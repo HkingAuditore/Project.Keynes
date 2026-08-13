@@ -47,8 +47,6 @@ static func build() -> Resource:
 		if i < technology_flags.size() and (int(technology_flags[i]) & TechnologyCatalogScript.FLAG_STARTING) != 0:
 			continue
 		var modifier_key := String(technology_modifiers[i])
-		if modifier_key.is_empty():
-			continue
 		var program_key := String(technology_recipes[i])
 		if definition_seen.has(program_key):
 			continue
@@ -165,20 +163,27 @@ static func _technology_definition(recipe_id: String, recipe_version: int,
 	adopted_value.value_q16 = Q16_ONE
 	var emit_adopted := EffectInstructionScript.new()
 	emit_adopted.op = 11 # EMIT_COMMAND
-	emit_adopted.arg0 = 1
+	emit_adopted.arg0 = 0 if modifier_key.is_empty() else 1
 	var end := EffectInstructionScript.new()
 	end.op = 12 # END
-	definition.instructions = [constant, emit, adopted_value, emit_adopted, end]
+	var instructions: Array[Resource] = [constant]
+	if not modifier_key.is_empty():
+		instructions.append(emit)
+	instructions.append(adopted_value)
+	instructions.append(emit_adopted)
+	instructions.append(end)
+	definition.instructions = instructions
 	var adopted := _command(5, 4, 13, &"technology.adopted", technology_id)
 	adopted.value_mode = 0 # VALUE_CONSTANT
 	adopted.value_q16 = Q16_ONE
 	adopted.payload_i0 = technology_index
 	adopted.payload_i1 = domain_index
 	adopted.payload_i2 = 1 # technology adoption event recipe version
-	definition.commands = [
-		_command(1, 1, 1, &"technology.modifier", modifier_key),
-		adopted,
-	]
+	var commands: Array[Resource] = []
+	if not modifier_key.is_empty():
+		commands.append(_command(1, 1, 1, &"technology.modifier", modifier_key))
+	commands.append(adopted)
+	definition.commands = commands
 	return definition
 
 

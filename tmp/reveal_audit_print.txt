@@ -1,0 +1,104 @@
+﻿BYPASS 52 empty_hard 16 has_hard 36
+EMPTY
+stone tech.hunting 狩猎 start 1 proxy ['landform.grassland', 'landform.forest'] obj ['resource.wild_game']
+stone tech.stone_knapping 打制石器 start 1 proxy ['landform.mountain'] obj ['resource.flint', 'resource.stone']
+stone tech.fire_control 火种控制 start 1 proxy ['landform.grassland'] obj ['resource.timber']
+stone tech.fishing_boats 渔舟 start 0 proxy ['landform.coast'] obj ['resource.freshwater_fish', 'resource.marine_fish']
+stone tech.freshwater_fishing 淡水岸捕 start 1 proxy ['landform.freshwater_access', 'landform.river_valley'] obj ['resource.freshwater_fish']
+stone tech.coastal_fishing 潮间带采集 start 1 proxy ['landform.coast', 'landform.coastal_estuary'] obj ['resource.marine_fish']
+stone tech.earth_building 土建筑 start 1 proxy ['landform.arid_basin', 'landform.loess_plain'] obj ['resource.clay']
+stone tech.herd_management 畜群管理 start 0 proxy ['resource.pasture', 'landform.grassland'] obj ['bio.horse']
+stone tech.wild_tuber_collection 野生块茎挖掘 start 1 proxy ['landform.high_plateau', 'landform.mountain'] obj ['bio.potato']
+stone tech.wild_flax_collection 野生韧皮采集 start 1 proxy ['landform.grassland', 'landform.forest'] obj ['bio.flax']
+stone tech.gold_panning 粗陶淘金 start 1 proxy ['landform.freshwater_access', 'landform.river_valley'] obj ['resource.gold_ore']
+stone tech.surface_silver_collection 地表银矿拣采 start 1 proxy ['landform.mountain', 'landform.high_plateau'] obj ['resource.silver_ore']
+stone tech.deadwood_collection 枯枝采集 start 1 proxy ['landform.forest', 'landform.conifer_forest'] obj ['resource.timber']
+stone tech.hide_scraping 生皮刮制 start 1 proxy ['landform.grassland', 'landform.forest'] obj ['resource.wild_game']
+stone tech.fur_sewing 毛皮缝制 start 1 proxy ['landform.tundra', 'landform.conifer_forest'] obj ['resource.wild_game']
+stone tech.charcoal_burning 木炭烧制 start 0 proxy ['landform.forest'] obj ['resource.timber']
+GATED
+stone tech.animal_husbandry 畜牧驯养 hard ['tech.hunting'] proxy ['landform.grassland']
+stone tech.animal_tracking 动物追踪 hard ['tech.animal_husbandry'] proxy ['landform.grassland']
+agrarian tech.pastoralism 游牧放牧 hard ['tech.herd_management'] proxy ['resource.pasture', 'landform.grassland']
+agrarian tech.horse_domestication 马匹驯化 hard ['tech.settled_knowledge', 'tech.herd_management'] proxy ['resource.pasture', 'landform.grassland']
+agrarian tech.spice_cultivation 香料栽培 hard ['tech.wild_spice_collection'] proxy ['resource.plantation_land']
+agrarian tech.animal_traction 畜力牵引 hard ['tech.settled_knowledge', 'tech.copper_ore_roasting'] proxy ['landform.grassland']
+agrarian tech.adobe_making 日晒土坯 hard ['tech.settled_knowledge', 'tech.hand_pottery'] proxy ['landform.arid_basin']
+agrarian tech.maize_garden_horticulture 玉米园圃 hard ['tech.settled_knowledge', 'tech.wild_maize_collection'] proxy ['resource.fertile_soil']
+agrarian tech.swidden_maize_cultivation 刀耕火种玉米 hard ['tech.maize_garden_horticulture'] proxy ['landform.forest']
+agrarian tech.rainfed_maize_cultivation 雨养玉米田 hard ['tech.swidden_maize_cultivation'] proxy ['resource.arable_land']
+agrarian tech.flood_recession_maize 退水玉米地 hard ['tech.rainfed_maize_cultivation'] proxy ['landform.floodplain']
+agrarian tech.rainfed_wheat_cultivation 雨养小麦田 hard ['tech.settled_knowledge', 'tech.wild_wheat_collection'] proxy ['landform.loess_plain']
+agrarian tech.flood_recession_wheat 退水小麦地 hard ['tech.rainfed_wheat_cultivation'] proxy ['landform.floodplain']
+agrarian tech.dryland_wheat_cultivation 旱作小麦田 hard ['tech.flood_recession_wheat'] proxy ['landform.arid_basin']
+agrarian tech.upland_rice_propagation 旱稻繁育 hard ['tech.paddy_bunding'] proxy ['landform.high_plateau']
+agrarian tech.wetland_rice_gardening 湿地稻园 hard ['tech.upland_rice_propagation'] proxy ['landform.marsh', 'resource.paddy_land']
+agrarian tech.rice_paddy_cultivation 水田稻作 hard ['tech.settled_knowledge', 'tech.wild_rice_collection'] proxy ['resource.paddy_land']
+agrarian tech.ridge_tuber_cultivation 垄作块茎 hard ['tech.terrace_farming'] proxy ['landform.high_plateau']
+agrarian tech.highland_tuber_farming 高地块茎农业 hard ['tech.settled_knowledge', 'tech.tuber_storage'] proxy ['landform.high_plateau', 'landform.mountain']
+agrarian tech.cotton_gardening 棉花园圃 hard ['tech.spice_cultivation'] proxy ['resource.plantation_land']
+agrarian tech.spice_shade_gardening 遮阴香料园 hard ['tech.settled_knowledge', 'tech.wild_spice_collection'] proxy ['resource.plantation_land']
+agrarian tech.timber_sawing 手工锯木 hard ['tech.settled_knowledge', 'tech.charcoal_burning'] proxy ['landform.forest']
+agrarian tech.dairy_processing 乳品加工 hard ['tech.horse_domestication'] proxy ['resource.pasture', 'landform.grassland']
+agrarian tech.hide_tanning 皮革鞣制 hard ['tech.dairy_processing'] proxy ['landform.grassland']
+agrarian tech.wool_husbandry 毛用畜牧 hard ['tech.hide_tanning'] proxy ['resource.pasture', 'landform.grassland']
+agrarian tech.meat_processing 屠宰分割 hard ['tech.wool_husbandry'] proxy ['resource.pasture', 'landform.grassland']
+kingdom tech.bark_paper_making 树皮纸 hard ['tech.agrarian_society', 'tech.timber_sawing'] proxy ['landform.forest']
+kingdom tech.tenant_cereal_farming 佃作谷物 hard ['tech.fermentation'] proxy ['resource.arable_land']
+empire tech.forest_management 森林管理 hard ['tech.kingdom_administration', 'tech.bark_paper_making'] proxy ['landform.forest']
+empire tech.pastoral_networks 牧业网络 hard ['tech.kingdom_administration', 'tech.parchment_making'] proxy ['resource.pasture', 'landform.grassland']
+empire tech.manorial_cereal_farming 庄园谷物经营 hard ['tech.kingdom_administration', 'tech.customary_tenancy'] proxy ['resource.arable_land']
+empire tech.estate_cereal_management 庄园谷物核算 hard ['tech.kingdom_administration', 'tech.sharecropping'] proxy ['resource.arable_land']
+exploration tech.estate_plantation_management 种植园庄园管理 hard ['tech.imperial_integration', 'tech.serf_obligations'] proxy ['resource.plantation_land']
+enlightenment tech.livestock_breeding 畜种改良 hard ['tech.global_exchange', 'tech.commercial_estates'] proxy ['resource.pasture', 'landform.grassland']
+enlightenment tech.precision_instruments 精密仪器 hard ['tech.global_exchange', 'tech.oceanic_navigation'] proxy ['landform.coast']
+electrical tech.modern_husbandry 现代畜牧 hard ['tech.industrialization', 'tech.labor_organization'] proxy ['resource.pasture', 'landform.grassland']
+HORSE
+stone tech.herd_management 畜群管理 ['resource.pasture', 'landform.grassland', 'bio.horse'] hard []
+agrarian tech.pastoralism 游牧放牧 ['resource.pasture', 'landform.grassland', 'bio.horse'] hard ['tech.herd_management']
+agrarian tech.horse_domestication 马匹驯化 ['resource.pasture', 'landform.grassland', 'bio.horse'] hard ['tech.settled_knowledge', 'tech.herd_management']
+agrarian tech.dairy_processing 乳品加工 ['resource.pasture', 'landform.grassland', 'bio.horse'] hard ['tech.horse_domestication']
+agrarian tech.wool_husbandry 毛用畜牧 ['resource.pasture', 'landform.grassland', 'bio.horse'] hard ['tech.hide_tanning']
+agrarian tech.meat_processing 屠宰分割 ['resource.pasture', 'landform.grassland', 'bio.horse'] hard ['tech.wool_husbandry']
+empire tech.pastoral_networks 牧业网络 ['resource.pasture', 'landform.grassland', 'bio.horse'] hard ['tech.kingdom_administration', 'tech.parchment_making']
+enlightenment tech.livestock_breeding 畜种改良 ['resource.pasture', 'landform.grassland', 'bio.horse'] hard ['tech.global_exchange', 'tech.commercial_estates']
+electrical tech.modern_husbandry 现代畜牧 ['resource.pasture', 'landform.grassland', 'bio.horse'] hard ['tech.industrialization', 'tech.labor_organization']
+HIDE_SHEEP
+stone tech.animal_husbandry 畜牧驯养 ['resource.wild_game', 'bio.sheep', 'landform.grassland']
+stone tech.animal_tracking 动物追踪 ['resource.wild_game', 'bio.sheep', 'landform.grassland']
+agrarian tech.animal_traction 畜力牵引 ['resource.wild_game', 'bio.sheep', 'landform.grassland']
+agrarian tech.hide_tanning 皮革鞣制 ['resource.wild_game', 'bio.sheep', 'landform.grassland']
+kingdom tech.parchment_making 皮纸制作 ['resource.wild_game', 'bio.sheep']
+CROSS
+stone tech.fiber_twisting expected ['contact.tin', 'resource.tin_ore'] extras ['bio.flax', 'bio.cotton', 'bio.bast_fiber'] miss True
+agrarian tech.dairy_processing expected ['bio.cattle'] extras ['bio.horse'] miss True
+agrarian tech.hide_tanning expected ['resource.wild_game'] extras ['bio.sheep'] miss False
+agrarian tech.wool_husbandry expected ['bio.sheep'] extras ['bio.horse'] miss True
+agrarian tech.salt_preservation expected ['resource.salt'] extras ['resource.saltpeter', 'resource.sulfur'] miss False
+kingdom tech.writing expected ['contact.tin', 'resource.tin_ore'] extras ['resource.clay', 'resource.timber'] miss True
+kingdom tech.iron_smelting expected ['contact.tin', 'resource.iron_ore', 'resource.tin_ore'] extras ['resource.coal'] miss False
+kingdom tech.estate_accounting expected ['contact.tin', 'resource.tin_ore'] extras ['resource.clay', 'resource.timber'] miss True
+empire tech.blast_furnace expected ['resource.wild_game'] extras ['resource.iron_ore', 'resource.coal'] miss True
+empire tech.movable_type_printing expected ['contact.tin', 'resource.tin_ore'] extras ['resource.timber'] miss True
+exploration tech.screw_press_printing expected ['contact.tin', 'resource.tin_ore'] extras ['resource.timber'] miss True
+enlightenment tech.crop_breeding expected ['bio.reed'] extras ['bio.potato', 'contact.potato'] miss True
+enlightenment tech.geological_prospecting expected ['contact.tin', 'resource.tin_ore'] extras ['resource.copper_ore'] miss False
+enlightenment tech.livestock_breeding expected ['bio.reed'] extras ['bio.horse'] miss True
+steam tech.coke_smelting expected ['contact.tin', 'resource.tin_ore'] extras ['resource.iron_ore', 'resource.coal'] miss True
+CLONED
+20 ['breakthrough.automation', 'breakthrough.digital_control'] ['tech.digital_computing', 'tech.information_theory', 'tech.knowledge_economy', 'tech.software_engineering', 'tech.networked_computing']
+10 ['breakthrough.seed_saving', 'resource.fertile_soil', 'weather.repeated_crop_failure'] ['tech.seasonal_foraging', 'tech.crop_domestication', 'tech.food_storage', 'tech.hearth_preservation', 'tech.seed_selection']
+9 ['bio.horse', 'landform.grassland', 'resource.pasture'] ['tech.herd_management', 'tech.pastoralism', 'tech.horse_domestication', 'tech.dairy_processing', 'tech.wool_husbandry']
+9 ['breakthrough.hydraulic_engineering', 'landform.freshwater_access', 'landform.river_valley'] ['tech.irrigation', 'tech.irrigation_surveying', 'tech.canal_engineering', 'tech.water_power', 'tech.urban_waterworks']
+9 ['breakthrough.print_calibration', 'breakthrough.printing'] ['tech.scholastic_method', 'tech.chartered_universities', 'tech.indentured_contracts', 'tech.scientific_classification', 'tech.political_economy']
+7 ['resource.coal'] ['tech.surface_coal_use', 'tech.coal_outcrop_identification', 'tech.surface_coal_collection', 'tech.coal_mining', 'tech.coal_adit_mining']
+7 ['resource.coal', 'resource.natural_gas', 'resource.oil'] ['tech.petroleum_extraction', 'tech.petroleum_refining', 'tech.internal_combustion', 'tech.petroleum_drilling', 'tech.synthetic_materials']
+6 ['breakthrough.seed_saving', 'landform.river_valley', 'resource.fertile_soil'] ['tech.communal_specialization', 'tech.household_production', 'tech.permanent_settlements', 'tech.household_landholding', 'tech.communal_field_coordination']
+6 ['bio.wheat', 'breakthrough.rainfed_adaptation', 'contact.wheat'] ['tech.crop_rotation', 'tech.intensive_crop_rotation', 'tech.crop_transplantation', 'tech.agricultural_improvement', 'tech.mechanical_threshing']
+5 ['bio.bast_fiber', 'bio.cotton', 'bio.flax'] ['tech.fiber_twisting', 'tech.weaving', 'tech.loom_weaving', 'tech.hand_spinning', 'tech.plant_fiber_papermaking']
+5 ['bio.wheat', 'contact.wheat'] ['tech.wheat_identification', 'tech.wild_wheat_collection', 'tech.wheat_seed_saving', 'tech.wheat_propagation', 'tech.grain_baking']
+5 ['bio.maize', 'breakthrough.maize_selection', 'contact.maize'] ['tech.maize_selection', 'tech.agronomic_exchange', 'tech.mechanized_agriculture', 'tech.industrial_agronomy', 'tech.precision_agriculture']
+5 ['resource.phosphate_rock', 'resource.saltpeter', 'resource.sulfur'] ['tech.gunpowder_formulation', 'tech.gunpowder_weapons', 'tech.industrial_chemistry', 'tech.fertilizer_processing', 'tech.synthetic_fertilizer']
+5 ['breakthrough.maritime_operations', 'landform.coast'] ['tech.magnetic_navigation', 'tech.celestial_navigation', 'tech.oceanic_ship_design', 'tech.coastal_shipyards', 'tech.oceanic_provisioning']
+5 ['breakthrough.assembly_line', 'breakthrough.industrial_organization', 'breakthrough.steam_power'] ['tech.industrial_organization', 'tech.labor_organization', 'tech.factory_system', 'tech.managerial_hierarchy', 'tech.worker_cooperatives']
+5 ['breakthrough.assembly_line', 'breakthrough.electrification', 'breakthrough.industrial_organization'] ['tech.telecommunications', 'tech.corporate_management', 'tech.corporate_agribusiness', 'tech.collective_agriculture', 'tech.state_enterprises']

@@ -54,6 +54,13 @@ func _init() -> void:
 	_expect("player fit action is registered", InputMap.has_action(&"player_fit_view"))
 	_expect("player zoom actions are registered",
 		InputMap.has_action(&"player_zoom_in") and InputMap.has_action(&"player_zoom_out"))
+	var overlay_button_scene := load("res://scenes/ui/map_overlay_icon_button.tscn") as PackedScene
+	var overlay_button := overlay_button_scene.instantiate() as Button \
+		if overlay_button_scene != null else null
+	_expect("overlay icon buttons do not steal GUI focus",
+		overlay_button != null and overlay_button.focus_mode == Control.FOCUS_NONE)
+	if overlay_button != null:
+		overlay_button.free()
 	var packed := load("res://scenes/player_game.tscn") as PackedScene
 	var scene := packed.instantiate() if packed != null else null
 	var player = scene if scene != null else null

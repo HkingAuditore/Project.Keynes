@@ -86,6 +86,7 @@ var _vector_low_label: Label
 var _vector_high_label: Label
 var _current_mode: int = 0
 var _last_pointer_value: float = -1.0   # NaN/未选中时隐藏指针
+var _legend_bucket: int = -1
 
 func _ready() -> void:
 	_icon_label = get_node_or_null("Margin/Root/TitleRow/Icon") as Label
@@ -121,9 +122,11 @@ func update_for_mode(
 	mode: int,
 	title_override: String = "",
 	hint_override: String = "",
-	icon_override: String = ""
+	icon_override: String = "",
+	occupancy_bit: int = -1
 ) -> void:
 	_current_mode = mode
+	_legend_bucket = occupancy_bit
 	if mode == OverlayMode.MODE.NONE:
 		visible = false
 		return
@@ -173,6 +176,7 @@ func _icon_for_mode(mode: int) -> String:
 		OverlayMode.MODE.WIND_DIR: return "wind"
 		OverlayMode.MODE.OCEAN_CURRENT_DIR: return "ocean_current"
 		OverlayMode.MODE.RESOURCE_RESERVE: return "resource"
+		OverlayMode.MODE.BIO_OCCUPANCY: return "growth"
 		_: return "overview"
 
 # 选中 cell 时更新指针位置；未选中或数值不适用（离散通道）时隐藏。
@@ -421,6 +425,9 @@ func _rebuild_discrete_list(mode: int) -> void:
 		for i in range(VegetationType.VEG.size()):
 			names.append(VegetationType.name_cn(i))
 			colors.append(_categorical_color(i, 0.12))
+	elif mode == OverlayMode.MODE.BIO_OCCUPANCY:
+		names.append("有分布")
+		colors.append(_categorical_color(maxi(_legend_bucket, 0), 0.22))
 	_discrete_scroll.custom_minimum_size.y = minf(220.0, float(names.size()) * 22.0)
 	for i in range(names.size()):
 		var row := LegendRowScene.instantiate() as HBoxContainer

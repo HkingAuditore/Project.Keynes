@@ -1,0 +1,860 @@
+{
+  "cycles": [],
+  "era_back": [],
+  "layout_back": [],
+  "missing_node": [],
+  "day0_ident_skip": [],
+  "later_ident_skip_count": 36,
+  "later_ident_skip_stone_agrarian": [
+    {
+      "id": "tech.pottery",
+      "name": "陶器容器体系",
+      "era": "agrarian",
+      "role": "handling",
+      "anchor": "route_anchor",
+      "lane": "branch.maritime_logistics",
+      "hard": [
+        "定居知识 (tech.settled_knowledge)",
+        "渔舟 (tech.fishing_boats)"
+      ],
+      "missing": [
+        "黏土辨识 (tech.clay_identification)"
+      ]
+    },
+    {
+      "id": "tech.plough_agriculture",
+      "name": "犁耕农业",
+      "era": "agrarian",
+      "role": "handling",
+      "anchor": "backbone_anchor",
+      "lane": "backbone.tools_machinery",
+      "hard": [
+        "定居知识 (tech.settled_knowledge)"
+      ],
+      "missing": [
+        "燧石辨识 (tech.flint_identification)"
+      ]
+    },
+    {
+      "id": "tech.weaving",
+      "name": "织造",
+      "era": "agrarian",
+      "role": "handling",
+      "anchor": "support",
+      "lane": "branch.textile_fibers",
+      "hard": [
+        "纤维捻制 (tech.fiber_twisting)"
+      ],
+      "missing": [
+        "棉花辨识 (tech.cotton_identification)",
+        "亚麻与韧皮辨识 (tech.flax_identification)"
+      ]
+    },
+    {
+      "id": "tech.bronze_casting",
+      "name": "铜锡配比与铸造",
+      "era": "agrarian",
+      "role": "production_system",
+      "anchor": "route_anchor",
+      "lane": "branch.nonferrous_metals",
+      "hard": [
+        "定居知识 (tech.settled_knowledge)",
+        "自然铜冷锤 (tech.natural_copper_working)"
+      ],
+      "missing": [
+        "锡矿辨识 (tech.tin_identification)"
+      ]
+    },
+    {
+      "id": "tech.kiln_firing",
+      "name": "窑烧控制",
+      "era": "agrarian",
+      "role": "handling",
+      "anchor": "route_anchor",
+      "lane": "branch.electric_intelligent_energy",
+      "hard": [
+        "定居知识 (tech.settled_knowledge)",
+        "控制性用火 (tech.controlled_burning)"
+      ],
+      "missing": [
+        "黏土辨识 (tech.clay_identification)"
+      ]
+    },
+    {
+      "id": "tech.loom_weaving",
+      "name": "织机织造",
+      "era": "agrarian",
+      "role": "handling",
+      "anchor": "route_anchor",
+      "lane": "branch.textile_fibers",
+      "hard": [
+        "定居知识 (tech.settled_knowledge)",
+        "纤维捻制 (tech.fiber_twisting)"
+      ],
+      "missing": [
+        "棉花辨识 (tech.cotton_identification)",
+        "亚麻与韧皮辨识 (tech.flax_identification)"
+      ]
+    },
+    {
+      "id": "tech.grain_threshing",
+      "name": "谷物脱粒",
+      "era": "agrarian",
+      "role": "handling",
+      "anchor": "support",
+      "lane": "branch.wheat_rainfed",
+      "hard": [
+        "旱作保水 (tech.dryland_water_retention)"
+      ],
+      "missing": [
+        "玉米辨识 (tech.maize_identification)",
+        "稻类辨识 (tech.rice_identification)"
+      ]
+    },
+    {
+      "id": "tech.hand_spinning",
+      "name": "手工纺纱",
+      "era": "agrarian",
+      "role": "handling",
+      "anchor": "support",
+      "lane": "branch.textile_fibers",
+      "hard": [
+        "沤麻 (tech.flax_retting)"
+      ],
+      "missing": [
+        "棉花辨识 (tech.cotton_identification)"
+      ]
+    },
+    {
+      "id": "tech.cotton_ginning",
+      "name": "棉花去籽",
+      "era": "agrarian",
+      "role": "handling",
+      "anchor": "support",
+      "lane": "branch.textile_fibers",
+      "hard": [
+        "手工纺纱 (tech.hand_spinning)"
+      ],
+      "missing": [
+        "棉花辨识 (tech.cotton_identification)"
+      ]
+    },
+    {
+      "id": "tech.latex_smoke_coagulation",
+      "name": "乳胶烟熏凝固",
+      "era": "agrarian",
+      "role": "handling",
+      "anchor": "support",
+      "lane": "branch.tropical_commodities",
+      "hard": [
+        "遮阴香料园 (tech.spice_shade_gardening)"
+      ],
+      "missing": [
+        "橡胶树辨识 (tech.rubber_identification)"
+      ]
+    },
+    {
+      "id": "tech.masonry",
+      "name": "砌体建筑",
+      "era": "kingdom",
+      "role": "production_system",
+      "anchor": "route_anchor",
+      "lane": "branch.construction_materials",
+      "hard": [
+        "农耕社会 (tech.agrarian_society)",
+        "日晒土坯 (tech.adobe_making)"
+      ],
+      "missing": [
+        "燧石辨识 (tech.flint_identification)"
+      ]
+    },
+    {
+      "id": "tech.urban_sanitation",
+      "name": "城市卫生",
+      "era": "kingdom",
+      "role": "handling",
+      "anchor": "route_anchor",
+      "lane": "branch.industrial_chemistry",
+      "hard": [
+        "农耕社会 (tech.agrarian_society)",
+        "盐渍保存 (tech.salt_preservation)"
+      ],
+      "missing": [
+        "黏土辨识 (tech.clay_identification)"
+      ]
+    },
+    {
+      "id": "tech.scholarly_academies",
+      "name": "学术机构",
+      "era": "kingdom",
+      "role": "handling",
+      "anchor": "support",
+      "lane": "backbone.knowledge_computation",
+      "hard": [
+        "文字 (tech.writing)"
+      ],
+      "missing": [
+        "黏土辨识 (tech.clay_identification)"
+      ]
+    },
+    {
+      "id": "tech.tenant_cereal_farming",
+      "name": "佃作谷物",
+      "era": "kingdom",
+      "role": "production_system",
+      "anchor": "support",
+      "lane": "backbone.food_storage",
+      "hard": [
+        "发酵保存 (tech.fermentation)"
+      ],
+      "missing": [
+        "玉米辨识 (tech.maize_identification)",
+        "稻类辨识 (tech.rice_identification)",
+        "小麦辨识 (tech.wheat_identification)"
+      ]
+    }
+  ],
+  "wrong_ident": [],
+  "odd_cross_count": 0,
+  "odd_cross_stone_agrarian": [],
+  "odd_same_lane_count": 54,
+  "odd_same_lane_stone_agrarian": [
+    {
+      "id": "tech.clay_identification",
+      "name": "黏土辨识",
+      "era": "stone",
+      "lane": "branch.construction_materials",
+      "prereq": "tech.stone_knapping",
+      "prereq_name": "打制石器",
+      "node_objs": [
+        "resource.clay"
+      ],
+      "prereq_objs": [
+        "resource.flint",
+        "resource.stone"
+      ]
+    },
+    {
+      "id": "tech.tin_identification",
+      "name": "锡矿辨识",
+      "era": "stone",
+      "lane": "branch.nonferrous_metals",
+      "prereq": "tech.copper_annealing",
+      "prereq_name": "铜退火",
+      "node_objs": [
+        "resource.tin_ore"
+      ],
+      "prereq_objs": [
+        "resource.copper_ore"
+      ]
+    },
+    {
+      "id": "tech.communal_specialization",
+      "name": "共同体分工",
+      "era": "stone",
+      "lane": "backbone.institutions_exchange",
+      "prereq": "tech.early_trade",
+      "prereq_name": "早期贸易",
+      "node_objs": [
+        "resource.fertile_soil"
+      ],
+      "prereq_objs": [
+        "resource.gold_ore",
+        "resource.silver_ore"
+      ]
+    },
+    {
+      "id": "tech.gold_placer_identification",
+      "name": "砂金辨识",
+      "era": "stone",
+      "lane": "branch.water_wind",
+      "prereq": "tech.freshwater_fishing",
+      "prereq_name": "淡水岸捕",
+      "node_objs": [
+        "resource.gold_ore"
+      ],
+      "prereq_objs": [
+        "resource.freshwater_fish"
+      ]
+    },
+    {
+      "id": "tech.flint_identification",
+      "name": "燧石辨识",
+      "era": "stone",
+      "lane": "branch.construction_materials",
+      "prereq": "tech.earth_building",
+      "prereq_name": "土建筑",
+      "node_objs": [
+        "resource.flint"
+      ],
+      "prereq_objs": [
+        "resource.clay"
+      ]
+    },
+    {
+      "id": "tech.pottery",
+      "name": "陶器容器体系",
+      "era": "agrarian",
+      "lane": "branch.maritime_logistics",
+      "prereq": "tech.fishing_boats",
+      "prereq_name": "渔舟",
+      "node_objs": [
+        "resource.clay"
+      ],
+      "prereq_objs": [
+        "resource.freshwater_fish",
+        "resource.marine_fish"
+      ]
+    },
+    {
+      "id": "tech.dryland_farming",
+      "name": "旱作农业",
+      "era": "agrarian",
+      "lane": "branch.wheat_rainfed",
+      "prereq": "tech.wild_wheat_collection",
+      "prereq_name": "野生谷穗采集",
+      "node_objs": [
+        "resource.arable_land"
+      ],
+      "prereq_objs": [
+        "bio.wheat"
+      ]
+    },
+    {
+      "id": "tech.rainfed_field_system",
+      "name": "雨养田体系",
+      "era": "agrarian",
+      "lane": "backbone.food_storage",
+      "prereq": "tech.seed_selection",
+      "prereq_name": "留种选育",
+      "node_objs": [
+        "resource.arable_land"
+      ],
+      "prereq_objs": [
+        "resource.fertile_soil"
+      ]
+    },
+    {
+      "id": "tech.paddy_bunding",
+      "name": "水田畦埂",
+      "era": "agrarian",
+      "lane": "branch.rice_irrigation",
+      "prereq": "tech.wild_rice_collection",
+      "prereq_name": "野生稻采集",
+      "node_objs": [
+        "resource.paddy_land"
+      ],
+      "prereq_objs": [
+        "bio.rice"
+      ]
+    },
+    {
+      "id": "tech.kiln_firing",
+      "name": "窑烧控制",
+      "era": "agrarian",
+      "lane": "branch.electric_intelligent_energy",
+      "prereq": "tech.controlled_burning",
+      "prereq_name": "控制性用火",
+      "node_objs": [
+        "resource.clay",
+        "resource.silica_sand"
+      ],
+      "prereq_objs": [
+        "resource.timber"
+      ]
+    },
+    {
+      "id": "tech.animal_traction",
+      "name": "畜力牵引",
+      "era": "agrarian",
+      "lane": "branch.heavy_industry",
+      "prereq": "tech.copper_ore_roasting",
+      "prereq_name": "铜矿焙烧",
+      "node_objs": [
+        "bio.cattle",
+        "bio.horse"
+      ],
+      "prereq_objs": [
+        "resource.copper_ore"
+      ]
+    },
+    {
+      "id": "tech.public_storehouses",
+      "name": "公共仓储",
+      "era": "agrarian",
+      "lane": "backbone.food_storage",
+      "prereq": "tech.rainfed_field_system",
+      "prereq_name": "雨养田体系",
+      "node_objs": [
+        "resource.fertile_soil"
+      ],
+      "prereq_objs": [
+        "resource.arable_land"
+      ]
+    },
+    {
+      "id": "tech.grain_threshing",
+      "name": "谷物脱粒",
+      "era": "agrarian",
+      "lane": "branch.wheat_rainfed",
+      "prereq": "tech.dryland_water_retention",
+      "prereq_name": "旱作保水",
+      "node_objs": [
+        "bio.maize",
+        "bio.rice",
+        "bio.wheat"
+      ],
+      "prereq_objs": [
+        "resource.arable_land"
+      ]
+    },
+    {
+      "id": "tech.upland_rice_propagation",
+      "name": "旱稻繁育",
+      "era": "agrarian",
+      "lane": "branch.rice_irrigation",
+      "prereq": "tech.paddy_bunding",
+      "prereq_name": "水田畦埂",
+      "node_objs": [
+        "bio.rice"
+      ],
+      "prereq_objs": [
+        "resource.paddy_land"
+      ]
+    },
+    {
+      "id": "tech.rice_water_control",
+      "name": "稻田水位控制",
+      "era": "agrarian",
+      "lane": "branch.rice_irrigation",
+      "prereq": "tech.wetland_rice_gardening",
+      "prereq_name": "湿地稻园",
+      "node_objs": [
+        "resource.paddy_land"
+      ],
+      "prereq_objs": [
+        "bio.rice"
+      ]
+    },
+    {
+      "id": "tech.cotton_gardening",
+      "name": "棉花园圃",
+      "era": "agrarian",
+      "lane": "branch.tropical_commodities",
+      "prereq": "tech.spice_cultivation",
+      "prereq_name": "香料栽培",
+      "node_objs": [
+        "bio.cotton"
+      ],
+      "prereq_objs": [
+        "bio.spice"
+      ]
+    },
+    {
+      "id": "tech.latex_smoke_coagulation",
+      "name": "乳胶烟熏凝固",
+      "era": "agrarian",
+      "lane": "branch.tropical_commodities",
+      "prereq": "tech.spice_shade_gardening",
+      "prereq_name": "遮阴香料园",
+      "node_objs": [
+        "bio.rubber"
+      ],
+      "prereq_objs": [
+        "bio.spice"
+      ]
+    },
+    {
+      "id": "tech.dairy_processing",
+      "name": "乳品加工",
+      "era": "agrarian",
+      "lane": "branch.pastoral_livestock",
+      "prereq": "tech.horse_domestication",
+      "prereq_name": "马匹驯化",
+      "node_objs": [
+        "bio.cattle"
+      ],
+      "prereq_objs": [
+        "bio.horse"
+      ]
+    },
+    {
+      "id": "tech.hide_tanning",
+      "name": "皮革鞣制",
+      "era": "agrarian",
+      "lane": "branch.pastoral_livestock",
+      "prereq": "tech.dairy_processing",
+      "prereq_name": "乳品加工",
+      "node_objs": [
+        "bio.sheep",
+        "resource.wild_game"
+      ],
+      "prereq_objs": [
+        "bio.cattle"
+      ]
+    },
+    {
+      "id": "tech.early_glassmaking",
+      "name": "早期玻璃烧制",
+      "era": "agrarian",
+      "lane": "branch.construction_materials",
+      "prereq": "tech.adobe_making",
+      "prereq_name": "日晒土坯",
+      "node_objs": [
+        "resource.limestone",
+        "resource.silica_sand"
+      ],
+      "prereq_objs": [
+        "resource.clay"
+      ]
+    }
+  ],
+  "designed_ok": [
+    {
+      "label": "玉米",
+      "broken": [],
+      "chain": [
+        "tech.maize_identification",
+        "tech.wild_maize_collection",
+        "tech.maize_seed_saving",
+        "tech.maize_propagation"
+      ]
+    },
+    {
+      "label": "小麦",
+      "broken": [],
+      "chain": [
+        "tech.wheat_identification",
+        "tech.wild_wheat_collection",
+        "tech.wheat_seed_saving",
+        "tech.wheat_propagation"
+      ]
+    },
+    {
+      "label": "水稻",
+      "broken": [],
+      "chain": [
+        "tech.rice_identification",
+        "tech.wild_rice_collection",
+        "tech.rice_seed_saving"
+      ]
+    },
+    {
+      "label": "块茎",
+      "broken": [],
+      "chain": [
+        "tech.potato_identification",
+        "tech.tuber_storage",
+        "tech.potato_propagation"
+      ]
+    },
+    {
+      "label": "黏土",
+      "broken": [],
+      "chain": [
+        "tech.clay_identification",
+        "tech.clay_preparation",
+        "tech.hand_pottery"
+      ]
+    },
+    {
+      "label": "铜",
+      "broken": [],
+      "chain": [
+        "tech.natural_copper_identification",
+        "tech.natural_copper_working",
+        "tech.copper_annealing",
+        "tech.copper_ore_roasting"
+      ]
+    },
+    {
+      "label": "棉花",
+      "broken": [],
+      "chain": [
+        "tech.cotton_identification",
+        "tech.wild_cotton_collection"
+      ]
+    },
+    {
+      "label": "香料",
+      "broken": [],
+      "chain": [
+        "tech.spice_identification",
+        "tech.wild_spice_collection"
+      ]
+    },
+    {
+      "label": "橡胶",
+      "broken": [],
+      "chain": [
+        "tech.rubber_identification",
+        "tech.wild_latex_tapping"
+      ]
+    },
+    {
+      "label": "亚麻沤麻",
+      "broken": [],
+      "chain": [
+        "tech.flax_identification",
+        "tech.flax_retting"
+      ]
+    },
+    {
+      "label": "铁矿拣采",
+      "broken": [],
+      "chain": [
+        "tech.iron_ore_identification",
+        "tech.surface_iron_collection"
+      ]
+    },
+    {
+      "label": "煤炭拣采",
+      "broken": [],
+      "chain": [
+        "tech.coal_outcrop_identification",
+        "tech.surface_coal_collection"
+      ]
+    },
+    {
+      "label": "锡在铜后",
+      "broken": [],
+      "chain": [
+        "tech.copper_annealing",
+        "tech.tin_identification"
+      ]
+    }
+  ],
+  "designed_break": [],
+  "extra_designed": [
+    {
+      "label": "陶器容器←手制陶器",
+      "direct": false,
+      "transitive": false,
+      "b_hard": [
+        "tech.settled_knowledge",
+        "tech.fishing_boats"
+      ]
+    },
+    {
+      "label": "日晒土坯←手制陶器",
+      "direct": true,
+      "transitive": true,
+      "b_hard": [
+        "tech.settled_knowledge",
+        "tech.hand_pottery"
+      ]
+    },
+    {
+      "label": "青铜←锡辨识",
+      "direct": false,
+      "transitive": false,
+      "b_hard": [
+        "tech.settled_knowledge",
+        "tech.natural_copper_working"
+      ]
+    },
+    {
+      "label": "青铜←冷锤",
+      "direct": true,
+      "transitive": true,
+      "b_hard": [
+        "tech.settled_knowledge",
+        "tech.natural_copper_working"
+      ]
+    },
+    {
+      "label": "块炼铁←铁矿辨识",
+      "direct": false,
+      "transitive": false,
+      "b_hard": [
+        "tech.agrarian_society",
+        "tech.animal_traction"
+      ]
+    },
+    {
+      "label": "地表用煤←露头煤辨识",
+      "direct": false,
+      "transitive": false,
+      "b_hard": [
+        "tech.agrarian_society",
+        "tech.kiln_firing"
+      ]
+    },
+    {
+      "label": "纤维捻制←亚麻辨识",
+      "direct": false,
+      "transitive": false,
+      "b_hard": []
+    },
+    {
+      "label": "高地块茎农业←块茎保存",
+      "direct": true,
+      "transitive": true,
+      "b_hard": [
+        "tech.settled_knowledge",
+        "tech.tuber_storage"
+      ]
+    },
+    {
+      "label": "垄作块茎←块茎辨识",
+      "direct": false,
+      "transitive": true,
+      "b_hard": [
+        "tech.terrace_farming"
+      ]
+    }
+  ],
+  "stone_empty": [
+    {
+      "id": "tech.composite_tools",
+      "name": "复合工具",
+      "role": "handling",
+      "anchor": "backbone_anchor",
+      "lane": "backbone.tools_machinery"
+    },
+    {
+      "id": "tech.natural_observation",
+      "name": "自然观察",
+      "role": "handling",
+      "anchor": "backbone_anchor",
+      "lane": "backbone.knowledge_computation"
+    },
+    {
+      "id": "tech.controlled_burning",
+      "name": "控制性用火",
+      "role": "handling",
+      "anchor": "route_anchor",
+      "lane": "branch.electric_intelligent_energy"
+    },
+    {
+      "id": "tech.fishing_boats",
+      "name": "渔舟",
+      "role": "handling",
+      "anchor": "route_anchor",
+      "lane": "branch.maritime_logistics"
+    },
+    {
+      "id": "tech.natural_copper_identification",
+      "name": "自然铜辨识",
+      "role": "identification",
+      "anchor": "support",
+      "lane": "branch.nonferrous_metals"
+    },
+    {
+      "id": "tech.fiber_twisting",
+      "name": "纤维捻制",
+      "role": "handling",
+      "anchor": "route_anchor",
+      "lane": "branch.textile_fibers"
+    },
+    {
+      "id": "tech.food_storage",
+      "name": "食物储藏",
+      "role": "handling",
+      "anchor": "backbone_anchor",
+      "lane": "backbone.food_storage"
+    },
+    {
+      "id": "tech.herd_management",
+      "name": "畜群管理",
+      "role": "production_system",
+      "anchor": "route_anchor",
+      "lane": "branch.pastoral_livestock"
+    },
+    {
+      "id": "tech.maize_identification",
+      "name": "玉米辨识",
+      "role": "identification",
+      "anchor": "support",
+      "lane": "branch.maize_horticulture"
+    },
+    {
+      "id": "tech.wheat_identification",
+      "name": "小麦辨识",
+      "role": "identification",
+      "anchor": "support",
+      "lane": "branch.wheat_rainfed"
+    },
+    {
+      "id": "tech.rice_identification",
+      "name": "稻类辨识",
+      "role": "identification",
+      "anchor": "support",
+      "lane": "branch.rice_irrigation"
+    },
+    {
+      "id": "tech.potato_identification",
+      "name": "块茎辨识",
+      "role": "identification",
+      "anchor": "support",
+      "lane": "branch.tuber_highland"
+    },
+    {
+      "id": "tech.cotton_identification",
+      "name": "棉花辨识",
+      "role": "identification",
+      "anchor": "support",
+      "lane": "branch.tropical_commodities"
+    },
+    {
+      "id": "tech.flax_identification",
+      "name": "亚麻与韧皮辨识",
+      "role": "identification",
+      "anchor": "support",
+      "lane": "branch.textile_fibers"
+    },
+    {
+      "id": "tech.spice_identification",
+      "name": "香料植物辨识",
+      "role": "identification",
+      "anchor": "support",
+      "lane": "branch.tropical_commodities"
+    },
+    {
+      "id": "tech.rubber_identification",
+      "name": "橡胶树辨识",
+      "role": "identification",
+      "anchor": "support",
+      "lane": "branch.tropical_commodities"
+    },
+    {
+      "id": "tech.reed_identification",
+      "name": "芦苇辨识",
+      "role": "identification",
+      "anchor": "route_anchor",
+      "lane": "branch.water_wind"
+    },
+    {
+      "id": "tech.charcoal_burning",
+      "name": "木炭烧制",
+      "role": "handling",
+      "anchor": "route_anchor",
+      "lane": "branch.forest_biomass"
+    },
+    {
+      "id": "tech.brine_collection",
+      "name": "卤水采集",
+      "role": "handling",
+      "anchor": "route_anchor",
+      "lane": "branch.industrial_chemistry"
+    }
+  ],
+  "cross_lane_hard": [
+    {
+      "from": "tech.rubber_identification",
+      "from_name": "橡胶树辨识",
+      "to": "tech.wild_latex_tapping",
+      "to_name": "野生割胶",
+      "from_lane": "branch.tropical_commodities",
+      "to_lane": "branch.petroleum_materials"
+    },
+    {
+      "from": "tech.copper_annealing",
+      "from_name": "铜退火",
+      "to": "tech.copper_ore_roasting",
+      "to_name": "铜矿焙烧",
+      "from_lane": "branch.nonferrous_metals",
+      "to_lane": "branch.heavy_industry"
+    }
+  ]
+}

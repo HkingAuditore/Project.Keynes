@@ -415,6 +415,8 @@ private:
     bool prerequisites_met(int32_t slot, int32_t technology) const;
     bool prerequisites_met(const std::vector<uint64_t> &completed, int32_t slot,
                            int32_t technology) const;
+    bool era_entry_met(const std::vector<uint64_t> &completed, int32_t slot,
+                       int32_t technology) const;
     bool research_condition_met(int32_t slot, int32_t technology) const;
     bool research_condition_met(const std::vector<uint64_t> &completed,
                                 const std::vector<uint64_t> &signals,
@@ -470,6 +472,10 @@ private:
     std::vector<int32_t> _technology_milestone_offsets;
     std::vector<int32_t> _technology_milestone_candidates;
     std::vector<int32_t> _technology_milestone_required_counts;
+    // Dense per-technology era gate. -1 denotes the first era. This is kept
+    // separate from the authored prerequisite CSR so the graph contains only
+    // real knowledge dependencies.
+    std::vector<int32_t> _technology_entry_milestone_indices;
     std::vector<int32_t> _technology_flags;
     std::vector<std::string> _technology_modifier_definition_keys;
     std::vector<uint8_t> _research_signal_requires_provenance;

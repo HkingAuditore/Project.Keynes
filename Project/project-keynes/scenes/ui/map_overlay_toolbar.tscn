@@ -18,7 +18,7 @@ script = ExtResource("1_script")
 
 [node name="PrimaryPanel" type="PanelContainer" parent="."]
 offset_right = 56.0
-offset_bottom = 156.0
+offset_bottom = 204.0
 mouse_filter = 0
 theme_type_variation = &"PKPanel"
 
@@ -38,6 +38,8 @@ layout_mode = 2
 [node name="Climate" parent="PrimaryPanel/Margin/PrimaryBox" instance=ExtResource("2_button")]
 layout_mode = 2
 [node name="Resources" parent="PrimaryPanel/Margin/PrimaryBox" instance=ExtResource("2_button")]
+layout_mode = 2
+[node name="Biology" parent="PrimaryPanel/Margin/PrimaryBox" instance=ExtResource("2_button")]
 layout_mode = 2
 
 [node name="SecondaryPanel" type="PanelContainer" parent="."]

@@ -493,6 +493,12 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::run_native_world_generate_full_pass);
     ClassDB::bind_method(D_METHOD("run_research_signal_generation_pass", "knobs"),
                          &DCWorldExt::run_research_signal_generation_pass);
+    ClassDB::bind_method(D_METHOD("run_bio_province_pass", "knobs"),
+                         &DCWorldExt::run_bio_province_pass);
+    ClassDB::bind_method(D_METHOD("run_bio_seed_pass", "knobs"),
+                         &DCWorldExt::run_bio_seed_pass);
+    ClassDB::bind_method(D_METHOD("run_bio_occupancy_pass", "knobs"),
+                         &DCWorldExt::run_bio_occupancy_pass);
     ClassDB::bind_method(D_METHOD("run_native_world_generate_pass", "seed", "cfg", "profile"),
                          &DCWorldExt::run_native_world_generate_pass);
     ClassDB::bind_method(D_METHOD("get_native_fronts_snapshot"),

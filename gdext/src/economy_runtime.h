@@ -171,6 +171,8 @@ public:
                _environment_day != day_index;
     }
     bool should_run(int64_t day_index) const;
+    void drain_bio_introduces(godot::PackedInt32Array &cells,
+                              godot::PackedInt32Array &bits);
     godot::Dictionary report() const;
     godot::Dictionary population_cell_summary(int32_t cell_idx) const;
     godot::Dictionary named_settlement_snapshot() const;
@@ -3293,6 +3295,11 @@ private:
     std::vector<int32_t> _profession_required_technologies;
     std::vector<std::string> _ethnicity_ids;
     std::vector<std::string> _good_ids;
+    std::vector<int32_t> _good_occupancy_bit_offsets;
+    std::vector<int32_t> _good_occupancy_bits;
+    std::vector<int32_t> _bio_introduce_cells;
+    std::vector<int32_t> _bio_introduce_bits;
+    std::unordered_set<uint64_t> _bio_introduce_keys;
     std::vector<std::string> _plan_ids;
     std::vector<int32_t> _good_default_price;
     std::vector<int64_t> _good_default_stock;
@@ -4035,6 +4042,7 @@ private:
     int64_t available_resource_amount(const ResourceAmount &item, int32_t cell) const;
     void ensure_resource_lane(size_t index);
     void consume_resource_amount(const ResourceAmount &item, int32_t cell, int64_t quantity);
+    void queue_bio_introduce_from_good(int32_t cell, int32_t good_id);
     bool resource_is_renewable(int32_t resource_id) const;
     int64_t renewable_safe_harvest(int32_t resource_id, int32_t cell) const;
     bool commit_ready_construction(std::vector<int32_t> &changed_cells,

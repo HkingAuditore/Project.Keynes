@@ -471,22 +471,12 @@ static func compile_native_catalog() -> Dictionary:
 		return dependency_columns
 	for technology_index_value in range(technology_ids.size()):
 		var binding_count: int = technology_binding_rows[technology_index_value].size()
-		var building_binding_count: int = 0
-		for binding in technology_binding_rows[technology_index_value]:
-			if int(binding[0]) == 2:
-				building_binding_count += 1
 		var technology_id := String(technology_ids[technology_index_value])
 		var is_milestone := (int(technology_catalog.technology_flags[technology_index_value]) \
 				& TechnologyCatalogScript.FLAG_MILESTONE) != 0
 		if is_milestone and binding_count != 0:
 			return {"ok": false, "reason": "milestone_content_binding_forbidden",
 				"id": technology_id, "count": binding_count}
-		if not is_milestone and binding_count > 4:
-			return {"ok": false, "reason": "technology_content_binding_limit_exceeded",
-				"id": technology_id, "count": binding_count, "limit": 4}
-		if not is_milestone and building_binding_count > 2:
-			return {"ok": false, "reason": "technology_building_binding_limit_exceeded",
-				"id": technology_id, "count": building_binding_count, "limit": 2}
 	var technology_binding_offsets := PackedInt32Array([0])
 	var technology_binding_kinds := PackedByteArray()
 	var technology_binding_ids := PackedStringArray()

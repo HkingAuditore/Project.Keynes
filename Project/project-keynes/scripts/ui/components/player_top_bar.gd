@@ -37,6 +37,10 @@ func _ready() -> void:
 	IconButton.apply(_gm_button, &"overview", 15, "GM 面板（F1 / `）")
 	IconButton.apply(_day_night_button, &"moon", 15, "昼夜循环：开启", true, true)
 	IconButton.apply(_pause_button, &"pause", 15, "暂停", true, false)
+	%SetupButton.focus_mode = Control.FOCUS_NONE
+	_gm_button.focus_mode = Control.FOCUS_NONE
+	_day_night_button.focus_mode = Control.FOCUS_NONE
+	_pause_button.focus_mode = Control.FOCUS_NONE
 	%SetupButton.pressed.connect(func() -> void: setup_requested.emit())
 	_gm_button.pressed.connect(func() -> void: gm_requested.emit())
 	_day_night_button.toggled.connect(func(enabled: bool) -> void: day_night_toggled.emit(enabled))

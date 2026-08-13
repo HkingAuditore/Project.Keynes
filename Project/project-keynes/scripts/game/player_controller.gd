@@ -348,12 +348,24 @@ func is_player_owned_cell(cell: int) -> bool:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	handle_input(event)
+	# GUI 已消费的事件不会到这里。文本框必须继续挡住地图手势；
+	# 普通按钮焦点不得锁死选格/缩放/拖拽，否则左侧 overlay 点完就无法操作地图。
+	if _is_text_editing():
+		return
+	if _is_world_pointer_event(event):
+		_release_ordinary_ui_focus()
+	_dispatch_player_input(event)
 
 
 func handle_input(event: InputEvent) -> void:
+	# Direct dispatch from PlayerGame / tests / embedded tools. Ordinary Control
+	# focus still blocks this path so UI cannot be bypassed by calling us.
 	if _is_input_blocked_by_ui():
 		return
+	_dispatch_player_input(event)
+
+
+func _dispatch_player_input(event: InputEvent) -> void:
 	if _camera != null and _camera.handle_player_input(event):
 		get_viewport().set_input_as_handled()
 		return
@@ -819,13 +831,31 @@ func _is_text_editing() -> bool:
 
 
 func _is_input_blocked_by_ui() -> bool:
-	# _unhandled_input normally arrives after GUI consumption. Keep this guard
-	# explicit so direct dispatchers and embedded tools cannot bypass UI focus.
+	# Direct-dispatch guard only. `_unhandled_input` already survived GUI
+	# consumption and must not treat leftover HUD button focus as a map lock.
 	var viewport := get_viewport()
 	if viewport == null:
 		return false
 	var focus := viewport.gui_get_focus_owner()
 	return focus is Control
+
+
+func _is_world_pointer_event(event: InputEvent) -> bool:
+	return event is InputEventMouseButton \
+		or event is InputEventMouseMotion \
+		or event is InputEventScreenTouch \
+		or event is InputEventScreenDrag \
+		or event is InputEventMagnifyGesture \
+		or event is InputEventPanGesture
+
+
+func _release_ordinary_ui_focus() -> void:
+	var viewport := get_viewport()
+	if viewport == null:
+		return
+	var focus := viewport.gui_get_focus_owner()
+	if focus is Control and not (focus is LineEdit or focus is TextEdit):
+		viewport.gui_release_focus()
 
 
 static func _result(ok: bool, code: String, message: String) -> Dictionary:

@@ -1,0 +1,71 @@
+=== elec_assembly 7 ===
+tech.electrification|电气化|power_scale|electrical|engineering|energy|breakthrough.electrification,breakthrough.motor_winding,breakthrough.assembly_line
+tech.electric_grid|电网|power_scale|electrical|engineering|energy|breakthrough.electrification,breakthrough.motor_winding,breakthrough.assembly_line
+tech.electromagnetic_induction|电磁感应|handling|electrical|science|research|breakthrough.electrification,breakthrough.motor_winding,breakthrough.assembly_line
+tech.electric_generation|发电机|power_scale|electrical|engineering|energy|breakthrough.electrification,breakthrough.motor_winding,breakthrough.assembly_line
+tech.electric_motors|电动机|power_scale|electrical|engineering|energy|breakthrough.electrification,breakthrough.motor_winding,breakthrough.assembly_line
+tech.industrial_quality_control|工业质量控制|handling|electrical|engineering|manufacturing|breakthrough.electrification,breakthrough.motor_winding,breakthrough.assembly_line
+tech.refrigeration|机械制冷|power_scale|electrical|engineering|energy|breakthrough.electrification,breakthrough.motor_winding,breakthrough.assembly_line
+
+=== stone_knowledge 10 ===
+tech.natural_observation|自然观察|handling|stone|science|observation|weather.monsoon,weather.frost,landform.river_valley
+tech.oral_tradition|口述传统|institution|stone|society|knowledge|weather.monsoon,weather.frost,landform.river_valley
+tech.seasonal_calendar|季节历|handling|stone|science|observation|weather.monsoon,weather.frost,landform.river_valley
+tech.celestial_calendars|天文历法|handling|agrarian|science|observation|weather.monsoon,weather.frost,landform.river_valley
+tech.record_keeping|记事制度|institution|agrarian|society|knowledge|weather.monsoon,weather.frost,landform.river_valley
+tech.writing|文字|institution|kingdom|society|knowledge|weather.monsoon,weather.frost,landform.river_valley
+tech.natural_philosophy|自然哲学|handling|kingdom|science|research|weather.monsoon,weather.frost,landform.river_valley
+tech.scholarly_academies|学术机构|handling|kingdom|society|research|weather.monsoon,weather.frost,landform.river_valley
+tech.parchment_making|皮纸制作|institution|kingdom|engineering|knowledge|weather.monsoon,weather.frost,landform.river_valley
+tech.manuscript_culture|手稿文化|institution|kingdom|science|knowledge|weather.monsoon,weather.frost,landform.river_valley
+
+=== agrarian_institution 15 ===
+tech.communal_specialization|共同体分工|institution|stone|society|organization|resource.fertile_soil,landform.river_valley,breakthrough.seed_saving
+tech.household_production|家庭生产|institution|stone|society|organization|resource.fertile_soil,landform.river_valley,breakthrough.seed_saving
+tech.permanent_settlements|永久聚落|institution|agrarian|society|organization|resource.fertile_soil,landform.river_valley,breakthrough.seed_saving
+tech.household_landholding|家庭土地占有|institution|agrarian|society|organization|resource.fertile_soil,landform.river_valley,breakthrough.seed_saving
+tech.communal_field_coordination|共同田协调|institution|agrarian|society|organization|resource.fertile_soil,landform.river_valley,breakthrough.seed_saving
+tech.public_storehouses|公共仓储|institution|agrarian|society|organization|resource.fertile_soil,landform.river_valley,breakthrough.seed_saving
+tech.weights_and_measures|度量衡|institution|kingdom|society|trade|resource.fertile_soil,landform.river_valley,breakthrough.seed_saving
+tech.market_institutions|市场制度|institution|kingdom|society|trade|resource.fertile_soil,landform.river_valley,breakthrough.seed_saving
+tech.currency|货币|institution|kingdom|society|trade|resource.fertile_soil,landform.river_valley,breakthrough.seed_saving
+tech.road_engineering|道路工程|institution|kingdom|engineering|trade|resource.fertile_soil,landform.river_valley,breakthrough.seed_saving
+tech.state_bureaucracy|官僚行政|institution|kingdom|society|organization|resource.fertile_soil,landform.river_valley,breakthrough.seed_saving
+tech.customary_tenancy|习惯佃作|institution|kingdom|society|organization|resource.fertile_soil,landform.river_valley,breakthrough.seed_saving
+tech.sharecropping|分成租佃|institution|kingdom|society|organization|resource.fertile_soil,landform.river_valley,breakthrough.seed_saving
+tech.estate_accounting|庄园核算|institution|kingdom|society|organization|resource.fertile_soil,landform.river_valley,breakthrough.seed_saving
+tech.urban_food_supply|城市食物供应|institution|kingdom|society|organization|resource.fertile_soil,landform.river_valley,breakthrough.seed_saving
+
+=== steam_org 0 ===
+
+=== steam_seal 2 ===
+tech.steam_power|蒸汽动力|power_scale|steam|engineering|energy|breakthrough.steam_power,breakthrough.steam_sealing,breakthrough.assembly_line
+tech.assembly_line|流水线组织|power_scale|steam|engineering|manufacturing|breakthrough.steam_power,breakthrough.steam_sealing,breakthrough.assembly_line
+
+=== timber_forest 9 ===
+tech.charcoal_burning|木炭烧制|handling|stone|engineering|craft|resource.timber,landform.forest,breakthrough.forest_management
+tech.timber_sawing|手工锯木|production_system|agrarian|engineering|construction|resource.timber,landform.forest,breakthrough.forest_management
+tech.bark_paper_making|树皮纸|institution|kingdom|engineering|knowledge|resource.timber,landform.forest,breakthrough.forest_management
+tech.forest_management|森林管理|handling|empire|agriculture|foraging|resource.timber,landform.forest,breakthrough.forest_management
+tech.rag_paper_making|破布纸|institution|empire|engineering|knowledge|resource.timber,landform.forest,breakthrough.forest_management
+tech.woodblock_printing|木版印刷|institution|empire|engineering|knowledge|resource.timber,landform.forest,breakthrough.forest_management
+tech.mine_timbering|矿井木支护|handling|empire|engineering|resource|resource.timber,landform.forest,breakthrough.forest_management
+tech.steam_sawmilling|蒸汽锯木|applied_method|steam|engineering|manufacturing|resource.timber,landform.forest,breakthrough.forest_management
+tech.electrochemistry|电化学|handling|electrical|science|chemistry|resource.timber,landform.forest,breakthrough.forest_management
+
+=== most cloned remaining ===
+20	breakthrough.automation,breakthrough.digital_control
+15	breakthrough.seed_saving,landform.river_valley,resource.fertile_soil
+10	landform.river_valley,weather.frost,weather.monsoon
+9	breakthrough.seed_saving,resource.fertile_soil,weather.repeated_crop_failure
+9	bio.horse,landform.grassland,resource.pasture
+9	breakthrough.forest_management,landform.forest,resource.timber
+9	breakthrough.hydraulic_engineering,landform.freshwater_access,landform.river_valley
+9	breakthrough.print_calibration,breakthrough.printing
+7	breakthrough.assembly_line,breakthrough.electrification,breakthrough.motor_winding
+7	resource.coal,resource.natural_gas,resource.oil
+6	bio.wheat,breakthrough.rainfed_adaptation,contact.wheat
+5	bio.bast_fiber,bio.cotton,bio.flax
+5	bio.wheat,contact.wheat
+5	bio.maize,breakthrough.maize_selection,contact.maize
+5	resource.phosphate_rock,resource.saltpeter,resource.sulfur

@@ -1,0 +1,86 @@
+﻿Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] technology catalog compiles
+  [info] catalog compile + public metadata + layout 160.203ms
+  [PASS] technology layout compiles
+  [PASS] debug catalog compile and layout stay below 250ms
+  [PASS] era metadata carries display names
+  [PASS] domain metadata carries four accents
+  [PASS] technology presentation is fully Chinese
+  [PASS] revealed technology conditions expose discovered evidence
+  [PASS] tree view exists
+  [PASS] tree view draws itself instead of spawning nodes
+  [PASS] layout covers the whole catalog
+  [PASS] layout bands one per era
+  [PASS] every hard dependency edge points strictly downwards
+  [PASS] era bands never overlap or invert
+  [PASS] era milestones are horizontally centred
+  [PASS] era milestones terminate their band
+  [PASS] only eight technologies are known at the start
+  [PASS] fog keeps the visible set far below the catalog size
+  [PASS] fog hides later eras entirely
+  [PASS] visible set is exactly discovered plus its unknown frontier
+  [PASS] the dial ring is large enough to aim at
+  [PASS] balanced weights push the handles out to the balance ring
+  [PASS] balanced handles clear the centre dead zone
+  [PASS] pressing along an arm grabs that domain
+  [PASS] pressing along an arm grabs that domain
+  [PASS] pressing along an arm grabs that domain
+  [PASS] pressing along an arm grabs that domain
+  [PASS] pressing along an arm grabs that domain
+  [PASS] dragging any axis keeps the weights summing to 10000
+  [PASS] normalisation never produces negative weights
+  [PASS] every drag commits exactly once
+  [PASS] the centre disc grabs no axis
+  [PASS] the diagonal gap between two arms grabs nothing
+  [PASS] pressing well outside the ring grabs nothing
+  [PASS] a press without movement changes nothing
+  [PASS] a press without movement sends no command
+  [PASS] aiming 20px off an arm still grabs it
+  [PASS] snapshot weights round-trip
+  [info] policy column 280 x 525 at 0
+  [info] tree column 640 x 525 at 280
+  [info] detail column 320 x 525 at 920
+  [PASS] every research column stays inside 1280x720
+  [PASS] research policy and detail are permanent working columns
+  [PASS] policy close requests cannot hide the permanent left column
+  [PASS] detail close requests cannot hide the permanent right column
+  [PASS] detail body and relation rows fit the drawer width
+  [info] compact tree width 760
+  [PASS] compact mode still leaves the tree over 420px wide
+  [PASS] compact mode keeps both columns docked at reduced width
+  [PASS] queued technology renders one row
+  [PASS] daily refresh keeps the baked geometry
+  [PASS] daily refresh reuses queue rows instead of rebuilding them
+  [PASS] tree view still owns no child nodes
+  [info] 1000 steady refreshes p95 0.909ms
+  [PASS] 1000 refreshes keep node and edge cache sizes stable
+  [PASS] 1000 refreshes preserve baked geometry
+  [PASS] 1000 refreshes allocate no tree child nodes
+  [PASS] steady technology refresh p95 stays below 1ms
+  [PASS] the tree view exposes no zoom state at all
+  [PASS] queued research determines the opening focus
+  [PASS] focus selector uses the four authoritative research domains
+  [PASS] focus view contains at most three era bands
+  [PASS] focus view includes the era milestone gate
+  [PASS] full reveal keeps the focused domain to a three-era bounded set
+  [PASS] focused geometry remains narrower than the old full catalog map
+  [PASS] full reveal still shows era milestones in the focused window
+  [PASS] focus layout uses at most two nodes per visual layer
+  [PASS] overview uses four domain rows after full reveal
+  [PASS] overview keeps four domains but hides future eras
+=== technology workspace smoke: 0 failures ===
+Godot_v4.6.2-stable_win64_console.exe : ERROR: 21 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyText
+ureE' were leaked at exit.
+所在位置 C:\Users\hkinghuang\AppData\Local\Temp\ps-script-f9d62d44-59e3-4ca8-94fa-eefb27929bdf.ps1:93 字符: 1
++ & $godot --headless --path $project --script res://tests/technology_w ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ERROR: 21 RID a...leaked at exit.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ERROR: 22 RID allocations of type 'PN18TextServerAdvanced22ShapedTextDataAdvancedE' were leaked at exit.
+ERROR: 2 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 124 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

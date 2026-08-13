@@ -45,7 +45,7 @@ func _init() -> void:
 	_expect("technology presentation is fully Chinese",
 		String((definitions[maize] as Dictionary).get("display_name", "")) == "玉米辨识"
 		and String((definitions[maize] as Dictionary).get("effect_summary", ""))
-			== "大田作物农业产出 +10%"
+			== "大田作物农业产出 +18%"
 		and String(((definitions[maize] as Dictionary).get(
 			"route_display_names", PackedStringArray()) as PackedStringArray)[0])
 			== "作物 · 玉米")
@@ -187,16 +187,45 @@ func _audit_fog(tree: Control, layout: Dictionary) -> void:
 	var visible: PackedByteArray = tree.get("_visible_nodes")
 	var consistent := true
 	for index in range(visible.size()):
-		var reachable := int(states[index]) >= 1
+		var reachable := TechnologyTreeView.presents_state(int(states[index]))
 		if not reachable:
 			for parent in parents[index]:
-				if int(states[int(parent)]) >= 1:
+				if TechnologyTreeView.presents_state(int(states[int(parent)])):
 					reachable = true
 					break
 		if (visible[index] != 0) != reachable:
 			consistent = false
 			break
-	_expect("visible set is exactly discovered plus its unknown frontier", consistent)
+	_expect("visible set is exactly researchable nodes plus their unknown frontier", consistent)
+	var locked := -1
+	for index in range(states.size()):
+		if int(states[index]) != 0:
+			continue
+		if bool((tree.get("_definitions")[index] as Dictionary).get("is_milestone", false)):
+			continue
+		var parent_presented := false
+		for parent in parents[index]:
+			if TechnologyTreeView.presents_state(int(states[int(parent)])):
+				parent_presented = true
+				break
+		if parent_presented:
+			locked = index
+			break
+	_expect("the opening frontier has a child that can be locked for the fog check", locked >= 0)
+	if locked >= 0:
+		var locked_name := String((tree.get("_definitions")[locked] as Dictionary).get(
+			"display_name", ""))
+		states[locked] = 1
+		tree.patch_states(states, tree.get("_progress"))
+		var known_nodes: PackedByteArray = tree.get("_known_nodes")
+		var visible_nodes: PackedByteArray = tree.get("_visible_nodes")
+		_expect("revealed-but-locked nodes stay unnamed", int(known_nodes[locked]) == 0)
+		_expect("revealed-but-locked nodes remain unknown frontier",
+			int(visible_nodes[locked]) != 0)
+		_expect("tooltip does not leak locked technology names",
+			not String(tree._tooltip_for(locked)).contains(locked_name))
+		states[locked] = 0
+		tree.patch_states(states, tree.get("_progress"))
 
 
 func _audit_dial() -> void:
@@ -295,8 +324,8 @@ func _move(control: Control, position: Vector2) -> void:
 	control._gui_input(event)
 
 
-# 1280x720 is the supported floor: policy stays resident while the detail drawer
-# overlays the right edge without pushing either column out of view.
+# 1280x720 is the supported floor: policy and detail are permanent columns,
+# and the tree keeps the remaining centre canvas.
 func _audit_fit(workspace: Control, tree: Control) -> void:
 	var frame := Rect2(Vector2.ZERO, workspace.size)
 	var policy := workspace.get("_policy_panel") as Control
@@ -311,18 +340,20 @@ func _audit_fit(workspace: Control, tree: Control) -> void:
 		if not frame.grow(1.0).encloses(rect) or column == tree and rect.size.x <= 0.0:
 			contained = false
 	_expect("every research column stays inside 1280x720", contained)
-	_expect("research policy is a permanent 280px working column",
-		tree.offset_left == 280.0 and tree.offset_right == -40.0
-		and policy.visible and not detail.visible and policy.size.x == 280.0)
+	_expect("research policy and detail are permanent working columns",
+		tree.offset_left == TechnologyWorkspace.POLICY_WIDTH \
+		and tree.offset_right == -TechnologyWorkspace.DETAIL_WIDTH
+		and policy.visible and detail.visible and policy.size.x == 280.0)
 	workspace._set_policy_open(false)
 	await process_frame
 	_expect("policy close requests cannot hide the permanent left column",
-		policy.visible and tree.offset_left == 280.0)
-	workspace._set_detail_open(true)
+		policy.visible and tree.offset_left == TechnologyWorkspace.POLICY_WIDTH)
+	workspace._set_detail_open(false)
 	await process_frame
-	_expect("detail overlays the right edge without closing policy",
-		detail.visible and policy.visible and detail.size.x == 384.0
-		and tree.offset_left == 280.0)
+	_expect("detail close requests cannot hide the permanent right column",
+		detail.visible and policy.visible \
+		and tree.offset_right == -TechnologyWorkspace.DETAIL_WIDTH
+		and tree.offset_left == TechnologyWorkspace.POLICY_WIDTH)
 	var detail_card := workspace.get("_detail") as Control
 	var detail_scroll := detail_card.get_node("Scroll") as ScrollContainer
 	var detail_body := detail_card.get_node("Scroll/Body") as Control
@@ -341,8 +372,11 @@ func _audit_fit(workspace: Control, tree: Control) -> void:
 	await process_frame
 	print("  [info] compact tree width %.0f" % tree.size.x)
 	_expect("compact mode still leaves the tree over 420px wide", tree.size.x >= 420.0)
+	_expect("compact mode keeps both columns docked at reduced width",
+		tree.offset_left == TechnologyWorkspace.COMPACT_POLICY_WIDTH \
+		and tree.offset_right == -TechnologyWorkspace.COMPACT_DETAIL_WIDTH
+		and policy.visible and detail.visible)
 	workspace.set_compact(false)
-	workspace._set_detail_open(false)
 	await process_frame
 
 
@@ -386,20 +420,27 @@ func _audit_refresh(workspace: Control, tree: Control, definitions: Array,
 	_expect("steady technology refresh p95 stays below 1ms", refresh_p95 <= 1.0)
 
 
-# Focus mode keeps a bounded domain window; overview carries the full-network
-# orientation without exposing undiscovered eras.
+# Focus mode keeps a four-domain atlas inside the centre canvas; overview
+# carries the full-network orientation without exposing undiscovered eras.
 func _audit_navigation(workspace: Control, tree: Control, definitions: Array) -> void:
 	_expect("the tree view exposes no zoom state at all", tree.get("_zoom") == null)
 	var initial_nav: Dictionary = workspace.navigation_report()
 	_expect("queued research determines the opening focus",
 		String(initial_nav.domain) == String((definitions[4] as Dictionary).get("domain_id", ""))
 		and int(initial_nav.era) == 0)
-	var lane_selector := workspace.get("_lane_selector") as OptionButton
-	_expect("focus selector uses the four authoritative research domains",
-		lane_selector.item_count == 4)
+	_expect("the toolbar no longer splits the tree by domain tabs",
+		workspace.get_node_or_null("Root/Toolbar/Row/DomainTabs") == null)
 	var initial_focus: Dictionary = tree.focus_report()
 	_expect("focus view contains at most three era bands",
 		(initial_focus.get("bands", []) as Array).size() <= 3)
+	_expect("focus view exposes four domain lanes on one map",
+		(initial_focus.get("lanes", []) as Array).size() == 4)
+	var has_milestone := false
+	for node_value in initial_focus.get("nodes", []) as Array:
+		var node: Dictionary = node_value
+		if bool(node.get("is_milestone", false)):
+			has_milestone = true
+	_expect("focus view includes the era milestone gate", has_milestone)
 	var states := PackedInt32Array()
 	var progress := PackedInt64Array()
 	states.resize(definitions.size())
@@ -407,10 +448,37 @@ func _audit_navigation(workspace: Control, tree: Control, definitions: Array) ->
 	states.fill(5)
 	tree.patch_states(states, progress)
 	var full_focus: Dictionary = tree.focus_report()
-	_expect("full reveal keeps the focused domain to a three-era bounded set",
-		(full_focus.get("nodes", []) as Array).size() <= 50)
-	_expect("focused geometry remains narrower than the old full catalog map",
-		(full_focus.get("content_rect", Rect2()) as Rect2).size.x < 1000.0)
+	var canvas := tree.size
+	var bounds: Rect2 = full_focus.get("content_rect", Rect2())
+	_expect("full reveal keeps the atlas to a three-era bounded set",
+		(full_focus.get("nodes", []) as Array).size() <= 280)
+	_expect("focus geometry fills the centre canvas without horizontal overflow",
+		bounds.size.x <= canvas.x + 1.0 and bounds.size.x >= canvas.x * 0.92)
+	var overflow := false
+	var split_column := false
+	var focus_has_milestone := false
+	var domains_seen := {}
+	var xs_by_domain := {}
+	for node_value in full_focus.get("nodes", []) as Array:
+		var node: Dictionary = node_value
+		var rect: Rect2 = node.rect
+		if not bounds.grow(1.0).encloses(rect):
+			overflow = true
+		if bool(node.get("is_milestone", false)):
+			focus_has_milestone = true
+			continue
+		var domain := int(node.get("domain", -1))
+		domains_seen[domain] = true
+		var x := rect.position.x
+		if xs_by_domain.has(domain) and absf(float(xs_by_domain[domain]) - x) > 1.0:
+			split_column = true
+		xs_by_domain[domain] = x
+	_expect("every focus node stays inside the canvas-fitted bounds", not overflow)
+	_expect("full reveal still shows era milestones in the focused window",
+		focus_has_milestone)
+	_expect("focus view keeps all four research domains on one map",
+		domains_seen.size() == 4)
+	_expect("each research domain occupies a single vertical lane", not split_column)
 	workspace._set_mode(1)
 	var overview: Control = workspace.overview_view()
 	overview.patch_states(states)

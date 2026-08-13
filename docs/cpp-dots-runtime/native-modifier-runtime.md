@@ -4,10 +4,11 @@
 五部门、生产家族与精确建筑类型产出、施工/贸易和旱涝寒热适应效果。完成节点先 pending，Effect
 中的 Modifier 与 `technology.adopted` 等全部命令 ACK 后才发布完成标签；详见
 [科技树、科技值与科研经济运行时](./technology-tree-runtime.md)。
-当前 360 节点目录显式作者化 381 个 term；不再根据路线标签批量推导全国部门效果。每个非开局
-节点保留 1-3 个真实消费者条款，生产家族或同一精确建筑累计不超过 +125%，全国部门/研究/贸易
-累计不超过 +50%，且含泛化全国条款的节点不超过非开局节点的 20%。所有泛化条款都与一个
-生产家族或精确建筑效果配对。
+当前 361 节点目录显式作者化 516 个 term。每个非开局节点保留 1-3 个真实消费者条款；生产家族
+或同一精确建筑作者合计不超过 +400%，全国部门/研究/贸易作者合计不超过 +400%，含泛化全国条款
+的节点不超过非开局节点的 40%。目录钳制：家族/建筑/五部门/贸易 `[0, 8]`，四领域研究效率
+`[0, 6]`，气候损失 `[0.20, 1]`，建设成本/时间 `[0.40, 4]`。所有泛化条款都与一个生产家族或
+精确建筑效果配对。
 
 本文是 Project.Keynes 全域 Modifier Runtime 的当前实现主说明。代码、测试、
 架构文档和 `project-keynes-modifier-runtime` Skill 与本文不一致时，变更不能交付。
@@ -49,8 +50,8 @@ dense ID。运行时查询只使用 dense ID；存档、journal 和 explain 使�
 | --- | --- | --- | --- |
 | `climate.cell.radiative_target` | Climate | `[0, 1]` | climate Pass-A |
 | `country.economy_output_factor` | Country | `[0, 16]` | country epoch snapshot |
-| `country.output.family.<id>_factor` | Country | `[0, 3]` | frozen country×family building output |
-| `country.output.building.<id>_factor` | Country | `[0, 3]` | frozen country×building-type output |
+| `country.output.family.<id>_factor` | Country | `[0, 8]` | frozen country×family building output |
+| `country.output.building.<id>_factor` | Country | `[0, 8]` | frozen country×building-type output |
 | `economy.building.output_factor` | Economy | `[0, 16]` | building output helper |
 | `economy.city.output_factor` | Economy | `[0, 8]` | settlement epoch output cache |
 | `economy.city.birth_factor` | Economy | `[0, 4]` | household demography |

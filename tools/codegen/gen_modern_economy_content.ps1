@@ -18,8 +18,50 @@ $curatedContentDir = Join-Path $PSScriptRoot 'economy_content'
 $utf8 = [System.Text.UTF8Encoding]::new($false)
 $managedPaths = [System.Collections.Generic.HashSet[string]]::new(
     [System.StringComparer]::OrdinalIgnoreCase)
+$preservedHandAuthoredGoods = @(
+    'bast_fiber','brine','charcoal','gold_ore','natural_rubber','reed_bundle',
+    'seed_cotton','silver_ore','technology_points','turf_block','wrought_iron'
+)
+foreach ($goodId in $preservedHandAuthoredGoods) {
+    [void]$managedPaths.Add([System.IO.Path]::GetFullPath(
+        (Join-Path $goodsDir "$goodId.tres")))
+}
+$preservedHandAuthoredProfessions = @(
+    'ai_researcher','cooperative_member','corvee_worker','data_scientist',
+    'household_farmer','lorekeeper','natural_philosopher','research_scientist',
+    'scholar','scientist','scribe','sharecropper'
+)
+foreach ($professionId in $preservedHandAuthoredProfessions) {
+    [void]$managedPaths.Add([System.IO.Path]::GetFullPath(
+        (Join-Path $professionsDir "$professionId.tres")))
+}
+[void]$managedPaths.Add([System.IO.Path]::GetFullPath(
+    (Join-Path $plansDir 'scholarly_household.tres')))
 $script:syncingCurated = $false
 $script:finalizingConstruction = $false
+$technologyRankById = @{}
+$resourceDiscoveryTechnologyById = @{}
+$technologyNetworkPath = Join-Path $project 'data/technology/technology_network.json'
+if (Test-Path -LiteralPath $technologyNetworkPath) {
+    $technologyNetwork = [System.IO.File]::ReadAllText($technologyNetworkPath) | ConvertFrom-Json
+    $eraRanks = @{}
+    foreach ($era in $technologyNetwork.eras) { $eraRanks[[string]$era.id] = [int]$era.sort_order }
+    foreach ($node in $technologyNetwork.nodes) {
+        $technologyRankById[[string]$node.id] = [int]$eraRanks[[string]$node.era_id]
+        foreach ($binding in @($node.expected_bindings)) {
+            if ([int]$binding.kind -ne 3) { continue }
+            $resourceId = [string]$binding.id
+            if (-not $resourceDiscoveryTechnologyById.ContainsKey($resourceId)) {
+                $resourceDiscoveryTechnologyById[$resourceId] = @()
+            }
+            $technologyId = [string]$node.id
+            if ($technologyId -notin @($resourceDiscoveryTechnologyById[$resourceId])) {
+                $resourceDiscoveryTechnologyById[$resourceId] = @(
+                    $resourceDiscoveryTechnologyById[$resourceId]) + @($technologyId)
+            }
+        }
+    }
+}
 
 function Curated-Source-For-Target([string]$Path) {
     $parent = Split-Path -Parent $Path
@@ -73,6 +115,10 @@ function Write-Utf8([string]$Path, [string]$Content) {
     try {
         [System.IO.File]::WriteAllText($Path, $expected, $utf8)
     } catch {
+        if ($_.Exception.Message -like '*user-mapped section open*') {
+            Write-Warning "Skipped editor-locked curated file: $Path"
+            return
+        }
         throw "failed writing generated file: $Path`n$($_.Exception.Message)"
     }
 }
@@ -151,7 +197,7 @@ $naturalResourceRows += @(
 
 $processedGroups = [ordered]@{
     forestry = @('lumber','paper','packaging','printed_materials','furniture')
-    construction = @('bricks','lime','cement','concrete','glass','construction_components')
+    construction = @('adobe_brick','bricks','lime','cement','concrete','glass','construction_components')
     food = @('grain','bread','prepared_staples','edible_oil','processed_food',
         'livestock_products','meat','dairy_products','canned_fish','beverages')
     textile = @('fur','raw_hide','leather','wool','cloth','synthetic_fiber','clothing',
@@ -168,6 +214,7 @@ $processedGroups = [ordered]@{
 }
 
 $goodNames = @{
+    adobe_brick='日晒土坯';
     logs='原木'; raw_stone='原石'; vegetables='蔬菜'; wheat_grain='小麦';
     rice_grain='稻米'; corn_grain='玉米'; potatoes='马铃薯'; coal='煤炭';
     crude_oil='原油'; natural_gas='天然气'; copper_ore='铜矿石'; iron_ore='铁矿石';
@@ -267,7 +314,11 @@ function Add-Good([string]$Id, [string]$Name, [string]$Category) {
     if ($goods.Contains($Id)) { throw "duplicate good id: $Id" }
     $goods[$Id] = @{ name=$Name; category=$Category }
 }
-foreach ($row in $resourceRows) { Add-Good $row[2] $goodNames[$row[2]] 'primary' }
+foreach ($row in $resourceRows) {
+    if (-not [string]::IsNullOrWhiteSpace([string]$row[2])) {
+        Add-Good $row[2] $goodNames[$row[2]] 'primary'
+    }
+}
 Add-Good 'horses' $goodNames['horses'] 'primary'
 foreach ($category in $processedGroups.Keys) {
     foreach ($id in $processedGroups[$category]) {
@@ -293,14 +344,14 @@ function Technology-For-Good([string]$Id) {
         dairy_products='tech.pottery'; wool='tech.pottery'; leather='tech.pottery';
         processed_food='tech.fire_control'; copper_ore='tech.bronze_casting'; copper='tech.bronze_casting';
         tin_ore='tech.bronze_casting'; tin='tech.bronze_casting'; furniture='tech.pottery';
-        bricks='tech.masonry'; lime='tech.masonry'; cement='tech.steam_power'; concrete='tech.steam_power';
+        adobe_brick='tech.adobe_making'; bricks='tech.masonry'; lime='tech.masonry'; cement='tech.steam_power'; concrete='tech.steam_power';
         limestone='tech.masonry'; silica_sand='tech.masonry'; glass='tech.masonry'; construction_components='tech.masonry';
         corn_grain='tech.manuscript_culture'; horses='tech.bronze_casting';
         potatoes='tech.guild_organization'; edible_oil='tech.guild_organization';
         clothing='tech.guild_organization'; footwear='tech.guild_organization';
         spices='tech.oceanic_navigation'; latex='tech.oceanic_navigation'; medicinal_herbs='tech.oceanic_navigation';
         cotton_fiber='tech.oceanic_navigation';
-        paper='tech.writing'; packaging='tech.printing_press'; printed_materials='tech.printing_press'; canned_fish='tech.precision_engineering';
+        paper='tech.writing'; packaging='tech.screw_press_printing'; printed_materials='tech.screw_press_printing'; canned_fish='tech.precision_engineering';
         beverages='tech.guild_organization'; coal='tech.coke_smelting'; coke='tech.coke_smelting';
         iron_ore='tech.masonry'; agricultural_machinery='tech.steam_power';
         industrial_chemicals='tech.experimental_science'; steel='tech.steam_power';
@@ -311,7 +362,7 @@ function Technology-For-Good([string]$Id) {
         engines='tech.electrification'; wire='tech.electrification'; refined_fuel='tech.electrification';
         lubricants='tech.steam_power'; natural_gas='tech.electrification'; crude_oil='tech.steam_power';
         petrochemicals='tech.electrochemistry'; plastics='tech.electrochemistry';
-        fertilizer='tech.guild_organization'; detergent='tech.electrochemistry';
+        fertilizer='tech.guild_organization'; detergent='tech.petrochemical_industry';
         household_appliances='tech.electrification'; fine_clothing='tech.guild_organization';
         fine_furniture='tech.guild_organization'; jewelry='tech.bronze_casting';
         electronic_components='tech.radio'; rare_earth_ore='tech.geological_prospecting';
@@ -445,12 +496,15 @@ $professionRows = @(
 )
 if ($professionRows.Count -ne 33) { throw 'profession catalog baseline must be 33' }
 foreach ($row in $professionRows) {
-    $professionTechnologyTags = if ([string]::IsNullOrWhiteSpace([string]$row[3])) {
-        'PackedStringArray()'
-    } else {
-        'PackedStringArray("' + [string]$row[3] + '")'
+    $professionPath = Join-Path $professionsDir "$($row[0]).tres"
+    # Profession profiles carry behavior semantic tags and satisfaction
+    # weights consumed by FamilyRuntime.  They are authoritative resources,
+    # not disposable rows in the economy content generator.
+    if (Test-Path -LiteralPath $professionPath) {
+        [void]$managedPaths.Add([System.IO.Path]::GetFullPath($professionPath))
+        continue
     }
-    Write-Utf8 (Join-Path $professionsDir "$($row[0]).tres") @"
+    Write-Utf8 $professionPath @"
 [gd_resource type="Resource" script_class="ProfessionProfile" load_steps=2 format=3]
 [ext_resource type="Script" path="res://scripts/data/profession_profile.gd" id="1"]
 [resource]
@@ -458,7 +512,7 @@ script = ExtResource("1")
 id = &"$($row[0])"
 display_name = "$($row[1])"
 default_consumption_plan_id = &"$($row[2])"
-technology_tags = $professionTechnologyTags
+technology_tags = PackedStringArray()
 "@
 }
 
@@ -735,7 +789,7 @@ function Technology-For-Building([string]$Id) {
         'soap_plant')) { return 'tech.guild_organization' }
     if ($Id -in @('cotton_collector','spice_plants_collector','rubber_tree_collector','medicinal_herbs_collector')) { return 'tech.oceanic_navigation' }
     if ($Id -in @('packaging_plant','printed_materials_plant',
-        'rag_paper_workshop','distillery')) { return 'tech.printing_press' }
+        'rag_paper_workshop','distillery')) { return 'tech.screw_press_printing' }
     if ($Id -in @('industrial_chemicals_plant','explosives_plant','sulfur_collector',
         'saltpeter_collector','pharmaceuticals_plant','canning_workshop')) { return 'tech.experimental_science' }
     if ($Id -in @('industrial_machinery_plant','machine_parts_plant')) { return 'tech.steam_power' }
@@ -752,8 +806,9 @@ function Technology-For-Building([string]$Id) {
         'oil_collector','natural_gas_collector','refined_fuel_plant',
         'gas_power_plant','oil_power_plant','processed_food_plant','beverages_plant','cloth_plant','intensive_farm',
         'fine_clothing_plant','fine_furniture_plant','jewelry_plant')) { return 'tech.electrification' }
-    if ($Id -in @('aluminum_plant','batteries_plant','fertilizer_plant','detergent_plant',
+    if ($Id -in @('aluminum_plant','batteries_plant','fertilizer_plant',
         'petrochemicals_plant','plastics_plant','electrochemical_works')) { return 'tech.electrochemistry' }
+    if ($Id -eq 'detergent_plant') { return 'tech.petrochemical_industry' }
     if ($Id -eq 'electronic_components_plant') { return 'tech.radio' }
     if ($Id -eq 'rare_earth_collector') { return 'tech.geological_prospecting' }
     if ($Id -eq 'rare_earth_metals_plant') { return 'tech.advanced_metallurgy' }
@@ -765,14 +820,17 @@ function Technology-For-Building([string]$Id) {
     return ''
 }
 function Technology-Rank([string]$Technology) {
+	if ($technologyRankById.ContainsKey($Technology)) { return [int]$technologyRankById[$Technology] }
     $rank = @{
         'tech.hunting'=0; 'tech.gathering'=0; 'tech.stone_knapping'=0; 'tech.fire_control'=0;
         'tech.pottery'=1; 'tech.bronze_casting'=1; 'tech.writing'=2; 'tech.masonry'=2;
         'tech.manuscript_culture'=3; 'tech.guild_organization'=3; 'tech.oceanic_navigation'=4;
-        'tech.printing_press'=4; 'tech.experimental_science'=5; 'tech.precision_engineering'=5;
-        'tech.coke_smelting'=6; 'tech.steam_power'=6; 'tech.electrification'=7; 'tech.radio'=7;
+        'tech.screw_press_printing'=4; 'tech.experimental_science'=5; 'tech.precision_engineering'=5;
+        'tech.coke_smelting'=6; 'tech.steam_power'=6; 'tech.steam_sawmilling'=6;
+        'tech.electrification'=7; 'tech.radio'=7;
         'tech.electrochemistry'=7; 'tech.geological_prospecting'=8; 'tech.advanced_metallurgy'=8;
-        'tech.nuclear_fission'=8; 'tech.digital_computing'=9; 'tech.networked_computing'=9;
+        'tech.nuclear_fission'=8; 'tech.petrochemical_industry'=8;
+        'tech.digital_computing'=9; 'tech.networked_computing'=9;
         'tech.machine_learning'=10; 'tech.autonomous_systems'=10
     }
     if ($rank.ContainsKey($Technology)) { return [int]$rank[$Technology] }
@@ -799,6 +857,7 @@ function Extraction-Ratio-For-Building([string]$Id) {
 }
 
 function Default-Price-For-Good([string]$Id) {
+    if ([string]::IsNullOrWhiteSpace($Id)) { return [long]0 }
     $path = Join-Path $goodsDir "$Id.tres"
     if (-not (Test-Path -LiteralPath $path)) { throw "good price source missing: $Id" }
     $match = [regex]::Match([System.IO.File]::ReadAllText($path), '(?m)^default_price = (\d+)\r?$')
@@ -1521,6 +1580,17 @@ function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[
     # Timber collection remains viable without tools; tools scale the remaining
     # half of capacity through the existing soft-input contract.
     $inputRequiredQ16 = if ($Id -eq 'timber_collector') { @(32768) } else { @() }
+    $agriculturalResources = @('arable_land','paddy_land','plantation_land','pasture','fertile_soil')
+    $economicSector = if ($Kind -eq 'collector' -and
+        @($Resources | Where-Object { $_ -in $agriculturalResources }).Count -gt 0) {
+        'agriculture'
+    } elseif ($Kind -eq 'collector') {
+        'extractive'
+    } elseif ($Category -eq 'energy') {
+        'energy'
+    } else {
+        'manufacturing'
+    }
     Write-Utf8 (Join-Path $buildingsDir "$Id.tres") @"
 [gd_resource type="Resource" script_class="BuildingProfile" load_steps=2 format=3]
 [ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
@@ -1529,6 +1599,7 @@ script = ExtResource("1")
 id = &"$Id"
 display_name = "$Name"
 building_kind = "$Kind"
+economic_sector_id = "$economicSector"
 technology_tags = PackedStringArray("industry.$Category", "$technology")
 upgrade_family_id = &"$Family"
 upgrade_tier = $Tier
@@ -1721,13 +1792,13 @@ Add-Building 'iron_tool_workshop' '铁制工具工坊' 'industrial' 'artisan' 'a
 Add-Building 'canning_workshop' '罐头工坊' 'industrial' 'guild_master' 'artisan' @('fish','salt','packaging','tools') @('canned_fish') @() @() 'none' 'food' 'fish_canning' 1
 
 $explicitIndustryGoods = @(
-    'grain','bread','prepared_staples','livestock_products','meat','dairy_products','raw_hide',
+    'adobe_brick','grain','bread','prepared_staples','livestock_products','meat','dairy_products','raw_hide',
     'wool','leather','cloth','clothing','footwear','paper','beverages','fertilizer',
     'industrial_chemicals','jewelry','fine_clothing','fine_furniture','construction_components'
 )
 foreach ($category in $processedGroups.Keys) {
     foreach ($good in $processedGroups[$category]) {
-        if ($good -eq 'fur' -or $good -in $explicitIndustryGoods) { continue }
+        if ($good -in @('fur','adobe_brick') -or $good -in $explicitIndustryGoods) { continue }
         $id = "${good}_plant"
         $worker = Worker-For-Output $good $category
         $displayName = if ($good -eq 'electricity') { '燃煤发电厂' } elseif ($good -eq 'tools') { '钢制工具厂' } `
@@ -1831,6 +1902,14 @@ $generatedResourceIds = @('marine_fish','arable_land','paddy_land','plantation_l
 $newResources = $naturalResourceRows | Where-Object { $_[0] -in $generatedResourceIds }
 foreach ($row in $newResources) {
     $id = $row[0]
+    $resourcePath = Join-Path $resourcesDir "$id.tres"
+    # Resource profiles contain hand-tuned geography, climate and ecology
+    # parameters.  The economy generator may verify their presence but must
+    # never replace those parameters with its coarse fallback template.
+    if (Test-Path -LiteralPath $resourcePath) {
+        [void]$managedPaths.Add([System.IO.Path]::GetFullPath($resourcePath))
+        continue
+    }
     $habitat = if ($id -eq 'marine_fish') { 'coastal_land' } else { 'land' }
     $genBase=0.0; $genSelf=0.0; $decaySelf=0.0
     $initBase=-120000.0; $initTemp=0.0; $initMoisture=0.0; $initElevation=0.0
@@ -1958,13 +2037,16 @@ function Worker-For-Method([string]$Kind, [string]$Category, [string[]]$Resource
 }
 
 $methodTechnologyByRank = @{
-    1='tech.bronze_casting'; 2='tech.masonry'; 3='tech.guild_organization'; 4='tech.printing_press';
+    1='tech.bronze_casting'; 2='tech.masonry'; 3='tech.guild_organization'; 4='tech.screw_press_printing';
     5='tech.precision_engineering'; 6='tech.steam_power'; 7='tech.electrification';
     8='tech.advanced_metallurgy'; 9='tech.networked_computing'; 10='tech.autonomous_systems'
 }
 $methodEnablerByRank = @{
     1='bronze_tools'; 2='bronze_tools'; 3='bronze_tools'; 4='tools'; 5='tools'; 6='steam_engines';
     7='electricity'; 8='electric_motor'; 9='computers'; 10='autonomous_systems'
+}
+$methodTechnologyOverrides = @{
+    method_lumber_plant_r6='tech.steam_sawmilling'
 }
 $methodPrefixByRank = @{
     1='青铜改良'; 2='古典改良'; 3='行会化'; 4='商贸化'; 5='科学化'; 6='蒸汽化';
@@ -1991,6 +2073,7 @@ $methodNameOverrides = @{
     method_oceanic_shipyard_r7='电气化造船厂'; method_bricks_plant_r6='工业砖厂'
     method_lime_plant_r6='工业石灰厂'; method_limestone_collector_r6='工业石灰岩矿场'
     method_lumber_plant_r2='改良锯木场'; method_lumber_plant_r4='水力锯木场'
+    method_lumber_plant_r6='蒸汽锯木厂'
     method_timber_collector_r2='组织化伐木场'; method_timber_collector_r4='商营伐木场'
     method_stone_collector_r2='石料场'; method_stone_collector_r4='规模化采石场'
     method_marine_fish_collector_r2='帆船渔场'; method_marine_fish_collector_r4='远洋渔场'
@@ -2029,7 +2112,9 @@ function Add-Production-Method([string]$SourceId, [int]$TargetRank) {
     $behavior = Content-Scalar-String $content 'behavior_id'
     if ($outputs.Count -eq 0) { throw "method source lacks output: $SourceId" }
     $category = Industry-For-Good $outputs[0]
-    $enablers = if ($methodEnablersBySource.ContainsKey($SourceId)) {
+    $enablers = if ($SourceId -eq 'lumber_plant' -and $TargetRank -eq 6) {
+        @('steam_engines','coal')
+    } elseif ($methodEnablersBySource.ContainsKey($SourceId)) {
         @($methodEnablersBySource[$SourceId])
     } else { @($methodEnablerByRank[$TargetRank]) }
     $toolGoods = @('chipped_stone_tools','bronze_tools','tools','precision_tools')
@@ -2063,16 +2148,67 @@ function Add-Production-Method([string]$SourceId, [int]$TargetRank) {
     }
     if ($SourceId -eq 'gathering_ground') { $worker = 'forager' }
     $methodId = "method_${SourceId}_r${TargetRank}"
+    if ($methodId -eq 'method_lumber_plant_r6') { $worker = 'machinist' }
     $methodName = if ($methodNameOverrides.ContainsKey($methodId)) {
         $methodNameOverrides[$methodId]
     } else { "$($methodPrefixByRank[$TargetRank])$name" }
+    $methodTechnology = if ($methodTechnologyOverrides.ContainsKey($methodId)) {
+        $methodTechnologyOverrides[$methodId]
+    } else { $methodTechnologyByRank[$TargetRank] }
     Add-Building $methodId $methodName $kind $owner $worker $inputs $outputs $resources $resourceModes `
-        $behavior $category '' 0 $methodTechnologyByRank[$TargetRank] $inputQuantities $SourceId
+        $behavior $category '' 0 $methodTechnology $inputQuantities $SourceId
 }
 
 Sync-CuratedDirectory (Join-Path $curatedContentDir 'goods') $goodsDir
 Sync-CuratedDirectory (Join-Path $curatedContentDir 'buildings') $buildingsDir
-Sync-CuratedDirectory (Join-Path $curatedContentDir 'resources') $resourcesDir
+
+# Resource geography remains hand-authored.  Only the technology discovery
+# contract is synchronized from the authoritative technology network.
+foreach ($profile in Get-ChildItem -LiteralPath $resourcesDir -Filter '*.tres' -File) {
+    [void]$managedPaths.Add([System.IO.Path]::GetFullPath($profile.FullName))
+    $content = [System.IO.File]::ReadAllText($profile.FullName)
+    $resourceId = Content-Scalar-String $content 'id'
+    if (-not $resourceDiscoveryTechnologyById.ContainsKey($resourceId)) { continue }
+    $technologyTags = @($resourceDiscoveryTechnologyById[$resourceId])
+    $expectedLine = 'discovery_technology_tags = ' + (PSArray $technologyTags)
+    if ([regex]::IsMatch($content,
+        '(?m)^discovery_technology_tags = PackedStringArray\(.*\)\r?$')) {
+        $content = [regex]::Replace($content,
+            '(?m)^discovery_technology_tags = PackedStringArray\(.*\)\r?$',
+            $expectedLine)
+    } else {
+        $content = [regex]::Replace($content, '(?m)^(id = &"[^"]+"\r?)$',
+            "`$1`n$expectedLine")
+    }
+    Write-Utf8 $profile.FullName $content
+}
+
+# Curated profiles share the same explicit sector contract as generated
+# profiles.  Normalize missing legacy fields after copying templates so the
+# economy catalog never has to infer a sector from a building name.
+foreach ($profile in Get-ChildItem -LiteralPath $buildingsDir -Filter '*.tres' -File) {
+    $content = [System.IO.File]::ReadAllText($profile.FullName)
+    if ([regex]::IsMatch($content, '(?m)^economic_sector_id = "[^"]+"\r?$')) { continue }
+    $kind = Content-Scalar-String $content 'building_kind'
+    $resources = @(Content-Strings $content 'resource_ids')
+    $outputs = @(Content-Strings $content 'output_good_ids')
+    $agriculturalResources = @('arable_land','paddy_land','plantation_land','pasture','fertile_soil')
+    $sector = if ($kind -eq 'collector' -and
+        @($resources | Where-Object { $_ -in $agriculturalResources }).Count -gt 0) {
+        'agriculture'
+    } elseif ($kind -eq 'collector') {
+        'extractive'
+    } elseif ($outputs -contains 'electricity') {
+        'energy'
+    } elseif ($outputs -contains 'technology_points' -or $kind -eq 'service') {
+        'knowledge'
+    } else {
+        'manufacturing'
+    }
+    $content = [regex]::Replace($content, '(?m)^(building_kind = "[^"]+"\r?)$',
+        "`$1`neconomic_sector_id = `"$sector`"")
+    Write-Utf8 $profile.FullName $content
+}
 
 # Every pre-Information single-route good must declare a lifecycle. Persistent
 # macro sectors use the normal cross-era schedule; bounded sectors name their
@@ -2106,6 +2242,7 @@ $boundedMethodTargets = @{
     spice_plants_collector=@(6); medicinal_herbs_collector=@(7)
     edible_oil_plant=@(6); soap_plant=@(6); packaging_plant=@(7); printed_materials_plant=@(7)
     oceanic_shipyard=@(7); bricks_plant=@(6); lime_plant=@(6); limestone_collector=@(6)
+    lumber_plant=@(2,4,6)
 }
 $persistentMethodSources = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
 foreach ($sourceId in @(
@@ -2115,7 +2252,7 @@ foreach ($sourceId in @(
     'flax_collector','household_appliances_plant','industrial_machinery_plant',
     'insulated_cable_plant','lead_ore_collector','lead_plant','lubricants_plant','lumber_plant',
     'machine_parts_plant','manganese_ore_collector','marine_fish_collector',
-    'natural_gas_collector','nuclear_fuel_plant','petrochemicals_plant',
+    'natural_gas_collector','nuclear_fuel_plant','petrochemicals_plant','processed_food_plant',
     'phosphate_rock_collector','plastics_plant','precision_tool_workshop','radio_equipment_works',
     'rare_earth_collector','rare_earth_metals_plant','reactor_component_works',
     'refined_fuel_plant','rice_collector','saltpeter_collector','scientific_instrument_works',
@@ -2295,6 +2432,41 @@ $buildingTechnologyCalibrations = @{
     wild_wheat_stand = @{ direct='tech.wild_wheat_collection'; required=@() }
     wild_rice_marsh = @{ direct='tech.wild_rice_collection'; required=@() }
     primitive_gold_sluice = @{ direct='tech.gold_panning'; required=@('tech.composite_tools') }
+    landed_estate = @{ direct='tech.estate_cereal_management'; required=@('tech.maize_propagation','tech.rainfed_field_system','tech.estate_accounting','tech.serf_obligations') }
+    method_wheat_farm_r3 = @{ direct='tech.estate_cereal_management'; required=@('tech.wheat_propagation','tech.rainfed_field_system','tech.estate_accounting','tech.intensive_crop_rotation') }
+    method_wheat_farm_r5 = @{ direct='tech.estate_cereal_management'; required=@('tech.wheat_propagation','tech.rainfed_field_system','tech.estate_accounting','tech.intensive_crop_rotation','tech.crop_breeding','tech.long_term_leases') }
+    method_flax_collector_r3 = @{ direct='tech.estate_plantation_management'; required=@('tech.flax_retting','tech.seed_selection','tech.estate_accounting') }
+    method_flax_collector_r5 = @{ direct='tech.estate_plantation_management'; required=@('tech.flax_retting','tech.estate_accounting','tech.crop_breeding','tech.long_term_leases') }
+    method_rice_collector_r3 = @{ direct='tech.tenant_paddy_management'; required=@('tech.rice_paddy_cultivation','tech.rice_water_control','tech.customary_tenancy') }
+    method_rice_collector_r5 = @{ direct='tech.estate_paddy_management'; required=@('tech.rice_water_control','tech.estate_accounting','tech.crop_breeding','tech.long_term_leases') }
+    jewelry_plant = @{ direct='tech.mass_production'; required=@('tech.currency','tech.industrial_quality_control','tech.corporate_management') }
+    method_oceanic_shipyard_r7 = @{ direct='tech.electric_motors'; required=@('tech.oceanic_ship_design','tech.coastal_shipyards','tech.mass_production','tech.industrial_statistics') }
+    footwear_plant = @{ direct='tech.factory_system'; required=@('tech.hide_tanning','tech.textile_machinery','tech.interchangeable_parts') }
+    leather_plant = @{ direct='tech.factory_system'; required=@('tech.hide_tanning','tech.industrial_chemistry','tech.interchangeable_parts') }
+    cloth_plant = @{ direct='tech.mass_production'; required=@('tech.textile_machinery','tech.corporate_management') }
+    fine_clothing_plant = @{ direct='tech.mass_production'; required=@('tech.textile_machinery','tech.corporate_management') }
+    method_lead_plant_r9 = @{ direct='tech.digital_control'; required=@('tech.advanced_metallurgy','tech.mineral_spectral_survey','tech.sensor_networks','tech.industrial_quality_control') }
+    method_zinc_plant_r9 = @{ direct='tech.digital_control'; required=@('tech.advanced_metallurgy','tech.mineral_spectral_survey','tech.sensor_networks','tech.industrial_quality_control') }
+    method_synthetic_fiber_plant_r10 = @{ direct='tech.robotic_manufacturing'; required=@('tech.synthetic_fiber_engineering','tech.machine_learning','tech.digital_control','tech.algorithmic_management') }
+    method_synthetic_rubber_plant_r10 = @{ direct='tech.robotic_manufacturing'; required=@('tech.synthetic_materials','tech.machine_learning','tech.digital_control','tech.algorithmic_management') }
+    method_aluminum_plant_r10 = @{ direct='tech.robotic_manufacturing'; required=@('tech.advanced_metallurgy','tech.specialty_alloys','tech.digital_control','tech.algorithmic_management','tech.autonomous_labor_coordination') }
+    method_stainless_steel_plant_r10 = @{ direct='tech.robotic_manufacturing'; required=@('tech.advanced_metallurgy','tech.specialty_alloys','tech.digital_control','tech.algorithmic_management','tech.autonomous_labor_coordination') }
+    method_reactor_component_works_r10 = @{ direct='tech.robotic_manufacturing'; required=@('tech.nuclear_energy','tech.autonomous_systems','tech.digital_control','tech.algorithmic_management') }
+    detergent_plant = @{ direct='tech.petrochemical_industry'; required=@('tech.industrial_chemistry','tech.electrochemistry') }
+    method_detergent_plant_r10 = @{ direct='tech.petrochemical_industry'; required=@('tech.industrial_chemistry','tech.electrochemistry','tech.machine_learning','tech.robotic_manufacturing','tech.digital_control','tech.algorithmic_management') }
+    method_rare_earth_collector_r10 = @{ direct='tech.autonomous_mining'; required=@('tech.mineral_spectral_survey','tech.digital_control') }
+    method_zinc_ore_collector_r9 = @{ direct='tech.mineral_spectral_survey'; required=@('tech.mechanized_mining') }
+    method_limestone_collector_r6 = @{ direct='tech.geological_prospecting'; required=@('tech.industrial_organization') }
+    method_saltpeter_collector_r8 = @{ direct='tech.mechanized_mining'; required=@('tech.geological_prospecting','tech.industrial_chemistry') }
+    method_sulfur_collector_r8 = @{ direct='tech.mechanized_mining'; required=@('tech.geological_prospecting','tech.industrial_chemistry') }
+    method_cotton_collector_r6 = @{ direct='tech.mechanized_agriculture'; required=@('tech.cotton_gardening','tech.mechanical_threshing') }
+    method_potato_collector_r6 = @{ direct='tech.mechanized_agriculture'; required=@('tech.highland_tuber_farming','tech.mechanical_reaping') }
+    method_phosphate_rock_collector_r9 = @{ direct='tech.digital_control'; required=@('tech.mineral_spectral_survey','tech.mechanized_mining','tech.fertilizer_processing') }
+    batteries_plant = @{ direct='tech.electrochemistry'; required=@() }
+    method_rare_earth_metals_plant_r10 = @{ direct='tech.robotic_manufacturing'; required=@('tech.advanced_metallurgy','tech.mineral_spectral_survey','tech.digital_control','tech.algorithmic_management','tech.systems_engineering') }
+    method_concrete_plant_r9 = @{ direct='tech.digital_control'; required=@('tech.industrial_quality_control','tech.sensor_networks') }
+    method_highland_precision_agriculture = @{ direct='tech.precision_agriculture'; required=@('tech.highland_tuber_farming','tech.geographic_information_systems','tech.biotechnology') }
+    method_autonomous_forestry = @{ direct='tech.autonomous_systems'; required=@('tech.satellite_observation','tech.smart_grid','tech.scientific_agents') }
 }
 foreach ($buildingId in $buildingTechnologyCalibrations.Keys) {
     $path = Join-Path $buildingsDir "$buildingId.tres"
@@ -2306,6 +2478,18 @@ foreach ($buildingId in $buildingTechnologyCalibrations.Keys) {
     $content = [regex]::Replace($content,
         '(?m)^required_technology_tags = PackedStringArray\([^\r\n]*\)\r?$',
         'required_technology_tags = ' + (PSArray @($calibration.required)), 1)
+    Write-Utf8 $path $content
+}
+
+# Landlord ownership does not turn cultivated land into extraction. These
+# profiles consume agricultural carrying capacity and therefore belong to the
+# agriculture sector for both broad output modifiers and UI classification.
+foreach ($buildingId in @('landed_estate','medicinal_herbs_collector')) {
+    $path = Join-Path $buildingsDir "$buildingId.tres"
+    $content = [System.IO.File]::ReadAllText($path)
+    $content = [regex]::Replace($content,
+        '(?m)^economic_sector_id = "[^"]*"\r?$',
+        'economic_sector_id = "agriculture"', 1)
     Write-Utf8 $path $content
 }
 

@@ -23,6 +23,9 @@ Current baseline:
 - A new era also requires the preceding era milestone.
 - Each era milestone requires any two of its four marked candidates.
 - Discovery reveals only immediate successors after prerequisite completion; reveal never completes.
+- Map occupancy (`cell.bio_occupancy_bits`) is current species presence. Country research signals
+  are permanent seen-knowledge; local extinction does not revoke evidence. Trade still yields
+  `contact.*` only.
 
 Compilation produces stable-ID lookup, dense IDs in topological order, prerequisite and milestone CSR,
 reverse unlock indices, public definitions, Modifier definition keys, and a catalog hash. Validate
@@ -129,7 +132,8 @@ owns nothing but a section title bar and the content area. The tree is a single 
 `TechnologyTreeView`; `GraphEdit` is no longer used and no per-technology child node is created.
 Geometry is baked once by the pure-function `TechnologyTreeLayout` and never moves.
 
-Fog clips drawing to the discovered set plus its immediate unknown frontier, and the pan/zoom range
+Fog clips drawing to the researchable set plus its immediate unknown frontier. Revealed-but-locked
+nodes (hard prerequisites incomplete) stay unnamed like undiscovered ones. The pan/zoom range
 equals the visible bounding box, so neither the catalog size nor the remaining era count is
 observable. Unknown nodes must not leak semantic content through any visible or assistive channel.
 Domain color is only supplemental; pair states with icon, border, and text.

@@ -41,7 +41,7 @@ const F32: int = DCComponentIds.F32
 const I32: int = DCComponentIds.I32
 const U8: int  = DCComponentIds.U8
 
-# ─── CELL_SCHEMA — 生产 142 条 + demo 1 条（截至 2026-07-27，含物资库存/价格与视野字段；
+# ─── CELL_SCHEMA — 生产字段 + demo 1 条（含物资库存/价格、视野、生物占领 bitset；
 #     与 component_ids.gd / world.gd / world_ext.cpp BIND_TABLE 1:1 镜像）────
 #
 # 字段 demo（可选，默认 false）：标记为 true 的条目仅在
@@ -216,6 +216,9 @@ const CELL_SCHEMA: Array = [
 	{ name = &"cell.res_manganese_ore_extra_change", cpp_name = "cell_res_manganese_ore_extra_change", dtype = F32, track_prev = false, map_field = "res_manganese_ore_extra_change_arr", prev_field = "", owner = "economy.resources" },
 	{ name = &"cell.res_sulfur_extra_change", cpp_name = "cell_res_sulfur_extra_change", dtype = F32, track_prev = false, map_field = "res_sulfur_extra_change_arr", prev_field = "", owner = "economy.resources" },
 	{ name = &"cell.res_flint_extra_change", cpp_name = "cell_res_flint_extra_change", dtype = F32, track_prev = false, map_field = "res_flint_extra_change_arr", prev_field = "", owner = "economy.resources" },
+	{ name = &"cell.bio_occupancy_bits", cpp_name = "cell_bio_occupancy_bits", dtype = I32, track_prev = false, map_field = "bio_occupancy_bits_arr", prev_field = "", owner = "ecology.bio_occupancy" },
+	{ name = &"cell.landmass_id", cpp_name = "cell_landmass_id", dtype = I32, track_prev = false, map_field = "landmass_id_arr", prev_field = "", owner = "map_generation" },
+	{ name = &"cell.province_id", cpp_name = "cell_province_id", dtype = I32, track_prev = false, map_field = "province_id_arr", prev_field = "", owner = "map_generation" },
 	# ─── Demo-only（1 条，performance-charter §12.6 reference impl）────────
 	# 仅在 ClimateProfile.demo_thermal_gradient_enabled=true 时被 bind_map_data
 	# attach；为 false 时跳过，不占内存。

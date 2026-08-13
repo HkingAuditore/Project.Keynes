@@ -1,0 +1,2339 @@
+{
+  "bypass_count": 52,
+  "bypass": [
+    {
+      "id": "tech.hunting",
+      "name": "狩猎",
+      "era": "stone",
+      "role": "handling",
+      "starting": true,
+      "hard": [],
+      "objects": [
+        "resource.wild_game"
+      ],
+      "habitats": [
+        "landform.grassland",
+        "landform.forest"
+      ],
+      "pack": [
+        "resource.wild_game",
+        "landform.grassland",
+        "landform.forest"
+      ],
+      "expected": [
+        "contact.tin",
+        "resource.tin_ore",
+        "resource.wild_game"
+      ]
+    },
+    {
+      "id": "tech.stone_knapping",
+      "name": "打制石器",
+      "era": "stone",
+      "role": "handling",
+      "starting": true,
+      "hard": [],
+      "objects": [
+        "resource.flint",
+        "resource.stone"
+      ],
+      "habitats": [
+        "landform.mountain"
+      ],
+      "pack": [
+        "resource.flint",
+        "resource.stone",
+        "landform.mountain"
+      ],
+      "expected": []
+    },
+    {
+      "id": "tech.fire_control",
+      "name": "火种控制",
+      "era": "stone",
+      "role": "handling",
+      "starting": true,
+      "hard": [],
+      "objects": [
+        "resource.timber"
+      ],
+      "habitats": [
+        "landform.grassland"
+      ],
+      "pack": [
+        "resource.timber",
+        "weather.drought",
+        "landform.grassland"
+      ],
+      "expected": []
+    },
+    {
+      "id": "tech.fishing_boats",
+      "name": "渔舟",
+      "era": "stone",
+      "role": "handling",
+      "starting": false,
+      "hard": [],
+      "objects": [
+        "resource.freshwater_fish",
+        "resource.marine_fish"
+      ],
+      "habitats": [
+        "landform.coast"
+      ],
+      "pack": [
+        "resource.freshwater_fish",
+        "resource.marine_fish",
+        "landform.coast"
+      ],
+      "expected": [
+        "resource.freshwater_fish",
+        "resource.marine_fish"
+      ]
+    },
+    {
+      "id": "tech.animal_husbandry",
+      "name": "畜牧驯养",
+      "era": "stone",
+      "role": "production_system",
+      "starting": false,
+      "hard": [
+        "tech.hunting"
+      ],
+      "objects": [
+        "resource.wild_game",
+        "bio.sheep"
+      ],
+      "habitats": [
+        "landform.grassland"
+      ],
+      "pack": [
+        "resource.wild_game",
+        "bio.sheep",
+        "landform.grassland"
+      ],
+      "expected": []
+    },
+    {
+      "id": "tech.animal_tracking",
+      "name": "动物追踪",
+      "era": "stone",
+      "role": "handling",
+      "starting": false,
+      "hard": [
+        "tech.animal_husbandry"
+      ],
+      "objects": [
+        "resource.wild_game",
+        "bio.sheep"
+      ],
+      "habitats": [
+        "landform.grassland"
+      ],
+      "pack": [
+        "resource.wild_game",
+        "bio.sheep",
+        "landform.grassland"
+      ],
+      "expected": []
+    },
+    {
+      "id": "tech.freshwater_fishing",
+      "name": "淡水岸捕",
+      "era": "stone",
+      "role": "handling",
+      "starting": true,
+      "hard": [],
+      "objects": [
+        "resource.freshwater_fish"
+      ],
+      "habitats": [
+        "landform.freshwater_access",
+        "landform.river_valley"
+      ],
+      "pack": [
+        "resource.freshwater_fish",
+        "landform.freshwater_access",
+        "landform.river_valley"
+      ],
+      "expected": [
+        "resource.freshwater_fish",
+        "resource.marine_fish"
+      ]
+    },
+    {
+      "id": "tech.coastal_fishing",
+      "name": "潮间带采集",
+      "era": "stone",
+      "role": "handling",
+      "starting": true,
+      "hard": [],
+      "objects": [
+        "resource.marine_fish"
+      ],
+      "habitats": [
+        "landform.coast",
+        "landform.coastal_estuary"
+      ],
+      "pack": [
+        "resource.marine_fish",
+        "landform.coast",
+        "landform.coastal_estuary"
+      ],
+      "expected": [
+        "resource.freshwater_fish",
+        "resource.marine_fish"
+      ]
+    },
+    {
+      "id": "tech.earth_building",
+      "name": "土建筑",
+      "era": "stone",
+      "role": "production_system",
+      "starting": true,
+      "hard": [],
+      "objects": [
+        "resource.clay"
+      ],
+      "habitats": [
+        "landform.arid_basin",
+        "landform.loess_plain"
+      ],
+      "pack": [
+        "resource.clay",
+        "landform.arid_basin",
+        "landform.loess_plain"
+      ],
+      "expected": []
+    },
+    {
+      "id": "tech.herd_management",
+      "name": "畜群管理",
+      "era": "stone",
+      "role": "production_system",
+      "starting": false,
+      "hard": [],
+      "objects": [
+        "bio.horse"
+      ],
+      "habitats": [
+        "resource.pasture",
+        "landform.grassland"
+      ],
+      "pack": [
+        "resource.pasture",
+        "landform.grassland",
+        "bio.horse"
+      ],
+      "expected": []
+    },
+    {
+      "id": "tech.wild_tuber_collection",
+      "name": "野生块茎挖掘",
+      "era": "stone",
+      "role": "handling",
+      "starting": true,
+      "hard": [],
+      "objects": [
+        "bio.potato"
+      ],
+      "habitats": [
+        "landform.high_plateau",
+        "landform.mountain"
+      ],
+      "pack": [
+        "bio.potato",
+        "landform.high_plateau",
+        "landform.mountain"
+      ],
+      "expected": [
+        "bio.potato",
+        "contact.potato"
+      ]
+    },
+    {
+      "id": "tech.wild_flax_collection",
+      "name": "野生韧皮采集",
+      "era": "stone",
+      "role": "handling",
+      "starting": true,
+      "hard": [],
+      "objects": [
+        "bio.flax"
+      ],
+      "habitats": [
+        "landform.grassland",
+        "landform.forest"
+      ],
+      "pack": [
+        "bio.flax",
+        "landform.grassland",
+        "landform.forest"
+      ],
+      "expected": [
+        "bio.bast_fiber",
+        "bio.flax",
+        "contact.flax"
+      ]
+    },
+    {
+      "id": "tech.gold_panning",
+      "name": "粗陶淘金",
+      "era": "stone",
+      "role": "handling",
+      "starting": true,
+      "hard": [],
+      "objects": [
+        "resource.gold_ore"
+      ],
+      "habitats": [
+        "landform.freshwater_access",
+        "landform.river_valley"
+      ],
+      "pack": [
+        "resource.gold_ore",
+        "landform.freshwater_access",
+        "landform.river_valley"
+      ],
+      "expected": [
+        "resource.gold_ore"
+      ]
+    },
+    {
+      "id": "tech.surface_silver_collection",
+      "name": "地表银矿拣采",
+      "era": "stone",
+      "role": "handling",
+      "starting": true,
+      "hard": [],
+      "objects": [
+        "resource.silver_ore"
+      ],
+      "habitats": [
+        "landform.mountain",
+        "landform.high_plateau"
+      ],
+      "pack": [
+        "resource.silver_ore",
+        "landform.mountain",
+        "landform.high_plateau"
+      ],
+      "expected": [
+        "resource.silver_ore"
+      ]
+    },
+    {
+      "id": "tech.deadwood_collection",
+      "name": "枯枝采集",
+      "era": "stone",
+      "role": "handling",
+      "starting": true,
+      "hard": [],
+      "objects": [
+        "resource.timber"
+      ],
+      "habitats": [
+        "landform.forest",
+        "landform.conifer_forest"
+      ],
+      "pack": [
+        "resource.timber",
+        "landform.forest",
+        "landform.conifer_forest"
+      ],
+      "expected": [
+        "resource.timber"
+      ]
+    },
+    {
+      "id": "tech.hide_scraping",
+      "name": "生皮刮制",
+      "era": "stone",
+      "role": "handling",
+      "starting": true,
+      "hard": [],
+      "objects": [
+        "resource.wild_game"
+      ],
+      "habitats": [
+        "landform.grassland",
+        "landform.forest"
+      ],
+      "pack": [
+        "resource.wild_game",
+        "landform.grassland",
+        "landform.forest"
+      ],
+      "expected": [
+        "resource.wild_game"
+      ]
+    },
+    {
+      "id": "tech.fur_sewing",
+      "name": "毛皮缝制",
+      "era": "stone",
+      "role": "handling",
+      "starting": true,
+      "hard": [],
+      "objects": [
+        "resource.wild_game"
+      ],
+      "habitats": [
+        "landform.tundra",
+        "landform.conifer_forest"
+      ],
+      "pack": [
+        "resource.wild_game",
+        "landform.tundra",
+        "landform.conifer_forest"
+      ],
+      "expected": [
+        "resource.wild_game"
+      ]
+    },
+    {
+      "id": "tech.charcoal_burning",
+      "name": "木炭烧制",
+      "era": "stone",
+      "role": "handling",
+      "starting": false,
+      "hard": [],
+      "objects": [
+        "resource.timber"
+      ],
+      "habitats": [
+        "landform.forest"
+      ],
+      "pack": [
+        "resource.timber",
+        "landform.forest"
+      ],
+      "expected": [
+        "resource.coal",
+        "resource.timber"
+      ]
+    },
+    {
+      "id": "tech.pastoralism",
+      "name": "游牧放牧",
+      "era": "agrarian",
+      "role": "production_system",
+      "starting": false,
+      "hard": [
+        "tech.herd_management"
+      ],
+      "objects": [
+        "bio.horse"
+      ],
+      "habitats": [
+        "resource.pasture",
+        "landform.grassland"
+      ],
+      "pack": [
+        "resource.pasture",
+        "landform.grassland",
+        "bio.horse"
+      ],
+      "expected": []
+    },
+    {
+      "id": "tech.horse_domestication",
+      "name": "马匹驯化",
+      "era": "agrarian",
+      "role": "production_system",
+      "starting": false,
+      "hard": [
+        "tech.settled_knowledge",
+        "tech.herd_management"
+      ],
+      "objects": [
+        "bio.horse"
+      ],
+      "habitats": [
+        "resource.pasture",
+        "landform.grassland"
+      ],
+      "pack": [
+        "resource.pasture",
+        "landform.grassland",
+        "bio.horse"
+      ],
+      "expected": [
+        "bio.horse"
+      ]
+    },
+    {
+      "id": "tech.spice_cultivation",
+      "name": "香料栽培",
+      "era": "agrarian",
+      "role": "applied_method",
+      "starting": false,
+      "hard": [
+        "tech.wild_spice_collection"
+      ],
+      "objects": [
+        "bio.spice",
+        "contact.spice"
+      ],
+      "habitats": [
+        "resource.plantation_land"
+      ],
+      "pack": [
+        "bio.spice",
+        "contact.spice",
+        "resource.plantation_land"
+      ],
+      "expected": [
+        "bio.spice",
+        "contact.spice"
+      ]
+    },
+    {
+      "id": "tech.animal_traction",
+      "name": "畜力牵引",
+      "era": "agrarian",
+      "role": "handling",
+      "starting": false,
+      "hard": [
+        "tech.settled_knowledge",
+        "tech.copper_ore_roasting"
+      ],
+      "objects": [
+        "resource.wild_game",
+        "bio.sheep"
+      ],
+      "habitats": [
+        "landform.grassland"
+      ],
+      "pack": [
+        "resource.wild_game",
+        "bio.sheep",
+        "landform.grassland"
+      ],
+      "expected": []
+    },
+    {
+      "id": "tech.adobe_making",
+      "name": "日晒土坯",
+      "era": "agrarian",
+      "role": "production_system",
+      "starting": false,
+      "hard": [
+        "tech.settled_knowledge",
+        "tech.hand_pottery"
+      ],
+      "objects": [
+        "resource.clay"
+      ],
+      "habitats": [
+        "landform.arid_basin"
+      ],
+      "pack": [
+        "resource.clay",
+        "landform.arid_basin",
+        "weather.drought"
+      ],
+      "expected": []
+    },
+    {
+      "id": "tech.maize_garden_horticulture",
+      "name": "玉米园圃",
+      "era": "agrarian",
+      "role": "production_system",
+      "starting": false,
+      "hard": [
+        "tech.settled_knowledge",
+        "tech.wild_maize_collection"
+      ],
+      "objects": [
+        "bio.maize",
+        "contact.maize"
+      ],
+      "habitats": [
+        "resource.fertile_soil"
+      ],
+      "pack": [
+        "bio.maize",
+        "contact.maize",
+        "resource.fertile_soil"
+      ],
+      "expected": [
+        "bio.maize",
+        "contact.maize"
+      ]
+    },
+    {
+      "id": "tech.swidden_maize_cultivation",
+      "name": "刀耕火种玉米",
+      "era": "agrarian",
+      "role": "applied_method",
+      "starting": false,
+      "hard": [
+        "tech.maize_garden_horticulture"
+      ],
+      "objects": [
+        "bio.maize"
+      ],
+      "habitats": [
+        "landform.forest"
+      ],
+      "pack": [
+        "bio.maize",
+        "landform.forest",
+        "weather.drought"
+      ],
+      "expected": [
+        "bio.maize",
+        "contact.maize"
+      ]
+    },
+    {
+      "id": "tech.rainfed_maize_cultivation",
+      "name": "雨养玉米田",
+      "era": "agrarian",
+      "role": "applied_method",
+      "starting": false,
+      "hard": [
+        "tech.swidden_maize_cultivation"
+      ],
+      "objects": [
+        "bio.maize"
+      ],
+      "habitats": [
+        "resource.arable_land"
+      ],
+      "pack": [
+        "bio.maize",
+        "resource.arable_land",
+        "weather.drought"
+      ],
+      "expected": [
+        "bio.maize",
+        "contact.maize"
+      ]
+    },
+    {
+      "id": "tech.flood_recession_maize",
+      "name": "退水玉米地",
+      "era": "agrarian",
+      "role": "production_system",
+      "starting": false,
+      "hard": [
+        "tech.rainfed_maize_cultivation"
+      ],
+      "objects": [
+        "bio.maize"
+      ],
+      "habitats": [
+        "landform.floodplain"
+      ],
+      "pack": [
+        "bio.maize",
+        "landform.floodplain",
+        "weather.major_flood"
+      ],
+      "expected": [
+        "bio.maize",
+        "contact.maize"
+      ]
+    },
+    {
+      "id": "tech.rainfed_wheat_cultivation",
+      "name": "雨养小麦田",
+      "era": "agrarian",
+      "role": "applied_method",
+      "starting": false,
+      "hard": [
+        "tech.settled_knowledge",
+        "tech.wild_wheat_collection"
+      ],
+      "objects": [
+        "bio.wheat"
+      ],
+      "habitats": [
+        "landform.loess_plain"
+      ],
+      "pack": [
+        "bio.wheat",
+        "landform.loess_plain",
+        "weather.drought"
+      ],
+      "expected": [
+        "bio.wheat",
+        "contact.wheat"
+      ]
+    },
+    {
+      "id": "tech.flood_recession_wheat",
+      "name": "退水小麦地",
+      "era": "agrarian",
+      "role": "production_system",
+      "starting": false,
+      "hard": [
+        "tech.rainfed_wheat_cultivation"
+      ],
+      "objects": [
+        "bio.wheat"
+      ],
+      "habitats": [
+        "landform.floodplain"
+      ],
+      "pack": [
+        "bio.wheat",
+        "landform.floodplain",
+        "weather.major_flood"
+      ],
+      "expected": [
+        "bio.wheat",
+        "contact.wheat"
+      ]
+    },
+    {
+      "id": "tech.dryland_wheat_cultivation",
+      "name": "旱作小麦田",
+      "era": "agrarian",
+      "role": "applied_method",
+      "starting": false,
+      "hard": [
+        "tech.flood_recession_wheat"
+      ],
+      "objects": [
+        "bio.wheat"
+      ],
+      "habitats": [
+        "landform.arid_basin"
+      ],
+      "pack": [
+        "bio.wheat",
+        "landform.arid_basin",
+        "weather.drought"
+      ],
+      "expected": [
+        "bio.wheat",
+        "contact.wheat"
+      ]
+    },
+    {
+      "id": "tech.upland_rice_propagation",
+      "name": "旱稻繁育",
+      "era": "agrarian",
+      "role": "production_system",
+      "starting": false,
+      "hard": [
+        "tech.paddy_bunding"
+      ],
+      "objects": [
+        "bio.rice"
+      ],
+      "habitats": [
+        "landform.high_plateau"
+      ],
+      "pack": [
+        "bio.rice",
+        "landform.high_plateau",
+        "weather.drought"
+      ],
+      "expected": [
+        "bio.rice",
+        "contact.rice"
+      ]
+    },
+    {
+      "id": "tech.wetland_rice_gardening",
+      "name": "湿地稻园",
+      "era": "agrarian",
+      "role": "applied_method",
+      "starting": false,
+      "hard": [
+        "tech.upland_rice_propagation"
+      ],
+      "objects": [
+        "bio.rice"
+      ],
+      "habitats": [
+        "landform.marsh",
+        "resource.paddy_land"
+      ],
+      "pack": [
+        "bio.rice",
+        "landform.marsh",
+        "resource.paddy_land"
+      ],
+      "expected": [
+        "bio.rice",
+        "contact.rice"
+      ]
+    },
+    {
+      "id": "tech.rice_paddy_cultivation",
+      "name": "水田稻作",
+      "era": "agrarian",
+      "role": "applied_method",
+      "starting": false,
+      "hard": [
+        "tech.settled_knowledge",
+        "tech.wild_rice_collection"
+      ],
+      "objects": [
+        "bio.rice"
+      ],
+      "habitats": [
+        "resource.paddy_land"
+      ],
+      "pack": [
+        "bio.rice",
+        "resource.paddy_land",
+        "breakthrough.paddy_control"
+      ],
+      "expected": [
+        "bio.rice",
+        "contact.rice"
+      ]
+    },
+    {
+      "id": "tech.ridge_tuber_cultivation",
+      "name": "垄作块茎",
+      "era": "agrarian",
+      "role": "applied_method",
+      "starting": false,
+      "hard": [
+        "tech.terrace_farming"
+      ],
+      "objects": [
+        "bio.potato"
+      ],
+      "habitats": [
+        "landform.high_plateau"
+      ],
+      "pack": [
+        "bio.potato",
+        "landform.high_plateau",
+        "breakthrough.terrace_maintenance"
+      ],
+      "expected": [
+        "bio.potato",
+        "contact.potato"
+      ]
+    },
+    {
+      "id": "tech.highland_tuber_farming",
+      "name": "高地块茎农业",
+      "era": "agrarian",
+      "role": "production_system",
+      "starting": false,
+      "hard": [
+        "tech.settled_knowledge",
+        "tech.tuber_storage"
+      ],
+      "objects": [
+        "bio.potato"
+      ],
+      "habitats": [
+        "landform.high_plateau",
+        "landform.mountain"
+      ],
+      "pack": [
+        "bio.potato",
+        "landform.high_plateau",
+        "landform.mountain"
+      ],
+      "expected": [
+        "bio.potato",
+        "contact.potato"
+      ]
+    },
+    {
+      "id": "tech.cotton_gardening",
+      "name": "棉花园圃",
+      "era": "agrarian",
+      "role": "applied_method",
+      "starting": false,
+      "hard": [
+        "tech.spice_cultivation"
+      ],
+      "objects": [
+        "bio.cotton",
+        "contact.cotton"
+      ],
+      "habitats": [
+        "resource.plantation_land"
+      ],
+      "pack": [
+        "bio.cotton",
+        "contact.cotton",
+        "resource.plantation_land"
+      ],
+      "expected": [
+        "bio.cotton",
+        "contact.cotton"
+      ]
+    },
+    {
+      "id": "tech.spice_shade_gardening",
+      "name": "遮阴香料园",
+      "era": "agrarian",
+      "role": "applied_method",
+      "starting": false,
+      "hard": [
+        "tech.settled_knowledge",
+        "tech.wild_spice_collection"
+      ],
+      "objects": [
+        "bio.spice",
+        "contact.spice"
+      ],
+      "habitats": [
+        "resource.plantation_land"
+      ],
+      "pack": [
+        "bio.spice",
+        "contact.spice",
+        "resource.plantation_land"
+      ],
+      "expected": [
+        "bio.spice",
+        "contact.spice"
+      ]
+    },
+    {
+      "id": "tech.timber_sawing",
+      "name": "手工锯木",
+      "era": "agrarian",
+      "role": "production_system",
+      "starting": false,
+      "hard": [
+        "tech.settled_knowledge",
+        "tech.charcoal_burning"
+      ],
+      "objects": [
+        "resource.timber"
+      ],
+      "habitats": [
+        "landform.forest"
+      ],
+      "pack": [
+        "resource.timber",
+        "landform.forest",
+        "breakthrough.forest_management"
+      ],
+      "expected": [
+        "resource.timber"
+      ]
+    },
+    {
+      "id": "tech.dairy_processing",
+      "name": "乳品加工",
+      "era": "agrarian",
+      "role": "production_system",
+      "starting": false,
+      "hard": [
+        "tech.horse_domestication"
+      ],
+      "objects": [
+        "bio.horse"
+      ],
+      "habitats": [
+        "resource.pasture",
+        "landform.grassland"
+      ],
+      "pack": [
+        "resource.pasture",
+        "landform.grassland",
+        "bio.horse"
+      ],
+      "expected": [
+        "bio.cattle"
+      ]
+    },
+    {
+      "id": "tech.hide_tanning",
+      "name": "皮革鞣制",
+      "era": "agrarian",
+      "role": "handling",
+      "starting": false,
+      "hard": [
+        "tech.dairy_processing"
+      ],
+      "objects": [
+        "resource.wild_game",
+        "bio.sheep"
+      ],
+      "habitats": [
+        "landform.grassland"
+      ],
+      "pack": [
+        "resource.wild_game",
+        "bio.sheep",
+        "landform.grassland"
+      ],
+      "expected": [
+        "resource.wild_game"
+      ]
+    },
+    {
+      "id": "tech.wool_husbandry",
+      "name": "毛用畜牧",
+      "era": "agrarian",
+      "role": "production_system",
+      "starting": false,
+      "hard": [
+        "tech.hide_tanning"
+      ],
+      "objects": [
+        "bio.horse"
+      ],
+      "habitats": [
+        "resource.pasture",
+        "landform.grassland"
+      ],
+      "pack": [
+        "resource.pasture",
+        "landform.grassland",
+        "bio.horse"
+      ],
+      "expected": [
+        "bio.sheep"
+      ]
+    },
+    {
+      "id": "tech.meat_processing",
+      "name": "屠宰分割",
+      "era": "agrarian",
+      "role": "handling",
+      "starting": false,
+      "hard": [
+        "tech.wool_husbandry"
+      ],
+      "objects": [
+        "bio.horse"
+      ],
+      "habitats": [
+        "resource.pasture",
+        "landform.grassland"
+      ],
+      "pack": [
+        "resource.pasture",
+        "landform.grassland",
+        "bio.horse"
+      ],
+      "expected": []
+    },
+    {
+      "id": "tech.bark_paper_making",
+      "name": "树皮纸",
+      "era": "kingdom",
+      "role": "institution",
+      "starting": false,
+      "hard": [
+        "tech.agrarian_society",
+        "tech.timber_sawing"
+      ],
+      "objects": [
+        "resource.timber"
+      ],
+      "habitats": [
+        "landform.forest"
+      ],
+      "pack": [
+        "resource.timber",
+        "landform.forest"
+      ],
+      "expected": [
+        "resource.timber"
+      ]
+    },
+    {
+      "id": "tech.tenant_cereal_farming",
+      "name": "佃作谷物",
+      "era": "kingdom",
+      "role": "production_system",
+      "starting": false,
+      "hard": [
+        "tech.fermentation"
+      ],
+      "objects": [
+        "bio.wheat"
+      ],
+      "habitats": [
+        "resource.arable_land"
+      ],
+      "pack": [
+        "bio.wheat",
+        "resource.arable_land",
+        "breakthrough.rainfed_adaptation"
+      ],
+      "expected": []
+    },
+    {
+      "id": "tech.forest_management",
+      "name": "森林管理",
+      "era": "empire",
+      "role": "handling",
+      "starting": false,
+      "hard": [
+        "tech.kingdom_administration",
+        "tech.bark_paper_making"
+      ],
+      "objects": [
+        "resource.timber"
+      ],
+      "habitats": [
+        "landform.forest"
+      ],
+      "pack": [
+        "resource.timber",
+        "landform.forest",
+        "breakthrough.forest_management"
+      ],
+      "expected": []
+    },
+    {
+      "id": "tech.pastoral_networks",
+      "name": "牧业网络",
+      "era": "empire",
+      "role": "production_system",
+      "starting": false,
+      "hard": [
+        "tech.kingdom_administration",
+        "tech.parchment_making"
+      ],
+      "objects": [
+        "bio.horse"
+      ],
+      "habitats": [
+        "resource.pasture",
+        "landform.grassland"
+      ],
+      "pack": [
+        "resource.pasture",
+        "landform.grassland",
+        "bio.horse"
+      ],
+      "expected": []
+    },
+    {
+      "id": "tech.manorial_cereal_farming",
+      "name": "庄园谷物经营",
+      "era": "empire",
+      "role": "production_system",
+      "starting": false,
+      "hard": [
+        "tech.kingdom_administration",
+        "tech.customary_tenancy"
+      ],
+      "objects": [
+        "bio.wheat"
+      ],
+      "habitats": [
+        "resource.arable_land"
+      ],
+      "pack": [
+        "bio.wheat",
+        "resource.arable_land",
+        "breakthrough.rainfed_adaptation"
+      ],
+      "expected": []
+    },
+    {
+      "id": "tech.estate_cereal_management",
+      "name": "庄园谷物核算",
+      "era": "empire",
+      "role": "institution",
+      "starting": false,
+      "hard": [
+        "tech.kingdom_administration",
+        "tech.sharecropping"
+      ],
+      "objects": [
+        "bio.wheat"
+      ],
+      "habitats": [
+        "resource.arable_land"
+      ],
+      "pack": [
+        "bio.wheat",
+        "resource.arable_land",
+        "breakthrough.rainfed_adaptation"
+      ],
+      "expected": []
+    },
+    {
+      "id": "tech.estate_plantation_management",
+      "name": "种植园庄园管理",
+      "era": "exploration",
+      "role": "institution",
+      "starting": false,
+      "hard": [
+        "tech.imperial_integration",
+        "tech.serf_obligations"
+      ],
+      "objects": [
+        "bio.spice",
+        "bio.cotton"
+      ],
+      "habitats": [
+        "resource.plantation_land"
+      ],
+      "pack": [
+        "resource.plantation_land",
+        "bio.spice",
+        "bio.cotton"
+      ],
+      "expected": []
+    },
+    {
+      "id": "tech.livestock_breeding",
+      "name": "畜种改良",
+      "era": "enlightenment",
+      "role": "production_system",
+      "starting": false,
+      "hard": [
+        "tech.global_exchange",
+        "tech.commercial_estates"
+      ],
+      "objects": [
+        "bio.horse"
+      ],
+      "habitats": [
+        "resource.pasture",
+        "landform.grassland"
+      ],
+      "pack": [
+        "resource.pasture",
+        "landform.grassland",
+        "bio.horse"
+      ],
+      "expected": [
+        "bio.reed"
+      ]
+    },
+    {
+      "id": "tech.precision_instruments",
+      "name": "精密仪器",
+      "era": "enlightenment",
+      "role": "handling",
+      "starting": false,
+      "hard": [
+        "tech.global_exchange",
+        "tech.oceanic_navigation"
+      ],
+      "objects": [
+        "resource.marine_fish"
+      ],
+      "habitats": [
+        "landform.coast"
+      ],
+      "pack": [
+        "landform.coast",
+        "resource.marine_fish",
+        "breakthrough.maritime_operations"
+      ],
+      "expected": []
+    },
+    {
+      "id": "tech.modern_husbandry",
+      "name": "现代畜牧",
+      "era": "electrical",
+      "role": "production_system",
+      "starting": false,
+      "hard": [
+        "tech.industrialization",
+        "tech.labor_organization"
+      ],
+      "objects": [
+        "bio.horse"
+      ],
+      "habitats": [
+        "resource.pasture",
+        "landform.grassland"
+      ],
+      "pack": [
+        "resource.pasture",
+        "landform.grassland",
+        "bio.horse"
+      ],
+      "expected": []
+    }
+  ],
+  "cross_species_count": 15,
+  "cross_species": [
+    {
+      "id": "tech.fiber_twisting",
+      "name": "纤维捻制",
+      "era": "stone",
+      "expected": [
+        "contact.tin",
+        "resource.tin_ore"
+      ],
+      "extras": [
+        "bio.flax",
+        "bio.cotton",
+        "bio.bast_fiber"
+      ],
+      "pack": [
+        "bio.flax",
+        "bio.cotton",
+        "bio.bast_fiber"
+      ],
+      "starting": false,
+      "hard": [],
+      "missing_expected": true
+    },
+    {
+      "id": "tech.dairy_processing",
+      "name": "乳品加工",
+      "era": "agrarian",
+      "expected": [
+        "bio.cattle"
+      ],
+      "extras": [
+        "bio.horse"
+      ],
+      "pack": [
+        "resource.pasture",
+        "landform.grassland",
+        "bio.horse"
+      ],
+      "starting": false,
+      "hard": [
+        "tech.horse_domestication"
+      ],
+      "missing_expected": true
+    },
+    {
+      "id": "tech.hide_tanning",
+      "name": "皮革鞣制",
+      "era": "agrarian",
+      "expected": [
+        "resource.wild_game"
+      ],
+      "extras": [
+        "bio.sheep"
+      ],
+      "pack": [
+        "resource.wild_game",
+        "bio.sheep",
+        "landform.grassland"
+      ],
+      "starting": false,
+      "hard": [
+        "tech.dairy_processing"
+      ]
+    },
+    {
+      "id": "tech.wool_husbandry",
+      "name": "毛用畜牧",
+      "era": "agrarian",
+      "expected": [
+        "bio.sheep"
+      ],
+      "extras": [
+        "bio.horse"
+      ],
+      "pack": [
+        "resource.pasture",
+        "landform.grassland",
+        "bio.horse"
+      ],
+      "starting": false,
+      "hard": [
+        "tech.hide_tanning"
+      ],
+      "missing_expected": true
+    },
+    {
+      "id": "tech.salt_preservation",
+      "name": "盐渍保存",
+      "era": "agrarian",
+      "expected": [
+        "resource.salt"
+      ],
+      "extras": [
+        "resource.saltpeter",
+        "resource.sulfur"
+      ],
+      "pack": [
+        "resource.salt",
+        "resource.saltpeter",
+        "resource.sulfur"
+      ],
+      "starting": false,
+      "hard": [
+        "tech.settled_knowledge",
+        "tech.brine_collection"
+      ]
+    },
+    {
+      "id": "tech.writing",
+      "name": "文字",
+      "era": "kingdom",
+      "expected": [
+        "contact.tin",
+        "resource.tin_ore"
+      ],
+      "extras": [
+        "resource.clay",
+        "resource.timber"
+      ],
+      "pack": [
+        "resource.clay",
+        "resource.timber"
+      ],
+      "starting": false,
+      "hard": [
+        "tech.agrarian_society"
+      ],
+      "missing_expected": true
+    },
+    {
+      "id": "tech.iron_smelting",
+      "name": "块炼铁",
+      "era": "kingdom",
+      "expected": [
+        "contact.tin",
+        "resource.iron_ore",
+        "resource.tin_ore"
+      ],
+      "extras": [
+        "resource.coal"
+      ],
+      "pack": [
+        "resource.iron_ore",
+        "resource.coal"
+      ],
+      "starting": false,
+      "hard": [
+        "tech.agrarian_society",
+        "tech.animal_traction"
+      ]
+    },
+    {
+      "id": "tech.estate_accounting",
+      "name": "庄园核算",
+      "era": "kingdom",
+      "expected": [
+        "contact.tin",
+        "resource.tin_ore"
+      ],
+      "extras": [
+        "resource.clay",
+        "resource.timber"
+      ],
+      "pack": [
+        "resource.clay",
+        "resource.timber"
+      ],
+      "starting": false,
+      "hard": [
+        "tech.state_bureaucracy"
+      ],
+      "missing_expected": true
+    },
+    {
+      "id": "tech.blast_furnace",
+      "name": "高炉冶炼",
+      "era": "empire",
+      "expected": [
+        "resource.wild_game"
+      ],
+      "extras": [
+        "resource.iron_ore",
+        "resource.coal"
+      ],
+      "pack": [
+        "resource.iron_ore",
+        "resource.coal",
+        "breakthrough.metalworking"
+      ],
+      "starting": false,
+      "hard": [
+        "tech.kingdom_administration",
+        "tech.iron_smelting"
+      ],
+      "missing_expected": true
+    },
+    {
+      "id": "tech.movable_type_printing",
+      "name": "活字印刷",
+      "era": "empire",
+      "expected": [
+        "contact.tin",
+        "resource.tin_ore"
+      ],
+      "extras": [
+        "resource.timber"
+      ],
+      "pack": [
+        "breakthrough.printing",
+        "breakthrough.print_calibration",
+        "resource.timber"
+      ],
+      "starting": false,
+      "hard": [
+        "tech.kingdom_administration"
+      ],
+      "missing_expected": true
+    },
+    {
+      "id": "tech.screw_press_printing",
+      "name": "螺旋压印",
+      "era": "exploration",
+      "expected": [
+        "contact.tin",
+        "resource.tin_ore"
+      ],
+      "extras": [
+        "resource.timber"
+      ],
+      "pack": [
+        "breakthrough.printing",
+        "breakthrough.print_calibration",
+        "resource.timber"
+      ],
+      "starting": false,
+      "hard": [
+        "tech.imperial_integration",
+        "tech.forest_management"
+      ],
+      "missing_expected": true
+    },
+    {
+      "id": "tech.crop_breeding",
+      "name": "系统育种",
+      "era": "enlightenment",
+      "expected": [
+        "bio.reed"
+      ],
+      "extras": [
+        "bio.potato",
+        "contact.potato"
+      ],
+      "pack": [
+        "bio.potato",
+        "contact.potato",
+        "breakthrough.terrace_maintenance"
+      ],
+      "starting": false,
+      "hard": [
+        "tech.global_exchange",
+        "tech.crop_acclimatization"
+      ],
+      "missing_expected": true
+    },
+    {
+      "id": "tech.geological_prospecting",
+      "name": "地质勘探",
+      "era": "enlightenment",
+      "expected": [
+        "contact.tin",
+        "resource.tin_ore"
+      ],
+      "extras": [
+        "resource.copper_ore"
+      ],
+      "pack": [
+        "resource.copper_ore",
+        "resource.tin_ore",
+        "breakthrough.metalworking"
+      ],
+      "starting": false,
+      "hard": [
+        "tech.global_exchange",
+        "tech.shaft_sinking"
+      ]
+    },
+    {
+      "id": "tech.livestock_breeding",
+      "name": "畜种改良",
+      "era": "enlightenment",
+      "expected": [
+        "bio.reed"
+      ],
+      "extras": [
+        "bio.horse"
+      ],
+      "pack": [
+        "resource.pasture",
+        "landform.grassland",
+        "bio.horse"
+      ],
+      "starting": false,
+      "hard": [
+        "tech.global_exchange",
+        "tech.commercial_estates"
+      ],
+      "missing_expected": true
+    },
+    {
+      "id": "tech.coke_smelting",
+      "name": "焦炭冶炼",
+      "era": "steam",
+      "expected": [
+        "contact.tin",
+        "resource.tin_ore"
+      ],
+      "extras": [
+        "resource.iron_ore",
+        "resource.coal"
+      ],
+      "pack": [
+        "resource.iron_ore",
+        "resource.coal",
+        "breakthrough.metalworking"
+      ],
+      "starting": false,
+      "hard": [
+        "tech.enlightenment_institutions",
+        "tech.geological_prospecting"
+      ],
+      "missing_expected": true
+    }
+  ],
+  "empty_prereq_habitat_count": 25,
+  "empty_prereq_habitat": [
+    {
+      "id": "tech.hunting",
+      "name": "狩猎",
+      "era": "stone",
+      "starting": true,
+      "role": "handling",
+      "leaves": [
+        "resource.wild_game",
+        "landform.grassland",
+        "landform.forest"
+      ]
+    },
+    {
+      "id": "tech.gathering",
+      "name": "采集",
+      "era": "stone",
+      "starting": true,
+      "role": "handling",
+      "leaves": [
+        "resource.fertile_soil",
+        "landform.forest",
+        "landform.grassland"
+      ]
+    },
+    {
+      "id": "tech.stone_knapping",
+      "name": "打制石器",
+      "era": "stone",
+      "starting": true,
+      "role": "handling",
+      "leaves": [
+        "resource.flint",
+        "resource.stone",
+        "landform.mountain"
+      ]
+    },
+    {
+      "id": "tech.fire_control",
+      "name": "火种控制",
+      "era": "stone",
+      "starting": true,
+      "role": "handling",
+      "leaves": [
+        "resource.timber",
+        "weather.drought",
+        "landform.grassland"
+      ]
+    },
+    {
+      "id": "tech.natural_observation",
+      "name": "自然观察",
+      "era": "stone",
+      "starting": false,
+      "role": "handling",
+      "leaves": [
+        "weather.monsoon",
+        "weather.frost",
+        "landform.river_valley"
+      ]
+    },
+    {
+      "id": "tech.fishing_boats",
+      "name": "渔舟",
+      "era": "stone",
+      "starting": false,
+      "role": "handling",
+      "leaves": [
+        "resource.freshwater_fish",
+        "resource.marine_fish",
+        "landform.coast"
+      ]
+    },
+    {
+      "id": "tech.food_storage",
+      "name": "食物储藏",
+      "era": "stone",
+      "starting": false,
+      "role": "handling",
+      "leaves": [
+        "breakthrough.seed_saving",
+        "resource.fertile_soil",
+        "weather.repeated_crop_failure"
+      ]
+    },
+    {
+      "id": "tech.freshwater_fishing",
+      "name": "淡水岸捕",
+      "era": "stone",
+      "starting": true,
+      "role": "handling",
+      "leaves": [
+        "resource.freshwater_fish",
+        "landform.freshwater_access",
+        "landform.river_valley"
+      ]
+    },
+    {
+      "id": "tech.coastal_fishing",
+      "name": "潮间带采集",
+      "era": "stone",
+      "starting": true,
+      "role": "handling",
+      "leaves": [
+        "resource.marine_fish",
+        "landform.coast",
+        "landform.coastal_estuary"
+      ]
+    },
+    {
+      "id": "tech.earth_building",
+      "name": "土建筑",
+      "era": "stone",
+      "starting": true,
+      "role": "production_system",
+      "leaves": [
+        "resource.clay",
+        "landform.arid_basin",
+        "landform.loess_plain"
+      ]
+    },
+    {
+      "id": "tech.herd_management",
+      "name": "畜群管理",
+      "era": "stone",
+      "starting": false,
+      "role": "production_system",
+      "leaves": [
+        "resource.pasture",
+        "landform.grassland",
+        "bio.horse"
+      ]
+    },
+    {
+      "id": "tech.wild_tuber_collection",
+      "name": "野生块茎挖掘",
+      "era": "stone",
+      "starting": true,
+      "role": "handling",
+      "leaves": [
+        "bio.potato",
+        "landform.high_plateau",
+        "landform.mountain"
+      ]
+    },
+    {
+      "id": "tech.wild_flax_collection",
+      "name": "野生韧皮采集",
+      "era": "stone",
+      "starting": true,
+      "role": "handling",
+      "leaves": [
+        "bio.flax",
+        "landform.grassland",
+        "landform.forest"
+      ]
+    },
+    {
+      "id": "tech.gold_panning",
+      "name": "粗陶淘金",
+      "era": "stone",
+      "starting": true,
+      "role": "handling",
+      "leaves": [
+        "resource.gold_ore",
+        "landform.freshwater_access",
+        "landform.river_valley"
+      ]
+    },
+    {
+      "id": "tech.surface_silver_collection",
+      "name": "地表银矿拣采",
+      "era": "stone",
+      "starting": true,
+      "role": "handling",
+      "leaves": [
+        "resource.silver_ore",
+        "landform.mountain",
+        "landform.high_plateau"
+      ]
+    },
+    {
+      "id": "tech.deadwood_collection",
+      "name": "枯枝采集",
+      "era": "stone",
+      "starting": true,
+      "role": "handling",
+      "leaves": [
+        "resource.timber",
+        "landform.forest",
+        "landform.conifer_forest"
+      ]
+    },
+    {
+      "id": "tech.reed_identification",
+      "name": "芦苇辨识",
+      "era": "stone",
+      "starting": false,
+      "role": "identification",
+      "leaves": [
+        "bio.reed",
+        "landform.marsh",
+        "landform.freshwater_access"
+      ]
+    },
+    {
+      "id": "tech.reed_harvesting",
+      "name": "芦苇收割",
+      "era": "stone",
+      "starting": true,
+      "role": "handling",
+      "leaves": [
+        "bio.reed",
+        "landform.marsh",
+        "landform.freshwater_access"
+      ]
+    },
+    {
+      "id": "tech.turf_cutting",
+      "name": "草皮切割",
+      "era": "stone",
+      "starting": true,
+      "role": "production_system",
+      "leaves": [
+        "resource.pasture",
+        "landform.tundra",
+        "landform.high_plateau"
+      ]
+    },
+    {
+      "id": "tech.hide_scraping",
+      "name": "生皮刮制",
+      "era": "stone",
+      "starting": true,
+      "role": "handling",
+      "leaves": [
+        "resource.wild_game",
+        "landform.grassland",
+        "landform.forest"
+      ]
+    },
+    {
+      "id": "tech.fur_sewing",
+      "name": "毛皮缝制",
+      "era": "stone",
+      "starting": true,
+      "role": "handling",
+      "leaves": [
+        "resource.wild_game",
+        "landform.tundra",
+        "landform.conifer_forest"
+      ]
+    },
+    {
+      "id": "tech.flood_calendar_practice",
+      "name": "洪水历法实践",
+      "era": "stone",
+      "starting": true,
+      "role": "handling",
+      "leaves": [
+        "landform.floodplain",
+        "landform.river_valley",
+        "weather.major_flood"
+      ]
+    },
+    {
+      "id": "tech.pastoral_route_memory",
+      "name": "牧群路线记忆",
+      "era": "stone",
+      "starting": true,
+      "role": "handling",
+      "leaves": [
+        "resource.pasture",
+        "landform.grassland",
+        "landform.steppe_plain"
+      ]
+    },
+    {
+      "id": "tech.tide_observation",
+      "name": "潮汐与航向记忆",
+      "era": "stone",
+      "starting": true,
+      "role": "handling",
+      "leaves": [
+        "landform.coast",
+        "landform.coastal_estuary",
+        "weather.storm_surge"
+      ]
+    },
+    {
+      "id": "tech.charcoal_burning",
+      "name": "木炭烧制",
+      "era": "stone",
+      "starting": false,
+      "role": "handling",
+      "leaves": [
+        "resource.timber",
+        "landform.forest"
+      ]
+    }
+  ],
+  "cloned": [
+    {
+      "n": 20,
+      "pack": [
+        "breakthrough.automation",
+        "breakthrough.digital_control"
+      ],
+      "users": [
+        "tech.digital_computing",
+        "tech.information_theory",
+        "tech.knowledge_economy",
+        "tech.software_engineering",
+        "tech.networked_computing",
+        "tech.automated_logistics",
+        "tech.digital_control",
+        "tech.platform_coordination"
+      ],
+      "user_count": 20
+    },
+    {
+      "n": 10,
+      "pack": [
+        "breakthrough.seed_saving",
+        "resource.fertile_soil",
+        "weather.repeated_crop_failure"
+      ],
+      "users": [
+        "tech.seasonal_foraging",
+        "tech.crop_domestication",
+        "tech.food_storage",
+        "tech.hearth_preservation",
+        "tech.seed_selection",
+        "tech.fermentation",
+        "tech.urban_food_supply",
+        "tech.regional_granaries"
+      ],
+      "user_count": 10
+    },
+    {
+      "n": 9,
+      "pack": [
+        "bio.horse",
+        "landform.grassland",
+        "resource.pasture"
+      ],
+      "users": [
+        "tech.herd_management",
+        "tech.pastoralism",
+        "tech.horse_domestication",
+        "tech.dairy_processing",
+        "tech.wool_husbandry",
+        "tech.meat_processing",
+        "tech.pastoral_networks",
+        "tech.livestock_breeding"
+      ],
+      "user_count": 9
+    },
+    {
+      "n": 9,
+      "pack": [
+        "breakthrough.hydraulic_engineering",
+        "landform.freshwater_access",
+        "landform.river_valley"
+      ],
+      "users": [
+        "tech.irrigation",
+        "tech.irrigation_surveying",
+        "tech.canal_engineering",
+        "tech.water_power",
+        "tech.urban_waterworks",
+        "tech.hydraulic_engineering",
+        "tech.hydrological_remote_sensing",
+        "tech.precision_irrigation"
+      ],
+      "user_count": 9
+    },
+    {
+      "n": 9,
+      "pack": [
+        "breakthrough.print_calibration",
+        "breakthrough.printing"
+      ],
+      "users": [
+        "tech.scholastic_method",
+        "tech.chartered_universities",
+        "tech.indentured_contracts",
+        "tech.scientific_classification",
+        "tech.political_economy",
+        "tech.probability_statistics",
+        "tech.learned_societies",
+        "tech.wage_contracts"
+      ],
+      "user_count": 9
+    },
+    {
+      "n": 7,
+      "pack": [
+        "resource.coal"
+      ],
+      "users": [
+        "tech.surface_coal_use",
+        "tech.coal_outcrop_identification",
+        "tech.surface_coal_collection",
+        "tech.coal_mining",
+        "tech.coal_adit_mining",
+        "tech.coal_geology",
+        "tech.industrial_coal_mining"
+      ],
+      "user_count": 7
+    },
+    {
+      "n": 7,
+      "pack": [
+        "resource.coal",
+        "resource.natural_gas",
+        "resource.oil"
+      ],
+      "users": [
+        "tech.petroleum_extraction",
+        "tech.petroleum_refining",
+        "tech.internal_combustion",
+        "tech.petroleum_drilling",
+        "tech.synthetic_materials",
+        "tech.plastics_engineering",
+        "tech.nuclear_fuel_cycle"
+      ],
+      "user_count": 7
+    },
+    {
+      "n": 6,
+      "pack": [
+        "breakthrough.seed_saving",
+        "landform.river_valley",
+        "resource.fertile_soil"
+      ],
+      "users": [
+        "tech.communal_specialization",
+        "tech.household_production",
+        "tech.permanent_settlements",
+        "tech.household_landholding",
+        "tech.communal_field_coordination",
+        "tech.public_storehouses"
+      ],
+      "user_count": 6
+    },
+    {
+      "n": 6,
+      "pack": [
+        "bio.wheat",
+        "breakthrough.rainfed_adaptation",
+        "contact.wheat"
+      ],
+      "users": [
+        "tech.crop_rotation",
+        "tech.intensive_crop_rotation",
+        "tech.crop_transplantation",
+        "tech.agricultural_improvement",
+        "tech.mechanical_threshing",
+        "tech.motorized_agriculture"
+      ],
+      "user_count": 6
+    },
+    {
+      "n": 5,
+      "pack": [
+        "bio.bast_fiber",
+        "bio.cotton",
+        "bio.flax"
+      ],
+      "users": [
+        "tech.fiber_twisting",
+        "tech.weaving",
+        "tech.loom_weaving",
+        "tech.hand_spinning",
+        "tech.plant_fiber_papermaking"
+      ],
+      "user_count": 5
+    },
+    {
+      "n": 5,
+      "pack": [
+        "bio.wheat",
+        "contact.wheat"
+      ],
+      "users": [
+        "tech.wheat_identification",
+        "tech.wild_wheat_collection",
+        "tech.wheat_seed_saving",
+        "tech.wheat_propagation",
+        "tech.grain_baking"
+      ],
+      "user_count": 5
+    },
+    {
+      "n": 5,
+      "pack": [
+        "bio.maize",
+        "breakthrough.maize_selection",
+        "contact.maize"
+      ],
+      "users": [
+        "tech.maize_selection",
+        "tech.agronomic_exchange",
+        "tech.mechanized_agriculture",
+        "tech.industrial_agronomy",
+        "tech.precision_agriculture"
+      ],
+      "user_count": 5
+    },
+    {
+      "n": 5,
+      "pack": [
+        "resource.phosphate_rock",
+        "resource.saltpeter",
+        "resource.sulfur"
+      ],
+      "users": [
+        "tech.gunpowder_formulation",
+        "tech.gunpowder_weapons",
+        "tech.industrial_chemistry",
+        "tech.fertilizer_processing",
+        "tech.synthetic_fertilizer"
+      ],
+      "user_count": 5
+    },
+    {
+      "n": 5,
+      "pack": [
+        "breakthrough.maritime_operations",
+        "landform.coast"
+      ],
+      "users": [
+        "tech.magnetic_navigation",
+        "tech.celestial_navigation",
+        "tech.oceanic_ship_design",
+        "tech.coastal_shipyards",
+        "tech.oceanic_provisioning"
+      ],
+      "user_count": 5
+    },
+    {
+      "n": 5,
+      "pack": [
+        "breakthrough.assembly_line",
+        "breakthrough.industrial_organization",
+        "breakthrough.steam_power"
+      ],
+      "users": [
+        "tech.industrial_organization",
+        "tech.labor_organization",
+        "tech.factory_system",
+        "tech.managerial_hierarchy",
+        "tech.worker_cooperatives"
+      ],
+      "user_count": 5
+    },
+    {
+      "n": 5,
+      "pack": [
+        "breakthrough.assembly_line",
+        "breakthrough.electrification",
+        "breakthrough.industrial_organization"
+      ],
+      "users": [
+        "tech.telecommunications",
+        "tech.corporate_management",
+        "tech.corporate_agribusiness",
+        "tech.collective_agriculture",
+        "tech.state_enterprises"
+      ],
+      "user_count": 5
+    }
+  ],
+  "horse_pack": [
+    {
+      "id": "tech.herd_management",
+      "name": "畜群管理",
+      "era": "stone",
+      "pack": [
+        "resource.pasture",
+        "landform.grassland",
+        "bio.horse"
+      ],
+      "hard": []
+    },
+    {
+      "id": "tech.pastoralism",
+      "name": "游牧放牧",
+      "era": "agrarian",
+      "pack": [
+        "resource.pasture",
+        "landform.grassland",
+        "bio.horse"
+      ],
+      "hard": [
+        "tech.herd_management"
+      ]
+    },
+    {
+      "id": "tech.horse_domestication",
+      "name": "马匹驯化",
+      "era": "agrarian",
+      "pack": [
+        "resource.pasture",
+        "landform.grassland",
+        "bio.horse"
+      ],
+      "hard": [
+        "tech.settled_knowledge",
+        "tech.herd_management"
+      ]
+    },
+    {
+      "id": "tech.dairy_processing",
+      "name": "乳品加工",
+      "era": "agrarian",
+      "pack": [
+        "resource.pasture",
+        "landform.grassland",
+        "bio.horse"
+      ],
+      "hard": [
+        "tech.horse_domestication"
+      ]
+    },
+    {
+      "id": "tech.wool_husbandry",
+      "name": "毛用畜牧",
+      "era": "agrarian",
+      "pack": [
+        "resource.pasture",
+        "landform.grassland",
+        "bio.horse"
+      ],
+      "hard": [
+        "tech.hide_tanning"
+      ]
+    },
+    {
+      "id": "tech.meat_processing",
+      "name": "屠宰分割",
+      "era": "agrarian",
+      "pack": [
+        "resource.pasture",
+        "landform.grassland",
+        "bio.horse"
+      ],
+      "hard": [
+        "tech.wool_husbandry"
+      ]
+    },
+    {
+      "id": "tech.pastoral_networks",
+      "name": "牧业网络",
+      "era": "empire",
+      "pack": [
+        "resource.pasture",
+        "landform.grassland",
+        "bio.horse"
+      ],
+      "hard": [
+        "tech.kingdom_administration",
+        "tech.parchment_making"
+      ]
+    },
+    {
+      "id": "tech.livestock_breeding",
+      "name": "畜种改良",
+      "era": "enlightenment",
+      "pack": [
+        "resource.pasture",
+        "landform.grassland",
+        "bio.horse"
+      ],
+      "hard": [
+        "tech.global_exchange",
+        "tech.commercial_estates"
+      ]
+    },
+    {
+      "id": "tech.modern_husbandry",
+      "name": "现代畜牧",
+      "era": "electrical",
+      "pack": [
+        "resource.pasture",
+        "landform.grassland",
+        "bio.horse"
+      ],
+      "hard": [
+        "tech.industrialization",
+        "tech.labor_organization"
+      ]
+    }
+  ],
+  "hide_sheep_pack": [
+    {
+      "id": "tech.animal_husbandry",
+      "name": "畜牧驯养",
+      "era": "stone",
+      "pack": [
+        "resource.wild_game",
+        "bio.sheep",
+        "landform.grassland"
+      ]
+    },
+    {
+      "id": "tech.animal_tracking",
+      "name": "动物追踪",
+      "era": "stone",
+      "pack": [
+        "resource.wild_game",
+        "bio.sheep",
+        "landform.grassland"
+      ]
+    },
+    {
+      "id": "tech.animal_traction",
+      "name": "畜力牵引",
+      "era": "agrarian",
+      "pack": [
+        "resource.wild_game",
+        "bio.sheep",
+        "landform.grassland"
+      ]
+    },
+    {
+      "id": "tech.hide_tanning",
+      "name": "皮革鞣制",
+      "era": "agrarian",
+      "pack": [
+        "resource.wild_game",
+        "bio.sheep",
+        "landform.grassland"
+      ]
+    },
+    {
+      "id": "tech.parchment_making",
+      "name": "皮纸制作",
+      "era": "kingdom",
+      "pack": [
+        "resource.wild_game",
+        "bio.sheep"
+      ]
+    }
+  ]
+}

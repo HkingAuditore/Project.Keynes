@@ -22,8 +22,8 @@ const PLACEHOLDER := "__TECHNOLOGY_TREE_DATA__"
 const EXPECTED_NODE_COUNT := 361
 const EXPECTED_ERA_COUNT := 11
 const EXPECTED_DOMAIN_COUNT := 4
-const EXPECTED_MILESTONE_CANDIDATE_COUNT := 16
-const EXPECTED_MILESTONE_REQUIRED_COUNT := 5
+const EXPECTED_MILESTONE_CANDIDATE_COUNT := 8
+const EXPECTED_MILESTONE_REQUIRED_COUNT := 4
 const MAX_VISUAL_EDGE_COUNT := 1500
 const VISUAL_EDGE_KINDS := ["hard", "alternative", "application", "milestone_candidate"]
 
@@ -153,9 +153,6 @@ func _validate(definitions: Array[Dictionary], eras: Array[Dictionary],
 				return "milestone_required_count_invalid: %s" % id
 		if (definition.get("route_tags", PackedStringArray()) as PackedStringArray).is_empty():
 			return "route_tags_missing: %s" % id
-		if not bool(definition.get("is_starting", false)) \
-				and _node_modifier_terms(definition).is_empty():
-			return "modifier_terms_missing: %s" % id
 	if milestone_count != EXPECTED_ERA_COUNT:
 		return "milestone_count_mismatch: %d" % milestone_count
 	for edge in visual_edges:
@@ -249,6 +246,7 @@ func _node_record(definition: Dictionary, definitions: Array[Dictionary],
 	var id := String(definition.get("id", ""))
 	var successors := PackedStringArray()
 	var hard_successors := PackedStringArray()
+	var hard_successor_rationales := PackedStringArray()
 	var candidate_milestones := PackedStringArray()
 	for other in definitions:
 		var prerequisites: PackedStringArray = other.get("prerequisite_ids", PackedStringArray())
@@ -256,6 +254,11 @@ func _node_record(definition: Dictionary, definitions: Array[Dictionary],
 		var other_id := String(other.get("id", ""))
 		if prerequisites.has(id):
 			hard_successors.append(other_id)
+			var rationale_index := prerequisites.find(id)
+			var other_rationales: PackedStringArray = other.get(
+				"prerequisite_rationales", PackedStringArray())
+			hard_successor_rationales.append(String(other_rationales[rationale_index]) \
+				if rationale_index >= 0 and rationale_index < other_rationales.size() else "")
 			successors.append(other_id)
 		if bool(other.get("is_milestone", false)) and candidates.has(id):
 			candidate_milestones.append(other_id)
@@ -280,8 +283,11 @@ func _node_record(definition: Dictionary, definitions: Array[Dictionary],
 		"domain_id": String(definition.get("domain_id", "")),
 		"cost_points": int(definition.get("cost_points", 0)),
 		"prerequisite_ids": definition.get("prerequisite_ids", PackedStringArray()),
+		"prerequisite_rationales": definition.get(
+			"prerequisite_rationales", PackedStringArray()),
 		"successor_ids": successors,
 		"hard_successor_ids": hard_successors,
+		"hard_successor_rationales": hard_successor_rationales,
 		"candidate_milestone_ids": candidate_milestones,
 		"is_milestone": bool(definition.get("is_milestone", false)),
 		"is_era_key": bool(definition.get("is_era_key", false)),
@@ -306,10 +312,14 @@ func _node_record(definition: Dictionary, definitions: Array[Dictionary],
 		"modifier_terms": _node_modifier_terms(definition),
 		"content_effects": (definition.get("content_effects", []) as Array).duplicate(true),
 		"opportunity_cost": String(definition.get("opportunity_cost", "")),
-		"same_lane_successor_ids": definition.get(
-			"same_lane_successor_ids", PackedStringArray()),
+		"branch_successor_ids": definition.get(
+			"branch_successor_ids", PackedStringArray()),
+		"branch_successor_rationales": definition.get(
+			"branch_successor_rationales", PackedStringArray()),
 		"application_target_ids": definition.get(
 			"application_target_ids", PackedStringArray()),
+		"application_target_rationales": definition.get(
+			"application_target_rationales", PackedStringArray()),
 		"terminal_reason": String(definition.get("terminal_reason", "")),
 		"unlocks": unlocks,
 	}
@@ -536,8 +546,9 @@ func _append_markdown_node(lines: PackedStringArray, node: Dictionary, era: Dict
 		node.get("starter_capability_tags", PackedStringArray()))))
 	lines.append("| 效果配置 | %s |" % _md_table(_value_or_none(node.get("effect_profile", ""))))
 
-	_append_named_id_section(lines, "前置科技（决定研发资格）", node.get("prerequisite_ids", PackedStringArray()),
-		tech_names)
+	_append_relation_section(lines, "硬前置（决定研发资格）",
+		node.get("prerequisite_ids", PackedStringArray()),
+		node.get("prerequisite_rationales", PackedStringArray()), tech_names)
 	if not (node.get("condition_lines", []) as Array).is_empty():
 		_append_condition_section(lines, "额外研发条件", node.get("condition_lines", []))
 	_append_condition_section(lines, "发现启发（仅用于揭示）",
@@ -566,12 +577,15 @@ func _append_markdown_node(lines: PackedStringArray, node: Dictionary, era: Dict
 	_append_unlock_section(lines, node.get("unlocks", {}))
 	_append_content_effect_section(lines, node.get("content_effects", []))
 	_append_modifier_section(lines, node.get("modifier_terms", []))
-	_append_named_id_section(lines, "直接后继（硬前置关系）",
-		node.get("hard_successor_ids", PackedStringArray()), tech_names)
-	_append_named_id_section(lines, "同路线后继",
-		node.get("same_lane_successor_ids", PackedStringArray()), tech_names)
-	_append_named_id_section(lines, "应用交汇目标",
-		node.get("application_target_ids", PackedStringArray()), tech_names)
+	_append_relation_section(lines, "被以下科技作为硬前置",
+		node.get("hard_successor_ids", PackedStringArray()),
+		node.get("hard_successor_rationales", PackedStringArray()), tech_names)
+	_append_relation_section(lines, "主题路线后继",
+		node.get("branch_successor_ids", PackedStringArray()),
+		node.get("branch_successor_rationales", PackedStringArray()), tech_names)
+	_append_relation_section(lines, "跨领域应用",
+		node.get("application_target_ids", PackedStringArray()),
+		node.get("application_target_rationales", PackedStringArray()), tech_names)
 	_append_named_id_section(lines, "作为候选参与的里程碑",
 		node.get("candidate_milestone_ids", PackedStringArray()),
 		tech_names)
@@ -591,6 +605,20 @@ func _append_named_id_section(lines: PackedStringArray, title: String, ids,
 func _append_named_id_items(lines: PackedStringArray, ids, tech_names: Dictionary) -> void:
 	for raw_id in ids:
 		lines.append("- %s" % _named_technology(String(raw_id), tech_names))
+
+
+func _append_relation_section(lines: PackedStringArray, title: String, ids,
+		rationales, tech_names: Dictionary) -> void:
+	lines.append("")
+	lines.append("#### %s" % title)
+	lines.append("")
+	if ids.is_empty():
+		lines.append("无")
+		return
+	for cursor in range(ids.size()):
+		var reason := String(rationales[cursor]) if cursor < rationales.size() else ""
+		lines.append("- %s%s" % [_named_technology(String(ids[cursor]), tech_names),
+			("：%s" % _md_inline(reason)) if not reason.is_empty() else ""])
 
 
 func _append_condition_section(lines: PackedStringArray, title: String, condition_lines) -> void:

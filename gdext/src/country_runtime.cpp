@@ -233,6 +233,8 @@ Dictionary NativeCountryRuntime::configure(const Dictionary &catalog,
     _technology_milestone_offsets = packed_i32(catalog, "technology_milestone_offsets");
     _technology_milestone_candidates = packed_i32(catalog, "technology_milestone_candidates");
     _technology_milestone_required_counts = packed_i32(catalog, "technology_milestone_required_counts");
+    _technology_entry_milestone_indices =
+        packed_i32(catalog, "technology_entry_milestone_indices");
     _technology_flags = packed_i32(catalog, "technology_flags");
     _technology_modifier_definition_keys =
         packed_strings(catalog, "technology_modifier_definition_keys");
@@ -271,6 +273,7 @@ Dictionary NativeCountryRuntime::configure(const Dictionary &catalog,
         _technology_prerequisite_offsets.size() != tech_count + 1 ||
         _technology_milestone_offsets.size() != tech_count + 1 ||
         _technology_milestone_required_counts.size() != tech_count ||
+        _technology_entry_milestone_indices.size() != tech_count ||
         _technology_flags.size() != tech_count ||
         _technology_modifier_definition_keys.size() != tech_count ||
         _technology_prerequisite_offsets.front() != 0 ||
@@ -310,6 +313,9 @@ Dictionary NativeCountryRuntime::configure(const Dictionary &catalog,
     for (int32_t prerequisite : _technology_prerequisites)
         if (prerequisite < 0 || prerequisite >= static_cast<int32_t>(tech_count))
             return fail("country_technology_prerequisite_invalid");
+    for (int32_t entry_milestone : _technology_entry_milestone_indices)
+        if (entry_milestone < -1 || entry_milestone >= static_cast<int32_t>(tech_count))
+            return fail("country_technology_era_entry_invalid");
     for (int32_t candidate : _technology_milestone_candidates)
         if (candidate < 0 || candidate >= static_cast<int32_t>(tech_count))
             return fail("country_technology_milestone_candidate_invalid");
@@ -1477,6 +1483,11 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
                 (batch.pending[word_index] & bit) != 0) {
                 error = "country_research_technology_unavailable"; break;
             }
+            if (!prerequisites_met(batch.technologies, slot, command.aux) ||
+                !research_condition_met(batch.technologies, batch.signals,
+                                        slot, command.aux)) {
+                error = "country_research_requirements_incomplete"; break;
+            }
             const bool milestone = (_technology_flags[static_cast<size_t>(command.aux)] & 2) != 0;
             if (!milestone && _technology_domains[static_cast<size_t>(command.aux)] != command.domain) {
                 error = "country_research_domain_mismatch"; break;
@@ -2579,6 +2590,7 @@ bool NativeCountryRuntime::prerequisites_met(const std::vector<uint64_t> &comple
     const auto has = [&](int32_t tech) {
         return (completed[base + tech / 64] & (1ULL << (tech % 64))) != 0;
     };
+    if (!era_entry_met(completed, slot, technology)) return false;
     const int32_t milestone_begin = _technology_milestone_offsets[static_cast<size_t>(technology)];
     const int32_t milestone_end = _technology_milestone_offsets[static_cast<size_t>(technology + 1)];
     if (milestone_end > milestone_begin) {
@@ -2592,6 +2604,18 @@ bool NativeCountryRuntime::prerequisites_met(const std::vector<uint64_t> &comple
     for (int32_t edge = begin; edge < end; ++edge)
         if (!has(_technology_prerequisites[static_cast<size_t>(edge)])) return false;
     return true;
+}
+
+bool NativeCountryRuntime::era_entry_met(const std::vector<uint64_t> &completed,
+                                          int32_t slot, int32_t technology) const {
+    if (slot < 0 || technology < 0 ||
+        technology >= static_cast<int32_t>(_technology_entry_milestone_indices.size())) return false;
+    const int32_t entry = _technology_entry_milestone_indices[static_cast<size_t>(technology)];
+    if (entry < 0) return true;
+    const size_t base = static_cast<size_t>(slot) * _technology_words;
+    const size_t word = base + static_cast<size_t>(entry / 64);
+    return word < completed.size() &&
+           (completed[word] & (uint64_t{1} << (entry % 64))) != 0;
 }
 
 bool NativeCountryRuntime::prerequisites_met(int32_t slot, int32_t technology) const {
@@ -3199,6 +3223,9 @@ uint64_t NativeCountryRuntime::catalog_hash() const {
     if (!_technology_prerequisites.empty())
         hash_bytes(hash, _technology_prerequisites.data(),
                    _technology_prerequisites.size() * sizeof(int32_t));
+    if (!_technology_entry_milestone_indices.empty())
+        hash_bytes(hash, _technology_entry_milestone_indices.data(),
+                   _technology_entry_milestone_indices.size() * sizeof(int32_t));
     if (!_research_signal_requires_provenance.empty())
         hash_bytes(hash, _research_signal_requires_provenance.data(),
                    _research_signal_requires_provenance.size() * sizeof(uint8_t));
@@ -3358,6 +3385,9 @@ uint64_t NativeCountryRuntime::catalog_hash_v3() const {
     if (!_technology_prerequisites.empty())
         hash_bytes(hash, _technology_prerequisites.data(),
                    _technology_prerequisites.size() * sizeof(int32_t));
+    if (!_technology_entry_milestone_indices.empty())
+        hash_bytes(hash, _technology_entry_milestone_indices.data(),
+                   _technology_entry_milestone_indices.size() * sizeof(int32_t));
     return hash;
 }
 

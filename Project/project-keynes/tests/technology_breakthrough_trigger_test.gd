@@ -18,6 +18,19 @@ func _init() -> void:
 	ext.create_entities(1)
 	var effect_catalog: Resource = EffectDomainCatalogScript.build()
 	_require(effect_catalog != null, "effect domain catalog builds")
+	var gis_index := (compiled.technology_ids as PackedStringArray).find(
+		"tech.geographic_information_systems")
+	var gis_recipe_id := String((compiled.technology_effect_recipe_ids as PackedStringArray)[gis_index])
+	var gis_effect_definition: Resource = null
+	for definition_value in effect_catalog.definitions:
+		var definition: Resource = definition_value
+		if String(definition.key) == gis_recipe_id:
+			gis_effect_definition = definition
+			break
+	_require(gis_effect_definition != null
+		and gis_effect_definition.commands.size() == 1
+		and String((gis_effect_definition.commands[0] as Resource).command_key) == "technology.adopted",
+		"unlock-only technology emits adopted without a Modifier command")
 	_require(bool(ext.configure_effects(
 		effect_catalog.compile_native_catalog()).get("ok", false)),
 		"effect runtime configures")

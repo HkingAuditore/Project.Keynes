@@ -89,13 +89,35 @@ unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 2
 
-[node name="SuccessorTitle" type="Label" parent="Scroll/Body/DetailBlock"]
+[node name="HardSuccessorTitle" type="Label" parent="Scroll/Body/DetailBlock"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "将解锁"
+text = "被以下科技作为硬前置"
 theme_type_variation = &"PKSectionTitle"
 
-[node name="Successors" type="VBoxContainer" parent="Scroll/Body/DetailBlock"]
+[node name="HardSuccessors" type="VBoxContainer" parent="Scroll/Body/DetailBlock"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="BranchSuccessorTitle" type="Label" parent="Scroll/Body/DetailBlock"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "主题路线后继"
+theme_type_variation = &"PKSectionTitle"
+
+[node name="BranchSuccessors" type="VBoxContainer" parent="Scroll/Body/DetailBlock"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="ApplicationTitle" type="Label" parent="Scroll/Body/DetailBlock"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "跨领域应用"
+theme_type_variation = &"PKSectionTitle"
+
+[node name="Applications" type="VBoxContainer" parent="Scroll/Body/DetailBlock"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 2

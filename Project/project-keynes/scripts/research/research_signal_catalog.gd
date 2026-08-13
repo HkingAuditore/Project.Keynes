@@ -191,6 +191,7 @@ const NETWORK_SIGNAL_ROWS := [
 	["contact.spice", "香料样本接触", ResearchSignalDefinitionScript.Kind.CONTACT, ResearchSignalDefinitionScript.Persistence.PERMANENT, ["category.contact"], [], [], true],
 	["contact.rubber", "橡胶样本接触", ResearchSignalDefinitionScript.Kind.CONTACT, ResearchSignalDefinitionScript.Persistence.PERMANENT, ["category.contact"], [], [], true],
 	["contact.tin", "锡矿贸易接触", ResearchSignalDefinitionScript.Kind.CONTACT, ResearchSignalDefinitionScript.Persistence.PERMANENT, ["category.contact"], [], [], true],
+	["contact.maritime_vessel", "外国舰船或远洋船体接触", ResearchSignalDefinitionScript.Kind.CONTACT, ResearchSignalDefinitionScript.Persistence.PERMANENT, ["category.contact", "category.maritime"], [], [], true],
 
 	["breakthrough.seed_saving", "留种实践突破", ResearchSignalDefinitionScript.Kind.TECH_BREAKTHROUGH, ResearchSignalDefinitionScript.Persistence.PERMANENT, ["category.breakthrough"], [], [], true],
 	["breakthrough.rainfed_adaptation", "雨养适应突破", ResearchSignalDefinitionScript.Kind.TECH_BREAKTHROUGH, ResearchSignalDefinitionScript.Persistence.PERMANENT, ["category.breakthrough"], [], [], true],
@@ -211,6 +212,193 @@ const NETWORK_SIGNAL_ROWS := [
 	["breakthrough.energy_control", "能源控制突破", ResearchSignalDefinitionScript.Kind.TECH_BREAKTHROUGH, ResearchSignalDefinitionScript.Persistence.PERMANENT, ["category.breakthrough"], [], [], true],
 ]
 
+## Occupancy bit 0..31. Envelope/carrier/origin are generation+runtime inputs;
+## `realm.*` tags on SIGNAL_ROWS remain presentation metadata and are not read
+## by seeding. Occupancy ⊆ envelope ∩ reachable province ∩ carrier>ε.
+const OCCUPANCY_FLAG_NEED_WETLAND_OR_RIVER := 1
+const OCCUPANCY_FLAG_NEED_HIGHLAND := 2
+const OCCUPANCY_FLAG_FORBID_TROPICAL_FOREST := 4
+const OCCUPANCY_FLAG_NEED_ARID := 8
+const OCCUPANCY_FLAG_NEED_DRY_OR_HIGHLAND := 16
+const OCCUPANCY_FLAG_FORBID_ARID := 32
+const OCCUPANCY_FLAG_FORBID_WARM := 64
+const OCCUPANCY_FLAG_FORBID_COLD := 128
+const OCCUPANCY_ORIGIN_UNIQUE_PROVINCE := 0
+const OCCUPANCY_MAX_SPECIES := 32
+
+const _VEG_GRASS := [4, 9, 10, 13]
+const _VEG_FOREST := [5, 7, 8, 12, 14, 15, 24, 25]
+const _VEG_TROPICAL_FOREST := [12, 14, 15, 24, 25]
+const _VEG_WETLAND := [19, 20, 21, 27]
+const _VEG_COOL_GRASS := [9, 10]
+const _VEG_WARM_CROP := [4, 9, 10, 13, 12, 14, 15]
+const _VEG_FLAX := [4, 9, 10, 11, 13]
+const _VEG_POTATO := [3, 4, 9]
+const _VEG_RUBBER := [14, 24, 12, 15]
+
+## carrier empty = envelope only. introduce_goods drive agricultural occupancy.
+const BIO_OCCUPANCY_BY_ID := {
+	"bio.maize": {
+		"carrier": "arable_land", "carrier_alt": "",
+		"temp_lo": 0.42, "temp_hi": 0.92, "moist_lo": 0.32, "moist_hi": 1.0,
+		"elev_lo": 0.0, "elev_hi": 0.78, "veg": _VEG_GRASS, "flags": 0,
+		"max_cost": 16, "fill_keep": 0.58, "introduce_goods": ["corn_grain"],
+	},
+	"bio.wheat": {
+		"carrier": "arable_land", "carrier_alt": "",
+		"temp_lo": 0.26, "temp_hi": 0.64, "moist_lo": 0.28, "moist_hi": 0.72,
+		"elev_lo": 0.0, "elev_hi": 0.80, "veg": _VEG_COOL_GRASS, "flags": 0,
+		"max_cost": 16, "fill_keep": 0.58, "introduce_goods": ["wheat_grain"],
+	},
+	"bio.rice": {
+		"carrier": "arable_land", "carrier_alt": "paddy_land",
+		"temp_lo": 0.48, "temp_hi": 0.95, "moist_lo": 0.50, "moist_hi": 1.0,
+		"elev_lo": 0.0, "elev_hi": 0.62, "veg": _VEG_WETLAND,
+		"flags": OCCUPANCY_FLAG_NEED_WETLAND_OR_RIVER,
+		"max_cost": 14, "fill_keep": 0.62, "introduce_goods": ["rice_grain"],
+	},
+	"bio.potato": {
+		"carrier": "arable_land", "carrier_alt": "",
+		"temp_lo": 0.18, "temp_hi": 0.56, "moist_lo": 0.30, "moist_hi": 0.80,
+		"elev_lo": 0.0, "elev_hi": 1.0, "veg": _VEG_POTATO,
+		"flags": OCCUPANCY_FLAG_NEED_HIGHLAND,
+		"max_cost": 12, "fill_keep": 0.55, "introduce_goods": ["potatoes"],
+	},
+	"bio.horse": {
+		"carrier": "pasture", "carrier_alt": "",
+		"temp_lo": 0.26, "temp_hi": 0.64, "moist_lo": 0.22, "moist_hi": 0.70,
+		"elev_lo": 0.0, "elev_hi": 0.82, "veg": _VEG_COOL_GRASS, "flags": 0,
+		"max_cost": 18, "fill_keep": 0.52, "introduce_goods": [],
+	},
+	"bio.cotton": {
+		"carrier": "arable_land", "carrier_alt": "",
+		"temp_lo": 0.52, "temp_hi": 0.95, "moist_lo": 0.32, "moist_hi": 0.90,
+		"elev_lo": 0.0, "elev_hi": 0.72, "veg": _VEG_WARM_CROP, "flags": 0,
+		"max_cost": 14, "fill_keep": 0.55, "introduce_goods": ["seed_cotton", "cotton_fiber"],
+	},
+	"bio.flax": {
+		"carrier": "arable_land", "carrier_alt": "",
+		"temp_lo": 0.26, "temp_hi": 0.64, "moist_lo": 0.30, "moist_hi": 0.78,
+		"elev_lo": 0.0, "elev_hi": 0.80, "veg": _VEG_FLAX, "flags": 0,
+		"max_cost": 14, "fill_keep": 0.55, "introduce_goods": ["flax_fiber"],
+	},
+	"bio.spice": {
+		"carrier": "arable_land", "carrier_alt": "",
+		"temp_lo": 0.60, "temp_hi": 1.0, "moist_lo": 0.45, "moist_hi": 1.0,
+		"elev_lo": 0.0, "elev_hi": 0.70, "veg": _VEG_TROPICAL_FOREST, "flags": 0,
+		"max_cost": 12, "fill_keep": 0.50, "introduce_goods": ["spices"],
+	},
+	"bio.rubber": {
+		"carrier": "plantation_land", "carrier_alt": "",
+		"temp_lo": 0.60, "temp_hi": 1.0, "moist_lo": 0.52, "moist_hi": 1.0,
+		"elev_lo": 0.0, "elev_hi": 0.68, "veg": _VEG_RUBBER, "flags": 0,
+		"max_cost": 12, "fill_keep": 0.48, "introduce_goods": ["latex"],
+	},
+	"bio.sheep": {
+		"carrier": "pasture", "carrier_alt": "",
+		"temp_lo": 0.16, "temp_hi": 0.62, "moist_lo": 0.18, "moist_hi": 0.80,
+		"elev_lo": 0.0, "elev_hi": 0.88, "veg": _VEG_GRASS,
+		"flags": OCCUPANCY_FLAG_FORBID_WARM,
+		"max_cost": 16, "fill_keep": 0.55, "introduce_goods": ["wool", "livestock_products"],
+	},
+	"bio.goat": {
+		"carrier": "pasture", "carrier_alt": "",
+		"temp_lo": 0.20, "temp_hi": 0.88, "moist_lo": 0.0, "moist_hi": 1.0,
+		"elev_lo": 0.0, "elev_hi": 1.0, "veg": [],
+		"flags": OCCUPANCY_FLAG_NEED_DRY_OR_HIGHLAND | OCCUPANCY_FLAG_FORBID_TROPICAL_FOREST,
+		"max_cost": 16, "fill_keep": 0.50, "introduce_goods": [],
+	},
+	"bio.cattle": {
+		"carrier": "pasture", "carrier_alt": "",
+		"temp_lo": 0.34, "temp_hi": 0.82, "moist_lo": 0.56, "moist_hi": 1.0,
+		"elev_lo": 0.0, "elev_hi": 0.78, "veg": _VEG_GRASS,
+		"flags": OCCUPANCY_FLAG_FORBID_COLD,
+		"max_cost": 16, "fill_keep": 0.52, "introduce_goods": ["dairy_products", "livestock_products"],
+	},
+	"bio.pig": {
+		"carrier": "wild_game", "carrier_alt": "",
+		"temp_lo": 0.34, "temp_hi": 0.88, "moist_lo": 0.56, "moist_hi": 1.0,
+		"elev_lo": 0.0, "elev_hi": 0.80, "veg": _VEG_FOREST,
+		"flags": OCCUPANCY_FLAG_FORBID_COLD,
+		"max_cost": 14, "fill_keep": 0.50, "introduce_goods": [],
+	},
+	"bio.camel": {
+		"carrier": "pasture", "carrier_alt": "",
+		"temp_lo": 0.60, "temp_hi": 1.0, "moist_lo": 0.0, "moist_hi": 0.42,
+		"elev_lo": 0.0, "elev_hi": 0.80, "veg": [],
+		"flags": OCCUPANCY_FLAG_NEED_ARID,
+		"max_cost": 18, "fill_keep": 0.48, "introduce_goods": [],
+	},
+	"bio.yak": {
+		"carrier": "pasture", "carrier_alt": "",
+		"temp_lo": 0.0, "temp_hi": 0.34, "moist_lo": 0.20, "moist_hi": 0.80,
+		"elev_lo": 0.0, "elev_hi": 1.0, "veg": _VEG_GRASS,
+		"flags": OCCUPANCY_FLAG_NEED_HIGHLAND,
+		"max_cost": 12, "fill_keep": 0.50, "introduce_goods": [],
+	},
+	"bio.silkworm": {
+		"carrier": "", "carrier_alt": "",
+		"temp_lo": 0.55, "temp_hi": 0.92, "moist_lo": 0.56, "moist_hi": 1.0,
+		"elev_lo": 0.0, "elev_hi": 0.72, "veg": _VEG_FOREST, "flags": 0,
+		"max_cost": 12, "fill_keep": 0.45, "introduce_goods": [],
+	},
+	"bio.reed": {
+		"carrier": "", "carrier_alt": "",
+		"temp_lo": 0.20, "temp_hi": 0.90, "moist_lo": 0.50, "moist_hi": 1.0,
+		"elev_lo": 0.0, "elev_hi": 0.55, "veg": _VEG_WETLAND,
+		"flags": OCCUPANCY_FLAG_NEED_WETLAND_OR_RIVER,
+		"max_cost": 10, "fill_keep": 0.60, "introduce_goods": ["reed_bundle"],
+	},
+	"bio.bast_fiber": {
+		"carrier": "", "carrier_alt": "",
+		"temp_lo": 0.28, "temp_hi": 0.78, "moist_lo": 0.32, "moist_hi": 0.90,
+		"elev_lo": 0.0, "elev_hi": 0.80, "veg": _VEG_FOREST,
+		"flags": OCCUPANCY_FLAG_FORBID_ARID,
+		"max_cost": 12, "fill_keep": 0.50, "introduce_goods": ["bast_fiber"],
+	},
+	"bio.dye_plant": {
+		"carrier": "arable_land", "carrier_alt": "",
+		"temp_lo": 0.52, "temp_hi": 0.95, "moist_lo": 0.28, "moist_hi": 0.90,
+		"elev_lo": 0.0, "elev_hi": 0.75, "veg": _VEG_WARM_CROP, "flags": 0,
+		"max_cost": 14, "fill_keep": 0.50, "introduce_goods": [],
+	},
+}
+
+const OVERLAY_ICON_BY_ID := {
+	"bio.maize": &"economy.crop",
+	"bio.wheat": &"economy.crop",
+	"bio.rice": &"economy.crop",
+	"bio.potato": &"economy.crop",
+	"bio.cotton": &"economy.crop",
+	"bio.flax": &"economy.crop",
+	"bio.spice": &"economy.crop",
+	"bio.dye_plant": &"economy.crop",
+	"bio.bast_fiber": &"economy.crop",
+	"bio.horse": &"good.horses",
+	"bio.sheep": &"good.wool",
+	"bio.goat": &"economy.livestock",
+	"bio.cattle": &"economy.livestock",
+	"bio.camel": &"economy.livestock",
+	"bio.yak": &"economy.livestock",
+	"bio.pig": &"good.game_meat",
+	"bio.rubber": &"ecology.vegetation",
+	"bio.reed": &"ecology.vegetation",
+	"bio.silkworm": &"ecology.vegetation",
+}
+
+
+static func _veg_masks(veg_ids: Array) -> PackedInt32Array:
+	var mask0 := 0
+	var mask1 := 0
+	for raw in veg_ids:
+		var veg_id := int(raw)
+		if veg_id >= 0 and veg_id < 32:
+			mask0 |= 1 << veg_id
+		elif veg_id >= 32 and veg_id < 64:
+			mask1 |= 1 << (veg_id - 32)
+	return PackedInt32Array([mask0, mask1])
+
+
 static func compile_native_catalog() -> Dictionary:
 	var ids := PackedStringArray()
 	var names := PackedStringArray()
@@ -223,6 +411,26 @@ static func compile_native_catalog() -> Dictionary:
 	var habitat_tags := PackedStringArray()
 	var realm_offsets := PackedInt32Array([0])
 	var realm_ids := PackedStringArray()
+	var occupancy_bit := PackedInt32Array()
+	var bio_signal_ids := PackedInt32Array()
+	var bio_occupancy_bits := PackedInt32Array()
+	var bio_carrier_ids := PackedStringArray()
+	var bio_carrier_alt_ids := PackedStringArray()
+	var bio_temp_lo := PackedFloat32Array()
+	var bio_temp_hi := PackedFloat32Array()
+	var bio_moist_lo := PackedFloat32Array()
+	var bio_moist_hi := PackedFloat32Array()
+	var bio_elev_lo := PackedFloat32Array()
+	var bio_elev_hi := PackedFloat32Array()
+	var bio_veg_mask0 := PackedInt32Array()
+	var bio_veg_mask1 := PackedInt32Array()
+	var bio_flags := PackedInt32Array()
+	var bio_max_cost := PackedInt32Array()
+	var bio_fill_keep := PackedFloat32Array()
+	var bio_origin_policy := PackedInt32Array()
+	var bio_introduce_good_ids := PackedStringArray()
+	var bio_introduce_occupancy_bits := PackedInt32Array()
+	var next_occupancy_bit := 0
 	var seen := {}
 	for row in SIGNAL_ROWS + NETWORK_SIGNAL_ROWS:
 		var id := String(row[0])
@@ -243,6 +451,38 @@ static func compile_native_catalog() -> Dictionary:
 		for realm in row[6]:
 			realm_ids.append(String(realm))
 		realm_offsets.append(realm_ids.size())
+		var kind := int(row[2])
+		if kind != ResearchSignalDefinitionScript.Kind.BIO:
+			occupancy_bit.append(-1)
+			continue
+		if next_occupancy_bit >= OCCUPANCY_MAX_SPECIES:
+			return {"ok": false, "reason": "research_bio_occupancy_bit_overflow", "id": id}
+		if not BIO_OCCUPANCY_BY_ID.has(id):
+			return {"ok": false, "reason": "research_bio_occupancy_spec_missing", "id": id}
+		var spec: Dictionary = BIO_OCCUPANCY_BY_ID[id]
+		var bit := next_occupancy_bit
+		next_occupancy_bit += 1
+		occupancy_bit.append(bit)
+		bio_signal_ids.append(ids.size() - 1)
+		bio_occupancy_bits.append(bit)
+		bio_carrier_ids.append(String(spec.get("carrier", "")))
+		bio_carrier_alt_ids.append(String(spec.get("carrier_alt", "")))
+		bio_temp_lo.append(float(spec.get("temp_lo", 0.0)))
+		bio_temp_hi.append(float(spec.get("temp_hi", 1.0)))
+		bio_moist_lo.append(float(spec.get("moist_lo", 0.0)))
+		bio_moist_hi.append(float(spec.get("moist_hi", 1.0)))
+		bio_elev_lo.append(float(spec.get("elev_lo", 0.0)))
+		bio_elev_hi.append(float(spec.get("elev_hi", 1.0)))
+		var masks := _veg_masks(spec.get("veg", []))
+		bio_veg_mask0.append(int(masks[0]))
+		bio_veg_mask1.append(int(masks[1]))
+		bio_flags.append(int(spec.get("flags", 0)))
+		bio_max_cost.append(maxi(1, int(spec.get("max_cost", 16))))
+		bio_fill_keep.append(clampf(float(spec.get("fill_keep", 0.55)), 0.0, 1.0))
+		bio_origin_policy.append(int(spec.get("origin_policy", OCCUPANCY_ORIGIN_UNIQUE_PROVINCE)))
+		for good_id in spec.get("introduce_goods", []):
+			bio_introduce_good_ids.append(String(good_id))
+			bio_introduce_occupancy_bits.append(bit)
 	return {
 		"ok": true,
 		"research_signal_ids": ids,
@@ -256,10 +496,80 @@ static func compile_native_catalog() -> Dictionary:
 		"research_signal_habitat_tags": habitat_tags,
 		"research_signal_realm_offsets": realm_offsets,
 		"research_signal_realm_ids": realm_ids,
+		"research_signal_occupancy_bit": occupancy_bit,
+		"research_bio_species_count": next_occupancy_bit,
+		"research_bio_signal_ids": bio_signal_ids,
+		"research_bio_occupancy_bits": bio_occupancy_bits,
+		"research_bio_carrier_ids": bio_carrier_ids,
+		"research_bio_carrier_alt_ids": bio_carrier_alt_ids,
+		"research_bio_temp_lo": bio_temp_lo,
+		"research_bio_temp_hi": bio_temp_hi,
+		"research_bio_moist_lo": bio_moist_lo,
+		"research_bio_moist_hi": bio_moist_hi,
+		"research_bio_elev_lo": bio_elev_lo,
+		"research_bio_elev_hi": bio_elev_hi,
+		"research_bio_veg_mask0": bio_veg_mask0,
+		"research_bio_veg_mask1": bio_veg_mask1,
+		"research_bio_flags": bio_flags,
+		"research_bio_max_cost": bio_max_cost,
+		"research_bio_fill_keep": bio_fill_keep,
+		"research_bio_origin_policy": bio_origin_policy,
+		"research_bio_introduce_good_ids": bio_introduce_good_ids,
+		"research_bio_introduce_occupancy_bits": bio_introduce_occupancy_bits,
 	}
 
 static func signal_index(compiled: Dictionary, id: StringName) -> int:
 	return (compiled.get("research_signal_ids", PackedStringArray()) as PackedStringArray).find(String(id))
+
+static func occupancy_bit_for_signal(compiled: Dictionary, id: StringName) -> int:
+	var index := signal_index(compiled, id)
+	var bits: PackedInt32Array = compiled.get("research_signal_occupancy_bit", PackedInt32Array())
+	if index < 0 or index >= bits.size():
+		return -1
+	return int(bits[index])
+
+
+static func overlay_icon_key(id: String) -> StringName:
+	return OVERLAY_ICON_BY_ID.get(id, &"ecology.growth") as StringName
+
+
+static func occupancy_overlay_entries() -> Array[Dictionary]:
+	var compiled := compile_native_catalog()
+	if not bool(compiled.get("ok", false)):
+		return []
+	var out: Array[Dictionary] = []
+	var ids: PackedStringArray = compiled.get("research_signal_ids", PackedStringArray())
+	var names: PackedStringArray = compiled.get("research_signal_display_names", PackedStringArray())
+	var kinds: PackedInt32Array = compiled.get("research_signal_kinds", PackedInt32Array())
+	var bits: PackedInt32Array = compiled.get("research_signal_occupancy_bit", PackedInt32Array())
+	var bio_kind := ResearchSignalDefinitionScript.Kind.BIO
+	for i in range(ids.size()):
+		if i >= kinds.size() or int(kinds[i]) != bio_kind:
+			continue
+		var bit := int(bits[i]) if i < bits.size() else -1
+		if bit < 0:
+			continue
+		out.append({
+			"id": StringName(ids[i]),
+			"display_name": String(names[i]) if i < names.size() else String(ids[i]),
+			"occupancy_bit": bit,
+			"icon_key": overlay_icon_key(String(ids[i])),
+		})
+	return out
+
+
+static func occupancy_signal_indices(compiled: Dictionary, bits: int) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	if bits == 0:
+		return out
+	var signal_ids: PackedInt32Array = compiled.get("research_bio_signal_ids", PackedInt32Array())
+	var occupancy_bits: PackedInt32Array = compiled.get("research_bio_occupancy_bits", PackedInt32Array())
+	for i in range(mini(signal_ids.size(), occupancy_bits.size())):
+		var bit := int(occupancy_bits[i])
+		if bit >= 0 and bit < 32 and (bits & (1 << bit)) != 0:
+			out.append(int(signal_ids[i]))
+	return out
+
 
 static func public_metadata() -> Array[Dictionary]:
 	var compiled := compile_native_catalog()

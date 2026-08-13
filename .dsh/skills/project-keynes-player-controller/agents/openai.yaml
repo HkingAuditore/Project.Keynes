@@ -1,0 +1,4 @@
+interface:
+  display_name: "Project Keynes PlayerController"
+  short_description: "Formal player session input and command gateway"
+  default_prompt: "Use $project-keynes-player-controller to implement or review the formal Project.Keynes PlayerController boundary."

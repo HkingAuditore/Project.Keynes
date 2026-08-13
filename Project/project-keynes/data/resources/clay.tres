@@ -5,7 +5,7 @@
 [resource]
 script = ExtResource("1")
 id = &"clay"
-discovery_technology_tags = PackedStringArray("tech.earth_building", "tech.clay_identification")
+discovery_technology_tags = PackedStringArray("tech.clay_identification", "tech.earth_building")
 display_name = "黏土"
 reserve_component = &"cell.res_clay_reserve"
 init_reserve_scale = 8.0

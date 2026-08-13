@@ -1,0 +1,44 @@
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"cadastral_office"
+display_name = "地籍管理局"
+economic_sector_id = "knowledge"
+semantic_tags = PackedStringArray("method.cadastre", "method.administration", "method.survey")
+technology_tags = PackedStringArray("tech.property_cadastre")
+required_technology_tags = PackedStringArray("tech.cartography", "tech.long_term_leases", "tech.estate_accounting", "tech.weights_and_measures")
+upgrade_family_id = &"cadastral_institution"
+upgrade_tier = 6
+construction_days = 140
+construction_good_ids = PackedStringArray("lumber", "bricks", "construction_components")
+construction_quantities = PackedInt64Array(21750, 21750, 14500)
+owner_profession_id = &"guild_master"
+employee_profession_ids = PackedStringArray("scribe", "engineer", "scholar")
+employee_slots_per_building = PackedInt64Array(18, 6, 4)
+employee_wage_policy_ids = PackedStringArray("adaptive", "adaptive", "adaptive")
+employee_reference_wages_per_day = PackedInt64Array(15500, 19000, 17500)
+input_good_ids = PackedStringArray("printed_materials", "scientific_instruments")
+input_quantities_per_day = PackedInt64Array(1800, 500)
+input_required_q16 = PackedInt32Array(32768, 16384)
+input_category_ids = PackedStringArray()
+input_min_quality_levels = PackedInt32Array()
+input_candidate_offsets = PackedInt32Array(0)
+input_candidate_good_ids = PackedStringArray()
+input_candidate_efficiency_q16 = PackedInt32Array()
+output_good_ids = PackedStringArray("technology_points")
+output_quantities_per_day = PackedInt64Array(1800000)
+output_cost_shares_q16 = PackedInt32Array()
+resource_ids = PackedStringArray()
+resource_quantities_per_day = PackedInt64Array()
+resource_interaction_modes = PackedStringArray()
+resource_access_modes = PackedStringArray()
+resource_generation_ids = PackedStringArray()
+resource_generation_quantities_per_day = PackedInt64Array()
+condition_opcodes = PackedInt32Array()
+condition_signals = PackedInt32Array()
+condition_compares = PackedInt32Array()
+condition_reference_ids = PackedStringArray()
+condition_values = PackedInt64Array()

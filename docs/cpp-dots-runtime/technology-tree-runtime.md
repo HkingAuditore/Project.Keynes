@@ -30,7 +30,9 @@ Bio, resource, landform, weather and breakthrough observations. `TechnologyCatal
 technology reveal conditions to postfix dense IR and includes that IR, the signal catalog, unique Effect
 recipe identity and explicit Modifier term IR in the technology catalog identity. `EconomyCatalog`
 adds the complete content-binding summary and Trigger definition identity before native country
-configuration. `prerequisite_ids` is the sole research-eligibility gate.
+configuration. Research eligibility is evaluated in one order: persistent reveal, era
+`entry_milestone_id`, all `hard_prerequisite_ids`, then the nested `research_condition` expression.
+Player, AI and low-level enqueue commands share this native check.
 
 The active reveal subset is `TECH_COMPLETED`, `SIGNAL_PRESENT`, `SIGNAL_COUNT`, `ALL_OF`, `ANY_OF`,
 `AT_LEAST`, and `NOT`. Signal predicates only discover/reveal nodes. Missing hard prerequisites keep
@@ -38,11 +40,31 @@ the node non-researchable; signals cannot bypass them. Deferred domain points do
 domain, and `pending` activation does not re-evaluate a gate. `COUNTRY_FLAG`, statistics, buildings,
 transient event sequences and `WITHIN_DAYS` remain unsupported authoring extensions.
 
-Static signal discovery is country-local and is initiated only by a 0→1 explored-cell transition.
-The first native generation pass builds Bio/landform CSR; after natural-resource reserves exist, a
-second native pass appends every `resource.*` fact to the same sorted CSR. GDScript only assembles
-the returned arrays. `NativeCountryRuntime` owns whether a country has observed them. Goods stock
-never implies Bio discovery, and countries do not automatically share evidence.
+Static signal discovery is country-local. A 0→1 explored-cell transition submits landform/resource
+CSR plus the cell's **current** `bio.*` occupancy bits. Occupancy 0→1 on an already-explored cell
+submits `DISCOVER` again. Local extinction does not delete country evidence. The first native
+generation pass builds landform CSR only; after natural-resource reserves exist, `run_bio_seed_pass`
+writes `cell.bio_occupancy_bits` (carrier-gated, one origin province per species). A later native
+pass appends every `resource.*` fact to the same sorted CSR. GDScript only assembles the returned
+arrays. `NativeCountryRuntime` owns whether a country has observed them. Goods stock and cross-border
+trade never imply Bio occupancy; trade still yields `contact.*` knowledge only. Agricultural
+production of mapped goods can introduce occupancy on the producing cell if the climate envelope and
+carrier reserve still hold.
+
+Inspector 认矿与科技树揭示分开：可见格（含无主地）只按观察者国家**已掌握**科技的
+`discovery_technology_tags` 列出储量；开局视野证据可以揭示石器时代节点，但不会因此把邻格
+写成「尚未配置自然资源类型」，也不会用已揭示未完成的识别科技打开对应矿种。开局视野里的
+铜矿储量只揭示自然铜辨识；自然铜冷锤以辨识为硬前置，未完成辨识前不能研究。块茎保存、
+野生香料采集、野生割胶和手制陶器同样先要求本对象辨识（陶器还要求黏土调制）。铜矿焙烧
+以铜退火为硬前置，揭示为铜矿储量与金属加工实践同时成立。亚麻/香料/橡胶辨识不再挂在
+后续处理上；铁矿与露头煤辨识以农耕时代门为硬前置，不再要求先炼铁或先拣铁。非石器专业
+科技硬前置已经没有数量槽位或入度上限；时代开放由独立的 `entry_milestone_id` 判断，不再注入
+节点硬前置。块炼铁、地表用煤等复合节点可以同时保留材料、燃料、炉温、测量与组织基础。
+棉花园圃以定居知识和野生棉铃采集为硬前置，不再要求先完成香料栽培。
+同泳道按 layout 串起来的无关对象也已拆开：棉花去籽挂棉铃采集，乳胶烟熏挂橡胶加工，
+乳品/鞣革/毛用畜牧/屠宰并行挂畜群管理，玻璃挂窑烧，垄作块茎挂块茎保存，煤矿平硐挂
+地表煤采集，佃作谷物挂留种选育。黏土、燧石、砂金、银脉辨识不再挂打制石器、土建筑、
+捕鱼或季节历。
 
 河流、湖泊和湿地发布 `landform.freshwater_access`（“河湖水系”）地貌证据，供淡水捕鱼、
 淘金、芦苇和水利路线的揭示条件使用。它不是 `ResourceProfile`，也没有储量、采集或商品
@@ -65,20 +87,35 @@ idempotency key，不会重复发现。
 
 ## 目录
 
-当前目录包含 361 个定义：23 个只允许区域开局求解器授予的零成本原始处理节点，以及 338 个
-可研究节点，覆盖 11 个时代和农业、工程、科学、社会四领域。不存在全球统一开局科技。每时代
-里程碑严格使用 16 个本时代唯一候选中的任意 5 个；候选分组只用于 UI。里程碑不直接解锁
+当前 schema v2 目录包含 361 个保留稳定 ID 的定义：23 个只允许区域开局求解器授予的零成本原始
+处理节点，以及 338 个可研究节点，覆盖 11 个时代和农业、工程、科学、社会四领域。不存在全球
+统一开局科技。每时代里程碑严格使用 8 个显式候选中的任意 4 个；候选分组只用于 UI。里程碑不直接解锁
 Good、Resource、建筑或生产方式，只执行时代奖励 Effect 并开放下一时代。
 
-拓扑固定为四条跨时代骨干和十六条跨时代专业泳道。每条泳道每时代恰有一个路线锚点；非石器
-专业锚点的硬前置是“上一时代里程碑 AND 上一时代同路线锚点”；骨干锚点以时代里程碑为硬
-前置。实践、接触、资源和地理证据仅写入揭示条件，用来启发并显示科技，不能替代知识链。
-当前目录有 462 条硬边、0 条替代研究边、505 条应用交汇边和 176 条里程碑候选边，总计
-1,143 条静态可视边；节点硬入度上限 2。
+拓扑由四条公共主干与 24 个动态主题家族组成，不再要求每个家族每时代占一个槽位。时代门槛、
+揭示条件、无上限硬前置与替代研究条件分别编译；里程碑不再成为普通节点硬边。实践、接触、资源
+和地理证据负责揭示问题，`ANY_OF` / `AT_LEAST` 负责可替代知识路径，不能冒充硬知识链。
+当前目录有 308 条硬边、57 条替代知识边和 88 条里程碑候选边；最大硬入度 6，但运行时和 schema
+均不设置上限。显式应用关系独立保存，不再从数组相邻项或同车道自动生成。
 
 区域开局处理科技也保留发现条件，用于说明其地理/资源来源，但仍只由区域开局求解器授予；
 发现条件不改变其研究资格。芦苇、草皮、湿地、洪泛、旱作、水田、高地、河运与风力等节点
-使用科技级精确证据，避免从宽泛路线继承无关信号。
+使用科技级精确证据，避免从宽泛路线继承无关信号。`node_role == identification` 的 18 个
+辨识节点只允许本对象目击/储量、对应 `contact.*`，或目录用来定义该对象的栖息地（芦苇保留
+沼泽与河湖，砂金保留河湖）；种植园容量、跨物种/跨矿种第三条和 `breakthrough.*` 不得作为
+辨识启发。王国铁矿、王国露头煤和启蒙煤层地质仍把上一时代里程碑包在 `ALL_OF` 外层。
+采集、沤麻、冷锤、地表采矿等处理节点不再继承辨识的第三条代理证据；纤维捻制/织造仍可
+同时看见亚麻与棉花，但沤麻只认亚麻。铁矿与煤炭拆开；高炉冶炼由铁矿、煤炭和金属加工
+揭示，不再误用皮革词元 `fur`。航海揭示去掉渔获代理，物流不再共用海事三元组。
+处理与生产节点不得把地貌/承载力写成对象目击的 `ANY_OF` 旁路：羊毛毡制只认羊，狩猎只认
+野生动物，韧皮采集只认亚麻/韧皮，毛用畜牧只认羊，乳品只认牛。芦苇与砂金辨识仍可用目录
+定义的栖息地。开局求解器的韧皮衣物路线要求视野内已有亚麻或韧皮占用；生皮衣物走狩猎加
+刮皮，狩猎营地建造仍消耗采集植物，因此仅在沃土可揭示采集时把采集带进闭包。
+帝国制度不再共用「印刷 + 校准 + 航运」：农奴/庄园走土地与留种，行会走工艺实践，活字/大学走印刷，
+航海商社才保留航运。原子与信息科学不再共用「自动化 + 稀土」：核裂变走电气与化工控制，
+运筹学走工业组织，计算节点走数字控制，气候/遥感走气候建模。电气动力不再共用绕组与流水线：
+电动机保留绕组，电网/发电走电气化本身，质量控制走流水线。王国文字、手稿和官僚用黏土与木材，
+皮纸用兽皮，不再继承石器时代的季风/霜冻/河谷兜底。
 
 `tech.early_trade`（“早期贸易”）是第 23 个零成本区域开局节点。它由出生地可见的天然金矿
 或银矿揭示，解锁零建造成本的 `early_merchant_post`（“早期商栈”），并作为石器时代制度/
@@ -87,7 +124,7 @@ Good、Resource、建筑或生产方式，只执行时代奖励 Effect 并开放
 目录编译器为每项科技生成唯一 Effect recipe、唯一永久 Modifier definition、显式 Modifier
 term CSR、路线标签、研究条件 postfix IR、prerequisite CSR、milestone-candidate CSR、反向
 解锁索引和拓扑序。`EconomyCatalog` 另外生成科技到 Good/生产方式/Resource 的反向绑定 CSR，
-并验证 132 个 Good、348 个生产方式、45 个职业和 31 个 Resource 均有合法科技标签，职业不得直接持有
+并验证 132 个 Good、351 个生产方式、45 个职业和 31 个 Resource 均有合法科技标签，职业不得直接持有
 `tech.*` 门槛。任一内容缺绑定、引用未知科技，或科技没有内容/Modifier/Effect 消费者都会
 导致冷启动编译失败。
 
@@ -95,15 +132,20 @@ term CSR、路线标签、研究条件 postfix IR、prerequisite CSR、milestone
 同时提供中文路线标签；玩家界面不显示内部 `tech.*`/`route.*` ID。稳定 ID、dense 顺序、
 Effect/Trigger/经济绑定与这些目录文本共同参与精确 catalog identity，因此本轮不迁移旧目录存档。
 
-内容解锁审计把单项科技的直接经济绑定限制在 4 项以内、建筑/生产方式绑定限制在 2 项以内；
-里程碑直接绑定必须为 0。`BuildingProfile.technology_tags` 保持直接应用科技的 ANY 语义，
+内容解锁审计不再限制单项科技的直接经济绑定数量，只验证每项绑定存在且确有消费者；里程碑直接
+绑定仍必须为 0。`BuildingProfile.technology_tags` 保持直接应用科技的 ANY 语义，
 `required_technology_tags` 编译为全部满足的 ALL 支撑轴，原生建设、投资、生产和查询路径使用
 同一判定。大气式
 蒸汽机先解锁低产原型工坊，蒸汽动力再解锁通用蒸汽机工厂，蒸汽抽水单独解锁蒸汽矿井；
+热力学不解锁新建筑，只给已有蒸汽机工厂 +50%、科学领域研究效率 +20%、能源部门产出 +15%。
+实验科学改为加成博学学会与知识部门，不再借用造纸业填空。
+骨干锚点和里程碑现在同时带专精建筑/工艺与全面部门或气候/建设效果；玉米/小麦走旱灾、水稻走洪灾、块茎走寒冷、热带/畜牧走热害，营造与森林走建设成本，纺织/化工走制造部门，有色/重工业/石油走采掘部门，电气走能源部门，海运走贸易速度。
 基础肥料加工与合成肥料、铜冶炼与青铜铸造、数字控制与自主系统均保持渐进职责。
 
 本轮增加 11 个纯内容生产方式：蒸汽航运、自动化港口、自主航运、水力发电、流域治理、智能
-水网、森林遥感、自主林业、高地精准农业、智能牧业和专用商品作物。它们只使用现有岗位、商品、
+水网、森林遥感、自主林业、高地精准农业、智能牧业和专用商品作物。蒸汽航运船坞由蒸汽密封
+直接解锁，并要求远洋航海、蒸汽动力与海岸船厂作为 ALL 支撑轴；探索时代海岸船厂本身不再
+直接开放蒸汽船坞。它们只使用现有岗位、商品、
 资源、配方、气候与 postfix 建设条件。自动化方法把对应普通岗位减少 20%-50%，同时把机械、
 电力、计算、自治系统或科技值投入价值提高至少 15%；河流、森林、高地、牧场和种植园方法在
 目标条件下的基础产出至少高于对照方法 20%，不满足条件时不可建设。
@@ -153,9 +195,13 @@ PKCN v11 为每个国家保存：
 国家×建筑类型和四类气候适应 Q16 因子；生产热循环只读连续 POD，不查询字符串或
 ModifierStore，也不会为每个建筑实例创建 Country Modifier。
 
-当前 338 个可研究节点共显式定义 381 个 Modifier term，其中 43 个节点含小幅全国研究、贸易
-或部门溢出，但每个这类节点同时拥有生产家族或精确建筑定向效果，不存在只有全国泛化效果的
-科技。结构化内容摘要使用资源自身的中文名称，覆盖建筑、物资、阶层、资源、地块、地形、
+Modifier 不再是非开局科技的强制模板；当前有 90 个可研究节点采用纯解锁/纯内容效果，空
+Modifier key 不发送 Modifier 命令、不等待 Modifier ACK，但仍发送 `technology.adopted`。
+数值效果只保留给已有建筑、方法或领域消费者，专业路线用真实投入、岗位、配方、地理与制度差异
+形成 build 身份。作者合计上限为家族/建筑
++400%、全国部门/研究/贸易 +400%；目录把家族/建筑/五部门/贸易钳在 `[0, 8]`，四领域研究
+效率 `[0, 6]`，气候损失 `[0.20, 1]`，建设成本/时间 `[0.40, 4]`。不存在只有全国泛化效果的科技。
+结构化内容摘要使用资源自身的中文名称，覆盖建筑、物资、阶层、资源、地块、地形、
 地貌和气候条件，不向玩家显示内部稳定 ID。
 
 Modifier 只改变配方结果、科技值到进度的转换、施工参数和贸易能力，不直接增删现金或商品。
@@ -167,24 +213,29 @@ section tab；section 切换只由底栏 `CountryActionBar` 驱动。经济 sect
 `EconomyWorkspace`，经 `CountryFacade.treasury_snapshot()` 展示国家现金与全部非零国库物资；
 政治/军事/外交暂用统一 `SectionPlaceholderScreen`。科技 section 挂载全屏
 `TechnologyWorkspace`：顶部状态条与紧凑导航工具栏，中央为聚焦研究/网络总览二选一视图，
-左侧 280px 研究管理栏常驻参与排版，右侧 384px 科技详情按需覆盖；右栏内容在固定宽度内换行并
-纵向滚动，不允许横向裁切。1600 以上仍可将右侧详情固定到中央排版。
+左侧 280px 研究管理栏与右侧 320px 科技详情均为常驻列并参与中央树排版；窄屏分别收至
+220/260px。右栏内容在固定宽度内换行并纵向滚动，不允许横向裁切。四大研究领域画在同一张
+聚焦图上，各自占用一条随中央画布均分的垂直泳道；顶栏不再用领域 Tab 切树。搜索框保持
+紧凑固定宽度，工具栏剩余空间由 Spacer 吸收。
 
 工作区不持有 `CountryFacade`、玩家国家句柄或命令序列。权重、预算和队列操作只发出结构化玩家意图，由 `PlayerController` 解析正式会话、分配下一日生效日与单调 sequence，再委托 `NativeCountryRuntime`。
 
 完整 DAG 仍由 `TechnologyTreeLayout.build()` 一次性烘焙，供详情关系、目录审计与迷雾计算使用。
-玩家日常操作使用自绘 `TechnologyTreeView` 的聚焦几何：一级切换只使用农业、工程、科学、社会
-四个权威领域；每次取所选领域的前一、当前、下一可见时代，并按领域内依赖深度以最多 5 列紧凑
-排布。细分 `main_lane` 只保留为节点路线信息和同层排序依据，不再为每条路线单独留出整张画布。
-领域内硬前置画实线；窗口外同领域关系由时代切换承接，选中节点时才显示其真正的跨领域可点击入口；
-应用交汇只在选中端点时显示虚线。时代里程碑用“完成候选数 / 5”横条表达，不铺开 16 条候选边。
+玩家日常操作使用自绘 `TechnologyTreeView` 的聚焦几何：农业、工程、科学、社会四个权威领域
+同图展示。每次取前一、当前、下一可见时代；时代内按硬前置深度分层，同深度同领域的兄弟在本泳道
+内向下叠放，避免横向溢出。列宽随中央画布均分，节点不超出画布；内容较短时垂直居中，较高时只
+允许纵向平移。每个可见时代带底部显示时代里程碑关隘；未揭示时只标“时代里程碑”与候选进度，
+不泄露名称与效果。细分 `main_lane` 只保留为节点路线信息和同层排序依据，不再为每条路线单独留出整张画布。
+窗口内跨领域硬前置画实线；窗口外时代关系由时代翻页承接，选中节点时才显示其真正的相邻时代可点击入口；
+应用交汇只在选中端点时显示细线。里程碑候选仍用节点底边进度条表达 4/8，不铺开候选边。
 
 独立自绘 `TechnologyOverviewView` 以四领域为行、可见时代为列，每个单元格只画状态刻度。
 它不显示完整卡片或连线，点击单元格返回聚焦视图。初次打开优先定位最高权重领域的队列首项，
-没有队列则定位最深可研究前沿；搜索、队列行、跨分支入口和总览单元格统一跳转到同一聚焦路径。
+没有队列则定位最深可研究前沿；搜索、队列行、相邻时代入口和总览单元格统一跳转到同一聚焦路径。
 
-迷雾按「已揭示集合 ∪ 其直接未知后继」裁剪聚焦视图。总览固定显示四个领域，但只创建至少一个
-已揭示节点的时代列，不显示未发现路线、未来时代名称或节点数量。未知前沿只画暗轮廓，不显示名称、成本、
+迷雾按「可研究集合 ∪ 其直接未知后继」裁剪聚焦视图。只有揭示条件已满足且全部硬前置已完成
+的节点才显示名称；已揭示但前置未完成的节点与未发现节点一样只画暗轮廓。总览固定显示四个领域，但只创建至少一个
+可研究节点的时代列，不显示未发现路线、未来时代名称或节点数量。未知前沿只画暗轮廓，不显示名称、成本、
 效果、搜索文本或辅助文字。hover 或选中节点会高亮完整前置链与直接后继，无关节点降低对比度。
 
 两种视图永远 1:1 绘制，没有缩放。聚焦视图依靠有界节点集保持文字清晰，必要时可拖动背景；
@@ -205,11 +256,11 @@ section tab；section 切换只由底栏 `CountryActionBar` 驱动。经济 sect
 
 日 tick 只走 `TechnologyWorkspace.refresh_research()`：状态数组未变化时，树只替换进度并
 `queue_redraw()`，不重算局部几何或迷雾；隐藏总览不刷新单元格；队列行仅在队列构成签名变化时
-重建，详情卡仅在选中项或相关状态变化时重建前后置行，其余 tick 只更新进度与按钮。已揭示节点显示路线标签、当前阻塞谓词、证据数量、首次发现日和第一证据格；
+重建，详情卡仅在选中项或相关状态变化时重建前后置行，其余 tick 只更新进度与按钮。可研究节点显示路线标签、当前阻塞谓词、证据数量、首次发现日和第一证据格；
 未知节点仍不读取或显示名称、效果、前置、路线或辅助文字。
 
-已揭示科技的名称、效果摘要、路线徽章、前置科技名称和发现证据均显示中文；内部稳定 ID 只用于
-索引与命令提交。未揭示前置仍显示为“未知科技”，不会通过条件详情泄露名称。
+可研究科技的名称、效果摘要、路线徽章、前置科技名称和发现证据均显示中文；内部稳定 ID 只用于
+索引与命令提交。未可研究的前置仍显示为“未知科技”，不会通过条件详情泄露名称。
 
 ## 启动、存档与兼容性
 

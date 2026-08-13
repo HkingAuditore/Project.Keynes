@@ -183,10 +183,11 @@
   .edge.hot { stroke: var(--brass); opacity: 1; stroke-width: 2; filter: drop-shadow(0 0 3px rgba(199,162,90,0.5)); }
 
   /* 时代横向条带：一个时代覆盖它所跨越的全部行（含里程碑独占行） */
-  .era-band { position: absolute; border-top: 1px solid var(--brass-faint); }
+  .era-band { position: absolute; border-top: 1px solid var(--brass-faint); z-index: 0; }
   .era-band.zebra { background: rgba(240,230,207,0.014); }
   .era-band .era-title {
-    position: absolute; top: 10px; left: 26px; pointer-events: none; user-select: none;
+    position: absolute; top: 12px; left: 28px; right: 120px;
+    pointer-events: none; user-select: none; z-index: 1;
   }
   .era-band .era-title .era-name { font: 600 15px var(--serif); color: var(--brass); letter-spacing: 5px; }
   .era-band .era-title .era-meta { font-size: 10.5px; color: var(--text-3); letter-spacing: 1px; margin-top: 2px; }
@@ -204,7 +205,7 @@
   }
 
   .node {
-    position: absolute; width: 200px; cursor: pointer;
+    position: absolute; width: 200px; cursor: pointer; z-index: 2;
     background: linear-gradient(180deg, var(--parchment-2), var(--parchment));
     border: 1px solid rgba(199,162,90,0.22); border-radius: 6px;
     box-shadow: 0 2px 6px rgba(0,0,0,0.4), inset 0 1px 0 rgba(240,230,207,0.05);
@@ -276,24 +277,33 @@
 </div>
 
 <script>
-const DATA = __TECHNOLOGY_TREE_DATA__;
+let TEMPLATE_PREVIEW = false;
+const DATA = (() => {
+  try {
+    return __TECHNOLOGY_TREE_DATA__;
+  } catch (error) {
+    // The authoring template is also safe to open directly. The exporter
+    // replaces the single token above with the authoritative catalog payload.
+    TEMPLATE_PREVIEW = true;
+    return { eras: [], domains: [], lanes: [], edges: [], nodes: [] };
+  }
+})();
 
 const NODE_W = 200, NODE_H = 56;
 const MILESTONE_W = 260, MILESTONE_H = 74;
-const LINE_CAP = 5;                 // 每条可视行最多 5 张卡 ⇒ 整树宽度收进一屏
-const COL_GAP = 14;                 // 行内卡片水平间距
-const LINE_GAP = 14;                // 同层折行之间的垂直间距
-const ROW_GAP = 36;                 // 依赖层之间的垂直间距（留给连线弧度）
-const PAD_TOP = 34, PAD_SIDE = 28, PAD_BOTTOM = 48;
-const ERA_PAD = 14;                 // 时代条带上下内边距
+const MIN_LINE_CAP = 5;             // 窄屏下限，不足则横向滚动
+const MAX_LINE_CAP = 9;             // 超宽屏也不把一行拉成细带
+const MIN_COL_GAP = 18;             // 行内最小水平间距
+const MAX_SPREAD_GAP = NODE_W * 0.92; // 短行拉开的上限，避免两张卡飞到两端
+const STAGGER_Y = 15;               // 奇偶列错落，做出层次
+const LINE_GAP = 18;                // 同层折行之间的垂直间距
+const ROW_GAP = 40;                 // 依赖层之间的垂直间距（留给连线弧度）
+const PAD_TOP = 56, PAD_SIDE = 28, PAD_BOTTOM = 48;
+const ERA_PAD = 52;                 // 给时代题名留出不与卡片重叠的顶带
 const MILESTONE_PAD = 22;           // 里程碑独占行的上下留白
 const BARYCENTRE_PASSES = 4;
 const SVGNS = "http://www.w3.org/2000/svg";
 const ERA_NUMERALS = ["Ⅰ","Ⅱ","Ⅲ","Ⅳ","Ⅴ","Ⅵ","Ⅶ","Ⅷ","Ⅸ","Ⅹ","Ⅺ"];
-
-const LINE_W = LINE_CAP * NODE_W + (LINE_CAP - 1) * COL_GAP;
-const STAGE_W = PAD_SIDE * 2 + LINE_W;
-const CENTER_X = STAGE_W / 2;
 
 const nodesById = {}; DATA.nodes.forEach(n => nodesById[n.id] = n);
 const domainsById = {}; DATA.domains.forEach(d => domainsById[d.id] = d);
@@ -307,126 +317,244 @@ DATA.edges.forEach(e => {
 });
 const STRUCTURAL_EDGE_KINDS = new Set(["hard", "milestone_candidate"]);
 DATA.nodes.forEach((n, i) => n._order = i);   // 目录序（拓扑序）作为确定性 tiebreak
+const laneRank = {};
+(DATA.lanes || []).forEach((lane, i) => { laneRank[lane.id] = i; });
 
-// ── 布局：行 = 全局依赖层（DAG 最长路径分层，自上而下推进）。
-//    每层先重心排序压减跨线，再按 LINE_CAP 折成若干条居中的可视行，
-//    宽度因此固定一屏；里程碑深度独占一层 ⇒ 独占一行横贯居中。
-function layout() {
-  // 深度：记忆化 DFS 最长路径（硬前置 + 里程碑候选边），不假设目录顺序。
-  const depth = {};
-  const visit = (id, stack) => {
-    if (depth[id] !== undefined) return depth[id];
-    if (stack.has(id)) return -1;                    // 环保护
-    stack.add(id);
-    let best = -1;
-    incomingEdges[id].filter(e => STRUCTURAL_EDGE_KINDS.has(e.kind)).forEach(e => {
-      best = Math.max(best, visit(e.from, stack));
-    });
-    stack.delete(id);
-    depth[id] = best + 1;
-    return depth[id];
-  };
-  DATA.nodes.forEach(n => visit(n.id, new Set()));
-  const maxDepth = Math.max(...DATA.nodes.map(n => depth[n.id]));
-  const rows = [];
-  for (let d = 0; d <= maxDepth; d++) rows.push(DATA.nodes.filter(n => depth[n.id] === d));
+let pos = {}, DEPTH = {}, ERA_BANDS = [];
+let STAGE_W = 0, STAGE_H = 0, currentZoom = 1;
 
-  // 层内重心排序（以层内序号为坐标，折行前的相对顺序即最终视觉顺序）
-  const idx = {};
-  rows.forEach(row => row.forEach((n, i) => idx[n.id] = i));
-  for (let pass = 0; pass < BARYCENTRE_PASSES; pass++) {
-    const downward = pass % 2 === 0;
-    const range = downward ? [...rows.keys()] : [...rows.keys()].reverse();
-    range.forEach(ri => {
-      if (rows[ri].length <= 1) return;
-      rows[ri].sort((a, b) => sortKey(a, downward) - sortKey(b, downward) || a._order - b._order);
-      rows[ri].forEach((n, i) => idx[n.id] = i);
-    });
-  }
-  function sortKey(n, downward) {
-    const rel = downward
-      ? incomingEdges[n.id].filter(e => STRUCTURAL_EDGE_KINDS.has(e.kind)).map(e => e.from)
-      : outgoingEdges[n.id].filter(e => STRUCTURAL_EDGE_KINDS.has(e.kind)).map(e => e.to);
-    let total = 0, cnt = 0;
-    rel.forEach(rid => { if (idx[rid] !== undefined) { total += idx[rid]; cnt++; } });
-    return cnt > 0 ? total / cnt : idx[n.id];
-  }
-
-  // 折行放置：每层把普通节点切成若干条 LINE_CAP 宽的居中行；
-  // 里程碑落在自然深度上，但在该层末尾独占一行居中。
-  const pos = {};
-  const rowTop = [], rowBottom = [], rowMsTop = [], rowMsBottom = [];
-  let y = PAD_TOP;
-  rows.forEach(row => {
-    const milestone = row.find(n => n.is_milestone) || null;
-    const normals = row.filter(n => n !== milestone);
-    rowTop.push(y);
-    for (let s = 0; s < normals.length; s += LINE_CAP) {
-      const line = normals.slice(s, s + LINE_CAP);
-      const lineW = line.length * NODE_W + (line.length - 1) * COL_GAP;
-      line.forEach((n, i) => {
-        pos[n.id] = { x: CENTER_X - lineW / 2 + i * (NODE_W + COL_GAP), y, h: NODE_H };
-      });
-      y += NODE_H + (s + LINE_CAP < normals.length ? LINE_GAP : 0);
-    }
-    if (milestone) {
-      if (normals.length) y += LINE_GAP;
-      rowMsTop.push(y - (normals.length ? LINE_GAP : MILESTONE_PAD));
-      pos[milestone.id] = { x: CENTER_X - MILESTONE_W / 2, y, h: MILESTONE_H };
-      y += MILESTONE_H;
-      rowMsBottom.push(y + (normals.length ? 0 : MILESTONE_PAD));
-    } else {
-      rowMsTop.push(0); rowMsBottom.push(0);
-    }
-    rowBottom.push(y);
-    y += ROW_GAP;
-  });
-
-  // 时代条带：覆盖本时代占据的行区间（含里程碑独占行）
-  const eraBands = DATA.eras.map(era => {
-    const members = DATA.nodes.filter(n => n.era_id === era.id);
-    const dMin = Math.min(...members.map(n => depth[n.id]));
-    const dMax = Math.max(...members.map(n => depth[n.id]));
-    const milestone = members.find(n => n.is_milestone);
-    const md = milestone ? depth[milestone.id] : -1;
-    return {
-      era, top: rowTop[dMin] - ERA_PAD, bottom: rowBottom[dMax] + ERA_PAD,
-      milestoneId: milestone ? milestone.id : null,
-      msTop: milestone ? rowMsTop[md] : 0,
-      msBottom: milestone ? rowMsBottom[md] : 0,
-    };
-  });
-  return { pos, depth, eraBands, width: STAGE_W, height: y + PAD_BOTTOM };
+function viewportMetrics() {
+  const scroller = document.getElementById("scroller");
+  const avail = Math.max(scroller ? scroller.clientWidth : 0, 720);
+  const cap = Math.min(MAX_LINE_CAP, Math.max(MIN_LINE_CAP,
+    Math.floor((avail - 2 * PAD_SIDE + MIN_COL_GAP) / (NODE_W + MIN_COL_GAP))));
+  const packed = cap * NODE_W + (cap - 1) * MIN_COL_GAP + 2 * PAD_SIDE;
+  const stageW = Math.max(avail, packed);
+  const usable = stageW - 2 * PAD_SIDE;
+  const colGap = cap > 1 ? (usable - cap * NODE_W) / (cap - 1) : MIN_COL_GAP;
+  return { lineCap: cap, stageW, colGap, usable };
 }
 
-const { pos, depth: DEPTH, eraBands: ERA_BANDS, height: STAGE_H } = layout();
+// Era is the primary layout boundary. Dependencies may cross an era boundary,
+// but nodes never do. Inside an era, structural edges determine local layers;
+// domain and branch-family order provide deterministic crossing reduction.
+function layout(metrics) {
+  const { lineCap, stageW, colGap, usable } = metrics;
+  const placed = {};
+  const depth = {};
+  const eraBands = [];
+  const domainRank = {};
+  DATA.domains.forEach((domain, index) => { domainRank[domain.id] = index; });
+  let y = PAD_TOP;
+  const lineHeight = NODE_H + STAGGER_Y + 18;
 
-// ── 舞台骨架：泳道底纹 + 吸顶泳道标题 + 时代横向条带 ──
+  function placeLine(line, originY, wrapIndex) {
+    const count = line.length;
+    let gap, x0;
+    if (count >= lineCap) {
+      gap = colGap;
+      x0 = PAD_SIDE;
+    } else if (count === 1) {
+      gap = 0;
+      x0 = PAD_SIDE + (usable - NODE_W) / 2;
+    } else {
+      gap = Math.min(MAX_SPREAD_GAP,
+        Math.max(MIN_COL_GAP, (usable - count * NODE_W) / (count - 1)));
+      const lineWidth = count * NODE_W + (count - 1) * gap;
+      x0 = PAD_SIDE + (usable - lineWidth) / 2;
+    }
+    line.forEach((node, index) => {
+      const laneJitter = ((laneRank[node.layout_lane] || 0) % 3) * 4;
+      const wrapJitter = (wrapIndex % 2) * 6;
+      placed[node.id] = {
+        x: x0 + index * (NODE_W + gap),
+        y: originY + (index % 2) * STAGGER_Y + laneJitter + wrapJitter,
+        h: NODE_H,
+      };
+    });
+  }
+
+  DATA.eras.forEach((era, eraIndex) => {
+    const members = DATA.nodes.filter(node => node.era_id === era.id);
+    const memberIds = new Set(members.map(node => node.id));
+    const milestone = members.find(node => node.is_milestone) || null;
+    const normals = members.filter(node => !node.is_milestone);
+    const localDepth = {};
+    const visit = (id, stack) => {
+      if (localDepth[id] !== undefined) return localDepth[id];
+      if (stack.has(id)) return 0;
+      stack.add(id);
+      let best = -1;
+      incomingEdges[id]
+        .filter(edge => STRUCTURAL_EDGE_KINDS.has(edge.kind)
+          && memberIds.has(edge.from) && !nodesById[edge.from].is_milestone)
+        .forEach(edge => { best = Math.max(best, visit(edge.from, stack)); });
+      stack.delete(id);
+      localDepth[id] = best + 1;
+      depth[id] = eraIndex * 1000 + localDepth[id];
+      return localDepth[id];
+    };
+    normals.forEach(node => visit(node.id, new Set()));
+
+    const maxLocalDepth = normals.length
+      ? Math.max(...normals.map(node => localDepth[node.id])) : -1;
+    const rows = [];
+    for (let layer = 0; layer <= maxLocalDepth; layer++)
+      rows.push(normals.filter(node => localDepth[node.id] === layer));
+
+    const indexInRow = {};
+    rows.forEach(row => {
+      row.sort((left, right) => {
+        const leftDomain = domainRank[left.domain_id] ?? 99;
+        const rightDomain = domainRank[right.domain_id] ?? 99;
+        if (leftDomain !== rightDomain) return leftDomain - rightDomain;
+        const leftLane = laneRank[left.layout_lane] ?? 9999;
+        const rightLane = laneRank[right.layout_lane] ?? 9999;
+        return leftLane !== rightLane ? leftLane - rightLane : left._order - right._order;
+      });
+      row.forEach((node, index) => { indexInRow[node.id] = index; });
+    });
+    const barycentre = (node, downward) => {
+      const related = (downward ? incomingEdges[node.id] : outgoingEdges[node.id])
+        .filter(edge => STRUCTURAL_EDGE_KINDS.has(edge.kind))
+        .map(edge => downward ? edge.from : edge.to)
+        .filter(id => memberIds.has(id) && indexInRow[id] !== undefined);
+      if (!related.length) return indexInRow[node.id];
+      return related.reduce((sum, id) => sum + indexInRow[id], 0) / related.length;
+    };
+    for (let pass = 0; pass < BARYCENTRE_PASSES; pass++) {
+      const downward = pass % 2 === 0;
+      const order = downward ? [...rows.keys()] : [...rows.keys()].reverse();
+      order.forEach(rowIndex => {
+        const row = rows[rowIndex];
+        row.sort((left, right) => {
+          const delta = barycentre(left, downward) - barycentre(right, downward);
+          if (Math.abs(delta) > 0.4) return delta;
+          const leftLane = laneRank[left.layout_lane] ?? 9999;
+          const rightLane = laneRank[right.layout_lane] ?? 9999;
+          return leftLane !== rightLane ? leftLane - rightLane : left._order - right._order;
+        });
+        row.forEach((node, index) => { indexInRow[node.id] = index; });
+      });
+    }
+
+    const bandTop = y;
+    y += ERA_PAD;
+    rows.forEach(row => {
+      let wrapIndex = 0;
+      for (let start = 0; start < row.length; start += lineCap) {
+        placeLine(row.slice(start, start + lineCap), y, wrapIndex);
+        y += lineHeight + (start + lineCap < row.length ? LINE_GAP : 0);
+        wrapIndex += 1;
+      }
+      y += ROW_GAP;
+    });
+
+    let milestoneTop = 0;
+    let milestoneBottom = 0;
+    if (milestone) {
+      y += MILESTONE_PAD;
+      milestoneTop = y - MILESTONE_PAD;
+      placed[milestone.id] = {
+        x: (stageW - MILESTONE_W) / 2, y, h: MILESTONE_H,
+      };
+      depth[milestone.id] = eraIndex * 1000 + maxLocalDepth + 1;
+      y += MILESTONE_H;
+      milestoneBottom = y + MILESTONE_PAD;
+      y += MILESTONE_PAD;
+    }
+    const bandBottom = Math.max(y + ERA_PAD, bandTop + ERA_PAD * 2 + MILESTONE_H);
+    eraBands.push({
+      era, top: bandTop, bottom: bandBottom,
+      milestoneId: milestone ? milestone.id : null,
+      msTop: milestoneTop, msBottom: milestoneBottom,
+    });
+    y = bandBottom;
+  });
+  return { pos: placed, depth, eraBands, width: stageW, height: y + PAD_BOTTOM };
+}
+
+function validateEraPartition(result) {
+  result.eraBands.forEach((band, index) => {
+    if (index > 0 && result.eraBands[index - 1].bottom > band.top)
+      throw new Error(`Era bands overlap: ${result.eraBands[index - 1].era.id} / ${band.era.id}`);
+    DATA.nodes.filter(node => node.era_id === band.era.id).forEach(node => {
+      const point = result.pos[node.id];
+      if (!point || point.y < band.top || point.y + point.h > band.bottom)
+        throw new Error(`Technology escaped era band: ${node.id} / ${band.era.id}`);
+    });
+  });
+}
+
 const stage = document.getElementById("stage");
 const svg = document.getElementById("edges");
-stage.style.width = STAGE_W + "px";
-stage.style.height = STAGE_H + "px";
-svg.setAttribute("width", STAGE_W);
-svg.setAttribute("height", STAGE_H);
+const wrap = document.getElementById("stage-wrap");
+const bandEls = [];
+const milestoneRowEls = [];
 
-ERA_BANDS.forEach((band, ei) => {
-  const el = document.createElement("div");
-  el.className = "era-band" + (ei % 2 ? " zebra" : "");
-  el.dataset.eraId = band.era.id;
-  el.style.cssText = `left:0;width:${STAGE_W}px;top:${band.top}px;height:${band.bottom - band.top}px`;
-  el.innerHTML = `<div class="era-title">
-      <div class="era-name">${band.era.display_name}</div>
-      <div class="era-meta">${band.era.node_count} 项 · ${fmtCost(band.era.min_cost)}–${fmtCost(band.era.max_cost)}</div>
-    </div>
-    <div class="era-watermark">${ERA_NUMERALS[ei] || ""}</div>`;
-  stage.appendChild(el);
-  if (band.milestoneId) {
-    const sep = document.createElement("div");
-    sep.className = "milestone-row";
-    sep.style.cssText = `top:${band.msTop}px;height:${band.msBottom - band.msTop}px;width:${STAGE_W}px`;
-    stage.appendChild(sep);
-  }
-});
+function applyStageSize() {
+  stage.style.width = STAGE_W + "px";
+  stage.style.height = STAGE_H + "px";
+  svg.setAttribute("width", STAGE_W);
+  svg.setAttribute("height", STAGE_H);
+  wrap.style.width = STAGE_W * currentZoom + "px";
+  wrap.style.height = STAGE_H * currentZoom + "px";
+}
+
+function renderBands() {
+  bandEls.forEach(el => el.remove());
+  milestoneRowEls.forEach(el => el.remove());
+  bandEls.length = 0;
+  milestoneRowEls.length = 0;
+  ERA_BANDS.forEach((band, ei) => {
+    const el = document.createElement("div");
+    el.className = "era-band" + (ei % 2 ? " zebra" : "");
+    el.dataset.eraId = band.era.id;
+    el.style.cssText = `left:0;width:${STAGE_W}px;top:${band.top}px;height:${band.bottom - band.top}px`;
+    el.innerHTML = `<div class="era-title">
+        <div class="era-name">${band.era.display_name}</div>
+        <div class="era-meta">${band.era.node_count} 项 · ${fmtCost(band.era.min_cost)}–${fmtCost(band.era.max_cost)}</div>
+      </div>
+      <div class="era-watermark">${ERA_NUMERALS[ei] || ""}</div>`;
+    stage.insertBefore(el, svg);
+    bandEls.push(el);
+    if (band.milestoneId) {
+      const sep = document.createElement("div");
+      sep.className = "milestone-row";
+      sep.style.cssText = `top:${band.msTop}px;height:${band.msBottom - band.msTop}px;width:${STAGE_W}px`;
+      stage.insertBefore(sep, svg);
+      milestoneRowEls.push(sep);
+    }
+  });
+}
+
+function relayout() {
+  const result = layout(viewportMetrics());
+  validateEraPartition(result);
+  pos = result.pos;
+  DEPTH = result.depth;
+  ERA_BANDS = result.eraBands;
+  STAGE_W = result.width;
+  STAGE_H = result.height;
+  applyStageSize();
+  renderBands();
+  DATA.nodes.forEach(n => {
+    const p = pos[n.id];
+    const el = nodeEls[n.id];
+    if (el) {
+      el.style.left = p.x + "px";
+      el.style.top = p.y + "px";
+    }
+  });
+  edgeEls.forEach(updateEdgePath);
+}
+
+// 首次布局在节点 DOM 创建前只算坐标。
+const initialLayout = layout(viewportMetrics());
+validateEraPartition(initialLayout);
+({ pos, depth: DEPTH, eraBands: ERA_BANDS, width: STAGE_W, height: STAGE_H } = initialLayout);
+applyStageSize();
+renderBands();
 
 const nodeEls = {};
 DATA.nodes.forEach(n => {
@@ -451,33 +579,55 @@ DATA.nodes.forEach(n => {
 
 const edgeEls = [];
 DATA.edges.forEach(e => {
-  if (nodesById[e.from] && nodesById[e.to]) edgeEls.push(drawEdge(e));
+  if (nodesById[e.from] && nodesById[e.to] && isDrawnEdge(e)) edgeEls.push(drawEdge(e));
 });
 
-function drawEdge(edge) {
-  const fromId = edge.from, toId = edge.to;
+function isDrawnEdge(edge) {
+  // 时代门已经由里程碑行表达；再从里程碑拉硬前置边会扇到整代科技。
+  if (edge.kind === "hard" && nodesById[edge.from] && nodesById[edge.from].is_milestone) return false;
+  return true;
+}
+
+function edgePathD(edge) {
+  const fromId = edge.from || edge.dataset.from, toId = edge.to || edge.dataset.to;
   const a = pos[fromId], b = pos[toId];
   const aw = nodesById[fromId].is_milestone ? MILESTONE_W : NODE_W;
   const bw = nodesById[toId].is_milestone ? MILESTONE_W : NODE_W;
   const x1 = a.x + aw / 2, y1 = a.y + a.h, x2 = b.x + bw / 2, y2 = b.y;
   const dy = Math.max(22, Math.abs(y2 - y1) * 0.46);
+  return `M ${x1} ${y1} C ${x1} ${y1 + dy}, ${x2} ${y2 - dy}, ${x2} ${y2}`;
+}
+
+function drawEdge(edge) {
   const path = document.createElementNS(SVGNS, "path");
-  path.setAttribute("d", `M ${x1} ${y1} C ${x1} ${y1 + dy}, ${x2} ${y2 - dy}, ${x2} ${y2}`);
+  path.setAttribute("d", edgePathD(edge));
   path.setAttribute("class", `edge ${edge.kind}`);
-  path.dataset.from = fromId; path.dataset.to = toId; path.dataset.kind = edge.kind;
+  path.dataset.from = edge.from; path.dataset.to = edge.to; path.dataset.kind = edge.kind;
   svg.appendChild(path);
   return path;
 }
 
-// ── 链路高亮：完整前置闭包 + 后继闭包（含里程碑候选软链）──
+function updateEdgePath(path) {
+  path.setAttribute("d", edgePathD(path));
+}
+
+// ── 链路高亮：前置追溯到时代里程碑为止，不穿过里程碑扇出整代科技 ──
 function chainOf(id) {
   const hot = new Set([id]);
   const up = cid => incomingEdges[cid].filter(e => STRUCTURAL_EDGE_KINDS.has(e.kind)).forEach(e => {
-    if (!hot.has(e.from)) { hot.add(e.from); up(e.from); }
+    if (hot.has(e.from)) return;
+    hot.add(e.from);
+    if (nodesById[e.from].is_milestone) return;
+    up(e.from);
   });
-  const down = cid => outgoingEdges[cid].filter(e => STRUCTURAL_EDGE_KINDS.has(e.kind)).forEach(e => {
-    if (!hot.has(e.to)) { hot.add(e.to); down(e.to); }
-  });
+  const down = cid => {
+    if (nodesById[cid].is_milestone) return;
+    outgoingEdges[cid].filter(e => STRUCTURAL_EDGE_KINDS.has(e.kind)).forEach(e => {
+      if (hot.has(e.to)) return;
+      hot.add(e.to);
+      down(e.to);
+    });
+  };
   up(id); down(id);
   [...incomingEdges[id], ...outgoingEdges[id]].forEach(e => {
     if (!STRUCTURAL_EDGE_KINDS.has(e.kind)) { hot.add(e.from); hot.add(e.to); }
@@ -571,7 +721,7 @@ function renderOverview() {
       点击单元格可高亮对应「时代 × 领域」的全部节点；<br>
       点击树中节点查看成本、研发前置、发现启发与数值效果；<br>
       顶栏边类型开关可分别查看硬前置、应用交汇与里程碑候选关系；<br>
-      悬停节点高亮其完整前后置链路；Esc 清除选中。
+      悬停节点高亮其知识链，前置追溯到时代里程碑即止；Esc 清除选中。
     </div>`;
   detail.querySelectorAll("td.cell").forEach(td => td.addEventListener("click", () => {
     focusEraDomain(td.dataset.era, td.dataset.dom);
@@ -623,19 +773,26 @@ function renderDetail(n) {
     const t = nodesById[id];
     return `<span class="rel-chip${soft ? " soft" : ""}" data-goto="${id}">${t ? t.display_name : id}${tag ? `<span class="m">${tag}</span>` : ""}</span>`;
   };
-  const prereqs = n.prerequisite_ids.map(pid => chip(pid, false)).join("") ||
+  const relationList = (ids, reasons, soft, tag) => (ids || []).map((id, i) =>
+    `<div class="cond-line">${chip(id, soft, tag)}${reasons && reasons[i] ?
+      `<div class="d-desc" style="margin-top:4px">${esc(reasons[i])}</div>` : ""}</div>`).join("");
+  const prereqs = relationList(n.prerequisite_ids, n.prerequisite_rationales, false, "") ||
     '<span style="color:var(--text-3)">无（时代入口）</span>';
   const hardSuccessors = outgoingEdges[n.id].filter(e => e.kind === "hard").map(e => e.to);
-  const succs = hardSuccessors.map(sid => chip(sid, false)).join("") ||
+  const succs = relationList(hardSuccessors, n.hard_successor_rationales, false, "") ||
     '<span style="color:var(--text-3)">无（末端）</span>';
-  const sameLane = (n.same_lane_successor_ids || []).map(sid => chip(sid, false, "同路线")).join("") ||
+  const sameLane = relationList(n.branch_successor_ids, n.branch_successor_rationales, false, "主题") ||
     '<span style="color:var(--text-3)">无</span>';
-  const applicationOut = outgoingEdges[n.id].filter(e => e.kind === "application")
-    .map(e => chip(e.to, true, "输出")).join("");
+  const applicationOut = relationList(n.application_target_ids,
+    n.application_target_rationales, true, "应用");
   const applicationIn = incomingEdges[n.id].filter(e => e.kind === "application")
     .map(e => chip(e.from, true, "输入")).join("");
   const applicationBlock = applicationOut || applicationIn
-    ? `<div class="d-sec"><h3>应用交汇</h3><div>${applicationOut}${applicationIn}</div></div>` : "";
+    ? `<div class="d-sec"><h3>跨领域应用</h3><div>${applicationOut}${applicationIn}</div></div>` : "";
+  const research = n.condition_lines && n.condition_lines.length
+    ? n.condition_lines.map(l =>
+        `<div class="cond-line" style="padding-left:${l.depth * 16}px">${l.depth ? "└ " : ""}${esc(l.text)}</div>`).join("")
+    : '<div class="cond-line" style="color:var(--text-3)">无替代知识路径。</div>';
   const milestoneBlock = n.is_milestone
     ? `<div class="d-sec"><h3>里程碑候选 · 任选 ${n.milestone_required_count} 项</h3>` +
       n.milestone_candidate_ids.map(cid => chip(cid, true)).join("") + "</div>"
@@ -660,13 +817,14 @@ function renderDetail(n) {
     <div class="d-sec"><h3>机会成本</h3><div class="d-desc">${esc(n.opportunity_cost || "无")}</div></div>
     ${unlockBlock}
     ${renderContentEffects(n.content_effects)}
-    <div class="d-sec"><h3>前置科技 · 决定研发资格</h3><div>${prereqs}</div></div>
+    <div class="d-sec"><h3>硬前置 · 全部必须完成</h3><div>${prereqs}</div></div>
+    <div class="d-sec"><h3>替代知识路径</h3>${research}</div>
     ${milestoneBlock}
     <div class="d-sec"><h3>发现启发 · 仅用于揭示</h3>${inspiration}</div>
     <div class="d-sec"><h3>数值效果 · 永久修正</h3>${terms}</div>
-    <div class="d-sec"><h3>同路线后继</h3><div>${sameLane}</div></div>
+    <div class="d-sec"><h3>主题路线后继</h3><div>${sameLane}</div></div>
     ${applicationBlock}
-    <div class="d-sec"><h3>直接后继 · 硬前置</h3><div>${succs}</div></div>
+    <div class="d-sec"><h3>被以下科技作为硬前置</h3><div>${succs}</div></div>
     ${n.terminal_reason ? `<div class="d-sec"><h3>终点理由</h3><div class="d-desc">${esc(n.terminal_reason)}</div></div>` : ""}`;
   detail.scrollTop = 0;
   detail.querySelectorAll("[data-goto]").forEach(el => el.addEventListener("click", ev => {
@@ -725,7 +883,7 @@ const EDGE_META = {
 const edgeOn = { hard: true, application: true, alternative: true, milestone_candidate: false };
 const edgeLegend = document.getElementById("edge-legend");
 Object.entries(EDGE_META).forEach(([kind, meta]) => {
-  const count = DATA.edges.filter(e => e.kind === kind).length;
+  const count = DATA.edges.filter(e => e.kind === kind && isDrawnEdge(e)).length;
   const el = document.createElement("span");
   el.className = "edge-chip" + (edgeOn[kind] ? "" : " off");
   el.innerHTML = `<span class="edge-swatch ${meta[1]}"></span>${meta[0]}<b>${count}</b>`;
@@ -765,12 +923,16 @@ searchInput.addEventListener("keydown", ev => {
 
 document.querySelectorAll("#zoom-seg button").forEach(btn => btn.addEventListener("click", () => {
   document.querySelectorAll("#zoom-seg button").forEach(b => b.classList.toggle("on", b === btn));
-  const z = parseFloat(btn.dataset.zoom);
-  const wrap = document.getElementById("stage-wrap");
-  wrap.style.transform = `scale(${z})`;
-  wrap.style.width = STAGE_W * z + "px";
-  wrap.style.height = STAGE_H * z + "px";
+  currentZoom = parseFloat(btn.dataset.zoom);
+  wrap.style.transform = `scale(${currentZoom})`;
+  applyStageSize();
 }));
+
+let resizeTimer = 0;
+new ResizeObserver(() => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(relayout, 80);
+}).observe(document.getElementById("scroller"));
 
 // ── 工具函数 ──
 function fmtCost(v) {
@@ -788,7 +950,15 @@ function fmtTerm(t) {
 }
 function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
 
-renderOverview();
+if (TEMPLATE_PREVIEW) {
+  document.getElementById("detail").innerHTML = `
+    <div class="d-title">Technology tree template</div>
+    <div class="d-sub">No catalog data is embedded in this source template.</div>
+    <div class="section"><div class="sec-title">Open the generated report</div>
+    <div class="effect">technology_tree_report.html</div></div>`;
+} else {
+  renderOverview();
+}
 </script>
 </body>
 </html>

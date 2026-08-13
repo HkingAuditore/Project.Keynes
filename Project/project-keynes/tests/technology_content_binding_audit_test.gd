@@ -38,15 +38,13 @@ const CRITICAL_DIRECT_CONSUMERS := [
 	"tech.robotic_manufacturing",
 	"tech.autonomous_mining",
 	"tech.smart_grid",
-	"tech.coastal_shipyards",
+	"tech.steam_sealing",
 	"tech.automated_logistics",
 	"tech.autonomous_logistics",
 	"tech.water_power",
 	"tech.hydrological_remote_sensing",
 	"tech.algorithmic_governance",
 	"tech.satellite_observation",
-	"tech.scientific_agents",
-	"tech.biotechnology",
 	"tech.modern_husbandry",
 ]
 
@@ -85,6 +83,8 @@ func _init() -> void:
 	_assert_electrification_scope(catalog)
 	_assert_progressive_unlocks(catalog)
 	_assert_networked_crop_and_resource_gates(catalog)
+	_assert_estate_institution_scope(catalog)
+	_assert_engineering_method_scope(catalog)
 	_assert_specialized_production_methods(catalog)
 	_assert_explicit_economic_sectors(catalog)
 	print("[PASS] technology content bindings cover goods, production methods, and resources")
@@ -96,7 +96,8 @@ func _assert_explicit_economic_sectors(catalog: Dictionary) -> void:
 	var sectors: PackedInt32Array = catalog.building_economic_sectors
 	assert(sectors.size() == ids.size())
 	for farm_id in ["subsistence_farm", "wheat_farm", "rice_collector",
-			"rainfed_maize_field", "pastoral_camp"]:
+			"rainfed_maize_field", "pastoral_camp", "landed_estate",
+			"medicinal_herbs_collector"]:
 		var index := ids.find(farm_id)
 		assert(index >= 0 and int(sectors[index]) == 0, farm_id)
 	for mine_id in ["coal_mine", "iron_ore_collector", "copper_ore_collector"]:
@@ -196,12 +197,10 @@ func _assert_binding_distribution(catalog: Dictionary) -> void:
 				"milestone directly unlocks content: %s -> %d" % [
 					technology_ids[technology_index], direct_count])
 			continue
-		assert(direct_count <= 4,
-			"technology direct unlocks over-concentrated: %s -> %d" % [
-				technology_ids[technology_index], direct_count])
-		assert(building_count <= 2,
-			"technology building unlocks over-concentrated: %s -> %d" % [
-				technology_ids[technology_index], building_count])
+		# Schema v2 deliberately has no authoring quota for direct consumers.
+		# Composite production systems may unlock several goods, buildings and
+		# methods together; their exact bindings are audited above instead.
+		assert(direct_count >= building_count)
 
 
 func _assert_critical_direct_consumers(catalog: Dictionary) -> void:
@@ -315,10 +314,104 @@ func _assert_networked_crop_and_resource_gates(catalog: Dictionary) -> void:
 			assert(String(binding.id) != "landed_estate")
 
 
+func _assert_estate_institution_scope(catalog: Dictionary) -> void:
+	for building_id in ["landed_estate", "method_wheat_farm_r3", "method_wheat_farm_r5"]:
+		_assert_technology_has_binding(catalog, "tech.estate_cereal_management", 2, building_id)
+	_assert_building_supports(catalog, "method_wheat_farm_r3", [
+		"tech.wheat_propagation", "tech.rainfed_field_system",
+		"tech.estate_accounting", "tech.intensive_crop_rotation"])
+	_assert_building_supports(catalog, "method_wheat_farm_r5", [
+		"tech.wheat_propagation", "tech.rainfed_field_system",
+		"tech.estate_accounting", "tech.intensive_crop_rotation",
+		"tech.crop_breeding", "tech.long_term_leases"])
+	_assert_technology_has_binding(catalog, "tech.tenant_paddy_management", 2,
+		"method_rice_collector_r3")
+	_assert_technology_has_binding(catalog, "tech.estate_paddy_management", 2,
+		"method_rice_collector_r5")
+	for building_id in ["method_flax_collector_r3", "method_flax_collector_r5"]:
+		_assert_technology_has_binding(catalog, "tech.estate_plantation_management", 2,
+			building_id)
+	for technology_id in ["tech.seed_selection", "tech.intensive_crop_rotation",
+			"tech.crop_breeding", "tech.rice_paddy_cultivation"]:
+		for binding in _technology_bindings(catalog, technology_id):
+			assert(String(binding.id) not in ["method_wheat_farm_r3",
+				"method_wheat_farm_r5", "method_flax_collector_r3",
+				"method_flax_collector_r5", "method_rice_collector_r3",
+				"method_rice_collector_r5"],
+				"agronomy technology directly unlocks an estate institution method: %s -> %s" % [
+					technology_id, binding.id])
+
+
+func _assert_engineering_method_scope(catalog: Dictionary) -> void:
+	var forbidden_direct := {
+		"tech.industrial_statistics": ["jewelry_plant", "method_oceanic_shipyard_r7"],
+		"tech.interchangeable_parts": ["footwear_plant", "leather_plant"],
+		"tech.corporate_management": ["cloth_plant", "fine_clothing_plant"],
+		"tech.open_science_networks": ["method_lead_plant_r9", "method_zinc_plant_r9"],
+		"tech.algorithmic_management": ["method_synthetic_fiber_plant_r10",
+			"method_synthetic_rubber_plant_r10"],
+		"tech.autonomous_labor_coordination": ["method_aluminum_plant_r10",
+			"method_stainless_steel_plant_r10"],
+		"tech.autonomous_systems": ["method_reactor_component_works_r10"],
+		"tech.learned_societies": ["method_limestone_collector_r6"],
+		"tech.coal_geology": ["method_saltpeter_collector_r8",
+			"method_sulfur_collector_r8"],
+		"tech.mechanical_threshing": ["method_cotton_collector_r6",
+			"method_potato_collector_r6"],
+		"tech.industrial_agronomy": ["method_phosphate_rock_collector_r9"],
+		"tech.electronic_control": ["batteries_plant"],
+		"tech.systems_engineering": ["method_rare_earth_metals_plant_r10"],
+		"tech.sensor_networks": ["method_concrete_plant_r9"],
+		"tech.biotechnology": ["method_highland_precision_agriculture"],
+		"tech.scientific_agents": ["method_autonomous_forestry"],
+	}
+	for technology_id in forbidden_direct:
+		for binding in _technology_bindings(catalog, technology_id):
+			assert(String(binding.id) not in forbidden_direct[technology_id],
+				"organization/science node directly unlocks an unrelated factory: %s -> %s" % [
+					technology_id, binding.id])
+	for row in [
+		["tech.mass_production", "jewelry_plant"],
+		["tech.electric_motors", "method_oceanic_shipyard_r7"],
+		["tech.factory_system", "footwear_plant"],
+		["tech.factory_system", "leather_plant"],
+		["tech.mass_production", "cloth_plant"],
+		["tech.mass_production", "fine_clothing_plant"],
+		["tech.digital_control", "method_lead_plant_r9"],
+		["tech.digital_control", "method_zinc_plant_r9"],
+		["tech.robotic_manufacturing", "method_synthetic_fiber_plant_r10"],
+		["tech.robotic_manufacturing", "method_synthetic_rubber_plant_r10"],
+		["tech.robotic_manufacturing", "method_aluminum_plant_r10"],
+		["tech.robotic_manufacturing", "method_stainless_steel_plant_r10"],
+		["tech.robotic_manufacturing", "method_reactor_component_works_r10"],
+		["tech.geological_prospecting", "method_limestone_collector_r6"],
+		["tech.mechanized_mining", "method_saltpeter_collector_r8"],
+		["tech.mechanized_mining", "method_sulfur_collector_r8"],
+		["tech.mechanized_agriculture", "method_cotton_collector_r6"],
+		["tech.mechanized_agriculture", "method_potato_collector_r6"],
+		["tech.digital_control", "method_phosphate_rock_collector_r9"],
+		["tech.electrochemistry", "batteries_plant"],
+		["tech.robotic_manufacturing", "method_rare_earth_metals_plant_r10"],
+		["tech.digital_control", "method_concrete_plant_r9"],
+		["tech.precision_agriculture", "method_highland_precision_agriculture"],
+		["tech.autonomous_systems", "method_autonomous_forestry"],
+	]:
+		_assert_technology_has_binding(catalog, String(row[0]), 2, String(row[1]))
+	_assert_building_supports(catalog, "method_oceanic_shipyard_r7", [
+		"tech.oceanic_ship_design", "tech.coastal_shipyards",
+		"tech.mass_production", "tech.industrial_statistics"])
+	_assert_building_supports(catalog, "method_lead_plant_r9", [
+		"tech.advanced_metallurgy", "tech.mineral_spectral_survey",
+		"tech.sensor_networks", "tech.industrial_quality_control"])
+	_assert_building_supports(catalog, "method_aluminum_plant_r10", [
+		"tech.advanced_metallurgy", "tech.specialty_alloys",
+		"tech.algorithmic_management", "tech.autonomous_labor_coordination"])
+
+
 func _assert_specialized_production_methods(catalog: Dictionary) -> void:
 	var methods := [
-		["method_steam_shipping", "tech.coastal_shipyards",
-			["tech.oceanic_navigation", "tech.steam_power", "tech.steam_sealing"]],
+		["method_steam_shipping", "tech.steam_sealing",
+			["tech.oceanic_navigation", "tech.steam_power", "tech.coastal_shipyards"]],
 		["method_automated_port", "tech.automated_logistics",
 			["tech.global_logistics", "tech.digital_control", "tech.electric_grid"]],
 		["method_autonomous_shipping", "tech.autonomous_logistics",
@@ -331,11 +424,11 @@ func _assert_specialized_production_methods(catalog: Dictionary) -> void:
 			["tech.hydrological_remote_sensing", "tech.smart_grid", "tech.autonomous_systems"]],
 		["method_forest_remote_sensing", "tech.satellite_observation",
 			["tech.forest_management", "tech.geographic_information_systems"]],
-		["method_autonomous_forestry", "tech.scientific_agents",
-			["tech.satellite_observation", "tech.autonomous_systems", "tech.smart_grid"]],
-		["method_highland_precision_agriculture", "tech.biotechnology",
-			["tech.highland_tuber_farming", "tech.precision_agriculture",
-				"tech.geographic_information_systems"]],
+		["method_autonomous_forestry", "tech.autonomous_systems",
+			["tech.satellite_observation", "tech.smart_grid", "tech.scientific_agents"]],
+		["method_highland_precision_agriculture", "tech.precision_agriculture",
+			["tech.highland_tuber_farming", "tech.geographic_information_systems",
+				"tech.biotechnology"]],
 		["method_smart_husbandry", "tech.modern_husbandry",
 			["tech.sensor_networks", "tech.autonomous_systems", "tech.smart_grid"]],
 		["method_specialty_commodity_plantation", "tech.commodity_crop_management",

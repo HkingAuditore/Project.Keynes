@@ -983,6 +983,34 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
             ? static_cast<int32_t>(found - research_signals.begin()) : -1;
     };
     _bio_maize_signal_id = signal_id("bio.maize");
+    _good_occupancy_bit_offsets.assign(_good_ids.size() + 1, 0);
+    _good_occupancy_bits.clear();
+    {
+        const std::vector<std::string> intro_goods = packed_strings(
+            catalog, "research_bio_introduce_good_ids");
+        const std::vector<int32_t> intro_bits = packed_i32(
+            catalog, "research_bio_introduce_occupancy_bits");
+        const size_t pair_count = std::min(intro_goods.size(), intro_bits.size());
+        std::vector<std::vector<int32_t>> bits_by_good(_good_ids.size());
+        for (size_t i = 0; i < pair_count; ++i) {
+            const auto found = std::find(_good_ids.begin(), _good_ids.end(),
+                                         intro_goods[i]);
+            if (found == _good_ids.end() || *found != intro_goods[i]) continue;
+            const int32_t bit = intro_bits[i];
+            if (bit < 0 || bit >= 32) continue;
+            bits_by_good[size_t(found - _good_ids.begin())].push_back(bit);
+        }
+        _good_occupancy_bit_offsets[0] = 0;
+        for (size_t g = 0; g < _good_ids.size(); ++g) {
+            auto &row = bits_by_good[g];
+            std::sort(row.begin(), row.end());
+            row.erase(std::unique(row.begin(), row.end()), row.end());
+            _good_occupancy_bits.insert(_good_occupancy_bits.end(),
+                                        row.begin(), row.end());
+            _good_occupancy_bit_offsets[g + 1] =
+                static_cast<int32_t>(_good_occupancy_bits.size());
+        }
+    }
     const std::array<const char *, 27> breakthrough_ids{
         "breakthrough.maize_selection", "breakthrough.dryland_adaptation",
         "breakthrough.hydraulic_engineering", "breakthrough.metalworking",

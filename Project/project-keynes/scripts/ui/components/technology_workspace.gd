@@ -5,9 +5,8 @@ const PlayerControllerScript = preload("res://scripts/game/player_controller.gd"
 const ResearchConditionScript = preload("res://scripts/research/research_condition.gd")
 const ResearchPredicateScript = preload("res://scripts/research/research_predicate.gd")
 
-# Full-bleed research screen with a bounded domain workspace and a separate
-# network overview. Research policy is a permanent working column; technology
-# detail remains an on-demand drawer.
+# Full-bleed research screen with a four-domain atlas and a separate network
+# overview. Research policy and technology detail are permanent columns.
 
 signal policy_submitted()
 
@@ -16,10 +15,9 @@ const TechnologyQueueRowScene := preload("res://scenes/ui/technology_queue_row.t
 const CASH_SCALE := 10000.0
 const POINT_SCALE := 1000.0
 const POLICY_WIDTH := 280.0
-const DETAIL_WIDTH := 384.0
-const DETAIL_ANCHOR_WIDTH := 360.0
-const DRAWER_RAIL_WIDTH := 40.0
-const PIN_BREAKPOINT := 1600.0
+const DETAIL_WIDTH := 320.0
+const COMPACT_POLICY_WIDTH := 220.0
+const COMPACT_DETAIL_WIDTH := 260.0
 const DOMAIN_COUNT := 4
 const MODE_FOCUS := 0
 const MODE_OVERVIEW := 1
@@ -38,16 +36,11 @@ var _research: Dictionary = {}
 var _queue_signature := ""
 var _detail_signature := ""
 var _last_states := PackedInt32Array()
-var _lane_visibility_signature := 0
 var _mode := MODE_FOCUS
 var _focus_domain := ""
 var _focus_era := 0
 var _manual_focus := false
 var _initial_focus_pending := true
-var _policy_open := true
-var _detail_open := false
-var _policy_pinned := false
-var _detail_pinned := false
 var _compact := false
 
 var _status_chips: Dictionary = {}
@@ -64,14 +57,7 @@ var _overview_mode: Button
 var _prev_era: Button
 var _next_era: Button
 var _era_label: Label
-var _lane_selector: OptionButton
 var _search: LineEdit
-var _policy_toggle: Button
-var _detail_toggle: Button
-var _policy_rail: Button
-var _detail_rail: Button
-var _policy_pin: Button
-var _detail_pin: Button
 var _queue_zones: Array = []
 var _queue_headers: Array = []
 var _queue_rows: Array = []
@@ -99,29 +85,25 @@ func _ready() -> void:
 	_main = get_node_or_null("Root/Main") as Control
 	_focus_mode = get_node_or_null("Root/Toolbar/Row/FocusMode") as Button
 	_overview_mode = get_node_or_null("Root/Toolbar/Row/OverviewMode") as Button
-	_prev_era = get_node_or_null("Root/Toolbar/Row/PrevEra") as Button
-	_next_era = get_node_or_null("Root/Toolbar/Row/NextEra") as Button
-	_era_label = get_node_or_null("Root/Toolbar/Row/EraLabel") as Label
-	_lane_selector = get_node_or_null("Root/Toolbar/Row/Lane") as OptionButton
+	_prev_era = get_node_or_null("Root/Toolbar/Row/EraPlate/EraRow/PrevEra") as Button
+	_next_era = get_node_or_null("Root/Toolbar/Row/EraPlate/EraRow/NextEra") as Button
+	_era_label = get_node_or_null("Root/Toolbar/Row/EraPlate/EraRow/EraLabel") as Label
 	_search = get_node_or_null("Root/Toolbar/Row/Search") as LineEdit
-	_policy_toggle = get_node_or_null("Root/Toolbar/Row/PolicyToggle") as Button
-	_detail_toggle = get_node_or_null("Root/Toolbar/Row/DetailToggle") as Button
-	_policy_rail = get_node_or_null("Root/Main/PolicyRail") as Button
-	_detail_rail = get_node_or_null("Root/Main/DetailRail") as Button
-	_policy_pin = get_node_or_null("Root/Main/PolicyPanel/Scroll/Body/Header/Pin") as Button
-	_detail_pin = get_node_or_null("Root/Main/DetailHost/Body/Header/Pin") as Button
 	if _policy_panel == null or _dial == null or _budget == null \
 			or _tree == null or _overview == null or _detail == null \
 			or _detail_host == null or _main == null or _focus_mode == null \
 			or _overview_mode == null or _prev_era == null or _next_era == null \
-			or _era_label == null or _lane_selector == null or _search == null \
-			or _policy_toggle == null or _detail_toggle == null \
-			or _policy_rail == null or _detail_rail == null \
-			or _policy_pin == null or _detail_pin == null:
+			or _era_label == null or _search == null:
 		var missing := PackedStringArray()
 		for key in required_paths:
 			if get_node_or_null(required_paths[key]) == null:
 				missing.append(String(required_paths[key]))
+		for extra in ["Root/Toolbar/Row/EraPlate/EraRow/PrevEra",
+				"Root/Toolbar/Row/EraPlate/EraRow/NextEra",
+				"Root/Toolbar/Row/EraPlate/EraRow/EraLabel",
+				"Root/Toolbar/Row/Search"]:
+			if get_node_or_null(extra) == null:
+				missing.append(extra)
 		push_error("TechnologyWorkspace 必须通过 technology_workspace.tscn 实例化；缺失节点：%s" \
 			% ", ".join(missing))
 		return
@@ -162,30 +144,13 @@ func _ready() -> void:
 	_overview_mode.pressed.connect(func() -> void: _set_mode(MODE_OVERVIEW))
 	_prev_era.pressed.connect(func() -> void: _shift_era(-1))
 	_next_era.pressed.connect(func() -> void: _shift_era(1))
-	_lane_selector.item_selected.connect(_on_lane_selected)
 	_search.text_submitted.connect(_on_search_submitted)
-	_policy_toggle.pressed.connect(func() -> void: _set_policy_open(true))
-	_detail_toggle.pressed.connect(func() -> void: _set_detail_open(not _detail_open))
-	_policy_rail.pressed.connect(func() -> void: _set_policy_open(true))
-	_detail_rail.pressed.connect(func() -> void: _set_detail_open(true))
-	_policy_pin.toggled.connect(_on_policy_pin_toggled)
-	_detail_pin.toggled.connect(_on_detail_pin_toggled)
-	var policy_close := get_node("Root/Main/PolicyPanel/Scroll/Body/Header/Close") as Button
-	var detail_close := get_node("Root/Main/DetailHost/Body/Header/Close") as Button
-	IconButton.apply(policy_close, &"action.close", IconButton.SMALL, "关闭研究管理")
-	IconButton.apply(detail_close, &"action.close", IconButton.SMALL, "关闭科技详情")
-	IconButton.apply(_policy_pin, &"action.pin", IconButton.SMALL, "固定研究管理")
-	IconButton.apply(_detail_pin, &"action.pin", IconButton.SMALL, "固定科技详情")
-	IconButton.apply(_policy_rail, &"system.settings", IconButton.SMALL, "打开研究管理")
-	IconButton.apply(_detail_rail, &"summary.overview", IconButton.SMALL, "打开科技详情")
 	IconButton.apply(_prev_era, &"action.back", IconButton.SMALL, "上一个已知时代")
 	IconButton.apply(_next_era, &"action.chevron_right", IconButton.SMALL, "下一个已知时代")
 	var relocate := get_node("Root/Toolbar/Row/Relocate") as Button
 	IconButton.apply(relocate, &"system.target", IconButton.SMALL, "重新定位研究前沿")
 	relocate.pressed.connect(_apply_default_focus)
-	policy_close.pressed.connect(func() -> void: _set_policy_open(true))
-	detail_close.pressed.connect(func() -> void: _set_detail_open(false))
-	_apply_drawer_layout()
+	_apply_column_layout()
 
 
 func set_model(model: Dictionary) -> void:
@@ -214,7 +179,7 @@ func set_model(model: Dictionary) -> void:
 		if not _definitions.is_empty():
 			_tree.set_catalog(_definitions, _eras, _domains, _visual_edges)
 			_overview.set_catalog(_definitions, _eras, _domains)
-			_configure_lane_selector(PackedInt32Array())
+			_ensure_focus_domain()
 			_dial.configure(_domains)
 			_configure_queues()
 	_apply_research()
@@ -240,23 +205,26 @@ func set_compact(compact: bool) -> void:
 		var chip := _status_chips.get(key) as Control
 		if chip != null:
 			chip.visible = not compact
-	_apply_drawer_layout()
+	_apply_column_layout()
 
 
 func reset_navigation() -> void:
 	_initial_focus_pending = true
 	_manual_focus = false
 	_set_mode(MODE_FOCUS)
-	_set_policy_open(true)
-	_set_detail_open(false)
 	if not _definitions.is_empty():
 		_apply_default_focus()
+	_apply_column_layout()
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_RESIZED:
+		_apply_column_layout()
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel"):
-		if _detail_open:
-			_set_detail_open(false)
+		accept_event()
 
 
 func tree_view() -> Control:
@@ -273,30 +241,16 @@ func navigation_report() -> Dictionary:
 		"domain": _focus_domain,
 		"lane": _focus_domain,
 		"era": _focus_era,
-		"policy_open": _policy_open,
-		"detail_open": _detail_open,
-		"policy_pinned": _policy_pinned,
-		"detail_pinned": _detail_pinned,
+		"policy_open": true,
+		"detail_open": true,
+		"policy_pinned": true,
+		"detail_pinned": true,
 	}
 
 
-func _configure_lane_selector(states: PackedInt32Array) -> void:
-	var previous := _focus_domain
-	_lane_selector.clear()
-	for domain in _domains:
-		var data: Dictionary = domain
-		var domain_id := String(data.get("id", ""))
-		_lane_selector.add_item(String(data.get("display_name", domain_id)))
-		_lane_selector.set_item_metadata(_lane_selector.item_count - 1, domain_id)
-	if _lane_selector.item_count == 0:
-		return
-	var selected := 0
-	for index in range(_lane_selector.item_count):
-		if String(_lane_selector.get_item_metadata(index)) == previous:
-			selected = index
-			break
-	_lane_selector.select(selected)
-	_focus_domain = String(_lane_selector.get_item_metadata(selected))
+func _ensure_focus_domain() -> void:
+	if _focus_domain.is_empty() and not _domains.is_empty():
+		_focus_domain = String((_domains[0] as Dictionary).get("id", ""))
 
 
 func _set_mode(mode: int) -> void:
@@ -307,9 +261,7 @@ func _set_mode(mode: int) -> void:
 	_overview.visible = _mode == MODE_OVERVIEW
 	_prev_era.disabled = _mode != MODE_FOCUS
 	_next_era.disabled = _mode != MODE_FOCUS
-	_lane_selector.disabled = _mode != MODE_FOCUS
 	if _mode == MODE_OVERVIEW:
-		_set_detail_open(false)
 		_overview.patch_states(_research.get("technology_states", PackedInt32Array()))
 	UIAnimation.crossfade(_tree if _mode == MODE_FOCUS else _overview, UITokens.ANIM_FAST)
 
@@ -320,14 +272,6 @@ func _shift_era(delta: int) -> void:
 		return
 	_manual_focus = true
 	_focus_era = target
-	_apply_focus(-1)
-
-
-func _on_lane_selected(index: int) -> void:
-	if index < 0 or index >= _lane_selector.item_count:
-		return
-	_manual_focus = true
-	_focus_domain = String(_lane_selector.get_item_metadata(index))
 	_apply_focus(-1)
 
 
@@ -347,7 +291,7 @@ func _on_search_submitted(query: String) -> void:
 	var states: PackedInt32Array = _research.get("technology_states", PackedInt32Array())
 	var best := -1
 	for index in range(_definitions.size()):
-		if index >= states.size() or states[index] <= 0:
+		if index >= states.size() or not TechnologyTreeView.presents_state(states[index]):
 			continue
 		var name := String((_definitions[index] as Dictionary).get("display_name", ""))
 		if name.to_lower() == normalized:
@@ -360,33 +304,32 @@ func _on_search_submitted(query: String) -> void:
 		_search.text = String((_definitions[best] as Dictionary).get("display_name", ""))
 	else:
 		_search.text = ""
-		_search.placeholder_text = "未找到已揭示科技"
+		_search.placeholder_text = "未找到可见科技"
 
 
 func _focus_technology(index: int) -> void:
 	if index < 0 or index >= _definitions.size():
 		return
 	var states: PackedInt32Array = _research.get("technology_states", PackedInt32Array())
-	if index >= states.size() or states[index] <= 0:
-		return
 	var definition: Dictionary = _definitions[index]
-	_focus_domain = String(definition.get("domain_id", ""))
+	var is_milestone := bool(definition.get("is_milestone", false))
+	if not is_milestone and (index >= states.size() \
+			or not TechnologyTreeView.presents_state(states[index])):
+		return
+	if not is_milestone:
+		_focus_domain = String(definition.get("domain_id", ""))
 	_focus_era = _era_index(String(definition.get("era_id", "")))
 	_manual_focus = true
 	_set_mode(MODE_FOCUS)
 	_apply_focus(index)
-	_set_detail_open(true)
 
 
 func _apply_focus(preferred_index: int) -> void:
-	if _focus_domain.is_empty() or _eras.is_empty():
+	if _eras.is_empty() or _tree == null:
 		return
+	_ensure_focus_domain()
 	_focus_era = clampi(_focus_era, 0, maxi(0, _deepest_visible_era()))
 	_tree.set_focus(_focus_domain, _focus_era, preferred_index)
-	for index in range(_lane_selector.item_count):
-		if String(_lane_selector.get_item_metadata(index)) == _focus_domain:
-			_lane_selector.select(index)
-			break
 	_era_label.text = String((_eras[_focus_era] as Dictionary).get("display_name", "—"))
 	_prev_era.disabled = _mode != MODE_FOCUS or _focus_era <= 0
 	_next_era.disabled = _mode != MODE_FOCUS or _focus_era >= _deepest_visible_era()
@@ -446,7 +389,7 @@ func _frontier_target() -> int:
 	if best >= 0:
 		return best
 	for index in range(mini(states.size(), _definitions.size())):
-		if states[index] <= 0:
+		if not TechnologyTreeView.presents_state(states[index]):
 			continue
 		var era := _era_index(String((_definitions[index] as Dictionary).get("era_id", "")))
 		if era > best_era:
@@ -462,74 +405,76 @@ func _era_index(era_id: String) -> int:
 	return 0
 
 
+func _milestone_completed_count(definition: Dictionary, states: PackedInt32Array) -> int:
+	var completed := 0
+	for id in definition.get("milestone_candidate_ids", PackedStringArray()):
+		var technology := int(_technology_indices.get(String(id), -1))
+		if technology >= 0 and technology < states.size() and states[technology] >= 5:
+			completed += 1
+	return completed
+
+
 func _deepest_visible_era() -> int:
 	var states: PackedInt32Array = _research.get("technology_states", PackedInt32Array())
 	var deepest := 0
+	var parents: Array = []
+	if _tree != null:
+		parents = _tree.layout_report().get("parents", [])
 	for index in range(mini(states.size(), _definitions.size())):
-		if states[index] <= 0:
+		if not _tree_visible_from_states(index, states, parents):
 			continue
 		deepest = maxi(deepest, _era_index(String(
 			(_definitions[index] as Dictionary).get("era_id", ""))))
 	return deepest
 
 
-func _set_policy_open(open: bool) -> void:
-	_policy_open = true
-	_policy_panel.visible = true
-	_policy_toggle.button_pressed = true
-	_policy_rail.visible = false
-	_apply_drawer_layout()
+func _tree_visible_from_states(index: int, states: PackedInt32Array,
+		parents: Array) -> bool:
+	if TechnologyTreeView.presents_state(int(states[index]) if index < states.size() else 0):
+		return true
+	if index < 0 or index >= parents.size():
+		return false
+	for parent in parents[index]:
+		var parent_index := int(parent)
+		if TechnologyTreeView.presents_state(
+				int(states[parent_index]) if parent_index < states.size() else 0):
+			return true
+	return false
 
 
-func _set_detail_open(open: bool) -> void:
-	_detail_open = open
-	_detail_host.visible = open
-	_detail_toggle.button_pressed = open
-	_detail_rail.visible = not open
-	if open:
-		UIAnimation.fade_slide_in(_detail_host, Vector2(24.0, 0.0), UITokens.ANIM_MED)
-	_apply_drawer_layout()
+func _column_policy_width() -> float:
+	return COMPACT_POLICY_WIDTH if _compact else POLICY_WIDTH
 
 
-func _on_policy_pin_toggled(pressed: bool) -> void:
-	_policy_pinned = true
-	_policy_pin.set_pressed_no_signal(_policy_pinned)
-	_apply_drawer_layout()
+func _column_detail_width() -> float:
+	return COMPACT_DETAIL_WIDTH if _compact else DETAIL_WIDTH
 
 
-func _on_detail_pin_toggled(pressed: bool) -> void:
-	_detail_pinned = pressed and size.x >= PIN_BREAKPOINT
-	_detail_pin.set_pressed_no_signal(_detail_pinned)
-	_apply_drawer_layout()
+func _set_policy_open(_open: bool) -> void:
+	_apply_column_layout()
 
 
-func _apply_drawer_layout() -> void:
-	if _main == null:
+func _set_detail_open(_open: bool) -> void:
+	_apply_column_layout()
+
+
+func _apply_column_layout() -> void:
+	if _main == null or _policy_panel == null or _detail_host == null:
 		return
-	var wide := size.x >= PIN_BREAKPOINT and not _compact
-	_policy_pin.visible = false
-	_detail_pin.visible = wide
-	_policy_open = true
-	_policy_pinned = true
+	var left := _column_policy_width()
+	var right := _column_detail_width()
 	_policy_panel.visible = true
-	_policy_toggle.visible = false
-	_policy_rail.visible = false
-	var policy_close := get_node_or_null(
-		"Root/Main/PolicyPanel/Scroll/Body/Header/Close") as Control
-	if policy_close != null:
-		policy_close.visible = false
-	if not wide:
-		_detail_pinned = false
-		_detail_pin.set_pressed_no_signal(false)
-	_policy_panel.offset_right = POLICY_WIDTH
-	_detail_host.offset_left = -DETAIL_ANCHOR_WIDTH
-	var left_inset := POLICY_WIDTH
-	var right_inset := DETAIL_WIDTH if _detail_open and _detail_pinned else DRAWER_RAIL_WIDTH
+	_detail_host.visible = true
+	_policy_panel.offset_left = 0.0
+	_policy_panel.offset_right = left
+	_detail_host.offset_left = -right
+	_detail_host.offset_right = 0.0
+	_detail_host.clip_contents = true
 	for canvas in [_tree, _overview]:
-		canvas.offset_left = left_inset
-		canvas.offset_right = -right_inset
-	_policy_rail.visible = false
-	_detail_rail.visible = not _detail_open
+		if canvas == null:
+			continue
+		canvas.offset_left = left
+		canvas.offset_right = -right
 
 
 func _configure_queues() -> void:
@@ -549,15 +494,6 @@ func _apply_research() -> void:
 	var progress: PackedInt64Array = _research.get("technology_progress", PackedInt64Array())
 	var relations_changed := states != _last_states
 	_last_states = states
-	var lane_signature := 17
-	for index in range(mini(states.size(), _definitions.size())):
-		if states[index] <= 0:
-			continue
-		lane_signature = int((lane_signature * 31 + String((_definitions[index] as Dictionary).get(
-			"domain_id", "")).hash()) & 0x7fffffff)
-	if lane_signature != _lane_visibility_signature:
-		_lane_visibility_signature = lane_signature
-		_configure_lane_selector(states)
 	_tree.patch_states(states, progress)
 	if _overview.visible:
 		_overview.patch_states(states)
@@ -613,7 +549,7 @@ func _current_era_label(states: PackedInt32Array) -> String:
 		var era_name := String(_era_names.get(era_id, era_id))
 		if states[index] >= 5:
 			reached = era_name
-		elif states[index] >= 1 and pending.is_empty():
+		elif TechnologyTreeView.presents_state(states[index]) and pending.is_empty():
 			pending = era_name
 	if reached.is_empty():
 		return pending if not pending.is_empty() else "—"
@@ -687,11 +623,17 @@ func _refresh_detail(refresh_relations: bool = true) -> void:
 		return
 	var states: PackedInt32Array = _research.get("technology_states", PackedInt32Array())
 	var state := int(states[index]) if index < states.size() else 0
-	if state <= 0:
-		_detail_signature = ""
-		_detail.show_unknown()
-		return
 	var definition: Dictionary = _definitions[index]
+	if not TechnologyTreeView.presents_state(state):
+		_detail_signature = ""
+		if bool(definition.get("is_milestone", false)):
+			_detail.show_milestone_locked(
+				String(_era_names.get(String(definition.get("era_id", "")), "")),
+				_milestone_completed_count(definition, states),
+				int(definition.get("milestone_required_count", 5)))
+		else:
+			_detail.show_unknown()
+		return
 	var progress: PackedInt64Array = _research.get(
 		"technology_progress", PackedInt64Array())
 	var cost := maxf(1.0, float(definition.get("cost_points", 1)))
@@ -717,7 +659,7 @@ func _refresh_detail(refresh_relations: bool = true) -> void:
 
 func _relation_signature(relations: Dictionary) -> String:
 	var parts := PackedStringArray()
-	for group in ["prerequisites", "successors"]:
+	for group in ["prerequisites", "hard_successors", "branch_successors", "applications"]:
 		for entry in relations.get(group, []) as Array:
 			parts.append("%d" % int((entry as Dictionary).get("state", 0)))
 		parts.append("/")
@@ -728,30 +670,77 @@ func _relation_signature(relations: Dictionary) -> String:
 
 
 func _relations_for(index: int, states: PackedInt32Array) -> Dictionary:
-	var layout: Dictionary = _tree.layout_report()
+	var definition: Dictionary = _definitions[index]
+	var hard_ids: PackedStringArray = definition.get(
+		"prerequisite_ids", PackedStringArray())
+	var rationales: PackedStringArray = definition.get(
+		"prerequisite_rationales", PackedStringArray())
 	var prerequisites: Array = []
-	var successors: Array = []
-	for edge_value in layout.get("edges", []):
-		var edge: Dictionary = edge_value
-		var from := int(edge.get("from", -1))
-		var to := int(edge.get("to", -1))
-		var kind := String(edge.get("kind", "hard"))
-		if kind == "hard" and to == index:
-			prerequisites.append(_relation_entry(from, states))
-		elif from == index:
-			successors.append(_relation_entry(to, states, _relation_prefix(kind, true)))
-		elif to == index and kind != "hard":
-			successors.append(_relation_entry(from, states, _relation_prefix(kind, false)))
+	var prerequisite_ids: PackedStringArray = definition.get(
+		"milestone_candidate_ids", PackedStringArray()) \
+		if int(definition.get("milestone_required_count", 0)) > 0 else hard_ids
+	for prerequisite_cursor in range(prerequisite_ids.size()):
+		var prerequisite_id := String(prerequisite_ids[prerequisite_cursor])
+		var prerequisite_index := int(_technology_indices.get(prerequisite_id, -1))
+		if prerequisite_index < 0:
+			continue
+		var reason := String(rationales[prerequisite_cursor]) \
+			if prerequisite_cursor < rationales.size() else ""
+		prerequisites.append(_relation_entry_with_rationale(
+			prerequisite_index, states, reason))
+	var hard_successors: Array = []
+	var selected_id := String(definition.get("id", ""))
+	for target_index in range(_definitions.size()):
+		var target: Dictionary = _definitions[target_index]
+		var target_hard_ids: PackedStringArray = target.get(
+			"prerequisite_ids", PackedStringArray())
+		var rationale_index := target_hard_ids.find(selected_id)
+		if rationale_index < 0:
+			continue
+		var target_rationales: PackedStringArray = target.get(
+			"prerequisite_rationales", PackedStringArray())
+		var reason := String(target_rationales[rationale_index]) \
+			if rationale_index < target_rationales.size() else ""
+		hard_successors.append(_relation_entry_with_rationale(
+			target_index, states, reason))
+	var branch_successors := _authored_relation_entries(definition,
+		"branch_successor_ids", "branch_successor_rationales", states)
+	var applications := _authored_relation_entries(definition,
+		"application_target_ids", "application_target_rationales", states)
 	return {
 		"prerequisites": prerequisites,
-		"successors": successors,
+		"hard_successors": hard_successors,
+		"branch_successors": branch_successors,
+		"applications": applications,
 		"condition_items": _condition_items(index, states),
 	}
 
 
+func _authored_relation_entries(definition: Dictionary, ids_key: String,
+		rationales_key: String, states: PackedInt32Array) -> Array:
+	var out: Array = []
+	var ids: PackedStringArray = definition.get(ids_key, PackedStringArray())
+	var rationales: PackedStringArray = definition.get(rationales_key, PackedStringArray())
+	for cursor in range(ids.size()):
+		var target_index := int(_technology_indices.get(String(ids[cursor]), -1))
+		if target_index < 0:
+			continue
+		var rationale := String(rationales[cursor]) if cursor < rationales.size() else ""
+		out.append(_relation_entry_with_rationale(target_index, states, rationale))
+	return out
+
+
+func _relation_entry_with_rationale(index: int, states: PackedInt32Array,
+		rationale: String) -> Dictionary:
+	var entry := _relation_entry(index, states)
+	if not rationale.is_empty() and int(entry.get("state", 0)) > 0:
+		entry["name"] = "%s：%s" % [String(entry.name), rationale]
+	return entry
+
+
 func _relation_entry(index: int, states: PackedInt32Array, prefix: String = "") -> Dictionary:
 	var state := int(states[index]) if index < states.size() else 0
-	if state <= 0:
+	if not TechnologyTreeView.presents_state(state):
 		return {"name": "未知科技", "state": 0}
 	var name := String((_definitions[index] as Dictionary).get("display_name", ""))
 	return {
@@ -772,21 +761,48 @@ func _relation_prefix(kind: String, outgoing: bool) -> String:
 func _condition_items(index: int, states: PackedInt32Array) -> Array:
 	if index < 0 or index >= _definitions.size():
 		return []
-	var spec: Dictionary = (_definitions[index] as Dictionary).get(
-		"reveal_condition", {})
-	if spec.is_empty():
-		return []
-	var result := _evaluate_condition(spec, states, _signal_evidence())
-	var inspirations: Array = []
-	for item_value in result.get("items", []) as Array:
-		var item: Dictionary = item_value
-		if String(item.get("source_kind", "")) != "signal" \
-				or not bool(item.get("met", false)):
-			continue
-		var inspiration := item.duplicate()
-		inspiration["text"] = "启发线索 · %s" % String(item.get("text", ""))
-		inspirations.append(inspiration)
-	return inspirations
+	var definition: Dictionary = _definitions[index]
+	var items: Array = []
+	var entry_id := String(definition.get("era_entry_milestone_id", ""))
+	if not entry_id.is_empty():
+		var entry_index := int(_technology_indices.get(entry_id, -1))
+		var entry_met := entry_index >= 0 and entry_index < states.size() \
+			and int(states[entry_index]) >= 4
+		var entry_name := entry_id
+		if entry_index >= 0 and entry_index < _definitions.size():
+			entry_name = String((_definitions[entry_index] as Dictionary).get(
+				"display_name", entry_id))
+		items.append({
+			"text": "时代门槛：%s（%s）" % [entry_name, "已开放" if entry_met else "未开放"],
+			"icon": &"technology.state.completed" if entry_met else &"technology.state.locked",
+			"accent": UITokens.GOOD if entry_met else UITokens.WARN,
+			"met": entry_met,
+		})
+	var evidence := _signal_evidence()
+	var reveal_spec: Dictionary = definition.get("reveal_condition", {})
+	if not reveal_spec.is_empty():
+		var reveal_result := _evaluate_condition(reveal_spec, states, evidence)
+		for item_value in reveal_result.get("items", []) as Array:
+			var item: Dictionary = item_value
+			if String(item.get("source_kind", "")) != "signal" \
+					or not bool(item.get("met", false)):
+				continue
+			var inspiration := item.duplicate()
+			inspiration["text"] = "揭示证据：%s" % String(item.get("text", ""))
+			items.append(inspiration)
+	var research_spec: Dictionary = definition.get("research_condition", {})
+	if not research_spec.is_empty():
+		var research_result := _evaluate_condition(research_spec, states, evidence)
+		var research_met := bool(research_result.get("met", false))
+		items.append({
+			"text": "替代研究条件：%s（%s）" % [
+				String(definition.get("research_condition_summary", "")),
+				"已满足" if research_met else "未满足"],
+			"icon": &"technology.state.completed" if research_met else &"technology.state.locked",
+			"accent": UITokens.GOOD if research_met else UITokens.WARN,
+			"met": research_met,
+		})
+	return items
 
 
 func _signal_evidence() -> Dictionary:
@@ -846,7 +862,8 @@ func _evaluate_condition_atom(atom: Dictionary, states: PackedInt32Array,
 			if technology_index >= 0 and technology_index < states.size() else 0
 		var met := technology_state >= 4
 		var technology_name := "未知科技"
-		if technology_state > 0 and technology_index < _definitions.size():
+		if TechnologyTreeView.presents_state(technology_state) \
+				and technology_index < _definitions.size():
 			technology_name = String((_definitions[technology_index] as Dictionary).get(
 				"display_name", technology_name))
 		return {
@@ -888,7 +905,6 @@ func _evaluate_condition_atom(atom: Dictionary, states: PackedInt32Array,
 
 func _on_tree_selected(_index: int) -> void:
 	_manual_focus = true
-	_set_detail_open(true)
 	_refresh_detail()
 
 

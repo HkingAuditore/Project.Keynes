@@ -413,7 +413,8 @@ static func bake_cell_lut(
 	resource_profile: ResourceProfile = null,
 	existing_tex: ImageTexture = null,
 	existing_buf: PackedByteArray = PackedByteArray(),
-	existing_image: Image = null
+	existing_image: Image = null,
+	occupancy_bit: int = -1
 ) -> Dictionary:
 	var dims: Vector2i = world.lut_dims if world != null else Vector2i.ZERO
 	if map == null or world == null or mode == OverlayMode.MODE.NONE \
@@ -436,12 +437,15 @@ static func bake_cell_lut(
 
 	var reserves: PackedFloat32Array = PackedFloat32Array()
 	var habitat: PackedByteArray = map.resource_habitat_mask_arr
+	var occupancy_bits: PackedInt32Array = PackedInt32Array()
 	var reference := 1.0
 	if mode == OverlayMode.MODE.RESOURCE_RESERVE and resource_profile != null:
 		var field := ResourceProfileRegistry.reserve_map_field(resource_profile)
 		if field != "":
 			reserves = map.get(field)
 		reference = ResourceProfileRegistry.reference_reserve(resource_profile)
+	elif mode == OverlayMode.MODE.BIO_OCCUPANCY:
+		occupancy_bits = map.bio_occupancy_bits_arr
 
 	var valid_count := 0
 	var invalid_count := 0
@@ -508,6 +512,11 @@ static func bake_cell_lut(
 					and ResourceProfileRegistry.habitat_available(resource_profile, mask) \
 					and reserve > 0.0
 				value = clampf(reserve / maxf(reference, 1.0), 0.0, 1.0)
+			OverlayMode.MODE.BIO_OCCUPANCY:
+				valid = occupancy_bit >= 0 and occupancy_bit < 32 \
+					and idx < occupancy_bits.size() \
+					and (int(occupancy_bits[idx]) & (1 << occupancy_bit)) != 0
+				bucket = occupancy_bit
 			_:
 				var cell = map.cell_at(idx)
 				var sample := _sample_cell(

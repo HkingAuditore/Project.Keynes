@@ -1,0 +1,4 @@
+interface:
+  display_name: "Project Keynes 科技树设计"
+  short_description: "设计并审查代码约束下的十一时代网状科技树与产业支线"
+  default_prompt: "Use $project-keynes-technology-tree-design to design or review a grounded eleven-era technology network for Project.Keynes."

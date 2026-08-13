@@ -285,6 +285,10 @@ var cell_biogeographic_realm_arr: PackedByteArray = PackedByteArray()
 var cell_research_signal_offsets: PackedInt32Array = PackedInt32Array()
 var cell_research_signal_ids: PackedInt32Array = PackedInt32Array()
 var cell_research_signal_values: PackedInt32Array = PackedInt32Array()
+## Current species presence (Kind.BIO occupancy bitset). Persisted with dynamic_world.
+var bio_occupancy_bits_arr: PackedInt32Array = PackedInt32Array()
+var landmass_id_arr: PackedInt32Array = PackedInt32Array()
+var province_id_arr: PackedInt32Array = PackedInt32Array()
 
 # ─── Dirty Mask（需求 2.1 / 2.4 阶段 A.2 投入使用） ───────────────────────
 # 每个 cell 1 字节：0 = clean、1 = dirty。Pass A 写入时按 epsilon 判定标 dirty；
@@ -746,6 +750,9 @@ func _alloc_soa(n: int) -> void:
 	vegetation_drought_stress_arr.resize(n)
 	vegetation_cold_stress_arr.resize(n)
 	vegetation_regen_score_arr.resize(n)
+	bio_occupancy_bits_arr.resize(n)
+	landmass_id_arr.resize(n)
+	province_id_arr.resize(n)
 
 ## DEPRECATED（PR-2.2，2026-Q3）：本函数仅在 bake_world / 加载存档时调用一次（生成期初始化）。
 ## 运行期 sub-pass 已经全部走 world.write_*_indexed（PR-2.1.x 完成）。

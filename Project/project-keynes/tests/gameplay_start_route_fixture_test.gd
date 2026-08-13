@@ -51,9 +51,11 @@ func _init() -> void:
 			"route": "arid_highland", "temperature": 0.56, "moisture": 0.30,
 			"elevation": 0.50, "river": true, "coastal": false,
 			"resources": {"wild_game": 200000.0, "timber": 400000.0,
-				"clay": 180000.0, "silver_ore": 100000.0},
+				"clay": 180000.0, "silver_ore": 100000.0,
+				"fertile_soil": 400000.0},
 			"signals": ["resource.wild_game", "resource.timber", "resource.clay",
-				"landform.grassland", "weather.drought", "resource.silver_ore"],
+				"resource.fertile_soil", "landform.grassland", "weather.drought",
+				"resource.silver_ore"],
 			"food": "game_meat", "construction": "logs",
 			"knowledge_tech": "tech.oral_memory_practice",
 			"required_buildings": ["stone_age_hunting_camp", "hide_scraping_shelter",
@@ -213,6 +215,19 @@ func _set_signals(map: MapData, cell: int, signal_ids: Array) -> void:
 	map.cell_research_signal_offsets = offsets
 	map.cell_research_signal_ids = out_ids
 	map.cell_research_signal_values = values
+	var occupancy := PackedInt32Array()
+	occupancy.resize(map.cell_count())
+	var occupancy_lookup: PackedInt32Array = compiled.get(
+		"research_signal_occupancy_bit", PackedInt32Array())
+	var bits := 0
+	for signal_index in dense:
+		if signal_index < occupancy_lookup.size():
+			var bit := int(occupancy_lookup[signal_index])
+			if bit >= 0 and bit < 32:
+				bits |= 1 << bit
+	if cell < occupancy.size():
+		occupancy[cell] = bits
+	map.bio_occupancy_bits_arr = occupancy
 
 
 func _f32(count: int, value: float) -> PackedFloat32Array:

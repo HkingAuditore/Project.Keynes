@@ -215,9 +215,12 @@ industrialist-owned production. Accepted bullion uses the native issue path, pub
 Player Inspector visibility is technology-filtered without changing native authority. Market
 snapshots retain the complete dense goods catalog for stable indices, save, and hashing, while the
 ViewModel renders only rows whose `good_technology_available` value is true. Natural-resource
-reserves remain physically present in MapData; the ViewModel renders only resources that satisfy
-`discovery_technology_tags` and have at least one technology-available collector in the selected
-cell's country. Missing snapshot metadata fails open so stale/unavailable native detail does not
+reserves remain physically present in MapData. The Inspector is the viewing player's dossier:
+visible cells, including unowned land, use that country's completed technologies against
+`discovery_technology_tags`. Extraction stays cell-local and still requires a
+technology-available collector on the selected cell. An empty filtered list means the current
+technologies have not identified local deposits; it must not be presented as "resource types are
+unconfigured". Missing snapshot metadata fails open so stale/unavailable native detail does not
 silently erase the whole dossier.
 
 ## 7. Source map

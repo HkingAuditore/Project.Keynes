@@ -13,7 +13,7 @@
 // registration. Background and rationale: docs/dots-migration-roadmap.md
 // §3 (A1 ComponentSchema 单一源) and dots-component-schema.md.
 //
-// Schema entries: 145
+// Schema entries: 148
 // (Demo entries are emitted with the same row shape; the GDScript side
 // gates them on demo_thermal_gradient_enabled before binding, and the
 // C++ bind_map_data already gracefully no-ops on size==0 properties.)
@@ -175,6 +175,9 @@ inline constexpr BindEntry BIND_TABLE_AUTOGEN[] = {
     { "cell_res_manganese_ore_extra_change",   "res_manganese_ore_extra_change_arr",   SlotDType::F32 },
     { "cell_res_sulfur_extra_change",          "res_sulfur_extra_change_arr",          SlotDType::F32 },
     { "cell_res_flint_extra_change",           "res_flint_extra_change_arr",           SlotDType::F32 },
+    { "cell_bio_occupancy_bits",               "bio_occupancy_bits_arr",               SlotDType::I32 },
+    { "cell_landmass_id",                      "landmass_id_arr",                      SlotDType::I32 },
+    { "cell_province_id",                      "province_id_arr",                      SlotDType::I32 },
     { "cell_demo_thermal_gradient",            "demo_thermal_gradient_arr",            SlotDType::F32 },  // demo-only (gated on ClimateProfile.demo_thermal_gradient_enabled)
 };
 

@@ -10,7 +10,7 @@
 - `NativeCountryRuntime` 为每个国家保存 dense technology bitset。新游戏的起始科技由国家启动包决定；缺省国家使用配置的起始科技。
 - 经济周期开始时冻结 `cell → country`、国家 generation/hash 和科技 bitset。物资替代、职业就业、建造和生产都读取冻结副本；周期中提交的国家解锁命令从下个经济周期起生效。
 - `CountryFacade` 提交 `GRANT_TECHNOLOGY` stable-ID 命令，只允许授予、不允许撤销，避免既有职业和建筑在周期内失去前提。
-- 自然资源储量始终真实存在于 DataCore。`discovery_technology_tags` 只控制地图和 Inspector 是否可见；能否开采由采集建筑自己的 `technology_tags` 独立决定。
+- 自然资源储量始终真实存在于 DataCore。`discovery_technology_tags` 只控制地图和 Inspector 是否可见；Inspector 对可见格（含无主地）使用**观察者国家**已掌握科技认矿，不能把无主地的空科技集合显示成「尚未配置自然资源类型」。能否开采由采集建筑自己的 `technology_tags` 独立决定。
 - PKCN v1 保存国家科技；当前 PKEC v19 保存匹配的 PKCN schema/generation/hash、企业三态及 pending/cooldown、聚合商人债务、实物收入、国内在途贸易、每 cell 结算日/generation 与 dirty generations。PKEC v18 以 `pending=NONE, cooldown=0` 兼容恢复；PKEC v2-v17 统一返回 `legacy_economy_save_unsupported`。
 - 每个 need 最多支持 4 个替代 variant。32 个职业映射到 survival、agrarian、extractive、
   industrial_worker、artisan、technical、merchant、owner 八套计划；共同覆盖主食、衣着、住房、

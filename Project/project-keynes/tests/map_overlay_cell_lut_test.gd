@@ -71,6 +71,26 @@ func _init() -> void:
 		_ramp_has_separated_steps(OverlayMode.MODE.ELEVATION,
 			PackedFloat32Array([0.10, 0.30, 0.50, 0.70, 0.90]), 0.24))
 
+	var catalog := ResearchSignalCatalog.compile_native_catalog()
+	var maize_bit := ResearchSignalCatalog.occupancy_bit_for_signal(catalog, &"bio.maize")
+	_expect("maize occupancy bit is valid", maize_bit >= 0 and maize_bit < 32)
+	map.bio_occupancy_bits_arr[0] = 1 << maize_bit
+	map.bio_occupancy_bits_arr[1] = 0
+	map.bio_occupancy_bits_arr[2] = 0
+	var occupancy := DataOverlayBaker.bake_cell_lut(
+		map, world, OverlayMode.MODE.BIO_OCCUPANCY, null, 0.0, adapter,
+		null, resource.get("texture"), resource_buf, resource.get("image"),
+		maize_bit)
+	var occupancy_buf: PackedByteArray = occupancy.get("buf", PackedByteArray())
+	_expect("maize occupancy cell is opaque", occupancy_buf[3] == 255)
+	_expect("maize occupancy encodes occupancy bit", occupancy_buf[0] == maize_bit)
+	_expect("neighbor without maize occupancy is transparent", occupancy_buf[7] == 0)
+	_expect("far cell without maize occupancy is transparent", occupancy_buf[11] == 0)
+	_expect("maize occupancy stays on cell LUT path",
+		String(occupancy.get("path", "")) == "cell_lut")
+	_expect("maize occupancy valid count is one cell",
+		int(occupancy.get("stats", {}).get("count", 0)) == 1)
+
 	print("=== map overlay cell LUT: %d checks, %d failures ===" % [_checks, _failures])
 	quit(0 if _failures == 0 else 1)
 

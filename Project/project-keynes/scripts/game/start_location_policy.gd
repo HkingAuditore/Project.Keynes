@@ -14,6 +14,7 @@ const MIN_COUNTRY_DISTANCE := 4
 const MAX_COUNTRY_DISTANCE := 12
 
 static var _research_signal_index_by_id: Dictionary = {}
+static var _research_signal_occupancy_bit: PackedInt32Array = PackedInt32Array()
 static var _starter_catalog_cache: Dictionary = {}
 
 
@@ -235,29 +236,38 @@ static func _starter_route_for_cell(map: MapData, cell_idx: int,
 		food_options.append(_route_option(["tech.freshwater_fishing"],
 			["freshwater_fishing_camp"], {"food_good": "fish", "food_resource": "freshwater_fish"}))
 	if region in ["cold_highland", "arid_highland"] \
-			and _reserve(map, "fertile_soil", cell_idx) > 0.0:
+			and _reserve(map, "fertile_soil", cell_idx) > 0.0 \
+			and _probe_has_signal(signal_probe, starter_catalog, "bio.potato"):
 		food_options.append(_route_option(["tech.wild_tuber_collection"],
 			["wild_tuber_patch"], {"food_good": "potatoes", "food_resource": "fertile_soil"}))
 	if _reserve(map, "fertile_soil", cell_idx) > 0.0:
-		food_options.append(_route_option(["tech.gathering", "tech.deadwood_collection"],
+		food_options.append(_route_option(["tech.gathering"],
 			["gathering_ground"],
 			{"food_good": "gathered_plants", "food_resource": "fertile_soil"}))
 	if _reserve(map, "wild_game", cell_idx) > 0.0:
-		food_options.append(_route_option(
-			["tech.gathering", "tech.deadwood_collection", "tech.hunting"],
+		# Hunting camp construction still spends gathered_plants, so the hunting
+		# food closure carries gathering when soil evidence can reveal it.
+		# Gathering does not reveal hunting; grassland no longer stands in.
+		var hunting_food_techs: Array = ["tech.hunting"]
+		if _reserve(map, "fertile_soil", cell_idx) > 0.0:
+			hunting_food_techs.append("tech.gathering")
+		food_options.append(_route_option(hunting_food_techs,
 			["stone_age_hunting_camp"],
 			{"food_good": "game_meat", "food_resource": "wild_game"}))
 
 	var clothing_options: Array[Dictionary] = []
-	if _reserve(map, "fertile_soil", cell_idx) > 0.0:
-		# Fertile soil is formally revealed by gathering; include that
-		# observation in the starter closure even when food comes from water.
+	if _reserve(map, "fertile_soil", cell_idx) > 0.0 \
+			and (_probe_has_signal(signal_probe, starter_catalog, "bio.flax") \
+				or _probe_has_signal(signal_probe, starter_catalog, "bio.bast_fiber")):
+		# Bast clothing requires seeing flax or bast plants, not just fertile soil.
 		clothing_options.append(_route_option(["tech.gathering", "tech.wild_flax_collection"],
 			["bast_fiber_camp", "bast_wrap_shelter"],
 			{"clothing_resource": "fertile_soil", "input_buffer": "bast_fiber"}))
 	if _reserve(map, "wild_game", cell_idx) > 0.0:
-		clothing_options.append(_route_option([
-			"tech.gathering", "tech.deadwood_collection", "tech.hunting", "tech.hide_scraping"],
+		var hide_techs: Array = ["tech.hunting", "tech.hide_scraping"]
+		if _reserve(map, "fertile_soil", cell_idx) > 0.0:
+			hide_techs.append("tech.gathering")
+		clothing_options.append(_route_option(hide_techs,
 			["stone_age_hunting_camp", "hide_scraping_shelter"],
 			{"clothing_resource": "wild_game", "input_buffer": "raw_hide"}))
 
@@ -361,6 +371,15 @@ static func _append_many_unique(values: PackedStringArray,
 		_append_unique(values, String(value))
 
 
+static func _probe_has_signal(signal_probe: Dictionary, catalog: Dictionary,
+		signal_id: String) -> bool:
+	var ids: PackedStringArray = catalog.get("research_signal_ids", PackedStringArray())
+	var signal_index := ids.find(signal_id)
+	if signal_index < 0:
+		return false
+	return int((signal_probe.get("counts", {}) as Dictionary).get(signal_index, 0)) > 0
+
+
 static func _starter_technologies_revealed(technology_ids: PackedStringArray,
 		signal_probe: Dictionary, catalog: Dictionary) -> bool:
 	for technology_id in technology_ids:
@@ -430,20 +449,24 @@ static func _signals_for_visible_cells(map: MapData, visible: PackedByteArray,
 	var offsets: PackedInt32Array = map.cell_research_signal_offsets
 	var ids: PackedInt32Array = map.cell_research_signal_ids
 	var values: PackedInt32Array = map.cell_research_signal_values
-	if offsets.size() != map.cell_count() + 1 or ids.size() != values.size():
-		return {"counts": counts, "signal_ids": signal_ids,
-			"signal_cells": signal_cells}
 	var signal_count := (catalog.research_signal_ids as PackedStringArray).size()
 	for cell in range(mini(map.cell_count(), visible.size())):
 		if visible[cell] == 0:
 			continue
-		for edge in range(offsets[cell], offsets[cell + 1]):
-			var signal_index := int(ids[edge])
-			if signal_index < 0 or signal_index >= signal_count or int(values[edge]) <= 0:
-				continue
-			counts[signal_index] = int(counts.get(signal_index, 0)) + 1
-			signal_ids.append(signal_index)
-			signal_cells.append(cell)
+		if offsets.size() == map.cell_count() + 1 and ids.size() == values.size():
+			for edge in range(offsets[cell], offsets[cell + 1]):
+				var signal_index := int(ids[edge])
+				if signal_index < 0 or signal_index >= signal_count or int(values[edge]) <= 0:
+					continue
+				counts[signal_index] = int(counts.get(signal_index, 0)) + 1
+				signal_ids.append(signal_index)
+				signal_cells.append(cell)
+		if cell < map.bio_occupancy_bits_arr.size():
+			for signal_index in ResearchSignalCatalogScript.occupancy_signal_indices(
+					catalog, int(map.bio_occupancy_bits_arr[cell])):
+				counts[signal_index] = int(counts.get(signal_index, 0)) + 1
+				signal_ids.append(int(signal_index))
+				signal_cells.append(cell)
 	return {"counts": counts, "signal_ids": signal_ids,
 		"signal_cells": signal_cells}
 
@@ -582,11 +605,7 @@ static func _vicinity_has_signal(map: MapData, cell_idx: int,
 
 
 static func _cell_has_signal(map: MapData, cell_idx: int, signal_id: String) -> bool:
-	var offsets := map.cell_research_signal_offsets
-	var ids := map.cell_research_signal_ids
-	var values := map.cell_research_signal_values
-	if cell_idx < 0 or offsets.size() != map.cell_count() + 1 \
-			or ids.size() != values.size():
+	if cell_idx < 0 or map == null:
 		return false
 	if _research_signal_index_by_id.is_empty():
 		var compiled: Dictionary = ResearchSignalCatalogScript.compile_native_catalog()
@@ -595,11 +614,24 @@ static func _cell_has_signal(map: MapData, cell_idx: int, signal_id: String) -> 
 		var stable_ids: PackedStringArray = compiled.research_signal_ids
 		for index in range(stable_ids.size()):
 			_research_signal_index_by_id[String(stable_ids[index])] = index
+		_research_signal_occupancy_bit = compiled.get(
+			"research_signal_occupancy_bit", PackedInt32Array())
 	var wanted := int(_research_signal_index_by_id.get(signal_id, -1))
 	if wanted < 0:
 		return false
-	for edge in range(int(offsets[cell_idx]), int(offsets[cell_idx + 1])):
-		if int(ids[edge]) == wanted and int(values[edge]) > 0:
+	var offsets := map.cell_research_signal_offsets
+	var ids := map.cell_research_signal_ids
+	var values := map.cell_research_signal_values
+	if offsets.size() == map.cell_count() + 1 and ids.size() == values.size() \
+			and cell_idx + 1 < offsets.size():
+		for edge in range(int(offsets[cell_idx]), int(offsets[cell_idx + 1])):
+			if int(ids[edge]) == wanted and int(values[edge]) > 0:
+				return true
+	if cell_idx < map.bio_occupancy_bits_arr.size() \
+			and wanted < _research_signal_occupancy_bit.size():
+		var bit := int(_research_signal_occupancy_bit[wanted])
+		if bit >= 0 and bit < 32 \
+				and (int(map.bio_occupancy_bits_arr[cell_idx]) & (1 << bit)) != 0:
 			return true
 	return false
 

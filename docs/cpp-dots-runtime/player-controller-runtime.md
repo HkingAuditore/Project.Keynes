@@ -40,10 +40,15 @@ Godot UI / unhandled input
 ## 输入与 UI 优先
 
 控制器实现 `_unhandled_input`，但不实现 `_process`，也不轮询 `Input`。UI
-已经消费的事件不会进入世界交互；控制器额外检查 viewport focus，任何
-`Control` 焦点都会阻止直接分发，文本编辑状态则阻止所有快捷键、点击、拖拽、
-滚轮和触摸。语义键位在 `project.godot` InputMap 中声明，PlayerGame 和
-MapCamera 不得重新加入硬编码玩家快捷键。
+已经消费的事件不会进入世界交互。门控分两层：
+
+- `LineEdit` / `TextEdit` 焦点会挡住 `_unhandled_input` 的全部快捷键和地图手势。
+- 普通 `Control` 焦点只挡住 `handle_input()` 直接分发（`PlayerGame`、测试、嵌入工具），
+  不锁死已经穿过 GUI 的地图点击、滚轮、拖拽和触摸。
+- 空地图上的指针事件会 `gui_release_focus()`，清掉 HUD 按钮残留焦点。
+- 地图 overlay、顶栏和国家栏按钮使用 `FOCUS_NONE`，避免点完图层后无法操作地图。
+
+语义键位在 `project.godot` InputMap 中声明，PlayerGame 和 MapCamera 不得重新加入硬编码玩家快捷键。
 
 ## 正式命令网关
 

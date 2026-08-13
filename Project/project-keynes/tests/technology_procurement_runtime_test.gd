@@ -20,14 +20,16 @@ func _init() -> void:
 		load("res://data/country/default_country.tres"), compiled).get("ok", false)))
 	var gathering := (compiled.technology_ids as PackedStringArray).find(
 		"tech.gathering")
+	var maize_identification := (compiled.technology_ids as PackedStringArray).find(
+		"tech.maize_identification")
 	var country_packet := {
 		"country_ids": PackedStringArray(["country.procurement"]),
 		"country_names": PackedStringArray(["Procurement"]),
 		"country_cash": PackedInt64Array([100000000]),
 		"territory_offsets": PackedInt32Array([0, 1]),
 		"territory_cells": PackedInt32Array([0]),
-		"technology_offsets": PackedInt32Array([0, 1]),
-		"technology_indices": PackedInt32Array([gathering]),
+		"technology_offsets": PackedInt32Array([0, 2]),
+		"technology_indices": PackedInt32Array([gathering, maize_identification]),
 	}
 	_expect("country bootstraps", bool(country.bootstrap(
 		PackedByteArray([0]), country_packet).get("ok", false)))

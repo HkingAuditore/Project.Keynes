@@ -1,0 +1,696 @@
+{
+  "same_lane_disjoint": [
+    {
+      "id": "tech.tin_identification",
+      "name": "锡矿辨识",
+      "era": "stone",
+      "role": "identification",
+      "anchor": "support",
+      "lane": "branch.nonferrous_metals",
+      "layout": 15,
+      "objs": [
+        "tin"
+      ],
+      "prereq": "tech.copper_annealing",
+      "prereq_name": "铜退火",
+      "prereq_role": "production_system",
+      "prereq_anchor": "support",
+      "prereq_objs": [
+        "copper"
+      ],
+      "prereq_layout": 14,
+      "hard": [
+        "铜退火"
+      ]
+    },
+    {
+      "id": "tech.pottery",
+      "name": "陶器容器体系",
+      "era": "agrarian",
+      "role": "handling",
+      "anchor": "route_anchor",
+      "lane": "branch.maritime_logistics",
+      "layout": 76,
+      "objs": [
+        "clay"
+      ],
+      "prereq": "tech.fishing_boats",
+      "prereq_name": "渔舟",
+      "prereq_role": "handling",
+      "prereq_anchor": "route_anchor",
+      "prereq_objs": [
+        "freshwater_fish",
+        "marine_fish"
+      ],
+      "prereq_layout": 9,
+      "hard": [
+        "定居知识",
+        "渔舟"
+      ]
+    },
+    {
+      "id": "tech.animal_traction",
+      "name": "畜力牵引",
+      "era": "agrarian",
+      "role": "handling",
+      "anchor": "route_anchor",
+      "lane": "branch.heavy_industry",
+      "layout": 99,
+      "objs": [
+        "cattle",
+        "horse"
+      ],
+      "prereq": "tech.copper_ore_roasting",
+      "prereq_name": "铜矿焙烧",
+      "prereq_role": "production_system",
+      "prereq_anchor": "route_anchor",
+      "prereq_objs": [
+        "copper"
+      ],
+      "prereq_layout": 70,
+      "hard": [
+        "定居知识",
+        "铜矿焙烧"
+      ]
+    },
+    {
+      "id": "tech.iron_smelting",
+      "name": "块炼铁",
+      "era": "kingdom",
+      "role": "production_system",
+      "anchor": "route_anchor",
+      "lane": "branch.heavy_industry",
+      "layout": 137,
+      "objs": [
+        "coal",
+        "iron"
+      ],
+      "prereq": "tech.animal_traction",
+      "prereq_name": "畜力牵引",
+      "prereq_role": "handling",
+      "prereq_anchor": "route_anchor",
+      "prereq_objs": [
+        "cattle",
+        "horse"
+      ],
+      "prereq_layout": 99,
+      "hard": [
+        "农耕社会",
+        "畜力牵引"
+      ]
+    },
+    {
+      "id": "tech.market_institutions",
+      "name": "市场制度",
+      "era": "kingdom",
+      "role": "institution",
+      "anchor": "route_anchor",
+      "lane": "branch.tropical_commodities",
+      "layout": 139,
+      "objs": [
+        "gold_ore",
+        "silver_ore"
+      ],
+      "prereq": "tech.spice_shade_gardening",
+      "prereq_name": "遮阴香料园",
+      "prereq_role": "applied_method",
+      "prereq_anchor": "route_anchor",
+      "prereq_objs": [
+        "spice"
+      ],
+      "prereq_layout": 123,
+      "hard": [
+        "农耕社会",
+        "遮阴香料园"
+      ]
+    },
+    {
+      "id": "tech.currency",
+      "name": "货币",
+      "era": "kingdom",
+      "role": "institution",
+      "anchor": "route_anchor",
+      "lane": "branch.nonferrous_metals",
+      "layout": 140,
+      "objs": [
+        "gold_ore",
+        "silver_ore"
+      ],
+      "prereq": "tech.bronze_casting",
+      "prereq_name": "铜锡配比与铸造",
+      "prereq_role": "production_system",
+      "prereq_anchor": "route_anchor",
+      "prereq_objs": [
+        "copper",
+        "tin"
+      ],
+      "prereq_layout": 90,
+      "hard": [
+        "农耕社会",
+        "铜锡配比与铸造"
+      ]
+    },
+    {
+      "id": "tech.surface_coal_use",
+      "name": "地表煤利用",
+      "era": "kingdom",
+      "role": "handling",
+      "anchor": "route_anchor",
+      "lane": "branch.electric_intelligent_energy",
+      "layout": 148,
+      "objs": [
+        "coal"
+      ],
+      "prereq": "tech.kiln_firing",
+      "prereq_name": "窑烧控制",
+      "prereq_role": "handling",
+      "prereq_anchor": "route_anchor",
+      "prereq_objs": [
+        "clay",
+        "silica"
+      ],
+      "prereq_layout": 97,
+      "hard": [
+        "农耕社会",
+        "窑烧控制"
+      ]
+    },
+    {
+      "id": "tech.parchment_making",
+      "name": "皮纸制作",
+      "era": "kingdom",
+      "role": "institution",
+      "anchor": "route_anchor",
+      "lane": "branch.pastoral_livestock",
+      "layout": 151,
+      "objs": [
+        "game",
+        "sheep"
+      ],
+      "prereq": "tech.horse_domestication",
+      "prereq_name": "马匹驯化",
+      "prereq_role": "production_system",
+      "prereq_anchor": "route_anchor",
+      "prereq_objs": [
+        "horse"
+      ],
+      "prereq_layout": 81,
+      "hard": [
+        "农耕社会",
+        "马匹驯化"
+      ]
+    },
+    {
+      "id": "tech.manuscript_culture",
+      "name": "手稿文化",
+      "era": "kingdom",
+      "role": "institution",
+      "anchor": "support",
+      "lane": "backbone.knowledge_computation",
+      "layout": 152,
+      "objs": [
+        "sheep"
+      ],
+      "prereq": "tech.scholarly_academies",
+      "prereq_name": "学术机构",
+      "prereq_role": "handling",
+      "prereq_anchor": "support",
+      "prereq_objs": [
+        "clay"
+      ],
+      "prereq_layout": 147,
+      "hard": [
+        "学术机构"
+      ]
+    },
+    {
+      "id": "tech.crucible_steel",
+      "name": "坩埚钢",
+      "era": "empire",
+      "role": "production_system",
+      "anchor": "route_anchor",
+      "lane": "branch.nonferrous_metals",
+      "layout": 172,
+      "objs": [
+        "coal",
+        "iron"
+      ],
+      "prereq": "tech.currency",
+      "prereq_name": "货币",
+      "prereq_role": "institution",
+      "prereq_anchor": "route_anchor",
+      "prereq_objs": [
+        "gold_ore",
+        "silver_ore"
+      ],
+      "prereq_layout": 140,
+      "hard": [
+        "王国体系",
+        "货币"
+      ]
+    },
+    {
+      "id": "tech.crop_acclimatization",
+      "name": "作物驯化移植",
+      "era": "exploration",
+      "role": "production_system",
+      "anchor": "route_anchor",
+      "lane": "branch.tuber_highland",
+      "layout": 203,
+      "objs": [
+        "potato"
+      ],
+      "prereq": "tech.estate_cereal_management",
+      "prereq_name": "庄园谷物核算",
+      "prereq_role": "institution",
+      "prereq_anchor": "route_anchor",
+      "prereq_objs": [
+        "maize",
+        "rice",
+        "wheat"
+      ],
+      "prereq_layout": 190,
+      "hard": [
+        "帝国网络",
+        "庄园谷物核算"
+      ]
+    },
+    {
+      "id": "tech.coke_smelting",
+      "name": "焦炭冶炼",
+      "era": "steam",
+      "role": "production_system",
+      "anchor": "route_anchor",
+      "lane": "branch.nonferrous_metals",
+      "layout": 245,
+      "objs": [
+        "coal",
+        "iron"
+      ],
+      "prereq": "tech.geological_prospecting",
+      "prereq_name": "地质勘探",
+      "prereq_role": "handling",
+      "prereq_anchor": "route_anchor",
+      "prereq_objs": [
+        "copper",
+        "tin"
+      ],
+      "prereq_layout": 229,
+      "hard": [
+        "启蒙制度",
+        "地质勘探"
+      ]
+    },
+    {
+      "id": "tech.fertilizer_processing",
+      "name": "肥料加工",
+      "era": "steam",
+      "role": "handling",
+      "anchor": "route_anchor",
+      "lane": "branch.tuber_highland",
+      "layout": 255,
+      "objs": [
+        "phosphate_rock",
+        "saltpeter",
+        "sulfur"
+      ],
+      "prereq": "tech.crop_breeding",
+      "prereq_name": "系统育种",
+      "prereq_role": "production_system",
+      "prereq_anchor": "route_anchor",
+      "prereq_objs": [
+        "potato"
+      ],
+      "prereq_layout": 219,
+      "hard": [
+        "启蒙制度",
+        "系统育种"
+      ]
+    },
+    {
+      "id": "tech.synthetic_fertilizer",
+      "name": "合成肥料",
+      "era": "electrical",
+      "role": "handling",
+      "anchor": "route_anchor",
+      "lane": "branch.maize_horticulture",
+      "layout": 269,
+      "objs": [
+        "phosphate_rock",
+        "saltpeter",
+        "sulfur"
+      ],
+      "prereq": "tech.mechanized_agriculture",
+      "prereq_name": "机械化农业",
+      "prereq_role": "production_system",
+      "prereq_anchor": "route_anchor",
+      "prereq_objs": [
+        "maize"
+      ],
+      "prereq_layout": 248,
+      "hard": [
+        "工业化",
+        "机械化农业"
+      ]
+    },
+    {
+      "id": "tech.cold_chain",
+      "name": "冷链",
+      "era": "electrical",
+      "role": "handling",
+      "anchor": "route_anchor",
+      "lane": "branch.tuber_highland",
+      "layout": 279,
+      "objs": [
+        "potato"
+      ],
+      "prereq": "tech.fertilizer_processing",
+      "prereq_name": "肥料加工",
+      "prereq_role": "handling",
+      "prereq_anchor": "route_anchor",
+      "prereq_objs": [
+        "phosphate_rock",
+        "saltpeter",
+        "sulfur"
+      ],
+      "prereq_layout": 255,
+      "hard": [
+        "工业化",
+        "肥料加工"
+      ]
+    },
+    {
+      "id": "tech.industrial_agronomy",
+      "name": "工业农学",
+      "era": "atomic",
+      "role": "production_system",
+      "anchor": "route_anchor",
+      "lane": "branch.maize_horticulture",
+      "layout": 293,
+      "objs": [
+        "maize"
+      ],
+      "prereq": "tech.synthetic_fertilizer",
+      "prereq_name": "合成肥料",
+      "prereq_role": "handling",
+      "prereq_anchor": "route_anchor",
+      "prereq_objs": [
+        "phosphate_rock",
+        "saltpeter",
+        "sulfur"
+      ],
+      "prereq_layout": 269,
+      "hard": [
+        "电气社会",
+        "合成肥料"
+      ]
+    },
+    {
+      "id": "tech.synthetic_materials",
+      "name": "合成材料",
+      "era": "atomic",
+      "role": "handling",
+      "anchor": "route_anchor",
+      "lane": "branch.forest_biomass",
+      "layout": 300,
+      "objs": [
+        "coal",
+        "gas",
+        "oil"
+      ],
+      "prereq": "tech.electrochemistry",
+      "prereq_name": "电化学",
+      "prereq_role": "handling",
+      "prereq_anchor": "route_anchor",
+      "prereq_objs": [
+        "sulfur"
+      ],
+      "prereq_layout": 271,
+      "hard": [
+        "电气社会",
+        "电化学"
+      ]
+    },
+    {
+      "id": "tech.networked_computing",
+      "name": "网络计算",
+      "era": "information",
+      "role": "power_scale",
+      "anchor": "route_anchor",
+      "lane": "branch.textile_fibers",
+      "layout": 322,
+      "objs": [
+        "tin"
+      ],
+      "prereq": "tech.synthetic_fiber_engineering",
+      "prereq_name": "合成纤维工程",
+      "prereq_role": "handling",
+      "prereq_anchor": "route_anchor",
+      "prereq_objs": [
+        "oil"
+      ],
+      "prereq_layout": 313,
+      "hard": [
+        "原子现代化",
+        "合成纤维工程"
+      ]
+    },
+    {
+      "id": "tech.intelligent_breeding",
+      "name": "智能育种",
+      "era": "intelligent",
+      "role": "handling",
+      "anchor": "route_anchor",
+      "lane": "branch.maize_horticulture",
+      "layout": 352,
+      "objs": [
+        "reed"
+      ],
+      "prereq": "tech.precision_agriculture",
+      "prereq_name": "精准农业",
+      "prereq_role": "production_system",
+      "prereq_anchor": "route_anchor",
+      "prereq_objs": [
+        "maize"
+      ],
+      "prereq_layout": 317,
+      "hard": [
+        "信息社会",
+        "精准农业"
+      ]
+    }
+  ],
+  "missing_own_chain": [
+    {
+      "id": "tech.ground_stone_tools",
+      "name": "磨制石器",
+      "era": "stone",
+      "role": "handling",
+      "anchor": "support",
+      "lane": "branch.construction_materials",
+      "layout": 24,
+      "objs": [
+        "clay",
+        "flint",
+        "stone"
+      ],
+      "hard": [
+        "打制石器 (tech.stone_knapping)"
+      ],
+      "nearest_own": "黏土辨识 (tech.clay_identification)",
+      "nearest_own_role": "identification",
+      "nearest_own_era": "stone",
+      "nearest_own_layout": 11,
+      "hard_count": 1
+    },
+    {
+      "id": "tech.cotton_identification",
+      "name": "棉花辨识",
+      "era": "stone",
+      "role": "identification",
+      "anchor": "support",
+      "lane": "branch.tropical_commodities",
+      "layout": 45,
+      "objs": [
+        "cotton"
+      ],
+      "hard": [],
+      "nearest_own": "纤维捻制 (tech.fiber_twisting)",
+      "nearest_own_role": "handling",
+      "nearest_own_era": "stone",
+      "nearest_own_layout": 17,
+      "hard_count": 0
+    },
+    {
+      "id": "tech.flax_identification",
+      "name": "亚麻与韧皮辨识",
+      "era": "stone",
+      "role": "identification",
+      "anchor": "support",
+      "lane": "branch.textile_fibers",
+      "layout": 47,
+      "objs": [
+        "flax"
+      ],
+      "hard": [],
+      "nearest_own": "纤维捻制 (tech.fiber_twisting)",
+      "nearest_own_role": "handling",
+      "nearest_own_era": "stone",
+      "nearest_own_layout": 17,
+      "hard_count": 0
+    },
+    {
+      "id": "tech.flint_identification",
+      "name": "燧石辨识",
+      "era": "stone",
+      "role": "identification",
+      "anchor": "support",
+      "lane": "branch.construction_materials",
+      "layout": 72,
+      "objs": [
+        "flint"
+      ],
+      "hard": [],
+      "nearest_own": "磨制石器 (tech.ground_stone_tools)",
+      "nearest_own_role": "handling",
+      "nearest_own_era": "stone",
+      "nearest_own_layout": 24,
+      "hard_count": 0
+    },
+    {
+      "id": "tech.scholarly_academies",
+      "name": "学术机构",
+      "era": "kingdom",
+      "role": "handling",
+      "anchor": "support",
+      "lane": "backbone.knowledge_computation",
+      "layout": 147,
+      "objs": [
+        "clay"
+      ],
+      "hard": [
+        "文字 (tech.writing)"
+      ],
+      "nearest_own": "城市卫生 (tech.urban_sanitation)",
+      "nearest_own_role": "handling",
+      "nearest_own_era": "kingdom",
+      "nearest_own_layout": 145,
+      "hard_count": 1
+    },
+    {
+      "id": "tech.tenant_cereal_farming",
+      "name": "佃作谷物",
+      "era": "kingdom",
+      "role": "production_system",
+      "anchor": "support",
+      "lane": "backbone.food_storage",
+      "layout": 157,
+      "objs": [
+        "maize",
+        "rice",
+        "wheat"
+      ],
+      "hard": [
+        "留种选育 (tech.seed_selection)"
+      ],
+      "nearest_own": "轮作 (tech.crop_rotation)",
+      "nearest_own_role": "production_system",
+      "nearest_own_era": "kingdom",
+      "nearest_own_layout": 144,
+      "hard_count": 1
+    },
+    {
+      "id": "tech.iron_ore_identification",
+      "name": "铁矿辨识",
+      "era": "kingdom",
+      "role": "identification",
+      "anchor": "support",
+      "lane": "branch.heavy_industry",
+      "layout": 159,
+      "objs": [
+        "iron"
+      ],
+      "hard": [
+        "农耕社会 (tech.agrarian_society)"
+      ],
+      "nearest_own": "块炼铁 (tech.iron_smelting)",
+      "nearest_own_role": "production_system",
+      "nearest_own_era": "kingdom",
+      "nearest_own_layout": 137,
+      "hard_count": 1
+    },
+    {
+      "id": "tech.coal_outcrop_identification",
+      "name": "露头煤辨识",
+      "era": "kingdom",
+      "role": "identification",
+      "anchor": "support",
+      "lane": "branch.heavy_industry",
+      "layout": 161,
+      "objs": [
+        "coal"
+      ],
+      "hard": [
+        "农耕社会 (tech.agrarian_society)"
+      ],
+      "nearest_own": "地表煤利用 (tech.surface_coal_use)",
+      "nearest_own_role": "handling",
+      "nearest_own_era": "kingdom",
+      "nearest_own_layout": 148,
+      "hard_count": 1
+    },
+    {
+      "id": "tech.precision_engineering",
+      "name": "精密工程",
+      "era": "enlightenment",
+      "role": "handling",
+      "anchor": "support",
+      "lane": "backbone.tools_machinery",
+      "layout": 221,
+      "objs": [
+        "iron"
+      ],
+      "hard": [
+        "机械计时 (tech.mechanical_timekeeping)"
+      ],
+      "nearest_own": "坩埚钢 (tech.crucible_steel)",
+      "nearest_own_role": "production_system",
+      "nearest_own_era": "empire",
+      "nearest_own_layout": 172,
+      "hard_count": 1
+    }
+  ],
+  "wrong_ident": [],
+  "family_first_handling": [
+    {
+      "id": "tech.scholarly_academies",
+      "name": "学术机构",
+      "era": "kingdom",
+      "role": "handling",
+      "anchor": "support",
+      "lane": "backbone.knowledge_computation",
+      "obj": "clay",
+      "hard": [
+        "文字 (tech.writing)"
+      ],
+      "missing_ident": "tech.clay_identification",
+      "layout": 147,
+      "ident_layout": 11
+    },
+    {
+      "id": "tech.precision_engineering",
+      "name": "精密工程",
+      "era": "enlightenment",
+      "role": "handling",
+      "anchor": "support",
+      "lane": "backbone.tools_machinery",
+      "obj": "iron",
+      "hard": [
+        "机械计时 (tech.mechanical_timekeeping)"
+      ],
+      "missing_ident": "tech.iron_ore_identification",
+      "layout": 221,
+      "ident_layout": 159
+    }
+  ]
+}

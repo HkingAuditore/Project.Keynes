@@ -368,9 +368,19 @@ func set_map_overlay(request: Dictionary) -> void:
 	if mode == OverlayMode.MODE.NONE:
 		clear_map_overlay()
 		return
+	var signal_id := StringName(request.get("signal_id", &""))
+	var occupancy_bit := -1
+	if mode == OverlayMode.MODE.BIO_OCCUPANCY:
+		occupancy_bit = ResearchSignalCatalog.occupancy_bit_for_signal(
+			ResearchSignalCatalog.compile_native_catalog(), signal_id)
+		if occupancy_bit < 0:
+			clear_map_overlay()
+			return
 	_map_overlay_request = {
 		"mode": mode,
 		"resource_id": StringName(request.get("resource_id", &"")),
+		"signal_id": signal_id,
+		"occupancy_bit": occupancy_bit,
 	}
 	_map_overlay_dirty = true
 	set_process(true)
@@ -428,12 +438,17 @@ func _refresh_map_overlay(force: bool) -> void:
 		if resource_profile == null:
 			clear_map_overlay()
 			return
+	var occupancy_bit := int(_map_overlay_request.get("occupancy_bit", -1))
+	if mode == OverlayMode.MODE.BIO_OCCUPANCY and occupancy_bit < 0:
+		clear_map_overlay()
+		return
 	var climate = _generator._c() if _generator != null and _generator.has_method("_c") else null
 	var phase := _world_clock.season_phase() if _world_clock != null else 0.0
 	var started := Time.get_ticks_usec()
 	var result := DataOverlayBaker.bake_cell_lut(
 		_current_map, _world_data, mode, climate, phase, _view_adapter,
-		resource_profile, _map_overlay_tex, _map_overlay_buf, _map_overlay_image
+		resource_profile, _map_overlay_tex, _map_overlay_buf, _map_overlay_image,
+		occupancy_bit
 	)
 	_map_overlay_tex = result.get("texture") as ImageTexture
 	_map_overlay_image = result.get("image") as Image
@@ -2477,7 +2492,6 @@ func _refresh_vision() -> Dictionary:
 
 func _submit_discovered_map_signals(previous: PackedByteArray) -> void:
 	if _current_map == null or previous.size() != _current_map.explored_arr.size() \
-			or _current_map.cell_research_signal_offsets.size() != _current_map.cell_count() + 1 \
 			or _generator == null or not _generator.has_method("get_country_facade"):
 		return
 	var facade = _generator.get_country_facade()
@@ -2486,21 +2500,43 @@ func _submit_discovered_map_signals(previous: PackedByteArray) -> void:
 		return
 	var commands: Array[Dictionary] = []
 	var effective_day := _world_clock.day_index() + 1 if _world_clock != null else 1
+	var catalog: Dictionary = ResearchSignalCatalog.compile_native_catalog()
+	var offsets := _current_map.cell_research_signal_offsets
+	var ids := _current_map.cell_research_signal_ids
+	var values := _current_map.cell_research_signal_values
+	var csr_ok := offsets.size() == _current_map.cell_count() + 1 and ids.size() == values.size()
 	for cell in _current_map.cell_count():
 		if previous[cell] != 0 or _current_map.explored_arr[cell] == 0:
 			continue
-		var begin := int(_current_map.cell_research_signal_offsets[cell])
-		var end := int(_current_map.cell_research_signal_offsets[cell + 1])
-		for edge in range(begin, end):
-			commands.append({
-				"opcode": CountryFacade.Opcode.DISCOVER_COUNTRY_SIGNAL,
-				"target_handle": handle,
-				"signal": int(_current_map.cell_research_signal_ids[edge]),
-				"cell": cell,
-				"value": 1,
-				"effective_day": effective_day,
-				"sequence": cell * 16 + (edge - begin),
-			})
+		var seq := 0
+		if csr_ok:
+			var begin := int(offsets[cell])
+			var end := int(offsets[cell + 1])
+			for edge in range(begin, end):
+				commands.append({
+					"opcode": CountryFacade.Opcode.DISCOVER_COUNTRY_SIGNAL,
+					"target_handle": handle,
+					"signal": int(ids[edge]),
+					"cell": cell,
+					"value": 1,
+					"effective_day": effective_day,
+					"sequence": cell * 64 + seq,
+				})
+				seq += 1
+		if cell < _current_map.bio_occupancy_bits_arr.size():
+			var occ_signals := ResearchSignalCatalog.occupancy_signal_indices(
+				catalog, int(_current_map.bio_occupancy_bits_arr[cell]))
+			for signal_index in occ_signals:
+				commands.append({
+					"opcode": CountryFacade.Opcode.DISCOVER_COUNTRY_SIGNAL,
+					"target_handle": handle,
+					"signal": int(signal_index),
+					"cell": cell,
+					"value": 1,
+					"effective_day": effective_day,
+					"sequence": cell * 64 + seq,
+				})
+				seq += 1
 	if not commands.is_empty():
 		facade.submit(commands)
 

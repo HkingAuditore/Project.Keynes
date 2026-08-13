@@ -1,0 +1,1114 @@
+{
+  "ident_count": 18,
+  "missing_ident_on_handling": [
+    {
+      "id": "tech.pottery",
+      "name": "陶器容器体系",
+      "era": "agrarian",
+      "role": "handling",
+      "anchor": "route_anchor",
+      "lane": "branch.maritime_logistics",
+      "order": 76,
+      "hard": [
+        "tech.settled_knowledge",
+        "tech.fishing_boats"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "resource.clay"
+      ],
+      "breakthrough": [
+        "breakthrough.kiln_temperature"
+      ],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.clay_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.plough_agriculture",
+      "name": "犁耕农业",
+      "era": "agrarian",
+      "role": "handling",
+      "anchor": "backbone_anchor",
+      "lane": "backbone.tools_machinery",
+      "order": 82,
+      "hard": [
+        "tech.settled_knowledge"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "resource.flint",
+        "resource.stone"
+      ],
+      "breakthrough": [
+        "breakthrough.kiln_temperature"
+      ],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.flint_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.weaving",
+      "name": "织造",
+      "era": "agrarian",
+      "role": "handling",
+      "anchor": "support",
+      "lane": "branch.textile_fibers",
+      "order": 88,
+      "hard": [
+        "tech.fiber_twisting"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "bio.bast_fiber",
+        "bio.cotton",
+        "bio.flax"
+      ],
+      "breakthrough": [],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.cotton_identification",
+        "tech.flax_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.bronze_casting",
+      "name": "铜锡配比与铸造",
+      "era": "agrarian",
+      "role": "production_system",
+      "anchor": "route_anchor",
+      "lane": "branch.nonferrous_metals",
+      "order": 90,
+      "hard": [
+        "tech.settled_knowledge",
+        "tech.natural_copper_working"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "resource.copper_ore",
+        "resource.tin_ore"
+      ],
+      "breakthrough": [],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.tin_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.kiln_firing",
+      "name": "窑烧控制",
+      "era": "agrarian",
+      "role": "handling",
+      "anchor": "route_anchor",
+      "lane": "branch.electric_intelligent_energy",
+      "order": 97,
+      "hard": [
+        "tech.settled_knowledge",
+        "tech.controlled_burning"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "resource.clay",
+        "resource.silica_sand"
+      ],
+      "breakthrough": [
+        "breakthrough.kiln_temperature"
+      ],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.clay_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.loom_weaving",
+      "name": "织机织造",
+      "era": "agrarian",
+      "role": "handling",
+      "anchor": "route_anchor",
+      "lane": "branch.textile_fibers",
+      "order": 98,
+      "hard": [
+        "tech.settled_knowledge",
+        "tech.fiber_twisting"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "bio.bast_fiber",
+        "bio.cotton",
+        "bio.flax"
+      ],
+      "breakthrough": [],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.cotton_identification",
+        "tech.flax_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.grain_threshing",
+      "name": "谷物脱粒",
+      "era": "agrarian",
+      "role": "handling",
+      "anchor": "support",
+      "lane": "branch.wheat_rainfed",
+      "order": 108,
+      "hard": [
+        "tech.dryland_water_retention"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "bio.maize",
+        "bio.rice",
+        "bio.wheat"
+      ],
+      "breakthrough": [],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.maize_identification",
+        "tech.rice_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.hand_spinning",
+      "name": "手工纺纱",
+      "era": "agrarian",
+      "role": "handling",
+      "anchor": "support",
+      "lane": "branch.textile_fibers",
+      "order": 120,
+      "hard": [
+        "tech.flax_retting"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "bio.bast_fiber",
+        "bio.cotton",
+        "bio.flax"
+      ],
+      "breakthrough": [],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.cotton_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.cotton_ginning",
+      "name": "棉花去籽",
+      "era": "agrarian",
+      "role": "handling",
+      "anchor": "support",
+      "lane": "branch.textile_fibers",
+      "order": 121,
+      "hard": [
+        "tech.hand_spinning"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "bio.cotton"
+      ],
+      "breakthrough": [],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.cotton_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.cotton_gardening",
+      "name": "棉花园圃",
+      "era": "agrarian",
+      "role": "applied_method",
+      "anchor": "support",
+      "lane": "branch.tropical_commodities",
+      "order": 122,
+      "hard": [
+        "tech.spice_cultivation"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "bio.cotton"
+      ],
+      "breakthrough": [],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.cotton_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.latex_smoke_coagulation",
+      "name": "乳胶烟熏凝固",
+      "era": "agrarian",
+      "role": "handling",
+      "anchor": "support",
+      "lane": "branch.tropical_commodities",
+      "order": 124,
+      "hard": [
+        "tech.spice_shade_gardening"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "bio.rubber"
+      ],
+      "breakthrough": [],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.rubber_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.masonry",
+      "name": "砌体建筑",
+      "era": "kingdom",
+      "role": "production_system",
+      "anchor": "route_anchor",
+      "lane": "branch.construction_materials",
+      "order": 136,
+      "hard": [
+        "tech.agrarian_society",
+        "tech.adobe_making"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "resource.clay",
+        "resource.flint",
+        "resource.stone"
+      ],
+      "breakthrough": [],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.flint_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.urban_sanitation",
+      "name": "城市卫生",
+      "era": "kingdom",
+      "role": "handling",
+      "anchor": "route_anchor",
+      "lane": "branch.industrial_chemistry",
+      "order": 145,
+      "hard": [
+        "tech.agrarian_society",
+        "tech.salt_preservation"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "resource.clay",
+        "resource.salt",
+        "resource.sulfur"
+      ],
+      "breakthrough": [],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.clay_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.scholarly_academies",
+      "name": "学术机构",
+      "era": "kingdom",
+      "role": "handling",
+      "anchor": "support",
+      "lane": "backbone.knowledge_computation",
+      "order": 147,
+      "hard": [
+        "tech.writing"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "resource.clay",
+        "resource.timber"
+      ],
+      "breakthrough": [],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.clay_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.tenant_cereal_farming",
+      "name": "佃作谷物",
+      "era": "kingdom",
+      "role": "production_system",
+      "anchor": "support",
+      "lane": "backbone.food_storage",
+      "order": 157,
+      "hard": [
+        "tech.fermentation"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "bio.maize",
+        "bio.rice",
+        "bio.wheat"
+      ],
+      "breakthrough": [],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.maize_identification",
+        "tech.rice_identification",
+        "tech.wheat_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.blast_furnace",
+      "name": "高炉冶炼",
+      "era": "empire",
+      "role": "production_system",
+      "anchor": "route_anchor",
+      "lane": "branch.heavy_industry",
+      "order": 171,
+      "hard": [
+        "tech.kingdom_administration",
+        "tech.iron_smelting"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "resource.coal",
+        "resource.iron_ore"
+      ],
+      "breakthrough": [
+        "breakthrough.metalworking"
+      ],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.coal_outcrop_identification",
+        "tech.iron_ore_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.crucible_steel",
+      "name": "坩埚钢",
+      "era": "empire",
+      "role": "production_system",
+      "anchor": "route_anchor",
+      "lane": "branch.nonferrous_metals",
+      "order": 172,
+      "hard": [
+        "tech.kingdom_administration",
+        "tech.currency"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "resource.coal",
+        "resource.iron_ore"
+      ],
+      "breakthrough": [],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.coal_outcrop_identification",
+        "tech.iron_ore_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.coal_mining",
+      "name": "煤矿开采",
+      "era": "empire",
+      "role": "handling",
+      "anchor": "route_anchor",
+      "lane": "branch.petroleum_materials",
+      "order": 173,
+      "hard": [
+        "tech.kingdom_administration",
+        "tech.natural_philosophy"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "resource.coal"
+      ],
+      "breakthrough": [],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.coal_outcrop_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.manorial_cereal_farming",
+      "name": "庄园谷物经营",
+      "era": "empire",
+      "role": "production_system",
+      "anchor": "route_anchor",
+      "lane": "branch.maize_horticulture",
+      "order": 184,
+      "hard": [
+        "tech.kingdom_administration",
+        "tech.customary_tenancy"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "bio.maize",
+        "bio.rice",
+        "bio.wheat"
+      ],
+      "breakthrough": [],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.rice_identification",
+        "tech.wheat_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.coal_adit_mining",
+      "name": "煤矿平硐",
+      "era": "empire",
+      "role": "handling",
+      "anchor": "support",
+      "lane": "branch.heavy_industry",
+      "order": 187,
+      "hard": [
+        "tech.blast_furnace"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "resource.coal"
+      ],
+      "breakthrough": [],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.coal_outcrop_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.interregional_botany",
+      "name": "跨区域植物学",
+      "era": "exploration",
+      "role": "handling",
+      "anchor": "route_anchor",
+      "lane": "branch.rice_irrigation",
+      "order": 204,
+      "hard": [
+        "tech.imperial_integration",
+        "tech.estate_paddy_management"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "bio.maize",
+        "bio.potato"
+      ],
+      "breakthrough": [],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.maize_identification",
+        "tech.potato_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.mechanical_timekeeping",
+      "name": "机械计时",
+      "era": "exploration",
+      "role": "power_scale",
+      "anchor": "backbone_anchor",
+      "lane": "backbone.tools_machinery",
+      "order": 206,
+      "hard": [
+        "tech.imperial_integration"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "resource.iron_ore"
+      ],
+      "breakthrough": [
+        "breakthrough.kiln_temperature",
+        "breakthrough.metalworking"
+      ],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.iron_ore_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.commodity_crop_management",
+      "name": "商品作物管理",
+      "era": "exploration",
+      "role": "production_system",
+      "anchor": "route_anchor",
+      "lane": "branch.textile_fibers",
+      "order": 212,
+      "hard": [
+        "tech.imperial_integration",
+        "tech.rag_paper_making"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "bio.cotton",
+        "bio.flax"
+      ],
+      "breakthrough": [],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.cotton_identification",
+        "tech.flax_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.precision_engineering",
+      "name": "精密工程",
+      "era": "enlightenment",
+      "role": "handling",
+      "anchor": "support",
+      "lane": "backbone.tools_machinery",
+      "order": 221,
+      "hard": [
+        "tech.mechanical_timekeeping"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "resource.iron_ore"
+      ],
+      "breakthrough": [
+        "breakthrough.kiln_temperature",
+        "breakthrough.metalworking"
+      ],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.iron_ore_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.standardization",
+      "name": "标准化",
+      "era": "enlightenment",
+      "role": "handling",
+      "anchor": "backbone_anchor",
+      "lane": "backbone.tools_machinery",
+      "order": 225,
+      "hard": [
+        "tech.global_exchange"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "resource.iron_ore"
+      ],
+      "breakthrough": [
+        "breakthrough.kiln_temperature",
+        "breakthrough.metalworking"
+      ],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.iron_ore_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.mechanical_workshops",
+      "name": "机械工坊",
+      "era": "enlightenment",
+      "role": "power_scale",
+      "anchor": "support",
+      "lane": "backbone.tools_machinery",
+      "order": 228,
+      "hard": [
+        "tech.standardization"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "resource.iron_ore"
+      ],
+      "breakthrough": [
+        "breakthrough.kiln_temperature",
+        "breakthrough.metalworking"
+      ],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.iron_ore_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.geological_prospecting",
+      "name": "地质勘探",
+      "era": "enlightenment",
+      "role": "handling",
+      "anchor": "route_anchor",
+      "lane": "branch.nonferrous_metals",
+      "order": 229,
+      "hard": [
+        "tech.global_exchange",
+        "tech.shaft_sinking"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "resource.copper_ore",
+        "resource.tin_ore"
+      ],
+      "breakthrough": [
+        "breakthrough.metalworking"
+      ],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.tin_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.industrial_coal_mining",
+      "name": "工业采煤",
+      "era": "steam",
+      "role": "handling",
+      "anchor": "route_anchor",
+      "lane": "branch.heavy_industry",
+      "order": 244,
+      "hard": [
+        "tech.enlightenment_institutions",
+        "tech.atmospheric_engine"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "resource.coal"
+      ],
+      "breakthrough": [],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.coal_geology",
+        "tech.coal_outcrop_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.coke_smelting",
+      "name": "焦炭冶炼",
+      "era": "steam",
+      "role": "production_system",
+      "anchor": "route_anchor",
+      "lane": "branch.nonferrous_metals",
+      "order": 245,
+      "hard": [
+        "tech.enlightenment_institutions",
+        "tech.geological_prospecting"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "resource.coal",
+        "resource.iron_ore"
+      ],
+      "breakthrough": [
+        "breakthrough.metalworking"
+      ],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.coal_geology",
+        "tech.coal_outcrop_identification",
+        "tech.iron_ore_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.textile_machinery",
+      "name": "纺织机械",
+      "era": "steam",
+      "role": "handling",
+      "anchor": "route_anchor",
+      "lane": "branch.textile_fibers",
+      "order": 251,
+      "hard": [
+        "tech.enlightenment_institutions",
+        "tech.wage_contracts"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "bio.cotton",
+        "bio.flax"
+      ],
+      "breakthrough": [
+        "breakthrough.industrial_organization"
+      ],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.cotton_identification",
+        "tech.flax_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.petroleum_extraction",
+      "name": "石油开采",
+      "era": "electrical",
+      "role": "handling",
+      "anchor": "support",
+      "lane": "branch.petroleum_materials",
+      "order": 275,
+      "hard": [
+        "tech.steam_power"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "resource.coal",
+        "resource.natural_gas",
+        "resource.oil"
+      ],
+      "breakthrough": [],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.coal_outcrop_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.petroleum_refining",
+      "name": "石油炼制",
+      "era": "electrical",
+      "role": "handling",
+      "anchor": "support",
+      "lane": "branch.petroleum_materials",
+      "order": 276,
+      "hard": [
+        "tech.petroleum_extraction"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "resource.coal",
+        "resource.natural_gas",
+        "resource.oil"
+      ],
+      "breakthrough": [],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.coal_outcrop_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.internal_combustion",
+      "name": "内燃机",
+      "era": "electrical",
+      "role": "power_scale",
+      "anchor": "route_anchor",
+      "lane": "branch.petroleum_materials",
+      "order": 277,
+      "hard": [
+        "tech.industrialization",
+        "tech.steam_power"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "resource.coal",
+        "resource.natural_gas",
+        "resource.oil"
+      ],
+      "breakthrough": [],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.coal_outcrop_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.electric_grid",
+      "name": "电网",
+      "era": "electrical",
+      "role": "power_scale",
+      "anchor": "route_anchor",
+      "lane": "branch.electric_intelligent_energy",
+      "order": 278,
+      "hard": [
+        "tech.industrialization",
+        "tech.assembly_line"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "resource.coal"
+      ],
+      "breakthrough": [
+        "breakthrough.electrification"
+      ],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.coal_geology",
+        "tech.coal_outcrop_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.petroleum_drilling",
+      "name": "石油钻探",
+      "era": "electrical",
+      "role": "handling",
+      "anchor": "route_anchor",
+      "lane": "branch.heavy_industry",
+      "order": 289,
+      "hard": [
+        "tech.industrialization",
+        "tech.industrial_coal_mining"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "resource.coal",
+        "resource.natural_gas",
+        "resource.oil"
+      ],
+      "breakthrough": [],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.coal_geology",
+        "tech.coal_outcrop_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.advanced_metallurgy",
+      "name": "先进冶金",
+      "era": "atomic",
+      "role": "production_system",
+      "anchor": "support",
+      "lane": "branch.nonferrous_metals",
+      "order": 294,
+      "hard": [
+        "tech.electromagnetic_induction"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "resource.copper_ore",
+        "resource.iron_ore"
+      ],
+      "breakthrough": [
+        "breakthrough.metalworking"
+      ],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.iron_ore_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.synthetic_materials",
+      "name": "合成材料",
+      "era": "atomic",
+      "role": "handling",
+      "anchor": "route_anchor",
+      "lane": "branch.forest_biomass",
+      "order": 300,
+      "hard": [
+        "tech.electrical_society",
+        "tech.electrochemistry"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "resource.coal",
+        "resource.natural_gas",
+        "resource.oil"
+      ],
+      "breakthrough": [],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.coal_geology",
+        "tech.coal_outcrop_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.public_health_systems",
+      "name": "公共卫生体系",
+      "era": "atomic",
+      "role": "handling",
+      "anchor": "route_anchor",
+      "lane": "branch.tropical_commodities",
+      "order": 302,
+      "hard": [
+        "tech.electrical_society",
+        "tech.refrigeration"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "bio.rubber",
+        "bio.spice"
+      ],
+      "breakthrough": [],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.rubber_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.specialty_alloys",
+      "name": "特种合金",
+      "era": "atomic",
+      "role": "production_system",
+      "anchor": "route_anchor",
+      "lane": "branch.nonferrous_metals",
+      "order": 306,
+      "hard": [
+        "tech.electrical_society",
+        "tech.electromagnetic_induction"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "resource.copper_ore",
+        "resource.iron_ore"
+      ],
+      "breakthrough": [
+        "breakthrough.metalworking"
+      ],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.iron_ore_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.plastics_engineering",
+      "name": "塑料工程",
+      "era": "atomic",
+      "role": "handling",
+      "anchor": "route_anchor",
+      "lane": "branch.construction_materials",
+      "order": 308,
+      "hard": [
+        "tech.electrical_society",
+        "tech.electrification"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "resource.coal",
+        "resource.natural_gas",
+        "resource.oil"
+      ],
+      "breakthrough": [],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.coal_geology",
+        "tech.coal_outcrop_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.nuclear_fuel_cycle",
+      "name": "核燃料循环",
+      "era": "atomic",
+      "role": "power_scale",
+      "anchor": "support",
+      "lane": "branch.electric_intelligent_energy",
+      "order": 312,
+      "hard": [
+        "tech.nuclear_energy"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "resource.coal",
+        "resource.natural_gas",
+        "resource.oil"
+      ],
+      "breakthrough": [],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.coal_geology",
+        "tech.coal_outcrop_identification"
+      ],
+      "day0_analog": false
+    },
+    {
+      "id": "tech.mineral_spectral_survey",
+      "name": "矿物光谱遥感",
+      "era": "information",
+      "role": "handling",
+      "anchor": "route_anchor",
+      "lane": "branch.nonferrous_metals",
+      "order": 327,
+      "hard": [
+        "tech.atomic_modernity",
+        "tech.specialty_alloys"
+      ],
+      "empty_hard": false,
+      "objs": [
+        "resource.coal",
+        "resource.iron_ore"
+      ],
+      "breakthrough": [
+        "breakthrough.mine_support"
+      ],
+      "reveal_op": 1,
+      "missing_ident": [
+        "tech.coal_geology",
+        "tech.coal_outcrop_identification",
+        "tech.iron_ore_identification"
+      ],
+      "day0_analog": false
+    }
+  ],
+  "day0_count": 0,
+  "inverted_ident_prereqs": [
+    {
+      "ident": "tech.clay_identification",
+      "ident_name": "黏土辨识",
+      "ident_order": 11,
+      "prereq": "tech.stone_knapping",
+      "prereq_name": "打制石器",
+      "prereq_role": "handling",
+      "prereq_order": 2,
+      "shared_objects": [],
+      "same_object_handling": false
+    },
+    {
+      "ident": "tech.tin_identification",
+      "ident_name": "锡矿辨识",
+      "ident_order": 15,
+      "prereq": "tech.copper_annealing",
+      "prereq_name": "铜退火",
+      "prereq_role": "production_system",
+      "prereq_order": 14,
+      "shared_objects": [],
+      "same_object_handling": false
+    },
+    {
+      "ident": "tech.gold_placer_identification",
+      "ident_name": "砂金辨识",
+      "ident_order": 53,
+      "prereq": "tech.freshwater_fishing",
+      "prereq_name": "淡水岸捕",
+      "prereq_role": "handling",
+      "prereq_order": 22,
+      "shared_objects": [],
+      "same_object_handling": false
+    },
+    {
+      "ident": "tech.silver_vein_identification",
+      "ident_name": "地表银脉辨识",
+      "ident_order": 55,
+      "prereq": "tech.seasonal_calendar",
+      "prereq_name": "季节历",
+      "prereq_role": "handling",
+      "prereq_order": 26,
+      "shared_objects": [],
+      "same_object_handling": false
+    },
+    {
+      "ident": "tech.flint_identification",
+      "ident_name": "燧石辨识",
+      "ident_order": 72,
+      "prereq": "tech.earth_building",
+      "prereq_name": "土建筑",
+      "prereq_role": "production_system",
+      "prereq_order": 25,
+      "shared_objects": [],
+      "same_object_handling": false
+    }
+  ],
+  "wrong_object_ident_prereq": [],
+  "visual_hard": 469,
+  "node_hard": 469
+}

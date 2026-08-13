@@ -1,0 +1,2691 @@
+{
+  "researchable": 327,
+  "empty_reveal": 0,
+  "identification_count": 18,
+  "finding_counts": {
+    "foreign_subject_signal": 39,
+    "identification_via_breakthrough": 10,
+    "ore_proxy_swap": 6,
+    "fiber_token_overmatch": 8,
+    "fiber_cross_species": 2,
+    "land_capacity_on_identification": 1,
+    "kiln_on_unfired_earth": 1,
+    "livestock_as_wild_game": 2,
+    "mine_support_overmatch": 8,
+    "timber_as_literacy_proxy": 3,
+    "wheat_token_overmatch": 2,
+    "fish_as_maritime_proxy": 5,
+    "generic_knowledge_dump": 26
+  },
+  "top_signals": [
+    [
+      "breakthrough.maritime_operations",
+      40
+    ],
+    [
+      "landform.river_valley",
+      38
+    ],
+    [
+      "breakthrough.automation",
+      38
+    ],
+    [
+      "breakthrough.digital_control",
+      34
+    ],
+    [
+      "breakthrough.print_calibration",
+      32
+    ],
+    [
+      "resource.rare_earth",
+      30
+    ],
+    [
+      "breakthrough.printing",
+      29
+    ],
+    [
+      "resource.coal",
+      26
+    ],
+    [
+      "breakthrough.electrification",
+      25
+    ],
+    [
+      "breakthrough.assembly_line",
+      24
+    ],
+    [
+      "breakthrough.seed_saving",
+      23
+    ],
+    [
+      "resource.fertile_soil",
+      23
+    ],
+    [
+      "resource.iron_ore",
+      23
+    ],
+    [
+      "breakthrough.mine_support",
+      19
+    ],
+    [
+      "bio.wheat",
+      18
+    ],
+    [
+      "breakthrough.rainfed_adaptation",
+      17
+    ],
+    [
+      "landform.freshwater_access",
+      17
+    ],
+    [
+      "breakthrough.kiln_temperature",
+      16
+    ],
+    [
+      "breakthrough.metalworking",
+      15
+    ],
+    [
+      "contact.wheat",
+      15
+    ]
+  ],
+  "source_kinds": [
+    [
+      "breakthrough",
+      415
+    ],
+    [
+      "resource",
+      251
+    ],
+    [
+      "landform",
+      113
+    ],
+    [
+      "bio",
+      96
+    ],
+    [
+      "contact",
+      62
+    ],
+    [
+      "weather",
+      41
+    ]
+  ],
+  "role_counts": [
+    [
+      "handling",
+      130
+    ],
+    [
+      "institution",
+      73
+    ],
+    [
+      "production_system",
+      60
+    ],
+    [
+      "power_scale",
+      34
+    ],
+    [
+      "identification",
+      18
+    ],
+    [
+      "applied_method",
+      12
+    ]
+  ],
+  "cloned_triples": [
+    {
+      "signals": [
+        "breakthrough.maritime_operations",
+        "breakthrough.print_calibration",
+        "breakthrough.printing"
+      ],
+      "count": 29,
+      "roles": [
+        "handling",
+        "institution"
+      ],
+      "examples": [
+        {
+          "id": "tech.guild_organization",
+          "name": "行业组织",
+          "role": "institution",
+          "era": "empire"
+        },
+        {
+          "id": "tech.movable_type_printing",
+          "name": "活字印刷",
+          "role": "institution",
+          "era": "empire"
+        },
+        {
+          "id": "tech.scholastic_method",
+          "name": "经院研究法",
+          "role": "handling",
+          "era": "empire"
+        },
+        {
+          "id": "tech.chartered_universities",
+          "name": "特许大学",
+          "role": "handling",
+          "era": "empire"
+        },
+        {
+          "id": "tech.manorial_jurisdiction",
+          "name": "庄园司法",
+          "role": "institution",
+          "era": "empire"
+        },
+        {
+          "id": "tech.serf_obligations",
+          "name": "农奴义务",
+          "role": "institution",
+          "era": "empire"
+        },
+        {
+          "id": "tech.guild_apprenticeship",
+          "name": "行会学徒制",
+          "role": "institution",
+          "era": "empire"
+        },
+        {
+          "id": "tech.regional_granaries",
+          "name": "区域粮仓",
+          "role": "institution",
+          "era": "empire"
+        }
+      ]
+    },
+    {
+      "signals": [
+        "breakthrough.automation",
+        "breakthrough.digital_control",
+        "resource.rare_earth"
+      ],
+      "count": 23,
+      "roles": [
+        "handling",
+        "power_scale"
+      ],
+      "examples": [
+        {
+          "id": "tech.digital_computing",
+          "name": "数字计算",
+          "role": "power_scale",
+          "era": "information"
+        },
+        {
+          "id": "tech.information_theory",
+          "name": "信息论",
+          "role": "handling",
+          "era": "information"
+        },
+        {
+          "id": "tech.software_engineering",
+          "name": "软件工程",
+          "role": "power_scale",
+          "era": "information"
+        },
+        {
+          "id": "tech.networked_computing",
+          "name": "网络计算",
+          "role": "power_scale",
+          "era": "information"
+        },
+        {
+          "id": "tech.satellite_observation",
+          "name": "卫星观测",
+          "role": "handling",
+          "era": "information"
+        },
+        {
+          "id": "tech.biotechnology",
+          "name": "生物技术",
+          "role": "handling",
+          "era": "information"
+        },
+        {
+          "id": "tech.numerical_weather_prediction",
+          "name": "数值天气预报",
+          "role": "handling",
+          "era": "information"
+        },
+        {
+          "id": "tech.digital_control",
+          "name": "数字控制",
+          "role": "power_scale",
+          "era": "information"
+        }
+      ]
+    },
+    {
+      "signals": [
+        "breakthrough.mine_support",
+        "resource.coal",
+        "resource.iron_ore"
+      ],
+      "count": 19,
+      "roles": [
+        "handling",
+        "identification",
+        "institution",
+        "power_scale",
+        "production_system"
+      ],
+      "examples": [
+        {
+          "id": "tech.iron_smelting",
+          "name": "块炼铁",
+          "role": "production_system",
+          "era": "kingdom"
+        },
+        {
+          "id": "tech.surface_coal_use",
+          "name": "地表煤利用",
+          "role": "handling",
+          "era": "kingdom"
+        },
+        {
+          "id": "tech.iron_ore_identification",
+          "name": "铁矿辨识",
+          "role": "identification",
+          "era": "kingdom"
+        },
+        {
+          "id": "tech.surface_iron_collection",
+          "name": "地表铁矿采集",
+          "role": "handling",
+          "era": "kingdom"
+        },
+        {
+          "id": "tech.coal_outcrop_identification",
+          "name": "露头煤辨识",
+          "role": "identification",
+          "era": "kingdom"
+        },
+        {
+          "id": "tech.surface_coal_collection",
+          "name": "地表煤采集",
+          "role": "handling",
+          "era": "kingdom"
+        },
+        {
+          "id": "tech.crucible_steel",
+          "name": "坩埚钢",
+          "role": "production_system",
+          "era": "empire"
+        },
+        {
+          "id": "tech.coal_mining",
+          "name": "煤矿开采",
+          "role": "handling",
+          "era": "empire"
+        }
+      ]
+    },
+    {
+      "signals": [
+        "bio.wheat",
+        "breakthrough.rainfed_adaptation",
+        "contact.wheat"
+      ],
+      "count": 15,
+      "roles": [
+        "handling",
+        "identification",
+        "institution",
+        "power_scale",
+        "production_system"
+      ],
+      "examples": [
+        {
+          "id": "tech.wheat_identification",
+          "name": "小麦辨识",
+          "role": "identification",
+          "era": "stone"
+        },
+        {
+          "id": "tech.wild_wheat_collection",
+          "name": "野生谷穗采集",
+          "role": "handling",
+          "era": "stone"
+        },
+        {
+          "id": "tech.wheat_seed_saving",
+          "name": "小麦留种",
+          "role": "handling",
+          "era": "stone"
+        },
+        {
+          "id": "tech.wheat_propagation",
+          "name": "小麦繁育",
+          "role": "production_system",
+          "era": "stone"
+        },
+        {
+          "id": "tech.grain_threshing",
+          "name": "谷物脱粒",
+          "role": "handling",
+          "era": "agrarian"
+        },
+        {
+          "id": "tech.grain_baking",
+          "name": "谷物烘焙",
+          "role": "handling",
+          "era": "agrarian"
+        },
+        {
+          "id": "tech.crop_rotation",
+          "name": "轮作",
+          "role": "production_system",
+          "era": "kingdom"
+        },
+        {
+          "id": "tech.tenant_cereal_farming",
+          "name": "佃作谷物",
+          "role": "production_system",
+          "era": "kingdom"
+        }
+      ]
+    },
+    {
+      "signals": [
+        "breakthrough.maritime_operations",
+        "landform.coast",
+        "resource.marine_fish"
+      ],
+      "count": 11,
+      "roles": [
+        "handling",
+        "institution",
+        "power_scale",
+        "production_system"
+      ],
+      "examples": [
+        {
+          "id": "tech.magnetic_navigation",
+          "name": "磁针导航",
+          "role": "handling",
+          "era": "empire"
+        },
+        {
+          "id": "tech.celestial_navigation",
+          "name": "天文导航",
+          "role": "handling",
+          "era": "exploration"
+        },
+        {
+          "id": "tech.oceanic_navigation",
+          "name": "远洋航海",
+          "role": "institution",
+          "era": "exploration"
+        },
+        {
+          "id": "tech.oceanic_ship_design",
+          "name": "远洋船舶设计",
+          "role": "institution",
+          "era": "exploration"
+        },
+        {
+          "id": "tech.coastal_shipyards",
+          "name": "海岸船厂",
+          "role": "production_system",
+          "era": "exploration"
+        },
+        {
+          "id": "tech.oceanic_provisioning",
+          "name": "远洋补给",
+          "role": "institution",
+          "era": "exploration"
+        },
+        {
+          "id": "tech.precision_instruments",
+          "name": "精密仪器",
+          "role": "handling",
+          "era": "enlightenment"
+        },
+        {
+          "id": "tech.rail_logistics",
+          "name": "铁路物流",
+          "role": "institution",
+          "era": "steam"
+        }
+      ]
+    },
+    {
+      "signals": [
+        "breakthrough.assembly_line",
+        "breakthrough.electrification",
+        "breakthrough.motor_winding"
+      ],
+      "count": 11,
+      "roles": [
+        "handling",
+        "power_scale"
+      ],
+      "examples": [
+        {
+          "id": "tech.electrification",
+          "name": "电气化",
+          "role": "power_scale",
+          "era": "electrical"
+        },
+        {
+          "id": "tech.public_education",
+          "name": "公共教育",
+          "role": "handling",
+          "era": "electrical"
+        },
+        {
+          "id": "tech.radio",
+          "name": "无线电",
+          "role": "handling",
+          "era": "electrical"
+        },
+        {
+          "id": "tech.electric_grid",
+          "name": "电网",
+          "role": "power_scale",
+          "era": "electrical"
+        },
+        {
+          "id": "tech.electromagnetic_induction",
+          "name": "电磁感应",
+          "role": "handling",
+          "era": "electrical"
+        },
+        {
+          "id": "tech.electric_generation",
+          "name": "发电机",
+          "role": "power_scale",
+          "era": "electrical"
+        },
+        {
+          "id": "tech.electric_motors",
+          "name": "电动机",
+          "role": "power_scale",
+          "era": "electrical"
+        },
+        {
+          "id": "tech.industrial_research",
+          "name": "工业研究",
+          "role": "handling",
+          "era": "electrical"
+        }
+      ]
+    },
+    {
+      "signals": [
+        "landform.river_valley",
+        "weather.frost",
+        "weather.monsoon"
+      ],
+      "count": 10,
+      "roles": [
+        "handling",
+        "institution"
+      ],
+      "examples": [
+        {
+          "id": "tech.natural_observation",
+          "name": "自然观察",
+          "role": "handling",
+          "era": "stone"
+        },
+        {
+          "id": "tech.oral_tradition",
+          "name": "口述传统",
+          "role": "institution",
+          "era": "stone"
+        },
+        {
+          "id": "tech.seasonal_calendar",
+          "name": "季节历",
+          "role": "handling",
+          "era": "stone"
+        },
+        {
+          "id": "tech.celestial_calendars",
+          "name": "天文历法",
+          "role": "handling",
+          "era": "agrarian"
+        },
+        {
+          "id": "tech.record_keeping",
+          "name": "记事制度",
+          "role": "institution",
+          "era": "agrarian"
+        },
+        {
+          "id": "tech.writing",
+          "name": "文字",
+          "role": "institution",
+          "era": "kingdom"
+        },
+        {
+          "id": "tech.natural_philosophy",
+          "name": "自然哲学",
+          "role": "handling",
+          "era": "kingdom"
+        },
+        {
+          "id": "tech.scholarly_academies",
+          "name": "学术机构",
+          "role": "handling",
+          "era": "kingdom"
+        }
+      ]
+    },
+    {
+      "signals": [
+        "breakthrough.metalworking",
+        "resource.copper_ore",
+        "resource.tin_ore"
+      ],
+      "count": 10,
+      "roles": [
+        "handling",
+        "identification",
+        "production_system"
+      ],
+      "examples": [
+        {
+          "id": "tech.natural_copper_identification",
+          "name": "自然铜辨识",
+          "role": "identification",
+          "era": "stone"
+        },
+        {
+          "id": "tech.natural_copper_working",
+          "name": "自然铜冷锤",
+          "role": "handling",
+          "era": "stone"
+        },
+        {
+          "id": "tech.copper_annealing",
+          "name": "铜退火",
+          "role": "production_system",
+          "era": "stone"
+        },
+        {
+          "id": "tech.copper_ore_roasting",
+          "name": "铜矿焙烧",
+          "role": "production_system",
+          "era": "stone"
+        },
+        {
+          "id": "tech.copper_metallurgy",
+          "name": "木炭坩埚炼铜",
+          "role": "production_system",
+          "era": "agrarian"
+        },
+        {
+          "id": "tech.bronze_casting",
+          "name": "铜锡配比与铸造",
+          "role": "production_system",
+          "era": "agrarian"
+        },
+        {
+          "id": "tech.geological_prospecting",
+          "name": "地质勘探",
+          "role": "handling",
+          "era": "enlightenment"
+        },
+        {
+          "id": "tech.coke_smelting",
+          "name": "焦炭冶炼",
+          "role": "production_system",
+          "era": "steam"
+        }
+      ]
+    },
+    {
+      "signals": [
+        "bio.cotton",
+        "bio.flax",
+        "contact.flax"
+      ],
+      "count": 10,
+      "roles": [
+        "handling",
+        "identification",
+        "institution",
+        "production_system"
+      ],
+      "examples": [
+        {
+          "id": "tech.fiber_twisting",
+          "name": "纤维捻制",
+          "role": "handling",
+          "era": "stone"
+        },
+        {
+          "id": "tech.flax_identification",
+          "name": "亚麻与韧皮辨识",
+          "role": "identification",
+          "era": "stone"
+        },
+        {
+          "id": "tech.weaving",
+          "name": "织造",
+          "role": "handling",
+          "era": "agrarian"
+        },
+        {
+          "id": "tech.loom_weaving",
+          "name": "织机织造",
+          "role": "handling",
+          "era": "agrarian"
+        },
+        {
+          "id": "tech.flax_retting",
+          "name": "沤麻",
+          "role": "handling",
+          "era": "agrarian"
+        },
+        {
+          "id": "tech.hand_spinning",
+          "name": "手工纺纱",
+          "role": "handling",
+          "era": "agrarian"
+        },
+        {
+          "id": "tech.plant_fiber_papermaking",
+          "name": "植物纤维抄纸",
+          "role": "institution",
+          "era": "kingdom"
+        },
+        {
+          "id": "tech.commodity_crop_management",
+          "name": "商品作物管理",
+          "role": "production_system",
+          "era": "exploration"
+        }
+      ]
+    },
+    {
+      "signals": [
+        "bio.maize",
+        "breakthrough.maize_selection",
+        "contact.maize"
+      ],
+      "count": 10,
+      "roles": [
+        "handling",
+        "identification",
+        "production_system"
+      ],
+      "examples": [
+        {
+          "id": "tech.maize_identification",
+          "name": "玉米辨识",
+          "role": "identification",
+          "era": "stone"
+        },
+        {
+          "id": "tech.wild_maize_collection",
+          "name": "野生玉米采集",
+          "role": "handling",
+          "era": "stone"
+        },
+        {
+          "id": "tech.maize_seed_saving",
+          "name": "玉米留种",
+          "role": "handling",
+          "era": "stone"
+        },
+        {
+          "id": "tech.maize_propagation",
+          "name": "玉米繁育",
+          "role": "production_system",
+          "era": "stone"
+        },
+        {
+          "id": "tech.maize_selection",
+          "name": "玉米选育",
+          "role": "production_system",
+          "era": "agrarian"
+        },
+        {
+          "id": "tech.maize_garden_horticulture",
+          "name": "玉米园圃",
+          "role": "production_system",
+          "era": "agrarian"
+        },
+        {
+          "id": "tech.agronomic_exchange",
+          "name": "农艺交换",
+          "role": "production_system",
+          "era": "exploration"
+        },
+        {
+          "id": "tech.mechanized_agriculture",
+          "name": "机械化农业",
+          "role": "production_system",
+          "era": "steam"
+        }
+      ]
+    },
+    {
+      "signals": [
+        "bio.horse",
+        "landform.grassland",
+        "resource.pasture"
+      ],
+      "count": 9,
+      "roles": [
+        "handling",
+        "production_system"
+      ],
+      "examples": [
+        {
+          "id": "tech.herd_management",
+          "name": "畜群管理",
+          "role": "production_system",
+          "era": "stone"
+        },
+        {
+          "id": "tech.pastoralism",
+          "name": "游牧放牧",
+          "role": "production_system",
+          "era": "agrarian"
+        },
+        {
+          "id": "tech.horse_domestication",
+          "name": "马匹驯化",
+          "role": "production_system",
+          "era": "agrarian"
+        },
+        {
+          "id": "tech.dairy_processing",
+          "name": "乳品加工",
+          "role": "production_system",
+          "era": "agrarian"
+        },
+        {
+          "id": "tech.wool_husbandry",
+          "name": "毛用畜牧",
+          "role": "production_system",
+          "era": "agrarian"
+        },
+        {
+          "id": "tech.meat_processing",
+          "name": "屠宰分割",
+          "role": "handling",
+          "era": "agrarian"
+        },
+        {
+          "id": "tech.pastoral_networks",
+          "name": "牧业网络",
+          "role": "production_system",
+          "era": "empire"
+        },
+        {
+          "id": "tech.livestock_breeding",
+          "name": "畜种改良",
+          "role": "production_system",
+          "era": "enlightenment"
+        }
+      ]
+    },
+    {
+      "signals": [
+        "breakthrough.forest_management",
+        "landform.forest",
+        "resource.timber"
+      ],
+      "count": 9,
+      "roles": [
+        "applied_method",
+        "handling",
+        "institution",
+        "production_system"
+      ],
+      "examples": [
+        {
+          "id": "tech.charcoal_burning",
+          "name": "木炭烧制",
+          "role": "handling",
+          "era": "stone"
+        },
+        {
+          "id": "tech.timber_sawing",
+          "name": "手工锯木",
+          "role": "production_system",
+          "era": "agrarian"
+        },
+        {
+          "id": "tech.bark_paper_making",
+          "name": "树皮纸",
+          "role": "institution",
+          "era": "kingdom"
+        },
+        {
+          "id": "tech.forest_management",
+          "name": "森林管理",
+          "role": "handling",
+          "era": "empire"
+        },
+        {
+          "id": "tech.rag_paper_making",
+          "name": "破布纸",
+          "role": "institution",
+          "era": "empire"
+        },
+        {
+          "id": "tech.woodblock_printing",
+          "name": "木版印刷",
+          "role": "institution",
+          "era": "empire"
+        },
+        {
+          "id": "tech.mine_timbering",
+          "name": "矿井木支护",
+          "role": "handling",
+          "era": "empire"
+        },
+        {
+          "id": "tech.steam_sawmilling",
+          "name": "蒸汽锯木",
+          "role": "applied_method",
+          "era": "steam"
+        }
+      ]
+    }
+  ],
+  "ident_rows": [
+    {
+      "id": "tech.clay_identification",
+      "name": "黏土辨识",
+      "era": "stone",
+      "signals": [
+        "resource.clay",
+        "resource.silica_sand",
+        "breakthrough.kiln_temperature"
+      ],
+      "generated_by": "token:clay"
+    },
+    {
+      "id": "tech.natural_copper_identification",
+      "name": "自然铜辨识",
+      "era": "stone",
+      "signals": [
+        "resource.copper_ore",
+        "resource.tin_ore",
+        "breakthrough.metalworking"
+      ],
+      "generated_by": "token:copper"
+    },
+    {
+      "id": "tech.tin_identification",
+      "name": "锡矿辨识",
+      "era": "stone",
+      "signals": [
+        "resource.tin_ore",
+        "contact.tin",
+        "breakthrough.metalworking"
+      ],
+      "generated_by": "token:tin"
+    },
+    {
+      "id": "tech.maize_identification",
+      "name": "玉米辨识",
+      "era": "stone",
+      "signals": [
+        "bio.maize",
+        "contact.maize",
+        "breakthrough.maize_selection"
+      ],
+      "generated_by": "token:maize"
+    },
+    {
+      "id": "tech.wheat_identification",
+      "name": "小麦辨识",
+      "era": "stone",
+      "signals": [
+        "bio.wheat",
+        "contact.wheat",
+        "breakthrough.rainfed_adaptation"
+      ],
+      "generated_by": "token:wheat"
+    },
+    {
+      "id": "tech.rice_identification",
+      "name": "稻类辨识",
+      "era": "stone",
+      "signals": [
+        "bio.rice",
+        "contact.rice",
+        "breakthrough.paddy_control"
+      ],
+      "generated_by": "token:rice"
+    },
+    {
+      "id": "tech.potato_identification",
+      "name": "块茎辨识",
+      "era": "stone",
+      "signals": [
+        "bio.potato",
+        "contact.potato",
+        "breakthrough.terrace_maintenance"
+      ],
+      "generated_by": "token:potato"
+    },
+    {
+      "id": "tech.cotton_identification",
+      "name": "棉花辨识",
+      "era": "stone",
+      "signals": [
+        "bio.cotton",
+        "contact.cotton"
+      ],
+      "generated_by": "token:cotton"
+    },
+    {
+      "id": "tech.flax_identification",
+      "name": "亚麻与韧皮辨识",
+      "era": "stone",
+      "signals": [
+        "bio.flax",
+        "bio.cotton",
+        "contact.flax"
+      ],
+      "generated_by": "token:flax"
+    },
+    {
+      "id": "tech.spice_identification",
+      "name": "香料植物辨识",
+      "era": "stone",
+      "signals": [
+        "bio.spice",
+        "contact.spice",
+        "resource.plantation_land"
+      ],
+      "generated_by": "token:spice"
+    },
+    {
+      "id": "tech.rubber_identification",
+      "name": "橡胶树辨识",
+      "era": "stone",
+      "signals": [
+        "bio.rubber",
+        "contact.rubber",
+        "landform.forest"
+      ],
+      "generated_by": "token:rubber"
+    },
+    {
+      "id": "tech.gold_placer_identification",
+      "name": "砂金辨识",
+      "era": "stone",
+      "signals": [
+        "resource.gold_ore",
+        "resource.silver_ore",
+        "landform.freshwater_access"
+      ],
+      "generated_by": "token:gold"
+    },
+    {
+      "id": "tech.silver_vein_identification",
+      "name": "地表银脉辨识",
+      "era": "stone",
+      "signals": [
+        "resource.gold_ore",
+        "resource.silver_ore",
+        "landform.freshwater_access"
+      ],
+      "generated_by": "token:silver"
+    },
+    {
+      "id": "tech.reed_identification",
+      "name": "芦苇辨识",
+      "era": "stone",
+      "signals": [
+        "bio.reed",
+        "landform.marsh",
+        "landform.freshwater_access"
+      ],
+      "generated_by": "explicit_or_lane"
+    },
+    {
+      "id": "tech.flint_identification",
+      "name": "燧石辨识",
+      "era": "stone",
+      "signals": [
+        "resource.stone",
+        "resource.flint",
+        "resource.clay"
+      ],
+      "generated_by": "token:flint"
+    },
+    {
+      "id": "tech.iron_ore_identification",
+      "name": "铁矿辨识",
+      "era": "kingdom",
+      "signals": [
+        "resource.iron_ore",
+        "resource.coal",
+        "breakthrough.mine_support"
+      ],
+      "generated_by": "token:iron"
+    },
+    {
+      "id": "tech.coal_outcrop_identification",
+      "name": "露头煤辨识",
+      "era": "kingdom",
+      "signals": [
+        "resource.iron_ore",
+        "resource.coal",
+        "breakthrough.mine_support"
+      ],
+      "generated_by": "token:coal"
+    },
+    {
+      "id": "tech.coal_geology",
+      "name": "煤层地质",
+      "era": "enlightenment",
+      "signals": [
+        "resource.iron_ore",
+        "resource.coal",
+        "breakthrough.mine_support"
+      ],
+      "generated_by": "token:coal"
+    }
+  ],
+  "findings": {
+    "foreign_subject_signal": [
+      {
+        "id": "tech.clay_identification",
+        "name": "黏土辨识",
+        "era": "stone",
+        "role": "identification",
+        "signals": [
+          "resource.clay",
+          "resource.silica_sand",
+          "breakthrough.kiln_temperature"
+        ],
+        "foreign": [
+          "resource.silica_sand"
+        ],
+        "generated_by": "token:clay"
+      },
+      {
+        "id": "tech.natural_copper_identification",
+        "name": "自然铜辨识",
+        "era": "stone",
+        "role": "identification",
+        "signals": [
+          "resource.copper_ore",
+          "resource.tin_ore",
+          "breakthrough.metalworking"
+        ],
+        "foreign": [
+          "resource.tin_ore"
+        ],
+        "generated_by": "token:copper"
+      },
+      {
+        "id": "tech.natural_copper_working",
+        "name": "自然铜冷锤",
+        "era": "stone",
+        "role": "handling",
+        "signals": [
+          "resource.copper_ore",
+          "resource.tin_ore",
+          "breakthrough.metalworking"
+        ],
+        "foreign": [
+          "resource.tin_ore"
+        ],
+        "generated_by": "token:copper"
+      },
+      {
+        "id": "tech.copper_annealing",
+        "name": "铜退火",
+        "era": "stone",
+        "role": "production_system",
+        "signals": [
+          "resource.copper_ore",
+          "resource.tin_ore",
+          "breakthrough.metalworking"
+        ],
+        "foreign": [
+          "resource.tin_ore"
+        ],
+        "generated_by": "token:copper"
+      },
+      {
+        "id": "tech.fiber_twisting",
+        "name": "纤维捻制",
+        "era": "stone",
+        "role": "handling",
+        "signals": [
+          "bio.flax",
+          "bio.cotton",
+          "contact.flax"
+        ],
+        "foreign": [
+          "bio.flax",
+          "bio.cotton",
+          "contact.flax"
+        ],
+        "generated_by": "token:fiber"
+      },
+      {
+        "id": "tech.flax_identification",
+        "name": "亚麻与韧皮辨识",
+        "era": "stone",
+        "role": "identification",
+        "signals": [
+          "bio.flax",
+          "bio.cotton",
+          "contact.flax"
+        ],
+        "foreign": [
+          "bio.cotton"
+        ],
+        "generated_by": "token:flax"
+      },
+      {
+        "id": "tech.spice_identification",
+        "name": "香料植物辨识",
+        "era": "stone",
+        "role": "identification",
+        "signals": [
+          "bio.spice",
+          "contact.spice",
+          "resource.plantation_land"
+        ],
+        "foreign": [
+          "resource.plantation_land"
+        ],
+        "generated_by": "token:spice"
+      },
+      {
+        "id": "tech.wild_spice_collection",
+        "name": "野生香料采集",
+        "era": "stone",
+        "role": "handling",
+        "signals": [
+          "bio.spice",
+          "contact.spice",
+          "resource.plantation_land"
+        ],
+        "foreign": [
+          "resource.plantation_land"
+        ],
+        "generated_by": "token:spice"
+      },
+      {
+        "id": "tech.gold_placer_identification",
+        "name": "砂金辨识",
+        "era": "stone",
+        "role": "identification",
+        "signals": [
+          "resource.gold_ore",
+          "resource.silver_ore",
+          "landform.freshwater_access"
+        ],
+        "foreign": [
+          "resource.silver_ore"
+        ],
+        "generated_by": "token:gold"
+      },
+      {
+        "id": "tech.silver_vein_identification",
+        "name": "地表银脉辨识",
+        "era": "stone",
+        "role": "identification",
+        "signals": [
+          "resource.gold_ore",
+          "resource.silver_ore",
+          "landform.freshwater_access"
+        ],
+        "foreign": [
+          "resource.gold_ore"
+        ],
+        "generated_by": "token:silver"
+      },
+      {
+        "id": "tech.charcoal_burning",
+        "name": "木炭烧制",
+        "era": "stone",
+        "role": "handling",
+        "signals": [
+          "resource.timber",
+          "landform.forest",
+          "breakthrough.forest_management"
+        ],
+        "foreign": [
+          "resource.timber"
+        ],
+        "generated_by": "token:forest"
+      },
+      {
+        "id": "tech.copper_ore_roasting",
+        "name": "铜矿焙烧",
+        "era": "stone",
+        "role": "production_system",
+        "signals": [
+          "resource.copper_ore",
+          "resource.tin_ore",
+          "breakthrough.metalworking"
+        ],
+        "foreign": [
+          "resource.tin_ore"
+        ],
+        "generated_by": "token:copper"
+      },
+      {
+        "id": "tech.clay_preparation",
+        "name": "黏土调制",
+        "era": "stone",
+        "role": "handling",
+        "signals": [
+          "resource.clay",
+          "resource.silica_sand",
+          "breakthrough.kiln_temperature"
+        ],
+        "foreign": [
+          "resource.silica_sand"
+        ],
+        "generated_by": "token:clay"
+      },
+      {
+        "id": "tech.spice_cultivation",
+        "name": "香料栽培",
+        "era": "agrarian",
+        "role": "applied_method",
+        "signals": [
+          "bio.spice",
+          "contact.spice",
+          "resource.plantation_land"
+        ],
+        "foreign": [
+          "resource.plantation_land"
+        ],
+        "generated_by": "token:spice"
+      },
+      {
+        "id": "tech.copper_metallurgy",
+        "name": "木炭坩埚炼铜",
+        "era": "agrarian",
+        "role": "production_system",
+        "signals": [
+          "resource.copper_ore",
+          "resource.tin_ore",
+          "breakthrough.metalworking"
+        ],
+        "foreign": [
+          "resource.tin_ore"
+        ],
+        "generated_by": "token:copper"
+      },
+      {
+        "id": "tech.bronze_casting",
+        "name": "铜锡配比与铸造",
+        "era": "agrarian",
+        "role": "production_system",
+        "signals": [
+          "resource.copper_ore",
+          "resource.tin_ore",
+          "breakthrough.metalworking"
+        ],
+        "foreign": [
+          "resource.copper_ore"
+        ],
+        "generated_by": "token:copper"
+      },
+      {
+        "id": "tech.rainfed_maize_cultivation",
+        "name": "雨养玉米田",
+        "era": "agrarian",
+        "role": "applied_method",
+        "signals": [
+          "bio.maize",
+          "resource.arable_land",
+          "weather.drought"
+        ],
+        "foreign": [
+          "resource.arable_land"
+        ],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.wetland_rice_gardening",
+        "name": "湿地稻园",
+        "era": "agrarian",
+        "role": "applied_method",
+        "signals": [
+          "bio.rice",
+          "landform.marsh",
+          "resource.paddy_land"
+        ],
+        "foreign": [
+          "resource.paddy_land"
+        ],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.rice_water_control",
+        "name": "稻田水位控制",
+        "era": "agrarian",
+        "role": "production_system",
+        "signals": [
+          "resource.paddy_land",
+          "landform.river_valley",
+          "breakthrough.paddy_control"
+        ],
+        "foreign": [
+          "resource.paddy_land"
+        ],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.flax_retting",
+        "name": "沤麻",
+        "era": "agrarian",
+        "role": "handling",
+        "signals": [
+          "bio.flax",
+          "bio.cotton",
+          "contact.flax"
+        ],
+        "foreign": [
+          "bio.cotton"
+        ],
+        "generated_by": "token:flax"
+      },
+      {
+        "id": "tech.cotton_gardening",
+        "name": "棉花园圃",
+        "era": "agrarian",
+        "role": "applied_method",
+        "signals": [
+          "bio.cotton",
+          "contact.cotton",
+          "resource.plantation_land"
+        ],
+        "foreign": [
+          "resource.plantation_land"
+        ],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.spice_shade_gardening",
+        "name": "遮阴香料园",
+        "era": "agrarian",
+        "role": "applied_method",
+        "signals": [
+          "bio.spice",
+          "contact.spice",
+          "resource.plantation_land"
+        ],
+        "foreign": [
+          "resource.plantation_land"
+        ],
+        "generated_by": "token:spice"
+      },
+      {
+        "id": "tech.salt_preservation",
+        "name": "盐渍保存",
+        "era": "agrarian",
+        "role": "handling",
+        "signals": [
+          "resource.salt",
+          "resource.saltpeter",
+          "resource.sulfur"
+        ],
+        "foreign": [
+          "resource.sulfur"
+        ],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.iron_smelting",
+        "name": "块炼铁",
+        "era": "kingdom",
+        "role": "production_system",
+        "signals": [
+          "resource.iron_ore",
+          "resource.coal",
+          "breakthrough.mine_support"
+        ],
+        "foreign": [
+          "resource.iron_ore",
+          "resource.coal"
+        ],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.surface_coal_use",
+        "name": "地表煤利用",
+        "era": "kingdom",
+        "role": "handling",
+        "signals": [
+          "resource.iron_ore",
+          "resource.coal",
+          "breakthrough.mine_support"
+        ],
+        "foreign": [
+          "resource.iron_ore"
+        ],
+        "generated_by": "token:coal"
+      },
+      {
+        "id": "tech.estate_accounting",
+        "name": "庄园核算",
+        "era": "kingdom",
+        "role": "institution",
+        "signals": [
+          "resource.fertile_soil",
+          "landform.river_valley",
+          "breakthrough.seed_saving"
+        ],
+        "foreign": [
+          "resource.fertile_soil"
+        ],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.iron_ore_identification",
+        "name": "铁矿辨识",
+        "era": "kingdom",
+        "role": "identification",
+        "signals": [
+          "resource.iron_ore",
+          "resource.coal",
+          "breakthrough.mine_support"
+        ],
+        "foreign": [
+          "resource.coal"
+        ],
+        "generated_by": "token:iron"
+      },
+      {
+        "id": "tech.surface_iron_collection",
+        "name": "地表铁矿采集",
+        "era": "kingdom",
+        "role": "handling",
+        "signals": [
+          "resource.iron_ore",
+          "resource.coal",
+          "breakthrough.mine_support"
+        ],
+        "foreign": [
+          "resource.coal"
+        ],
+        "generated_by": "token:iron"
+      },
+      {
+        "id": "tech.coal_outcrop_identification",
+        "name": "露头煤辨识",
+        "era": "kingdom",
+        "role": "identification",
+        "signals": [
+          "resource.iron_ore",
+          "resource.coal",
+          "breakthrough.mine_support"
+        ],
+        "foreign": [
+          "resource.iron_ore"
+        ],
+        "generated_by": "token:coal"
+      },
+      {
+        "id": "tech.surface_coal_collection",
+        "name": "地表煤采集",
+        "era": "kingdom",
+        "role": "handling",
+        "signals": [
+          "resource.iron_ore",
+          "resource.coal",
+          "breakthrough.mine_support"
+        ],
+        "foreign": [
+          "resource.iron_ore"
+        ],
+        "generated_by": "token:coal"
+      },
+      {
+        "id": "tech.coal_mining",
+        "name": "煤矿开采",
+        "era": "empire",
+        "role": "handling",
+        "signals": [
+          "resource.iron_ore",
+          "resource.coal",
+          "breakthrough.mine_support"
+        ],
+        "foreign": [
+          "resource.iron_ore"
+        ],
+        "generated_by": "token:coal"
+      },
+      {
+        "id": "tech.woodblock_printing",
+        "name": "木版印刷",
+        "era": "empire",
+        "role": "institution",
+        "signals": [
+          "resource.timber",
+          "landform.forest",
+          "breakthrough.forest_management"
+        ],
+        "foreign": [
+          "resource.timber"
+        ],
+        "generated_by": "token:forest"
+      },
+      {
+        "id": "tech.coal_adit_mining",
+        "name": "煤矿平硐",
+        "era": "empire",
+        "role": "handling",
+        "signals": [
+          "resource.iron_ore",
+          "resource.coal",
+          "breakthrough.mine_support"
+        ],
+        "foreign": [
+          "resource.iron_ore"
+        ],
+        "generated_by": "token:coal"
+      },
+      {
+        "id": "tech.geological_prospecting",
+        "name": "地质勘探",
+        "era": "enlightenment",
+        "role": "handling",
+        "signals": [
+          "resource.copper_ore",
+          "resource.tin_ore",
+          "breakthrough.metalworking"
+        ],
+        "foreign": [
+          "resource.copper_ore"
+        ],
+        "generated_by": "token:metal"
+      },
+      {
+        "id": "tech.coal_geology",
+        "name": "煤层地质",
+        "era": "enlightenment",
+        "role": "identification",
+        "signals": [
+          "resource.iron_ore",
+          "resource.coal",
+          "breakthrough.mine_support"
+        ],
+        "foreign": [
+          "resource.iron_ore"
+        ],
+        "generated_by": "token:coal"
+      },
+      {
+        "id": "tech.industrial_coal_mining",
+        "name": "工业采煤",
+        "era": "steam",
+        "role": "handling",
+        "signals": [
+          "resource.iron_ore",
+          "resource.coal",
+          "breakthrough.mine_support"
+        ],
+        "foreign": [
+          "resource.iron_ore"
+        ],
+        "generated_by": "token:coal"
+      },
+      {
+        "id": "tech.coke_smelting",
+        "name": "焦炭冶炼",
+        "era": "steam",
+        "role": "production_system",
+        "signals": [
+          "resource.copper_ore",
+          "resource.tin_ore",
+          "breakthrough.metalworking"
+        ],
+        "foreign": [
+          "resource.copper_ore"
+        ],
+        "generated_by": "token:metallurgy"
+      },
+      {
+        "id": "tech.digital_computing",
+        "name": "数字计算",
+        "era": "information",
+        "role": "power_scale",
+        "signals": [
+          "breakthrough.digital_control",
+          "breakthrough.automation",
+          "resource.rare_earth"
+        ],
+        "foreign": [
+          "resource.rare_earth"
+        ],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.networked_computing",
+        "name": "网络计算",
+        "era": "information",
+        "role": "power_scale",
+        "signals": [
+          "breakthrough.digital_control",
+          "breakthrough.automation",
+          "resource.rare_earth"
+        ],
+        "foreign": [
+          "resource.rare_earth"
+        ],
+        "generated_by": "explicit_or_lane"
+      }
+    ],
+    "identification_via_breakthrough": [
+      {
+        "id": "tech.clay_identification",
+        "name": "黏土辨识",
+        "era": "stone",
+        "role": "identification",
+        "signals": [
+          "resource.clay",
+          "resource.silica_sand",
+          "breakthrough.kiln_temperature"
+        ],
+        "foreign": [],
+        "generated_by": "token:clay"
+      },
+      {
+        "id": "tech.natural_copper_identification",
+        "name": "自然铜辨识",
+        "era": "stone",
+        "role": "identification",
+        "signals": [
+          "resource.copper_ore",
+          "resource.tin_ore",
+          "breakthrough.metalworking"
+        ],
+        "foreign": [],
+        "generated_by": "token:copper"
+      },
+      {
+        "id": "tech.tin_identification",
+        "name": "锡矿辨识",
+        "era": "stone",
+        "role": "identification",
+        "signals": [
+          "resource.tin_ore",
+          "contact.tin",
+          "breakthrough.metalworking"
+        ],
+        "foreign": [],
+        "generated_by": "token:tin"
+      },
+      {
+        "id": "tech.maize_identification",
+        "name": "玉米辨识",
+        "era": "stone",
+        "role": "identification",
+        "signals": [
+          "bio.maize",
+          "contact.maize",
+          "breakthrough.maize_selection"
+        ],
+        "foreign": [],
+        "generated_by": "token:maize"
+      },
+      {
+        "id": "tech.wheat_identification",
+        "name": "小麦辨识",
+        "era": "stone",
+        "role": "identification",
+        "signals": [
+          "bio.wheat",
+          "contact.wheat",
+          "breakthrough.rainfed_adaptation"
+        ],
+        "foreign": [],
+        "generated_by": "token:wheat"
+      },
+      {
+        "id": "tech.rice_identification",
+        "name": "稻类辨识",
+        "era": "stone",
+        "role": "identification",
+        "signals": [
+          "bio.rice",
+          "contact.rice",
+          "breakthrough.paddy_control"
+        ],
+        "foreign": [],
+        "generated_by": "token:rice"
+      },
+      {
+        "id": "tech.potato_identification",
+        "name": "块茎辨识",
+        "era": "stone",
+        "role": "identification",
+        "signals": [
+          "bio.potato",
+          "contact.potato",
+          "breakthrough.terrace_maintenance"
+        ],
+        "foreign": [],
+        "generated_by": "token:potato"
+      },
+      {
+        "id": "tech.iron_ore_identification",
+        "name": "铁矿辨识",
+        "era": "kingdom",
+        "role": "identification",
+        "signals": [
+          "resource.iron_ore",
+          "resource.coal",
+          "breakthrough.mine_support"
+        ],
+        "foreign": [],
+        "generated_by": "token:iron"
+      },
+      {
+        "id": "tech.coal_outcrop_identification",
+        "name": "露头煤辨识",
+        "era": "kingdom",
+        "role": "identification",
+        "signals": [
+          "resource.iron_ore",
+          "resource.coal",
+          "breakthrough.mine_support"
+        ],
+        "foreign": [],
+        "generated_by": "token:coal"
+      },
+      {
+        "id": "tech.coal_geology",
+        "name": "煤层地质",
+        "era": "enlightenment",
+        "role": "identification",
+        "signals": [
+          "resource.iron_ore",
+          "resource.coal",
+          "breakthrough.mine_support"
+        ],
+        "foreign": [],
+        "generated_by": "token:coal"
+      }
+    ],
+    "ore_proxy_swap": [
+      {
+        "id": "tech.natural_copper_identification",
+        "name": "自然铜辨识",
+        "era": "stone",
+        "role": "identification",
+        "signals": [
+          "resource.copper_ore",
+          "resource.tin_ore",
+          "breakthrough.metalworking"
+        ],
+        "foreign": [],
+        "generated_by": "token:copper"
+      },
+      {
+        "id": "tech.natural_copper_working",
+        "name": "自然铜冷锤",
+        "era": "stone",
+        "role": "handling",
+        "signals": [
+          "resource.copper_ore",
+          "resource.tin_ore",
+          "breakthrough.metalworking"
+        ],
+        "foreign": [],
+        "generated_by": "token:copper"
+      },
+      {
+        "id": "tech.copper_annealing",
+        "name": "铜退火",
+        "era": "stone",
+        "role": "production_system",
+        "signals": [
+          "resource.copper_ore",
+          "resource.tin_ore",
+          "breakthrough.metalworking"
+        ],
+        "foreign": [],
+        "generated_by": "token:copper"
+      },
+      {
+        "id": "tech.copper_metallurgy",
+        "name": "木炭坩埚炼铜",
+        "era": "agrarian",
+        "role": "production_system",
+        "signals": [
+          "resource.copper_ore",
+          "resource.tin_ore",
+          "breakthrough.metalworking"
+        ],
+        "foreign": [],
+        "generated_by": "token:copper"
+      },
+      {
+        "id": "tech.iron_ore_identification",
+        "name": "铁矿辨识",
+        "era": "kingdom",
+        "role": "identification",
+        "signals": [
+          "resource.iron_ore",
+          "resource.coal",
+          "breakthrough.mine_support"
+        ],
+        "foreign": [],
+        "generated_by": "token:iron"
+      },
+      {
+        "id": "tech.surface_iron_collection",
+        "name": "地表铁矿采集",
+        "era": "kingdom",
+        "role": "handling",
+        "signals": [
+          "resource.iron_ore",
+          "resource.coal",
+          "breakthrough.mine_support"
+        ],
+        "foreign": [],
+        "generated_by": "token:iron"
+      }
+    ],
+    "fiber_token_overmatch": [
+      {
+        "id": "tech.fiber_twisting",
+        "name": "纤维捻制",
+        "era": "stone",
+        "role": "handling",
+        "signals": [
+          "bio.flax",
+          "bio.cotton",
+          "contact.flax"
+        ],
+        "foreign": [],
+        "generated_by": "token:fiber"
+      },
+      {
+        "id": "tech.weaving",
+        "name": "织造",
+        "era": "agrarian",
+        "role": "handling",
+        "signals": [
+          "bio.flax",
+          "bio.cotton",
+          "contact.flax"
+        ],
+        "foreign": [],
+        "generated_by": "token:fiber"
+      },
+      {
+        "id": "tech.loom_weaving",
+        "name": "织机织造",
+        "era": "agrarian",
+        "role": "handling",
+        "signals": [
+          "bio.flax",
+          "bio.cotton",
+          "contact.flax"
+        ],
+        "foreign": [],
+        "generated_by": "token:fiber"
+      },
+      {
+        "id": "tech.hand_spinning",
+        "name": "手工纺纱",
+        "era": "agrarian",
+        "role": "handling",
+        "signals": [
+          "bio.flax",
+          "bio.cotton",
+          "contact.flax"
+        ],
+        "foreign": [],
+        "generated_by": "token:fiber"
+      },
+      {
+        "id": "tech.plant_fiber_papermaking",
+        "name": "植物纤维抄纸",
+        "era": "kingdom",
+        "role": "institution",
+        "signals": [
+          "bio.flax",
+          "bio.cotton",
+          "contact.flax"
+        ],
+        "foreign": [],
+        "generated_by": "token:fiber"
+      },
+      {
+        "id": "tech.commodity_crop_management",
+        "name": "商品作物管理",
+        "era": "exploration",
+        "role": "production_system",
+        "signals": [
+          "bio.flax",
+          "bio.cotton",
+          "contact.flax"
+        ],
+        "foreign": [],
+        "generated_by": "token:fiber"
+      },
+      {
+        "id": "tech.textile_machinery",
+        "name": "纺织机械",
+        "era": "steam",
+        "role": "handling",
+        "signals": [
+          "bio.flax",
+          "bio.cotton",
+          "contact.flax"
+        ],
+        "foreign": [],
+        "generated_by": "token:fiber"
+      },
+      {
+        "id": "tech.synthetic_fiber_engineering",
+        "name": "合成纤维工程",
+        "era": "atomic",
+        "role": "handling",
+        "signals": [
+          "bio.flax",
+          "bio.cotton",
+          "contact.flax"
+        ],
+        "foreign": [],
+        "generated_by": "token:fiber"
+      }
+    ],
+    "fiber_cross_species": [
+      {
+        "id": "tech.flax_identification",
+        "name": "亚麻与韧皮辨识",
+        "era": "stone",
+        "role": "identification",
+        "signals": [
+          "bio.flax",
+          "bio.cotton",
+          "contact.flax"
+        ],
+        "foreign": [],
+        "generated_by": "token:flax"
+      },
+      {
+        "id": "tech.flax_retting",
+        "name": "沤麻",
+        "era": "agrarian",
+        "role": "handling",
+        "signals": [
+          "bio.flax",
+          "bio.cotton",
+          "contact.flax"
+        ],
+        "foreign": [],
+        "generated_by": "token:flax"
+      }
+    ],
+    "land_capacity_on_identification": [
+      {
+        "id": "tech.spice_identification",
+        "name": "香料植物辨识",
+        "era": "stone",
+        "role": "identification",
+        "signals": [
+          "bio.spice",
+          "contact.spice",
+          "resource.plantation_land"
+        ],
+        "foreign": [],
+        "generated_by": "token:spice"
+      }
+    ],
+    "kiln_on_unfired_earth": [
+      {
+        "id": "tech.adobe_making",
+        "name": "日晒土坯",
+        "era": "agrarian",
+        "role": "production_system",
+        "signals": [
+          "resource.clay",
+          "resource.silica_sand",
+          "breakthrough.kiln_temperature"
+        ],
+        "foreign": [],
+        "generated_by": "token:clay"
+      }
+    ],
+    "livestock_as_wild_game": [
+      {
+        "id": "tech.hide_tanning",
+        "name": "皮革鞣制",
+        "era": "agrarian",
+        "role": "handling",
+        "signals": [
+          "resource.wild_game",
+          "bio.sheep",
+          "landform.grassland"
+        ],
+        "foreign": [],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.blast_furnace",
+        "name": "高炉冶炼",
+        "era": "empire",
+        "role": "production_system",
+        "signals": [
+          "resource.wild_game",
+          "bio.sheep",
+          "landform.grassland"
+        ],
+        "foreign": [],
+        "generated_by": "explicit_or_lane"
+      }
+    ],
+    "mine_support_overmatch": [
+      {
+        "id": "tech.iron_smelting",
+        "name": "块炼铁",
+        "era": "kingdom",
+        "role": "production_system",
+        "signals": [
+          "resource.iron_ore",
+          "resource.coal",
+          "breakthrough.mine_support"
+        ],
+        "foreign": [],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.iron_ore_identification",
+        "name": "铁矿辨识",
+        "era": "kingdom",
+        "role": "identification",
+        "signals": [
+          "resource.iron_ore",
+          "resource.coal",
+          "breakthrough.mine_support"
+        ],
+        "foreign": [],
+        "generated_by": "token:iron"
+      },
+      {
+        "id": "tech.surface_iron_collection",
+        "name": "地表铁矿采集",
+        "era": "kingdom",
+        "role": "handling",
+        "signals": [
+          "resource.iron_ore",
+          "resource.coal",
+          "breakthrough.mine_support"
+        ],
+        "foreign": [],
+        "generated_by": "token:iron"
+      },
+      {
+        "id": "tech.crucible_steel",
+        "name": "坩埚钢",
+        "era": "empire",
+        "role": "production_system",
+        "signals": [
+          "resource.iron_ore",
+          "resource.coal",
+          "breakthrough.mine_support"
+        ],
+        "foreign": [],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.deep_mining",
+        "name": "深井采矿",
+        "era": "exploration",
+        "role": "handling",
+        "signals": [
+          "resource.iron_ore",
+          "resource.coal",
+          "breakthrough.mine_support"
+        ],
+        "foreign": [],
+        "generated_by": "token:mine"
+      },
+      {
+        "id": "tech.corporate_mining",
+        "name": "公司矿山",
+        "era": "steam",
+        "role": "institution",
+        "signals": [
+          "resource.iron_ore",
+          "resource.coal",
+          "breakthrough.mine_support"
+        ],
+        "foreign": [],
+        "generated_by": "token:mine"
+      },
+      {
+        "id": "tech.mechanized_mining",
+        "name": "机械化采矿",
+        "era": "atomic",
+        "role": "handling",
+        "signals": [
+          "resource.iron_ore",
+          "resource.coal",
+          "breakthrough.mine_support"
+        ],
+        "foreign": [],
+        "generated_by": "token:mine"
+      },
+      {
+        "id": "tech.autonomous_mining",
+        "name": "自主采矿",
+        "era": "intelligent",
+        "role": "power_scale",
+        "signals": [
+          "resource.iron_ore",
+          "resource.coal",
+          "breakthrough.mine_support"
+        ],
+        "foreign": [],
+        "generated_by": "explicit_or_lane"
+      }
+    ],
+    "timber_as_literacy_proxy": [
+      {
+        "id": "tech.bark_paper_making",
+        "name": "树皮纸",
+        "era": "kingdom",
+        "role": "institution",
+        "signals": [
+          "resource.timber",
+          "landform.forest",
+          "breakthrough.forest_management"
+        ],
+        "foreign": [],
+        "generated_by": "token:forest"
+      },
+      {
+        "id": "tech.rag_paper_making",
+        "name": "破布纸",
+        "era": "empire",
+        "role": "institution",
+        "signals": [
+          "resource.timber",
+          "landform.forest",
+          "breakthrough.forest_management"
+        ],
+        "foreign": [],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.woodblock_printing",
+        "name": "木版印刷",
+        "era": "empire",
+        "role": "institution",
+        "signals": [
+          "resource.timber",
+          "landform.forest",
+          "breakthrough.forest_management"
+        ],
+        "foreign": [],
+        "generated_by": "token:forest"
+      }
+    ],
+    "wheat_token_overmatch": [
+      {
+        "id": "tech.tenant_cereal_farming",
+        "name": "佃作谷物",
+        "era": "kingdom",
+        "role": "production_system",
+        "signals": [
+          "bio.wheat",
+          "contact.wheat",
+          "breakthrough.rainfed_adaptation"
+        ],
+        "foreign": [],
+        "generated_by": "token:cereal"
+      },
+      {
+        "id": "tech.estate_cereal_management",
+        "name": "庄园谷物核算",
+        "era": "empire",
+        "role": "institution",
+        "signals": [
+          "bio.wheat",
+          "contact.wheat",
+          "breakthrough.rainfed_adaptation"
+        ],
+        "foreign": [],
+        "generated_by": "token:cereal"
+      }
+    ],
+    "fish_as_maritime_proxy": [
+      {
+        "id": "tech.magnetic_navigation",
+        "name": "磁针导航",
+        "era": "empire",
+        "role": "handling",
+        "signals": [
+          "landform.coast",
+          "resource.marine_fish",
+          "breakthrough.maritime_operations"
+        ],
+        "foreign": [],
+        "generated_by": "token:maritime"
+      },
+      {
+        "id": "tech.celestial_navigation",
+        "name": "天文导航",
+        "era": "exploration",
+        "role": "handling",
+        "signals": [
+          "landform.coast",
+          "resource.marine_fish",
+          "breakthrough.maritime_operations"
+        ],
+        "foreign": [],
+        "generated_by": "token:navigation"
+      },
+      {
+        "id": "tech.oceanic_navigation",
+        "name": "远洋航海",
+        "era": "exploration",
+        "role": "institution",
+        "signals": [
+          "landform.coast",
+          "resource.marine_fish",
+          "breakthrough.maritime_operations"
+        ],
+        "foreign": [],
+        "generated_by": "token:maritime"
+      },
+      {
+        "id": "tech.oceanic_ship_design",
+        "name": "远洋船舶设计",
+        "era": "exploration",
+        "role": "institution",
+        "signals": [
+          "landform.coast",
+          "resource.marine_fish",
+          "breakthrough.maritime_operations"
+        ],
+        "foreign": [],
+        "generated_by": "token:maritime"
+      },
+      {
+        "id": "tech.coastal_shipyards",
+        "name": "海岸船厂",
+        "era": "exploration",
+        "role": "production_system",
+        "signals": [
+          "landform.coast",
+          "resource.marine_fish",
+          "breakthrough.maritime_operations"
+        ],
+        "foreign": [],
+        "generated_by": "token:maritime"
+      }
+    ],
+    "generic_knowledge_dump": [
+      {
+        "id": "tech.nuclear_fission",
+        "name": "核裂变",
+        "era": "atomic",
+        "role": "handling",
+        "signals": [
+          "breakthrough.electrification",
+          "breakthrough.automation",
+          "resource.rare_earth"
+        ],
+        "foreign": [],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.national_laboratories",
+        "name": "国家实验室",
+        "era": "atomic",
+        "role": "handling",
+        "signals": [
+          "breakthrough.electrification",
+          "breakthrough.automation",
+          "resource.rare_earth"
+        ],
+        "foreign": [],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.operations_research",
+        "name": "运筹学",
+        "era": "atomic",
+        "role": "handling",
+        "signals": [
+          "breakthrough.electrification",
+          "breakthrough.automation",
+          "resource.rare_earth"
+        ],
+        "foreign": [],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.electronic_control",
+        "name": "电子控制",
+        "era": "atomic",
+        "role": "power_scale",
+        "signals": [
+          "breakthrough.electrification",
+          "breakthrough.automation",
+          "resource.rare_earth"
+        ],
+        "foreign": [],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.industrial_ecology",
+        "name": "工业生态",
+        "era": "atomic",
+        "role": "handling",
+        "signals": [
+          "breakthrough.electrification",
+          "breakthrough.automation",
+          "resource.rare_earth"
+        ],
+        "foreign": [],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.systems_engineering",
+        "name": "系统工程",
+        "era": "atomic",
+        "role": "handling",
+        "signals": [
+          "breakthrough.electrification",
+          "breakthrough.automation",
+          "resource.rare_earth"
+        ],
+        "foreign": [],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.information_theory",
+        "name": "信息论",
+        "era": "information",
+        "role": "handling",
+        "signals": [
+          "breakthrough.digital_control",
+          "breakthrough.automation",
+          "resource.rare_earth"
+        ],
+        "foreign": [],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.software_engineering",
+        "name": "软件工程",
+        "era": "information",
+        "role": "power_scale",
+        "signals": [
+          "breakthrough.digital_control",
+          "breakthrough.automation",
+          "resource.rare_earth"
+        ],
+        "foreign": [],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.networked_computing",
+        "name": "网络计算",
+        "era": "information",
+        "role": "power_scale",
+        "signals": [
+          "breakthrough.digital_control",
+          "breakthrough.automation",
+          "resource.rare_earth"
+        ],
+        "foreign": [],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.satellite_observation",
+        "name": "卫星观测",
+        "era": "information",
+        "role": "handling",
+        "signals": [
+          "breakthrough.digital_control",
+          "breakthrough.automation",
+          "resource.rare_earth"
+        ],
+        "foreign": [],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.biotechnology",
+        "name": "生物技术",
+        "era": "information",
+        "role": "handling",
+        "signals": [
+          "breakthrough.digital_control",
+          "breakthrough.automation",
+          "resource.rare_earth"
+        ],
+        "foreign": [],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.numerical_weather_prediction",
+        "name": "数值天气预报",
+        "era": "information",
+        "role": "handling",
+        "signals": [
+          "breakthrough.digital_control",
+          "breakthrough.automation",
+          "resource.rare_earth"
+        ],
+        "foreign": [],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.crop_remote_sensing",
+        "name": "作物遥感",
+        "era": "information",
+        "role": "handling",
+        "signals": [
+          "breakthrough.digital_control",
+          "breakthrough.automation",
+          "resource.rare_earth"
+        ],
+        "foreign": [],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.open_science_networks",
+        "name": "开放科学网络",
+        "era": "information",
+        "role": "handling",
+        "signals": [
+          "breakthrough.digital_control",
+          "breakthrough.automation",
+          "resource.rare_earth"
+        ],
+        "foreign": [],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.geographic_information_systems",
+        "name": "地理信息系统",
+        "era": "information",
+        "role": "power_scale",
+        "signals": [
+          "breakthrough.digital_control",
+          "breakthrough.automation",
+          "resource.rare_earth"
+        ],
+        "foreign": [],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.sensor_networks",
+        "name": "传感器网络",
+        "era": "information",
+        "role": "power_scale",
+        "signals": [
+          "breakthrough.digital_control",
+          "breakthrough.automation",
+          "resource.rare_earth"
+        ],
+        "foreign": [],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.bioinformatics",
+        "name": "生物信息学",
+        "era": "information",
+        "role": "handling",
+        "signals": [
+          "breakthrough.digital_control",
+          "breakthrough.automation",
+          "resource.rare_earth"
+        ],
+        "foreign": [],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.machine_learning",
+        "name": "机器学习",
+        "era": "intelligent",
+        "role": "handling",
+        "signals": [
+          "breakthrough.digital_control",
+          "breakthrough.automation",
+          "resource.rare_earth"
+        ],
+        "foreign": [],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.neural_networks",
+        "name": "神经网络",
+        "era": "intelligent",
+        "role": "handling",
+        "signals": [
+          "breakthrough.digital_control",
+          "breakthrough.automation",
+          "resource.rare_earth"
+        ],
+        "foreign": [],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.autonomous_systems",
+        "name": "自主系统",
+        "era": "intelligent",
+        "role": "power_scale",
+        "signals": [
+          "breakthrough.digital_control",
+          "breakthrough.automation",
+          "resource.rare_earth"
+        ],
+        "foreign": [],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.robotic_manufacturing",
+        "name": "机器人制造",
+        "era": "intelligent",
+        "role": "power_scale",
+        "signals": [
+          "breakthrough.digital_control",
+          "breakthrough.automation",
+          "resource.rare_earth"
+        ],
+        "foreign": [],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.computational_biology",
+        "name": "计算生物学",
+        "era": "intelligent",
+        "role": "handling",
+        "signals": [
+          "breakthrough.digital_control",
+          "breakthrough.automation",
+          "resource.rare_earth"
+        ],
+        "foreign": [],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.climate_modeling",
+        "name": "气候建模",
+        "era": "intelligent",
+        "role": "handling",
+        "signals": [
+          "breakthrough.digital_control",
+          "breakthrough.automation",
+          "resource.rare_earth"
+        ],
+        "foreign": [],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.distributed_intelligence",
+        "name": "分布式智能",
+        "era": "intelligent",
+        "role": "power_scale",
+        "signals": [
+          "breakthrough.digital_control",
+          "breakthrough.automation",
+          "resource.rare_earth"
+        ],
+        "foreign": [],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.intelligent_breeding",
+        "name": "智能育种",
+        "era": "intelligent",
+        "role": "handling",
+        "signals": [
+          "breakthrough.digital_control",
+          "breakthrough.automation",
+          "resource.rare_earth"
+        ],
+        "foreign": [],
+        "generated_by": "explicit_or_lane"
+      },
+      {
+        "id": "tech.scientific_agents",
+        "name": "智能科学代理",
+        "era": "intelligent",
+        "role": "handling",
+        "signals": [
+          "breakthrough.digital_control",
+          "breakthrough.automation",
+          "resource.rare_earth"
+        ],
+        "foreign": [],
+        "generated_by": "explicit_or_lane"
+      }
+    ]
+  }
+}

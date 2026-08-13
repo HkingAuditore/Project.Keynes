@@ -1,0 +1,4 @@
+interface:
+  display_name: "Project Keynes Effect Runtime"
+  short_description: "Native configurable effect plans, transactions, ACKs and persistence"
+  default_prompt: "Use $project-keynes-effect-runtime for Project Keynes Effect Runtime work. Preserve domain ownership, packed IR, deterministic plans, safe-boundary ACKs and PKEF persistence."

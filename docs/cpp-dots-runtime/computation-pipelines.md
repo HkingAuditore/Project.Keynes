@@ -95,8 +95,9 @@ generation-stamped 首触 shadow delta 计算增量 totals。PROBE 每日全量�
 | Weather field | C++ sub-passes | `run_weather_field_solve_pass`, distribute/summary/stage-b helpers | begin/commit state machine、front object compatibility。 |
 | Runtime hydrology | C++ full-map pass + weather job stage | `run_runtime_hydrology_pass` | `weather_refresh` stage 编排、ClimateProfile knobs、后续慢频视觉重烘策略。 |
 | Natural resources（自然资源每日生成/衰减） | C++ full-map pass + GDScript orchestration | `run_natural_resource_pass` | knobs 构造（`ResourceProfileRegistry.build_pass_knobs`）、初始储量 bootstrap、`natural_resource_daily` system 调度、GDScript fallback。 |
+| Bio occupancy（物种占领 / 陆块省） | C++ knobs pass + GDScript orchestration | `run_bio_province_pass`, `run_bio_seed_pass`, `run_bio_occupancy_pass` / `bio_occupancy_daily` | 资源 bootstrap 之后播撒；占领 bitset 进 schema/`dynamic_world`；地貌 CSR 不再含 `bio.*`。国家知识仍由探索/`DISCOVER` 记账，灭绝不撤销。 |
 | CountryStore / territory / technology / treasury / tax policy | C++ ACTIVE authority | `country_daily` | 独立国家 SoA、领土 CSR、国家科技、国库与五类税表；仅 `cell.country_slot` 发布到 DataCore，PKCN v5 持久化。 |
-| Static research signals | C++ generation pass + native country evidence | `run_research_signal_generation_pass` / `country_daily` | Generation writes deterministic cell-indexed CSR (`offsets`, dense IDs, values); vision submits idempotent country discovery commands, while technology conditions consume only dense country evidence. |
+| Static research signals | C++ generation pass + native country evidence | `run_research_signal_generation_pass` / `country_daily` | Generation writes landform+resource CSR; bio presence is `cell.bio_occupancy_bits`. Vision submits idempotent country discovery for CSR plus current occupancy; occupancy 0→1 on explored cells submits again. Technology conditions consume only dense country evidence. |
 | ModifierStore | C++ ACTIVE authority | `modifier_daily` | 四域隔离 SoA/bucket；不写 base，发布冻结 effective 聚合与 journal。 |
 | PopulationCohort / MarketStore / fiscal escrow | C++ Market V2 ACTIVE | `economy_daily` | 独立 chunk/market vectors、冻结国家税率、N 日 need/bundle 清算、源头扣缴与补贴托管；worker 写独占 cell lane，财政提交统一更新国库并发布 PKEC v30。 |
 | 综合满意度（八维度 composite） | C++ ACTIVE authority，寄生在既有归约循环 | `economy_daily` 的 household market 归约 + `refresh_epoch_development()` | 四档需求累加器零额外遍历；收入增长/储蓄/税负三维读 cohort 账本，社会发展维度在 epoch 边界缓存为 `_epoch_cell_development_q16` 后热循环 O(1) 只读。详见[综合满意度运行时](./satisfaction-runtime.md)。 |
@@ -116,20 +117,25 @@ generation-stamped 首触 shadow delta 计算增量 totals。PROBE 每日全量�
 
 > `cell_temp_baseline_year`（海冰 + 显示温度的运行期年 baseline）权威计算已收回 C++，见下文 "Temp baseline year bake" 节。注意它与 pass_a 每日写的运行期 `cell_temp_baseline`（辐射 + 热惯性积分）是两个不同字段。
 
-## Static research-signal generation
+## Static research-signal generation and bio occupancy
 
-`run_research_signal_generation_pass` is a post-assembly native map pass. It receives generation
-vegetation, landform/river/volcano/water arrays, dimensions, seed, and the catalog's dense static
-signal IDs. It emits `generation_vegetation`, `cell_biogeographic_realm`, and a cell-indexed CSR
-(`cell_signal_offsets`, `cell_signal_ids`, `cell_signal_values`). No new DataCore component or
-per-cell Godot object is created.
+`run_research_signal_generation_pass` is a post-assembly native map pass. The static `mode`
+writes only landform facts (`landform.*`) into cell-indexed CSR. It no longer stamps `bio.*` or
+screen-percentage Earth realms. After natural-resource bootstrap, `run_bio_province_pass` builds
+landmass and barrier provinces from hex neighbors, and `run_bio_seed_pass` places each catalog
+species from one origin province with cost-limited diffusion, envelope gaps, and carrier-reserve
+gating (`pasture` / `wild_game` / `arable_land` / `paddy_land` / `plantation_land`). Occupancy is
+`cell.bio_occupancy_bits` (DataCore I32 bitset, persisted with `dynamic_world`).
 
-The pass currently derives maize/wheat/potato/horse from deterministic realm + generation habitat,
-and derives `landform.freshwater_access` (river/lake hydrology), river valley, volcanic, high plateau,
-and coastal estuary from static map fields. `MapGenerator` validates only CSR shape and publishes it
-to `MapData`. On vision's first
-exploration of a cell, `WorldRuntimeHost` submits a country command; C++ country state—not MapData—
-records the discovery. Runtime vegetation evolution and cover do not revoke knowledge.
+`bio_occupancy_daily` runs after climate and `natural_resource_daily`. It clears occupancy when the
+envelope or carrier reserve fails, applies same-province neighbor diffusion on a stride, and sets
+bits for local agricultural introduce (building output of mapped goods). Trade still publishes only
+`contact.*` knowledge. On first exploration, `WorldRuntimeHost` submits landform/resource CSR plus
+**current** occupancy bits. Occupancy 0→1 on an already-explored cell submits `DISCOVER` again.
+Local extinction does not revoke country evidence.
+
+`MapGenerator` validates CSR shape and occupancy array length and publishes both to `MapData`.
+Runtime vegetation evolution and cover do not revoke knowledge.
 
 ## Native world generation base + post-base + publish（生成期）
 
@@ -873,6 +879,16 @@ Ocean land 算法概要：
 - `map_generator.gd::_bootstrap_natural_resource_deposits(map, cfg)`（生成期一次性写初始储量）
 - `NaturalResourceDailySystem`（`natural_resource_daily`，每日 DCSystem，按 Profile 读取即时/30 日温度与环境湿度/植物可用水 → 拓扑自动排在 climate 之后）— [`scripts/simulation/systems/natural_resource_daily_system.gd`](../../Project/project-keynes/scripts/simulation/systems/natural_resource_daily_system.gd)
 - 数据驱动配置：`ResourceProfile`（.tres）+ `ResourceProfileRegistry`（`build_pass_knobs` 组装系数数组）。
+
+## Bio occupancy（物种占领 / 陆块省）
+
+主要入口：
+
+- `DCWorldExt::run_bio_province_pass` / `run_bio_seed_pass` / `run_bio_occupancy_pass` — [`gdext/src/world_ext_bio.cpp`](../../gdext/src/world_ext_bio.cpp)
+- `map_generator.gd::_seed_bio_occupancy`（资源 bootstrap 之后一次：陆块+省+单起源扩散）
+- `BioOccupancyDailySystem`（`bio_occupancy_daily`，读取储量/气候，写 `cell.bio_occupancy_bits`；灭绝与引种当日生效，邻格扩散走内部 stride）— [`scripts/simulation/systems/bio_occupancy_daily_system.gd`](../../Project/project-keynes/scripts/simulation/systems/bio_occupancy_daily_system.gd)
+
+占领 ⊆ 气候信封 ∩ 可达省 ∩ 承载储量>ε。羊/牛/马等绑 `pasture`，猪绑 `wild_game`，玉米/小麦绑 `arable_land`，橡胶只绑 `plantation_land`。本格农业生产可绕过省界引种，但仍要信封和承载；跨邦贸易只发 `contact.*`。
 
 **模型（统一 profile，可选线性或种群生态动态）**：普通资源每 tick、每 cell、每资源 r
 采用**半隐式（IMEX）积分** —— 把生成/衰减拆成「常数生产项 P」与「线性损失率 L」，
@@ -2448,7 +2464,7 @@ encode、GPU 上传和 shader fetch 均被删除；只保留 per-cell 风/洋流
 
 玩家地图信息层复用 `DataOverlayLayer`，不建立第二套 overlay 子系统：
 
-- `WorldRuntimeHost.set_map_overlay({mode, resource_id})` 接收统一请求。
+- `WorldRuntimeHost.set_map_overlay({mode, resource_id, signal_id})` 接收统一请求。
 - `DataOverlayBaker.bake_cell_lut()` 只遍历 `n_cells`，按 `cell.index` 向
   `WorldData.lut_dims` 写一个 RGBA8 texel；buffer、`Image` 对应的 texture 句柄在世界生命周期内复用，
   同尺寸使用 `ImageTexture.update()`。
@@ -2463,6 +2479,8 @@ encode、GPU 上传和 shader fetch 均被删除；只保留 per-cell 风/洋流
 - 资源储量读取 flush 后的 `MapData` reserve array；固定归一化参考值来自
   `ResourceProfileRegistry.reference_reserve(profile)`，与 Inspector 共用。零储量和 habitat 不匹配
   cell 透明，UI discovery 过滤不改变物理储量或经济权威。
+- 生物占领读取 flush 后的 `MapData.bio_occupancy_bits_arr`；`signal_id` 经
+  `ResearchSignalCatalog.occupancy_bit_for_signal` 解析 bit，置位 cell 写离散 texel，未置位透明。
 
 这条链路是玩家信息遮罩的唯一动态路径。下面的 derived-resolution 路径保留给旧 debug 工具。
 
