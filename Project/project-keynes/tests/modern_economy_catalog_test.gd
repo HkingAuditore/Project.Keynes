@@ -28,7 +28,7 @@ func _audit(catalog: Dictionary) -> void:
 	var needs: PackedStringArray = catalog.need_ids
 	var resources: PackedStringArray = catalog.building_resource_ids
 	_expect("network economy catalog has 132 goods", goods.size() == 132)
-	_expect("network economy has 348 production methods", buildings.size() == 348)
+	_expect("network economy has 352 production methods", buildings.size() == 352)
 	_expect("45 labor, institutional and research professions", professions.size() == 45)
 	_expect("17 differentiated household needs", needs.size() == 17)
 	_expect("31 registered natural resources", ResourceRegistryScript.count() == 31)
@@ -92,10 +92,10 @@ func _audit(catalog: Dictionary) -> void:
 	var gathering = load("res://data/economy/buildings/gathering_ground.tres")
 	var stone_hunting = load(
 		"res://data/economy/buildings/stone_age_hunting_camp.tres")
-	_expect("stone hunting tool demand fits the local knapping chain",
+	_expect("stone hunting remains a tool-free subsistence practice",
 		stone_hunting != null and
-		stone_hunting.input_good_ids == PackedStringArray(["chipped_stone_tools"]) and
-		stone_hunting.input_quantities_per_day == PackedInt64Array([5]))
+		stone_hunting.input_good_ids.is_empty() and
+		stone_hunting.input_quantities_per_day.is_empty())
 	var stone_collector = load("res://data/economy/buildings/stone_collector.tres")
 	var timber_collector = load("res://data/economy/buildings/timber_collector.tres")
 	var bronze_tools = load("res://data/economy/buildings/bronze_tool_workshop.tres")
@@ -148,15 +148,13 @@ func _audit(catalog: Dictionary) -> void:
 			stone_building != null and
 			String(stone_building.owner_profession_id) == stone_owner_policy[building_id] and
 			stone_building.employee_profession_ids.is_empty())
-	_expect("stone hunting sustains its hunter and yields fewer byproducts",
+	_expect("stone hunting sustains its hunter and yields fewer hides",
 		stone_hunting != null and
-		stone_hunting.output_good_ids == PackedStringArray(["game_meat", "raw_hide", "fur"]) and
-		stone_hunting.output_quantities_per_day == PackedInt64Array([3335, 40, 20]) and
+		stone_hunting.output_good_ids == PackedStringArray(["game_meat", "raw_hide"]) and
+		stone_hunting.output_quantities_per_day == PackedInt64Array([3335, 40]) and
 		stone_hunting.output_quantities_per_day[0] >= 171 and
 		stone_hunting.output_quantities_per_day[0] >
 			stone_hunting.output_quantities_per_day[1] and
-		stone_hunting.output_quantities_per_day[1] >
-			stone_hunting.output_quantities_per_day[2] and
 		stone_hunting.resource_quantities_per_day == PackedInt64Array([715]) and
 		stone_hunting.owner_slots_per_building == 2)
 	_expect("rough bullion sites are locally owner-operated and input-free",
@@ -364,16 +362,15 @@ func _audit(catalog: Dictionary) -> void:
 		_expect("calibrated owner-operated households: %s" % buildings[type_id],
 			owners[type_id] >= 1 and owners[type_id] <= 3)
 		_expect("building has physical output: %s" % buildings[type_id],
-			buildings[type_id] == "merchant_post" or
+			buildings[type_id] in ["merchant_post", "early_merchant_post"] or
 			output_offsets[type_id + 1] > output_offsets[type_id])
-		_expect("building kind is collector or industry: %s" % buildings[type_id],
-			kinds[type_id] in [0, 1] or
-			(buildings[type_id] == "merchant_post" and kinds[type_id] == 2))
+		_expect("building kind is collector, industry, or service: %s" % buildings[type_id],
+			kinds[type_id] in [0, 1, 2])
 		_expect("building behavior remains physical: %s" % buildings[type_id],
 			behavior_ids[type_id] in [0, 1, 2])
 		_expect("merchant owns only matching bullion collectors: %s" % buildings[type_id],
 			owner_professions[type_id] != merchant_profession or
-			buildings[type_id] in ["merchant_post", "placer_gold_working",
+			buildings[type_id] in ["merchant_post", "early_merchant_post", "placer_gold_working",
 				"surface_silver_working"])
 		if employee_offsets[type_id + 1] > employee_offsets[type_id]:
 			_expect("employee roles have positive reference wages: %s" % buildings[type_id],

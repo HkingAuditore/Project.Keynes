@@ -739,6 +739,8 @@ func _on_map_overlay_requested(request: Dictionary) -> void:
 	var mode := int(request.get("mode", OverlayMode.MODE.NONE))
 	var title := ""
 	var icon_key := ""
+	var hint := ""
+	var occupancy_bit := -1
 	if mode == OverlayMode.MODE.RESOURCE_RESERVE:
 		var resource_id := StringName(request.get("resource_id", &""))
 		for profile in ResourceProfileRegistry.ordered():
@@ -746,9 +748,18 @@ func _on_map_overlay_requested(request: Dictionary) -> void:
 				title = profile.display_name
 				icon_key = ResourceProfileRegistry.icon_key(profile)
 				break
+		hint = "透明区域无可用储量"
+	elif mode == OverlayMode.MODE.BIO_OCCUPANCY:
+		var signal_id := StringName(request.get("signal_id", &""))
+		for entry in ResearchSignalCatalog.occupancy_overlay_entries():
+			if StringName(entry.get("id", &"")) == signal_id:
+				title = String(entry.get("display_name", ""))
+				icon_key = String(entry.get("icon_key", &"ecology.growth"))
+				occupancy_bit = int(entry.get("occupancy_bit", -1))
+				break
+		hint = "透明区域当前没有该物种"
 	if _map_overlay_legend != null:
-		var hint := "透明区域无可用储量" if mode == OverlayMode.MODE.RESOURCE_RESERVE else ""
-		_map_overlay_legend.update_for_mode(mode, title, hint, icon_key)
+		_map_overlay_legend.update_for_mode(mode, title, hint, icon_key, occupancy_bit)
 		call_deferred("_layout_overlay_legend")
 	map_overlay_requested.emit(request)
 

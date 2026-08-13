@@ -22,6 +22,45 @@ double elapsed_ms(const Clock::time_point &start) {
 }
 } // namespace
 
+void NativeEconomyRuntime::queue_bio_introduce_from_good(int32_t cell, int32_t good_id) {
+    if (cell < 0 || good_id < 0 ||
+        good_id + 1 >= static_cast<int32_t>(_good_occupancy_bit_offsets.size())) {
+        return;
+    }
+    const int32_t begin = _good_occupancy_bit_offsets[size_t(good_id)];
+    const int32_t end = _good_occupancy_bit_offsets[size_t(good_id) + 1];
+    if (begin < 0 || end <= begin ||
+        end > static_cast<int32_t>(_good_occupancy_bits.size())) {
+        return;
+    }
+    for (int32_t i = begin; i < end; ++i) {
+        const int32_t bit = _good_occupancy_bits[size_t(i)];
+        if (bit < 0 || bit >= 32) continue;
+        const uint64_t key = (uint64_t(uint32_t(cell)) << 8) | uint32_t(bit);
+        if (!_bio_introduce_keys.insert(key).second) continue;
+        _bio_introduce_cells.push_back(cell);
+        _bio_introduce_bits.push_back(bit);
+    }
+}
+
+void NativeEconomyRuntime::drain_bio_introduces(godot::PackedInt32Array &cells,
+                                                godot::PackedInt32Array &bits) {
+    const int32_t n = static_cast<int32_t>(_bio_introduce_cells.size());
+    cells.resize(n);
+    bits.resize(n);
+    if (n > 0) {
+        int32_t *cell_ptr = cells.ptrw();
+        int32_t *bit_ptr = bits.ptrw();
+        for (int32_t i = 0; i < n; ++i) {
+            cell_ptr[i] = _bio_introduce_cells[size_t(i)];
+            bit_ptr[i] = _bio_introduce_bits[size_t(i)];
+        }
+    }
+    _bio_introduce_cells.clear();
+    _bio_introduce_bits.clear();
+    _bio_introduce_keys.clear();
+}
+
 int64_t NativeEconomyRuntime::production_climate_capacity_q16(
         const BuildingType &type, int32_t cell,
         int64_t *temperature_fit_q16, int64_t *water_fit_q16,
@@ -1264,7 +1303,10 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 const int64_t qty = effective_building_output_quantity(
                     group, item.quantity, scale_q16, building_days,
                     _saturation_count);
-                if (qty > 0) offers.push_back({item.good_id, owner_slot, g, qty, 0, qty});
+                if (qty > 0) {
+                    offers.push_back({item.good_id, owner_slot, g, qty, 0, qty});
+                    queue_bio_introduce_from_good(cell, item.good_id);
+                }
                 group.last_output = saturating_add(
                     group.last_output, qty, _saturation_count);
             }

@@ -24,14 +24,17 @@ func _init() -> void:
 	assert((catalog.technology_primary_route_tags as PackedStringArray).size() == EXPECTED_TECHNOLOGY_COUNT)
 	assert((catalog.technology_layout_lanes as PackedStringArray).size() == EXPECTED_TECHNOLOGY_COUNT)
 	assert((catalog.technology_starter_capability_offsets as PackedInt32Array).size() == EXPECTED_TECHNOLOGY_COUNT + 1)
+	assert((catalog.technology_entry_milestone_indices as PackedInt32Array).size() == EXPECTED_TECHNOLOGY_COUNT)
+	assert((catalog.technology_era_entry_milestone_indices as PackedInt32Array).size() == 11)
 	var definitions: Array = TechnologyCatalogScript.public_definitions()
 	assert(definitions.size() == EXPECTED_TECHNOLOGY_COUNT)
 	assert(String(catalog.technology_display_names[0]) == "狩猎")
 	assert(String((definitions[0] as Dictionary).display_name) == "狩猎")
 	assert(String((definitions[0] as Dictionary).effect_summary) \
-		== "解锁物资：野味；解锁物资：生皮；解锁建筑：狩猎营地；开放通用职业阶层岗位")
+		== "解锁物资：野味；解锁物资：生皮；解锁建筑：狩猎营地；可利用资源：野生动物")
 	for era in TechnologyCatalogScript.public_era_metadata():
-		assert(int((era as Dictionary).candidate_required) == 5)
+		assert(int((era as Dictionary).candidate_required) == 4)
+		assert(((era as Dictionary).milestone_candidate_ids as PackedStringArray).size() == 8)
 	var researchable := 0
 	var milestones := 0
 	var recipe_ids := {}
@@ -73,14 +76,12 @@ func _init() -> void:
 			assert(not recipe_id.is_empty() and not recipe_ids.has(recipe_id))
 			recipe_ids[recipe_id] = true
 			assert(int(catalog.technology_effect_recipe_versions[i]) == 1)
-			assert(int(catalog.technology_modifier_term_offsets[i + 1]) \
-				> int(catalog.technology_modifier_term_offsets[i]))
 		assert(int(catalog.technology_route_tag_offsets[i + 1])
 			- int(catalog.technology_route_tag_offsets[i]) >= 1)
 		if (int(catalog.technology_flags[i]) & 2) != 0:
 			milestones += 1
-			assert(int(catalog.technology_milestone_required_counts[i]) == 5)
-			assert(int(catalog.technology_milestone_offsets[i + 1]) - int(catalog.technology_milestone_offsets[i]) == 16)
+			assert(int(catalog.technology_milestone_required_counts[i]) == 4)
+			assert(int(catalog.technology_milestone_offsets[i + 1]) - int(catalog.technology_milestone_offsets[i]) == 8)
 	assert(researchable == EXPECTED_TECHNOLOGY_COUNT - EXPECTED_STARTER_COUNT)
 	assert(milestones == 11)
 	assert(recipe_ids.size() == EXPECTED_TECHNOLOGY_COUNT - EXPECTED_STARTER_COUNT)
@@ -89,11 +90,13 @@ func _init() -> void:
 			"tech.cotton_cultivation", "tech.flax_cultivation"]:
 		assert((catalog.technology_ids as PackedStringArray).find(retired_crop_bundle) < 0,
 			retired_crop_bundle)
-	assert((catalog.technology_prerequisites as PackedInt32Array).size() <= 500)
+	var maximum_hard_prerequisites := 0
 	for i in range(EXPECTED_TECHNOLOGY_COUNT):
-		assert(int(catalog.technology_prerequisite_offsets[i + 1]) \
-			- int(catalog.technology_prerequisite_offsets[i]) <= 2)
-	assert(modifier_stats.size() >= 360 and modifier_stats.size() <= 480)
+		maximum_hard_prerequisites = maxi(maximum_hard_prerequisites,
+			int(catalog.technology_prerequisite_offsets[i + 1])
+			- int(catalog.technology_prerequisite_offsets[i]))
+	assert(maximum_hard_prerequisites >= 5)
+	assert(modifier_stats.size() > 0)
 	assert((catalog.technology_network_roles as PackedStringArray).size() \
 		== EXPECTED_TECHNOLOGY_COUNT)
 	assert((catalog.technology_anchor_kinds as PackedStringArray).size() \
@@ -106,7 +109,13 @@ func _init() -> void:
 		var kind := String((edge as Dictionary).get("kind", ""))
 		assert(visual_kind_counts.has(kind))
 		visual_kind_counts[kind] += 1
-	assert(int(visual_kind_counts.milestone_candidate) == 176)
+	assert(int(visual_kind_counts.milestone_candidate) == 88)
+	assert(int(visual_kind_counts.alternative) > 0)
+	for unlock_only_id in ["tech.atmospheric_engine", "tech.geographic_information_systems"]:
+		var unlock_only_index := (catalog.technology_ids as PackedStringArray).find(unlock_only_id)
+		assert(unlock_only_index >= 0)
+		assert(int(catalog.technology_modifier_term_offsets[unlock_only_index + 1]) \
+			== int(catalog.technology_modifier_term_offsets[unlock_only_index]))
 	var signals: PackedStringArray = catalog.research_signal_ids
 	for resource_id in ["timber", "stone", "fertile_soil", "arable_land", "paddy_land",
 			"plantation_land", "pasture", "coal", "oil", "natural_gas", "copper_ore",

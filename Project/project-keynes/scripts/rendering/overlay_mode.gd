@@ -46,6 +46,7 @@ enum MODE {
 	ELEVATION = 19,              # 玩家地图：权威海拔
 	VEGETATION_TYPE = 20,        # 玩家地图：当前植被类型
 	RESOURCE_RESERVE = 21,       # 玩家地图：所选自然资源储量
+	BIO_OCCUPANCY = 22,          # 玩家地图：所选物种当前占领（离散有/无）
 }
 
 # VECTOR 类通道：方向用色相、强度用亮度。它们既不是离散调色板（DISCRETE）
@@ -85,6 +86,7 @@ const DISPLAY_NAME: Dictionary = {
 	MODE.ELEVATION: "海拔",
 	MODE.VEGETATION_TYPE: "当前植被",
 	MODE.RESOURCE_RESERVE: "自然资源",
+	MODE.BIO_OCCUPANCY: "生物分布",
 }
 
 # 连续通道的数值两端标签（Legend 显示用）。离散通道留空。
@@ -120,6 +122,7 @@ const DOMAIN_HINT: Dictionary = {
 	MODE.OCEAN_PSI: "仅水域有效；陆地透明，0.5 为中性。",
 	MODE.DEMO_THERMAL_GRADIENT: "仅 demo 数据存在时有效；数组为空会透明。",
 	MODE.RESOURCE_RESERVE: "零储量、不适生或不适用地区保持透明。",
+	MODE.BIO_OCCUPANCY: "透明区域当前没有该物种。",
 }
 
 
@@ -149,6 +152,7 @@ const CATEGORY: Dictionary = {
 	MODE.ELEVATION: CATEGORY_KIND.CONTINUOUS,
 	MODE.VEGETATION_TYPE: CATEGORY_KIND.DISCRETE,
 	MODE.RESOURCE_RESERVE: CATEGORY_KIND.CONTINUOUS,
+	MODE.BIO_OCCUPANCY: CATEGORY_KIND.DISCRETE,
 }
 
 # 纬度气候带离散档位（与 InfoPanelController 的 _climate_zone_name 同口径：按 |ny-0.5| 分 5 档）。

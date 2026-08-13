@@ -39,6 +39,7 @@ var _scroll: ScrollContainer
 var _content_box: VBoxContainer
 
 var _insight_list: InsightList
+var _badge_row: BadgeRow
 var _resource_list: ResourceList
 var _cohort_list
 var _building_list
@@ -242,6 +243,7 @@ func _render_content(reset_scroll: bool) -> void:
 	for child in _content_box.get_children():
 		child.queue_free()
 	_insight_list = null
+	_badge_row = null
 	_resource_list = null
 	_cohort_list = null
 	_building_list = null
@@ -390,6 +392,7 @@ func _build_category_block(data: Dictionary) -> void:
 		var row := BadgeRowScene.instantiate() as BadgeRow
 		row.set_badges(badges)
 		_content_box.add_child(row)
+		_badge_row = row
 
 
 func _apply_category_patch(data: Dictionary) -> void:
@@ -404,6 +407,8 @@ func _apply_category_patch(data: Dictionary) -> void:
 func _apply_category_block_patch(data: Dictionary) -> void:
 	if _insight_list != null:
 		_insight_list.update_items(data.get("insights", []))
+	if _badge_row != null and data.has("badges"):
+		_badge_row.update_badges(data.get("badges", []))
 	if _cohort_list != null and data.has("cohort_rows"):
 		_cohort_list.update_rows(data.get("cohort_rows", []))
 	if _family_list != null and data.has("family_rows"):

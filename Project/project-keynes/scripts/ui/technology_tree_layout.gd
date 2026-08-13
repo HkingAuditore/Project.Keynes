@@ -6,7 +6,7 @@ extends RefCounted
 # remaining tree shifting under the player's cursor.
 
 const NODE_SIZE := Vector2(152.0, 50.0)
-const MILESTONE_SIZE := Vector2(208.0, 58.0)
+const MILESTONE_SIZE := Vector2(208.0, 66.0)
 const COLUMN_GAP := 26.0
 const ROW_GAP := 44.0
 const ERA_HEADER_HEIGHT := 30.0
@@ -15,9 +15,13 @@ const ERA_GAP := 18.0
 const EDGE_SEGMENTS := 14
 const BARYCENTRE_PASSES := 3
 const FALLBACK_DOMAIN_IDS := ["agriculture", "engineering", "science", "society"]
-const FOCUS_COLUMNS := 5
-const FOCUS_COLUMN_GAP := 20.0
-const FOCUS_ROW_GAP := 30.0
+const FOCUS_ROW_GAP := 34.0
+const LANE_GAP := 14.0
+const LANE_HEADER_HEIGHT := 22.0
+const LANE_INSET := 10.0
+const SIBLING_GAP := 12.0
+const MIN_NODE_WIDTH := 32.0
+const MAX_NODE_WIDTH := 184.0
 
 
 static func build(definitions: Array, eras: Array, domains: Array = [],
@@ -182,19 +186,19 @@ static func build(definitions: Array, eras: Array, domains: Array = [],
 	}
 
 
-# Produces a bounded working set for one domain. Fine-grained routes still
-# determine ordering and relationships, but they no longer consume one whole
-# workspace each. The visible geometry contains one of the four research
-# domains across the previous, current and next visible eras.
+# Four research domains share one atlas. Fine-grained routes still determine
+# ordering, but each domain occupies a single vertical lane sized to the centre
+# canvas so the tree fills the window without overflowing it.
 static func build_focus(definitions: Array, eras: Array, domains: Array,
 		visual_edges: Array, domain_id: String, focus_era: int,
 		visible_nodes: PackedByteArray = PackedByteArray(),
-		base_layout: Dictionary = {}) -> Dictionary:
+		base_layout: Dictionary = {},
+		canvas_size: Vector2 = Vector2.ZERO) -> Dictionary:
 	var full := base_layout if not base_layout.is_empty() \
 		else build(definitions, eras, domains, visual_edges)
 	if not bool(full.get("ok", false)) or definitions.is_empty():
 		return {"ok": false, "nodes": [], "edges": [], "portals": [],
-			"bands": [], "content_rect": Rect2()}
+			"bands": [], "lanes": [], "content_rect": Rect2()}
 	var parents: Array = full.get("parents", [])
 	var children: Array = full.get("children", [])
 	var era_order := _era_order(definitions, eras)
@@ -204,15 +208,20 @@ static func build_focus(definitions: Array, eras: Array, domains: Array,
 	var clamped_era := clampi(focus_era, 0, maxi(0, era_order.size() - 1))
 	var first_era := maxi(0, clamped_era - 1)
 	var last_era := mini(era_order.size() - 1, clamped_era + 1)
+	var domain_ids := _focus_domain_ids(domains)
+	var domain_names := _focus_domain_names(domains)
+	var domain_count := domain_ids.size()
+	var metrics := _lane_metrics(canvas_size, domain_count)
+	var node_size := Vector2(float(metrics.node_w), NODE_SIZE.y)
 	var members_by_era: Array[PackedInt32Array] = []
 	for _era in range(era_order.size()):
 		members_by_era.append(PackedInt32Array())
 	var local_lookup := {}
+	var index_by_id := {}
 	for index in range(definitions.size()):
 		var definition: Dictionary = definitions[index]
+		index_by_id[String(definition.get("id", ""))] = index
 		if bool(definition.get("is_milestone", false)):
-			continue
-		if String(definition.get("domain_id", "")) != domain_id:
 			continue
 		var era_index := int(era_by_id.get(String(definition.get("era_id", "")), -1))
 		if era_index < first_era or era_index > last_era:
@@ -227,65 +236,90 @@ static func build_focus(definitions: Array, eras: Array, domains: Array,
 	var rect_by_index := {}
 	var bands: Array[Dictionary] = []
 	var cursor_y := 0.0
-	var content_rect := Rect2()
+	var canvas_w := float(metrics.canvas_w)
+	var content_rect := Rect2(Vector2(-canvas_w * 0.5, 0.0), Vector2(canvas_w, 0.0))
 	var found := false
+	var lane_meta: Array = []
+	for domain in range(domain_count):
+		lane_meta.append({
+			"domain": domain,
+			"id": String(domain_ids[domain]),
+			"display_name": String(domain_names[domain]),
+		})
 	for era_index in range(first_era, last_era + 1):
 		var members := members_by_era[era_index]
 		if members.is_empty():
 			continue
+		var milestone := _era_milestone_index(era_order[era_index], index_by_id)
+		if milestone >= 0 and not local_lookup.has(milestone):
+			members.append(milestone)
+			local_lookup[milestone] = true
 		var band_top := cursor_y
-		var body_top := band_top + ERA_HEADER_HEIGHT + 8.0
-		var depth_groups := {}
-		for technology in members:
-			var depth := _local_depth(technology, members, parents)
-			if not depth_groups.has(depth):
-				depth_groups[depth] = []
-			(depth_groups[depth] as Array).append(int(technology))
-		var depths: Array = depth_groups.keys()
-		depths.sort()
-		var row_cursor := 0
-		for depth_value in depths:
-			var ordered: Array = depth_groups[depth_value]
-			ordered.sort_custom(func(a: int, b: int) -> bool:
-				var lane_a := String((definitions[a] as Dictionary).get(
-					"main_lane", (definitions[a] as Dictionary).get("layout_lane", "")))
-				var lane_b := String((definitions[b] as Dictionary).get(
-					"main_lane", (definitions[b] as Dictionary).get("layout_lane", "")))
-				if lane_a != lane_b:
-					return lane_a < lane_b
-				return a < b
-			)
-			var depth_rows := int(ceil(float(ordered.size()) / float(FOCUS_COLUMNS)))
+		var header_h := ERA_HEADER_HEIGHT + LANE_HEADER_HEIGHT
+		var body_y := band_top + header_h + 8.0
+		var rows := _band_rows(members, parents, definitions)
+		var visual_layer := 0
+		for row_index in range(rows.size()):
+			var ordered := _ordered_focus_row(rows[row_index], definitions)
+			if ordered.is_empty():
+				continue
+			var milestone_row := ordered.size() == 1 \
+				and bool((definitions[int(ordered[0])] as Dictionary).get(
+					"is_milestone", false))
+			if milestone_row:
+				var technology := int(ordered[0])
+				var milestone_w := clampf(float(metrics.inner) * 0.38, 120.0,
+					minf(MILESTONE_SIZE.x, float(metrics.inner) - 16.0))
+				var placed := _place_focus_node(technology, -milestone_w * 0.5,
+					body_y, Vector2(milestone_w, MILESTONE_SIZE.y),
+					definitions[technology] as Dictionary, domains,
+					era_index, clamped_era, row_index, visual_layer, true)
+				rect_by_index[technology] = placed.rect
+				nodes.append(placed)
+				found = true
+				body_y += MILESTONE_SIZE.y + FOCUS_ROW_GAP
+				visual_layer += 1
+				continue
+			var buckets: Array = []
+			for _domain in range(domain_count):
+				buckets.append([])
 			for slot in range(ordered.size()):
 				var technology := int(ordered[slot])
-				var column := slot % FOCUS_COLUMNS
-				var local_row := slot / FOCUS_COLUMNS
-				var columns_in_row := mini(FOCUS_COLUMNS,
-					ordered.size() - local_row * FOCUS_COLUMNS)
-				var row_width := columns_in_row * NODE_SIZE.x \
-					+ maxi(0, columns_in_row - 1) * FOCUS_COLUMN_GAP
-				var x := -row_width * 0.5 \
-					+ column * (NODE_SIZE.x + FOCUS_COLUMN_GAP)
-				var row := row_cursor + local_row
-				var rect := Rect2(Vector2(x,
-					body_top + row * (NODE_SIZE.y + FOCUS_ROW_GAP)), NODE_SIZE)
-				rect_by_index[technology] = rect
-				nodes.append({
-					"index": technology,
-					"rect": rect,
-					"domain": _domain_index(definitions[technology], domains),
-					"lane_id": String((definitions[technology] as Dictionary).get(
-						"main_lane", (definitions[technology] as Dictionary).get("layout_lane", ""))),
-					"era_index": era_index,
-					"depth": int(depth_value),
-					"is_focus_era": era_index == clamped_era,
-				})
-				content_rect = rect if not found else content_rect.merge(rect)
-				found = true
-			row_cursor += depth_rows
-		var row_count := row_cursor
-		var band_bottom := body_top + row_count * NODE_SIZE.y \
-			+ maxi(0, row_count - 1) * FOCUS_ROW_GAP + ERA_PADDING
+				var domain := clampi(_domain_index(definitions[technology] as Dictionary,
+					domains), 0, domain_count - 1)
+				var bucket: Array = buckets[domain]
+				bucket.append(technology)
+				buckets[domain] = bucket
+			var max_stack := 1
+			for domain in range(domain_count):
+				max_stack = maxi(max_stack, (buckets[domain] as Array).size())
+			for domain in range(domain_count):
+				var bucket: Array = buckets[domain]
+				var x := _lane_node_x(metrics, domain)
+				for stack_index in range(bucket.size()):
+					var technology := int(bucket[stack_index])
+					var y := body_y + float(stack_index) * (node_size.y + SIBLING_GAP)
+					var placed := _place_focus_node(technology, x, y, node_size,
+						definitions[technology] as Dictionary, domains, era_index,
+						clamped_era, row_index, visual_layer, false)
+					rect_by_index[technology] = placed.rect
+					nodes.append(placed)
+					found = true
+			body_y += float(max_stack) * node_size.y \
+				+ float(maxi(0, max_stack - 1)) * SIBLING_GAP + FOCUS_ROW_GAP
+			visual_layer += 1
+		var band_bottom := body_y - FOCUS_ROW_GAP + ERA_PADDING
+		var lanes: Array = []
+		for domain in range(domain_count):
+			var lane_x := float(metrics.left) \
+				+ float(domain) * (float(metrics.lane_w) + float(metrics.gap))
+			lanes.append({
+				"domain": domain,
+				"id": String(domain_ids[domain]),
+				"display_name": String(domain_names[domain]),
+				"rect": Rect2(lane_x, band_top + ERA_HEADER_HEIGHT,
+					float(metrics.lane_w), band_bottom - band_top - ERA_HEADER_HEIGHT),
+			})
 		bands.append({
 			"era_index": era_index,
 			"id": String((era_order[era_index] as Dictionary).get("id", "")),
@@ -293,6 +327,8 @@ static func build_focus(definitions: Array, eras: Array, domains: Array,
 			"top": band_top,
 			"bottom": band_bottom,
 			"is_focus": era_index == clamped_era,
+			"milestone_index": milestone,
+			"lanes": lanes,
 		})
 		cursor_y = band_bottom + ERA_GAP
 
@@ -305,9 +341,9 @@ static func build_focus(definitions: Array, eras: Array, domains: Array,
 			if local_lookup.has(parent):
 				var points := _edge_points(rect_by_index[parent], rect_by_index[technology])
 				edges.append({"from": parent, "to": technology, "kind": "hard", "points": points})
-			elif String((definitions[parent] as Dictionary).get("domain_id", "")) != domain_id \
-					and (visible_nodes.is_empty() \
-					or (parent < visible_nodes.size() and visible_nodes[parent] != 0)):
+			elif _is_visible_index(parent, visible_nodes) \
+					and _era_outside_window(definitions[parent] as Dictionary,
+						era_by_id, first_era, last_era):
 				portals.append({
 					"owner": technology,
 					"target": int(parent),
@@ -316,9 +352,9 @@ static func build_focus(definitions: Array, eras: Array, domains: Array,
 		for child in children[technology]:
 			if local_lookup.has(child):
 				continue
-			if String((definitions[child] as Dictionary).get("domain_id", "")) != domain_id \
-					and (visible_nodes.is_empty() \
-					or (child < visible_nodes.size() and visible_nodes[child] != 0)):
+			if _is_visible_index(child, visible_nodes) \
+					and _era_outside_window(definitions[child] as Dictionary,
+						era_by_id, first_era, last_era):
 				portals.append({
 					"owner": technology,
 					"target": int(child),
@@ -341,48 +377,119 @@ static func build_focus(definitions: Array, eras: Array, domains: Array,
 			"kind": "application",
 			"points": _edge_points(rect_by_index[from], rect_by_index[to]),
 		})
+	content_rect.size.y = maxf(content_rect.size.y, cursor_y)
 	for band in bands:
-		band["rect"] = Rect2(content_rect.position.x - VIEW_SIDE_PADDING,
-			float(band.top), content_rect.size.x + VIEW_SIDE_PADDING * 2.0,
-			float(band.bottom) - float(band.top))
-	if found:
-		content_rect = content_rect.grow(VIEW_SIDE_PADDING)
-		content_rect.size.y = maxf(content_rect.size.y, cursor_y - content_rect.position.y)
+		band["rect"] = Rect2(content_rect.position.x, float(band.top),
+			content_rect.size.x, float(band.bottom) - float(band.top))
 	return {
-		"ok": true,
+		"ok": found,
 		"nodes": nodes,
 		"edges": edges,
 		"portals": portals,
 		"bands": bands,
+		"lanes": lane_meta,
 		"parents": parents,
 		"children": children,
 		"content_rect": content_rect,
 		"domain_id": domain_id,
 		"focus_era": clamped_era,
+		"fits_canvas": true,
+		"canvas_size": Vector2(canvas_w, canvas_size.y),
 	}
 
 
-const VIEW_SIDE_PADDING := 44.0
+static func _lane_metrics(canvas_size: Vector2, domain_count: int) -> Dictionary:
+	var count := maxi(1, domain_count)
+	var canvas_w := canvas_size.x if canvas_size.x >= 200.0 else 720.0
+	var inner := maxf(80.0, canvas_w - LANE_INSET * 2.0)
+	if inner > canvas_w:
+		inner = canvas_w
+	var gap := LANE_GAP if count > 1 else 0.0
+	var lane_w := maxf(8.0, (inner - gap * float(count - 1)) / float(count))
+	var node_w := clampf(lane_w - 16.0, MIN_NODE_WIDTH, MAX_NODE_WIDTH)
+	if node_w > lane_w - 6.0:
+		node_w = maxf(24.0, lane_w - 6.0)
+	return {
+		"canvas_w": canvas_w,
+		"inner": inner,
+		"lane_w": lane_w,
+		"node_w": node_w,
+		"left": -inner * 0.5,
+		"gap": gap,
+	}
 
 
-static func _local_depth(node: int, members: PackedInt32Array,
-		parents: Array) -> int:
-	var member_lookup := {}
-	for member in members:
-		member_lookup[member] = true
-	var depth := 0
-	var frontier := PackedInt32Array([node])
-	var visited := {}
-	while not frontier.is_empty():
-		var current := frontier[frontier.size() - 1]
-		frontier.resize(frontier.size() - 1)
-		for parent in parents[current]:
-			if not member_lookup.has(parent) or visited.has(parent):
-				continue
-			visited[parent] = true
-			depth += 1
-			frontier.append(parent)
-	return depth
+static func _lane_node_x(metrics: Dictionary, domain: int) -> float:
+	return float(metrics.left) + float(domain) * (float(metrics.lane_w) + float(metrics.gap)) \
+		+ (float(metrics.lane_w) - float(metrics.node_w)) * 0.5
+
+
+static func _focus_domain_ids(domains: Array) -> PackedStringArray:
+	var ids := PackedStringArray()
+	for domain in domains:
+		ids.append(String((domain as Dictionary).get("id", "")))
+	if ids.is_empty():
+		for domain_id in FALLBACK_DOMAIN_IDS:
+			ids.append(String(domain_id))
+	return ids
+
+
+static func _focus_domain_names(domains: Array) -> PackedStringArray:
+	var names := PackedStringArray()
+	for domain in domains:
+		var data: Dictionary = domain
+		names.append(String(data.get("display_name", data.get("id", ""))))
+	if names.is_empty():
+		for domain_id in FALLBACK_DOMAIN_IDS:
+			names.append(String(domain_id))
+	return names
+
+
+static func _is_visible_index(index: int, visible_nodes: PackedByteArray) -> bool:
+	return visible_nodes.is_empty() \
+		or (index >= 0 and index < visible_nodes.size() and visible_nodes[index] != 0)
+
+
+static func _era_outside_window(definition: Dictionary, era_by_id: Dictionary,
+		first_era: int, last_era: int) -> bool:
+	var era_index := int(era_by_id.get(String(definition.get("era_id", "")), -1))
+	return era_index < first_era or era_index > last_era
+
+
+static func _era_milestone_index(era: Dictionary, index_by_id: Dictionary) -> int:
+	return int(index_by_id.get(String(era.get("milestone_id", "")), -1))
+
+
+static func _ordered_focus_row(row: PackedInt32Array, definitions: Array) -> Array:
+	var ordered: Array = []
+	for node in row:
+		ordered.append(int(node))
+	ordered.sort_custom(func(a: int, b: int) -> bool:
+		var left: Dictionary = definitions[a]
+		var right: Dictionary = definitions[b]
+		var lane_a := String(left.get("branch_family_id", left.get("layout_lane", "")))
+		var lane_b := String(right.get("branch_family_id", right.get("layout_lane", "")))
+		if lane_a != lane_b:
+			return lane_a < lane_b
+		return a < b
+	)
+	return ordered
+
+
+static func _place_focus_node(technology: int, x: float, y: float, size: Vector2,
+		definition: Dictionary, domains: Array, era_index: int, clamped_era: int,
+		depth: int, layer: int, is_milestone: bool) -> Dictionary:
+	return {
+		"index": technology,
+		"rect": Rect2(Vector2(x, y), size),
+		"domain": _domain_index(definition, domains),
+		"lane_id": String(definition.get("branch_family_id", definition.get("layout_lane", ""))),
+		"era_index": era_index,
+		"depth": depth,
+		"layer": layer,
+		"is_focus_era": era_index == clamped_era,
+		"is_milestone": is_milestone,
+	}
 
 
 static func _domain_index(definition: Dictionary, domains: Array) -> int:
@@ -433,6 +540,7 @@ static func _era_order(definitions: Array, eras: Array) -> Array[Dictionary]:
 		order.append({
 			"id": String(data.get("id", "")),
 			"display_name": String(data.get("display_name", String(data.get("id", "")))),
+			"milestone_id": String(data.get("milestone_id", "")),
 		})
 	if not order.is_empty():
 		return order
@@ -452,7 +560,7 @@ static func _era_order(definitions: Array, eras: Array) -> Array[Dictionary]:
 # Rows are the local dependency depth inside one era. The era milestone always
 # terminates its band so the next era reads as a gated continuation.
 static func _band_rows(band_members: PackedInt32Array,
-		parents: Array[PackedInt32Array], definitions: Array) -> Array[PackedInt32Array]:
+		parents: Array, definitions: Array) -> Array[PackedInt32Array]:
 	var rows: Array[PackedInt32Array] = []
 	if band_members.is_empty():
 		return rows

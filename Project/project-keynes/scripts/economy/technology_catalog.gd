@@ -87,20 +87,13 @@ static func compile_native_catalog() -> Dictionary:
 	if not bool(network.get("ok", false)):
 		return network
 	var technology_rows: Array = (network.get("nodes", []) as Array).duplicate(true)
-	var source_era_order := {}
-	for era_index_value in range((network.get("eras", []) as Array).size()):
-		source_era_order[String(((network.get("eras", []) as Array)[era_index_value] as Dictionary).get("id", ""))] = era_index_value
-	technology_rows.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
-		var left_era := int(source_era_order.get(String(left.get("era_id", "")), 999))
-		var right_era := int(source_era_order.get(String(right.get("era_id", "")), 999))
-		if left_era != right_era:
-			return left_era < right_era
-		if bool(left.get("is_milestone", false)) != bool(right.get("is_milestone", false)):
-			return not bool(left.get("is_milestone", false))
-		return int(left.get("layout_order", 0)) < int(right.get("layout_order", 0)))
+	# Schema-v2 authoring is already era-grouped and topologically ordered.  Do
+	# not re-sort by legacy layout_order: a same-era dependency may legitimately
+	# point from a later visual row to an earlier one.
 	var era_rows: Array = network.get("eras", [])
 	var domain_rows: Array = network.get("domains", [])
-	if technology_rows.size() != 361 or era_rows.size() != 11 or domain_rows.size() != 4:
+	if technology_rows.size() < 361 or era_rows.size() != 11 or domain_rows.size() != 4 \
+			or int(network.get("schema_version", 0)) < 2:
 		return {"ok": false, "reason": "technology_network_shape_invalid"}
 	var ids := PackedStringArray()
 	var names := PackedStringArray()
@@ -127,10 +120,30 @@ static func compile_native_catalog() -> Dictionary:
 	var id_to_index := {}
 	var era_index := {}
 	var era_milestone_ids := PackedStringArray()
+	var era_entry_milestone_ids := PackedStringArray()
+	var era_candidate_ids := {}
+	var milestone_required_by_id := {}
+	var milestone_candidate_ids := {}
 	for i in range(era_rows.size()):
 		var era_row: Dictionary = era_rows[i]
-		era_index[String(era_row.get("id", ""))] = i
-		era_milestone_ids.append(String(era_row.get("milestone_id", "")))
+		var authored_era_id := String(era_row.get("id", ""))
+		var milestone_id := String(era_row.get("milestone_id", ""))
+		var candidate_ids: Array = era_row.get("milestone_candidate_ids", [])
+		var candidate_required := int(era_row.get("candidate_required", 0))
+		if candidate_ids.size() != 8 or candidate_required != 4:
+			return {"ok": false, "reason": "technology_era_candidate_contract_invalid",
+				"era_id": authored_era_id}
+		era_index[authored_era_id] = i
+		era_milestone_ids.append(milestone_id)
+		era_entry_milestone_ids.append(String(era_row.get("entry_milestone_id", "")))
+		era_candidate_ids[authored_era_id] = candidate_ids.duplicate()
+		milestone_required_by_id[milestone_id] = candidate_required
+		for candidate_id in candidate_ids:
+			var normalized_candidate := String(candidate_id)
+			if milestone_candidate_ids.has(normalized_candidate):
+				return {"ok": false, "reason": "technology_milestone_candidate_duplicate",
+					"id": normalized_candidate}
+			milestone_candidate_ids[normalized_candidate] = authored_era_id
 	for row_value in technology_rows:
 		var row: Dictionary = row_value
 		var id := String(row.get("id", ""))
@@ -150,42 +163,49 @@ static func compile_native_catalog() -> Dictionary:
 		var secondary_routes: Array = row.get("secondary_route_tags", [])
 		if not era_index.has(era) or domain < 0 or int(row.get("cost_points", -1)) < 0 \
 				or String(row.get("effect_profile", "")).is_empty() \
-				or String(row.get("main_lane", "")).is_empty() or secondary_routes.is_empty():
+				or String(row.get("branch_family_id", "")).is_empty() or secondary_routes.is_empty():
 			return {"ok": false, "reason": "technology_metadata_invalid", "id": row_id}
 		era_ids.append(era)
 		domain_indices.append(domain)
 		var is_starter := bool(row.get("is_starter_eligible", false))
 		costs.append(0 if is_starter else int(row.get("cost_points", 0)) * 1000)
 		var hard_prerequisites: Array = row.get("hard_prerequisite_ids", [])
-		if hard_prerequisites.size() > 2:
-			return {"ok": false, "reason": "technology_hard_prerequisite_limit_exceeded", "id": row_id}
+		var prerequisite_rationales: Array = row.get("prerequisite_rationales", [])
+		if prerequisite_rationales.size() != hard_prerequisites.size():
+			return {"ok": false, "reason": "technology_prerequisite_rationale_count_invalid",
+				"id": row_id}
+		var branch_successors: Array = row.get("branch_successor_ids", [])
+		var branch_rationales: Array = row.get("branch_successor_rationales", [])
+		var application_targets: Array = row.get("application_target_ids", [])
+		var application_rationales: Array = row.get("application_target_rationales", [])
+		if branch_successors.size() != branch_rationales.size():
+			return {"ok": false, "reason": "technology_branch_rationale_count_invalid",
+				"id": row_id}
+		if application_targets.size() != application_rationales.size():
+			return {"ok": false, "reason": "technology_application_rationale_count_invalid",
+				"id": row_id}
 		for prerequisite in hard_prerequisites:
 			var prerequisite_id := String(prerequisite)
 			if not id_to_index.has(prerequisite_id):
 				return {"ok": false, "reason": "technology_prerequisite_missing", "id": row_id, "prerequisite": prerequisite_id}
 			var prerequisite_index := int(id_to_index[prerequisite_id])
 			if prerequisite_index >= row_index:
-				return {"ok": false, "reason": "technology_catalog_not_topological", "id": row_id}
+				return {"ok": false, "reason": "technology_catalog_not_topological", "id": row_id,
+					"prerequisite": prerequisite_id}
 			prerequisites.append(prerequisite_index)
 		prerequisite_offsets.append(prerequisites.size())
 		var is_milestone := bool(row.get("is_milestone", false))
 		var candidate_ids: Array = []
 		if is_milestone:
-			for candidate_value in technology_rows:
-				var candidate: Dictionary = candidate_value
-				if String(candidate.get("era_id", "")) == era \
-						and bool(candidate.get("is_milestone_candidate", false)):
-					candidate_ids.append(String(candidate.get("id", "")))
-			if candidate_ids.size() != 16:
-				return {"ok": false, "reason": "technology_era_candidate_count_invalid", "id": row_id}
+			candidate_ids = (era_candidate_ids.get(era, []) as Array).duplicate()
 			for candidate_id in candidate_ids:
 				var candidate_index := int(id_to_index.get(candidate_id, -1))
 				if candidate_index < 0 or candidate_index >= row_index:
 					return {"ok": false, "reason": "technology_era_candidate_invalid", "id": row_id, "candidate": candidate_id}
 				milestone_candidates.append(candidate_index)
 		milestone_offsets.append(milestone_candidates.size())
-		milestone_required.append(5 if is_milestone else 0)
-		flags.append((FLAG_ERA_KEY if bool(row.get("is_milestone_candidate", false)) else 0) \
+		milestone_required.append(int(milestone_required_by_id.get(row_id, 0)) if is_milestone else 0)
+		flags.append((FLAG_ERA_KEY if milestone_candidate_ids.has(row_id) else 0) \
 			| (FLAG_MILESTONE if is_milestone else 0) \
 			| (FLAG_STARTING if is_starter else 0))
 		effects.append(String(row.get("effect_summary", "")))
@@ -200,7 +220,7 @@ static func compile_native_catalog() -> Dictionary:
 		route_tag_offsets.append(route_tags.size())
 		var primary_route := String(secondary_routes[0])
 		primary_route_tags.append(primary_route)
-		layout_lanes.append(String(row.get("main_lane", "")))
+		layout_lanes.append(String(row.get("branch_family_id", "")))
 		node_roles.append(String(row.get("node_role", "")))
 		network_roles.append(String(row.get("network_role", "")))
 		anchor_kinds.append(String(row.get("anchor_kind", "")))
@@ -220,14 +240,30 @@ static func compile_native_catalog() -> Dictionary:
 	var era_ids_out := PackedStringArray()
 	var era_names := PackedStringArray()
 	var era_milestones := PackedInt32Array()
-	for era_value in era_rows:
-		var era_row: Dictionary = era_value
+	var era_entry_milestones := PackedInt32Array()
+	for index in range(era_rows.size()):
+		var era_row: Dictionary = era_rows[index]
 		var milestone_id := String(era_row.get("milestone_id", ""))
 		if not id_to_index.has(milestone_id):
 			return {"ok": false, "reason": "technology_milestone_missing", "id": milestone_id}
 		era_ids_out.append(String(era_row.get("id", "")))
 		era_names.append(String(era_row.get("display_name", "")))
 		era_milestones.append(int(id_to_index[milestone_id]))
+		var entry_milestone_id := String(era_row.get("entry_milestone_id", ""))
+		if index == 0:
+			if not entry_milestone_id.is_empty():
+				return {"ok": false, "reason": "technology_first_era_entry_milestone_invalid"}
+			era_entry_milestones.append(-1)
+		else:
+			if not id_to_index.has(entry_milestone_id) \
+					or entry_milestone_id != String(era_milestone_ids[index - 1]):
+				return {"ok": false, "reason": "technology_era_entry_milestone_invalid",
+					"era_id": String(era_row.get("id", ""))}
+			era_entry_milestones.append(int(id_to_index[entry_milestone_id]))
+	var technology_entry_milestones := PackedInt32Array()
+	for technology_era_id in era_ids:
+		technology_entry_milestones.append(
+			era_entry_milestones[int(era_index[String(technology_era_id)])])
 	var signal_ids: PackedStringArray = signal_catalog.get("research_signal_ids", PackedStringArray())
 	var conditions := _compile_condition_specs(ids, signal_ids,
 		research_condition_specs, "technology_research_condition")
@@ -278,13 +314,16 @@ static func compile_native_catalog() -> Dictionary:
 		"technology_anchor_kinds": anchor_kinds,
 		"technology_starter_capability_offsets": starter_capability_offsets,
 		"technology_starter_capability_tags": starter_capability_tags,
-		"technology_modifier_definition_keys": _modifier_definition_keys(ids),
+		"technology_modifier_definition_keys": _modifier_definition_keys(
+			ids, modifier_ir.technology_modifier_term_offsets),
 		"technology_domain_ids": PackedStringArray(DOMAIN_IDS),
 		"technology_domain_display_names": PackedStringArray(DOMAIN_NAMES),
 		"technology_domain_default_weights_bp": PackedInt32Array([2500, 2500, 2500, 2500]),
 		"technology_era_ids_ordered": era_ids_out,
 		"technology_era_display_names": era_names,
 		"technology_era_milestone_indices": era_milestones,
+		"technology_era_entry_milestone_indices": era_entry_milestones,
+		"technology_entry_milestone_indices": technology_entry_milestones,
 		# Technology owns the stable milestone -> reward-pool routing. The
 		# candidate rules and executable templates remain Effect catalog data.
 		"technology_era_reward_pool_ids": PackedStringArray(),
@@ -321,12 +360,6 @@ static func _compile_explicit_modifier_term_ir(nodes: Array) -> Dictionary:
 	for node_value in nodes:
 		var node: Dictionary = node_value
 		var terms: Array = node.get("modifier_terms", [])
-		if terms.is_empty() and not bool(node.get("is_starter_eligible", false)):
-			return {"ok": false, "reason": "technology_modifier_terms_missing",
-				"id": String(node.get("id", ""))}
-		if terms.size() > 3:
-			return {"ok": false, "reason": "technology_modifier_term_limit_exceeded",
-				"id": String(node.get("id", ""))}
 		for term_value in terms:
 			var term: Dictionary = term_value
 			var stat_key := String(term.get("stat", "")).strip_edges()
@@ -520,10 +553,14 @@ static func _append_predicate_dict(predicate: Dictionary, signal_index: Dictiona
 		return ""
 	return "technology_condition_predicate_unsupported"
 
-static func _modifier_definition_keys(ids: PackedStringArray) -> PackedStringArray:
+static func _modifier_definition_keys(ids: PackedStringArray,
+		term_offsets: PackedInt32Array) -> PackedStringArray:
 	var out := PackedStringArray()
-	for id in ids:
-		out.append("technology.%s" % String(id).trim_prefix("tech."))
+	for index in range(ids.size()):
+		var has_terms := index + 1 < term_offsets.size() \
+			and term_offsets[index + 1] > term_offsets[index]
+		out.append("technology.%s" % String(ids[index]).trim_prefix("tech.") \
+			if has_terms else "")
 	return out
 
 
@@ -563,6 +600,9 @@ static func public_definitions() -> Array[Dictionary]:
 			"domain_id": DOMAIN_IDS[compiled.technology_domain_indices[i]],
 			"cost_points": int(compiled.technology_costs[i]) / 1000,
 			"prerequisite_ids": prerequisites_out,
+			"prerequisite_rationales": PackedStringArray(
+				source.get("prerequisite_rationales", [])),
+			"era_entry_milestone_id": String(source.get("era_entry_milestone_id", "")),
 			"milestone_candidate_ids": candidates_out,
 			"milestone_required_count": compiled.technology_milestone_required_counts[i],
 			"is_milestone": (int(compiled.technology_flags[i]) & 2) != 0,
@@ -576,18 +616,25 @@ static func public_definitions() -> Array[Dictionary]:
 			"anchor_kind": String(compiled.technology_anchor_kinds[i]),
 			"primary_route_tag": String(compiled.technology_primary_route_tags[i]),
 			"layout_lane": String(compiled.technology_layout_lanes[i]),
-			"main_lane": String(compiled.technology_layout_lanes[i]),
+			"branch_family_id": String(compiled.technology_layout_lanes[i]),
 			"starter_capability_tags": starter_capabilities,
 			"route_tags": public_route_tags,
 			"route_display_names": _localized_route_names(public_route_tags),
 			"research_condition": (source.get("research_condition", {}) as Dictionary).duplicate(true),
+			"research_condition_summary": String(source.get("research_condition_summary", "")),
 			"reveal_condition": (source.get("reveal_condition", {}) as Dictionary).duplicate(true),
+			"reveal_category": String(source.get("reveal_category", "")),
+			"reveal_summary": String(source.get("reveal_summary", "")),
 			"modifier_terms": (source.get("modifier_terms", []) as Array).duplicate(true),
 			"expected_bindings": (source.get("expected_bindings", []) as Array).duplicate(true),
 			"content_effects": (source.get("content_effects", []) as Array).duplicate(true),
 			"opportunity_cost": String(source.get("opportunity_cost", "")),
-			"same_lane_successor_ids": PackedStringArray(source.get("same_lane_successor_ids", [])),
+			"branch_successor_ids": PackedStringArray(source.get("branch_successor_ids", [])),
+			"branch_successor_rationales": PackedStringArray(
+				source.get("branch_successor_rationales", [])),
 			"application_target_ids": PackedStringArray(source.get("application_target_ids", [])),
+			"application_target_rationales": PackedStringArray(
+				source.get("application_target_rationales", [])),
 			"terminal_reason": String(source.get("terminal_reason", "")),
 		})
 	return out
@@ -608,7 +655,7 @@ static func public_lane_metadata() -> Array[Dictionary]:
 	if not bool(network.get("ok", false)):
 		return []
 	var out: Array[Dictionary] = []
-	for lane_value in (network.get("backbones", []) as Array) + (network.get("specialist_lanes", []) as Array):
+	for lane_value in (network.get("backbones", []) as Array) + (network.get("branch_families", []) as Array):
 		out.append((lane_value as Dictionary).duplicate(true))
 	return out
 
@@ -642,7 +689,9 @@ static func public_era_metadata() -> Array[Dictionary]:
 			"id": String(row.get("id", "")),
 			"display_name": String(row.get("display_name", "")),
 			"milestone_id": String(row.get("milestone_id", "")),
-			"candidate_required": int(row.get("candidate_required", 5)),
+			"entry_milestone_id": String(row.get("entry_milestone_id", "")),
+			"milestone_candidate_ids": PackedStringArray(row.get("milestone_candidate_ids", [])),
+			"candidate_required": int(row.get("candidate_required", 4)),
 			"sort_order": index,
 		})
 	return out

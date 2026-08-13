@@ -9,25 +9,25 @@ const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const EraRewardCatalogScript = preload("res://scripts/effect/era_reward_catalog.gd")
 
 const TECHNOLOGY_STATS := [
-	["country.research.agriculture_efficiency", 0.0, 1.6],
-	["country.research.engineering_efficiency", 0.0, 1.6],
-	["country.research.science_efficiency", 0.0, 1.6],
-	["country.research.society_efficiency", 0.0, 1.6],
+	["country.research.agriculture_efficiency", 0.0, 6.0],
+	["country.research.engineering_efficiency", 0.0, 6.0],
+	["country.research.science_efficiency", 0.0, 6.0],
+	["country.research.society_efficiency", 0.0, 6.0],
 	["country.research.cost_factor", 0.65, 4.0],
-	["country.research.institution_output_factor", 0.0, 3.0],
-	["country.output.agriculture_factor", 0.0, 3.0],
-	["country.output.extractive_factor", 0.0, 3.0],
-	["country.output.manufacturing_factor", 0.0, 3.0],
-	["country.output.energy_factor", 0.0, 3.0],
-	["country.output.knowledge_factor", 0.0, 3.0],
-	["country.construction.cost_factor", 0.65, 4.0],
-	["country.construction.time_factor", 0.65, 4.0],
-	["country.trade.capacity_factor", 0.0, 2.0],
-	["country.trade.speed_factor", 0.0, 1.5],
-	["country.climate.drought_loss_factor", 0.35, 1.0],
-	["country.climate.flood_loss_factor", 0.35, 1.0],
-	["country.climate.cold_stress_factor", 0.35, 1.0],
-	["country.climate.heat_stress_factor", 0.35, 1.0],
+	["country.research.institution_output_factor", 0.0, 8.0],
+	["country.output.agriculture_factor", 0.0, 8.0],
+	["country.output.extractive_factor", 0.0, 8.0],
+	["country.output.manufacturing_factor", 0.0, 8.0],
+	["country.output.energy_factor", 0.0, 8.0],
+	["country.output.knowledge_factor", 0.0, 8.0],
+	["country.construction.cost_factor", 0.40, 4.0],
+	["country.construction.time_factor", 0.40, 4.0],
+	["country.trade.capacity_factor", 0.0, 8.0],
+	["country.trade.speed_factor", 0.0, 8.0],
+	["country.climate.drought_loss_factor", 0.20, 1.0],
+	["country.climate.flood_loss_factor", 0.20, 1.0],
+	["country.climate.cold_stress_factor", 0.20, 1.0],
+	["country.climate.heat_stress_factor", 0.20, 1.0],
 ]
 
 @export var stats: Array[Resource] = []
@@ -120,7 +120,7 @@ func compile_native_catalog() -> Dictionary:
 		out.stat_keys.append(String(family_key))
 		out.stat_domains.append(1)
 		out.stat_min_values.append(0.0)
-		out.stat_max_values.append(3.0)
+		out.stat_max_values.append(8.0)
 		out.stat_persistable.append(1)
 		stat_domains_by_id.append(1)
 		stat_allowed_operations_by_id.append(15)
@@ -133,7 +133,7 @@ func compile_native_catalog() -> Dictionary:
 		out.stat_keys.append(String(building_key))
 		out.stat_domains.append(1)
 		out.stat_min_values.append(0.0)
-		out.stat_max_values.append(3.0)
+		out.stat_max_values.append(8.0)
 		out.stat_persistable.append(1)
 		stat_domains_by_id.append(1)
 		stat_allowed_operations_by_id.append(15)
@@ -202,6 +202,10 @@ func compile_native_catalog() -> Dictionary:
 		if (int(technologies.technology_flags[i]) & TechnologyCatalogScript.FLAG_STARTING) != 0:
 			continue
 		var definition_key := String(technologies.technology_modifier_definition_keys[i])
+		# Unlock-only technologies intentionally have no Modifier definition. Their
+		# adoption still runs through EffectRuntime and the country ACK boundary.
+		if definition_key.is_empty():
+			continue
 		if definition_keys.has(definition_key):
 			return {"ok": false, "reason": "modifier_definition_invalid_or_duplicate"}
 		definition_keys[definition_key] = true

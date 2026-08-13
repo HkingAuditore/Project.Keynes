@@ -29,9 +29,11 @@ snapshots; it never queries map Resources, strings, or dictionaries in the daily
 research loop.
 
 The active command is `DISCOVER_COUNTRY_SIGNAL=14`; it is deduplicated by the sorted
-`(signal_dense_id, cell_idx)` key before evidence and facts are published. Static Bio/landform
-signals come from the first native map pass; all real resource reserves are appended by a second
-native pass after deposit bootstrap. The cold snapshot exposes
+`(signal_dense_id, cell_idx)` key before evidence and facts are published. The first native map
+pass writes landform CSR only. After resource bootstrap, `run_bio_seed_pass` writes
+`cell.bio_occupancy_bits`; resource facts are appended to the same CSR. First exploration submits
+landform/resource CSR plus **current** occupancy bits. Occupancy 0→1 on an already-explored cell
+submits `DISCOVER` again. Local extinction does not revoke country evidence. The cold snapshot exposes
 signal IDs, distinct counts, first/last days, and first cells. A signal catalog mismatch, malformed
 dense ID, invalid cell, or legacy PKCN schema is rejected rather than defaulted; schema/catalog
 identity failures use `catalog_hash_mismatch`, while malformed commands keep their precise reason.
@@ -111,7 +113,8 @@ handle、重复 good、非负数量和全部余额，再一次性提交并只递
 它的 A 通道）、重建国界 mesh。领土变更极少，所以全量重建，不做增量。
 
 注意 Inspector 的国家摘要受迷雾门控：`FOG_UNEXPLORED` 的格子不展示任何国家信息，
-即使 `get_country_cell_summary()` 能返回。详见
+即使 `get_country_cell_summary()` 能返回。自然资源检查器对 `FOG_VISIBLE` 格子使用观察者
+国家已掌握科技认矿；无主地没有科技，但不能因此把全图已生成的储量显示成未配置。详见
 [视野迷雾与国界线](./vision-fog-and-borders.md)。
 > 科技树扩展说明见[科技树、科技值与科研经济运行时](./technology-tree-runtime.md)。当前
 > PKCN v11 持久化 discovery/completed/pending bitset、稀疏研究进度、四领域队列与权重、

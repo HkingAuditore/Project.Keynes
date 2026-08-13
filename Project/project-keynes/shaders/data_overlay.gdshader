@@ -327,6 +327,8 @@ void fragment() {
 			} else if (overlay_mode == 21) { // RESOURCE_RESERVE
 				rgb = ramp_resource(value);
 				alpha_mul = 1.28;
+			} else if (overlay_mode == 22) { // BIO_OCCUPANCY
+				rgb = categorical_color(bucket, 0.22);
 			}
 
 			out_color = vec4(rgb, clamp(base_alpha * alpha_mul, 0.0, 1.0));

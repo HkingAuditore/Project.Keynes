@@ -227,6 +227,13 @@ const CELL_RES_MANGANESE_ORE_EXTRA_CHANGE: StringName = &"cell.res_manganese_ore
 const CELL_RES_SULFUR_EXTRA_CHANGE: StringName = &"cell.res_sulfur_extra_change"
 const CELL_RES_FLINT_EXTRA_CHANGE: StringName = &"cell.res_flint_extra_change"
 
+# ─── Bio occupancy / biogeographic provinces ──────────────────────────
+# occupancy_bits: per-cell 32-bit presence mask for Kind.BIO species.
+# landmass_id / province_id: generation topology; occupancy is the PKSV field.
+const CELL_BIO_OCCUPANCY_BITS: StringName = &"cell.bio_occupancy_bits" # i32 bitset
+const CELL_LANDMASS_ID: StringName = &"cell.landmass_id"               # i32, 0 = water
+const CELL_PROVINCE_ID: StringName = &"cell.province_id"               # i32, 0 = water
+
 # ─── Reference-impl Pass #2 — `cell.demo.*` 命名空间（demo-only） ─────────
 # 命名纪律：`cell.demo.*` 是参考实现（performance-charter §12.5/§12.6）专用
 #   命名空间。任何真实游戏机制（climate / weather / biome / vegetation / UI

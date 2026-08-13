@@ -37,6 +37,40 @@ class CountingGenerator extends RefCounted:
 		return facade
 
 
+class PlayerDiscoveryCountryFacade extends RefCounted:
+	var owned_cells := {}
+	var countries := {}
+
+	func cell_summary(cell_idx: int) -> Dictionary:
+		if owned_cells.has(cell_idx):
+			return {
+				"ok": true,
+				"owned": true,
+				"country_handle": int(owned_cells[cell_idx]),
+				"country_name": "新国家",
+			}
+		return {
+			"ok": true,
+			"owned": false,
+			"country_handle": 0,
+			"country_name": "无主之地",
+		}
+
+	func snapshot(handle: int) -> Dictionary:
+		return countries.get(handle, {"ok": false})
+
+
+class PlayerDiscoveryGenerator extends RefCounted:
+	var country := PlayerDiscoveryCountryFacade.new()
+	var start_cell := 0
+
+	func get_country_facade():
+		return country
+
+	func gameplay_start_report() -> Dictionary:
+		return {"ok": true, "cell": start_cell}
+
+
 func _initialize() -> void:
 	var failures := PackedStringArray()
 	var map := MapData.new(1, 1)
@@ -56,6 +90,9 @@ func _initialize() -> void:
 	cell.base_moisture = 0.50
 	cell.temperature = 0.52
 	cell.vegetation_vitality = 0.72
+	_seed_research_signals(map, 0, PackedStringArray([
+		"bio.maize", "bio.wheat", "bio.rice", "resource.timber", "landform.grassland"]),
+		PackedInt32Array([1, 1, 0, 1, 1]))
 
 	var view_model := CellInspectorViewModel.new()
 	view_model.set_context(map, null, null, null, 0.42, 22.0)
@@ -149,8 +186,20 @@ func _initialize() -> void:
 	var physical: Dictionary = _find_section(geography.get("sections", []), "physical_geography")
 	var climate: Dictionary = _find_section(geography.get("sections", []), "climate_hydrology")
 	var ecology: Dictionary = _find_section(geography.get("sections", []), "vegetation_ecology")
+	var biogeography: Dictionary = _find_section(geography.get("sections", []), "biogeography")
 	if physical.is_empty() or climate.is_empty() or ecology.is_empty():
 		failures.append("geography tab is missing grouped sections")
+	if biogeography.is_empty() or String(biogeography.get("title", "")) != "本地物种":
+		failures.append("geography tab is missing local species facts")
+	var maize_badge := _find_by_id(biogeography.get("badges", []), "bio.maize")
+	var wheat_badge := _find_by_id(biogeography.get("badges", []), "bio.wheat")
+	if String(maize_badge.get("text", "")) != "玉米" \
+			or String(wheat_badge.get("text", "")) != "小麦":
+		failures.append("local species badges did not use catalog display names")
+	if not _find_by_id(biogeography.get("badges", []), "bio.rice").is_empty() \
+			or not _find_by_id(biogeography.get("badges", []), "resource.timber").is_empty() \
+			or not _find_by_id(biogeography.get("badges", []), "landform.grassland").is_empty():
+		failures.append("local species section leaked zero-value, resource, or landform signals")
 	var climate_zone_metric := _find_by_id(climate.get("metrics", []), "geography_terrain")
 	var vegetation_metric := _find_by_id(ecology.get("metrics", []), "ecology_vegetation")
 	if _find_by_id(physical.get("metrics", []), "geography_landform").is_empty():
@@ -212,7 +261,8 @@ func _initialize() -> void:
 		failures.append("pasture capacity did not replace species livestock resource rows")
 	var gated_resources: Array = view_model._resource_state(0, false, {
 		"enforce_discovery": true,
-		"technology_ids": PackedStringArray(),
+		"technology_ids": PackedStringArray([
+			"tech.deadwood_collection", "tech.iron_ore_identification"]),
 		"enforce_extraction": true,
 		"extractable_resource_ids": {&"timber": true, &"rare_earth": true},
 	})
@@ -222,6 +272,74 @@ func _initialize() -> void:
 			or not _find_by_id(gated_resources, "rare_earth").is_empty() \
 			or gated_iron.is_empty() or bool(gated_iron.get("extractable", true)):
 		failures.append("resource dossier did not enforce discovery and extraction technology")
+	var undiscovered := view_model._resources_category([], {"enforce_discovery": true})
+	var undiscovered_insight := _find_by_id(
+		undiscovered.get("insights", []), "resource_undiscovered")
+	if undiscovered_insight.is_empty() \
+			or String(undiscovered_insight.get("text", "")).find("尚未识别") < 0:
+		failures.append("gated empty resource lists must not claim types are unconfigured")
+
+	var explored_map := MapData.new(1, 1)
+	_seed_research_signals(explored_map, 0, PackedStringArray(["bio.maize"]), PackedInt32Array([1]))
+	explored_map.visible_arr = PackedByteArray([0])
+	explored_map.explored_arr = PackedByteArray([1])
+	var explored_view_model := CellInspectorViewModel.new()
+	explored_view_model.set_context(explored_map, null, null, null, 0.42, 22.0)
+	var explored_model := explored_view_model.build(cell)
+	var explored_geo: Dictionary = explored_model.get("categories", {}).get("geography", {})
+	var explored_bio := _find_section(explored_geo.get("sections", []), "biogeography")
+	if explored_bio.is_empty() or _find_by_id(explored_bio.get("badges", []), "bio.maize").is_empty():
+		failures.append("remembered geography must keep local species facts")
+	if not _find_section(explored_geo.get("sections", []), "natural_resources").is_empty():
+		failures.append("explored-but-unseen cells must not expose live natural-resource intel")
+
+	var unexplored_map := MapData.new(1, 1)
+	_seed_research_signals(unexplored_map, 0, PackedStringArray(["bio.maize"]), PackedInt32Array([1]))
+	unexplored_map.visible_arr = PackedByteArray([0])
+	unexplored_map.explored_arr = PackedByteArray([0])
+	var unexplored_view_model := CellInspectorViewModel.new()
+	unexplored_view_model.set_context(unexplored_map, null, null, null, 0.42, 22.0)
+	var unexplored_model := unexplored_view_model.build(cell)
+	if not (unexplored_model.get("categories", {}) as Dictionary).is_empty() \
+			or String(unexplored_model.get("header", {}).get("title", "")) != "未探索区域":
+		failures.append("unexplored cells must not leak local species facts")
+
+	var empty_bio_map := MapData.new(1, 1)
+	var empty_bio_view_model := CellInspectorViewModel.new()
+	empty_bio_view_model.set_context(empty_bio_map, null, null, null, 0.42, 22.0)
+	var empty_bio_geo: Dictionary = empty_bio_view_model.build(cell).get(
+		"categories", {}).get("geography", {})
+	if not _find_section(empty_bio_geo.get("sections", []), "biogeography").is_empty():
+		failures.append("empty occupancy bits must not invent a local species section")
+
+	var discovery_map := MapData.new(2, 1)
+	discovery_map.res_timber_reserve_arr = PackedFloat32Array([12500.0, 8000.0])
+	discovery_map.res_rare_earth_reserve_arr = PackedFloat32Array([5000.0, 4000.0])
+	discovery_map.resource_habitat_mask_arr = PackedByteArray([1, 1])
+	var discovery_generator := PlayerDiscoveryGenerator.new()
+	discovery_generator.country.owned_cells[0] = 42
+	discovery_generator.country.countries[42] = {
+		"ok": true,
+		"technology_ids": PackedStringArray(["tech.deadwood_collection", "tech.gathering"]),
+	}
+	var discovery_view_model := CellInspectorViewModel.new()
+	discovery_view_model.set_context(discovery_map, discovery_generator, null, null, 0.42, 22.0)
+	var unowned_visibility: Dictionary = discovery_view_model._resource_visibility_context(1)
+	var unowned_techs: PackedStringArray = unowned_visibility.get(
+		"technology_ids", PackedStringArray())
+	if not bool(unowned_visibility.get("enforce_discovery", false)) \
+			or not unowned_techs.has("tech.deadwood_collection"):
+		failures.append("unowned cells must use the player country's completed technologies")
+	var unowned_resources: Array = discovery_view_model._resource_state(
+		1, false, unowned_visibility)
+	if _find_by_id(unowned_resources, "timber").is_empty() \
+			or not _find_by_id(unowned_resources, "rare_earth").is_empty():
+		failures.append("unowned cells must show player-identified deposits instead of hiding the dossier")
+	var unowned_category: Dictionary = discovery_view_model._resources_category(
+		unowned_resources, unowned_visibility)
+	if not _find_by_id(unowned_category.get("insights", []), "resource_unconfigured").is_empty() \
+			or _find_by_id(unowned_category.get("resource_rows", []), "timber").is_empty():
+		failures.append("unowned identified deposits must render as resource rows")
 
 	var population_category: Dictionary = view_model._population_category({
 		"ok": true,
@@ -570,3 +688,44 @@ func _expected_density(resource_id: String, reserve: float) -> String:
 
 func _is_legacy_icon(icon: String) -> bool:
 	return icon in ["⚙", "▶", "Ⅱ", "☼", "♣", "◆", "▰", "☁", "✦", "⌖", "≈", "↗", "↟", "✤", "♞", "◈", "◇"]
+
+
+func _seed_research_signals(map: MapData, cell_idx: int, signal_ids: PackedStringArray,
+		values_in: PackedInt32Array) -> void:
+	var catalog: Dictionary = ResearchSignalCatalog.compile_native_catalog()
+	var dense := PackedInt32Array()
+	var values := PackedInt32Array()
+	var occupancy_bits_for_cell := 0
+	var occupancy_lookup: PackedInt32Array = catalog.get(
+		"research_signal_occupancy_bit", PackedInt32Array())
+	for i in range(signal_ids.size()):
+		var signal_index := ResearchSignalCatalog.signal_index(
+			catalog, StringName(signal_ids[i]))
+		if signal_index < 0:
+			continue
+		dense.append(signal_index)
+		var value := int(values_in[i]) if i < values_in.size() else 1
+		values.append(value)
+		if value > 0 and signal_index < occupancy_lookup.size():
+			var bit := int(occupancy_lookup[signal_index])
+			if bit >= 0 and bit < 32:
+				occupancy_bits_for_cell |= 1 << bit
+	var cell_n := maxi(cell_idx + 1, 1)
+	var offsets := PackedInt32Array()
+	offsets.resize(cell_n + 1)
+	var out_ids := PackedInt32Array()
+	var out_values := PackedInt32Array()
+	for map_cell in range(cell_n):
+		offsets[map_cell] = out_ids.size()
+		if map_cell == cell_idx:
+			out_ids.append_array(dense)
+			out_values.append_array(values)
+	offsets[cell_n] = out_ids.size()
+	map.cell_research_signal_offsets = offsets
+	map.cell_research_signal_ids = out_ids
+	map.cell_research_signal_values = out_values
+	var occupancy := PackedInt32Array()
+	occupancy.resize(cell_n)
+	if cell_idx < occupancy.size():
+		occupancy[cell_idx] = occupancy_bits_for_cell
+	map.bio_occupancy_bits_arr = occupancy

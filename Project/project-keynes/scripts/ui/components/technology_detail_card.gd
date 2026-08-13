@@ -22,8 +22,12 @@ var _body: VBoxContainer
 var _detail_block: VBoxContainer
 var _prerequisite_title: Label
 var _prerequisites: VBoxContainer
-var _successor_title: Label
-var _successors: VBoxContainer
+var _hard_successor_title: Label
+var _hard_successors: VBoxContainer
+var _branch_successor_title: Label
+var _branch_successors: VBoxContainer
+var _application_title: Label
+var _applications: VBoxContainer
 var _action: Button
 var _placeholder: Label
 
@@ -42,15 +46,21 @@ func _ready() -> void:
 	_effects = get_node_or_null("Scroll/Body/DetailBlock/Effects") as InsightList
 	_prerequisite_title = get_node_or_null("Scroll/Body/DetailBlock/PrerequisiteTitle") as Label
 	_prerequisites = get_node_or_null("Scroll/Body/DetailBlock/Prerequisites") as VBoxContainer
-	_successor_title = get_node_or_null("Scroll/Body/DetailBlock/SuccessorTitle") as Label
-	_successors = get_node_or_null("Scroll/Body/DetailBlock/Successors") as VBoxContainer
+	_hard_successor_title = get_node_or_null("Scroll/Body/DetailBlock/HardSuccessorTitle") as Label
+	_hard_successors = get_node_or_null("Scroll/Body/DetailBlock/HardSuccessors") as VBoxContainer
+	_branch_successor_title = get_node_or_null("Scroll/Body/DetailBlock/BranchSuccessorTitle") as Label
+	_branch_successors = get_node_or_null("Scroll/Body/DetailBlock/BranchSuccessors") as VBoxContainer
+	_application_title = get_node_or_null("Scroll/Body/DetailBlock/ApplicationTitle") as Label
+	_applications = get_node_or_null("Scroll/Body/DetailBlock/Applications") as VBoxContainer
 	_action = get_node_or_null("Scroll/Body/DetailBlock/Action") as Button
 	if _body == null or _header_icon == null or _name == null \
 			or _state_label == null or _placeholder == null \
 			or _detail_block == null or _chips == null or _gauge == null \
 			or _effects == null or _prerequisite_title == null \
-			or _prerequisites == null or _successor_title == null \
-			or _successors == null or _action == null:
+			or _prerequisites == null or _hard_successor_title == null \
+			or _hard_successors == null or _branch_successor_title == null \
+			or _branch_successors == null or _application_title == null \
+			or _applications == null or _action == null:
 		push_error("TechnologyDetailCard 必须通过 technology_detail_card.tscn 实例化。")
 		return
 	_header_icon.set_semantic(&"country.technology", UITokens.CLIMATE)
@@ -82,7 +92,23 @@ func show_unknown() -> void:
 	_name.text = "未知科技"
 	_state_label.text = STATE_NAMES[0]
 	_placeholder.visible = true
-	_placeholder.text = "完成任意一项直接前置后，这个节点的名称、成本与效果才会揭示。"
+	_placeholder.text = "这个节点在可研究之前不会显示名称、成本与效果。"
+	_detail_block.visible = false
+
+
+func show_milestone_locked(era_name: String, completed: int, required: int) -> void:
+	if _body == null:
+		_ready()
+	_index = -1
+	_state = 0
+	_submitted = false
+	_header_icon.set_semantic(&"technology.milestone", UITokens.BRASS_HIGHLIGHT)
+	_name.text = "时代里程碑"
+	_state_label.text = era_name
+	_state_label.add_theme_color_override("font_color", UITokens.BRASS_HIGHLIGHT)
+	_placeholder.visible = true
+	_placeholder.text = "完成本时代 %d / %d 项候选后可研究此关隘。名称与效果在可研究后显示。" \
+		% [completed, maxi(1, required)]
 	_detail_block.visible = false
 
 
@@ -136,10 +162,16 @@ func show_technology(index: int, definition: Dictionary, state: int, fraction: f
 		_prerequisite_title.text = "硬前置"
 	_prerequisite_title.visible = not prerequisites.is_empty()
 	_fill_relation_rows(_prerequisites, prerequisites)
-	var successors: Array = relations.get("successors", [])
-	_successor_title.text = "网络关系"
-	_successor_title.visible = not successors.is_empty()
-	_fill_relation_rows(_successors, successors)
+	var hard_successors: Array = relations.get("hard_successors", [])
+	_hard_successor_title.text = "被以下科技作为硬前置"
+	_hard_successor_title.visible = not hard_successors.is_empty()
+	_fill_relation_rows(_hard_successors, hard_successors)
+	var branch_successors: Array = relations.get("branch_successors", [])
+	_branch_successor_title.visible = not branch_successors.is_empty()
+	_fill_relation_rows(_branch_successors, branch_successors)
+	var applications: Array = relations.get("applications", [])
+	_application_title.visible = not applications.is_empty()
+	_fill_relation_rows(_applications, applications)
 	_apply_action(state)
 
 
@@ -196,17 +228,33 @@ func _effect_items(definition: Dictionary) -> Array:
 		var term: Dictionary = term_value
 		var stat := String(term.get("stat", ""))
 		var value := int(round(float(term.get("value", 0.0)) * 100.0))
+		var delta := "%+d%%" % value
 		var text := ""
 		if stat.begins_with("country.output.building."):
-			text = "%s产出 +%d%%" % [String(term.get(
-				"subject_display_name", "指定建筑")), value]
+			text = "%s产出 %s" % [String(term.get(
+				"subject_display_name", "指定建筑")), delta]
 		elif stat.begins_with("country.output.family."):
-			text = "%s产出 +%d%%" % [String(term.get(
-				"subject_display_name", "相关建筑工艺")), value]
-		elif stat.begins_with("country.climate."):
-			text = "针对性气候损失调整 %d%%" % value
-		elif not stat.is_empty():
-			text = "定向国家能力 +%d%%" % value
+			text = "%s产出 %s" % [String(term.get(
+				"subject_display_name", "相关生产家族")), delta]
+		else:
+			var subject_names := {
+				"country.climate.cold_stress_factor": "寒冷损失",
+				"country.climate.drought_loss_factor": "旱灾损失",
+				"country.climate.flood_loss_factor": "洪灾损失",
+				"country.climate.heat_stress_factor": "热害损失",
+				"country.construction.cost_factor": "国家建设成本",
+				"country.output.agriculture_factor": "农业部门产出",
+				"country.output.extractive_factor": "采掘部门产出",
+				"country.output.manufacturing_factor": "制造部门产出",
+				"country.output.energy_factor": "能源部门产出",
+				"country.output.knowledge_factor": "知识部门产出",
+				"country.research.engineering_efficiency": "工程领域研究效率",
+				"country.research.science_efficiency": "科学领域研究效率",
+				"country.research.society_efficiency": "社会领域研究效率",
+				"country.trade.speed_factor": "贸易速度",
+			}
+			if subject_names.has(stat):
+				text = "%s %s" % [String(subject_names[stat]), delta]
 		if not text.is_empty():
 			items.append({"text": text, "icon": &"metric.technology", "accent": UITokens.CLIMATE})
 	if not items.is_empty():
@@ -240,7 +288,7 @@ func _fill_relation_rows(host: VBoxContainer, entries: Array) -> void:
 		var label := row.get_node("Label") as Label
 		label.text = String(data.get("name", "未知科技"))
 		label.add_theme_color_override("font_color",
-			UITokens.TEXT_MAIN if state >= 1 else UITokens.TEXT_FAINT)
+			UITokens.TEXT_MAIN if TechnologyTreeView.presents_state(state) else UITokens.TEXT_FAINT)
 		host.add_child(row)
 
 

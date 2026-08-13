@@ -13,7 +13,7 @@ const MAX_RESOURCE_PANEL_HEIGHT := 430.0
 const PANEL_MARGIN_TOTAL := 12.0
 const PANEL_THEME_MARGIN_TOTAL := 16.0
 
-enum Category { NONE, GEOGRAPHY, CLIMATE, RESOURCES }
+enum Category { NONE, GEOGRAPHY, CLIMATE, RESOURCES, BIOLOGY }
 
 var _primary_panel: PanelContainer
 var _secondary_panel: PanelContainer
@@ -50,8 +50,12 @@ func _ready() -> void:
 	_configure_category_button(Category.RESOURCES,
 		_primary_box.get_node("Resources") as Button, &"economy.resource",
 		"资源信息", "显示当前所有自然资源储量")
+	_configure_category_button(Category.BIOLOGY,
+		_primary_box.get_node("Biology") as Button, &"ecology.growth",
+		"生物信息", "显示当前物种占领分布")
 	IconButton.apply(_close_button, &"status.hidden", IconButton.LARGE,
 		"关闭图层\n关闭当前地图信息遮罩")
+	_close_button.focus_mode = Control.FOCUS_NONE
 	_close_button.pressed.connect(_on_clear_pressed)
 	_resource_scroll.gui_input.connect(_on_resource_scroll_gui_input)
 
@@ -90,6 +94,7 @@ func _configure_category_button(category: int, button: Button,
 		icon_key: StringName, title: String, description: String) -> void:
 	IconButton.apply(button, icon_key, IconButton.LARGE,
 		"%s\n%s" % [tr(title), tr(description)])
+	button.focus_mode = Control.FOCUS_NONE
 	button.pressed.connect(func() -> void:
 		_set_category(Category.NONE if _category == category else category)
 	)
@@ -139,9 +144,10 @@ func _rebuild_secondary() -> void:
 				"以色相表示方向、亮度表示流速")
 		Category.RESOURCES:
 			_add_resource_buttons()
+		Category.BIOLOGY:
+			_add_biology_buttons()
 
 	_apply_secondary_geometry()
-	call_deferred("_wire_focus_neighbors")
 	call_deferred("_configure_scrollbar")
 
 
@@ -159,7 +165,7 @@ func _apply_secondary_geometry() -> void:
 		size.y
 	)
 	var panel_height := desired_height
-	if _category == Category.RESOURCES:
+	if _category == Category.RESOURCES or _category == Category.BIOLOGY:
 		panel_height = minf(
 			desired_height,
 			minf(MAX_RESOURCE_PANEL_HEIGHT, available_height)
@@ -255,10 +261,35 @@ func _add_resource_buttons() -> void:
 		_mode_buttons.append(button)
 
 
+func _add_biology_buttons() -> void:
+	for entry in ResearchSignalCatalog.occupancy_overlay_entries():
+		var display_name := String(entry.get("display_name", ""))
+		var icon_key := entry.get("icon_key", &"ecology.growth") as StringName
+		var button := _make_icon_button(
+			icon_key, display_name,
+			"当前目击分布，会随气候、承载和人类活动变化"
+		)
+		if icon_key == &"system.unknown":
+			var species_id := StringName(entry.get("id", &""))
+			if not _warned_missing_icons.has(species_id):
+				_warned_missing_icons[species_id] = true
+				push_warning("MapOverlayToolbar: species '%s' has no registered icon" % species_id)
+		var request := {
+			"mode": OverlayMode.MODE.BIO_OCCUPANCY,
+			"resource_id": &"",
+			"signal_id": entry.get("id", &""),
+		}
+		button.button_pressed = _active_request == request
+		button.pressed.connect(func() -> void: _activate(request, button))
+		_secondary_box.add_child(button)
+		_mode_buttons.append(button)
+
+
 func _make_icon_button(icon_key: StringName, title: String, description: String) -> Button:
 	var button := OverlayButtonScene.instantiate() as Button
 	button.tooltip_text = "%s\n%s" % [tr(title), tr(description)]
 	IconButton.apply(button, icon_key, IconButton.LARGE)
+	button.focus_mode = Control.FOCUS_NONE
 	return button
 
 
@@ -274,15 +305,3 @@ func _on_clear_pressed() -> void:
 	for button in _mode_buttons:
 		button.button_pressed = false
 	overlay_cleared.emit()
-
-
-func _wire_focus_neighbors() -> void:
-	if _mode_buttons.is_empty() or not _category_buttons.has(_category) \
-			or not is_instance_valid(_close_button):
-		return
-	var category_button: Button = _category_buttons[_category]
-	var first: Button = _mode_buttons[0]
-	category_button.focus_neighbor_right = category_button.get_path_to(first)
-	for button in _mode_buttons:
-		button.focus_neighbor_left = button.get_path_to(category_button)
-	_close_button.focus_neighbor_left = _close_button.get_path_to(category_button)

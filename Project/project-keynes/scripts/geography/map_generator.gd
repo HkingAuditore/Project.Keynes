@@ -161,6 +161,7 @@ const StarterSettlementBootstrapScript = preload("res://scripts/economy/starter_
 const DiagnosticsBusScript = preload("res://scripts/geography/diagnostics_bus.gd")
 const TerrainGeneratorScript = preload("res://scripts/geography/map_generation/terrain_gen.gd")
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
+const ResearchSignalCatalogScript = preload("res://scripts/research/research_signal_catalog.gd")
 
 # Sliced Update Scheduler (SUS) — 全局切片更新调度器。生产路径恒走
 # DCSystemScheduler facade，由 C++ SusSchedulerExt 负责 budget/skip 统计。
@@ -176,6 +177,7 @@ const WeatherResearchSignalPublisherScript = preload(
 const ClimateDailySystemScript = preload("res://scripts/simulation/systems/climate_daily_system.gd")
 const SeaIceDailySystemScript = preload("res://scripts/simulation/systems/sea_ice_daily_system.gd")
 const NaturalResourceDailySystemScript = preload("res://scripts/simulation/systems/natural_resource_daily_system.gd")
+const BioOccupancyDailySystemScript = preload("res://scripts/simulation/systems/bio_occupancy_daily_system.gd")
 const OceanCurrentsSystemScript = preload("res://scripts/simulation/systems/ocean_currents_system.gd")
 const WeatherDCSystemScript = preload("res://scripts/simulation/systems/weather_system.gd")
 const SeasonRefreshSystemScript = preload("res://scripts/simulation/systems/season_refresh_system.gd")
@@ -1038,6 +1040,7 @@ var _refresh_climate_daily_job = null
 var _sea_ice_daily_job = null
 # `natural_resource_daily` 自然资源每日生成/衰减系统 + 缓存的 C++ pass knobs（系数恒定，仅 n_cells 每 tick 更新）。
 var _natural_resource_daily_job = null
+var _bio_occupancy_daily_job = null
 var _economy_facade = null
 var _economy_daily_job = null
 var _country_facade = null
@@ -2303,6 +2306,7 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	_bootstrap_natural_resource_deposits(map, cfg)
 	_publish_bootstrapped_natural_resources_to_runtime(map)
 	_append_natural_resource_research_signals(map)
+	_seed_bio_occupancy(map)
 	if not _gameplay_start_context.is_empty():
 		var gameplay_config: Dictionary = _gameplay_start_context.get("config", {})
 		var country_config: Dictionary = gameplay_config.get("country", {})
@@ -2414,9 +2418,12 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 	_natural_resource_daily_job = NaturalResourceDailySystemScript.new(self, map, natural_resource_stride)
 	_sus.configure_job_from_profile(_natural_resource_daily_job, cp, false, &"natural_resource_daily", natural_resource_stride)
 	_runtime_register_system(_natural_resource_daily_job)
+	_bio_occupancy_daily_job = BioOccupancyDailySystemScript.new(self, map, 8)
+	_sus.configure_job_from_profile(_bio_occupancy_daily_job, cp, false, &"bio_occupancy_daily", 1)
+	_runtime_register_system(_bio_occupancy_daily_job)
 	if _try_register_native_daily_sim_job(map, world):
 		if OS.is_debug_build():
-			print("[native_daily] ACTIVE: registered native_daily_sim + natural_resource_daily; retained season_refresh + ocean_currents boundary jobs")
+			print("[native_daily] ACTIVE: registered native_daily_sim + natural_resource_daily + bio_occupancy_daily; retained season_refresh + ocean_currents boundary jobs")
 		_register_visual_upload_jobs(map, world, hex_size, cp_sched)
 		_runtime_build_topology("native_daily path")
 		if _sus_bootstrap == null:
@@ -10036,14 +10043,10 @@ func _generate_static_research_signals(map: MapData) -> void:
 	var ids: PackedStringArray = catalog.get("research_signal_ids", PackedStringArray())
 	var dense := PackedInt32Array()
 	for key in [
-		"bio.maize", "bio.wheat", "bio.rice", "bio.potato", "bio.horse",
-		"bio.cotton", "bio.flax", "bio.spice", "bio.rubber",
 		"landform.freshwater_access", "landform.river_valley", "landform.volcanic",
 		"landform.high_plateau", "landform.coastal_estuary", "landform.coast",
 		"landform.arid_basin", "landform.marsh", "landform.forest",
 		"landform.grassland", "landform.mountain",
-		"bio.sheep", "bio.goat", "bio.cattle", "bio.pig", "bio.camel",
-		"bio.yak", "bio.silkworm", "bio.reed", "bio.bast_fiber", "bio.dye_plant",
 		"landform.delta", "landform.floodplain", "landform.monsoon_basin",
 		"landform.loess_plain", "landform.steppe_plain", "landform.tundra",
 		"landform.conifer_forest", "landform.oasis", "landform.steep_slope",
@@ -10129,6 +10132,182 @@ func _append_natural_resource_research_signals(map: MapData) -> void:
 	map.cell_research_signal_offsets = result.get("cell_signal_offsets", PackedInt32Array())
 	map.cell_research_signal_ids = result.get("cell_signal_ids", PackedInt32Array())
 	map.cell_research_signal_values = result.get("cell_signal_values", PackedInt32Array())
+
+
+func _bio_occupancy_base_knobs(map_ref: MapData) -> Dictionary:
+	var catalog: Dictionary = ResearchSignalCatalogScript.compile_native_catalog()
+	if not bool(catalog.get("ok", false)):
+		return {"ok": false, "reason": String(catalog.get("reason", "catalog"))}
+	var n := map_ref.cell_count()
+	var carrier_ids: PackedStringArray = catalog.get("research_bio_carrier_ids", PackedStringArray())
+	var carrier_alts: PackedStringArray = catalog.get("research_bio_carrier_alt_ids", PackedStringArray())
+	var unique_ids: Array[String] = []
+	var index_of := {}
+	var columns: Array = []
+	var empty := PackedFloat32Array()
+	empty.resize(n)
+	for raw_id in carrier_ids:
+		var id := String(raw_id)
+		if id.is_empty() or index_of.has(id):
+			continue
+		index_of[id] = unique_ids.size()
+		unique_ids.append(id)
+		columns.append(_bio_reserve_column(map_ref, id, n, empty))
+	for raw_id in carrier_alts:
+		var id := String(raw_id)
+		if id.is_empty() or index_of.has(id):
+			continue
+		index_of[id] = unique_ids.size()
+		unique_ids.append(id)
+		columns.append(_bio_reserve_column(map_ref, id, n, empty))
+	var primary := PackedInt32Array()
+	var alt := PackedInt32Array()
+	primary.resize(carrier_ids.size())
+	alt.resize(carrier_alts.size())
+	for i in range(carrier_ids.size()):
+		var id := String(carrier_ids[i])
+		primary[i] = int(index_of.get(id, -1)) if not id.is_empty() else -1
+	for i in range(carrier_alts.size()):
+		var id := String(carrier_alts[i])
+		alt[i] = int(index_of.get(id, -1)) if not id.is_empty() else -1
+	return {
+		"ok": true,
+		"cell_count": n,
+		"width": map_ref.width,
+		"height": map_ref.height,
+		"seed": _last_seed,
+		"is_water": map_ref.is_water_arr,
+		"vegetation": map_ref.vegetation_arr,
+		"landform": map_ref.landform_arr,
+		"has_river": map_ref.has_river_arr,
+		"temperature": map_ref.temp_arr,
+		"moisture": map_ref.moisture_arr,
+		"elevation": map_ref.elevation_arr,
+		"neighbor_indices": map_ref.neighbor_indices_packed(),
+		"species_signal_ids": catalog.get("research_bio_signal_ids", PackedInt32Array()),
+		"species_occupancy_bits": catalog.get("research_bio_occupancy_bits", PackedInt32Array()),
+		"species_carrier_index": primary,
+		"species_carrier_alt_index": alt,
+		"species_temp_lo": catalog.get("research_bio_temp_lo", PackedFloat32Array()),
+		"species_temp_hi": catalog.get("research_bio_temp_hi", PackedFloat32Array()),
+		"species_moist_lo": catalog.get("research_bio_moist_lo", PackedFloat32Array()),
+		"species_moist_hi": catalog.get("research_bio_moist_hi", PackedFloat32Array()),
+		"species_elev_lo": catalog.get("research_bio_elev_lo", PackedFloat32Array()),
+		"species_elev_hi": catalog.get("research_bio_elev_hi", PackedFloat32Array()),
+		"species_veg_mask0": catalog.get("research_bio_veg_mask0", PackedInt32Array()),
+		"species_veg_mask1": catalog.get("research_bio_veg_mask1", PackedInt32Array()),
+		"species_flags": catalog.get("research_bio_flags", PackedInt32Array()),
+		"species_max_cost": catalog.get("research_bio_max_cost", PackedInt32Array()),
+		"species_fill_keep": catalog.get("research_bio_fill_keep", PackedFloat32Array()),
+		"carrier_reserves": columns,
+	}
+
+
+func _bio_reserve_column(map_ref: MapData, resource_id: String, n: int,
+		empty: PackedFloat32Array) -> PackedFloat32Array:
+	for profile in ResourceProfileRegistry.ordered():
+		if String(profile.id) != resource_id:
+			continue
+		var field := ResourceProfileRegistry.reserve_map_field(profile)
+		if field.is_empty():
+			break
+		var values: PackedFloat32Array = map_ref.get(field)
+		if values.size() == n:
+			return values
+		break
+	return empty
+
+
+func _publish_bio_occupancy_to_runtime(map_ref: MapData) -> void:
+	if map_ref == null:
+		return
+	var pairs := [
+		[&"cell.bio_occupancy_bits", map_ref.bio_occupancy_bits_arr],
+		[&"cell.landmass_id", map_ref.landmass_id_arr],
+		[&"cell.province_id", map_ref.province_id_arr],
+	]
+	for pair in pairs:
+		var component: StringName = pair[0]
+		var values: PackedInt32Array = pair[1]
+		if _data_core_world != null and _data_core_world.has_method("component_id") \
+				and _data_core_world.has_method("write_i32_range"):
+			var cid := int(_data_core_world.component_id(component))
+			if cid >= 0:
+				_data_core_world.write_i32_range(cid, 0, values)
+		if _data_core_world_ext != null and _data_core_world_ext.has_method("component_id") \
+				and _data_core_world_ext.has_method("write_i32_range"):
+			var cid_ext := int(_data_core_world_ext.component_id(component))
+			if cid_ext >= 0:
+				_data_core_world_ext.write_i32_range(cid_ext, 0, values)
+
+
+func _seed_bio_occupancy(map_ref: MapData) -> void:
+	if map_ref == null or _data_core_world_ext == null \
+			or not _data_core_world_ext.has_method("run_bio_province_pass") \
+			or not _data_core_world_ext.has_method("run_bio_seed_pass"):
+		push_error("[bio-occupancy] native province/seed pass unavailable")
+		return
+	var knobs := _bio_occupancy_base_knobs(map_ref)
+	if not bool(knobs.get("ok", false)):
+		push_error("[bio-occupancy] species knobs failed: %s" % String(knobs.get("reason", "unknown")))
+		return
+	var province_res: Dictionary = _data_core_world_ext.run_bio_province_pass(knobs)
+	if not bool(province_res.get("ok", false)):
+		push_error("[bio-occupancy] province pass failed: %s" % String(
+			province_res.get("reason", "unknown")))
+		return
+	var n := map_ref.cell_count()
+	var landmass: PackedInt32Array = province_res.get("landmass_ids", PackedInt32Array())
+	var provinces: PackedInt32Array = province_res.get("province_ids", PackedInt32Array())
+	if landmass.size() != n or provinces.size() != n:
+		push_error("[bio-occupancy] province output shape invalid")
+		return
+	map_ref.landmass_id_arr = landmass
+	map_ref.province_id_arr = provinces
+	knobs["province_ids"] = provinces
+	var seed_res: Dictionary = _data_core_world_ext.run_bio_seed_pass(knobs)
+	if not bool(seed_res.get("ok", false)):
+		push_error("[bio-occupancy] seed pass failed: %s" % String(seed_res.get("reason", "unknown")))
+		return
+	var occupancy: PackedInt32Array = seed_res.get("occupancy_bits", PackedInt32Array())
+	if occupancy.size() != n:
+		push_error("[bio-occupancy] occupancy output shape invalid")
+		return
+	map_ref.bio_occupancy_bits_arr = occupancy
+	_publish_bio_occupancy_to_runtime(map_ref)
+
+
+func run_bio_occupancy_pass_native(map_ref, run_diffusion: bool = false, day_index: int = 0) -> Dictionary:
+	if map_ref == null or _data_core_world_ext == null \
+			or not _data_core_world_ext.has_method("run_bio_occupancy_pass"):
+		return {"ok": false, "path": "skip", "reason": "native_unavailable"}
+	var knobs := _bio_occupancy_base_knobs(map_ref)
+	if not bool(knobs.get("ok", false)):
+		return knobs
+	knobs["province_ids"] = map_ref.province_id_arr
+	knobs["occupancy_bits"] = map_ref.bio_occupancy_bits_arr
+	knobs["explored"] = map_ref.explored_arr
+	knobs["run_diffusion"] = run_diffusion
+	knobs["day_index"] = day_index
+	if _data_core_world_ext.has_method("refresh_slots_from_map_keys"):
+		_data_core_world_ext.refresh_slots_from_map_keys(PackedStringArray([
+			"cell_bio_occupancy_bits",
+			"cell_res_pasture_reserve",
+			"cell_res_wild_game_reserve",
+			"cell_res_arable_land_reserve",
+			"cell_res_paddy_land_reserve",
+			"cell_res_plantation_land_reserve",
+			"cell_temp",
+			"cell_moisture",
+			"cell_vegetation",
+		]))
+	var res: Dictionary = _data_core_world_ext.run_bio_occupancy_pass(knobs)
+	if bool(res.get("ok", false)):
+		var occupancy: PackedInt32Array = res.get("occupancy_bits", PackedInt32Array())
+		if occupancy.size() == map_ref.cell_count():
+			map_ref.bio_occupancy_bits_arr = occupancy
+			_publish_bio_occupancy_to_runtime(map_ref)
+	return res
 
 # Phase 14：永久性地标 — 一旦设定不被季节 / biome 重决策覆盖。
 # terrain-overhaul：CHAPARRAL/MOOR/FLOODPLAIN/MESA 为特征 pass 专属地形（分类器无法

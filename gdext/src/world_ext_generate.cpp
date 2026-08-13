@@ -27,6 +27,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
@@ -194,6 +195,7 @@ Dictionary DCWorldExt::run_research_signal_generation_pass(const Dictionary &kno
         return out;
     }
     const int n = int(n64);
+    (void)seed;
     const PackedByteArray vegetation = knobs.get("generation_vegetation", PackedByteArray());
     const PackedByteArray landform = knobs.get("landform", PackedByteArray());
     const PackedByteArray rivers = knobs.get("has_river", PackedByteArray());
@@ -205,12 +207,11 @@ Dictionary DCWorldExt::run_research_signal_generation_pass(const Dictionary &kno
     const PackedInt32Array signal_ids = knobs.get("signal_ids", PackedInt32Array());
     if (vegetation.size() != n || landform.size() != n || rivers.size() != n ||
         volcanoes.size() != n || water.size() != n || temperature.size() != n ||
-        moisture.size() != n || elevation.size() != n || signal_ids.size() != 40) {
+        moisture.size() != n || elevation.size() != n || signal_ids.size() != 21) {
         out["reason"] = String("research_signal_generation_input_shape_invalid");
         return out;
     }
-    // Stable semantic order: nine biota, freshwater-access landform, then ten
-    // other landforms. Freshwater is hydrology evidence, not an economy resource.
+    // Landform-only CSR. Bio occupancy is seeded after resource bootstrap.
     const uint8_t *veg = vegetation.ptr();
     const uint8_t *lf = landform.ptr();
     const uint8_t *riv = rivers.ptr();
@@ -223,6 +224,7 @@ Dictionary DCWorldExt::run_research_signal_generation_pass(const Dictionary &kno
     PackedByteArray realms;
     realms.resize(n);
     uint8_t *realm = realms.ptrw();
+    std::memset(realm, 0, size_t(n));
     PackedInt32Array offsets;
     offsets.resize(n + 1);
     int32_t *offset = offsets.ptrw();
@@ -230,22 +232,7 @@ Dictionary DCWorldExt::run_research_signal_generation_pass(const Dictionary &kno
     PackedInt32Array values;
     ids.resize(0); values.resize(0);
     std::vector<int32_t> scratch;
-    scratch.reserve(40);
-    auto realm_for = [&](int cell) -> uint8_t {
-        if (is_water[cell] != 0) return 0;
-        const int row = cell / width;
-        const int col = cell - row * width;
-        const uint32_t h = uint32_t(seed) ^ uint32_t(col * 0x9e3779b9U) ^ uint32_t(row * 0x85ebca6bU);
-        const int band = (int((h >> 28U) & 3U) - 1);
-        const int x = (col * 100) / std::max(width, 1);
-        const int y = (row * 100) / std::max(height, 1);
-        if (y >= 30 && y <= 68 && x < 30 + band * 4) return uint8_t(1);       // neotropical
-        if (y >= 25 && y <= 60 && x < 56 + band * 3) return uint8_t(2);       // western Eurasian
-        if (y >= 28 && y <= 58 && x >= 42 && x <= 82) return uint8_t(3);      // Eurasian steppe
-        if (y >= 38 && y <= 76 && x >= 76) return uint8_t(5);                 // east Asian
-        if (y >= 30 && y <= 74 && x >= 28 && x < 48) return uint8_t(4);       // subsaharan
-        return uint8_t(6);                                                     // australasian/other
-    };
+    scratch.reserve(24);
     auto has_water_neighbor = [&](int cell) {
         const int row = cell / width;
         const int col = cell - row * width;
@@ -259,8 +246,6 @@ Dictionary DCWorldExt::run_research_signal_generation_pass(const Dictionary &kno
     int32_t cursor = 0;
     for (int cell = 0; cell < n; ++cell) {
         offset[cell] = cursor;
-        const uint8_t r = realm_for(cell);
-        realm[cell] = r;
         scratch.clear();
         if (is_water[cell] == 0) {
             const bool grass = veg[cell] == 4 || veg[cell] == 9 || veg[cell] == 10 ||
@@ -268,63 +253,40 @@ Dictionary DCWorldExt::run_research_signal_generation_pass(const Dictionary &kno
             const bool forest = veg[cell] == 5 || veg[cell] == 7 || veg[cell] == 8 ||
                                 veg[cell] == 12 || veg[cell] == 14 || veg[cell] == 15 ||
                                 veg[cell] == 24 || veg[cell] == 25;
-            const bool tropical_forest = veg[cell] == 12 || veg[cell] == 14 ||
-                                         veg[cell] == 15 || veg[cell] == 24 ||
-                                         veg[cell] == 25;
             const bool wetland = veg[cell] == 19 || veg[cell] == 20 ||
                                  veg[cell] == 21 || veg[cell] == 27 || lf[cell] == 9;
             const bool arid = veg[cell] == 16 || veg[cell] == 17 ||
                               lf[cell] == 10 || lf[cell] == 11;
             const bool coast = has_water_neighbor(cell);
-            if (r == 1 && grass) scratch.push_back(sid[0]);
-            if (r == 2 && (veg[cell] == 9 || veg[cell] == 10)) scratch.push_back(sid[1]);
-            if (r == 5 && (wetland || riv[cell] != 0)) scratch.push_back(sid[2]);
-            if (r == 1 && lf[cell] == 13 && (grass || veg[cell] == 3)) scratch.push_back(sid[3]);
-            if (r == 3 && (veg[cell] == 9 || veg[cell] == 10)) scratch.push_back(sid[4]);
-            if ((r == 1 || r == 4 || r == 5) && (grass || tropical_forest)) scratch.push_back(sid[5]);
-            if (r == 2 && (grass || veg[cell] == 11)) scratch.push_back(sid[6]);
-            if ((r == 1 || r == 4 || r == 5) && tropical_forest) scratch.push_back(sid[7]);
-            if ((r == 1 || r == 4 || r == 5) && (veg[cell] == 14 || veg[cell] == 24))
-                scratch.push_back(sid[8]);
-            if (riv[cell] != 0 || wetland) scratch.push_back(sid[9]);
-            if (riv[cell] != 0) scratch.push_back(sid[10]);
-            if (volc[cell] != 0 || lf[cell] == 12) scratch.push_back(sid[11]);
-            if (lf[cell] == 13) scratch.push_back(sid[12]);
-            if (riv[cell] != 0 && coast) scratch.push_back(sid[13]);
-            if (coast) scratch.push_back(sid[14]);
-            if (arid) scratch.push_back(sid[15]);
-            if (wetland) scratch.push_back(sid[16]);
-            if (forest) scratch.push_back(sid[17]);
-            if (grass) scratch.push_back(sid[18]);
-            if (lf[cell] == 7 || lf[cell] == 8 || lf[cell] == 13)
-                scratch.push_back(sid[19]);
             const bool cold = temp[cell] <= 0.34f;
             const bool warm = temp[cell] >= 0.62f;
             const bool moist_land = moist[cell] >= 0.58f;
             const bool dry_land = moist[cell] <= 0.38f;
             const bool highland = elev[cell] >= 0.62f ||
                                   lf[cell] == 7 || lf[cell] == 8 || lf[cell] == 13;
-            if (grass && !warm) scratch.push_back(sid[20]);                 // sheep
-            if ((dry_land || highland) && !tropical_forest) scratch.push_back(sid[21]); // goat
-            if (grass && moist_land && !cold) scratch.push_back(sid[22]);  // cattle
-            if (forest && moist_land && !cold) scratch.push_back(sid[23]); // pig
-            if (arid && warm) scratch.push_back(sid[24]);                  // camel
-            if (cold && highland && grass) scratch.push_back(sid[25]);     // yak
-            if (warm && forest && moist_land) scratch.push_back(sid[26]);  // silkworm
-            if (wetland) scratch.push_back(sid[27]);                       // reed
-            if (forest && !arid) scratch.push_back(sid[28]);               // bast fiber
-            if (warm && (grass || forest)) scratch.push_back(sid[29]);     // dye plants
-            if (riv[cell] != 0 && coast) scratch.push_back(sid[30]);       // delta
+            if (riv[cell] != 0 || wetland) scratch.push_back(sid[0]);
+            if (riv[cell] != 0) scratch.push_back(sid[1]);
+            if (volc[cell] != 0 || lf[cell] == 12) scratch.push_back(sid[2]);
+            if (lf[cell] == 13) scratch.push_back(sid[3]);
+            if (riv[cell] != 0 && coast) scratch.push_back(sid[4]);
+            if (coast) scratch.push_back(sid[5]);
+            if (arid) scratch.push_back(sid[6]);
+            if (wetland) scratch.push_back(sid[7]);
+            if (forest) scratch.push_back(sid[8]);
+            if (grass) scratch.push_back(sid[9]);
+            if (lf[cell] == 7 || lf[cell] == 8 || lf[cell] == 13)
+                scratch.push_back(sid[10]);
+            if (riv[cell] != 0 && coast) scratch.push_back(sid[11]);
             if (riv[cell] != 0 && moist_land && elev[cell] <= 0.48f)
-                scratch.push_back(sid[31]);                                // floodplain
-            if (warm && moist_land) scratch.push_back(sid[32]);            // monsoon basin
-            if (grass && !arid && moist[cell] <= 0.56f) scratch.push_back(sid[33]);
-            if (grass && dry_land) scratch.push_back(sid[34]);             // steppe
-            if (cold && !forest) scratch.push_back(sid[35]);               // tundra
-            if (cold && forest) scratch.push_back(sid[36]);                 // conifer forest
-            if (arid && (riv[cell] != 0 || wetland)) scratch.push_back(sid[37]);
-            if (highland) scratch.push_back(sid[38]);                       // steep slope
-            if ((coast || highland) && !forest) scratch.push_back(sid[39]); // wind corridor
+                scratch.push_back(sid[12]);
+            if (warm && moist_land) scratch.push_back(sid[13]);
+            if (grass && !arid && moist[cell] <= 0.56f) scratch.push_back(sid[14]);
+            if (grass && dry_land) scratch.push_back(sid[15]);
+            if (cold && !forest) scratch.push_back(sid[16]);
+            if (cold && forest) scratch.push_back(sid[17]);
+            if (arid && (riv[cell] != 0 || wetland)) scratch.push_back(sid[18]);
+            if (highland) scratch.push_back(sid[19]);
+            if ((coast || highland) && !forest) scratch.push_back(sid[20]);
         }
         std::sort(scratch.begin(), scratch.end());
         scratch.erase(std::unique(scratch.begin(), scratch.end()), scratch.end());

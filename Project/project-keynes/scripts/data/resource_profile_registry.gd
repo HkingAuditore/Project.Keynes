@@ -100,6 +100,8 @@ static func count() -> int:
 ## Deposits remain present in MapData regardless of this result. This helper is
 ## for inspectors/map overlays only; extraction is independently gated by the
 ## extractor building's `technology_tags` in NativeEconomyRuntime.
+## Inspectors must pass the viewing country's completed technology IDs, including
+## when the selected cell is unowned.
 static func discovery_visible(p: ResourceProfile,
 		unlocked_technology_ids: PackedStringArray) -> bool:
 	if p == null:

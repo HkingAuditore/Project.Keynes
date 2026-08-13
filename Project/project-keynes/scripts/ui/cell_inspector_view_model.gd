@@ -54,6 +54,7 @@ var _need_display_names: Dictionary = {}
 var _need_display_names_loaded := false
 var _player_country_resolved := false
 var _player_country_handle_cache := -1
+var _research_signal_catalog: Dictionary = {}
 
 
 func set_context(map: MapData, generator, view_adapter: DCViewAdapter, world_clock: WorldClock, sea_level: float, hex_size: float) -> void:
@@ -344,9 +345,10 @@ func build_tab_category(cell: HexCell, tab_id: String) -> Dictionary:
 		"tax":
 			return _cell_tax_category(idx)
 		"natural_resources":
+			var visibility := _resource_visibility_context(idx)
 			return _resources_category(_resource_state(
-				idx, LandformType.is_water(_landform(cell, idx)),
-				_resource_visibility_context(idx)))
+				idx, LandformType.is_water(_landform(cell, idx)), visibility),
+				visibility)
 		"geography":
 			var terrain_v := _terrain(cell, idx)
 			var landform_v := _landform(cell, idx)
@@ -614,7 +616,6 @@ func _tax_catalog_ids(policy: Dictionary, tax_kind: String) -> PackedStringArray
 func _player_country_handle() -> int:
 	if _player_country_resolved:
 		return _player_country_handle_cache
-	_player_country_resolved = true
 	_player_country_handle_cache = -1
 	if _generator != null and _generator.has_method("gameplay_start_report"):
 		var start_report: Dictionary = _generator.gameplay_start_report()
@@ -623,6 +624,7 @@ func _player_country_handle() -> int:
 			var summary := _country_summary(start_cell)
 			if bool(summary.get("ok", false)) and bool(summary.get("owned", false)):
 				_player_country_handle_cache = int(summary.get("country_handle", -1))
+				_player_country_resolved = true
 	return _player_country_handle_cache
 
 
@@ -746,7 +748,7 @@ func _geography_information_category(
 	climate_metrics.append({"id": "climate_weather", "title": "当前天气", "value": _weather_name(cell, idx), "subtitle": _intensity_text(_weather_intensity(cell, idx)), "accent": UITokens.WATER, "icon": "weather"})
 	var climate_gauges: Array = climate.get("gauges", []).duplicate()
 	climate_gauges.append_array(hydrology.get("gauges", []))
-	return {
+	var category := {
 		"sections": [
 			{
 				"id": "physical_geography",
@@ -776,12 +778,15 @@ func _geography_information_category(
 			},
 		],
 	}
+	_append_bio_facts_to_geography(category, idx)
+	return category
 
 
 func _append_resources_to_geography(category: Dictionary, idx: int,
 		is_water: bool) -> void:
-	var resource_section := _resources_category(_resource_state(
-		idx, is_water, _resource_visibility_context(idx)))
+	var visibility := _resource_visibility_context(idx)
+	var resource_section := _resources_category(
+		_resource_state(idx, is_water, visibility), visibility)
 	resource_section["id"] = "natural_resources"
 	resource_section["title"] = "自然资源"
 	resource_section["icon"] = "eco"
@@ -789,6 +794,74 @@ func _append_resources_to_geography(category: Dictionary, idx: int,
 	var sections: Array = category.get("sections", [])
 	sections.append(resource_section)
 	category["sections"] = sections
+
+
+## 本地物种是当前占领层目击，会随气候、植被、承载储量和人类活动变化。
+## 不是可采集储量；国家知识另计，局部灭绝不会撤销已发现证据。
+func _append_bio_facts_to_geography(category: Dictionary, idx: int) -> void:
+	var badges := _cell_bio_badges(idx)
+	if badges.is_empty():
+		return
+	var section := {
+		"id": "biogeography",
+		"title": "本地物种",
+		"icon": "crop",
+		"accent": UITokens.ECO,
+		"insights": [{
+			"id": "biogeography_note",
+			"text": "当前目击的本地物种，会随气候、植被、承载储量和人类活动变化；不是可采集储量。",
+			"accent": UITokens.ECO,
+			"icon": "crop",
+		}],
+		"badges": badges,
+	}
+	var sections: Array = category.get("sections", [])
+	sections.append(section)
+	category["sections"] = sections
+
+
+func _cell_bio_badges(idx: int) -> Array:
+	if _map == null or idx < 0:
+		return []
+	var catalog := _ensure_research_signal_catalog()
+	if catalog.is_empty():
+		return []
+	if idx >= _map.bio_occupancy_bits_arr.size():
+		return []
+	var bits := int(_map.bio_occupancy_bits_arr[idx])
+	if bits == 0:
+		return []
+	var kinds: PackedInt32Array = catalog.get("research_signal_kinds", PackedInt32Array())
+	var names: PackedStringArray = catalog.get("research_signal_display_names", PackedStringArray())
+	var signal_ids: PackedStringArray = catalog.get("research_signal_ids", PackedStringArray())
+	var occupancy_bits: PackedInt32Array = catalog.get("research_signal_occupancy_bit", PackedInt32Array())
+	var kind_count := mini(kinds.size(), mini(names.size(), mini(signal_ids.size(), occupancy_bits.size())))
+	var badges := []
+	for signal_index in range(kind_count):
+		if int(kinds[signal_index]) != ResearchSignalDefinition.Kind.BIO:
+			continue
+		var bit := int(occupancy_bits[signal_index])
+		if bit < 0 or bit >= 32 or (bits & (1 << bit)) == 0:
+			continue
+		var display_name := String(names[signal_index])
+		if display_name.is_empty():
+			continue
+		badges.append({
+			"id": String(signal_ids[signal_index]),
+			"text": display_name,
+			"accent": UITokens.ECO,
+		})
+	return badges
+
+
+func _ensure_research_signal_catalog() -> Dictionary:
+	if not _research_signal_catalog.is_empty():
+		return _research_signal_catalog
+	var compiled: Dictionary = ResearchSignalCatalog.compile_native_catalog()
+	if not bool(compiled.get("ok", false)):
+		return {}
+	_research_signal_catalog = compiled
+	return _research_signal_catalog
 
 
 func _rows_from_category(category: Dictionary, rows_key: String) -> Array:
@@ -892,11 +965,26 @@ func _ecology_category(cell: HexCell, idx: int, vegetation_v: int, vitality: flo
 	}
 
 
-func _resources_category(resource_state: Array) -> Dictionary:
+func _resources_category(resource_state: Array, visibility: Dictionary = {}) -> Dictionary:
 	var rows := []
 	var insights := []
+	ResourceProfileRegistry.ensure_loaded()
+	if ResourceProfileRegistry.count() <= 0:
+		return {"insights": [{
+			"id": "resource_unconfigured",
+			"text": "尚未配置自然资源类型。",
+			"accent": UITokens.TEXT_MUTED,
+			"icon": "resource",
+		}]}
 	if resource_state.is_empty():
-		return {"insights": [{"text": "尚未配置自然资源类型。", "accent": UITokens.TEXT_MUTED}]}
+		var gated := bool(visibility.get("enforce_discovery", false))
+		return {"insights": [{
+			"id": "resource_undiscovered" if gated else "resource_empty",
+			"text": "当前科技尚未识别此地资源。" if gated \
+				else "此地块当前无可显示自然资源。",
+			"accent": UITokens.TEXT_MUTED,
+			"icon": "resource",
+		}]}
 	var sorted := resource_state.duplicate()
 	sorted.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		return float(a.get("rank", 0.0)) > float(b.get("rank", 0.0))
@@ -2300,18 +2388,34 @@ func _resource_visibility_context(cell_idx: int) -> Dictionary:
 	var summary: Dictionary = country_facade.cell_summary(cell_idx)
 	if not bool(summary.get("ok", false)):
 		return context
-	context.enforce_discovery = true
-	if bool(summary.get("owned", false)):
-		var country: Dictionary = country_facade.snapshot(int(summary.get("country_handle", 0)))
-		if not bool(country.get("ok", false)):
-			context.enforce_discovery = false
-		else:
-			context.technology_ids = country.get("technology_ids", PackedStringArray())
+	# 检查器是玩家视角：迷雾已经挡住未探索格，认矿用观察者已掌握科技，
+	# 不能用地块所有者（无主地没有科技）的空集合把真实储量显示成「未配置」。
+	var viewer := _completed_technology_ids(country_facade, _player_country_handle())
+	if not bool(viewer.get("ok", false)) and bool(summary.get("owned", false)):
+		viewer = _completed_technology_ids(
+			country_facade, int(summary.get("country_handle", -1)))
+	if bool(viewer.get("ok", false)):
+		context.enforce_discovery = true
+		context.technology_ids = viewer.get("technology_ids", PackedStringArray())
+	elif not bool(summary.get("owned", false)):
+		context.enforce_discovery = true
 	var extractable := _extractable_resource_ids(_building_snapshot(cell_idx))
 	if bool(extractable.get("ok", false)):
 		context.enforce_extraction = true
 		context.extractable_resource_ids = extractable.ids
 	return context
+
+
+func _completed_technology_ids(country_facade, handle: int) -> Dictionary:
+	if handle <= 0 or country_facade == null or not country_facade.has_method("snapshot"):
+		return {"ok": false}
+	var country: Dictionary = country_facade.snapshot(handle)
+	if not bool(country.get("ok", false)):
+		return {"ok": false}
+	return {
+		"ok": true,
+		"technology_ids": country.get("technology_ids", PackedStringArray()),
+	}
 
 
 func _extractable_resource_ids(snapshot: Dictionary) -> Dictionary:

@@ -1,0 +1,400 @@
+extends SceneTree
+
+# bio_occupancy_pass_test.gd
+# 生物占领 / 科学区划：陆块隔离、承载门控、信封内空白、局部灭绝不产出撤销、农业引种绕过省界。
+#
+# Headless:
+#   godot --headless --script tests/bio_occupancy_pass_test.gd --quit
+
+var _checks: int = 0
+var _failures: int = 0
+
+
+func _init() -> void:
+	_run()
+	quit(0 if _failures == 0 else 1)
+
+
+func _run() -> void:
+	print("=== bio occupancy pass test ===")
+	_test_catalog_and_schema()
+	_test_native_passes()
+	print("=== bio occupancy pass summary: %d checks, %d failures ===" % [_checks, _failures])
+
+
+func _test_catalog_and_schema() -> void:
+	var occupancy: Dictionary = DCComponentSchema.find_by_name(&"cell.bio_occupancy_bits")
+	var landmass: Dictionary = DCComponentSchema.find_by_name(&"cell.landmass_id")
+	var province: Dictionary = DCComponentSchema.find_by_name(&"cell.province_id")
+	_expect("schema has occupancy bits", not occupancy.is_empty())
+	_expect("schema has landmass id", not landmass.is_empty())
+	_expect("schema has province id", not province.is_empty())
+	if not occupancy.is_empty():
+		_expect("occupancy dtype I32", int(occupancy.get("dtype", -1)) == DCComponentIds.I32)
+		_expect("occupancy map_field", String(occupancy.get("map_field", "")) == "bio_occupancy_bits_arr")
+	var catalog: Dictionary = ResearchSignalCatalog.compile_native_catalog()
+	_expect("catalog compiles", bool(catalog.get("ok", false)))
+	_expect("19 bio species", int(catalog.get("research_bio_species_count", 0)) == 19)
+	var sheep_bit := ResearchSignalCatalog.occupancy_bit_for_signal(catalog, &"bio.sheep")
+	var maize_bit := ResearchSignalCatalog.occupancy_bit_for_signal(catalog, &"bio.maize")
+	_expect("sheep occupancy bit assigned", sheep_bit >= 0 and sheep_bit < 32)
+	_expect("maize occupancy bit assigned", maize_bit >= 0 and maize_bit < 32)
+	var carrier_ids: PackedStringArray = catalog.get("research_bio_carrier_ids", PackedStringArray())
+	var bits: PackedInt32Array = catalog.get("research_bio_occupancy_bits", PackedInt32Array())
+	var sheep_carrier := ""
+	for i in range(mini(carrier_ids.size(), bits.size())):
+		if int(bits[i]) == sheep_bit:
+			sheep_carrier = String(carrier_ids[i])
+			break
+	_expect("sheep carrier is pasture", sheep_carrier == "pasture")
+	var intro_goods: PackedStringArray = catalog.get("research_bio_introduce_good_ids", PackedStringArray())
+	_expect("corn_grain introduces maize", intro_goods.has("corn_grain"))
+	var rubber_carrier := ""
+	var rubber_bit := ResearchSignalCatalog.occupancy_bit_for_signal(catalog, &"bio.rubber")
+	for i in range(mini(carrier_ids.size(), bits.size())):
+		if int(bits[i]) == rubber_bit:
+			rubber_carrier = String(carrier_ids[i])
+			break
+	_expect("rubber carrier is plantation_land only", rubber_carrier == "plantation_land")
+
+
+func _test_native_passes() -> void:
+	if not ClassDB.class_exists("DCWorldExt"):
+		_skip("DCWorldExt class not found")
+		return
+	var ext := DCWorldExt.new()
+	if not ext.has_method("run_bio_province_pass") \
+			or not ext.has_method("run_bio_seed_pass") \
+			or not ext.has_method("run_bio_occupancy_pass"):
+		_skip("bio occupancy passes not exported")
+		return
+	var landform_csr := _test_landform_csr_excludes_bio(ext)
+	if not landform_csr:
+		return
+	_test_landmass_isolation_and_gaps(ext)
+	_test_carrier_extinction_and_introduce(ext)
+
+
+func _test_landform_csr_excludes_bio(ext) -> bool:
+	var map := _make_two_continent_map()
+	var catalog: Dictionary = TechnologyCatalog.compile_native_catalog()
+	var ids: PackedStringArray = catalog.get("research_signal_ids", PackedStringArray())
+	var dense := PackedInt32Array()
+	for key in [
+		"landform.freshwater_access", "landform.river_valley", "landform.volcanic",
+		"landform.high_plateau", "landform.coastal_estuary", "landform.coast",
+		"landform.arid_basin", "landform.marsh", "landform.forest",
+		"landform.grassland", "landform.mountain",
+		"landform.delta", "landform.floodplain", "landform.monsoon_basin",
+		"landform.loess_plain", "landform.steppe_plain", "landform.tundra",
+		"landform.conifer_forest", "landform.oasis", "landform.steep_slope",
+		"landform.stable_wind_corridor",
+	]:
+		dense.append(ids.find(key))
+	var result: Dictionary = ext.run_research_signal_generation_pass({
+		"width": map.width,
+		"height": map.height,
+		"seed": 7,
+		"generation_vegetation": map.vegetation_arr,
+		"landform": map.landform_arr,
+		"has_river": map.has_river_arr,
+		"has_volcano": map.has_volcano_arr,
+		"is_water": map.is_water_arr,
+		"temperature": map.temp_arr,
+		"moisture": map.moisture_arr,
+		"elevation": map.elevation_arr,
+		"signal_ids": dense,
+	})
+	_expect("landform CSR ok", bool(result.get("ok", false)))
+	if not bool(result.get("ok", false)):
+		return false
+	var signal_ids: PackedInt32Array = result.get("cell_signal_ids", PackedInt32Array())
+	var maize := ids.find("bio.maize")
+	var sheep := ids.find("bio.sheep")
+	var leaked := false
+	for sid in signal_ids:
+		if int(sid) == maize or int(sid) == sheep:
+			leaked = true
+			break
+	_expect("static CSR no longer stamps bio occupancy", not leaked)
+	return true
+
+
+func _test_landmass_isolation_and_gaps(ext) -> void:
+	var map := _make_two_continent_map()
+	var knobs := _species_knobs(map, PackedStringArray(["bio.maize"]))
+	knobs["width"] = map.width
+	knobs["height"] = map.height
+	var province_res: Dictionary = ext.run_bio_province_pass(knobs)
+	_expect("province pass ok", bool(province_res.get("ok", false)))
+	if not bool(province_res.get("ok", false)):
+		return
+	var landmass: PackedInt32Array = province_res.get("landmass_ids", PackedInt32Array())
+	var provinces: PackedInt32Array = province_res.get("province_ids", PackedInt32Array())
+	var land_a := PackedInt32Array()
+	var land_b := PackedInt32Array()
+	for cell in range(map.cell_count()):
+		if map.is_water_arr[cell] != 0:
+			continue
+		var hex: HexCell = map.cell_at(cell)
+		var off := HexUtils.cube_to_offset(hex.q, hex.r)
+		if off.x <= 3:
+			land_a.append(cell)
+		else:
+			land_b.append(cell)
+	_expect("two landmass ids", int(province_res.get("landmass_count", 0)) >= 2)
+	if land_a.is_empty() or land_b.is_empty():
+		_expect("split continents populated", false)
+		return
+	_expect("continents are distinct landmasses",
+		int(landmass[land_a[0]]) != int(landmass[land_b[0]]) \
+		and int(landmass[land_a[0]]) > 0 and int(landmass[land_b[0]]) > 0)
+	knobs["province_ids"] = provinces
+	knobs["seed"] = 42
+	var seed_res: Dictionary = ext.run_bio_seed_pass(knobs)
+	_expect("seed pass ok", bool(seed_res.get("ok", false)))
+	if not bool(seed_res.get("ok", false)):
+		return
+	var occupancy: PackedInt32Array = seed_res.get("occupancy_bits", PackedInt32Array())
+	var maize_bit := int(knobs.species_occupancy_bits[0])
+	var mask := 1 << maize_bit
+	var count_a := 0
+	var count_b := 0
+	var envelope_empty := 0
+	for cell in land_a:
+		if (int(occupancy[cell]) & mask) != 0:
+			count_a += 1
+		else:
+			envelope_empty += 1
+	for cell in land_b:
+		if (int(occupancy[cell]) & mask) != 0:
+			count_b += 1
+		else:
+			envelope_empty += 1
+	_expect("maize occupies exactly one origin landmass",
+		(count_a > 0 and count_b == 0) or (count_b > 0 and count_a == 0))
+	_expect("envelope keeps unoccupied cells", envelope_empty > 0)
+
+
+func _test_carrier_extinction_and_introduce(ext) -> void:
+	var map := _make_two_continent_map()
+	var knobs := _species_knobs(map, PackedStringArray(["bio.sheep", "bio.maize"]))
+	var province_res: Dictionary = ext.run_bio_province_pass({
+		"width": map.width,
+		"height": map.height,
+		"is_water": map.is_water_arr,
+		"landform": map.landform_arr,
+		"vegetation": map.vegetation_arr,
+		"neighbor_indices": map.neighbor_indices_packed(),
+	})
+	if not bool(province_res.get("ok", false)):
+		_expect("province for extinction test", false)
+		return
+	var catalog: Dictionary = ResearchSignalCatalog.compile_native_catalog()
+	var sheep_bit := ResearchSignalCatalog.occupancy_bit_for_signal(catalog, &"bio.sheep")
+	var maize_bit := ResearchSignalCatalog.occupancy_bit_for_signal(catalog, &"bio.maize")
+	_expect("sheep/maize occupancy bits in knobs",
+		knobs.species_occupancy_bits.find(sheep_bit) >= 0 \
+		and knobs.species_occupancy_bits.find(maize_bit) >= 0)
+	var occupancy := PackedInt32Array()
+	occupancy.resize(map.cell_count())
+	var host := -1
+	for cell in range(map.cell_count()):
+		if map.is_water_arr[cell] == 0:
+			host = cell
+			occupancy[cell] = (1 << sheep_bit)
+			break
+	_expect("found land host cell", host >= 0)
+	map.res_pasture_reserve_arr[host] = 0.0
+	knobs["province_ids"] = province_res.get("province_ids", PackedInt32Array())
+	knobs["occupancy_bits"] = occupancy
+	knobs["carrier_reserves"] = _refresh_carrier_columns(map, knobs)
+	knobs["run_diffusion"] = false
+	knobs["explored"] = map.explored_arr
+	var extinct: Dictionary = ext.run_bio_occupancy_pass(knobs)
+	_expect("extinction pass ok", bool(extinct.get("ok", false)))
+	var after: PackedInt32Array = extinct.get("occupancy_bits", PackedInt32Array())
+	if host >= 0 and after.size() == occupancy.size():
+		_expect("pasture zero clears sheep occupancy", (int(after[host]) & (1 << sheep_bit)) == 0)
+	var newly: PackedInt32Array = extinct.get("newly_occupied_cells", PackedInt32Array())
+	_expect("extinction does not emit discovery", newly.is_empty())
+
+	var intro_cell := -1
+	for cell in range(map.cell_count()):
+		if map.is_water_arr[cell] == 0 and cell != host:
+			intro_cell = cell
+			break
+	var intro_cells := PackedInt32Array([intro_cell])
+	var intro_bits := PackedInt32Array([maize_bit])
+	knobs["occupancy_bits"] = after if after.size() == map.cell_count() else occupancy
+	knobs["introduce_cells"] = intro_cells
+	knobs["introduce_bits"] = intro_bits
+	map.explored_arr[intro_cell] = 1
+	knobs["explored"] = map.explored_arr
+	var intro: Dictionary = ext.run_bio_occupancy_pass(knobs)
+	_expect("introduce pass ok", bool(intro.get("ok", false)))
+	var intro_occ: PackedInt32Array = intro.get("occupancy_bits", PackedInt32Array())
+	if intro_cell >= 0 and intro_occ.size() == map.cell_count():
+		_expect("local production introduces maize without province origin",
+			(int(intro_occ[intro_cell]) & (1 << maize_bit)) != 0)
+	var intro_new: PackedInt32Array = intro.get("newly_occupied_cells", PackedInt32Array())
+	_expect("explored 0→1 occupancy is reported for DISCOVER",
+		intro_new.find(intro_cell) >= 0)
+
+
+func _make_two_continent_map() -> MapData:
+	var width := 10
+	var height := 3
+	var map := MapData.new(width, height)
+	for row in range(height):
+		for col in range(width):
+			var cube := HexUtils.offset_to_cube(col, row)
+			map.set_cell(HexCell.new(cube.x, cube.y))
+	map._build_indices()
+	map._alloc_soa(map.cell_count())
+	for cell in range(map.cell_count()):
+		var hex: HexCell = map.cell_at(cell)
+		var off := HexUtils.cube_to_offset(hex.q, hex.r)
+		var water := off.x == 0 or off.x == 4 or off.x == 5 or off.x == 9
+		map.is_water_arr[cell] = 1 if water else 0
+		map.terrain_arr[cell] = TerrainType.TERRAIN.OCEAN if water else TerrainType.TERRAIN.PLAIN
+		map.landform_arr[cell] = LandformType.LF.OCEAN if water else LandformType.LF.PLAIN
+		map.vegetation_arr[cell] = VegetationType.VEG.NONE if water else VegetationType.VEG.TEMPERATE_GRASSLAND
+		map.temp_arr[cell] = 0.55
+		map.moisture_arr[cell] = 0.55
+		map.elevation_arr[cell] = 0.20
+		map.has_river_arr[cell] = 0
+		map.has_volcano_arr[cell] = 0
+		map.res_arable_land_reserve_arr[cell] = 0.0 if water else 80.0
+		map.res_pasture_reserve_arr[cell] = 0.0 if water else 80.0
+		map.res_paddy_land_reserve_arr[cell] = 0.0
+		map.res_plantation_land_reserve_arr[cell] = 0.0
+		map.res_wild_game_reserve_arr[cell] = 0.0 if water else 40.0
+		map.explored_arr[cell] = 0
+	return map
+
+
+func _species_knobs(map: MapData, species_ids: PackedStringArray) -> Dictionary:
+	var catalog: Dictionary = ResearchSignalCatalog.compile_native_catalog()
+	var all_ids: PackedStringArray = catalog.get("research_signal_ids", PackedStringArray())
+	var bio_signal_ids: PackedInt32Array = catalog.get("research_bio_signal_ids", PackedInt32Array())
+	var wanted := {}
+	for species_id in species_ids:
+		wanted[String(species_id)] = true
+	var keep := PackedInt32Array()
+	for i in range(bio_signal_ids.size()):
+		var signal_index := int(bio_signal_ids[i])
+		if signal_index < 0 or signal_index >= all_ids.size():
+			continue
+		if wanted.has(String(all_ids[signal_index])):
+			keep.append(i)
+	var knobs := {
+		"cell_count": map.cell_count(),
+		"seed": 42,
+		"is_water": map.is_water_arr,
+		"vegetation": map.vegetation_arr,
+		"landform": map.landform_arr,
+		"has_river": map.has_river_arr,
+		"temperature": map.temp_arr,
+		"moisture": map.moisture_arr,
+		"elevation": map.elevation_arr,
+		"neighbor_indices": map.neighbor_indices_packed(),
+		"species_signal_ids": _take_i32(catalog.get("research_bio_signal_ids", PackedInt32Array()), keep),
+		"species_occupancy_bits": _take_i32(catalog.get("research_bio_occupancy_bits", PackedInt32Array()), keep),
+		"species_temp_lo": _take_f32(catalog.get("research_bio_temp_lo", PackedFloat32Array()), keep),
+		"species_temp_hi": _take_f32(catalog.get("research_bio_temp_hi", PackedFloat32Array()), keep),
+		"species_moist_lo": _take_f32(catalog.get("research_bio_moist_lo", PackedFloat32Array()), keep),
+		"species_moist_hi": _take_f32(catalog.get("research_bio_moist_hi", PackedFloat32Array()), keep),
+		"species_elev_lo": _take_f32(catalog.get("research_bio_elev_lo", PackedFloat32Array()), keep),
+		"species_elev_hi": _take_f32(catalog.get("research_bio_elev_hi", PackedFloat32Array()), keep),
+		"species_veg_mask0": _take_i32(catalog.get("research_bio_veg_mask0", PackedInt32Array()), keep),
+		"species_veg_mask1": _take_i32(catalog.get("research_bio_veg_mask1", PackedInt32Array()), keep),
+		"species_flags": _take_i32(catalog.get("research_bio_flags", PackedInt32Array()), keep),
+		"species_max_cost": _take_i32(catalog.get("research_bio_max_cost", PackedInt32Array()), keep),
+		"species_fill_keep": _take_f32(catalog.get("research_bio_fill_keep", PackedFloat32Array()), keep),
+	}
+	var carrier_ids: PackedStringArray = catalog.get("research_bio_carrier_ids", PackedStringArray())
+	var carrier_alts: PackedStringArray = catalog.get("research_bio_carrier_alt_ids", PackedStringArray())
+	var unique: Array[String] = []
+	var index_of := {}
+	var columns: Array = []
+	var empty := PackedFloat32Array()
+	empty.resize(map.cell_count())
+	var primary := PackedInt32Array()
+	var alt := PackedInt32Array()
+	primary.resize(keep.size())
+	alt.resize(keep.size())
+	for k in range(keep.size()):
+		var src := int(keep[k])
+		var id := String(carrier_ids[src]) if src < carrier_ids.size() else ""
+		var alt_id := String(carrier_alts[src]) if src < carrier_alts.size() else ""
+		if not id.is_empty() and not index_of.has(id):
+			index_of[id] = unique.size()
+			unique.append(id)
+			columns.append(_reserve_column(map, id, empty))
+		if not alt_id.is_empty() and not index_of.has(alt_id):
+			index_of[alt_id] = unique.size()
+			unique.append(alt_id)
+			columns.append(_reserve_column(map, alt_id, empty))
+		primary[k] = int(index_of.get(id, -1)) if not id.is_empty() else -1
+		alt[k] = int(index_of.get(alt_id, -1)) if not alt_id.is_empty() else -1
+	knobs["species_carrier_index"] = primary
+	knobs["species_carrier_alt_index"] = alt
+	knobs["carrier_reserves"] = columns
+	knobs["carrier_resource_ids"] = unique
+	return knobs
+
+
+func _refresh_carrier_columns(map: MapData, knobs: Dictionary) -> Array:
+	var ids: Array = knobs.get("carrier_resource_ids", [])
+	var empty := PackedFloat32Array()
+	empty.resize(map.cell_count())
+	var columns: Array = []
+	for id in ids:
+		columns.append(_reserve_column(map, String(id), empty))
+	return columns
+
+
+func _reserve_column(map: MapData, resource_id: String, empty: PackedFloat32Array) -> PackedFloat32Array:
+	for profile in ResourceProfileRegistry.ordered():
+		if String(profile.id) != resource_id:
+			continue
+		var field := ResourceProfileRegistry.reserve_map_field(profile)
+		if field.is_empty():
+			break
+		var values: PackedFloat32Array = map.get(field)
+		if values.size() == map.cell_count():
+			return values
+		break
+	return empty
+
+
+func _take_i32(src: PackedInt32Array, keep: PackedInt32Array) -> PackedInt32Array:
+	var out := PackedInt32Array()
+	out.resize(keep.size())
+	for i in range(keep.size()):
+		var idx := int(keep[i])
+		out[i] = int(src[idx]) if idx >= 0 and idx < src.size() else 0
+	return out
+
+
+func _take_f32(src: PackedFloat32Array, keep: PackedInt32Array) -> PackedFloat32Array:
+	var out := PackedFloat32Array()
+	out.resize(keep.size())
+	for i in range(keep.size()):
+		var idx := int(keep[i])
+		out[i] = float(src[idx]) if idx >= 0 and idx < src.size() else 0.0
+	return out
+
+
+func _expect(label: String, ok: bool) -> void:
+	_checks += 1
+	if ok:
+		print("[PASS] %s" % label)
+	else:
+		_failures += 1
+		push_error("[FAIL] %s" % label)
+
+
+func _skip(reason: String) -> void:
+	print("[SKIP] %s" % reason)

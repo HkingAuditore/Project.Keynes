@@ -278,10 +278,10 @@ func _run() -> void:
 	var compact_workspace := panel.get("_technology_workspace") as Control
 	var compact_tree := compact_workspace.tree_view() as Control
 	var compact_navigation: Dictionary = compact_workspace.navigation_report()
-	_expect("compact technology layout keeps policy resident and detail closed",
-		bool(compact_navigation.policy_open) and not bool(compact_navigation.detail_open)
-		and compact_tree.offset_left == TechnologyWorkspace.POLICY_WIDTH
-		and compact_tree.offset_right == -TechnologyWorkspace.DRAWER_RAIL_WIDTH)
+	_expect("compact technology layout keeps both columns resident",
+		bool(compact_navigation.policy_open) and bool(compact_navigation.detail_open)
+		and compact_tree.offset_left == TechnologyWorkspace.COMPACT_POLICY_WIDTH
+		and compact_tree.offset_right == -TechnologyWorkspace.COMPACT_DETAIL_WIDTH)
 	root.size = Vector2i(1280, 720)
 	await process_frame
 	await process_frame
@@ -495,6 +495,29 @@ func _run() -> void:
 			_expect("player handle matches the start cell owner",
 				player_handle >= 0 \
 					and player_handle == int(owned_slice.get("country_handle", -2)))
+			var unowned_visibility: Dictionary = inspector_vm._resource_visibility_context(
+				unowned_idx)
+			var unowned_techs: PackedStringArray = unowned_visibility.get(
+				"technology_ids", PackedStringArray())
+			_expect("unowned cells identify resources with player technologies",
+				bool(unowned_visibility.get("enforce_discovery", false)) \
+				and not unowned_techs.is_empty())
+			var unowned_landform := 0
+			if unowned_idx < map.landform_arr.size():
+				unowned_landform = int(map.landform_arr[unowned_idx])
+			var unowned_resources: Array = inspector_vm._resource_state(
+				unowned_idx, LandformType.is_water(unowned_landform),
+				unowned_visibility)
+			var unowned_category: Dictionary = inspector_vm._resources_category(
+				unowned_resources, unowned_visibility)
+			var reported_unconfigured := false
+			for insight_value in unowned_category.get("insights", []):
+				if String((insight_value as Dictionary).get("id", "")) \
+						== "resource_unconfigured":
+					reported_unconfigured = true
+					break
+			_expect("unowned cells do not report unconfigured resource types",
+				not reported_unconfigured)
 	right_panel.select_tab("geography")
 	await process_frame
 

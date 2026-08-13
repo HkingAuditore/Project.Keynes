@@ -1618,6 +1618,7 @@ bool NativeEconomyRuntime::settle_due_trade_orders(std::string &error) {
                 else if (good_id == "spices") contact_rule = 6;
                 else if (good_id == "latex") contact_rule = 7;
                 else if (good_id == "tin_ore" || good_id == "tin") contact_rule = 8;
+                else if (good_id == "oceanic_vessels") contact_rule = 9;
                 if (contact_rule >= 0 && source_country >= 0 &&
                     destination_country >= 0 && source_country != destination_country &&
                     destination_country < static_cast<int32_t>(_epoch_country_handles.size())) {

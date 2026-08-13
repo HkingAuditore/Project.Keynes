@@ -10,10 +10,10 @@
 | 时代 | 11 |
 | 领域 | 4 |
 | 里程碑 | 11 |
-| 硬前置边 | 462 |
-| 应用交汇边 | 505 |
-| 替代说明边 | 0 |
-| 里程碑候选边 | 176 |
+| 硬前置边 | 544 |
+| 应用交汇边 | 19 |
+| 替代说明边 | 21 |
+| 里程碑候选边 | 88 |
 
 ## 时代目录
 
@@ -44,7 +44,7 @@
 | 研究成本 | 0 科技点（`technology_points`） |
 | 节点标记 | 开局科技、区域开局候选 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.pastoral\_livestock |
 | 主要路线 | 生态 · 野生动物 (\`route.ecology.game\`) |
@@ -52,20 +52,17 @@
 | 开局能力标签 | \`starter.food\` |
 | 效果配置 | starter |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「野生动物」（resource.wild\_game）
-  - 已发现信号「草原」（landform.grassland）
-  - 已发现信号「森林」（landform.forest）
+- 已发现信号「野生动物」（resource.wild\_game）
 
 #### 效果摘要
 
-解锁物资：野味；解锁物资：生皮；解锁建筑：狩猎营地；开放通用职业阶层岗位
+解锁物资：野味；解锁物资：生皮；解锁建筑：狩猎营地；可利用资源：野生动物
 
 #### 机会成本
 
@@ -83,26 +80,23 @@
 - **野味**（`good`）：`good.game_meat` → `production_access` `unlock` `1.0`；`existing_binding`
 - **生皮**（`good`）：`good.raw_hide` → `production_access` `unlock` `1.0`；`existing_binding`
 - **狩猎营地**（`building`）：`building.stone_age_hunting_camp` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **野味**（`good`）：`good.game_meat` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **生皮**（`good`）：`good.raw_hide` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 - **野生动物**（`resource`）：`resource.wild_game` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
 无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 畜牧驯养 (`tech.animal_husbandry`)
+- 畜牧驯养 (`tech.animal_husbandry`)：狩猎提供畜群驯养、育种与畜产品处理能力中的操作与材料处理方法，畜牧驯养直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 纤维捻制 (`tech.fiber_twisting`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -118,7 +112,7 @@
 | 研究成本 | 0 科技点（`technology_points`） |
 | 节点标记 | 开局科技、区域开局候选 |
 | 网络角色 | backbone |
-| 锚点类型 | support |
+| 锚点类型 | backbone |
 | 节点角色 | handling |
 | 布局路线 | backbone.food\_storage |
 | 主要路线 | 生态 · 野生植物 (\`route.ecology.plants\`) |
@@ -126,20 +120,17 @@
 | 开局能力标签 | \`starter.food\` |
 | 效果配置 | starter |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-  - 已发现信号「森林」（landform.forest）
-  - 已发现信号「草原」（landform.grassland）
+- 已发现信号「肥沃土壤」（resource.fertile\_soil）
 
 #### 效果摘要
 
-解锁物资：采集植物食物；解锁建筑：采集营地；开放通用职业阶层岗位；可利用资源：肥沃土壤
+解锁物资：采集植物食物；解锁建筑：采集营地；可利用资源：肥沃土壤
 
 #### 机会成本
 
@@ -156,23 +147,21 @@
 
 - **采集植物食物**（`good`）：`good.gathered_plants` → `production_access` `unlock` `1.0`；`existing_binding`
 - **采集营地**（`building`）：`building.gathering_ground` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **采集植物食物**（`good`）：`good.gathered_plants` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 - **肥沃土壤**（`resource`）：`resource.fertile_soil` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
 无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 季节性采集 (`tech.seasonal_foraging`)
+- 季节性采集 (`tech.seasonal_foraging`)：采集提供粮食处理、保存与农艺组织能力中的操作与材料处理方法，季节性采集直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
 无
 
@@ -190,7 +179,7 @@
 | 研究成本 | 0 科技点（`technology_points`） |
 | 节点标记 | 开局科技、区域开局候选 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.construction\_materials |
 | 主要路线 | 材料 · 石材 (\`route.material.stone\`) |
@@ -198,7 +187,7 @@
 | 开局能力标签 | \`starter.construction\` |
 | 效果配置 | starter |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
@@ -207,11 +196,10 @@
 - 满足其一：
   - 已发现信号「燧石」（resource.flint）
   - 已发现信号「石料」（resource.stone）
-  - 已发现信号「山地」（landform.mountain）
 
 #### 效果摘要
 
-解锁物资：打制石器；解锁建筑：燧石采掘场；开放通用职业阶层岗位；解锁建筑：改良燧石矿坑
+解锁物资：打制石器；解锁建筑：燧石采掘场；解锁建筑：改良燧石矿坑
 
 #### 机会成本
 
@@ -228,27 +216,23 @@
 
 - **打制石器**（`good`）：`good.chipped_stone_tools` → `production_access` `unlock` `1.0`；`existing_binding`
 - **燧石采掘场**（`building`）：`building.flint_quarry` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **燧石原料**（`good`）：`good.flint` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 - **改良燧石矿坑**（`building`）：`building.method_flint_quarry_r1` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
 无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 黏土辨识 (`tech.clay_identification`)
+- 磨制石器 (`tech.ground_stone_tools`)：打制石器提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，磨制石器直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 木炭烧制 (`tech.charcoal_burning`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -264,28 +248,25 @@
 | 研究成本 | 0 科技点（`technology_points`） |
 | 节点标记 | 开局科技、区域开局候选 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | branch.electric\_intelligent\_energy |
+| 布局路线 | branch.industrial\_chemistry |
 | 主要路线 | 能源 · 火 (\`route.energy.fire\`) |
 | 全部路线 | 能源 · 火 (\`route.energy.fire\`) |
 | 开局能力标签 | \`starter.knowledge\` |
 | 效果配置 | starter |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「木材」（resource.timber）
-  - 已发现信号「干旱经验」（weather.drought）
-  - 已发现信号「草原」（landform.grassland）
+- 已发现信号「木材」（resource.timber）
 
 #### 效果摘要
 
-解锁建筑：公共火塘；开放通用职业阶层岗位
+解锁建筑：公共火塘
 
 #### 机会成本
 
@@ -301,27 +282,22 @@
 #### 结构化内容效果
 
 - **公共火塘**（`building`）：`building.communal_hearth` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **加工食品**（`good`）：`good.processed_food` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **采集植物食物**（`good`）：`good.gathered_plants` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **野味**（`good`）：`good.game_meat` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **原木**（`good`）：`good.logs` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
 无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 窑烧控制 (`tech.kiln_firing`)：火种控制提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，窑烧控制直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
 无
-
-#### 应用交汇目标
-
-- 自然铜冷锤 (`tech.natural_copper_working`)
 
 #### 作为候选参与的里程碑
 
@@ -337,7 +313,7 @@
 | 研究成本 | 3900 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
-| 锚点类型 | support |
+| 锚点类型 | backbone |
 | 节点角色 | handling |
 | 布局路线 | backbone.food\_storage |
 | 主要路线 | 生态 · 野生植物 (\`route.ecology.plants\`) |
@@ -345,9 +321,9 @@
 | 开局能力标签 | 无 |
 | 效果配置 | foraging |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 采集 (`tech.gathering`)
+- 采集 (`tech.gathering`)：采集提供粮食处理、保存与农艺组织能力中的操作与材料处理方法，季节性采集直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
@@ -358,7 +334,7 @@
 
 #### 效果摘要
 
-主粮加工产出 +10%
+主粮加工产出 +18%
 
 #### 机会成本
 
@@ -377,17 +353,17 @@
 
 #### 永久 Modifier 条款
 
-- 主粮加工：`country.output.family.staple_preparation_factor`：+10%
+- 主粮加工：`country.output.family.staple_preparation_factor`：+18%
 
-#### 直接后继（硬前置关系）
-
-- 种子与繁育观察 (`tech.crop_domestication`)
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
 
 无
 
@@ -403,9 +379,9 @@
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 3000 科技点（`technology_points`） |
-| 节点标记 | 无 |
+| 节点标记 | 时代关键 |
 | 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | handling |
 | 布局路线 | backbone.tools\_machinery |
 | 主要路线 | 材料 · 石材 (\`route.material.stone\`) |
@@ -413,20 +389,17 @@
 | 开局能力标签 | 无 |
 | 效果配置 | tools |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「燧石」（resource.flint）
-  - 已发现信号「石料」（resource.stone）
-  - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
+无
 
 #### 效果摘要
 
-解锁建筑：石器打制工坊；开放通用职业阶层岗位；解锁建筑：组织化伐木场；开放通用职业阶层岗位；石器打制工坊产出 +25%
+解锁建筑：石器打制工坊；解锁建筑：组织化伐木场；工程领域研究效率 +15%
 
 #### 机会成本
 
@@ -442,33 +415,29 @@
 #### 结构化内容效果
 
 - **石器打制工坊**（`building`）：`building.knapping_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **打制石器**（`good`）：`good.chipped_stone_tools` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **燧石原料**（`good`）：`good.flint` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **组织化伐木场**（`building`）：`building.method_timber_collector_r2` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **原木**（`good`）：`good.logs` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 石器打制工坊：`country.output.building.knapping_workshop_factor`：+25%
+- `country.research.engineering_efficiency`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 共同体分工 (`tech.communal_specialization`)：复合工具提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，共同体分工直接使用这一能力完成其工艺或组织设计
+- 犁耕农业 (`tech.plough_agriculture`)：复合工具提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，犁耕农业直接使用这一能力完成其工艺或组织设计
+- 活字印刷 (`tech.movable_type_printing`)：复合工具提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，活字印刷直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
-- 犁耕农业 (`tech.plough_agriculture`)
-
-#### 应用交汇目标
-
-- 犁耕农业 (`tech.plough_agriculture`)
+无
 
 #### 作为候选参与的里程碑
 
-无
+- 定居知识 (`tech.settled_knowledge`)
 
 ### 自然观察 (`tech.natural_observation`)
 
@@ -478,30 +447,27 @@
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 科学 (`science`) |
 | 研究成本 | 3000 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 节点标记 | 时代关键 |
+| 网络角色 | branch |
+| 锚点类型 | era\_candidate |
 | 节点角色 | handling |
-| 布局路线 | backbone.knowledge\_computation |
+| 布局路线 | branch.natural\_history |
 | 主要路线 | 制度 · 观察 (\`route.institution.observation\`) |
 | 全部路线 | 制度 · 观察 (\`route.institution.observation\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | observation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「季风经验」（weather.monsoon）
-  - 已发现信号「霜冻经验」（weather.frost）
-  - 已发现信号「河谷」（landform.river\_valley）
+无
 
 #### 效果摘要
 
-解锁物资：药材；可利用资源：硝石；可利用资源：硅砂；科研机构产出 +11%；国家协同能力 +3%
+解锁物资：药材；可利用资源：硝石；可利用资源：硅砂；科研机构产出 +25%；知识部门产出 +15%
 
 #### 机会成本
 
@@ -522,24 +488,26 @@
 
 #### 永久 Modifier 条款
 
-- 科研机构：`country.output.family.research_institution_factor`：+11%
-- `country.research.science_efficiency`：+3%
+- 科研机构：`country.output.family.research_institution_factor`：+25%
+- `country.output.knowledge_factor`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 口述传统 (`tech.oral_tradition`)
+- 口述传统 (`tech.oral_tradition`)：自然观察提供观察、分类、实验与生物育种知识中的操作与材料处理方法，口述传统直接使用这一能力完成其工艺或组织设计
+- 天文历法 (`tech.celestial_calendars`)：自然观察提供观察、分类、实验与生物育种知识中的操作与材料处理方法，天文历法直接使用这一能力完成其工艺或组织设计
+- 自然哲学 (`tech.natural_philosophy`)：自然观察提供观察、分类、实验与生物育种知识中的操作与材料处理方法，自然哲学直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 天文历法 (`tech.celestial_calendars`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 天文历法 (`tech.celestial_calendars`)
+无
 
 #### 作为候选参与的里程碑
 
-无
+- 定居知识 (`tech.settled_knowledge`)
 
 ### 口述传统 (`tech.oral_tradition`)
 
@@ -551,7 +519,7 @@
 | 研究成本 | 3900 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
-| 锚点类型 | support |
+| 锚点类型 | backbone |
 | 节点角色 | institution |
 | 布局路线 | backbone.knowledge\_computation |
 | 主要路线 | 制度 · 口述传承 (\`route.institution.oral\`) |
@@ -559,9 +527,9 @@
 | 开局能力标签 | 无 |
 | 效果配置 | knowledge |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 自然观察 (`tech.natural_observation`)
+- 自然观察 (`tech.natural_observation`)：自然观察提供观察、分类、实验与生物育种知识中的操作与材料处理方法，口述传统直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
@@ -572,7 +540,7 @@
 
 #### 效果摘要
 
-解锁建筑：传知者议事圈；开放通用职业阶层岗位；开放科技职业阶层岗位；传知者议事圈产出 +20%
+解锁建筑：传知者议事圈
 
 #### 机会成本
 
@@ -588,23 +556,20 @@
 #### 结构化内容效果
 
 - **传知者议事圈**（`building`）：`building.lorekeeper_circle` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **科技职业阶层**（`class`）：`class.technology` → `employment_access` `enable` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 传知者议事圈：`country.output.building.lorekeeper_circle_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 季节历 (`tech.seasonal_calendar`)
+- 季节历 (`tech.seasonal_calendar`)：口述传统提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，季节历直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
 无
 
@@ -620,17 +585,17 @@
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 农业 (`agriculture`) |
 | 研究成本 | 3400 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | branch.electric\_intelligent\_energy |
+| 布局路线 | branch.forest\_biomass |
 | 主要路线 | 生态 · 森林 (\`route.ecology.forest\`) |
 | 全部路线 | 生态 · 森林 (\`route.ecology.forest\`)；气候 · 火 (\`route.climate.fire\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | foraging |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
@@ -638,12 +603,11 @@
 
 - 满足其一：
   - 已发现信号「木材」（resource.timber）
-  - 已发现信号「黏土」（resource.clay）
   - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
 
 #### 效果摘要
 
-金属工具业产出 +12%；国家协同能力 +3%
+金属工具业产出 +28%；能源部门产出 +12%
 
 #### 机会成本
 
@@ -662,25 +626,24 @@
 
 #### 永久 Modifier 条款
 
-- 金属工具业：`country.output.family.metal_toolmaking_factor`：+12%
-- `country.output.agriculture_factor`：+3%
+- 金属工具业：`country.output.family.metal_toolmaking_factor`：+28%
+- `country.output.energy_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 窑烧控制 (`tech.kiln_firing`)
+无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 窑烧控制 (`tech.kiln_firing`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 窑烧控制 (`tech.kiln_firing`)
-- 自然铜冷锤 (`tech.natural_copper_working`)
+无
 
 #### 作为候选参与的里程碑
 
-- 定居知识 (`tech.settled_knowledge`)
+无
 
 ### 渔舟 (`tech.fishing_boats`)
 
@@ -690,9 +653,9 @@
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 3400 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.maritime\_logistics |
 | 主要路线 | 地理 · 沿海 (\`route.geography.coast\`) |
@@ -700,7 +663,7 @@
 | 开局能力标签 | 无 |
 | 效果配置 | fishing |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
@@ -709,11 +672,10 @@
 - 满足其一：
   - 已发现信号「淡水鱼群」（resource.freshwater\_fish）
   - 已发现信号「海洋鱼类」（resource.marine\_fish）
-  - 已发现信号「海岸」（landform.coast）
 
 #### 效果摘要
 
-解锁建筑：帆船渔场；开放通用职业阶层岗位；开放通用职业阶层岗位；帆船渔场产出 +25%
+解锁建筑：帆船渔场；贸易速度 +12%
 
 #### 机会成本
 
@@ -729,31 +691,26 @@
 #### 结构化内容效果
 
 - **帆船渔场**（`building`）：`building.method_marine_fish_collector_r2` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **鱼类**（`good`）：`good.fish` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 帆船渔场：`country.output.building.method_marine_fish_collector_r2_factor`：+25%
+- `country.trade.speed_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 陶器容器体系 (`tech.pottery`)
+无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 陶器容器体系 (`tech.pottery`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 陶器容器体系 (`tech.pottery`)
-- 木炭烧制 (`tech.charcoal_burning`)
+无
 
 #### 作为候选参与的里程碑
 
-- 定居知识 (`tech.settled_knowledge`)
+无
 
 ### 种子与繁育观察 (`tech.crop_domestication`)
 
@@ -763,9 +720,9 @@
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 农业 (`agriculture`) |
 | 研究成本 | 3900 科技点（`technology_points`） |
-| 节点标记 | 无 |
+| 节点标记 | 时代关键 |
 | 网络角色 | backbone |
-| 锚点类型 | support |
+| 锚点类型 | era\_candidate |
 | 节点角色 | production\_system |
 | 布局路线 | backbone.food\_storage |
 | 主要路线 | 作物 · 通用农艺 (\`route.crop.general\`) |
@@ -773,20 +730,17 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 季节性采集 (`tech.seasonal_foraging`)
+无
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
-  - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-  - 已发现信号「连续歉收经验」（weather.repeated\_crop\_failure）
+无
 
 #### 效果摘要
 
-大田作物农业产出 +10%
+大田作物农业产出 +18%
 
 #### 机会成本
 
@@ -805,23 +759,23 @@
 
 #### 永久 Modifier 条款
 
-- 大田作物农业：`country.output.family.field_crop_farming_factor`：+10%
+- 大田作物农业：`country.output.family.field_crop_farming_factor`：+18%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 留种选育 (`tech.seed_selection`)：种子与繁育观察提供粮食处理、保存与农艺组织能力中的成套生产流程，留种选育直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
-
-无
-
-#### 应用交汇目标
+#### 跨领域应用
 
 无
 
 #### 作为候选参与的里程碑
 
-无
+- 定居知识 (`tech.settled_knowledge`)
 
 ### 黏土辨识 (`tech.clay_identification`)
 
@@ -833,7 +787,7 @@
 | 研究成本 | 3900 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | identification |
 | 布局路线 | branch.construction\_materials |
 | 主要路线 | 材料 · 黏土 (\`route.material.clay\`) |
@@ -841,20 +795,17 @@
 | 开局能力标签 | 无 |
 | 效果配置 | observation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 打制石器 (`tech.stone_knapping`)
+无
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「黏土」（resource.clay）
-  - 已发现信号「硅砂」（resource.silica\_sand）
-  - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
+- 已发现信号「黏土」（resource.clay）
 
 #### 效果摘要
 
-可利用资源：黏土；黏土采掘产出 +10%
+可利用资源：黏土；黏土采掘产出 +18%
 
 #### 机会成本
 
@@ -873,19 +824,19 @@
 
 #### 永久 Modifier 条款
 
-- 黏土采掘：`country.output.family.clay_extraction_factor`：+10%
+- 黏土采掘：`country.output.family.clay_extraction_factor`：+18%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 磨制石器 (`tech.ground_stone_tools`)
+- 黏土调制 (`tech.clay_preparation`)：黏土辨识提供土石、陶瓷、玻璃和工程构件制造能力中的识别与证据标准，黏土调制直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 木炭烧制 (`tech.charcoal_burning`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -901,7 +852,7 @@
 | 研究成本 | 3900 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | identification |
 | 布局路线 | branch.nonferrous\_metals |
 | 主要路线 | 资源 · 铜 (\`route.resource.copper\`) |
@@ -909,20 +860,17 @@
 | 开局能力标签 | 无 |
 | 效果配置 | observation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「铜矿」（resource.copper\_ore）
-  - 已发现信号「锡矿」（resource.tin\_ore）
-  - 已发现信号「金属加工突破」（breakthrough.metalworking）
+- 已发现信号「铜矿」（resource.copper\_ore）
 
 #### 效果摘要
 
-可利用资源：铜矿；铜业产出 +10%
+可利用资源：铜矿；铜业产出 +18%
 
 #### 机会成本
 
@@ -941,19 +889,19 @@
 
 #### 永久 Modifier 条款
 
-- 铜业：`country.output.family.copper_extraction_factor`：+10%
+- 铜业：`country.output.family.copper_extraction_factor`：+18%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 自然铜冷锤 (`tech.natural_copper_working`)：自然铜辨识提供矿物识别、有色冶炼与合金配制能力中的识别与证据标准，自然铜冷锤直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
 无
-
-#### 应用交汇目标
-
-- 铜矿焙烧 (`tech.copper_ore_roasting`)
 
 #### 作为候选参与的里程碑
 
@@ -967,9 +915,9 @@
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 3400 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.nonferrous\_metals |
 | 主要路线 | 资源 · 铜 (\`route.resource.copper\`) |
@@ -977,20 +925,17 @@
 | 开局能力标签 | 无 |
 | 效果配置 | craft |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-无
+- 自然铜辨识 (`tech.natural_copper_identification`)：自然铜辨识提供矿物识别、有色冶炼与合金配制能力中的识别与证据标准，自然铜冷锤直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「铜矿」（resource.copper\_ore）
-  - 已发现信号「锡矿」（resource.tin\_ore）
-  - 已发现信号「金属加工突破」（breakthrough.metalworking）
+- 已发现信号「铜矿」（resource.copper\_ore）
 
 #### 效果摘要
 
-解锁建筑：自然铜冷锤工坊；开放通用职业阶层岗位；自然铜冷锤工坊产出 +25%
+解锁建筑：自然铜冷锤工坊；采掘部门产出 +12%
 
 #### 机会成本
 
@@ -1006,31 +951,28 @@
 #### 结构化内容效果
 
 - **自然铜冷锤工坊**（`building`）：`building.natural_copper_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **铜**（`good`）：`good.copper` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 自然铜冷锤工坊：`country.output.building.natural_copper_workshop_factor`：+25%
+- `country.output.extractive_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 铜退火 (`tech.copper_annealing`)
-- 木炭坩埚炼铜 (`tech.copper_metallurgy`)
-- 铜锡配比与铸造 (`tech.bronze_casting`)
+- 铜退火 (`tech.copper_annealing`)：自然铜冷锤提供矿物识别、有色冶炼与合金配制能力中的操作与材料处理方法，铜退火直接使用这一能力完成其工艺或组织设计
+- 木炭坩埚炼铜 (`tech.copper_metallurgy`)：自然铜冷锤提供矿物识别、有色冶炼与合金配制能力中的操作与材料处理方法，木炭坩埚炼铜直接使用这一能力完成其工艺或组织设计
+- 铜锡配比与铸造 (`tech.bronze_casting`)：自然铜冷锤提供矿物识别、有色冶炼与合金配制能力中的操作与材料处理方法，铜锡配比与铸造直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 铜锡配比与铸造 (`tech.bronze_casting`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 铜锡配比与铸造 (`tech.bronze_casting`)
-- 铜矿焙烧 (`tech.copper_ore_roasting`)
+无
 
 #### 作为候选参与的里程碑
 
-- 定居知识 (`tech.settled_knowledge`)
+无
 
 ### 铜退火 (`tech.copper_annealing`)
 
@@ -1042,7 +984,7 @@
 | 研究成本 | 3900 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.nonferrous\_metals |
 | 主要路线 | 资源 · 铜 (\`route.resource.copper\`) |
@@ -1050,20 +992,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | metallurgy |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 自然铜冷锤 (`tech.natural_copper_working`)
+- 自然铜冷锤 (`tech.natural_copper_working`)：自然铜冷锤提供矿物识别、有色冶炼与合金配制能力中的操作与材料处理方法，铜退火直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
   - 已发现信号「铜矿」（resource.copper\_ore）
-  - 已发现信号「锡矿」（resource.tin\_ore）
   - 已发现信号「金属加工突破」（breakthrough.metalworking）
 
 #### 效果摘要
 
-解锁建筑：露天青铜作坊；开放通用职业阶层岗位；露天青铜作坊产出 +20%
+解锁建筑：露天青铜作坊
 
 #### 机会成本
 
@@ -1079,27 +1020,23 @@
 #### 结构化内容效果
 
 - **露天青铜作坊**（`building`）：`building.ore_bronzesmith_camp` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **青铜工具**（`good`）：`good.bronze_tools` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **铜矿石**（`good`）：`good.copper_ore` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **锡矿石**（`good`）：`good.tin_ore` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **原木**（`good`）：`good.logs` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 露天青铜作坊：`country.output.building.ore_bronzesmith_camp_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 锡矿辨识 (`tech.tin_identification`)
+- 锡矿辨识 (`tech.tin_identification`)：铜退火提供矿物识别、有色冶炼与合金配制能力中的成套生产流程，锡矿辨识直接使用这一能力完成其工艺或组织设计
+- 铜矿焙烧 (`tech.copper_ore_roasting`)：铜退火提供矿物识别、有色冶炼与合金配制能力中的成套生产流程，铜矿焙烧直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 铜矿焙烧 (`tech.copper_ore_roasting`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -1115,7 +1052,7 @@
 | 研究成本 | 3900 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | identification |
 | 布局路线 | branch.nonferrous\_metals |
 | 主要路线 | 资源 · 锡 (\`route.resource.tin\`) |
@@ -1123,20 +1060,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | observation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 铜退火 (`tech.copper_annealing`)
+- 铜退火 (`tech.copper_annealing`)：铜退火提供矿物识别、有色冶炼与合金配制能力中的成套生产流程，锡矿辨识直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
   - 已发现信号「锡矿」（resource.tin\_ore）
   - 已发现信号「锡矿贸易接触」（contact.tin）
-  - 已发现信号「金属加工突破」（breakthrough.metalworking）
 
 #### 效果摘要
 
-解锁物资：锡矿石；可利用资源：锡矿；锡业产出 +10%
+解锁物资：锡矿石；可利用资源：锡矿；锡业产出 +18%
 
 #### 机会成本
 
@@ -1156,19 +1092,19 @@
 
 #### 永久 Modifier 条款
 
-- 锡业：`country.output.family.tin_extraction_factor`：+10%
+- 锡业：`country.output.family.tin_extraction_factor`：+18%
 
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
 
-- 铜矿焙烧 (`tech.copper_ore_roasting`)
+无
+
+#### 跨领域应用
+
+无
 
 #### 作为候选参与的里程碑
 
@@ -1184,7 +1120,7 @@
 | 研究成本 | 3900 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.pastoral\_livestock |
 | 主要路线 | 生态 · 牧场 (\`route.ecology.pasture\`) |
@@ -1192,20 +1128,21 @@
 | 开局能力标签 | 无 |
 | 效果配置 | livestock |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 狩猎 (`tech.hunting`)
+- 狩猎 (`tech.hunting`)：狩猎提供畜群驯养、育种与畜产品处理能力中的操作与材料处理方法，畜牧驯养直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
   - 已发现信号「野生动物」（resource.wild\_game）
   - 已发现信号「羊」（bio.sheep）
-  - 已发现信号「草原」（landform.grassland）
+  - 已发现信号「马匹」（bio.horse）
+  - 已发现信号「牛」（bio.cattle）
 
 #### 效果摘要
 
-畜牧业产出 +10%
+畜牧业产出 +18%
 
 #### 机会成本
 
@@ -1224,19 +1161,21 @@
 
 #### 永久 Modifier 条款
 
-- 畜牧业：`country.output.family.livestock_husbandry_factor`：+10%
+- 畜牧业：`country.output.family.livestock_husbandry_factor`：+18%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 动物追踪 (`tech.animal_tracking`)
+- 动物追踪 (`tech.animal_tracking`)：畜牧驯养提供畜群驯养、育种与畜产品处理能力中的成套生产流程，动物追踪直接使用这一能力完成其工艺或组织设计
+- 畜力牵引 (`tech.animal_traction`)：畜牧驯养提供畜群驯养、育种与畜产品处理能力中的成套生产流程，畜力牵引直接使用这一能力完成其工艺或组织设计
+- 现代畜牧 (`tech.modern_husbandry`)：畜牧驯养提供畜群驯养、育种与畜产品处理能力中的成套生产流程，现代畜牧直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 纤维捻制 (`tech.fiber_twisting`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -1250,9 +1189,9 @@
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 3400 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.textile\_fibers |
 | 主要路线 | 工艺 · 纺织 (\`route.craft.textiles\`) |
@@ -1260,7 +1199,7 @@
 | 开局能力标签 | 无 |
 | 效果配置 | craft |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
@@ -1269,11 +1208,11 @@
 - 满足其一：
   - 已发现信号「亚麻」（bio.flax）
   - 已发现信号「棉花」（bio.cotton）
-  - 已发现信号「亚麻样本接触」（contact.flax）
+  - 已发现信号「韧皮纤维植物」（bio.bast\_fiber）
 
 #### 效果摘要
 
-解锁物资：布料；解锁建筑：家庭织造棚；开放通用职业阶层岗位；家庭织造棚产出 +25%
+解锁物资：布料；解锁建筑：家庭织造棚；制造部门产出 +12%
 
 #### 机会成本
 
@@ -1290,32 +1229,27 @@
 
 - **布料**（`good`）：`good.cloth` → `production_access` `unlock` `1.0`；`existing_binding`
 - **家庭织造棚**（`building`）：`building.household_weaving_shelter` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **布料**（`good`）：`good.cloth` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **采集植物食物**（`good`）：`good.gathered_plants` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 家庭织造棚：`country.output.building.household_weaving_shelter_factor`：+25%
+- `country.output.manufacturing_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 亚麻与韧皮辨识 (`tech.flax_identification`)
-- 织造 (`tech.weaving`)
-- 织机织造 (`tech.loom_weaving`)
+- 织造 (`tech.weaving`)：纤维捻制提供纤维处理、纺纱、织造与服装生产工艺中的操作与材料处理方法，织造直接使用这一能力完成其工艺或组织设计
+- 织机织造 (`tech.loom_weaving`)：纤维捻制提供纤维处理、纺纱、织造与服装生产工艺中的操作与材料处理方法，织机织造直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 织机织造 (`tech.loom_weaving`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 织机织造 (`tech.loom_weaving`)
-- 畜群管理 (`tech.herd_management`)
+无
 
 #### 作为候选参与的里程碑
 
-- 定居知识 (`tech.settled_knowledge`)
+无
 
 ### 食物储藏 (`tech.food_storage`)
 
@@ -1327,7 +1261,7 @@
 | 研究成本 | 3000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 锚点类型 | backbone |
 | 节点角色 | handling |
 | 布局路线 | backbone.food\_storage |
 | 主要路线 | 制度 · 储藏 (\`route.institution.storage\`) |
@@ -1335,7 +1269,7 @@
 | 开局能力标签 | 无 |
 | 效果配置 | craft |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
@@ -1348,7 +1282,7 @@
 
 #### 效果摘要
 
-主粮加工产出 +11%；国家协同能力 +3%
+主粮加工产出 +25%；农业部门产出 +15%
 
 #### 机会成本
 
@@ -1367,21 +1301,20 @@
 
 #### 永久 Modifier 条款
 
-- 主粮加工：`country.output.family.staple_preparation_factor`：+11%
-- `country.output.manufacturing_factor`：+3%
+- 主粮加工：`country.output.family.staple_preparation_factor`：+25%
+- `country.output.agriculture_factor`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 炉火保存 (`tech.hearth_preservation`)
-- 留种选育 (`tech.seed_selection`)
+- 炉火保存 (`tech.hearth_preservation`)：食物储藏提供粮食处理、保存与农艺组织能力中的操作与材料处理方法，炉火保存直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 发酵保存 (`tech.fermentation`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 发酵保存 (`tech.fermentation`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -1395,17 +1328,17 @@
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 社会 (`society`) |
 | 研究成本 | 0 科技点（`technology_points`） |
-| 节点标记 | 开局科技、区域开局候选 |
-| 网络角色 | backbone |
-| 锚点类型 | support |
+| 节点标记 | 开局科技、区域开局候选、时代关键 |
+| 网络角色 | branch |
+| 锚点类型 | era\_candidate |
 | 节点角色 | institution |
-| 布局路线 | backbone.institutions\_exchange |
+| 布局路线 | branch.commerce\_finance |
 | 主要路线 | 制度 · 社群 (\`route.institution.community\`) |
 | 全部路线 | 制度 · 社群 (\`route.institution.community\`) |
 | 开局能力标签 | \`starter.trade\` |
 | 效果配置 | starter |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
@@ -1417,7 +1350,7 @@
 
 #### 效果摘要
 
-解锁建筑：早期商栈；开放通用职业阶层岗位
+解锁建筑：早期商栈
 
 #### 机会成本
 
@@ -1433,27 +1366,26 @@
 #### 结构化内容效果
 
 - **早期商栈**（`building`）：`building.early_merchant_post` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
 无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 共同体分工 (`tech.communal_specialization`)
+- 市场制度 (`tech.market_institutions`)：早期贸易提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，市场制度直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
 无
 
 #### 作为候选参与的里程碑
 
-无
+- 定居知识 (`tech.settled_knowledge`)
 
 ### 共同体分工 (`tech.communal_specialization`)
 
@@ -1463,9 +1395,9 @@
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 社会 (`society`) |
 | 研究成本 | 3000 科技点（`technology_points`） |
-| 节点标记 | 无 |
+| 节点标记 | 时代关键 |
 | 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | institution |
 | 布局路线 | backbone.institutions\_exchange |
 | 主要路线 | 制度 · 社群 (\`route.institution.community\`) |
@@ -1473,20 +1405,17 @@
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 早期贸易 (`tech.early_trade`)
+- 复合工具 (`tech.composite_tools`)：复合工具提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，共同体分工直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-  - 已发现信号「河谷」（landform.river\_valley）
-  - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
+无
 
 #### 效果摘要
 
-解锁建筑：商栈；开放通用职业阶层岗位；商栈产出 +25%
+解锁建筑：商栈；社会领域研究效率 +15%
 
 #### 机会成本
 
@@ -1502,27 +1431,27 @@
 #### 结构化内容效果
 
 - **商栈**（`building`）：`building.merchant_post` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 商栈：`country.output.building.merchant_post_factor`：+25%
+- `country.research.society_efficiency`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 家庭生产 (`tech.household_production`)
+- 家庭生产 (`tech.household_production`)：共同体分工提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，家庭生产直接使用这一能力完成其工艺或组织设计
+- 永久聚落 (`tech.permanent_settlements`)：共同体分工提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，永久聚落直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 永久聚落 (`tech.permanent_settlements`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 永久聚落 (`tech.permanent_settlements`)
+无
 
 #### 作为候选参与的里程碑
 
-无
+- 定居知识 (`tech.settled_knowledge`)
 
 ### 动物追踪 (`tech.animal_tracking`)
 
@@ -1534,7 +1463,7 @@
 | 研究成本 | 3900 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.pastoral\_livestock |
 | 主要路线 | 生态 · 野生动物 (\`route.ecology.game\`) |
@@ -1542,20 +1471,17 @@
 | 开局能力标签 | 无 |
 | 效果配置 | foraging |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 畜牧驯养 (`tech.animal_husbandry`)
+- 畜牧驯养 (`tech.animal_husbandry`)：畜牧驯养提供畜群驯养、育种与畜产品处理能力中的成套生产流程，动物追踪直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「野生动物」（resource.wild\_game）
-  - 已发现信号「羊」（bio.sheep）
-  - 已发现信号「草原」（landform.grassland）
+- 已发现信号「野生动物」（resource.wild\_game）
 
 #### 效果摘要
 
-解锁建筑：商业狩猎与毛皮站；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：小型陷阱线；商业狩猎与毛皮站产出 +20%
+解锁建筑：商业狩猎与毛皮站；解锁建筑：小型陷阱线；可利用资源：野生动物
 
 #### 机会成本
 
@@ -1571,30 +1497,24 @@
 #### 结构化内容效果
 
 - **商业狩猎与毛皮站**（`building`）：`building.method_stone_age_hunting_camp_r4` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **野味**（`good`）：`good.game_meat` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **生皮**（`good`）：`good.raw_hide` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **毛皮**（`good`）：`good.fur` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **小型陷阱线**（`building`）：`building.small_game_trapline` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **野生动物**（`resource`）：`resource.wild_game` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 商业狩猎与毛皮站：`country.output.building.method_stone_age_hunting_camp_r4_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 纤维捻制 (`tech.fiber_twisting`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -1610,28 +1530,25 @@
 | 研究成本 | 0 科技点（`technology_points`） |
 | 节点标记 | 开局科技、区域开局候选 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | branch.water\_wind |
+| 布局路线 | branch.maritime\_logistics |
 | 主要路线 | 地理 · 河流 (\`route.geography.river\`) |
 | 全部路线 | 地理 · 河流 (\`route.geography.river\`) |
 | 开局能力标签 | \`starter.food\` |
 | 效果配置 | fishing |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「淡水鱼群」（resource.freshwater\_fish）
-  - 已发现信号「河湖水系」（landform.freshwater\_access）
-  - 已发现信号「河谷」（landform.river\_valley）
+- 已发现信号「淡水鱼群」（resource.freshwater\_fish）
 
 #### 效果摘要
 
-解锁物资：鱼类；解锁建筑：淡水捕鱼营地；开放通用职业阶层岗位；可利用资源：淡水鱼群
+解锁物资：鱼类；解锁建筑：淡水捕鱼营地；可利用资源：淡水鱼群
 
 #### 机会成本
 
@@ -1648,25 +1565,23 @@
 
 - **鱼类**（`good`）：`good.fish` → `production_access` `unlock` `1.0`；`existing_binding`
 - **淡水捕鱼营地**（`building`）：`building.freshwater_fishing_camp` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **鱼类**（`good`）：`good.fish` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 - **淡水鱼群**（`resource`）：`resource.freshwater_fish` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
 无
 
-#### 直接后继（硬前置关系）
-
-- 砂金辨识 (`tech.gold_placer_identification`)
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
 
-- 野生稻采集 (`tech.wild_rice_collection`)
+无
+
+#### 跨领域应用
+
+无
 
 #### 作为候选参与的里程碑
 
@@ -1682,7 +1597,7 @@
 | 研究成本 | 0 科技点（`technology_points`） |
 | 节点标记 | 开局科技、区域开局候选 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.maritime\_logistics |
 | 主要路线 | 地理 · 沿海 (\`route.geography.coast\`) |
@@ -1690,20 +1605,17 @@
 | 开局能力标签 | \`starter.food\` |
 | 效果配置 | fishing |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「海洋鱼类」（resource.marine\_fish）
-  - 已发现信号「海岸」（landform.coast）
-  - 已发现信号「海岸河口」（landform.coastal\_estuary）
+- 已发现信号「海洋鱼类」（resource.marine\_fish）
 
 #### 效果摘要
 
-解锁物资：鱼类；解锁建筑：沿岸渔场；开放通用职业阶层岗位；可利用资源：海洋鱼类
+解锁物资：鱼类；解锁建筑：沿岸渔场；可利用资源：海洋鱼类
 
 #### 机会成本
 
@@ -1720,25 +1632,23 @@
 
 - **鱼类**（`good`）：`good.fish` → `production_access` `unlock` `1.0`；`existing_binding`
 - **沿岸渔场**（`building`）：`building.marine_fish_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **鱼类**（`good`）：`good.fish` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 - **海洋鱼类**（`resource`）：`resource.marine_fish` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
 无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 木炭烧制 (`tech.charcoal_burning`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -1754,7 +1664,7 @@
 | 研究成本 | 3900 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.construction\_materials |
 | 主要路线 | 材料 · 石材 (\`route.material.stone\`) |
@@ -1762,9 +1672,9 @@
 | 开局能力标签 | 无 |
 | 效果配置 | tools |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 黏土辨识 (`tech.clay_identification`)
+- 打制石器 (`tech.stone_knapping`)：打制石器提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，磨制石器直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
@@ -1775,7 +1685,7 @@
 
 #### 效果摘要
 
-解锁物资：原石；解锁建筑：毛石整理场；开放通用职业阶层岗位；解锁建筑：采石场；毛石整理场产出 +20%
+解锁物资：原石；解锁建筑：毛石整理场；解锁建筑：采石场；可利用资源：石料
 
 #### 机会成本
 
@@ -1792,27 +1702,25 @@
 
 - **原石**（`good`）：`good.raw_stone` → `production_access` `unlock` `1.0`；`existing_binding`
 - **毛石整理场**（`building`）：`building.rubble_stone_working` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **原石**（`good`）：`good.raw_stone` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 - **采石场**（`building`）：`building.stone_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **石料**（`resource`）：`resource.stone` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 毛石整理场：`country.output.building.rubble_stone_working_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 灌溉 (`tech.irrigation`)：磨制石器提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，灌溉直接使用这一能力完成其工艺或组织设计
+- 梯田农业 (`tech.terrace_farming`)：磨制石器提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，梯田农业直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
 无
-
-#### 应用交汇目标
-
-- 木炭烧制 (`tech.charcoal_burning`)
 
 #### 作为候选参与的里程碑
 
@@ -1828,7 +1736,7 @@
 | 研究成本 | 0 科技点（`technology_points`） |
 | 节点标记 | 开局科技、区域开局候选 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.construction\_materials |
 | 主要路线 | 材料 · 黏土 (\`route.material.clay\`) |
@@ -1836,20 +1744,17 @@
 | 开局能力标签 | \`starter.construction\` |
 | 效果配置 | construction |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「黏土」（resource.clay）
-  - 已发现信号「干旱盆地」（landform.arid\_basin）
-  - 已发现信号「黄土平原」（landform.loess\_plain）
+- 已发现信号「黏土」（resource.clay）
 
 #### 效果摘要
 
-解锁物资：黏土；解锁建筑：土料挖掘坑；开放通用职业阶层岗位；解锁建筑：原始黏土坑
+解锁物资：黏土；解锁建筑：土料挖掘坑；解锁建筑：原始黏土坑；可利用资源：黏土
 
 #### 机会成本
 
@@ -1866,8 +1771,6 @@
 
 - **黏土**（`good`）：`good.clay` → `production_access` `unlock` `1.0`；`existing_binding`
 - **土料挖掘坑**（`building`）：`building.earth_digging_pit` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **黏土**（`good`）：`good.clay` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 - **原始黏土坑**（`building`）：`building.primitive_clay_pit` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **黏土**（`resource`）：`resource.clay` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
@@ -1875,17 +1778,17 @@
 
 无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 燧石辨识 (`tech.flint_identification`)
+- 水田畦埂 (`tech.paddy_bunding`)：土建筑提供土石、陶瓷、玻璃和工程构件制造能力中的成套生产流程，水田畦埂直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 木炭烧制 (`tech.charcoal_burning`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -1899,19 +1802,19 @@
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 科学 (`science`) |
 | 研究成本 | 3900 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | support |
+| 节点标记 | 时代关键 |
+| 网络角色 | branch |
+| 锚点类型 | era\_candidate |
 | 节点角色 | handling |
-| 布局路线 | backbone.knowledge\_computation |
+| 布局路线 | branch.measurement\_instruments |
 | 主要路线 | 制度 · 历法 (\`route.institution.calendar\`) |
 | 全部路线 | 制度 · 历法 (\`route.institution.calendar\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | observation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 口述传统 (`tech.oral_tradition`)
+- 口述传统 (`tech.oral_tradition`)：口述传统提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，季节历直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
@@ -1922,7 +1825,7 @@
 
 #### 效果摘要
 
-科研机构产出 +10%
+科研机构产出 +18%
 
 #### 机会成本
 
@@ -1941,23 +1844,23 @@
 
 #### 永久 Modifier 条款
 
-- 科研机构：`country.output.family.research_institution_factor`：+10%
+- 科研机构：`country.output.family.research_institution_factor`：+18%
 
-#### 直接后继（硬前置关系）
-
-- 地表银脉辨识 (`tech.silver_vein_identification`)
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
 
 无
 
 #### 作为候选参与的里程碑
 
-无
+- 定居知识 (`tech.settled_knowledge`)
 
 ### 炉火保存 (`tech.hearth_preservation`)
 
@@ -1969,7 +1872,7 @@
 | 研究成本 | 3900 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
-| 锚点类型 | support |
+| 锚点类型 | backbone |
 | 节点角色 | handling |
 | 布局路线 | backbone.food\_storage |
 | 主要路线 | 制度 · 储藏 (\`route.institution.storage\`) |
@@ -1977,9 +1880,9 @@
 | 开局能力标签 | 无 |
 | 效果配置 | craft |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 食物储藏 (`tech.food_storage`)
+- 食物储藏 (`tech.food_storage`)：食物储藏提供粮食处理、保存与农艺组织能力中的操作与材料处理方法，炉火保存直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
@@ -1990,7 +1893,7 @@
 
 #### 效果摘要
 
-解锁物资：熟制主食；解锁建筑：主食厨房；开放通用职业阶层岗位；开放通用职业阶层岗位；主食厨房产出 +20%
+解锁物资：熟制主食；解锁建筑：主食厨房
 
 #### 机会成本
 
@@ -2007,24 +1910,20 @@
 
 - **熟制主食**（`good`）：`good.prepared_staples` → `production_access` `unlock` `1.0`；`existing_binding`
 - **主食厨房**（`building`）：`building.staple_kitchen` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **熟制主食**（`good`）：`good.prepared_staples` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **混合谷物**（`good`）：`good.grain` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 主食厨房：`country.output.building.staple_kitchen_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
 无
 
@@ -2042,7 +1941,7 @@
 | 研究成本 | 3900 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
-| 锚点类型 | support |
+| 锚点类型 | backbone |
 | 节点角色 | institution |
 | 布局路线 | backbone.institutions\_exchange |
 | 主要路线 | 制度 · 社群 (\`route.institution.community\`) |
@@ -2050,9 +1949,9 @@
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 共同体分工 (`tech.communal_specialization`)
+- 共同体分工 (`tech.communal_specialization`)：共同体分工提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，家庭生产直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
@@ -2063,7 +1962,7 @@
 
 #### 效果摘要
 
-科研机构产出 +10%
+家用织机产出 +35%
 
 #### 机会成本
 
@@ -2082,17 +1981,17 @@
 
 #### 永久 Modifier 条款
 
-- 科研机构：`country.output.family.research_institution_factor`：+10%
+- 家用织机：`country.output.building.household_loom_factor`：+35%
 
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
 
 无
 
@@ -2108,9 +2007,9 @@
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 农业 (`agriculture`) |
 | 研究成本 | 3400 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.pastoral\_livestock |
 | 主要路线 | 生态 · 牧场 (\`route.ecology.pasture\`) |
@@ -2118,20 +2017,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | livestock |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「牧场承载力」（resource.pasture）
-  - 已发现信号「草原」（landform.grassland）
+  - 已发现信号「羊」（bio.sheep）
   - 已发现信号「马匹」（bio.horse）
+  - 已发现信号「牛」（bio.cattle）
 
 #### 效果摘要
 
-解锁物资：畜牧产品；解锁建筑：游牧营地；开放通用职业阶层岗位；可利用资源：牧场承载力；游牧营地产出 +25%
+解锁物资：畜牧产品；解锁建筑：游牧营地；可利用资源：牧场承载力；热害损失 -8%
 
 #### 机会成本
 
@@ -2148,31 +2047,32 @@
 
 - **畜牧产品**（`good`）：`good.livestock_products` → `production_access` `unlock` `1.0`；`existing_binding`
 - **游牧营地**（`building`）：`building.pastoral_camp` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **畜牧产品**（`good`）：`good.livestock_products` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 - **牧场承载力**（`resource`）：`resource.pasture` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 游牧营地：`country.output.building.pastoral_camp_factor`：+25%
+- `country.climate.heat_stress_factor`：+8%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 游牧放牧 (`tech.pastoralism`)
-- 马匹驯化 (`tech.horse_domestication`)
+- 游牧放牧 (`tech.pastoralism`)：畜群管理提供畜群驯养、育种与畜产品处理能力中的成套生产流程，游牧放牧直接使用这一能力完成其工艺或组织设计
+- 马匹驯化 (`tech.horse_domestication`)：畜群管理提供畜群驯养、育种与畜产品处理能力中的成套生产流程，马匹驯化直接使用这一能力完成其工艺或组织设计
+- 乳品加工 (`tech.dairy_processing`)：畜群管理提供畜群驯养、育种与畜产品处理能力中的成套生产流程，乳品加工直接使用这一能力完成其工艺或组织设计
+- 皮革鞣制 (`tech.hide_tanning`)：畜群管理提供畜群驯养、育种与畜产品处理能力中的成套生产流程，皮革鞣制直接使用这一能力完成其工艺或组织设计
+- 毛用畜牧 (`tech.wool_husbandry`)：畜群管理提供畜群驯养、育种与畜产品处理能力中的成套生产流程，毛用畜牧直接使用这一能力完成其工艺或组织设计
+- 屠宰分割 (`tech.meat_processing`)：畜群管理提供畜群驯养、育种与畜产品处理能力中的成套生产流程，屠宰分割直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 马匹驯化 (`tech.horse_domestication`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 马匹驯化 (`tech.horse_domestication`)
-- 纤维捻制 (`tech.fiber_twisting`)
+无
 
 #### 作为候选参与的里程碑
 
-- 定居知识 (`tech.settled_knowledge`)
+无
 
 ### 玉米辨识 (`tech.maize_identification`)
 
@@ -2184,7 +2084,7 @@
 | 研究成本 | 3900 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | identification |
 | 布局路线 | branch.maize\_horticulture |
 | 主要路线 | 作物 · 玉米 (\`route.crop.maize\`) |
@@ -2192,7 +2092,7 @@
 | 开局能力标签 | 无 |
 | 效果配置 | observation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
@@ -2201,11 +2101,10 @@
 - 满足其一：
   - 已发现信号「玉米」（bio.maize）
   - 已发现信号「玉米样本接触」（contact.maize）
-  - 已发现信号「玉米选育突破」（breakthrough.maize\_selection）
 
 #### 效果摘要
 
-大田作物农业产出 +10%
+大田作物农业产出 +18%
 
 #### 机会成本
 
@@ -2216,7 +2115,7 @@
 - **物资：** 无
 - **建筑 / 生产方式：** 无
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 野生玉米采集地 (`wild_maize_stand`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
@@ -2224,19 +2123,19 @@
 
 #### 永久 Modifier 条款
 
-- 大田作物农业：`country.output.family.field_crop_farming_factor`：+10%
+- 大田作物农业：`country.output.family.field_crop_farming_factor`：+18%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 野生玉米采集 (`tech.wild_maize_collection`)：玉米辨识提供玉米栽培、选育与田间管理经验中的识别与证据标准，野生玉米采集直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
 无
-
-#### 应用交汇目标
-
-- 卤水采集 (`tech.brine_collection`)
 
 #### 作为候选参与的里程碑
 
@@ -2252,7 +2151,7 @@
 | 研究成本 | 3400 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | handling |
 | 布局路线 | branch.maize\_horticulture |
 | 主要路线 | 作物 · 玉米 (\`route.crop.maize\`) |
@@ -2260,20 +2159,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | foraging |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-无
+- 玉米辨识 (`tech.maize_identification`)：玉米辨识提供玉米栽培、选育与田间管理经验中的识别与证据标准，野生玉米采集直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
   - 已发现信号「玉米」（bio.maize）
   - 已发现信号「玉米样本接触」（contact.maize）
-  - 已发现信号「玉米选育突破」（breakthrough.maize\_selection）
 
 #### 效果摘要
 
-解锁物资：玉米；解锁建筑：野生玉米采集地；开放通用职业阶层岗位；野生玉米采集地产出 +25%
+解锁物资：玉米；解锁建筑：野生玉米采集地；旱灾损失 -8%
 
 #### 机会成本
 
@@ -2290,27 +2188,24 @@
 
 - **玉米**（`good`）：`good.corn_grain` → `production_access` `unlock` `1.0`；`existing_binding`
 - **野生玉米采集地**（`building`）：`building.wild_maize_stand` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **玉米**（`good`）：`good.corn_grain` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 野生玉米采集地：`country.output.building.wild_maize_stand_factor`：+25%
+- `country.climate.drought_loss_factor`：+8%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 玉米留种 (`tech.maize_seed_saving`)
-- 玉米选育 (`tech.maize_selection`)
-- 玉米园圃 (`tech.maize_garden_horticulture`)
+- 玉米留种 (`tech.maize_seed_saving`)：野生玉米采集提供玉米栽培、选育与田间管理经验中的操作与材料处理方法，玉米留种直接使用这一能力完成其工艺或组织设计
+- 玉米选育 (`tech.maize_selection`)：野生玉米采集提供玉米栽培、选育与田间管理经验中的操作与材料处理方法，玉米选育直接使用这一能力完成其工艺或组织设计
+- 玉米园圃 (`tech.maize_garden_horticulture`)：野生玉米采集提供玉米栽培、选育与田间管理经验中的操作与材料处理方法，玉米园圃直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 玉米园圃 (`tech.maize_garden_horticulture`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 玉米园圃 (`tech.maize_garden_horticulture`)
-- 卤水采集 (`tech.brine_collection`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -2326,7 +2221,7 @@
 | 研究成本 | 3900 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.maize\_horticulture |
 | 主要路线 | 作物 · 玉米 (\`route.crop.maize\`) |
@@ -2334,20 +2229,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 野生玉米采集 (`tech.wild_maize_collection`)
+- 野生玉米采集 (`tech.wild_maize_collection`)：野生玉米采集提供玉米栽培、选育与田间管理经验中的操作与材料处理方法，玉米留种直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
   - 已发现信号「玉米」（bio.maize）
   - 已发现信号「玉米样本接触」（contact.maize）
-  - 已发现信号「玉米选育突破」（breakthrough.maize\_selection）
 
 #### 效果摘要
 
-大田作物农业产出 +10%
+大田作物农业产出 +18%
 
 #### 机会成本
 
@@ -2366,19 +2260,19 @@
 
 #### 永久 Modifier 条款
 
-- 大田作物农业：`country.output.family.field_crop_farming_factor`：+10%
+- 大田作物农业：`country.output.family.field_crop_farming_factor`：+18%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 玉米繁育 (`tech.maize_propagation`)
+- 玉米繁育 (`tech.maize_propagation`)：玉米留种提供玉米栽培、选育与田间管理经验中的操作与材料处理方法，玉米繁育直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 卤水采集 (`tech.brine_collection`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -2394,7 +2288,7 @@
 | 研究成本 | 3900 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.maize\_horticulture |
 | 主要路线 | 作物 · 玉米 (\`route.crop.maize\`) |
@@ -2402,20 +2296,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 玉米留种 (`tech.maize_seed_saving`)
+- 玉米留种 (`tech.maize_seed_saving`)：玉米留种提供玉米栽培、选育与田间管理经验中的操作与材料处理方法，玉米繁育直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
   - 已发现信号「玉米」（bio.maize）
   - 已发现信号「玉米样本接触」（contact.maize）
-  - 已发现信号「玉米选育突破」（breakthrough.maize\_selection）
 
 #### 效果摘要
 
-大田作物农业产出 +10%
+大田作物农业产出 +18%
 
 #### 机会成本
 
@@ -2434,19 +2327,19 @@
 
 #### 永久 Modifier 条款
 
-- 大田作物农业：`country.output.family.field_crop_farming_factor`：+10%
+- 大田作物农业：`country.output.family.field_crop_farming_factor`：+18%
 
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
 
-- 卤水采集 (`tech.brine_collection`)
+无
+
+#### 跨领域应用
+
+无
 
 #### 作为候选参与的里程碑
 
@@ -2462,7 +2355,7 @@
 | 研究成本 | 3900 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | identification |
 | 布局路线 | branch.wheat\_rainfed |
 | 主要路线 | 作物 · 小麦 (\`route.crop.wheat\`) |
@@ -2470,7 +2363,7 @@
 | 开局能力标签 | 无 |
 | 效果配置 | observation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
@@ -2479,11 +2372,10 @@
 - 满足其一：
   - 已发现信号「小麦」（bio.wheat）
   - 已发现信号「小麦样本接触」（contact.wheat）
-  - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
 
 #### 效果摘要
 
-大田作物农业产出 +10%
+大田作物农业产出 +18%
 
 #### 机会成本
 
@@ -2494,7 +2386,7 @@
 - **物资：** 无
 - **建筑 / 生产方式：** 无
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 野生谷穗采集地 (`wild_wheat_stand`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
@@ -2502,19 +2394,19 @@
 
 #### 永久 Modifier 条款
 
-- 大田作物农业：`country.output.family.field_crop_farming_factor`：+10%
+- 大田作物农业：`country.output.family.field_crop_farming_factor`：+18%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 野生谷穗采集 (`tech.wild_wheat_collection`)：小麦辨识提供谷物旱作、轮作与收获工艺中的识别与证据标准，野生谷穗采集直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
 无
-
-#### 应用交汇目标
-
-- 卤水采集 (`tech.brine_collection`)
 
 #### 作为候选参与的里程碑
 
@@ -2528,9 +2420,9 @@
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 农业 (`agriculture`) |
 | 研究成本 | 3400 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.wheat\_rainfed |
 | 主要路线 | 作物 · 小麦 (\`route.crop.wheat\`) |
@@ -2538,20 +2430,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | foraging |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-无
+- 小麦辨识 (`tech.wheat_identification`)：小麦辨识提供谷物旱作、轮作与收获工艺中的识别与证据标准，野生谷穗采集直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
   - 已发现信号「小麦」（bio.wheat）
   - 已发现信号「小麦样本接触」（contact.wheat）
-  - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
 
 #### 效果摘要
 
-解锁物资：小麦；解锁建筑：野生谷穗采集地；开放通用职业阶层岗位；野生谷穗采集地产出 +25%
+解锁物资：小麦；解锁建筑：野生谷穗采集地；旱灾损失 -8%
 
 #### 机会成本
 
@@ -2568,31 +2459,28 @@
 
 - **小麦**（`good`）：`good.wheat_grain` → `production_access` `unlock` `1.0`；`existing_binding`
 - **野生谷穗采集地**（`building`）：`building.wild_wheat_stand` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **小麦**（`good`）：`good.wheat_grain` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 野生谷穗采集地：`country.output.building.wild_wheat_stand_factor`：+25%
+- `country.climate.drought_loss_factor`：+8%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 小麦留种 (`tech.wheat_seed_saving`)
-- 旱作农业 (`tech.dryland_farming`)
-- 雨养小麦田 (`tech.rainfed_wheat_cultivation`)
+- 小麦留种 (`tech.wheat_seed_saving`)：野生谷穗采集提供谷物旱作、轮作与收获工艺中的操作与材料处理方法，小麦留种直接使用这一能力完成其工艺或组织设计
+- 旱作农业 (`tech.dryland_farming`)：野生谷穗采集提供谷物旱作、轮作与收获工艺中的操作与材料处理方法，旱作农业直接使用这一能力完成其工艺或组织设计
+- 雨养小麦田 (`tech.rainfed_wheat_cultivation`)：野生谷穗采集提供谷物旱作、轮作与收获工艺中的操作与材料处理方法，雨养小麦田直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 雨养小麦田 (`tech.rainfed_wheat_cultivation`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 雨养小麦田 (`tech.rainfed_wheat_cultivation`)
-- 卤水采集 (`tech.brine_collection`)
+无
 
 #### 作为候选参与的里程碑
 
-- 定居知识 (`tech.settled_knowledge`)
+无
 
 ### 小麦留种 (`tech.wheat_seed_saving`)
 
@@ -2604,7 +2492,7 @@
 | 研究成本 | 3900 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.wheat\_rainfed |
 | 主要路线 | 作物 · 小麦 (\`route.crop.wheat\`) |
@@ -2612,20 +2500,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 野生谷穗采集 (`tech.wild_wheat_collection`)
+- 野生谷穗采集 (`tech.wild_wheat_collection`)：野生谷穗采集提供谷物旱作、轮作与收获工艺中的操作与材料处理方法，小麦留种直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
   - 已发现信号「小麦」（bio.wheat）
   - 已发现信号「小麦样本接触」（contact.wheat）
-  - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
 
 #### 效果摘要
 
-大田作物农业产出 +10%
+大田作物农业产出 +18%
 
 #### 机会成本
 
@@ -2644,19 +2531,19 @@
 
 #### 永久 Modifier 条款
 
-- 大田作物农业：`country.output.family.field_crop_farming_factor`：+10%
+- 大田作物农业：`country.output.family.field_crop_farming_factor`：+18%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 小麦繁育 (`tech.wheat_propagation`)
+- 小麦繁育 (`tech.wheat_propagation`)：小麦留种提供谷物旱作、轮作与收获工艺中的操作与材料处理方法，小麦繁育直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 卤水采集 (`tech.brine_collection`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -2672,7 +2559,7 @@
 | 研究成本 | 3900 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.wheat\_rainfed |
 | 主要路线 | 作物 · 小麦 (\`route.crop.wheat\`) |
@@ -2680,20 +2567,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 小麦留种 (`tech.wheat_seed_saving`)
+- 小麦留种 (`tech.wheat_seed_saving`)：小麦留种提供谷物旱作、轮作与收获工艺中的操作与材料处理方法，小麦繁育直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
   - 已发现信号「小麦」（bio.wheat）
   - 已发现信号「小麦样本接触」（contact.wheat）
-  - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
 
 #### 效果摘要
 
-大田作物农业产出 +10%
+大田作物农业产出 +18%
 
 #### 机会成本
 
@@ -2704,7 +2590,7 @@
 - **物资：** 无
 - **建筑 / 生产方式：** 无
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 旱作保水小麦田 (`dryland_wheat_field`)；退水小麦地 (`floodplain_wheat_plot`)；雨养小麦地 (`rainfed_wheat_plot`)；佃作雨养小麦田 (`tenant_rainfed_wheat_field`)；小麦农场 (`wheat_farm`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 旱作保水小麦田 (`dryland_wheat_field`)；退水小麦地 (`floodplain_wheat_plot`)；佃作小麦庄园 (`method_wheat_farm_r3`)；改良轮作小麦庄园 (`method_wheat_farm_r5`)；雨养小麦地 (`rainfed_wheat_plot`)；佃作雨养小麦田 (`tenant_rainfed_wheat_field`)；小麦农场 (`wheat_farm`)
 
 #### 结构化内容效果
 
@@ -2712,19 +2598,19 @@
 
 #### 永久 Modifier 条款
 
-- 大田作物农业：`country.output.family.field_crop_farming_factor`：+10%
+- 大田作物农业：`country.output.family.field_crop_farming_factor`：+18%
 
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
 
-- 卤水采集 (`tech.brine_collection`)
+无
+
+#### 跨领域应用
+
+无
 
 #### 作为候选参与的里程碑
 
@@ -2740,7 +2626,7 @@
 | 研究成本 | 3900 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | identification |
 | 布局路线 | branch.rice\_irrigation |
 | 主要路线 | 作物 · 水稻 (\`route.crop.rice\`) |
@@ -2748,7 +2634,7 @@
 | 开局能力标签 | 无 |
 | 效果配置 | observation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
@@ -2757,11 +2643,10 @@
 - 满足其一：
   - 已发现信号「稻」（bio.rice）
   - 已发现信号「稻种样本接触」（contact.rice）
-  - 已发现信号「水田控制突破」（breakthrough.paddy\_control）
 
 #### 效果摘要
 
-大田作物农业产出 +10%
+大田作物农业产出 +18%
 
 #### 机会成本
 
@@ -2772,7 +2657,7 @@
 - **物资：** 无
 - **建筑 / 生产方式：** 无
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 野生稻沼泽 (`wild_rice_marsh`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
@@ -2780,19 +2665,19 @@
 
 #### 永久 Modifier 条款
 
-- 大田作物农业：`country.output.family.field_crop_farming_factor`：+10%
+- 大田作物农业：`country.output.family.field_crop_farming_factor`：+18%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 野生稻采集 (`tech.wild_rice_collection`)：稻类辨识提供水田整备、水位控制与稻作管理方法中的识别与证据标准，野生稻采集直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
 无
-
-#### 应用交汇目标
-
-- 芦苇辨识 (`tech.reed_identification`)
 
 #### 作为候选参与的里程碑
 
@@ -2806,9 +2691,9 @@
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 农业 (`agriculture`) |
 | 研究成本 | 3400 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.rice\_irrigation |
 | 主要路线 | 作物 · 水稻 (\`route.crop.rice\`) |
@@ -2816,20 +2701,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | foraging |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-无
+- 稻类辨识 (`tech.rice_identification`)：稻类辨识提供水田整备、水位控制与稻作管理方法中的识别与证据标准，野生稻采集直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
   - 已发现信号「稻」（bio.rice）
   - 已发现信号「稻种样本接触」（contact.rice）
-  - 已发现信号「水田控制突破」（breakthrough.paddy\_control）
 
 #### 效果摘要
 
-解锁物资：稻米；解锁建筑：野生稻沼泽；开放通用职业阶层岗位；野生稻沼泽产出 +25%
+解锁物资：稻米；解锁建筑：野生稻沼泽；洪灾损失 -8%
 
 #### 机会成本
 
@@ -2846,31 +2730,28 @@
 
 - **稻米**（`good`）：`good.rice_grain` → `production_access` `unlock` `1.0`；`existing_binding`
 - **野生稻沼泽**（`building`）：`building.wild_rice_marsh` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **稻米**（`good`）：`good.rice_grain` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 野生稻沼泽：`country.output.building.wild_rice_marsh_factor`：+25%
+- `country.climate.flood_loss_factor`：+8%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 稻种留存 (`tech.rice_seed_saving`)
-- 水田畦埂 (`tech.paddy_bunding`)
-- 水田稻作 (`tech.rice_paddy_cultivation`)
+- 稻种留存 (`tech.rice_seed_saving`)：野生稻采集提供水田整备、水位控制与稻作管理方法中的操作与材料处理方法，稻种留存直接使用这一能力完成其工艺或组织设计
+- 水田畦埂 (`tech.paddy_bunding`)：野生稻采集提供水田整备、水位控制与稻作管理方法中的操作与材料处理方法，水田畦埂直接使用这一能力完成其工艺或组织设计
+- 水田稻作 (`tech.rice_paddy_cultivation`)：野生稻采集提供水田整备、水位控制与稻作管理方法中的操作与材料处理方法，水田稻作直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 水田稻作 (`tech.rice_paddy_cultivation`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 水田稻作 (`tech.rice_paddy_cultivation`)
-- 芦苇辨识 (`tech.reed_identification`)
+无
 
 #### 作为候选参与的里程碑
 
-- 定居知识 (`tech.settled_knowledge`)
+无
 
 ### 稻种留存 (`tech.rice_seed_saving`)
 
@@ -2882,7 +2763,7 @@
 | 研究成本 | 3900 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.rice\_irrigation |
 | 主要路线 | 作物 · 水稻 (\`route.crop.rice\`) |
@@ -2890,20 +2771,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 野生稻采集 (`tech.wild_rice_collection`)
+- 野生稻采集 (`tech.wild_rice_collection`)：野生稻采集提供水田整备、水位控制与稻作管理方法中的操作与材料处理方法，稻种留存直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
   - 已发现信号「稻」（bio.rice）
   - 已发现信号「稻种样本接触」（contact.rice）
-  - 已发现信号「水田控制突破」（breakthrough.paddy\_control）
 
 #### 效果摘要
 
-大田作物农业产出 +10%
+大田作物农业产出 +18%
 
 #### 机会成本
 
@@ -2922,19 +2802,19 @@
 
 #### 永久 Modifier 条款
 
-- 大田作物农业：`country.output.family.field_crop_farming_factor`：+10%
+- 大田作物农业：`country.output.family.field_crop_farming_factor`：+18%
 
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
 
-- 芦苇辨识 (`tech.reed_identification`)
+无
+
+#### 跨领域应用
+
+无
 
 #### 作为候选参与的里程碑
 
@@ -2950,7 +2830,7 @@
 | 研究成本 | 3900 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | identification |
 | 布局路线 | branch.tuber\_highland |
 | 主要路线 | 作物 · 块茎作物 (\`route.crop.tuber\`) |
@@ -2958,7 +2838,7 @@
 | 开局能力标签 | 无 |
 | 效果配置 | observation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
@@ -2967,11 +2847,10 @@
 - 满足其一：
   - 已发现信号「马铃薯」（bio.potato）
   - 已发现信号「块茎样本接触」（contact.potato）
-  - 已发现信号「梯田维护突破」（breakthrough.terrace\_maintenance）
 
 #### 效果摘要
 
-高地农业产出 +10%
+高地农业产出 +18%
 
 #### 机会成本
 
@@ -2990,19 +2869,19 @@
 
 #### 永久 Modifier 条款
 
-- 高地农业：`country.output.family.highland_crop_farming_factor`：+10%
+- 高地农业：`country.output.family.highland_crop_farming_factor`：+18%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 块茎保存 (`tech.tuber_storage`)：块茎辨识提供块茎繁育、坡地耕作与低温保存经验中的识别与证据标准，块茎保存直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
 无
-
-#### 应用交汇目标
-
-- 卤水采集 (`tech.brine_collection`)
 
 #### 作为候选参与的里程碑
 
@@ -3018,7 +2897,7 @@
 | 研究成本 | 0 科技点（`technology_points`） |
 | 节点标记 | 开局科技、区域开局候选 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.tuber\_highland |
 | 主要路线 | 作物 · 块茎作物 (\`route.crop.tuber\`) |
@@ -3026,7 +2905,7 @@
 | 开局能力标签 | \`starter.food\` |
 | 效果配置 | foraging |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
@@ -3034,12 +2913,11 @@
 
 - 满足其一：
   - 已发现信号「马铃薯」（bio.potato）
-  - 已发现信号「高原」（landform.high\_plateau）
-  - 已发现信号「山地」（landform.mountain）
+  - 已发现信号「块茎样本接触」（contact.potato）
 
 #### 效果摘要
 
-解锁物资：马铃薯；解锁建筑：野生块茎采集地；开放通用职业阶层岗位
+解锁物资：马铃薯；解锁建筑：野生块茎采集地
 
 #### 机会成本
 
@@ -3056,24 +2934,22 @@
 
 - **马铃薯**（`good`）：`good.potatoes` → `production_access` `unlock` `1.0`；`existing_binding`
 - **野生块茎采集地**（`building`）：`building.wild_tuber_patch` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **马铃薯**（`good`）：`good.potatoes` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
 无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 卤水采集 (`tech.brine_collection`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -3087,9 +2963,9 @@
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 3400 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.tuber\_highland |
 | 主要路线 | 作物 · 块茎作物 (\`route.crop.tuber\`) |
@@ -3097,20 +2973,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | craft |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-无
+- 块茎辨识 (`tech.potato_identification`)：块茎辨识提供块茎繁育、坡地耕作与低温保存经验中的识别与证据标准，块茎保存直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
   - 已发现信号「马铃薯」（bio.potato）
   - 已发现信号「块茎样本接触」（contact.potato）
-  - 已发现信号「梯田维护突破」（breakthrough.terrace\_maintenance）
 
 #### 效果摘要
 
-高地农业产出 +12%；国家协同能力 +3%
+高地农业产出 +28%；寒冷损失 -8%
 
 #### 机会成本
 
@@ -3129,27 +3004,27 @@
 
 #### 永久 Modifier 条款
 
-- 高地农业：`country.output.family.highland_crop_farming_factor`：+12%
-- `country.output.manufacturing_factor`：+3%
+- 高地农业：`country.output.family.highland_crop_farming_factor`：+28%
+- `country.climate.cold_stress_factor`：+8%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 块茎繁育 (`tech.potato_propagation`)
-- 梯田农业 (`tech.terrace_farming`)
-- 高地块茎农业 (`tech.highland_tuber_farming`)
+- 块茎繁育 (`tech.potato_propagation`)：块茎保存提供块茎繁育、坡地耕作与低温保存经验中的操作与材料处理方法，块茎繁育直接使用这一能力完成其工艺或组织设计
+- 梯田农业 (`tech.terrace_farming`)：块茎保存提供块茎繁育、坡地耕作与低温保存经验中的操作与材料处理方法，梯田农业直接使用这一能力完成其工艺或组织设计
+- 垄作块茎 (`tech.ridge_tuber_cultivation`)：块茎保存提供块茎繁育、坡地耕作与低温保存经验中的操作与材料处理方法，垄作块茎直接使用这一能力完成其工艺或组织设计
+- 高地块茎农业 (`tech.highland_tuber_farming`)：块茎保存提供块茎繁育、坡地耕作与低温保存经验中的操作与材料处理方法，高地块茎农业直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 高地块茎农业 (`tech.highland_tuber_farming`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 高地块茎农业 (`tech.highland_tuber_farming`)
-- 卤水采集 (`tech.brine_collection`)
+无
 
 #### 作为候选参与的里程碑
 
-- 定居知识 (`tech.settled_knowledge`)
+无
 
 ### 块茎繁育 (`tech.potato_propagation`)
 
@@ -3161,7 +3036,7 @@
 | 研究成本 | 3900 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.tuber\_highland |
 | 主要路线 | 作物 · 块茎作物 (\`route.crop.tuber\`) |
@@ -3169,20 +3044,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 块茎保存 (`tech.tuber_storage`)
+- 块茎保存 (`tech.tuber_storage`)：块茎保存提供块茎繁育、坡地耕作与低温保存经验中的操作与材料处理方法，块茎繁育直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
   - 已发现信号「马铃薯」（bio.potato）
   - 已发现信号「块茎样本接触」（contact.potato）
-  - 已发现信号「梯田维护突破」（breakthrough.terrace\_maintenance）
 
 #### 效果摘要
 
-解锁物资：马铃薯；高地农业产出 +10%
+解锁物资：马铃薯；高地农业产出 +18%
 
 #### 机会成本
 
@@ -3201,19 +3075,19 @@
 
 #### 永久 Modifier 条款
 
-- 高地农业：`country.output.family.highland_crop_farming_factor`：+10%
+- 高地农业：`country.output.family.highland_crop_farming_factor`：+18%
 
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
 
-- 卤水采集 (`tech.brine_collection`)
+无
+
+#### 跨领域应用
+
+无
 
 #### 作为候选参与的里程碑
 
@@ -3229,7 +3103,7 @@
 | 研究成本 | 3900 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | identification |
 | 布局路线 | branch.tropical\_commodities |
 | 主要路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
@@ -3237,7 +3111,7 @@
 | 开局能力标签 | 无 |
 | 效果配置 | observation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
@@ -3246,11 +3120,10 @@
 - 满足其一：
   - 已发现信号「棉花」（bio.cotton）
   - 已发现信号「棉花样本接触」（contact.cotton）
-  - 已发现信号「种植园承载力」（resource.plantation\_land）
 
 #### 效果摘要
 
-织布业产出 +10%
+织布业产出 +18%
 
 #### 机会成本
 
@@ -3269,19 +3142,19 @@
 
 #### 永久 Modifier 条款
 
-- 织布业：`country.output.family.cloth_weaving_factor`：+10%
+- 织布业：`country.output.family.cloth_weaving_factor`：+18%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 野生棉铃采集 (`tech.wild_cotton_collection`)
+- 野生棉铃采集 (`tech.wild_cotton_collection`)：棉花辨识提供热带作物栽培、采收与商品化处理能力中的识别与证据标准，野生棉铃采集直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 渔舟 (`tech.fishing_boats`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -3297,7 +3170,7 @@
 | 研究成本 | 3900 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.tropical\_commodities |
 | 主要路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
@@ -3305,20 +3178,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | foraging |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 棉花辨识 (`tech.cotton_identification`)
+- 棉花辨识 (`tech.cotton_identification`)：棉花辨识提供热带作物栽培、采收与商品化处理能力中的识别与证据标准，野生棉铃采集直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
   - 已发现信号「棉花」（bio.cotton）
   - 已发现信号「棉花样本接触」（contact.cotton）
-  - 已发现信号「种植园承载力」（resource.plantation\_land）
 
 #### 效果摘要
 
-织布业产出 +10%
+织布业产出 +18%
 
 #### 机会成本
 
@@ -3337,19 +3209,20 @@
 
 #### 永久 Modifier 条款
 
-- 织布业：`country.output.family.cloth_weaving_factor`：+10%
+- 织布业：`country.output.family.cloth_weaving_factor`：+18%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 香料植物辨识 (`tech.spice_identification`)
+- 棉花去籽 (`tech.cotton_ginning`)：野生棉铃采集提供热带作物栽培、采收与商品化处理能力中的操作与材料处理方法，棉花去籽直接使用这一能力完成其工艺或组织设计
+- 棉花园圃 (`tech.cotton_gardening`)：野生棉铃采集提供热带作物栽培、采收与商品化处理能力中的操作与材料处理方法，棉花园圃直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 渔舟 (`tech.fishing_boats`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -3365,7 +3238,7 @@
 | 研究成本 | 3900 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | identification |
 | 布局路线 | branch.textile\_fibers |
 | 主要路线 | 工艺 · 纺织 (\`route.craft.textiles\`) |
@@ -3373,20 +3246,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | observation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 纤维捻制 (`tech.fiber_twisting`)
+无
 
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
   - 已发现信号「亚麻」（bio.flax）
-  - 已发现信号「棉花」（bio.cotton）
+  - 已发现信号「韧皮纤维植物」（bio.bast\_fiber）
   - 已发现信号「亚麻样本接触」（contact.flax）
 
 #### 效果摘要
 
-织布业产出 +10%
+织布业产出 +18%
 
 #### 机会成本
 
@@ -3405,19 +3278,19 @@
 
 #### 永久 Modifier 条款
 
-- 织布业：`country.output.family.cloth_weaving_factor`：+10%
+- 织布业：`country.output.family.cloth_weaving_factor`：+18%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 沤麻 (`tech.flax_retting`)：亚麻与韧皮辨识提供纤维处理、纺纱、织造与服装生产工艺中的识别与证据标准，沤麻直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
 无
-
-#### 应用交汇目标
-
-- 畜群管理 (`tech.herd_management`)
 
 #### 作为候选参与的里程碑
 
@@ -3433,7 +3306,7 @@
 | 研究成本 | 0 科技点（`technology_points`） |
 | 节点标记 | 开局科技、区域开局候选 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.textile\_fibers |
 | 主要路线 | 工艺 · 纺织 (\`route.craft.textiles\`) |
@@ -3441,7 +3314,7 @@
 | 开局能力标签 | \`starter.clothing\` |
 | 效果配置 | foraging |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
@@ -3449,12 +3322,12 @@
 
 - 满足其一：
   - 已发现信号「亚麻」（bio.flax）
-  - 已发现信号「草原」（landform.grassland）
-  - 已发现信号「森林」（landform.forest）
+  - 已发现信号「韧皮纤维植物」（bio.bast\_fiber）
+  - 已发现信号「亚麻样本接触」（contact.flax）
 
 #### 效果摘要
 
-解锁物资：韧皮纤维；解锁物资：衣物；解锁建筑：野生韧皮纤维营地；开放通用职业阶层岗位
+解锁物资：韧皮纤维；解锁物资：衣物；解锁建筑：野生韧皮纤维营地；解锁建筑：韧皮裹衣棚
 
 #### 机会成本
 
@@ -3472,27 +3345,23 @@
 - **韧皮纤维**（`good`）：`good.bast_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
 - **衣物**（`good`）：`good.clothing` → `production_access` `unlock` `1.0`；`existing_binding`
 - **野生韧皮纤维营地**（`building`）：`building.bast_fiber_camp` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **韧皮纤维**（`good`）：`good.bast_fiber` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 - **韧皮裹衣棚**（`building`）：`building.bast_wrap_shelter` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **衣物**（`good`）：`good.clothing` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **韧皮纤维**（`good`）：`good.bast_fiber` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
 无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 畜群管理 (`tech.herd_management`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -3508,7 +3377,7 @@
 | 研究成本 | 3900 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | identification |
 | 布局路线 | branch.tropical\_commodities |
 | 主要路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
@@ -3516,20 +3385,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | observation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 野生棉铃采集 (`tech.wild_cotton_collection`)
+无
 
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
   - 已发现信号「香料作物」（bio.spice）
   - 已发现信号「香料样本接触」（contact.spice）
-  - 已发现信号「种植园承载力」（resource.plantation\_land）
 
 #### 效果摘要
 
-专用商品作物农业产出 +10%
+专用商品作物农业产出 +18%
 
 #### 机会成本
 
@@ -3548,19 +3416,19 @@
 
 #### 永久 Modifier 条款
 
-- 专用商品作物农业：`country.output.family.specialty_commodity_crops_factor`：+10%
+- 专用商品作物农业：`country.output.family.specialty_commodity_crops_factor`：+18%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 野生香料采集 (`tech.wild_spice_collection`)：香料植物辨识提供热带作物栽培、采收与商品化处理能力中的识别与证据标准，野生香料采集直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
 无
-
-#### 应用交汇目标
-
-- 渔舟 (`tech.fishing_boats`)
 
 #### 作为候选参与的里程碑
 
@@ -3574,9 +3442,9 @@
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 农业 (`agriculture`) |
 | 研究成本 | 3400 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.tropical\_commodities |
 | 主要路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
@@ -3584,20 +3452,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | foraging |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-无
+- 香料植物辨识 (`tech.spice_identification`)：香料植物辨识提供热带作物栽培、采收与商品化处理能力中的识别与证据标准，野生香料采集直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
   - 已发现信号「香料作物」（bio.spice）
   - 已发现信号「香料样本接触」（contact.spice）
-  - 已发现信号「种植园承载力」（resource.plantation\_land）
 
 #### 效果摘要
 
-解锁物资：香料；专用商品作物农业产出 +12%；国家协同能力 +3%
+解锁物资：香料；专用商品作物农业产出 +28%；热害损失 -8%
 
 #### 机会成本
 
@@ -3616,27 +3483,25 @@
 
 #### 永久 Modifier 条款
 
-- 专用商品作物农业：`country.output.family.specialty_commodity_crops_factor`：+12%
-- `country.output.agriculture_factor`：+3%
+- 专用商品作物农业：`country.output.family.specialty_commodity_crops_factor`：+28%
+- `country.climate.heat_stress_factor`：+8%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 橡胶树辨识 (`tech.rubber_identification`)
-- 香料栽培 (`tech.spice_cultivation`)
-- 遮阴香料园 (`tech.spice_shade_gardening`)
+- 香料栽培 (`tech.spice_cultivation`)：野生香料采集提供热带作物栽培、采收与商品化处理能力中的操作与材料处理方法，香料栽培直接使用这一能力完成其工艺或组织设计
+- 遮阴香料园 (`tech.spice_shade_gardening`)：野生香料采集提供热带作物栽培、采收与商品化处理能力中的操作与材料处理方法，遮阴香料园直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 遮阴香料园 (`tech.spice_shade_gardening`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 遮阴香料园 (`tech.spice_shade_gardening`)
-- 渔舟 (`tech.fishing_boats`)
+无
 
 #### 作为候选参与的里程碑
 
-- 定居知识 (`tech.settled_knowledge`)
+无
 
 ### 橡胶树辨识 (`tech.rubber_identification`)
 
@@ -3648,7 +3513,7 @@
 | 研究成本 | 3900 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | identification |
 | 布局路线 | branch.tropical\_commodities |
 | 主要路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
@@ -3656,20 +3521,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | observation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 野生香料采集 (`tech.wild_spice_collection`)
+无
 
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
   - 已发现信号「橡胶树」（bio.rubber）
   - 已发现信号「橡胶样本接触」（contact.rubber）
-  - 已发现信号「森林」（landform.forest）
 
 #### 效果摘要
 
-化学工业产出 +10%
+化学工业产出 +18%
 
 #### 机会成本
 
@@ -3688,19 +3552,19 @@
 
 #### 永久 Modifier 条款
 
-- 化学工业：`country.output.family.chemical_industry_factor`：+10%
+- 化学工业：`country.output.family.chemical_industry_factor`：+18%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 野生割胶 (`tech.wild_latex_tapping`)：橡胶树辨识提供热带作物栽培、采收与商品化处理能力中的识别与证据标准，野生割胶直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
 无
-
-#### 应用交汇目标
-
-- 渔舟 (`tech.fishing_boats`)
 
 #### 作为候选参与的里程碑
 
@@ -3714,30 +3578,29 @@
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 3400 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | branch.petroleum\_materials |
+| 布局路线 | branch.tropical\_commodities |
 | 主要路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
 | 全部路线 | 作物 · 热带作物 (\`route.crop.tropical\`)；材料 · 合成材料 (\`route.material.materials\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | craft |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-无
+- 橡胶树辨识 (`tech.rubber_identification`)：橡胶树辨识提供热带作物栽培、采收与商品化处理能力中的识别与证据标准，野生割胶直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
   - 已发现信号「橡胶树」（bio.rubber）
   - 已发现信号「橡胶样本接触」（contact.rubber）
-  - 已发现信号「森林」（landform.forest）
 
 #### 效果摘要
 
-解锁物资：天然乳胶；解锁建筑：野生割胶营地；开放通用职业阶层岗位；适应温度条件；野生割胶营地产出 +25%
+解锁物资：天然乳胶；解锁建筑：野生割胶营地；采掘部门产出 +12%
 
 #### 机会成本
 
@@ -3754,31 +3617,26 @@
 
 - **天然乳胶**（`good`）：`good.latex` → `production_access` `unlock` `1.0`；`existing_binding`
 - **野生割胶营地**（`building`）：`building.rubber_tapping_camp` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **天然乳胶**（`good`）：`good.latex` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **温度**（`climate`）：`climate.temperature` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
-- **水分**（`climate`）：`climate.moisture` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 野生割胶营地：`country.output.building.rubber_tapping_camp_factor`：+25%
+- `country.output.extractive_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 天然橡胶加工 (`tech.rubber_working`)
+- 天然橡胶加工 (`tech.rubber_working`)：野生割胶提供热带作物栽培、采收与商品化处理能力中的操作与材料处理方法，天然橡胶加工直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 天然橡胶加工 (`tech.rubber_working`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 天然橡胶加工 (`tech.rubber_working`)
-- 卤水采集 (`tech.brine_collection`)
+无
 
 #### 作为候选参与的里程碑
 
-- 定居知识 (`tech.settled_knowledge`)
+无
 
 ### 砂金辨识 (`tech.gold_placer_identification`)
 
@@ -3790,86 +3648,15 @@
 | 研究成本 | 3900 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | identification |
-| 布局路线 | branch.water\_wind |
+| 布局路线 | branch.nonferrous\_metals |
 | 主要路线 | 资源 · 黄金 (\`route.resource.gold\`) |
 | 全部路线 | 资源 · 黄金 (\`route.resource.gold\`)；地理 · 河流 (\`route.geography.river\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | observation |
 
-#### 前置科技（决定研发资格）
-
-- 淡水岸捕 (`tech.freshwater_fishing`)
-
-#### 发现启发（仅用于揭示）
-
-- 满足其一：
-  - 已发现信号「金矿」（resource.gold\_ore）
-  - 已发现信号「银矿」（resource.silver\_ore）
-  - 已发现信号「河湖水系」（landform.freshwater\_access）
-
-#### 效果摘要
-
-解锁建筑：木槽溜洗场；开放通用职业阶层岗位；需要河流地块条件；木槽溜洗场产出 +20%
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 1 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 木槽溜洗场 (`primitive_gold_sluice`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-- **木槽溜洗场**（`building`）：`building.primitive_gold_sluice` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **含金砂矿**（`good`）：`good.gold_ore` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **河流**（`tile`）：`tile.river` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-- 木槽溜洗场：`country.output.building.primitive_gold_sluice_factor`：+20%
-
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
-
-无
-
-#### 应用交汇目标
-
-- 野生稻采集 (`tech.wild_rice_collection`)
-
-#### 作为候选参与的里程碑
-
-无
-
-### 粗陶淘金 (`tech.gold_panning`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.gold_panning` |
-| 时代 | 石器时代 (`stone`) |
-| 领域 | 工程 (`engineering`) |
-| 研究成本 | 0 科技点（`technology_points`） |
-| 节点标记 | 开局科技、区域开局候选 |
-| 网络角色 | branch |
-| 锚点类型 | support |
-| 节点角色 | handling |
-| 布局路线 | branch.water\_wind |
-| 主要路线 | 资源 · 黄金 (\`route.resource.gold\`) |
-| 全部路线 | 资源 · 黄金 (\`route.resource.gold\`)；地理 · 河流 (\`route.geography.river\`) |
-| 开局能力标签 | \`starter.precious\_metal\` |
-| 效果配置 | resource |
-
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
@@ -3878,302 +3665,10 @@
 - 满足其一：
   - 已发现信号「金矿」（resource.gold\_ore）
   - 已发现信号「河湖水系」（landform.freshwater\_access）
-  - 已发现信号「河谷」（landform.river\_valley）
 
 #### 效果摘要
 
-解锁物资：黄金；解锁物资：含金砂矿；解锁建筑：河滩淘金场；开放通用职业阶层岗位
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 1 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 黄金 (`gold`)；含金砂矿 (`gold_ore`)
-- **建筑 / 生产方式：** 河滩淘金场 (`placer_gold_working`)
-- **自然资源：** 金矿 (`gold_ore`)
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 砂金淘洗精炼棚 (`gold_washing_refinery`)；木槽溜洗场 (`primitive_gold_sluice`)
-
-#### 结构化内容效果
-
-- **黄金**（`good`）：`good.gold` → `production_access` `unlock` `1.0`；`existing_binding`
-- **含金砂矿**（`good`）：`good.gold_ore` → `production_access` `unlock` `1.0`；`existing_binding`
-- **河滩淘金场**（`building`）：`building.placer_gold_working` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **含金砂矿**（`good`）：`good.gold_ore` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **金矿**（`resource`）：`resource.gold_ore` → `local_resource_access` `unlock` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-无
-
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
-
-无
-
-#### 应用交汇目标
-
-- 野生稻采集 (`tech.wild_rice_collection`)
-
-#### 作为候选参与的里程碑
-
-无
-
-### 地表银脉辨识 (`tech.silver_vein_identification`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.silver_vein_identification` |
-| 时代 | 石器时代 (`stone`) |
-| 领域 | 科学 (`science`) |
-| 研究成本 | 3900 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | support |
-| 节点角色 | identification |
-| 布局路线 | backbone.knowledge\_computation |
-| 主要路线 | 资源 · 白银 (\`route.resource.silver\`) |
-| 全部路线 | 资源 · 白银 (\`route.resource.silver\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | observation |
-
-#### 前置科技（决定研发资格）
-
-- 季节历 (`tech.seasonal_calendar`)
-
-#### 发现启发（仅用于揭示）
-
-- 满足其一：
-  - 已发现信号「金矿」（resource.gold\_ore）
-  - 已发现信号「银矿」（resource.silver\_ore）
-  - 已发现信号「河湖水系」（landform.freshwater\_access）
-
-#### 效果摘要
-
-解锁建筑：浅坑银矿作业；开放通用职业阶层岗位；需要高海拔地块条件；浅坑银矿作业产出 +20%
-
-#### 机会成本
-
-占用通用研究预算，延后同代专业路线锚点
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 浅坑银矿作业 (`shallow_silver_working`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-- **浅坑银矿作业**（`building`）：`building.shallow_silver_working` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **含银矿石**（`good`）：`good.silver_ore` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **高海拔**（`tile`）：`tile.elevation` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-- 浅坑银矿作业：`country.output.building.shallow_silver_working_factor`：+20%
-
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
-
-无
-
-#### 应用交汇目标
-
-无
-
-#### 作为候选参与的里程碑
-
-无
-
-### 地表银矿拣采 (`tech.surface_silver_collection`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.surface_silver_collection` |
-| 时代 | 石器时代 (`stone`) |
-| 领域 | 工程 (`engineering`) |
-| 研究成本 | 0 科技点（`technology_points`） |
-| 节点标记 | 开局科技、区域开局候选 |
-| 网络角色 | backbone |
-| 锚点类型 | support |
-| 节点角色 | handling |
-| 布局路线 | backbone.tools\_machinery |
-| 主要路线 | 资源 · 白银 (\`route.resource.silver\`) |
-| 全部路线 | 资源 · 白银 (\`route.resource.silver\`) |
-| 开局能力标签 | \`starter.precious\_metal\` |
-| 效果配置 | resource |
-
-#### 前置科技（决定研发资格）
-
-无
-
-#### 发现启发（仅用于揭示）
-
-- 满足其一：
-  - 已发现信号「银矿」（resource.silver\_ore）
-  - 已发现信号「山地」（landform.mountain）
-  - 已发现信号「高原」（landform.high\_plateau）
-
-#### 效果摘要
-
-解锁物资：白银；解锁物资：含银矿石；解锁建筑：露天银矿；开放通用职业阶层岗位
-
-#### 机会成本
-
-占用通用研究预算，延后同代专业路线锚点
-
-#### 内容解锁
-
-- **物资：** 白银 (`silver`)；含银矿石 (`silver_ore`)
-- **建筑 / 生产方式：** 露天银矿 (`surface_silver_working`)
-- **自然资源：** 银矿 (`silver_ore`)
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 浅坑银矿作业 (`shallow_silver_working`)；银矿火试炉 (`silver_fire_assay_hearth`)
-
-#### 结构化内容效果
-
-- **白银**（`good`）：`good.silver` → `production_access` `unlock` `1.0`；`existing_binding`
-- **含银矿石**（`good`）：`good.silver_ore` → `production_access` `unlock` `1.0`；`existing_binding`
-- **露天银矿**（`building`）：`building.surface_silver_working` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **含银矿石**（`good`）：`good.silver_ore` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **银矿**（`resource`）：`resource.silver_ore` → `local_resource_access` `unlock` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-无
-
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
-
-无
-
-#### 应用交汇目标
-
-无
-
-#### 作为候选参与的里程碑
-
-无
-
-### 枯枝采集 (`tech.deadwood_collection`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.deadwood_collection` |
-| 时代 | 石器时代 (`stone`) |
-| 领域 | 工程 (`engineering`) |
-| 研究成本 | 0 科技点（`technology_points`） |
-| 节点标记 | 开局科技、区域开局候选 |
-| 网络角色 | branch |
-| 锚点类型 | support |
-| 节点角色 | handling |
-| 布局路线 | branch.forest\_biomass |
-| 主要路线 | 生态 · 森林 (\`route.ecology.forest\`) |
-| 全部路线 | 生态 · 森林 (\`route.ecology.forest\`) |
-| 开局能力标签 | \`starter.construction\` |
-| 效果配置 | foraging |
-
-#### 前置科技（决定研发资格）
-
-无
-
-#### 发现启发（仅用于揭示）
-
-- 满足其一：
-  - 已发现信号「木材」（resource.timber）
-  - 已发现信号「森林」（landform.forest）
-  - 已发现信号「针叶林」（landform.conifer\_forest）
-
-#### 效果摘要
-
-解锁物资：原木；解锁建筑：枯枝采集营地；开放通用职业阶层岗位；解锁建筑：伐木场
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 1 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 原木 (`logs`)
-- **建筑 / 生产方式：** 枯枝采集营地 (`deadwood_gathering_camp`)；伐木场 (`timber_collector`)
-- **自然资源：** 木材 (`timber`)
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 树皮纸工坊 (`bark_paper_workshop`)；覆土木炭窑 (`charcoal_pit`)；露天黏土坑 (`early_clay_pit`)；商栈 (`merchant_post`)
-
-#### 结构化内容效果
-
-- **原木**（`good`）：`good.logs` → `production_access` `unlock` `1.0`；`existing_binding`
-- **枯枝采集营地**（`building`）：`building.deadwood_gathering_camp` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **原木**（`good`）：`good.logs` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **伐木场**（`building`）：`building.timber_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **木材**（`resource`）：`resource.timber` → `local_resource_access` `unlock` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-无
-
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
-
-无
-
-#### 应用交汇目标
-
-- 手制陶器 (`tech.hand_pottery`)
-
-#### 作为候选参与的里程碑
-
-无
-
-### 芦苇辨识 (`tech.reed_identification`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.reed_identification` |
-| 时代 | 石器时代 (`stone`) |
-| 领域 | 科学 (`science`) |
-| 研究成本 | 3400 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
-| 网络角色 | branch |
-| 锚点类型 | route\_anchor |
-| 节点角色 | identification |
-| 布局路线 | branch.water\_wind |
-| 主要路线 | 地理 · 河流 (\`route.geography.river\`) |
-| 全部路线 | 地理 · 河流 (\`route.geography.river\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | observation |
-
-#### 前置科技（决定研发资格）
-
-无
-
-#### 发现启发（仅用于揭示）
-
-- 满足其一：
-  - 已发现信号「芦苇」（bio.reed）
-  - 已发现信号「沼泽」（landform.marsh）
-  - 已发现信号「河湖水系」（landform.freshwater\_access）
-
-#### 效果摘要
-
-科研机构产出 +12%；国家协同能力 +3%
+黄金采掘产出 +18%
 
 #### 机会成本
 
@@ -4192,45 +3687,312 @@
 
 #### 永久 Modifier 条款
 
-- 科研机构：`country.output.family.research_institution_factor`：+12%
-- `country.research.science_efficiency`：+3%
+- 黄金采掘：`country.output.family.gold_extraction_factor`：+18%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 灌溉 (`tech.irrigation`)
+无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 灌溉 (`tech.irrigation`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 灌溉 (`tech.irrigation`)
-- 野生稻采集 (`tech.wild_rice_collection`)
+无
 
 #### 作为候选参与的里程碑
 
-- 定居知识 (`tech.settled_knowledge`)
+无
 
-### 芦苇收割 (`tech.reed_harvesting`)
+### 粗陶淘金 (`tech.gold_panning`)
 
 | 字段 | 内容 |
 | --- | --- |
-| 稳定 ID | `tech.reed_harvesting` |
+| 稳定 ID | `tech.gold_panning` |
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 0 科技点（`technology_points`） |
 | 节点标记 | 开局科技、区域开局候选 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | branch.water\_wind |
-| 主要路线 | 地理 · 河流 (\`route.geography.river\`) |
-| 全部路线 | 地理 · 河流 (\`route.geography.river\`) |
+| 布局路线 | branch.nonferrous\_metals |
+| 主要路线 | 资源 · 黄金 (\`route.resource.gold\`) |
+| 全部路线 | 资源 · 黄金 (\`route.resource.gold\`)；地理 · 河流 (\`route.geography.river\`) |
+| 开局能力标签 | \`starter.precious\_metal\` |
+| 效果配置 | resource |
+
+#### 硬前置（决定研发资格）
+
+无
+
+#### 发现启发（仅用于揭示）
+
+- 已发现信号「金矿」（resource.gold\_ore）
+
+#### 效果摘要
+
+解锁物资：含金砂矿；解锁建筑：河滩淘金场；解锁建筑：木槽溜洗场；可利用资源：金矿
+
+#### 机会成本
+
+转入该路线需补齐历史锚点；时代 1 后的生产方式依赖专用资本、岗位或地理条件
+
+#### 内容解锁
+
+- **物资：** 含金砂矿 (`gold_ore`)
+- **建筑 / 生产方式：** 河滩淘金场 (`placer_gold_working`)；木槽溜洗场 (`primitive_gold_sluice`)
+- **自然资源：** 金矿 (`gold_ore`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 砂金淘洗精炼棚 (`gold_washing_refinery`)
+
+#### 结构化内容效果
+
+- **含金砂矿**（`good`）：`good.gold_ore` → `production_access` `unlock` `1.0`；`existing_binding`
+- **河滩淘金场**（`building`）：`building.placer_gold_working` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **木槽溜洗场**（`building`）：`building.primitive_gold_sluice` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **金矿**（`resource`）：`resource.gold_ore` → `local_resource_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 地表银脉辨识 (`tech.silver_vein_identification`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.silver_vein_identification` |
+| 时代 | 石器时代 (`stone`) |
+| 领域 | 科学 (`science`) |
+| 研究成本 | 3900 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | backbone |
+| 节点角色 | identification |
+| 布局路线 | branch.nonferrous\_metals |
+| 主要路线 | 资源 · 白银 (\`route.resource.silver\`) |
+| 全部路线 | 资源 · 白银 (\`route.resource.silver\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | observation |
+
+#### 硬前置（决定研发资格）
+
+无
+
+#### 发现启发（仅用于揭示）
+
+- 已发现信号「银矿」（resource.silver\_ore）
+
+#### 效果摘要
+
+解锁建筑：浅坑银矿作业
+
+#### 机会成本
+
+占用通用研究预算，延后同代专业路线锚点
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 浅坑银矿作业 (`shallow_silver_working`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **浅坑银矿作业**（`building`）：`building.shallow_silver_working` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 地表银矿拣采 (`tech.surface_silver_collection`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.surface_silver_collection` |
+| 时代 | 石器时代 (`stone`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 0 科技点（`technology_points`） |
+| 节点标记 | 开局科技、区域开局候选 |
+| 网络角色 | branch |
+| 锚点类型 | backbone |
+| 节点角色 | handling |
+| 布局路线 | branch.nonferrous\_metals |
+| 主要路线 | 资源 · 白银 (\`route.resource.silver\`) |
+| 全部路线 | 资源 · 白银 (\`route.resource.silver\`) |
+| 开局能力标签 | \`starter.precious\_metal\` |
+| 效果配置 | resource |
+
+#### 硬前置（决定研发资格）
+
+无
+
+#### 发现启发（仅用于揭示）
+
+- 已发现信号「银矿」（resource.silver\_ore）
+
+#### 效果摘要
+
+解锁物资：白银；解锁物资：含银矿石；解锁建筑：露天银矿；可利用资源：银矿
+
+#### 机会成本
+
+占用通用研究预算，延后同代专业路线锚点
+
+#### 内容解锁
+
+- **物资：** 白银 (`silver`)；含银矿石 (`silver_ore`)
+- **建筑 / 生产方式：** 露天银矿 (`surface_silver_working`)
+- **自然资源：** 银矿 (`silver_ore`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 浅坑银矿作业 (`shallow_silver_working`)；银矿火试炉 (`silver_fire_assay_hearth`)
+
+#### 结构化内容效果
+
+- **白银**（`good`）：`good.silver` → `production_access` `unlock` `1.0`；`existing_binding`
+- **含银矿石**（`good`）：`good.silver_ore` → `production_access` `unlock` `1.0`；`existing_binding`
+- **露天银矿**（`building`）：`building.surface_silver_working` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **银矿**（`resource`）：`resource.silver_ore` → `local_resource_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 枯枝采集 (`tech.deadwood_collection`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.deadwood_collection` |
+| 时代 | 石器时代 (`stone`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 0 科技点（`technology_points`） |
+| 节点标记 | 开局科技、区域开局候选 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | handling |
+| 布局路线 | branch.forest\_biomass |
+| 主要路线 | 生态 · 森林 (\`route.ecology.forest\`) |
+| 全部路线 | 生态 · 森林 (\`route.ecology.forest\`) |
 | 开局能力标签 | \`starter.construction\` |
 | 效果配置 | foraging |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
+
+无
+
+#### 发现启发（仅用于揭示）
+
+- 已发现信号「木材」（resource.timber）
+
+#### 效果摘要
+
+解锁物资：原木；解锁建筑：枯枝采集营地；解锁建筑：伐木场；可利用资源：木材
+
+#### 机会成本
+
+转入该路线需补齐历史锚点；时代 1 后的生产方式依赖专用资本、岗位或地理条件
+
+#### 内容解锁
+
+- **物资：** 原木 (`logs`)
+- **建筑 / 生产方式：** 枯枝采集营地 (`deadwood_gathering_camp`)；伐木场 (`timber_collector`)
+- **自然资源：** 木材 (`timber`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 树皮纸工坊 (`bark_paper_workshop`)；覆土木炭窑 (`charcoal_pit`)；露天黏土坑 (`early_clay_pit`)；商栈 (`merchant_post`)
+
+#### 结构化内容效果
+
+- **原木**（`good`）：`good.logs` → `production_access` `unlock` `1.0`；`existing_binding`
+- **枯枝采集营地**（`building`）：`building.deadwood_gathering_camp` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **伐木场**（`building`）：`building.timber_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **木材**（`resource`）：`resource.timber` → `local_resource_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 芦苇辨识 (`tech.reed_identification`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.reed_identification` |
+| 时代 | 石器时代 (`stone`) |
+| 领域 | 科学 (`science`) |
+| 研究成本 | 3400 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | identification |
+| 布局路线 | branch.water\_wind |
+| 主要路线 | 地理 · 河流 (\`route.geography.river\`) |
+| 全部路线 | 地理 · 河流 (\`route.geography.river\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | observation |
+
+#### 硬前置（决定研发资格）
 
 无
 
@@ -4243,7 +4005,75 @@
 
 #### 效果摘要
 
-解锁物资：芦苇束；解锁建筑：芦苇收割营地；开放通用职业阶层岗位；适用于沼泽地形
+科研机构产出 +28%
+
+#### 机会成本
+
+转入该路线需补齐历史锚点；时代 1 后的生产方式依赖专用资本、岗位或地理条件
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+- 科研机构：`country.output.family.research_institution_factor`：+28%
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 芦苇收割 (`tech.reed_harvesting`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.reed_harvesting` |
+| 时代 | 石器时代 (`stone`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 0 科技点（`technology_points`） |
+| 节点标记 | 开局科技、区域开局候选 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | handling |
+| 布局路线 | branch.water\_wind |
+| 主要路线 | 地理 · 河流 (\`route.geography.river\`) |
+| 全部路线 | 地理 · 河流 (\`route.geography.river\`) |
+| 开局能力标签 | \`starter.construction\` |
+| 效果配置 | foraging |
+
+#### 硬前置（决定研发资格）
+
+无
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「芦苇」（bio.reed）
+  - 已发现信号「沼泽」（landform.marsh）
+  - 已发现信号「河湖水系」（landform.freshwater\_access）
+
+#### 效果摘要
+
+解锁物资：芦苇束；解锁建筑：芦苇收割营地；可利用资源：水田承载力
 
 #### 机会成本
 
@@ -4260,27 +4090,23 @@
 
 - **芦苇束**（`good`）：`good.reed_bundle` → `production_access` `unlock` `1.0`；`existing_binding`
 - **芦苇收割营地**（`building`）：`building.reed_cutting_camp` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **芦苇束**（`good`）：`good.reed_bundle` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **沼泽**（`terrain`）：`terrain.swamp` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
-- **洪泛平原**（`terrain`）：`terrain.floodplain` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
 - **水田承载力**（`resource`）：`resource.paddy_land` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
 无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 野生稻采集 (`tech.wild_rice_collection`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -4296,7 +4122,7 @@
 | 研究成本 | 0 科技点（`technology_points`） |
 | 节点标记 | 开局科技、区域开局候选 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.tuber\_highland |
 | 主要路线 | 气候 · 寒冷 (\`route.climate.cold\`) |
@@ -4304,20 +4130,17 @@
 | 开局能力标签 | \`starter.construction\` |
 | 效果配置 | construction |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「牧场承载力」（resource.pasture）
-  - 已发现信号「苔原」（landform.tundra）
-  - 已发现信号「高原」（landform.high\_plateau）
+- 已发现信号「牧场承载力」（resource.pasture）
 
 #### 效果摘要
 
-解锁物资：草皮块；解锁建筑：草皮切割场；开放通用职业阶层岗位；适用于苔原地形
+解锁物资：草皮块；解锁建筑：草皮切割场；可利用资源：牧场承载力
 
 #### 机会成本
 
@@ -4334,28 +4157,23 @@
 
 - **草皮块**（`good`）：`good.turf_block` → `production_access` `unlock` `1.0`；`existing_binding`
 - **草皮切割场**（`building`）：`building.turf_cutting_ground` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **草皮块**（`good`）：`good.turf_block` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **苔原**（`terrain`）：`terrain.tundra` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
-- **泥炭湿原**（`terrain`）：`terrain.moor` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
-- **高海拔**（`tile`）：`tile.elevation` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
 - **牧场承载力**（`resource`）：`resource.pasture` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
 无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 卤水采集 (`tech.brine_collection`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -4371,7 +4189,7 @@
 | 研究成本 | 0 科技点（`technology_points`） |
 | 节点标记 | 开局科技、区域开局候选 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.pastoral\_livestock |
 | 主要路线 | 生态 · 野生动物 (\`route.ecology.game\`) |
@@ -4379,20 +4197,17 @@
 | 开局能力标签 | \`starter.clothing\` |
 | 效果配置 | craft |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「野生动物」（resource.wild\_game）
-  - 已发现信号「草原」（landform.grassland）
-  - 已发现信号「森林」（landform.forest）
+- 已发现信号「野生动物」（resource.wild\_game）
 
 #### 效果摘要
 
-解锁物资：衣物；解锁建筑：生皮刮制棚；开放通用职业阶层岗位
+解锁物资：衣物；解锁建筑：生皮刮制棚
 
 #### 机会成本
 
@@ -4409,25 +4224,22 @@
 
 - **衣物**（`good`）：`good.clothing` → `production_access` `unlock` `1.0`；`existing_binding`
 - **生皮刮制棚**（`building`）：`building.hide_scraping_shelter` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **衣物**（`good`）：`good.clothing` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **生皮**（`good`）：`good.raw_hide` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
 无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 纤维捻制 (`tech.fiber_twisting`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -4443,7 +4255,7 @@
 | 研究成本 | 0 科技点（`technology_points`） |
 | 节点标记 | 开局科技、区域开局候选 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.textile\_fibers |
 | 主要路线 | 工艺 · 纺织 (\`route.craft.textiles\`) |
@@ -4451,20 +4263,17 @@
 | 开局能力标签 | \`starter.clothing\` |
 | 效果配置 | craft |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「野生动物」（resource.wild\_game）
-  - 已发现信号「苔原」（landform.tundra）
-  - 已发现信号「针叶林」（landform.conifer\_forest）
+- 已发现信号「野生动物」（resource.wild\_game）
 
 #### 效果摘要
 
-解锁物资：衣物；解锁物资：毛皮；解锁建筑：毛皮缝制棚；开放通用职业阶层岗位
+解锁物资：衣物；解锁物资：毛皮；解锁建筑：毛皮缝制棚
 
 #### 机会成本
 
@@ -4482,25 +4291,22 @@
 - **衣物**（`good`）：`good.clothing` → `production_access` `unlock` `1.0`；`existing_binding`
 - **毛皮**（`good`）：`good.fur` → `production_access` `unlock` `1.0`；`existing_binding`
 - **毛皮缝制棚**（`building`）：`building.fur_sewing_shelter` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **衣物**（`good`）：`good.clothing` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **毛皮**（`good`）：`good.fur` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
 无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 畜群管理 (`tech.herd_management`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -4516,7 +4322,7 @@
 | 研究成本 | 0 科技点（`technology_points`） |
 | 节点标记 | 开局科技、区域开局候选 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.textile\_fibers |
 | 主要路线 | 工艺 · 纺织 (\`route.craft.textiles\`) |
@@ -4524,20 +4330,17 @@
 | 开局能力标签 | \`starter.clothing\` |
 | 效果配置 | craft |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「羊」（bio.sheep）
-  - 已发现信号「牧场承载力」（resource.pasture）
-  - 已发现信号「草原」（landform.grassland）
+- 已发现信号「羊」（bio.sheep）
 
 #### 效果摘要
 
-解锁物资：衣物；解锁建筑：毡制帐篷；开放通用职业阶层岗位
+解锁物资：衣物；解锁建筑：毡制帐篷
 
 #### 机会成本
 
@@ -4554,25 +4357,22 @@
 
 - **衣物**（`good`）：`good.clothing` → `production_access` `unlock` `1.0`；`existing_binding`
 - **毡制帐篷**（`building`）：`building.felt_making_tent` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **衣物**（`good`）：`good.clothing` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **羊毛**（`good`）：`good.wool` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
 无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 畜群管理 (`tech.herd_management`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -4588,7 +4388,7 @@
 | 研究成本 | 0 科技点（`technology_points`） |
 | 节点标记 | 开局科技、区域开局候选 |
 | 网络角色 | backbone |
-| 锚点类型 | support |
+| 锚点类型 | backbone |
 | 节点角色 | handling |
 | 布局路线 | backbone.knowledge\_computation |
 | 主要路线 | 制度 · 口述传承 (\`route.institution.oral\`) |
@@ -4596,7 +4396,7 @@
 | 开局能力标签 | \`starter.knowledge\` |
 | 效果配置 | starter |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
@@ -4609,7 +4409,7 @@
 
 #### 效果摘要
 
-解锁物资：科技值；解锁建筑：口述记忆圈；开放科技职业阶层岗位
+解锁物资：科技值；解锁建筑：口述记忆圈
 
 #### 机会成本
 
@@ -4626,22 +4426,20 @@
 
 - **科技值**（`good`）：`good.technology_points` → `production_access` `unlock` `1.0`；`existing_binding`
 - **口述记忆圈**（`building`）：`building.oral_memory_circle` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **科技职业阶层**（`class`）：`class.technology` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
 无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
 无
 
@@ -4658,16 +4456,16 @@
 | 领域 | 科学 (`science`) |
 | 研究成本 | 0 科技点（`technology_points`） |
 | 节点标记 | 开局科技、区域开局候选 |
-| 网络角色 | backbone |
-| 锚点类型 | support |
+| 网络角色 | branch |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | backbone.knowledge\_computation |
+| 布局路线 | branch.natural\_history |
 | 主要路线 | 制度 · 观察 (\`route.institution.observation\`) |
 | 全部路线 | 制度 · 观察 (\`route.institution.observation\`) |
 | 开局能力标签 | \`starter.knowledge\` |
 | 效果配置 | starter |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
@@ -4680,7 +4478,7 @@
 
 #### 效果摘要
 
-解锁物资：科技值；解锁建筑：物候观察棚；开放科技职业阶层岗位
+解锁物资：科技值；解锁建筑：物候观察棚
 
 #### 机会成本
 
@@ -4697,22 +4495,20 @@
 
 - **科技值**（`good`）：`good.technology_points` → `production_access` `unlock` `1.0`；`existing_binding`
 - **物候观察棚**（`building`）：`building.seasonal_observation_shelter` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **科技职业阶层**（`class`）：`class.technology` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
 无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
 无
 
@@ -4729,16 +4525,16 @@
 | 领域 | 科学 (`science`) |
 | 研究成本 | 0 科技点（`technology_points`） |
 | 节点标记 | 开局科技、区域开局候选 |
-| 网络角色 | backbone |
-| 锚点类型 | support |
+| 网络角色 | branch |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | backbone.knowledge\_computation |
+| 布局路线 | branch.measurement\_instruments |
 | 主要路线 | 制度 · 历法 (\`route.institution.calendar\`) |
 | 全部路线 | 制度 · 历法 (\`route.institution.calendar\`)；地理 · 河流 (\`route.geography.river\`) |
 | 开局能力标签 | \`starter.knowledge\` |
 | 效果配置 | starter |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
@@ -4751,7 +4547,7 @@
 
 #### 效果摘要
 
-解锁物资：科技值；解锁建筑：洪水历法祭所；开放科技职业阶层岗位
+解锁物资：科技值；解锁建筑：洪水历法祭所
 
 #### 机会成本
 
@@ -4768,22 +4564,20 @@
 
 - **科技值**（`good`）：`good.technology_points` → `production_access` `unlock` `1.0`；`existing_binding`
 - **洪水历法祭所**（`building`）：`building.flood_calendar_shrine` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **科技职业阶层**（`class`）：`class.technology` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
 无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 灌溉 (`tech.irrigation`)：洪水历法实践提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，灌溉直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
-
-无
-
-#### 应用交汇目标
+#### 跨领域应用
 
 无
 
@@ -4801,7 +4595,7 @@
 | 研究成本 | 0 科技点（`technology_points`） |
 | 节点标记 | 开局科技、区域开局候选 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.pastoral\_livestock |
 | 主要路线 | 生态 · 牧场 (\`route.ecology.pasture\`) |
@@ -4809,20 +4603,17 @@
 | 开局能力标签 | \`starter.knowledge\` |
 | 效果配置 | starter |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「牧场承载力」（resource.pasture）
-  - 已发现信号「草原」（landform.grassland）
-  - 已发现信号「草原平原」（landform.steppe\_plain）
+- 已发现信号「牧场承载力」（resource.pasture）
 
 #### 效果摘要
 
-解锁物资：科技值；解锁建筑：牧群路线议事帐；开放通用职业阶层岗位
+解锁物资：科技值；解锁建筑：牧群路线议事帐
 
 #### 机会成本
 
@@ -4839,24 +4630,22 @@
 
 - **科技值**（`good`）：`good.technology_points` → `production_access` `unlock` `1.0`；`existing_binding`
 - **牧群路线议事帐**（`building`）：`building.pastoral_council_tent` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
 无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 纤维捻制 (`tech.fiber_twisting`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -4872,7 +4661,7 @@
 | 研究成本 | 0 科技点（`technology_points`） |
 | 节点标记 | 开局科技、区域开局候选 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.maritime\_logistics |
 | 主要路线 | 地理 · 沿海 (\`route.geography.coast\`) |
@@ -4880,7 +4669,7 @@
 | 开局能力标签 | \`starter.knowledge\` |
 | 效果配置 | starter |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
@@ -4893,7 +4682,7 @@
 
 #### 效果摘要
 
-解锁物资：科技值；解锁建筑：潮汐观察屋；开放通用职业阶层岗位
+解锁物资：科技值；解锁建筑：潮汐观察屋
 
 #### 机会成本
 
@@ -4910,24 +4699,22 @@
 
 - **科技值**（`good`）：`good.technology_points` → `production_access` `unlock` `1.0`；`existing_binding`
 - **潮汐观察屋**（`building`）：`building.tide_observation_hut` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
 无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 木炭烧制 (`tech.charcoal_burning`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -4941,9 +4728,9 @@
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 3400 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.forest\_biomass |
 | 主要路线 | 能源 · 火 (\`route.energy.fire\`) |
@@ -4951,20 +4738,17 @@
 | 开局能力标签 | 无 |
 | 效果配置 | craft |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「木材」（resource.timber）
-  - 已发现信号「森林」（landform.forest）
-  - 已发现信号「林业经营突破」（breakthrough.forest\_management）
+- 已发现信号「木材」（resource.timber）
 
 #### 效果摘要
 
-解锁物资：木炭；解锁建筑：覆土木炭窑；开放通用职业阶层岗位；覆土木炭窑产出 +25%
+解锁物资：木炭；解锁建筑：覆土木炭窑；国家建设成本 -10%
 
 #### 机会成本
 
@@ -4981,30 +4765,26 @@
 
 - **木炭**（`good`）：`good.charcoal` → `production_access` `unlock` `1.0`；`existing_binding`
 - **覆土木炭窑**（`building`）：`building.charcoal_pit` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **木炭**（`good`）：`good.charcoal` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **原木**（`good`）：`good.logs` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 覆土木炭窑：`country.output.building.charcoal_pit_factor`：+25%
+- `country.construction.cost_factor`：+10%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 手工锯木 (`tech.timber_sawing`)
+- 块炼铁 (`tech.iron_smelting`)：木炭烧制提供林木管理、木材加工与生物质利用工艺中的操作与材料处理方法，块炼铁直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 手工锯木 (`tech.timber_sawing`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 手工锯木 (`tech.timber_sawing`)
-- 手制陶器 (`tech.hand_pottery`)
+无
 
 #### 作为候选参与的里程碑
 
-- 定居知识 (`tech.settled_knowledge`)
+无
 
 ### 铜矿焙烧 (`tech.copper_ore_roasting`)
 
@@ -5014,9 +4794,9 @@
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 3400 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.heavy\_industry |
 | 主要路线 | 资源 · 铜 (\`route.resource.copper\`) |
@@ -5024,20 +4804,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | metallurgy |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-无
+- 铜退火 (`tech.copper_annealing`)：铜退火提供矿物识别、有色冶炼与合金配制能力中的成套生产流程，铜矿焙烧直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
+- 全部满足：
   - 已发现信号「铜矿」（resource.copper\_ore）
-  - 已发现信号「锡矿」（resource.tin\_ore）
   - 已发现信号「金属加工突破」（breakthrough.metalworking）
 
 #### 效果摘要
 
-解锁物资：铜矿石；解锁建筑：铜矿；开放通用职业阶层岗位；开放通用职业阶层岗位；铜矿产出 +25%
+解锁物资：铜矿石；解锁建筑：铜矿；采掘部门产出 +12%
 
 #### 机会成本
 
@@ -5054,31 +4833,26 @@
 
 - **铜矿石**（`good`）：`good.copper_ore` → `production_access` `unlock` `1.0`；`existing_binding`
 - **铜矿**（`building`）：`building.copper_ore_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **铜矿石**（`good`）：`good.copper_ore` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 铜矿：`country.output.building.copper_ore_collector_factor`：+25%
+- `country.output.extractive_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 畜力牵引 (`tech.animal_traction`)
+无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 畜力牵引 (`tech.animal_traction`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 畜力牵引 (`tech.animal_traction`)
-- 自然铜冷锤 (`tech.natural_copper_working`)
+无
 
 #### 作为候选参与的里程碑
 
-- 定居知识 (`tech.settled_knowledge`)
+无
 
 ### 卤水采集 (`tech.brine_collection`)
 
@@ -5088,9 +4862,9 @@
 | 时代 | 石器时代 (`stone`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 3400 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.industrial\_chemistry |
 | 主要路线 | 资源 · 矿产 (\`route.resource.minerals\`) |
@@ -5098,7 +4872,7 @@
 | 开局能力标签 | 无 |
 | 效果配置 | resource |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
@@ -5107,11 +4881,10 @@
 - 满足其一：
   - 已发现信号「盐」（resource.salt）
   - 已发现信号「硫磺」（resource.sulfur）
-  - 已发现信号「黏土」（resource.clay）
 
 #### 效果摘要
 
-解锁物资：卤水；解锁建筑：卤水采集池；开放通用职业阶层岗位；可利用资源：盐；卤水采集池产出 +25%
+解锁物资：卤水；解锁建筑：卤水采集池；可利用资源：盐；制造部门产出 +12%
 
 #### 机会成本
 
@@ -5128,30 +4901,28 @@
 
 - **卤水**（`good`）：`good.brine` → `production_access` `unlock` `1.0`；`existing_binding`
 - **卤水采集池**（`building`）：`building.brine_gathering_basin` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **卤水**（`good`）：`good.brine` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 - **盐**（`resource`）：`resource.salt` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 卤水采集池：`country.output.building.brine_gathering_basin_factor`：+25%
+- `country.output.manufacturing_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 盐渍保存 (`tech.salt_preservation`)
+- 盐渍保存 (`tech.salt_preservation`)：卤水采集提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，盐渍保存直接使用这一能力完成其工艺或组织设计
+- 火药配制 (`tech.gunpowder_formulation`)：卤水采集提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，火药配制直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 盐渍保存 (`tech.salt_preservation`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 盐渍保存 (`tech.salt_preservation`)
-- 野生玉米采集 (`tech.wild_maize_collection`)
+无
 
 #### 作为候选参与的里程碑
 
-- 定居知识 (`tech.settled_knowledge`)
+无
 
 ### 燧石辨识 (`tech.flint_identification`)
 
@@ -5163,7 +4934,7 @@
 | 研究成本 | 3900 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | identification |
 | 布局路线 | branch.construction\_materials |
 | 主要路线 | 材料 · 石材 (\`route.material.stone\`) |
@@ -5171,20 +4942,17 @@
 | 开局能力标签 | 无 |
 | 效果配置 | observation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 土建筑 (`tech.earth_building`)
+无
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「石料」（resource.stone）
-  - 已发现信号「燧石」（resource.flint）
-  - 已发现信号「黏土」（resource.clay）
+- 已发现信号「燧石」（resource.flint）
 
 #### 效果摘要
 
-解锁物资：燧石原料；可利用资源：燧石；金属工具业产出 +10%
+解锁物资：燧石原料；可利用资源：燧石；金属工具业产出 +18%
 
 #### 机会成本
 
@@ -5204,19 +4972,19 @@
 
 #### 永久 Modifier 条款
 
-- 金属工具业：`country.output.family.metal_toolmaking_factor`：+10%
+- 金属工具业：`country.output.family.metal_toolmaking_factor`：+18%
 
-#### 直接后继（硬前置关系）
-
-- 黏土调制 (`tech.clay_preparation`)
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
 
-- 木炭烧制 (`tech.charcoal_burning`)
+无
+
+#### 跨领域应用
+
+无
 
 #### 作为候选参与的里程碑
 
@@ -5232,7 +5000,7 @@
 | 研究成本 | 3900 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.construction\_materials |
 | 主要路线 | 材料 · 黏土 (\`route.material.clay\`) |
@@ -5240,20 +5008,17 @@
 | 开局能力标签 | 无 |
 | 效果配置 | craft |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 燧石辨识 (`tech.flint_identification`)
+- 黏土辨识 (`tech.clay_identification`)：黏土辨识提供土石、陶瓷、玻璃和工程构件制造能力中的识别与证据标准，黏土调制直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「黏土」（resource.clay）
-  - 已发现信号「硅砂」（resource.silica\_sand）
-  - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
+- 已发现信号「黏土」（resource.clay）
 
 #### 效果摘要
 
-解锁物资：砖块；解锁建筑：黏土坑；开放通用职业阶层岗位；开放通用职业阶层岗位；黏土坑产出 +20%
+解锁物资：砖块；解锁建筑：黏土坑；解锁建筑：露天黏土坑
 
 #### 机会成本
 
@@ -5270,27 +5035,24 @@
 
 - **砖块**（`good`）：`good.bricks` → `production_access` `unlock` `1.0`；`existing_binding`
 - **黏土坑**（`building`）：`building.clay_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **黏土**（`good`）：`good.clay` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **露天黏土坑**（`building`）：`building.early_clay_pit` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 黏土坑：`country.output.building.clay_collector_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 手制陶器 (`tech.hand_pottery`)：黏土调制提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，手制陶器直接使用这一能力完成其工艺或组织设计
+- 窑烧控制 (`tech.kiln_firing`)：黏土调制提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，窑烧控制直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
 无
-
-#### 应用交汇目标
-
-- 木炭烧制 (`tech.charcoal_burning`)
 
 #### 作为候选参与的里程碑
 
@@ -5306,7 +5068,7 @@
 | 研究成本 | 3400 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | handling |
 | 布局路线 | branch.construction\_materials |
 | 主要路线 | 材料 · 黏土 (\`route.material.clay\`) |
@@ -5314,20 +5076,17 @@
 | 开局能力标签 | 无 |
 | 效果配置 | craft |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-无
+- 黏土调制 (`tech.clay_preparation`)：黏土调制提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，手制陶器直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「黏土」（resource.clay）
-  - 已发现信号「硅砂」（resource.silica\_sand）
-  - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
+- 已发现信号「黏土」（resource.clay）
 
 #### 效果摘要
 
-解锁物资：陶器；解锁建筑：露天陶器烧造；开放通用职业阶层岗位；露天陶器烧造产出 +25%
+解锁物资：陶器；解锁建筑：露天陶器烧造；国家建设成本 -10%
 
 #### 机会成本
 
@@ -5344,27 +5103,22 @@
 
 - **陶器**（`good`）：`good.pottery` → `production_access` `unlock` `1.0`；`existing_binding`
 - **露天陶器烧造**（`building`）：`building.open_pottery_hearth` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **陶器**（`good`）：`good.pottery` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **黏土**（`good`）：`good.clay` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **原木**（`good`）：`good.logs` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 露天陶器烧造：`country.output.building.open_pottery_hearth_factor`：+25%
+- `country.construction.cost_factor`：+10%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 日晒土坯 (`tech.adobe_making`)
+- 陶器容器体系 (`tech.pottery`)：手制陶器提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，陶器容器体系直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 日晒土坯 (`tech.adobe_making`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 日晒土坯 (`tech.adobe_making`)
-- 木炭烧制 (`tech.charcoal_burning`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -5388,7 +5142,7 @@
 | 开局能力标签 | 无 |
 | 效果配置 | milestone |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
@@ -5398,7 +5152,7 @@
 
 #### 效果摘要
 
-科研机构产出 +10%
+科研机构产出 +25%；社会领域研究效率 +15%
 
 #### 机会成本
 
@@ -5406,23 +5160,15 @@
 
 #### 里程碑候选
 
-需要完成下列 16 项候选中的任意 5 项：
-- 控制性用火 (`tech.controlled_burning`)
-- 渔舟 (`tech.fishing_boats`)
-- 自然铜冷锤 (`tech.natural_copper_working`)
-- 纤维捻制 (`tech.fiber_twisting`)
-- 畜群管理 (`tech.herd_management`)
+需要完成下列 8 项候选中的任意 4 项：
+- 种子与繁育观察 (`tech.crop_domestication`)
+- 复合工具 (`tech.composite_tools`)
+- 自然观察 (`tech.natural_observation`)
+- 共同体分工 (`tech.communal_specialization`)
 - 野生玉米采集 (`tech.wild_maize_collection`)
-- 野生谷穗采集 (`tech.wild_wheat_collection`)
-- 野生稻采集 (`tech.wild_rice_collection`)
-- 块茎保存 (`tech.tuber_storage`)
-- 野生香料采集 (`tech.wild_spice_collection`)
-- 野生割胶 (`tech.wild_latex_tapping`)
-- 芦苇辨识 (`tech.reed_identification`)
-- 木炭烧制 (`tech.charcoal_burning`)
-- 铜矿焙烧 (`tech.copper_ore_roasting`)
-- 卤水采集 (`tech.brine_collection`)
 - 手制陶器 (`tech.hand_pottery`)
+- 季节历 (`tech.seasonal_calendar`)
+- 早期贸易 (`tech.early_trade`)
 
 #### 内容解锁
 
@@ -5437,36 +5183,18 @@
 
 #### 永久 Modifier 条款
 
-- 科研机构：`country.output.family.research_institution_factor`：+10%
+- 科研机构：`country.output.family.research_institution_factor`：+25%
+- `country.research.society_efficiency`：+15%
 
-#### 直接后继（硬前置关系）
-
-- 陶器容器体系 (`tech.pottery`)
-- 永久聚落 (`tech.permanent_settlements`)
-- 灌溉 (`tech.irrigation`)
-- 马匹驯化 (`tech.horse_domestication`)
-- 犁耕农业 (`tech.plough_agriculture`)
-- 天然橡胶加工 (`tech.rubber_working`)
-- 铜锡配比与铸造 (`tech.bronze_casting`)
-- 天文历法 (`tech.celestial_calendars`)
-- 窑烧控制 (`tech.kiln_firing`)
-- 织机织造 (`tech.loom_weaving`)
-- 畜力牵引 (`tech.animal_traction`)
-- 日晒土坯 (`tech.adobe_making`)
-- 玉米园圃 (`tech.maize_garden_horticulture`)
-- 雨养小麦田 (`tech.rainfed_wheat_cultivation`)
-- 水田稻作 (`tech.rice_paddy_cultivation`)
-- 高地块茎农业 (`tech.highland_tuber_farming`)
-- 遮阴香料园 (`tech.spice_shade_gardening`)
-- 手工锯木 (`tech.timber_sawing`)
-- 发酵保存 (`tech.fermentation`)
-- 盐渍保存 (`tech.salt_preservation`)
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
 
 无
 
@@ -5479,84 +5207,6 @@
 
 共 59 项科技，研究成本范围 7200-12000；时代里程碑：农耕社会 (`tech.agrarian_society`)。
 
-### 陶器容器体系 (`tech.pottery`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.pottery` |
-| 时代 | 农耕时代 (`agrarian`) |
-| 领域 | 工程 (`engineering`) |
-| 研究成本 | 8160 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
-| 网络角色 | branch |
-| 锚点类型 | route\_anchor |
-| 节点角色 | handling |
-| 布局路线 | branch.maritime\_logistics |
-| 主要路线 | 材料 · 黏土 (\`route.material.clay\`) |
-| 全部路线 | 材料 · 黏土 (\`route.material.clay\`)；制度 · 储藏 (\`route.institution.storage\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | craft |
-
-#### 前置科技（决定研发资格）
-
-- 定居知识 (`tech.settled_knowledge`)
-- 渔舟 (`tech.fishing_boats`)
-
-#### 发现启发（仅用于揭示）
-
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「黏土」（resource.clay）
-    - 已发现信号「硅砂」（resource.silica\_sand）
-    - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
-
-#### 效果摘要
-
-解锁建筑：行会陶窑；开放通用职业阶层岗位；开放通用职业阶层岗位；行会陶窑产出 +25%
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 2 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 行会陶窑 (`method_pottery_kiln_r3`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 土法炼铜炉 (`early_copper_smelter`)；活字印刷坊 (`movable_type_print_shop`)
-
-#### 结构化内容效果
-
-- **行会陶窑**（`building`）：`building.method_pottery_kiln_r3` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **陶器**（`good`）：`good.pottery` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **黏土**（`good`）：`good.clay` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **原木**（`good`）：`good.logs` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-- 行会陶窑：`country.output.building.method_pottery_kiln_r3_factor`：+25%
-
-#### 直接后继（硬前置关系）
-
-- 河运 (`tech.river_transport`)
-
-#### 同路线后继
-
-- 河运 (`tech.river_transport`)
-
-#### 应用交汇目标
-
-- 河运 (`tech.river_transport`)
-- 天然橡胶加工 (`tech.rubber_working`)
-
-#### 作为候选参与的里程碑
-
-- 农耕社会 (`tech.agrarian_society`)
-
 ### 留种选育 (`tech.seed_selection`)
 
 | 字段 | 内容 |
@@ -5565,9 +5215,9 @@
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 农业 (`agriculture`) |
 | 研究成本 | 9360 科技点（`technology_points`） |
-| 节点标记 | 无 |
+| 节点标记 | 时代关键 |
 | 网络角色 | backbone |
-| 锚点类型 | support |
+| 锚点类型 | era\_candidate |
 | 节点角色 | production\_system |
 | 布局路线 | backbone.food\_storage |
 | 主要路线 | 作物 · 通用农艺 (\`route.crop.general\`) |
@@ -5575,22 +5225,17 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 食物储藏 (`tech.food_storage`)
+- 种子与繁育观察 (`tech.crop_domestication`)：种子与繁育观察提供粮食处理、保存与农艺组织能力中的成套生产流程，留种选育直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
-    - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-    - 已发现信号「连续歉收经验」（weather.repeated\_crop\_failure）
+无
 
 #### 效果摘要
 
-解锁建筑：亚麻庄园；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：改良轮作小麦庄园；亚麻庄园产出 +20%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -5599,39 +5244,37 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 亚麻庄园 (`method_flax_collector_r3`)；改良轮作小麦庄园 (`method_wheat_farm_r5`)
+- **建筑 / 生产方式：** 无
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 亚麻庄园 (`method_flax_collector_r3`)
 
 #### 结构化内容效果
 
-- **亚麻庄园**（`building`）：`building.method_flax_collector_r3` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **亚麻纤维**（`good`）：`good.flax_fiber` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **改良轮作小麦庄园**（`building`）：`building.method_wheat_farm_r5` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **小麦**（`good`）：`good.wheat_grain` → `output_recipe_access` `enable` `1.0`；`existing_binding`
+无
 
 #### 永久 Modifier 条款
 
-- 亚麻庄园：`country.output.building.method_flax_collector_r3_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 雨养田体系 (`tech.rainfed_field_system`)
+- 香料栽培 (`tech.spice_cultivation`)：留种选育提供粮食处理、保存与农艺组织能力中的成套生产流程，香料栽培直接使用这一能力完成其工艺或组织设计
+- 雨养田体系 (`tech.rainfed_field_system`)：留种选育提供粮食处理、保存与农艺组织能力中的成套生产流程，雨养田体系直接使用这一能力完成其工艺或组织设计
+- 轮作 (`tech.crop_rotation`)：留种选育提供粮食处理、保存与农艺组织能力中的成套生产流程，轮作直接使用这一能力完成其工艺或组织设计
+- 佃作谷物 (`tech.tenant_cereal_farming`)：留种选育提供粮食处理、保存与农艺组织能力中的成套生产流程，佃作谷物直接使用这一能力完成其工艺或组织设计
+- 系统育种 (`tech.crop_breeding`)：留种选育提供粮食处理、保存与农艺组织能力中的成套生产流程，系统育种直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
 无
 
 #### 作为候选参与的里程碑
 
-无
+- 农耕社会 (`tech.agrarian_society`)
 
 ### 永久聚落 (`tech.permanent_settlements`)
 
@@ -5641,9 +5284,9 @@
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 社会 (`society`) |
 | 研究成本 | 7200 科技点（`technology_points`） |
-| 节点标记 | 无 |
+| 节点标记 | 时代关键 |
 | 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | institution |
 | 布局路线 | backbone.institutions\_exchange |
 | 主要路线 | 制度 · 聚落 (\`route.institution.settlement\`) |
@@ -5651,22 +5294,17 @@
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 定居知识 (`tech.settled_knowledge`)
+- 共同体分工 (`tech.communal_specialization`)：共同体分工提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，永久聚落直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-    - 已发现信号「河谷」（landform.river\_valley）
-    - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
+无
 
 #### 效果摘要
 
-解锁建筑：定居采集营地；开放通用职业阶层岗位；开放通用职业阶层岗位；定居采集营地产出 +25%
+解锁建筑：定居采集营地；社会领域研究效率 +15%
 
 #### 机会成本
 
@@ -5682,30 +5320,30 @@
 #### 结构化内容效果
 
 - **定居采集营地**（`building`）：`building.method_gathering_ground_r1` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **采集植物食物**（`good`）：`good.gathered_plants` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 定居采集营地：`country.output.building.method_gathering_ground_r1_factor`：+25%
+- `country.research.society_efficiency`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 记事制度 (`tech.record_keeping`)
+- 灌溉 (`tech.irrigation`)：永久聚落提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，灌溉直接使用这一能力完成其工艺或组织设计
+- 记事制度 (`tech.record_keeping`)：永久聚落提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，记事制度直接使用这一能力完成其工艺或组织设计
+- 文字 (`tech.writing`)：永久聚落提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，文字直接使用这一能力完成其工艺或组织设计
+- 道路工程 (`tech.road_engineering`)：永久聚落提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，道路工程直接使用这一能力完成其工艺或组织设计
+- 官僚行政 (`tech.state_bureaucracy`)：永久聚落提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，官僚行政直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 官僚行政 (`tech.state_bureaucracy`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 官僚行政 (`tech.state_bureaucracy`)
+无
 
 #### 作为候选参与的里程碑
 
-无
+- 农耕社会 (`tech.agrarian_society`)
 
 ### 灌溉 (`tech.irrigation`)
 
@@ -5715,9 +5353,9 @@
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 8160 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.water\_wind |
 | 主要路线 | 地理 · 河流 (\`route.geography.river\`) |
@@ -5725,23 +5363,22 @@
 | 开局能力标签 | 无 |
 | 效果配置 | hydraulic |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 定居知识 (`tech.settled_knowledge`)
-- 芦苇辨识 (`tech.reed_identification`)
+- 永久聚落 (`tech.permanent_settlements`)：永久聚落提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，灌溉直接使用这一能力完成其工艺或组织设计
+- 洪水历法实践 (`tech.flood_calendar_practice`)：洪水历法实践提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，灌溉直接使用这一能力完成其工艺或组织设计
+- 磨制石器 (`tech.ground_stone_tools`)：磨制石器提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，灌溉直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「河湖水系」（landform.freshwater\_access）
-    - 已发现信号「河谷」（landform.river\_valley）
-    - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
+- 满足其一：
+  - 已发现信号「河湖水系」（landform.freshwater\_access）
+  - 已发现信号「河谷」（landform.river\_valley）
+  - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
 
 #### 效果摘要
 
-公共营造产出 +12%；国家协同能力 +3%
+公共营造产出 +28%；洪灾损失 -8%
 
 #### 机会成本
 
@@ -5760,26 +5397,25 @@
 
 #### 永久 Modifier 条款
 
-- 公共营造：`country.output.family.construction_methods_factor`：+12%
-- `country.output.energy_factor`：+3%
+- 公共营造：`country.output.family.construction_methods_factor`：+28%
+- `country.climate.flood_loss_factor`：+8%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 灌溉测量 (`tech.irrigation_surveying`)
-- 运河工程 (`tech.canal_engineering`)
+- 灌溉测量 (`tech.irrigation_surveying`)：灌溉提供水流、风力、输配水和流域工程能力中的成套生产流程，灌溉测量直接使用这一能力完成其工艺或组织设计
+- 运河工程 (`tech.canal_engineering`)：灌溉提供水流、风力、输配水和流域工程能力中的成套生产流程，运河工程直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 运河工程 (`tech.canal_engineering`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 运河工程 (`tech.canal_engineering`)
-- 日晒土坯 (`tech.adobe_making`)
+无
 
 #### 作为候选参与的里程碑
 
-- 农耕社会 (`tech.agrarian_society`)
+无
 
 ### 游牧放牧 (`tech.pastoralism`)
 
@@ -5791,7 +5427,7 @@
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.pastoral\_livestock |
 | 主要路线 | 生态 · 牧场 (\`route.ecology.pasture\`) |
@@ -5799,22 +5435,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | livestock |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 畜群管理 (`tech.herd_management`)
+- 畜群管理 (`tech.herd_management`)：畜群管理提供畜群驯养、育种与畜产品处理能力中的成套生产流程，游牧放牧直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「牧场承载力」（resource.pasture）
-    - 已发现信号「草原」（landform.grassland）
-    - 已发现信号「马匹」（bio.horse）
+- 满足其一：
+  - 已发现信号「羊」（bio.sheep）
+  - 已发现信号「马匹」（bio.horse）
+  - 已发现信号「牛」（bio.cattle）
 
 #### 效果摘要
 
-畜牧业产出 +10%
+畜牧业产出 +18%
 
 #### 机会成本
 
@@ -5833,19 +5467,19 @@
 
 #### 永久 Modifier 条款
 
-- 畜牧业：`country.output.family.livestock_husbandry_factor`：+10%
+- 畜牧业：`country.output.family.livestock_husbandry_factor`：+18%
 
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
 
-- 雨养小麦田 (`tech.rainfed_wheat_cultivation`)
+无
+
+#### 跨领域应用
+
+无
 
 #### 作为候选参与的里程碑
 
@@ -5859,9 +5493,9 @@
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 农业 (`agriculture`) |
 | 研究成本 | 8160 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.pastoral\_livestock |
 | 主要路线 | 生态 · 草原 (\`route.ecology.steppe\`) |
@@ -5869,23 +5503,17 @@
 | 开局能力标签 | 无 |
 | 效果配置 | livestock |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 定居知识 (`tech.settled_knowledge`)
-- 畜群管理 (`tech.herd_management`)
+- 畜群管理 (`tech.herd_management`)：畜群管理提供畜群驯养、育种与畜产品处理能力中的成套生产流程，马匹驯化直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「牧场承载力」（resource.pasture）
-    - 已发现信号「草原」（landform.grassland）
-    - 已发现信号「马匹」（bio.horse）
+- 已发现信号「马匹」（bio.horse）
 
 #### 效果摘要
 
-解锁物资：马匹；解锁建筑：养马场；开放通用职业阶层岗位；开放通用职业阶层岗位；养马场产出 +25%
+解锁物资：马匹；解锁建筑：养马场；解锁建筑：马匹繁育营地；热害损失 -8%
 
 #### 机会成本
 
@@ -5902,32 +5530,27 @@
 
 - **马匹**（`good`）：`good.horses` → `production_access` `unlock` `1.0`；`existing_binding`
 - **养马场**（`building`）：`building.horse_breeder` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **马匹**（`good`）：`good.horses` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 - **马匹繁育营地**（`building`）：`building.horse_breeding_camp` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 养马场：`country.output.building.horse_breeder_factor`：+25%
+- `country.climate.heat_stress_factor`：+8%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 乳品加工 (`tech.dairy_processing`)
-- 皮纸制作 (`tech.parchment_making`)
+- 皮纸制作 (`tech.parchment_making`)：马匹驯化提供畜群驯养、育种与畜产品处理能力中的成套生产流程，皮纸制作直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 皮纸制作 (`tech.parchment_making`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 皮纸制作 (`tech.parchment_making`)
-- 雨养小麦田 (`tech.rainfed_wheat_cultivation`)
+无
 
 #### 作为候选参与的里程碑
 
-- 农耕社会 (`tech.agrarian_society`)
+无
 
 ### 犁耕农业 (`tech.plough_agriculture`)
 
@@ -5937,9 +5560,9 @@
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 7200 科技点（`technology_points`） |
-| 节点标记 | 无 |
+| 节点标记 | 时代关键 |
 | 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | handling |
 | 布局路线 | backbone.tools\_machinery |
 | 主要路线 | 作物 · 通用农艺 (\`route.crop.general\`) |
@@ -5947,22 +5570,17 @@
 | 开局能力标签 | 无 |
 | 效果配置 | tools |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 定居知识 (`tech.settled_knowledge`)
+- 复合工具 (`tech.composite_tools`)：复合工具提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，犁耕农业直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「燧石」（resource.flint）
-    - 已发现信号「石料」（resource.stone）
-    - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
+无
 
 #### 效果摘要
 
-金属工具业产出 +11%；国家协同能力 +3%
+大田作物农业产出 +25%；工程领域研究效率 +15%
 
 #### 机会成本
 
@@ -5981,24 +5599,26 @@
 
 #### 永久 Modifier 条款
 
-- 金属工具业：`country.output.family.metal_toolmaking_factor`：+11%
-- `country.output.manufacturing_factor`：+3%
+- 大田作物农业：`country.output.family.field_crop_farming_factor`：+25%
+- `country.research.engineering_efficiency`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 畜力牵引 (`tech.animal_traction`)：犁耕农业提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，畜力牵引直接使用这一能力完成其工艺或组织设计
+- 道路工程 (`tech.road_engineering`)：犁耕农业提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，道路工程直接使用这一能力完成其工艺或组织设计
+- 轮作 (`tech.crop_rotation`)：犁耕农业提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，轮作直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
-- 度量衡 (`tech.weights_and_measures`)
-
-#### 应用交汇目标
-
-- 度量衡 (`tech.weights_and_measures`)
+无
 
 #### 作为候选参与的里程碑
 
-无
+- 农耕社会 (`tech.agrarian_society`)
 
 ### 玉米选育 (`tech.maize_selection`)
 
@@ -6010,7 +5630,7 @@
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.maize\_horticulture |
 | 主要路线 | 作物 · 玉米 (\`route.crop.maize\`) |
@@ -6018,22 +5638,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 野生玉米采集 (`tech.wild_maize_collection`)
+- 野生玉米采集 (`tech.wild_maize_collection`)：野生玉米采集提供玉米栽培、选育与田间管理经验中的操作与材料处理方法，玉米选育直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「玉米」（bio.maize）
-    - 已发现信号「玉米样本接触」（contact.maize）
-    - 已发现信号「玉米选育突破」（breakthrough.maize\_selection）
+- 满足其一：
+  - 已发现信号「玉米」（bio.maize）
+  - 已发现信号「玉米样本接触」（contact.maize）
+  - 已发现信号「玉米选育突破」（breakthrough.maize\_selection）
 
 #### 效果摘要
 
-大田作物农业产出 +10%
+大田作物农业产出 +18%
 
 #### 机会成本
 
@@ -6052,19 +5670,19 @@
 
 #### 永久 Modifier 条款
 
-- 大田作物农业：`country.output.family.field_crop_farming_factor`：+10%
+- 大田作物农业：`country.output.family.field_crop_farming_factor`：+18%
 
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
 
-- 灌溉 (`tech.irrigation`)
+无
+
+#### 跨领域应用
+
+无
 
 #### 作为候选参与的里程碑
 
@@ -6080,7 +5698,7 @@
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.wheat\_rainfed |
 | 主要路线 | 气候 · 干旱 (\`route.climate.drought\`) |
@@ -6088,22 +5706,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 野生谷穗采集 (`tech.wild_wheat_collection`)
+- 野生谷穗采集 (`tech.wild_wheat_collection`)：野生谷穗采集提供谷物旱作、轮作与收获工艺中的操作与材料处理方法，旱作农业直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「旱地承载力」（resource.arable\_land）
-    - 已发现信号「干旱盆地」（landform.arid\_basin）
-    - 已发现信号「干旱经验」（weather.drought）
+- 满足其一：
+  - 已发现信号「旱地承载力」（resource.arable\_land）
+  - 已发现信号「干旱盆地」（landform.arid\_basin）
+  - 已发现信号「干旱经验」（weather.drought）
 
 #### 效果摘要
 
-大田作物农业产出 +10%
+大田作物农业产出 +18%
 
 #### 机会成本
 
@@ -6122,19 +5738,19 @@
 
 #### 永久 Modifier 条款
 
-- 大田作物农业：`country.output.family.field_crop_farming_factor`：+10%
+- 大田作物农业：`country.output.family.field_crop_farming_factor`：+18%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 旱作保水 (`tech.dryland_water_retention`)
+- 旱作保水 (`tech.dryland_water_retention`)：旱作农业提供谷物旱作、轮作与收获工艺中的成套生产流程，旱作保水直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 灌溉 (`tech.irrigation`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -6150,7 +5766,7 @@
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.tuber\_highland |
 | 主要路线 | 地理 · 高地 (\`route.geography.highland\`) |
@@ -6158,22 +5774,21 @@
 | 开局能力标签 | 无 |
 | 效果配置 | hydraulic |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 块茎保存 (`tech.tuber_storage`)
+- 块茎保存 (`tech.tuber_storage`)：块茎保存提供块茎繁育、坡地耕作与低温保存经验中的操作与材料处理方法，梯田农业直接使用这一能力完成其工艺或组织设计
+- 磨制石器 (`tech.ground_stone_tools`)：磨制石器提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，梯田农业直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「山地」（landform.mountain）
-    - 已发现信号「高原」（landform.high\_plateau）
-    - 已发现信号「梯田维护突破」（breakthrough.terrace\_maintenance）
+- 满足其一：
+  - 已发现信号「山地」（landform.mountain）
+  - 已发现信号「高原」（landform.high\_plateau）
+  - 已发现信号「梯田维护突破」（breakthrough.terrace\_maintenance）
 
 #### 效果摘要
 
-高地农业产出 +10%
+高地农业产出 +18%
 
 #### 机会成本
 
@@ -6192,19 +5807,19 @@
 
 #### 永久 Modifier 条款
 
-- 高地农业：`country.output.family.highland_crop_farming_factor`：+10%
+- 高地农业：`country.output.family.highland_crop_farming_factor`：+18%
 
-#### 直接后继（硬前置关系）
-
-- 垄作块茎 (`tech.ridge_tuber_cultivation`)
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
 
-- 日晒土坯 (`tech.adobe_making`)
+无
+
+#### 跨领域应用
+
+无
 
 #### 作为候选参与的里程碑
 
@@ -6220,7 +5835,7 @@
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | applied\_method |
 | 布局路线 | branch.tropical\_commodities |
 | 主要路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
@@ -6228,22 +5843,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 野生香料采集 (`tech.wild_spice_collection`)
+- 野生香料采集 (`tech.wild_spice_collection`)：野生香料采集提供热带作物栽培、采收与商品化处理能力中的操作与材料处理方法，香料栽培直接使用这一能力完成其工艺或组织设计
+- 留种选育 (`tech.seed_selection`)：留种选育提供粮食处理、保存与农艺组织能力中的成套生产流程，香料栽培直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「香料作物」（bio.spice）
-    - 已发现信号「香料样本接触」（contact.spice）
-    - 已发现信号「种植园承载力」（resource.plantation\_land）
+- 满足其一：
+  - 已发现信号「香料作物」（bio.spice）
+  - 已发现信号「香料样本接触」（contact.spice）
 
 #### 效果摘要
 
-专用商品作物农业产出 +10%
+专用商品作物农业产出 +18%
 
 #### 机会成本
 
@@ -6262,19 +5875,19 @@
 
 #### 永久 Modifier 条款
 
-- 专用商品作物农业：`country.output.family.specialty_commodity_crops_factor`：+10%
+- 专用商品作物农业：`country.output.family.specialty_commodity_crops_factor`：+18%
 
-#### 直接后继（硬前置关系）
-
-- 棉花园圃 (`tech.cotton_gardening`)
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
 
-- 盐渍保存 (`tech.salt_preservation`)
+无
+
+#### 跨领域应用
+
+无
 
 #### 作为候选参与的里程碑
 
@@ -6288,33 +5901,29 @@
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 8160 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | branch.petroleum\_materials |
+| 布局路线 | branch.tropical\_commodities |
 | 主要路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
 | 全部路线 | 作物 · 热带作物 (\`route.crop.tropical\`)；材料 · 合成材料 (\`route.material.materials\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | craft |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 定居知识 (`tech.settled_knowledge`)
-- 野生割胶 (`tech.wild_latex_tapping`)
+- 野生割胶 (`tech.wild_latex_tapping`)：野生割胶提供热带作物栽培、采收与商品化处理能力中的操作与材料处理方法，天然橡胶加工直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「橡胶树」（bio.rubber）
-    - 已发现信号「橡胶样本接触」（contact.rubber）
-    - 已发现信号「森林」（landform.forest）
+- 满足其一：
+  - 已发现信号「橡胶树」（bio.rubber）
+  - 已发现信号「橡胶样本接触」（contact.rubber）
 
 #### 效果摘要
 
-化学工业产出 +12%；国家协同能力 +3%
+化学工业产出 +28%；采掘部门产出 +12%
 
 #### 机会成本
 
@@ -6333,25 +5942,25 @@
 
 #### 永久 Modifier 条款
 
-- 化学工业：`country.output.family.chemical_industry_factor`：+12%
-- `country.output.manufacturing_factor`：+3%
+- 化学工业：`country.output.family.chemical_industry_factor`：+28%
+- `country.output.extractive_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 自然哲学 (`tech.natural_philosophy`)
+- 乳胶烟熏凝固 (`tech.latex_smoke_coagulation`)：天然橡胶加工提供热带作物栽培、采收与商品化处理能力中的操作与材料处理方法，乳胶烟熏凝固直接使用这一能力完成其工艺或组织设计
+- 合成材料 (`tech.synthetic_materials`)：天然橡胶加工提供热带作物栽培、采收与商品化处理能力中的操作与材料处理方法，合成材料直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 自然哲学 (`tech.natural_philosophy`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 自然哲学 (`tech.natural_philosophy`)
-- 陶器容器体系 (`tech.pottery`)
+无
 
 #### 作为候选参与的里程碑
 
-- 农耕社会 (`tech.agrarian_society`)
+无
 
 ### 织造 (`tech.weaving`)
 
@@ -6363,7 +5972,7 @@
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.textile\_fibers |
 | 主要路线 | 工艺 · 纺织 (\`route.craft.textiles\`) |
@@ -6371,22 +5980,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | manufacturing |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 纤维捻制 (`tech.fiber_twisting`)
+- 纤维捻制 (`tech.fiber_twisting`)：纤维捻制提供纤维处理、纺纱、织造与服装生产工艺中的操作与材料处理方法，织造直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「亚麻」（bio.flax）
-    - 已发现信号「棉花」（bio.cotton）
-    - 已发现信号「亚麻样本接触」（contact.flax）
+- 满足其一：
+  - 已发现信号「亚麻」（bio.flax）
+  - 已发现信号「棉花」（bio.cotton）
+  - 已发现信号「韧皮纤维植物」（bio.bast\_fiber）
 
 #### 效果摘要
 
-解锁物资：布料；解锁建筑：家用织机；开放通用职业阶层岗位；家用织机产出 +20%
+解锁物资：布料；解锁建筑：家用织机
 
 #### 机会成本
 
@@ -6403,24 +6010,22 @@
 
 - **布料**（`good`）：`good.cloth` → `production_access` `unlock` `1.0`；`existing_binding`
 - **家用织机**（`building`）：`building.household_loom` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **布料**（`good`）：`good.cloth` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 家用织机：`country.output.building.household_loom_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 盐渍保存 (`tech.salt_preservation`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -6436,7 +6041,7 @@
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.nonferrous\_metals |
 | 主要路线 | 资源 · 铜 (\`route.resource.copper\`) |
@@ -6444,22 +6049,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | metallurgy |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 自然铜冷锤 (`tech.natural_copper_working`)
+- 自然铜冷锤 (`tech.natural_copper_working`)：自然铜冷锤提供矿物识别、有色冶炼与合金配制能力中的操作与材料处理方法，木炭坩埚炼铜直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「铜矿」（resource.copper\_ore）
-    - 已发现信号「锡矿」（resource.tin\_ore）
-    - 已发现信号「金属加工突破」（breakthrough.metalworking）
+- 满足其一：
+  - 已发现信号「铜矿」（resource.copper\_ore）
+  - 已发现信号「金属加工突破」（breakthrough.metalworking）
 
 #### 效果摘要
 
-解锁物资：铜；解锁建筑：土法炼铜炉；开放通用职业阶层岗位；开放通用职业阶层岗位；土法炼铜炉产出 +20%
+解锁物资：铜；解锁建筑：土法炼铜炉
 
 #### 机会成本
 
@@ -6476,27 +6078,22 @@
 
 - **铜**（`good`）：`good.copper` → `production_access` `unlock` `1.0`；`existing_binding`
 - **土法炼铜炉**（`building`）：`building.early_copper_smelter` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **铜**（`good`）：`good.copper` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **铜矿石**（`good`）：`good.copper_ore` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **木炭**（`good`）：`good.charcoal` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 土法炼铜炉：`country.output.building.early_copper_smelter_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 窑烧控制 (`tech.kiln_firing`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -6512,7 +6109,7 @@
 | 研究成本 | 8160 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | production\_system |
 | 布局路线 | branch.nonferrous\_metals |
 | 主要路线 | 资源 · 铜 (\`route.resource.copper\`) |
@@ -6520,23 +6117,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | metallurgy |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 定居知识 (`tech.settled_knowledge`)
-- 自然铜冷锤 (`tech.natural_copper_working`)
+- 自然铜冷锤 (`tech.natural_copper_working`)：自然铜冷锤提供矿物识别、有色冶炼与合金配制能力中的操作与材料处理方法，铜锡配比与铸造直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「铜矿」（resource.copper\_ore）
-    - 已发现信号「锡矿」（resource.tin\_ore）
-    - 已发现信号「金属加工突破」（breakthrough.metalworking）
+- 满足其一：
+  - 已发现信号「铜矿」（resource.copper\_ore）
+  - 已发现信号「锡矿」（resource.tin\_ore）
+  - 已发现信号「锡矿贸易接触」（contact.tin）
 
 #### 效果摘要
 
-解锁物资：青铜工具；解锁物资：锡；解锁建筑：青铜工具工坊；开放通用职业阶层岗位；青铜工具工坊产出 +25%
+解锁物资：青铜工具；解锁物资：锡；解锁建筑：青铜工具工坊；解锁建筑：土法炼锡炉；采掘部门产出 +12%
 
 #### 机会成本
 
@@ -6554,32 +6148,23 @@
 - **青铜工具**（`good`）：`good.bronze_tools` → `production_access` `unlock` `1.0`；`existing_binding`
 - **锡**（`good`）：`good.tin` → `production_access` `unlock` `1.0`；`existing_binding`
 - **青铜工具工坊**（`building`）：`building.bronze_tool_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **青铜工具**（`good`）：`good.bronze_tools` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **铜**（`good`）：`good.copper` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **锡**（`good`）：`good.tin` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **土法炼锡炉**（`building`）：`building.early_tin_smelter` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **锡**（`good`）：`good.tin` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **锡矿石**（`good`）：`good.tin_ore` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **原木**（`good`）：`good.logs` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 青铜工具工坊：`country.output.building.bronze_tool_workshop_factor`：+25%
+- `country.output.extractive_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 货币 (`tech.currency`)
+- 货币 (`tech.currency`)：铜锡配比与铸造提供矿物识别、有色冶炼与合金配制能力中的成套生产流程，货币直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 货币 (`tech.currency`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 货币 (`tech.currency`)
-- 窑烧控制 (`tech.kiln_firing`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -6593,32 +6178,27 @@
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 科学 (`science`) |
 | 研究成本 | 7200 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 节点标记 | 时代关键 |
+| 网络角色 | branch |
+| 锚点类型 | era\_candidate |
 | 节点角色 | handling |
-| 布局路线 | backbone.knowledge\_computation |
+| 布局路线 | branch.measurement\_instruments |
 | 主要路线 | 制度 · 历法 (\`route.institution.calendar\`) |
 | 全部路线 | 制度 · 历法 (\`route.institution.calendar\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | observation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 定居知识 (`tech.settled_knowledge`)
+- 自然观察 (`tech.natural_observation`)：自然观察提供观察、分类、实验与生物育种知识中的操作与材料处理方法，天文历法直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「季风经验」（weather.monsoon）
-    - 已发现信号「霜冻经验」（weather.frost）
-    - 已发现信号「河谷」（landform.river\_valley）
+无
 
 #### 效果摘要
 
-科研机构产出 +11%；国家协同能力 +3%
+科研机构产出 +25%；知识部门产出 +15%
 
 #### 机会成本
 
@@ -6637,24 +6217,25 @@
 
 #### 永久 Modifier 条款
 
-- 科研机构：`country.output.family.research_institution_factor`：+11%
-- `country.research.science_efficiency`：+3%
+- 科研机构：`country.output.family.research_institution_factor`：+25%
+- `country.output.knowledge_factor`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 文字 (`tech.writing`)：天文历法提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，文字直接使用这一能力完成其工艺或组织设计
+- 地图学 (`tech.cartography`)：天文历法提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，地图学直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
-- 文字 (`tech.writing`)
-
-#### 应用交汇目标
-
-- 文字 (`tech.writing`)
+无
 
 #### 作为候选参与的里程碑
 
-无
+- 农耕社会 (`tech.agrarian_society`)
 
 ### 记事制度 (`tech.record_keeping`)
 
@@ -6664,9 +6245,9 @@
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 社会 (`society`) |
 | 研究成本 | 9360 科技点（`technology_points`） |
-| 节点标记 | 无 |
+| 节点标记 | 时代关键 |
 | 网络角色 | backbone |
-| 锚点类型 | support |
+| 锚点类型 | era\_candidate |
 | 节点角色 | institution |
 | 布局路线 | backbone.institutions\_exchange |
 | 主要路线 | 制度 · 记录 (\`route.institution.records\`) |
@@ -6674,22 +6255,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | knowledge |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 永久聚落 (`tech.permanent_settlements`)
+- 永久聚落 (`tech.permanent_settlements`)：永久聚落提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，记事制度直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「季风经验」（weather.monsoon）
-    - 已发现信号「霜冻经验」（weather.frost）
-    - 已发现信号「河谷」（landform.river\_valley）
+- 满足其一：
+  - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
+  - 已发现信号「连续歉收经验」（weather.repeated\_crop\_failure）
 
 #### 效果摘要
 
-解锁建筑：书记学校；开放通用职业阶层岗位；开放科技职业阶层岗位；书记学校产出 +20%
+解锁建筑：书记学校
 
 #### 机会成本
 
@@ -6705,30 +6283,27 @@
 #### 结构化内容效果
 
 - **书记学校**（`building`）：`building.scribal_school` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **科技职业阶层**（`class`）：`class.technology` → `employment_access` `enable` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **陶器**（`good`）：`good.pottery` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 书记学校：`country.output.building.scribal_school_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 家庭土地占有 (`tech.household_landholding`)
+- 家庭土地占有 (`tech.household_landholding`)：记事制度提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，家庭土地占有直接使用这一能力完成其工艺或组织设计
+- 市场制度 (`tech.market_institutions`)：记事制度提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，市场制度直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
 无
 
 #### 作为候选参与的里程碑
 
-无
+- 农耕社会 (`tech.agrarian_society`)
 
 ### 雨养田体系 (`tech.rainfed_field_system`)
 
@@ -6740,7 +6315,7 @@
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
-| 锚点类型 | support |
+| 锚点类型 | backbone |
 | 节点角色 | production\_system |
 | 布局路线 | backbone.food\_storage |
 | 主要路线 | 作物 · 通用农艺 (\`route.crop.general\`) |
@@ -6748,22 +6323,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 留种选育 (`tech.seed_selection`)
+- 留种选育 (`tech.seed_selection`)：留种选育提供粮食处理、保存与农艺组织能力中的成套生产流程，雨养田体系直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「旱地承载力」（resource.arable\_land）
-    - 已发现信号「干旱经验」（weather.drought）
-    - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
+- 满足其一：
+  - 已发现信号「旱地承载力」（resource.arable\_land）
+  - 已发现信号「干旱经验」（weather.drought）
+  - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
 
 #### 效果摘要
 
-可利用资源：肥沃土壤；可利用资源：旱地承载力；大田作物农业产出 +10%
+可利用资源：肥沃土壤；可利用资源：旱地承载力；大田作物农业产出 +18%
 
 #### 机会成本
 
@@ -6774,7 +6347,7 @@
 - **物资：** 无
 - **建筑 / 生产方式：** 无
 - **自然资源：** 肥沃土壤 (`fertile_soil`)；旱地承载力 (`arable_land`)
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 菜蔬农场 (`fertile_soil_collector`)；亚麻农场 (`flax_collector`)；玉米庄园 (`landed_estate`)；雨养玉米田 (`rainfed_maize_field`)；雨养小麦地 (`rainfed_wheat_plot`)；自给农庄 (`subsistence_farm`)；佃作雨养玉米田 (`tenant_rainfed_maize_field`)；佃作雨养小麦田 (`tenant_rainfed_wheat_field`)；旱稻田 (`upland_rice_plot`)；小麦农场 (`wheat_farm`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 菜蔬农场 (`fertile_soil_collector`)；亚麻农场 (`flax_collector`)；玉米庄园 (`landed_estate`)；佃作小麦庄园 (`method_wheat_farm_r3`)；改良轮作小麦庄园 (`method_wheat_farm_r5`)；雨养玉米田 (`rainfed_maize_field`)；雨养小麦地 (`rainfed_wheat_plot`)；自给农庄 (`subsistence_farm`)；佃作雨养玉米田 (`tenant_rainfed_maize_field`)；佃作雨养小麦田 (`tenant_rainfed_wheat_field`)；旱稻田 (`upland_rice_plot`)；小麦农场 (`wheat_farm`)
 
 #### 结构化内容效果
 
@@ -6783,17 +6356,17 @@
 
 #### 永久 Modifier 条款
 
-- 大田作物农业：`country.output.family.field_crop_farming_factor`：+10%
+- 大田作物农业：`country.output.family.field_crop_farming_factor`：+18%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 公共仓储 (`tech.public_storehouses`)
+- 公共仓储 (`tech.public_storehouses`)：雨养田体系提供粮食处理、保存与农艺组织能力中的成套生产流程，公共仓储直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
 无
 
@@ -6811,7 +6384,7 @@
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.rice\_irrigation |
 | 主要路线 | 作物 · 水稻 (\`route.crop.rice\`) |
@@ -6819,22 +6392,21 @@
 | 开局能力标签 | 无 |
 | 效果配置 | hydraulic |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 野生稻采集 (`tech.wild_rice_collection`)
+- 野生稻采集 (`tech.wild_rice_collection`)：野生稻采集提供水田整备、水位控制与稻作管理方法中的操作与材料处理方法，水田畦埂直接使用这一能力完成其工艺或组织设计
+- 土建筑 (`tech.earth_building`)：土建筑提供土石、陶瓷、玻璃和工程构件制造能力中的成套生产流程，水田畦埂直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「水田承载力」（resource.paddy\_land）
-    - 已发现信号「洪泛平原」（landform.floodplain）
-    - 已发现信号「水田控制突破」（breakthrough.paddy\_control）
+- 满足其一：
+  - 已发现信号「水田承载力」（resource.paddy\_land）
+  - 已发现信号「洪泛平原」（landform.floodplain）
+  - 已发现信号「水田控制突破」（breakthrough.paddy\_control）
 
 #### 效果摘要
 
-主粮加工产出 +10%
+大田作物农业产出 +18%
 
 #### 机会成本
 
@@ -6853,19 +6425,19 @@
 
 #### 永久 Modifier 条款
 
-- 主粮加工：`country.output.family.staple_preparation_factor`：+10%
+- 大田作物农业：`country.output.family.field_crop_farming_factor`：+18%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 旱稻繁育 (`tech.upland_rice_propagation`)
+- 旱稻繁育 (`tech.upland_rice_propagation`)：水田畦埂提供水田整备、水位控制与稻作管理方法中的成套生产流程，旱稻繁育直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 日晒土坯 (`tech.adobe_making`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -6881,7 +6453,7 @@
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.wheat\_rainfed |
 | 主要路线 | 气候 · 干旱 (\`route.climate.drought\`) |
@@ -6889,22 +6461,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 旱作农业 (`tech.dryland_farming`)
+- 旱作农业 (`tech.dryland_farming`)：旱作农业提供谷物旱作、轮作与收获工艺中的成套生产流程，旱作保水直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「旱地承载力」（resource.arable\_land）
-    - 已发现信号「干旱经验」（weather.drought）
-    - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
+- 满足其一：
+  - 已发现信号「旱地承载力」（resource.arable\_land）
+  - 已发现信号「干旱经验」（weather.drought）
+  - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
 
 #### 效果摘要
 
-公共营造产出 +10%
+公共营造产出 +18%
 
 #### 机会成本
 
@@ -6923,19 +6493,19 @@
 
 #### 永久 Modifier 条款
 
-- 公共营造：`country.output.family.construction_methods_factor`：+10%
+- 公共营造：`country.output.family.construction_methods_factor`：+18%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 谷物脱粒 (`tech.grain_threshing`)
+- 谷物脱粒 (`tech.grain_threshing`)：旱作保水提供谷物旱作、轮作与收获工艺中的成套生产流程，谷物脱粒直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 灌溉 (`tech.irrigation`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -6949,9 +6519,9 @@
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 科学 (`science`) |
 | 研究成本 | 9360 科技点（`technology_points`） |
-| 节点标记 | 无 |
+| 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | era\_candidate |
 | 节点角色 | handling |
 | 布局路线 | branch.water\_wind |
 | 主要路线 | 地理 · 河流 (\`route.geography.river\`) |
@@ -6959,22 +6529,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | observation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 灌溉 (`tech.irrigation`)
+- 灌溉 (`tech.irrigation`)：灌溉提供水流、风力、输配水和流域工程能力中的成套生产流程，灌溉测量直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「河湖水系」（landform.freshwater\_access）
-    - 已发现信号「河谷」（landform.river\_valley）
-    - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
+- 满足其一：
+  - 已发现信号「河湖水系」（landform.freshwater\_access）
+  - 已发现信号「河谷」（landform.river\_valley）
+  - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
 
 #### 效果摘要
 
-公共营造产出 +10%
+公共营造产出 +18%
 
 #### 机会成本
 
@@ -6993,23 +6561,23 @@
 
 #### 永久 Modifier 条款
 
-- 公共营造：`country.output.family.construction_methods_factor`：+10%
+- 公共营造：`country.output.family.construction_methods_factor`：+18%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 水利工程 (`tech.hydraulic_engineering`)：灌溉测量提供坡降、流量和高程测定方法
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
 无
-
-#### 应用交汇目标
-
-- 日晒土坯 (`tech.adobe_making`)
 
 #### 作为候选参与的里程碑
 
-无
+- 农耕社会 (`tech.agrarian_society`)
 
 ### 窑烧控制 (`tech.kiln_firing`)
 
@@ -7019,33 +6587,31 @@
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 8160 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | branch.electric\_intelligent\_energy |
+| 布局路线 | branch.construction\_materials |
 | 主要路线 | 材料 · 黏土 (\`route.material.clay\`) |
 | 全部路线 | 材料 · 黏土 (\`route.material.clay\`)；能源 · 火 (\`route.energy.fire\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | craft |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 定居知识 (`tech.settled_knowledge`)
-- 控制性用火 (`tech.controlled_burning`)
+- 火种控制 (`tech.fire_control`)：火种控制提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，窑烧控制直接使用这一能力完成其工艺或组织设计
+- 黏土调制 (`tech.clay_preparation`)：黏土调制提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，窑烧控制直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「黏土」（resource.clay）
-    - 已发现信号「硅砂」（resource.silica\_sand）
-    - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
+- 满足其一：
+  - 已发现信号「黏土」（resource.clay）
+  - 已发现信号「硅砂」（resource.silica\_sand）
+  - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
 
 #### 效果摘要
 
-解锁建筑：烧砖窑；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：升焰陶窑；烧砖窑产出 +25%
+解锁建筑：烧砖窑；解锁建筑：升焰陶窑；能源部门产出 +12%
 
 #### 机会成本
 
@@ -7061,34 +6627,99 @@
 #### 结构化内容效果
 
 - **烧砖窑**（`building`）：`building.fired_brick_kiln` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **砖块**（`good`）：`good.bricks` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **黏土**（`good`）：`good.clay` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **木炭**（`good`）：`good.charcoal` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **升焰陶窑**（`building`）：`building.pottery_kiln` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **陶器**（`good`）：`good.pottery` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 烧砖窑：`country.output.building.fired_brick_kiln_factor`：+25%
+- `country.output.energy_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 地表煤利用 (`tech.surface_coal_use`)
+- 陶器容器体系 (`tech.pottery`)：窑烧控制提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，陶器容器体系直接使用这一能力完成其工艺或组织设计
+- 早期玻璃烧制 (`tech.early_glassmaking`)：窑烧控制提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，早期玻璃烧制直接使用这一能力完成其工艺或组织设计
+- 地表煤利用 (`tech.surface_coal_use`)：窑烧控制提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，地表煤利用直接使用这一能力完成其工艺或组织设计
+- 块炼铁 (`tech.iron_smelting`)：窑烧控制提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，块炼铁直接使用这一能力完成其工艺或组织设计
+- 火药配制 (`tech.gunpowder_formulation`)：窑烧控制提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，火药配制直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 地表煤利用 (`tech.surface_coal_use`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 地表煤利用 (`tech.surface_coal_use`)
-- 畜力牵引 (`tech.animal_traction`)
+无
 
 #### 作为候选参与的里程碑
 
-- 农耕社会 (`tech.agrarian_society`)
+无
+
+### 陶器容器体系 (`tech.pottery`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.pottery` |
+| 时代 | 农耕时代 (`agrarian`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 8160 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | handling |
+| 布局路线 | branch.construction\_materials |
+| 主要路线 | 材料 · 黏土 (\`route.material.clay\`) |
+| 全部路线 | 材料 · 黏土 (\`route.material.clay\`)；制度 · 储藏 (\`route.institution.storage\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | craft |
+
+#### 硬前置（决定研发资格）
+
+- 手制陶器 (`tech.hand_pottery`)：手制陶器提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，陶器容器体系直接使用这一能力完成其工艺或组织设计
+- 窑烧控制 (`tech.kiln_firing`)：窑烧控制提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，陶器容器体系直接使用这一能力完成其工艺或组织设计
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「黏土」（resource.clay）
+  - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
+
+#### 效果摘要
+
+解锁建筑：行会陶窑；贸易速度 +12%
+
+#### 机会成本
+
+转入该路线需补齐历史锚点；时代 2 后的生产方式依赖专用资本、岗位或地理条件
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 行会陶窑 (`method_pottery_kiln_r3`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 土法炼铜炉 (`early_copper_smelter`)；活字印刷坊 (`movable_type_print_shop`)
+
+#### 结构化内容效果
+
+- **行会陶窑**（`building`）：`building.method_pottery_kiln_r3` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+- `country.trade.speed_factor`：+12%
+
+#### 被以下科技作为硬前置
+
+- 河运 (`tech.river_transport`)：陶器容器体系提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，河运直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
 
 ### 织机织造 (`tech.loom_weaving`)
 
@@ -7098,9 +6729,9 @@
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 8160 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.textile\_fibers |
 | 主要路线 | 工艺 · 纺织 (\`route.craft.textiles\`) |
@@ -7108,23 +6739,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | manufacturing |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 定居知识 (`tech.settled_knowledge`)
-- 纤维捻制 (`tech.fiber_twisting`)
+- 纤维捻制 (`tech.fiber_twisting`)：纤维捻制提供纤维处理、纺纱、织造与服装生产工艺中的操作与材料处理方法，织机织造直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「亚麻」（bio.flax）
-    - 已发现信号「棉花」（bio.cotton）
-    - 已发现信号「亚麻样本接触」（contact.flax）
+- 满足其一：
+  - 已发现信号「亚麻」（bio.flax）
+  - 已发现信号「棉花」（bio.cotton）
+  - 已发现信号「韧皮纤维植物」（bio.bast\_fiber）
 
 #### 效果摘要
 
-解锁建筑：行会织造坊；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：羊毛行会作坊；行会织造坊产出 +25%
+解锁建筑：行会织造坊；解锁建筑：羊毛行会作坊；制造部门产出 +12%
 
 #### 机会成本
 
@@ -7140,36 +6768,28 @@
 #### 结构化内容效果
 
 - **行会织造坊**（`building`）：`building.guild_weaving_house` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **布料**（`good`）：`good.cloth` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **亚麻纤维**（`good`）：`good.flax_fiber` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **羊毛行会作坊**（`building`）：`building.method_wool_shed_r3` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **羊毛**（`good`）：`good.wool` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **畜牧产品**（`good`）：`good.livestock_products` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 行会织造坊：`country.output.building.guild_weaving_house_factor`：+25%
+- `country.output.manufacturing_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 沤麻 (`tech.flax_retting`)
-- 植物纤维抄纸 (`tech.plant_fiber_papermaking`)
+- 植物纤维抄纸 (`tech.plant_fiber_papermaking`)：织机织造提供纤维处理、纺纱、织造与服装生产工艺中的操作与材料处理方法，植物纤维抄纸直接使用这一能力完成其工艺或组织设计
+- 纺织机械 (`tech.textile_machinery`)：织机织造提供纤维处理、纺纱、织造与服装生产工艺中的操作与材料处理方法，纺织机械直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 植物纤维抄纸 (`tech.plant_fiber_papermaking`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 植物纤维抄纸 (`tech.plant_fiber_papermaking`)
-- 盐渍保存 (`tech.salt_preservation`)
+无
 
 #### 作为候选参与的里程碑
 
-- 农耕社会 (`tech.agrarian_society`)
+无
 
 ### 畜力牵引 (`tech.animal_traction`)
 
@@ -7179,33 +6799,30 @@
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 8160 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | branch.heavy\_industry |
+| 布局路线 | branch.pastoral\_livestock |
 | 主要路线 | 作物 · 通用农艺 (\`route.crop.general\`) |
 | 全部路线 | 作物 · 通用农艺 (\`route.crop.general\`)；生态 · 牧场 (\`route.ecology.pasture\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | tools |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 定居知识 (`tech.settled_knowledge`)
-- 铜矿焙烧 (`tech.copper_ore_roasting`)
+- 畜牧驯养 (`tech.animal_husbandry`)：畜牧驯养提供畜群驯养、育种与畜产品处理能力中的成套生产流程，畜力牵引直接使用这一能力完成其工艺或组织设计
+- 犁耕农业 (`tech.plough_agriculture`)：犁耕农业提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，畜力牵引直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「野生动物」（resource.wild\_game）
-    - 已发现信号「羊」（bio.sheep）
-    - 已发现信号「草原」（landform.grassland）
+- 满足其一：
+  - 已发现信号「马匹」（bio.horse）
+  - 已发现信号「牛」（bio.cattle）
 
 #### 效果摘要
 
-畜牧业产出 +12%；国家协同能力 +3%
+畜牧业产出 +28%；采掘部门产出 +12%
 
 #### 机会成本
 
@@ -7224,25 +6841,24 @@
 
 #### 永久 Modifier 条款
 
-- 畜牧业：`country.output.family.livestock_husbandry_factor`：+12%
-- `country.output.manufacturing_factor`：+3%
+- 畜牧业：`country.output.family.livestock_husbandry_factor`：+28%
+- `country.output.extractive_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 块炼铁 (`tech.iron_smelting`)
+无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 块炼铁 (`tech.iron_smelting`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 块炼铁 (`tech.iron_smelting`)
-- 盐渍保存 (`tech.salt_preservation`)
+无
 
 #### 作为候选参与的里程碑
 
-- 农耕社会 (`tech.agrarian_society`)
+无
 
 ### 家庭土地占有 (`tech.household_landholding`)
 
@@ -7253,31 +6869,29 @@
 | 领域 | 社会 (`society`) |
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | support |
+| 网络角色 | branch |
+| 锚点类型 | branch |
 | 节点角色 | institution |
-| 布局路线 | backbone.institutions\_exchange |
+| 布局路线 | branch.land\_institutions |
 | 主要路线 | 制度 · 聚落 (\`route.institution.settlement\`) |
 | 全部路线 | 制度 · 聚落 (\`route.institution.settlement\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 记事制度 (`tech.record_keeping`)
+- 记事制度 (`tech.record_keeping`)：记事制度提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，家庭土地占有直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-    - 已发现信号「河谷」（landform.river\_valley）
-    - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
+- 满足其一：
+  - 已发现信号「肥沃土壤」（resource.fertile\_soil）
+  - 已发现信号「河谷」（landform.river\_valley）
+  - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
 
 #### 效果摘要
 
-解锁物资：混合谷物；解锁物资：蔬菜；解锁建筑：菜蔬农场；开放通用职业阶层岗位；菜蔬农场产出 +20%
+解锁物资：混合谷物；解锁物资：蔬菜；解锁建筑：菜蔬农场；解锁建筑：自给农庄
 
 #### 机会成本
 
@@ -7295,24 +6909,21 @@
 - **混合谷物**（`good`）：`good.grain` → `production_access` `unlock` `1.0`；`existing_binding`
 - **蔬菜**（`good`）：`good.vegetables` → `production_access` `unlock` `1.0`；`existing_binding`
 - **菜蔬农场**（`building`）：`building.fertile_soil_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **蔬菜**（`good`）：`good.vegetables` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 - **自给农庄**（`building`）：`building.subsistence_farm` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **混合谷物**（`good`）：`good.grain` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 菜蔬农场：`country.output.building.fertile_soil_collector_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 共同田协调 (`tech.communal_field_coordination`)
+- 共同田协调 (`tech.communal_field_coordination`)：家庭土地占有提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，共同田协调直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
 无
 
@@ -7329,31 +6940,29 @@
 | 领域 | 社会 (`society`) |
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | support |
+| 网络角色 | branch |
+| 锚点类型 | branch |
 | 节点角色 | institution |
-| 布局路线 | backbone.institutions\_exchange |
+| 布局路线 | branch.land\_institutions |
 | 主要路线 | 制度 · 社群 (\`route.institution.community\`) |
 | 全部路线 | 制度 · 社群 (\`route.institution.community\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 家庭土地占有 (`tech.household_landholding`)
+- 家庭土地占有 (`tech.household_landholding`)：家庭土地占有提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，共同田协调直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-    - 已发现信号「河谷」（landform.river\_valley）
-    - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
+- 满足其一：
+  - 已发现信号「肥沃土壤」（resource.fertile\_soil）
+  - 已发现信号「河谷」（landform.river\_valley）
+  - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
 
 #### 效果摘要
 
-科研机构产出 +10%
+自给农庄产出 +35%
 
 #### 机会成本
 
@@ -7372,17 +6981,17 @@
 
 #### 永久 Modifier 条款
 
-- 科研机构：`country.output.family.research_institution_factor`：+10%
+- 自给农庄：`country.output.building.subsistence_farm_factor`：+35%
 
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
 
 无
 
@@ -7400,7 +7009,7 @@
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
-| 锚点类型 | support |
+| 锚点类型 | backbone |
 | 节点角色 | institution |
 | 布局路线 | backbone.food\_storage |
 | 主要路线 | 制度 · 储藏 (\`route.institution.storage\`) |
@@ -7408,22 +7017,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 雨养田体系 (`tech.rainfed_field_system`)
+- 雨养田体系 (`tech.rainfed_field_system`)：雨养田体系提供粮食处理、保存与农艺组织能力中的成套生产流程，公共仓储直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-    - 已发现信号「河谷」（landform.river\_valley）
-    - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
+- 满足其一：
+  - 已发现信号「肥沃土壤」（resource.fertile\_soil）
+  - 已发现信号「河谷」（landform.river\_valley）
+  - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
 
 #### 效果摘要
 
-科研机构产出 +10%
+主食厨房产出 +35%
 
 #### 机会成本
 
@@ -7442,17 +7049,17 @@
 
 #### 永久 Modifier 条款
 
-- 科研机构：`country.output.family.research_institution_factor`：+10%
+- 主食厨房：`country.output.building.staple_kitchen_factor`：+35%
 
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
 
 无
 
@@ -7468,9 +7075,9 @@
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 8160 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.construction\_materials |
 | 主要路线 | 材料 · 黏土 (\`route.material.clay\`) |
@@ -7478,23 +7085,17 @@
 | 开局能力标签 | 无 |
 | 效果配置 | construction |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 定居知识 (`tech.settled_knowledge`)
-- 手制陶器 (`tech.hand_pottery`)
+无
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「黏土」（resource.clay）
-    - 已发现信号「硅砂」（resource.silica\_sand）
-    - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
+- 已发现信号「黏土」（resource.clay）
 
 #### 效果摘要
 
-解锁物资：日晒土坯；解锁物资：建筑构件；解锁建筑：日晒土坯场；开放通用职业阶层岗位；日晒土坯场产出 +25%
+解锁物资：日晒土坯；解锁物资：建筑构件；解锁建筑：日晒土坯场；解锁建筑：制砖厂；国家建设成本 -10%
 
 #### 机会成本
 
@@ -7512,35 +7113,27 @@
 - **日晒土坯**（`good`）：`good.adobe_brick` → `production_access` `unlock` `1.0`；`existing_binding`
 - **建筑构件**（`good`）：`good.construction_components` → `production_access` `unlock` `1.0`；`existing_binding`
 - **日晒土坯场**（`building`）：`building.adobe_yard` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **日晒土坯**（`good`）：`good.adobe_brick` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **黏土**（`good`）：`good.clay` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **采集植物食物**（`good`）：`good.gathered_plants` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **制砖厂**（`building`）：`building.bricks_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **砖块**（`good`）：`good.bricks` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 日晒土坯场：`country.output.building.adobe_yard_factor`：+25%
+- `country.construction.cost_factor`：+10%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 早期玻璃烧制 (`tech.early_glassmaking`)
-- 砌体建筑 (`tech.masonry`)
+- 砌体建筑 (`tech.masonry`)：日晒土坯提供土石、陶瓷、玻璃和工程构件制造能力中的成套生产流程，砌体建筑直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 砌体建筑 (`tech.masonry`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 砌体建筑 (`tech.masonry`)
-- 畜力牵引 (`tech.animal_traction`)
+无
 
 #### 作为候选参与的里程碑
 
-- 农耕社会 (`tech.agrarian_society`)
+无
 
 ### 玉米园圃 (`tech.maize_garden_horticulture`)
 
@@ -7550,9 +7143,9 @@
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 农业 (`agriculture`) |
 | 研究成本 | 8160 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.maize\_horticulture |
 | 主要路线 | 作物 · 玉米 (\`route.crop.maize\`) |
@@ -7560,23 +7153,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 定居知识 (`tech.settled_knowledge`)
-- 野生玉米采集 (`tech.wild_maize_collection`)
+- 野生玉米采集 (`tech.wild_maize_collection`)：野生玉米采集提供玉米栽培、选育与田间管理经验中的操作与材料处理方法，玉米园圃直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「玉米」（bio.maize）
-    - 已发现信号「玉米样本接触」（contact.maize）
-    - 已发现信号「玉米选育突破」（breakthrough.maize\_selection）
+- 满足其一：
+  - 已发现信号「玉米」（bio.maize）
+  - 已发现信号「玉米样本接触」（contact.maize）
 
 #### 效果摘要
 
-解锁物资：玉米；解锁建筑：家庭玉米园圃；开放通用职业阶层岗位；家庭玉米园圃产出 +25%
+解锁物资：玉米；解锁建筑：家庭玉米园圃；旱灾损失 -8%
 
 #### 机会成本
 
@@ -7593,30 +7182,27 @@
 
 - **玉米**（`good`）：`good.corn_grain` → `production_access` `unlock` `1.0`；`existing_binding`
 - **家庭玉米园圃**（`building`）：`building.maize_garden` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **玉米**（`good`）：`good.corn_grain` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 家庭玉米园圃：`country.output.building.maize_garden_factor`：+25%
+- `country.climate.drought_loss_factor`：+8%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 刀耕火种玉米 (`tech.swidden_maize_cultivation`)
-- 习惯佃作 (`tech.customary_tenancy`)
+- 刀耕火种玉米 (`tech.swidden_maize_cultivation`)：玉米园圃提供玉米栽培、选育与田间管理经验中的成套生产流程，刀耕火种玉米直接使用这一能力完成其工艺或组织设计
+- 习惯佃作 (`tech.customary_tenancy`)：玉米园圃提供玉米栽培、选育与田间管理经验中的成套生产流程，习惯佃作直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 习惯佃作 (`tech.customary_tenancy`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 习惯佃作 (`tech.customary_tenancy`)
-- 灌溉 (`tech.irrigation`)
+无
 
 #### 作为候选参与的里程碑
 
-- 农耕社会 (`tech.agrarian_society`)
+无
 
 ### 刀耕火种玉米 (`tech.swidden_maize_cultivation`)
 
@@ -7628,7 +7214,7 @@
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | applied\_method |
 | 布局路线 | branch.maize\_horticulture |
 | 主要路线 | 作物 · 玉米 (\`route.crop.maize\`) |
@@ -7636,22 +7222,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 玉米园圃 (`tech.maize_garden_horticulture`)
+- 玉米园圃 (`tech.maize_garden_horticulture`)：玉米园圃提供玉米栽培、选育与田间管理经验中的成套生产流程，刀耕火种玉米直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「玉米」（bio.maize）
-    - 已发现信号「森林」（landform.forest）
-    - 已发现信号「干旱经验」（weather.drought）
+- 满足其一：
+  - 已发现信号「玉米」（bio.maize）
+  - 已发现信号「玉米样本接触」（contact.maize）
 
 #### 效果摘要
 
-解锁建筑：刀耕火种玉米地；开放通用职业阶层岗位；适应温度条件；适应水分条件；刀耕火种玉米地产出 +20%
+解锁建筑：刀耕火种玉米地
 
 #### 机会成本
 
@@ -7667,26 +7250,22 @@
 #### 结构化内容效果
 
 - **刀耕火种玉米地**（`building`）：`building.swidden_maize_plot` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **玉米**（`good`）：`good.corn_grain` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **温度**（`climate`）：`climate.temperature` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
-- **水分**（`climate`）：`climate.moisture` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 刀耕火种玉米地：`country.output.building.swidden_maize_plot_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 雨养玉米田 (`tech.rainfed_maize_cultivation`)
+- 雨养玉米田 (`tech.rainfed_maize_cultivation`)：刀耕火种玉米提供玉米栽培、选育与田间管理经验中的专门知识，雨养玉米田直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 灌溉 (`tech.irrigation`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -7702,7 +7281,7 @@
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | applied\_method |
 | 布局路线 | branch.maize\_horticulture |
 | 主要路线 | 作物 · 玉米 (\`route.crop.maize\`) |
@@ -7710,22 +7289,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 刀耕火种玉米 (`tech.swidden_maize_cultivation`)
+- 刀耕火种玉米 (`tech.swidden_maize_cultivation`)：刀耕火种玉米提供玉米栽培、选育与田间管理经验中的专门知识，雨养玉米田直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「玉米」（bio.maize）
-    - 已发现信号「旱地承载力」（resource.arable\_land）
-    - 已发现信号「干旱经验」（weather.drought）
+- 满足其一：
+  - 已发现信号「玉米」（bio.maize）
+  - 已发现信号「玉米样本接触」（contact.maize）
 
 #### 效果摘要
 
-解锁建筑：雨养玉米田；开放通用职业阶层岗位；适应温度条件；适应水分条件；雨养玉米田产出 +20%
+解锁建筑：雨养玉米田
 
 #### 机会成本
 
@@ -7741,26 +7317,22 @@
 #### 结构化内容效果
 
 - **雨养玉米田**（`building`）：`building.rainfed_maize_field` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **玉米**（`good`）：`good.corn_grain` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **温度**（`climate`）：`climate.temperature` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
-- **水分**（`climate`）：`climate.moisture` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 雨养玉米田：`country.output.building.rainfed_maize_field_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 退水玉米地 (`tech.flood_recession_maize`)
+- 退水玉米地 (`tech.flood_recession_maize`)：雨养玉米田提供玉米栽培、选育与田间管理经验中的专门知识，退水玉米地直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 灌溉 (`tech.irrigation`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -7776,7 +7348,7 @@
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.maize\_horticulture |
 | 主要路线 | 作物 · 玉米 (\`route.crop.maize\`) |
@@ -7784,22 +7356,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 雨养玉米田 (`tech.rainfed_maize_cultivation`)
+- 雨养玉米田 (`tech.rainfed_maize_cultivation`)：雨养玉米田提供玉米栽培、选育与田间管理经验中的专门知识，退水玉米地直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「玉米」（bio.maize）
-    - 已发现信号「洪泛平原」（landform.floodplain）
-    - 已发现信号「洪水经验」（weather.major\_flood）
+- 满足其一：
+  - 已发现信号「玉米」（bio.maize）
+  - 已发现信号「玉米样本接触」（contact.maize）
 
 #### 效果摘要
 
-解锁建筑：退水玉米地；开放通用职业阶层岗位；需要河流地块条件；退水玉米地产出 +20%
+解锁建筑：退水玉米地
 
 #### 机会成本
 
@@ -7815,25 +7384,22 @@
 #### 结构化内容效果
 
 - **退水玉米地**（`building`）：`building.floodplain_maize_plot` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **玉米**（`good`）：`good.corn_grain` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **河流**（`tile`）：`tile.river` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 退水玉米地：`country.output.building.floodplain_maize_plot_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 灌溉 (`tech.irrigation`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -7849,7 +7415,7 @@
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.wheat\_rainfed |
 | 主要路线 | 作物 · 小麦 (\`route.crop.wheat\`) |
@@ -7857,22 +7423,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | craft |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 旱作保水 (`tech.dryland_water_retention`)
+- 旱作保水 (`tech.dryland_water_retention`)：旱作保水提供谷物旱作、轮作与收获工艺中的成套生产流程，谷物脱粒直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「小麦」（bio.wheat）
-    - 已发现信号「小麦样本接触」（contact.wheat）
-    - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
+- 满足其一：
+  - 已发现信号「小麦」（bio.wheat）
+  - 已发现信号「玉米」（bio.maize）
+  - 已发现信号「稻」（bio.rice）
 
 #### 效果摘要
 
-主粮加工产出 +10%
+大田作物农业产出 +18%
 
 #### 机会成本
 
@@ -7891,19 +7455,19 @@
 
 #### 永久 Modifier 条款
 
-- 主粮加工：`country.output.family.staple_preparation_factor`：+10%
+- 大田作物农业：`country.output.family.field_crop_farming_factor`：+18%
 
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
 
-- 灌溉 (`tech.irrigation`)
+无
+
+#### 跨领域应用
+
+无
 
 #### 作为候选参与的里程碑
 
@@ -7917,9 +7481,9 @@
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 农业 (`agriculture`) |
 | 研究成本 | 8160 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | applied\_method |
 | 布局路线 | branch.wheat\_rainfed |
 | 主要路线 | 作物 · 小麦 (\`route.crop.wheat\`) |
@@ -7927,23 +7491,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 定居知识 (`tech.settled_knowledge`)
-- 野生谷穗采集 (`tech.wild_wheat_collection`)
+- 野生谷穗采集 (`tech.wild_wheat_collection`)：野生谷穗采集提供谷物旱作、轮作与收获工艺中的操作与材料处理方法，雨养小麦田直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「小麦」（bio.wheat）
-    - 已发现信号「黄土平原」（landform.loess\_plain）
-    - 已发现信号「干旱经验」（weather.drought）
+- 满足其一：
+  - 已发现信号「小麦」（bio.wheat）
+  - 已发现信号「小麦样本接触」（contact.wheat）
 
 #### 效果摘要
 
-解锁物资：小麦；解锁建筑：雨养小麦地；开放通用职业阶层岗位；适应温度条件；雨养小麦地产出 +25%
+解锁物资：小麦；解锁建筑：雨养小麦地；解锁建筑：小麦农场；旱灾损失 -8%
 
 #### 机会成本
 
@@ -7960,33 +7520,27 @@
 
 - **小麦**（`good`）：`good.wheat_grain` → `production_access` `unlock` `1.0`；`existing_binding`
 - **雨养小麦地**（`building`）：`building.rainfed_wheat_plot` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **小麦**（`good`）：`good.wheat_grain` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **温度**（`climate`）：`climate.temperature` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
-- **水分**（`climate`）：`climate.moisture` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
 - **小麦农场**（`building`）：`building.wheat_farm` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 雨养小麦地：`country.output.building.rainfed_wheat_plot_factor`：+25%
+- `country.climate.drought_loss_factor`：+8%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 退水小麦地 (`tech.flood_recession_wheat`)
-- 轮作 (`tech.crop_rotation`)
+- 退水小麦地 (`tech.flood_recession_wheat`)：雨养小麦田提供谷物旱作、轮作与收获工艺中的专门知识，退水小麦地直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 轮作 (`tech.crop_rotation`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 轮作 (`tech.crop_rotation`)
-- 灌溉 (`tech.irrigation`)
+无
 
 #### 作为候选参与的里程碑
 
-- 农耕社会 (`tech.agrarian_society`)
+无
 
 ### 退水小麦地 (`tech.flood_recession_wheat`)
 
@@ -7998,7 +7552,7 @@
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.wheat\_rainfed |
 | 主要路线 | 作物 · 小麦 (\`route.crop.wheat\`) |
@@ -8006,22 +7560,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 雨养小麦田 (`tech.rainfed_wheat_cultivation`)
+- 雨养小麦田 (`tech.rainfed_wheat_cultivation`)：雨养小麦田提供谷物旱作、轮作与收获工艺中的专门知识，退水小麦地直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「小麦」（bio.wheat）
-    - 已发现信号「洪泛平原」（landform.floodplain）
-    - 已发现信号「洪水经验」（weather.major\_flood）
+- 满足其一：
+  - 已发现信号「小麦」（bio.wheat）
+  - 已发现信号「小麦样本接触」（contact.wheat）
 
 #### 效果摘要
 
-解锁建筑：退水小麦地；开放通用职业阶层岗位；需要河流地块条件；退水小麦地产出 +20%
+解锁建筑：退水小麦地
 
 #### 机会成本
 
@@ -8037,25 +7588,22 @@
 #### 结构化内容效果
 
 - **退水小麦地**（`building`）：`building.floodplain_wheat_plot` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **小麦**（`good`）：`good.wheat_grain` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **河流**（`tile`）：`tile.river` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 退水小麦地：`country.output.building.floodplain_wheat_plot_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 旱作小麦田 (`tech.dryland_wheat_cultivation`)
+- 旱作小麦田 (`tech.dryland_wheat_cultivation`)：退水小麦地提供谷物旱作、轮作与收获工艺中的成套生产流程，旱作小麦田直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 灌溉 (`tech.irrigation`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -8071,7 +7619,7 @@
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | applied\_method |
 | 布局路线 | branch.wheat\_rainfed |
 | 主要路线 | 作物 · 小麦 (\`route.crop.wheat\`) |
@@ -8079,22 +7627,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 退水小麦地 (`tech.flood_recession_wheat`)
+- 退水小麦地 (`tech.flood_recession_wheat`)：退水小麦地提供谷物旱作、轮作与收获工艺中的成套生产流程，旱作小麦田直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「小麦」（bio.wheat）
-    - 已发现信号「干旱盆地」（landform.arid\_basin）
-    - 已发现信号「干旱经验」（weather.drought）
+- 满足其一：
+  - 已发现信号「小麦」（bio.wheat）
+  - 已发现信号「小麦样本接触」（contact.wheat）
 
 #### 效果摘要
 
-解锁建筑：旱作保水小麦田；开放通用职业阶层岗位；适应水分条件；需要高海拔地块条件；旱作保水小麦田产出 +20%
+解锁建筑：旱作保水小麦田
 
 #### 机会成本
 
@@ -8110,26 +7655,22 @@
 #### 结构化内容效果
 
 - **旱作保水小麦田**（`building`）：`building.dryland_wheat_field` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **小麦**（`good`）：`good.wheat_grain` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **水分**（`climate`）：`climate.moisture` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
-- **高海拔**（`tile`）：`tile.elevation` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 旱作保水小麦田：`country.output.building.dryland_wheat_field_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 谷物烘焙 (`tech.grain_baking`)
+- 谷物烘焙 (`tech.grain_baking`)：旱作小麦田提供谷物旱作、轮作与收获工艺中的专门知识，谷物烘焙直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 灌溉 (`tech.irrigation`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -8145,7 +7686,7 @@
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.rice\_irrigation |
 | 主要路线 | 作物 · 水稻 (\`route.crop.rice\`) |
@@ -8153,22 +7694,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 水田畦埂 (`tech.paddy_bunding`)
+- 水田畦埂 (`tech.paddy_bunding`)：水田畦埂提供水田整备、水位控制与稻作管理方法中的成套生产流程，旱稻繁育直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「稻」（bio.rice）
-    - 已发现信号「高原」（landform.high\_plateau）
-    - 已发现信号「干旱经验」（weather.drought）
+- 满足其一：
+  - 已发现信号「稻」（bio.rice）
+  - 已发现信号「稻种样本接触」（contact.rice）
 
 #### 效果摘要
 
-解锁建筑：旱稻田；开放通用职业阶层岗位；适应温度条件；适应水分条件；旱稻田产出 +20%
+解锁建筑：旱稻田
 
 #### 机会成本
 
@@ -8184,26 +7722,22 @@
 #### 结构化内容效果
 
 - **旱稻田**（`building`）：`building.upland_rice_plot` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **稻米**（`good`）：`good.rice_grain` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **温度**（`climate`）：`climate.temperature` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
-- **水分**（`climate`）：`climate.moisture` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 旱稻田：`country.output.building.upland_rice_plot_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 湿地稻园 (`tech.wetland_rice_gardening`)
+- 湿地稻园 (`tech.wetland_rice_gardening`)：旱稻繁育提供水田整备、水位控制与稻作管理方法中的成套生产流程，湿地稻园直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 日晒土坯 (`tech.adobe_making`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -8219,7 +7753,7 @@
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | applied\_method |
 | 布局路线 | branch.rice\_irrigation |
 | 主要路线 | 作物 · 水稻 (\`route.crop.rice\`) |
@@ -8227,22 +7761,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 旱稻繁育 (`tech.upland_rice_propagation`)
+- 旱稻繁育 (`tech.upland_rice_propagation`)：旱稻繁育提供水田整备、水位控制与稻作管理方法中的成套生产流程，湿地稻园直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「稻」（bio.rice）
-    - 已发现信号「沼泽」（landform.marsh）
-    - 已发现信号「水田承载力」（resource.paddy\_land）
+- 满足其一：
+  - 已发现信号「稻」（bio.rice）
+  - 已发现信号「稻种样本接触」（contact.rice）
 
 #### 效果摘要
 
-解锁物资：稻米；解锁建筑：稻作农场；开放通用职业阶层岗位；解锁建筑：湿地稻园；稻作农场产出 +20%
+解锁物资：稻米；解锁建筑：稻作农场；解锁建筑：湿地稻园
 
 #### 机会成本
 
@@ -8259,27 +7790,23 @@
 
 - **稻米**（`good`）：`good.rice_grain` → `production_access` `unlock` `1.0`；`existing_binding`
 - **稻作农场**（`building`）：`building.rice_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **稻米**（`good`）：`good.rice_grain` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 - **湿地稻园**（`building`）：`building.wetland_rice_garden` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **河流**（`tile`）：`tile.river` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
-- **水田承载力**（`resource`）：`resource.paddy_land` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 稻作农场：`country.output.building.rice_collector_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 稻田水位控制 (`tech.rice_water_control`)
+- 稻田水位控制 (`tech.rice_water_control`)：湿地稻园提供水田整备、水位控制与稻作管理方法中的专门知识，稻田水位控制直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 日晒土坯 (`tech.adobe_making`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -8295,7 +7822,7 @@
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.rice\_irrigation |
 | 主要路线 | 作物 · 水稻 (\`route.crop.rice\`) |
@@ -8303,22 +7830,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | hydraulic |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 湿地稻园 (`tech.wetland_rice_gardening`)
+- 湿地稻园 (`tech.wetland_rice_gardening`)：湿地稻园提供水田整备、水位控制与稻作管理方法中的专门知识，稻田水位控制直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「水田承载力」（resource.paddy\_land）
-    - 已发现信号「河谷」（landform.river\_valley）
-    - 已发现信号「水田控制突破」（breakthrough.paddy\_control）
+- 满足其一：
+  - 已发现信号「水田承载力」（resource.paddy\_land）
+  - 已发现信号「河谷」（landform.river\_valley）
+  - 已发现信号「水田控制突破」（breakthrough.paddy\_control）
 
 #### 效果摘要
 
-解锁建筑：畦埂水稻田；开放农民阶层岗位；开放通用职业阶层岗位；需要河流地块条件；畦埂水稻田产出 +20%
+解锁建筑：畦埂水稻田
 
 #### 机会成本
 
@@ -8329,32 +7854,27 @@
 - **物资：** 无
 - **建筑 / 生产方式：** 畦埂水稻田 (`bunded_rice_field`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 庄园水田 (`estate_paddy`)；分成水田 (`sharecrop_paddy`)；佃作水田 (`tenant_paddy`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 庄园水田 (`estate_paddy`)；佃作稻庄 (`method_rice_collector_r3`)；精耕稻庄 (`method_rice_collector_r5`)；分成水田 (`sharecrop_paddy`)；佃作水田 (`tenant_paddy`)
 
 #### 结构化内容效果
 
 - **畦埂水稻田**（`building`）：`building.bunded_rice_field` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **农民阶层**（`class`）：`class.farmer` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **稻米**（`good`）：`good.rice_grain` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **河流**（`tile`）：`tile.river` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
-- **水田承载力**（`resource`）：`resource.paddy_land` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 畦埂水稻田：`country.output.building.bunded_rice_field_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 日晒土坯 (`tech.adobe_making`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -8370,7 +7890,7 @@
 | 研究成本 | 8160 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | applied\_method |
 | 布局路线 | branch.rice\_irrigation |
 | 主要路线 | 作物 · 水稻 (\`route.crop.rice\`) |
@@ -8378,23 +7898,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 定居知识 (`tech.settled_knowledge`)
-- 野生稻采集 (`tech.wild_rice_collection`)
+- 野生稻采集 (`tech.wild_rice_collection`)：野生稻采集提供水田整备、水位控制与稻作管理方法中的操作与材料处理方法，水田稻作直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「稻」（bio.rice）
-    - 已发现信号「稻种样本接触」（contact.rice）
-    - 已发现信号「水田控制突破」（breakthrough.paddy\_control）
+- 满足其一：
+  - 已发现信号「稻」（bio.rice）
+  - 已发现信号「稻种样本接触」（contact.rice）
 
 #### 效果摘要
 
-解锁物资：稻米；解锁建筑：佃作稻庄；开放通用职业阶层岗位；开放通用职业阶层岗位；佃作稻庄产出 +25%
+解锁物资：稻米；可利用资源：水田承载力；洪灾损失 -8%
 
 #### 机会成本
 
@@ -8403,36 +7919,30 @@
 #### 内容解锁
 
 - **物资：** 稻米 (`rice_grain`)
-- **建筑 / 生产方式：** 佃作稻庄 (`method_rice_collector_r3`)
+- **建筑 / 生产方式：** 无
 - **自然资源：** 水田承载力 (`paddy_land`)
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 佃作稻庄 (`method_rice_collector_r3`)
 
 #### 结构化内容效果
 
 - **稻米**（`good`）：`good.rice_grain` → `production_access` `unlock` `1.0`；`existing_binding`
-- **佃作稻庄**（`building`）：`building.method_rice_collector_r3` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **稻米**（`good`）：`good.rice_grain` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **水田承载力**（`resource`）：`resource.paddy_land` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 佃作稻庄：`country.output.building.method_rice_collector_r3_factor`：+25%
+- `country.climate.flood_loss_factor`：+8%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 佃作水田 (`tech.tenant_paddy_management`)
+- 佃作水田 (`tech.tenant_paddy_management`)：水田稻作提供水田整备、水位控制与稻作管理方法中的专门知识，佃作水田直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 佃作水田 (`tech.tenant_paddy_management`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 佃作水田 (`tech.tenant_paddy_management`)
-- 日晒土坯 (`tech.adobe_making`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -8448,7 +7958,7 @@
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | applied\_method |
 | 布局路线 | branch.tuber\_highland |
 | 主要路线 | 作物 · 块茎作物 (\`route.crop.tuber\`) |
@@ -8456,22 +7966,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 梯田农业 (`tech.terrace_farming`)
+- 块茎保存 (`tech.tuber_storage`)：块茎保存提供块茎繁育、坡地耕作与低温保存经验中的操作与材料处理方法，垄作块茎直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「马铃薯」（bio.potato）
-    - 已发现信号「块茎样本接触」（contact.potato）
-    - 已发现信号「梯田维护突破」（breakthrough.terrace\_maintenance）
+- 满足其一：
+  - 已发现信号「马铃薯」（bio.potato）
+  - 已发现信号「块茎样本接触」（contact.potato）
 
 #### 效果摘要
 
-解锁建筑：马铃薯农场；开放通用职业阶层岗位；马铃薯农场产出 +20%
+解锁建筑：马铃薯农场
 
 #### 机会成本
 
@@ -8487,24 +7994,22 @@
 #### 结构化内容效果
 
 - **马铃薯农场**（`building`）：`building.potato_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **马铃薯**（`good`）：`good.potatoes` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 马铃薯农场：`country.output.building.potato_collector_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 防霜窖藏 (`tech.frost_protected_storage`)
+- 防霜窖藏 (`tech.frost_protected_storage`)：垄作块茎提供块茎繁育、坡地耕作与低温保存经验中的专门知识，防霜窖藏直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 日晒土坯 (`tech.adobe_making`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -8520,7 +8025,7 @@
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.tuber\_highland |
 | 主要路线 | 作物 · 块茎作物 (\`route.crop.tuber\`) |
@@ -8528,22 +8033,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | craft |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 垄作块茎 (`tech.ridge_tuber_cultivation`)
+- 垄作块茎 (`tech.ridge_tuber_cultivation`)：垄作块茎提供块茎繁育、坡地耕作与低温保存经验中的专门知识，防霜窖藏直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「马铃薯」（bio.potato）
-    - 已发现信号「块茎样本接触」（contact.potato）
-    - 已发现信号「梯田维护突破」（breakthrough.terrace\_maintenance）
+- 满足其一：
+  - 已发现信号「马铃薯」（bio.potato）
+  - 已发现信号「块茎样本接触」（contact.potato）
 
 #### 效果摘要
 
-主粮加工产出 +10%
+大田作物农业产出 +18%
 
 #### 机会成本
 
@@ -8562,19 +8064,19 @@
 
 #### 永久 Modifier 条款
 
-- 主粮加工：`country.output.family.staple_preparation_factor`：+10%
+- 大田作物农业：`country.output.family.field_crop_farming_factor`：+18%
 
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
 
-- 日晒土坯 (`tech.adobe_making`)
+无
+
+#### 跨领域应用
+
+无
 
 #### 作为候选参与的里程碑
 
@@ -8588,9 +8090,9 @@
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 农业 (`agriculture`) |
 | 研究成本 | 8160 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.tuber\_highland |
 | 主要路线 | 作物 · 块茎作物 (\`route.crop.tuber\`) |
@@ -8598,23 +8100,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 定居知识 (`tech.settled_knowledge`)
-- 块茎保存 (`tech.tuber_storage`)
+- 块茎保存 (`tech.tuber_storage`)：块茎保存提供块茎繁育、坡地耕作与低温保存经验中的操作与材料处理方法，高地块茎农业直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「马铃薯」（bio.potato）
-    - 已发现信号「高原」（landform.high\_plateau）
-    - 已发现信号「山地」（landform.mountain）
+- 满足其一：
+  - 已发现信号「马铃薯」（bio.potato）
+  - 已发现信号「块茎样本接触」（contact.potato）
 
 #### 效果摘要
 
-解锁建筑：冷凉高地块茎田；开放农民阶层岗位；适用于山地地貌；适用于高原地貌；冷凉高地块茎田产出 +25%
+解锁建筑：冷凉高地块茎田；寒冷损失 -8%
 
 #### 机会成本
 
@@ -8625,37 +8123,31 @@
 - **物资：** 无
 - **建筑 / 生产方式：** 冷凉高地块茎田 (`highland_tuber_plot`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 高地精准块茎农业 (`method_highland_precision_agriculture`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 高地精准块茎农业 (`method_highland_precision_agriculture`)；机械化马铃薯农场 (`method_potato_collector_r6`)
 
 #### 结构化内容效果
 
 - **冷凉高地块茎田**（`building`）：`building.highland_tuber_plot` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **农民阶层**（`class`）：`class.farmer` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **马铃薯**（`good`）：`good.potatoes` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **山地**（`landform`）：`landform.mountain` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
-- **高原**（`landform`）：`landform.plateau` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
-- **高海拔**（`tile`）：`tile.elevation` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 冷凉高地块茎田：`country.output.building.highland_tuber_plot_factor`：+25%
+- `country.climate.cold_stress_factor`：+8%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 分成租佃 (`tech.sharecropping`)
+- 分成租佃 (`tech.sharecropping`)：高地块茎农业提供块茎繁育、坡地耕作与低温保存经验中的成套生产流程，分成租佃直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 分成租佃 (`tech.sharecropping`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 分成租佃 (`tech.sharecropping`)
-- 日晒土坯 (`tech.adobe_making`)
+无
 
 #### 作为候选参与的里程碑
 
-- 农耕社会 (`tech.agrarian_society`)
+无
 
 ### 沤麻 (`tech.flax_retting`)
 
@@ -8667,7 +8159,7 @@
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.textile\_fibers |
 | 主要路线 | 工艺 · 纺织 (\`route.craft.textiles\`) |
@@ -8675,22 +8167,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | craft |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 织机织造 (`tech.loom_weaving`)
+- 亚麻与韧皮辨识 (`tech.flax_identification`)：亚麻与韧皮辨识提供纤维处理、纺纱、织造与服装生产工艺中的识别与证据标准，沤麻直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「亚麻」（bio.flax）
-    - 已发现信号「棉花」（bio.cotton）
-    - 已发现信号「亚麻样本接触」（contact.flax）
+- 满足其一：
+  - 已发现信号「亚麻」（bio.flax）
+  - 已发现信号「韧皮纤维植物」（bio.bast\_fiber）
+  - 已发现信号「亚麻样本接触」（contact.flax）
 
 #### 效果摘要
 
-解锁物资：亚麻纤维；解锁建筑：亚麻农场；开放通用职业阶层岗位；解锁建筑：沤麻池；亚麻农场产出 +20%
+解锁物资：亚麻纤维；解锁建筑：亚麻农场；解锁建筑：沤麻池
 
 #### 机会成本
 
@@ -8701,32 +8191,29 @@
 - **物资：** 亚麻纤维 (`flax_fiber`)
 - **建筑 / 生产方式：** 亚麻农场 (`flax_collector`)；沤麻池 (`flax_retting_pit`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 家庭纺织坊 (`cottage_weaving`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 家庭纺织坊 (`cottage_weaving`)；亚麻庄园 (`method_flax_collector_r3`)；改良亚麻庄园 (`method_flax_collector_r5`)
 
 #### 结构化内容效果
 
 - **亚麻纤维**（`good`）：`good.flax_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
 - **亚麻农场**（`building`）：`building.flax_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **亚麻纤维**（`good`）：`good.flax_fiber` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 - **沤麻池**（`building`）：`building.flax_retting_pit` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **韧皮纤维**（`good`）：`good.bast_fiber` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 亚麻农场：`country.output.building.flax_collector_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 手工纺纱 (`tech.hand_spinning`)
+- 手工纺纱 (`tech.hand_spinning`)：沤麻提供纤维处理、纺纱、织造与服装生产工艺中的操作与材料处理方法，手工纺纱直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 盐渍保存 (`tech.salt_preservation`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -8742,7 +8229,7 @@
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.textile\_fibers |
 | 主要路线 | 工艺 · 纺织 (\`route.craft.textiles\`) |
@@ -8750,22 +8237,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | craft |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 沤麻 (`tech.flax_retting`)
+- 沤麻 (`tech.flax_retting`)：沤麻提供纤维处理、纺纱、织造与服装生产工艺中的操作与材料处理方法，手工纺纱直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「亚麻」（bio.flax）
-    - 已发现信号「棉花」（bio.cotton）
-    - 已发现信号「亚麻样本接触」（contact.flax）
+- 满足其一：
+  - 已发现信号「亚麻」（bio.flax）
+  - 已发现信号「棉花」（bio.cotton）
+  - 已发现信号「韧皮纤维植物」（bio.bast\_fiber）
 
 #### 效果摘要
 
-解锁建筑：家庭纺织坊；开放通用职业阶层岗位；家庭纺织坊产出 +20%
+解锁建筑：家庭纺织坊
 
 #### 机会成本
 
@@ -8781,24 +8266,22 @@
 #### 结构化内容效果
 
 - **家庭纺织坊**（`building`）：`building.cottage_weaving` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **布料**（`good`）：`good.cloth` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 家庭纺织坊：`country.output.building.cottage_weaving_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
-
-- 棉花去籽 (`tech.cotton_ginning`)
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
 
-- 盐渍保存 (`tech.salt_preservation`)
+无
+
+#### 跨领域应用
+
+无
 
 #### 作为候选参与的里程碑
 
@@ -8814,7 +8297,7 @@
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.textile\_fibers |
 | 主要路线 | 工艺 · 纺织 (\`route.craft.textiles\`) |
@@ -8822,22 +8305,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | craft |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 手工纺纱 (`tech.hand_spinning`)
+- 野生棉铃采集 (`tech.wild_cotton_collection`)：野生棉铃采集提供热带作物栽培、采收与商品化处理能力中的操作与材料处理方法，棉花去籽直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「棉花」（bio.cotton）
-    - 已发现信号「棉花样本接触」（contact.cotton）
-    - 已发现信号「种植园承载力」（resource.plantation\_land）
+- 满足其一：
+  - 已发现信号「棉花」（bio.cotton）
+  - 已发现信号「棉花样本接触」（contact.cotton）
 
 #### 效果摘要
 
-解锁物资：棉纤维；解锁建筑：手工轧棉棚；开放通用职业阶层岗位；手工轧棉棚产出 +20%
+解锁物资：棉纤维；解锁建筑：手工轧棉棚
 
 #### 机会成本
 
@@ -8854,25 +8334,22 @@
 
 - **棉纤维**（`good`）：`good.cotton_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
 - **手工轧棉棚**（`building`）：`building.cotton_ginning_shelter` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **棉纤维**（`good`）：`good.cotton_fiber` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **籽棉**（`good`）：`good.seed_cotton` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 手工轧棉棚：`country.output.building.cotton_ginning_shelter_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 盐渍保存 (`tech.salt_preservation`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -8888,7 +8365,7 @@
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | applied\_method |
 | 布局路线 | branch.tropical\_commodities |
 | 主要路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
@@ -8896,22 +8373,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 香料栽培 (`tech.spice_cultivation`)
+- 野生棉铃采集 (`tech.wild_cotton_collection`)：野生棉铃采集提供热带作物栽培、采收与商品化处理能力中的操作与材料处理方法，棉花园圃直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「棉花」（bio.cotton）
-    - 已发现信号「棉花样本接触」（contact.cotton）
-    - 已发现信号「种植园承载力」（resource.plantation\_land）
+- 满足其一：
+  - 已发现信号「棉花」（bio.cotton）
+  - 已发现信号「棉花样本接触」（contact.cotton）
 
 #### 效果摘要
 
-解锁物资：棉纤维；解锁物资：籽棉；解锁建筑：家庭棉花园圃；开放通用职业阶层岗位；家庭棉花园圃产出 +20%
+解锁物资：棉纤维；解锁物资：籽棉；解锁建筑：家庭棉花园圃；可利用资源：种植园承载力
 
 #### 机会成本
 
@@ -8922,32 +8396,30 @@
 - **物资：** 棉纤维 (`cotton_fiber`)；籽棉 (`seed_cotton`)
 - **建筑 / 生产方式：** 家庭棉花园圃 (`cotton_garden`)
 - **自然资源：** 种植园承载力 (`plantation_land`)
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 棉花农场 (`cotton_collector`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 棉花农场 (`cotton_collector`)；机械化棉花农场 (`method_cotton_collector_r6`)
 
 #### 结构化内容效果
 
 - **棉纤维**（`good`）：`good.cotton_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
 - **籽棉**（`good`）：`good.seed_cotton` → `production_access` `unlock` `1.0`；`existing_binding`
 - **家庭棉花园圃**（`building`）：`building.cotton_garden` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **籽棉**（`good`）：`good.seed_cotton` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 - **种植园承载力**（`resource`）：`resource.plantation_land` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 家庭棉花园圃：`country.output.building.cotton_garden_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 商品作物管理 (`tech.commodity_crop_management`)：棉花园圃提供热带作物栽培、采收与商品化处理能力中的专门知识，商品作物管理直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
 无
-
-#### 应用交汇目标
-
-- 盐渍保存 (`tech.salt_preservation`)
 
 #### 作为候选参与的里程碑
 
@@ -8961,9 +8433,9 @@
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 农业 (`agriculture`) |
 | 研究成本 | 8160 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | applied\_method |
 | 布局路线 | branch.tropical\_commodities |
 | 主要路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
@@ -8971,23 +8443,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 定居知识 (`tech.settled_knowledge`)
-- 野生香料采集 (`tech.wild_spice_collection`)
+- 野生香料采集 (`tech.wild_spice_collection`)：野生香料采集提供热带作物栽培、采收与商品化处理能力中的操作与材料处理方法，遮阴香料园直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「香料作物」（bio.spice）
-    - 已发现信号「香料样本接触」（contact.spice）
-    - 已发现信号「种植园承载力」（resource.plantation\_land）
+- 满足其一：
+  - 已发现信号「香料作物」（bio.spice）
+  - 已发现信号「香料样本接触」（contact.spice）
 
 #### 效果摘要
 
-解锁物资：香料；解锁建筑：林下遮阴香料园；开放通用职业阶层岗位；适应温度条件；林下遮阴香料园产出 +25%
+解锁物资：香料；解锁建筑：林下遮阴香料园；可利用资源：种植园承载力；热害损失 -8%
 
 #### 机会成本
 
@@ -9004,33 +8472,27 @@
 
 - **香料**（`good`）：`good.spices` → `production_access` `unlock` `1.0`；`existing_binding`
 - **林下遮阴香料园**（`building`）：`building.spice_shade_garden` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **香料**（`good`）：`good.spices` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **温度**（`climate`）：`climate.temperature` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
-- **水分**（`climate`）：`climate.moisture` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
 - **种植园承载力**（`resource`）：`resource.plantation_land` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 林下遮阴香料园：`country.output.building.spice_shade_garden_factor`：+25%
+- `country.climate.heat_stress_factor`：+8%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 乳胶烟熏凝固 (`tech.latex_smoke_coagulation`)
-- 市场制度 (`tech.market_institutions`)
+- 商品作物管理 (`tech.commodity_crop_management`)：遮阴香料园提供热带作物栽培、采收与商品化处理能力中的专门知识，商品作物管理直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 市场制度 (`tech.market_institutions`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 市场制度 (`tech.market_institutions`)
-- 盐渍保存 (`tech.salt_preservation`)
+无
 
 #### 作为候选参与的里程碑
 
-- 农耕社会 (`tech.agrarian_society`)
+无
 
 ### 乳胶烟熏凝固 (`tech.latex_smoke_coagulation`)
 
@@ -9042,7 +8504,7 @@
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.tropical\_commodities |
 | 主要路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
@@ -9050,22 +8512,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | craft |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 遮阴香料园 (`tech.spice_shade_gardening`)
+- 天然橡胶加工 (`tech.rubber_working`)：天然橡胶加工提供热带作物栽培、采收与商品化处理能力中的操作与材料处理方法，乳胶烟熏凝固直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「橡胶树」（bio.rubber）
-    - 已发现信号「橡胶样本接触」（contact.rubber）
-    - 已发现信号「森林」（landform.forest）
+- 满足其一：
+  - 已发现信号「橡胶树」（bio.rubber）
+  - 已发现信号「橡胶样本接触」（contact.rubber）
 
 #### 效果摘要
 
-解锁物资：凝固天然橡胶；解锁建筑：乳胶烟熏凝固棚；开放通用职业阶层岗位；可利用资源：种植园承载力；乳胶烟熏凝固棚产出 +20%
+解锁物资：凝固天然橡胶；解锁建筑：乳胶烟熏凝固棚；可利用资源：种植园承载力
 
 #### 机会成本
 
@@ -9082,27 +8541,23 @@
 
 - **凝固天然橡胶**（`good`）：`good.natural_rubber` → `production_access` `unlock` `1.0`；`existing_binding`
 - **乳胶烟熏凝固棚**（`building`）：`building.latex_smoking_shelter` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **凝固天然橡胶**（`good`）：`good.natural_rubber` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **天然乳胶**（`good`）：`good.latex` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **原木**（`good`）：`good.logs` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **种植园承载力**（`resource`）：`resource.plantation_land` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 乳胶烟熏凝固棚：`country.output.building.latex_smoking_shelter_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 盐渍保存 (`tech.salt_preservation`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -9116,9 +8571,9 @@
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 8160 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.forest\_biomass |
 | 主要路线 | 生态 · 森林 (\`route.ecology.forest\`) |
@@ -9126,23 +8581,17 @@
 | 开局能力标签 | 无 |
 | 效果配置 | construction |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 定居知识 (`tech.settled_knowledge`)
-- 木炭烧制 (`tech.charcoal_burning`)
+无
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「木材」（resource.timber）
-    - 已发现信号「森林」（landform.forest）
-    - 已发现信号「林业经营突破」（breakthrough.forest\_management）
+- 已发现信号「木材」（resource.timber）
 
 #### 效果摘要
 
-解锁物资：木材；解锁建筑：锯木场；开放通用职业阶层岗位；解锁建筑：改良锯木场；锯木场产出 +25%
+解锁物资：木材；解锁建筑：锯木场；解锁建筑：改良锯木场；国家建设成本 -10%
 
 #### 机会成本
 
@@ -9153,39 +8602,36 @@
 - **物资：** 木材 (`lumber`)
 - **建筑 / 生产方式：** 锯木场 (`lumber_plant`)；改良锯木场 (`method_lumber_plant_r2`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 细木家具工坊 (`cabinetmaker_workshop`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 细木家具工坊 (`cabinetmaker_workshop`)；蒸汽锯木厂 (`method_lumber_plant_r6`)
 
 #### 结构化内容效果
 
 - **木材**（`good`）：`good.lumber` → `production_access` `unlock` `1.0`；`existing_binding`
 - **锯木场**（`building`）：`building.lumber_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **木材**（`good`）：`good.lumber` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **原木**（`good`）：`good.logs` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **改良锯木场**（`building`）：`building.method_lumber_plant_r2` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 锯木场：`country.output.building.lumber_plant_factor`：+25%
+- `country.construction.cost_factor`：+10%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 树皮纸 (`tech.bark_paper_making`)
+- 树皮纸 (`tech.bark_paper_making`)：手工锯木提供林木管理、木材加工与生物质利用工艺中的成套生产流程，树皮纸直接使用这一能力完成其工艺或组织设计
+- 海岸船厂 (`tech.coastal_shipyards`)：手工锯木提供林木管理、木材加工与生物质利用工艺中的成套生产流程，海岸船厂直接使用这一能力完成其工艺或组织设计
+- 螺旋压印 (`tech.screw_press_printing`)：手工锯木提供林木管理、木材加工与生物质利用工艺中的成套生产流程，螺旋压印直接使用这一能力完成其工艺或组织设计
+- 蒸汽锯木 (`tech.steam_sawmilling`)：手工锯木确立锯切、定尺和木料分级工艺，蒸汽锯木是在该工艺上的动力升级
 
-#### 同路线后继
+#### 主题路线后继
 
-- 树皮纸 (`tech.bark_paper_making`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 树皮纸 (`tech.bark_paper_making`)
-- 陶器容器体系 (`tech.pottery`)
+无
 
 #### 作为候选参与的里程碑
 
-- 农耕社会 (`tech.agrarian_society`)
+无
 
 ### 乳品加工 (`tech.dairy_processing`)
 
@@ -9197,7 +8643,7 @@
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.pastoral\_livestock |
 | 主要路线 | 生态 · 牧场 (\`route.ecology.pasture\`) |
@@ -9205,22 +8651,17 @@
 | 开局能力标签 | 无 |
 | 效果配置 | livestock |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 马匹驯化 (`tech.horse_domestication`)
+- 畜群管理 (`tech.herd_management`)：畜群管理提供畜群驯养、育种与畜产品处理能力中的成套生产流程，乳品加工直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「牧场承载力」（resource.pasture）
-    - 已发现信号「草原」（landform.grassland）
-    - 已发现信号「马匹」（bio.horse）
+- 已发现信号「牛」（bio.cattle）
 
 #### 效果摘要
 
-解锁物资：乳制品；解锁建筑：乳品工坊；开放通用职业阶层岗位；开放通用职业阶层岗位；乳品工坊产出 +20%
+解锁物资：乳制品；解锁建筑：乳品工坊
 
 #### 机会成本
 
@@ -9237,26 +8678,22 @@
 
 - **乳制品**（`good`）：`good.dairy_products` → `production_access` `unlock` `1.0`；`existing_binding`
 - **乳品工坊**（`building`）：`building.creamery` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **乳制品**（`good`）：`good.dairy_products` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **畜牧产品**（`good`）：`good.livestock_products` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 乳品工坊：`country.output.building.creamery_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
-
-- 皮革鞣制 (`tech.hide_tanning`)
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
 
-- 雨养小麦田 (`tech.rainfed_wheat_cultivation`)
+无
+
+#### 跨领域应用
+
+无
 
 #### 作为候选参与的里程碑
 
@@ -9272,7 +8709,7 @@
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.pastoral\_livestock |
 | 主要路线 | 生态 · 野生动物 (\`route.ecology.game\`) |
@@ -9280,22 +8717,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | craft |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 乳品加工 (`tech.dairy_processing`)
+- 畜群管理 (`tech.herd_management`)：畜群管理提供畜群驯养、育种与畜产品处理能力中的成套生产流程，皮革鞣制直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「野生动物」（resource.wild\_game）
-    - 已发现信号「羊」（bio.sheep）
-    - 已发现信号「草原」（landform.grassland）
+- 满足其一：
+  - 已发现信号「野生动物」（resource.wild\_game）
+  - 已发现信号「羊」（bio.sheep）
 
 #### 效果摘要
 
-解锁物资：鞋履；解锁物资：皮革；解锁建筑：鞋匠铺；开放通用职业阶层岗位；鞋匠铺产出 +20%
+解锁物资：鞋履；解锁物资：皮革；解锁建筑：鞋匠铺；解锁建筑：制革工坊
 
 #### 机会成本
 
@@ -9306,37 +8740,30 @@
 - **物资：** 鞋履 (`footwear`)；皮革 (`leather`)
 - **建筑 / 生产方式：** 鞋匠铺 (`cobbler_shop`)；制革工坊 (`tannery`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 皮纸工坊 (`parchment_workshop`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 制鞋厂 (`footwear_plant`)；制革厂 (`leather_plant`)；皮纸工坊 (`parchment_workshop`)
 
 #### 结构化内容效果
 
 - **鞋履**（`good`）：`good.footwear` → `production_access` `unlock` `1.0`；`existing_binding`
 - **皮革**（`good`）：`good.leather` → `production_access` `unlock` `1.0`；`existing_binding`
 - **鞋匠铺**（`building`）：`building.cobbler_shop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **鞋履**（`good`）：`good.footwear` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **皮革**（`good`）：`good.leather` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **制革工坊**（`building`）：`building.tannery` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **皮革**（`good`）：`good.leather` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **生皮**（`good`）：`good.raw_hide` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 鞋匠铺：`country.output.building.cobbler_shop_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
-
-- 毛用畜牧 (`tech.wool_husbandry`)
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
 
-- 雨养小麦田 (`tech.rainfed_wheat_cultivation`)
+无
+
+#### 跨领域应用
+
+无
 
 #### 作为候选参与的里程碑
 
@@ -9352,7 +8779,7 @@
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.pastoral\_livestock |
 | 主要路线 | 生态 · 牧场 (\`route.ecology.pasture\`) |
@@ -9360,22 +8787,17 @@
 | 开局能力标签 | 无 |
 | 效果配置 | livestock |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 皮革鞣制 (`tech.hide_tanning`)
+- 畜群管理 (`tech.herd_management`)：畜群管理提供畜群驯养、育种与畜产品处理能力中的成套生产流程，毛用畜牧直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「牧场承载力」（resource.pasture）
-    - 已发现信号「草原」（landform.grassland）
-    - 已发现信号「马匹」（bio.horse）
+- 已发现信号「羊」（bio.sheep）
 
 #### 效果摘要
 
-解锁物资：羊毛；解锁建筑：精梳羊毛作坊；开放通用职业阶层岗位；开放通用职业阶层岗位；精梳羊毛作坊产出 +20%
+解锁物资：羊毛；解锁建筑：精梳羊毛作坊；解锁建筑：羊毛棚
 
 #### 机会成本
 
@@ -9392,28 +8814,23 @@
 
 - **羊毛**（`good`）：`good.wool` → `production_access` `unlock` `1.0`；`existing_binding`
 - **精梳羊毛作坊**（`building`）：`building.method_wool_shed_r5` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **羊毛**（`good`）：`good.wool` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **畜牧产品**（`good`）：`good.livestock_products` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **羊毛棚**（`building`）：`building.wool_shed` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 精梳羊毛作坊：`country.output.building.method_wool_shed_r5_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
-
-- 屠宰分割 (`tech.meat_processing`)
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
 
-- 雨养小麦田 (`tech.rainfed_wheat_cultivation`)
+无
+
+#### 跨领域应用
+
+无
 
 #### 作为候选参与的里程碑
 
@@ -9429,7 +8846,7 @@
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.pastoral\_livestock |
 | 主要路线 | 生态 · 牧场 (\`route.ecology.pasture\`) |
@@ -9437,22 +8854,21 @@
 | 开局能力标签 | 无 |
 | 效果配置 | craft |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 毛用畜牧 (`tech.wool_husbandry`)
+- 畜群管理 (`tech.herd_management`)：畜群管理提供畜群驯养、育种与畜产品处理能力中的成套生产流程，屠宰分割直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「牧场承载力」（resource.pasture）
-    - 已发现信号「草原」（landform.grassland）
-    - 已发现信号「马匹」（bio.horse）
+- 满足其一：
+  - 已发现信号「野生动物」（resource.wild\_game）
+  - 已发现信号「牛」（bio.cattle）
+  - 已发现信号「羊」（bio.sheep）
+  - 已发现信号「猪」（bio.pig）
 
 #### 效果摘要
 
-解锁物资：肉类；解锁建筑：工业屠宰场；开放通用职业阶层岗位；开放通用职业阶层岗位；工业屠宰场产出 +20%
+解锁物资：肉类；解锁建筑：工业屠宰场；解锁建筑：屠宰场
 
 #### 机会成本
 
@@ -9469,30 +8885,23 @@
 
 - **肉类**（`good`）：`good.meat` → `production_access` `unlock` `1.0`；`existing_binding`
 - **工业屠宰场**（`building`）：`building.mechanized_slaughterhouse` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **肉类**（`good`）：`good.meat` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **生皮**（`good`）：`good.raw_hide` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **畜牧产品**（`good`）：`good.livestock_products` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **屠宰场**（`building`）：`building.slaughterhouse` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 工业屠宰场：`country.output.building.mechanized_slaughterhouse_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 雨养小麦田 (`tech.rainfed_wheat_cultivation`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -9508,7 +8917,7 @@
 | 研究成本 | 7200 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 锚点类型 | backbone |
 | 节点角色 | handling |
 | 布局路线 | backbone.food\_storage |
 | 主要路线 | 制度 · 储藏 (\`route.institution.storage\`) |
@@ -9516,22 +8925,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | craft |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 定居知识 (`tech.settled_knowledge`)
+无
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
-    - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-    - 已发现信号「连续歉收经验」（weather.repeated\_crop\_failure）
+- 满足其一：
+  - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
+  - 已发现信号「肥沃土壤」（resource.fertile\_soil）
+  - 已发现信号「连续歉收经验」（weather.repeated\_crop\_failure）
 
 #### 效果摘要
 
-解锁物资：酒饮；解锁建筑：酿酒坊；开放通用职业阶层岗位；开放通用职业阶层岗位；酿酒坊产出 +25%
+解锁物资：酒饮；解锁建筑：酿酒坊；解锁建筑：蒸馏酒坊；农业部门产出 +15%
 
 #### 机会成本
 
@@ -9548,29 +8955,23 @@
 
 - **酒饮**（`good`）：`good.beverages` → `production_access` `unlock` `1.0`；`existing_binding`
 - **酿酒坊**（`building`）：`building.brewery` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **酒饮**（`good`）：`good.beverages` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **混合谷物**（`good`）：`good.grain` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **蒸馏酒坊**（`building`）：`building.distillery` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **陶器**（`good`）：`good.pottery` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 酿酒坊：`country.output.building.brewery_factor`：+25%
+- `country.output.agriculture_factor`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 佃作谷物 (`tech.tenant_cereal_farming`)
+无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 城市食物供应 (`tech.urban_food_supply`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 城市食物供应 (`tech.urban_food_supply`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -9584,9 +8985,9 @@
 | 时代 | 农耕时代 (`agrarian`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 8160 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.industrial\_chemistry |
 | 主要路线 | 制度 · 储藏 (\`route.institution.storage\`) |
@@ -9594,23 +8995,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | craft |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 定居知识 (`tech.settled_knowledge`)
-- 卤水采集 (`tech.brine_collection`)
+- 卤水采集 (`tech.brine_collection`)：卤水采集提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，盐渍保存直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「盐」（resource.salt）
-    - 已发现信号「硝石」（resource.saltpeter）
-    - 已发现信号「硫磺」（resource.sulfur）
+- 满足其一：
+  - 已发现信号「盐」（resource.salt）
+  - 已发现信号「硝石」（resource.saltpeter）
+  - 已发现信号「硫磺」（resource.sulfur）
 
 #### 效果摘要
 
-解锁物资：食盐；解锁建筑：盐场；开放通用职业阶层岗位；开放通用职业阶层岗位；盐场产出 +25%
+解锁物资：食盐；解锁建筑：盐场；解锁建筑：日晒盐田；制造部门产出 +12%
 
 #### 机会成本
 
@@ -9627,32 +9025,29 @@
 
 - **食盐**（`good`）：`good.salt` → `production_access` `unlock` `1.0`；`existing_binding`
 - **盐场**（`building`）：`building.salt_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **食盐**（`good`）：`good.salt` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 - **日晒盐田**（`building`）：`building.solar_salt_pan` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **卤水**（`good`）：`good.brine` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 盐场：`country.output.building.salt_collector_factor`：+25%
+- `country.output.manufacturing_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 城市卫生 (`tech.urban_sanitation`)
+- 城市卫生 (`tech.urban_sanitation`)：盐渍保存提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，城市卫生直接使用这一能力完成其工艺或组织设计
+- 远洋补给 (`tech.oceanic_provisioning`)：盐渍保存提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，远洋补给直接使用这一能力完成其工艺或组织设计
+- 罐藏 (`tech.canning`)：盐渍保存提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，罐藏直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 城市卫生 (`tech.urban_sanitation`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 城市卫生 (`tech.urban_sanitation`)
-- 天然橡胶加工 (`tech.rubber_working`)
+无
 
 #### 作为候选参与的里程碑
 
-- 农耕社会 (`tech.agrarian_society`)
+无
 
 ### 谷物烘焙 (`tech.grain_baking`)
 
@@ -9664,7 +9059,7 @@
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.wheat\_rainfed |
 | 主要路线 | 作物 · 小麦 (\`route.crop.wheat\`) |
@@ -9672,22 +9067,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | craft |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 旱作小麦田 (`tech.dryland_wheat_cultivation`)
+- 旱作小麦田 (`tech.dryland_wheat_cultivation`)：旱作小麦田提供谷物旱作、轮作与收获工艺中的专门知识，谷物烘焙直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「小麦」（bio.wheat）
-    - 已发现信号「小麦样本接触」（contact.wheat）
-    - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
+- 满足其一：
+  - 已发现信号「小麦」（bio.wheat）
+  - 已发现信号「小麦样本接触」（contact.wheat）
 
 #### 效果摘要
 
-解锁物资：面包；解锁建筑：面包坊；开放通用职业阶层岗位；开放通用职业阶层岗位；面包坊产出 +20%
+解锁物资：面包；解锁建筑：面包坊；解锁建筑：面包厂
 
 #### 机会成本
 
@@ -9704,29 +9096,23 @@
 
 - **面包**（`good`）：`good.bread` → `production_access` `unlock` `1.0`；`existing_binding`
 - **面包坊**（`building`）：`building.bakery` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **面包**（`good`）：`good.bread` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **小麦**（`good`）：`good.wheat_grain` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **面包厂**（`building`）：`building.bread_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **包装材料**（`good`）：`good.packaging` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 面包坊：`country.output.building.bakery_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 灌溉 (`tech.irrigation`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -9742,7 +9128,7 @@
 | 研究成本 | 9360 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.construction\_materials |
 | 主要路线 | 材料 · 合成材料 (\`route.material.materials\`) |
@@ -9750,22 +9136,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | craft |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 日晒土坯 (`tech.adobe_making`)
+- 窑烧控制 (`tech.kiln_firing`)：窑烧控制提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，早期玻璃烧制直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「定居知识」（tech.settled\_knowledge）
-  - 满足其一：
-    - 已发现信号「硅砂」（resource.silica\_sand）
-    - 已发现信号「石灰岩」（resource.limestone）
-    - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
+- 满足其一：
+  - 已发现信号「硅砂」（resource.silica\_sand）
+  - 已发现信号「石灰岩」（resource.limestone）
+  - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
 
 #### 效果摘要
 
-解锁物资：玻璃；解锁物资：硅砂；解锁建筑：玻璃窑；开放通用职业阶层岗位；玻璃窑产出 +20%
+解锁物资：玻璃；解锁物资：硅砂；解锁建筑：玻璃窑；解锁建筑：硅砂矿坑
 
 #### 机会成本
 
@@ -9783,30 +9167,23 @@
 - **玻璃**（`good`）：`good.glass` → `production_access` `unlock` `1.0`；`existing_binding`
 - **硅砂**（`good`）：`good.silica_sand` → `production_access` `unlock` `1.0`；`existing_binding`
 - **玻璃窑**（`building`）：`building.classical_glass_kiln` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **玻璃**（`good`）：`good.glass` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **硅砂**（`good`）：`good.silica_sand` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **原木**（`good`）：`good.logs` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **硅砂矿坑**（`building`）：`building.classical_silica_pit` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **硅砂**（`good`）：`good.silica_sand` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 玻璃窑：`country.output.building.classical_glass_kiln_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 畜力牵引 (`tech.animal_traction`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -9830,7 +9207,7 @@
 | 开局能力标签 | 无 |
 | 效果配置 | milestone |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
@@ -9840,7 +9217,7 @@
 
 #### 效果摘要
 
-科研机构产出 +10%
+商栈产出 +25%；社会领域研究效率 +15%
 
 #### 机会成本
 
@@ -9848,23 +9225,15 @@
 
 #### 里程碑候选
 
-需要完成下列 16 项候选中的任意 5 项：
-- 陶器容器体系 (`tech.pottery`)
-- 灌溉 (`tech.irrigation`)
-- 马匹驯化 (`tech.horse_domestication`)
-- 天然橡胶加工 (`tech.rubber_working`)
-- 铜锡配比与铸造 (`tech.bronze_casting`)
-- 窑烧控制 (`tech.kiln_firing`)
-- 织机织造 (`tech.loom_weaving`)
-- 畜力牵引 (`tech.animal_traction`)
-- 日晒土坯 (`tech.adobe_making`)
-- 玉米园圃 (`tech.maize_garden_horticulture`)
-- 雨养小麦田 (`tech.rainfed_wheat_cultivation`)
+需要完成下列 8 项候选中的任意 4 项：
+- 留种选育 (`tech.seed_selection`)
+- 犁耕农业 (`tech.plough_agriculture`)
+- 天文历法 (`tech.celestial_calendars`)
+- 永久聚落 (`tech.permanent_settlements`)
 - 水田稻作 (`tech.rice_paddy_cultivation`)
-- 高地块茎农业 (`tech.highland_tuber_farming`)
-- 遮阴香料园 (`tech.spice_shade_gardening`)
-- 手工锯木 (`tech.timber_sawing`)
-- 盐渍保存 (`tech.salt_preservation`)
+- 铜锡配比与铸造 (`tech.bronze_casting`)
+- 灌溉测量 (`tech.irrigation_surveying`)
+- 记事制度 (`tech.record_keeping`)
 
 #### 内容解锁
 
@@ -9879,36 +9248,18 @@
 
 #### 永久 Modifier 条款
 
-- 科研机构：`country.output.family.research_institution_factor`：+10%
+- 商栈：`country.output.family.merchant_post_factor`：+25%
+- `country.research.society_efficiency`：+15%
 
-#### 直接后继（硬前置关系）
-
-- 文字 (`tech.writing`)
-- 砌体建筑 (`tech.masonry`)
-- 块炼铁 (`tech.iron_smelting`)
-- 度量衡 (`tech.weights_and_measures`)
-- 市场制度 (`tech.market_institutions`)
-- 货币 (`tech.currency`)
-- 运河工程 (`tech.canal_engineering`)
-- 河运 (`tech.river_transport`)
-- 轮作 (`tech.crop_rotation`)
-- 城市卫生 (`tech.urban_sanitation`)
-- 自然哲学 (`tech.natural_philosophy`)
-- 地表煤利用 (`tech.surface_coal_use`)
-- 植物纤维抄纸 (`tech.plant_fiber_papermaking`)
-- 树皮纸 (`tech.bark_paper_making`)
-- 皮纸制作 (`tech.parchment_making`)
-- 官僚行政 (`tech.state_bureaucracy`)
-- 习惯佃作 (`tech.customary_tenancy`)
-- 分成租佃 (`tech.sharecropping`)
-- 佃作水田 (`tech.tenant_paddy_management`)
-- 城市食物供应 (`tech.urban_food_supply`)
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
 
 无
 
@@ -9929,9 +9280,9 @@
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 社会 (`society`) |
 | 研究成本 | 18000 科技点（`technology_points`） |
-| 节点标记 | 无 |
+| 节点标记 | 时代关键 |
 | 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | institution |
 | 布局路线 | backbone.knowledge\_computation |
 | 主要路线 | 制度 · 文字 (\`route.institution.writing\`) |
@@ -9939,22 +9290,18 @@
 | 开局能力标签 | 无 |
 | 效果配置 | knowledge |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 农耕社会 (`tech.agrarian_society`)
+- 天文历法 (`tech.celestial_calendars`)：天文历法提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，文字直接使用这一能力完成其工艺或组织设计
+- 永久聚落 (`tech.permanent_settlements`)：永久聚落提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，文字直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「农耕社会」（tech.agrarian\_society）
-  - 满足其一：
-    - 已发现信号「季风经验」（weather.monsoon）
-    - 已发现信号「霜冻经验」（weather.frost）
-    - 已发现信号「河谷」（landform.river\_valley）
+无
 
 #### 效果摘要
 
-解锁物资：手抄本；解锁建筑：城邦抄写室；开放通用职业阶层岗位；开放通用职业阶层岗位；城邦抄写室产出 +25%
+解锁物资：手抄本；解锁建筑：城邦抄写室；知识部门产出 +15%
 
 #### 机会成本
 
@@ -9971,31 +9318,33 @@
 
 - **手抄本**（`good`）：`good.manuscripts` → `production_access` `unlock` `1.0`；`existing_binding`
 - **城邦抄写室**（`building`）：`building.classical_scriptorium` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **手抄本**（`good`）：`good.manuscripts` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **采集植物食物**（`good`）：`good.gathered_plants` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 城邦抄写室：`country.output.building.classical_scriptorium_factor`：+25%
+- `country.output.knowledge_factor`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 学术机构 (`tech.scholarly_academies`)
-- 木版印刷 (`tech.woodblock_printing`)
+- 学术机构 (`tech.scholarly_academies`)：文字提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，学术机构直接使用这一能力完成其工艺或组织设计
+- 自然哲学 (`tech.natural_philosophy`)：文字提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，自然哲学直接使用这一能力完成其工艺或组织设计
+- 官僚行政 (`tech.state_bureaucracy`)：文字提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，官僚行政直接使用这一能力完成其工艺或组织设计
+- 木版印刷 (`tech.woodblock_printing`)：文字提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，木版印刷直接使用这一能力完成其工艺或组织设计
+- 活字印刷 (`tech.movable_type_printing`)：文字提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，活字印刷直接使用这一能力完成其工艺或组织设计
+- 经院研究法 (`tech.scholastic_method`)：文字提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，经院研究法直接使用这一能力完成其工艺或组织设计
+- 地图学 (`tech.cartography`)：文字提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，地图学直接使用这一能力完成其工艺或组织设计
+- 复式记账 (`tech.double_entry_bookkeeping`)：文字提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，复式记账直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 经院研究法 (`tech.scholastic_method`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 经院研究法 (`tech.scholastic_method`)
+无
 
 #### 作为候选参与的里程碑
 
-无
+- 王国体系 (`tech.kingdom_administration`)
 
 ### 砌体建筑 (`tech.masonry`)
 
@@ -10005,9 +9354,9 @@
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 20400 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.construction\_materials |
 | 主要路线 | 材料 · 石材 (\`route.material.stone\`) |
@@ -10015,23 +9364,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | construction |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 农耕社会 (`tech.agrarian_society`)
-- 日晒土坯 (`tech.adobe_making`)
+- 日晒土坯 (`tech.adobe_making`)：日晒土坯提供土石、陶瓷、玻璃和工程构件制造能力中的成套生产流程，砌体建筑直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「农耕社会」（tech.agrarian\_society）
-  - 满足其一：
-    - 已发现信号「石料」（resource.stone）
-    - 已发现信号「燧石」（resource.flint）
-    - 已发现信号「黏土」（resource.clay）
+- 满足其一：
+  - 已发现信号「石料」（resource.stone）
+  - 已发现信号「燧石」（resource.flint）
+  - 已发现信号「黏土」（resource.clay）
 
 #### 效果摘要
 
-解锁物资：石灰；解锁物资：石灰岩；解锁建筑：石灰厂；开放通用职业阶层岗位；石灰厂产出 +25%
+解锁物资：石灰；解锁物资：石灰岩；解锁建筑：石灰厂；可利用资源：石灰岩；国家建设成本 -10%
 
 #### 机会成本
 
@@ -10049,114 +9395,27 @@
 - **石灰**（`good`）：`good.lime` → `production_access` `unlock` `1.0`；`existing_binding`
 - **石灰岩**（`good`）：`good.limestone` → `production_access` `unlock` `1.0`；`existing_binding`
 - **石灰厂**（`building`）：`building.lime_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **石灰**（`good`）：`good.lime` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **石灰岩**（`good`）：`good.limestone` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **石灰岩**（`resource`）：`resource.limestone` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 石灰厂：`country.output.building.lime_plant_factor`：+25%
+- `country.construction.cost_factor`：+10%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 城市水务 (`tech.urban_waterworks`)
+- 城市水务 (`tech.urban_waterworks`)：砌体建筑提供土石、陶瓷、玻璃和工程构件制造能力中的成套生产流程，城市水务直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 城市水务 (`tech.urban_waterworks`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 城市水务 (`tech.urban_waterworks`)
-- 运河工程 (`tech.canal_engineering`)
-
-#### 作为候选参与的里程碑
-
-- 王国体系 (`tech.kingdom_administration`)
-
-### 块炼铁 (`tech.iron_smelting`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.iron_smelting` |
-| 时代 | 王国时代 (`kingdom`) |
-| 领域 | 工程 (`engineering`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
-| 网络角色 | branch |
-| 锚点类型 | route\_anchor |
-| 节点角色 | production\_system |
-| 布局路线 | branch.heavy\_industry |
-| 主要路线 | 资源 · 铁 (\`route.resource.iron\`) |
-| 全部路线 | 资源 · 铁 (\`route.resource.iron\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | metallurgy |
-
-#### 前置科技（决定研发资格）
-
-- 农耕社会 (`tech.agrarian_society`)
-- 畜力牵引 (`tech.animal_traction`)
-
-#### 发现启发（仅用于揭示）
-
-- 全部满足：
-  - 已完成科技「农耕社会」（tech.agrarian\_society）
-  - 满足其一：
-    - 已发现信号「铁矿」（resource.iron\_ore）
-    - 已发现信号「煤炭」（resource.coal）
-    - 已发现信号「矿井支护突破」（breakthrough.mine\_support）
-
-#### 效果摘要
-
-解锁物资：锻铁；解锁建筑：块炼炉；开放通用职业阶层岗位；开放通用职业阶层岗位；块炼炉产出 +25%
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 3 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 锻铁 (`wrought_iron`)
-- **建筑 / 生产方式：** 块炼炉 (`bloomery`)；铁制工具工坊 (`iron_tool_workshop`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 浅层铁矿 (`early_iron_mine`)
-
-#### 结构化内容效果
-
-- **锻铁**（`good`）：`good.wrought_iron` → `production_access` `unlock` `1.0`；`existing_binding`
-- **块炼炉**（`building`）：`building.bloomery` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **锻铁**（`good`）：`good.wrought_iron` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **铁矿石**（`good`）：`good.iron_ore` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **木炭**（`good`）：`good.charcoal` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **铁制工具工坊**（`building`）：`building.iron_tool_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **锻铁**（`good`）：`good.wrought_iron` → `input_method_access` `enable` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-- 块炼炉：`country.output.building.bloomery_factor`：+25%
-
-#### 直接后继（硬前置关系）
-
-- 铁矿辨识 (`tech.iron_ore_identification`)
-- 高炉冶炼 (`tech.blast_furnace`)
-
-#### 同路线后继
-
-- 高炉冶炼 (`tech.blast_furnace`)
-
-#### 应用交汇目标
-
-- 高炉冶炼 (`tech.blast_furnace`)
-- 自然哲学 (`tech.natural_philosophy`)
+无
 
 #### 作为候选参与的里程碑
 
-- 王国体系 (`tech.kingdom_administration`)
+无
 
 ### 度量衡 (`tech.weights_and_measures`)
 
@@ -10167,31 +9426,28 @@
 | 领域 | 社会 (`society`) |
 | 研究成本 | 18000 科技点（`technology_points`） |
 | 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 网络角色 | branch |
+| 锚点类型 | branch |
 | 节点角色 | institution |
-| 布局路线 | backbone.tools\_machinery |
+| 布局路线 | branch.measurement\_instruments |
 | 主要路线 | 制度 · 市场 (\`route.institution.market\`) |
 | 全部路线 | 制度 · 市场 (\`route.institution.market\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | trade |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 农耕社会 (`tech.agrarian_society`)
+无
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「农耕社会」（tech.agrarian\_society）
-  - 满足其一：
-    - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-    - 已发现信号「河谷」（landform.river\_valley）
-    - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
+- 满足其一：
+  - 已发现信号「金属加工突破」（breakthrough.metalworking）
+  - 已发现信号「石料」（resource.stone）
 
 #### 效果摘要
 
-解锁建筑：砂金淘洗精炼棚；开放通用职业阶层岗位；解锁建筑：银矿火试炉；砂金淘洗精炼棚产出 +25%
+解锁物资：黄金；解锁建筑：砂金淘洗精炼棚；解锁建筑：银矿火试炉；工程领域研究效率 +15%
 
 #### 机会成本
 
@@ -10199,37 +9455,33 @@
 
 #### 内容解锁
 
-- **物资：** 无
+- **物资：** 黄金 (`gold`)
 - **建筑 / 生产方式：** 砂金淘洗精炼棚 (`gold_washing_refinery`)；银矿火试炉 (`silver_fire_assay_hearth`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 地籍管理局 (`cadastral_office`)
 
 #### 结构化内容效果
 
+- **黄金**（`good`）：`good.gold` → `production_access` `unlock` `1.0`；`existing_binding`
 - **砂金淘洗精炼棚**（`building`）：`building.gold_washing_refinery` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **黄金**（`good`）：`good.gold` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **含金砂矿**（`good`）：`good.gold_ore` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **木炭**（`good`）：`good.charcoal` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **银矿火试炉**（`building`）：`building.silver_fire_assay_hearth` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **白银**（`good`）：`good.silver` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **含银矿石**（`good`）：`good.silver_ore` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 砂金淘洗精炼棚：`country.output.building.gold_washing_refinery_factor`：+25%
+- `country.research.engineering_efficiency`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 道路工程 (`tech.road_engineering`)
+- 火药配制 (`tech.gunpowder_formulation`)：度量衡提供测量基准、统计方法与精密仪器能力中的稳定的组织与制度载体，火药配制直接使用这一能力完成其工艺或组织设计
+- 地产测绘 (`tech.property_cadastre`)：度量衡提供测量基准、统计方法与精密仪器能力中的稳定的组织与制度载体，地产测绘直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 活字印刷 (`tech.movable_type_printing`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 活字印刷 (`tech.movable_type_printing`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -10245,31 +9497,28 @@
 | 研究成本 | 20400 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | institution |
-| 布局路线 | branch.tropical\_commodities |
+| 布局路线 | branch.commerce\_finance |
 | 主要路线 | 制度 · 市场 (\`route.institution.market\`) |
 | 全部路线 | 制度 · 市场 (\`route.institution.market\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | trade |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 农耕社会 (`tech.agrarian_society`)
-- 遮阴香料园 (`tech.spice_shade_gardening`)
+- 早期贸易 (`tech.early_trade`)：早期贸易提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，市场制度直接使用这一能力完成其工艺或组织设计
+- 记事制度 (`tech.record_keeping`)：记事制度提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，市场制度直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「农耕社会」（tech.agrarian\_society）
-  - 满足其一：
-    - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-    - 已发现信号「河谷」（landform.river\_valley）
-    - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
+- 满足其一：
+  - 已发现信号「金矿」（resource.gold\_ore）
+  - 已发现信号「银矿」（resource.silver\_ore）
 
 #### 效果摘要
 
-科研机构产出 +12%；国家协同能力 +3%
+商栈产出 +50%；热害损失 -8%
 
 #### 机会成本
 
@@ -10288,21 +9537,22 @@
 
 #### 永久 Modifier 条款
 
-- 科研机构：`country.output.family.research_institution_factor`：+12%
-- `country.trade.capacity_factor`：+3%
+- 商栈：`country.output.building.merchant_post_factor`：+50%
+- `country.climate.heat_stress_factor`：+8%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 农奴义务 (`tech.serf_obligations`)
+- 农奴义务 (`tech.serf_obligations`)：市场制度提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，农奴义务直接使用这一能力完成其工艺或组织设计
+- 商业网络 (`tech.mercantile_networks`)：市场制度提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，商业网络直接使用这一能力完成其工艺或组织设计
+- 数字市场 (`tech.digital_marketplaces`)：市场制度提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，数字市场直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 农奴义务 (`tech.serf_obligations`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 农奴义务 (`tech.serf_obligations`)
-- 自然哲学 (`tech.natural_philosophy`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -10316,33 +9566,29 @@
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 社会 (`society`) |
 | 研究成本 | 20400 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | institution |
-| 布局路线 | branch.nonferrous\_metals |
+| 布局路线 | branch.commerce\_finance |
 | 主要路线 | 制度 · 市场 (\`route.institution.market\`) |
 | 全部路线 | 制度 · 市场 (\`route.institution.market\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | trade |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 农耕社会 (`tech.agrarian_society`)
-- 铜锡配比与铸造 (`tech.bronze_casting`)
+- 铜锡配比与铸造 (`tech.bronze_casting`)：铜锡配比与铸造提供矿物识别、有色冶炼与合金配制能力中的成套生产流程，货币直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「农耕社会」（tech.agrarian\_society）
-  - 满足其一：
-    - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-    - 已发现信号「河谷」（landform.river\_valley）
-    - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
+- 满足其一：
+  - 已发现信号「金矿」（resource.gold\_ore）
+  - 已发现信号「银矿」（resource.silver\_ore）
 
 #### 效果摘要
 
-解锁物资：珠宝；解锁建筑：金银器工坊；开放通用职业阶层岗位；开放通用职业阶层岗位；金银器工坊产出 +25%
+解锁物资：珠宝；解锁建筑：金银器工坊；采掘部门产出 +12%
 
 #### 机会成本
 
@@ -10353,38 +9599,32 @@
 - **物资：** 珠宝 (`jewelry`)
 - **建筑 / 生产方式：** 金银器工坊 (`goldsmith_workshop`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 珠宝厂 (`jewelry_plant`)
 
 #### 结构化内容效果
 
 - **珠宝**（`good`）：`good.jewelry` → `production_access` `unlock` `1.0`；`existing_binding`
 - **金银器工坊**（`building`）：`building.goldsmith_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **珠宝**（`good`）：`good.jewelry` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **黄金**（`good`）：`good.gold` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 金银器工坊：`country.output.building.goldsmith_workshop_factor`：+25%
+- `country.output.extractive_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 坩埚钢 (`tech.crucible_steel`)
+- 坩埚钢 (`tech.crucible_steel`)：货币提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，坩埚钢直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 坩埚钢 (`tech.crucible_steel`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 坩埚钢 (`tech.crucible_steel`)
-- 砌体建筑 (`tech.masonry`)
+无
 
 #### 作为候选参与的里程碑
 
-- 王国体系 (`tech.kingdom_administration`)
+无
 
 ### 道路工程 (`tech.road_engineering`)
 
@@ -10394,9 +9634,9 @@
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 23400 科技点（`technology_points`） |
-| 节点标记 | 无 |
+| 节点标记 | 时代关键 |
 | 网络角色 | backbone |
-| 锚点类型 | support |
+| 锚点类型 | era\_candidate |
 | 节点角色 | institution |
 | 布局路线 | backbone.tools\_machinery |
 | 主要路线 | 地理 · 内陆 (\`route.geography.inland\`) |
@@ -10404,22 +9644,18 @@
 | 开局能力标签 | 无 |
 | 效果配置 | trade |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 度量衡 (`tech.weights_and_measures`)
+- 永久聚落 (`tech.permanent_settlements`)：永久聚落提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，道路工程直接使用这一能力完成其工艺或组织设计
+- 犁耕农业 (`tech.plough_agriculture`)：犁耕农业提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，道路工程直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「农耕社会」（tech.agrarian\_society）
-  - 满足其一：
-    - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-    - 已发现信号「河谷」（landform.river\_valley）
-    - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
+无
 
 #### 效果摘要
 
-解锁建筑：石作工场；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：规模化采石场；石作工场产出 +20%
+解锁建筑：石作工场；解锁建筑：规模化采石场
 
 #### 机会成本
 
@@ -10435,33 +9671,30 @@
 #### 结构化内容效果
 
 - **石作工场**（`building`）：`building.classical_masonry_yard` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **建筑构件**（`good`）：`good.construction_components` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **原石**（`good`）：`good.raw_stone` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **规模化采石场**（`building`）：`building.method_stone_collector_r4` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **原石**（`good`）：`good.raw_stone` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 石作工场：`country.output.building.classical_masonry_yard_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 行业组织 (`tech.guild_organization`)：道路工程提供工具制造、机械加工与设备控制能力中的稳定的组织与制度载体，行业组织直接使用这一能力完成其工艺或组织设计
+- 地图学 (`tech.cartography`)：道路工程提供工具制造、机械加工与设备控制能力中的稳定的组织与制度载体，地图学直接使用这一能力完成其工艺或组织设计
+- 机械计时 (`tech.mechanical_timekeeping`)：道路工程提供工具制造、机械加工与设备控制能力中的稳定的组织与制度载体，机械计时直接使用这一能力完成其工艺或组织设计
+- 铁路物流 (`tech.rail_logistics`)：道路工程提供工具制造、机械加工与设备控制能力中的稳定的组织与制度载体，铁路物流直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
-
-无
-
-#### 应用交汇目标
+#### 跨领域应用
 
 无
 
 #### 作为候选参与的里程碑
 
-无
+- 王国体系 (`tech.kingdom_administration`)
 
 ### 运河工程 (`tech.canal_engineering`)
 
@@ -10471,9 +9704,9 @@
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 20400 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.water\_wind |
 | 主要路线 | 地理 · 河流 (\`route.geography.river\`) |
@@ -10481,23 +9714,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | hydraulic |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 农耕社会 (`tech.agrarian_society`)
-- 灌溉 (`tech.irrigation`)
+- 灌溉 (`tech.irrigation`)：灌溉提供水流、风力、输配水和流域工程能力中的成套生产流程，运河工程直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「农耕社会」（tech.agrarian\_society）
-  - 满足其一：
-    - 已发现信号「河湖水系」（landform.freshwater\_access）
-    - 已发现信号「河谷」（landform.river\_valley）
-    - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
+- 满足其一：
+  - 已发现信号「河湖水系」（landform.freshwater\_access）
+  - 已发现信号「河谷」（landform.river\_valley）
+  - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
 
 #### 效果摘要
 
-解锁建筑：石灰石采石场；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：石料场；石灰石采石场产出 +25%
+解锁建筑：石灰石采石场；解锁建筑：石料场；洪灾损失 -8%
 
 #### 机会成本
 
@@ -10513,33 +9743,28 @@
 #### 结构化内容效果
 
 - **石灰石采石场**（`building`）：`building.limestone_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **石灰岩**（`good`）：`good.limestone` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 - **石料场**（`building`）：`building.method_stone_collector_r2` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **原石**（`good`）：`good.raw_stone` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 石灰石采石场：`country.output.building.limestone_collector_factor`：+25%
+- `country.climate.flood_loss_factor`：+8%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 水力机械 (`tech.water_power`)
+- 水力机械 (`tech.water_power`)：运河工程提供水流、风力、输配水和流域工程能力中的成套生产流程，水力机械直接使用这一能力完成其工艺或组织设计
+- 水利工程 (`tech.hydraulic_engineering`)：运河工程提供大尺度渠道、闸门和水位调度经验
 
-#### 同路线后继
+#### 主题路线后继
 
-- 水力机械 (`tech.water_power`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 水力机械 (`tech.water_power`)
-- 地表煤利用 (`tech.surface_coal_use`)
+无
 
 #### 作为候选参与的里程碑
 
-- 王国体系 (`tech.kingdom_administration`)
+无
 
 ### 河运 (`tech.river_transport`)
 
@@ -10549,9 +9774,9 @@
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 20400 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | institution |
 | 布局路线 | branch.maritime\_logistics |
 | 主要路线 | 地理 · 河流 (\`route.geography.river\`) |
@@ -10559,23 +9784,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | trade |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 农耕社会 (`tech.agrarian_society`)
-- 陶器容器体系 (`tech.pottery`)
+- 陶器容器体系 (`tech.pottery`)：陶器容器体系提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，河运直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「农耕社会」（tech.agrarian\_society）
-  - 满足其一：
-    - 已发现信号「河谷」（landform.river\_valley）
-    - 已发现信号「河湖水系」（landform.freshwater\_access）
-    - 已发现信号「洪水经验」（weather.major\_flood）
+- 满足其一：
+  - 已发现信号「河谷」（landform.river\_valley）
+  - 已发现信号「河湖水系」（landform.freshwater\_access）
+  - 已发现信号「洪水经验」（weather.major\_flood）
 
 #### 效果摘要
 
-科研机构产出 +12%；国家协同能力 +3%
+公共营造场产出 +50%；贸易速度 +12%
 
 #### 机会成本
 
@@ -10594,25 +9816,25 @@
 
 #### 永久 Modifier 条款
 
-- 科研机构：`country.output.family.research_institution_factor`：+12%
-- `country.trade.capacity_factor`：+3%
+- 公共营造场：`country.output.building.classical_public_works_factor`：+50%
+- `country.trade.speed_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 磁针导航 (`tech.magnetic_navigation`)
+- 磁针导航 (`tech.magnetic_navigation`)：河运提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，磁针导航直接使用这一能力完成其工艺或组织设计
+- 远洋航海 (`tech.oceanic_navigation`)：河运提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，远洋航海直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 磁针导航 (`tech.magnetic_navigation`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 磁针导航 (`tech.magnetic_navigation`)
-- 地表煤利用 (`tech.surface_coal_use`)
+无
 
 #### 作为候选参与的里程碑
 
-- 王国体系 (`tech.kingdom_administration`)
+无
 
 ### 轮作 (`tech.crop_rotation`)
 
@@ -10624,7 +9846,7 @@
 | 研究成本 | 20400 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | production\_system |
 | 布局路线 | branch.wheat\_rainfed |
 | 主要路线 | 作物 · 通用农艺 (\`route.crop.general\`) |
@@ -10632,23 +9854,18 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 农耕社会 (`tech.agrarian_society`)
-- 雨养小麦田 (`tech.rainfed_wheat_cultivation`)
+- 留种选育 (`tech.seed_selection`)：留种选育提供粮食处理、保存与农艺组织能力中的成套生产流程，轮作直接使用这一能力完成其工艺或组织设计
+- 犁耕农业 (`tech.plough_agriculture`)：犁耕农业提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，轮作直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「农耕社会」（tech.agrarian\_society）
-  - 满足其一：
-    - 已发现信号「小麦」（bio.wheat）
-    - 已发现信号「小麦样本接触」（contact.wheat）
-    - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
+无
 
 #### 效果摘要
 
-解锁物资：食用油；解锁建筑：堆肥场；开放通用职业阶层岗位；开放通用职业阶层岗位；堆肥场产出 +25%
+解锁物资：食用油；解锁建筑：堆肥场；解锁建筑：榨油坊；旱灾损失 -8%
 
 #### 机会成本
 
@@ -10665,31 +9882,23 @@
 
 - **食用油**（`good`）：`good.edible_oil` → `production_access` `unlock` `1.0`；`existing_binding`
 - **堆肥场**（`building`）：`building.composting_yard` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **肥料**（`good`）：`good.fertilizer` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **畜牧产品**（`good`）：`good.livestock_products` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **榨油坊**（`building`）：`building.edible_oil_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **食用油**（`good`）：`good.edible_oil` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **玉米**（`good`）：`good.corn_grain` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 堆肥场：`country.output.building.composting_yard_factor`：+25%
+- `country.climate.drought_loss_factor`：+8%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 集约轮作 (`tech.intensive_crop_rotation`)
+- 集约轮作 (`tech.intensive_crop_rotation`)：轮作提供谷物旱作、轮作与收获工艺中的成套生产流程，集约轮作直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 集约轮作 (`tech.intensive_crop_rotation`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 集约轮作 (`tech.intensive_crop_rotation`)
-- 块炼铁 (`tech.iron_smelting`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -10703,33 +9912,30 @@
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 科学 (`science`) |
 | 研究成本 | 20400 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | branch.industrial\_chemistry |
+| 布局路线 | branch.public\_health |
 | 主要路线 | 地理 · 城市 (\`route.geography.urban\`) |
 | 全部路线 | 地理 · 城市 (\`route.geography.urban\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | health |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 农耕社会 (`tech.agrarian_society`)
-- 盐渍保存 (`tech.salt_preservation`)
+- 盐渍保存 (`tech.salt_preservation`)：盐渍保存提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，城市卫生直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「农耕社会」（tech.agrarian\_society）
-  - 满足其一：
-    - 已发现信号「盐」（resource.salt）
-    - 已发现信号「硫磺」（resource.sulfur）
-    - 已发现信号「黏土」（resource.clay）
+- 满足其一：
+  - 已发现信号「盐」（resource.salt）
+  - 已发现信号「硫磺」（resource.sulfur）
+  - 已发现信号「黏土」（resource.clay）
 
 #### 效果摘要
 
-解锁物资：肥皂；解锁建筑：工业制皂厂；开放通用职业阶层岗位；开放通用职业阶层岗位；工业制皂厂产出 +25%
+解锁物资：肥皂；解锁建筑：工业制皂厂；解锁建筑：制皂工坊；制造部门产出 +12%
 
 #### 机会成本
 
@@ -10746,35 +9952,96 @@
 
 - **肥皂**（`good`）：`good.soap` → `production_access` `unlock` `1.0`；`existing_binding`
 - **工业制皂厂**（`building`）：`building.method_soap_plant_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **肥皂**（`good`）：`good.soap` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **食用油**（`good`）：`good.edible_oil` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **食盐**（`good`）：`good.salt` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **制皂工坊**（`building`）：`building.soap_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 工业制皂厂：`country.output.building.method_soap_plant_r6_factor`：+25%
+- `country.output.manufacturing_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 火药配制 (`tech.gunpowder_formulation`)
+- 公共卫生 (`tech.public_health`)：城市卫生提供卫生、疾病控制与医疗组织能力中的操作与材料处理方法，公共卫生直接使用这一能力完成其工艺或组织设计
+- 公共卫生体系 (`tech.public_health_systems`)：城市卫生提供卫生、疾病控制与医疗组织能力中的操作与材料处理方法，公共卫生体系直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 火药配制 (`tech.gunpowder_formulation`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 火药配制 (`tech.gunpowder_formulation`)
-- 植物纤维抄纸 (`tech.plant_fiber_papermaking`)
+无
 
 #### 作为候选参与的里程碑
 
-- 王国体系 (`tech.kingdom_administration`)
+无
+
+### 学术机构 (`tech.scholarly_academies`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.scholarly_academies` |
+| 时代 | 王国时代 (`kingdom`) |
+| 领域 | 社会 (`society`) |
+| 研究成本 | 23400 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | backbone |
+| 锚点类型 | backbone |
+| 节点角色 | handling |
+| 布局路线 | backbone.knowledge\_computation |
+| 主要路线 | 制度 · 学术 (\`route.institution.academic\`) |
+| 全部路线 | 制度 · 学术 (\`route.institution.academic\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | research |
+
+#### 硬前置（决定研发资格）
+
+- 文字 (`tech.writing`)：文字提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，学术机构直接使用这一能力完成其工艺或组织设计
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「黏土」（resource.clay）
+  - 已发现信号「木材」（resource.timber）
+
+#### 效果摘要
+
+解锁建筑：古典学院
+
+#### 机会成本
+
+占用通用研究预算，延后同代专业路线锚点
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 古典学院 (`classical_academy`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **古典学院**（`building`）：`building.classical_academy` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+- 自然哲学 (`tech.natural_philosophy`)：学术机构提供记录、验证、计算与知识传播方法中的操作与材料处理方法，自然哲学直接使用这一能力完成其工艺或组织设计
+- 手稿文化 (`tech.manuscript_culture`)：学术机构提供记录、验证、计算与知识传播方法中的操作与材料处理方法，手稿文化直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
 
 ### 自然哲学 (`tech.natural_philosophy`)
 
@@ -10786,31 +10053,30 @@
 | 研究成本 | 20400 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | handling |
-| 布局路线 | branch.petroleum\_materials |
+| 布局路线 | branch.natural\_history |
 | 主要路线 | 制度 · 学术 (\`route.institution.academic\`) |
 | 全部路线 | 制度 · 学术 (\`route.institution.academic\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | research |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 农耕社会 (`tech.agrarian_society`)
-- 天然橡胶加工 (`tech.rubber_working`)
+- 自然观察 (`tech.natural_observation`)：自然观察提供观察、分类、实验与生物育种知识中的操作与材料处理方法，自然哲学直接使用这一能力完成其工艺或组织设计
+- 文字 (`tech.writing`)：文字提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，自然哲学直接使用这一能力完成其工艺或组织设计
+- 学术机构 (`tech.scholarly_academies`)：学术机构提供记录、验证、计算与知识传播方法中的操作与材料处理方法，自然哲学直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「农耕社会」（tech.agrarian\_society）
-  - 满足其一：
-    - 已发现信号「季风经验」（weather.monsoon）
-    - 已发现信号「霜冻经验」（weather.frost）
-    - 已发现信号「河谷」（landform.river\_valley）
+- 满足其一：
+  - 已发现信号「季风经验」（weather.monsoon）
+  - 已发现信号「霜冻经验」（weather.frost）
+  - 已发现信号「山地」（landform.mountain）
 
 #### 效果摘要
 
-造纸业产出 +12%；国家协同能力 +3%
+古典学院产出 +50%；采掘部门产出 +12%
 
 #### 机会成本
 
@@ -10829,99 +10095,26 @@
 
 #### 永久 Modifier 条款
 
-- 造纸业：`country.output.family.paper_making_factor`：+12%
-- `country.research.science_efficiency`：+3%
+- 古典学院：`country.output.building.classical_academy_factor`：+50%
+- `country.output.extractive_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 煤矿开采 (`tech.coal_mining`)
+- 跨区域植物学 (`tech.interregional_botany`)：自然哲学提供观察、分类、实验与生物育种知识中的操作与材料处理方法，跨区域植物学直接使用这一能力完成其工艺或组织设计
+- 科学分类 (`tech.scientific_classification`)：自然哲学提供观察、分类、实验与生物育种知识中的操作与材料处理方法，科学分类直接使用这一能力完成其工艺或组织设计
+- 地质勘探 (`tech.geological_prospecting`)：自然哲学提供观察、分类、实验与生物育种知识中的操作与材料处理方法，地质勘探直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 煤矿开采 (`tech.coal_mining`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 煤矿开采 (`tech.coal_mining`)
-- 植物纤维抄纸 (`tech.plant_fiber_papermaking`)
+无
 
 #### 作为候选参与的里程碑
 
 - 王国体系 (`tech.kingdom_administration`)
-
-### 学术机构 (`tech.scholarly_academies`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.scholarly_academies` |
-| 时代 | 王国时代 (`kingdom`) |
-| 领域 | 社会 (`society`) |
-| 研究成本 | 23400 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | support |
-| 节点角色 | handling |
-| 布局路线 | backbone.knowledge\_computation |
-| 主要路线 | 制度 · 学术 (\`route.institution.academic\`) |
-| 全部路线 | 制度 · 学术 (\`route.institution.academic\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | research |
-
-#### 前置科技（决定研发资格）
-
-- 文字 (`tech.writing`)
-
-#### 发现启发（仅用于揭示）
-
-- 全部满足：
-  - 已完成科技「农耕社会」（tech.agrarian\_society）
-  - 满足其一：
-    - 已发现信号「季风经验」（weather.monsoon）
-    - 已发现信号「霜冻经验」（weather.frost）
-    - 已发现信号「河谷」（landform.river\_valley）
-
-#### 效果摘要
-
-解锁建筑：古典学院；开放通用职业阶层岗位；开放科技职业阶层岗位；古典学院产出 +20%
-
-#### 机会成本
-
-占用通用研究预算，延后同代专业路线锚点
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 古典学院 (`classical_academy`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-- **古典学院**（`building`）：`building.classical_academy` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **科技职业阶层**（`class`）：`class.technology` → `employment_access` `enable` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **手抄本**（`good`）：`good.manuscripts` → `input_method_access` `enable` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-- 古典学院：`country.output.building.classical_academy_factor`：+20%
-
-#### 直接后继（硬前置关系）
-
-- 手稿文化 (`tech.manuscript_culture`)
-
-#### 同路线后继
-
-无
-
-#### 应用交汇目标
-
-无
-
-#### 作为候选参与的里程碑
-
-无
 
 ### 地表煤利用 (`tech.surface_coal_use`)
 
@@ -10931,33 +10124,27 @@
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 20400 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | branch.electric\_intelligent\_energy |
+| 布局路线 | branch.heavy\_industry |
 | 主要路线 | 资源 · 煤炭 (\`route.resource.coal\`) |
 | 全部路线 | 资源 · 煤炭 (\`route.resource.coal\`)；能源 · 热能 (\`route.energy.thermal\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | resource |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 农耕社会 (`tech.agrarian_society`)
-- 窑烧控制 (`tech.kiln_firing`)
+- 窑烧控制 (`tech.kiln_firing`)：窑烧控制提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，地表煤利用直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「农耕社会」（tech.agrarian\_society）
-  - 满足其一：
-    - 已发现信号「铁矿」（resource.iron\_ore）
-    - 已发现信号「煤炭」（resource.coal）
-    - 已发现信号「矿井支护突破」（breakthrough.mine\_support）
+- 已发现信号「煤炭」（resource.coal）
 
 #### 效果摘要
 
-解锁物资：煤炭；铁矿业产出 +12%；国家协同能力 +3%
+解锁物资：煤炭；铁矿业产出 +28%；能源部门产出 +12%
 
 #### 机会成本
 
@@ -10976,25 +10163,24 @@
 
 #### 永久 Modifier 条款
 
-- 铁矿业：`country.output.family.iron_extraction_factor`：+12%
-- `country.output.manufacturing_factor`：+3%
+- 铁矿业：`country.output.family.iron_extraction_factor`：+28%
+- `country.output.energy_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 风力机械 (`tech.wind_power`)
+- 风力机械 (`tech.wind_power`)：地表煤利用提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，风力机械直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 风力机械 (`tech.wind_power`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 风力机械 (`tech.wind_power`)
-- 运河工程 (`tech.canal_engineering`)
+无
 
 #### 作为候选参与的里程碑
 
-- 王国体系 (`tech.kingdom_administration`)
+无
 
 ### 植物纤维抄纸 (`tech.plant_fiber_papermaking`)
 
@@ -11004,9 +10190,9 @@
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 20400 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | institution |
 | 布局路线 | branch.textile\_fibers |
 | 主要路线 | 制度 · 文字 (\`route.institution.writing\`) |
@@ -11014,23 +10200,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | knowledge |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 农耕社会 (`tech.agrarian_society`)
-- 织机织造 (`tech.loom_weaving`)
+- 织机织造 (`tech.loom_weaving`)：织机织造提供纤维处理、纺纱、织造与服装生产工艺中的操作与材料处理方法，植物纤维抄纸直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「农耕社会」（tech.agrarian\_society）
-  - 满足其一：
-    - 已发现信号「亚麻」（bio.flax）
-    - 已发现信号「棉花」（bio.cotton）
-    - 已发现信号「亚麻样本接触」（contact.flax）
+- 满足其一：
+  - 已发现信号「亚麻」（bio.flax）
+  - 已发现信号「棉花」（bio.cotton）
+  - 已发现信号「韧皮纤维植物」（bio.bast\_fiber）
 
 #### 效果摘要
 
-解锁物资：纸张；解锁建筑：植物纤维抄纸坊；开放通用职业阶层岗位；开放通用职业阶层岗位；植物纤维抄纸坊产出 +25%
+解锁物资：纸张；解锁建筑：植物纤维抄纸坊；制造部门产出 +12%
 
 #### 机会成本
 
@@ -11047,32 +10230,26 @@
 
 - **纸张**（`good`）：`good.paper` → `production_access` `unlock` `1.0`；`existing_binding`
 - **植物纤维抄纸坊**（`building`）：`building.plant_fiber_paper_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **纸张**（`good`）：`good.paper` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **韧皮纤维**（`good`）：`good.bast_fiber` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 植物纤维抄纸坊：`country.output.building.plant_fiber_paper_workshop_factor`：+25%
+- `country.output.manufacturing_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 破布纸 (`tech.rag_paper_making`)
+- 破布纸 (`tech.rag_paper_making`)：植物纤维抄纸提供纤维处理、纺纱、织造与服装生产工艺中的稳定的组织与制度载体，破布纸直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 破布纸 (`tech.rag_paper_making`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 破布纸 (`tech.rag_paper_making`)
-- 地表煤利用 (`tech.surface_coal_use`)
+无
 
 #### 作为候选参与的里程碑
 
-- 王国体系 (`tech.kingdom_administration`)
+无
 
 ### 树皮纸 (`tech.bark_paper_making`)
 
@@ -11082,9 +10259,9 @@
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 20400 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | institution |
 | 布局路线 | branch.forest\_biomass |
 | 主要路线 | 生态 · 森林 (\`route.ecology.forest\`) |
@@ -11092,23 +10269,17 @@
 | 开局能力标签 | 无 |
 | 效果配置 | knowledge |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 农耕社会 (`tech.agrarian_society`)
-- 手工锯木 (`tech.timber_sawing`)
+- 手工锯木 (`tech.timber_sawing`)：手工锯木提供林木管理、木材加工与生物质利用工艺中的成套生产流程，树皮纸直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「农耕社会」（tech.agrarian\_society）
-  - 满足其一：
-    - 已发现信号「木材」（resource.timber）
-    - 已发现信号「森林」（landform.forest）
-    - 已发现信号「林业经营突破」（breakthrough.forest\_management）
+- 已发现信号「木材」（resource.timber）
 
 #### 效果摘要
 
-解锁物资：纸张；解锁建筑：树皮纸工坊；开放通用职业阶层岗位；开放通用职业阶层岗位；树皮纸工坊产出 +25%
+解锁物资：纸张；解锁建筑：树皮纸工坊；国家建设成本 -10%
 
 #### 机会成本
 
@@ -11125,32 +10296,26 @@
 
 - **纸张**（`good`）：`good.paper` → `production_access` `unlock` `1.0`；`existing_binding`
 - **树皮纸工坊**（`building`）：`building.bark_paper_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **纸张**（`good`）：`good.paper` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **原木**（`good`）：`good.logs` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 树皮纸工坊：`country.output.building.bark_paper_workshop_factor`：+25%
+- `country.construction.cost_factor`：+10%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 森林管理 (`tech.forest_management`)
+- 森林管理 (`tech.forest_management`)：树皮纸提供林木管理、木材加工与生物质利用工艺中的稳定的组织与制度载体，森林管理直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 森林管理 (`tech.forest_management`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 森林管理 (`tech.forest_management`)
-- 城市卫生 (`tech.urban_sanitation`)
+无
 
 #### 作为候选参与的里程碑
 
-- 王国体系 (`tech.kingdom_administration`)
+无
 
 ### 皮纸制作 (`tech.parchment_making`)
 
@@ -11160,9 +10325,9 @@
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 20400 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | institution |
 | 布局路线 | branch.pastoral\_livestock |
 | 主要路线 | 生态 · 牧场 (\`route.ecology.pasture\`) |
@@ -11170,23 +10335,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | knowledge |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 农耕社会 (`tech.agrarian_society`)
-- 马匹驯化 (`tech.horse_domestication`)
+- 马匹驯化 (`tech.horse_domestication`)：马匹驯化提供畜群驯养、育种与畜产品处理能力中的成套生产流程，皮纸制作直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「农耕社会」（tech.agrarian\_society）
-  - 满足其一：
-    - 已发现信号「季风经验」（weather.monsoon）
-    - 已发现信号「霜冻经验」（weather.frost）
-    - 已发现信号「河谷」（landform.river\_valley）
+- 满足其一：
+  - 已发现信号「野生动物」（resource.wild\_game）
+  - 已发现信号「羊」（bio.sheep）
 
 #### 效果摘要
 
-解锁物资：纸张；解锁建筑：皮纸工坊；开放通用职业阶层岗位；开放通用职业阶层岗位；皮纸工坊产出 +25%
+解锁物资：纸张；解锁建筑：皮纸工坊；热害损失 -8%
 
 #### 机会成本
 
@@ -11203,32 +10364,26 @@
 
 - **纸张**（`good`）：`good.paper` → `production_access` `unlock` `1.0`；`existing_binding`
 - **皮纸工坊**（`building`）：`building.parchment_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **纸张**（`good`）：`good.paper` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **生皮**（`good`）：`good.raw_hide` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 皮纸工坊：`country.output.building.parchment_workshop_factor`：+25%
+- `country.climate.heat_stress_factor`：+8%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 牧业网络 (`tech.pastoral_networks`)
+- 牧业网络 (`tech.pastoral_networks`)：皮纸制作提供畜群驯养、育种与畜产品处理能力中的稳定的组织与制度载体，牧业网络直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 牧业网络 (`tech.pastoral_networks`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 牧业网络 (`tech.pastoral_networks`)
-- 河运 (`tech.river_transport`)
+无
 
 #### 作为候选参与的里程碑
 
-- 王国体系 (`tech.kingdom_administration`)
+无
 
 ### 手稿文化 (`tech.manuscript_culture`)
 
@@ -11240,7 +10395,7 @@
 | 研究成本 | 23400 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
-| 锚点类型 | support |
+| 锚点类型 | backbone |
 | 节点角色 | institution |
 | 布局路线 | backbone.knowledge\_computation |
 | 主要路线 | 制度 · 文字 (\`route.institution.writing\`) |
@@ -11248,22 +10403,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | knowledge |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 学术机构 (`tech.scholarly_academies`)
+- 学术机构 (`tech.scholarly_academies`)：学术机构提供记录、验证、计算与知识传播方法中的操作与材料处理方法，手稿文化直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「农耕社会」（tech.agrarian\_society）
-  - 满足其一：
-    - 已发现信号「季风经验」（weather.monsoon）
-    - 已发现信号「霜冻经验」（weather.frost）
-    - 已发现信号「河谷」（landform.river\_valley）
+- 满足其一：
+  - 已发现信号「羊」（bio.sheep）
+  - 已发现信号「木材」（resource.timber）
 
 #### 效果摘要
 
-解锁建筑：公共营造场；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：修道院抄写室；公共营造场产出 +20%
+解锁建筑：公共营造场；解锁建筑：修道院抄写室
 
 #### 机会成本
 
@@ -11279,29 +10431,21 @@
 #### 结构化内容效果
 
 - **公共营造场**（`building`）：`building.classical_public_works` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **建筑构件**（`good`）：`good.construction_components` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **砖块**（`good`）：`good.bricks` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **石灰**（`good`）：`good.lime` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **修道院抄写室**（`building`）：`building.monastic_scriptorium` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **手抄本**（`good`）：`good.manuscripts` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **生皮**（`good`）：`good.raw_hide` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 公共营造场：`country.output.building.classical_public_works_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
 无
 
@@ -11317,9 +10461,9 @@
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 社会 (`society`) |
 | 研究成本 | 18000 科技点（`technology_points`） |
-| 节点标记 | 无 |
+| 节点标记 | 时代关键 |
 | 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | institution |
 | 布局路线 | backbone.institutions\_exchange |
 | 主要路线 | 制度 · 国家治理 (\`route.institution.state\`) |
@@ -11327,22 +10471,18 @@
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 农耕社会 (`tech.agrarian_society`)
+- 文字 (`tech.writing`)：文字提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，官僚行政直接使用这一能力完成其工艺或组织设计
+- 永久聚落 (`tech.permanent_settlements`)：永久聚落提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，官僚行政直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「农耕社会」（tech.agrarian\_society）
-  - 满足其一：
-    - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-    - 已发现信号「河谷」（landform.river\_valley）
-    - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
+无
 
 #### 效果摘要
 
-海运业产出 +11%；国家协同能力 +3%
+商栈产出 +25%；社会领域研究效率 +15%
 
 #### 机会成本
 
@@ -11361,24 +10501,29 @@
 
 #### 永久 Modifier 条款
 
-- 海运业：`country.output.family.maritime_operations_factor`：+11%
-- `country.research.society_efficiency`：+3%
+- 商栈：`country.output.family.merchant_post_factor`：+25%
+- `country.research.society_efficiency`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 庄园核算 (`tech.estate_accounting`)
+- 庄园核算 (`tech.estate_accounting`)：官僚行政提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，庄园核算直接使用这一能力完成其工艺或组织设计
+- 行业组织 (`tech.guild_organization`)：官僚行政提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，行业组织直接使用这一能力完成其工艺或组织设计
+- 经院研究法 (`tech.scholastic_method`)：官僚行政提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，经院研究法直接使用这一能力完成其工艺或组织设计
+- 特许商社 (`tech.chartered_companies`)：官僚行政提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，特许商社直接使用这一能力完成其工艺或组织设计
+- 国家实验室 (`tech.national_laboratories`)：官僚行政提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，国家实验室直接使用这一能力完成其工艺或组织设计
+- 国营企业 (`tech.state_enterprises`)：官僚行政提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，国营企业直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 行业组织 (`tech.guild_organization`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 行业组织 (`tech.guild_organization`)
+无
 
 #### 作为候选参与的里程碑
 
-无
+- 王国体系 (`tech.kingdom_administration`)
 
 ### 习惯佃作 (`tech.customary_tenancy`)
 
@@ -11388,33 +10533,30 @@
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 社会 (`society`) |
 | 研究成本 | 20400 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | institution |
-| 布局路线 | branch.maize\_horticulture |
+| 布局路线 | branch.land\_institutions |
 | 主要路线 | 制度 · 市场 (\`route.institution.market\`) |
 | 全部路线 | 制度 · 市场 (\`route.institution.market\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 农耕社会 (`tech.agrarian_society`)
-- 玉米园圃 (`tech.maize_garden_horticulture`)
+- 玉米园圃 (`tech.maize_garden_horticulture`)：玉米园圃提供玉米栽培、选育与田间管理经验中的成套生产流程，习惯佃作直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「农耕社会」（tech.agrarian\_society）
-  - 满足其一：
-    - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-    - 已发现信号「河谷」（landform.river\_valley）
-    - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
+- 满足其一：
+  - 已发现信号「旱地承载力」（resource.arable\_land）
+  - 已发现信号「肥沃土壤」（resource.fertile\_soil）
+  - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
 
 #### 效果摘要
 
-海运业产出 +12%；国家协同能力 +3%
+三圃制小农场产出 +50%；旱灾损失 -8%
 
 #### 机会成本
 
@@ -11425,7 +10567,7 @@
 - **物资：** 无
 - **建筑 / 生产方式：** 无
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 佃作水田 (`tenant_paddy`)；佃作雨养玉米田 (`tenant_rainfed_maize_field`)；佃作雨养小麦田 (`tenant_rainfed_wheat_field`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 佃作稻庄 (`method_rice_collector_r3`)；佃作水田 (`tenant_paddy`)；佃作雨养玉米田 (`tenant_rainfed_maize_field`)；佃作雨养小麦田 (`tenant_rainfed_wheat_field`)
 
 #### 结构化内容效果
 
@@ -11433,25 +10575,24 @@
 
 #### 永久 Modifier 条款
 
-- 海运业：`country.output.family.maritime_operations_factor`：+12%
-- `country.research.society_efficiency`：+3%
+- 三圃制小农场：`country.output.building.three_field_smallholding_factor`：+50%
+- `country.climate.drought_loss_factor`：+8%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 庄园谷物经营 (`tech.manorial_cereal_farming`)
+- 庄园谷物经营 (`tech.manorial_cereal_farming`)：习惯佃作提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，庄园谷物经营直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 庄园谷物经营 (`tech.manorial_cereal_farming`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 庄园谷物经营 (`tech.manorial_cereal_farming`)
-- 块炼铁 (`tech.iron_smelting`)
+无
 
 #### 作为候选参与的里程碑
 
-- 王国体系 (`tech.kingdom_administration`)
+无
 
 ### 分成租佃 (`tech.sharecropping`)
 
@@ -11461,33 +10602,30 @@
 | 时代 | 王国时代 (`kingdom`) |
 | 领域 | 社会 (`society`) |
 | 研究成本 | 20400 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | institution |
-| 布局路线 | branch.tuber\_highland |
+| 布局路线 | branch.land\_institutions |
 | 主要路线 | 制度 · 市场 (\`route.institution.market\`) |
 | 全部路线 | 制度 · 市场 (\`route.institution.market\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 农耕社会 (`tech.agrarian_society`)
-- 高地块茎农业 (`tech.highland_tuber_farming`)
+- 高地块茎农业 (`tech.highland_tuber_farming`)：高地块茎农业提供块茎繁育、坡地耕作与低温保存经验中的成套生产流程，分成租佃直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「农耕社会」（tech.agrarian\_society）
-  - 满足其一：
-    - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-    - 已发现信号「河谷」（landform.river\_valley）
-    - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
+- 满足其一：
+  - 已发现信号「旱地承载力」（resource.arable\_land）
+  - 已发现信号「肥沃土壤」（resource.fertile\_soil）
+  - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
 
 #### 效果摘要
 
-海运业产出 +12%；国家协同能力 +3%
+改良小农场产出 +50%；寒冷损失 -8%
 
 #### 机会成本
 
@@ -11506,25 +10644,24 @@
 
 #### 永久 Modifier 条款
 
-- 海运业：`country.output.family.maritime_operations_factor`：+12%
-- `country.research.society_efficiency`：+3%
+- 改良小农场：`country.output.building.improved_smallholding_factor`：+50%
+- `country.climate.cold_stress_factor`：+8%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 庄园谷物核算 (`tech.estate_cereal_management`)
+- 庄园谷物核算 (`tech.estate_cereal_management`)：分成租佃提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，庄园谷物核算直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 庄园谷物核算 (`tech.estate_cereal_management`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 庄园谷物核算 (`tech.estate_cereal_management`)
-- 地表煤利用 (`tech.surface_coal_use`)
+无
 
 #### 作为候选参与的里程碑
 
-- 王国体系 (`tech.kingdom_administration`)
+无
 
 ### 庄园核算 (`tech.estate_accounting`)
 
@@ -11535,31 +10672,28 @@
 | 领域 | 社会 (`society`) |
 | 研究成本 | 23400 科技点（`technology_points`） |
 | 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | support |
+| 网络角色 | branch |
+| 锚点类型 | branch |
 | 节点角色 | institution |
-| 布局路线 | backbone.institutions\_exchange |
+| 布局路线 | branch.land\_institutions |
 | 主要路线 | 制度 · 国家治理 (\`route.institution.state\`) |
 | 全部路线 | 制度 · 国家治理 (\`route.institution.state\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 官僚行政 (`tech.state_bureaucracy`)
+- 官僚行政 (`tech.state_bureaucracy`)：官僚行政提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，庄园核算直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「农耕社会」（tech.agrarian\_society）
-  - 满足其一：
-    - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-    - 已发现信号「河谷」（landform.river\_valley）
-    - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
+- 满足其一：
+  - 已发现信号「黏土」（resource.clay）
+  - 已发现信号「木材」（resource.timber）
 
 #### 效果摘要
 
-海运业产出 +10%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -11570,7 +10704,7 @@
 - **物资：** 无
 - **建筑 / 生产方式：** 无
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 庄园水田 (`estate_paddy`)；玉米庄园 (`landed_estate`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 地籍管理局 (`cadastral_office`)；庄园水田 (`estate_paddy`)；玉米庄园 (`landed_estate`)；亚麻庄园 (`method_flax_collector_r3`)；改良亚麻庄园 (`method_flax_collector_r5`)；精耕稻庄 (`method_rice_collector_r5`)；佃作小麦庄园 (`method_wheat_farm_r3`)；改良轮作小麦庄园 (`method_wheat_farm_r5`)
 
 #### 结构化内容效果
 
@@ -11578,17 +10712,19 @@
 
 #### 永久 Modifier 条款
 
-- 海运业：`country.output.family.maritime_operations_factor`：+10%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 商品作物管理 (`tech.commodity_crop_management`)：庄园核算提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，商品作物管理直接使用这一能力完成其工艺或组织设计
+- 种植园庄园管理 (`tech.estate_plantation_management`)：庄园核算提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，种植园庄园管理直接使用这一能力完成其工艺或组织设计
+- 地产测绘 (`tech.property_cadastre`)：庄园核算提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，地产测绘直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
-
-无
-
-#### 应用交汇目标
+#### 跨领域应用
 
 无
 
@@ -11606,7 +10742,7 @@
 | 研究成本 | 23400 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
-| 锚点类型 | support |
+| 锚点类型 | backbone |
 | 节点角色 | production\_system |
 | 布局路线 | backbone.food\_storage |
 | 主要路线 | 作物 · 通用农艺 (\`route.crop.general\`) |
@@ -11614,22 +10750,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 发酵保存 (`tech.fermentation`)
+- 留种选育 (`tech.seed_selection`)：留种选育提供粮食处理、保存与农艺组织能力中的成套生产流程，佃作谷物直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「农耕社会」（tech.agrarian\_society）
-  - 满足其一：
-    - 已发现信号「小麦」（bio.wheat）
-    - 已发现信号「小麦样本接触」（contact.wheat）
-    - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
+- 满足其一：
+  - 已发现信号「小麦」（bio.wheat）
+  - 已发现信号「玉米」（bio.maize）
+  - 已发现信号「稻」（bio.rice）
 
 #### 效果摘要
 
-解锁建筑：佃作雨养玉米田；开放通用职业阶层岗位；开放通用职业阶层岗位；适应温度条件；佃作雨养玉米田产出 +20%
+解锁建筑：佃作雨养玉米田；解锁建筑：佃作雨养小麦田
 
 #### 机会成本
 
@@ -11645,28 +10779,21 @@
 #### 结构化内容效果
 
 - **佃作雨养玉米田**（`building`）：`building.tenant_rainfed_maize_field` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **玉米**（`good`）：`good.corn_grain` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **温度**（`climate`）：`climate.temperature` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
-- **水分**（`climate`）：`climate.moisture` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
 - **佃作雨养小麦田**（`building`）：`building.tenant_rainfed_wheat_field` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **农民阶层**（`class`）：`class.farmer` → `employment_access` `enable` `1.0`；`existing_binding`
-- **小麦**（`good`）：`good.wheat_grain` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 佃作雨养玉米田：`country.output.building.tenant_rainfed_maize_field_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
 无
 
@@ -11684,7 +10811,7 @@
 | 研究成本 | 20400 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | production\_system |
 | 布局路线 | branch.rice\_irrigation |
 | 主要路线 | 作物 · 水稻 (\`route.crop.rice\`) |
@@ -11692,23 +10819,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 农耕社会 (`tech.agrarian_society`)
-- 水田稻作 (`tech.rice_paddy_cultivation`)
+- 水田稻作 (`tech.rice_paddy_cultivation`)：水田稻作提供水田整备、水位控制与稻作管理方法中的专门知识，佃作水田直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「农耕社会」（tech.agrarian\_society）
-  - 满足其一：
-    - 已发现信号「水田承载力」（resource.paddy\_land）
-    - 已发现信号「洪泛平原」（landform.floodplain）
-    - 已发现信号「水田控制突破」（breakthrough.paddy\_control）
+- 满足其一：
+  - 已发现信号「水田承载力」（resource.paddy\_land）
+  - 已发现信号「洪泛平原」（landform.floodplain）
+  - 已发现信号「水田控制突破」（breakthrough.paddy\_control）
 
 #### 效果摘要
 
-解锁建筑：分成水田；开放通用职业阶层岗位；开放农民阶层岗位；需要河流地块条件；分成水田产出 +25%
+解锁建筑：分成水田；解锁建筑：佃作水田；解锁建筑：佃作稻庄
 
 #### 机会成本
 
@@ -11717,37 +10841,31 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 分成水田 (`sharecrop_paddy`)；佃作水田 (`tenant_paddy`)
+- **建筑 / 生产方式：** 佃作稻庄 (`method_rice_collector_r3`)；分成水田 (`sharecrop_paddy`)；佃作水田 (`tenant_paddy`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
 - **分成水田**（`building`）：`building.sharecrop_paddy` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **农民阶层**（`class`）：`class.farmer` → `employment_access` `enable` `1.0`；`existing_binding`
-- **稻米**（`good`）：`good.rice_grain` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **河流**（`tile`）：`tile.river` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
-- **水田承载力**（`resource`）：`resource.paddy_land` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
 - **佃作水田**（`building`）：`building.tenant_paddy` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
+- **佃作稻庄**（`building`）：`building.method_rice_collector_r3` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 分成水田：`country.output.building.sharecrop_paddy_factor`：+25%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 庄园水田核算 (`tech.estate_paddy_management`)
+- 庄园水田核算 (`tech.estate_paddy_management`)：佃作水田提供水田整备、水位控制与稻作管理方法中的成套生产流程，庄园水田核算直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 庄园水田核算 (`tech.estate_paddy_management`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 庄园水田核算 (`tech.estate_paddy_management`)
-- 地表煤利用 (`tech.surface_coal_use`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -11763,7 +10881,7 @@
 | 研究成本 | 23400 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | identification |
 | 布局路线 | branch.heavy\_industry |
 | 主要路线 | 资源 · 铁 (\`route.resource.iron\`) |
@@ -11771,22 +10889,17 @@
 | 开局能力标签 | 无 |
 | 效果配置 | observation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 块炼铁 (`tech.iron_smelting`)
+无
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「农耕社会」（tech.agrarian\_society）
-  - 满足其一：
-    - 已发现信号「铁矿」（resource.iron\_ore）
-    - 已发现信号「煤炭」（resource.coal）
-    - 已发现信号「矿井支护突破」（breakthrough.mine\_support）
+- 已发现信号「铁矿」（resource.iron\_ore）
 
 #### 效果摘要
 
-解锁物资：铁矿石；解锁建筑：铁矿；开放通用职业阶层岗位；开放通用职业阶层岗位；铁矿产出 +20%
+解锁物资：铁矿石；解锁建筑：铁矿；可利用资源：铁矿
 
 #### 机会成本
 
@@ -11803,27 +10916,23 @@
 
 - **铁矿石**（`good`）：`good.iron_ore` → `production_access` `unlock` `1.0`；`existing_binding`
 - **铁矿**（`building`）：`building.iron_ore_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **铁矿石**（`good`）：`good.iron_ore` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **铁矿**（`resource`）：`resource.iron_ore` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 铁矿：`country.output.building.iron_ore_collector_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 地表铁矿采集 (`tech.surface_iron_collection`)
+- 地表铁矿采集 (`tech.surface_iron_collection`)：铁矿辨识提供矿井、钢铁、蒸汽机械与重型设备能力中的识别与证据标准，地表铁矿采集直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 自然哲学 (`tech.natural_philosophy`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -11839,7 +10948,7 @@
 | 研究成本 | 23400 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.heavy\_industry |
 | 主要路线 | 资源 · 铁 (\`route.resource.iron\`) |
@@ -11847,22 +10956,17 @@
 | 开局能力标签 | 无 |
 | 效果配置 | resource |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 铁矿辨识 (`tech.iron_ore_identification`)
+- 铁矿辨识 (`tech.iron_ore_identification`)：铁矿辨识提供矿井、钢铁、蒸汽机械与重型设备能力中的识别与证据标准，地表铁矿采集直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「农耕社会」（tech.agrarian\_society）
-  - 满足其一：
-    - 已发现信号「铁矿」（resource.iron\_ore）
-    - 已发现信号「煤炭」（resource.coal）
-    - 已发现信号「矿井支护突破」（breakthrough.mine\_support）
+- 已发现信号「铁矿」（resource.iron\_ore）
 
 #### 效果摘要
 
-解锁物资：金属工具；解锁建筑：浅层铁矿；开放通用职业阶层岗位；开放通用职业阶层岗位；浅层铁矿产出 +20%
+解锁物资：金属工具；解锁建筑：浅层铁矿
 
 #### 机会成本
 
@@ -11879,30 +10983,98 @@
 
 - **金属工具**（`good`）：`good.tools` → `production_access` `unlock` `1.0`；`existing_binding`
 - **浅层铁矿**（`building`）：`building.early_iron_mine` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **铁矿石**（`good`）：`good.iron_ore` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **青铜工具**（`good`）：`good.bronze_tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 浅层铁矿：`country.output.building.early_iron_mine_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 露头煤辨识 (`tech.coal_outcrop_identification`)
+- 块炼铁 (`tech.iron_smelting`)：地表铁矿采集提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，块炼铁直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 自然哲学 (`tech.natural_philosophy`)
+无
 
 #### 作为候选参与的里程碑
 
 无
+
+### 块炼铁 (`tech.iron_smelting`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.iron_smelting` |
+| 时代 | 王国时代 (`kingdom`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 20400 科技点（`technology_points`） |
+| 节点标记 | 时代关键 |
+| 网络角色 | branch |
+| 锚点类型 | era\_candidate |
+| 节点角色 | production\_system |
+| 布局路线 | branch.heavy\_industry |
+| 主要路线 | 资源 · 铁 (\`route.resource.iron\`) |
+| 全部路线 | 资源 · 铁 (\`route.resource.iron\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | metallurgy |
+
+#### 硬前置（决定研发资格）
+
+- 地表铁矿采集 (`tech.surface_iron_collection`)：地表铁矿采集提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，块炼铁直接使用这一能力完成其工艺或组织设计
+- 木炭烧制 (`tech.charcoal_burning`)：木炭烧制提供林木管理、木材加工与生物质利用工艺中的操作与材料处理方法，块炼铁直接使用这一能力完成其工艺或组织设计
+- 窑烧控制 (`tech.kiln_firing`)：窑烧控制提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，块炼铁直接使用这一能力完成其工艺或组织设计
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「铁矿」（resource.iron\_ore）
+  - 已发现信号「煤炭」（resource.coal）
+
+#### 效果摘要
+
+解锁物资：锻铁；解锁建筑：块炼炉；解锁建筑：铁制工具工坊；采掘部门产出 +12%
+
+#### 机会成本
+
+转入该路线需补齐历史锚点；时代 3 后的生产方式依赖专用资本、岗位或地理条件
+
+#### 内容解锁
+
+- **物资：** 锻铁 (`wrought_iron`)
+- **建筑 / 生产方式：** 块炼炉 (`bloomery`)；铁制工具工坊 (`iron_tool_workshop`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 浅层铁矿 (`early_iron_mine`)
+
+#### 结构化内容效果
+
+- **锻铁**（`good`）：`good.wrought_iron` → `production_access` `unlock` `1.0`；`existing_binding`
+- **块炼炉**（`building`）：`building.bloomery` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **铁制工具工坊**（`building`）：`building.iron_tool_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+- `country.output.extractive_factor`：+12%
+
+#### 被以下科技作为硬前置
+
+- 高炉冶炼 (`tech.blast_furnace`)：块炼铁提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，高炉冶炼直接使用这一能力完成其工艺或组织设计
+- 煤矿开采 (`tech.coal_mining`)：块炼铁提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，煤矿开采直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+- 王国体系 (`tech.kingdom_administration`)
 
 ### 露头煤辨识 (`tech.coal_outcrop_identification`)
 
@@ -11914,7 +11086,7 @@
 | 研究成本 | 23400 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | identification |
 | 布局路线 | branch.heavy\_industry |
 | 主要路线 | 资源 · 煤炭 (\`route.resource.coal\`) |
@@ -11922,22 +11094,17 @@
 | 开局能力标签 | 无 |
 | 效果配置 | observation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 地表铁矿采集 (`tech.surface_iron_collection`)
+无
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「农耕社会」（tech.agrarian\_society）
-  - 满足其一：
-    - 已发现信号「铁矿」（resource.iron\_ore）
-    - 已发现信号「煤炭」（resource.coal）
-    - 已发现信号「矿井支护突破」（breakthrough.mine\_support）
+- 已发现信号「煤炭」（resource.coal）
 
 #### 效果摘要
 
-可利用资源：煤炭；铁矿业产出 +10%
+可利用资源：煤炭；铁矿业产出 +18%
 
 #### 机会成本
 
@@ -11956,19 +11123,19 @@
 
 #### 永久 Modifier 条款
 
-- 铁矿业：`country.output.family.iron_extraction_factor`：+10%
+- 铁矿业：`country.output.family.iron_extraction_factor`：+18%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 地表煤采集 (`tech.surface_coal_collection`)
+- 地表煤采集 (`tech.surface_coal_collection`)：露头煤辨识提供矿井、钢铁、蒸汽机械与重型设备能力中的识别与证据标准，地表煤采集直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 自然哲学 (`tech.natural_philosophy`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -11984,7 +11151,7 @@
 | 研究成本 | 23400 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.heavy\_industry |
 | 主要路线 | 资源 · 煤炭 (\`route.resource.coal\`) |
@@ -11992,22 +11159,17 @@
 | 开局能力标签 | 无 |
 | 效果配置 | resource |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 露头煤辨识 (`tech.coal_outcrop_identification`)
+- 露头煤辨识 (`tech.coal_outcrop_identification`)：露头煤辨识提供矿井、钢铁、蒸汽机械与重型设备能力中的识别与证据标准，地表煤采集直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「农耕社会」（tech.agrarian\_society）
-  - 满足其一：
-    - 已发现信号「铁矿」（resource.iron\_ore）
-    - 已发现信号「煤炭」（resource.coal）
-    - 已发现信号「矿井支护突破」（breakthrough.mine\_support）
+- 已发现信号「煤炭」（resource.coal）
 
 #### 效果摘要
 
-解锁建筑：露头煤采集场；开放通用职业阶层岗位；露头煤采集场产出 +20%
+解锁建筑：露头煤采集场
 
 #### 机会成本
 
@@ -12023,24 +11185,23 @@
 #### 结构化内容效果
 
 - **露头煤采集场**（`building`）：`building.surface_coal_gathering` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **煤炭**（`good`）：`good.coal` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 露头煤采集场：`country.output.building.surface_coal_gathering_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 煤矿开采 (`tech.coal_mining`)：地表煤采集提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，煤矿开采直接使用这一能力完成其工艺或组织设计
+- 煤矿平硐 (`tech.coal_adit_mining`)：地表煤采集提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，煤矿平硐直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
 无
-
-#### 应用交汇目标
-
-- 自然哲学 (`tech.natural_philosophy`)
 
 #### 作为候选参与的里程碑
 
@@ -12056,7 +11217,7 @@
 | 研究成本 | 18000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 锚点类型 | backbone |
 | 节点角色 | institution |
 | 布局路线 | backbone.food\_storage |
 | 主要路线 | 地理 · 城市 (\`route.geography.urban\`) |
@@ -12064,22 +11225,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 农耕社会 (`tech.agrarian_society`)
+无
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「农耕社会」（tech.agrarian\_society）
-  - 满足其一：
-    - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-    - 已发现信号「河谷」（landform.river\_valley）
-    - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
+- 满足其一：
+  - 已发现信号「肥沃土壤」（resource.fertile\_soil）
+  - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
+  - 已发现信号「连续歉收经验」（weather.repeated\_crop\_failure）
 
 #### 效果摘要
 
-海运业产出 +11%；国家协同能力 +3%
+主食厨房产出 +50%；农业部门产出 +15%
 
 #### 机会成本
 
@@ -12098,20 +11257,20 @@
 
 #### 永久 Modifier 条款
 
-- 海运业：`country.output.family.maritime_operations_factor`：+11%
-- `country.research.society_efficiency`：+3%
+- 主食厨房：`country.output.building.staple_kitchen_factor`：+50%
+- `country.output.agriculture_factor`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 区域粮仓 (`tech.regional_granaries`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 区域粮仓 (`tech.regional_granaries`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -12135,7 +11294,7 @@
 | 开局能力标签 | 无 |
 | 效果配置 | milestone |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
@@ -12145,7 +11304,7 @@
 
 #### 效果摘要
 
-海运业产出 +10%
+商栈产出 +25%；社会领域研究效率 +15%
 
 #### 机会成本
 
@@ -12153,23 +11312,15 @@
 
 #### 里程碑候选
 
-需要完成下列 16 项候选中的任意 5 项：
-- 砌体建筑 (`tech.masonry`)
-- 块炼铁 (`tech.iron_smelting`)
-- 市场制度 (`tech.market_institutions`)
-- 货币 (`tech.currency`)
-- 运河工程 (`tech.canal_engineering`)
-- 河运 (`tech.river_transport`)
+需要完成下列 8 项候选中的任意 4 项：
 - 轮作 (`tech.crop_rotation`)
-- 城市卫生 (`tech.urban_sanitation`)
-- 自然哲学 (`tech.natural_philosophy`)
-- 地表煤利用 (`tech.surface_coal_use`)
-- 植物纤维抄纸 (`tech.plant_fiber_papermaking`)
-- 树皮纸 (`tech.bark_paper_making`)
-- 皮纸制作 (`tech.parchment_making`)
-- 习惯佃作 (`tech.customary_tenancy`)
-- 分成租佃 (`tech.sharecropping`)
+- 道路工程 (`tech.road_engineering`)
+- 文字 (`tech.writing`)
+- 官僚行政 (`tech.state_bureaucracy`)
 - 佃作水田 (`tech.tenant_paddy_management`)
+- 块炼铁 (`tech.iron_smelting`)
+- 自然哲学 (`tech.natural_philosophy`)
+- 市场制度 (`tech.market_institutions`)
 
 #### 内容解锁
 
@@ -12184,36 +11335,18 @@
 
 #### 永久 Modifier 条款
 
-- 海运业：`country.output.family.maritime_operations_factor`：+10%
+- 商栈：`country.output.family.merchant_post_factor`：+25%
+- `country.research.society_efficiency`：+15%
 
-#### 直接后继（硬前置关系）
-
-- 森林管理 (`tech.forest_management`)
-- 牧业网络 (`tech.pastoral_networks`)
-- 集约轮作 (`tech.intensive_crop_rotation`)
-- 水力机械 (`tech.water_power`)
-- 风力机械 (`tech.wind_power`)
-- 行业组织 (`tech.guild_organization`)
-- 高炉冶炼 (`tech.blast_furnace`)
-- 坩埚钢 (`tech.crucible_steel`)
-- 煤矿开采 (`tech.coal_mining`)
-- 破布纸 (`tech.rag_paper_making`)
-- 活字印刷 (`tech.movable_type_printing`)
-- 火药配制 (`tech.gunpowder_formulation`)
-- 磁针导航 (`tech.magnetic_navigation`)
-- 城市水务 (`tech.urban_waterworks`)
-- 经院研究法 (`tech.scholastic_method`)
-- 农奴义务 (`tech.serf_obligations`)
-- 庄园谷物经营 (`tech.manorial_cereal_farming`)
-- 区域粮仓 (`tech.regional_granaries`)
-- 庄园谷物核算 (`tech.estate_cereal_management`)
-- 庄园水田核算 (`tech.estate_paddy_management`)
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
 
 无
 
@@ -12236,7 +11369,7 @@
 | 研究成本 | 47600 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | handling |
 | 布局路线 | branch.forest\_biomass |
 | 主要路线 | 生态 · 森林 (\`route.ecology.forest\`) |
@@ -12244,23 +11377,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | foraging |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 王国体系 (`tech.kingdom_administration`)
-- 树皮纸 (`tech.bark_paper_making`)
+- 树皮纸 (`tech.bark_paper_making`)：树皮纸提供林木管理、木材加工与生物质利用工艺中的稳定的组织与制度载体，森林管理直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「王国体系」（tech.kingdom\_administration）
-  - 满足其一：
-    - 已发现信号「木材」（resource.timber）
-    - 已发现信号「森林」（landform.forest）
-    - 已发现信号「林业经营突破」（breakthrough.forest\_management）
+- 满足其一：
+  - 已发现信号「木材」（resource.timber）
+  - 已发现信号「林业经营突破」（breakthrough.forest\_management）
 
 #### 效果摘要
 
-解锁建筑：水力锯木场；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：商营伐木场；水力锯木场产出 +25%
+解锁建筑：水力锯木场；解锁建筑：商营伐木场
 
 #### 机会成本
 
@@ -12276,31 +11405,23 @@
 #### 结构化内容效果
 
 - **水力锯木场**（`building`）：`building.method_lumber_plant_r4` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **木材**（`good`）：`good.lumber` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **原木**（`good`）：`good.logs` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **商营伐木场**（`building`）：`building.method_timber_collector_r4` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **原木**（`good`）：`good.logs` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 水力锯木场：`country.output.building.method_lumber_plant_r4_factor`：+25%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 螺旋压印 (`tech.screw_press_printing`)
+无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 螺旋压印 (`tech.screw_press_printing`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 螺旋压印 (`tech.screw_press_printing`)
-- 水力机械 (`tech.water_power`)
-- 经院研究法 (`tech.scholastic_method`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -12314,9 +11435,9 @@
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 农业 (`agriculture`) |
 | 研究成本 | 47600 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.pastoral\_livestock |
 | 主要路线 | 生态 · 牧场 (\`route.ecology.pasture\`) |
@@ -12324,23 +11445,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | livestock |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 王国体系 (`tech.kingdom_administration`)
-- 皮纸制作 (`tech.parchment_making`)
+- 皮纸制作 (`tech.parchment_making`)：皮纸制作提供畜群驯养、育种与畜产品处理能力中的稳定的组织与制度载体，牧业网络直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「王国体系」（tech.kingdom\_administration）
-  - 满足其一：
-    - 已发现信号「牧场承载力」（resource.pasture）
-    - 已发现信号「草原」（landform.grassland）
-    - 已发现信号「马匹」（bio.horse）
+- 满足其一：
+  - 已发现信号「羊」（bio.sheep）
+  - 已发现信号「马匹」（bio.horse）
+  - 已发现信号「牛」（bio.cattle）
 
 #### 效果摘要
 
-解锁建筑：庄园牧场；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：机械化牧场；庄园牧场产出 +25%
+解锁建筑：庄园牧场；解锁建筑：机械化牧场；热害损失 -8%
 
 #### 机会成本
 
@@ -12356,33 +11474,27 @@
 #### 结构化内容效果
 
 - **庄园牧场**（`building`）：`building.manorial_pasture` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **畜牧产品**（`good`）：`good.livestock_products` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 - **机械化牧场**（`building`）：`building.ranching_station` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **农业机械**（`good`）：`good.agricultural_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 庄园牧场：`country.output.building.manorial_pasture_factor`：+25%
+- `country.climate.heat_stress_factor`：+8%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 商业农庄 (`tech.commercial_estates`)
+- 商业农庄 (`tech.commercial_estates`)：牧业网络提供畜群驯养、育种与畜产品处理能力中的成套生产流程，商业农庄直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 商业农庄 (`tech.commercial_estates`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 商业农庄 (`tech.commercial_estates`)
-- 城市水务 (`tech.urban_waterworks`)
-- 区域粮仓 (`tech.regional_granaries`)
+无
 
 #### 作为候选参与的里程碑
 
-- 帝国网络 (`tech.imperial_integration`)
+无
 
 ### 集约轮作 (`tech.intensive_crop_rotation`)
 
@@ -12394,7 +11506,7 @@
 | 研究成本 | 47600 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | production\_system |
 | 布局路线 | branch.wheat\_rainfed |
 | 主要路线 | 作物 · 通用农艺 (\`route.crop.general\`) |
@@ -12402,23 +11514,17 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 王国体系 (`tech.kingdom_administration`)
-- 轮作 (`tech.crop_rotation`)
+- 轮作 (`tech.crop_rotation`)：轮作提供谷物旱作、轮作与收获工艺中的成套生产流程，集约轮作直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「王国体系」（tech.kingdom\_administration）
-  - 满足其一：
-    - 已发现信号「小麦」（bio.wheat）
-    - 已发现信号「小麦样本接触」（contact.wheat）
-    - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
+无
 
 #### 效果摘要
 
-解锁建筑：佃作小麦庄园；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：三圃制小农场；佃作小麦庄园产出 +25%
+解锁建筑：三圃制小农场；旱灾损失 -8%
 
 #### 机会成本
 
@@ -12427,38 +11533,30 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 佃作小麦庄园 (`method_wheat_farm_r3`)；三圃制小农场 (`three_field_smallholding`)
+- **建筑 / 生产方式：** 三圃制小农场 (`three_field_smallholding`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 佃作小麦庄园 (`method_wheat_farm_r3`)；改良轮作小麦庄园 (`method_wheat_farm_r5`)
 
 #### 结构化内容效果
 
-- **佃作小麦庄园**（`building`）：`building.method_wheat_farm_r3` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **小麦**（`good`）：`good.wheat_grain` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **三圃制小农场**（`building`）：`building.three_field_smallholding` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **混合谷物**（`good`）：`good.grain` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **蔬菜**（`good`）：`good.vegetables` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 佃作小麦庄园：`country.output.building.method_wheat_farm_r3_factor`：+25%
+- `country.climate.drought_loss_factor`：+8%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 作物移植适应 (`tech.crop_transplantation`)
+- 农艺交换 (`tech.agronomic_exchange`)：集约轮作提供谷物旱作、轮作与收获工艺中的成套生产流程，农艺交换直接使用这一能力完成其工艺或组织设计
+- 作物移植适应 (`tech.crop_transplantation`)：集约轮作提供谷物旱作、轮作与收获工艺中的成套生产流程，作物移植适应直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 作物移植适应 (`tech.crop_transplantation`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 作物移植适应 (`tech.crop_transplantation`)
-- 破布纸 (`tech.rag_paper_making`)
-- 活字印刷 (`tech.movable_type_printing`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -12472,9 +11570,9 @@
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 47600 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | power\_scale |
 | 布局路线 | branch.water\_wind |
 | 主要路线 | 地理 · 河流 (\`route.geography.river\`) |
@@ -12482,23 +11580,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | energy |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 王国体系 (`tech.kingdom_administration`)
-- 运河工程 (`tech.canal_engineering`)
+- 运河工程 (`tech.canal_engineering`)：运河工程提供水流、风力、输配水和流域工程能力中的成套生产流程，水力机械直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「王国体系」（tech.kingdom\_administration）
-  - 满足其一：
-    - 已发现信号「河湖水系」（landform.freshwater\_access）
-    - 已发现信号「河谷」（landform.river\_valley）
-    - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
+- 满足其一：
+  - 已发现信号「河湖水系」（landform.freshwater\_access）
+  - 已发现信号「河谷」（landform.river\_valley）
+  - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
 
 #### 效果摘要
 
-解锁建筑：河流水力发电站；开放通用职业阶层岗位；开放通用职业阶层岗位；需要河流地块条件；河流水力发电站产出 +25%
+解锁建筑：河流水力发电站；洪灾损失 -8%
 
 #### 机会成本
 
@@ -12514,34 +11609,26 @@
 #### 结构化内容效果
 
 - **河流水力发电站**（`building`）：`building.hydropower_station` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电气设备**（`good`）：`good.electrical_equipment` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **河流**（`tile`）：`tile.river` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 河流水力发电站：`country.output.building.hydropower_station_factor`：+25%
+- `country.climate.flood_loss_factor`：+8%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 矿井排水 (`tech.mine_drainage`)
+- 矿井排水 (`tech.mine_drainage`)：水力机械提供水流、风力、输配水和流域工程能力中的动力与规模化能力，矿井排水直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 矿井排水 (`tech.mine_drainage`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 矿井排水 (`tech.mine_drainage`)
-- 磁针导航 (`tech.magnetic_navigation`)
-- 经院研究法 (`tech.scholastic_method`)
+无
 
 #### 作为候选参与的里程碑
 
-- 帝国网络 (`tech.imperial_integration`)
+无
 
 ### 风力机械 (`tech.wind_power`)
 
@@ -12551,33 +11638,30 @@
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 47600 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | power\_scale |
-| 布局路线 | branch.electric\_intelligent\_energy |
+| 布局路线 | branch.water\_wind |
 | 主要路线 | 地理 · 沿海 (\`route.geography.coast\`) |
 | 全部路线 | 地理 · 沿海 (\`route.geography.coast\`)；能源 · 风力 (\`route.energy.wind\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | energy |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 王国体系 (`tech.kingdom_administration`)
-- 地表煤利用 (`tech.surface_coal_use`)
+- 地表煤利用 (`tech.surface_coal_use`)：地表煤利用提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，风力机械直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「王国体系」（tech.kingdom\_administration）
-  - 满足其一：
-    - 已发现信号「稳定风廊」（landform.stable\_wind\_corridor）
-    - 已发现信号「季风经验」（weather.monsoon）
-    - 已发现信号「台风经验」（weather.typhoon）
+- 满足其一：
+  - 已发现信号「稳定风廊」（landform.stable\_wind\_corridor）
+  - 已发现信号「季风经验」（weather.monsoon）
+  - 已发现信号「台风经验」（weather.typhoon）
 
 #### 效果摘要
 
-可再生能源业产出 +12%；国家协同能力 +3%
+可再生能源业产出 +28%；能源部门产出 +12%
 
 #### 机会成本
 
@@ -12596,26 +11680,24 @@
 
 #### 永久 Modifier 条款
 
-- 可再生能源业：`country.output.family.renewable_power_generation_factor`：+12%
-- `country.output.energy_factor`：+3%
+- 可再生能源业：`country.output.family.renewable_power_generation_factor`：+28%
+- `country.output.energy_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 天文导航 (`tech.celestial_navigation`)
+- 天文导航 (`tech.celestial_navigation`)：风力机械提供水流、风力、输配水和流域工程能力中的动力与规模化能力，天文导航直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 天文导航 (`tech.celestial_navigation`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 天文导航 (`tech.celestial_navigation`)
-- 煤矿开采 (`tech.coal_mining`)
-- 行业组织 (`tech.guild_organization`)
+无
 
 #### 作为候选参与的里程碑
 
-- 帝国网络 (`tech.imperial_integration`)
+无
 
 ### 行业组织 (`tech.guild_organization`)
 
@@ -12625,32 +11707,28 @@
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 社会 (`society`) |
 | 研究成本 | 42000 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 节点标记 | 时代关键 |
+| 网络角色 | branch |
+| 锚点类型 | era\_candidate |
 | 节点角色 | institution |
-| 布局路线 | backbone.institutions\_exchange |
+| 布局路线 | branch.labor\_management |
 | 主要路线 | 制度 · 行会 (\`route.institution.guild\`) |
 | 全部路线 | 制度 · 行会 (\`route.institution.guild\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 王国体系 (`tech.kingdom_administration`)
+- 官僚行政 (`tech.state_bureaucracy`)：官僚行政提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，行业组织直接使用这一能力完成其工艺或组织设计
+- 道路工程 (`tech.road_engineering`)：道路工程提供工具制造、机械加工与设备控制能力中的稳定的组织与制度载体，行业组织直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「王国体系」（tech.kingdom\_administration）
-  - 满足其一：
-    - 已发现信号「印刷突破」（breakthrough.printing）
-    - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+无
 
 #### 效果摘要
 
-解锁物资：衣物；解锁物资：家具；解锁建筑：家具行会工坊；开放通用职业阶层岗位；家具行会工坊产出 +25%
+解锁物资：衣物；解锁物资：家具；解锁建筑：家具行会工坊；解锁建筑：裁缝铺；社会领域研究效率 +15%
 
 #### 机会成本
 
@@ -12668,34 +11746,33 @@
 - **衣物**（`good`）：`good.clothing` → `production_access` `unlock` `1.0`；`existing_binding`
 - **家具**（`good`）：`good.furniture` → `production_access` `unlock` `1.0`；`existing_binding`
 - **家具行会工坊**（`building`）：`building.guild_hall` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **家具**（`good`）：`good.furniture` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **木材**（`good`）：`good.lumber` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **裁缝铺**（`building`）：`building.tailor_shop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **衣物**（`good`）：`good.clothing` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **布料**（`good`）：`good.cloth` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 家具行会工坊：`country.output.building.guild_hall_factor`：+25%
+- `country.research.society_efficiency`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 特许大学 (`tech.chartered_universities`)
+- 特许大学 (`tech.chartered_universities`)：行业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，特许大学直接使用这一能力完成其工艺或组织设计
+- 海岸船厂 (`tech.coastal_shipyards`)：行业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，海岸船厂直接使用这一能力完成其工艺或组织设计
+- 复式记账 (`tech.double_entry_bookkeeping`)：行业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，复式记账直接使用这一能力完成其工艺或组织设计
+- 农艺交换 (`tech.agronomic_exchange`)：行业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，农艺交换直接使用这一能力完成其工艺或组织设计
+- 合作社组织 (`tech.cooperative_association`)：行业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，合作社组织直接使用这一能力完成其工艺或组织设计
+- 工业组织 (`tech.industrial_organization`)：行业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，工业组织直接使用这一能力完成其工艺或组织设计
+- 机床 (`tech.machine_tools`)：行业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，机床直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 复式记账 (`tech.double_entry_bookkeeping`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 复式记账 (`tech.double_entry_bookkeeping`)
+无
 
 #### 作为候选参与的里程碑
 
-无
+- 帝国网络 (`tech.imperial_integration`)
 
 ### 高炉冶炼 (`tech.blast_furnace`)
 
@@ -12707,7 +11784,7 @@
 | 研究成本 | 47600 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | production\_system |
 | 布局路线 | branch.heavy\_industry |
 | 主要路线 | 资源 · 铁 (\`route.resource.iron\`) |
@@ -12715,23 +11792,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | metallurgy |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 王国体系 (`tech.kingdom_administration`)
-- 块炼铁 (`tech.iron_smelting`)
+- 块炼铁 (`tech.iron_smelting`)：块炼铁提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，高炉冶炼直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「王国体系」（tech.kingdom\_administration）
-  - 满足其一：
-    - 已发现信号「野生动物」（resource.wild\_game）
-    - 已发现信号「羊」（bio.sheep）
-    - 已发现信号「草原」（landform.grassland）
+- 满足其一：
+  - 已发现信号「铁矿」（resource.iron\_ore）
+  - 已发现信号「煤炭」（resource.coal）
+  - 已发现信号「金属加工突破」（breakthrough.metalworking）
 
 #### 效果摘要
 
-解锁物资：钢材；解锁建筑：焦炭炼钢厂；开放通用职业阶层岗位；开放通用职业阶层岗位；焦炭炼钢厂产出 +25%
+解锁物资：钢材；解锁建筑：焦炭炼钢厂；采掘部门产出 +12%
 
 #### 机会成本
 
@@ -12748,31 +11822,25 @@
 
 - **钢材**（`good`）：`good.steel` → `production_access` `unlock` `1.0`；`existing_binding`
 - **焦炭炼钢厂**（`building`）：`building.steam_steel_works` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **钢材**（`good`）：`good.steel` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **铁矿石**（`good`）：`good.iron_ore` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **焦炭**（`good`）：`good.coke` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 焦炭炼钢厂：`country.output.building.steam_steel_works_factor`：+25%
+- `country.output.extractive_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 煤矿平硐 (`tech.coal_adit_mining`)
-- 深井采矿 (`tech.deep_mining`)
+- 深井采矿 (`tech.deep_mining`)：高炉冶炼提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，深井采矿直接使用这一能力完成其工艺或组织设计
+- 大气式蒸汽机 (`tech.atmospheric_engine`)：高炉冶炼提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，大气式蒸汽机直接使用这一能力完成其工艺或组织设计
+- 焦炭冶炼 (`tech.coke_smelting`)：高炉冶炼提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，焦炭冶炼直接使用这一能力完成其工艺或组织设计
+- 先进冶金 (`tech.advanced_metallurgy`)：高炉冶炼提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，先进冶金直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 深井采矿 (`tech.deep_mining`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 深井采矿 (`tech.deep_mining`)
-- 磁针导航 (`tech.magnetic_navigation`)
-- 行业组织 (`tech.guild_organization`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -12786,9 +11854,9 @@
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 47600 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.nonferrous\_metals |
 | 主要路线 | 资源 · 铁 (\`route.resource.iron\`) |
@@ -12796,23 +11864,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | metallurgy |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 王国体系 (`tech.kingdom_administration`)
-- 货币 (`tech.currency`)
+- 货币 (`tech.currency`)：货币提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，坩埚钢直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「王国体系」（tech.kingdom\_administration）
-  - 满足其一：
-    - 已发现信号「铁矿」（resource.iron\_ore）
-    - 已发现信号「煤炭」（resource.coal）
-    - 已发现信号「矿井支护突破」（breakthrough.mine\_support）
+- 满足其一：
+  - 已发现信号「铁矿」（resource.iron\_ore）
+  - 已发现信号「煤炭」（resource.coal）
 
 #### 效果摘要
 
-解锁物资：金属工具；钢铁业产出 +12%；国家协同能力 +3%
+解锁物资：金属工具；钢铁业产出 +28%；采掘部门产出 +12%
 
 #### 机会成本
 
@@ -12831,26 +11895,24 @@
 
 #### 永久 Modifier 条款
 
-- 钢铁业：`country.output.family.steelmaking_factor`：+12%
-- `country.output.manufacturing_factor`：+3%
+- 钢铁业：`country.output.family.steelmaking_factor`：+28%
+- `country.output.extractive_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 井筒开掘 (`tech.shaft_sinking`)
+- 井筒开掘 (`tech.shaft_sinking`)：坩埚钢提供矿物识别、有色冶炼与合金配制能力中的成套生产流程，井筒开掘直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 井筒开掘 (`tech.shaft_sinking`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 井筒开掘 (`tech.shaft_sinking`)
-- 火药配制 (`tech.gunpowder_formulation`)
-- 经院研究法 (`tech.scholastic_method`)
+无
 
 #### 作为候选参与的里程碑
 
-- 帝国网络 (`tech.imperial_integration`)
+无
 
 ### 煤矿开采 (`tech.coal_mining`)
 
@@ -12860,33 +11922,28 @@
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 47600 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | branch.petroleum\_materials |
+| 布局路线 | branch.heavy\_industry |
 | 主要路线 | 资源 · 煤炭 (\`route.resource.coal\`) |
 | 全部路线 | 资源 · 煤炭 (\`route.resource.coal\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | resource |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 王国体系 (`tech.kingdom_administration`)
-- 自然哲学 (`tech.natural_philosophy`)
+- 地表煤采集 (`tech.surface_coal_collection`)：地表煤采集提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，煤矿开采直接使用这一能力完成其工艺或组织设计
+- 块炼铁 (`tech.iron_smelting`)：块炼铁提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，煤矿开采直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「王国体系」（tech.kingdom\_administration）
-  - 满足其一：
-    - 已发现信号「铁矿」（resource.iron\_ore）
-    - 已发现信号「煤炭」（resource.coal）
-    - 已发现信号「矿井支护突破」（breakthrough.mine\_support）
+- 已发现信号「煤炭」（resource.coal）
 
 #### 效果摘要
 
-解锁物资：煤炭；解锁建筑：煤矿；开放通用职业阶层岗位；开放通用职业阶层岗位；煤矿产出 +25%
+解锁物资：煤炭；解锁建筑：煤矿；采掘部门产出 +12%
 
 #### 机会成本
 
@@ -12903,32 +11960,26 @@
 
 - **煤炭**（`good`）：`good.coal` → `production_access` `unlock` `1.0`；`existing_binding`
 - **煤矿**（`building`）：`building.coal_mine` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **煤炭**（`good`）：`good.coal` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 煤矿：`country.output.building.coal_mine_factor`：+25%
+- `country.output.extractive_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 特许商社 (`tech.chartered_companies`)
+- 工业采煤 (`tech.industrial_coal_mining`)：煤矿开采提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，工业采煤直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 特许商社 (`tech.chartered_companies`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 特许商社 (`tech.chartered_companies`)
-- 风力机械 (`tech.wind_power`)
-- 活字印刷 (`tech.movable_type_printing`)
+无
 
 #### 作为候选参与的里程碑
 
-- 帝国网络 (`tech.imperial_integration`)
+无
 
 ### 破布纸 (`tech.rag_paper_making`)
 
@@ -12938,9 +11989,9 @@
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 47600 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | institution |
 | 布局路线 | branch.textile\_fibers |
 | 主要路线 | 工艺 · 纺织 (\`route.craft.textiles\`) |
@@ -12948,23 +11999,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | knowledge |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 王国体系 (`tech.kingdom_administration`)
-- 植物纤维抄纸 (`tech.plant_fiber_papermaking`)
+- 植物纤维抄纸 (`tech.plant_fiber_papermaking`)：植物纤维抄纸提供纤维处理、纺纱、织造与服装生产工艺中的稳定的组织与制度载体，破布纸直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「王国体系」（tech.kingdom\_administration）
-  - 满足其一：
-    - 已发现信号「木材」（resource.timber）
-    - 已发现信号「森林」（landform.forest）
-    - 已发现信号「林业经营突破」（breakthrough.forest\_management）
+- 满足其一：
+  - 已发现信号「印刷突破」（breakthrough.printing）
+  - 已发现信号「木材」（resource.timber）
 
 #### 效果摘要
 
-解锁物资：纸张；解锁建筑：碎布造纸工坊；开放通用职业阶层岗位；开放通用职业阶层岗位；碎布造纸工坊产出 +25%
+解锁物资：纸张；解锁建筑：碎布造纸工坊；制造部门产出 +12%
 
 #### 机会成本
 
@@ -12981,33 +12028,26 @@
 
 - **纸张**（`good`）：`good.paper` → `production_access` `unlock` `1.0`；`existing_binding`
 - **碎布造纸工坊**（`building`）：`building.rag_paper_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **纸张**（`good`）：`good.paper` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **亚麻纤维**（`good`）：`good.flax_fiber` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 碎布造纸工坊：`country.output.building.rag_paper_workshop_factor`：+25%
+- `country.output.manufacturing_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 商品作物管理 (`tech.commodity_crop_management`)
+无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 商品作物管理 (`tech.commodity_crop_management`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 商品作物管理 (`tech.commodity_crop_management`)
-- 磁针导航 (`tech.magnetic_navigation`)
-- 区域粮仓 (`tech.regional_granaries`)
+无
 
 #### 作为候选参与的里程碑
 
-- 帝国网络 (`tech.imperial_integration`)
+无
 
 ### 木版印刷 (`tech.woodblock_printing`)
 
@@ -13019,7 +12059,7 @@
 | 研究成本 | 54600 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
-| 锚点类型 | support |
+| 锚点类型 | backbone |
 | 节点角色 | institution |
 | 布局路线 | backbone.knowledge\_computation |
 | 主要路线 | 制度 · 印刷 (\`route.institution.printing\`) |
@@ -13027,22 +12067,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | knowledge |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 文字 (`tech.writing`)
+- 文字 (`tech.writing`)：文字提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，木版印刷直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「王国体系」（tech.kingdom\_administration）
-  - 满足其一：
-    - 已发现信号「木材」（resource.timber）
-    - 已发现信号「森林」（landform.forest）
-    - 已发现信号「林业经营突破」（breakthrough.forest\_management）
+- 满足其一：
+  - 已发现信号「印刷突破」（breakthrough.printing）
+  - 已发现信号「木材」（resource.timber）
 
 #### 效果摘要
 
-解锁物资：印刷品；解锁建筑：木版印刷坊；开放通用职业阶层岗位；开放通用职业阶层岗位；木版印刷坊产出 +20%
+解锁物资：印刷品；解锁建筑：木版印刷坊
 
 #### 机会成本
 
@@ -13059,25 +12096,20 @@
 
 - **印刷品**（`good`）：`good.printed_materials` → `production_access` `unlock` `1.0`；`existing_binding`
 - **木版印刷坊**（`building`）：`building.woodblock_printing_house` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **印刷品**（`good`）：`good.printed_materials` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **纸张**（`good`）：`good.paper` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 木版印刷坊：`country.output.building.woodblock_printing_house_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
 无
 
@@ -13093,9 +12125,9 @@
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 42000 科技点（`technology_points`） |
-| 节点标记 | 无 |
+| 节点标记 | 时代关键 |
 | 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | institution |
 | 布局路线 | backbone.tools\_machinery |
 | 主要路线 | 制度 · 印刷 (\`route.institution.printing\`) |
@@ -13103,22 +12135,18 @@
 | 开局能力标签 | 无 |
 | 效果配置 | knowledge |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 王国体系 (`tech.kingdom_administration`)
+- 文字 (`tech.writing`)：文字提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，活字印刷直接使用这一能力完成其工艺或组织设计
+- 复合工具 (`tech.composite_tools`)：复合工具提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，活字印刷直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「王国体系」（tech.kingdom\_administration）
-  - 满足其一：
-    - 已发现信号「印刷突破」（breakthrough.printing）
-    - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+无
 
 #### 效果摘要
 
-解锁物资：印刷品；解锁建筑：活字印刷坊；开放通用职业阶层岗位；开放通用职业阶层岗位；活字印刷坊产出 +25%
+解锁物资：印刷品；解锁建筑：活字印刷坊；工程领域研究效率 +15%
 
 #### 机会成本
 
@@ -13135,31 +12163,26 @@
 
 - **印刷品**（`good`）：`good.printed_materials` → `production_access` `unlock` `1.0`；`existing_binding`
 - **活字印刷坊**（`building`）：`building.movable_type_print_shop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **印刷品**（`good`）：`good.printed_materials` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **纸张**（`good`）：`good.paper` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 活字印刷坊：`country.output.building.movable_type_print_shop_factor`：+25%
+- `country.research.engineering_efficiency`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 螺旋压印 (`tech.screw_press_printing`)：活字印刷提供工具制造、机械加工与设备控制能力中的稳定的组织与制度载体，螺旋压印直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
-- 机械计时 (`tech.mechanical_timekeeping`)
-
-#### 应用交汇目标
-
-- 机械计时 (`tech.mechanical_timekeeping`)
+无
 
 #### 作为候选参与的里程碑
 
-无
+- 帝国网络 (`tech.imperial_integration`)
 
 ### 火药配制 (`tech.gunpowder_formulation`)
 
@@ -13169,9 +12192,9 @@
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 科学 (`science`) |
 | 研究成本 | 47600 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.industrial\_chemistry |
 | 主要路线 | 资源 · 硝石 (\`route.resource.saltpeter\`) |
@@ -13179,23 +12202,22 @@
 | 开局能力标签 | 无 |
 | 效果配置 | chemistry |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 王国体系 (`tech.kingdom_administration`)
-- 城市卫生 (`tech.urban_sanitation`)
+- 窑烧控制 (`tech.kiln_firing`)：窑烧控制提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，火药配制直接使用这一能力完成其工艺或组织设计
+- 度量衡 (`tech.weights_and_measures`)：度量衡提供测量基准、统计方法与精密仪器能力中的稳定的组织与制度载体，火药配制直接使用这一能力完成其工艺或组织设计
+- 卤水采集 (`tech.brine_collection`)：卤水采集提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，火药配制直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「王国体系」（tech.kingdom\_administration）
-  - 满足其一：
-    - 已发现信号「硫磺」（resource.sulfur）
-    - 已发现信号「磷矿石」（resource.phosphate\_rock）
-    - 已发现信号「硝石」（resource.saltpeter）
+- 满足其一：
+  - 已发现信号「硫磺」（resource.sulfur）
+  - 已发现信号「磷矿石」（resource.phosphate\_rock）
+  - 已发现信号「硝石」（resource.saltpeter）
 
 #### 效果摘要
 
-解锁物资：炸药；解锁物资：硝石；解锁建筑：硝石矿；开放通用职业阶层岗位；硝石矿产出 +25%
+解锁物资：炸药；解锁物资：硝石；解锁建筑：硝石矿；解锁建筑：硫矿；制造部门产出 +12%
 
 #### 机会成本
 
@@ -13213,34 +12235,28 @@
 - **炸药**（`good`）：`good.explosives` → `production_access` `unlock` `1.0`；`existing_binding`
 - **硝石**（`good`）：`good.saltpeter` → `production_access` `unlock` `1.0`；`existing_binding`
 - **硝石矿**（`building`）：`building.saltpeter_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **硝石**（`good`）：`good.saltpeter` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **硫矿**（`building`）：`building.sulfur_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **硫磺**（`good`）：`good.sulfur` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 硝石矿：`country.output.building.saltpeter_collector_factor`：+25%
+- `country.output.manufacturing_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 火药武器 (`tech.gunpowder_weapons`)
+- 火药武器 (`tech.gunpowder_weapons`)：火药配制提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，火药武器直接使用这一能力完成其工艺或组织设计
+- 工业化学 (`tech.industrial_chemistry`)：火药配制提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，工业化学直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 火药武器 (`tech.gunpowder_weapons`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 火药武器 (`tech.gunpowder_weapons`)
-- 城市水务 (`tech.urban_waterworks`)
-- 区域粮仓 (`tech.regional_granaries`)
+无
 
 #### 作为候选参与的里程碑
 
-- 帝国网络 (`tech.imperial_integration`)
+无
 
 ### 磁针导航 (`tech.magnetic_navigation`)
 
@@ -13252,7 +12268,7 @@
 | 研究成本 | 47600 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | handling |
 | 布局路线 | branch.maritime\_logistics |
 | 主要路线 | 地理 · 沿海 (\`route.geography.coast\`) |
@@ -13260,23 +12276,21 @@
 | 开局能力标签 | 无 |
 | 效果配置 | observation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 王国体系 (`tech.kingdom_administration`)
-- 河运 (`tech.river_transport`)
+- 河运 (`tech.river_transport`)：河运提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，磁针导航直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「王国体系」（tech.kingdom\_administration）
-  - 满足其一：
-    - 已发现信号「海岸」（landform.coast）
-    - 已发现信号「海洋鱼类」（resource.marine\_fish）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+- 满足其一：
+  - 已发现信号「海岸」（landform.coast）
+  - 已发现信号「海岸河口」（landform.coastal\_estuary）
+  - 已发现信号「外国舰船或远洋船体接触」（contact.maritime\_vessel）
+  - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
 
 #### 效果摘要
 
-海运业产出 +12%；国家协同能力 +3%
+海运作业产出 +28%；贸易速度 +12%
 
 #### 机会成本
 
@@ -13295,22 +12309,20 @@
 
 #### 永久 Modifier 条款
 
-- 海运业：`country.output.family.maritime_operations_factor`：+12%
-- `country.research.science_efficiency`：+3%
+- 海运作业：`country.output.family.maritime_operations_factor`：+28%
+- `country.trade.speed_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 远洋航海 (`tech.oceanic_navigation`)
+无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 远洋航海 (`tech.oceanic_navigation`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 远洋航海 (`tech.oceanic_navigation`)
-- 农奴义务 (`tech.serf_obligations`)
-- 行业组织 (`tech.guild_organization`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -13324,33 +12336,30 @@
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 47600 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
-| 布局路线 | branch.construction\_materials |
+| 布局路线 | branch.water\_wind |
 | 主要路线 | 地理 · 城市 (\`route.geography.urban\`) |
 | 全部路线 | 地理 · 城市 (\`route.geography.urban\`)；气候 · 洪水 (\`route.climate.flood\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | hydraulic |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 王国体系 (`tech.kingdom_administration`)
-- 砌体建筑 (`tech.masonry`)
+- 砌体建筑 (`tech.masonry`)：砌体建筑提供土石、陶瓷、玻璃和工程构件制造能力中的成套生产流程，城市水务直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「王国体系」（tech.kingdom\_administration）
-  - 满足其一：
-    - 已发现信号「河湖水系」（landform.freshwater\_access）
-    - 已发现信号「河谷」（landform.river\_valley）
-    - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
+- 满足其一：
+  - 已发现信号「河湖水系」（landform.freshwater\_access）
+  - 已发现信号「河谷」（landform.river\_valley）
+  - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
 
 #### 效果摘要
 
-公共营造产出 +12%；国家协同能力 +3%
+公共营造产出 +28%
 
 #### 机会成本
 
@@ -13369,26 +12378,23 @@
 
 #### 永久 Modifier 条款
 
-- 公共营造：`country.output.family.construction_methods_factor`：+12%
-- `country.output.energy_factor`：+3%
+- 公共营造：`country.output.family.construction_methods_factor`：+28%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 海岸船厂 (`tech.coastal_shipyards`)
+无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 海岸船厂 (`tech.coastal_shipyards`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 海岸船厂 (`tech.coastal_shipyards`)
-- 风力机械 (`tech.wind_power`)
-- 活字印刷 (`tech.movable_type_printing`)
+无
 
 #### 作为候选参与的里程碑
 
-- 帝国网络 (`tech.imperial_integration`)
+无
 
 ### 经院研究法 (`tech.scholastic_method`)
 
@@ -13398,9 +12404,9 @@
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 科学 (`science`) |
 | 研究成本 | 42000 科技点（`technology_points`） |
-| 节点标记 | 无 |
+| 节点标记 | 时代关键 |
 | 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | handling |
 | 布局路线 | backbone.knowledge\_computation |
 | 主要路线 | 制度 · 学术 (\`route.institution.academic\`) |
@@ -13408,22 +12414,18 @@
 | 开局能力标签 | 无 |
 | 效果配置 | research |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 王国体系 (`tech.kingdom_administration`)
+- 文字 (`tech.writing`)：文字提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，经院研究法直接使用这一能力完成其工艺或组织设计
+- 官僚行政 (`tech.state_bureaucracy`)：官僚行政提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，经院研究法直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「王国体系」（tech.kingdom\_administration）
-  - 满足其一：
-    - 已发现信号「印刷突破」（breakthrough.printing）
-    - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+无
 
 #### 效果摘要
 
-造纸业产出 +11%；国家协同能力 +3%
+古典学院产出 +50%；知识部门产出 +15%
 
 #### 机会成本
 
@@ -13442,24 +12444,26 @@
 
 #### 永久 Modifier 条款
 
-- 造纸业：`country.output.family.paper_making_factor`：+11%
-- `country.research.science_efficiency`：+3%
+- 古典学院：`country.output.building.classical_academy_factor`：+50%
+- `country.output.knowledge_factor`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 机械计时 (`tech.mechanical_timekeeping`)：经院研究法提供记录、验证、计算与知识传播方法中的操作与材料处理方法，机械计时直接使用这一能力完成其工艺或组织设计
+- 实验科学 (`tech.experimental_science`)：经院研究法提供记录、验证、计算与知识传播方法中的操作与材料处理方法，实验科学直接使用这一能力完成其工艺或组织设计
+- 学术社团 (`tech.learned_societies`)：经院研究法提供论证、注释和公开争辩的学术规范
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
-- 地图学 (`tech.cartography`)
-
-#### 应用交汇目标
-
-- 地图学 (`tech.cartography`)
+无
 
 #### 作为候选参与的里程碑
 
-无
+- 帝国网络 (`tech.imperial_integration`)
 
 ### 特许大学 (`tech.chartered_universities`)
 
@@ -13471,7 +12475,7 @@
 | 研究成本 | 54600 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
-| 锚点类型 | support |
+| 锚点类型 | backbone |
 | 节点角色 | handling |
 | 布局路线 | backbone.institutions\_exchange |
 | 主要路线 | 制度 · 大学 (\`route.institution.university\`) |
@@ -13479,22 +12483,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | research |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 行业组织 (`tech.guild_organization`)
+- 行业组织 (`tech.guild_organization`)：行业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，特许大学直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「王国体系」（tech.kingdom\_administration）
-  - 满足其一：
-    - 已发现信号「印刷突破」（breakthrough.printing）
-    - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+- 满足其一：
+  - 已发现信号「印刷突破」（breakthrough.printing）
+  - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
 
 #### 效果摘要
 
-解锁建筑：特许大学；开放通用职业阶层岗位；开放科技职业阶层岗位；解锁建筑：印刷学社；特许大学产出 +20%
+解锁建筑：特许大学；解锁建筑：印刷学社
 
 #### 机会成本
 
@@ -13510,26 +12511,22 @@
 #### 结构化内容效果
 
 - **特许大学**（`building`）：`building.chartered_university` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **科技职业阶层**（`class`）：`class.technology` → `employment_access` `enable` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **手抄本**（`good`）：`good.manuscripts` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **印刷学社**（`building`）：`building.printing_academy` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **印刷品**（`good`）：`good.printed_materials` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 特许大学：`country.output.building.chartered_university_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 庄园司法 (`tech.manorial_jurisdiction`)
+- 庄园司法 (`tech.manorial_jurisdiction`)：特许大学提供制度协调、公共组织与交换规则中的操作与材料处理方法，庄园司法直接使用这一能力完成其工艺或组织设计
+- 学术社团 (`tech.learned_societies`)：特许大学提供稳定的学者共同体、章程和人才来源
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
 无
 
@@ -13546,31 +12543,29 @@
 | 领域 | 社会 (`society`) |
 | 研究成本 | 54600 科技点（`technology_points`） |
 | 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | support |
+| 网络角色 | branch |
+| 锚点类型 | branch |
 | 节点角色 | institution |
-| 布局路线 | backbone.institutions\_exchange |
+| 布局路线 | branch.land\_institutions |
 | 主要路线 | 制度 · 国家治理 (\`route.institution.state\`) |
 | 全部路线 | 制度 · 国家治理 (\`route.institution.state\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 特许大学 (`tech.chartered_universities`)
+- 特许大学 (`tech.chartered_universities`)：特许大学提供制度协调、公共组织与交换规则中的操作与材料处理方法，庄园司法直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「王国体系」（tech.kingdom\_administration）
-  - 满足其一：
-    - 已发现信号「印刷突破」（breakthrough.printing）
-    - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+- 满足其一：
+  - 已发现信号「旱地承载力」（resource.arable\_land）
+  - 已发现信号「肥沃土壤」（resource.fertile\_soil）
+  - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
 
 #### 效果摘要
 
-海运业产出 +10%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -13589,17 +12584,17 @@
 
 #### 永久 Modifier 条款
 
-- 海运业：`country.output.family.maritime_operations_factor`：+10%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 行会学徒制 (`tech.guild_apprenticeship`)
+- 行会学徒制 (`tech.guild_apprenticeship`)：庄园司法提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，行会学徒制直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
 无
 
@@ -13615,33 +12610,30 @@
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 社会 (`society`) |
 | 研究成本 | 47600 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | institution |
-| 布局路线 | branch.tropical\_commodities |
+| 布局路线 | branch.land\_institutions |
 | 主要路线 | 制度 · 国家治理 (\`route.institution.state\`) |
 | 全部路线 | 制度 · 国家治理 (\`route.institution.state\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 王国体系 (`tech.kingdom_administration`)
-- 市场制度 (`tech.market_institutions`)
+- 市场制度 (`tech.market_institutions`)：市场制度提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，农奴义务直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「王国体系」（tech.kingdom\_administration）
-  - 满足其一：
-    - 已发现信号「印刷突破」（breakthrough.printing）
-    - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+- 满足其一：
+  - 已发现信号「旱地承载力」（resource.arable\_land）
+  - 已发现信号「肥沃土壤」（resource.fertile\_soil）
+  - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
 
 #### 效果摘要
 
-海运业产出 +12%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -13660,25 +12652,23 @@
 
 #### 永久 Modifier 条款
 
-- 海运业：`country.output.family.maritime_operations_factor`：+12%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 种植园庄园管理 (`tech.estate_plantation_management`)
+无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 种植园庄园管理 (`tech.estate_plantation_management`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 种植园庄园管理 (`tech.estate_plantation_management`)
-- 破布纸 (`tech.rag_paper_making`)
-- 活字印刷 (`tech.movable_type_printing`)
+无
 
 #### 作为候选参与的里程碑
 
-- 帝国网络 (`tech.imperial_integration`)
+无
 
 ### 庄园谷物经营 (`tech.manorial_cereal_farming`)
 
@@ -13688,33 +12678,30 @@
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 农业 (`agriculture`) |
 | 研究成本 | 47600 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
-| 布局路线 | branch.maize\_horticulture |
+| 布局路线 | branch.land\_institutions |
 | 主要路线 | 作物 · 通用农艺 (\`route.crop.general\`) |
 | 全部路线 | 作物 · 通用农艺 (\`route.crop.general\`)；制度 · 国家治理 (\`route.institution.state\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 王国体系 (`tech.kingdom_administration`)
-- 习惯佃作 (`tech.customary_tenancy`)
+- 习惯佃作 (`tech.customary_tenancy`)：习惯佃作提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，庄园谷物经营直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「王国体系」（tech.kingdom\_administration）
-  - 满足其一：
-    - 已发现信号「小麦」（bio.wheat）
-    - 已发现信号「小麦样本接触」（contact.wheat）
-    - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
+- 满足其一：
+  - 已发现信号「小麦」（bio.wheat）
+  - 已发现信号「玉米」（bio.maize）
+  - 已发现信号「稻」（bio.rice）
 
 #### 效果摘要
 
-主粮加工产出 +12%
+佃作雨养玉米田产出 +18%；佃作雨养小麦田产出 +18%
 
 #### 机会成本
 
@@ -13733,25 +12720,24 @@
 
 #### 永久 Modifier 条款
 
-- 主粮加工：`country.output.family.staple_preparation_factor`：+12%
+- 佃作雨养玉米田：`country.output.building.tenant_rainfed_maize_field_factor`：+18%
+- 佃作雨养小麦田：`country.output.building.tenant_rainfed_wheat_field_factor`：+18%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 农艺交换 (`tech.agronomic_exchange`)
+无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 农艺交换 (`tech.agronomic_exchange`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 农艺交换 (`tech.agronomic_exchange`)
-- 农奴义务 (`tech.serf_obligations`)
-- 区域粮仓 (`tech.regional_granaries`)
+无
 
 #### 作为候选参与的里程碑
 
-- 帝国网络 (`tech.imperial_integration`)
+无
 
 ### 行会学徒制 (`tech.guild_apprenticeship`)
 
@@ -13762,31 +12748,28 @@
 | 领域 | 社会 (`society`) |
 | 研究成本 | 54600 科技点（`technology_points`） |
 | 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | support |
+| 网络角色 | branch |
+| 锚点类型 | branch |
 | 节点角色 | institution |
-| 布局路线 | backbone.institutions\_exchange |
+| 布局路线 | branch.labor\_management |
 | 主要路线 | 制度 · 行会 (\`route.institution.guild\`) |
 | 全部路线 | 制度 · 行会 (\`route.institution.guild\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 庄园司法 (`tech.manorial_jurisdiction`)
+- 庄园司法 (`tech.manorial_jurisdiction`)：庄园司法提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，行会学徒制直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「王国体系」（tech.kingdom\_administration）
-  - 满足其一：
-    - 已发现信号「印刷突破」（breakthrough.printing）
-    - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+- 满足其一：
+  - 已发现信号「金属加工突破」（breakthrough.metalworking）
+  - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
 
 #### 效果摘要
 
-解锁物资：华服；解锁物资：精美家具；解锁建筑：细木家具工坊；开放通用职业阶层岗位；细木家具工坊产出 +20%
+解锁物资：华服；解锁物资：精美家具；解锁建筑：细木家具工坊；解锁建筑：宫廷裁缝坊
 
 #### 机会成本
 
@@ -13804,29 +12787,21 @@
 - **华服**（`good`）：`good.fine_clothing` → `production_access` `unlock` `1.0`；`existing_binding`
 - **精美家具**（`good`）：`good.fine_furniture` → `production_access` `unlock` `1.0`；`existing_binding`
 - **细木家具工坊**（`building`）：`building.cabinetmaker_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **精美家具**（`good`）：`good.fine_furniture` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **木材**（`good`）：`good.lumber` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **布料**（`good`）：`good.cloth` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **宫廷裁缝坊**（`building`）：`building.court_tailor` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **华服**（`good`）：`good.fine_clothing` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **毛皮**（`good`）：`good.fur` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 细木家具工坊：`country.output.building.cabinetmaker_workshop_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
 无
 
@@ -13842,9 +12817,9 @@
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 社会 (`society`) |
 | 研究成本 | 42000 科技点（`technology_points`） |
-| 节点标记 | 无 |
+| 节点标记 | 时代关键 |
 | 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | institution |
 | 布局路线 | backbone.food\_storage |
 | 主要路线 | 制度 · 储藏 (\`route.institution.storage\`) |
@@ -13852,22 +12827,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 王国体系 (`tech.kingdom_administration`)
+无
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「王国体系」（tech.kingdom\_administration）
-  - 满足其一：
-    - 已发现信号「印刷突破」（breakthrough.printing）
-    - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+- 满足其一：
+  - 已发现信号「肥沃土壤」（resource.fertile\_soil）
+  - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
+  - 已发现信号「连续歉收经验」（weather.repeated\_crop\_failure）
 
 #### 效果摘要
 
-海运业产出 +11%
+主食加工厂产出 +50%；农业部门产出 +15%
 
 #### 机会成本
 
@@ -13886,23 +12859,24 @@
 
 #### 永久 Modifier 条款
 
-- 海运业：`country.output.family.maritime_operations_factor`：+11%
+- 主食加工厂：`country.output.building.staple_food_plant_factor`：+50%
+- `country.output.agriculture_factor`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 远洋补给 (`tech.oceanic_provisioning`)：区域粮仓提供粮食处理、保存与农艺组织能力中的稳定的组织与制度载体，远洋补给直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
-- 远洋补给 (`tech.oceanic_provisioning`)
-
-#### 应用交汇目标
-
-- 远洋补给 (`tech.oceanic_provisioning`)
+无
 
 #### 作为候选参与的里程碑
 
-无
+- 帝国网络 (`tech.imperial_integration`)
 
 ### 煤矿平硐 (`tech.coal_adit_mining`)
 
@@ -13914,7 +12888,7 @@
 | 研究成本 | 54600 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.heavy\_industry |
 | 主要路线 | 资源 · 煤炭 (\`route.resource.coal\`) |
@@ -13922,22 +12896,17 @@
 | 开局能力标签 | 无 |
 | 效果配置 | resource |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 高炉冶炼 (`tech.blast_furnace`)
+- 地表煤采集 (`tech.surface_coal_collection`)：地表煤采集提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，煤矿平硐直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「王国体系」（tech.kingdom\_administration）
-  - 满足其一：
-    - 已发现信号「铁矿」（resource.iron\_ore）
-    - 已发现信号「煤炭」（resource.coal）
-    - 已发现信号「矿井支护突破」（breakthrough.mine\_support）
+- 已发现信号「煤炭」（resource.coal）
 
 #### 效果摘要
 
-解锁建筑：煤层平硐；开放通用职业阶层岗位；开放通用职业阶层岗位；煤层平硐产出 +20%
+解锁建筑：煤层平硐
 
 #### 机会成本
 
@@ -13953,26 +12922,22 @@
 #### 结构化内容效果
 
 - **煤层平硐**（`building`）：`building.coal_adit` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **煤炭**（`good`）：`good.coal` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 煤层平硐：`country.output.building.coal_adit_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 矿井木支护 (`tech.mine_timbering`)
+- 矿井木支护 (`tech.mine_timbering`)：煤矿平硐提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，矿井木支护直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 磁针导航 (`tech.magnetic_navigation`)
-- 行业组织 (`tech.guild_organization`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -13988,7 +12953,7 @@
 | 研究成本 | 54600 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.heavy\_industry |
 | 主要路线 | 资源 · 矿产 (\`route.resource.minerals\`) |
@@ -13996,22 +12961,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | resource |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 煤矿平硐 (`tech.coal_adit_mining`)
+- 煤矿平硐 (`tech.coal_adit_mining`)：煤矿平硐提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，矿井木支护直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「王国体系」（tech.kingdom\_administration）
-  - 满足其一：
-    - 已发现信号「木材」（resource.timber）
-    - 已发现信号「森林」（landform.forest）
-    - 已发现信号「林业经营突破」（breakthrough.forest\_management）
+- 满足其一：
+  - 已发现信号「木材」（resource.timber）
+  - 已发现信号「矿井支护突破」（breakthrough.mine\_support）
 
 #### 效果摘要
 
-解锁建筑：浅层铜矿；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：浅层锡矿；浅层铜矿产出 +20%
+解锁建筑：浅层铜矿；解锁建筑：浅层锡矿
 
 #### 机会成本
 
@@ -14027,28 +12989,24 @@
 #### 结构化内容效果
 
 - **浅层铜矿**（`building`）：`building.early_copper_mine` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **铜矿石**（`good`）：`good.copper_ore` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 - **浅层锡矿**（`building`）：`building.early_tin_mine` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **锡矿石**（`good`）：`good.tin_ore` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 浅层铜矿：`country.output.building.early_copper_mine_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 矿井通风 (`tech.mine_ventilation`)
+- 矿井通风 (`tech.mine_ventilation`)：矿井木支护提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，矿井通风直接使用这一能力完成其工艺或组织设计
+- 工业采煤 (`tech.industrial_coal_mining`)：矿井木支护提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，工业采煤直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 磁针导航 (`tech.magnetic_navigation`)
-- 行业组织 (`tech.guild_organization`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -14064,7 +13022,7 @@
 | 研究成本 | 54600 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.heavy\_industry |
 | 主要路线 | 资源 · 矿产 (\`route.resource.minerals\`) |
@@ -14072,22 +13030,17 @@
 | 开局能力标签 | 无 |
 | 效果配置 | resource |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 矿井木支护 (`tech.mine_timbering`)
+- 矿井木支护 (`tech.mine_timbering`)：矿井木支护提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，矿井通风直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「王国体系」（tech.kingdom\_administration）
-  - 满足其一：
-    - 已发现信号「铁矿」（resource.iron\_ore）
-    - 已发现信号「煤炭」（resource.coal）
-    - 已发现信号「矿井支护突破」（breakthrough.mine\_support）
+- 已发现信号「矿井支护突破」（breakthrough.mine\_support）
 
 #### 效果摘要
 
-解锁建筑：铅矿；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：锌矿；铅矿产出 +20%
+解锁建筑：铅矿；解锁建筑：锌矿；可利用资源：铅矿；可利用资源：锌矿
 
 #### 机会成本
 
@@ -14103,32 +13056,25 @@
 #### 结构化内容效果
 
 - **铅矿**（`building`）：`building.lead_ore_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **铅矿石**（`good`）：`good.lead_ore` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **炸药**（`good`）：`good.explosives` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **锌矿**（`building`）：`building.zinc_ore_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **锌矿石**（`good`）：`good.zinc_ore` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 - **铅矿**（`resource`）：`resource.lead_ore` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 - **锌矿**（`resource`）：`resource.zinc_ore` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 铅矿：`country.output.building.lead_ore_collector_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 深井采矿 (`tech.deep_mining`)：矿井通风提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，深井采矿直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
 无
-
-#### 应用交汇目标
-
-- 磁针导航 (`tech.magnetic_navigation`)
-- 行业组织 (`tech.guild_organization`)
 
 #### 作为候选参与的里程碑
 
@@ -14142,9 +13088,9 @@
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 社会 (`society`) |
 | 研究成本 | 47600 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | institution |
 | 布局路线 | branch.tuber\_highland |
 | 主要路线 | 作物 · 通用农艺 (\`route.crop.general\`) |
@@ -14152,23 +13098,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 王国体系 (`tech.kingdom_administration`)
-- 分成租佃 (`tech.sharecropping`)
+- 分成租佃 (`tech.sharecropping`)：分成租佃提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，庄园谷物核算直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「王国体系」（tech.kingdom\_administration）
-  - 满足其一：
-    - 已发现信号「小麦」（bio.wheat）
-    - 已发现信号「小麦样本接触」（contact.wheat）
-    - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
+- 满足其一：
+  - 已发现信号「小麦」（bio.wheat）
+  - 已发现信号「玉米」（bio.maize）
+  - 已发现信号「稻」（bio.rice）
 
 #### 效果摘要
 
-解锁建筑：玉米庄园；开放通用职业阶层岗位；开放通用职业阶层岗位；玉米庄园产出 +25%
+解锁建筑：玉米庄园；解锁建筑：佃作小麦庄园；解锁建筑：改良轮作小麦庄园
 
 #### 机会成本
 
@@ -14177,38 +13120,35 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 玉米庄园 (`landed_estate`)
+- **建筑 / 生产方式：** 玉米庄园 (`landed_estate`)；佃作小麦庄园 (`method_wheat_farm_r3`)；改良轮作小麦庄园 (`method_wheat_farm_r5`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
 - **玉米庄园**（`building`）：`building.landed_estate` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **玉米**（`good`）：`good.corn_grain` → `output_recipe_access` `enable` `1.0`；`existing_binding`
+- **佃作小麦庄园**（`building`）：`building.method_wheat_farm_r3` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **改良轮作小麦庄园**（`building`）：`building.method_wheat_farm_r5` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 玉米庄园：`country.output.building.landed_estate_factor`：+25%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 作物驯化移植 (`tech.crop_acclimatization`)
+无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 作物驯化移植 (`tech.crop_acclimatization`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 作物驯化移植 (`tech.crop_acclimatization`)
-- 牧业网络 (`tech.pastoral_networks`)
-- 行业组织 (`tech.guild_organization`)
+无
 
 #### 作为候选参与的里程碑
 
-- 帝国网络 (`tech.imperial_integration`)
+无
 
 ### 庄园水田核算 (`tech.estate_paddy_management`)
 
@@ -14218,9 +13158,9 @@
 | 时代 | 帝国时代 (`empire`) |
 | 领域 | 社会 (`society`) |
 | 研究成本 | 47600 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | institution |
 | 布局路线 | branch.rice\_irrigation |
 | 主要路线 | 作物 · 水稻 (\`route.crop.rice\`) |
@@ -14228,23 +13168,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 王国体系 (`tech.kingdom_administration`)
-- 佃作水田 (`tech.tenant_paddy_management`)
+- 佃作水田 (`tech.tenant_paddy_management`)：佃作水田提供水田整备、水位控制与稻作管理方法中的成套生产流程，庄园水田核算直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「王国体系」（tech.kingdom\_administration）
-  - 满足其一：
-    - 已发现信号「水田承载力」（resource.paddy\_land）
-    - 已发现信号「洪泛平原」（landform.floodplain）
-    - 已发现信号「水田控制突破」（breakthrough.paddy\_control）
+- 满足其一：
+  - 已发现信号「水田承载力」（resource.paddy\_land）
+  - 已发现信号「洪泛平原」（landform.floodplain）
+  - 已发现信号「水田控制突破」（breakthrough.paddy\_control）
 
 #### 效果摘要
 
-解锁建筑：庄园水田；开放通用职业阶层岗位；开放通用职业阶层岗位；开放劳动者阶层岗位；庄园水田产出 +25%
+解锁建筑：庄园水田；解锁建筑：精耕稻庄
 
 #### 机会成本
 
@@ -14253,41 +13190,34 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 庄园水田 (`estate_paddy`)
+- **建筑 / 生产方式：** 庄园水田 (`estate_paddy`)；精耕稻庄 (`method_rice_collector_r5`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
 - **庄园水田**（`building`）：`building.estate_paddy` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **劳动者阶层**（`class`）：`class.worker` → `employment_access` `enable` `1.0`；`existing_binding`
-- **稻米**（`good`）：`good.rice_grain` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **河流**（`tile`）：`tile.river` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
-- **水田承载力**（`resource`）：`resource.paddy_land` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
+- **精耕稻庄**（`building`）：`building.method_rice_collector_r5` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 庄园水田：`country.output.building.estate_paddy_factor`：+25%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 跨区域植物学 (`tech.interregional_botany`)
+无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 跨区域植物学 (`tech.interregional_botany`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 跨区域植物学 (`tech.interregional_botany`)
-- 磁针导航 (`tech.magnetic_navigation`)
-- 经院研究法 (`tech.scholastic_method`)
+无
 
 #### 作为候选参与的里程碑
 
-- 帝国网络 (`tech.imperial_integration`)
+无
 
 ### 帝国网络 (`tech.imperial_integration`)
 
@@ -14307,7 +13237,7 @@
 | 开局能力标签 | 无 |
 | 效果配置 | milestone |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
@@ -14317,7 +13247,7 @@
 
 #### 效果摘要
 
-造纸业产出 +10%
+公共营造场产出 +50%；社会领域研究效率 +15%
 
 #### 机会成本
 
@@ -14325,23 +13255,15 @@
 
 #### 里程碑候选
 
-需要完成下列 16 项候选中的任意 5 项：
-- 森林管理 (`tech.forest_management`)
-- 牧业网络 (`tech.pastoral_networks`)
+需要完成下列 8 项候选中的任意 4 项：
 - 集约轮作 (`tech.intensive_crop_rotation`)
-- 水力机械 (`tech.water_power`)
-- 风力机械 (`tech.wind_power`)
+- 活字印刷 (`tech.movable_type_printing`)
+- 经院研究法 (`tech.scholastic_method`)
+- 行业组织 (`tech.guild_organization`)
+- 森林管理 (`tech.forest_management`)
 - 高炉冶炼 (`tech.blast_furnace`)
-- 坩埚钢 (`tech.crucible_steel`)
-- 煤矿开采 (`tech.coal_mining`)
-- 破布纸 (`tech.rag_paper_making`)
-- 火药配制 (`tech.gunpowder_formulation`)
 - 磁针导航 (`tech.magnetic_navigation`)
-- 城市水务 (`tech.urban_waterworks`)
-- 农奴义务 (`tech.serf_obligations`)
-- 庄园谷物经营 (`tech.manorial_cereal_farming`)
-- 庄园谷物核算 (`tech.estate_cereal_management`)
-- 庄园水田核算 (`tech.estate_paddy_management`)
+- 区域粮仓 (`tech.regional_granaries`)
 
 #### 内容解锁
 
@@ -14356,36 +13278,18 @@
 
 #### 永久 Modifier 条款
 
-- 造纸业：`country.output.family.paper_making_factor`：+10%
+- 公共营造场：`country.output.building.classical_public_works_factor`：+50%
+- `country.research.society_efficiency`：+15%
 
-#### 直接后继（硬前置关系）
-
-- 地图学 (`tech.cartography`)
-- 天文导航 (`tech.celestial_navigation`)
-- 远洋航海 (`tech.oceanic_navigation`)
-- 海岸船厂 (`tech.coastal_shipyards`)
-- 螺旋压印 (`tech.screw_press_printing`)
-- 火药武器 (`tech.gunpowder_weapons`)
-- 深井采矿 (`tech.deep_mining`)
-- 复式记账 (`tech.double_entry_bookkeeping`)
-- 商业农庄 (`tech.commercial_estates`)
-- 作物驯化移植 (`tech.crop_acclimatization`)
-- 跨区域植物学 (`tech.interregional_botany`)
-- 机械计时 (`tech.mechanical_timekeeping`)
-- 井筒开掘 (`tech.shaft_sinking`)
-- 矿井排水 (`tech.mine_drainage`)
-- 特许商社 (`tech.chartered_companies`)
-- 种植园庄园管理 (`tech.estate_plantation_management`)
-- 商品作物管理 (`tech.commodity_crop_management`)
-- 远洋补给 (`tech.oceanic_provisioning`)
-- 农艺交换 (`tech.agronomic_exchange`)
-- 作物移植适应 (`tech.crop_transplantation`)
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
 
 无
 
@@ -14406,32 +13310,533 @@
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 科学 (`science`) |
 | 研究成本 | 96000 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 节点标记 | 时代关键 |
+| 网络角色 | branch |
+| 锚点类型 | era\_candidate |
 | 节点角色 | handling |
-| 布局路线 | backbone.knowledge\_computation |
+| 布局路线 | branch.geoscience\_gis |
 | 主要路线 | 制度 · 测绘 (\`route.institution.survey\`) |
 | 全部路线 | 制度 · 测绘 (\`route.institution.survey\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | observation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 帝国网络 (`tech.imperial_integration`)
+- 文字 (`tech.writing`)：文字提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，地图学直接使用这一能力完成其工艺或组织设计
+- 道路工程 (`tech.road_engineering`)：道路工程提供工具制造、机械加工与设备控制能力中的稳定的组织与制度载体，地图学直接使用这一能力完成其工艺或组织设计
+- 天文历法 (`tech.celestial_calendars`)：天文历法提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，地图学直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「帝国网络」（tech.imperial\_integration）
-  - 满足其一：
-    - 已发现信号「印刷突破」（breakthrough.printing）
-    - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+无
 
 #### 效果摘要
 
-造纸业产出 +11%
+书记学校产出 +50%；知识部门产出 +15%
+
+#### 机会成本
+
+占用通用研究预算，延后同代专业路线锚点
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 地籍管理局 (`cadastral_office`)；地理空间分析中心 (`geospatial_analysis_center`)
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+- 书记学校：`country.output.building.scribal_school_factor`：+50%
+- `country.output.knowledge_factor`：+15%
+
+#### 被以下科技作为硬前置
+
+- 远洋航海 (`tech.oceanic_navigation`)：地图学提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，远洋航海直接使用这一能力完成其工艺或组织设计
+- 标准化 (`tech.standardization`)：地图学提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，标准化直接使用这一能力完成其工艺或组织设计
+- 地质勘探 (`tech.geological_prospecting`)：地图学提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，地质勘探直接使用这一能力完成其工艺或组织设计
+- 地产测绘 (`tech.property_cadastre`)：地图学提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，地产测绘直接使用这一能力完成其工艺或组织设计
+- 地理信息系统 (`tech.geographic_information_systems`)：地图学提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，地理信息系统直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+- 洲际网络 (`tech.global_exchange`)
+
+### 天文导航 (`tech.celestial_navigation`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.celestial_navigation` |
+| 时代 | 探索时代 (`exploration`) |
+| 领域 | 科学 (`science`) |
+| 研究成本 | 108800 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | handling |
+| 布局路线 | branch.maritime\_logistics |
+| 主要路线 | 地理 · 沿海 (\`route.geography.coast\`) |
+| 全部路线 | 地理 · 沿海 (\`route.geography.coast\`)；制度 · 历法 (\`route.institution.calendar\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | observation |
+
+#### 硬前置（决定研发资格）
+
+- 风力机械 (`tech.wind_power`)：风力机械提供水流、风力、输配水和流域工程能力中的动力与规模化能力，天文导航直接使用这一能力完成其工艺或组织设计
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「海岸」（landform.coast）
+  - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+
+#### 效果摘要
+
+海运作业产出 +28%；能源部门产出 +12%
+
+#### 机会成本
+
+转入该路线需补齐历史锚点；时代 5 后的生产方式依赖专用资本、岗位或地理条件
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+- 海运作业：`country.output.family.maritime_operations_factor`：+28%
+- `country.output.energy_factor`：+12%
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 远洋航海 (`tech.oceanic_navigation`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.oceanic_navigation` |
+| 时代 | 探索时代 (`exploration`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 108800 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | institution |
+| 布局路线 | branch.maritime\_logistics |
+| 主要路线 | 地理 · 沿海 (\`route.geography.coast\`) |
+| 全部路线 | 地理 · 沿海 (\`route.geography.coast\`)；贸易 · 海运 (\`route.trade.maritime\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | trade |
+
+#### 硬前置（决定研发资格）
+
+- 地图学 (`tech.cartography`)：地图学提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，远洋航海直接使用这一能力完成其工艺或组织设计
+- 河运 (`tech.river_transport`)：河运提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，远洋航海直接使用这一能力完成其工艺或组织设计
+
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「磁针导航」（tech.magnetic\_navigation）
+  - 已完成科技「天文导航」（tech.celestial\_navigation）
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「海岸」（landform.coast）
+  - 已发现信号「海岸河口」（landform.coastal\_estuary）
+  - 已发现信号「外国舰船或远洋船体接触」（contact.maritime\_vessel）
+  - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+
+#### 效果摘要
+
+解锁物资：远洋船舶；解锁建筑：远洋造船厂；贸易速度 +12%
+
+#### 机会成本
+
+转入该路线需补齐历史锚点；时代 5 后的生产方式依赖专用资本、岗位或地理条件
+
+#### 内容解锁
+
+- **物资：** 远洋船舶 (`oceanic_vessels`)
+- **建筑 / 生产方式：** 远洋造船厂 (`oceanic_shipyard`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 远洋渔场 (`method_marine_fish_collector_r4`)；蒸汽航运船坞 (`method_steam_shipping`)
+
+#### 结构化内容效果
+
+- **远洋船舶**（`good`）：`good.oceanic_vessels` → `production_access` `unlock` `1.0`；`existing_binding`
+- **远洋造船厂**（`building`）：`building.oceanic_shipyard` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+- `country.trade.speed_factor`：+12%
+
+#### 被以下科技作为硬前置
+
+- 远洋船舶设计 (`tech.oceanic_ship_design`)：远洋航海提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，远洋船舶设计直接使用这一能力完成其工艺或组织设计
+- 商业网络 (`tech.mercantile_networks`)：远洋航海提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，商业网络直接使用这一能力完成其工艺或组织设计
+- 远洋补给 (`tech.oceanic_provisioning`)：远洋航海提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，远洋补给直接使用这一能力完成其工艺或组织设计
+- 跨区域植物学 (`tech.interregional_botany`)：远洋航海提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，跨区域植物学直接使用这一能力完成其工艺或组织设计
+- 精密仪器 (`tech.precision_instruments`)：远洋航海提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，精密仪器直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 远洋船舶设计 (`tech.oceanic_ship_design`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.oceanic_ship_design` |
+| 时代 | 探索时代 (`exploration`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 124800 科技点（`technology_points`） |
+| 节点标记 | 时代关键 |
+| 网络角色 | branch |
+| 锚点类型 | era\_candidate |
+| 节点角色 | institution |
+| 布局路线 | branch.maritime\_logistics |
+| 主要路线 | 贸易 · 海运 (\`route.trade.maritime\`) |
+| 全部路线 | 贸易 · 海运 (\`route.trade.maritime\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | trade |
+
+#### 硬前置（决定研发资格）
+
+- 远洋航海 (`tech.oceanic_navigation`)：远洋航海提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，远洋船舶设计直接使用这一能力完成其工艺或组织设计
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「海岸」（landform.coast）
+  - 已发现信号「海岸河口」（landform.coastal\_estuary）
+  - 已发现信号「外国舰船或远洋船体接触」（contact.maritime\_vessel）
+  - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+
+#### 效果摘要
+
+海运作业产出 +18%
+
+#### 机会成本
+
+转入该路线需补齐历史锚点；时代 5 后的生产方式依赖专用资本、岗位或地理条件
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 电气化造船厂 (`method_oceanic_shipyard_r7`)
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+- 海运作业：`country.output.family.maritime_operations_factor`：+18%
+
+#### 被以下科技作为硬前置
+
+- 海岸船厂 (`tech.coastal_shipyards`)：远洋船舶设计提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，海岸船厂直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+- 洲际网络 (`tech.global_exchange`)
+
+### 海岸船厂 (`tech.coastal_shipyards`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.coastal_shipyards` |
+| 时代 | 探索时代 (`exploration`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 108800 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | production\_system |
+| 布局路线 | branch.maritime\_logistics |
+| 主要路线 | 地理 · 沿海 (\`route.geography.coast\`) |
+| 全部路线 | 地理 · 沿海 (\`route.geography.coast\`)；贸易 · 海运 (\`route.trade.maritime\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | construction |
+
+#### 硬前置（决定研发资格）
+
+- 远洋船舶设计 (`tech.oceanic_ship_design`)：远洋船舶设计提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，海岸船厂直接使用这一能力完成其工艺或组织设计
+- 手工锯木 (`tech.timber_sawing`)：手工锯木提供林木管理、木材加工与生物质利用工艺中的成套生产流程，海岸船厂直接使用这一能力完成其工艺或组织设计
+- 行业组织 (`tech.guild_organization`)：行业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，海岸船厂直接使用这一能力完成其工艺或组织设计
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「海岸」（landform.coast）
+  - 已发现信号「海岸河口」（landform.coastal\_estuary）
+  - 已发现信号「外国舰船或远洋船体接触」（contact.maritime\_vessel）
+  - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+
+#### 效果摘要
+
+海运作业产出 +28%
+
+#### 机会成本
+
+转入该路线需补齐历史锚点；时代 5 后的生产方式依赖专用资本、岗位或地理条件
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 电气化造船厂 (`method_oceanic_shipyard_r7`)；蒸汽航运船坞 (`method_steam_shipping`)
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+- 海运作业：`country.output.family.maritime_operations_factor`：+28%
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 螺旋压印 (`tech.screw_press_printing`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.screw_press_printing` |
+| 时代 | 探索时代 (`exploration`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 108800 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | backbone |
+| 锚点类型 | branch |
+| 节点角色 | institution |
+| 布局路线 | backbone.knowledge\_computation |
+| 主要路线 | 制度 · 印刷 (\`route.institution.printing\`) |
+| 全部路线 | 制度 · 印刷 (\`route.institution.printing\`)；工艺 · 精准 (\`route.craft.precision\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | knowledge |
+
+#### 硬前置（决定研发资格）
+
+- 活字印刷 (`tech.movable_type_printing`)：活字印刷提供工具制造、机械加工与设备控制能力中的稳定的组织与制度载体，螺旋压印直接使用这一能力完成其工艺或组织设计
+- 手工锯木 (`tech.timber_sawing`)：手工锯木提供林木管理、木材加工与生物质利用工艺中的成套生产流程，螺旋压印直接使用这一能力完成其工艺或组织设计
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「印刷突破」（breakthrough.printing）
+  - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
+  - 已发现信号「木材」（resource.timber）
+
+#### 效果摘要
+
+解锁物资：包装材料；解锁物资：印刷品；解锁建筑：包装材料厂；解锁建筑：印刷厂
+
+#### 机会成本
+
+转入该路线需补齐历史锚点；时代 5 后的生产方式依赖专用资本、岗位或地理条件
+
+#### 内容解锁
+
+- **物资：** 包装材料 (`packaging`)；印刷品 (`printed_materials`)
+- **建筑 / 生产方式：** 包装材料厂 (`packaging_plant`)；印刷厂 (`printed_materials_plant`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 印刷学社 (`printing_academy`)
+
+#### 结构化内容效果
+
+- **包装材料**（`good`）：`good.packaging` → `production_access` `unlock` `1.0`；`existing_binding`
+- **印刷品**（`good`）：`good.printed_materials` → `production_access` `unlock` `1.0`；`existing_binding`
+- **包装材料厂**（`building`）：`building.packaging_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **印刷厂**（`building`）：`building.printed_materials_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+- 学术社团 (`tech.learned_societies`)：螺旋压印使论文、目录与通信材料能够低成本复制和跨地传播
+- 机械印刷 (`tech.mechanized_printing`)：螺旋压印提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，机械印刷直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 火药武器 (`tech.gunpowder_weapons`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.gunpowder_weapons` |
+| 时代 | 探索时代 (`exploration`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 108800 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | handling |
+| 布局路线 | branch.industrial\_chemistry |
+| 主要路线 | 资源 · 硝石 (\`route.resource.saltpeter\`) |
+| 全部路线 | 资源 · 硝石 (\`route.resource.saltpeter\`)；资源 · 硫 (\`route.resource.sulfur\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | chemistry |
+
+#### 硬前置（决定研发资格）
+
+- 火药配制 (`tech.gunpowder_formulation`)：火药配制提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，火药武器直接使用这一能力完成其工艺或组织设计
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「硫磺」（resource.sulfur）
+  - 已发现信号「磷矿石」（resource.phosphate\_rock）
+  - 已发现信号「硝石」（resource.saltpeter）
+
+#### 效果摘要
+
+解锁物资：炸药；解锁物资：硫磺；解锁建筑：炸药厂；解锁建筑：自动化炸药厂；制造部门产出 +12%
+
+#### 机会成本
+
+转入该路线需补齐历史锚点；时代 5 后的生产方式依赖专用资本、岗位或地理条件
+
+#### 内容解锁
+
+- **物资：** 炸药 (`explosives`)；硫磺 (`sulfur`)
+- **建筑 / 生产方式：** 炸药厂 (`explosives_plant`)；自动化炸药厂 (`method_explosives_plant_r10`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 现代炸药厂 (`method_explosives_plant_r8`)
+
+#### 结构化内容效果
+
+- **炸药**（`good`）：`good.explosives` → `production_access` `unlock` `1.0`；`existing_binding`
+- **硫磺**（`good`）：`good.sulfur` → `production_access` `unlock` `1.0`；`existing_binding`
+- **炸药厂**（`building`）：`building.explosives_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **自动化炸药厂**（`building`）：`building.method_explosives_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+- `country.output.manufacturing_factor`：+12%
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 复式记账 (`tech.double_entry_bookkeeping`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.double_entry_bookkeeping` |
+| 时代 | 探索时代 (`exploration`) |
+| 领域 | 社会 (`society`) |
+| 研究成本 | 96000 科技点（`technology_points`） |
+| 节点标记 | 时代关键 |
+| 网络角色 | branch |
+| 锚点类型 | era\_candidate |
+| 节点角色 | institution |
+| 布局路线 | branch.commerce\_finance |
+| 主要路线 | 制度 · 市场 (\`route.institution.market\`) |
+| 全部路线 | 制度 · 市场 (\`route.institution.market\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | trade |
+
+#### 硬前置（决定研发资格）
+
+- 文字 (`tech.writing`)：文字提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，复式记账直接使用这一能力完成其工艺或组织设计
+- 行业组织 (`tech.guild_organization`)：行业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，复式记账直接使用这一能力完成其工艺或组织设计
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+商栈产出 +50%；社会领域研究效率 +15%
 
 #### 机会成本
 
@@ -14450,59 +13855,64 @@
 
 #### 永久 Modifier 条款
 
-- 造纸业：`country.output.family.paper_making_factor`：+11%
+- 商栈：`country.output.building.merchant_post_factor`：+50%
+- `country.research.society_efficiency`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 商业网络 (`tech.mercantile_networks`)：复式记账提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，商业网络直接使用这一能力完成其工艺或组织设计
+- 商业租佃 (`tech.commercial_tenancy`)：复式记账提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，商业租佃直接使用这一能力完成其工艺或组织设计
+- 特许商社 (`tech.chartered_companies`)：复式记账提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，特许商社直接使用这一能力完成其工艺或组织设计
+- 政治经济学 (`tech.political_economy`)：复式记账提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，政治经济学直接使用这一能力完成其工艺或组织设计
+- 合作社组织 (`tech.cooperative_association`)：复式记账提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，合作社组织直接使用这一能力完成其工艺或组织设计
+- 工业组织 (`tech.industrial_organization`)：复式记账提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，工业组织直接使用这一能力完成其工艺或组织设计
+- 管理层级 (`tech.managerial_hierarchy`)：复式记账提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，管理层级直接使用这一能力完成其工艺或组织设计
+- 公司管理 (`tech.corporate_management`)：复式记账提供资产、负债、成本和利润的统一核算，使公司能够跨业务配置资本
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
-- 实验科学 (`tech.experimental_science`)
-
-#### 应用交汇目标
-
-- 实验科学 (`tech.experimental_science`)
+无
 
 #### 作为候选参与的里程碑
 
-无
+- 洲际网络 (`tech.global_exchange`)
 
-### 天文导航 (`tech.celestial_navigation`)
+### 商业农庄 (`tech.commercial_estates`)
 
 | 字段 | 内容 |
 | --- | --- |
-| 稳定 ID | `tech.celestial_navigation` |
+| 稳定 ID | `tech.commercial_estates` |
 | 时代 | 探索时代 (`exploration`) |
-| 领域 | 科学 (`science`) |
+| 领域 | 社会 (`society`) |
 | 研究成本 | 108800 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
-| 节点角色 | handling |
-| 布局路线 | branch.electric\_intelligent\_energy |
-| 主要路线 | 地理 · 沿海 (\`route.geography.coast\`) |
-| 全部路线 | 地理 · 沿海 (\`route.geography.coast\`)；制度 · 历法 (\`route.institution.calendar\`) |
+| 锚点类型 | branch |
+| 节点角色 | institution |
+| 布局路线 | branch.commerce\_finance |
+| 主要路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
+| 全部路线 | 作物 · 热带作物 (\`route.crop.tropical\`)；制度 · 市场 (\`route.institution.market\`) |
 | 开局能力标签 | 无 |
-| 效果配置 | observation |
+| 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 帝国网络 (`tech.imperial_integration`)
-- 风力机械 (`tech.wind_power`)
+- 牧业网络 (`tech.pastoral_networks`)：牧业网络提供畜群驯养、育种与畜产品处理能力中的成套生产流程，商业农庄直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「帝国网络」（tech.imperial\_integration）
-  - 满足其一：
-    - 已发现信号「海岸」（landform.coast）
-    - 已发现信号「海洋鱼类」（resource.marine\_fish）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+- 满足其一：
+  - 已发现信号「旱地承载力」（resource.arable\_land）
+  - 已发现信号「肥沃土壤」（resource.fertile\_soil）
+  - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
 
 #### 效果摘要
 
-海运业产出 +12%
+解锁建筑：药材种植园
 
 #### 机会成本
 
@@ -14511,151 +13921,68 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 无
+- **建筑 / 生产方式：** 药材种植园 (`medicinal_herbs_collector`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
+- **药材种植园**（`building`）：`building.medicinal_herbs_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
 无
 
-#### 永久 Modifier 条款
+#### 被以下科技作为硬前置
 
-- 海运业：`country.output.family.maritime_operations_factor`：+12%
+- 畜种改良 (`tech.livestock_breeding`)：商业农庄提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，畜种改良直接使用这一能力完成其工艺或组织设计
 
-#### 直接后继（硬前置关系）
+#### 主题路线后继
 
-- 蒸汽密封 (`tech.steam_sealing`)
+无
 
-#### 同路线后继
+#### 跨领域应用
 
-- 蒸汽密封 (`tech.steam_sealing`)
-
-#### 应用交汇目标
-
-- 蒸汽密封 (`tech.steam_sealing`)
-- 井筒开掘 (`tech.shaft_sinking`)
+无
 
 #### 作为候选参与的里程碑
 
-- 洲际网络 (`tech.global_exchange`)
+无
 
-### 远洋航海 (`tech.oceanic_navigation`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.oceanic_navigation` |
-| 时代 | 探索时代 (`exploration`) |
-| 领域 | 工程 (`engineering`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
-| 网络角色 | branch |
-| 锚点类型 | route\_anchor |
-| 节点角色 | institution |
-| 布局路线 | branch.maritime\_logistics |
-| 主要路线 | 地理 · 沿海 (\`route.geography.coast\`) |
-| 全部路线 | 地理 · 沿海 (\`route.geography.coast\`)；贸易 · 海运 (\`route.trade.maritime\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | trade |
-
-#### 前置科技（决定研发资格）
-
-- 帝国网络 (`tech.imperial_integration`)
-- 磁针导航 (`tech.magnetic_navigation`)
-
-#### 发现启发（仅用于揭示）
-
-- 全部满足：
-  - 已完成科技「帝国网络」（tech.imperial\_integration）
-  - 满足其一：
-    - 已发现信号「海岸」（landform.coast）
-    - 已发现信号「海洋鱼类」（resource.marine\_fish）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
-
-#### 效果摘要
-
-解锁物资：远洋船舶；解锁建筑：远洋造船厂；开放通用职业阶层岗位；开放通用职业阶层岗位；远洋造船厂产出 +25%
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 5 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 远洋船舶 (`oceanic_vessels`)
-- **建筑 / 生产方式：** 远洋造船厂 (`oceanic_shipyard`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 远洋渔场 (`method_marine_fish_collector_r4`)；蒸汽航运船坞 (`method_steam_shipping`)
-
-#### 结构化内容效果
-
-- **远洋船舶**（`good`）：`good.oceanic_vessels` → `production_access` `unlock` `1.0`；`existing_binding`
-- **远洋造船厂**（`building`）：`building.oceanic_shipyard` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **远洋船舶**（`good`）：`good.oceanic_vessels` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **木材**（`good`）：`good.lumber` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **布料**（`good`）：`good.cloth` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **铜**（`good`）：`good.copper` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **玻璃**（`good`）：`good.glass` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-- 远洋造船厂：`country.output.building.oceanic_shipyard_factor`：+25%
-
-#### 直接后继（硬前置关系）
-
-- 远洋船舶设计 (`tech.oceanic_ship_design`)
-- 精密仪器 (`tech.precision_instruments`)
-
-#### 同路线后继
-
-- 精密仪器 (`tech.precision_instruments`)
-
-#### 应用交汇目标
-
-- 精密仪器 (`tech.precision_instruments`)
-- 螺旋压印 (`tech.screw_press_printing`)
-
-#### 作为候选参与的里程碑
-
-- 洲际网络 (`tech.global_exchange`)
-
-### 远洋船舶设计 (`tech.oceanic_ship_design`)
+### 商业网络 (`tech.mercantile_networks`)
 
 | 字段 | 内容 |
 | --- | --- |
-| 稳定 ID | `tech.oceanic_ship_design` |
+| 稳定 ID | `tech.mercantile_networks` |
 | 时代 | 探索时代 (`exploration`) |
-| 领域 | 工程 (`engineering`) |
+| 领域 | 社会 (`society`) |
 | 研究成本 | 124800 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | institution |
-| 布局路线 | branch.maritime\_logistics |
+| 布局路线 | branch.commerce\_finance |
 | 主要路线 | 贸易 · 海运 (\`route.trade.maritime\`) |
-| 全部路线 | 贸易 · 海运 (\`route.trade.maritime\`) |
+| 全部路线 | 贸易 · 海运 (\`route.trade.maritime\`)；制度 · 市场 (\`route.institution.market\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | trade |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 远洋航海 (`tech.oceanic_navigation`)
+- 市场制度 (`tech.market_institutions`)：市场制度提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，商业网络直接使用这一能力完成其工艺或组织设计
+- 远洋航海 (`tech.oceanic_navigation`)：远洋航海提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，商业网络直接使用这一能力完成其工艺或组织设计
+- 复式记账 (`tech.double_entry_bookkeeping`)：复式记账提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，商业网络直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「帝国网络」（tech.imperial\_integration）
-  - 满足其一：
-    - 已发现信号「海岸」（landform.coast）
-    - 已发现信号「海洋鱼类」（resource.marine\_fish）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+- 满足其一：
+  - 已发现信号「海岸」（landform.coast）
+  - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+  - 已发现信号「印刷突破」（breakthrough.printing）
 
 #### 效果摘要
 
-运输装备业产出 +10%
+商栈产出 +35%
 
 #### 机会成本
 
@@ -14674,59 +14001,124 @@
 
 #### 永久 Modifier 条款
 
-- 运输装备业：`country.output.family.railway_equipment_making_factor`：+10%
+- 商栈：`country.output.building.merchant_post_factor`：+35%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 商业网络 (`tech.mercantile_networks`)
+- 特许商社 (`tech.chartered_companies`)：商业网络提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，特许商社直接使用这一能力完成其工艺或组织设计
+- 全球物流 (`tech.global_logistics`)：商业网络提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，全球物流直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 螺旋压印 (`tech.screw_press_printing`)
+无
 
 #### 作为候选参与的里程碑
 
 无
 
-### 海岸船厂 (`tech.coastal_shipyards`)
+### 机械计时 (`tech.mechanical_timekeeping`)
 
 | 字段 | 内容 |
 | --- | --- |
-| 稳定 ID | `tech.coastal_shipyards` |
+| 稳定 ID | `tech.mechanical_timekeeping` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 工程 (`engineering`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
+| 研究成本 | 96000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
-| 节点角色 | production\_system |
-| 布局路线 | branch.construction\_materials |
-| 主要路线 | 地理 · 沿海 (\`route.geography.coast\`) |
-| 全部路线 | 地理 · 沿海 (\`route.geography.coast\`)；贸易 · 海运 (\`route.trade.maritime\`) |
+| 锚点类型 | era\_candidate |
+| 节点角色 | power\_scale |
+| 布局路线 | branch.measurement\_instruments |
+| 主要路线 | 工艺 · 精准 (\`route.craft.precision\`) |
+| 全部路线 | 工艺 · 精准 (\`route.craft.precision\`) |
 | 开局能力标签 | 无 |
-| 效果配置 | construction |
+| 效果配置 | tools |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 帝国网络 (`tech.imperial_integration`)
-- 城市水务 (`tech.urban_waterworks`)
+- 道路工程 (`tech.road_engineering`)：道路工程提供工具制造、机械加工与设备控制能力中的稳定的组织与制度载体，机械计时直接使用这一能力完成其工艺或组织设计
+- 经院研究法 (`tech.scholastic_method`)：经院研究法提供记录、验证、计算与知识传播方法中的操作与材料处理方法，机械计时直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「帝国网络」（tech.imperial\_integration）
-  - 满足其一：
-    - 已发现信号「海岸」（landform.coast）
-    - 已发现信号「海洋鱼类」（resource.marine\_fish）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+无
 
 #### 效果摘要
 
-解锁建筑：蒸汽航运船坞；开放通用职业阶层岗位；开放通用职业阶层岗位；蒸汽航运船坞产出 +25%
+金属工具业产出 +25%；工程领域研究效率 +15%
+
+#### 机会成本
+
+占用通用研究预算，延后同代专业路线锚点
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+- 金属工具业：`country.output.family.metal_toolmaking_factor`：+25%
+- `country.research.engineering_efficiency`：+15%
+
+#### 被以下科技作为硬前置
+
+- 精密工程 (`tech.precision_engineering`)：机械计时提供测量基准、统计方法与精密仪器能力中的动力与规模化能力，精密工程直接使用这一能力完成其工艺或组织设计
+- 实验科学 (`tech.experimental_science`)：机械计时提供测量基准、统计方法与精密仪器能力中的动力与规模化能力，实验科学直接使用这一能力完成其工艺或组织设计
+- 标准化 (`tech.standardization`)：机械计时提供测量基准、统计方法与精密仪器能力中的动力与规模化能力，标准化直接使用这一能力完成其工艺或组织设计
+- 热力学 (`tech.thermodynamics`)：机械计时提供测量基准、统计方法与精密仪器能力中的动力与规模化能力，热力学直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+- 洲际网络 (`tech.global_exchange`)
+
+### 井筒开掘 (`tech.shaft_sinking`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.shaft_sinking` |
+| 时代 | 探索时代 (`exploration`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 108800 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | handling |
+| 布局路线 | branch.heavy\_industry |
+| 主要路线 | 资源 · 矿产 (\`route.resource.minerals\`) |
+| 全部路线 | 资源 · 矿产 (\`route.resource.minerals\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | resource |
+
+#### 硬前置（决定研发资格）
+
+- 坩埚钢 (`tech.crucible_steel`)：坩埚钢提供矿物识别、有色冶炼与合金配制能力中的成套生产流程，井筒开掘直接使用这一能力完成其工艺或组织设计
+
+#### 发现启发（仅用于揭示）
+
+- 已发现信号「矿井支护突破」（breakthrough.mine\_support）
+
+#### 效果摘要
+
+解锁建筑：金矿；解锁建筑：银矿；采掘部门产出 +12%
 
 #### 机会成本
 
@@ -14735,207 +14127,36 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 蒸汽航运船坞 (`method_steam_shipping`)
+- **建筑 / 生产方式：** 金矿 (`gold_mine`)；银矿 (`silver_mine`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
-- **蒸汽航运船坞**（`building`）：`building.method_steam_shipping` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **远洋船舶**（`good`）：`good.oceanic_vessels` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **木材**（`good`）：`good.lumber` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **钢材**（`good`）：`good.steel` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **蒸汽机**（`good`）：`good.steam_engines` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **煤炭**（`good`）：`good.coal` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
+- **金矿**（`building`）：`building.gold_mine` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **银矿**（`building`）：`building.silver_mine` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 蒸汽航运船坞：`country.output.building.method_steam_shipping_factor`：+25%
+- `country.output.extractive_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 地产测绘 (`tech.property_cadastre`)
+- 深井采矿 (`tech.deep_mining`)：井筒开掘提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，深井采矿直接使用这一能力完成其工艺或组织设计
+- 矿井排水 (`tech.mine_drainage`)：井筒开掘提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，矿井排水直接使用这一能力完成其工艺或组织设计
+- 地质勘探 (`tech.geological_prospecting`)：井筒开掘提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，地质勘探直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 地产测绘 (`tech.property_cadastre`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 地产测绘 (`tech.property_cadastre`)
-- 螺旋压印 (`tech.screw_press_printing`)
-
-#### 作为候选参与的里程碑
-
-- 洲际网络 (`tech.global_exchange`)
-
-### 螺旋压印 (`tech.screw_press_printing`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.screw_press_printing` |
-| 时代 | 探索时代 (`exploration`) |
-| 领域 | 工程 (`engineering`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
-| 网络角色 | branch |
-| 锚点类型 | route\_anchor |
-| 节点角色 | institution |
-| 布局路线 | branch.forest\_biomass |
-| 主要路线 | 制度 · 印刷 (\`route.institution.printing\`) |
-| 全部路线 | 制度 · 印刷 (\`route.institution.printing\`)；工艺 · 精准 (\`route.craft.precision\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | knowledge |
-
-#### 前置科技（决定研发资格）
-
-- 帝国网络 (`tech.imperial_integration`)
-- 森林管理 (`tech.forest_management`)
-
-#### 发现启发（仅用于揭示）
-
-- 全部满足：
-  - 已完成科技「帝国网络」（tech.imperial\_integration）
-  - 满足其一：
-    - 已发现信号「印刷突破」（breakthrough.printing）
-    - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
-
-#### 效果摘要
-
-解锁物资：包装材料；解锁物资：印刷品；解锁建筑：包装材料厂；开放通用职业阶层岗位；包装材料厂产出 +25%
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 5 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 包装材料 (`packaging`)；印刷品 (`printed_materials`)
-- **建筑 / 生产方式：** 包装材料厂 (`packaging_plant`)；印刷厂 (`printed_materials_plant`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 印刷学社 (`printing_academy`)
-
-#### 结构化内容效果
-
-- **包装材料**（`good`）：`good.packaging` → `production_access` `unlock` `1.0`；`existing_binding`
-- **印刷品**（`good`）：`good.printed_materials` → `production_access` `unlock` `1.0`；`existing_binding`
-- **包装材料厂**（`building`）：`building.packaging_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **包装材料**（`good`）：`good.packaging` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **纸张**（`good`）：`good.paper` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **印刷厂**（`building`）：`building.printed_materials_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **印刷品**（`good`）：`good.printed_materials` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-- 包装材料厂：`country.output.building.packaging_plant_factor`：+25%
-
-#### 直接后继（硬前置关系）
-
-- 学术社团 (`tech.learned_societies`)
-
-#### 同路线后继
-
-- 学术社团 (`tech.learned_societies`)
-
-#### 应用交汇目标
-
-- 学术社团 (`tech.learned_societies`)
-- 海岸船厂 (`tech.coastal_shipyards`)
+无
 
 #### 作为候选参与的里程碑
 
-- 洲际网络 (`tech.global_exchange`)
-
-### 火药武器 (`tech.gunpowder_weapons`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.gunpowder_weapons` |
-| 时代 | 探索时代 (`exploration`) |
-| 领域 | 工程 (`engineering`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
-| 网络角色 | branch |
-| 锚点类型 | route\_anchor |
-| 节点角色 | handling |
-| 布局路线 | branch.industrial\_chemistry |
-| 主要路线 | 资源 · 硝石 (\`route.resource.saltpeter\`) |
-| 全部路线 | 资源 · 硝石 (\`route.resource.saltpeter\`)；资源 · 硫 (\`route.resource.sulfur\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | chemistry |
-
-#### 前置科技（决定研发资格）
-
-- 帝国网络 (`tech.imperial_integration`)
-- 火药配制 (`tech.gunpowder_formulation`)
-
-#### 发现启发（仅用于揭示）
-
-- 全部满足：
-  - 已完成科技「帝国网络」（tech.imperial\_integration）
-  - 满足其一：
-    - 已发现信号「硫磺」（resource.sulfur）
-    - 已发现信号「磷矿石」（resource.phosphate\_rock）
-    - 已发现信号「硝石」（resource.saltpeter）
-
-#### 效果摘要
-
-解锁物资：炸药；解锁物资：硫磺；解锁建筑：炸药厂；开放通用职业阶层岗位；炸药厂产出 +25%
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 5 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 炸药 (`explosives`)；硫磺 (`sulfur`)
-- **建筑 / 生产方式：** 炸药厂 (`explosives_plant`)；自动化炸药厂 (`method_explosives_plant_r10`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 现代炸药厂 (`method_explosives_plant_r8`)
-
-#### 结构化内容效果
-
-- **炸药**（`good`）：`good.explosives` → `production_access` `unlock` `1.0`；`existing_binding`
-- **硫磺**（`good`）：`good.sulfur` → `production_access` `unlock` `1.0`；`existing_binding`
-- **炸药厂**（`building`）：`building.explosives_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **炸药**（`good`）：`good.explosives` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **硝石**（`good`）：`good.saltpeter` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **硫磺**（`good`）：`good.sulfur` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **自动化炸药厂**（`building`）：`building.method_explosives_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **自主系统**（`good`）：`good.autonomous_systems` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-- 炸药厂：`country.output.building.explosives_plant_factor`：+25%
-
-#### 直接后继（硬前置关系）
-
-- 公共卫生 (`tech.public_health`)
-
-#### 同路线后继
-
-- 公共卫生 (`tech.public_health`)
-
-#### 应用交汇目标
-
-- 公共卫生 (`tech.public_health`)
-- 农艺交换 (`tech.agronomic_exchange`)
-
-#### 作为候选参与的里程碑
-
-- 洲际网络 (`tech.global_exchange`)
+无
 
 ### 深井采矿 (`tech.deep_mining`)
 
@@ -14945,9 +14166,9 @@
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 108800 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.heavy\_industry |
 | 主要路线 | 资源 · 矿产 (\`route.resource.minerals\`) |
@@ -14955,23 +14176,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | resource |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 帝国网络 (`tech.imperial_integration`)
-- 高炉冶炼 (`tech.blast_furnace`)
+- 井筒开掘 (`tech.shaft_sinking`)：井筒开掘提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，深井采矿直接使用这一能力完成其工艺或组织设计
+- 矿井通风 (`tech.mine_ventilation`)：矿井通风提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，深井采矿直接使用这一能力完成其工艺或组织设计
+- 高炉冶炼 (`tech.blast_furnace`)：高炉冶炼提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，深井采矿直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「帝国网络」（tech.imperial\_integration）
-  - 满足其一：
-    - 已发现信号「铁矿」（resource.iron\_ore）
-    - 已发现信号「煤炭」（resource.coal）
-    - 已发现信号「矿井支护突破」（breakthrough.mine\_support）
+- 已发现信号「矿井支护突破」（breakthrough.mine\_support）
 
 #### 效果摘要
 
-解锁物资：铅矿石；解锁物资：锌矿石；铁矿业产出 +12%
+解锁物资：铅矿石；解锁物资：锌矿石；铁矿业产出 +28%；采掘部门产出 +12%
 
 #### 机会成本
 
@@ -14991,59 +14208,127 @@
 
 #### 永久 Modifier 条款
 
-- 铁矿业：`country.output.family.iron_extraction_factor`：+12%
+- 铁矿业：`country.output.family.iron_extraction_factor`：+28%
+- `country.output.extractive_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 大气式蒸汽机 (`tech.atmospheric_engine`)
+无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 大气式蒸汽机 (`tech.atmospheric_engine`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 大气式蒸汽机 (`tech.atmospheric_engine`)
-- 井筒开掘 (`tech.shaft_sinking`)
+无
 
 #### 作为候选参与的里程碑
 
-- 洲际网络 (`tech.global_exchange`)
+无
 
-### 复式记账 (`tech.double_entry_bookkeeping`)
+### 矿井排水 (`tech.mine_drainage`)
 
 | 字段 | 内容 |
 | --- | --- |
-| 稳定 ID | `tech.double_entry_bookkeeping` |
+| 稳定 ID | `tech.mine_drainage` |
 | 时代 | 探索时代 (`exploration`) |
-| 领域 | 社会 (`society`) |
-| 研究成本 | 96000 科技点（`technology_points`） |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 108800 科技点（`technology_points`） |
 | 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
-| 节点角色 | institution |
-| 布局路线 | backbone.institutions\_exchange |
-| 主要路线 | 制度 · 市场 (\`route.institution.market\`) |
-| 全部路线 | 制度 · 市场 (\`route.institution.market\`) |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | handling |
+| 布局路线 | branch.heavy\_industry |
+| 主要路线 | 资源 · 矿产 (\`route.resource.minerals\`) |
+| 全部路线 | 资源 · 矿产 (\`route.resource.minerals\`) |
 | 开局能力标签 | 无 |
-| 效果配置 | trade |
+| 效果配置 | resource |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 帝国网络 (`tech.imperial_integration`)
+- 水力机械 (`tech.water_power`)：水力机械提供水流、风力、输配水和流域工程能力中的动力与规模化能力，矿井排水直接使用这一能力完成其工艺或组织设计
+- 井筒开掘 (`tech.shaft_sinking`)：井筒开掘提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，矿井排水直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「帝国网络」（tech.imperial\_integration）
-  - 满足其一：
-    - 已发现信号「印刷突破」（breakthrough.printing）
-    - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+- 满足其一：
+  - 已发现信号「矿井支护突破」（breakthrough.mine\_support）
+  - 已发现信号「河湖水系」（landform.freshwater\_access）
 
 #### 效果摘要
 
-公共营造产出 +11%
+解锁建筑：深井盐矿；解锁建筑：锡矿；洪灾损失 -8%
+
+#### 机会成本
+
+转入该路线需补齐历史锚点；时代 5 后的生产方式依赖专用资本、岗位或地理条件
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 深井盐矿 (`industrial_salt_mine`)；锡矿 (`tin_ore_collector`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 硅砂矿 (`silica_sand_collector`)
+
+#### 结构化内容效果
+
+- **深井盐矿**（`building`）：`building.industrial_salt_mine` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **锡矿**（`building`）：`building.tin_ore_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+- `country.climate.flood_loss_factor`：+8%
+
+#### 被以下科技作为硬前置
+
+- 大气式蒸汽机 (`tech.atmospheric_engine`)：矿井排水提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，大气式蒸汽机直接使用这一能力完成其工艺或组织设计
+- 蒸汽抽水 (`tech.steam_pumping`)：矿井排水定义扬程、井下积水和连续排放需求，是蒸汽抽水的直接应用问题
+- 深层地球物理 (`tech.deep_geophysics`)：矿井排水提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，深层地球物理直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 商业租佃 (`tech.commercial_tenancy`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.commercial_tenancy` |
+| 时代 | 探索时代 (`exploration`) |
+| 领域 | 社会 (`society`) |
+| 研究成本 | 124800 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | institution |
+| 布局路线 | branch.land\_institutions |
+| 主要路线 | 制度 · 市场 (\`route.institution.market\`) |
+| 全部路线 | 制度 · 市场 (\`route.institution.market\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | organization |
+
+#### 硬前置（决定研发资格）
+
+- 复式记账 (`tech.double_entry_bookkeeping`)：复式记账提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，商业租佃直接使用这一能力完成其工艺或组织设计
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「旱地承载力」（resource.arable\_land）
+  - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
+
+#### 效果摘要
+
+生计农业产出 +18%
 
 #### 机会成本
 
@@ -15062,60 +14347,59 @@
 
 #### 永久 Modifier 条款
 
-- 公共营造：`country.output.family.construction_methods_factor`：+11%
+- 生计农业：`country.output.family.subsistence_food_factor`：+18%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 商业租佃 (`tech.commercial_tenancy`)
-- 政治经济学 (`tech.political_economy`)
+- 种植园庄园管理 (`tech.estate_plantation_management`)：商业租佃提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，种植园庄园管理直接使用这一能力完成其工艺或组织设计
+- 契约劳工制度 (`tech.indentured_contracts`)：商业租佃提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，契约劳工制度直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 合作社组织 (`tech.cooperative_association`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 合作社组织 (`tech.cooperative_association`)
+无
 
 #### 作为候选参与的里程碑
 
 无
 
-### 商业农庄 (`tech.commercial_estates`)
+### 特许商社 (`tech.chartered_companies`)
 
 | 字段 | 内容 |
 | --- | --- |
-| 稳定 ID | `tech.commercial_estates` |
+| 稳定 ID | `tech.chartered_companies` |
 | 时代 | 探索时代 (`exploration`) |
 | 领域 | 社会 (`society`) |
 | 研究成本 | 108800 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | institution |
-| 布局路线 | branch.pastoral\_livestock |
-| 主要路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
-| 全部路线 | 作物 · 热带作物 (\`route.crop.tropical\`)；制度 · 市场 (\`route.institution.market\`) |
+| 布局路线 | branch.commerce\_finance |
+| 主要路线 | 制度 · 市场 (\`route.institution.market\`) |
+| 全部路线 | 制度 · 市场 (\`route.institution.market\`)；贸易 · 海运 (\`route.trade.maritime\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 帝国网络 (`tech.imperial_integration`)
-- 牧业网络 (`tech.pastoral_networks`)
+- 商业网络 (`tech.mercantile_networks`)：商业网络提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，特许商社直接使用这一能力完成其工艺或组织设计
+- 复式记账 (`tech.double_entry_bookkeeping`)：复式记账提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，特许商社直接使用这一能力完成其工艺或组织设计
+- 官僚行政 (`tech.state_bureaucracy`)：官僚行政提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，特许商社直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「帝国网络」（tech.imperial\_integration）
-  - 满足其一：
-    - 已发现信号「印刷突破」（breakthrough.printing）
-    - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+- 满足其一：
+  - 已发现信号「海岸」（landform.coast）
+  - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+  - 已发现信号「印刷突破」（breakthrough.printing）
 
 #### 效果摘要
 
-解锁建筑：药材种植园；开放通用职业阶层岗位；开放通用职业阶层岗位；药材种植园产出 +25%
+商栈产出 +50%；采掘部门产出 +12%
 
 #### 机会成本
 
@@ -15124,37 +14408,459 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 药材种植园 (`medicinal_herbs_collector`)
+- **建筑 / 生产方式：** 无
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
-- **药材种植园**（`building`）：`building.medicinal_herbs_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **药材**（`good`）：`good.medicinal_herbs` → `output_recipe_access` `enable` `1.0`；`existing_binding`
+无
 
 #### 永久 Modifier 条款
 
-- 药材种植园：`country.output.building.medicinal_herbs_collector_factor`：+25%
+- 商栈：`country.output.building.merchant_post_factor`：+50%
+- `country.output.extractive_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 畜种改良 (`tech.livestock_breeding`)
+- 煤层地质 (`tech.coal_geology`)：特许商社提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，煤层地质直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 畜种改良 (`tech.livestock_breeding`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 畜种改良 (`tech.livestock_breeding`)
-- 商品作物管理 (`tech.commodity_crop_management`)
+无
 
 #### 作为候选参与的里程碑
 
 - 洲际网络 (`tech.global_exchange`)
+
+### 商品作物管理 (`tech.commodity_crop_management`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.commodity_crop_management` |
+| 时代 | 探索时代 (`exploration`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 108800 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | production\_system |
+| 布局路线 | branch.tropical\_commodities |
+| 主要路线 | 作物 · 交流 (\`route.crop.exchange\`) |
+| 全部路线 | 作物 · 交流 (\`route.crop.exchange\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 棉花园圃 (`tech.cotton_gardening`)：棉花园圃提供热带作物栽培、采收与商品化处理能力中的专门知识，商品作物管理直接使用这一能力完成其工艺或组织设计
+- 遮阴香料园 (`tech.spice_shade_gardening`)：遮阴香料园提供热带作物栽培、采收与商品化处理能力中的专门知识，商品作物管理直接使用这一能力完成其工艺或组织设计
+- 庄园核算 (`tech.estate_accounting`)：庄园核算提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，商品作物管理直接使用这一能力完成其工艺或组织设计
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「亚麻」（bio.flax）
+  - 已发现信号「棉花」（bio.cotton）
+  - 已发现信号「亚麻样本接触」（contact.flax）
+
+#### 效果摘要
+
+解锁建筑：专用商品作物种植园；解锁建筑：橡胶种植园；制造部门产出 +12%
+
+#### 机会成本
+
+转入该路线需补齐历史锚点；时代 5 后的生产方式依赖专用资本、岗位或地理条件
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 专用商品作物种植园 (`method_specialty_commodity_plantation`)；橡胶种植园 (`rubber_tree_collector`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 棉花农场 (`cotton_collector`)；机械化橡胶种植园 (`method_rubber_tree_collector_r6`)；机械化香料种植园 (`method_spice_plants_collector_r6`)；香料种植园 (`spice_plants_collector`)
+
+#### 结构化内容效果
+
+- **专用商品作物种植园**（`building`）：`building.method_specialty_commodity_plantation` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **橡胶种植园**（`building`）：`building.rubber_tree_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+- `country.output.manufacturing_factor`：+12%
+
+#### 被以下科技作为硬前置
+
+- 种植园庄园管理 (`tech.estate_plantation_management`)：商品作物管理提供热带作物栽培、采收与商品化处理能力中的成套生产流程，种植园庄园管理直接使用这一能力完成其工艺或组织设计
+- 工资契约 (`tech.wage_contracts`)：商品作物管理提供热带作物栽培、采收与商品化处理能力中的成套生产流程，工资契约直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 种植园庄园管理 (`tech.estate_plantation_management`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.estate_plantation_management` |
+| 时代 | 探索时代 (`exploration`) |
+| 领域 | 社会 (`society`) |
+| 研究成本 | 108800 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | institution |
+| 布局路线 | branch.tropical\_commodities |
+| 主要路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
+| 全部路线 | 作物 · 热带作物 (\`route.crop.tropical\`)；制度 · 市场 (\`route.institution.market\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | organization |
+
+#### 硬前置（决定研发资格）
+
+- 商业租佃 (`tech.commercial_tenancy`)：商业租佃提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，种植园庄园管理直接使用这一能力完成其工艺或组织设计
+- 商品作物管理 (`tech.commodity_crop_management`)：商品作物管理提供热带作物栽培、采收与商品化处理能力中的成套生产流程，种植园庄园管理直接使用这一能力完成其工艺或组织设计
+- 庄园核算 (`tech.estate_accounting`)：庄园核算提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，种植园庄园管理直接使用这一能力完成其工艺或组织设计
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「香料作物」（bio.spice）
+  - 已发现信号「棉花」（bio.cotton）
+
+#### 效果摘要
+
+解锁建筑：棉花农场；解锁建筑：香料种植园；解锁建筑：亚麻庄园；解锁建筑：改良亚麻庄园
+
+#### 机会成本
+
+转入该路线需补齐历史锚点；时代 5 后的生产方式依赖专用资本、岗位或地理条件
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 棉花农场 (`cotton_collector`)；亚麻庄园 (`method_flax_collector_r3`)；改良亚麻庄园 (`method_flax_collector_r5`)；香料种植园 (`spice_plants_collector`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 橡胶种植园 (`rubber_tree_collector`)
+
+#### 结构化内容效果
+
+- **棉花农场**（`building`）：`building.cotton_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **香料种植园**（`building`）：`building.spice_plants_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **亚麻庄园**（`building`）：`building.method_flax_collector_r3` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **改良亚麻庄园**（`building`）：`building.method_flax_collector_r5` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 远洋补给 (`tech.oceanic_provisioning`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.oceanic_provisioning` |
+| 时代 | 探索时代 (`exploration`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 96000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | backbone |
+| 锚点类型 | backbone |
+| 节点角色 | institution |
+| 布局路线 | backbone.food\_storage |
+| 主要路线 | 贸易 · 海运 (\`route.trade.maritime\`) |
+| 全部路线 | 贸易 · 海运 (\`route.trade.maritime\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | trade |
+
+#### 硬前置（决定研发资格）
+
+- 远洋航海 (`tech.oceanic_navigation`)：远洋航海提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，远洋补给直接使用这一能力完成其工艺或组织设计
+- 盐渍保存 (`tech.salt_preservation`)：盐渍保存提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，远洋补给直接使用这一能力完成其工艺或组织设计
+- 区域粮仓 (`tech.regional_granaries`)：区域粮仓提供粮食处理、保存与农艺组织能力中的稳定的组织与制度载体，远洋补给直接使用这一能力完成其工艺或组织设计
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「海岸」（landform.coast）
+  - 已发现信号「海岸河口」（landform.coastal\_estuary）
+  - 已发现信号「外国舰船或远洋船体接触」（contact.maritime\_vessel）
+  - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+
+#### 效果摘要
+
+解锁建筑：远洋渔场；农业部门产出 +15%
+
+#### 机会成本
+
+占用通用研究预算，延后同代专业路线锚点
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 远洋渔场 (`method_marine_fish_collector_r4`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **远洋渔场**（`building`）：`building.method_marine_fish_collector_r4` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+- `country.output.agriculture_factor`：+15%
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 农艺交换 (`tech.agronomic_exchange`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.agronomic_exchange` |
+| 时代 | 探索时代 (`exploration`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 108800 科技点（`technology_points`） |
+| 节点标记 | 时代关键 |
+| 网络角色 | backbone |
+| 锚点类型 | era\_candidate |
+| 节点角色 | production\_system |
+| 布局路线 | backbone.food\_storage |
+| 主要路线 | 作物 · 交流 (\`route.crop.exchange\`) |
+| 全部路线 | 作物 · 交流 (\`route.crop.exchange\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 集约轮作 (`tech.intensive_crop_rotation`)：集约轮作提供谷物旱作、轮作与收获工艺中的成套生产流程，农艺交换直接使用这一能力完成其工艺或组织设计
+- 行业组织 (`tech.guild_organization`)：行业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，农艺交换直接使用这一能力完成其工艺或组织设计
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+电气化集约农场产出 +50%；旱灾损失 -8%
+
+#### 机会成本
+
+转入该路线需补齐历史锚点；时代 5 后的生产方式依赖专用资本、岗位或地理条件
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+- 电气化集约农场：`country.output.building.intensive_farm_factor`：+50%
+- `country.climate.drought_loss_factor`：+8%
+
+#### 被以下科技作为硬前置
+
+- 跨区域植物学 (`tech.interregional_botany`)：农艺交换提供粮食处理、保存与农艺组织能力中的成套生产流程，跨区域植物学直接使用这一能力完成其工艺或组织设计
+- 农业改良 (`tech.agricultural_improvement`)：农艺交换提供粮食处理、保存与农艺组织能力中的成套生产流程，农业改良直接使用这一能力完成其工艺或组织设计
+- 土壤实验 (`tech.soil_experimentation`)：农艺交换提供粮食处理、保存与农艺组织能力中的成套生产流程，土壤实验直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+- 洲际网络 (`tech.global_exchange`)
+
+### 跨区域植物学 (`tech.interregional_botany`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.interregional_botany` |
+| 时代 | 探索时代 (`exploration`) |
+| 领域 | 科学 (`science`) |
+| 研究成本 | 108800 科技点（`technology_points`） |
+| 节点标记 | 时代关键 |
+| 网络角色 | branch |
+| 锚点类型 | era\_candidate |
+| 节点角色 | handling |
+| 布局路线 | branch.natural\_history |
+| 主要路线 | 作物 · 交流 (\`route.crop.exchange\`) |
+| 全部路线 | 作物 · 交流 (\`route.crop.exchange\`)；制度 · 测绘 (\`route.institution.survey\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | observation |
+
+#### 硬前置（决定研发资格）
+
+- 自然哲学 (`tech.natural_philosophy`)：自然哲学提供观察、分类、实验与生物育种知识中的操作与材料处理方法，跨区域植物学直接使用这一能力完成其工艺或组织设计
+- 农艺交换 (`tech.agronomic_exchange`)：农艺交换提供粮食处理、保存与农艺组织能力中的成套生产流程，跨区域植物学直接使用这一能力完成其工艺或组织设计
+- 远洋航海 (`tech.oceanic_navigation`)：远洋航海提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，跨区域植物学直接使用这一能力完成其工艺或组织设计
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「玉米」（bio.maize）
+  - 已发现信号「马铃薯」（bio.potato）
+  - 已发现信号「香料样本接触」（contact.spice）
+
+#### 效果摘要
+
+电气化集约农场产出 +50%；洪灾损失 -8%
+
+#### 机会成本
+
+转入该路线需补齐历史锚点；时代 5 后的生产方式依赖专用资本、岗位或地理条件
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+- 电气化集约农场：`country.output.building.intensive_farm_factor`：+50%
+- `country.climate.flood_loss_factor`：+8%
+
+#### 被以下科技作为硬前置
+
+- 作物驯化移植 (`tech.crop_acclimatization`)：跨区域植物学提供观察、分类、实验与生物育种知识中的操作与材料处理方法，作物驯化移植直接使用这一能力完成其工艺或组织设计
+- 农业合作社 (`tech.agricultural_cooperatives`)：跨区域植物学提供观察、分类、实验与生物育种知识中的操作与材料处理方法，农业合作社直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+- 洲际网络 (`tech.global_exchange`)
+
+### 作物移植适应 (`tech.crop_transplantation`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.crop_transplantation` |
+| 时代 | 探索时代 (`exploration`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 108800 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | production\_system |
+| 布局路线 | branch.natural\_history |
+| 主要路线 | 作物 · 交流 (\`route.crop.exchange\`) |
+| 全部路线 | 作物 · 交流 (\`route.crop.exchange\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 集约轮作 (`tech.intensive_crop_rotation`)：集约轮作提供谷物旱作、轮作与收获工艺中的成套生产流程，作物移植适应直接使用这一能力完成其工艺或组织设计
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「小麦」（bio.wheat）
+  - 已发现信号「小麦样本接触」（contact.wheat）
+  - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
+
+#### 效果摘要
+
+大田作物农业产出 +28%；旱灾损失 -8%
+
+#### 机会成本
+
+转入该路线需补齐历史锚点；时代 5 后的生产方式依赖专用资本、岗位或地理条件
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+- 大田作物农业：`country.output.family.field_crop_farming_factor`：+28%
+- `country.climate.drought_loss_factor`：+8%
+
+#### 被以下科技作为硬前置
+
+- 作物驯化移植 (`tech.crop_acclimatization`)：作物移植适应提供观察、分类、实验与生物育种知识中的成套生产流程，作物驯化移植直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
 
 ### 作物驯化移植 (`tech.crop_acclimatization`)
 
@@ -15166,31 +14872,29 @@
 | 研究成本 | 108800 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | production\_system |
-| 布局路线 | branch.tuber\_highland |
+| 布局路线 | branch.natural\_history |
 | 主要路线 | 作物 · 交流 (\`route.crop.exchange\`) |
 | 全部路线 | 作物 · 交流 (\`route.crop.exchange\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 帝国网络 (`tech.imperial_integration`)
-- 庄园谷物核算 (`tech.estate_cereal_management`)
+- 跨区域植物学 (`tech.interregional_botany`)：跨区域植物学提供观察、分类、实验与生物育种知识中的操作与材料处理方法，作物驯化移植直接使用这一能力完成其工艺或组织设计
+- 作物移植适应 (`tech.crop_transplantation`)：作物移植适应提供观察、分类、实验与生物育种知识中的成套生产流程，作物驯化移植直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「帝国网络」（tech.imperial\_integration）
-  - 满足其一：
-    - 已发现信号「马铃薯」（bio.potato）
-    - 已发现信号「块茎样本接触」（contact.potato）
-    - 已发现信号「梯田维护突破」（breakthrough.terrace\_maintenance）
+- 满足其一：
+  - 已发现信号「马铃薯」（bio.potato）
+  - 已发现信号「块茎样本接触」（contact.potato）
+  - 已发现信号「梯田维护突破」（breakthrough.terrace\_maintenance）
 
 #### 效果摘要
 
-可利用资源：种植园承载力；主粮加工产出 +12%
+可利用资源：种植园承载力；大田作物农业产出 +28%；寒冷损失 -8%
 
 #### 机会成本
 
@@ -15209,909 +14913,20 @@
 
 #### 永久 Modifier 条款
 
-- 主粮加工：`country.output.family.staple_preparation_factor`：+12%
+- 大田作物农业：`country.output.family.field_crop_farming_factor`：+28%
+- `country.climate.cold_stress_factor`：+8%
 
-#### 直接后继（硬前置关系）
-
-- 系统育种 (`tech.crop_breeding`)
-
-#### 同路线后继
-
-- 系统育种 (`tech.crop_breeding`)
-
-#### 应用交汇目标
-
-- 系统育种 (`tech.crop_breeding`)
-- 火药武器 (`tech.gunpowder_weapons`)
-
-#### 作为候选参与的里程碑
-
-- 洲际网络 (`tech.global_exchange`)
-
-### 跨区域植物学 (`tech.interregional_botany`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.interregional_botany` |
-| 时代 | 探索时代 (`exploration`) |
-| 领域 | 科学 (`science`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
-| 网络角色 | branch |
-| 锚点类型 | route\_anchor |
-| 节点角色 | handling |
-| 布局路线 | branch.rice\_irrigation |
-| 主要路线 | 作物 · 交流 (\`route.crop.exchange\`) |
-| 全部路线 | 作物 · 交流 (\`route.crop.exchange\`)；制度 · 测绘 (\`route.institution.survey\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | observation |
-
-#### 前置科技（决定研发资格）
-
-- 帝国网络 (`tech.imperial_integration`)
-- 庄园水田核算 (`tech.estate_paddy_management`)
-
-#### 发现启发（仅用于揭示）
-
-- 全部满足：
-  - 已完成科技「帝国网络」（tech.imperial\_integration）
-  - 满足其一：
-    - 已发现信号「印刷突破」（breakthrough.printing）
-    - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
-
-#### 效果摘要
-
-造纸业产出 +12%
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 5 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 无
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
+#### 被以下科技作为硬前置
 
 无
 
-#### 永久 Modifier 条款
-
-- 造纸业：`country.output.family.paper_making_factor`：+12%
-
-#### 直接后继（硬前置关系）
-
-- 农业合作社 (`tech.agricultural_cooperatives`)
-
-#### 同路线后继
-
-- 农业合作社 (`tech.agricultural_cooperatives`)
-
-#### 应用交汇目标
-
-- 农业合作社 (`tech.agricultural_cooperatives`)
-- 矿井排水 (`tech.mine_drainage`)
-
-#### 作为候选参与的里程碑
-
-- 洲际网络 (`tech.global_exchange`)
-
-### 商业网络 (`tech.mercantile_networks`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.mercantile_networks` |
-| 时代 | 探索时代 (`exploration`) |
-| 领域 | 社会 (`society`) |
-| 研究成本 | 124800 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | branch |
-| 锚点类型 | support |
-| 节点角色 | institution |
-| 布局路线 | branch.maritime\_logistics |
-| 主要路线 | 贸易 · 海运 (\`route.trade.maritime\`) |
-| 全部路线 | 贸易 · 海运 (\`route.trade.maritime\`)；制度 · 市场 (\`route.institution.market\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | trade |
-
-#### 前置科技（决定研发资格）
-
-- 远洋船舶设计 (`tech.oceanic_ship_design`)
-
-#### 发现启发（仅用于揭示）
-
-- 全部满足：
-  - 已完成科技「帝国网络」（tech.imperial\_integration）
-  - 满足其一：
-    - 已发现信号「印刷突破」（breakthrough.printing）
-    - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
-
-#### 效果摘要
-
-造纸业产出 +10%
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 5 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 无
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
+#### 主题路线后继
 
 无
 
-#### 永久 Modifier 条款
-
-- 造纸业：`country.output.family.paper_making_factor`：+10%
-
-#### 直接后继（硬前置关系）
+#### 跨领域应用
 
 无
-
-#### 同路线后继
-
-无
-
-#### 应用交汇目标
-
-- 螺旋压印 (`tech.screw_press_printing`)
-
-#### 作为候选参与的里程碑
-
-无
-
-### 机械计时 (`tech.mechanical_timekeeping`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.mechanical_timekeeping` |
-| 时代 | 探索时代 (`exploration`) |
-| 领域 | 工程 (`engineering`) |
-| 研究成本 | 96000 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
-| 节点角色 | power\_scale |
-| 布局路线 | backbone.tools\_machinery |
-| 主要路线 | 工艺 · 精准 (\`route.craft.precision\`) |
-| 全部路线 | 工艺 · 精准 (\`route.craft.precision\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | tools |
-
-#### 前置科技（决定研发资格）
-
-- 帝国网络 (`tech.imperial_integration`)
-
-#### 发现启发（仅用于揭示）
-
-- 全部满足：
-  - 已完成科技「帝国网络」（tech.imperial\_integration）
-  - 满足其一：
-    - 已发现信号「金属加工突破」（breakthrough.metalworking）
-    - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
-    - 已发现信号「铁矿」（resource.iron\_ore）
-
-#### 效果摘要
-
-金属工具业产出 +11%
-
-#### 机会成本
-
-占用通用研究预算，延后同代专业路线锚点
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 无
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-无
-
-#### 永久 Modifier 条款
-
-- 金属工具业：`country.output.family.metal_toolmaking_factor`：+11%
-
-#### 直接后继（硬前置关系）
-
-- 精密工程 (`tech.precision_engineering`)
-
-#### 同路线后继
-
-- 标准化 (`tech.standardization`)
-
-#### 应用交汇目标
-
-- 标准化 (`tech.standardization`)
-
-#### 作为候选参与的里程碑
-
-无
-
-### 井筒开掘 (`tech.shaft_sinking`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.shaft_sinking` |
-| 时代 | 探索时代 (`exploration`) |
-| 领域 | 工程 (`engineering`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
-| 网络角色 | branch |
-| 锚点类型 | route\_anchor |
-| 节点角色 | handling |
-| 布局路线 | branch.nonferrous\_metals |
-| 主要路线 | 资源 · 矿产 (\`route.resource.minerals\`) |
-| 全部路线 | 资源 · 矿产 (\`route.resource.minerals\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | resource |
-
-#### 前置科技（决定研发资格）
-
-- 帝国网络 (`tech.imperial_integration`)
-- 坩埚钢 (`tech.crucible_steel`)
-
-#### 发现启发（仅用于揭示）
-
-- 全部满足：
-  - 已完成科技「帝国网络」（tech.imperial\_integration）
-  - 满足其一：
-    - 已发现信号「铁矿」（resource.iron\_ore）
-    - 已发现信号「煤炭」（resource.coal）
-    - 已发现信号「矿井支护突破」（breakthrough.mine\_support）
-
-#### 效果摘要
-
-解锁建筑：金矿；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：银矿；金矿产出 +25%
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 5 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 金矿 (`gold_mine`)；银矿 (`silver_mine`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-- **金矿**（`building`）：`building.gold_mine` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **黄金**（`good`）：`good.gold` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **银矿**（`building`）：`building.silver_mine` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **白银**（`good`）：`good.silver` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-- 金矿：`country.output.building.gold_mine_factor`：+25%
-
-#### 直接后继（硬前置关系）
-
-- 地质勘探 (`tech.geological_prospecting`)
-
-#### 同路线后继
-
-- 地质勘探 (`tech.geological_prospecting`)
-
-#### 应用交汇目标
-
-- 地质勘探 (`tech.geological_prospecting`)
-- 深井采矿 (`tech.deep_mining`)
-
-#### 作为候选参与的里程碑
-
-- 洲际网络 (`tech.global_exchange`)
-
-### 矿井排水 (`tech.mine_drainage`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.mine_drainage` |
-| 时代 | 探索时代 (`exploration`) |
-| 领域 | 工程 (`engineering`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
-| 网络角色 | branch |
-| 锚点类型 | route\_anchor |
-| 节点角色 | handling |
-| 布局路线 | branch.water\_wind |
-| 主要路线 | 资源 · 矿产 (\`route.resource.minerals\`) |
-| 全部路线 | 资源 · 矿产 (\`route.resource.minerals\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | resource |
-
-#### 前置科技（决定研发资格）
-
-- 帝国网络 (`tech.imperial_integration`)
-- 水力机械 (`tech.water_power`)
-
-#### 发现启发（仅用于揭示）
-
-- 全部满足：
-  - 已完成科技「帝国网络」（tech.imperial\_integration）
-  - 满足其一：
-    - 已发现信号「铁矿」（resource.iron\_ore）
-    - 已发现信号「煤炭」（resource.coal）
-    - 已发现信号「矿井支护突破」（breakthrough.mine\_support）
-
-#### 效果摘要
-
-解锁建筑：深井盐矿；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：锡矿；深井盐矿产出 +25%
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 5 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 深井盐矿 (`industrial_salt_mine`)；锡矿 (`tin_ore_collector`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 硅砂矿 (`silica_sand_collector`)
-
-#### 结构化内容效果
-
-- **深井盐矿**（`building`）：`building.industrial_salt_mine` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **食盐**（`good`）：`good.salt` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **炸药**（`good`）：`good.explosives` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **锡矿**（`building`）：`building.tin_ore_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **锡矿石**（`good`）：`good.tin_ore` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-- 深井盐矿：`country.output.building.industrial_salt_mine_factor`：+25%
-
-#### 直接后继（硬前置关系）
-
-- 水利工程 (`tech.hydraulic_engineering`)
-
-#### 同路线后继
-
-- 水利工程 (`tech.hydraulic_engineering`)
-
-#### 应用交汇目标
-
-- 水利工程 (`tech.hydraulic_engineering`)
-- 跨区域植物学 (`tech.interregional_botany`)
-
-#### 作为候选参与的里程碑
-
-- 洲际网络 (`tech.global_exchange`)
-
-### 商业租佃 (`tech.commercial_tenancy`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.commercial_tenancy` |
-| 时代 | 探索时代 (`exploration`) |
-| 领域 | 社会 (`society`) |
-| 研究成本 | 124800 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | support |
-| 节点角色 | institution |
-| 布局路线 | backbone.institutions\_exchange |
-| 主要路线 | 制度 · 市场 (\`route.institution.market\`) |
-| 全部路线 | 制度 · 市场 (\`route.institution.market\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | organization |
-
-#### 前置科技（决定研发资格）
-
-- 复式记账 (`tech.double_entry_bookkeeping`)
-
-#### 发现启发（仅用于揭示）
-
-- 全部满足：
-  - 已完成科技「帝国网络」（tech.imperial\_integration）
-  - 满足其一：
-    - 已发现信号「印刷突破」（breakthrough.printing）
-    - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
-
-#### 效果摘要
-
-公共营造产出 +10%
-
-#### 机会成本
-
-占用通用研究预算，延后同代专业路线锚点
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 无
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-无
-
-#### 永久 Modifier 条款
-
-- 公共营造：`country.output.family.construction_methods_factor`：+10%
-
-#### 直接后继（硬前置关系）
-
-- 契约劳工制度 (`tech.indentured_contracts`)
-
-#### 同路线后继
-
-无
-
-#### 应用交汇目标
-
-无
-
-#### 作为候选参与的里程碑
-
-无
-
-### 特许商社 (`tech.chartered_companies`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.chartered_companies` |
-| 时代 | 探索时代 (`exploration`) |
-| 领域 | 社会 (`society`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
-| 网络角色 | branch |
-| 锚点类型 | route\_anchor |
-| 节点角色 | institution |
-| 布局路线 | branch.petroleum\_materials |
-| 主要路线 | 制度 · 市场 (\`route.institution.market\`) |
-| 全部路线 | 制度 · 市场 (\`route.institution.market\`)；贸易 · 海运 (\`route.trade.maritime\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | organization |
-
-#### 前置科技（决定研发资格）
-
-- 帝国网络 (`tech.imperial_integration`)
-- 煤矿开采 (`tech.coal_mining`)
-
-#### 发现启发（仅用于揭示）
-
-- 全部满足：
-  - 已完成科技「帝国网络」（tech.imperial\_integration）
-  - 满足其一：
-    - 已发现信号「印刷突破」（breakthrough.printing）
-    - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
-
-#### 效果摘要
-
-公共营造产出 +12%
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 5 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 无
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-无
-
-#### 永久 Modifier 条款
-
-- 公共营造：`country.output.family.construction_methods_factor`：+12%
-
-#### 直接后继（硬前置关系）
-
-- 煤层地质 (`tech.coal_geology`)
-
-#### 同路线后继
-
-- 煤层地质 (`tech.coal_geology`)
-
-#### 应用交汇目标
-
-- 煤层地质 (`tech.coal_geology`)
-- 火药武器 (`tech.gunpowder_weapons`)
-
-#### 作为候选参与的里程碑
-
-- 洲际网络 (`tech.global_exchange`)
-
-### 种植园庄园管理 (`tech.estate_plantation_management`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.estate_plantation_management` |
-| 时代 | 探索时代 (`exploration`) |
-| 领域 | 社会 (`society`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
-| 网络角色 | branch |
-| 锚点类型 | route\_anchor |
-| 节点角色 | institution |
-| 布局路线 | branch.tropical\_commodities |
-| 主要路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
-| 全部路线 | 作物 · 热带作物 (\`route.crop.tropical\`)；制度 · 市场 (\`route.institution.market\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | organization |
-
-#### 前置科技（决定研发资格）
-
-- 帝国网络 (`tech.imperial_integration`)
-- 农奴义务 (`tech.serf_obligations`)
-
-#### 发现启发（仅用于揭示）
-
-- 全部满足：
-  - 已完成科技「帝国网络」（tech.imperial\_integration）
-  - 满足其一：
-    - 已发现信号「印刷突破」（breakthrough.printing）
-    - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
-
-#### 效果摘要
-
-解锁建筑：棉花农场；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：香料种植园；棉花农场产出 +25%
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 5 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 棉花农场 (`cotton_collector`)；香料种植园 (`spice_plants_collector`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 橡胶种植园 (`rubber_tree_collector`)
-
-#### 结构化内容效果
-
-- **棉花农场**（`building`）：`building.cotton_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **籽棉**（`good`）：`good.seed_cotton` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **香料种植园**（`building`）：`building.spice_plants_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **香料**（`good`）：`good.spices` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-- 棉花农场：`country.output.building.cotton_collector_factor`：+25%
-
-#### 直接后继（硬前置关系）
-
-- 科学分类 (`tech.scientific_classification`)
-
-#### 同路线后继
-
-- 科学分类 (`tech.scientific_classification`)
-
-#### 应用交汇目标
-
-- 科学分类 (`tech.scientific_classification`)
-- 远洋航海 (`tech.oceanic_navigation`)
-
-#### 作为候选参与的里程碑
-
-- 洲际网络 (`tech.global_exchange`)
-
-### 商品作物管理 (`tech.commodity_crop_management`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.commodity_crop_management` |
-| 时代 | 探索时代 (`exploration`) |
-| 领域 | 农业 (`agriculture`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
-| 网络角色 | branch |
-| 锚点类型 | route\_anchor |
-| 节点角色 | production\_system |
-| 布局路线 | branch.textile\_fibers |
-| 主要路线 | 作物 · 交流 (\`route.crop.exchange\`) |
-| 全部路线 | 作物 · 交流 (\`route.crop.exchange\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | crop |
-
-#### 前置科技（决定研发资格）
-
-- 帝国网络 (`tech.imperial_integration`)
-- 破布纸 (`tech.rag_paper_making`)
-
-#### 发现启发（仅用于揭示）
-
-- 全部满足：
-  - 已完成科技「帝国网络」（tech.imperial\_integration）
-  - 满足其一：
-    - 已发现信号「亚麻」（bio.flax）
-    - 已发现信号「棉花」（bio.cotton）
-    - 已发现信号「亚麻样本接触」（contact.flax）
-
-#### 效果摘要
-
-解锁建筑：专用商品作物种植园；开放通用职业阶层岗位；开放通用职业阶层岗位；可利用资源：种植园承载力；专用商品作物种植园产出 +25%
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 5 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 专用商品作物种植园 (`method_specialty_commodity_plantation`)；橡胶种植园 (`rubber_tree_collector`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 棉花农场 (`cotton_collector`)；机械化橡胶种植园 (`method_rubber_tree_collector_r6`)；机械化香料种植园 (`method_spice_plants_collector_r6`)；香料种植园 (`spice_plants_collector`)
-
-#### 结构化内容效果
-
-- **专用商品作物种植园**（`building`）：`building.method_specialty_commodity_plantation` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **香料**（`good`）：`good.spices` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **天然乳胶**（`good`）：`good.latex` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **肥料**（`good`）：`good.fertilizer` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **农业机械**（`good`）：`good.agricultural_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **计算机**（`good`）：`good.computers` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **种植园承载力**（`resource`）：`resource.plantation_land` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
-- **肥沃土壤**（`resource`）：`resource.fertile_soil` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
-- **橡胶种植园**（`building`）：`building.rubber_tree_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-- 专用商品作物种植园：`country.output.building.method_specialty_commodity_plantation_factor`：+25%
-
-#### 直接后继（硬前置关系）
-
-- 工资契约 (`tech.wage_contracts`)
-
-#### 同路线后继
-
-- 工资契约 (`tech.wage_contracts`)
-
-#### 应用交汇目标
-
-- 工资契约 (`tech.wage_contracts`)
-- 商业农庄 (`tech.commercial_estates`)
-
-#### 作为候选参与的里程碑
-
-- 洲际网络 (`tech.global_exchange`)
-
-### 远洋补给 (`tech.oceanic_provisioning`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.oceanic_provisioning` |
-| 时代 | 探索时代 (`exploration`) |
-| 领域 | 工程 (`engineering`) |
-| 研究成本 | 96000 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
-| 节点角色 | institution |
-| 布局路线 | backbone.food\_storage |
-| 主要路线 | 贸易 · 海运 (\`route.trade.maritime\`) |
-| 全部路线 | 贸易 · 海运 (\`route.trade.maritime\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | trade |
-
-#### 前置科技（决定研发资格）
-
-- 帝国网络 (`tech.imperial_integration`)
-
-#### 发现启发（仅用于揭示）
-
-- 全部满足：
-  - 已完成科技「帝国网络」（tech.imperial\_integration）
-  - 满足其一：
-    - 已发现信号「海岸」（landform.coast）
-    - 已发现信号「海洋鱼类」（resource.marine\_fish）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
-
-#### 效果摘要
-
-解锁建筑：远洋渔场；开放通用职业阶层岗位；开放通用职业阶层岗位；远洋渔场产出 +25%
-
-#### 机会成本
-
-占用通用研究预算，延后同代专业路线锚点
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 远洋渔场 (`method_marine_fish_collector_r4`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-- **远洋渔场**（`building`）：`building.method_marine_fish_collector_r4` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **鱼类**（`good`）：`good.fish` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-- 远洋渔场：`country.output.building.method_marine_fish_collector_r4_factor`：+25%
-
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
-
-- 罐藏 (`tech.canning`)
-
-#### 应用交汇目标
-
-- 罐藏 (`tech.canning`)
-
-#### 作为候选参与的里程碑
-
-无
-
-### 农艺交换 (`tech.agronomic_exchange`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.agronomic_exchange` |
-| 时代 | 探索时代 (`exploration`) |
-| 领域 | 农业 (`agriculture`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
-| 网络角色 | branch |
-| 锚点类型 | route\_anchor |
-| 节点角色 | production\_system |
-| 布局路线 | branch.maize\_horticulture |
-| 主要路线 | 作物 · 交流 (\`route.crop.exchange\`) |
-| 全部路线 | 作物 · 交流 (\`route.crop.exchange\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | crop |
-
-#### 前置科技（决定研发资格）
-
-- 帝国网络 (`tech.imperial_integration`)
-- 庄园谷物经营 (`tech.manorial_cereal_farming`)
-
-#### 发现启发（仅用于揭示）
-
-- 全部满足：
-  - 已完成科技「帝国网络」（tech.imperial\_integration）
-  - 满足其一：
-    - 已发现信号「玉米」（bio.maize）
-    - 已发现信号「玉米样本接触」（contact.maize）
-    - 已发现信号「玉米选育突破」（breakthrough.maize\_selection）
-
-#### 效果摘要
-
-公共营造产出 +12%
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 5 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 无
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-无
-
-#### 永久 Modifier 条款
-
-- 公共营造：`country.output.family.construction_methods_factor`：+12%
-
-#### 直接后继（硬前置关系）
-
-- 土壤实验 (`tech.soil_experimentation`)
-
-#### 同路线后继
-
-- 土壤实验 (`tech.soil_experimentation`)
-
-#### 应用交汇目标
-
-- 土壤实验 (`tech.soil_experimentation`)
-- 火药武器 (`tech.gunpowder_weapons`)
-
-#### 作为候选参与的里程碑
-
-- 洲际网络 (`tech.global_exchange`)
-
-### 作物移植适应 (`tech.crop_transplantation`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.crop_transplantation` |
-| 时代 | 探索时代 (`exploration`) |
-| 领域 | 农业 (`agriculture`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
-| 网络角色 | branch |
-| 锚点类型 | route\_anchor |
-| 节点角色 | production\_system |
-| 布局路线 | branch.wheat\_rainfed |
-| 主要路线 | 作物 · 交流 (\`route.crop.exchange\`) |
-| 全部路线 | 作物 · 交流 (\`route.crop.exchange\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | crop |
-
-#### 前置科技（决定研发资格）
-
-- 帝国网络 (`tech.imperial_integration`)
-- 集约轮作 (`tech.intensive_crop_rotation`)
-
-#### 发现启发（仅用于揭示）
-
-- 全部满足：
-  - 已完成科技「帝国网络」（tech.imperial\_integration）
-  - 满足其一：
-    - 已发现信号「小麦」（bio.wheat）
-    - 已发现信号「小麦样本接触」（contact.wheat）
-    - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
-
-#### 效果摘要
-
-主粮加工产出 +12%
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 5 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 无
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-无
-
-#### 永久 Modifier 条款
-
-- 主粮加工：`country.output.family.staple_preparation_factor`：+12%
-
-#### 直接后继（硬前置关系）
-
-- 农业改良 (`tech.agricultural_improvement`)
-
-#### 同路线后继
-
-- 农业改良 (`tech.agricultural_improvement`)
-
-#### 应用交汇目标
-
-- 农业改良 (`tech.agricultural_improvement`)
-- 火药武器 (`tech.gunpowder_weapons`)
 
 #### 作为候选参与的里程碑
 
@@ -16127,7 +14942,7 @@
 | 研究成本 | 124800 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
-| 锚点类型 | support |
+| 锚点类型 | backbone |
 | 节点角色 | institution |
 | 布局路线 | backbone.institutions\_exchange |
 | 主要路线 | 制度 · 市场 (\`route.institution.market\`) |
@@ -16135,22 +14950,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 商业租佃 (`tech.commercial_tenancy`)
+- 商业租佃 (`tech.commercial_tenancy`)：商业租佃提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，契约劳工制度直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「帝国网络」（tech.imperial\_integration）
-  - 满足其一：
-    - 已发现信号「印刷突破」（breakthrough.printing）
-    - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+- 满足其一：
+  - 已发现信号「印刷突破」（breakthrough.printing）
+  - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
 
 #### 效果摘要
 
-公共营造产出 +10%
+商栈产出 +18%
 
 #### 机会成本
 
@@ -16169,17 +14981,17 @@
 
 #### 永久 Modifier 条款
 
-- 公共营造：`country.output.family.construction_methods_factor`：+10%
+- 商栈：`country.output.family.merchant_post_factor`：+18%
 
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
 
 无
 
@@ -16205,7 +15017,7 @@
 | 开局能力标签 | 无 |
 | 效果配置 | milestone |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
@@ -16215,7 +15027,7 @@
 
 #### 效果摘要
 
-公共营造产出 +10%
+商栈产出 +50%；热害损失 -8%；社会领域研究效率 +15%
 
 #### 机会成本
 
@@ -16223,23 +15035,15 @@
 
 #### 里程碑候选
 
-需要完成下列 16 项候选中的任意 5 项：
-- 天文导航 (`tech.celestial_navigation`)
-- 远洋航海 (`tech.oceanic_navigation`)
-- 海岸船厂 (`tech.coastal_shipyards`)
-- 螺旋压印 (`tech.screw_press_printing`)
-- 火药武器 (`tech.gunpowder_weapons`)
-- 深井采矿 (`tech.deep_mining`)
-- 商业农庄 (`tech.commercial_estates`)
-- 作物驯化移植 (`tech.crop_acclimatization`)
-- 跨区域植物学 (`tech.interregional_botany`)
-- 井筒开掘 (`tech.shaft_sinking`)
-- 矿井排水 (`tech.mine_drainage`)
-- 特许商社 (`tech.chartered_companies`)
-- 种植园庄园管理 (`tech.estate_plantation_management`)
-- 商品作物管理 (`tech.commodity_crop_management`)
+需要完成下列 8 项候选中的任意 4 项：
 - 农艺交换 (`tech.agronomic_exchange`)
-- 作物移植适应 (`tech.crop_transplantation`)
+- 机械计时 (`tech.mechanical_timekeeping`)
+- 地图学 (`tech.cartography`)
+- 复式记账 (`tech.double_entry_bookkeeping`)
+- 作物驯化移植 (`tech.crop_acclimatization`)
+- 远洋船舶设计 (`tech.oceanic_ship_design`)
+- 跨区域植物学 (`tech.interregional_botany`)
+- 特许商社 (`tech.chartered_companies`)
 
 #### 内容解锁
 
@@ -16254,38 +15058,21 @@
 
 #### 永久 Modifier 条款
 
-- 公共营造：`country.output.family.construction_methods_factor`：+10%
+- 商栈：`country.output.building.merchant_post_factor`：+50%
+- `country.climate.heat_stress_factor`：+8%
+- `country.research.society_efficiency`：+15%
 
-#### 直接后继（硬前置关系）
-
-- 科学分类 (`tech.scientific_classification`)
-- 系统育种 (`tech.crop_breeding`)
-- 农业改良 (`tech.agricultural_improvement`)
-- 实验科学 (`tech.experimental_science`)
-- 标准化 (`tech.standardization`)
-- 公共卫生 (`tech.public_health`)
-- 水利工程 (`tech.hydraulic_engineering`)
-- 地质勘探 (`tech.geological_prospecting`)
-- 大气式蒸汽机 (`tech.atmospheric_engine`)
-- 学术社团 (`tech.learned_societies`)
-- 土壤实验 (`tech.soil_experimentation`)
-- 畜种改良 (`tech.livestock_breeding`)
-- 工资契约 (`tech.wage_contracts`)
-- 合作社组织 (`tech.cooperative_association`)
-- 农业合作社 (`tech.agricultural_cooperatives`)
-- 精密仪器 (`tech.precision_instruments`)
-- 地产测绘 (`tech.property_cadastre`)
-- 煤层地质 (`tech.coal_geology`)
-- 蒸汽密封 (`tech.steam_sealing`)
-- 罐藏 (`tech.canning`)
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
 
-- 远洋航海 (`tech.oceanic_navigation`)
+无
+
+#### 跨领域应用
+
+无
 
 #### 作为候选参与的里程碑
 
@@ -16306,31 +15093,34 @@
 | 研究成本 | 244800 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | handling |
-| 布局路线 | branch.tropical\_commodities |
+| 布局路线 | branch.natural\_history |
 | 主要路线 | 制度 · 测绘 (\`route.institution.survey\`) |
 | 全部路线 | 制度 · 测绘 (\`route.institution.survey\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | observation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 洲际网络 (`tech.global_exchange`)
-- 种植园庄园管理 (`tech.estate_plantation_management`)
+- 自然哲学 (`tech.natural_philosophy`)：自然哲学提供观察、分类、实验与生物育种知识中的操作与材料处理方法，科学分类直接使用这一能力完成其工艺或组织设计
+
+#### 额外研发条件
+
+- 至少满足 2 项：
+  - 已完成科技「实验科学」（tech.experimental\_science）
+  - 已完成科技「跨区域植物学」（tech.interregional\_botany）
+  - 已完成科技「学术社团」（tech.learned\_societies）
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「洲际网络」（tech.global\_exchange）
-  - 满足其一：
-    - 已发现信号「印刷突破」（breakthrough.printing）
-    - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+- 满足其一：
+  - 已发现信号「印刷突破」（breakthrough.printing）
+  - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
 
 #### 效果摘要
 
-解锁物资：洗涤剂；解锁建筑：洗涤剂厂；开放通用职业阶层岗位；开放通用职业阶层岗位；洗涤剂厂产出 +25%
+博学学会产出 +18%
 
 #### 机会成本
 
@@ -16338,42 +15128,33 @@
 
 #### 内容解锁
 
-- **物资：** 洗涤剂 (`detergent`)
-- **建筑 / 生产方式：** 洗涤剂厂 (`detergent_plant`)；智能化洗涤剂厂 (`method_detergent_plant_r10`)
+- **物资：** 无
+- **建筑 / 生产方式：** 无
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
-- **洗涤剂**（`good`）：`good.detergent` → `production_access` `unlock` `1.0`；`existing_binding`
-- **洗涤剂厂**（`building`）：`building.detergent_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **洗涤剂**（`good`）：`good.detergent` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **石化产品**（`good`）：`good.petrochemicals` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业化学品**（`good`）：`good.industrial_chemicals` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **智能化洗涤剂厂**（`building`）：`building.method_detergent_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **自主系统**（`good`）：`good.autonomous_systems` → `input_method_access` `enable` `1.0`；`existing_binding`
+无
 
 #### 永久 Modifier 条款
 
-- 洗涤剂厂：`country.output.building.detergent_plant_factor`：+25%
+- 博学学会：`country.output.building.learned_society_factor`：+18%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 管理层级 (`tech.managerial_hierarchy`)
+- 系统育种 (`tech.crop_breeding`)：科学分类提供观察、分类、实验与生物育种知识中的操作与材料处理方法，系统育种直接使用这一能力完成其工艺或组织设计
+- 生物技术 (`tech.biotechnology`)：科学分类提供观察、分类、实验与生物育种知识中的操作与材料处理方法，生物技术直接使用这一能力完成其工艺或组织设计
+- 生物信息学 (`tech.bioinformatics`)：科学分类提供观察、分类、实验与生物育种知识中的操作与材料处理方法，生物信息学直接使用这一能力完成其工艺或组织设计
+- 计算生物学 (`tech.computational_biology`)：科学分类提供观察、分类、实验与生物育种知识中的操作与材料处理方法，计算生物学直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 管理层级 (`tech.managerial_hierarchy`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 管理层级 (`tech.managerial_hierarchy`)
-- 公共卫生 (`tech.public_health`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -16389,31 +15170,36 @@
 | 研究成本 | 244800 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | production\_system |
-| 布局路线 | branch.tuber\_highland |
+| 布局路线 | branch.natural\_history |
 | 主要路线 | 作物 · 通用农艺 (\`route.crop.general\`) |
 | 全部路线 | 作物 · 通用农艺 (\`route.crop.general\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 洲际网络 (`tech.global_exchange`)
-- 作物驯化移植 (`tech.crop_acclimatization`)
+- 留种选育 (`tech.seed_selection`)：留种选育提供粮食处理、保存与农艺组织能力中的成套生产流程，系统育种直接使用这一能力完成其工艺或组织设计
+- 科学分类 (`tech.scientific_classification`)：科学分类提供观察、分类、实验与生物育种知识中的操作与材料处理方法，系统育种直接使用这一能力完成其工艺或组织设计
+
+#### 额外研发条件
+
+- 至少满足 2 项：
+  - 已完成科技「土壤实验」（tech.soil\_experimentation）
+  - 已完成科技「跨区域植物学」（tech.interregional\_botany）
+  - 已完成科技「农业改良」（tech.agricultural\_improvement）
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「洲际网络」（tech.global\_exchange）
-  - 满足其一：
-    - 已发现信号「马铃薯」（bio.potato）
-    - 已发现信号「块茎样本接触」（contact.potato）
-    - 已发现信号「梯田维护突破」（breakthrough.terrace\_maintenance）
+- 满足其一：
+  - 已发现信号「马铃薯」（bio.potato）
+  - 已发现信号「块茎样本接触」（contact.potato）
+  - 已发现信号「梯田维护突破」（breakthrough.terrace\_maintenance）
 
 #### 效果摘要
 
-解锁建筑：改良亚麻庄园；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：精耕稻庄；改良亚麻庄园产出 +25%
+寒冷损失 -8%
 
 #### 机会成本
 
@@ -16422,36 +15208,29 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 改良亚麻庄园 (`method_flax_collector_r5`)；精耕稻庄 (`method_rice_collector_r5`)
+- **建筑 / 生产方式：** 无
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 改良亚麻庄园 (`method_flax_collector_r5`)；精耕稻庄 (`method_rice_collector_r5`)；改良轮作小麦庄园 (`method_wheat_farm_r5`)
 
 #### 结构化内容效果
 
-- **改良亚麻庄园**（`building`）：`building.method_flax_collector_r5` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **亚麻纤维**（`good`）：`good.flax_fiber` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **精耕稻庄**（`building`）：`building.method_rice_collector_r5` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **稻米**（`good`）：`good.rice_grain` → `output_recipe_access` `enable` `1.0`；`existing_binding`
+无
 
 #### 永久 Modifier 条款
 
-- 改良亚麻庄园：`country.output.building.method_flax_collector_r5_factor`：+25%
+- `country.climate.cold_stress_factor`：+8%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 肥料加工 (`tech.fertilizer_processing`)
+- 智能育种 (`tech.intelligent_breeding`)：系统育种提供观察、分类、实验与生物育种知识中的成套生产流程，智能育种直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 肥料加工 (`tech.fertilizer_processing`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 肥料加工 (`tech.fertilizer_processing`)
-- 地产测绘 (`tech.property_cadastre`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -16467,7 +15246,7 @@
 | 研究成本 | 244800 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | production\_system |
 | 布局路线 | branch.wheat\_rainfed |
 | 主要路线 | 作物 · 通用农艺 (\`route.crop.general\`) |
@@ -16475,23 +15254,17 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 洲际网络 (`tech.global_exchange`)
-- 作物移植适应 (`tech.crop_transplantation`)
+- 农艺交换 (`tech.agronomic_exchange`)：农艺交换提供粮食处理、保存与农艺组织能力中的成套生产流程，农业改良直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「洲际网络」（tech.global\_exchange）
-  - 满足其一：
-    - 已发现信号「小麦」（bio.wheat）
-    - 已发现信号「小麦样本接触」（contact.wheat）
-    - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
+无
 
 #### 效果摘要
 
-解锁建筑：改良小农场；开放通用职业阶层岗位；解锁建筑：工业榨油厂；开放通用职业阶层岗位；改良小农场产出 +25%
+解锁建筑：改良小农场；解锁建筑：工业榨油厂
 
 #### 机会成本
 
@@ -16507,32 +15280,23 @@
 #### 结构化内容效果
 
 - **改良小农场**（`building`）：`building.improved_smallholding` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **混合谷物**（`good`）：`good.grain` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **蔬菜**（`good`）：`good.vegetables` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 - **工业榨油厂**（`building`）：`building.method_edible_oil_plant_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **食用油**（`good`）：`good.edible_oil` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **玉米**（`good`）：`good.corn_grain` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 改良小农场：`country.output.building.improved_smallholding_factor`：+25%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 机械脱粒 (`tech.mechanical_threshing`)
+- 机械化农业 (`tech.mechanized_agriculture`)：农业改良提供谷物旱作、轮作与收获工艺中的成套生产流程，机械化农业直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 机械脱粒 (`tech.mechanical_threshing`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 机械脱粒 (`tech.mechanical_threshing`)
-- 水利工程 (`tech.hydraulic_engineering`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -16548,7 +15312,7 @@
 | 研究成本 | 280800 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
-| 锚点类型 | support |
+| 锚点类型 | backbone |
 | 节点角色 | handling |
 | 布局路线 | backbone.tools\_machinery |
 | 主要路线 | 工艺 · 精准 (\`route.craft.precision\`) |
@@ -16556,22 +15320,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | tools |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 机械计时 (`tech.mechanical_timekeeping`)
+- 机械计时 (`tech.mechanical_timekeeping`)：机械计时提供测量基准、统计方法与精密仪器能力中的动力与规模化能力，精密工程直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「洲际网络」（tech.global\_exchange）
-  - 满足其一：
-    - 已发现信号「金属加工突破」（breakthrough.metalworking）
-    - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
-    - 已发现信号「铁矿」（resource.iron\_ore）
+- 满足其一：
+  - 已发现信号「金属加工突破」（breakthrough.metalworking）
+  - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
+  - 已发现信号「铁矿」（resource.iron\_ore）
 
 #### 效果摘要
 
-解锁物资：精密工具；解锁建筑：精密工具厂；开放通用职业阶层岗位；开放通用职业阶层岗位；精密工具厂产出 +20%
+解锁物资：精密工具；解锁建筑：精密工具厂；解锁建筑：精密工具工坊
 
 #### 机会成本
 
@@ -16588,30 +15350,23 @@
 
 - **精密工具**（`good`）：`good.precision_tools` → `production_access` `unlock` `1.0`；`existing_binding`
 - **精密工具厂**（`building`）：`building.method_precision_tool_workshop_r8` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **精密工具**（`good`）：`good.precision_tools` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **科学仪器**（`good`）：`good.scientific_instruments` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电动机**（`good`）：`good.electric_motor` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **精密工具工坊**（`building`）：`building.precision_tool_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 精密工具厂：`country.output.building.method_precision_tool_workshop_r8_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 蒸汽密封 (`tech.steam_sealing`)：精密工程提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，蒸汽密封直接使用这一能力完成其工艺或组织设计
+- 罐藏 (`tech.canning`)：精密工程提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，罐藏直接使用这一能力完成其工艺或组织设计
+- 内燃机 (`tech.internal_combustion`)：精密工程提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，内燃机直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
-
-无
-
-#### 应用交汇目标
+#### 跨领域应用
 
 无
 
@@ -16627,9 +15382,9 @@
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 科学 (`science`) |
 | 研究成本 | 216000 科技点（`technology_points`） |
-| 节点标记 | 无 |
+| 节点标记 | 时代关键 |
 | 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | handling |
 | 布局路线 | backbone.knowledge\_computation |
 | 主要路线 | 制度 · 实验 (\`route.institution.experimental\`) |
@@ -16637,22 +15392,18 @@
 | 开局能力标签 | 无 |
 | 效果配置 | research |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 洲际网络 (`tech.global_exchange`)
+- 经院研究法 (`tech.scholastic_method`)：经院研究法提供记录、验证、计算与知识传播方法中的操作与材料处理方法，实验科学直接使用这一能力完成其工艺或组织设计
+- 机械计时 (`tech.mechanical_timekeeping`)：机械计时提供测量基准、统计方法与精密仪器能力中的动力与规模化能力，实验科学直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「洲际网络」（tech.global\_exchange）
-  - 满足其一：
-    - 已发现信号「印刷突破」（breakthrough.printing）
-    - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+无
 
 #### 效果摘要
 
-造纸业产出 +11%
+博学学会产出 +50%；知识部门产出 +15%
 
 #### 机会成本
 
@@ -16671,23 +15422,33 @@
 
 #### 永久 Modifier 条款
 
-- 造纸业：`country.output.family.paper_making_factor`：+11%
+- 博学学会：`country.output.building.learned_society_factor`：+50%
+- `country.output.knowledge_factor`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 概率与统计 (`tech.probability_statistics`)
+- 概率与统计 (`tech.probability_statistics`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，概率与统计直接使用这一能力完成其工艺或组织设计
+- 公共卫生 (`tech.public_health`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，公共卫生直接使用这一能力完成其工艺或组织设计
+- 热力学 (`tech.thermodynamics`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，热力学直接使用这一能力完成其工艺或组织设计
+- 工业化学 (`tech.industrial_chemistry`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，工业化学直接使用这一能力完成其工艺或组织设计
+- 现代医学 (`tech.modern_medicine`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，现代医学直接使用这一能力完成其工艺或组织设计
+- 电磁感应 (`tech.electromagnetic_induction`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，电磁感应直接使用这一能力完成其工艺或组织设计
+- 电化学 (`tech.electrochemistry`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，电化学直接使用这一能力完成其工艺或组织设计
+- 无线电 (`tech.radio`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，无线电直接使用这一能力完成其工艺或组织设计
+- 工业研究 (`tech.industrial_research`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，工业研究直接使用这一能力完成其工艺或组织设计
+- 核裂变 (`tech.nuclear_fission`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，核裂变直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 热力学 (`tech.thermodynamics`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 热力学 (`tech.thermodynamics`)
+无
 
 #### 作为候选参与的里程碑
 
-无
+- 启蒙制度 (`tech.enlightenment_institutions`)
 
 ### 政治经济学 (`tech.political_economy`)
 
@@ -16699,7 +15460,7 @@
 | 研究成本 | 280800 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
-| 锚点类型 | support |
+| 锚点类型 | backbone |
 | 节点角色 | institution |
 | 布局路线 | backbone.institutions\_exchange |
 | 主要路线 | 制度 · 国家治理 (\`route.institution.state\`) |
@@ -16707,22 +15468,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 复式记账 (`tech.double_entry_bookkeeping`)
+- 复式记账 (`tech.double_entry_bookkeeping`)：复式记账提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，政治经济学直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「洲际网络」（tech.global\_exchange）
-  - 满足其一：
-    - 已发现信号「印刷突破」（breakthrough.printing）
-    - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+- 满足其一：
+  - 已发现信号「印刷突破」（breakthrough.printing）
+  - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
 
 #### 效果摘要
 
-公共营造产出 +10%
+商栈产出 +18%
 
 #### 机会成本
 
@@ -16741,17 +15499,17 @@
 
 #### 永久 Modifier 条款
 
-- 公共营造：`country.output.family.construction_methods_factor`：+10%
+- 商栈：`country.output.family.merchant_post_factor`：+18%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 长期租约 (`tech.long_term_leases`)
+- 长期租约 (`tech.long_term_leases`)：政治经济学提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，长期租约直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
 无
 
@@ -16768,31 +15526,28 @@
 | 领域 | 科学 (`science`) |
 | 研究成本 | 280800 科技点（`technology_points`） |
 | 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | support |
+| 网络角色 | branch |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | backbone.knowledge\_computation |
+| 布局路线 | branch.measurement\_instruments |
 | 主要路线 | 制度 · 实验 (\`route.institution.experimental\`) |
 | 全部路线 | 制度 · 实验 (\`route.institution.experimental\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | research |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 实验科学 (`tech.experimental_science`)
+- 实验科学 (`tech.experimental_science`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，概率与统计直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「洲际网络」（tech.global\_exchange）
-  - 满足其一：
-    - 已发现信号「印刷突破」（breakthrough.printing）
-    - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+- 满足其一：
+  - 已发现信号「印刷突破」（breakthrough.printing）
+  - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
 
 #### 效果摘要
 
-造纸业产出 +10%
+博学学会产出 +35%
 
 #### 机会成本
 
@@ -16803,7 +15558,7 @@
 - **物资：** 无
 - **建筑 / 生产方式：** 无
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 地理空间分析中心 (`geospatial_analysis_center`)
 
 #### 结构化内容效果
 
@@ -16811,17 +15566,23 @@
 
 #### 永久 Modifier 条款
 
-- 造纸业：`country.output.family.paper_making_factor`：+10%
+- 博学学会：`country.output.building.learned_society_factor`：+35%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 深层地球物理 (`tech.deep_geophysics`)：概率与统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，深层地球物理直接使用这一能力完成其工艺或组织设计
+- 运筹学 (`tech.operations_research`)：概率与统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，运筹学直接使用这一能力完成其工艺或组织设计
+- 信息论 (`tech.information_theory`)：概率与统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，信息论直接使用这一能力完成其工艺或组织设计
+- 数值天气预报 (`tech.numerical_weather_prediction`)：概率与统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，数值天气预报直接使用这一能力完成其工艺或组织设计
+- 地理信息系统 (`tech.geographic_information_systems`)：概率与统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，地理信息系统直接使用这一能力完成其工艺或组织设计
+- 计算生物学 (`tech.computational_biology`)：概率与统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，计算生物学直接使用这一能力完成其工艺或组织设计
+- 气候建模 (`tech.climate_modeling`)：概率与统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，气候建模直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
-
-无
-
-#### 应用交汇目标
+#### 跨领域应用
 
 无
 
@@ -16837,32 +15598,28 @@
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 216000 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 节点标记 | 时代关键 |
+| 网络角色 | branch |
+| 锚点类型 | era\_candidate |
 | 节点角色 | handling |
-| 布局路线 | backbone.tools\_machinery |
+| 布局路线 | branch.measurement\_instruments |
 | 主要路线 | 工艺 · 机械 (\`route.craft.machinery\`) |
 | 全部路线 | 工艺 · 机械 (\`route.craft.machinery\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | manufacturing |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 洲际网络 (`tech.global_exchange`)
+- 地图学 (`tech.cartography`)：地图学提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，标准化直接使用这一能力完成其工艺或组织设计
+- 机械计时 (`tech.mechanical_timekeeping`)：机械计时提供测量基准、统计方法与精密仪器能力中的动力与规模化能力，标准化直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「洲际网络」（tech.global\_exchange）
-  - 满足其一：
-    - 已发现信号「金属加工突破」（breakthrough.metalworking）
-    - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
-    - 已发现信号「铁矿」（resource.iron\_ore）
+无
 
 #### 效果摘要
 
-解锁建筑：电气化包装厂；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：电气印刷厂；电气化包装厂产出 +25%
+解锁建筑：电气化包装厂；解锁建筑：电气印刷厂；工程领域研究效率 +15%
 
 #### 机会成本
 
@@ -16878,35 +15635,35 @@
 #### 结构化内容效果
 
 - **电气化包装厂**（`building`）：`building.method_packaging_plant_r7` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **包装材料**（`good`）：`good.packaging` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **纸张**（`good`）：`good.paper` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **电气印刷厂**（`building`）：`building.method_printed_materials_plant_r7` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **印刷品**（`good`）：`good.printed_materials` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 电气化包装厂：`country.output.building.method_packaging_plant_r7_factor`：+25%
+- `country.research.engineering_efficiency`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 机械工坊 (`tech.mechanical_workshops`)
+- 水利工程 (`tech.hydraulic_engineering`)：标准化统一管径、构件和测量基准，使跨区域水利设施能够协同建设
+- 机械工坊 (`tech.mechanical_workshops`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，机械工坊直接使用这一能力完成其工艺或组织设计
+- 机械化农业 (`tech.mechanized_agriculture`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，机械化农业直接使用这一能力完成其工艺或组织设计
+- 机床 (`tech.machine_tools`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，机床直接使用这一能力完成其工艺或组织设计
+- 工业化学 (`tech.industrial_chemistry`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，工业化学直接使用这一能力完成其工艺或组织设计
+- 工厂制 (`tech.factory_system`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，工厂制直接使用这一能力完成其工艺或组织设计
+- 互换零件 (`tech.interchangeable_parts`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，互换零件直接使用这一能力完成其工艺或组织设计
+- 电网 (`tech.electric_grid`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，电网直接使用这一能力完成其工艺或组织设计
+- 工业质量控制 (`tech.industrial_quality_control`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，工业质量控制直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 机床 (`tech.machine_tools`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 机床 (`tech.machine_tools`)
+无
 
 #### 作为候选参与的里程碑
 
-无
+- 启蒙制度 (`tech.enlightenment_institutions`)
 
 ### 公共卫生 (`tech.public_health`)
 
@@ -16916,33 +15673,31 @@
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 科学 (`science`) |
 | 研究成本 | 244800 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | branch.industrial\_chemistry |
+| 布局路线 | branch.public\_health |
 | 主要路线 | 地理 · 城市 (\`route.geography.urban\`) |
 | 全部路线 | 地理 · 城市 (\`route.geography.urban\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | health |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 洲际网络 (`tech.global_exchange`)
-- 火药武器 (`tech.gunpowder_weapons`)
+- 城市卫生 (`tech.urban_sanitation`)：城市卫生提供卫生、疾病控制与医疗组织能力中的操作与材料处理方法，公共卫生直接使用这一能力完成其工艺或组织设计
+- 实验科学 (`tech.experimental_science`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，公共卫生直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「洲际网络」（tech.global\_exchange）
-  - 满足其一：
-    - 已发现信号「硝石」（resource.saltpeter）
-    - 已发现信号「硫磺」（resource.sulfur）
-    - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
+- 满足其一：
+  - 已发现信号「硝石」（resource.saltpeter）
+  - 已发现信号「硫磺」（resource.sulfur）
+  - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
 
 #### 效果摘要
 
-化学工业产出 +12%
+化学工业产出 +28%；制造部门产出 +12%
 
 #### 机会成本
 
@@ -16961,24 +15716,25 @@
 
 #### 永久 Modifier 条款
 
-- 化学工业：`country.output.family.chemical_industry_factor`：+12%
+- 化学工业：`country.output.family.chemical_industry_factor`：+28%
+- `country.output.manufacturing_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 工业化学 (`tech.industrial_chemistry`)
+- 现代医学 (`tech.modern_medicine`)：公共卫生提供卫生、疾病控制与医疗组织能力中的操作与材料处理方法，现代医学直接使用这一能力完成其工艺或组织设计
+- 公共卫生体系 (`tech.public_health_systems`)：公共卫生提供卫生、疾病控制与医疗组织能力中的操作与材料处理方法，公共卫生体系直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 工业化学 (`tech.industrial_chemistry`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 工业化学 (`tech.industrial_chemistry`)
-- 煤层地质 (`tech.coal_geology`)
+无
 
 #### 作为候选参与的里程碑
 
-- 启蒙制度 (`tech.enlightenment_institutions`)
+无
 
 ### 水利工程 (`tech.hydraulic_engineering`)
 
@@ -16988,9 +15744,9 @@
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 244800 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.water\_wind |
 | 主要路线 | 气候 · 洪水 (\`route.climate.flood\`) |
@@ -16998,23 +15754,22 @@
 | 开局能力标签 | 无 |
 | 效果配置 | hydraulic |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 洲际网络 (`tech.global_exchange`)
-- 矿井排水 (`tech.mine_drainage`)
+- 运河工程 (`tech.canal_engineering`)：运河工程提供大尺度渠道、闸门和水位调度经验
+- 灌溉测量 (`tech.irrigation_surveying`)：灌溉测量提供坡降、流量和高程测定方法
+- 标准化 (`tech.standardization`)：标准化统一管径、构件和测量基准，使跨区域水利设施能够协同建设
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「洲际网络」（tech.global\_exchange）
-  - 满足其一：
-    - 已发现信号「河湖水系」（landform.freshwater\_access）
-    - 已发现信号「河谷」（landform.river\_valley）
-    - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
+- 满足其一：
+  - 已发现信号「河湖水系」（landform.freshwater\_access）
+  - 已发现信号「河谷」（landform.river\_valley）
+  - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
 
 #### 效果摘要
 
-解锁物资：水泥；解锁建筑：水泥厂；开放通用职业阶层岗位；开放通用职业阶层岗位；水泥厂产出 +25%
+解锁物资：水泥；解锁建筑：水泥厂；解锁建筑：自动化水泥厂
 
 #### 机会成本
 
@@ -17031,37 +15786,28 @@
 
 - **水泥**（`good`）：`good.cement` → `production_access` `unlock` `1.0`；`existing_binding`
 - **水泥厂**（`building`）：`building.cement_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **水泥**（`good`）：`good.cement` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **石灰**（`good`）：`good.lime` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **黏土**（`good`）：`good.clay` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **自动化水泥厂**（`building`）：`building.method_cement_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **计算机**（`good`）：`good.computers` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 水泥厂：`country.output.building.cement_plant_factor`：+25%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 蒸汽抽水 (`tech.steam_pumping`)
+- 精准灌溉 (`tech.precision_irrigation`)：水利工程提供水流、风力、输配水和流域工程能力中的成套生产流程，精准灌溉直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 蒸汽抽水 (`tech.steam_pumping`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 蒸汽抽水 (`tech.steam_pumping`)
-- 地产测绘 (`tech.property_cadastre`)
+- 发电机 (`tech.electric_generation`)：水利工程为水轮发电提供流量控制、坝体与引水设施
+- 精准灌溉 (`tech.precision_irrigation`)：精准灌溉把水利工程的输配水体系接入数字控制
 
 #### 作为候选参与的里程碑
 
-- 启蒙制度 (`tech.enlightenment_institutions`)
+无
 
 ### 机械工坊 (`tech.mechanical_workshops`)
 
@@ -17073,7 +15819,7 @@
 | 研究成本 | 280800 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
-| 锚点类型 | support |
+| 锚点类型 | backbone |
 | 节点角色 | power\_scale |
 | 布局路线 | backbone.tools\_machinery |
 | 主要路线 | 工艺 · 机械 (\`route.craft.machinery\`) |
@@ -17081,22 +15827,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | manufacturing |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 标准化 (`tech.standardization`)
+- 标准化 (`tech.standardization`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，机械工坊直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「洲际网络」（tech.global\_exchange）
-  - 满足其一：
-    - 已发现信号「金属加工突破」（breakthrough.metalworking）
-    - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
-    - 已发现信号「铁矿」（resource.iron\_ore）
+- 满足其一：
+  - 已发现信号「金属加工突破」（breakthrough.metalworking）
+  - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
+  - 已发现信号「铁矿」（resource.iron\_ore）
 
 #### 效果摘要
 
-解锁物资：机器零件；解锁建筑：建筑构件厂；开放通用职业阶层岗位；开放通用职业阶层岗位；建筑构件厂产出 +20%
+解锁物资：机器零件；解锁建筑：建筑构件厂；解锁建筑：改良家用织机
 
 #### 机会成本
 
@@ -17113,29 +15857,23 @@
 
 - **机器零件**（`good`）：`good.machine_parts` → `production_access` `unlock` `1.0`；`existing_binding`
 - **建筑构件厂**（`building`）：`building.construction_components_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **建筑构件**（`good`）：`good.construction_components` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **混凝土**（`good`）：`good.concrete` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **钢材**（`good`）：`good.steel` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **玻璃**（`good`）：`good.glass` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **改良家用织机**（`building`）：`building.improved_domestic_loom` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **布料**（`good`）：`good.cloth` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 建筑构件厂：`country.output.building.construction_components_plant_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 大气式蒸汽机 (`tech.atmospheric_engine`)：机械工坊提供工具制造、机械加工与设备控制能力中的动力与规模化能力，大气式蒸汽机直接使用这一能力完成其工艺或组织设计
+- 蒸汽密封 (`tech.steam_sealing`)：机械工坊提供工具制造、机械加工与设备控制能力中的动力与规模化能力，蒸汽密封直接使用这一能力完成其工艺或组织设计
+- 内燃机 (`tech.internal_combustion`)：机械工坊提供工具制造、机械加工与设备控制能力中的动力与规模化能力，内燃机直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
-
-无
-
-#### 应用交汇目标
+#### 跨领域应用
 
 无
 
@@ -17151,33 +15889,32 @@
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 科学 (`science`) |
 | 研究成本 | 244800 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | branch.nonferrous\_metals |
+| 布局路线 | branch.geoscience\_gis |
 | 主要路线 | 资源 · 矿产 (\`route.resource.minerals\`) |
 | 全部路线 | 资源 · 矿产 (\`route.resource.minerals\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | resource |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 洲际网络 (`tech.global_exchange`)
-- 井筒开掘 (`tech.shaft_sinking`)
+- 自然哲学 (`tech.natural_philosophy`)：自然哲学提供观察、分类、实验与生物育种知识中的操作与材料处理方法，地质勘探直接使用这一能力完成其工艺或组织设计
+- 地图学 (`tech.cartography`)：地图学提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，地质勘探直接使用这一能力完成其工艺或组织设计
+- 井筒开掘 (`tech.shaft_sinking`)：井筒开掘提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，地质勘探直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「洲际网络」（tech.global\_exchange）
-  - 满足其一：
-    - 已发现信号「铜矿」（resource.copper\_ore）
-    - 已发现信号「锡矿」（resource.tin\_ore）
-    - 已发现信号「金属加工突破」（breakthrough.metalworking）
+- 满足其一：
+  - 已发现信号「铜矿」（resource.copper\_ore）
+  - 已发现信号「锡矿」（resource.tin\_ore）
+  - 已发现信号「金属加工突破」（breakthrough.metalworking）
 
 #### 效果摘要
 
-解锁物资：锰矿石；解锁建筑：自动化铅矿；开放通用职业阶层岗位；开放通用职业阶层岗位；自动化铅矿产出 +25%
+解锁物资：锰矿石；解锁建筑：自动化铅矿；解锁建筑：硅砂矿；解锁建筑：工业石灰岩矿场；采掘部门产出 +12%
 
 #### 机会成本
 
@@ -17186,43 +15923,38 @@
 #### 内容解锁
 
 - **物资：** 锰矿石 (`manganese_ore`)
-- **建筑 / 生产方式：** 自动化铅矿 (`method_lead_ore_collector_r9`)；硅砂矿 (`silica_sand_collector`)
+- **建筑 / 生产方式：** 自动化铅矿 (`method_lead_ore_collector_r9`)；工业石灰岩矿场 (`method_limestone_collector_r6`)；硅砂矿 (`silica_sand_collector`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 现代硝石矿 (`method_saltpeter_collector_r8`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 现代硝石矿 (`method_saltpeter_collector_r8`)；现代硫矿 (`method_sulfur_collector_r8`)
 
 #### 结构化内容效果
 
 - **锰矿石**（`good`）：`good.manganese_ore` → `production_access` `unlock` `1.0`；`existing_binding`
 - **自动化铅矿**（`building`）：`building.method_lead_ore_collector_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **铅矿石**（`good`）：`good.lead_ore` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **炸药**（`good`）：`good.explosives` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **计算机**（`good`）：`good.computers` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **硅砂矿**（`building`）：`building.silica_sand_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **硅砂**（`good`）：`good.silica_sand` → `output_recipe_access` `enable` `1.0`；`existing_binding`
+- **工业石灰岩矿场**（`building`）：`building.method_limestone_collector_r6` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
 
 #### 永久 Modifier 条款
 
-- 自动化铅矿：`country.output.building.method_lead_ore_collector_r9_factor`：+25%
+- `country.output.extractive_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 焦炭冶炼 (`tech.coke_smelting`)
+- 肥料加工 (`tech.fertilizer_processing`)：地质勘探提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，肥料加工直接使用这一能力完成其工艺或组织设计
+- 石油开采 (`tech.petroleum_extraction`)：地质勘探提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，石油开采直接使用这一能力完成其工艺或组织设计
+- 深层地球物理 (`tech.deep_geophysics`)：地质勘探提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，深层地球物理直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 焦炭冶炼 (`tech.coke_smelting`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 焦炭冶炼 (`tech.coke_smelting`)
-- 蒸汽密封 (`tech.steam_sealing`)
+无
 
 #### 作为候选参与的里程碑
 
-- 启蒙制度 (`tech.enlightenment_institutions`)
+无
 
 ### 大气式蒸汽机 (`tech.atmospheric_engine`)
 
@@ -17234,7 +15966,7 @@
 | 研究成本 | 244800 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | power\_scale |
 | 布局路线 | branch.heavy\_industry |
 | 主要路线 | 能源 · 蒸汽 (\`route.energy.steam\`) |
@@ -17242,23 +15974,22 @@
 | 开局能力标签 | 无 |
 | 效果配置 | energy |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 洲际网络 (`tech.global_exchange`)
-- 深井采矿 (`tech.deep_mining`)
+- 矿井排水 (`tech.mine_drainage`)：矿井排水提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，大气式蒸汽机直接使用这一能力完成其工艺或组织设计
+- 机械工坊 (`tech.mechanical_workshops`)：机械工坊提供工具制造、机械加工与设备控制能力中的动力与规模化能力，大气式蒸汽机直接使用这一能力完成其工艺或组织设计
+- 高炉冶炼 (`tech.blast_furnace`)：高炉冶炼提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，大气式蒸汽机直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「洲际网络」（tech.global\_exchange）
-  - 满足其一：
-    - 已发现信号「河湖水系」（landform.freshwater\_access）
-    - 已发现信号「稳定风廊」（landform.stable\_wind\_corridor）
-    - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
+- 满足其一：
+  - 已发现信号「河湖水系」（landform.freshwater\_access）
+  - 已发现信号「稳定风廊」（landform.stable\_wind\_corridor）
+  - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
 
 #### 效果摘要
 
-解锁物资：蒸汽机；解锁建筑：大气式蒸汽机工坊；开放通用职业阶层岗位；开放通用职业阶层岗位；大气式蒸汽机工坊产出 +25%
+解锁物资：蒸汽机；解锁建筑：大气式蒸汽机工坊
 
 #### 机会成本
 
@@ -17273,32 +16004,25 @@
 
 #### 结构化内容效果
 
-- **蒸汽机**（`good`）：`good.steam_engines` → `production_access` `unlock` `1.0`；`existing_binding`
-- **大气式蒸汽机工坊**（`building`）：`building.atmospheric_engine_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **蒸汽机**（`good`）：`good.steam_engines` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **煤炭**（`good`）：`good.coal` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **钢材**（`good`）：`good.steel` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `input_method_access` `enable` `1.0`；`existing_binding`
+- **蒸汽机**（`good`）：`good.steam_engines` → `production_access` `unlock` `1.0`；`catalog_rebind`
+- **大气式蒸汽机工坊**（`building`）：`building.atmospheric_engine_workshop` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
 
 #### 永久 Modifier 条款
 
-- 大气式蒸汽机工坊：`country.output.building.atmospheric_engine_workshop_factor`：+25%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 工业采煤 (`tech.industrial_coal_mining`)
+- 工业采煤 (`tech.industrial_coal_mining`)：大气式蒸汽机提供矿井、钢铁、蒸汽机械与重型设备能力中的动力与规模化能力，工业采煤直接使用这一能力完成其工艺或组织设计
+- 蒸汽动力 (`tech.steam_power`)：大气式蒸汽机证明蒸汽驱动活塞做功的可行结构，是通用蒸汽动力的工程原型
 
-#### 同路线后继
+#### 主题路线后继
 
-- 工业采煤 (`tech.industrial_coal_mining`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 工业采煤 (`tech.industrial_coal_mining`)
-- 公共卫生 (`tech.public_health`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -17312,33 +16036,31 @@
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 社会 (`society`) |
 | 研究成本 | 244800 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | branch.forest\_biomass |
+| 布局路线 | branch.natural\_history |
 | 主要路线 | 制度 · 学术 (\`route.institution.academic\`) |
 | 全部路线 | 制度 · 学术 (\`route.institution.academic\`)；制度 · 印刷 (\`route.institution.printing\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | research |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 洲际网络 (`tech.global_exchange`)
-- 螺旋压印 (`tech.screw_press_printing`)
+- 经院研究法 (`tech.scholastic_method`)：经院研究法提供论证、注释和公开争辩的学术规范
+- 特许大学 (`tech.chartered_universities`)：特许大学提供稳定的学者共同体、章程和人才来源
+- 螺旋压印 (`tech.screw_press_printing`)：螺旋压印使论文、目录与通信材料能够低成本复制和跨地传播
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「洲际网络」（tech.global\_exchange）
-  - 满足其一：
-    - 已发现信号「印刷突破」（breakthrough.printing）
-    - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+- 满足其一：
+  - 已发现信号「印刷突破」（breakthrough.printing）
+  - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
 
 #### 效果摘要
 
-解锁建筑：博学学会；开放通用职业阶层岗位；开放科技职业阶层岗位；解锁建筑：工业石灰岩矿场；博学学会产出 +25%
+解锁建筑：博学学会
 
 #### 机会成本
 
@@ -17347,43 +16069,34 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 博学学会 (`learned_society`)；工业石灰岩矿场 (`method_limestone_collector_r6`)
+- **建筑 / 生产方式：** 博学学会 (`learned_society`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
 - **博学学会**（`building`）：`building.learned_society` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **科技职业阶层**（`class`）：`class.technology` → `employment_access` `enable` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **印刷品**（`good`）：`good.printed_materials` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **科学仪器**（`good`）：`good.scientific_instruments` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业石灰岩矿场**（`building`）：`building.method_limestone_collector_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **石灰岩**（`good`）：`good.limestone` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 博学学会：`country.output.building.learned_society_factor`：+25%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 蒸汽锯木 (`tech.steam_sawmilling`)
+- 开放科学网络 (`tech.open_science_networks`)：学术社团提供观察、分类、实验与生物育种知识中的操作与材料处理方法，开放科学网络直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 蒸汽锯木 (`tech.steam_sawmilling`)
+- 科学分类 (`tech.scientific_classification`)：学术社团提供分类学所需的标本交流、同行讨论与知识编目网络
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 蒸汽锯木 (`tech.steam_sawmilling`)
-- 精密仪器 (`tech.precision_instruments`)
+- 实验科学 (`tech.experimental_science`)：学术社团为可重复实验提供交流、评议与结果传播机构
+- 工业研究 (`tech.industrial_research`)：工业研究机构沿用学术社团形成的同行评议和知识传播规范
 
 #### 作为候选参与的里程碑
 
-- 启蒙制度 (`tech.enlightenment_institutions`)
+无
 
 ### 土壤实验 (`tech.soil_experimentation`)
 
@@ -17393,33 +16106,30 @@
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 科学 (`science`) |
 | 研究成本 | 244800 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | branch.maize\_horticulture |
+| 布局路线 | branch.natural\_history |
 | 主要路线 | 作物 · 通用农艺 (\`route.crop.general\`) |
 | 全部路线 | 作物 · 通用农艺 (\`route.crop.general\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | research |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 洲际网络 (`tech.global_exchange`)
-- 农艺交换 (`tech.agronomic_exchange`)
+- 农艺交换 (`tech.agronomic_exchange`)：农艺交换提供粮食处理、保存与农艺组织能力中的成套生产流程，土壤实验直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「洲际网络」（tech.global\_exchange）
-  - 满足其一：
-    - 已发现信号「印刷突破」（breakthrough.printing）
-    - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+- 满足其一：
+  - 已发现信号「肥沃土壤」（resource.fertile\_soil）
+  - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
+  - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
 
 #### 效果摘要
 
-可利用资源：磷矿石；造纸业产出 +12%
+可利用资源：磷矿石；堆肥场产出 +50%
 
 #### 机会成本
 
@@ -17438,24 +16148,23 @@
 
 #### 永久 Modifier 条款
 
-- 造纸业：`country.output.family.paper_making_factor`：+12%
+- 堆肥场：`country.output.building.composting_yard_factor`：+50%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 机械化农业 (`tech.mechanized_agriculture`)
+- 肥料加工 (`tech.fertilizer_processing`)：土壤实验提供观察、分类、实验与生物育种知识中的操作与材料处理方法，肥料加工直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 机械化农业 (`tech.mechanized_agriculture`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 机械化农业 (`tech.mechanized_agriculture`)
-- 水利工程 (`tech.hydraulic_engineering`)
+无
 
 #### 作为候选参与的里程碑
 
-- 启蒙制度 (`tech.enlightenment_institutions`)
+无
 
 ### 畜种改良 (`tech.livestock_breeding`)
 
@@ -17465,9 +16174,9 @@
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 农业 (`agriculture`) |
 | 研究成本 | 244800 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.pastoral\_livestock |
 | 主要路线 | 生态 · 牧场 (\`route.ecology.pasture\`) |
@@ -17475,23 +16184,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | livestock |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 洲际网络 (`tech.global_exchange`)
-- 商业农庄 (`tech.commercial_estates`)
+- 商业农庄 (`tech.commercial_estates`)：商业农庄提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，畜种改良直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「洲际网络」（tech.global\_exchange）
-  - 满足其一：
-    - 已发现信号「牧场承载力」（resource.pasture）
-    - 已发现信号「草原」（landform.grassland）
-    - 已发现信号「马匹」（bio.horse）
+- 满足其一：
+  - 已发现信号「羊」（bio.sheep）
+  - 已发现信号「马匹」（bio.horse）
+  - 已发现信号「牛」（bio.cattle）
 
 #### 效果摘要
 
-畜牧业产出 +12%
+畜牧业产出 +28%
 
 #### 机会成本
 
@@ -17510,24 +16216,23 @@
 
 #### 永久 Modifier 条款
 
-- 畜牧业：`country.output.family.livestock_husbandry_factor`：+12%
+- 畜牧业：`country.output.family.livestock_husbandry_factor`：+28%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 劳工组织 (`tech.labor_organization`)
+无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 劳工组织 (`tech.labor_organization`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 劳工组织 (`tech.labor_organization`)
-- 农业改良 (`tech.agricultural_improvement`)
+无
 
 #### 作为候选参与的里程碑
 
-- 启蒙制度 (`tech.enlightenment_institutions`)
+无
 
 ### 工资契约 (`tech.wage_contracts`)
 
@@ -17537,33 +16242,29 @@
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 社会 (`society`) |
 | 研究成本 | 244800 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | institution |
-| 布局路线 | branch.textile\_fibers |
+| 布局路线 | branch.labor\_management |
 | 主要路线 | 制度 · 市场 (\`route.institution.market\`) |
 | 全部路线 | 制度 · 市场 (\`route.institution.market\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 洲际网络 (`tech.global_exchange`)
-- 商品作物管理 (`tech.commodity_crop_management`)
+- 商品作物管理 (`tech.commodity_crop_management`)：商品作物管理提供热带作物栽培、采收与商品化处理能力中的成套生产流程，工资契约直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「洲际网络」（tech.global\_exchange）
-  - 满足其一：
-    - 已发现信号「印刷突破」（breakthrough.printing）
-    - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+- 满足其一：
+  - 已发现信号「印刷突破」（breakthrough.printing）
+  - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
 
 #### 效果摘要
 
-家具行会工坊产出 +25%；国家协同能力 +3%
+家具行会工坊产出 +50%；制造部门产出 +12%
 
 #### 机会成本
 
@@ -17582,25 +16283,24 @@
 
 #### 永久 Modifier 条款
 
-- 家具行会工坊：`country.output.building.guild_hall_factor`：+25%
-- `country.research.society_efficiency`：+3%
+- 家具行会工坊：`country.output.building.guild_hall_factor`：+50%
+- `country.output.manufacturing_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 纺织机械 (`tech.textile_machinery`)
+- 劳工组织 (`tech.labor_organization`)：工资契约提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，劳工组织直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 纺织机械 (`tech.textile_machinery`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 纺织机械 (`tech.textile_machinery`)
-- 公共卫生 (`tech.public_health`)
+无
 
 #### 作为候选参与的里程碑
 
-- 启蒙制度 (`tech.enlightenment_institutions`)
+无
 
 ### 长期租约 (`tech.long_term_leases`)
 
@@ -17611,31 +16311,28 @@
 | 领域 | 社会 (`society`) |
 | 研究成本 | 280800 科技点（`technology_points`） |
 | 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | support |
+| 网络角色 | branch |
+| 锚点类型 | branch |
 | 节点角色 | institution |
-| 布局路线 | backbone.institutions\_exchange |
+| 布局路线 | branch.land\_institutions |
 | 主要路线 | 制度 · 市场 (\`route.institution.market\`) |
 | 全部路线 | 制度 · 市场 (\`route.institution.market\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 政治经济学 (`tech.political_economy`)
+- 政治经济学 (`tech.political_economy`)：政治经济学提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，长期租约直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「洲际网络」（tech.global\_exchange）
-  - 满足其一：
-    - 已发现信号「印刷突破」（breakthrough.printing）
-    - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+- 满足其一：
+  - 已发现信号「印刷突破」（breakthrough.printing）
+  - 已发现信号「旱地承载力」（resource.arable\_land）
 
 #### 效果摘要
 
-玉米庄园产出 +20%；国家协同能力 +3%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -17646,7 +16343,7 @@
 - **物资：** 无
 - **建筑 / 生产方式：** 无
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 地籍管理局 (`cadastral_office`)；改良亚麻庄园 (`method_flax_collector_r5`)；精耕稻庄 (`method_rice_collector_r5`)；改良轮作小麦庄园 (`method_wheat_farm_r5`)
 
 #### 结构化内容效果
 
@@ -17654,18 +16351,17 @@
 
 #### 永久 Modifier 条款
 
-- 玉米庄园：`country.output.building.landed_estate_factor`：+20%
-- `country.research.society_efficiency`：+3%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 地产测绘 (`tech.property_cadastre`)：长期租约提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，地产测绘直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
-
-无
-
-#### 应用交汇目标
+#### 跨领域应用
 
 无
 
@@ -17681,9 +16377,9 @@
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 社会 (`society`) |
 | 研究成本 | 216000 科技点（`technology_points`） |
-| 节点标记 | 无 |
+| 节点标记 | 时代关键 |
 | 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | institution |
 | 布局路线 | backbone.institutions\_exchange |
 | 主要路线 | 制度 · 社群 (\`route.institution.community\`) |
@@ -17691,22 +16387,18 @@
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 洲际网络 (`tech.global_exchange`)
+- 复式记账 (`tech.double_entry_bookkeeping`)：复式记账提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，合作社组织直接使用这一能力完成其工艺或组织设计
+- 行业组织 (`tech.guild_organization`)：行业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，合作社组织直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「洲际网络」（tech.global\_exchange）
-  - 满足其一：
-    - 已发现信号「印刷突破」（breakthrough.printing）
-    - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+无
 
 #### 效果摘要
 
-家具行会工坊产出 +25%；国家协同能力 +3%
+家具行会工坊产出 +50%；社会领域研究效率 +15%
 
 #### 机会成本
 
@@ -17725,24 +16417,27 @@
 
 #### 永久 Modifier 条款
 
-- 家具行会工坊：`country.output.building.guild_hall_factor`：+25%
-- `country.research.society_efficiency`：+3%
+- 家具行会工坊：`country.output.building.guild_hall_factor`：+50%
+- `country.research.society_efficiency`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 工厂制 (`tech.factory_system`)：合作社组织提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，工厂制直接使用这一能力完成其工艺或组织设计
+- 公共教育 (`tech.public_education`)：合作社组织提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，公共教育直接使用这一能力完成其工艺或组织设计
+- 国营企业 (`tech.state_enterprises`)：合作社组织提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，国营企业直接使用这一能力完成其工艺或组织设计
+- 知识合作社 (`tech.knowledge_cooperatives`)：合作社组织提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，知识合作社直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
-- 工厂制 (`tech.factory_system`)
-
-#### 应用交汇目标
-
-- 工厂制 (`tech.factory_system`)
+无
 
 #### 作为候选参与的里程碑
 
-无
+- 启蒙制度 (`tech.enlightenment_institutions`)
 
 ### 农业合作社 (`tech.agricultural_cooperatives`)
 
@@ -17752,9 +16447,9 @@
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 农业 (`agriculture`) |
 | 研究成本 | 244800 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | institution |
 | 布局路线 | branch.rice\_irrigation |
 | 主要路线 | 作物 · 通用农艺 (\`route.crop.general\`) |
@@ -17762,23 +16457,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 洲际网络 (`tech.global_exchange`)
-- 跨区域植物学 (`tech.interregional_botany`)
+- 跨区域植物学 (`tech.interregional_botany`)：跨区域植物学提供观察、分类、实验与生物育种知识中的操作与材料处理方法，农业合作社直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「洲际网络」（tech.global\_exchange）
-  - 满足其一：
-    - 已发现信号「印刷突破」（breakthrough.printing）
-    - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+- 满足其一：
+  - 已发现信号「肥沃土壤」（resource.fertile\_soil）
+  - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
+  - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
 
 #### 效果摘要
 
-电气化集约农场产出 +25%；国家协同能力 +3%
+电气化集约农场产出 +50%；洪灾损失 -8%
 
 #### 机会成本
 
@@ -17797,25 +16489,24 @@
 
 #### 永久 Modifier 条款
 
-- 电气化集约农场：`country.output.building.intensive_farm_factor`：+25%
-- `country.research.society_efficiency`：+3%
+- 电气化集约农场：`country.output.building.intensive_farm_factor`：+50%
+- `country.climate.flood_loss_factor`：+8%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 机械收割 (`tech.mechanical_reaping`)
+无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 机械收割 (`tech.mechanical_reaping`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 机械收割 (`tech.mechanical_reaping`)
-- 地产测绘 (`tech.property_cadastre`)
+无
 
 #### 作为候选参与的里程碑
 
-- 启蒙制度 (`tech.enlightenment_institutions`)
+无
 
 ### 精密仪器 (`tech.precision_instruments`)
 
@@ -17825,33 +16516,29 @@
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 244800 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | branch.maritime\_logistics |
+| 布局路线 | branch.measurement\_instruments |
 | 主要路线 | 工艺 · 精准 (\`route.craft.precision\`) |
 | 全部路线 | 工艺 · 精准 (\`route.craft.precision\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | tools |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 洲际网络 (`tech.global_exchange`)
-- 远洋航海 (`tech.oceanic_navigation`)
+- 远洋航海 (`tech.oceanic_navigation`)：远洋航海提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，精密仪器直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「洲际网络」（tech.global\_exchange）
-  - 满足其一：
-    - 已发现信号「海岸」（landform.coast）
-    - 已发现信号「海洋鱼类」（resource.marine\_fish）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+- 满足其一：
+  - 已发现信号「金属加工突破」（breakthrough.metalworking）
+  - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
 
 #### 效果摘要
 
-金属工具业产出 +12%
+金属工具业产出 +28%；贸易速度 +12%
 
 #### 机会成本
 
@@ -17870,24 +16557,28 @@
 
 #### 永久 Modifier 条款
 
-- 金属工具业：`country.output.family.metal_toolmaking_factor`：+12%
+- 金属工具业：`country.output.family.metal_toolmaking_factor`：+28%
+- `country.trade.speed_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 铁路物流 (`tech.rail_logistics`)
+- 铁路物流 (`tech.rail_logistics`)：精密仪器提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，铁路物流直接使用这一能力完成其工艺或组织设计
+- 电磁感应 (`tech.electromagnetic_induction`)：精密仪器提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，电磁感应直接使用这一能力完成其工艺或组织设计
+- 核能 (`tech.nuclear_energy`)：精密仪器提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，核能直接使用这一能力完成其工艺或组织设计
+- 卫星观测 (`tech.satellite_observation`)：精密仪器提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，卫星观测直接使用这一能力完成其工艺或组织设计
+- 矿物光谱遥感 (`tech.mineral_spectral_survey`)：精密仪器提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，矿物光谱遥感直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 铁路物流 (`tech.rail_logistics`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 铁路物流 (`tech.rail_logistics`)
-- 煤层地质 (`tech.coal_geology`)
+无
 
 #### 作为候选参与的里程碑
 
-- 启蒙制度 (`tech.enlightenment_institutions`)
+无
 
 ### 地产测绘 (`tech.property_cadastre`)
 
@@ -17899,31 +16590,30 @@
 | 研究成本 | 244800 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | institution |
-| 布局路线 | branch.construction\_materials |
+| 布局路线 | branch.land\_institutions |
 | 主要路线 | 制度 · 国家治理 (\`route.institution.state\`) |
 | 全部路线 | 制度 · 国家治理 (\`route.institution.state\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 洲际网络 (`tech.global_exchange`)
-- 海岸船厂 (`tech.coastal_shipyards`)
+- 地图学 (`tech.cartography`)：地图学提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，地产测绘直接使用这一能力完成其工艺或组织设计
+- 长期租约 (`tech.long_term_leases`)：长期租约提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，地产测绘直接使用这一能力完成其工艺或组织设计
+- 庄园核算 (`tech.estate_accounting`)：庄园核算提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，地产测绘直接使用这一能力完成其工艺或组织设计
+- 度量衡 (`tech.weights_and_measures`)：度量衡提供测量基准、统计方法与精密仪器能力中的稳定的组织与制度载体，地产测绘直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「洲际网络」（tech.global\_exchange）
-  - 满足其一：
-    - 已发现信号「印刷突破」（breakthrough.printing）
-    - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+- 满足其一：
+  - 已发现信号「印刷突破」（breakthrough.printing）
+  - 已发现信号「旱地承载力」（resource.arable\_land）
 
 #### 效果摘要
 
-玉米庄园产出 +25%；国家协同能力 +3%
+解锁建筑：地籍管理局；国家建设成本 -6%
 
 #### 机会成本
 
@@ -17932,31 +16622,29 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 无
+- **建筑 / 生产方式：** 地籍管理局 (`cadastral_office`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
-无
+- **地籍管理局**（`building`）：`building.cadastral_office` → `construction_and_production_access` `unlock` `1.0`；`new_content`
 
 #### 永久 Modifier 条款
 
-- 玉米庄园：`country.output.building.landed_estate_factor`：+25%
-- `country.research.society_efficiency`：+3%
+- `country.construction.cost_factor`：+6%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 互换零件 (`tech.interchangeable_parts`)
+无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 互换零件 (`tech.interchangeable_parts`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 互换零件 (`tech.interchangeable_parts`)
-- 大气式蒸汽机 (`tech.atmospheric_engine`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -17970,112 +16658,27 @@
 | 时代 | 启蒙时代 (`enlightenment`) |
 | 领域 | 科学 (`science`) |
 | 研究成本 | 244800 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | identification |
-| 布局路线 | branch.petroleum\_materials |
+| 布局路线 | branch.heavy\_industry |
 | 主要路线 | 资源 · 煤炭 (\`route.resource.coal\`) |
 | 全部路线 | 资源 · 煤炭 (\`route.resource.coal\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | resource |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 洲际网络 (`tech.global_exchange`)
-- 特许商社 (`tech.chartered_companies`)
-
-#### 发现启发（仅用于揭示）
-
-- 全部满足：
-  - 已完成科技「洲际网络」（tech.global\_exchange）
-  - 满足其一：
-    - 已发现信号「铁矿」（resource.iron\_ore）
-    - 已发现信号「煤炭」（resource.coal）
-    - 已发现信号「矿井支护突破」（breakthrough.mine\_support）
-
-#### 效果摘要
-
-解锁建筑：现代硝石矿；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：现代硫矿；现代硝石矿产出 +25%
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 6 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 现代硝石矿 (`method_saltpeter_collector_r8`)；现代硫矿 (`method_sulfur_collector_r8`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-- **现代硝石矿**（`building`）：`building.method_saltpeter_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **硝石**（`good`）：`good.saltpeter` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电动机**（`good`）：`good.electric_motor` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **现代硫矿**（`building`）：`building.method_sulfur_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **硫磺**（`good`）：`good.sulfur` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-- 现代硝石矿：`country.output.building.method_saltpeter_collector_r8_factor`：+25%
-
-#### 直接后继（硬前置关系）
-
-- 蒸汽动力 (`tech.steam_power`)
-
-#### 同路线后继
-
-- 蒸汽动力 (`tech.steam_power`)
-
-#### 应用交汇目标
-
-- 蒸汽动力 (`tech.steam_power`)
-- 精密仪器 (`tech.precision_instruments`)
-
-#### 作为候选参与的里程碑
-
-- 启蒙制度 (`tech.enlightenment_institutions`)
-
-### 蒸汽密封 (`tech.steam_sealing`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.steam_sealing` |
-| 时代 | 启蒙时代 (`enlightenment`) |
-| 领域 | 工程 (`engineering`) |
-| 研究成本 | 244800 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
-| 网络角色 | branch |
-| 锚点类型 | route\_anchor |
-| 节点角色 | power\_scale |
-| 布局路线 | branch.electric\_intelligent\_energy |
-| 主要路线 | 能源 · 蒸汽 (\`route.energy.steam\`) |
-| 全部路线 | 能源 · 蒸汽 (\`route.energy.steam\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | energy |
-
-#### 前置科技（决定研发资格）
-
-- 洲际网络 (`tech.global_exchange`)
-- 天文导航 (`tech.celestial_navigation`)
+- 特许商社 (`tech.chartered_companies`)：特许商社提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，煤层地质直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「洲际网络」（tech.global\_exchange）
-  - 满足其一：
-    - 已发现信号「河湖水系」（landform.freshwater\_access）
-    - 已发现信号「稳定风廊」（landform.stable\_wind\_corridor）
-    - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
+- 已发现信号「煤炭」（resource.coal）
 
 #### 效果摘要
 
-可再生能源业产出 +12%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -18086,7 +16689,7 @@
 - **物资：** 无
 - **建筑 / 生产方式：** 无
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 蒸汽航运船坞 (`method_steam_shipping`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
@@ -18094,24 +16697,92 @@
 
 #### 永久 Modifier 条款
 
-- 可再生能源业：`country.output.family.renewable_power_generation_factor`：+12%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 流水线组织 (`tech.assembly_line`)
+无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 流水线组织 (`tech.assembly_line`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 流水线组织 (`tech.assembly_line`)
-- 大气式蒸汽机 (`tech.atmospheric_engine`)
+无
 
 #### 作为候选参与的里程碑
 
-- 启蒙制度 (`tech.enlightenment_institutions`)
+无
+
+### 蒸汽密封 (`tech.steam_sealing`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.steam_sealing` |
+| 时代 | 启蒙时代 (`enlightenment`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 244800 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | power\_scale |
+| 布局路线 | branch.heavy\_industry |
+| 主要路线 | 能源 · 蒸汽 (\`route.energy.steam\`) |
+| 全部路线 | 能源 · 蒸汽 (\`route.energy.steam\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | energy |
+
+#### 硬前置（决定研发资格）
+
+- 精密工程 (`tech.precision_engineering`)：精密工程提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，蒸汽密封直接使用这一能力完成其工艺或组织设计
+- 机械工坊 (`tech.mechanical_workshops`)：机械工坊提供工具制造、机械加工与设备控制能力中的动力与规模化能力，蒸汽密封直接使用这一能力完成其工艺或组织设计
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「河湖水系」（landform.freshwater\_access）
+  - 已发现信号「稳定风廊」（landform.stable\_wind\_corridor）
+  - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
+
+#### 效果摘要
+
+解锁建筑：蒸汽航运船坞；能源部门产出 +12%
+
+#### 机会成本
+
+转入该路线需补齐历史锚点；时代 6 后的生产方式依赖专用资本、岗位或地理条件
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 蒸汽航运船坞 (`method_steam_shipping`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **蒸汽航运船坞**（`building`）：`building.method_steam_shipping` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+- `country.output.energy_factor`：+12%
+
+#### 被以下科技作为硬前置
+
+- 蒸汽动力 (`tech.steam_power`)：蒸汽密封降低汽缸、阀门和管路泄漏，使压力和效率可稳定维持
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
 
 ### 罐藏 (`tech.canning`)
 
@@ -18123,7 +16794,7 @@
 | 研究成本 | 216000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 锚点类型 | backbone |
 | 节点角色 | handling |
 | 布局路线 | backbone.food\_storage |
 | 主要路线 | 制度 · 储藏 (\`route.institution.storage\`) |
@@ -18131,22 +16802,21 @@
 | 开局能力标签 | 无 |
 | 效果配置 | craft |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 洲际网络 (`tech.global_exchange`)
+- 盐渍保存 (`tech.salt_preservation`)：盐渍保存提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，罐藏直接使用这一能力完成其工艺或组织设计
+- 精密工程 (`tech.precision_engineering`)：精密工程提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，罐藏直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「洲际网络」（tech.global\_exchange）
-  - 满足其一：
-    - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
-    - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-    - 已发现信号「连续歉收经验」（weather.repeated\_crop\_failure）
+- 满足其一：
+  - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
+  - 已发现信号「肥沃土壤」（resource.fertile\_soil）
+  - 已发现信号「连续歉收经验」（weather.repeated\_crop\_failure）
 
 #### 效果摘要
 
-解锁物资：鱼罐头；解锁建筑：鱼类罐头厂；开放通用职业阶层岗位；开放通用职业阶层岗位；鱼类罐头厂产出 +25%
+解锁物资：鱼罐头；解锁建筑：鱼类罐头厂；解锁建筑：罐头工坊；农业部门产出 +15%
 
 #### 机会成本
 
@@ -18163,30 +16833,23 @@
 
 - **鱼罐头**（`good`）：`good.canned_fish` → `production_access` `unlock` `1.0`；`existing_binding`
 - **鱼类罐头厂**（`building`）：`building.canned_fish_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **鱼罐头**（`good`）：`good.canned_fish` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **鱼类**（`good`）：`good.fish` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **食盐**（`good`）：`good.salt` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **包装材料**（`good`）：`good.packaging` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **罐头工坊**（`building`）：`building.canning_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 鱼类罐头厂：`country.output.building.canned_fish_plant_factor`：+25%
+- `country.output.agriculture_factor`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 工业组织 (`tech.industrial_organization`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 工业组织 (`tech.industrial_organization`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -18210,7 +16873,7 @@
 | 开局能力标签 | 无 |
 | 效果配置 | milestone |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
@@ -18220,7 +16883,7 @@
 
 #### 效果摘要
 
-造纸业产出 +10%
+特许大学产出 +50%；知识部门产出 +15%
 
 #### 机会成本
 
@@ -18228,23 +16891,15 @@
 
 #### 里程碑候选
 
-需要完成下列 16 项候选中的任意 5 项：
-- 科学分类 (`tech.scientific_classification`)
-- 系统育种 (`tech.crop_breeding`)
+需要完成下列 8 项候选中的任意 4 项：
 - 农业改良 (`tech.agricultural_improvement`)
-- 公共卫生 (`tech.public_health`)
-- 水利工程 (`tech.hydraulic_engineering`)
-- 地质勘探 (`tech.geological_prospecting`)
+- 标准化 (`tech.standardization`)
+- 实验科学 (`tech.experimental_science`)
+- 合作社组织 (`tech.cooperative_association`)
+- 系统育种 (`tech.crop_breeding`)
 - 大气式蒸汽机 (`tech.atmospheric_engine`)
-- 学术社团 (`tech.learned_societies`)
-- 土壤实验 (`tech.soil_experimentation`)
-- 畜种改良 (`tech.livestock_breeding`)
-- 工资契约 (`tech.wage_contracts`)
-- 农业合作社 (`tech.agricultural_cooperatives`)
-- 精密仪器 (`tech.precision_instruments`)
+- 科学分类 (`tech.scientific_classification`)
 - 地产测绘 (`tech.property_cadastre`)
-- 煤层地质 (`tech.coal_geology`)
-- 蒸汽密封 (`tech.steam_sealing`)
 
 #### 内容解锁
 
@@ -18259,36 +16914,18 @@
 
 #### 永久 Modifier 条款
 
-- 造纸业：`country.output.family.paper_making_factor`：+10%
+- 特许大学：`country.output.building.chartered_university_factor`：+50%
+- `country.output.knowledge_factor`：+15%
 
-#### 直接后继（硬前置关系）
-
-- 工业采煤 (`tech.industrial_coal_mining`)
-- 焦炭冶炼 (`tech.coke_smelting`)
-- 热力学 (`tech.thermodynamics`)
-- 蒸汽动力 (`tech.steam_power`)
-- 机械化农业 (`tech.mechanized_agriculture`)
-- 工业组织 (`tech.industrial_organization`)
-- 蒸汽抽水 (`tech.steam_pumping`)
-- 纺织机械 (`tech.textile_machinery`)
-- 机床 (`tech.machine_tools`)
-- 铁路物流 (`tech.rail_logistics`)
-- 工业化学 (`tech.industrial_chemistry`)
-- 肥料加工 (`tech.fertilizer_processing`)
-- 劳工组织 (`tech.labor_organization`)
-- 机械收割 (`tech.mechanical_reaping`)
-- 机械脱粒 (`tech.mechanical_threshing`)
-- 工厂制 (`tech.factory_system`)
-- 管理层级 (`tech.managerial_hierarchy`)
-- 互换零件 (`tech.interchangeable_parts`)
-- 流水线组织 (`tech.assembly_line`)
-- 蒸汽锯木 (`tech.steam_sawmilling`)
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
 
 无
 
@@ -18309,9 +16946,9 @@
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 544000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.heavy\_industry |
 | 主要路线 | 资源 · 煤炭 (\`route.resource.coal\`) |
@@ -18319,23 +16956,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | resource |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 启蒙制度 (`tech.enlightenment_institutions`)
-- 大气式蒸汽机 (`tech.atmospheric_engine`)
+- 煤矿开采 (`tech.coal_mining`)：煤矿开采提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，工业采煤直接使用这一能力完成其工艺或组织设计
+- 矿井木支护 (`tech.mine_timbering`)：矿井木支护提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，工业采煤直接使用这一能力完成其工艺或组织设计
+- 大气式蒸汽机 (`tech.atmospheric_engine`)：大气式蒸汽机提供矿井、钢铁、蒸汽机械与重型设备能力中的动力与规模化能力，工业采煤直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「启蒙制度」（tech.enlightenment\_institutions）
-  - 满足其一：
-    - 已发现信号「铁矿」（resource.iron\_ore）
-    - 已发现信号「煤炭」（resource.coal）
-    - 已发现信号「矿井支护突破」（breakthrough.mine\_support）
+- 已发现信号「煤炭」（resource.coal）
 
 #### 效果摘要
 
-解锁物资：煤炭；铁矿业产出 +12%
+解锁物资：煤炭；铁矿业产出 +28%；采掘部门产出 +12%
 
 #### 机会成本
 
@@ -18354,25 +16987,26 @@
 
 #### 永久 Modifier 条款
 
-- 铁矿业：`country.output.family.iron_extraction_factor`：+12%
+- 铁矿业：`country.output.family.iron_extraction_factor`：+28%
+- `country.output.extractive_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 公司矿山 (`tech.corporate_mining`)
-- 石油钻探 (`tech.petroleum_drilling`)
+- 焦炭冶炼 (`tech.coke_smelting`)：工业采煤提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，焦炭冶炼直接使用这一能力完成其工艺或组织设计
+- 公司矿山 (`tech.corporate_mining`)：工业采煤提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，公司矿山直接使用这一能力完成其工艺或组织设计
+- 机械化采矿 (`tech.mechanized_mining`)：工业采煤提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，机械化采矿直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 石油钻探 (`tech.petroleum_drilling`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 石油钻探 (`tech.petroleum_drilling`)
-- 蒸汽动力 (`tech.steam_power`)
+无
 
 #### 作为候选参与的里程碑
 
-- 工业化 (`tech.industrialization`)
+无
 
 ### 焦炭冶炼 (`tech.coke_smelting`)
 
@@ -18382,9 +17016,9 @@
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 544000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.nonferrous\_metals |
 | 主要路线 | 资源 · 煤炭 (\`route.resource.coal\`) |
@@ -18392,23 +17026,21 @@
 | 开局能力标签 | 无 |
 | 效果配置 | metallurgy |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 启蒙制度 (`tech.enlightenment_institutions`)
-- 地质勘探 (`tech.geological_prospecting`)
+- 高炉冶炼 (`tech.blast_furnace`)：高炉冶炼提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，焦炭冶炼直接使用这一能力完成其工艺或组织设计
+- 工业采煤 (`tech.industrial_coal_mining`)：工业采煤提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，焦炭冶炼直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「启蒙制度」（tech.enlightenment\_institutions）
-  - 满足其一：
-    - 已发现信号「铜矿」（resource.copper\_ore）
-    - 已发现信号「锡矿」（resource.tin\_ore）
-    - 已发现信号「金属加工突破」（breakthrough.metalworking）
+- 满足其一：
+  - 已发现信号「铁矿」（resource.iron\_ore）
+  - 已发现信号「煤炭」（resource.coal）
+  - 已发现信号「金属加工突破」（breakthrough.metalworking）
 
 #### 效果摘要
 
-解锁物资：焦炭；解锁物资：钢材；解锁建筑：焦化厂；开放通用职业阶层岗位；焦化厂产出 +25%
+解锁物资：焦炭；解锁物资：钢材；解锁建筑：焦化厂；解锁建筑：电弧炉炼钢厂；采掘部门产出 +12%
 
 #### 机会成本
 
@@ -18426,37 +17058,27 @@
 - **焦炭**（`good`）：`good.coke` → `production_access` `unlock` `1.0`；`existing_binding`
 - **钢材**（`good`）：`good.steel` → `production_access` `unlock` `1.0`；`existing_binding`
 - **焦化厂**（`building`）：`building.coke_ovens` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **焦炭**（`good`）：`good.coke` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **煤炭**（`good`）：`good.coal` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **电弧炉炼钢厂**（`building`）：`building.steel_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **钢材**（`good`）：`good.steel` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **铁矿石**（`good`）：`good.iron_ore` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 焦化厂：`country.output.building.coke_ovens_factor`：+25%
+- `country.output.extractive_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 电磁感应 (`tech.electromagnetic_induction`)
+无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 电磁感应 (`tech.electromagnetic_induction`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 电磁感应 (`tech.electromagnetic_induction`)
-- 互换零件 (`tech.interchangeable_parts`)
+无
 
 #### 作为候选参与的里程碑
 
-- 工业化 (`tech.industrialization`)
+无
 
 ### 热力学 (`tech.thermodynamics`)
 
@@ -18466,9 +17088,9 @@
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 科学 (`science`) |
 | 研究成本 | 480000 科技点（`technology_points`） |
-| 节点标记 | 无 |
+| 节点标记 | 时代关键 |
 | 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | handling |
 | 布局路线 | backbone.knowledge\_computation |
 | 主要路线 | 能源 · 热能 (\`route.energy.thermal\`) |
@@ -18476,22 +17098,18 @@
 | 开局能力标签 | 无 |
 | 效果配置 | research |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 启蒙制度 (`tech.enlightenment_institutions`)
+- 实验科学 (`tech.experimental_science`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，热力学直接使用这一能力完成其工艺或组织设计
+- 机械计时 (`tech.mechanical_timekeeping`)：机械计时提供测量基准、统计方法与精密仪器能力中的动力与规模化能力，热力学直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「启蒙制度」（tech.enlightenment\_institutions）
-  - 满足其一：
-    - 已发现信号「蒸汽动力突破」（breakthrough.steam\_power）
-    - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
-    - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
+无
 
 #### 效果摘要
 
-造纸业产出 +11%
+蒸汽机工厂产出 +50%；科学领域研究效率 +20%；能源部门产出 +15%
 
 #### 机会成本
 
@@ -18510,105 +17128,25 @@
 
 #### 永久 Modifier 条款
 
-- 造纸业：`country.output.family.paper_making_factor`：+11%
+- 蒸汽机工厂：`country.output.building.steam_engine_works_factor`：+50%
+- `country.research.science_efficiency`：+20%
+- `country.output.energy_factor`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 机械印刷 (`tech.mechanized_printing`)
+- 电气化 (`tech.electrification`)：热力学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，电气化直接使用这一能力完成其工艺或组织设计
+- 内燃机 (`tech.internal_combustion`)：热力学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，内燃机直接使用这一能力完成其工艺或组织设计
+- 机动农业 (`tech.motorized_agriculture`)：热力学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，机动农业直接使用这一能力完成其工艺或组织设计
+- 机械制冷 (`tech.refrigeration`)：热力学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，机械制冷直接使用这一能力完成其工艺或组织设计
+- 石化裂解 (`tech.petrochemical_cracking`)：热力学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，石化裂解直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
-
-- 工业研究 (`tech.industrial_research`)
-
-#### 应用交汇目标
-
-- 工业研究 (`tech.industrial_research`)
-
-#### 作为候选参与的里程碑
+#### 主题路线后继
 
 无
 
-### 蒸汽动力 (`tech.steam_power`)
+#### 跨领域应用
 
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.steam_power` |
-| 时代 | 蒸汽时代 (`steam`) |
-| 领域 | 工程 (`engineering`) |
-| 研究成本 | 544000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
-| 网络角色 | branch |
-| 锚点类型 | route\_anchor |
-| 节点角色 | power\_scale |
-| 布局路线 | branch.petroleum\_materials |
-| 主要路线 | 能源 · 蒸汽 (\`route.energy.steam\`) |
-| 全部路线 | 能源 · 蒸汽 (\`route.energy.steam\`)；资源 · 煤炭 (\`route.resource.coal\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | energy |
-
-#### 前置科技（决定研发资格）
-
-- 启蒙制度 (`tech.enlightenment_institutions`)
-- 煤层地质 (`tech.coal_geology`)
-
-#### 发现启发（仅用于揭示）
-
-- 全部满足：
-  - 已完成科技「启蒙制度」（tech.enlightenment\_institutions）
-  - 满足其一：
-    - 已发现信号「蒸汽动力突破」（breakthrough.steam\_power）
-    - 已发现信号「蒸汽密封突破」（breakthrough.steam\_sealing）
-    - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
-
-#### 效果摘要
-
-解锁物资：蒸汽机；解锁建筑：自动化蒸汽机厂；开放通用职业阶层岗位；开放通用职业阶层岗位；自动化蒸汽机厂产出 +25%
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 7 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 蒸汽机 (`steam_engines`)
-- **建筑 / 生产方式：** 自动化蒸汽机厂 (`method_steam_engine_works_r9`)；蒸汽机工厂 (`steam_engine_works`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 鱼类罐头厂 (`canned_fish_plant`)；蒸汽航运船坞 (`method_steam_shipping`)
-
-#### 结构化内容效果
-
-- **蒸汽机**（`good`）：`good.steam_engines` → `production_access` `unlock` `1.0`；`existing_binding`
-- **自动化蒸汽机厂**（`building`）：`building.method_steam_engine_works_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **蒸汽机**（`good`）：`good.steam_engines` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **焦炭**（`good`）：`good.coke` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **钢材**（`good`）：`good.steel` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **精密工具**（`good`）：`good.precision_tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **计算机**（`good`）：`good.computers` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **蒸汽机工厂**（`building`）：`building.steam_engine_works` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `input_method_access` `enable` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-- 自动化蒸汽机厂：`country.output.building.method_steam_engine_works_r9_factor`：+25%
-
-#### 直接后继（硬前置关系）
-
-- 石油开采 (`tech.petroleum_extraction`)
-- 内燃机 (`tech.internal_combustion`)
-
-#### 同路线后继
-
-- 内燃机 (`tech.internal_combustion`)
-
-#### 应用交汇目标
-
-- 内燃机 (`tech.internal_combustion`)
-- 纺织机械 (`tech.textile_machinery`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -18623,32 +17161,27 @@
 | 领域 | 农业 (`agriculture`) |
 | 研究成本 | 544000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
-| 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 网络角色 | backbone |
+| 锚点类型 | era\_candidate |
 | 节点角色 | production\_system |
-| 布局路线 | branch.maize\_horticulture |
+| 布局路线 | backbone.tools\_machinery |
 | 主要路线 | 作物 · 机械化 (\`route.crop.mechanized\`) |
 | 全部路线 | 作物 · 机械化 (\`route.crop.mechanized\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 启蒙制度 (`tech.enlightenment_institutions`)
-- 土壤实验 (`tech.soil_experimentation`)
+- 农业改良 (`tech.agricultural_improvement`)：农业改良提供谷物旱作、轮作与收获工艺中的成套生产流程，机械化农业直接使用这一能力完成其工艺或组织设计
+- 标准化 (`tech.standardization`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，机械化农业直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「启蒙制度」（tech.enlightenment\_institutions）
-  - 满足其一：
-    - 已发现信号「玉米」（bio.maize）
-    - 已发现信号「玉米样本接触」（contact.maize）
-    - 已发现信号「玉米选育突破」（breakthrough.maize\_selection）
+无
 
 #### 效果摘要
 
-解锁物资：农业机械；解锁建筑：农业机械厂；开放通用职业阶层岗位；开放通用职业阶层岗位；农业机械厂产出 +25%
+解锁物资：农业机械；解锁建筑：农业机械厂；解锁建筑：机械化棉花农场；解锁建筑：机械化马铃薯农场
 
 #### 机会成本
 
@@ -18657,37 +17190,34 @@
 #### 内容解锁
 
 - **物资：** 农业机械 (`agricultural_machinery`)
-- **建筑 / 生产方式：** 农业机械厂 (`agricultural_machinery_plant`)
+- **建筑 / 生产方式：** 农业机械厂 (`agricultural_machinery_plant`)；机械化棉花农场 (`method_cotton_collector_r6`)；机械化马铃薯农场 (`method_potato_collector_r6`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 机械化农场 (`mechanized_farm`)；机械化棉花农场 (`method_cotton_collector_r6`)；机械化玉米农场 (`method_landed_estate_r6`)；机械化马铃薯农场 (`method_potato_collector_r6`)；机械化橡胶种植园 (`method_rubber_tree_collector_r6`)；机械化香料种植园 (`method_spice_plants_collector_r6`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 机械化农场 (`mechanized_farm`)；机械化玉米农场 (`method_landed_estate_r6`)；机械化橡胶种植园 (`method_rubber_tree_collector_r6`)；机械化香料种植园 (`method_spice_plants_collector_r6`)
 
 #### 结构化内容效果
 
 - **农业机械**（`good`）：`good.agricultural_machinery` → `production_access` `unlock` `1.0`；`existing_binding`
 - **农业机械厂**（`building`）：`building.agricultural_machinery_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **农业机械**（`good`）：`good.agricultural_machinery` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **蒸汽机**（`good`）：`good.steam_engines` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
+- **机械化棉花农场**（`building`）：`building.method_cotton_collector_r6` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
+- **机械化马铃薯农场**（`building`）：`building.method_potato_collector_r6` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
 
 #### 永久 Modifier 条款
 
-- 农业机械厂：`country.output.building.agricultural_machinery_plant_factor`：+25%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 合成肥料 (`tech.synthetic_fertilizer`)
+- 机械收割 (`tech.mechanical_reaping`)：机械化农业提供工具制造、机械加工与设备控制能力中的成套生产流程，机械收割直接使用这一能力完成其工艺或组织设计
+- 机械脱粒 (`tech.mechanical_threshing`)：机械化农业提供工具制造、机械加工与设备控制能力中的成套生产流程，机械脱粒直接使用这一能力完成其工艺或组织设计
+- 机动农业 (`tech.motorized_agriculture`)：机械化农业提供工具制造、机械加工与设备控制能力中的成套生产流程，机动农业直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 合成肥料 (`tech.synthetic_fertilizer`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 合成肥料 (`tech.synthetic_fertilizer`)
-- 工业采煤 (`tech.industrial_coal_mining`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -18702,31 +17232,30 @@
 | 领域 | 社会 (`society`) |
 | 研究成本 | 480000 科技点（`technology_points`） |
 | 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 网络角色 | branch |
+| 锚点类型 | branch |
 | 节点角色 | institution |
-| 布局路线 | backbone.food\_storage |
+| 布局路线 | branch.labor\_management |
 | 主要路线 | 制度 · 工厂 (\`route.institution.factory\`) |
 | 全部路线 | 制度 · 工厂 (\`route.institution.factory\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 启蒙制度 (`tech.enlightenment_institutions`)
+- 行业组织 (`tech.guild_organization`)：行业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，工业组织直接使用这一能力完成其工艺或组织设计
+- 复式记账 (`tech.double_entry_bookkeeping`)：复式记账提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，工业组织直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「启蒙制度」（tech.enlightenment\_institutions）
-  - 满足其一：
-    - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
-    - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
-    - 已发现信号「蒸汽动力突破」（breakthrough.steam\_power）
+- 满足其一：
+  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
+  - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
+  - 已发现信号「蒸汽动力突破」（breakthrough.steam\_power）
 
 #### 效果摘要
 
-解锁建筑：工业砖厂；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：工业石灰厂；工业砖厂产出 +25%
+解锁建筑：工业砖厂；解锁建筑：工业石灰厂
 
 #### 机会成本
 
@@ -18742,35 +17271,188 @@
 #### 结构化内容效果
 
 - **工业砖厂**（`building`）：`building.method_bricks_plant_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **砖块**（`good`）：`good.bricks` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **黏土**（`good`）：`good.clay` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **工业石灰厂**（`building`）：`building.method_lime_plant_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **石灰**（`good`）：`good.lime` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **石灰岩**（`good`）：`good.limestone` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 工业砖厂：`country.output.building.method_bricks_plant_r6_factor`：+25%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 劳工组织 (`tech.labor_organization`)：工业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，劳工组织直接使用这一能力完成其工艺或组织设计
+- 管理层级 (`tech.managerial_hierarchy`)：工业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，管理层级直接使用这一能力完成其工艺或组织设计
+- 流水线组织 (`tech.assembly_line`)：工业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，流水线组织直接使用这一能力完成其工艺或组织设计
+- 运筹学 (`tech.operations_research`)：工业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，运筹学直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
-- 大规模生产 (`tech.mass_production`)
-
-#### 应用交汇目标
-
-- 大规模生产 (`tech.mass_production`)
+无
 
 #### 作为候选参与的里程碑
 
 无
+
+### 机床 (`tech.machine_tools`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.machine_tools` |
+| 时代 | 蒸汽时代 (`steam`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 480000 科技点（`technology_points`） |
+| 节点标记 | 时代关键 |
+| 网络角色 | backbone |
+| 锚点类型 | era\_candidate |
+| 节点角色 | handling |
+| 布局路线 | backbone.tools\_machinery |
+| 主要路线 | 工艺 · 机械 (\`route.craft.machinery\`) |
+| 全部路线 | 工艺 · 机械 (\`route.craft.machinery\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | manufacturing |
+
+#### 硬前置（决定研发资格）
+
+- 标准化 (`tech.standardization`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，机床直接使用这一能力完成其工艺或组织设计
+- 行业组织 (`tech.guild_organization`)：行业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，机床直接使用这一能力完成其工艺或组织设计
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：金属工具；解锁建筑：机械零件厂；解锁建筑：钢制工具厂；工程领域研究效率 +15%
+
+#### 机会成本
+
+占用通用研究预算，延后同代专业路线锚点
+
+#### 内容解锁
+
+- **物资：** 金属工具 (`tools`)
+- **建筑 / 生产方式：** 机械零件厂 (`machine_parts_plant`)；钢制工具厂 (`tools_plant`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 工业机械厂 (`industrial_machinery_plant`)；蒸汽锯木厂 (`method_lumber_plant_r6`)；自动化机械零件厂 (`method_machine_parts_plant_r9`)
+
+#### 结构化内容效果
+
+- **金属工具**（`good`）：`good.tools` → `production_access` `unlock` `1.0`；`existing_binding`
+- **机械零件厂**（`building`）：`building.machine_parts_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **钢制工具厂**（`building`）：`building.tools_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+- `country.research.engineering_efficiency`：+15%
+
+#### 被以下科技作为硬前置
+
+- 蒸汽动力 (`tech.steam_power`)：机床提供精密汽缸、活塞、阀门和传动件的批量制造能力
+- 蒸汽抽水 (`tech.steam_pumping`)：机床保证泵缸、活塞、阀门与连杆的精度和可维修性
+- 机械印刷 (`tech.mechanized_printing`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，机械印刷直接使用这一能力完成其工艺或组织设计
+- 机械收割 (`tech.mechanical_reaping`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，机械收割直接使用这一能力完成其工艺或组织设计
+- 机械脱粒 (`tech.mechanical_threshing`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，机械脱粒直接使用这一能力完成其工艺或组织设计
+- 纺织机械 (`tech.textile_machinery`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，纺织机械直接使用这一能力完成其工艺或组织设计
+- 互换零件 (`tech.interchangeable_parts`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，互换零件直接使用这一能力完成其工艺或组织设计
+- 蒸汽锯木 (`tech.steam_sawmilling`)：机床提供耐用、可互换的轴承、锯架与传动零件，使高速锯切设备可制造和维护
+- 电气化 (`tech.electrification`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，电气化直接使用这一能力完成其工艺或组织设计
+- 电动机 (`tech.electric_motors`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，电动机直接使用这一能力完成其工艺或组织设计
+- 石油钻探 (`tech.petroleum_drilling`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，石油钻探直接使用这一能力完成其工艺或组织设计
+- 机械制冷 (`tech.refrigeration`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，机械制冷直接使用这一能力完成其工艺或组织设计
+- 机械化采矿 (`tech.mechanized_mining`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，机械化采矿直接使用这一能力完成其工艺或组织设计
+- 机器人制造 (`tech.robotic_manufacturing`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，机器人制造直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+- 工业化 (`tech.industrialization`)
+
+### 蒸汽动力 (`tech.steam_power`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.steam_power` |
+| 时代 | 蒸汽时代 (`steam`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 544000 科技点（`technology_points`） |
+| 节点标记 | 时代关键 |
+| 网络角色 | branch |
+| 锚点类型 | era\_candidate |
+| 节点角色 | power\_scale |
+| 布局路线 | branch.heavy\_industry |
+| 主要路线 | 能源 · 蒸汽 (\`route.energy.steam\`) |
+| 全部路线 | 能源 · 蒸汽 (\`route.energy.steam\`)；资源 · 煤炭 (\`route.resource.coal\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | energy |
+
+#### 硬前置（决定研发资格）
+
+- 大气式蒸汽机 (`tech.atmospheric_engine`)：大气式蒸汽机证明蒸汽驱动活塞做功的可行结构，是通用蒸汽动力的工程原型
+- 蒸汽密封 (`tech.steam_sealing`)：蒸汽密封降低汽缸、阀门和管路泄漏，使压力和效率可稳定维持
+- 机床 (`tech.machine_tools`)：机床提供精密汽缸、活塞、阀门和传动件的批量制造能力
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「蒸汽动力突破」（breakthrough.steam\_power）
+  - 已发现信号「蒸汽密封突破」（breakthrough.steam\_sealing）
+
+#### 效果摘要
+
+解锁物资：蒸汽机；解锁建筑：自动化蒸汽机厂；解锁建筑：蒸汽机工厂
+
+#### 机会成本
+
+转入该路线需补齐历史锚点；时代 7 后的生产方式依赖专用资本、岗位或地理条件
+
+#### 内容解锁
+
+- **物资：** 蒸汽机 (`steam_engines`)
+- **建筑 / 生产方式：** 自动化蒸汽机厂 (`method_steam_engine_works_r9`)；蒸汽机工厂 (`steam_engine_works`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 鱼类罐头厂 (`canned_fish_plant`)；蒸汽锯木厂 (`method_lumber_plant_r6`)；蒸汽航运船坞 (`method_steam_shipping`)
+
+#### 结构化内容效果
+
+- **蒸汽机**（`good`）：`good.steam_engines` → `production_access` `unlock` `1.0`；`existing_binding`
+- **自动化蒸汽机厂**（`building`）：`building.method_steam_engine_works_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **蒸汽机工厂**（`building`）：`building.steam_engine_works` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+- 蒸汽抽水 (`tech.steam_pumping`)：蒸汽动力提供不依赖河流的连续泵送功率
+- 铁路物流 (`tech.rail_logistics`)：蒸汽动力提供矿井、钢铁、蒸汽机械与重型设备能力中的动力与规模化能力，铁路物流直接使用这一能力完成其工艺或组织设计
+- 机械印刷 (`tech.mechanized_printing`)：蒸汽动力提供矿井、钢铁、蒸汽机械与重型设备能力中的动力与规模化能力，机械印刷直接使用这一能力完成其工艺或组织设计
+- 蒸汽锯木 (`tech.steam_sawmilling`)：蒸汽动力提供连续旋转机械功，直接驱动锯框、进料与传动机构
+- 石油开采 (`tech.petroleum_extraction`)：蒸汽动力提供矿井、钢铁、蒸汽机械与重型设备能力中的动力与规模化能力，石油开采直接使用这一能力完成其工艺或组织设计
+- 发电机 (`tech.electric_generation`)：蒸汽动力提供矿井、钢铁、蒸汽机械与重型设备能力中的动力与规模化能力，发电机直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
+
+- 蒸汽抽水 (`tech.steam_pumping`)：稳定蒸汽动力使矿井抽水从试验机械转为可持续生产系统
+
+#### 跨领域应用
+
+- 铁路物流 (`tech.rail_logistics`)：铁路牵引把稳定蒸汽动力应用于陆上大宗运输
+- 机械印刷 (`tech.mechanized_printing`)：机械印刷把蒸汽动力应用于连续压印与纸张输送
+
+#### 作为候选参与的里程碑
+
+- 工业化 (`tech.industrialization`)
 
 ### 蒸汽抽水 (`tech.steam_pumping`)
 
@@ -18780,33 +17462,32 @@
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 544000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | applied\_method |
-| 布局路线 | branch.water\_wind |
+| 布局路线 | branch.heavy\_industry |
 | 主要路线 | 能源 · 蒸汽 (\`route.energy.steam\`) |
 | 全部路线 | 能源 · 蒸汽 (\`route.energy.steam\`)；资源 · 矿产 (\`route.resource.minerals\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | resource |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 启蒙制度 (`tech.enlightenment_institutions`)
-- 水利工程 (`tech.hydraulic_engineering`)
+- 矿井排水 (`tech.mine_drainage`)：矿井排水定义扬程、井下积水和连续排放需求，是蒸汽抽水的直接应用问题
+- 蒸汽动力 (`tech.steam_power`)：蒸汽动力提供不依赖河流的连续泵送功率
+- 机床 (`tech.machine_tools`)：机床保证泵缸、活塞、阀门与连杆的精度和可维修性
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「启蒙制度」（tech.enlightenment\_institutions）
-  - 满足其一：
-    - 已发现信号「河湖水系」（landform.freshwater\_access）
-    - 已发现信号「河谷」（landform.river\_valley）
-    - 已发现信号「流域治理突破」（breakthrough.watershed\_management）
+- 满足其一：
+  - 已发现信号「河湖水系」（landform.freshwater\_access）
+  - 已发现信号「河谷」（landform.river\_valley）
+  - 已发现信号「流域治理突破」（breakthrough.watershed\_management）
 
 #### 效果摘要
 
-解锁建筑：蒸汽动力煤矿；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：蒸汽动力铁矿；蒸汽动力煤矿产出 +25%
+解锁建筑：蒸汽动力煤矿；解锁建筑：蒸汽动力铁矿
 
 #### 机会成本
 
@@ -18822,189 +17503,23 @@
 #### 结构化内容效果
 
 - **蒸汽动力煤矿**（`building`）：`building.steam_coal_mine` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **煤炭**（`good`）：`good.coal` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 - **蒸汽动力铁矿**（`building`）：`building.steam_iron_mine` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **铁矿石**（`good`）：`good.iron_ore` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
-
-- 蒸汽动力煤矿：`country.output.building.steam_coal_mine_factor`：+25%
-
-#### 直接后继（硬前置关系）
-
-- 发电机 (`tech.electric_generation`)
-
-#### 同路线后继
-
-- 发电机 (`tech.electric_generation`)
-
-#### 应用交汇目标
-
-- 发电机 (`tech.electric_generation`)
-- 流水线组织 (`tech.assembly_line`)
-
-#### 作为候选参与的里程碑
-
-- 工业化 (`tech.industrialization`)
-
-### 纺织机械 (`tech.textile_machinery`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.textile_machinery` |
-| 时代 | 蒸汽时代 (`steam`) |
-| 领域 | 工程 (`engineering`) |
-| 研究成本 | 544000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
-| 网络角色 | branch |
-| 锚点类型 | route\_anchor |
-| 节点角色 | handling |
-| 布局路线 | branch.textile\_fibers |
-| 主要路线 | 工艺 · 纺织 (\`route.craft.textiles\`) |
-| 全部路线 | 工艺 · 纺织 (\`route.craft.textiles\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | manufacturing |
-
-#### 前置科技（决定研发资格）
-
-- 启蒙制度 (`tech.enlightenment_institutions`)
-- 工资契约 (`tech.wage_contracts`)
-
-#### 发现启发（仅用于揭示）
-
-- 全部满足：
-  - 已完成科技「启蒙制度」（tech.enlightenment\_institutions）
-  - 满足其一：
-    - 已发现信号「亚麻」（bio.flax）
-    - 已发现信号「棉花」（bio.cotton）
-    - 已发现信号「亚麻样本接触」（contact.flax）
-
-#### 效果摘要
-
-解锁建筑：制衣厂；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：蒸汽纺织厂；制衣厂产出 +25%
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 7 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 制衣厂 (`clothing_plant`)；蒸汽纺织厂 (`textile_mill`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 制鞋厂 (`footwear_plant`)；改良家用织机 (`improved_domestic_loom`)；制革厂 (`leather_plant`)
-
-#### 结构化内容效果
-
-- **制衣厂**（`building`）：`building.clothing_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **衣物**（`good`）：`good.clothing` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **布料**（`good`）：`good.cloth` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **蒸汽纺织厂**（`building`）：`building.textile_mill` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **布料**（`good`）：`good.cloth` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **亚麻纤维**（`good`）：`good.flax_fiber` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **煤炭**（`good`）：`good.coal` → `input_method_access` `enable` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-- 制衣厂：`country.output.building.clothing_plant_factor`：+25%
-
-#### 直接后继（硬前置关系）
-
-- 公司管理 (`tech.corporate_management`)
-
-#### 同路线后继
-
-- 公司管理 (`tech.corporate_management`)
-
-#### 应用交汇目标
-
-- 公司管理 (`tech.corporate_management`)
-- 流水线组织 (`tech.assembly_line`)
-
-#### 作为候选参与的里程碑
-
-- 工业化 (`tech.industrialization`)
-
-### 机床 (`tech.machine_tools`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.machine_tools` |
-| 时代 | 蒸汽时代 (`steam`) |
-| 领域 | 工程 (`engineering`) |
-| 研究成本 | 480000 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
-| 节点角色 | handling |
-| 布局路线 | backbone.tools\_machinery |
-| 主要路线 | 工艺 · 机械 (\`route.craft.machinery\`) |
-| 全部路线 | 工艺 · 机械 (\`route.craft.machinery\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | manufacturing |
-
-#### 前置科技（决定研发资格）
-
-- 启蒙制度 (`tech.enlightenment_institutions`)
-
-#### 发现启发（仅用于揭示）
-
-- 全部满足：
-  - 已完成科技「启蒙制度」（tech.enlightenment\_institutions）
-  - 满足其一：
-    - 已发现信号「蒸汽密封突破」（breakthrough.steam\_sealing）
-    - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
-    - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
-
-#### 效果摘要
-
-解锁物资：金属工具；解锁建筑：机械零件厂；开放通用职业阶层岗位；开放通用职业阶层岗位；机械零件厂产出 +25%
-
-#### 机会成本
-
-占用通用研究预算，延后同代专业路线锚点
-
-#### 内容解锁
-
-- **物资：** 金属工具 (`tools`)
-- **建筑 / 生产方式：** 机械零件厂 (`machine_parts_plant`)；钢制工具厂 (`tools_plant`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 工业机械厂 (`industrial_machinery_plant`)；自动化机械零件厂 (`method_machine_parts_plant_r9`)
-
-#### 结构化内容效果
-
-- **金属工具**（`good`）：`good.tools` → `production_access` `unlock` `1.0`；`existing_binding`
-- **机械零件厂**（`building`）：`building.machine_parts_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **机器零件**（`good`）：`good.machine_parts` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **钢材**（`good`）：`good.steel` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **润滑剂**（`good`）：`good.lubricants` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **钢制工具厂**（`building`）：`building.tools_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **木材**（`good`）：`good.lumber` → `input_method_access` `enable` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-- 机械零件厂：`country.output.building.machine_parts_plant_factor`：+25%
-
-#### 直接后继（硬前置关系）
 
 无
 
-#### 同路线后继
+#### 被以下科技作为硬前置
 
-- 工业质量控制 (`tech.industrial_quality_control`)
+无
 
-#### 应用交汇目标
+#### 主题路线后继
 
-- 工业质量控制 (`tech.industrial_quality_control`)
+无
+
+#### 跨领域应用
+
+无
 
 #### 作为候选参与的里程碑
 
@@ -19018,9 +17533,9 @@
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 544000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | institution |
 | 布局路线 | branch.maritime\_logistics |
 | 主要路线 | 贸易 · 铁路 (\`route.trade.rail\`) |
@@ -19028,23 +17543,21 @@
 | 开局能力标签 | 无 |
 | 效果配置 | trade |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 启蒙制度 (`tech.enlightenment_institutions`)
-- 精密仪器 (`tech.precision_instruments`)
+- 蒸汽动力 (`tech.steam_power`)：蒸汽动力提供矿井、钢铁、蒸汽机械与重型设备能力中的动力与规模化能力，铁路物流直接使用这一能力完成其工艺或组织设计
+- 道路工程 (`tech.road_engineering`)：道路工程提供工具制造、机械加工与设备控制能力中的稳定的组织与制度载体，铁路物流直接使用这一能力完成其工艺或组织设计
+- 精密仪器 (`tech.precision_instruments`)：精密仪器提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，铁路物流直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「启蒙制度」（tech.enlightenment\_institutions）
-  - 满足其一：
-    - 已发现信号「海岸」（landform.coast）
-    - 已发现信号「海洋鱼类」（resource.marine\_fish）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+- 满足其一：
+  - 已发现信号「蒸汽动力突破」（breakthrough.steam\_power）
+  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
 
 #### 效果摘要
 
-解锁物资：铁路设备；解锁建筑：铁路设备厂；开放通用职业阶层岗位；开放通用职业阶层岗位；铁路设备厂产出 +25%
+解锁物资：铁路设备；解锁建筑：铁路设备厂；解锁建筑：铁路设备工场；贸易速度 +12%
 
 #### 机会成本
 
@@ -19061,38 +17574,27 @@
 
 - **铁路设备**（`good`）：`good.railway_equipment` → `production_access` `unlock` `1.0`；`existing_binding`
 - **铁路设备厂**（`building`）：`building.railway_equipment_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **铁路设备**（`good`）：`good.railway_equipment` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **钢材**（`good`）：`good.steel` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电动机**（`good`）：`good.electric_motor` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **铁路设备工场**（`building`）：`building.steam_rail_works` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **蒸汽机**（`good`）：`good.steam_engines` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 铁路设备厂：`country.output.building.railway_equipment_plant_factor`：+25%
+- `country.trade.speed_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 电信 (`tech.telecommunications`)
+- 冷链 (`tech.cold_chain`)：铁路物流提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，冷链直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 电信 (`tech.telecommunications`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 电信 (`tech.telecommunications`)
-- 流水线组织 (`tech.assembly_line`)
+无
 
 #### 作为候选参与的里程碑
 
-- 工业化 (`tech.industrialization`)
+无
 
 ### 工业化学 (`tech.industrial_chemistry`)
 
@@ -19104,7 +17606,7 @@
 | 研究成本 | 544000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | handling |
 | 布局路线 | branch.industrial\_chemistry |
 | 主要路线 | 制度 · 实验 (\`route.institution.experimental\`) |
@@ -19112,23 +17614,22 @@
 | 开局能力标签 | 无 |
 | 效果配置 | chemistry |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 启蒙制度 (`tech.enlightenment_institutions`)
-- 公共卫生 (`tech.public_health`)
+- 实验科学 (`tech.experimental_science`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，工业化学直接使用这一能力完成其工艺或组织设计
+- 标准化 (`tech.standardization`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，工业化学直接使用这一能力完成其工艺或组织设计
+- 火药配制 (`tech.gunpowder_formulation`)：火药配制提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，工业化学直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「启蒙制度」（tech.enlightenment\_institutions）
-  - 满足其一：
-    - 已发现信号「硫磺」（resource.sulfur）
-    - 已发现信号「磷矿石」（resource.phosphate\_rock）
-    - 已发现信号「硝石」（resource.saltpeter）
+- 满足其一：
+  - 已发现信号「硫磺」（resource.sulfur）
+  - 已发现信号「磷矿石」（resource.phosphate\_rock）
+  - 已发现信号「硝石」（resource.saltpeter）
 
 #### 效果摘要
 
-解锁物资：工业化学品；解锁建筑：玻璃厂；开放通用职业阶层岗位；开放通用职业阶层岗位；玻璃厂产出 +25%
+解锁物资：工业化学品；解锁建筑：玻璃厂；解锁建筑：化学工场；可利用资源：硫磺矿；制造部门产出 +12%
 
 #### 机会成本
 
@@ -19139,39 +17640,43 @@
 - **物资：** 工业化学品 (`industrial_chemicals`)
 - **建筑 / 生产方式：** 玻璃厂 (`glass_plant`)；化学工场 (`industrial_chemicals_plant`)
 - **自然资源：** 硫磺矿 (`sulfur`)
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 炸药厂 (`explosives_plant`)；工业制皂厂 (`method_soap_plant_r6`)；造纸厂 (`paper_plant`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 洗涤剂厂 (`detergent_plant`)；炸药厂 (`explosives_plant`)；制革厂 (`leather_plant`)；智能化洗涤剂厂 (`method_detergent_plant_r10`)；现代硝石矿 (`method_saltpeter_collector_r8`)；工业制皂厂 (`method_soap_plant_r6`)；现代硫矿 (`method_sulfur_collector_r8`)；造纸厂 (`paper_plant`)
 
 #### 结构化内容效果
 
 - **工业化学品**（`good`）：`good.industrial_chemicals` → `production_access` `unlock` `1.0`；`existing_binding`
 - **玻璃厂**（`building`）：`building.glass_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **玻璃**（`good`）：`good.glass` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **硅砂**（`good`）：`good.silica_sand` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **化学工场**（`building`）：`building.industrial_chemicals_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **工业化学品**（`good`）：`good.industrial_chemicals` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **硫磺**（`good`）：`good.sulfur` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **食盐**（`good`）：`good.salt` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **硫磺矿**（`resource`）：`resource.sulfur` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 玻璃厂：`country.output.building.glass_plant_factor`：+25%
+- `country.output.manufacturing_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 现代医学 (`tech.modern_medicine`)
+- 肥料加工 (`tech.fertilizer_processing`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，肥料加工直接使用这一能力完成其工艺或组织设计
+- 现代医学 (`tech.modern_medicine`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，现代医学直接使用这一能力完成其工艺或组织设计
+- 电化学 (`tech.electrochemistry`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，电化学直接使用这一能力完成其工艺或组织设计
+- 先进冶金 (`tech.advanced_metallurgy`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，先进冶金直接使用这一能力完成其工艺或组织设计
+- 石油化工 (`tech.petrochemical_industry`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，石油化工直接使用这一能力完成其工艺或组织设计
+- 合成材料 (`tech.synthetic_materials`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，合成材料直接使用这一能力完成其工艺或组织设计
+- 公共卫生体系 (`tech.public_health_systems`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，公共卫生体系直接使用这一能力完成其工艺或组织设计
+- 石化裂解 (`tech.petrochemical_cracking`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，石化裂解直接使用这一能力完成其工艺或组织设计
+- 塑料工程 (`tech.plastics_engineering`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，塑料工程直接使用这一能力完成其工艺或组织设计
+- 核燃料循环 (`tech.nuclear_fuel_cycle`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，核燃料循环直接使用这一能力完成其工艺或组织设计
+- 合成纤维工程 (`tech.synthetic_fiber_engineering`)：工业化学提供聚合、溶剂、温度和纯度控制，是合成纤维成形的反应基础
+- 工业生态 (`tech.industrial_ecology`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，工业生态直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 现代医学 (`tech.modern_medicine`)
+- 电化学 (`tech.electrochemistry`)：工业化学的反应控制与纯度标准可扩展到电解反应体系
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 现代医学 (`tech.modern_medicine`)
-- 纺织机械 (`tech.textile_machinery`)
+- 石油化工 (`tech.petrochemical_industry`)：石油化工直接采用工业化学的反应器、分离和纯度控制
+- 现代医学 (`tech.modern_medicine`)：现代药品与消毒品生产采用工业化学的标准反应与质量控制
+- 合成肥料 (`tech.synthetic_fertilizer`)：合成肥料可沿工业化学反应工程路线实现
 
 #### 作为候选参与的里程碑
 
@@ -19187,31 +17692,30 @@
 | 研究成本 | 544000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | handling |
-| 布局路线 | branch.tuber\_highland |
+| 布局路线 | branch.industrial\_chemistry |
 | 主要路线 | 作物 · 工业农业 (\`route.crop.industrial\`) |
 | 全部路线 | 作物 · 工业农业 (\`route.crop.industrial\`)；资源 · 磷矿 (\`route.resource.phosphate\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | chemistry |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 启蒙制度 (`tech.enlightenment_institutions`)
-- 系统育种 (`tech.crop_breeding`)
+- 土壤实验 (`tech.soil_experimentation`)：土壤实验提供观察、分类、实验与生物育种知识中的操作与材料处理方法，肥料加工直接使用这一能力完成其工艺或组织设计
+- 地质勘探 (`tech.geological_prospecting`)：地质勘探提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，肥料加工直接使用这一能力完成其工艺或组织设计
+- 工业化学 (`tech.industrial_chemistry`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，肥料加工直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「启蒙制度」（tech.enlightenment\_institutions）
-  - 满足其一：
-    - 已发现信号「硫磺」（resource.sulfur）
-    - 已发现信号「磷矿石」（resource.phosphate\_rock）
-    - 已发现信号「硝石」（resource.saltpeter）
+- 满足其一：
+  - 已发现信号「硫磺」（resource.sulfur）
+  - 已发现信号「磷矿石」（resource.phosphate\_rock）
+  - 已发现信号「硝石」（resource.saltpeter）
 
 #### 效果摘要
 
-解锁物资：肥料；解锁物资：磷矿石；解锁建筑：磷矿；开放通用职业阶层岗位；磷矿产出 +25%
+解锁物资：肥料；解锁物资：磷矿石；解锁建筑：磷矿；寒冷损失 -8%
 
 #### 机会成本
 
@@ -19222,35 +17726,29 @@
 - **物资：** 肥料 (`fertilizer`)；磷矿石 (`phosphate_rock`)
 - **建筑 / 生产方式：** 磷矿 (`phosphate_rock_collector`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 自动化磷矿 (`method_phosphate_rock_collector_r9`)
 
 #### 结构化内容效果
 
 - **肥料**（`good`）：`good.fertilizer` → `production_access` `unlock` `1.0`；`existing_binding`
 - **磷矿石**（`good`）：`good.phosphate_rock` → `production_access` `unlock` `1.0`；`existing_binding`
 - **磷矿**（`building`）：`building.phosphate_rock_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **磷矿石**（`good`）：`good.phosphate_rock` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **炸药**（`good`）：`good.explosives` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 磷矿：`country.output.building.phosphate_rock_collector_factor`：+25%
+- `country.climate.cold_stress_factor`：+8%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 冷链 (`tech.cold_chain`)
+- 合成肥料 (`tech.synthetic_fertilizer`)：肥料加工提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，合成肥料直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 冷链 (`tech.cold_chain`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 冷链 (`tech.cold_chain`)
-- 流水线组织 (`tech.assembly_line`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -19266,7 +17764,7 @@
 | 研究成本 | 624000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
-| 锚点类型 | support |
+| 锚点类型 | backbone |
 | 节点角色 | institution |
 | 布局路线 | backbone.knowledge\_computation |
 | 主要路线 | 制度 · 印刷 (\`route.institution.printing\`) |
@@ -19274,22 +17772,22 @@
 | 开局能力标签 | 无 |
 | 效果配置 | knowledge |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 热力学 (`tech.thermodynamics`)
+- 螺旋压印 (`tech.screw_press_printing`)：螺旋压印提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，机械印刷直接使用这一能力完成其工艺或组织设计
+- 蒸汽动力 (`tech.steam_power`)：蒸汽动力提供矿井、钢铁、蒸汽机械与重型设备能力中的动力与规模化能力，机械印刷直接使用这一能力完成其工艺或组织设计
+- 机床 (`tech.machine_tools`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，机械印刷直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「启蒙制度」（tech.enlightenment\_institutions）
-  - 满足其一：
-    - 已发现信号「蒸汽动力突破」（breakthrough.steam\_power）
-    - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
-    - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
+- 满足其一：
+  - 已发现信号「印刷突破」（breakthrough.printing）
+  - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
+  - 已发现信号「蒸汽动力突破」（breakthrough.steam\_power）
 
 #### 效果摘要
 
-解锁建筑：造纸厂；开放通用职业阶层岗位；开放通用职业阶层岗位；造纸厂产出 +20%
+解锁建筑：造纸厂
 
 #### 机会成本
 
@@ -19305,26 +17803,307 @@
 #### 结构化内容效果
 
 - **造纸厂**（`building`）：`building.paper_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **纸张**（`good`）：`good.paper` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **原木**（`good`）：`good.logs` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业化学品**（`good`）：`good.industrial_chemicals` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 造纸厂：`country.output.building.paper_plant_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 机械收割 (`tech.mechanical_reaping`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.mechanical_reaping` |
+| 时代 | 蒸汽时代 (`steam`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 544000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | power\_scale |
+| 布局路线 | branch.wheat\_rainfed |
+| 主要路线 | 作物 · 机械化 (\`route.crop.mechanized\`) |
+| 全部路线 | 作物 · 机械化 (\`route.crop.mechanized\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | manufacturing |
+
+#### 硬前置（决定研发资格）
+
+- 机床 (`tech.machine_tools`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，机械收割直接使用这一能力完成其工艺或组织设计
+- 机械化农业 (`tech.mechanized_agriculture`)：机械化农业提供工具制造、机械加工与设备控制能力中的成套生产流程，机械收割直接使用这一能力完成其工艺或组织设计
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「稻」（bio.rice）
+  - 已发现信号「稻种样本接触」（contact.rice）
+  - 已发现信号「水田控制突破」（breakthrough.paddy\_control）
+
+#### 效果摘要
+
+解锁建筑：机械化农场；解锁建筑：机械化玉米农场
+
+#### 机会成本
+
+转入该路线需补齐历史锚点；时代 7 后的生产方式依赖专用资本、岗位或地理条件
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 机械化农场 (`mechanized_farm`)；机械化玉米农场 (`method_landed_estate_r6`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 机械化马铃薯农场 (`method_potato_collector_r6`)
+
+#### 结构化内容效果
+
+- **机械化农场**（`building`）：`building.mechanized_farm` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **机械化玉米农场**（`building`）：`building.method_landed_estate_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 机械脱粒 (`tech.mechanical_threshing`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.mechanical_threshing` |
+| 时代 | 蒸汽时代 (`steam`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 544000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | power\_scale |
+| 布局路线 | branch.wheat\_rainfed |
+| 主要路线 | 作物 · 机械化 (\`route.crop.mechanized\`) |
+| 全部路线 | 作物 · 机械化 (\`route.crop.mechanized\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | manufacturing |
+
+#### 硬前置（决定研发资格）
+
+- 机床 (`tech.machine_tools`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，机械脱粒直接使用这一能力完成其工艺或组织设计
+- 机械化农业 (`tech.mechanized_agriculture`)：机械化农业提供工具制造、机械加工与设备控制能力中的成套生产流程，机械脱粒直接使用这一能力完成其工艺或组织设计
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「小麦」（bio.wheat）
+  - 已发现信号「小麦样本接触」（contact.wheat）
+  - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
+
+#### 效果摘要
+
+提供后续科技与内容的知识基础
+
+#### 机会成本
+
+转入该路线需补齐历史锚点；时代 7 后的生产方式依赖专用资本、岗位或地理条件
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 机械化棉花农场 (`method_cotton_collector_r6`)
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 工厂制 (`tech.factory_system`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.factory_system` |
+| 时代 | 蒸汽时代 (`steam`) |
+| 领域 | 社会 (`society`) |
+| 研究成本 | 480000 科技点（`technology_points`） |
+| 节点标记 | 时代关键 |
+| 网络角色 | branch |
+| 锚点类型 | era\_candidate |
+| 节点角色 | institution |
+| 布局路线 | branch.labor\_management |
+| 主要路线 | 制度 · 工厂 (\`route.institution.factory\`) |
+| 全部路线 | 制度 · 工厂 (\`route.institution.factory\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | organization |
+
+#### 硬前置（决定研发资格）
+
+- 标准化 (`tech.standardization`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，工厂制直接使用这一能力完成其工艺或组织设计
+- 合作社组织 (`tech.cooperative_association`)：合作社组织提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，工厂制直接使用这一能力完成其工艺或组织设计
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：工业机械；解锁建筑：工业机械厂；解锁建筑：数字化工业机械厂；解锁建筑：制鞋厂；解锁建筑：制革厂；社会领域研究效率 +15%
+
+#### 机会成本
+
+占用通用研究预算，延后同代专业路线锚点
+
+#### 内容解锁
+
+- **物资：** 工业机械 (`industrial_machinery`)
+- **建筑 / 生产方式：** 制鞋厂 (`footwear_plant`)；工业机械厂 (`industrial_machinery_plant`)；制革厂 (`leather_plant`)；数字化工业机械厂 (`method_industrial_machinery_plant_r9`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 造纸厂 (`paper_plant`)；主食加工厂 (`staple_food_plant`)
+
+#### 结构化内容效果
+
+- **工业机械**（`good`）：`good.industrial_machinery` → `production_access` `unlock` `1.0`；`existing_binding`
+- **工业机械厂**（`building`）：`building.industrial_machinery_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **数字化工业机械厂**（`building`）：`building.method_industrial_machinery_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **制鞋厂**（`building`）：`building.footwear_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **制革厂**（`building`）：`building.leather_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+- `country.research.society_efficiency`：+15%
+
+#### 被以下科技作为硬前置
+
+- 纺织机械 (`tech.textile_machinery`)：工厂制提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，纺织机械直接使用这一能力完成其工艺或组织设计
+- 劳工组织 (`tech.labor_organization`)：工厂制提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，劳工组织直接使用这一能力完成其工艺或组织设计
+- 管理层级 (`tech.managerial_hierarchy`)：工厂制提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，管理层级直接使用这一能力完成其工艺或组织设计
+- 工业统计 (`tech.industrial_statistics`)：工厂制提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，工业统计直接使用这一能力完成其工艺或组织设计
+- 流水线组织 (`tech.assembly_line`)：工厂制提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，流水线组织直接使用这一能力完成其工艺或组织设计
+- 公共教育 (`tech.public_education`)：工厂制提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，公共教育直接使用这一能力完成其工艺或组织设计
+- 工业研究 (`tech.industrial_research`)：工厂制提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，工业研究直接使用这一能力完成其工艺或组织设计
+- 国营企业 (`tech.state_enterprises`)：工厂制提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，国营企业直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+- 工业化 (`tech.industrialization`)
+
+### 纺织机械 (`tech.textile_machinery`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.textile_machinery` |
+| 时代 | 蒸汽时代 (`steam`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 544000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | handling |
+| 布局路线 | branch.textile\_fibers |
+| 主要路线 | 工艺 · 纺织 (\`route.craft.textiles\`) |
+| 全部路线 | 工艺 · 纺织 (\`route.craft.textiles\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | manufacturing |
+
+#### 硬前置（决定研发资格）
+
+- 织机织造 (`tech.loom_weaving`)：织机织造提供纤维处理、纺纱、织造与服装生产工艺中的操作与材料处理方法，纺织机械直接使用这一能力完成其工艺或组织设计
+- 机床 (`tech.machine_tools`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，纺织机械直接使用这一能力完成其工艺或组织设计
+- 工厂制 (`tech.factory_system`)：工厂制提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，纺织机械直接使用这一能力完成其工艺或组织设计
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「棉花」（bio.cotton）
+  - 已发现信号「亚麻」（bio.flax）
+  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
+
+#### 效果摘要
+
+解锁建筑：制衣厂；解锁建筑：蒸汽纺织厂；制造部门产出 +12%
+
+#### 机会成本
+
+转入该路线需补齐历史锚点；时代 7 后的生产方式依赖专用资本、岗位或地理条件
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 制衣厂 (`clothing_plant`)；蒸汽纺织厂 (`textile_mill`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 电力纺织厂 (`cloth_plant`)；高级成衣厂 (`fine_clothing_plant`)；制鞋厂 (`footwear_plant`)；改良家用织机 (`improved_domestic_loom`)
+
+#### 结构化内容效果
+
+- **制衣厂**（`building`）：`building.clothing_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **蒸汽纺织厂**（`building`）：`building.textile_mill` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+- `country.output.manufacturing_factor`：+12%
+
+#### 被以下科技作为硬前置
+
+- 合成纤维工程 (`tech.synthetic_fiber_engineering`)：纺织机械提供纺丝后的牵伸、卷绕和织造设备，使材料能够进入规模化纺织生产
+
+#### 主题路线后继
+
+- 合成纤维工程 (`tech.synthetic_fiber_engineering`)：纺织机械给合成纤维提供可规模化纺丝、牵伸与织造的设备基础
+
+#### 跨领域应用
 
 无
 
@@ -19342,31 +18121,30 @@
 | 研究成本 | 544000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | institution |
-| 布局路线 | branch.pastoral\_livestock |
+| 布局路线 | branch.labor\_management |
 | 主要路线 | 制度 · 工厂 (\`route.institution.factory\`) |
 | 全部路线 | 制度 · 工厂 (\`route.institution.factory\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 启蒙制度 (`tech.enlightenment_institutions`)
-- 畜种改良 (`tech.livestock_breeding`)
+- 工厂制 (`tech.factory_system`)：工厂制提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，劳工组织直接使用这一能力完成其工艺或组织设计
+- 工资契约 (`tech.wage_contracts`)：工资契约提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，劳工组织直接使用这一能力完成其工艺或组织设计
+- 工业组织 (`tech.industrial_organization`)：工业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，劳工组织直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「启蒙制度」（tech.enlightenment\_institutions）
-  - 满足其一：
-    - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
-    - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
-    - 已发现信号「蒸汽动力突破」（breakthrough.steam\_power）
+- 满足其一：
+  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
+  - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
+  - 已发现信号「蒸汽动力突破」（breakthrough.steam\_power）
 
 #### 效果摘要
 
-家具行会工坊产出 +25%；国家协同能力 +3%
+家具行会工坊产出 +50%
 
 #### 机会成本
 
@@ -19385,263 +18163,23 @@
 
 #### 永久 Modifier 条款
 
-- 家具行会工坊：`country.output.building.guild_hall_factor`：+25%
-- `country.research.society_efficiency`：+3%
+- 家具行会工坊：`country.output.building.guild_hall_factor`：+50%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 现代畜牧 (`tech.modern_husbandry`)
+- 人机协作 (`tech.human_machine_collaboration`)：劳工组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，人机协作直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
-
-- 现代畜牧 (`tech.modern_husbandry`)
-
-#### 应用交汇目标
-
-- 现代畜牧 (`tech.modern_husbandry`)
-- 铁路物流 (`tech.rail_logistics`)
-
-#### 作为候选参与的里程碑
-
-- 工业化 (`tech.industrialization`)
-
-### 机械收割 (`tech.mechanical_reaping`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.mechanical_reaping` |
-| 时代 | 蒸汽时代 (`steam`) |
-| 领域 | 工程 (`engineering`) |
-| 研究成本 | 544000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
-| 网络角色 | branch |
-| 锚点类型 | route\_anchor |
-| 节点角色 | power\_scale |
-| 布局路线 | branch.rice\_irrigation |
-| 主要路线 | 作物 · 机械化 (\`route.crop.mechanized\`) |
-| 全部路线 | 作物 · 机械化 (\`route.crop.mechanized\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | manufacturing |
-
-#### 前置科技（决定研发资格）
-
-- 启蒙制度 (`tech.enlightenment_institutions`)
-- 农业合作社 (`tech.agricultural_cooperatives`)
-
-#### 发现启发（仅用于揭示）
-
-- 全部满足：
-  - 已完成科技「启蒙制度」（tech.enlightenment\_institutions）
-  - 满足其一：
-    - 已发现信号「稻」（bio.rice）
-    - 已发现信号「稻种样本接触」（contact.rice）
-    - 已发现信号「水田控制突破」（breakthrough.paddy\_control）
-
-#### 效果摘要
-
-解锁建筑：机械化农场；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：机械化玉米农场；机械化农场产出 +25%
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 7 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 机械化农场 (`mechanized_farm`)；机械化玉米农场 (`method_landed_estate_r6`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-- **机械化农场**（`building`）：`building.mechanized_farm` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **混合谷物**（`good`）：`good.grain` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **蔬菜**（`good`）：`good.vegetables` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **农业机械**（`good`）：`good.agricultural_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **机械化玉米农场**（`building`）：`building.method_landed_estate_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **玉米**（`good`）：`good.corn_grain` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-- 机械化农场：`country.output.building.mechanized_farm_factor`：+25%
-
-#### 直接后继（硬前置关系）
-
-- 电动机 (`tech.electric_motors`)
-
-#### 同路线后继
-
-- 电动机 (`tech.electric_motors`)
-
-#### 应用交汇目标
-
-- 电动机 (`tech.electric_motors`)
-- 流水线组织 (`tech.assembly_line`)
-
-#### 作为候选参与的里程碑
-
-- 工业化 (`tech.industrialization`)
-
-### 机械脱粒 (`tech.mechanical_threshing`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.mechanical_threshing` |
-| 时代 | 蒸汽时代 (`steam`) |
-| 领域 | 工程 (`engineering`) |
-| 研究成本 | 544000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
-| 网络角色 | branch |
-| 锚点类型 | route\_anchor |
-| 节点角色 | power\_scale |
-| 布局路线 | branch.wheat\_rainfed |
-| 主要路线 | 作物 · 机械化 (\`route.crop.mechanized\`) |
-| 全部路线 | 作物 · 机械化 (\`route.crop.mechanized\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | manufacturing |
-
-#### 前置科技（决定研发资格）
-
-- 启蒙制度 (`tech.enlightenment_institutions`)
-- 农业改良 (`tech.agricultural_improvement`)
-
-#### 发现启发（仅用于揭示）
-
-- 全部满足：
-  - 已完成科技「启蒙制度」（tech.enlightenment\_institutions）
-  - 满足其一：
-    - 已发现信号「小麦」（bio.wheat）
-    - 已发现信号「小麦样本接触」（contact.wheat）
-    - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
-
-#### 效果摘要
-
-解锁建筑：机械化棉花农场；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：机械化马铃薯农场；机械化棉花农场产出 +25%
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 7 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 机械化棉花农场 (`method_cotton_collector_r6`)；机械化马铃薯农场 (`method_potato_collector_r6`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-- **机械化棉花农场**（`building`）：`building.method_cotton_collector_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **籽棉**（`good`）：`good.seed_cotton` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **农业机械**（`good`）：`good.agricultural_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **机械化马铃薯农场**（`building`）：`building.method_potato_collector_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **马铃薯**（`good`）：`good.potatoes` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-- 机械化棉花农场：`country.output.building.method_cotton_collector_r6_factor`：+25%
-
-#### 直接后继（硬前置关系）
-
-- 机动农业 (`tech.motorized_agriculture`)
-
-#### 同路线后继
-
-- 机动农业 (`tech.motorized_agriculture`)
-
-#### 应用交汇目标
-
-- 机动农业 (`tech.motorized_agriculture`)
-- 工业采煤 (`tech.industrial_coal_mining`)
-
-#### 作为候选参与的里程碑
-
-- 工业化 (`tech.industrialization`)
-
-### 工厂制 (`tech.factory_system`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.factory_system` |
-| 时代 | 蒸汽时代 (`steam`) |
-| 领域 | 社会 (`society`) |
-| 研究成本 | 480000 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
-| 节点角色 | institution |
-| 布局路线 | backbone.institutions\_exchange |
-| 主要路线 | 制度 · 工厂 (\`route.institution.factory\`) |
-| 全部路线 | 制度 · 工厂 (\`route.institution.factory\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | organization |
-
-#### 前置科技（决定研发资格）
-
-- 启蒙制度 (`tech.enlightenment_institutions`)
-
-#### 发现启发（仅用于揭示）
-
-- 全部满足：
-  - 已完成科技「启蒙制度」（tech.enlightenment\_institutions）
-  - 满足其一：
-    - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
-    - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
-    - 已发现信号「蒸汽动力突破」（breakthrough.steam\_power）
-
-#### 效果摘要
-
-解锁物资：工业机械；解锁建筑：工业机械厂；开放通用职业阶层岗位；开放通用职业阶层岗位；工业机械厂产出 +25%
-
-#### 机会成本
-
-占用通用研究预算，延后同代专业路线锚点
-
-#### 内容解锁
-
-- **物资：** 工业机械 (`industrial_machinery`)
-- **建筑 / 生产方式：** 工业机械厂 (`industrial_machinery_plant`)；数字化工业机械厂 (`method_industrial_machinery_plant_r9`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 造纸厂 (`paper_plant`)；主食加工厂 (`staple_food_plant`)
-
-#### 结构化内容效果
-
-- **工业机械**（`good`）：`good.industrial_machinery` → `production_access` `unlock` `1.0`；`existing_binding`
-- **工业机械厂**（`building`）：`building.industrial_machinery_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **机器零件**（`good`）：`good.machine_parts` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **蒸汽机**（`good`）：`good.steam_engines` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **数字化工业机械厂**（`building`）：`building.method_industrial_machinery_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **计算机**（`good`）：`good.computers` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-- 工业机械厂：`country.output.building.industrial_machinery_plant_factor`：+25%
-
-#### 直接后继（硬前置关系）
-
-- 工业统计 (`tech.industrial_statistics`)
-
-#### 同路线后继
-
-- 公共教育 (`tech.public_education`)
-
-#### 应用交汇目标
-
-- 公共教育 (`tech.public_education`)
-
-#### 作为候选参与的里程碑
+#### 主题路线后继
 
 无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+- 工业化 (`tech.industrialization`)
 
 ### 管理层级 (`tech.managerial_hierarchy`)
 
@@ -19651,33 +18189,32 @@
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 社会 (`society`) |
 | 研究成本 | 544000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | institution |
-| 布局路线 | branch.tropical\_commodities |
+| 布局路线 | branch.labor\_management |
 | 主要路线 | 制度 · 工厂 (\`route.institution.factory\`) |
 | 全部路线 | 制度 · 工厂 (\`route.institution.factory\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 启蒙制度 (`tech.enlightenment_institutions`)
-- 科学分类 (`tech.scientific_classification`)
+- 工业组织 (`tech.industrial_organization`)：工业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，管理层级直接使用这一能力完成其工艺或组织设计
+- 工厂制 (`tech.factory_system`)：工厂制提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，管理层级直接使用这一能力完成其工艺或组织设计
+- 复式记账 (`tech.double_entry_bookkeeping`)：复式记账提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，管理层级直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「启蒙制度」（tech.enlightenment\_institutions）
-  - 满足其一：
-    - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
-    - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
-    - 已发现信号「蒸汽动力突破」（breakthrough.steam\_power）
+- 满足其一：
+  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
+  - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
+  - 已发现信号「蒸汽动力突破」（breakthrough.steam\_power）
 
 #### 效果摘要
 
-解锁建筑：高级家具厂；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：家具厂；高级家具厂产出 +25%
+解锁建筑：高级家具厂；解锁建筑：家具厂
 
 #### 机会成本
 
@@ -19693,38 +18230,27 @@
 #### 结构化内容效果
 
 - **高级家具厂**（`building`）：`building.fine_furniture_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **精美家具**（`good`）：`good.fine_furniture` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **木材**（`good`）：`good.lumber` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **布料**（`good`）：`good.cloth` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业化学品**（`good`）：`good.industrial_chemicals` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **家具厂**（`building`）：`building.furniture_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **家具**（`good`）：`good.furniture` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 高级家具厂：`country.output.building.fine_furniture_plant_factor`：+25%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 机械制冷 (`tech.refrigeration`)
+- 公司管理 (`tech.corporate_management`)：管理层级建立跨部门授权与责任链，是公司级治理不可替代的组织基础
 
-#### 同路线后继
+#### 主题路线后继
 
-- 机械制冷 (`tech.refrigeration`)
+- 公司管理 (`tech.corporate_management`)：管理层级发展为跨厂区的公司预算、统计与责任中心体系
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 机械制冷 (`tech.refrigeration`)
-- 蒸汽动力 (`tech.steam_power`)
+无
 
 #### 作为候选参与的里程碑
 
-- 工业化 (`tech.industrialization`)
+无
 
 ### 工业统计 (`tech.industrial_statistics`)
 
@@ -19735,31 +18261,28 @@
 | 领域 | 科学 (`science`) |
 | 研究成本 | 624000 科技点（`technology_points`） |
 | 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | support |
+| 网络角色 | branch |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | backbone.institutions\_exchange |
+| 布局路线 | branch.measurement\_instruments |
 | 主要路线 | 制度 · 规划 (\`route.institution.planning\`) |
 | 全部路线 | 制度 · 规划 (\`route.institution.planning\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | research |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 工厂制 (`tech.factory_system`)
+- 工厂制 (`tech.factory_system`)：工厂制提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，工业统计直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「启蒙制度」（tech.enlightenment\_institutions）
-  - 满足其一：
-    - 已发现信号「蒸汽动力突破」（breakthrough.steam\_power）
-    - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
-    - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
+- 满足其一：
+  - 已发现信号「蒸汽动力突破」（breakthrough.steam\_power）
+  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
 
 #### 效果摘要
 
-解锁建筑：珠宝厂；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：电气化造船厂；珠宝厂产出 +20%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -19768,40 +18291,32 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 珠宝厂 (`jewelry_plant`)；电气化造船厂 (`method_oceanic_shipyard_r7`)
+- **建筑 / 生产方式：** 无
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 电气化造船厂 (`method_oceanic_shipyard_r7`)
 
 #### 结构化内容效果
 
-- **珠宝厂**（`building`）：`building.jewelry_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **珠宝**（`good`）：`good.jewelry` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **黄金**（`good`）：`good.gold` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电气化造船厂**（`building`）：`building.method_oceanic_shipyard_r7` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **远洋船舶**（`good`）：`good.oceanic_vessels` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **木材**（`good`）：`good.lumber` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **布料**（`good`）：`good.cloth` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **铜**（`good`）：`good.copper` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **玻璃**（`good`）：`good.glass` → `input_method_access` `enable` `1.0`；`existing_binding`
+无
 
 #### 永久 Modifier 条款
 
-- 珠宝厂：`country.output.building.jewelry_plant_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 工人合作工场 (`tech.worker_cooperatives`)
+- 工人合作工场 (`tech.worker_cooperatives`)：工业统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，工人合作工场直接使用这一能力完成其工艺或组织设计
+- 公司管理 (`tech.corporate_management`)：工业统计提供跨工厂绩效比较和计划控制所需的量化资料
+- 工业质量控制 (`tech.industrial_quality_control`)：工业统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，工业质量控制直接使用这一能力完成其工艺或组织设计
+- 运筹学 (`tech.operations_research`)：工业统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，运筹学直接使用这一能力完成其工艺或组织设计
+- 工业生态 (`tech.industrial_ecology`)：工业统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，工业生态直接使用这一能力完成其工艺或组织设计
+- 系统工程 (`tech.systems_engineering`)：工业统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，系统工程直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
 无
 
@@ -19817,9 +18332,9 @@
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 544000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.construction\_materials |
 | 主要路线 | 工艺 · 机械 (\`route.craft.machinery\`) |
@@ -19827,23 +18342,21 @@
 | 开局能力标签 | 无 |
 | 效果配置 | manufacturing |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 启蒙制度 (`tech.enlightenment_institutions`)
-- 地产测绘 (`tech.property_cadastre`)
+- 标准化 (`tech.standardization`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，互换零件直接使用这一能力完成其工艺或组织设计
+- 机床 (`tech.machine_tools`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，互换零件直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「启蒙制度」（tech.enlightenment\_institutions）
-  - 满足其一：
-    - 已发现信号「黏土」（resource.clay）
-    - 已发现信号「石料」（resource.stone）
-    - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
+- 满足其一：
+  - 已发现信号「黏土」（resource.clay）
+  - 已发现信号「石料」（resource.stone）
+  - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
 
 #### 效果摘要
 
-解锁建筑：制鞋厂；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：制革厂；制鞋厂产出 +25%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -19852,44 +18365,33 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 制鞋厂 (`footwear_plant`)；制革厂 (`leather_plant`)
+- **建筑 / 生产方式：** 无
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 制鞋厂 (`footwear_plant`)；制革厂 (`leather_plant`)
 
 #### 结构化内容效果
 
-- **制鞋厂**（`building`）：`building.footwear_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **鞋履**（`good`）：`good.footwear` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **皮革**（`good`）：`good.leather` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **天然乳胶**（`good`）：`good.latex` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **制革厂**（`building`）：`building.leather_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **皮革**（`good`）：`good.leather` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **生皮**（`good`）：`good.raw_hide` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业化学品**（`good`）：`good.industrial_chemicals` → `input_method_access` `enable` `1.0`；`existing_binding`
+无
 
 #### 永久 Modifier 条款
 
-- 制鞋厂：`country.output.building.footwear_plant_factor`：+25%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 电气化 (`tech.electrification`)
+- 流水线组织 (`tech.assembly_line`)：互换零件提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，流水线组织直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 电气化 (`tech.electrification`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 电气化 (`tech.electrification`)
-- 蒸汽抽水 (`tech.steam_pumping`)
+无
 
 #### 作为候选参与的里程碑
 
-- 工业化 (`tech.industrialization`)
+无
 
 ### 流水线组织 (`tech.assembly_line`)
 
@@ -19899,33 +18401,31 @@
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 544000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | power\_scale |
-| 布局路线 | branch.electric\_intelligent\_energy |
+| 布局路线 | branch.labor\_management |
 | 主要路线 | 制度 · 工厂 (\`route.institution.factory\`) |
 | 全部路线 | 制度 · 工厂 (\`route.institution.factory\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | manufacturing |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 启蒙制度 (`tech.enlightenment_institutions`)
-- 蒸汽密封 (`tech.steam_sealing`)
+- 互换零件 (`tech.interchangeable_parts`)：互换零件提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，流水线组织直接使用这一能力完成其工艺或组织设计
+- 工厂制 (`tech.factory_system`)：工厂制提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，流水线组织直接使用这一能力完成其工艺或组织设计
+- 工业组织 (`tech.industrial_organization`)：工业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，流水线组织直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「启蒙制度」（tech.enlightenment\_institutions）
-  - 满足其一：
-    - 已发现信号「蒸汽动力突破」（breakthrough.steam\_power）
-    - 已发现信号「蒸汽密封突破」（breakthrough.steam\_sealing）
-    - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
+- 满足其一：
+  - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
+  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
 
 #### 效果摘要
 
-解锁物资：家用电器；解锁建筑：家用电器厂；开放通用职业阶层岗位；开放通用职业阶层岗位；家用电器厂产出 +25%
+解锁物资：家用电器；解锁建筑：家用电器厂；能源部门产出 +12%
 
 #### 机会成本
 
@@ -19942,36 +18442,26 @@
 
 - **家用电器**（`good`）：`good.household_appliances` → `production_access` `unlock` `1.0`；`existing_binding`
 - **家用电器厂**（`building`）：`building.household_appliances_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **家用电器**（`good`）：`good.household_appliances` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **电气设备**（`good`）：`good.electrical_equipment` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **钢材**（`good`）：`good.steel` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **塑料**（`good`）：`good.plastics` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 家用电器厂：`country.output.building.household_appliances_plant_factor`：+25%
+- `country.output.energy_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 电网 (`tech.electric_grid`)
+无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 电网 (`tech.electric_grid`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 电网 (`tech.electric_grid`)
-- 蒸汽抽水 (`tech.steam_pumping`)
+无
 
 #### 作为候选参与的里程碑
 
-- 工业化 (`tech.industrialization`)
+无
 
 ### 蒸汽锯木 (`tech.steam_sawmilling`)
 
@@ -19981,9 +18471,9 @@
 | 时代 | 蒸汽时代 (`steam`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 544000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | applied\_method |
 | 布局路线 | branch.forest\_biomass |
 | 主要路线 | 生态 · 森林 (\`route.ecology.forest\`) |
@@ -19991,23 +18481,21 @@
 | 开局能力标签 | 无 |
 | 效果配置 | manufacturing |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 启蒙制度 (`tech.enlightenment_institutions`)
-- 学术社团 (`tech.learned_societies`)
+- 手工锯木 (`tech.timber_sawing`)：手工锯木确立锯切、定尺和木料分级工艺，蒸汽锯木是在该工艺上的动力升级
+- 蒸汽动力 (`tech.steam_power`)：蒸汽动力提供连续旋转机械功，直接驱动锯框、进料与传动机构
+- 机床 (`tech.machine_tools`)：机床提供耐用、可互换的轴承、锯架与传动零件，使高速锯切设备可制造和维护
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「启蒙制度」（tech.enlightenment\_institutions）
-  - 满足其一：
-    - 已发现信号「木材」（resource.timber）
-    - 已发现信号「森林」（landform.forest）
-    - 已发现信号「林业经营突破」（breakthrough.forest\_management）
+- 满足其一：
+  - 已发现信号「木材」（resource.timber）
+  - 已发现信号「蒸汽动力突破」（breakthrough.steam\_power）
 
 #### 效果摘要
 
-精细木作产出 +12%
+解锁建筑：蒸汽锯木厂
 
 #### 机会成本
 
@@ -20016,34 +18504,33 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 无
+- **建筑 / 生产方式：** 蒸汽锯木厂 (`method_lumber_plant_r6`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
-无
+- **蒸汽锯木厂**（`building`）：`building.method_lumber_plant_r6` → `construction_and_production_access` `unlock` `1.0`；`new_content`
 
 #### 永久 Modifier 条款
 
-- 精细木作：`country.output.family.fine_furniture_making_factor`：+12%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 电化学 (`tech.electrochemistry`)
+无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 电化学 (`tech.electrochemistry`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 电化学 (`tech.electrochemistry`)
-- 工业化学 (`tech.industrial_chemistry`)
+无
 
 #### 作为候选参与的里程碑
 
-- 工业化 (`tech.industrialization`)
+无
 
 ### 公司矿山 (`tech.corporate_mining`)
 
@@ -20055,7 +18542,7 @@
 | 研究成本 | 624000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | institution |
 | 布局路线 | branch.heavy\_industry |
 | 主要路线 | 资源 · 矿产 (\`route.resource.minerals\`) |
@@ -20063,22 +18550,17 @@
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 工业采煤 (`tech.industrial_coal_mining`)
+- 工业采煤 (`tech.industrial_coal_mining`)：工业采煤提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，公司矿山直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「启蒙制度」（tech.enlightenment\_institutions）
-  - 满足其一：
-    - 已发现信号「铁矿」（resource.iron\_ore）
-    - 已发现信号「煤炭」（resource.coal）
-    - 已发现信号「矿井支护突破」（breakthrough.mine\_support）
+- 已发现信号「矿井支护突破」（breakthrough.mine\_support）
 
 #### 效果摘要
 
-铁矿业产出 +10%
+铁矿业产出 +18%
 
 #### 机会成本
 
@@ -20097,19 +18579,19 @@
 
 #### 永久 Modifier 条款
 
-- 铁矿业：`country.output.family.iron_extraction_factor`：+10%
+- 铁矿业：`country.output.family.iron_extraction_factor`：+18%
 
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
 
-- 蒸汽动力 (`tech.steam_power`)
+无
+
+#### 跨领域应用
+
+无
 
 #### 作为候选参与的里程碑
 
@@ -20124,31 +18606,29 @@
 | 领域 | 社会 (`society`) |
 | 研究成本 | 624000 科技点（`technology_points`） |
 | 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | support |
+| 网络角色 | branch |
+| 锚点类型 | branch |
 | 节点角色 | institution |
-| 布局路线 | backbone.institutions\_exchange |
+| 布局路线 | branch.labor\_management |
 | 主要路线 | 制度 · 社群 (\`route.institution.community\`) |
 | 全部路线 | 制度 · 社群 (\`route.institution.community\`)；制度 · 工厂 (\`route.institution.factory\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 工业统计 (`tech.industrial_statistics`)
+- 工业统计 (`tech.industrial_statistics`)：工业统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，工人合作工场直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「启蒙制度」（tech.enlightenment\_institutions）
-  - 满足其一：
-    - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
-    - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
-    - 已发现信号「蒸汽动力突破」（breakthrough.steam\_power）
+- 满足其一：
+  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
+  - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
+  - 已发现信号「蒸汽动力突破」（breakthrough.steam\_power）
 
 #### 效果摘要
 
-家具行会工坊产出 +20%；国家协同能力 +3%
+家具行会工坊产出 +35%
 
 #### 机会成本
 
@@ -20167,18 +18647,17 @@
 
 #### 永久 Modifier 条款
 
-- 家具行会工坊：`country.output.building.guild_hall_factor`：+20%
-- `country.research.society_efficiency`：+3%
+- 家具行会工坊：`country.output.building.guild_hall_factor`：+35%
 
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
 
 无
 
@@ -20204,7 +18683,7 @@
 | 开局能力标签 | 无 |
 | 效果配置 | milestone |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
@@ -20214,7 +18693,7 @@
 
 #### 效果摘要
 
-珠宝业产出 +10%
+焦炭炼钢厂产出 +50%；社会领域研究效率 +15%
 
 #### 机会成本
 
@@ -20222,23 +18701,15 @@
 
 #### 里程碑候选
 
-需要完成下列 16 项候选中的任意 5 项：
-- 工业采煤 (`tech.industrial_coal_mining`)
-- 焦炭冶炼 (`tech.coke_smelting`)
-- 蒸汽动力 (`tech.steam_power`)
+需要完成下列 8 项候选中的任意 4 项：
 - 机械化农业 (`tech.mechanized_agriculture`)
-- 蒸汽抽水 (`tech.steam_pumping`)
-- 纺织机械 (`tech.textile_machinery`)
-- 铁路物流 (`tech.rail_logistics`)
-- 工业化学 (`tech.industrial_chemistry`)
+- 机床 (`tech.machine_tools`)
+- 热力学 (`tech.thermodynamics`)
+- 工厂制 (`tech.factory_system`)
 - 肥料加工 (`tech.fertilizer_processing`)
+- 蒸汽动力 (`tech.steam_power`)
+- 工业化学 (`tech.industrial_chemistry`)
 - 劳工组织 (`tech.labor_organization`)
-- 机械收割 (`tech.mechanical_reaping`)
-- 机械脱粒 (`tech.mechanical_threshing`)
-- 管理层级 (`tech.managerial_hierarchy`)
-- 互换零件 (`tech.interchangeable_parts`)
-- 流水线组织 (`tech.assembly_line`)
-- 蒸汽锯木 (`tech.steam_sawmilling`)
 
 #### 内容解锁
 
@@ -20253,36 +18724,18 @@
 
 #### 永久 Modifier 条款
 
-- 珠宝业：`country.output.family.jewelry_making_factor`：+10%
+- 焦炭炼钢厂：`country.output.building.steam_steel_works_factor`：+50%
+- `country.research.society_efficiency`：+15%
 
-#### 直接后继（硬前置关系）
-
-- 合成肥料 (`tech.synthetic_fertilizer`)
-- 电气化 (`tech.electrification`)
-- 电化学 (`tech.electrochemistry`)
-- 公共教育 (`tech.public_education`)
-- 大规模生产 (`tech.mass_production`)
-- 内燃机 (`tech.internal_combustion`)
-- 电网 (`tech.electric_grid`)
-- 冷链 (`tech.cold_chain`)
-- 现代医学 (`tech.modern_medicine`)
-- 电信 (`tech.telecommunications`)
-- 电磁感应 (`tech.electromagnetic_induction`)
-- 发电机 (`tech.electric_generation`)
-- 电动机 (`tech.electric_motors`)
-- 机动农业 (`tech.motorized_agriculture`)
-- 现代畜牧 (`tech.modern_husbandry`)
-- 公司管理 (`tech.corporate_management`)
-- 工业研究 (`tech.industrial_research`)
-- 石油钻探 (`tech.petroleum_drilling`)
-- 工业质量控制 (`tech.industrial_quality_control`)
-- 机械制冷 (`tech.refrigeration`)
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
 
 无
 
@@ -20303,9 +18756,9 @@
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 农业 (`agriculture`) |
 | 研究成本 | 1224000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.maize\_horticulture |
 | 主要路线 | 作物 · 工业农业 (\`route.crop.industrial\`) |
@@ -20313,23 +18766,26 @@
 | 开局能力标签 | 无 |
 | 效果配置 | chemistry |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 工业化 (`tech.industrialization`)
-- 机械化农业 (`tech.mechanized_agriculture`)
+- 肥料加工 (`tech.fertilizer_processing`)：肥料加工提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，合成肥料直接使用这一能力完成其工艺或组织设计
+
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「工业化学」（tech.industrial\_chemistry）
+  - 已完成科技「电化学」（tech.electrochemistry）
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「工业化」（tech.industrialization）
-  - 满足其一：
-    - 已发现信号「硫磺」（resource.sulfur）
-    - 已发现信号「磷矿石」（resource.phosphate\_rock）
-    - 已发现信号「硝石」（resource.saltpeter）
+- 满足其一：
+  - 已发现信号「硫磺」（resource.sulfur）
+  - 已发现信号「磷矿石」（resource.phosphate\_rock）
+  - 已发现信号「硝石」（resource.saltpeter）
 
 #### 效果摘要
 
-解锁物资：肥料；解锁建筑：化肥厂；开放通用职业阶层岗位；开放通用职业阶层岗位；化肥厂产出 +25%
+解锁物资：肥料；解锁建筑：化肥厂
 
 #### 机会成本
 
@@ -20346,36 +18802,26 @@
 
 - **肥料**（`good`）：`good.fertilizer` → `production_access` `unlock` `1.0`；`existing_binding`
 - **化肥厂**（`building`）：`building.fertilizer_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **肥料**（`good`）：`good.fertilizer` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **磷矿石**（`good`）：`good.phosphate_rock` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **天然气**（`good`）：`good.natural_gas` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 化肥厂：`country.output.building.fertilizer_plant_factor`：+25%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 工业农学 (`tech.industrial_agronomy`)
+无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 工业农学 (`tech.industrial_agronomy`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 工业农学 (`tech.industrial_agronomy`)
-- 机械制冷 (`tech.refrigeration`)
-- 大规模生产 (`tech.mass_production`)
+无
 
 #### 作为候选参与的里程碑
 
-- 电气社会 (`tech.electrical_society`)
+无
 
 ### 电气化 (`tech.electrification`)
 
@@ -20387,31 +18833,26 @@
 | 研究成本 | 1224000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | power\_scale |
-| 布局路线 | branch.construction\_materials |
+| 布局路线 | branch.electric\_intelligent\_energy |
 | 主要路线 | 能源 · 电力 (\`route.energy.electric\`) |
 | 全部路线 | 能源 · 电力 (\`route.energy.electric\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | energy |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 工业化 (`tech.industrialization`)
-- 互换零件 (`tech.interchangeable_parts`)
+- 热力学 (`tech.thermodynamics`)：热力学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，电气化直接使用这一能力完成其工艺或组织设计
+- 机床 (`tech.machine_tools`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，电气化直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「工业化」（tech.industrialization）
-  - 满足其一：
-    - 已发现信号「电气化突破」（breakthrough.electrification）
-    - 已发现信号「电机绕组突破」（breakthrough.motor\_winding）
-    - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
+无
 
 #### 效果摘要
 
-解锁物资：电气设备；解锁建筑：早期电气设备厂；开放通用职业阶层岗位；开放通用职业阶层岗位；早期电气设备厂产出 +25%
+解锁物资：电气设备；解锁建筑：早期电气设备厂；解锁建筑：电气设备厂
 
 #### 机会成本
 
@@ -20428,121 +18869,24 @@
 
 - **电气设备**（`good`）：`good.electrical_equipment` → `production_access` `unlock` `1.0`；`existing_binding`
 - **早期电气设备厂**（`building`）：`building.basic_electrical_equipment_works` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **电气设备**（`good`）：`good.electrical_equipment` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **绝缘电缆**（`good`）：`good.insulated_cable` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **钢材**（`good`）：`good.steel` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **塑料**（`good`）：`good.plastics` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **电气设备厂**（`building`）：`building.electrical_equipment_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **金属线材**（`good`）：`good.wire` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 早期电气设备厂：`country.output.building.basic_electrical_equipment_works_factor`：+25%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 塑料工程 (`tech.plastics_engineering`)
+- 电网 (`tech.electric_grid`)：电气化提供发电、电机、电网与能源控制能力中的动力与规模化能力，电网直接使用这一能力完成其工艺或组织设计
+- 电子控制 (`tech.electronic_control`)：电气化提供发电、电机、电网与能源控制能力中的动力与规模化能力，电子控制直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 塑料工程 (`tech.plastics_engineering`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 塑料工程 (`tech.plastics_engineering`)
-- 电网 (`tech.electric_grid`)
-- 工业质量控制 (`tech.industrial_quality_control`)
-
-#### 作为候选参与的里程碑
-
-- 电气社会 (`tech.electrical_society`)
-
-### 电化学 (`tech.electrochemistry`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.electrochemistry` |
-| 时代 | 电气时代 (`electrical`) |
-| 领域 | 科学 (`science`) |
-| 研究成本 | 1224000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
-| 网络角色 | branch |
-| 锚点类型 | route\_anchor |
-| 节点角色 | handling |
-| 布局路线 | branch.forest\_biomass |
-| 主要路线 | 能源 · 电力 (\`route.energy.electric\`) |
-| 全部路线 | 能源 · 电力 (\`route.energy.electric\`)；制度 · 实验 (\`route.institution.experimental\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | chemistry |
-
-#### 前置科技（决定研发资格）
-
-- 工业化 (`tech.industrialization`)
-- 蒸汽锯木 (`tech.steam_sawmilling`)
-
-#### 发现启发（仅用于揭示）
-
-- 全部满足：
-  - 已完成科技「工业化」（tech.industrialization）
-  - 满足其一：
-    - 已发现信号「木材」（resource.timber）
-    - 已发现信号「森林」（landform.forest）
-    - 已发现信号「林业经营突破」（breakthrough.forest\_management）
-
-#### 效果摘要
-
-解锁物资：锌；解锁建筑：电化工厂；开放通用职业阶层岗位；开放通用职业阶层岗位；电化工厂产出 +25%
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 8 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 锌 (`zinc`)
-- **建筑 / 生产方式：** 电化工厂 (`electrochemical_works`)；炼锌厂 (`zinc_plant`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-- **锌**（`good`）：`good.zinc` → `production_access` `unlock` `1.0`；`existing_binding`
-- **电化工厂**（`building`）：`building.electrochemical_works` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **工业化学品**（`good`）：`good.industrial_chemicals` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **食盐**（`good`）：`good.salt` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **炼锌厂**（`building`）：`building.zinc_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **锌**（`good`）：`good.zinc` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **锌矿石**（`good`）：`good.zinc_ore` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **煤炭**（`good`）：`good.coal` → `input_method_access` `enable` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-- 电化工厂：`country.output.building.electrochemical_works_factor`：+25%
-
-#### 直接后继（硬前置关系）
-
-- 合成材料 (`tech.synthetic_materials`)
-
-#### 同路线后继
-
-- 合成材料 (`tech.synthetic_materials`)
-
-#### 应用交汇目标
-
-- 合成材料 (`tech.synthetic_materials`)
-- 发电机 (`tech.electric_generation`)
-- 工业研究 (`tech.industrial_research`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -20556,9 +18900,9 @@
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 社会 (`society`) |
 | 研究成本 | 1080000 科技点（`technology_points`） |
-| 节点标记 | 无 |
+| 节点标记 | 时代关键 |
 | 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | handling |
 | 布局路线 | backbone.institutions\_exchange |
 | 主要路线 | 制度 · 教育 (\`route.institution.education\`) |
@@ -20566,22 +18910,18 @@
 | 开局能力标签 | 无 |
 | 效果配置 | research |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 工业化 (`tech.industrialization`)
+- 合作社组织 (`tech.cooperative_association`)：合作社组织提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，公共教育直接使用这一能力完成其工艺或组织设计
+- 工厂制 (`tech.factory_system`)：工厂制提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，公共教育直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「工业化」（tech.industrialization）
-  - 满足其一：
-    - 已发现信号「电气化突破」（breakthrough.electrification）
-    - 已发现信号「电机绕组突破」（breakthrough.motor\_winding）
-    - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
+无
 
 #### 效果摘要
 
-解锁建筑：工业研究实验室；开放通用职业阶层岗位；开放科技职业阶层岗位；开放通用职业阶层岗位；工业研究实验室产出 +25%
+解锁建筑：工业研究实验室；解锁建筑：综合工学院；社会领域研究效率 +15%
 
 #### 机会成本
 
@@ -20597,121 +18937,29 @@
 #### 结构化内容效果
 
 - **工业研究实验室**（`building`）：`building.industrial_research_laboratory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **科技职业阶层**（`class`）：`class.technology` → `employment_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **科学仪器**（`good`）：`good.scientific_instruments` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **综合工学院**（`building`）：`building.polytechnic_institute` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **煤炭**（`good`）：`good.coal` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 工业研究实验室：`country.output.building.industrial_research_laboratory_factor`：+25%
+- `country.research.society_efficiency`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 无线电 (`tech.radio`)
+- 国家实验室 (`tech.national_laboratories`)：公共教育提供制度协调、公共组织与交换规则中的操作与材料处理方法，国家实验室直接使用这一能力完成其工艺或组织设计
+- 知识经济 (`tech.knowledge_economy`)：公共教育提供制度协调、公共组织与交换规则中的操作与材料处理方法，知识经济直接使用这一能力完成其工艺或组织设计
+- 开放科学网络 (`tech.open_science_networks`)：公共教育提供制度协调、公共组织与交换规则中的操作与材料处理方法，开放科学网络直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
-
-- 运筹学 (`tech.operations_research`)
-
-#### 应用交汇目标
-
-- 运筹学 (`tech.operations_research`)
-
-#### 作为候选参与的里程碑
+#### 主题路线后继
 
 无
 
-### 无线电 (`tech.radio`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.radio` |
-| 时代 | 电气时代 (`electrical`) |
-| 领域 | 科学 (`science`) |
-| 研究成本 | 1404000 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | support |
-| 节点角色 | handling |
-| 布局路线 | backbone.institutions\_exchange |
-| 主要路线 | 制度 · 通信 (\`route.institution.communication\`) |
-| 全部路线 | 制度 · 通信 (\`route.institution.communication\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | research |
-
-#### 前置科技（决定研发资格）
-
-- 公共教育 (`tech.public_education`)
-
-#### 发现启发（仅用于揭示）
-
-- 全部满足：
-  - 已完成科技「工业化」（tech.industrialization）
-  - 满足其一：
-    - 已发现信号「电气化突破」（breakthrough.electrification）
-    - 已发现信号「电机绕组突破」（breakthrough.motor\_winding）
-    - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
-
-#### 效果摘要
-
-解锁物资：电子元件；解锁物资：无线电设备；解锁建筑：电子元件厂；开放通用职业阶层岗位；电子元件厂产出 +20%
-
-#### 机会成本
-
-占用通用研究预算，延后同代专业路线锚点
-
-#### 内容解锁
-
-- **物资：** 电子元件 (`electronic_components`)；无线电设备 (`radio_equipment`)
-- **建筑 / 生产方式：** 电子元件厂 (`electronic_components_plant`)；无线电设备厂 (`radio_equipment_works`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 智能化无线电设备厂 (`method_radio_equipment_works_r10`)
-
-#### 结构化内容效果
-
-- **电子元件**（`good`）：`good.electronic_components` → `production_access` `unlock` `1.0`；`existing_binding`
-- **无线电设备**（`good`）：`good.radio_equipment` → `production_access` `unlock` `1.0`；`existing_binding`
-- **电子元件厂**（`building`）：`building.electronic_components_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **电子元件**（`good`）：`good.electronic_components` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **铜**（`good`）：`good.copper` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **锡**（`good`）：`good.tin` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **锌**（`good`）：`good.zinc` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **塑料**（`good`）：`good.plastics` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **无线电设备厂**（`building`）：`building.radio_equipment_works` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **无线电设备**（`good`）：`good.radio_equipment` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **绝缘电缆**（`good`）：`good.insulated_cable` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电子元件**（`good`）：`good.electronic_components` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `input_method_access` `enable` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-- 电子元件厂：`country.output.building.electronic_components_plant_factor`：+20%
-
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
-
-无
-
-#### 应用交汇目标
+#### 跨领域应用
 
 无
 
 #### 作为候选参与的里程碑
 
-无
+- 电气社会 (`tech.electrical_society`)
 
 ### 大规模生产 (`tech.mass_production`)
 
@@ -20722,31 +18970,29 @@
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 1080000 科技点（`technology_points`） |
 | 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 网络角色 | branch |
+| 锚点类型 | backbone |
 | 节点角色 | handling |
-| 布局路线 | backbone.food\_storage |
+| 布局路线 | branch.labor\_management |
 | 主要路线 | 制度 · 工厂 (\`route.institution.factory\`) |
 | 全部路线 | 制度 · 工厂 (\`route.institution.factory\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | manufacturing |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 工业化 (`tech.industrialization`)
+无
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「工业化」（tech.industrialization）
-  - 满足其一：
-    - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
-    - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-    - 已发现信号「连续歉收经验」（weather.repeated\_crop\_failure）
+- 满足其一：
+  - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
+  - 已发现信号「肥沃土壤」（resource.fertile\_soil）
+  - 已发现信号「连续歉收经验」（weather.repeated\_crop\_failure）
 
 #### 效果摘要
 
-解锁建筑：酿造厂；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：主食加工厂；酿造厂产出 +25%
+解锁建筑：酿造厂；解锁建筑：主食加工厂；解锁建筑：珠宝厂；解锁建筑：电力纺织厂；解锁建筑：高级成衣厂；农业部门产出 +15%
 
 #### 机会成本
 
@@ -20755,39 +19001,33 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 酿造厂 (`beverages_plant`)；主食加工厂 (`staple_food_plant`)
+- **建筑 / 生产方式：** 酿造厂 (`beverages_plant`)；电力纺织厂 (`cloth_plant`)；高级成衣厂 (`fine_clothing_plant`)；珠宝厂 (`jewelry_plant`)；主食加工厂 (`staple_food_plant`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 电力纺织厂 (`cloth_plant`)；混凝土厂 (`concrete_plant`)；高级成衣厂 (`fine_clothing_plant`)；高级家具厂 (`fine_furniture_plant`)；家具厂 (`furniture_plant`)；家用电器厂 (`household_appliances_plant`)；珠宝厂 (`jewelry_plant`)；工业屠宰场 (`mechanized_slaughterhouse`)；智能化汽车厂 (`method_automobiles_plant_r10`)；电气化造船厂 (`method_oceanic_shipyard_r7`)；电气化包装厂 (`method_packaging_plant_r7`)；电气印刷厂 (`method_printed_materials_plant_r7`)；工业制皂厂 (`method_soap_plant_r6`)；综合食品厂 (`processed_food_plant`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 混凝土厂 (`concrete_plant`)；高级家具厂 (`fine_furniture_plant`)；家具厂 (`furniture_plant`)；家用电器厂 (`household_appliances_plant`)；工业屠宰场 (`mechanized_slaughterhouse`)；智能化汽车厂 (`method_automobiles_plant_r10`)；电气化造船厂 (`method_oceanic_shipyard_r7`)；电气化包装厂 (`method_packaging_plant_r7`)；电气印刷厂 (`method_printed_materials_plant_r7`)；工业制皂厂 (`method_soap_plant_r6`)；综合食品厂 (`processed_food_plant`)
 
 #### 结构化内容效果
 
 - **酿造厂**（`building`）：`building.beverages_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **酒饮**（`good`）：`good.beverages` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **混合谷物**（`good`）：`good.grain` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **包装材料**（`good`）：`good.packaging` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **主食加工厂**（`building`）：`building.staple_food_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **熟制主食**（`good`）：`good.prepared_staples` → `output_recipe_access` `enable` `1.0`；`existing_binding`
+- **珠宝厂**（`building`）：`building.jewelry_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **电力纺织厂**（`building`）：`building.cloth_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **高级成衣厂**（`building`）：`building.fine_clothing_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 酿造厂：`country.output.building.beverages_plant_factor`：+25%
+- `country.output.agriculture_factor`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 工业生态 (`tech.industrial_ecology`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 工业生态 (`tech.industrial_ecology`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -20803,7 +19043,7 @@
 | 研究成本 | 1404000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.petroleum\_materials |
 | 主要路线 | 资源 · 石油 (\`route.resource.oil\`) |
@@ -20811,22 +19051,21 @@
 | 开局能力标签 | 无 |
 | 效果配置 | resource |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 蒸汽动力 (`tech.steam_power`)
+- 地质勘探 (`tech.geological_prospecting`)：地质勘探提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，石油开采直接使用这一能力完成其工艺或组织设计
+- 蒸汽动力 (`tech.steam_power`)：蒸汽动力提供矿井、钢铁、蒸汽机械与重型设备能力中的动力与规模化能力，石油开采直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「工业化」（tech.industrialization）
-  - 满足其一：
-    - 已发现信号「石油」（resource.oil）
-    - 已发现信号「天然气」（resource.natural\_gas）
-    - 已发现信号「煤炭」（resource.coal）
+- 满足其一：
+  - 已发现信号「石油」（resource.oil）
+  - 已发现信号「天然气」（resource.natural\_gas）
+  - 已发现信号「煤炭」（resource.coal）
 
 #### 效果摘要
 
-解锁物资：原油；解锁建筑：油田；开放通用职业阶层岗位；开放通用职业阶层岗位；油田产出 +20%
+解锁物资：原油；解锁建筑：油田；可利用资源：石油
 
 #### 机会成本
 
@@ -20843,29 +19082,25 @@
 
 - **原油**（`good`）：`good.crude_oil` → `production_access` `unlock` `1.0`；`existing_binding`
 - **油田**（`building`）：`building.oil_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **原油**（`good`）：`good.crude_oil` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **石油**（`resource`）：`resource.oil` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 油田：`country.output.building.oil_collector_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 石油炼制 (`tech.petroleum_refining`)
+- 石油炼制 (`tech.petroleum_refining`)：石油开采提供油气开采、炼制与高分子原料能力中的操作与材料处理方法，石油炼制直接使用这一能力完成其工艺或组织设计
+- 石油钻探 (`tech.petroleum_drilling`)：石油开采提供油气开采、炼制与高分子原料能力中的操作与材料处理方法，石油钻探直接使用这一能力完成其工艺或组织设计
+- 石油化工 (`tech.petrochemical_industry`)：石油开采提供油气开采、炼制与高分子原料能力中的操作与材料处理方法，石油化工直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 电网 (`tech.electric_grid`)
-- 工业质量控制 (`tech.industrial_quality_control`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -20881,7 +19116,7 @@
 | 研究成本 | 1404000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.petroleum\_materials |
 | 主要路线 | 资源 · 石油 (\`route.resource.oil\`) |
@@ -20889,22 +19124,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | chemistry |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 石油开采 (`tech.petroleum_extraction`)
+- 石油开采 (`tech.petroleum_extraction`)：石油开采提供油气开采、炼制与高分子原料能力中的操作与材料处理方法，石油炼制直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「工业化」（tech.industrialization）
-  - 满足其一：
-    - 已发现信号「石油」（resource.oil）
-    - 已发现信号「天然气」（resource.natural\_gas）
-    - 已发现信号「煤炭」（resource.coal）
+- 满足其一：
+  - 已发现信号「石油」（resource.oil）
+  - 已发现信号「天然气」（resource.natural\_gas）
+  - 已发现信号「煤炭」（resource.coal）
 
 #### 效果摘要
 
-解锁物资：精炼燃料；解锁建筑：智能炼油厂；开放通用职业阶层岗位；开放通用职业阶层岗位；智能炼油厂产出 +20%
+解锁物资：精炼燃料；解锁建筑：智能炼油厂；解锁建筑：炼油厂
 
 #### 机会成本
 
@@ -20921,32 +19154,24 @@
 
 - **精炼燃料**（`good`）：`good.refined_fuel` → `production_access` `unlock` `1.0`；`existing_binding`
 - **智能炼油厂**（`building`）：`building.method_refined_fuel_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **精炼燃料**（`good`）：`good.refined_fuel` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **原油**（`good`）：`good.crude_oil` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **自主系统**（`good`）：`good.autonomous_systems` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **炼油厂**（`building`）：`building.refined_fuel_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 智能炼油厂：`country.output.building.method_refined_fuel_plant_r10_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 内燃机 (`tech.internal_combustion`)：石油炼制提供油气开采、炼制与高分子原料能力中的操作与材料处理方法，内燃机直接使用这一能力完成其工艺或组织设计
+- 石油化工 (`tech.petrochemical_industry`)：石油炼制提供油气开采、炼制与高分子原料能力中的操作与材料处理方法，石油化工直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
 无
-
-#### 应用交汇目标
-
-- 电网 (`tech.electric_grid`)
-- 工业质量控制 (`tech.industrial_quality_control`)
 
 #### 作为候选参与的里程碑
 
@@ -20960,9 +19185,9 @@
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 1224000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | power\_scale |
 | 布局路线 | branch.petroleum\_materials |
 | 主要路线 | 能源 · 内燃 (\`route.energy.combustion\`) |
@@ -20970,23 +19195,23 @@
 | 开局能力标签 | 无 |
 | 效果配置 | energy |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 工业化 (`tech.industrialization`)
-- 蒸汽动力 (`tech.steam_power`)
+- 石油炼制 (`tech.petroleum_refining`)：石油炼制提供油气开采、炼制与高分子原料能力中的操作与材料处理方法，内燃机直接使用这一能力完成其工艺或组织设计
+- 精密工程 (`tech.precision_engineering`)：精密工程提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，内燃机直接使用这一能力完成其工艺或组织设计
+- 热力学 (`tech.thermodynamics`)：热力学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，内燃机直接使用这一能力完成其工艺或组织设计
+- 机械工坊 (`tech.mechanical_workshops`)：机械工坊提供工具制造、机械加工与设备控制能力中的动力与规模化能力，内燃机直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「工业化」（tech.industrialization）
-  - 满足其一：
-    - 已发现信号「石油」（resource.oil）
-    - 已发现信号「天然气」（resource.natural\_gas）
-    - 已发现信号「煤炭」（resource.coal）
+- 满足其一：
+  - 已发现信号「石油」（resource.oil）
+  - 已发现信号「天然气」（resource.natural\_gas）
+  - 已发现信号「煤炭」（resource.coal）
 
 #### 效果摘要
 
-解锁物资：汽车；解锁物资：发动机；解锁建筑：汽车厂；开放通用职业阶层岗位；汽车厂产出 +25%
+解锁物资：汽车；解锁物资：发动机；解锁建筑：汽车厂；解锁建筑：发动机厂；采掘部门产出 +12%
 
 #### 机会成本
 
@@ -21004,217 +19229,27 @@
 - **汽车**（`good`）：`good.automobiles` → `production_access` `unlock` `1.0`；`existing_binding`
 - **发动机**（`good`）：`good.engines` → `production_access` `unlock` `1.0`；`existing_binding`
 - **汽车厂**（`building`）：`building.automobiles_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **汽车**（`good`）：`good.automobiles` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **发动机**（`good`）：`good.engines` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **钢材**（`good`）：`good.steel` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电池**（`good`）：`good.batteries` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **天然乳胶**（`good`）：`good.latex` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **发动机厂**（`building`）：`building.engines_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **发动机**（`good`）：`good.engines` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **铝**（`good`）：`good.aluminum` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **机器零件**（`good`）：`good.machine_parts` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **润滑剂**（`good`）：`good.lubricants` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 汽车厂：`country.output.building.automobiles_plant_factor`：+25%
+- `country.output.extractive_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 石油化工 (`tech.petrochemical_industry`)
+- 机械化采矿 (`tech.mechanized_mining`)：内燃机提供油气开采、炼制与高分子原料能力中的动力与规模化能力，机械化采矿直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 石油化工 (`tech.petrochemical_industry`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 石油化工 (`tech.petrochemical_industry`)
-- 电网 (`tech.electric_grid`)
-- 工业质量控制 (`tech.industrial_quality_control`)
+无
 
 #### 作为候选参与的里程碑
 
-- 电气社会 (`tech.electrical_society`)
-
-### 电网 (`tech.electric_grid`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.electric_grid` |
-| 时代 | 电气时代 (`electrical`) |
-| 领域 | 工程 (`engineering`) |
-| 研究成本 | 1224000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
-| 网络角色 | branch |
-| 锚点类型 | route\_anchor |
-| 节点角色 | power\_scale |
-| 布局路线 | branch.electric\_intelligent\_energy |
-| 主要路线 | 能源 · 电力 (\`route.energy.electric\`) |
-| 全部路线 | 能源 · 电力 (\`route.energy.electric\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | energy |
-
-#### 前置科技（决定研发资格）
-
-- 工业化 (`tech.industrialization`)
-- 流水线组织 (`tech.assembly_line`)
-
-#### 发现启发（仅用于揭示）
-
-- 全部满足：
-  - 已完成科技「工业化」（tech.industrialization）
-  - 满足其一：
-    - 已发现信号「电气化突破」（breakthrough.electrification）
-    - 已发现信号「电机绕组突破」（breakthrough.motor\_winding）
-    - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
-
-#### 效果摘要
-
-解锁物资：绝缘电缆；解锁建筑：绝缘电缆厂；开放通用职业阶层岗位；开放通用职业阶层岗位；绝缘电缆厂产出 +25%
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 8 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 绝缘电缆 (`insulated_cable`)
-- **建筑 / 生产方式：** 绝缘电缆厂 (`insulated_cable_plant`)；智能化绝缘电缆厂 (`method_insulated_cable_plant_r10`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 燃气发电厂 (`gas_power_plant`)；河流水力发电站 (`hydropower_station`)；自动化港口船舶中心 (`method_automated_port`)；燃油发电厂 (`oil_power_plant`)
-
-#### 结构化内容效果
-
-- **绝缘电缆**（`good`）：`good.insulated_cable` → `production_access` `unlock` `1.0`；`existing_binding`
-- **绝缘电缆厂**（`building`）：`building.insulated_cable_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **绝缘电缆**（`good`）：`good.insulated_cable` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **金属线材**（`good`）：`good.wire` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **塑料**（`good`）：`good.plastics` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **智能化绝缘电缆厂**（`building`）：`building.method_insulated_cable_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **自主系统**（`good`）：`good.autonomous_systems` → `input_method_access` `enable` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-- 绝缘电缆厂：`country.output.building.insulated_cable_plant_factor`：+25%
-
-#### 直接后继（硬前置关系）
-
-- 核裂变 (`tech.nuclear_fission`)
-- 核能 (`tech.nuclear_energy`)
-
-#### 同路线后继
-
-- 核能 (`tech.nuclear_energy`)
-
-#### 应用交汇目标
-
-- 核能 (`tech.nuclear_energy`)
-- 内燃机 (`tech.internal_combustion`)
-- 公共教育 (`tech.public_education`)
-
-#### 作为候选参与的里程碑
-
-- 电气社会 (`tech.electrical_society`)
-
-### 冷链 (`tech.cold_chain`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.cold_chain` |
-| 时代 | 电气时代 (`electrical`) |
-| 领域 | 工程 (`engineering`) |
-| 研究成本 | 1224000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
-| 网络角色 | branch |
-| 锚点类型 | route\_anchor |
-| 节点角色 | handling |
-| 布局路线 | branch.tuber\_highland |
-| 主要路线 | 能源 · 电力 (\`route.energy.electric\`) |
-| 全部路线 | 能源 · 电力 (\`route.energy.electric\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | health |
-
-#### 前置科技（决定研发资格）
-
-- 工业化 (`tech.industrialization`)
-- 肥料加工 (`tech.fertilizer_processing`)
-
-#### 发现启发（仅用于揭示）
-
-- 全部满足：
-  - 已完成科技「工业化」（tech.industrialization）
-  - 满足其一：
-    - 已发现信号「马铃薯」（bio.potato）
-    - 已发现信号「块茎样本接触」（contact.potato）
-    - 已发现信号「梯田维护突破」（breakthrough.terrace\_maintenance）
-
-#### 效果摘要
-
-解锁物资：加工食品；解锁建筑：乳制品厂；开放通用职业阶层岗位；开放通用职业阶层岗位；乳制品厂产出 +25%
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 8 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 加工食品 (`processed_food`)
-- **建筑 / 生产方式：** 乳制品厂 (`dairy_products_plant`)；综合食品厂 (`processed_food_plant`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-- **加工食品**（`good`）：`good.processed_food` → `production_access` `unlock` `1.0`；`existing_binding`
-- **乳制品厂**（`building`）：`building.dairy_products_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **乳制品**（`good`）：`good.dairy_products` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **畜牧产品**（`good`）：`good.livestock_products` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **包装材料**（`good`）：`good.packaging` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **综合食品厂**（`building`）：`building.processed_food_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **加工食品**（`good`）：`good.processed_food` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **熟制主食**（`good`）：`good.prepared_staples` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **肉类**（`good`）：`good.meat` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **蔬菜**（`good`）：`good.vegetables` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **食用油**（`good`）：`good.edible_oil` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-- 乳制品厂：`country.output.building.dairy_products_plant_factor`：+25%
-
-#### 直接后继（硬前置关系）
-
-- 国营企业 (`tech.state_enterprises`)
-
-#### 同路线后继
-
-- 国营企业 (`tech.state_enterprises`)
-
-#### 应用交汇目标
-
-- 国营企业 (`tech.state_enterprises`)
-- 现代畜牧 (`tech.modern_husbandry`)
-- 公共教育 (`tech.public_education`)
-
-#### 作为候选参与的里程碑
-
-- 电气社会 (`tech.electrical_society`)
+无
 
 ### 现代医学 (`tech.modern_medicine`)
 
@@ -21226,31 +19261,30 @@
 | 研究成本 | 1224000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | handling |
-| 布局路线 | branch.industrial\_chemistry |
+| 布局路线 | branch.public\_health |
 | 主要路线 | 制度 · 实验 (\`route.institution.experimental\`) |
 | 全部路线 | 制度 · 实验 (\`route.institution.experimental\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | health |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 工业化 (`tech.industrialization`)
-- 工业化学 (`tech.industrial_chemistry`)
+- 公共卫生 (`tech.public_health`)：公共卫生提供卫生、疾病控制与医疗组织能力中的操作与材料处理方法，现代医学直接使用这一能力完成其工艺或组织设计
+- 工业化学 (`tech.industrial_chemistry`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，现代医学直接使用这一能力完成其工艺或组织设计
+- 实验科学 (`tech.experimental_science`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，现代医学直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「工业化」（tech.industrialization）
-  - 满足其一：
-    - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
-    - 已发现信号「电气化突破」（breakthrough.electrification）
-    - 已发现信号「磷矿石」（resource.phosphate\_rock）
+- 满足其一：
+  - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
+  - 已发现信号「电气化突破」（breakthrough.electrification）
+  - 已发现信号「磷矿石」（resource.phosphate\_rock）
 
 #### 效果摘要
 
-解锁物资：药品；解锁建筑：受控环境药材农场；开放通用职业阶层岗位；开放通用职业阶层岗位；受控环境药材农场产出 +25%
+解锁物资：药品；解锁建筑：受控环境药材农场；解锁建筑：制药厂；制造部门产出 +12%
 
 #### 机会成本
 
@@ -21267,34 +19301,385 @@
 
 - **药品**（`good`）：`good.pharmaceuticals` → `production_access` `unlock` `1.0`；`existing_binding`
 - **受控环境药材农场**（`building`）：`building.method_medicinal_herbs_collector_r7` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **药材**（`good`）：`good.medicinal_herbs` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **肥料**（`good`）：`good.fertilizer` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **制药厂**（`building`）：`building.pharmaceuticals_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **药品**（`good`）：`good.pharmaceuticals` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **药材**（`good`）：`good.medicinal_herbs` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业化学品**（`good`）：`good.industrial_chemicals` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 受控环境药材农场：`country.output.building.method_medicinal_herbs_collector_r7_factor`：+25%
+- `country.output.manufacturing_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 石化裂解 (`tech.petrochemical_cracking`)
+- 公共卫生体系 (`tech.public_health_systems`)：现代医学提供卫生、疾病控制与医疗组织能力中的操作与材料处理方法，公共卫生体系直接使用这一能力完成其工艺或组织设计
+- 生物技术 (`tech.biotechnology`)：现代医学提供卫生、疾病控制与医疗组织能力中的操作与材料处理方法，生物技术直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 石化裂解 (`tech.petrochemical_cracking`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 石化裂解 (`tech.petrochemical_cracking`)
-- 电气化 (`tech.electrification`)
-- 大规模生产 (`tech.mass_production`)
+无
+
+#### 作为候选参与的里程碑
+
+- 电气社会 (`tech.electrical_society`)
+
+### 电磁感应 (`tech.electromagnetic_induction`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.electromagnetic_induction` |
+| 时代 | 电气时代 (`electrical`) |
+| 领域 | 科学 (`science`) |
+| 研究成本 | 1224000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | handling |
+| 布局路线 | branch.electric\_intelligent\_energy |
+| 主要路线 | 能源 · 电力 (\`route.energy.electric\`) |
+| 全部路线 | 能源 · 电力 (\`route.energy.electric\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | research |
+
+#### 硬前置（决定研发资格）
+
+- 实验科学 (`tech.experimental_science`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，电磁感应直接使用这一能力完成其工艺或组织设计
+- 精密仪器 (`tech.precision_instruments`)：精密仪器提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，电磁感应直接使用这一能力完成其工艺或组织设计
+
+#### 发现启发（仅用于揭示）
+
+- 已发现信号「电气化突破」（breakthrough.electrification）
+
+#### 效果摘要
+
+解锁物资：金属线材；解锁建筑：智能化线材厂；解锁建筑：线材厂；采掘部门产出 +12%
+
+#### 机会成本
+
+转入该路线需补齐历史锚点；时代 8 后的生产方式依赖专用资本、岗位或地理条件
+
+#### 内容解锁
+
+- **物资：** 金属线材 (`wire`)
+- **建筑 / 生产方式：** 智能化线材厂 (`method_wire_plant_r10`)；线材厂 (`wire_plant`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **金属线材**（`good`）：`good.wire` → `production_access` `unlock` `1.0`；`existing_binding`
+- **智能化线材厂**（`building`）：`building.method_wire_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **线材厂**（`building`）：`building.wire_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+- `country.output.extractive_factor`：+12%
+
+#### 被以下科技作为硬前置
+
+- 电化学 (`tech.electrochemistry`)：电磁感应提供发电、电机、电网与能源控制能力中的操作与材料处理方法，电化学直接使用这一能力完成其工艺或组织设计
+- 无线电 (`tech.radio`)：电磁感应提供发电、电机、电网与能源控制能力中的操作与材料处理方法，无线电直接使用这一能力完成其工艺或组织设计
+- 发电机 (`tech.electric_generation`)：电磁感应提供发电、电机、电网与能源控制能力中的操作与材料处理方法，发电机直接使用这一能力完成其工艺或组织设计
+- 电动机 (`tech.electric_motors`)：电磁感应提供发电、电机、电网与能源控制能力中的操作与材料处理方法，电动机直接使用这一能力完成其工艺或组织设计
+- 核裂变 (`tech.nuclear_fission`)：电磁感应提供发电、电机、电网与能源控制能力中的操作与材料处理方法，核裂变直接使用这一能力完成其工艺或组织设计
+- 深层地球物理 (`tech.deep_geophysics`)：电磁感应提供发电、电机、电网与能源控制能力中的操作与材料处理方法，深层地球物理直接使用这一能力完成其工艺或组织设计
+- 半导体制造 (`tech.semiconductor_manufacturing`)：电磁感应提供发电、电机、电网与能源控制能力中的操作与材料处理方法，半导体制造直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 电化学 (`tech.electrochemistry`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.electrochemistry` |
+| 时代 | 电气时代 (`electrical`) |
+| 领域 | 科学 (`science`) |
+| 研究成本 | 1224000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | handling |
+| 布局路线 | branch.industrial\_chemistry |
+| 主要路线 | 能源 · 电力 (\`route.energy.electric\`) |
+| 全部路线 | 能源 · 电力 (\`route.energy.electric\`)；制度 · 实验 (\`route.institution.experimental\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | chemistry |
+
+#### 硬前置（决定研发资格）
+
+- 实验科学 (`tech.experimental_science`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，电化学直接使用这一能力完成其工艺或组织设计
+- 电磁感应 (`tech.electromagnetic_induction`)：电磁感应提供发电、电机、电网与能源控制能力中的操作与材料处理方法，电化学直接使用这一能力完成其工艺或组织设计
+- 工业化学 (`tech.industrial_chemistry`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，电化学直接使用这一能力完成其工艺或组织设计
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「电气化突破」（breakthrough.electrification）
+  - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
+  - 已发现信号「硫磺」（resource.sulfur）
+
+#### 效果摘要
+
+解锁物资：锌；解锁建筑：电化工厂；解锁建筑：炼锌厂；解锁建筑：电池厂
+
+#### 机会成本
+
+转入该路线需补齐历史锚点；时代 8 后的生产方式依赖专用资本、岗位或地理条件
+
+#### 内容解锁
+
+- **物资：** 锌 (`zinc`)
+- **建筑 / 生产方式：** 电池厂 (`batteries_plant`)；电化工厂 (`electrochemical_works`)；炼锌厂 (`zinc_plant`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 洗涤剂厂 (`detergent_plant`)；智能化洗涤剂厂 (`method_detergent_plant_r10`)
+
+#### 结构化内容效果
+
+- **锌**（`good`）：`good.zinc` → `production_access` `unlock` `1.0`；`existing_binding`
+- **电化工厂**（`building`）：`building.electrochemical_works` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **炼锌厂**（`building`）：`building.zinc_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **电池厂**（`building`）：`building.batteries_plant` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+- 石油化工 (`tech.petrochemical_industry`)：电化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，石油化工直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+- 合成肥料 (`tech.synthetic_fertilizer`)：电化学提供另一条合成肥料反应与原料转化路线
+- 石油化工 (`tech.petrochemical_industry`)：电解与电化学分离用于石化原料和添加剂生产
+
+#### 作为候选参与的里程碑
+
+无
+
+### 无线电 (`tech.radio`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.radio` |
+| 时代 | 电气时代 (`electrical`) |
+| 领域 | 科学 (`science`) |
+| 研究成本 | 1404000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | backbone |
+| 节点角色 | handling |
+| 布局路线 | branch.computation\_control |
+| 主要路线 | 制度 · 通信 (\`route.institution.communication\`) |
+| 全部路线 | 制度 · 通信 (\`route.institution.communication\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | research |
+
+#### 硬前置（决定研发资格）
+
+- 电磁感应 (`tech.electromagnetic_induction`)：电磁感应提供发电、电机、电网与能源控制能力中的操作与材料处理方法，无线电直接使用这一能力完成其工艺或组织设计
+- 实验科学 (`tech.experimental_science`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，无线电直接使用这一能力完成其工艺或组织设计
+
+#### 发现启发（仅用于揭示）
+
+- 已发现信号「电气化突破」（breakthrough.electrification）
+
+#### 效果摘要
+
+解锁物资：电子元件；解锁物资：无线电设备；解锁建筑：电子元件厂；解锁建筑：无线电设备厂
+
+#### 机会成本
+
+占用通用研究预算，延后同代专业路线锚点
+
+#### 内容解锁
+
+- **物资：** 电子元件 (`electronic_components`)；无线电设备 (`radio_equipment`)
+- **建筑 / 生产方式：** 电子元件厂 (`electronic_components_plant`)；无线电设备厂 (`radio_equipment_works`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 智能化无线电设备厂 (`method_radio_equipment_works_r10`)
+
+#### 结构化内容效果
+
+- **电子元件**（`good`）：`good.electronic_components` → `production_access` `unlock` `1.0`；`existing_binding`
+- **无线电设备**（`good`）：`good.radio_equipment` → `production_access` `unlock` `1.0`；`existing_binding`
+- **电子元件厂**（`building`）：`building.electronic_components_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **无线电设备厂**（`building`）：`building.radio_equipment_works` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+- 电信 (`tech.telecommunications`)：无线电提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，电信直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 发电机 (`tech.electric_generation`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.electric_generation` |
+| 时代 | 电气时代 (`electrical`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 1224000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | power\_scale |
+| 布局路线 | branch.electric\_intelligent\_energy |
+| 主要路线 | 能源 · 电力 (\`route.energy.electric\`) |
+| 全部路线 | 能源 · 电力 (\`route.energy.electric\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | energy |
+
+#### 硬前置（决定研发资格）
+
+- 电磁感应 (`tech.electromagnetic_induction`)：电磁感应提供发电、电机、电网与能源控制能力中的操作与材料处理方法，发电机直接使用这一能力完成其工艺或组织设计
+- 蒸汽动力 (`tech.steam_power`)：蒸汽动力提供矿井、钢铁、蒸汽机械与重型设备能力中的动力与规模化能力，发电机直接使用这一能力完成其工艺或组织设计
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「电气化突破」（breakthrough.electrification）
+  - 已发现信号「蒸汽动力突破」（breakthrough.steam\_power）
+
+#### 效果摘要
+
+解锁物资：电力；解锁建筑：燃煤发电厂；解锁建筑：燃气发电厂
+
+#### 机会成本
+
+转入该路线需补齐历史锚点；时代 8 后的生产方式依赖专用资本、岗位或地理条件
+
+#### 内容解锁
+
+- **物资：** 电力 (`electricity`)
+- **建筑 / 生产方式：** 燃煤发电厂 (`electricity_plant`)；燃气发电厂 (`gas_power_plant`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 河流水力发电站 (`hydropower_station`)
+
+#### 结构化内容效果
+
+- **电力**（`good`）：`good.electricity` → `production_access` `unlock` `1.0`；`existing_binding`
+- **燃煤发电厂**（`building`）：`building.electricity_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **燃气发电厂**（`building`）：`building.gas_power_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+- 电网 (`tech.electric_grid`)：发电机提供发电、电机、电网与能源控制能力中的动力与规模化能力，电网直接使用这一能力完成其工艺或组织设计
+- 电动机 (`tech.electric_motors`)：发电机提供发电、电机、电网与能源控制能力中的动力与规模化能力，电动机直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 电网 (`tech.electric_grid`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.electric_grid` |
+| 时代 | 电气时代 (`electrical`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 1224000 科技点（`technology_points`） |
+| 节点标记 | 时代关键 |
+| 网络角色 | branch |
+| 锚点类型 | era\_candidate |
+| 节点角色 | power\_scale |
+| 布局路线 | branch.electric\_intelligent\_energy |
+| 主要路线 | 能源 · 电力 (\`route.energy.electric\`) |
+| 全部路线 | 能源 · 电力 (\`route.energy.electric\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | energy |
+
+#### 硬前置（决定研发资格）
+
+- 发电机 (`tech.electric_generation`)：发电机提供发电、电机、电网与能源控制能力中的动力与规模化能力，电网直接使用这一能力完成其工艺或组织设计
+- 电气化 (`tech.electrification`)：电气化提供发电、电机、电网与能源控制能力中的动力与规模化能力，电网直接使用这一能力完成其工艺或组织设计
+- 标准化 (`tech.standardization`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，电网直接使用这一能力完成其工艺或组织设计
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「电气化突破」（breakthrough.electrification）
+  - 已发现信号「煤炭」（resource.coal）
+
+#### 效果摘要
+
+解锁物资：绝缘电缆；解锁建筑：绝缘电缆厂；解锁建筑：智能化绝缘电缆厂；能源部门产出 +12%
+
+#### 机会成本
+
+转入该路线需补齐历史锚点；时代 8 后的生产方式依赖专用资本、岗位或地理条件
+
+#### 内容解锁
+
+- **物资：** 绝缘电缆 (`insulated_cable`)
+- **建筑 / 生产方式：** 绝缘电缆厂 (`insulated_cable_plant`)；智能化绝缘电缆厂 (`method_insulated_cable_plant_r10`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 燃气发电厂 (`gas_power_plant`)；河流水力发电站 (`hydropower_station`)；自动化港口船舶中心 (`method_automated_port`)；燃油发电厂 (`oil_power_plant`)
+
+#### 结构化内容效果
+
+- **绝缘电缆**（`good`）：`good.insulated_cable` → `production_access` `unlock` `1.0`；`existing_binding`
+- **绝缘电缆厂**（`building`）：`building.insulated_cable_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **智能化绝缘电缆厂**（`building`）：`building.method_insulated_cable_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+- `country.output.energy_factor`：+12%
+
+#### 被以下科技作为硬前置
+
+- 电信 (`tech.telecommunications`)：电网提供发电、电机、电网与能源控制能力中的动力与规模化能力，电信直接使用这一能力完成其工艺或组织设计
+- 核能 (`tech.nuclear_energy`)：电网提供发电、电机、电网与能源控制能力中的动力与规模化能力，核能直接使用这一能力完成其工艺或组织设计
+- 智能电网 (`tech.smart_grid`)：电网提供发电、电机、电网与能源控制能力中的动力与规模化能力，智能电网直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
 
 #### 作为候选参与的里程碑
 
@@ -21308,33 +19693,31 @@
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 社会 (`society`) |
 | 研究成本 | 1224000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | institution |
-| 布局路线 | branch.maritime\_logistics |
+| 布局路线 | branch.computation\_control |
 | 主要路线 | 制度 · 通信 (\`route.institution.communication\`) |
 | 全部路线 | 制度 · 通信 (\`route.institution.communication\`)；制度 · 网络 (\`route.institution.network\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | trade |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 工业化 (`tech.industrialization`)
-- 铁路物流 (`tech.rail_logistics`)
+- 无线电 (`tech.radio`)：无线电提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，电信直接使用这一能力完成其工艺或组织设计
+- 电网 (`tech.electric_grid`)：电网提供发电、电机、电网与能源控制能力中的动力与规模化能力，电信直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「工业化」（tech.industrialization）
-  - 满足其一：
-    - 已发现信号「电气化突破」（breakthrough.electrification）
-    - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
-    - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
+- 满足其一：
+  - 已发现信号「电气化突破」（breakthrough.electrification）
+  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
+  - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
 
 #### 效果摘要
 
-无线电设备厂产出 +25%；国家协同能力 +3%
+无线电设备厂产出 +50%；贸易速度 +12%
 
 #### 机会成本
 
@@ -21353,191 +19736,27 @@
 
 #### 永久 Modifier 条款
 
-- 无线电设备厂：`country.output.building.radio_equipment_works_factor`：+25%
-- `country.trade.capacity_factor`：+3%
+- 无线电设备厂：`country.output.building.radio_equipment_works_factor`：+50%
+- `country.trade.speed_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 全球物流 (`tech.global_logistics`)
+- 信息论 (`tech.information_theory`)：电信提供数字计算、软件、网络与自动控制能力中的稳定的组织与制度载体，信息论直接使用这一能力完成其工艺或组织设计
+- 网络计算 (`tech.networked_computing`)：电信提供数字计算、软件、网络与自动控制能力中的稳定的组织与制度载体，网络计算直接使用这一能力完成其工艺或组织设计
+- 卫星观测 (`tech.satellite_observation`)：电信提供数字计算、软件、网络与自动控制能力中的稳定的组织与制度载体，卫星观测直接使用这一能力完成其工艺或组织设计
+- 传感器网络 (`tech.sensor_networks`)：电信提供数字计算、软件、网络与自动控制能力中的稳定的组织与制度载体，传感器网络直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 全球物流 (`tech.global_logistics`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 全球物流 (`tech.global_logistics`)
-- 机械制冷 (`tech.refrigeration`)
-- 公共教育 (`tech.public_education`)
-
-#### 作为候选参与的里程碑
-
-- 电气社会 (`tech.electrical_society`)
-
-### 电磁感应 (`tech.electromagnetic_induction`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.electromagnetic_induction` |
-| 时代 | 电气时代 (`electrical`) |
-| 领域 | 科学 (`science`) |
-| 研究成本 | 1224000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
-| 网络角色 | branch |
-| 锚点类型 | route\_anchor |
-| 节点角色 | handling |
-| 布局路线 | branch.nonferrous\_metals |
-| 主要路线 | 能源 · 电力 (\`route.energy.electric\`) |
-| 全部路线 | 能源 · 电力 (\`route.energy.electric\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | research |
-
-#### 前置科技（决定研发资格）
-
-- 工业化 (`tech.industrialization`)
-- 焦炭冶炼 (`tech.coke_smelting`)
-
-#### 发现启发（仅用于揭示）
-
-- 全部满足：
-  - 已完成科技「工业化」（tech.industrialization）
-  - 满足其一：
-    - 已发现信号「电气化突破」（breakthrough.electrification）
-    - 已发现信号「电机绕组突破」（breakthrough.motor\_winding）
-    - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
-
-#### 效果摘要
-
-解锁物资：金属线材；解锁建筑：智能化线材厂；开放通用职业阶层岗位；开放通用职业阶层岗位；智能化线材厂产出 +25%
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 8 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 金属线材 (`wire`)
-- **建筑 / 生产方式：** 智能化线材厂 (`method_wire_plant_r10`)；线材厂 (`wire_plant`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-- **金属线材**（`good`）：`good.wire` → `production_access` `unlock` `1.0`；`existing_binding`
-- **智能化线材厂**（`building`）：`building.method_wire_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **金属线材**（`good`）：`good.wire` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **铜**（`good`）：`good.copper` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **自主系统**（`good`）：`good.autonomous_systems` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **线材厂**（`building`）：`building.wire_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-- 智能化线材厂：`country.output.building.method_wire_plant_r10_factor`：+25%
-
-#### 直接后继（硬前置关系）
-
-- 先进冶金 (`tech.advanced_metallurgy`)
-- 特种合金 (`tech.specialty_alloys`)
-
-#### 同路线后继
-
-- 特种合金 (`tech.specialty_alloys`)
-
-#### 应用交汇目标
-
-- 特种合金 (`tech.specialty_alloys`)
-- 现代医学 (`tech.modern_medicine`)
-- 工业研究 (`tech.industrial_research`)
+无
 
 #### 作为候选参与的里程碑
 
-- 电气社会 (`tech.electrical_society`)
-
-### 发电机 (`tech.electric_generation`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.electric_generation` |
-| 时代 | 电气时代 (`electrical`) |
-| 领域 | 工程 (`engineering`) |
-| 研究成本 | 1224000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
-| 网络角色 | branch |
-| 锚点类型 | route\_anchor |
-| 节点角色 | power\_scale |
-| 布局路线 | branch.water\_wind |
-| 主要路线 | 能源 · 电力 (\`route.energy.electric\`) |
-| 全部路线 | 能源 · 电力 (\`route.energy.electric\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | energy |
-
-#### 前置科技（决定研发资格）
-
-- 工业化 (`tech.industrialization`)
-- 蒸汽抽水 (`tech.steam_pumping`)
-
-#### 发现启发（仅用于揭示）
-
-- 全部满足：
-  - 已完成科技「工业化」（tech.industrialization）
-  - 满足其一：
-    - 已发现信号「电气化突破」（breakthrough.electrification）
-    - 已发现信号「电机绕组突破」（breakthrough.motor\_winding）
-    - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
-
-#### 效果摘要
-
-解锁物资：电力；解锁建筑：燃煤发电厂；开放通用职业阶层岗位；开放通用职业阶层岗位；燃煤发电厂产出 +25%
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 8 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 电力 (`electricity`)
-- **建筑 / 生产方式：** 燃煤发电厂 (`electricity_plant`)；燃气发电厂 (`gas_power_plant`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 河流水力发电站 (`hydropower_station`)
-
-#### 结构化内容效果
-
-- **电力**（`good`）：`good.electricity` → `production_access` `unlock` `1.0`；`existing_binding`
-- **燃煤发电厂**（`building`）：`building.electricity_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **煤炭**（`good`）：`good.coal` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **燃气发电厂**（`building`）：`building.gas_power_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **天然气**（`good`）：`good.natural_gas` → `input_method_access` `enable` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-- 燃煤发电厂：`country.output.building.electricity_plant_factor`：+25%
-
-#### 直接后继（硬前置关系）
-
-- 深层地球物理 (`tech.deep_geophysics`)
-
-#### 同路线后继
-
-- 深层地球物理 (`tech.deep_geophysics`)
-
-#### 应用交汇目标
-
-- 深层地球物理 (`tech.deep_geophysics`)
-- 电信 (`tech.telecommunications`)
-- 工业研究 (`tech.industrial_research`)
-
-#### 作为候选参与的里程碑
-
-- 电气社会 (`tech.electrical_society`)
+无
 
 ### 电动机 (`tech.electric_motors`)
 
@@ -21547,33 +19766,31 @@
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 1224000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | power\_scale |
-| 布局路线 | branch.rice\_irrigation |
+| 布局路线 | branch.electric\_intelligent\_energy |
 | 主要路线 | 能源 · 电力 (\`route.energy.electric\`) |
 | 全部路线 | 能源 · 电力 (\`route.energy.electric\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | energy |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 工业化 (`tech.industrialization`)
-- 机械收割 (`tech.mechanical_reaping`)
+- 电磁感应 (`tech.electromagnetic_induction`)：电磁感应提供发电、电机、电网与能源控制能力中的操作与材料处理方法，电动机直接使用这一能力完成其工艺或组织设计
+- 机床 (`tech.machine_tools`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，电动机直接使用这一能力完成其工艺或组织设计
+- 发电机 (`tech.electric_generation`)：发电机提供发电、电机、电网与能源控制能力中的动力与规模化能力，电动机直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「工业化」（tech.industrialization）
-  - 满足其一：
-    - 已发现信号「电气化突破」（breakthrough.electrification）
-    - 已发现信号「电机绕组突破」（breakthrough.motor\_winding）
-    - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
+- 满足其一：
+  - 已发现信号「电气化突破」（breakthrough.electrification）
+  - 已发现信号「电机绕组突破」（breakthrough.motor\_winding）
 
 #### 效果摘要
 
-解锁物资：电动机；解锁建筑：电动机厂；开放通用职业阶层岗位；开放通用职业阶层岗位；电动机厂产出 +25%
+解锁物资：电动机；解锁建筑：电动机厂；解锁建筑：智能化电动机厂；解锁建筑：电气化造船厂
 
 #### 机会成本
 
@@ -21582,7 +19799,7 @@
 #### 内容解锁
 
 - **物资：** 电动机 (`electric_motor`)
-- **建筑 / 生产方式：** 电动机厂 (`electric_motor_plant`)；智能化电动机厂 (`method_electric_motor_plant_r10`)
+- **建筑 / 生产方式：** 电动机厂 (`electric_motor_plant`)；智能化电动机厂 (`method_electric_motor_plant_r10`)；电气化造船厂 (`method_oceanic_shipyard_r7`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 家用电器厂 (`household_appliances_plant`)；智能化家用电器厂 (`method_household_appliances_plant_r10`)
 
@@ -21590,39 +19807,28 @@
 
 - **电动机**（`good`）：`good.electric_motor` → `production_access` `unlock` `1.0`；`existing_binding`
 - **电动机厂**（`building`）：`building.electric_motor_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **电动机**（`good`）：`good.electric_motor` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **铜**（`good`）：`good.copper` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **钢材**（`good`）：`good.steel` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **智能化电动机厂**（`building`）：`building.method_electric_motor_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **自主系统**（`good`）：`good.autonomous_systems` → `input_method_access` `enable` `1.0`；`existing_binding`
+- **电气化造船厂**（`building`）：`building.method_oceanic_shipyard_r7` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 电动机厂：`country.output.building.electric_motor_plant_factor`：+25%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 系统工程 (`tech.systems_engineering`)
+无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 系统工程 (`tech.systems_engineering`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 系统工程 (`tech.systems_engineering`)
-- 电信 (`tech.telecommunications`)
-- 工业研究 (`tech.industrial_research`)
+无
 
 #### 作为候选参与的里程碑
 
-- 电气社会 (`tech.electrical_society`)
+无
 
 ### 机动农业 (`tech.motorized_agriculture`)
 
@@ -21634,7 +19840,7 @@
 | 研究成本 | 1224000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | production\_system |
 | 布局路线 | branch.wheat\_rainfed |
 | 主要路线 | 作物 · 机械化 (\`route.crop.mechanized\`) |
@@ -21642,23 +19848,18 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 工业化 (`tech.industrialization`)
-- 机械脱粒 (`tech.mechanical_threshing`)
+- 机械化农业 (`tech.mechanized_agriculture`)：机械化农业提供工具制造、机械加工与设备控制能力中的成套生产流程，机动农业直接使用这一能力完成其工艺或组织设计
+- 热力学 (`tech.thermodynamics`)：热力学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，机动农业直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「工业化」（tech.industrialization）
-  - 满足其一：
-    - 已发现信号「小麦」（bio.wheat）
-    - 已发现信号「小麦样本接触」（contact.wheat）
-    - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
+无
 
 #### 效果摘要
 
-解锁建筑：机械化橡胶种植园；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：机械化香料种植园；机械化橡胶种植园产出 +25%
+解锁建筑：机械化橡胶种植园；解锁建筑：机械化香料种植园
 
 #### 机会成本
 
@@ -21674,30 +19875,23 @@
 #### 结构化内容效果
 
 - **机械化橡胶种植园**（`building`）：`building.method_rubber_tree_collector_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **天然乳胶**（`good`）：`good.latex` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **农业机械**（`good`）：`good.agricultural_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **机械化香料种植园**（`building`）：`building.method_spice_plants_collector_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **香料**（`good`）：`good.spices` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 机械化橡胶种植园：`country.output.building.method_rubber_tree_collector_r6_factor`：+25%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 集体农业 (`tech.collective_agriculture`)
+- 工业农学 (`tech.industrial_agronomy`)：机动农业提供谷物旱作、轮作与收获工艺中的成套生产流程，工业农学直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 集体农业 (`tech.collective_agriculture`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 集体农业 (`tech.collective_agriculture`)
-- 公司管理 (`tech.corporate_management`)
-- 工业质量控制 (`tech.industrial_quality_control`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -21713,7 +19907,7 @@
 | 研究成本 | 1224000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | production\_system |
 | 布局路线 | branch.pastoral\_livestock |
 | 主要路线 | 生态 · 牧场 (\`route.ecology.pasture\`) |
@@ -21721,23 +19915,26 @@
 | 开局能力标签 | 无 |
 | 效果配置 | livestock |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 工业化 (`tech.industrialization`)
-- 劳工组织 (`tech.labor_organization`)
+- 畜牧驯养 (`tech.animal_husbandry`)：畜牧驯养提供畜群驯养、育种与畜产品处理能力中的成套生产流程，现代畜牧直接使用这一能力完成其工艺或组织设计
+
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「畜种改良」（tech.livestock\_breeding）
+  - 已完成科技「公共卫生」（tech.public\_health）
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「工业化」（tech.industrialization）
-  - 满足其一：
-    - 已发现信号「牧场承载力」（resource.pasture）
-    - 已发现信号「草原」（landform.grassland）
-    - 已发现信号「马匹」（bio.horse）
+- 满足其一：
+  - 已发现信号「羊」（bio.sheep）
+  - 已发现信号「马匹」（bio.horse）
+  - 已发现信号「牛」（bio.cattle）
 
 #### 效果摘要
 
-解锁建筑：智能牧业站；开放通用职业阶层岗位；开放通用职业阶层岗位；可利用资源：牧场承载力；智能牧业站产出 +25%
+解锁建筑：智能牧业站
 
 #### 机会成本
 
@@ -21753,32 +19950,22 @@
 #### 结构化内容效果
 
 - **智能牧业站**（`building`）：`building.method_smart_husbandry` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **畜牧产品**（`good`）：`good.livestock_products` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **农业机械**（`good`）：`good.agricultural_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **计算机**（`good`）：`good.computers` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **自主系统**（`good`）：`good.autonomous_systems` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **牧场承载力**（`resource`）：`resource.pasture` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 智能牧业站：`country.output.building.method_smart_husbandry_factor`：+25%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 公司农业 (`tech.corporate_agribusiness`)
+无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 公司农业 (`tech.corporate_agribusiness`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 公司农业 (`tech.corporate_agribusiness`)
-- 电气化 (`tech.electrification`)
-- 大规模生产 (`tech.mass_production`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -21794,31 +19981,30 @@
 | 研究成本 | 1224000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | institution |
-| 布局路线 | branch.textile\_fibers |
+| 布局路线 | branch.labor\_management |
 | 主要路线 | 制度 · 工厂 (\`route.institution.factory\`) |
 | 全部路线 | 制度 · 工厂 (\`route.institution.factory\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 工业化 (`tech.industrialization`)
-- 纺织机械 (`tech.textile_machinery`)
+- 管理层级 (`tech.managerial_hierarchy`)：管理层级建立跨部门授权与责任链，是公司级治理不可替代的组织基础
+- 复式记账 (`tech.double_entry_bookkeeping`)：复式记账提供资产、负债、成本和利润的统一核算，使公司能够跨业务配置资本
+- 工业统计 (`tech.industrial_statistics`)：工业统计提供跨工厂绩效比较和计划控制所需的量化资料
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「工业化」（tech.industrialization）
-  - 满足其一：
-    - 已发现信号「电气化突破」（breakthrough.electrification）
-    - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
-    - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
+- 满足其一：
+  - 已发现信号「电气化突破」（breakthrough.electrification）
+  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
+  - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
 
 #### 效果摘要
 
-解锁建筑：电力纺织厂；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：高级成衣厂；电力纺织厂产出 +25%
+制造部门产出 +12%
 
 #### 机会成本
 
@@ -21827,42 +20013,31 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 电力纺织厂 (`cloth_plant`)；高级成衣厂 (`fine_clothing_plant`)
+- **建筑 / 生产方式：** 无
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 电力纺织厂 (`cloth_plant`)；高级成衣厂 (`fine_clothing_plant`)；珠宝厂 (`jewelry_plant`)
 
 #### 结构化内容效果
 
-- **电力纺织厂**（`building`）：`building.cloth_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **布料**（`good`）：`good.cloth` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **亚麻纤维**（`good`）：`good.flax_fiber` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **高级成衣厂**（`building`）：`building.fine_clothing_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **华服**（`good`）：`good.fine_clothing` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **布料**（`good`）：`good.cloth` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业化学品**（`good`）：`good.industrial_chemicals` → `input_method_access` `enable` `1.0`；`existing_binding`
+无
 
 #### 永久 Modifier 条款
 
-- 电力纺织厂：`country.output.building.cloth_plant_factor`：+25%
+- `country.output.manufacturing_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 合成纤维工程 (`tech.synthetic_fiber_engineering`)
+- 公司农业 (`tech.corporate_agribusiness`)：公司管理提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，公司农业直接使用这一能力完成其工艺或组织设计
+- 平台协调 (`tech.platform_coordination`)：公司管理提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，平台协调直接使用这一能力完成其工艺或组织设计
+- 算法管理 (`tech.algorithmic_management`)：公司管理提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，算法管理直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 合成纤维工程 (`tech.synthetic_fiber_engineering`)
+- 算法管理 (`tech.algorithmic_management`)：公司管理形成的指标、责任与资源配置体系可进一步算法化
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 合成纤维工程 (`tech.synthetic_fiber_engineering`)
-- 电信 (`tech.telecommunications`)
-- 大规模生产 (`tech.mass_production`)
+- 运筹学 (`tech.operations_research`)：公司预算和部门统计为运筹模型提供可度量的决策对象
 
 #### 作为候选参与的里程碑
 
@@ -21876,9 +20051,9 @@
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 科学 (`science`) |
 | 研究成本 | 1080000 科技点（`technology_points`） |
-| 节点标记 | 无 |
+| 节点标记 | 时代关键 |
 | 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | handling |
 | 布局路线 | backbone.knowledge\_computation |
 | 主要路线 | 制度 · 实验 (\`route.institution.experimental\`) |
@@ -21886,22 +20061,18 @@
 | 开局能力标签 | 无 |
 | 效果配置 | research |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 工业化 (`tech.industrialization`)
+- 实验科学 (`tech.experimental_science`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，工业研究直接使用这一能力完成其工艺或组织设计
+- 工厂制 (`tech.factory_system`)：工厂制提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，工业研究直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「工业化」（tech.industrialization）
-  - 满足其一：
-    - 已发现信号「电气化突破」（breakthrough.electrification）
-    - 已发现信号「电机绕组突破」（breakthrough.motor\_winding）
-    - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
+无
 
 #### 效果摘要
 
-解锁物资：科学仪器；解锁建筑：智能仪器厂；开放通用职业阶层岗位；开放通用职业阶层岗位；智能仪器厂产出 +25%
+解锁物资：科学仪器；解锁建筑：智能仪器厂；解锁建筑：科学仪器工坊；知识部门产出 +15%
 
 #### 机会成本
 
@@ -21918,38 +20089,32 @@
 
 - **科学仪器**（`good`）：`good.scientific_instruments` → `production_access` `unlock` `1.0`；`existing_binding`
 - **智能仪器厂**（`building`）：`building.method_scientific_instrument_works_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **科学仪器**（`good`）：`good.scientific_instruments` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **玻璃**（`good`）：`good.glass` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **铜**（`good`）：`good.copper` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **自主系统**（`good`）：`good.autonomous_systems` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **科学仪器工坊**（`building`）：`building.scientific_instrument_works` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **科技职业阶层**（`class`）：`class.technology` → `employment_access` `enable` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 智能仪器厂：`country.output.building.method_scientific_instrument_works_r10_factor`：+25%
+- `country.output.knowledge_factor`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 工业质量控制 (`tech.industrial_quality_control`)：工业研究提供记录、验证、计算与知识传播方法中的操作与材料处理方法，工业质量控制直接使用这一能力完成其工艺或组织设计
+- 工业农学 (`tech.industrial_agronomy`)：工业研究提供记录、验证、计算与知识传播方法中的操作与材料处理方法，工业农学直接使用这一能力完成其工艺或组织设计
+- 核裂变 (`tech.nuclear_fission`)：工业研究提供记录、验证、计算与知识传播方法中的操作与材料处理方法，核裂变直接使用这一能力完成其工艺或组织设计
+- 国家实验室 (`tech.national_laboratories`)：工业研究提供记录、验证、计算与知识传播方法中的操作与材料处理方法，国家实验室直接使用这一能力完成其工艺或组织设计
+- 电子控制 (`tech.electronic_control`)：工业研究提供记录、验证、计算与知识传播方法中的操作与材料处理方法，电子控制直接使用这一能力完成其工艺或组织设计
+- 生物技术 (`tech.biotechnology`)：工业研究提供记录、验证、计算与知识传播方法中的操作与材料处理方法，生物技术直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
-- 国家实验室 (`tech.national_laboratories`)
-
-#### 应用交汇目标
-
-- 国家实验室 (`tech.national_laboratories`)
+无
 
 #### 作为候选参与的里程碑
 
-无
+- 电气社会 (`tech.electrical_society`)
 
 ### 石油钻探 (`tech.petroleum_drilling`)
 
@@ -21959,33 +20124,31 @@
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 1224000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | branch.heavy\_industry |
+| 布局路线 | branch.petroleum\_materials |
 | 主要路线 | 资源 · 石油 (\`route.resource.oil\`) |
 | 全部路线 | 资源 · 石油 (\`route.resource.oil\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | resource |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 工业化 (`tech.industrialization`)
-- 工业采煤 (`tech.industrial_coal_mining`)
+- 石油开采 (`tech.petroleum_extraction`)：石油开采提供油气开采、炼制与高分子原料能力中的操作与材料处理方法，石油钻探直接使用这一能力完成其工艺或组织设计
+- 机床 (`tech.machine_tools`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，石油钻探直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「工业化」（tech.industrialization）
-  - 满足其一：
-    - 已发现信号「石油」（resource.oil）
-    - 已发现信号「天然气」（resource.natural\_gas）
-    - 已发现信号「煤炭」（resource.coal）
+- 满足其一：
+  - 已发现信号「石油」（resource.oil）
+  - 已发现信号「天然气」（resource.natural\_gas）
+  - 已发现信号「煤炭」（resource.coal）
 
 #### 效果摘要
 
-解锁建筑：蒸汽钻井场；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：燃油发电厂；蒸汽钻井场产出 +25%
+解锁建筑：蒸汽钻井场；解锁建筑：燃油发电厂；采掘部门产出 +12%
 
 #### 机会成本
 
@@ -22001,38 +20164,27 @@
 #### 结构化内容效果
 
 - **蒸汽钻井场**（`building`）：`building.early_oil_well` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **原油**（`good`）：`good.crude_oil` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **钢材**（`good`）：`good.steel` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **精密工具**（`good`）：`good.precision_tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **蒸汽机**（`good`）：`good.steam_engines` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **燃油发电厂**（`building`）：`building.oil_power_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **精炼燃料**（`good`）：`good.refined_fuel` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 蒸汽钻井场：`country.output.building.early_oil_well_factor`：+25%
+- `country.output.extractive_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 机械化采矿 (`tech.mechanized_mining`)
+无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 机械化采矿 (`tech.mechanized_mining`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 机械化采矿 (`tech.mechanized_mining`)
-- 电信 (`tech.telecommunications`)
-- 公共教育 (`tech.public_education`)
+无
 
 #### 作为候选参与的里程碑
 
-- 电气社会 (`tech.electrical_society`)
+无
 
 ### 工业质量控制 (`tech.industrial_quality_control`)
 
@@ -22043,31 +20195,30 @@
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 1080000 科技点（`technology_points`） |
 | 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 网络角色 | branch |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | backbone.tools\_machinery |
+| 布局路线 | branch.measurement\_instruments |
 | 主要路线 | 制度 · 工厂 (\`route.institution.factory\`) |
 | 全部路线 | 制度 · 工厂 (\`route.institution.factory\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | manufacturing |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 工业化 (`tech.industrialization`)
+- 标准化 (`tech.standardization`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，工业质量控制直接使用这一能力完成其工艺或组织设计
+- 工业统计 (`tech.industrial_statistics`)：工业统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，工业质量控制直接使用这一能力完成其工艺或组织设计
+- 工业研究 (`tech.industrial_research`)：工业研究提供记录、验证、计算与知识传播方法中的操作与材料处理方法，工业质量控制直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「工业化」（tech.industrialization）
-  - 满足其一：
-    - 已发现信号「电气化突破」（breakthrough.electrification）
-    - 已发现信号「电机绕组突破」（breakthrough.motor\_winding）
-    - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
+- 满足其一：
+  - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
+  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
 
 #### 效果摘要
 
-解锁建筑：现代炸药厂；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：精密仪器厂；现代炸药厂产出 +25%
+解锁建筑：现代炸药厂；解锁建筑：精密仪器厂；工程领域研究效率 +15%
 
 #### 机会成本
 
@@ -22078,40 +20229,30 @@
 - **物资：** 无
 - **建筑 / 生产方式：** 现代炸药厂 (`method_explosives_plant_r8`)；精密仪器厂 (`method_scientific_instrument_works_r8`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 工业屠宰场 (`mechanized_slaughterhouse`)；自动化水泥厂 (`method_cement_plant_r9`)；自动化焦化厂 (`method_coke_ovens_r9`)；工业榨油厂 (`method_edible_oil_plant_r6`)；数字化工业机械厂 (`method_industrial_machinery_plant_r9`)；自动化润滑油厂 (`method_lubricants_plant_r9`)；自动化机械零件厂 (`method_machine_parts_plant_r9`)；精密工具厂 (`method_precision_tool_workshop_r8`)；自动化蒸汽机厂 (`method_steam_engine_works_r9`)；综合食品厂 (`processed_food_plant`)；主食加工厂 (`staple_food_plant`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 珠宝厂 (`jewelry_plant`)；工业屠宰场 (`mechanized_slaughterhouse`)；自动化水泥厂 (`method_cement_plant_r9`)；自动化焦化厂 (`method_coke_ovens_r9`)；自动化混凝土厂 (`method_concrete_plant_r9`)；工业榨油厂 (`method_edible_oil_plant_r6`)；数字化工业机械厂 (`method_industrial_machinery_plant_r9`)；自动化炼铅厂 (`method_lead_plant_r9`)；自动化润滑油厂 (`method_lubricants_plant_r9`)；自动化机械零件厂 (`method_machine_parts_plant_r9`)；精密工具厂 (`method_precision_tool_workshop_r8`)；自动化蒸汽机厂 (`method_steam_engine_works_r9`)；自动化炼锌厂 (`method_zinc_plant_r9`)；综合食品厂 (`processed_food_plant`)；主食加工厂 (`staple_food_plant`)
 
 #### 结构化内容效果
 
 - **现代炸药厂**（`building`）：`building.method_explosives_plant_r8` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **炸药**（`good`）：`good.explosives` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **硝石**（`good`）：`good.saltpeter` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **硫磺**（`good`）：`good.sulfur` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电动机**（`good`）：`good.electric_motor` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **精密仪器厂**（`building`）：`building.method_scientific_instrument_works_r8` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **科学仪器**（`good`）：`good.scientific_instruments` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **玻璃**（`good`）：`good.glass` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **铜**（`good`）：`good.copper` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 现代炸药厂：`country.output.building.method_explosives_plant_r8_factor`：+25%
+- `country.research.engineering_efficiency`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 核能 (`tech.nuclear_energy`)：工业质量控制提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，核能直接使用这一能力完成其工艺或组织设计
+- 特种合金 (`tech.specialty_alloys`)：工业质量控制提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，特种合金直接使用这一能力完成其工艺或组织设计
+- 半导体制造 (`tech.semiconductor_manufacturing`)：工业质量控制提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，半导体制造直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
-- 电子控制 (`tech.electronic_control`)
-
-#### 应用交汇目标
-
-- 电子控制 (`tech.electronic_control`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -22125,33 +20266,28 @@
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 1224000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | power\_scale |
-| 布局路线 | branch.tropical\_commodities |
+| 布局路线 | branch.public\_health |
 | 主要路线 | 能源 · 电力 (\`route.energy.electric\`) |
 | 全部路线 | 能源 · 电力 (\`route.energy.electric\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | energy |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 工业化 (`tech.industrialization`)
-- 管理层级 (`tech.managerial_hierarchy`)
+- 热力学 (`tech.thermodynamics`)：热力学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，机械制冷直接使用这一能力完成其工艺或组织设计
+- 机床 (`tech.machine_tools`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，机械制冷直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「工业化」（tech.industrialization）
-  - 满足其一：
-    - 已发现信号「电气化突破」（breakthrough.electrification）
-    - 已发现信号「电机绕组突破」（breakthrough.motor\_winding）
-    - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
+- 已发现信号「电气化突破」（breakthrough.electrification）
 
 #### 效果摘要
 
-可再生能源业产出 +12%
+可再生能源业产出 +28%
 
 #### 机会成本
 
@@ -22170,25 +20306,94 @@
 
 #### 永久 Modifier 条款
 
-- 可再生能源业：`country.output.family.renewable_power_generation_factor`：+12%
+- 可再生能源业：`country.output.family.renewable_power_generation_factor`：+28%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 公共卫生体系 (`tech.public_health_systems`)
+- 冷链 (`tech.cold_chain`)：机械制冷提供卫生、疾病控制与医疗组织能力中的动力与规模化能力，冷链直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 公共卫生体系 (`tech.public_health_systems`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 公共卫生体系 (`tech.public_health_systems`)
-- 公司管理 (`tech.corporate_management`)
-- 工业质量控制 (`tech.industrial_quality_control`)
+无
 
 #### 作为候选参与的里程碑
 
-- 电气社会 (`tech.electrical_society`)
+无
+
+### 冷链 (`tech.cold_chain`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.cold_chain` |
+| 时代 | 电气时代 (`electrical`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 1224000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | handling |
+| 布局路线 | branch.public\_health |
+| 主要路线 | 能源 · 电力 (\`route.energy.electric\`) |
+| 全部路线 | 能源 · 电力 (\`route.energy.electric\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | health |
+
+#### 硬前置（决定研发资格）
+
+- 机械制冷 (`tech.refrigeration`)：机械制冷提供卫生、疾病控制与医疗组织能力中的动力与规模化能力，冷链直接使用这一能力完成其工艺或组织设计
+- 铁路物流 (`tech.rail_logistics`)：铁路物流提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，冷链直接使用这一能力完成其工艺或组织设计
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「马铃薯」（bio.potato）
+  - 已发现信号「块茎样本接触」（contact.potato）
+  - 已发现信号「梯田维护突破」（breakthrough.terrace\_maintenance）
+
+#### 效果摘要
+
+解锁物资：加工食品；解锁建筑：乳制品厂；解锁建筑：综合食品厂；寒冷损失 -8%
+
+#### 机会成本
+
+转入该路线需补齐历史锚点；时代 8 后的生产方式依赖专用资本、岗位或地理条件
+
+#### 内容解锁
+
+- **物资：** 加工食品 (`processed_food`)
+- **建筑 / 生产方式：** 乳制品厂 (`dairy_products_plant`)；综合食品厂 (`processed_food_plant`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **加工食品**（`good`）：`good.processed_food` → `production_access` `unlock` `1.0`；`existing_binding`
+- **乳制品厂**（`building`）：`building.dairy_products_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **综合食品厂**（`building`）：`building.processed_food_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+- `country.climate.cold_stress_factor`：+8%
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
 
 ### 电气社会 (`tech.electrical_society`)
 
@@ -22208,7 +20413,7 @@
 | 开局能力标签 | 无 |
 | 效果配置 | milestone |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
@@ -22218,7 +20423,7 @@
 
 #### 效果摘要
 
-可再生能源业产出 +10%
+可再生能源业产出 +25%；能源部门产出 +15%
 
 #### 机会成本
 
@@ -22226,23 +20431,15 @@
 
 #### 里程碑候选
 
-需要完成下列 16 项候选中的任意 5 项：
-- 合成肥料 (`tech.synthetic_fertilizer`)
-- 电气化 (`tech.electrification`)
-- 电化学 (`tech.electrochemistry`)
-- 内燃机 (`tech.internal_combustion`)
-- 电网 (`tech.electric_grid`)
-- 冷链 (`tech.cold_chain`)
-- 现代医学 (`tech.modern_medicine`)
-- 电信 (`tech.telecommunications`)
-- 电磁感应 (`tech.electromagnetic_induction`)
-- 发电机 (`tech.electric_generation`)
-- 电动机 (`tech.electric_motors`)
+需要完成下列 8 项候选中的任意 4 项：
 - 机动农业 (`tech.motorized_agriculture`)
+- 电气化 (`tech.electrification`)
+- 工业研究 (`tech.industrial_research`)
+- 公共教育 (`tech.public_education`)
 - 现代畜牧 (`tech.modern_husbandry`)
+- 电网 (`tech.electric_grid`)
+- 现代医学 (`tech.modern_medicine`)
 - 公司管理 (`tech.corporate_management`)
-- 石油钻探 (`tech.petroleum_drilling`)
-- 机械制冷 (`tech.refrigeration`)
 
 #### 内容解锁
 
@@ -22257,39 +20454,20 @@
 
 #### 永久 Modifier 条款
 
-- 可再生能源业：`country.output.family.renewable_power_generation_factor`：+10%
+- 可再生能源业：`country.output.family.renewable_power_generation_factor`：+25%
+- `country.output.energy_factor`：+15%
 
-#### 直接后继（硬前置关系）
-
-- 工业农学 (`tech.industrial_agronomy`)
-- 国家实验室 (`tech.national_laboratories`)
-- 深层地球物理 (`tech.deep_geophysics`)
-- 运筹学 (`tech.operations_research`)
-- 石油化工 (`tech.petrochemical_industry`)
-- 合成材料 (`tech.synthetic_materials`)
-- 机械化采矿 (`tech.mechanized_mining`)
-- 公共卫生体系 (`tech.public_health_systems`)
-- 核能 (`tech.nuclear_energy`)
-- 电子控制 (`tech.electronic_control`)
-- 全球物流 (`tech.global_logistics`)
-- 特种合金 (`tech.specialty_alloys`)
-- 石化裂解 (`tech.petrochemical_cracking`)
-- 塑料工程 (`tech.plastics_engineering`)
-- 公司农业 (`tech.corporate_agribusiness`)
-- 集体农业 (`tech.collective_agriculture`)
-- 国营企业 (`tech.state_enterprises`)
-- 合成纤维工程 (`tech.synthetic_fiber_engineering`)
-- 工业生态 (`tech.industrial_ecology`)
-- 系统工程 (`tech.systems_engineering`)
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
 
-- 内燃机 (`tech.internal_combustion`)
-- 公共教育 (`tech.public_education`)
+无
+
+#### 跨领域应用
+
+无
 
 #### 作为候选参与的里程碑
 
@@ -22310,7 +20488,7 @@
 | 研究成本 | 2720000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | production\_system |
 | 布局路线 | branch.maize\_horticulture |
 | 主要路线 | 作物 · 工业农业 (\`route.crop.industrial\`) |
@@ -22318,23 +20496,18 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 电气社会 (`tech.electrical_society`)
-- 合成肥料 (`tech.synthetic_fertilizer`)
+- 机动农业 (`tech.motorized_agriculture`)：机动农业提供谷物旱作、轮作与收获工艺中的成套生产流程，工业农学直接使用这一能力完成其工艺或组织设计
+- 工业研究 (`tech.industrial_research`)：工业研究提供记录、验证、计算与知识传播方法中的操作与材料处理方法，工业农学直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「电气社会」（tech.electrical\_society）
-  - 满足其一：
-    - 已发现信号「玉米」（bio.maize）
-    - 已发现信号「玉米样本接触」（contact.maize）
-    - 已发现信号「玉米选育突破」（breakthrough.maize\_selection）
+无
 
 #### 效果摘要
 
-解锁建筑：电气化集约农场；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：自动化磷矿；电气化集约农场产出 +25%
+解锁建筑：电气化集约农场
 
 #### 机会成本
 
@@ -22343,42 +20516,31 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 电气化集约农场 (`intensive_farm`)；自动化磷矿 (`method_phosphate_rock_collector_r9`)
+- **建筑 / 生产方式：** 电气化集约农场 (`intensive_farm`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
 - **电气化集约农场**（`building`）：`building.intensive_farm` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **混合谷物**（`good`）：`good.grain` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **蔬菜**（`good`）：`good.vegetables` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **肥料**（`good`）：`good.fertilizer` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **农业机械**（`good`）：`good.agricultural_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **自动化磷矿**（`building`）：`building.method_phosphate_rock_collector_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **磷矿石**（`good`）：`good.phosphate_rock` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **炸药**（`good`）：`good.explosives` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **计算机**（`good`）：`good.computers` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 电气化集约农场：`country.output.building.intensive_farm_factor`：+25%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 精准农业 (`tech.precision_agriculture`)
+- 公司农业 (`tech.corporate_agribusiness`)：工业农学提供玉米栽培、选育与田间管理经验中的成套生产流程，公司农业直接使用这一能力完成其工艺或组织设计
+- 集体农业 (`tech.collective_agriculture`)：工业农学提供玉米栽培、选育与田间管理经验中的成套生产流程，集体农业直接使用这一能力完成其工艺或组织设计
+- 精准农业 (`tech.precision_agriculture`)：工业农学提供玉米栽培、选育与田间管理经验中的成套生产流程，精准农业直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 精准农业 (`tech.precision_agriculture`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 精准农业 (`tech.precision_agriculture`)
-- 石化裂解 (`tech.petrochemical_cracking`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -22394,30 +20556,36 @@
 | 研究成本 | 3120000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
-| 布局路线 | branch.nonferrous\_metals |
+| 布局路线 | branch.heavy\_industry |
 | 主要路线 | 资源 · 合金 (\`route.resource.alloys\`) |
 | 全部路线 | 资源 · 合金 (\`route.resource.alloys\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | metallurgy |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 电磁感应 (`tech.electromagnetic_induction`)
+- 高炉冶炼 (`tech.blast_furnace`)：高炉冶炼提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，先进冶金直接使用这一能力完成其工艺或组织设计
+- 工业化学 (`tech.industrial_chemistry`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，先进冶金直接使用这一能力完成其工艺或组织设计
+
+#### 额外研发条件
+
+- 至少满足 2 项：
+  - 已完成科技「焦炭冶炼」（tech.coke\_smelting）
+  - 已完成科技「电磁感应」（tech.electromagnetic\_induction）
+  - 已完成科技「工业质量控制」（tech.industrial\_quality\_control）
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「电气社会」（tech.electrical\_society）
-  - 满足其一：
-    - 已发现信号「铜矿」（resource.copper\_ore）
-    - 已发现信号「锡矿」（resource.tin\_ore）
-    - 已发现信号「金属加工突破」（breakthrough.metalworking）
+- 满足其一：
+  - 已发现信号「铁矿」（resource.iron\_ore）
+  - 已发现信号「铜矿」（resource.copper\_ore）
+  - 已发现信号「金属加工突破」（breakthrough.metalworking）
 
 #### 效果摘要
 
-解锁物资：铅；解锁物资：钢材；解锁建筑：炼铜厂；开放通用职业阶层岗位；炼铜厂产出 +20%
+解锁物资：铅；解锁物资：钢材；解锁建筑：炼铜厂；解锁建筑：炼锡厂
 
 #### 机会成本
 
@@ -22428,38 +20596,35 @@
 - **物资：** 铅 (`lead`)；钢材 (`steel`)
 - **建筑 / 生产方式：** 炼铜厂 (`copper_plant`)；炼锡厂 (`tin_plant`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 炼铅厂 (`lead_plant`)；智能冶铝厂 (`method_aluminum_plant_r10`)；智能化不锈钢厂 (`method_stainless_steel_plant_r10`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 炼铅厂 (`lead_plant`)；智能冶铝厂 (`method_aluminum_plant_r10`)；自动化炼铅厂 (`method_lead_plant_r9`)；智能战略金属冶炼厂 (`method_rare_earth_metals_plant_r10`)；智能化不锈钢厂 (`method_stainless_steel_plant_r10`)；自动化炼锌厂 (`method_zinc_plant_r9`)
 
 #### 结构化内容效果
 
 - **铅**（`good`）：`good.lead` → `production_access` `unlock` `1.0`；`existing_binding`
 - **钢材**（`good`）：`good.steel` → `production_access` `unlock` `1.0`；`existing_binding`
 - **炼铜厂**（`building`）：`building.copper_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **铜**（`good`）：`good.copper` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **铜矿石**（`good`）：`good.copper_ore` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **煤炭**（`good`）：`good.coal` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **炼锡厂**（`building`）：`building.tin_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **锡**（`good`）：`good.tin` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **锡矿石**（`good`）：`good.tin_ore` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 炼铜厂：`country.output.building.copper_plant_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 核能 (`tech.nuclear_energy`)：先进冶金提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，核能直接使用这一能力完成其工艺或组织设计
+- 特种合金 (`tech.specialty_alloys`)：先进冶金提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，特种合金直接使用这一能力完成其工艺或组织设计
+- 核燃料循环 (`tech.nuclear_fuel_cycle`)：先进冶金提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，核燃料循环直接使用这一能力完成其工艺或组织设计
+- 半导体制造 (`tech.semiconductor_manufacturing`)：先进冶金提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，半导体制造直接使用这一能力完成其工艺或组织设计
+- 机器人制造 (`tech.robotic_manufacturing`)：先进冶金提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，机器人制造直接使用这一能力完成其工艺或组织设计
+- 自主采矿 (`tech.autonomous_mining`)：先进冶金提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，自主采矿直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
 无
-
-#### 应用交汇目标
-
-- 机械化采矿 (`tech.mechanized_mining`)
 
 #### 作为候选参与的里程碑
 
@@ -22475,7 +20640,7 @@
 | 研究成本 | 3120000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.electric\_intelligent\_energy |
 | 主要路线 | 能源 · 核能 (\`route.energy.nuclear\`) |
@@ -22483,22 +20648,21 @@
 | 开局能力标签 | 无 |
 | 效果配置 | research |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 电网 (`tech.electric_grid`)
+- 实验科学 (`tech.experimental_science`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，核裂变直接使用这一能力完成其工艺或组织设计
+- 电磁感应 (`tech.electromagnetic_induction`)：电磁感应提供发电、电机、电网与能源控制能力中的操作与材料处理方法，核裂变直接使用这一能力完成其工艺或组织设计
+- 工业研究 (`tech.industrial_research`)：工业研究提供记录、验证、计算与知识传播方法中的操作与材料处理方法，核裂变直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「电气社会」（tech.electrical\_society）
-  - 满足其一：
-    - 已发现信号「电气化突破」（breakthrough.electrification）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「稀土」（resource.rare\_earth）
+- 满足其一：
+  - 已发现信号「电气化突破」（breakthrough.electrification）
+  - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
 
 #### 效果摘要
 
-解锁物资：核燃料；解锁物资：反应堆部件；解锁建筑：核燃料厂；开放通用职业阶层岗位；核燃料厂产出 +20%
+解锁物资：核燃料；解锁物资：反应堆部件；解锁建筑：核燃料厂；解锁建筑：核医学制药中心
 
 #### 机会成本
 
@@ -22516,34 +20680,23 @@
 - **核燃料**（`good`）：`good.nuclear_fuel` → `production_access` `unlock` `1.0`；`existing_binding`
 - **反应堆部件**（`good`）：`good.reactor_components` → `production_access` `unlock` `1.0`；`existing_binding`
 - **核燃料厂**（`building`）：`building.nuclear_fuel_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **核燃料**（`good`）：`good.nuclear_fuel` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **战略矿物材料**（`good`）：`good.rare_earth_metals` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **核医学制药中心**（`building`）：`building.nuclear_medicine_center` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **药品**（`good`）：`good.pharmaceuticals` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **核燃料**（`good`）：`good.nuclear_fuel` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **反应堆部件**（`good`）：`good.reactor_components` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 核燃料厂：`country.output.building.nuclear_fuel_plant_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 核能 (`tech.nuclear_energy`)：核裂变提供发电、电机、电网与能源控制能力中的操作与材料处理方法，核能直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
 无
-
-#### 应用交汇目标
-
-- 特种合金 (`tech.specialty_alloys`)
 
 #### 作为候选参与的里程碑
 
@@ -22557,9 +20710,9 @@
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 社会 (`society`) |
 | 研究成本 | 2400000 科技点（`technology_points`） |
-| 节点标记 | 无 |
+| 节点标记 | 时代关键 |
 | 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | handling |
 | 布局路线 | backbone.knowledge\_computation |
 | 主要路线 | 制度 · 实验室 (\`route.institution.laboratory\`) |
@@ -22567,22 +20720,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | research |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 电气社会 (`tech.electrical_society`)
+- 工业研究 (`tech.industrial_research`)：工业研究提供记录、验证、计算与知识传播方法中的操作与材料处理方法，国家实验室直接使用这一能力完成其工艺或组织设计
+- 公共教育 (`tech.public_education`)：公共教育提供制度协调、公共组织与交换规则中的操作与材料处理方法，国家实验室直接使用这一能力完成其工艺或组织设计
+- 官僚行政 (`tech.state_bureaucracy`)：官僚行政提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，国家实验室直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「电气社会」（tech.electrical\_society）
-  - 满足其一：
-    - 已发现信号「电气化突破」（breakthrough.electrification）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「稀土」（resource.rare\_earth）
+无
 
 #### 效果摘要
 
-解锁建筑：国家实验室；开放通用职业阶层岗位；开放科技职业阶层岗位；开放通用职业阶层岗位；国家实验室产出 +25%
+解锁建筑：国家实验室；知识部门产出 +15%
 
 #### 机会成本
 
@@ -22598,33 +20748,30 @@
 #### 结构化内容效果
 
 - **国家实验室**（`building`）：`building.national_laboratory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **科技职业阶层**（`class`）：`class.technology` → `employment_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **科学仪器**（`good`）：`good.scientific_instruments` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **精密工具**（`good`）：`good.precision_tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 国家实验室：`country.output.building.national_laboratory_factor`：+25%
+- `country.output.knowledge_factor`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 核能 (`tech.nuclear_energy`)：国家实验室提供记录、验证、计算与知识传播方法中的操作与材料处理方法，核能直接使用这一能力完成其工艺或组织设计
+- 核燃料循环 (`tech.nuclear_fuel_cycle`)：国家实验室提供记录、验证、计算与知识传播方法中的操作与材料处理方法，核燃料循环直接使用这一能力完成其工艺或组织设计
+- 数字计算 (`tech.digital_computing`)：国家实验室提供记录、验证、计算与知识传播方法中的操作与材料处理方法，数字计算直接使用这一能力完成其工艺或组织设计
+- 知识经济 (`tech.knowledge_economy`)：国家实验室提供记录、验证、计算与知识传播方法中的操作与材料处理方法，知识经济直接使用这一能力完成其工艺或组织设计
+- 机器学习 (`tech.machine_learning`)：国家实验室提供记录、验证、计算与知识传播方法中的操作与材料处理方法，机器学习直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
-- 数字计算 (`tech.digital_computing`)
-
-#### 应用交汇目标
-
-- 数字计算 (`tech.digital_computing`)
+无
 
 #### 作为候选参与的里程碑
 
-无
+- 原子现代化 (`tech.atomic_modernity`)
 
 ### 深层地球物理 (`tech.deep_geophysics`)
 
@@ -22636,31 +20783,31 @@
 | 研究成本 | 2720000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | handling |
-| 布局路线 | branch.water\_wind |
+| 布局路线 | branch.geoscience\_gis |
 | 主要路线 | 资源 · 矿产 (\`route.resource.minerals\`) |
 | 全部路线 | 资源 · 矿产 (\`route.resource.minerals\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | resource |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 电气社会 (`tech.electrical_society`)
-- 发电机 (`tech.electric_generation`)
+- 地质勘探 (`tech.geological_prospecting`)：地质勘探提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，深层地球物理直接使用这一能力完成其工艺或组织设计
+- 电磁感应 (`tech.electromagnetic_induction`)：电磁感应提供发电、电机、电网与能源控制能力中的操作与材料处理方法，深层地球物理直接使用这一能力完成其工艺或组织设计
+- 概率与统计 (`tech.probability_statistics`)：概率与统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，深层地球物理直接使用这一能力完成其工艺或组织设计
+- 矿井排水 (`tech.mine_drainage`)：矿井排水提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，深层地球物理直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「电气社会」（tech.electrical\_society）
-  - 满足其一：
-    - 已发现信号「河湖水系」（landform.freshwater\_access）
-    - 已发现信号「河谷」（landform.river\_valley）
-    - 已发现信号「流域治理突破」（breakthrough.watershed\_management）
+- 满足其一：
+  - 已发现信号「河湖水系」（landform.freshwater\_access）
+  - 已发现信号「河谷」（landform.river\_valley）
+  - 已发现信号「流域治理突破」（breakthrough.watershed\_management）
 
 #### 效果摘要
 
-解锁物资：铝土矿；解锁建筑：铝土矿；开放通用职业阶层岗位；开放通用职业阶层岗位；铝土矿产出 +25%
+解锁物资：铝土矿；解锁建筑：铝土矿；解锁建筑：炼铅厂；可利用资源：铝土矿
 
 #### 机会成本
 
@@ -22677,33 +20824,26 @@
 
 - **铝土矿**（`good`）：`good.bauxite` → `production_access` `unlock` `1.0`；`existing_binding`
 - **铝土矿**（`building`）：`building.bauxite_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **铝土矿**（`good`）：`good.bauxite` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **炸药**（`good`）：`good.explosives` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **炼铅厂**（`building`）：`building.lead_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **铅**（`good`）：`good.lead` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **铅矿石**（`good`）：`good.lead_ore` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **煤炭**（`good`）：`good.coal` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **铝土矿**（`resource`）：`resource.bauxite` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 铝土矿：`country.output.building.bauxite_collector_factor`：+25%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 水文遥感 (`tech.hydrological_remote_sensing`)
+- 卫星观测 (`tech.satellite_observation`)：深层地球物理提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，卫星观测直接使用这一能力完成其工艺或组织设计
+- 矿物光谱遥感 (`tech.mineral_spectral_survey`)：深层地球物理提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，矿物光谱遥感直接使用这一能力完成其工艺或组织设计
+- 水文遥感 (`tech.hydrological_remote_sensing`)：深层地球物理提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，水文遥感直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 水文遥感 (`tech.hydrological_remote_sensing`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 水文遥感 (`tech.hydrological_remote_sensing`)
-- 系统工程 (`tech.systems_engineering`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -22719,7 +20859,7 @@
 | 研究成本 | 2400000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 锚点类型 | backbone |
 | 节点角色 | handling |
 | 布局路线 | backbone.institutions\_exchange |
 | 主要路线 | 制度 · 规划 (\`route.institution.planning\`) |
@@ -22727,22 +20867,21 @@
 | 开局能力标签 | 无 |
 | 效果配置 | research |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 电气社会 (`tech.electrical_society`)
+- 概率与统计 (`tech.probability_statistics`)：概率与统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，运筹学直接使用这一能力完成其工艺或组织设计
+- 工业统计 (`tech.industrial_statistics`)：工业统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，运筹学直接使用这一能力完成其工艺或组织设计
+- 工业组织 (`tech.industrial_organization`)：工业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，运筹学直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「电气社会」（tech.electrical\_society）
-  - 满足其一：
-    - 已发现信号「电气化突破」（breakthrough.electrification）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「稀土」（resource.rare\_earth）
+- 满足其一：
+  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
+  - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
 
 #### 效果摘要
 
-金属工具业产出 +11%
+工业研究实验室产出 +50%；社会领域研究效率 +15%
 
 #### 机会成本
 
@@ -22761,19 +20900,23 @@
 
 #### 永久 Modifier 条款
 
-- 金属工具业：`country.output.family.metal_toolmaking_factor`：+11%
+- 工业研究实验室：`country.output.building.industrial_research_laboratory_factor`：+50%
+- `country.research.society_efficiency`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 系统工程 (`tech.systems_engineering`)：运筹学提供制度协调、公共组织与交换规则中的操作与材料处理方法，系统工程直接使用这一能力完成其工艺或组织设计
+- 平台协调 (`tech.platform_coordination`)：运筹学提供制度协调、公共组织与交换规则中的操作与材料处理方法，平台协调直接使用这一能力完成其工艺或组织设计
+- 算法治理 (`tech.algorithmic_governance`)：运筹学提供制度协调、公共组织与交换规则中的操作与材料处理方法，算法治理直接使用这一能力完成其工艺或组织设计
+- 算法管理 (`tech.algorithmic_management`)：运筹学提供制度协调、公共组织与交换规则中的操作与材料处理方法，算法管理直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
-- 知识经济 (`tech.knowledge_economy`)
-
-#### 应用交汇目标
-
-- 知识经济 (`tech.knowledge_economy`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -22787,9 +20930,9 @@
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 2720000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.petroleum\_materials |
 | 主要路线 | 资源 · 石油 (\`route.resource.oil\`) |
@@ -22797,23 +20940,23 @@
 | 开局能力标签 | 无 |
 | 效果配置 | chemistry |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 电气社会 (`tech.electrical_society`)
-- 内燃机 (`tech.internal_combustion`)
+- 石油开采 (`tech.petroleum_extraction`)：石油开采提供油气开采、炼制与高分子原料能力中的操作与材料处理方法，石油化工直接使用这一能力完成其工艺或组织设计
+- 石油炼制 (`tech.petroleum_refining`)：石油炼制提供油气开采、炼制与高分子原料能力中的操作与材料处理方法，石油化工直接使用这一能力完成其工艺或组织设计
+- 工业化学 (`tech.industrial_chemistry`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，石油化工直接使用这一能力完成其工艺或组织设计
+- 电化学 (`tech.electrochemistry`)：电化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，石油化工直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「电气社会」（tech.electrical\_society）
-  - 满足其一：
-    - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
-    - 已发现信号「电气化突破」（breakthrough.electrification）
-    - 已发现信号「石油」（resource.oil）
+- 满足其一：
+  - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
+  - 已发现信号「电气化突破」（breakthrough.electrification）
+  - 已发现信号「石油」（resource.oil）
 
 #### 效果摘要
 
-解锁物资：石化产品；解锁建筑：智能石油化工厂；开放通用职业阶层岗位；开放通用职业阶层岗位；智能石油化工厂产出 +25%
+解锁物资：石化产品；解锁建筑：石油化工厂；解锁建筑：智能石油化工厂；解锁物资：洗涤剂；解锁建筑：洗涤剂厂；解锁建筑：智能化洗涤剂厂
 
 #### 机会成本
 
@@ -22821,46 +20964,42 @@
 
 #### 内容解锁
 
-- **物资：** 石化产品 (`petrochemicals`)
-- **建筑 / 生产方式：** 智能石油化工厂 (`method_petrochemicals_plant_r10`)；石油化工厂 (`petrochemicals_plant`)
+- **物资：** 洗涤剂 (`detergent`)；石化产品 (`petrochemicals`)
+- **建筑 / 生产方式：** 洗涤剂厂 (`detergent_plant`)；智能化洗涤剂厂 (`method_detergent_plant_r10`)；智能石油化工厂 (`method_petrochemicals_plant_r10`)；石油化工厂 (`petrochemicals_plant`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 现代炸药厂 (`method_explosives_plant_r8`)
 
 #### 结构化内容效果
 
-- **石化产品**（`good`）：`good.petrochemicals` → `production_access` `unlock` `1.0`；`existing_binding`
-- **智能石油化工厂**（`building`）：`building.method_petrochemicals_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **石化产品**（`good`）：`good.petrochemicals` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **原油**（`good`）：`good.crude_oil` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **天然气**（`good`）：`good.natural_gas` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **自主系统**（`good`）：`good.autonomous_systems` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **石油化工厂**（`building`）：`building.petrochemicals_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **石化产品**（`good`）：`good.petrochemicals` → `production_access` `unlock` `1.0`；`catalog_rebind`
+- **石油化工厂**（`building`）：`building.petrochemicals_plant` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
+- **智能石油化工厂**（`building`）：`building.method_petrochemicals_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
+- **洗涤剂**（`good`）：`good.detergent` → `production_access` `unlock` `1.0`；`catalog_rebind`
+- **洗涤剂厂**（`building`）：`building.detergent_plant` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
+- **智能化洗涤剂厂**（`building`）：`building.method_detergent_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
 
 #### 永久 Modifier 条款
 
-- 智能石油化工厂：`country.output.building.method_petrochemicals_plant_r10_factor`：+25%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 半导体制造 (`tech.semiconductor_manufacturing`)
+- 合成材料 (`tech.synthetic_materials`)：石油化工提供油气开采、炼制与高分子原料能力中的操作与材料处理方法，合成材料直接使用这一能力完成其工艺或组织设计
+- 石化裂解 (`tech.petrochemical_cracking`)：石油化工提供油气开采、炼制与高分子原料能力中的操作与材料处理方法，石化裂解直接使用这一能力完成其工艺或组织设计
+- 塑料工程 (`tech.plastics_engineering`)：石油化工提供油气开采、炼制与高分子原料能力中的操作与材料处理方法，塑料工程直接使用这一能力完成其工艺或组织设计
+- 合成纤维工程 (`tech.synthetic_fiber_engineering`)：石油化工稳定供应合成纤维所需单体与中间体
 
-#### 同路线后继
+#### 主题路线后继
 
-- 半导体制造 (`tech.semiconductor_manufacturing`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 半导体制造 (`tech.semiconductor_manufacturing`)
-- 石化裂解 (`tech.petrochemical_cracking`)
+无
 
 #### 作为候选参与的里程碑
 
-- 原子现代化 (`tech.atomic_modernity`)
+无
 
 ### 合成材料 (`tech.synthetic_materials`)
 
@@ -22870,33 +21009,32 @@
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 2720000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | branch.forest\_biomass |
+| 布局路线 | branch.petroleum\_materials |
 | 主要路线 | 材料 · 合成材料 (\`route.material.materials\`) |
 | 全部路线 | 材料 · 合成材料 (\`route.material.materials\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | chemistry |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 电气社会 (`tech.electrical_society`)
-- 电化学 (`tech.electrochemistry`)
+- 工业化学 (`tech.industrial_chemistry`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，合成材料直接使用这一能力完成其工艺或组织设计
+- 石油化工 (`tech.petrochemical_industry`)：石油化工提供油气开采、炼制与高分子原料能力中的操作与材料处理方法，合成材料直接使用这一能力完成其工艺或组织设计
+- 天然橡胶加工 (`tech.rubber_working`)：天然橡胶加工提供热带作物栽培、采收与商品化处理能力中的操作与材料处理方法，合成材料直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「电气社会」（tech.electrical\_society）
-  - 满足其一：
-    - 已发现信号「石油」（resource.oil）
-    - 已发现信号「天然气」（resource.natural\_gas）
-    - 已发现信号「煤炭」（resource.coal）
+- 满足其一：
+  - 已发现信号「石油」（resource.oil）
+  - 已发现信号「天然气」（resource.natural\_gas）
+  - 已发现信号「煤炭」（resource.coal）
 
 #### 效果摘要
 
-解锁物资：混凝土；解锁物资：合成橡胶；解锁建筑：混凝土厂；开放通用职业阶层岗位；混凝土厂产出 +25%
+解锁物资：混凝土；解锁物资：合成橡胶；解锁建筑：混凝土厂；解锁建筑：合成橡胶厂
 
 #### 机会成本
 
@@ -22914,39 +21052,27 @@
 - **混凝土**（`good`）：`good.concrete` → `production_access` `unlock` `1.0`；`existing_binding`
 - **合成橡胶**（`good`）：`good.synthetic_rubber` → `production_access` `unlock` `1.0`；`existing_binding`
 - **混凝土厂**（`building`）：`building.concrete_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **混凝土**（`good`）：`good.concrete` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **水泥**（`good`）：`good.cement` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **原石**（`good`）：`good.raw_stone` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **合成橡胶厂**（`building`）：`building.synthetic_rubber_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **合成橡胶**（`good`）：`good.synthetic_rubber` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **石化产品**（`good`）：`good.petrochemicals` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **硫磺**（`good`）：`good.sulfur` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 混凝土厂：`country.output.building.concrete_plant_factor`：+25%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 卫星观测 (`tech.satellite_observation`)
+无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 卫星观测 (`tech.satellite_observation`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 卫星观测 (`tech.satellite_observation`)
-- 塑料工程 (`tech.plastics_engineering`)
+无
 
 #### 作为候选参与的里程碑
 
-- 原子现代化 (`tech.atomic_modernity`)
+无
 
 ### 机械化采矿 (`tech.mechanized_mining`)
 
@@ -22956,9 +21082,9 @@
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 2720000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.heavy\_industry |
 | 主要路线 | 资源 · 矿产 (\`route.resource.minerals\`) |
@@ -22966,23 +21092,21 @@
 | 开局能力标签 | 无 |
 | 效果配置 | resource |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 电气社会 (`tech.electrical_society`)
-- 石油钻探 (`tech.petroleum_drilling`)
+- 工业采煤 (`tech.industrial_coal_mining`)：工业采煤提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，机械化采矿直接使用这一能力完成其工艺或组织设计
+- 机床 (`tech.machine_tools`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，机械化采矿直接使用这一能力完成其工艺或组织设计
+- 内燃机 (`tech.internal_combustion`)：内燃机提供油气开采、炼制与高分子原料能力中的动力与规模化能力，机械化采矿直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「电气社会」（tech.electrical\_society）
-  - 满足其一：
-    - 已发现信号「铁矿」（resource.iron\_ore）
-    - 已发现信号「煤炭」（resource.coal）
-    - 已发现信号「矿井支护突破」（breakthrough.mine\_support）
+- 满足其一：
+  - 已发现信号「矿井支护突破」（breakthrough.mine\_support）
+  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
 
 #### 效果摘要
 
-解锁建筑：锰矿；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：智能锰矿；锰矿产出 +25%
+解锁建筑：锰矿；解锁建筑：智能锰矿；解锁建筑：现代硝石矿；解锁建筑：现代硫矿；采掘部门产出 +12%
 
 #### 机会成本
 
@@ -22991,41 +21115,36 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 锰矿 (`manganese_ore_collector`)；智能锰矿 (`method_manganese_ore_collector_r10`)
+- **建筑 / 生产方式：** 锰矿 (`manganese_ore_collector`)；智能锰矿 (`method_manganese_ore_collector_r10`)；现代硝石矿 (`method_saltpeter_collector_r8`)；现代硫矿 (`method_sulfur_collector_r8`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 现代硝石矿 (`method_saltpeter_collector_r8`)；现代硫矿 (`method_sulfur_collector_r8`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 自动化磷矿 (`method_phosphate_rock_collector_r9`)；自动化锌矿 (`method_zinc_ore_collector_r9`)
 
 #### 结构化内容效果
 
 - **锰矿**（`building`）：`building.manganese_ore_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **锰矿石**（`good`）：`good.manganese_ore` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **炸药**（`good`）：`good.explosives` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **智能锰矿**（`building`）：`building.method_manganese_ore_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **自主系统**（`good`）：`good.autonomous_systems` → `input_method_access` `enable` `1.0`；`existing_binding`
+- **现代硝石矿**（`building`）：`building.method_saltpeter_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
+- **现代硫矿**（`building`）：`building.method_sulfur_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
 
 #### 永久 Modifier 条款
 
-- 锰矿：`country.output.building.manganese_ore_collector_factor`：+25%
+- `country.output.extractive_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 传感器网络 (`tech.sensor_networks`)
+- 自主采矿 (`tech.autonomous_mining`)：机械化采矿提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，自主采矿直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 传感器网络 (`tech.sensor_networks`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 传感器网络 (`tech.sensor_networks`)
-- 特种合金 (`tech.specialty_alloys`)
+无
 
 #### 作为候选参与的里程碑
 
-- 原子现代化 (`tech.atomic_modernity`)
+无
 
 ### 公共卫生体系 (`tech.public_health_systems`)
 
@@ -23035,33 +21154,33 @@
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 社会 (`society`) |
 | 研究成本 | 2720000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | branch.tropical\_commodities |
+| 布局路线 | branch.public\_health |
 | 主要路线 | 制度 · 卫生 (\`route.institution.health\`) |
 | 全部路线 | 制度 · 卫生 (\`route.institution.health\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | health |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 电气社会 (`tech.electrical_society`)
-- 机械制冷 (`tech.refrigeration`)
+- 公共卫生 (`tech.public_health`)：公共卫生提供卫生、疾病控制与医疗组织能力中的操作与材料处理方法，公共卫生体系直接使用这一能力完成其工艺或组织设计
+- 现代医学 (`tech.modern_medicine`)：现代医学提供卫生、疾病控制与医疗组织能力中的操作与材料处理方法，公共卫生体系直接使用这一能力完成其工艺或组织设计
+- 城市卫生 (`tech.urban_sanitation`)：城市卫生提供卫生、疾病控制与医疗组织能力中的操作与材料处理方法，公共卫生体系直接使用这一能力完成其工艺或组织设计
+- 工业化学 (`tech.industrial_chemistry`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，公共卫生体系直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「电气社会」（tech.electrical\_society）
-  - 满足其一：
-    - 已发现信号「香料作物」（bio.spice）
-    - 已发现信号「橡胶树」（bio.rubber）
-    - 已发现信号「香料样本接触」（contact.spice）
+- 满足其一：
+  - 已发现信号「香料作物」（bio.spice）
+  - 已发现信号「橡胶树」（bio.rubber）
+  - 已发现信号「香料样本接触」（contact.spice）
 
 #### 效果摘要
 
-化学工业产出 +12%
+化学工业产出 +28%
 
 #### 机会成本
 
@@ -23080,24 +21199,23 @@
 
 #### 永久 Modifier 条款
 
-- 化学工业：`country.output.family.chemical_industry_factor`：+12%
+- 化学工业：`country.output.family.chemical_industry_factor`：+28%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 数值天气预报 (`tech.numerical_weather_prediction`)
+- 工业生态 (`tech.industrial_ecology`)：公共卫生体系提供卫生、疾病控制与医疗组织能力中的操作与材料处理方法，工业生态直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 数值天气预报 (`tech.numerical_weather_prediction`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 数值天气预报 (`tech.numerical_weather_prediction`)
-- 全球物流 (`tech.global_logistics`)
+无
 
 #### 作为候选参与的里程碑
 
-- 原子现代化 (`tech.atomic_modernity`)
+无
 
 ### 核能 (`tech.nuclear_energy`)
 
@@ -23109,7 +21227,7 @@
 | 研究成本 | 2720000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | power\_scale |
 | 布局路线 | branch.electric\_intelligent\_energy |
 | 主要路线 | 能源 · 核能 (\`route.energy.nuclear\`) |
@@ -23117,23 +21235,24 @@
 | 开局能力标签 | 无 |
 | 效果配置 | energy |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 电气社会 (`tech.electrical_society`)
-- 电网 (`tech.electric_grid`)
+- 核裂变 (`tech.nuclear_fission`)：核裂变提供发电、电机、电网与能源控制能力中的操作与材料处理方法，核能直接使用这一能力完成其工艺或组织设计
+- 先进冶金 (`tech.advanced_metallurgy`)：先进冶金提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，核能直接使用这一能力完成其工艺或组织设计
+- 电网 (`tech.electric_grid`)：电网提供发电、电机、电网与能源控制能力中的动力与规模化能力，核能直接使用这一能力完成其工艺或组织设计
+- 国家实验室 (`tech.national_laboratories`)：国家实验室提供记录、验证、计算与知识传播方法中的操作与材料处理方法，核能直接使用这一能力完成其工艺或组织设计
+- 精密仪器 (`tech.precision_instruments`)：精密仪器提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，核能直接使用这一能力完成其工艺或组织设计
+- 工业质量控制 (`tech.industrial_quality_control`)：工业质量控制提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，核能直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「电气社会」（tech.electrical\_society）
-  - 满足其一：
-    - 已发现信号「电气化突破」（breakthrough.electrification）
-    - 已发现信号「电机绕组突破」（breakthrough.motor\_winding）
-    - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
+- 满足其一：
+  - 已发现信号「电气化突破」（breakthrough.electrification）
+  - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
 
 #### 效果摘要
 
-解锁建筑：核电站；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：核反应堆设备厂；核电站产出 +25%
+解锁建筑：核电站；解锁建筑：核反应堆设备厂；能源部门产出 +12%
 
 #### 机会成本
 
@@ -23144,43 +21263,28 @@
 - **物资：** 无
 - **建筑 / 生产方式：** 核电站 (`nuclear_power_plant`)；核反应堆设备厂 (`reactor_component_works`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 智能化核反应堆设备厂 (`method_reactor_component_works_r10`)
 
 #### 结构化内容效果
 
 - **核电站**（`building`）：`building.nuclear_power_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **核燃料**（`good`）：`good.nuclear_fuel` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **反应堆部件**（`good`）：`good.reactor_components` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **核反应堆设备厂**（`building`）：`building.reactor_component_works` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **反应堆部件**（`good`）：`good.reactor_components` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **钢材**（`good`）：`good.steel` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **战略矿物材料**（`good`）：`good.rare_earth_metals` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电气设备**（`good`）：`good.electrical_equipment` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 核电站：`country.output.building.nuclear_power_plant_factor`：+25%
+- `country.output.energy_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 核燃料循环 (`tech.nuclear_fuel_cycle`)
-- 信息论 (`tech.information_theory`)
+- 核燃料循环 (`tech.nuclear_fuel_cycle`)：核能提供发电、电机、电网与能源控制能力中的动力与规模化能力，核燃料循环直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 信息论 (`tech.information_theory`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 信息论 (`tech.information_theory`)
-- 特种合金 (`tech.specialty_alloys`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -23194,9 +21298,9 @@
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 2400000 科技点（`technology_points`） |
-| 节点标记 | 无 |
+| 节点标记 | 时代关键 |
 | 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | power\_scale |
 | 布局路线 | backbone.tools\_machinery |
 | 主要路线 | 制度 · 规划 (\`route.institution.planning\`) |
@@ -23204,22 +21308,18 @@
 | 开局能力标签 | 无 |
 | 效果配置 | automation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 电气社会 (`tech.electrical_society`)
+- 电气化 (`tech.electrification`)：电气化提供发电、电机、电网与能源控制能力中的动力与规模化能力，电子控制直接使用这一能力完成其工艺或组织设计
+- 工业研究 (`tech.industrial_research`)：工业研究提供记录、验证、计算与知识传播方法中的操作与材料处理方法，电子控制直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「电气社会」（tech.electrical\_society）
-  - 满足其一：
-    - 已发现信号「电气化突破」（breakthrough.electrification）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「稀土」（resource.rare\_earth）
+无
 
 #### 效果摘要
 
-解锁物资：电池；解锁建筑：电池厂；开放通用职业阶层岗位；开放通用职业阶层岗位；电池厂产出 +25%
+解锁物资：电池；工程领域研究效率 +15%
 
 #### 机会成本
 
@@ -23228,42 +21328,40 @@
 #### 内容解锁
 
 - **物资：** 电池 (`batteries`)
-- **建筑 / 生产方式：** 电池厂 (`batteries_plant`)
+- **建筑 / 生产方式：** 无
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 自动化润滑油厂 (`method_lubricants_plant_r9`)；精密工具厂 (`method_precision_tool_workshop_r8`)；精密仪器厂 (`method_scientific_instrument_works_r8`)
 
 #### 结构化内容效果
 
 - **电池**（`good`）：`good.batteries` → `production_access` `unlock` `1.0`；`existing_binding`
-- **电池厂**（`building`）：`building.batteries_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **电池**（`good`）：`good.batteries` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **铅**（`good`）：`good.lead` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业化学品**（`good`）：`good.industrial_chemicals` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 电池厂：`country.output.building.batteries_plant_factor`：+25%
+- `country.research.engineering_efficiency`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 系统工程 (`tech.systems_engineering`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，系统工程直接使用这一能力完成其工艺或组织设计
+- 精准农业 (`tech.precision_agriculture`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，精准农业直接使用这一能力完成其工艺或组织设计
+- 数字计算 (`tech.digital_computing`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，数字计算直接使用这一能力完成其工艺或组织设计
+- 半导体制造 (`tech.semiconductor_manufacturing`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，半导体制造直接使用这一能力完成其工艺或组织设计
+- 卫星观测 (`tech.satellite_observation`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，卫星观测直接使用这一能力完成其工艺或组织设计
+- 数字控制 (`tech.digital_control`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，数字控制直接使用这一能力完成其工艺或组织设计
+- 传感器网络 (`tech.sensor_networks`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，传感器网络直接使用这一能力完成其工艺或组织设计
+- 机器人制造 (`tech.robotic_manufacturing`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，机器人制造直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
-- 数字控制 (`tech.digital_control`)
-
-#### 应用交汇目标
-
-- 数字控制 (`tech.digital_control`)
+无
 
 #### 作为候选参与的里程碑
 
-无
+- 原子现代化 (`tech.atomic_modernity`)
 
 ### 全球物流 (`tech.global_logistics`)
 
@@ -23275,7 +21373,7 @@
 | 研究成本 | 2720000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | institution |
 | 布局路线 | branch.maritime\_logistics |
 | 主要路线 | 制度 · 网络 (\`route.institution.network\`) |
@@ -23283,23 +21381,26 @@
 | 开局能力标签 | 无 |
 | 效果配置 | trade |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 电气社会 (`tech.electrical_society`)
-- 电信 (`tech.telecommunications`)
+- 商业网络 (`tech.mercantile_networks`)：商业网络提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，全球物流直接使用这一能力完成其工艺或组织设计
+
+#### 额外研发条件
+
+- 至少满足 2 项：
+  - 已完成科技「铁路物流」（tech.rail\_logistics）
+  - 已完成科技「电信」（tech.telecommunications）
+  - 已完成科技「远洋航海」（tech.oceanic\_navigation）
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「电气社会」（tech.electrical\_society）
-  - 满足其一：
-    - 已发现信号「海岸」（landform.coast）
-    - 已发现信号「海洋鱼类」（resource.marine\_fish）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+- 满足其一：
+  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
+  - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
 
 #### 效果摘要
 
-运输装备业产出 +12%
+海运作业产出 +28%；贸易速度 +12%
 
 #### 机会成本
 
@@ -23318,20 +21419,22 @@
 
 #### 永久 Modifier 条款
 
-- 运输装备业：`country.output.family.railway_equipment_making_factor`：+12%
+- 海运作业：`country.output.family.maritime_operations_factor`：+28%
+- `country.trade.speed_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 自动化物流 (`tech.automated_logistics`)
+- 公司农业 (`tech.corporate_agribusiness`)：全球物流提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，公司农业直接使用这一能力完成其工艺或组织设计
+- 自动化物流 (`tech.automated_logistics`)：全球物流提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，自动化物流直接使用这一能力完成其工艺或组织设计
+- 数字市场 (`tech.digital_marketplaces`)：全球物流提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，数字市场直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 自动化物流 (`tech.automated_logistics`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 自动化物流 (`tech.automated_logistics`)
-- 合成材料 (`tech.synthetic_materials`)
+- 数字市场 (`tech.digital_marketplaces`)：全球物流网络为数字市场的跨区域履约提供实体运输能力
 
 #### 作为候选参与的里程碑
 
@@ -23345,9 +21448,9 @@
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 2720000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | production\_system |
 | 布局路线 | branch.nonferrous\_metals |
 | 主要路线 | 资源 · 合金 (\`route.resource.alloys\`) |
@@ -23355,23 +21458,21 @@
 | 开局能力标签 | 无 |
 | 效果配置 | metallurgy |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 电气社会 (`tech.electrical_society`)
-- 电磁感应 (`tech.electromagnetic_induction`)
+- 先进冶金 (`tech.advanced_metallurgy`)：先进冶金提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，特种合金直接使用这一能力完成其工艺或组织设计
+- 工业质量控制 (`tech.industrial_quality_control`)：工业质量控制提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，特种合金直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「电气社会」（tech.electrical\_society）
-  - 满足其一：
-    - 已发现信号「铜矿」（resource.copper\_ore）
-    - 已发现信号「锡矿」（resource.tin\_ore）
-    - 已发现信号「金属加工突破」（breakthrough.metalworking）
+- 满足其一：
+  - 已发现信号「铁矿」（resource.iron\_ore）
+  - 已发现信号「铜矿」（resource.copper\_ore）
+  - 已发现信号「金属加工突破」（breakthrough.metalworking）
 
 #### 效果摘要
 
-解锁物资：铝；解锁物资：不锈钢；解锁建筑：电解铝厂；开放通用职业阶层岗位；电解铝厂产出 +25%
+解锁物资：铝；解锁物资：不锈钢；解锁建筑：电解铝厂；解锁建筑：不锈钢厂；采掘部门产出 +12%
 
 #### 机会成本
 
@@ -23389,39 +21490,27 @@
 - **铝**（`good`）：`good.aluminum` → `production_access` `unlock` `1.0`；`existing_binding`
 - **不锈钢**（`good`）：`good.stainless_steel` → `production_access` `unlock` `1.0`；`existing_binding`
 - **电解铝厂**（`building`）：`building.aluminum_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **铝**（`good`）：`good.aluminum` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **铝土矿**（`good`）：`good.bauxite` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **不锈钢厂**（`building`）：`building.stainless_steel_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **不锈钢**（`good`）：`good.stainless_steel` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **钢材**（`good`）：`good.steel` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **战略矿物材料**（`good`）：`good.rare_earth_metals` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **锰矿石**（`good`）：`good.manganese_ore` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 电解铝厂：`country.output.building.aluminum_plant_factor`：+25%
+- `country.output.extractive_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 矿物光谱遥感 (`tech.mineral_spectral_survey`)
+无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 矿物光谱遥感 (`tech.mineral_spectral_survey`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 矿物光谱遥感 (`tech.mineral_spectral_survey`)
-- 机械化采矿 (`tech.mechanized_mining`)
+无
 
 #### 作为候选参与的里程碑
 
-- 原子现代化 (`tech.atomic_modernity`)
+无
 
 ### 石化裂解 (`tech.petrochemical_cracking`)
 
@@ -23431,33 +21520,32 @@
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 2720000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | branch.industrial\_chemistry |
+| 布局路线 | branch.petroleum\_materials |
 | 主要路线 | 资源 · 石油 (\`route.resource.oil\`) |
 | 全部路线 | 资源 · 石油 (\`route.resource.oil\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | chemistry |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 电气社会 (`tech.electrical_society`)
-- 现代医学 (`tech.modern_medicine`)
+- 石油化工 (`tech.petrochemical_industry`)：石油化工提供油气开采、炼制与高分子原料能力中的操作与材料处理方法，石化裂解直接使用这一能力完成其工艺或组织设计
+- 工业化学 (`tech.industrial_chemistry`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，石化裂解直接使用这一能力完成其工艺或组织设计
+- 热力学 (`tech.thermodynamics`)：热力学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，石化裂解直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「电气社会」（tech.electrical\_society）
-  - 满足其一：
-    - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
-    - 已发现信号「电气化突破」（breakthrough.electrification）
-    - 已发现信号「磷矿石」（resource.phosphate\_rock）
+- 满足其一：
+  - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
+  - 已发现信号「电气化突破」（breakthrough.electrification）
+  - 已发现信号「磷矿石」（resource.phosphate\_rock）
 
 #### 效果摘要
 
-解锁物资：天然气；解锁建筑：智能天然气田；开放通用职业阶层岗位；开放通用职业阶层岗位；智能天然气田产出 +25%
+解锁物资：天然气；解锁建筑：智能天然气田；解锁建筑：天然气田；可利用资源：天然气；制造部门产出 +12%
 
 #### 机会成本
 
@@ -23474,35 +21562,28 @@
 
 - **天然气**（`good`）：`good.natural_gas` → `production_access` `unlock` `1.0`；`existing_binding`
 - **智能天然气田**（`building`）：`building.method_natural_gas_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **天然气**（`good`）：`good.natural_gas` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **自主系统**（`good`）：`good.autonomous_systems` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **天然气田**（`building`）：`building.natural_gas_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **天然气**（`resource`）：`resource.natural_gas` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 智能天然气田：`country.output.building.method_natural_gas_collector_r10_factor`：+25%
+- `country.output.manufacturing_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 软件工程 (`tech.software_engineering`)
+无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 软件工程 (`tech.software_engineering`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 软件工程 (`tech.software_engineering`)
-- 工业农学 (`tech.industrial_agronomy`)
+无
 
 #### 作为候选参与的里程碑
 
-- 原子现代化 (`tech.atomic_modernity`)
+无
 
 ### 塑料工程 (`tech.plastics_engineering`)
 
@@ -23512,33 +21593,31 @@
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 2720000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | branch.construction\_materials |
+| 布局路线 | branch.petroleum\_materials |
 | 主要路线 | 材料 · 合成材料 (\`route.material.materials\`) |
 | 全部路线 | 材料 · 合成材料 (\`route.material.materials\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | chemistry |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 电气社会 (`tech.electrical_society`)
-- 电气化 (`tech.electrification`)
+- 石油化工 (`tech.petrochemical_industry`)：石油化工提供油气开采、炼制与高分子原料能力中的操作与材料处理方法，塑料工程直接使用这一能力完成其工艺或组织设计
+- 工业化学 (`tech.industrial_chemistry`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，塑料工程直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「电气社会」（tech.electrical\_society）
-  - 满足其一：
-    - 已发现信号「石油」（resource.oil）
-    - 已发现信号「天然气」（resource.natural\_gas）
-    - 已发现信号「煤炭」（resource.coal）
+- 满足其一：
+  - 已发现信号「石油」（resource.oil）
+  - 已发现信号「天然气」（resource.natural\_gas）
+  - 已发现信号「煤炭」（resource.coal）
 
 #### 效果摘要
 
-解锁物资：塑料；解锁建筑：智能化塑料厂；开放通用职业阶层岗位；开放通用职业阶层岗位；智能化塑料厂产出 +25%
+解锁物资：塑料；解锁建筑：智能化塑料厂；解锁建筑：塑料厂
 
 #### 机会成本
 
@@ -23555,36 +21634,27 @@
 
 - **塑料**（`good`）：`good.plastics` → `production_access` `unlock` `1.0`；`existing_binding`
 - **智能化塑料厂**（`building`）：`building.method_plastics_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **塑料**（`good`）：`good.plastics` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **石化产品**（`good`）：`good.petrochemicals` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **自主系统**（`good`）：`good.autonomous_systems` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **塑料厂**（`building`）：`building.plastics_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 智能化塑料厂：`country.output.building.method_plastics_plant_r10_factor`：+25%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 地理信息系统 (`tech.geographic_information_systems`)
+无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 地理信息系统 (`tech.geographic_information_systems`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 地理信息系统 (`tech.geographic_information_systems`)
-- 合成材料 (`tech.synthetic_materials`)
+无
 
 #### 作为候选参与的里程碑
 
-- 原子现代化 (`tech.atomic_modernity`)
+无
 
 ### 公司农业 (`tech.corporate_agribusiness`)
 
@@ -23596,7 +21666,7 @@
 | 研究成本 | 2720000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | institution |
 | 布局路线 | branch.pastoral\_livestock |
 | 主要路线 | 作物 · 工业农业 (\`route.crop.industrial\`) |
@@ -23604,23 +21674,22 @@
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 电气社会 (`tech.electrical_society`)
-- 现代畜牧 (`tech.modern_husbandry`)
+- 公司管理 (`tech.corporate_management`)：公司管理提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，公司农业直接使用这一能力完成其工艺或组织设计
+- 工业农学 (`tech.industrial_agronomy`)：工业农学提供玉米栽培、选育与田间管理经验中的成套生产流程，公司农业直接使用这一能力完成其工艺或组织设计
+- 全球物流 (`tech.global_logistics`)：全球物流提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，公司农业直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「电气社会」（tech.electrical\_society）
-  - 满足其一：
-    - 已发现信号「电气化突破」（breakthrough.electrification）
-    - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
-    - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
+- 满足其一：
+  - 已发现信号「电气化突破」（breakthrough.electrification）
+  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
+  - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
 
 #### 效果摘要
 
-精准农场产出 +25%；国家协同能力 +3%
+精准农场产出 +50%
 
 #### 机会成本
 
@@ -23639,94 +21708,19 @@
 
 #### 永久 Modifier 条款
 
-- 精准农场：`country.output.building.precision_farm_factor`：+25%
-- `country.research.society_efficiency`：+3%
+- 精准农场：`country.output.building.precision_farm_factor`：+50%
 
-#### 直接后继（硬前置关系）
-
-- 生物信息学 (`tech.bioinformatics`)
-
-#### 同路线后继
-
-- 生物信息学 (`tech.bioinformatics`)
-
-#### 应用交汇目标
-
-- 生物信息学 (`tech.bioinformatics`)
-- 合成纤维工程 (`tech.synthetic_fiber_engineering`)
-
-#### 作为候选参与的里程碑
-
-- 原子现代化 (`tech.atomic_modernity`)
-
-### 集体农业 (`tech.collective_agriculture`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.collective_agriculture` |
-| 时代 | 原子时代 (`atomic`) |
-| 领域 | 社会 (`society`) |
-| 研究成本 | 2720000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
-| 网络角色 | branch |
-| 锚点类型 | route\_anchor |
-| 节点角色 | institution |
-| 布局路线 | branch.wheat\_rainfed |
-| 主要路线 | 作物 · 工业农业 (\`route.crop.industrial\`) |
-| 全部路线 | 作物 · 工业农业 (\`route.crop.industrial\`)；制度 · 社群 (\`route.institution.community\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | organization |
-
-#### 前置科技（决定研发资格）
-
-- 电气社会 (`tech.electrical_society`)
-- 机动农业 (`tech.motorized_agriculture`)
-
-#### 发现启发（仅用于揭示）
-
-- 全部满足：
-  - 已完成科技「电气社会」（tech.electrical\_society）
-  - 满足其一：
-    - 已发现信号「电气化突破」（breakthrough.electrification）
-    - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
-    - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
-
-#### 效果摘要
-
-机械化农场产出 +25%；国家协同能力 +3%
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 9 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 无
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
+#### 被以下科技作为硬前置
 
 无
 
-#### 永久 Modifier 条款
+#### 主题路线后继
 
-- 机械化农场：`country.output.building.mechanized_farm_factor`：+25%
-- `country.research.society_efficiency`：+3%
+无
 
-#### 直接后继（硬前置关系）
+#### 跨领域应用
 
-- 作物遥感 (`tech.crop_remote_sensing`)
-
-#### 同路线后继
-
-- 作物遥感 (`tech.crop_remote_sensing`)
-
-#### 应用交汇目标
-
-- 作物遥感 (`tech.crop_remote_sensing`)
-- 石化裂解 (`tech.petrochemical_cracking`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -23742,31 +21736,27 @@
 | 研究成本 | 2720000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | institution |
-| 布局路线 | branch.tuber\_highland |
+| 布局路线 | branch.labor\_management |
 | 主要路线 | 制度 · 国家治理 (\`route.institution.state\`) |
 | 全部路线 | 制度 · 国家治理 (\`route.institution.state\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 电气社会 (`tech.electrical_society`)
-- 冷链 (`tech.cold_chain`)
+- 官僚行政 (`tech.state_bureaucracy`)：官僚行政提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，国营企业直接使用这一能力完成其工艺或组织设计
+- 工厂制 (`tech.factory_system`)：工厂制提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，国营企业直接使用这一能力完成其工艺或组织设计
+- 合作社组织 (`tech.cooperative_association`)：合作社组织提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，国营企业直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「电气社会」（tech.electrical\_society）
-  - 满足其一：
-    - 已发现信号「电气化突破」（breakthrough.electrification）
-    - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
-    - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
+无
 
 #### 效果摘要
 
-燃煤发电厂产出 +25%；国家协同能力 +3%
+燃煤发电厂产出 +50%；寒冷损失 -8%
 
 #### 机会成本
 
@@ -23785,25 +21775,93 @@
 
 #### 永久 Modifier 条款
 
-- 燃煤发电厂：`country.output.building.electricity_plant_factor`：+25%
-- `country.research.society_efficiency`：+3%
+- 燃煤发电厂：`country.output.building.electricity_plant_factor`：+50%
+- `country.climate.cold_stress_factor`：+8%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 生物技术 (`tech.biotechnology`)
+- 集体农业 (`tech.collective_agriculture`)：国营企业提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，集体农业直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 生物技术 (`tech.biotechnology`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 生物技术 (`tech.biotechnology`)
-- 石化裂解 (`tech.petrochemical_cracking`)
+无
 
 #### 作为候选参与的里程碑
 
 - 原子现代化 (`tech.atomic_modernity`)
+
+### 集体农业 (`tech.collective_agriculture`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.collective_agriculture` |
+| 时代 | 原子时代 (`atomic`) |
+| 领域 | 社会 (`society`) |
+| 研究成本 | 2720000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | institution |
+| 布局路线 | branch.wheat\_rainfed |
+| 主要路线 | 作物 · 工业农业 (\`route.crop.industrial\`) |
+| 全部路线 | 作物 · 工业农业 (\`route.crop.industrial\`)；制度 · 社群 (\`route.institution.community\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | organization |
+
+#### 硬前置（决定研发资格）
+
+- 国营企业 (`tech.state_enterprises`)：国营企业提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，集体农业直接使用这一能力完成其工艺或组织设计
+- 工业农学 (`tech.industrial_agronomy`)：工业农学提供玉米栽培、选育与田间管理经验中的成套生产流程，集体农业直接使用这一能力完成其工艺或组织设计
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「电气化突破」（breakthrough.electrification）
+  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
+  - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
+
+#### 效果摘要
+
+机械化农场产出 +50%
+
+#### 机会成本
+
+转入该路线需补齐历史锚点；时代 9 后的生产方式依赖专用资本、岗位或地理条件
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+- 机械化农场：`country.output.building.mechanized_farm_factor`：+50%
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
 
 ### 核燃料循环 (`tech.nuclear_fuel_cycle`)
 
@@ -23815,7 +21873,7 @@
 | 研究成本 | 3120000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | support |
+| 锚点类型 | branch |
 | 节点角色 | power\_scale |
 | 布局路线 | branch.electric\_intelligent\_energy |
 | 主要路线 | 能源 · 核能 (\`route.energy.nuclear\`) |
@@ -23823,22 +21881,23 @@
 | 开局能力标签 | 无 |
 | 效果配置 | energy |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 核能 (`tech.nuclear_energy`)
+- 核能 (`tech.nuclear_energy`)：核能提供发电、电机、电网与能源控制能力中的动力与规模化能力，核燃料循环直接使用这一能力完成其工艺或组织设计
+- 先进冶金 (`tech.advanced_metallurgy`)：先进冶金提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，核燃料循环直接使用这一能力完成其工艺或组织设计
+- 工业化学 (`tech.industrial_chemistry`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，核燃料循环直接使用这一能力完成其工艺或组织设计
+- 国家实验室 (`tech.national_laboratories`)：国家实验室提供记录、验证、计算与知识传播方法中的操作与材料处理方法，核燃料循环直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「电气社会」（tech.electrical\_society）
-  - 满足其一：
-    - 已发现信号「石油」（resource.oil）
-    - 已发现信号「天然气」（resource.natural\_gas）
-    - 已发现信号「煤炭」（resource.coal）
+- 满足其一：
+  - 已发现信号「石油」（resource.oil）
+  - 已发现信号「天然气」（resource.natural\_gas）
+  - 已发现信号「煤炭」（resource.coal）
 
 #### 效果摘要
 
-解锁建筑：智能化核燃料厂；开放通用职业阶层岗位；开放通用职业阶层岗位；智能化核燃料厂产出 +20%
+解锁建筑：智能化核燃料厂
 
 #### 机会成本
 
@@ -23854,30 +21913,22 @@
 #### 结构化内容效果
 
 - **智能化核燃料厂**（`building`）：`building.method_nuclear_fuel_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **核燃料**（`good`）：`good.nuclear_fuel` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **战略矿物材料**（`good`）：`good.rare_earth_metals` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **自主系统**（`good`）：`good.autonomous_systems` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 智能化核燃料厂：`country.output.building.method_nuclear_fuel_plant_r10_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 特种合金 (`tech.specialty_alloys`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -23891,9 +21942,9 @@
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 2720000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
 | 布局路线 | branch.textile\_fibers |
 | 主要路线 | 工艺 · 纺织 (\`route.craft.textiles\`) |
@@ -23901,23 +21952,21 @@
 | 开局能力标签 | 无 |
 | 效果配置 | chemistry |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 电气社会 (`tech.electrical_society`)
-- 公司管理 (`tech.corporate_management`)
+- 工业化学 (`tech.industrial_chemistry`)：工业化学提供聚合、溶剂、温度和纯度控制，是合成纤维成形的反应基础
+- 石油化工 (`tech.petrochemical_industry`)：石油化工稳定供应合成纤维所需单体与中间体
+- 纺织机械 (`tech.textile_machinery`)：纺织机械提供纺丝后的牵伸、卷绕和织造设备，使材料能够进入规模化纺织生产
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「电气社会」（tech.electrical\_society）
-  - 满足其一：
-    - 已发现信号「亚麻」（bio.flax）
-    - 已发现信号「棉花」（bio.cotton）
-    - 已发现信号「亚麻样本接触」（contact.flax）
+- 满足其一：
+  - 已发现信号「石油」（resource.oil）
+  - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
 
 #### 效果摘要
 
-解锁物资：合成纤维；解锁建筑：合成纤维厂；开放通用职业阶层岗位；开放通用职业阶层岗位；合成纤维厂产出 +25%
+解锁物资：合成纤维；解锁建筑：合成纤维厂；解锁建筑：合成纤维织造厂
 
 #### 机会成本
 
@@ -23934,37 +21983,27 @@
 
 - **合成纤维**（`good`）：`good.synthetic_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
 - **合成纤维厂**（`building`）：`building.synthetic_fiber_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **合成纤维**（`good`）：`good.synthetic_fiber` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **石化产品**（`good`）：`good.petrochemicals` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **合成纤维织造厂**（`building`）：`building.synthetic_textile_mill` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **布料**（`good`）：`good.cloth` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **合成纤维**（`good`）：`good.synthetic_fiber` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 合成纤维厂：`country.output.building.synthetic_fiber_plant_factor`：+25%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 网络计算 (`tech.networked_computing`)
+无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 网络计算 (`tech.networked_computing`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 网络计算 (`tech.networked_computing`)
-- 公司农业 (`tech.corporate_agribusiness`)
+无
 
 #### 作为候选参与的里程碑
 
-- 原子现代化 (`tech.atomic_modernity`)
+无
 
 ### 工业生态 (`tech.industrial_ecology`)
 
@@ -23975,31 +22014,30 @@
 | 领域 | 科学 (`science`) |
 | 研究成本 | 2400000 科技点（`technology_points`） |
 | 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 网络角色 | branch |
+| 锚点类型 | backbone |
 | 节点角色 | handling |
-| 布局路线 | backbone.food\_storage |
+| 布局路线 | branch.industrial\_chemistry |
 | 主要路线 | 制度 · 规划 (\`route.institution.planning\`) |
 | 全部路线 | 制度 · 规划 (\`route.institution.planning\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | research |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 电气社会 (`tech.electrical_society`)
+- 工业化学 (`tech.industrial_chemistry`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，工业生态直接使用这一能力完成其工艺或组织设计
+- 公共卫生体系 (`tech.public_health_systems`)：公共卫生体系提供卫生、疾病控制与医疗组织能力中的操作与材料处理方法，工业生态直接使用这一能力完成其工艺或组织设计
+- 工业统计 (`tech.industrial_statistics`)：工业统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，工业生态直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「电气社会」（tech.electrical\_society）
-  - 满足其一：
-    - 已发现信号「电气化突破」（breakthrough.electrification）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「稀土」（resource.rare\_earth）
+- 满足其一：
+  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
+  - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
 
 #### 效果摘要
 
-解锁物资：润滑剂；解锁建筑：润滑油厂；开放通用职业阶层岗位；开放通用职业阶层岗位；润滑油厂产出 +25%
+解锁物资：润滑剂；解锁建筑：润滑油厂；解锁建筑：自动化润滑油厂；农业部门产出 +15%
 
 #### 机会成本
 
@@ -24016,31 +22054,23 @@
 
 - **润滑剂**（`good`）：`good.lubricants` → `production_access` `unlock` `1.0`；`existing_binding`
 - **润滑油厂**（`building`）：`building.lubricants_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **润滑剂**（`good`）：`good.lubricants` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **原油**（`good`）：`good.crude_oil` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **自动化润滑油厂**（`building`）：`building.method_lubricants_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **计算机**（`good`）：`good.computers` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 润滑油厂：`country.output.building.lubricants_plant_factor`：+25%
+- `country.output.agriculture_factor`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 平台协调 (`tech.platform_coordination`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 平台协调 (`tech.platform_coordination`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -24054,33 +22084,31 @@
 | 时代 | 原子时代 (`atomic`) |
 | 领域 | 科学 (`science`) |
 | 研究成本 | 2720000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | branch.rice\_irrigation |
+| 布局路线 | branch.computation\_control |
 | 主要路线 | 制度 · 规划 (\`route.institution.planning\`) |
 | 全部路线 | 制度 · 规划 (\`route.institution.planning\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | research |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 电气社会 (`tech.electrical_society`)
-- 电动机 (`tech.electric_motors`)
+- 运筹学 (`tech.operations_research`)：运筹学提供制度协调、公共组织与交换规则中的操作与材料处理方法，系统工程直接使用这一能力完成其工艺或组织设计
+- 电子控制 (`tech.electronic_control`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，系统工程直接使用这一能力完成其工艺或组织设计
+- 工业统计 (`tech.industrial_statistics`)：工业统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，系统工程直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「电气社会」（tech.electrical\_society）
-  - 满足其一：
-    - 已发现信号「电气化突破」（breakthrough.electrification）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「稀土」（resource.rare\_earth）
+- 满足其一：
+  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
+  - 已发现信号「自动化突破」（breakthrough.automation）
 
 #### 效果摘要
 
-解锁物资：战略矿物材料；解锁物资：战略矿石；解锁建筑：智能战略金属冶炼厂；开放通用职业阶层岗位；智能战略金属冶炼厂产出 +25%
+解锁物资：战略矿物材料；解锁物资：战略矿石；解锁建筑：战略金属冶炼厂
 
 #### 机会成本
 
@@ -24089,45 +22117,35 @@
 #### 内容解锁
 
 - **物资：** 战略矿物材料 (`rare_earth_metals`)；战略矿石 (`rare_earth_ore`)
-- **建筑 / 生产方式：** 智能战略金属冶炼厂 (`method_rare_earth_metals_plant_r10`)；战略金属冶炼厂 (`rare_earth_metals_plant`)
+- **建筑 / 生产方式：** 战略金属冶炼厂 (`rare_earth_metals_plant`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 智能战略金属冶炼厂 (`method_rare_earth_metals_plant_r10`)
 
 #### 结构化内容效果
 
 - **战略矿物材料**（`good`）：`good.rare_earth_metals` → `production_access` `unlock` `1.0`；`existing_binding`
 - **战略矿石**（`good`）：`good.rare_earth_ore` → `production_access` `unlock` `1.0`；`existing_binding`
-- **智能战略金属冶炼厂**（`building`）：`building.method_rare_earth_metals_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **战略矿物材料**（`good`）：`good.rare_earth_metals` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **战略矿石**（`good`）：`good.rare_earth_ore` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **自主系统**（`good`）：`good.autonomous_systems` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **战略金属冶炼厂**（`building`）：`building.rare_earth_metals_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 智能战略金属冶炼厂：`country.output.building.method_rare_earth_metals_plant_r10_factor`：+25%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 精准灌溉 (`tech.precision_irrigation`)
+无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 精准灌溉 (`tech.precision_irrigation`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 精准灌溉 (`tech.precision_irrigation`)
-- 深层地球物理 (`tech.deep_geophysics`)
+无
 
 #### 作为候选参与的里程碑
 
-- 原子现代化 (`tech.atomic_modernity`)
+无
 
 ### 原子现代化 (`tech.atomic_modernity`)
 
@@ -24147,7 +22165,7 @@
 | 开局能力标签 | 无 |
 | 效果配置 | milestone |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
@@ -24157,7 +22175,7 @@
 
 #### 效果摘要
 
-珠宝业产出 +10%
+国家实验室产出 +50%；社会领域研究效率 +15%
 
 #### 机会成本
 
@@ -24165,23 +22183,15 @@
 
 #### 里程碑候选
 
-需要完成下列 16 项候选中的任意 5 项：
+需要完成下列 8 项候选中的任意 4 项：
 - 工业农学 (`tech.industrial_agronomy`)
-- 深层地球物理 (`tech.deep_geophysics`)
-- 石油化工 (`tech.petrochemical_industry`)
-- 合成材料 (`tech.synthetic_materials`)
-- 机械化采矿 (`tech.mechanized_mining`)
-- 公共卫生体系 (`tech.public_health_systems`)
-- 核能 (`tech.nuclear_energy`)
-- 全球物流 (`tech.global_logistics`)
-- 特种合金 (`tech.specialty_alloys`)
-- 石化裂解 (`tech.petrochemical_cracking`)
-- 塑料工程 (`tech.plastics_engineering`)
-- 公司农业 (`tech.corporate_agribusiness`)
-- 集体农业 (`tech.collective_agriculture`)
+- 电子控制 (`tech.electronic_control`)
+- 国家实验室 (`tech.national_laboratories`)
 - 国营企业 (`tech.state_enterprises`)
-- 合成纤维工程 (`tech.synthetic_fiber_engineering`)
-- 系统工程 (`tech.systems_engineering`)
+- 公司农业 (`tech.corporate_agribusiness`)
+- 核能 (`tech.nuclear_energy`)
+- 深层地球物理 (`tech.deep_geophysics`)
+- 全球物流 (`tech.global_logistics`)
 
 #### 内容解锁
 
@@ -24196,36 +22206,18 @@
 
 #### 永久 Modifier 条款
 
-- 珠宝业：`country.output.family.jewelry_making_factor`：+10%
+- 国家实验室：`country.output.building.national_laboratory_factor`：+50%
+- `country.research.society_efficiency`：+15%
 
-#### 直接后继（硬前置关系）
-
-- 精准农业 (`tech.precision_agriculture`)
-- 数字计算 (`tech.digital_computing`)
-- 信息论 (`tech.information_theory`)
-- 知识经济 (`tech.knowledge_economy`)
-- 软件工程 (`tech.software_engineering`)
-- 网络计算 (`tech.networked_computing`)
-- 半导体制造 (`tech.semiconductor_manufacturing`)
-- 卫星观测 (`tech.satellite_observation`)
-- 自动化物流 (`tech.automated_logistics`)
-- 生物技术 (`tech.biotechnology`)
-- 矿物光谱遥感 (`tech.mineral_spectral_survey`)
-- 数值天气预报 (`tech.numerical_weather_prediction`)
-- 数字控制 (`tech.digital_control`)
-- 作物遥感 (`tech.crop_remote_sensing`)
-- 水文遥感 (`tech.hydrological_remote_sensing`)
-- 平台协调 (`tech.platform_coordination`)
-- 精准灌溉 (`tech.precision_irrigation`)
-- 地理信息系统 (`tech.geographic_information_systems`)
-- 传感器网络 (`tech.sensor_networks`)
-- 生物信息学 (`tech.bioinformatics`)
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
 
 无
 
@@ -24248,7 +22240,7 @@
 | 研究成本 | 6120000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | production\_system |
 | 布局路线 | branch.maize\_horticulture |
 | 主要路线 | 作物 · 精准 (\`route.crop.precision\`) |
@@ -24256,23 +22248,18 @@
 | 开局能力标签 | 无 |
 | 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 原子现代化 (`tech.atomic_modernity`)
-- 工业农学 (`tech.industrial_agronomy`)
+- 工业农学 (`tech.industrial_agronomy`)：工业农学提供玉米栽培、选育与田间管理经验中的成套生产流程，精准农业直接使用这一能力完成其工艺或组织设计
+- 电子控制 (`tech.electronic_control`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，精准农业直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「原子现代化」（tech.atomic\_modernity）
-  - 满足其一：
-    - 已发现信号「玉米」（bio.maize）
-    - 已发现信号「玉米样本接触」（contact.maize）
-    - 已发现信号「玉米选育突破」（breakthrough.maize\_selection）
+无
 
 #### 效果摘要
 
-解锁建筑：数字化农业机械厂；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：精准农场；数字化农业机械厂产出 +25%
+解锁建筑：数字化农业机械厂；解锁建筑：精准农场；解锁建筑：高地精准块茎农业
 
 #### 机会成本
 
@@ -24281,43 +22268,32 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 数字化农业机械厂 (`method_agricultural_machinery_plant_r9`)；精准农场 (`precision_farm`)
+- **建筑 / 生产方式：** 数字化农业机械厂 (`method_agricultural_machinery_plant_r9`)；高地精准块茎农业 (`method_highland_precision_agriculture`)；精准农场 (`precision_farm`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 高地精准块茎农业 (`method_highland_precision_agriculture`)；专用商品作物种植园 (`method_specialty_commodity_plantation`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 专用商品作物种植园 (`method_specialty_commodity_plantation`)
 
 #### 结构化内容效果
 
 - **数字化农业机械厂**（`building`）：`building.method_agricultural_machinery_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **农业机械**（`good`）：`good.agricultural_machinery` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **蒸汽机**（`good`）：`good.steam_engines` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **计算机**（`good`）：`good.computers` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **精准农场**（`building`）：`building.precision_farm` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **混合谷物**（`good`）：`good.grain` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **蔬菜**（`good`）：`good.vegetables` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **肥料**（`good`）：`good.fertilizer` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **农业机械**（`good`）：`good.agricultural_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
+- **高地精准块茎农业**（`building`）：`building.method_highland_precision_agriculture` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
 
 #### 永久 Modifier 条款
 
-- 数字化农业机械厂：`country.output.building.method_agricultural_machinery_plant_r9_factor`：+25%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 智能育种 (`tech.intelligent_breeding`)
+- 作物遥感 (`tech.crop_remote_sensing`)：精准农业提供玉米栽培、选育与田间管理经验中的成套生产流程，作物遥感直接使用这一能力完成其工艺或组织设计
+- 自动化农业 (`tech.automated_agriculture`)：精准农业提供玉米栽培、选育与田间管理经验中的成套生产流程，自动化农业直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 智能育种 (`tech.intelligent_breeding`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 智能育种 (`tech.intelligent_breeding`)
-- 水文遥感 (`tech.hydrological_remote_sensing`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -24331,32 +22307,28 @@
 | 时代 | 信息时代 (`information`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 5400000 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 节点标记 | 时代关键 |
+| 网络角色 | branch |
+| 锚点类型 | era\_candidate |
 | 节点角色 | power\_scale |
-| 布局路线 | backbone.knowledge\_computation |
+| 布局路线 | branch.computation\_control |
 | 主要路线 | 制度 · 计算 (\`route.institution.computing\`) |
 | 全部路线 | 制度 · 计算 (\`route.institution.computing\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | automation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 原子现代化 (`tech.atomic_modernity`)
+- 电子控制 (`tech.electronic_control`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，数字计算直接使用这一能力完成其工艺或组织设计
+- 国家实验室 (`tech.national_laboratories`)：国家实验室提供记录、验证、计算与知识传播方法中的操作与材料处理方法，数字计算直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「原子现代化」（tech.atomic\_modernity）
-  - 满足其一：
-    - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「稀土」（resource.rare\_earth）
+无
 
 #### 效果摘要
 
-解锁物资：计算机；解锁建筑：计算机厂；开放通用职业阶层岗位；开放通用职业阶层岗位；计算机厂产出 +25%
+解锁物资：计算机；解锁建筑：计算机厂；解锁建筑：早期计算机工场；知识部门产出 +15%
 
 #### 机会成本
 
@@ -24367,46 +22339,44 @@
 - **物资：** 计算机 (`computers`)
 - **建筑 / 生产方式：** 计算机厂 (`computers_plant`)；早期计算机工场 (`digital_computer_workshop`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 早期半导体厂 (`basic_semiconductor_fab`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 早期半导体厂 (`basic_semiconductor_fab`)；地理空间分析中心 (`geospatial_analysis_center`)
 
 #### 结构化内容效果
 
 - **计算机**（`good`）：`good.computers` → `production_access` `unlock` `1.0`；`existing_binding`
 - **计算机厂**（`building`）：`building.computers_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **科技职业阶层**（`class`）：`class.technology` → `employment_access` `enable` `1.0`；`existing_binding`
-- **计算机**（`good`）：`good.computers` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **半导体**（`good`）：`good.semiconductors` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电子元件**（`good`）：`good.electronic_components` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **塑料**（`good`）：`good.plastics` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **早期计算机工场**（`building`）：`building.digital_computer_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **精密工具**（`good`）：`good.precision_tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **铜**（`good`）：`good.copper` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 计算机厂：`country.output.building.computers_plant_factor`：+25%
+- `country.output.knowledge_factor`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 信息论 (`tech.information_theory`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，信息论直接使用这一能力完成其工艺或组织设计
+- 软件工程 (`tech.software_engineering`)：数字计算提供可编程处理器、存储与执行模型，软件工程必须以此作为实现对象
+- 网络计算 (`tech.networked_computing`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，网络计算直接使用这一能力完成其工艺或组织设计
+- 半导体制造 (`tech.semiconductor_manufacturing`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，半导体制造直接使用这一能力完成其工艺或组织设计
+- 数值天气预报 (`tech.numerical_weather_prediction`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，数值天气预报直接使用这一能力完成其工艺或组织设计
+- 地理信息系统 (`tech.geographic_information_systems`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，地理信息系统直接使用这一能力完成其工艺或组织设计
+- 生物信息学 (`tech.bioinformatics`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，生物信息学直接使用这一能力完成其工艺或组织设计
+- 机器学习 (`tech.machine_learning`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，机器学习直接使用这一能力完成其工艺或组织设计
+- 自主系统 (`tech.autonomous_systems`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，自主系统直接使用这一能力完成其工艺或组织设计
+- 计算生物学 (`tech.computational_biology`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，计算生物学直接使用这一能力完成其工艺或组织设计
+- 气候建模 (`tech.climate_modeling`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，气候建模直接使用这一能力完成其工艺或组织设计
+- 算法治理 (`tech.algorithmic_governance`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，算法治理直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
-- 机器学习 (`tech.machine_learning`)
-
-#### 应用交汇目标
-
-- 机器学习 (`tech.machine_learning`)
+无
 
 #### 作为候选参与的里程碑
 
-无
+- 信息社会 (`tech.information_society`)
 
 ### 信息论 (`tech.information_theory`)
 
@@ -24416,33 +22386,31 @@
 | 时代 | 信息时代 (`information`) |
 | 领域 | 科学 (`science`) |
 | 研究成本 | 6120000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | branch.electric\_intelligent\_energy |
+| 布局路线 | branch.computation\_control |
 | 主要路线 | 制度 · 计算 (\`route.institution.computing\`) |
 | 全部路线 | 制度 · 计算 (\`route.institution.computing\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | research |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 原子现代化 (`tech.atomic_modernity`)
-- 核能 (`tech.nuclear_energy`)
+- 数字计算 (`tech.digital_computing`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，信息论直接使用这一能力完成其工艺或组织设计
+- 概率与统计 (`tech.probability_statistics`)：概率与统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，信息论直接使用这一能力完成其工艺或组织设计
+- 电信 (`tech.telecommunications`)：电信提供数字计算、软件、网络与自动控制能力中的稳定的组织与制度载体，信息论直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「原子现代化」（tech.atomic\_modernity）
-  - 满足其一：
-    - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「稀土」（resource.rare\_earth）
+- 满足其一：
+  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
+  - 已发现信号「自动化突破」（breakthrough.automation）
 
 #### 效果摘要
 
-金属工具业产出 +12%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -24461,24 +22429,24 @@
 
 #### 永久 Modifier 条款
 
-- 金属工具业：`country.output.family.metal_toolmaking_factor`：+12%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 智能电网 (`tech.smart_grid`)
+- 软件工程 (`tech.software_engineering`)：信息论提供编码、复杂度与可靠传输的形式化基础，使软件接口和数据处理可以被系统设计
+- 智能电网 (`tech.smart_grid`)：信息论提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，智能电网直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 智能电网 (`tech.smart_grid`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 智能电网 (`tech.smart_grid`)
-- 传感器网络 (`tech.sensor_networks`)
+无
 
 #### 作为候选参与的里程碑
 
-- 信息社会 (`tech.information_society`)
+无
 
 ### 知识经济 (`tech.knowledge_economy`)
 
@@ -24488,9 +22456,9 @@
 | 时代 | 信息时代 (`information`) |
 | 领域 | 社会 (`society`) |
 | 研究成本 | 5400000 科技点（`technology_points`） |
-| 节点标记 | 无 |
+| 节点标记 | 时代关键 |
 | 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | institution |
 | 布局路线 | backbone.institutions\_exchange |
 | 主要路线 | 制度 · 知识 (\`route.institution.knowledge\`) |
@@ -24498,22 +22466,18 @@
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 原子现代化 (`tech.atomic_modernity`)
+- 公共教育 (`tech.public_education`)：公共教育提供制度协调、公共组织与交换规则中的操作与材料处理方法，知识经济直接使用这一能力完成其工艺或组织设计
+- 国家实验室 (`tech.national_laboratories`)：国家实验室提供记录、验证、计算与知识传播方法中的操作与材料处理方法，知识经济直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「原子现代化」（tech.atomic\_modernity）
-  - 满足其一：
-    - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「能源控制突破」（breakthrough.energy\_control）
+无
 
 #### 效果摘要
 
-金属工具业产出 +11%
+计算研究中心产出 +50%；社会领域研究效率 +15%
 
 #### 机会成本
 
@@ -24532,23 +22496,25 @@
 
 #### 永久 Modifier 条款
 
-- 金属工具业：`country.output.family.metal_toolmaking_factor`：+11%
+- 计算研究中心：`country.output.building.computing_research_center_factor`：+50%
+- `country.research.society_efficiency`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 开放科学网络 (`tech.open_science_networks`)
+- 人机共治 (`tech.human_machine_cogovernance`)：知识经济提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，人机共治直接使用这一能力完成其工艺或组织设计
+- 知识合作社 (`tech.knowledge_cooperatives`)：知识经济提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，知识合作社直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 人机共治 (`tech.human_machine_cogovernance`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 人机共治 (`tech.human_machine_cogovernance`)
+无
 
 #### 作为候选参与的里程碑
 
-无
+- 信息社会 (`tech.information_society`)
 
 ### 软件工程 (`tech.software_engineering`)
 
@@ -24558,33 +22524,30 @@
 | 时代 | 信息时代 (`information`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 6120000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | power\_scale |
-| 布局路线 | branch.industrial\_chemistry |
+| 布局路线 | branch.computation\_control |
 | 主要路线 | 制度 · 计算 (\`route.institution.computing\`) |
 | 全部路线 | 制度 · 计算 (\`route.institution.computing\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | automation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 原子现代化 (`tech.atomic_modernity`)
-- 石化裂解 (`tech.petrochemical_cracking`)
+- 数字计算 (`tech.digital_computing`)：数字计算提供可编程处理器、存储与执行模型，软件工程必须以此作为实现对象
+- 信息论 (`tech.information_theory`)：信息论提供编码、复杂度与可靠传输的形式化基础，使软件接口和数据处理可以被系统设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「原子现代化」（tech.atomic\_modernity）
-  - 满足其一：
-    - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「稀土」（resource.rare\_earth）
+- 满足其一：
+  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
+  - 已发现信号「自动化突破」（breakthrough.automation）
 
 #### 效果摘要
 
-解锁建筑：计算研究中心；开放通用职业阶层岗位；开放科技职业阶层岗位；开放通用职业阶层岗位；计算研究中心产出 +25%
+解锁建筑：计算研究中心
 
 #### 机会成本
 
@@ -24600,34 +22563,29 @@
 #### 结构化内容效果
 
 - **计算研究中心**（`building`）：`building.computing_research_center` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **科技职业阶层**（`class`）：`class.technology` → `employment_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **计算机**（`good`）：`good.computers` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **通信设备**（`good`）：`good.telecom_equipment` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 计算研究中心：`country.output.building.computing_research_center_factor`：+25%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 神经网络 (`tech.neural_networks`)
+- 网络计算 (`tech.networked_computing`)：软件工程提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，网络计算直接使用这一能力完成其工艺或组织设计
+- 神经网络 (`tech.neural_networks`)：软件工程提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，神经网络直接使用这一能力完成其工艺或组织设计
+- 智能科学代理 (`tech.scientific_agents`)：软件工程提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，智能科学代理直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 神经网络 (`tech.neural_networks`)
+- 网络计算 (`tech.networked_computing`)：可靠的软件模块、接口和测试方法是网络化计算服务的同主题后继
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 神经网络 (`tech.neural_networks`)
-- 半导体制造 (`tech.semiconductor_manufacturing`)
+- 数字控制 (`tech.digital_control`)：数字控制需要经过测试的软件模块承载控制逻辑
+- 平台协调 (`tech.platform_coordination`)：平台协调依赖可维护的软件服务、接口与数据契约
 
 #### 作为候选参与的里程碑
 
-- 信息社会 (`tech.information_society`)
+无
 
 ### 网络计算 (`tech.networked_computing`)
 
@@ -24637,33 +22595,31 @@
 | 时代 | 信息时代 (`information`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 6120000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | power\_scale |
-| 布局路线 | branch.textile\_fibers |
+| 布局路线 | branch.computation\_control |
 | 主要路线 | 制度 · 网络 (\`route.institution.network\`) |
 | 全部路线 | 制度 · 网络 (\`route.institution.network\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | automation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 原子现代化 (`tech.atomic_modernity`)
-- 合成纤维工程 (`tech.synthetic_fiber_engineering`)
+- 软件工程 (`tech.software_engineering`)：软件工程提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，网络计算直接使用这一能力完成其工艺或组织设计
+- 电信 (`tech.telecommunications`)：电信提供数字计算、软件、网络与自动控制能力中的稳定的组织与制度载体，网络计算直接使用这一能力完成其工艺或组织设计
+- 数字计算 (`tech.digital_computing`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，网络计算直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「原子现代化」（tech.atomic\_modernity）
-  - 满足其一：
-    - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「稀土」（resource.rare\_earth）
+- 满足其一：
+  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
+  - 已发现信号「自动化突破」（breakthrough.automation）
 
 #### 效果摘要
 
-解锁物资：通信设备；解锁建筑：通信设备厂；开放通用职业阶层岗位；开放通用职业阶层岗位；通信设备厂产出 +25%
+解锁物资：通信设备；解锁建筑：通信设备厂；制造部门产出 +12%
 
 #### 机会成本
 
@@ -24680,40 +22636,30 @@
 
 - **通信设备**（`good`）：`good.telecom_equipment` → `production_access` `unlock` `1.0`；`existing_binding`
 - **通信设备厂**（`building`）：`building.telecom_equipment_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **科技职业阶层**（`class`）：`class.technology` → `employment_access` `enable` `1.0`；`existing_binding`
-- **通信设备**（`good`）：`good.telecom_equipment` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **半导体**（`good`）：`good.semiconductors` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电子元件**（`good`）：`good.electronic_components` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属线材**（`good`）：`good.wire` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电池**（`good`）：`good.batteries` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **塑料**（`good`）：`good.plastics` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 通信设备厂：`country.output.building.telecom_equipment_plant_factor`：+25%
+- `country.output.manufacturing_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 算法管理 (`tech.algorithmic_management`)
+- 开放科学网络 (`tech.open_science_networks`)：网络计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，开放科学网络直接使用这一能力完成其工艺或组织设计
+- 平台协调 (`tech.platform_coordination`)：网络计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，平台协调直接使用这一能力完成其工艺或组织设计
+- 数字市场 (`tech.digital_marketplaces`)：网络计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，数字市场直接使用这一能力完成其工艺或组织设计
+- 分布式智能 (`tech.distributed_intelligence`)：网络计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，分布式智能直接使用这一能力完成其工艺或组织设计
+- 算法管理 (`tech.algorithmic_management`)：网络计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，算法管理直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 算法管理 (`tech.algorithmic_management`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 算法管理 (`tech.algorithmic_management`)
-- 软件工程 (`tech.software_engineering`)
+无
 
 #### 作为候选参与的里程碑
 
-- 信息社会 (`tech.information_society`)
+无
 
 ### 半导体制造 (`tech.semiconductor_manufacturing`)
 
@@ -24725,31 +22671,32 @@
 | 研究成本 | 6120000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | handling |
-| 布局路线 | branch.petroleum\_materials |
+| 布局路线 | branch.computation\_control |
 | 主要路线 | 资源 · 稀土 (\`route.resource.rare\_earth\`) |
 | 全部路线 | 资源 · 稀土 (\`route.resource.rare\_earth\`)；制度 · 计算 (\`route.institution.computing\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | manufacturing |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 原子现代化 (`tech.atomic_modernity`)
-- 石油化工 (`tech.petrochemical_industry`)
+- 数字计算 (`tech.digital_computing`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，半导体制造直接使用这一能力完成其工艺或组织设计
+- 电磁感应 (`tech.electromagnetic_induction`)：电磁感应提供发电、电机、电网与能源控制能力中的操作与材料处理方法，半导体制造直接使用这一能力完成其工艺或组织设计
+- 先进冶金 (`tech.advanced_metallurgy`)：先进冶金提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，半导体制造直接使用这一能力完成其工艺或组织设计
+- 工业质量控制 (`tech.industrial_quality_control`)：工业质量控制提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，半导体制造直接使用这一能力完成其工艺或组织设计
+- 电子控制 (`tech.electronic_control`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，半导体制造直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「原子现代化」（tech.atomic\_modernity）
-  - 满足其一：
-    - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
-    - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-    - 已发现信号「能源控制突破」（breakthrough.energy\_control）
+- 满足其一：
+  - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
+  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
+  - 已发现信号「能源控制突破」（breakthrough.energy\_control）
 
 #### 效果摘要
 
-解锁物资：先进芯片；解锁物资：半导体；解锁建筑：早期半导体厂；开放通用职业阶层岗位；早期半导体厂产出 +25%
+解锁物资：先进芯片；解锁物资：半导体；解锁建筑：早期半导体厂；解锁建筑：半导体厂；采掘部门产出 +12%
 
 #### 机会成本
 
@@ -24767,36 +22714,24 @@
 - **先进芯片**（`good`）：`good.advanced_chips` → `production_access` `unlock` `1.0`；`existing_binding`
 - **半导体**（`good`）：`good.semiconductors` → `production_access` `unlock` `1.0`；`existing_binding`
 - **早期半导体厂**（`building`）：`building.basic_semiconductor_fab` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **科技职业阶层**（`class`）：`class.technology` → `employment_access` `enable` `1.0`；`existing_binding`
-- **半导体**（`good`）：`good.semiconductors` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **硅砂**（`good`）：`good.silica_sand` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **铜**（`good`）：`good.copper` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业化学品**（`good`）：`good.industrial_chemicals` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **精密工具**（`good`）：`good.precision_tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **半导体厂**（`building`）：`building.semiconductors_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 早期半导体厂：`country.output.building.basic_semiconductor_fab_factor`：+25%
+- `country.output.extractive_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 分布式智能 (`tech.distributed_intelligence`)
+- 传感器网络 (`tech.sensor_networks`)：半导体制造提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，传感器网络直接使用这一能力完成其工艺或组织设计
+- 分布式智能 (`tech.distributed_intelligence`)：半导体制造提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，分布式智能直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 分布式智能 (`tech.distributed_intelligence`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 分布式智能 (`tech.distributed_intelligence`)
-- 自动化物流 (`tech.automated_logistics`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -24812,31 +22747,30 @@
 | 研究成本 | 6120000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | handling |
-| 布局路线 | branch.forest\_biomass |
+| 布局路线 | branch.geoscience\_gis |
 | 主要路线 | 制度 · 测绘 (\`route.institution.survey\`) |
 | 全部路线 | 制度 · 测绘 (\`route.institution.survey\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | observation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 原子现代化 (`tech.atomic_modernity`)
-- 合成材料 (`tech.synthetic_materials`)
+- 电信 (`tech.telecommunications`)：电信提供数字计算、软件、网络与自动控制能力中的稳定的组织与制度载体，卫星观测直接使用这一能力完成其工艺或组织设计
+- 电子控制 (`tech.electronic_control`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，卫星观测直接使用这一能力完成其工艺或组织设计
+- 精密仪器 (`tech.precision_instruments`)：精密仪器提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，卫星观测直接使用这一能力完成其工艺或组织设计
+- 深层地球物理 (`tech.deep_geophysics`)：深层地球物理提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，卫星观测直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「原子现代化」（tech.atomic\_modernity）
-  - 满足其一：
-    - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「稀土」（resource.rare\_earth）
+- 满足其一：
+  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
+  - 已发现信号「气候建模突破」（breakthrough.climate\_modeling）
 
 #### 效果摘要
 
-解锁建筑：森林遥感经营站；开放通用职业阶层岗位；开放通用职业阶层岗位；开放科技职业阶层岗位；森林遥感经营站产出 +25%
+解锁建筑：森林遥感经营站
 
 #### 机会成本
 
@@ -24852,32 +22786,26 @@
 #### 结构化内容效果
 
 - **森林遥感经营站**（`building`）：`building.method_forest_remote_sensing` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **科技职业阶层**（`class`）：`class.technology` → `employment_access` `enable` `1.0`；`existing_binding`
-- **原木**（`good`）：`good.logs` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **计算机**（`good`）：`good.computers` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **科学仪器**（`good`）：`good.scientific_instruments` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **木材**（`resource`）：`resource.timber` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 森林遥感经营站：`country.output.building.method_forest_remote_sensing_factor`：+25%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 智能科学代理 (`tech.scientific_agents`)
+- 矿物光谱遥感 (`tech.mineral_spectral_survey`)：卫星观测提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，矿物光谱遥感直接使用这一能力完成其工艺或组织设计
+- 数值天气预报 (`tech.numerical_weather_prediction`)：卫星观测提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，数值天气预报直接使用这一能力完成其工艺或组织设计
+- 作物遥感 (`tech.crop_remote_sensing`)：卫星观测提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，作物遥感直接使用这一能力完成其工艺或组织设计
+- 水文遥感 (`tech.hydrological_remote_sensing`)：卫星观测提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，水文遥感直接使用这一能力完成其工艺或组织设计
+- 气候建模 (`tech.climate_modeling`)：卫星观测提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，气候建模直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 智能科学代理 (`tech.scientific_agents`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 智能科学代理 (`tech.scientific_agents`)
-- 自动化物流 (`tech.automated_logistics`)
+- 气候建模 (`tech.climate_modeling`)：卫星观测为气候模型提供连续的大尺度边界与校验数据
 
 #### 作为候选参与的里程碑
 
@@ -24891,9 +22819,9 @@
 | 时代 | 信息时代 (`information`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 6120000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | power\_scale |
 | 布局路线 | branch.maritime\_logistics |
 | 主要路线 | 制度 · 网络 (\`route.institution.network\`) |
@@ -24901,23 +22829,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | automation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 原子现代化 (`tech.atomic_modernity`)
-- 全球物流 (`tech.global_logistics`)
+- 全球物流 (`tech.global_logistics`)：全球物流提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，自动化物流直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「原子现代化」（tech.atomic\_modernity）
-  - 满足其一：
-    - 已发现信号「海岸」（landform.coast）
-    - 已发现信号「海洋鱼类」（resource.marine\_fish）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+- 满足其一：
+  - 已发现信号「自动化突破」（breakthrough.automation）
+  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
 
 #### 效果摘要
 
-解锁建筑：自动化港口船舶中心；开放通用职业阶层岗位；开放通用职业阶层岗位；自动化港口船舶中心产出 +25%
+解锁建筑：自动化港口船舶中心；贸易速度 +12%
 
 #### 机会成本
 
@@ -24933,35 +22857,26 @@
 #### 结构化内容效果
 
 - **自动化港口船舶中心**（`building`）：`building.method_automated_port` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **远洋船舶**（`good`）：`good.oceanic_vessels` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **钢材**（`good`）：`good.steel` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **发动机**（`good`）：`good.engines` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **计算机**（`good`）：`good.computers` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 自动化港口船舶中心：`country.output.building.method_automated_port_factor`：+25%
+- `country.trade.speed_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 自主物流 (`tech.autonomous_logistics`)
+- 自主物流 (`tech.autonomous_logistics`)：自动化物流提供船舶、导航、港口与运输组织能力中的动力与规模化能力，自主物流直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 自主物流 (`tech.autonomous_logistics`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 自主物流 (`tech.autonomous_logistics`)
-- 半导体制造 (`tech.semiconductor_manufacturing`)
+无
 
 #### 作为候选参与的里程碑
 
-- 信息社会 (`tech.information_society`)
+无
 
 ### 生物技术 (`tech.biotechnology`)
 
@@ -24971,33 +22886,31 @@
 | 时代 | 信息时代 (`information`) |
 | 领域 | 科学 (`science`) |
 | 研究成本 | 6120000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | branch.tuber\_highland |
+| 布局路线 | branch.natural\_history |
 | 主要路线 | 作物 · 生物技术 (\`route.crop.biotechnology\`) |
 | 全部路线 | 作物 · 生物技术 (\`route.crop.biotechnology\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | research |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 原子现代化 (`tech.atomic_modernity`)
-- 国营企业 (`tech.state_enterprises`)
+- 科学分类 (`tech.scientific_classification`)：科学分类提供观察、分类、实验与生物育种知识中的操作与材料处理方法，生物技术直接使用这一能力完成其工艺或组织设计
+- 现代医学 (`tech.modern_medicine`)：现代医学提供卫生、疾病控制与医疗组织能力中的操作与材料处理方法，生物技术直接使用这一能力完成其工艺或组织设计
+- 工业研究 (`tech.industrial_research`)：工业研究提供记录、验证、计算与知识传播方法中的操作与材料处理方法，生物技术直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「原子现代化」（tech.atomic\_modernity）
-  - 满足其一：
-    - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「稀土」（resource.rare\_earth）
+- 满足其一：
+  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
+  - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
 
 #### 效果摘要
 
-解锁建筑：高地精准块茎农业；开放通用职业阶层岗位；开放通用职业阶层岗位；需要高海拔地块条件；高地精准块茎农业产出 +25%
+寒冷损失 -8%
 
 #### 机会成本
 
@@ -25006,43 +22919,34 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 高地精准块茎农业 (`method_highland_precision_agriculture`)
+- **建筑 / 生产方式：** 无
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 专用商品作物种植园 (`method_specialty_commodity_plantation`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 高地精准块茎农业 (`method_highland_precision_agriculture`)；专用商品作物种植园 (`method_specialty_commodity_plantation`)
 
 #### 结构化内容效果
 
-- **高地精准块茎农业**（`building`）：`building.method_highland_precision_agriculture` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **马铃薯**（`good`）：`good.potatoes` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **肥料**（`good`）：`good.fertilizer` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **农业机械**（`good`）：`good.agricultural_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **计算机**（`good`）：`good.computers` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **高海拔**（`tile`）：`tile.elevation` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
-- **旱地承载力**（`resource`）：`resource.arable_land` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
+无
 
 #### 永久 Modifier 条款
 
-- 高地精准块茎农业：`country.output.building.method_highland_precision_agriculture_factor`：+25%
+- `country.climate.cold_stress_factor`：+8%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 计算生物学 (`tech.computational_biology`)
+- 生物信息学 (`tech.bioinformatics`)：生物技术提供观察、分类、实验与生物育种知识中的操作与材料处理方法，生物信息学直接使用这一能力完成其工艺或组织设计
+- 计算生物学 (`tech.computational_biology`)：生物技术提供观察、分类、实验与生物育种知识中的操作与材料处理方法，计算生物学直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 计算生物学 (`tech.computational_biology`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 计算生物学 (`tech.computational_biology`)
-- 地理信息系统 (`tech.geographic_information_systems`)
+无
 
 #### 作为候选参与的里程碑
 
-- 信息社会 (`tech.information_society`)
+无
 
 ### 矿物光谱遥感 (`tech.mineral_spectral_survey`)
 
@@ -25052,33 +22956,32 @@
 | 时代 | 信息时代 (`information`) |
 | 领域 | 科学 (`science`) |
 | 研究成本 | 6120000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | branch.nonferrous\_metals |
+| 布局路线 | branch.geoscience\_gis |
 | 主要路线 | 资源 · 矿产 (\`route.resource.minerals\`) |
 | 全部路线 | 资源 · 矿产 (\`route.resource.minerals\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | resource |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 原子现代化 (`tech.atomic_modernity`)
-- 特种合金 (`tech.specialty_alloys`)
+- 卫星观测 (`tech.satellite_observation`)：卫星观测提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，矿物光谱遥感直接使用这一能力完成其工艺或组织设计
+- 深层地球物理 (`tech.deep_geophysics`)：深层地球物理提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，矿物光谱遥感直接使用这一能力完成其工艺或组织设计
+- 精密仪器 (`tech.precision_instruments`)：精密仪器提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，矿物光谱遥感直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「原子现代化」（tech.atomic\_modernity）
-  - 满足其一：
-    - 已发现信号「铁矿」（resource.iron\_ore）
-    - 已发现信号「煤炭」（resource.coal）
-    - 已发现信号「矿井支护突破」（breakthrough.mine\_support）
+- 满足其一：
+  - 已发现信号「铁矿」（resource.iron\_ore）
+  - 已发现信号「煤炭」（resource.coal）
+  - 已发现信号「矿井支护突破」（breakthrough.mine\_support）
 
 #### 效果摘要
 
-解锁建筑：自动化铝土矿；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：战略矿山；自动化铝土矿产出 +25%
+解锁建筑：自动化铝土矿；解锁建筑：战略矿山；可利用资源：稀土；可利用资源：锰矿；解锁建筑：自动化锌矿；采掘部门产出 +12%
 
 #### 机会成本
 
@@ -25087,44 +22990,37 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 自动化铝土矿 (`method_bauxite_collector_r9`)；战略矿山 (`rare_earth_collector`)
+- **建筑 / 生产方式：** 自动化铝土矿 (`method_bauxite_collector_r9`)；自动化锌矿 (`method_zinc_ore_collector_r9`)；战略矿山 (`rare_earth_collector`)
 - **自然资源：** 稀土 (`rare_earth`)；锰矿 (`manganese_ore`)
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 自动化铅矿 (`method_lead_ore_collector_r9`)；智能锰矿 (`method_manganese_ore_collector_r10`)；智能天然气田 (`method_natural_gas_collector_r10`)；自动化磷矿 (`method_phosphate_rock_collector_r9`)；自动化锌矿 (`method_zinc_ore_collector_r9`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 自动化铅矿 (`method_lead_ore_collector_r9`)；自动化炼铅厂 (`method_lead_plant_r9`)；智能锰矿 (`method_manganese_ore_collector_r10`)；智能天然气田 (`method_natural_gas_collector_r10`)；自动化磷矿 (`method_phosphate_rock_collector_r9`)；智能战略矿山 (`method_rare_earth_collector_r10`)；智能战略金属冶炼厂 (`method_rare_earth_metals_plant_r10`)；自动化炼锌厂 (`method_zinc_plant_r9`)
 
 #### 结构化内容效果
 
 - **自动化铝土矿**（`building`）：`building.method_bauxite_collector_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **铝土矿**（`good`）：`good.bauxite` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **炸药**（`good`）：`good.explosives` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **计算机**（`good`）：`good.computers` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **战略矿山**（`building`）：`building.rare_earth_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **战略矿石**（`good`）：`good.rare_earth_ore` → `output_recipe_access` `enable` `1.0`；`existing_binding`
 - **稀土**（`resource`）：`resource.rare_earth` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 - **锰矿**（`resource`）：`resource.manganese_ore` → `local_resource_access` `unlock` `1.0`；`existing_binding`
+- **自动化锌矿**（`building`）：`building.method_zinc_ore_collector_r9` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
 
 #### 永久 Modifier 条款
 
-- 自动化铝土矿：`country.output.building.method_bauxite_collector_r9_factor`：+25%
+- `country.output.extractive_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 自主采矿 (`tech.autonomous_mining`)
+- 自主采矿 (`tech.autonomous_mining`)：矿物光谱遥感提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，自主采矿直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 自主采矿 (`tech.autonomous_mining`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 自主采矿 (`tech.autonomous_mining`)
-- 信息论 (`tech.information_theory`)
+无
 
 #### 作为候选参与的里程碑
 
-- 信息社会 (`tech.information_society`)
+无
 
 ### 数值天气预报 (`tech.numerical_weather_prediction`)
 
@@ -25134,33 +23030,31 @@
 | 时代 | 信息时代 (`information`) |
 | 领域 | 科学 (`science`) |
 | 研究成本 | 6120000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | branch.tropical\_commodities |
+| 布局路线 | branch.geoscience\_gis |
 | 主要路线 | 气候 · 建模 (\`route.climate.modeling\`) |
 | 全部路线 | 气候 · 建模 (\`route.climate.modeling\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | observation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 原子现代化 (`tech.atomic_modernity`)
-- 公共卫生体系 (`tech.public_health_systems`)
+- 概率与统计 (`tech.probability_statistics`)：概率与统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，数值天气预报直接使用这一能力完成其工艺或组织设计
+- 数字计算 (`tech.digital_computing`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，数值天气预报直接使用这一能力完成其工艺或组织设计
+- 卫星观测 (`tech.satellite_observation`)：卫星观测提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，数值天气预报直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「原子现代化」（tech.atomic\_modernity）
-  - 满足其一：
-    - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「稀土」（resource.rare\_earth）
+- 满足其一：
+  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
+  - 已发现信号「气候建模突破」（breakthrough.climate\_modeling）
 
 #### 效果摘要
 
-金属工具业产出 +12%
+国家实验室产出 +50%
 
 #### 机会成本
 
@@ -25179,24 +23073,23 @@
 
 #### 永久 Modifier 条款
 
-- 金属工具业：`country.output.family.metal_toolmaking_factor`：+12%
+- 国家实验室：`country.output.building.national_laboratory_factor`：+50%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 知识合作社 (`tech.knowledge_cooperatives`)
+- 气候建模 (`tech.climate_modeling`)：数值天气预报提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，气候建模直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 知识合作社 (`tech.knowledge_cooperatives`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 知识合作社 (`tech.knowledge_cooperatives`)
-- 软件工程 (`tech.software_engineering`)
+无
 
 #### 作为候选参与的里程碑
 
-- 信息社会 (`tech.information_society`)
+无
 
 ### 数字控制 (`tech.digital_control`)
 
@@ -25206,32 +23099,27 @@
 | 时代 | 信息时代 (`information`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 5400000 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 节点标记 | 时代关键 |
+| 网络角色 | branch |
+| 锚点类型 | era\_candidate |
 | 节点角色 | power\_scale |
-| 布局路线 | backbone.tools\_machinery |
+| 布局路线 | branch.computation\_control |
 | 主要路线 | 制度 · 计算 (\`route.institution.computing\`) |
 | 全部路线 | 制度 · 计算 (\`route.institution.computing\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | automation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 原子现代化 (`tech.atomic_modernity`)
+- 电子控制 (`tech.electronic_control`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，数字控制直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「原子现代化」（tech.atomic\_modernity）
-  - 满足其一：
-    - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「稀土」（resource.rare\_earth）
+无
 
 #### 效果摘要
 
-解锁建筑：自动化焦化厂；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：自动化机械零件厂；自动化焦化厂产出 +25%
+解锁建筑：自动化焦化厂；解锁建筑：自动化机械零件厂；解锁建筑：自动化炼铅厂；解锁建筑：自动化炼锌厂；解锁建筑：自动化磷矿；解锁建筑：自动化混凝土厂；工程领域研究效率 +15%
 
 #### 机会成本
 
@@ -25240,45 +23128,43 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 自动化焦化厂 (`method_coke_ovens_r9`)；自动化机械零件厂 (`method_machine_parts_plant_r9`)
+- **建筑 / 生产方式：** 自动化焦化厂 (`method_coke_ovens_r9`)；自动化混凝土厂 (`method_concrete_plant_r9`)；自动化炼铅厂 (`method_lead_plant_r9`)；自动化机械零件厂 (`method_machine_parts_plant_r9`)；自动化磷矿 (`method_phosphate_rock_collector_r9`)；自动化炼锌厂 (`method_zinc_plant_r9`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 智能冶铝厂 (`method_aluminum_plant_r10`)；自动化港口船舶中心 (`method_automated_port`)；智能化汽车厂 (`method_automobiles_plant_r10`)；智能化电池厂 (`method_batteries_plant_r10`)；自动化水泥厂 (`method_cement_plant_r9`)；自动化混凝土厂 (`method_concrete_plant_r9`)；智能化洗涤剂厂 (`method_detergent_plant_r10`)；智能化电动机厂 (`method_electric_motor_plant_r10`)；智能化电子元件厂 (`method_electronic_components_plant_r10`)；智能化发动机厂 (`method_engines_plant_r10`)；自动化炸药厂 (`method_explosives_plant_r10`)；智能化家用电器厂 (`method_household_appliances_plant_r10`)；数字化工业机械厂 (`method_industrial_machinery_plant_r9`)；智能化绝缘电缆厂 (`method_insulated_cable_plant_r10`)；自动化炼铅厂 (`method_lead_plant_r9`)；自动化润滑油厂 (`method_lubricants_plant_r9`)；自动化机械零件厂 (`method_machine_parts_plant_r9`)；智能化核燃料厂 (`method_nuclear_fuel_plant_r10`)；智能石油化工厂 (`method_petrochemicals_plant_r10`)；智能化塑料厂 (`method_plastics_plant_r10`)；智能工具厂 (`method_precision_tool_workshop_r10`)；智能化无线电设备厂 (`method_radio_equipment_works_r10`)；智能战略矿山 (`method_rare_earth_collector_r10`)；智能战略金属冶炼厂 (`method_rare_earth_metals_plant_r10`)；智能化核反应堆设备厂 (`method_reactor_component_works_r10`)；智能炼油厂 (`method_refined_fuel_plant_r10`)；智能仪器厂 (`method_scientific_instrument_works_r10`)；智能化不锈钢厂 (`method_stainless_steel_plant_r10`)；自动化蒸汽机厂 (`method_steam_engine_works_r9`)；智能化合成纤维厂 (`method_synthetic_fiber_plant_r10`)；智能化合成橡胶厂 (`method_synthetic_rubber_plant_r10`)；智能化线材厂 (`method_wire_plant_r10`)；自动化炼锌厂 (`method_zinc_plant_r9`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 智能冶铝厂 (`method_aluminum_plant_r10`)；自动化港口船舶中心 (`method_automated_port`)；智能化汽车厂 (`method_automobiles_plant_r10`)；智能化电池厂 (`method_batteries_plant_r10`)；自动化水泥厂 (`method_cement_plant_r9`)；智能化洗涤剂厂 (`method_detergent_plant_r10`)；智能化电动机厂 (`method_electric_motor_plant_r10`)；智能化电子元件厂 (`method_electronic_components_plant_r10`)；智能化发动机厂 (`method_engines_plant_r10`)；自动化炸药厂 (`method_explosives_plant_r10`)；智能化家用电器厂 (`method_household_appliances_plant_r10`)；数字化工业机械厂 (`method_industrial_machinery_plant_r9`)；智能化绝缘电缆厂 (`method_insulated_cable_plant_r10`)；自动化润滑油厂 (`method_lubricants_plant_r9`)；自动化机械零件厂 (`method_machine_parts_plant_r9`)；智能化核燃料厂 (`method_nuclear_fuel_plant_r10`)；智能石油化工厂 (`method_petrochemicals_plant_r10`)；智能化塑料厂 (`method_plastics_plant_r10`)；智能工具厂 (`method_precision_tool_workshop_r10`)；智能化无线电设备厂 (`method_radio_equipment_works_r10`)；智能战略矿山 (`method_rare_earth_collector_r10`)；智能战略金属冶炼厂 (`method_rare_earth_metals_plant_r10`)；智能化核反应堆设备厂 (`method_reactor_component_works_r10`)；智能炼油厂 (`method_refined_fuel_plant_r10`)；智能仪器厂 (`method_scientific_instrument_works_r10`)；智能化不锈钢厂 (`method_stainless_steel_plant_r10`)；自动化蒸汽机厂 (`method_steam_engine_works_r9`)；智能化合成纤维厂 (`method_synthetic_fiber_plant_r10`)；智能化合成橡胶厂 (`method_synthetic_rubber_plant_r10`)；智能化线材厂 (`method_wire_plant_r10`)
 
 #### 结构化内容效果
 
 - **自动化焦化厂**（`building`）：`building.method_coke_ovens_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **焦炭**（`good`）：`good.coke` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **煤炭**（`good`）：`good.coal` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **计算机**（`good`）：`good.computers` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **自动化机械零件厂**（`building`）：`building.method_machine_parts_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **机器零件**（`good`）：`good.machine_parts` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **钢材**（`good`）：`good.steel` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **润滑剂**（`good`）：`good.lubricants` → `input_method_access` `enable` `1.0`；`existing_binding`
+- **自动化炼铅厂**（`building`）：`building.method_lead_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **自动化炼锌厂**（`building`）：`building.method_zinc_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **自动化磷矿**（`building`）：`building.method_phosphate_rock_collector_r9` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
+- **自动化混凝土厂**（`building`）：`building.method_concrete_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
 
 #### 永久 Modifier 条款
 
-- 自动化焦化厂：`country.output.building.method_coke_ovens_r9_factor`：+25%
+- `country.research.engineering_efficiency`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 精准灌溉 (`tech.precision_irrigation`)：数字控制提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，精准灌溉直接使用这一能力完成其工艺或组织设计
+- 自动化农业 (`tech.automated_agriculture`)：数字控制提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，自动化农业直接使用这一能力完成其工艺或组织设计
+- 自主系统 (`tech.autonomous_systems`)：数字控制提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，自主系统直接使用这一能力完成其工艺或组织设计
+- 机器人制造 (`tech.robotic_manufacturing`)：数字控制提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，机器人制造直接使用这一能力完成其工艺或组织设计
+- 智能电网 (`tech.smart_grid`)：数字控制提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，智能电网直接使用这一能力完成其工艺或组织设计
+- 人机共治 (`tech.human_machine_cogovernance`)：数字控制提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，人机共治直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
-- 自主系统 (`tech.autonomous_systems`)
-
-#### 应用交汇目标
-
-- 自主系统 (`tech.autonomous_systems`)
+无
 
 #### 作为候选参与的里程碑
 
-无
+- 信息社会 (`tech.information_society`)
 
 ### 作物遥感 (`tech.crop_remote_sensing`)
 
@@ -25288,33 +23174,30 @@
 | 时代 | 信息时代 (`information`) |
 | 领域 | 科学 (`science`) |
 | 研究成本 | 6120000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | branch.wheat\_rainfed |
+| 布局路线 | branch.geoscience\_gis |
 | 主要路线 | 作物 · 精准 (\`route.crop.precision\`) |
 | 全部路线 | 作物 · 精准 (\`route.crop.precision\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | observation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 原子现代化 (`tech.atomic_modernity`)
-- 集体农业 (`tech.collective_agriculture`)
+- 卫星观测 (`tech.satellite_observation`)：卫星观测提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，作物遥感直接使用这一能力完成其工艺或组织设计
+- 精准农业 (`tech.precision_agriculture`)：精准农业提供玉米栽培、选育与田间管理经验中的成套生产流程，作物遥感直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「原子现代化」（tech.atomic\_modernity）
-  - 满足其一：
-    - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「稀土」（resource.rare\_earth）
+- 满足其一：
+  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
+  - 已发现信号「气候建模突破」（breakthrough.climate\_modeling）
 
 #### 效果摘要
 
-金属工具业产出 +12%
+精准农场产出 +50%
 
 #### 机会成本
 
@@ -25333,24 +23216,23 @@
 
 #### 永久 Modifier 条款
 
-- 金属工具业：`country.output.family.metal_toolmaking_factor`：+12%
+- 精准农场：`country.output.building.precision_farm_factor`：+50%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 气候建模 (`tech.climate_modeling`)
+- 气候建模 (`tech.climate_modeling`)：作物遥感提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，气候建模直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 气候建模 (`tech.climate_modeling`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 气候建模 (`tech.climate_modeling`)
-- 水文遥感 (`tech.hydrological_remote_sensing`)
+无
 
 #### 作为候选参与的里程碑
 
-- 信息社会 (`tech.information_society`)
+无
 
 ### 水文遥感 (`tech.hydrological_remote_sensing`)
 
@@ -25360,33 +23242,31 @@
 | 时代 | 信息时代 (`information`) |
 | 领域 | 科学 (`science`) |
 | 研究成本 | 6120000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | branch.water\_wind |
+| 布局路线 | branch.geoscience\_gis |
 | 主要路线 | 气候 · 建模 (\`route.climate.modeling\`) |
 | 全部路线 | 气候 · 建模 (\`route.climate.modeling\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | observation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 原子现代化 (`tech.atomic_modernity`)
-- 深层地球物理 (`tech.deep_geophysics`)
+- 卫星观测 (`tech.satellite_observation`)：卫星观测提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，水文遥感直接使用这一能力完成其工艺或组织设计
+- 深层地球物理 (`tech.deep_geophysics`)：深层地球物理提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，水文遥感直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「原子现代化」（tech.atomic\_modernity）
-  - 满足其一：
-    - 已发现信号「河湖水系」（landform.freshwater\_access）
-    - 已发现信号「河谷」（landform.river\_valley）
-    - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
+- 满足其一：
+  - 已发现信号「河湖水系」（landform.freshwater\_access）
+  - 已发现信号「河谷」（landform.river\_valley）
+  - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
 
 #### 效果摘要
 
-解锁建筑：流域治理中心；开放通用职业阶层岗位；开放科技职业阶层岗位；开放通用职业阶层岗位；流域治理中心产出 +25%
+解锁建筑：流域治理中心
 
 #### 机会成本
 
@@ -25402,35 +23282,26 @@
 #### 结构化内容效果
 
 - **流域治理中心**（`building`）：`building.watershed_governance_center` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **科技职业阶层**（`class`）：`class.technology` → `employment_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **科学仪器**（`good`）：`good.scientific_instruments` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **计算机**（`good`）：`good.computers` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **河流**（`tile`）：`tile.river` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 流域治理中心：`country.output.building.watershed_governance_center_factor`：+25%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 算法治理 (`tech.algorithmic_governance`)
+无
 
-#### 同路线后继
+#### 主题路线后继
 
-- 算法治理 (`tech.algorithmic_governance`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 算法治理 (`tech.algorithmic_governance`)
-- 地理信息系统 (`tech.geographic_information_systems`)
+无
 
 #### 作为候选参与的里程碑
 
-- 信息社会 (`tech.information_society`)
+无
 
 ### 开放科学网络 (`tech.open_science_networks`)
 
@@ -25442,7 +23313,7 @@
 | 研究成本 | 7020000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | backbone |
-| 锚点类型 | support |
+| 锚点类型 | backbone |
 | 节点角色 | handling |
 | 布局路线 | backbone.institutions\_exchange |
 | 主要路线 | 制度 · 网络 (\`route.institution.network\`) |
@@ -25450,22 +23321,21 @@
 | 开局能力标签 | 无 |
 | 效果配置 | research |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 知识经济 (`tech.knowledge_economy`)
+- 网络计算 (`tech.networked_computing`)：网络计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，开放科学网络直接使用这一能力完成其工艺或组织设计
+- 公共教育 (`tech.public_education`)：公共教育提供制度协调、公共组织与交换规则中的操作与材料处理方法，开放科学网络直接使用这一能力完成其工艺或组织设计
+- 学术社团 (`tech.learned_societies`)：学术社团提供观察、分类、实验与生物育种知识中的操作与材料处理方法，开放科学网络直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「原子现代化」（tech.atomic\_modernity）
-  - 满足其一：
-    - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「稀土」（resource.rare\_earth）
+- 满足其一：
+  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
+  - 已发现信号「印刷突破」（breakthrough.printing）
 
 #### 效果摘要
 
-解锁建筑：自动化炼铅厂；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：自动化炼锌厂；自动化炼铅厂产出 +20%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -25474,39 +23344,28 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 自动化炼铅厂 (`method_lead_plant_r9`)；自动化炼锌厂 (`method_zinc_plant_r9`)
+- **建筑 / 生产方式：** 无
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
-- **自动化炼铅厂**（`building`）：`building.method_lead_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **铅**（`good`）：`good.lead` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **铅矿石**（`good`）：`good.lead_ore` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **煤炭**（`good`）：`good.coal` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **计算机**（`good`）：`good.computers` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **自动化炼锌厂**（`building`）：`building.method_zinc_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **锌**（`good`）：`good.zinc` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **锌矿石**（`good`）：`good.zinc_ore` → `input_method_access` `enable` `1.0`；`existing_binding`
+无
 
 #### 永久 Modifier 条款
 
-- 自动化炼铅厂：`country.output.building.method_lead_plant_r9_factor`：+20%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 数字市场 (`tech.digital_marketplaces`)
+- 智能科学代理 (`tech.scientific_agents`)：开放科学网络提供制度协调、公共组织与交换规则中的操作与材料处理方法，智能科学代理直接使用这一能力完成其工艺或组织设计
+- 知识合作社 (`tech.knowledge_cooperatives`)：开放科学网络提供制度协调、公共组织与交换规则中的操作与材料处理方法，知识合作社直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
 无
 
@@ -25522,32 +23381,31 @@
 | 时代 | 信息时代 (`information`) |
 | 领域 | 社会 (`society`) |
 | 研究成本 | 5400000 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 节点标记 | 时代关键 |
+| 网络角色 | branch |
+| 锚点类型 | era\_candidate |
 | 节点角色 | institution |
-| 布局路线 | backbone.food\_storage |
+| 布局路线 | branch.labor\_management |
 | 主要路线 | 制度 · 网络 (\`route.institution.network\`) |
 | 全部路线 | 制度 · 网络 (\`route.institution.network\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 原子现代化 (`tech.atomic_modernity`)
+- 网络计算 (`tech.networked_computing`)：网络计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，平台协调直接使用这一能力完成其工艺或组织设计
+- 运筹学 (`tech.operations_research`)：运筹学提供制度协调、公共组织与交换规则中的操作与材料处理方法，平台协调直接使用这一能力完成其工艺或组织设计
+- 公司管理 (`tech.corporate_management`)：公司管理提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，平台协调直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「原子现代化」（tech.atomic\_modernity）
-  - 满足其一：
-    - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「能源控制突破」（breakthrough.energy\_control）
+- 满足其一：
+  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
+  - 已发现信号「自动化突破」（breakthrough.automation）
 
 #### 效果摘要
 
-计算研究中心产出 +25%；国家协同能力 +3%
+计算研究中心产出 +50%；农业部门产出 +15%
 
 #### 机会成本
 
@@ -25566,92 +23424,22 @@
 
 #### 永久 Modifier 条款
 
-- 计算研究中心：`country.output.building.computing_research_center_factor`：+25%
-- `country.research.society_efficiency`：+3%
+- 计算研究中心：`country.output.building.computing_research_center_factor`：+50%
+- `country.output.agriculture_factor`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-无
+- 人机协作 (`tech.human_machine_collaboration`)：平台协调提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，人机协作直接使用这一能力完成其工艺或组织设计
+- 智能电网 (`tech.smart_grid`)：平台协调提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，智能电网直接使用这一能力完成其工艺或组织设计
+- 算法治理 (`tech.algorithmic_governance`)：平台协调提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，算法治理直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
-
-- 自动化农业 (`tech.automated_agriculture`)
-
-#### 应用交汇目标
-
-- 自动化农业 (`tech.automated_agriculture`)
-
-#### 作为候选参与的里程碑
+#### 主题路线后继
 
 无
 
-### 精准灌溉 (`tech.precision_irrigation`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.precision_irrigation` |
-| 时代 | 信息时代 (`information`) |
-| 领域 | 农业 (`agriculture`) |
-| 研究成本 | 6120000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
-| 网络角色 | branch |
-| 锚点类型 | route\_anchor |
-| 节点角色 | production\_system |
-| 布局路线 | branch.rice\_irrigation |
-| 主要路线 | 作物 · 精准 (\`route.crop.precision\`) |
-| 全部路线 | 作物 · 精准 (\`route.crop.precision\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | crop |
-
-#### 前置科技（决定研发资格）
-
-- 原子现代化 (`tech.atomic_modernity`)
-- 系统工程 (`tech.systems_engineering`)
-
-#### 发现启发（仅用于揭示）
-
-- 全部满足：
-  - 已完成科技「原子现代化」（tech.atomic\_modernity）
-  - 满足其一：
-    - 已发现信号「河湖水系」（landform.freshwater\_access）
-    - 已发现信号「河谷」（landform.river\_valley）
-    - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
-
-#### 效果摘要
-
-运输装备业产出 +12%
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 10 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 无
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
+#### 跨领域应用
 
 无
-
-#### 永久 Modifier 条款
-
-- 运输装备业：`country.output.family.railway_equipment_making_factor`：+12%
-
-#### 直接后继（硬前置关系）
-
-- 自适应灌溉 (`tech.adaptive_irrigation`)
-
-#### 同路线后继
-
-- 自适应灌溉 (`tech.adaptive_irrigation`)
-
-#### 应用交汇目标
-
-- 自适应灌溉 (`tech.adaptive_irrigation`)
-- 地理信息系统 (`tech.geographic_information_systems`)
 
 #### 作为候选参与的里程碑
 
@@ -25666,31 +23454,30 @@
 | 领域 | 社会 (`society`) |
 | 研究成本 | 7020000 科技点（`technology_points`） |
 | 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | support |
+| 网络角色 | branch |
+| 锚点类型 | branch |
 | 节点角色 | institution |
-| 布局路线 | backbone.institutions\_exchange |
+| 布局路线 | branch.commerce\_finance |
 | 主要路线 | 制度 · 网络 (\`route.institution.network\`) |
 | 全部路线 | 制度 · 网络 (\`route.institution.network\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | trade |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 开放科学网络 (`tech.open_science_networks`)
+- 网络计算 (`tech.networked_computing`)：网络计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，数字市场直接使用这一能力完成其工艺或组织设计
+- 市场制度 (`tech.market_institutions`)：市场制度提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，数字市场直接使用这一能力完成其工艺或组织设计
+- 全球物流 (`tech.global_logistics`)：全球物流提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，数字市场直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「原子现代化」（tech.atomic\_modernity）
-  - 满足其一：
-    - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「能源控制突破」（breakthrough.energy\_control）
+- 满足其一：
+  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
+  - 已发现信号「自动化突破」（breakthrough.automation）
 
 #### 效果摘要
 
-计算机厂产出 +20%；国家协同能力 +3%
+计算机厂产出 +35%
 
 #### 机会成本
 
@@ -25709,18 +23496,17 @@
 
 #### 永久 Modifier 条款
 
-- 计算机厂：`country.output.building.computers_plant_factor`：+20%
-- `country.trade.capacity_factor`：+3%
+- 计算机厂：`country.output.building.computers_plant_factor`：+35%
 
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
 
 无
 
@@ -25736,33 +23522,38 @@
 | 时代 | 信息时代 (`information`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 6120000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | power\_scale |
-| 布局路线 | branch.construction\_materials |
+| 布局路线 | branch.geoscience\_gis |
 | 主要路线 | 制度 · 计算 (\`route.institution.computing\`) |
 | 全部路线 | 制度 · 计算 (\`route.institution.computing\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | automation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 原子现代化 (`tech.atomic_modernity`)
-- 塑料工程 (`tech.plastics_engineering`)
+- 地图学 (`tech.cartography`)：地图学提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，地理信息系统直接使用这一能力完成其工艺或组织设计
+- 数字计算 (`tech.digital_computing`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，地理信息系统直接使用这一能力完成其工艺或组织设计
+- 概率与统计 (`tech.probability_statistics`)：概率与统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，地理信息系统直接使用这一能力完成其工艺或组织设计
+
+#### 额外研发条件
+
+- 满足其一：
+  - 已完成科技「卫星观测」（tech.satellite\_observation）
+  - 已完成科技「水文遥感」（tech.hydrological\_remote\_sensing）
+  - 已完成科技「矿物光谱遥感」（tech.mineral\_spectral\_survey）
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「原子现代化」（tech.atomic\_modernity）
-  - 满足其一：
-    - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「稀土」（resource.rare\_earth）
+- 满足其一：
+  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
+  - 已发现信号「自动化突破」（breakthrough.automation）
 
 #### 效果摘要
 
-解锁建筑：智能战略矿山；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：自动化锌矿；智能战略矿山产出 +25%
+解锁建筑：地理空间分析中心
 
 #### 机会成本
 
@@ -25771,160 +23562,70 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 智能战略矿山 (`method_rare_earth_collector_r10`)；自动化锌矿 (`method_zinc_ore_collector_r9`)
+- **建筑 / 生产方式：** 地理空间分析中心 (`geospatial_analysis_center`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 森林遥感经营站 (`method_forest_remote_sensing`)；高地精准块茎农业 (`method_highland_precision_agriculture`)；流域治理中心 (`watershed_governance_center`)
 
 #### 结构化内容效果
 
-- **智能战略矿山**（`building`）：`building.method_rare_earth_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **战略矿石**（`good`）：`good.rare_earth_ore` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **炸药**（`good`）：`good.explosives` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **自主系统**（`good`）：`good.autonomous_systems` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **自动化锌矿**（`building`）：`building.method_zinc_ore_collector_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **锌矿石**（`good`）：`good.zinc_ore` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **计算机**（`good`）：`good.computers` → `input_method_access` `enable` `1.0`；`existing_binding`
+- **地理空间分析中心**（`building`）：`building.geospatial_analysis_center` → `construction_and_production_access` `unlock` `1.0`；`new_content`
 
 #### 永久 Modifier 条款
 
-- 智能战略矿山：`country.output.building.method_rare_earth_collector_r10_factor`：+25%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 机器人制造 (`tech.robotic_manufacturing`)
+- 精准灌溉 (`tech.precision_irrigation`)：地理信息系统提供制图、地质、遥感与空间分析能力中的动力与规模化能力，精准灌溉直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 机器人制造 (`tech.robotic_manufacturing`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 机器人制造 (`tech.robotic_manufacturing`)
-- 传感器网络 (`tech.sensor_networks`)
-
-#### 作为候选参与的里程碑
-
-- 信息社会 (`tech.information_society`)
-
-### 传感器网络 (`tech.sensor_networks`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.sensor_networks` |
-| 时代 | 信息时代 (`information`) |
-| 领域 | 工程 (`engineering`) |
-| 研究成本 | 6120000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
-| 网络角色 | branch |
-| 锚点类型 | route\_anchor |
-| 节点角色 | power\_scale |
-| 布局路线 | branch.heavy\_industry |
-| 主要路线 | 制度 · 网络 (\`route.institution.network\`) |
-| 全部路线 | 制度 · 网络 (\`route.institution.network\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | automation |
-
-#### 前置科技（决定研发资格）
-
-- 原子现代化 (`tech.atomic_modernity`)
-- 机械化采矿 (`tech.mechanized_mining`)
-
-#### 发现启发（仅用于揭示）
-
-- 全部满足：
-  - 已完成科技「原子现代化」（tech.atomic\_modernity）
-  - 满足其一：
-    - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「稀土」（resource.rare\_earth）
-
-#### 效果摘要
-
-解锁建筑：自动化混凝土厂；开放通用职业阶层岗位；开放通用职业阶层岗位；自动化混凝土厂产出 +25%
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 10 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 自动化混凝土厂 (`method_concrete_plant_r9`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 自动化水泥厂 (`method_cement_plant_r9`)；自动化焦化厂 (`method_coke_ovens_r9`)；数字化工业机械厂 (`method_industrial_machinery_plant_r9`)；智能牧业站 (`method_smart_husbandry`)
-
-#### 结构化内容效果
-
-- **自动化混凝土厂**（`building`）：`building.method_concrete_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **混凝土**（`good`）：`good.concrete` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **水泥**（`good`）：`good.cement` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **原石**（`good`）：`good.raw_stone` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **计算机**（`good`）：`good.computers` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-- 自动化混凝土厂：`country.output.building.method_concrete_plant_r9_factor`：+25%
-
-#### 直接后继（硬前置关系）
-
-- 自主劳动协调 (`tech.autonomous_labor_coordination`)
-
-#### 同路线后继
-
-- 自主劳动协调 (`tech.autonomous_labor_coordination`)
-
-#### 应用交汇目标
-
-- 自主劳动协调 (`tech.autonomous_labor_coordination`)
-- 软件工程 (`tech.software_engineering`)
+- 精准农业 (`tech.precision_agriculture`)：GIS 把地块、作物与传感数据转化为差异化农艺决策
+- 精准灌溉 (`tech.precision_irrigation`)：GIS 为分区供水和管网调度提供空间数据模型
+- 自主采矿 (`tech.autonomous_mining`)：GIS 为矿区设备路径、矿体边界和作业区约束提供空间底图
 
 #### 作为候选参与的里程碑
 
-- 信息社会 (`tech.information_society`)
+无
 
-### 生物信息学 (`tech.bioinformatics`)
+### 精准灌溉 (`tech.precision_irrigation`)
 
 | 字段 | 内容 |
 | --- | --- |
-| 稳定 ID | `tech.bioinformatics` |
+| 稳定 ID | `tech.precision_irrigation` |
 | 时代 | 信息时代 (`information`) |
-| 领域 | 科学 (`science`) |
+| 领域 | 农业 (`agriculture`) |
 | 研究成本 | 6120000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
-| 节点角色 | handling |
-| 布局路线 | branch.pastoral\_livestock |
-| 主要路线 | 作物 · 生物技术 (\`route.crop.biotechnology\`) |
-| 全部路线 | 作物 · 生物技术 (\`route.crop.biotechnology\`) |
+| 锚点类型 | era\_candidate |
+| 节点角色 | production\_system |
+| 布局路线 | branch.rice\_irrigation |
+| 主要路线 | 作物 · 精准 (\`route.crop.precision\`) |
+| 全部路线 | 作物 · 精准 (\`route.crop.precision\`) |
 | 开局能力标签 | 无 |
-| 效果配置 | research |
+| 效果配置 | crop |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 原子现代化 (`tech.atomic_modernity`)
-- 公司农业 (`tech.corporate_agribusiness`)
+- 水利工程 (`tech.hydraulic_engineering`)：水利工程提供水流、风力、输配水和流域工程能力中的成套生产流程，精准灌溉直接使用这一能力完成其工艺或组织设计
+- 数字控制 (`tech.digital_control`)：数字控制提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，精准灌溉直接使用这一能力完成其工艺或组织设计
+- 地理信息系统 (`tech.geographic_information_systems`)：地理信息系统提供制图、地质、遥感与空间分析能力中的动力与规模化能力，精准灌溉直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「原子现代化」（tech.atomic\_modernity）
-  - 满足其一：
-    - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「稀土」（resource.rare\_earth）
+- 满足其一：
+  - 已发现信号「河湖水系」（landform.freshwater\_access）
+  - 已发现信号「河谷」（landform.river\_valley）
+  - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
 
 #### 效果摘要
 
-计算研究中心产出 +25%；国家协同能力 +3%
+金属工具业产出 +28%
 
 #### 机会成本
 
@@ -25943,25 +23644,165 @@
 
 #### 永久 Modifier 条款
 
-- 计算研究中心：`country.output.building.computing_research_center_factor`：+25%
-- `country.research.science_efficiency`：+3%
+- 金属工具业：`country.output.family.metal_toolmaking_factor`：+28%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
-- 人机协作 (`tech.human_machine_collaboration`)
+- 自适应灌溉 (`tech.adaptive_irrigation`)：精准灌溉提供水田整备、水位控制与稻作管理方法中的成套生产流程，自适应灌溉直接使用这一能力完成其工艺或组织设计
 
-#### 同路线后继
+#### 主题路线后继
 
-- 人机协作 (`tech.human_machine_collaboration`)
+无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 人机协作 (`tech.human_machine_collaboration`)
-- 作物遥感 (`tech.crop_remote_sensing`)
+无
 
 #### 作为候选参与的里程碑
 
 - 信息社会 (`tech.information_society`)
+
+### 传感器网络 (`tech.sensor_networks`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.sensor_networks` |
+| 时代 | 信息时代 (`information`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 6120000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | power\_scale |
+| 布局路线 | branch.computation\_control |
+| 主要路线 | 制度 · 网络 (\`route.institution.network\`) |
+| 全部路线 | 制度 · 网络 (\`route.institution.network\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | automation |
+
+#### 硬前置（决定研发资格）
+
+- 电子控制 (`tech.electronic_control`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，传感器网络直接使用这一能力完成其工艺或组织设计
+- 电信 (`tech.telecommunications`)：电信提供数字计算、软件、网络与自动控制能力中的稳定的组织与制度载体，传感器网络直接使用这一能力完成其工艺或组织设计
+- 半导体制造 (`tech.semiconductor_manufacturing`)：半导体制造提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，传感器网络直接使用这一能力完成其工艺或组织设计
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
+  - 已发现信号「电气化突破」（breakthrough.electrification）
+
+#### 效果摘要
+
+采掘部门产出 +12%
+
+#### 机会成本
+
+转入该路线需补齐历史锚点；时代 10 后的生产方式依赖专用资本、岗位或地理条件
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 自动化水泥厂 (`method_cement_plant_r9`)；自动化焦化厂 (`method_coke_ovens_r9`)；自动化混凝土厂 (`method_concrete_plant_r9`)；数字化工业机械厂 (`method_industrial_machinery_plant_r9`)；自动化炼铅厂 (`method_lead_plant_r9`)；智能牧业站 (`method_smart_husbandry`)；自动化炼锌厂 (`method_zinc_plant_r9`)
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+- `country.output.extractive_factor`：+12%
+
+#### 被以下科技作为硬前置
+
+- 自主采矿 (`tech.autonomous_mining`)：传感器网络提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，自主采矿直接使用这一能力完成其工艺或组织设计
+- 智能电网 (`tech.smart_grid`)：传感器网络提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，智能电网直接使用这一能力完成其工艺或组织设计
+- 分布式智能 (`tech.distributed_intelligence`)：传感器网络提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，分布式智能直接使用这一能力完成其工艺或组织设计
+- 自主劳动协调 (`tech.autonomous_labor_coordination`)：传感器网络提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，自主劳动协调直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 生物信息学 (`tech.bioinformatics`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.bioinformatics` |
+| 时代 | 信息时代 (`information`) |
+| 领域 | 科学 (`science`) |
+| 研究成本 | 6120000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | handling |
+| 布局路线 | branch.natural\_history |
+| 主要路线 | 作物 · 生物技术 (\`route.crop.biotechnology\`) |
+| 全部路线 | 作物 · 生物技术 (\`route.crop.biotechnology\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | research |
+
+#### 硬前置（决定研发资格）
+
+- 生物技术 (`tech.biotechnology`)：生物技术提供观察、分类、实验与生物育种知识中的操作与材料处理方法，生物信息学直接使用这一能力完成其工艺或组织设计
+- 数字计算 (`tech.digital_computing`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，生物信息学直接使用这一能力完成其工艺或组织设计
+- 科学分类 (`tech.scientific_classification`)：科学分类提供观察、分类、实验与生物育种知识中的操作与材料处理方法，生物信息学直接使用这一能力完成其工艺或组织设计
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
+  - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
+
+#### 效果摘要
+
+计算研究中心产出 +50%
+
+#### 机会成本
+
+转入该路线需补齐历史锚点；时代 10 后的生产方式依赖专用资本、岗位或地理条件
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 无
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+- 计算研究中心：`country.output.building.computing_research_center_factor`：+50%
+
+#### 被以下科技作为硬前置
+
+- 计算生物学 (`tech.computational_biology`)：生物信息学提供观察、分类、实验与生物育种知识中的操作与材料处理方法，计算生物学直接使用这一能力完成其工艺或组织设计
+- 智能育种 (`tech.intelligent_breeding`)：生物信息学提供观察、分类、实验与生物育种知识中的操作与材料处理方法，智能育种直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
 
 ### 信息社会 (`tech.information_society`)
 
@@ -25981,7 +23822,7 @@
 | 开局能力标签 | 无 |
 | 效果配置 | milestone |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
@@ -25991,7 +23832,7 @@
 
 #### 效果摘要
 
-金属工具业产出 +10%
+计算研究中心产出 +50%；社会领域研究效率 +15%
 
 #### 机会成本
 
@@ -25999,23 +23840,15 @@
 
 #### 里程碑候选
 
-需要完成下列 16 项候选中的任意 5 项：
+需要完成下列 8 项候选中的任意 4 项：
 - 精准农业 (`tech.precision_agriculture`)
-- 信息论 (`tech.information_theory`)
-- 软件工程 (`tech.software_engineering`)
-- 网络计算 (`tech.networked_computing`)
+- 数字控制 (`tech.digital_control`)
+- 数字计算 (`tech.digital_computing`)
+- 知识经济 (`tech.knowledge_economy`)
+- 精准灌溉 (`tech.precision_irrigation`)
 - 半导体制造 (`tech.semiconductor_manufacturing`)
 - 卫星观测 (`tech.satellite_observation`)
-- 自动化物流 (`tech.automated_logistics`)
-- 生物技术 (`tech.biotechnology`)
-- 矿物光谱遥感 (`tech.mineral_spectral_survey`)
-- 数值天气预报 (`tech.numerical_weather_prediction`)
-- 作物遥感 (`tech.crop_remote_sensing`)
-- 水文遥感 (`tech.hydrological_remote_sensing`)
-- 精准灌溉 (`tech.precision_irrigation`)
-- 地理信息系统 (`tech.geographic_information_systems`)
-- 传感器网络 (`tech.sensor_networks`)
-- 生物信息学 (`tech.bioinformatics`)
+- 平台协调 (`tech.platform_coordination`)
 
 #### 内容解锁
 
@@ -26030,36 +23863,18 @@
 
 #### 永久 Modifier 条款
 
-- 金属工具业：`country.output.family.metal_toolmaking_factor`：+10%
+- 计算研究中心：`country.output.building.computing_research_center_factor`：+50%
+- `country.research.society_efficiency`：+15%
 
-#### 直接后继（硬前置关系）
-
-- 机器学习 (`tech.machine_learning`)
-- 自动化农业 (`tech.automated_agriculture`)
-- 神经网络 (`tech.neural_networks`)
-- 人机协作 (`tech.human_machine_collaboration`)
-- 自主系统 (`tech.autonomous_systems`)
-- 机器人制造 (`tech.robotic_manufacturing`)
-- 自主采矿 (`tech.autonomous_mining`)
-- 计算生物学 (`tech.computational_biology`)
-- 气候建模 (`tech.climate_modeling`)
-- 智能电网 (`tech.smart_grid`)
-- 算法治理 (`tech.algorithmic_governance`)
-- 分布式智能 (`tech.distributed_intelligence`)
-- 智能育种 (`tech.intelligent_breeding`)
-- 自主物流 (`tech.autonomous_logistics`)
-- 智能科学代理 (`tech.scientific_agents`)
-- 人机共治 (`tech.human_machine_cogovernance`)
-- 算法管理 (`tech.algorithmic_management`)
-- 自适应灌溉 (`tech.adaptive_irrigation`)
-- 知识合作社 (`tech.knowledge_cooperatives`)
-- 自主劳动协调 (`tech.autonomous_labor_coordination`)
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
 
 无
 
@@ -26080,32 +23895,28 @@
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 科学 (`science`) |
 | 研究成本 | 12000000 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 节点标记 | 时代关键 |
+| 网络角色 | branch |
+| 锚点类型 | era\_candidate |
 | 节点角色 | handling |
-| 布局路线 | backbone.knowledge\_computation |
+| 布局路线 | branch.computation\_control |
 | 主要路线 | 人工智能 · 机器学习 (\`route.ai.learning\`) |
 | 全部路线 | 人工智能 · 机器学习 (\`route.ai.learning\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | research |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 信息社会 (`tech.information_society`)
+- 数字计算 (`tech.digital_computing`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，机器学习直接使用这一能力完成其工艺或组织设计
+- 国家实验室 (`tech.national_laboratories`)：国家实验室提供记录、验证、计算与知识传播方法中的操作与材料处理方法，机器学习直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「信息社会」（tech.information\_society）
-  - 满足其一：
-    - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「稀土」（resource.rare\_earth）
+无
 
 #### 效果摘要
 
-解锁建筑：高端芯片厂；开放通用职业阶层岗位；开放通用职业阶层岗位；开放科技职业阶层岗位；高端芯片厂产出 +25%
+解锁建筑：高端芯片厂；解锁建筑：智能研究院；知识部门产出 +15%
 
 #### 机会成本
 
@@ -26121,41 +23932,31 @@
 #### 结构化内容效果
 
 - **高端芯片厂**（`building`）：`building.advanced_chip_fab` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **科技职业阶层**（`class`）：`class.technology` → `employment_access` `enable` `1.0`；`existing_binding`
-- **先进芯片**（`good`）：`good.advanced_chips` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **半导体**（`good`）：`good.semiconductors` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **战略矿物材料**（`good`）：`good.rare_earth_metals` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业化学品**（`good`）：`good.industrial_chemicals` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **精密工具**（`good`）：`good.precision_tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **智能研究院**（`building`）：`building.machine_intelligence_institute` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **计算机**（`good`）：`good.computers` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **先进芯片**（`good`）：`good.advanced_chips` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 高端芯片厂：`country.output.building.advanced_chip_fab_factor`：+25%
+- `country.output.knowledge_factor`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 神经网络 (`tech.neural_networks`)：机器学习提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，神经网络直接使用这一能力完成其工艺或组织设计
+- 人机协作 (`tech.human_machine_collaboration`)：机器学习提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，人机协作直接使用这一能力完成其工艺或组织设计
+- 智能育种 (`tech.intelligent_breeding`)：机器学习提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，智能育种直接使用这一能力完成其工艺或组织设计
+- 智能科学代理 (`tech.scientific_agents`)：机器学习提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，智能科学代理直接使用这一能力完成其工艺或组织设计
+- 算法管理 (`tech.algorithmic_management`)：机器学习提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，算法管理直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
-
-无
-
-#### 应用交汇目标
+#### 跨领域应用
 
 无
 
 #### 作为候选参与的里程碑
 
-无
+- 认知自动化 (`tech.cognitive_automation`)
 
 ### 自动化农业 (`tech.automated_agriculture`)
 
@@ -26165,9 +23966,9 @@
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 农业 (`agriculture`) |
 | 研究成本 | 12000000 科技点（`technology_points`） |
-| 节点标记 | 无 |
+| 节点标记 | 时代关键 |
 | 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | power\_scale |
 | 布局路线 | backbone.food\_storage |
 | 主要路线 | 作物 · 自动化 (\`route.crop.automated\`) |
@@ -26175,22 +23976,18 @@
 | 开局能力标签 | 无 |
 | 效果配置 | automation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 信息社会 (`tech.information_society`)
+- 精准农业 (`tech.precision_agriculture`)：精准农业提供玉米栽培、选育与田间管理经验中的成套生产流程，自动化农业直接使用这一能力完成其工艺或组织设计
+- 数字控制 (`tech.digital_control`)：数字控制提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，自动化农业直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「信息社会」（tech.information\_society）
-  - 满足其一：
-    - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「稀土」（resource.rare\_earth）
+无
 
 #### 效果摘要
 
-解锁建筑：自动化农场；开放通用职业阶层岗位；开放通用职业阶层岗位；自动化农场产出 +25%
+解锁建筑：自动化农场；农业部门产出 +15%
 
 #### 机会成本
 
@@ -26206,35 +24003,26 @@
 #### 结构化内容效果
 
 - **自动化农场**（`building`）：`building.automated_farm` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **混合谷物**（`good`）：`good.grain` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **蔬菜**（`good`）：`good.vegetables` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **肥料**（`good`）：`good.fertilizer` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **农业机械**（`good`）：`good.agricultural_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **计算机**（`good`）：`good.computers` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **自主系统**（`good`）：`good.autonomous_systems` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 自动化农场：`country.output.building.automated_farm_factor`：+25%
+- `country.output.agriculture_factor`：+15%
 
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
 
 无
 
 #### 作为候选参与的里程碑
 
-无
+- 认知自动化 (`tech.cognitive_automation`)
 
 ### 神经网络 (`tech.neural_networks`)
 
@@ -26244,33 +24032,30 @@
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 科学 (`science`) |
 | 研究成本 | 13600000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | branch.industrial\_chemistry |
+| 布局路线 | branch.computation\_control |
 | 主要路线 | 人工智能 · 机器学习 (\`route.ai.learning\`) |
 | 全部路线 | 人工智能 · 机器学习 (\`route.ai.learning\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | research |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 信息社会 (`tech.information_society`)
-- 软件工程 (`tech.software_engineering`)
+- 机器学习 (`tech.machine_learning`)：机器学习提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，神经网络直接使用这一能力完成其工艺或组织设计
+- 软件工程 (`tech.software_engineering`)：软件工程提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，神经网络直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「信息社会」（tech.information\_society）
-  - 满足其一：
-    - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「稀土」（resource.rare\_earth）
+- 满足其一：
+  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
+  - 已发现信号「自动化突破」（breakthrough.automation）
 
 #### 效果摘要
 
-智能研究院产出 +25%；国家协同能力 +3%
+智能研究院产出 +50%；制造部门产出 +12%
 
 #### 机会成本
 
@@ -26289,24 +24074,24 @@
 
 #### 永久 Modifier 条款
 
-- 智能研究院：`country.output.building.machine_intelligence_institute_factor`：+25%
-- `country.research.science_efficiency`：+3%
+- 智能研究院：`country.output.building.machine_intelligence_institute_factor`：+50%
+- `country.output.manufacturing_factor`：+12%
 
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
 
-- 算法管理 (`tech.algorithmic_management`)
+无
+
+#### 跨领域应用
+
+无
 
 #### 作为候选参与的里程碑
 
-- 认知自动化 (`tech.cognitive_automation`)
+无
 
 ### 人机协作 (`tech.human_machine_collaboration`)
 
@@ -26316,33 +24101,31 @@
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 社会 (`society`) |
 | 研究成本 | 13600000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | institution |
-| 布局路线 | branch.pastoral\_livestock |
+| 布局路线 | branch.labor\_management |
 | 主要路线 | 人工智能 · 人机协作 (\`route.ai.collaboration\`) |
 | 全部路线 | 人工智能 · 人机协作 (\`route.ai.collaboration\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 信息社会 (`tech.information_society`)
-- 生物信息学 (`tech.bioinformatics`)
+- 劳工组织 (`tech.labor_organization`)：劳工组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，人机协作直接使用这一能力完成其工艺或组织设计
+- 平台协调 (`tech.platform_coordination`)：平台协调提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，人机协作直接使用这一能力完成其工艺或组织设计
+- 机器学习 (`tech.machine_learning`)：机器学习提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，人机协作直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「信息社会」（tech.information\_society）
-  - 满足其一：
-    - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「能源控制突破」（breakthrough.energy\_control）
+- 满足其一：
+  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
+  - 已发现信号「自动化突破」（breakthrough.automation）
 
 #### 效果摘要
 
-解锁建筑：智能化家用电器厂；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：智能工具厂；智能化家用电器厂产出 +25%
+解锁建筑：智能化家用电器厂；解锁建筑：智能工具厂
 
 #### 机会成本
 
@@ -26358,39 +24141,27 @@
 #### 结构化内容效果
 
 - **智能化家用电器厂**（`building`）：`building.method_household_appliances_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **家用电器**（`good`）：`good.household_appliances` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **电气设备**（`good`）：`good.electrical_equipment` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **钢材**（`good`）：`good.steel` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **塑料**（`good`）：`good.plastics` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **自主系统**（`good`）：`good.autonomous_systems` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **智能工具厂**（`building`）：`building.method_precision_tool_workshop_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **精密工具**（`good`）：`good.precision_tools` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **科学仪器**（`good`）：`good.scientific_instruments` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 智能化家用电器厂：`country.output.building.method_household_appliances_plant_r10_factor`：+25%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 自主物流 (`tech.autonomous_logistics`)
+无
 
 #### 作为候选参与的里程碑
 
-- 认知自动化 (`tech.cognitive_automation`)
+无
 
 ### 自主系统 (`tech.autonomous_systems`)
 
@@ -26400,32 +24171,28 @@
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 12000000 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 节点标记 | 时代关键 |
+| 网络角色 | branch |
+| 锚点类型 | era\_candidate |
 | 节点角色 | power\_scale |
-| 布局路线 | backbone.tools\_machinery |
+| 布局路线 | branch.computation\_control |
 | 主要路线 | 人工智能 · 自主系统 (\`route.ai.autonomy\`) |
 | 全部路线 | 人工智能 · 自主系统 (\`route.ai.autonomy\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | automation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 信息社会 (`tech.information_society`)
+- 数字控制 (`tech.digital_control`)：数字控制提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，自主系统直接使用这一能力完成其工艺或组织设计
+- 数字计算 (`tech.digital_computing`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，自主系统直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「信息社会」（tech.information\_society）
-  - 满足其一：
-    - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「稀土」（resource.rare\_earth）
+无
 
 #### 效果摘要
 
-解锁物资：自主系统；解锁建筑：自主控制系统厂；开放通用职业阶层岗位；开放通用职业阶层岗位；自主控制系统厂产出 +25%
+解锁物资：自主系统；解锁建筑：自主控制系统厂；解锁建筑：自主林业经营站；工程领域研究效率 +15%
 
 #### 机会成本
 
@@ -26434,52 +24201,37 @@
 #### 内容解锁
 
 - **物资：** 自主系统 (`autonomous_systems`)
-- **建筑 / 生产方式：** 自主控制系统厂 (`autonomous_systems_plant`)；智能化核反应堆设备厂 (`method_reactor_component_works_r10`)
+- **建筑 / 生产方式：** 自主控制系统厂 (`autonomous_systems_plant`)；自主林业经营站 (`method_autonomous_forestry`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 自主林业经营站 (`method_autonomous_forestry`)；自主航运调度港 (`method_autonomous_shipping`)；智能化核燃料厂 (`method_nuclear_fuel_plant_r10`)；智能牧业站 (`method_smart_husbandry`)；智能水网控制中心 (`smart_water_network`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 自主航运调度港 (`method_autonomous_shipping`)；智能化核燃料厂 (`method_nuclear_fuel_plant_r10`)；智能化核反应堆设备厂 (`method_reactor_component_works_r10`)；智能牧业站 (`method_smart_husbandry`)；智能水网控制中心 (`smart_water_network`)
 
 #### 结构化内容效果
 
 - **自主系统**（`good`）：`good.autonomous_systems` → `production_access` `unlock` `1.0`；`existing_binding`
 - **自主控制系统厂**（`building`）：`building.autonomous_systems_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **科技职业阶层**（`class`）：`class.technology` → `employment_access` `enable` `1.0`；`existing_binding`
-- **自主系统**（`good`）：`good.autonomous_systems` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **先进芯片**（`good`）：`good.advanced_chips` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电动机**（`good`）：`good.electric_motor` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电池**（`good`）：`good.batteries` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **精密工具**（`good`）：`good.precision_tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **智能化核反应堆设备厂**（`building`）：`building.method_reactor_component_works_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **反应堆部件**（`good`）：`good.reactor_components` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **钢材**（`good`）：`good.steel` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **战略矿物材料**（`good`）：`good.rare_earth_metals` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电气设备**（`good`）：`good.electrical_equipment` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **自主系统**（`good`）：`good.autonomous_systems` → `input_method_access` `enable` `1.0`；`existing_binding`
+- **自主林业经营站**（`building`）：`building.method_autonomous_forestry` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
 
 #### 永久 Modifier 条款
 
-- 自主控制系统厂：`country.output.building.autonomous_systems_plant_factor`：+25%
+- `country.research.engineering_efficiency`：+15%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 机器人制造 (`tech.robotic_manufacturing`)：自主系统提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，机器人制造直接使用这一能力完成其工艺或组织设计
+- 自主采矿 (`tech.autonomous_mining`)：自主系统提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，自主采矿直接使用这一能力完成其工艺或组织设计
+- 自主劳动协调 (`tech.autonomous_labor_coordination`)：自主系统提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，自主劳动协调直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
-
-无
-
-#### 应用交汇目标
+#### 跨领域应用
 
 无
 
 #### 作为候选参与的里程碑
 
-无
+- 认知自动化 (`tech.cognitive_automation`)
 
 ### 机器人制造 (`tech.robotic_manufacturing`)
 
@@ -26491,31 +24243,32 @@
 | 研究成本 | 13600000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | power\_scale |
-| 布局路线 | branch.construction\_materials |
+| 布局路线 | branch.heavy\_industry |
 | 主要路线 | 人工智能 · 自主系统 (\`route.ai.autonomy\`) |
 | 全部路线 | 人工智能 · 自主系统 (\`route.ai.autonomy\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | automation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 信息社会 (`tech.information_society`)
-- 地理信息系统 (`tech.geographic_information_systems`)
+- 机床 (`tech.machine_tools`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，机器人制造直接使用这一能力完成其工艺或组织设计
+- 电子控制 (`tech.electronic_control`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，机器人制造直接使用这一能力完成其工艺或组织设计
+- 数字控制 (`tech.digital_control`)：数字控制提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，机器人制造直接使用这一能力完成其工艺或组织设计
+- 自主系统 (`tech.autonomous_systems`)：自主系统提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，机器人制造直接使用这一能力完成其工艺或组织设计
+- 先进冶金 (`tech.advanced_metallurgy`)：先进冶金提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，机器人制造直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「信息社会」（tech.information\_society）
-  - 满足其一：
-    - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「稀土」（resource.rare\_earth）
+- 满足其一：
+  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
+  - 已发现信号「自动化突破」（breakthrough.automation）
+  - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
 
 #### 效果摘要
 
-解锁建筑：智能化汽车厂；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：智能化发动机厂；智能化汽车厂产出 +25%
+解锁建筑：智能化汽车厂；解锁建筑：智能化发动机厂；解锁建筑：智能化合成纤维厂；解锁建筑：智能化合成橡胶厂；解锁建筑：智能冶铝厂；解锁建筑：智能化不锈钢厂；解锁建筑：智能化核反应堆设备厂；解锁建筑：智能战略金属冶炼厂
 
 #### 机会成本
 
@@ -26524,45 +24277,36 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 智能化汽车厂 (`method_automobiles_plant_r10`)；智能化发动机厂 (`method_engines_plant_r10`)
+- **建筑 / 生产方式：** 智能冶铝厂 (`method_aluminum_plant_r10`)；智能化汽车厂 (`method_automobiles_plant_r10`)；智能化发动机厂 (`method_engines_plant_r10`)；智能战略金属冶炼厂 (`method_rare_earth_metals_plant_r10`)；智能化核反应堆设备厂 (`method_reactor_component_works_r10`)；智能化不锈钢厂 (`method_stainless_steel_plant_r10`)；智能化合成纤维厂 (`method_synthetic_fiber_plant_r10`)；智能化合成橡胶厂 (`method_synthetic_rubber_plant_r10`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 智能冶铝厂 (`method_aluminum_plant_r10`)；智能化电池厂 (`method_batteries_plant_r10`)；智能化洗涤剂厂 (`method_detergent_plant_r10`)；智能化电动机厂 (`method_electric_motor_plant_r10`)；智能化电子元件厂 (`method_electronic_components_plant_r10`)；自动化炸药厂 (`method_explosives_plant_r10`)；智能化家用电器厂 (`method_household_appliances_plant_r10`)；智能化绝缘电缆厂 (`method_insulated_cable_plant_r10`)；智能化核燃料厂 (`method_nuclear_fuel_plant_r10`)；智能石油化工厂 (`method_petrochemicals_plant_r10`)；智能化塑料厂 (`method_plastics_plant_r10`)；智能工具厂 (`method_precision_tool_workshop_r10`)；智能化无线电设备厂 (`method_radio_equipment_works_r10`)；智能战略金属冶炼厂 (`method_rare_earth_metals_plant_r10`)；智能化核反应堆设备厂 (`method_reactor_component_works_r10`)；智能炼油厂 (`method_refined_fuel_plant_r10`)；智能仪器厂 (`method_scientific_instrument_works_r10`)；智能化不锈钢厂 (`method_stainless_steel_plant_r10`)；智能化合成纤维厂 (`method_synthetic_fiber_plant_r10`)；智能化合成橡胶厂 (`method_synthetic_rubber_plant_r10`)；智能化线材厂 (`method_wire_plant_r10`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 智能化电池厂 (`method_batteries_plant_r10`)；智能化洗涤剂厂 (`method_detergent_plant_r10`)；智能化电动机厂 (`method_electric_motor_plant_r10`)；智能化电子元件厂 (`method_electronic_components_plant_r10`)；自动化炸药厂 (`method_explosives_plant_r10`)；智能化家用电器厂 (`method_household_appliances_plant_r10`)；智能化绝缘电缆厂 (`method_insulated_cable_plant_r10`)；智能化核燃料厂 (`method_nuclear_fuel_plant_r10`)；智能石油化工厂 (`method_petrochemicals_plant_r10`)；智能化塑料厂 (`method_plastics_plant_r10`)；智能工具厂 (`method_precision_tool_workshop_r10`)；智能化无线电设备厂 (`method_radio_equipment_works_r10`)；智能炼油厂 (`method_refined_fuel_plant_r10`)；智能仪器厂 (`method_scientific_instrument_works_r10`)；智能化线材厂 (`method_wire_plant_r10`)
 
 #### 结构化内容效果
 
 - **智能化汽车厂**（`building`）：`building.method_automobiles_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **汽车**（`good`）：`good.automobiles` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **发动机**（`good`）：`good.engines` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **钢材**（`good`）：`good.steel` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电池**（`good`）：`good.batteries` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **天然乳胶**（`good`）：`good.latex` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **自主系统**（`good`）：`good.autonomous_systems` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **智能化发动机厂**（`building`）：`building.method_engines_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **发动机**（`good`）：`good.engines` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **铝**（`good`）：`good.aluminum` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **机器零件**（`good`）：`good.machine_parts` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **润滑剂**（`good`）：`good.lubricants` → `input_method_access` `enable` `1.0`；`existing_binding`
+- **智能化合成纤维厂**（`building`）：`building.method_synthetic_fiber_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **智能化合成橡胶厂**（`building`）：`building.method_synthetic_rubber_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **智能冶铝厂**（`building`）：`building.method_aluminum_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **智能化不锈钢厂**（`building`）：`building.method_stainless_steel_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **智能化核反应堆设备厂**（`building`）：`building.method_reactor_component_works_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **智能战略金属冶炼厂**（`building`）：`building.method_rare_earth_metals_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
 
 #### 永久 Modifier 条款
 
-- 智能化汽车厂：`country.output.building.method_automobiles_plant_r10_factor`：+25%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 算法治理 (`tech.algorithmic_governance`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -26576,33 +24320,33 @@
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 13600000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | power\_scale |
-| 布局路线 | branch.nonferrous\_metals |
+| 布局路线 | branch.heavy\_industry |
 | 主要路线 | 资源 · 矿产 (\`route.resource.minerals\`) |
 | 全部路线 | 资源 · 矿产 (\`route.resource.minerals\`)；人工智能 · 自主系统 (\`route.ai.autonomy\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | automation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 信息社会 (`tech.information_society`)
-- 矿物光谱遥感 (`tech.mineral_spectral_survey`)
+- 机械化采矿 (`tech.mechanized_mining`)：机械化采矿提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，自主采矿直接使用这一能力完成其工艺或组织设计
+- 矿物光谱遥感 (`tech.mineral_spectral_survey`)：矿物光谱遥感提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，自主采矿直接使用这一能力完成其工艺或组织设计
+- 传感器网络 (`tech.sensor_networks`)：传感器网络提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，自主采矿直接使用这一能力完成其工艺或组织设计
+- 自主系统 (`tech.autonomous_systems`)：自主系统提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，自主采矿直接使用这一能力完成其工艺或组织设计
+- 先进冶金 (`tech.advanced_metallurgy`)：先进冶金提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，自主采矿直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「信息社会」（tech.information\_society）
-  - 满足其一：
-    - 已发现信号「铁矿」（resource.iron\_ore）
-    - 已发现信号「煤炭」（resource.coal）
-    - 已发现信号「矿井支护突破」（breakthrough.mine\_support）
+- 满足其一：
+  - 已发现信号「矿井支护突破」（breakthrough.mine\_support）
+  - 已发现信号「自动化突破」（breakthrough.automation）
 
 #### 效果摘要
 
-解锁建筑：智能硝石矿；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：智能硫矿；智能硝石矿产出 +25%
+解锁建筑：智能硝石矿；解锁建筑：智能硫矿；解锁建筑：智能战略矿山；采掘部门产出 +12%
 
 #### 机会成本
 
@@ -26611,40 +24355,35 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 智能硝石矿 (`method_saltpeter_collector_r10`)；智能硫矿 (`method_sulfur_collector_r10`)
+- **建筑 / 生产方式：** 智能战略矿山 (`method_rare_earth_collector_r10`)；智能硝石矿 (`method_saltpeter_collector_r10`)；智能硫矿 (`method_sulfur_collector_r10`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 智能锰矿 (`method_manganese_ore_collector_r10`)；智能天然气田 (`method_natural_gas_collector_r10`)；智能战略矿山 (`method_rare_earth_collector_r10`)；智能硝石矿 (`method_saltpeter_collector_r10`)；智能硫矿 (`method_sulfur_collector_r10`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 智能锰矿 (`method_manganese_ore_collector_r10`)；智能天然气田 (`method_natural_gas_collector_r10`)；智能硝石矿 (`method_saltpeter_collector_r10`)；智能硫矿 (`method_sulfur_collector_r10`)
 
 #### 结构化内容效果
 
 - **智能硝石矿**（`building`）：`building.method_saltpeter_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **硝石**（`good`）：`good.saltpeter` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **自主系统**（`good`）：`good.autonomous_systems` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **智能硫矿**（`building`）：`building.method_sulfur_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **硫磺**（`good`）：`good.sulfur` → `output_recipe_access` `enable` `1.0`；`existing_binding`
+- **智能战略矿山**（`building`）：`building.method_rare_earth_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
 
 #### 永久 Modifier 条款
 
-- 智能硝石矿：`country.output.building.method_saltpeter_collector_r10_factor`：+25%
+- `country.output.extractive_factor`：+12%
 
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
 
-- 机器人制造 (`tech.robotic_manufacturing`)
+无
+
+#### 跨领域应用
+
+无
 
 #### 作为候选参与的里程碑
 
-- 认知自动化 (`tech.cognitive_automation`)
+无
 
 ### 计算生物学 (`tech.computational_biology`)
 
@@ -26654,33 +24393,33 @@
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 科学 (`science`) |
 | 研究成本 | 13600000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | branch.tuber\_highland |
+| 布局路线 | branch.natural\_history |
 | 主要路线 | 作物 · 生物技术 (\`route.crop.biotechnology\`) |
 | 全部路线 | 作物 · 生物技术 (\`route.crop.biotechnology\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | research |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 信息社会 (`tech.information_society`)
-- 生物技术 (`tech.biotechnology`)
+- 科学分类 (`tech.scientific_classification`)：科学分类提供观察、分类、实验与生物育种知识中的操作与材料处理方法，计算生物学直接使用这一能力完成其工艺或组织设计
+- 生物技术 (`tech.biotechnology`)：生物技术提供观察、分类、实验与生物育种知识中的操作与材料处理方法，计算生物学直接使用这一能力完成其工艺或组织设计
+- 生物信息学 (`tech.bioinformatics`)：生物信息学提供观察、分类、实验与生物育种知识中的操作与材料处理方法，计算生物学直接使用这一能力完成其工艺或组织设计
+- 数字计算 (`tech.digital_computing`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，计算生物学直接使用这一能力完成其工艺或组织设计
+- 概率与统计 (`tech.probability_statistics`)：概率与统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，计算生物学直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「信息社会」（tech.information\_society）
-  - 满足其一：
-    - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「稀土」（resource.rare\_earth）
+- 满足其一：
+  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
+  - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
 
 #### 效果摘要
 
-国家实验室产出 +25%；国家协同能力 +3%
+国家实验室产出 +50%
 
 #### 机会成本
 
@@ -26699,24 +24438,23 @@
 
 #### 永久 Modifier 条款
 
-- 国家实验室：`country.output.building.national_laboratory_factor`：+25%
-- `country.research.science_efficiency`：+3%
+- 国家实验室：`country.output.building.national_laboratory_factor`：+50%
 
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
 
-- 智能电网 (`tech.smart_grid`)
+无
+
+#### 跨领域应用
+
+无
 
 #### 作为候选参与的里程碑
 
-- 认知自动化 (`tech.cognitive_automation`)
+无
 
 ### 气候建模 (`tech.climate_modeling`)
 
@@ -26728,31 +24466,31 @@
 | 研究成本 | 13600000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | handling |
-| 布局路线 | branch.wheat\_rainfed |
+| 布局路线 | branch.geoscience\_gis |
 | 主要路线 | 气候 · 建模 (\`route.climate.modeling\`) |
 | 全部路线 | 气候 · 建模 (\`route.climate.modeling\`)；气候 · 寒冷 (\`route.climate.cold\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | observation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 信息社会 (`tech.information_society`)
-- 作物遥感 (`tech.crop_remote_sensing`)
+- 数值天气预报 (`tech.numerical_weather_prediction`)：数值天气预报提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，气候建模直接使用这一能力完成其工艺或组织设计
+- 卫星观测 (`tech.satellite_observation`)：卫星观测提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，气候建模直接使用这一能力完成其工艺或组织设计
+- 数字计算 (`tech.digital_computing`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，气候建模直接使用这一能力完成其工艺或组织设计
+- 概率与统计 (`tech.probability_statistics`)：概率与统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，气候建模直接使用这一能力完成其工艺或组织设计
+- 作物遥感 (`tech.crop_remote_sensing`)：作物遥感提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，气候建模直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「信息社会」（tech.information\_society）
-  - 满足其一：
-    - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「稀土」（resource.rare\_earth）
+- 满足其一：
+  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
+  - 已发现信号「气候建模突破」（breakthrough.climate\_modeling）
 
 #### 效果摘要
 
-国家实验室产出 +25%；国家协同能力 +3%
+国家实验室产出 +50%
 
 #### 机会成本
 
@@ -26771,20 +24509,19 @@
 
 #### 永久 Modifier 条款
 
-- 国家实验室：`country.output.building.national_laboratory_factor`：+25%
-- `country.research.science_efficiency`：+3%
+- 国家实验室：`country.output.building.national_laboratory_factor`：+50%
 
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
 
-- 自主劳动协调 (`tech.autonomous_labor_coordination`)
+无
+
+#### 跨领域应用
+
+无
 
 #### 作为候选参与的里程碑
 
@@ -26798,9 +24535,9 @@
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 13600000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | power\_scale |
 | 布局路线 | branch.electric\_intelligent\_energy |
 | 主要路线 | 能源 · 电力 (\`route.energy.electric\`) |
@@ -26808,23 +24545,23 @@
 | 开局能力标签 | 无 |
 | 效果配置 | energy |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 信息社会 (`tech.information_society`)
-- 信息论 (`tech.information_theory`)
+- 电网 (`tech.electric_grid`)：电网提供发电、电机、电网与能源控制能力中的动力与规模化能力，智能电网直接使用这一能力完成其工艺或组织设计
+- 信息论 (`tech.information_theory`)：信息论提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，智能电网直接使用这一能力完成其工艺或组织设计
+- 数字控制 (`tech.digital_control`)：数字控制提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，智能电网直接使用这一能力完成其工艺或组织设计
+- 传感器网络 (`tech.sensor_networks`)：传感器网络提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，智能电网直接使用这一能力完成其工艺或组织设计
+- 平台协调 (`tech.platform_coordination`)：平台协调提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，智能电网直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「信息社会」（tech.information\_society）
-  - 满足其一：
-    - 已发现信号「能源控制突破」（breakthrough.energy\_control）
-    - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-    - 已发现信号「稀土」（resource.rare\_earth）
+- 满足其一：
+  - 已发现信号「能源控制突破」（breakthrough.energy\_control）
+  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
 
 #### 效果摘要
 
-解锁建筑：智能化电池厂；开放通用职业阶层岗位；开放通用职业阶层岗位；智能化电池厂产出 +25%
+解锁建筑：智能化电池厂；能源部门产出 +12%
 
 #### 机会成本
 
@@ -26840,35 +24577,26 @@
 #### 结构化内容效果
 
 - **智能化电池厂**（`building`）：`building.method_batteries_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **电池**（`good`）：`good.batteries` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **铅**（`good`）：`good.lead` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业化学品**（`good`）：`good.industrial_chemicals` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **自主系统**（`good`）：`good.autonomous_systems` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 智能化电池厂：`country.output.building.method_batteries_plant_r10_factor`：+25%
+- `country.output.energy_factor`：+12%
 
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
 
-- 算法治理 (`tech.algorithmic_governance`)
+无
+
+#### 跨领域应用
+
+无
 
 #### 作为候选参与的里程碑
 
-- 认知自动化 (`tech.cognitive_automation`)
+无
 
 ### 算法治理 (`tech.algorithmic_governance`)
 
@@ -26880,31 +24608,29 @@
 | 研究成本 | 13600000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | institution |
-| 布局路线 | branch.water\_wind |
+| 布局路线 | branch.labor\_management |
 | 主要路线 | 制度 · 国家治理 (\`route.institution.state\`) |
 | 全部路线 | 制度 · 国家治理 (\`route.institution.state\`)；人工智能 · 人机协作 (\`route.ai.collaboration\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 信息社会 (`tech.information_society`)
-- 水文遥感 (`tech.hydrological_remote_sensing`)
+- 数字计算 (`tech.digital_computing`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，算法治理直接使用这一能力完成其工艺或组织设计
+- 运筹学 (`tech.operations_research`)：运筹学提供制度协调、公共组织与交换规则中的操作与材料处理方法，算法治理直接使用这一能力完成其工艺或组织设计
+- 平台协调 (`tech.platform_coordination`)：平台协调提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，算法治理直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「信息社会」（tech.information\_society）
-  - 满足其一：
-    - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「能源控制突破」（breakthrough.energy\_control）
+- 满足其一：
+  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
+  - 已发现信号「自动化突破」（breakthrough.automation）
 
 #### 效果摘要
 
-解锁建筑：智能水网控制中心；开放通用职业阶层岗位；开放科技职业阶层岗位；开放通用职业阶层岗位；智能水网控制中心产出 +25%
+解锁建筑：智能水网控制中心
 
 #### 机会成本
 
@@ -26920,31 +24646,22 @@
 #### 结构化内容效果
 
 - **智能水网控制中心**（`building`）：`building.smart_water_network` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **科技职业阶层**（`class`）：`class.technology` → `employment_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **计算机**（`good`）：`good.computers` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **自主系统**（`good`）：`good.autonomous_systems` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **河流**（`tile`）：`tile.river` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 智能水网控制中心：`country.output.building.smart_water_network_factor`：+25%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 智能电网 (`tech.smart_grid`)
+无
 
 #### 作为候选参与的里程碑
 
@@ -26958,33 +24675,31 @@
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 13600000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | power\_scale |
-| 布局路线 | branch.petroleum\_materials |
+| 布局路线 | branch.computation\_control |
 | 主要路线 | 制度 · 网络 (\`route.institution.network\`) |
 | 全部路线 | 制度 · 网络 (\`route.institution.network\`)；人工智能 · 自主系统 (\`route.ai.autonomy\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | automation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 信息社会 (`tech.information_society`)
-- 半导体制造 (`tech.semiconductor_manufacturing`)
+- 网络计算 (`tech.networked_computing`)：网络计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，分布式智能直接使用这一能力完成其工艺或组织设计
+- 半导体制造 (`tech.semiconductor_manufacturing`)：半导体制造提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，分布式智能直接使用这一能力完成其工艺或组织设计
+- 传感器网络 (`tech.sensor_networks`)：传感器网络提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，分布式智能直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「信息社会」（tech.information\_society）
-  - 满足其一：
-    - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「稀土」（resource.rare\_earth）
+- 满足其一：
+  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
+  - 已发现信号「自动化突破」（breakthrough.automation）
 
 #### 效果摘要
 
-解锁建筑：智能化电子元件厂；开放通用职业阶层岗位；开放通用职业阶层岗位；开放科技职业阶层岗位；智能化电子元件厂产出 +25%
+解锁建筑：智能化电子元件厂；解锁建筑：智能化无线电设备厂；采掘部门产出 +12%
 
 #### 机会成本
 
@@ -27000,42 +24715,27 @@
 #### 结构化内容效果
 
 - **智能化电子元件厂**（`building`）：`building.method_electronic_components_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **科技职业阶层**（`class`）：`class.technology` → `employment_access` `enable` `1.0`；`existing_binding`
-- **电子元件**（`good`）：`good.electronic_components` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **铜**（`good`）：`good.copper` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **锡**（`good`）：`good.tin` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **锌**（`good`）：`good.zinc` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **塑料**（`good`）：`good.plastics` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **自主系统**（`good`）：`good.autonomous_systems` → `input_method_access` `enable` `1.0`；`existing_binding`
 - **智能化无线电设备厂**（`building`）：`building.method_radio_equipment_works_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **无线电设备**（`good`）：`good.radio_equipment` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **绝缘电缆**（`good`）：`good.insulated_cable` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电子元件**（`good`）：`good.electronic_components` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 智能化电子元件厂：`country.output.building.method_electronic_components_plant_r10_factor`：+25%
+- `country.output.extractive_factor`：+12%
 
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
 
-- 算法管理 (`tech.algorithmic_management`)
+无
+
+#### 跨领域应用
+
+无
 
 #### 作为候选参与的里程碑
 
-- 认知自动化 (`tech.cognitive_automation`)
+无
 
 ### 智能育种 (`tech.intelligent_breeding`)
 
@@ -27047,31 +24747,30 @@
 | 研究成本 | 13600000 科技点（`technology_points`） |
 | 节点标记 | 时代关键 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | era\_candidate |
 | 节点角色 | handling |
-| 布局路线 | branch.maize\_horticulture |
+| 布局路线 | branch.natural\_history |
 | 主要路线 | 作物 · 生物技术 (\`route.crop.biotechnology\`) |
 | 全部路线 | 作物 · 生物技术 (\`route.crop.biotechnology\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | research |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 信息社会 (`tech.information_society`)
-- 精准农业 (`tech.precision_agriculture`)
+- 系统育种 (`tech.crop_breeding`)：系统育种提供观察、分类、实验与生物育种知识中的成套生产流程，智能育种直接使用这一能力完成其工艺或组织设计
+- 生物信息学 (`tech.bioinformatics`)：生物信息学提供观察、分类、实验与生物育种知识中的操作与材料处理方法，智能育种直接使用这一能力完成其工艺或组织设计
+- 机器学习 (`tech.machine_learning`)：机器学习提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，智能育种直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「信息社会」（tech.information\_society）
-  - 满足其一：
-    - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「稀土」（resource.rare\_earth）
+- 满足其一：
+  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
+  - 已发现信号「玉米选育突破」（breakthrough.maize\_selection）
+  - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
 
 #### 效果摘要
 
-精准农场产出 +25%；国家协同能力 +3%
+精准农场产出 +50%
 
 #### 机会成本
 
@@ -27090,20 +24789,19 @@
 
 #### 永久 Modifier 条款
 
-- 精准农场：`country.output.building.precision_farm_factor`：+25%
-- `country.research.agriculture_efficiency`：+3%
+- 精准农场：`country.output.building.precision_farm_factor`：+50%
 
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
 
-- 自主劳动协调 (`tech.autonomous_labor_coordination`)
+无
+
+#### 跨领域应用
+
+无
 
 #### 作为候选参与的里程碑
 
@@ -27117,9 +24815,9 @@
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 工程 (`engineering`) |
 | 研究成本 | 13600000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | power\_scale |
 | 布局路线 | branch.maritime\_logistics |
 | 主要路线 | 制度 · 网络 (\`route.institution.network\`) |
@@ -27127,23 +24825,19 @@
 | 开局能力标签 | 无 |
 | 效果配置 | automation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 信息社会 (`tech.information_society`)
-- 自动化物流 (`tech.automated_logistics`)
+- 自动化物流 (`tech.automated_logistics`)：自动化物流提供船舶、导航、港口与运输组织能力中的动力与规模化能力，自主物流直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「信息社会」（tech.information\_society）
-  - 满足其一：
-    - 已发现信号「海岸」（landform.coast）
-    - 已发现信号「海洋鱼类」（resource.marine\_fish）
-    - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+- 满足其一：
+  - 已发现信号「自动化突破」（breakthrough.automation）
+  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
 
 #### 效果摘要
 
-解锁建筑：自主航运调度港；开放通用职业阶层岗位；开放通用职业阶层岗位；开放科技职业阶层岗位；自主航运调度港产出 +25%
+解锁建筑：自主航运调度港；贸易速度 +12%
 
 #### 机会成本
 
@@ -27159,36 +24853,26 @@
 #### 结构化内容效果
 
 - **自主航运调度港**（`building`）：`building.method_autonomous_shipping` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **科技职业阶层**（`class`）：`class.technology` → `employment_access` `enable` `1.0`；`existing_binding`
-- **远洋船舶**（`good`）：`good.oceanic_vessels` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **钢材**（`good`）：`good.steel` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **发动机**（`good`）：`good.engines` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **计算机**（`good`）：`good.computers` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **自主系统**（`good`）：`good.autonomous_systems` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `input_method_access` `enable` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-- 自主航运调度港：`country.output.building.method_autonomous_shipping_factor`：+25%
+- `country.trade.speed_factor`：+12%
 
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
 
-- 智能电网 (`tech.smart_grid`)
+无
+
+#### 跨领域应用
+
+无
 
 #### 作为候选参与的里程碑
 
-- 认知自动化 (`tech.cognitive_automation`)
+无
 
 ### 智能科学代理 (`tech.scientific_agents`)
 
@@ -27198,33 +24882,31 @@
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 科学 (`science`) |
 | 研究成本 | 13600000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | handling |
-| 布局路线 | branch.forest\_biomass |
+| 布局路线 | branch.computation\_control |
 | 主要路线 | 人工智能 · 机器学习 (\`route.ai.learning\`) |
 | 全部路线 | 人工智能 · 机器学习 (\`route.ai.learning\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | research |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 信息社会 (`tech.information_society`)
-- 卫星观测 (`tech.satellite_observation`)
+- 机器学习 (`tech.machine_learning`)：机器学习提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，智能科学代理直接使用这一能力完成其工艺或组织设计
+- 开放科学网络 (`tech.open_science_networks`)：开放科学网络提供制度协调、公共组织与交换规则中的操作与材料处理方法，智能科学代理直接使用这一能力完成其工艺或组织设计
+- 软件工程 (`tech.software_engineering`)：软件工程提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，智能科学代理直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「信息社会」（tech.information\_society）
-  - 满足其一：
-    - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「稀土」（resource.rare\_earth）
+- 满足其一：
+  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
+  - 已发现信号「自动化突破」（breakthrough.automation）
 
 #### 效果摘要
 
-解锁建筑：自主林业经营站；开放通用职业阶层岗位；开放通用职业阶层岗位；开放科技职业阶层岗位；自主林业经营站产出 +25%
+提供后续科技与内容的知识基础
 
 #### 机会成本
 
@@ -27233,43 +24915,33 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 自主林业经营站 (`method_autonomous_forestry`)
+- **建筑 / 生产方式：** 无
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 智能仪器厂 (`method_scientific_instrument_works_r10`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 自主林业经营站 (`method_autonomous_forestry`)；智能仪器厂 (`method_scientific_instrument_works_r10`)
 
 #### 结构化内容效果
 
-- **自主林业经营站**（`building`）：`building.method_autonomous_forestry` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **科技职业阶层**（`class`）：`class.technology` → `employment_access` `enable` `1.0`；`existing_binding`
-- **原木**（`good`）：`good.logs` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **计算机**（`good`）：`good.computers` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **自主系统**（`good`）：`good.autonomous_systems` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **科技值**（`good`）：`good.technology_points` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **木材**（`resource`）：`resource.timber` → `specialized_building_placement` `enable` `1.0`；`existing_binding`
+无
 
 #### 永久 Modifier 条款
 
-- 自主林业经营站：`country.output.building.method_autonomous_forestry_factor`：+25%
+无
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
 
 无
 
-#### 同路线后继
+#### 主题路线后继
 
 无
 
-#### 应用交汇目标
+#### 跨领域应用
 
-- 神经网络 (`tech.neural_networks`)
+无
 
 #### 作为候选参与的里程碑
 
-- 认知自动化 (`tech.cognitive_automation`)
+无
 
 ### 人机共治 (`tech.human_machine_cogovernance`)
 
@@ -27279,32 +24951,28 @@
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 社会 (`society`) |
 | 研究成本 | 12000000 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | backbone |
-| 锚点类型 | backbone\_anchor |
+| 节点标记 | 时代关键 |
+| 网络角色 | branch |
+| 锚点类型 | era\_candidate |
 | 节点角色 | institution |
-| 布局路线 | backbone.institutions\_exchange |
+| 布局路线 | branch.labor\_management |
 | 主要路线 | 人工智能 · 人机协作 (\`route.ai.collaboration\`) |
 | 全部路线 | 人工智能 · 人机协作 (\`route.ai.collaboration\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 信息社会 (`tech.information_society`)
+- 知识经济 (`tech.knowledge_economy`)：知识经济提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，人机共治直接使用这一能力完成其工艺或组织设计
+- 数字控制 (`tech.digital_control`)：数字控制提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，人机共治直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「信息社会」（tech.information\_society）
-  - 满足其一：
-    - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「能源控制突破」（breakthrough.energy\_control）
+无
 
 #### 效果摘要
 
-运输装备业产出 +11%
+智能研究院产出 +50%；社会领域研究效率 +15%
 
 #### 机会成本
 
@@ -27323,23 +24991,24 @@
 
 #### 永久 Modifier 条款
 
-- 运输装备业：`country.output.family.railway_equipment_making_factor`：+11%
+- 智能研究院：`country.output.building.machine_intelligence_institute_factor`：+50%
+- `country.research.society_efficiency`：+15%
 
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
 
 无
 
 #### 作为候选参与的里程碑
 
-无
+- 认知自动化 (`tech.cognitive_automation`)
 
 ### 算法管理 (`tech.algorithmic_management`)
 
@@ -27349,33 +25018,32 @@
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 社会 (`society`) |
 | 研究成本 | 13600000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | institution |
-| 布局路线 | branch.textile\_fibers |
+| 布局路线 | branch.labor\_management |
 | 主要路线 | 人工智能 · 人机协作 (\`route.ai.collaboration\`) |
 | 全部路线 | 人工智能 · 人机协作 (\`route.ai.collaboration\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 信息社会 (`tech.information_society`)
-- 网络计算 (`tech.networked_computing`)
+- 公司管理 (`tech.corporate_management`)：公司管理提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，算法管理直接使用这一能力完成其工艺或组织设计
+- 运筹学 (`tech.operations_research`)：运筹学提供制度协调、公共组织与交换规则中的操作与材料处理方法，算法管理直接使用这一能力完成其工艺或组织设计
+- 网络计算 (`tech.networked_computing`)：网络计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，算法管理直接使用这一能力完成其工艺或组织设计
+- 机器学习 (`tech.machine_learning`)：机器学习提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，算法管理直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「信息社会」（tech.information\_society）
-  - 满足其一：
-    - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「能源控制突破」（breakthrough.energy\_control）
+- 满足其一：
+  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
+  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
 
 #### 效果摘要
 
-解锁建筑：智能化合成纤维厂；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：智能化合成橡胶厂；智能化合成纤维厂产出 +25%
+制造部门产出 +12%
 
 #### 机会成本
 
@@ -27384,44 +25052,33 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 智能化合成纤维厂 (`method_synthetic_fiber_plant_r10`)；智能化合成橡胶厂 (`method_synthetic_rubber_plant_r10`)
+- **建筑 / 生产方式：** 无
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 智能冶铝厂 (`method_aluminum_plant_r10`)；智能化汽车厂 (`method_automobiles_plant_r10`)；智能化洗涤剂厂 (`method_detergent_plant_r10`)；智能化发动机厂 (`method_engines_plant_r10`)；自动化炸药厂 (`method_explosives_plant_r10`)；智能化家用电器厂 (`method_household_appliances_plant_r10`)；智能石油化工厂 (`method_petrochemicals_plant_r10`)；智能化塑料厂 (`method_plastics_plant_r10`)；智能战略金属冶炼厂 (`method_rare_earth_metals_plant_r10`)；智能化核反应堆设备厂 (`method_reactor_component_works_r10`)；智能炼油厂 (`method_refined_fuel_plant_r10`)；智能化不锈钢厂 (`method_stainless_steel_plant_r10`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 智能冶铝厂 (`method_aluminum_plant_r10`)；智能化汽车厂 (`method_automobiles_plant_r10`)；智能化洗涤剂厂 (`method_detergent_plant_r10`)；智能化发动机厂 (`method_engines_plant_r10`)；自动化炸药厂 (`method_explosives_plant_r10`)；智能化家用电器厂 (`method_household_appliances_plant_r10`)；智能石油化工厂 (`method_petrochemicals_plant_r10`)；智能化塑料厂 (`method_plastics_plant_r10`)；智能战略金属冶炼厂 (`method_rare_earth_metals_plant_r10`)；智能化核反应堆设备厂 (`method_reactor_component_works_r10`)；智能炼油厂 (`method_refined_fuel_plant_r10`)；智能化不锈钢厂 (`method_stainless_steel_plant_r10`)；智能化合成纤维厂 (`method_synthetic_fiber_plant_r10`)；智能化合成橡胶厂 (`method_synthetic_rubber_plant_r10`)
 
 #### 结构化内容效果
 
-- **智能化合成纤维厂**（`building`）：`building.method_synthetic_fiber_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **合成纤维**（`good`）：`good.synthetic_fiber` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **石化产品**（`good`）：`good.petrochemicals` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **自主系统**（`good`）：`good.autonomous_systems` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **智能化合成橡胶厂**（`building`）：`building.method_synthetic_rubber_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **合成橡胶**（`good`）：`good.synthetic_rubber` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **硫磺**（`good`）：`good.sulfur` → `input_method_access` `enable` `1.0`；`existing_binding`
+无
 
 #### 永久 Modifier 条款
 
-- 智能化合成纤维厂：`country.output.building.method_synthetic_fiber_plant_r10_factor`：+25%
+- `country.output.manufacturing_factor`：+12%
 
-#### 直接后继（硬前置关系）
+#### 被以下科技作为硬前置
+
+- 自主劳动协调 (`tech.autonomous_labor_coordination`)：算法管理提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，自主劳动协调直接使用这一能力完成其工艺或组织设计
+
+#### 主题路线后继
 
 无
 
-#### 同路线后继
+#### 跨领域应用
 
 无
-
-#### 应用交汇目标
-
-- 智能电网 (`tech.smart_grid`)
 
 #### 作为候选参与的里程碑
 
-- 认知自动化 (`tech.cognitive_automation`)
+无
 
 ### 自适应灌溉 (`tech.adaptive_irrigation`)
 
@@ -27431,9 +25088,9 @@
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 农业 (`agriculture`) |
 | 研究成本 | 13600000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | power\_scale |
 | 布局路线 | branch.rice\_irrigation |
 | 主要路线 | 作物 · 自动化 (\`route.crop.automated\`) |
@@ -27441,23 +25098,20 @@
 | 开局能力标签 | 无 |
 | 效果配置 | automation |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 信息社会 (`tech.information_society`)
-- 精准灌溉 (`tech.precision_irrigation`)
+- 精准灌溉 (`tech.precision_irrigation`)：精准灌溉提供水田整备、水位控制与稻作管理方法中的成套生产流程，自适应灌溉直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「信息社会」（tech.information\_society）
-  - 满足其一：
-    - 已发现信号「河湖水系」（landform.freshwater\_access）
-    - 已发现信号「河谷」（landform.river\_valley）
-    - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
+- 满足其一：
+  - 已发现信号「河湖水系」（landform.freshwater\_access）
+  - 已发现信号「河谷」（landform.river\_valley）
+  - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
 
 #### 效果摘要
 
-可再生能源业产出 +12%
+公共营造产出 +28%
 
 #### 机会成本
 
@@ -27476,23 +25130,23 @@
 
 #### 永久 Modifier 条款
 
-- 可再生能源业：`country.output.family.renewable_power_generation_factor`：+12%
+- 公共营造：`country.output.family.construction_methods_factor`：+28%
 
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
 
-- 智能电网 (`tech.smart_grid`)
+无
+
+#### 跨领域应用
+
+无
 
 #### 作为候选参与的里程碑
 
-- 认知自动化 (`tech.cognitive_automation`)
+无
 
 ### 知识合作社 (`tech.knowledge_cooperatives`)
 
@@ -27502,33 +25156,31 @@
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 社会 (`society`) |
 | 研究成本 | 13600000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | institution |
-| 布局路线 | branch.tropical\_commodities |
+| 布局路线 | branch.labor\_management |
 | 主要路线 | 制度 · 知识 (\`route.institution.knowledge\`) |
 | 全部路线 | 制度 · 知识 (\`route.institution.knowledge\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 信息社会 (`tech.information_society`)
-- 数值天气预报 (`tech.numerical_weather_prediction`)
+- 开放科学网络 (`tech.open_science_networks`)：开放科学网络提供制度协调、公共组织与交换规则中的操作与材料处理方法，知识合作社直接使用这一能力完成其工艺或组织设计
+- 合作社组织 (`tech.cooperative_association`)：合作社组织提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，知识合作社直接使用这一能力完成其工艺或组织设计
+- 知识经济 (`tech.knowledge_economy`)：知识经济提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，知识合作社直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「信息社会」（tech.information\_society）
-  - 满足其一：
-    - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「能源控制突破」（breakthrough.energy\_control）
+- 满足其一：
+  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
+  - 已发现信号「自动化突破」（breakthrough.automation）
 
 #### 效果摘要
 
-智能研究院产出 +25%；国家协同能力 +3%
+智能研究院产出 +50%
 
 #### 机会成本
 
@@ -27547,24 +25199,23 @@
 
 #### 永久 Modifier 条款
 
-- 智能研究院：`country.output.building.machine_intelligence_institute_factor`：+25%
-- `country.research.society_efficiency`：+3%
+- 智能研究院：`country.output.building.machine_intelligence_institute_factor`：+50%
 
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
 
-- 分布式智能 (`tech.distributed_intelligence`)
+无
+
+#### 跨领域应用
+
+无
 
 #### 作为候选参与的里程碑
 
-- 认知自动化 (`tech.cognitive_automation`)
+无
 
 ### 自主劳动协调 (`tech.autonomous_labor_coordination`)
 
@@ -27574,33 +25225,31 @@
 | 时代 | 智能时代 (`intelligent`) |
 | 领域 | 社会 (`society`) |
 | 研究成本 | 13600000 科技点（`technology_points`） |
-| 节点标记 | 时代关键 |
+| 节点标记 | 无 |
 | 网络角色 | branch |
-| 锚点类型 | route\_anchor |
+| 锚点类型 | branch |
 | 节点角色 | institution |
-| 布局路线 | branch.heavy\_industry |
+| 布局路线 | branch.labor\_management |
 | 主要路线 | 人工智能 · 人机协作 (\`route.ai.collaboration\`) |
 | 全部路线 | 人工智能 · 人机协作 (\`route.ai.collaboration\`) |
 | 开局能力标签 | 无 |
 | 效果配置 | organization |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
-- 信息社会 (`tech.information_society`)
-- 传感器网络 (`tech.sensor_networks`)
+- 算法管理 (`tech.algorithmic_management`)：算法管理提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，自主劳动协调直接使用这一能力完成其工艺或组织设计
+- 传感器网络 (`tech.sensor_networks`)：传感器网络提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，自主劳动协调直接使用这一能力完成其工艺或组织设计
+- 自主系统 (`tech.autonomous_systems`)：自主系统提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，自主劳动协调直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已完成科技「信息社会」（tech.information\_society）
-  - 满足其一：
-    - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-    - 已发现信号「自动化突破」（breakthrough.automation）
-    - 已发现信号「能源控制突破」（breakthrough.energy\_control）
+- 满足其一：
+  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
+  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
 
 #### 效果摘要
 
-解锁建筑：智能冶铝厂；开放通用职业阶层岗位；开放通用职业阶层岗位；解锁建筑：智能化不锈钢厂；智能冶铝厂产出 +25%
+采掘部门产出 +12%
 
 #### 机会成本
 
@@ -27609,46 +25258,33 @@
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 智能冶铝厂 (`method_aluminum_plant_r10`)；智能化不锈钢厂 (`method_stainless_steel_plant_r10`)
+- **建筑 / 生产方式：** 无
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 智能冶铝厂 (`method_aluminum_plant_r10`)；智能化不锈钢厂 (`method_stainless_steel_plant_r10`)
 
 #### 结构化内容效果
 
-- **智能冶铝厂**（`building`）：`building.method_aluminum_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `ownership_access` `enable` `1.0`；`existing_binding`
-- **通用职业阶层**（`class`）：`class.general` → `employment_access` `enable` `1.0`；`existing_binding`
-- **铝**（`good`）：`good.aluminum` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **铝土矿**（`good`）：`good.bauxite` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **电力**（`good`）：`good.electricity` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **金属工具**（`good`）：`good.tools` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **工业机械**（`good`）：`good.industrial_machinery` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **自主系统**（`good`）：`good.autonomous_systems` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **智能化不锈钢厂**（`building`）：`building.method_stainless_steel_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **不锈钢**（`good`）：`good.stainless_steel` → `output_recipe_access` `enable` `1.0`；`existing_binding`
-- **钢材**（`good`）：`good.steel` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **战略矿物材料**（`good`）：`good.rare_earth_metals` → `input_method_access` `enable` `1.0`；`existing_binding`
-- **锰矿石**（`good`）：`good.manganese_ore` → `input_method_access` `enable` `1.0`；`existing_binding`
+无
 
 #### 永久 Modifier 条款
 
-- 智能冶铝厂：`country.output.building.method_aluminum_plant_r10_factor`：+25%
+- `country.output.extractive_factor`：+12%
 
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
 
-- 分布式智能 (`tech.distributed_intelligence`)
+无
+
+#### 跨领域应用
+
+无
 
 #### 作为候选参与的里程碑
 
-- 认知自动化 (`tech.cognitive_automation`)
+无
 
 ### 认知自动化 (`tech.cognitive_automation`)
 
@@ -27668,7 +25304,7 @@
 | 开局能力标签 | 无 |
 | 效果配置 | milestone |
 
-#### 前置科技（决定研发资格）
+#### 硬前置（决定研发资格）
 
 无
 
@@ -27678,7 +25314,7 @@
 
 #### 效果摘要
 
-珠宝业产出 +10%
+智能研究院产出 +50%；社会领域研究效率 +15%
 
 #### 机会成本
 
@@ -27686,23 +25322,15 @@
 
 #### 里程碑候选
 
-需要完成下列 16 项候选中的任意 5 项：
-- 神经网络 (`tech.neural_networks`)
-- 人机协作 (`tech.human_machine_collaboration`)
-- 机器人制造 (`tech.robotic_manufacturing`)
-- 自主采矿 (`tech.autonomous_mining`)
-- 计算生物学 (`tech.computational_biology`)
-- 气候建模 (`tech.climate_modeling`)
-- 智能电网 (`tech.smart_grid`)
-- 算法治理 (`tech.algorithmic_governance`)
-- 分布式智能 (`tech.distributed_intelligence`)
+需要完成下列 8 项候选中的任意 4 项：
+- 自动化农业 (`tech.automated_agriculture`)
+- 自主系统 (`tech.autonomous_systems`)
+- 机器学习 (`tech.machine_learning`)
+- 人机共治 (`tech.human_machine_cogovernance`)
 - 智能育种 (`tech.intelligent_breeding`)
-- 自主物流 (`tech.autonomous_logistics`)
-- 智能科学代理 (`tech.scientific_agents`)
-- 算法管理 (`tech.algorithmic_management`)
-- 自适应灌溉 (`tech.adaptive_irrigation`)
-- 知识合作社 (`tech.knowledge_cooperatives`)
-- 自主劳动协调 (`tech.autonomous_labor_coordination`)
+- 机器人制造 (`tech.robotic_manufacturing`)
+- 气候建模 (`tech.climate_modeling`)
+- 算法治理 (`tech.algorithmic_governance`)
 
 #### 内容解锁
 
@@ -27717,17 +25345,18 @@
 
 #### 永久 Modifier 条款
 
-- 珠宝业：`country.output.family.jewelry_making_factor`：+10%
+- 智能研究院：`country.output.building.machine_intelligence_institute_factor`：+50%
+- `country.research.society_efficiency`：+15%
 
-#### 直接后继（硬前置关系）
-
-无
-
-#### 同路线后继
+#### 被以下科技作为硬前置
 
 无
 
-#### 应用交汇目标
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
 
 无
 

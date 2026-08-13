@@ -84,6 +84,7 @@ const CONTACT_RULES := [
 	[6, "spice", "contact.spice"],
 	[7, "rubber", "contact.rubber"],
 	[8, "tin", "contact.tin"],
+	[9, "maritime_vessel", "contact.maritime_vessel"],
 ]
 
 const WEATHER_RULES := [

@@ -41,7 +41,7 @@ func patch_states(states: PackedInt32Array) -> void:
 	_states = states
 	var signature := 17
 	for state in states:
-		signature = int((signature * 31 + (1 if int(state) > 0 else 0)) & 0x7fffffff)
+		signature = int((signature * 31 + (1 if TechnologyTreeView.presents_state(int(state)) else 0)) & 0x7fffffff)
 	if signature != _reveal_signature:
 		_reveal_signature = signature
 		_rebuild_cells()
@@ -69,7 +69,7 @@ func _rebuild_cells() -> void:
 	for index in range(_eras.size()):
 		era_lookup[String((_eras[index] as Dictionary).get("id", ""))] = index
 	for technology in range(_definitions.size()):
-		if _state_of(technology) <= 0:
+		if not TechnologyTreeView.presents_state(_state_of(technology)):
 			continue
 		var era_index := int(era_lookup.get(String((_definitions[technology] as Dictionary).get(
 			"era_id", "")), -1))
@@ -88,7 +88,7 @@ func _rebuild_cells() -> void:
 					continue
 				if int(era_lookup.get(String(definition.get("era_id", "")), -1)) != era_index:
 					continue
-				if _state_of(technology) > 0:
+				if TechnologyTreeView.presents_state(_state_of(technology)):
 					candidates.append(technology)
 			if candidates.is_empty():
 				continue
@@ -166,7 +166,7 @@ func _tooltip_for(index: int) -> String:
 		return ""
 	var cell: Dictionary = _cells[index]
 	var technology := int(cell.technology)
-	return "%s · 本领域本时代 %d 项已揭示" % [String((_definitions[technology] as Dictionary).get(
+	return "%s · 本领域本时代 %d 项可见" % [String((_definitions[technology] as Dictionary).get(
 		"display_name", "")), (cell.technologies as Array).size()]
 
 
