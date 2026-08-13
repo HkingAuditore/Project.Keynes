@@ -44,8 +44,9 @@ func _init() -> void:
 		"tech.maize_identification")
 	_expect("technology presentation is fully Chinese",
 		String((definitions[maize] as Dictionary).get("display_name", "")) == "玉米辨识"
-		and String((definitions[maize] as Dictionary).get("effect_summary", ""))
-			== "大田作物农业产出 +18%"
+		and not String((definitions[maize] as Dictionary).get("effect_summary", "")).is_empty()
+		and not String((definitions[maize] as Dictionary).get("effect_summary", "")).contains(
+			"大田作物农业")
 		and String(((definitions[maize] as Dictionary).get(
 			"route_display_names", PackedStringArray()) as PackedStringArray)[0])
 			== "作物 · 玉米")

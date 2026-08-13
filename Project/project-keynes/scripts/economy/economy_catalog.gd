@@ -12,6 +12,8 @@ const ResourceRegistryScript = preload("res://scripts/data/resource_profile_regi
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
 const TriggerCatalogScript = preload("res://scripts/trigger/trigger_catalog.gd")
 const FamilyTraitCatalogScript = preload("res://scripts/family/family_trait_catalog.gd")
+const TerrainTypeScript = preload("res://scripts/geography/terrain_type.gd")
+const LandformTypeScript = preload("res://scripts/geography/landform_type.gd")
 const DEFAULT_SETTLEMENT_PROFILE_PATH := "res://data/economy/default_settlement.tres"
 const DEFAULT_FAMILY_SURNAME_PACK_PATH := "res://data/economy/default_family_surnames.tres"
 const DEFAULT_PERSON_GIVEN_NAME_PACK_PATH := "res://data/economy/default_person_given_names.tres"
@@ -329,6 +331,14 @@ static func compile_native_catalog() -> Dictionary:
 			signature_satisfaction_dimension_weights,
 		"satisfaction_dimension_count": SATISFACTION_DIMENSION_COUNT,
 		"signature_keys": signature_keys,
+		"modifier_sector_ids": PackedStringArray([
+			"agriculture", "extractive", "manufacturing", "energy", "knowledge"]),
+		"modifier_terrain_ids": PackedStringArray(
+			TerrainTypeScript.TERRAIN.keys().map(func(value):
+				return String(value).to_lower())),
+		"modifier_landform_ids": PackedStringArray(
+			LandformTypeScript.LF.keys().map(func(value):
+				return String(value).to_lower())),
 	}
 	for key in good_columns:
 		catalog[key] = good_columns[key]

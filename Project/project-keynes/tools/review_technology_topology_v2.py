@@ -19,6 +19,215 @@ ROOT = Path(__file__).resolve().parents[1]
 NETWORK = ROOT / "data" / "technology" / "technology_network.json"
 
 
+GOOD_NAMES = {
+    "grain": "谷物",
+    "wheat_grain": "小麦",
+    "rice_grain": "稻米",
+    "corn_grain": "玉米",
+    "potatoes": "马铃薯",
+}
+
+
+def good_output_terms(good_ids: list[str], value: float,
+                      group_display_name: str = "") -> list[dict]:
+    """Author exact output-good modifiers without leaking into building families."""
+    return [{
+        "stat": f"country.output.good.{good_id}_factor",
+        "operation": 0.0,
+        "value": value,
+        "subject_kind": "good",
+        "subject_id": good_id,
+        "subject_display_name": group_display_name or GOOD_NAMES[good_id],
+    } for good_id in good_ids]
+
+
+GOOD_NAMES.update({
+    "logs": "原木", "lumber": "木材", "coal": "煤", "tools": "工具",
+    "iron_ore": "铁矿石", "copper_ore": "铜矿石", "silver_ore": "银矿石",
+    "gold_ore": "金矿石", "fish": "鱼", "meat": "肉类",
+    "processed_food": "加工食品", "cloth": "布匹", "electricity": "电力",
+    "petrochemicals": "石化产品", "plastics": "塑料", "crude_oil": "原油",
+    "synthetic_fiber": "合成纤维", "printed_materials": "印刷品",
+    "semiconductors": "半导体", "computers": "计算机", "copper": "铜",
+})
+
+
+def authored_modifier_term(stat: str, value: float, rationale_text: str) -> dict:
+    """Build an explicitly reviewed term and name its real runtime consumer."""
+    subject_kind, subject_id, subject_name = "society", stat, "全社会"
+    effect_class = "全社会或部门影响"
+    consumer = "NativeEconomyRuntime::refresh_building_modifier_factors"
+    patterns = (
+        ("country.output.good.", "_factor", "good", "商品产出",
+         "NativeEconomyRuntime::effective_building_output_quantity"),
+        ("country.input.good.", "_factor", "good", "生产投入",
+         "NativeEconomyRuntime::effective_production_input_quantity"),
+        ("country.consumption.good.", "_factor", "good", "家庭消费",
+         "NativeEconomyRuntime::effective_household_good_quantity"),
+        ("country.resource.", ".use_factor", "resource", "自然资源利用",
+         "NativeEconomyRuntime::effective_resource_use_quantity"),
+        ("country.resource.", ".managed_generation_factor", "resource", "自然资源再生",
+         "NativeEconomyRuntime::effective_managed_resource_generation"),
+    )
+    for prefix, suffix, kind, klass, runtime_consumer in patterns:
+        if stat.startswith(prefix) and stat.endswith(suffix):
+            subject_id = stat[len(prefix):-len(suffix)]
+            subject_kind, effect_class, consumer = kind, klass, runtime_consumer
+            subject_name = GOOD_NAMES.get(subject_id, subject_id)
+            break
+    if stat.startswith("country.output.terrain.") or stat.startswith("country.output.landform."):
+        subject_kind = "geography"
+        subject_id = stat.removeprefix("country.output.").removesuffix("_factor")
+        subject_name, effect_class = subject_id, "地理生产适应"
+    elif stat == "country.production.input_factor":
+        subject_name, effect_class = "全社会生产投入", "全社会生产投入"
+        consumer = "NativeEconomyRuntime::effective_production_input_quantity"
+    elif stat == "country.household.consumption_factor":
+        subject_name, effect_class = "全社会家庭消费", "全社会家庭消费"
+        consumer = "NativeEconomyRuntime::family_consumption_factor_q16"
+    elif stat == "country.resource.use_factor":
+        subject_name, effect_class = "全社会自然资源耗用", "全社会自然资源利用"
+        consumer = "NativeEconomyRuntime::effective_resource_use_quantity"
+    elif stat == "country.economy_output_factor":
+        subject_name = "全社会经济产出"
+    elif stat == "country.trade.speed_factor":
+        subject_name, effect_class = "全社会贸易运输速度", "全社会贸易能力"
+        consumer = "NativeEconomyRuntime::capture_country_epoch"
+    return {
+        "stat": stat, "operation": 0.0, "value": value,
+        "subject_kind": subject_kind, "subject_id": subject_id,
+        "subject_display_name": subject_name, "effect_class": effect_class,
+        "effect_rationale": rationale_text,
+        "implementation_status": "runtime_consumed", "runtime_consumer": consumer,
+    }
+
+
+# Explicit per-technology review. Ordinary societal spillovers are <=5%; large
+# bonuses are narrow goods, resources or geography effects with real tradeoffs.
+EFFECT_SPECS = [
+    ("tech.composite_tools", "country.economy_output_factor", .03, "复合工具提高跨行业劳动效率。"),
+    ("tech.writing", "country.economy_output_factor", .03, "书写减少组织的信息损失。"),
+    ("tech.weights_and_measures", "country.economy_output_factor", .03, "统一度量降低交换和核验成本。"),
+    ("tech.public_health", "country.economy_output_factor", .03, "疾病预防减少误工和照护损失。"),
+    ("tech.public_education", "country.economy_output_factor", .04, "普及教育提高跨行业技能迁移。"),
+    ("tech.corporate_management", "country.economy_output_factor", .03, "预算和责任中心改善跨厂协调。"),
+    ("tech.software_engineering", "country.economy_output_factor", .03, "可靠软件降低数字流程故障成本。"),
+    ("tech.networked_computing", "country.economy_output_factor", .04, "联网扩大知识和服务复用。"),
+    ("tech.machine_learning", "country.economy_output_factor", .05, "预测与分类改善跨行业配置。"),
+    ("tech.autonomous_systems", "country.economy_output_factor", .06, "关键节点扩大连续生产能力。"),
+    ("tech.crop_domestication", "country.output.agriculture_factor", .04, "驯化知识提高全社会农业劳动的可预测性。"),
+    ("tech.permanent_settlements", "country.economy_output_factor", .02, "常住聚落降低跨行业设施与劳作协调成本。"),
+    ("tech.road_engineering", "country.trade.speed_factor", .04, "道路标准改善全社会陆路周转。"),
+    ("tech.state_bureaucracy", "country.economy_output_factor", .02, "稳定行政记录减少征调与组织摩擦。"),
+    ("tech.movable_type_printing", "country.output.knowledge_factor", .06, "活字印刷扩大知识复制与传播。"),
+    ("tech.double_entry_bookkeeping", "country.production.input_factor", -.02, "复式记账揭示跨行业库存、损耗与成本浪费。"),
+    ("tech.experimental_science", "country.output.knowledge_factor", .06, "可复现实验提高全社会知识生产效率。"),
+    ("tech.cooperative_association", "country.economy_output_factor", .02, "合作组织降低小生产者共享资本与风险的成本。"),
+    ("tech.industrial_statistics", "country.production.input_factor", -.03, "工业统计减少跨厂物料计划偏差。"),
+    ("tech.factory_system", "country.output.manufacturing_factor", .06, "工厂制度提高制造流程的专业化与连续性。"),
+    ("tech.mechanized_agriculture", "country.output.agriculture_factor", .06, "机械化提高全社会农业作业时效。"),
+    ("tech.modern_medicine", "country.economy_output_factor", .03, "现代医学减少全社会疾病导致的劳动损失。"),
+    ("tech.electrification", "country.economy_output_factor", .03, "电气化向各行业提供可分配动力。"),
+    ("tech.industrial_research", "country.output.knowledge_factor", .06, "企业实验室把生产问题转化为系统知识。"),
+    ("tech.national_laboratories", "country.output.knowledge_factor", .07, "国家实验机构汇集长期仪器与研究资本。"),
+    ("tech.digital_computing", "country.output.knowledge_factor", .06, "数字计算提高全社会模型、记录与分析能力。"),
+    ("tech.semiconductor_manufacturing", "country.output.manufacturing_factor", .05, "洁净制造与过程控制向高级制造扩散。"),
+    ("tech.knowledge_economy", "country.economy_output_factor", .04, "知识服务与无形资本提高跨行业配置效率。"),
+    ("tech.open_science_networks", "country.output.knowledge_factor", .06, "开放科研网络减少重复实验并扩大资料复用。"),
+    ("tech.precision_agriculture", "country.output.agriculture_factor", .08, "田块级测量改善全社会农业投入配置。"),
+    ("tech.climate_modeling", "country.output.agriculture_factor", .04, "气候预测减少农业时机与灾害暴露误差。"),
+    ("tech.human_machine_cogovernance", "country.economy_output_factor", .03, "人机协同提高复杂社会决策的响应速度。"),
+    ("tech.algorithmic_governance", "country.production.input_factor", -.03, "算法治理减少跨部门配置与采购浪费。"),
+    ("tech.robotic_manufacturing", "country.output.manufacturing_factor", .08, "机器人提高制造连续性与一致性。"),
+    ("tech.standardization", "country.production.input_factor", -.04, "统一规格减少返工和材料浪费。"),
+    ("tech.interchangeable_parts", "country.production.input_factor", -.05, "互换件降低修配和备件投入。"),
+    ("tech.industrial_quality_control", "country.production.input_factor", -.04, "过程检验减少废品。"),
+    ("tech.systems_engineering", "country.production.input_factor", -.03, "接口管理减少复杂工程浪费。"),
+    ("tech.industrial_ecology", "country.resource.use_factor", -.08, "闭环利用降低原生资源耗用。"),
+    ("tech.mass_production", "country.output.manufacturing_factor", .12, "大批量专用流程提高制造吞吐。"),
+    ("tech.mass_production", "country.household.consumption_factor", .03, "廉价标准品诱发消费反弹。"),
+    ("tech.industrial_ecology", "country.output.manufacturing_factor", -.03, "闭环改造初期牺牲制造吞吐。"),
+
+    ("tech.grain_threshing", "country.output.good.grain_factor", .18, "脱粒提高通用谷物可收获量。"),
+    ("tech.grain_threshing", "country.output.good.wheat_grain_factor", .18, "脱粒减少小麦落粒损失。"),
+    ("tech.grain_threshing", "country.output.good.rice_grain_factor", .18, "脱粒减少稻谷损失。"),
+    ("tech.grain_threshing", "country.output.good.corn_grain_factor", .18, "脱粒式处理减少玉米籽粒损失。"),
+    ("tech.wild_maize_collection", "country.output.terrain.jungle.agriculture_factor", .08, "识别野生禾本科生境，提高雨林边缘的采集与试种效率。"),
+    ("tech.maize_seed_saving", "country.output.good.corn_grain_factor", .12, "留种稳定玉米收成。"),
+    ("tech.maize_selection", "country.output.good.corn_grain_factor", .18, "定向选择提高玉米品系产量。"),
+    ("tech.wheat_seed_saving", "country.output.good.wheat_grain_factor", .12, "留种稳定小麦收成。"),
+    ("tech.rice_seed_saving", "country.output.good.rice_grain_factor", .12, "留种稳定水稻收成。"),
+    ("tech.plough_agriculture", "country.output.good.grain_factor", .18, "犁耕扩大谷物有效耕作层。"),
+    ("tech.plough_agriculture", "country.output.good.wheat_grain_factor", .18, "犁耕改善小麦整地。"),
+    ("tech.plough_agriculture", "country.output.good.corn_grain_factor", .12, "犁耕改善玉米田整地。"),
+    ("tech.crop_rotation", "country.output.good.grain_factor", .18, "轮作维持谷物地力。"),
+    ("tech.intensive_crop_rotation", "country.output.good.grain_factor", .22, "密集轮作提高谷物年产出。"),
+    ("tech.rice_water_control", "country.output.good.rice_grain_factor", .22, "水位控制改善稻作产量。"),
+    ("tech.mechanical_reaping", "country.output.good.wheat_grain_factor", .22, "机械收割降低小麦时效损失。"),
+    ("tech.mechanical_threshing", "country.output.good.wheat_grain_factor", .20, "机械脱粒提高小麦处理吞吐。"),
+    ("tech.mechanical_threshing", "country.input.good.coal_factor", .04, "早期动力脱粒增加煤耗。"),
+    ("tech.crop_breeding", "country.output.good.grain_factor", .12, "育种提高通用谷物潜力。"),
+    ("tech.crop_breeding", "country.output.good.wheat_grain_factor", .12, "育种提高小麦潜力。"),
+    ("tech.crop_breeding", "country.output.good.rice_grain_factor", .12, "育种提高水稻潜力。"),
+    ("tech.crop_breeding", "country.output.good.corn_grain_factor", .12, "育种提高玉米潜力。"),
+    ("tech.refrigeration", "country.consumption.good.meat_factor", -.08, "冷藏减少家庭肉类腐败。"),
+    ("tech.cold_chain", "country.consumption.good.fish_factor", -.10, "冷链减少鱼类运输和家庭损耗。"),
+    ("tech.cold_chain", "country.consumption.good.meat_factor", -.10, "冷链减少肉类运输和家庭损耗。"),
+    ("tech.canning", "country.consumption.good.processed_food_factor", -.08, "罐藏延长加工食品保存期。"),
+
+    ("tech.timber_sawing", "country.resource.timber.use_factor", -.10, "锯切提高原木得材率。"),
+    ("tech.steam_sawmilling", "country.resource.timber.use_factor", -.08, "动力锯切减少锯路损耗。"),
+    ("tech.steam_sawmilling", "country.input.good.coal_factor", .05, "蒸汽锯木以煤耗换取吞吐。"),
+    ("tech.forest_management", "country.resource.timber.managed_generation_factor", .28, "轮伐补植提高林木恢复。"),
+    ("tech.controlled_burning", "country.resource.timber.managed_generation_factor", -.08, "控制燃烧短期损失木本存量。"),
+    ("tech.coal_adit_mining", "country.resource.coal.use_factor", -.08, "平硐提高煤层回收率。"),
+    ("tech.industrial_coal_mining", "country.resource.coal.use_factor", -.12, "工业矿井降低煤层损失。"),
+    ("tech.industrial_coal_mining", "country.input.good.tools_factor", .05, "工业矿井增加工具维护负担。"),
+    ("tech.deep_mining", "country.resource.iron_ore.use_factor", -.08, "深井开拓提高铁矿回采率。"),
+    ("tech.mechanized_mining", "country.resource.iron_ore.use_factor", -.10, "机械采矿提高铁矿回采。"),
+    ("tech.mechanized_mining", "country.resource.coal.use_factor", -.10, "机械采矿提高煤层回采。"),
+    ("tech.autonomous_mining", "country.resource.iron_ore.use_factor", -.12, "传感调度减少贫化遗漏。"),
+    ("tech.autonomous_mining", "country.output.extractive_factor", .15, "自主采矿提高连续作业。"),
+    ("tech.copper_ore_roasting", "country.resource.copper_ore.use_factor", -.08, "焙烧改善铜回收率。"),
+    ("tech.petroleum_drilling", "country.resource.oil.use_factor", -.10, "井控提高可采原油比例。"),
+
+    ("tech.dryland_farming", "country.output.terrain.desert.agriculture_factor", .28, "旱作改善沙漠边缘农业。"),
+    ("tech.dryland_farming", "country.output.terrain.cold_desert.agriculture_factor", .24, "保墒适应寒漠农业。"),
+    ("tech.dryland_water_retention", "country.output.terrain.steppe.agriculture_factor", .22, "集水覆盖改善草原旱作。"),
+    ("tech.terrace_farming", "country.output.landform.hill.agriculture_factor", .28, "梯田把坡地转为耕作面。"),
+    ("tech.highland_tuber_farming", "country.output.landform.plateau.agriculture_factor", .32, "块茎体系适应高原短季。"),
+    ("tech.highland_tuber_farming", "country.output.landform.mountain.agriculture_factor", .24, "畦作稳定山地农业。"),
+    ("tech.flood_recession_wheat", "country.output.terrain.floodplain.agriculture_factor", .25, "退水播种利用洪泛沉积。"),
+    ("tech.flood_recession_maize", "country.output.terrain.floodplain.agriculture_factor", .25, "退水玉米利用洪泛水肥。"),
+    ("tech.paddy_bunding", "country.output.landform.lowland.agriculture_factor", .22, "田埂蓄水改善低地稻作。"),
+    ("tech.rice_paddy_cultivation", "country.output.terrain.floodplain.agriculture_factor", .25, "水田利用洪泛水文。"),
+    ("tech.spice_shade_gardening", "country.output.terrain.jungle.agriculture_factor", .24, "遮阴园艺适应雨林微气候。"),
+    ("tech.forest_management", "country.output.terrain.forest.extractive_factor", .22, "轮伐调查提高森林采集。"),
+    ("tech.coal_adit_mining", "country.output.landform.hill.extractive_factor", .20, "平硐利用丘陵露头。"),
+    ("tech.deep_mining", "country.output.landform.mountain.extractive_factor", .24, "支护通风适应山地深矿。"),
+    ("tech.geological_prospecting", "country.output.terrain.badlands.extractive_factor", .18, "踏勘提高裸岩地区找矿。"),
+    ("tech.geological_prospecting", "country.output.landform.plateau.extractive_factor", .18, "构造测绘改善高原找矿。"),
+    ("tech.mineral_spectral_survey", "country.output.terrain.desert.extractive_factor", .25, "光谱遥感提高沙漠找矿。"),
+    ("tech.wind_power", "country.output.terrain.steppe.energy_factor", .24, "开阔风场提高风能产出。"),
+    ("tech.wind_power", "country.output.landform.plateau.energy_factor", .22, "高原风场提高利用率。"),
+    ("tech.water_power", "country.output.landform.rift_valley.energy_factor", .20, "高差和集中水流改善水力利用。"),
+    ("tech.hydraulic_engineering", "country.output.landform.delta.agriculture_factor", .18, "堤渠分洪改善三角洲农业。"),
+    ("tech.hydraulic_engineering", "country.output.landform.delta.manufacturing_factor", -.05, "大型水工维护占用制造能力。"),
+
+    ("tech.steam_sealing", "country.input.good.coal_factor", -.08, "密封减少蒸汽系统煤耗。"),
+    ("tech.thermodynamics", "country.input.good.coal_factor", -.08, "热力学减少动力煤耗。"),
+    ("tech.electric_motors", "country.input.good.coal_factor", -.04, "电传动替代分散蒸汽煤耗。"),
+    ("tech.electrification", "country.input.good.copper_factor", .05, "电气化扩大铜线需求。"),
+    ("tech.electric_grid", "country.output.good.electricity_factor", .18, "联网调度提高电力输出。"),
+    ("tech.smart_grid", "country.output.good.electricity_factor", .22, "智能调度降低电网拥塞。"),
+    ("tech.petrochemical_cracking", "country.output.good.petrochemicals_factor", .22, "裂解扩大石化品收率。"),
+    ("tech.petrochemical_cracking", "country.input.good.crude_oil_factor", .06, "高吞吐裂解扩大原油需求。"),
+    ("tech.textile_machinery", "country.output.good.cloth_factor", .20, "机械纺织提高布匹产量。"),
+    ("tech.textile_machinery", "country.input.good.coal_factor", .04, "早期纺机增加煤动力需求。"),
+    ("tech.mechanized_printing", "country.output.good.printed_materials_factor", .22, "机械印刷提高印刷品吞吐。"),
+]
+
+
 FAMILY_OVERRIDES = {
     "tech.fire_control": "branch.industrial_chemistry",
     "tech.controlled_burning": "branch.forest_biomass",
@@ -228,6 +437,137 @@ RESEARCH_CONDITIONS = {
 }
 
 
+def signal_atom(signal_id: str) -> dict:
+    return {"kind": 1, "id": signal_id, "value": 1}
+
+
+# Three explicit research-route gates per specialist family.  The first two are
+# knowledge alternatives; the third admits either a knowledge route or direct
+# practical evidence.  These are authored IDs, not family-order inference.
+FAMILY_ROUTE_SPECS = {
+    "branch.commerce_finance": [
+        ("tech.currency", ["tech.early_trade", "tech.record_keeping"], ""),
+        ("tech.mercantile_networks", ["tech.chartered_universities", "tech.commercial_estates"], ""),
+        ("tech.digital_marketplaces", ["tech.corporate_management", "tech.telecommunications"], "breakthrough.automation"),
+    ],
+    "branch.computation_control": [
+        ("tech.information_theory", ["tech.radio", "tech.industrial_statistics"], ""),
+        ("tech.neural_networks", ["tech.systems_engineering", "tech.bioinformatics"], ""),
+        ("tech.distributed_intelligence", ["tech.neural_networks", "tech.autonomous_systems"], "breakthrough.automation"),
+    ],
+    "branch.construction_materials": [
+        ("tech.kiln_firing", ["tech.controlled_burning", "tech.hand_pottery"], ""),
+        ("tech.masonry", ["tech.earth_building", "tech.early_glassmaking"], ""),
+        ("tech.interchangeable_parts", ["tech.precision_engineering", "tech.mechanical_workshops"], "breakthrough.metalworking"),
+    ],
+    "branch.electric_intelligent_energy": [
+        ("tech.electric_generation", ["tech.water_power", "tech.atmospheric_engine"], ""),
+        ("tech.nuclear_energy", ["tech.corporate_management", "tech.state_enterprises"], ""),
+        ("tech.smart_grid", ["tech.systems_engineering", "tech.distributed_intelligence"], "breakthrough.energy_control"),
+    ],
+    "branch.forest_biomass": [
+        ("tech.charcoal_burning", ["tech.controlled_burning", "tech.fire_control"], ""),
+        ("tech.forest_management", ["tech.guild_organization", "tech.regional_granaries"], ""),
+        ("tech.steam_sawmilling", ["tech.industrial_coal_mining", "tech.precision_engineering"], "breakthrough.forest_management"),
+    ],
+    "branch.geoscience_gis": [
+        ("tech.geological_prospecting", ["tech.mine_drainage", "tech.scientific_classification"], ""),
+        ("tech.satellite_observation", ["tech.radio", "tech.cartography"], ""),
+        ("tech.climate_modeling", ["tech.mineral_spectral_survey", "tech.hydrological_remote_sensing"], "breakthrough.climate_modeling"),
+    ],
+    "branch.heavy_industry": [
+        ("tech.blast_furnace", ["tech.copper_metallurgy", "tech.guild_organization"], ""),
+        ("tech.steam_power", ["tech.water_power", "tech.wind_power"], ""),
+        ("tech.autonomous_mining", ["tech.robotic_manufacturing", "tech.machine_learning"], "breakthrough.mine_support"),
+    ],
+    "branch.industrial_chemistry": [
+        ("tech.gunpowder_formulation", ["tech.salt_preservation", "tech.copper_ore_roasting"], ""),
+        ("tech.electrochemistry", ["tech.standardization", "tech.fertilizer_processing"], ""),
+        ("tech.industrial_ecology", ["tech.public_health", "tech.systems_engineering"], "breakthrough.chemical_process_control"),
+    ],
+    "branch.labor_management": [
+        ("tech.industrial_organization", ["tech.wage_contracts", "tech.commercial_estates"], ""),
+        ("tech.corporate_management", ["tech.mass_production", "tech.worker_cooperatives"], ""),
+        ("tech.algorithmic_management", ["tech.human_machine_collaboration", "tech.algorithmic_governance"], "breakthrough.automation"),
+    ],
+    "branch.land_institutions": [
+        ("tech.sharecropping", ["tech.customary_tenancy", "tech.household_landholding"], ""),
+        ("tech.commercial_tenancy", ["tech.currency", "tech.estate_accounting"], ""),
+        ("tech.property_cadastre", ["tech.standardization", "tech.state_bureaucracy"], "breakthrough.rainfed_adaptation"),
+    ],
+    "branch.maize_horticulture": [
+        ("tech.maize_selection", ["tech.phenology_observation", "tech.seed_selection"], ""),
+        ("tech.synthetic_fertilizer", ["tech.soil_experimentation", "tech.electrochemistry"], ""),
+        ("tech.rainfed_maize_cultivation", ["tech.dryland_farming", "tech.flood_recession_maize"], "breakthrough.maize_selection"),
+    ],
+    "branch.maritime_logistics": [
+        ("tech.oceanic_navigation", ["tech.magnetic_navigation", "tech.celestial_navigation"], ""),
+        ("tech.global_logistics", ["tech.rail_logistics", "tech.telecommunications"], ""),
+        ("tech.autonomous_logistics", ["tech.platform_coordination", "tech.distributed_intelligence"], "breakthrough.maritime_operations"),
+    ],
+    "branch.measurement_instruments": [
+        ("tech.probability_statistics", ["tech.celestial_calendars", "tech.double_entry_bookkeeping"], ""),
+        ("tech.precision_instruments", ["tech.weights_and_measures", "tech.mechanical_timekeeping"], ""),
+        ("tech.industrial_quality_control", ["tech.corporate_management", "tech.precision_instruments"], "breakthrough.print_calibration"),
+    ],
+    "branch.natural_history": [
+        ("tech.scientific_classification", ["tech.experimental_science", "tech.interregional_botany", "tech.learned_societies"], ""),
+        ("tech.crop_breeding", ["tech.soil_experimentation", "tech.interregional_botany", "tech.agricultural_improvement"], ""),
+        ("tech.bioinformatics", ["tech.software_engineering", "tech.open_science_networks"], "bio.wheat"),
+    ],
+    "branch.nonferrous_metals": [
+        ("tech.bronze_casting", ["tech.kiln_firing", "tech.record_keeping"], ""),
+        ("tech.coke_smelting", ["tech.industrial_chemistry", "tech.mine_ventilation"], ""),
+        ("tech.specialty_alloys", ["tech.electrochemistry", "tech.nuclear_fuel_cycle"], "breakthrough.metalworking"),
+    ],
+    "branch.pastoral_livestock": [
+        ("tech.pastoralism", ["tech.animal_traction", "tech.hide_tanning"], ""),
+        ("tech.modern_husbandry", ["tech.livestock_breeding", "tech.public_health"], ""),
+        ("tech.corporate_agribusiness", ["tech.modern_husbandry", "tech.cold_chain"], "bio.cattle"),
+    ],
+    "branch.petroleum_materials": [
+        ("tech.petroleum_refining", ["tech.industrial_chemistry", "tech.steam_power"], ""),
+        ("tech.petrochemical_industry", ["tech.fertilizer_processing", "tech.thermodynamics"], ""),
+        ("tech.plastics_engineering", ["tech.synthetic_materials", "tech.industrial_quality_control"], "breakthrough.chemical_process_control"),
+    ],
+    "branch.public_health": [
+        ("tech.public_health", ["tech.scientific_classification", "tech.state_bureaucracy"], ""),
+        ("tech.modern_medicine", ["tech.refrigeration", "tech.scientific_classification"], ""),
+        ("tech.public_health_systems", ["tech.state_enterprises", "tech.cold_chain"], "breakthrough.chemical_process_control"),
+    ],
+    "branch.rice_irrigation": [
+        ("tech.rice_water_control", ["tech.irrigation", "tech.paddy_bunding"], ""),
+        ("tech.estate_paddy_management", ["tech.manorial_jurisdiction", "tech.irrigation_surveying"], ""),
+        ("tech.adaptive_irrigation", ["tech.sensor_networks", "tech.crop_remote_sensing"], "breakthrough.paddy_control"),
+    ],
+    "branch.textile_fibers": [
+        ("tech.weaving", ["tech.fur_sewing", "tech.felt_making"], ""),
+        ("tech.textile_machinery", ["tech.steam_power", "tech.standardization"], ""),
+        ("tech.synthetic_fiber_engineering", ["tech.plastics_engineering", "tech.rubber_working"], "breakthrough.chemical_process_control"),
+    ],
+    "branch.tropical_commodities": [
+        ("tech.spice_cultivation", ["tech.irrigation", "tech.record_keeping"], ""),
+        ("tech.rubber_working", ["tech.kiln_firing", "tech.copper_annealing"], ""),
+        ("tech.estate_plantation_management", ["tech.chartered_companies", "tech.crop_acclimatization"], "bio.spice"),
+    ],
+    "branch.tuber_highland": [
+        ("tech.terrace_farming", ["tech.irrigation", "tech.earth_building"], ""),
+        ("tech.highland_tuber_farming", ["tech.terrace_farming", "tech.frost_protected_storage"], ""),
+        ("tech.estate_cereal_management", ["tech.estate_accounting", "tech.manorial_cereal_farming"], "breakthrough.terrace_maintenance"),
+    ],
+    "branch.water_wind": [
+        ("tech.irrigation", ["tech.earth_building", "tech.seed_selection"], ""),
+        ("tech.water_power", ["tech.irrigation_surveying", "tech.timber_sawing"], ""),
+        ("tech.hydraulic_engineering", ["tech.urban_waterworks", "tech.property_cadastre"], "breakthrough.watershed_management"),
+    ],
+    "branch.wheat_rainfed": [
+        ("tech.grain_threshing", ["tech.animal_traction", "tech.hand_pottery"], ""),
+        ("tech.mechanical_reaping", ["tech.crop_rotation", "tech.tenant_cereal_farming"], ""),
+        ("tech.collective_agriculture", ["tech.internal_combustion", "tech.electric_motors"], "breakthrough.rainfed_adaptation"),
+    ],
+}
+
+
 BRANCH_SUCCESSORS = {
     "tech.learned_societies": (["tech.scientific_classification"], ["学术社团提供分类学所需的标本交流、同行讨论与知识编目网络"]),
     "tech.steam_power": (["tech.steam_pumping"], ["稳定蒸汽动力使矿井抽水从试验机械转为可持续生产系统"]),
@@ -431,7 +771,19 @@ def main() -> int:
     if len(nodes) != 361:
         raise ValueError(f"expected the 361 stable legacy IDs, found {len(nodes)}")
     by_id = {node["id"]: node for node in nodes}
-    referenced = set(FAMILY_OVERRIDES) | set(HARD_OVERRIDES) | set(RESEARCH_CONDITIONS)
+    authored_conditions = dict(RESEARCH_CONDITIONS)
+    for family_id, route_specs in FAMILY_ROUTE_SPECS.items():
+        for target_id, technology_choices, signal_id in route_specs:
+            children = [tech_atom(choice) for choice in technology_choices]
+            if signal_id:
+                children.append(signal_atom(signal_id))
+            if target_id not in authored_conditions or signal_id:
+                authored_conditions[target_id] = ({"operator": 2, "children": children}, "")
+    referenced = set(FAMILY_OVERRIDES) | set(HARD_OVERRIDES) | set(authored_conditions)
+    for route_specs in FAMILY_ROUTE_SPECS.values():
+        for target_id, technology_choices, _signal_id in route_specs:
+            referenced.add(target_id)
+            referenced.update(technology_choices)
     referenced.update(BRANCH_SUCCESSORS)
     referenced.update(APPLICATIONS)
     for targets in HARD_OVERRIDES.values():
@@ -455,7 +807,15 @@ def main() -> int:
         by_id[technology_id]["hard_prerequisite_ids"] = list(prerequisites)
 
     for node in nodes:
-        condition, summary = RESEARCH_CONDITIONS.get(node["id"], ({}, ""))
+        condition, summary = authored_conditions.get(node["id"], ({}, ""))
+        if condition and not summary:
+            tech_names = [by_id[technology_id]["display_name"]
+                for technology_id in sorted(condition_technology_ids(condition))]
+            has_signal = any(isinstance(child, dict) and int(child.get("kind", -1)) == 1
+                for child in condition.get("children", []))
+            summary = "、".join(tech_names) + (
+                "任一路线或对应生产实践证据均可提供研究入口"
+                if has_signal else "中的任一路线均可提供替代知识基础")
         node["research_condition"] = condition
         node["research_condition_summary"] = summary
         branch_targets, branch_reasons = BRANCH_SUCCESSORS.get(node["id"], ([], []))
@@ -474,6 +834,53 @@ def main() -> int:
     ):
         by_id[technology_id]["modifier_terms"] = []
 
+    # The old field_crop_farming target is an upgrade family containing broad
+    # mixed-output farms, not a crop or cereal category. Remove every inherited
+    # use, then author product-specific effects. Identification and general
+    # knowledge nodes intentionally retain no automatic production bonus.
+    for node in nodes:
+        node["modifier_terms"] = [term for term in node.get("modifier_terms", [])
+            if term.get("stat") != "country.output.family.field_crop_farming_factor"]
+
+    crop_good_effects = {
+        "tech.maize_seed_saving": (["corn_grain"], 0.18),
+        "tech.maize_propagation": (["corn_grain"], 0.18),
+        "tech.maize_selection": (["corn_grain"], 0.18),
+        "tech.wheat_seed_saving": (["wheat_grain"], 0.18),
+        "tech.wheat_propagation": (["wheat_grain"], 0.18),
+        "tech.rice_seed_saving": (["rice_grain"], 0.18),
+        "tech.paddy_bunding": (["rice_grain"], 0.18),
+        "tech.plough_agriculture": (["grain", "wheat_grain", "corn_grain"], 0.25),
+        "tech.dryland_farming": (["grain", "wheat_grain", "corn_grain"], 0.18),
+        "tech.rainfed_field_system": (["grain", "wheat_grain", "corn_grain"], 0.18),
+        "tech.frost_protected_storage": (["potatoes"], 0.18),
+    }
+    for technology_id, (good_ids, value) in crop_good_effects.items():
+        by_id[technology_id]["modifier_terms"].extend(
+            good_output_terms(good_ids, value))
+
+    cereal_goods = ["grain", "wheat_grain", "rice_grain", "corn_grain"]
+    by_id["tech.grain_threshing"]["modifier_terms"].extend(
+        good_output_terms(cereal_goods, 0.18, "全部谷物"))
+
+    # Final explicit effect pass supersedes every legacy/generated term above.
+    # A reviewed node may intentionally remain modifier-free when its consumer
+    # is an unlock, method, prerequisite, institution or alternative route.
+    for node in nodes:
+        node["modifier_terms"] = []
+        node["effect_design_review"] = {
+            "status": "reviewed",
+            "numeric_effect_policy": "explicit_only",
+            "non_numeric_consumers_allowed": True,
+        }
+    for technology_id, stat, value, effect_rationale in EFFECT_SPECS:
+        if technology_id not in by_id:
+            raise ValueError(f"effect review references missing technology: {technology_id}")
+        by_id[technology_id]["modifier_terms"].append(
+            authored_modifier_term(stat, value, effect_rationale))
+    for term in by_id["tech.grain_threshing"]["modifier_terms"]:
+        term["subject_display_name"] = "全部谷物"
+
     steam_sawmilling = by_id["tech.steam_sawmilling"]
     binding = {"kind": 2, "id": "method_lumber_plant_r6"}
     if binding not in steam_sawmilling["expected_bindings"]:
@@ -489,15 +896,31 @@ def main() -> int:
     })
     steam_sawmilling["effect_summary"] = "解锁生产方法：蒸汽锯木厂"
 
+    era_order = {era["id"]: int(era["sort_order"]) for era in payload["eras"]}
     for node in nodes:
         alternatives = condition_technology_ids(node["research_condition"])
         overlap = alternatives.intersection(node["hard_prerequisite_ids"])
         if overlap:
             raise ValueError(f"{node['id']} repeats hard prerequisites as alternatives: {sorted(overlap)}")
+        future_alternatives = sorted(technology_id for technology_id in alternatives
+            if era_order[by_id[technology_id]["era_id"]] > era_order[node["era_id"]])
+        if future_alternatives:
+            raise ValueError(f"{node['id']} has future-era alternatives: {future_alternatives}")
         node["prerequisite_rationales"] = [rationale(by_id[source], node)
             for source in node["hard_prerequisite_ids"]]
 
-    era_order = {era["id"]: int(era["sort_order"]) for era in payload["eras"]}
+    for family_id, route_specs in FAMILY_ROUTE_SPECS.items():
+        targets = [target_id for target_id, _choices, _signal in route_specs]
+        if len(set(targets)) != 3:
+            raise ValueError(f"{family_id} must author three distinct route targets")
+        if any(by_id[target_id]["branch_family_id"] != family_id for target_id in targets):
+            raise ValueError(f"{family_id} route target assigned to another family")
+        mixed_count = sum(1 for _target, _choices, signal_id in route_specs if signal_id)
+        knowledge_count = sum(1 for _target, choices, _signal in route_specs
+            if len(choices) >= 2)
+        if mixed_count < 1 or knowledge_count < 2:
+            raise ValueError(f"{family_id} lacks authored knowledge/evidence alternatives")
+
     for node in nodes:
         target_era = era_order[node["era_id"]]
         for prerequisite in node["hard_prerequisite_ids"]:
@@ -531,7 +954,7 @@ def main() -> int:
         "version": 1,
         "reviewed_node_count": len(payload["nodes"]),
         "relationship_policy": "explicit_authoring_only",
-        "allowed_research_condition_ids": sorted(RESEARCH_CONDITIONS),
+        "allowed_research_condition_ids": sorted(authored_conditions),
         "legacy_keyword_family_inference": False,
         "legacy_adjacent_successor_inference": False,
         "legacy_automatic_alternatives": False,

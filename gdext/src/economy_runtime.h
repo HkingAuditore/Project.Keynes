@@ -3162,6 +3162,8 @@ private:
         int64_t research_factor_q16 = 0;
         int64_t family_factor_q16 = 0;
         int64_t building_type_factor_q16 = 0;
+        int64_t terrain_sector_factor_q16 = 0;
+        int64_t landform_sector_factor_q16 = 0;
         uint64_t country_handle = 0;
         uint64_t mod_version = 0;
         int32_t cell = -1;
@@ -3372,6 +3374,9 @@ private:
     // resource changes. It is derived epoch output, not save/hash authority.
     std::vector<int64_t> _last_published_resource_deltas;
     std::vector<std::string> _resource_ids;
+    std::vector<std::string> _modifier_sector_ids;
+    std::vector<std::string> _modifier_terrain_ids;
+    std::vector<std::string> _modifier_landform_ids;
     std::vector<std::string> _resource_reserve_slots;
     std::vector<std::string> _resource_extra_slots;
     int64_t _building_context_day = -1;
@@ -3488,7 +3493,17 @@ private:
     std::vector<int32_t> _import_tax_stat_ids;
     std::vector<int32_t> _export_tax_stat_ids;
     std::vector<int32_t> _country_family_output_stat_ids;
+    std::vector<int32_t> _country_good_output_stat_ids;
+    std::vector<int32_t> _country_good_input_stat_ids;
+    std::vector<int32_t> _country_good_consumption_stat_ids;
+    std::vector<int32_t> _country_resource_use_stat_ids;
+    std::vector<int32_t> _country_resource_generation_stat_ids;
+    std::vector<int32_t> _country_terrain_sector_output_stat_ids;
+    std::vector<int32_t> _country_landform_sector_output_stat_ids;
     std::vector<int32_t> _country_building_output_stat_ids;
+    int32_t _country_production_input_stat_id = -1;
+    int32_t _country_household_consumption_stat_id = -1;
+    int32_t _country_resource_use_stat_id = -1;
     std::array<int32_t, 4> _country_climate_loss_stat_ids{-1, -1, -1, -1};
     int32_t _city_birth_stat_id = -1;
     int32_t _city_consumption_stat_id = -1;
@@ -3587,7 +3602,17 @@ private:
     std::vector<int32_t> _epoch_country_sector_output_factor_q16;
     std::vector<int32_t> _epoch_country_research_output_factor_q16;
     std::vector<int32_t> _epoch_country_family_output_factor_q16;
+    std::vector<int32_t> _epoch_country_good_output_factor_q16;
+    std::vector<int32_t> _epoch_country_good_input_factor_q16;
+    std::vector<int32_t> _epoch_country_good_consumption_factor_q16;
+    std::vector<int32_t> _epoch_country_resource_use_factor_q16;
+    std::vector<int32_t> _epoch_country_resource_generation_factor_q16;
+    std::vector<int32_t> _epoch_country_terrain_sector_output_factor_q16;
+    std::vector<int32_t> _epoch_country_landform_sector_output_factor_q16;
     std::vector<int32_t> _epoch_country_building_output_factor_q16;
+    std::vector<int32_t> _epoch_country_production_input_factor_q16;
+    std::vector<int32_t> _epoch_country_household_consumption_factor_q16;
+    std::vector<int32_t> _epoch_country_resource_global_use_factor_q16;
     std::vector<int32_t> _epoch_country_climate_loss_factor_q16;
     std::vector<int32_t> _epoch_country_trade_capacity_factor_q16;
     std::vector<int32_t> _epoch_country_trade_speed_factor_q16;
@@ -4024,13 +4049,25 @@ private:
     int64_t projected_employee_tax_retention_q16(
         const BuildingGroup &group, int64_t &sat) const;
     int64_t effective_building_output_quantity(
-        const BuildingGroup &group, int64_t base_quantity,
+        const BuildingGroup &group, int32_t good_id, int64_t base_quantity,
         int64_t utilization_q16, int64_t building_days,
         int64_t &sat) const;
     int64_t effective_building_output_quantity_for_target(
         int32_t cell, int32_t type_id, int32_t owner_signature_id,
-        int64_t base_quantity, int64_t utilization_q16,
+        int32_t good_id, int64_t base_quantity, int64_t utilization_q16,
         int64_t building_days, int64_t &sat);
+    int64_t effective_production_input_quantity(
+        int32_t cell, int32_t good_id, int64_t base_quantity,
+        int64_t &sat) const;
+    int64_t effective_resource_use_quantity(
+        int32_t cell, int32_t resource_id, int64_t base_quantity,
+        int64_t &sat) const;
+    int64_t effective_managed_resource_generation(
+        int32_t cell, int32_t resource_id, int64_t base_quantity,
+        int64_t &sat) const;
+    int64_t effective_household_good_quantity(
+        int32_t cell, int32_t good_id, int64_t base_quantity,
+        int64_t &sat) const;
     void refresh_building_modifier_factors();
     void refresh_city_modifier_factors();
     int64_t planned_owner_demand(const BuildingGroup &group,

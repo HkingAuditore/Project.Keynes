@@ -224,9 +224,13 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     const size_t idx = static_cast<size_t>(item.resource_id) *
                         _cell_count + pending.cell;
                     ensure_investment_resource_commitment_lane(idx);
+                    const int64_t effective_quantity =
+                        effective_resource_use_quantity(
+                            pending.cell, item.resource_id, item.quantity,
+                            _saturation_count);
                     _investment_resource_committed_by_cell[idx] = saturating_add(
                         _investment_resource_committed_by_cell[idx],
-                        saturating_mul(pending.count, item.quantity,
+                        saturating_mul(pending.count, effective_quantity,
                             _saturation_count), _saturation_count);
                 }
             }
@@ -251,9 +255,11 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
             const size_t idx = static_cast<size_t>(item.resource_id) *
                 _cell_count + group.cell;
             ensure_investment_resource_commitment_lane(idx);
+            const int64_t effective_quantity = effective_resource_use_quantity(
+                group.cell, item.resource_id, item.quantity, _saturation_count);
             _investment_resource_committed_by_cell[idx] = saturating_add(
                 _investment_resource_committed_by_cell[idx],
-                saturating_mul(group.count, item.quantity,
+                saturating_mul(group.count, effective_quantity,
                     _saturation_count), _saturation_count);
         }
         _investment_outstanding_credit_by_cell[group.cell] =
@@ -590,11 +596,11 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                         type.owner_profession_id, 0);
                 const int64_t effective_unit_output = existing_group >= 0
                     ? effective_building_output_quantity(
-                        _buildings[existing_group], output.quantity,
+                        _buildings[existing_group], output.good_id, output.quantity,
                         Q16_ONE, 1, _saturation_count)
                     : effective_building_output_quantity_for_target(
                         cell, type_id, representative_owner,
-                        output.quantity, Q16_ONE, 1,
+                        output.good_id, output.quantity, Q16_ONE, 1,
                         _saturation_count);
                 const int64_t index = _market.index(market, output.good_id);
                 const int32_t signal = market_signal_index(cell, output.good_id);
@@ -770,8 +776,12 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                             _resource_remaining[resource_idx]) /
                             std::max<int64_t>(1, _resource_min_horizon_days);
                     }
+                    const int64_t effective_quantity =
+                        effective_resource_use_quantity(
+                            cell, item.resource_id, item.quantity,
+                            _saturation_count);
                     if (committed > daily_budget ||
-                        item.quantity > daily_budget - committed) {
+                        effective_quantity > daily_budget - committed) {
                         resource_budget_ready = false;
                         break;
                     }
@@ -923,7 +933,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     const int64_t prospective_quantity =
                         effective_building_output_quantity_for_target(
                             cell, type_id, target_signature,
-                            output.quantity, utilization_q16, 1,
+                            output.good_id, output.quantity, utilization_q16, 1,
                             _saturation_count);
                     const int64_t retail_price = _market.price[
                         _market.index(market, output.good_id)];
@@ -1112,7 +1122,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                         const int64_t monthly_output =
                             effective_building_output_quantity_for_target(
                                 cell, type_id, target_signature,
-                                output.quantity, Q16_ONE, 30,
+                                output.good_id, output.quantity, Q16_ONE, 30,
                                 _saturation_count);
                         projected_issue = saturating_add(projected_issue, mul_div_sat(
                             monthly_output,
@@ -1153,7 +1163,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     candidate.driver_output_per_building =
                         effective_building_output_quantity_for_target(
                             cell, type_id, target_signature,
-                            output.quantity, utilization_q16, 1,
+                            output.good_id, output.quantity, utilization_q16, 1,
                             _saturation_count);
                     break;
                 }
@@ -1311,8 +1321,12 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     const ResourceAmount &item = _building_resources[
                         allocated_type.resource_begin + edge];
                     if (item.mode != 0 || item.resource_id != resource_id) continue;
+                    const int64_t effective_quantity =
+                        effective_resource_use_quantity(
+                            cell, item.resource_id, item.quantity,
+                            _saturation_count);
                     used = saturating_add(used, saturating_mul(
-                        portfolio[j].allocated_count, item.quantity,
+                        portfolio[j].allocated_count, effective_quantity,
                         _saturation_count), _saturation_count);
                 }
             }
@@ -1399,10 +1413,14 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                             _resource_remaining[resource_idx]) /
                             std::max<int64_t>(1, _resource_min_horizon_days);
                     }
+                    const int64_t effective_quantity = std::max<int64_t>(1,
+                        effective_resource_use_quantity(
+                            cell, item.resource_id, item.quantity,
+                            _saturation_count));
                     const int64_t resource_cap = std::max<int64_t>(0,
                         daily_budget - committed -
                         previously_allocated_resource(item.resource_id)) /
-                        item.quantity;
+                        effective_quantity;
                     cap = std::min(cap, resource_cap);
                 }
             }

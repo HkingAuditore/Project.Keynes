@@ -429,6 +429,21 @@ owner-lot 继续生产且不会自动转换。快照发布 family、tier、highe
 预测共用同一组合顺序。热循环不查询字符串或 Country ModifierStore，这些表为 epoch 临时数据，
 不进入 PKEC、状态哈希或国家持久状态。
 
+2026-08 的科技效果审查把同一冻结契约扩展到精确物资、自然资源和地理条件。冷启动解析
+`country.output.good.<good>_factor`、`country.input.good.<good>_factor`、
+`country.consumption.good.<good>_factor`、`country.resource.<resource>.use_factor`、
+`country.resource.<resource>.managed_generation_factor`，以及
+`country.output.terrain|landform.<id>.<sector>_factor`；全局轴另有
+`country.production.input_factor`、`country.household.consumption_factor` 和
+`country.resource.use_factor`。`EconomyCatalog` 同时提交稳定的 sector、terrain 与 landform ID，
+原生运行时在 `capture_country_epoch()` 将它们冻结为国家稠密 Q16 表，热循环不拼接 stat key。
+
+精确产出和地理×产业因子进入实际生产、恢复探针与投资预测的同一产出组合；生产投入因子同时进入
+能力上限、候选价格、采购、预留、成本和需求信号；自然资源 use 因子同时约束容量、实际扣减、恢复
+探针和投资资源核算，managed-generation 只作用于建筑明确产生的资源。居民消费的全局与精确物资
+因子改变物理篮子数量、订单、结算和税费，并从家庭偏好函数中移除重复乘算。所有因子仍是 epoch
+scratch，不改变 PKEC 字节布局、状态哈希或调度阶段。
+
 周期开始先按冻结价格计算每栋建筑的投入替换成本、完整工资义务、预期 producer settlement
 收入与目标营业利润率，作为诊断和销售后利润分享依据。计划利用率按可售产出的真实售罄率调整，
 耐储商品保留 1/32 探测下限，易腐/周期流商品保留 1/6 下限；严重亏损状态机仍是完全停产的唯一入口。生产者自留只在该业主实际生产的单组分生存食品或寒冷衣物之间重新归一化，不再把最低生存额稀释到其无法生产的理想替代品上。

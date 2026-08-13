@@ -106,7 +106,10 @@ func _effect_summary(node: Dictionary) -> String:
 		if subject.is_empty():
 			subject = String(MODIFIER_SUBJECT_NAMES.get(stat, stat))
 		if stat.begins_with("country.output.building.") \
-				or stat.begins_with("country.output.family."):
+				or stat.begins_with("country.output.family.") \
+				or stat.begins_with("country.output.good.") \
+				or stat.begins_with("country.output.terrain.") \
+				or stat.begins_with("country.output.landform."):
 			subject += "产出"
 		var text := "%s %s" % [subject, _modifier_delta(term)]
 		if not seen.has(text):
@@ -182,11 +185,19 @@ func _validate(payload: Dictionary) -> Dictionary:
 				return _fail("technology_milestone_candidate_duplicate:%s" % candidate_id)
 			candidate_ids[candidate_id] = era_id
 	var family_ids := {}
+	var specialist_family_ids := {}
 	for row_value in backbones + families:
 		var family_id := String((row_value as Dictionary).get("id", ""))
 		if family_id.is_empty() or family_ids.has(family_id):
 			return _fail("technology_branch_family_invalid")
 		family_ids[family_id] = true
+	for row_value in families:
+		specialist_family_ids[String((row_value as Dictionary).id)] = true
+	var route_count_by_family := {}
+	var mixed_route_count_by_family := {}
+	for family_id in specialist_family_ids:
+		route_count_by_family[family_id] = 0
+		mixed_route_count_by_family[family_id] = 0
 	var node_by_id := {}
 	for node_value in nodes:
 		var node: Dictionary = node_value
@@ -247,22 +258,39 @@ func _validate(payload: Dictionary) -> Dictionary:
 			if String(node.get("research_condition_summary", "")).is_empty():
 				return _fail("technology_research_condition_summary_missing:%s" % id)
 			research_condition_nodes += 1
+			if specialist_family_ids.has(family_id):
+				route_count_by_family[family_id] = int(route_count_by_family[family_id]) + 1
+				if _condition_has_signal(condition):
+					mixed_route_count_by_family[family_id] = int(
+						mixed_route_count_by_family[family_id]) + 1
 			var alternatives := PackedStringArray()
 			_collect_technology_atoms(condition, alternatives)
 			for alternative_id in alternatives:
 				if hard.has(String(alternative_id)):
 					return _fail("technology_condition_duplicates_hard_prerequisite:%s" % id)
+				if int(era_index[String((node_by_id[String(alternative_id)] as Dictionary).era_id)]) \
+						> int(era_index[era_id]):
+					return _fail("technology_condition_future_era:%s" % id)
 		if (node.get("modifier_terms", []) as Array).is_empty() \
 				and not bool(node.get("is_starter_eligible", false)):
 			empty_modifier_nodes += 1
-		var unlocked_buildings := {}
+		var unlocked_content := {}
 		for binding_value in node.get("expected_bindings", []):
 			var binding: Dictionary = binding_value
-			if int(binding.get("kind", 0)) == 2:
-				unlocked_buildings[String(binding.get("id", ""))] = true
+			var unlocked_id := String(binding.get("id", ""))
+			if not unlocked_id.is_empty():
+				unlocked_content["%d:%s" % [int(binding.get("kind", 0)), unlocked_id]] = true
 		for term_value in node.get("modifier_terms", []):
 			var term: Dictionary = term_value
-			if unlocked_buildings.has(String(term.get("subject_id", ""))):
+			if String(term.get("effect_class", "")).is_empty() \
+					or String(term.get("effect_rationale", "")).is_empty() \
+					or String(term.get("implementation_status", "")) != "runtime_consumed" \
+					or String(term.get("runtime_consumer", "")).is_empty():
+				return _fail("technology_modifier_semantics_missing:%s" % id)
+			var subject_binding_kind := _modifier_subject_binding_kind(String(
+				term.get("subject_kind", "")))
+			if subject_binding_kind > 0 and unlocked_content.has("%d:%s" % [
+				subject_binding_kind, String(term.get("subject_id", ""))]):
 				return _fail("technology_unlock_same_target_modifier:%s" % id)
 		var branch_successors: Array = node.get("branch_successor_ids", [])
 		var branch_rationales: Array = node.get("branch_successor_rationales", [])
@@ -302,6 +330,11 @@ func _validate(payload: Dictionary) -> Dictionary:
 		ready.sort()
 	if visited != nodes.size():
 		return _fail("technology_hard_prerequisite_cycle")
+	for family_id in specialist_family_ids:
+		if int(route_count_by_family[family_id]) < 3:
+			return _fail("technology_family_alternative_routes_missing:%s" % family_id)
+		if int(mixed_route_count_by_family[family_id]) < 1:
+			return _fail("technology_family_mixed_evidence_route_missing:%s" % family_id)
 	for node_value in nodes:
 		var node: Dictionary = node_value
 		var id := String(node.id)
@@ -319,6 +352,14 @@ func _validate(payload: Dictionary) -> Dictionary:
 		"research_condition_nodes": research_condition_nodes,
 		"empty_modifier_nodes": empty_modifier_nodes,
 	}
+
+
+func _modifier_subject_binding_kind(subject_kind: String) -> int:
+	match subject_kind:
+		"good": return 1
+		"building": return 2
+		"resource": return 3
+		_: return 0
 
 
 func _validate_condition(spec: Dictionary, node_by_id: Dictionary) -> String:
@@ -396,6 +437,19 @@ func _collect_technology_atoms(spec: Dictionary, out: PackedStringArray) -> void
 			_collect_technology_atoms(child_value as Dictionary, out)
 
 
+func _condition_has_signal(spec: Dictionary) -> bool:
+	if spec.is_empty():
+		return false
+	if spec.has("kind"):
+		return int(spec.get("kind", -1)) in [
+			ResearchPredicateScript.Kind.SIGNAL_PRESENT,
+			ResearchPredicateScript.Kind.SIGNAL_COUNT]
+	for child_value in spec.get("children", []):
+		if child_value is Dictionary and _condition_has_signal(child_value as Dictionary):
+			return true
+	return false
+
+
 func _add_edge(out: Array[Dictionary], seen: Dictionary, source: String,
 		target: String, kind: String) -> void:
 	if source.is_empty() or target.is_empty() or source == target or not ALLOWED_EDGE_KINDS.has(kind):
@@ -417,6 +471,30 @@ func _count_condition_technology_atoms(nodes: Array) -> int:
 
 
 func _audit_report(payload: Dictionary, validation: Dictionary) -> String:
+	var effect_counts := {
+		"全社会或部门": 0,
+		"精确物资产出": 0,
+		"精确物资投入": 0,
+		"居民物资消费": 0,
+		"自然资源": 0,
+		"地理×产业": 0,
+	}
+	for node_value in payload.nodes:
+		for term_value in (node_value as Dictionary).get("modifier_terms", []):
+			var stat := String((term_value as Dictionary).get("stat", ""))
+			if stat.begins_with("country.output.good."):
+				effect_counts["精确物资产出"] += 1
+			elif stat.begins_with("country.input.good."):
+				effect_counts["精确物资投入"] += 1
+			elif stat.begins_with("country.consumption.good."):
+				effect_counts["居民物资消费"] += 1
+			elif stat.begins_with("country.resource."):
+				effect_counts["自然资源"] += 1
+			elif stat.begins_with("country.output.terrain.") \
+					or stat.begins_with("country.output.landform."):
+				effect_counts["地理×产业"] += 1
+			else:
+				effect_counts["全社会或部门"] += 1
 	var lines := PackedStringArray([
 		"# Technology Network v2 Audit", "",
 		"- Nodes: %d" % (payload.nodes as Array).size(),
@@ -426,6 +504,14 @@ func _audit_report(payload: Dictionary, validation: Dictionary) -> String:
 		"- Milestone candidate edges: %d (8 per era, require 4)" % int(validation.milestone_candidate_edges),
 		"- Nodes with research conditions: %d" % int(validation.research_condition_nodes),
 		"- Unlock-only/no-Modifier nodes: %d" % int(validation.empty_modifier_nodes), "",
+		"## Explicit effect semantics", "",
+		"- Societal/sector terms: %d" % int(effect_counts["全社会或部门"]),
+		"- Exact-good output terms: %d" % int(effect_counts["精确物资产出"]),
+		"- Exact-good input terms: %d" % int(effect_counts["精确物资投入"]),
+		"- Household good-consumption terms: %d" % int(effect_counts["居民物资消费"]),
+		"- Natural-resource terms: %d" % int(effect_counts["自然资源"]),
+		"- Geography × sector terms: %d" % int(effect_counts["地理×产业"]),
+		"- Missing runtime consumers: 0", "",
 		"## Branch families", "",
 	])
 	for family_value in payload.branch_families:

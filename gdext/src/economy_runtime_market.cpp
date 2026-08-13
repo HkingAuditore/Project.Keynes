@@ -29,7 +29,8 @@ int64_t NativeEconomyRuntime::variant_unit_price(int32_t market, int32_t variant
         const NeedComponent &component = _components[variant.component_begin + c];
         unit_price = saturating_add(
             unit_price,
-            mul_div_sat(component.qty_per_need,
+            mul_div_sat(effective_household_good_quantity(
+                            market, component.good_id, component.qty_per_need, sat),
                         _market.price[_market.index(market, component.good_id)],
                         GOODS_SCALE, sat), sat);
     }
@@ -218,7 +219,9 @@ void NativeEconomyRuntime::compute_cohort_demand_preview(
                     ? (*price_override)[component.good_id]
                     : _market.price[_market.index(market, component.good_id)];
                 unit_price = saturating_add(unit_price, mul_div_sat(
-                    component.qty_per_need, price, GOODS_SCALE, sat), sat);
+                    effective_household_good_quantity(
+                        market, component.good_id, component.qty_per_need, sat),
+                    price, GOODS_SCALE, sat), sat);
             }
             if (!available) continue;
             unit_price = std::max<int64_t>(1, unit_price);
@@ -282,7 +285,9 @@ void NativeEconomyRuntime::compute_cohort_demand_preview(
             for (int32_t c = 0; c < variant.component_count; ++c) {
                 const NeedComponent &component = _components[variant.component_begin + c];
                 totals[component.good_id] = saturating_add(totals[component.good_id],
-                    mul_div_sat(units, component.qty_per_need, GOODS_SCALE, sat), sat);
+                    mul_div_sat(units, effective_household_good_quantity(
+                        market, component.good_id, component.qty_per_need, sat),
+                        GOODS_SCALE, sat), sat);
             }
         }
     }
@@ -756,6 +761,11 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         return page >= 0 && page < static_cast<int32_t>(_population.page_cell.size())
             ? _population.page_cell[page] : -1;
     };
+    const auto component_quantity = [&](int32_t slot,
+            const NeedComponent &component) {
+        return effective_household_good_quantity(
+            cohort_cell(slot), component.good_id, component.qty_per_need, sat);
+    };
     const bool consumption_tax_active =
         (_epoch_active_tax_mask & static_cast<uint8_t>(
             1U << NativeCountryRuntime::TAX_CONSUMPTION)) != 0;
@@ -776,7 +786,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 component.good_id);
             if (rate <= 0) continue;
             const int64_t component_value = mul_div_sat(
-                component.qty_per_need,
+                component_quantity(slot, component),
                 _market.price[_market.index(market, component.good_id)],
                 GOODS_SCALE, sat);
             quoted = saturating_add(quoted, mul_div_sat(
@@ -798,7 +808,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 component.good_id);
             if (rate >= 0) continue;
             const int64_t quantity = mul_div_sat(
-                units, component.qty_per_need, GOODS_SCALE, sat);
+                units, component_quantity(order.slot, component), GOODS_SCALE, sat);
             const int64_t component_base = mul_div_sat(
                 quantity,
                 _market.price[_market.index(market, component.good_id)],
@@ -973,13 +983,15 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 ++found;
             }
             retained_capacity = std::min(retained_capacity, mul_div_sat(
-                quantity, GOODS_SCALE, component.qty_per_need, sat));
+                quantity, GOODS_SCALE,
+                std::max<int64_t>(1, component_quantity(order.slot, component)), sat));
         }
         if (retained_capacity <= 0) continue;
         for (int32_t c = 0; c < variant.component_count; ++c) {
             const NeedComponent &component = _components[variant.component_begin + c];
             int64_t remaining = mul_div_sat(
-                retained_capacity, component.qty_per_need, GOODS_SCALE, sat);
+                retained_capacity, component_quantity(order.slot, component),
+                GOODS_SCALE, sat);
             auto found = retained_begin(order.slot, component.good_id);
             while (remaining > 0 && found != _owner_retained_outputs.end() &&
                    found->owner_slot == order.slot &&
@@ -992,7 +1004,8 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 ++found;
             }
             const int64_t used = mul_div_sat(
-                retained_capacity, component.qty_per_need, GOODS_SCALE, sat) - remaining;
+                retained_capacity, component_quantity(order.slot, component),
+                GOODS_SCALE, sat) - remaining;
             result.retained_output_consumed = saturating_add(
                 result.retained_output_consumed, used, sat);
         }
@@ -1115,7 +1128,8 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             const NeedComponent &component =
                 _components[variant.component_begin + c];
             const int64_t quantity = mul_div_sat(
-                order.filled_units, component.qty_per_need, GOODS_SCALE, sat);
+                order.filled_units, component_quantity(order.slot, component),
+                GOODS_SCALE, sat);
             const int64_t component_base = mul_div_sat(
                 quantity, _market.price[_market.index(market, component.good_id)],
                 GOODS_SCALE, sat);
@@ -1156,7 +1170,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 const NeedComponent &component = _components[variant.component_begin + c];
                 ++good_counts[component.good_id];
                 const int64_t required = mul_div_sat(order.funded_units,
-                                                     component.qty_per_need, GOODS_SCALE, sat);
+                    component_quantity(order.slot, component), GOODS_SCALE, sat);
                 pass_demand[component.good_id] = saturating_add(
                     pass_demand[component.good_id], required, sat);
                 good_demand[component.good_id] = saturating_add(
@@ -1202,10 +1216,12 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             const VariantChoice &variant = _variants[order.variant_index];
             for (int32_t c = 0; c < variant.component_count; ++c) {
                 const NeedComponent &component = _components[variant.component_begin + c];
+                const int64_t adjusted_qty_per_need = std::max<int64_t>(1,
+                    component_quantity(order.slot, component));
                 const int64_t required = mul_div_sat(order.funded_units,
-                                                     component.qty_per_need, GOODS_SCALE, sat);
+                    adjusted_qty_per_need, GOODS_SCALE, sat);
                 component_refs[good_cursor[component.good_id]++] =
-                    {o, required, component.qty_per_need};
+                    {o, required, adjusted_qty_per_need};
             }
         }
         for (int32_t good = 0; good < _market.good_count; ++good) {
@@ -1238,7 +1254,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             for (int32_t c = 0; c < variant.component_count; ++c) {
                 const NeedComponent &component = _components[variant.component_begin + c];
                 const int64_t used = mul_div_sat(order.filled_units,
-                                                 component.qty_per_need, GOODS_SCALE, sat);
+                    component_quantity(order.slot, component), GOODS_SCALE, sat);
                 pass_sales[component.good_id] = saturating_add(pass_sales[component.good_id],
                                                                used, sat);
             }

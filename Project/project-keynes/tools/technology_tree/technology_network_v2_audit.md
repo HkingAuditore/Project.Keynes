@@ -3,10 +3,20 @@
 - Nodes: 361
 - Branch families: 24
 - Hard prerequisite edges: 544 (no indegree cap)
-- Alternative evidence edges: 21
+- Alternative evidence edges: 153
 - Milestone candidate edges: 88 (8 per era, require 4)
-- Nodes with research conditions: 8
-- Unlock-only/no-Modifier nodes: 105
+- Nodes with research conditions: 74
+- Unlock-only/no-Modifier nodes: 249
+
+## Explicit effect semantics
+
+- Societal/sector terms: 42
+- Exact-good output terms: 25
+- Exact-good input terms: 9
+- Household good-consumption terms: 4
+- Natural-resource terms: 13
+- Geography × sector terms: 23
+- Missing runtime consumers: 0
 
 ## Branch families
 

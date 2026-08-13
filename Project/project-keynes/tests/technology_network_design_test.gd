@@ -81,6 +81,22 @@ func _init() -> void:
 		assert((node.application_target_ids as Array).size() == (node.application_target_rationales as Array).size())
 		_validate_condition(node.get("reveal_condition", {}))
 		_validate_condition(node.get("research_condition", {}))
+		for term_value in node.get("modifier_terms", []):
+			var term: Dictionary = term_value
+			assert(not String(term.get("effect_class", "")).is_empty())
+			assert(not String(term.get("effect_rationale", "")).is_empty())
+			assert(String(term.get("implementation_status", "")) == "runtime_consumed")
+			assert(not String(term.get("runtime_consumer", "")).is_empty())
+			for binding_value in node.get("expected_bindings", []):
+				var binding: Dictionary = binding_value
+				var subject_kind := String(term.get("subject_kind", ""))
+				var matching_binding_kind: int = int({"good": 1, "building": 2, "resource": 3}.get(
+					subject_kind, -1))
+				assert(matching_binding_kind < 0 \
+					or int(binding.get("kind", 0)) != matching_binding_kind \
+					or String(term.get("subject_id", "")) != String(binding.get("id", "")),
+					"%s unlocks and modifies %s in the same technology" % [
+						String(node.id), String(term.get("subject_id", ""))])
 		_assert_effect_summary_matches_structured_effects(node)
 
 	var maximum_hard_indegree := 0
@@ -148,6 +164,25 @@ func _init() -> void:
 	assert(candidate_edges == 88)
 	assert(alternative_edges > 0)
 	assert(application_edges > 0)
+	var route_count_by_family := {}
+	var mixed_count_by_family := {}
+	for family_id in family_ids:
+		route_count_by_family[String(family_id)] = 0
+		mixed_count_by_family[String(family_id)] = 0
+	for node_value in nodes:
+		var node: Dictionary = node_value
+		var condition: Dictionary = node.get("research_condition", {})
+		var family_id := String(node.get("branch_family_id", ""))
+		if condition.is_empty() or not family_ids.has(family_id):
+			continue
+		route_count_by_family[family_id] = int(route_count_by_family[family_id]) + 1
+		if _condition_has_signal(condition):
+			mixed_count_by_family[family_id] = int(mixed_count_by_family[family_id]) + 1
+	for family_id in family_ids:
+		assert(int(route_count_by_family[String(family_id)]) >= 3,
+			"%s lacks three alternative route nodes" % family_id)
+		assert(int(mixed_count_by_family[String(family_id)]) >= 1,
+			"%s lacks a mixed evidence route" % family_id)
 
 	_assert_prerequisites(node_by_id, "tech.property_cadastre", [
 		"tech.cartography", "tech.long_term_leases"])
@@ -189,6 +224,23 @@ func _init() -> void:
 	_assert_binding(node_by_id, "tech.estate_paddy_management", "building", "method_rice_collector_r5")
 	_assert_binding(node_by_id, "tech.estate_plantation_management", "building", "method_flax_collector_r3")
 	_assert_binding(node_by_id, "tech.estate_plantation_management", "building", "method_flax_collector_r5")
+	var cereal_stats := {
+		"country.output.good.grain_factor": true,
+		"country.output.good.wheat_grain_factor": true,
+		"country.output.good.rice_grain_factor": true,
+		"country.output.good.corn_grain_factor": true,
+	}
+	var threshing_terms: Array = (node_by_id["tech.grain_threshing"] as Dictionary).modifier_terms
+	assert(threshing_terms.size() == cereal_stats.size())
+	for term_value in threshing_terms:
+		var term: Dictionary = term_value
+		assert(cereal_stats.has(String(term.stat)))
+		assert(is_equal_approx(float(term.value), 0.18))
+		assert(String(term.subject_display_name) == "全部谷物")
+	for node_value in nodes:
+		for term_value in (node_value as Dictionary).modifier_terms:
+			assert(String((term_value as Dictionary).stat) !=
+				"country.output.family.field_crop_farming_factor")
 	for institutional_id in ["tech.estate_accounting", "tech.serf_obligations",
 			"tech.estate_cereal_management", "tech.estate_paddy_management",
 			"tech.estate_plantation_management", "tech.long_term_leases"]:
@@ -254,6 +306,19 @@ func _collect_technology_atoms(condition: Dictionary, out: PackedStringArray) ->
 	for child_value in condition.get("children", []):
 		if child_value is Dictionary:
 			_collect_technology_atoms(child_value as Dictionary, out)
+
+
+func _condition_has_signal(condition: Dictionary) -> bool:
+	if condition.is_empty():
+		return false
+	if condition.has("kind"):
+		return int(condition.get("kind", -1)) in [
+			ResearchPredicateScript.Kind.SIGNAL_PRESENT,
+			ResearchPredicateScript.Kind.SIGNAL_COUNT]
+	for child_value in condition.get("children", []):
+		if child_value is Dictionary and _condition_has_signal(child_value as Dictionary):
+			return true
+	return false
 
 
 func _assert_acyclic(node_by_id: Dictionary) -> void:

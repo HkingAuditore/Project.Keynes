@@ -110,6 +110,56 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
         _country_family_output_stat_ids.push_back(_modifier_runtime != nullptr
             ? _modifier_runtime->stat_id_for_key(key) : -1);
     }
+    _country_good_output_stat_ids.clear();
+    _country_good_input_stat_ids.clear();
+    _country_good_consumption_stat_ids.clear();
+    _country_good_output_stat_ids.reserve(_good_ids.size());
+    _country_good_input_stat_ids.reserve(_good_ids.size());
+    _country_good_consumption_stat_ids.reserve(_good_ids.size());
+    for (const std::string &good_id : _good_ids) {
+        const std::string key = "country.output.good." + good_id + "_factor";
+        _country_good_output_stat_ids.push_back(_modifier_runtime != nullptr
+            ? _modifier_runtime->stat_id_for_key(key) : -1);
+        _country_good_input_stat_ids.push_back(_modifier_runtime != nullptr
+            ? _modifier_runtime->stat_id_for_key(
+                "country.input.good." + good_id + "_factor") : -1);
+        _country_good_consumption_stat_ids.push_back(_modifier_runtime != nullptr
+            ? _modifier_runtime->stat_id_for_key(
+                "country.consumption.good." + good_id + "_factor") : -1);
+    }
+    _country_resource_use_stat_ids.clear();
+    _country_resource_generation_stat_ids.clear();
+    for (const std::string &resource_id : _resource_ids) {
+        _country_resource_use_stat_ids.push_back(_modifier_runtime != nullptr
+            ? _modifier_runtime->stat_id_for_key(
+                "country.resource." + resource_id + ".use_factor") : -1);
+        _country_resource_generation_stat_ids.push_back(_modifier_runtime != nullptr
+            ? _modifier_runtime->stat_id_for_key(
+                "country.resource." + resource_id +
+                ".managed_generation_factor") : -1);
+    }
+    const auto resolve_geography_stats = [&](const std::string &kind,
+            const std::vector<std::string> &geography_ids,
+            std::vector<int32_t> &target) {
+        target.clear();
+        target.reserve(geography_ids.size() * _modifier_sector_ids.size());
+        for (const std::string &geography_id : geography_ids)
+            for (const std::string &sector_id : _modifier_sector_ids)
+                target.push_back(_modifier_runtime != nullptr
+                    ? _modifier_runtime->stat_id_for_key("country.output." + kind +
+                        "." + geography_id + "." + sector_id + "_factor") : -1);
+    };
+    resolve_geography_stats("terrain", _modifier_terrain_ids,
+                            _country_terrain_sector_output_stat_ids);
+    resolve_geography_stats("landform", _modifier_landform_ids,
+                            _country_landform_sector_output_stat_ids);
+    _country_production_input_stat_id = _modifier_runtime != nullptr
+        ? _modifier_runtime->stat_id_for_key("country.production.input_factor") : -1;
+    _country_household_consumption_stat_id = _modifier_runtime != nullptr
+        ? _modifier_runtime->stat_id_for_key(
+            "country.household.consumption_factor") : -1;
+    _country_resource_use_stat_id = _modifier_runtime != nullptr
+        ? _modifier_runtime->stat_id_for_key("country.resource.use_factor") : -1;
     _country_building_output_stat_ids.clear();
     _country_building_output_stat_ids.reserve(_building_type_ids.size());
     for (const std::string &building_id : _building_type_ids) {
@@ -131,6 +181,30 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
             _country_family_output_stat_ids.begin(),
             _country_family_output_stat_ids.end(),
             [](int32_t id) { return id < 0; }) || std::any_of(
+            _country_good_output_stat_ids.begin(),
+            _country_good_output_stat_ids.end(),
+            [](int32_t id) { return id < 0; }) || std::any_of(
+            _country_good_input_stat_ids.begin(),
+            _country_good_input_stat_ids.end(),
+            [](int32_t id) { return id < 0; }) || std::any_of(
+            _country_good_consumption_stat_ids.begin(),
+            _country_good_consumption_stat_ids.end(),
+            [](int32_t id) { return id < 0; }) || std::any_of(
+            _country_resource_use_stat_ids.begin(),
+            _country_resource_use_stat_ids.end(),
+            [](int32_t id) { return id < 0; }) || std::any_of(
+            _country_resource_generation_stat_ids.begin(),
+            _country_resource_generation_stat_ids.end(),
+            [](int32_t id) { return id < 0; }) || std::any_of(
+            _country_terrain_sector_output_stat_ids.begin(),
+            _country_terrain_sector_output_stat_ids.end(),
+            [](int32_t id) { return id < 0; }) || std::any_of(
+            _country_landform_sector_output_stat_ids.begin(),
+            _country_landform_sector_output_stat_ids.end(),
+            [](int32_t id) { return id < 0; }) ||
+            _country_production_input_stat_id < 0 ||
+            _country_household_consumption_stat_id < 0 ||
+            _country_resource_use_stat_id < 0 || std::any_of(
             _country_building_output_stat_ids.begin(),
             _country_building_output_stat_ids.end(),
             [](int32_t id) { return id < 0; }) || std::any_of(

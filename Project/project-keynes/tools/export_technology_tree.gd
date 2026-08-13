@@ -665,6 +665,12 @@ func _append_modifier_section(lines: PackedStringArray, terms) -> void:
 			_modifier_value(int(term.get("operation", -1)), float(term.get("value", 0.0))),
 		])
 
+	for term in terms:
+		lines.append("  - 效果机制：%s" % _md_inline(String(
+			term.get("effect_rationale", ""))))
+		lines.append("  - 运行时消费者：`%s`" % _md_code(String(
+			term.get("runtime_consumer", ""))))
+
 
 func _append_content_effect_section(lines: PackedStringArray, effects) -> void:
 	lines.append("")

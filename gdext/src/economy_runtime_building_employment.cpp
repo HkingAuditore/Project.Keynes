@@ -319,7 +319,7 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
                         _building_outputs[type.output_begin + output_index];
                     const int64_t effective_output =
                         effective_building_output_quantity(
-                            group, output.quantity, Q16_ONE, 1,
+                            group, output.good_id, output.quantity, Q16_ONE, 1,
                             _saturation_count);
                     int64_t settlement = _good_monetary_issue_values[output.good_id];
                     if (settlement <= 0) {

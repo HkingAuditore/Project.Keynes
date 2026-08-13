@@ -654,6 +654,17 @@ function clearChain() {
 // ── 详情面板 ──
 const detail = document.getElementById("detail");
 const STAT_LABELS = [
+  [/^country\.economy_output_factor$/, () => "全社会经济产出"],
+  [/^country\.production\.input_factor$/, () => "全社会生产投入"],
+  [/^country\.household\.consumption_factor$/, () => "全社会家庭消费"],
+  [/^country\.resource\.use_factor$/, () => "全社会自然资源耗用"],
+  [/^country\.output\.good\.([^.]+)_factor$/, m => `商品产出 · ${m[1]}`],
+  [/^country\.input\.good\.([^.]+)_factor$/, m => `生产投入 · ${m[1]}`],
+  [/^country\.consumption\.good\.([^.]+)_factor$/, m => `家庭消费 · ${m[1]}`],
+  [/^country\.resource\.([^.]+)\.use_factor$/, m => `自然资源利用 · ${m[1]}`],
+  [/^country\.resource\.([^.]+)\.managed_generation_factor$/, m => `资源再生 · ${m[1]}`],
+  [/^country\.output\.(terrain|landform)\.([^.]+)\.([^.]+)_factor$/,
+    m => `地理生产 · ${m[1]}.${m[2]} · ${m[3]}`],
   [/^country\.output\.family\.([^.]+)_factor$/, m => `生产家族产出 · ${m[1]}`],
   [/^country\.output\.building\.([^.]+)_factor$/, m => `指定建筑产出 · ${m[1]}`],
   [/^country\.output\.agriculture_factor$/, () => "农业部门产出"],
@@ -766,7 +777,9 @@ function renderDetail(n) {
   const terms = n.modifier_terms.length
     ? n.modifier_terms.map(t => `<div class="term">
         <div class="t-head"><span class="t-label">${esc(termLabel(t))}</span><span class="t-val">${fmtTerm(t)}</span></div>
-        <div class="t-key">${t.stat}</div></div>`).join("")
+        <div class="t-key">${t.stat}</div>
+        <div class="d-desc">${esc(t.effect_rationale || "")}</div>
+        <div class="t-key">运行时消费者 · ${esc(t.runtime_consumer || "未声明")}</div></div>`).join("")
     : '<div class="cond-line" style="color:var(--text-3)">无数值效果（开局即完成）。</div>';
 
   const chip = (id, soft, tag) => {
