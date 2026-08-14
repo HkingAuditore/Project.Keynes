@@ -10,7 +10,7 @@
 | 时代 | 11 |
 | 领域 | 4 |
 | 里程碑 | 11 |
-| 硬前置边 | 544 |
+| 硬前置边 | 545 |
 | 应用交汇边 | 19 |
 | 替代说明边 | 153 |
 | 里程碑候选边 | 88 |
@@ -62,7 +62,7 @@
 
 #### 效果摘要
 
-解锁物资：野味；解锁物资：生皮；解锁建筑：狩猎营地；可利用资源：野生动物
+解锁物资：野味；解锁物资：生皮；解锁建筑：狩猎营地；可利用资源：野生动物；作为必要支撑：生皮刮制棚、小型陷阱线
 
 #### 机会成本
 
@@ -130,7 +130,7 @@
 
 #### 效果摘要
 
-解锁物资：采集植物食物；解锁建筑：采集营地；可利用资源：肥沃土壤
+解锁物资：采集植物食物；解锁建筑：采集营地；可利用资源：肥沃土壤；作为必要支撑：商栈
 
 #### 机会成本
 
@@ -199,7 +199,7 @@
 
 #### 效果摘要
 
-解锁物资：打制石器；解锁建筑：燧石采掘场；解锁建筑：改良燧石矿坑
+解锁物资：打制石器；解锁建筑：燧石采掘场；解锁建筑：改良燧石矿坑；作为必要支撑：露天黏土坑、石器打制工坊、自然铜冷锤工坊、毛石整理场
 
 #### 机会成本
 
@@ -266,7 +266,7 @@
 
 #### 效果摘要
 
-解锁建筑：公共火塘
+解锁建筑：公共火塘；作为必要支撑：覆土木炭窑、砂金淘洗精炼棚、乳胶烟熏凝固棚、传知者议事圈、露天陶器烧造、银矿火试炉
 
 #### 机会成本
 
@@ -334,7 +334,7 @@
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+生计食物产出 +12%
 
 #### 机会成本
 
@@ -353,7 +353,9 @@
 
 #### 永久 Modifier 条款
 
-无
+- 生计食物：`country.output.family.subsistence_food_factor`：+12%
+  - 效果机制：季节性采集历法提高生计食物获取效率。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -399,7 +401,7 @@
 
 #### 效果摘要
 
-解锁建筑：石器打制工坊；解锁建筑：组织化伐木场；全社会经济产出 +3%
+解锁建筑：石器打制工坊；解锁建筑：组织化伐木场；全社会经济产出 +3%；作为必要支撑：木槽溜洗场、野生割胶营地、木版印刷坊
 
 #### 机会成本
 
@@ -469,7 +471,7 @@
 
 #### 效果摘要
 
-解锁物资：药材；可利用资源：硝石；可利用资源：硅砂
+解锁物资：药材；可利用资源：硝石；可利用资源：硅砂；农业领域研究效率 +8%
 
 #### 机会成本
 
@@ -490,7 +492,9 @@
 
 #### 永久 Modifier 条款
 
-无
+- 农业领域研究效率：`country.research.agriculture_efficiency`：+8%
+  - 效果机制：自然观察、生物分类与育种方法提高农业研究效率。
+  - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
 #### 被以下科技作为硬前置
 
@@ -541,7 +545,7 @@
 
 #### 效果摘要
 
-解锁建筑：传知者议事圈
+解锁建筑：传知者议事圈；研究机构产出 +12%
 
 #### 机会成本
 
@@ -560,7 +564,9 @@
 
 #### 永久 Modifier 条款
 
-无
+- 研究机构：`country.output.family.research_institution_factor`：+12%
+  - 效果机制：知识保存与复制提高研究机构的有效产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -608,7 +614,7 @@
 
 #### 效果摘要
 
-timber -8%
+timber -8%；作为必要支撑：刀耕火种玉米地
 
 #### 机会成本
 
@@ -677,7 +683,7 @@ timber -8%
 
 #### 效果摘要
 
-解锁建筑：帆船渔场
+解锁建筑：帆船渔场；航运作业产出 +28%
 
 #### 机会成本
 
@@ -696,7 +702,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 航运作业：`country.output.family.maritime_operations_factor`：+28%
+  - 效果机制：导航、船舶与物流组织提高运输生产方式产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -742,7 +750,7 @@ timber -8%
 
 #### 效果摘要
 
-全社会 +4%
+全社会 +4%；作为必要支撑：家庭棉花园圃、菜蔬农场、亚麻农场、林下遮阴香料园、自给农庄
 
 #### 机会成本
 
@@ -809,7 +817,7 @@ timber -8%
 
 #### 效果摘要
 
-可利用资源：黏土
+可利用资源：黏土；营造方法产出 +12%
 
 #### 机会成本
 
@@ -828,7 +836,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 营造方法：`country.output.family.construction_methods_factor`：+12%
+  - 效果机制：材料识别与成形工艺提高建材和营造方法产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -874,7 +884,7 @@ timber -8%
 
 #### 效果摘要
 
-可利用资源：铜矿
+可利用资源：铜矿；铜矿采掘产出 +12%；作为必要支撑：铜矿、自然铜冷锤工坊
 
 #### 机会成本
 
@@ -893,7 +903,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 铜矿采掘：`country.output.family.copper_extraction_factor`：+12%
+  - 效果机制：有色矿物辨识与冶金工艺提高铜及合金原料链产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -939,7 +951,7 @@ timber -8%
 
 #### 效果摘要
 
-解锁建筑：自然铜冷锤工坊
+解锁建筑：自然铜冷锤工坊；铜矿采掘产出 +12%
 
 #### 机会成本
 
@@ -958,7 +970,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 铜矿采掘：`country.output.family.copper_extraction_factor`：+12%
+  - 效果机制：有色矿物辨识与冶金工艺提高铜及合金原料链产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -1008,7 +1022,7 @@ timber -8%
 
 #### 效果摘要
 
-解锁建筑：露天青铜作坊
+解锁建筑：露天青铜作坊；铜矿采掘产出 +12%；作为必要支撑：铜矿
 
 #### 机会成本
 
@@ -1027,7 +1041,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 铜矿采掘：`country.output.family.copper_extraction_factor`：+12%
+  - 效果机制：有色矿物辨识与冶金工艺提高铜及合金原料链产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -1076,7 +1092,7 @@ timber -8%
 
 #### 效果摘要
 
-解锁物资：锡矿石；可利用资源：锡矿
+解锁物资：锡矿石；可利用资源：锡矿；锡矿采掘产出 +12%；作为必要支撑：土法炼锡炉、露天青铜作坊、锡矿
 
 #### 机会成本
 
@@ -1096,7 +1112,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 锡矿采掘：`country.output.family.tin_extraction_factor`：+12%
+  - 效果机制：锡矿辨识提高采锡生产方式产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -1146,7 +1164,7 @@ timber -8%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+畜牧业产出 +12%；作为必要支撑：游牧营地
 
 #### 机会成本
 
@@ -1165,7 +1183,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 畜牧业：`country.output.family.livestock_husbandry_factor`：+12%
+  - 效果机制：畜群管理、繁育与加工体系提高畜牧业产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -1216,7 +1236,7 @@ timber -8%
 
 #### 效果摘要
 
-解锁物资：布料；解锁建筑：家庭织造棚
+解锁物资：布料；解锁建筑：家庭织造棚；布匹织造产出 +12%；作为必要支撑：家庭纺织坊、植物纤维抄纸坊
 
 #### 机会成本
 
@@ -1236,7 +1256,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 布匹织造：`country.output.family.cloth_weaving_factor`：+12%
+  - 效果机制：纤维处理、纺纱与织造方法提高布匹生产链产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -1286,7 +1308,7 @@ timber -8%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+主粮加工产出 +12%
 
 #### 机会成本
 
@@ -1305,7 +1327,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 主粮加工：`country.output.family.staple_preparation_factor`：+12%
+  - 效果机制：储藏、加工与供给组织减少主粮处理损失。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -1418,7 +1442,7 @@ timber -8%
 
 #### 效果摘要
 
-解锁建筑：商栈
+解锁建筑：商栈；社会领域研究效率 +8%；作为必要支撑：传知者议事圈
 
 #### 机会成本
 
@@ -1437,7 +1461,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 社会领域研究效率：`country.research.society_efficiency`：+8%
+  - 效果机制：制度记录与组织经验提高社会领域研究效率。
+  - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
 #### 被以下科技作为硬前置
 
@@ -1484,7 +1510,7 @@ timber -8%
 
 #### 效果摘要
 
-解锁建筑：商业狩猎与毛皮站；解锁建筑：小型陷阱线；可利用资源：野生动物
+解锁建筑：商业狩猎与毛皮站；解锁建筑：小型陷阱线；可利用资源：野生动物；畜牧业产出 +28%
 
 #### 机会成本
 
@@ -1505,7 +1531,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 畜牧业：`country.output.family.livestock_husbandry_factor`：+28%
+  - 效果机制：畜群管理、繁育与加工体系提高畜牧业产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -1688,7 +1716,7 @@ timber -8%
 
 #### 效果摘要
 
-解锁物资：原石；解锁建筑：毛石整理场；解锁建筑：采石场；可利用资源：石料
+解锁物资：原石；解锁建筑：毛石整理场；解锁建筑：采石场；可利用资源：石料；营造方法产出 +12%；作为必要支撑：石灰石采石场、石料场、毛石整理场、浅坑银矿作业、露头煤采集场
 
 #### 机会成本
 
@@ -1710,7 +1738,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 营造方法：`country.output.family.construction_methods_factor`：+12%
+  - 效果机制：材料识别与成形工艺提高建材和营造方法产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -1757,7 +1787,7 @@ timber -8%
 
 #### 效果摘要
 
-解锁物资：黏土；解锁建筑：土料挖掘坑；解锁建筑：原始黏土坑；可利用资源：黏土
+解锁物资：黏土；解锁建筑：土料挖掘坑；解锁建筑：原始黏土坑；可利用资源：黏土；作为必要支撑：日晒土坯场、制砖厂、露天黏土坑、原始黏土坑
 
 #### 机会成本
 
@@ -1828,7 +1858,7 @@ timber -8%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+工程领域研究效率 +20%
 
 #### 机会成本
 
@@ -1847,7 +1877,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 工程领域研究效率：`country.research.engineering_efficiency`：+20%
+  - 效果机制：计时、测量与统计提高工程研究效率。
+  - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
 #### 被以下科技作为硬前置
 
@@ -1896,7 +1928,7 @@ timber -8%
 
 #### 效果摘要
 
-解锁物资：熟制主食；解锁建筑：主食厨房
+解锁物资：熟制主食；解锁建筑：主食厨房；主粮加工产出 +25%
 
 #### 机会成本
 
@@ -1916,7 +1948,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 主粮加工：`country.output.family.staple_preparation_factor`：+25%
+  - 效果机制：储藏、加工与供给组织减少主粮处理损失。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -1965,7 +1999,7 @@ timber -8%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+社会领域研究效率 +20%；作为必要支撑：菜蔬农场、家庭玉米园圃、林下遮阴香料园、自给农庄
 
 #### 机会成本
 
@@ -1984,7 +2018,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 社会领域研究效率：`country.research.society_efficiency`：+20%
+  - 效果机制：制度记录与组织经验提高社会领域研究效率。
+  - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
 #### 被以下科技作为硬前置
 
@@ -2033,7 +2069,7 @@ timber -8%
 
 #### 效果摘要
 
-解锁物资：畜牧产品；解锁建筑：游牧营地；可利用资源：牧场承载力
+解锁物资：畜牧产品；解锁建筑：游牧营地；可利用资源：牧场承载力；畜牧业产出 +12%
 
 #### 机会成本
 
@@ -2054,7 +2090,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 畜牧业：`country.output.family.livestock_husbandry_factor`：+12%
+  - 效果机制：畜群管理、繁育与加工体系提高畜牧业产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -2107,7 +2145,7 @@ timber -8%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+玉米产出 +12%
 
 #### 机会成本
 
@@ -2126,7 +2164,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 玉米：`country.output.good.corn_grain_factor`：+12%
+  - 效果机制：辨识、繁育与田间体系提高玉米产出。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -2315,7 +2355,7 @@ timber -8%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+玉米产出 +25%；作为必要支撑：退水玉米地、玉米庄园、家庭玉米园圃、雨养玉米田、刀耕火种玉米地、佃作雨养玉米田
 
 #### 机会成本
 
@@ -2334,7 +2374,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 玉米：`country.output.good.corn_grain_factor`：+25%
+  - 效果机制：辨识、繁育与田间体系提高玉米产出。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -2382,7 +2424,7 @@ timber -8%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+小麦产出 +12%
 
 #### 机会成本
 
@@ -2401,7 +2443,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 小麦：`country.output.good.wheat_grain_factor`：+12%
+  - 效果机制：小麦辨识、繁育与旱作体系提高小麦产出。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -2449,7 +2493,7 @@ timber -8%
 
 #### 效果摘要
 
-解锁物资：小麦；解锁建筑：野生谷穗采集地
+解锁物资：小麦；解锁建筑：野生谷穗采集地；terrain.steppe.agriculture产出 +12%
 
 #### 机会成本
 
@@ -2469,7 +2513,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- terrain.steppe.agriculture：`country.output.terrain.steppe.agriculture_factor`：+12%
+  - 效果机制：野生小麦采集经验提高草原边缘的谷物辨识与采收效率。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -2588,7 +2634,7 @@ timber -8%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+小麦产出 +28%；作为必要支撑：旱作保水小麦田、退水小麦地、佃作小麦庄园、改良轮作小麦庄园、雨养小麦地、佃作雨养小麦田、小麦农场
 
 #### 机会成本
 
@@ -2607,7 +2653,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 小麦：`country.output.good.wheat_grain_factor`：+28%
+  - 效果机制：小麦辨识、繁育与旱作体系提高小麦产出。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -2655,7 +2703,7 @@ timber -8%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+稻米产出 +12%
 
 #### 机会成本
 
@@ -2674,7 +2722,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 稻米：`country.output.good.rice_grain_factor`：+12%
+  - 效果机制：稻类辨识、水田组织与灌溉控制提高稻米产出。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -2722,7 +2772,7 @@ timber -8%
 
 #### 效果摘要
 
-解锁物资：稻米；解锁建筑：野生稻沼泽
+解锁物资：稻米；解锁建筑：野生稻沼泽；landform.lowland.agriculture产出 +12%
 
 #### 机会成本
 
@@ -2742,7 +2792,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- landform.lowland.agriculture：`country.output.landform.lowland.agriculture_factor`：+12%
+  - 效果机制：野生稻采集经验提高低地湿润环境中的稻作适应。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -2792,7 +2844,7 @@ timber -8%
 
 #### 效果摘要
 
-稻米产出 +12%
+稻米产出 +12%；作为必要支撑：畦埂水稻田、稻作农场、旱稻田、湿地稻园
 
 #### 机会成本
 
@@ -2861,7 +2913,7 @@ timber -8%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+马铃薯产出 +12%
 
 #### 机会成本
 
@@ -2880,7 +2932,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 马铃薯：`country.output.good.potatoes_factor`：+12%
+  - 效果机制：块茎辨识、保存与高地栽培提高马铃薯产出。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -2996,7 +3050,7 @@ timber -8%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+马铃薯产出 +12%
 
 #### 机会成本
 
@@ -3015,7 +3069,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 马铃薯：`country.output.good.potatoes_factor`：+12%
+  - 效果机制：块茎辨识、保存与高地栽培提高马铃薯产出。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -3066,7 +3122,7 @@ timber -8%
 
 #### 效果摘要
 
-解锁物资：马铃薯
+解锁物资：马铃薯；landform.plateau.agriculture产出 +12%；作为必要支撑：冷凉高地块茎田、马铃薯农场
 
 #### 机会成本
 
@@ -3085,7 +3141,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- landform.plateau.agriculture：`country.output.landform.plateau.agriculture_factor`：+12%
+  - 效果机制：块茎繁育方法提高高原环境中的马铃薯种植效率。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -3133,7 +3191,7 @@ timber -8%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+专用商品作物产出 +12%
 
 #### 机会成本
 
@@ -3152,7 +3210,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+12%
+  - 效果机制：热带作物辨识、栽培与商品化提高专用经济作物产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -3200,7 +3260,7 @@ timber -8%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+专用商品作物产出 +12%；作为必要支撑：手工轧棉棚
 
 #### 机会成本
 
@@ -3219,7 +3279,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+12%
+  - 效果机制：热带作物辨识、栽培与商品化提高专用经济作物产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -3269,7 +3331,7 @@ timber -8%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+布匹织造产出 +12%
 
 #### 机会成本
 
@@ -3288,7 +3350,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 布匹织造：`country.output.family.cloth_weaving_factor`：+12%
+  - 效果机制：纤维处理、纺纱与织造方法提高布匹生产链产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -3337,7 +3401,7 @@ timber -8%
 
 #### 效果摘要
 
-解锁物资：韧皮纤维；解锁物资：衣物；解锁建筑：野生韧皮纤维营地；解锁建筑：韧皮裹衣棚
+解锁物资：韧皮纤维；解锁物资：衣物；解锁建筑：野生韧皮纤维营地；解锁建筑：韧皮裹衣棚；作为必要支撑：亚麻农场、沤麻池
 
 #### 机会成本
 
@@ -3407,7 +3471,7 @@ timber -8%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+专用商品作物产出 +12%
 
 #### 机会成本
 
@@ -3426,7 +3490,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+12%
+  - 效果机制：热带作物辨识、栽培与商品化提高专用经济作物产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -3474,7 +3540,7 @@ timber -8%
 
 #### 效果摘要
 
-解锁物资：香料
+解锁物资：香料；专用商品作物产出 +12%；作为必要支撑：林下遮阴香料园
 
 #### 机会成本
 
@@ -3493,7 +3559,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+12%
+  - 效果机制：热带作物辨识、栽培与商品化提高专用经济作物产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -3542,7 +3610,7 @@ timber -8%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+专用商品作物产出 +12%；作为必要支撑：野生割胶营地
 
 #### 机会成本
 
@@ -3561,7 +3629,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+12%
+  - 效果机制：热带作物辨识、栽培与商品化提高专用经济作物产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -3609,7 +3679,7 @@ timber -8%
 
 #### 效果摘要
 
-解锁物资：天然乳胶；解锁建筑：野生割胶营地
+解锁物资：天然乳胶；解锁建筑：野生割胶营地；专用商品作物产出 +12%；作为必要支撑：乳胶烟熏凝固棚
 
 #### 机会成本
 
@@ -3629,7 +3699,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+12%
+  - 效果机制：热带作物辨识、栽培与商品化提高专用经济作物产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -3677,7 +3749,7 @@ timber -8%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+金矿采掘产出 +12%
 
 #### 机会成本
 
@@ -3696,7 +3768,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 金矿采掘：`country.output.family.gold_extraction_factor`：+12%
+  - 效果机制：砂金辨识提高采金生产方式产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -3742,7 +3816,7 @@ timber -8%
 
 #### 效果摘要
 
-解锁物资：含金砂矿；解锁建筑：河滩淘金场；解锁建筑：木槽溜洗场；可利用资源：金矿
+解锁物资：含金砂矿；解锁建筑：河滩淘金场；解锁建筑：木槽溜洗场；可利用资源：金矿；作为必要支撑：砂金淘洗精炼棚
 
 #### 机会成本
 
@@ -3810,7 +3884,7 @@ timber -8%
 
 #### 效果摘要
 
-解锁建筑：浅坑银矿作业
+银矿采掘产出 +12%
 
 #### 机会成本
 
@@ -3819,21 +3893,23 @@ timber -8%
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 浅坑银矿作业 (`shallow_silver_working`)
+- **建筑 / 生产方式：** 无
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
-- **浅坑银矿作业**（`building`）：`building.shallow_silver_working` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+无
 
 #### 永久 Modifier 条款
 
-无
+- 银矿采掘：`country.output.family.silver_extraction_factor`：+12%
+  - 效果机制：银脉辨识提高采银生产方式产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
-无
+- 地表银矿拣采 (`tech.surface_silver_collection`)：地表银脉辨识提供矿物识别、有色冶炼与合金配制能力中的识别与证据标准，地表银矿拣采直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -3867,7 +3943,7 @@ timber -8%
 
 #### 硬前置（决定研发资格）
 
-无
+- 地表银脉辨识 (`tech.silver_vein_identification`)：地表银脉辨识提供矿物识别、有色冶炼与合金配制能力中的识别与证据标准，地表银矿拣采直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
@@ -3875,7 +3951,7 @@ timber -8%
 
 #### 效果摘要
 
-解锁物资：白银；解锁物资：含银矿石；解锁建筑：露天银矿；可利用资源：银矿
+解锁物资：白银；解锁物资：含银矿石；解锁建筑：浅坑银矿作业；解锁建筑：露天银矿；可利用资源：银矿；作为必要支撑：银矿火试炉
 
 #### 机会成本
 
@@ -3884,14 +3960,15 @@ timber -8%
 #### 内容解锁
 
 - **物资：** 白银 (`silver`)；含银矿石 (`silver_ore`)
-- **建筑 / 生产方式：** 露天银矿 (`surface_silver_working`)
+- **建筑 / 生产方式：** 浅坑银矿作业 (`shallow_silver_working`)；露天银矿 (`surface_silver_working`)
 - **自然资源：** 银矿 (`silver_ore`)
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 浅坑银矿作业 (`shallow_silver_working`)；银矿火试炉 (`silver_fire_assay_hearth`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 银矿火试炉 (`silver_fire_assay_hearth`)
 
 #### 结构化内容效果
 
 - **白银**（`good`）：`good.silver` → `production_access` `unlock` `1.0`；`existing_binding`
 - **含银矿石**（`good`）：`good.silver_ore` → `production_access` `unlock` `1.0`；`existing_binding`
+- **浅坑银矿作业**（`building`）：`building.shallow_silver_working` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **露天银矿**（`building`）：`building.surface_silver_working` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **银矿**（`resource`）：`resource.silver_ore` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
@@ -3943,7 +4020,7 @@ timber -8%
 
 #### 效果摘要
 
-解锁物资：原木；解锁建筑：枯枝采集营地；解锁建筑：伐木场；可利用资源：木材
+解锁物资：原木；解锁建筑：枯枝采集营地；解锁建筑：伐木场；可利用资源：木材；作为必要支撑：树皮纸工坊、覆土木炭窑、露天黏土坑、商栈
 
 #### 机会成本
 
@@ -4014,7 +4091,7 @@ timber -8%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+terrain.floodplain.agriculture产出 +12%
 
 #### 机会成本
 
@@ -4033,7 +4110,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- terrain.floodplain.agriculture：`country.output.terrain.floodplain.agriculture_factor`：+12%
+  - 效果机制：芦苇生境辨识提高洪泛平原农业适应。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -4763,7 +4842,7 @@ timber -8%
 
 #### 效果摘要
 
-解锁物资：木炭；解锁建筑：覆土木炭窑
+解锁物资：木炭；解锁建筑：覆土木炭窑；timber -8%；作为必要支撑：块炼炉、土法炼铜炉、烧砖窑、升焰陶窑
 
 #### 机会成本
 
@@ -4783,7 +4862,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- timber：`country.resource.timber.use_factor`：+8%
+  - 效果机制：炭窑控制提高木材转化效率并减少原料耗用。
+  - 运行时消费者：`NativeEconomyRuntime::effective_resource_use_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -4831,7 +4912,7 @@ timber -8%
 
 #### 效果摘要
 
-解锁物资：铜矿石；解锁建筑：铜矿；铜矿石 -8%
+解锁物资：铜矿石；解锁建筑：铜矿；铜矿石 -8%；作为必要支撑：土法炼铜炉
 
 #### 机会成本
 
@@ -4901,7 +4982,7 @@ timber -8%
 
 #### 效果摘要
 
-解锁物资：卤水；解锁建筑：卤水采集池；可利用资源：盐
+解锁物资：卤水；解锁建筑：卤水采集池；可利用资源：盐；制盐产出 +12%；作为必要支撑：日晒盐田
 
 #### 机会成本
 
@@ -4922,7 +5003,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 制盐：`country.output.family.salt_extraction_factor`：+12%
+  - 效果机制：卤水采集提高盐业生产方式产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -4969,7 +5052,7 @@ timber -8%
 
 #### 效果摘要
 
-解锁物资：燧石原料；可利用资源：燧石
+解锁物资：燧石原料；可利用资源：燧石；营造方法产出 +25%；作为必要支撑：石器打制工坊、改良燧石矿坑
 
 #### 机会成本
 
@@ -4989,7 +5072,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 营造方法：`country.output.family.construction_methods_factor`：+25%
+  - 效果机制：材料识别与成形工艺提高建材和营造方法产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -5035,7 +5120,7 @@ timber -8%
 
 #### 效果摘要
 
-解锁物资：砖块；解锁建筑：黏土坑；解锁建筑：露天黏土坑
+解锁物资：砖块；解锁建筑：黏土坑；解锁建筑：露天黏土坑；营造方法产出 +12%；作为必要支撑：制砖厂、烧砖窑、露天陶器烧造、升焰陶窑、原始黏土坑
 
 #### 机会成本
 
@@ -5056,7 +5141,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 营造方法：`country.output.family.construction_methods_factor`：+12%
+  - 效果机制：材料识别与成形工艺提高建材和营造方法产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -5103,7 +5190,7 @@ timber -8%
 
 #### 效果摘要
 
-解锁物资：陶器；解锁建筑：露天陶器烧造
+解锁物资：陶器；解锁建筑：露天陶器烧造；营造方法产出 +12%；作为必要支撑：露天陶器烧造、升焰陶窑
 
 #### 机会成本
 
@@ -5123,7 +5210,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 营造方法：`country.output.family.construction_methods_factor`：+12%
+  - 效果机制：材料识别与成形工艺提高建材和营造方法产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -5251,7 +5340,7 @@ timber -8%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+主粮加工产出 +12%；作为必要支撑：亚麻庄园
 
 #### 机会成本
 
@@ -5270,7 +5359,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 主粮加工：`country.output.family.staple_preparation_factor`：+12%
+  - 效果机制：储藏、加工与供给组织减少主粮处理损失。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -5320,7 +5411,7 @@ timber -8%
 
 #### 效果摘要
 
-解锁建筑：定居采集营地；全社会经济产出 +2%
+解锁建筑：定居采集营地；全社会经济产出 +2%；作为必要支撑：自给农庄
 
 #### 机会成本
 
@@ -5402,7 +5493,7 @@ timber -8%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+稻米产出 +12%；作为必要支撑：稻作农场、湿地稻园
 
 #### 机会成本
 
@@ -5421,7 +5512,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 稻米：`country.output.good.rice_grain_factor`：+12%
+  - 效果机制：基础灌溉提高稻米产出。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -5477,7 +5570,7 @@ timber -8%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+畜牧业产出 +28%
 
 #### 机会成本
 
@@ -5496,7 +5589,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 畜牧业：`country.output.family.livestock_husbandry_factor`：+28%
+  - 效果机制：畜群管理、繁育与加工体系提高畜牧业产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -5542,7 +5637,7 @@ timber -8%
 
 #### 效果摘要
 
-解锁物资：马匹；解锁建筑：养马场；解锁建筑：马匹繁育营地
+解锁物资：马匹；解锁建筑：养马场；解锁建筑：马匹繁育营地；畜牧业产出 +12%
 
 #### 机会成本
 
@@ -5563,7 +5658,9 @@ timber -8%
 
 #### 永久 Modifier 条款
 
-无
+- 畜牧业：`country.output.family.livestock_husbandry_factor`：+12%
+  - 效果机制：畜群管理、繁育与加工体系提高畜牧业产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -5919,7 +6016,7 @@ landform.hill.agriculture产出 +28%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+专用商品作物产出 +28%
 
 #### 机会成本
 
@@ -5938,7 +6035,9 @@ landform.hill.agriculture产出 +28%
 
 #### 永久 Modifier 条款
 
-无
+- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+28%
+  - 效果机制：热带作物辨识、栽培与商品化提高专用经济作物产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -5992,7 +6091,7 @@ landform.hill.agriculture产出 +28%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+专用商品作物产出 +12%
 
 #### 机会成本
 
@@ -6011,7 +6110,9 @@ landform.hill.agriculture产出 +28%
 
 #### 永久 Modifier 条款
 
-无
+- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+12%
+  - 效果机制：热带作物辨识、栽培与商品化提高专用经济作物产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -6067,7 +6168,7 @@ landform.hill.agriculture产出 +28%
 
 #### 效果摘要
 
-解锁物资：布料；解锁建筑：家用织机
+解锁物资：布料；解锁建筑：家用织机；布匹织造产出 +25%
 
 #### 机会成本
 
@@ -6087,7 +6188,9 @@ landform.hill.agriculture产出 +28%
 
 #### 永久 Modifier 条款
 
-无
+- 布匹织造：`country.output.family.cloth_weaving_factor`：+25%
+  - 效果机制：纤维处理、纺纱与织造方法提高布匹生产链产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -6135,7 +6238,7 @@ landform.hill.agriculture产出 +28%
 
 #### 效果摘要
 
-解锁物资：铜；解锁建筑：土法炼铜炉
+解锁物资：铜；解锁建筑：土法炼铜炉；铜矿采掘产出 +28%；作为必要支撑：浅层铜矿、土法炼锡炉
 
 #### 机会成本
 
@@ -6155,7 +6258,9 @@ landform.hill.agriculture产出 +28%
 
 #### 永久 Modifier 条款
 
-无
+- 铜矿采掘：`country.output.family.copper_extraction_factor`：+28%
+  - 效果机制：有色矿物辨识与冶金工艺提高铜及合金原料链产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -6210,7 +6315,7 @@ landform.hill.agriculture产出 +28%
 
 #### 效果摘要
 
-解锁物资：青铜工具；解锁物资：锡；解锁建筑：青铜工具工坊；解锁建筑：土法炼锡炉
+解锁物资：青铜工具；解锁物资：锡；解锁建筑：青铜工具工坊；解锁建筑：土法炼锡炉；铜矿采掘产出 +12%；作为必要支撑：浅层锡矿、露天青铜作坊、锡矿
 
 #### 机会成本
 
@@ -6232,7 +6337,9 @@ landform.hill.agriculture产出 +28%
 
 #### 永久 Modifier 条款
 
-无
+- 铜矿采掘：`country.output.family.copper_extraction_factor`：+12%
+  - 效果机制：有色矿物辨识与冶金工艺提高铜及合金原料链产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -6278,7 +6385,7 @@ landform.hill.agriculture产出 +28%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+工程领域研究效率 +8%
 
 #### 机会成本
 
@@ -6297,7 +6404,9 @@ landform.hill.agriculture产出 +28%
 
 #### 永久 Modifier 条款
 
-无
+- 工程领域研究效率：`country.research.engineering_efficiency`：+8%
+  - 效果机制：计时、测量与统计提高工程研究效率。
+  - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
 #### 被以下科技作为硬前置
 
@@ -6346,7 +6455,7 @@ landform.hill.agriculture产出 +28%
 
 #### 效果摘要
 
-解锁建筑：书记学校
+解锁建筑：书记学校；社会领域研究效率 +8%
 
 #### 机会成本
 
@@ -6365,7 +6474,9 @@ landform.hill.agriculture产出 +28%
 
 #### 永久 Modifier 条款
 
-无
+- 社会领域研究效率：`country.research.society_efficiency`：+8%
+  - 效果机制：制度记录与组织经验提高社会领域研究效率。
+  - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
 #### 被以下科技作为硬前置
 
@@ -6415,7 +6526,7 @@ landform.hill.agriculture产出 +28%
 
 #### 效果摘要
 
-可利用资源：肥沃土壤；可利用资源：旱地承载力
+可利用资源：肥沃土壤；可利用资源：旱地承载力；主粮加工产出 +12%；作为必要支撑：菜蔬农场、亚麻农场、玉米庄园、佃作小麦庄园、改良轮作小麦庄园、雨养玉米田、雨养小麦地、自给农庄、佃作雨养玉米田、佃作雨养小麦田、旱稻田、小麦农场
 
 #### 机会成本
 
@@ -6435,7 +6546,9 @@ landform.hill.agriculture产出 +28%
 
 #### 永久 Modifier 条款
 
-无
+- 主粮加工：`country.output.family.staple_preparation_factor`：+12%
+  - 效果机制：储藏、加工与供给组织减少主粮处理损失。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -6485,7 +6598,7 @@ landform.hill.agriculture产出 +28%
 
 #### 效果摘要
 
-landform.lowland.agriculture产出 +22%
+landform.lowland.agriculture产出 +22%；作为必要支撑：畦埂水稻田、分成水田、佃作水田
 
 #### 机会成本
 
@@ -6555,7 +6668,7 @@ landform.lowland.agriculture产出 +22%
 
 #### 效果摘要
 
-terrain.steppe.agriculture产出 +22%
+terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦田
 
 #### 机会成本
 
@@ -6625,7 +6738,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+营造方法产出 +12%；作为必要支撑：退水玉米地、退水小麦地
 
 #### 机会成本
 
@@ -6644,7 +6757,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 营造方法：`country.output.family.construction_methods_factor`：+12%
+  - 效果机制：坡降与水准测量提高水工营造产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -6700,7 +6815,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁建筑：烧砖窑；解锁建筑：升焰陶窑
+解锁建筑：烧砖窑；解锁建筑：升焰陶窑；营造方法产出 +12%；作为必要支撑：制砖厂、土法炼锡炉、烧砖窑、行会陶窑、锡矿
 
 #### 机会成本
 
@@ -6720,7 +6835,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 营造方法：`country.output.family.construction_methods_factor`：+12%
+  - 效果机制：材料识别与成形工艺提高建材和营造方法产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -6773,7 +6890,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁建筑：行会陶窑
+解锁建筑：行会陶窑；营造方法产出 +12%；作为必要支撑：土法炼铜炉、活字印刷坊
 
 #### 机会成本
 
@@ -6792,7 +6909,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 营造方法：`country.output.family.construction_methods_factor`：+12%
+  - 效果机制：材料识别与成形工艺提高建材和营造方法产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -6841,7 +6960,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁建筑：行会织造坊；解锁建筑：羊毛行会作坊
+解锁建筑：行会织造坊；解锁建筑：羊毛行会作坊；布匹织造产出 +12%
 
 #### 机会成本
 
@@ -6861,7 +6980,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 布匹织造：`country.output.family.cloth_weaving_factor`：+12%
+  - 效果机制：纤维处理、纺纱与织造方法提高布匹生产链产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -6911,7 +7032,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+畜牧业产出 +28%
 
 #### 机会成本
 
@@ -6930,7 +7051,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 畜牧业：`country.output.family.livestock_husbandry_factor`：+28%
+  - 效果机制：畜群管理、繁育与加工体系提高畜牧业产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -6979,7 +7102,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁物资：混合谷物；解锁物资：蔬菜；解锁建筑：菜蔬农场；解锁建筑：自给农庄
+解锁物资：混合谷物；解锁物资：蔬菜；解锁建筑：菜蔬农场；解锁建筑：自给农庄；地籍机构产出 +12%；作为必要支撑：畦埂水稻田、冷凉高地块茎田
 
 #### 机会成本
 
@@ -7001,7 +7124,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 地籍机构：`country.output.family.cadastral_institution_factor`：+12%
+  - 效果机制：地权、租佃与核算制度提高土地登记和经营协调产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -7050,7 +7175,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+地籍机构产出 +25%
 
 #### 机会成本
 
@@ -7069,7 +7194,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 地籍机构：`country.output.family.cadastral_institution_factor`：+25%
+  - 效果机制：地权、租佃与核算制度提高土地登记和经营协调产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -7118,7 +7245,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+主粮加工产出 +25%；作为必要支撑：庄园水田
 
 #### 机会成本
 
@@ -7137,7 +7264,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 主粮加工：`country.output.family.staple_preparation_factor`：+25%
+  - 效果机制：储藏、加工与供给组织减少主粮处理损失。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -7183,7 +7312,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁物资：日晒土坯；解锁物资：建筑构件；解锁建筑：日晒土坯场；解锁建筑：制砖厂
+解锁物资：日晒土坯；解锁物资：建筑构件；解锁建筑：日晒土坯场；解锁建筑：制砖厂；营造方法产出 +12%；作为必要支撑：石作工场、烧砖窑
 
 #### 机会成本
 
@@ -7205,7 +7334,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 营造方法：`country.output.family.construction_methods_factor`：+12%
+  - 效果机制：材料识别与成形工艺提高建材和营造方法产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -7253,7 +7384,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁物资：玉米；解锁建筑：家庭玉米园圃
+解锁物资：玉米；解锁建筑：家庭玉米园圃；terrain.jungle.agriculture产出 +12%
 
 #### 机会成本
 
@@ -7273,7 +7404,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- terrain.jungle.agriculture：`country.output.terrain.jungle.agriculture_factor`：+12%
+  - 效果机制：玉米园圃体系提高雨林边缘复合园艺的农业产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -7322,7 +7455,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁建筑：刀耕火种玉米地
+解锁建筑：刀耕火种玉米地；玉米产出 +12%
 
 #### 机会成本
 
@@ -7341,7 +7474,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 玉米：`country.output.good.corn_grain_factor`：+12%
+  - 效果机制：辨识、繁育与田间体系提高玉米产出。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -7396,7 +7531,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁建筑：雨养玉米田
+解锁建筑：雨养玉米田；玉米产出 +12%
 
 #### 机会成本
 
@@ -7415,7 +7550,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 玉米：`country.output.good.corn_grain_factor`：+12%
+  - 效果机制：辨识、繁育与田间体系提高玉米产出。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -7617,7 +7754,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁物资：小麦；解锁建筑：雨养小麦地；解锁建筑：小麦农场
+解锁物资：小麦；解锁建筑：雨养小麦地；解锁建筑：小麦农场；terrain.steppe.agriculture产出 +12%
 
 #### 机会成本
 
@@ -7638,7 +7775,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- terrain.steppe.agriculture：`country.output.terrain.steppe.agriculture_factor`：+12%
+  - 效果机制：雨养小麦体系提高草原气候中的农业产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -7755,7 +7894,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁建筑：旱作保水小麦田
+解锁建筑：旱作保水小麦田；小麦产出 +12%
 
 #### 机会成本
 
@@ -7774,7 +7913,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 小麦：`country.output.good.wheat_grain_factor`：+12%
+  - 效果机制：小麦辨识、繁育与旱作体系提高小麦产出。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -7822,7 +7963,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁建筑：旱稻田
+解锁建筑：旱稻田；稻米产出 +12%
 
 #### 机会成本
 
@@ -7841,7 +7982,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 稻米：`country.output.good.rice_grain_factor`：+12%
+  - 效果机制：稻类辨识、水田组织与灌溉控制提高稻米产出。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -7889,7 +8032,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁物资：稻米；解锁建筑：稻作农场；解锁建筑：湿地稻园
+解锁物资：稻米；解锁建筑：稻作农场；解锁建筑：湿地稻园；terrain.floodplain.agriculture产出 +12%；作为必要支撑：畦埂水稻田
 
 #### 机会成本
 
@@ -7910,7 +8053,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- terrain.floodplain.agriculture：`country.output.terrain.floodplain.agriculture_factor`：+12%
+  - 效果机制：湿地稻作提高洪泛平原农业产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -7965,7 +8110,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁建筑：畦埂水稻田；稻米产出 +22%
+解锁建筑：畦埂水稻田；稻米产出 +22%；作为必要支撑：庄园水田、佃作稻庄、精耕稻庄、分成水田、佃作水田
 
 #### 机会成本
 
@@ -8034,7 +8179,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁物资：稻米；可利用资源：水田承载力；terrain.floodplain.agriculture产出 +25%
+解锁物资：稻米；可利用资源：水田承载力；terrain.floodplain.agriculture产出 +25%；作为必要支撑：佃作稻庄
 
 #### 机会成本
 
@@ -8104,7 +8249,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁建筑：马铃薯农场
+解锁建筑：马铃薯农场；马铃薯产出 +12%
 
 #### 机会成本
 
@@ -8123,7 +8268,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 马铃薯：`country.output.good.potatoes_factor`：+12%
+  - 效果机制：块茎辨识、保存与高地栽培提高马铃薯产出。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -8171,7 +8318,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+马铃薯产出 +25%；作为必要支撑：冷凉高地块茎田
 
 #### 机会成本
 
@@ -8190,7 +8337,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 马铃薯：`country.output.good.potatoes_factor`：+25%
+  - 效果机制：块茎辨识、保存与高地栽培提高马铃薯产出。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -8244,7 +8393,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁建筑：冷凉高地块茎田；landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +24%
+解锁建筑：冷凉高地块茎田；landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +24%；作为必要支撑：高地精准块茎农业、机械化马铃薯农场
 
 #### 机会成本
 
@@ -8317,7 +8466,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁物资：亚麻纤维；解锁建筑：亚麻农场；解锁建筑：沤麻池
+解锁物资：亚麻纤维；解锁建筑：亚麻农场；解锁建筑：沤麻池；布匹织造产出 +12%；作为必要支撑：家庭纺织坊、亚麻庄园、改良亚麻庄园
 
 #### 机会成本
 
@@ -8338,7 +8487,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 布匹织造：`country.output.family.cloth_weaving_factor`：+12%
+  - 效果机制：纤维处理、纺纱与织造方法提高布匹生产链产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -8387,7 +8538,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁建筑：家庭纺织坊
+解锁建筑：家庭纺织坊；布匹织造产出 +25%；作为必要支撑：家用织机
 
 #### 机会成本
 
@@ -8406,7 +8557,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 布匹织造：`country.output.family.cloth_weaving_factor`：+25%
+  - 效果机制：纤维处理、纺纱与织造方法提高布匹生产链产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -8454,7 +8607,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁物资：棉纤维；解锁建筑：手工轧棉棚
+解锁物资：棉纤维；解锁建筑：手工轧棉棚；布匹织造产出 +25%；作为必要支撑：家庭棉花园圃
 
 #### 机会成本
 
@@ -8474,7 +8627,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 布匹织造：`country.output.family.cloth_weaving_factor`：+25%
+  - 效果机制：纤维处理、纺纱与织造方法提高布匹生产链产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -8522,7 +8677,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁物资：棉纤维；解锁物资：籽棉；解锁建筑：家庭棉花园圃；可利用资源：种植园承载力
+解锁物资：棉纤维；解锁物资：籽棉；解锁建筑：家庭棉花园圃；可利用资源：种植园承载力；专用商品作物产出 +12%；作为必要支撑：棉花农场、机械化棉花农场
 
 #### 机会成本
 
@@ -8544,7 +8699,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+12%
+  - 效果机制：热带作物辨识、栽培与商品化提高专用经济作物产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -8592,7 +8749,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁物资：香料；解锁建筑：林下遮阴香料园；可利用资源：种植园承载力；terrain.jungle.agriculture产出 +24%
+解锁物资：香料；解锁建筑：林下遮阴香料园；可利用资源：种植园承载力；terrain.jungle.agriculture产出 +24%；作为必要支撑：香料种植园
 
 #### 机会成本
 
@@ -8663,7 +8820,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁物资：凝固天然橡胶；解锁建筑：乳胶烟熏凝固棚；可利用资源：种植园承载力
+解锁物资：凝固天然橡胶；解锁建筑：乳胶烟熏凝固棚；可利用资源：种植园承载力；专用商品作物产出 +28%；作为必要支撑：橡胶种植园
 
 #### 机会成本
 
@@ -8684,7 +8841,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+28%
+  - 效果机制：热带作物辨识、栽培与商品化提高专用经济作物产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -8730,7 +8889,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁物资：木材；解锁建筑：锯木场；解锁建筑：改良锯木场；timber -10%
+解锁物资：木材；解锁建筑：锯木场；解锁建筑：改良锯木场；timber -10%；作为必要支撑：细木家具工坊、蒸汽锯木厂
 
 #### 机会成本
 
@@ -8802,7 +8961,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁物资：乳制品；解锁建筑：乳品工坊
+解锁物资：乳制品；解锁建筑：乳品工坊；畜牧业产出 +28%
 
 #### 机会成本
 
@@ -8822,7 +8981,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 畜牧业：`country.output.family.livestock_husbandry_factor`：+28%
+  - 效果机制：畜群管理、繁育与加工体系提高畜牧业产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -8870,7 +9031,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁物资：鞋履；解锁物资：皮革；解锁建筑：鞋匠铺；解锁建筑：制革工坊
+解锁物资：鞋履；解锁物资：皮革；解锁建筑：鞋匠铺；解锁建筑：制革工坊；畜牧业产出 +28%；作为必要支撑：制鞋厂、制革厂、皮纸工坊
 
 #### 机会成本
 
@@ -8892,7 +9053,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 畜牧业：`country.output.family.livestock_husbandry_factor`：+28%
+  - 效果机制：畜群管理、繁育与加工体系提高畜牧业产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -8938,7 +9101,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁物资：羊毛；解锁建筑：精梳羊毛作坊；解锁建筑：羊毛棚
+解锁物资：羊毛；解锁建筑：精梳羊毛作坊；解锁建筑：羊毛棚；畜牧业产出 +28%
 
 #### 机会成本
 
@@ -8959,7 +9122,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 畜牧业：`country.output.family.livestock_husbandry_factor`：+28%
+  - 效果机制：畜群管理、繁育与加工体系提高畜牧业产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -9009,7 +9174,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁物资：肉类；解锁建筑：工业屠宰场；解锁建筑：屠宰场
+解锁物资：肉类；解锁建筑：工业屠宰场；解锁建筑：屠宰场；畜牧业产出 +28%
 
 #### 机会成本
 
@@ -9030,7 +9195,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 畜牧业：`country.output.family.livestock_husbandry_factor`：+28%
+  - 效果机制：畜群管理、繁育与加工体系提高畜牧业产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -9079,7 +9246,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁物资：酒饮；解锁建筑：酿酒坊；解锁建筑：蒸馏酒坊
+解锁物资：酒饮；解锁建筑：酿酒坊；解锁建筑：蒸馏酒坊；主粮加工产出 +25%
 
 #### 机会成本
 
@@ -9100,7 +9267,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 主粮加工：`country.output.family.staple_preparation_factor`：+25%
+  - 效果机制：储藏、加工与供给组织减少主粮处理损失。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -9149,7 +9318,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁物资：食盐；解锁建筑：盐场；解锁建筑：日晒盐田
+解锁物资：食盐；解锁建筑：盐场；解锁建筑：日晒盐田；加工食品 -8%
 
 #### 机会成本
 
@@ -9170,7 +9339,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 加工食品：`country.consumption.good.processed_food_factor`：+8%
+  - 效果机制：盐藏减少加工食品的腐败损失。
+  - 运行时消费者：`NativeEconomyRuntime::effective_household_good_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -9220,7 +9391,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁物资：面包；解锁建筑：面包坊；解锁建筑：面包厂
+解锁物资：面包；解锁建筑：面包坊；解锁建筑：面包厂；小麦产出 +28%
 
 #### 机会成本
 
@@ -9241,7 +9412,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 小麦：`country.output.good.wheat_grain_factor`：+28%
+  - 效果机制：小麦辨识、繁育与旱作体系提高小麦产出。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -9290,7 +9463,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁物资：玻璃；解锁物资：硅砂；解锁建筑：玻璃窑；解锁建筑：硅砂矿坑
+解锁物资：玻璃；解锁物资：硅砂；解锁建筑：玻璃窑；解锁建筑：硅砂矿坑；营造方法产出 +25%
 
 #### 机会成本
 
@@ -9312,7 +9485,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 营造方法：`country.output.family.construction_methods_factor`：+25%
+  - 效果机制：材料识别与成形工艺提高建材和营造方法产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -9441,7 +9616,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁物资：手抄本；解锁建筑：城邦抄写室；全社会经济产出 +3%
+解锁物资：手抄本；解锁建筑：城邦抄写室；全社会经济产出 +3%；作为必要支撑：树皮纸工坊、皮纸工坊、植物纤维抄纸坊
 
 #### 机会成本
 
@@ -9525,7 +9700,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁物资：石灰；解锁物资：石灰岩；解锁建筑：石灰厂；可利用资源：石灰岩
+解锁物资：石灰；解锁物资：石灰岩；解锁建筑：石灰厂；可利用资源：石灰岩；营造方法产出 +12%；作为必要支撑：石作工场、煤层平硐、石灰石采石场、石料场
 
 #### 机会成本
 
@@ -9547,7 +9722,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 营造方法：`country.output.family.construction_methods_factor`：+12%
+  - 效果机制：材料识别与成形工艺提高建材和营造方法产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -9595,7 +9772,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁物资：黄金；解锁建筑：砂金淘洗精炼棚；解锁建筑：银矿火试炉；全社会经济产出 +3%
+解锁物资：黄金；解锁建筑：砂金淘洗精炼棚；解锁建筑：银矿火试炉；全社会经济产出 +3%；作为必要支撑：地籍管理局
 
 #### 机会成本
 
@@ -9668,7 +9845,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+国内贸易容量 +8%
 
 #### 机会成本
 
@@ -9687,7 +9864,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 国内贸易容量：`country.trade.capacity_factor`：+8%
+  - 效果机制：市场组织与结算网络扩大国内贸易容量。
+  - 运行时消费者：`NativeEconomyRuntime::capture_country_epoch`
 
 #### 被以下科技作为硬前置
 
@@ -9743,7 +9922,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁物资：珠宝；解锁建筑：金银器工坊
+解锁物资：珠宝；解锁建筑：金银器工坊；国内贸易容量 +8%；作为必要支撑：珠宝厂
 
 #### 机会成本
 
@@ -9763,7 +9942,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 国内贸易容量：`country.trade.capacity_factor`：+8%
+  - 效果机制：市场组织与结算网络扩大国内贸易容量。
+  - 运行时消费者：`NativeEconomyRuntime::capture_country_epoch`
 
 #### 被以下科技作为硬前置
 
@@ -9884,7 +10065,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁建筑：石灰石采石场；解锁建筑：石料场
+解锁建筑：石灰石采石场；解锁建筑：石料场；营造方法产出 +12%
 
 #### 机会成本
 
@@ -9904,7 +10085,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 营造方法：`country.output.family.construction_methods_factor`：+12%
+  - 效果机制：渠道、闸门与堤岸工程提高水工营造产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -9954,7 +10137,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+航运作业产出 +12%
 
 #### 机会成本
 
@@ -9973,7 +10156,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 航运作业：`country.output.family.maritime_operations_factor`：+12%
+  - 效果机制：导航、船舶与物流组织提高运输生产方式产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -10021,7 +10206,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁物资：食用油；解锁建筑：堆肥场；解锁建筑：榨油坊；谷物产出 +18%
+解锁物资：食用油；解锁建筑：堆肥场；解锁建筑：榨油坊；谷物产出 +18%；作为必要支撑：工业榨油厂
 
 #### 机会成本
 
@@ -10093,7 +10278,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁物资：肥皂；解锁建筑：工业制皂厂；解锁建筑：制皂工坊
+解锁物资：肥皂；解锁建筑：工业制皂厂；解锁建筑：制皂工坊；pharmaceuticals产出 +12%
 
 #### 机会成本
 
@@ -10114,7 +10299,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- pharmaceuticals：`country.output.good.pharmaceuticals_factor`：+12%
+  - 效果机制：卫生组织与防疫体系提高药品有效供给。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -10163,7 +10350,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁建筑：古典学院
+解锁建筑：古典学院；研究机构产出 +12%
 
 #### 机会成本
 
@@ -10182,7 +10369,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 研究机构：`country.output.family.research_institution_factor`：+12%
+  - 效果机制：知识保存与复制提高研究机构的有效产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -10234,7 +10423,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+农业领域研究效率 +8%
 
 #### 机会成本
 
@@ -10253,7 +10442,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 农业领域研究效率：`country.research.agriculture_efficiency`：+8%
+  - 效果机制：自然观察、生物分类与育种方法提高农业研究效率。
+  - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
 #### 被以下科技作为硬前置
 
@@ -10301,7 +10492,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁物资：煤炭
+解锁物资：煤炭；全社会 +12%
 
 #### 机会成本
 
@@ -10320,7 +10511,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.extractive_factor`：+12%
+  - 效果机制：露头煤利用经验提高采掘部门产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -10369,7 +10562,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁物资：纸张；解锁建筑：植物纤维抄纸坊
+解锁物资：纸张；解锁建筑：植物纤维抄纸坊；造纸产出 +12%
 
 #### 机会成本
 
@@ -10389,7 +10582,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 造纸：`country.output.family.paper_making_factor`：+12%
+  - 效果机制：植物纤维制浆提高造纸生产方式产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -10435,7 +10630,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁物资：纸张；解锁建筑：树皮纸工坊
+解锁物资：纸张；解锁建筑：树皮纸工坊；造纸产出 +12%
 
 #### 机会成本
 
@@ -10455,7 +10650,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 造纸：`country.output.family.paper_making_factor`：+12%
+  - 效果机制：树皮纤维处理提高造纸生产方式产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -10503,7 +10700,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁物资：纸张；解锁建筑：皮纸工坊
+解锁物资：纸张；解锁建筑：皮纸工坊；畜牧业产出 +12%
 
 #### 机会成本
 
@@ -10523,7 +10720,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 畜牧业：`country.output.family.livestock_husbandry_factor`：+12%
+  - 效果机制：畜群管理、繁育与加工体系提高畜牧业产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -10571,7 +10770,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁建筑：公共营造场；解锁建筑：修道院抄写室
+解锁建筑：公共营造场；解锁建筑：修道院抄写室；研究机构产出 +25%；作为必要支撑：活字印刷坊、印刷厂、木版印刷坊
 
 #### 机会成本
 
@@ -10591,7 +10790,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 研究机构：`country.output.family.research_institution_factor`：+25%
+  - 效果机制：知识保存与复制提高研究机构的有效产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -10713,7 +10914,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+地籍机构产出 +12%；作为必要支撑：佃作稻庄、佃作水田、佃作雨养玉米田、佃作雨养小麦田
 
 #### 机会成本
 
@@ -10732,7 +10933,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 地籍机构：`country.output.family.cadastral_institution_factor`：+12%
+  - 效果机制：地权、租佃与核算制度提高土地登记和经营协调产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -10787,7 +10990,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+地籍机构产出 +12%；作为必要支撑：分成水田
 
 #### 机会成本
 
@@ -10806,7 +11009,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 地籍机构：`country.output.family.cadastral_institution_factor`：+12%
+  - 效果机制：地权、租佃与核算制度提高土地登记和经营协调产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -10854,7 +11059,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+地籍机构产出 +12%；作为必要支撑：地籍管理局、庄园水田、玉米庄园、亚麻庄园、改良亚麻庄园、精耕稻庄、佃作小麦庄园、改良轮作小麦庄园
 
 #### 机会成本
 
@@ -10873,7 +11078,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 地籍机构：`country.output.family.cadastral_institution_factor`：+12%
+  - 效果机制：地权、租佃与核算制度提高土地登记和经营协调产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -10924,7 +11131,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁建筑：佃作雨养玉米田；解锁建筑：佃作雨养小麦田
+解锁建筑：佃作雨养玉米田；解锁建筑：佃作雨养小麦田；主粮加工产出 +25%
 
 #### 机会成本
 
@@ -10944,7 +11151,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 主粮加工：`country.output.family.staple_preparation_factor`：+25%
+  - 效果机制：储藏、加工与供给组织减少主粮处理损失。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -10993,7 +11202,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁建筑：分成水田；解锁建筑：佃作水田；解锁建筑：佃作稻庄
+解锁建筑：佃作稻庄；解锁建筑：分成水田；解锁建筑：佃作水田；稻米产出 +12%
 
 #### 机会成本
 
@@ -11008,13 +11217,15 @@ terrain.steppe.agriculture产出 +22%
 
 #### 结构化内容效果
 
+- **佃作稻庄**（`building`）：`building.method_rice_collector_r3` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **分成水田**（`building`）：`building.sharecrop_paddy` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **佃作水田**（`building`）：`building.tenant_paddy` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **佃作稻庄**（`building`）：`building.method_rice_collector_r3` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-无
+- 稻米：`country.output.good.rice_grain_factor`：+12%
+  - 效果机制：稻类辨识、水田组织与灌溉控制提高稻米产出。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -11060,7 +11271,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁物资：铁矿石；解锁建筑：铁矿；可利用资源：铁矿
+解锁物资：铁矿石；可利用资源：铁矿；iron\_extraction产出 +12%
 
 #### 机会成本
 
@@ -11069,19 +11280,20 @@ terrain.steppe.agriculture产出 +22%
 #### 内容解锁
 
 - **物资：** 铁矿石 (`iron_ore`)
-- **建筑 / 生产方式：** 铁矿 (`iron_ore_collector`)
+- **建筑 / 生产方式：** 无
 - **自然资源：** 铁矿 (`iron_ore`)
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
 - **铁矿石**（`good`）：`good.iron_ore` → `production_access` `unlock` `1.0`；`existing_binding`
-- **铁矿**（`building`）：`building.iron_ore_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **铁矿**（`resource`）：`resource.iron_ore` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-无
+- iron\_extraction：`country.output.family.iron_extraction_factor`：+12%
+  - 效果机制：矿井、冶炼与动力体系提高铁矿采掘链产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -11127,7 +11339,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁物资：金属工具；解锁建筑：浅层铁矿
+解锁物资：金属工具；解锁建筑：地表铁矿采集场；iron\_extraction产出 +12%；作为必要支撑：块炼炉、浅层铁矿、铁制工具工坊
 
 #### 机会成本
 
@@ -11136,18 +11348,20 @@ terrain.steppe.agriculture产出 +22%
 #### 内容解锁
 
 - **物资：** 金属工具 (`tools`)
-- **建筑 / 生产方式：** 浅层铁矿 (`early_iron_mine`)
+- **建筑 / 生产方式：** 地表铁矿采集场 (`iron_ore_collector`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 块炼炉 (`bloomery`)；铁制工具工坊 (`iron_tool_workshop`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 块炼炉 (`bloomery`)；浅层铁矿 (`early_iron_mine`)；铁制工具工坊 (`iron_tool_workshop`)
 
 #### 结构化内容效果
 
 - **金属工具**（`good`）：`good.tools` → `production_access` `unlock` `1.0`；`existing_binding`
-- **浅层铁矿**（`building`）：`building.early_iron_mine` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **地表铁矿采集场**（`building`）：`building.iron_ore_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-无
+- iron\_extraction：`country.output.family.iron_extraction_factor`：+12%
+  - 效果机制：矿井、冶炼与动力体系提高铁矿采掘链产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -11197,7 +11411,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁物资：锻铁；解锁建筑：块炼炉；解锁建筑：铁制工具工坊
+解锁物资：锻铁；解锁建筑：块炼炉；解锁建筑：铁制工具工坊；iron\_extraction产出 +12%；作为必要支撑：浅层铁矿
 
 #### 机会成本
 
@@ -11218,7 +11432,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- iron\_extraction：`country.output.family.iron_extraction_factor`：+12%
+  - 效果机制：矿井、冶炼与动力体系提高铁矿采掘链产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -11265,7 +11481,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-可利用资源：煤炭
+可利用资源：煤炭；全社会 +12%；作为必要支撑：露头煤采集场
 
 #### 机会成本
 
@@ -11284,7 +11500,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.extractive_factor`：+12%
+  - 效果机制：煤层露头辨识提高采掘选址效率。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -11330,7 +11548,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁建筑：露头煤采集场
+解锁建筑：露头煤采集场；全社会 +12%；作为必要支撑：煤层平硐
 
 #### 机会成本
 
@@ -11349,7 +11567,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.extractive_factor`：+12%
+  - 效果机制：地表煤采集提高采掘部门产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -11399,7 +11619,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+主粮加工产出 +25%
 
 #### 机会成本
 
@@ -11418,7 +11638,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 主粮加工：`country.output.family.staple_preparation_factor`：+25%
+  - 效果机制：储藏、加工与供给组织减少主粮处理损失。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -11554,7 +11776,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁建筑：水力锯木场；解锁建筑：商营伐木场；timber +28%；terrain.forest.extractive产出 +22%
+解锁建筑：水力锯木场；解锁建筑：商营伐木场；timber +28%；terrain.forest.extractive产出 +22%；作为必要支撑：森林遥感经营站
 
 #### 机会成本
 
@@ -11628,7 +11850,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁建筑：庄园牧场；解锁建筑：机械化牧场
+解锁建筑：庄园牧场；解锁建筑：机械化牧场；畜牧业产出 +12%
 
 #### 机会成本
 
@@ -11648,7 +11870,9 @@ terrain.steppe.agriculture产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 畜牧业：`country.output.family.livestock_husbandry_factor`：+12%
+  - 效果机制：畜群管理、繁育与加工体系提高畜牧业产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -11694,7 +11918,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁建筑：三圃制小农场；谷物产出 +22%
+解锁建筑：三圃制小农场；谷物产出 +22%；作为必要支撑：佃作小麦庄园、改良轮作小麦庄园
 
 #### 机会成本
 
@@ -11912,7 +12136,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：衣物；解锁物资：家具；解锁建筑：家具行会工坊；解锁建筑：裁缝铺
+解锁物资：衣物；解锁物资：家具；解锁建筑：家具行会工坊；解锁建筑：裁缝铺；全社会 +8%；作为必要支撑：行会陶窑、包装材料厂、印刷厂
 
 #### 机会成本
 
@@ -11934,7 +12158,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.manufacturing_factor`：+8%
+  - 效果机制：劳动分工与管理协调提高制造部门产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -11995,7 +12221,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：钢材；解锁建筑：焦炭炼钢厂
+解锁物资：钢材；解锁建筑：焦炭炼钢厂；iron\_extraction产出 +12%
 
 #### 机会成本
 
@@ -12015,7 +12241,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- iron\_extraction：`country.output.family.iron_extraction_factor`：+12%
+  - 效果机制：矿井、冶炼与动力体系提高铁矿采掘链产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -12066,7 +12294,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：金属工具
+解锁物资：金属工具；炼钢产出 +12%
 
 #### 机会成本
 
@@ -12085,7 +12313,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 炼钢：`country.output.family.steelmaking_factor`：+12%
+  - 效果机制：坩埚控温提高炼钢生产方式产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -12132,7 +12362,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：煤炭；解锁建筑：煤矿
+解锁物资：煤炭；解锁建筑：煤矿；煤 -8%
 
 #### 机会成本
 
@@ -12152,7 +12382,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 煤：`country.resource.coal.use_factor`：+8%
+  - 效果机制：系统采煤减少煤层损失。
+  - 运行时消费者：`NativeEconomyRuntime::effective_resource_use_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -12200,7 +12432,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：纸张；解锁建筑：碎布造纸工坊
+解锁物资：纸张；解锁建筑：碎布造纸工坊；造纸产出 +12%
 
 #### 机会成本
 
@@ -12220,7 +12452,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 造纸：`country.output.family.paper_making_factor`：+12%
+  - 效果机制：破布回收制浆提高造纸生产方式产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -12268,7 +12502,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：印刷品；解锁建筑：木版印刷坊
+解锁物资：印刷品；解锁建筑：木版印刷坊；研究机构产出 +25%
 
 #### 机会成本
 
@@ -12288,7 +12522,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 研究机构：`country.output.family.research_institution_factor`：+25%
+  - 效果机制：知识保存与复制提高研究机构的有效产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -12414,7 +12650,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：炸药；解锁物资：硝石；解锁建筑：硝石矿；解锁建筑：硫矿
+解锁物资：炸药；解锁物资：硝石；解锁建筑：硝石矿；解锁建筑：硫矿；化学工业产出 +12%
 
 #### 机会成本
 
@@ -12436,7 +12672,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 化学工业：`country.output.family.chemical_industry_factor`：+12%
+  - 效果机制：配方、反应与过程控制提高化学工业产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -12487,7 +12725,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+航运作业产出 +28%
 
 #### 机会成本
 
@@ -12506,7 +12744,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 航运作业：`country.output.family.maritime_operations_factor`：+28%
+  - 效果机制：导航、船舶与物流组织提高运输生产方式产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -12555,7 +12795,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+营造方法产出 +25%
 
 #### 机会成本
 
@@ -12574,7 +12814,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 营造方法：`country.output.family.construction_methods_factor`：+25%
+  - 效果机制：城市供排水体系强化大型营造方法产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -12621,7 +12863,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+研究机构产出 +12%
 
 #### 机会成本
 
@@ -12640,7 +12882,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 研究机构：`country.output.family.research_institution_factor`：+12%
+  - 效果机制：知识保存与复制提高研究机构的有效产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -12690,7 +12934,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：特许大学；解锁建筑：印刷学社
+解锁建筑：特许大学；解锁建筑：印刷学社；社会领域研究效率 +8%
 
 #### 机会成本
 
@@ -12710,7 +12954,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 社会领域研究效率：`country.research.society_efficiency`：+8%
+  - 效果机制：制度记录与组织经验提高社会领域研究效率。
+  - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
 #### 被以下科技作为硬前置
 
@@ -12760,7 +13006,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+地籍机构产出 +12%
 
 #### 机会成本
 
@@ -12779,7 +13025,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 地籍机构：`country.output.family.cadastral_institution_factor`：+12%
+  - 效果机制：地权、租佃与核算制度提高土地登记和经营协调产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -12828,7 +13076,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+地籍机构产出 +25%；作为必要支撑：庄园水田、玉米庄园
 
 #### 机会成本
 
@@ -12847,7 +13095,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 地籍机构：`country.output.family.cadastral_institution_factor`：+25%
+  - 效果机制：地权、租佃与核算制度提高土地登记和经营协调产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -12896,7 +13146,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+地籍机构产出 +25%
 
 #### 机会成本
 
@@ -12915,7 +13165,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 地籍机构：`country.output.family.cadastral_institution_factor`：+25%
+  - 效果机制：地权、租佃与核算制度提高土地登记和经营协调产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -12963,7 +13215,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：华服；解锁物资：精美家具；解锁建筑：细木家具工坊；解锁建筑：宫廷裁缝坊
+解锁物资：华服；解锁物资：精美家具；解锁建筑：细木家具工坊；解锁建筑：宫廷裁缝坊；全社会 +22%；作为必要支撑：细木家具工坊、活字印刷坊
 
 #### 机会成本
 
@@ -12985,7 +13237,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.manufacturing_factor`：+22%
+  - 效果机制：劳动分工与管理协调提高制造部门产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -13034,7 +13288,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+主粮加工产出 +12%
 
 #### 机会成本
 
@@ -13053,7 +13307,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 主粮加工：`country.output.family.staple_preparation_factor`：+12%
+  - 效果机制：储藏、加工与供给组织减少主粮处理损失。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -13171,7 +13427,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：浅层铜矿；解锁建筑：浅层锡矿
+解锁建筑：浅层铜矿；解锁建筑：浅层铁矿；解锁建筑：浅层锡矿；全社会 +12%
 
 #### 机会成本
 
@@ -13180,18 +13436,21 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 浅层铜矿 (`early_copper_mine`)；浅层锡矿 (`early_tin_mine`)
+- **建筑 / 生产方式：** 浅层铜矿 (`early_copper_mine`)；浅层铁矿 (`early_iron_mine`)；浅层锡矿 (`early_tin_mine`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
 - **浅层铜矿**（`building`）：`building.early_copper_mine` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **浅层铁矿**（`building`）：`building.early_iron_mine` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **浅层锡矿**（`building`）：`building.early_tin_mine` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.extractive_factor`：+12%
+  - 效果机制：矿井木支护提高采掘作业稳定性。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -13238,7 +13497,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：铅矿；解锁建筑：锌矿；可利用资源：铅矿；可利用资源：锌矿
+解锁建筑：铅矿；解锁建筑：锌矿；可利用资源：铅矿；可利用资源：锌矿；全社会 +12%
 
 #### 机会成本
 
@@ -13260,7 +13519,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.extractive_factor`：+12%
+  - 效果机制：矿井通风延长安全作业时间。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -13316,7 +13577,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：玉米庄园；解锁建筑：佃作小麦庄园；解锁建筑：改良轮作小麦庄园
+解锁建筑：玉米庄园；解锁建筑：佃作小麦庄园；解锁建筑：改良轮作小麦庄园；小麦产出 +12%
 
 #### 机会成本
 
@@ -13337,7 +13598,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 小麦：`country.output.good.wheat_grain_factor`：+12%
+  - 效果机制：庄园谷物核算与田间组织提高小麦产出。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -13392,7 +13655,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：庄园水田；解锁建筑：精耕稻庄
+解锁建筑：庄园水田；解锁建筑：精耕稻庄；稻米产出 +28%
 
 #### 机会成本
 
@@ -13412,7 +13675,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 稻米：`country.output.good.rice_grain_factor`：+28%
+  - 效果机制：稻类辨识、水田组织与灌溉控制提高稻米产出。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -13542,7 +13807,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理局、地理空间分析中心
 
 #### 机会成本
 
@@ -13561,7 +13826,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- geospatial\_analysis\_institution：`country.output.family.geospatial_analysis_institution_factor`：+12%
+  - 效果机制：测绘、遥感与地理分析提高地理空间机构产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -13613,7 +13880,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+航运作业产出 +28%
 
 #### 机会成本
 
@@ -13632,7 +13899,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 航运作业：`country.output.family.maritime_operations_factor`：+28%
+  - 效果机制：导航、船舶与物流组织提高运输生产方式产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -13689,7 +13958,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：远洋船舶；解锁建筑：远洋造船厂
+解锁物资：远洋船舶；解锁建筑：远洋造船厂；航运作业产出 +12%；作为必要支撑：远洋渔场、蒸汽航运船坞
 
 #### 机会成本
 
@@ -13709,7 +13978,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 航运作业：`country.output.family.maritime_operations_factor`：+12%
+  - 效果机制：导航、船舶与物流组织提高运输生产方式产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -13763,7 +14034,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+航运作业产出 +12%；作为必要支撑：电气化造船厂
 
 #### 机会成本
 
@@ -13782,7 +14053,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 航运作业：`country.output.family.maritime_operations_factor`：+12%
+  - 效果机制：导航、船舶与物流组织提高运输生产方式产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -13834,7 +14107,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+航运作业产出 +28%；作为必要支撑：电气化造船厂、蒸汽航运船坞
 
 #### 机会成本
 
@@ -13853,7 +14126,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 航运作业：`country.output.family.maritime_operations_factor`：+28%
+  - 效果机制：导航、船舶与物流组织提高运输生产方式产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -13903,7 +14178,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：包装材料；解锁物资：印刷品；解锁建筑：包装材料厂；解锁建筑：印刷厂
+解锁物资：包装材料；解锁物资：印刷品；解锁建筑：包装材料厂；解锁建筑：印刷厂；研究机构产出 +12%；作为必要支撑：印刷学社
 
 #### 机会成本
 
@@ -13925,7 +14200,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 研究机构：`country.output.family.research_institution_factor`：+12%
+  - 效果机制：知识保存与复制提高研究机构的有效产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -13975,7 +14252,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：炸药；解锁物资：硫磺；解锁建筑：炸药厂；解锁建筑：自动化炸药厂
+解锁物资：炸药；解锁物资：硫磺；解锁建筑：炸药厂；解锁建筑：自动化炸药厂；化学工业产出 +25%；作为必要支撑：现代炸药厂
 
 #### 机会成本
 
@@ -13997,7 +14274,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 化学工业：`country.output.family.chemical_industry_factor`：+25%
+  - 效果机制：配方、反应与过程控制提高化学工业产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -14121,7 +14400,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：药材种植园
+解锁建筑：药材种植园；国内贸易容量 +8%
 
 #### 机会成本
 
@@ -14140,7 +14419,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 国内贸易容量：`country.trade.capacity_factor`：+8%
+  - 效果机制：市场组织与结算网络扩大国内贸易容量。
+  - 运行时消费者：`NativeEconomyRuntime::capture_country_epoch`
 
 #### 被以下科技作为硬前置
 
@@ -14197,7 +14478,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+国内贸易容量 +8%
 
 #### 机会成本
 
@@ -14216,7 +14497,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 国内贸易容量：`country.trade.capacity_factor`：+8%
+  - 效果机制：市场组织与结算网络扩大国内贸易容量。
+  - 运行时消费者：`NativeEconomyRuntime::capture_country_epoch`
 
 #### 被以下科技作为硬前置
 
@@ -14264,7 +14547,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+工程领域研究效率 +8%
 
 #### 机会成本
 
@@ -14283,7 +14566,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 工程领域研究效率：`country.research.engineering_efficiency`：+8%
+  - 效果机制：计时、测量与统计提高工程研究效率。
+  - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
 #### 被以下科技作为硬前置
 
@@ -14332,7 +14617,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：金矿；解锁建筑：银矿
+解锁建筑：金矿；解锁建筑：银矿；全社会 +12%
 
 #### 机会成本
 
@@ -14352,7 +14637,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.extractive_factor`：+12%
+  - 效果机制：井筒开掘扩大可达矿体范围。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -14402,7 +14689,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：铅矿石；解锁物资：锌矿石；铁矿石 -8%；landform.mountain.extractive产出 +24%
+解锁物资：铅矿石；解锁物资：锌矿石；铁矿石 -8%；landform.mountain.extractive产出 +24%；作为必要支撑：金矿、深井盐矿、铅矿、硅砂矿、银矿、锌矿
 
 #### 机会成本
 
@@ -14476,7 +14763,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：深井盐矿；解锁建筑：锡矿
+解锁建筑：深井盐矿；解锁建筑：锡矿；全社会 +12%；作为必要支撑：硅砂矿
 
 #### 机会成本
 
@@ -14496,7 +14783,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.extractive_factor`：+12%
+  - 效果机制：矿井排水提高采掘作业连续性。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -14552,7 +14841,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+地籍机构产出 +12%
 
 #### 机会成本
 
@@ -14571,7 +14860,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 地籍机构：`country.output.family.cadastral_institution_factor`：+12%
+  - 效果机制：地权、租佃与核算制度提高土地登记和经营协调产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -14623,7 +14914,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+国内贸易容量 +8%
 
 #### 机会成本
 
@@ -14642,7 +14933,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 国内贸易容量：`country.trade.capacity_factor`：+8%
+  - 效果机制：市场组织与结算网络扩大国内贸易容量。
+  - 运行时消费者：`NativeEconomyRuntime::capture_country_epoch`
 
 #### 被以下科技作为硬前置
 
@@ -14693,7 +14986,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：专用商品作物种植园；解锁建筑：橡胶种植园
+解锁建筑：专用商品作物种植园；解锁建筑：橡胶种植园；专用商品作物产出 +12%；作为必要支撑：棉花农场、机械化橡胶种植园、机械化香料种植园、香料种植园
 
 #### 机会成本
 
@@ -14713,7 +15006,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+12%
+  - 效果机制：热带作物辨识、栽培与商品化提高专用经济作物产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -14771,7 +15066,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：棉花农场；解锁建筑：香料种植园；解锁建筑：亚麻庄园；解锁建筑：改良亚麻庄园
+解锁建筑：棉花农场；解锁建筑：亚麻庄园；解锁建筑：改良亚麻庄园；解锁建筑：香料种植园；专用商品作物产出 +28%；作为必要支撑：橡胶种植园
 
 #### 机会成本
 
@@ -14787,13 +15082,15 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 #### 结构化内容效果
 
 - **棉花农场**（`building`）：`building.cotton_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **香料种植园**（`building`）：`building.spice_plants_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **亚麻庄园**（`building`）：`building.method_flax_collector_r3` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **改良亚麻庄园**（`building`）：`building.method_flax_collector_r5` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **香料种植园**（`building`）：`building.spice_plants_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-无
+- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+28%
+  - 效果机制：热带作物辨识、栽培与商品化提高专用经济作物产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -14845,7 +15142,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：远洋渔场
+解锁建筑：远洋渔场；主粮加工产出 +25%
 
 #### 机会成本
 
@@ -14864,7 +15161,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 主粮加工：`country.output.family.staple_preparation_factor`：+25%
+  - 效果机制：储藏、加工与供给组织减少主粮处理损失。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -14911,7 +15210,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+主粮加工产出 +12%
 
 #### 机会成本
 
@@ -14930,7 +15229,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 主粮加工：`country.output.family.staple_preparation_factor`：+12%
+  - 效果机制：储藏、加工与供给组织减少主粮处理损失。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -14983,7 +15284,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+农业领域研究效率 +8%
 
 #### 机会成本
 
@@ -15002,7 +15303,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 农业领域研究效率：`country.research.agriculture_efficiency`：+8%
+  - 效果机制：自然观察、生物分类与育种方法提高农业研究效率。
+  - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
 #### 被以下科技作为硬前置
 
@@ -15052,7 +15355,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+农业领域研究效率 +8%
 
 #### 机会成本
 
@@ -15071,7 +15374,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 农业领域研究效率：`country.research.agriculture_efficiency`：+8%
+  - 效果机制：自然观察、生物分类与育种方法提高农业研究效率。
+  - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
 #### 被以下科技作为硬前置
 
@@ -15121,7 +15426,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-可利用资源：种植园承载力
+可利用资源：种植园承载力；农业领域研究效率 +22%
 
 #### 机会成本
 
@@ -15140,7 +15445,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 农业领域研究效率：`country.research.agriculture_efficiency`：+22%
+  - 效果机制：自然观察、生物分类与育种方法提高农业研究效率。
+  - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
 #### 被以下科技作为硬前置
 
@@ -15188,7 +15495,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+社会领域研究效率 +20%；作为必要支撑：棉花农场、橡胶种植园、香料种植园
 
 #### 机会成本
 
@@ -15207,7 +15514,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 社会领域研究效率：`country.research.society_efficiency`：+20%
+  - 效果机制：制度记录与组织经验提高社会领域研究效率。
+  - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
 #### 被以下科技作为硬前置
 
@@ -15344,7 +15653,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+农业领域研究效率 +8%
 
 #### 机会成本
 
@@ -15363,7 +15672,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 农业领域研究效率：`country.research.agriculture_efficiency`：+8%
+  - 效果机制：自然观察、生物分类与育种方法提高农业研究效率。
+  - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
 #### 被以下科技作为硬前置
 
@@ -15423,7 +15734,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-谷物产出 +12%；小麦产出 +12%；稻米产出 +12%；玉米产出 +12%
+谷物产出 +12%；小麦产出 +12%；稻米产出 +12%；玉米产出 +12%；作为必要支撑：改良亚麻庄园、精耕稻庄、改良轮作小麦庄园
 
 #### 机会成本
 
@@ -15499,7 +15810,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：改良小农场；解锁建筑：工业榨油厂
+解锁建筑：改良小农场；解锁建筑：工业榨油厂；小麦产出 +12%
 
 #### 机会成本
 
@@ -15519,7 +15830,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 小麦：`country.output.good.wheat_grain_factor`：+12%
+  - 效果机制：小麦辨识、繁育与旱作体系提高小麦产出。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -15568,7 +15881,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：精密工具；解锁建筑：精密工具厂；解锁建筑：精密工具工坊
+解锁物资：精密工具；解锁建筑：精密工具厂；解锁建筑：精密工具工坊；金属工具制造产出 +12%；作为必要支撑：罐头工坊
 
 #### 机会成本
 
@@ -15589,7 +15902,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 金属工具制造：`country.output.family.metal_toolmaking_factor`：+12%
+  - 效果机制：工具、机床与控制能力提高金属工具制造产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -15638,7 +15953,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-全社会 +6%
+全社会 +6%；作为必要支撑：罐头工坊
 
 #### 机会成本
 
@@ -15716,7 +16031,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+社会领域研究效率 +8%
 
 #### 机会成本
 
@@ -15735,7 +16050,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 社会领域研究效率：`country.research.society_efficiency`：+8%
+  - 效果机制：制度记录与组织经验提高社会领域研究效率。
+  - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
 #### 被以下科技作为硬前置
 
@@ -15789,7 +16106,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+工程领域研究效率 +8%；作为必要支撑：地理空间分析中心
 
 #### 机会成本
 
@@ -15808,7 +16125,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 工程领域研究效率：`country.research.engineering_efficiency`：+8%
+  - 效果机制：计时、测量与统计提高工程研究效率。
+  - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
 #### 被以下科技作为硬前置
 
@@ -15861,7 +16180,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：电气化包装厂；解锁建筑：电气印刷厂；全社会生产投入 -4%
+解锁建筑：电气化包装厂；解锁建筑：电气印刷厂；全社会生产投入 -4%；作为必要支撑：建筑构件厂、包装材料厂
 
 #### 机会成本
 
@@ -16027,7 +16346,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：水泥；解锁建筑：水泥厂；解锁建筑：自动化水泥厂；landform.delta.agriculture产出 +18%；landform.delta.manufacturing产出 -5%
+解锁物资：水泥；解锁建筑：水泥厂；解锁建筑：自动化水泥厂；landform.delta.agriculture产出 +18%；landform.delta.manufacturing产出 -5%；作为必要支撑：混凝土厂、河流水力发电站、流域治理中心
 
 #### 机会成本
 
@@ -16103,7 +16422,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：机器零件；解锁建筑：建筑构件厂；解锁建筑：改良家用织机
+解锁物资：机器零件；解锁建筑：建筑构件厂；解锁建筑：改良家用织机；金属工具制造产出 +12%
 
 #### 机会成本
 
@@ -16124,7 +16443,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 金属工具制造：`country.output.family.metal_toolmaking_factor`：+12%
+  - 效果机制：工具、机床与控制能力提高金属工具制造产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -16183,7 +16504,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：锰矿石；解锁建筑：自动化铅矿；解锁建筑：硅砂矿；解锁建筑：工业石灰岩矿场；terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
+解锁物资：锰矿石；解锁建筑：自动化铅矿；解锁建筑：工业石灰岩矿场；解锁建筑：硅砂矿；terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%；作为必要支撑：现代硝石矿、现代硫矿
 
 #### 机会成本
 
@@ -16200,8 +16521,8 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 - **锰矿石**（`good`）：`good.manganese_ore` → `production_access` `unlock` `1.0`；`existing_binding`
 - **自动化铅矿**（`building`）：`building.method_lead_ore_collector_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **工业石灰岩矿场**（`building`）：`building.method_limestone_collector_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **硅砂矿**（`building`）：`building.silica_sand_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **工业石灰岩矿场**（`building`）：`building.method_limestone_collector_r6` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
 
 #### 永久 Modifier 条款
 
@@ -16263,7 +16584,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：蒸汽机；解锁建筑：大气式蒸汽机工坊
+解锁物资：蒸汽机；解锁建筑：大气式蒸汽机工坊；全社会 +12%
 
 #### 机会成本
 
@@ -16279,11 +16600,13 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 #### 结构化内容效果
 
 - **蒸汽机**（`good`）：`good.steam_engines` → `production_access` `unlock` `1.0`；`catalog_rebind`
-- **大气式蒸汽机工坊**（`building`）：`building.atmospheric_engine_workshop` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
+- **大气式蒸汽机工坊**（`building`）：`building.atmospheric_engine_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.extractive_factor`：+12%
+  - 效果机制：大气式蒸汽机为矿井抽排提供连续动力。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -16334,7 +16657,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：博学学会
+解锁建筑：博学学会；农业领域研究效率 +8%
 
 #### 机会成本
 
@@ -16353,7 +16676,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 农业领域研究效率：`country.research.agriculture_efficiency`：+8%
+  - 效果机制：自然观察、生物分类与育种方法提高农业研究效率。
+  - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
 #### 被以下科技作为硬前置
 
@@ -16403,7 +16728,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-可利用资源：磷矿石
+可利用资源：磷矿石；农业领域研究效率 +8%
 
 #### 机会成本
 
@@ -16422,7 +16747,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 农业领域研究效率：`country.research.agriculture_efficiency`：+8%
+  - 效果机制：自然观察、生物分类与育种方法提高农业研究效率。
+  - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
 #### 被以下科技作为硬前置
 
@@ -16471,7 +16798,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+畜牧业产出 +28%
 
 #### 机会成本
 
@@ -16490,7 +16817,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 畜牧业：`country.output.family.livestock_husbandry_factor`：+28%
+  - 效果机制：畜群管理、繁育与加工体系提高畜牧业产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -16538,7 +16867,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+全社会 +8%
 
 #### 机会成本
 
@@ -16557,7 +16886,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.manufacturing_factor`：+8%
+  - 效果机制：劳动分工与管理协调提高制造部门产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -16605,7 +16936,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+地籍机构产出 +12%；作为必要支撑：地籍管理局、改良亚麻庄园、精耕稻庄、改良轮作小麦庄园
 
 #### 机会成本
 
@@ -16624,7 +16955,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 地籍机构：`country.output.family.cadastral_institution_factor`：+12%
+  - 效果机制：地权、租佃与核算制度提高土地登记和经营协调产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -16744,7 +17077,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+稻米产出 +28%
 
 #### 机会成本
 
@@ -16763,7 +17096,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 稻米：`country.output.good.rice_grain_factor`：+28%
+  - 效果机制：稻类辨识、水田组织与灌溉控制提高稻米产出。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -16817,7 +17152,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+工程领域研究效率 +8%
 
 #### 机会成本
 
@@ -16836,7 +17171,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 工程领域研究效率：`country.research.engineering_efficiency`：+8%
+  - 效果机制：计时、测量与统计提高工程研究效率。
+  - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
 #### 被以下科技作为硬前置
 
@@ -16898,7 +17235,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：地籍管理局
+解锁建筑：地籍管理局；地籍机构产出 +25%
 
 #### 机会成本
 
@@ -16913,11 +17250,13 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 结构化内容效果
 
-- **地籍管理局**（`building`）：`building.cadastral_office` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+- **地籍管理局**（`building`）：`building.cadastral_office` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-无
+- 地籍机构：`country.output.family.cadastral_institution_factor`：+25%
+  - 效果机制：地权、租佃与核算制度提高土地登记和经营协调产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -16963,7 +17302,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+煤 -8%
 
 #### 机会成本
 
@@ -16982,7 +17321,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 煤：`country.resource.coal.use_factor`：+8%
+  - 效果机制：煤田地质调查减少无效掘进与煤层损失。
+  - 运行时消费者：`NativeEconomyRuntime::effective_resource_use_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -17338,7 +17679,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：焦炭；解锁物资：钢材；解锁建筑：焦化厂；解锁建筑：电弧炉炼钢厂
+解锁物资：焦炭；解锁物资：钢材；解锁建筑：焦化厂；解锁建筑：电弧炉炼钢厂；炼钢产出 +12%；作为必要支撑：自动化焦化厂
 
 #### 机会成本
 
@@ -17360,7 +17701,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 炼钢：`country.output.family.steelmaking_factor`：+12%
+  - 效果机制：焦炭冶炼提高炼钢生产方式产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -17479,7 +17822,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：农业机械；解锁建筑：农业机械厂；解锁建筑：机械化棉花农场；解锁建筑：机械化马铃薯农场；全社会 +6%
+解锁物资：农业机械；解锁建筑：农业机械厂；解锁建筑：机械化棉花农场；解锁建筑：机械化马铃薯农场；全社会 +6%；作为必要支撑：机械化农场、机械化玉米农场、机械化橡胶种植园、机械化香料种植园
 
 #### 机会成本
 
@@ -17496,8 +17839,8 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 - **农业机械**（`good`）：`good.agricultural_machinery` → `production_access` `unlock` `1.0`；`existing_binding`
 - **农业机械厂**（`building`）：`building.agricultural_machinery_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **机械化棉花农场**（`building`）：`building.method_cotton_collector_r6` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
-- **机械化马铃薯农场**（`building`）：`building.method_potato_collector_r6` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
+- **机械化棉花农场**（`building`）：`building.method_cotton_collector_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **机械化马铃薯农场**（`building`）：`building.method_potato_collector_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -17561,7 +17904,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：工业砖厂；解锁建筑：工业石灰厂
+解锁建筑：工业砖厂；解锁建筑：工业石灰厂；全社会 +8%；作为必要支撑：面包厂、鱼类罐头厂、乳制品厂、工业屠宰场、工业榨油厂、工业石灰岩矿场、综合工学院
 
 #### 机会成本
 
@@ -17581,7 +17924,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.manufacturing_factor`：+8%
+  - 效果机制：劳动分工与管理协调提高制造部门产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -17631,7 +17976,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：金属工具；解锁建筑：机械零件厂；解锁建筑：钢制工具厂
+解锁物资：金属工具；解锁建筑：机械零件厂；解锁建筑：钢制工具厂；金属工具制造产出 +12%；作为必要支撑：工业机械厂、蒸汽锯木厂、自动化机械零件厂
 
 #### 机会成本
 
@@ -17652,7 +17997,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 金属工具制造：`country.output.family.metal_toolmaking_factor`：+12%
+  - 效果机制：工具、机床与控制能力提高金属工具制造产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -17721,7 +18068,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：蒸汽机；解锁建筑：自动化蒸汽机厂；解锁建筑：蒸汽机工厂
+解锁物资：蒸汽机；解锁建筑：自动化蒸汽机厂；解锁建筑：蒸汽机工厂；全社会 +12%；作为必要支撑：鱼类罐头厂、蒸汽锯木厂、蒸汽航运船坞
 
 #### 机会成本
 
@@ -17742,7 +18089,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.manufacturing_factor`：+12%
+  - 效果机制：通用蒸汽动力提高制造部门产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -17799,7 +18148,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：蒸汽动力煤矿；解锁建筑：蒸汽动力铁矿
+解锁建筑：蒸汽动力煤矿；解锁建筑：蒸汽动力铁矿；全社会 +12%
 
 #### 机会成本
 
@@ -17819,7 +18168,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.extractive_factor`：+12%
+  - 效果机制：蒸汽泵提高深部采掘连续性。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -17869,7 +18220,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：铁路设备；解锁建筑：铁路设备厂；解锁建筑：铁路设备工场
+解锁物资：铁路设备；解锁建筑：铁路设备厂；解锁建筑：铁路设备工场；航运作业产出 +12%
 
 #### 机会成本
 
@@ -17890,7 +18241,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 航运作业：`country.output.family.maritime_operations_factor`：+12%
+  - 效果机制：导航、船舶与物流组织提高运输生产方式产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -17941,7 +18294,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：工业化学品；解锁建筑：玻璃厂；解锁建筑：化学工场；可利用资源：硫磺矿
+解锁物资：工业化学品；解锁建筑：玻璃厂；解锁建筑：化学工场；可利用资源：硫磺矿；化学工业产出 +12%；作为必要支撑：洗涤剂厂、炸药厂、制革厂、智能化洗涤剂厂、现代硝石矿、工业制皂厂、现代硫矿、造纸厂
 
 #### 机会成本
 
@@ -17963,7 +18316,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 化学工业：`country.output.family.chemical_industry_factor`：+12%
+  - 效果机制：配方、反应与过程控制提高化学工业产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -18027,7 +18382,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：肥料；解锁物资：磷矿石；解锁建筑：磷矿
+解锁物资：肥料；解锁物资：磷矿石；解锁建筑：磷矿；化学工业产出 +12%；作为必要支撑：自动化磷矿
 
 #### 机会成本
 
@@ -18048,7 +18403,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 化学工业：`country.output.family.chemical_industry_factor`：+12%
+  - 效果机制：配方、反应与过程控制提高化学工业产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -18176,7 +18533,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：机械化农场；解锁建筑：机械化玉米农场；小麦产出 +22%
+解锁建筑：机械化农场；解锁建筑：机械化玉米农场；小麦产出 +22%；作为必要支撑：机械化马铃薯农场
 
 #### 机会成本
 
@@ -18248,7 +18605,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-小麦产出 +20%；煤 +4%
+小麦产出 +20%；煤 +4%；作为必要支撑：机械化棉花农场
 
 #### 机会成本
 
@@ -18319,7 +18676,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：工业机械；解锁建筑：工业机械厂；解锁建筑：数字化工业机械厂；解锁建筑：制鞋厂；解锁建筑：制革厂；全社会 +6%
+解锁物资：工业机械；解锁建筑：制鞋厂；解锁建筑：工业机械厂；解锁建筑：制革厂；解锁建筑：数字化工业机械厂；全社会 +6%；作为必要支撑：造纸厂、主食加工厂
 
 #### 机会成本
 
@@ -18335,10 +18692,10 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 #### 结构化内容效果
 
 - **工业机械**（`good`）：`good.industrial_machinery` → `production_access` `unlock` `1.0`；`existing_binding`
-- **工业机械厂**（`building`）：`building.industrial_machinery_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **数字化工业机械厂**（`building`）：`building.method_industrial_machinery_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **制鞋厂**（`building`）：`building.footwear_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **工业机械厂**（`building`）：`building.industrial_machinery_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **制革厂**（`building`）：`building.leather_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **数字化工业机械厂**（`building`）：`building.method_industrial_machinery_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -18408,7 +18765,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：制衣厂；解锁建筑：蒸汽纺织厂；布匹产出 +20%；煤 +4%
+解锁建筑：制衣厂；解锁建筑：蒸汽纺织厂；布匹产出 +20%；煤 +4%；作为必要支撑：电力纺织厂、高级成衣厂、制鞋厂、改良家用织机
 
 #### 机会成本
 
@@ -18484,7 +18841,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+全社会 +8%
 
 #### 机会成本
 
@@ -18503,7 +18860,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.manufacturing_factor`：+8%
+  - 效果机制：劳动分工与管理协调提高制造部门产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -18554,7 +18913,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：高级家具厂；解锁建筑：家具厂
+解锁建筑：高级家具厂；解锁建筑：家具厂；全社会 +8%
 
 #### 机会成本
 
@@ -18574,7 +18933,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.manufacturing_factor`：+8%
+  - 效果机制：劳动分工与管理协调提高制造部门产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -18622,7 +18983,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-全社会生产投入 -3%
+全社会生产投入 -3%；作为必要支撑：电气化造船厂
 
 #### 机会成本
 
@@ -18705,7 +19066,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-全社会生产投入 -5%
+全社会生产投入 -5%；作为必要支撑：制鞋厂、制革厂
 
 #### 机会成本
 
@@ -18776,7 +19137,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：家用电器；解锁建筑：家用电器厂
+解锁物资：家用电器；解锁建筑：家用电器厂；全社会 +22%；作为必要支撑：面包厂、乳制品厂
 
 #### 机会成本
 
@@ -18796,7 +19157,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.manufacturing_factor`：+22%
+  - 效果机制：劳动分工与管理协调提高制造部门产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -18868,7 +19231,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 结构化内容效果
 
-- **蒸汽锯木厂**（`building`）：`building.method_lumber_plant_r6` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+- **蒸汽锯木厂**（`building`）：`building.method_lumber_plant_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -18923,7 +19286,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+全社会 +28%
 
 #### 机会成本
 
@@ -18942,7 +19305,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.extractive_factor`：+28%
+  - 效果机制：公司化矿山组织强化采掘部门产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -18991,7 +19356,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+全社会 +22%
 
 #### 机会成本
 
@@ -19010,7 +19375,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.manufacturing_factor`：+22%
+  - 效果机制：劳动分工与管理协调提高制造部门产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -19147,7 +19514,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：肥料；解锁建筑：化肥厂
+解锁物资：肥料；解锁建筑：化肥厂；玉米产出 +25%
 
 #### 机会成本
 
@@ -19167,7 +19534,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 玉米：`country.output.good.corn_grain_factor`：+25%
+  - 效果机制：辨识、繁育与田间体系提高玉米产出。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -19361,7 +19730,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：酿造厂；解锁建筑：主食加工厂；解锁建筑：珠宝厂；解锁建筑：电力纺织厂；解锁建筑：高级成衣厂；全社会 +12%；全社会家庭消费 +3%
+解锁建筑：酿造厂；解锁建筑：电力纺织厂；解锁建筑：高级成衣厂；解锁建筑：珠宝厂；解锁建筑：主食加工厂；全社会 +12%；全社会家庭消费 +3%；作为必要支撑：混凝土厂、高级家具厂、家具厂、家用电器厂、工业屠宰场、智能化汽车厂、电气化造船厂、电气化包装厂、电气印刷厂、工业制皂厂、综合食品厂
 
 #### 机会成本
 
@@ -19377,10 +19746,10 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 #### 结构化内容效果
 
 - **酿造厂**（`building`）：`building.beverages_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **主食加工厂**（`building`）：`building.staple_food_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **珠宝厂**（`building`）：`building.jewelry_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **电力纺织厂**（`building`）：`building.cloth_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **高级成衣厂**（`building`）：`building.fine_clothing_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **珠宝厂**（`building`）：`building.jewelry_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **主食加工厂**（`building`）：`building.staple_food_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -19439,7 +19808,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：原油；解锁建筑：油田；可利用资源：石油
+解锁物资：原油；解锁建筑：蒸汽钻井场；可利用资源：石油；石油开采产出 +12%；作为必要支撑：油田
 
 #### 机会成本
 
@@ -19448,19 +19817,21 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 #### 内容解锁
 
 - **物资：** 原油 (`crude_oil`)
-- **建筑 / 生产方式：** 油田 (`oil_collector`)
+- **建筑 / 生产方式：** 蒸汽钻井场 (`early_oil_well`)
 - **自然资源：** 石油 (`oil`)
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 蒸汽钻井场 (`early_oil_well`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 油田 (`oil_collector`)
 
 #### 结构化内容效果
 
 - **原油**（`good`）：`good.crude_oil` → `production_access` `unlock` `1.0`；`existing_binding`
-- **油田**（`building`）：`building.oil_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **蒸汽钻井场**（`building`）：`building.early_oil_well` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **石油**（`resource`）：`resource.oil` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-无
+- 石油开采：`country.output.family.oil_extraction_factor`：+12%
+  - 效果机制：石油开采、炼制与材料应用提高石油产业链产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -19517,7 +19888,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：精炼燃料；解锁建筑：智能炼油厂；解锁建筑：炼油厂
+解锁物资：精炼燃料；解锁建筑：智能炼油厂；解锁建筑：炼油厂；石油开采产出 +12%
 
 #### 机会成本
 
@@ -19538,7 +19909,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 石油开采：`country.output.family.oil_extraction_factor`：+12%
+  - 效果机制：石油开采、炼制与材料应用提高石油产业链产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -19591,7 +19964,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：汽车；解锁物资：发动机；解锁建筑：汽车厂；解锁建筑：发动机厂
+解锁物资：汽车；解锁物资：发动机；解锁建筑：汽车厂；解锁建筑：发动机厂；石油开采产出 +12%；作为必要支撑：燃气发电厂、智能化汽车厂、智能化发动机厂
 
 #### 机会成本
 
@@ -19613,7 +19986,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 石油开采：`country.output.family.oil_extraction_factor`：+12%
+  - 效果机制：石油开采、炼制与材料应用提高石油产业链产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -19741,7 +20116,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：金属线材；解锁建筑：智能化线材厂；解锁建筑：线材厂
+解锁物资：金属线材；解锁建筑：智能化线材厂；解锁建筑：线材厂；全社会 +10%
 
 #### 机会成本
 
@@ -19762,7 +20137,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.energy_factor`：+10%
+  - 效果机制：发电与燃料循环知识提高能源部门产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -19825,7 +20202,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：锌；解锁建筑：电化工厂；解锁建筑：炼锌厂；解锁建筑：电池厂
+解锁物资：锌；解锁建筑：电池厂；解锁建筑：电化工厂；解锁建筑：炼锌厂；化学工业产出 +12%；作为必要支撑：洗涤剂厂、智能化洗涤剂厂
 
 #### 机会成本
 
@@ -19841,13 +20218,15 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 #### 结构化内容效果
 
 - **锌**（`good`）：`good.zinc` → `production_access` `unlock` `1.0`；`existing_binding`
+- **电池厂**（`building`）：`building.batteries_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **电化工厂**（`building`）：`building.electrochemical_works` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **炼锌厂**（`building`）：`building.zinc_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **电池厂**（`building`）：`building.batteries_plant` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
 
 #### 永久 Modifier 条款
 
-无
+- 化学工业：`country.output.family.chemical_industry_factor`：+12%
+  - 效果机制：配方、反应与过程控制提高化学工业产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -19895,7 +20274,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：电子元件；解锁物资：无线电设备；解锁建筑：电子元件厂；解锁建筑：无线电设备厂
+解锁物资：电子元件；解锁物资：无线电设备；解锁建筑：电子元件厂；解锁建筑：无线电设备厂；科学领域研究效率 +8%；作为必要支撑：智能化无线电设备厂
 
 #### 机会成本
 
@@ -19917,7 +20296,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 科学领域研究效率：`country.research.science_efficiency`：+8%
+  - 效果机制：通信、计算与控制方法提高科学研究效率。
+  - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
 #### 被以下科技作为硬前置
 
@@ -19972,7 +20353,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：电力；解锁建筑：燃煤发电厂；解锁建筑：燃气发电厂
+解锁物资：电力；解锁建筑：燃煤发电厂；解锁建筑：燃气发电厂；全社会 +10%；作为必要支撑：河流水力发电站
 
 #### 机会成本
 
@@ -19993,7 +20374,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.energy_factor`：+10%
+  - 效果机制：发电与燃料循环知识提高能源部门产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -20044,7 +20427,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：绝缘电缆；解锁建筑：绝缘电缆厂；解锁建筑：智能化绝缘电缆厂；电力产出 +18%
+解锁物资：绝缘电缆；解锁建筑：绝缘电缆厂；解锁建筑：智能化绝缘电缆厂；电力产出 +18%；作为必要支撑：燃气发电厂、河流水力发电站、自动化港口船舶中心、燃油发电厂
 
 #### 机会成本
 
@@ -20119,7 +20502,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+科学领域研究效率 +8%
 
 #### 机会成本
 
@@ -20138,7 +20521,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 科学领域研究效率：`country.research.science_efficiency`：+8%
+  - 效果机制：通信、计算与控制方法提高科学研究效率。
+  - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
 #### 被以下科技作为硬前置
 
@@ -20191,7 +20576,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：电动机；解锁建筑：电动机厂；解锁建筑：智能化电动机厂；解锁建筑：电气化造船厂；煤 -4%
+解锁物资：电动机；解锁建筑：电动机厂；解锁建筑：智能化电动机厂；解锁建筑：电气化造船厂；煤 -4%；作为必要支撑：家用电器厂、智能化家用电器厂
 
 #### 机会成本
 
@@ -20262,7 +20647,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：机械化橡胶种植园；解锁建筑：机械化香料种植园
+解锁建筑：机械化橡胶种植园；解锁建筑：机械化香料种植园；小麦产出 +12%
 
 #### 机会成本
 
@@ -20282,7 +20667,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 小麦：`country.output.good.wheat_grain_factor`：+12%
+  - 效果机制：小麦辨识、繁育与旱作体系提高小麦产出。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -20337,7 +20724,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：智能牧业站
+解锁建筑：智能牧业站；畜牧业产出 +28%
 
 #### 机会成本
 
@@ -20356,7 +20743,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 畜牧业：`country.output.family.livestock_husbandry_factor`：+28%
+  - 效果机制：畜群管理、繁育与加工体系提高畜牧业产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -20413,7 +20802,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-全社会经济产出 +3%
+全社会经济产出 +3%；作为必要支撑：电力纺织厂、高级成衣厂、珠宝厂
 
 #### 机会成本
 
@@ -20483,7 +20872,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：科学仪器；解锁建筑：智能仪器厂；解锁建筑：科学仪器工坊；全社会 +6%
+解锁物资：科学仪器；解锁建筑：智能仪器厂；解锁建筑：科学仪器工坊；全社会 +6%；作为必要支撑：精密仪器厂
 
 #### 机会成本
 
@@ -20561,7 +20950,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：蒸汽钻井场；解锁建筑：燃油发电厂；oil -10%
+解锁建筑：油田；解锁建筑：燃油发电厂；oil -10%
 
 #### 机会成本
 
@@ -20570,13 +20959,13 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 蒸汽钻井场 (`early_oil_well`)；燃油发电厂 (`oil_power_plant`)
+- **建筑 / 生产方式：** 油田 (`oil_collector`)；燃油发电厂 (`oil_power_plant`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
-- **蒸汽钻井场**（`building`）：`building.early_oil_well` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **油田**（`building`）：`building.oil_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **燃油发电厂**（`building`）：`building.oil_power_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -20640,7 +21029,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：现代炸药厂；解锁建筑：精密仪器厂；全社会生产投入 -4%
+解锁建筑：现代炸药厂；解锁建筑：精密仪器厂；全社会生产投入 -4%；作为必要支撑：珠宝厂、工业屠宰场、自动化水泥厂、自动化焦化厂、自动化混凝土厂、工业榨油厂、数字化工业机械厂、自动化炼铅厂、自动化润滑油厂、自动化机械零件厂、精密工具厂、自动化蒸汽机厂、自动化炼锌厂、综合食品厂、主食加工厂
 
 #### 机会成本
 
@@ -20711,7 +21100,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-肉类 -8%
+肉类 -8%；作为必要支撑：乳制品厂
 
 #### 机会成本
 
@@ -20937,7 +21326,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：电气化集约农场
+解锁建筑：电气化集约农场；玉米产出 +12%
 
 #### 机会成本
 
@@ -20956,7 +21345,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 玉米：`country.output.good.corn_grain_factor`：+12%
+  - 效果机制：辨识、繁育与田间体系提高玉米产出。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -21015,7 +21406,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：铅；解锁物资：钢材；解锁建筑：炼铜厂；解锁建筑：炼锡厂
+解锁物资：铅；解锁物资：钢材；解锁建筑：炼铜厂；解锁建筑：炼锡厂；炼钢产出 +12%；作为必要支撑：炼铅厂、智能冶铝厂、自动化炼铅厂、智能战略金属冶炼厂、智能化不锈钢厂、自动化炼锌厂
 
 #### 机会成本
 
@@ -21037,7 +21428,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 炼钢：`country.output.family.steelmaking_factor`：+12%
+  - 效果机制：先进冶金提高炼钢生产方式产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -21092,7 +21485,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：核燃料；解锁物资：反应堆部件；解锁建筑：核燃料厂；解锁建筑：核医学制药中心
+解锁物资：核燃料；解锁物资：反应堆部件；解锁建筑：核燃料厂；解锁建筑：核医学制药中心；全社会 +10%
 
 #### 机会成本
 
@@ -21114,7 +21507,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.energy_factor`：+10%
+  - 效果机制：发电与燃料循环知识提高能源部门产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -21239,7 +21634,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：铝土矿；解锁建筑：铝土矿；解锁建筑：炼铅厂；可利用资源：铝土矿
+解锁物资：铝土矿；解锁建筑：铝土矿；解锁建筑：炼铅厂；可利用资源：铝土矿；geospatial\_analysis\_institution产出 +12%；作为必要支撑：天然气田、战略矿山
 
 #### 机会成本
 
@@ -21261,7 +21656,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- geospatial\_analysis\_institution：`country.output.family.geospatial_analysis_institution_factor`：+12%
+  - 效果机制：测绘、遥感与地理分析提高地理空间机构产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -21313,7 +21710,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+社会领域研究效率 +8%
 
 #### 机会成本
 
@@ -21332,7 +21729,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 社会领域研究效率：`country.research.society_efficiency`：+8%
+  - 效果机制：制度记录与组织经验提高社会领域研究效率。
+  - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
 #### 被以下科技作为硬前置
 
@@ -21393,7 +21792,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：石化产品；解锁建筑：石油化工厂；解锁建筑：智能石油化工厂；解锁物资：洗涤剂；解锁建筑：洗涤剂厂；解锁建筑：智能化洗涤剂厂
+解锁物资：石化产品；解锁物资：洗涤剂；解锁建筑：洗涤剂厂；解锁建筑：智能化洗涤剂厂；解锁建筑：智能石油化工厂；解锁建筑：石油化工厂；石油开采产出 +12%；作为必要支撑：现代炸药厂
 
 #### 机会成本
 
@@ -21409,15 +21808,17 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 #### 结构化内容效果
 
 - **石化产品**（`good`）：`good.petrochemicals` → `production_access` `unlock` `1.0`；`catalog_rebind`
-- **石油化工厂**（`building`）：`building.petrochemicals_plant` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
-- **智能石油化工厂**（`building`）：`building.method_petrochemicals_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
 - **洗涤剂**（`good`）：`good.detergent` → `production_access` `unlock` `1.0`；`catalog_rebind`
-- **洗涤剂厂**（`building`）：`building.detergent_plant` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
-- **智能化洗涤剂厂**（`building`）：`building.method_detergent_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
+- **洗涤剂厂**（`building`）：`building.detergent_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **智能化洗涤剂厂**（`building`）：`building.method_detergent_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **智能石油化工厂**（`building`）：`building.method_petrochemicals_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **石油化工厂**（`building`）：`building.petrochemicals_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-无
+- 石油开采：`country.output.family.oil_extraction_factor`：+12%
+  - 效果机制：石油开采、炼制与材料应用提高石油产业链产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -21471,7 +21872,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：混凝土；解锁物资：合成橡胶；解锁建筑：混凝土厂；解锁建筑：合成橡胶厂
+解锁物资：混凝土；解锁物资：合成橡胶；解锁建筑：混凝土厂；解锁建筑：合成橡胶厂；石油开采产出 +28%；作为必要支撑：现代炸药厂、智能化合成橡胶厂
 
 #### 机会成本
 
@@ -21493,7 +21894,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 石油开采：`country.output.family.oil_extraction_factor`：+28%
+  - 效果机制：石油开采、炼制与材料应用提高石油产业链产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -21543,7 +21946,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：锰矿；解锁建筑：智能锰矿；解锁建筑：现代硝石矿；解锁建筑：现代硫矿；铁矿石 -10%；煤 -10%
+解锁建筑：锰矿；解锁建筑：智能锰矿；解锁建筑：现代硝石矿；解锁建筑：现代硫矿；铁矿石 -10%；煤 -10%；作为必要支撑：自动化磷矿、自动化锌矿
 
 #### 机会成本
 
@@ -21560,8 +21963,8 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 - **锰矿**（`building`）：`building.manganese_ore_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **智能锰矿**（`building`）：`building.method_manganese_ore_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **现代硝石矿**（`building`）：`building.method_saltpeter_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
-- **现代硫矿**（`building`）：`building.method_sulfur_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
+- **现代硝石矿**（`building`）：`building.method_saltpeter_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **现代硫矿**（`building`）：`building.method_sulfur_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -21629,7 +22032,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+pharmaceuticals产出 +12%
 
 #### 机会成本
 
@@ -21648,7 +22051,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- pharmaceuticals：`country.output.good.pharmaceuticals_factor`：+12%
+  - 效果机制：卫生组织与防疫体系提高药品有效供给。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -21707,7 +22112,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：核电站；解锁建筑：核反应堆设备厂
+解锁建筑：核电站；解锁建筑：核反应堆设备厂；全社会 +10%；作为必要支撑：智能化核反应堆设备厂
 
 #### 机会成本
 
@@ -21727,7 +22132,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.energy_factor`：+10%
+  - 效果机制：发电与燃料循环知识提高能源部门产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -21774,7 +22181,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：电池
+解锁物资：电池；金属工具制造产出 +12%；作为必要支撑：自动化润滑油厂、精密工具厂、精密仪器厂
 
 #### 机会成本
 
@@ -21793,7 +22200,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 金属工具制造：`country.output.family.metal_toolmaking_factor`：+12%
+  - 效果机制：工具、机床与控制能力提高金属工具制造产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -21855,7 +22264,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+航运作业产出 +12%；作为必要支撑：自动化港口船舶中心
 
 #### 机会成本
 
@@ -21874,7 +22283,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 航运作业：`country.output.family.maritime_operations_factor`：+12%
+  - 效果机制：导航、船舶与物流组织提高运输生产方式产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -21933,7 +22344,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：铝；解锁物资：不锈钢；解锁建筑：电解铝厂；解锁建筑：不锈钢厂
+解锁物资：铝；解锁物资：不锈钢；解锁建筑：电解铝厂；解锁建筑：不锈钢厂；炼钢产出 +28%；作为必要支撑：智能冶铝厂、智能化不锈钢厂
 
 #### 机会成本
 
@@ -21955,7 +22366,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 炼钢：`country.output.family.steelmaking_factor`：+28%
+  - 效果机制：专用合金知识强化高端炼钢生产方式产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -22006,7 +22419,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：天然气；解锁建筑：智能天然气田；解锁建筑：天然气田；可利用资源：天然气；石化产品产出 +22%；原油 +6%
+解锁物资：天然气；解锁建筑：智能天然气田；解锁建筑：天然气田；可利用资源：天然气；石化产品产出 +22%；原油 +6%；作为必要支撑：燃气发电厂
 
 #### 机会成本
 
@@ -22090,7 +22503,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：塑料；解锁建筑：智能化塑料厂；解锁建筑：塑料厂
+解锁物资：塑料；解锁建筑：智能化塑料厂；解锁建筑：塑料厂；石油开采产出 +28%
 
 #### 机会成本
 
@@ -22111,7 +22524,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 石油开采：`country.output.family.oil_extraction_factor`：+28%
+  - 效果机制：石油开采、炼制与材料应用提高石油产业链产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -22169,7 +22584,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+畜牧业产出 +28%
 
 #### 机会成本
 
@@ -22188,7 +22603,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 畜牧业：`country.output.family.livestock_husbandry_factor`：+28%
+  - 效果机制：畜群管理、繁育与加工体系提高畜牧业产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -22236,7 +22653,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+全社会 +8%
 
 #### 机会成本
 
@@ -22255,7 +22672,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.manufacturing_factor`：+8%
+  - 效果机制：劳动分工与管理协调提高制造部门产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -22312,7 +22731,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+小麦产出 +28%
 
 #### 机会成本
 
@@ -22331,7 +22750,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 小麦：`country.output.good.wheat_grain_factor`：+28%
+  - 效果机制：小麦辨识、繁育与旱作体系提高小麦产出。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -22383,7 +22804,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：智能化核燃料厂
+解锁建筑：智能化核燃料厂；全社会 +24%
 
 #### 机会成本
 
@@ -22402,7 +22823,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.energy_factor`：+24%
+  - 效果机制：发电与燃料循环知识提高能源部门产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -22459,7 +22882,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：合成纤维；解锁建筑：合成纤维厂；解锁建筑：合成纤维织造厂
+解锁物资：合成纤维；解锁建筑：合成纤维厂；解锁建筑：合成纤维织造厂；布匹织造产出 +25%；作为必要支撑：智能化合成纤维厂、合成纤维织造厂
 
 #### 机会成本
 
@@ -22480,7 +22903,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 布匹织造：`country.output.family.cloth_weaving_factor`：+25%
+  - 效果机制：纤维处理、纺纱与织造方法提高布匹生产链产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -22613,7 +23038,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：战略矿物材料；解锁物资：战略矿石；解锁建筑：战略金属冶炼厂；全社会生产投入 -3%
+解锁物资：战略矿物材料；解锁物资：战略矿石；解锁建筑：战略金属冶炼厂；全社会生产投入 -3%；作为必要支撑：智能战略金属冶炼厂
 
 #### 机会成本
 
@@ -22765,7 +23190,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：数字化农业机械厂；解锁建筑：精准农场；解锁建筑：高地精准块茎农业；全社会 +8%
+解锁建筑：数字化农业机械厂；解锁建筑：高地精准块茎农业；解锁建筑：精准农场；全社会 +8%；作为必要支撑：专用商品作物种植园
 
 #### 机会成本
 
@@ -22781,8 +23206,8 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 #### 结构化内容效果
 
 - **数字化农业机械厂**（`building`）：`building.method_agricultural_machinery_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **高地精准块茎农业**（`building`）：`building.method_highland_precision_agriculture` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **精准农场**（`building`）：`building.precision_farm` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **高地精准块茎农业**（`building`）：`building.method_highland_precision_agriculture` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
 
 #### 永久 Modifier 条款
 
@@ -22836,7 +23261,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：计算机；解锁建筑：计算机厂；解锁建筑：早期计算机工场；全社会 +6%
+解锁物资：计算机；解锁建筑：计算机厂；解锁建筑：早期计算机工场；全社会 +6%；作为必要支撑：早期半导体厂、地理空间分析中心
 
 #### 机会成本
 
@@ -22926,7 +23351,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+科学领域研究效率 +8%
 
 #### 机会成本
 
@@ -22945,7 +23370,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 科学领域研究效率：`country.research.science_efficiency`：+8%
+  - 效果机制：通信、计算与控制方法提高科学研究效率。
+  - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
 #### 被以下科技作为硬前置
 
@@ -23217,7 +23644,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：先进芯片；解锁物资：半导体；解锁建筑：早期半导体厂；解锁建筑：半导体厂；全社会 +5%
+解锁物资：先进芯片；解锁物资：半导体；解锁建筑：早期半导体厂；解锁建筑：半导体厂；全社会 +5%；作为必要支撑：智能化电子元件厂
 
 #### 机会成本
 
@@ -23299,7 +23726,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：森林遥感经营站
+解锁建筑：森林遥感经营站；geospatial\_analysis\_institution产出 +12%；作为必要支撑：自主林业经营站
 
 #### 机会成本
 
@@ -23318,7 +23745,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- geospatial\_analysis\_institution：`country.output.family.geospatial_analysis_institution_factor`：+12%
+  - 效果机制：测绘、遥感与地理分析提高地理空间机构产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -23370,7 +23799,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：自动化港口船舶中心
+解锁建筑：自动化港口船舶中心；航运作业产出 +12%
 
 #### 机会成本
 
@@ -23389,7 +23818,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 航运作业：`country.output.family.maritime_operations_factor`：+12%
+  - 效果机制：导航、船舶与物流组织提高运输生产方式产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -23439,7 +23870,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+农业领域研究效率 +8%；作为必要支撑：高地精准块茎农业、专用商品作物种植园
 
 #### 机会成本
 
@@ -23458,7 +23889,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 农业领域研究效率：`country.research.agriculture_efficiency`：+8%
+  - 效果机制：自然观察、生物分类与育种方法提高农业研究效率。
+  - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
 #### 被以下科技作为硬前置
 
@@ -23510,7 +23943,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：自动化铝土矿；解锁建筑：战略矿山；可利用资源：稀土；可利用资源：锰矿；解锁建筑：自动化锌矿；terrain.desert.extractive产出 +25%
+解锁建筑：自动化铝土矿；解锁建筑：自动化锌矿；解锁建筑：战略矿山；可利用资源：稀土；可利用资源：锰矿；terrain.desert.extractive产出 +25%；作为必要支撑：自动化铅矿、自动化炼铅厂、智能锰矿、智能天然气田、自动化磷矿、智能战略矿山、智能战略金属冶炼厂、自动化炼锌厂
 
 #### 机会成本
 
@@ -23526,10 +23959,10 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 #### 结构化内容效果
 
 - **自动化铝土矿**（`building`）：`building.method_bauxite_collector_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **自动化锌矿**（`building`）：`building.method_zinc_ore_collector_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **战略矿山**（`building`）：`building.rare_earth_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **稀土**（`resource`）：`resource.rare_earth` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 - **锰矿**（`resource`）：`resource.manganese_ore` → `local_resource_access` `unlock` `1.0`；`existing_binding`
-- **自动化锌矿**（`building`）：`building.method_zinc_ore_collector_r9` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
 
 #### 永久 Modifier 条款
 
@@ -23585,7 +24018,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+geospatial\_analysis\_institution产出 +12%
 
 #### 机会成本
 
@@ -23604,7 +24037,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- geospatial\_analysis\_institution：`country.output.family.geospatial_analysis_institution_factor`：+12%
+  - 效果机制：测绘、遥感与地理分析提高地理空间机构产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -23650,7 +24085,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：自动化焦化厂；解锁建筑：自动化机械零件厂；解锁建筑：自动化炼铅厂；解锁建筑：自动化炼锌厂；解锁建筑：自动化磷矿；解锁建筑：自动化混凝土厂
+解锁建筑：自动化焦化厂；解锁建筑：自动化混凝土厂；解锁建筑：自动化炼铅厂；解锁建筑：自动化机械零件厂；解锁建筑：自动化磷矿；解锁建筑：自动化炼锌厂；科学领域研究效率 +8%；作为必要支撑：智能冶铝厂、自动化港口船舶中心、智能化汽车厂、智能化电池厂、自动化水泥厂、智能化洗涤剂厂、智能化电动机厂、智能化电子元件厂、智能化发动机厂、自动化炸药厂、智能化家用电器厂、数字化工业机械厂、智能化绝缘电缆厂、自动化润滑油厂、自动化机械零件厂、智能化核燃料厂、智能石油化工厂、智能化塑料厂、智能工具厂、智能化无线电设备厂、智能战略矿山、智能战略金属冶炼厂、智能化核反应堆设备厂、智能炼油厂、智能仪器厂、智能化不锈钢厂、自动化蒸汽机厂、智能化合成纤维厂、智能化合成橡胶厂、智能化线材厂
 
 #### 机会成本
 
@@ -23666,15 +24101,17 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 #### 结构化内容效果
 
 - **自动化焦化厂**（`building`）：`building.method_coke_ovens_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **自动化机械零件厂**（`building`）：`building.method_machine_parts_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **自动化混凝土厂**（`building`）：`building.method_concrete_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **自动化炼铅厂**（`building`）：`building.method_lead_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **自动化机械零件厂**（`building`）：`building.method_machine_parts_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **自动化磷矿**（`building`）：`building.method_phosphate_rock_collector_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **自动化炼锌厂**（`building`）：`building.method_zinc_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **自动化磷矿**（`building`）：`building.method_phosphate_rock_collector_r9` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
-- **自动化混凝土厂**（`building`）：`building.method_concrete_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
 
 #### 永久 Modifier 条款
 
-无
+- 科学领域研究效率：`country.research.science_efficiency`：+8%
+  - 效果机制：通信、计算与控制方法提高科学研究效率。
+  - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
 #### 被以下科技作为硬前置
 
@@ -23728,7 +24165,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+geospatial\_analysis\_institution产出 +12%
 
 #### 机会成本
 
@@ -23747,7 +24184,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- geospatial\_analysis\_institution：`country.output.family.geospatial_analysis_institution_factor`：+12%
+  - 效果机制：测绘、遥感与地理分析提高地理空间机构产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -23797,7 +24236,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：流域治理中心
+解锁建筑：流域治理中心；geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网控制中心
 
 #### 机会成本
 
@@ -23816,7 +24255,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- geospatial\_analysis\_institution：`country.output.family.geospatial_analysis_institution_factor`：+28%
+  - 效果机制：测绘、遥感与地理分析提高地理空间机构产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -23938,7 +24379,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+全社会 +8%
 
 #### 机会成本
 
@@ -23957,7 +24398,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.manufacturing_factor`：+8%
+  - 效果机制：劳动分工与管理协调提高制造部门产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -24016,7 +24459,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+国内贸易容量 +20%
 
 #### 机会成本
 
@@ -24035,7 +24478,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 国内贸易容量：`country.trade.capacity_factor`：+20%
+  - 效果机制：市场组织与结算网络扩大国内贸易容量。
+  - 运行时消费者：`NativeEconomyRuntime::capture_country_epoch`
 
 #### 被以下科技作为硬前置
 
@@ -24092,7 +24537,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：地理空间分析中心
+解锁建筑：地理空间分析中心；geospatial\_analysis\_institution产出 +12%；作为必要支撑：森林遥感经营站、高地精准块茎农业、流域治理中心
 
 #### 机会成本
 
@@ -24107,11 +24552,13 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 结构化内容效果
 
-- **地理空间分析中心**（`building`）：`building.geospatial_analysis_center` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+- **地理空间分析中心**（`building`）：`building.geospatial_analysis_center` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
-无
+- geospatial\_analysis\_institution：`country.output.family.geospatial_analysis_institution_factor`：+12%
+  - 效果机制：测绘、遥感与地理分析提高地理空间机构产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -24164,7 +24611,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+稻米产出 +12%
 
 #### 机会成本
 
@@ -24183,7 +24630,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 稻米：`country.output.good.rice_grain_factor`：+12%
+  - 效果机制：稻类辨识、水田组织与灌溉控制提高稻米产出。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -24233,7 +24682,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+科学领域研究效率 +8%；作为必要支撑：自动化水泥厂、自动化焦化厂、自动化混凝土厂、数字化工业机械厂、自动化炼铅厂、智能牧业站、自动化炼锌厂
 
 #### 机会成本
 
@@ -24252,7 +24701,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 科学领域研究效率：`country.research.science_efficiency`：+8%
+  - 效果机制：通信、计算与控制方法提高科学研究效率。
+  - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
 #### 被以下科技作为硬前置
 
@@ -24312,7 +24763,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+农业领域研究效率 +8%
 
 #### 机会成本
 
@@ -24331,7 +24782,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 农业领域研究效率：`country.research.agriculture_efficiency`：+8%
+  - 效果机制：自然观察、生物分类与育种方法提高农业研究效率。
+  - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
 #### 被以下科技作为硬前置
 
@@ -24461,7 +24914,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：高端芯片厂；解锁建筑：智能研究院；全社会经济产出 +5%
+解锁建筑：高端芯片厂；解锁建筑：智能研究院；全社会经济产出 +5%；作为必要支撑：智能化洗涤剂厂、智能石油化工厂、智能化塑料厂、智能炼油厂、智能化合成纤维厂、智能化合成橡胶厂
 
 #### 机会成本
 
@@ -24534,7 +24987,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：自动化农场
+解锁建筑：自动化农场；全社会 +22%；作为必要支撑：专用商品作物种植园
 
 #### 机会成本
 
@@ -24553,7 +25006,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.agriculture_factor`：+22%
+  - 效果机制：自动化农业提高全社会农业作业的连续性。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -24608,7 +25063,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+科学领域研究效率 +22%
 
 #### 机会成本
 
@@ -24627,7 +25082,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 科学领域研究效率：`country.research.science_efficiency`：+22%
+  - 效果机制：通信、计算与控制方法提高科学研究效率。
+  - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
 #### 被以下科技作为硬前置
 
@@ -24677,7 +25134,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：智能化家用电器厂；解锁建筑：智能工具厂
+解锁建筑：智能化家用电器厂；解锁建筑：智能工具厂；全社会 +22%；作为必要支撑：智能工具厂
 
 #### 机会成本
 
@@ -24697,7 +25154,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.manufacturing_factor`：+22%
+  - 效果机制：劳动分工与管理协调提高制造部门产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -24744,7 +25203,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁物资：自主系统；解锁建筑：自主控制系统厂；解锁建筑：自主林业经营站；全社会经济产出 +6%
+解锁物资：自主系统；解锁建筑：自主控制系统厂；解锁建筑：自主林业经营站；全社会经济产出 +6%；作为必要支撑：自主航运调度港、智能化核燃料厂、智能化核反应堆设备厂、智能牧业站、智能水网控制中心
 
 #### 机会成本
 
@@ -24761,7 +25220,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 - **自主系统**（`good`）：`good.autonomous_systems` → `production_access` `unlock` `1.0`；`existing_binding`
 - **自主控制系统厂**（`building`）：`building.autonomous_systems_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **自主林业经营站**（`building`）：`building.method_autonomous_forestry` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
+- **自主林业经营站**（`building`）：`building.method_autonomous_forestry` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -24822,7 +25281,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：智能化汽车厂；解锁建筑：智能化发动机厂；解锁建筑：智能化合成纤维厂；解锁建筑：智能化合成橡胶厂；解锁建筑：智能冶铝厂；解锁建筑：智能化不锈钢厂；解锁建筑：智能化核反应堆设备厂；解锁建筑：智能战略金属冶炼厂；全社会 +8%
+解锁建筑：智能冶铝厂；解锁建筑：智能化汽车厂；解锁建筑：智能化发动机厂；解锁建筑：智能战略金属冶炼厂；解锁建筑：智能化核反应堆设备厂；解锁建筑：智能化不锈钢厂；解锁建筑：智能化合成纤维厂；解锁建筑：智能化合成橡胶厂；全社会 +8%；作为必要支撑：智能化电池厂、智能化洗涤剂厂、智能化电动机厂、智能化电子元件厂、自动化炸药厂、智能化家用电器厂、智能化绝缘电缆厂、智能化核燃料厂、智能石油化工厂、智能化塑料厂、智能工具厂、智能化无线电设备厂、智能炼油厂、智能仪器厂、智能化线材厂
 
 #### 机会成本
 
@@ -24837,14 +25296,14 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 结构化内容效果
 
+- **智能冶铝厂**（`building`）：`building.method_aluminum_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **智能化汽车厂**（`building`）：`building.method_automobiles_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **智能化发动机厂**（`building`）：`building.method_engines_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **智能战略金属冶炼厂**（`building`）：`building.method_rare_earth_metals_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **智能化核反应堆设备厂**（`building`）：`building.method_reactor_component_works_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **智能化不锈钢厂**（`building`）：`building.method_stainless_steel_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **智能化合成纤维厂**（`building`）：`building.method_synthetic_fiber_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **智能化合成橡胶厂**（`building`）：`building.method_synthetic_rubber_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **智能冶铝厂**（`building`）：`building.method_aluminum_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **智能化不锈钢厂**（`building`）：`building.method_stainless_steel_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **智能化核反应堆设备厂**（`building`）：`building.method_reactor_component_works_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **智能战略金属冶炼厂**（`building`）：`building.method_rare_earth_metals_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
 
 #### 永久 Modifier 条款
 
@@ -24909,7 +25368,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：智能硝石矿；解锁建筑：智能硫矿；解锁建筑：智能战略矿山；铁矿石 -12%；全社会 +15%
+解锁建筑：智能战略矿山；解锁建筑：智能硝石矿；解锁建筑：智能硫矿；铁矿石 -12%；全社会 +15%；作为必要支撑：智能锰矿、智能天然气田、智能硝石矿、智能硫矿
 
 #### 机会成本
 
@@ -24924,9 +25383,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 结构化内容效果
 
+- **智能战略矿山**（`building`）：`building.method_rare_earth_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **智能硝石矿**（`building`）：`building.method_saltpeter_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **智能硫矿**（`building`）：`building.method_sulfur_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **智能战略矿山**（`building`）：`building.method_rare_earth_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
 
 #### 永久 Modifier 条款
 
@@ -24987,7 +25446,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+农业领域研究效率 +22%
 
 #### 机会成本
 
@@ -25006,7 +25465,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 农业领域研究效率：`country.research.agriculture_efficiency`：+22%
+  - 效果机制：自然观察、生物分类与育种方法提高农业研究效率。
+  - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
 #### 被以下科技作为硬前置
 
@@ -25145,7 +25606,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：智能化电池厂；电力产出 +22%
+解锁建筑：智能化电池厂；电力产出 +22%；作为必要支撑：自主林业经营站、自主航运调度港、智能化电池厂、智能化电动机厂、智能化绝缘电缆厂、智能牧业站、智能化线材厂、智能水网控制中心
 
 #### 机会成本
 
@@ -25294,7 +25755,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：智能化电子元件厂；解锁建筑：智能化无线电设备厂
+解锁建筑：智能化电子元件厂；解锁建筑：智能化无线电设备厂；科学领域研究效率 +22%；作为必要支撑：自主航运调度港、智能仪器厂
 
 #### 机会成本
 
@@ -25314,7 +25775,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 科学领域研究效率：`country.research.science_efficiency`：+22%
+  - 效果机制：通信、计算与控制方法提高科学研究效率。
+  - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
 #### 被以下科技作为硬前置
 
@@ -25365,7 +25828,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+农业领域研究效率 +22%
 
 #### 机会成本
 
@@ -25384,7 +25847,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 农业领域研究效率：`country.research.agriculture_efficiency`：+22%
+  - 效果机制：自然观察、生物分类与育种方法提高农业研究效率。
+  - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
 #### 被以下科技作为硬前置
 
@@ -25439,7 +25904,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：自主航运调度港
+解锁建筑：自主航运调度港；航运作业产出 +28%
 
 #### 机会成本
 
@@ -25458,7 +25923,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 航运作业：`country.output.family.maritime_operations_factor`：+28%
+  - 效果机制：导航、船舶与物流组织提高运输生产方式产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -25508,7 +25975,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+科学领域研究效率 +22%；作为必要支撑：自主林业经营站、智能仪器厂
 
 #### 机会成本
 
@@ -25527,7 +25994,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 科学领域研究效率：`country.research.science_efficiency`：+22%
+  - 效果机制：通信、计算与控制方法提高科学研究效率。
+  - 运行时消费者：`NativeCountryRuntime::process_research_day`
 
 #### 被以下科技作为硬前置
 
@@ -25653,7 +26122,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+全社会 +8%；作为必要支撑：智能冶铝厂、智能化汽车厂、智能化洗涤剂厂、智能化发动机厂、自动化炸药厂、智能化家用电器厂、智能石油化工厂、智能化塑料厂、智能战略金属冶炼厂、智能化核反应堆设备厂、智能炼油厂、智能化不锈钢厂、智能化合成纤维厂、智能化合成橡胶厂
 
 #### 机会成本
 
@@ -25672,7 +26141,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.manufacturing_factor`：+8%
+  - 效果机制：劳动分工与管理协调提高制造部门产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -25728,7 +26199,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+稻米产出 +28%
 
 #### 机会成本
 
@@ -25747,7 +26218,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 稻米：`country.output.good.rice_grain_factor`：+28%
+  - 效果机制：稻类辨识、水田组织与灌溉控制提高稻米产出。
+  - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
 
 #### 被以下科技作为硬前置
 
@@ -25797,7 +26270,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+全社会 +22%
 
 #### 机会成本
 
@@ -25816,7 +26289,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.manufacturing_factor`：+22%
+  - 效果机制：劳动分工与管理协调提高制造部门产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -25866,7 +26341,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-提供后续科技与内容的知识基础
+全社会 +22%；作为必要支撑：智能冶铝厂、智能化不锈钢厂
 
 #### 机会成本
 
@@ -25885,7 +26360,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 永久 Modifier 条款
 
-无
+- 全社会：`country.output.manufacturing_factor`：+22%
+  - 效果机制：劳动分工与管理协调提高制造部门产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 

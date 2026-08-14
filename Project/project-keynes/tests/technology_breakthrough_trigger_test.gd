@@ -27,10 +27,15 @@ func _init() -> void:
 		if String(definition.key) == gis_recipe_id:
 			gis_effect_definition = definition
 			break
-	_require(gis_effect_definition != null
-		and gis_effect_definition.commands.size() == 1
-		and String((gis_effect_definition.commands[0] as Resource).command_key) == "technology.adopted",
-		"unlock-only technology emits adopted without a Modifier command")
+	var has_adopted := false
+	var has_modifier := false
+	if gis_effect_definition != null:
+		for command_value in gis_effect_definition.commands:
+			var command: Resource = command_value
+			has_adopted = has_adopted or String(command.command_key) == "technology.adopted"
+			has_modifier = has_modifier or String(command.command_key) == "technology.modifier"
+	_require(gis_effect_definition != null and has_adopted,
+		"technology emits adopted command")
 	_require(bool(ext.configure_effects(
 		effect_catalog.compile_native_catalog()).get("ok", false)),
 		"effect runtime configures")
