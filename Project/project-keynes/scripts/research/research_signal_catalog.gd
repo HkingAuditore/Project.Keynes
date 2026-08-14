@@ -216,7 +216,9 @@ const NETWORK_SIGNAL_ROWS := [
 
 ## Occupancy bit 0..31. Envelope/carrier/origin are generation+runtime inputs;
 ## `realm.*` tags on SIGNAL_ROWS remain presentation metadata and are not read
-## by seeding. Occupancy ⊆ envelope ∩ reachable province ∩ carrier>ε.
+## by seeding. Generation occupancy ⊆ envelope ∩ continent-scale landmasses
+## ∩ carrier>ε (satellite islets skipped unless they are the unique argmax).
+## Runtime neighbor diffusion stays inside a province; local farming can introduce.
 const OCCUPANCY_FLAG_NEED_WETLAND_OR_RIVER := 1
 const OCCUPANCY_FLAG_NEED_HIGHLAND := 2
 const OCCUPANCY_FLAG_FORBID_TROPICAL_FOREST := 4
@@ -225,17 +227,19 @@ const OCCUPANCY_FLAG_NEED_DRY_OR_HIGHLAND := 16
 const OCCUPANCY_FLAG_FORBID_ARID := 32
 const OCCUPANCY_FLAG_FORBID_WARM := 64
 const OCCUPANCY_FLAG_FORBID_COLD := 128
-const OCCUPANCY_ORIGIN_UNIQUE_PROVINCE := 0
+const OCCUPANCY_ORIGIN_UNIQUE_LANDMASS := 0
 const OCCUPANCY_MAX_SPECIES := 32
 
-const _VEG_GRASS := [4, 9, 10, 13]
+const _VEG_GRASS := [4, 9, 10, 11, 13]
 const _VEG_FOREST := [5, 7, 8, 12, 14, 15, 24, 25]
 const _VEG_TROPICAL_FOREST := [12, 14, 15, 24, 25]
 const _VEG_WETLAND := [19, 20, 21, 27]
-const _VEG_COOL_GRASS := [9, 10]
+const _VEG_COOL_GRASS := [4, 6, 7, 9, 10, 11]
+const _VEG_COLD_HIGHLAND := [1, 2, 3, 4, 5, 6]
+const _VEG_DRY := [10, 16, 17]
 const _VEG_WARM_CROP := [4, 9, 10, 13, 12, 14, 15]
-const _VEG_FLAX := [4, 9, 10, 11, 13]
-const _VEG_POTATO := [3, 4, 9]
+const _VEG_FLAX := [4, 6, 7, 9, 10, 11]
+const _VEG_POTATO := [3, 4, 6, 7, 9, 10, 11]
 const _VEG_RUBBER := [14, 24, 12, 15]
 
 ## carrier empty = envelope only. introduce_goods drive agricultural occupancy.
@@ -248,28 +252,28 @@ const BIO_OCCUPANCY_BY_ID := {
 	},
 	"bio.wheat": {
 		"carrier": "arable_land", "carrier_alt": "",
-		"temp_lo": 0.26, "temp_hi": 0.64, "moist_lo": 0.28, "moist_hi": 0.72,
-		"elev_lo": 0.0, "elev_hi": 0.80, "veg": _VEG_COOL_GRASS, "flags": 0,
+		"temp_lo": 0.22, "temp_hi": 0.70, "moist_lo": 0.24, "moist_hi": 0.90,
+		"elev_lo": 0.0, "elev_hi": 0.82, "veg": _VEG_COOL_GRASS, "flags": 0,
 		"max_cost": 16, "fill_keep": 0.58, "introduce_goods": ["wheat_grain"],
 	},
 	"bio.rice": {
 		"carrier": "arable_land", "carrier_alt": "paddy_land",
-		"temp_lo": 0.48, "temp_hi": 0.95, "moist_lo": 0.50, "moist_hi": 1.0,
-		"elev_lo": 0.0, "elev_hi": 0.62, "veg": _VEG_WETLAND,
+		"temp_lo": 0.46, "temp_hi": 0.95, "moist_lo": 0.42, "moist_hi": 1.0,
+		"elev_lo": 0.0, "elev_hi": 0.68, "veg": [],
 		"flags": OCCUPANCY_FLAG_NEED_WETLAND_OR_RIVER,
-		"max_cost": 14, "fill_keep": 0.62, "introduce_goods": ["rice_grain"],
+		"max_cost": 14, "fill_keep": 0.58, "introduce_goods": ["rice_grain"],
 	},
 	"bio.potato": {
-		"carrier": "arable_land", "carrier_alt": "",
-		"temp_lo": 0.18, "temp_hi": 0.56, "moist_lo": 0.30, "moist_hi": 0.80,
-		"elev_lo": 0.0, "elev_hi": 1.0, "veg": _VEG_POTATO,
+		"carrier": "", "carrier_alt": "",
+		"temp_lo": 0.22, "temp_hi": 0.58, "moist_lo": 0.24, "moist_hi": 0.88,
+		"elev_lo": 0.30, "elev_hi": 1.0, "veg": _VEG_POTATO,
 		"flags": OCCUPANCY_FLAG_NEED_HIGHLAND,
-		"max_cost": 12, "fill_keep": 0.55, "introduce_goods": ["potatoes"],
+		"max_cost": 12, "fill_keep": 0.52, "introduce_goods": ["potatoes"],
 	},
 	"bio.horse": {
 		"carrier": "pasture", "carrier_alt": "",
-		"temp_lo": 0.26, "temp_hi": 0.64, "moist_lo": 0.22, "moist_hi": 0.70,
-		"elev_lo": 0.0, "elev_hi": 0.82, "veg": _VEG_COOL_GRASS, "flags": 0,
+		"temp_lo": 0.22, "temp_hi": 0.70, "moist_lo": 0.18, "moist_hi": 0.78,
+		"elev_lo": 0.0, "elev_hi": 0.84, "veg": _VEG_COOL_GRASS, "flags": 0,
 		"max_cost": 18, "fill_keep": 0.52, "introduce_goods": [],
 	},
 	"bio.cotton": {
@@ -280,8 +284,8 @@ const BIO_OCCUPANCY_BY_ID := {
 	},
 	"bio.flax": {
 		"carrier": "arable_land", "carrier_alt": "",
-		"temp_lo": 0.26, "temp_hi": 0.64, "moist_lo": 0.30, "moist_hi": 0.78,
-		"elev_lo": 0.0, "elev_hi": 0.80, "veg": _VEG_FLAX, "flags": 0,
+		"temp_lo": 0.22, "temp_hi": 0.68, "moist_lo": 0.26, "moist_hi": 0.84,
+		"elev_lo": 0.0, "elev_hi": 0.82, "veg": _VEG_FLAX, "flags": 0,
 		"max_cost": 14, "fill_keep": 0.55, "introduce_goods": ["flax_fiber"],
 	},
 	"bio.spice": {
@@ -319,23 +323,21 @@ const BIO_OCCUPANCY_BY_ID := {
 	},
 	"bio.pig": {
 		"carrier": "wild_game", "carrier_alt": "",
-		"temp_lo": 0.34, "temp_hi": 0.88, "moist_lo": 0.56, "moist_hi": 1.0,
+		"temp_lo": 0.34, "temp_hi": 0.88, "moist_lo": 0.32, "moist_hi": 1.0,
 		"elev_lo": 0.0, "elev_hi": 0.80, "veg": _VEG_FOREST,
 		"flags": OCCUPANCY_FLAG_FORBID_COLD,
 		"max_cost": 14, "fill_keep": 0.50, "introduce_goods": [],
 	},
 	"bio.camel": {
-		"carrier": "pasture", "carrier_alt": "",
-		"temp_lo": 0.60, "temp_hi": 1.0, "moist_lo": 0.0, "moist_hi": 0.42,
-		"elev_lo": 0.0, "elev_hi": 0.80, "veg": [],
-		"flags": OCCUPANCY_FLAG_NEED_ARID,
+		"carrier": "", "carrier_alt": "",
+		"temp_lo": 0.40, "temp_hi": 1.0, "moist_lo": 0.0, "moist_hi": 0.34,
+		"elev_lo": 0.0, "elev_hi": 0.88, "veg": _VEG_DRY, "flags": 0,
 		"max_cost": 18, "fill_keep": 0.48, "introduce_goods": [],
 	},
 	"bio.yak": {
-		"carrier": "pasture", "carrier_alt": "",
-		"temp_lo": 0.0, "temp_hi": 0.34, "moist_lo": 0.20, "moist_hi": 0.80,
-		"elev_lo": 0.0, "elev_hi": 1.0, "veg": _VEG_GRASS,
-		"flags": OCCUPANCY_FLAG_NEED_HIGHLAND,
+		"carrier": "", "carrier_alt": "",
+		"temp_lo": 0.0, "temp_hi": 0.32, "moist_lo": 0.12, "moist_hi": 0.80,
+		"elev_lo": 0.42, "elev_hi": 1.0, "veg": _VEG_COLD_HIGHLAND, "flags": 0,
 		"max_cost": 12, "fill_keep": 0.50, "introduce_goods": [],
 	},
 	"bio.silkworm": {
@@ -346,8 +348,8 @@ const BIO_OCCUPANCY_BY_ID := {
 	},
 	"bio.reed": {
 		"carrier": "", "carrier_alt": "",
-		"temp_lo": 0.20, "temp_hi": 0.90, "moist_lo": 0.50, "moist_hi": 1.0,
-		"elev_lo": 0.0, "elev_hi": 0.55, "veg": _VEG_WETLAND,
+		"temp_lo": 0.20, "temp_hi": 0.90, "moist_lo": 0.22, "moist_hi": 1.0,
+		"elev_lo": 0.0, "elev_hi": 0.80, "veg": [],
 		"flags": OCCUPANCY_FLAG_NEED_WETLAND_OR_RIVER,
 		"max_cost": 10, "fill_keep": 0.60, "introduce_goods": ["reed_bundle"],
 	},
@@ -488,7 +490,7 @@ static func compile_native_catalog() -> Dictionary:
 		bio_flags.append(int(spec.get("flags", 0)))
 		bio_max_cost.append(maxi(1, int(spec.get("max_cost", 16))))
 		bio_fill_keep.append(clampf(float(spec.get("fill_keep", 0.55)), 0.0, 1.0))
-		bio_origin_policy.append(int(spec.get("origin_policy", OCCUPANCY_ORIGIN_UNIQUE_PROVINCE)))
+		bio_origin_policy.append(int(spec.get("origin_policy", OCCUPANCY_ORIGIN_UNIQUE_LANDMASS)))
 		for good_id in spec.get("introduce_goods", []):
 			bio_introduce_good_ids.append(String(good_id))
 			bio_introduce_occupancy_bits.append(bit)

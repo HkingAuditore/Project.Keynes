@@ -10,9 +10,9 @@
 | 时代 | 11 |
 | 领域 | 4 |
 | 里程碑 | 11 |
-| 硬前置边 | 545 |
+| 硬前置边 | 303 |
 | 应用交汇边 | 19 |
-| 替代说明边 | 153 |
+| 替代说明边 | 698 |
 | 里程碑候选边 | 88 |
 
 ## 时代目录
@@ -327,10 +327,7 @@
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
-  - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-  - 已发现信号「连续歉收经验」（weather.repeated\_crop\_failure）
+无
 
 #### 效果摘要
 
@@ -429,7 +426,6 @@
 
 - 共同体分工 (`tech.communal_specialization`)：复合工具提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，共同体分工直接使用这一能力完成其工艺或组织设计
 - 犁耕农业 (`tech.plough_agriculture`)：复合工具提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，犁耕农业直接使用这一能力完成其工艺或组织设计
-- 活字印刷 (`tech.movable_type_printing`)：复合工具提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，活字印刷直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -538,10 +534,7 @@
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「季风经验」（weather.monsoon）
-  - 已发现信号「霜冻经验」（weather.frost）
-  - 已发现信号「河谷」（landform.river\_valley）
+无
 
 #### 效果摘要
 
@@ -947,7 +940,7 @@ timber -8%；作为必要支撑：刀耕火种玉米地
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「铜矿」（resource.copper\_ore）
+无
 
 #### 效果摘要
 
@@ -1016,9 +1009,7 @@ timber -8%；作为必要支撑：刀耕火种玉米地
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「铜矿」（resource.copper\_ore）
-  - 已发现信号「金属加工突破」（breakthrough.metalworking）
+无
 
 #### 效果摘要
 
@@ -1156,11 +1147,7 @@ timber -8%；作为必要支撑：刀耕火种玉米地
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「野生动物」（resource.wild\_game）
-  - 已发现信号「羊」（bio.sheep）
-  - 已发现信号「马匹」（bio.horse）
-  - 已发现信号「牛」（bio.cattle）
+无
 
 #### 效果摘要
 
@@ -1506,7 +1493,7 @@ timber -8%；作为必要支撑：刀耕火种玉米地
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「野生动物」（resource.wild\_game）
+无
 
 #### 效果摘要
 
@@ -1709,10 +1696,7 @@ timber -8%；作为必要支撑：刀耕火种玉米地
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「石料」（resource.stone）
-  - 已发现信号「燧石」（resource.flint）
-  - 已发现信号「黏土」（resource.clay）
+无
 
 #### 效果摘要
 
@@ -1851,10 +1835,7 @@ timber -8%；作为必要支撑：刀耕火种玉米地
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「季风经验」（weather.monsoon）
-  - 已发现信号「霜冻经验」（weather.frost）
-  - 已发现信号「河谷」（landform.river\_valley）
+无
 
 #### 效果摘要
 
@@ -1921,10 +1902,7 @@ timber -8%；作为必要支撑：刀耕火种玉米地
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
-  - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-  - 已发现信号「连续歉收经验」（weather.repeated\_crop\_failure）
+无
 
 #### 效果摘要
 
@@ -1992,10 +1970,7 @@ timber -8%；作为必要支撑：刀耕火种玉米地
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-  - 已发现信号「河谷」（landform.river\_valley）
-  - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
+无
 
 #### 效果摘要
 
@@ -2208,9 +2183,7 @@ timber -8%；作为必要支撑：刀耕火种玉米地
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「玉米」（bio.maize）
-  - 已发现信号「玉米样本接触」（contact.maize）
+无
 
 #### 效果摘要
 
@@ -2280,9 +2253,7 @@ timber -8%；作为必要支撑：刀耕火种玉米地
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「玉米」（bio.maize）
-  - 已发现信号「玉米样本接触」（contact.maize）
+无
 
 #### 效果摘要
 
@@ -2349,9 +2320,7 @@ timber -8%；作为必要支撑：刀耕火种玉米地
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「玉米」（bio.maize）
-  - 已发现信号「玉米样本接触」（contact.maize）
+无
 
 #### 效果摘要
 
@@ -2487,9 +2456,7 @@ timber -8%；作为必要支撑：刀耕火种玉米地
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「小麦」（bio.wheat）
-  - 已发现信号「小麦样本接触」（contact.wheat）
+无
 
 #### 效果摘要
 
@@ -2559,9 +2526,7 @@ timber -8%；作为必要支撑：刀耕火种玉米地
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「小麦」（bio.wheat）
-  - 已发现信号「小麦样本接触」（contact.wheat）
+无
 
 #### 效果摘要
 
@@ -2628,9 +2593,7 @@ timber -8%；作为必要支撑：刀耕火种玉米地
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「小麦」（bio.wheat）
-  - 已发现信号「小麦样本接触」（contact.wheat）
+无
 
 #### 效果摘要
 
@@ -2766,9 +2729,7 @@ timber -8%；作为必要支撑：刀耕火种玉米地
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「稻」（bio.rice）
-  - 已发现信号「稻种样本接触」（contact.rice）
+无
 
 #### 效果摘要
 
@@ -2838,9 +2799,7 @@ timber -8%；作为必要支撑：刀耕火种玉米地
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「稻」（bio.rice）
-  - 已发现信号「稻种样本接触」（contact.rice）
+无
 
 #### 效果摘要
 
@@ -3044,9 +3003,7 @@ timber -8%；作为必要支撑：刀耕火种玉米地
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「马铃薯」（bio.potato）
-  - 已发现信号「块茎样本接触」（contact.potato）
+无
 
 #### 效果摘要
 
@@ -3116,9 +3073,7 @@ timber -8%；作为必要支撑：刀耕火种玉米地
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「马铃薯」（bio.potato）
-  - 已发现信号「块茎样本接触」（contact.potato）
+无
 
 #### 效果摘要
 
@@ -3254,9 +3209,7 @@ timber -8%；作为必要支撑：刀耕火种玉米地
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「棉花」（bio.cotton）
-  - 已发现信号「棉花样本接触」（contact.cotton）
+无
 
 #### 效果摘要
 
@@ -3534,9 +3487,7 @@ timber -8%；作为必要支撑：刀耕火种玉米地
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「香料作物」（bio.spice）
-  - 已发现信号「香料样本接触」（contact.spice）
+无
 
 #### 效果摘要
 
@@ -3673,9 +3624,7 @@ timber -8%；作为必要支撑：刀耕火种玉米地
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「橡胶树」（bio.rubber）
-  - 已发现信号「橡胶样本接触」（contact.rubber）
+无
 
 #### 效果摘要
 
@@ -3947,7 +3896,7 @@ timber -8%；作为必要支撑：刀耕火种玉米地
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「银矿」（resource.silver\_ore）
+无
 
 #### 效果摘要
 
@@ -4830,12 +4779,6 @@ terrain.floodplain.agriculture产出 +12%
 
 无
 
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「控制性用火」（tech.controlled\_burning）
-  - 已完成科技「火种控制」（tech.fire\_control）
-
 #### 发现启发（仅用于揭示）
 
 - 已发现信号「木材」（resource.timber）
@@ -4868,7 +4811,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 被以下科技作为硬前置
 
-- 块炼铁 (`tech.iron_smelting`)：木炭烧制提供林木管理、木材加工与生物质利用工艺中的操作与材料处理方法，块炼铁直接使用这一能力完成其工艺或组织设计
+无
 
 #### 主题路线后继
 
@@ -4906,9 +4849,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 发现启发（仅用于揭示）
 
-- 全部满足：
-  - 已发现信号「铜矿」（resource.copper\_ore）
-  - 已发现信号「金属加工突破」（breakthrough.metalworking）
+无
 
 #### 效果摘要
 
@@ -5010,7 +4951,6 @@ terrain.floodplain.agriculture产出 +12%
 #### 被以下科技作为硬前置
 
 - 盐渍保存 (`tech.salt_preservation`)：卤水采集提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，盐渍保存直接使用这一能力完成其工艺或组织设计
-- 火药配制 (`tech.gunpowder_formulation`)：卤水采集提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，火药配制直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -5116,7 +5056,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「黏土」（resource.clay）
+无
 
 #### 效果摘要
 
@@ -5186,7 +5126,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「黏土」（resource.clay）
+无
 
 #### 效果摘要
 
@@ -5438,9 +5378,7 @@ terrain.floodplain.agriculture产出 +12%
 
 - 灌溉 (`tech.irrigation`)：永久聚落提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，灌溉直接使用这一能力完成其工艺或组织设计
 - 记事制度 (`tech.record_keeping`)：永久聚落提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，记事制度直接使用这一能力完成其工艺或组织设计
-- 文字 (`tech.writing`)：永久聚落提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，文字直接使用这一能力完成其工艺或组织设计
 - 道路工程 (`tech.road_engineering`)：永久聚落提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，道路工程直接使用这一能力完成其工艺或组织设计
-- 官僚行政 (`tech.state_bureaucracy`)：永久聚落提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，官僚行政直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -5478,17 +5416,10 @@ terrain.floodplain.agriculture产出 +12%
 - 洪水历法实践 (`tech.flood_calendar_practice`)：洪水历法实践提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，灌溉直接使用这一能力完成其工艺或组织设计
 - 磨制石器 (`tech.ground_stone_tools`)：磨制石器提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，灌溉直接使用这一能力完成其工艺或组织设计
 
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「土建筑」（tech.earth\_building）
-  - 已完成科技「留种选育」（tech.seed\_selection）
-
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
   - 已发现信号「河湖水系」（landform.freshwater\_access）
-  - 已发现信号「河谷」（landform.river\_valley）
   - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
 
 #### 效果摘要
@@ -5555,18 +5486,12 @@ terrain.floodplain.agriculture产出 +12%
 
 - 畜群管理 (`tech.herd_management`)：畜群管理提供畜群驯养、育种与畜产品处理能力中的成套生产流程，游牧放牧直接使用这一能力完成其工艺或组织设计
 
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「畜力牵引」（tech.animal\_traction）
-  - 已完成科技「皮革鞣制」（tech.hide\_tanning）
-
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「羊」（bio.sheep）
-  - 已发现信号「马匹」（bio.horse）
-  - 已发现信号「牛」（bio.cattle）
+  - 已发现信号「牧场承载力」（resource.pasture）
+  - 已发现信号「草原平原」（landform.steppe\_plain）
+  - 已发现信号「干旱经验」（weather.drought）
 
 #### 效果摘要
 
@@ -5633,7 +5558,9 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「马匹」（bio.horse）
+- 满足其一：
+  - 已发现信号「牧场承载力」（resource.pasture）
+  - 已发现信号「草原平原」（landform.steppe\_plain）
 
 #### 效果摘要
 
@@ -5738,8 +5665,6 @@ terrain.floodplain.agriculture产出 +12%
 #### 被以下科技作为硬前置
 
 - 畜力牵引 (`tech.animal_traction`)：犁耕农业提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，畜力牵引直接使用这一能力完成其工艺或组织设计
-- 道路工程 (`tech.road_engineering`)：犁耕农业提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，道路工程直接使用这一能力完成其工艺或组织设计
-- 轮作 (`tech.crop_rotation`)：犁耕农业提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，轮作直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -5775,17 +5700,9 @@ terrain.floodplain.agriculture产出 +12%
 
 - 野生玉米采集 (`tech.wild_maize_collection`)：野生玉米采集提供玉米栽培、选育与田间管理经验中的操作与材料处理方法，玉米选育直接使用这一能力完成其工艺或组织设计
 
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「物候观察实践」（tech.phenology\_observation）
-  - 已完成科技「留种选育」（tech.seed\_selection）
-
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「玉米」（bio.maize）
-  - 已发现信号「玉米样本接触」（contact.maize）
   - 已发现信号「玉米选育突破」（breakthrough.maize\_selection）
 
 #### 效果摘要
@@ -5925,12 +5842,6 @@ terrain.desert.agriculture产出 +28%；terrain.cold\_desert.agriculture产出 +
 - 块茎保存 (`tech.tuber_storage`)：块茎保存提供块茎繁育、坡地耕作与低温保存经验中的操作与材料处理方法，梯田农业直接使用这一能力完成其工艺或组织设计
 - 磨制石器 (`tech.ground_stone_tools`)：磨制石器提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，梯田农业直接使用这一能力完成其工艺或组织设计
 
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「灌溉」（tech.irrigation）
-  - 已完成科技「土建筑」（tech.earth\_building）
-
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
@@ -6002,17 +5913,11 @@ landform.hill.agriculture产出 +28%
 - 野生香料采集 (`tech.wild_spice_collection`)：野生香料采集提供热带作物栽培、采收与商品化处理能力中的操作与材料处理方法，香料栽培直接使用这一能力完成其工艺或组织设计
 - 留种选育 (`tech.seed_selection`)：留种选育提供粮食处理、保存与农艺组织能力中的成套生产流程，香料栽培直接使用这一能力完成其工艺或组织设计
 
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「灌溉」（tech.irrigation）
-  - 已完成科技「记事制度」（tech.record\_keeping）
-
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「香料作物」（bio.spice）
-  - 已发现信号「香料样本接触」（contact.spice）
+  - 已发现信号「种植园承载力」（resource.plantation\_land）
+  - 已发现信号「连续湿季经验」（weather.prolonged\_wet\_season）
 
 #### 效果摘要
 
@@ -6077,17 +5982,11 @@ landform.hill.agriculture产出 +28%
 
 - 野生割胶 (`tech.wild_latex_tapping`)：野生割胶提供热带作物栽培、采收与商品化处理能力中的操作与材料处理方法，天然橡胶加工直接使用这一能力完成其工艺或组织设计
 
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「窑烧控制」（tech.kiln\_firing）
-  - 已完成科技「铜退火」（tech.copper\_annealing）
-
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「橡胶树」（bio.rubber）
-  - 已发现信号「橡胶样本接触」（contact.rubber）
+  - 已发现信号「种植园承载力」（resource.plantation\_land）
+  - 已发现信号「森林」（landform.forest）
 
 #### 效果摘要
 
@@ -6117,7 +6016,6 @@ landform.hill.agriculture产出 +28%
 #### 被以下科技作为硬前置
 
 - 乳胶烟熏凝固 (`tech.latex_smoke_coagulation`)：天然橡胶加工提供热带作物栽培、采收与商品化处理能力中的操作与材料处理方法，乳胶烟熏凝固直接使用这一能力完成其工艺或组织设计
-- 合成材料 (`tech.synthetic_materials`)：天然橡胶加工提供热带作物栽培、采收与商品化处理能力中的操作与材料处理方法，合成材料直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -6153,18 +6051,11 @@ landform.hill.agriculture产出 +28%
 
 - 纤维捻制 (`tech.fiber_twisting`)：纤维捻制提供纤维处理、纺纱、织造与服装生产工艺中的操作与材料处理方法，织造直接使用这一能力完成其工艺或组织设计
 
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「毛皮缝制」（tech.fur\_sewing）
-  - 已完成科技「羊毛毡制」（tech.felt\_making）
-
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「亚麻」（bio.flax）
-  - 已发现信号「棉花」（bio.cotton）
-  - 已发现信号「韧皮纤维植物」（bio.bast\_fiber）
+  - 已发现信号「旱地承载力」（resource.arable\_land）
+  - 已发现信号「人口规模 100」（development.population.100\_90d）
 
 #### 效果摘要
 
@@ -6233,7 +6124,6 @@ landform.hill.agriculture产出 +28%
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「铜矿」（resource.copper\_ore）
   - 已发现信号「金属加工突破」（breakthrough.metalworking）
 
 #### 效果摘要
@@ -6300,16 +6190,9 @@ landform.hill.agriculture产出 +28%
 
 - 自然铜冷锤 (`tech.natural_copper_working`)：自然铜冷锤提供矿物识别、有色冶炼与合金配制能力中的操作与材料处理方法，铜锡配比与铸造直接使用这一能力完成其工艺或组织设计
 
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「窑烧控制」（tech.kiln\_firing）
-  - 已完成科技「记事制度」（tech.record\_keeping）
-
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「铜矿」（resource.copper\_ore）
   - 已发现信号「锡矿」（resource.tin\_ore）
   - 已发现信号「锡矿贸易接触」（contact.tin）
 
@@ -6411,7 +6294,6 @@ landform.hill.agriculture产出 +28%
 #### 被以下科技作为硬前置
 
 - 文字 (`tech.writing`)：天文历法提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，文字直接使用这一能力完成其工艺或组织设计
-- 地图学 (`tech.cartography`)：天文历法提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，地图学直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -6481,7 +6363,6 @@ landform.hill.agriculture产出 +28%
 #### 被以下科技作为硬前置
 
 - 家庭土地占有 (`tech.household_landholding`)：记事制度提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，家庭土地占有直接使用这一能力完成其工艺或组织设计
-- 市场制度 (`tech.market_institutions`)：记事制度提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，市场制度直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -6662,9 +6543,8 @@ landform.lowland.agriculture产出 +22%；作为必要支撑：畦埂水稻田�
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「旱地承载力」（resource.arable\_land）
-  - 已发现信号「干旱经验」（weather.drought）
   - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
+  - 已发现信号「黄土平原」（landform.loess\_plain）
 
 #### 效果摘要
 
@@ -6732,9 +6612,8 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「河湖水系」（landform.freshwater\_access）
-  - 已发现信号「河谷」（landform.river\_valley）
-  - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
+  - 已发现信号「三角洲」（landform.delta）
+  - 已发现信号「聚落等级 1」（development.settlement.tier\_1\_90d）
 
 #### 效果摘要
 
@@ -6763,7 +6642,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 被以下科技作为硬前置
 
-- 水利工程 (`tech.hydraulic_engineering`)：灌溉测量提供坡降、流量和高程测定方法
+无
 
 #### 主题路线后继
 
@@ -6800,16 +6679,9 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 - 火种控制 (`tech.fire_control`)：火种控制提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，窑烧控制直接使用这一能力完成其工艺或组织设计
 - 黏土调制 (`tech.clay_preparation`)：黏土调制提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，窑烧控制直接使用这一能力完成其工艺或组织设计
 
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「控制性用火」（tech.controlled\_burning）
-  - 已完成科技「手制陶器」（tech.hand\_pottery）
-
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「黏土」（resource.clay）
   - 已发现信号「硅砂」（resource.silica\_sand）
   - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
 
@@ -6844,7 +6716,6 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 - 陶器容器体系 (`tech.pottery`)：窑烧控制提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，陶器容器体系直接使用这一能力完成其工艺或组织设计
 - 早期玻璃烧制 (`tech.early_glassmaking`)：窑烧控制提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，早期玻璃烧制直接使用这一能力完成其工艺或组织设计
 - 地表煤利用 (`tech.surface_coal_use`)：窑烧控制提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，地表煤利用直接使用这一能力完成其工艺或组织设计
-- 块炼铁 (`tech.iron_smelting`)：窑烧控制提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，块炼铁直接使用这一能力完成其工艺或组织设计
 - 火药配制 (`tech.gunpowder_formulation`)：窑烧控制提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，火药配制直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
@@ -6885,8 +6756,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「黏土」（resource.clay）
-  - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
+  - 已发现信号「冻融经验」（weather.freeze\_thaw）
 
 #### 效果摘要
 
@@ -6954,9 +6824,8 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「亚麻」（bio.flax）
-  - 已发现信号「棉花」（bio.cotton）
-  - 已发现信号「韧皮纤维植物」（bio.bast\_fiber）
+  - 已发现信号「人口规模 100」（development.population.100\_90d）
+  - 已发现信号「牧场承载力」（resource.pasture）
 
 #### 效果摘要
 
@@ -7098,7 +6967,6 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 - 满足其一：
   - 已发现信号「肥沃土壤」（resource.fertile\_soil）
   - 已发现信号「河谷」（landform.river\_valley）
-  - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
 
 #### 效果摘要
 
@@ -7169,9 +7037,8 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-  - 已发现信号「河谷」（landform.river\_valley）
-  - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
+  - 已发现信号「人口规模 100」（development.population.100\_90d）
+  - 已发现信号「旱地承载力」（resource.arable\_land）
 
 #### 效果摘要
 
@@ -7379,8 +7246,8 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「玉米」（bio.maize）
-  - 已发现信号「玉米样本接触」（contact.maize）
+  - 已发现信号「旱地承载力」（resource.arable\_land）
+  - 已发现信号「干旱经验」（weather.drought）
 
 #### 效果摘要
 
@@ -7450,8 +7317,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「玉米」（bio.maize）
-  - 已发现信号「玉米样本接触」（contact.maize）
+  - 已发现信号「森林」（landform.forest）
 
 #### 效果摘要
 
@@ -7516,18 +7382,10 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 - 刀耕火种玉米 (`tech.swidden_maize_cultivation`)：刀耕火种玉米提供玉米栽培、选育与田间管理经验中的专门知识，雨养玉米田直接使用这一能力完成其工艺或组织设计
 
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「旱作农业」（tech.dryland\_farming）
-  - 已完成科技「退水玉米地」（tech.flood\_recession\_maize）
-  - 已发现信号「玉米选育突破」（breakthrough.maize\_selection）
-
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「玉米」（bio.maize）
-  - 已发现信号「玉米样本接触」（contact.maize）
+  - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
 
 #### 效果摘要
 
@@ -7595,8 +7453,8 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「玉米」（bio.maize）
-  - 已发现信号「玉米样本接触」（contact.maize）
+  - 已发现信号「洪泛平原」（landform.floodplain）
+  - 已发现信号「洪水经验」（weather.major\_flood）
 
 #### 效果摘要
 
@@ -7661,16 +7519,9 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 - 旱作保水 (`tech.dryland_water_retention`)：旱作保水提供谷物旱作、轮作与收获工艺中的成套生产流程，谷物脱粒直接使用这一能力完成其工艺或组织设计
 
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「畜力牵引」（tech.animal\_traction）
-  - 已完成科技「手制陶器」（tech.hand\_pottery）
-
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「小麦」（bio.wheat）
   - 已发现信号「玉米」（bio.maize）
   - 已发现信号「稻」（bio.rice）
 
@@ -7749,8 +7600,8 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「小麦」（bio.wheat）
-  - 已发现信号「小麦样本接触」（contact.wheat）
+  - 已发现信号「旱地承载力」（resource.arable\_land）
+  - 已发现信号「干旱经验」（weather.drought）
 
 #### 效果摘要
 
@@ -7820,8 +7671,8 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「小麦」（bio.wheat）
-  - 已发现信号「小麦样本接触」（contact.wheat）
+  - 已发现信号「洪泛平原」（landform.floodplain）
+  - 已发现信号「洪水经验」（weather.major\_flood）
 
 #### 效果摘要
 
@@ -7889,8 +7740,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「小麦」（bio.wheat）
-  - 已发现信号「小麦样本接触」（contact.wheat）
+  - 已发现信号「黄土平原」（landform.loess\_plain）
 
 #### 效果摘要
 
@@ -7958,8 +7808,8 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「稻」（bio.rice）
-  - 已发现信号「稻种样本接触」（contact.rice）
+  - 已发现信号「高原」（landform.high\_plateau）
+  - 已发现信号「干旱经验」（weather.drought）
 
 #### 效果摘要
 
@@ -8027,8 +7877,8 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「稻」（bio.rice）
-  - 已发现信号「稻种样本接触」（contact.rice）
+  - 已发现信号「三角洲」（landform.delta）
+  - 已发现信号「连续湿季经验」（weather.prolonged\_wet\_season）
 
 #### 效果摘要
 
@@ -8095,18 +7945,11 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 - 湿地稻园 (`tech.wetland_rice_gardening`)：湿地稻园提供水田整备、水位控制与稻作管理方法中的专门知识，稻田水位控制直接使用这一能力完成其工艺或组织设计
 
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「灌溉」（tech.irrigation）
-  - 已完成科技「水田畦埂」（tech.paddy\_bunding）
-
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「水田承载力」（resource.paddy\_land）
   - 已发现信号「河谷」（landform.river\_valley）
-  - 已发现信号「水田控制突破」（breakthrough.paddy\_control）
+  - 已发现信号「洪水经验」（weather.major\_flood）
 
 #### 效果摘要
 
@@ -8174,8 +8017,8 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「稻」（bio.rice）
-  - 已发现信号「稻种样本接触」（contact.rice）
+  - 已发现信号「水田承载力」（resource.paddy\_land）
+  - 已发现信号「三角洲」（landform.delta）
 
 #### 效果摘要
 
@@ -8244,8 +8087,8 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「马铃薯」（bio.potato）
-  - 已发现信号「块茎样本接触」（contact.potato）
+  - 已发现信号「高原」（landform.high\_plateau）
+  - 已发现信号「霜冻经验」（weather.frost）
 
 #### 效果摘要
 
@@ -8313,8 +8156,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「马铃薯」（bio.potato）
-  - 已发现信号「块茎样本接触」（contact.potato）
+  - 已发现信号「旱地承载力」（resource.arable\_land）
 
 #### 效果摘要
 
@@ -8379,17 +8221,11 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 - 块茎保存 (`tech.tuber_storage`)：块茎保存提供块茎繁育、坡地耕作与低温保存经验中的操作与材料处理方法，高地块茎农业直接使用这一能力完成其工艺或组织设计
 
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「梯田农业」（tech.terrace\_farming）
-  - 已完成科技「防霜窖藏」（tech.frost\_protected\_storage）
-
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「马铃薯」（bio.potato）
-  - 已发现信号「块茎样本接触」（contact.potato）
+  - 已发现信号「高原」（landform.high\_plateau）
+  - 已发现信号「梯田维护突破」（breakthrough.terrace\_maintenance）
 
 #### 效果摘要
 
@@ -8460,9 +8296,8 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「亚麻」（bio.flax）
-  - 已发现信号「韧皮纤维植物」（bio.bast\_fiber）
-  - 已发现信号「亚麻样本接触」（contact.flax）
+  - 已发现信号「河湖水系」（landform.freshwater\_access）
+  - 已发现信号「连续湿季经验」（weather.prolonged\_wet\_season）
 
 #### 效果摘要
 
@@ -8532,9 +8367,8 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「亚麻」（bio.flax）
   - 已发现信号「棉花」（bio.cotton）
-  - 已发现信号「韧皮纤维植物」（bio.bast\_fiber）
+  - 已发现信号「旱地承载力」（resource.arable\_land）
 
 #### 效果摘要
 
@@ -8602,8 +8436,8 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「棉花」（bio.cotton）
-  - 已发现信号「棉花样本接触」（contact.cotton）
+  - 已发现信号「旱地承载力」（resource.arable\_land）
+  - 已发现信号「人口规模 100」（development.population.100\_90d）
 
 #### 效果摘要
 
@@ -8672,8 +8506,8 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「棉花」（bio.cotton）
-  - 已发现信号「棉花样本接触」（contact.cotton）
+  - 已发现信号「旱地承载力」（resource.arable\_land）
+  - 已发现信号「热浪经验」（weather.heatwave）
 
 #### 效果摘要
 
@@ -8744,8 +8578,8 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「香料作物」（bio.spice）
-  - 已发现信号「香料样本接触」（contact.spice）
+  - 已发现信号「种植园承载力」（resource.plantation\_land）
+  - 已发现信号「森林」（landform.forest）
 
 #### 效果摘要
 
@@ -8776,7 +8610,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 被以下科技作为硬前置
 
-- 商品作物管理 (`tech.commodity_crop_management`)：遮阴香料园提供热带作物栽培、采收与商品化处理能力中的专门知识，商品作物管理直接使用这一能力完成其工艺或组织设计
+无
 
 #### 主题路线后继
 
@@ -8815,8 +8649,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「橡胶树」（bio.rubber）
-  - 已发现信号「橡胶样本接触」（contact.rubber）
+  - 已发现信号「连续湿季经验」（weather.prolonged\_wet\_season）
 
 #### 效果摘要
 
@@ -8917,8 +8750,6 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 被以下科技作为硬前置
 
 - 树皮纸 (`tech.bark_paper_making`)：手工锯木提供林木管理、木材加工与生物质利用工艺中的成套生产流程，树皮纸直接使用这一能力完成其工艺或组织设计
-- 海岸船厂 (`tech.coastal_shipyards`)：手工锯木提供林木管理、木材加工与生物质利用工艺中的成套生产流程，海岸船厂直接使用这一能力完成其工艺或组织设计
-- 螺旋压印 (`tech.screw_press_printing`)：手工锯木提供林木管理、木材加工与生物质利用工艺中的成套生产流程，螺旋压印直接使用这一能力完成其工艺或组织设计
 - 蒸汽锯木 (`tech.steam_sawmilling`)：手工锯木确立锯切、定尺和木料分级工艺，蒸汽锯木是在该工艺上的动力升级
 
 #### 主题路线后继
@@ -8957,7 +8788,9 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「牛」（bio.cattle）
+- 满足其一：
+  - 已发现信号「牧场承载力」（resource.pasture）
+  - 已发现信号「草原」（landform.grassland）
 
 #### 效果摘要
 
@@ -9027,7 +8860,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 - 满足其一：
   - 已发现信号「野生动物」（resource.wild\_game）
-  - 已发现信号「羊」（bio.sheep）
+  - 已发现信号「牧场承载力」（resource.pasture）
 
 #### 效果摘要
 
@@ -9097,7 +8930,9 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「羊」（bio.sheep）
+- 满足其一：
+  - 已发现信号「牧场承载力」（resource.pasture）
+  - 已发现信号「草原平原」（landform.steppe\_plain）
 
 #### 效果摘要
 
@@ -9168,8 +9003,6 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 - 满足其一：
   - 已发现信号「野生动物」（resource.wild\_game）
-  - 已发现信号「牛」（bio.cattle）
-  - 已发现信号「羊」（bio.sheep）
   - 已发现信号「猪」（bio.pig）
 
 #### 效果摘要
@@ -9312,9 +9145,8 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「盐」（resource.salt）
   - 已发现信号「硝石」（resource.saltpeter）
-  - 已发现信号「硫磺」（resource.sulfur）
+  - 已发现信号「热浪经验」（weather.heatwave）
 
 #### 效果摘要
 
@@ -9346,7 +9178,6 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 被以下科技作为硬前置
 
 - 城市卫生 (`tech.urban_sanitation`)：盐渍保存提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，城市卫生直接使用这一能力完成其工艺或组织设计
-- 远洋补给 (`tech.oceanic_provisioning`)：盐渍保存提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，远洋补给直接使用这一能力完成其工艺或组织设计
 - 罐藏 (`tech.canning`)：盐渍保存提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，罐藏直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
@@ -9386,8 +9217,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「小麦」（bio.wheat）
-  - 已发现信号「小麦样本接触」（contact.wheat）
+  - 已发现信号「人口规模 100」（development.population.100\_90d）
 
 #### 效果摘要
 
@@ -9457,9 +9287,8 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
-  - 已发现信号「硅砂」（resource.silica\_sand）
   - 已发现信号「石灰岩」（resource.limestone）
-  - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
+  - 已发现信号「冻融经验」（weather.freeze\_thaw）
 
 #### 效果摘要
 
@@ -9608,11 +9437,10 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 硬前置（决定研发资格）
 
 - 天文历法 (`tech.celestial_calendars`)：天文历法提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，文字直接使用这一能力完成其工艺或组织设计
-- 永久聚落 (`tech.permanent_settlements`)：永久聚落提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，文字直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「人口规模 500」（development.population.500\_90d）
 
 #### 效果摘要
 
@@ -9643,7 +9471,6 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 被以下科技作为硬前置
 
 - 学术机构 (`tech.scholarly_academies`)：文字提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，学术机构直接使用这一能力完成其工艺或组织设计
-- 自然哲学 (`tech.natural_philosophy`)：文字提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，自然哲学直接使用这一能力完成其工艺或组织设计
 - 官僚行政 (`tech.state_bureaucracy`)：文字提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，官僚行政直接使用这一能力完成其工艺或组织设计
 - 木版印刷 (`tech.woodblock_printing`)：文字提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，木版印刷直接使用这一能力完成其工艺或组织设计
 - 活字印刷 (`tech.movable_type_printing`)：文字提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，活字印刷直接使用这一能力完成其工艺或组织设计
@@ -9685,18 +9512,9 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 - 日晒土坯 (`tech.adobe_making`)：日晒土坯提供土石、陶瓷、玻璃和工程构件制造能力中的成套生产流程，砌体建筑直接使用这一能力完成其工艺或组织设计
 
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「土建筑」（tech.earth\_building）
-  - 已完成科技「早期玻璃烧制」（tech.early\_glassmaking）
-
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「石料」（resource.stone）
-  - 已发现信号「燧石」（resource.flint）
-  - 已发现信号「黏土」（resource.clay）
+- 已发现信号「聚落等级 2」（development.settlement.tier\_2\_180d）
 
 #### 效果摘要
 
@@ -9766,9 +9584,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「金属加工突破」（breakthrough.metalworking）
-  - 已发现信号「石料」（resource.stone）
+- 已发现信号「活跃产业规模 4」（development.buildings.active\_4\_180d）
 
 #### 效果摘要
 
@@ -9799,8 +9615,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 被以下科技作为硬前置
 
-- 火药配制 (`tech.gunpowder_formulation`)：度量衡提供测量基准、统计方法与精密仪器能力中的稳定的组织与制度载体，火药配制直接使用这一能力完成其工艺或组织设计
-- 地产测绘 (`tech.property_cadastre`)：度量衡提供测量基准、统计方法与精密仪器能力中的稳定的组织与制度载体，地产测绘直接使用这一能力完成其工艺或组织设计
+无
 
 #### 主题路线后继
 
@@ -9835,13 +9650,10 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 硬前置（决定研发资格）
 
 - 早期贸易 (`tech.early_trade`)：早期贸易提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，市场制度直接使用这一能力完成其工艺或组织设计
-- 记事制度 (`tech.record_keeping`)：记事制度提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，市场制度直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「金矿」（resource.gold\_ore）
-  - 已发现信号「银矿」（resource.silver\_ore）
+- 已发现信号「农业就业 10」（development.employment.agriculture.10\_90d）
 
 #### 效果摘要
 
@@ -9872,7 +9684,6 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 - 农奴义务 (`tech.serf_obligations`)：市场制度提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，农奴义务直接使用这一能力完成其工艺或组织设计
 - 商业网络 (`tech.mercantile_networks`)：市场制度提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，商业网络直接使用这一能力完成其工艺或组织设计
-- 数字市场 (`tech.digital_marketplaces`)：市场制度提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，数字市场直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -9908,17 +9719,9 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 - 铜锡配比与铸造 (`tech.bronze_casting`)：铜锡配比与铸造提供矿物识别、有色冶炼与合金配制能力中的成套生产流程，货币直接使用这一能力完成其工艺或组织设计
 
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「早期贸易」（tech.early\_trade）
-  - 已完成科技「记事制度」（tech.record\_keeping）
-
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「金矿」（resource.gold\_ore）
-  - 已发现信号「银矿」（resource.silver\_ore）
+- 已发现信号「制造就业 10」（development.employment.manufacturing.10\_90d）
 
 #### 效果摘要
 
@@ -9983,11 +9786,10 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 硬前置（决定研发资格）
 
 - 永久聚落 (`tech.permanent_settlements`)：永久聚落提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，道路工程直接使用这一能力完成其工艺或组织设计
-- 犁耕农业 (`tech.plough_agriculture`)：犁耕农业提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，道路工程直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「知识就业 10」（development.employment.knowledge.10\_90d）
 
 #### 效果摘要
 
@@ -10017,10 +9819,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 被以下科技作为硬前置
 
-- 行业组织 (`tech.guild_organization`)：道路工程提供工具制造、机械加工与设备控制能力中的稳定的组织与制度载体，行业组织直接使用这一能力完成其工艺或组织设计
-- 地图学 (`tech.cartography`)：道路工程提供工具制造、机械加工与设备控制能力中的稳定的组织与制度载体，地图学直接使用这一能力完成其工艺或组织设计
 - 机械计时 (`tech.mechanical_timekeeping`)：道路工程提供工具制造、机械加工与设备控制能力中的稳定的组织与制度载体，机械计时直接使用这一能力完成其工艺或组织设计
-- 铁路物流 (`tech.rail_logistics`)：道路工程提供工具制造、机械加工与设备控制能力中的稳定的组织与制度载体，铁路物流直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -10058,10 +9857,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「河湖水系」（landform.freshwater\_access）
-  - 已发现信号「河谷」（landform.river\_valley）
-  - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
+- 已发现信号「农业产出规模 100」（development.output.agriculture.100\_180d）
 
 #### 效果摘要
 
@@ -10130,10 +9926,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「河谷」（landform.river\_valley）
-  - 已发现信号「河湖水系」（landform.freshwater\_access）
-  - 已发现信号「洪水经验」（weather.major\_flood）
+- 已发现信号「制造产出规模 100」（development.output.manufacturing.100\_180d）
 
 #### 效果摘要
 
@@ -10163,7 +9956,6 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 被以下科技作为硬前置
 
 - 磁针导航 (`tech.magnetic_navigation`)：河运提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，磁针导航直接使用这一能力完成其工艺或组织设计
-- 远洋航海 (`tech.oceanic_navigation`)：河运提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，远洋航海直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -10198,11 +9990,10 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 硬前置（决定研发资格）
 
 - 留种选育 (`tech.seed_selection`)：留种选育提供粮食处理、保存与农艺组织能力中的成套生产流程，轮作直接使用这一能力完成其工艺或组织设计
-- 犁耕农业 (`tech.plough_agriculture`)：犁耕农业提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，轮作直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「综合满意度 50%」（development.satisfaction.50\_180d）
 
 #### 效果摘要
 
@@ -10271,10 +10062,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「盐」（resource.salt）
-  - 已发现信号「硫磺」（resource.sulfur）
-  - 已发现信号「黏土」（resource.clay）
+- 已发现信号「人口规模 500」（development.population.500\_90d）
 
 #### 效果摘要
 
@@ -10306,7 +10094,6 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 被以下科技作为硬前置
 
 - 公共卫生 (`tech.public_health`)：城市卫生提供卫生、疾病控制与医疗组织能力中的操作与材料处理方法，公共卫生直接使用这一能力完成其工艺或组织设计
-- 公共卫生体系 (`tech.public_health_systems`)：城市卫生提供卫生、疾病控制与医疗组织能力中的操作与材料处理方法，公共卫生体系直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -10344,9 +10131,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「黏土」（resource.clay）
-  - 已发现信号「木材」（resource.timber）
+- 已发现信号「聚落等级 2」（development.settlement.tier\_2\_180d）
 
 #### 效果摘要
 
@@ -10375,7 +10160,6 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 被以下科技作为硬前置
 
-- 自然哲学 (`tech.natural_philosophy`)：学术机构提供记录、验证、计算与知识传播方法中的操作与材料处理方法，自然哲学直接使用这一能力完成其工艺或组织设计
 - 手稿文化 (`tech.manuscript_culture`)：学术机构提供记录、验证、计算与知识传播方法中的操作与材料处理方法，手稿文化直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
@@ -10411,15 +10195,10 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 硬前置（决定研发资格）
 
 - 自然观察 (`tech.natural_observation`)：自然观察提供观察、分类、实验与生物育种知识中的操作与材料处理方法，自然哲学直接使用这一能力完成其工艺或组织设计
-- 文字 (`tech.writing`)：文字提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，自然哲学直接使用这一能力完成其工艺或组织设计
-- 学术机构 (`tech.scholarly_academies`)：学术机构提供记录、验证、计算与知识传播方法中的操作与材料处理方法，自然哲学直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「季风经验」（weather.monsoon）
-  - 已发现信号「霜冻经验」（weather.frost）
-  - 已发现信号「山地」（landform.mountain）
+- 已发现信号「活跃产业规模 4」（development.buildings.active\_4\_180d）
 
 #### 效果摘要
 
@@ -10488,7 +10267,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「煤炭」（resource.coal）
+- 已发现信号「农业就业 10」（development.employment.agriculture.10\_90d）
 
 #### 效果摘要
 
@@ -10555,10 +10334,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「亚麻」（bio.flax）
-  - 已发现信号「棉花」（bio.cotton）
-  - 已发现信号「韧皮纤维植物」（bio.bast\_fiber）
+- 已发现信号「制造就业 10」（development.employment.manufacturing.10\_90d）
 
 #### 效果摘要
 
@@ -10626,7 +10402,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「木材」（resource.timber）
+- 已发现信号「知识就业 10」（development.employment.knowledge.10\_90d）
 
 #### 效果摘要
 
@@ -10694,9 +10470,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「野生动物」（resource.wild\_game）
-  - 已发现信号「羊」（bio.sheep）
+- 已发现信号「农业产出规模 100」（development.output.agriculture.100\_180d）
 
 #### 效果摘要
 
@@ -10764,9 +10538,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「羊」（bio.sheep）
-  - 已发现信号「木材」（resource.timber）
+- 已发现信号「制造产出规模 100」（development.output.manufacturing.100\_180d）
 
 #### 效果摘要
 
@@ -10831,11 +10603,10 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 硬前置（决定研发资格）
 
 - 文字 (`tech.writing`)：文字提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，官僚行政直接使用这一能力完成其工艺或组织设计
-- 永久聚落 (`tech.permanent_settlements`)：永久聚落提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，官僚行政直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「综合满意度 50%」（development.satisfaction.50\_180d）
 
 #### 效果摘要
 
@@ -10866,9 +10637,6 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 - 庄园核算 (`tech.estate_accounting`)：官僚行政提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，庄园核算直接使用这一能力完成其工艺或组织设计
 - 行业组织 (`tech.guild_organization`)：官僚行政提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，行业组织直接使用这一能力完成其工艺或组织设计
-- 经院研究法 (`tech.scholastic_method`)：官僚行政提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，经院研究法直接使用这一能力完成其工艺或组织设计
-- 特许商社 (`tech.chartered_companies`)：官僚行政提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，特许商社直接使用这一能力完成其工艺或组织设计
-- 国家实验室 (`tech.national_laboratories`)：官僚行政提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，国家实验室直接使用这一能力完成其工艺或组织设计
 - 国营企业 (`tech.state_enterprises`)：官僚行政提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，国营企业直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
@@ -10907,10 +10675,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「旱地承载力」（resource.arable\_land）
-  - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-  - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
+- 已发现信号「人口规模 500」（development.population.500\_90d）
 
 #### 效果摘要
 
@@ -10975,18 +10740,9 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 - 高地块茎农业 (`tech.highland_tuber_farming`)：高地块茎农业提供块茎繁育、坡地耕作与低温保存经验中的成套生产流程，分成租佃直接使用这一能力完成其工艺或组织设计
 
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「习惯佃作」（tech.customary\_tenancy）
-  - 已完成科技「家庭土地占有」（tech.household\_landholding）
-
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「旱地承载力」（resource.arable\_land）
-  - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-  - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
+- 已发现信号「聚落等级 2」（development.settlement.tier\_2\_180d）
 
 #### 效果摘要
 
@@ -11053,9 +10809,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「黏土」（resource.clay）
-  - 已发现信号「木材」（resource.timber）
+- 已发现信号「活跃产业规模 4」（development.buildings.active\_4\_180d）
 
 #### 效果摘要
 
@@ -11084,9 +10838,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 被以下科技作为硬前置
 
-- 商品作物管理 (`tech.commodity_crop_management`)：庄园核算提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，商品作物管理直接使用这一能力完成其工艺或组织设计
-- 种植园庄园管理 (`tech.estate_plantation_management`)：庄园核算提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，种植园庄园管理直接使用这一能力完成其工艺或组织设计
-- 地产测绘 (`tech.property_cadastre`)：庄园核算提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，地产测绘直接使用这一能力完成其工艺或组织设计
+无
 
 #### 主题路线后继
 
@@ -11124,10 +10876,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「小麦」（bio.wheat）
-  - 已发现信号「玉米」（bio.maize）
-  - 已发现信号「稻」（bio.rice）
+- 已发现信号「农业就业 10」（development.employment.agriculture.10\_90d）
 
 #### 效果摘要
 
@@ -11195,10 +10944,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「水田承载力」（resource.paddy\_land）
-  - 已发现信号「洪泛平原」（landform.floodplain）
-  - 已发现信号「水田控制突破」（breakthrough.paddy\_control）
+- 已发现信号「制造就业 10」（development.employment.manufacturing.10\_90d）
 
 #### 效果摘要
 
@@ -11267,7 +11013,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「铁矿」（resource.iron\_ore）
+- 已发现信号「知识就业 10」（development.employment.knowledge.10\_90d）
 
 #### 效果摘要
 
@@ -11335,7 +11081,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「铁矿」（resource.iron\_ore）
+- 已发现信号「农业产出规模 100」（development.output.agriculture.100\_180d）
 
 #### 效果摘要
 
@@ -11400,14 +11146,10 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 硬前置（决定研发资格）
 
 - 地表铁矿采集 (`tech.surface_iron_collection`)：地表铁矿采集提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，块炼铁直接使用这一能力完成其工艺或组织设计
-- 木炭烧制 (`tech.charcoal_burning`)：木炭烧制提供林木管理、木材加工与生物质利用工艺中的操作与材料处理方法，块炼铁直接使用这一能力完成其工艺或组织设计
-- 窑烧控制 (`tech.kiln_firing`)：窑烧控制提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，块炼铁直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「铁矿」（resource.iron\_ore）
-  - 已发现信号「煤炭」（resource.coal）
+- 已发现信号「制造产出规模 100」（development.output.manufacturing.100\_180d）
 
 #### 效果摘要
 
@@ -11439,7 +11181,6 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 被以下科技作为硬前置
 
 - 高炉冶炼 (`tech.blast_furnace`)：块炼铁提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，高炉冶炼直接使用这一能力完成其工艺或组织设计
-- 煤矿开采 (`tech.coal_mining`)：块炼铁提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，煤矿开采直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -11477,7 +11218,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「煤炭」（resource.coal）
+- 已发现信号「综合满意度 50%」（development.satisfaction.50\_180d）
 
 #### 效果摘要
 
@@ -11544,7 +11285,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「煤炭」（resource.coal）
+- 已发现信号「人口规模 500」（development.population.500\_90d）
 
 #### 效果摘要
 
@@ -11612,10 +11353,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-  - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
-  - 已发现信号「连续歉收经验」（weather.repeated\_crop\_failure）
+- 已发现信号「聚落等级 2」（development.settlement.tier\_2\_180d）
 
 #### 效果摘要
 
@@ -11762,17 +11500,9 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 - 树皮纸 (`tech.bark_paper_making`)：树皮纸提供林木管理、木材加工与生物质利用工艺中的稳定的组织与制度载体，森林管理直接使用这一能力完成其工艺或组织设计
 
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「行业组织」（tech.guild\_organization）
-  - 已完成科技「区域粮仓」（tech.regional\_granaries）
-
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「木材」（resource.timber）
-  - 已发现信号「林业经营突破」（breakthrough.forest\_management）
+- 已发现信号「活跃产业规模 8」（development.buildings.active\_8\_360d）
 
 #### 效果摘要
 
@@ -11843,10 +11573,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「羊」（bio.sheep）
-  - 已发现信号「马匹」（bio.horse）
-  - 已发现信号「牛」（bio.cattle）
+- 已发现信号「农业就业 50」（development.employment.agriculture.50\_180d）
 
 #### 效果摘要
 
@@ -11914,7 +11641,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「采掘就业 50」（development.employment.extractive.50\_180d）
 
 #### 效果摘要
 
@@ -11980,18 +11707,9 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 - 运河工程 (`tech.canal_engineering`)：运河工程提供水流、风力、输配水和流域工程能力中的成套生产流程，水力机械直接使用这一能力完成其工艺或组织设计
 
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「灌溉测量」（tech.irrigation\_surveying）
-  - 已完成科技「手工锯木」（tech.timber\_sawing）
-
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「河湖水系」（landform.freshwater\_access）
-  - 已发现信号「河谷」（landform.river\_valley）
-  - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
+- 已发现信号「制造就业 50」（development.employment.manufacturing.50\_180d）
 
 #### 效果摘要
 
@@ -12058,10 +11776,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「稳定风廊」（landform.stable\_wind\_corridor）
-  - 已发现信号「季风经验」（weather.monsoon）
-  - 已发现信号「台风经验」（weather.typhoon）
+- 已发现信号「农业产出规模 1000」（development.output.agriculture.1000\_360d）
 
 #### 效果摘要
 
@@ -12128,11 +11843,10 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 #### 硬前置（决定研发资格）
 
 - 官僚行政 (`tech.state_bureaucracy`)：官僚行政提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，行业组织直接使用这一能力完成其工艺或组织设计
-- 道路工程 (`tech.road_engineering`)：道路工程提供工具制造、机械加工与设备控制能力中的稳定的组织与制度载体，行业组织直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「制造产出规模 1000」（development.output.manufacturing.1000\_360d）
 
 #### 效果摘要
 
@@ -12165,12 +11879,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 #### 被以下科技作为硬前置
 
 - 特许大学 (`tech.chartered_universities`)：行业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，特许大学直接使用这一能力完成其工艺或组织设计
-- 海岸船厂 (`tech.coastal_shipyards`)：行业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，海岸船厂直接使用这一能力完成其工艺或组织设计
-- 复式记账 (`tech.double_entry_bookkeeping`)：行业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，复式记账直接使用这一能力完成其工艺或组织设计
-- 农艺交换 (`tech.agronomic_exchange`)：行业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，农艺交换直接使用这一能力完成其工艺或组织设计
-- 合作社组织 (`tech.cooperative_association`)：行业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，合作社组织直接使用这一能力完成其工艺或组织设计
 - 工业组织 (`tech.industrial_organization`)：行业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，工业组织直接使用这一能力完成其工艺或组织设计
-- 机床 (`tech.machine_tools`)：行业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，机床直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -12206,18 +11915,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 - 块炼铁 (`tech.iron_smelting`)：块炼铁提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，高炉冶炼直接使用这一能力完成其工艺或组织设计
 
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「木炭坩埚炼铜」（tech.copper\_metallurgy）
-  - 已完成科技「行业组织」（tech.guild\_organization）
-
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「铁矿」（resource.iron\_ore）
-  - 已发现信号「煤炭」（resource.coal）
-  - 已发现信号「金属加工突破」（breakthrough.metalworking）
+- 已发现信号「人口规模 2500」（development.population.2500\_180d）
 
 #### 效果摘要
 
@@ -12247,8 +11947,6 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 被以下科技作为硬前置
 
-- 深井采矿 (`tech.deep_mining`)：高炉冶炼提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，深井采矿直接使用这一能力完成其工艺或组织设计
-- 大气式蒸汽机 (`tech.atmospheric_engine`)：高炉冶炼提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，大气式蒸汽机直接使用这一能力完成其工艺或组织设计
 - 焦炭冶炼 (`tech.coke_smelting`)：高炉冶炼提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，焦炭冶炼直接使用这一能力完成其工艺或组织设计
 - 先进冶金 (`tech.advanced_metallurgy`)：高炉冶炼提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，先进冶金直接使用这一能力完成其工艺或组织设计
 
@@ -12288,9 +11986,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「铁矿」（resource.iron\_ore）
-  - 已发现信号「煤炭」（resource.coal）
+- 已发现信号「多聚落体系」（development.settlements.tier\_2\_count\_2\_180d）
 
 #### 效果摘要
 
@@ -12354,11 +12050,10 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 #### 硬前置（决定研发资格）
 
 - 地表煤采集 (`tech.surface_coal_collection`)：地表煤采集提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，煤矿开采直接使用这一能力完成其工艺或组织设计
-- 块炼铁 (`tech.iron_smelting`)：块炼铁提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，煤矿开采直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「煤炭」（resource.coal）
+- 已发现信号「聚落等级 3」（development.settlement.tier\_3\_360d）
 
 #### 效果摘要
 
@@ -12426,9 +12121,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「印刷突破」（breakthrough.printing）
-  - 已发现信号「木材」（resource.timber）
+- 已发现信号「活跃产业规模 8」（development.buildings.active\_8\_360d）
 
 #### 效果摘要
 
@@ -12496,9 +12189,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「印刷突破」（breakthrough.printing）
-  - 已发现信号「木材」（resource.timber）
+- 已发现信号「农业就业 50」（development.employment.agriculture.50\_180d）
 
 #### 效果摘要
 
@@ -12563,11 +12254,10 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 #### 硬前置（决定研发资格）
 
 - 文字 (`tech.writing`)：文字提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，活字印刷直接使用这一能力完成其工艺或组织设计
-- 复合工具 (`tech.composite_tools`)：复合工具提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，活字印刷直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「采掘就业 50」（development.employment.extractive.50\_180d）
 
 #### 效果摘要
 
@@ -12632,21 +12322,10 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 #### 硬前置（决定研发资格）
 
 - 窑烧控制 (`tech.kiln_firing`)：窑烧控制提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，火药配制直接使用这一能力完成其工艺或组织设计
-- 度量衡 (`tech.weights_and_measures`)：度量衡提供测量基准、统计方法与精密仪器能力中的稳定的组织与制度载体，火药配制直接使用这一能力完成其工艺或组织设计
-- 卤水采集 (`tech.brine_collection`)：卤水采集提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，火药配制直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「盐渍保存」（tech.salt\_preservation）
-  - 已完成科技「铜矿焙烧」（tech.copper\_ore\_roasting）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「硫磺」（resource.sulfur）
-  - 已发现信号「磷矿石」（resource.phosphate\_rock）
-  - 已发现信号「硝石」（resource.saltpeter）
+- 已发现信号「制造就业 50」（development.employment.manufacturing.50\_180d）
 
 #### 效果摘要
 
@@ -12679,7 +12358,6 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 #### 被以下科技作为硬前置
 
 - 火药武器 (`tech.gunpowder_weapons`)：火药配制提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，火药武器直接使用这一能力完成其工艺或组织设计
-- 工业化学 (`tech.industrial_chemistry`)：火药配制提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，工业化学直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -12717,11 +12395,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「海岸」（landform.coast）
-  - 已发现信号「海岸河口」（landform.coastal\_estuary）
-  - 已发现信号「外国舰船或远洋船体接触」（contact.maritime\_vessel）
-  - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+- 已发现信号「农业产出规模 1000」（development.output.agriculture.1000\_360d）
 
 #### 效果摘要
 
@@ -12788,10 +12462,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「河湖水系」（landform.freshwater\_access）
-  - 已发现信号「河谷」（landform.river\_valley）
-  - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
+- 已发现信号「制造产出规模 1000」（development.output.manufacturing.1000\_360d）
 
 #### 效果摘要
 
@@ -12855,11 +12526,10 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 #### 硬前置（决定研发资格）
 
 - 文字 (`tech.writing`)：文字提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，经院研究法直接使用这一能力完成其工艺或组织设计
-- 官僚行政 (`tech.state_bureaucracy`)：官僚行政提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，经院研究法直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「人口规模 2500」（development.population.2500\_180d）
 
 #### 效果摘要
 
@@ -12888,7 +12558,6 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 被以下科技作为硬前置
 
-- 机械计时 (`tech.mechanical_timekeeping`)：经院研究法提供记录、验证、计算与知识传播方法中的操作与材料处理方法，机械计时直接使用这一能力完成其工艺或组织设计
 - 实验科学 (`tech.experimental_science`)：经院研究法提供记录、验证、计算与知识传播方法中的操作与材料处理方法，实验科学直接使用这一能力完成其工艺或组织设计
 - 学术社团 (`tech.learned_societies`)：经院研究法提供论证、注释和公开争辩的学术规范
 
@@ -12928,9 +12597,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「印刷突破」（breakthrough.printing）
-  - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
+- 已发现信号「多聚落体系」（development.settlements.tier\_2\_count\_2\_180d）
 
 #### 效果摘要
 
@@ -12961,7 +12628,6 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 #### 被以下科技作为硬前置
 
 - 庄园司法 (`tech.manorial_jurisdiction`)：特许大学提供制度协调、公共组织与交换规则中的操作与材料处理方法，庄园司法直接使用这一能力完成其工艺或组织设计
-- 学术社团 (`tech.learned_societies`)：特许大学提供稳定的学者共同体、章程和人才来源
 
 #### 主题路线后继
 
@@ -12999,10 +12665,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「旱地承载力」（resource.arable\_land）
-  - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-  - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
+- 已发现信号「聚落等级 3」（development.settlement.tier\_3\_360d）
 
 #### 效果摘要
 
@@ -13069,10 +12732,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「旱地承载力」（resource.arable\_land）
-  - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-  - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
+- 已发现信号「活跃产业规模 8」（development.buildings.active\_8\_360d）
 
 #### 效果摘要
 
@@ -13139,10 +12799,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「小麦」（bio.wheat）
-  - 已发现信号「玉米」（bio.maize）
-  - 已发现信号「稻」（bio.rice）
+- 已发现信号「农业就业 50」（development.employment.agriculture.50\_180d）
 
 #### 效果摘要
 
@@ -13209,9 +12866,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「金属加工突破」（breakthrough.metalworking）
-  - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
+- 已发现信号「采掘就业 50」（development.employment.extractive.50\_180d）
 
 #### 效果摘要
 
@@ -13281,10 +12936,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-  - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
-  - 已发现信号「连续歉收经验」（weather.repeated\_crop\_failure）
+- 已发现信号「制造就业 50」（development.employment.manufacturing.50\_180d）
 
 #### 效果摘要
 
@@ -13313,7 +12965,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 被以下科技作为硬前置
 
-- 远洋补给 (`tech.oceanic_provisioning`)：区域粮仓提供粮食处理、保存与农艺组织能力中的稳定的组织与制度载体，远洋补给直接使用这一能力完成其工艺或组织设计
+无
 
 #### 主题路线后继
 
@@ -13351,7 +13003,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「煤炭」（resource.coal）
+- 已发现信号「农业产出规模 1000」（development.output.agriculture.1000\_360d）
 
 #### 效果摘要
 
@@ -13421,9 +13073,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「木材」（resource.timber）
-  - 已发现信号「矿井支护突破」（breakthrough.mine\_support）
+- 已发现信号「制造产出规模 1000」（development.output.manufacturing.1000\_360d）
 
 #### 效果摘要
 
@@ -13455,7 +13105,6 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 #### 被以下科技作为硬前置
 
 - 矿井通风 (`tech.mine_ventilation`)：矿井木支护提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，矿井通风直接使用这一能力完成其工艺或组织设计
-- 工业采煤 (`tech.industrial_coal_mining`)：矿井木支护提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，工业采煤直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -13493,7 +13142,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「矿井支护突破」（breakthrough.mine\_support）
+- 已发现信号「人口规模 2500」（development.population.2500\_180d）
 
 #### 效果摘要
 
@@ -13525,7 +13174,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 被以下科技作为硬前置
 
-- 深井采矿 (`tech.deep_mining`)：矿井通风提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，深井采矿直接使用这一能力完成其工艺或组织设计
+无
 
 #### 主题路线后继
 
@@ -13561,19 +13210,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 - 分成租佃 (`tech.sharecropping`)：分成租佃提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，庄园谷物核算直接使用这一能力完成其工艺或组织设计
 
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「庄园核算」（tech.estate\_accounting）
-  - 已完成科技「庄园谷物经营」（tech.manorial\_cereal\_farming）
-  - 已发现信号「梯田维护突破」（breakthrough.terrace\_maintenance）
-
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「小麦」（bio.wheat）
-  - 已发现信号「玉米」（bio.maize）
-  - 已发现信号「稻」（bio.rice）
+- 已发现信号「多聚落体系」（development.settlements.tier\_2\_count\_2\_180d）
 
 #### 效果摘要
 
@@ -13640,18 +13279,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 - 佃作水田 (`tech.tenant_paddy_management`)：佃作水田提供水田整备、水位控制与稻作管理方法中的成套生产流程，庄园水田核算直接使用这一能力完成其工艺或组织设计
 
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「庄园司法」（tech.manorial\_jurisdiction）
-  - 已完成科技「灌溉测量」（tech.irrigation\_surveying）
-
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「水田承载力」（resource.paddy\_land）
-  - 已发现信号「洪泛平原」（landform.floodplain）
-  - 已发现信号「水田控制突破」（breakthrough.paddy\_control）
+- 已发现信号「聚落等级 3」（development.settlement.tier\_3\_360d）
 
 #### 效果摘要
 
@@ -13798,12 +13428,10 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 #### 硬前置（决定研发资格）
 
 - 文字 (`tech.writing`)：文字提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，地图学直接使用这一能力完成其工艺或组织设计
-- 道路工程 (`tech.road_engineering`)：道路工程提供工具制造、机械加工与设备控制能力中的稳定的组织与制度载体，地图学直接使用这一能力完成其工艺或组织设计
-- 天文历法 (`tech.celestial_calendars`)：天文历法提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，地图学直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「累计贸易价值 1000」（development.trade.value\_1000）
 
 #### 效果摘要
 
@@ -13834,7 +13462,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 - 远洋航海 (`tech.oceanic_navigation`)：地图学提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，远洋航海直接使用这一能力完成其工艺或组织设计
 - 标准化 (`tech.standardization`)：地图学提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，标准化直接使用这一能力完成其工艺或组织设计
-- 地质勘探 (`tech.geological_prospecting`)：地图学提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，地质勘探直接使用这一能力完成其工艺或组织设计
 - 地产测绘 (`tech.property_cadastre`)：地图学提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，地产测绘直接使用这一能力完成其工艺或组织设计
 - 地理信息系统 (`tech.geographic_information_systems`)：地图学提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，地理信息系统直接使用这一能力完成其工艺或组织设计
 
@@ -13874,9 +13501,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「海岸」（landform.coast）
-  - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+- 已发现信号「两类商品作物形成产出」（development.commodity\_crop\_variety\_2）
 
 #### 效果摘要
 
@@ -13940,21 +13565,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 地图学 (`tech.cartography`)：地图学提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，远洋航海直接使用这一能力完成其工艺或组织设计
-- 河运 (`tech.river_transport`)：河运提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，远洋航海直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「磁针导航」（tech.magnetic\_navigation）
-  - 已完成科技「天文导航」（tech.celestial\_navigation）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「海岸」（landform.coast）
-  - 已发现信号「海岸河口」（landform.coastal\_estuary）
-  - 已发现信号「外国舰船或远洋船体接触」（contact.maritime\_vessel）
-  - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+- 已发现信号「农业就业 250」（development.employment.agriculture.250\_360d）
 
 #### 效果摘要
 
@@ -13985,9 +13599,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 被以下科技作为硬前置
 
 - 远洋船舶设计 (`tech.oceanic_ship_design`)：远洋航海提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，远洋船舶设计直接使用这一能力完成其工艺或组织设计
-- 商业网络 (`tech.mercantile_networks`)：远洋航海提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，商业网络直接使用这一能力完成其工艺或组织设计
 - 远洋补给 (`tech.oceanic_provisioning`)：远洋航海提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，远洋补给直接使用这一能力完成其工艺或组织设计
-- 跨区域植物学 (`tech.interregional_botany`)：远洋航海提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，跨区域植物学直接使用这一能力完成其工艺或组织设计
 - 精密仪器 (`tech.precision_instruments`)：远洋航海提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，精密仪器直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
@@ -14026,11 +13638,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「海岸」（landform.coast）
-  - 已发现信号「海岸河口」（landform.coastal\_estuary）
-  - 已发现信号「外国舰船或远洋船体接触」（contact.maritime\_vessel）
-  - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+- 已发现信号「知识就业 250」（development.employment.knowledge.250\_360d）
 
 #### 效果摘要
 
@@ -14094,16 +13702,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 远洋船舶设计 (`tech.oceanic_ship_design`)：远洋船舶设计提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，海岸船厂直接使用这一能力完成其工艺或组织设计
-- 手工锯木 (`tech.timber_sawing`)：手工锯木提供林木管理、木材加工与生物质利用工艺中的成套生产流程，海岸船厂直接使用这一能力完成其工艺或组织设计
-- 行业组织 (`tech.guild_organization`)：行业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，海岸船厂直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「海岸」（landform.coast）
-  - 已发现信号「海岸河口」（landform.coastal\_estuary）
-  - 已发现信号「外国舰船或远洋船体接触」（contact.maritime\_vessel）
-  - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+- 已发现信号「综合满意度 55%」（development.satisfaction.55\_360d）
 
 #### 效果摘要
 
@@ -14167,14 +13769,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 活字印刷 (`tech.movable_type_printing`)：活字印刷提供工具制造、机械加工与设备控制能力中的稳定的组织与制度载体，螺旋压印直接使用这一能力完成其工艺或组织设计
-- 手工锯木 (`tech.timber_sawing`)：手工锯木提供林木管理、木材加工与生物质利用工艺中的成套生产流程，螺旋压印直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「印刷突破」（breakthrough.printing）
-  - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
-  - 已发现信号「木材」（resource.timber）
+- 已发现信号「人口规模 12500」（development.population.12500\_360d）
 
 #### 效果摘要
 
@@ -14206,7 +13804,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 学术社团 (`tech.learned_societies`)：螺旋压印使论文、目录与通信材料能够低成本复制和跨地传播
 - 机械印刷 (`tech.mechanized_printing`)：螺旋压印提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，机械印刷直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
@@ -14245,10 +13842,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「硫磺」（resource.sulfur）
-  - 已发现信号「磷矿石」（resource.phosphate\_rock）
-  - 已发现信号「硝石」（resource.saltpeter）
+- 已发现信号「贸易商品 2 类」（development.trade.goods\_2）
 
 #### 效果摘要
 
@@ -14315,11 +13909,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 文字 (`tech.writing`)：文字提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，复式记账直接使用这一能力完成其工艺或组织设计
-- 行业组织 (`tech.guild_organization`)：行业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，复式记账直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「贸易伙伴 1 个」（development.trade.partners\_1）
 
 #### 效果摘要
 
@@ -14348,14 +13941,9 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 商业网络 (`tech.mercantile_networks`)：复式记账提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，商业网络直接使用这一能力完成其工艺或组织设计
 - 商业租佃 (`tech.commercial_tenancy`)：复式记账提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，商业租佃直接使用这一能力完成其工艺或组织设计
-- 特许商社 (`tech.chartered_companies`)：复式记账提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，特许商社直接使用这一能力完成其工艺或组织设计
 - 政治经济学 (`tech.political_economy`)：复式记账提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，政治经济学直接使用这一能力完成其工艺或组织设计
 - 合作社组织 (`tech.cooperative_association`)：复式记账提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，合作社组织直接使用这一能力完成其工艺或组织设计
-- 工业组织 (`tech.industrial_organization`)：复式记账提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，工业组织直接使用这一能力完成其工艺或组织设计
-- 管理层级 (`tech.managerial_hierarchy`)：复式记账提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，管理层级直接使用这一能力完成其工艺或组织设计
-- 公司管理 (`tech.corporate_management`)：复式记账提供资产、负债、成本和利润的统一核算，使公司能够跨业务配置资本
 
 #### 主题路线后继
 
@@ -14393,10 +13981,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「旱地承载力」（resource.arable\_land）
-  - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-  - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
+- 已发现信号「累计贸易量 100」（development.trade.quantity\_100）
 
 #### 效果摘要
 
@@ -14460,21 +14045,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 市场制度 (`tech.market_institutions`)：市场制度提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，商业网络直接使用这一能力完成其工艺或组织设计
-- 远洋航海 (`tech.oceanic_navigation`)：远洋航海提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，商业网络直接使用这一能力完成其工艺或组织设计
-- 复式记账 (`tech.double_entry_bookkeeping`)：复式记账提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，商业网络直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「特许大学」（tech.chartered\_universities）
-  - 已完成科技「商业农庄」（tech.commercial\_estates）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「海岸」（landform.coast）
-  - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
-  - 已发现信号「印刷突破」（breakthrough.printing）
+- 已发现信号「累计贸易价值 1000」（development.trade.value\_1000）
 
 #### 效果摘要
 
@@ -14539,11 +14113,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 道路工程 (`tech.road_engineering`)：道路工程提供工具制造、机械加工与设备控制能力中的稳定的组织与制度载体，机械计时直接使用这一能力完成其工艺或组织设计
-- 经院研究法 (`tech.scholastic_method`)：经院研究法提供记录、验证、计算与知识传播方法中的操作与材料处理方法，机械计时直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「两类商品作物形成产出」（development.commodity\_crop\_variety\_2）
 
 #### 效果摘要
 
@@ -14573,9 +14146,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 被以下科技作为硬前置
 
 - 精密工程 (`tech.precision_engineering`)：机械计时提供测量基准、统计方法与精密仪器能力中的动力与规模化能力，精密工程直接使用这一能力完成其工艺或组织设计
-- 实验科学 (`tech.experimental_science`)：机械计时提供测量基准、统计方法与精密仪器能力中的动力与规模化能力，实验科学直接使用这一能力完成其工艺或组织设计
-- 标准化 (`tech.standardization`)：机械计时提供测量基准、统计方法与精密仪器能力中的动力与规模化能力，标准化直接使用这一能力完成其工艺或组织设计
-- 热力学 (`tech.thermodynamics`)：机械计时提供测量基准、统计方法与精密仪器能力中的动力与规模化能力，热力学直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -14613,7 +14183,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「矿井支护突破」（breakthrough.mine\_support）
+- 已发现信号「农业就业 250」（development.employment.agriculture.250\_360d）
 
 #### 效果摘要
 
@@ -14644,8 +14214,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 被以下科技作为硬前置
 
 - 深井采矿 (`tech.deep_mining`)：井筒开掘提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，深井采矿直接使用这一能力完成其工艺或组织设计
-- 矿井排水 (`tech.mine_drainage`)：井筒开掘提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，矿井排水直接使用这一能力完成其工艺或组织设计
-- 地质勘探 (`tech.geological_prospecting`)：井筒开掘提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，地质勘探直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -14680,12 +14248,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 井筒开掘 (`tech.shaft_sinking`)：井筒开掘提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，深井采矿直接使用这一能力完成其工艺或组织设计
-- 矿井通风 (`tech.mine_ventilation`)：矿井通风提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，深井采矿直接使用这一能力完成其工艺或组织设计
-- 高炉冶炼 (`tech.blast_furnace`)：高炉冶炼提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，深井采矿直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「矿井支护突破」（breakthrough.mine\_support）
+- 已发现信号「知识就业 250」（development.employment.knowledge.250\_360d）
 
 #### 效果摘要
 
@@ -14753,13 +14319,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 水力机械 (`tech.water_power`)：水力机械提供水流、风力、输配水和流域工程能力中的动力与规模化能力，矿井排水直接使用这一能力完成其工艺或组织设计
-- 井筒开掘 (`tech.shaft_sinking`)：井筒开掘提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，矿井排水直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「矿井支护突破」（breakthrough.mine\_support）
-  - 已发现信号「河湖水系」（landform.freshwater\_access）
+- 已发现信号「综合满意度 55%」（development.satisfaction.55\_360d）
 
 #### 效果摘要
 
@@ -14791,7 +14354,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 - 大气式蒸汽机 (`tech.atmospheric_engine`)：矿井排水提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，大气式蒸汽机直接使用这一能力完成其工艺或组织设计
 - 蒸汽抽水 (`tech.steam_pumping`)：矿井排水定义扬程、井下积水和连续排放需求，是蒸汽抽水的直接应用问题
-- 深层地球物理 (`tech.deep_geophysics`)：矿井排水提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，深层地球物理直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -14827,17 +14389,9 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 - 复式记账 (`tech.double_entry_bookkeeping`)：复式记账提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，商业租佃直接使用这一能力完成其工艺或组织设计
 
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「货币」（tech.currency）
-  - 已完成科技「庄园核算」（tech.estate\_accounting）
-
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「旱地承载力」（resource.arable\_land）
-  - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
+- 已发现信号「人口规模 12500」（development.population.12500\_360d）
 
 #### 效果摘要
 
@@ -14866,7 +14420,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 种植园庄园管理 (`tech.estate_plantation_management`)：商业租佃提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，种植园庄园管理直接使用这一能力完成其工艺或组织设计
 - 契约劳工制度 (`tech.indentured_contracts`)：商业租佃提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，契约劳工制度直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
@@ -14902,15 +14455,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 商业网络 (`tech.mercantile_networks`)：商业网络提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，特许商社直接使用这一能力完成其工艺或组织设计
-- 复式记账 (`tech.double_entry_bookkeeping`)：复式记账提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，特许商社直接使用这一能力完成其工艺或组织设计
-- 官僚行政 (`tech.state_bureaucracy`)：官僚行政提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，特许商社直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「海岸」（landform.coast）
-  - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
-  - 已发现信号「印刷突破」（breakthrough.printing）
+- 已发现信号「贸易商品 2 类」（development.trade.goods\_2）
 
 #### 效果摘要
 
@@ -14974,15 +14522,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 棉花园圃 (`tech.cotton_gardening`)：棉花园圃提供热带作物栽培、采收与商品化处理能力中的专门知识，商品作物管理直接使用这一能力完成其工艺或组织设计
-- 遮阴香料园 (`tech.spice_shade_gardening`)：遮阴香料园提供热带作物栽培、采收与商品化处理能力中的专门知识，商品作物管理直接使用这一能力完成其工艺或组织设计
-- 庄园核算 (`tech.estate_accounting`)：庄园核算提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，商品作物管理直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「亚麻」（bio.flax）
-  - 已发现信号「棉花」（bio.cotton）
-  - 已发现信号「亚麻样本接触」（contact.flax）
+- 已发现信号「贸易伙伴 1 个」（development.trade.partners\_1）
 
 #### 效果摘要
 
@@ -15012,89 +14555,8 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 种植园庄园管理 (`tech.estate_plantation_management`)：商品作物管理提供热带作物栽培、采收与商品化处理能力中的成套生产流程，种植园庄园管理直接使用这一能力完成其工艺或组织设计
+- 种植园庄园管理 (`tech.estate_plantation_management`)：商品作物管理提供种植园庄园管理不可替代的商品作物栽培、采收与经营原理
 - 工资契约 (`tech.wage_contracts`)：商品作物管理提供热带作物栽培、采收与商品化处理能力中的成套生产流程，工资契约直接使用这一能力完成其工艺或组织设计
-
-#### 主题路线后继
-
-无
-
-#### 跨领域应用
-
-无
-
-#### 作为候选参与的里程碑
-
-无
-
-### 种植园庄园管理 (`tech.estate_plantation_management`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.estate_plantation_management` |
-| 时代 | 探索时代 (`exploration`) |
-| 领域 | 社会 (`society`) |
-| 研究成本 | 108800 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | branch |
-| 锚点类型 | branch |
-| 节点角色 | institution |
-| 布局路线 | branch.tropical\_commodities |
-| 主要路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
-| 全部路线 | 作物 · 热带作物 (\`route.crop.tropical\`)；制度 · 市场 (\`route.institution.market\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | organization |
-
-#### 硬前置（决定研发资格）
-
-- 商业租佃 (`tech.commercial_tenancy`)：商业租佃提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，种植园庄园管理直接使用这一能力完成其工艺或组织设计
-- 商品作物管理 (`tech.commodity_crop_management`)：商品作物管理提供热带作物栽培、采收与商品化处理能力中的成套生产流程，种植园庄园管理直接使用这一能力完成其工艺或组织设计
-- 庄园核算 (`tech.estate_accounting`)：庄园核算提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，种植园庄园管理直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「特许商社」（tech.chartered\_companies）
-  - 已完成科技「作物驯化移植」（tech.crop\_acclimatization）
-  - 已发现信号「香料作物」（bio.spice）
-
-#### 发现启发（仅用于揭示）
-
-- 满足其一：
-  - 已发现信号「香料作物」（bio.spice）
-  - 已发现信号「棉花」（bio.cotton）
-
-#### 效果摘要
-
-解锁建筑：棉花农场；解锁建筑：亚麻庄园；解锁建筑：改良亚麻庄园；解锁建筑：香料种植园；专用商品作物产出 +28%；作为必要支撑：橡胶种植园
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 5 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 棉花农场 (`cotton_collector`)；亚麻庄园 (`method_flax_collector_r3`)；改良亚麻庄园 (`method_flax_collector_r5`)；香料种植园 (`spice_plants_collector`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 橡胶种植园 (`rubber_tree_collector`)
-
-#### 结构化内容效果
-
-- **棉花农场**（`building`）：`building.cotton_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **亚麻庄园**（`building`）：`building.method_flax_collector_r3` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **改良亚麻庄园**（`building`）：`building.method_flax_collector_r5` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **香料种植园**（`building`）：`building.spice_plants_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+28%
-  - 效果机制：热带作物辨识、栽培与商品化提高专用经济作物产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
-
-#### 被以下科技作为硬前置
-
-无
 
 #### 主题路线后继
 
@@ -15129,16 +14591,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 远洋航海 (`tech.oceanic_navigation`)：远洋航海提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，远洋补给直接使用这一能力完成其工艺或组织设计
-- 盐渍保存 (`tech.salt_preservation`)：盐渍保存提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，远洋补给直接使用这一能力完成其工艺或组织设计
-- 区域粮仓 (`tech.regional_granaries`)：区域粮仓提供粮食处理、保存与农艺组织能力中的稳定的组织与制度载体，远洋补给直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「海岸」（landform.coast）
-  - 已发现信号「海岸河口」（landform.coastal\_estuary）
-  - 已发现信号「外国舰船或远洋船体接触」（contact.maritime\_vessel）
-  - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
+- 已发现信号「两类商品作物形成产出」（development.commodity\_crop\_variety\_2）
 
 #### 效果摘要
 
@@ -15202,11 +14658,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 集约轮作 (`tech.intensive_crop_rotation`)：集约轮作提供谷物旱作、轮作与收获工艺中的成套生产流程，农艺交换直接使用这一能力完成其工艺或组织设计
-- 行业组织 (`tech.guild_organization`)：行业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，农艺交换直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「两类商品作物形成产出」（development.commodity\_crop\_variety\_2）
 
 #### 效果摘要
 
@@ -15235,7 +14690,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 跨区域植物学 (`tech.interregional_botany`)：农艺交换提供粮食处理、保存与农艺组织能力中的成套生产流程，跨区域植物学直接使用这一能力完成其工艺或组织设计
 - 农业改良 (`tech.agricultural_improvement`)：农艺交换提供粮食处理、保存与农艺组织能力中的成套生产流程，农业改良直接使用这一能力完成其工艺或组织设计
 - 土壤实验 (`tech.soil_experimentation`)：农艺交换提供粮食处理、保存与农艺组织能力中的成套生产流程，土壤实验直接使用这一能力完成其工艺或组织设计
 
@@ -15272,15 +14726,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 自然哲学 (`tech.natural_philosophy`)：自然哲学提供观察、分类、实验与生物育种知识中的操作与材料处理方法，跨区域植物学直接使用这一能力完成其工艺或组织设计
-- 农艺交换 (`tech.agronomic_exchange`)：农艺交换提供粮食处理、保存与农艺组织能力中的成套生产流程，跨区域植物学直接使用这一能力完成其工艺或组织设计
-- 远洋航海 (`tech.oceanic_navigation`)：远洋航海提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，跨区域植物学直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「玉米」（bio.maize）
-  - 已发现信号「马铃薯」（bio.potato）
-  - 已发现信号「香料样本接触」（contact.spice）
+- 已发现信号「农业就业 250」（development.employment.agriculture.250\_360d）
 
 #### 效果摘要
 
@@ -15348,10 +14797,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「小麦」（bio.wheat）
-  - 已发现信号「小麦样本接触」（contact.wheat）
-  - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
+- 已发现信号「知识就业 250」（development.employment.knowledge.250\_360d）
 
 #### 效果摘要
 
@@ -15380,7 +14826,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 作物驯化移植 (`tech.crop_acclimatization`)：作物移植适应提供观察、分类、实验与生物育种知识中的成套生产流程，作物驯化移植直接使用这一能力完成其工艺或组织设计
+无
 
 #### 主题路线后继
 
@@ -15415,14 +14861,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 跨区域植物学 (`tech.interregional_botany`)：跨区域植物学提供观察、分类、实验与生物育种知识中的操作与材料处理方法，作物驯化移植直接使用这一能力完成其工艺或组织设计
-- 作物移植适应 (`tech.crop_transplantation`)：作物移植适应提供观察、分类、实验与生物育种知识中的成套生产流程，作物驯化移植直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「马铃薯」（bio.potato）
-  - 已发现信号「块茎样本接触」（contact.potato）
-  - 已发现信号「梯田维护突破」（breakthrough.terrace\_maintenance）
+- 已发现信号「综合满意度 55%」（development.satisfaction.55\_360d）
 
 #### 效果摘要
 
@@ -15489,9 +14931,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「印刷突破」（breakthrough.printing）
-  - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
+- 已发现信号「贸易商品 2 类」（development.trade.goods\_2）
 
 #### 效果摘要
 
@@ -15517,6 +14957,78 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 - 社会领域研究效率：`country.research.society_efficiency`：+20%
   - 效果机制：制度记录与组织经验提高社会领域研究效率。
   - 运行时消费者：`NativeCountryRuntime::process_research_day`
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 种植园庄园管理 (`tech.estate_plantation_management`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.estate_plantation_management` |
+| 时代 | 探索时代 (`exploration`) |
+| 领域 | 社会 (`society`) |
+| 研究成本 | 108800 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | institution |
+| 布局路线 | branch.tropical\_commodities |
+| 主要路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
+| 全部路线 | 作物 · 热带作物 (\`route.crop.tropical\`)；制度 · 市场 (\`route.institution.market\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | organization |
+
+#### 硬前置（决定研发资格）
+
+- 商品作物管理 (`tech.commodity_crop_management`)：商品作物管理提供种植园庄园管理不可替代的商品作物栽培、采收与经营原理
+
+#### 发现启发（仅用于揭示）
+
+- 全部满足：
+  - 已发现信号「两类商品作物形成产出」（development.commodity\_crop\_variety\_2）
+  - 已发现信号「商品作物设施稳定经营」（development.commodity\_crop\_facilities\_4\_180d）
+
+#### 效果摘要
+
+解锁建筑：棉花农场；解锁建筑：亚麻庄园；解锁建筑：改良亚麻庄园；解锁建筑：香料种植园；专用商品作物产出 +28%；作为必要支撑：橡胶种植园
+
+#### 机会成本
+
+转入该路线需补齐历史锚点；时代 5 后的生产方式依赖专用资本、岗位或地理条件
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 棉花农场 (`cotton_collector`)；亚麻庄园 (`method_flax_collector_r3`)；改良亚麻庄园 (`method_flax_collector_r5`)；香料种植园 (`spice_plants_collector`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 橡胶种植园 (`rubber_tree_collector`)
+
+#### 结构化内容效果
+
+- **棉花农场**（`building`）：`building.cotton_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **亚麻庄园**（`building`）：`building.method_flax_collector_r3` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **改良亚麻庄园**（`building`）：`building.method_flax_collector_r5` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **香料种植园**（`building`）：`building.spice_plants_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+- 专用商品作物：`country.output.family.specialty_commodity_crops_factor`：+28%
+  - 效果机制：热带作物辨识、栽培与商品化提高专用经济作物产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -15638,18 +15150,9 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 - 自然哲学 (`tech.natural_philosophy`)：自然哲学提供观察、分类、实验与生物育种知识中的操作与材料处理方法，科学分类直接使用这一能力完成其工艺或组织设计
 
-#### 额外研发条件
-
-- 至少满足 2 项：
-  - 已完成科技「实验科学」（tech.experimental\_science）
-  - 已完成科技「跨区域植物学」（tech.interregional\_botany）
-  - 已完成科技「学术社团」（tech.learned\_societies）
-
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「印刷突破」（breakthrough.printing）
-  - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
+- 已发现信号「知识产出规模 1000」（development.output.knowledge.1000\_360d）
 
 #### 效果摘要
 
@@ -15678,9 +15181,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 系统育种 (`tech.crop_breeding`)：科学分类提供观察、分类、实验与生物育种知识中的操作与材料处理方法，系统育种直接使用这一能力完成其工艺或组织设计
 - 生物技术 (`tech.biotechnology`)：科学分类提供观察、分类、实验与生物育种知识中的操作与材料处理方法，生物技术直接使用这一能力完成其工艺或组织设计
-- 生物信息学 (`tech.bioinformatics`)：科学分类提供观察、分类、实验与生物育种知识中的操作与材料处理方法，生物信息学直接使用这一能力完成其工艺或组织设计
 - 计算生物学 (`tech.computational_biology`)：科学分类提供观察、分类、实验与生物育种知识中的操作与材料处理方法，计算生物学直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
@@ -15716,21 +15217,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 留种选育 (`tech.seed_selection`)：留种选育提供粮食处理、保存与农艺组织能力中的成套生产流程，系统育种直接使用这一能力完成其工艺或组织设计
-- 科学分类 (`tech.scientific_classification`)：科学分类提供观察、分类、实验与生物育种知识中的操作与材料处理方法，系统育种直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 至少满足 2 项：
-  - 已完成科技「土壤实验」（tech.soil\_experimentation）
-  - 已完成科技「跨区域植物学」（tech.interregional\_botany）
-  - 已完成科技「农业改良」（tech.agricultural\_improvement）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「马铃薯」（bio.potato）
-  - 已发现信号「块茎样本接触」（contact.potato）
-  - 已发现信号「梯田维护突破」（breakthrough.terrace\_maintenance）
+- 已发现信号「贸易商品 4 类」（development.trade.goods\_4）
 
 #### 效果摘要
 
@@ -15806,7 +15296,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「聚落等级 3」（development.settlement.tier\_3\_360d）
 
 #### 效果摘要
 
@@ -15874,10 +15364,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「金属加工突破」（breakthrough.metalworking）
-  - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
-  - 已发现信号「铁矿」（resource.iron\_ore）
+- 已发现信号「活跃产业规模 16」（development.buildings.active\_16\_360d）
 
 #### 效果摘要
 
@@ -15909,8 +15396,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 被以下科技作为硬前置
 
 - 蒸汽密封 (`tech.steam_sealing`)：精密工程提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，蒸汽密封直接使用这一能力完成其工艺或组织设计
-- 罐藏 (`tech.canning`)：精密工程提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，罐藏直接使用这一能力完成其工艺或组织设计
-- 内燃机 (`tech.internal_combustion`)：精密工程提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，内燃机直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -15945,11 +15430,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 经院研究法 (`tech.scholastic_method`)：经院研究法提供记录、验证、计算与知识传播方法中的操作与材料处理方法，实验科学直接使用这一能力完成其工艺或组织设计
-- 机械计时 (`tech.mechanical_timekeeping`)：机械计时提供测量基准、统计方法与精密仪器能力中的动力与规模化能力，实验科学直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「制造就业 250」（development.employment.manufacturing.250\_360d）
 
 #### 效果摘要
 
@@ -15979,13 +15463,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 被以下科技作为硬前置
 
 - 概率与统计 (`tech.probability_statistics`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，概率与统计直接使用这一能力完成其工艺或组织设计
-- 公共卫生 (`tech.public_health`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，公共卫生直接使用这一能力完成其工艺或组织设计
 - 热力学 (`tech.thermodynamics`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，热力学直接使用这一能力完成其工艺或组织设计
 - 工业化学 (`tech.industrial_chemistry`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，工业化学直接使用这一能力完成其工艺或组织设计
-- 现代医学 (`tech.modern_medicine`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，现代医学直接使用这一能力完成其工艺或组织设计
 - 电磁感应 (`tech.electromagnetic_induction`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，电磁感应直接使用这一能力完成其工艺或组织设计
 - 电化学 (`tech.electrochemistry`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，电化学直接使用这一能力完成其工艺或组织设计
-- 无线电 (`tech.radio`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，无线电直接使用这一能力完成其工艺或组织设计
 - 工业研究 (`tech.industrial_research`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，工业研究直接使用这一能力完成其工艺或组织设计
 - 核裂变 (`tech.nuclear_fission`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，核裂变直接使用这一能力完成其工艺或组织设计
 
@@ -16025,9 +15506,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「印刷突破」（breakthrough.printing）
-  - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
+- 已发现信号「制造产出规模 10000」（development.output.manufacturing.10000\_720d）
 
 #### 效果摘要
 
@@ -16092,17 +15571,9 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 - 实验科学 (`tech.experimental_science`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，概率与统计直接使用这一能力完成其工艺或组织设计
 
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「天文历法」（tech.celestial\_calendars）
-  - 已完成科技「复式记账」（tech.double\_entry\_bookkeeping）
-
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「印刷突破」（breakthrough.printing）
-  - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
+- 已发现信号「综合满意度 55%」（development.satisfaction.55\_360d）
 
 #### 效果摘要
 
@@ -16131,13 +15602,8 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 深层地球物理 (`tech.deep_geophysics`)：概率与统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，深层地球物理直接使用这一能力完成其工艺或组织设计
 - 运筹学 (`tech.operations_research`)：概率与统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，运筹学直接使用这一能力完成其工艺或组织设计
-- 信息论 (`tech.information_theory`)：概率与统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，信息论直接使用这一能力完成其工艺或组织设计
 - 数值天气预报 (`tech.numerical_weather_prediction`)：概率与统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，数值天气预报直接使用这一能力完成其工艺或组织设计
-- 地理信息系统 (`tech.geographic_information_systems`)：概率与统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，地理信息系统直接使用这一能力完成其工艺或组织设计
-- 计算生物学 (`tech.computational_biology`)：概率与统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，计算生物学直接使用这一能力完成其工艺或组织设计
-- 气候建模 (`tech.climate_modeling`)：概率与统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，气候建模直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -16172,11 +15638,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 地图学 (`tech.cartography`)：地图学提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，标准化直接使用这一能力完成其工艺或组织设计
-- 机械计时 (`tech.mechanical_timekeeping`)：机械计时提供测量基准、统计方法与精密仪器能力中的动力与规模化能力，标准化直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「知识就业 250」（development.employment.knowledge.250\_360d）
 
 #### 效果摘要
 
@@ -16206,14 +15671,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 水利工程 (`tech.hydraulic_engineering`)：标准化统一管径、构件和测量基准，使跨区域水利设施能够协同建设
 - 机械工坊 (`tech.mechanical_workshops`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，机械工坊直接使用这一能力完成其工艺或组织设计
-- 机械化农业 (`tech.mechanized_agriculture`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，机械化农业直接使用这一能力完成其工艺或组织设计
 - 机床 (`tech.machine_tools`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，机床直接使用这一能力完成其工艺或组织设计
-- 工业化学 (`tech.industrial_chemistry`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，工业化学直接使用这一能力完成其工艺或组织设计
 - 工厂制 (`tech.factory_system`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，工厂制直接使用这一能力完成其工艺或组织设计
 - 互换零件 (`tech.interchangeable_parts`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，互换零件直接使用这一能力完成其工艺或组织设计
-- 电网 (`tech.electric_grid`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，电网直接使用这一能力完成其工艺或组织设计
 - 工业质量控制 (`tech.industrial_quality_control`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，工业质量控制直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
@@ -16249,20 +15710,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 城市卫生 (`tech.urban_sanitation`)：城市卫生提供卫生、疾病控制与医疗组织能力中的操作与材料处理方法，公共卫生直接使用这一能力完成其工艺或组织设计
-- 实验科学 (`tech.experimental_science`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，公共卫生直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「科学分类」（tech.scientific\_classification）
-  - 已完成科技「官僚行政」（tech.state\_bureaucracy）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「硝石」（resource.saltpeter）
-  - 已发现信号「硫磺」（resource.sulfur）
-  - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
+- 已发现信号「知识产出规模 1000」（development.output.knowledge.1000\_360d）
 
 #### 效果摘要
 
@@ -16327,22 +15778,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 运河工程 (`tech.canal_engineering`)：运河工程提供大尺度渠道、闸门和水位调度经验
-- 灌溉测量 (`tech.irrigation_surveying`)：灌溉测量提供坡降、流量和高程测定方法
-- 标准化 (`tech.standardization`)：标准化统一管径、构件和测量基准，使跨区域水利设施能够协同建设
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「城市水务」（tech.urban\_waterworks）
-  - 已完成科技「地产测绘」（tech.property\_cadastre）
-  - 已发现信号「流域治理突破」（breakthrough.watershed\_management）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「河湖水系」（landform.freshwater\_access）
-  - 已发现信号「河谷」（landform.river\_valley）
-  - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
+- 已发现信号「贸易商品 4 类」（development.trade.goods\_4）
 
 #### 效果摘要
 
@@ -16415,10 +15854,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「金属加工突破」（breakthrough.metalworking）
-  - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
-  - 已发现信号「铁矿」（resource.iron\_ore）
+- 已发现信号「聚落等级 3」（development.settlement.tier\_3\_360d）
 
 #### 效果摘要
 
@@ -16449,9 +15885,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 大气式蒸汽机 (`tech.atmospheric_engine`)：机械工坊提供工具制造、机械加工与设备控制能力中的动力与规模化能力，大气式蒸汽机直接使用这一能力完成其工艺或组织设计
-- 蒸汽密封 (`tech.steam_sealing`)：机械工坊提供工具制造、机械加工与设备控制能力中的动力与规模化能力，蒸汽密封直接使用这一能力完成其工艺或组织设计
-- 内燃机 (`tech.internal_combustion`)：机械工坊提供工具制造、机械加工与设备控制能力中的动力与规模化能力，内燃机直接使用这一能力完成其工艺或组织设计
+无
 
 #### 主题路线后继
 
@@ -16486,21 +15920,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 自然哲学 (`tech.natural_philosophy`)：自然哲学提供观察、分类、实验与生物育种知识中的操作与材料处理方法，地质勘探直接使用这一能力完成其工艺或组织设计
-- 地图学 (`tech.cartography`)：地图学提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，地质勘探直接使用这一能力完成其工艺或组织设计
-- 井筒开掘 (`tech.shaft_sinking`)：井筒开掘提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，地质勘探直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「矿井排水」（tech.mine\_drainage）
-  - 已完成科技「科学分类」（tech.scientific\_classification）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「铜矿」（resource.copper\_ore）
-  - 已发现信号「锡矿」（resource.tin\_ore）
-  - 已发现信号「金属加工突破」（breakthrough.metalworking）
+- 已发现信号「活跃产业规模 16」（development.buildings.active\_16\_360d）
 
 #### 效果摘要
 
@@ -16535,7 +15958,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 肥料加工 (`tech.fertilizer_processing`)：地质勘探提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，肥料加工直接使用这一能力完成其工艺或组织设计
 - 石油开采 (`tech.petroleum_extraction`)：地质勘探提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，石油开采直接使用这一能力完成其工艺或组织设计
 - 深层地球物理 (`tech.deep_geophysics`)：地质勘探提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，深层地球物理直接使用这一能力完成其工艺或组织设计
 
@@ -16572,15 +15994,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 矿井排水 (`tech.mine_drainage`)：矿井排水提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，大气式蒸汽机直接使用这一能力完成其工艺或组织设计
-- 机械工坊 (`tech.mechanical_workshops`)：机械工坊提供工具制造、机械加工与设备控制能力中的动力与规模化能力，大气式蒸汽机直接使用这一能力完成其工艺或组织设计
-- 高炉冶炼 (`tech.blast_furnace`)：高炉冶炼提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，大气式蒸汽机直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「河湖水系」（landform.freshwater\_access）
-  - 已发现信号「稳定风廊」（landform.stable\_wind\_corridor）
-  - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
+- 已发现信号「制造就业 250」（development.employment.manufacturing.250\_360d）
 
 #### 效果摘要
 
@@ -16610,7 +16027,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 工业采煤 (`tech.industrial_coal_mining`)：大气式蒸汽机提供矿井、钢铁、蒸汽机械与重型设备能力中的动力与规模化能力，工业采煤直接使用这一能力完成其工艺或组织设计
 - 蒸汽动力 (`tech.steam_power`)：大气式蒸汽机证明蒸汽驱动活塞做功的可行结构，是通用蒸汽动力的工程原型
 
 #### 主题路线后继
@@ -16646,14 +16062,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 经院研究法 (`tech.scholastic_method`)：经院研究法提供论证、注释和公开争辩的学术规范
-- 特许大学 (`tech.chartered_universities`)：特许大学提供稳定的学者共同体、章程和人才来源
-- 螺旋压印 (`tech.screw_press_printing`)：螺旋压印使论文、目录与通信材料能够低成本复制和跨地传播
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「印刷突破」（breakthrough.printing）
-  - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
+- 已发现信号「制造产出规模 10000」（development.output.manufacturing.10000\_720d）
 
 #### 效果摘要
 
@@ -16682,7 +16094,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 开放科学网络 (`tech.open_science_networks`)：学术社团提供观察、分类、实验与生物育种知识中的操作与材料处理方法，开放科学网络直接使用这一能力完成其工艺或组织设计
+无
 
 #### 主题路线后继
 
@@ -16721,10 +16133,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-  - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
-  - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
+- 已发现信号「综合满意度 55%」（development.satisfaction.55\_360d）
 
 #### 效果摘要
 
@@ -16791,10 +16200,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「羊」（bio.sheep）
-  - 已发现信号「马匹」（bio.horse）
-  - 已发现信号「牛」（bio.cattle）
+- 已发现信号「知识就业 250」（development.employment.knowledge.250\_360d）
 
 #### 效果摘要
 
@@ -16861,9 +16267,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「印刷突破」（breakthrough.printing）
-  - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
+- 已发现信号「知识产出规模 1000」（development.output.knowledge.1000\_360d）
 
 #### 效果摘要
 
@@ -16892,7 +16296,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 劳工组织 (`tech.labor_organization`)：工资契约提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，劳工组织直接使用这一能力完成其工艺或组织设计
+无
 
 #### 主题路线后继
 
@@ -16930,9 +16334,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「印刷突破」（breakthrough.printing）
-  - 已发现信号「旱地承载力」（resource.arable\_land）
+- 已发现信号「贸易商品 4 类」（development.trade.goods\_4）
 
 #### 效果摘要
 
@@ -16961,7 +16363,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 地产测绘 (`tech.property_cadastre`)：长期租约提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，地产测绘直接使用这一能力完成其工艺或组织设计
+无
 
 #### 主题路线后继
 
@@ -16996,11 +16398,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 复式记账 (`tech.double_entry_bookkeeping`)：复式记账提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，合作社组织直接使用这一能力完成其工艺或组织设计
-- 行业组织 (`tech.guild_organization`)：行业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，合作社组织直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「聚落等级 3」（development.settlement.tier\_3\_360d）
 
 #### 效果摘要
 
@@ -17029,10 +16430,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 工厂制 (`tech.factory_system`)：合作社组织提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，工厂制直接使用这一能力完成其工艺或组织设计
 - 公共教育 (`tech.public_education`)：合作社组织提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，公共教育直接使用这一能力完成其工艺或组织设计
-- 国营企业 (`tech.state_enterprises`)：合作社组织提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，国营企业直接使用这一能力完成其工艺或组织设计
-- 知识合作社 (`tech.knowledge_cooperatives`)：合作社组织提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，知识合作社直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -17070,10 +16468,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-  - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
-  - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
+- 已发现信号「活跃产业规模 16」（development.buildings.active\_16\_360d）
 
 #### 效果摘要
 
@@ -17138,17 +16533,9 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 - 远洋航海 (`tech.oceanic_navigation`)：远洋航海提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，精密仪器直接使用这一能力完成其工艺或组织设计
 
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「度量衡」（tech.weights\_and\_measures）
-  - 已完成科技「机械计时」（tech.mechanical\_timekeeping）
-
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「金属加工突破」（breakthrough.metalworking）
-  - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
+- 已发现信号「制造就业 250」（development.employment.manufacturing.250\_360d）
 
 #### 效果摘要
 
@@ -17177,11 +16564,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 铁路物流 (`tech.rail_logistics`)：精密仪器提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，铁路物流直接使用这一能力完成其工艺或组织设计
-- 电磁感应 (`tech.electromagnetic_induction`)：精密仪器提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，电磁感应直接使用这一能力完成其工艺或组织设计
-- 核能 (`tech.nuclear_energy`)：精密仪器提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，核能直接使用这一能力完成其工艺或组织设计
-- 卫星观测 (`tech.satellite_observation`)：精密仪器提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，卫星观测直接使用这一能力完成其工艺或组织设计
-- 矿物光谱遥感 (`tech.mineral_spectral_survey`)：精密仪器提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，矿物光谱遥感直接使用这一能力完成其工艺或组织设计
+无
 
 #### 主题路线后继
 
@@ -17216,22 +16599,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 地图学 (`tech.cartography`)：地图学提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，地产测绘直接使用这一能力完成其工艺或组织设计
-- 长期租约 (`tech.long_term_leases`)：长期租约提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，地产测绘直接使用这一能力完成其工艺或组织设计
-- 庄园核算 (`tech.estate_accounting`)：庄园核算提供地权、租佃、登记与乡村治理制度中的稳定的组织与制度载体，地产测绘直接使用这一能力完成其工艺或组织设计
-- 度量衡 (`tech.weights_and_measures`)：度量衡提供测量基准、统计方法与精密仪器能力中的稳定的组织与制度载体，地产测绘直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「标准化」（tech.standardization）
-  - 已完成科技「官僚行政」（tech.state\_bureaucracy）
-  - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「印刷突破」（breakthrough.printing）
-  - 已发现信号「旱地承载力」（resource.arable\_land）
+- 已发现信号「制造产出规模 10000」（development.output.manufacturing.10000\_720d）
 
 #### 效果摘要
 
@@ -17298,7 +16669,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「煤炭」（resource.coal）
+- 已发现信号「综合满意度 55%」（development.satisfaction.55\_360d）
 
 #### 效果摘要
 
@@ -17362,14 +16733,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 精密工程 (`tech.precision_engineering`)：精密工程提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，蒸汽密封直接使用这一能力完成其工艺或组织设计
-- 机械工坊 (`tech.mechanical_workshops`)：机械工坊提供工具制造、机械加工与设备控制能力中的动力与规模化能力，蒸汽密封直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「河湖水系」（landform.freshwater\_access）
-  - 已发现信号「稳定风廊」（landform.stable\_wind\_corridor）
-  - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
+- 已发现信号「知识就业 250」（development.employment.knowledge.250\_360d）
 
 #### 效果摘要
 
@@ -17398,7 +16765,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 蒸汽动力 (`tech.steam_power`)：蒸汽密封降低汽缸、阀门和管路泄漏，使压力和效率可稳定维持
+无
 
 #### 主题路线后继
 
@@ -17433,14 +16800,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 盐渍保存 (`tech.salt_preservation`)：盐渍保存提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，罐藏直接使用这一能力完成其工艺或组织设计
-- 精密工程 (`tech.precision_engineering`)：精密工程提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，罐藏直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
-  - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-  - 已发现信号「连续歉收经验」（weather.repeated\_crop\_failure）
+- 已发现信号「知识产出规模 1000」（development.output.knowledge.1000\_360d）
 
 #### 效果摘要
 
@@ -17588,12 +16951,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 煤矿开采 (`tech.coal_mining`)：煤矿开采提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，工业采煤直接使用这一能力完成其工艺或组织设计
-- 矿井木支护 (`tech.mine_timbering`)：矿井木支护提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，工业采煤直接使用这一能力完成其工艺或组织设计
-- 大气式蒸汽机 (`tech.atmospheric_engine`)：大气式蒸汽机提供矿井、钢铁、蒸汽机械与重型设备能力中的动力与规模化能力，工业采煤直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「煤炭」（resource.coal）
+- 已发现信号「活跃产业规模 16」（development.buildings.active\_16\_360d）
 
 #### 效果摘要
 
@@ -17625,7 +16986,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 焦炭冶炼 (`tech.coke_smelting`)：工业采煤提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，焦炭冶炼直接使用这一能力完成其工艺或组织设计
 - 公司矿山 (`tech.corporate_mining`)：工业采煤提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，公司矿山直接使用这一能力完成其工艺或组织设计
 - 机械化采矿 (`tech.mechanized_mining`)：工业采煤提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，机械化采矿直接使用这一能力完成其工艺或组织设计
 
@@ -17662,20 +17022,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 高炉冶炼 (`tech.blast_furnace`)：高炉冶炼提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，焦炭冶炼直接使用这一能力完成其工艺或组织设计
-- 工业采煤 (`tech.industrial_coal_mining`)：工业采煤提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，焦炭冶炼直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「工业化学」（tech.industrial\_chemistry）
-  - 已完成科技「矿井通风」（tech.mine\_ventilation）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「铁矿」（resource.iron\_ore）
-  - 已发现信号「煤炭」（resource.coal）
-  - 已发现信号「金属加工突破」（breakthrough.metalworking）
+- 已发现信号「制造就业 250」（development.employment.manufacturing.250\_360d）
 
 #### 效果摘要
 
@@ -17742,11 +17092,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 实验科学 (`tech.experimental_science`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，热力学直接使用这一能力完成其工艺或组织设计
-- 机械计时 (`tech.mechanical_timekeeping`)：机械计时提供测量基准、统计方法与精密仪器能力中的动力与规模化能力，热力学直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「采掘就业 250」（development.employment.extractive.250\_360d）
 
 #### 效果摘要
 
@@ -17776,10 +17125,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 被以下科技作为硬前置
 
 - 电气化 (`tech.electrification`)：热力学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，电气化直接使用这一能力完成其工艺或组织设计
-- 内燃机 (`tech.internal_combustion`)：热力学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，内燃机直接使用这一能力完成其工艺或组织设计
-- 机动农业 (`tech.motorized_agriculture`)：热力学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，机动农业直接使用这一能力完成其工艺或组织设计
 - 机械制冷 (`tech.refrigeration`)：热力学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，机械制冷直接使用这一能力完成其工艺或组织设计
-- 石化裂解 (`tech.petrochemical_cracking`)：热力学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，石化裂解直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -17814,11 +17160,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 农业改良 (`tech.agricultural_improvement`)：农业改良提供谷物旱作、轮作与收获工艺中的成套生产流程，机械化农业直接使用这一能力完成其工艺或组织设计
-- 标准化 (`tech.standardization`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，机械化农业直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「能源就业 250」（development.employment.energy.250\_360d）
 
 #### 效果摘要
 
@@ -17850,8 +17195,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 机械收割 (`tech.mechanical_reaping`)：机械化农业提供工具制造、机械加工与设备控制能力中的成套生产流程，机械收割直接使用这一能力完成其工艺或组织设计
-- 机械脱粒 (`tech.mechanical_threshing`)：机械化农业提供工具制造、机械加工与设备控制能力中的成套生产流程，机械脱粒直接使用这一能力完成其工艺或组织设计
 - 机动农业 (`tech.motorized_agriculture`)：机械化农业提供工具制造、机械加工与设备控制能力中的成套生产流程，机动农业直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
@@ -17887,20 +17230,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 行业组织 (`tech.guild_organization`)：行业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，工业组织直接使用这一能力完成其工艺或组织设计
-- 复式记账 (`tech.double_entry_bookkeeping`)：复式记账提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，工业组织直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「工资契约」（tech.wage\_contracts）
-  - 已完成科技「商业农庄」（tech.commercial\_estates）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
-  - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
-  - 已发现信号「蒸汽动力突破」（breakthrough.steam\_power）
+- 已发现信号「制造产出规模 10000」（development.output.manufacturing.10000\_720d）
 
 #### 效果摘要
 
@@ -17930,10 +17263,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 劳工组织 (`tech.labor_organization`)：工业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，劳工组织直接使用这一能力完成其工艺或组织设计
 - 管理层级 (`tech.managerial_hierarchy`)：工业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，管理层级直接使用这一能力完成其工艺或组织设计
-- 流水线组织 (`tech.assembly_line`)：工业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，流水线组织直接使用这一能力完成其工艺或组织设计
-- 运筹学 (`tech.operations_research`)：工业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，运筹学直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -17968,11 +17298,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 标准化 (`tech.standardization`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，机床直接使用这一能力完成其工艺或组织设计
-- 行业组织 (`tech.guild_organization`)：行业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，机床直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「能源产出规模 10000」（development.output.energy.10000\_720d）
 
 #### 效果摘要
 
@@ -18003,19 +17332,8 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 蒸汽动力 (`tech.steam_power`)：机床提供精密汽缸、活塞、阀门和传动件的批量制造能力
-- 蒸汽抽水 (`tech.steam_pumping`)：机床保证泵缸、活塞、阀门与连杆的精度和可维修性
-- 机械印刷 (`tech.mechanized_printing`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，机械印刷直接使用这一能力完成其工艺或组织设计
 - 机械收割 (`tech.mechanical_reaping`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，机械收割直接使用这一能力完成其工艺或组织设计
 - 机械脱粒 (`tech.mechanical_threshing`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，机械脱粒直接使用这一能力完成其工艺或组织设计
-- 纺织机械 (`tech.textile_machinery`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，纺织机械直接使用这一能力完成其工艺或组织设计
-- 互换零件 (`tech.interchangeable_parts`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，互换零件直接使用这一能力完成其工艺或组织设计
-- 蒸汽锯木 (`tech.steam_sawmilling`)：机床提供耐用、可互换的轴承、锯架与传动零件，使高速锯切设备可制造和维护
-- 电气化 (`tech.electrification`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，电气化直接使用这一能力完成其工艺或组织设计
-- 电动机 (`tech.electric_motors`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，电动机直接使用这一能力完成其工艺或组织设计
-- 石油钻探 (`tech.petroleum_drilling`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，石油钻探直接使用这一能力完成其工艺或组织设计
-- 机械制冷 (`tech.refrigeration`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，机械制冷直接使用这一能力完成其工艺或组织设计
-- 机械化采矿 (`tech.mechanized_mining`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，机械化采矿直接使用这一能力完成其工艺或组织设计
 - 机器人制造 (`tech.robotic_manufacturing`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，机器人制造直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
@@ -18051,20 +17369,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 大气式蒸汽机 (`tech.atmospheric_engine`)：大气式蒸汽机证明蒸汽驱动活塞做功的可行结构，是通用蒸汽动力的工程原型
-- 蒸汽密封 (`tech.steam_sealing`)：蒸汽密封降低汽缸、阀门和管路泄漏，使压力和效率可稳定维持
-- 机床 (`tech.machine_tools`)：机床提供精密汽缸、活塞、阀门和传动件的批量制造能力
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「水力机械」（tech.water\_power）
-  - 已完成科技「风力机械」（tech.wind\_power）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「蒸汽动力突破」（breakthrough.steam\_power）
-  - 已发现信号「蒸汽密封突破」（breakthrough.steam\_sealing）
+- 已发现信号「累计贸易量 1000」（development.trade.quantity\_1000）
 
 #### 效果摘要
 
@@ -18095,12 +17403,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 蒸汽抽水 (`tech.steam_pumping`)：蒸汽动力提供不依赖河流的连续泵送功率
 - 铁路物流 (`tech.rail_logistics`)：蒸汽动力提供矿井、钢铁、蒸汽机械与重型设备能力中的动力与规模化能力，铁路物流直接使用这一能力完成其工艺或组织设计
-- 机械印刷 (`tech.mechanized_printing`)：蒸汽动力提供矿井、钢铁、蒸汽机械与重型设备能力中的动力与规模化能力，机械印刷直接使用这一能力完成其工艺或组织设计
-- 蒸汽锯木 (`tech.steam_sawmilling`)：蒸汽动力提供连续旋转机械功，直接驱动锯框、进料与传动机构
-- 石油开采 (`tech.petroleum_extraction`)：蒸汽动力提供矿井、钢铁、蒸汽机械与重型设备能力中的动力与规模化能力，石油开采直接使用这一能力完成其工艺或组织设计
-- 发电机 (`tech.electric_generation`)：蒸汽动力提供矿井、钢铁、蒸汽机械与重型设备能力中的动力与规模化能力，发电机直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -18136,15 +17439,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 矿井排水 (`tech.mine_drainage`)：矿井排水定义扬程、井下积水和连续排放需求，是蒸汽抽水的直接应用问题
-- 蒸汽动力 (`tech.steam_power`)：蒸汽动力提供不依赖河流的连续泵送功率
-- 机床 (`tech.machine_tools`)：机床保证泵缸、活塞、阀门与连杆的精度和可维修性
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「河湖水系」（landform.freshwater\_access）
-  - 已发现信号「河谷」（landform.river\_valley）
-  - 已发现信号「流域治理突破」（breakthrough.watershed\_management）
+- 已发现信号「贸易伙伴 2 个」（development.trade.partners\_2）
 
 #### 效果摘要
 
@@ -18209,14 +17507,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 蒸汽动力 (`tech.steam_power`)：蒸汽动力提供矿井、钢铁、蒸汽机械与重型设备能力中的动力与规模化能力，铁路物流直接使用这一能力完成其工艺或组织设计
-- 道路工程 (`tech.road_engineering`)：道路工程提供工具制造、机械加工与设备控制能力中的稳定的组织与制度载体，铁路物流直接使用这一能力完成其工艺或组织设计
-- 精密仪器 (`tech.precision_instruments`)：精密仪器提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，铁路物流直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「蒸汽动力突破」（breakthrough.steam\_power）
-  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
+- 已发现信号「人口规模 62500」（development.population.62500\_720d）
 
 #### 效果摘要
 
@@ -18247,7 +17541,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 冷链 (`tech.cold_chain`)：铁路物流提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，冷链直接使用这一能力完成其工艺或组织设计
+无
 
 #### 主题路线后继
 
@@ -18282,15 +17576,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 实验科学 (`tech.experimental_science`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，工业化学直接使用这一能力完成其工艺或组织设计
-- 标准化 (`tech.standardization`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，工业化学直接使用这一能力完成其工艺或组织设计
-- 火药配制 (`tech.gunpowder_formulation`)：火药配制提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，工业化学直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「硫磺」（resource.sulfur）
-  - 已发现信号「磷矿石」（resource.phosphate\_rock）
-  - 已发现信号「硝石」（resource.saltpeter）
+- 已发现信号「活跃产业规模 16」（development.buildings.active\_16\_360d）
 
 #### 效果摘要
 
@@ -18322,16 +17611,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 肥料加工 (`tech.fertilizer_processing`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，肥料加工直接使用这一能力完成其工艺或组织设计
-- 现代医学 (`tech.modern_medicine`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，现代医学直接使用这一能力完成其工艺或组织设计
-- 电化学 (`tech.electrochemistry`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，电化学直接使用这一能力完成其工艺或组织设计
-- 先进冶金 (`tech.advanced_metallurgy`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，先进冶金直接使用这一能力完成其工艺或组织设计
-- 石油化工 (`tech.petrochemical_industry`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，石油化工直接使用这一能力完成其工艺或组织设计
 - 合成材料 (`tech.synthetic_materials`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，合成材料直接使用这一能力完成其工艺或组织设计
-- 公共卫生体系 (`tech.public_health_systems`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，公共卫生体系直接使用这一能力完成其工艺或组织设计
-- 石化裂解 (`tech.petrochemical_cracking`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，石化裂解直接使用这一能力完成其工艺或组织设计
-- 塑料工程 (`tech.plastics_engineering`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，塑料工程直接使用这一能力完成其工艺或组织设计
-- 核燃料循环 (`tech.nuclear_fuel_cycle`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，核燃料循环直接使用这一能力完成其工艺或组织设计
 - 合成纤维工程 (`tech.synthetic_fiber_engineering`)：工业化学提供聚合、溶剂、温度和纯度控制，是合成纤维成形的反应基础
 - 工业生态 (`tech.industrial_ecology`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，工业生态直接使用这一能力完成其工艺或组织设计
 
@@ -18370,15 +17650,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 土壤实验 (`tech.soil_experimentation`)：土壤实验提供观察、分类、实验与生物育种知识中的操作与材料处理方法，肥料加工直接使用这一能力完成其工艺或组织设计
-- 地质勘探 (`tech.geological_prospecting`)：地质勘探提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，肥料加工直接使用这一能力完成其工艺或组织设计
-- 工业化学 (`tech.industrial_chemistry`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，肥料加工直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「硫磺」（resource.sulfur）
-  - 已发现信号「磷矿石」（resource.phosphate\_rock）
-  - 已发现信号「硝石」（resource.saltpeter）
+- 已发现信号「制造就业 250」（development.employment.manufacturing.250\_360d）
 
 #### 效果摘要
 
@@ -18444,15 +17719,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 螺旋压印 (`tech.screw_press_printing`)：螺旋压印提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，机械印刷直接使用这一能力完成其工艺或组织设计
-- 蒸汽动力 (`tech.steam_power`)：蒸汽动力提供矿井、钢铁、蒸汽机械与重型设备能力中的动力与规模化能力，机械印刷直接使用这一能力完成其工艺或组织设计
-- 机床 (`tech.machine_tools`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，机械印刷直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「印刷突破」（breakthrough.printing）
-  - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
-  - 已发现信号「蒸汽动力突破」（breakthrough.steam\_power）
+- 已发现信号「采掘就业 250」（development.employment.extractive.250\_360d）
 
 #### 效果摘要
 
@@ -18516,20 +17786,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 机床 (`tech.machine_tools`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，机械收割直接使用这一能力完成其工艺或组织设计
-- 机械化农业 (`tech.mechanized_agriculture`)：机械化农业提供工具制造、机械加工与设备控制能力中的成套生产流程，机械收割直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「轮作」（tech.crop\_rotation）
-  - 已完成科技「佃作谷物」（tech.tenant\_cereal\_farming）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「稻」（bio.rice）
-  - 已发现信号「稻种样本接触」（contact.rice）
-  - 已发现信号「水田控制突破」（breakthrough.paddy\_control）
+- 已发现信号「能源就业 250」（development.employment.energy.250\_360d）
 
 #### 效果摘要
 
@@ -18594,14 +17854,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 机床 (`tech.machine_tools`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，机械脱粒直接使用这一能力完成其工艺或组织设计
-- 机械化农业 (`tech.mechanized_agriculture`)：机械化农业提供工具制造、机械加工与设备控制能力中的成套生产流程，机械脱粒直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「小麦」（bio.wheat）
-  - 已发现信号「小麦样本接触」（contact.wheat）
-  - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
+- 已发现信号「制造产出规模 10000」（development.output.manufacturing.10000\_720d）
 
 #### 效果摘要
 
@@ -18668,11 +17924,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 标准化 (`tech.standardization`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，工厂制直接使用这一能力完成其工艺或组织设计
-- 合作社组织 (`tech.cooperative_association`)：合作社组织提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，工厂制直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「能源产出规模 10000」（development.output.energy.10000\_720d）
 
 #### 效果摘要
 
@@ -18705,14 +17960,8 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 纺织机械 (`tech.textile_machinery`)：工厂制提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，纺织机械直接使用这一能力完成其工艺或组织设计
 - 劳工组织 (`tech.labor_organization`)：工厂制提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，劳工组织直接使用这一能力完成其工艺或组织设计
-- 管理层级 (`tech.managerial_hierarchy`)：工厂制提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，管理层级直接使用这一能力完成其工艺或组织设计
 - 工业统计 (`tech.industrial_statistics`)：工厂制提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，工业统计直接使用这一能力完成其工艺或组织设计
-- 流水线组织 (`tech.assembly_line`)：工厂制提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，流水线组织直接使用这一能力完成其工艺或组织设计
-- 公共教育 (`tech.public_education`)：工厂制提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，公共教育直接使用这一能力完成其工艺或组织设计
-- 工业研究 (`tech.industrial_research`)：工厂制提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，工业研究直接使用这一能力完成其工艺或组织设计
-- 国营企业 (`tech.state_enterprises`)：工厂制提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，国营企业直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -18747,21 +17996,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 织机织造 (`tech.loom_weaving`)：织机织造提供纤维处理、纺纱、织造与服装生产工艺中的操作与材料处理方法，纺织机械直接使用这一能力完成其工艺或组织设计
-- 机床 (`tech.machine_tools`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，纺织机械直接使用这一能力完成其工艺或组织设计
-- 工厂制 (`tech.factory_system`)：工厂制提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，纺织机械直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「蒸汽动力」（tech.steam\_power）
-  - 已完成科技「标准化」（tech.standardization）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「棉花」（bio.cotton）
-  - 已发现信号「亚麻」（bio.flax）
-  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
+- 已发现信号「累计贸易量 1000」（development.trade.quantity\_1000）
 
 #### 效果摘要
 
@@ -18794,7 +18032,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 合成纤维工程 (`tech.synthetic_fiber_engineering`)：纺织机械提供纺丝后的牵伸、卷绕和织造设备，使材料能够进入规模化纺织生产
+无
 
 #### 主题路线后继
 
@@ -18829,15 +18067,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 工厂制 (`tech.factory_system`)：工厂制提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，劳工组织直接使用这一能力完成其工艺或组织设计
-- 工资契约 (`tech.wage_contracts`)：工资契约提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，劳工组织直接使用这一能力完成其工艺或组织设计
-- 工业组织 (`tech.industrial_organization`)：工业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，劳工组织直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
-  - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
-  - 已发现信号「蒸汽动力突破」（breakthrough.steam\_power）
+- 已发现信号「贸易伙伴 2 个」（development.trade.partners\_2）
 
 #### 效果摘要
 
@@ -18901,15 +18134,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 工业组织 (`tech.industrial_organization`)：工业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，管理层级直接使用这一能力完成其工艺或组织设计
-- 工厂制 (`tech.factory_system`)：工厂制提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，管理层级直接使用这一能力完成其工艺或组织设计
-- 复式记账 (`tech.double_entry_bookkeeping`)：复式记账提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，管理层级直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
-  - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
-  - 已发现信号「蒸汽动力突破」（breakthrough.steam\_power）
+- 已发现信号「人口规模 62500」（development.population.62500\_720d）
 
 #### 效果摘要
 
@@ -18977,9 +18205,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「蒸汽动力突破」（breakthrough.steam\_power）
-  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
+- 已发现信号「活跃产业规模 16」（development.buildings.active\_16\_360d）
 
 #### 效果摘要
 
@@ -19009,11 +18235,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 被以下科技作为硬前置
 
 - 工人合作工场 (`tech.worker_cooperatives`)：工业统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，工人合作工场直接使用这一能力完成其工艺或组织设计
-- 公司管理 (`tech.corporate_management`)：工业统计提供跨工厂绩效比较和计划控制所需的量化资料
-- 工业质量控制 (`tech.industrial_quality_control`)：工业统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，工业质量控制直接使用这一能力完成其工艺或组织设计
-- 运筹学 (`tech.operations_research`)：工业统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，运筹学直接使用这一能力完成其工艺或组织设计
-- 工业生态 (`tech.industrial_ecology`)：工业统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，工业生态直接使用这一能力完成其工艺或组织设计
-- 系统工程 (`tech.systems_engineering`)：工业统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，系统工程直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -19048,21 +18269,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 标准化 (`tech.standardization`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，互换零件直接使用这一能力完成其工艺或组织设计
-- 机床 (`tech.machine_tools`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，互换零件直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「精密工程」（tech.precision\_engineering）
-  - 已完成科技「机械工坊」（tech.mechanical\_workshops）
-  - 已发现信号「金属加工突破」（breakthrough.metalworking）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「黏土」（resource.clay）
-  - 已发现信号「石料」（resource.stone）
-  - 已发现信号「炉温控制突破」（breakthrough.kiln\_temperature）
+- 已发现信号「制造就业 250」（development.employment.manufacturing.250\_360d）
 
 #### 效果摘要
 
@@ -19126,14 +18336,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 互换零件 (`tech.interchangeable_parts`)：互换零件提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，流水线组织直接使用这一能力完成其工艺或组织设计
-- 工厂制 (`tech.factory_system`)：工厂制提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，流水线组织直接使用这一能力完成其工艺或组织设计
-- 工业组织 (`tech.industrial_organization`)：工业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，流水线组织直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
-  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
+- 已发现信号「采掘就业 250」（development.employment.extractive.250\_360d）
 
 #### 效果摘要
 
@@ -19198,21 +18404,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 手工锯木 (`tech.timber_sawing`)：手工锯木确立锯切、定尺和木料分级工艺，蒸汽锯木是在该工艺上的动力升级
-- 蒸汽动力 (`tech.steam_power`)：蒸汽动力提供连续旋转机械功，直接驱动锯框、进料与传动机构
-- 机床 (`tech.machine_tools`)：机床提供耐用、可互换的轴承、锯架与传动零件，使高速锯切设备可制造和维护
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「工业采煤」（tech.industrial\_coal\_mining）
-  - 已完成科技「精密工程」（tech.precision\_engineering）
-  - 已发现信号「林业经营突破」（breakthrough.forest\_management）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「木材」（resource.timber）
-  - 已发现信号「蒸汽动力突破」（breakthrough.steam\_power）
+- 已发现信号「能源就业 250」（development.employment.energy.250\_360d）
 
 #### 效果摘要
 
@@ -19282,7 +18477,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「矿井支护突破」（breakthrough.mine\_support）
+- 已发现信号「制造产出规模 10000」（development.output.manufacturing.10000\_720d）
 
 #### 效果摘要
 
@@ -19349,10 +18544,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
-  - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
-  - 已发现信号「蒸汽动力突破」（breakthrough.steam\_power）
+- 已发现信号「累计贸易量 1000」（development.trade.quantity\_1000）
 
 #### 效果摘要
 
@@ -19499,18 +18691,9 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 - 肥料加工 (`tech.fertilizer_processing`)：肥料加工提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，合成肥料直接使用这一能力完成其工艺或组织设计
 
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「工业化学」（tech.industrial\_chemistry）
-  - 已完成科技「电化学」（tech.electrochemistry）
-
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「硫磺」（resource.sulfur）
-  - 已发现信号「磷矿石」（resource.phosphate\_rock）
-  - 已发现信号「硝石」（resource.saltpeter）
+- 已发现信号「贸易商品 4 类」（development.trade.goods\_4）
 
 #### 效果摘要
 
@@ -19575,11 +18758,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 热力学 (`tech.thermodynamics`)：热力学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，电气化直接使用这一能力完成其工艺或组织设计
-- 机床 (`tech.machine_tools`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，电气化直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「多聚落体系」（development.settlements.tier\_4\_count\_8\_720d）
 
 #### 效果摘要
 
@@ -19613,7 +18795,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 电网 (`tech.electric_grid`)：电气化提供发电、电机、电网与能源控制能力中的动力与规模化能力，电网直接使用这一能力完成其工艺或组织设计
 - 电子控制 (`tech.electronic_control`)：电气化提供发电、电机、电网与能源控制能力中的动力与规模化能力，电子控制直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
@@ -19649,11 +18830,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 合作社组织 (`tech.cooperative_association`)：合作社组织提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，公共教育直接使用这一能力完成其工艺或组织设计
-- 工厂制 (`tech.factory_system`)：工厂制提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，公共教育直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「活跃产业规模 32」（development.buildings.active\_32\_720d）
 
 #### 效果摘要
 
@@ -19683,9 +18863,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 国家实验室 (`tech.national_laboratories`)：公共教育提供制度协调、公共组织与交换规则中的操作与材料处理方法，国家实验室直接使用这一能力完成其工艺或组织设计
 - 知识经济 (`tech.knowledge_economy`)：公共教育提供制度协调、公共组织与交换规则中的操作与材料处理方法，知识经济直接使用这一能力完成其工艺或组织设计
-- 开放科学网络 (`tech.open_science_networks`)：公共教育提供制度协调、公共组织与交换规则中的操作与材料处理方法，开放科学网络直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -19723,10 +18901,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
-  - 已发现信号「肥沃土壤」（resource.fertile\_soil）
-  - 已发现信号「连续歉收经验」（weather.repeated\_crop\_failure）
+- 已发现信号「综合满意度 60%」（development.satisfaction.60\_720d）
 
 #### 效果摘要
 
@@ -19797,14 +18972,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 地质勘探 (`tech.geological_prospecting`)：地质勘探提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，石油开采直接使用这一能力完成其工艺或组织设计
-- 蒸汽动力 (`tech.steam_power`)：蒸汽动力提供矿井、钢铁、蒸汽机械与重型设备能力中的动力与规模化能力，石油开采直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「石油」（resource.oil）
-  - 已发现信号「天然气」（resource.natural\_gas）
-  - 已发现信号「煤炭」（resource.coal）
+- 已发现信号「能源就业 1250」（development.employment.energy.1250\_720d）
 
 #### 效果摘要
 
@@ -19873,18 +19044,9 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 - 石油开采 (`tech.petroleum_extraction`)：石油开采提供油气开采、炼制与高分子原料能力中的操作与材料处理方法，石油炼制直接使用这一能力完成其工艺或组织设计
 
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「工业化学」（tech.industrial\_chemistry）
-  - 已完成科技「蒸汽动力」（tech.steam\_power）
-
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「石油」（resource.oil）
-  - 已发现信号「天然气」（resource.natural\_gas）
-  - 已发现信号「煤炭」（resource.coal）
+- 已发现信号「制造就业 1250」（development.employment.manufacturing.1250\_720d）
 
 #### 效果摘要
 
@@ -19916,7 +19078,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 被以下科技作为硬前置
 
 - 内燃机 (`tech.internal_combustion`)：石油炼制提供油气开采、炼制与高分子原料能力中的操作与材料处理方法，内燃机直接使用这一能力完成其工艺或组织设计
-- 石油化工 (`tech.petrochemical_industry`)：石油炼制提供油气开采、炼制与高分子原料能力中的操作与材料处理方法，石油化工直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -19951,16 +19112,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 石油炼制 (`tech.petroleum_refining`)：石油炼制提供油气开采、炼制与高分子原料能力中的操作与材料处理方法，内燃机直接使用这一能力完成其工艺或组织设计
-- 精密工程 (`tech.precision_engineering`)：精密工程提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，内燃机直接使用这一能力完成其工艺或组织设计
-- 热力学 (`tech.thermodynamics`)：热力学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，内燃机直接使用这一能力完成其工艺或组织设计
-- 机械工坊 (`tech.mechanical_workshops`)：机械工坊提供工具制造、机械加工与设备控制能力中的动力与规模化能力，内燃机直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「石油」（resource.oil）
-  - 已发现信号「天然气」（resource.natural\_gas）
-  - 已发现信号「煤炭」（resource.coal）
+- 已发现信号「知识就业 1250」（development.employment.knowledge.1250\_720d）
 
 #### 效果摘要
 
@@ -19992,7 +19147,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 机械化采矿 (`tech.mechanized_mining`)：内燃机提供油气开采、炼制与高分子原料能力中的动力与规模化能力，机械化采矿直接使用这一能力完成其工艺或组织设计
+无
 
 #### 主题路线后继
 
@@ -20027,21 +19182,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 公共卫生 (`tech.public_health`)：公共卫生提供卫生、疾病控制与医疗组织能力中的操作与材料处理方法，现代医学直接使用这一能力完成其工艺或组织设计
-- 工业化学 (`tech.industrial_chemistry`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，现代医学直接使用这一能力完成其工艺或组织设计
-- 实验科学 (`tech.experimental_science`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，现代医学直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「机械制冷」（tech.refrigeration）
-  - 已完成科技「科学分类」（tech.scientific\_classification）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
-  - 已发现信号「电气化突破」（breakthrough.electrification）
-  - 已发现信号「磷矿石」（resource.phosphate\_rock）
+- 已发现信号「能源产出规模 10000」（development.output.energy.10000\_720d）
 
 #### 效果摘要
 
@@ -20072,8 +19216,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 公共卫生体系 (`tech.public_health_systems`)：现代医学提供卫生、疾病控制与医疗组织能力中的操作与材料处理方法，公共卫生体系直接使用这一能力完成其工艺或组织设计
-- 生物技术 (`tech.biotechnology`)：现代医学提供卫生、疾病控制与医疗组织能力中的操作与材料处理方法，生物技术直接使用这一能力完成其工艺或组织设计
+无
 
 #### 主题路线后继
 
@@ -20108,11 +19251,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 实验科学 (`tech.experimental_science`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，电磁感应直接使用这一能力完成其工艺或组织设计
-- 精密仪器 (`tech.precision_instruments`)：精密仪器提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，电磁感应直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「电气化突破」（breakthrough.electrification）
+- 已发现信号「制造产出规模 10000」（development.output.manufacturing.10000\_720d）
 
 #### 效果摘要
 
@@ -20143,13 +19285,9 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 电化学 (`tech.electrochemistry`)：电磁感应提供发电、电机、电网与能源控制能力中的操作与材料处理方法，电化学直接使用这一能力完成其工艺或组织设计
 - 无线电 (`tech.radio`)：电磁感应提供发电、电机、电网与能源控制能力中的操作与材料处理方法，无线电直接使用这一能力完成其工艺或组织设计
 - 发电机 (`tech.electric_generation`)：电磁感应提供发电、电机、电网与能源控制能力中的操作与材料处理方法，发电机直接使用这一能力完成其工艺或组织设计
 - 电动机 (`tech.electric_motors`)：电磁感应提供发电、电机、电网与能源控制能力中的操作与材料处理方法，电动机直接使用这一能力完成其工艺或组织设计
-- 核裂变 (`tech.nuclear_fission`)：电磁感应提供发电、电机、电网与能源控制能力中的操作与材料处理方法，核裂变直接使用这一能力完成其工艺或组织设计
-- 深层地球物理 (`tech.deep_geophysics`)：电磁感应提供发电、电机、电网与能源控制能力中的操作与材料处理方法，深层地球物理直接使用这一能力完成其工艺或组织设计
-- 半导体制造 (`tech.semiconductor_manufacturing`)：电磁感应提供发电、电机、电网与能源控制能力中的操作与材料处理方法，半导体制造直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -20184,21 +19322,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 实验科学 (`tech.experimental_science`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，电化学直接使用这一能力完成其工艺或组织设计
-- 电磁感应 (`tech.electromagnetic_induction`)：电磁感应提供发电、电机、电网与能源控制能力中的操作与材料处理方法，电化学直接使用这一能力完成其工艺或组织设计
-- 工业化学 (`tech.industrial_chemistry`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，电化学直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「标准化」（tech.standardization）
-  - 已完成科技「肥料加工」（tech.fertilizer\_processing）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「电气化突破」（breakthrough.electrification）
-  - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
-  - 已发现信号「硫磺」（resource.sulfur）
+- 已发现信号「贸易商品 4 类」（development.trade.goods\_4）
 
 #### 效果摘要
 
@@ -20230,7 +19357,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 石油化工 (`tech.petrochemical_industry`)：电化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，石油化工直接使用这一能力完成其工艺或组织设计
+无
 
 #### 主题路线后继
 
@@ -20266,11 +19393,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 电磁感应 (`tech.electromagnetic_induction`)：电磁感应提供发电、电机、电网与能源控制能力中的操作与材料处理方法，无线电直接使用这一能力完成其工艺或组织设计
-- 实验科学 (`tech.experimental_science`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，无线电直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「电气化突破」（breakthrough.electrification）
+- 已发现信号「多聚落体系」（development.settlements.tier\_4\_count\_8\_720d）
 
 #### 效果摘要
 
@@ -20337,19 +19463,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 电磁感应 (`tech.electromagnetic_induction`)：电磁感应提供发电、电机、电网与能源控制能力中的操作与材料处理方法，发电机直接使用这一能力完成其工艺或组织设计
-- 蒸汽动力 (`tech.steam_power`)：蒸汽动力提供矿井、钢铁、蒸汽机械与重型设备能力中的动力与规模化能力，发电机直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「水力机械」（tech.water\_power）
-  - 已完成科技「大气式蒸汽机」（tech.atmospheric\_engine）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「电气化突破」（breakthrough.electrification）
-  - 已发现信号「蒸汽动力突破」（breakthrough.steam\_power）
+- 已发现信号「活跃产业规模 32」（development.buildings.active\_32\_720d）
 
 #### 效果摘要
 
@@ -20381,7 +19498,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 被以下科技作为硬前置
 
 - 电网 (`tech.electric_grid`)：发电机提供发电、电机、电网与能源控制能力中的动力与规模化能力，电网直接使用这一能力完成其工艺或组织设计
-- 电动机 (`tech.electric_motors`)：发电机提供发电、电机、电网与能源控制能力中的动力与规模化能力，电动机直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -20416,14 +19532,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 发电机 (`tech.electric_generation`)：发电机提供发电、电机、电网与能源控制能力中的动力与规模化能力，电网直接使用这一能力完成其工艺或组织设计
-- 电气化 (`tech.electrification`)：电气化提供发电、电机、电网与能源控制能力中的动力与规模化能力，电网直接使用这一能力完成其工艺或组织设计
-- 标准化 (`tech.standardization`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，电网直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「电气化突破」（breakthrough.electrification）
-  - 已发现信号「煤炭」（resource.coal）
+- 已发现信号「综合满意度 60%」（development.satisfaction.60\_720d）
 
 #### 效果摘要
 
@@ -20454,8 +19566,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 电信 (`tech.telecommunications`)：电网提供发电、电机、电网与能源控制能力中的动力与规模化能力，电信直接使用这一能力完成其工艺或组织设计
-- 核能 (`tech.nuclear_energy`)：电网提供发电、电机、电网与能源控制能力中的动力与规模化能力，核能直接使用这一能力完成其工艺或组织设计
 - 智能电网 (`tech.smart_grid`)：电网提供发电、电机、电网与能源控制能力中的动力与规模化能力，智能电网直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
@@ -20491,14 +19601,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 无线电 (`tech.radio`)：无线电提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，电信直接使用这一能力完成其工艺或组织设计
-- 电网 (`tech.electric_grid`)：电网提供发电、电机、电网与能源控制能力中的动力与规模化能力，电信直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「电气化突破」（breakthrough.electrification）
-  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
-  - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
+- 已发现信号「能源就业 1250」（development.employment.energy.1250\_720d）
 
 #### 效果摘要
 
@@ -20527,10 +19633,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 信息论 (`tech.information_theory`)：电信提供数字计算、软件、网络与自动控制能力中的稳定的组织与制度载体，信息论直接使用这一能力完成其工艺或组织设计
-- 网络计算 (`tech.networked_computing`)：电信提供数字计算、软件、网络与自动控制能力中的稳定的组织与制度载体，网络计算直接使用这一能力完成其工艺或组织设计
 - 卫星观测 (`tech.satellite_observation`)：电信提供数字计算、软件、网络与自动控制能力中的稳定的组织与制度载体，卫星观测直接使用这一能力完成其工艺或组织设计
-- 传感器网络 (`tech.sensor_networks`)：电信提供数字计算、软件、网络与自动控制能力中的稳定的组织与制度载体，传感器网络直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -20565,14 +19668,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 电磁感应 (`tech.electromagnetic_induction`)：电磁感应提供发电、电机、电网与能源控制能力中的操作与材料处理方法，电动机直接使用这一能力完成其工艺或组织设计
-- 机床 (`tech.machine_tools`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，电动机直接使用这一能力完成其工艺或组织设计
-- 发电机 (`tech.electric_generation`)：发电机提供发电、电机、电网与能源控制能力中的动力与规模化能力，电动机直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「电气化突破」（breakthrough.electrification）
-  - 已发现信号「电机绕组突破」（breakthrough.motor\_winding）
+- 已发现信号「制造就业 1250」（development.employment.manufacturing.1250\_720d）
 
 #### 效果摘要
 
@@ -20639,11 +19738,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 机械化农业 (`tech.mechanized_agriculture`)：机械化农业提供工具制造、机械加工与设备控制能力中的成套生产流程，机动农业直接使用这一能力完成其工艺或组织设计
-- 热力学 (`tech.thermodynamics`)：热力学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，机动农业直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「知识就业 1250」（development.employment.knowledge.1250\_720d）
 
 #### 效果摘要
 
@@ -20709,18 +19807,9 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 - 畜牧驯养 (`tech.animal_husbandry`)：畜牧驯养提供畜群驯养、育种与畜产品处理能力中的成套生产流程，现代畜牧直接使用这一能力完成其工艺或组织设计
 
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「畜种改良」（tech.livestock\_breeding）
-  - 已完成科技「公共卫生」（tech.public\_health）
-
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「羊」（bio.sheep）
-  - 已发现信号「马匹」（bio.horse）
-  - 已发现信号「牛」（bio.cattle）
+- 已发现信号「能源产出规模 10000」（development.output.energy.10000\_720d）
 
 #### 效果摘要
 
@@ -20784,21 +19873,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 管理层级 (`tech.managerial_hierarchy`)：管理层级建立跨部门授权与责任链，是公司级治理不可替代的组织基础
-- 复式记账 (`tech.double_entry_bookkeeping`)：复式记账提供资产、负债、成本和利润的统一核算，使公司能够跨业务配置资本
-- 工业统计 (`tech.industrial_statistics`)：工业统计提供跨工厂绩效比较和计划控制所需的量化资料
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「大规模生产」（tech.mass\_production）
-  - 已完成科技「工人合作工场」（tech.worker\_cooperatives）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「电气化突破」（breakthrough.electrification）
-  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
-  - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
+- 已发现信号「贸易商品 4 类」（development.trade.goods\_4）
 
 #### 效果摘要
 
@@ -20828,7 +19906,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 被以下科技作为硬前置
 
 - 公司农业 (`tech.corporate_agribusiness`)：公司管理提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，公司农业直接使用这一能力完成其工艺或组织设计
-- 平台协调 (`tech.platform_coordination`)：公司管理提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，平台协调直接使用这一能力完成其工艺或组织设计
 - 算法管理 (`tech.algorithmic_management`)：公司管理提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，算法管理直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
@@ -20864,11 +19941,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 实验科学 (`tech.experimental_science`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，工业研究直接使用这一能力完成其工艺或组织设计
-- 工厂制 (`tech.factory_system`)：工厂制提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，工业研究直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「贸易商品 4 类」（development.trade.goods\_4）
 
 #### 效果摘要
 
@@ -20899,12 +19975,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 工业质量控制 (`tech.industrial_quality_control`)：工业研究提供记录、验证、计算与知识传播方法中的操作与材料处理方法，工业质量控制直接使用这一能力完成其工艺或组织设计
-- 工业农学 (`tech.industrial_agronomy`)：工业研究提供记录、验证、计算与知识传播方法中的操作与材料处理方法，工业农学直接使用这一能力完成其工艺或组织设计
-- 核裂变 (`tech.nuclear_fission`)：工业研究提供记录、验证、计算与知识传播方法中的操作与材料处理方法，核裂变直接使用这一能力完成其工艺或组织设计
 - 国家实验室 (`tech.national_laboratories`)：工业研究提供记录、验证、计算与知识传播方法中的操作与材料处理方法，国家实验室直接使用这一能力完成其工艺或组织设计
-- 电子控制 (`tech.electronic_control`)：工业研究提供记录、验证、计算与知识传播方法中的操作与材料处理方法，电子控制直接使用这一能力完成其工艺或组织设计
-- 生物技术 (`tech.biotechnology`)：工业研究提供记录、验证、计算与知识传播方法中的操作与材料处理方法，生物技术直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -20939,14 +20010,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 石油开采 (`tech.petroleum_extraction`)：石油开采提供油气开采、炼制与高分子原料能力中的操作与材料处理方法，石油钻探直接使用这一能力完成其工艺或组织设计
-- 机床 (`tech.machine_tools`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，石油钻探直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「石油」（resource.oil）
-  - 已发现信号「天然气」（resource.natural\_gas）
-  - 已发现信号「煤炭」（resource.coal）
+- 已发现信号「多聚落体系」（development.settlements.tier\_4\_count\_8\_720d）
 
 #### 效果摘要
 
@@ -21011,21 +20078,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 标准化 (`tech.standardization`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，工业质量控制直接使用这一能力完成其工艺或组织设计
-- 工业统计 (`tech.industrial_statistics`)：工业统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，工业质量控制直接使用这一能力完成其工艺或组织设计
-- 工业研究 (`tech.industrial_research`)：工业研究提供记录、验证、计算与知识传播方法中的操作与材料处理方法，工业质量控制直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「公司管理」（tech.corporate\_management）
-  - 已完成科技「精密仪器」（tech.precision\_instruments）
-  - 已发现信号「印刷校准突破」（breakthrough.print\_calibration）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
-  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
+- 已发现信号「活跃产业规模 32」（development.buildings.active\_32\_720d）
 
 #### 效果摘要
 
@@ -21055,9 +20111,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 核能 (`tech.nuclear_energy`)：工业质量控制提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，核能直接使用这一能力完成其工艺或组织设计
-- 特种合金 (`tech.specialty_alloys`)：工业质量控制提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，特种合金直接使用这一能力完成其工艺或组织设计
-- 半导体制造 (`tech.semiconductor_manufacturing`)：工业质量控制提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，半导体制造直接使用这一能力完成其工艺或组织设计
+无
 
 #### 主题路线后继
 
@@ -21092,11 +20146,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 热力学 (`tech.thermodynamics`)：热力学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，机械制冷直接使用这一能力完成其工艺或组织设计
-- 机床 (`tech.machine_tools`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，机械制冷直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「电气化突破」（breakthrough.electrification）
+- 已发现信号「综合满意度 60%」（development.satisfaction.60\_720d）
 
 #### 效果摘要
 
@@ -21160,14 +20213,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 机械制冷 (`tech.refrigeration`)：机械制冷提供卫生、疾病控制与医疗组织能力中的动力与规模化能力，冷链直接使用这一能力完成其工艺或组织设计
-- 铁路物流 (`tech.rail_logistics`)：铁路物流提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，冷链直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「马铃薯」（bio.potato）
-  - 已发现信号「块茎样本接触」（contact.potato）
-  - 已发现信号「梯田维护突破」（breakthrough.terrace\_maintenance）
+- 已发现信号「能源就业 1250」（development.employment.energy.1250\_720d）
 
 #### 效果摘要
 
@@ -21318,11 +20367,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 机动农业 (`tech.motorized_agriculture`)：机动农业提供谷物旱作、轮作与收获工艺中的成套生产流程，工业农学直接使用这一能力完成其工艺或组织设计
-- 工业研究 (`tech.industrial_research`)：工业研究提供记录、验证、计算与知识传播方法中的操作与材料处理方法，工业农学直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「制造产出规模 100000」（development.output.manufacturing.100000\_1095d）
 
 #### 效果摘要
 
@@ -21351,8 +20399,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 公司农业 (`tech.corporate_agribusiness`)：工业农学提供玉米栽培、选育与田间管理经验中的成套生产流程，公司农业直接使用这一能力完成其工艺或组织设计
-- 集体农业 (`tech.collective_agriculture`)：工业农学提供玉米栽培、选育与田间管理经验中的成套生产流程，集体农业直接使用这一能力完成其工艺或组织设计
 - 精准农业 (`tech.precision_agriculture`)：工业农学提供玉米栽培、选育与田间管理经验中的成套生产流程，精准农业直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
@@ -21388,21 +20434,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 高炉冶炼 (`tech.blast_furnace`)：高炉冶炼提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，先进冶金直接使用这一能力完成其工艺或组织设计
-- 工业化学 (`tech.industrial_chemistry`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，先进冶金直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 至少满足 2 项：
-  - 已完成科技「焦炭冶炼」（tech.coke\_smelting）
-  - 已完成科技「电磁感应」（tech.electromagnetic\_induction）
-  - 已完成科技「工业质量控制」（tech.industrial\_quality\_control）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「铁矿」（resource.iron\_ore）
-  - 已发现信号「铜矿」（resource.copper\_ore）
-  - 已发现信号「金属加工突破」（breakthrough.metalworking）
+- 已发现信号「能源产出规模 100000」（development.output.energy.100000\_1095d）
 
 #### 效果摘要
 
@@ -21434,12 +20469,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 核能 (`tech.nuclear_energy`)：先进冶金提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，核能直接使用这一能力完成其工艺或组织设计
 - 特种合金 (`tech.specialty_alloys`)：先进冶金提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，特种合金直接使用这一能力完成其工艺或组织设计
-- 核燃料循环 (`tech.nuclear_fuel_cycle`)：先进冶金提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，核燃料循环直接使用这一能力完成其工艺或组织设计
-- 半导体制造 (`tech.semiconductor_manufacturing`)：先进冶金提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，半导体制造直接使用这一能力完成其工艺或组织设计
-- 机器人制造 (`tech.robotic_manufacturing`)：先进冶金提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，机器人制造直接使用这一能力完成其工艺或组织设计
-- 自主采矿 (`tech.autonomous_mining`)：先进冶金提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，自主采矿直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -21474,14 +20504,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 实验科学 (`tech.experimental_science`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，核裂变直接使用这一能力完成其工艺或组织设计
-- 电磁感应 (`tech.electromagnetic_induction`)：电磁感应提供发电、电机、电网与能源控制能力中的操作与材料处理方法，核裂变直接使用这一能力完成其工艺或组织设计
-- 工业研究 (`tech.industrial_research`)：工业研究提供记录、验证、计算与知识传播方法中的操作与材料处理方法，核裂变直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「电气化突破」（breakthrough.electrification）
-  - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
+- 已发现信号「贸易商品 8 类」（development.trade.goods\_8）
 
 #### 效果摘要
 
@@ -21548,12 +20574,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 工业研究 (`tech.industrial_research`)：工业研究提供记录、验证、计算与知识传播方法中的操作与材料处理方法，国家实验室直接使用这一能力完成其工艺或组织设计
-- 公共教育 (`tech.public_education`)：公共教育提供制度协调、公共组织与交换规则中的操作与材料处理方法，国家实验室直接使用这一能力完成其工艺或组织设计
-- 官僚行政 (`tech.state_bureaucracy`)：官僚行政提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，国家实验室直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「贸易伙伴 4 个」（development.trade.partners\_4）
 
 #### 效果摘要
 
@@ -21582,11 +20606,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 核能 (`tech.nuclear_energy`)：国家实验室提供记录、验证、计算与知识传播方法中的操作与材料处理方法，核能直接使用这一能力完成其工艺或组织设计
-- 核燃料循环 (`tech.nuclear_fuel_cycle`)：国家实验室提供记录、验证、计算与知识传播方法中的操作与材料处理方法，核燃料循环直接使用这一能力完成其工艺或组织设计
-- 数字计算 (`tech.digital_computing`)：国家实验室提供记录、验证、计算与知识传播方法中的操作与材料处理方法，数字计算直接使用这一能力完成其工艺或组织设计
-- 知识经济 (`tech.knowledge_economy`)：国家实验室提供记录、验证、计算与知识传播方法中的操作与材料处理方法，知识经济直接使用这一能力完成其工艺或组织设计
-- 机器学习 (`tech.machine_learning`)：国家实验室提供记录、验证、计算与知识传播方法中的操作与材料处理方法，机器学习直接使用这一能力完成其工艺或组织设计
+无
 
 #### 主题路线后继
 
@@ -21621,16 +20641,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 地质勘探 (`tech.geological_prospecting`)：地质勘探提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，深层地球物理直接使用这一能力完成其工艺或组织设计
-- 电磁感应 (`tech.electromagnetic_induction`)：电磁感应提供发电、电机、电网与能源控制能力中的操作与材料处理方法，深层地球物理直接使用这一能力完成其工艺或组织设计
-- 概率与统计 (`tech.probability_statistics`)：概率与统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，深层地球物理直接使用这一能力完成其工艺或组织设计
-- 矿井排水 (`tech.mine_drainage`)：矿井排水提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，深层地球物理直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「河湖水系」（landform.freshwater\_access）
-  - 已发现信号「河谷」（landform.river\_valley）
-  - 已发现信号「流域治理突破」（breakthrough.watershed\_management）
+- 已发现信号「人口规模 312500」（development.population.312500\_1095d）
 
 #### 效果摘要
 
@@ -21662,9 +20676,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 卫星观测 (`tech.satellite_observation`)：深层地球物理提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，卫星观测直接使用这一能力完成其工艺或组织设计
-- 矿物光谱遥感 (`tech.mineral_spectral_survey`)：深层地球物理提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，矿物光谱遥感直接使用这一能力完成其工艺或组织设计
-- 水文遥感 (`tech.hydrological_remote_sensing`)：深层地球物理提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，水文遥感直接使用这一能力完成其工艺或组织设计
+无
 
 #### 主题路线后继
 
@@ -21699,14 +20711,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 概率与统计 (`tech.probability_statistics`)：概率与统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，运筹学直接使用这一能力完成其工艺或组织设计
-- 工业统计 (`tech.industrial_statistics`)：工业统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，运筹学直接使用这一能力完成其工艺或组织设计
-- 工业组织 (`tech.industrial_organization`)：工业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，运筹学直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
-  - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
+- 已发现信号「聚落等级 5」（development.settlement.tier\_5\_1095d）
 
 #### 效果摘要
 
@@ -21736,9 +20744,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 被以下科技作为硬前置
 
 - 系统工程 (`tech.systems_engineering`)：运筹学提供制度协调、公共组织与交换规则中的操作与材料处理方法，系统工程直接使用这一能力完成其工艺或组织设计
-- 平台协调 (`tech.platform_coordination`)：运筹学提供制度协调、公共组织与交换规则中的操作与材料处理方法，平台协调直接使用这一能力完成其工艺或组织设计
-- 算法治理 (`tech.algorithmic_governance`)：运筹学提供制度协调、公共组织与交换规则中的操作与材料处理方法，算法治理直接使用这一能力完成其工艺或组织设计
-- 算法管理 (`tech.algorithmic_management`)：运筹学提供制度协调、公共组织与交换规则中的操作与材料处理方法，算法管理直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -21773,22 +20778,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 石油开采 (`tech.petroleum_extraction`)：石油开采提供油气开采、炼制与高分子原料能力中的操作与材料处理方法，石油化工直接使用这一能力完成其工艺或组织设计
-- 石油炼制 (`tech.petroleum_refining`)：石油炼制提供油气开采、炼制与高分子原料能力中的操作与材料处理方法，石油化工直接使用这一能力完成其工艺或组织设计
-- 工业化学 (`tech.industrial_chemistry`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，石油化工直接使用这一能力完成其工艺或组织设计
-- 电化学 (`tech.electrochemistry`)：电化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，石油化工直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「肥料加工」（tech.fertilizer\_processing）
-  - 已完成科技「热力学」（tech.thermodynamics）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
-  - 已发现信号「电气化突破」（breakthrough.electrification）
-  - 已发现信号「石油」（resource.oil）
+- 已发现信号「制造就业 1250」（development.employment.manufacturing.1250\_720d）
 
 #### 效果摘要
 
@@ -21822,10 +20815,8 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 合成材料 (`tech.synthetic_materials`)：石油化工提供油气开采、炼制与高分子原料能力中的操作与材料处理方法，合成材料直接使用这一能力完成其工艺或组织设计
 - 石化裂解 (`tech.petrochemical_cracking`)：石油化工提供油气开采、炼制与高分子原料能力中的操作与材料处理方法，石化裂解直接使用这一能力完成其工艺或组织设计
 - 塑料工程 (`tech.plastics_engineering`)：石油化工提供油气开采、炼制与高分子原料能力中的操作与材料处理方法，塑料工程直接使用这一能力完成其工艺或组织设计
-- 合成纤维工程 (`tech.synthetic_fiber_engineering`)：石油化工稳定供应合成纤维所需单体与中间体
 
 #### 主题路线后继
 
@@ -21860,15 +20851,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 工业化学 (`tech.industrial_chemistry`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，合成材料直接使用这一能力完成其工艺或组织设计
-- 石油化工 (`tech.petrochemical_industry`)：石油化工提供油气开采、炼制与高分子原料能力中的操作与材料处理方法，合成材料直接使用这一能力完成其工艺或组织设计
-- 天然橡胶加工 (`tech.rubber_working`)：天然橡胶加工提供热带作物栽培、采收与商品化处理能力中的操作与材料处理方法，合成材料直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「石油」（resource.oil）
-  - 已发现信号「天然气」（resource.natural\_gas）
-  - 已发现信号「煤炭」（resource.coal）
+- 已发现信号「能源就业 1250」（development.employment.energy.1250\_720d）
 
 #### 效果摘要
 
@@ -21935,14 +20921,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 工业采煤 (`tech.industrial_coal_mining`)：工业采煤提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，机械化采矿直接使用这一能力完成其工艺或组织设计
-- 机床 (`tech.machine_tools`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，机械化采矿直接使用这一能力完成其工艺或组织设计
-- 内燃机 (`tech.internal_combustion`)：内燃机提供油气开采、炼制与高分子原料能力中的动力与规模化能力，机械化采矿直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「矿井支护突破」（breakthrough.mine\_support）
-  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
+- 已发现信号「知识就业 1250」（development.employment.knowledge.1250\_720d）
 
 #### 效果摘要
 
@@ -22012,23 +20994,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 公共卫生 (`tech.public_health`)：公共卫生提供卫生、疾病控制与医疗组织能力中的操作与材料处理方法，公共卫生体系直接使用这一能力完成其工艺或组织设计
-- 现代医学 (`tech.modern_medicine`)：现代医学提供卫生、疾病控制与医疗组织能力中的操作与材料处理方法，公共卫生体系直接使用这一能力完成其工艺或组织设计
-- 城市卫生 (`tech.urban_sanitation`)：城市卫生提供卫生、疾病控制与医疗组织能力中的操作与材料处理方法，公共卫生体系直接使用这一能力完成其工艺或组织设计
-- 工业化学 (`tech.industrial_chemistry`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，公共卫生体系直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「国营企业」（tech.state\_enterprises）
-  - 已完成科技「冷链」（tech.cold\_chain）
-  - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「香料作物」（bio.spice）
-  - 已发现信号「橡胶树」（bio.rubber）
-  - 已发现信号「香料样本接触」（contact.spice）
+- 已发现信号「制造产出规模 100000」（development.output.manufacturing.100000\_1095d）
 
 #### 效果摘要
 
@@ -22057,7 +21026,7 @@ pharmaceuticals产出 +12%
 
 #### 被以下科技作为硬前置
 
-- 工业生态 (`tech.industrial_ecology`)：公共卫生体系提供卫生、疾病控制与医疗组织能力中的操作与材料处理方法，工业生态直接使用这一能力完成其工艺或组织设计
+无
 
 #### 主题路线后继
 
@@ -22092,23 +21061,10 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 核裂变 (`tech.nuclear_fission`)：核裂变提供发电、电机、电网与能源控制能力中的操作与材料处理方法，核能直接使用这一能力完成其工艺或组织设计
-- 先进冶金 (`tech.advanced_metallurgy`)：先进冶金提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，核能直接使用这一能力完成其工艺或组织设计
-- 电网 (`tech.electric_grid`)：电网提供发电、电机、电网与能源控制能力中的动力与规模化能力，核能直接使用这一能力完成其工艺或组织设计
-- 国家实验室 (`tech.national_laboratories`)：国家实验室提供记录、验证、计算与知识传播方法中的操作与材料处理方法，核能直接使用这一能力完成其工艺或组织设计
-- 精密仪器 (`tech.precision_instruments`)：精密仪器提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，核能直接使用这一能力完成其工艺或组织设计
-- 工业质量控制 (`tech.industrial_quality_control`)：工业质量控制提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，核能直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「公司管理」（tech.corporate\_management）
-  - 已完成科技「国营企业」（tech.state\_enterprises）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「电气化突破」（breakthrough.electrification）
-  - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
+- 已发现信号「能源产出规模 100000」（development.output.energy.100000\_1095d）
 
 #### 效果摘要
 
@@ -22173,11 +21129,10 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 电气化 (`tech.electrification`)：电气化提供发电、电机、电网与能源控制能力中的动力与规模化能力，电子控制直接使用这一能力完成其工艺或组织设计
-- 工业研究 (`tech.industrial_research`)：工业研究提供记录、验证、计算与知识传播方法中的操作与材料处理方法，电子控制直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「贸易商品 8 类」（development.trade.goods\_8）
 
 #### 效果摘要
 
@@ -22206,14 +21161,9 @@ pharmaceuticals产出 +12%
 
 #### 被以下科技作为硬前置
 
-- 系统工程 (`tech.systems_engineering`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，系统工程直接使用这一能力完成其工艺或组织设计
-- 精准农业 (`tech.precision_agriculture`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，精准农业直接使用这一能力完成其工艺或组织设计
 - 数字计算 (`tech.digital_computing`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，数字计算直接使用这一能力完成其工艺或组织设计
-- 半导体制造 (`tech.semiconductor_manufacturing`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，半导体制造直接使用这一能力完成其工艺或组织设计
-- 卫星观测 (`tech.satellite_observation`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，卫星观测直接使用这一能力完成其工艺或组织设计
 - 数字控制 (`tech.digital_control`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，数字控制直接使用这一能力完成其工艺或组织设计
 - 传感器网络 (`tech.sensor_networks`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，传感器网络直接使用这一能力完成其工艺或组织设计
-- 机器人制造 (`tech.robotic_manufacturing`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，机器人制造直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -22249,18 +21199,9 @@ pharmaceuticals产出 +12%
 
 - 商业网络 (`tech.mercantile_networks`)：商业网络提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，全球物流直接使用这一能力完成其工艺或组织设计
 
-#### 额外研发条件
-
-- 至少满足 2 项：
-  - 已完成科技「铁路物流」（tech.rail\_logistics）
-  - 已完成科技「电信」（tech.telecommunications）
-  - 已完成科技「远洋航海」（tech.oceanic\_navigation）
-
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
-  - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
+- 已发现信号「贸易伙伴 4 个」（development.trade.partners\_4）
 
 #### 效果摘要
 
@@ -22289,9 +21230,7 @@ pharmaceuticals产出 +12%
 
 #### 被以下科技作为硬前置
 
-- 公司农业 (`tech.corporate_agribusiness`)：全球物流提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，公司农业直接使用这一能力完成其工艺或组织设计
 - 自动化物流 (`tech.automated_logistics`)：全球物流提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，自动化物流直接使用这一能力完成其工艺或组织设计
-- 数字市场 (`tech.digital_marketplaces`)：全球物流提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，数字市场直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -22326,21 +21265,10 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 先进冶金 (`tech.advanced_metallurgy`)：先进冶金提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，特种合金直接使用这一能力完成其工艺或组织设计
-- 工业质量控制 (`tech.industrial_quality_control`)：工业质量控制提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，特种合金直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「电化学」（tech.electrochemistry）
-  - 已完成科技「核燃料循环」（tech.nuclear\_fuel\_cycle）
-  - 已发现信号「金属加工突破」（breakthrough.metalworking）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「铁矿」（resource.iron\_ore）
-  - 已发现信号「铜矿」（resource.copper\_ore）
-  - 已发现信号「金属加工突破」（breakthrough.metalworking）
+- 已发现信号「人口规模 312500」（development.population.312500\_1095d）
 
 #### 效果摘要
 
@@ -22407,15 +21335,10 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 石油化工 (`tech.petrochemical_industry`)：石油化工提供油气开采、炼制与高分子原料能力中的操作与材料处理方法，石化裂解直接使用这一能力完成其工艺或组织设计
-- 工业化学 (`tech.industrial_chemistry`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，石化裂解直接使用这一能力完成其工艺或组织设计
-- 热力学 (`tech.thermodynamics`)：热力学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，石化裂解直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
-  - 已发现信号「电气化突破」（breakthrough.electrification）
-  - 已发现信号「磷矿石」（resource.phosphate\_rock）
+- 已发现信号「聚落等级 5」（development.settlement.tier\_5\_1095d）
 
 #### 效果摘要
 
@@ -22485,21 +21408,10 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 石油化工 (`tech.petrochemical_industry`)：石油化工提供油气开采、炼制与高分子原料能力中的操作与材料处理方法，塑料工程直接使用这一能力完成其工艺或组织设计
-- 工业化学 (`tech.industrial_chemistry`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，塑料工程直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「合成材料」（tech.synthetic\_materials）
-  - 已完成科技「工业质量控制」（tech.industrial\_quality\_control）
-  - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「石油」（resource.oil）
-  - 已发现信号「天然气」（resource.natural\_gas）
-  - 已发现信号「煤炭」（resource.coal）
+- 已发现信号「知识就业 1250」（development.employment.knowledge.1250\_720d）
 
 #### 效果摘要
 
@@ -22565,22 +21477,10 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 公司管理 (`tech.corporate_management`)：公司管理提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，公司农业直接使用这一能力完成其工艺或组织设计
-- 工业农学 (`tech.industrial_agronomy`)：工业农学提供玉米栽培、选育与田间管理经验中的成套生产流程，公司农业直接使用这一能力完成其工艺或组织设计
-- 全球物流 (`tech.global_logistics`)：全球物流提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，公司农业直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「现代畜牧」（tech.modern\_husbandry）
-  - 已完成科技「冷链」（tech.cold\_chain）
-  - 已发现信号「牛」（bio.cattle）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「电气化突破」（breakthrough.electrification）
-  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
-  - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
+- 已发现信号「能源就业 1250」（development.employment.energy.1250\_720d）
 
 #### 效果摘要
 
@@ -22644,12 +21544,10 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 官僚行政 (`tech.state_bureaucracy`)：官僚行政提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，国营企业直接使用这一能力完成其工艺或组织设计
-- 工厂制 (`tech.factory_system`)：工厂制提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，国营企业直接使用这一能力完成其工艺或组织设计
-- 合作社组织 (`tech.cooperative_association`)：合作社组织提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，国营企业直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「知识就业 1250」（development.employment.knowledge.1250\_720d）
 
 #### 效果摘要
 
@@ -22713,21 +21611,10 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 国营企业 (`tech.state_enterprises`)：国营企业提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，集体农业直接使用这一能力完成其工艺或组织设计
-- 工业农学 (`tech.industrial_agronomy`)：工业农学提供玉米栽培、选育与田间管理经验中的成套生产流程，集体农业直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「内燃机」（tech.internal\_combustion）
-  - 已完成科技「电动机」（tech.electric\_motors）
-  - 已发现信号「雨养适应突破」（breakthrough.rainfed\_adaptation）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「电气化突破」（breakthrough.electrification）
-  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
-  - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
+- 已发现信号「制造产出规模 100000」（development.output.manufacturing.100000\_1095d）
 
 #### 效果摘要
 
@@ -22791,16 +21678,10 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 核能 (`tech.nuclear_energy`)：核能提供发电、电机、电网与能源控制能力中的动力与规模化能力，核燃料循环直接使用这一能力完成其工艺或组织设计
-- 先进冶金 (`tech.advanced_metallurgy`)：先进冶金提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，核燃料循环直接使用这一能力完成其工艺或组织设计
-- 工业化学 (`tech.industrial_chemistry`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，核燃料循环直接使用这一能力完成其工艺或组织设计
-- 国家实验室 (`tech.national_laboratories`)：国家实验室提供记录、验证、计算与知识传播方法中的操作与材料处理方法，核燃料循环直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「石油」（resource.oil）
-  - 已发现信号「天然气」（resource.natural\_gas）
-  - 已发现信号「煤炭」（resource.coal）
+- 已发现信号「贸易伙伴 4 个」（development.trade.partners\_4）
 
 #### 效果摘要
 
@@ -22864,21 +21745,10 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 工业化学 (`tech.industrial_chemistry`)：工业化学提供聚合、溶剂、温度和纯度控制，是合成纤维成形的反应基础
-- 石油化工 (`tech.petrochemical_industry`)：石油化工稳定供应合成纤维所需单体与中间体
-- 纺织机械 (`tech.textile_machinery`)：纺织机械提供纺丝后的牵伸、卷绕和织造设备，使材料能够进入规模化纺织生产
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「塑料工程」（tech.plastics\_engineering）
-  - 已完成科技「天然橡胶加工」（tech.rubber\_working）
-  - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「石油」（resource.oil）
-  - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
+- 已发现信号「贸易商品 8 类」（development.trade.goods\_8）
 
 #### 效果摘要
 
@@ -22944,21 +21814,10 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 工业化学 (`tech.industrial_chemistry`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，工业生态直接使用这一能力完成其工艺或组织设计
-- 公共卫生体系 (`tech.public_health_systems`)：公共卫生体系提供卫生、疾病控制与医疗组织能力中的操作与材料处理方法，工业生态直接使用这一能力完成其工艺或组织设计
-- 工业统计 (`tech.industrial_statistics`)：工业统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，工业生态直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「公共卫生」（tech.public\_health）
-  - 已完成科技「系统工程」（tech.systems\_engineering）
-  - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
-  - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
+- 已发现信号「贸易伙伴 4 个」（development.trade.partners\_4）
 
 #### 效果摘要
 
@@ -23027,14 +21886,10 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 运筹学 (`tech.operations_research`)：运筹学提供制度协调、公共组织与交换规则中的操作与材料处理方法，系统工程直接使用这一能力完成其工艺或组织设计
-- 电子控制 (`tech.electronic_control`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，系统工程直接使用这一能力完成其工艺或组织设计
-- 工业统计 (`tech.industrial_statistics`)：工业统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，系统工程直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
-  - 已发现信号「自动化突破」（breakthrough.automation）
+- 已发现信号「人口规模 312500」（development.population.312500\_1095d）
 
 #### 效果摘要
 
@@ -23182,11 +22037,10 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 工业农学 (`tech.industrial_agronomy`)：工业农学提供玉米栽培、选育与田间管理经验中的成套生产流程，精准农业直接使用这一能力完成其工艺或组织设计
-- 电子控制 (`tech.electronic_control`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，精准农业直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「综合满意度 65%」（development.satisfaction.65\_1095d）
 
 #### 效果摘要
 
@@ -23217,7 +22071,6 @@ pharmaceuticals产出 +12%
 
 #### 被以下科技作为硬前置
 
-- 作物遥感 (`tech.crop_remote_sensing`)：精准农业提供玉米栽培、选育与田间管理经验中的成套生产流程，作物遥感直接使用这一能力完成其工艺或组织设计
 - 自动化农业 (`tech.automated_agriculture`)：精准农业提供玉米栽培、选育与田间管理经验中的成套生产流程，自动化农业直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
@@ -23253,11 +22106,10 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 电子控制 (`tech.electronic_control`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，数字计算直接使用这一能力完成其工艺或组织设计
-- 国家实验室 (`tech.national_laboratories`)：国家实验室提供记录、验证、计算与知识传播方法中的操作与材料处理方法，数字计算直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「知识就业 6250」（development.employment.knowledge.6250\_1095d）
 
 #### 效果摘要
 
@@ -23290,15 +22142,8 @@ pharmaceuticals产出 +12%
 
 - 信息论 (`tech.information_theory`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，信息论直接使用这一能力完成其工艺或组织设计
 - 软件工程 (`tech.software_engineering`)：数字计算提供可编程处理器、存储与执行模型，软件工程必须以此作为实现对象
-- 网络计算 (`tech.networked_computing`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，网络计算直接使用这一能力完成其工艺或组织设计
 - 半导体制造 (`tech.semiconductor_manufacturing`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，半导体制造直接使用这一能力完成其工艺或组织设计
-- 数值天气预报 (`tech.numerical_weather_prediction`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，数值天气预报直接使用这一能力完成其工艺或组织设计
-- 地理信息系统 (`tech.geographic_information_systems`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，地理信息系统直接使用这一能力完成其工艺或组织设计
-- 生物信息学 (`tech.bioinformatics`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，生物信息学直接使用这一能力完成其工艺或组织设计
 - 机器学习 (`tech.machine_learning`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，机器学习直接使用这一能力完成其工艺或组织设计
-- 自主系统 (`tech.autonomous_systems`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，自主系统直接使用这一能力完成其工艺或组织设计
-- 计算生物学 (`tech.computational_biology`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，计算生物学直接使用这一能力完成其工艺或组织设计
-- 气候建模 (`tech.climate_modeling`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，气候建模直接使用这一能力完成其工艺或组织设计
 - 算法治理 (`tech.algorithmic_governance`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，算法治理直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
@@ -23334,20 +22179,10 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 数字计算 (`tech.digital_computing`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，信息论直接使用这一能力完成其工艺或组织设计
-- 概率与统计 (`tech.probability_statistics`)：概率与统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，信息论直接使用这一能力完成其工艺或组织设计
-- 电信 (`tech.telecommunications`)：电信提供数字计算、软件、网络与自动控制能力中的稳定的组织与制度载体，信息论直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「无线电」（tech.radio）
-  - 已完成科技「工业统计」（tech.industrial\_statistics）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-  - 已发现信号「自动化突破」（breakthrough.automation）
+- 已发现信号「制造就业 6250」（development.employment.manufacturing.6250\_1095d）
 
 #### 效果摘要
 
@@ -23376,8 +22211,7 @@ pharmaceuticals产出 +12%
 
 #### 被以下科技作为硬前置
 
-- 软件工程 (`tech.software_engineering`)：信息论提供编码、复杂度与可靠传输的形式化基础，使软件接口和数据处理可以被系统设计
-- 智能电网 (`tech.smart_grid`)：信息论提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，智能电网直接使用这一能力完成其工艺或组织设计
+无
 
 #### 主题路线后继
 
@@ -23412,11 +22246,10 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 公共教育 (`tech.public_education`)：公共教育提供制度协调、公共组织与交换规则中的操作与材料处理方法，知识经济直接使用这一能力完成其工艺或组织设计
-- 国家实验室 (`tech.national_laboratories`)：国家实验室提供记录、验证、计算与知识传播方法中的操作与材料处理方法，知识经济直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「知识产出规模 100000」（development.output.knowledge.100000\_1095d）
 
 #### 效果摘要
 
@@ -23446,7 +22279,6 @@ pharmaceuticals产出 +12%
 #### 被以下科技作为硬前置
 
 - 人机共治 (`tech.human_machine_cogovernance`)：知识经济提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，人机共治直接使用这一能力完成其工艺或组织设计
-- 知识合作社 (`tech.knowledge_cooperatives`)：知识经济提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，知识合作社直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -23481,13 +22313,10 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 数字计算 (`tech.digital_computing`)：数字计算提供可编程处理器、存储与执行模型，软件工程必须以此作为实现对象
-- 信息论 (`tech.information_theory`)：信息论提供编码、复杂度与可靠传输的形式化基础，使软件接口和数据处理可以被系统设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-  - 已发现信号「自动化突破」（breakthrough.automation）
+- 已发现信号「贸易商品 16 类」（development.trade.goods\_16）
 
 #### 效果摘要
 
@@ -23517,8 +22346,6 @@ pharmaceuticals产出 +12%
 #### 被以下科技作为硬前置
 
 - 网络计算 (`tech.networked_computing`)：软件工程提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，网络计算直接使用这一能力完成其工艺或组织设计
-- 神经网络 (`tech.neural_networks`)：软件工程提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，神经网络直接使用这一能力完成其工艺或组织设计
-- 智能科学代理 (`tech.scientific_agents`)：软件工程提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，智能科学代理直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -23554,14 +22381,10 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 软件工程 (`tech.software_engineering`)：软件工程提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，网络计算直接使用这一能力完成其工艺或组织设计
-- 电信 (`tech.telecommunications`)：电信提供数字计算、软件、网络与自动控制能力中的稳定的组织与制度载体，网络计算直接使用这一能力完成其工艺或组织设计
-- 数字计算 (`tech.digital_computing`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，网络计算直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-  - 已发现信号「自动化突破」（breakthrough.automation）
+- 已发现信号「贸易伙伴 8 个」（development.trade.partners\_8）
 
 #### 效果摘要
 
@@ -23595,7 +22418,6 @@ pharmaceuticals产出 +12%
 - 平台协调 (`tech.platform_coordination`)：网络计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，平台协调直接使用这一能力完成其工艺或组织设计
 - 数字市场 (`tech.digital_marketplaces`)：网络计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，数字市场直接使用这一能力完成其工艺或组织设计
 - 分布式智能 (`tech.distributed_intelligence`)：网络计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，分布式智能直接使用这一能力完成其工艺或组织设计
-- 算法管理 (`tech.algorithmic_management`)：网络计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，算法管理直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -23630,17 +22452,10 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 数字计算 (`tech.digital_computing`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，半导体制造直接使用这一能力完成其工艺或组织设计
-- 电磁感应 (`tech.electromagnetic_induction`)：电磁感应提供发电、电机、电网与能源控制能力中的操作与材料处理方法，半导体制造直接使用这一能力完成其工艺或组织设计
-- 先进冶金 (`tech.advanced_metallurgy`)：先进冶金提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，半导体制造直接使用这一能力完成其工艺或组织设计
-- 工业质量控制 (`tech.industrial_quality_control`)：工业质量控制提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，半导体制造直接使用这一能力完成其工艺或组织设计
-- 电子控制 (`tech.electronic_control`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，半导体制造直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
-  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-  - 已发现信号「能源控制突破」（breakthrough.energy\_control）
+- 已发现信号「累计贸易量 100000」（development.trade.quantity\_100000）
 
 #### 效果摘要
 
@@ -23672,8 +22487,7 @@ pharmaceuticals产出 +12%
 
 #### 被以下科技作为硬前置
 
-- 传感器网络 (`tech.sensor_networks`)：半导体制造提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，传感器网络直接使用这一能力完成其工艺或组织设计
-- 分布式智能 (`tech.distributed_intelligence`)：半导体制造提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，分布式智能直接使用这一能力完成其工艺或组织设计
+无
 
 #### 主题路线后继
 
@@ -23708,21 +22522,10 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 电信 (`tech.telecommunications`)：电信提供数字计算、软件、网络与自动控制能力中的稳定的组织与制度载体，卫星观测直接使用这一能力完成其工艺或组织设计
-- 电子控制 (`tech.electronic_control`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，卫星观测直接使用这一能力完成其工艺或组织设计
-- 精密仪器 (`tech.precision_instruments`)：精密仪器提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，卫星观测直接使用这一能力完成其工艺或组织设计
-- 深层地球物理 (`tech.deep_geophysics`)：深层地球物理提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，卫星观测直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「无线电」（tech.radio）
-  - 已完成科技「地图学」（tech.cartography）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-  - 已发现信号「气候建模突破」（breakthrough.climate\_modeling）
+- 已发现信号「多聚落体系」（development.settlements.tier\_5\_count\_16\_1095d）
 
 #### 效果摘要
 
@@ -23752,10 +22555,8 @@ pharmaceuticals产出 +12%
 #### 被以下科技作为硬前置
 
 - 矿物光谱遥感 (`tech.mineral_spectral_survey`)：卫星观测提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，矿物光谱遥感直接使用这一能力完成其工艺或组织设计
-- 数值天气预报 (`tech.numerical_weather_prediction`)：卫星观测提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，数值天气预报直接使用这一能力完成其工艺或组织设计
 - 作物遥感 (`tech.crop_remote_sensing`)：卫星观测提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，作物遥感直接使用这一能力完成其工艺或组织设计
 - 水文遥感 (`tech.hydrological_remote_sensing`)：卫星观测提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，水文遥感直接使用这一能力完成其工艺或组织设计
-- 气候建模 (`tech.climate_modeling`)：卫星观测提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，气候建模直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -23793,9 +22594,7 @@ pharmaceuticals产出 +12%
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「自动化突破」（breakthrough.automation）
-  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
+- 已发现信号「活跃产业规模 64」（development.buildings.active\_64\_1095d）
 
 #### 效果摘要
 
@@ -23859,14 +22658,10 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 科学分类 (`tech.scientific_classification`)：科学分类提供观察、分类、实验与生物育种知识中的操作与材料处理方法，生物技术直接使用这一能力完成其工艺或组织设计
-- 现代医学 (`tech.modern_medicine`)：现代医学提供卫生、疾病控制与医疗组织能力中的操作与材料处理方法，生物技术直接使用这一能力完成其工艺或组织设计
-- 工业研究 (`tech.industrial_research`)：工业研究提供记录、验证、计算与知识传播方法中的操作与材料处理方法，生物技术直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-  - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
+- 已发现信号「综合满意度 65%」（development.satisfaction.65\_1095d）
 
 #### 效果摘要
 
@@ -23896,7 +22691,6 @@ pharmaceuticals产出 +12%
 #### 被以下科技作为硬前置
 
 - 生物信息学 (`tech.bioinformatics`)：生物技术提供观察、分类、实验与生物育种知识中的操作与材料处理方法，生物信息学直接使用这一能力完成其工艺或组织设计
-- 计算生物学 (`tech.computational_biology`)：生物技术提供观察、分类、实验与生物育种知识中的操作与材料处理方法，计算生物学直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -23931,15 +22725,10 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 卫星观测 (`tech.satellite_observation`)：卫星观测提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，矿物光谱遥感直接使用这一能力完成其工艺或组织设计
-- 深层地球物理 (`tech.deep_geophysics`)：深层地球物理提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，矿物光谱遥感直接使用这一能力完成其工艺或组织设计
-- 精密仪器 (`tech.precision_instruments`)：精密仪器提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，矿物光谱遥感直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「铁矿」（resource.iron\_ore）
-  - 已发现信号「煤炭」（resource.coal）
-  - 已发现信号「矿井支护突破」（breakthrough.mine\_support）
+- 已发现信号「知识就业 6250」（development.employment.knowledge.6250\_1095d）
 
 #### 效果摘要
 
@@ -23972,7 +22761,7 @@ pharmaceuticals产出 +12%
 
 #### 被以下科技作为硬前置
 
-- 自主采矿 (`tech.autonomous_mining`)：矿物光谱遥感提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，自主采矿直接使用这一能力完成其工艺或组织设计
+无
 
 #### 主题路线后继
 
@@ -24007,14 +22796,10 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 概率与统计 (`tech.probability_statistics`)：概率与统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，数值天气预报直接使用这一能力完成其工艺或组织设计
-- 数字计算 (`tech.digital_computing`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，数值天气预报直接使用这一能力完成其工艺或组织设计
-- 卫星观测 (`tech.satellite_observation`)：卫星观测提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，数值天气预报直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-  - 已发现信号「气候建模突破」（breakthrough.climate\_modeling）
+- 已发现信号「制造就业 6250」（development.employment.manufacturing.6250\_1095d）
 
 #### 效果摘要
 
@@ -24081,7 +22866,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「知识产出规模 100000」（development.output.knowledge.100000\_1095d）
 
 #### 效果摘要
 
@@ -24115,12 +22900,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 被以下科技作为硬前置
 
-- 精准灌溉 (`tech.precision_irrigation`)：数字控制提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，精准灌溉直接使用这一能力完成其工艺或组织设计
-- 自动化农业 (`tech.automated_agriculture`)：数字控制提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，自动化农业直接使用这一能力完成其工艺或组织设计
 - 自主系统 (`tech.autonomous_systems`)：数字控制提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，自主系统直接使用这一能力完成其工艺或组织设计
-- 机器人制造 (`tech.robotic_manufacturing`)：数字控制提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，机器人制造直接使用这一能力完成其工艺或组织设计
-- 智能电网 (`tech.smart_grid`)：数字控制提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，智能电网直接使用这一能力完成其工艺或组织设计
-- 人机共治 (`tech.human_machine_cogovernance`)：数字控制提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，人机共治直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -24155,13 +22935,10 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 卫星观测 (`tech.satellite_observation`)：卫星观测提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，作物遥感直接使用这一能力完成其工艺或组织设计
-- 精准农业 (`tech.precision_agriculture`)：精准农业提供玉米栽培、选育与田间管理经验中的成套生产流程，作物遥感直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-  - 已发现信号「气候建模突破」（breakthrough.climate\_modeling）
+- 已发现信号「贸易商品 16 类」（development.trade.goods\_16）
 
 #### 效果摘要
 
@@ -24190,7 +22967,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 被以下科技作为硬前置
 
-- 气候建模 (`tech.climate_modeling`)：作物遥感提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，气候建模直接使用这一能力完成其工艺或组织设计
+无
 
 #### 主题路线后继
 
@@ -24225,14 +23002,10 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 卫星观测 (`tech.satellite_observation`)：卫星观测提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，水文遥感直接使用这一能力完成其工艺或组织设计
-- 深层地球物理 (`tech.deep_geophysics`)：深层地球物理提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，水文遥感直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「河湖水系」（landform.freshwater\_access）
-  - 已发现信号「河谷」（landform.river\_valley）
-  - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
+- 已发现信号「贸易伙伴 8 个」（development.trade.partners\_8）
 
 #### 效果摘要
 
@@ -24296,14 +23069,10 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 网络计算 (`tech.networked_computing`)：网络计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，开放科学网络直接使用这一能力完成其工艺或组织设计
-- 公共教育 (`tech.public_education`)：公共教育提供制度协调、公共组织与交换规则中的操作与材料处理方法，开放科学网络直接使用这一能力完成其工艺或组织设计
-- 学术社团 (`tech.learned_societies`)：学术社团提供观察、分类、实验与生物育种知识中的操作与材料处理方法，开放科学网络直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-  - 已发现信号「印刷突破」（breakthrough.printing）
+- 已发现信号「累计贸易量 100000」（development.trade.quantity\_100000）
 
 #### 效果摘要
 
@@ -24332,7 +23101,6 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 被以下科技作为硬前置
 
-- 智能科学代理 (`tech.scientific_agents`)：开放科学网络提供制度协调、公共组织与交换规则中的操作与材料处理方法，智能科学代理直接使用这一能力完成其工艺或组织设计
 - 知识合作社 (`tech.knowledge_cooperatives`)：开放科学网络提供制度协调、公共组织与交换规则中的操作与材料处理方法，知识合作社直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
@@ -24368,14 +23136,10 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 网络计算 (`tech.networked_computing`)：网络计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，平台协调直接使用这一能力完成其工艺或组织设计
-- 运筹学 (`tech.operations_research`)：运筹学提供制度协调、公共组织与交换规则中的操作与材料处理方法，平台协调直接使用这一能力完成其工艺或组织设计
-- 公司管理 (`tech.corporate_management`)：公司管理提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，平台协调直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-  - 已发现信号「自动化突破」（breakthrough.automation）
+- 已发现信号「多聚落体系」（development.settlements.tier\_5\_count\_16\_1095d）
 
 #### 效果摘要
 
@@ -24404,9 +23168,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 被以下科技作为硬前置
 
-- 人机协作 (`tech.human_machine_collaboration`)：平台协调提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，人机协作直接使用这一能力完成其工艺或组织设计
-- 智能电网 (`tech.smart_grid`)：平台协调提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，智能电网直接使用这一能力完成其工艺或组织设计
-- 算法治理 (`tech.algorithmic_governance`)：平台协调提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，算法治理直接使用这一能力完成其工艺或组织设计
+无
 
 #### 主题路线后继
 
@@ -24441,21 +23203,10 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 网络计算 (`tech.networked_computing`)：网络计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，数字市场直接使用这一能力完成其工艺或组织设计
-- 市场制度 (`tech.market_institutions`)：市场制度提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，数字市场直接使用这一能力完成其工艺或组织设计
-- 全球物流 (`tech.global_logistics`)：全球物流提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，数字市场直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「公司管理」（tech.corporate\_management）
-  - 已完成科技「电信」（tech.telecommunications）
-  - 已发现信号「自动化突破」（breakthrough.automation）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-  - 已发现信号「自动化突破」（breakthrough.automation）
+- 已发现信号「活跃产业规模 64」（development.buildings.active\_64\_1095d）
 
 #### 效果摘要
 
@@ -24519,21 +23270,10 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 地图学 (`tech.cartography`)：地图学提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，地理信息系统直接使用这一能力完成其工艺或组织设计
-- 数字计算 (`tech.digital_computing`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，地理信息系统直接使用这一能力完成其工艺或组织设计
-- 概率与统计 (`tech.probability_statistics`)：概率与统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，地理信息系统直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「卫星观测」（tech.satellite\_observation）
-  - 已完成科技「水文遥感」（tech.hydrological\_remote\_sensing）
-  - 已完成科技「矿物光谱遥感」（tech.mineral\_spectral\_survey）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-  - 已发现信号「自动化突破」（breakthrough.automation）
+- 已发现信号「综合满意度 65%」（development.satisfaction.65\_1095d）
 
 #### 效果摘要
 
@@ -24562,7 +23302,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 被以下科技作为硬前置
 
-- 精准灌溉 (`tech.precision_irrigation`)：地理信息系统提供制图、地质、遥感与空间分析能力中的动力与规模化能力，精准灌溉直接使用这一能力完成其工艺或组织设计
+无
 
 #### 主题路线后继
 
@@ -24599,15 +23339,10 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 水利工程 (`tech.hydraulic_engineering`)：水利工程提供水流、风力、输配水和流域工程能力中的成套生产流程，精准灌溉直接使用这一能力完成其工艺或组织设计
-- 数字控制 (`tech.digital_control`)：数字控制提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，精准灌溉直接使用这一能力完成其工艺或组织设计
-- 地理信息系统 (`tech.geographic_information_systems`)：地理信息系统提供制图、地质、遥感与空间分析能力中的动力与规模化能力，精准灌溉直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「河湖水系」（landform.freshwater\_access）
-  - 已发现信号「河谷」（landform.river\_valley）
-  - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
+- 已发现信号「知识就业 6250」（development.employment.knowledge.6250\_1095d）
 
 #### 效果摘要
 
@@ -24671,14 +23406,10 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 电子控制 (`tech.electronic_control`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，传感器网络直接使用这一能力完成其工艺或组织设计
-- 电信 (`tech.telecommunications`)：电信提供数字计算、软件、网络与自动控制能力中的稳定的组织与制度载体，传感器网络直接使用这一能力完成其工艺或组织设计
-- 半导体制造 (`tech.semiconductor_manufacturing`)：半导体制造提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，传感器网络直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-  - 已发现信号「电气化突破」（breakthrough.electrification）
+- 已发现信号「制造就业 6250」（development.employment.manufacturing.6250\_1095d）
 
 #### 效果摘要
 
@@ -24707,10 +23438,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 被以下科技作为硬前置
 
-- 自主采矿 (`tech.autonomous_mining`)：传感器网络提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，自主采矿直接使用这一能力完成其工艺或组织设计
-- 智能电网 (`tech.smart_grid`)：传感器网络提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，智能电网直接使用这一能力完成其工艺或组织设计
-- 分布式智能 (`tech.distributed_intelligence`)：传感器网络提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，分布式智能直接使用这一能力完成其工艺或组织设计
-- 自主劳动协调 (`tech.autonomous_labor_coordination`)：传感器网络提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，自主劳动协调直接使用这一能力完成其工艺或组织设计
+无
 
 #### 主题路线后继
 
@@ -24745,21 +23473,10 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 生物技术 (`tech.biotechnology`)：生物技术提供观察、分类、实验与生物育种知识中的操作与材料处理方法，生物信息学直接使用这一能力完成其工艺或组织设计
-- 数字计算 (`tech.digital_computing`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，生物信息学直接使用这一能力完成其工艺或组织设计
-- 科学分类 (`tech.scientific_classification`)：科学分类提供观察、分类、实验与生物育种知识中的操作与材料处理方法，生物信息学直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「软件工程」（tech.software\_engineering）
-  - 已完成科技「开放科学网络」（tech.open\_science\_networks）
-  - 已发现信号「小麦」（bio.wheat）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-  - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
+- 已发现信号「知识产出规模 100000」（development.output.knowledge.100000\_1095d）
 
 #### 效果摘要
 
@@ -24788,8 +23505,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 被以下科技作为硬前置
 
-- 计算生物学 (`tech.computational_biology`)：生物信息学提供观察、分类、实验与生物育种知识中的操作与材料处理方法，计算生物学直接使用这一能力完成其工艺或组织设计
-- 智能育种 (`tech.intelligent_breeding`)：生物信息学提供观察、分类、实验与生物育种知识中的操作与材料处理方法，智能育种直接使用这一能力完成其工艺或组织设计
+无
 
 #### 主题路线后继
 
@@ -24906,11 +23622,10 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 数字计算 (`tech.digital_computing`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，机器学习直接使用这一能力完成其工艺或组织设计
-- 国家实验室 (`tech.national_laboratories`)：国家实验室提供记录、验证、计算与知识传播方法中的操作与材料处理方法，机器学习直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「贸易商品 16 类」（development.trade.goods\_16）
 
 #### 效果摘要
 
@@ -24941,10 +23656,7 @@ geospatial\_analysis\_institution产出 +12%
 #### 被以下科技作为硬前置
 
 - 神经网络 (`tech.neural_networks`)：机器学习提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，神经网络直接使用这一能力完成其工艺或组织设计
-- 人机协作 (`tech.human_machine_collaboration`)：机器学习提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，人机协作直接使用这一能力完成其工艺或组织设计
-- 智能育种 (`tech.intelligent_breeding`)：机器学习提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，智能育种直接使用这一能力完成其工艺或组织设计
 - 智能科学代理 (`tech.scientific_agents`)：机器学习提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，智能科学代理直接使用这一能力完成其工艺或组织设计
-- 算法管理 (`tech.algorithmic_management`)：机器学习提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，算法管理直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
 
@@ -24979,11 +23691,10 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 精准农业 (`tech.precision_agriculture`)：精准农业提供玉米栽培、选育与田间管理经验中的成套生产流程，自动化农业直接使用这一能力完成其工艺或组织设计
-- 数字控制 (`tech.digital_control`)：数字控制提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，自动化农业直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「贸易伙伴 8 个」（development.trade.partners\_8）
 
 #### 效果摘要
 
@@ -25047,19 +23758,10 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 机器学习 (`tech.machine_learning`)：机器学习提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，神经网络直接使用这一能力完成其工艺或组织设计
-- 软件工程 (`tech.software_engineering`)：软件工程提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，神经网络直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「系统工程」（tech.systems\_engineering）
-  - 已完成科技「生物信息学」（tech.bioinformatics）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-  - 已发现信号「自动化突破」（breakthrough.automation）
+- 已发现信号「综合满意度 70%」（development.satisfaction.70\_1095d）
 
 #### 效果摘要
 
@@ -25123,14 +23825,10 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 劳工组织 (`tech.labor_organization`)：劳工组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，人机协作直接使用这一能力完成其工艺或组织设计
-- 平台协调 (`tech.platform_coordination`)：平台协调提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，人机协作直接使用这一能力完成其工艺或组织设计
-- 机器学习 (`tech.machine_learning`)：机器学习提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，人机协作直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-  - 已发现信号「自动化突破」（breakthrough.automation）
+- 已发现信号「知识就业 6250」（development.employment.knowledge.6250\_1095d）
 
 #### 效果摘要
 
@@ -25195,11 +23893,10 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 数字控制 (`tech.digital_control`)：数字控制提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，自主系统直接使用这一能力完成其工艺或组织设计
-- 数字计算 (`tech.digital_computing`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，自主系统直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「制造就业 6250」（development.employment.manufacturing.6250\_1095d）
 
 #### 效果摘要
 
@@ -25230,9 +23927,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 被以下科技作为硬前置
 
-- 机器人制造 (`tech.robotic_manufacturing`)：自主系统提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，机器人制造直接使用这一能力完成其工艺或组织设计
-- 自主采矿 (`tech.autonomous_mining`)：自主系统提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，自主采矿直接使用这一能力完成其工艺或组织设计
-- 自主劳动协调 (`tech.autonomous_labor_coordination`)：自主系统提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，自主劳动协调直接使用这一能力完成其工艺或组织设计
+无
 
 #### 主题路线后继
 
@@ -25267,17 +23962,10 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 机床 (`tech.machine_tools`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，机器人制造直接使用这一能力完成其工艺或组织设计
-- 电子控制 (`tech.electronic_control`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，机器人制造直接使用这一能力完成其工艺或组织设计
-- 数字控制 (`tech.digital_control`)：数字控制提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，机器人制造直接使用这一能力完成其工艺或组织设计
-- 自主系统 (`tech.autonomous_systems`)：自主系统提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，机器人制造直接使用这一能力完成其工艺或组织设计
-- 先进冶金 (`tech.advanced_metallurgy`)：先进冶金提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，机器人制造直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-  - 已发现信号「自动化突破」（breakthrough.automation）
-  - 已发现信号「流水线组织突破」（breakthrough.assembly\_line）
+- 已发现信号「能源就业 6250」（development.employment.energy.6250\_1095d）
 
 #### 效果摘要
 
@@ -25348,23 +24036,10 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 机械化采矿 (`tech.mechanized_mining`)：机械化采矿提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，自主采矿直接使用这一能力完成其工艺或组织设计
-- 矿物光谱遥感 (`tech.mineral_spectral_survey`)：矿物光谱遥感提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，自主采矿直接使用这一能力完成其工艺或组织设计
-- 传感器网络 (`tech.sensor_networks`)：传感器网络提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，自主采矿直接使用这一能力完成其工艺或组织设计
-- 自主系统 (`tech.autonomous_systems`)：自主系统提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，自主采矿直接使用这一能力完成其工艺或组织设计
-- 先进冶金 (`tech.advanced_metallurgy`)：先进冶金提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，自主采矿直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「机器人制造」（tech.robotic\_manufacturing）
-  - 已完成科技「机器学习」（tech.machine\_learning）
-  - 已发现信号「矿井支护突破」（breakthrough.mine\_support）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「矿井支护突破」（breakthrough.mine\_support）
-  - 已发现信号「自动化突破」（breakthrough.automation）
+- 已发现信号「知识产出规模 100000」（development.output.knowledge.100000\_1095d）
 
 #### 效果摘要
 
@@ -25433,16 +24108,10 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 科学分类 (`tech.scientific_classification`)：科学分类提供观察、分类、实验与生物育种知识中的操作与材料处理方法，计算生物学直接使用这一能力完成其工艺或组织设计
-- 生物技术 (`tech.biotechnology`)：生物技术提供观察、分类、实验与生物育种知识中的操作与材料处理方法，计算生物学直接使用这一能力完成其工艺或组织设计
-- 生物信息学 (`tech.bioinformatics`)：生物信息学提供观察、分类、实验与生物育种知识中的操作与材料处理方法，计算生物学直接使用这一能力完成其工艺或组织设计
-- 数字计算 (`tech.digital_computing`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，计算生物学直接使用这一能力完成其工艺或组织设计
-- 概率与统计 (`tech.probability_statistics`)：概率与统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，计算生物学直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-  - 已发现信号「化工过程控制突破」（breakthrough.chemical\_process\_control）
+- 已发现信号「制造产出规模 100000」（development.output.manufacturing.100000\_1095d）
 
 #### 效果摘要
 
@@ -25506,23 +24175,10 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 数值天气预报 (`tech.numerical_weather_prediction`)：数值天气预报提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，气候建模直接使用这一能力完成其工艺或组织设计
-- 卫星观测 (`tech.satellite_observation`)：卫星观测提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，气候建模直接使用这一能力完成其工艺或组织设计
-- 数字计算 (`tech.digital_computing`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，气候建模直接使用这一能力完成其工艺或组织设计
-- 概率与统计 (`tech.probability_statistics`)：概率与统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，气候建模直接使用这一能力完成其工艺或组织设计
-- 作物遥感 (`tech.crop_remote_sensing`)：作物遥感提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，气候建模直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「矿物光谱遥感」（tech.mineral\_spectral\_survey）
-  - 已完成科技「水文遥感」（tech.hydrological\_remote\_sensing）
-  - 已发现信号「气候建模突破」（breakthrough.climate\_modeling）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-  - 已发现信号「气候建模突破」（breakthrough.climate\_modeling）
+- 已发现信号「能源产出规模 100000」（development.output.energy.100000\_1095d）
 
 #### 效果摘要
 
@@ -25586,23 +24242,10 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 电网 (`tech.electric_grid`)：电网提供发电、电机、电网与能源控制能力中的动力与规模化能力，智能电网直接使用这一能力完成其工艺或组织设计
-- 信息论 (`tech.information_theory`)：信息论提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，智能电网直接使用这一能力完成其工艺或组织设计
-- 数字控制 (`tech.digital_control`)：数字控制提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，智能电网直接使用这一能力完成其工艺或组织设计
-- 传感器网络 (`tech.sensor_networks`)：传感器网络提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，智能电网直接使用这一能力完成其工艺或组织设计
-- 平台协调 (`tech.platform_coordination`)：平台协调提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，智能电网直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「系统工程」（tech.systems\_engineering）
-  - 已完成科技「分布式智能」（tech.distributed\_intelligence）
-  - 已发现信号「能源控制突破」（breakthrough.energy\_control）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「能源控制突破」（breakthrough.energy\_control）
-  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
+- 已发现信号「贸易商品 16 类」（development.trade.goods\_16）
 
 #### 效果摘要
 
@@ -25666,14 +24309,10 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 数字计算 (`tech.digital_computing`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，算法治理直接使用这一能力完成其工艺或组织设计
-- 运筹学 (`tech.operations_research`)：运筹学提供制度协调、公共组织与交换规则中的操作与材料处理方法，算法治理直接使用这一能力完成其工艺或组织设计
-- 平台协调 (`tech.platform_coordination`)：平台协调提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，算法治理直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-  - 已发现信号「自动化突破」（breakthrough.automation）
+- 已发现信号「贸易伙伴 8 个」（development.trade.partners\_8）
 
 #### 效果摘要
 
@@ -25737,21 +24376,10 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 网络计算 (`tech.networked_computing`)：网络计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，分布式智能直接使用这一能力完成其工艺或组织设计
-- 半导体制造 (`tech.semiconductor_manufacturing`)：半导体制造提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，分布式智能直接使用这一能力完成其工艺或组织设计
-- 传感器网络 (`tech.sensor_networks`)：传感器网络提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，分布式智能直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「神经网络」（tech.neural\_networks）
-  - 已完成科技「自主系统」（tech.autonomous\_systems）
-  - 已发现信号「自动化突破」（breakthrough.automation）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-  - 已发现信号「自动化突破」（breakthrough.automation）
+- 已发现信号「综合满意度 70%」（development.satisfaction.70\_1095d）
 
 #### 效果摘要
 
@@ -25816,15 +24444,10 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 系统育种 (`tech.crop_breeding`)：系统育种提供观察、分类、实验与生物育种知识中的成套生产流程，智能育种直接使用这一能力完成其工艺或组织设计
-- 生物信息学 (`tech.bioinformatics`)：生物信息学提供观察、分类、实验与生物育种知识中的操作与材料处理方法，智能育种直接使用这一能力完成其工艺或组织设计
-- 机器学习 (`tech.machine_learning`)：机器学习提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，智能育种直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-  - 已发现信号「玉米选育突破」（breakthrough.maize\_selection）
-  - 已发现信号「留种实践突破」（breakthrough.seed\_saving）
+- 已发现信号「知识就业 6250」（development.employment.knowledge.6250\_1095d）
 
 #### 效果摘要
 
@@ -25889,18 +24512,9 @@ geospatial\_analysis\_institution产出 +12%
 
 - 自动化物流 (`tech.automated_logistics`)：自动化物流提供船舶、导航、港口与运输组织能力中的动力与规模化能力，自主物流直接使用这一能力完成其工艺或组织设计
 
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「平台协调」（tech.platform\_coordination）
-  - 已完成科技「分布式智能」（tech.distributed\_intelligence）
-  - 已发现信号「航运运营突破」（breakthrough.maritime\_operations）
-
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「自动化突破」（breakthrough.automation）
-  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
+- 已发现信号「制造就业 6250」（development.employment.manufacturing.6250\_1095d）
 
 #### 效果摘要
 
@@ -25964,14 +24578,10 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 机器学习 (`tech.machine_learning`)：机器学习提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，智能科学代理直接使用这一能力完成其工艺或组织设计
-- 开放科学网络 (`tech.open_science_networks`)：开放科学网络提供制度协调、公共组织与交换规则中的操作与材料处理方法，智能科学代理直接使用这一能力完成其工艺或组织设计
-- 软件工程 (`tech.software_engineering`)：软件工程提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，智能科学代理直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-  - 已发现信号「自动化突破」（breakthrough.automation）
+- 已发现信号「能源就业 6250」（development.employment.energy.6250\_1095d）
 
 #### 效果摘要
 
@@ -26035,11 +24645,10 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 知识经济 (`tech.knowledge_economy`)：知识经济提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，人机共治直接使用这一能力完成其工艺或组织设计
-- 数字控制 (`tech.digital_control`)：数字控制提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，人机共治直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「制造产出规模 100000」（development.output.manufacturing.100000\_1095d）
 
 #### 效果摘要
 
@@ -26103,22 +24712,10 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 公司管理 (`tech.corporate_management`)：公司管理提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，算法管理直接使用这一能力完成其工艺或组织设计
-- 运筹学 (`tech.operations_research`)：运筹学提供制度协调、公共组织与交换规则中的操作与材料处理方法，算法管理直接使用这一能力完成其工艺或组织设计
-- 网络计算 (`tech.networked_computing`)：网络计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，算法管理直接使用这一能力完成其工艺或组织设计
-- 机器学习 (`tech.machine_learning`)：机器学习提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，算法管理直接使用这一能力完成其工艺或组织设计
-
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「人机协作」（tech.human\_machine\_collaboration）
-  - 已完成科技「算法治理」（tech.algorithmic\_governance）
-  - 已发现信号「自动化突破」（breakthrough.automation）
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
+- 已发现信号「制造产出规模 100000」（development.output.manufacturing.100000\_1095d）
 
 #### 效果摘要
 
@@ -26183,19 +24780,9 @@ geospatial\_analysis\_institution产出 +12%
 
 - 精准灌溉 (`tech.precision_irrigation`)：精准灌溉提供水田整备、水位控制与稻作管理方法中的成套生产流程，自适应灌溉直接使用这一能力完成其工艺或组织设计
 
-#### 额外研发条件
-
-- 满足其一：
-  - 已完成科技「传感器网络」（tech.sensor\_networks）
-  - 已完成科技「作物遥感」（tech.crop\_remote\_sensing）
-  - 已发现信号「水田控制突破」（breakthrough.paddy\_control）
-
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「河湖水系」（landform.freshwater\_access）
-  - 已发现信号「河谷」（landform.river\_valley）
-  - 已发现信号「水利工程突破」（breakthrough.hydraulic\_engineering）
+- 已发现信号「能源产出规模 100000」（development.output.energy.100000\_1095d）
 
 #### 效果摘要
 
@@ -26259,14 +24846,10 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 开放科学网络 (`tech.open_science_networks`)：开放科学网络提供制度协调、公共组织与交换规则中的操作与材料处理方法，知识合作社直接使用这一能力完成其工艺或组织设计
-- 合作社组织 (`tech.cooperative_association`)：合作社组织提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，知识合作社直接使用这一能力完成其工艺或组织设计
-- 知识经济 (`tech.knowledge_economy`)：知识经济提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，知识合作社直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-  - 已发现信号「自动化突破」（breakthrough.automation）
+- 已发现信号「综合满意度 70%」（development.satisfaction.70\_1095d）
 
 #### 效果摘要
 
@@ -26330,14 +24913,10 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 算法管理 (`tech.algorithmic_management`)：算法管理提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，自主劳动协调直接使用这一能力完成其工艺或组织设计
-- 传感器网络 (`tech.sensor_networks`)：传感器网络提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，自主劳动协调直接使用这一能力完成其工艺或组织设计
-- 自主系统 (`tech.autonomous_systems`)：自主系统提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，自主劳动协调直接使用这一能力完成其工艺或组织设计
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「数字控制突破」（breakthrough.digital\_control）
-  - 已发现信号「工业组织突破」（breakthrough.industrial\_organization）
+- 已发现信号「贸易伙伴 8 个」（development.trade.partners\_8）
 
 #### 效果摘要
 

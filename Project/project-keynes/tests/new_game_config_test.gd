@@ -42,6 +42,41 @@ func _init() -> void:
 		(names_a.display_names as PackedStringArray).find("罗马帝国") < 0)
 	_expect("historical name pack has broad capacity",
 		int(name_pack.validate(12).available) >= 60)
+	_expect("default land layout is two continents",
+		String(config.base.land_layout) == "two"
+		and int(config.base.num_continents) == 2
+		and float(config.base.continent_size) < 0.7)
+	_expect("two-continent spacing keeps cores apart",
+		float(NewGameConfig.derive_climate(config.world_controls).get("main_separation_factor", 0.0)) > 1.0)
+	config.apply_land_layout("archipelago")
+	_expect("archipelago uses many small cores",
+		String(config.base.land_layout) == "archipelago"
+		and int(config.base.num_continents) >= 5
+		and float(config.base.continent_size) <= 0.32
+		and int(config.world_controls.island_amount) >= 80)
+	config.apply_land_layout("single")
+	_expect("single continent keeps one large core",
+		int(config.base.num_continents) == 1 and float(config.base.continent_size) >= 0.7)
+	config.apply_land_layout("multiple")
+	_expect("multiple continents stay smaller than pangaea",
+		int(config.base.num_continents) >= 3 and float(config.base.continent_size) <= 0.45)
+	var unknown := NewGameConfig.new()
+	unknown.country.name = "ok"
+	unknown.base.initial_seed = 1
+	unknown.base.land_layout = "not-a-layout"
+	_expect("unknown layout becomes custom",
+		bool(unknown.validate().ok) and String(unknown.base.land_layout) == "custom")
+	var setup_climate := NewGameConfig.derive_climate({
+		"continent_spacing": 55,
+		"island_amount": 50,
+		"coast_roughness": 50,
+		"wetness": 55,
+		"lake_density": 45,
+		"river_density": 55,
+		"volcano_amount": 40,
+	})
+	_expect("full world controls still derive coast warp",
+		setup_climate.has("continent_warp_amp") and setup_climate.has("main_separation_factor"))
 	print("new game config: %d checks, %d failures" % [_checks, _failures])
 	quit(0 if _failures == 0 else 1)
 

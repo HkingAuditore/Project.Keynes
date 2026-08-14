@@ -472,76 +472,8 @@ func _control_value(control: Control, field_type: String):
 	return null
 
 
-func _pct(controls: Dictionary, name: String, default_value: float) -> float:
-	return clampf(float(controls.get(name, default_value)) / 100.0, 0.0, 1.0)
-
-
-func _mix(a: float, b: float, t: float) -> float:
-	return lerpf(a, b, clampf(t, 0.0, 1.0))
-
-
-func _mixi(a: int, b: int, t: float) -> int:
-	return int(round(_mix(float(a), float(b), t)))
-
-
 func _build_climate_overrides(controls: Dictionary) -> Dictionary:
-	var continent_spacing := _pct(controls, "continent_spacing", 55.0)
-	var island_amount := _pct(controls, "island_amount", 50.0)
-	var coast_roughness := _pct(controls, "coast_roughness", 50.0)
-	var relief_amount := _pct(controls, "relief_amount", 55.0)
-	var mountain_amount := _pct(controls, "mountain_amount", 60.0)
-	var valley_amount := _pct(controls, "valley_amount", 45.0)
-	var wetness := _pct(controls, "wetness", 55.0)
-	var coastal_wetness := _pct(controls, "coastal_wetness", 55.0)
-	var rain_shadow := _pct(controls, "rain_shadow", 50.0)
-	var lake_density := _pct(controls, "lake_density", 45.0)
-	var lake_size := _pct(controls, "lake_size", 55.0)
-	var river_density := _pct(controls, "river_density", 55.0)
-	var short_rivers := _pct(controls, "short_rivers", 50.0)
-	var volcano_amount := _pct(controls, "volcano_amount", 40.0)
-	var offshore_strength: float = clampf((island_amount + coast_roughness) * 0.5, 0.0, 1.0)
-
-	return {
-		"continent_warp_amp": _mix(0.04, 0.30, coast_roughness),
-		"main_separation_factor": _mix(0.62, 1.12, continent_spacing),
-		"satellites_per_main": _mixi(0, 7, island_amount),
-		"satellite_radius_min": _mix(0.26, 0.12, island_amount),
-		"satellite_radius_max": _mix(0.48, 0.28, island_amount),
-		"satellite_separation_factor": _mix(0.30, 0.80, continent_spacing),
-		"offshore_amp": _mix(0.20, 0.70, offshore_strength),
-		"meso_weight": _mix(0.12, 0.48, coast_roughness),
-		"macro_relief_weight": _mix(0.08, 0.45, relief_amount),
-		"ridge_boost_amp": _mix(0.25, 1.15, mountain_amount),
-		"spl_iters": _mixi(0, 30, valley_amount),
-		"spl_erodibility": _mix(0.35, 2.60, valley_amount),
-		"spl_uplift_rate": _mix(0.04, 0.18, mountain_amount),
-		"moisture_land_base": _mix(0.08, 0.30, wetness),
-		"moisture_precip_gain": _mix(2.0, 4.8, wetness),
-		"moisture_continental_dry": _mix(0.045, 0.012, wetness),
-		# [zonal-envelope] 越湿→ITCZ/风暴路径增雨越强、极地抑雨越弱（保持单调）
-		"moisture_itcz_wet_strength": _mix(0.6, 1.2, wetness),
-		"moisture_stormtrack_wet_strength": _mix(0.3, 0.7, wetness),
-		"moisture_polar_dry_strength": _mix(0.5, 0.25, wetness),
-		"moisture_tropical_evap_boost": _mix(0.6, 1.4, wetness),
-		"moisture_coastal_floor": _mix(0.25, 0.62, coastal_wetness),
-		"coastal_moisture_boost": _mix(0.05, 0.38, coastal_wetness),
-		"orographic_boost": _mix(0.35, 2.2, mountain_amount),
-		"rain_shadow_threshold": _mix(0.22, 0.06, rain_shadow),
-		"rain_shadow_factor": _mix(0.88, 0.28, rain_shadow),
-		"rain_shadow_lookback": _mixi(1, 5, rain_shadow),
-		"hydro_lake_min_cells": _mixi(16, 4, lake_density),
-		"hydro_lake_min_depth": _mix(0.030, 0.010, lake_density),
-		"hydro_lake_min_volume": _mix(0.50, 0.10, lake_density),
-		"lake_seed_freq": _mix(0.090, 0.035, lake_size),
-		"lake_seed_threshold": _mix(0.72, 0.48, lake_density),
-		"lake_seed_depth": _mix(0.05, 0.16, lake_size),
-		"lake_seed_min_interior": 0.12,
-		"river_channel_init_cells": _mixi(30, 7, river_density),
-		"hydro_river_min_length": _mixi(10, 3, short_rivers),
-		"max_volcanoes": _mixi(0, 18, volcano_amount),
-		"volcano_min_dist": _mixi(14, 3, volcano_amount),
-		"volcano_min_land_h": _mix(0.78, 0.52, volcano_amount),
-	}
+	return NewGameConfig.derive_climate(controls)
 
 
 func _on_preset_selected(index: int) -> void:

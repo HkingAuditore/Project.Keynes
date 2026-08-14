@@ -10170,6 +10170,9 @@ func _bio_occupancy_base_knobs(map_ref: MapData) -> Dictionary:
 	for i in range(carrier_alts.size()):
 		var id := String(carrier_alts[i])
 		alt[i] = int(index_of.get(id, -1)) if not id.is_empty() else -1
+	var temperature: PackedFloat32Array = map_ref.temp_30d_arr
+	if temperature.size() != n:
+		temperature = map_ref.temp_arr
 	return {
 		"ok": true,
 		"cell_count": n,
@@ -10180,7 +10183,7 @@ func _bio_occupancy_base_knobs(map_ref: MapData) -> Dictionary:
 		"vegetation": map_ref.vegetation_arr,
 		"landform": map_ref.landform_arr,
 		"has_river": map_ref.has_river_arr,
-		"temperature": map_ref.temp_arr,
+		"temperature": temperature,
 		"moisture": map_ref.moisture_arr,
 		"elevation": map_ref.elevation_arr,
 		"neighbor_indices": map_ref.neighbor_indices_packed(),
@@ -10265,6 +10268,7 @@ func _seed_bio_occupancy(map_ref: MapData) -> void:
 	map_ref.landmass_id_arr = landmass
 	map_ref.province_id_arr = provinces
 	knobs["province_ids"] = provinces
+	knobs["landmass_ids"] = landmass
 	var seed_res: Dictionary = _data_core_world_ext.run_bio_seed_pass(knobs)
 	if not bool(seed_res.get("ok", false)):
 		push_error("[bio-occupancy] seed pass failed: %s" % String(seed_res.get("reason", "unknown")))
@@ -10275,6 +10279,32 @@ func _seed_bio_occupancy(map_ref: MapData) -> void:
 		return
 	map_ref.bio_occupancy_bits_arr = occupancy
 	_publish_bio_occupancy_to_runtime(map_ref)
+	_log_bio_occupancy_seed(knobs, seed_res, int(province_res.get("landmass_count", 0)),
+		int(province_res.get("province_count", 0)))
+
+
+func _log_bio_occupancy_seed(knobs: Dictionary, seed_res: Dictionary, landmass_count: int,
+		province_count: int) -> void:
+	var catalog: Dictionary = ResearchSignalCatalogScript.compile_native_catalog()
+	var ids: PackedStringArray = catalog.get("research_signal_ids", PackedStringArray())
+	var signal_ids: PackedInt32Array = knobs.get("species_signal_ids", PackedInt32Array())
+	var envelope: PackedInt32Array = seed_res.get("envelope_cell_counts", PackedInt32Array())
+	var origin_envelope: PackedInt32Array = seed_res.get("origin_envelope_cell_counts", PackedInt32Array())
+	var occupied: PackedInt32Array = seed_res.get("occupied_cell_counts", PackedInt32Array())
+	var origins: PackedInt32Array = seed_res.get("origin_landmass_ids", PackedInt32Array())
+	var seeded: PackedInt32Array = seed_res.get("seeded_landmass_counts", PackedInt32Array())
+	print("[bio-occupancy] seed landmasses=%d provinces=%d species=%d" % [
+		landmass_count, province_count, signal_ids.size()])
+	for i in range(signal_ids.size()):
+		var sid := int(signal_ids[i])
+		var name := String(ids[sid]) if sid >= 0 and sid < ids.size() else "?"
+		var env_n := int(envelope[i]) if i < envelope.size() else 0
+		var origin_n := int(origin_envelope[i]) if i < origin_envelope.size() else 0
+		var occ_n := int(occupied[i]) if i < occupied.size() else 0
+		var origin_id := int(origins[i]) if i < origins.size() else 0
+		var seeded_n := int(seeded[i]) if i < seeded.size() else 0
+		print("[bio-occupancy]   %s envelope=%d seeded_landmasses=%d primary_landmass=%d primary_envelope=%d occupied=%d" % [
+			name, env_n, seeded_n, origin_id, origin_n, occ_n])
 
 
 func run_bio_occupancy_pass_native(map_ref, run_diffusion: bool = false, day_index: int = 0) -> Dictionary:
