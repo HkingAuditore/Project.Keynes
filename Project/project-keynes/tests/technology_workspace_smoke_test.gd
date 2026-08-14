@@ -6,6 +6,8 @@ const DialScript = preload("res://scripts/ui/components/research_weight_dial.gd"
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
 const TechnologyTreeLayoutScript = preload("res://scripts/ui/technology_tree_layout.gd")
 const ResearchSignalCatalogScript = preload("res://scripts/research/research_signal_catalog.gd")
+const DevelopmentAchievementCatalogScript = preload(
+	"res://scripts/research/development_achievement_catalog.gd")
 
 var _failures := 0
 
@@ -60,6 +62,21 @@ func _init() -> void:
 	_expect("revealed technology conditions expose discovered evidence",
 		_items_contain(condition_items, "玉米") and
 		_items_contain(condition_items, "地块 7"))
+	var plantation := (compiled.technology_ids as PackedStringArray).find(
+		"tech.estate_plantation_management")
+	condition_states[plantation] = 2
+	var route_items: Array = workspace._condition_items(plantation, condition_states)
+	_expect("technology detail explains independent research routes",
+		_items_contain(route_items, "研究路线 · 土地制度路线") and
+		not _items_contain(route_items, "替代研究条件"))
+	var development_title := workspace.get_node(
+		"Root/Main/PolicyPanel/Scroll/Body/DevelopmentTitle") as Label
+	var development_list := workspace.get_node(
+		"Root/Main/PolicyPanel/Scroll/Body/DevelopmentList") as VBoxContainer
+	_expect("development board shows only current-era neutral objectives",
+		development_title.visible and development_list.visible and
+		development_list.get_child_count() == 1 and
+		not development_title.text.contains("科技"))
 	var tree: Control = workspace.tree_view()
 	_expect("tree view exists", tree != null)
 	if tree == null:
@@ -96,6 +113,11 @@ func _model(definitions: Array, eras: Array, domains: Array) -> Dictionary:
 		states[index] = 2
 	states[4] = 3
 	progress[4] = 500 * 1000
+	var population_objective: Dictionary = {}
+	for definition in DevelopmentAchievementCatalogScript.definitions():
+		if String(definition.get("signal_id", "")) == "development.population.100_90d":
+			population_objective = definition.duplicate(true)
+			break
 	return {
 		"country_handle": 0,
 		"technology_definitions": definitions,
@@ -104,6 +126,20 @@ func _model(definitions: Array, eras: Array, domains: Array) -> Dictionary:
 		"technology_visual_edges": TechnologyCatalogScript.public_visual_edges(),
 		"technology_lanes": TechnologyCatalogScript.public_lane_metadata(),
 		"research_signal_definitions": signal_definitions,
+		"development": {
+			"ok": true,
+			"era_id": "stone",
+			"objectives": [population_objective],
+			"progress_by_signal": {
+				"development.population.100_90d": {
+					"current_value": 80,
+					"qualifier_threshold": 100,
+					"consecutive_days": 45,
+					"target_days": 90,
+					"completed": 0,
+				},
+			},
+		},
 		"research": {
 			"technology_states": states,
 			"technology_progress": progress,

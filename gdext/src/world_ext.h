@@ -266,6 +266,8 @@ public:
     godot::Dictionary set_trigger_enabled(const godot::Dictionary &batch);
     godot::Dictionary reconcile_trigger_branch_bindings(const godot::Dictionary &batch);
     godot::Dictionary get_trigger_branch_progress(int64_t branch_handle) const;
+    godot::Dictionary get_development_progress(int64_t country_handle,
+                                               int32_t era_index) const;
     godot::Dictionary resync_trigger_source(const godot::Dictionary &snapshot);
     godot::Dictionary get_trigger_report() const;
     godot::PackedByteArray capture_trigger_state() const;

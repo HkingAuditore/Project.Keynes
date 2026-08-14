@@ -439,6 +439,19 @@ Dictionary NativeEconomyRuntime::end_restore() {
         out["computed_environment_hash"] = computed_environment_hash;
         return out;
     }
+    const size_t expected_population_slots =
+        _population.page_next.size() * static_cast<size_t>(COHORT_PAGE_SIZE);
+    if (_population.active.size() != expected_population_slots ||
+        _population.reserved.size() != expected_population_slots ||
+        _population.reservation_owner.size() != expected_population_slots ||
+        _population.signature_id.size() != expected_population_slots ||
+        _population.generation.size() != expected_population_slots ||
+        _population.population.size() != expected_population_slots ||
+        _population.funds.size() != expected_population_slots) {
+        out["ok"] = false;
+        out["reason"] = "restore_population_lane_shape_invalid";
+        return out;
+    }
     std::vector<uint8_t> referenced(_population.page_next.size(), 0);
     int64_t actual_active = 0;
     for (int32_t page = 0; page < static_cast<int32_t>(_population.page_next.size()); ++page) {

@@ -13,7 +13,7 @@
 
 PKSV persistence is a snapshot boundary, not a new owner. GDScript coordinates
 section capture while each native authority emits its own versioned state:
-PKCN v11, PKEF v9, PKTR v4, PKEC v34, PKCM v1, PKGP v1, and
+PKCN v11, PKEF v9, PKTR v5, PKEC v34, PKCM v1, PKGP v1, and
 `PKEnvironmentRuntime v1`. Environment export includes the
 resident core vectors, weather ping-pong buffers, topology, dirty/active sets,
 round flags, stage cursors, and snapshot generations. Restore validates schema
@@ -972,7 +972,7 @@ eight revisions and `2 * cell_count` entries; an expired cursor returns
 
 Trigger catalogs cross the bridge once as protocol v2 packed columns. GDScript owns resource
 configuration and domain adapters; C++ owns dense trigger state, dynamic family branch bindings and
-PKTR v4 bytes. Gameplay facts carry both legacy `entity_id` and generation-safe 64-bit
+PKTR v5 bytes. Gameplay facts carry both legacy `entity_id` and generation-safe 64-bit
 `entity_handle`; economy publishes construction/trade facts once and TriggerRuntime fans them out by
 `(event_type, cell)`.
 

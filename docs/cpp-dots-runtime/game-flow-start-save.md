@@ -137,7 +137,7 @@ tax policy, territory claim and native Effect ingress idempotency; PKEC v34 embe
 modifiers, BuildingIdentityStore, family traits/cell influence,
 production-climate state, and Economy Effect ingress idempotency. PKGP v1 saves
 Gameplay identity/base SoA and modifiers; journal v4 saves native
-`PUBLISH_EVENT` Effect idempotency evidence; PKTR v4 saves static/dynamic branch
+`PUBLISH_EVENT` Effect idempotency evidence; PKTR v5 saves static/dynamic branch
 and technology-practice Trigger accumulation. PKEF v9 saves Effect recipe/program
 identity and pending ACK state. Old PKCN/PKEF/PKTR schemas or related catalog
 identity changes are rejected with `catalog_hash_mismatch`.
@@ -179,7 +179,7 @@ Restore order is strict:
    modifiers, building identities, notable families, active family expeditions, and production-climate state.
 7. Restore PKGP, then PKFG; re-solve vision and republish `enum_lut.a` and the border
    mesh through `WorldRuntimeHost.refresh_country_visuals()`.
-8. Restore journal v4 and PKTR v4, then PKID v2
+8. Restore journal v4 and PKTR v5, then PKID v2
    ideology state. PKID verifies its active PKEF bindings before the session is
    allowed to resume.
 9. Rebuild derived views/render resources and scheduler topology.
@@ -246,6 +246,6 @@ landlords, serfs or indentured labor. The only food bridge is 15 days of the rou
 food good; `processed_food` receives no fixed grant. Every generated country starts with exactly one
 territory cell, one regional weak bundle, 20 population, one founder family and one notable founder.
 
-Save flow requires `PKTR v4` after journal/domain state. Missing/older PKTR, older PKCN/PKEF,
+Save flow requires `PKTR v5` after journal/domain state. Missing/older PKTR, older PKCN/PKEF,
 PKEC v32 or older, and incompatible catalog hashes reject restore; no empty-trigger or technology
 ID migration is provided.

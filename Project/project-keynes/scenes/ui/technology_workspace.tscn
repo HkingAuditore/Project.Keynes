@@ -281,6 +281,18 @@ unique_name_in_owner = true
 layout_mode = 2
 [node name="Rule" type="HSeparator" parent="Root/Main/PolicyPanel/Scroll/Body"]
 layout_mode = 2
+
+[node name="DevelopmentTitle" type="Label" parent="Root/Main/PolicyPanel/Scroll/Body"]
+layout_mode = 2
+text = "国家发展目标"
+theme_type_variation = &"PKSectionTitle"
+visible = false
+
+[node name="DevelopmentList" type="VBoxContainer" parent="Root/Main/PolicyPanel/Scroll/Body"]
+layout_mode = 2
+theme_override_constants/separation = 6
+visible = false
+
 [node name="QueueTitle" type="Label" parent="Root/Main/PolicyPanel/Scroll/Body"]
 layout_mode = 2
 text = "研究队列"

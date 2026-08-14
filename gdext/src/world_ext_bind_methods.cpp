@@ -199,6 +199,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::reconcile_trigger_branch_bindings);
     ClassDB::bind_method(D_METHOD("get_trigger_branch_progress", "branch_handle"),
                          &DCWorldExt::get_trigger_branch_progress);
+    ClassDB::bind_method(D_METHOD("get_development_progress", "country_handle", "era_index"),
+                         &DCWorldExt::get_development_progress);
     ClassDB::bind_method(D_METHOD("resync_trigger_source", "snapshot"),
                          &DCWorldExt::resync_trigger_source);
     ClassDB::bind_method(D_METHOD("get_trigger_report"),

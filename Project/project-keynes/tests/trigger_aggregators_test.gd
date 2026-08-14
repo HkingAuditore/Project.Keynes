@@ -39,7 +39,7 @@ func _run() -> void:
 	if not ext.has_method("configure_triggers"):
 		print("[trigger-aggregators] SKIP: Trigger API unavailable"); quit(0); return
 	var catalog = TriggerCatalogScript.new()
-	catalog.source_count = 2; catalog.event_type_span = 32
+	catalog.source_count = 8; catalog.event_type_span = 32
 	var definitions := [
 		_definition("count", 1, 1, 2, 0), _definition("sum", 2, 2, 5),
 		_definition("max", 3, 4, 10), _definition("min", 4, 3, 4, 1, 4),

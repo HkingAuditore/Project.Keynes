@@ -2,6 +2,8 @@ class_name ResearchSignalCatalog
 extends RefCounted
 
 const ResearchSignalDefinitionScript = preload("res://scripts/research/research_signal_definition.gd")
+const DevelopmentAchievementCatalogScript = preload(
+	"res://scripts/research/development_achievement_catalog.gd")
 
 ## Authoritative discovery vocabulary. The row order is stable save/catalog data;
 ## no C++ string lookup survives catalog compilation.
@@ -432,7 +434,14 @@ static func compile_native_catalog() -> Dictionary:
 	var bio_introduce_occupancy_bits := PackedInt32Array()
 	var next_occupancy_bit := 0
 	var seen := {}
-	for row in SIGNAL_ROWS + NETWORK_SIGNAL_ROWS:
+	# Build a fresh row list on every compile. Array constants are shared by
+	# reference in GDScript; mutating a concatenated view would duplicate the
+	# development rows on the next catalog compile.
+	var authored_rows: Array = []
+	authored_rows.append_array((SIGNAL_ROWS as Array).duplicate(true))
+	authored_rows.append_array((NETWORK_SIGNAL_ROWS as Array).duplicate(true))
+	authored_rows.append_array(DevelopmentAchievementCatalogScript.signal_rows())
+	for row in authored_rows:
 		var id := String(row[0])
 		if not id.contains(".") or seen.has(id):
 			return {"ok": false, "reason": "research_signal_id_invalid_or_duplicate", "id": id}

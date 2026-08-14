@@ -1,6 +1,6 @@
 extends SceneTree
 
-# Deterministic schema-v2 normalizer and validator. The network JSON is the
+# Deterministic schema-v3 normalizer and validator. The network JSON is the
 # sole authoring source: this tool never invents prerequisites, branches,
 # milestone candidates, application links, or Modifier effects.
 
@@ -8,7 +8,7 @@ const ResearchConditionScript = preload("res://scripts/research/research_conditi
 const ResearchPredicateScript = preload("res://scripts/research/research_predicate.gd")
 
 const NETWORK_PATH := "res://data/technology/technology_network.json"
-const REPORT_PATH := "res://tools/technology_tree/technology_network_v2_audit.md"
+const REPORT_PATH := "res://tools/technology_tree/technology_network_v3_audit.md"
 const ERA_IDS := [
 	"stone", "agrarian", "kingdom", "empire", "exploration", "enlightenment",
 	"steam", "electrical", "atomic", "information", "intelligent",
@@ -67,7 +67,7 @@ func _init() -> void:
 	if not check_only:
 		_write_json(payload)
 		_write_text(REPORT_PATH, report)
-	print("[PASS] technology schema v2: %d nodes / %d hard / %d alternative / %d milestone candidates" % [
+	print("[PASS] technology schema v3: %d nodes / %d hard / %d research-route / %d milestone candidates" % [
 		(payload.nodes as Array).size(), int(validation.hard_edges),
 		int(validation.alternative_edges), int(validation.milestone_candidate_edges)])
 	quit(0)
@@ -159,7 +159,7 @@ func _read_payload() -> Dictionary:
 
 
 func _validate(payload: Dictionary) -> Dictionary:
-	if int(payload.get("schema_version", 0)) != 2:
+	if int(payload.get("schema_version", 0)) != 3:
 		return _fail("technology_network_schema_version_invalid")
 	var eras: Array = payload.get("eras", [])
 	var domains: Array = payload.get("domains", [])
@@ -204,11 +204,6 @@ func _validate(payload: Dictionary) -> Dictionary:
 		family_ids[family_id] = true
 	for row_value in families:
 		specialist_family_ids[String((row_value as Dictionary).id)] = true
-	var route_count_by_family := {}
-	var mixed_route_count_by_family := {}
-	for family_id in specialist_family_ids:
-		route_count_by_family[family_id] = 0
-		mixed_route_count_by_family[family_id] = 0
 	var node_by_id := {}
 	for node_value in nodes:
 		var node: Dictionary = node_value
@@ -224,7 +219,8 @@ func _validate(payload: Dictionary) -> Dictionary:
 				"era_id", "")) != String(candidate_ids[candidate_id]):
 			return _fail("technology_milestone_candidate_invalid:%s" % candidate_id)
 	var hard_edges := 0
-	var research_condition_nodes := 0
+	var research_route_nodes := 0
+	var research_route_count := 0
 	var empty_modifier_nodes := 0
 	var adjacency := {}
 	var indegree := {}
@@ -261,27 +257,47 @@ func _validate(payload: Dictionary) -> Dictionary:
 			adjacency[prerequisite] = targets
 			indegree[id] = int(indegree[id]) + 1
 			hard_edges += 1
-		var condition: Dictionary = node.get("research_condition", {})
-		if not condition.is_empty():
-			var condition_error := _validate_condition(condition, node_by_id)
+		var legacy_condition: Dictionary = node.get("research_condition", {})
+		if not legacy_condition.is_empty():
+			return _fail("technology_legacy_research_condition_forbidden:%s" % id)
+		var routes: Array = node.get("research_routes", [])
+		if int(era_index[era_id]) >= 2 and routes.is_empty() \
+				and String(node.get("route_exemption_reason", "")).strip_edges().is_empty():
+			return _fail("technology_route_exemption_reason_missing:%s" % id)
+		var route_ids := {}
+		var route_types := {}
+		for route_value in routes:
+			if not route_value is Dictionary:
+				return _fail("technology_research_route_invalid:%s" % id)
+			var route: Dictionary = route_value
+			var route_id := String(route.get("id", "")).strip_edges()
+			var route_type := String(route.get("route_type", "")).strip_edges()
+			var route_condition: Dictionary = route.get("condition", {})
+			if not route_id.begins_with("research_route.") or route_ids.has(route_id) \
+					or String(route.get("display_name", "")).strip_edges().is_empty() \
+					or route_type.is_empty() \
+					or String(route.get("description", "")).strip_edges().is_empty() \
+					or route_condition.is_empty():
+				return _fail("technology_research_route_invalid:%s" % id)
+			route_ids[route_id] = true
+			route_types[route_type] = true
+			var condition_error := _validate_condition(route_condition, node_by_id)
 			if not condition_error.is_empty():
-				return _fail("%s:%s" % [condition_error, id])
-			if String(node.get("research_condition_summary", "")).is_empty():
-				return _fail("technology_research_condition_summary_missing:%s" % id)
-			research_condition_nodes += 1
-			if specialist_family_ids.has(family_id):
-				route_count_by_family[family_id] = int(route_count_by_family[family_id]) + 1
-				if _condition_has_signal(condition):
-					mixed_route_count_by_family[family_id] = int(
-						mixed_route_count_by_family[family_id]) + 1
+				return _fail("%s:%s:%s" % [condition_error, id, route_id])
 			var alternatives := PackedStringArray()
-			_collect_technology_atoms(condition, alternatives)
+			_collect_technology_atoms(route_condition, alternatives)
 			for alternative_id in alternatives:
 				if hard.has(String(alternative_id)):
-					return _fail("technology_condition_duplicates_hard_prerequisite:%s" % id)
-				if int(era_index[String((node_by_id[String(alternative_id)] as Dictionary).era_id)]) \
-						> int(era_index[era_id]):
-					return _fail("technology_condition_future_era:%s" % id)
+					return _fail("technology_route_duplicates_core_prerequisite:%s" % id)
+				var source_index := nodes.find(node_by_id[String(alternative_id)])
+				var target_index := nodes.find(node)
+				if source_index < 0 or source_index >= target_index:
+					return _fail("technology_research_route_reference_not_earlier:%s" % id)
+		if routes.size() > 1 and route_types.size() < 2:
+			return _fail("technology_research_route_types_not_distinct:%s" % id)
+		if not routes.is_empty():
+			research_route_nodes += 1
+			research_route_count += routes.size()
 		var modifier_terms: Array = node.get("modifier_terms", [])
 		var is_formal := not bool(node.get("is_milestone", false)) \
 			and not bool(node.get("is_starting", false)) \
@@ -346,11 +362,17 @@ func _validate(payload: Dictionary) -> Dictionary:
 		ready.sort()
 	if visited != nodes.size():
 		return _fail("technology_hard_prerequisite_cycle")
-	for family_id in specialist_family_ids:
-		if int(route_count_by_family[family_id]) < 3:
-			return _fail("technology_family_alternative_routes_missing:%s" % family_id)
-		if int(mixed_route_count_by_family[family_id]) < 1:
-			return _fail("technology_family_mixed_evidence_route_missing:%s" % family_id)
+	var post_kingdom_total := 0
+	var post_kingdom_with_routes := 0
+	for node_value in nodes:
+		var node: Dictionary = node_value
+		if int(era_index[String(node.era_id)]) < 2:
+			continue
+		post_kingdom_total += 1
+		if not (node.get("research_routes", []) as Array).is_empty():
+			post_kingdom_with_routes += 1
+	if post_kingdom_total <= 0 or post_kingdom_with_routes * 100 < post_kingdom_total * 80:
+		return _fail("technology_research_route_coverage_below_80_percent")
 	for node_value in nodes:
 		var node: Dictionary = node_value
 		var id := String(node.id)
@@ -363,9 +385,10 @@ func _validate(payload: Dictionary) -> Dictionary:
 	return {
 		"ok": true,
 		"hard_edges": hard_edges,
-		"alternative_edges": _count_condition_technology_atoms(nodes),
+		"alternative_edges": _count_route_technology_atoms(nodes),
 		"milestone_candidate_edges": eras.size() * 8,
-		"research_condition_nodes": research_condition_nodes,
+		"research_route_nodes": research_route_nodes,
+		"research_route_count": research_route_count,
 		"empty_modifier_nodes": empty_modifier_nodes,
 	}
 
@@ -417,10 +440,13 @@ func _build_visual_edges(payload: Dictionary) -> Array[Dictionary]:
 		var target := String(node.id)
 		for source in node.get("hard_prerequisite_ids", []):
 			_add_edge(out, seen, String(source), target, "hard")
-		var alternatives := PackedStringArray()
-		_collect_technology_atoms(node.get("research_condition", {}), alternatives)
-		for source in alternatives:
-			_add_edge(out, seen, String(source), target, "alternative")
+		for route_value in node.get("research_routes", []):
+			var route: Dictionary = route_value
+			var alternatives := PackedStringArray()
+			_collect_technology_atoms(route.get("condition", {}), alternatives)
+			for source in alternatives:
+				_add_edge(out, seen, String(source), target, "alternative",
+					String(route.get("id", "")))
 		for application in node.get("application_target_ids", []):
 			_add_edge(out, seen, target, String(application), "application")
 	for era_value in payload.eras:
@@ -467,22 +493,26 @@ func _condition_has_signal(spec: Dictionary) -> bool:
 
 
 func _add_edge(out: Array[Dictionary], seen: Dictionary, source: String,
-		target: String, kind: String) -> void:
+		target: String, kind: String, route_id: String = "") -> void:
 	if source.is_empty() or target.is_empty() or source == target or not ALLOWED_EDGE_KINDS.has(kind):
 		return
-	var key := "%s|%s|%s" % [kind, source, target]
+	var key := "%s|%s|%s|%s" % [kind, source, target, route_id]
 	if seen.has(key):
 		return
 	seen[key] = true
-	out.append({"from": source, "to": target, "kind": kind})
+	var edge := {"from": source, "to": target, "kind": kind}
+	if not route_id.is_empty():
+		edge["route_id"] = route_id
+	out.append(edge)
 
 
-func _count_condition_technology_atoms(nodes: Array) -> int:
+func _count_route_technology_atoms(nodes: Array) -> int:
 	var count := 0
 	for node_value in nodes:
-		var atoms := PackedStringArray()
-		_collect_technology_atoms((node_value as Dictionary).get("research_condition", {}), atoms)
-		count += atoms.size()
+		for route_value in (node_value as Dictionary).get("research_routes", []):
+			var atoms := PackedStringArray()
+			_collect_technology_atoms((route_value as Dictionary).get("condition", {}), atoms)
+			count += atoms.size()
 	return count
 
 
@@ -512,13 +542,14 @@ func _audit_report(payload: Dictionary, validation: Dictionary) -> String:
 			else:
 				effect_counts["全社会或部门"] += 1
 	var lines := PackedStringArray([
-		"# Technology Network v2 Audit", "",
+		"# Technology Network v3 Audit", "",
 		"- Nodes: %d" % (payload.nodes as Array).size(),
 		"- Branch families: %d" % (payload.branch_families as Array).size(),
 		"- Hard prerequisite edges: %d (no indegree cap)" % int(validation.hard_edges),
 		"- Alternative evidence edges: %d" % int(validation.alternative_edges),
 		"- Milestone candidate edges: %d (8 per era, require 4)" % int(validation.milestone_candidate_edges),
-		"- Nodes with research conditions: %d" % int(validation.research_condition_nodes),
+		"- Nodes with research routes: %d" % int(validation.research_route_nodes),
+		"- Research routes: %d" % int(validation.research_route_count),
 		"- Unlock-only/no-Modifier nodes: %d" % int(validation.empty_modifier_nodes), "",
 		"## Explicit effect semantics", "",
 		"- Societal/sector terms: %d" % int(effect_counts["全社会或部门"]),

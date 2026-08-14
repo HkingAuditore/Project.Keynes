@@ -179,6 +179,13 @@ Dictionary TriggerRuntime::configure(const Dictionary &catalog) {
     const PackedInt32Array modes = get_i32(catalog, "modes");
     const PackedInt32Array cooldown_days = get_i32(catalog, "cooldown_days");
     const PackedInt32Array window_days = get_i32(catalog, "window_days");
+    const PackedInt64Array qualifier_thresholds = get_i64(
+        catalog, "qualifier_thresholds");
+    const PackedInt32Array duration_fields = get_i32(catalog, "duration_fields");
+    const PackedInt32Array development_metric_ids = get_i32(
+        catalog, "development_metric_ids");
+    const PackedInt32Array development_era_indices = get_i32(
+        catalog, "development_era_indices");
     const PackedByteArray enabled = get_u8(catalog, "enabled");
     const PackedByteArray dynamic_bindings = get_u8(catalog, "dynamic_bindings");
     const PackedInt32Array selector_fields = get_i32(catalog, "selector_fields");
@@ -188,8 +195,18 @@ Dictionary TriggerRuntime::configure(const Dictionary &catalog) {
     const PackedInt32Array condition_ops = get_i32(catalog, "condition_ops");
     const PackedInt32Array effect_offsets = get_i32(catalog, "effect_offsets");
 
-    if ((count > 0 && (event_types.size() != count || source_ids.size() != count ||
-        aggregators.size() != count || thresholds.size() != count)) ||
+    if ((versions.size() != count || source_ids.size() != count ||
+        event_types.size() != count || schemas.size() != count ||
+        aggregators.size() != count || value_fields.size() != count ||
+        distinct_fields.size() != count || scopes.size() != count ||
+        target_resolvers.size() != count || static_targets.size() != count ||
+        thresholds.size() != count || modes.size() != count ||
+        cooldown_days.size() != count || window_days.size() != count ||
+        qualifier_thresholds.size() != count || duration_fields.size() != count ||
+        development_metric_ids.size() != count ||
+        development_era_indices.size() != count || enabled.size() != count ||
+        dynamic_bindings.size() != count || selector_fields.size() != count ||
+        selector_values.size() != count || selector_negated.size() != count) ||
         condition_offsets.size() != count + 1 || effect_offsets.size() != count + 1)
         return failure("trigger_catalog_columns_invalid");
 
@@ -234,6 +251,10 @@ Dictionary TriggerRuntime::configure(const Dictionary &catalog) {
         definition.mode = i32_at(modes, i, REPEAT);
         definition.cooldown_days = std::max(0, i32_at(cooldown_days, i, 0));
         definition.window_days = std::max(0, i32_at(window_days, i, 0));
+        definition.qualifier_threshold = i64_at(qualifier_thresholds, i, 0);
+        definition.duration_field = i32_at(duration_fields, i, VALUE_ONE);
+        definition.development_metric_id = i32_at(development_metric_ids, i, -1);
+        definition.development_era_index = i32_at(development_era_indices, i, -1);
         definition.enabled = u8_at(enabled, i, 1) != 0 ? 1 : 0;
         definition.dynamic_binding = u8_at(dynamic_bindings, i, 0) != 0 ? 1 : 0;
         definition.selector_field = i32_at(selector_fields, i, -1);
@@ -246,7 +267,7 @@ Dictionary TriggerRuntime::configure(const Dictionary &catalog) {
         if (definition.key.empty() || definition.source_id < 0 ||
             definition.source_id >= _source_count || definition.event_type < 0 ||
             definition.event_type >= _event_type_span || definition.threshold <= 0 ||
-            definition.aggregator < COUNT || definition.aggregator > SNAPSHOT_DIFF ||
+            definition.aggregator < COUNT || definition.aggregator > CONSECUTIVE_DURATION ||
             definition.value_field < VALUE_ONE || definition.value_field > GROUP_HANDLE ||
             definition.distinct_field < VALUE_ONE || definition.distinct_field > GROUP_HANDLE ||
             definition.scope < GLOBAL || definition.scope > ENTITY ||
@@ -255,6 +276,9 @@ Dictionary TriggerRuntime::configure(const Dictionary &catalog) {
             (definition.mode != REPEAT && definition.mode != ONE_SHOT) ||
             ((definition.aggregator == WINDOW_COUNT ||
               definition.aggregator == WINDOW_SUM) && definition.window_days <= 0) ||
+            (definition.aggregator == CONSECUTIVE_DURATION &&
+             (definition.duration_field < VALUE_ONE ||
+              definition.duration_field > GROUP_HANDLE)) ||
             definition.condition_begin < 0 || definition.condition_count < 0 ||
             definition.condition_count > MAX_CONDITION_OPS ||
             definition.condition_begin + definition.condition_count > condition_ops.size() ||
@@ -278,6 +302,14 @@ Dictionary TriggerRuntime::configure(const Dictionary &catalog) {
         catalog_hash = fnv_mix(catalog_hash, &definition.distinct_field, sizeof(definition.distinct_field));
         catalog_hash = fnv_mix(catalog_hash, &definition.cooldown_days, sizeof(definition.cooldown_days));
         catalog_hash = fnv_mix(catalog_hash, &definition.window_days, sizeof(definition.window_days));
+        catalog_hash = fnv_mix(catalog_hash, &definition.qualifier_threshold,
+                               sizeof(definition.qualifier_threshold));
+        catalog_hash = fnv_mix(catalog_hash, &definition.duration_field,
+                               sizeof(definition.duration_field));
+        catalog_hash = fnv_mix(catalog_hash, &definition.development_metric_id,
+                               sizeof(definition.development_metric_id));
+        catalog_hash = fnv_mix(catalog_hash, &definition.development_era_index,
+                               sizeof(definition.development_era_index));
         catalog_hash = fnv_mix(catalog_hash, &definition.enabled, sizeof(definition.enabled));
         catalog_hash = fnv_mix(catalog_hash, &definition.dynamic_binding,
                                sizeof(definition.dynamic_binding));
@@ -398,6 +430,7 @@ void TriggerRuntime::reset_runtime_state() {
     _state.cooldown_until.assign(_max_states, 0);
     _state.window_start_day.assign(_max_states, -1);
     _state.last_observed.assign(_max_states, 0);
+    _state.last_sample_day.assign(_max_states, -1);
     _state.completed.assign(_max_states, 0);
     _state.initialized.assign(_max_states, 0);
     _state.needs_resync.assign(_max_states, 0);
@@ -441,6 +474,7 @@ int32_t TriggerRuntime::find_or_create_state(int32_t trigger_id,
             _state.cooldown_until[index] = 0;
             _state.window_start_day[index] = -1;
             _state.last_observed[index] = 0;
+            _state.last_sample_day[index] = -1;
             _state.completed[index] = 0;
             _state.initialized[index] = 0;
             _state.needs_resync[index] = 0;
@@ -481,6 +515,7 @@ void TriggerRuntime::erase_state(int32_t trigger_id, uint64_t target_handle) {
     move(_state.remainder); move(_state.last_event_id);
     move(_state.fire_sequence); move(_state.cooldown_until);
     move(_state.window_start_day); move(_state.last_observed);
+    move(_state.last_sample_day);
     move(_state.completed); move(_state.initialized); move(_state.needs_resync);
     const size_t dst = static_cast<size_t>(state_index) * _distinct_capacity;
     const size_t src = static_cast<size_t>(last) * _distinct_capacity;
@@ -683,6 +718,31 @@ bool TriggerRuntime::update_aggregate(int32_t state_index,
                 ? 0 : saturating_sub(event_value, previous);
         } else {
             _state.accumulator[state_index] = event_value;
+        }
+        _state.initialized[state_index] = 1;
+        new_value = _state.accumulator[state_index];
+        return true;
+    }
+    if (definition.aggregator == CONSECUTIVE_DURATION) {
+        const int64_t metric_value = event_value;
+        const int64_t coverage = std::max<int64_t>(
+            1, event_field(event, definition.duration_field));
+        int64_t &last_sample_day = _state.last_sample_day[state_index];
+        _state.last_observed[state_index] = metric_value;
+        if (last_sample_day >= 0 && event.day <= last_sample_day) {
+            new_value = _state.accumulator[state_index];
+            return true;
+        }
+        const bool gap = last_sample_day >= 0 &&
+            event.day > saturating_add(last_sample_day, coverage);
+        last_sample_day = event.day;
+        if (metric_value < definition.qualifier_threshold) {
+            _state.accumulator[state_index] = 0;
+        } else if (gap || _state.initialized[state_index] == 0) {
+            _state.accumulator[state_index] = coverage;
+        } else {
+            _state.accumulator[state_index] = saturating_add(
+                _state.accumulator[state_index], coverage);
         }
         _state.initialized[state_index] = 1;
         new_value = _state.accumulator[state_index];
@@ -1204,6 +1264,51 @@ Dictionary TriggerRuntime::branch_progress(uint64_t branch_handle) const {
     return out;
 }
 
+Dictionary TriggerRuntime::development_progress(uint64_t country_handle,
+                                                int32_t era_index) const {
+    Dictionary out;
+    PackedInt32Array metric_ids;
+    PackedInt64Array current_values, qualifier_thresholds;
+    PackedInt64Array consecutive_days, last_sample_days;
+    PackedInt32Array target_days, completed;
+    for (int32_t trigger_id = 0;
+         trigger_id < static_cast<int32_t>(_definitions.size()); ++trigger_id) {
+        const Definition &definition = _definitions[trigger_id];
+        if (definition.development_metric_id < 0 ||
+            definition.development_era_index != era_index) continue;
+        int32_t state_index = -1;
+        for (int32_t index = 0; index < _state_count; ++index) {
+            if (_state.trigger_id[index] == trigger_id &&
+                _state.target_handle[index] == country_handle) {
+                state_index = index;
+                break;
+            }
+        }
+        metric_ids.push_back(definition.development_metric_id);
+        current_values.push_back(state_index >= 0
+            ? _state.last_observed[state_index] : 0);
+        qualifier_thresholds.push_back(definition.qualifier_threshold);
+        consecutive_days.push_back(state_index >= 0
+            ? _state.accumulator[state_index] : 0);
+        last_sample_days.push_back(state_index >= 0
+            ? _state.last_sample_day[state_index] : -1);
+        target_days.push_back(static_cast<int32_t>(definition.threshold));
+        completed.push_back(state_index >= 0
+            ? _state.completed[state_index] : 0);
+    }
+    out["ok"] = true;
+    out["country_handle"] = static_cast<int64_t>(country_handle);
+    out["era_index"] = era_index;
+    out["metric_ids"] = metric_ids;
+    out["current_values"] = current_values;
+    out["qualifier_thresholds"] = qualifier_thresholds;
+    out["consecutive_days"] = consecutive_days;
+    out["target_days"] = target_days;
+    out["last_sample_days"] = last_sample_days;
+    out["completed"] = completed;
+    return out;
+}
+
 Dictionary TriggerRuntime::resync_source(const Dictionary &snapshot) {
     if (!_configured) return failure("trigger_runtime_not_configured");
     const int32_t source = int32_t(snapshot.get("source_id", -1));
@@ -1319,6 +1424,7 @@ PackedByteArray TriggerRuntime::capture() const {
         append_le<int64_t>(bytes, _state.cooldown_until[i]);
         append_le<int64_t>(bytes, _state.window_start_day[i]);
         append_le<int64_t>(bytes, _state.last_observed[i]);
+        append_le<int64_t>(bytes, _state.last_sample_day[i]);
         append_le<uint8_t>(bytes, _state.completed[i]);
         append_le<uint8_t>(bytes, _state.initialized[i]);
         append_le<uint8_t>(bytes, _state.needs_resync[i]);
@@ -1422,6 +1528,7 @@ Dictionary TriggerRuntime::restore(const PackedByteArray &packed) {
             !read_le(bytes, size, cursor, _state.cooldown_until[state_index]) ||
             !read_le(bytes, size, cursor, _state.window_start_day[state_index]) ||
             !read_le(bytes, size, cursor, _state.last_observed[state_index]) ||
+            !read_le(bytes, size, cursor, _state.last_sample_day[state_index]) ||
             !read_le(bytes, size, cursor, _state.completed[state_index]) ||
             !read_le(bytes, size, cursor, _state.initialized[state_index]) ||
             !read_le(bytes, size, cursor, _state.needs_resync[state_index]))

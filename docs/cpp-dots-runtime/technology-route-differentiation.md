@@ -1,6 +1,6 @@
 # 环境驱动的科技路线差异化
 
-> 实现状态（2026-08）：schema v2 网状科技体系已经落地。当前权威目录保留 361 项稳定科技 ID、
+> 实现状态（2026-08）：schema v3 网状科技体系已经落地。当前权威目录保留 361 项稳定科技 ID、
 > 11 个时代、4 个领域、4 条公共主干与 24 个动态主题家族；不存在全球统一开局科技，23 个零成本
 > 原始处理节点只能由区域开局求解器按当地证据授予。每时代显式 8 个候选、任意完成 4 个即完成
 > 里程碑并统一开放下一时代。下文仍保留的早期设计
@@ -11,7 +11,7 @@
 
 - 节点角色为 `identification`、`handling`、`production_system`、`power_scale`、
   `institution`、`applied_method` 和 `milestone`；路线、泳道、里程碑候选与开局能力是静态元数据。
-- 目录编译时代门槛、揭示、硬前置和替代研究条件四层资格；里程碑候选边只参与 8 选 4 计数，
+- 目录编译时代门槛、问题揭示、核心知识和节点专属研究路线；里程碑候选边只参与 8 选 4 计数，
   不会被编译成普通节点的硬前置。
 - 硬前置和直接内容绑定都没有人为数量上限；审计关系真实性、引用完整性和运行时消费者。
 - `BuildingProfile.technology_tags` 是直接应用科技的 ANY 门槛；
@@ -351,7 +351,7 @@ Effect 再应用专属 Modifier 或发布下一项研究机会。
 - Economy 在提交边界扫描稀疏 BuildingGroup，并发布已经资格化的实践事实。
 - Trigger 维护计数、来源、fire sequence 和幂等；Effect 将结果转成
   `DISCOVER_COUNTRY_SIGNAL`，第一实践格保留为证据来源。
-- PKCN v11、PKEF v9、PKTR v4 使用严格当前 schema 与 catalog identity round-trip。
+- PKCN v11、PKEF v9、PKTR v5 使用严格当前 schema 与 catalog identity round-trip。
 
 ### 已完成：专属数值效果
 

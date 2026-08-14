@@ -2,6 +2,8 @@ extends SceneTree
 
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const CountryTestHelper = preload("res://tests/country_test_helper.gd")
+const DevelopmentAchievementCatalogScript = preload(
+	"res://scripts/research/development_achievement_catalog.gd")
 
 var failures := 0
 
@@ -69,6 +71,34 @@ func _run() -> void:
 	_expect("opening local cycle commits exactly", bool(report.get("done", false)) and
 		not bool(report.get("fatal", false)) and int(report.get("goods_error", 1)) == 0 and
 		int(report.get("money_error", 1)) == 0)
+	var development_events: Dictionary = ext.poll_gameplay_events({
+		"consumer_id": &"development_metric_test", "after_event_id": 0,
+		"max_events": 512, "type": 17})
+	var development_ids: PackedInt32Array = development_events.get(
+		"payload_i0", PackedInt32Array())
+	var population_metric := -1
+	var development_definitions: Array[Dictionary] = DevelopmentAchievementCatalogScript.definitions()
+	for index in range(development_definitions.size()):
+		if String(development_definitions[index].get("signal_id", "")) == \
+				"development.population.100_90d":
+			population_metric = index
+			break
+	var population_cursor := development_ids.find(population_metric)
+	var development_values: PackedInt64Array = development_events.get(
+		"value_i64", PackedInt64Array())
+	var development_schemas: PackedInt32Array = development_events.get(
+		"payload_schema", PackedInt32Array())
+	var development_coverage: PackedInt32Array = development_events.get(
+		"payload_i1", PackedInt32Array())
+	var development_versions: PackedInt32Array = development_events.get(
+		"payload_i3", PackedInt32Array())
+	var expected_development_coverage := int(report.get("epoch_days", 1))
+	_expect("economy publishes population development metric v1",
+		population_cursor >= 0 and population_cursor < development_values.size() and
+		int(development_values[population_cursor]) == 200 and
+		int(development_schemas[population_cursor]) == 10 and
+		int(development_coverage[population_cursor]) == expected_development_coverage and
+		int(development_versions[population_cursor]) == 1)
 	_expect("rolling markets remain within the four-day visibility bound",
 		not bool(report.get("fatal", false)) and
 		int(report.get("max_state_age_days", 99)) <= 4)

@@ -87,13 +87,13 @@ static func compile_native_catalog() -> Dictionary:
 	if not bool(network.get("ok", false)):
 		return network
 	var technology_rows: Array = (network.get("nodes", []) as Array).duplicate(true)
-	# Schema-v2 authoring is already era-grouped and topologically ordered.  Do
+	# Schema-v3 authoring is already era-grouped and topologically ordered. Do
 	# not re-sort by legacy layout_order: a same-era dependency may legitimately
 	# point from a later visual row to an earlier one.
 	var era_rows: Array = network.get("eras", [])
 	var domain_rows: Array = network.get("domains", [])
-	if technology_rows.size() < 361 or era_rows.size() != 11 or domain_rows.size() != 4 \
-			or int(network.get("schema_version", 0)) < 2:
+	if technology_rows.size() != 361 or era_rows.size() != 11 or domain_rows.size() != 4 \
+			or int(network.get("schema_version", 0)) != 3:
 		return {"ok": false, "reason": "technology_network_shape_invalid"}
 	var ids := PackedStringArray()
 	var names := PackedStringArray()
@@ -152,7 +152,6 @@ static func compile_native_catalog() -> Dictionary:
 		id_to_index[id] = ids.size()
 		ids.append(id)
 		names.append(String(row.get("display_name", "")))
-	var research_condition_specs := {}
 	var reveal_condition_specs := {}
 	for row_value in technology_rows:
 		var row: Dictionary = row_value
@@ -228,13 +227,14 @@ static func compile_native_catalog() -> Dictionary:
 			starter_capability_tags.append(String(capability_tag))
 		starter_capability_offsets.append(starter_capability_tags.size())
 		var research_spec: Dictionary = (row.get("research_condition", {}) as Dictionary).duplicate(true)
+		if not research_spec.is_empty():
+			return {"ok": false, "reason": "technology_legacy_research_condition_forbidden",
+				"id": row_id}
 		var reveal_spec: Dictionary = (row.get("reveal_condition", {}) as Dictionary).duplicate(true)
 		var content_effects: Array = row.get("content_effects", [])
 		if row.has("content_effects") and not _validate_content_effects(content_effects,
 				(row.get("expected_bindings", []) as Array)):
 			return {"ok": false, "reason": "technology_content_effect_invalid", "id": row_id}
-		if not research_spec.is_empty():
-			research_condition_specs[row_id] = research_spec
 		if not reveal_spec.is_empty():
 			reveal_condition_specs[row_id] = reveal_spec
 	var era_ids_out := PackedStringArray()
@@ -265,8 +265,7 @@ static func compile_native_catalog() -> Dictionary:
 		technology_entry_milestones.append(
 			era_entry_milestones[int(era_index[String(technology_era_id)])])
 	var signal_ids: PackedStringArray = signal_catalog.get("research_signal_ids", PackedStringArray())
-	var conditions := _compile_condition_specs(ids, signal_ids,
-		research_condition_specs, "technology_research_condition")
+	var conditions := _compile_research_routes(technology_rows, ids, signal_ids, era_index)
 	if not bool(conditions.get("ok", false)):
 		return conditions
 	var reveal_conditions := _compile_condition_specs(ids, signal_ids,
@@ -408,6 +407,104 @@ static func _validate_content_effects(effects: Array, expected_bindings: Array) 
 		if not bool(expected[key]):
 			return false
 	return true
+
+
+static func _compile_research_routes(nodes: Array, technology_ids: PackedStringArray,
+		signal_ids: PackedStringArray, era_index: Dictionary) -> Dictionary:
+	var technology_route_offsets := PackedInt32Array([0])
+	var route_ids := PackedStringArray()
+	var route_names := PackedStringArray()
+	var route_types := PackedStringArray()
+	var route_descriptions := PackedStringArray()
+	var route_condition_offsets := PackedInt32Array([0])
+	var route_ops := PackedInt32Array()
+	var route_refs := PackedInt32Array()
+	var route_values := PackedInt64Array()
+	var total_offsets := PackedInt32Array([0])
+	var total_ops := PackedInt32Array()
+	var total_refs := PackedInt32Array()
+	var total_values := PackedInt64Array()
+	var signal_index := {}
+	var technology_index := {}
+	var seen_route_ids := {}
+	for i in range(signal_ids.size()):
+		signal_index[String(signal_ids[i])] = i
+	for i in range(technology_ids.size()):
+		technology_index[String(technology_ids[i])] = i
+	for technology in range(nodes.size()):
+		var node: Dictionary = nodes[technology]
+		var technology_id := String(node.get("id", ""))
+		var routes: Array = node.get("research_routes", [])
+		var era := int(era_index.get(String(node.get("era_id", "")), -1))
+		if era >= 2 and routes.is_empty() and String(
+				node.get("route_exemption_reason", "")).strip_edges().is_empty():
+			return {"ok": false, "reason": "technology_route_exemption_reason_missing",
+				"technology_id": technology_id}
+		var route_type_seen := {}
+		for route_value in routes:
+			if not route_value is Dictionary:
+				return {"ok": false, "reason": "technology_research_route_invalid",
+					"technology_id": technology_id}
+			var route: Dictionary = route_value
+			var route_id := String(route.get("id", "")).strip_edges()
+			var route_name := String(route.get("display_name", "")).strip_edges()
+			var route_type := String(route.get("route_type", "")).strip_edges()
+			var route_description := String(route.get("description", "")).strip_edges()
+			var condition: Dictionary = route.get("condition", {})
+			if not route_id.begins_with("research_route.") or seen_route_ids.has(route_id) \
+					or route_name.is_empty() or route_type.is_empty() \
+					or route_description.is_empty() or condition.is_empty():
+				return {"ok": false, "reason": "technology_research_route_invalid",
+					"technology_id": technology_id, "route_id": route_id}
+			seen_route_ids[route_id] = true
+			route_type_seen[route_type] = true
+			var route_begin := route_ops.size()
+			var error := _append_condition_postfix(condition, signal_index, technology_index,
+				route_ops, route_refs, route_values)
+			if not error.is_empty():
+				return {"ok": false, "reason": error, "technology_id": technology_id,
+					"route_id": route_id}
+			for cursor in range(route_begin, route_ops.size()):
+				if route_ops[cursor] == CONDITION_PUSH_TECH_COMPLETED \
+						and route_refs[cursor] >= technology:
+					return {"ok": false,
+						"reason": "technology_research_route_reference_not_earlier",
+						"technology_id": technology_id, "route_id": route_id}
+			route_condition_offsets.append(route_ops.size())
+			route_ids.append(route_id)
+			route_names.append(route_name)
+			route_types.append(route_type)
+			route_descriptions.append(route_description)
+			error = _append_condition_postfix(condition, signal_index, technology_index,
+				total_ops, total_refs, total_values)
+			if not error.is_empty():
+				return {"ok": false, "reason": error, "technology_id": technology_id,
+					"route_id": route_id}
+		if routes.size() > 1:
+			total_ops.append(CONDITION_ANY_OF)
+			total_refs.append(routes.size())
+			total_values.append(0)
+		if routes.size() > 1 and route_type_seen.size() < 2:
+			return {"ok": false, "reason": "technology_research_route_types_not_distinct",
+				"technology_id": technology_id}
+		technology_route_offsets.append(route_ids.size())
+		total_offsets.append(total_ops.size())
+	return {
+		"ok": true,
+		"technology_research_route_offsets": technology_route_offsets,
+		"research_route_ids": route_ids,
+		"research_route_display_names": route_names,
+		"research_route_types": route_types,
+		"research_route_descriptions": route_descriptions,
+		"research_route_condition_offsets": route_condition_offsets,
+		"research_route_condition_ops": route_ops,
+		"research_route_condition_refs": route_refs,
+		"research_route_condition_values": route_values,
+		"technology_research_condition_offsets": total_offsets,
+		"technology_research_condition_ops": total_ops,
+		"technology_research_condition_refs": total_refs,
+		"technology_research_condition_values": total_values,
+	}
 
 static func _compile_condition_specs(
 		technology_ids: PackedStringArray, signal_ids: PackedStringArray,
@@ -600,6 +697,7 @@ static func public_definitions() -> Array[Dictionary]:
 			"domain_id": DOMAIN_IDS[compiled.technology_domain_indices[i]],
 			"cost_points": int(compiled.technology_costs[i]) / 1000,
 			"prerequisite_ids": prerequisites_out,
+			"hard_prerequisite_ids": prerequisites_out,
 			"prerequisite_rationales": PackedStringArray(
 				source.get("prerequisite_rationales", [])),
 			"era_entry_milestone_id": String(source.get("era_entry_milestone_id", "")),
@@ -620,8 +718,8 @@ static func public_definitions() -> Array[Dictionary]:
 			"starter_capability_tags": starter_capabilities,
 			"route_tags": public_route_tags,
 			"route_display_names": _localized_route_names(public_route_tags),
-			"research_condition": (source.get("research_condition", {}) as Dictionary).duplicate(true),
-			"research_condition_summary": String(source.get("research_condition_summary", "")),
+			"research_routes": (source.get("research_routes", []) as Array).duplicate(true),
+			"route_exemption_reason": String(source.get("route_exemption_reason", "")),
 			"reveal_condition": (source.get("reveal_condition", {}) as Dictionary).duplicate(true),
 			"reveal_category": String(source.get("reveal_category", "")),
 			"reveal_summary": String(source.get("reveal_summary", "")),

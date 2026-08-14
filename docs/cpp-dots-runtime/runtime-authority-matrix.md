@@ -9,7 +9,7 @@ InfrastructureProjectStore 是施工/路线权威；Effect 仅负责跨域事务
 The current implementation supersedes older historical rows retained in the
 long-form matrix below: country authority is **PKCN v11**, economy authority is
 **PKEC v34**, configurable cross-domain effects are **PKEF v9**, Trigger state is
-**PKTR v4**, ideology state is **PKID v2**, and the native gameplay journal is
+**PKTR v5**, ideology state is **PKID v2**, and the native gameplay journal is
 **journal v4**. The save
 coordinator restores domain state in its documented order and verifies active
 ideology bindings against PKEF; recovery never replays an effect to repair a
@@ -35,7 +35,7 @@ mixed transaction. Legacy PKEC v29 and earlier are rejected with
 | Economy/building/family-cell modifiers | Economy `ModifierStore` + `BuildingIdentityStore` | embedded in PKEC v34, Modifier schema v2 | Factors feed frozen output/birth/consumption/resource helpers, never ledgers directly |
 | Gameplay modifiers | Gameplay `ModifierStore` + base/identity SoA | PKSV `pkgp` / PKGP v1 | Explicit native handles only; no Godot Object reflection |
 | Configurable effects and cross-domain plans | `EffectRuntime` | PKSV `pkef` / PKEF v9 | Owns catalog IR, unique technology recipes, flat metric slabs, due/dirty candidates, colonization Country+Economy transactions, durable external bindings and ACKs; never owns country/economy/Modifier stores |
-| Trigger accumulation and technology-practice breakthroughs | `TriggerRuntime` | PKSV `pktr` / PKTR v4 | Owns source cursors, aggregate/remainder/window state, fire sequence and unhanded effects; threshold crossing hands typed Country-signal commands to Effect and never writes Country or Economy directly |
+| Trigger accumulation, technology-practice breakthroughs and development duration | `TriggerRuntime` | PKSV `pktr` / PKTR v5 | Owns source cursors, aggregate/remainder/window state, last sample day, fire sequence and unhanded effects; threshold crossing hands typed Country-signal commands to Effect and never writes Country or Economy directly |
 | Country ideology collection/progression/offers | `NativeIdeologyRuntime` | PKSV `pkid` / PKID v2 | Owns sparse country idea state, slots, points, offer RNG and gates; active states verify PKEF external binding identity rather than replay effects |
 | Effect-originated gameplay events | native Gameplay journal | PKSV `journal` v4 | `gameplay_effect` is the POD ingress/ACK boundary; journal stores normal event IDs and `event_id=-1` custom geography-commit idempotency evidence |
 | Calendar/RNG/time mode | `WorldClock` | PKSV `world_clock` | Restore date, carry, RNG, publish indices, pause and speed |
@@ -223,7 +223,7 @@ save section carries an optional `climate_modes` extension; schema-1 saves remai
 valid and restore with zero/legacy mode state when the extension is absent.
 
 `TriggerRuntime` owns committed event aggregation, condition IR, dynamic family-branch bindings,
-the ordered effect buffer, and PKTR v4. GameplayEventBus owns facts and replay; Modifier,
+the ordered effect buffer, and PKTR v5. GameplayEventBus owns facts and replay; Modifier,
 Country, Economy, and Gameplay remain owners of effect application.
 
 `EffectRuntime` is the next graph owner at priority 85. It owns packed effect

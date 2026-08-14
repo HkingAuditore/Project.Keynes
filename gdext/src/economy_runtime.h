@@ -321,6 +321,7 @@ public:
         GAMEPLAY_FACT_TECHNOLOGY_CONTACT = 6,
         GAMEPLAY_FACT_INFRASTRUCTURE_COMPLETED = 7,
         GAMEPLAY_FACT_REPEATED_CROP_FAILURE = 8,
+        GAMEPLAY_FACT_COUNTRY_DEVELOPMENT_METRIC = 9,
     };
     enum TechnologyPracticeRule : int32_t {
         PRACTICE_MAIZE_SELECTION = 0,
@@ -355,6 +356,8 @@ public:
     };
     bool drain_committed_gameplay_facts(
         std::vector<CommittedGameplayFact> &out);
+    bool compile_development_catalog(const godot::Dictionary &catalog,
+                                     std::string &error);
     int32_t building_resource_access_cells(int32_t cell, int32_t resource_id,
                                            int32_t *out_cells, int32_t capacity) const;
     bool capture_trade_topology(const int32_t *neighbor_indices,
@@ -3477,6 +3480,14 @@ private:
     std::vector<int32_t> _building_dependency_tag_offsets;
     std::vector<int32_t> _building_dependency_tags;
     std::vector<std::string> _technology_ids;
+    std::vector<int32_t> _development_metric_signal_indices;
+    std::vector<int32_t> _development_metric_era_indices;
+    std::vector<int32_t> _development_metric_types;
+    std::vector<int32_t> _development_metric_subject_kinds;
+    std::vector<int32_t> _development_metric_subject_offsets;
+    std::vector<int32_t> _development_metric_subject_indices;
+    std::vector<int64_t> _development_metric_qualifier_thresholds;
+    std::vector<int32_t> _development_metric_duration_days;
     int32_t _technology_words = 0;
     NativeCountryRuntime *_country_runtime = nullptr;
     ModifierRuntime *_modifier_runtime = nullptr;
@@ -3988,6 +3999,7 @@ private:
     int32_t social_pressure_level_for(int64_t composite_q16) const;
     void publish_social_pressure_facts();
     void publish_technology_practice_facts();
+    void publish_country_development_facts();
     bool prepare_fiscal_budgets(std::string &error);
     void settle_income_subsidies_for_cell(int32_t cell,
                                           int64_t &saturation_count);

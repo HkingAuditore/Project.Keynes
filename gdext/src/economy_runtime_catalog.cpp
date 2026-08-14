@@ -1093,7 +1093,90 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
     }
     if (!compile_settlement_catalog(catalog, error)) return false;
     if (!compile_family_catalog(catalog, error)) return false;
-    return compile_person_catalog(catalog, error);
+    if (!compile_person_catalog(catalog, error)) return false;
+    return compile_development_catalog(catalog, error);
+}
+
+
+bool NativeEconomyRuntime::compile_development_catalog(
+        const Dictionary &catalog, std::string &error) {
+    _development_metric_signal_indices = packed_i32(
+        catalog, "development_metric_signal_indices");
+    _development_metric_era_indices = packed_i32(
+        catalog, "development_metric_era_indices");
+    _development_metric_types = packed_i32(catalog, "development_metric_types");
+    _development_metric_subject_kinds = packed_i32(
+        catalog, "development_metric_subject_kinds");
+    const std::vector<int32_t> authored_offsets = packed_i32(
+        catalog, "development_metric_subject_offsets");
+    const std::vector<std::string> authored_subject_ids = packed_strings(
+        catalog, "development_metric_subject_ids");
+    _development_metric_qualifier_thresholds = packed_i64(
+        catalog, "development_metric_qualifier_thresholds");
+    _development_metric_duration_days = packed_i32(
+        catalog, "development_metric_duration_days");
+    const size_t count = _development_metric_types.size();
+    if (_development_metric_signal_indices.size() != count ||
+        _development_metric_era_indices.size() != count ||
+        _development_metric_subject_kinds.size() != count ||
+        _development_metric_qualifier_thresholds.size() != count ||
+        _development_metric_duration_days.size() != count ||
+        authored_offsets.size() != count + 1 || authored_offsets.empty() ||
+        authored_offsets.front() != 0 ||
+        authored_offsets.back() != static_cast<int32_t>(authored_subject_ids.size())) {
+        error = "development_metric_catalog_columns_invalid";
+        return false;
+    }
+    _development_metric_subject_offsets.assign(1, 0);
+    _development_metric_subject_indices.clear();
+    for (size_t metric = 0; metric < count; ++metric) {
+        const int32_t type = _development_metric_types[metric];
+        const int32_t kind = _development_metric_subject_kinds[metric];
+        if (type <= 0 || type > 14 || kind < 0 || kind > 4 ||
+            _development_metric_era_indices[metric] < 0 ||
+            _development_metric_era_indices[metric] >= 11 ||
+            _development_metric_qualifier_thresholds[metric] < 0 ||
+            _development_metric_duration_days[metric] <= 0) {
+            error = "development_metric_definition_invalid";
+            return false;
+        }
+        for (int32_t cursor = authored_offsets[metric];
+             cursor < authored_offsets[metric + 1]; ++cursor) {
+            const std::string &subject = authored_subject_ids[static_cast<size_t>(cursor)];
+            int32_t resolved = -1;
+            if (kind == 1) { // economic sector
+                static const char *SECTORS[] = {
+                    "agriculture", "extractive", "manufacturing", "energy", "knowledge"};
+                for (int32_t i = 0; i < 5; ++i)
+                    if (subject == SECTORS[i]) resolved = i;
+            } else if (kind == 2) {
+                const auto it = std::find(_building_type_ids.begin(),
+                                          _building_type_ids.end(), subject);
+                if (it != _building_type_ids.end())
+                    resolved = static_cast<int32_t>(it - _building_type_ids.begin());
+            } else if (kind == 3) {
+                const auto it = std::find(_building_upgrade_family_ids.begin(),
+                                          _building_upgrade_family_ids.end(), subject);
+                if (it != _building_upgrade_family_ids.end())
+                    resolved = static_cast<int32_t>(it - _building_upgrade_family_ids.begin());
+            } else if (kind == 4) {
+                const auto it = std::find(_good_ids.begin(), _good_ids.end(), subject);
+                if (it != _good_ids.end())
+                    resolved = static_cast<int32_t>(it - _good_ids.begin());
+            } else {
+                // Settlement count uses a numeric tier as its subject.
+                try { resolved = std::stoi(subject); } catch (...) { resolved = -1; }
+            }
+            if (resolved < 0) {
+                error = "development_metric_subject_unknown:" + subject;
+                return false;
+            }
+            _development_metric_subject_indices.push_back(resolved);
+        }
+        _development_metric_subject_offsets.push_back(
+            static_cast<int32_t>(_development_metric_subject_indices.size()));
+    }
+    return true;
 }
 
 

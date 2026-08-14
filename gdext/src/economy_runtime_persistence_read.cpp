@@ -504,6 +504,12 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         _population.page_cell.assign(pages, -1);
         const size_t slots = static_cast<size_t>(pages) * COHORT_PAGE_SIZE;
         _population.active.assign(slots, 0);
+        // Reservations are transient and are intentionally not serialized at a
+        // committed save boundary.  Recreate their dense lanes explicitly so
+        // post-restore allocation/release paths have the same shape as a fresh
+        // runtime and cannot index an empty vector.
+        _population.reserved.assign(slots, 0);
+        _population.reservation_owner.assign(slots, 0);
         _population.signature_id.assign(slots, 0);
         _population.generation.assign(slots, 1);
         _population.population.assign(slots, 0);

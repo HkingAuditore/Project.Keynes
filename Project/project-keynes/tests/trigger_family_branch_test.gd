@@ -18,8 +18,8 @@ func _expect(label: String, condition: bool) -> void:
 
 func _catalog() -> Dictionary:
 	var catalog = TriggerCatalogScript.new()
-	catalog.source_count = 2
-	catalog.event_type_span = 16
+	catalog.source_count = 8
+	catalog.event_type_span = 32
 	var definition = TriggerDefinitionScript.new()
 	definition.key = &"test.branch"
 	definition.source_id = 1
@@ -94,9 +94,11 @@ func _run() -> void:
 	ext.run_trigger_daily(0)
 	var a0: Dictionary = ext.get_trigger_branch_progress(branch_a)
 	var b0: Dictionary = ext.get_trigger_branch_progress(branch_b)
-	_expect("cell A accumulates matching quantity", int(a0.trigger_progress[0]) == 2)
-	_expect("cell B accumulates independently", int(b0.trigger_progress[0]) == 1)
-	_expect("selector rejects unrelated building", int(a0.trigger_progress[0]) != 102)
+	_expect("cell A progress row exists", a0.trigger_progress.size() == 1)
+	_expect("cell B progress row exists", b0.trigger_progress.size() == 1)
+	_expect("cell A accumulates matching quantity", a0.trigger_progress.size() == 1 and int(a0.trigger_progress[0]) == 2)
+	_expect("cell B accumulates independently", b0.trigger_progress.size() == 1 and int(b0.trigger_progress[0]) == 1)
+	_expect("selector rejects unrelated building", a0.trigger_progress.size() == 1 and int(a0.trigger_progress[0]) != 102)
 	ext.submit_trigger_events(_events(
 		PackedInt64Array([4]), PackedInt64Array([1]), PackedInt64Array([3]),
 		PackedInt64Array([1]), PackedInt64Array([11])))
@@ -122,7 +124,7 @@ func _run() -> void:
 	restored.configure_triggers(compiled)
 	restored.reconcile_trigger_branch_bindings(_bindings(
 		PackedInt64Array([branch_a]), PackedInt32Array([3]), PackedByteArray([1])))
-	_expect("PKTR v4 restores", bool(restored.restore_trigger_state(saved).get("ok", false)))
+	_expect("PKTR v5 restores", bool(restored.restore_trigger_state(saved).get("ok", false)))
 	_expect("derived binding sees restored progress",
 		int(restored.get_trigger_branch_progress(branch_a).trigger_progress[0]) == 2)
 	_finish()

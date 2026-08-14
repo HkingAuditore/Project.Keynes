@@ -15,7 +15,7 @@ func _run() -> void:
 	if not ext.has_method("configure_triggers"):
 		print("[trigger-runtime] SKIP: Trigger API unavailable"); quit(0); return
 	var catalog := {
-		"protocol_version": 2, "source_count": 4, "event_type_span": 32,
+		"protocol_version": 3, "source_count": 4, "event_type_span": 32,
 		"max_state_instances": 64, "max_pending_events": 64, "distinct_capacity": 8,
 		"trigger_keys": PackedStringArray(["test.count"]), "versions": PackedInt32Array([1]),
 		"source_ids": PackedInt32Array([1]), "event_types": PackedInt32Array([7]),
@@ -25,6 +25,10 @@ func _run() -> void:
 		"static_targets": PackedInt64Array([0]), "thresholds": PackedInt64Array([2]),
 		"modes": PackedInt32Array([1]), "cooldown_days": PackedInt32Array([0]),
 		"window_days": PackedInt32Array([0]), "enabled": PackedByteArray([1]),
+		"qualifier_thresholds": PackedInt64Array([0]),
+		"duration_fields": PackedInt32Array([0]),
+		"development_metric_ids": PackedInt32Array([-1]),
+		"development_era_indices": PackedInt32Array([-1]),
 		"dynamic_bindings": PackedByteArray([0]),
 		"selector_fields": PackedInt32Array([-1]),
 		"selector_values": PackedInt64Array([0]),
@@ -60,7 +64,7 @@ func _run() -> void:
 	_expect("threshold emits one effect", int(effects.get("count", 0)) == 1)
 	var saved: PackedByteArray = ext.capture_trigger_state()
 	_expect("PKTR captures", not saved.is_empty())
-	_expect("PKTR v4 header", saved.size() >= 8 and saved.decode_s32(4) == 4)
+	_expect("PKTR v5 header", saved.size() >= 8 and saved.decode_s32(4) == 5)
 	var restored: Object = ClassDB.instantiate("DCWorldExt")
 	_expect("restore configures", bool(restored.configure_triggers(catalog).get("ok", false)))
 	_expect("PKTR restores", bool(restored.restore_trigger_state(saved).get("ok", false)))

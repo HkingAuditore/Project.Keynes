@@ -92,6 +92,13 @@ Dictionary DCWorldExt::get_trigger_branch_progress(int64_t branch_handle) const 
             static_cast<uint64_t>(branch_handle));
 }
 
+Dictionary DCWorldExt::get_development_progress(int64_t country_handle,
+                                                int32_t era_index) const {
+    return _trigger_runtime == nullptr ? unavailable()
+        : runtime_from(_trigger_runtime)->development_progress(
+            static_cast<uint64_t>(country_handle), era_index);
+}
+
 Dictionary DCWorldExt::resync_trigger_source(const Dictionary &snapshot) {
     return _trigger_runtime == nullptr ? unavailable()
         : runtime_from(_trigger_runtime)->resync_source(snapshot);

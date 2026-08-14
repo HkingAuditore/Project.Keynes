@@ -17,6 +17,16 @@ func _init() -> void:
 	assert((catalog.technology_effect_recipe_ids as PackedStringArray).size() == EXPECTED_TECHNOLOGY_COUNT)
 	assert((catalog.technology_effect_recipe_versions as PackedInt32Array).size() == EXPECTED_TECHNOLOGY_COUNT)
 	assert((catalog.technology_route_tag_offsets as PackedInt32Array).size() == EXPECTED_TECHNOLOGY_COUNT + 1)
+	assert((catalog.technology_research_route_offsets as PackedInt32Array).size() == EXPECTED_TECHNOLOGY_COUNT + 1)
+	assert((catalog.research_route_ids as PackedStringArray).size() > 600)
+	assert((catalog.research_route_ids as PackedStringArray).size() ==
+		(catalog.research_route_display_names as PackedStringArray).size())
+	assert((catalog.research_route_ids as PackedStringArray).size() ==
+		(catalog.research_route_types as PackedStringArray).size())
+	assert((catalog.research_route_ids as PackedStringArray).size() ==
+		(catalog.research_route_descriptions as PackedStringArray).size())
+	assert((catalog.research_route_condition_offsets as PackedInt32Array).size() ==
+		(catalog.research_route_ids as PackedStringArray).size() + 1)
 	assert((catalog.technology_research_condition_offsets as PackedInt32Array).size() == EXPECTED_TECHNOLOGY_COUNT + 1)
 	assert((catalog.technology_reveal_condition_offsets as PackedInt32Array).size() == EXPECTED_TECHNOLOGY_COUNT + 1)
 	assert((catalog.technology_modifier_term_offsets as PackedInt32Array).size() == EXPECTED_TECHNOLOGY_COUNT + 1)
@@ -103,7 +113,7 @@ func _init() -> void:
 		maximum_hard_prerequisites = maxi(maximum_hard_prerequisites,
 			int(catalog.technology_prerequisite_offsets[i + 1])
 			- int(catalog.technology_prerequisite_offsets[i]))
-	assert(maximum_hard_prerequisites >= 5)
+	assert(maximum_hard_prerequisites >= 2 and maximum_hard_prerequisites <= 3)
 	assert(modifier_stats.size() > 0)
 	assert((catalog.technology_network_roles as PackedStringArray).size() \
 		== EXPECTED_TECHNOLOGY_COUNT)
@@ -117,6 +127,8 @@ func _init() -> void:
 		var kind := String((edge as Dictionary).get("kind", ""))
 		assert(visual_kind_counts.has(kind))
 		visual_kind_counts[kind] += 1
+		if kind == "alternative":
+			assert(not String((edge as Dictionary).get("route_id", "")).is_empty())
 	assert(int(visual_kind_counts.milestone_candidate) == 88)
 	assert(int(visual_kind_counts.alternative) > 0)
 	for formal_id in ["tech.atmospheric_engine", "tech.geographic_information_systems"]:
@@ -126,6 +138,8 @@ func _init() -> void:
 			- int(catalog.technology_modifier_term_offsets[formal_index])
 		assert(formal_term_count >= 1 and formal_term_count <= 6)
 	var signals: PackedStringArray = catalog.research_signal_ids
+	assert(signals.has("development.population.100_90d"))
+	assert(signals.has("development.commodity_crop_facilities_4_180d"))
 	for resource_id in ["timber", "stone", "fertile_soil", "arable_land", "paddy_land",
 			"plantation_land", "pasture", "coal", "oil", "natural_gas", "copper_ore",
 			"iron_ore", "gold_ore", "silver_ore", "salt", "saltpeter", "rare_earth",

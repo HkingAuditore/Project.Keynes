@@ -321,7 +321,7 @@ func _register_providers() -> void:
 			"_restore_climate_modifier_provider"),
 		_make_provider(&"world_clock", 1, PackedStringArray(["world_clock"]),
 			"_can_clock_provider", "_write_clock_provider", "_restore_clock_provider"),
-		_make_provider(&"pkcn", 10, PackedStringArray(["pkcn"]),
+		_make_provider(&"pkcn", 11, PackedStringArray(["pkcn"]),
 			"_can_country_provider", "_write_country_provider", "_restore_country_provider"),
 		# Effect restores before Economy so PKEC v34 can cross-check every
 		# SETTLING expedition transaction against authoritative PKEF state.
@@ -341,7 +341,7 @@ func _register_providers() -> void:
 		# must match the payload schema, or list_slots() rejects newly written saves.
 		_make_provider(&"journal", 4, PackedStringArray(["journal"]),
 			"_can_journal_provider", "_write_journal_provider", "_restore_journal_provider"),
-		_make_provider(&"pktr", 3, PackedStringArray(["pktr"]),
+		_make_provider(&"pktr", 5, PackedStringArray(["pktr"]),
 			"_can_trigger_provider", "_write_trigger_provider",
 			"_restore_trigger_provider"),
 		_make_provider(&"pkid", 2, PackedStringArray(["pkid"]),
@@ -393,16 +393,15 @@ func _manifest_compatible(raw_manifest) -> bool:
 		if provider_id == "environment":
 			schema_compatible = saved_schema in [1, 2]
 		elif provider_id == "pkcn":
-			# PKCN v11 also carries the authoritative era-reward plan reference.
-			# Its native reader is
+			# PKCN v11 carries the authoritative era-reward plan reference. Its native reader is
 			# exact-version only, so advertising an older schema would defer failure
 			# until after partial session restore.
-			schema_compatible = saved_schema == 10
+			schema_compatible = saved_schema == 11
 		elif provider_id == "pkec":
 			# v33 is the documented empty-canal migration path.
 			schema_compatible = saved_schema in [33, 34]
 		elif provider_id == "pktr":
-			schema_compatible = saved_schema == 3
+			schema_compatible = saved_schema == 5
 		elif provider_id == "journal":
 			schema_compatible = saved_schema in [1, 2, 3, 4]
 		elif provider_id == "pkef":
