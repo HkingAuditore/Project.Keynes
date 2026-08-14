@@ -30,9 +30,12 @@ const MODIFIER_SUBJECT_NAMES := {
 	"country.output.extractive_factor": "采掘部门产出",
 	"country.output.knowledge_factor": "知识部门产出",
 	"country.output.manufacturing_factor": "制造部门产出",
+	"country.research.agriculture_efficiency": "农业领域研究效率",
 	"country.research.engineering_efficiency": "工程领域研究效率",
 	"country.research.science_efficiency": "科学领域研究效率",
 	"country.research.society_efficiency": "社会领域研究效率",
+	"country.research.institution_output_factor": "科研机构产出",
+	"country.trade.capacity_factor": "国内贸易容量",
 	"country.trade.speed_factor": "贸易速度",
 }
 
@@ -115,9 +118,17 @@ func _effect_summary(node: Dictionary) -> String:
 		if not seen.has(text):
 			seen[text] = true
 			parts.append(text)
+	var support_names := PackedStringArray()
+	for support_value in node.get("support_buildings", []):
+		var support: Dictionary = support_value
+		var support_name := String(support.get("name", support.get("id", "")))
+		if not support_name.is_empty() and not support_names.has(support_name):
+			support_names.append(support_name)
+	if not support_names.is_empty():
+		parts.append("作为必要支撑：" + "、".join(support_names))
 	if parts.is_empty():
 		return "完成时代里程碑并开放下一时代" if bool(node.get(
-			"is_milestone", false)) else "提供后续科技与内容的知识基础"
+			"is_milestone", false)) else ""
 	return "；".join(parts)
 
 
@@ -271,8 +282,13 @@ func _validate(payload: Dictionary) -> Dictionary:
 				if int(era_index[String((node_by_id[String(alternative_id)] as Dictionary).era_id)]) \
 						> int(era_index[era_id]):
 					return _fail("technology_condition_future_era:%s" % id)
-		if (node.get("modifier_terms", []) as Array).is_empty() \
-				and not bool(node.get("is_starter_eligible", false)):
+		var modifier_terms: Array = node.get("modifier_terms", [])
+		var is_formal := not bool(node.get("is_milestone", false)) \
+			and not bool(node.get("is_starting", false)) \
+			and not bool(node.get("is_starter_eligible", false))
+		if is_formal and (modifier_terms.is_empty() or modifier_terms.size() > 6):
+			return _fail("technology_modifier_term_count_invalid:%s" % id)
+		if modifier_terms.is_empty() and not bool(node.get("is_starter_eligible", false)):
 			empty_modifier_nodes += 1
 		var unlocked_content := {}
 		for binding_value in node.get("expected_bindings", []):
@@ -280,7 +296,7 @@ func _validate(payload: Dictionary) -> Dictionary:
 			var unlocked_id := String(binding.get("id", ""))
 			if not unlocked_id.is_empty():
 				unlocked_content["%d:%s" % [int(binding.get("kind", 0)), unlocked_id]] = true
-		for term_value in node.get("modifier_terms", []):
+		for term_value in modifier_terms:
 			var term: Dictionary = term_value
 			if String(term.get("effect_class", "")).is_empty() \
 					or String(term.get("effect_rationale", "")).is_empty() \

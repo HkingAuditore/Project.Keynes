@@ -36,8 +36,10 @@ func _init() -> void:
 	assert(definitions.size() == EXPECTED_TECHNOLOGY_COUNT)
 	assert(String(catalog.technology_display_names[0]) == "狩猎")
 	assert(String((definitions[0] as Dictionary).display_name) == "狩猎")
-	assert(String((definitions[0] as Dictionary).effect_summary) \
-		== "解锁物资：野味；解锁物资：生皮；解锁建筑：狩猎营地；可利用资源：野生动物")
+	var hunting_summary := String((definitions[0] as Dictionary).effect_summary)
+	assert(hunting_summary.begins_with(
+		"解锁物资：野味；解锁物资：生皮；解锁建筑：狩猎营地；可利用资源：野生动物"))
+	assert(hunting_summary.contains("作为必要支撑"))
 	for era in TechnologyCatalogScript.public_era_metadata():
 		assert(int((era as Dictionary).candidate_required) == 4)
 		assert(((era as Dictionary).milestone_candidate_ids as PackedStringArray).size() == 8)
@@ -117,11 +119,12 @@ func _init() -> void:
 		visual_kind_counts[kind] += 1
 	assert(int(visual_kind_counts.milestone_candidate) == 88)
 	assert(int(visual_kind_counts.alternative) > 0)
-	for unlock_only_id in ["tech.atmospheric_engine", "tech.geographic_information_systems"]:
-		var unlock_only_index := (catalog.technology_ids as PackedStringArray).find(unlock_only_id)
-		assert(unlock_only_index >= 0)
-		assert(int(catalog.technology_modifier_term_offsets[unlock_only_index + 1]) \
-			== int(catalog.technology_modifier_term_offsets[unlock_only_index]))
+	for formal_id in ["tech.atmospheric_engine", "tech.geographic_information_systems"]:
+		var formal_index := (catalog.technology_ids as PackedStringArray).find(formal_id)
+		assert(formal_index >= 0)
+		var formal_term_count := int(catalog.technology_modifier_term_offsets[formal_index + 1]) \
+			- int(catalog.technology_modifier_term_offsets[formal_index])
+		assert(formal_term_count >= 1 and formal_term_count <= 6)
 	var signals: PackedStringArray = catalog.research_signal_ids
 	for resource_id in ["timber", "stone", "fertile_soil", "arable_land", "paddy_land",
 			"plantation_land", "pasture", "coal", "oil", "natural_gas", "copper_ore",

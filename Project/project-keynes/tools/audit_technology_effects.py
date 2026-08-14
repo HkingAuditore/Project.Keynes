@@ -47,7 +47,7 @@ FAMILY_TOPIC = {
     "metal_toolmaking": (
         "tool", "machine", "machinery", "precision", "standard", "parts", "flint",
         "bronze", "alloy", "metallurgy", "interchange", "quality", "control",
-        "automation", "robot", "timekeeping", "clock", "chronometer",
+        "automation", "robot", "mechan", "timekeeping", "clock", "chronometer",
     ),
     "maritime_operations": (
         "maritime", "ocean", "ship", "port", "navigation", "logistics", "coast",
@@ -56,7 +56,7 @@ FAMILY_TOPIC = {
     "construction_methods": (
         "construction", "masonry", "adobe", "earth", "urban", "canal", "irrigation",
         "hydraulic", "cement", "concrete", "brick", "kiln", "pottery", "stone",
-        "waterwork", "sanitation",
+        "clay", "glass", "flint", "waterwork", "sanitation",
     ),
     "field_crop_farming": (
         "maize", "wheat", "rice", "grain", "cereal", "rainfed", "paddy", "crop",

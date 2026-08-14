@@ -251,6 +251,23 @@ func _assert_progressive_unlocks(catalog: Dictionary) -> void:
 		2, "computing_research_center")
 	_assert_technology_has_binding(catalog, "tech.semiconductor_manufacturing",
 		2, "semiconductors_plant")
+	_assert_technology_has_binding(catalog, "tech.surface_iron_collection",
+		2, "iron_ore_collector")
+	_assert_technology_has_binding(catalog, "tech.mine_timbering", 2, "early_iron_mine")
+	_assert_building_supports(catalog, "early_iron_mine",
+		["tech.surface_iron_collection", "tech.iron_smelting"])
+	_assert_technology_has_binding(catalog, "tech.surface_silver_collection",
+		2, "shallow_silver_working")
+	_assert_technology_has_binding(catalog, "tech.surface_silver_collection",
+		2, "surface_silver_working")
+	_assert_building_supports(catalog, "shallow_silver_working",
+		["tech.ground_stone_tools"])
+	_assert_technology_has_binding(catalog, "tech.petroleum_extraction",
+		2, "early_oil_well")
+	_assert_technology_has_binding(catalog, "tech.petroleum_drilling", 2, "oil_collector")
+	_assert_building_supports(catalog, "oil_collector", ["tech.petroleum_extraction"])
+	_assert_upgrade_order(catalog, "early_oil_well", "oil_collector", "oil_extraction")
+	_assert_upgrade_order(catalog, "iron_ore_collector", "early_iron_mine", "iron_extraction")
 	var autonomous_buildings := 0
 	for binding in _technology_bindings(catalog, "tech.autonomous_systems"):
 		if int(binding.kind) == 2:
@@ -260,14 +277,26 @@ func _assert_progressive_unlocks(catalog: Dictionary) -> void:
 
 
 func _assert_networked_crop_and_resource_gates(catalog: Dictionary) -> void:
-	for identification_id in ["tech.maize_identification", "tech.wheat_identification",
-			"tech.rice_identification", "tech.potato_identification",
-			"tech.cotton_identification", "tech.flax_identification",
-			"tech.rubber_identification", "tech.coal_outcrop_identification"]:
+	var file := FileAccess.open(NETWORK_PATH, FileAccess.READ)
+	assert(file != null)
+	var parsed = JSON.parse_string(file.get_as_text())
+	assert(parsed is Dictionary)
+	var silver_collection_found := false
+	for node_value in (parsed as Dictionary).get("nodes", []):
+		var node: Dictionary = node_value
+		if String(node.get("id", "")) == "tech.surface_silver_collection":
+			silver_collection_found = true
+			assert("tech.silver_vein_identification" in node.get(
+				"hard_prerequisite_ids", []),
+				"surface silver collection bypasses vein identification")
+		if String(node.get("node_role", "")) != "identification":
+			continue
+		var identification_id := String(node.get("id", ""))
 		for binding in _technology_bindings(catalog, identification_id):
 			assert(int(binding.kind) != 2,
 				"identification directly constructs production: %s -> %s" % [
 					identification_id, binding.id])
+	assert(silver_collection_found)
 	_assert_technology_has_binding(catalog, "tech.wild_maize_collection", 2,
 		"wild_maize_stand")
 	for binding in _technology_bindings(catalog, "tech.maize_propagation"):
@@ -580,6 +609,23 @@ func _assert_building_supports(catalog: Dictionary, building_id: String,
 	for technology_id in required_ids:
 		assert(actual.has(technology_id), "%s missing ALL support %s" % [
 			building_id, technology_id])
+
+
+func _assert_upgrade_order(catalog: Dictionary, earlier_id: String, later_id: String,
+		expected_family: String) -> void:
+	var ids: PackedStringArray = catalog.building_type_ids
+	var earlier := ids.find(earlier_id)
+	var later := ids.find(later_id)
+	assert(earlier >= 0 and later >= 0, "%s/%s" % [earlier_id, later_id])
+	var family_indices: PackedInt32Array = catalog.building_upgrade_family_indices
+	var family_ids: PackedStringArray = catalog.building_upgrade_family_ids
+	var tiers: PackedInt32Array = catalog.building_upgrade_tiers
+	assert(int(family_indices[earlier]) >= 0 and int(family_indices[later]) >= 0)
+	assert(String(family_ids[family_indices[earlier]]) == expected_family)
+	assert(String(family_ids[family_indices[later]]) == expected_family)
+	assert(int(tiers[earlier]) < int(tiers[later]),
+		"upgrade tier must increase: %s T%d -> %s T%d" % [
+			earlier_id, tiers[earlier], later_id, tiers[later]])
 
 
 func _assert_technology_has_binding(catalog: Dictionary, technology_id: String,

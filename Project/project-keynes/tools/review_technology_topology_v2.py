@@ -11,12 +11,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections import defaultdict
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 NETWORK = ROOT / "data" / "technology" / "technology_network.json"
+BUILDINGS_DIR = ROOT / "data" / "economy" / "buildings"
 
 
 GOOD_NAMES = {
@@ -58,6 +60,10 @@ def authored_modifier_term(stat: str, value: float, rationale_text: str) -> dict
     effect_class = "全社会或部门影响"
     consumer = "NativeEconomyRuntime::refresh_building_modifier_factors"
     patterns = (
+        ("country.output.building.", "_factor", "building", "精确生产方式产出",
+         "NativeEconomyRuntime::refresh_building_modifier_factors"),
+        ("country.output.family.", "_factor", "building_family", "生产家族产出",
+         "NativeEconomyRuntime::refresh_building_modifier_factors"),
         ("country.output.good.", "_factor", "good", "商品产出",
          "NativeEconomyRuntime::effective_building_output_quantity"),
         ("country.input.good.", "_factor", "good", "生产投入",
@@ -93,6 +99,48 @@ def authored_modifier_term(stat: str, value: float, rationale_text: str) -> dict
     elif stat == "country.trade.speed_factor":
         subject_name, effect_class = "全社会贸易运输速度", "全社会贸易能力"
         consumer = "NativeEconomyRuntime::capture_country_epoch"
+    elif stat == "country.trade.capacity_factor":
+        subject_name, effect_class = "国内贸易容量", "全社会贸易能力"
+        consumer = "NativeEconomyRuntime::capture_country_epoch"
+    elif stat.startswith("country.research."):
+        research_names = {
+            "country.research.agriculture_efficiency": "农业领域研究效率",
+            "country.research.engineering_efficiency": "工程领域研究效率",
+            "country.research.science_efficiency": "科学领域研究效率",
+            "country.research.society_efficiency": "社会领域研究效率",
+            "country.research.institution_output_factor": "科研机构产出",
+        }
+        subject_name = research_names.get(stat, stat)
+        effect_class = "研究效率"
+        consumer = "NativeCountryRuntime::process_research_day"
+    if stat.startswith("country.output.family."):
+        family_names = {
+            "staple_preparation": "主粮加工",
+            "subsistence_food": "生计食物",
+            "paper_making": "造纸",
+            "salt_extraction": "制盐",
+            "research_institution": "研究机构",
+            "metal_toolmaking": "金属工具制造",
+            "construction_methods": "营造方法",
+            "chemical_industry": "化学工业",
+            "copper_extraction": "铜矿采掘",
+            "silver_extraction": "银矿采掘",
+            "tin_extraction": "锡矿采掘",
+            "gold_extraction": "金矿采掘",
+            "steelmaking": "炼钢",
+            "livestock_husbandry": "畜牧业",
+            "oil_extraction": "石油开采",
+            "cadastral_institution": "地籍机构",
+            "maritime_operations": "航运作业",
+            "cloth_weaving": "布匹织造",
+            "specialty_commodity_crops": "专用商品作物",
+            "renewable_power_generation": "可再生动力",
+        }
+        subject_id = stat[len("country.output.family."):-len("_factor")]
+        subject_kind = "building_family"
+        subject_name = family_names.get(subject_id, subject_id)
+        effect_class = "生产家族产出"
+        consumer = "NativeEconomyRuntime::refresh_building_modifier_factors"
     return {
         "stat": stat, "operation": 0.0, "value": value,
         "subject_kind": subject_kind, "subject_id": subject_id,
@@ -100,6 +148,107 @@ def authored_modifier_term(stat: str, value: float, rationale_text: str) -> dict
         "effect_rationale": rationale_text,
         "implementation_status": "runtime_consumed", "runtime_consumer": consumer,
     }
+
+
+def collect_support_buildings() -> dict[str, list[dict]]:
+    """Read the authoritative ALL support tags for presentation only."""
+    result: dict[str, list[dict]] = defaultdict(list)
+    pattern = re.compile(r'required_technology_tags\s*=\s*PackedStringArray\((.*?)\)', re.S)
+    item_pattern = re.compile(r'"([^"]+)"')
+    for path in sorted(BUILDINGS_DIR.glob("*.tres")):
+        text = path.read_text(encoding="utf-8")
+        match = pattern.search(text)
+        if not match:
+            continue
+        building_id = path.stem
+        display_match = re.search(r'display_name\s*=\s*"([^"]+)"', text)
+        display_name = display_match.group(1) if display_match else building_id.replace("_", " ")
+        for technology_id in item_pattern.findall(match.group(1)):
+            result[technology_id].append({"id": building_id, "name": display_name})
+    return result
+
+
+def collect_direct_buildings() -> dict[str, list[dict]]:
+    """Read direct BuildingProfile technology tags for catalog binding output."""
+    result: dict[str, list[dict]] = defaultdict(list)
+    pattern = re.compile(r'technology_tags\s*=\s*PackedStringArray\((.*?)\)', re.S)
+    item_pattern = re.compile(r'"([^"]+)"')
+    for path in sorted(BUILDINGS_DIR.glob("*.tres")):
+        text = path.read_text(encoding="utf-8")
+        match = pattern.search(text)
+        if not match:
+            continue
+        building_id = path.stem
+        display_match = re.search(r'display_name\s*=\s*"([^"]+)"', text)
+        display_name = display_match.group(1) if display_match else building_id.replace("_", " ")
+        for technology_id in item_pattern.findall(match.group(1)):
+            if technology_id.startswith("tech."):
+                result[technology_id].append({"id": building_id, "name": display_name})
+    return result
+
+
+def rebuild_building_bindings(nodes: list[dict], direct_buildings: dict[str, list[dict]]) -> None:
+    """Synchronize authoring projections with authoritative BuildingProfile tags."""
+    for node in nodes:
+        node["expected_bindings"] = [binding for binding in node.get("expected_bindings", [])
+            if int(binding.get("kind", 0)) != 2]
+        node["content_effects"] = [effect for effect in node.get("content_effects", [])
+            if effect.get("kind") != "building"]
+        for building in direct_buildings.get(node["id"], []):
+            node["expected_bindings"].append({"kind": 2, "id": building["id"]})
+            node["content_effects"].append({
+                "kind": "building", "id": building["id"], "binding_kind": 2,
+                "subject": f"building.{building['id']}",
+                "attribute": "construction_and_production_access",
+                "operation": "unlock", "value": 1,
+                "implementation": "BuildingProfile.technology_tags",
+                "status": "existing_binding", "display_name": building["name"],
+            })
+        kind_order = {"good": 0, "building": 1, "resource": 2}
+        node["content_effects"] = sorted(
+            enumerate(node.get("content_effects", [])),
+            key=lambda item: (kind_order.get(str(item[1].get("kind", "")), 99), item[0]))
+        node["content_effects"] = [item[1] for item in node["content_effects"]]
+
+
+def effect_summary(node: dict) -> str:
+    parts: list[str] = []
+    kind_order = {"good": 0, "building": 1, "resource": 2}
+    content_effects = sorted(
+        enumerate(node.get("content_effects", [])),
+        key=lambda item: (kind_order.get(str(item[1].get("kind", "")), 99), item[0]))
+    content_effects = [item[1] for item in content_effects]
+    for effect in content_effects:
+        if effect.get("operation") != "unlock":
+            continue
+        kind = {"building": "解锁建筑", "good": "解锁物资", "resource": "可利用资源"}.get(effect.get("kind"))
+        if kind:
+            parts.append(f"{kind}：{effect.get('display_name', effect.get('id', ''))}")
+    for term in node.get("modifier_terms", []):
+        value = float(term.get("value", 0.0))
+        operation = int(term.get("operation", 0))
+        if operation == 0:
+            delta = value
+        elif operation == 1:
+            delta = -value
+        elif operation == 2:
+            delta = value - 1.0
+        else:
+            delta = 1.0 / value - 1.0 if value else 0.0
+        subject = term.get("subject_display_name") or term.get("stat", "")
+        stat = str(term.get("stat", ""))
+        if stat.startswith(("country.output.building.", "country.output.family.",
+                            "country.output.good.", "country.output.terrain.",
+                            "country.output.landform.")):
+            subject += "产出"
+        parts.append(f"{subject} {'+' if delta >= 0 else '-'}{abs(delta) * 100:g}%")
+    support = node.get("support_buildings", [])
+    if support:
+        names = "、".join(str(item.get("name", item.get("id", ""))) for item in support)
+        parts.append(f"作为必要支撑：{names}")
+    if parts:
+        return "；".join(dict.fromkeys(parts))
+    return "完成时代里程碑并开放下一时代" if node.get("is_milestone") else ""
 
 
 # Explicit per-technology review. Ordinary societal spillovers are <=5%; large
@@ -175,6 +324,89 @@ EFFECT_SPECS = [
     ("tech.cold_chain", "country.consumption.good.meat_factor", -.10, "冷链减少肉类运输和家庭损耗。"),
     ("tech.canning", "country.consumption.good.processed_food_factor", -.08, "罐藏延长加工食品保存期。"),
 
+    ("tech.wild_wheat_collection", "country.output.terrain.steppe.agriculture_factor", .12,
+     "野生小麦采集经验提高草原边缘的谷物辨识与采收效率。"),
+    ("tech.wild_rice_collection", "country.output.landform.lowland.agriculture_factor", .12,
+     "野生稻采集经验提高低地湿润环境中的稻作适应。"),
+    ("tech.potato_propagation", "country.output.landform.plateau.agriculture_factor", .12,
+     "块茎繁育方法提高高原环境中的马铃薯种植效率。"),
+    ("tech.maize_garden_horticulture", "country.output.terrain.jungle.agriculture_factor", .12,
+     "玉米园圃体系提高雨林边缘复合园艺的农业产出。"),
+    ("tech.rainfed_wheat_cultivation", "country.output.terrain.steppe.agriculture_factor", .12,
+     "雨养小麦体系提高草原气候中的农业产出。"),
+    ("tech.wetland_rice_gardening", "country.output.terrain.floodplain.agriculture_factor", .12,
+     "湿地稻作提高洪泛平原农业产出。"),
+
+    ("tech.seasonal_foraging", "country.output.family.subsistence_food_factor", .12,
+     "季节性采集历法提高生计食物获取效率。"),
+    ("tech.automated_agriculture", "country.output.agriculture_factor", .22,
+     "自动化农业提高全社会农业作业的连续性。"),
+    ("tech.charcoal_burning", "country.resource.timber.use_factor", -.08,
+     "炭窑控制提高木材转化效率并减少原料耗用。"),
+    ("tech.bark_paper_making", "country.output.family.paper_making_factor", .12,
+     "树皮纤维处理提高造纸生产方式产出。"),
+    ("tech.brine_collection", "country.output.family.salt_extraction_factor", .12,
+     "卤水采集提高盐业生产方式产出。"),
+    ("tech.salt_preservation", "country.consumption.good.processed_food_factor", -.08,
+     "盐藏减少加工食品的腐败损失。"),
+    ("tech.gold_placer_identification", "country.output.family.gold_extraction_factor", .12,
+     "砂金辨识提高采金生产方式产出。"),
+    ("tech.silver_vein_identification", "country.output.family.silver_extraction_factor", .12,
+     "银脉辨识提高采银生产方式产出。"),
+    ("tech.tin_identification", "country.output.family.tin_extraction_factor", .12,
+     "锡矿辨识提高采锡生产方式产出。"),
+    ("tech.crucible_steel", "country.output.family.steelmaking_factor", .12,
+     "坩埚控温提高炼钢生产方式产出。"),
+    ("tech.coke_smelting", "country.output.family.steelmaking_factor", .12,
+     "焦炭冶炼提高炼钢生产方式产出。"),
+    ("tech.specialty_alloys", "country.output.family.steelmaking_factor", .28,
+     "专用合金知识强化高端炼钢生产方式产出。"),
+    ("tech.plant_fiber_papermaking", "country.output.family.paper_making_factor", .12,
+     "植物纤维制浆提高造纸生产方式产出。"),
+    ("tech.rag_paper_making", "country.output.family.paper_making_factor", .12,
+     "破布回收制浆提高造纸生产方式产出。"),
+    ("tech.estate_cereal_management", "country.output.good.wheat_grain_factor", .12,
+     "庄园谷物核算与田间组织提高小麦产出。"),
+    ("tech.reed_identification", "country.output.terrain.floodplain.agriculture_factor", .12,
+     "芦苇生境辨识提高洪泛平原农业适应。"),
+    ("tech.irrigation", "country.output.good.rice_grain_factor", .12,
+     "基础灌溉提高稻米产出。"),
+    ("tech.irrigation_surveying", "country.output.family.construction_methods_factor", .12,
+     "坡降与水准测量提高水工营造产出。"),
+    ("tech.canal_engineering", "country.output.family.construction_methods_factor", .12,
+     "渠道、闸门与堤岸工程提高水工营造产出。"),
+    ("tech.urban_waterworks", "country.output.family.construction_methods_factor", .25,
+     "城市供排水体系强化大型营造方法产出。"),
+
+    ("tech.surface_coal_use", "country.output.extractive_factor", .12,
+     "露头煤利用经验提高采掘部门产出。"),
+    ("tech.coal_outcrop_identification", "country.output.extractive_factor", .12,
+     "煤层露头辨识提高采掘选址效率。"),
+    ("tech.surface_coal_collection", "country.output.extractive_factor", .12,
+     "地表煤采集提高采掘部门产出。"),
+    ("tech.coal_mining", "country.resource.coal.use_factor", -.08,
+     "系统采煤减少煤层损失。"),
+    ("tech.mine_timbering", "country.output.extractive_factor", .12,
+     "矿井木支护提高采掘作业稳定性。"),
+    ("tech.mine_ventilation", "country.output.extractive_factor", .12,
+     "矿井通风延长安全作业时间。"),
+    ("tech.shaft_sinking", "country.output.extractive_factor", .12,
+     "井筒开掘扩大可达矿体范围。"),
+    ("tech.mine_drainage", "country.output.extractive_factor", .12,
+     "矿井排水提高采掘作业连续性。"),
+    ("tech.atmospheric_engine", "country.output.extractive_factor", .12,
+     "大气式蒸汽机为矿井抽排提供连续动力。"),
+    ("tech.coal_geology", "country.resource.coal.use_factor", -.08,
+     "煤田地质调查减少无效掘进与煤层损失。"),
+    ("tech.steam_power", "country.output.manufacturing_factor", .12,
+     "通用蒸汽动力提高制造部门产出。"),
+    ("tech.steam_pumping", "country.output.extractive_factor", .12,
+     "蒸汽泵提高深部采掘连续性。"),
+    ("tech.corporate_mining", "country.output.extractive_factor", .28,
+     "公司化矿山组织强化采掘部门产出。"),
+    ("tech.advanced_metallurgy", "country.output.family.steelmaking_factor", .12,
+     "先进冶金提高炼钢生产方式产出。"),
+
     ("tech.timber_sawing", "country.resource.timber.use_factor", -.10, "锯切提高原木得材率。"),
     ("tech.steam_sawmilling", "country.resource.timber.use_factor", -.08, "动力锯切减少锯路损耗。"),
     ("tech.steam_sawmilling", "country.input.good.coal_factor", .05, "蒸汽锯木以煤耗换取吞吐。"),
@@ -225,6 +457,162 @@ EFFECT_SPECS = [
     ("tech.textile_machinery", "country.output.good.cloth_factor", .20, "机械纺织提高布匹产量。"),
     ("tech.textile_machinery", "country.input.good.coal_factor", .04, "早期纺机增加煤动力需求。"),
     ("tech.mechanized_printing", "country.output.good.printed_materials_factor", .22, "机械印刷提高印刷品吞吐。"),
+]
+
+
+# Explicit completion pass for every paid, non-milestone technology that does
+# not already have a reviewed numeric package above. Membership is authored;
+# no keyword, lane adjacency, or array-position inference is used. The terminal
+# value is selected only after explicit topology has been resolved.
+EFFECT_COMPLETION_GROUPS = [
+    (["tech.seasonal_foraging", "tech.food_storage", "tech.hearth_preservation",
+      "tech.seed_selection", "tech.rainfed_field_system", "tech.public_storehouses",
+      "tech.fermentation", "tech.tenant_cereal_farming", "tech.urban_food_supply",
+      "tech.regional_granaries", "tech.oceanic_provisioning", "tech.agronomic_exchange",
+      "tech.automated_agriculture"],
+     "country.output.family.staple_preparation_factor", .12, .25,
+     "储藏、加工与供给组织减少主粮处理损失。"),
+    (["tech.communal_specialization", "tech.household_production", "tech.record_keeping",
+      "tech.chartered_universities", "tech.indentured_contracts", "tech.political_economy",
+      "tech.operations_research"],
+     "country.research.society_efficiency", .08, .20,
+     "制度记录与组织经验提高社会领域研究效率。"),
+    (["tech.oral_tradition", "tech.scholarly_academies", "tech.manuscript_culture",
+      "tech.woodblock_printing", "tech.scholastic_method", "tech.screw_press_printing"],
+     "country.output.family.research_institution_factor", .12, .25,
+     "知识保存与复制提高研究机构的有效产出。"),
+    (["tech.precision_engineering", "tech.mechanical_workshops", "tech.machine_tools",
+      "tech.electronic_control"],
+     "country.output.family.metal_toolmaking_factor", .12, .25,
+     "工具、机床与控制能力提高金属工具制造产出。"),
+    (["tech.market_institutions", "tech.currency", "tech.commercial_estates",
+      "tech.mercantile_networks", "tech.chartered_companies", "tech.digital_marketplaces"],
+     "country.trade.capacity_factor", .08, .20,
+     "市场组织与结算网络扩大国内贸易容量。"),
+    (["tech.radio", "tech.telecommunications", "tech.information_theory", "tech.digital_control",
+      "tech.sensor_networks", "tech.neural_networks", "tech.distributed_intelligence",
+      "tech.scientific_agents"],
+     "country.research.science_efficiency", .08, .22,
+     "通信、计算与控制方法提高科学研究效率。"),
+    (["tech.clay_identification", "tech.ground_stone_tools", "tech.flint_identification",
+      "tech.clay_preparation", "tech.hand_pottery", "tech.kiln_firing", "tech.pottery",
+      "tech.adobe_making", "tech.early_glassmaking", "tech.masonry"],
+     "country.output.family.construction_methods_factor", .12, .25,
+     "材料识别与成形工艺提高建材和营造方法产出。"),
+    (["tech.electromagnetic_induction", "tech.electric_generation", "tech.nuclear_fission",
+      "tech.nuclear_energy", "tech.nuclear_fuel_cycle"],
+     "country.output.energy_factor", .10, .24,
+     "发电与燃料循环知识提高能源部门产出。"),
+    (["tech.charcoal_burning", "tech.bark_paper_making"],
+     "country.output.good.logs_factor", .12, .25,
+     "木本原料处理提高可用原木与纤维材料产出。"),
+    (["tech.cartography", "tech.deep_geophysics", "tech.satellite_observation",
+      "tech.numerical_weather_prediction", "tech.crop_remote_sensing",
+      "tech.hydrological_remote_sensing", "tech.geographic_information_systems"],
+     "country.output.family.geospatial_analysis_institution_factor", .12, .28,
+     "测绘、遥感与地理分析提高地理空间机构产出。"),
+    (["tech.surface_coal_use", "tech.iron_ore_identification", "tech.surface_iron_collection",
+      "tech.iron_smelting", "tech.coal_outcrop_identification", "tech.surface_coal_collection",
+      "tech.blast_furnace", "tech.coal_mining", "tech.mine_timbering", "tech.mine_ventilation",
+      "tech.shaft_sinking", "tech.mine_drainage", "tech.atmospheric_engine", "tech.coal_geology",
+      "tech.steam_power", "tech.steam_pumping", "tech.corporate_mining",
+      "tech.advanced_metallurgy"],
+     "country.output.family.iron_extraction_factor", .12, .28,
+     "矿井、冶炼与动力体系提高铁矿采掘链产出。"),
+    (["tech.brine_collection", "tech.salt_preservation", "tech.gunpowder_formulation",
+      "tech.gunpowder_weapons", "tech.industrial_chemistry", "tech.fertilizer_processing",
+      "tech.electrochemistry"],
+     "country.output.family.chemical_industry_factor", .12, .25,
+     "配方、反应与过程控制提高化学工业产出。"),
+    (["tech.guild_organization", "tech.guild_apprenticeship", "tech.wage_contracts",
+      "tech.industrial_organization", "tech.labor_organization", "tech.managerial_hierarchy",
+      "tech.assembly_line", "tech.worker_cooperatives", "tech.state_enterprises",
+      "tech.platform_coordination", "tech.human_machine_collaboration",
+      "tech.algorithmic_management", "tech.knowledge_cooperatives",
+      "tech.autonomous_labor_coordination"],
+     "country.output.manufacturing_factor", .08, .22,
+     "劳动分工与管理协调提高制造部门产出。"),
+    (["tech.household_landholding", "tech.communal_field_coordination", "tech.customary_tenancy",
+      "tech.sharecropping", "tech.estate_accounting", "tech.manorial_jurisdiction",
+      "tech.serf_obligations", "tech.manorial_cereal_farming", "tech.commercial_tenancy",
+      "tech.long_term_leases", "tech.property_cadastre"],
+     "country.output.family.cadastral_institution_factor", .12, .25,
+     "地权、租佃与核算制度提高土地登记和经营协调产出。"),
+    (["tech.maize_identification", "tech.maize_propagation", "tech.maize_garden_horticulture",
+      "tech.swidden_maize_cultivation", "tech.rainfed_maize_cultivation",
+      "tech.synthetic_fertilizer", "tech.industrial_agronomy"],
+     "country.output.good.corn_grain_factor", .12, .25,
+     "辨识、繁育与田间体系提高玉米产出。"),
+    (["tech.fishing_boats", "tech.river_transport", "tech.magnetic_navigation",
+      "tech.celestial_navigation", "tech.oceanic_navigation", "tech.oceanic_ship_design",
+      "tech.coastal_shipyards", "tech.rail_logistics", "tech.global_logistics",
+      "tech.automated_logistics", "tech.autonomous_logistics"],
+     "country.output.family.maritime_operations_factor", .12, .28,
+     "导航、船舶与物流组织提高运输生产方式产出。"),
+    (["tech.seasonal_calendar", "tech.celestial_calendars", "tech.mechanical_timekeeping",
+      "tech.probability_statistics", "tech.precision_instruments"],
+     "country.research.engineering_efficiency", .08, .20,
+     "计时、测量与统计提高工程研究效率。"),
+    (["tech.natural_observation", "tech.natural_philosophy", "tech.interregional_botany",
+      "tech.crop_transplantation", "tech.crop_acclimatization", "tech.scientific_classification",
+      "tech.learned_societies", "tech.soil_experimentation", "tech.biotechnology",
+      "tech.bioinformatics", "tech.computational_biology", "tech.intelligent_breeding"],
+     "country.research.agriculture_efficiency", .08, .22,
+     "自然观察、生物分类与育种方法提高农业研究效率。"),
+    (["tech.natural_copper_identification", "tech.natural_copper_working", "tech.copper_annealing",
+      "tech.tin_identification", "tech.gold_placer_identification", "tech.silver_vein_identification",
+      "tech.copper_metallurgy", "tech.bronze_casting", "tech.crucible_steel",
+      "tech.coke_smelting", "tech.specialty_alloys"],
+     "country.output.family.copper_extraction_factor", .12, .28,
+     "有色矿物辨识与冶金工艺提高铜及合金原料链产出。"),
+    (["tech.animal_husbandry", "tech.animal_tracking", "tech.herd_management", "tech.pastoralism",
+      "tech.horse_domestication", "tech.animal_traction", "tech.dairy_processing",
+      "tech.hide_tanning", "tech.wool_husbandry", "tech.meat_processing",
+      "tech.parchment_making", "tech.pastoral_networks", "tech.livestock_breeding",
+      "tech.modern_husbandry", "tech.corporate_agribusiness"],
+     "country.output.family.livestock_husbandry_factor", .12, .28,
+     "畜群管理、繁育与加工体系提高畜牧业产出。"),
+    (["tech.petroleum_extraction", "tech.petroleum_refining", "tech.internal_combustion",
+      "tech.petrochemical_industry", "tech.synthetic_materials", "tech.plastics_engineering"],
+     "country.output.family.oil_extraction_factor", .12, .28,
+     "石油开采、炼制与材料应用提高石油产业链产出。"),
+    (["tech.urban_sanitation", "tech.public_health_systems"],
+     "country.output.good.pharmaceuticals_factor", .12, .25,
+     "卫生组织与防疫体系提高药品有效供给。"),
+    (["tech.rice_identification", "tech.wild_rice_collection", "tech.upland_rice_propagation",
+      "tech.wetland_rice_gardening", "tech.tenant_paddy_management",
+      "tech.estate_paddy_management", "tech.agricultural_cooperatives",
+      "tech.precision_irrigation", "tech.adaptive_irrigation"],
+     "country.output.good.rice_grain_factor", .12, .28,
+     "稻类辨识、水田组织与灌溉控制提高稻米产出。"),
+    (["tech.fiber_twisting", "tech.flax_identification", "tech.weaving", "tech.loom_weaving",
+      "tech.flax_retting", "tech.hand_spinning", "tech.cotton_ginning",
+      "tech.plant_fiber_papermaking", "tech.rag_paper_making",
+      "tech.synthetic_fiber_engineering"],
+     "country.output.family.cloth_weaving_factor", .12, .25,
+     "纤维处理、纺纱与织造方法提高布匹生产链产出。"),
+    (["tech.cotton_identification", "tech.wild_cotton_collection", "tech.spice_identification",
+      "tech.wild_spice_collection", "tech.rubber_identification", "tech.wild_latex_tapping",
+      "tech.spice_cultivation", "tech.rubber_working", "tech.cotton_gardening",
+      "tech.latex_smoke_coagulation", "tech.commodity_crop_management",
+      "tech.estate_plantation_management"],
+     "country.output.family.specialty_commodity_crops_factor", .12, .28,
+     "热带作物辨识、栽培与商品化提高专用经济作物产出。"),
+    (["tech.potato_identification", "tech.tuber_storage", "tech.potato_propagation",
+      "tech.ridge_tuber_cultivation", "tech.frost_protected_storage",
+      "tech.estate_cereal_management"],
+     "country.output.good.potatoes_factor", .12, .25,
+     "块茎辨识、保存与高地栽培提高马铃薯产出。"),
+    (["tech.reed_identification", "tech.irrigation", "tech.irrigation_surveying",
+      "tech.canal_engineering", "tech.urban_waterworks"],
+     "country.output.family.renewable_power_generation_factor", .12, .25,
+     "水文识别、测量与水工建设提高可再生动力设施产出。"),
+    (["tech.wheat_identification", "tech.wild_wheat_collection", "tech.wheat_propagation",
+      "tech.rainfed_wheat_cultivation", "tech.dryland_wheat_cultivation", "tech.grain_baking",
+      "tech.agricultural_improvement", "tech.motorized_agriculture",
+      "tech.collective_agriculture"],
+     "country.output.good.wheat_grain_factor", .12, .28,
+     "小麦辨识、繁育与旱作体系提高小麦产出。"),
 ]
 
 
@@ -303,6 +691,7 @@ HARD_OVERRIDES = {
     "tech.spice_cultivation": ["tech.wild_spice_collection", "tech.seed_selection"],
     "tech.weaving": ["tech.fiber_twisting"],
     "tech.paddy_bunding": ["tech.wild_rice_collection", "tech.earth_building"],
+    "tech.surface_silver_collection": ["tech.silver_vein_identification"],
     "tech.kiln_firing": ["tech.fire_control", "tech.clay_preparation"],
     "tech.animal_traction": ["tech.animal_husbandry", "tech.plough_agriculture"],
     "tech.iron_smelting": ["tech.surface_iron_collection", "tech.charcoal_burning", "tech.kiln_firing"],
@@ -771,6 +1160,8 @@ def main() -> int:
     if len(nodes) != 361:
         raise ValueError(f"expected the 361 stable legacy IDs, found {len(nodes)}")
     by_id = {node["id"]: node for node in nodes}
+    support_buildings = collect_support_buildings()
+    direct_buildings = collect_direct_buildings()
     authored_conditions = dict(RESEARCH_CONDITIONS)
     for family_id, route_specs in FAMILY_ROUTE_SPECS.items():
         for target_id, technology_choices, signal_id in route_specs:
@@ -878,23 +1269,43 @@ def main() -> int:
             raise ValueError(f"effect review references missing technology: {technology_id}")
         by_id[technology_id]["modifier_terms"].append(
             authored_modifier_term(stat, value, effect_rationale))
+
+    # Complete every paid non-milestone node that still has no numeric effect.
+    # The groups above are an authored table: membership and target Stat are
+    # reviewed explicitly, while the terminal multiplier only reflects whether
+    # this node has any authored downstream edge in the current topology.
+    hard_successors_for_effects: dict[str, list[str]] = defaultdict(list)
+    for node in nodes:
+        for prerequisite in node.get("hard_prerequisite_ids", []):
+            hard_successors_for_effects[prerequisite].append(node["id"])
+    for group_ids, stat, ordinary_value, terminal_value, group_rationale in EFFECT_COMPLETION_GROUPS:
+        for technology_id in group_ids:
+            if technology_id not in by_id:
+                raise ValueError(f"effect completion references missing technology: {technology_id}")
+            node = by_id[technology_id]
+            if node.get("modifier_terms"):
+                continue
+            if node.get("is_milestone") or node.get("is_starting") or node.get("is_starter_eligible"):
+                continue
+            is_terminal = not (
+                hard_successors_for_effects[technology_id]
+                or node.get("branch_successor_ids")
+                or node.get("application_target_ids"))
+            value = terminal_value if is_terminal else ordinary_value
+            node["modifier_terms"] = [authored_modifier_term(stat, value, group_rationale)]
+
+    for node in nodes:
+        terms = node.get("modifier_terms", [])
+        if node.get("is_milestone") or node.get("is_starting") or node.get("is_starter_eligible"):
+            continue
+        if not terms:
+            raise ValueError(f"formal technology has no reviewed Modifier effect: {node['id']}")
+        if len(terms) > 6:
+            raise ValueError(f"technology exceeds six Modifier terms: {node['id']}")
     for term in by_id["tech.grain_threshing"]["modifier_terms"]:
         term["subject_display_name"] = "全部谷物"
 
-    steam_sawmilling = by_id["tech.steam_sawmilling"]
-    binding = {"kind": 2, "id": "method_lumber_plant_r6"}
-    if binding not in steam_sawmilling["expected_bindings"]:
-        steam_sawmilling["expected_bindings"].append(binding)
-    steam_sawmilling["content_effects"] = [effect for effect in steam_sawmilling["content_effects"]
-        if str(effect.get("id", "")) != "method_lumber_plant_r6"]
-    steam_sawmilling["content_effects"].append({
-        "kind": "building", "id": "method_lumber_plant_r6", "binding_kind": 2,
-        "subject": "building.method_lumber_plant_r6",
-        "attribute": "construction_and_production_access", "operation": "unlock", "value": 1,
-        "implementation": "BuildingProfile.technology_tags", "status": "new_content",
-        "display_name": "蒸汽锯木厂",
-    })
-    steam_sawmilling["effect_summary"] = "解锁生产方法：蒸汽锯木厂"
+    rebuild_building_bindings(nodes, direct_buildings)
 
     era_order = {era["id"]: int(era["sort_order"]) for era in payload["eras"]}
     for node in nodes:
@@ -930,6 +1341,10 @@ def main() -> int:
             if by_id[target]["branch_family_id"] != node["branch_family_id"]:
                 raise ValueError(f"cross-family branch successor must be application: {node['id']} -> {target}")
 
+    for node in nodes:
+        node["support_buildings"] = support_buildings.get(node["id"], [])
+        node["effect_summary"] = effect_summary(node)
+
     payload["nodes"] = stable_topological_order(nodes, era_order)
     by_id = {node["id"]: node for node in payload["nodes"]}
     hard_successors: dict[str, list[str]] = defaultdict(list)
@@ -945,10 +1360,16 @@ def main() -> int:
             node["terminal_reason"] = f"{node['display_name']}是该时代的全局入口里程碑，不作为节点级知识前置"
         else:
             consumers = [str(binding.get("id", "")) for binding in node.get("expected_bindings", [])]
-            consumer_text = "、".join(consumers) if consumers else "已声明的内容效果与数值消费者"
+            effect_text = "、".join(
+                f"{term.get('subject_display_name', term.get('stat', ''))}{float(term.get('value', 0.0)) * 100:g}%"
+                for term in node.get("modifier_terms", []))
+            support_text = "、".join(str(item.get("name", item.get("id", "")))
+                for item in node.get("support_buildings", []))
+            consumer_text = "、".join(consumers or ([support_text] if support_text else [])
+                or ([effect_text] if effect_text else [])) or "当前目录终点效果"
             node["terminal_reason"] = (
                 f"{node['display_name']}是{family_names[node['branch_family_id']]}在当前目录中的应用端点，"
-                f"其终值由{consumer_text}消费")
+                f"其终点效果由{consumer_text}消费")
 
     payload["semantic_review"] = {
         "version": 1,

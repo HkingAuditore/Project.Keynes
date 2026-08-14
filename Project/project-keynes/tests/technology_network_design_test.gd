@@ -81,6 +81,12 @@ func _init() -> void:
 		assert((node.application_target_ids as Array).size() == (node.application_target_rationales as Array).size())
 		_validate_condition(node.get("reveal_condition", {}))
 		_validate_condition(node.get("research_condition", {}))
+		if not bool(node.get("is_milestone", false)) and not bool(node.get("is_starting", false)) \
+				and not bool(node.get("is_starter_eligible", false)):
+			var required_terms: Array = node.get("modifier_terms", [])
+			assert(required_terms.size() >= 1 and required_terms.size() <= 6,
+				"formal technology must have 1-6 Modifier terms: %s" % technology_id)
+			assert(String(node.get("effect_summary", "")) != "提供后续科技与内容的知识基础")
 		for term_value in node.get("modifier_terms", []):
 			var term: Dictionary = term_value
 			assert(not String(term.get("effect_class", "")).is_empty())
@@ -189,13 +195,13 @@ func _init() -> void:
 	_assert_no_token(node_by_id["tech.property_cadastre"], "maize")
 	_assert_prerequisites(node_by_id, "tech.atmospheric_engine", [
 		"tech.mine_drainage", "tech.mechanical_workshops"])
-	assert(((node_by_id["tech.atmospheric_engine"] as Dictionary).modifier_terms as Array).is_empty())
+	assert(not ((node_by_id["tech.atmospheric_engine"] as Dictionary).modifier_terms as Array).is_empty())
 	_assert_binding(node_by_id, "tech.atmospheric_engine", "building", "atmospheric_engine_workshop")
 	_assert_prerequisites(node_by_id, "tech.geographic_information_systems", [
 		"tech.cartography", "tech.digital_computing"])
 	_assert_no_prerequisite(node_by_id, "tech.geographic_information_systems", "tech.plastics_engineering")
 	assert(int(((node_by_id["tech.geographic_information_systems"] as Dictionary).research_condition as Dictionary).operator) == ResearchConditionScript.Operator.ANY_OF)
-	assert(((node_by_id["tech.geographic_information_systems"] as Dictionary).modifier_terms as Array).is_empty())
+	assert(not ((node_by_id["tech.geographic_information_systems"] as Dictionary).modifier_terms as Array).is_empty())
 	_assert_prerequisites(node_by_id, "tech.scientific_classification", ["tech.natural_philosophy"])
 	assert(int(((node_by_id["tech.scientific_classification"] as Dictionary).research_condition as Dictionary).operator) == ResearchConditionScript.Operator.AT_LEAST)
 	_assert_no_token(node_by_id["tech.scientific_classification"], "detergent")
@@ -259,10 +265,18 @@ func _init() -> void:
 	var unlock_only_count := 0
 	for node_value in nodes:
 		var node: Dictionary = node_value
-		if (node.modifier_terms as Array).is_empty() and int(node.get("cost_points", 0)) > 0:
+		if (node.modifier_terms as Array).is_empty() and int(node.get("cost_points", 0)) > 0 \
+				and not bool(node.get("is_milestone", false)) \
+				and not bool(node.get("is_starting", false)) \
+				and not bool(node.get("is_starter_eligible", false)):
 			unlock_only_count += 1
 		_assert_no_unlock_and_same_target_modifier(node)
-	assert(unlock_only_count > 0)
+	assert(unlock_only_count == 0)
+	var maize_terms: Array = (node_by_id["tech.maize_propagation"] as Dictionary).modifier_terms
+	assert(maize_terms.size() >= 1 and maize_terms.size() <= 6)
+	assert(String((maize_terms[0] as Dictionary).stat) == "country.output.good.corn_grain_factor")
+	assert(is_equal_approx(float((maize_terms[0] as Dictionary).value), 0.25))
+	assert(((node_by_id["tech.maize_propagation"] as Dictionary).expected_bindings as Array).is_empty())
 	print("[PASS] technology network schema v2: %d nodes / %d families / max indegree %d" % [
 		nodes.size(), families.size(), maximum_hard_indegree])
 	quit(0)
@@ -403,6 +417,6 @@ func _assert_effect_summary_matches_structured_effects(node: Dictionary) -> void
 		if not subject.is_empty():
 			assert(summary.contains(subject), "%s summary omits modifier target" % node.id)
 	if content_effects.is_empty() and modifier_terms.is_empty():
-		assert(summary == ("完成时代里程碑并开放下一时代" if bool(node.get(
-			"is_milestone", false)) else "提供后续科技与内容的知识基础"),
+		assert(summary == "完成时代里程碑并开放下一时代" if bool(node.get(
+			"is_milestone", false)) else "",
 			"%s summary claims an unauthored effect" % node.id)
