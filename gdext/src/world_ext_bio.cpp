@@ -28,6 +28,7 @@ constexpr int32_t kLfVolcano = 12;
 constexpr int32_t kLfPlateau = 13;
 constexpr float kCarrierEps = 0.0001f;
 constexpr float kDiffusionKeep = 0.15f;
+constexpr float kPersistClimateMargin = 0.12f;
 
 constexpr int32_t kFlagNeedWetlandOrRiver = 1;
 constexpr int32_t kFlagNeedHighland = 2;
@@ -68,11 +69,11 @@ bool veg_wetland(uint8_t veg) {
 }
 
 bool veg_arid(uint8_t veg) {
-    return veg == 16 || veg == 17;
+    return veg == 10 || veg == 16 || veg == 17;
 }
 
 bool lf_highland(uint8_t lf, float elev) {
-    return elev >= 0.62f || lf == kLfMountain || lf == kLfPeak || lf == kLfPlateau;
+    return elev >= 0.40f || lf == 6 || lf == kLfMountain || lf == kLfPeak || lf == kLfPlateau;
 }
 
 bool lf_arid(uint8_t lf) {
@@ -203,7 +204,8 @@ bool envelope_ok(int cell, int species, const SpeciesView &sp,
         return false;
     if ((flags & kFlagForbidTropicalForest) != 0 && veg_tropical_forest(veg[cell]))
         return false;
-    if ((flags & kFlagNeedArid) != 0 && !veg_arid(veg[cell]) && !lf_arid(lf[cell]))
+    if ((flags & kFlagNeedArid) != 0 && !veg_arid(veg[cell]) && !lf_arid(lf[cell]) &&
+        m > 0.38f)
         return false;
     if ((flags & kFlagNeedDryOrHighland) != 0 && m > 0.38f && !lf_highland(lf[cell], e))
         return false;
@@ -211,6 +213,26 @@ bool envelope_ok(int cell, int species, const SpeciesView &sp,
         return false;
     if ((flags & kFlagForbidWarm) != 0 && t >= 0.62f) return false;
     if ((flags & kFlagForbidCold) != 0 && t <= 0.34f) return false;
+    return true;
+}
+
+// Established stands: climate with margin only. Vegetation masks, habitat flags,
+// and carrier reserves still gate seed / diffusion / introduce, not persistence.
+bool persist_ok(int cell, int species, const SpeciesView &sp,
+                const uint8_t *water, const float *temp, const float *moist,
+                const float *elev) {
+    if (water[cell] != 0) return false;
+    const float t = temp[cell];
+    const float m = moist[cell];
+    const float e = elev[cell];
+    if (t < sp.temp_lo[species] - kPersistClimateMargin ||
+        t > sp.temp_hi[species] + kPersistClimateMargin)
+        return false;
+    if (m < sp.moist_lo[species] - kPersistClimateMargin ||
+        m > sp.moist_hi[species] + kPersistClimateMargin)
+        return false;
+    if (e < sp.elev_lo[species] - 0.08f || e > sp.elev_hi[species] + 0.08f)
+        return false;
     return true;
 }
 
@@ -427,10 +449,12 @@ Dictionary DCWorldExt::run_bio_seed_pass(const Dictionary &knobs) {
     const PackedFloat32Array moist_arr = knobs.get("moisture", PackedFloat32Array());
     const PackedFloat32Array elev_arr = knobs.get("elevation", PackedFloat32Array());
     const PackedInt32Array province_arr = knobs.get("province_ids", PackedInt32Array());
+    const PackedInt32Array landmass_arr = knobs.get("landmass_ids", PackedInt32Array());
     const PackedInt32Array neighbors = knobs.get("neighbor_indices", PackedInt32Array());
     if (water_arr.size() != n || veg_arr.size() != n || lf_arr.size() != n ||
         river_arr.size() != n || temp_arr.size() != n || moist_arr.size() != n ||
-        elev_arr.size() != n || province_arr.size() != n || neighbors.size() != n * 6) {
+        elev_arr.size() != n || province_arr.size() != n || landmass_arr.size() != n ||
+        neighbors.size() != n * 6) {
         out["reason"] = String("bio_seed_input_shape_invalid");
         return out;
     }
@@ -452,102 +476,149 @@ Dictionary DCWorldExt::run_bio_seed_pass(const Dictionary &knobs) {
     const float *temp = temp_arr.ptr();
     const float *moist = moist_arr.ptr();
     const float *elev = elev_arr.ptr();
-    const int32_t *province = province_arr.ptr();
-    const int32_t *nb = neighbors.ptr();
+    const int32_t *landmass = landmass_arr.ptr();
 
     PackedInt32Array occupancy;
     occupancy.resize(n);
     int32_t *occ = occupancy.ptrw();
     std::memset(occ, 0, size_t(n) * sizeof(int32_t));
 
-    int32_t max_province = 0;
+    int32_t max_landmass = 0;
     for (int cell = 0; cell < n; ++cell)
-        max_province = std::max(max_province, province[cell]);
+        max_landmass = std::max(max_landmass, landmass[cell]);
+
+    std::vector<int32_t> landmass_size(size_t(max_landmass + 1), 0);
+    for (int cell = 0; cell < n; ++cell) {
+        const int32_t lid = landmass[cell];
+        if (lid > 0) landmass_size[size_t(lid)] += 1;
+    }
+    int32_t largest_land = 0;
+    for (int32_t lid = 1; lid <= max_landmass; ++lid)
+        largest_land = std::max(largest_land, landmass_size[size_t(lid)]);
+    // Continent-scale landmasses all get a local stand. Satellite islets that
+    // only hold a handful of cells stay empty unless they are the unique argmax
+    // (endemic pocket). Floor tracks the largest landmass so tiny test maps and
+    // 2400-cell worlds use the same rule.
+    constexpr int32_t kMinOriginEnvelope = 8;
+    constexpr int32_t kMinContinentCells = 8;
+    constexpr float kMinContinentShare = 0.18f;
+    const int32_t continent_floor = std::max(
+        kMinContinentCells,
+        int32_t(std::lround(float(largest_land) * kMinContinentShare)));
 
     std::vector<int32_t> candidates;
     candidates.reserve(size_t(n));
-    std::vector<int32_t> origin_weight(size_t(max_province + 1), 0);
-    std::vector<int32_t> origin_best(size_t(max_province + 1), -1);
-    std::vector<int32_t> dist;
-    std::vector<int32_t> queue;
+    std::vector<int32_t> origin_weight(size_t(max_landmass + 1), 0);
+    std::vector<int32_t> origin_best(size_t(max_landmass + 1), -1);
+    std::vector<uint8_t> seed_lm(size_t(max_landmass + 1), 0);
+    PackedInt32Array envelope_counts;
+    PackedInt32Array origin_envelope_counts;
+    PackedInt32Array occupied_counts;
+    PackedInt32Array origin_landmasses;
+    PackedInt32Array seeded_landmass_counts;
+    envelope_counts.resize(sp.count);
+    origin_envelope_counts.resize(sp.count);
+    occupied_counts.resize(sp.count);
+    origin_landmasses.resize(sp.count);
+    seeded_landmass_counts.resize(sp.count);
+    int32_t *envelope_n = envelope_counts.ptrw();
+    int32_t *origin_envelope_n = origin_envelope_counts.ptrw();
+    int32_t *occupied_n = occupied_counts.ptrw();
+    int32_t *origin_ids = origin_landmasses.ptrw();
+    int32_t *seeded_n = seeded_landmass_counts.ptrw();
+    std::memset(envelope_n, 0, size_t(sp.count) * sizeof(int32_t));
+    std::memset(origin_envelope_n, 0, size_t(sp.count) * sizeof(int32_t));
+    std::memset(occupied_n, 0, size_t(sp.count) * sizeof(int32_t));
+    std::memset(origin_ids, 0, size_t(sp.count) * sizeof(int32_t));
+    std::memset(seeded_n, 0, size_t(sp.count) * sizeof(int32_t));
 
     for (int s = 0; s < sp.count; ++s) {
         const int32_t bit = sp.bits[s];
         if (bit < 0 || bit >= 32) continue;
         candidates.clear();
-        origin_weight.assign(size_t(max_province + 1), 0);
-        origin_best.assign(size_t(max_province + 1), -1);
+        origin_weight.assign(size_t(max_landmass + 1), 0);
+        origin_best.assign(size_t(max_landmass + 1), -1);
+        seed_lm.assign(size_t(max_landmass + 1), 0);
         for (int cell = 0; cell < n; ++cell) {
             if (!envelope_ok(cell, s, sp, water, veg, lf, river, temp, moist, elev))
                 continue;
             if (!carrier_ok(cell, s, sp, reserves)) continue;
-            const int32_t pid = province[cell];
-            if (pid <= 0) continue;
+            const int32_t lid = landmass[cell];
+            if (lid <= 0) continue;
             candidates.push_back(cell);
-            origin_weight[size_t(pid)] += 1;
-            const int32_t prev = origin_best[size_t(pid)];
+            origin_weight[size_t(lid)] += 1;
+            const int32_t prev = origin_best[size_t(lid)];
             if (prev < 0) {
-                origin_best[size_t(pid)] = cell;
+                origin_best[size_t(lid)] = cell;
             } else {
                 const float prev_fit = 1.0f - std::abs(
                     temp[prev] - 0.5f * (sp.temp_lo[s] + sp.temp_hi[s]));
                 const float cur_fit = 1.0f - std::abs(
                     temp[cell] - 0.5f * (sp.temp_lo[s] + sp.temp_hi[s]));
-                if (cur_fit > prev_fit) origin_best[size_t(pid)] = cell;
+                if (cur_fit > prev_fit) origin_best[size_t(lid)] = cell;
             }
         }
-        uint32_t total = 0;
-        for (int32_t w : origin_weight) total += uint32_t(std::max(w, 0));
-        if (total == 0) continue;
+        envelope_n[s] = int32_t(candidates.size());
+        int32_t best_w = 0;
+        for (int32_t lid = 1; lid <= max_landmass; ++lid)
+            best_w = std::max(best_w, origin_weight[size_t(lid)]);
+        if (best_w <= 0) continue;
+        uint32_t tie_n = 0;
+        for (int32_t lid = 1; lid <= max_landmass; ++lid) {
+            if (origin_weight[size_t(lid)] == best_w) tie_n += 1;
+        }
         const uint32_t pick = uint32_t(
             (uint64_t(bio_hash(uint32_t(seed), uint32_t(s + 1), 0xC0FFEEu)) *
-             uint64_t(total)) >> 32);
-        uint32_t acc = 0;
-        int32_t origin_province = 0;
-        for (int32_t pid = 1; pid <= max_province; ++pid) {
-            if (origin_weight[size_t(pid)] <= 0) continue;
-            acc += uint32_t(origin_weight[size_t(pid)]);
-            if (pick < acc) {
-                origin_province = pid;
+             uint64_t(tie_n)) >> 32);
+        uint32_t seen = 0;
+        int32_t origin_landmass = 0;
+        for (int32_t lid = 1; lid <= max_landmass; ++lid) {
+            if (origin_weight[size_t(lid)] != best_w) continue;
+            if (seen == pick) {
+                origin_landmass = lid;
                 break;
             }
+            seen += 1;
         }
-        if (origin_province <= 0) continue;
-        const int32_t origin = origin_best[size_t(origin_province)];
-        if (origin < 0) continue;
-        occ[origin] |= (1 << bit);
-        dist.assign(size_t(n), -1);
-        queue.clear();
-        queue.push_back(origin);
-        dist[size_t(origin)] = 0;
-        const int32_t cap = std::max(1, sp.max_cost[s]);
-        size_t head = 0;
-        while (head < queue.size()) {
-            const int32_t cur = queue[head++];
-            const int32_t base = cur * 6;
-            for (int d = 0; d < 6; ++d) {
-                const int32_t nxt = nb[base + d];
-                if (nxt < 0 || nxt >= n || dist[size_t(nxt)] >= 0) continue;
-                if (province[nxt] != origin_province) continue;
-                if (!envelope_ok(nxt, s, sp, water, veg, lf, river, temp, moist, elev))
-                    continue;
-                if (!carrier_ok(nxt, s, sp, reserves)) continue;
-                const int32_t step = traversal_cost(lf[nxt], veg[nxt], water[nxt]);
-                const int32_t next_cost = dist[size_t(cur)] + step;
-                if (next_cost > cap) continue;
-                dist[size_t(nxt)] = next_cost;
-                queue.push_back(nxt);
-                if (bio_unit(bio_hash(uint32_t(seed), uint32_t(s + 17), uint32_t(nxt))) <
-                    sp.fill_keep[s]) {
-                    occ[nxt] |= (1 << bit);
-                }
-            }
+        if (origin_landmass <= 0) continue;
+        origin_ids[s] = origin_landmass;
+        origin_envelope_n[s] = origin_weight[size_t(origin_landmass)];
+        int32_t seeded = 0;
+        for (int32_t lid = 1; lid <= max_landmass; ++lid) {
+            const int32_t w = origin_weight[size_t(lid)];
+            if (w <= 0) continue;
+            const bool primary = lid == origin_landmass;
+            const bool continent = landmass_size[size_t(lid)] >= continent_floor;
+            const bool stand = w >= kMinOriginEnvelope;
+            if (!primary && !(continent && stand)) continue;
+            seed_lm[size_t(lid)] = 1;
+            seeded += 1;
         }
+        seeded_n[s] = seeded;
+        int32_t occupied = 0;
+        for (int32_t cell : candidates) {
+            const int32_t lid = landmass[cell];
+            if (lid <= 0 || seed_lm[size_t(lid)] == 0) continue;
+            const int32_t origin = origin_best[size_t(lid)];
+            const float keep = origin_weight[size_t(lid)] < kMinOriginEnvelope
+                ? 1.0f : sp.fill_keep[s];
+            const bool keep_cell = cell == origin ||
+                bio_unit(bio_hash(uint32_t(seed), uint32_t(s + 17), uint32_t(cell))) < keep;
+            if (!keep_cell) continue;
+            occ[cell] |= (1 << bit);
+            occupied += 1;
+        }
+        occupied_n[s] = occupied;
     }
 
     out["ok"] = true;
     out["path"] = String("gdext");
     out["occupancy_bits"] = occupancy;
+    out["envelope_cell_counts"] = envelope_counts;
+    out["origin_envelope_cell_counts"] = origin_envelope_counts;
+    out["occupied_cell_counts"] = occupied_counts;
+    out["origin_landmass_ids"] = origin_landmasses;
+    out["seeded_landmass_counts"] = seeded_landmass_counts;
     return out;
 }
 
@@ -643,8 +714,7 @@ Dictionary DCWorldExt::run_bio_occupancy_pass(const Dictionary &knobs) {
             if (bit < 0 || bit >= 32) continue;
             const int32_t mask = 1 << bit;
             if ((bits & mask) == 0) continue;
-            if (!envelope_ok(cell, s, sp, water, veg, lf, river, temp, moist, elev) ||
-                !carrier_ok(cell, s, sp, reserves)) {
+            if (!persist_ok(cell, s, sp, water, temp, moist, elev)) {
                 bits &= ~mask;
             }
         }

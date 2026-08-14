@@ -28,9 +28,11 @@ Current baseline:
 - Rivers, lakes and wetlands publish `landform.freshwater_access`; there is no
   `resource.freshwater` deposit. Keep hydrology evidence separate from extractable
   `freshwater_fish` and other `ResourceProfile` entries.
-- Map occupancy (`cell.bio_occupancy_bits`) answers “what lives here now” and is gated by
-  climate envelope, reachable province, and carrier reserve (`pasture` / `wild_game` /
-  `arable_land` / `paddy_land` / `plantation_land`). Country research signals answer “has this
+- Map occupancy (`cell.bio_occupancy_bits`) answers “what lives here now”. Generation seeds each
+  species on every continent-scale landmass that has a biome-scale climate envelope and carrier
+  reserve (`pasture` / `wild_game` / `arable_land` / `paddy_land` / `plantation_land`). Satellite
+  islets are skipped unless they are the unique argmax endemic pocket. Runtime neighbor diffusion
+  stays inside a province. Country research signals answer “has this
   country seen it”; extinction does not revoke evidence. Inspector local species read occupancy;
   `SIGNAL_PRESENT` / `SIGNAL_COUNT` and start-location routes read country knowledge.
 - `tech.early_trade` is a zero-cost regional-start node revealed by visible natural gold or silver.

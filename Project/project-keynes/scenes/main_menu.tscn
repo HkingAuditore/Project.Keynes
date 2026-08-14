@@ -198,6 +198,22 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
+[node name="LayoutField" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Body"]
+layout_mode = 2
+theme_override_constants/separation = 6
+[node name="Label" type="Label" parent="PageMargin/PageStack/NewGamePage/Body/LayoutField"]
+layout_mode = 2
+text = "陆地布局"
+[node name="LayoutOption" type="OptionButton" parent="PageMargin/PageStack/NewGamePage/Body/LayoutField"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "决定大陆块数与海洋分隔，而不是只改地图尺寸。"
+[node name="LayoutHint" type="Label" parent="PageMargin/PageStack/NewGamePage/Body/LayoutField"]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 3
+text = "两块被海洋隔开的主陆，适合对峙与跨海接触。"
+
 [node name="AdvancedButton" type="Button" parent="PageMargin/PageStack/NewGamePage/Body"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 38)

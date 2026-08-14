@@ -15,7 +15,12 @@ metadata to move configuration between scenes.
 are `country`, `base`, `world_controls`, `climate`, and `research`. The
 `country.foreign_count` field is persisted with range `0..12` and default `5`;
 v2 loads migrate to `0` so existing saves retain their single-country opening.
-Always validate through
+`base.land_layout` is a player-facing preset id (`single` / `two` / `multiple` /
+`archipelago` / `custom`). Named presets write `num_continents`, `continent_size`,
+`sea_level`, plus `world_controls.continent_spacing` and `island_amount`; the
+default is `two`, sized so the two cores stay separated instead of merging into
+one Pangaea. Missing or unknown ids validate as `custom` and keep the stored
+numeric knobs. Always validate through
 `validate()` or `from_dictionary()` before generation. The resolved nonzero
 seed, including a UI-generated random seed, is the value stored in PKSV.
 

@@ -24,11 +24,14 @@ const MAP_PRESETS := [
 @onready var _size_option: OptionButton = %SizeOption
 @onready var _width_box: SpinBox = %WidthBox
 @onready var _height_box: SpinBox = %HeightBox
+@onready var _layout_option: OptionButton = %LayoutOption
+@onready var _layout_hint: Label = %LayoutHint
 @onready var _advanced_grid: GridContainer = %AdvancedGrid
 @onready var _load_slots: VBoxContainer = %LoadSlots
 
 var _advanced_controls: Dictionary = {}
 var _settings_controls: Dictionary = {}
+var _layout_syncing := false
 
 
 func _ready() -> void:
@@ -74,13 +77,20 @@ func _configure_new_game_form() -> void:
 	_configure_dimension_box(_width_box, 10, DCFeatureFlags.max_map_width(), 60)
 	_configure_dimension_box(_height_box, 8, DCFeatureFlags.max_map_height(), 40)
 	_set_custom_size_enabled(false)
+	_configure_land_layout_options()
 	_add_advanced_spin("大陆数量", "num_continents", 1, 8, 2)
-	_add_advanced_spin("大陆规模", "continent_size", 0.2, 0.9, 0.9, 0.01)
-	_add_advanced_spin("海平面", "sea_level", 0.1, 0.8, 0.42, 0.01)
+	_add_advanced_spin("大陆规模", "continent_size", 0.2, 0.9, 0.50, 0.01)
+	_add_advanced_spin("海平面", "sea_level", 0.1, 0.8, 0.50, 0.01)
+	_add_advanced_spin("大陆分散度", "continent_spacing", 0, 100, 92)
+	_add_advanced_spin("岛屿数量", "island_amount", 0, 100, 38)
 	_add_advanced_spin("湿润程度", "wetness", 0, 100, 55)
 	_add_advanced_spin("湖泊密度", "lake_density", 0, 100, 45)
 	_add_advanced_spin("河流密度", "river_density", 0, 100, 55)
 	_add_advanced_spin("火山数量", "volcano_amount", 0, 100, 40)
+	for key in ["num_continents", "continent_size", "sea_level", "continent_spacing", "island_amount"]:
+		(_advanced_controls[key] as SpinBox).value_changed.connect(
+			func(_value: float) -> void: _on_layout_spin_changed())
+	_apply_land_layout(NewGameConfig.DEFAULT_LAND_LAYOUT)
 
 
 func _bind_settings_controls() -> void:
@@ -108,6 +118,7 @@ func _connect_static_actions() -> void:
 	%RandomSeedButton.pressed.connect(func() -> void: _seed_box.value = NewGameConfig.random_seed())
 	%AdvancedButton.toggled.connect(func(open: bool) -> void: _advanced_grid.visible = open)
 	_size_option.item_selected.connect(_on_size_preset_selected)
+	_layout_option.item_selected.connect(_on_land_layout_selected)
 	for entry in [
 		[%NewGameButton, "新游戏", "plus", 18],
 		[%LoadGameButton, "加载游戏", "history", 18],
@@ -286,6 +297,81 @@ func _on_size_preset_selected(index: int) -> void:
 		_height_box.value = map_size.y
 
 
+func _configure_land_layout_options() -> void:
+	_layout_option.clear()
+	_layout_hint.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
+	_layout_hint.add_theme_font_size_override("font_size", UITokens.FONT_SMALL)
+	for index in range(NewGameConfig.LAND_LAYOUT_PRESETS.size()):
+		var preset: Dictionary = NewGameConfig.LAND_LAYOUT_PRESETS[index]
+		_layout_option.add_item(String(preset.get("label", "")))
+		_layout_option.set_item_metadata(index, String(preset.get("id", "")))
+		_layout_option.set_item_tooltip(index, String(preset.get("hint", "")))
+	_layout_option.select(NewGameConfig.land_layout_index(NewGameConfig.DEFAULT_LAND_LAYOUT))
+	_refresh_layout_hint()
+
+
+func _on_land_layout_selected(index: int) -> void:
+	if _layout_syncing:
+		return
+	var layout_id := String(_layout_option.get_item_metadata(index))
+	_apply_land_layout(layout_id)
+
+
+func _apply_land_layout(layout_id: String) -> void:
+	var preset := NewGameConfig.land_layout_by_id(layout_id)
+	if preset.is_empty():
+		return
+	_layout_syncing = true
+	if String(preset.get("id", "")) != NewGameConfig.CUSTOM_LAND_LAYOUT:
+		(_advanced_controls.num_continents as SpinBox).value = int(preset.get("num_continents", 2))
+		(_advanced_controls.continent_size as SpinBox).value = float(preset.get("continent_size", 0.50))
+		(_advanced_controls.sea_level as SpinBox).value = float(preset.get("sea_level", 0.50))
+		(_advanced_controls.continent_spacing as SpinBox).value = int(preset.get("continent_spacing", 55))
+		(_advanced_controls.island_amount as SpinBox).value = int(preset.get("island_amount", 50))
+	var select_index := NewGameConfig.land_layout_index(String(preset.get("id", NewGameConfig.CUSTOM_LAND_LAYOUT)))
+	if _layout_option.selected != select_index:
+		_layout_option.select(select_index)
+	_layout_syncing = false
+	_refresh_layout_hint()
+
+
+func _on_layout_spin_changed() -> void:
+	if _layout_syncing:
+		return
+	var matched := _matched_land_layout_id()
+	var select_index := NewGameConfig.land_layout_index(matched)
+	if _layout_option.selected != select_index:
+		_layout_option.select(select_index)
+	_refresh_layout_hint()
+
+
+func _matched_land_layout_id() -> String:
+	for preset in NewGameConfig.LAND_LAYOUT_PRESETS:
+		var layout: Dictionary = preset
+		if String(layout.get("id", "")) == NewGameConfig.CUSTOM_LAND_LAYOUT:
+			continue
+		if int((_advanced_controls.num_continents as SpinBox).value) != int(layout.get("num_continents", 0)):
+			continue
+		if not is_equal_approx(float((_advanced_controls.continent_size as SpinBox).value),
+				float(layout.get("continent_size", 0.0))):
+			continue
+		if not is_equal_approx(float((_advanced_controls.sea_level as SpinBox).value),
+				float(layout.get("sea_level", 0.0))):
+			continue
+		if int((_advanced_controls.continent_spacing as SpinBox).value) != int(layout.get("continent_spacing", 0)):
+			continue
+		if int((_advanced_controls.island_amount as SpinBox).value) != int(layout.get("island_amount", 0)):
+			continue
+		return String(layout.get("id", NewGameConfig.CUSTOM_LAND_LAYOUT))
+	return NewGameConfig.CUSTOM_LAND_LAYOUT
+
+
+func _refresh_layout_hint() -> void:
+	var layout_id := String(_layout_option.get_item_metadata(_layout_option.selected))
+	var preset := NewGameConfig.land_layout_by_id(layout_id)
+	_layout_hint.text = String(preset.get("hint", ""))
+
+
 func _set_custom_size_enabled(enabled: bool) -> void:
 	_width_box.editable = enabled
 	_height_box.editable = enabled
@@ -298,10 +384,13 @@ func _start_new_game() -> void:
 	config.base.map_width = int(_width_box.value)
 	config.base.map_height = int(_height_box.value)
 	config.base.initial_seed = int(_seed_box.value)
+	config.base.land_layout = String(_layout_option.get_item_metadata(_layout_option.selected))
 	config.base.num_continents = int((_advanced_controls.num_continents as SpinBox).value)
 	config.base.continent_size = float((_advanced_controls.continent_size as SpinBox).value)
 	config.base.sea_level = float((_advanced_controls.sea_level as SpinBox).value)
 	config.world_controls = {
+		"continent_spacing": int((_advanced_controls.continent_spacing as SpinBox).value),
+		"island_amount": int((_advanced_controls.island_amount as SpinBox).value),
 		"wetness": int((_advanced_controls.wetness as SpinBox).value),
 		"lake_density": int((_advanced_controls.lake_density as SpinBox).value),
 		"river_density": int((_advanced_controls.river_density as SpinBox).value),

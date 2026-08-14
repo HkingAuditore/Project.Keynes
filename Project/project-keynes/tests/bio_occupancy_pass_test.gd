@@ -1,7 +1,8 @@
 extends SceneTree
 
 # bio_occupancy_pass_test.gd
-# 生物占领 / 科学区划：陆块隔离、承载门控、信封内空白、局部灭绝不产出撤销、农业引种绕过省界。
+# 生物占领 / 科学区划：大陆级陆块各自播种、卫星岛跳过、信封填充、承载门控、
+# 信封内空白、已占领格气候余量持久化、农业引种绕过省界。
 #
 # Headless:
 #   godot --headless --script tests/bio_occupancy_pass_test.gd --quit
@@ -72,7 +73,10 @@ func _test_native_passes() -> void:
 	if not landform_csr:
 		return
 	_test_landmass_isolation_and_gaps(ext)
-	_test_carrier_extinction_and_introduce(ext)
+	_test_origin_picks_largest_envelope(ext)
+	_test_origin_landmass_fills_distant_envelope(ext)
+	_test_cold_and_dry_endemic_envelopes(ext)
+	_test_occupancy_persistence_and_introduce(ext)
 
 
 func _test_landform_csr_excludes_bio(ext) -> bool:
@@ -150,6 +154,7 @@ func _test_landmass_isolation_and_gaps(ext) -> void:
 		int(landmass[land_a[0]]) != int(landmass[land_b[0]]) \
 		and int(landmass[land_a[0]]) > 0 and int(landmass[land_b[0]]) > 0)
 	knobs["province_ids"] = provinces
+	knobs["landmass_ids"] = landmass
 	knobs["seed"] = 42
 	var seed_res: Dictionary = ext.run_bio_seed_pass(knobs)
 	_expect("seed pass ok", bool(seed_res.get("ok", false)))
@@ -171,12 +176,254 @@ func _test_landmass_isolation_and_gaps(ext) -> void:
 			count_b += 1
 		else:
 			envelope_empty += 1
-	_expect("maize occupies exactly one origin landmass",
-		(count_a > 0 and count_b == 0) or (count_b > 0 and count_a == 0))
+	_expect("maize occupies both continent-scale landmasses", count_a > 0 and count_b > 0)
+	_expect("each continent maize stand is biome-scale", count_a >= 2 and count_b >= 2)
 	_expect("envelope keeps unoccupied cells", envelope_empty > 0)
+	var seeded: PackedInt32Array = seed_res.get("seeded_landmass_counts", PackedInt32Array())
+	_expect("two-continent seed reports both landmasses",
+		seeded.size() > 0 and int(seeded[0]) >= 2)
 
 
-func _test_carrier_extinction_and_introduce(ext) -> void:
+func _test_origin_picks_largest_envelope(ext) -> void:
+	var width := 18
+	var height := 3
+	var map := MapData.new(width, height)
+	for row in range(height):
+		for col in range(width):
+			var cube := HexUtils.offset_to_cube(col, row)
+			map.set_cell(HexCell.new(cube.x, cube.y))
+	map._build_indices()
+	map._alloc_soa(map.cell_count())
+	for cell in range(map.cell_count()):
+		var hex: HexCell = map.cell_at(cell)
+		var off := HexUtils.cube_to_offset(hex.q, hex.r)
+		var water := off.x == 0 or (off.x >= 10 and off.x <= 15) or off.x == width - 1
+		map.is_water_arr[cell] = 1 if water else 0
+		map.terrain_arr[cell] = TerrainType.TERRAIN.OCEAN if water else TerrainType.TERRAIN.PLAIN
+		map.landform_arr[cell] = LandformType.LF.OCEAN if water else LandformType.LF.PLAIN
+		map.vegetation_arr[cell] = VegetationType.VEG.NONE if water else VegetationType.VEG.TEMPERATE_GRASSLAND
+		map.temp_arr[cell] = 0.55
+		map.moisture_arr[cell] = 0.55
+		map.elevation_arr[cell] = 0.20
+		map.has_river_arr[cell] = 0
+		map.has_volcano_arr[cell] = 0
+		map.res_arable_land_reserve_arr[cell] = 0.0 if water else 80.0
+		map.res_pasture_reserve_arr[cell] = 0.0 if water else 80.0
+		map.res_paddy_land_reserve_arr[cell] = 0.0
+		map.res_plantation_land_reserve_arr[cell] = 0.0
+		map.res_wild_game_reserve_arr[cell] = 0.0
+		map.explored_arr[cell] = 0
+	var knobs := _species_knobs(map, PackedStringArray(["bio.wheat"]))
+	knobs["width"] = map.width
+	knobs["height"] = map.height
+	var province_res: Dictionary = ext.run_bio_province_pass(knobs)
+	_expect("unequal-landmass province pass ok", bool(province_res.get("ok", false)))
+	if not bool(province_res.get("ok", false)):
+		return
+	var landmass: PackedInt32Array = province_res.get("landmass_ids", PackedInt32Array())
+	knobs["province_ids"] = province_res.get("province_ids", PackedInt32Array())
+	knobs["landmass_ids"] = landmass
+	knobs["seed"] = 99
+	var seed_res: Dictionary = ext.run_bio_seed_pass(knobs)
+	_expect("unequal-landmass seed pass ok", bool(seed_res.get("ok", false)))
+	if not bool(seed_res.get("ok", false)):
+		return
+	var occupancy: PackedInt32Array = seed_res.get("occupancy_bits", PackedInt32Array())
+	var catalog: Dictionary = ResearchSignalCatalog.compile_native_catalog()
+	var wheat_bit := ResearchSignalCatalog.occupancy_bit_for_signal(catalog, &"bio.wheat")
+	var left_n := 0
+	var right_n := 0
+	for cell in range(map.cell_count()):
+		if map.is_water_arr[cell] != 0:
+			continue
+		var hex: HexCell = map.cell_at(cell)
+		var col := int(HexUtils.cube_to_offset(hex.q, hex.r).x)
+		if (int(occupancy[cell]) & (1 << wheat_bit)) == 0:
+			continue
+		if col <= 9:
+			left_n += 1
+		else:
+			right_n += 1
+	_expect("wheat occupies the continent-scale landmass", left_n >= 6)
+	_expect("satellite islet does not receive wheat", right_n == 0)
+	var seeded: PackedInt32Array = seed_res.get("seeded_landmass_counts", PackedInt32Array())
+	_expect("satellite seed reports one landmass", seeded.size() > 0 and int(seeded[0]) == 1)
+
+
+func _test_origin_landmass_fills_distant_envelope(ext) -> void:
+	var width := 28
+	var height := 3
+	var map := MapData.new(width, height)
+	for row in range(height):
+		for col in range(width):
+			var cube := HexUtils.offset_to_cube(col, row)
+			map.set_cell(HexCell.new(cube.x, cube.y))
+	map._build_indices()
+	map._alloc_soa(map.cell_count())
+	for cell in range(map.cell_count()):
+		var hex: HexCell = map.cell_at(cell)
+		var off := HexUtils.cube_to_offset(hex.q, hex.r)
+		var water := off.x == 0 or off.x == width - 1
+		map.is_water_arr[cell] = 1 if water else 0
+		map.terrain_arr[cell] = TerrainType.TERRAIN.OCEAN if water else TerrainType.TERRAIN.PLAIN
+		map.landform_arr[cell] = LandformType.LF.OCEAN if water else LandformType.LF.PLAIN
+		map.vegetation_arr[cell] = VegetationType.VEG.NONE if water else VegetationType.VEG.TEMPERATE_GRASSLAND
+		map.temp_arr[cell] = 0.50
+		map.moisture_arr[cell] = 0.50
+		map.elevation_arr[cell] = 0.20
+		map.has_river_arr[cell] = 1 if not water and off.y == 1 else 0
+		map.has_volcano_arr[cell] = 0
+		map.res_arable_land_reserve_arr[cell] = 0.0 if water else 80.0
+		map.res_pasture_reserve_arr[cell] = 0.0
+		map.res_paddy_land_reserve_arr[cell] = 0.0
+		map.res_plantation_land_reserve_arr[cell] = 0.0
+		map.res_wild_game_reserve_arr[cell] = 0.0
+		map.explored_arr[cell] = 0
+	var knobs := _species_knobs(map, PackedStringArray(["bio.wheat", "bio.rice", "bio.reed"]))
+	knobs["width"] = map.width
+	knobs["height"] = map.height
+	var province_res: Dictionary = ext.run_bio_province_pass(knobs)
+	_expect("long-strip province pass ok", bool(province_res.get("ok", false)))
+	if not bool(province_res.get("ok", false)):
+		return
+	knobs["province_ids"] = province_res.get("province_ids", PackedInt32Array())
+	knobs["landmass_ids"] = province_res.get("landmass_ids", PackedInt32Array())
+	knobs["seed"] = 7
+	var seed_res: Dictionary = ext.run_bio_seed_pass(knobs)
+	_expect("long-strip seed pass ok", bool(seed_res.get("ok", false)))
+	if not bool(seed_res.get("ok", false)):
+		return
+	var occupancy: PackedInt32Array = seed_res.get("occupancy_bits", PackedInt32Array())
+	var catalog: Dictionary = ResearchSignalCatalog.compile_native_catalog()
+	var wheat_bit := ResearchSignalCatalog.occupancy_bit_for_signal(catalog, &"bio.wheat")
+	var rice_bit := ResearchSignalCatalog.occupancy_bit_for_signal(catalog, &"bio.rice")
+	var reed_bit := ResearchSignalCatalog.occupancy_bit_for_signal(catalog, &"bio.reed")
+	var wheat_cols := PackedInt32Array()
+	var rice_count := 0
+	var reed_count := 0
+	for cell in range(map.cell_count()):
+		if map.is_water_arr[cell] != 0:
+			continue
+		var hex: HexCell = map.cell_at(cell)
+		var col := int(HexUtils.cube_to_offset(hex.q, hex.r).x)
+		if (int(occupancy[cell]) & (1 << wheat_bit)) != 0:
+			wheat_cols.append(col)
+		if (int(occupancy[cell]) & (1 << rice_bit)) != 0:
+			rice_count += 1
+		if (int(occupancy[cell]) & (1 << reed_bit)) != 0:
+			reed_count += 1
+	_expect("wheat occupies the long grassland belt", wheat_cols.size() >= 12)
+	if wheat_cols.is_empty():
+		_expect("wheat span is biome-scale, not a local disk", false)
+	else:
+		var lo := wheat_cols[0]
+		var hi := wheat_cols[0]
+		for col in wheat_cols:
+			lo = mini(lo, int(col))
+			hi = maxi(hi, int(col))
+		_expect("wheat span is biome-scale, not a local disk", hi - lo >= 16)
+	_expect("reeds occupy river cells without wetland vegetation", reed_count >= 8)
+	_expect("rice occupies river valleys without wetland vegetation", rice_count >= 8)
+
+
+func _test_cold_and_dry_endemic_envelopes(ext) -> void:
+	var width := 24
+	var height := 3
+	var map := MapData.new(width, height)
+	for row in range(height):
+		for col in range(width):
+			var cube := HexUtils.offset_to_cube(col, row)
+			map.set_cell(HexCell.new(cube.x, cube.y))
+	map._build_indices()
+	map._alloc_soa(map.cell_count())
+	for cell in range(map.cell_count()):
+		var hex: HexCell = map.cell_at(cell)
+		var off := HexUtils.cube_to_offset(hex.q, hex.r)
+		var water := off.x == 0 or off.x == width - 1
+		map.is_water_arr[cell] = 1 if water else 0
+		map.terrain_arr[cell] = TerrainType.TERRAIN.OCEAN if water else TerrainType.TERRAIN.PLAIN
+		map.landform_arr[cell] = LandformType.LF.OCEAN if water else LandformType.LF.PLAIN
+		map.has_river_arr[cell] = 0
+		map.has_volcano_arr[cell] = 0
+		map.res_arable_land_reserve_arr[cell] = 0.0
+		map.res_pasture_reserve_arr[cell] = 0.0
+		map.res_paddy_land_reserve_arr[cell] = 0.0
+		map.res_plantation_land_reserve_arr[cell] = 0.0
+		map.res_wild_game_reserve_arr[cell] = 0.0
+		map.explored_arr[cell] = 0
+		if water:
+			map.vegetation_arr[cell] = VegetationType.VEG.NONE
+			map.temp_arr[cell] = 0.50
+			map.moisture_arr[cell] = 0.50
+			map.elevation_arr[cell] = 0.0
+			continue
+		if off.x <= 8:
+			map.vegetation_arr[cell] = VegetationType.VEG.DESERT_SCRUB
+			map.temp_arr[cell] = 0.72
+			map.moisture_arr[cell] = 0.18
+			map.elevation_arr[cell] = 0.22
+		elif off.x <= 15:
+			map.vegetation_arr[cell] = VegetationType.VEG.TEMPERATE_GRASSLAND
+			map.temp_arr[cell] = 0.40
+			map.moisture_arr[cell] = 0.48
+			map.elevation_arr[cell] = 0.48
+			map.res_arable_land_reserve_arr[cell] = 80.0
+		else:
+			map.vegetation_arr[cell] = VegetationType.VEG.TUNDRA
+			map.temp_arr[cell] = 0.18
+			map.moisture_arr[cell] = 0.40
+			map.elevation_arr[cell] = 0.52
+	var knobs := _species_knobs(map, PackedStringArray(["bio.camel", "bio.potato", "bio.yak"]))
+	knobs["width"] = map.width
+	knobs["height"] = map.height
+	var province_res: Dictionary = ext.run_bio_province_pass(knobs)
+	_expect("endemic envelope province pass ok", bool(province_res.get("ok", false)))
+	if not bool(province_res.get("ok", false)):
+		return
+	knobs["province_ids"] = province_res.get("province_ids", PackedInt32Array())
+	knobs["landmass_ids"] = province_res.get("landmass_ids", PackedInt32Array())
+	knobs["seed"] = 11
+	var seed_res: Dictionary = ext.run_bio_seed_pass(knobs)
+	_expect("endemic envelope seed pass ok", bool(seed_res.get("ok", false)))
+	if not bool(seed_res.get("ok", false)):
+		return
+	var occupancy: PackedInt32Array = seed_res.get("occupancy_bits", PackedInt32Array())
+	var catalog: Dictionary = ResearchSignalCatalog.compile_native_catalog()
+	var camel_bit := ResearchSignalCatalog.occupancy_bit_for_signal(catalog, &"bio.camel")
+	var potato_bit := ResearchSignalCatalog.occupancy_bit_for_signal(catalog, &"bio.potato")
+	var yak_bit := ResearchSignalCatalog.occupancy_bit_for_signal(catalog, &"bio.yak")
+	var camel_n := 0
+	var potato_n := 0
+	var yak_n := 0
+	var camel_spill := 0
+	var potato_spill := 0
+	var yak_spill := 0
+	for cell in range(map.cell_count()):
+		if map.is_water_arr[cell] != 0:
+			continue
+		var hex: HexCell = map.cell_at(cell)
+		var col := int(HexUtils.cube_to_offset(hex.q, hex.r).x)
+		var has_camel := (int(occupancy[cell]) & (1 << camel_bit)) != 0
+		var has_potato := (int(occupancy[cell]) & (1 << potato_bit)) != 0
+		var has_yak := (int(occupancy[cell]) & (1 << yak_bit)) != 0
+		if has_camel:
+			camel_n += 1
+			if col > 8:
+				camel_spill += 1
+		if has_potato:
+			potato_n += 1
+			if col <= 8 or col > 15:
+				potato_spill += 1
+		if has_yak:
+			yak_n += 1
+			if col <= 15:
+				yak_spill += 1
+	_expect("camels stay in the dry belt", camel_n >= 4 and camel_spill == 0)
+	_expect("potatoes stay in cool highlands", potato_n >= 4 and potato_spill == 0)
+	_expect("yaks stay in cold highlands", yak_n >= 4 and yak_spill == 0)
+
+
+func _test_occupancy_persistence_and_introduce(ext) -> void:
 	var map := _make_two_continent_map()
 	var knobs := _species_knobs(map, PackedStringArray(["bio.sheep", "bio.maize"]))
 	var province_res: Dictionary = ext.run_bio_province_pass({
@@ -188,7 +435,7 @@ func _test_carrier_extinction_and_introduce(ext) -> void:
 		"neighbor_indices": map.neighbor_indices_packed(),
 	})
 	if not bool(province_res.get("ok", false)):
-		_expect("province for extinction test", false)
+		_expect("province for persistence test", false)
 		return
 	var catalog: Dictionary = ResearchSignalCatalog.compile_native_catalog()
 	var sheep_bit := ResearchSignalCatalog.occupancy_bit_for_signal(catalog, &"bio.sheep")
@@ -211,13 +458,32 @@ func _test_carrier_extinction_and_introduce(ext) -> void:
 	knobs["carrier_reserves"] = _refresh_carrier_columns(map, knobs)
 	knobs["run_diffusion"] = false
 	knobs["explored"] = map.explored_arr
-	var extinct: Dictionary = ext.run_bio_occupancy_pass(knobs)
-	_expect("extinction pass ok", bool(extinct.get("ok", false)))
-	var after: PackedInt32Array = extinct.get("occupancy_bits", PackedInt32Array())
+	var after_pasture: Dictionary = ext.run_bio_occupancy_pass(knobs)
+	_expect("persistence pass ok", bool(after_pasture.get("ok", false)))
+	var after: PackedInt32Array = after_pasture.get("occupancy_bits", PackedInt32Array())
 	if host >= 0 and after.size() == occupancy.size():
-		_expect("pasture zero clears sheep occupancy", (int(after[host]) & (1 << sheep_bit)) == 0)
-	var newly: PackedInt32Array = extinct.get("newly_occupied_cells", PackedInt32Array())
-	_expect("extinction does not emit discovery", newly.is_empty())
+		_expect("pasture zero does not instantly extinct established sheep",
+			(int(after[host]) & (1 << sheep_bit)) != 0)
+	_expect("carrier persistence does not emit discovery",
+		PackedInt32Array(after_pasture.get("newly_occupied_cells", PackedInt32Array())).is_empty())
+
+	map.vegetation_arr[host] = VegetationType.VEG.TROPICAL_RAINFOREST
+	knobs["vegetation"] = map.vegetation_arr
+	knobs["occupancy_bits"] = after if after.size() == occupancy.size() else occupancy
+	var after_veg: Dictionary = ext.run_bio_occupancy_pass(knobs)
+	after = after_veg.get("occupancy_bits", PackedInt32Array())
+	if host >= 0 and after.size() == occupancy.size():
+		_expect("vegetation succession does not extinct established sheep",
+			(int(after[host]) & (1 << sheep_bit)) != 0)
+
+	map.temp_arr[host] = 0.0
+	knobs["temperature"] = map.temp_arr
+	knobs["occupancy_bits"] = after if after.size() == occupancy.size() else occupancy
+	var after_climate: Dictionary = ext.run_bio_occupancy_pass(knobs)
+	after = after_climate.get("occupancy_bits", PackedInt32Array())
+	if host >= 0 and after.size() == occupancy.size():
+		_expect("hostile climate clears occupancy",
+			(int(after[host]) & (1 << sheep_bit)) == 0)
 
 	var intro_cell := -1
 	for cell in range(map.cell_count()):

@@ -1,10 +1,11 @@
 extends DCSystem
 class_name BioOccupancyDailySystem
 
-## Daily occupancy: local extinction and agricultural introduce every day;
-## neighbor diffusion on an internal cadence. Native authority is
-## `run_bio_occupancy_pass`. Country knowledge is submitted only for 0→1
-## occupancy on already-explored cells.
+## Daily occupancy: established stands persist unless climate leaves a margin
+## around the envelope (vegetation succession and carrier IMEX do not instantly
+## extinct). Agricultural introduce and neighbor diffusion still require the
+## strict envelope plus carrier. Native authority is `run_bio_occupancy_pass`.
+## Country knowledge is submitted only for 0→1 occupancy on explored cells.
 
 const _SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
 
@@ -29,6 +30,7 @@ func _init(p_generator, p_map: MapData, p_diffusion_stride: int = 8) -> void:
 func declare_reads() -> Array[StringName]:
 	return [
 		DCComponentIds.CELL_TEMP,
+		DCComponentIds.CELL_TEMP_30D,
 		DCComponentIds.CELL_MOISTURE,
 		DCComponentIds.CELL_ELEVATION,
 		DCComponentIds.CELL_VEGETATION,

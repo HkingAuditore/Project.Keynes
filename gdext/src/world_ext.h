@@ -509,7 +509,7 @@ public:
     // Static, generation-only research evidence. Input/output are packed arrays;
     // no MapData/Object access or per-cell Variant allocation occurs in the loop.
     godot::Dictionary run_research_signal_generation_pass(const godot::Dictionary &knobs);
-    // Landmass/province topology, origin+diffusion seed, and daily occupancy.
+    // Landmass/province topology, origin-landmass envelope seed, and daily occupancy.
     // Knobs in / packed arrays out; occupancy is the persisted presence bitset.
     godot::Dictionary run_bio_province_pass(const godot::Dictionary &knobs);
     godot::Dictionary run_bio_seed_pass(const godot::Dictionary &knobs);

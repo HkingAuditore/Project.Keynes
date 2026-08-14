@@ -123,16 +123,23 @@ generation-stamped 首触 shadow delta 计算增量 totals。PROBE 每日全量�
 writes only landform facts (`landform.*`) into cell-indexed CSR. It no longer stamps `bio.*` or
 screen-percentage Earth realms. After natural-resource bootstrap, `run_bio_province_pass` builds
 landmass and barrier provinces from hex neighbors, and `run_bio_seed_pass` places each catalog
-species from one origin province with cost-limited diffusion, envelope gaps, and carrier-reserve
-gating (`pasture` / `wild_game` / `arable_land` / `paddy_land` / `plantation_land`). Occupancy is
-`cell.bio_occupancy_bits` (DataCore I32 bitset, persisted with `dynamic_world`).
+species on **every continent-scale landmass** that has a biome-scale envelope+carrier stand
+(at least 8 suitable cells, and landmass size ≥ 18% of the largest landmass). The landmass with
+the most suitable cells is still recorded as the primary origin (ties broken by seed hash).
+Satellite islets that only hold a handful of cells are not seeded unless they are that unique
+argmax endemic pocket. Every envelope+carrier cell on a seeded landmass is eligible; `fill_keep`
+thins the stand. Runtime neighbor diffusion still cannot cross ocean.
+Carrier gating remains `pasture` / `wild_game` / `arable_land` / `paddy_land` / `plantation_land`.
+Occupancy is `cell.bio_occupancy_bits` (DataCore I32 bitset, persisted with `dynamic_world`).
 
-`bio_occupancy_daily` runs after climate and `natural_resource_daily`. It clears occupancy when the
-envelope or carrier reserve fails, applies same-province neighbor diffusion on a stride, and sets
-bits for local agricultural introduce (building output of mapped goods). Trade still publishes only
-`contact.*` knowledge. On first exploration, `WorldRuntimeHost` submits landform/resource CSR plus
-**current** occupancy bits. Occupancy 0→1 on an already-explored cell submits `DISCOVER` again.
-Local extinction does not revoke country evidence.
+`bio_occupancy_daily` runs after climate and `natural_resource_daily`. Established occupancy
+persists unless the cell is water or 30-day temperature / moisture / elevation leave a climate
+margin around the seed envelope (`kPersistClimateMargin`). Vegetation succession and carrier
+reserve IMEX do not instantly clear a stand. Same-province neighbor diffusion and agricultural
+introduce still require the strict envelope plus carrier. Trade still publishes only `contact.*`
+knowledge. On first exploration, `WorldRuntimeHost` submits landform/resource CSR plus **current**
+occupancy bits. Occupancy 0→1 on an already-explored cell submits `DISCOVER` again. Local
+extinction does not revoke country evidence.
 
 `MapGenerator` validates CSR shape and occupancy array length and publishes both to `MapData`.
 Runtime vegetation evolution and cover do not revoke knowledge.
@@ -323,7 +330,7 @@ relief（见下 “P0 relief”）。
 - **副热带干带加深并移序**：`moisture_subtropical_dry_strength 0.22→0.30`、`center 0.33→0.36`（width 0.18 不变），且从海岸 guard 之前移到之后生效——副热带海岸也能成**真荒漠**（base_moisture<0.2）；center 极移避免高斯尾触达赤道带（实测 0.30/0.20/0.33 时部分种子赤道林率跌破草率）。
 - **分类阈值按新分布再校准（`world_ext_internal.h` 三函数 + `map_generator.gd` 逐位镜像）**：真热带温度带 `t>0.66→0.80`（旧边界实测对应距赤道约 49°，把温带漏斗进热带干端）；JUNGLE/雨林湿门 `0.54→0.56`、whittaker 雨林门 `0.58→0.56` 对齐；亚热带 FOREST 湿门 `0.36→0.40`、暖温带 FOREST `0.55→0.48`（温带森林回归）；SAVANNA 湿端 MONSOON 门随 JUNGLE 边界同步 `0.54→0.56`；SEAGRASS 温度窗同步 `0.74→0.82` 上缘。
 - **验证硬指标（`tests/generation_zonal_moisture_test.gd`，3 种子 150×100，35 checks）**：赤道带(eq<0.2) bm 中位数 0.43-0.44 > 副热带带 0.08-0.19、副热带带存在 bm<0.2 格（每种子 900-1600 格真荒漠）、中纬带 > 副热带带、赤道核心森林系(46-61%) > 草原系(35-45%)、全图森林 33.7-35.5%、草原 26.2-27.1%、荒漠 6.0-9.8%。生产路径（WorldRuntimeHost，高地形种子）730 天 soak：草原系 47.9→36.8%、荒漠 0.1→4.7%、赤道核心 F55.6>G37.6、植被演替迁移 12.3%/2yr（修复前 0.7%/10.7yr），SAVANNA→季雨林链 83 格打通、gates 无需调参；瞬时湿度漂移 +0.058 为**蒸腾再循环平衡瞬态**（首 91 天 +0.086 后同季年际回落，非失控，森林格漂移最大 = donor 共位），timescale 分离后不影响 biome。工具：`tools/audit_veg_zonation.py`（输入 tile CSV 输出纬带审计 + 7 项硬指标核对）。赤道带残留的 TEMPERATE_STEPPE 经归因 57.5% 位于 elev>0.7 的高原格（东非高原式 elevation-cooled 分类，物理合理）。
-- **knob 键名单同步**：`climate_profile.gd`（@export + 注释）、`map_generator.gd::_native_generation_cfg_dict` 转发白名单、`main.gd::_GENERATION_KNOB_WHITELIST`、`new_game_config.gd::derive_climate` 与 `world_setup.gd` 的 wetness 滑条映射（仅 4 个 strength 类旋钮参与：itcz_wet 0.6-1.2 / stormtrack 0.3-0.7 / polar_dry 0.5-0.25 反向 / tropical_evap 0.6-1.4，保持"越湿越多林"单调；center/width/recycle/convergence 几何与机理旋钮不随滑条）。
+- **knob 键名单同步**：`climate_profile.gd`（@export + 注释）、`map_generator.gd::_native_generation_cfg_dict` 转发白名单、`main.gd::_GENERATION_KNOB_WHITELIST`、`new_game_config.gd::derive_climate`（玩家向 `world_controls` 的唯一派生点；`world_setup.gd` 直接调用它）。陆地布局预设写入 `continent_spacing` / `island_amount`，分别映射 `main_separation_factor` 与卫星岛/近海岛屿密度。wetness 滑条仍只动 4 个 strength 类旋钮（itcz_wet 0.6-1.2 / stormtrack 0.3-0.7 / polar_dry 0.5-0.25 反向 / tropical_evap 0.6-1.4），保持"越湿越多林"单调；center/width/recycle/convergence 几何与机理旋钮不随滑条。
 
 **大陆-海洋双峰测高(地台)模型（2026-06-26，权威高程模型）**：取代旧"径向穹顶"（`radial_raw = dist_field*(...)`，elev∝离大陆中心距离 → 大陆是穹顶、平原鼓、海岸只是缓坡无坡折）。新模型复现地球**双峰 hypsographic 曲线**：平坦大陆地台 + 平坦深海平原 + 又窄又陡的大陆坡折。位于 `run_native_world_generate_base_pass` 的 `// 1. coords + elevation` 循环内（C++ 唯一路径，无 GDScript 镜像）：
 - **大陆性 mask**：`cont = dist_field(线性 mask 种子) × PK_CONT_RADIAL_W + 大陆形状 fBm × PK_CONT_NOISE_W + offshore(岛)`，乘极地衰减 `(1 - edge_t × PK_POLAR_OCEAN)`，再 `C = smoothstep(THRESH±MARGIN, cont)` 锐化 → `MARGIN` 小则海陆过渡窄 = **大陆坡陡 = 海岸落差/法线强**。
@@ -885,10 +892,10 @@ Ocean land 算法概要：
 主要入口：
 
 - `DCWorldExt::run_bio_province_pass` / `run_bio_seed_pass` / `run_bio_occupancy_pass` — [`gdext/src/world_ext_bio.cpp`](../../gdext/src/world_ext_bio.cpp)
-- `map_generator.gd::_seed_bio_occupancy`（资源 bootstrap 之后一次：陆块+省+单起源扩散）
-- `BioOccupancyDailySystem`（`bio_occupancy_daily`，读取储量/气候，写 `cell.bio_occupancy_bits`；灭绝与引种当日生效，邻格扩散走内部 stride）— [`scripts/simulation/systems/bio_occupancy_daily_system.gd`](../../Project/project-keynes/scripts/simulation/systems/bio_occupancy_daily_system.gd)
+- `map_generator.gd::_seed_bio_occupancy`（资源 bootstrap 之后一次：陆块+省，再按大陆级陆块信封播撒）
+- `BioOccupancyDailySystem`（`bio_occupancy_daily`，写 `cell.bio_occupancy_bits`；已占领格用气候余量持久化，植被演替与承载日清不立刻灭绝；引种与同省扩散仍走严格信封+承载）— [`scripts/simulation/systems/bio_occupancy_daily_system.gd`](../../Project/project-keynes/scripts/simulation/systems/bio_occupancy_daily_system.gd)
 
-占领 ⊆ 气候信封 ∩ 可达省 ∩ 承载储量>ε。羊/牛/马等绑 `pasture`，猪绑 `wild_game`，玉米/小麦绑 `arable_land`，橡胶只绑 `plantation_land`。本格农业生产可绕过省界引种，但仍要信封和承载；跨邦贸易只发 `contact.*`。
+生成期占领 ⊆ 气候信封 ∩ 大陆级陆块 ∩ 承载储量>ε（卫星岛跳过，除非它是该物种唯一适生陆块）。广布物种走气候带；马铃薯走安第斯式中高海拔冷凉开敞带（不绑旱地承载，也不铺成温带作物），牦牛走更高更冷的高寒带，骆驼走干草原与荒漠。骆驼/牦牛/野生马铃薯可以不绑牧场或旱地承载。运行期邻格扩散仍限同省。羊/牛/马等绑 `pasture`，猪绑 `wild_game`，玉米/小麦绑 `arable_land`，橡胶只绑 `plantation_land`；承载只门控播种、扩散和引种，不门控已占领格的日持久化。本格农业生产可绕过省界引种，但仍要信封和承载；跨邦贸易只发 `contact.*`。
 
 **模型（统一 profile，可选线性或种群生态动态）**：普通资源每 tick、每 cell、每资源 r
 采用**半隐式（IMEX）积分** —— 把生成/衰减拆成「常数生产项 P」与「线性损失率 L」，
