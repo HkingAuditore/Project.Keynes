@@ -1229,11 +1229,12 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
             _command_batch.research_daily_budgets = _country_research_daily_budgets;
             _command_batch.research_deferred_points = _country_research_deferred_points;
         }
-        if (_command_batch.stage_signals) {
+        if (_command_batch.stage_research || _command_batch.stage_signals) {
             _command_batch.signals = _country_research_signals;
-            _command_batch.signal_cells = _country_research_signal_cells;
             _command_batch.signal_evidence = _country_research_signal_evidence;
         }
+        if (_command_batch.stage_signals)
+            _command_batch.signal_cells = _country_research_signal_cells;
         if (_command_batch.stage_tax) {
             _command_batch.tax_defaults = _country_tax_defaults;
             _command_batch.income_tax_overrides =
@@ -1485,6 +1486,7 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
             }
             if (!prerequisites_met(batch.technologies, slot, command.aux) ||
                 !research_condition_met(batch.technologies, batch.signals,
+                                        batch.signal_evidence,
                                         slot, command.aux)) {
                 error = "country_research_requirements_incomplete"; break;
             }
@@ -2646,14 +2648,21 @@ const NativeCountryRuntime::SignalEvidence *NativeCountryRuntime::find_signal_ev
 }
 
 int32_t NativeCountryRuntime::signal_count(int32_t slot, int32_t signal) const {
-    if (slot < 0 || slot >= static_cast<int32_t>(_country_research_signal_evidence.size())) return 0;
+    return signal_count(_country_research_signal_evidence, slot, signal);
+}
+
+int32_t NativeCountryRuntime::signal_count(
+        const std::vector<std::vector<SignalEvidence>> &evidence,
+        int32_t slot, int32_t signal) const {
+    if (slot < 0 || slot >= static_cast<int32_t>(evidence.size())) return 0;
     const SignalEvidence *entry = find_signal_evidence(
-        _country_research_signal_evidence[static_cast<size_t>(slot)], signal);
+        evidence[static_cast<size_t>(slot)], signal);
     return entry == nullptr ? 0 : entry->count;
 }
 
 bool NativeCountryRuntime::research_condition_met(const std::vector<uint64_t> &completed,
                                                    const std::vector<uint64_t> &signals,
+                                                   const std::vector<std::vector<SignalEvidence>> &evidence,
                                                    int32_t slot, int32_t technology) const {
     if (technology < 0 || technology >= static_cast<int32_t>(_technology_ids.size()) ||
         _technology_research_condition_offsets.empty()) return false;
@@ -2676,7 +2685,7 @@ bool NativeCountryRuntime::research_condition_met(const std::vector<uint64_t> &c
             stack[depth++] = signal_present(signals, slot, ref);
         } else if (op == 3) {
             if (depth >= static_cast<int32_t>(stack.size())) return false;
-            stack[depth++] = signal_count(slot, ref) >= value;
+            stack[depth++] = signal_count(evidence, slot, ref) >= value;
         } else if (op == 13) {
             if (depth < 1) return false;
             stack[static_cast<size_t>(depth - 1)] =
@@ -2698,6 +2707,7 @@ bool NativeCountryRuntime::research_condition_met(const std::vector<uint64_t> &c
 
 bool NativeCountryRuntime::research_condition_met(int32_t slot, int32_t technology) const {
     return research_condition_met(_country_technologies, _country_research_signals,
+                                  _country_research_signal_evidence,
                                   slot, technology);
 }
 

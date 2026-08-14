@@ -47,11 +47,11 @@ func _init() -> void:
 		PackedByteArray([0]), packet).get("ok", false)))
 	var handle := int(facade.cell_summary(0).country_handle)
 	_expect("discovery inspiration queues", bool(facade.discover_research_signal(
-		handle, &"bio.maize", 0, 1, 0, 1).get("ok", false))
+		handle, &"resource.arable_land", 0, 1, 0, 1).get("ok", false))
 		and bool(facade.discover_research_signal(
 			handle, &"landform.coast", 0, 1, 0, 2).get("ok", false))
 		and bool(facade.discover_research_signal(
-			handle, &"resource.clay", 0, 1, 0, 3).get("ok", false)))
+			handle, &"resource.silica_sand", 0, 1, 0, 3).get("ok", false)))
 	_expect("discovery inspiration commits", bool(ext.run_country_slice(
 		{"day_index": 0}).get("done", false)))
 	var revealed_snapshot: Dictionary = facade.research_snapshot(handle)
@@ -74,7 +74,7 @@ func _init() -> void:
 		and int(snapshot.technology_progress[composite]) == 3000
 		and int(snapshot.technology_points_stock) == 0
 		and int(snapshot.consumed_total) == 10000)
-	_expect("completed route prerequisites permit research",
+	_expect("completed core prerequisites permit research",
 		int(snapshot.technology_states[previous_maize]) == 5
 		and int(snapshot.technology_states[previous_maritime]) == 5
 		and int(snapshot.technology_progress[seasonal]) == 7000

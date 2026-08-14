@@ -259,6 +259,12 @@ double elapsed_ms(const Clock::time_point &start) {
 
 bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) {
     const auto started = Clock::now();
+    if (cell < 0 || cell >= _cell_count ||
+        _building_cell_offsets.size() != static_cast<size_t>(_cell_count + 1) ||
+        _labor_signals.cell_offsets.size() != static_cast<size_t>(_cell_count + 1)) {
+        error = "building_employment_restore_index_invalid";
+        return false;
+    }
     const int32_t begin = _building_cell_offsets[cell];
     const int32_t end = _building_cell_offsets[cell + 1];
     if (begin >= end) return true;

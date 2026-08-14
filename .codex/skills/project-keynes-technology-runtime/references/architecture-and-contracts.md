@@ -18,9 +18,9 @@ technology catalog and validates every `tech.*` reference. It must not invent ID
 Current baseline:
 
 - 361 definitions: 23 regional-start processing nodes and 338 researchable technologies.
-- 11 eras, four domains, four backbones, and sixteen specialist lanes.
-- Each era has exactly sixteen lane anchors and requires any five for its milestone.
-- Completed hard prerequisites are the sole research-eligibility gate.
+- 11 eras, four domains, four backbones, and twenty-four dynamic branch families.
+- Each era has exactly eight milestone candidates and requires any four.
+- Eligibility requires the previous milestone, every core prerequisite, and any one complete research route when routes exist.
 - Nonstone specialist anchors require the previous milestone and previous same-lane anchor;
   backbone anchors require the previous milestone.
 - Geography, resource, contact and practice evidence appears only in reveal-condition IR. It may
@@ -38,9 +38,9 @@ Current baseline:
 
 `Project/project-keynes/data/technology/technology_network.json` is the sole authoring source.
 `TechnologyCatalog` strictly parses it and remains the sole compiled/runtime authority. The authoring
-file includes explicit hard prerequisites, reveal conditions, Modifier terms, content bindings and
-the static visual edge kinds: hard, application, and milestone_candidate. `alternative` remains a
-recognized format value for compatibility but the current catalog emits none.
+file includes explicit hard prerequisites, reveal conditions, research routes, Modifier terms,
+content bindings and the static visual edge kinds: hard, alternative, application, and
+milestone_candidate. Alternative edges identify their route and are shown only for the selected node.
 
 Compilation produces stable-ID lookup, dense IDs in topological order, prerequisite/milestone and
 Modifier-term CSR, unique Effect recipe identity, route/condition IR, reverse unlock indices and public
@@ -205,7 +205,7 @@ Current versions:
 - PKCN v11: catalog/content/Trigger identity, all research/signal state, queues, policy, deferred stock,
   pending items, evidence provenance and counters.
 - PKEF v9: unique technology recipes, transactions/ACK and era-reward plans.
-- PKTR v4: Trigger accumulation and pending effects.
+- PKTR v5: Trigger accumulation, last development sample day, consecutive progress, and pending effects.
 - PKEC v34: procurement/practice state, technology-points market/in-transit state and audit baselines.
 
 Restore PKCN before PKEC. Reject old PKCN/PKEF/PKTR schemas and any related catalog identity change

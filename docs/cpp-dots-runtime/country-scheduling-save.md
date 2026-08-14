@@ -32,7 +32,7 @@ SoA staging、稀疏 cell delta、事件和 cursor 保留在 C++，通过真实�
 `TRANSFER_TERRITORY` 批次，使用直接稀疏发布快路径；混合命令或重复 cell 仍走通用 staging
 delta 的完整预检。纯领土批次不会复制其不可能修改的科技和国库矩阵。
 
-## PKCN v11 / PKEF v9 / PKTR v4 / PKEC v34
+## PKCN v11 / PKEF v9 / PKTR v5 / PKEC v34
 
 PKCN v11 保存时代奖励的最小 plan 引用和状态，完整 Alternative Offer Plan 位于
 PKEF v9。恢复先 PKCN 后 PKEF，并执行双向一致性审计；旧 PKCN 不做迁移。
@@ -55,7 +55,7 @@ identity 同时覆盖显式 Effect recipe/Modifier term IR，并混入 Trigger �
 生产方式、Resource 绑定摘要。恢复仍必须先 PKCN 后 PKEC；
 地块税务编译缓存不持久化，由 PKEC 恢复后的下一个经济 epoch 重建。
 
-PKEF v9 与 PKTR v4 分别严格验证 Effect program/recipe hash 和 Trigger definition hash；
+PKEF v9 与 PKTR v5 分别严格验证 Effect program/recipe hash 和 Trigger definition hash；
 旧 schema 或 hash 变化同样返回 `catalog_hash_mismatch`。完整 PKSV 因而不会用新科技目录
 恢复旧研究、突破累计或待 ACK 事务。
 

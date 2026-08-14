@@ -374,6 +374,10 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
                     NativeEconomyRuntime::GAMEPLAY_FACT_REPEATED_CROP_FAILURE) {
                 event_type = 11;
                 payload_schema = 9;
+            } else if (fact.kind ==
+                    NativeEconomyRuntime::GAMEPLAY_FACT_COUNTRY_DEVELOPMENT_METRIC) {
+                event_type = 17;
+                payload_schema = 10;
             }
             if (event_type == 0) continue;
             if (_emit_gameplay_event(day_index, 9, event_type, 1, fact.flags,

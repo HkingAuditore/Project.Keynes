@@ -481,6 +481,7 @@ bool NativeEconomyRuntime::publish_epoch_slice(
         }
         publish_social_pressure_facts();
         publish_technology_practice_facts();
+        publish_country_development_facts();
         _rolling_processed_cells = static_cast<int32_t>(_epoch_settlement_cells.size());
         _rolling_deferred_cells = std::max(
             0, _rolling_due_cells - _rolling_processed_cells);

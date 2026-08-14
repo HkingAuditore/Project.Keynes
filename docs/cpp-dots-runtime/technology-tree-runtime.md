@@ -27,12 +27,13 @@
 
 `ResearchSignalCatalog` is static content, not another runtime. It compiles stable signal IDs for
 Bio, resource, landform, weather and breakthrough observations. `TechnologyCatalog` compiles
-technology reveal conditions to postfix dense IR and includes that IR, the signal catalog, unique Effect
-recipe identity and explicit Modifier term IR in the technology catalog identity. `EconomyCatalog`
-adds the complete content-binding summary and Trigger definition identity before native country
-configuration. Research eligibility is evaluated in one order: persistent reveal, era
-`entry_milestone_id`, all `hard_prerequisite_ids`, then the nested `research_condition` expression.
-Player, AI and low-level enqueue commands share this native check.
+technology reveal conditions and each `research_routes[]` entry to independent postfix dense IR and
+includes that IR, the signal catalog, unique Effect recipe identity and explicit Modifier term IR in
+the technology catalog identity. `EconomyCatalog` adds the complete content-binding summary and
+Trigger definition identity before native country configuration. Research eligibility is evaluated as:
+era milestone completed AND every `hard_prerequisite_ids` completed AND (no route package OR one
+complete `research_routes[]` condition). Player, AI and low-level enqueue commands share this native
+check.
 
 The active reveal subset is `TECH_COMPLETED`, `SIGNAL_PRESENT`, `SIGNAL_COUNT`, `ALL_OF`, `ANY_OF`,
 `AT_LEAST`, and `NOT`. Signal predicates only discover/reveal nodes. Missing hard prerequisites keep
@@ -70,7 +71,7 @@ Inspector 认矿与科技树揭示分开：可见格（含无主地）只按观�
 淘金、芦苇和水利路线的揭示条件使用。它不是 `ResourceProfile`，也没有储量、采集或商品
 配方；实际可采集的水生自然资源只有 `freshwater_fish` 等明确资源条目。
 
-Temporary weather is only a fact. Economy publishes sparse committed practice facts; PKTR v4
+Temporary weather is only a fact. Economy publishes sparse committed practice facts; PKTR v5
 persists their threshold accumulation, and Effect issues idempotent `DISCOVER_COUNTRY_SIGNAL`
 commands for permanent `breakthrough.*` evidence while retaining the first practice cell.
 
@@ -87,16 +88,16 @@ idempotency key，不会重复发现。
 
 ## 目录
 
-当前 schema v2 目录包含 361 个保留稳定 ID 的定义：23 个只允许区域开局求解器授予的零成本原始
+当前 schema v3 目录包含 361 个保留稳定 ID 的定义：23 个只允许区域开局求解器授予的零成本原始
 处理节点，以及 338 个可研究节点，覆盖 11 个时代和农业、工程、科学、社会四领域。不存在全球
 统一开局科技。每时代里程碑严格使用 8 个显式候选中的任意 4 个；候选分组只用于 UI。里程碑不直接解锁
 Good、Resource、建筑或生产方式，只执行时代奖励 Effect 并开放下一时代。
 
 拓扑由四条公共主干与 24 个动态主题家族组成，不再要求每个家族每时代占一个槽位。时代门槛、
-揭示条件、无上限硬前置与替代研究条件分别编译；里程碑不再成为普通节点硬边。实践、接触、资源
-和地理证据负责揭示问题，`ANY_OF` / `AT_LEAST` 负责可替代知识路径，不能冒充硬知识链。
-当前目录有 544 条硬边、153 条替代科技证据边和 88 条里程碑候选边；74 个节点具有
-`research_condition`。每个动态主题家族至少有三个替代入口，其中至少一个同时使用科技与实践/
+揭示条件、303 条核心知识硬边与独立研究路线分别编译；里程碑不再成为普通节点硬边。实践、接触、资源
+和地理证据负责揭示问题，路线内的 `ANY_OF` / `AT_LEAST` 负责不同解决能力，不能冒充核心知识。
+当前目录有 303 条硬边、621 条研究路线、698 条替代可视边和 88 条里程碑候选边；没有
+authoring-side `research_condition`。每个王国时代以后非豁免节点至少有两条类型不同的路线，其中至少一条同时使用科技与发展/实践
 环境信号；最大硬入度 6 只是当前内容结果，运行时和 schema 均不设置上限。显式应用关系独立保存，
 不再从数组相邻项或同车道自动生成。
 
@@ -124,7 +125,7 @@ Good、Resource、建筑或生产方式，只执行时代奖励 Effect 并开放
 交换骨干的入口。每个正式新游戏国家都必须在本地路线闭包中获得该科技并预建一座早期商栈。
 
 目录编译器为每项科技生成唯一 Effect recipe、唯一永久 Modifier definition、显式 Modifier
-term CSR、路线标签、研究条件 postfix IR、prerequisite CSR、milestone-candidate CSR、反向
+term CSR、路线标签、每路线独立 postfix IR 与总 `ANY_OF`、prerequisite CSR、milestone-candidate CSR、反向
 解锁索引和拓扑序。`EconomyCatalog` 另外生成科技到 Good/生产方式/Resource 的反向绑定 CSR，
 并验证 132 个 Good、351 个生产方式、45 个职业和 31 个 Resource 均有合法科技标签，职业不得直接持有
 `tech.*` 门槛。任一内容缺绑定、引用未知科技，或科技没有内容/Modifier/Effect 消费者都会
@@ -160,6 +161,20 @@ Effect/Trigger/经济绑定与这些目录文本共同参与精确 catalog ident
 资源、配方、气候与 postfix 建设条件。自动化方法把对应普通岗位减少 20%-50%，同时把机械、
 电力、计算、自治系统或科技值投入价值提高至少 15%；河流、森林、高地、牧场和种植园方法在
 目标条件下的基础产出至少高于对照方法 20%，不满足条件时不可建设。
+
+## 发展成就与连续资格
+
+`DevelopmentAchievementCatalog` 是静态目录，不拥有独立运行时。它定义稳定
+`development.*` 信号、时代、目标文案、指标类型、主体、阈值与持续日数。Economy 在现有
+实践事实扫描中按国家聚合人口、聚落等级、建筑装机/活跃规模、产业就业与产出、人口加权满意度
+以及贸易量、基础价值、订单、商品和伙伴数；只遍历活跃聚落、建筑组和贸易聚合行。
+
+提交事实使用 `EVENT_COUNTRY_DEVELOPMENT_METRIC = 17` 与
+`PAYLOAD_COUNTRY_DEVELOPMENT_V1 = 10`。Trigger protocol v3 的
+`CONSECUTIVE_DURATION` 每个提交日最多推进一次，跌破阈值清零，同日重复不累计，采样日空洞
+重新起算。达标后沿 Effect/Country ACK 路径授予永久 `development.*` 信号；Economy 不直接
+写国家研究状态。科技 UI 只查询当前最高开放时代的中性目标和进度，并在选中科技时分别解释
+核心知识与每条研究路线，未知科技不会泄露名称、效果或路线。
 
 ## 国家研究状态与日结算
 
@@ -279,8 +294,8 @@ section tab；section 切换只由底栏 `CountryActionBar` 驱动。经济 sect
   v2 迁移时外国数量为 0。
 - PKCN v11 保存完整研究/信号状态，并把科技与研究信号、揭示条件 IR、Effect recipe/Modifier term IR、
   Trigger 定义摘要和全部内容绑定摘要混入 catalog identity。
-- PKEF v9 保存 Effect program hash、实例、事务/ACK 和时代奖励冻结计划；PKTR v4 保存突破
-  阈值累计、来源游标和未派发效果。
+- PKEF v9 保存 Effect program hash、实例、事务/ACK 和时代奖励冻结计划；PKTR v5 保存突破
+  与发展成就阈值累计、最后采样日、连续进度、来源游标和未派发效果。
 - PKEC v34 保存采购累计、科技值市场/在途状态、实践发布所需的经济权威与联合审计基线。
 - PKSV 恢复顺序保持 PKCN 在 PKEC 之前。
 - PKCN/PKEF/PKTR 的旧 schema 或任何相关 catalog identity 变化统一返回

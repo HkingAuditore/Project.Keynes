@@ -11,6 +11,8 @@ const PRODUCTION_CLIMATE_DIR := "res://data/economy/production_climates"
 const ResourceRegistryScript = preload("res://scripts/data/resource_profile_registry.gd")
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
 const TriggerCatalogScript = preload("res://scripts/trigger/trigger_catalog.gd")
+const DevelopmentAchievementCatalogScript = preload(
+	"res://scripts/research/development_achievement_catalog.gd")
 const FamilyTraitCatalogScript = preload("res://scripts/family/family_trait_catalog.gd")
 const TerrainTypeScript = preload("res://scripts/geography/terrain_type.gd")
 const LandformTypeScript = preload("res://scripts/geography/landform_type.gd")
@@ -384,6 +386,10 @@ static func compile_native_catalog() -> Dictionary:
 	var technology_catalog: Dictionary = TechnologyCatalogScript.compile_native_catalog()
 	if not bool(technology_catalog.get("ok", false)):
 		return technology_catalog
+	var development_catalog := DevelopmentAchievementCatalogScript.compile_native_catalog(
+		technology_catalog.get("research_signal_ids", PackedStringArray()))
+	if not bool(development_catalog.get("ok", false)):
+		return development_catalog
 	var technology_ids: PackedStringArray = technology_catalog.technology_ids
 	var technology_set := {}
 	var technology_index := {}
@@ -542,6 +548,9 @@ static func compile_native_catalog() -> Dictionary:
 	for key in technology_catalog:
 		if key != "ok":
 			catalog[key] = technology_catalog[key]
+	for key in development_catalog:
+		if key != "ok":
+			catalog[key] = development_catalog[key]
 	for key in ["technology_content_binding_offsets", "technology_content_binding_kinds",
 			"technology_content_binding_ids", "technology_consumer_flags",
 			"building_dependency_branch_offsets", "building_dependency_branch_technologies",

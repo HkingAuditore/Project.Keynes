@@ -1544,6 +1544,10 @@ void NativeEconomyRuntime::compact_trade_orders(const std::vector<uint8_t> &remo
 
 bool NativeEconomyRuntime::settle_due_trade_orders(std::string &error) {
     const auto started = Clock::now();
+    if (_trade_orders.ids.empty()) {
+        _trade_settle_ms += elapsed_ms(started);
+        return true;
+    }
     if (_trade_orders.arrival_buckets_dirty) rebuild_trade_arrival_buckets();
     std::vector<uint8_t> remove(static_cast<size_t>(_trade_orders.size()), 0);
     for (int32_t bucket = 0;

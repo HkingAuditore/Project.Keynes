@@ -14,6 +14,7 @@ enum Kind {
 	COUNTRY_FLAG,
 	COUNTRY_STAT,
 	CONTACT,
+	DEVELOPMENT,
 }
 
 enum Persistence {

@@ -5,6 +5,8 @@ const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalo
 const ResearchSignalCatalogScript = preload("res://scripts/research/research_signal_catalog.gd")
 const GoodProfileRegistryScript = preload("res://scripts/data/good_profile_registry.gd")
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
+const DevelopmentAchievementCatalogScript = preload(
+	"res://scripts/research/development_achievement_catalog.gd")
 
 # Catalog content (display names, icons, technology requirements) is static for
 # the whole session; the cache is built once so daily refreshes cost nothing.
@@ -52,6 +54,7 @@ func build(include_treasury: bool = false) -> Dictionary:
 	var cash := int(treasury.get("cash", 0)) if treasury_available \
 		else int(summary.get("cash", 0))
 	research["country_cash"] = cash
+	var development := _development_model(country_handle, research)
 	return {
 		"available": true,
 		"country_name": String(summary.get("country_name", "未命名国家")),
@@ -72,6 +75,7 @@ func build(include_treasury: bool = false) -> Dictionary:
 		"economy_facade": economy_facade,
 		"current_day": int(facade.report().get("last_committed_day", -1)),
 		"research": research,
+		"development": development,
 		"technology_definitions": TechnologyCatalogScript.public_definitions(),
 		"technology_eras": TechnologyCatalogScript.public_era_metadata(),
 		"technology_domains": TechnologyCatalogScript.public_domain_metadata(),
@@ -79,6 +83,70 @@ func build(include_treasury: bool = false) -> Dictionary:
 		"technology_lanes": TechnologyCatalogScript.public_lane_metadata(),
 		"research_signal_definitions": ResearchSignalCatalogScript.public_metadata(),
 		"ideology": ideology,
+	}
+
+
+func _development_model(country_handle: int, research: Dictionary) -> Dictionary:
+	const era_ids := DevelopmentAchievementCatalogScript.ERA_IDS
+	var definitions: Array[Dictionary] = DevelopmentAchievementCatalogScript.definitions()
+	var states: PackedInt32Array = research.get("technology_states", PackedInt32Array())
+	var technology_definitions: Array = TechnologyCatalogScript.public_definitions()
+	var highest_era := 0
+	for index in range(mini(states.size(), technology_definitions.size())):
+		if int(states[index]) <= 0:
+			continue
+		var era_index := era_ids.find(String((technology_definitions[index] as Dictionary).get("era_id", "")))
+		if era_index >= 0:
+			highest_era = maxi(highest_era, era_index)
+	var progress_by_signal := {}
+	var trigger = _generator.get_trigger_facade() \
+		if _generator != null and _generator.has_method("get_trigger_facade") else null
+	if trigger != null and trigger.has_method("development_progress"):
+		for era_index in range(highest_era + 1):
+			var raw: Dictionary = trigger.development_progress(country_handle, String(era_ids[era_index]))
+			if not bool(raw.get("ok", false)):
+				continue
+			var metric_ids: PackedInt32Array = raw.get("metric_ids", PackedInt32Array())
+			var values: PackedInt64Array = raw.get("current_values", PackedInt64Array())
+			var qualifiers: PackedInt64Array = raw.get("qualifier_thresholds", PackedInt64Array())
+			var consecutive: PackedInt64Array = raw.get("consecutive_days", PackedInt64Array())
+			var target_days: PackedInt32Array = raw.get("target_days", PackedInt32Array())
+			var completed: PackedInt32Array = raw.get("completed", PackedInt32Array())
+			for cursor in range(metric_ids.size()):
+				var metric_index := int(metric_ids[cursor])
+				if metric_index < 0 or metric_index >= definitions.size():
+					continue
+				var definition: Dictionary = definitions[metric_index]
+				progress_by_signal[String(definition.get("signal_id", ""))] = {
+					"metric_id": metric_index,
+					"current_value": int(values[cursor]) if cursor < values.size() else 0,
+					"qualifier_threshold": int(qualifiers[cursor]) if cursor < qualifiers.size() else int(definition.get("qualifier_threshold", 0)),
+					"consecutive_days": int(consecutive[cursor]) if cursor < consecutive.size() else 0,
+					"target_days": int(target_days[cursor]) if cursor < target_days.size() else int(definition.get("duration_days", 1)),
+					"completed": int(completed[cursor]) if cursor < completed.size() else 0,
+				}
+	# A completed permanent signal remains explainable even if its Trigger state
+	# has been compacted or the cold query is temporarily unavailable.
+	var signal_snapshot: Dictionary = research.get("research_signal_snapshot", {})
+	var signal_ids: PackedInt32Array = signal_snapshot.get("signal_ids", PackedInt32Array())
+	var signal_metadata: Array = ResearchSignalCatalogScript.public_metadata()
+	for signal_index in signal_ids:
+		if signal_index < 0 or signal_index >= signal_metadata.size():
+			continue
+		var signal_id := String((signal_metadata[signal_index] as Dictionary).get("id", ""))
+		if signal_id.begins_with("development.") and not progress_by_signal.has(signal_id):
+			progress_by_signal[signal_id] = {"completed": 1}
+	var era_id := String(era_ids[highest_era])
+	var objectives: Array[Dictionary] = []
+	for definition in definitions:
+		if String(definition.get("era_id", "")) == era_id:
+			objectives.append(definition.duplicate(true))
+	return {
+		"ok": true,
+		"era_id": era_id,
+		"era_index": highest_era,
+		"objectives": objectives,
+		"progress_by_signal": progress_by_signal,
 	}
 
 

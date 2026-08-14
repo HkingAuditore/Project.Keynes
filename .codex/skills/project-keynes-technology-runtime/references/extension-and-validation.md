@@ -8,10 +8,11 @@
    second hand-maintained catalog.
 2. Preserve every existing stable ID unless the user explicitly authorizes a compatibility break; the
    360-node rebuild is an intentional exact-hash break with no migration.
-3. Define era, domain, cost, prerequisites, milestone flags/candidates, public summary, route tags,
+3. Define era, domain, cost, core prerequisites, research routes, milestone flags/candidates, public summary, route tags,
    unique Effect recipe and explicit Modifier terms together.
-4. Keep prerequisite edges acyclic and era-monotonic. Verify each milestone has sixteen specialist-lane
-   candidates, requires five, and remains reachable through alternative practice/contact/geographic evidence.
+4. Keep prerequisite and route technology references acyclic and era-monotonic. Verify each milestone has eight
+   candidates, requires four, and remains reachable across the resource-poor, inland, low-trade,
+   low-urbanization and specialist-industry scenarios.
 5. Add or update the generated permanent Modifier definition and a real domain consumer when adding a
    numerical effect. A definition with no consumer is incomplete.
 6. Update Good/Building/Resource bindings and compile `EconomyCatalog`; professions must not carry a

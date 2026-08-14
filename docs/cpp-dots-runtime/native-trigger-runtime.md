@@ -15,7 +15,7 @@ Effects are commands applied by domain adapters at their next safe boundary.
 
 ## Packed contract
 
-当前 packed protocol 为 v2，PKTR save schema 为 v3。Gameplay event 同时携带兼容
+当前 packed protocol 为 v3，PKTR save schema 为 v5。Gameplay event 同时携带兼容
 `entity_id` 和 64 位 generation-safe `entity_handle`。
 
 `TriggerCatalog.compile_native_catalog()` emits dense IDs and packed columns for
@@ -25,7 +25,9 @@ Callable, or arbitrary script is evaluated in the native loop. New aggregators o
 actions add a compiler column and adapter without changing the main evaluator.
 
 Supported aggregators are COUNT, SUM, MIN/MAX, STATE_LEVEL, WINDOW_COUNT/SUM,
-DISTINCT_COUNT, and SNAPSHOT_DIFF. Conditions support threshold/crossing/level
+DISTINCT_COUNT, SNAPSHOT_DIFF, and CONSECUTIVE_DURATION. The consecutive aggregator
+stores the last sample day, rejects same-day double progress, resets on threshold
+failure, and restarts after a committed-day gap. Conditions support threshold/crossing/level
 change, boolean composition, cooldown, repeat/one-shot, and completion. Targets
 resolve from static, source entity, event entity/group, or committed snapshots.
 Conserved cash, goods, and population are domain commands, never modifier stats.
@@ -68,14 +70,19 @@ level-change 去重模式，所以每 epoch 的事件量以滚动 workset 为上
 
 ## Persistence and recovery
 
-`PKTR v4` stores catalog hash/version, source cursors, dynamic branch bindings, trigger SoA (accumulator,
+`PKTR v5` stores catalog hash/version, source cursors, dynamic branch bindings, trigger SoA (accumulator,
 remainder, last event, fire sequence, cooldown/reset, observed snapshot, target
-generation, resync flags), and pending effects. Restore rejects catalog mismatch,
+generation, last development sample day, resync flags), and pending effects. Restore rejects catalog mismatch,
 truncated payloads, stale definitions, invalid handles, or any older schema with
 `catalog_hash_mismatch`; there is no empty-trigger migration. Family reward adapters queue native free-building or
 population commands at the next Economy safe boundary; they never mutate economy authority directly.
 
 ## Technology breakthroughs
+
+Country development facts use event 17 / payload 10. `DevelopmentAchievementCatalog`
+compiles their dense metric IDs, thresholds, eras and permanent country-signal effects.
+`development_progress(country_handle, era_index)` is a cold UI query; the native
+evaluation path remains dense and allocation-free.
 
 Economy publishes `EVENT_TECHNOLOGY_PRACTICE` only from committed, producing
 BuildingGroups. Eleven one-shot rules aggregate maize selection, dryland days/windows,

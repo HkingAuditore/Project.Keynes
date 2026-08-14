@@ -4,6 +4,8 @@ class_name TechnologyWorkspace
 const PlayerControllerScript = preload("res://scripts/game/player_controller.gd")
 const ResearchConditionScript = preload("res://scripts/research/research_condition.gd")
 const ResearchPredicateScript = preload("res://scripts/research/research_predicate.gd")
+const DevelopmentAchievementCatalogScript = preload(
+	"res://scripts/research/development_achievement_catalog.gd")
 
 # Full-bleed research screen with a four-domain atlas and a separate network
 # overview. Research policy and technology detail are permanent columns.
@@ -33,6 +35,7 @@ var _technology_indices: Dictionary = {}
 var _signal_indices: Dictionary = {}
 var _signal_names: Dictionary = {}
 var _research: Dictionary = {}
+var _development: Dictionary = {}
 var _queue_signature := ""
 var _detail_signature := ""
 var _last_states := PackedInt32Array()
@@ -61,6 +64,8 @@ var _search: LineEdit
 var _queue_zones: Array = []
 var _queue_headers: Array = []
 var _queue_rows: Array = []
+var _development_rows: Array = []
+var _development_signature := ""
 
 
 func _ready() -> void:
@@ -74,6 +79,8 @@ func _ready() -> void:
 		"overview": "Root/Main/Overview",
 		"detail_host": "Root/Main/DetailHost",
 		"detail": "Root/Main/DetailHost/Body/Detail",
+		"development_title": "Root/Main/PolicyPanel/Scroll/Body/DevelopmentTitle",
+		"development_list": "Root/Main/PolicyPanel/Scroll/Body/DevelopmentList",
 	}
 	_policy_panel = get_node_or_null(required_paths.policy_panel) as PanelContainer
 	_dial = get_node_or_null(required_paths.dial) as Control
@@ -157,6 +164,7 @@ func set_model(model: Dictionary) -> void:
 	if _tree == null:
 		_ready()
 	_research = model.get("research", {})
+	_development = model.get("development", {})
 	if _definitions.is_empty():
 		_definitions = model.get("technology_definitions", [])
 		_eras = model.get("technology_eras", [])
@@ -190,6 +198,7 @@ func refresh_research(model: Dictionary) -> void:
 	if _tree == null:
 		return
 	_research = model.get("research", {})
+	_development = model.get("development", _development)
 	_apply_research()
 
 
@@ -504,6 +513,7 @@ func _apply_research() -> void:
 		int(_research.get("daily_procurement_budget", 0)),
 		int(_research.get("country_cash", 0)))
 	_patch_queues(states, progress, weights)
+	_patch_development()
 	_update_status(states)
 	if _initial_focus_pending:
 		_apply_default_focus()
@@ -536,6 +546,86 @@ func _set_chip(id: String, text: String, tooltip: String) -> void:
 		return
 	value.text = text
 	value.tooltip_text = tooltip
+
+
+func _patch_development() -> void:
+	var title := get_node_or_null("Root/Main/PolicyPanel/Scroll/Body/DevelopmentTitle") as Label
+	var list := get_node_or_null("Root/Main/PolicyPanel/Scroll/Body/DevelopmentList") as VBoxContainer
+	if title == null or list == null:
+		return
+	var objectives: Array = _development.get("objectives", [])
+	var era_name := String(_era_names.get(String(_development.get("era_id", "")), ""))
+	title.visible = not objectives.is_empty()
+	list.visible = not objectives.is_empty()
+	if objectives.is_empty():
+		return
+	title.text = "国家发展目标" if era_name.is_empty() else "国家发展目标 · %s" % era_name
+	var signature_parts := PackedStringArray()
+	for objective_value in objectives:
+		var objective: Dictionary = objective_value
+		signature_parts.append(String(objective.get("signal_id", "")))
+	var signature := "|".join(signature_parts)
+	if signature != _development_signature:
+		_development_signature = signature
+		for child in list.get_children():
+			child.queue_free()
+		_development_rows.clear()
+		for objective_value in objectives:
+			var objective: Dictionary = objective_value
+			var row := VBoxContainer.new()
+			row.add_theme_constant_override("separation", 2)
+			var line := HBoxContainer.new()
+			var name := Label.new()
+			name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			name.text = String(objective.get("display_name", "发展目标"))
+			name.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+			var value := Label.new()
+			value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+			value.theme_type_variation = &"PKMutedLabel"
+			line.add_child(name)
+			line.add_child(value)
+			var bar := ProgressBar.new()
+			bar.custom_minimum_size = Vector2(0, 8)
+			bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			bar.show_percentage = false
+			row.add_child(line)
+			row.add_child(bar)
+			list.add_child(row)
+			_development_rows.append({"signal_id": String(objective.get("signal_id", "")),
+				"definition": objective, "value": value, "bar": bar})
+	var progress_by_signal: Dictionary = _development.get("progress_by_signal", {})
+	for row_value in _development_rows:
+		var row: Dictionary = row_value
+		var definition: Dictionary = row.definition
+		var progress: Dictionary = progress_by_signal.get(String(row.signal_id), {})
+		var completed := int(progress.get("completed", 0)) > 0
+		var qualifier := int(progress.get("qualifier_threshold", definition.get("qualifier_threshold", 0)))
+		var current := int(progress.get("current_value", 0))
+		var target_days := maxi(1, int(progress.get("target_days", definition.get("duration_days", 1))))
+		var consecutive := int(progress.get("consecutive_days", 0))
+		var value_text := "已达成" if completed else _development_value_text(
+			definition, current, qualifier, consecutive, target_days)
+		(row.value as Label).text = value_text
+		var value_ratio := 1.0 if qualifier <= 0 and completed else (float(current) / float(qualifier) if qualifier > 0 else 0.0)
+		var duration_ratio := 1.0 if target_days <= 1 and completed else float(consecutive) / float(target_days)
+		(row.bar as ProgressBar).value = clampf(minf(value_ratio, duration_ratio), 0.0, 1.0)
+
+
+func _development_value_text(definition: Dictionary, current: int, qualifier: int,
+		consecutive: int, target_days: int) -> String:
+	var metric_type := int(definition.get("metric_type", 0))
+	var current_text := str(current)
+	var target_text := str(qualifier)
+	if metric_type == DevelopmentAchievementCatalogScript.MetricType.SATISFACTION_Q16:
+		current_text = "%d%%" % int(round(float(current) * 100.0 / 65536.0))
+		target_text = "%d%%" % int(round(float(qualifier) * 100.0 / 65536.0))
+	elif metric_type in [DevelopmentAchievementCatalogScript.MetricType.INDUSTRY_OUTPUT,
+		DevelopmentAchievementCatalogScript.MetricType.TRADE_QUANTITY]:
+		current_text = UITokens.format_compact_number_cn(float(current) / 1000.0, 1)
+		target_text = UITokens.format_compact_number_cn(float(qualifier) / 1000.0, 1)
+	var duration := " · %d/%d日" % [mini(consecutive, target_days), target_days] \
+		if target_days > 1 else ""
+	return "%s/%s%s" % [current_text, target_text, duration]
 
 
 # The current era is the deepest era whose milestone the country already holds,
@@ -790,18 +880,41 @@ func _condition_items(index: int, states: PackedInt32Array) -> Array:
 			var inspiration := item.duplicate()
 			inspiration["text"] = "揭示证据：%s" % String(item.get("text", ""))
 			items.append(inspiration)
-	var research_spec: Dictionary = definition.get("research_condition", {})
-	if not research_spec.is_empty():
-		var research_result := _evaluate_condition(research_spec, states, evidence)
-		var research_met := bool(research_result.get("met", false))
+	var hard_ids: PackedStringArray = definition.get("prerequisite_ids", PackedStringArray())
+	for hard_id in hard_ids:
+		var hard_index := int(_technology_indices.get(String(hard_id), -1))
+		var hard_state := int(states[hard_index]) if hard_index >= 0 and hard_index < states.size() else 0
+		var hard_name := "未知科技"
+		if TechnologyTreeView.presents_state(hard_state) and hard_index >= 0:
+			hard_name = String((_definitions[hard_index] as Dictionary).get("display_name", hard_name))
+		var hard_met := hard_state >= 5
 		items.append({
-			"text": "替代研究条件：%s（%s）" % [
-				String(definition.get("research_condition_summary", "")),
-				"已满足" if research_met else "未满足"],
-			"icon": &"technology.state.completed" if research_met else &"technology.state.locked",
-			"accent": UITokens.GOOD if research_met else UITokens.WARN,
-			"met": research_met,
+			"text": "核心知识：%s（%s）" % [hard_name, "已完成" if hard_met else "未完成"],
+			"icon": &"technology.state.completed" if hard_met else &"technology.state.locked",
+			"accent": UITokens.GOOD if hard_met else UITokens.WARN,
+			"met": hard_met,
 		})
+	for route_value in definition.get("research_routes", []) as Array:
+		var route: Dictionary = route_value
+		var route_result := _evaluate_condition(route.get("condition", {}) as Dictionary,
+			states, evidence)
+		var route_met := bool(route_result.get("met", false))
+		var route_name := String(route.get("display_name", "研究路线"))
+		var route_description := String(route.get("description", ""))
+		var route_text := "研究路线 · %s" % route_name
+		if not route_description.is_empty():
+			route_text += "：%s" % route_description
+		items.append({
+			"text": "%s（%s）" % [route_text, "已满足" if route_met else "未满足"],
+			"icon": &"technology.state.completed" if route_met else &"technology.state.locked",
+			"accent": UITokens.GOOD if route_met else UITokens.WARN,
+			"met": route_met,
+		})
+		for route_item_value in route_result.get("items", []) as Array:
+			var route_item: Dictionary = (route_item_value as Dictionary).duplicate()
+			route_item["text"] = "路线 · %s：%s" % [route_name,
+				String(route_item.get("text", ""))]
+			items.append(route_item)
 	return items
 
 
@@ -817,6 +930,16 @@ func _signal_evidence() -> Dictionary:
 			"count": int(counts[cursor]) if cursor < counts.size() else 0,
 			"first_day": int(first_days[cursor]) if cursor < first_days.size() else -1,
 			"first_cell": int(first_cells[cursor]) if cursor < first_cells.size() else -1,
+		}
+	var development_progress: Dictionary = _development.get("progress_by_signal", {})
+	for stable_id in development_progress:
+		var signal_index := int(_signal_indices.get(String(stable_id), -1))
+		if signal_index < 0:
+			continue
+		var progress: Dictionary = development_progress[stable_id]
+		evidence[signal_index] = {
+			"count": 1 if int(progress.get("completed", 0)) > 0 else 0,
+			"development": progress,
 		}
 	return evidence
 
@@ -882,6 +1005,29 @@ func _evaluate_condition_atom(atom: Dictionary, states: PackedInt32Array,
 		return {"met": false, "items": []}
 	var signal_index := int(_signal_indices.get(stable_id, -1))
 	var row: Dictionary = evidence.get(signal_index, {})
+	if stable_id.begins_with("development."):
+		var development: Dictionary = row.get("development", {})
+		var definition := _development_definition(stable_id)
+		var qualifier := int(development.get("qualifier_threshold",
+			definition.get("qualifier_threshold", required)))
+		var current := int(development.get("current_value", 0))
+		var target_days := maxi(1, int(development.get("target_days",
+			definition.get("duration_days", 1))))
+		var consecutive := int(development.get("consecutive_days", 0))
+		var met := int(development.get("completed", 0)) > 0 \
+			or (current >= qualifier and consecutive >= target_days)
+		var name := String(_signal_names.get(stable_id, stable_id))
+		return {
+			"met": met,
+			"items": [{
+				"text": "%s：%s" % [name, "已达成" if met else _development_value_text(
+					definition, current, qualifier, consecutive, target_days)],
+				"icon": &"technology.state.completed" if met else &"technology.state.locked",
+				"accent": UITokens.GOOD if met else UITokens.WARN,
+				"source_kind": "signal",
+				"met": met,
+			}],
+		}
 	var count := int(row.get("count", 0))
 	var target := required if kind == ResearchPredicateScript.Kind.SIGNAL_COUNT else 1
 	var met := count >= target
@@ -901,6 +1047,13 @@ func _evaluate_condition_atom(atom: Dictionary, states: PackedInt32Array,
 			"met": met,
 		}],
 	}
+
+
+func _development_definition(signal_id: String) -> Dictionary:
+	for definition in DevelopmentAchievementCatalogScript.definitions():
+		if String((definition as Dictionary).get("signal_id", "")) == signal_id:
+			return definition as Dictionary
+	return {}
 
 
 func _on_tree_selected(_index: int) -> void:

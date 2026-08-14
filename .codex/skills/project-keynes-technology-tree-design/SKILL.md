@@ -34,7 +34,7 @@ Do not turn a design request into implementation unless the user asks for change
 For the current Project.Keynes implementation, start from
 `Project/project-keynes/data/technology/technology_network.json`. It is the sole authoring source;
 `TechnologyCatalog` remains the compiled/runtime authority. The current network contract is 361 stable
-IDs, eleven eras, four backbones, sixteen specialist lanes, sixteen candidates per era, and a five-node
+IDs, eleven eras, four backbones, twenty-four dynamic branch families, eight candidates per era, and a four-node
 milestone threshold. Do not reintroduce keyword-selected anchors or generated route-based effects.
 
 Inspect the authoritative source rather than relying on prior diagrams or prose:
@@ -67,9 +67,12 @@ Apply these rules:
 
 ## Design Prerequisites And Discovery
 
-Write the knowledge chain in `hard_prerequisite_ids`. Put geography, resources, contact samples and
-practice breakthroughs in `reveal_condition`; these sources reveal possibilities but never make an
-unqualified technology researchable. Keep `research_condition` empty under the current contract.
+Write irreplaceable principles in `hard_prerequisite_ids`. Put geography, resources, contact samples,
+development pressure and practice breakthroughs in `reveal_condition` when they describe the problem
+the country has encountered. Put strategically distinct solution capabilities in `research_routes[]`;
+from the Kingdom era onward, mainline, institution, production-system and milestone-candidate nodes
+normally need two or three route types. Authoring-side `research_condition` is forbidden. A route may
+bypass professional knowledge but not the previous-era milestone or core principles.
 
 Use only active operators unless runtime work is explicitly approved:
 

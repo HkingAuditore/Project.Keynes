@@ -67,17 +67,22 @@ Also use `civ-grounded-development` for repository changes. Add
 - Keep player-facing Chinese names, effect summaries, and route labels in the
   `public_definitions()` presentation layer. Translation-only edits must not change stable `tech.*`
   IDs, compiled native catalog rows, or exact catalog identity.
-- Restore PKCN before PKEC. PKCN v11, PKEF v9 and PKTR v4 use exact schema/catalog identity and
+- Restore PKCN before PKEC. PKCN v11, PKEF v9 and PKTR v5 use exact schema/catalog identity and
   return `catalog_hash_mismatch` for older trees rather than silently defaulting state.
 - Do not add taxes, cross-country technology trade, research diplomacy, or AI research policy as
   incidental scope.
 
 ## Research-signal discovery contract
 
-Completed technologies in `prerequisite_ids` are the sole research-eligibility gate. Authoring-side
-`research_condition` must remain empty unless a future design explicitly introduces a second hard
-gate. Geography, resources, contact and practice signals belong in `reveal_condition`: they inspire
-and reveal a technology but never substitute for required knowledge.
+`hard_prerequisite_ids` contains only irreplaceable core knowledge. Authoring-side
+`research_condition` is forbidden: the compiler must reject it when non-empty. Optional
+`research_routes[]` packages contain stable route IDs, Chinese names, route types, explanations and
+conditions. Formal eligibility is previous-era milestone completed AND every hard prerequisite
+completed AND (no route package OR one complete route). A route may substitute for professional
+knowledge, but never for the era milestone or core principles. Geography, resources, contact and
+practice signals can reveal a problem; development, institutional and practice signals can also be
+part of a route when they express the capability used to solve it. Reveal and route conditions must
+not reuse the same signal atom.
 
 The currently active v1 operators are `TECH_COMPLETED`, `SIGNAL_PRESENT`, `SIGNAL_COUNT`,
 `ALL_OF`, `ANY_OF`, `AT_LEAST`, and `NOT`. Treat `COUNTRY_FLAG`, `COUNTRY_STAT`,

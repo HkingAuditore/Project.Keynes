@@ -22,6 +22,11 @@ var _last_effect_id := 0
 var _adapters: Dictionary = {}
 var _last_report: Dictionary = {}
 
+const DEVELOPMENT_ERA_IDS := [
+	"stone", "agrarian", "kingdom", "empire", "exploration", "enlightenment",
+	"steam", "electrical", "atomic", "information", "intelligent",
+]
+
 func configure(world_ext: Object, event_bus: GameplayEventBus, clock: WorldClock = null,
 		modifier_facade: ModifierFacade = null, catalog: Resource = null) -> Dictionary:
 	_world_ext = world_ext; _event_bus = event_bus; _clock = clock
@@ -50,6 +55,15 @@ func register_domain_effect_adapter(action: int, domain: int,
 func is_configured() -> bool: return _configured
 func world_ext() -> Object: return _world_ext
 func report() -> Dictionary: return _world_ext.get_trigger_report() if _configured else {"configured": false}
+
+func development_progress(country_handle: int, era_id: String) -> Dictionary:
+	if not _configured or not _world_ext.has_method("get_development_progress"):
+		return {"ok": false, "reason": "trigger_development_progress_unavailable"}
+	var era_index := DEVELOPMENT_ERA_IDS.find(era_id)
+	if era_index < 0:
+		return {"ok": false, "reason": "technology_era_unknown", "era_id": era_id}
+	var result: Variant = _world_ext.get_development_progress(country_handle, era_index)
+	return result if result is Dictionary else {"ok": false, "reason": "bad_development_progress_result"}
 
 func ingest_committed_events(day_index: int, max_events: int = 512) -> Dictionary:
 	if not _configured or _event_bus == null or not _event_bus.is_available():

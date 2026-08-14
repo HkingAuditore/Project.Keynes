@@ -420,6 +420,7 @@ private:
     bool research_condition_met(int32_t slot, int32_t technology) const;
     bool research_condition_met(const std::vector<uint64_t> &completed,
                                 const std::vector<uint64_t> &signals,
+                                const std::vector<std::vector<SignalEvidence>> &evidence,
                                 int32_t slot, int32_t technology) const;
     bool reveal_condition_met(int32_t slot, int32_t technology) const;
     void refresh_discovery_for_technology(int32_t slot, int32_t technology);
@@ -427,6 +428,8 @@ private:
     bool signal_present(const std::vector<uint64_t> &signals, int32_t slot,
                         int32_t signal) const;
     int32_t signal_count(int32_t slot, int32_t signal) const;
+    int32_t signal_count(const std::vector<std::vector<SignalEvidence>> &evidence,
+                         int32_t slot, int32_t signal) const;
     static SignalEvidence *find_signal_evidence(std::vector<SignalEvidence> &entries,
                                                 int32_t signal);
     static const SignalEvidence *find_signal_evidence(

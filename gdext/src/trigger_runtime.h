@@ -18,8 +18,8 @@ class NativeIdeologyRuntime;
 // aggregation, condition evaluation, and effect generation use dense POD data.
 class TriggerRuntime {
 public:
-    static constexpr int32_t PROTOCOL_VERSION = 2;
-    static constexpr int32_t SAVE_SCHEMA_VERSION = 4;
+    static constexpr int32_t PROTOCOL_VERSION = 3;
+    static constexpr int32_t SAVE_SCHEMA_VERSION = 5;
 
     enum Scope : int32_t { GLOBAL = 0, GROUP = 1, ENTITY = 2 };
     enum Aggregator : int32_t {
@@ -32,6 +32,7 @@ public:
         WINDOW_SUM = 7,
         DISTINCT_COUNT = 8,
         SNAPSHOT_DIFF = 9,
+        CONSECUTIVE_DURATION = 10,
     };
     enum ValueField : int32_t {
         VALUE_ONE = 0,
@@ -96,6 +97,8 @@ public:
     godot::Dictionary set_enabled(const godot::Dictionary &batch);
     godot::Dictionary reconcile_branch_bindings(const godot::Dictionary &batch);
     godot::Dictionary branch_progress(uint64_t branch_handle) const;
+    godot::Dictionary development_progress(uint64_t country_handle,
+                                           int32_t era_index) const;
     godot::Dictionary resync_source(const godot::Dictionary &snapshot);
     godot::Dictionary report() const;
     bool should_run(int64_t day_index) const;
@@ -121,6 +124,10 @@ private:
         int32_t mode = REPEAT;
         int32_t cooldown_days = 0;
         int32_t window_days = 0;
+        int64_t qualifier_threshold = 0;
+        int32_t duration_field = VALUE_ONE;
+        int32_t development_metric_id = -1;
+        int32_t development_era_index = -1;
         int32_t condition_begin = 0;
         int32_t condition_count = 0;
         int32_t effect_begin = 0;
@@ -188,6 +195,7 @@ private:
         std::vector<int64_t> cooldown_until;
         std::vector<int64_t> window_start_day;
         std::vector<int64_t> last_observed;
+        std::vector<int64_t> last_sample_day;
         std::vector<uint8_t> completed;
         std::vector<uint8_t> initialized;
         std::vector<uint8_t> needs_resync;

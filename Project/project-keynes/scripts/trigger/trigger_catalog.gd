@@ -5,8 +5,10 @@ const DEFAULT_PATH := "res://data/triggers/default_trigger_catalog.tres"
 const TriggerDefinitionScript = preload("res://scripts/trigger/trigger_definition.gd")
 const TriggerEffectScript = preload("res://scripts/trigger/trigger_effect.gd")
 const ResearchSignalCatalogScript = preload("res://scripts/research/research_signal_catalog.gd")
+const DevelopmentAchievementCatalogScript = preload(
+	"res://scripts/research/development_achievement_catalog.gd")
 
-const PROTOCOL_VERSION := 2
+const PROTOCOL_VERSION := 3
 const AGG_COUNT := 1
 const AGG_SUM := 2
 const AGG_MIN := 3
@@ -16,6 +18,7 @@ const AGG_WINDOW_COUNT := 6
 const AGG_WINDOW_SUM := 7
 const AGG_DISTINCT_COUNT := 8
 const AGG_SNAPSHOT_DIFF := 9
+const AGG_CONSECUTIVE_DURATION := 10
 const TARGET_STATIC := 0
 const TARGET_SOURCE_ENTITY := 1
 const TARGET_EVENT_ENTITY := 2
@@ -27,13 +30,16 @@ const MODE_ONE_SHOT := 2
 const EVENT_TECHNOLOGY_PRACTICE := 14
 const EVENT_TECHNOLOGY_CONTACT := 16
 const EVENT_WEATHER_OBSERVED := 11
+const EVENT_COUNTRY_DEVELOPMENT_METRIC := 17
 const PAYLOAD_TECHNOLOGY_PRACTICE_V1 := 7
 const PAYLOAD_WEATHER_OBSERVED_V1 := 9
+const PAYLOAD_COUNTRY_DEVELOPMENT_V1 := 10
 const SOURCE_NATIVE := 1
 const SOURCE_GDSCRIPT := 2
 const SCOPE_ENTITY := 2
 const VALUE_I64 := 1
 const PAYLOAD_I0 := 2
+const PAYLOAD_I1 := 3
 const ACTION_COUNTRY_COMMAND := 10
 const COUNTRY_DOMAIN := 1
 const COMMAND_DISCOVER_COUNTRY_SIGNAL := 14
@@ -126,6 +132,10 @@ func compile_native_catalog() -> Dictionary:
 		"static_targets": PackedInt64Array(), "thresholds": PackedInt64Array(),
 		"modes": PackedInt32Array(), "cooldown_days": PackedInt32Array(),
 		"window_days": PackedInt32Array(), "enabled": PackedByteArray(),
+		"qualifier_thresholds": PackedInt64Array(),
+		"duration_fields": PackedInt32Array(),
+		"development_metric_ids": PackedInt32Array(),
+		"development_era_indices": PackedInt32Array(),
 		"dynamic_bindings": PackedByteArray(),
 		"selector_fields": PackedInt32Array(), "selector_values": PackedInt64Array(),
 		"selector_negated": PackedByteArray(),
@@ -144,6 +154,7 @@ func compile_native_catalog() -> Dictionary:
 	compiled_definitions.append_array(_breakthrough_definitions())
 	compiled_definitions.append_array(_contact_definitions())
 	compiled_definitions.append_array(_weather_definitions())
+	compiled_definitions.append_array(_development_definitions())
 	var seen := {}
 	for definition in compiled_definitions:
 		if definition == null or not definition is TriggerDefinitionScript:
@@ -163,6 +174,10 @@ func compile_native_catalog() -> Dictionary:
 		out.static_targets.append(definition.static_target); out.thresholds.append(definition.threshold)
 		out.modes.append(definition.mode); out.cooldown_days.append(definition.cooldown_days)
 		out.window_days.append(definition.window_days); out.enabled.append(1 if definition.enabled else 0)
+		out.qualifier_thresholds.append(definition.qualifier_threshold)
+		out.duration_fields.append(definition.duration_field)
+		out.development_metric_ids.append(definition.development_metric_id)
+		out.development_era_indices.append(definition.development_era_index)
 		out.dynamic_bindings.append(1 if definition.dynamic_binding else 0)
 		out.selector_fields.append(definition.selector_field)
 		var selector_value := int(definition.selector_value)
@@ -249,6 +264,54 @@ static func _weather_definitions() -> Array[Resource]:
 		effect.value_mode = 0
 		effect.value = SOURCE_KIND_TRIGGER_OUTPUT
 		effect.command_key = &"weather.discover"
+		effect.definition_key = StringName(signal_id)
+		effect.payload_i0 = signal_index
+		definition.effects = [effect]
+		out.append(definition)
+	return out
+
+
+static func _development_definitions() -> Array[Resource]:
+	var signal_catalog: Dictionary = ResearchSignalCatalogScript.compile_native_catalog()
+	var signal_ids: PackedStringArray = signal_catalog.get(
+		"research_signal_ids", PackedStringArray())
+	var compiled: Dictionary = DevelopmentAchievementCatalogScript.compile_native_catalog(signal_ids)
+	var out: Array[Resource] = []
+	if not bool(signal_catalog.get("ok", false)) or not bool(compiled.get("ok", false)):
+		return out
+	for metric in range((compiled.development_metric_ids as PackedStringArray).size()):
+		var signal_index := int(compiled.development_metric_signal_indices[metric])
+		var signal_id := String(compiled.development_metric_ids[metric])
+		var definition := TriggerDefinitionScript.new()
+		definition.key = StringName("development.achievement.%s" % signal_id.trim_prefix(
+			"development."))
+		definition.version = 1
+		definition.source_id = SOURCE_NATIVE
+		definition.event_type = EVENT_COUNTRY_DEVELOPMENT_METRIC
+		definition.payload_schema = PAYLOAD_COUNTRY_DEVELOPMENT_V1
+		definition.aggregator = AGG_CONSECUTIVE_DURATION
+		definition.value_field = VALUE_I64
+		definition.duration_field = PAYLOAD_I1
+		definition.qualifier_threshold = int(
+			compiled.development_metric_qualifier_thresholds[metric])
+		definition.scope = SCOPE_ENTITY
+		definition.target_resolver = TARGET_EVENT_ENTITY
+		definition.threshold = int(compiled.development_metric_duration_days[metric])
+		definition.mode = MODE_ONE_SHOT
+		definition.selector_field = PAYLOAD_I0
+		definition.selector_value = metric
+		definition.condition_ops = PackedInt32Array([2])
+		definition.development_metric_id = metric
+		definition.development_era_index = int(
+			compiled.development_metric_era_indices[metric])
+		var effect := TriggerEffectScript.new()
+		effect.action = ACTION_COUNTRY_COMMAND
+		effect.domain = COUNTRY_DOMAIN
+		effect.opcode = COMMAND_DISCOVER_COUNTRY_SIGNAL
+		effect.target_resolver = TARGET_EVENT_ENTITY
+		effect.value_mode = 0
+		effect.value = SOURCE_KIND_TRIGGER_OUTPUT
+		effect.command_key = &"development.discover"
 		effect.definition_key = StringName(signal_id)
 		effect.payload_i0 = signal_index
 		definition.effects = [effect]

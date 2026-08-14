@@ -19,7 +19,7 @@ generation, bootstrap, PKSV, and restore contract is documented in
 Saving does not introduce a second simulation authority. It freezes new clock
 advancement, drains existing country/economy continuations across render frames,
 then snapshots `DCWorld`, native environment state, PKCM, WorldClock, PKCN v11, PKEC, PKGP,
-PKFG, journal, PKTR v4, PKEF v9, and player view. Restore regenerates static geography and applies
+PKFG, journal, PKTR v5, PKEF v9, and player view. Restore regenerates static geography and applies
 PKCM after environment, PKCN before PKEC, PKGP after PKEC, and PKTR after Economy/domain state.
 PKFG carries only the monotonic `cell_explored` progress;
 current visibility and fog knowledge are derived and are recomputed on restore.
@@ -241,7 +241,7 @@ domain、生产气候冻结/诊断字段与 Economy Effect ingress 幂等证据�
 `TriggerRuntime` is the native event-to-effect graph between committed event
 publication and domain consumers. It owns packed trigger state only; domain
 commands are applied by Modifier/Country/Economy adapters at safe boundaries.
-Technology practice thresholds persist in PKTR v4 and hand breakthrough-signal
+Technology practice and development thresholds persist in PKTR v5 and hand permanent-signal
 commands to PKEF v9; technology/research state remains PKCN v11 authority.
 See [Native Trigger Runtime](./native-trigger-runtime.md).
 
