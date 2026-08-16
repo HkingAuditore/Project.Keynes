@@ -344,9 +344,14 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             append_le<int32_t>(payload, group.realized_profit_margin_q16);
             append_le<uint16_t>(payload, group.severe_loss_cycles);
             append_le<uint16_t>(payload, group.recovery_cycles);
-            append_le<uint8_t>(payload, group.operating_state);
-            append_le<uint8_t>(payload, group.pending_operating_state);
-            append_le<uint16_t>(payload, group.recovery_cooldown_cycles);
+            // v35 never emits the retired RECOVERY_PROBE state or its
+            // pending/cooldown lanes. Keep the fields in the binary record so
+            // older readers remain structurally aligned, but serialize only
+            // the two-state lifecycle and neutral compatibility values.
+            append_le<uint8_t>(payload, std::min<uint8_t>(group.operating_state, 1));
+            append_le<uint8_t>(payload,
+                group.pending_operating_state <= 1 ? group.pending_operating_state : uint8_t{255});
+            append_le<uint16_t>(payload, 0);
             append_le<uint16_t>(payload, group.recovery_failed_reviews);
             append_le<uint16_t>(payload, group.merchant_debt_term_cycles_left);
             append_le<uint16_t>(payload, group.merchant_debt_delinquent_cycles);

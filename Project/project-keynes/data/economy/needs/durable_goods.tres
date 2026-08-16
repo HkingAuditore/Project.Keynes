@@ -5,5 +5,3 @@ script = ExtResource("1")
 id = &"durable_goods"
 display_name = "耐用消费品"
 living_cost_weight_q16 = 0
-satisfaction_tier = 2
-satisfaction_weight_q16 = 26214

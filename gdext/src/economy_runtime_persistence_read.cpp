@@ -31,7 +31,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         error = "save_chunk_header_invalid";
         return false;
     }
-    if (schema != SCHEMA_VERSION && schema != 33) {
+    if (schema != SCHEMA_VERSION) {
         error = schema <= 31 ? "economy_save_v31_or_earlier_unsupported" :
             (schema == 32 ? "economy_save_v32_or_earlier_unsupported" :
             "economy_save_schema_unsupported");
@@ -109,7 +109,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 saved_trade_export_fraction = 32768,
                 saved_trade_import_fraction = 32768,
                 saved_trade_response_days = 15,
-                saved_investment_review_days = 10,
+                saved_investment_review_days = 180,
                 saved_investment_shortage = 8192,
                 saved_investment_utilization = 42598,
                 saved_investment_payback_days = 365,
@@ -397,7 +397,10 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             saved_credit_terms == _merchant_credit_term_cycles &&
             saved_recovery_cycles == _recovery_success_cycles &&
             saved_liquidation_reviews == _recovery_liquidation_failed_reviews;
-        if ((schema >= 12 && !policy_matches) ||
+        // v33/v34 saves contain the retired probe/restart policy fields. They
+        // remain decodable, but the current profile is authoritative after
+        // migration, including the one-year suspended liquidation window.
+        if ((schema >= SCHEMA_VERSION && !policy_matches) ||
             (schema == 11 && _trade_runtime_mode == 2 && !policy_matches)) {
             error = "save_business_policy_profile_mismatch";
             return false;
@@ -431,7 +434,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             saved_resource_horizon == _resource_min_horizon_days &&
             saved_bullion_cap == _bullion_monthly_issue_cap_q16 &&
             saved_support_cap == _producer_support_monthly_cap_q16;
-        if (schema >= 14 && !dynamic_policy_matches) {
+        if (schema >= SCHEMA_VERSION && !dynamic_policy_matches) {
             error = "save_dynamic_policy_profile_mismatch";
             return false;
         }
@@ -941,8 +944,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 group.last_climate_lost_output < 0 ||
                 group.purchase_intent_capacity_q16 < 0 ||
                 group.purchase_intent_capacity_q16 > Q16_ONE ||
-                (group.pending_operating_state > 2 && group.pending_operating_state != 255) ||
-                group.operating_state > 2 || group.merchant_debt_principal < 0 ||
+                (group.pending_operating_state > 1 && group.pending_operating_state != 255) ||
+                group.operating_state > 1 || group.merchant_debt_principal < 0 ||
                 group.merchant_debt_premium < 0 ||
                 group.last_in_kind_livelihood_value < 0 ||
                 ((group.merchant_debt_principal > 0 || group.merchant_debt_premium > 0) &&

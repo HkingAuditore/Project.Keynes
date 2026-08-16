@@ -255,6 +255,28 @@ func _test_technology_gating(compiled: Dictionary, native_catalog: Dictionary) -
 	var initial_technologies: Dictionary = ext.get_country_snapshot(country_summary.country_handle)
 	var market: Dictionary = ext.get_market_cell_snapshot(0)
 	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	var population: Dictionary = ext.get_population_cell_snapshot(0)
+	var demand_indices: PackedInt32Array = population.get(
+		"demand_good_indices", PackedInt32Array())
+	var demand_quantities: PackedInt64Array = population.get(
+		"demand_per_capita_daily", PackedInt64Array())
+	var good_technology_available: PackedByteArray = market.get(
+		"good_technology_available", PackedByteArray())
+	var demand_uses_only_discovered_goods := good_technology_available.size() == goods.size()
+	var locked_demand_goods := PackedStringArray()
+	for demand_cursor in range(demand_indices.size()):
+		var good_index := int(demand_indices[demand_cursor])
+		var quantity := int(demand_quantities[demand_cursor]) \
+			if demand_cursor < demand_quantities.size() else 0
+		if quantity <= 0:
+			continue
+		if good_index < 0 or good_index >= good_technology_available.size() \
+				or good_technology_available[good_index] == 0:
+			demand_uses_only_discovered_goods = false
+			if good_index >= 0 and good_index < goods.size():
+				locked_demand_goods.append(String(goods[good_index]))
+	_expect("stone-start demand excludes undiscovered goods",
+		demand_uses_only_discovered_goods and locked_demand_goods.is_empty())
 	var advanced_type := types.find("autonomous_systems_plant")
 	var early_gold_type := types.find("placer_gold_working")
 	var early_silver_type := types.find("surface_silver_working")

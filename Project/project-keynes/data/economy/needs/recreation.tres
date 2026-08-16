@@ -5,5 +5,3 @@ script = ExtResource("1")
 id = &"recreation"
 display_name = "休闲娱乐"
 living_cost_weight_q16 = 0
-satisfaction_tier = 2
-satisfaction_weight_q16 = 32768

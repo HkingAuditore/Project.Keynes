@@ -8,10 +8,10 @@ Generated from `data/technology/technology_network.json` (schema 3).
 - Nodes with reveal conditions: 315
 - Nodes with research routes: 230
 - Research routes fully implied by hard-prerequisite history: 0
-- Reveal conditions fully implied by hard-prerequisite history: 0
+- Reveal conditions fully implied by hard-prerequisite history: 1
 - Nodes reusing a signal atom in reveal and a research route: 0
-- Nodes whose reveal shares signal atoms with hard-prerequisite ancestors: 0
-- Repeated reveal-formula groups: 74
+- Nodes whose reveal shares signal atoms with hard-prerequisite ancestors: 1
+- Repeated reveal-formula groups: 75
 - Unexplained repeated reveal-formula groups: 0
 - Invalid/self/future route references: 0
 - Nodes with non-distinct route types: 0
@@ -23,7 +23,7 @@ A route is considered historically implied only when every atom required by its 
 
 ### Fully Implied Reveal Conditions
 
-- 无
+- `tech.fermentation` - 发酵保存（agrarian）
 
 ### Fully Implied Research Routes
 
@@ -41,7 +41,7 @@ A route is considered historically implied only when every atom required by its 
 
 ### Reveal Signal Reused From Hard-Prerequisite Ancestors
 
-- 无
+- `tech.fermentation` 与祖先 `tech.food_storage`：`1|breakthrough.seed_saving|1`, `1|resource.fertile_soil|1`, `1|weather.repeated_crop_failure|1`
 
 ### Repeated Reveal Templates
 

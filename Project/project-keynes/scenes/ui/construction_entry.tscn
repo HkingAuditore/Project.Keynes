@@ -1,0 +1,33 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="1_icon"]
+
+[node name="ConstructionEntry" type="PanelContainer"]
+theme_type_variation = &"PKInsetPanel"
+
+[node name="Row" type="HBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Icon" parent="Row" instance=ExtResource("1_icon")]
+custom_minimum_size = Vector2(24, 24)
+layout_mode = 2
+
+[node name="Text" type="VBoxContainer" parent="Row"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Title" type="Label" parent="Row/Text"]
+layout_mode = 2
+text = "修建新建筑"
+theme_type_variation = &"PKSectionTitle"
+
+[node name="Subtitle" type="Label" parent="Row/Text"]
+layout_mode = 2
+text = "浏览可用项目与当前国库报价"
+theme_type_variation = &"PKMutedLabel"
+
+[node name="OpenButton" type="Button" parent="Row"]
+custom_minimum_size = Vector2(92, 34)
+layout_mode = 2
+text = "新建建筑"

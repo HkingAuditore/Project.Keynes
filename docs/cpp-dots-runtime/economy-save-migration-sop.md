@@ -1,11 +1,11 @@
 # 经济存档、catalog migration 与内容扩展 SOP
 
-## PKEC v34（当前 writer）
+## PKEC v35（当前 writer）
 
-v34 新增 `CANAL_QUOTES=27`、`CANAL_PROJECTS=28`、`END=29`，header 保存报价/项目数和
-quote/project/receipt 的 next-id。v33 `END=27` 仍可读并迁移为空运河经济集合；DataCore
-dynamic-world 负责两个 cell 字段，PKEF 负责未 ACK 的 canal commit。详见
-[运河运行时](./canal-runtime.md)。
+v35 在 v34 的运河 section 之后固定当前分组建材、ACTIVE/SUSPENDED_LOSS 建筑状态和
+停产清算诊断。header 保存报价/项目数、quote/project/receipt 的 next-id，以及当前建筑
+目录契约。v34 及更早版本不再读取或迁移；建筑目录和建材语义变化使旧存档明确不兼容。
+详见[运河运行时](./canal-runtime.md)。
 
 ## 流式格式
 
@@ -319,3 +319,4 @@ or through aliases. Missing components fail explicitly.
 PKEC v22/v23 remain readable. After population restore they rebuild tiers and
 allocate names deterministically in ascending cell order with
 `name_roll_generation=0`. PKCN still restores before PKEC.
+

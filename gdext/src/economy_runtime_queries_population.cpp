@@ -78,7 +78,85 @@ Dictionary NativeEconomyRuntime::population_cell_summary(int32_t cell_idx) const
     out["survival_satisfaction_q16"] = summary.satisfaction_q16;
     out["epoch_id"] = _epoch_id;
     append_settlement_fields(out, cell_idx);
+    append_population_employment_fields(out, cell_idx);
     return out;
+}
+
+void NativeEconomyRuntime::append_population_employment_fields(
+        Dictionary &out, int32_t cell_idx) const {
+    int64_t job_capacity = 0;
+    int64_t jobs_filled = 0;
+    int64_t snapshot_sat = 0;
+    if (_building_cell_offsets.size() == static_cast<size_t>(_cell_count + 1)) {
+        for (int32_t group_index = _building_cell_offsets[cell_idx];
+             group_index < _building_cell_offsets[cell_idx + 1];
+             ++group_index) {
+            const BuildingGroup &group = _buildings[group_index];
+            if (group.count <= 0 || group.operating_state == 1 ||
+                group.type_id < 0 || group.type_id >= static_cast<int32_t>(
+                    _building_types.size())) continue;
+            const BuildingType &type = _building_types[group.type_id];
+            const int64_t owner_required = planned_owner_demand(
+                group, snapshot_sat);
+            job_capacity = saturating_add(
+                job_capacity, owner_required, snapshot_sat);
+            jobs_filled = saturating_add(jobs_filled,
+                std::min(std::max<int64_t>(0, group.filled_owner),
+                         owner_required), snapshot_sat);
+            const int64_t utilization_q16 = std::clamp<int64_t>(
+                group.planned_utilization_q16, 0, Q16_ONE);
+            for (int32_t role = 0; role < type.employee_count; ++role) {
+                const JobRole &job = _building_employee_roles[
+                    type.employee_begin + role];
+                const int64_t full = saturating_mul(
+                    group.count, job.slots_per_building, snapshot_sat);
+                int64_t required = mul_div_sat(
+                    full, utilization_q16, Q16_ONE, snapshot_sat);
+                if (required == 0 && full > 0 && utilization_q16 > 0)
+                    required = 1;
+                job_capacity = saturating_add(
+                    job_capacity, required, snapshot_sat);
+                const int32_t fill_index = group.employee_fill_begin + role;
+                const int64_t filled = fill_index >= 0 && fill_index <
+                        static_cast<int32_t>(_building_employee_filled.size())
+                    ? _building_employee_filled[fill_index] : 0;
+                jobs_filled = saturating_add(jobs_filled,
+                    std::min(std::max<int64_t>(0, filled), required),
+                    snapshot_sat);
+            }
+        }
+    }
+    out["job_capacity"] = job_capacity;
+    out["jobs_filled"] = jobs_filled;
+    out["job_openings"] = std::max<int64_t>(0,
+        job_capacity - jobs_filled);
+    out["investment_last_review_day"] =
+        _investment_diagnostic_cell == cell_idx
+            ? _investment_diagnostic_day : -1;
+    int32_t dominant_reason = INVESTMENT_REJECTION_NONE;
+    int32_t failed_material_group = -1;
+    std::array<int64_t, INVESTMENT_REJECTION_UNSUPPORTED_KIND + 1> counts{};
+    if (_investment_diagnostic_cell == cell_idx) {
+        for (const InvestmentDiagnostic &item : _investment_diagnostics) {
+            if (item.rejection_reason > INVESTMENT_REJECTION_NONE &&
+                item.rejection_reason <= INVESTMENT_REJECTION_UNSUPPORTED_KIND) {
+                ++counts[static_cast<size_t>(item.rejection_reason)];
+            }
+            if (item.rejection_reason == INVESTMENT_REJECTION_MATERIALS &&
+                failed_material_group < 0) {
+                failed_material_group = item.failed_material_group;
+            }
+        }
+        for (int32_t reason = INVESTMENT_REJECTION_NONE + 1;
+             reason <= INVESTMENT_REJECTION_UNSUPPORTED_KIND; ++reason) {
+            if (counts[static_cast<size_t>(reason)] >
+                counts[static_cast<size_t>(dominant_reason)]) {
+                dominant_reason = reason;
+            }
+        }
+    }
+    out["investment_last_block_reason"] = dominant_reason;
+    out["investment_last_failed_material_group"] = failed_material_group;
 }
 
 Dictionary NativeEconomyRuntime::population_cell_snapshot(int32_t cell_idx) const {
@@ -128,6 +206,7 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
     out["survival_satisfaction_q16"] = summary.satisfaction_q16;
     out["epoch_id"] = _epoch_id;
     append_settlement_fields(out, cell_idx);
+    append_population_employment_fields(out, cell_idx);
     PackedInt64Array handles;
     PackedInt32Array signatures;
     PackedInt32Array professions;

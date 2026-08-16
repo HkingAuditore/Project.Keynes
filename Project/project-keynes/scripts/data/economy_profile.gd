@@ -151,7 +151,6 @@ extends Resource
 @export_range(-65536, 0, 1) var building_severe_loss_threshold_q16: int = -16384
 @export_range(1, 32, 1) var building_severe_loss_cycles: int = 3
 @export_range(0, 65536, 1) var building_restart_margin_q16: int = 6554
-@export_range(1, 32, 1) var building_restart_cycles: int = 2
 ## Merchants keep 12.5% of frozen opening cash while procurement is active.
 @export_range(0, 65536, 1) var merchant_procurement_cash_reserve_q16: int = 8192
 ## Base inventory horizon before each good's configured target ratio is applied.
@@ -162,8 +161,9 @@ extends Resource
 @export_range(0, 65536, 1) var merchant_credit_exposure_q16: int = 16384
 @export_range(0, 65536, 1) var merchant_credit_premium_q16: int = 3277
 @export_range(1, 64, 1) var merchant_credit_term_cycles: int = 6
-@export_range(1, 32, 1) var recovery_success_cycles: int = 2
-@export_range(1, 64, 1) var recovery_liquidation_failed_reviews: int = 6
+## A suspended building must fail roughly one year of 5-day restart reviews
+## before liquidation.
+@export_range(1, 365, 1) var suspended_liquidation_failed_reviews: int = 73
 ## Frozen-cycle Market V2 has passed the mobile and 10M-cohort ACTIVE gates.
 @export_enum("OFF", "PROBE", "ACTIVE") var market_runtime_mode: String = "ACTIVE"
 
@@ -186,14 +186,12 @@ extends Resource
 @export_range(0, 65536, 1) var trade_export_inventory_fraction_q16: int = 32768
 @export_range(0, 65536, 1) var trade_import_fill_fraction_q16: int = 32768
 @export_range(1, 365, 1) var trade_response_days: int = 15
-@export_range(1, 3650, 1) var investment_review_days: int = 10
+@export_range(1, 3650, 1) var investment_review_days: int = 30
 ## Per-cell building plan (procurement intent) evaluation cadence. Plans only
 ## steer the next cycles' purchases; refreshing them every 10 days instead of
 ## every settlement cycle makes the economy slightly less responsive but never
 ## breaks stock/cash conservation. Reserve rebuild still runs every epoch.
 @export_range(1, 3650, 1) var building_plan_days: int = 10
-@export_range(0, 65536, 1) var investment_min_shortage_q16: int = 8192
-@export_range(0, 65536, 1) var investment_min_utilization_q16: int = 42598
 @export_range(1, 36500, 1) var investment_max_payback_days: int = 365
 @export_range(1, 12, 1) var investment_operating_cycles: int = 2
 @export_range(1, 65536, 1) var investment_gap_fill_share_q16: int = 16384
@@ -201,7 +199,7 @@ extends Resource
 @export_range(1, 65536, 1) var investment_max_type_owner_share_q16: int = 32768
 ## Per review, an established building type may grow by at most 10% of its
 ## installed count. A previously absent type uses the separate seed limit.
-@export_range(1, 65536, 1) var investment_max_growth_share_q16: int = 6554
+@export_range(1, 65536, 1) var investment_max_growth_share_q16: int = 16384
 @export_range(1, 1024, 1) var investment_new_type_seed_buildings: int = 1
 ## A non-merchant cohort only changes profession into merchant when its
 ## projected disposable-income improvement reaches this Q16 threshold.
@@ -308,15 +306,13 @@ func to_native_profile() -> Dictionary:
 		"building_severe_loss_threshold_q16": building_severe_loss_threshold_q16,
 		"building_severe_loss_cycles": building_severe_loss_cycles,
 		"building_restart_margin_q16": building_restart_margin_q16,
-		"building_restart_cycles": building_restart_cycles,
 		"merchant_procurement_cash_reserve_q16": merchant_procurement_cash_reserve_q16,
 		"merchant_market_making_days_q16": merchant_market_making_days_q16,
 		"merchant_credit_runtime_mode": merchant_credit_runtime_mode,
 		"merchant_credit_exposure_q16": merchant_credit_exposure_q16,
 		"merchant_credit_premium_q16": merchant_credit_premium_q16,
 		"merchant_credit_term_cycles": merchant_credit_term_cycles,
-		"recovery_success_cycles": recovery_success_cycles,
-		"recovery_liquidation_failed_reviews": recovery_liquidation_failed_reviews,
+		"suspended_liquidation_failed_reviews": suspended_liquidation_failed_reviews,
 		"market_runtime_mode": market_runtime_mode,
 		"trade_runtime_mode": trade_runtime_mode,
 		"trade_capacity_per_merchant_q16": trade_capacity_per_merchant_q16,
@@ -338,8 +334,6 @@ func to_native_profile() -> Dictionary:
 		"trade_response_days": trade_response_days,
 		"investment_review_days": investment_review_days,
 		"building_plan_days": building_plan_days,
-		"investment_min_shortage_q16": investment_min_shortage_q16,
-		"investment_min_utilization_q16": investment_min_utilization_q16,
 		"investment_max_payback_days": investment_max_payback_days,
 		"investment_operating_cycles": investment_operating_cycles,
 		"investment_gap_fill_share_q16": investment_gap_fill_share_q16,

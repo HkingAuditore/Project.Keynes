@@ -47,6 +47,7 @@ func build(include_treasury: bool = false) -> Dictionary:
 			"reason": "country trade API unavailable"}
 	var country_snapshot: Dictionary = facade.snapshot(country_handle) \
 		if facade.has_method("snapshot") else {}
+	var tax_availability := _tax_availability(economy_facade, start_cell)
 	var ideology := _ideology_model(country_handle)
 	var treasury := _treasury_model(facade, country_handle) if include_treasury \
 		else _unavailable_treasury("当前页面未请求国库明细")
@@ -69,7 +70,8 @@ func build(include_treasury: bool = false) -> Dictionary:
 		"treasury": treasury,
 		"tax_policy": tax_policy,
 		"tax_presentation": present_tax_policy(tax_policy,
-			country_snapshot.get("technology_ids", PackedStringArray())),
+			country_snapshot.get("technology_ids", PackedStringArray()),
+			tax_availability),
 		"fiscal": fiscal,
 		"trade_summary": trade_summary,
 		"economy_facade": economy_facade,
@@ -84,6 +86,74 @@ func build(include_treasury: bool = false) -> Dictionary:
 		"research_signal_definitions": ResearchSignalCatalogScript.public_metadata(),
 		"ideology": ideology,
 	}
+
+
+func _tax_availability(economy_facade, cell: int) -> Dictionary:
+	var availability := {}
+	if economy_facade == null or cell < 0:
+		return availability
+
+	if economy_facade.has_method("market_cell_snapshot"):
+		var market: Dictionary = economy_facade.market_cell_snapshot(cell)
+		var good_ids: PackedStringArray = market.get("good_ids", PackedStringArray())
+		var good_available: PackedByteArray = market.get(
+			"good_technology_available", PackedByteArray())
+		if bool(market.get("ok", false)) and good_ids.size() == good_available.size():
+			var goods := {}
+			for index in range(good_ids.size()):
+				if good_available[index] != 0:
+					goods[String(good_ids[index])] = true
+			availability["good"] = goods
+
+	if economy_facade.has_method("building_cell_snapshot"):
+		var buildings: Dictionary = economy_facade.building_cell_snapshot(cell)
+		var building_ids: PackedStringArray = buildings.get(
+			"building_type_ids", PackedStringArray())
+		var building_available: PackedByteArray = buildings.get(
+			"building_technology_available", PackedByteArray())
+		if bool(buildings.get("ok", false)) \
+				and building_ids.size() == building_available.size():
+			var building_filter := {}
+			for index in range(building_ids.size()):
+				if building_available[index] != 0:
+					building_filter[String(building_ids[index])] = true
+			availability["building"] = building_filter
+
+	var professions := {}
+	var population_valid := false
+	if economy_facade.has_method("population_cell_snapshot"):
+		var population: Dictionary = economy_facade.population_cell_snapshot(cell)
+		var population_profession_ids: PackedInt32Array = population.get(
+			"profession_ids", PackedInt32Array())
+		var profession_stable_ids: PackedStringArray = population.get(
+			"profession_stable_ids", PackedStringArray())
+		# An empty profession row set is still an authoritative snapshot: it means
+		# this cell currently has no cohorts, not that the population query failed.
+		population_valid = bool(population.get("ok", false)) \
+				and not profession_stable_ids.is_empty()
+		if population_valid:
+			for profession_index in population_profession_ids:
+				if profession_index >= 0 and profession_index < profession_stable_ids.size():
+					professions[String(profession_stable_ids[profession_index])] = true
+
+	# A profession is tax-relevant once it exists in the country or is a role of
+	# a building whose complete native technology/dependency gate is open.
+	if availability.has("building"):
+		var building_content := _tax_content("building")
+		for raw_building_id in (availability["building"] as Dictionary).keys():
+			var building_item: Dictionary = building_content.get(String(raw_building_id), {})
+			if building_item.is_empty():
+				continue
+			var owner_profession := String(building_item.get("owner_profession_id", ""))
+			if not owner_profession.is_empty():
+				professions[owner_profession] = true
+			var employee_professions: PackedStringArray = building_item.get(
+				"employee_profession_ids", PackedStringArray())
+			for profession_id in employee_professions:
+				professions[String(profession_id)] = true
+	if population_valid or availability.has("building"):
+		availability["profession"] = professions
+	return availability
 
 
 func _development_model(country_handle: int, research: Dictionary) -> Dictionary:
@@ -216,25 +286,37 @@ static func present_treasury(snapshot: Dictionary) -> Dictionary:
 	}
 
 
-# Tax pages list only the content the country's completed technologies unlock,
-# mirroring NativeEconomyRuntime's executable `tech.*` requirement semantics:
-# an item with no `tech.*` tag is always available, and non-tech tag namespaces
-# are metadata only.
-static func present_tax_policy(tax_policy: Dictionary, completed_technologies) -> Dictionary:
+# Tax pages list only content available to the country at the selected starting
+# cell.  The native economy masks include dependency branches that static
+# profile tags cannot express; completed technologies remain the deterministic
+# fallback for callers that present a standalone policy dictionary.
+static func present_tax_policy(tax_policy: Dictionary, completed_technologies,
+		availability: Dictionary = {}) -> Dictionary:
+	return _present_tax_policy(tax_policy, completed_technologies, availability)
+
+
+static func _present_tax_policy(tax_policy: Dictionary, completed_technologies,
+		availability: Dictionary) -> Dictionary:
 	if not bool(tax_policy.get("ok", false)):
 		return {"ok": false}
 	var completed := {}
 	for tech_id in completed_technologies:
 		completed[String(tech_id)] = true
+	var profession_filter: Dictionary = availability.get("profession", {})
+	var good_filter: Dictionary = availability.get("good", {})
+	var building_filter: Dictionary = availability.get("building", {})
 	var professions := _present_items(
-			tax_policy.get("profession_ids", PackedStringArray()), "profession", completed, false)
+		tax_policy.get("profession_ids", PackedStringArray()), "profession", completed,
+		false, false, profession_filter, availability.has("profession"))
 	var goods := _present_items(
-		tax_policy.get("good_ids", PackedStringArray()), "good", completed, true)
+		tax_policy.get("good_ids", PackedStringArray()), "good", completed,
+		false, false, good_filter, availability.has("good"))
 	var tariff_goods := _present_items(
 		tax_policy.get("good_ids", PackedStringArray()), "good", completed,
 		true, true)
 	var buildings := _present_items(
-			tax_policy.get("building_type_ids", PackedStringArray()), "building", completed, false)
+			tax_policy.get("building_type_ids", PackedStringArray()), "building", completed,
+		false, false, building_filter, availability.has("building"))
 	return {
 		"ok": true,
 		"income": professions,
@@ -247,7 +329,8 @@ static func present_tax_policy(tax_policy: Dictionary, completed_technologies) -
 
 static func _present_items(ids: PackedStringArray, kind: String,
 		completed: Dictionary, allow_tradeable: bool = false,
-		tradeable_only: bool = false) -> Dictionary:
+		tradeable_only: bool = false, available_ids: Dictionary = {},
+		enforce_available: bool = false) -> Dictionary:
 	var content := _tax_content(kind)
 	var unlocked: Array[Dictionary] = []
 	for raw_id in ids:
@@ -255,13 +338,24 @@ static func _present_items(ids: PackedStringArray, kind: String,
 		var item: Dictionary = content.get(stable_id, {})
 		if item.is_empty():
 			continue
+		if enforce_available and not available_ids.has(stable_id):
+			continue
 		if tradeable_only and not bool(item.get("tradeable", false)):
 			continue
 		var locked := false
-		for tech_id in item.get("tech_required", []):
-			if not completed.has(String(tech_id)):
-				locked = true
-				break
+		var direct_requirements: Array = item.get("tech_required", [])
+		if not direct_requirements.is_empty():
+			var direct_ready := false
+			for tech_id in direct_requirements:
+				if completed.has(String(tech_id)):
+					direct_ready = true
+					break
+			locked = not direct_ready
+		if not locked:
+			for tech_id in item.get("tech_required_all", []):
+				if not completed.has(String(tech_id)):
+					locked = true
+					break
 		if locked and not (allow_tradeable and bool(item.get("tradeable", false))):
 			continue
 		unlocked.append({
@@ -296,27 +390,37 @@ static func _tax_content(kind: String) -> Dictionary:
 					if not profile.output_good_ids.is_empty() else ""
 				var kind_code := 0 if profile.building_kind == "collector" \
 					else (2 if profile.building_kind == "service" else 1)
-				content[String(profile.id)] = _content_entry(
+				var entry := _content_entry(
 					profile.id, profile.display_name,
 					String(IconCatalog.building_semantic(
 						String(profile.id), primary_good, kind_code)),
-					profile.technology_tags)
+					profile.technology_tags, false, profile.required_technology_tags)
+				entry["owner_profession_id"] = String(profile.owner_profession_id)
+				entry["employee_profession_ids"] = profile.employee_profession_ids
+				content[String(profile.id)] = entry
 	_tax_content_cache[kind] = content
 	return content
 
 
 static func _content_entry(stable_id, display_name: String, icon_key: String,
-		technology_tags: PackedStringArray, tradeable: bool = false) -> Dictionary:
+		technology_tags: PackedStringArray, tradeable: bool = false,
+		required_technology_tags: PackedStringArray = PackedStringArray()) -> Dictionary:
 	var required: Array[String] = []
 	for tag in technology_tags:
 		var normalized := String(tag).strip_edges()
 		if normalized.begins_with("tech."):
 			required.append(normalized)
+	var required_all: Array[String] = []
+	for tag in required_technology_tags:
+		var normalized := String(tag).strip_edges()
+		if normalized.begins_with("tech."):
+			required_all.append(normalized)
 	var resolved_name := display_name.strip_edges()
 	return {
 		"display_name": resolved_name if resolved_name != "" else String(stable_id),
 		"icon_key": icon_key,
 		"tech_required": required,
+		"tech_required_all": required_all,
 		"tradeable": tradeable,
 	}
 

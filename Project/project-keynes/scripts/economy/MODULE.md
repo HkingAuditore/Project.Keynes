@@ -17,7 +17,7 @@
 > 上面那条生存口径仍然成立，但它现在只等于 `SAT_DIM_SUBSISTENCE` 且**只**驱动饥饿死亡。
 > 完整契约见 `docs/cpp-dots-runtime/satisfaction-runtime.md`。
 
-> v16：建筑采用 ACTIVE/SUSPENDED_LOSS/RECOVERY_PROBE 三态；商人是本地聚合债权池而非普通
+> 当前：建筑公开状态只保留 ACTIVE/SUSPENDED_LOSS；商人是本地聚合债权池而非普通
 > 业主职业，5% 一次性溢价、六期偿还。自产只保留生存食品和寒冷最低衣物，实际消费价值进入
 > 次期经济收益但不能偿债。贸易短缺按事件计龄并执行源库存/目的缺口批次仲裁。测试 bootstrap
 > 按 50% 可持续承载人口和 75% 利用率反推最小生存链，剩余人口进入 unemployed cohort。
@@ -58,8 +58,11 @@
 - 家族所属建筑的 owner 岗只能由本地、完全匹配 owner signature 的家族成员占据；匿名建筑只能
   使用匿名 cohort 容量。`FAMILY_COMMIT` 在 `BUILDING_COMMIT` 后归一化成员 claim，并派生各职业的
   人口、owner-employed 与 employee-employed；不存在独立家族劳动力账本或经理代理路径。
-- 正式 `StarterSettlementBootstrap v3` 为每个首都声明一个采集营地创始家族；原生 bootstrap
-  守恒归属两名实际业主并立即晋升一名可追溯代表。未声明的普通 bootstrap 仍从空家族状态开始。
+- 正式 `StarterSettlementBootstrap v7` 为每个首都声明一个采集营地创始家族；原生 bootstrap
+  只为首栋采集建筑保留其创始经营者，且这不是规划器的人口分配规则；其余人口保留在
+  unemployed pool，由正常 owner-job matching 自主寻找建筑和职业。规划器输出的岗位容量
+  不按职业拆分，也不会转写为 `owner_population` 或任何人口职业标签。未声明的普通 bootstrap
+  仍从空家族状态开始。
   为兼容长驻编辑器发出的 v2 packet，原生层也从“强制命名首都 + 真实采集营地”派生声明，并在
   开局第 0..30 天的 `FAMILY_COMMIT` 对缺失家族的正式首都作幂等修复；没有采集营地的普通夹具
   不触发该路径。
@@ -96,11 +99,11 @@
 - 同一 variant 的 components 是互补 bundle；不同 variants 是替代品。
 - `staple_food/protein/produce` 是内部营养与价格分配子篮子，对玩家统一显示“食品”；野味、
   鱼、肉、谷物、采集植物和已解锁加工食物均按替代品展示，即使当前分配量为零也不隐藏。
-- 生存满足取“食品总满足”和“气候修正衣着满足”的较小值；高温可把衣着需求降到零。
+- 生存食品满足取“食品总满足”与任一完整主食/蛋白质/蔬果子篮子的较大值，再与气候修正衣着满足取较小值；高温可把衣着需求降到零。因此鱼、野味等完整蛋白质篮子可防止饥饿。
   周期开始时仍存活人口先参与就业和生产，profile 的 50% 阈值只用于消费后的确定性饥饿死亡，
   不再前置削减劳动力并锁死自给生产。
-- cohort 出生量按人数、`birth_rate_q32` 和当前生存满足率计算；默认年出生率 4.0%、自然死亡率
-  2.5%，完全满足时长期净增长目标约 1.5%，满足率只以 50% 权重削减出生率。同地块同民族的出生
+- cohort 出生量按人数、`birth_rate_q32` 和当前综合满意度计算；默认年出生率 20.0%、自然死亡率
+  2.5%，完全满足时长期净增长目标约 17.5%（约 4.3 年翻倍）；综合满意度以 100% 权重调制出生率，严重匮乏时会大幅压低出生。同地块同民族的出生
   贡献在 worker 内聚合，Q32 小数余数跨周期累计，并于 `STRUCTURAL_COMMIT` 加入
   `unemployed|eth`；新生不携带资金且不在同周期招聘。
 - 九套在业职业原型加一套失业者生存原型；在业原型共用九项基础家庭需求，并以基础/舒适/奢侈三档比例及分层财富弹性校准。猎人使用独立的
@@ -316,11 +319,11 @@ derived target. Price V4 instead derives its pricing inventory target from at mo
 five-day settlement period, so a balanced current flow is not priced as a
 60-day shortage. No parallel inventory state is introduced.
 
-Catalog `min_price` and `max_price` remain legacy reference metadata. Normal
-settlement, cost-anchor smoothing, trade quotes, bootstrap, and restore use only
-the positive `int32` numeric guards `[1, INT32_MAX]`. Per-day rise/fall limits
-remain the normal volatility control, and the producer cost anchor remains a
-dynamic soft floor when active supply confirms the cost signal.
+Catalog `min_price` and `max_price` are authoritative settlement bounds. Normal
+settlement clamps each updated market price to the per-good catalog interval,
+intersected with the positive `int32` numeric guards `[1, INT32_MAX]`. Per-day
+rise/fall limits remain the normal volatility control, and the producer cost
+anchor remains a dynamic soft floor when active supply confirms the cost signal.
 
 Production utilization uses household demand plus sparse business demand.
 Business-only tools and intermediates recover from the industrial probe floor
@@ -458,13 +461,14 @@ reports replace one cell's cached current-epoch contribution atomically, so a
 non-due structural reconciliation cannot make unemployment negative. Investment
 aggregates actual offered supply across every `(cell,good)`, includes owner livelihood
 in operating cost, compares the remaining demand deficit with input coverage, and reports
-explicit rejection reasons. Loss-suspended groups release every owner/employee; an
-approved recovery probe rehires only its scaled probe capacity. CSV schema v12 adds resource flow direction,
+explicit rejection reasons. Loss-suspended groups release every owner/employee; a
+viable suspended group returns to ACTIVE at the next frozen boundary with its full
+physical owner capacity. CSV schema v24 adds resource flow direction,
 procurement opportunity/allocation, in-kind livelihood coverage, and unresolved
 trade-rejection buckets. These remain derived debug state outside PKEC and replay
 hash. High discard accelerates the existing utilization response when no active
 shortage recovery is required, while preserving shortage recovery and the
-survival/probe floor.
+survival floor.
 
 CSV schema v13 adds `building_investment_probability_skips` to distinguish a
 cash-qualified cohort losing its deterministic investment roll from capital,
@@ -492,14 +496,12 @@ Investment uses actual offered-supply deficits, persistent merchant inventory-ta
 and input stock/supply coverage, not installed recipe capacity. These changes remain inside `NativeEconomyRuntime`; no
 GDScript authority, save schema, DataCore slot, or cadence was added.
 
-The 2026-07-22 lifecycle correction keeps service buildings outside producer profit states.
-Every suspended owner moves into the existing unemployed pool; an approved recovery probe
-hires again through the normal path. Owner-occupied no-production cycles can suspend a
-blocked producer, while the installed group publishes a bounded 1/6 or 1/32 unfunded
-upstream probe. Permanent liquidation reviews advance only when inputs, resources, and
-financing can execute that probe but its expected margin remains below restart; temporary
-blockage resets the failed-review streak. Probe capacity and liquidation eligibility are
-transient native lanes outside PKEC and replay hash.
+The lifecycle correction keeps service buildings outside producer profit states. Every
+suspended owner moves into the existing unemployed pool. A suspended producer publishes no
+trial-production capacity, jobs, or input demand. Permanent liquidation reviews advance only
+when a full restart is executable but its expected margin remains below restart; temporary
+blockage resets the failed-review streak. The default threshold is 73 fixed five-day reviews,
+approximately one year, before confirmed excess capacity is liquidated in batches.
 
 ## 2026-07-23 renewable-harvest and fixture-employment correction
 

@@ -25,7 +25,7 @@ const EXPECTED_DOMAIN_COUNT := 4
 const EXPECTED_MILESTONE_CANDIDATE_COUNT := 8
 const EXPECTED_MILESTONE_REQUIRED_COUNT := 4
 const MAX_VISUAL_EDGE_COUNT := 1500
-const VISUAL_EDGE_KINDS := ["hard", "alternative", "application", "milestone_candidate"]
+const VISUAL_EDGE_KINDS := ["hard", "alternative", "application", "branch", "milestone_candidate"]
 
 
 func _init() -> void:
@@ -312,6 +312,9 @@ func _node_record(definition: Dictionary, definitions: Array[Dictionary],
 		"modifier_terms": _node_modifier_terms(definition),
 		"content_effects": (definition.get("content_effects", []) as Array).duplicate(true),
 		"opportunity_cost": String(definition.get("opportunity_cost", "")),
+		"topology_review": (definition.get("topology_review", {}) as Dictionary).duplicate(true),
+		"building_unlock_review": (definition.get(
+			"building_unlock_review", {}) as Dictionary).duplicate(true),
 		"branch_successor_ids": definition.get(
 			"branch_successor_ids", PackedStringArray()),
 		"branch_successor_rationales": definition.get(
@@ -471,6 +474,7 @@ func _markdown_report(payload: Dictionary) -> String:
 	lines.append("| 硬前置边 | %d |" % int(edge_kind_counts.get("hard", 0)))
 	lines.append("| 应用交汇边 | %d |" % int(edge_kind_counts.get("application", 0)))
 	lines.append("| 替代说明边 | %d |" % int(edge_kind_counts.get("alternative", 0)))
+	lines.append("| 分支关系边 | %d |" % int(edge_kind_counts.get("branch", 0)))
 	lines.append("| 里程碑候选边 | %d |" % int(
 		edge_kind_counts.get("milestone_candidate", 0)))
 	lines.append("")
@@ -542,6 +546,18 @@ func _append_markdown_node(lines: PackedStringArray, node: Dictionary, era: Dict
 	lines.append("| 主要路线 | %s |" % _md_table(_route_value(
 		String(node.get("primary_route_tag", "")), node)))
 	lines.append("| 全部路线 | %s |" % _md_table(_route_values(node)))
+	var topology_review: Dictionary = node.get("topology_review", {})
+	if not topology_review.is_empty():
+		lines.append("| 拓扑审查 | %s：%s |" % [
+			_md_table(String(topology_review.get("role", ""))),
+			_md_table(String(topology_review.get("rationale", ""))),
+		])
+	var building_review: Dictionary = node.get("building_unlock_review", {})
+	if not building_review.is_empty():
+		lines.append("| 建筑解锁审查 | %s：%s |" % [
+			_md_table(String(building_review.get("policy", ""))),
+			_md_table(String(building_review.get("rationale", ""))),
+		])
 	lines.append("| 开局能力标签 | %s |" % _md_table(_id_values(
 		node.get("starter_capability_tags", PackedStringArray()))))
 	lines.append("| 效果配置 | %s |" % _md_table(_value_or_none(node.get("effect_profile", ""))))

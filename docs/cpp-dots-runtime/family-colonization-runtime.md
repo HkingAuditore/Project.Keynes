@@ -70,12 +70,13 @@ person stable ID 确定性随行。
 
 ## 存档与诊断
 
-当前严格版本为 PKCN v11、PKEC v34；PKEF 当前为 v9。科技目录、研究信号、Effect
+当前严格版本为 PKCN v11、PKEC v35；PKEF 当前为 v9。科技目录、研究信号、Effect
 recipe、Trigger 定义或内容绑定摘要变化时，PKCN 以 `catalog_hash_mismatch` 拒绝旧存档。
 完整恢复必须先恢复 PKCN，再恢复 PKEF 与 PKEC，使 PKEC 能交叉验证所有 `SETTLING`
 事务。恢复后重建到期堆和活动目标索引。
 
 `get_economy_report()` 暴露活动队数、到期堆大小、在途人口、路线查询、载荷拆分
 和跨域提交耗时。核心回归在 `tests/family_colonization_runtime_test.gd`，覆盖冻结
-路线、revision 重验、真实人口托管、O(1) 判重、进度返程、回执及 PKEC v34
+路线、revision 重验、真实人口托管、O(1) 判重、进度返程、回执及 PKEC v35
 中途恢复。
+

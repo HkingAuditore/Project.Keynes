@@ -41,6 +41,8 @@ func _run() -> void:
 	var profile = load("res://data/economy/default_economy.tres").to_native_profile()
 	profile.market_cycle_days = 5
 	profile.market_runtime_mode = "ACTIVE"
+	# Keep focused lifecycle/investment fixtures fast; production default is 30 days.
+	profile.investment_review_days = 10
 	_test_construction_rebuild_preserves_employee_fill(compiled, profile)
 	_test_zero_resource_releases_building_labor(compiled, profile)
 	_test_owner_positions_are_independent_of_utilization(compiled, profile)
@@ -48,6 +50,7 @@ func _run() -> void:
 	_test_production_income_consumption_order(catalog, profile)
 	_test_scarce_output_cost_floor(catalog, profile)
 	_test_survival_retention_cap(catalog, profile)
+	_test_all_survival_food_outputs_are_retained(catalog, profile)
 	_test_survival_flow_replacement_procurement(catalog, profile)
 	_test_renewable_harvest_budget_is_shared(catalog, profile)
 	_test_hunter_subsistence_and_working_capital(catalog, profile)
@@ -67,6 +70,7 @@ func _run() -> void:
 	_test_same_profession_owner_income_reallocation(catalog, profile)
 	_test_owner_income_reallocation_prefers_unemployed(catalog, profile)
 	_test_endogenous_owner_investment(catalog, profile)
+	_test_high_unemployment_investment_catchup(catalog, profile)
 	_test_collector_endogenous_investment(catalog, profile)
 	_test_all_buildings_have_explicit_construction(catalog)
 	_test_investment_capacity_is_not_gate(catalog, profile)
@@ -79,7 +83,7 @@ func _run() -> void:
 	_test_production_worker_scalar_equivalence(catalog, profile)
 	_test_merchant_financed_construction(catalog, profile)
 	# Keep the legacy insolvency fixture focused on payroll state transitions;
-	# the 60-day default is covered by the market/schema tests.
+	# the production 180-day review cadence is intentionally not used here.
 	profile.merchant_market_making_days_q16 = 1966080
 	_expect("all-technology test country bootstraps",
 		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 77))
@@ -1410,8 +1414,6 @@ func _test_endogenous_owner_investment(source_catalog: Dictionary,
 	profile.starvation_death_rate_q32 = 0
 	# These legacy policy values remain serializable, but no longer veto a
 	# profitable candidate merely because pressure/utilization is below them.
-	profile.investment_min_shortage_q16 = 65536
-	profile.investment_min_utilization_q16 = 65536
 	var signatures: PackedStringArray = catalog.signature_keys
 	var artisan_sig := signatures.find("artisan|default")
 	var hunter_sig := signatures.find("hunter|default")
@@ -1562,6 +1564,86 @@ func _test_endogenous_owner_investment(source_catalog: Dictionary,
 	_expect("non-review day prevents repeat expansion",
 		int(day31.get("building_investments_started", 0)) == 0 and
 		total_building_count == invested_total)
+
+
+func _test_high_unemployment_investment_catchup(
+		source_catalog: Dictionary, source_profile: Dictionary) -> void:
+	var catalog := source_catalog.duplicate(true)
+	var profile := source_profile.duplicate(true)
+	profile.investment_review_days = 30
+	profile.resource_safe_harvest_q16 = 0
+	profile.starvation_death_rate_q32 = 0
+	profile.merchant_market_making_days_q16 = 1966080
+	var building_ids: PackedStringArray = catalog.building_type_ids
+	var knapping_id := building_ids.find("knapping_workshop")
+	var hunting_id := building_ids.find("stone_age_hunting_camp")
+	var timber_id := building_ids.find("timber_collector")
+	var signatures: PackedStringArray = catalog.signature_keys
+	var artisan_sig := signatures.find("artisan|default")
+	var hunter_sig := signatures.find("hunter|default")
+	var forager_sig := signatures.find("forager|default")
+	var unemployed_sig := signatures.find("unemployed|default")
+	var merchant_sig := signatures.find("merchant|default")
+	var ext := _new_ext(catalog)
+	_expect("employment-catchup country bootstraps",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 9035))
+	_expect("employment-catchup runtime configures",
+		bool(ext.configure_economy(catalog, profile, 1, 9035).get("ok", false)))
+	var goods: PackedStringArray = catalog.good_ids
+	var tool_good := goods.find("tools")
+	var stock := PackedInt64Array()
+	stock.resize(goods.size())
+	stock.fill(1000000000)
+	var prices: PackedInt32Array = catalog.good_default_price.duplicate()
+	prices[tool_good] = int((catalog.good_max_price as PackedInt32Array)[tool_good])
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0, 0, 0, 0]),
+		"signature_ids": PackedInt32Array([
+			artisan_sig, hunter_sig, forager_sig, unemployed_sig, merchant_sig]),
+		"population": PackedInt64Array([1, 20, 3, 35, 1]),
+		"funds": PackedInt64Array([
+			1000000000, 1000000000, 1000000000, 3500000000, 1000000000]),
+	}, {
+		"stock": stock,
+		"price": prices,
+		"building_cells": PackedInt32Array([0, 0, 0]),
+		"building_type_ids": PackedInt32Array([
+			knapping_id, hunting_id, timber_id]),
+		"building_owner_signature_ids": PackedInt32Array([
+			artisan_sig, hunter_sig, forager_sig]),
+		"building_counts": PackedInt64Array([2, 10, 3]),
+	})
+	_expect("employment-catchup fixture injects 35 additional unemployed",
+		bool(boot.get("ok", false)))
+	if not bool(boot.get("ok", false)):
+		return
+	var first_start_day := -1
+	var catchup_seen := false
+	var jobs_started := 0
+	var ledgers_ok := true
+	for epoch in range(74):
+		var report := _run_day(ext, epoch)
+		var simulation_day := epoch * 5
+		if int(report.get("building_investment_jobs_started", 0)) > 0:
+			jobs_started += int(report.get("building_investment_jobs_started", 0))
+			if first_start_day < 0:
+				first_start_day = simulation_day
+		catchup_seen = catchup_seen or int(report.get(
+			"building_investment_employment_catchup_cells", 0)) > 0
+		ledgers_ok = ledgers_ok and int(report.get("population_error", 1)) == 0 and \
+			int(report.get("money_error", 1)) == 0 and \
+			int(report.get("goods_error", 1)) == 0
+	var population: Dictionary = ext.get_population_cell_snapshot(0)
+	var total_population := _sum_i64(population.get(
+		"populations", PackedInt64Array()))
+	var unemployed_population := _sum_i64(population.get(
+		"unemployed_by_cohort", PackedInt64Array()))
+	_expect("high unemployment activates catch-up and starts jobs within 30 days",
+		catchup_seen and jobs_started > 0 and first_start_day > 0 and
+		first_start_day <= 30)
+	_expect("employment catch-up lowers unemployment strictly below 25 percent in 365 days",
+		total_population == 60 and unemployed_population * 4 < total_population)
+	_expect("employment-catchup regression conserves every ledger", ledgers_ok)
 
 
 func _test_collector_endogenous_investment(
@@ -2003,29 +2085,26 @@ func _test_recovery_failure_commits_next_cycle(source_catalog: Dictionary,
 	var failed_report := _run_day(ext, 4)
 	var failed: Dictionary = ext.get_building_cell_snapshot(0)
 	group = (failed.group_type_ids as PackedInt32Array).find(loom_id)
-	_expect("failed probe remains recovery until the next frozen boundary",
-		int(failed_report.get("recovery_approved", 0)) == 1 and
-		int(failed_report.get("recovery_failed", 0)) == 1 and
-		int((failed.operating_state as PackedByteArray)[group]) == 2 and
-		int((failed.pending_operating_state as PackedByteArray)[group]) == 1 and
-		int((failed.recovery_cooldown_cycles as PackedInt32Array)[group]) == 2 and
+	_expect("failed restart remains fully suspended without a probe state",
+		int((failed.operating_state as PackedByteArray)[group]) == 1 and
+		int((failed.pending_operating_state as PackedByteArray)[group]) == 255 and
+		int((failed.recovery_cooldown_cycles as PackedInt32Array)[group]) == 0 and
 		int((failed.filled_owner as PackedInt64Array)[group]) == 0)
 	var commit_report := _run_day(ext, 5)
 	var committed: Dictionary = ext.get_building_cell_snapshot(0)
 	group = (committed.group_type_ids as PackedInt32Array).find(loom_id)
-	_expect("next due cycle commits suspension without rehiring",
-		int(commit_report.get("recovery_candidates", 0)) == 0 and
+	_expect("next due cycle keeps suspension without rehiring",
 		int((committed.operating_state as PackedByteArray)[group]) == 1 and
 		int((committed.pending_operating_state as PackedByteArray)[group]) == 255 and
-		int((committed.recovery_cooldown_cycles as PackedInt32Array)[group]) == 2 and
+		int((committed.recovery_cooldown_cycles as PackedInt32Array)[group]) == 0 and
 		int((committed.filled_owner as PackedInt64Array)[group]) == 0)
 	var cooldown_report := _run_day(ext, 6)
 	var cooldown: Dictionary = ext.get_building_cell_snapshot(0)
 	group = (cooldown.group_type_ids as PackedInt32Array).find(loom_id)
-	_expect("recovery cooldown skips two complete due-cell cycles",
-		int(cooldown_report.get("recovery_candidates", 0)) == 0 and
+	_expect("suspended building has no recovery cooldown or probe capacity",
 		int((cooldown.operating_state as PackedByteArray)[group]) == 1 and
-		int((cooldown.recovery_cooldown_cycles as PackedInt32Array)[group]) == 1)
+		int((cooldown.pending_operating_state as PackedByteArray)[group]) == 255 and
+		int((cooldown.recovery_cooldown_cycles as PackedInt32Array)[group]) == 0)
 	_expect("recovery-pending cycles conserve every ledger",
 		int(failed_report.get("population_error", 1)) == 0 and
 		int(failed_report.get("money_error", 1)) == 0 and
@@ -2329,6 +2408,67 @@ func _test_survival_retention_cap(catalog: Dictionary, source_profile: Dictionar
 		int(next_report.get("population_error", 1)) == 0 and
 		int(next_report.get("money_error", 1)) == 0 and
 		int(next_report.get("goods_error", 1)) == 0)
+
+func _test_all_survival_food_outputs_are_retained(catalog: Dictionary,
+		source_profile: Dictionary) -> void:
+	# The farm deliberately produces a token staple amount and a large produce
+	# amount. A staple-only retention route would retain only the token output;
+	# the aggregate calorie pool must also retain the produce output.
+	var fixture_catalog := catalog.duplicate(true)
+	var farm_id := (fixture_catalog.building_type_ids as PackedStringArray).find(
+		"subsistence_farm")
+	var output_offsets: PackedInt32Array = fixture_catalog.building_output_offsets
+	var output_quantities: PackedInt64Array = fixture_catalog.building_output_quantities.duplicate()
+	output_quantities[int(output_offsets[farm_id])] = 1
+	output_quantities[int(output_offsets[farm_id]) + 1] = 1000
+	fixture_catalog.building_output_quantities = output_quantities
+	var profile := source_profile.duplicate(true)
+	profile.starvation_death_rate_q32 = 0
+	var ext := _new_ext(fixture_catalog)
+	_expect("multi-food retention country bootstraps",
+		CountryTestHelper.configure_all_technologies(ext, fixture_catalog, 1, 1791))
+	_expect("multi-food retention runtime configures",
+		bool(ext.configure_economy(fixture_catalog, profile, 1, 1791).get("ok", false)))
+	# The default test resource bridge has only 1000 reserve units per cell;
+	# raise the farm's two capacity resources so this test isolates retention.
+	var resource_ids: PackedStringArray = fixture_catalog.building_resource_ids
+	var reserve_slots: PackedStringArray = fixture_catalog.building_resource_reserve_slots
+	for resource_id in ["arable_land", "fertile_soil"]:
+		var resource_index := resource_ids.find(resource_id)
+		if resource_index < 0:
+			continue
+		var reserve_slot: int = ext.component_id(StringName(reserve_slots[resource_index]))
+		ext.write_f32_range(reserve_slot, 0, PackedFloat32Array([1000000.0]))
+	var signatures: PackedStringArray = fixture_catalog.signature_keys
+	var farmer_sig := signatures.find("subsistence_farmer|default")
+	var merchant_sig := signatures.find("merchant|default")
+	var goods := PackedInt64Array()
+	goods.resize((fixture_catalog.good_ids as PackedStringArray).size())
+	goods.fill(0)
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0]),
+		"signature_ids": PackedInt32Array([farmer_sig, merchant_sig]),
+		"population": PackedInt64Array([1, 1]),
+		"funds": PackedInt64Array([100000000, 100000000]),
+	}, {
+		"stock": goods,
+		"building_cells": PackedInt32Array([0]),
+		"building_type_ids": PackedInt32Array([farm_id]),
+		"building_owner_signature_ids": PackedInt32Array([farmer_sig]),
+		"building_counts": PackedInt64Array([1]),
+	})
+	_expect("multi-food retention settlement bootstraps", bool(boot.get("ok", false)))
+	var report := _run_day(ext, 0)
+	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	var row := (buildings.group_type_ids as PackedInt32Array).find(farm_id)
+	var retained := int((buildings.last_retained as PackedInt64Array)[row]) if row >= 0 else 0
+	_expect("produce output remains retained beside a staple output",
+		row >= 0 and retained > 100 and
+		int((buildings.last_output as PackedInt64Array)[row]) > retained)
+	_expect("multi-food retention cycle conserves every ledger",
+		int(report.get("population_error", 1)) == 0 and
+		int(report.get("money_error", 1)) == 0 and
+		int(report.get("goods_error", 1)) == 0)
 
 func _test_survival_flow_replacement_procurement(catalog: Dictionary,
 		source_profile: Dictionary) -> void:

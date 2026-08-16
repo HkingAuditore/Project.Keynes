@@ -32,6 +32,13 @@ var economic_sector_id: String = ""
 @export_range(0, 36500, 1) var construction_days: int = 0
 @export var construction_good_ids: PackedStringArray = PackedStringArray()
 @export var construction_quantities: PackedInt64Array = PackedInt64Array()
+## Optional construction-material alternatives. Each entry in
+## construction_good_ids is a required group (AND); the corresponding
+## candidate slice is an OR list. Empty arrays preserve the legacy single-good
+## recipe and are expanded by EconomyCatalog.
+@export var construction_candidate_offsets: PackedInt32Array = PackedInt32Array()
+@export var construction_candidate_good_ids: PackedStringArray = PackedStringArray()
+@export var construction_candidate_efficiency_q16: PackedInt32Array = PackedInt32Array()
 
 ## V1 has exactly one owner profession. Ownership itself is held by the
 ## sponsoring (cell, signature) cohort identity and survives handle churn.

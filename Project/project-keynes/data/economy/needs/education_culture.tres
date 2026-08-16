@@ -5,5 +5,3 @@ script = ExtResource("1")
 id = &"education_culture"
 display_name = "教育与文化"
 living_cost_weight_q16 = 0
-satisfaction_tier = 2
-satisfaction_weight_q16 = 45875

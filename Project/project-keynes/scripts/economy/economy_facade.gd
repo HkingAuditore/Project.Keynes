@@ -299,6 +299,11 @@ func good_display_name(good_index: int) -> String:
 	var stable_id := String(ids[good_index])
 	return String(_good_display_names.get(stable_id, stable_id))
 
+
+func profession_display_name(profession_id: StringName) -> String:
+	var stable_id := String(profession_id)
+	return String(_profession_display_names.get(stable_id, stable_id))
+
 func building_cell_snapshot(cell_idx: int) -> Dictionary:
 	if not _configured:
 		return {}
@@ -309,11 +314,15 @@ func building_cell_snapshot(cell_idx: int) -> Dictionary:
 
 
 func construction_catalog(search: String = "", offset: int = 0,
-		limit: int = 32) -> Dictionary:
+		limit: int = 32,
+		technology_available: PackedByteArray = PackedByteArray()) -> Dictionary:
 	var ids: PackedStringArray = _catalog.get("building_type_ids", PackedStringArray())
+	var enforce_technology := technology_available.size() == ids.size()
 	var matches := PackedInt32Array()
 	var needle := search.strip_edges().to_lower()
 	for type_id in range(ids.size()):
+		if enforce_technology and technology_available[type_id] == 0:
+			continue
 		var stable_id := String(ids[type_id])
 		var display_name := String(_building_display_names.get(stable_id, stable_id))
 		if needle.is_empty() or stable_id.to_lower().contains(needle) \
@@ -329,14 +338,21 @@ func treasury_construction_options(country_handle: int, cell_idx: int,
 		search: String = "", offset: int = 0, limit: int = 32) -> Dictionary:
 	if not _configured or not _world_ext.has_method("get_treasury_construction_quotes"):
 		return {"ok": false, "reason": "construction_quote_api_unavailable"}
-	var page := construction_catalog(search, offset, limit)
+	var building_snapshot: Dictionary = building_cell_snapshot(cell_idx)
+	var stable_ids: PackedStringArray = _catalog.get(
+		"building_type_ids", PackedStringArray())
+	var technology_available: PackedByteArray = building_snapshot.get(
+		"building_technology_available", PackedByteArray())
+	if not bool(building_snapshot.get("ok", false)) \
+			or technology_available.size() != stable_ids.size():
+		return {"ok": false, "reason": "construction_technology_snapshot_unavailable"}
+	var page := construction_catalog(
+		search, offset, limit, technology_available)
 	var type_ids: PackedInt32Array = page.get("type_ids", PackedInt32Array())
 	var quotes: Dictionary = _world_ext.get_treasury_construction_quotes(
 		country_handle, cell_idx, type_ids)
 	if not bool(quotes.get("ok", false)):
 		return quotes
-	var stable_ids: PackedStringArray = _catalog.get(
-		"building_type_ids", PackedStringArray())
 	var good_ids: PackedStringArray = _catalog.get("good_ids", PackedStringArray())
 	var eligible: PackedByteArray = quotes.get("eligible", PackedByteArray())
 	var reasons: PackedStringArray = quotes.get("reason_codes", PackedStringArray())
@@ -857,6 +873,8 @@ func _attach_building_display_metadata(snapshot: Dictionary) -> void:
 		"building_input_category_ids", "building_input_min_quality_levels",
 		"building_input_candidate_offsets", "building_input_candidate_good_ids",
 		"building_input_candidate_efficiency_q16", "building_upgrade_family_ids",
+		"building_construction_candidate_offsets", "building_construction_candidate_good_ids",
+		"building_construction_candidate_efficiency_q16",
 		"building_upgrade_family_indices", "building_upgrade_tiers",
 		"building_production_climate_profile_indices", "production_climate_profile_ids",
 		"building_behavior_ids",

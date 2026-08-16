@@ -1005,13 +1005,14 @@ foreach ($expectation in @(
 $coreHouseholdNeeds = @('staple_food','protein','produce','clothing','housing','household_goods',
     'hygiene','healthcare','home_energy')
 $expectedPlanNeeds = @{
-    plan_unemployed=@('staple_food')
+    plan_unemployed=@('staple_food','protein','produce')
     survival_household=$coreHouseholdNeeds
     hunter_household=@($coreHouseholdNeeds + @('work_equipment'))
     agrarian_household=@($coreHouseholdNeeds + @('transport','work_equipment','recreation'))
     extractive_household=@($coreHouseholdNeeds + @('transport','work_equipment'))
     industrial_worker_household=@($coreHouseholdNeeds + @('transport','work_equipment'))
     artisan_household=@($coreHouseholdNeeds + @('education_culture','work_equipment','luxury'))
+    scholarly_household=@($coreHouseholdNeeds + @('education_culture','work_equipment','luxury'))
     technical_household=@($coreHouseholdNeeds + @('transport','communication','education_culture',
         'recreation','durable_goods','work_equipment','luxury'))
     merchant_household=@($coreHouseholdNeeds + @('transport','communication','education_culture',
@@ -1024,7 +1025,8 @@ $expectedPlanNames = @{
     hunter_household='狩猎家庭消费'
     agrarian_household='农业型家庭消费'
     extractive_household='采掘型家庭消费'; industrial_worker_household='产业工人家庭消费'
-    artisan_household='工匠型家庭消费'; technical_household='技术型家庭消费'
+    artisan_household='工匠型家庭消费'; scholarly_household='学术家庭消费'
+    technical_household='技术型家庭消费'
     merchant_household='商人家庭消费'; owner_household='业主家庭消费'
 }
 $needPolicies = @{
@@ -1047,7 +1049,7 @@ $needPolicies = @{
     status_goods=@(1,'luxury',98304,1024,524288,32768)
 }
 $expectedNeedVariants = @{
-    staple_food=@('prepared_staples','bread','grain','gathered_plants')
+    staple_food=@('prepared_staples','bread','grain','gathered_plants','potatoes')
     protein=@('game_meat','meat','fish','canned_fish','dairy_products')
     produce=@('vegetables','processed_food')
     clothing=@('cloth','fur','clothing','footwear')
@@ -1070,7 +1072,8 @@ $planScales = @{
     hunter_household=@(85,40,0)
     agrarian_household=@(95,75,0)
     extractive_household=@(105,85,0); industrial_worker_household=@(100,85,0)
-    artisan_household=@(105,105,80); technical_household=@(110,125,120)
+    artisan_household=@(105,105,80); scholarly_household=@(105,105,80)
+    technical_household=@(110,125,120)
     merchant_household=@(115,150,180); owner_household=@(120,175,240)
 }
 $allowedCrossNeedUses = @{
@@ -1081,13 +1084,13 @@ $allowedCrossNeedUses = @{
 }
 $forbiddenHouseholdGoods = @('railway_equipment','oceanic_vessels','scientific_instruments','electricity')
 $expectedHouseholdGoods = @(
-    'prepared_staples','bread','grain','gathered_plants','game_meat','meat','fish','canned_fish','dairy_products',
+    'prepared_staples','bread','grain','gathered_plants','potatoes','game_meat','meat','fish','canned_fish','dairy_products',
     'vegetables','processed_food','cloth','fur','clothing','footwear','construction_components',
     'pottery','furniture','soap','detergent','medicinal_herbs','pharmaceuticals','logs','coal',
     'natural_gas','refined_fuel','horses','automobiles','radio_equipment','telecom_equipment',
     'manuscripts','printed_materials','computers','beverages','household_appliances',
     'autonomous_systems','chipped_stone_tools','bronze_tools','tools','precision_tools',
-    'fine_clothing','fine_furniture','jewelry','spices'
+    'fine_clothing','fine_furniture','jewelry','spices','technology_points'
 )
 
 $planSignatures = @{}
@@ -1179,7 +1182,8 @@ foreach ($file in Get-ChildItem -LiteralPath $planDir -Filter '*.tres') {
             } else { $variantKeys[$variantKey] = $true }
             for ($componentIndex = $componentBegin; $componentIndex -lt $componentEnd; $componentIndex++) {
                 $good = $componentGoodIds[$componentIndex]
-                if ($componentQuantities[$componentIndex] -ne 1000) {
+                $expectedComponentQuantity = if ($good -eq 'technology_points') { 100 } else { 1000 }
+                if ($componentQuantities[$componentIndex] -ne $expectedComponentQuantity) {
                     $failures.Add("household component quantity drift: $planId -> $needId -> $good")
                 }
                 if (-not $goodNeedUses.ContainsKey($good)) { $goodNeedUses[$good] = @() }
@@ -1187,7 +1191,13 @@ foreach ($file in Get-ChildItem -LiteralPath $planDir -Filter '*.tres') {
             }
         }
         $actualVariants = @($variantKeys.Keys | Sort-Object)
-        $expectedVariants = @($expectedNeedVariants[$needId] | Sort-Object)
+        $expectedVariants = if ($planId -eq 'technical_household' -and
+            $needId -eq 'education_culture') {
+            @('manuscripts+technology_points','printed_materials+technology_points',
+                'computers+technology_points' | Sort-Object)
+        } else {
+            @($expectedNeedVariants[$needId] | Sort-Object)
+        }
         if (($actualVariants -join ',') -ne ($expectedVariants -join ',')) {
             $failures.Add("household need variant classification drift: $planId -> $needId")
         }
@@ -1223,7 +1233,7 @@ foreach ($file in Get-ChildItem -LiteralPath $planDir -Filter '*.tres') {
         $failures.Add("duplicate consumption prototype: $planId and $($planSignatures[$signature])")
     } else { $planSignatures[$signature] = $planId }
 }
-if ($planCount -ne 10) { $failures.Add("expected ten consumption prototypes, found $planCount") }
+if ($planCount -ne 11) { $failures.Add("expected eleven consumption prototypes, found $planCount") }
 $actualHouseholdGoods = @($goods.Values | Where-Object { $_.Demanded } |
     ForEach-Object { $_.Id } | Sort-Object)
 if (($actualHouseholdGoods -join ',') -ne (($expectedHouseholdGoods | Sort-Object) -join ',')) {
@@ -1358,7 +1368,7 @@ for ($eraRank = 0; $eraRank -le 10; $eraRank++) {
     }
     Report-Construction-Cycles $blockedBuildings $eraReachable $eraRank
     $hasStaple = $false
-    foreach ($staple in @('gathered_plants','grain','bread','prepared_staples')) {
+    foreach ($staple in @('gathered_plants','grain','bread','prepared_staples','potatoes')) {
         if ($eraReachable.Contains($staple)) { $hasStaple = $true; break }
     }
     if (-not $hasStaple) { $failures.Add("era $eraRank has no reachable staple food") }

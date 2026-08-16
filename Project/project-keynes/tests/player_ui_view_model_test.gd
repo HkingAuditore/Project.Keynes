@@ -149,7 +149,7 @@ func _initialize() -> void:
 	if tabs.size() != 5:
 		failures.append("expected five dossier tabs")
 	var expected_tabs := ["geography", "population", "families", "market", "buildings"]
-	var expected_labels := ["地理信息", "人口信息", "家族", "市场信息", "建筑"]
+	var expected_labels := ["地理", "人口", "家族", "市场", "建筑"]
 	for i in range(expected_tabs.size()):
 		if i >= tabs.size() or String(tabs[i].get("id", "")) != expected_tabs[i] \
 				or String(tabs[i].get("label", "")) != expected_labels[i]:
@@ -366,9 +366,9 @@ func _initialize() -> void:
 		"settlement_cashflow_expense": PackedInt64Array([0, 500000, 0]),
 		"settlement_income_by_cohort": PackedInt64Array([1500000]),
 		"settlement_expense_by_cohort": PackedInt64Array([500000]),
-		"demand_good_offsets": PackedInt32Array([0, 2]),
-		"demand_good_indices": PackedInt32Array([0, 1]),
-		"demand_per_capita_daily": PackedInt64Array([800, 40]),
+		"demand_good_offsets": PackedInt32Array([0, 3]),
+		"demand_good_indices": PackedInt32Array([0, 1, 3]),
+		"demand_per_capita_daily": PackedInt64Array([800, 40, 25]),
 		"demand_good_stable_ids": PackedStringArray(["grain", "cloth", "fur", "clothing"]),
 		"demand_need_stable_ids": PackedStringArray(["staple_food", "produce", "clothing"]),
 		"demand_need_offsets": PackedInt32Array([0, 3]),
@@ -643,6 +643,20 @@ func _initialize() -> void:
 		failures.append("UI view model mutated simulation reserve data")
 	if not is_equal_approx(before_reserve, 12500.0):
 		failures.append("test reserve baseline was unexpectedly changed")
+	var family_visibility := {
+		"enforce_buildings": true, "buildings": {"unlocked_building": true},
+		"enforce_goods": true, "goods": {"unlocked_good": true},
+		"enforce_professions": true, "professions": {"artisan": true},
+	}
+	if CellInspectorViewModel._family_behavior_selector_visible(
+			0, "locked_building", family_visibility) \
+			or CellInspectorViewModel._family_behavior_selector_visible(
+			3, "locked_good", family_visibility) \
+			or CellInspectorViewModel._family_behavior_selector_visible(
+			1, "locked_profession", family_visibility) \
+			or not CellInspectorViewModel._family_behavior_selector_visible(
+			0, "unlocked_building", family_visibility):
+		failures.append("family detail did not filter locked behavior selectors")
 
 	if failures.is_empty():
 		print("[player-ui-view-model] PASS")

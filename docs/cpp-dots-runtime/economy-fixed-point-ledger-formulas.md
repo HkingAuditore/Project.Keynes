@@ -144,9 +144,15 @@ explicit_money_mint += support_money
 每次提交严格校验：
 
 ```text
+country_research_goods_consumed = max(0,
+    research_consumed_total_at_close - research_consumed_total_at_epoch_begin)
+```
+
+```text
 closing_population = opening_population + explicit_population_delta
 closing_money      = opening_money + explicit_mint - explicit_burn
 closing_stock      = opening_stock + explicit_stock_delta - consumed_goods
+                     - country_research_goods_consumed
 ```
 
 任何误差非零或内部不变量破坏都进入 fatal；不为千万 cohort 创建回滚副本。
@@ -222,8 +228,8 @@ allocation_i = floor(prefix_i * available / total)
 
 ```text
 balanced_food_sat = sum(food_filled) / sum(food_desired)
-staple_sat   = staple_filled / staple_desired
-food_sat     = max(staple_sat, balanced_food_sat)
+best_food_sat = max(staple_sat, protein_sat, produce_sat)
+food_sat     = max(best_food_sat, balanced_food_sat)
 clothing_sat = clothing_desired == 0 ? 1 : clothing_filled / clothing_desired
 cold_exposure = max(clamp((0.5 - temperature) * 2, 0, 1), snow_cover)
 cold_clothing_ceiling = 1 - cold_exposure * (1 - clothing_sat)
@@ -247,9 +253,11 @@ expected_births_q32 = population * effective_birth_rate_q32 * epoch_days
 [综合满意度运行时](./satisfaction-runtime.md)。
 
 周期开始时仍存活人口先就业和生产，不用上周期满足度削减劳动力。
-职业默认出生率为每日 Q32 `353011`（约 3.0%/年），自然死亡率为 `294176`（约 2.5%/年），
-满足度权重为 100%。同一 cell 内按 ethnicity 汇总 `expected_births_q32`；整数部分直接出生，Q32
-小数部分使用 `seed/sample_day/cell/ethnicity` 的无状态哈希舍入，不新增 birth residual。
+职业默认出生率为每日 Q32 `2353407`（约 20.0%/年），自然死亡率为 `294176`（约 2.5%/年），
+完全满足时净增长约 17.5%/年，健康人口理论翻倍时间约 4.3 年；满意度权重为 100%，严重匮乏
+会大幅压低出生。同一 cell
+内按 ethnicity 汇总 `expected_births_q32`；整数部分直接出生，Q32 小数部分写入每格每民族的
+`birth_residual_q32` 并跨周期累计，由 PKEC v30 持久化。
 新生人口在结构提交末尾合并到 `unemployed|eth`，资金、收入和就业均为零。
 
 默认饥饿满足度阈值是 50%；
@@ -332,8 +340,9 @@ market_stock += accepted_goods
 
 ```text
 closing_stock = opening_stock + explicit_stock_delta + accepted_output
-                - household_consumption - construction_inputs
-                - production_inputs - cycle_flow_discarded
+                 - household_consumption - construction_inputs
+                 - production_inputs - production_output_discarded
+                 - cycle_flow_discarded - country_research_goods_consumed
 ```
 
 所有生产业主按本 cohort 的普通 desired need quantity 和正常 variant 得分份额留用自产物资；
@@ -391,7 +400,8 @@ industrial 仍必须有显式建材配方。goods audit 继续为：
 ```text
 closing_stock = opening_stock + explicit_stock_delta + accepted_output
                 - household_consumption - construction_inputs
-                - production_inputs - cycle_flow_discarded
+                - production_inputs - production_output_discarded
+                - cycle_flow_discarded - country_research_goods_consumed
 ```
 ## 2026-07-18 owner livelihood and capped procurement formulas
 
@@ -602,7 +612,7 @@ cohort funds, merchant funds, the money audit, PKEC v15 bytes, or the state hash
 Utilization still follows realized sell-through, but high discard accelerates the
 existing response. A discard rate of at least 25% applies a response floor of 0.75;
 at least 50% applies a response of 1.0 when no active shortage recovery is required.
-A real shortage recovery signal retains priority, and the existing survival/probe
+A real shortage recovery signal retains priority, and the existing survival
 utilization floor remains authoritative.
 
 ## Healthy subsistence and effective-supply investment
@@ -640,14 +650,16 @@ inventory_pressure_q16 = clamp((price_inventory_target - stock)
 
 merchant_inventory_target = protected_daily_flow
                             * good_target_inventory_days_q16 / Q16
-final_price = clamp(rate_limited_composite_price, 1, INT32_MAX)
+final_price = clamp(rate_limited_composite_price,
+                    max(1, good.min_price),
+                    min(INT32_MAX, max(max(1, good.min_price), good.max_price)))
 ```
 
 The price target is derived transiently and is not merchant inventory authority. The
-merchant target retains the full configured horizon. Catalog `min_price/max_price` do
-not clamp normal prices; the remaining bounds are integer-safety guards. The production
-cost anchor is still a dynamic soft floor and may lift an underpriced active output only
-within the configured price-rise rate.
+merchant target retains the full configured horizon. Catalog `min_price/max_price` clamp
+normal prices in addition to the integer-safety guards. The production cost anchor is
+still a dynamic soft floor and may lift an underpriced active output only within the
+configured price-rise rate.
 
 ## Flow replacement procurement and producer settlement
 
@@ -686,7 +698,7 @@ is capped by the existing renewable harvest/standing-resource availability and b
 forecast procurement quota. A physically blocked or overstocked producer therefore cannot
 consume pooled owner cash merely because its output is classified as survival.
 
-## Suspended producer probe and liquidation gate
+## Suspended producer restart and liquidation gate
 
 ```text
 settled = last_output > 0 or last_input > 0 or last_resource > 0
@@ -694,17 +706,18 @@ settled = last_output > 0 or last_input > 0 or last_resource > 0
 advance_suspension = (settled and realized_margin <= severe_loss_threshold)
                      or (filled_owner > 0 and not settled)
 
-probe_scale = 1/6  if survival_or_cycle_flow_output else 1/32
-probe_executable = physical_inputs_available
-                   and natural_resources_available
-                   and financing_available
-advance_liquidation_review = probe_executable
+restart_executable = physical_inputs_available
+                     and natural_resources_available
+                     and financing_available
+advance_liquidation_review = restart_executable
                              and expected_margin < restart_margin
 ```
 
-Suspension sets owner demand to zero but does not remove the building. Probe demand is
-unfunded signal demand only: it changes neither stock nor cash. Non-executable reviews reset
-the consecutive failure count. Service buildings do not evaluate these formulas.
+Suspension sets production, owner demand, employment, and input demand to zero but does not
+remove the building. A profitable, executable restart records `pending=ACTIVE` and becomes
+active at the next frozen settlement boundary. Non-executable reviews reset the consecutive
+failure count. A permanently unprofitable suspended group is liquidated only after 73 failed
+five-day reviews (approximately 365 days); service buildings do not evaluate these formulas.
 
 ## Production climate capacity
 

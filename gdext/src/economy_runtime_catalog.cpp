@@ -488,7 +488,6 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
         _survival_food_need_stable_ids.push_back(
             static_cast<int32_t>(found - _need_ids.begin()));
     }
-    _survival_staple_need_stable_id = _survival_food_need_stable_ids.front();
     _survival_food_need_mask.assign(_need_ids.size(), uint8_t{0});
     for (const int32_t stable_need : _survival_food_need_stable_ids)
         _survival_food_need_mask[stable_need] = 1;
@@ -643,7 +642,6 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
         _components[c] = {component_goods[c], component_qty[c]};
     }
     _survival_food_good_mask.assign(goods, uint8_t{0});
-    _survival_staple_good_mask.assign(goods, uint8_t{0});
     _survival_clothing_good_mask.assign(goods, uint8_t{0});
     for (const Need &need : _needs) {
         const bool survival_food_need = need.stable_id >= 0 &&
@@ -660,8 +658,6 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
             if (component.qty_per_need == GOODS_SCALE) {
                 if (survival_food_need) {
                     _survival_food_good_mask[component.good_id] = 1;
-                    if (need.stable_id == _survival_staple_need_stable_id)
-                        _survival_staple_good_mask[component.good_id] = 1;
                 }
                 if (survival_clothing_need)
                     _survival_clothing_good_mask[component.good_id] = 1;
@@ -1487,6 +1483,8 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
         _building_type_labor_signal_professions.clear();
         _building_employee_roles.clear();
         _building_construction_goods.clear();
+        _building_construction_candidate_offsets.clear();
+        _building_construction_candidates.clear();
         _building_inputs.clear();
         _building_input_candidates.clear();
         _building_outputs.clear();
@@ -1613,6 +1611,25 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
         packed_i64(catalog, "building_employee_reference_wages_per_day");
     const std::vector<int32_t> construction_goods = packed_i32(catalog, "building_construction_good_ids");
     const std::vector<int64_t> construction_qty = packed_i64(catalog, "building_construction_quantities");
+    std::vector<int32_t> construction_candidate_offsets = packed_i32(
+        catalog, "building_construction_candidate_offsets");
+    std::vector<int32_t> construction_candidate_goods = packed_i32(
+        catalog, "building_construction_candidate_good_ids");
+    std::vector<int32_t> construction_candidate_efficiencies = packed_i32(
+        catalog, "building_construction_candidate_efficiency_q16");
+    // v1/v2 catalogs did not carry construction candidate CSR. Expand every
+    // legacy fixed material into a one-candidate group before validation.
+    if (construction_candidate_offsets.empty() &&
+            construction_candidate_goods.empty() &&
+            construction_candidate_efficiencies.empty()) {
+        construction_candidate_offsets.push_back(0);
+        for (const int32_t good : construction_goods) {
+            construction_candidate_goods.push_back(good);
+            construction_candidate_efficiencies.push_back(Q16_ONE);
+            construction_candidate_offsets.push_back(
+                static_cast<int32_t>(construction_candidate_goods.size()));
+        }
+    }
     const std::vector<int32_t> input_goods = packed_i32(catalog, "building_input_good_ids");
     const std::vector<int64_t> input_qty = packed_i64(catalog, "building_input_quantities");
     std::vector<int32_t> input_required_q16 = packed_i32(catalog, "building_input_required_q16");
@@ -1647,6 +1664,13 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
         employee_reference_wages.size() != employee_prof.size() ||
         construction_offsets.back() != static_cast<int32_t>(construction_goods.size()) ||
         construction_qty.size() != construction_goods.size() ||
+        construction_candidate_offsets.size() != construction_goods.size() + 1 ||
+        construction_candidate_offsets.empty() || construction_candidate_offsets.front() != 0 ||
+        !std::is_sorted(construction_candidate_offsets.begin(),
+                        construction_candidate_offsets.end()) ||
+        construction_candidate_offsets.back() !=
+            static_cast<int32_t>(construction_candidate_goods.size()) ||
+        construction_candidate_efficiencies.size() != construction_candidate_goods.size() ||
         input_offsets.back() != static_cast<int32_t>(input_goods.size()) ||
         input_qty.size() != input_goods.size() ||
         input_required_q16.size() != input_goods.size() ||
@@ -1991,6 +2015,39 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
     if (std::adjacent_find(upgrade_pairs.begin(), upgrade_pairs.end()) != upgrade_pairs.end()) {
         error = "building_upgrade_family_tier_duplicate";
         return false;
+    }
+    _building_construction_candidate_offsets = construction_candidate_offsets;
+    _building_construction_candidates.resize(construction_candidate_goods.size());
+    for (size_t i = 0; i < construction_candidate_goods.size(); ++i) {
+        if (construction_candidate_goods[i] < 0 ||
+            construction_candidate_goods[i] >= static_cast<int32_t>(_good_ids.size()) ||
+            construction_candidate_efficiencies[i] <= 0 ||
+            construction_candidate_efficiencies[i] > Q16_ONE * 4) {
+            error = "building_construction_candidate_invalid";
+            return false;
+        }
+        _building_construction_candidates[i] = {
+            construction_candidate_goods[i], construction_candidate_efficiencies[i]};
+    }
+    for (size_t group = 0; group < _building_construction_goods.size(); ++group) {
+        const int32_t begin = _building_construction_candidate_offsets[group];
+        const int32_t end = _building_construction_candidate_offsets[group + 1];
+        if (begin >= end) {
+            error = "building_construction_candidate_group_empty";
+            return false;
+        }
+        bool preferred_seen = false;
+        for (int32_t candidate = begin; candidate < end; ++candidate) {
+            if (_building_construction_candidates[candidate].good_id ==
+                    _building_construction_goods[group].good_id) {
+                preferred_seen = true;
+                break;
+            }
+        }
+        if (!preferred_seen) {
+            error = "building_construction_preferred_candidate_missing";
+            return false;
+        }
     }
     return true;
 }

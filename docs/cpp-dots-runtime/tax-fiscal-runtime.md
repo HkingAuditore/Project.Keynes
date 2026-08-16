@@ -109,7 +109,7 @@ market 完成后，`household_market/income_subsidy` 子阶段按 cohort 汇总�
 ## 存档与迁移
 
 - PKCN v11 保存五类默认率、稀疏覆盖、政策版本和 Country Modifier domain。
-- PKEC v34 保存逐 cell 上批补贴权重、generation-safe 国家 handle、财政累计值和确定性 hash。
+- PKEC v35 保存逐 cell 上批补贴权重、generation-safe 国家 handle、财政累计值和确定性 hash。
 - PKCN v3/PKEC v22 有且只有一条显式迁移：基础税率全零、覆盖为空、补贴历史为空。新增税率
   stat 的 Modifier catalog 扩展仅在这条迁移中接受，并逐项验证旧 definition version、
   stat key 和 term payload；其他 catalog mismatch 仍拒绝。
@@ -130,3 +130,4 @@ market 完成后，`household_market/income_subsidy` 子阶段按 cohort 汇总�
 最低验证集为 country、economy rolling、building、modifier、game-save 和玩家国家 UI
 focused suites，加 debug/release 构建及 50 日 production-path benchmark。确定性测试必须
 覆盖 worker 数、slice budget、continuation、保存恢复和财政 hash。
+

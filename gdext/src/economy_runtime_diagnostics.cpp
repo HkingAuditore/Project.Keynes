@@ -820,6 +820,13 @@ Dictionary NativeEconomyRuntime::report() const {
         _opening_totals.country_cash + _opening_totals.escrow_cash;
     const int64_t money_close = _closing_totals.cohort_funds +
         _closing_totals.country_cash + _closing_totals.escrow_cash;
+    const int64_t goods_expected = _opening_totals.goods_stock +
+        _explicit_stock_delta + _production_output_stock +
+        _production_output_discarded + _production_output_retained -
+        _consumed_goods - _owner_output_consumed -
+        _construction_goods_consumed - _production_inputs_consumed -
+        _production_output_discarded - _cycle_flow_discarded -
+        _bullion_stock_consumed - _country_research_goods_consumed;
     out["path"] = "ECONOMY_GRAPH";
     out["mode"] = "native";
     out["report_mode"] = "full";
@@ -1543,6 +1550,7 @@ Dictionary NativeEconomyRuntime::report() const {
     out["filled_employee_jobs"] = _filled_employee_jobs;
     out["unemployed_population"] = _unemployed_population;
     out["construction_goods_consumed"] = _construction_goods_consumed;
+    out["explicit_stock_delta"] = _explicit_stock_delta;
     out["building_investment_model"] = "endogenous_owner_portfolio_v8";
     out["investment_gap_fill_share_q16"] =
         _investment_gap_fill_share_q16;
@@ -1599,6 +1607,12 @@ Dictionary NativeEconomyRuntime::report() const {
         _building_investment_capital_limited;
     out["building_investment_owner_population_limited"] =
         _building_investment_owner_population_limited;
+    out["building_investment_jobs_started"] =
+        _building_investment_jobs_started;
+    out["building_investment_employment_gap"] =
+        _building_investment_employment_gap;
+    out["building_investment_employment_catchup_cells"] =
+        _building_investment_employment_catchup_cells;
     out["desired_business_demand"] = _desired_business_demand;
     out["funded_business_demand"] = _funded_business_demand;
     out["unfunded_business_demand"] = _unfunded_business_demand;
@@ -1621,7 +1635,8 @@ Dictionary NativeEconomyRuntime::report() const {
 	out["silver_money_issued"] = _silver_money_issued;
 	out["cycle_flow_produced"] = _cycle_flow_produced;
 	out["cycle_flow_consumed"] = _cycle_flow_consumed;
-	out["cycle_flow_discarded"] = _cycle_flow_discarded;
+    out["cycle_flow_discarded"] = _cycle_flow_discarded;
+    out["consumed_goods"] = _consumed_goods;
     out["building_wages_paid"] = _building_wages_paid;
     out["building_wages_unpaid"] = _building_wages_unpaid;
     out["building_base_wages_due"] = _building_base_wages_due;
@@ -1863,13 +1878,15 @@ Dictionary NativeEconomyRuntime::report() const {
     out["population_error"] = _epoch_active ? 0 : _closing_totals.population - population_expected;
     out["money_error"] = _epoch_active ? 0
         : money_close - (money_open + _explicit_money_mint - _explicit_money_burn);
+    out["opening_goods_stock"] = _opening_totals.goods_stock;
+    out["closing_goods_stock"] = _closing_totals.goods_stock;
+    out["opening_country_goods"] = _opening_totals.country_goods;
+    out["closing_country_goods"] = _closing_totals.country_goods;
+    out["goods_expected"] = goods_expected;
     out["goods_error"] = _epoch_active ? 0
-        : _closing_totals.goods_stock -
-              (_opening_totals.goods_stock + _explicit_stock_delta +
-               _production_output_stock + _production_output_retained -
-               _consumed_goods - _owner_output_consumed -
-			   _construction_goods_consumed - _production_inputs_consumed -
-			   _cycle_flow_discarded - _bullion_stock_consumed);
+        : _closing_totals.goods_stock - goods_expected;
+    out["country_research_goods_consumed"] =
+        _country_research_goods_consumed;
     out["saturation_count"] = _saturation_count;
     out["fatal_reason"] = String(_fatal_reason.c_str());
     out["fatal"] = _fatal;
@@ -1955,7 +1972,7 @@ Dictionary NativeEconomyRuntime::report() const {
     out["merchant_count"] = static_cast<int64_t>(_merchant_slots.size());
     out["merchant_repairs"] = _merchant_repairs;
     out["price_cap_hits"] = _price_cap_hits;
-    out["price_runtime_bounds"] = "numeric_guard_only";
+    out["price_runtime_bounds"] = "catalog_min_max_and_numeric_guard";
     out["price_numeric_guard_min"] = PRICE_NUMERIC_GUARD_MIN;
     out["price_numeric_guard_max"] = PRICE_NUMERIC_GUARD_MAX;
     out["continuation_slices"] = _continuation_slices;

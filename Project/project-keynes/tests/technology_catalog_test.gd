@@ -121,7 +121,7 @@ func _init() -> void:
 		== EXPECTED_TECHNOLOGY_COUNT)
 	var visual_edges: Array = catalog.technology_visual_edges
 	assert(visual_edges.size() <= 1500)
-	var visual_kind_counts := {"hard": 0, "alternative": 0, "application": 0,
+	var visual_kind_counts := {"hard": 0, "alternative": 0, "application": 0, "branch": 0,
 		"milestone_candidate": 0}
 	for edge in visual_edges:
 		var kind := String((edge as Dictionary).get("kind", ""))
@@ -131,6 +131,11 @@ func _init() -> void:
 			assert(not String((edge as Dictionary).get("route_id", "")).is_empty())
 	assert(int(visual_kind_counts.milestone_candidate) == 88)
 	assert(int(visual_kind_counts.alternative) > 0)
+	var authored_branch_edges := 0
+	for definition_value in definitions:
+		authored_branch_edges += (definition_value as Dictionary).get(
+			"branch_successor_ids", PackedStringArray()).size()
+	assert(int(visual_kind_counts.branch) == authored_branch_edges)
 	for formal_id in ["tech.atmospheric_engine", "tech.geographic_information_systems"]:
 		var formal_index := (catalog.technology_ids as PackedStringArray).find(formal_id)
 		assert(formal_index >= 0)

@@ -981,12 +981,6 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
             group.count, type.owner_slots_per_building, snapshot_sat);
         int64_t employment_utilization_q16 = group.operating_state == 1
             ? 0 : group.planned_utilization_q16;
-        if (group.operating_state == 2 && group_idx < static_cast<int32_t>(
-                _building_recovery_probe_capacity_q16.size())) {
-            employment_utilization_q16 = std::min<int64_t>(
-                employment_utilization_q16,
-                _building_recovery_probe_capacity_q16[group_idx]);
-        }
         const int64_t planned_owner_required = planned_owner_demand(
             group, snapshot_sat);
         group_type_ids.push_back(group.type_id);
@@ -1057,9 +1051,10 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
         severe_loss_cycles.push_back(group.severe_loss_cycles);
         recovery_cycles.push_back(group.recovery_cycles);
         recovery_failed_reviews.push_back(group.recovery_failed_reviews);
-        pending_operating_state.push_back(group.pending_operating_state);
-        recovery_cooldown_cycles.push_back(group.recovery_cooldown_cycles);
-        operating_state.push_back(group.operating_state);
+        pending_operating_state.push_back(group.pending_operating_state <= 1
+            ? group.pending_operating_state : uint8_t{255});
+        recovery_cooldown_cycles.push_back(0);
+        operating_state.push_back(std::min<uint8_t>(group.operating_state, 1));
         merchant_debt_principal.push_back(group.merchant_debt_principal);
         merchant_debt_premium.push_back(group.merchant_debt_premium);
         merchant_debt_term_cycles_left.push_back(group.merchant_debt_term_cycles_left);
@@ -1157,6 +1152,11 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     PackedInt64Array investment_candidate_driver_merchant_sold;
     PackedInt64Array investment_candidate_driver_sell_through_q16;
     PackedInt64Array investment_candidate_driver_discard_q16;
+    PackedInt32Array investment_candidate_failed_material_group;
+    PackedInt32Array investment_candidate_selected_material_offsets;
+    PackedInt32Array investment_candidate_selected_material_good_ids;
+    PackedInt64Array investment_candidate_selected_material_quantities;
+    investment_candidate_selected_material_offsets.push_back(0);
     if (_investment_diagnostic_cell == cell_idx) {
         for (const InvestmentDiagnostic &item : _investment_diagnostics) {
             investment_candidate_type_ids.push_back(item.type_id);
@@ -1180,6 +1180,18 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
                 item.driver_sell_through_q16);
             investment_candidate_driver_discard_q16.push_back(
                 item.driver_discard_q16);
+            investment_candidate_failed_material_group.push_back(
+                item.failed_material_group);
+            for (size_t material = 0;
+                 material < item.selected_material_good_ids.size(); ++material) {
+                investment_candidate_selected_material_good_ids.push_back(
+                    item.selected_material_good_ids[material]);
+                investment_candidate_selected_material_quantities.push_back(
+                    material < item.selected_material_quantities.size()
+                        ? item.selected_material_quantities[material] : 0);
+            }
+            investment_candidate_selected_material_offsets.push_back(
+                investment_candidate_selected_material_good_ids.size());
         }
 
     }
@@ -1269,6 +1281,14 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
         investment_candidate_driver_utilization_q16;
     out["investment_candidate_driver_sellable"] =
         investment_candidate_driver_sellable;
+    out["investment_candidate_failed_material_group"] =
+        investment_candidate_failed_material_group;
+    out["investment_candidate_selected_material_offsets"] =
+        investment_candidate_selected_material_offsets;
+    out["investment_candidate_selected_material_good_ids"] =
+        investment_candidate_selected_material_good_ids;
+    out["investment_candidate_selected_material_quantities"] =
+        investment_candidate_selected_material_quantities;
     out["investment_candidate_driver_merchant_sold"] =
         investment_candidate_driver_merchant_sold;
     out["investment_candidate_driver_sell_through_q16"] =
@@ -1384,6 +1404,12 @@ Dictionary NativeEconomyRuntime::treasury_construction_quotes(
     const int32_t cost_factor = country_slot >= 0 && country_slot <
             static_cast<int32_t>(_epoch_country_construction_cost_factor_q16.size())
         ? _epoch_country_construction_cost_factor_q16[country_slot] : Q16_ONE;
+    std::vector<int64_t> country_stock(_good_ids.size(), 0);
+    for (size_t good = 0; good < country_stock.size(); ++good) {
+        country_stock[good] = std::max<int64_t>(0,
+            _country_runtime->good_for_handle(country_handle,
+                static_cast<int32_t>(good)));
+    }
 
     for (int64_t cursor = 0; cursor < requested_type_ids.size(); ++cursor) {
         const int32_t type_id = requested_type_ids[cursor];
@@ -1423,25 +1449,36 @@ Dictionary NativeEconomyRuntime::treasury_construction_quotes(
             std::vector<int64_t> quote_required;
             quote_good_ids.reserve(type.construction_count);
             quote_required.reserve(type.construction_count);
-            for (int32_t edge = 0; edge < type.construction_count; ++edge) {
-                const GoodAmount &item = _building_construction_goods[
-                    type.construction_begin + edge];
-                const int64_t required = std::max<int64_t>(1, mul_div_sat(
-                    item.quantity, cost_factor, Q16_ONE, quote_sat));
-                auto found = std::find(quote_good_ids.begin(),
-                                       quote_good_ids.end(), item.good_id);
-                if (found == quote_good_ids.end()) {
-                    quote_good_ids.push_back(item.good_id);
-                    quote_required.push_back(required);
-                } else {
-                    const size_t index = static_cast<size_t>(
-                        found - quote_good_ids.begin());
-                    quote_required[index] = saturating_add(
-                        quote_required[index], required, quote_sat);
-                }
-                if (can_build && !good_available(cell_idx, item.good_id, false)) {
-                    can_build = false;
-                    reason = "construction_technology_locked";
+            ConstructionMaterialPlan material_plan;
+            const bool material_plan_ready = plan_construction_materials(
+                cell_idx, type_id, 1, cost_factor, material_plan,
+                &country_stock);
+            if (!material_plan_ready && can_build) {
+                can_build = false;
+                reason = "construction_materials_insufficient";
+            }
+            if (material_plan_ready) {
+                quote_good_ids = material_plan.good_ids;
+                quote_required = material_plan.quantities;
+            } else {
+                // Keep a useful quote for locked/invalid entries using the
+                // preferred legacy recipe; eligibility remains false above.
+                for (int32_t edge = 0; edge < type.construction_count; ++edge) {
+                    const GoodAmount &item = _building_construction_goods[
+                        type.construction_begin + edge];
+                    const int64_t required = std::max<int64_t>(1, mul_div_sat(
+                        item.quantity, cost_factor, Q16_ONE, quote_sat));
+                    auto found = std::find(quote_good_ids.begin(),
+                                           quote_good_ids.end(), item.good_id);
+                    if (found == quote_good_ids.end()) {
+                        quote_good_ids.push_back(item.good_id);
+                        quote_required.push_back(required);
+                    } else {
+                        const size_t index = static_cast<size_t>(
+                            found - quote_good_ids.begin());
+                        quote_required[index] = saturating_add(
+                            quote_required[index], required, quote_sat);
+                    }
                 }
             }
             for (size_t item_index = 0; item_index < quote_good_ids.size();

@@ -1,10 +1,10 @@
 # 原生阶层与本地市场运行时（Market V2 / Price V4）
 
-PKEC v34 在 Economy 内加入公共工程 `InfrastructureProjectStore`、报价 token 与运河路线
+PKEC v35 在 Economy 内加入公共工程 `InfrastructureProjectStore`、报价 token 与运河路线
 CSR；国库资产、市场采购、回执和守恒仍复用既有经济机制。领域 API 与跨域 ACK 契约见
 [运河运行时](./canal-runtime.md)。
 
-2026-07 的高速合批、认证近似冷却、generation-stamped scratch 和三态
+2026-07 的高速合批、认证近似冷却、generation-stamped scratch 和两态
 closing audit 契约见
 [运行时性能优化契约](runtime-performance-optimization-2026-07.md)。
 
@@ -75,18 +75,18 @@ capped at 25% of the group per review, and moves the same proportion of
 merchant debt to bad debt. Building groups remain aggregate; no per-building
 state is introduced.
 
-`NativeEconomyRuntime` 继续单独持有建筑、债务、就业和贸易状态。建筑状态为
-`ACTIVE / SUSPENDED_LOSS / RECOVERY_PROBE`；停产组可从本格商人聚合现金池取得仅用于
-建设材料或生产实物投入的信用，基础工资后、本期奖金前按本金优先偿还。连续两个成功试产周期
-恢复 ACTIVE；连续六次 10 日审查未恢复则整组清算，商栈除外，未偿债务只记坏账。
-自产实物收入按冻结零售价持久化到来源建筑，只参与经济收益和岗位选择，不可偿债。
-恢复试产的结果在本周期只写 `pending_operating_state`，到该 cell 下一个 frozen
-结算周期开始时才提交。失败探针保持本周期 `RECOVERY_PROBE` 的就业与发布状态一致，
-随后进入两个本地周期的冷却；探针 owner/employee 只按 probe capacity 招聘。
+`NativeEconomyRuntime` 继续单独持有建筑、债务、就业和贸易状态。PKEC v35 的建筑公开状态仅为
+`ACTIVE / SUSPENDED_LOSS`；停产组不再保留试产产能、岗位或投入需求。停产组可从本格
+商人聚合现金池取得仅用于建设材料或生产实物投入的信用，基础工资后、本期奖金前按本金
+优先偿还。满足输入、资源、融资和盈利条件的停产组只写入 `pending_operating_state=ACTIVE`，
+在下一个 frozen 结算边界直接恢复；连续 73 次五日清算复核（约 365 天）仍不可恢复时，
+才按确认的过剩产能分批清算，商栈除外，未偿债务只记坏账。自产实物收入按冻结零售价
+持久化到来源建筑，只参与经济收益和岗位选择，不可偿债。
 建筑角色存储重建保留既有 employee fill，新扩容量保持空缺。自然资源容量在就业前压入
 `planned_utilization_q16`；零资源 ACTIVE 建筑保留资产和业主席位、释放按利用率缩放的雇员，
-若随后进入 SUSPENDED 才释放业主。PKEC writer 为 v19；restore
-接受 v19，并将 v18 的 pending/cooldown 默认迁移为 `NONE/0`。
+若随后进入 SUSPENDED 才释放业主。停产组每个五日结算边界复核一次，连续 73 次失败
+复核（约一年）后才按过剩容量分批清算；v34 及更早 PKEC 因建筑目录/建材契约变化拒绝加载，
+不做旧存档迁移。
 
 > 2026-07-11 状态：冻结周期错峰版默认 `market_runtime_mode=ACTIVE`、结算周期 5 日。功能、守恒、
 > worker/scalar 确定性、移动和 10M cohort 性能门槛均已通过。
@@ -151,7 +151,7 @@ sequence、settled day、稳定结果码及实际两类物资/现金支出；它
 - C++ 按建筑数、周期天数和计划利用率确定性重建稀疏生产投入硬预留。多投入配方先按同一可执行比例缩放，只预留能组成完整配方的数量；缺少任一互补投入时不会继续锁住其他投入。若非生存产出会消耗生存食物，则整套配方让家庭生存清算优先，只能使用清算后的余量。商人目标库存至少覆盖实际预留；居民与国内贸易只能消费/导出 `stock - reserve`。`production_input_reserved`、`production_input_reserve_shortfall` 及 selected-cell/CSV v14 逐商品列用于诊断。缓存不进入 PKEC，可从建筑和市场信号状态重建。
 - 正常商人现金不足时，生产者托底只补足正常目标库存的剩余缺口，不再把全部可储存余货无条件入库；超过目标的余量进入真实 discard sink。被托底的数量仍获得冻结本地零售价 20% 的显式发行货币。`production_output_supported` 与 `producer_support_money_issued` 分开报告，货币审计把后者计入 `_explicit_money_mint`。`cycle_flow` 产出不能跨周期存货，但在边界清零前会先获得同周期低价采购/托底机会，剩余瞬态库存再计入 `cycle_flow_discarded`。
 - 生成测试经济不再使用职业固定人均资金：每个 cohort 获得按当前气候、族群和默认价格计算的 30 日 `survival_household` 生存金；业主追加两周期最低有效输入成本；商人追加本地产出目标库存资金。
-- PKEC v34 是当前 writer/reader：保留 FamilyStore、NotablePersonStore、cohort membership、
+- PKEC v35 是当前 writer/reader：保留 FamilyStore、NotablePersonStore、cohort membership、
   building ownership、Economy Modifier domain、冻结环境、财政与出生余数，并追加家族特性 roll、
   per-cell influence branch 与有序特性命令 sections。reader 只接受 v30，v29 及更早版本明确拒绝。
 - 显赫家族不拆分建筑组或创建第二钱包；成员/所有权采用稀疏边，业主岗位必须由本格同职业家族
@@ -644,15 +644,17 @@ Inspector 诊断 lane，计入 runtime memory，但不进入 state hash 或 PKEC
 各原型再分别应用基础、舒适、奢侈三档比例，财富弹性从主食的低弹性逐步提高到身份消费。
 `survival_household` 继续作为自适应工资的生活成本基准。
 
-三个饮食 need 对 UI 统一显示为“食品”，但 native 仍分别保留营养、价格和技术替代权重；野味是
-蛋白质替代品。Inspector 从嵌套 CSR 枚举计划内全部组件，以 market 科技位过滤，零分配但已解锁
+三个饮食 need 对 UI 统一显示为“食品”，但 native 仍分别保留营养、价格和技术替代权重；野味与鱼类是
+蛋白质替代品，马铃薯也是主食替代品。Inspector 从嵌套 CSR 枚举计划内全部组件，以 market 科技位过滤，零分配但已解锁
 的替代品仍显示；数量和支出仍只来自 `demand_good_*` 聚合列。`needs_satisfaction` 的权威语义是
-食品总满足与气候衣着满足的较小值，等价于 `SAT_DIM_SUBSISTENCE`；自 2026-08-04 起它
+食品总满足或任一完整食品子篮子与气候衣着满足的较小值，等价于 `SAT_DIM_SUBSISTENCE`；自 2026-08-04 起它
 **只**驱动饥饿死亡，出生率与其余玩法读 `composite_satisfaction`，见
 [综合满意度运行时](./satisfaction-runtime.md)。周期开始时仍存活人口先就业和生产；默认 50%
 是消费后的饥饿满足度阈值，不前置削减劳动力。Q32 饥饿死亡率使用既有 residual、birth/death
-审计和结构回收路径。默认职业年出生/自然死亡率为 4.0%/2.5%，完全满足时净增长目标约 1.5%；
-出生率折减读 composite 并先按 `satisfaction_birth_reference_q16` 重标定，权重仍为 50%。
+审计和结构回收路径。默认职业年出生/自然死亡率为 20.0%/2.5%，完全满足时净增长目标约 17.5%，
+健康人口理论翻倍时间约 4.3 年；
+出生率折减读 composite 并先按 `satisfaction_birth_reference_q16` 重标定，默认权重为 100%，
+因此严重匮乏会大幅压低出生而不影响完全满意时的 20% 年出生率。
 出生贡献按地块与民族聚合，Q32 小数余数跨周期累计，并由 PKEC v30 持久化；不新增调度阶段。
 
 建筑基础工资不再预付；生产出售后用 owner 销售后资金统一分配。最终欠薪继续记录在
@@ -1053,24 +1055,25 @@ trade stock planning, but no longer makes a flow-balanced good look maximally sc
 the price integrator. Selected-cell market snapshots expose `price_inventory_target`
 beside `merchant_inventory_target` so the two derived horizons can be audited directly.
 
-Catalog `min_price` and `max_price` are legacy reference values rather than normal
-market controls. Settlement prices, trade quotes, cost anchors, bootstrap packets, and
-PKEC restore validation use only the emergency numeric interval `[1, INT32_MAX]`.
+Catalog `min_price` and `max_price` are authoritative settlement bounds. Settlement
+prices are clamped to each good's catalog interval intersected with the emergency
+numeric interval `[1, INT32_MAX]`; trade quotes, cost anchors, bootstrap packets, and
+PKEC restore validation therefore never expose a price outside those bounds.
 Configured per-day rise/fall limits still bound volatility, and the observed production
 cost anchor remains a rate-limited dynamic soft floor. Trade relief is derived from
-shortage, unfunded business demand, and production-input reserve gaps; touching a legacy
-catalog maximum is no longer a relief signal. PKEC v15 and authoritative state layout
-are unchanged.
+shortage, unfunded business demand, and production-input reserve gaps. PKEC v15 and
+authoritative state layout are unchanged.
 
 ## 2026-07-22 Price V4 anchored additive pricing and investment feedback
 
-Price V4 keeps uncapped economic prices with directional adjustment references. Frozen
+Price V4 uses catalog-bounded economic prices with directional adjustment references. Frozen
 market pressure is clamped by the per-good daily rise/fall rate. Positive pressure is
 multiplied by `max(default_price, cost_anchor_price)`, so repeated equal shortages produce
 linear reference-value increments instead of exponential increments. Negative pressure is
 multiplied by the current market price, so a high production-cost anchor cannot amplify a
-glut-driven markdown into an immediate price collapse. The only remaining bounds are the
-fixed-point numeric guards. Fully idle goods use a separate bounded mean-reversion step
+glut-driven markdown into an immediate price collapse. The resulting price is finally
+clamped to the catalog min/max and fixed-point numeric guards. Fully idle goods use a
+separate bounded mean-reversion step
 toward `default_price`; legacy goods profiles receive an effective minimum inactive-reversion
 weight of 8192 Q16.
 
@@ -1111,18 +1114,12 @@ extraction, or generation is a recoverable execution blockage and remains active
 `SUSPENDED_LOSS` always releases every owner to the unemployment pool while preserving
 installed capacity.
 
-A suspended producer publishes only a small unfunded upstream probe (1/6 for survival or
-cycle-flow output, otherwise 1/32). It neither withdraws stock nor reserves labor or cash.
-Permanent-liquidation reviews advance only when the probe inputs, natural resources, and
-financing are currently executable but the counterfactual margin still misses the restart
-threshold. A supply, resource, or financing blockage resets failed liquidation reviews, so
-scarcity pauses the business without destroying it. These probe and eligibility lanes are
-epoch-transient and do not change PKEC v19 or the authoritative hash.
-
-An approved `RECOVERY_PROBE` counts as successful only when the group actually executes at
-least one input, output, extraction, or generation leg and also passes its cash/economic
-checks. A zero-work probe is a failure, publishes `pending=SUSPENDED_LOSS`, and commits that
-state only at the next due-cell boundary before the two-cycle retry cooldown.
+A suspended producer publishes no production, employment, or input demand. Permanent-liquidation
+reviews advance only when a full restart is physically and financially executable but the expected
+margin still misses the restart threshold. A supply, resource, or financing blockage resets failed
+liquidation reviews, so scarcity pauses the business without destroying it. The failed-review
+threshold is 73 fixed five-day reviews (approximately one year), and the counter is retained in
+the building snapshot/CSV for diagnostics.
 
 ## 2026-07-23 initial renewable configuration and test-fixture population
 
@@ -1261,3 +1258,4 @@ capitals. A forced capital receives and retains a deterministic name below tier
 backward-compatibly in the high bit of the persisted tier byte; older v24
 records have it clear. Selected-cell summaries expose
 `settlement_name_forced`.
+

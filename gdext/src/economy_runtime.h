@@ -35,7 +35,10 @@ public:
     // 30: authoritative composite satisfaction dimensions, income baseline EMA,
     //     per-cohort fiscal burden accumulators, family branch satisfaction, and
     //     per-cell published social-pressure level.
-    static constexpr int32_t SCHEMA_VERSION = 34;
+    // 35: RECOVERY_PROBE is no longer a runtime state. The building catalog
+    // and grouped construction contract changed with this version; older
+    // economy saves are intentionally incompatible and are rejected.
+    static constexpr int32_t SCHEMA_VERSION = 35;
     static constexpr int32_t ROLLING_PHASE_COUNT = 5;
     // 不能叫 PAGE_SIZE：那是 POSIX 保留的宏名，emscripten 的 musl
     // <bits/limits.h> 无条件 `#define PAGE_SIZE 65536`，会把这行成员声明展开成
@@ -597,6 +600,19 @@ private:
         int64_t quantity = 0;
     };
 
+    struct ConstructionCandidate {
+        int32_t good_id = -1;
+        int32_t efficiency_q16 = Q16_ONE;
+    };
+
+    struct ConstructionMaterialPlan {
+        std::vector<int32_t> good_ids;
+        std::vector<int64_t> quantities;
+        int64_t total_cost = 0;
+        int32_t failed_group = -1;
+        bool feasible = false;
+    };
+
     struct ProductionInput {
         int32_t preferred_good_id = -1;
         int64_t quantity = 0;
@@ -664,7 +680,7 @@ private:
         uint16_t recovery_failed_reviews = 0;
         uint16_t merchant_debt_term_cycles_left = 0;
         uint16_t merchant_debt_delinquent_cycles = 0;
-        uint8_t operating_state = 0; // 0=ACTIVE, 1=SUSPENDED_LOSS, 2=RECOVERY_PROBE.
+        uint8_t operating_state = 0; // 0=ACTIVE, 1=SUSPENDED_LOSS.
         uint8_t wage_suspended = 0;
         int64_t merchant_debt_principal = 0;
         int64_t merchant_debt_premium = 0;
@@ -993,6 +1009,9 @@ private:
         int64_t payback_days = 0;
         int64_t required_capital = 0;
         int64_t projected_profit_per_day = 0;
+        int32_t failed_material_group = -1;
+        std::vector<int32_t> selected_material_good_ids;
+        std::vector<int64_t> selected_material_quantities;
     };
 
     struct OutputInvestmentSignal {
@@ -2394,9 +2413,7 @@ private:
     std::vector<uint8_t> _survival_food_need_mask;
     std::vector<int32_t> _survival_required_need_indices;
     std::vector<uint8_t> _survival_food_good_mask;
-    std::vector<uint8_t> _survival_staple_good_mask;
     std::vector<uint8_t> _survival_clothing_good_mask;
-    int32_t _survival_staple_need_stable_id = -1;
     int32_t _survival_clothing_need_stable_id = -1;
     int32_t _starvation_satisfaction_threshold_q16 = Q16_ONE / 2;
     int32_t _survival_production_target_q16 = Q16_ONE;
@@ -2436,7 +2453,9 @@ private:
     int32_t _merchant_credit_premium_q16 = 3277;
     int32_t _merchant_credit_term_cycles = 6;
     int32_t _recovery_success_cycles = 2;
-    int32_t _recovery_liquidation_failed_reviews = 6;
+    // 73 five-day reviews are approximately one year. The old recovery name
+    // is retained only for save/profile compatibility.
+    int32_t _recovery_liquidation_failed_reviews = 73;
     int32_t _merchant_profession_id = -1;
     std::string _merchant_profession_stable_id = "merchant";
     // Reserved profession representing unemployed population. Resolved from the
@@ -2464,7 +2483,7 @@ private:
     int32_t _trade_export_inventory_fraction_q16 = Q16_ONE / 2;
     int32_t _trade_import_fill_fraction_q16 = Q16_ONE / 2;
     int32_t _trade_response_days = 15;
-    int32_t _investment_review_days = 10;
+    int32_t _investment_review_days = 30;
     // Per-cell building plan (procurement intent) evaluation cadence. Cells
     // are evaluated when cell % _building_plan_days == day % _building_plan_days;
     // reserve rebuild still covers every due building cell each epoch.
@@ -2476,7 +2495,7 @@ private:
     int32_t _investment_gap_fill_share_q16 = Q16_ONE / 4;
     int32_t _investment_portfolio_max_types = 4;
     int32_t _investment_max_type_owner_share_q16 = Q16_ONE / 2;
-    int32_t _investment_max_growth_share_q16 = 6554;
+    int32_t _investment_max_growth_share_q16 = 16384;
     int32_t _investment_new_type_seed_buildings = 1;
     int32_t _investment_merchant_transition_min_improvement_q16 = Q16_ONE / 2;
     int32_t _investment_sparse_mode = 2;
@@ -2519,6 +2538,8 @@ private:
     int64_t _explicit_money_burn = 0;
     int64_t _external_population_delta = 0;
     int64_t _explicit_stock_delta = 0;
+    int64_t _country_research_consumed_opening = 0;
+    int64_t _country_research_goods_consumed = 0;
     int64_t _consumed_goods = 0;
     int64_t _births = 0;
     int64_t _deaths = 0;
@@ -2604,6 +2625,9 @@ private:
     int64_t _building_investment_material_limited = 0;
     int64_t _building_investment_capital_limited = 0;
     int64_t _building_investment_owner_population_limited = 0;
+    int64_t _building_investment_jobs_started = 0;
+    int64_t _building_investment_employment_gap = 0;
+    int64_t _building_investment_employment_catchup_cells = 0;
     int64_t _desired_business_demand = 0;
     int64_t _funded_business_demand = 0;
     int64_t _unfunded_business_demand = 0;
@@ -3147,9 +3171,9 @@ private:
     std::vector<int64_t> _building_working_capital_allocated;
     std::vector<int64_t> _building_owner_livelihood_credit;
     std::vector<int64_t> _building_merchant_credit_limit;
-    // Suspended producers keep a bounded upstream demand signal without
-    // retaining labor. Permanent liquidation is reviewed only when a probe is
-    // physically and financially executable but still economically unviable.
+    // Suspended producers keep no production, labor, or input demand. Permanent
+    // liquidation is reviewed only when a full restart is physically and
+    // financially executable but still economically unviable.
     std::vector<int64_t> _building_recovery_probe_capacity_q16;
     std::vector<uint8_t> _building_recovery_liquidation_eligible;
     // Per-group cache for refresh_building_modifier_factors, keyed on every
@@ -3685,6 +3709,11 @@ private:
     std::vector<int32_t> _building_type_labor_signal_professions;
     std::vector<JobRole> _building_employee_roles;
     std::vector<GoodAmount> _building_construction_goods;
+    // Candidate CSR is parallel to _building_construction_goods. The legacy
+    // preferred good remains the first-class group identity; each slice is an
+    // OR list of regional substitutes for that required group.
+    std::vector<int32_t> _building_construction_candidate_offsets;
+    std::vector<ConstructionCandidate> _building_construction_candidates;
     std::vector<ProductionInput> _building_inputs;
     std::vector<InputCandidate> _building_input_candidates;
     std::vector<GoodAmount> _building_outputs;
@@ -4018,6 +4047,10 @@ private:
     int64_t fiscal_escrow_total() const;
     bool apply_build_command(const Command &cmd, int32_t owner_slot,
                              std::string &error, bool allow_obsolete_tier = false);
+    bool plan_construction_materials(int32_t cell, int32_t type_id,
+                                     int64_t count, int32_t cost_factor_q16,
+                                     ConstructionMaterialPlan &plan,
+                                     const std::vector<int64_t> *additional_stock = nullptr) const;
     bool apply_demolish_command(const Command &cmd, int32_t owner_slot, std::string &error);
     bool run_building_employment_cell(int32_t cell,
                                       bool allow_owner_job_reallocation,
@@ -4170,6 +4203,7 @@ private:
                                    std::string &error);
     bool rebuild_merchant_ranges(std::string &error);
     bool run_government_research_procurement(std::string &error);
+    void refresh_country_research_goods_consumed();
     bool compile_family_catalog(const godot::Dictionary &catalog,
                                 std::string &error);
     bool compile_family_trait_catalog(const godot::Dictionary &catalog,
@@ -4335,6 +4369,8 @@ private:
                                     int64_t &saturation_count) const;
     godot::Dictionary population_cell_snapshot_impl(
         int32_t cell_idx, const EnvironmentSample &sample) const;
+    void append_population_employment_fields(
+        godot::Dictionary &out, int32_t cell_idx) const;
     bool compile_settlement_catalog(const godot::Dictionary &catalog,
                                     std::string &error);
     int64_t population_total_for_cell(int32_t cell) const;

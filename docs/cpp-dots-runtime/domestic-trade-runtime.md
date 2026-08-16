@@ -133,7 +133,7 @@ pending/accepted target、拓扑哈希、规范化拓扑变化/计划重置计�
 
 PKEC v11 在 v10 国家桥格式上增加贸易订单和贸易流 EMA sections，并在 header 保存稳定
 `next_order_id` 与已解析贸易配置。路线缓存、拓扑、Dijkstra scratch、未完成扫描和候选不存档。
-加载后先恢复当前 PKCN v11，再恢复 PKEC v34；贸易拓扑由下一次地图捕获重建。
+加载后先恢复当前 PKCN v11，再恢复 PKEC v35；贸易拓扑由下一次地图捕获重建。
 
 PKEC v12 增加企业停产状态、连续计数、采购意图容量、实际利润率、实际出库 EMA 和对应策略参数。
 参数一致的 v11 ACTIVE 才可迁移并将新增字段初始化为确定性默认值；当前 12.5% / 30 日分档库存基线商人策略
@@ -218,3 +218,4 @@ signals sort ahead of newer destinations and candidates. Reports and CSV expose
 the maximum age, maximum first-dispatch delay, and signals that exceed the
 configured 15-day response target without dispatch; these clocks do not enter
 PKEC or the authoritative state hash.
+

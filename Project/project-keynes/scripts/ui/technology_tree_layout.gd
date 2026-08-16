@@ -51,7 +51,8 @@ static func build(definitions: Array, eras: Array, domains: Array = [],
 			var child := int(index_by_id.get(String(edge.get("to", "")), -1))
 			var kind := String(edge.get("kind", ""))
 			if parent < 0 or child < 0 or parent == child \
-					or kind not in ["hard", "alternative", "application", "milestone_candidate"]:
+					or kind not in ["hard", "alternative", "application", "branch",
+						"milestone_candidate"]:
 				continue
 			edge_pairs.append({"from": parent, "to": child, "kind": kind})
 			if kind != "hard":
@@ -365,7 +366,8 @@ static func build_focus(definitions: Array, eras: Array, domains: Array,
 		focus_index_by_id[String((definitions[index] as Dictionary).get("id", ""))] = int(index)
 	for edge_value in visual_edges:
 		var visual: Dictionary = edge_value
-		if String(visual.get("kind", "")) != "application":
+		var visual_kind := String(visual.get("kind", ""))
+		if visual_kind not in ["application", "branch"]:
 			continue
 		var from := int(focus_index_by_id.get(String(visual.get("from", "")), -1))
 		var to := int(focus_index_by_id.get(String(visual.get("to", "")), -1))
@@ -374,7 +376,7 @@ static func build_focus(definitions: Array, eras: Array, domains: Array,
 		edges.append({
 			"from": from,
 			"to": to,
-			"kind": "application",
+			"kind": visual_kind,
 			"points": _edge_points(rect_by_index[from], rect_by_index[to]),
 		})
 	content_rect.size.y = maxf(content_rect.size.y, cursor_y)

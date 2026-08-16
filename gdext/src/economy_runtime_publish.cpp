@@ -289,6 +289,7 @@ bool NativeEconomyRuntime::publish_epoch_slice(
         if (_publish_cursor >= static_cast<size_t>(_market.good_count))
             _publish_phase = PublishPhase::VERIFY;
     } else if (_publish_phase == PublishPhase::VERIFY) {
+        refresh_country_research_goods_consumed();
         const int64_t population_expected = _opening_totals.population +
             _births - _deaths + _external_population_delta;
         const int64_t money_open = _opening_totals.cohort_funds +
@@ -299,10 +300,12 @@ bool NativeEconomyRuntime::publish_epoch_slice(
             _explicit_money_burn;
         const int64_t goods_expected = _opening_totals.goods_stock +
             _explicit_stock_delta + _production_output_stock +
-            _production_output_retained - _consumed_goods -
+            _production_output_discarded + _production_output_retained -
+            _consumed_goods -
             _owner_output_consumed - _construction_goods_consumed -
-            _production_inputs_consumed - _cycle_flow_discarded -
-            _bullion_stock_consumed;
+            _production_inputs_consumed - _production_output_discarded -
+            _cycle_flow_discarded - _bullion_stock_consumed -
+            _country_research_goods_consumed;
         if (!_closing_audit_incremental_this_epoch &&
             _closing_audit_mode != 0) {
             const int64_t incremental_money =

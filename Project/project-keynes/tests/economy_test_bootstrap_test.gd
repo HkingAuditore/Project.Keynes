@@ -244,8 +244,8 @@ func _initialize() -> void:
 	_expect("native bootstrap receives all building groups",
 		int(boot.get("building_group_count", 0)) == int(first.building_group_count))
 	var csv_test := _start_csv_recorder(ext, map, csv_resource_slot_ids, csv_resource_ids)
-	_expect("native CSV v23 recorder starts", bool(csv_test.get("ok", false)) and
-		int(csv_test.get("schema_version", 0)) == 23)
+	_expect("native CSV v24 recorder starts", bool(csv_test.get("ok", false)) and
+		int(csv_test.get("schema_version", 0)) == 24)
 	var buildings: Dictionary = facade.building_cell_snapshot(0)
 	var second_buildings: Dictionary = facade.building_cell_snapshot(1)
 	_expect("closed-chain land receives a settlement and the broken chain stays empty",
@@ -666,7 +666,7 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 		int(status.get("written_epochs", 0)) == 3)
 	_expect("CSV reports no writer error", str(status.get("error_code", "")) == "")
 	var paths: Dictionary = start_result.get("test_paths", {})
-	var expected_columns := {"summary": 168, "cohorts": 26, "buildings": 78,
+	var expected_columns := {"summary": 178, "cohorts": 26, "buildings": 83,
 		"resources": 21, "market": 49}
 	for dim in expected_columns:
 		var path: String = str(paths.get(dim, ""))
@@ -683,7 +683,7 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 				lines[line_idx].split(",", true).size() == int(expected_columns[dim]))
 	var summary_text := FileAccess.get_file_as_string(str(paths.summary)).trim_prefix("﻿")
 	var summary_header := summary_text.split("\n", false)[0].split(",", true)
-	_expect("summary CSV v23 exposes labor transmission and existing diagnostics",
+	_expect("summary CSV v24 exposes labor, employment catch-up and material diagnostics",
 		[
 			"construction_goods_consumed", "building_investment_candidates",
 			"building_owner_mobility", "building_owner_job_reallocations",
@@ -715,13 +715,27 @@ func _verify_csv_recorder(ext: Object, start_result: Dictionary,
 			"climate_profiled_building_groups",
 			"climate_limited_building_groups",
 			"average_climate_capacity_q16",
+			"suspended_restart_candidates",
+			"suspended_restart_approved",
+			"suspended_restart_restarted",
+			"suspended_restart_failed",
+			"suspended_liquidated_buildings",
+			"suspended_partially_liquidated_buildings",
+			"suspended_fully_liquidated_groups",
+			"building_investment_jobs_started",
+			"building_investment_employment_gap",
+			"building_investment_employment_catchup_cells",
 		].all(func(column: String) -> bool: return summary_header.has(column)))
 	var building_text := FileAccess.get_file_as_string(str(paths.buildings)).trim_prefix("﻿")
 	var building_lines := building_text.split("\n", false)
 	var building_header := building_lines[0].split(",", true)
-	_expect("building CSV v23 exposes climate production diagnostics",
+	_expect("building CSV v24 exposes lifecycle and material diagnostics",
 		["last_temperature_fit_q16", "last_water_fit_q16",
-			"last_climate_capacity_q16", "last_climate_lost_output"].all(
+			"last_climate_capacity_q16", "last_climate_lost_output",
+			"suspended_restart_cycles", "suspended_liquidation_failed_reviews",
+			"investment_failed_material_group",
+			"investment_selected_material_good_ids",
+			"investment_selected_material_quantities"].all(
 			func(column: String) -> bool: return building_header.has(column)))
 	var owner_capacity_col := building_header.find("owner_capacity")
 	var owner_required_col := building_header.find("owner_required")

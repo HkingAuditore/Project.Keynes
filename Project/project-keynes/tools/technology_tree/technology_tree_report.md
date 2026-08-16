@@ -10,9 +10,10 @@
 | 时代 | 11 |
 | 领域 | 4 |
 | 里程碑 | 11 |
-| 硬前置边 | 303 |
+| 硬前置边 | 397 |
 | 应用交汇边 | 19 |
-| 替代说明边 | 698 |
+| 替代说明边 | 671 |
+| 分支关系边 | 7 |
 | 里程碑候选边 | 88 |
 
 ## 时代目录
@@ -1932,7 +1933,7 @@ timber -8%；作为必要支撑：刀耕火种玉米地
 
 #### 被以下科技作为硬前置
 
-无
+- 发酵保存 (`tech.fermentation`)：发酵保存必须先掌握可控容器保存与火候处理。
 
 #### 主题路线后继
 
@@ -5157,6 +5158,7 @@ terrain.floodplain.agriculture产出 +12%
 #### 被以下科技作为硬前置
 
 - 陶器容器体系 (`tech.pottery`)：手制陶器提供土石、陶瓷、玻璃和工程构件制造能力中的操作与材料处理方法，陶器容器体系直接使用这一能力完成其工艺或组织设计
+- 发酵保存 (`tech.fermentation`)：稳定发酵还依赖可重复制造的陶质容器。
 
 #### 主题路线后继
 
@@ -6128,7 +6130,7 @@ landform.hill.agriculture产出 +28%
 
 #### 效果摘要
 
-解锁物资：铜；解锁建筑：土法炼铜炉；铜矿采掘产出 +28%；作为必要支撑：浅层铜矿、土法炼锡炉
+解锁物资：铜；解锁建筑：土法炼铜炉；解锁建筑：浅层锡矿；铜矿采掘产出 +28%；作为必要支撑：浅层铜矿、土法炼锡炉
 
 #### 机会成本
 
@@ -6137,7 +6139,7 @@ landform.hill.agriculture产出 +28%
 #### 内容解锁
 
 - **物资：** 铜 (`copper`)
-- **建筑 / 生产方式：** 土法炼铜炉 (`early_copper_smelter`)
+- **建筑 / 生产方式：** 土法炼铜炉 (`early_copper_smelter`)；浅层锡矿 (`early_tin_mine`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 浅层铜矿 (`early_copper_mine`)；土法炼锡炉 (`early_tin_smelter`)
 
@@ -6145,6 +6147,7 @@ landform.hill.agriculture产出 +28%
 
 - **铜**（`good`）：`good.copper` → `production_access` `unlock` `1.0`；`existing_binding`
 - **土法炼铜炉**（`building`）：`building.early_copper_smelter` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **浅层锡矿**（`building`）：`building.early_tin_mine` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -7953,7 +7956,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 效果摘要
 
-解锁建筑：畦埂水稻田；稻米产出 +22%；作为必要支撑：庄园水田、佃作稻庄、精耕稻庄、分成水田、佃作水田
+解锁建筑：畦埂水稻田；解锁建筑：佃作稻庄；稻米产出 +22%；作为必要支撑：庄园水田、佃作稻庄、精耕稻庄、分成水田、佃作水田
 
 #### 机会成本
 
@@ -7962,13 +7965,14 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 畦埂水稻田 (`bunded_rice_field`)
+- **建筑 / 生产方式：** 畦埂水稻田 (`bunded_rice_field`)；佃作稻庄 (`method_rice_collector_r3`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 庄园水田 (`estate_paddy`)；佃作稻庄 (`method_rice_collector_r3`)；精耕稻庄 (`method_rice_collector_r5`)；分成水田 (`sharecrop_paddy`)；佃作水田 (`tenant_paddy`)
 
 #### 结构化内容效果
 
 - **畦埂水稻田**（`building`）：`building.bunded_rice_field` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **佃作稻庄**（`building`）：`building.method_rice_collector_r3` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -8229,7 +8233,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 效果摘要
 
-解锁建筑：冷凉高地块茎田；landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +24%；作为必要支撑：高地精准块茎农业、机械化马铃薯农场
+解锁建筑：冷凉高地块茎田；解锁建筑：机械化马铃薯农场；landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +24%；作为必要支撑：高地精准块茎农业、机械化马铃薯农场
 
 #### 机会成本
 
@@ -8238,13 +8242,14 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 冷凉高地块茎田 (`highland_tuber_plot`)
+- **建筑 / 生产方式：** 冷凉高地块茎田 (`highland_tuber_plot`)；机械化马铃薯农场 (`method_potato_collector_r6`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 高地精准块茎农业 (`method_highland_precision_agriculture`)；机械化马铃薯农场 (`method_potato_collector_r6`)
 
 #### 结构化内容效果
 
 - **冷凉高地块茎田**（`building`）：`building.highland_tuber_plot` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **机械化马铃薯农场**（`building`）：`building.method_potato_collector_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -9068,7 +9073,8 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 硬前置（决定研发资格）
 
-无
+- 炉火保存 (`tech.hearth_preservation`)：发酵保存必须先掌握可控容器保存与火候处理。
+- 手制陶器 (`tech.hand_pottery`)：稳定发酵还依赖可重复制造的陶质容器。
 
 #### 发现启发（仅用于揭示）
 
@@ -9725,7 +9731,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 效果摘要
 
-解锁物资：珠宝；解锁建筑：金银器工坊；国内贸易容量 +8%；作为必要支撑：珠宝厂
+解锁物资：珠宝；解锁建筑：金银器工坊；解锁建筑：珠宝厂；国内贸易容量 +8%；作为必要支撑：珠宝厂
 
 #### 机会成本
 
@@ -9734,7 +9740,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 内容解锁
 
 - **物资：** 珠宝 (`jewelry`)
-- **建筑 / 生产方式：** 金银器工坊 (`goldsmith_workshop`)
+- **建筑 / 生产方式：** 金银器工坊 (`goldsmith_workshop`)；珠宝厂 (`jewelry_plant`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 珠宝厂 (`jewelry_plant`)
 
@@ -9742,6 +9748,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 - **珠宝**（`good`）：`good.jewelry` → `production_access` `unlock` `1.0`；`existing_binding`
 - **金银器工坊**（`building`）：`building.goldsmith_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **珠宝厂**（`building`）：`building.jewelry_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -9819,6 +9826,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 被以下科技作为硬前置
 
+- 区域粮仓 (`tech.regional_granaries`)：区域储备必须依赖可持续的陆路集散网络。
 - 机械计时 (`tech.mechanical_timekeeping`)：道路工程提供工具制造、机械加工与设备控制能力中的稳定的组织与制度载体，机械计时直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
@@ -10568,7 +10576,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 被以下科技作为硬前置
 
-无
+- 特许大学 (`tech.chartered_universities`)：特许大学需要稳定的文本复制与课程载体。
 
 #### 主题路线后继
 
@@ -10637,6 +10645,8 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 - 庄园核算 (`tech.estate_accounting`)：官僚行政提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，庄园核算直接使用这一能力完成其工艺或组织设计
 - 行业组织 (`tech.guild_organization`)：官僚行政提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，行业组织直接使用这一能力完成其工艺或组织设计
+- 特许大学 (`tech.chartered_universities`)：法人特许与经费治理依赖成文行政制度。
+- 区域粮仓 (`tech.regional_granaries`)：跨聚落储备需要常设行政记账与征调能力。
 - 国营企业 (`tech.state_enterprises`)：官僚行政提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，国营企业直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
@@ -10948,7 +10958,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 效果摘要
 
-解锁建筑：佃作稻庄；解锁建筑：分成水田；解锁建筑：佃作水田；稻米产出 +12%
+解锁建筑：分成水田；解锁建筑：佃作水田；稻米产出 +12%
 
 #### 机会成本
 
@@ -10957,13 +10967,12 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 佃作稻庄 (`method_rice_collector_r3`)；分成水田 (`sharecrop_paddy`)；佃作水田 (`tenant_paddy`)
+- **建筑 / 生产方式：** 分成水田 (`sharecrop_paddy`)；佃作水田 (`tenant_paddy`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
-- **佃作稻庄**（`building`）：`building.method_rice_collector_r3` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **分成水田**（`building`）：`building.sharecrop_paddy` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **佃作水田**（`building`）：`building.tenant_paddy` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
@@ -11382,7 +11391,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 被以下科技作为硬前置
 
-无
+- 区域粮仓 (`tech.regional_granaries`)：区域粮仓建立在城市供粮调度经验之上。
 
 #### 主题路线后继
 
@@ -12594,6 +12603,8 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 #### 硬前置（决定研发资格）
 
 - 行业组织 (`tech.guild_organization`)：行业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，特许大学直接使用这一能力完成其工艺或组织设计
+- 手稿文化 (`tech.manuscript_culture`)：特许大学需要稳定的文本复制与课程载体。
+- 官僚行政 (`tech.state_bureaucracy`)：法人特许与经费治理依赖成文行政制度。
 
 #### 发现启发（仅用于揭示）
 
@@ -12932,7 +12943,9 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 硬前置（决定研发资格）
 
-无
+- 城市食物供应 (`tech.urban_food_supply`)：区域粮仓建立在城市供粮调度经验之上。
+- 官僚行政 (`tech.state_bureaucracy`)：跨聚落储备需要常设行政记账与征调能力。
+- 道路工程 (`tech.road_engineering`)：区域储备必须依赖可持续的陆路集散网络。
 
 #### 发现启发（仅用于揭示）
 
@@ -13077,7 +13090,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：浅层铜矿；解锁建筑：浅层铁矿；解锁建筑：浅层锡矿；全社会 +12%
+解锁建筑：浅层铜矿；解锁建筑：浅层铁矿；全社会 +12%
 
 #### 机会成本
 
@@ -13086,7 +13099,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 浅层铜矿 (`early_copper_mine`)；浅层铁矿 (`early_iron_mine`)；浅层锡矿 (`early_tin_mine`)
+- **建筑 / 生产方式：** 浅层铜矿 (`early_copper_mine`)；浅层铁矿 (`early_iron_mine`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
@@ -13094,7 +13107,6 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 - **浅层铜矿**（`building`）：`building.early_copper_mine` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **浅层铁矿**（`building`）：`building.early_iron_mine` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **浅层锡矿**（`building`）：`building.early_tin_mine` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -13216,7 +13228,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-解锁建筑：玉米庄园；解锁建筑：佃作小麦庄园；解锁建筑：改良轮作小麦庄园；小麦产出 +12%
+解锁建筑：玉米庄园；解锁建筑：佃作小麦庄园；小麦产出 +12%
 
 #### 机会成本
 
@@ -13225,7 +13237,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 玉米庄园 (`landed_estate`)；佃作小麦庄园 (`method_wheat_farm_r3`)；改良轮作小麦庄园 (`method_wheat_farm_r5`)
+- **建筑 / 生产方式：** 玉米庄园 (`landed_estate`)；佃作小麦庄园 (`method_wheat_farm_r3`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
@@ -13233,7 +13245,6 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 - **玉米庄园**（`building`）：`building.landed_estate` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **佃作小麦庄园**（`building`）：`building.method_wheat_farm_r3` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **改良轮作小麦庄园**（`building`）：`building.method_wheat_farm_r5` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -13463,6 +13474,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 - 远洋航海 (`tech.oceanic_navigation`)：地图学提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，远洋航海直接使用这一能力完成其工艺或组织设计
 - 标准化 (`tech.standardization`)：地图学提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，标准化直接使用这一能力完成其工艺或组织设计
 - 地产测绘 (`tech.property_cadastre`)：地图学提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，地产测绘直接使用这一能力完成其工艺或组织设计
+- 精准农业 (`tech.precision_agriculture`)：地块差异化管理需要稳定的空间测绘框架。
 - 地理信息系统 (`tech.geographic_information_systems`)：地图学提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，地理信息系统直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
@@ -14935,7 +14947,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 效果摘要
 
-社会领域研究效率 +20%；作为必要支撑：棉花农场、橡胶种植园、香料种植园
+解锁建筑：亚麻庄园；社会领域研究效率 +20%；作为必要支撑：棉花农场、橡胶种植园、香料种植园
 
 #### 机会成本
 
@@ -14944,13 +14956,13 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 无
+- **建筑 / 生产方式：** 亚麻庄园 (`method_flax_collector_r3`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 棉花农场 (`cotton_collector`)；橡胶种植园 (`rubber_tree_collector`)；香料种植园 (`spice_plants_collector`)
 
 #### 结构化内容效果
 
-无
+- **亚麻庄园**（`building`）：`building.method_flax_collector_r3` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -15004,7 +15016,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 效果摘要
 
-解锁建筑：棉花农场；解锁建筑：亚麻庄园；解锁建筑：改良亚麻庄园；解锁建筑：香料种植园；专用商品作物产出 +28%；作为必要支撑：橡胶种植园
+解锁建筑：棉花农场；解锁建筑：香料种植园；专用商品作物产出 +28%；作为必要支撑：橡胶种植园
 
 #### 机会成本
 
@@ -15013,15 +15025,13 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 棉花农场 (`cotton_collector`)；亚麻庄园 (`method_flax_collector_r3`)；改良亚麻庄园 (`method_flax_collector_r5`)；香料种植园 (`spice_plants_collector`)
+- **建筑 / 生产方式：** 棉花农场 (`cotton_collector`)；香料种植园 (`spice_plants_collector`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 橡胶种植园 (`rubber_tree_collector`)
 
 #### 结构化内容效果
 
 - **棉花农场**（`building`）：`building.cotton_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **亚麻庄园**（`building`）：`building.method_flax_collector_r3` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **改良亚麻庄园**（`building`）：`building.method_flax_collector_r5` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **香料种植园**（`building`）：`building.spice_plants_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -15224,7 +15234,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 效果摘要
 
-谷物产出 +12%；小麦产出 +12%；稻米产出 +12%；玉米产出 +12%；作为必要支撑：改良亚麻庄园、精耕稻庄、改良轮作小麦庄园
+解锁建筑：改良轮作小麦庄园；谷物产出 +12%；小麦产出 +12%；稻米产出 +12%；玉米产出 +12%；作为必要支撑：改良亚麻庄园、精耕稻庄、改良轮作小麦庄园
 
 #### 机会成本
 
@@ -15233,13 +15243,13 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 无
+- **建筑 / 生产方式：** 改良轮作小麦庄园 (`method_wheat_farm_r5`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 改良亚麻庄园 (`method_flax_collector_r5`)；精耕稻庄 (`method_rice_collector_r5`)；改良轮作小麦庄园 (`method_wheat_farm_r5`)
 
 #### 结构化内容效果
 
-无
+- **改良轮作小麦庄园**（`building`）：`building.method_wheat_farm_r5` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -15327,6 +15337,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 被以下科技作为硬前置
 
 - 机械化农业 (`tech.mechanized_agriculture`)：农业改良提供谷物旱作、轮作与收获工艺中的成套生产流程，机械化农业直接使用这一能力完成其工艺或组织设计
+- 现代畜牧 (`tech.modern_husbandry`)：规模化饲养需要近代农艺和饲料供给。
 
 #### 主题路线后继
 
@@ -15536,6 +15547,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 被以下科技作为硬前置
 
 - 长期租约 (`tech.long_term_leases`)：政治经济学提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，长期租约直接使用这一能力完成其工艺或组织设计
+- 算法治理 (`tech.algorithmic_governance`)：公共算法必须建立在制度激励与分配知识上。
 
 #### 主题路线后继
 
@@ -15604,6 +15616,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 - 运筹学 (`tech.operations_research`)：概率与统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，运筹学直接使用这一能力完成其工艺或组织设计
 - 数值天气预报 (`tech.numerical_weather_prediction`)：概率与统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，数值天气预报直接使用这一能力完成其工艺或组织设计
+- 机器学习 (`tech.machine_learning`)：机器学习需要概率推断和统计估计。
 
 #### 主题路线后继
 
@@ -15675,6 +15688,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 - 机床 (`tech.machine_tools`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，机床直接使用这一能力完成其工艺或组织设计
 - 工厂制 (`tech.factory_system`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，工厂制直接使用这一能力完成其工艺或组织设计
 - 互换零件 (`tech.interchangeable_parts`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，互换零件直接使用这一能力完成其工艺或组织设计
+- 电网 (`tech.electric_grid`)：并网运行需要统一电压、频率和设备规范。
 - 工业质量控制 (`tech.industrial_quality_control`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，工业质量控制直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
@@ -15927,7 +15941,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 效果摘要
 
-解锁物资：锰矿石；解锁建筑：自动化铅矿；解锁建筑：工业石灰岩矿场；解锁建筑：硅砂矿；terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%；作为必要支撑：现代硝石矿、现代硫矿
+解锁物资：锰矿石；解锁建筑：自动化铅矿；解锁建筑：硅砂矿；terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%；作为必要支撑：现代硝石矿、现代硫矿
 
 #### 机会成本
 
@@ -15936,7 +15950,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 内容解锁
 
 - **物资：** 锰矿石 (`manganese_ore`)
-- **建筑 / 生产方式：** 自动化铅矿 (`method_lead_ore_collector_r9`)；工业石灰岩矿场 (`method_limestone_collector_r6`)；硅砂矿 (`silica_sand_collector`)
+- **建筑 / 生产方式：** 自动化铅矿 (`method_lead_ore_collector_r9`)；硅砂矿 (`silica_sand_collector`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 现代硝石矿 (`method_saltpeter_collector_r8`)；现代硫矿 (`method_sulfur_collector_r8`)
 
@@ -15944,7 +15958,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 - **锰矿石**（`good`）：`good.manganese_ore` → `production_access` `unlock` `1.0`；`existing_binding`
 - **自动化铅矿**（`building`）：`building.method_lead_ore_collector_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **工业石灰岩矿场**（`building`）：`building.method_limestone_collector_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **硅砂矿**（`building`）：`building.silica_sand_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -16229,7 +16242,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-无
+- 现代畜牧 (`tech.modern_husbandry`)：现代畜牧建立在系统育种和谱系管理之上。
 
 #### 主题路线后继
 
@@ -16338,7 +16351,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 效果摘要
 
-地籍机构产出 +12%；作为必要支撑：地籍管理局、改良亚麻庄园、精耕稻庄、改良轮作小麦庄园
+解锁建筑：改良亚麻庄园；地籍机构产出 +12%；作为必要支撑：地籍管理局、改良亚麻庄园、精耕稻庄、改良轮作小麦庄园
 
 #### 机会成本
 
@@ -16347,13 +16360,13 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 无
+- **建筑 / 生产方式：** 改良亚麻庄园 (`method_flax_collector_r5`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 地籍管理局 (`cadastral_office`)；改良亚麻庄园 (`method_flax_collector_r5`)；精耕稻庄 (`method_rice_collector_r5`)；改良轮作小麦庄园 (`method_wheat_farm_r5`)
 
 #### 结构化内容效果
 
-无
+- **改良亚麻庄园**（`building`）：`building.method_flax_collector_r5` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -16987,6 +17000,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 被以下科技作为硬前置
 
 - 公司矿山 (`tech.corporate_mining`)：工业采煤提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，公司矿山直接使用这一能力完成其工艺或组织设计
+- 石油开采 (`tech.petroleum_extraction`)：石油开采复用深井、排水和机械化矿业能力。
 - 机械化采矿 (`tech.mechanized_mining`)：工业采煤提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，机械化采矿直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
@@ -17125,7 +17139,9 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 被以下科技作为硬前置
 
 - 电气化 (`tech.electrification`)：热力学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，电气化直接使用这一能力完成其工艺或组织设计
+- 发电机 (`tech.electric_generation`)：稳定发电需要能量转换与热效率知识。
 - 机械制冷 (`tech.refrigeration`)：热力学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，机械制冷直接使用这一能力完成其工艺或组织设计
+- 核裂变 (`tech.nuclear_fission`)：裂变能利用依赖热量、相变和能量守恒知识。
 
 #### 主题路线后继
 
@@ -17167,7 +17183,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 效果摘要
 
-解锁物资：农业机械；解锁建筑：农业机械厂；解锁建筑：机械化棉花农场；解锁建筑：机械化马铃薯农场；全社会 +6%；作为必要支撑：机械化农场、机械化玉米农场、机械化橡胶种植园、机械化香料种植园
+解锁物资：农业机械；解锁建筑：农业机械厂；解锁建筑：机械化棉花农场；全社会 +6%；作为必要支撑：机械化农场、机械化玉米农场、机械化橡胶种植园、机械化香料种植园
 
 #### 机会成本
 
@@ -17176,7 +17192,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 内容解锁
 
 - **物资：** 农业机械 (`agricultural_machinery`)
-- **建筑 / 生产方式：** 农业机械厂 (`agricultural_machinery_plant`)；机械化棉花农场 (`method_cotton_collector_r6`)；机械化马铃薯农场 (`method_potato_collector_r6`)
+- **建筑 / 生产方式：** 农业机械厂 (`agricultural_machinery_plant`)；机械化棉花农场 (`method_cotton_collector_r6`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 机械化农场 (`mechanized_farm`)；机械化玉米农场 (`method_landed_estate_r6`)；机械化橡胶种植园 (`method_rubber_tree_collector_r6`)；机械化香料种植园 (`method_spice_plants_collector_r6`)
 
@@ -17185,7 +17201,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 - **农业机械**（`good`）：`good.agricultural_machinery` → `production_access` `unlock` `1.0`；`existing_binding`
 - **农业机械厂**（`building`）：`building.agricultural_machinery_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **机械化棉花农场**（`building`）：`building.method_cotton_collector_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **机械化马铃薯农场**（`building`）：`building.method_potato_collector_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -17196,6 +17211,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 被以下科技作为硬前置
 
 - 机动农业 (`tech.motorized_agriculture`)：机械化农业提供工具制造、机械加工与设备控制能力中的成套生产流程，机动农业直接使用这一能力完成其工艺或组织设计
+- 集体农业 (`tech.collective_agriculture`)：集体农业需要可共享调度的农业机械。
 
 #### 主题路线后继
 
@@ -17263,6 +17279,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
+- 工厂制 (`tech.factory_system`)：工厂制不仅需要标准件，也需要集中化生产组织。
 - 管理层级 (`tech.managerial_hierarchy`)：工业组织提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，管理层级直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
@@ -17334,6 +17351,8 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 - 机械收割 (`tech.mechanical_reaping`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，机械收割直接使用这一能力完成其工艺或组织设计
 - 机械脱粒 (`tech.mechanical_threshing`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，机械脱粒直接使用这一能力完成其工艺或组织设计
+- 电动机 (`tech.electric_motors`)：可用电机依赖精密转子、轴承与绕组制造。
+- 机械化采矿 (`tech.mechanized_mining`)：机械化矿山需要可批量制造和维修重型设备。
 - 机器人制造 (`tech.robotic_manufacturing`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，机器人制造直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
@@ -17541,7 +17560,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-无
+- 全球物流 (`tech.global_logistics`)：全球物流需要成熟的内陆干线集疏运。
 
 #### 主题路线后继
 
@@ -17611,6 +17630,8 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
+- 电化学 (`tech.electrochemistry`)：规模化电解依赖工业试剂、纯化与流程控制。
+- 石油化工 (`tech.petrochemical_industry`)：石化产业以连续反应、分离和工业试剂体系为基础。
 - 合成材料 (`tech.synthetic_materials`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，合成材料直接使用这一能力完成其工艺或组织设计
 - 合成纤维工程 (`tech.synthetic_fiber_engineering`)：工业化学提供聚合、溶剂、温度和纯度控制，是合成纤维成形的反应基础
 - 工业生态 (`tech.industrial_ecology`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，工业生态直接使用这一能力完成其工艺或组织设计
@@ -17657,7 +17678,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 效果摘要
 
-解锁物资：肥料；解锁物资：磷矿石；解锁建筑：磷矿；化学工业产出 +12%；作为必要支撑：自动化磷矿
+解锁物资：肥料；解锁物资：磷矿石；解锁建筑：磷矿；解锁建筑：自动化磷矿；化学工业产出 +12%；作为必要支撑：自动化磷矿
 
 #### 机会成本
 
@@ -17666,7 +17687,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 内容解锁
 
 - **物资：** 肥料 (`fertilizer`)；磷矿石 (`phosphate_rock`)
-- **建筑 / 生产方式：** 磷矿 (`phosphate_rock_collector`)
+- **建筑 / 生产方式：** 自动化磷矿 (`method_phosphate_rock_collector_r9`)；磷矿 (`phosphate_rock_collector`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 自动化磷矿 (`method_phosphate_rock_collector_r9`)
 
@@ -17675,6 +17696,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 - **肥料**（`good`）：`good.fertilizer` → `production_access` `unlock` `1.0`；`existing_binding`
 - **磷矿石**（`good`）：`good.phosphate_rock` → `production_access` `unlock` `1.0`；`existing_binding`
 - **磷矿**（`building`）：`building.phosphate_rock_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **自动化磷矿**（`building`）：`building.method_phosphate_rock_collector_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -17924,6 +17946,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 标准化 (`tech.standardization`)：标准化提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，工厂制直接使用这一能力完成其工艺或组织设计
+- 工业组织 (`tech.industrial_organization`)：工厂制不仅需要标准件，也需要集中化生产组织。
 
 #### 发现启发（仅用于揭示）
 
@@ -17931,7 +17954,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 效果摘要
 
-解锁物资：工业机械；解锁建筑：制鞋厂；解锁建筑：工业机械厂；解锁建筑：制革厂；解锁建筑：数字化工业机械厂；全社会 +6%；作为必要支撑：造纸厂、主食加工厂
+解锁物资：工业机械；解锁建筑：工业机械厂；解锁建筑：制革厂；全社会 +6%；作为必要支撑：造纸厂、主食加工厂
 
 #### 机会成本
 
@@ -17940,17 +17963,15 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 内容解锁
 
 - **物资：** 工业机械 (`industrial_machinery`)
-- **建筑 / 生产方式：** 制鞋厂 (`footwear_plant`)；工业机械厂 (`industrial_machinery_plant`)；制革厂 (`leather_plant`)；数字化工业机械厂 (`method_industrial_machinery_plant_r9`)
+- **建筑 / 生产方式：** 工业机械厂 (`industrial_machinery_plant`)；制革厂 (`leather_plant`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 造纸厂 (`paper_plant`)；主食加工厂 (`staple_food_plant`)
 
 #### 结构化内容效果
 
 - **工业机械**（`good`）：`good.industrial_machinery` → `production_access` `unlock` `1.0`；`existing_binding`
-- **制鞋厂**（`building`）：`building.footwear_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **工业机械厂**（`building`）：`building.industrial_machinery_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **制革厂**（`building`）：`building.leather_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **数字化工业机械厂**（`building`）：`building.method_industrial_machinery_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -18032,7 +18053,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-无
+- 合成纤维工程 (`tech.synthetic_fiber_engineering`)：合成纤维必须能进入连续纺丝与织造设备。
 
 #### 主题路线后继
 
@@ -18074,7 +18095,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 效果摘要
 
-全社会 +8%
+解锁建筑：制鞋厂；全社会 +8%
 
 #### 机会成本
 
@@ -18083,13 +18104,13 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 无
+- **建筑 / 生产方式：** 制鞋厂 (`footwear_plant`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
-无
+- **制鞋厂**（`building`）：`building.footwear_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -18235,6 +18256,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 被以下科技作为硬前置
 
 - 工人合作工场 (`tech.worker_cooperatives`)：工业统计提供测量基准、统计方法与精密仪器能力中的操作与材料处理方法，工人合作工场直接使用这一能力完成其工艺或组织设计
+- 国家实验室 (`tech.national_laboratories`)：大型实验计划需要统计测量与资源调度。
 
 #### 主题路线后继
 
@@ -18369,7 +18391,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-无
+- 大规模生产 (`tech.mass_production`)：大规模生产以连续工序和节拍化装配为核心。
 
 #### 主题路线后继
 
@@ -18795,6 +18817,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
+- 大规模生产 (`tech.mass_production`)：规模化工厂需要可分配到工位的通用电力。
+- 电化学 (`tech.electrochemistry`)：电化学工业需要可控而连续的电力来源。
+- 电网 (`tech.electric_grid`)：电网建设以前期电气化设备与用电体系为基础。
+- 电动机 (`tech.electric_motors`)：电动机扩散需要成熟供电基础设施。
 - 电子控制 (`tech.electronic_control`)：电气化提供发电、电机、电网与能源控制能力中的动力与规模化能力，电子控制直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
@@ -18863,6 +18889,9 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
+- 工业研究 (`tech.industrial_research`)：工业研究需要规模化基础教育提供技术人才。
+- 国家实验室 (`tech.national_laboratories`)：国家实验室依赖广泛教育体系供给研究人员。
+- 公共卫生体系 (`tech.public_health_systems`)：卫生规范和预防措施依赖全民教育传播。
 - 知识经济 (`tech.knowledge_economy`)：公共教育提供制度协调、公共组织与交换规则中的操作与材料处理方法，知识经济直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
@@ -18897,7 +18926,8 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 硬前置（决定研发资格）
 
-无
+- 流水线组织 (`tech.assembly_line`)：大规模生产以连续工序和节拍化装配为核心。
+- 电气化 (`tech.electrification`)：规模化工厂需要可分配到工位的通用电力。
 
 #### 发现启发（仅用于揭示）
 
@@ -18905,7 +18935,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 效果摘要
 
-解锁建筑：酿造厂；解锁建筑：电力纺织厂；解锁建筑：高级成衣厂；解锁建筑：珠宝厂；解锁建筑：主食加工厂；全社会 +12%；全社会家庭消费 +3%；作为必要支撑：混凝土厂、高级家具厂、家具厂、家用电器厂、工业屠宰场、智能化汽车厂、电气化造船厂、电气化包装厂、电气印刷厂、工业制皂厂、综合食品厂
+解锁建筑：电力纺织厂；解锁建筑：主食加工厂；全社会 +12%；全社会家庭消费 +3%；作为必要支撑：混凝土厂、高级家具厂、家具厂、家用电器厂、工业屠宰场、智能化汽车厂、电气化造船厂、电气化包装厂、电气印刷厂、工业制皂厂、综合食品厂
 
 #### 机会成本
 
@@ -18914,16 +18944,13 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 酿造厂 (`beverages_plant`)；电力纺织厂 (`cloth_plant`)；高级成衣厂 (`fine_clothing_plant`)；珠宝厂 (`jewelry_plant`)；主食加工厂 (`staple_food_plant`)
+- **建筑 / 生产方式：** 电力纺织厂 (`cloth_plant`)；主食加工厂 (`staple_food_plant`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 混凝土厂 (`concrete_plant`)；高级家具厂 (`fine_furniture_plant`)；家具厂 (`furniture_plant`)；家用电器厂 (`household_appliances_plant`)；工业屠宰场 (`mechanized_slaughterhouse`)；智能化汽车厂 (`method_automobiles_plant_r10`)；电气化造船厂 (`method_oceanic_shipyard_r7`)；电气化包装厂 (`method_packaging_plant_r7`)；电气印刷厂 (`method_printed_materials_plant_r7`)；工业制皂厂 (`method_soap_plant_r6`)；综合食品厂 (`processed_food_plant`)
 
 #### 结构化内容效果
 
-- **酿造厂**（`building`）：`building.beverages_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **电力纺织厂**（`building`）：`building.cloth_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **高级成衣厂**（`building`）：`building.fine_clothing_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **珠宝厂**（`building`）：`building.jewelry_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **主食加工厂**（`building`）：`building.staple_food_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -18972,6 +18999,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 地质勘探 (`tech.geological_prospecting`)：地质勘探提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，石油开采直接使用这一能力完成其工艺或组织设计
+- 工业采煤 (`tech.industrial_coal_mining`)：石油开采复用深井、排水和机械化矿业能力。
 
 #### 发现启发（仅用于揭示）
 
@@ -19078,6 +19106,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 被以下科技作为硬前置
 
 - 内燃机 (`tech.internal_combustion`)：石油炼制提供油气开采、炼制与高分子原料能力中的操作与材料处理方法，内燃机直接使用这一能力完成其工艺或组织设计
+- 合成材料 (`tech.synthetic_materials`)：合成材料需要稳定的炼制馏分和化工原料。
 
 #### 主题路线后继
 
@@ -19216,7 +19245,8 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-无
+- 公共卫生体系 (`tech.public_health_systems`)：公共健康系统需要现代诊疗和流行病知识。
+- 生物技术 (`tech.biotechnology`)：分子操作依赖现代医学的细胞与病理知识。
 
 #### 主题路线后继
 
@@ -19322,6 +19352,8 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 实验科学 (`tech.experimental_science`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，电化学直接使用这一能力完成其工艺或组织设计
+- 电气化 (`tech.electrification`)：电化学工业需要可控而连续的电力来源。
+- 工业化学 (`tech.industrial_chemistry`)：规模化电解依赖工业试剂、纯化与流程控制。
 
 #### 发现启发（仅用于揭示）
 
@@ -19329,7 +19361,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 效果摘要
 
-解锁物资：锌；解锁建筑：电池厂；解锁建筑：电化工厂；解锁建筑：炼锌厂；化学工业产出 +12%；作为必要支撑：洗涤剂厂、智能化洗涤剂厂
+解锁物资：锌；解锁建筑：电池厂；解锁建筑：电化工厂；化学工业产出 +12%；作为必要支撑：洗涤剂厂、智能化洗涤剂厂
 
 #### 机会成本
 
@@ -19338,7 +19370,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 内容解锁
 
 - **物资：** 锌 (`zinc`)
-- **建筑 / 生产方式：** 电池厂 (`batteries_plant`)；电化工厂 (`electrochemical_works`)；炼锌厂 (`zinc_plant`)
+- **建筑 / 生产方式：** 电池厂 (`batteries_plant`)；电化工厂 (`electrochemical_works`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 洗涤剂厂 (`detergent_plant`)；智能化洗涤剂厂 (`method_detergent_plant_r10`)
 
@@ -19347,7 +19379,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 - **锌**（`good`）：`good.zinc` → `production_access` `unlock` `1.0`；`existing_binding`
 - **电池厂**（`building`）：`building.batteries_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **电化工厂**（`building`）：`building.electrochemical_works` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **炼锌厂**（`building`）：`building.zinc_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -19357,7 +19388,11 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-无
+- 核裂变 (`tech.nuclear_fission`)：裂变研究需要同位素与高纯材料的化学处理能力。
+- 石油化工 (`tech.petrochemical_industry`)：现代石化控制与催化材料依赖电化学工业。
+- 合成材料 (`tech.synthetic_materials`)：聚合催化剂与材料处理依赖电化学能力。
+- 核燃料循环 (`tech.nuclear_fuel_cycle`)：燃料制备与后处理需要高纯分离化学。
+- 半导体制造 (`tech.semiconductor_manufacturing`)：半导体制造依赖高纯化学、沉积和蚀刻。
 
 #### 主题路线后继
 
@@ -19463,6 +19498,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 电磁感应 (`tech.electromagnetic_induction`)：电磁感应提供发电、电机、电网与能源控制能力中的操作与材料处理方法，发电机直接使用这一能力完成其工艺或组织设计
+- 热力学 (`tech.thermodynamics`)：稳定发电需要能量转换与热效率知识。
 
 #### 发现启发（仅用于揭示）
 
@@ -19532,6 +19568,8 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 发电机 (`tech.electric_generation`)：发电机提供发电、电机、电网与能源控制能力中的动力与规模化能力，电网直接使用这一能力完成其工艺或组织设计
+- 电气化 (`tech.electrification`)：电网建设以前期电气化设备与用电体系为基础。
+- 标准化 (`tech.standardization`)：并网运行需要统一电压、频率和设备规范。
 
 #### 发现启发（仅用于揭示）
 
@@ -19566,6 +19604,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
+- 核能 (`tech.nuclear_energy`)：核能只有接入大型电网后才能成为社会能源系统。
 - 智能电网 (`tech.smart_grid`)：电网提供发电、电机、电网与能源控制能力中的动力与规模化能力，智能电网直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
@@ -19633,6 +19672,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
+- 网络计算 (`tech.networked_computing`)：联网计算必须建立在可靠远距离通信之上。
 - 卫星观测 (`tech.satellite_observation`)：电信提供数字计算、软件、网络与自动控制能力中的稳定的组织与制度载体，卫星观测直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
@@ -19668,6 +19708,8 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 电磁感应 (`tech.electromagnetic_induction`)：电磁感应提供发电、电机、电网与能源控制能力中的操作与材料处理方法，电动机直接使用这一能力完成其工艺或组织设计
+- 电气化 (`tech.electrification`)：电动机扩散需要成熟供电基础设施。
+- 机床 (`tech.machine_tools`)：可用电机依赖精密转子、轴承与绕组制造。
 
 #### 发现启发（仅用于揭示）
 
@@ -19675,7 +19717,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 效果摘要
 
-解锁物资：电动机；解锁建筑：电动机厂；解锁建筑：智能化电动机厂；解锁建筑：电气化造船厂；煤 -4%；作为必要支撑：家用电器厂、智能化家用电器厂
+解锁物资：电动机；解锁建筑：电动机厂；解锁建筑：电气化造船厂；煤 -4%；作为必要支撑：家用电器厂、智能化家用电器厂
 
 #### 机会成本
 
@@ -19684,7 +19726,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 内容解锁
 
 - **物资：** 电动机 (`electric_motor`)
-- **建筑 / 生产方式：** 电动机厂 (`electric_motor_plant`)；智能化电动机厂 (`method_electric_motor_plant_r10`)；电气化造船厂 (`method_oceanic_shipyard_r7`)
+- **建筑 / 生产方式：** 电动机厂 (`electric_motor_plant`)；电气化造船厂 (`method_oceanic_shipyard_r7`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 家用电器厂 (`household_appliances_plant`)；智能化家用电器厂 (`method_household_appliances_plant_r10`)
 
@@ -19692,7 +19734,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 - **电动机**（`good`）：`good.electric_motor` → `production_access` `unlock` `1.0`；`existing_binding`
 - **电动机厂**（`building`）：`building.electric_motor_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **智能化电动机厂**（`building`）：`building.method_electric_motor_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **电气化造船厂**（`building`）：`building.method_oceanic_shipyard_r7` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -19703,7 +19744,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-无
+- 机械化采矿 (`tech.mechanized_mining`)：井下提升、通风和破碎依赖可靠电动动力。
 
 #### 主题路线后继
 
@@ -19806,6 +19847,8 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 畜牧驯养 (`tech.animal_husbandry`)：畜牧驯养提供畜群驯养、育种与畜产品处理能力中的成套生产流程，现代畜牧直接使用这一能力完成其工艺或组织设计
+- 畜种改良 (`tech.livestock_breeding`)：现代畜牧建立在系统育种和谱系管理之上。
+- 农业改良 (`tech.agricultural_improvement`)：规模化饲养需要近代农艺和饲料供给。
 
 #### 发现启发（仅用于揭示）
 
@@ -19880,7 +19923,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 效果摘要
 
-全社会经济产出 +3%；作为必要支撑：电力纺织厂、高级成衣厂、珠宝厂
+解锁建筑：酿造厂；解锁建筑：高级成衣厂；全社会经济产出 +3%；作为必要支撑：电力纺织厂、高级成衣厂、珠宝厂
 
 #### 机会成本
 
@@ -19889,13 +19932,14 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 无
+- **建筑 / 生产方式：** 酿造厂 (`beverages_plant`)；高级成衣厂 (`fine_clothing_plant`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 电力纺织厂 (`cloth_plant`)；高级成衣厂 (`fine_clothing_plant`)；珠宝厂 (`jewelry_plant`)
 
 #### 结构化内容效果
 
-无
+- **酿造厂**（`building`）：`building.beverages_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **高级成衣厂**（`building`）：`building.fine_clothing_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -19906,6 +19950,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 被以下科技作为硬前置
 
 - 公司农业 (`tech.corporate_agribusiness`)：公司管理提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，公司农业直接使用这一能力完成其工艺或组织设计
+- 平台协调 (`tech.platform_coordination`)：平台协调建立在跨部门企业管理能力之上。
 - 算法管理 (`tech.algorithmic_management`)：公司管理提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，算法管理直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
@@ -19941,6 +19986,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 实验科学 (`tech.experimental_science`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，工业研究直接使用这一能力完成其工艺或组织设计
+- 公共教育 (`tech.public_education`)：工业研究需要规模化基础教育提供技术人才。
 
 #### 发现启发（仅用于揭示）
 
@@ -19976,6 +20022,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 被以下科技作为硬前置
 
 - 国家实验室 (`tech.national_laboratories`)：工业研究提供记录、验证、计算与知识传播方法中的操作与材料处理方法，国家实验室直接使用这一能力完成其工艺或组织设计
+- 生物技术 (`tech.biotechnology`)：生物技术需要可重复的工业研究组织与设备。
 
 #### 主题路线后继
 
@@ -20111,7 +20158,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-无
+- 半导体制造 (`tech.semiconductor_manufacturing`)：晶圆量产需要统计过程控制与缺陷管理。
 
 #### 主题路线后继
 
@@ -20250,7 +20297,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-无
+- 公司农业 (`tech.corporate_agribusiness`)：跨区域农食企业依赖冷链保存和配送。
 
 #### 主题路线后继
 
@@ -20374,7 +20421,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 效果摘要
 
-解锁建筑：电气化集约农场；玉米产出 +12%
+解锁建筑：电气化集约农场；解锁建筑：数字化农业机械厂；玉米产出 +12%
 
 #### 机会成本
 
@@ -20383,13 +20430,14 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 电气化集约农场 (`intensive_farm`)
+- **建筑 / 生产方式：** 电气化集约农场 (`intensive_farm`)；数字化农业机械厂 (`method_agricultural_machinery_plant_r9`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
 - **电气化集约农场**（`building`）：`building.intensive_farm` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **数字化农业机械厂**（`building`）：`building.method_agricultural_machinery_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -20399,6 +20447,8 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
+- 公司农业 (`tech.corporate_agribusiness`)：公司化农业需要工业农艺与投入品体系。
+- 集体农业 (`tech.collective_agriculture`)：大规模集体生产需要统一农艺与投入标准。
 - 精准农业 (`tech.precision_agriculture`)：工业农学提供玉米栽培、选育与田间管理经验中的成套生产流程，精准农业直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
@@ -20469,7 +20519,9 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
+- 核能 (`tech.nuclear_energy`)：反应堆压力边界需要耐热耐蚀材料。
 - 特种合金 (`tech.specialty_alloys`)：先进冶金提供矿井、钢铁、蒸汽机械与重型设备能力中的成套生产流程，特种合金直接使用这一能力完成其工艺或组织设计
+- 核燃料循环 (`tech.nuclear_fuel_cycle`)：燃料包壳和处理设备依赖先进合金。
 
 #### 主题路线后继
 
@@ -20504,6 +20556,8 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 实验科学 (`tech.experimental_science`)：实验科学提供记录、验证、计算与知识传播方法中的操作与材料处理方法，核裂变直接使用这一能力完成其工艺或组织设计
+- 电化学 (`tech.electrochemistry`)：裂变研究需要同位素与高纯材料的化学处理能力。
+- 热力学 (`tech.thermodynamics`)：裂变能利用依赖热量、相变和能量守恒知识。
 
 #### 发现启发（仅用于揭示）
 
@@ -20574,6 +20628,8 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 工业研究 (`tech.industrial_research`)：工业研究提供记录、验证、计算与知识传播方法中的操作与材料处理方法，国家实验室直接使用这一能力完成其工艺或组织设计
+- 公共教育 (`tech.public_education`)：国家实验室依赖广泛教育体系供给研究人员。
+- 工业统计 (`tech.industrial_statistics`)：大型实验计划需要统计测量与资源调度。
 
 #### 发现启发（仅用于揭示）
 
@@ -20676,7 +20732,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-无
+- 矿物光谱遥感 (`tech.mineral_spectral_survey`)：光谱解释需要已有的地下结构与矿体模型。
 
 #### 主题路线后继
 
@@ -20743,7 +20799,11 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
+- 全球物流 (`tech.global_logistics`)：跨区域网络需要定量排程与库存优化。
 - 系统工程 (`tech.systems_engineering`)：运筹学提供制度协调、公共组织与交换规则中的操作与材料处理方法，系统工程直接使用这一能力完成其工艺或组织设计
+- 平台协调 (`tech.platform_coordination`)：平台匹配与运力分配需要优化方法。
+- 机器学习 (`tech.machine_learning`)：模型训练与决策需要优化方法。
+- 算法治理 (`tech.algorithmic_governance`)：算法治理需要约束优化与资源配置模型。
 
 #### 主题路线后继
 
@@ -20778,6 +20838,8 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 石油开采 (`tech.petroleum_extraction`)：石油开采提供油气开采、炼制与高分子原料能力中的操作与材料处理方法，石油化工直接使用这一能力完成其工艺或组织设计
+- 工业化学 (`tech.industrial_chemistry`)：石化产业以连续反应、分离和工业试剂体系为基础。
+- 电化学 (`tech.electrochemistry`)：现代石化控制与催化材料依赖电化学工业。
 
 #### 发现启发（仅用于揭示）
 
@@ -20785,7 +20847,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 效果摘要
 
-解锁物资：石化产品；解锁物资：洗涤剂；解锁建筑：洗涤剂厂；解锁建筑：智能化洗涤剂厂；解锁建筑：智能石油化工厂；解锁建筑：石油化工厂；石油开采产出 +12%；作为必要支撑：现代炸药厂
+解锁物资：石化产品；解锁物资：洗涤剂；解锁建筑：洗涤剂厂；解锁建筑：石油化工厂；石油开采产出 +12%；作为必要支撑：现代炸药厂
 
 #### 机会成本
 
@@ -20794,7 +20856,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 内容解锁
 
 - **物资：** 洗涤剂 (`detergent`)；石化产品 (`petrochemicals`)
-- **建筑 / 生产方式：** 洗涤剂厂 (`detergent_plant`)；智能化洗涤剂厂 (`method_detergent_plant_r10`)；智能石油化工厂 (`method_petrochemicals_plant_r10`)；石油化工厂 (`petrochemicals_plant`)
+- **建筑 / 生产方式：** 洗涤剂厂 (`detergent_plant`)；石油化工厂 (`petrochemicals_plant`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 现代炸药厂 (`method_explosives_plant_r8`)
 
@@ -20803,8 +20865,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 - **石化产品**（`good`）：`good.petrochemicals` → `production_access` `unlock` `1.0`；`catalog_rebind`
 - **洗涤剂**（`good`）：`good.detergent` → `production_access` `unlock` `1.0`；`catalog_rebind`
 - **洗涤剂厂**（`building`）：`building.detergent_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **智能化洗涤剂厂**（`building`）：`building.method_detergent_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **智能石油化工厂**（`building`）：`building.method_petrochemicals_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **石油化工厂**（`building`）：`building.petrochemicals_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -20851,10 +20911,12 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 工业化学 (`tech.industrial_chemistry`)：工业化学提供反应控制、配方、分离与化工质量标准中的操作与材料处理方法，合成材料直接使用这一能力完成其工艺或组织设计
+- 石油炼制 (`tech.petroleum_refining`)：合成材料需要稳定的炼制馏分和化工原料。
+- 电化学 (`tech.electrochemistry`)：聚合催化剂与材料处理依赖电化学能力。
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「能源就业 1250」（development.employment.energy.1250\_720d）
+- 已发现信号「制造产出规模 100000」（development.output.manufacturing.100000\_1095d）
 
 #### 效果摘要
 
@@ -20921,6 +20983,8 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 工业采煤 (`tech.industrial_coal_mining`)：工业采煤提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，机械化采矿直接使用这一能力完成其工艺或组织设计
+- 机床 (`tech.machine_tools`)：机械化矿山需要可批量制造和维修重型设备。
+- 电动机 (`tech.electric_motors`)：井下提升、通风和破碎依赖可靠电动动力。
 
 #### 发现启发（仅用于揭示）
 
@@ -20928,7 +20992,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 效果摘要
 
-解锁建筑：锰矿；解锁建筑：智能锰矿；解锁建筑：现代硝石矿；解锁建筑：现代硫矿；铁矿石 -10%；煤 -10%；作为必要支撑：自动化磷矿、自动化锌矿
+解锁建筑：锰矿；解锁建筑：智能锰矿；铁矿石 -10%；煤 -10%；作为必要支撑：自动化磷矿、自动化锌矿
 
 #### 机会成本
 
@@ -20937,7 +21001,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 锰矿 (`manganese_ore_collector`)；智能锰矿 (`method_manganese_ore_collector_r10`)；现代硝石矿 (`method_saltpeter_collector_r8`)；现代硫矿 (`method_sulfur_collector_r8`)
+- **建筑 / 生产方式：** 锰矿 (`manganese_ore_collector`)；智能锰矿 (`method_manganese_ore_collector_r10`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 自动化磷矿 (`method_phosphate_rock_collector_r9`)；自动化锌矿 (`method_zinc_ore_collector_r9`)
 
@@ -20945,8 +21009,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 - **锰矿**（`building`）：`building.manganese_ore_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **智能锰矿**（`building`）：`building.method_manganese_ore_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **现代硝石矿**（`building`）：`building.method_saltpeter_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **现代硫矿**（`building`）：`building.method_sulfur_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -20994,6 +21056,8 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 公共卫生 (`tech.public_health`)：公共卫生提供卫生、疾病控制与医疗组织能力中的操作与材料处理方法，公共卫生体系直接使用这一能力完成其工艺或组织设计
+- 现代医学 (`tech.modern_medicine`)：公共健康系统需要现代诊疗和流行病知识。
+- 公共教育 (`tech.public_education`)：卫生规范和预防措施依赖全民教育传播。
 
 #### 发现启发（仅用于揭示）
 
@@ -21061,10 +21125,12 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 核裂变 (`tech.nuclear_fission`)：核裂变提供发电、电机、电网与能源控制能力中的操作与材料处理方法，核能直接使用这一能力完成其工艺或组织设计
+- 电网 (`tech.electric_grid`)：核能只有接入大型电网后才能成为社会能源系统。
+- 先进冶金 (`tech.advanced_metallurgy`)：反应堆压力边界需要耐热耐蚀材料。
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「能源产出规模 100000」（development.output.energy.100000\_1095d）
+- 已发现信号「知识产出规模 100000」（development.output.knowledge.100000\_1095d）
 
 #### 效果摘要
 
@@ -21136,7 +21202,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁物资：电池；金属工具制造产出 +12%；作为必要支撑：自动化润滑油厂、精密工具厂、精密仪器厂
+解锁物资：电池；解锁建筑：炼锌厂；金属工具制造产出 +12%；作为必要支撑：自动化润滑油厂、精密工具厂、精密仪器厂
 
 #### 机会成本
 
@@ -21145,13 +21211,14 @@ pharmaceuticals产出 +12%
 #### 内容解锁
 
 - **物资：** 电池 (`batteries`)
-- **建筑 / 生产方式：** 无
+- **建筑 / 生产方式：** 炼锌厂 (`zinc_plant`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 自动化润滑油厂 (`method_lubricants_plant_r9`)；精密工具厂 (`method_precision_tool_workshop_r8`)；精密仪器厂 (`method_scientific_instrument_works_r8`)
 
 #### 结构化内容效果
 
 - **电池**（`good`）：`good.batteries` → `production_access` `unlock` `1.0`；`existing_binding`
+- **炼锌厂**（`building`）：`building.zinc_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -21161,8 +21228,11 @@ pharmaceuticals产出 +12%
 
 #### 被以下科技作为硬前置
 
+- 精准农业 (`tech.precision_agriculture`)：精准农业需要可执行变量投入的电子控制设备。
 - 数字计算 (`tech.digital_computing`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，数字计算直接使用这一能力完成其工艺或组织设计
+- 自动化物流 (`tech.automated_logistics`)：自动分拣与搬运依赖电子执行控制。
 - 数字控制 (`tech.digital_control`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，数字控制直接使用这一能力完成其工艺或组织设计
+- 精准灌溉 (`tech.precision_irrigation`)：精准灌溉需要阀门、泵站和反馈控制。
 - 传感器网络 (`tech.sensor_networks`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，传感器网络直接使用这一能力完成其工艺或组织设计
 
 #### 主题路线后继
@@ -21198,6 +21268,8 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 商业网络 (`tech.mercantile_networks`)：商业网络提供市场、会计、金融与商业网络组织能力中的稳定的组织与制度载体，全球物流直接使用这一能力完成其工艺或组织设计
+- 铁路物流 (`tech.rail_logistics`)：全球物流需要成熟的内陆干线集疏运。
+- 运筹学 (`tech.operations_research`)：跨区域网络需要定量排程与库存优化。
 
 #### 发现启发（仅用于揭示）
 
@@ -21477,10 +21549,12 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 公司管理 (`tech.corporate_management`)：公司管理提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，公司农业直接使用这一能力完成其工艺或组织设计
+- 工业农学 (`tech.industrial_agronomy`)：公司化农业需要工业农艺与投入品体系。
+- 冷链 (`tech.cold_chain`)：跨区域农食企业依赖冷链保存和配送。
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「能源就业 1250」（development.employment.energy.1250\_720d）
+- 已发现信号「农业产出规模 100000」（development.output.agriculture.100000\_1095d）
 
 #### 效果摘要
 
@@ -21551,7 +21625,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-全社会 +8%
+解锁建筑：现代硝石矿；解锁建筑：现代硫矿；全社会 +8%
 
 #### 机会成本
 
@@ -21560,13 +21634,14 @@ pharmaceuticals产出 +12%
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 无
+- **建筑 / 生产方式：** 现代硝石矿 (`method_saltpeter_collector_r8`)；现代硫矿 (`method_sulfur_collector_r8`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
-无
+- **现代硝石矿**（`building`）：`building.method_saltpeter_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **现代硫矿**（`building`）：`building.method_sulfur_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -21611,10 +21686,12 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 国营企业 (`tech.state_enterprises`)：国营企业提供岗位分工、工厂组织与管理决策能力中的稳定的组织与制度载体，集体农业直接使用这一能力完成其工艺或组织设计
+- 机械化农业 (`tech.mechanized_agriculture`)：集体农业需要可共享调度的农业机械。
+- 工业农学 (`tech.industrial_agronomy`)：大规模集体生产需要统一农艺与投入标准。
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「制造产出规模 100000」（development.output.manufacturing.100000\_1095d）
+- 已发现信号「农业就业 1250」（development.employment.agriculture.1250\_720d）
 
 #### 效果摘要
 
@@ -21678,6 +21755,8 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 核能 (`tech.nuclear_energy`)：核能提供发电、电机、电网与能源控制能力中的动力与规模化能力，核燃料循环直接使用这一能力完成其工艺或组织设计
+- 电化学 (`tech.electrochemistry`)：燃料制备与后处理需要高纯分离化学。
+- 先进冶金 (`tech.advanced_metallurgy`)：燃料包壳和处理设备依赖先进合金。
 
 #### 发现启发（仅用于揭示）
 
@@ -21685,7 +21764,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：智能化核燃料厂；全社会 +24%
+解锁建筑：智能化核燃料厂；解锁建筑：智能化核反应堆设备厂；全社会 +24%
 
 #### 机会成本
 
@@ -21694,13 +21773,14 @@ pharmaceuticals产出 +12%
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 智能化核燃料厂 (`method_nuclear_fuel_plant_r10`)
+- **建筑 / 生产方式：** 智能化核燃料厂 (`method_nuclear_fuel_plant_r10`)；智能化核反应堆设备厂 (`method_reactor_component_works_r10`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
 - **智能化核燃料厂**（`building`）：`building.method_nuclear_fuel_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **智能化核反应堆设备厂**（`building`）：`building.method_reactor_component_works_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -21745,6 +21825,7 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 工业化学 (`tech.industrial_chemistry`)：工业化学提供聚合、溶剂、温度和纯度控制，是合成纤维成形的反应基础
+- 纺织机械 (`tech.textile_machinery`)：合成纤维必须能进入连续纺丝与织造设备。
 
 #### 发现启发（仅用于揭示）
 
@@ -21893,7 +21974,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁物资：战略矿物材料；解锁物资：战略矿石；解锁建筑：战略金属冶炼厂；全社会生产投入 -3%；作为必要支撑：智能战略金属冶炼厂
+解锁物资：战略矿物材料；解锁物资：战略矿石；解锁建筑：战略金属冶炼厂；解锁建筑：自动化炼锌厂；全社会生产投入 -3%；作为必要支撑：智能战略金属冶炼厂
 
 #### 机会成本
 
@@ -21902,7 +21983,7 @@ pharmaceuticals产出 +12%
 #### 内容解锁
 
 - **物资：** 战略矿物材料 (`rare_earth_metals`)；战略矿石 (`rare_earth_ore`)
-- **建筑 / 生产方式：** 战略金属冶炼厂 (`rare_earth_metals_plant`)
+- **建筑 / 生产方式：** 自动化炼锌厂 (`method_zinc_plant_r9`)；战略金属冶炼厂 (`rare_earth_metals_plant`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 智能战略金属冶炼厂 (`method_rare_earth_metals_plant_r10`)
 
@@ -21911,6 +21992,7 @@ pharmaceuticals产出 +12%
 - **战略矿物材料**（`good`）：`good.rare_earth_metals` → `production_access` `unlock` `1.0`；`existing_binding`
 - **战略矿石**（`good`）：`good.rare_earth_ore` → `production_access` `unlock` `1.0`；`existing_binding`
 - **战略金属冶炼厂**（`building`）：`building.rare_earth_metals_plant` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **自动化炼锌厂**（`building`）：`building.method_zinc_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -21920,7 +22002,10 @@ pharmaceuticals产出 +12%
 
 #### 被以下科技作为硬前置
 
-无
+- 软件工程 (`tech.software_engineering`)：大型软件需要需求分解、接口和验证方法。
+- 数字控制 (`tech.digital_control`)：复杂控制器需要系统建模、反馈与验证方法。
+- 自主系统 (`tech.autonomous_systems`)：自主设备必须满足整机安全与反馈验证。
+- 气候建模 (`tech.climate_modeling`)：耦合气候过程需要系统建模与误差分析。
 
 #### 主题路线后继
 
@@ -22037,6 +22122,8 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 工业农学 (`tech.industrial_agronomy`)：工业农学提供玉米栽培、选育与田间管理经验中的成套生产流程，精准农业直接使用这一能力完成其工艺或组织设计
+- 电子控制 (`tech.electronic_control`)：精准农业需要可执行变量投入的电子控制设备。
+- 地图学 (`tech.cartography`)：地块差异化管理需要稳定的空间测绘框架。
 
 #### 发现启发（仅用于揭示）
 
@@ -22044,7 +22131,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：数字化农业机械厂；解锁建筑：高地精准块茎农业；解锁建筑：精准农场；全社会 +8%；作为必要支撑：专用商品作物种植园
+解锁建筑：高地精准块茎农业；解锁建筑：精准农场；全社会 +8%；作为必要支撑：专用商品作物种植园
 
 #### 机会成本
 
@@ -22053,13 +22140,12 @@ pharmaceuticals产出 +12%
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 数字化农业机械厂 (`method_agricultural_machinery_plant_r9`)；高地精准块茎农业 (`method_highland_precision_agriculture`)；精准农场 (`precision_farm`)
+- **建筑 / 生产方式：** 高地精准块茎农业 (`method_highland_precision_agriculture`)；精准农场 (`precision_farm`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 专用商品作物种植园 (`method_specialty_commodity_plantation`)
 
 #### 结构化内容效果
 
-- **数字化农业机械厂**（`building`）：`building.method_agricultural_machinery_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **高地精准块茎农业**（`building`）：`building.method_highland_precision_agriculture` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **精准农场**（`building`）：`building.precision_farm` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
@@ -22143,6 +22229,10 @@ pharmaceuticals产出 +12%
 - 信息论 (`tech.information_theory`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，信息论直接使用这一能力完成其工艺或组织设计
 - 软件工程 (`tech.software_engineering`)：数字计算提供可编程处理器、存储与执行模型，软件工程必须以此作为实现对象
 - 半导体制造 (`tech.semiconductor_manufacturing`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，半导体制造直接使用这一能力完成其工艺或组织设计
+- 矿物光谱遥感 (`tech.mineral_spectral_survey`)：多波段矿物识别需要数字信号处理。
+- 数字控制 (`tech.digital_control`)：数字控制必须有可编程计算与离散逻辑。
+- 地理信息系统 (`tech.geographic_information_systems`)：空间图层叠加与查询依赖数字计算。
+- 生物信息学 (`tech.bioinformatics`)：生物信息处理需要数字计算基础设施。
 - 机器学习 (`tech.machine_learning`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，机器学习直接使用这一能力完成其工艺或组织设计
 - 算法治理 (`tech.algorithmic_governance`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，算法治理直接使用这一能力完成其工艺或组织设计
 
@@ -22211,7 +22301,8 @@ pharmaceuticals产出 +12%
 
 #### 被以下科技作为硬前置
 
-无
+- 网络计算 (`tech.networked_computing`)：协议与编码需要可量化的信息传输理论。
+- 生物信息学 (`tech.bioinformatics`)：序列比对与编码需要信息度量方法。
 
 #### 主题路线后继
 
@@ -22279,6 +22370,7 @@ pharmaceuticals产出 +12%
 #### 被以下科技作为硬前置
 
 - 人机共治 (`tech.human_machine_cogovernance`)：知识经济提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，人机共治直接使用这一能力完成其工艺或组织设计
+- 知识合作社 (`tech.knowledge_cooperatives`)：知识合作社需要知识劳动与收益核算体系。
 
 #### 主题路线后继
 
@@ -22313,6 +22405,7 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 数字计算 (`tech.digital_computing`)：数字计算提供可编程处理器、存储与执行模型，软件工程必须以此作为实现对象
+- 系统工程 (`tech.systems_engineering`)：大型软件需要需求分解、接口和验证方法。
 
 #### 发现启发（仅用于揭示）
 
@@ -22381,6 +22474,8 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 软件工程 (`tech.software_engineering`)：软件工程提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，网络计算直接使用这一能力完成其工艺或组织设计
+- 电信 (`tech.telecommunications`)：联网计算必须建立在可靠远距离通信之上。
+- 信息论 (`tech.information_theory`)：协议与编码需要可量化的信息传输理论。
 
 #### 发现启发（仅用于揭示）
 
@@ -22414,6 +22509,7 @@ pharmaceuticals产出 +12%
 
 #### 被以下科技作为硬前置
 
+- 自动化物流 (`tech.automated_logistics`)：自动物流需要仓储、车辆和订单实时联网。
 - 开放科学网络 (`tech.open_science_networks`)：网络计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，开放科学网络直接使用这一能力完成其工艺或组织设计
 - 平台协调 (`tech.platform_coordination`)：网络计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，平台协调直接使用这一能力完成其工艺或组织设计
 - 数字市场 (`tech.digital_marketplaces`)：网络计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，数字市场直接使用这一能力完成其工艺或组织设计
@@ -22452,6 +22548,8 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 数字计算 (`tech.digital_computing`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，半导体制造直接使用这一能力完成其工艺或组织设计
+- 电化学 (`tech.electrochemistry`)：半导体制造依赖高纯化学、沉积和蚀刻。
+- 工业质量控制 (`tech.industrial_quality_control`)：晶圆量产需要统计过程控制与缺陷管理。
 
 #### 发现启发（仅用于揭示）
 
@@ -22557,6 +22655,9 @@ pharmaceuticals产出 +12%
 - 矿物光谱遥感 (`tech.mineral_spectral_survey`)：卫星观测提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，矿物光谱遥感直接使用这一能力完成其工艺或组织设计
 - 作物遥感 (`tech.crop_remote_sensing`)：卫星观测提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，作物遥感直接使用这一能力完成其工艺或组织设计
 - 水文遥感 (`tech.hydrological_remote_sensing`)：卫星观测提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，水文遥感直接使用这一能力完成其工艺或组织设计
+- 地理信息系统 (`tech.geographic_information_systems`)：地理信息系统需要持续、广域的空间观测数据。
+- 精准灌溉 (`tech.precision_irrigation`)：流域与田块水分管理需要广域观测。
+- 气候建模 (`tech.climate_modeling`)：气候模型需要全球连续观测作为边界和校验。
 
 #### 主题路线后继
 
@@ -22591,6 +22692,8 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 全球物流 (`tech.global_logistics`)：全球物流提供船舶、导航、港口与运输组织能力中的稳定的组织与制度载体，自动化物流直接使用这一能力完成其工艺或组织设计
+- 网络计算 (`tech.networked_computing`)：自动物流需要仓储、车辆和订单实时联网。
+- 电子控制 (`tech.electronic_control`)：自动分拣与搬运依赖电子执行控制。
 
 #### 发现启发（仅用于揭示）
 
@@ -22658,6 +22761,8 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 科学分类 (`tech.scientific_classification`)：科学分类提供观察、分类、实验与生物育种知识中的操作与材料处理方法，生物技术直接使用这一能力完成其工艺或组织设计
+- 工业研究 (`tech.industrial_research`)：生物技术需要可重复的工业研究组织与设备。
+- 现代医学 (`tech.modern_medicine`)：分子操作依赖现代医学的细胞与病理知识。
 
 #### 发现启发（仅用于揭示）
 
@@ -22725,14 +22830,16 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 卫星观测 (`tech.satellite_observation`)：卫星观测提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，矿物光谱遥感直接使用这一能力完成其工艺或组织设计
+- 深层地球物理 (`tech.deep_geophysics`)：光谱解释需要已有的地下结构与矿体模型。
+- 数字计算 (`tech.digital_computing`)：多波段矿物识别需要数字信号处理。
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「知识就业 6250」（development.employment.knowledge.6250\_1095d）
+- 已发现信号「采掘产出规模 100000」（development.output.extractive.100000\_1095d）
 
 #### 效果摘要
 
-解锁建筑：自动化铝土矿；解锁建筑：自动化锌矿；解锁建筑：战略矿山；可利用资源：稀土；可利用资源：锰矿；terrain.desert.extractive产出 +25%；作为必要支撑：自动化铅矿、自动化炼铅厂、智能锰矿、智能天然气田、自动化磷矿、智能战略矿山、智能战略金属冶炼厂、自动化炼锌厂
+解锁建筑：自动化铝土矿；解锁建筑：战略矿山；可利用资源：稀土；可利用资源：锰矿；terrain.desert.extractive产出 +25%；作为必要支撑：自动化铅矿、自动化炼铅厂、智能锰矿、智能天然气田、自动化磷矿、智能战略矿山、智能战略金属冶炼厂、自动化炼锌厂
 
 #### 机会成本
 
@@ -22741,14 +22848,13 @@ pharmaceuticals产出 +12%
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 自动化铝土矿 (`method_bauxite_collector_r9`)；自动化锌矿 (`method_zinc_ore_collector_r9`)；战略矿山 (`rare_earth_collector`)
+- **建筑 / 生产方式：** 自动化铝土矿 (`method_bauxite_collector_r9`)；战略矿山 (`rare_earth_collector`)
 - **自然资源：** 稀土 (`rare_earth`)；锰矿 (`manganese_ore`)
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 自动化铅矿 (`method_lead_ore_collector_r9`)；自动化炼铅厂 (`method_lead_plant_r9`)；智能锰矿 (`method_manganese_ore_collector_r10`)；智能天然气田 (`method_natural_gas_collector_r10`)；自动化磷矿 (`method_phosphate_rock_collector_r9`)；智能战略矿山 (`method_rare_earth_collector_r10`)；智能战略金属冶炼厂 (`method_rare_earth_metals_plant_r10`)；自动化炼锌厂 (`method_zinc_plant_r9`)
 
 #### 结构化内容效果
 
 - **自动化铝土矿**（`building`）：`building.method_bauxite_collector_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **自动化锌矿**（`building`）：`building.method_zinc_ore_collector_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **战略矿山**（`building`）：`building.rare_earth_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **稀土**（`resource`）：`resource.rare_earth` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 - **锰矿**（`resource`）：`resource.manganese_ore` → `local_resource_access` `unlock` `1.0`；`existing_binding`
@@ -22761,7 +22867,7 @@ pharmaceuticals产出 +12%
 
 #### 被以下科技作为硬前置
 
-无
+- 自主采矿 (`tech.autonomous_mining`)：自主采矿需要高分辨率矿体定位与品位模型。
 
 #### 主题路线后继
 
@@ -22863,6 +22969,8 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 电子控制 (`tech.electronic_control`)：电子控制提供工具制造、机械加工与设备控制能力中的动力与规模化能力，数字控制直接使用这一能力完成其工艺或组织设计
+- 数字计算 (`tech.digital_computing`)：数字控制必须有可编程计算与离散逻辑。
+- 系统工程 (`tech.systems_engineering`)：复杂控制器需要系统建模、反馈与验证方法。
 
 #### 发现启发（仅用于揭示）
 
@@ -22870,7 +22978,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：自动化焦化厂；解锁建筑：自动化混凝土厂；解锁建筑：自动化炼铅厂；解锁建筑：自动化机械零件厂；解锁建筑：自动化磷矿；解锁建筑：自动化炼锌厂；科学领域研究效率 +8%；作为必要支撑：智能冶铝厂、自动化港口船舶中心、智能化汽车厂、智能化电池厂、自动化水泥厂、智能化洗涤剂厂、智能化电动机厂、智能化电子元件厂、智能化发动机厂、自动化炸药厂、智能化家用电器厂、数字化工业机械厂、智能化绝缘电缆厂、自动化润滑油厂、自动化机械零件厂、智能化核燃料厂、智能石油化工厂、智能化塑料厂、智能工具厂、智能化无线电设备厂、智能战略矿山、智能战略金属冶炼厂、智能化核反应堆设备厂、智能炼油厂、智能仪器厂、智能化不锈钢厂、自动化蒸汽机厂、智能化合成纤维厂、智能化合成橡胶厂、智能化线材厂
+解锁建筑：自动化炼铅厂；解锁建筑：自动化机械零件厂；科学领域研究效率 +8%；作为必要支撑：智能冶铝厂、自动化港口船舶中心、智能化汽车厂、智能化电池厂、自动化水泥厂、智能化洗涤剂厂、智能化电动机厂、智能化电子元件厂、智能化发动机厂、自动化炸药厂、智能化家用电器厂、数字化工业机械厂、智能化绝缘电缆厂、自动化润滑油厂、自动化机械零件厂、智能化核燃料厂、智能石油化工厂、智能化塑料厂、智能工具厂、智能化无线电设备厂、智能战略矿山、智能战略金属冶炼厂、智能化核反应堆设备厂、智能炼油厂、智能仪器厂、智能化不锈钢厂、自动化蒸汽机厂、智能化合成纤维厂、智能化合成橡胶厂、智能化线材厂
 
 #### 机会成本
 
@@ -22879,18 +22987,14 @@ geospatial\_analysis\_institution产出 +12%
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 自动化焦化厂 (`method_coke_ovens_r9`)；自动化混凝土厂 (`method_concrete_plant_r9`)；自动化炼铅厂 (`method_lead_plant_r9`)；自动化机械零件厂 (`method_machine_parts_plant_r9`)；自动化磷矿 (`method_phosphate_rock_collector_r9`)；自动化炼锌厂 (`method_zinc_plant_r9`)
+- **建筑 / 生产方式：** 自动化炼铅厂 (`method_lead_plant_r9`)；自动化机械零件厂 (`method_machine_parts_plant_r9`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 智能冶铝厂 (`method_aluminum_plant_r10`)；自动化港口船舶中心 (`method_automated_port`)；智能化汽车厂 (`method_automobiles_plant_r10`)；智能化电池厂 (`method_batteries_plant_r10`)；自动化水泥厂 (`method_cement_plant_r9`)；智能化洗涤剂厂 (`method_detergent_plant_r10`)；智能化电动机厂 (`method_electric_motor_plant_r10`)；智能化电子元件厂 (`method_electronic_components_plant_r10`)；智能化发动机厂 (`method_engines_plant_r10`)；自动化炸药厂 (`method_explosives_plant_r10`)；智能化家用电器厂 (`method_household_appliances_plant_r10`)；数字化工业机械厂 (`method_industrial_machinery_plant_r9`)；智能化绝缘电缆厂 (`method_insulated_cable_plant_r10`)；自动化润滑油厂 (`method_lubricants_plant_r9`)；自动化机械零件厂 (`method_machine_parts_plant_r9`)；智能化核燃料厂 (`method_nuclear_fuel_plant_r10`)；智能石油化工厂 (`method_petrochemicals_plant_r10`)；智能化塑料厂 (`method_plastics_plant_r10`)；智能工具厂 (`method_precision_tool_workshop_r10`)；智能化无线电设备厂 (`method_radio_equipment_works_r10`)；智能战略矿山 (`method_rare_earth_collector_r10`)；智能战略金属冶炼厂 (`method_rare_earth_metals_plant_r10`)；智能化核反应堆设备厂 (`method_reactor_component_works_r10`)；智能炼油厂 (`method_refined_fuel_plant_r10`)；智能仪器厂 (`method_scientific_instrument_works_r10`)；智能化不锈钢厂 (`method_stainless_steel_plant_r10`)；自动化蒸汽机厂 (`method_steam_engine_works_r9`)；智能化合成纤维厂 (`method_synthetic_fiber_plant_r10`)；智能化合成橡胶厂 (`method_synthetic_rubber_plant_r10`)；智能化线材厂 (`method_wire_plant_r10`)
 
 #### 结构化内容效果
 
-- **自动化焦化厂**（`building`）：`building.method_coke_ovens_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **自动化混凝土厂**（`building`）：`building.method_concrete_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **自动化炼铅厂**（`building`）：`building.method_lead_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **自动化机械零件厂**（`building`）：`building.method_machine_parts_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **自动化磷矿**（`building`）：`building.method_phosphate_rock_collector_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **自动化炼锌厂**（`building`）：`building.method_zinc_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -22901,6 +23005,7 @@ geospatial\_analysis\_institution产出 +12%
 #### 被以下科技作为硬前置
 
 - 自主系统 (`tech.autonomous_systems`)：数字控制提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，自主系统直接使用这一能力完成其工艺或组织设计
+- 机器人制造 (`tech.robotic_manufacturing`)：机器人制造需要实时数字控制与传感闭环。
 
 #### 主题路线后继
 
@@ -23136,6 +23241,8 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 网络计算 (`tech.networked_computing`)：网络计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，平台协调直接使用这一能力完成其工艺或组织设计
+- 公司管理 (`tech.corporate_management`)：平台协调建立在跨部门企业管理能力之上。
+- 运筹学 (`tech.operations_research`)：平台匹配与运力分配需要优化方法。
 
 #### 发现启发（仅用于揭示）
 
@@ -23143,7 +23250,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-全社会 +8%
+解锁建筑：数字化工业机械厂；解锁建筑：智能石油化工厂；全社会 +8%
 
 #### 机会成本
 
@@ -23152,13 +23259,14 @@ geospatial\_analysis\_institution产出 +12%
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 无
+- **建筑 / 生产方式：** 数字化工业机械厂 (`method_industrial_machinery_plant_r9`)；智能石油化工厂 (`method_petrochemicals_plant_r10`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
-无
+- **数字化工业机械厂**（`building`）：`building.method_industrial_machinery_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **智能石油化工厂**（`building`）：`building.method_petrochemicals_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -23168,7 +23276,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 被以下科技作为硬前置
 
-无
+- 知识合作社 (`tech.knowledge_cooperatives`)：分布式合作需要共享平台的协调能力。
 
 #### 主题路线后继
 
@@ -23270,6 +23378,8 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 地图学 (`tech.cartography`)：地图学提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，地理信息系统直接使用这一能力完成其工艺或组织设计
+- 卫星观测 (`tech.satellite_observation`)：地理信息系统需要持续、广域的空间观测数据。
+- 数字计算 (`tech.digital_computing`)：空间图层叠加与查询依赖数字计算。
 
 #### 发现启发（仅用于揭示）
 
@@ -23277,7 +23387,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：地理空间分析中心；geospatial\_analysis\_institution产出 +12%；作为必要支撑：森林遥感经营站、高地精准块茎农业、流域治理中心
+解锁建筑：地理空间分析中心；解锁建筑：工业石灰岩矿场；geospatial\_analysis\_institution产出 +12%；作为必要支撑：森林遥感经营站、高地精准块茎农业、流域治理中心
 
 #### 机会成本
 
@@ -23286,13 +23396,14 @@ geospatial\_analysis\_institution产出 +12%
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 地理空间分析中心 (`geospatial_analysis_center`)
+- **建筑 / 生产方式：** 地理空间分析中心 (`geospatial_analysis_center`)；工业石灰岩矿场 (`method_limestone_collector_r6`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 森林遥感经营站 (`method_forest_remote_sensing`)；高地精准块茎农业 (`method_highland_precision_agriculture`)；流域治理中心 (`watershed_governance_center`)
 
 #### 结构化内容效果
 
 - **地理空间分析中心**（`building`）：`building.geospatial_analysis_center` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **工业石灰岩矿场**（`building`）：`building.method_limestone_collector_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -23339,6 +23450,8 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 水利工程 (`tech.hydraulic_engineering`)：水利工程提供水流、风力、输配水和流域工程能力中的成套生产流程，精准灌溉直接使用这一能力完成其工艺或组织设计
+- 电子控制 (`tech.electronic_control`)：精准灌溉需要阀门、泵站和反馈控制。
+- 卫星观测 (`tech.satellite_observation`)：流域与田块水分管理需要广域观测。
 
 #### 发现启发（仅用于揭示）
 
@@ -23413,7 +23526,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-科学领域研究效率 +8%；作为必要支撑：自动化水泥厂、自动化焦化厂、自动化混凝土厂、数字化工业机械厂、自动化炼铅厂、智能牧业站、自动化炼锌厂
+解锁建筑：自动化焦化厂；解锁建筑：自动化混凝土厂；科学领域研究效率 +8%；作为必要支撑：自动化水泥厂、自动化焦化厂、自动化混凝土厂、数字化工业机械厂、自动化炼铅厂、智能牧业站、自动化炼锌厂
 
 #### 机会成本
 
@@ -23422,13 +23535,14 @@ geospatial\_analysis\_institution产出 +12%
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 无
+- **建筑 / 生产方式：** 自动化焦化厂 (`method_coke_ovens_r9`)；自动化混凝土厂 (`method_concrete_plant_r9`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 自动化水泥厂 (`method_cement_plant_r9`)；自动化焦化厂 (`method_coke_ovens_r9`)；自动化混凝土厂 (`method_concrete_plant_r9`)；数字化工业机械厂 (`method_industrial_machinery_plant_r9`)；自动化炼铅厂 (`method_lead_plant_r9`)；智能牧业站 (`method_smart_husbandry`)；自动化炼锌厂 (`method_zinc_plant_r9`)
 
 #### 结构化内容效果
 
-无
+- **自动化焦化厂**（`building`）：`building.method_coke_ovens_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **自动化混凝土厂**（`building`）：`building.method_concrete_plant_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -23438,7 +23552,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 被以下科技作为硬前置
 
-无
+- 自适应灌溉 (`tech.adaptive_irrigation`)：实时调水需要分布式土壤与水文传感。
 
 #### 主题路线后继
 
@@ -23473,6 +23587,8 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 生物技术 (`tech.biotechnology`)：生物技术提供观察、分类、实验与生物育种知识中的操作与材料处理方法，生物信息学直接使用这一能力完成其工艺或组织设计
+- 数字计算 (`tech.digital_computing`)：生物信息处理需要数字计算基础设施。
+- 信息论 (`tech.information_theory`)：序列比对与编码需要信息度量方法。
 
 #### 发现启发（仅用于揭示）
 
@@ -23505,7 +23621,8 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 被以下科技作为硬前置
 
-无
+- 计算生物学 (`tech.computational_biology`)：计算生物学以结构化生物数据和算法管线为基础。
+- 智能育种 (`tech.intelligent_breeding`)：基因型和表型数据需要统一计算表示。
 
 #### 主题路线后继
 
@@ -23622,6 +23739,8 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 数字计算 (`tech.digital_computing`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，机器学习直接使用这一能力完成其工艺或组织设计
+- 概率与统计 (`tech.probability_statistics`)：机器学习需要概率推断和统计估计。
+- 运筹学 (`tech.operations_research`)：模型训练与决策需要优化方法。
 
 #### 发现启发（仅用于揭示）
 
@@ -23656,7 +23775,11 @@ geospatial\_analysis\_institution产出 +12%
 #### 被以下科技作为硬前置
 
 - 神经网络 (`tech.neural_networks`)：机器学习提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，神经网络直接使用这一能力完成其工艺或组织设计
+- 自主系统 (`tech.autonomous_systems`)：自主系统需要从数据形成感知和决策能力。
+- 计算生物学 (`tech.computational_biology`)：复杂生物系统推断需要数据驱动模型。
+- 智能育种 (`tech.intelligent_breeding`)：智能育种需要预测模型筛选性状组合。
 - 智能科学代理 (`tech.scientific_agents`)：机器学习提供数字计算、软件、网络与自动控制能力中的操作与材料处理方法，智能科学代理直接使用这一能力完成其工艺或组织设计
+- 认知自动化 (`tech.cognitive_automation`)：认知自动化需要可训练的感知与推理模型。
 
 #### 主题路线后继
 
@@ -23765,7 +23888,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-科学领域研究效率 +22%
+解锁建筑：智能化洗涤剂厂；解锁建筑：智能战略金属冶炼厂；科学领域研究效率 +22%
 
 #### 机会成本
 
@@ -23774,13 +23897,14 @@ geospatial\_analysis\_institution产出 +12%
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 无
+- **建筑 / 生产方式：** 智能化洗涤剂厂 (`method_detergent_plant_r10`)；智能战略金属冶炼厂 (`method_rare_earth_metals_plant_r10`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
-无
+- **智能化洗涤剂厂**（`building`）：`building.method_detergent_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **智能战略金属冶炼厂**（`building`）：`building.method_rare_earth_metals_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -23858,7 +23982,8 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 被以下科技作为硬前置
 
-无
+- 人机共治 (`tech.human_machine_cogovernance`)：共同治理需要成熟的人机工作分工。
+- 认知自动化 (`tech.cognitive_automation`)：认知流程落地需要明确的人机责任边界。
 
 #### 主题路线后继
 
@@ -23893,6 +24018,8 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 数字控制 (`tech.digital_control`)：数字控制提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，自主系统直接使用这一能力完成其工艺或组织设计
+- 机器学习 (`tech.machine_learning`)：自主系统需要从数据形成感知和决策能力。
+- 系统工程 (`tech.systems_engineering`)：自主设备必须满足整机安全与反馈验证。
 
 #### 发现启发（仅用于揭示）
 
@@ -23927,7 +24054,9 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 被以下科技作为硬前置
 
-无
+- 机器人制造 (`tech.robotic_manufacturing`)：柔性机器人产线需要自主规划和故障处理。
+- 自主采矿 (`tech.autonomous_mining`)：无人矿山依赖自主车辆、设备和安全控制。
+- 自主物流 (`tech.autonomous_logistics`)：自主物流需要无人车辆和设备决策能力。
 
 #### 主题路线后继
 
@@ -23962,6 +24091,8 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 机床 (`tech.machine_tools`)：机床提供工具制造、机械加工与设备控制能力中的操作与材料处理方法，机器人制造直接使用这一能力完成其工艺或组织设计
+- 数字控制 (`tech.digital_control`)：机器人制造需要实时数字控制与传感闭环。
+- 自主系统 (`tech.autonomous_systems`)：柔性机器人产线需要自主规划和故障处理。
 
 #### 发现启发（仅用于揭示）
 
@@ -23969,7 +24100,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：智能冶铝厂；解锁建筑：智能化汽车厂；解锁建筑：智能化发动机厂；解锁建筑：智能战略金属冶炼厂；解锁建筑：智能化核反应堆设备厂；解锁建筑：智能化不锈钢厂；解锁建筑：智能化合成纤维厂；解锁建筑：智能化合成橡胶厂；全社会 +8%；作为必要支撑：智能化电池厂、智能化洗涤剂厂、智能化电动机厂、智能化电子元件厂、自动化炸药厂、智能化家用电器厂、智能化绝缘电缆厂、智能化核燃料厂、智能石油化工厂、智能化塑料厂、智能工具厂、智能化无线电设备厂、智能炼油厂、智能仪器厂、智能化线材厂
+解锁建筑：智能化汽车厂；解锁建筑：智能化发动机厂；全社会 +8%；作为必要支撑：智能化电池厂、智能化洗涤剂厂、智能化电动机厂、智能化电子元件厂、自动化炸药厂、智能化家用电器厂、智能化绝缘电缆厂、智能化核燃料厂、智能石油化工厂、智能化塑料厂、智能工具厂、智能化无线电设备厂、智能炼油厂、智能仪器厂、智能化线材厂
 
 #### 机会成本
 
@@ -23978,20 +24109,14 @@ geospatial\_analysis\_institution产出 +12%
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 智能冶铝厂 (`method_aluminum_plant_r10`)；智能化汽车厂 (`method_automobiles_plant_r10`)；智能化发动机厂 (`method_engines_plant_r10`)；智能战略金属冶炼厂 (`method_rare_earth_metals_plant_r10`)；智能化核反应堆设备厂 (`method_reactor_component_works_r10`)；智能化不锈钢厂 (`method_stainless_steel_plant_r10`)；智能化合成纤维厂 (`method_synthetic_fiber_plant_r10`)；智能化合成橡胶厂 (`method_synthetic_rubber_plant_r10`)
+- **建筑 / 生产方式：** 智能化汽车厂 (`method_automobiles_plant_r10`)；智能化发动机厂 (`method_engines_plant_r10`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 智能化电池厂 (`method_batteries_plant_r10`)；智能化洗涤剂厂 (`method_detergent_plant_r10`)；智能化电动机厂 (`method_electric_motor_plant_r10`)；智能化电子元件厂 (`method_electronic_components_plant_r10`)；自动化炸药厂 (`method_explosives_plant_r10`)；智能化家用电器厂 (`method_household_appliances_plant_r10`)；智能化绝缘电缆厂 (`method_insulated_cable_plant_r10`)；智能化核燃料厂 (`method_nuclear_fuel_plant_r10`)；智能石油化工厂 (`method_petrochemicals_plant_r10`)；智能化塑料厂 (`method_plastics_plant_r10`)；智能工具厂 (`method_precision_tool_workshop_r10`)；智能化无线电设备厂 (`method_radio_equipment_works_r10`)；智能炼油厂 (`method_refined_fuel_plant_r10`)；智能仪器厂 (`method_scientific_instrument_works_r10`)；智能化线材厂 (`method_wire_plant_r10`)
 
 #### 结构化内容效果
 
-- **智能冶铝厂**（`building`）：`building.method_aluminum_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **智能化汽车厂**（`building`）：`building.method_automobiles_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **智能化发动机厂**（`building`）：`building.method_engines_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **智能战略金属冶炼厂**（`building`）：`building.method_rare_earth_metals_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **智能化核反应堆设备厂**（`building`）：`building.method_reactor_component_works_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **智能化不锈钢厂**（`building`）：`building.method_stainless_steel_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **智能化合成纤维厂**（`building`）：`building.method_synthetic_fiber_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **智能化合成橡胶厂**（`building`）：`building.method_synthetic_rubber_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -24036,14 +24161,16 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 机械化采矿 (`tech.mechanized_mining`)：机械化采矿提供矿井、钢铁、蒸汽机械与重型设备能力中的操作与材料处理方法，自主采矿直接使用这一能力完成其工艺或组织设计
+- 矿物光谱遥感 (`tech.mineral_spectral_survey`)：自主采矿需要高分辨率矿体定位与品位模型。
+- 自主系统 (`tech.autonomous_systems`)：无人矿山依赖自主车辆、设备和安全控制。
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「知识产出规模 100000」（development.output.knowledge.100000\_1095d）
+- 已发现信号「采掘就业 6250」（development.employment.extractive.6250\_1095d）
 
 #### 效果摘要
 
-解锁建筑：智能战略矿山；解锁建筑：智能硝石矿；解锁建筑：智能硫矿；铁矿石 -12%；全社会 +15%；作为必要支撑：智能锰矿、智能天然气田、智能硝石矿、智能硫矿
+解锁建筑：智能战略矿山；解锁建筑：智能硝石矿；铁矿石 -12%；全社会 +15%；作为必要支撑：智能锰矿、智能天然气田、智能硝石矿、智能硫矿
 
 #### 机会成本
 
@@ -24052,7 +24179,7 @@ geospatial\_analysis\_institution产出 +12%
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 智能战略矿山 (`method_rare_earth_collector_r10`)；智能硝石矿 (`method_saltpeter_collector_r10`)；智能硫矿 (`method_sulfur_collector_r10`)
+- **建筑 / 生产方式：** 智能战略矿山 (`method_rare_earth_collector_r10`)；智能硝石矿 (`method_saltpeter_collector_r10`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 智能锰矿 (`method_manganese_ore_collector_r10`)；智能天然气田 (`method_natural_gas_collector_r10`)；智能硝石矿 (`method_saltpeter_collector_r10`)；智能硫矿 (`method_sulfur_collector_r10`)
 
@@ -24060,7 +24187,6 @@ geospatial\_analysis\_institution产出 +12%
 
 - **智能战略矿山**（`building`）：`building.method_rare_earth_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **智能硝石矿**（`building`）：`building.method_saltpeter_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **智能硫矿**（`building`）：`building.method_sulfur_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -24108,6 +24234,8 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 科学分类 (`tech.scientific_classification`)：科学分类提供观察、分类、实验与生物育种知识中的操作与材料处理方法，计算生物学直接使用这一能力完成其工艺或组织设计
+- 生物信息学 (`tech.bioinformatics`)：计算生物学以结构化生物数据和算法管线为基础。
+- 机器学习 (`tech.machine_learning`)：复杂生物系统推断需要数据驱动模型。
 
 #### 发现启发（仅用于揭示）
 
@@ -24175,6 +24303,8 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 数值天气预报 (`tech.numerical_weather_prediction`)：数值天气预报提供制图、地质、遥感与空间分析能力中的操作与材料处理方法，气候建模直接使用这一能力完成其工艺或组织设计
+- 卫星观测 (`tech.satellite_observation`)：气候模型需要全球连续观测作为边界和校验。
+- 系统工程 (`tech.systems_engineering`)：耦合气候过程需要系统建模与误差分析。
 
 #### 发现启发（仅用于揭示）
 
@@ -24207,7 +24337,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 被以下科技作为硬前置
 
-无
+- 自适应灌溉 (`tech.adaptive_irrigation`)：自适应灌溉需要季节到长期的气候预测。
 
 #### 主题路线后继
 
@@ -24249,7 +24379,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：智能化电池厂；电力产出 +22%；作为必要支撑：自主林业经营站、自主航运调度港、智能化电池厂、智能化电动机厂、智能化绝缘电缆厂、智能牧业站、智能化线材厂、智能水网控制中心
+解锁建筑：智能化电池厂；解锁建筑：智能化电动机厂；电力产出 +22%；作为必要支撑：自主林业经营站、自主航运调度港、智能化电池厂、智能化电动机厂、智能化绝缘电缆厂、智能牧业站、智能化线材厂、智能水网控制中心
 
 #### 机会成本
 
@@ -24258,13 +24388,14 @@ geospatial\_analysis\_institution产出 +12%
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 智能化电池厂 (`method_batteries_plant_r10`)
+- **建筑 / 生产方式：** 智能化电池厂 (`method_batteries_plant_r10`)；智能化电动机厂 (`method_electric_motor_plant_r10`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 自主林业经营站 (`method_autonomous_forestry`)；自主航运调度港 (`method_autonomous_shipping`)；智能化电池厂 (`method_batteries_plant_r10`)；智能化电动机厂 (`method_electric_motor_plant_r10`)；智能化绝缘电缆厂 (`method_insulated_cable_plant_r10`)；智能牧业站 (`method_smart_husbandry`)；智能化线材厂 (`method_wire_plant_r10`)；智能水网控制中心 (`smart_water_network`)
 
 #### 结构化内容效果
 
 - **智能化电池厂**（`building`）：`building.method_batteries_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **智能化电动机厂**（`building`）：`building.method_electric_motor_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -24309,6 +24440,8 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 数字计算 (`tech.digital_computing`)：数字计算提供数字计算、软件、网络与自动控制能力中的动力与规模化能力，算法治理直接使用这一能力完成其工艺或组织设计
+- 运筹学 (`tech.operations_research`)：算法治理需要约束优化与资源配置模型。
+- 政治经济学 (`tech.political_economy`)：公共算法必须建立在制度激励与分配知识上。
 
 #### 发现启发（仅用于揭示）
 
@@ -24341,7 +24474,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 被以下科技作为硬前置
 
-无
+- 人机共治 (`tech.human_machine_cogovernance`)：共同治理还需要可审计的算法决策制度。
 
 #### 主题路线后继
 
@@ -24409,7 +24542,8 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 被以下科技作为硬前置
 
-无
+- 自主物流 (`tech.autonomous_logistics`)：跨节点物流必须协同多个自主代理。
+- 认知自动化 (`tech.cognitive_automation`)：复杂组织自动化需要多个智能体协同。
 
 #### 主题路线后继
 
@@ -24444,10 +24578,12 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 系统育种 (`tech.crop_breeding`)：系统育种提供观察、分类、实验与生物育种知识中的成套生产流程，智能育种直接使用这一能力完成其工艺或组织设计
+- 机器学习 (`tech.machine_learning`)：智能育种需要预测模型筛选性状组合。
+- 生物信息学 (`tech.bioinformatics`)：基因型和表型数据需要统一计算表示。
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「知识就业 6250」（development.employment.knowledge.6250\_1095d）
+- 已发现信号「农业产出规模 100000」（development.output.agriculture.100000\_1095d）
 
 #### 效果摘要
 
@@ -24511,10 +24647,12 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 自动化物流 (`tech.automated_logistics`)：自动化物流提供船舶、导航、港口与运输组织能力中的动力与规模化能力，自主物流直接使用这一能力完成其工艺或组织设计
+- 自主系统 (`tech.autonomous_systems`)：自主物流需要无人车辆和设备决策能力。
+- 分布式智能 (`tech.distributed_intelligence`)：跨节点物流必须协同多个自主代理。
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「制造就业 6250」（development.employment.manufacturing.6250\_1095d）
+- 已发现信号「累计贸易量 100000」（development.trade.quantity\_100000）
 
 #### 效果摘要
 
@@ -24585,7 +24723,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-科学领域研究效率 +22%；作为必要支撑：自主林业经营站、智能仪器厂
+解锁建筑：智能硫矿；解锁建筑：自动化锌矿；科学领域研究效率 +22%；作为必要支撑：自主林业经营站、智能仪器厂
 
 #### 机会成本
 
@@ -24594,13 +24732,14 @@ geospatial\_analysis\_institution产出 +12%
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 无
+- **建筑 / 生产方式：** 智能硫矿 (`method_sulfur_collector_r10`)；自动化锌矿 (`method_zinc_ore_collector_r9`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 自主林业经营站 (`method_autonomous_forestry`)；智能仪器厂 (`method_scientific_instrument_works_r10`)
 
 #### 结构化内容效果
 
-无
+- **智能硫矿**（`building`）：`building.method_sulfur_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **自动化锌矿**（`building`）：`building.method_zinc_ore_collector_r9` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -24645,6 +24784,8 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 知识经济 (`tech.knowledge_economy`)：知识经济提供制度协调、公共组织与交换规则中的稳定的组织与制度载体，人机共治直接使用这一能力完成其工艺或组织设计
+- 人机协作 (`tech.human_machine_collaboration`)：共同治理需要成熟的人机工作分工。
+- 算法治理 (`tech.algorithmic_governance`)：共同治理还需要可审计的算法决策制度。
 
 #### 发现启发（仅用于揭示）
 
@@ -24719,7 +24860,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-全社会 +8%；作为必要支撑：智能冶铝厂、智能化汽车厂、智能化洗涤剂厂、智能化发动机厂、自动化炸药厂、智能化家用电器厂、智能石油化工厂、智能化塑料厂、智能战略金属冶炼厂、智能化核反应堆设备厂、智能炼油厂、智能化不锈钢厂、智能化合成纤维厂、智能化合成橡胶厂
+解锁建筑：智能化合成纤维厂；解锁建筑：智能化合成橡胶厂；全社会 +8%；作为必要支撑：智能冶铝厂、智能化汽车厂、智能化洗涤剂厂、智能化发动机厂、自动化炸药厂、智能化家用电器厂、智能石油化工厂、智能化塑料厂、智能战略金属冶炼厂、智能化核反应堆设备厂、智能炼油厂、智能化不锈钢厂、智能化合成纤维厂、智能化合成橡胶厂
 
 #### 机会成本
 
@@ -24728,13 +24869,14 @@ geospatial\_analysis\_institution产出 +12%
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 无
+- **建筑 / 生产方式：** 智能化合成纤维厂 (`method_synthetic_fiber_plant_r10`)；智能化合成橡胶厂 (`method_synthetic_rubber_plant_r10`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 智能冶铝厂 (`method_aluminum_plant_r10`)；智能化汽车厂 (`method_automobiles_plant_r10`)；智能化洗涤剂厂 (`method_detergent_plant_r10`)；智能化发动机厂 (`method_engines_plant_r10`)；自动化炸药厂 (`method_explosives_plant_r10`)；智能化家用电器厂 (`method_household_appliances_plant_r10`)；智能石油化工厂 (`method_petrochemicals_plant_r10`)；智能化塑料厂 (`method_plastics_plant_r10`)；智能战略金属冶炼厂 (`method_rare_earth_metals_plant_r10`)；智能化核反应堆设备厂 (`method_reactor_component_works_r10`)；智能炼油厂 (`method_refined_fuel_plant_r10`)；智能化不锈钢厂 (`method_stainless_steel_plant_r10`)；智能化合成纤维厂 (`method_synthetic_fiber_plant_r10`)；智能化合成橡胶厂 (`method_synthetic_rubber_plant_r10`)
 
 #### 结构化内容效果
 
-无
+- **智能化合成纤维厂**（`building`）：`building.method_synthetic_fiber_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **智能化合成橡胶厂**（`building`）：`building.method_synthetic_rubber_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -24779,10 +24921,12 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 精准灌溉 (`tech.precision_irrigation`)：精准灌溉提供水田整备、水位控制与稻作管理方法中的成套生产流程，自适应灌溉直接使用这一能力完成其工艺或组织设计
+- 气候建模 (`tech.climate_modeling`)：自适应灌溉需要季节到长期的气候预测。
+- 传感器网络 (`tech.sensor_networks`)：实时调水需要分布式土壤与水文传感。
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「能源产出规模 100000」（development.output.energy.100000\_1095d）
+- 已发现信号「农业就业 6250」（development.employment.agriculture.6250\_1095d）
 
 #### 效果摘要
 
@@ -24846,6 +24990,8 @@ geospatial\_analysis\_institution产出 +12%
 #### 硬前置（决定研发资格）
 
 - 开放科学网络 (`tech.open_science_networks`)：开放科学网络提供制度协调、公共组织与交换规则中的操作与材料处理方法，知识合作社直接使用这一能力完成其工艺或组织设计
+- 知识经济 (`tech.knowledge_economy`)：知识合作社需要知识劳动与收益核算体系。
+- 平台协调 (`tech.platform_coordination`)：分布式合作需要共享平台的协调能力。
 
 #### 发现启发（仅用于揭示）
 
@@ -24920,7 +25066,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-全社会 +22%；作为必要支撑：智能冶铝厂、智能化不锈钢厂
+解锁建筑：智能冶铝厂；解锁建筑：智能化不锈钢厂；全社会 +22%；作为必要支撑：智能冶铝厂、智能化不锈钢厂
 
 #### 机会成本
 
@@ -24929,13 +25075,14 @@ geospatial\_analysis\_institution产出 +12%
 #### 内容解锁
 
 - **物资：** 无
-- **建筑 / 生产方式：** 无
+- **建筑 / 生产方式：** 智能冶铝厂 (`method_aluminum_plant_r10`)；智能化不锈钢厂 (`method_stainless_steel_plant_r10`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 智能冶铝厂 (`method_aluminum_plant_r10`)；智能化不锈钢厂 (`method_stainless_steel_plant_r10`)
 
 #### 结构化内容效果
 
-无
+- **智能冶铝厂**（`building`）：`building.method_aluminum_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **智能化不锈钢厂**（`building`）：`building.method_stainless_steel_plant_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -24979,7 +25126,9 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 硬前置（决定研发资格）
 
-无
+- 机器学习 (`tech.machine_learning`)：认知自动化需要可训练的感知与推理模型。
+- 分布式智能 (`tech.distributed_intelligence`)：复杂组织自动化需要多个智能体协同。
+- 人机协作 (`tech.human_machine_collaboration`)：认知流程落地需要明确的人机责任边界。
 
 #### 发现启发（仅用于揭示）
 

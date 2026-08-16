@@ -87,8 +87,11 @@ func _run_case(label: String, size: Vector2i, seed: int) -> Dictionary:
 		not player_start.has("resource_topups") and
 		(player_start.get("missing_resource_ids", PackedStringArray()) as
 			PackedStringArray).is_empty())
-	for resource_id in [String(player_start.get("starter_food_resource_id", "")),
-			String(player_start.get("starter_clothing_resource_id", "")),
+	for resource_id in player_start.get("starter_food_resource_ids", PackedStringArray()):
+		_expect("%s selected food resource %s exists" % [label, resource_id],
+			not String(resource_id).is_empty() and _resource_reserve(
+				map, String(resource_id), cell) > 0.0)
+	for resource_id in [String(player_start.get("starter_clothing_resource_id", "")),
 			String(player_start.get("starter_construction_resource_id", "")),
 			String(player_start.get("precious_resource", ""))]:
 		_expect("%s selected resource %s exists" % [label, resource_id],
@@ -117,6 +120,8 @@ func _run_case(label: String, size: Vector2i, seed: int) -> Dictionary:
 	var buildings: Dictionary = economy.building_cell_snapshot(cell)
 	var route_buildings: PackedStringArray = player_start.get(
 		"starter_building_ids", PackedStringArray())
+	var route_counts: PackedInt64Array = player_start.get(
+		"starter_building_counts", PackedInt64Array())
 	var route_technologies: PackedStringArray = player_start.get(
 		"starter_technology_ids", PackedStringArray())
 	_expect("%s grants early trade and prebuilds its merchant post" % label,
@@ -124,20 +129,39 @@ func _run_case(label: String, size: Vector2i, seed: int) -> Dictionary:
 		route_buildings.has("early_merchant_post"))
 	_expect("%s prebuilds exactly its route bundle" % label,
 		_sum_i64(buildings.get("building_counts_by_type", PackedInt64Array())) ==
-		route_buildings.size())
-	for building_id in route_buildings:
+		_sum_i64(route_counts))
+	for building_index in range(route_buildings.size()):
+		var building_id := String(route_buildings[building_index])
 		_expect("%s route building %s exists" % [label, building_id],
-			_building_count(buildings, building_id) == 1)
+			_building_count(buildings, building_id) == int(route_counts[building_index]))
+	_expect("%s route has 20 self-operated job slots" % label,
+		int(player_start.get("starter_job_capacity", 0)) == 20)
+	_expect("%s route has no employee slots" % label,
+		int(player_start.get("starter_employee_job_capacity", 0)) == 0)
+	_expect("%s route does not preallocate professions" % label,
+		not player_start.has("owner_job_capacity_by_profession"))
+	_expect("%s leaves non-founder population for native job matching" % label,
+		_profession_population(population, "unemployed") > 0
+		and _sum_i64(population.get("owner_employed_by_cohort",
+			PackedInt64Array())) > 0
+		and _sum_i64(population.get("owner_employed_by_cohort",
+			PackedInt64Array())) < 20
+		and _sum_i64(population.get("employee_employed_by_cohort",
+			PackedInt64Array())) == 0)
 	var precious_building := "placer_gold_working" \
 		if String(start.get("precious_resource", "")) == "gold_ore" \
 		else "surface_silver_working"
 	_expect("%s precious work site matches deposit" % label,
 		_building_count(buildings, precious_building) == 1)
 	var market: Dictionary = economy.market_cell_snapshot(cell)
-	var food_good := String(player_start.get("starter_food_good_id", ""))
+	var food_goods: PackedStringArray = player_start.get(
+		"starter_food_good_ids", PackedStringArray())
+	var food_bridge_present := not food_goods.is_empty()
+	for food_good in food_goods:
+		food_bridge_present = food_bridge_present and _market_stock(
+			market, String(food_good)) > 0
 	_expect("%s uses a fifteen-day local food bridge" % label,
-		_market_stock(market, food_good) >= 20 * 15 * 240
-		and _market_stock(market, "processed_food") == 0)
+		food_bridge_present and _market_stock(market, "processed_food") == 0)
 	var normalized_start := {
 		"cell": cell,
 		"precious_resource": str(start.get("precious_resource", "")),
@@ -198,6 +222,22 @@ func _sum_i64(values: PackedInt64Array) -> int:
 	var total := 0
 	for value in values:
 		total += int(value)
+	return total
+
+
+func _profession_population(snapshot: Dictionary, stable_id: String) -> int:
+	var catalog_ids: PackedStringArray = snapshot.get(
+		"profession_stable_ids", PackedStringArray())
+	var row_professions: PackedInt32Array = snapshot.get(
+		"profession_ids", PackedInt32Array())
+	var row_populations: PackedInt64Array = snapshot.get(
+		"populations", PackedInt64Array())
+	var total := 0
+	for row in range(mini(row_professions.size(), row_populations.size())):
+		var profession := int(row_professions[row])
+		if profession >= 0 and profession < catalog_ids.size() \
+				and String(catalog_ids[profession]) == stable_id:
+			total += int(row_populations[row])
 	return total
 
 

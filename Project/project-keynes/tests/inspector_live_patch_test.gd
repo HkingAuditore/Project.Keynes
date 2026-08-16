@@ -37,24 +37,52 @@ func _run() -> void:
 			or not deferred_picker._prev.disabled \
 			or not deferred_picker._next.disabled:
 		failures.append("construction picker lost a model supplied before entering the scene tree")
+	deferred_picker.custom_minimum_size = Vector2(400.0, 240.0)
+	deferred_picker.size = Vector2(400.0, 240.0)
+	deferred_picker.set_model(_construction_scroll_model())
+	await process_frame
+	await process_frame
+	var construction_scroll := deferred_picker._rows_scroll.get_v_scroll_bar()
+	if construction_scroll.max_value <= construction_scroll.page:
+		failures.append("construction quote list did not become vertically scrollable")
+	var first_option := deferred_picker._rows.get_child(0) as Button
+	if first_option == null \
+			or String((first_option.get_node(
+				"Margin/Line/Info/MaterialsRow/Materials") as Label).text).contains("国库") \
+			or not String((first_option.get_node(
+				"Margin/Line/Info/MaterialsRow/Materials") as Label).text).contains("单价") \
+			or not String((first_option.get_node(
+				"Margin/Line/Info/RecipeRow/Recipe") as Label).text).contains("产出") \
+			or not String((first_option.get_node(
+				"Margin/Line/Info/JobsRow/Jobs") as Label).text).contains("工匠") \
+			or first_option.find_children("", "IconBadge", true, false).size() < 4:
+		failures.append("construction option did not render the compact icon/material/recipe/job contract")
+	var jobs_label := first_option.get_node(
+		"Margin/Line/Info/JobsRow/Jobs") as Label
+	if jobs_label.get_global_rect().end.y > first_option.get_global_rect().end.y + 0.5:
+		failures.append("construction option content is clipped at the 400px detail width")
 
 	var model := _make_model()
 	panel.set_model_for_selection(model)
 	await process_frame
 	await process_frame
 	for button in panel._tabs._buttons.values():
-		if not String((button as Button).text).is_empty():
-			failures.append("dossier tab header still displays text")
+		if String((button as Button).text).is_empty():
+			failures.append("dossier tab header does not display its short label")
 		var icons := (button as Button).find_children("", "IconBadge", true, false)
-		if icons.size() != 1 or (icons[0] as Control).get_global_rect().get_center().distance_to(
-			(button as Control).get_global_rect().get_center()) > 1.0:
-			failures.append("dossier tab icon is not geometrically centered: button=%s icon=%s" % [
+		if icons.size() != 1 or absf((icons[0] as Control).get_global_rect().get_center().y -
+			(button as Control).get_global_rect().get_center().y) > 1.0 \
+			or (icons[0] as Control).get_global_rect().get_center().x >= \
+				(button as Control).get_global_rect().get_center().x:
+			failures.append("dossier tab icon is not aligned before its label: button=%s icon=%s" % [
 				(button as Control).get_global_rect(),
 				(icons[0] as Control).get_global_rect() if icons.size() == 1 else Rect2()])
+	if panel._summary_grid.columns != 2:
+		failures.append("dossier summary is not using the compact two-column grid")
 	for raw_card in panel._summary_cards.values():
 		var summary_card := raw_card as MetricCard
-		if summary_card != null and summary_card.size.x < 220.0:
-			failures.append("summary cards did not expand into full-width dossier rows: card=%s grid=%s" % [
+		if summary_card != null and summary_card.size.x < 120.0:
+			failures.append("summary cards are too narrow for the compact dossier grid: card=%s grid=%s" % [
 				summary_card.size, panel._summary_grid.size])
 	var overview_count := panel.visible_node_count()
 	var overview_patch := _make_patch("geography")
@@ -97,7 +125,6 @@ func _run() -> void:
 	if panel._scroll.scroll_vertical != 0:
 		failures.append("tab switch did not reset scroll position")
 	var market_list = panel._market_list
-	market_list.set_expanded("market_0", true)
 	var market_count := panel.visible_node_count()
 	for i in range(120):
 		panel.apply_live_patch(_make_patch("market", float(i)))
@@ -105,16 +132,17 @@ func _run() -> void:
 			await process_frame
 	if panel.visible_node_count() != market_count:
 		failures.append("120 market patches changed inspector node count")
-	if not market_list.is_expanded("market_0"):
-		failures.append("market live patch lost row expansion state")
+	var market_refs: Dictionary = market_list._row_refs.get("market_0", {})
+	if (market_refs.get("panel") as Node).has_node("Body/Details") \
+			or (market_refs.get("panel") as Node).has_node("Body/Button/Header/Chevron"):
+		failures.append("market row still contains nested expansion controls")
 	if market_list.get_combined_minimum_size().x > panel._scroll.size.x + 0.5:
-		failures.append("expanded market list exceeds the inspector scroll width: list=%s scroll=%s" % [
+		failures.append("market list exceeds the inspector scroll width: list=%s scroll=%s" % [
 			market_list.get_combined_minimum_size(), panel._scroll.size])
 
 	panel.select_tab("population")
 	await process_frame
 	var cohort_list = panel._cohort_list
-	cohort_list.set_expanded("cohort_1", true)
 	var cohort_count := panel.visible_node_count()
 	for i in range(120):
 		panel.apply_live_patch(_make_patch("population", float(i)))
@@ -122,12 +150,13 @@ func _run() -> void:
 			await process_frame
 	if panel.visible_node_count() != cohort_count:
 		failures.append("120 population patches changed inspector node count")
-	if not cohort_list.is_expanded("cohort_1"):
-		failures.append("population live patch lost cohort expansion state")
 	if cohort_list.get_combined_minimum_size().x > panel._scroll.size.x + 0.5:
-		failures.append("expanded population list exceeds the inspector scroll width: list=%s scroll=%s" % [
+		failures.append("population list exceeds the inspector scroll width: list=%s scroll=%s" % [
 			cohort_list.get_combined_minimum_size(), panel._scroll.size])
 	var cohort_refs: Dictionary = cohort_list._row_refs.get("cohort_1", {})
+	if (cohort_refs.get("panel") as Node).has_node("Body/Details") \
+			or (cohort_refs.get("panel") as Node).has_node("Body/Button/Header/Chevron"):
+		failures.append("population row still contains nested expansion controls")
 	if String((cohort_refs.get("name") as Label).text) != "工人" \
 			or (cohort_refs.get("icon") as IconBadge).icon_key != "profession.worker" \
 			or (cohort_refs.get("living_icon") as IconBadge).icon_key \
@@ -139,57 +168,51 @@ func _run() -> void:
 	if String((cohort_refs.get("wealth") as Label).text).contains("人均") \
 			or String((cohort_refs.get("net") as Label).text) != "+4":
 		failures.append("population header does not present compact wealth and net values")
-	var demand_requests := []
-	panel.demand_details_requested.connect(
-		func(details: Dictionary) -> void: demand_requests.append(details))
-	var demand_refs: Dictionary = cohort_refs.get("demand", {})
-	(demand_refs.get("button") as Button).pressed.emit()
-	if demand_requests.size() != 1 \
-			or String((demand_requests[0] as Dictionary).get("cohort_name", "")) != "工人 · 本地人口 · 小康 · 满意度 82.0%" \
-			or ((demand_requests[0] as Dictionary).get("rows", []) as Array).size() != 2 \
-			or ((demand_requests[0] as Dictionary).get("groups", []) as Array).size() != 1:
-		failures.append("population demand detail action did not forward the selected cohort payload")
+	var object_requests := []
+	panel.object_details_requested.connect(
+		func(request: Dictionary) -> void: object_requests.append(request))
+	(cohort_refs.get("button") as Button).pressed.emit()
+	if object_requests.size() != 1 \
+			or String((object_requests[0] as Dictionary).get("kind", "")) != "cohort":
+		failures.append("population row did not request the integrated object detail pane")
 	else:
-		var dialog = (load("res://scenes/ui/demand_detail_dialog.tscn") as PackedScene).instantiate()
-		root.add_child(dialog)
-		dialog.show_details(demand_requests[0])
+		var cohort_data: Dictionary = (cohort_list._row_data as Dictionary).get(
+			"cohort_1", {})
+		panel.show_object_detail({
+			"kind": "cohort", "name": "工人", "subtitle": "阶层 · 区域 1, 1",
+			"icon": "profession.worker", "accent": UITokens.ACCENT,
+			"row": cohort_data,
+		})
 		await process_frame
-		var visible_detail_cells := 0
-		for child in dialog._rows_grid.get_children():
-			if child is Control and (child as Control).visible:
-				visible_detail_cells += 1
-		var has_usage_group := false
-		var has_redundant_relation_text := false
-		var has_satisfaction_header := false
+		if not panel.detail_open() or not panel._detail_shell.visible \
+				or panel._object_detail_dialog.title_text() != "工人":
+			failures.append("cohort row did not open the embedded detail workspace")
 		var detail_text := ""
-		for node in dialog._rows_grid.find_children("", "Label", true, false):
-			var label_text := String((node as Label).text)
-			detail_text += label_text + "\n"
-			has_usage_group = has_usage_group or label_text == "基本生活 · 满足 82%"
-			has_satisfaction_header = has_satisfaction_header \
-				or label_text == "满意度维度 · 最短板 储蓄"
-			has_redundant_relation_text = has_redundant_relation_text \
-				or label_text.contains("用途：") or label_text.contains("替代品") \
-				or label_text.begins_with("方案 ")
-		var dialog_panels: Array[Node] = dialog.find_children(
-			"", "PanelContainer", true, false)
-		# 满意度分解占一行表头加两行维度，需求明细占一个分组行加两行商品，都是四列。
-		if not dialog.is_open() or visible_detail_cells != 24:
-			failures.append("demand detail dialog did not render the satisfaction block above one group and two four-column rows")
-		elif not has_satisfaction_header:
-			failures.append("demand detail dialog did not surface the worst satisfaction dimension")
-		elif not has_usage_group or has_redundant_relation_text:
-			failures.append("demand detail dialog did not express substitution through usage grouping")
-		elif not detail_text.contains("财富 +0.020 · 价格 −0.005") \
-				or not detail_text.contains("与上次结算相同"):
-			failures.append("demand detail did not show wealth and price quantity attribution")
-		elif dialog_panels.is_empty() \
-				or (dialog_panels[0] as Control).size.x > 1280.0 \
-				or (dialog_panels[0] as Control).size.y > 720.0:
-			failures.append("demand detail dialog exceeds the 1280x720 viewport")
-		dialog.close_dialog()
-		if dialog.visible:
-			failures.append("demand detail dialog did not close")
+		for node in panel._object_detail_dialog.find_children(
+				"", "Label", true, false):
+			detail_text += String((node as Label).text) + "\n"
+		if not detail_text.contains("消费需求"):
+			failures.append("embedded cohort detail did not include demand data")
+		var detail_nav := panel._object_detail_dialog._section_nav as Control
+		var operations_button := panel._object_detail_dialog._section_buttons.get(
+			"operations") as Button
+		if not detail_nav.visible or operations_button == null \
+				or not operations_button.visible:
+			failures.append("cohort detail section navigation is not interactive")
+		else:
+			operations_button.pressed.emit()
+			await process_frame
+			if panel._object_detail_dialog._scroll.scroll_vertical <= 0:
+				failures.append("cohort detail operations navigation did not scroll")
+		if not (cohort_refs.get("tax_editors", {}) as Dictionary).is_empty():
+			failures.append("population row still owns tax editors after tax migration")
+		panel.set_compact_detail_mode(true)
+		if panel._inspector_root.visible:
+			failures.append("compact detail mode did not replace the right overview")
+		panel.close_detail()
+		if panel.detail_open() or not panel._inspector_root.visible:
+			failures.append("closing compact detail did not restore the overview")
+		panel.set_compact_detail_mode(false)
 
 	panel.select_tab("buildings")
 	await process_frame
@@ -198,33 +221,22 @@ func _run() -> void:
 			or construction_picker._status.text != "测试：尚未拥有该地块。":
 		failures.append("inspector did not initialize construction picker after adding it to the tree")
 	var building_list = panel._building_list
-	building_list.set_expanded("building_1", true)
 	var building_count := panel.visible_node_count()
 	for i in range(40):
 		panel.apply_live_patch(_make_patch("buildings", float(i)))
 	await process_frame
 	if panel.visible_node_count() != building_count:
 		failures.append("building live patches changed inspector node count")
-	if not building_list.is_expanded("building_1"):
-		failures.append("building live patch lost expansion state")
 	if building_list.get_combined_minimum_size().x > panel._scroll.size.x + 0.5:
-		failures.append("expanded building list exceeds the inspector scroll width: list=%s scroll=%s" % [
+		failures.append("building list exceeds the inspector scroll width: list=%s scroll=%s" % [
 			building_list.get_combined_minimum_size(), panel._scroll.size])
 	var building_refs: Dictionary = building_list._row_refs.get("building_1", {})
+	if (building_refs.get("panel") as Node).has_node("Body/Details") \
+			or (building_refs.get("panel") as Node).has_node("Body/Button/Header/Chevron"):
+		failures.append("building row still contains nested expansion controls")
 	if String((building_refs.get("name") as Label).text) != "纺织工坊" \
 			or not (building_refs.get("state_icon") as Control).visible:
 		failures.append("building header did not keep a name-only title with an abnormal-state icon")
-	for group_id in ["state_summary", "jobs", "production", "finance"]:
-		var group_panel := ((building_refs.get(group_id, {}) as Dictionary).get("panel") as Control)
-		if group_panel != null and group_panel.size.x > building_list.size.x + 0.5:
-			failures.append("expanded building %s card exceeds the building list width: card=%s list=%s" % [
-				group_id, group_panel.size, building_list.size])
-			break
-	var state_refs: Dictionary = building_refs.get("state_summary", {})
-	if not (state_refs.get("panel") as Control).visible \
-			or String((state_refs.get("label") as Label).text) != "亏损停产" \
-			or not String((state_refs.get("detail") as Label).text).contains("岗位已释放"):
-		failures.append("building operating-state summary was not rendered in the expanded row")
 
 	var deferred_cohorts := (load("res://scenes/ui/cohort_list.tscn") as PackedScene).instantiate() as CohortList
 	root.add_child(deferred_cohorts)
@@ -244,7 +256,8 @@ func _run() -> void:
 	if top_bar.get_combined_minimum_size().y > PlayerTopBar.BAR_HEIGHT:
 		failures.append("top bar minimum height exceeds configured bar height")
 	if panel.get_combined_minimum_size().x > 460.0:
-		failures.append("inspector minimum width exceeds 460px")
+		failures.append("inspector minimum width exceeds 460px: %s" % \
+			panel.get_combined_minimum_size())
 
 	var loading := (load("res://scenes/ui/world_loading_overlay.tscn") as PackedScene).instantiate() as WorldLoadingOverlay
 	root.add_child(loading)
@@ -319,6 +332,33 @@ func _make_patch(tab_id: String, step: float = 1.0) -> Dictionary:
 		"summary_cards": _summary_cards(step),
 		"tab_id": tab_id,
 		"category": category,
+	}
+
+
+func _construction_scroll_model() -> Dictionary:
+	var items := []
+	for i in range(16):
+		items.append({
+			"building_id": "scroll_test_%d" % i,
+			"name": "测试建筑 %02d" % (i + 1),
+			"eligible": true,
+			"cash_required": 10000,
+			"materials": [{
+				"name": "木材", "required": 1000,
+				"treasury": 1000, "market": 0,
+				"unit_price_text": "1.25", "cost_text": "1.25",
+			}],
+			"inputs": [{"name": "原木", "quantity": "0.500 /日"}],
+			"outputs": [{"name": "木板", "quantity": "0.250 /日"}],
+			"jobs": [{"name": "工匠", "slots": 4, "owner": false}],
+			"icon": "economy.building.workshop",
+		})
+	return {
+		"available": true,
+		"items": items,
+		"total": items.size(),
+		"offset": 0,
+		"limit": 32,
 	}
 
 

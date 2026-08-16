@@ -31,6 +31,9 @@ total_goods = all market stock + all country treasury goods
 ```
 
 显式 mint/burn、外部 stock delta、居民消费、建设投入、生产投入/产出和丢弃仍分别记账。
+国家研发每日从本国 `technology_points` 国库扣除的物资属于外部商品 sink：`epoch_begin`
+记录研发累计消耗，`aggregate_publish` 只扣除本周期新增值，因此冻结周期内的研发不会被审计
+误判为丢失库存，周期起点前的消耗也不会重复扣除。
 每次提交要求 population/money/goods error 精确为 `0/0/0`。经济 state hash 混入当前 PKCN
 state hash；冻结报告公开 `country_schema_version`、`country_generation` 和
 `country_state_hash`。

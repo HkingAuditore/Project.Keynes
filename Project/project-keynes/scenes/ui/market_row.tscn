@@ -26,14 +26,6 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 theme_override_constants/separation = 8
-[node name="Chevron" type="Button" parent="Body/Button/Header"]
-custom_minimum_size = Vector2(22, 22)
-layout_mode = 2
-size_flags_vertical = 4
-toggle_mode = true
-focus_mode = 0
-tooltip_text = "展开 / 折叠"
-theme_type_variation = &"PKIconButton"
 [node name="Icon" parent="Body/Button/Header" instance=ExtResource("1_icon")]
 custom_minimum_size = Vector2(26, 26)
 layout_mode = 2
@@ -62,7 +54,3 @@ custom_minimum_size = Vector2(46, 0)
 layout_mode = 2
 horizontal_alignment = 1
 theme_type_variation = &"PKDangerText"
-[node name="Details" type="VBoxContainer" parent="Body"]
-visible = false
-layout_mode = 2
-theme_override_constants/separation = 2

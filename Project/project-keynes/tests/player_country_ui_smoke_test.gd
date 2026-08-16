@@ -292,34 +292,34 @@ func _run() -> void:
 	_expect("Tabler summary icon is registered",
 		IconBadge.texture_for_key("territory", IconBadge.FAMILY_TABLER) != null)
 
-	# ── 地块对象详情弹窗 ─────────────────────────────────────
+	# ── 地块税务合并与内嵌详情 ───────────────────────────────
 	var right_panel := ui.get("_right_panel") as InspectorPanel
 	if right_panel != null:
-		right_panel.select_tab("tax")
-		await process_frame
-		var cell_tax_workspace = right_panel.get("_cell_tax_workspace")
-		_expect("owned visible cell exposes an editable Inspector tax workspace",
-			cell_tax_workspace != null and
-			bool((cell_tax_workspace.get("_model") as Dictionary).get("editable", false)))
-		_expect("Inspector tax list uses a fixed virtual row pool",
-			cell_tax_workspace != null and
-			int(cell_tax_workspace.call("pooled_row_count")) == 10)
-		if cell_tax_workspace != null:
-			var workspace_id: int = cell_tax_workspace.get_instance_id()
-			var tax_scroll := cell_tax_workspace.get("_scroll") as ScrollContainer
-			tax_scroll.scroll_vertical = 40
-			ui.refresh_selected_daily_lines(false, clock.day_index())
-			await process_frame
-			_expect("daily tax refresh reuses nodes and preserves scroll",
-				right_panel.get("_cell_tax_workspace").get_instance_id() == workspace_id and
-				tax_scroll.scroll_vertical == 40)
+		var inspector_tabs: Array = (right_panel.get("_model") as Dictionary).get(
+			"tabs", [])
+		var has_tax_tab := false
+		for tab_value in inspector_tabs:
+			has_tax_tab = has_tax_tab or String((tab_value as Dictionary).get(
+				"id", "")) == "tax"
+		_expect("Inspector removes the standalone tax tab", not has_tax_tab)
 		right_panel.select_tab("population")
 		await process_frame
-	var detail_dialog = ui.get("_object_detail_dialog")
+		var tax_context := right_panel.get("_tax_context") as Dictionary
+		_expect("owned population page exposes an editable income default",
+			bool(tax_context.get("editable", false)) and
+			(tax_context.get("default_lanes", []) as Array).size() == 1)
+		var tax_scroll := right_panel.get("_scroll") as ScrollContainer
+		tax_scroll.scroll_vertical = 40
+		ui.refresh_selected_daily_lines(false, clock.day_index())
+		await process_frame
+		_expect("daily tax refresh preserves the merged page scroll",
+			tax_scroll.scroll_vertical == 40)
+	var detail_dialog = right_panel.get("_object_detail_dialog") \
+		if right_panel != null else null
 	var inspector_vm := ui.get("_inspector_view_model") as CellInspectorViewModel
 	var country_facade = ui.get("_country_facade")
 	var selected_cell := ui.get("_selected_cell") as HexCell
-	_expect("object detail dialog is wired into the UI",
+	_expect("object detail workspace is wired into the Inspector",
 		detail_dialog != null and right_panel != null and inspector_vm != null)
 	_expect("player start cell stays selected for object details", selected_cell != null)
 	var sample_profession_id := ""
@@ -334,20 +334,14 @@ func _run() -> void:
 		if not cohort_rows.is_empty():
 			var cohort_row_id := String(cohort_rows.keys()[0])
 			var cohort_refs := cohort_rows.values()[0] as Dictionary
-			var chevron := cohort_refs.get("chevron") as Button
-			_expect("cohort row exposes a dedicated expansion chevron", chevron != null)
-			if chevron != null:
-				chevron.button_pressed = true
-				_expect("chevron expands the cohort row in place",
-					cohort_list.is_expanded(cohort_row_id) and not detail_dialog.is_open())
-				chevron.button_pressed = false
-				_expect("chevron collapses the cohort row",
-					not cohort_list.is_expanded(cohort_row_id))
+			_expect("cohort row removes the nested expansion affordance",
+				not cohort_refs.has("chevron") \
+					and not (cohort_refs.get("panel") as Node).has_node("Body/Details"))
 			var cohort_payload := inspector_vm.build_object_detail(
 				selected_cell, {"kind": "cohort", "row_id": cohort_row_id})
 			sample_profession_id = String(cohort_payload.get("item_id", ""))
-			_expect("cohort detail payload carries all required keys",
-				cohort_payload.has("row") and cohort_payload.has("tax") \
+			_expect("cohort detail payload carries all required keys without duplicate tax data",
+				cohort_payload.has("row") and not cohort_payload.has("tax") \
 					and cohort_payload.has("subtitle") \
 					and not cohort_payload.has("country_facade") \
 					and not sample_profession_id.is_empty())
@@ -362,52 +356,64 @@ func _run() -> void:
 					.get("profession_id", "")).is_empty())
 			(cohort_refs.get("button") as Button).pressed.emit()
 			await process_frame
-			_expect("cohort row click opens the object detail dialog",
-				detail_dialog.is_open())
-			_expect("cohort dialog header names the object and cell",
+			_expect("cohort row click opens the embedded object detail workspace",
+				right_panel.detail_open() and detail_dialog.is_open())
+			_expect("cohort detail header names the object and cell",
 				not detail_dialog.title_text().is_empty() \
 					and detail_dialog.subtitle_text().contains("阶层") \
 					and detail_dialog.subtitle_text().contains("区域"))
 			var cohort_row_data := (cohort_list.get("_row_data") as Dictionary) \
 				.get(cohort_row_id, {}) as Dictionary
-			_expect("cohort dialog title shows the localized profession name",
+			_expect("cohort detail title shows the localized profession name",
 				detail_dialog.title_text() == String(cohort_row_data.get("name", "")))
 			_expect("cohort name falls back to the localized profession name",
 				String(inspector_vm._object_display_name("cohort",
 					{"profession_id": sample_profession_id}, int(selected_cell.index)))
 					== String(cohort_row_data.get("name", "")))
 			var cohort_grid_columns := detail_dialog.fact_grid_columns() as Array[int]
-			_expect("cohort dialog balances eight facts as a 4x2 grid",
+			_expect("cohort detail balances eight facts as a 4x2 grid",
 				cohort_grid_columns.size() == 1 and cohort_grid_columns[0] == 4)
-			_expect("cohort dialog shows one editable income tax lane",
-				detail_dialog.tax_lane_count() == 1 and detail_dialog.tax_lane_editable())
-			if detail_dialog.is_open() and detail_dialog.tax_lane_count() == 1:
-				var income_data := ((detail_dialog.get("_lanes") as Dictionary) \
-					.get("income", {}) as Dictionary).get("data", {}) as Dictionary
+			var detail_nav := detail_dialog.get("_section_nav") as HBoxContainer
+			_expect("cohort detail exposes fixed overview and demand navigation",
+				detail_nav != null and detail_nav.visible \
+					and (detail_nav.get_node("Overview") as Button).text == "概览" \
+					and (detail_nav.get_node("Operations") as Button).text == "需求")
+			var detail_scroll := detail_dialog.get("_scroll") as ScrollContainer
+			detail_scroll.scroll_vertical = 32
+			var detail_title_before: String = detail_dialog.title_text()
+			ui.refresh_selected_daily_lines(true, clock.day_index())
+			await process_frame
+			await process_frame
+			_expect("live patch preserves the selected detail and its scroll position",
+				right_panel.detail_open() and detail_dialog.title_text() == detail_title_before \
+					and detail_scroll.scroll_vertical == 32)
+			right_panel.close_detail()
+			await process_frame
+			_expect("cohort detail closes without closing the Inspector",
+				not right_panel.detail_open() and right_panel.visible)
+			var cohort_tax_editors := cohort_refs.get("tax_editors", {}) as Dictionary
+			_expect("cohort row owns one editable income tax lane",
+				cohort_tax_editors.size() == 1)
+			if cohort_tax_editors.size() == 1:
+				var income_editor := cohort_tax_editors.values()[0] as TaxLaneEditor
+				var income_data := income_editor.lane_data()
 				_expect("income lane binds the cohort profession id",
-					String(income_data.get("item_id", "")) == sample_profession_id)
-				var current_day := int(detail_dialog.get("_current_day"))
-				var base_rate := int(detail_dialog.tax_lane_rate("income"))
+					String(income_data.get("item_id", "")) == sample_profession_id \
+						and bool(income_data.get("editable", false)))
+				var base_rate := int(income_data.get("base", 0))
 				var new_rate := base_rate + 1 if base_rate < 100 else base_rate - 1
-				detail_dialog.set_lane_rate_for_test("income", new_rate)
-				detail_dialog.confirm_lane_for_test("income")
-				var pending_map: Dictionary = detail_dialog.get("_pending")
-				var pending_entry := pending_map.get("income", {}) as Dictionary
-				_expect("income tax override enters pending for the next day",
-					pending_map.size() == 1 \
-						and int(pending_entry.get("effective_day", -1)) == current_day + 1)
-				_expect("income tax override reaches the native command queue",
-					bool(detail_dialog.last_command_ok()) \
-						and int(detail_dialog.last_command_pending()) >= 1)
-				var queued_after_override := int(detail_dialog.last_command_pending())
-				detail_dialog.reset_lane_for_test("income")
-				_expect("lane reset queues a clear-override command for the next day",
-					bool(detail_dialog.last_command_ok()) \
-						and int(detail_dialog.last_command_pending()) \
-							== queued_after_override + 1 \
-						and detail_dialog.status_text().contains("生效"))
-			detail_dialog.close_dialog()
-			_expect("cohort dialog closes", not detail_dialog.is_open())
+				income_editor._spin.set_value_no_signal(new_rate)
+				income_editor._on_text_submitted("")
+				var pending_key := "cell:%d/income/%s" % [
+					int(selected_cell.index), sample_profession_id]
+				var pending_map := right_panel.get("_pending_tax") as Dictionary
+				var pending_entry := pending_map.get(pending_key, {}) as Dictionary
+				_expect("row tax edit enters next-day pending without opening details",
+					pending_map.has(pending_key) \
+						and int(pending_entry.get("effective_day", -1)) \
+							== int((right_panel.get("_tax_context") as Dictionary) \
+								.get("current_day", -1)) + 1 \
+						and not right_panel.detail_open())
 
 		right_panel.select_tab("buildings")
 		await process_frame
@@ -416,16 +422,18 @@ func _run() -> void:
 			if building_list != null else {}
 		_expect("buildings tab builds building rows", not building_rows.is_empty())
 		if not building_rows.is_empty():
-			((building_rows.values()[0] as Dictionary).get("button") as Button) \
+			var building_refs := building_rows.values()[0] as Dictionary
+			var building_editors := building_refs.get("tax_editors", {}) as Dictionary
+			_expect("building row owns one editable business tax lane",
+				building_editors.size() == 1 \
+					and bool((building_editors.values()[0] as TaxLaneEditor) \
+						.lane_data().get("editable", false)))
+			(building_refs.get("button") as Button) \
 				.pressed.emit()
 			await process_frame
-			var business_data := ((detail_dialog.get("_lanes") as Dictionary) \
-				.get("business", {}) as Dictionary).get("data", {}) as Dictionary
-			_expect("building row click opens a dialog with an editable business lane",
-				detail_dialog.is_open() and detail_dialog.tax_lane_count() == 1 \
-					and detail_dialog.tax_lane_editable() \
-					and not String(business_data.get("item_id", "")).is_empty())
-			detail_dialog.close_dialog()
+			_expect("building row click opens embedded business details",
+				right_panel.detail_open() and detail_dialog.is_open())
+			right_panel.close_detail()
 
 		right_panel.select_tab("market")
 		await process_frame
@@ -434,17 +442,24 @@ func _run() -> void:
 			if market_list != null else {}
 		_expect("market tab builds good rows", not market_rows.is_empty())
 		if not market_rows.is_empty():
-			((market_rows.values()[0] as Dictionary).get("button") as Button) \
+			var market_refs := market_rows.values()[0] as Dictionary
+			var market_editors := market_refs.get("tax_editors", {}) as Dictionary
+			_expect("good row owns consumption, import and export tax lanes",
+				market_editors.size() == 3)
+			var import_data: Dictionary = {}
+			for editor_value in market_editors.values():
+				var editor_data := (editor_value as TaxLaneEditor).lane_data()
+				if String(editor_data.get("kind", "")) == "import":
+					import_data = editor_data
+			_expect("tariff lanes use live foreign-trade data without placeholders",
+				not import_data.is_empty() \
+					and String(import_data.get("placeholder_note", "")).is_empty())
+			(market_refs.get("button") as Button) \
 				.pressed.emit()
 			await process_frame
-			_expect("good row click opens a dialog with consumption and tariff lanes",
-				detail_dialog.is_open() and detail_dialog.tax_lane_count() == 3 \
-					and detail_dialog.tax_lane_editable())
-			var import_data := ((detail_dialog.get("_lanes") as Dictionary) \
-				.get("import", {}) as Dictionary).get("data", {}) as Dictionary
-			_expect("tariff lanes use live foreign-trade data without placeholders",
-				String(import_data.get("placeholder_note", "")).is_empty())
-			detail_dialog.close_dialog()
+			_expect("good row click opens embedded supply details",
+				right_panel.detail_open() and detail_dialog.is_open())
+			right_panel.close_detail()
 
 		right_panel.select_tab("geography")
 		await process_frame
@@ -462,13 +477,13 @@ func _run() -> void:
 		else:
 			(visible_resource.get("button") as Button).pressed.emit()
 			await process_frame
-			_expect("resource row click opens a detail-only dialog without tax lanes",
-				detail_dialog.is_open() and detail_dialog.tax_lane_count() == 0 \
+			_expect("resource row click opens the embedded detail workspace",
+				right_panel.detail_open() and detail_dialog.is_open() \
 					and not detail_dialog.title_text().is_empty())
 			var resource_grid_columns := detail_dialog.fact_grid_columns() as Array[int]
-			_expect("resource dialog lays four facts as a 2x2 grid",
+			_expect("resource detail lays four facts as a 2x2 grid",
 				resource_grid_columns.size() == 1 and resource_grid_columns[0] == 2)
-			detail_dialog.close_dialog()
+			right_panel.close_detail()
 
 		var cell_idx := int(selected_cell.index)
 		var map := ui.get("_map") as MapData
@@ -482,19 +497,19 @@ func _run() -> void:
 					break
 		_expect("world has unowned cells for tax gating", unowned_idx >= 0)
 		if unowned_idx >= 0 and not sample_profession_id.is_empty():
-			var unowned_slice := inspector_vm.tax_slice_for_object(
-				unowned_idx, "cohort", sample_profession_id)
-			_expect("unowned cells hide the tax section",
-				not bool(unowned_slice.get("available", true)))
-			var owned_slice := inspector_vm.tax_slice_for_object(
-				cell_idx, "cohort", sample_profession_id)
-			_expect("player cell tax slice is available and editable",
-				bool(owned_slice.get("available", false)) \
-					and bool(owned_slice.get("editable", false)))
+			var unowned_context := inspector_vm._tax_context_for_cell(
+				unowned_idx, ["income"])
+			_expect("unowned cells cannot edit tax policy",
+				not bool(unowned_context.get("editable", true)))
+			var owned_context := inspector_vm._tax_context_for_cell(
+				cell_idx, ["income"])
+			_expect("player cell merged tax context is available and editable",
+				bool(owned_context.get("available", false)) \
+					and bool(owned_context.get("editable", false)))
 			var player_handle := int(inspector_vm._player_country_handle())
 			_expect("player handle matches the start cell owner",
 				player_handle >= 0 \
-					and player_handle == int(owned_slice.get("country_handle", -2)))
+					and player_handle == int(owned_context.get("country_handle", -2)))
 			var unowned_visibility: Dictionary = inspector_vm._resource_visibility_context(
 				unowned_idx)
 			var unowned_techs: PackedStringArray = unowned_visibility.get(

@@ -541,7 +541,7 @@ living_cost_weight_q16 = $($row[2])
 
 $needSpecs = @(
     @{id='staple_food'; tier='essential'; base=550; wealth=4096; min=49152; max=81920; price=98304; quantityPrice=16384; quantityFloor=32768;
-        variants=@(@('prepared_staples'),@('bread'),@('grain'),@('gathered_plants'))},
+        variants=@(@('prepared_staples'),@('bread'),@('grain'),@('gathered_plants'),@('potatoes'))},
     @{id='protein'; tier='essential'; base=180; wealth=16384; min=32768; max=131072; price=98304; quantityPrice=98304; quantityFloor=9830;
         variants=@(@('game_meat'),@('meat'),@('fish'),@('canned_fish'),@('dairy_products'))},
     @{id='produce'; tier='essential'; base=300; wealth=16384; min=32768; max=131072; price=98304; quantityPrice=65536; quantityFloor=4096;
@@ -610,6 +610,11 @@ function Write-Plan([string]$Id, [string]$Name, [string[]]$IncludedNeeds,
             $variantElasticity += [int]$spec.price
             $variantEnv += $(if ($spec.id -eq 'clothing' -and $variant -contains 'fur') { 'cold_fur_preference' } elseif ($spec.id -eq 'clothing') { 'warm_cloth_preference' } else { '' })
             foreach ($good in $variant) { $componentIds += $good; $componentQty += 1000; $c++ }
+            if ($Id -eq 'technical_household' -and $spec.id -eq 'education_culture') {
+                # Technical households buy a knowledge point alongside every
+                # education variant; keep the authored 100-unit service scale.
+                $componentIds += 'technology_points'; $componentQty += 100; $c++
+            }
             $componentOffsets += $c; $v++
         }
         $needOffsets += $v
@@ -643,11 +648,11 @@ component_qty_per_need = $(PI64 $componentQty)
 }
 $coreNeeds = @('staple_food','protein','produce','clothing','housing','household_goods',
     'hygiene','healthcare','home_energy')
-Write-Plan 'plan_unemployed' '失业者生存消费' @('staple_food') 80 0 0 @{
-    grain=81920; gathered_plants=98304
+Write-Plan 'plan_unemployed' '失业者生存消费' @('staple_food','protein','produce') 80 0 0 @{
+    grain=81920; gathered_plants=98304; potatoes=81920
 }
 Write-Plan 'survival_household' '生存型家庭消费' $coreNeeds 80 35 0 @{
-    gathered_plants=98304; grain=81920; cloth=81920; fur=73728; logs=98304; medicinal_herbs=81920
+    gathered_plants=98304; grain=81920; potatoes=81920; cloth=81920; fur=73728; logs=98304; medicinal_herbs=81920
 }
 Write-Plan 'agrarian_household' '农业型家庭消费' `
     ($coreNeeds + @('transport','work_equipment','recreation')) 95 75 0 @{
@@ -1998,7 +2003,7 @@ function Industry-For-Good([string]$GoodId) {
         advanced_chips='machinery'; autonomous_systems='machinery'; bronze_tools='machinery';
         chipped_stone_tools='machinery'; coke='energy'; flint='primary'; gathered_plants='food';
         insulated_cable='machinery'; manuscripts='forestry'; oceanic_vessels='machinery';
-        pottery='consumer'; precision_tools='machinery';
+        pottery='consumer'; precision_tools='machinery'; seed_cotton='textile';
         radio_equipment='machinery'; reactor_components='machinery';
         scientific_instruments='machinery'; steam_engines='machinery'
     }
@@ -2237,7 +2242,7 @@ foreach ($goodId in @($baseProducers.Keys | Sort-Object)) {
     }
 }
 $boundedMethodTargets = @{
-    knapping_workshop=@(); freshwater_fishing_camp=@(); gathering_ground=@(1); flint_quarry=@(1); stone_age_hunting_camp=@(4); pottery_kiln=@(3)
+    knapping_workshop=@(); freshwater_fishing_camp=@(); placer_gold_working=@(); surface_silver_working=@(); gold_mine=@(); silver_mine=@(); gathering_ground=@(1); flint_quarry=@(1); stone_age_hunting_camp=@(4); pottery_kiln=@(3)
     landed_estate=@(6); potato_collector=@(6); cotton_collector=@(6); rubber_tree_collector=@(6)
     spice_plants_collector=@(6); medicinal_herbs_collector=@(7)
     edible_oil_plant=@(6); soap_plant=@(6); packaging_plant=@(7); printed_materials_plant=@(7)
@@ -2279,6 +2284,7 @@ foreach ($sourceId in @($singleMethodSources | Sort-Object)) {
             6 { 9 }
             7 { 10 }
             8 { 10 }
+            9 { 10 }
             default { throw "unsupported persistent source rank: $sourceId -> $sourceRank" }
         })
     } else {
@@ -2288,6 +2294,7 @@ foreach ($sourceId in @($singleMethodSources | Sort-Object)) {
 }
 
 $constructionRecipeOverrides = @{
+    classical_glass_kiln = [ordered]@{ logs=750; raw_stone=500 }
     communal_hearth = [ordered]@{ logs=500; gathered_plants=250 }
     coal_mine = [ordered]@{ lumber=500; bricks=750; construction_components=750 }
     coke_ovens = [ordered]@{ lumber=500; bricks=750; construction_components=750 }

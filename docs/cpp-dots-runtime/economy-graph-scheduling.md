@@ -18,7 +18,7 @@ Market V2 / Price V3 现采用 `production_income_consumption_v12`：周期起�
 
 没有新增调度阶段。恢复候选与商人敞口在 `epoch_begin/building_plan` 冻结；贷款提款、投入购买、
 销售、基础工资、偿债和奖金在 `building_production` 完成；自产消费价值在 household clearing
-归属来源建筑；恢复转态、10 日失败审查、清算和建设竣工在 `building_commit` 完成。所有阶段仍
+归属来源建筑；恢复转态、180 日失败审查、清算和建设竣工在 `building_commit` 完成。所有阶段仍
 使用现有滚动五相 continuation 和同日 barrier。
 
 ## 周期选择
@@ -235,7 +235,7 @@ continuation so trade scanning no longer stacks with the first building-plan
 range and does not shift the sample day. This is distinct from deadline
 catch-up; normal auto workloads must report zero deadline barrier slices.
 
-Investment review is an independent 10-day boundary checked in
+Investment review is an independent 180-day boundary checked in
 `building_commit`; vacancy repair still runs whenever a committed cycle exposes
 an owner opening. Each cell may start at most one building per review.
 
@@ -244,7 +244,7 @@ work. The sparse planner continues between settlement boundaries under its scan
 and route budgets. At each settlement boundary, a completed candidate set or safe
 completed prefix may dispatch after stock, cash, capacity, topology, and country
 revalidation. No daily all-building-type scan was added: the full constructible
-catalog is evaluated only on the 10-day investment review for populated cells.
+catalog is evaluated only on the 180-day investment review for populated cells.
 
 `building_commit_phase` separates ready-construction commit, bounded investment
 review-cell ranges, and final employment reconciliation. `review_prepare` builds

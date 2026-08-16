@@ -2,22 +2,13 @@
 
 - Nodes: 361
 - Branch families: 24
-- Hard prerequisite edges: 303 (no indegree cap)
-- Alternative evidence edges: 698
+- Hard prerequisite edges: 397 (no indegree cap)
+- Alternative evidence edges: 671
 - Milestone candidate edges: 88 (8 per era, require 4)
 - Nodes with research routes: 230
 - Research routes: 621
+- Authored branch successor edges: 7
 - Unlock-only/no-Modifier nodes: 11
-
-## Qualification semantic gate
-
-- Reveal conditions implied by hard-prerequisite history: 0
-- Research routes implied by hard-prerequisite history: 0
-- Reveal/research-route signal reuse: 0
-- Reveal signal reuse from hard-prerequisite ancestors: 0
-- Unexplained repeated reveal templates: 0
-- Self/future/invalid route references: 0
-- Kingdom+ route coverage: 96.0%
 
 ## Explicit effect semantics
 

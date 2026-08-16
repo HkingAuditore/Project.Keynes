@@ -13,7 +13,7 @@
 
 PKSV persistence is a snapshot boundary, not a new owner. GDScript coordinates
 section capture while each native authority emits its own versioned state:
-PKCN v11, PKEF v9, PKTR v5, PKEC v34, PKCM v1, PKGP v1, and
+PKCN v11, PKEF v9, PKTR v5, PKEC v35, PKCM v1, PKGP v1, and
 `PKEnvironmentRuntime v1`. Environment export includes the
 resident core vectors, weather ping-pong buffers, topology, dirty/active sets,
 round flags, stage cursors, and snapshot generations. Restore validates schema
@@ -862,8 +862,8 @@ PKEC v8 的稀疏 `LaborMarketStore`、role 合同工资、生活成本、基础
 `NativeEconomyRuntime`，不新增 component slot，也不逐 cohort 跨语言调用。GDScript 仅通过
 选中地块 `get_building_cell_snapshot` 读取有界 role/labor-market 并行数组。
 建筑组查询额外发布 `owner_capacity/owner_required/owner_openings`：capacity 是完整物理 owner 槽位；
-ACTIVE 组的 required 等于 capacity；RECOVERY 组按 recovery probe capacity 与 planned utilization
-缩放；亏损停产或不可用组为 0，openings 等于 `max(required - filled_owner, 0)`。
+ACTIVE 组的 required 等于 capacity；SUSPENDED_LOSS 组为 0，openings 等于
+`max(required - filled_owner, 0)`。
 `planned_owner_equivalent` 仅是 utilization-scaled 生产诊断，不参与 ACTIVE 招聘目标；planned
 utilization 继续缩放 production 与 employee required。Inspector 不得用 planned equivalent 或建筑
 数量冒充业主岗位。`projected_owner_income_per_day` 用 `max(required, filled_owner)` 作为人数分母，
@@ -1033,3 +1033,4 @@ adapters to preflight without mutation, marks the native transaction
 leave the transaction pollable; the contiguous transport cursor does not skip
 later transactions. Effect commands must call existing domain command APIs and
 must carry the idempotency key through retries.
+

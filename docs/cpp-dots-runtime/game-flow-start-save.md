@@ -71,10 +71,17 @@ country-name pack, excluding the player's display name.
 
 ## Twenty-Person Settlements
 
-Every opening country receives exactly 20 people. Occupations are derived from the selected regional
-producer bundle, including the matching gold/silver work site and the merchant owner of an
-`early_merchant_post`; the remaining people start unemployed. The weak regional bundle is prebuilt,
-and only 15 days of its locally produced food is bridged into market stock. All settlements are compiled
+Every opening country receives exactly 20 people and exactly 20 self-operated job-capacity slots. Every starter technology
+whose reveal condition is already met by visible geography is completed; the physical food producer is
+selected from the dependency-closed local options, while the clothing/construction/knowledge bundle is
+bounded by the available self-operated slots. The packet does not preassign the whole population to
+professions: it reserves only the first producer's founder operators, places the remaining people in
+the native unemployed pool, and lets normal employment matching choose their building and profession
+at economy boundaries. Stone-Age buildings expose no employee roles. Their self-operated/co-operated
+jobs use the runtime's owner-role lane because the catalog has only owner and employee lanes; this is
+building capacity, not a landlord marker or a planner-owned population assignment. Fifteen days of the compiled `survival_household` food quantities are bridged
+across every locally discovered, runnable food good in its matching substitute sub-basket; when a basket
+has several discoveries, the bridge splits that quantity deterministically among them. All settlements are compiled
 into one PKEC bootstrap packet. PKCN/PKEC and the economy
 ledger remain the authorities; UI code does not own this state.
 Each capital also starts with exactly one founder family: the two foragers who
@@ -138,7 +145,7 @@ PKID v1 is accepted only when every ideology is inactive. Save capture waits for
 Country/Economy/Gameplay Effect ingress to be idle, so no cross-section snapshot
 can span a preflight/commit/ACK boundary.
 PKCM v1 saves Climate modifiers. PKCN v11 embeds Country modifiers, research,
-tax policy, territory claim and native Effect ingress idempotency; PKEC v34 embeds Economy
+tax policy, territory claim and native Effect ingress idempotency; PKEC v35 embeds Economy
 modifiers, BuildingIdentityStore, family traits/cell influence,
 production-climate state, and Economy Effect ingress idempotency. PKGP v1 saves
 Gameplay identity/base SoA and modifiers; journal v4 saves native
@@ -180,7 +187,7 @@ Restore order is strict:
 4. Restore PKCM, then `WorldClock`.
 5. Restore PKCN v11, including Country modifiers, research state, national/cell tax policy,
    and native Country Effect ingress idempotency.
-6. Restore PKEF v9, then PKEC v34 after trade topology has been configured, including Economy
+6. Restore PKEF v9, then PKEC v35 after trade topology has been configured, including Economy
    modifiers, building identities, notable families, active family expeditions, and production-climate state.
 7. Restore PKGP, then PKFG; re-solve vision and republish `enum_lut.a` and the border
    mesh through `WorldRuntimeHost.refresh_country_visuals()`.
@@ -233,24 +240,32 @@ economy settlement cycle (`game_save_roundtrip_test.gd`); debug/release GDExtens
 desktop/narrow UI checks.
 For economy changes, retain 60-day, two-year, and ten-year conservation soaks.
 
-## Regional technology/economy bootstrap v5
+## Regional technology/economy bootstrap v7
 
 Formal new games no longer grant four universal technologies or a universal settlement bundle.
 `StartLocationPolicy` classifies each capital from the capital ring's Bio/resource/landform/climate
-evidence and returns one food, clothing, construction, precious-metal and knowledge route.
-`MapGenerator` grants only the selected zero-cost handling technologies plus recursive structural
-prerequisites, plus the zero-cost `tech.early_trade`; `StarterSettlementBootstrap` prebuilds the
-matching weak producers and `early_merchant_post`. The supported
-families are coastal, floodplain, cold highland, tropical forest, arid highland and temperate.
+evidence and returns all discovered starter technologies plus one dependency-closed physical food,
+clothing, construction, precious-metal and knowledge bundle. `MapGenerator` grants every visible
+zero-cost starter technology plus recursive structural prerequisites, including the zero-cost
+`tech.early_trade`; `StarterSettlementBootstrap` prebuilds the selected physically closed food
+producer, the planner's resource-bounded clothing/construction/knowledge closure and an
+`early_merchant_post`. The planner emits parallel `starter_building_ids`/`starter_building_counts`;
+gold/silver sites and the merchant remain exactly one building. The supported families are coastal,
+floodplain, cold highland, tropical forest, arid highland and temperate.
 
 The bootstrap validates the complete direct/required-technology, construction-good, input, output,
 local-resource and resource-generation closure. It never adds gold, silver or any non-precious route
 resource, and it never tops up the former universal fertile-soil/timber/game/stone/flint set. Starting
 buildings cannot require steel, coal, industrial chemicals, industrialists, managers,
-landlords, serfs or indentured labor. The only food bridge is 15 days of the route's locally produced
-food good; `processed_food` receives no fixed grant. Every generated country starts with exactly one
-territory cell, one regional weak bundle, 20 population, one founder family and one notable founder.
+landlords, serfs or indentured labor. The food bridge is 15 days of every locally discovered, runnable
+food sub-basket as authored by `survival_household`, split across multiple substitutes when present;
+`processed_food` receives no fixed grant. Every generated country starts with exactly one
+territory cell, one regional weak bundle, 20 population, 20 self-operated job-capacity slots, zero employee
+slots, a founder operator cohort plus a native unemployed pool, one founder family and one notable
+founder. The first economy cycles may reassign the unemployed cohort into the planned self-operated roles;
+that is ordinary native employment matching and does not introduce employee relationships.
 
 Save flow requires `PKTR v5` after journal/domain state. Missing/older PKTR, older PKCN/PKEF,
 PKEC v32 or older, and incompatible catalog hashes reject restore; no empty-trigger or technology
 ID migration is provided.
+
