@@ -5,5 +5,3 @@ script = ExtResource("1")
 id = &"transport"
 display_name = "个人交通"
 living_cost_weight_q16 = 32768
-satisfaction_tier = 2
-satisfaction_weight_q16 = 45875

@@ -66,9 +66,9 @@ func _run() -> void:
 	var death_rates: PackedInt64Array = catalog.signature_death_rate_q32
 	var birth_weights: PackedInt64Array = catalog.signature_satisfaction_birth_weight_q16
 	_expect("profession defaults compile calibrated natural demography",
-		birth_rates.size() > 0 and birth_rates[0] == 470681 and
+		birth_rates.size() > 0 and birth_rates[0] == 2353407 and
 		death_rates.size() == birth_rates.size() and death_rates[0] == 294176 and
-		birth_weights.size() == birth_rates.size() and birth_weights[0] == 32768)
+		birth_weights.size() == birth_rates.size() and birth_weights[0] == 65536)
 	if not ClassDB.class_exists("DCWorldExt"):
 		print("  [SKIP] DCWorldExt unavailable")
 		_finish()
@@ -134,9 +134,10 @@ func _test_satisfaction_driven_births(compiled: Dictionary) -> void:
 	_expect("healthy satisfaction produces births above natural deaths",
 		int(healthy_report.get("births", 0)) > int(healthy_report.get("deaths", 0)) and
 		int(healthy_report.get("population_error", 1)) == 0)
-	_expect("zero survival satisfaction halves births below natural deaths",
+	_expect("deprivation strongly suppresses the gameplay birth rate",
 		int(deprived_report.get("births", 0)) > 0 and
-		int(deprived_report.get("births", 0)) < int(deprived_report.get("deaths", 0)) and
+		int(deprived_report.get("births", 0)) * 5 <
+			int(healthy_report.get("births", 0)) and
 		int(deprived_report.get("population_error", 1)) == 0)
 	var healthy_pop: Dictionary = healthy.get_population_cell_snapshot(0)
 	var signatures: PackedInt32Array = healthy_pop.signature_ids
@@ -182,7 +183,7 @@ func _test_survival_labor_and_mortality(compiled: Dictionary) -> void:
 	var goods: PackedStringArray = compiled.good_ids
 	var staple_stock := {
 		"prepared_staples": 1000000, "bread": 1000000, "grain": 1000000,
-		"gathered_plants": 1000000,
+		"gathered_plants": 1000000, "potatoes": 1000000,
 	}
 	var hot := _new_ext(1, 1.0)
 	var catalog := compiled.duplicate(true)
@@ -194,6 +195,7 @@ func _test_survival_labor_and_mortality(compiled: Dictionary) -> void:
 	_expect("hot survival runtime configures",
 		bool(hot.configure_economy(catalog, hot_profile, 1, 141).get("ok", false)))
 	var worker_sig: int = (compiled.signature_keys as PackedStringArray).find("worker|default")
+	var unemployed_sig: int = (compiled.signature_keys as PackedStringArray).find("unemployed|default")
 	hot.bootstrap_economy({
 		"cell_indices": PackedInt32Array([0]),
 		"signature_ids": PackedInt32Array([worker_sig]),
@@ -211,6 +213,41 @@ func _test_survival_labor_and_mortality(compiled: Dictionary) -> void:
 		hot_survives and int(hot_report.get("deaths", -1)) == 0 and
 		int(hot_report.get("population_error", 1)) == 0 and
 		_good_value(hot.get_market_cell_snapshot(0), "stock", "fish") == 0)
+
+	# Every terminal household food is a complete substitute inside one food
+	# sub-basket. Pin the full catalog so later content edits cannot silently make
+	# fish, wild game, dairy, tubers, or another valid food starvation-irrelevant.
+	var survival_food_ids := PackedStringArray([
+		"prepared_staples", "bread", "grain", "gathered_plants", "potatoes",
+		"game_meat", "meat", "fish", "canned_fish", "dairy_products",
+		"vegetables", "processed_food",
+	])
+	for food_index in range(survival_food_ids.size()):
+		var food_id := String(survival_food_ids[food_index])
+		var food_only := _new_ext(1, 1.0)
+		var food_seed := 144 + food_index
+		_expect("%s survival test country bootstraps" % food_id,
+			CountryTestHelper.configure_all_technologies(food_only, catalog, 1, food_seed))
+		_expect("%s survival runtime configures" % food_id,
+			bool(food_only.configure_economy(
+				catalog, hot_profile, 1, food_seed).get("ok", false)))
+		food_only.bootstrap_economy({
+			"cell_indices": PackedInt32Array([0]),
+			"signature_ids": PackedInt32Array([unemployed_sig]),
+			"population": PackedInt64Array([100]),
+			"funds": PackedInt64Array([100000000]),
+		}, {})
+		food_only.submit_economy_commands(
+			_stock_commands(0, goods, {food_id: 1000000}, 0))
+		var food_report := _run_day(food_only, 0)
+		var food_satisfaction: PackedInt32Array = food_only.get_population_cell_snapshot(
+			0).satisfaction_by_cohort_q16
+		var food_survives := true
+		for value in food_satisfaction:
+			food_survives = food_survives and int(value) >= 32768
+		_expect("a complete %s food basket prevents starvation" % food_id,
+			food_survives and int(food_report.get("deaths", -1)) == 0 and
+			int(food_report.get("population_error", 1)) == 0)
 
 	var cold := _new_ext(1, 0.0)
 	var cold_profile := _native_profile(false, 1)
@@ -500,7 +537,7 @@ func _test_price_quantity_response(compiled: Dictionary) -> void:
 	var baseline := _configured_price_worker(compiled, 1801)
 	var expensive := _configured_price_worker(compiled, 1802)
 	var goods: PackedStringArray = compiled.good_ids
-	var staple_ids := ["prepared_staples", "bread", "grain", "gathered_plants"]
+	var staple_ids := ["prepared_staples", "bread", "grain", "gathered_plants", "potatoes"]
 	var protein_ids := ["game_meat", "meat", "fish", "canned_fish", "dairy_products"]
 	var clothing_ids := ["cloth", "fur", "clothing", "footwear"]
 	var basket := {}
@@ -544,8 +581,8 @@ func _test_price_v3_numeric_guards_and_horizons(compiled: Dictionary) -> void:
 		shortage_report = _run_day(shortage, day)
 	var shortage_market: Dictionary = shortage.get_market_cell_snapshot(0)
 	var game_meat := goods.find("game_meat")
-	_expect("sustained shortage can exceed the legacy catalog maximum price",
-		_good_value(shortage_market, "price", "game_meat") >
+	_expect("sustained shortage remains within the catalog maximum price",
+		_good_value(shortage_market, "price", "game_meat") <=
 		int(old_max_prices[game_meat]))
 	var price_target := _good_value(
 		shortage_market, "price_inventory_target", "game_meat")
@@ -578,15 +615,15 @@ func _test_price_v3_numeric_guards_and_horizons(compiled: Dictionary) -> void:
 			cycle_price >= minimum_price
 		previous_price = cycle_price
 	var oversupply_market: Dictionary = oversupply.get_market_cell_snapshot(0)
-	_expect("persistent valueless oversupply can fall below the legacy minimum price",
-		_good_value(oversupply_market, "price", "raw_hide") <
+	_expect("persistent valueless oversupply cannot fall below the catalog minimum price",
+		_good_value(oversupply_market, "price", "raw_hide") >=
 		int(old_min_prices[raw_hide]))
 	_expect("oversupply markdown uses the current-price fall limit",
 		directional_fall_limited)
 	_expect("numeric price guards preserve positive prices and exact ledgers",
 		_good_value(oversupply_market, "price", "raw_hide") >= 1 and
 		String(oversupply.get_economy_report().get("price_runtime_bounds", "")) ==
-			"numeric_guard_only" and
+			"catalog_min_max_and_numeric_guard" and
 		int(oversupply.get_economy_report().get("price_numeric_guard_min", 0)) == 1 and
 		int(shortage_report.get("population_error", 1)) == 0 and
 		int(shortage_report.get("money_error", 1)) == 0 and

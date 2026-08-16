@@ -16,14 +16,16 @@ signal exit_game_requested()
 signal era_reward_choice_requested(offer_generation: int, choice_index: int)
 
 const RIGHT_PANEL_WIDTH := 460.0
+const DETAIL_LAYOUT_BREAKPOINT := 1180.0
+const DETAIL_PANEL_MIN_WIDTH := 860.0
+const DETAIL_PANEL_MAX_WIDTH := 1040.0
+const MAP_REMAINING_MIN_WIDTH := 320.0
 const OVERLAY_LEGEND_WIDTH := 198.0
 const GM_PANEL_TARGET_WIDTH := 560.0
 const GM_PANEL_MIN_WIDTH := 300.0
 var _top_bar: PlayerTopBar
 var _right_panel: InspectorPanel
 var _loading_overlay: WorldLoadingOverlay
-var _demand_detail_dialog
-var _object_detail_dialog
 var _colonization_panel: ColonizationPlannerPanel
 var _colonization_route: ColonizationRouteLayer
 var _colonization_targeting: Dictionary = {}
@@ -37,8 +39,10 @@ var _live_revision_cell := -1
 var _live_revision_tab := ""
 var _live_common_hash := 0
 var _live_category_generation := -1
+var _live_tax_policy_version := -1
 var _live_category_hash := 0
 var _live_revision_valid := false
+var _selection_context := ""
 var _player_controller = null
 var _country_view_model: CountryViewModel
 var _country_action_bar: CountryActionBar
@@ -82,6 +86,8 @@ func set_world_context(
 				"map_wrap_period_x") else 0.0
 		_colonization_route.set_context(map, world_clock, hex_size, wrap_period)
 	_inspector_view_model.set_context(map, generator, view_adapter, world_clock, sea_level, hex_size)
+	_object_detail_context.clear()
+	_selection_context = ""
 	_invalidate_live_revision()
 	if _country_view_model == null:
 		_country_view_model = CountryViewModel.new()
@@ -94,9 +100,8 @@ func set_world_context(
 		_map_overlay_toolbar.reset_for_world()
 	if _map_overlay_legend != null:
 		_map_overlay_legend.update_for_mode(OverlayMode.MODE.NONE)
-	if _demand_detail_dialog != null:
-		_demand_detail_dialog.close_dialog()
-	_close_object_detail_dialog()
+	if _right_panel != null:
+		_right_panel.close_detail(false)
 	if _colonization_panel != null:
 		_colonization_panel.close_panel()
 	if _gm_console != null:
@@ -146,7 +151,9 @@ func toggle_perf_hud() -> void:
 
 
 func show_cell_panel(cell: HexCell) -> void:
-	_close_object_detail_dialog()
+	if _right_panel != null:
+		_right_panel.close_detail(false)
+	_object_detail_context.clear()
 	_selected_cell = cell
 	if not _colonization_targeting.is_empty():
 		var targeting := _colonization_targeting.duplicate()
@@ -167,17 +174,19 @@ func show_cell_panel(cell: HexCell) -> void:
 	_set_inspector_trace_cell(int(cell.index) \
 		if _selected_fog_state == VisionSolver.FOG_VISIBLE else -1)
 	_right_panel.set_model_for_selection(_inspector_view_model.build(cell))
+	_selection_context = _revision_selection_context(
+		_inspector_view_model.live_patch_revision(cell, _right_panel.current_tab()))
 	if not _right_panel.visible:
 		UIAnimation.fade_slide_in(_right_panel, Vector2(24.0, 0.0), UITokens.ANIM_MED)
 
 
 func hide_cell_panel() -> void:
 	_selected_cell = null
+	_selection_context = ""
 	_invalidate_live_revision()
 	_set_inspector_trace_cell(-1)
-	if _demand_detail_dialog != null:
-		_demand_detail_dialog.close_dialog()
-	_close_object_detail_dialog()
+	if _right_panel != null:
+		_right_panel.close_detail(false)
 	if _right_panel != null:
 		UIAnimation.fade_slide_out(_right_panel, Vector2(24.0, 0.0), UITokens.ANIM_FAST)
 
@@ -208,19 +217,28 @@ func refresh_selected_daily_lines(force: bool = false, day_idx: int = -1) -> Dic
 		return timing
 	_last_cached_panel_ms = now_ms
 	var include_category := true
-	var revision: Dictionary = {}
+	var revision: Dictionary = _inspector_view_model.live_patch_revision(
+		_selected_cell, tab_id)
+	var next_selection_context := _revision_selection_context(revision)
+	if not _selection_context.is_empty() and next_selection_context != _selection_context:
+		_selection_context = next_selection_context
+		refresh_selected_panel()
+		timing["ran"] = true
+		return timing
+	_selection_context = next_selection_context
 	var common_dirty := true
 	var category_dirty := true
 	var cell_idx := int(_selected_cell.index)
 	var same_target := _live_revision_valid and _live_revision_cell == cell_idx \
 		and _live_revision_tab == tab_id
 	if tab_id == "population":
-		revision = _inspector_view_model.live_patch_revision(_selected_cell, tab_id)
 		var common_hash := int(revision.get("common_hash", 0))
 		var category_generation := int(revision.get("category_generation", -1))
+		var tax_policy_version := int(revision.get("tax_policy_version", -1))
 		common_dirty = force or not same_target or common_hash != _live_common_hash
 		category_dirty = force or not same_target or \
-			category_generation != _live_category_generation
+			category_generation != _live_category_generation or \
+			tax_policy_version != _live_tax_policy_version
 		include_category = category_dirty
 		if not common_dirty and not category_dirty:
 			return timing
@@ -248,11 +266,13 @@ func refresh_selected_daily_lines(force: bool = false, day_idx: int = -1) -> Dic
 		_live_revision_tab = tab_id
 		_live_common_hash = int(revision.get("common_hash", 0))
 		_live_category_generation = int(revision.get("category_generation", -1))
+		_live_tax_policy_version = int(revision.get("tax_policy_version", -1))
 		_live_revision_valid = true
 		if not common_dirty and not patch.has("category"):
 			return timing
 	var apply_started_usec := Time.get_ticks_usec()
 	_right_panel.apply_live_patch(patch)
+	_refresh_object_detail()
 	timing["live_patch_apply_ms"] = (
 		Time.get_ticks_usec() - apply_started_usec) / 1000.0
 	timing["ran"] = true
@@ -264,14 +284,23 @@ func refresh_selected_panel() -> void:
 		return
 	_invalidate_live_revision()
 	_right_panel.set_model_for_selection(_inspector_view_model.build(_selected_cell))
+	_selection_context = _revision_selection_context(
+		_inspector_view_model.live_patch_revision(
+			_selected_cell, _right_panel.current_tab()))
+
+
+func _revision_selection_context(revision: Dictionary) -> String:
+	return "%s|%s" % [
+		String(revision.get("selection_context", "")),
+		String(revision.get("tabs_signature", "")),
+	]
 
 
 func _on_country_committed(_report: Dictionary) -> void:
-	# Country identity/territory changes are rare and may rebuild one selected
-	# dossier. Daily economy/climate ticks continue to use the live-value patch.
-	refresh_selected_panel()
+	# 税务提交与日常经济提交都只更新当前页的稳定节点；领土/视野改变由各自的
+	# 明确事件触发整块选择重建，不能在这里摧毁输入焦点和滚动状态。
+	refresh_selected_daily_lines(true)
 	refresh_country_summary()
-	_refresh_object_detail_tax()
 
 
 func open_country_section(section_id: String) -> void:
@@ -410,18 +439,14 @@ func _invalidate_live_revision() -> void:
 	_live_revision_tab = ""
 	_live_common_hash = 0
 	_live_category_generation = -1
+	_live_tax_policy_version = -1
 	_live_category_hash = 0
 	_live_revision_valid = false
 
 
-func _on_demand_details_requested(details: Dictionary) -> void:
-	if _demand_detail_dialog != null:
-		_demand_detail_dialog.show_details(details)
-
-
 func _on_object_details_requested(request: Dictionary) -> void:
 	if _selected_cell == null or _inspector_view_model == null \
-			or _object_detail_dialog == null:
+			or _right_panel == null:
 		return
 	var payload := _inspector_view_model.build_object_detail(_selected_cell, request)
 	if payload.is_empty():
@@ -431,23 +456,30 @@ func _on_object_details_requested(request: Dictionary) -> void:
 		"kind": String(payload.get("kind", "")),
 		"item_id": String(payload.get("item_id", "")),
 	}
-	_object_detail_dialog.show_details(payload)
+	_object_detail_context["request"] = request.duplicate(true)
+	_right_panel.show_object_detail(payload)
 
 
 func _close_object_detail_dialog() -> void:
 	_object_detail_context = {}
-	if _object_detail_dialog != null:
-		_object_detail_dialog.close_dialog()
+	if _right_panel != null:
+		_right_panel.close_detail(false)
 
 
-func _refresh_object_detail_tax() -> void:
-	if _object_detail_dialog == null or not _object_detail_dialog.is_open() \
-			or _object_detail_context.is_empty() or _inspector_view_model == null:
+func _refresh_object_detail() -> void:
+	if _object_detail_context.is_empty() or _selected_cell == null \
+			or _inspector_view_model == null or _right_panel == null \
+			or not _right_panel.detail_open():
 		return
-	_object_detail_dialog.refresh_tax(_inspector_view_model.tax_slice_for_object(
-		int(_object_detail_context.get("cell_idx", -1)),
-		String(_object_detail_context.get("kind", "")),
-		String(_object_detail_context.get("item_id", ""))))
+	if int(_object_detail_context.get("cell_idx", -1)) != int(_selected_cell.index):
+		_close_object_detail_dialog()
+		return
+	var request: Dictionary = _object_detail_context.get("request", {})
+	var payload := _inspector_view_model.build_object_detail(_selected_cell, request)
+	if payload.is_empty():
+		_close_object_detail_dialog()
+		return
+	_right_panel.refresh_object_detail(payload)
 
 
 func _set_inspector_trace_cell(cell_idx: int) -> void:
@@ -593,8 +625,6 @@ func set_player_controller(controller) -> void:
 		_country_panel.set_player_controller(controller)
 	if _right_panel != null and _right_panel.has_method("set_player_controller"):
 		_right_panel.set_player_controller(controller)
-	if _object_detail_dialog != null and _object_detail_dialog.has_method("set_player_controller"):
-		_object_detail_dialog.set_player_controller(controller)
 	if _colonization_panel != null:
 		_colonization_panel.set_player_controller(controller)
 	if _player_controller != null and _player_controller.has_signal("country_committed"):
@@ -622,20 +652,17 @@ func _bind_ui() -> void:
 	_right_panel.set_player_controller(_player_controller)
 	_right_panel.close_requested.connect(func() -> void: clear_selection_requested.emit())
 	_right_panel.tab_data_requested.connect(_on_inspector_tab_data_requested)
-	_right_panel.visibility_changed.connect(_layout_overlay_legend)
-	_right_panel.demand_details_requested.connect(_on_demand_details_requested)
+	_right_panel.visibility_changed.connect(_on_inspector_visibility_changed)
 	_right_panel.object_details_requested.connect(_on_object_details_requested)
+	_right_panel.detail_visibility_changed.connect(
+		_on_inspector_detail_visibility_changed)
+	_right_panel.family_colonization_requested.connect(
+		_on_family_colonization_requested)
 	_right_panel.construction_page_requested.connect(_on_construction_page_requested)
 	_right_panel.construction_requested.connect(_on_construction_requested)
 	_right_panel.colonization_requested.connect(_on_colonization_requested)
 	_layout_right_panel()
 
-	_demand_detail_dialog = get_node("UIRoot/ModalLayer/DemandDetailDialog")
-	_object_detail_dialog = get_node("UIRoot/ModalLayer/ObjectDetailDialog")
-	if _object_detail_dialog.has_method("set_player_controller"):
-		_object_detail_dialog.set_player_controller(_player_controller)
-	_object_detail_dialog.colonization_requested.connect(
-		_on_family_colonization_requested)
 	_colonization_panel = get_node(
 		"UIRoot/ModalLayer/ColonizationPlannerPanel") as ColonizationPlannerPanel
 	_colonization_panel.set_player_controller(_player_controller)
@@ -770,9 +797,34 @@ func _on_map_overlay_cleared() -> void:
 	map_overlay_cleared.emit()
 
 
+func _on_inspector_visibility_changed() -> void:
+	_layout_right_panel()
+	_layout_overlay_legend()
+	_layout_country_action_bar()
+	_layout_gm_panel()
+
+
+func _on_inspector_detail_visibility_changed(open: bool) -> void:
+	if not open:
+		_object_detail_context.clear()
+	_layout_right_panel()
+	_layout_overlay_legend()
+	_layout_country_action_bar()
+	_layout_gm_panel()
+	if open and get_viewport().get_visible_rect().size.x >= DETAIL_LAYOUT_BREAKPOINT \
+			and _player_controller != null and _player_controller.has_method(
+			"ensure_selected_visible"):
+		_player_controller.ensure_selected_visible()
+
+
 func _layout_overlay_legend() -> void:
 	if _map_overlay_legend == null:
 		return
+	var compact_detail := _right_panel != null and _right_panel.detail_open() \
+		and get_viewport().get_visible_rect().size.x < DETAIL_LAYOUT_BREAKPOINT
+	_map_overlay_legend.modulate.a = 0.0 if compact_detail else 1.0
+	_map_overlay_legend.mouse_filter = Control.MOUSE_FILTER_IGNORE \
+		if compact_detail else Control.MOUSE_FILTER_PASS
 	var right_inset := UITokens.SPACE_MD
 	if _right_panel != null and _right_panel.visible:
 		var panel_width := _right_panel.size.x
@@ -791,11 +843,19 @@ func _layout_overlay_legend() -> void:
 func _layout_country_action_bar() -> void:
 	if _country_action_bar == null:
 		return
+	var compact_detail := _right_panel != null and _right_panel.detail_open() \
+		and get_viewport().get_visible_rect().size.x < DETAIL_LAYOUT_BREAKPOINT
+	_country_action_bar.visible = not compact_detail
 	var viewport_width := get_viewport().get_visible_rect().size.x
-	var side_margin := maxf((viewport_width - 320.0) * 0.5, UITokens.SPACE_SM)
+	var safe := map_safe_area()
+	var bar_width := 320.0
+	var side_margin := maxf(safe.position.x + (safe.size.x - bar_width) * 0.5,
+		UITokens.SPACE_SM)
+	var right_margin := maxf(viewport_width - side_margin - bar_width,
+		UITokens.SPACE_SM)
 	_country_action_bar.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
 	_country_action_bar.offset_left = side_margin
-	_country_action_bar.offset_right = -side_margin
+	_country_action_bar.offset_right = -right_margin
 	_country_action_bar.offset_top = -CountryActionBar.BAR_HEIGHT - UITokens.SPACE_SM
 	_country_action_bar.offset_bottom = -UITokens.SPACE_SM
 	var window_width := get_window().size.x if get_window() != null else int(viewport_width)
@@ -806,7 +866,18 @@ func _layout_gm_panel() -> void:
 	if _gm_console == null:
 		return
 	var viewport_width := get_viewport().get_visible_rect().size.x
-	var available := viewport_width - RIGHT_PANEL_WIDTH - UITokens.SPACE_MD * 3.0
+	var compact_detail := _right_panel != null and _right_panel.detail_open() \
+		and viewport_width < DETAIL_LAYOUT_BREAKPOINT
+	_gm_console.modulate.a = 0.0 if compact_detail else 1.0
+	_gm_console.mouse_filter = Control.MOUSE_FILTER_IGNORE \
+		if compact_detail else Control.MOUSE_FILTER_PASS
+	if compact_detail:
+		return
+	var panel_width_right := RIGHT_PANEL_WIDTH
+	if _right_panel != null and _right_panel.visible:
+		panel_width_right = _right_panel.size.x if _right_panel.size.x > 0.0 \
+			else RIGHT_PANEL_WIDTH
+	var available := viewport_width - panel_width_right - UITokens.SPACE_MD * 3.0
 	var panel_width := clampf(available, GM_PANEL_MIN_WIDTH, GM_PANEL_TARGET_WIDTH)
 	_gm_console.offset_left = UITokens.SPACE_SM
 	_gm_console.offset_right = UITokens.SPACE_SM + panel_width
@@ -839,18 +910,48 @@ func _layout_right_panel() -> void:
 	# PRESET_RIGHT_WIDE：anchor_left=anchor_right=1.0（贴右边）且 anchor_bottom=1.0
 	# （随视口高度伸展），必须用这个而不是 PRESET_TOP_RIGHT，否则 offset_bottom
 	# 会被解释成"相对顶部锚点"而不是"相对底部锚点"，面板会被压扁到顶部一小条。
+	var viewport_width := get_viewport().get_visible_rect().size.x
+	var detail_open := _right_panel.detail_open()
+	var layout := inspector_layout_for_width(viewport_width, detail_open)
+	var compact := bool(layout.get("compact", false))
+	_right_panel.set_compact_detail_mode(compact)
+	var panel_width := float(layout.get("panel_width", RIGHT_PANEL_WIDTH))
 	_right_panel.set_anchors_preset(Control.PRESET_RIGHT_WIDE)
-	_right_panel.offset_left = -RIGHT_PANEL_WIDTH
+	_right_panel.offset_left = -panel_width
 	_right_panel.offset_top = 68.0  # 与 inspector_panel.tscn 原始烘焙值保持一致
 	_right_panel.offset_right = 0.0
 	_right_panel.offset_bottom = -12.0  # 与 inspector_panel.tscn 原始烘焙值保持一致
 	_right_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	_right_panel.grow_vertical = Control.GROW_DIRECTION_END
+	_right_panel.custom_minimum_size.x = panel_width if detail_open else RIGHT_PANEL_WIDTH
 	# 关键一步：UIAnimation.fade_slide_in/out 会把"第一次调用时的 control.position"
 	# 永久缓存成 rest position。如果不在这里主动刷新，等玩家第一次点开地块面板时，
 	# fade_slide_in 可能会缓存到一个还没被上面这套 offset 结算过的旧/零值，
 	# 之后每次开合面板都会被带回那个错误坐标——这正是"详情框缩在左上角"的成因。
 	UIAnimation.refresh_rest_position(_right_panel)
+
+
+static func inspector_layout_for_width(viewport_width: float,
+		detail_open: bool) -> Dictionary:
+	var compact := viewport_width < DETAIL_LAYOUT_BREAKPOINT
+	var panel_width := RIGHT_PANEL_WIDTH
+	if detail_open:
+		if compact:
+			panel_width = viewport_width
+		else:
+			panel_width = minf(DETAIL_PANEL_MAX_WIDTH,
+				maxf(DETAIL_PANEL_MIN_WIDTH, viewport_width * 0.62))
+			panel_width = minf(panel_width,
+				maxf(RIGHT_PANEL_WIDTH,
+					viewport_width - MAP_REMAINING_MIN_WIDTH))
+	return {
+		"compact": compact,
+		"panel_width": panel_width,
+		"detail_width": maxf(panel_width - RIGHT_PANEL_WIDTH, 0.0) \
+			if detail_open and not compact else panel_width if detail_open else 0.0,
+		"map_width": 0.0 if compact and detail_open \
+			else maxf(viewport_width - panel_width, 0.0),
+	}
 
 
 # 排查 Web 构建"详情框/状态栏跑到左上角"问题用的一次性诊断输出；不影响任何

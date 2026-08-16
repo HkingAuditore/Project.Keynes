@@ -5,5 +5,3 @@ script = ExtResource("1")
 id = &"hygiene"
 display_name = "清洁卫生"
 living_cost_weight_q16 = 65536
-satisfaction_tier = 1
-satisfaction_weight_q16 = 39322

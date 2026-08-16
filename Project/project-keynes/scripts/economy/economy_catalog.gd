@@ -838,6 +838,9 @@ static func _compile_building_columns(profession_index: Dictionary,
 	var construction_offsets := PackedInt32Array([0])
 	var construction_goods := PackedInt32Array()
 	var construction_quantities := PackedInt64Array()
+	var construction_candidate_offsets := PackedInt32Array([0])
+	var construction_candidate_goods := PackedInt32Array()
+	var construction_candidate_efficiencies := PackedInt32Array()
 	var input_offsets := PackedInt32Array([0])
 	var input_goods := PackedInt32Array()
 	var input_quantities := PackedInt64Array()
@@ -997,6 +1000,11 @@ static func _compile_building_columns(profession_index: Dictionary,
 				profile.construction_quantities, good_index, construction_goods,
 				construction_quantities)
 		if error != "": return {"ok": false, "reason": "%s: %s" % [error, stable_id]}
+		var construction_candidate_error := _append_construction_candidates(
+			profile, good_index, construction_candidate_offsets,
+			construction_candidate_goods, construction_candidate_efficiencies)
+		if construction_candidate_error != "":
+			return {"ok": false, "reason": "%s: %s" % [construction_candidate_error, stable_id]}
 		construction_offsets.append(construction_goods.size())
 		error = _append_building_goods(profile.input_good_ids,
 			profile.input_quantities_per_day, good_index, input_goods, input_quantities)
@@ -1226,6 +1234,9 @@ static func _compile_building_columns(profession_index: Dictionary,
 		"building_construction_offsets": construction_offsets,
 		"building_construction_good_ids": construction_goods,
 		"building_construction_quantities": construction_quantities,
+		"building_construction_candidate_offsets": construction_candidate_offsets,
+		"building_construction_candidate_good_ids": construction_candidate_goods,
+		"building_construction_candidate_efficiency_q16": construction_candidate_efficiencies,
 		"building_input_offsets": input_offsets,
 		"building_input_good_ids": input_goods,
 		"building_input_quantities": input_quantities,
@@ -1345,6 +1356,10 @@ static func _compile_building_dependency_columns(buildings: Dictionary,
 	var good_technology_tags: PackedStringArray = goods.good_technology_tags
 	var construction_offsets: PackedInt32Array = buildings.building_construction_offsets
 	var construction_goods: PackedInt32Array = buildings.building_construction_good_ids
+	var construction_candidate_offsets: PackedInt32Array = buildings.get(
+		"building_construction_candidate_offsets", PackedInt32Array())
+	var construction_candidate_goods: PackedInt32Array = buildings.get(
+		"building_construction_candidate_good_ids", PackedInt32Array())
 	var input_offsets: PackedInt32Array = buildings.building_input_offsets
 	var input_goods: PackedInt32Array = buildings.building_input_good_ids
 	var input_candidate_offsets: PackedInt32Array = buildings.building_input_candidate_offsets
@@ -1416,8 +1431,13 @@ static func _compile_building_dependency_columns(buildings: Dictionary,
 			dependency_branch_technology_offsets.append(dependency_branch_technologies.size())
 			building_branch_count += 1
 			for edge in range(construction_offsets[building_index], construction_offsets[building_index + 1]):
+				var candidates := []
+				if edge + 1 < construction_candidate_offsets.size():
+					for candidate_edge in range(construction_candidate_offsets[edge],
+							construction_candidate_offsets[edge + 1]):
+						candidates.append(int(construction_candidate_goods[candidate_edge]))
 				var result: Dictionary = append_good_group.call(building_id, 1,
-					int(construction_goods[edge]))
+					int(construction_goods[edge]), candidates)
 				if not bool(result.get("ok", false)):
 					return result
 			for edge in range(input_offsets[building_index], input_offsets[building_index + 1]):
@@ -1471,6 +1491,56 @@ static func _append_building_goods(ids: PackedStringArray, quantities: PackedInt
 			return "invalid building good"
 		out_ids.append(int(good_index[stable_id]))
 		out_quantities.append(int(quantities[i]))
+	return ""
+
+
+static func _append_construction_candidates(profile: Resource,
+		good_index: Dictionary, out_offsets: PackedInt32Array,
+		out_goods: PackedInt32Array, out_efficiencies: PackedInt32Array) -> String:
+	var groups: PackedStringArray = profile.construction_good_ids
+	var explicit_offsets: PackedInt32Array = profile.construction_candidate_offsets
+	var explicit_goods: PackedStringArray = profile.construction_candidate_good_ids
+	var explicit_efficiencies: PackedInt32Array = profile.construction_candidate_efficiency_q16
+	var has_explicit := explicit_offsets.size() > 1 \
+		or not explicit_goods.is_empty() or not explicit_efficiencies.is_empty()
+	if not has_explicit:
+		for good_id in groups:
+			var stable_id := String(good_id)
+			if not good_index.has(stable_id):
+				return "invalid construction good"
+			out_goods.append(int(good_index[stable_id]))
+			out_efficiencies.append(Q16_ONE)
+			out_offsets.append(out_goods.size())
+		return ""
+	if explicit_offsets.size() != groups.size() + 1 \
+		or explicit_offsets.is_empty() or explicit_offsets[0] != 0 \
+		or explicit_goods.size() != explicit_efficiencies.size() \
+		or explicit_offsets[-1] != explicit_goods.size():
+		return "building construction candidate columns mismatch"
+	for offset_index in range(1, explicit_offsets.size()):
+		if explicit_offsets[offset_index] < explicit_offsets[offset_index - 1]:
+			return "building construction candidate offsets invalid"
+	for group_index in range(groups.size()):
+		var begin := int(explicit_offsets[group_index])
+		var end := int(explicit_offsets[group_index + 1])
+		if end <= begin:
+			return "building construction candidate group is empty"
+		var preferred := String(groups[group_index])
+		var seen := {}
+		var preferred_seen := false
+		for candidate_index in range(begin, end):
+			var candidate_id := String(explicit_goods[candidate_index])
+			var efficiency := int(explicit_efficiencies[candidate_index])
+			if not good_index.has(candidate_id) or seen.has(candidate_id) \
+					or efficiency <= 0 or efficiency > 4 * Q16_ONE:
+				return "invalid construction candidate"
+			seen[candidate_id] = true
+			preferred_seen = preferred_seen or candidate_id == preferred
+			out_goods.append(int(good_index[candidate_id]))
+			out_efficiencies.append(efficiency)
+		if not preferred_seen:
+			return "construction candidate group must include preferred good"
+		out_offsets.append(out_goods.size())
 	return ""
 
 static func _load_resources(dir_path: String) -> Array:

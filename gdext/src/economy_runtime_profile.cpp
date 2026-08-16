@@ -176,8 +176,9 @@ bool NativeEconomyRuntime::configure_profile(const Dictionary &profile, std::str
     _building_restart_margin_q16 = std::clamp(
         dict_num<int32_t>(profile, "building_restart_margin_q16", 6554), 0,
         static_cast<int32_t>(Q16_ONE));
-    _building_restart_cycles = std::clamp(
-        dict_num<int32_t>(profile, "building_restart_cycles", 2), 1, 32);
+    // Retained only in the v35 binary policy payload for layout compatibility;
+    // the lifecycle no longer has a restart-cycle gate.
+    _building_restart_cycles = 2;
     _merchant_procurement_cash_reserve_q16 = std::clamp(
         dict_num<int32_t>(profile, "merchant_procurement_cash_reserve_q16", 8192),
         0, static_cast<int32_t>(Q16_ONE));
@@ -196,10 +197,13 @@ bool NativeEconomyRuntime::configure_profile(const Dictionary &profile, std::str
         static_cast<int32_t>(Q16_ONE));
     _merchant_credit_term_cycles = std::clamp(dict_num<int32_t>(
         profile, "merchant_credit_term_cycles", 6), 1, 64);
-    _recovery_success_cycles = std::clamp(dict_num<int32_t>(
-        profile, "recovery_success_cycles", 2), 1, 32);
-    _recovery_liquidation_failed_reviews = std::clamp(dict_num<int32_t>(
-        profile, "recovery_liquidation_failed_reviews", 6), 1, 64);
+    // Retained only in the v35 binary policy payload; recovery is now a
+    // single-boundary ACTIVE/SUSPENDED transition.
+    _recovery_success_cycles = 2;
+    const int32_t suspended_liquidation_reviews = dict_num<int32_t>(
+        profile, "suspended_liquidation_failed_reviews", 73);
+    _recovery_liquidation_failed_reviews = std::clamp(
+        suspended_liquidation_reviews, 1, 365);
     _merchant_profession_stable_id = dict_string(profile, "merchant_profession_id", "merchant");
     _unemployed_profession_stable_id = dict_string(profile, "unemployed_profession_id", "unemployed");
     const std::string runtime_mode = dict_string(profile, "market_runtime_mode", "PROBE");
@@ -244,15 +248,13 @@ bool NativeEconomyRuntime::configure_profile(const Dictionary &profile, std::str
     _trade_response_days = std::clamp(dict_num<int32_t>(
         profile, "trade_response_days", 15), 1, 365);
     _investment_review_days = std::clamp(dict_num<int32_t>(
-        profile, "investment_review_days", 10), 1, 3650);
+        profile, "investment_review_days", 30), 1, 3650);
     _building_plan_days = std::clamp(dict_num<int32_t>(
         profile, "building_plan_days", 10), 1, 3650);
-    _investment_min_shortage_q16 = std::clamp(dict_num<int32_t>(
-        profile, "investment_min_shortage_q16", 8192), 0,
-        static_cast<int32_t>(Q16_ONE));
-    _investment_min_utilization_q16 = std::clamp(dict_num<int32_t>(
-        profile, "investment_min_utilization_q16", 42598), 0,
-        static_cast<int32_t>(Q16_ONE));
+    // These two thresholds remain in the v35 binary policy payload for
+    // archive layout compatibility. No current investment path consults them.
+    _investment_min_shortage_q16 = Q16_ONE / 8;
+    _investment_min_utilization_q16 = 42598;
     _investment_max_payback_days = std::clamp(dict_num<int32_t>(
         profile, "investment_max_payback_days", 365), 1, 36500);
     _investment_operating_cycles = std::clamp(dict_num<int32_t>(
@@ -266,7 +268,7 @@ bool NativeEconomyRuntime::configure_profile(const Dictionary &profile, std::str
         profile, "investment_max_type_owner_share_q16", 32768), 1,
         static_cast<int32_t>(Q16_ONE));
     _investment_max_growth_share_q16 = std::clamp(dict_num<int32_t>(
-        profile, "investment_max_growth_share_q16", 6554), 1,
+        profile, "investment_max_growth_share_q16", 16384), 1,
         static_cast<int32_t>(Q16_ONE));
     _investment_new_type_seed_buildings = std::clamp(dict_num<int32_t>(
         profile, "investment_new_type_seed_buildings", 1), 1, 1024);

@@ -2875,6 +2875,19 @@ int64_t NativeCountryRuntime::total_good(int32_t good_id) const {
     return total;
 }
 
+int64_t NativeCountryRuntime::research_consumed_total() const {
+    int64_t total = 0;
+    for (size_t slot = 0; slot < _countries.active.size(); ++slot) {
+        if (_countries.active[slot] == 0 ||
+            slot >= _country_research_consumed_total.size()) continue;
+        const int64_t value = _country_research_consumed_total[slot];
+        if (value > 0 && total > std::numeric_limits<int64_t>::max() - value)
+            return std::numeric_limits<int64_t>::max();
+        total += value;
+    }
+    return total;
+}
+
 int32_t NativeCountryRuntime::run_research_day(int64_t day_index) {
     if (day_index <= _last_research_day || _technology_points_good_id < 0) return 0;
     int32_t changed = 0;

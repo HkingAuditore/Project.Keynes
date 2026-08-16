@@ -17,8 +17,12 @@ const ALLOWED_REVEAL_CATEGORIES := [
 	"general_knowledge", "environment_observation", "practice_diffusion", "composite_science",
 ]
 const ALLOWED_EDGE_KINDS := [
-	"hard", "alternative", "application", "milestone_candidate",
+	"hard", "alternative", "application", "branch", "milestone_candidate",
 ]
+const TOPOLOGY_REVIEW_ROLES := [
+	"origin", "continuation", "convergence", "branch", "terminal",
+]
+const BUILDING_UNLOCK_POLICIES := ["single", "paired", "support_only"]
 const MODIFIER_SUBJECT_NAMES := {
 	"country.climate.cold_stress_factor": "寒冷损失",
 	"country.climate.drought_loss_factor": "旱灾损失",
@@ -222,6 +226,7 @@ func _validate(payload: Dictionary) -> Dictionary:
 	var research_route_nodes := 0
 	var research_route_count := 0
 	var empty_modifier_nodes := 0
+	var branch_successor_edges := 0
 	var adjacency := {}
 	var indegree := {}
 	for id in node_by_id:
@@ -239,6 +244,28 @@ func _validate(payload: Dictionary) -> Dictionary:
 		if not ALLOWED_REVEAL_CATEGORIES.has(String(node.get("reveal_category", ""))) \
 				or String(node.get("reveal_summary", "")).is_empty():
 			return _fail("technology_reveal_metadata_invalid:%s" % id)
+		var topology_review: Dictionary = node.get("topology_review", {})
+		if not topology_review.is_empty():
+			var topology_role := String(topology_review.get("role", ""))
+			var topology_rationale := String(topology_review.get("rationale", "")).strip_edges()
+			if not TOPOLOGY_REVIEW_ROLES.has(topology_role) or topology_rationale.is_empty():
+				return _fail("technology_topology_review_invalid:%s" % id)
+			var expected_families: Array = topology_review.get(
+				"expected_hard_family_ids", [])
+			if not expected_families is Array:
+				return _fail("technology_topology_review_family_list_invalid:%s" % id)
+			for expected_family in expected_families:
+				if not family_ids.has(String(expected_family)):
+					return _fail("technology_topology_review_family_unknown:%s" % id)
+			if topology_role == "convergence" and expected_families.is_empty():
+				return _fail("technology_topology_review_convergence_empty:%s" % id)
+		var building_review: Dictionary = node.get("building_unlock_review", {})
+		if not building_review.is_empty():
+			var building_policy := String(building_review.get("policy", ""))
+			var building_rationale := String(building_review.get("rationale", "")).strip_edges()
+			if not BUILDING_UNLOCK_POLICIES.has(building_policy) \
+					or building_rationale.is_empty():
+				return _fail("technology_building_unlock_review_invalid:%s" % id)
 		var hard: Array = node.get("hard_prerequisite_ids", [])
 		var rationales: Array = node.get("prerequisite_rationales", [])
 		if hard.size() != rationales.size():
@@ -336,6 +363,7 @@ func _validate(payload: Dictionary) -> Dictionary:
 				return _fail("technology_branch_successor_cross_family:%s" % id)
 			if String(branch_rationales[successor_index]).strip_edges().is_empty():
 				return _fail("technology_branch_successor_rationale_missing:%s" % id)
+		branch_successor_edges += branch_successors.size()
 		var application_targets: Array = node.get("application_target_ids", [])
 		var application_rationales: Array = node.get("application_target_rationales", [])
 		if application_targets.size() != application_rationales.size():
@@ -390,6 +418,7 @@ func _validate(payload: Dictionary) -> Dictionary:
 		"research_route_nodes": research_route_nodes,
 		"research_route_count": research_route_count,
 		"empty_modifier_nodes": empty_modifier_nodes,
+		"branch_successor_edges": branch_successor_edges,
 	}
 
 
@@ -447,6 +476,8 @@ func _build_visual_edges(payload: Dictionary) -> Array[Dictionary]:
 			for source in alternatives:
 				_add_edge(out, seen, String(source), target, "alternative",
 					String(route.get("id", "")))
+		for branch_successor in node.get("branch_successor_ids", []):
+			_add_edge(out, seen, target, String(branch_successor), "branch")
 		for application in node.get("application_target_ids", []):
 			_add_edge(out, seen, target, String(application), "application")
 	for era_value in payload.eras:
@@ -550,6 +581,7 @@ func _audit_report(payload: Dictionary, validation: Dictionary) -> String:
 		"- Milestone candidate edges: %d (8 per era, require 4)" % int(validation.milestone_candidate_edges),
 		"- Nodes with research routes: %d" % int(validation.research_route_nodes),
 		"- Research routes: %d" % int(validation.research_route_count),
+		"- Authored branch successor edges: %d" % int(validation.branch_successor_edges),
 		"- Unlock-only/no-Modifier nodes: %d" % int(validation.empty_modifier_nodes), "",
 		"## Explicit effect semantics", "",
 		"- Societal/sector terms: %d" % int(effect_counts["全社会或部门"]),

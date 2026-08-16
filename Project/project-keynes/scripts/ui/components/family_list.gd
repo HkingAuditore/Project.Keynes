@@ -6,6 +6,7 @@ const FamilyRowScene := preload("res://scenes/ui/family_row.tscn")
 signal details_requested(request: Dictionary)
 
 var _row_refs: Dictionary = {}
+var _selected_row := ""
 
 
 func set_rows(rows: Array) -> void:
@@ -37,12 +38,20 @@ func update_rows(rows: Array) -> void:
 
 func _create_row(row_id: String) -> Dictionary:
 	var button := FamilyRowScene.instantiate() as Button
+	button.toggle_mode = true
 	button.pressed.connect(func() -> void: details_requested.emit(
 		{"kind": "family", "row_id": row_id}))
 	add_child(button)
 	return {"button": button, "icon": button.get_node("Margin/Line/Icon"),
 		"name": button.get_node("Margin/Line/Name"),
 		"prestige": button.get_node("Margin/Line/Prestige")}
+
+
+func set_selected(row_id: String) -> void:
+	_selected_row = row_id
+	for key in _row_refs.keys():
+		var refs: Dictionary = _row_refs[key]
+		(refs.get("button") as Button).set_pressed_no_signal(String(key) == row_id)
 
 
 func _apply_row(refs: Dictionary, data: Dictionary) -> void:

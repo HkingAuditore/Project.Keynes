@@ -624,8 +624,8 @@ Dictionary NativeEconomyRuntime::end_restore() {
             group.last_bonus_paid < 0 || group.last_bonus_due < 0 ||
             group.last_base_wages_paid > group.last_base_wages_due ||
             group.last_bonus_paid > group.last_bonus_due ||
-            group.wage_suspended > 1 || group.operating_state > 2 ||
-            (group.pending_operating_state > 2 && group.pending_operating_state != 255) ||
+            group.wage_suspended > 1 || group.operating_state > 1 ||
+            (group.pending_operating_state > 1 && group.pending_operating_state != 255) ||
             group.merchant_debt_principal < 0 || group.merchant_debt_premium < 0 ||
             group.last_in_kind_livelihood_value < 0 ||
             group.last_temperature_fit_q16 < 0 ||

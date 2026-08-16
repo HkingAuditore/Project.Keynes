@@ -27,7 +27,7 @@ constexpr const char *HEADERS[EconomyCsvRecorder::DIM_COUNT] = {
     "epoch_row_id,epoch_id,day_index,cell_idx,q,r,s,resource_id,opening_reserve,natural_net_change,natural_positive_change,natural_negative_change,artificial_change_applied,artificial_change_pending,artificial_generation_applied,artificial_extraction_applied,artificial_generation_pending,artificial_extraction_pending,reserve,safe_yield,projected_life_days\n",
     "epoch_row_id,epoch_id,day_index,cell_idx,q,r,s,good_id,stock,price,demand_ema,business_demand_ema,offered_supply_ema,realized_withdrawal_ema,production_input_reserve,household_available_stock,merchant_inventory_target,merchant_procurement_shortfall,cost_anchor_price,shortage_q16,price_pressure_total_q16,category_id,storage_mode,trade_enabled,trade_import_ema,trade_export_ema,trade_inbound,trade_outbound,desired_business_demand,funded_business_demand,unfunded_business_demand,trade_export_safety_stock,trade_import_fill_target,trade_relief_pressure_q16,trade_signal_age_days,trade_first_dispatch_delay_days,trade_last_attempt_day,trade_last_rejection_reason,trade_deadline_exceeded,merchant_cash,merchant_inventory_retail_value,merchant_inventory_liquidation_value,merchant_economic_assets,merchant_procurement_margin_value,merchant_trade_purchase_cash,merchant_trade_sale_cash,merchant_operating_outflow,merchant_liquidity_coverage_q16,merchant_effective_buy_factor_q16\n",
 };
-constexpr const char *SUMMARY_V22_SUFFIX =
+constexpr const char *SUMMARY_V24_SUFFIX =
     ",building_investment_buildings_started"
     ",building_investment_portfolios_started"
     ",building_investment_types_started"
@@ -45,12 +45,27 @@ constexpr const char *SUMMARY_V22_SUFFIX =
     ",merchant_input_procurement_allocated"
     ",climate_profiled_building_groups"
     ",climate_limited_building_groups"
-    ",average_climate_capacity_q16\n";
-constexpr const char *BUILDING_V22_SUFFIX =
+    ",average_climate_capacity_q16"
+    ",suspended_restart_candidates"
+    ",suspended_restart_approved"
+    ",suspended_restart_restarted"
+    ",suspended_restart_failed"
+    ",suspended_liquidated_buildings"
+    ",suspended_partially_liquidated_buildings"
+    ",suspended_fully_liquidated_groups"
+    ",building_investment_jobs_started"
+    ",building_investment_employment_gap"
+    ",building_investment_employment_catchup_cells\n";
+constexpr const char *BUILDING_V24_SUFFIX =
     ",last_temperature_fit_q16"
     ",last_water_fit_q16"
     ",last_climate_capacity_q16"
-    ",last_climate_lost_output\n";
+    ",last_climate_lost_output"
+    ",suspended_restart_cycles"
+    ",suspended_liquidation_failed_reviews"
+    ",investment_failed_material_group"
+    ",investment_selected_material_good_ids"
+    ",investment_selected_material_quantities\n";
 
 template <typename T>
 void append_int(std::string &out, T value) {
@@ -637,6 +652,12 @@ bool EconomyCsvRecorder::fill_batch(
             runtime._building_investment_capital_limited;
         row.building_investment_owner_population_limited =
             runtime._building_investment_owner_population_limited;
+        row.building_investment_jobs_started =
+            runtime._building_investment_jobs_started;
+        row.building_investment_employment_gap =
+            runtime._building_investment_employment_gap;
+        row.building_investment_employment_catchup_cells =
+            runtime._building_investment_employment_catchup_cells;
         row.desired_business_demand = runtime._desired_business_demand;
         row.funded_business_demand = runtime._funded_business_demand;
         row.unfunded_business_demand = runtime._unfunded_business_demand;
@@ -854,12 +875,6 @@ bool EconomyCsvRecorder::fill_batch(
                         group.count, type.owner_slots_per_building, snapshot_sat);
                     int64_t employment_utilization_q16 = group.operating_state == 1
                         ? 0 : group.planned_utilization_q16;
-                    if (group.operating_state == 2 && index < static_cast<int32_t>(
-                            runtime._building_recovery_probe_capacity_q16.size())) {
-                        employment_utilization_q16 = std::min<int64_t>(
-                            employment_utilization_q16,
-                            runtime._building_recovery_probe_capacity_q16[index]);
-                    }
                     row.planned_owner_equivalent = runtime.mul_div_sat(
                         row.owner_capacity, employment_utilization_q16,
                         NativeEconomyRuntime::Q16_ONE, snapshot_sat);
@@ -904,6 +919,27 @@ bool EconomyCsvRecorder::fill_batch(
                             row.investment_driver_merchant_sold = item.driver_merchant_sold;
                             row.investment_driver_sell_through_q16 = item.driver_sell_through_q16;
                             row.investment_driver_discard_q16 = item.driver_discard_q16;
+                            row.investment_failed_material_group =
+                                item.failed_material_group;
+                            for (size_t material = 0;
+                                 material < item.selected_material_good_ids.size();
+                                 ++material) {
+                                if (material > 0) {
+                                    row.investment_selected_material_good_ids += "|";
+                                    row.investment_selected_material_quantities += "|";
+                                }
+                                const int32_t good =
+                                    item.selected_material_good_ids[material];
+                                row.investment_selected_material_good_ids +=
+                                    good >= 0 && good < static_cast<int32_t>(
+                                        _good_ids.size())
+                                        ? _good_ids[good] : "invalid";
+                                row.investment_selected_material_quantities +=
+                                    std::to_string(material <
+                                        item.selected_material_quantities.size()
+                                        ? item.selected_material_quantities[material]
+                                        : 0);
+                            }
                             break;
                         }
                     }
@@ -997,6 +1033,27 @@ bool EconomyCsvRecorder::fill_batch(
                     row.investment_driver_merchant_sold = item.driver_merchant_sold;
                     row.investment_driver_sell_through_q16 = item.driver_sell_through_q16;
                     row.investment_driver_discard_q16 = item.driver_discard_q16;
+                    row.investment_failed_material_group =
+                        item.failed_material_group;
+                    for (size_t material = 0;
+                         material < item.selected_material_good_ids.size();
+                         ++material) {
+                        if (material > 0) {
+                            row.investment_selected_material_good_ids += "|";
+                            row.investment_selected_material_quantities += "|";
+                        }
+                        const int32_t good =
+                            item.selected_material_good_ids[material];
+                        row.investment_selected_material_good_ids +=
+                            good >= 0 && good < static_cast<int32_t>(
+                                _good_ids.size())
+                                ? _good_ids[good] : "invalid";
+                        row.investment_selected_material_quantities +=
+                            std::to_string(material <
+                                item.selected_material_quantities.size()
+                                ? item.selected_material_quantities[material]
+                                : 0);
+                    }
                     batch.buildings.push_back(row);
                 }
             }
@@ -1300,7 +1357,7 @@ bool EconomyCsvRecorder::open_files(std::string &error) {
             _files[dim].write(HEADERS[dim],
                 static_cast<std::streamsize>(header_length - 1));
             const char *suffix = dim == SUMMARY
-                ? SUMMARY_V22_SUFFIX : BUILDING_V22_SUFFIX;
+                ? SUMMARY_V24_SUFFIX : BUILDING_V24_SUFFIX;
             _files[dim].write(suffix, static_cast<std::streamsize>(
                 std::char_traits<char>::length(suffix)));
         } else {
@@ -1472,6 +1529,18 @@ bool EconomyCsvRecorder::write_batch(const Batch &batch, int64_t &bytes, std::st
         field(chunk, row.climate_profiled_building_groups);
         field(chunk, row.climate_limited_building_groups);
         field(chunk, row.average_climate_capacity_q16);
+        // Keep the legacy recovery_* values above for CSV consumers, while
+        // exposing lifecycle terminology that no longer implies trial mode.
+        field(chunk, row.recovery_candidates);
+        field(chunk, row.recovery_approved);
+        field(chunk, row.recovery_restarted);
+        field(chunk, row.recovery_failed);
+        field(chunk, row.recovery_liquidated_buildings);
+        field(chunk, row.recovery_partially_liquidated_buildings);
+        field(chunk, row.recovery_fully_liquidated_groups);
+        field(chunk, row.building_investment_jobs_started);
+        field(chunk, row.building_investment_employment_gap);
+        field(chunk, row.building_investment_employment_catchup_cells);
         chunk.push_back('\n'); if (!maybe_flush(SUMMARY)) goto write_failed;
     }
     if (!flush(SUMMARY)) goto write_failed;
@@ -1546,6 +1615,11 @@ bool EconomyCsvRecorder::write_batch(const Batch &batch, int64_t &bytes, std::st
         field(chunk, row.last_water_fit_q16);
         field(chunk, row.last_climate_capacity_q16);
         field(chunk, row.last_climate_lost_output);
+        field(chunk, 0);
+        field(chunk, row.recovery_failed_reviews);
+        field(chunk, row.investment_failed_material_group);
+        text_field(chunk, row.investment_selected_material_good_ids);
+        text_field(chunk, row.investment_selected_material_quantities);
         chunk.push_back('\n'); if (!maybe_flush(BUILDINGS)) goto write_failed;
     }
     if (!flush(BUILDINGS)) goto write_failed;

@@ -22,7 +22,7 @@ class NativeEconomyRuntime;
 // into one of two POD buffers; the worker owns CSV encoding and file I/O.
 class EconomyCsvRecorder {
 public:
-    static constexpr int32_t SCHEMA_VERSION = 23;
+    static constexpr int32_t SCHEMA_VERSION = 24;
     static constexpr int32_t DIM_COUNT = 5;
     enum Dimension : int32_t { SUMMARY = 0, COHORTS = 1, BUILDINGS = 2, RESOURCES = 3, MARKET = 4 };
 
@@ -191,6 +191,9 @@ public:
         int64_t building_investment_material_limited = 0;
         int64_t building_investment_capital_limited = 0;
         int64_t building_investment_owner_population_limited = 0;
+        int64_t building_investment_jobs_started = 0;
+        int64_t building_investment_employment_gap = 0;
+        int64_t building_investment_employment_catchup_cells = 0;
         int64_t desired_business_demand = 0;
         int64_t funded_business_demand = 0;
         int64_t unfunded_business_demand = 0;
@@ -304,6 +307,9 @@ public:
         int64_t investment_driver_merchant_sold = 0;
         int64_t investment_driver_sell_through_q16 = 0;
         int64_t investment_driver_discard_q16 = 0;
+        int32_t investment_failed_material_group = -1;
+        std::string investment_selected_material_good_ids;
+        std::string investment_selected_material_quantities;
         int32_t realized_profit_margin_q16 = 0;
         int32_t severe_loss_cycles = 0;
         int32_t recovery_cycles = 0;

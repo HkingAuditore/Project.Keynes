@@ -15,12 +15,15 @@ extends Resource
 @export var technology_tags: PackedStringArray = PackedStringArray()
 
 ## Per-person, per-day Q32 demographic rates.
-## 4.0% births and 2.5% natural deaths per 365-day year produce a
-## fully-satisfied long-run net growth target of approximately 1.5%.
-## Satisfaction applies at half weight, preserving some births during shortages.
-@export var birth_rate_q32: int = 470681
+## 20.0% births and 2.5% natural deaths per 365-day year produce a
+## fully-satisfied long-run net growth target of approximately 17.5%. This is a
+## gameplay-scale demographic rate: a healthy population doubles in about 4.3
+## years and a 20-person starter settlement averages one birth every 91 days.
+## Composite satisfaction fully modulates births. Healthy cohorts retain the
+## gameplay-scale rate while severe deprivation sharply suppresses births.
+@export var birth_rate_q32: int = 2353407
 @export var death_rate_q32: int = 294176
-@export var satisfaction_birth_weight_q16: int = 32768
+@export var satisfaction_birth_weight_q16: int = 65536
 
 ## Q16 weights for the eight composite satisfaction dimensions, in native enum
 ## order: subsistence, basic, comfort, luxury, income growth, savings, tax

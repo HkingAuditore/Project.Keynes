@@ -499,12 +499,6 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 _building_planned_capacity_before_climate_q16.size())
             ? _building_planned_capacity_before_climate_q16[index]
             : group.planned_utilization_q16;
-        if (group.operating_state == 2) {
-            if (index >= 0 && index < static_cast<int32_t>(
-                    _building_recovery_probe_capacity_q16.size()))
-                utilization = std::min(utilization,
-                    _building_recovery_probe_capacity_q16[index]);
-        }
         return std::clamp<int64_t>(utilization, 0, Q16_ONE);
     };
     const int32_t professions = static_cast<int32_t>(_profession_ids.size());

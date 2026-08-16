@@ -222,8 +222,12 @@ void NativeEconomyRuntime::rebuild_building_cell_offsets() {
 }
 
 void NativeEconomyRuntime::rebuild_building_review_buckets() {
-    const int32_t phase_count = std::max(1, _investment_review_days);
-    _building_review_phase_offsets.assign(static_cast<size_t>(phase_count) + 1, 0);
+    // Lifecycle review is a market-settlement concern, not an investment-plan
+    // concern. Every five-day settlement must inspect every suspended group;
+    // partitioning by cell modulo five would skip four fifths of the groups
+    // because committed sample days are normally 0, 5, 10, ... . Keep one
+    // stable review bucket and let the continuation cursor provide slicing.
+    _building_review_phase_offsets.assign(2, 0);
     _building_review_group_indices.clear();
     _building_special_reset_group_indices.clear();
 
@@ -237,16 +241,13 @@ void NativeEconomyRuntime::rebuild_building_review_buckets() {
             _building_special_reset_group_indices.push_back(group_index);
             continue;
         }
-        const int32_t phase = ((group.cell % phase_count) + phase_count) % phase_count;
-        ++_building_review_phase_offsets[phase + 1];
+        ++_building_review_phase_offsets[1];
     }
-    for (int32_t phase = 0; phase < phase_count; ++phase)
-        _building_review_phase_offsets[phase + 1] +=
-            _building_review_phase_offsets[phase];
+    _building_review_phase_offsets[1] += _building_review_phase_offsets[0];
 
     _building_review_group_indices.resize(
         static_cast<size_t>(_building_review_phase_offsets.back()));
-    std::vector<int32_t> cursors = _building_review_phase_offsets;
+    int32_t cursor = _building_review_phase_offsets[0];
     for (int32_t group_index = 0;
          group_index < static_cast<int32_t>(_buildings.size()); ++group_index) {
         const BuildingGroup &group = _buildings[group_index];
@@ -254,8 +255,7 @@ void NativeEconomyRuntime::rebuild_building_review_buckets() {
             group.type_id < 0 ||
             group.type_id >= static_cast<int32_t>(_building_types.size()) ||
             _building_types[group.type_id].kind == 2) continue;
-        const int32_t phase = ((group.cell % phase_count) + phase_count) % phase_count;
-        _building_review_group_indices[cursors[phase]++] = group_index;
+        _building_review_group_indices[cursor++] = group_index;
     }
 }
 

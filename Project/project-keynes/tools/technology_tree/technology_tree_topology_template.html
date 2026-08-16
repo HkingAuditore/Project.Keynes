@@ -101,6 +101,7 @@
   .edge-swatch { width: 18px; height: 0; border-top: 3px solid var(--ink); }
   .edge-swatch.application { border-top-color: #2e7a68; border-top-style: dashed; }
   .edge-swatch.alternative { border-top-color: var(--blue); border-top-style: dotted; }
+  .edge-swatch.branch { border-top-color: #a66b34; border-top-style: dashed; }
   .edge-swatch.milestone_candidate { border-top-color: #c4922a; border-top-style: dashed; }
   #search {
     background: var(--paper); border: 2px solid var(--ink); color: var(--ink);
@@ -199,6 +200,7 @@
   .edge { fill: none; stroke: #2a1c12; stroke-width: 1.7; opacity: 0.42; stroke-linecap: round; }
   .edge.application { stroke: #2e7a68; stroke-dasharray: 6 5; opacity: 0.4; stroke-width: 1.5; }
   .edge.alternative { stroke: #3d6ea8; stroke-dasharray: 2 5; opacity: 0.28; stroke-width: 1.35; }
+  .edge.branch { stroke: #a66b34; stroke-dasharray: 9 5; opacity: 0.24; stroke-width: 1.45; }
   .edge.milestone_candidate { stroke: #c4922a; stroke-dasharray: 4 5; opacity: 0.28; }
   .edge.filtered:not(.focus-show) { opacity: 0 !important; }
   .edge.dim { opacity: 0.04; }
@@ -774,7 +776,7 @@ function renderOverview() {
     </div>
     <div class="overview-note">
       当前权威目录 technology_network.json：361 节点，硬前置 303 条，替代可视边 698 条。<br>
-      默认只画硬前置骨架。点选节点会临时显示它的替代/应用边；顶栏可打开全部边。Esc 清除高亮。
+      默认只画硬前置骨架。点选节点会临时显示它的替代/应用/分支边；顶栏可打开全部边。Esc 清除高亮。
     </div>`;
   detail.querySelectorAll("td.cell").forEach(td => td.addEventListener("click", () => {
     focusEraDomain(td.dataset.era, td.dataset.dom);
@@ -844,6 +846,10 @@ function renderDetail(n) {
     .map(e => chip(e.from, true, "输入")).join("");
   const applicationBlock = applicationOut || applicationIn
     ? `<div class="d-sec"><h3>跨领域应用</h3><div>${applicationOut}${applicationIn}</div></div>` : "";
+  const topologyReview = n.topology_review && n.topology_review.role
+    ? `<div class="d-sec"><h3>拓扑审查</h3><div class="kv"><span>角色</span><span>${esc(n.topology_review.role)}</span></div><div class="d-desc">${esc(n.topology_review.rationale || "")}</div></div>` : "";
+  const buildingReview = n.building_unlock_review && n.building_unlock_review.policy
+    ? `<div class="d-sec"><h3>建筑解锁审查</h3><div class="kv"><span>政策</span><span>${esc(n.building_unlock_review.policy)}</span></div><div class="d-desc">${esc(n.building_unlock_review.rationale || "")}</div></div>` : "";
   const research = n.condition_lines && n.condition_lines.length
     ? n.condition_lines.map(l =>
         `<div class="cond-line" style="padding-left:${l.depth * 16}px">${l.depth ? "└ " : ""}${esc(l.text)}</div>`).join("")
@@ -879,6 +885,7 @@ function renderDetail(n) {
     <div class="d-sec"><h3>数值效果 · 永久修正</h3>${terms}</div>
     <div class="d-sec"><h3>主题路线后继</h3><div>${sameLane}</div></div>
     ${applicationBlock}
+    ${topologyReview}${buildingReview}
     <div class="d-sec"><h3>被以下科技作为硬前置</h3><div>${succs}</div></div>
     ${n.terminal_reason ? `<div class="d-sec"><h3>终点理由</h3><div class="d-desc">${esc(n.terminal_reason)}</div></div>` : ""}`;
   detail.scrollTop = 0;
@@ -933,9 +940,10 @@ const EDGE_META = {
   hard: ["硬前置", ""],
   application: ["应用交汇", "application"],
   alternative: ["替代说明", "alternative"],
+  branch: ["分支关系", "branch"],
   milestone_candidate: ["里程碑候选", "milestone_candidate"],
 };
-const edgeOn = { hard: true, application: false, alternative: false, milestone_candidate: false };
+const edgeOn = { hard: true, application: false, alternative: false, branch: false, milestone_candidate: false };
 const edgeLegend = document.getElementById("edge-legend");
 Object.entries(EDGE_META).forEach(([kind, meta]) => {
   const count = DATA.edges.filter(e => e.kind === kind && isDrawnEdge(e)).length;

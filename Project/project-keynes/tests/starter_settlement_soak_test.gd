@@ -19,15 +19,15 @@ func _run() -> void:
 	profile.native_environment_runtime_enabled = false
 	var config := NewGameConfig.create_default()
 	config.country.name = "Starter Soak Nation"
-	config.country.foreign_count = 3
-	config.base.map_width = 40
-	config.base.map_height = 28
+	config.country.foreign_count = _configured_int("PK_STARTER_SETTLEMENT_FOREIGN_COUNT", 3)
+	config.base.map_width = _configured_int("PK_STARTER_SETTLEMENT_MAP_WIDTH", 40)
+	config.base.map_height = _configured_int("PK_STARTER_SETTLEMENT_MAP_HEIGHT", 28)
 	config.base.initial_seed = 20260727
 	config.base.num_continents = 2
 	config.base.continent_size = 0.9
 	config.base.sea_level = 0.42
 	config.base.river_count = 8
-	var map_config := MapConfig.make(40, 28)
+	var map_config := MapConfig.make(int(config.base.map_width), int(config.base.map_height))
 	map_config.seed = int(config.base.initial_seed)
 	map_config.num_continents = int(config.base.num_continents)
 	map_config.continent_size = float(config.base.continent_size)
@@ -114,6 +114,11 @@ func _run() -> void:
 func _configured_soak_days() -> int:
 	var value := OS.get_environment("PK_STARTER_SETTLEMENT_SOAK_DAYS").strip_edges()
 	return maxi(1, int(value)) if value.is_valid_int() else DEFAULT_SOAK_DAYS
+
+
+func _configured_int(name: String, fallback: int) -> int:
+	var value := OS.get_environment(name).strip_edges()
+	return int(value) if value.is_valid_int() else fallback
 
 
 func _run_day(generator: MapGenerator, economy, clock: WorldClock, day: int) -> Dictionary:

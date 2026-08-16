@@ -177,7 +177,7 @@ func start() -> void:
 	var native_paths: Dictionary = {}
 	for dim in ["summary", "cohorts", "buildings", "resources", "market"]:
 		native_paths[dim] = export_dir.path_join(
-			"economy_record_%s_v23%s_%s.csv" % [ts, scope_tag, dim])
+			"economy_record_%s_v24%s_%s.csv" % [ts, scope_tag, dim])
 
 	_status = world.call("start_economy_csv_recording", {
 		"record_summary": _record_summary,

@@ -89,6 +89,13 @@ func selected_cell():
 	return _selected_cell
 
 
+func ensure_selected_visible() -> void:
+	if _selected_cell == null or _camera == null or _ui_manager == null:
+		return
+	_camera.ensure_point_visible(_cell_display_world(_selected_cell),
+		_ui_manager.map_safe_area())
+
+
 func select_cell(cell) -> void:
 	if cell == null:
 		clear_selection()

@@ -55,14 +55,26 @@ Invoke-WebRequest "https://go.microsoft.com/fwlink/?linkid=2196241" -OutFile win
 
 装完得到 `C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\` 下的 `cdb.exe` 与 `gflags.exe`。
 
-### 3.3 自动保留崩溃转储（需管理员）
+### 3.3 自动保留崩溃转储（一次性配置，需管理员）
 
 ```powershell
-$k = "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps"
-New-Item -Path $k -Force | Out-Null
-New-ItemProperty -Path $k -Name DumpFolder -Value "D:\Godot\crashdumps" -PropertyType ExpandString -Force
-New-ItemProperty -Path $k -Name DumpType   -Value 2 -PropertyType DWord -Force   # 2 = full dump
-New-ItemProperty -Path $k -Name DumpCount  -Value 10 -PropertyType DWord -Force
+& .\tools\setup_godot_crash_dumps.ps1
+```
+
+脚本会自行请求管理员权限，并仅为 Godot 的常用可执行文件名注册 WER LocalDumps。转储自动保存到：
+
+```text
+%LOCALAPPDATA%\ProjectKeynes\CrashDumps
+```
+
+配置完成后仍然直接在编辑器里按 F5/F6。发生原生闪退时 Windows 自动生成 full dump，不需要从
+命令行启动游戏。脚本可重复执行；升级 Godot 且可执行文件名发生变化时，把新名称加入脚本中的
+`$godotExecutableNames` 后再运行一次。
+
+项目已经在 `project.godot` 中启用 Godot 文件日志和 10 份轮转，普通错误与崩溃前输出位于：
+
+```text
+%APPDATA%\Godot\app_userdata\ProjectKeynes\logs
 ```
 
 ## 4. 关键一步：用 headless 复现

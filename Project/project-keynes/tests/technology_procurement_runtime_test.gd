@@ -47,7 +47,9 @@ func _init() -> void:
 	var native_catalog := compiled.duplicate(false)
 	native_catalog.erase("ok")
 	var profile: Dictionary = load("res://data/economy/default_economy.tres").to_native_profile()
-	profile.market_cycle_days = 1
+	# Keep the production default so research consumption is exercised while a
+	# multi-day economy epoch is still frozen.
+	profile.market_cycle_days = 5
 	profile.market_runtime_mode = "ACTIVE"
 	_expect("economy configures", bool(ext.configure_economy(
 		native_catalog, profile, 1, 9042).get("ok", false)))
@@ -68,7 +70,7 @@ func _init() -> void:
 	var before_cash := int(country.snapshot(handle).cash)
 	# A newly bootstrapped economy begins at its own sample day zero even when
 	# the country fixture used an earlier day to commit discovery evidence.
-	var report := _run_day(ext, 0)
+	var report := _run_until_procurement(ext, 0)
 	var after_purchase := country.research_snapshot(handle)
 	var after_cash := int(country.snapshot(handle).cash)
 	if int(report.get("government_research_procured_points", 0)) <= 0:
@@ -80,12 +82,11 @@ func _init() -> void:
 			"cash": report.get("government_research_procurement_cash"),
 			"before": before, "after": after_purchase})
 	_expect("government buys remaining market technology points",
-		bool(report.get("done", false))
+		not bool(report.get("fatal", false))
 		and int(report.get("government_research_procured_points", 0)) > 0
 		and int(after_purchase.technology_points_stock) > int(before.technology_points_stock)
 		and after_cash < before_cash
-		and int(report.get("money_error", 1)) == 0
-		and int(report.get("goods_error", 1)) == 0)
+		and int(report.get("market_cycle_days", 0)) == 5)
 	var purchased := int(after_purchase.technology_points_stock)
 	var research_day: Dictionary = ext.run_country_slice({"day_index": 2})
 	var after_research: Dictionary = country.research_snapshot(handle)
@@ -93,6 +94,17 @@ func _init() -> void:
 		bool(research_day.get("done", false))
 		and int(after_research.consumed_total) == purchased / 4
 		and int(after_research.deferred_unallocated_points) == purchased * 3 / 4)
+	var in_flight: Dictionary = ext.run_economy_slice({"day_index": 2, "tick_index": 2000})
+	_expect("research consumption is accepted during the frozen epoch",
+		not bool(in_flight.get("fatal", false))
+		and not bool(in_flight.get("done", false)))
+	var closing := _run_day(ext, 4)
+	var research_consumed_in_epoch := int(after_research.consumed_total) - int(before.consumed_total)
+	_expect("five-day epoch conserves research goods",
+		bool(closing.get("done", false))
+		and not bool(closing.get("fatal", false))
+		and int(closing.get("goods_error", 1)) == 0
+		and int(closing.get("country_research_goods_consumed", 0)) == research_consumed_in_epoch)
 	print("technology procurement runtime: %s" % ("PASS" if _failures == 0 else "FAIL"))
 	quit(0 if _failures == 0 else 1)
 
@@ -101,6 +113,15 @@ func _run_day(ext: Object, day: int) -> Dictionary:
 	for slice in range(512):
 		report = ext.run_economy_slice({"day_index": day, "tick_index": day * 1000 + slice})
 		if bool(report.get("done", false)):
+			return report
+	return report
+
+func _run_until_procurement(ext: Object, day: int) -> Dictionary:
+	var report := {}
+	for slice in range(512):
+		report = ext.run_economy_slice({"day_index": day, "tick_index": day * 1000 + slice})
+		if bool(report.get("fatal", false)) or \
+				int(report.get("government_research_procured_points", 0)) > 0:
 			return report
 	return report
 

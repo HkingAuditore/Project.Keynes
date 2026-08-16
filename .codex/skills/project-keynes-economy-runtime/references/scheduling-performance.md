@@ -25,7 +25,7 @@ Stages are stable diagnostic ABI:
    epoch income and post-production stock.
 9. `structural_commit`: stable-sort and apply ECB work.
 10. `wait_commit`: keep completed internal state hidden until `sample_day + N - 1`.
-11. `building_commit`: commit ready construction, then run the 30-day industrial capital review
+11. `building_commit`: commit ready construction, then run the 180-day industrial capital review
     before publication and rebuild sparse employment ranges when structure or population changes.
 12. `aggregate_publish`: publish summaries, market rows, audits, trade EMA, and report.
 
@@ -149,6 +149,6 @@ the current epoch reads only the previous committed signal EMA, preserving the f
 and preventing scheduler-order feedback.
 
 Endogenous construction uses completed-period profit and demand signals, but starts at most one
-industrial building per cell when the committed day crosses a 30-day boundary. It reuses BUILD
+industrial building per cell when the committed day crosses a 180-day boundary. It reuses BUILD
 material/payment/event ledgers and reports candidates, owner mobility, starts, and funds/material
 blocks. The review cadence is derived from committed time and adds no save field.

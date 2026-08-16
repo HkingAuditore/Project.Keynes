@@ -63,6 +63,7 @@ func _init() -> void:
 	var routes_after_kingdom := 0
 	var nodes_after_kingdom := 0
 	var alternative_edges := 0
+	var branch_edges := 0
 	for node_value in nodes:
 		var node: Dictionary = node_value
 		var id := String(node.id)
@@ -173,15 +174,25 @@ func _init() -> void:
 	for edge_value in data.get("visual_edges", []):
 		var edge: Dictionary = edge_value
 		var kind := String(edge.get("kind", ""))
-		assert(kind in ["hard", "alternative", "application", "milestone_candidate"])
+		assert(kind in ["hard", "alternative", "application", "branch", "milestone_candidate"])
 		if kind != "alternative":
 			assert(not edge.has("route_id"))
+			if kind == "branch":
+				var branch_source: Dictionary = node_by_id[String(edge.get("from", ""))]
+				assert((branch_source.get("branch_successor_ids", []) as Array).has(
+					String(edge.get("to", ""))))
+				branch_edges += 1
 			continue
 		alternative_edges += 1
 		var route_id := String(edge.get("route_id", ""))
 		assert(route_by_id.has(route_id))
 		assert(String(route_target_by_id[route_id]) == String(edge.get("to", "")))
 	assert(alternative_edges > 0)
+	var authored_branch_edges := 0
+	for node_value in nodes:
+		authored_branch_edges += (node_value as Dictionary).get(
+			"branch_successor_ids", []).size()
+	assert(branch_edges == authored_branch_edges)
 
 	# Locked regression sample: plantation estate management has a genuine
 	# development reveal and three strategically different research routes.

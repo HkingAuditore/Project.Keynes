@@ -77,6 +77,7 @@
   .edge-swatch { width: 18px; height: 0; border-top: 2px solid #7b6947; }
   .edge-swatch.application { border-top-color: #69978c; border-top-style: dashed; }
   .edge-swatch.alternative { border-top-color: #7897b4; border-top-style: dotted; }
+  .edge-swatch.branch { border-top-color: #9a6b38; border-top-style: dashed; }
   .edge-swatch.milestone_candidate { border-top-color: var(--brass); border-top-style: dashed; }
   #search {
     background: rgba(20,16,10,0.8); border: 1px solid var(--rule); color: var(--text);
@@ -177,6 +178,7 @@
   .edge { fill: none; stroke: #6b5b3e; stroke-width: 1.3; opacity: 0.38; }
   .edge.application { stroke: #69978c; stroke-dasharray: 7 6; opacity: 0.14; }
   .edge.alternative { stroke: #7897b4; stroke-dasharray: 2 5; opacity: 0.25; }
+  .edge.branch { stroke: #9a6b38; stroke-dasharray: 9 5; opacity: 0.18; }
   .edge.milestone_candidate { stroke: var(--brass-dim); stroke-dasharray: 4 5; opacity: 0.10; }
   .edge.filtered { opacity: 0 !important; }
   .edge.dim { opacity: 0.05; }
@@ -731,7 +733,7 @@ function renderOverview() {
     <div class="overview-note">
       点击单元格可高亮对应「时代 × 领域」的全部节点；<br>
       点击树中节点查看成本、研发前置、发现启发与数值效果；<br>
-      顶栏边类型开关可分别查看硬前置、应用交汇与里程碑候选关系；<br>
+      顶栏边类型开关可分别查看硬前置、替代路线、应用交汇、分支关系与里程碑候选；<br>
       悬停节点高亮其知识链，前置追溯到时代里程碑即止；Esc 清除选中。
     </div>`;
   detail.querySelectorAll("td.cell").forEach(td => td.addEventListener("click", () => {
@@ -802,6 +804,10 @@ function renderDetail(n) {
     .map(e => chip(e.from, true, "输入")).join("");
   const applicationBlock = applicationOut || applicationIn
     ? `<div class="d-sec"><h3>跨领域应用</h3><div>${applicationOut}${applicationIn}</div></div>` : "";
+  const topologyReview = n.topology_review && n.topology_review.role
+    ? `<div class="d-sec"><h3>拓扑审查</h3><div class="kv"><span>角色</span><span>${esc(n.topology_review.role)}</span></div><div class="d-desc">${esc(n.topology_review.rationale || "")}</div></div>` : "";
+  const buildingReview = n.building_unlock_review && n.building_unlock_review.policy
+    ? `<div class="d-sec"><h3>建筑解锁审查</h3><div class="kv"><span>政策</span><span>${esc(n.building_unlock_review.policy)}</span></div><div class="d-desc">${esc(n.building_unlock_review.rationale || "")}</div></div>` : "";
   const research = n.condition_lines && n.condition_lines.length
     ? n.condition_lines.map(l =>
         `<div class="cond-line" style="padding-left:${l.depth * 16}px">${l.depth ? "└ " : ""}${esc(l.text)}</div>`).join("")
@@ -837,6 +843,7 @@ function renderDetail(n) {
     <div class="d-sec"><h3>数值效果 · 永久修正</h3>${terms}</div>
     <div class="d-sec"><h3>主题路线后继</h3><div>${sameLane}</div></div>
     ${applicationBlock}
+    ${topologyReview}${buildingReview}
     <div class="d-sec"><h3>被以下科技作为硬前置</h3><div>${succs}</div></div>
     ${n.terminal_reason ? `<div class="d-sec"><h3>终点理由</h3><div class="d-desc">${esc(n.terminal_reason)}</div></div>` : ""}`;
   detail.scrollTop = 0;
@@ -891,9 +898,10 @@ const EDGE_META = {
   hard: ["硬前置", ""],
   application: ["应用交汇", "application"],
   alternative: ["替代说明", "alternative"],
+  branch: ["分支关系", "branch"],
   milestone_candidate: ["里程碑候选", "milestone_candidate"],
 };
-const edgeOn = { hard: true, application: true, alternative: true, milestone_candidate: false };
+const edgeOn = { hard: true, application: true, alternative: true, branch: false, milestone_candidate: false };
 const edgeLegend = document.getElementById("edge-legend");
 Object.entries(EDGE_META).forEach(([kind, meta]) => {
   const count = DATA.edges.filter(e => e.kind === kind && isDrawnEdge(e)).length;

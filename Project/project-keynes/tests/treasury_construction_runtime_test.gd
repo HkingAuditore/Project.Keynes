@@ -1,6 +1,7 @@
 extends SceneTree
 
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
+const EconomyFacadeScript = preload("res://scripts/economy/economy_facade.gd")
 
 var _failures := 0
 
@@ -10,14 +11,50 @@ func _init() -> void:
 	_expect("construction catalog compiles", bool(catalog.get("ok", false)))
 	if bool(catalog.get("ok", false)):
 		catalog.erase("ok")
+		_test_catalog_hides_locked_buildings(catalog)
 		var profile: Dictionary = load(
 			"res://data/economy/default_economy.tres").to_native_profile()
 		profile.market_runtime_mode = "ACTIVE"
 		profile.market_cycle_days = 5
 		_test_market_funded_build(catalog, profile)
 		_test_cash_failure_is_atomic(catalog, profile)
+		_test_grouped_material_planner(catalog, profile)
 	print("=== treasury construction runtime: %d failures ===" % _failures)
 	quit(0 if _failures == 0 else 1)
+
+
+func _test_catalog_hides_locked_buildings(catalog: Dictionary) -> void:
+	var facade = EconomyFacadeScript.new()
+	facade._catalog = catalog
+	var ids: PackedStringArray = catalog.get(
+		"building_type_ids", PackedStringArray())
+	var availability := PackedByteArray()
+	availability.resize(ids.size())
+	for type_id in range(ids.size()):
+		availability[type_id] = 1 if type_id % 2 == 0 else 0
+	var first_page: Dictionary = facade.construction_catalog(
+		"", 0, 3, availability)
+	var second_page: Dictionary = facade.construction_catalog(
+		"", 3, 3, availability)
+	var first_type_ids: PackedInt32Array = first_page.get(
+		"type_ids", PackedInt32Array())
+	var second_type_ids: PackedInt32Array = second_page.get(
+		"type_ids", PackedInt32Array())
+	var expected_total: int = int((ids.size() + 1) / 2)
+	_expect("construction catalog excludes technology-locked buildings",
+		int(first_page.get("total", -1)) == expected_total \
+		and _all_even(first_type_ids) and _all_even(second_type_ids))
+	_expect("technology-filtered construction catalog paginates unlocked rows",
+		int(first_page.get("offset", -1)) == 0 \
+		and first_type_ids.size() == mini(3, expected_total) \
+		and int(second_page.get("offset", -1)) == mini(3, expected_total))
+
+
+func _all_even(values: PackedInt32Array) -> bool:
+	for value in values:
+		if value % 2 != 0:
+			return false
+	return true
 
 
 func _test_market_funded_build(catalog: Dictionary, profile: Dictionary) -> void:
@@ -98,7 +135,90 @@ func _test_cash_failure_is_atomic(catalog: Dictionary, profile: Dictionary) -> v
 		int(report.get("goods_error", 1)) == 0)
 
 
-func _fixture(catalog: Dictionary, profile: Dictionary, country_cash: int) -> Object:
+func _test_grouped_material_planner(catalog: Dictionary,
+		profile: Dictionary) -> void:
+	var reed_id := (catalog.good_ids as PackedStringArray).find("reed_bundle")
+	var building_id := (catalog.building_type_ids as PackedStringArray).find(
+		"bast_wrap_shelter")
+	_expect("grouped-material fixture IDs exist", reed_id >= 0 and building_id >= 0)
+	if reed_id < 0 or building_id < 0:
+		return
+	var funded := _fixture(catalog, profile, 1000000000000,
+		{"reed_bundle": 60})
+	_expect("grouped-material funded fixture bootstraps", funded != null)
+	if funded == null:
+		return
+	_run_day(funded, 0)
+	var country: Dictionary = funded.get_country_cell_summary(0)
+	var quote: Dictionary = funded.get_treasury_construction_quotes(
+		int(country.country_handle), 0, PackedInt32Array([building_id]))
+	var material_offsets: PackedInt32Array = quote.get(
+		"material_offsets", PackedInt32Array())
+	var material_goods: PackedInt32Array = quote.get(
+		"material_good_ids", PackedInt32Array())
+	var material_required: PackedInt64Array = quote.get(
+		"material_required", PackedInt64Array())
+	_expect("AND/OR planner selects one shared substitute and aggregates both groups",
+		bool(quote.get("ok", false)) and
+		(quote.get("eligible", PackedByteArray()) as PackedByteArray) ==
+			PackedByteArray([1]) and
+		material_offsets == PackedInt32Array([0, 1]) and
+		material_goods == PackedInt32Array([reed_id]) and
+		material_required == PackedInt64Array([60]))
+	var before := _market_good_stock(funded, "reed_bundle")
+	_expect("grouped-material command queues", bool(_submit(funded,
+		int(country.country_handle), building_id, 703).get("ok", false)))
+	var funded_report := _run_day(funded, 1)
+	var funded_receipts: Array = funded.get_construction_command_receipts(
+		0, 8).get("receipts", [])
+	var funded_receipt: Dictionary = funded_receipts[0] \
+		if not funded_receipts.is_empty() else {}
+	_expect("50-percent structure efficiency and cross-group total deduct exactly 60",
+		bool(funded_receipt.get("ok", false)) and before == 60 and
+		_market_good_stock(funded, "reed_bundle") == 0 and
+		int(funded_receipt.get("market_goods_used", -1)) == 60)
+	_expect("grouped-material success preserves economy conservation",
+		int(funded_report.get("population_error", 1)) == 0 and
+		int(funded_report.get("money_error", 1)) == 0 and
+		int(funded_report.get("goods_error", 1)) == 0)
+
+	var blocked := _fixture(catalog, profile, 1000000000000,
+		{"reed_bundle": 59})
+	_expect("grouped-material blocked fixture bootstraps", blocked != null)
+	if blocked == null:
+		return
+	_run_day(blocked, 0)
+	var blocked_country: Dictionary = blocked.get_country_cell_summary(0)
+	var blocked_cash_before := int(blocked.get_country_treasury_snapshot(
+		int(blocked_country.country_handle)).get("cash", -1))
+	var blocked_stock_before := _market_good_stock(blocked, "reed_bundle")
+	_expect("insufficient second group command queues for boundary revalidation",
+		bool(_submit(blocked, int(blocked_country.country_handle), building_id,
+			704).get("ok", false)))
+	var blocked_report := _run_day(blocked, 1)
+	var blocked_receipts: Array = blocked.get_construction_command_receipts(
+		0, 8).get("receipts", [])
+	var blocked_receipt: Dictionary = blocked_receipts[0] \
+		if not blocked_receipts.is_empty() else {}
+	var blocked_buildings: Dictionary = blocked.get_building_cell_snapshot(0)
+	_expect("one missing material group rejects atomically without stock or cash mutation",
+		not bool(blocked_receipt.get("ok", true)) and
+		String(blocked_receipt.get("code", "")) ==
+			"construction_materials_insufficient" and
+		_market_good_stock(blocked, "reed_bundle") == blocked_stock_before and
+		int(blocked.get_country_treasury_snapshot(
+			int(blocked_country.country_handle)).get("cash", -2)) ==
+			blocked_cash_before and
+		_sum_i64(blocked_buildings.get("construction_counts",
+			PackedInt64Array())) == 0)
+	_expect("grouped-material failure preserves economy conservation",
+		int(blocked_report.get("population_error", 1)) == 0 and
+		int(blocked_report.get("money_error", 1)) == 0 and
+		int(blocked_report.get("goods_error", 1)) == 0)
+
+
+func _fixture(catalog: Dictionary, profile: Dictionary, country_cash: int,
+		market_stock_by_good: Dictionary = {}) -> Object:
 	var ext := _new_ext(catalog)
 	var technology_ids: PackedStringArray = catalog.technology_ids
 	var technology_indices := PackedInt32Array()
@@ -129,7 +249,12 @@ func _fixture(catalog: Dictionary, profile: Dictionary, country_cash: int) -> Ob
 		"merchant|default")
 	var stock := PackedInt64Array()
 	stock.resize((catalog.good_ids as PackedStringArray).size())
-	stock.fill(1000000000)
+	stock.fill(1000000000 if market_stock_by_good.is_empty() else 0)
+	for good_id in market_stock_by_good:
+		var good_index := (catalog.good_ids as PackedStringArray).find(
+			String(good_id))
+		if good_index >= 0:
+			stock[good_index] = int(market_stock_by_good[good_id])
 	var economy_boot: Dictionary = ext.bootstrap_economy({
 		"cell_indices": PackedInt32Array([0]),
 		"signature_ids": PackedInt32Array([merchant_signature]),
@@ -226,6 +351,14 @@ func _sum_i64(values: PackedInt64Array) -> int:
 	for value in values:
 		total += int(value)
 	return total
+
+
+func _market_good_stock(ext: Object, good_id: String) -> int:
+	var snapshot: Dictionary = ext.get_market_cell_snapshot(0)
+	var ids: PackedStringArray = snapshot.get("good_ids", PackedStringArray())
+	var row := ids.find(good_id)
+	var stock: PackedInt64Array = snapshot.get("stock", PackedInt64Array())
+	return int(stock[row]) if row >= 0 and row < stock.size() else -1
 
 
 func _expect(label: String, condition: bool) -> void:

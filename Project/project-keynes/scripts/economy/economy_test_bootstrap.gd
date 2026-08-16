@@ -48,6 +48,7 @@ const TEST_INDUSTRY_COUNTS := {
 
 const FOOD_GOOD_IDS := {
 	"prepared_staples": true, "bread": true, "grain": true, "gathered_plants": true,
+	"potatoes": true,
 	"game_meat": true, "meat": true, "fish": true, "canned_fish": true,
 	"dairy_products": true, "vegetables": true, "processed_food": true,
 }
@@ -748,7 +749,7 @@ static func _household_basic_demand(population: int, supply: Dictionary) -> Dict
 	var demand := {}
 	_add_category_demand(demand, supply, population * 440,
 		{"prepared_staples": true, "bread": true, "grain": true,
-		"gathered_plants": true})
+		"gathered_plants": true, "potatoes": true})
 	_add_category_demand(demand, supply, population * 144,
 		{"game_meat": true, "meat": true, "fish": true,
 		"canned_fish": true, "dairy_products": true})

@@ -268,7 +268,7 @@ available tiers, and construction availability. These catalog additions change t
 not the PKEC v11 byte layout.
 
 At `building_commit`, endogenous owner investment may create one industrial building per cell only
-when a 30-day capital-review boundary is crossed. Existing vacancies remain employment concerns.
+when a 180-day capital-review boundary is crossed. Existing vacancies remain employment concerns.
 Expansion requires the configured target margin, at least 75% planned utilization, persistent
 demand pressure, enough local construction stock, and an entrepreneur whose per-capita funds cover
 materials plus 30 living-cost days. The entrepreneur moves one person and proportional funds into

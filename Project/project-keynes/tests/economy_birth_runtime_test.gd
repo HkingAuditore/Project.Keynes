@@ -66,10 +66,10 @@ func _test_two_and_ten_year_attractor(compiled: Dictionary) -> void:
 	var ten_year_population := int(runtime.get_population_cell_summary(0).population)
 	var two_year_growth := float(two_year_population - OPENING_POPULATION) / OPENING_POPULATION
 	var ten_year_growth := float(ten_year_population - OPENING_POPULATION) / OPENING_POPULATION
-	_expect("two-year healthy-rate attractor stays near three percent growth",
-		two_year_growth >= 0.028 and two_year_growth <= 0.033)
-	_expect("ten-year healthy-rate attractor stays near sixteen percent growth",
-		ten_year_growth >= 0.150 and ten_year_growth <= 0.175)
+	_expect("two-year gameplay-rate attractor stays near forty-two percent growth",
+		two_year_growth >= 0.415 and two_year_growth <= 0.422)
+	_expect("ten-year gameplay-rate attractor stays near four-hundred-seventy-four percent growth",
+		ten_year_growth >= 4.70 and ten_year_growth <= 4.78)
 	cycle_times_ms.sort()
 	var average_cycle_ms := float(Time.get_ticks_usec() - started) / 1000.0 / TEN_YEAR_CYCLES
 	var p95_cycle_ms := cycle_times_ms[int(floor(0.95 * (cycle_times_ms.size() - 1)))]

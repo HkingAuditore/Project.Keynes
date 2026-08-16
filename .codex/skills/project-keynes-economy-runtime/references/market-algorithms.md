@@ -213,7 +213,7 @@ reserve is derived state rather than a PKEC field: rebuild it after catalog/buil
 whenever the sparse building signal shape or cycle plan changes. Report both the requested reserve
 and its remaining stock shortfall.
 
-At a 30-day capital-review boundary, a fully owned industrial lot can expand only if it already
+At a 180-day capital-review boundary, a fully owned industrial lot can expand only if it already
 meets its configured target margin, planned utilization is at least 75%, demand pressure is at least
 12.5%, and the demand/supply deficit can absorb at least half of one building's daily output. The
 new owner's projected income must cover 110% of living cost and exceed source income by 12.5%.

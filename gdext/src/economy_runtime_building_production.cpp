@@ -442,11 +442,9 @@ bool NativeEconomyRuntime::run_building_production_cell(
     thread_local uint32_t retention_generation = 0;
     thread_local std::vector<int64_t> retention_food_targets;
     thread_local std::vector<int64_t> retention_food_used;
-    thread_local std::vector<uint8_t> retention_food_staple_route;
     thread_local std::vector<int64_t> retention_clothing_targets;
     thread_local std::vector<int64_t> retention_clothing_used;
     thread_local std::vector<uint8_t> retention_produces_survival_food;
-    thread_local std::vector<uint8_t> retention_produces_staple_food;
     thread_local std::vector<int64_t> retention_variant_scores;
     thread_local std::vector<int64_t> retention_variant_prices;
     thread_local std::vector<int64_t> retention_need_score_sums;
@@ -504,11 +502,9 @@ bool NativeEconomyRuntime::run_building_production_cell(
     retention_used.clear();
     retention_food_targets.assign(payroll_owners.size(), 0);
     retention_food_used.assign(payroll_owners.size(), 0);
-    retention_food_staple_route.assign(payroll_owners.size(), uint8_t{0});
     retention_clothing_targets.assign(payroll_owners.size(), 0);
     retention_clothing_used.assign(payroll_owners.size(), 0);
     retention_produces_survival_food.assign(payroll_owners.size(), uint8_t{0});
-    retention_produces_staple_food.assign(payroll_owners.size(), uint8_t{0});
     for (int32_t g = begin; g < end; ++g) {
         const BuildingGroup &group = _buildings[g];
         if (group.cell != cell || group.count <= 0) continue;
@@ -524,8 +520,6 @@ bool NativeEconomyRuntime::run_building_production_cell(
             ensure_retention_lane(owner_index, good);
             if (_survival_food_good_mask[good] != 0) {
                 retention_produces_survival_food[owner_index] = 1;
-                if (_survival_staple_good_mask[good] != 0)
-                    retention_produces_staple_food[owner_index] = 1;
             }
         }
     }
@@ -547,8 +541,6 @@ bool NativeEconomyRuntime::run_building_production_cell(
         const int64_t population = std::max<int64_t>(0, _population.population[owner_slot]);
         const bool produces_survival_food =
             retention_produces_survival_food[owner] != 0;
-        const bool produces_staple_food =
-            retention_produces_staple_food[owner] != 0;
         const int64_t temperature_exposure_q16 = std::clamp<int64_t>(
             (Q16_ONE / 2 - retention_environment.temperature_q16) * 2,
             0, Q16_ONE);
@@ -644,16 +636,15 @@ bool NativeEconomyRuntime::run_building_production_cell(
             }
         }
         if (produces_survival_food && population > 0) {
-            // Staple output may satisfy the other survival-food needs through
-            // emergency substitution, so retain against the complete healthy
-            // food basket rather than the staple row alone.
+            // Every survival-food output can satisfy the aggregate healthy food
+            // basket through emergency substitution, so retain against the
+            // complete food pool rather than a single nutrition row.
             const int64_t desired = survival_food_desired;
             const int64_t numerator = saturating_add(saturating_mul(
                 desired, _survival_production_target_q16,
                 _saturation_count), Q16_ONE - 1, _saturation_count);
             retention_food_targets[owner] = std::max<int64_t>(
                 numerator / Q16_ONE, produced_food_desired);
-            retention_food_staple_route[owner] = produces_staple_food ? 1 : 0;
         }
     }
     const bool has_cell_signals =
@@ -1012,17 +1003,6 @@ bool NativeEconomyRuntime::run_building_production_cell(
             allocate(candidate, candidate.desired_cost);
         }
     }
-    if (_merchant_credit_runtime_mode == 2) {
-        for (int32_t g = begin; g < end; ++g) {
-            if (_buildings[g].operating_state != 2 ||
-                _buildings[g].merchant_debt_delinquent_cycles != 0 ||
-                g >= static_cast<int32_t>(_building_merchant_credit_limit.size())) continue;
-            const int64_t grant = std::max<int64_t>(
-                0, _building_merchant_credit_limit[g]);
-            _building_working_capital_allocated[g] = saturating_add(
-                _building_working_capital_allocated[g], grant, _saturation_count);
-        }
-    }
     int64_t cell_opening_cash = 0;
     _population.for_each_in_cell(cell, [&](int32_t slot) {
         cell_opening_cash = saturating_add(cell_opening_cash,
@@ -1059,11 +1039,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
             const int64_t group_budget = g < static_cast<int32_t>(
                 _building_working_capital_allocated.size())
                 ? _building_working_capital_allocated[g] : 0;
-            const int64_t credit_cap = g < static_cast<int32_t>(
-                    _building_merchant_credit_limit.size()) &&
-                    group.operating_state == 2 &&
-                    group.merchant_debt_delinquent_cycles == 0
-                ? std::max<int64_t>(0, _building_merchant_credit_limit[g]) : 0;
+            const int64_t credit_cap = 0;
             const int64_t owner_capital_budget = std::max<int64_t>(
                 0, group_budget - std::min(group_budget, credit_cap));
             const int64_t owner_contribution_cap = std::min<int64_t>(
@@ -1228,7 +1204,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
             const int64_t draw = actual_cost - owner_contribution;
             if (draw > 0) {
                 if (_merchant_credit_runtime_mode != 2 ||
-                    group.operating_state != 2 ||
+                    group.operating_state != 0 ||
                     group.merchant_debt_delinquent_cycles != 0 ||
                     draw > drawable_credit ||
                     debit_local_merchants(cell, draw, CASHFLOW_MERCHANT_BUSINESS,
@@ -1358,13 +1334,13 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 const size_t owner = static_cast<size_t>(
                     retention_owner_by_slot[offer.owner_slot]);
                 if (_survival_food_good_mask[offer.good] != 0) {
-                    if (retention_food_staple_route[owner] == 0 ||
-                        _survival_staple_good_mask[offer.good] != 0) {
-                        offer.retained = std::min<int64_t>(offer.qty, std::max<int64_t>(
-                            0, retention_food_targets[owner] - retention_food_used[owner]));
-                        retention_food_used[owner] = saturating_add(
-                            retention_food_used[owner], offer.retained, _saturation_count);
-                    }
+                    // All survival-food outputs feed the same aggregate calorie
+                    // pool. A staple output must not suppress retention of fish,
+                    // game, protein, or produce from the same owner.
+                    offer.retained = std::min<int64_t>(offer.qty, std::max<int64_t>(
+                        0, retention_food_targets[owner] - retention_food_used[owner]));
+                    retention_food_used[owner] = saturating_add(
+                        retention_food_used[owner], offer.retained, _saturation_count);
                 } else if (_survival_clothing_good_mask[offer.good] != 0) {
                     offer.retained = std::min<int64_t>(offer.qty, std::max<int64_t>(
                         0, retention_clothing_targets[owner] -
@@ -2136,58 +2112,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
         const BuildingType &type = _building_types[group.type_id];
         const int64_t building_days = saturating_mul(
             group.count, std::max(1, _epoch_days), _saturation_count);
-        if (group.operating_state == 1) {
-            const int64_t probe_q16 = g < static_cast<int32_t>(
-                    _building_recovery_probe_capacity_q16.size())
-                ? std::clamp<int64_t>(
-                    _building_recovery_probe_capacity_q16[g], 0, Q16_ONE)
-                : 0;
-            // A suspended producer releases all labor, but a small unfunded
-            // probe remains visible to upstream suppliers. This is a signal,
-            // not a stock withdrawal or a financing commitment.
-            if (type.kind != 2 && probe_q16 > 0) {
-                for (int32_t i = 0; i < type.input_count; ++i) {
-                    const ProductionInput &item =
-                        _building_inputs[type.input_begin + i];
-                    const int64_t purchase_scale_q16 =
-                        input_purchase_scale_q16(item, probe_q16);
-                    if (purchase_scale_q16 <= 0) continue;
-                    const int64_t effective = saturating_mul(
-                        building_days, item.quantity, _saturation_count);
-                    const int32_t selected =
-                        select_input_candidate(item, false, effective);
-                    if (selected < 0) continue;
-                    const InputCandidate &candidate =
-                        _building_input_candidates[selected];
-                    const int64_t planned = scaled_input_quantity(
-                        effective_production_input_quantity(
-                            cell, candidate.good_id,
-                            physical_input_quantity(effective, candidate),
-                            _saturation_count),
-                        purchase_scale_q16);
-                    const int32_t signal = market_signal_index(
-                        cell, candidate.good_id);
-                    if (signal >= cell_signal_begin && signal < cell_signal_end) {
-                        const size_t local_signal = static_cast<size_t>(
-                            signal - cell_signal_begin);
-                        business_observed[local_signal] = saturating_add(
-                            business_observed[local_signal], planned,
-                            _saturation_count);
-                    }
-                    if (signal >= 0 && signal < static_cast<int32_t>(
-                            _epoch_desired_business_demand.size())) {
-                        _epoch_desired_business_demand[signal] = saturating_add(
-                            _epoch_desired_business_demand[signal], planned,
-                            _saturation_count);
-                    }
-                    _desired_business_demand = saturating_add(
-                        _desired_business_demand, planned, _saturation_count);
-                    _unfunded_business_demand = saturating_add(
-                        _unfunded_business_demand, planned, _saturation_count);
-                }
-            }
-            continue;
-        }
+        if (group.operating_state == 1) continue;
         const int64_t owner_livelihood = saturating_mul(saturating_mul(
             living_cost_for_signature(cell, group.owner_signature_id, -1,
                                       _saturation_count),

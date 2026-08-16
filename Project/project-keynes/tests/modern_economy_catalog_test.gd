@@ -21,12 +21,86 @@ func _expect(label: String, condition: bool) -> void:
 	print("  [%s] %s" % ["PASS" if condition else "FAIL", label])
 	if not condition: failures += 1
 
+func _audit_knowledge_building_owners(catalog: Dictionary,
+		_buildings: PackedStringArray, _professions: PackedStringArray) -> void:
+	var sectors: PackedInt32Array = catalog.get("building_economic_sectors", PackedInt32Array())
+	var owners: PackedInt32Array = catalog.get("building_owner_profession_ids", PackedInt32Array())
+	var profession_classes: PackedStringArray = catalog.get(
+		"profession_class_ids", PackedStringArray())
+	var knowledge_count := 0
+	for building_idx in range(sectors.size()):
+		if int(sectors[building_idx]) != 4:
+			continue
+		knowledge_count += 1
+		var owner_idx := int(owners[building_idx]) if building_idx < owners.size() else -1
+		var owner_class := String(profession_classes[owner_idx]) \
+			if owner_idx >= 0 and owner_idx < profession_classes.size() else ""
+		_expect("knowledge building owner is a technology profession: %s" % _buildings[building_idx],
+			owner_class == "technology")
+	_expect("knowledge building owner invariant covers all knowledge buildings",
+		knowledge_count > 0)
+
+
+func _audit_two_owner_early_buildings() -> void:
+	var expected := {
+		"freshwater_fishing_camp": {
+			"input": PackedInt64Array(), "output": PackedInt64Array([1940]),
+			"resource": PackedInt64Array([97])},
+		"marine_fish_collector": {
+			"input": PackedInt64Array(), "output": PackedInt64Array([2000]),
+			"resource": PackedInt64Array([250])},
+		"bast_wrap_shelter": {
+			"input": PackedInt64Array([240]), "output": PackedInt64Array([180]),
+			"resource": PackedInt64Array()},
+		"hide_scraping_shelter": {
+			"input": PackedInt64Array([350]), "output": PackedInt64Array([220]),
+			"resource": PackedInt64Array()},
+		"fur_sewing_shelter": {
+			"input": PackedInt64Array([200]), "output": PackedInt64Array([240]),
+			"resource": PackedInt64Array()},
+		"felt_making_tent": {
+			"input": PackedInt64Array([300]), "output": PackedInt64Array([260]),
+			"resource": PackedInt64Array()},
+		"stone_collector": {
+			"input": PackedInt64Array([100]), "output": PackedInt64Array([3545]),
+			"resource": PackedInt64Array([354])},
+		"timber_collector": {
+			"input": PackedInt64Array([100]), "output": PackedInt64Array([3545]),
+			"resource": PackedInt64Array([221])},
+		"adobe_yard": {
+			"input": PackedInt64Array([900, 90]), "output": PackedInt64Array([820]),
+			"resource": PackedInt64Array()},
+	}
+	for building_id in expected:
+		var profile: BuildingProfile = load(
+			"res://data/economy/buildings/%s.tres" % building_id)
+		var per_owner: Dictionary = expected[building_id]
+		_expect("early self-operated building has two owners and no employees: %s" %
+			building_id, profile != null and profile.owner_slots_per_building == 2 and
+			profile.employee_profession_ids.is_empty() and
+			profile.employee_slots_per_building.is_empty())
+		if profile == null:
+			continue
+		_expect("two-owner conversion preserves per-owner throughput: %s" % building_id,
+			profile.input_quantities_per_day == _scale_i64(per_owner.input, 2) and
+			profile.output_quantities_per_day == _scale_i64(per_owner.output, 2) and
+			profile.resource_quantities_per_day == _scale_i64(per_owner.resource, 2))
+
+
+func _scale_i64(values: PackedInt64Array, factor: int) -> PackedInt64Array:
+	var out := PackedInt64Array()
+	for value in values:
+		out.append(int(value) * factor)
+	return out
+
 func _audit(catalog: Dictionary) -> void:
 	var goods: PackedStringArray = catalog.good_ids
 	var buildings: PackedStringArray = catalog.building_type_ids
 	var professions: PackedStringArray = catalog.profession_ids
 	var needs: PackedStringArray = catalog.need_ids
 	var resources: PackedStringArray = catalog.building_resource_ids
+	_audit_knowledge_building_owners(catalog, buildings, professions)
+	_audit_two_owner_early_buildings()
 	_expect("network economy catalog has 132 goods", goods.size() == 132)
 	_expect("network economy has 352 production methods", buildings.size() == 352)
 	_expect("45 labor, institutional and research professions", professions.size() == 45)
@@ -101,8 +175,14 @@ func _audit(catalog: Dictionary) -> void:
 	var bronze_tools = load("res://data/economy/buildings/bronze_tool_workshop.tres")
 	var ore_bronze = load("res://data/economy/buildings/ore_bronzesmith_camp.tres")
 	_expect("early collectors keep tool maintenance below local workshop output",
-		stone_collector.input_quantities_per_day == PackedInt64Array([100]) and
-		timber_collector.input_quantities_per_day == PackedInt64Array([100]))
+		stone_collector.owner_slots_per_building == 2 and
+		timber_collector.owner_slots_per_building == 2 and
+		stone_collector.input_quantities_per_day == PackedInt64Array([200]) and
+		timber_collector.input_quantities_per_day == PackedInt64Array([200]) and
+		stone_collector.input_quantities_per_day[0] /
+			stone_collector.owner_slots_per_building == 100 and
+		timber_collector.input_quantities_per_day[0] /
+			timber_collector.owner_slots_per_building == 100)
 	_expect("bronze workshops avoid material-cost dominated recipes",
 		bronze_tools.input_quantities_per_day == PackedInt64Array([1500, 500]) and
 		ore_bronze.input_quantities_per_day == PackedInt64Array([500, 500, 500]))
@@ -228,6 +308,12 @@ func _audit(catalog: Dictionary) -> void:
 	_expect("guild production distinguishes apprentices and journeymen",
 		String(guild_hall.owner_profession_id) == "guild_master" and
 		guild_hall.employee_profession_ids == PackedStringArray(["apprentice", "journeyman"]))
+	var tide_observation_hut = load(
+		"res://data/economy/buildings/tide_observation_hut.tres")
+	_expect("coastal knowledge observation is owned by a knowledge profession",
+		tide_observation_hut != null and
+		String(tide_observation_hut.owner_profession_id) == "lorekeeper" and
+		tide_observation_hut.output_good_ids == PackedStringArray(["technology_points"]))
 	var classical_fishery = load(
 		"res://data/economy/buildings/method_marine_fish_collector_r2.tres")
 	_expect("preindustrial collectors are owned and staffed by their trade",
@@ -721,7 +807,7 @@ func _audit_household_consumption(catalog: Dictionary) -> void:
 			actual_household_goods.append(goods[good_idx])
 	actual_household_goods.sort()
 	var expected_household_goods := PackedStringArray([
-		"prepared_staples", "bread", "grain", "gathered_plants", "game_meat", "meat", "fish",
+		"prepared_staples", "bread", "grain", "gathered_plants", "potatoes", "game_meat", "meat", "fish",
 		"canned_fish", "dairy_products", "vegetables", "processed_food", "cloth", "fur",
 		"clothing", "footwear", "construction_components", "pottery", "furniture", "soap",
 		"detergent", "medicinal_herbs", "pharmaceuticals", "logs", "coal", "natural_gas",
@@ -752,7 +838,7 @@ func _audit_household_consumption(catalog: Dictionary) -> void:
 	var core_needs := ["staple_food", "protein", "produce", "clothing", "housing",
 		"household_goods", "hygiene", "healthcare", "home_energy"]
 	var expected_plan_needs := {
-		"plan_unemployed": ["staple_food"],
+		"plan_unemployed": ["staple_food", "protein", "produce"],
 		"survival_household": core_needs,
 		"hunter_household": core_needs + ["work_equipment"],
 		"agrarian_household": core_needs + ["transport", "work_equipment", "recreation"],
@@ -797,7 +883,7 @@ func _audit_household_consumption(catalog: Dictionary) -> void:
 		"quality_of_life": [2, 0, 131072, 1024, 524288, 65536],
 	}
 	var expected_variants := {
-		"staple_food": ["prepared_staples", "bread", "grain", "gathered_plants"],
+		"staple_food": ["prepared_staples", "bread", "grain", "gathered_plants", "potatoes"],
 		"protein": ["game_meat", "meat", "fish", "canned_fish", "dairy_products"],
 		"produce": ["vegetables", "processed_food"],
 		"clothing": ["cloth", "fur", "clothing", "footwear"],

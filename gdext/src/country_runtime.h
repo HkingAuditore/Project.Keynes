@@ -201,6 +201,10 @@ public:
     int64_t cash_for_slot(int32_t country_slot) const;
     int64_t cash_for_handle(int64_t country_handle) const;
     int64_t total_good(int32_t good_id) const;
+    // Cumulative research-point goods consumed by the country runtime. The
+    // economy uses the value at an epoch boundary to account for research
+    // that runs while the market cycle is frozen.
+    int64_t research_consumed_total() const;
     int64_t good_for_handle(int64_t country_handle, int32_t good_id) const;
     bool spend_treasury_assets(int64_t country_handle,
                                const int32_t *good_ids,

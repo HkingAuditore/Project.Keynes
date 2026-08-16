@@ -1,17 +1,25 @@
 class_name StarterSettlementBootstrap
 extends RefCounted
 
+const StarterEconomyPlannerScript = preload(
+	"res://scripts/economy/starter_economy_planner.gd")
 const MONEY_SCALE := 10000
 const GOODS_SCALE := 1000
 const STARTER_POPULATION := 20
 const SURVIVAL_DAYS := 15
-const SURVIVAL_FOOD_PER_PERSON_DAY := 240
 const LOCAL_INPUT_BUFFER_DAYS := 3
+const SURVIVAL_PLAN_PATH := "res://data/economy/consumption_plans/survival_household.tres"
 
 
 static func build(map: MapData, facade: EconomyFacade, start_cell: int,
 		precious_resource: String) -> Dictionary:
-	return build_many(map, facade, [_fallback_start(start_cell, precious_resource)])
+	var fallback := _fallback_start(start_cell, precious_resource)
+	var planned := StarterEconomyPlannerScript.plan(
+		map, start_cell, fallback, facade)
+	if not bool(planned.get("ok", false)):
+		return planned
+	fallback.merge(planned, true)
+	return build_many(map, facade, [fallback])
 
 
 static func build_many(map: MapData, facade: EconomyFacade,
@@ -47,15 +55,25 @@ static func build_many(map: MapData, facade: EconomyFacade,
 			return _error("starter_context_invalid", "初始聚落地点或贵金属路线无效。")
 		var route_buildings: PackedStringArray = start.get(
 			"starter_building_ids", PackedStringArray())
+		var route_counts: PackedInt64Array = start.get(
+			"starter_building_counts", PackedInt64Array())
 		if route_buildings.is_empty():
 			return _error("starter_route_missing", "出生点没有经过验证的初始建筑路线。")
+		if route_counts.size() != route_buildings.size():
+			return _error("starter_building_count_contract_invalid",
+				"开局建筑 ID 与数量必须一一对应。")
 		if not route_buildings.has("early_merchant_post"):
 			return _error("starter_trade_building_missing", "开局路线必须预建早期商栈。")
-		var profession_population := {}
-		var profession_order := PackedStringArray()
 		var first_building_type := -1
 		var first_owner_signature := -1
-		for building_id in route_buildings:
+		var first_owner_slots := 0
+		var job_capacity := 0
+		for building_index in range(route_buildings.size()):
+			var building_id := String(route_buildings[building_index])
+			var planned_count := int(route_counts[building_index])
+			if planned_count <= 0:
+				return _error("starter_building_count_contract_invalid",
+					"开局建筑数量必须大于零：%s" % building_id)
 			var building_type := facade.building_type_id(building_id)
 			if building_type < 0:
 				return _error("starter_building_missing",
@@ -64,64 +82,83 @@ static func build_many(map: MapData, facade: EconomyFacade,
 			if not bool(job_spec.get("ok", false)):
 				return _error("starter_building_job_invalid",
 					"初始建筑职业配置无效：%s" % building_id)
+			if not (job_spec.employee_professions as PackedStringArray).is_empty() \
+					or not (job_spec.employee_slots as PackedInt64Array).is_empty():
+				return _error("starter_employee_role_forbidden",
+					"石器时代初始建筑不得包含雇员岗位：%s" % building_id)
 			var owner_profession := String(job_spec.owner_profession)
 			var owner_signature := facade.signature_id(
 				StringName(owner_profession), &"default")
 			if owner_signature < 0:
 				return _error("starter_signature_missing",
 					"经济目录缺少初始职业：%s" % owner_profession)
-			if not profession_population.has(owner_profession):
-				profession_order.append(owner_profession)
-				profession_population[owner_profession] = 0
-			profession_population[owner_profession] = int(
-				profession_population[owner_profession]) + clampi(
-					int(job_spec.owner_slots), 1, 2)
+			job_capacity += planned_count * int(job_spec.owner_slots)
 			building_cells.append(start_cell)
 			building_types.append(building_type)
 			building_owners.append(owner_signature)
-			building_counts.append(1)
+			building_counts.append(planned_count)
 			starter_building_ids.append(String(building_id))
 			if first_building_type < 0:
 				first_building_type = building_type
 				first_owner_signature = owner_signature
+				first_owner_slots = int(job_spec.owner_slots)
 		starter_building_offsets.append(starter_building_ids.size())
 
-		var allocated_population := 0
-		for profession_id in profession_order:
-			allocated_population += int(profession_population[profession_id])
-		if allocated_population >= STARTER_POPULATION:
-			return _error("starter_population_overcommitted",
-				"初始弱建筑所需的业主人口超过 20 人。")
-		profession_order.append("unemployed")
-		profession_population["unemployed"] = STARTER_POPULATION - allocated_population
-		for profession_id in profession_order:
-			var population := int(profession_population[profession_id])
-			var signature := facade.signature_id(StringName(profession_id), &"default")
-			if signature < 0:
-				return _error("starter_signature_missing",
-					"经济目录缺少初始职业：%s" % profession_id)
-			signature_ids.append(signature)
-			cell_indices.append(start_cell)
-			populations.append(population)
-			funds.append(population * SURVIVAL_DAYS * 8 * MONEY_SCALE)
+		if job_capacity != STARTER_POPULATION:
+			return _error("starter_population_capacity_mismatch",
+				"初始建筑必须恰好提供 20 个可自主匹配岗位容量。")
+		if first_owner_slots <= 0 or first_owner_slots >= STARTER_POPULATION:
+			return _error("starter_founder_capacity_invalid",
+				"首栋生产建筑必须为待业人口保留可自主匹配的岗位空间。")
+		_append_population_row(signature_ids, cell_indices, populations, funds,
+			start_cell, first_owner_signature, first_owner_slots)
+		var unemployed_signature := facade.signature_id(&"unemployed", &"default")
+		if unemployed_signature < 0:
+			return _error("starter_signature_missing", "经济目录缺少 unemployed 职业。")
+		_append_population_row(signature_ids, cell_indices, populations, funds,
+			start_cell, unemployed_signature, STARTER_POPULATION - first_owner_slots)
 		total_population += STARTER_POPULATION
 
-		var food_good := String(start.get("starter_food_good_id", ""))
-		var food_index := goods.find(food_good)
-		if food_index < 0:
-			return _error("starter_good_missing", "经济目录缺少当地食物：%s" % food_good)
-		stock[start_cell * goods.size() + food_index] += STARTER_POPULATION \
-			* SURVIVAL_DAYS * SURVIVAL_FOOD_PER_PERSON_DAY
+		var food_goods: PackedStringArray = start.get(
+			"starter_food_good_ids", PackedStringArray())
+		var food_bridge := _food_bridge_quantities(food_goods)
+		if food_goods.is_empty() or food_bridge.size() != food_goods.size():
+			return _error("starter_food_contract_invalid",
+				"开局食物必须全部映射到 survival_household 的食品子篮子。")
+		for food_good in food_goods:
+			var food_index := goods.find(String(food_good))
+			if food_index < 0:
+				return _error("starter_good_missing", "经济目录缺少当地食物：%s" % food_good)
+			stock[start_cell * goods.size() + food_index] += STARTER_POPULATION \
+				* SURVIVAL_DAYS * int(food_bridge[String(food_good)])
 		var clothing_good := String(start.get("starter_clothing_good_id", ""))
 		if clothing_good.is_empty() or goods.find(clothing_good) < 0:
 			return _error("starter_good_missing", "经济目录缺少开局衣物：%s" % clothing_good)
 		stock[start_cell * goods.size() + goods.find(clothing_good)] += \
 			STARTER_POPULATION * LOCAL_INPUT_BUFFER_DAYS * GOODS_SCALE
-		var construction_good := String(start.get("starter_construction_good_id", ""))
-		if construction_good.is_empty() or goods.find(construction_good) < 0:
-			return _error("starter_good_missing", "经济目录缺少开局建材：%s" % construction_good)
-		stock[start_cell * goods.size() + goods.find(construction_good)] += \
-			STARTER_POPULATION * LOCAL_INPUT_BUFFER_DAYS * GOODS_SCALE
+		var construction_seed := String(start.get(
+			"starter_construction_seed_building_id", ""))
+		var selected_construction_goods: PackedStringArray = start.get(
+			"starter_construction_selected_good_ids", PackedStringArray())
+		var selected_construction_quantities: PackedInt64Array = start.get(
+			"starter_construction_selected_quantities", PackedInt64Array())
+		if construction_seed != String(start.get("primary_food_building_id", "")) \
+				or selected_construction_goods.is_empty() \
+				or selected_construction_goods.size() != selected_construction_quantities.size():
+			return _error("starter_construction_contract_invalid",
+				"开局建材必须来自食物种子建筑的完整分组选择结果。")
+		for selected_index in range(selected_construction_goods.size()):
+			var construction_good := String(selected_construction_goods[selected_index])
+			var good_index := goods.find(construction_good)
+			if construction_good.is_empty() or good_index < 0:
+				return _error("starter_good_missing",
+					"经济目录缺少开局建材：%s" % construction_good)
+			var four_seed_buildings := maxi(0,
+				int(selected_construction_quantities[selected_index])) * 4
+			var three_day_buffer := STARTER_POPULATION * \
+				LOCAL_INPUT_BUFFER_DAYS * GOODS_SCALE
+			stock[start_cell * goods.size() + good_index] += maxi(
+				four_seed_buildings, three_day_buffer)
 		var input_buffer_good := String(start.get("starter_input_buffer_good_id", ""))
 		if not input_buffer_good.is_empty():
 			var input_index := goods.find(input_buffer_good)
@@ -168,8 +205,17 @@ static func build_many(map: MapData, facade: EconomyFacade,
 		"starter_building_offsets": starter_building_offsets,
 		"starter_building_ids": starter_building_ids,
 		"survival_days": SURVIVAL_DAYS,
-		"source": "starter_settlement_bootstrap_v5",
+		"source": "starter_settlement_bootstrap_v8",
 	}
+
+
+static func _append_population_row(signature_ids: PackedInt32Array,
+		cell_indices: PackedInt32Array, populations: PackedInt64Array,
+		funds: PackedInt64Array, cell: int, signature: int, population: int) -> void:
+	signature_ids.append(signature)
+	cell_indices.append(cell)
+	populations.append(population)
+	funds.append(population * SURVIVAL_DAYS * 8 * MONEY_SCALE)
 
 
 static func _fallback_start(start_cell: int, precious_resource: String) -> Dictionary:
@@ -193,16 +239,50 @@ static func _fallback_start(start_cell: int, precious_resource: String) -> Dicti
 		"regional_route": "fallback",
 		"starter_technology_ids": technologies,
 		"starter_building_ids": buildings,
-		"starter_food_good_id": "gathered_plants",
+		"starter_food_good_ids": PackedStringArray(["gathered_plants"]),
 		"starter_clothing_good_id": "clothing",
 		"starter_construction_good_id": "logs",
 		"starter_knowledge_good_id": "technology_points",
-		"starter_food_resource_id": "fertile_soil",
+		"starter_food_resource_ids": PackedStringArray(["fertile_soil"]),
 		"starter_clothing_resource_id": "fertile_soil",
 		"starter_construction_resource_id": "timber",
 		"starter_input_buffer_good_id": "bast_fiber",
 		"starter_precious_good_id": precious_resource,
 	}
+
+
+static func _food_bridge_quantities(food_goods: PackedStringArray) -> Dictionary:
+	var plan = load(SURVIVAL_PLAN_PATH)
+	if plan == null:
+		return {}
+	var food_need_ids := {"staple_food": true, "protein": true, "produce": true}
+	var allocations := {}
+	for need_index in range(plan.need_ids.size()):
+		var need_id := String(plan.need_ids[need_index])
+		if not food_need_ids.has(need_id):
+			continue
+		var choices := PackedStringArray()
+		var variant_begin := int(plan.need_variant_offsets[need_index])
+		var variant_end := int(plan.need_variant_offsets[need_index + 1])
+		for variant_index in range(variant_begin, variant_end):
+			var component_begin := int(plan.variant_component_offsets[variant_index])
+			var component_end := int(plan.variant_component_offsets[variant_index + 1])
+			if component_end - component_begin != 1:
+				continue
+			var good_id := String(plan.component_good_ids[component_begin])
+			if food_goods.has(good_id) and not choices.has(good_id):
+				choices.append(good_id)
+		if choices.is_empty():
+			continue
+		var base_quantity := int(plan.base_qty_per_person[need_index])
+		for choice_index in range(choices.size()):
+			# Split a need's bridge evenly between multiple discovered substitutes
+			# so fish/game_meat do not duplicate the protein allowance.
+			var upper := floori(float(base_quantity * (choice_index + 1)) / choices.size())
+			var lower := floori(float(base_quantity * choice_index) / choices.size())
+			allocations[choices[choice_index]] = int(allocations.get(
+				choices[choice_index], 0)) + upper - lower
+	return allocations
 
 
 static func _error(code: String, message: String) -> Dictionary:

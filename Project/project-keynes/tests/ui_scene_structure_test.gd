@@ -89,8 +89,10 @@ func _check_player_game() -> void:
 		"HUDLayer/PlayerTopBar", "HUDLayer/PerfMiniHUD",
 		"HUDLayer/MapOverlayToolbar", "HUDLayer/CountryActionBar",
 		"HUDLayer/MapOverlayLegend", "PanelLayer/RightPanel",
-		"PanelLayer/CountryPanel", "ModalLayer/DemandDetailDialog",
-		"ModalLayer/ObjectDetailDialog", "ModalLayer/WorldLoadingOverlay",
+		"PanelLayer/CountryPanel",
+		"PanelLayer/RightPanel/Margin/Split/DetailShell/ObjectDetail",
+		"PanelLayer/RightPanel/Margin/Split/DetailShell/ConstructionPane",
+		"ModalLayer/WorldLoadingOverlay",
 		"ModalLayer/PauseMenu"]
 	for path in fixed_paths:
 		_expect("player UI has static %s" % path, ui_root.has_node(path))
@@ -105,12 +107,11 @@ func _check_player_game() -> void:
 
 func _check_component_scenes() -> void:
 	var expectations := {
-		"res://scenes/ui/inspector_panel.tscn": "Margin/InspectorRoot/ContentShell/ContentMargin/Scroll/ContentBox",
+		"res://scenes/ui/inspector_panel.tscn": "Margin/Split/InspectorRoot/ContentShell/ContentMargin/Scroll/ContentBox",
 		"res://scenes/ui/country_panel.tscn": "Center/Dialog/Content/SectionHost/EconomyWorkspace",
 		"res://scenes/ui/economy_workspace.tscn": "Column/Scroll/Flow",
 		"res://scenes/ui/technology_workspace.tscn": "Root/Main/DetailHost/Body/Detail",
 		"res://scenes/ui/technology_overview_view.tscn": "",
-		"res://scenes/ui/demand_detail_dialog.tscn": "Center/Dialog/Body/Scroll/RowsGrid",
 		"res://scenes/ui/object_detail_dialog.tscn": "Center/Dialog/Body/Scroll/Content",
 		"res://scenes/ui/world_loading_overlay.tscn": "Center/Card/Content/Progress",
 		"res://scenes/ui/map_overlay_toolbar.tscn": "SecondaryPanel/Margin/Root/ResourceScroll/SecondaryBox",

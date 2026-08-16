@@ -70,7 +70,7 @@ void NativeEconomyRuntime::build_demand_basis(
                     for (int32_t c = 0; c < variant.component_count; ++c) {
                         const NeedComponent &component =
                             _components[variant.component_begin + c];
-                        if (!good_market_available(
+                        if (!good_available(
                                 market, component.good_id, true)) return false;
                     }
                     return true;
@@ -212,7 +212,7 @@ void NativeEconomyRuntime::compute_cohort_demand_preview(
                     availability_index >=
                         _epoch_country_variant_available.size()) {
                     available &=
-                        good_market_available(market, component.good_id, true);
+                        good_available(market, component.good_id, true);
                 }
                 const int32_t price = price_override != nullptr &&
                         component.good_id < static_cast<int32_t>(price_override->size())
@@ -358,8 +358,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     thread_local std::vector<int64_t> cohort_food_required;
     thread_local std::vector<int64_t> cohort_food_filled;
     thread_local std::vector<int64_t> cohort_subsistence_food_filled;
-    thread_local std::vector<int64_t> cohort_staple_required;
-    thread_local std::vector<int64_t> cohort_staple_filled;
+    thread_local std::vector<int64_t> cohort_best_food_q16;
     thread_local std::vector<int64_t> cohort_clothing_required;
     thread_local std::vector<int64_t> cohort_clothing_filled;
     thread_local std::vector<int64_t> cohort_working_capital_reserve;
@@ -449,8 +448,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     cohort_food_required.assign(cohort_count, 0);
     cohort_food_filled.assign(cohort_count, 0);
     cohort_subsistence_food_filled.assign(cohort_count, 0);
-    cohort_staple_required.assign(cohort_count, 0);
-    cohort_staple_filled.assign(cohort_count, 0);
+    cohort_best_food_q16.assign(cohort_count, 0);
     cohort_clothing_required.assign(cohort_count, 0);
     cohort_clothing_filled.assign(cohort_count, 0);
     cohort_tier_weighted_q16.assign(
@@ -874,10 +872,6 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 _survival_food_need_mask[need.stable_id] != 0) {
                 cohort_food_required[local] = saturating_add(
                     cohort_food_required[local], survival_required, sat);
-                if (need.stable_id == _survival_staple_need_stable_id) {
-                    cohort_staple_required[local] = saturating_add(
-                        cohort_staple_required[local], survival_required, sat);
-                }
             } else if (need.stable_id == _survival_clothing_need_stable_id) {
                 cohort_clothing_required[local] = saturating_add(
                     cohort_clothing_required[local], survival_required, sat);
@@ -1345,6 +1339,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         budget_orders(fallback_orders, true);
         clear_orders(fallback_orders);
     }
+
     for (int32_t slot : slots) {
         auto entry = std::lower_bound(
             _owner_retained_outputs.begin(), _owner_retained_outputs.end(), slot,
@@ -1484,10 +1479,6 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             _survival_food_need_mask[stable_need] != 0) {
             cohort_food_filled[local] = saturating_add(
                 cohort_food_filled[local], state.filled_units, sat);
-            if (stable_need == _survival_staple_need_stable_id) {
-                cohort_staple_filled[local] = saturating_add(
-                    cohort_staple_filled[local], state.filled_units, sat);
-            }
         } else if (stable_need == _survival_clothing_need_stable_id) {
             cohort_clothing_filled[local] = saturating_add(
                 cohort_clothing_filled[local], state.filled_units, sat);
@@ -1496,6 +1487,15 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             ? Q16_ONE - 1
             : std::clamp<int64_t>(mul_div_sat(state.filled_units, Q16_ONE,
                                               state.desired_units, sat), 0, Q16_ONE - 1);
+        if (stable_need >= 0 &&
+            stable_need < static_cast<int32_t>(_survival_food_need_mask.size()) &&
+            _survival_food_need_mask[stable_need] != 0) {
+            // Any complete food sub-basket is caloric evidence. Protein is not
+            // a decorative luxury: a fully satisfied fish/meat basket keeps a
+            // cohort alive even when the preferred staple basket is empty.
+            cohort_best_food_q16[local] = std::max(
+                cohort_best_food_q16[local], satisfaction);
+        }
         const Need &need = _needs[state.need_index];
         const int64_t tier_weight = need.satisfaction_weight_q16;
         if (tier_weight > 0) {
@@ -1621,12 +1621,11 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             : std::clamp<int64_t>(mul_div_sat(
                 cohort_food_filled[local], Q16_ONE, cohort_food_required[local], sat),
                 0, Q16_ONE - 1);
-        const int64_t staple_q16 = cohort_staple_required[local] <= 0 ? Q16_ONE - 1
-            : std::clamp<int64_t>(mul_div_sat(
-                cohort_staple_filled[local], Q16_ONE, cohort_staple_required[local], sat),
-                0, Q16_ONE - 1);
-        // 主食单独覆盖最低热量生存；蛋白质与蔬果仍可通过综合膳食补足缺口。
-        const int64_t food_q16 = std::max(staple_q16, balanced_food_q16);
+        // The three food needs are preference/price sub-baskets, not mutually
+        // exclusive starvation gates. A complete protein or produce basket is
+        // sufficient evidence of calories, just like a complete staple basket.
+        const int64_t food_q16 = std::max(
+            balanced_food_q16, cohort_best_food_q16[local]);
         const int64_t clothing_q16 = cohort_clothing_required[local] <= 0 ? Q16_ONE - 1
             : std::clamp<int64_t>(mul_div_sat(
                 cohort_clothing_filled[local], Q16_ONE,
@@ -1824,8 +1823,16 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         bool rate_clamped = false;
         const int64_t next_price = next_price_v4(good, _market.price[idx], pressure,
             _epoch_days, sat, rate_clamped);
+        // The catalog bounds are gameplay/economic invariants, while the
+        // numeric guard only protects the storage type.  Applying only the
+        // latter lets inactive goods collapse to one sub-unit and appear as
+        // a zero price in the UI.
+        const int64_t catalog_min = std::max<int64_t>(
+            PRICE_NUMERIC_GUARD_MIN, _good_min_price[good]);
+        const int64_t catalog_max = std::min<int64_t>(
+            PRICE_NUMERIC_GUARD_MAX, std::max<int64_t>(catalog_min, _good_max_price[good]));
         const int64_t bounded = std::clamp<int64_t>(
-            next_price, PRICE_NUMERIC_GUARD_MIN, PRICE_NUMERIC_GUARD_MAX);
+            next_price, catalog_min, catalog_max);
         if (rate_clamped || bounded != next_price) ++result.price_cap_hits;
         if (_market.price[idx] != bounded) ++result.changed_prices;
         _market.price[idx] = static_cast<int32_t>(bounded);

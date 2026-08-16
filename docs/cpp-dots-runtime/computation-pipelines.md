@@ -53,17 +53,17 @@ callbacks keep the serial route until their owner can prove thread safety.
 - 某个机制现在到底跑在 C++、DataCore 还是 GDScript？
 - 继续推进 total C++/DOTS 化时，下一步应该迁移哪一段？
 
-## Economy pipeline（PKEC v30 当前，v24 历史基础）
+## Economy pipeline（PKEC v35 当前，v24 历史基础）
 
 经济图仍由 `NativeEconomyRuntime` 权威执行，未增加 DataCore slot 或 GDScript fallback。
-`building_plan` 生成恢复/授信额度，`building_employment` 允许已融资 RECOVERY_PROBE 招募，
+`building_plan` 生成授信额度，`building_employment` 只为 ACTIVE 建筑分配岗位，
 `building_production` 原子提款并采购投入且按工资后债务前奖金结算，household 将实际自产消费
-价值归属建筑，`building_commit` 完成复产/清算/建设债务转移。贸易派单使用代际复核和批次共享
+价值归属建筑，`building_commit` 完成停产恢复/清算/建设债务转移。贸易派单使用代际复核和批次共享
 库存/缺口仲裁。CSV v23 暴露债务、恢复、贸易事件、边际驱动商品、选中地块逐投资候选指标、商人流动性闭环字段、分层采购字段、投资组合、employee-to-owner 转岗及气候诊断。
 
-恢复探针只有在实际发生投入、产出、资源消耗或资源生成且现金/经济利润条件同时通过时才计为成功；
-空执行探针写入 pending suspension，并在下一 due-cell frozen boundary 提交。提交周期及其后一个完整
-due-cell 周期不再探测，避免 state 2/state 1 和就业关系隔 epoch 闪烁。
+停产建筑没有试产容量、岗位或投入需求。完整投入、资源、融资和盈利条件满足后只写入
+`pending_operating_state=ACTIVE`，在下一个 frozen settlement boundary 一次性恢复；每个五日
+结算边界复核全部停产组，复核分片不再依赖十日 `building_plan_days`。
 
 `building_commit` 的内生投资复核现在维护固定四项 portfolio：候选扫描与最终建筑数量解耦，
 共享人口/资本/信用/建材/缺口预算后，每种类型只提交一条聚合 BUILD 命令。收入改善率一次计算

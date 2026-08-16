@@ -8,15 +8,15 @@ InfrastructureProjectStore 是施工/路线权威；Effect 仅负责跨域事务
 
 The current implementation supersedes older historical rows retained in the
 long-form matrix below: country authority is **PKCN v11**, economy authority is
-**PKEC v34**, configurable cross-domain effects are **PKEF v9**, Trigger state is
+**PKEC v35**, configurable cross-domain effects are **PKEF v9**, Trigger state is
 **PKTR v5**, ideology state is **PKID v2**, and the native gameplay journal is
 **journal v4**. The save
 coordinator restores domain state in its documented order and verifies active
 ideology bindings against PKEF; recovery never replays an effect to repair a
 missing binding. Effect ACK masks identify adapters rather than authored domain
 numbers, so Modifier subdomains cannot alias Country/Economy adapter ACKs in a
-mixed transaction. Legacy PKEC v29 and earlier are rejected with
-`economy_save_v29_or_earlier_unsupported`.
+mixed transaction. Legacy PKEC v34 and earlier are rejected with
+`economy_save_schema_unsupported` (or the specific pre-v33 diagnostic).
 
 ## Game flow and persistence authorities
 
@@ -25,14 +25,14 @@ mixed transaction. Legacy PKEC v29 and earlier are rejected with
 | Pending new/load request | `GameFlowService` | none; one-shot process state | Never use `Engine` meta on the product path |
 | Validated world creation inputs | `NewGameConfig v3` | PKSV `new_game_config` | Store seed, foreign count, starting country cash and research policy; v2 migrates with zero foreigners |
 | Player and foreign identity/territory | PKCN / `NativeCountryRuntime` | PKSV `pkcn` plus player-only `player_context` | Player is slot 0; each opening country owns one cell; only `cell.country_slot` is mirrored to cells |
-| Population, market, buildings, family traits/cell influence, notable families and important people, family expedition custody, prosperity/settlement identity, taxable events and fiscal escrow | PKEC / `NativeEconomyRuntime` | PKSV `pkec` / PKEC v34 | Restore after PKCN, PKEF and trade topology; v33 migrates with empty canal project state |
-| Composite cohort satisfaction (8 dimensions), family branch satisfaction, published social-pressure level | PKEC / `NativeEconomyRuntime` | embedded in PKEC v34 | Authoritative for births, hire order, branch promotion and `ECONOMY_SOCIAL_PRESSURE`; starvation still reads only `SAT_DIM_SUBSISTENCE` |
+| Population, market, buildings, family traits/cell influence, notable families and important people, family expedition custody, prosperity/settlement identity, taxable events and fiscal escrow | PKEC / `NativeEconomyRuntime` | PKSV `pkec` / PKEC v35 | Restore after PKCN, PKEF and trade topology; v34 and earlier are incompatible |
+| Composite cohort satisfaction (8 dimensions), family branch satisfaction, published social-pressure level | PKEC / `NativeEconomyRuntime` | embedded in PKEC v35 | Authoritative for births, hire order, branch promotion and `ECONOMY_SOCIAL_PRESSURE`; starvation still reads only `SAT_DIM_SUBSISTENCE` |
 | Dynamic cell SoA | `DCWorld` / `DCWorldExt` by component contract | PKSV `dynamic_world` | Missing provider fails the save |
 | Native environment rounds | `EnvironmentRuntime` | `PKEnvironmentRuntime v1` in PKSV `environment` | Persist arrays, ping-pong, dirty sets, topology and cursors, not counters only |
 | Climate modifiers | Climate `ModifierStore` | PKSV `pkcm` / PKCM v1 | Publishes frozen add/factor; climate still owns temperature history |
 | Country research, technology, treasury, territory claim and national/cell tax policy | PKCN / `NativeCountryRuntime` | PKSV `pkcn` / PKCN v11 | Owns discovery/evidence, research, neutral-only colonization claim, five national defaults/overrides, interned sparse per-cell policies, fiscal cash bridge, native Effect ingress idempotency and the era-reward plan reference; catalog identity includes technology recipes/terms, Trigger definitions and content bindings |
 | Country modifiers | Country `ModifierStore` | embedded in PKCN v11 | Technology, production-family, climate-adaptation and fine-grained tax-rate effects alter frozen national/cell consumers, never ledgers directly |
-| Economy/building/family-cell modifiers | Economy `ModifierStore` + `BuildingIdentityStore` | embedded in PKEC v34, Modifier schema v2 | Factors feed frozen output/birth/consumption/resource helpers, never ledgers directly |
+| Economy/building/family-cell modifiers | Economy `ModifierStore` + `BuildingIdentityStore` | embedded in PKEC v35, Modifier schema v2 | Factors feed frozen output/birth/consumption/resource helpers, never ledgers directly |
 | Gameplay modifiers | Gameplay `ModifierStore` + base/identity SoA | PKSV `pkgp` / PKGP v1 | Explicit native handles only; no Godot Object reflection |
 | Configurable effects and cross-domain plans | `EffectRuntime` | PKSV `pkef` / PKEF v9 | Owns catalog IR, unique technology recipes, flat metric slabs, due/dirty candidates, colonization Country+Economy transactions, durable external bindings and ACKs; never owns country/economy/Modifier stores |
 | Trigger accumulation, technology-practice breakthroughs and development duration | `TriggerRuntime` | PKSV `pktr` / PKTR v5 | Owns source cursors, aggregate/remainder/window state, last sample day, fire sequence and unhanded effects; threshold crossing hands typed Country-signal commands to Effect and never writes Country or Economy directly |
@@ -42,8 +42,8 @@ mixed transaction. Legacy PKEC v29 and earlier are rejected with
 | Cell exploration progress | `VisionSolver` writing `cell.explored` | PKSV `pkfg` (`PKFogOfWar v1`) | Monotonic; restore after PKCN because re-solving reads territory |
 | Current visibility and fog knowledge | `VisionSolver` writing `cell.visible` and `MapData.fog_k_arr` | none; derived | Pure function of territory plus baked terrain; recomputed on restore, never saved |
 | Selection/camera | `PlayerController` + `MapCamera` Godot boundary | PKSV `player_view` | Restore after derived map/render resources exist; PlayerController owns input/session orchestration, MapCamera owns smoothing/inertia |
-| Player construction intent/receipt | `PlayerController` + `EconomyFacade` boundary; settlement in `NativeEconomyRuntime`, treasury in `NativeCountryRuntime` | Pending command remains in PKEC v34; receipt is transient | Quotes are bounded/nonbinding; execution atomically consumes treasury goods, local-market goods and treasury cash without a new scheduler stage |
-| Player family colonization intent/receipt | `PlayerController` + `EconomyFacade`; custody in `NativeEconomyRuntime`, claim in `NativeCountryRuntime`, transaction in `EffectRuntime` | PKEC v34 + PKCN v11 + PKEF v9 | Frozen visible route; real population is extracted at departure; two-domain ACK precedes publication |
+| Player construction intent/receipt | `PlayerController` + `EconomyFacade` boundary; settlement in `NativeEconomyRuntime`, treasury in `NativeCountryRuntime` | Pending command remains in PKEC v35; receipt is transient | Quotes are bounded/nonbinding; execution atomically consumes treasury goods, local-market goods and treasury cash without a new scheduler stage |
+| Player family colonization intent/receipt | `PlayerController` + `EconomyFacade`; custody in `NativeEconomyRuntime`, claim in `NativeCountryRuntime`, transaction in `EffectRuntime` | PKEC v35 + PKCN v11 + PKEF v9 | Frozen visible route; real population is extracted at departure; two-domain ACK precedes publication |
 
 Transient 经济缓存与 climate/ocean hot-state capsule 不改变本矩阵的权威
 划分；具体边界见
@@ -82,7 +82,7 @@ owner-lot、两组四档升级族、Price V3 稀疏企业信号、自适应工�
 ECONOMY_GRAPH/BUILDING_GRAPH 内完成。GDScript 只编译 profile/technology tags、桥接 30 个注册自然
 资源 slots、提交命令和查询选中 cell；不存在 GDScript 货币、价格、生产或贸易 fallback。
 国家身份、领土、科技和国库由 `NativeCountryRuntime` 单一权威持有；经济周期冻结国家映射与科技，
-现金/商品审计包含国家资产及贸易托管。当前持久格式为 PKCN v11 + PKEC v34，必须先恢复 PKCN；
+现金/商品审计包含国家资产及贸易托管。当前持久格式为 PKCN v11 + PKEC v35，必须先恢复 PKCN；
 PKEC v30 及更早版本统一返回明确的不兼容错误。
 
 cohort 综合满意度（八维度 composite）同属该权威：`_population.composite_satisfaction`
@@ -245,3 +245,4 @@ strength stays in `FAMILY_COMMIT`; Effect only plans the typed Modifier command.
 Native person promotion and `PERSON_COMMIT` also register the current
 `person.modifier.gameplay.generic.bonus` instance. No person ledger or
 structural authority is moved out of `NotablePersonStore`/`PERSON_COMMIT`.
+

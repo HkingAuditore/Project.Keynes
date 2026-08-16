@@ -32,7 +32,7 @@ SoA staging、稀疏 cell delta、事件和 cursor 保留在 C++，通过真实�
 `TRANSFER_TERRITORY` 批次，使用直接稀疏发布快路径；混合命令或重复 cell 仍走通用 staging
 delta 的完整预检。纯领土批次不会复制其不可能修改的科技和国库矩阵。
 
-## PKCN v11 / PKEF v9 / PKTR v5 / PKEC v34
+## PKCN v11 / PKEF v9 / PKTR v5 / PKEC v35
 
 PKCN v11 保存时代奖励的最小 plan 引用和状态，完整 Alternative Offer Plan 位于
 PKEF v9。恢复先 PKCN 后 PKEF，并执行双向一致性审计；旧 PKCN 不做迁移。
@@ -44,10 +44,10 @@ is idempotent per country/signal/cell and is committed through the normal countr
 command barrier. The static signal catalog and its stable IDs participate in the
 country catalog hash, so v4 and older PKCN streams are explicitly rejected.
 
-当前 writer 写出 PKCN v11 与 PKEC v34。PKCN v11 在国家研究、研究信号、全国税务政策、
+当前 writer 写出 PKCN v11 与 PKEC v35。PKCN v11 在国家研究、研究信号、全国税务政策、
 规范化稀疏地块税务政策和
 Country Modifier 状态之外，持久化原生 Country Effect ingress 的 prepared/committed
-结果与命令幂等记录以及无主领土 claim；PKEC v34 在既有经济、家族、建筑身份和生产气候状态之外，
+结果与命令幂等记录以及无主领土 claim；PKEC v35 在既有经济、家族、建筑身份和生产气候状态之外，
 持久化原生 Economy Effect ingress 的待处理结果与幂等证据。恢复后以相同 Effect
 command idempotency key 重投只会补齐 ACK，不会重复授予。reader 仅接受当前 schema；
 PKCN 的任一旧版本与 catalog mismatch 均明确返回 `catalog_hash_mismatch`。科技 catalog
@@ -92,3 +92,4 @@ PKFG 不属于国家权威，但恢复顺序依赖它：视野解算以玩家领
 最低验证序列：schema/binding 静态检查、debug/release GDExtension、国家 focused test、PKCN+
 PKEC round-trip、PKFG `explored` round-trip 与恢复后国界/视野一致性、经济守恒/worker-scalar
 hash、30+ tick ACTIVE soak，以及 100k territory update、200k/10M cohort 基准。
+

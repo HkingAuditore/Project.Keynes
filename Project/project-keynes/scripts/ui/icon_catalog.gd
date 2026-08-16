@@ -95,6 +95,7 @@ const SPECS := {
 	&"action.confirm": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf00c"},
 	&"action.fit": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf065"},
 	&"action.history": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf1da"},
+	&"action.more": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf141"},
 	&"action.pause": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf04c"},
 	&"action.pin": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf08d"},
 	&"action.play": {"family": FAMILY_FONT_AWESOME, "glyph": "\uf04b"},

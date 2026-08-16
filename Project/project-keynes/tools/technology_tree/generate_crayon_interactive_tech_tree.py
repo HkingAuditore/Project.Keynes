@@ -19,6 +19,10 @@ DOCS_HTML_PATH = WORKSPACE_ROOT / "docs/interactive_crayon_tech_tree.html"
 def build_html():
     print(f"Loading authoritative schema v3.0 data from {NETWORK_PATH}...")
     raw_data = json.loads(NETWORK_PATH.read_text(encoding="utf-8"))
+    edge_counts = defaultdict(int)
+    for edge in raw_data.get("visual_edges", []):
+        edge_counts[edge.get("kind", "")] += 1
+    edge_total = len(raw_data.get("visual_edges", []))
     
     # Check assets
     assets_dir = WORKSPACE_ROOT / ".cursor/projects/d-Godot-ProjectKeynes-Project-Keynes/assets"
@@ -699,6 +703,12 @@ def build_html():
     stroke-dasharray: 3 3;
   }}
 
+  .tech-edge.branch {{
+    stroke: #b4783d;
+    stroke-width: 1.8px;
+    stroke-dasharray: 9 5;
+  }}
+
   .tech-edge.milestone_candidate {{
     stroke: #e5b84c;
     stroke-width: 1.8px;
@@ -950,7 +960,7 @@ def build_html():
         PROJECT KEYNES
         <span class="brand-badge">Schema v3.0 权威数据</span>
       </div>
-      <div class="brand-desc">361 节点 · 11 时代 · 4 领域 · 1108 拓扑边 · 蜡笔剪纸交互图谱</div>
+      <div class="brand-desc">{len(raw_data.get("nodes", []))} 节点 · {len(raw_data.get("eras", []))} 时代 · {len(raw_data.get("domains", []))} 领域 · {edge_total} 拓扑边 · 蜡笔剪纸交互图谱</div>
     </div>
   </div>
 
@@ -984,21 +994,24 @@ def build_html():
   <div class="edge-filters">
     <span style="color: var(--text-muted); font-size: 11px; margin-right: 2px;">拓扑边显示:</span>
     <div class="edge-chip active" data-kind="hard">
-      <span class="edge-dot" style="background: #a38258;"></span> 硬前置 (303)
+      <span class="edge-dot" style="background: #a38258;"></span> 硬前置 ({edge_counts.get("hard", 0)})
     </div>
     <div class="edge-chip active" data-kind="milestone_candidate">
-      <span class="edge-dot" style="background: #e5b84c;"></span> 时代候选 (88)
+      <span class="edge-dot" style="background: #e5b84c;"></span> 时代候选 ({edge_counts.get("milestone_candidate", 0)})
     </div>
     <div class="edge-chip active" data-kind="application">
-      <span class="edge-dot" style="background: #4ba5db;"></span> 应用交汇 (19)
+      <span class="edge-dot" style="background: #4ba5db;"></span> 应用交汇 ({edge_counts.get("application", 0)})
     </div>
     <div class="edge-chip active" data-kind="alternative">
-      <span class="edge-dot" style="background: #738ca6;"></span> 替代路线 (698)
+      <span class="edge-dot" style="background: #738ca6;"></span> 替代路线 ({edge_counts.get("alternative", 0)})
+    </div>
+    <div class="edge-chip active" data-kind="branch">
+      <span class="edge-dot" style="background: #b4783d;"></span> 分支关系 ({edge_counts.get("branch", 0)})
     </div>
   </div>
 
   <div class="stats-info" id="stats-banner">
-    361 项科技 · 1108 条拓扑边
+    {len(raw_data.get("nodes", []))} 项科技 · {edge_total} 条拓扑边
   </div>
 </div>
 
@@ -1476,6 +1489,14 @@ def build_html():
       const curr = queueDown.shift();
       const succList = hardSuccessors.get(curr) || [];
       succList.forEach(sId => {{
+        downstreamEdges.add(`${{curr}}->${{sId}}`);
+        if (!downstreamNodes.has(sId)) {{
+          downstreamNodes.add(sId);
+          queueDown.push(sId);
+        }}
+      }});
+      const currNode = nodeMap.get(curr);
+      (currNode && currNode.branch_successor_ids || []).forEach(sId => {{
         downstreamEdges.add(`${{curr}}->${{sId}}`);
         if (!downstreamNodes.has(sId)) {{
           downstreamNodes.add(sId);

@@ -120,6 +120,9 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _building_investment_material_limited = 0;
     _building_investment_capital_limited = 0;
     _building_investment_owner_population_limited = 0;
+    _building_investment_jobs_started = 0;
+    _building_investment_employment_gap = 0;
+    _building_investment_employment_catchup_cells = 0;
     _trade_signal_max_age_days = 0;
     _trade_first_dispatch_delay_max_days = 0;
     _trade_response_deadline_misses = 0;
@@ -364,6 +367,8 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _explicit_money_burn = 0;
     _external_population_delta = 0;
     _explicit_stock_delta = 0;
+    _country_research_consumed_opening = 0;
+    _country_research_goods_consumed = 0;
     _consumed_goods = 0;
     _births = 0;
     _deaths = 0;
@@ -624,6 +629,8 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     const auto prepare_started = Clock::now();
     clear_epoch_metrics();
     _epoch_preflight_ms = preflight_ms;
+    _country_research_consumed_opening = _country_runtime == nullptr
+        ? 0 : _country_runtime->research_consumed_total();
     _epoch_begin_reset_ms = elapsed_ms(prepare_started);
     const auto country_started = Clock::now();
     if (!capture_country_epoch(error)) return false;
@@ -741,7 +748,7 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
         for (int32_t g = _building_cell_offsets[cell];
              g < _building_cell_offsets[cell + 1]; ++g) {
             BuildingGroup &group = _buildings[g];
-            const bool applying_pending = group.pending_operating_state <= 2;
+            const bool applying_pending = group.pending_operating_state <= 1;
             if (applying_pending) {
                 group.operating_state = group.pending_operating_state;
                 group.pending_operating_state = 255;
@@ -749,9 +756,16 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
                     group.severe_loss_cycles = 0;
                     group.recovery_failed_reviews = 0;
                 }
-            } else if (group.recovery_cooldown_cycles > 0) {
-                --group.recovery_cooldown_cycles;
             }
+            if (group.operating_state > 1) {
+                group.operating_state = 1;
+                group.recovery_cycles = 0;
+                group.recovery_cooldown_cycles = 0;
+            }
+            // These lanes are retained only for binary compatibility. The
+            // lifecycle no longer has a probe or cooldown phase.
+            group.recovery_cycles = 0;
+            group.recovery_cooldown_cycles = 0;
         }
     }
     _epoch_begin_recovery_apply_ms = elapsed_ms(recovery_apply_started);

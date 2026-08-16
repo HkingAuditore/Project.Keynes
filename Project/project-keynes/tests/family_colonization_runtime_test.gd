@@ -94,8 +94,8 @@ func _run() -> void:
 			restored_page.get("total", 0)) != 1:
 		print("restore=", restored_result, " page=", restored_page,
 			" saved_schema=", saved.get("schema", 0))
-	_expect("PKEC v34 restores in-flight route, payload and due heap exactly",
-		int(saved.get("schema", 0)) == 34
+	_expect("PKEC v35 restores in-flight route, payload and due heap exactly",
+		int(saved.get("schema", 0)) == 35
 		and bool(restored_result.get("ok", false))
 		and int(restored_page.get("total", 0)) == 1
 		and int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))

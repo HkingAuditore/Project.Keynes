@@ -323,12 +323,12 @@ func _register_providers() -> void:
 			"_can_clock_provider", "_write_clock_provider", "_restore_clock_provider"),
 		_make_provider(&"pkcn", 11, PackedStringArray(["pkcn"]),
 			"_can_country_provider", "_write_country_provider", "_restore_country_provider"),
-		# Effect restores before Economy so PKEC v34 can cross-check every
+		# Effect restores before Economy so PKEC v35 can cross-check every
 		# SETTLING expedition transaction against authoritative PKEF state.
 		_make_provider(&"pkef", 9, PackedStringArray(["pkef"]),
 			"_can_effect_provider", "_write_effect_provider",
 			"_restore_effect_provider"),
-		_make_provider(&"pkec", 34, PackedStringArray(["pkec"]),
+		_make_provider(&"pkec", 35, PackedStringArray(["pkec"]),
 			"_can_economy_provider", "_write_economy_provider", "_restore_economy_provider"),
 		_make_provider(&"pkgp", 1, PackedStringArray(["pkgp"]),
 			"_can_modifier_provider", "_write_gameplay_modifier_provider",
@@ -398,8 +398,9 @@ func _manifest_compatible(raw_manifest) -> bool:
 			# until after partial session restore.
 			schema_compatible = saved_schema == 11
 		elif provider_id == "pkec":
-			# v33 is the documented empty-canal migration path.
-			schema_compatible = saved_schema in [33, 34]
+			# v35 is intentionally exact: the grouped construction contract and
+			# building catalog are not migrated for existing saves.
+			schema_compatible = saved_schema == 35
 		elif provider_id == "pktr":
 			schema_compatible = saved_schema == 5
 		elif provider_id == "journal":

@@ -6,6 +6,8 @@ const ResearchSignalCatalogScript = preload(
 	"res://scripts/research/research_signal_catalog.gd")
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
+const StarterEconomyPlannerScript = preload(
+	"res://scripts/economy/starter_economy_planner.gd")
 const VisionSolverScript = preload("res://scripts/geography/vision_solver.gd")
 const COUNTRY_NAME_PACK_PATH := "res://data/country/default_country_names.tres"
 const UNREACHABLE_DISTANCE := 0x3fffffff
@@ -57,18 +59,18 @@ static func select_and_prepare(map: MapData, world: WorldData, seed: int, foreig
 			"starter_route": starter_route,
 			"closure_missing_count": 0,
 			"starter_technology_count": (starter_route.starter_technology_ids as PackedStringArray).size(),
-			"starter_building_count": (starter_route.starter_building_ids as PackedStringArray).size(),
+			"starter_building_count": int(starter_route.get(
+				"starter_building_total", (starter_route.starter_building_ids as
+				PackedStringArray).size())),
 		})
 	if candidates.is_empty():
 		return _error("starter_capability_unsatisfied",
 			"没有找到能以真实本地资源和可见地理信号闭合六项开局能力的出生地。")
 	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-		if int(a.starter_technology_count) != int(b.starter_technology_count):
-			return int(a.starter_technology_count) < int(b.starter_technology_count)
-		if int(a.starter_building_count) != int(b.starter_building_count):
-			return int(a.starter_building_count) < int(b.starter_building_count)
 		if not is_equal_approx(float(a.survival_score), float(b.survival_score)):
 			return float(a.survival_score) > float(b.survival_score)
+		if int(a.starter_building_count) != int(b.starter_building_count):
+			return int(a.starter_building_count) < int(b.starter_building_count)
 		return int(a.cell) < int(b.cell))
 	var top_count := 1
 	var chosen_index := 0
@@ -281,6 +283,11 @@ static func _starter_route_for_cell(map: MapData, cell_idx: int,
 	if _reserve(map, "timber", cell_idx) > 0.0:
 		construction_options.append(_route_option(["tech.deadwood_collection"],
 			["deadwood_gathering_camp"], {"construction_good": "logs", "construction_resource": "timber"}))
+	if _reserve(map, "stone", cell_idx) > 0.0:
+		construction_options.append(_route_option(
+			["tech.stone_knapping", "tech.ground_stone_tools"],
+			["rubble_stone_working"],
+			{"construction_good": "raw_stone", "construction_resource": "stone"}))
 	if _reserve(map, "clay", cell_idx) > 0.0:
 		construction_options.append(_route_option(["tech.earth_building"],
 			["earth_digging_pit"], {"construction_good": "clay", "construction_resource": "clay"}))
@@ -304,15 +311,58 @@ static func _starter_route_for_cell(map: MapData, cell_idx: int,
 		["tech.gold_panning"] if precious_resource == "gold_ore" else ["tech.surface_silver_collection"],
 		["placer_gold_working"] if precious_resource == "gold_ore" else ["surface_silver_working"], {})
 	var trade_option := _route_option(["tech.early_trade"], ["early_merchant_post"], {})
+
+	# Food discoveries are cumulative at the technology boundary. A coastal,
+	# freshwater, fertile or game signal contributes every revealed starter tech;
+	# the physical opening bundle still prebuilds one dependency-closed producer
+	# because owner slots and construction inputs are finite.
+	var revealed_food_options: Array[Dictionary] = []
+	for option in food_options:
+		if _starter_technologies_revealed(option.technology_ids, signal_probe, starter_catalog):
+			revealed_food_options.append(option)
+	if revealed_food_options.is_empty():
+		return _error("starter_food_unavailable", "出生点没有已发现的可运行食物生产方式。")
+	# Food discovery is a set, not the single producer chosen for the physical
+	# opening bundle. Keep every revealed substitute available to the bootstrap
+	# food bridge, while deduplicating fish exposed by coastal and freshwater
+	# routes and shared fertile-soil inputs.
+	var discovered_food_goods := PackedStringArray()
+	var discovered_food_resources := PackedStringArray()
+	for food in revealed_food_options:
+		_append_unique(discovered_food_goods, String(food.food_good))
+		_append_unique(discovered_food_resources, String(food.food_resource))
+	# Technologies are discoveries, not a one-route prize. The physical bundle
+	# below still chooses one clothing/construction/knowledge closure because its
+	# owner slots and construction inputs must fit the actual opening cell.
+	var discovered_technologies := PackedStringArray()
+	# Discovery is catalog-wide: a visible starter node is granted even when it
+	# does not participate in the six-capability physical opening bundle.
+	for technology_id in starter_catalog.get(
+			"starter_eligible_technology_ids", PackedStringArray()):
+		var singleton := PackedStringArray([String(technology_id)])
+		if _starter_technologies_revealed(singleton, signal_probe, starter_catalog):
+			_append_unique(discovered_technologies, String(technology_id))
+
 	var best: Dictionary = {}
-	for food in food_options:
+	var last_plan_failure: Dictionary = {}
+	var route_plan_attempts := 0
+	const MAX_ROUTE_PLAN_ATTEMPTS := 4
+	for food in revealed_food_options:
+		if route_plan_attempts >= MAX_ROUTE_PLAN_ATTEMPTS:
+			break
 		for clothing in clothing_options:
+			if route_plan_attempts >= MAX_ROUTE_PLAN_ATTEMPTS:
+				break
 			for construction in construction_options:
+				if route_plan_attempts >= MAX_ROUTE_PLAN_ATTEMPTS:
+					break
 				for knowledge in knowledge_options:
-					var technologies := PackedStringArray()
+					if route_plan_attempts >= MAX_ROUTE_PLAN_ATTEMPTS:
+						break
+					var technologies := discovered_technologies.duplicate()
 					var buildings := PackedStringArray()
-					for option in [food, clothing, construction, knowledge, precious_option, trade_option]:
-						_append_many_unique(technologies, option.technology_ids)
+					_append_many_unique(buildings, food.building_ids)
+					for option in [clothing, construction, knowledge, precious_option, trade_option]:
 						_append_many_unique(buildings, option.building_ids)
 					if not _starter_technologies_revealed(technologies, signal_probe, starter_catalog):
 						continue
@@ -324,11 +374,13 @@ static func _starter_route_for_cell(map: MapData, cell_idx: int,
 						"regional_route": region,
 						"starter_technology_ids": technologies,
 						"starter_building_ids": buildings,
-						"starter_food_good_id": String(food.food_good),
+						"starter_food_good_ids": discovered_food_goods,
 						"starter_clothing_good_id": "clothing",
+						# This legacy scalar is only the regional preference. The starter
+						# planner compiles the authoritative grouped construction contract.
 						"starter_construction_good_id": String(construction.construction_good),
 						"starter_knowledge_good_id": "technology_points",
-						"starter_food_resource_id": String(food.food_resource),
+						"starter_food_resource_ids": discovered_food_resources,
 						"starter_clothing_resource_id": String(clothing.clothing_resource),
 						"starter_construction_resource_id": String(construction.construction_resource),
 						"starter_input_buffer_good_id": String(clothing.input_buffer),
@@ -340,11 +392,21 @@ static func _starter_route_for_cell(map: MapData, cell_idx: int,
 						"geography_fit": 1.0,
 						"ok": true,
 					}
+					var planned := StarterEconomyPlannerScript.plan(
+						map, cell_idx, route)
+					route_plan_attempts += 1
+					if not bool(planned.get("ok", false)):
+						last_plan_failure = planned
+						continue
+					route.merge(planned, true)
 					if best.is_empty() or _starter_route_better(route, best):
 						best = route
 	if best.is_empty():
-		return _error("starter_capability_unsatisfied",
+		var failure := _error("starter_capability_unsatisfied",
 			"没有闭合食物、衣物、建材、知识、贵金属和贸易能力的出生点路线。")
+		if not last_plan_failure.is_empty():
+			failure["planner_failure"] = last_plan_failure
+		return failure
 	return best
 
 
@@ -385,22 +447,74 @@ static func _starter_technologies_revealed(technology_ids: PackedStringArray,
 	for technology_id in technology_ids:
 		var technology_index := (catalog.technology_ids as PackedStringArray).find(
 			String(technology_id))
-		if technology_index < 0 or not _reveal_condition_met(
-			technology_index, signal_probe.counts, catalog):
+		if technology_index < 0 or not _starter_technology_revealed(
+			technology_index, signal_probe.counts, catalog, {}):
 			return false
 	return true
 
 
+static func _starter_technology_revealed(technology_index: int,
+		signal_counts: Dictionary, catalog: Dictionary, visiting: Dictionary) -> bool:
+	# A zero-cost starter application may have no separate reveal condition when
+	# its hard prerequisite is the observable identification step. In that case,
+	# inherit the prerequisite's evidence without granting the non-starter node.
+	if technology_index < 0 or visiting.has(technology_index):
+		return false
+	visiting[technology_index] = true
+	var offsets: PackedInt32Array = catalog.technology_reveal_condition_offsets
+	var direct_condition_present := technology_index + 1 < offsets.size() \
+			and int(offsets[technology_index]) < int(offsets[technology_index + 1])
+	if direct_condition_present:
+		var direct_result := _reveal_condition_met(
+			technology_index, signal_counts, catalog)
+		visiting.erase(technology_index)
+		return direct_result
+	var prerequisite_offsets: PackedInt32Array = catalog.get(
+		"technology_prerequisite_offsets", PackedInt32Array())
+	var prerequisites: PackedInt32Array = catalog.get(
+		"technology_prerequisites", PackedInt32Array())
+	if technology_index + 1 >= prerequisite_offsets.size():
+		visiting.erase(technology_index)
+		return false
+	var begin := int(prerequisite_offsets[technology_index])
+	var end := int(prerequisite_offsets[technology_index + 1])
+	if begin >= end:
+		visiting.erase(technology_index)
+		return false
+	for edge in range(begin, end):
+		if edge < 0 or edge >= prerequisites.size() \
+				or not _starter_technology_revealed(
+					int(prerequisites[edge]), signal_counts, catalog, visiting):
+			visiting.erase(technology_index)
+			return false
+	visiting.erase(technology_index)
+	return true
+
+
 static func _starter_route_better(candidate: Dictionary, current: Dictionary) -> bool:
+	if int(candidate.get("weakest_supply_coverage_q16", 0)) != int(current.get(
+			"weakest_supply_coverage_q16", 0)):
+		return int(candidate.get("weakest_supply_coverage_q16", 0)) > int(current.get(
+			"weakest_supply_coverage_q16", 0))
+	if int(candidate.get("resource_pressure_q16", 0)) != int(current.get(
+			"resource_pressure_q16", 0)):
+		return int(candidate.get("resource_pressure_q16", 0)) < int(current.get(
+			"resource_pressure_q16", 0))
+	if int(candidate.get("overproduction_quantity", 0)) != int(current.get(
+			"overproduction_quantity", 0)):
+		return int(candidate.get("overproduction_quantity", 0)) < int(current.get(
+			"overproduction_quantity", 0))
+	if int(candidate.get("starter_building_total", 0)) != int(current.get(
+			"starter_building_total", 0)):
+		return int(candidate.get("starter_building_total", 0)) < int(current.get(
+			"starter_building_total", 0))
 	var candidate_buildings: PackedStringArray = candidate.starter_building_ids
 	var current_buildings: PackedStringArray = current.starter_building_ids
-	var candidate_technologies: PackedStringArray = candidate.starter_technology_ids
-	var current_technologies: PackedStringArray = current.starter_technology_ids
 	if candidate_buildings.size() != current_buildings.size():
 		return candidate_buildings.size() < current_buildings.size()
-	if candidate_technologies.size() != current_technologies.size():
-		return candidate_technologies.size() < current_technologies.size()
-	return String(candidate.starter_food_good_id) < String(current.starter_food_good_id)
+	# Discovery count is deliberately absent: all visible technologies have
+	# already been unioned. Only the bounded physical owner bundle is a tie-break.
+	return str(candidate_buildings) < str(current_buildings)
 
 
 static func _append_precious_route(start: Dictionary, precious_resource: String) -> void:
@@ -408,9 +522,16 @@ static func _append_precious_route(start: Dictionary, precious_resource: String)
 		"starter_technology_ids", PackedStringArray())
 	var buildings: PackedStringArray = start.get(
 		"starter_building_ids", PackedStringArray())
+	var counts: PackedInt64Array = start.get(
+		"starter_building_counts", PackedInt64Array())
+	var old_building_count := buildings.size()
 	_append_precious_route_values(technologies, buildings, precious_resource)
+	while counts.size() < buildings.size():
+		counts.append(1)
 	start["starter_technology_ids"] = technologies
 	start["starter_building_ids"] = buildings
+	if not counts.is_empty() or buildings.size() != old_building_count:
+		start["starter_building_counts"] = counts
 	start["starter_precious_good_id"] = precious_resource
 
 
@@ -481,8 +602,8 @@ static func _validate_starter_technologies(technology_ids: PackedStringArray,
 			return _error("starter_technology_not_eligible",
 				"开局路线包含非 starter 科技：%s" % technology_id)
 		var technology_index := stable_ids.find(String(technology_id))
-		if technology_index < 0 or not _reveal_condition_met(
-				technology_index, signal_probe.counts, catalog):
+		if technology_index < 0 or not _starter_technology_revealed(
+				technology_index, signal_probe.counts, catalog, {}):
 			return _error("starter_reveal_condition_unsatisfied",
 				"开局科技缺少当前可见地理证据：%s" % technology_id)
 		var offsets: PackedInt32Array = catalog.technology_starter_capability_offsets
@@ -539,8 +660,8 @@ static func _validate_starter_technologies(technology_ids: PackedStringArray,
 			return _error("starter_building_dependency_missing", "开局建筑依赖未闭合：%s" % building_id)
 		var owner_slots: PackedInt64Array = catalog.get("building_owner_slots", PackedInt64Array())
 		total_owner_slots += int(owner_slots[building_index])
-	if total_owner_slots >= 20:
-		return _error("starter_population_overcommitted", "开局建筑业主槽位占用超过初始人口。")
+	if total_owner_slots > 20:
+		return _error("starter_population_overcommitted", "开局建筑自营岗位容量超过初始人口规模。")
 	if not building_ids.has("early_merchant_post"):
 		return _error("starter_trade_building_missing", "开局必须预建早期商栈。")
 	return {"ok": true}

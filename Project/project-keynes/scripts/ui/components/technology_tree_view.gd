@@ -459,7 +459,7 @@ func _draw_edges() -> void:
 		var from := int(edge.from)
 		var to := int(edge.to)
 		var kind := String(edge.get("kind", "hard"))
-		if kind == "application" and _selected not in [from, to]:
+		if kind in ["application", "branch"] and _selected not in [from, to]:
 			continue
 		var emphasis := _selected < 0 or from == _selected or to == _selected \
 			or _chain_up.has(from) or _chain_down.has(to)
@@ -468,6 +468,8 @@ func _draw_edges() -> void:
 		colour.a = 0.78 if emphasis else 0.18
 		if kind == "application":
 			_draw_dashed_polyline(edge.points, colour, 1.0, 4.0, 5.0)
+		elif kind == "branch":
+			_draw_dashed_polyline(edge.points, colour, 1.5, 2.0, 3.0)
 		else:
 			draw_polyline(edge.points, colour, 2.0 if emphasis else 1.0, true)
 

@@ -1357,6 +1357,14 @@ epsilon 解决。`saturation_count>0` 表示输入规模/参数接近数值上�
 
 stage 判断：
 
+发生 `goods_conservation_failed` 时，`economy_daily` 会把守恒胶囊写入同一条 fatal 日志：
+`opening_goods_stock`、`closing_goods_stock`、`goods_expected`、`goods_error` 以及
+`production_output_stock/retained/discarded`、`consumed_goods`、
+`production_inputs_consumed`、`construction_goods_consumed`、`cycle_flow_discarded`、
+`bullion_stock_consumed`、`country_research_goods_consumed` 和 `explicit_stock_delta`。
+其中 discarded output 是总产出的显式 source/sink 对，科研点消耗则是国家 goods treasury
+在 frozen epoch 内的独立 sink；不要把自然资源 reserve 的 `total_delta` 当作 goods 流。
+
 - `ledger_apply` 长：命令 range 太大，查 `processed_commands/pending_commands`。
 - `household_market` 长：先按当前片的 `household_market_breakdown_ms/work`
   比较 `household_market.settle.prepare/worker/merge_aggregate/merge_trade/trace/other`；

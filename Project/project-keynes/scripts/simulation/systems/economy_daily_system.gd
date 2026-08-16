@@ -106,7 +106,26 @@ func tick(ctx) -> Dictionary:
 		world_clock.request_simulation_backpressure(&"economy_day_barrier", day_barrier)
 	if bool(result.get("fatal", false)) and not _fatal_reported:
 		_fatal_reported = true
-		push_error("[economy_daily] native economy paused: %s" % String(result.get("fatal_reason", "unknown")))
+		var fatal_report: Dictionary = facade.report() if facade != null else result
+		var goods_diagnostics := {
+			"goods_error": fatal_report.get("goods_error", "missing"),
+			"production_output_stock": fatal_report.get("production_output_stock", "missing"),
+			"production_output_retained": fatal_report.get("production_output_retained", "missing"),
+			"production_output_discarded": fatal_report.get("production_output_discarded", "missing"),
+			"consumed_goods": fatal_report.get("consumed_goods", "missing"),
+			"owner_output_consumed": fatal_report.get("owner_output_consumed", "missing"),
+			"construction_goods_consumed": fatal_report.get("construction_goods_consumed", "missing"),
+			"production_inputs_consumed": fatal_report.get("production_inputs_consumed", "missing"),
+			"cycle_flow_discarded": fatal_report.get("cycle_flow_discarded", "missing"),
+			"bullion_stock_consumed": fatal_report.get("bullion_stock_consumed", "missing"),
+			"country_research_goods_consumed": fatal_report.get("country_research_goods_consumed", "missing"),
+			"explicit_stock_delta": fatal_report.get("explicit_stock_delta", "missing"),
+			"stage": fatal_report.get("stage", "missing"),
+			"sample_day": fatal_report.get("sample_day", "missing"),
+			"last_completed_sample_day": fatal_report.get("last_completed_sample_day", "missing"),
+		}
+		push_error("[economy_daily] native economy paused: %s goods=%s" % [
+			String(result.get("fatal_reason", "unknown")), JSON.stringify(goods_diagnostics)])
 	var executed_stage := String(result.get(
 		"executed_stage", result.get("stage", "economy_daily")))
 	var executed_substage := String(result.get("executed_substage", ""))

@@ -7,30 +7,28 @@ const RowsCardScene := preload("res://scenes/ui/object_rows_card.tscn")
 const DetailLineScene := preload("res://scenes/ui/object_detail_line.tscn")
 const StateCardScene := preload("res://scenes/ui/object_state_card.tscn")
 const NoteScene := preload("res://scenes/ui/object_note.tscn")
+const ActionButtonScene := preload("res://scenes/ui/object_action_button.tscn")
 const TaxSectionScene := preload("res://scenes/ui/object_tax_section.tscn")
 const TaxLaneScene := preload("res://scenes/ui/object_tax_lane.tscn")
 
 signal closed()
 signal colonization_requested(family_handle: int, source_cell: int)
+signal tax_override_requested(scope: String, kind: String, item_id: String, rate: int)
+signal tax_reset_requested(scope: String, kind: String, item_id: String)
 
-const TAX_KIND_IDS := {"income": 0, "consumption": 1, "business": 2,
-	"import": 3, "export": 4}
 const PANEL_MIN_SIZE := Vector2(620.0, 520.0)
 
 var _header_icon: IconBadge
 var _title_label: Label
 var _subtitle_label: Label
+var _section_nav: HBoxContainer
+var _section_buttons: Dictionary = {}
+var _section_targets: Dictionary = {}
+var _scroll: ScrollContainer
 var _content: VBoxContainer
-var _status_label: Label
+var _tax_section: VBoxContainer
+var _tax_editors: Dictionary = {}
 var _player_controller = null
-var _country_handle := 0
-var _cell := -1
-var _editable := false
-var _current_day := -1
-var _policy_version := -1
-var _lanes: Dictionary = {}
-var _pending: Dictionary = {}
-var _last_command_result: Dictionary = {}
 var _fact_columns: Array[int] = []
 
 
@@ -40,15 +38,25 @@ func _ready() -> void:
 	_header_icon = get_node_or_null("Center/Dialog/Body/TitleRow/HeaderIcon") as IconBadge
 	_title_label = get_node_or_null("Center/Dialog/Body/TitleRow/Titles/Title") as Label
 	_subtitle_label = get_node_or_null("Center/Dialog/Body/TitleRow/Titles/Subtitle") as Label
+	_section_nav = get_node_or_null("Center/Dialog/Body/SectionNav") as HBoxContainer
+	_scroll = get_node_or_null("Center/Dialog/Body/Scroll") as ScrollContainer
 	_content = get_node_or_null("Center/Dialog/Body/Scroll/Content") as VBoxContainer
-	_status_label = get_node_or_null("Center/Dialog/Body/Status") as Label
 	var close_button := get_node_or_null("Center/Dialog/Body/TitleRow/CloseButton") as Button
 	var backdrop_close := get_node_or_null("BackdropClose") as Button
 	if _header_icon == null or _title_label == null or _subtitle_label == null \
-			or _content == null or _status_label == null or close_button == null \
+			or _section_nav == null or _scroll == null or _content == null \
+			or close_button == null \
 			or backdrop_close == null:
 		push_error("ObjectDetailDialog 必须通过 object_detail_dialog.tscn 实例化。")
 		return
+	_section_buttons = {
+		"overview": _section_nav.get_node("Overview"),
+		"operations": _section_nav.get_node("Operations"),
+		"effects": _section_nav.get_node("Effects"),
+	}
+	for section_id in _section_buttons:
+		(_section_buttons[section_id] as Button).pressed.connect(
+			_scroll_to_section.bind(String(section_id)))
 	IconButton.apply(close_button, &"action.close", IconButton.SMALL, "关闭")
 	close_button.pressed.connect(close_dialog)
 	backdrop_close.pressed.connect(close_dialog)
@@ -57,18 +65,19 @@ func _ready() -> void:
 func show_details(payload: Dictionary) -> void:
 	if _content == null:
 		_ready()
-	_pending.clear()
-	_lanes.clear()
+	visible = true
+	_section_targets.clear()
 	_fact_columns.clear()
-	_country_handle = 0
-	_cell = -1
 	_header_icon.set_semantic(StringName(payload.get("icon", "resource")),
 		payload.get("accent", UITokens.ACCENT))
 	_title_label.text = String(payload.get("name", "对象详情"))
 	_subtitle_label.text = String(payload.get("subtitle", ""))
 	_clear_content()
+	_tax_section = null
+	_tax_editors.clear()
 	var kind := String(payload.get("kind", ""))
 	var row: Dictionary = payload.get("row", {})
+	_build_tax_section(kind, payload.get("tax_context", {}), row)
 	match kind:
 		"cohort":
 			_build_cohort_details(row)
@@ -80,17 +89,89 @@ func show_details(payload: Dictionary) -> void:
 			_build_resource_details(row)
 		"family":
 			_build_family_details(row)
-	var tax: Dictionary = payload.get("tax", {})
-	if bool(tax.get("available", false)):
-		_build_tax_section(tax)
-	elif kind != "resource" and not String(tax.get("reason", "")).is_empty():
-		_add_muted_note(String(tax.get("reason", "")))
+	_configure_section_nav(kind)
+
+
+func refresh_details(payload: Dictionary) -> void:
+	if not visible or payload.is_empty():
+		return
+	var saved_scroll := _scroll.scroll_vertical if _scroll != null else 0
+	show_details(payload)
+	call_deferred("_restore_scroll", saved_scroll)
 
 
 func set_player_controller(controller) -> void:
 	_player_controller = controller
-	visible = true
-	UIAnimation.crossfade(self, UITokens.ANIM_FAST)
+
+
+func tax_editors() -> Array:
+	return _tax_editors.values()
+
+
+func _build_tax_section(kind: String, context_value: Variant, row: Dictionary) -> void:
+	var context: Dictionary = context_value if context_value is Dictionary else {}
+	if context.is_empty() and not row.has("tax_lanes"):
+		return
+	_tax_section = TaxSectionScene.instantiate() as VBoxContainer
+	_content.add_child(_tax_section)
+	(_tax_section.get_node("Head/Icon") as IconBadge).set_semantic(
+		&"tax.section", UITokens.BRASS_HIGHLIGHT)
+	var title := _tax_title(kind)
+	(_tax_section.get_node("Head/Title") as Label).text = title
+	var lanes := _tax_section.get_node("Lanes") as VBoxContainer
+	var all_lanes: Array = []
+	var defaults: Array = context.get("default_lanes", [])
+	for lane_value in defaults:
+		all_lanes.append(lane_value)
+	for lane_value in row.get("tax_lanes", []):
+		all_lanes.append(lane_value)
+	var editable := bool(context.get("editable", false))
+	(_tax_section.get_node("Head/Readonly") as Control).visible = not editable
+	var hint := _tax_section.get_node("Hint") as Label
+	if not bool(context.get("available", not all_lanes.is_empty())):
+		hint.text = String(context.get("reason", "该领土没有可调整的税收政策。"))
+		hint.visible = true
+	else:
+		hint.text = "左侧调整当前对象；输入后次日生效。"
+		hint.visible = true
+	for raw in all_lanes:
+		var lane: Dictionary = raw
+		var editor := TaxLaneScene.instantiate() as TaxLaneEditor
+		lanes.add_child(editor)
+		editor.override_requested.connect(func(scope: String, lane_kind: String,
+				item_id: String, rate: int) -> void:
+			tax_override_requested.emit(scope, lane_kind, item_id, rate))
+		editor.reset_requested.connect(func(scope: String, lane_kind: String,
+				item_id: String) -> void:
+			tax_reset_requested.emit(scope, lane_kind, item_id))
+		editor.set_data(lane)
+		_tax_editors[editor.editor_key(int(context.get("cell", -1)))] = editor
+	lanes.visible = not all_lanes.is_empty()
+
+
+func _tax_title(kind: String) -> String:
+	return {
+		"cohort": "所得税调整",
+		"good": "消费税与关税调整",
+		"building": "营业税调整",
+	}.get(kind, "税收调整")
+
+
+func set_embedded(embedded: bool = true) -> void:
+	var backdrop := get_node_or_null("Backdrop") as Control
+	var backdrop_close := get_node_or_null("BackdropClose") as Control
+	var dialog := get_node_or_null("Center/Dialog") as Control
+	if backdrop != null:
+		backdrop.visible = not embedded
+	if backdrop_close != null:
+		backdrop_close.visible = not embedded
+	if dialog != null:
+		dialog.custom_minimum_size = Vector2.ZERO if embedded else PANEL_MIN_SIZE
+		if embedded:
+			dialog.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		else:
+			dialog.set_anchors_and_offsets_preset(Control.PRESET_CENTER,
+				Control.PRESET_MODE_MINSIZE)
 
 
 func close_dialog() -> void:
@@ -104,26 +185,6 @@ func is_open() -> bool:
 	return visible
 
 
-# country_committed 之后由装配层调用的原地刷新：只更新税率 lane 的数值与
-# pending 状态，不重建详情区节点，快进时弹窗保持稳定。
-func refresh_tax(tax: Dictionary) -> void:
-	if not visible or not bool(tax.get("available", false)):
-		return
-	_current_day = int(tax.get("current_day", _current_day))
-	_policy_version = int(tax.get("policy_version", _policy_version))
-	_resolve_pending_lanes()
-	for raw in tax.get("items", []):
-		var item: Dictionary = raw
-		var kind := String(item.get("kind", ""))
-		if not _lanes.has(kind):
-			continue
-		var lane: Dictionary = _lanes[kind]
-		lane["data"] = item.duplicate(true)
-		if _pending.has(kind):
-			continue
-		_apply_lane_authoritative(kind, lane)
-
-
 func _unhandled_key_input(event: InputEvent) -> void:
 	if visible and event is InputEventKey and event.pressed and not event.echo \
 			and event.keycode == KEY_ESCAPE:
@@ -135,7 +196,6 @@ func _clear_content() -> void:
 	for child in _content.get_children():
 		_content.remove_child(child)
 		child.queue_free()
-	_set_status("")
 
 
 # ─── 详情区 ──────────────────────────────────────────────────────────────
@@ -144,7 +204,7 @@ func _build_cohort_details(row: Dictionary) -> void:
 	var status := String(row.get("status", ""))
 	if not status.is_empty():
 		_add_muted_note(status)
-	_add_fact_grid([
+	_section_targets["overview"] = _add_fact_grid([
 		{"label": "人口", "value": String(row.get("population", "—")), "accent": UITokens.ACCENT},
 		{"label": "身份", "value": String(row.get("cohort_identity", "本地人口")), "accent": UITokens.TEXT_MAIN},
 		{"label": "人均财富", "value": String(row.get("wealth", "—")).trim_prefix("人均 "), "accent": UITokens.RESOURCE},
@@ -156,18 +216,24 @@ func _build_cohort_details(row: Dictionary) -> void:
 		{"label": "净额/人", "value": String(row.get("net", "—")),
 			"accent": UITokens.GOOD if bool(row.get("net_positive", true)) else UITokens.RISK},
 	])
-	_add_rows_card("满意度维度", "growth", UITokens.ACCENT,
+	var needs_target := _add_rows_card("满意度维度", "growth", UITokens.ACCENT,
 		row.get("satisfaction_rows", []))
 	_add_rows_card("收入构成", "trend_up", UITokens.GOOD, row.get("income_rows", []))
 	_add_rows_card("支出构成", "trend_down", UITokens.RISK, row.get("expense_rows", []))
 	var demand: Dictionary = row.get("demand_summary", {})
 	if not demand.is_empty():
-		_add_muted_note("消费需求 · %s · %s" % [
+		needs_target = _add_muted_note("消费需求 · %s · %s" % [
 			String(demand.get("value", "—")), String(demand.get("subtitle", ""))])
+	var demand_target := _add_rows_card("消费需求", "resource", UITokens.RESOURCE,
+		row.get("demand_rows", []))
+	if needs_target == null:
+		needs_target = demand_target
+	if needs_target != null:
+		_section_targets["operations"] = needs_target
 
 
 func _build_building_details(row: Dictionary) -> void:
-	_add_fact_grid([
+	_section_targets["overview"] = _add_fact_grid([
 		{"label": "栋数", "value": String(row.get("count", "—")), "accent": UITokens.ACCENT},
 		{"label": "状态", "value": String(row.get("status", "—")), "accent": row.get("accent", UITokens.ACCENT)},
 		{"label": String(row.get("profit_label", "利润")), "value": String(row.get("profit", "—")),
@@ -177,18 +243,27 @@ func _build_building_details(row: Dictionary) -> void:
 	if not owner.is_empty():
 		_add_muted_note(owner)
 	var state: Dictionary = row.get("state_summary", {})
+	var operations_target: Control = null
 	if not state.is_empty():
-		_add_state_card(state)
-	_add_rows_card("岗位配置", "growth", UITokens.ACCENT, row.get("job_rows", []))
-	_add_rows_card("生产概览", "resource", UITokens.RESOURCE, row.get("production_rows", []))
+		operations_target = _add_state_card(state)
+	var jobs_target := _add_rows_card("岗位配置", "growth", UITokens.ACCENT,
+		row.get("job_rows", []))
+	var production_target := _add_rows_card("生产概览", "resource", UITokens.RESOURCE,
+		row.get("production_rows", []))
+	if operations_target == null:
+		operations_target = jobs_target if jobs_target != null else production_target
 	var finance: Dictionary = row.get("finance", {})
 	if not finance.is_empty():
-		_add_finance_card(finance)
+		var finance_target := _add_finance_card(finance)
+		if operations_target == null:
+			operations_target = finance_target
+	if operations_target != null:
+		_section_targets["operations"] = operations_target
 
 
 func _build_good_details(row: Dictionary) -> void:
 	var risk := String(row.get("risk", ""))
-	_add_fact_grid([
+	_section_targets["overview"] = _add_fact_grid([
 		{"label": "本地库存", "value": String(row.get("stock", "—")), "accent": UITokens.RESOURCE},
 		{"label": "本地价格", "value": String(row.get("price", "—")), "accent": UITokens.RESOURCE},
 		{"label": "库存日变化", "value": String(row.get("delta", "—")),
@@ -196,11 +271,14 @@ func _build_good_details(row: Dictionary) -> void:
 		{"label": "短缺风险", "value": risk if not risk.is_empty() else "无",
 			"accent": UITokens.RISK if not risk.is_empty() else UITokens.TEXT_MUTED},
 	])
-	_add_rows_card("供需明细", "resource", UITokens.RESOURCE, row.get("detail_rows", []))
+	var operations_target := _add_rows_card("供需明细", "resource", UITokens.RESOURCE,
+		row.get("detail_rows", []))
+	if operations_target != null:
+		_section_targets["operations"] = operations_target
 
 
 func _build_resource_details(row: Dictionary) -> void:
-	_add_fact_grid([
+	_section_targets["overview"] = _add_fact_grid([
 		{"label": "储量指数", "value": String(row.get("value", "—")), "accent": UITokens.RESOURCE},
 		{"label": "密度", "value": String(row.get("density", "—")), "accent": UITokens.RESOURCE},
 		{"label": "日变化", "value": String(row.get("delta", "—")),
@@ -212,7 +290,7 @@ func _build_resource_details(row: Dictionary) -> void:
 
 
 func _build_family_details(row: Dictionary) -> void:
-	_add_fact_grid([
+	_section_targets["overview"] = _add_fact_grid([
 		{"label": "家族人口", "value": String(row.get("population", "—")), "accent": UITokens.ACCENT},
 		{"label": "重要人物", "value": "%d 位" % int(row.get("notable_people", 0)), "accent": UITokens.ACCENT},
 		{"label": "家族产业", "value": "%s 栋" % String(row.get("owned_buildings", "0")), "accent": UITokens.CLIMATE},
@@ -225,28 +303,42 @@ func _build_family_details(row: Dictionary) -> void:
 			["0", "I", "II", "III", "IV", "V"][clampi(int(row.get("prestige_level", 0)), 0, 5)],
 			String(row.get("prestige_score", "0.0%"))], "accent": UITokens.ACCENT},
 	])
-	_add_rows_card("家族特性", "family.house", UITokens.ACCENT,
+	var people_target := _add_rows_card("家族特性", "family.house", UITokens.ACCENT,
 		row.get("trait_rows", []))
 	_add_rows_card("行为偏好", "growth", UITokens.GOOD,
 		row.get("behavior_rows", []))
-	_add_rows_card("地块威望", "family.house", UITokens.ACCENT,
+	var branch_target := _add_rows_card("地块威望", "family.house", UITokens.ACCENT,
 		row.get("branch_rows", []))
-	_add_branch_colonization_buttons(int(row.get("family_handle", 0)),
+	var action_target := _add_branch_colonization_buttons(int(row.get("family_handle", 0)),
 		row.get("branch_rows", []))
-	_add_rows_card("已激活加成", "growth", UITokens.CLIMATE,
+	if branch_target != null:
+		people_target = branch_target
+	elif action_target != null:
+		people_target = action_target
+	var effects_target := _add_rows_card("已激活加成", "growth", UITokens.CLIMATE,
 		row.get("modifier_rows", []))
-	_add_rows_card("累计触发", "resource", UITokens.RESOURCE,
+	var trigger_target := _add_rows_card("累计触发", "resource", UITokens.RESOURCE,
 		row.get("trigger_rows", []))
+	if effects_target == null:
+		effects_target = trigger_target
 	var people: Array = row.get("notable_person_rows", [])
 	if people.is_empty():
-		_add_muted_note("该家族目前没有重要人物。")
+		var empty_people := _add_muted_note("该家族目前没有重要人物。")
+		if people_target == null:
+			people_target = empty_people
 	else:
-		_add_rows_card("主要人物", "family.house", UITokens.ACCENT, people)
+		var notable_target := _add_rows_card("主要人物", "family.house", UITokens.ACCENT, people)
+		if people_target == null:
+			people_target = notable_target
+	if people_target != null:
+		_section_targets["operations"] = people_target
+	if effects_target != null:
+		_section_targets["effects"] = effects_target
 
 
-func _add_branch_colonization_buttons(family_handle: int, branches: Array) -> void:
+func _add_branch_colonization_buttons(family_handle: int, branches: Array) -> Control:
 	if family_handle == 0 or branches.is_empty():
-		return
+		return null
 	var panel := RowsCardScene.instantiate() as PanelContainer
 	_content.add_child(panel)
 	(panel.get_node("Box/TitleRow/Icon") as IconBadge).set_semantic(
@@ -260,10 +352,9 @@ func _add_branch_colonization_buttons(family_handle: int, branches: Array) -> vo
 		var source_cell := int(branch.get("cell", -1))
 		if source_cell < 0:
 			continue
-		var button := Button.new()
+		var button := ActionButtonScene.instantiate() as Button
 		button.text = "%s · 进入地图选点" % String(branch.get(
 			"name", "地块 %d" % source_cell))
-		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		var owned: bool = _player_controller != null and \
 			_player_controller.has_method("is_player_owned_cell") and \
 			bool(_player_controller.is_player_owned_cell(source_cell))
@@ -273,6 +364,7 @@ func _add_branch_colonization_buttons(family_handle: int, branches: Array) -> vo
 		button.pressed.connect(func() -> void:
 			colonization_requested.emit(family_handle, source_cell))
 		rows.add_child(button)
+	return panel
 
 
 func _delta_accent(delta: String) -> Color:
@@ -283,7 +375,7 @@ func _delta_accent(delta: String) -> Color:
 	return UITokens.TEXT_MUTED
 
 
-func _add_fact_grid(facts: Array) -> void:
+func _add_fact_grid(facts: Array) -> Control:
 	var panel := FactGridScene.instantiate() as PanelContainer
 	_content.add_child(panel)
 	var grid := panel.get_node("Grid") as GridContainer
@@ -300,6 +392,7 @@ func _add_fact_grid(facts: Array) -> void:
 		value.add_theme_font_override("font", UITokens.font_with_weight(650))
 		value.add_theme_color_override("font_color",
 			fact.get("accent", UITokens.TEXT_MAIN))
+	return panel
 
 
 # 事实网格按数量选列，保证最后一行不留孤格：4 项用 2×2，8 项用 4×2，
@@ -316,9 +409,10 @@ static func _balanced_fact_columns(fact_count: int) -> int:
 	return 4
 
 
-func _add_rows_card(title_text: String, icon_key: String, accent: Color, rows: Array) -> void:
+func _add_rows_card(title_text: String, icon_key: String, accent: Color,
+		rows: Array) -> Control:
 	if rows.is_empty():
-		return
+		return null
 	var panel := RowsCardScene.instantiate() as PanelContainer
 	_content.add_child(panel)
 	var icon := panel.get_node("Box/TitleRow/Icon") as IconBadge
@@ -337,9 +431,10 @@ func _add_rows_card(title_text: String, icon_key: String, accent: Color, rows: A
 		name_label.text = String(data.get("name", ""))
 		var value_label := line.get_node("Value") as Label
 		value_label.text = String(data.get("value", ""))
+	return panel
 
 
-func _add_state_card(state: Dictionary) -> void:
+func _add_state_card(state: Dictionary) -> Control:
 	var accent: Color = state.get("accent", UITokens.WARN)
 	var panel := StateCardScene.instantiate() as PanelContainer
 	_content.add_child(panel)
@@ -352,10 +447,11 @@ func _add_state_card(state: Dictionary) -> void:
 	var meta := panel.get_node("Box/Meta") as Label
 	meta.text = meta_text
 	meta.visible = not meta_text.is_empty()
+	return panel
 
 
-func _add_finance_card(finance: Dictionary) -> void:
-	_add_fact_grid([
+func _add_finance_card(finance: Dictionary) -> Control:
+	var panel := _add_fact_grid([
 		{"label": "本期收入", "value": String(finance.get("revenue", "—")), "accent": UITokens.GOOD},
 		{"label": "本期总成本", "value": String(finance.get("cost", "—")), "accent": UITokens.RISK},
 		{"label": "本期盈亏", "value": String(finance.get("profit", "—")),
@@ -367,215 +463,49 @@ func _add_finance_card(finance: Dictionary) -> void:
 	var warning := String(finance.get("warning", ""))
 	if not warning.is_empty():
 		_add_muted_note(warning, UITokens.RISK)
+	return panel
 
 
-func _add_muted_note(text: String, color: Color = UITokens.TEXT_MUTED) -> void:
+func _add_muted_note(text: String, color: Color = UITokens.TEXT_MUTED) -> Control:
 	var note := NoteScene.instantiate() as Label
 	note.text = text
 	note.add_theme_color_override("font_color", color)
 	_content.add_child(note)
+	return note
 
 
-# ─── 税收区 ──────────────────────────────────────────────────────────────
-
-func _build_tax_section(tax: Dictionary) -> void:
-	_current_day = int(tax.get("current_day", -1))
-	_policy_version = int(tax.get("policy_version", -1))
-	_country_handle = int(tax.get("country_handle", 0))
-	_cell = int(tax.get("cell", -1))
-	_editable = bool(tax.get("editable", false)) and _player_controller != null
-	var section := TaxSectionScene.instantiate() as VBoxContainer
-	_content.add_child(section)
-	var icon := section.get_node("Head/Icon") as IconBadge
-	icon.set_semantic(&"tax.section", UITokens.BRASS_HIGHLIGHT)
-	var title := section.get_node("Head/Title") as Label
-	title.text = "税收政策 · %s" % String(tax.get("country_name", ""))
-	(section.get_node("Head/Readonly") as Control).visible = not _editable
-	(section.get_node("Hint") as Control).visible = not _editable
-	var lanes := section.get_node("Lanes") as VBoxContainer
-	for raw in tax.get("items", []):
-		lanes.add_child(_make_tax_lane(raw))
-
-
-func _make_tax_lane(item: Dictionary) -> Control:
-	var kind := String(item.get("kind", ""))
-	var accent: Color = item.get("accent", UITokens.ACCENT)
-	var has_override := bool(item.get("has_override", false))
-	var base := int(item.get("base", 0))
-	var panel := TaxLaneScene.instantiate() as PanelContainer
-	var label := panel.get_node("Box/Row/Label") as Label
-	label.text = String(item.get("kind_label", kind))
-	label.add_theme_color_override("font_color", accent)
-	var spin := panel.get_node("Box/Row/Spin") as SpinBox
-	spin.editable = _editable
-	spin.get_line_edit().alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	spin.set_value_no_signal(base)
-	spin.get_line_edit().add_theme_color_override("font_color",
-		UITokens.BRASS_HIGHLIGHT if has_override else UITokens.TEXT_MUTED)
-	spin.get_line_edit().text_submitted.connect(_on_lane_text_submitted.bind(kind))
-	spin.get_line_edit().focus_exited.connect(_on_lane_focus_exited.bind(kind))
-	var reset := panel.get_node("Box/Row/Reset") as Button
-	reset.visible = _editable and has_override
-	IconButton.apply(reset, &"action.reset", IconButton.SMALL, "重置为默认税率")
-	reset.pressed.connect(_on_lane_reset_pressed.bind(kind))
-	var clock := panel.get_node("Box/Row/Clock") as IconBadge
-	clock.set_semantic(&"system.clock", UITokens.BRASS_HIGHLIGHT)
-	var note := panel.get_node("Box/Note") as Label
-	_lanes[kind] = {"panel": panel, "spin": spin, "reset": reset, "clock": clock,
-		"note": note, "data": item.duplicate(true)}
-	_refresh_lane_note(kind)
-	return panel
-
-
-func _refresh_lane_note(kind: String) -> void:
-	var lane: Dictionary = _lanes.get(kind, {})
-	if lane.is_empty():
-		return
-	var data: Dictionary = lane.get("data", {})
-	var parts: Array[String] = ["默认 %d%%" % int(data.get("default_rate", 0))]
-	var base := int(data.get("base", 0))
-	var effective := int(data.get("effective", base))
-	if effective != base:
-		parts.append("修正后 %d%%" % effective)
-	var placeholder := String(data.get("placeholder_note", ""))
-	if not placeholder.is_empty():
-		parts.append(placeholder)
-	(lane.get("note") as Label).text = " · ".join(parts)
-
-
-# 输入确认始终写入显式本地覆盖，即使数值等于父级；只有重置按钮清除覆盖。
-# 命令次日生效并进入 pending，直到 country_daily 原子提交后由 refresh_tax 解除。
-func _on_lane_text_submitted(_text: String, kind: String) -> void:
-	_confirm_lane(kind, true)
-
-
-func _on_lane_focus_exited(kind: String) -> void:
-	_confirm_lane(kind)
-
-
-func _confirm_lane(kind: String, explicit_confirm: bool = false) -> void:
-	var lane: Dictionary = _lanes.get(kind, {})
-	if lane.is_empty():
-		return
-	var spin := lane.get("spin") as SpinBox
-	var data: Dictionary = lane.get("data", {})
-	var rate := int(spin.value)
-	var base := int(data.get("base", 0))
-	var overridden := bool(data.get("has_override", false))
-	if rate == base and not explicit_confirm:
-		return
-	_submit_lane_override(kind, StringName(data.get("item_id", "")), rate)
-
-
-func _on_lane_reset_pressed(kind: String) -> void:
-	var lane: Dictionary = _lanes.get(kind, {})
-	if lane.is_empty():
-		return
-	var data: Dictionary = lane.get("data", {})
-	_clear_lane_override(kind, StringName(data.get("item_id", "")))
-
-
-func _submit_lane_override(kind: String, item_id: StringName, rate: int) -> void:
-	if not _editable or _player_controller == null:
-		return
-	var result: Dictionary = _player_controller.request_command(
-		&"country.tax.cell.set_override", {
-			"cell": _cell, "kind": int(TAX_KIND_IDS[kind]),
-			"item_id": item_id, "rate_percent": rate})
-	_last_command_result = result
-	var lane: Dictionary = _lanes.get(kind, {})
-	if bool(result.get("ok", false)):
-		_mark_pending(kind)
-		if not lane.is_empty():
-			var spin := lane.get("spin") as SpinBox
-			spin.set_value_no_signal(rate)
-			spin.get_line_edit().add_theme_color_override("font_color",
-				UITokens.BRASS_HIGHLIGHT)
-			(lane.get("data") as Dictionary)["base"] = rate
-			(lane.get("data") as Dictionary)["has_override"] = true
-			(lane.get("reset") as Button).visible = true
-		_set_status("税率命令已确认，将于第 %d 日生效" %
-			int(result.get("effective_day", _effective_day())))
-	else:
-		if not lane.is_empty():
-			(lane.get("spin") as SpinBox).set_value_no_signal(
-				int((lane.get("data") as Dictionary).get("base", 0)))
-		_set_status(String(result.get("reason", "税率命令提交失败")), true)
-
-
-func _clear_lane_override(kind: String, item_id: StringName) -> void:
-	if not _editable or _player_controller == null:
-		return
-	var result: Dictionary = _player_controller.request_command(
-		&"country.tax.cell.clear_override", {
-			"cell": _cell, "kind": int(TAX_KIND_IDS[kind]),
-			"item_id": item_id})
-	_last_command_result = result
-	var lane: Dictionary = _lanes.get(kind, {})
-	if bool(result.get("ok", false)):
-		_mark_pending(kind)
-		if not lane.is_empty():
-			var data := lane.get("data") as Dictionary
-			var default_rate := int(data.get("default_rate", 0))
-			var spin := lane.get("spin") as SpinBox
-			spin.set_value_no_signal(default_rate)
-			spin.get_line_edit().add_theme_color_override("font_color", UITokens.TEXT_MUTED)
-			data["base"] = default_rate
-			data["has_override"] = false
-			(lane.get("reset") as Button).visible = false
-		_set_status("已恢复继承税率，将于第 %d 日生效" %
-			int(result.get("effective_day", _effective_day())))
-	else:
-		_set_status(String(result.get("reason", "税率覆盖清除命令提交失败")), true)
-
-
-func _mark_pending(kind: String) -> void:
-	_pending[kind] = {
-		"effective_day": _effective_day(),
-		"policy_version": _policy_version,
+func _configure_section_nav(kind: String) -> void:
+	var labels := {
+		"overview": "概览",
+		"operations": "需求" if kind == "cohort" else \
+			"人物与分支" if kind == "family" else "经营" if kind == "building" \
+			else "供需",
+		"effects": "效果",
 	}
-	var lane: Dictionary = _lanes.get(kind, {})
-	if not lane.is_empty():
-		(lane.get("clock") as Control).visible = true
+	var visible_count := 0
+	for section_id in _section_buttons:
+		var button := _section_buttons[section_id] as Button
+		button.text = String(labels.get(section_id, section_id))
+		button.visible = _section_targets.has(section_id)
+		visible_count += 1 if button.visible else 0
+	_section_nav.visible = visible_count > 1
 
 
-func _resolve_pending_lanes() -> void:
-	var resolved: Array[String] = []
-	for key_value in _pending:
-		var kind := String(key_value)
-		var pending: Dictionary = _pending[kind]
-		if _current_day >= int(pending.get("effective_day", _current_day + 1)) \
-				and _policy_version > int(pending.get("policy_version", _policy_version)):
-			resolved.append(kind)
-	for kind in resolved:
-		_pending.erase(kind)
-
-
-func _apply_lane_authoritative(kind: String, lane: Dictionary) -> void:
-	var data: Dictionary = lane.get("data", {})
-	var base := int(data.get("base", 0))
-	var overridden := bool(data.get("has_override", false))
-	var spin := lane.get("spin") as SpinBox
-	if not spin.get_line_edit().has_focus():
-		spin.set_value_no_signal(base)
-		spin.get_line_edit().add_theme_color_override("font_color",
-			UITokens.BRASS_HIGHLIGHT if overridden else UITokens.TEXT_MUTED)
-	(lane.get("reset") as Button).visible = _editable and overridden
-	(lane.get("clock") as Control).visible = false
-	_refresh_lane_note(kind)
-
-
-func _effective_day() -> int:
-	return _current_day + 1
-
-
-func _set_status(text: String, warn: bool = false) -> void:
-	if _status_label == null:
+func _scroll_to_section(section_id: String) -> void:
+	if _scroll == null or not _section_targets.has(section_id):
 		return
-	_status_label.text = text
-	_status_label.visible = text != ""
-	_status_label.add_theme_color_override("font_color",
-		UITokens.WARN if warn else UITokens.TEXT_MUTED)
+	call_deferred("_ensure_section_visible", section_id)
+
+
+func _ensure_section_visible(section_id: String) -> void:
+	var target := _section_targets.get(section_id) as Control
+	if target != null and is_instance_valid(target):
+		_scroll.ensure_control_visible(target)
+
+
+func _restore_scroll(value: int) -> void:
+	if _scroll != null:
+		_scroll.scroll_vertical = value
 
 
 # ─── 测试钩子 ────────────────────────────────────────────────────────────
@@ -586,58 +516,6 @@ func title_text() -> String:
 
 func subtitle_text() -> String:
 	return _subtitle_label.text if _subtitle_label != null else ""
-
-
-func tax_lane_count() -> int:
-	return _lanes.size()
-
-
-func tax_lane_editable() -> bool:
-	return _editable
-
-
-func tax_lane_rate(kind: String) -> int:
-	var lane: Dictionary = _lanes.get(kind, {})
-	if lane.is_empty():
-		return 0
-	return int((lane.get("spin") as SpinBox).value)
-
-
-func tax_lane_instance_id(kind: String) -> int:
-	var lane: Dictionary = _lanes.get(kind, {})
-	if lane.is_empty():
-		return 0
-	return (lane.get("panel") as Control).get_instance_id()
-
-
-func set_lane_rate_for_test(kind: String, rate: int) -> void:
-	var lane: Dictionary = _lanes.get(kind, {})
-	if not lane.is_empty():
-		(lane.get("spin") as SpinBox).value = rate
-
-
-func confirm_lane_for_test(kind: String) -> void:
-	_confirm_lane(kind)
-
-
-func reset_lane_for_test(kind: String) -> void:
-	_on_lane_reset_pressed(kind)
-
-
-func pending_lane_count() -> int:
-	return _pending.size()
-
-
-func last_command_ok() -> bool:
-	return bool(_last_command_result.get("ok", false))
-
-
-func last_command_pending() -> int:
-	return int(_last_command_result.get("pending", -1))
-
-
-func status_text() -> String:
-	return _status_label.text if _status_label != null else ""
 
 
 func fact_grid_columns() -> Array[int]:

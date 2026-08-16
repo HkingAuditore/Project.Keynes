@@ -226,7 +226,7 @@ C++ pass 的目标形态是：循环外解析 slot id 和 knobs，循环内只�
 经济运行时通过窄 C++ 指针桥在 sample day 冻结归属、国家科技、generation/hash，并在整个结算
 周期使用该快照。国内贸易拓扑也以该冻结归属生成国家连通分量；新订单只走同一非中立国家，
 已发运订单不因后续边界变化取消。当前 PKCN v11 保存国家状态、研究/研究信号、全国与地块五类税务政策、
-科技/Effect recipe/Trigger/内容绑定 identity、Country Modifier domain 与 Country Effect ingress 幂等证据；PKEC v34 引用匹配的 PKCN identity，并持久化经济状态、显赫家族及其
+科技/Effect recipe/Trigger/内容绑定 identity、Country Modifier domain 与 Country Effect ingress 幂等证据；PKEC v35 引用匹配的 PKCN identity，并持久化经济状态、显赫家族及其
 成员/建筑所有权、家族重要人物与需求归因、补贴权重、财政累计、科研采购累计、BuildingIdentityStore、Economy Modifier
 domain、生产气候冻结/诊断字段与 Economy Effect ingress 幂等证据；
 完整恢复顺序固定为 PKCM、PKCN、PKEC、PKGP。详见
@@ -258,3 +258,4 @@ GDScript compiles `SettlementProfile` and `SettlementNamePackProfile`, resolves
 stable IDs/display strings, and consumes cold snapshots or revision deltas.
 `SettlementLabelLayer` owns pooled Godot visual objects only. Inspector and map
 labels are read-only consumers and never become a parallel simulation.
+

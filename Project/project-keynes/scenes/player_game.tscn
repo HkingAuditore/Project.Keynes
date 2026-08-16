@@ -11,8 +11,6 @@
 [ext_resource type="Script" uid="uid://doewiqfv0iv3t" path="res://scripts/rendering/data_overlay_layer.gd" id="11_overlay"]
 [ext_resource type="PackedScene" path="res://scenes/ui/player_top_bar.tscn" id="12_top_bar"]
 [ext_resource type="PackedScene" path="res://scenes/ui/inspector_panel.tscn" id="13_inspector"]
-[ext_resource type="PackedScene" path="res://scenes/ui/demand_detail_dialog.tscn" id="14_demand_dialog"]
-[ext_resource type="PackedScene" path="res://scenes/ui/object_detail_dialog.tscn" id="15_object_dialog"]
 [ext_resource type="PackedScene" path="res://scenes/ui/perf_mini_hud.tscn" id="16_perf"]
 [ext_resource type="PackedScene" path="res://scenes/ui/map_overlay_toolbar.tscn" id="17_overlay_toolbar"]
 [ext_resource type="PackedScene" path="res://scenes/ui/country_action_bar.tscn" id="18_country_bar"]
@@ -127,12 +125,6 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
-
-[node name="DemandDetailDialog" parent="UI/UIRoot/ModalLayer" instance=ExtResource("14_demand_dialog")]
-unique_name_in_owner = true
-
-[node name="ObjectDetailDialog" parent="UI/UIRoot/ModalLayer" instance=ExtResource("15_object_dialog")]
-unique_name_in_owner = true
 
 [node name="ColonizationPlannerPanel" parent="UI/UIRoot/ModalLayer" instance=ExtResource("25_colonization_panel")]
 unique_name_in_owner = true

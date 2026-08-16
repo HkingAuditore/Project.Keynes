@@ -5,5 +5,3 @@ script = ExtResource("1")
 id = &"work_equipment"
 display_name = "职业装备"
 living_cost_weight_q16 = 32768
-satisfaction_tier = 2
-satisfaction_weight_q16 = 39322

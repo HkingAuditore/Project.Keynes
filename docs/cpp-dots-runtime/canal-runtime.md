@@ -53,8 +53,8 @@ Visual Tile `height` RGBA8 固定为 RG=视觉高程、B=天然河流 SDF、A=�
 
 ## 存档与玩家控制契约
 
-PKEC v34 新增 canal quote/project sections 和三个 next-id；v33 恢复为空报价、空项目，
-DataCore dynamic-world 字段迁移为零。PKEF 保存未 ACK 的 `program_id=-2` 事务。恢复顺序
+PKEC v35 新增 canal quote/project sections 和三个 next-id；旧 PKEC 不做恢复迁移，
+DataCore dynamic-world 字段保持当前存档契约。PKEF 保存未 ACK 的 `program_id=-2` 事务。恢复顺序
 仍为 DataCore/PKCN -> PKEF -> PKEC -> topology recapture -> scheduler；纹理不保存，
 由恢复后的 mask 重新标脏。
 
@@ -62,3 +62,4 @@ DataCore dynamic-world 字段迁移为零。PKEF 保存未 ACK 的 `program_id=-
 InputMap、MapCamera、player_view、player_game.tscn 和 UI 均不包含运河。未来 Controller
 包装器只接收 `quote_token`，自动注入玩家国家，通过会话/国家/token 格式验证后才分配
 sequence，并以次日为 effective_day；Controller 不持有路线。
+

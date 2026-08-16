@@ -1,7 +1,8 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 [ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="1_icon"]
-[node name="TaxLane" type="PanelContainer"]
-theme_type_variation = &"PKInsetPanel"
+[ext_resource type="Script" path="res://scripts/ui/components/tax_lane_editor.gd" id="2_script"]
+[node name="TaxLane" type="VBoxContainer"]
+script = ExtResource("2_script")
 [node name="Box" type="VBoxContainer" parent="."]
 layout_mode = 2
 theme_override_constants/separation = 3
