@@ -108,6 +108,7 @@ struct SpeciesView {
     std::vector<float> fill_keep;
     std::vector<int32_t> origin_policy;
     std::vector<int32_t> guild;
+    std::vector<int32_t> habitat_class;
 };
 
 template <typename T, typename Packed>
@@ -159,6 +160,7 @@ bool load_species(const Dictionary &knobs, SpeciesView &sp, String &reason) {
     copy_packed(fill_keep, sp.fill_keep);
     const PackedInt32Array origin_policy = knobs.get("species_origin_policy", PackedInt32Array());
     const PackedInt32Array guild = knobs.get("species_guild", PackedInt32Array());
+    const PackedInt32Array habitat_class = knobs.get("species_habitat_class", PackedInt32Array());
     if (origin_policy.size() == n) {
         copy_packed(origin_policy, sp.origin_policy);
     } else if (origin_policy.size() == 0) {
@@ -171,6 +173,14 @@ bool load_species(const Dictionary &knobs, SpeciesView &sp, String &reason) {
         copy_packed(guild, sp.guild);
     } else if (guild.size() == 0) {
         sp.guild.assign(size_t(n), 0);
+    } else {
+        reason = String("bio_species_shape_invalid");
+        return false;
+    }
+    if (habitat_class.size() == n) {
+        copy_packed(habitat_class, sp.habitat_class);
+    } else if (habitat_class.size() == 0) {
+        sp.habitat_class.assign(size_t(n), 0);
     } else {
         reason = String("bio_species_shape_invalid");
         return false;
@@ -283,6 +293,7 @@ constexpr int32_t kGuildFood = 1;
 constexpr int32_t kGuildGrazer = 2;
 constexpr int32_t kGuildFiber = 3;
 constexpr int32_t kMinOriginEnvelope = 8;
+constexpr int32_t kHabitatClassMax = 11;
 constexpr int32_t kMinContinentCells = 8;
 constexpr float kMinContinentShare = 0.18f;
 
@@ -353,58 +364,6 @@ int pick_origin_cell(int species, int lid, int preferred, int n, int width,
     return best;
 }
 
-int32_t fill_hearth(int species, int origin, int lid, int n, int seed,
-                    const SpeciesView &sp, const int32_t *landmass,
-                    const int32_t *nb, const uint8_t *water, const uint8_t *veg,
-                    const uint8_t *lf, const uint8_t *river, const float *temp,
-                    const float *moist, const float *elev,
-                    const std::vector<PackedFloat32Array> &reserves,
-                    int32_t *occ, int32_t cost_cap = -1) {
-    const int32_t bit = sp.bits[species];
-    if (bit < 0 || bit >= 32 || origin < 0 || origin >= n) return 0;
-    const int32_t cap = cost_cap > 0 ? cost_cap : std::max(1, sp.max_cost[species]);
-    std::vector<int32_t> best(size_t(n), 1 << 29);
-    using Node = std::pair<int32_t, int32_t>;
-    std::priority_queue<Node, std::vector<Node>, std::greater<Node>> pq;
-    best[size_t(origin)] = 0;
-    pq.push(Node(0, origin));
-    int32_t occupied = 0;
-    while (!pq.empty()) {
-        const Node cur = pq.top();
-        pq.pop();
-        const int32_t cost = cur.first;
-        const int cell = cur.second;
-        if (cost != best[size_t(cell)]) continue;
-        if (cost > cap) continue;
-        const float decay = 1.0f - 0.35f * float(cost) / float(cap);
-        const float keep = sp.fill_keep[species] * std::max(0.15f, decay);
-        const bool keep_cell = cell == origin ||
-            bio_unit(bio_hash(uint32_t(seed), uint32_t(species + 17), uint32_t(cell))) < keep;
-        if (keep_cell && guild_slot_free(cell, species, sp, occ)) {
-            if ((occ[cell] & (1 << bit)) == 0) {
-                occ[cell] |= (1 << bit);
-                occupied += 1;
-            }
-        }
-        const int32_t base = cell * 6;
-        for (int d = 0; d < 6; ++d) {
-            const int32_t nxt = nb[base + d];
-            if (nxt < 0 || nxt >= n) continue;
-            if (landmass[nxt] != lid) continue;
-            if (!envelope_ok(nxt, species, sp, water, veg, lf, river, temp, moist, elev))
-                continue;
-            if (!carrier_ok(nxt, species, sp, reserves)) continue;
-            const int32_t step = traversal_cost(lf[nxt], veg[nxt], water[nxt]);
-            const int32_t nc = cost + std::max(1, step);
-            if (nc <= cap && nc < best[size_t(nxt)]) {
-                best[size_t(nxt)] = nc;
-                pq.push(Node(nc, nxt));
-            }
-        }
-    }
-    return occupied;
-}
-
 int32_t fill_landmass_envelope(int species, int lid, int n, int seed, bool thin,
                                const SpeciesView &sp, const int32_t *landmass,
                                const uint8_t *water, const uint8_t *veg,
@@ -458,6 +417,13 @@ bool landmass_has_species(int lid, int species, int n, const SpeciesView &sp,
         if (landmass[cell] == lid && (occ[cell] & mask) != 0) return true;
     }
     return false;
+}
+
+int32_t habitat_class_of(const SpeciesView &sp, int species) {
+    if (species < 0 || species >= sp.count || sp.habitat_class.empty()) return 0;
+    const int32_t h = sp.habitat_class[size_t(species)];
+    if (h <= 0 || h > kHabitatClassMax) return 0;
+    return h;
 }
 
 } // namespace
@@ -681,7 +647,7 @@ Dictionary DCWorldExt::run_bio_seed_pass(const Dictionary &knobs) {
     const float *moist = moist_arr.ptr();
     const float *elev = elev_arr.ptr();
     const int32_t *landmass = landmass_arr.ptr();
-    const int32_t *nb = neighbors.ptr();
+    (void)neighbors;
     const int width = int(knobs.get("width", 0));
     const int height = int(knobs.get("height", 0));
     const int hex_width = (width > 0 && height > 0 && width * height == n) ? width : 0;
@@ -777,9 +743,11 @@ Dictionary DCWorldExt::run_bio_seed_pass(const Dictionary &knobs) {
         return a < b;
     });
 
-    std::vector<int32_t> landmass_load(size_t(max_landmass + 1), 0);
+    std::vector<std::vector<int32_t>> class_load(
+        size_t(max_landmass + 1), std::vector<int32_t>(size_t(kHabitatClassMax + 1), 0));
     std::vector<int32_t> placed_core;
     std::vector<int32_t> placed_guild;
+    std::vector<int32_t> placed_class;
     std::vector<int32_t> placed_lid;
     bool catalog_has_food = false;
     bool catalog_has_support = false;
@@ -797,26 +765,20 @@ Dictionary DCWorldExt::run_bio_seed_pass(const Dictionary &knobs) {
                                             water, veg, lf, river, temp, moist, elev,
                                             reserves, occ);
         if (origin < 0) return 0;
-        int32_t added = 0;
-        if (w < kMinOriginEnvelope) {
-            added = fill_landmass_envelope(s, lid, n, seed, false, sp, landmass, water, veg,
-                                           lf, river, temp, moist, elev, reserves, origin, occ);
-        } else {
-            const int32_t cap = secondary
-                ? std::max(1, sp.max_cost[s] / 2)
-                : std::max(1, sp.max_cost[s]);
-            added = fill_hearth(s, origin, lid, n, seed, sp, landmass, nb, water, veg, lf,
-                                river, temp, moist, elev, reserves, occ, cap);
-        }
+        const int32_t added = fill_landmass_envelope(
+            s, lid, n, seed, false, sp, landmass, water, veg, lf, river, temp, moist, elev,
+            reserves, origin, occ);
         if (added <= 0) return 0;
         occupied_n[s] += added;
         hearth_n[s] += added;
         seeded_n[s] += 1;
-        landmass_load[size_t(lid)] += 1;
+        const int32_t hclass = habitat_class_of(sp, s);
+        if (hclass > 0) class_load[size_t(lid)][size_t(hclass)] += 1;
         placed_core.push_back(origin);
         placed_guild.push_back(sp.guild[s]);
+        placed_class.push_back(hclass);
         placed_lid.push_back(lid);
-        if (!secondary) {
+        if (!secondary || origin_ids[s] == 0) {
             origin_ids[s] = lid;
             origin_envelope_n[s] = w;
         }
@@ -852,6 +814,7 @@ Dictionary DCWorldExt::run_bio_seed_pass(const Dictionary &knobs) {
             origin_envelope_n[s] = weight[size_t(s)][size_t(origin_landmass)];
             int32_t occupied = 0;
             int32_t seeded = 0;
+            const int32_t hclass = habitat_class_of(sp, s);
             for (int32_t lid = 1; lid <= max_landmass; ++lid) {
                 const int32_t w = weight[size_t(s)][size_t(lid)];
                 if (w <= 0) continue;
@@ -859,11 +822,11 @@ Dictionary DCWorldExt::run_bio_seed_pass(const Dictionary &knobs) {
                 const bool stand = w >= kMinOriginEnvelope;
                 if (lid != origin_landmass && !(continent && stand)) continue;
                 const int origin = best_cell[size_t(s)][size_t(lid)];
-                occupied += fill_landmass_envelope(s, lid, n, seed, stand, sp, landmass,
+                occupied += fill_landmass_envelope(s, lid, n, seed, false, sp, landmass,
                                                    water, veg, lf, river, temp, moist, elev,
                                                    reserves, origin, occ);
                 seeded += 1;
-                landmass_load[size_t(lid)] += 1;
+                if (hclass > 0) class_load[size_t(lid)][size_t(hclass)] += 1;
             }
             occupied_n[s] = occupied;
             hearth_n[s] = occupied;
@@ -898,19 +861,24 @@ Dictionary DCWorldExt::run_bio_seed_pass(const Dictionary &knobs) {
         }
         if (cands.empty()) continue;
 
+        const int32_t hclass = habitat_class_of(sp, s);
         float best_score = -1.0e30f;
         int best_i = 0;
         for (int i = 0; i < int(cands.size()); ++i) {
             const Cand &c = cands[size_t(i)];
             float score = float(c.w);
-            score -= 80.0f * float(landmass_load[size_t(c.lid)]);
+            if (hclass > 0)
+                score -= 80.0f * float(class_load[size_t(c.lid)][size_t(hclass)]);
             for (size_t p = 0; p < placed_core.size(); ++p) {
-                if (placed_lid[p] != c.lid) continue;
                 const int d = std::max(1, hex_dist(c.core, placed_core[p], hex_width, n));
                 float penalty = 48.0f / float(d);
-                if (placed_guild[p] != 0 && placed_guild[p] == sp.guild[s])
-                    penalty *= 2.5f;
-                score -= penalty;
+                if (hclass > 0 && placed_class[p] == hclass) {
+                    if (placed_lid[p] == c.lid) penalty *= 2.5f;
+                    score -= penalty;
+                } else if (placed_lid[p] == c.lid && placed_guild[p] != 0 &&
+                           placed_guild[p] == sp.guild[s]) {
+                    score -= penalty * 2.5f;
+                }
             }
             const bool needs_food = catalog_has_food &&
                 !landmass_has_guild(c.lid, kGuildFood, n, sp, landmass, occ);
@@ -931,6 +899,26 @@ Dictionary DCWorldExt::run_bio_seed_pass(const Dictionary &knobs) {
 
     for (int32_t lid = 1; lid <= max_landmass; ++lid) {
         if (landmass_size[size_t(lid)] < continent_floor) continue;
+        for (int32_t hclass = 1; hclass <= kHabitatClassMax; ++hclass) {
+            if (class_load[size_t(lid)][size_t(hclass)] > 0) continue;
+            int best_s = -1;
+            int32_t best_w = 0;
+            int best_unplaced = -1;
+            for (int s = 0; s < sp.count; ++s) {
+                if (habitat_class_of(sp, s) != hclass) continue;
+                if (landmass_has_species(lid, s, n, sp, landmass, occ)) continue;
+                const int32_t w = weight[size_t(s)][size_t(lid)];
+                if (w < kMinOriginEnvelope) continue;
+                const int unplaced = origin_ids[s] == 0 ? 1 : 0;
+                if (unplaced > best_unplaced || (unplaced == best_unplaced && w > best_w)) {
+                    best_unplaced = unplaced;
+                    best_w = w;
+                    best_s = s;
+                }
+            }
+            if (best_s >= 0 && place_on_landmass(best_s, lid, true) > 0)
+                secondary_hearths += 1;
+        }
         if (catalog_has_food && !landmass_has_guild(lid, kGuildFood, n, sp, landmass, occ)) {
             int best_s = -1;
             int32_t best_w = 0;
