@@ -45,7 +45,9 @@ Static signal discovery is country-local. A 0→1 explored-cell transition submi
 CSR plus the cell's **current** `bio.*` occupancy bits. Occupancy 0→1 on an already-explored cell
 submits `DISCOVER` again. Local extinction does not delete country evidence. The first native
 generation pass builds landform CSR only; after natural-resource reserves exist, `run_bio_seed_pass`
-writes `cell.bio_occupancy_bits` (carrier-gated compact origin hearths; cosmopolitan reed may
+writes `cell.bio_occupancy_bits` (carrier-gated origin stands filling the
+origin landmass envelope; vacant habitat-class niches packed on other continents;
+cosmopolitan reed may
 span continents; continent-scale landmasses keep a food + fiber/livestock floor; satellite
 islets skipped unless they are the unique argmax). A later native
 pass appends every `resource.*` fact to the same sorted CSR. GDScript only assembles the returned

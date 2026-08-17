@@ -23,8 +23,9 @@ Current baseline:
 - A new era also requires the preceding era milestone.
 - Each era milestone requires any two of its four marked candidates.
 - Discovery reveals only immediate successors after prerequisite completion; reveal never completes.
-- Map occupancy (`cell.bio_occupancy_bits`) is current species presence, seeded as compact origin
-  hearths (cosmopolitan reed excepted) with a continent-scale food + fiber/livestock floor.
+- Map occupancy (`cell.bio_occupancy_bits`) is current species presence, seeded as a full
+  origin-habitat fill plus vacant habitat-class packing (cosmopolitan reed excepted)
+  with a continent-scale food + fiber/livestock floor.
   Country research signals are permanent seen-knowledge; local extinction does not revoke
   evidence. Trade still yields `contact.*` only.
 

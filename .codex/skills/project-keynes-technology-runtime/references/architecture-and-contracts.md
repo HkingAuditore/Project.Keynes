@@ -29,9 +29,10 @@ Current baseline:
   `resource.freshwater` deposit. Keep hydrology evidence separate from extractable
   `freshwater_fish` and other `ResourceProfile` entries.
 - Map occupancy (`cell.bio_occupancy_bits`) answers “what lives here now”. Generation seeds each
-  species as a compact origin hearth on envelope∩carrier (`UNIQUE_HEARTH` default; reed is
-  `COSMOPOLITAN`). Continent-scale landmasses keep a playable food + fiber/livestock floor via a
-  secondary hearth when needed. Satellite islets are skipped unless they are the unique argmax
+  UNIQUE_HEARTH species by filling envelope∩carrier on one origin landmass, then packs vacant
+  `habitat_class` niches on other continent-scale landmasses. Reed is `COSMOPOLITAN`.
+  Continent-scale landmasses keep a playable food + fiber/livestock floor.
+  Satellite islets are skipped unless they are the unique argmax
   endemic pocket. Runtime neighbor diffusion stays inside a province. Country research signals
   answer “has this country seen it”; extinction does not revoke evidence. Inspector local species
   read occupancy; `SIGNAL_PRESENT` / `SIGNAL_COUNT` and start-location routes read country knowledge.

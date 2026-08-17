@@ -115,11 +115,13 @@ GPU 纹理上传（`ImageTexture.update`/`create_from_image`）。
 ## Static research / bio occupancy
 
 `run_research_signal_generation_pass` writes landform CSR only. Bio presence is
-`cell.bio_occupancy_bits` from `run_bio_seed_pass`: compact origin hearths (`max_cost` BFS,
-`fill_keep` thins stands). Default one connected hearth per species; reed may occupy every
-continent-scale wetland stand. Continent-scale landmasses keep a food + fiber/livestock floor.
-Satellite islets are skipped unless they are the unique argmax. `realm.*` is display metadata;
-seeding does not read it.
+`cell.bio_occupancy_bits` from `run_bio_seed_pass`: UNIQUE_HEARTH species fill 100% of
+envelope∩carrier on one origin landmass; vacant `habitat_class` niches on other
+continent-scale landmasses get a matching secondary fill. Cosmopolitan reed covers
+continent wetlands. Same-class origins repel; food and grazer guilds still share at most
+one species per cell. Continent-scale landmasses keep a playable food + fiber/livestock
+floor. Satellite islets are skipped unless they are the unique argmax. `realm.*` is
+display metadata; seeding does not read it.
 
 ## 核心模式（写新 pass / 改 pass 时遵循）
 

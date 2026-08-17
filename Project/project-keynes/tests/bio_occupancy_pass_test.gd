@@ -1,7 +1,7 @@
 extends SceneTree
 
 # bio_occupancy_pass_test.gd
-# 生物占领：连通起源 hearth、卫星岛跳过、大陆可玩底盘、信封门控、
+# 生物占领：主产地铺满生境、空生态位补齐、卫星岛跳过、大陆可玩底盘、信封门控、
 # 已占领格气候余量持久化、农业引种绕过省界。
 #
 # Headless:
@@ -70,6 +70,18 @@ func _test_catalog_and_schema() -> void:
 			wheat_guild = int(guilds[i])
 	_expect("reed is cosmopolitan", reed_policy == ResearchSignalCatalog.OCCUPANCY_ORIGIN_COSMOPOLITAN)
 	_expect("wheat guild is food", wheat_guild == ResearchSignalCatalog.OCCUPANCY_GUILD_FOOD)
+	var habitats: PackedInt32Array = catalog.get("research_bio_habitat_class", PackedInt32Array())
+	_expect("habitat class compiled", habitats.size() == bits.size() and habitats.size() == 19)
+	var wheat_habitat := -1
+	var pig_habitat := -1
+	var pig_bit := ResearchSignalCatalog.occupancy_bit_for_signal(catalog, &"bio.pig")
+	for i in range(mini(habitats.size(), bits.size())):
+		if int(bits[i]) == wheat_bit:
+			wheat_habitat = int(habitats[i])
+		if int(bits[i]) == pig_bit:
+			pig_habitat = int(habitats[i])
+	_expect("wheat habitat is open_food", wheat_habitat == ResearchSignalCatalog.OCCUPANCY_HABITAT_OPEN_FOOD)
+	_expect("pig habitat is forest_grazer", pig_habitat == ResearchSignalCatalog.OCCUPANCY_HABITAT_FOREST_GRAZER)
 
 
 func _test_native_passes() -> void:
@@ -88,6 +100,7 @@ func _test_native_passes() -> void:
 	_test_landmass_isolation_and_gaps(ext)
 	_test_origin_picks_largest_envelope(ext)
 	_test_origin_hearth_is_compact(ext)
+	_test_forest_grazer_niche(ext)
 	_test_cold_and_dry_endemic_envelopes(ext)
 	_test_three_continent_food_floor(ext)
 	_test_occupancy_persistence_and_introduce(ext)
@@ -233,7 +246,17 @@ func _test_landmass_isolation_and_gaps(ext) -> void:
 		_expect("wheat reports a compact origin", int(seeded[wheat_idx]) == 1)
 	if reed_idx >= 0 and reed_idx < seeded.size():
 		_expect("reed reports cosmopolitan landmasses", int(seeded[reed_idx]) >= 2)
-	_expect("envelope keeps some unoccupied cells", empty_a + empty_b > 0)
+	var origin_env: PackedInt32Array = seed_res.get("origin_envelope_cell_counts", PackedInt32Array())
+	var occupied_n: PackedInt32Array = seed_res.get("occupied_cell_counts", PackedInt32Array())
+	if maize_idx >= 0 and maize_idx < origin_env.size() and maize_idx < occupied_n.size():
+		_expect("maize fills most of its origin envelope",
+			_fills_origin_envelope(int(occupied_n[maize_idx]), int(origin_env[maize_idx])))
+	if wheat_idx >= 0 and wheat_idx < origin_env.size() and wheat_idx < occupied_n.size():
+		_expect("wheat fills most of its origin envelope",
+			_fills_origin_envelope(int(occupied_n[wheat_idx]), int(origin_env[wheat_idx])))
+	var occupied_a := land_a.size() - empty_a
+	var occupied_b := land_b.size() - empty_b
+	_expect("continent cells are mostly occupied", occupied_a >= 4 and occupied_b >= 4)
 
 
 func _test_origin_picks_largest_envelope(ext) -> void:
@@ -364,18 +387,16 @@ func _test_origin_hearth_is_compact(ext) -> void:
 			rice_count += 1
 		if (int(occupancy[cell]) & (1 << reed_bit)) != 0:
 			reed_count += 1
-	_expect("wheat occupies a connected hearth", wheat_cols.size() >= 3)
-	if wheat_cols.is_empty():
-		_expect("wheat hearth has an upper bound", false)
-	else:
-		var lo := wheat_cols[0]
-		var hi := wheat_cols[0]
-		for col in wheat_cols:
-			lo = mini(lo, int(col))
-			hi = maxi(hi, int(col))
-		_expect("wheat hearth does not fill the whole belt", hi - lo <= 18)
+	_expect("wheat occupies a regional hearth", wheat_cols.size() >= 12)
 	_expect("reeds occupy river cells without wetland vegetation", reed_count >= 8)
 	_expect("rice occupies a river hearth", rice_count >= 3)
+	var origin_env: PackedInt32Array = seed_res.get("origin_envelope_cell_counts", PackedInt32Array())
+	var occupied_n: PackedInt32Array = seed_res.get("occupied_cell_counts", PackedInt32Array())
+	var occ_bits: PackedInt32Array = knobs.get("species_occupancy_bits", PackedInt32Array())
+	var wheat_idx := occ_bits.find(wheat_bit)
+	if wheat_idx >= 0 and wheat_idx < origin_env.size() and wheat_idx < occupied_n.size():
+		_expect("wheat fills most of the long-strip envelope",
+			_fills_origin_envelope(int(occupied_n[wheat_idx]), int(origin_env[wheat_idx])))
 	var food_overlap := 0
 	for cell in range(map.cell_count()):
 		if map.is_water_arr[cell] != 0:
@@ -384,6 +405,68 @@ func _test_origin_hearth_is_compact(ext) -> void:
 		if (bits & (1 << wheat_bit)) != 0 and (bits & (1 << rice_bit)) != 0:
 			food_overlap += 1
 	_expect("wheat and rice hearths stay off the same cells", food_overlap == 0)
+
+
+func _test_forest_grazer_niche(ext) -> void:
+	var width := 14
+	var height := 3
+	var map := MapData.new(width, height)
+	for row in range(height):
+		for col in range(width):
+			var cube := HexUtils.offset_to_cube(col, row)
+			map.set_cell(HexCell.new(cube.x, cube.y))
+	map._build_indices()
+	map._alloc_soa(map.cell_count())
+	for cell in range(map.cell_count()):
+		var hex: HexCell = map.cell_at(cell)
+		var off := HexUtils.cube_to_offset(hex.q, hex.r)
+		var water := off.x == 0 or off.x == width - 1
+		map.is_water_arr[cell] = 1 if water else 0
+		map.terrain_arr[cell] = TerrainType.TERRAIN.OCEAN if water else TerrainType.TERRAIN.FOREST
+		map.landform_arr[cell] = LandformType.LF.OCEAN if water else LandformType.LF.HILL
+		map.vegetation_arr[cell] = VegetationType.VEG.NONE if water else VegetationType.VEG.TEMPERATE_DECIDUOUS
+		map.temp_arr[cell] = 0.50
+		map.moisture_arr[cell] = 0.62
+		map.elevation_arr[cell] = 0.28
+		map.has_river_arr[cell] = 0
+		map.has_volcano_arr[cell] = 0
+		map.res_arable_land_reserve_arr[cell] = 0.0 if water else 80.0
+		map.res_pasture_reserve_arr[cell] = 0.0
+		map.res_paddy_land_reserve_arr[cell] = 0.0
+		map.res_plantation_land_reserve_arr[cell] = 0.0
+		map.res_wild_game_reserve_arr[cell] = 0.0 if water else 40.0
+		map.explored_arr[cell] = 0
+	var knobs := _species_knobs(map, PackedStringArray(["bio.wheat", "bio.pig"]))
+	knobs["width"] = map.width
+	knobs["height"] = map.height
+	var province_res: Dictionary = ext.run_bio_province_pass(knobs)
+	_expect("forest-niche province pass ok", bool(province_res.get("ok", false)))
+	if not bool(province_res.get("ok", false)):
+		return
+	knobs["province_ids"] = province_res.get("province_ids", PackedInt32Array())
+	knobs["landmass_ids"] = province_res.get("landmass_ids", PackedInt32Array())
+	knobs["seed"] = 19
+	var seed_res: Dictionary = ext.run_bio_seed_pass(knobs)
+	_expect("forest-niche seed pass ok", bool(seed_res.get("ok", false)))
+	if not bool(seed_res.get("ok", false)):
+		return
+	var occupancy: PackedInt32Array = seed_res.get("occupancy_bits", PackedInt32Array())
+	var catalog: Dictionary = ResearchSignalCatalog.compile_native_catalog()
+	var pig_bit := ResearchSignalCatalog.occupancy_bit_for_signal(catalog, &"bio.pig")
+	var pig_n := 0
+	for cell in range(map.cell_count()):
+		if map.is_water_arr[cell] != 0:
+			continue
+		if (int(occupancy[cell]) & (1 << pig_bit)) != 0:
+			pig_n += 1
+	_expect("forest continent has forest_grazer", pig_n >= 8)
+	var occ_bits: PackedInt32Array = knobs.get("species_occupancy_bits", PackedInt32Array())
+	var origin_env: PackedInt32Array = seed_res.get("origin_envelope_cell_counts", PackedInt32Array())
+	var occupied_n: PackedInt32Array = seed_res.get("occupied_cell_counts", PackedInt32Array())
+	var pig_idx := occ_bits.find(pig_bit)
+	if pig_idx >= 0 and pig_idx < origin_env.size() and pig_idx < occupied_n.size():
+		_expect("pig fills forest habitat on its origin landmass",
+			_fills_origin_envelope(int(occupied_n[pig_idx]), int(origin_env[pig_idx])))
 
 
 func _test_cold_and_dry_endemic_envelopes(ext) -> void:
@@ -712,6 +795,7 @@ func _species_knobs(map: MapData, species_ids: PackedStringArray) -> Dictionary:
 		"species_fill_keep": _take_f32(catalog.get("research_bio_fill_keep", PackedFloat32Array()), keep),
 		"species_origin_policy": _take_i32(catalog.get("research_bio_origin_policy", PackedInt32Array()), keep),
 		"species_guild": _take_i32(catalog.get("research_bio_guild", PackedInt32Array()), keep),
+		"species_habitat_class": _take_i32(catalog.get("research_bio_habitat_class", PackedInt32Array()), keep),
 	}
 	var carrier_ids: PackedStringArray = catalog.get("research_bio_carrier_ids", PackedStringArray())
 	var carrier_alts: PackedStringArray = catalog.get("research_bio_carrier_alt_ids", PackedStringArray())
@@ -785,6 +869,12 @@ func _take_f32(src: PackedFloat32Array, keep: PackedInt32Array) -> PackedFloat32
 		var idx := int(keep[i])
 		out[i] = float(src[idx]) if idx >= 0 and idx < src.size() else 0.0
 	return out
+
+
+func _fills_origin_envelope(occupied: int, origin_envelope: int) -> bool:
+	if origin_envelope <= 0:
+		return occupied <= 0
+	return occupied >= 8 or occupied * 2 >= origin_envelope
 
 
 func _expect(label: String, ok: bool) -> void:

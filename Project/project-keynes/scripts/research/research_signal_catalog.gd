@@ -216,10 +216,10 @@ const NETWORK_SIGNAL_ROWS := [
 
 ## Occupancy bit 0..31. Envelope/carrier/origin are generation+runtime inputs;
 ## `realm.*` tags on SIGNAL_ROWS remain presentation metadata and are not read
-## by seeding. Generation occupancy ⊆ envelope ∩ compact origin hearth
-## ∩ carrier>ε (cosmopolitan reed excepted; satellite islets skipped unless
-## they are the unique argmax). Continent-scale landmasses keep a playable
-## food + fiber/livestock floor via a secondary hearth when needed.
+## by seeding. Generation occupancy ⊆ envelope ∩ assigned landmasses
+## ∩ carrier>ε. UNIQUE_HEARTH species fill 100% of habitat on one origin
+## landmass; vacant habitat_class niches on other continent-scale landmasses
+## get a secondary fill. Cosmopolitan reed covers continent wetlands.
 ## Runtime neighbor diffusion stays inside a province; local farming can introduce.
 const OCCUPANCY_FLAG_NEED_WETLAND_OR_RIVER := 1
 const OCCUPANCY_FLAG_NEED_HIGHLAND := 2
@@ -236,6 +236,19 @@ const OCCUPANCY_GUILD_NONE := 0
 const OCCUPANCY_GUILD_FOOD := 1
 const OCCUPANCY_GUILD_GRAZER := 2
 const OCCUPANCY_GUILD_FIBER := 3
+const OCCUPANCY_HABITAT_NONE := 0
+const OCCUPANCY_HABITAT_OPEN_FOOD := 1
+const OCCUPANCY_HABITAT_WETLAND_FOOD := 2
+const OCCUPANCY_HABITAT_HIGHLAND_FOOD := 3
+const OCCUPANCY_HABITAT_OPEN_GRAZER := 4
+const OCCUPANCY_HABITAT_FOREST_GRAZER := 5
+const OCCUPANCY_HABITAT_DRY_GRAZER := 6
+const OCCUPANCY_HABITAT_COLD_GRAZER := 7
+const OCCUPANCY_HABITAT_TROPICAL := 8
+const OCCUPANCY_HABITAT_FIBER_OPEN := 9
+const OCCUPANCY_HABITAT_FIBER_WET := 10
+const OCCUPANCY_HABITAT_FIBER_FOREST := 11
+const OCCUPANCY_HABITAT_CLASS_MAX := 11
 const OCCUPANCY_MAX_SPECIES := 32
 
 const _VEG_GRASS := [4, 9, 10, 11, 13]
@@ -246,29 +259,26 @@ const _VEG_COOL_GRASS := [4, 6, 7, 9, 10, 11]
 const _VEG_COLD_HIGHLAND := [1, 2, 3, 4, 5, 6]
 const _VEG_DRY := [10, 16, 17]
 const _VEG_WARM_CROP := [4, 9, 10, 13, 12, 14, 15]
-const _VEG_FLAX := [4, 6, 10]
-const _VEG_POTATO := [3, 4, 6, 9, 10]
+const _VEG_FLAX := [4, 6, 7, 9, 10, 11]
+const _VEG_POTATO := [3, 4, 6, 7, 9, 10, 11]
 const _VEG_RUBBER := [14, 24, 12, 15]
-const _VEG_WHEAT := [9, 10, 11]
-const _VEG_MAIZE_OPEN := [9, 13]
-const _VEG_SHEEP := [4, 10]
-const _VEG_HORSE := [9, 10]
-const _VEG_PIG_FOREST := [5, 8, 12, 14, 15, 24, 25]
 
 ## carrier empty = envelope only. introduce_goods drive agricultural occupancy.
 const BIO_OCCUPANCY_BY_ID := {
 	"bio.maize": {
 		"carrier": "arable_land", "carrier_alt": "",
-		"temp_lo": 0.50, "temp_hi": 0.92, "moist_lo": 0.32, "moist_hi": 1.0,
-		"elev_lo": 0.0, "elev_hi": 0.78, "veg": _VEG_MAIZE_OPEN, "flags": 0,
+		"temp_lo": 0.42, "temp_hi": 0.92, "moist_lo": 0.32, "moist_hi": 1.0,
+		"elev_lo": 0.0, "elev_hi": 0.78, "veg": _VEG_GRASS, "flags": 0,
 		"max_cost": 16, "fill_keep": 0.58, "guild": OCCUPANCY_GUILD_FOOD,
+		"habitat_class": OCCUPANCY_HABITAT_OPEN_FOOD,
 		"introduce_goods": ["corn_grain"],
 	},
 	"bio.wheat": {
 		"carrier": "arable_land", "carrier_alt": "",
-		"temp_lo": 0.22, "temp_hi": 0.68, "moist_lo": 0.22, "moist_hi": 0.72,
-		"elev_lo": 0.0, "elev_hi": 0.82, "veg": _VEG_WHEAT, "flags": 0,
-		"max_cost": 12, "fill_keep": 0.58, "guild": OCCUPANCY_GUILD_FOOD,
+		"temp_lo": 0.22, "temp_hi": 0.70, "moist_lo": 0.24, "moist_hi": 0.90,
+		"elev_lo": 0.0, "elev_hi": 0.82, "veg": _VEG_COOL_GRASS, "flags": 0,
+		"max_cost": 16, "fill_keep": 0.58, "guild": OCCUPANCY_GUILD_FOOD,
+		"habitat_class": OCCUPANCY_HABITAT_OPEN_FOOD,
 		"introduce_goods": ["wheat_grain"],
 	},
 	"bio.rice": {
@@ -277,21 +287,24 @@ const BIO_OCCUPANCY_BY_ID := {
 		"elev_lo": 0.0, "elev_hi": 0.68, "veg": [],
 		"flags": OCCUPANCY_FLAG_NEED_WETLAND_OR_RIVER,
 		"max_cost": 14, "fill_keep": 0.58, "guild": OCCUPANCY_GUILD_FOOD,
+		"habitat_class": OCCUPANCY_HABITAT_WETLAND_FOOD,
 		"introduce_goods": ["rice_grain"],
 	},
 	"bio.potato": {
 		"carrier": "", "carrier_alt": "",
-		"temp_lo": 0.22, "temp_hi": 0.50, "moist_lo": 0.24, "moist_hi": 0.88,
+		"temp_lo": 0.22, "temp_hi": 0.58, "moist_lo": 0.24, "moist_hi": 0.88,
 		"elev_lo": 0.30, "elev_hi": 1.0, "veg": _VEG_POTATO,
 		"flags": OCCUPANCY_FLAG_NEED_HIGHLAND,
 		"max_cost": 12, "fill_keep": 0.52, "guild": OCCUPANCY_GUILD_FOOD,
+		"habitat_class": OCCUPANCY_HABITAT_HIGHLAND_FOOD,
 		"introduce_goods": ["potatoes"],
 	},
 	"bio.horse": {
 		"carrier": "pasture", "carrier_alt": "",
-		"temp_lo": 0.22, "temp_hi": 0.70, "moist_lo": 0.18, "moist_hi": 0.70,
-		"elev_lo": 0.0, "elev_hi": 0.84, "veg": _VEG_HORSE, "flags": 0,
-		"max_cost": 14, "fill_keep": 0.52, "guild": OCCUPANCY_GUILD_GRAZER,
+		"temp_lo": 0.22, "temp_hi": 0.70, "moist_lo": 0.18, "moist_hi": 0.78,
+		"elev_lo": 0.0, "elev_hi": 0.84, "veg": _VEG_COOL_GRASS, "flags": 0,
+		"max_cost": 18, "fill_keep": 0.52, "guild": OCCUPANCY_GUILD_GRAZER,
+		"habitat_class": OCCUPANCY_HABITAT_OPEN_GRAZER,
 		"introduce_goods": [],
 	},
 	"bio.cotton": {
@@ -299,6 +312,7 @@ const BIO_OCCUPANCY_BY_ID := {
 		"temp_lo": 0.52, "temp_hi": 0.95, "moist_lo": 0.32, "moist_hi": 0.90,
 		"elev_lo": 0.0, "elev_hi": 0.72, "veg": _VEG_WARM_CROP, "flags": 0,
 		"max_cost": 14, "fill_keep": 0.55, "guild": OCCUPANCY_GUILD_FIBER,
+		"habitat_class": OCCUPANCY_HABITAT_FIBER_OPEN,
 		"introduce_goods": ["seed_cotton", "cotton_fiber"],
 	},
 	"bio.flax": {
@@ -306,6 +320,7 @@ const BIO_OCCUPANCY_BY_ID := {
 		"temp_lo": 0.22, "temp_hi": 0.68, "moist_lo": 0.26, "moist_hi": 0.84,
 		"elev_lo": 0.0, "elev_hi": 0.82, "veg": _VEG_FLAX, "flags": 0,
 		"max_cost": 14, "fill_keep": 0.55, "guild": OCCUPANCY_GUILD_FIBER,
+		"habitat_class": OCCUPANCY_HABITAT_FIBER_OPEN,
 		"introduce_goods": ["flax_fiber"],
 	},
 	"bio.spice": {
@@ -313,6 +328,7 @@ const BIO_OCCUPANCY_BY_ID := {
 		"temp_lo": 0.60, "temp_hi": 1.0, "moist_lo": 0.45, "moist_hi": 1.0,
 		"elev_lo": 0.0, "elev_hi": 0.70, "veg": _VEG_TROPICAL_FOREST, "flags": 0,
 		"max_cost": 12, "fill_keep": 0.50, "guild": OCCUPANCY_GUILD_NONE,
+		"habitat_class": OCCUPANCY_HABITAT_TROPICAL,
 		"introduce_goods": ["spices"],
 	},
 	"bio.rubber": {
@@ -320,14 +336,16 @@ const BIO_OCCUPANCY_BY_ID := {
 		"temp_lo": 0.60, "temp_hi": 1.0, "moist_lo": 0.52, "moist_hi": 1.0,
 		"elev_lo": 0.0, "elev_hi": 0.68, "veg": _VEG_RUBBER, "flags": 0,
 		"max_cost": 12, "fill_keep": 0.48, "guild": OCCUPANCY_GUILD_NONE,
+		"habitat_class": OCCUPANCY_HABITAT_TROPICAL,
 		"introduce_goods": ["latex"],
 	},
 	"bio.sheep": {
 		"carrier": "pasture", "carrier_alt": "",
-		"temp_lo": 0.14, "temp_hi": 0.52, "moist_lo": 0.16, "moist_hi": 0.70,
-		"elev_lo": 0.18, "elev_hi": 0.88, "veg": _VEG_SHEEP,
+		"temp_lo": 0.16, "temp_hi": 0.62, "moist_lo": 0.18, "moist_hi": 0.80,
+		"elev_lo": 0.0, "elev_hi": 0.88, "veg": _VEG_GRASS,
 		"flags": OCCUPANCY_FLAG_FORBID_WARM,
-		"max_cost": 12, "fill_keep": 0.55, "guild": OCCUPANCY_GUILD_GRAZER,
+		"max_cost": 16, "fill_keep": 0.55, "guild": OCCUPANCY_GUILD_GRAZER,
+		"habitat_class": OCCUPANCY_HABITAT_OPEN_GRAZER,
 		"introduce_goods": ["wool", "livestock_products"],
 	},
 	"bio.goat": {
@@ -336,6 +354,7 @@ const BIO_OCCUPANCY_BY_ID := {
 		"elev_lo": 0.0, "elev_hi": 1.0, "veg": [],
 		"flags": OCCUPANCY_FLAG_NEED_DRY_OR_HIGHLAND | OCCUPANCY_FLAG_FORBID_TROPICAL_FOREST,
 		"max_cost": 14, "fill_keep": 0.50, "guild": OCCUPANCY_GUILD_GRAZER,
+		"habitat_class": OCCUPANCY_HABITAT_DRY_GRAZER,
 		"introduce_goods": [],
 	},
 	"bio.cattle": {
@@ -343,15 +362,17 @@ const BIO_OCCUPANCY_BY_ID := {
 		"temp_lo": 0.34, "temp_hi": 0.82, "moist_lo": 0.56, "moist_hi": 1.0,
 		"elev_lo": 0.0, "elev_hi": 0.78, "veg": _VEG_GRASS,
 		"flags": OCCUPANCY_FLAG_FORBID_COLD,
-		"max_cost": 14, "fill_keep": 0.52, "guild": OCCUPANCY_GUILD_GRAZER,
+		"max_cost": 16, "fill_keep": 0.52, "guild": OCCUPANCY_GUILD_GRAZER,
+		"habitat_class": OCCUPANCY_HABITAT_OPEN_GRAZER,
 		"introduce_goods": ["dairy_products", "livestock_products"],
 	},
 	"bio.pig": {
 		"carrier": "wild_game", "carrier_alt": "",
 		"temp_lo": 0.34, "temp_hi": 0.88, "moist_lo": 0.32, "moist_hi": 1.0,
-		"elev_lo": 0.0, "elev_hi": 0.80, "veg": _VEG_PIG_FOREST,
+		"elev_lo": 0.0, "elev_hi": 0.80, "veg": _VEG_FOREST,
 		"flags": OCCUPANCY_FLAG_FORBID_COLD,
-		"max_cost": 12, "fill_keep": 0.50, "guild": OCCUPANCY_GUILD_GRAZER,
+		"max_cost": 14, "fill_keep": 0.50, "guild": OCCUPANCY_GUILD_GRAZER,
+		"habitat_class": OCCUPANCY_HABITAT_FOREST_GRAZER,
 		"introduce_goods": [],
 	},
 	"bio.camel": {
@@ -359,6 +380,7 @@ const BIO_OCCUPANCY_BY_ID := {
 		"temp_lo": 0.40, "temp_hi": 1.0, "moist_lo": 0.0, "moist_hi": 0.34,
 		"elev_lo": 0.0, "elev_hi": 0.88, "veg": _VEG_DRY, "flags": 0,
 		"max_cost": 14, "fill_keep": 0.48, "guild": OCCUPANCY_GUILD_GRAZER,
+		"habitat_class": OCCUPANCY_HABITAT_DRY_GRAZER,
 		"introduce_goods": [],
 	},
 	"bio.yak": {
@@ -366,6 +388,7 @@ const BIO_OCCUPANCY_BY_ID := {
 		"temp_lo": 0.0, "temp_hi": 0.32, "moist_lo": 0.12, "moist_hi": 0.80,
 		"elev_lo": 0.42, "elev_hi": 1.0, "veg": _VEG_COLD_HIGHLAND, "flags": 0,
 		"max_cost": 12, "fill_keep": 0.50, "guild": OCCUPANCY_GUILD_GRAZER,
+		"habitat_class": OCCUPANCY_HABITAT_COLD_GRAZER,
 		"introduce_goods": [],
 	},
 	"bio.silkworm": {
@@ -373,6 +396,7 @@ const BIO_OCCUPANCY_BY_ID := {
 		"temp_lo": 0.55, "temp_hi": 0.92, "moist_lo": 0.56, "moist_hi": 1.0,
 		"elev_lo": 0.0, "elev_hi": 0.72, "veg": _VEG_FOREST, "flags": 0,
 		"max_cost": 12, "fill_keep": 0.45, "guild": OCCUPANCY_GUILD_NONE,
+		"habitat_class": OCCUPANCY_HABITAT_TROPICAL,
 		"introduce_goods": [],
 	},
 	"bio.reed": {
@@ -381,6 +405,7 @@ const BIO_OCCUPANCY_BY_ID := {
 		"elev_lo": 0.0, "elev_hi": 0.80, "veg": [],
 		"flags": OCCUPANCY_FLAG_NEED_WETLAND_OR_RIVER,
 		"max_cost": 10, "fill_keep": 0.60, "guild": OCCUPANCY_GUILD_FIBER,
+		"habitat_class": OCCUPANCY_HABITAT_FIBER_WET,
 		"origin_policy": OCCUPANCY_ORIGIN_COSMOPOLITAN,
 		"introduce_goods": ["reed_bundle"],
 	},
@@ -390,6 +415,7 @@ const BIO_OCCUPANCY_BY_ID := {
 		"elev_lo": 0.0, "elev_hi": 0.80, "veg": _VEG_FOREST,
 		"flags": OCCUPANCY_FLAG_FORBID_ARID,
 		"max_cost": 12, "fill_keep": 0.50, "guild": OCCUPANCY_GUILD_FIBER,
+		"habitat_class": OCCUPANCY_HABITAT_FIBER_FOREST,
 		"introduce_goods": ["bast_fiber"],
 	},
 	"bio.dye_plant": {
@@ -397,6 +423,7 @@ const BIO_OCCUPANCY_BY_ID := {
 		"temp_lo": 0.52, "temp_hi": 0.95, "moist_lo": 0.28, "moist_hi": 0.90,
 		"elev_lo": 0.0, "elev_hi": 0.75, "veg": _VEG_WARM_CROP, "flags": 0,
 		"max_cost": 14, "fill_keep": 0.50, "guild": OCCUPANCY_GUILD_FIBER,
+		"habitat_class": OCCUPANCY_HABITAT_FIBER_OPEN,
 		"introduce_goods": [],
 	},
 }
@@ -466,6 +493,7 @@ static func compile_native_catalog() -> Dictionary:
 	var bio_fill_keep := PackedFloat32Array()
 	var bio_origin_policy := PackedInt32Array()
 	var bio_guild := PackedInt32Array()
+	var bio_habitat_class := PackedInt32Array()
 	var bio_introduce_good_ids := PackedStringArray()
 	var bio_introduce_occupancy_bits := PackedInt32Array()
 	var next_occupancy_bit := 0
@@ -526,6 +554,7 @@ static func compile_native_catalog() -> Dictionary:
 		bio_fill_keep.append(clampf(float(spec.get("fill_keep", 0.55)), 0.0, 1.0))
 		bio_origin_policy.append(int(spec.get("origin_policy", OCCUPANCY_ORIGIN_UNIQUE_HEARTH)))
 		bio_guild.append(int(spec.get("guild", OCCUPANCY_GUILD_NONE)))
+		bio_habitat_class.append(int(spec.get("habitat_class", OCCUPANCY_HABITAT_NONE)))
 		for good_id in spec.get("introduce_goods", []):
 			bio_introduce_good_ids.append(String(good_id))
 			bio_introduce_occupancy_bits.append(bit)
@@ -561,6 +590,7 @@ static func compile_native_catalog() -> Dictionary:
 		"research_bio_fill_keep": bio_fill_keep,
 		"research_bio_origin_policy": bio_origin_policy,
 		"research_bio_guild": bio_guild,
+		"research_bio_habitat_class": bio_habitat_class,
 		"research_bio_introduce_good_ids": bio_introduce_good_ids,
 		"research_bio_introduce_occupancy_bits": bio_introduce_occupancy_bits,
 	}

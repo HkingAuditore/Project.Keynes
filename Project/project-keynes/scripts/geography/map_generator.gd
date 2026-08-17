@@ -10225,6 +10225,7 @@ func _bio_occupancy_base_knobs(map_ref: MapData) -> Dictionary:
 		"species_fill_keep": catalog.get("research_bio_fill_keep", PackedFloat32Array()),
 		"species_origin_policy": catalog.get("research_bio_origin_policy", PackedInt32Array()),
 		"species_guild": catalog.get("research_bio_guild", PackedInt32Array()),
+		"species_habitat_class": catalog.get("research_bio_habitat_class", PackedInt32Array()),
 		"carrier_reserves": columns,
 	}
 
@@ -10329,10 +10330,18 @@ func _log_bio_occupancy_seed(knobs: Dictionary, seed_res: Dictionary, landmass_c
 		var origin_id := int(origins[i]) if i < origins.size() else 0
 		var seeded_n := int(seeded[i]) if i < seeded.size() else 0
 		var hearth_n := int(hearths[i]) if i < hearths.size() else occ_n
-		print("[bio-occupancy]   %s envelope=%d hearth=%d seeded_landmasses=%d primary_landmass=%d primary_envelope=%d occupied=%d" % [
-			name, env_n, hearth_n, seeded_n, origin_id, origin_n, occ_n])
+		var fill_ratio := (float(occ_n) / float(origin_n)) if origin_n > 0 else 0.0
+		print("[bio-occupancy]   %s envelope=%d hearth=%d seeded_landmasses=%d primary_landmass=%d primary_envelope=%d occupied=%d occupied/envelope=%.2f" % [
+			name, env_n, hearth_n, seeded_n, origin_id, origin_n, occ_n, fill_ratio])
 	var occupancy: PackedInt32Array = seed_res.get("occupancy_bits", PackedInt32Array())
 	var landmass: PackedInt32Array = knobs.get("landmass_ids", PackedInt32Array())
+	var occ_bits: PackedInt32Array = knobs.get("species_occupancy_bits", PackedInt32Array())
+	var habitat_class: PackedInt32Array = knobs.get("species_habitat_class", PackedInt32Array())
+	var class_names := PackedStringArray([
+		"none", "open_food", "wetland_food", "highland_food", "open_grazer",
+		"forest_grazer", "dry_grazer", "cold_grazer", "tropical", "fiber_open",
+		"fiber_wet", "fiber_forest",
+	])
 	var food_bits: Array[int] = []
 	for food_id in ["bio.maize", "bio.wheat", "bio.rice", "bio.potato"]:
 		food_bits.append(ResearchSignalCatalogScript.occupancy_bit_for_signal(catalog, StringName(food_id)))
@@ -10343,6 +10352,7 @@ func _log_bio_occupancy_seed(knobs: Dictionary, seed_res: Dictionary, landmass_c
 			continue
 		seen[lid] = true
 		var foods: Array[String] = []
+		var classes: Array[String] = []
 		for other in range(occupancy.size()):
 			if int(landmass[other]) != lid:
 				continue
@@ -10357,7 +10367,21 @@ func _log_bio_occupancy_seed(knobs: Dictionary, seed_res: Dictionary, landmass_c
 				foods.append("rice")
 			if int(food_bits[3]) >= 0 and (bits & (1 << int(food_bits[3]))) != 0 and not foods.has("potato"):
 				foods.append("potato")
-		print("[bio-occupancy]   landmass %d foods=%s" % [lid, ", ".join(foods) if not foods.is_empty() else "none"])
+			for si in range(mini(occ_bits.size(), habitat_class.size())):
+				var bit := int(occ_bits[si])
+				if bit < 0 or bit >= 32 or (bits & (1 << bit)) == 0:
+					continue
+				var hclass := int(habitat_class[si])
+				if hclass <= 0 or hclass >= class_names.size():
+					continue
+				var cname := String(class_names[hclass])
+				if not classes.has(cname):
+					classes.append(cname)
+		print("[bio-occupancy]   landmass %d classes=%s foods=%s" % [
+			lid,
+			", ".join(classes) if not classes.is_empty() else "none",
+			", ".join(foods) if not foods.is_empty() else "none",
+		])
 
 
 func run_bio_occupancy_pass_native(map_ref, run_diffusion: bool = false, day_index: int = 0) -> Dictionary:
