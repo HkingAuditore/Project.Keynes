@@ -57,25 +57,27 @@ exists. Do not fall back to an arbitrary tile.
 ## Enforce the Player Start Contract
 
 - Use `StartLocationProfile`, not inspector habitability scores.
-- Require passable land, profile climate/elevation/vitality ranges, and local or
-  neighboring river/lake freshwater.
-- Sort by survival score and deterministically choose in the top quartile using
-  the world seed and `player_start` purpose key.
-- Prefer a naturally present gold or silver deposit.
-- Top up fertile soil, timber, wild game, stone, flint, and one precious metal
-  to profile minimums, then publish to MapData, DCWorld, and DCWorldExt.
+- Require passable land and profile climate/elevation/vitality ranges. Do not
+  require river/lake or coastal hydrology.
+- Prefer a naturally present gold or silver deposit, then survival score, then
+  cell index. Close routes only for the cells about to be chosen.
+- Top up fertile soil, timber, wild game, stone, flint, pasture, and one
+  precious metal to profile minimums. Do not invent fish, paddy, or clay on dry
+  inland cells. After MapData writes, republish reserves and resource research
+  signals. `evaluate_starter_route` must not apply top-ups.
 - Create stable country id `country.player` with exactly the start cell in its
   territory CSR. Keep every other cell unowned.
 
 ## Enforce the Settlement Contract
 
 Use `StarterSettlementBootstrap`; never call `EconomyTestBootstrap` from the
-formal path. Require exactly 20 people: three foragers, two merchants, one gold
-miner or two silver miners, and unemployed household members for the remainder.
-Require one gathering ground, timber collector, merchant post, and matching
-precious-metal work site. Use EconomyFacade catalog helpers and fixed-point
-packets, provide the 60-day bridge, and retain population/money/goods
-conservation checks.
+formal path. Require exactly 20 people and exactly 20 self-operated job slots.
+Allow employee roles only on `placer_gold_working` (1 miner) and
+`surface_silver_working` (2 miners); do not prefill those slots. Other Stone-Age
+starter buildings must remain owner-only. Require the planner's closed regional
+bundle plus the matching precious-metal work site and `early_merchant_post`.
+Use EconomyFacade catalog helpers and fixed-point packets, provide the 15-day
+local food bridge, and retain population/money/goods conservation checks.
 
 ## Enforce PKSV Boundaries
 

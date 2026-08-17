@@ -53,7 +53,7 @@ callbacks keep the serial route until their owner can prove thread safety.
 - 某个机制现在到底跑在 C++、DataCore 还是 GDScript？
 - 继续推进 total C++/DOTS 化时，下一步应该迁移哪一段？
 
-## Economy pipeline（PKEC v35 当前，v24 历史基础）
+## Economy pipeline（PKEC v36 当前，v24 历史基础）
 
 经济图仍由 `NativeEconomyRuntime` 权威执行，未增加 DataCore slot 或 GDScript fallback。
 `building_plan` 生成授信额度，`building_employment` 只为 ACTIVE 建筑分配岗位，
@@ -123,12 +123,15 @@ generation-stamped 首触 shadow delta 计算增量 totals。PROBE 每日全量�
 writes only landform facts (`landform.*`) into cell-indexed CSR. It no longer stamps `bio.*` or
 screen-percentage Earth realms. After natural-resource bootstrap, `run_bio_province_pass` builds
 landmass and barrier provinces from hex neighbors, and `run_bio_seed_pass` places each catalog
-species on **every continent-scale landmass** that has a biome-scale envelope+carrier stand
-(at least 8 suitable cells, and landmass size ≥ 18% of the largest landmass). The landmass with
-the most suitable cells is still recorded as the primary origin (ties broken by seed hash).
-Satellite islets that only hold a handful of cells are not seeded unless they are that unique
-argmax endemic pocket. Every envelope+carrier cell on a seeded landmass is eligible; `fill_keep`
-thins the stand. Runtime neighbor diffusion still cannot cross ocean.
+species as a **compact origin hearth** (cost-bounded BFS on envelope∩carrier; `max_cost` +
+`fill_keep`). `UNIQUE_HEARTH` (default) is one connected stand, usually on one landmass;
+`COSMOPOLITAN` (reed) may occupy every continent-scale wetland/river stand. Placement prefers
+narrow envelopes, then repels same-guild cores. Continent-scale landmasses (at least 8 cells,
+and size ≥ 18% of the largest landmass) keep a playable food + fiber/livestock floor via a
+secondary hearth when needed — not by copying the whole species list. Satellite islets that
+only hold a handful of cells are not seeded unless they are that unique argmax endemic pocket.
+`cell_biogeographic_realm_arr` stays 0; `realm.*` tags are display metadata and are not read by
+seeding. Runtime neighbor diffusion still cannot cross ocean.
 Carrier gating remains `pasture` / `wild_game` / `arable_land` / `paddy_land` / `plantation_land`.
 Occupancy is `cell.bio_occupancy_bits` (DataCore I32 bitset, persisted with `dynamic_world`).
 
@@ -892,10 +895,10 @@ Ocean land 算法概要：
 主要入口：
 
 - `DCWorldExt::run_bio_province_pass` / `run_bio_seed_pass` / `run_bio_occupancy_pass` — [`gdext/src/world_ext_bio.cpp`](../../gdext/src/world_ext_bio.cpp)
-- `map_generator.gd::_seed_bio_occupancy`（资源 bootstrap 之后一次：陆块+省，再按大陆级陆块信封播撒）
+- `map_generator.gd::_seed_bio_occupancy`（资源 bootstrap 之后一次：陆块+省，再按连通起源 hearth 播种）
 - `BioOccupancyDailySystem`（`bio_occupancy_daily`，写 `cell.bio_occupancy_bits`；已占领格用气候余量持久化，植被演替与承载日清不立刻灭绝；引种与同省扩散仍走严格信封+承载）— [`scripts/simulation/systems/bio_occupancy_daily_system.gd`](../../Project/project-keynes/scripts/simulation/systems/bio_occupancy_daily_system.gd)
 
-生成期占领 ⊆ 气候信封 ∩ 大陆级陆块 ∩ 承载储量>ε（卫星岛跳过，除非它是该物种唯一适生陆块）。广布物种走气候带；马铃薯走安第斯式中高海拔冷凉开敞带（不绑旱地承载，也不铺成温带作物），牦牛走更高更冷的高寒带，骆驼走干草原与荒漠。骆驼/牦牛/野生马铃薯可以不绑牧场或旱地承载。运行期邻格扩散仍限同省。羊/牛/马等绑 `pasture`，猪绑 `wild_game`，玉米/小麦绑 `arable_land`，橡胶只绑 `plantation_land`；承载只门控播种、扩散和引种，不门控已占领格的日持久化。本格农业生产可绕过省界引种，但仍要信封和承载；跨邦贸易只发 `contact.*`。
+生成期占领 ⊆ 气候信封 ∩ 连通起源 hearth ∩ 承载储量>ε。默认每种一块主 hearth；芦苇可多陆。覆盖底盘保证每块大陆级陆块至少一种食物和一条纤维/牲畜路（次级独立 hearth，禁止整包复制）。卫星岛跳过，除非它是该物种唯一适生陆块。马铃薯走中高海拔冷凉开敞带（不绑旱地承载），牦牛走更高更冷的高寒带，骆驼走干草原与荒漠。不按地球史把物种打包到固定旧世界/新世界。骆驼/牦牛/野生马铃薯可以不绑牧场或旱地承载。运行期邻格扩散仍限同省。羊/牛/马等绑 `pasture`，猪绑 `wild_game`，玉米/小麦绑 `arable_land`，橡胶只绑 `plantation_land`；承载只门控播种、扩散和引种，不门控已占领格的日持久化。本格农业生产可绕过省界引种，但仍要信封和承载；跨邦贸易只发 `contact.*`。
 
 **模型（统一 profile，可选线性或种群生态动态）**：普通资源每 tick、每 cell、每资源 r
 采用**半隐式（IMEX）积分** —— 把生成/衰减拆成「常数生产项 P」与「线性损失率 L」，
@@ -2853,7 +2856,7 @@ extra-change slot 由 ResourceProfileRegistry 顺序驱动 natural-resource pass
 电力生产者由 output 的 `good_storage_modes=cycle_flow` 判定并在同一 cell 的普通生产前执行。
 家庭需求不消费 cycle-flow 电力。金银 output 由 `good_monetary_issue_values` 进入实物锚定发行
 分支并累计 `bullion_money_issued`；其余 offer 走缺口加权预算和商人现金保留规则。merchant owner
-只允许两个无商品投入、无雇员、消耗匹配矿藏且单产金/银的早期 collector。
+只允许两个无商品投入、消耗匹配矿藏且单产金/银的早期 collector；它们可以保留矿工雇员，产出走铸币面值全额收购。金/银矿藏不是可交易物资。
 
 两相生产完成后，将受就业/资金/资源约束的可行采购意图、实际 offer（含 discarded、排除业主留用）
 和输出单位成本聚合进稀疏 `MarketSignalStore`；居民消费、企业输入和建设消费另聚合为

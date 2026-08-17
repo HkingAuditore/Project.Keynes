@@ -207,8 +207,8 @@ owner/employee job capacity but leaves all employment counters and market stock 
 native graph to fill. This is a development fixture, not a production historical population provider.
 
 Gold and silver deposits are intentionally early-visible monetary anchors. Gathering technology
-unlocks low-yield merchant-owned gold and silver workings with no goods inputs or employees; they
-extract the matching real deposit and output only bullion. Later employee-bearing mines remain
+unlocks low-yield merchant-owned gold and silver workings with no goods inputs; they extract the
+matching real deposit, employ miners, and output only bullion. Later employee-bearing mines remain
 industrialist-owned production. Accepted bullion uses the native issue path, publishes
 `bullion_money_issued` plus gold/silver splits, and remains inside exact money and goods audits.
 

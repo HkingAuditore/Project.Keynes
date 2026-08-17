@@ -656,6 +656,7 @@ tick's ψ (`cell_ocean_psi` slot) instead of zero:
   `last_completed_audit_worker_tasks_max` 应不超过 `economy_worker_task_cap`。
 - `worker_cpu_ms` 是各 task CPU 时间之和，stage `*_ms` 是 wait wall time；二者不能直接相加。
 - `opening_audit_fast_paths/full_verifications` 区分复用 committed close 与周期完整 opening scan。
+  开拓队 live 人口或 `expedition_funds` 相对上一收盘发生变化时，opening 不得走 fast path。
   closing audit 读取 `closing_audit_mode/fast_paths/full_verifications`：
   PROBE 每日同时算首触 shadow delta 与全量权威结果，INCREMENTAL 只在首日、restore、
   异常或周期复核日全扫。任何 mismatch 或 ledger error 都是 correctness failure。

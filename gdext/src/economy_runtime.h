@@ -38,8 +38,15 @@ public:
     // 35: RECOVERY_PROBE is no longer a runtime state. The building catalog
     // and grouped construction contract changed with this version; older
     // economy saves are intentionally incompatible and are rejected.
-    static constexpr int32_t SCHEMA_VERSION = 35;
+    // 36: cell carrying-capacity mix (K_geo × surplus × sat) and support EMA.
+    // v35 saves restore with support_ema = 1. Pre-v35 economy saves stay rejected.
+    static constexpr int32_t SCHEMA_VERSION = 36;
     static constexpr int32_t ROLLING_PHASE_COUNT = 5;
+    static constexpr int32_t CARRYING_FAMILY_COUNT = 21;
+    static constexpr int32_t CARRYING_NEED_FAMILY_COUNT = 17;
+    static constexpr int32_t CARRYING_SUPPORT_RESOURCE_COUNT = 7;
+    static constexpr int32_t CARRYING_LANDFORM_COUNT = 16;
+    static constexpr int32_t CARRYING_VEGETATION_COUNT = 28;
     // 不能叫 PAGE_SIZE：那是 POSIX 保留的宏名，emscripten 的 musl
     // <bits/limits.h> 无条件 `#define PAGE_SIZE 65536`，会把这行成员声明展开成
     // `static constexpr int32_t 65536 = 64;`。
@@ -232,6 +239,7 @@ public:
         uint64_t vision_revision);
     godot::Dictionary family_colonization_quote_detail(
         int64_t quote_token) const;
+    void fill_colonization_query_flags(godot::Dictionary &out) const;
     godot::Dictionary submit_family_colonization_start(
         int64_t country_handle, int64_t family_handle, int32_t source_cell,
         int32_t target_cell, int64_t population, int64_t quote_token,
@@ -631,6 +639,16 @@ private:
         int64_t quantity = 0;
         int32_t mode = 0; // 0=extract per day, 1=capacity per building.
         int32_t access_mode = 0; // 0=local, 1=local plus six hex neighbors.
+    };
+
+    struct CarryingSupportYield {
+        int32_t building_type_id = -1;
+        int32_t resource_id = -1;
+        int32_t secondary_resource_id = -1;
+        int32_t mode = 1;
+        int64_t food_output_per_day = 0;
+        int64_t resource_qty = 1;
+        int64_t secondary_qty = 0;
     };
 
     struct ConditionToken {
@@ -1576,6 +1594,7 @@ private:
         int64_t transit_goods = 0;
         int64_t transit_population = 0;
         int64_t escrow_cash = 0;
+        int64_t expedition_funds = 0;
         int64_t merchant_cash = 0;
         int64_t merchant_inventory_retail_value = 0;
         int64_t merchant_inventory_liquidation_value = 0;
@@ -2060,6 +2079,11 @@ private:
         std::vector<OwnerRetainedOutput> retained_outputs;
         std::vector<ProductionTraceDraft> trace_drafts;
         std::vector<ProductionCashflowDraft> cashflow_drafts;
+        // Worker-local occupancy introductions. The shared
+        // `_bio_introduce_keys` set must not be mutated from production
+        // workers; merge_building_production_result commits these in cell order.
+        std::vector<int32_t> bio_introduce_cells;
+        std::vector<int32_t> bio_introduce_bits;
         int64_t allocation_growth_count = 0;
         int64_t allocation_growth_bytes = 0;
 
@@ -2432,6 +2456,30 @@ private:
         _satisfaction_development_weights_q16 = {26214, 26214, 13107};
     int32_t _satisfaction_development_variety_target = 12;
     int32_t _satisfaction_birth_reference_q16 = 45875;
+    int64_t _carrying_k_habitat_ref = 40;
+    int64_t _carrying_k_floor = 8;
+    int32_t _carrying_river_bonus_q16 = 72090;
+    int32_t _carrying_water_habitability_q16 = 49152;
+    int32_t _carrying_surplus_elasticity_q16 = Q16_ONE / 2;
+    int32_t _carrying_sat_elasticity_q16 = 22938;
+    int32_t _carrying_soft_start_q16 = 45875;
+    int32_t _carrying_surplus_floor_q16 = 16384;
+    int32_t _carrying_surplus_cap_q16 = 98304;
+    int32_t _carrying_sat_floor_q16 = 8192;
+    int32_t _carrying_sat_cap_q16 = Q16_ONE;
+    int32_t _carrying_residual_floor_q16 = Q16_ONE / 2;
+    int32_t _carrying_residual_cap_q16 = Q16_ONE * 2;
+    int32_t _carrying_support_ema_alpha_q16 = 1024;
+    int32_t _carrying_temp_opt_lo_q16 = 19661;
+    int32_t _carrying_temp_opt_hi_q16 = 45875;
+    int32_t _carrying_paw_opt_lo_q16 = 16384;
+    int32_t _carrying_paw_opt_hi_q16 = 58982;
+    std::vector<int32_t> _carrying_family_weight;
+    std::vector<std::string> _carrying_profile_class_ids;
+    std::vector<int32_t> _carrying_profile_class_weight_q16;
+    std::vector<int32_t> _carrying_class_weight_q16;
+    std::vector<int32_t> _carrying_landform_habitability_q16;
+    std::vector<int32_t> _carrying_vegetation_habitability_q16;
     std::array<int32_t, SAT_PRESSURE_LEVEL_COUNT - 1>
         _satisfaction_pressure_thresholds_q16 = {13107, 26214, 39322, 52429};
     int32_t _wage_ema_alpha_q16 = 8192;
@@ -3320,6 +3368,18 @@ private:
     std::vector<Rule> _rules;
     std::vector<int64_t> _rule_params;
     std::vector<std::string> _profession_ids;
+    std::vector<int32_t> _profession_class_index;
+    std::vector<std::string> _carrying_class_ids;
+    std::vector<std::string> _carrying_family_ids;
+    std::vector<int32_t> _carrying_family_need_stable;
+    std::vector<int32_t> _carrying_family_good_offsets;
+    std::vector<int32_t> _carrying_family_goods;
+    std::vector<int32_t> _need_carrying_family;
+    std::vector<int32_t> _carrying_support_resource_ids;
+    std::vector<int32_t> _carrying_food_yield_offsets;
+    std::vector<CarryingSupportYield> _carrying_food_yields;
+    int64_t _carrying_survival_food_per_person = 1;
+    std::vector<CarryingSupportYield> _epoch_country_support_yield;
     std::vector<int32_t> _profession_technology_offsets;
     std::vector<int32_t> _profession_required_technologies;
     std::vector<std::string> _ethnicity_ids;
@@ -3328,6 +3388,8 @@ private:
     std::vector<int32_t> _good_occupancy_bits;
     std::vector<int32_t> _bio_introduce_cells;
     std::vector<int32_t> _bio_introduce_bits;
+    // Main-thread only. Production workers land introductions in
+    // ProductionResult; merge_building_production_result commits them here.
     std::unordered_set<uint64_t> _bio_introduce_keys;
     std::vector<std::string> _plan_ids;
     std::vector<int32_t> _good_default_price;
@@ -3692,6 +3754,16 @@ private:
     // Last published social-pressure level per cell. Persisted so a reload does
     // not replay a level-crossing event that already fired.
     std::vector<uint8_t> _cell_social_pressure_level;
+    // Slow EMA of the surplus×sat mix factor. Fertility reads this so a single
+    // harvest spike does not jump K_eff. Persisted in PKEC v36.
+    std::vector<int32_t> _cell_support_ema_q16;
+    // Derived carrying diagnostics. Not hashed except support EMA; Inspector only.
+    std::vector<int64_t> _cell_carrying_k_geo;
+    std::vector<int64_t> _cell_carrying_k_eff;
+    std::vector<int32_t> _cell_carrying_surplus_q16;
+    std::vector<int32_t> _cell_carrying_sat_q16;
+    std::vector<int32_t> _cell_carrying_family_surplus_q16;
+    std::vector<uint8_t> _cell_carrying_family_bindable;
     int32_t _epoch_country_count = 0;
     int32_t _epoch_country_technology_words = 0;
     uint64_t _epoch_country_generation = 0;
@@ -3817,9 +3889,13 @@ private:
     int32_t _family_min_settlement_tier = 2;
     int32_t _family_review_days = 30;
     int64_t _family_min_population_per_active = 100;
-    int32_t _family_max_per_cell = 64;
+    int32_t _family_max_per_cell = 8;
     int32_t _family_cells_per_slice = 128;
     int32_t _family_decline_reviews = 3;
+    // Notable households include dependents of the owned owner posts, not just
+    // the two shopkeepers. Anonymous majority stays implicit.
+    int32_t _family_household_people_per_owner_slot = 256;
+    int32_t _family_household_max_people = 1024;
     int32_t _person_runtime_mode = 2; // 0=OFF, 1=PROBE, 2=ACTIVE.
     int32_t _person_max_per_family = 4;
     int32_t _person_max_per_cell = 128;
@@ -3947,13 +4023,32 @@ private:
         int32_t destination_cell, std::string &error);
     void release_family_expedition_reservations(int32_t expedition);
     bool process_due_family_expeditions(int64_t day, std::string &error);
+    bool family_expedition_settle_inflight(uint64_t expedition_handle) const;
+    void recover_lost_family_settlement_commands();
     void rebuild_family_expedition_indices();
     void push_family_expedition_due(int32_t expedition);
     void append_colonization_receipt(int32_t expedition, int64_t sequence,
                                      int64_t effective_day, int64_t settled_day,
                                      uint8_t kind, const char *code);
+    void append_colonization_command_receipt(uint64_t country_handle,
+                                             uint64_t expedition_handle,
+                                             int32_t target_cell,
+                                             int64_t sequence,
+                                             int64_t effective_day,
+                                             int64_t settled_day,
+                                             uint8_t kind, const char *code);
+    bool pending_family_expedition_target_taken(uint64_t country_handle,
+                                                int32_t target_cell) const;
+    bool pending_family_expedition_cancel_taken(uint64_t expedition_handle) const;
+    bool has_pending_family_expedition_player_command() const;
+    bool apply_family_expedition_player_command(const Command &cmd,
+                                                std::string &error);
     int64_t family_population_in_cell(uint64_t family_handle,
                                       int32_t cell) const;
+    bool colonization_target_owner_allowed(uint64_t country_handle,
+                                           int32_t cell) const;
+    bool colonization_destination_family_allowed(uint64_t family_handle,
+                                                 int32_t cell) const;
     bool plan_family_colonization_route(uint64_t country_handle,
                                         int32_t source_cell,
                                         int32_t target_cell,
@@ -3970,6 +4065,20 @@ private:
     bool publish_epoch_slice(int64_t &work_done, std::string &error);
     void reset_publish_state();
     bool compile_building_catalog(const godot::Dictionary &catalog, std::string &error);
+    bool compile_carrying_catalog(const godot::Dictionary &catalog, std::string &error);
+    void refresh_epoch_carrying_yields();
+    int64_t carrying_mix_q16(int64_t value_q16, int32_t elasticity_q16,
+                             int64_t &sat) const;
+    int64_t carrying_climate_habitability_q16(int32_t cell, int64_t &sat) const;
+    int64_t carrying_resource_stock(int32_t resource_id, int32_t cell) const;
+    int64_t cell_k_geo_persons(int32_t cell, int64_t &sat) const;
+    int64_t cell_family_surplus_q16(int32_t market, int32_t cell, int32_t family,
+                                    int64_t food_filled, int64_t food_desired,
+                                    const int64_t *good_demand,
+                                    const int64_t *good_sales,
+                                    int64_t &sat) const;
+    void append_carrying_capacity_fields(godot::Dictionary &out,
+                                         int32_t cell_idx) const;
     bool evaluate_building_conditions(int32_t type_id, int32_t cell) const;
     bool cell_has_technology(int32_t cell, int32_t technology_id, bool frozen) const;
     bool cell_has_requirements(int32_t cell, int32_t begin, int32_t end,
@@ -4125,6 +4234,7 @@ private:
     void ensure_resource_lane(size_t index);
     void consume_resource_amount(const ResourceAmount &item, int32_t cell, int64_t quantity);
     void queue_bio_introduce_from_good(int32_t cell, int32_t good_id);
+    void commit_bio_introduce(int32_t cell, int32_t bit);
     bool resource_is_renewable(int32_t resource_id) const;
     int64_t renewable_safe_harvest(int32_t resource_id, int32_t cell) const;
     bool commit_ready_construction(std::vector<int32_t> &changed_cells,
@@ -4211,6 +4321,15 @@ private:
     bool run_family_commit_slice(int64_t &work_done, std::string &error);
     void rebuild_family_indices();
     void normalize_family_memberships();
+    void absorb_family_households();
+    int64_t family_household_target_people(int64_t owner_slots) const;
+    int64_t family_household_people_for_slot(int32_t slot,
+                                             int64_t owner_slots) const;
+    int64_t family_owned_owner_slots_in_cell(int32_t family_index,
+                                             int32_t cell) const;
+    void add_family_household_people(uint64_t family_handle, int32_t slot,
+                                     int64_t take);
+    int64_t family_people_on_slot(int32_t slot) const;
     void update_family_employment_attribution();
     void clamp_family_owner_employment_for_cell(int32_t cell);
     int32_t create_family_for_building(int32_t cell, int32_t building_index,
@@ -4287,13 +4406,22 @@ private:
         int64_t environment_factor_q16, int64_t composite_factor_q16,
         int64_t actor_population, int64_t actor_funds,
         int64_t &saturation_count) const;
+    bool slot_has_merchant_profession(int32_t slot) const;
     bool is_merchant_slot(int32_t slot) const;
+    bool market_has_living_merchant(int32_t market) const;
+    void collect_living_merchant_slots(int32_t market,
+                                       std::vector<int32_t> &out) const;
+    bool ensure_market_has_living_merchant(int32_t market, int64_t &repair_count,
+                                           std::string &error);
     void touch_accounting_slot(int32_t slot);
     void record_cohort_fiscal(int32_t slot, int64_t signed_amount);
     void rebuild_incremental_audit_shadow();
     void begin_incremental_audit_epoch();
     void audit_touch_population_lane(int32_t slot);
     void audit_touch_market_lane(size_t index);
+    void sum_family_expedition_holdings(int64_t &population, int64_t &funds,
+                                        int64_t &saturation) const;
+    void note_family_expedition_audit_invalidation();
     AuditTotals incremental_audit_totals() const;
     void commit_incremental_audit_shadow();
     void diagnose_incremental_audit_mismatch(const AuditTotals &full);

@@ -1,0 +1,294 @@
+﻿
+Microsoft (R) Windows Debugger Version 10.0.22621.755 AMD64
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+
+Loading Dump File [C:\Users\hkinghuang\AppData\Local\CrashDumps\Godot_v4.6.2-stable_win64.exe.56656.dmp]
+User Mini Dump File: Only registers, stack and portions of memory are available
+
+
+************* Path validation summary **************
+Response                         Time (ms)     Location
+Deferred                                       srv*C:\symbols*https://msdl.microsoft.com/download/symbols
+Symbol search path is: srv*C:\symbols*https://msdl.microsoft.com/download/symbols
+Executable search path is: 
+Windows 10 Version 22631 MP (32 procs) Free x64
+Product: WinNt, suite: SingleUserTS
+Edition build lab: 22621.1.amd64fre.ni_release.220506-1250
+Machine Name:
+Debug session time: Mon Aug 17 16:05:45.000 2026 (UTC + 8:00)
+System Uptime: 0 days 1:19:28.248
+Process Uptime: 0 days 0:03:39.000
+................................................................
+................................
+Loading unloaded module list
+..
+This dump file has an exception of interest stored in it.
+The stored exception information can be accessed via .ecxr.
+(dd50.e450): Unknown exception - code c0000374 (first/second chance not available)
+For analysis of this file, run !analyze -v
+ntdll!NtWaitForMultipleObjects+0x14:
+00007ffc`35551954 c3              ret
+0:000> .symopt+0x40
+Symbol options are 0xB0367:
+  0x00000001 - SYMOPT_CASE_INSENSITIVE
+  0x00000002 - SYMOPT_UNDNAME
+  0x00000004 - SYMOPT_DEFERRED_LOADS
+  0x00000020 - SYMOPT_OMAP_FIND_NEAREST
+  0x00000040 - SYMOPT_LOAD_ANYTHING
+  0x00000100 - SYMOPT_NO_UNQUALIFIED_LOADS
+  0x00000200 - SYMOPT_FAIL_CRITICAL_ERRORS
+  0x00010000 - SYMOPT_AUTO_PUBLICS
+  0x00020000 - SYMOPT_NO_IMAGE_SEARCH
+  0x00080000 - SYMOPT_NO_PROMPTS
+0:000> ub 00007ffa`3f6a556e L40
+*** WARNING: Unable to verify checksum for dots_ext.windows.template_debug.x86_64.dll
+dots_ext_windows_template_debug_x86_64!dots_ext_init+0xadcf7:
+00007ffa`3f6a5407 00488d          add     byte ptr [rax-73h],cl
+00007ffa`3f6a540a 8c24a0          mov     word ptr [rax],fs
+00007ffa`3f6a540d 0200            add     al,byte ptr [rax]
+00007ffa`3f6a540f 00e8            add     al,ch
+00007ffa`3f6a5411 ab              stos    dword ptr [rdi]
+00007ffa`3f6a5412 99              cdq
+00007ffa`3f6a5413 15004c8d8c      adc     eax,8C8D4C00h
+00007ffa`3f6a5418 24d8            and     al,0D8h
+00007ffa`3f6a541a 0200            add     al,byte ptr [rax]
+00007ffa`3f6a541c 00488b          add     byte ptr [rax-75h],cl
+00007ffa`3f6a541f cb              retf
+00007ffa`3f6a5420 4c8d8424a8020000 lea     r8,[rsp+2A8h]
+00007ffa`3f6a5428 488d9424f0020000 lea     rdx,[rsp+2F0h]
+00007ffa`3f6a5430 e85b7f1500      call    dots_ext_windows_template_debug_x86_64!dots_ext_init+0x205c80 (00007ffa`3f7fd390)
+00007ffa`3f6a5435 488d942430030000 lea     rdx,[rsp+330h]
+00007ffa`3f6a543d 488bc8          mov     rcx,rax
+00007ffa`3f6a5440 e8ab3c1600      call    dots_ext_windows_template_debug_x86_64!dots_ext_init+0x2119e0 (00007ffa`3f8090f0)
+00007ffa`3f6a5445 488d8c24f0020000 lea     rcx,[rsp+2F0h]
+00007ffa`3f6a544d e8ce3a1600      call    dots_ext_windows_template_debug_x86_64!dots_ext_init+0x211810 (00007ffa`3f808f20)
+00007ffa`3f6a5452 488d8c24a8020000 lea     rcx,[rsp+2A8h]
+00007ffa`3f6a545a e8c13a1600      call    dots_ext_windows_template_debug_x86_64!dots_ext_init+0x211810 (00007ffa`3f808f20)
+00007ffa`3f6a545f 488d8c24d8020000 lea     rcx,[rsp+2D8h]
+00007ffa`3f6a5467 e8b43a1600      call    dots_ext_windows_template_debug_x86_64!dots_ext_init+0x211810 (00007ffa`3f808f20)
+00007ffa`3f6a546c 488d8c24c0020000 lea     rcx,[rsp+2C0h]
+00007ffa`3f6a5474 e8b7de1500      call    dots_ext_windows_template_debug_x86_64!dots_ext_init+0x20bc20 (00007ffa`3f803330)
+00007ffa`3f6a5479 488d8c24c0020000 lea     rcx,[rsp+2C0h]
+00007ffa`3f6a5481 e87ade1500      call    dots_ext_windows_template_debug_x86_64!dots_ext_init+0x20bbf0 (00007ffa`3f803300)
+00007ffa`3f6a5486 488bd0          mov     rdx,rax
+00007ffa`3f6a5489 488d8c24d8020000 lea     rcx,[rsp+2D8h]
+00007ffa`3f6a5491 e84a381600      call    dots_ext_windows_template_debug_x86_64!dots_ext_init+0x2115d0 (00007ffa`3f808ce0)
+00007ffa`3f6a5496 488d15e3f01d00  lea     rdx,[dots_ext_windows_template_debug_x86_64!dots_ext_init+0x28ce70 (00007ffa`3f884580)]
+00007ffa`3f6a549d 488d8c24a0020000 lea     rcx,[rsp+2A0h]
+00007ffa`3f6a54a5 e8a6901500      call    dots_ext_windows_template_debug_x86_64!dots_ext_init+0x206e40 (00007ffa`3f7fe550)
+00007ffa`3f6a54aa 488bd0          mov     rdx,rax
+00007ffa`3f6a54ad 488d8c24a8020000 lea     rcx,[rsp+2A8h]
+00007ffa`3f6a54b5 e8b6381600      call    dots_ext_windows_template_debug_x86_64!dots_ext_init+0x211660 (00007ffa`3f808d70)
+00007ffa`3f6a54ba 488d8c24a0020000 lea     rcx,[rsp+2A0h]
+00007ffa`3f6a54c2 e8f9981500      call    dots_ext_windows_template_debug_x86_64!dots_ext_init+0x2076b0 (00007ffa`3f7fedc0)
+00007ffa`3f6a54c7 4c8d8c24d8020000 lea     r9,[rsp+2D8h]
+00007ffa`3f6a54cf 488bcb          mov     rcx,rbx
+00007ffa`3f6a54d2 4c8d8424a8020000 lea     r8,[rsp+2A8h]
+00007ffa`3f6a54da 488d9424f0020000 lea     rdx,[rsp+2F0h]
+00007ffa`3f6a54e2 e8a97e1500      call    dots_ext_windows_template_debug_x86_64!dots_ext_init+0x205c80 (00007ffa`3f7fd390)
+00007ffa`3f6a54e7 488d9424f8030000 lea     rdx,[rsp+3F8h]
+00007ffa`3f6a54ef 488bc8          mov     rcx,rax
+00007ffa`3f6a54f2 e8f93b1600      call    dots_ext_windows_template_debug_x86_64!dots_ext_init+0x2119e0 (00007ffa`3f8090f0)
+00007ffa`3f6a54f7 488d8c24f0020000 lea     rcx,[rsp+2F0h]
+00007ffa`3f6a54ff e81c3a1600      call    dots_ext_windows_template_debug_x86_64!dots_ext_init+0x211810 (00007ffa`3f808f20)
+00007ffa`3f6a5504 488d8c24a8020000 lea     rcx,[rsp+2A8h]
+00007ffa`3f6a550c e80f3a1600      call    dots_ext_windows_template_debug_x86_64!dots_ext_init+0x211810 (00007ffa`3f808f20)
+00007ffa`3f6a5511 488d8c24d8020000 lea     rcx,[rsp+2D8h]
+00007ffa`3f6a5519 e8023a1600      call    dots_ext_windows_template_debug_x86_64!dots_ext_init+0x211810 (00007ffa`3f808f20)
+00007ffa`3f6a551e 488d8c24c0020000 lea     rcx,[rsp+2C0h]
+00007ffa`3f6a5526 e805de1500      call    dots_ext_windows_template_debug_x86_64!dots_ext_init+0x20bc20 (00007ffa`3f803330)
+00007ffa`3f6a552b 4c39a7b0060000  cmp     qword ptr [rdi+6B0h],r12
+00007ffa`3f6a5532 0f8489010000    je      dots_ext_windows_template_debug_x86_64!dots_ext_init+0xadfb1 (00007ffa`3f6a56c1)
+00007ffa`3f6a5538 488d8c24c0020000 lea     rcx,[rsp+2C0h]
+00007ffa`3f6a5540 e8bbdd1500      call    dots_ext_windows_template_debug_x86_64!dots_ext_init+0x20bbf0 (00007ffa`3f803300)
+00007ffa`3f6a5545 488d8c24d8020000 lea     rcx,[rsp+2D8h]
+00007ffa`3f6a554d e8aedd1500      call    dots_ext_windows_template_debug_x86_64!dots_ext_init+0x20bbf0 (00007ffa`3f803300)
+00007ffa`3f6a5552 488b8fb0060000  mov     rcx,qword ptr [rdi+6B0h]
+00007ffa`3f6a5559 4c8d8424d8020000 lea     r8,[rsp+2D8h]
+00007ffa`3f6a5561 488d9424c0020000 lea     rdx,[rsp+2C0h]
+00007ffa`3f6a5569 e8b244deff      call    dots_ext_windows_template_debug_x86_64+0xe9a20 (00007ffa`3f489a20)
+0:000> da 00007ffa`3f884580 L80
+00007ffa`3f884580  "introduce_bits"
+0:000> du 00007ffa`3f884580 L40
+00007ffa`3f884580  "湩牴摯捵?:000> da 00007ffa`3f884500 L40
+00007ffa`3f884500  "run_diffusion"
+0:000> u 00007ffa`3f489a20 L30
+dots_ext_windows_template_debug_x86_64+0xe9a20:
+00007ffa`3f489a20 48895c2408      mov     qword ptr [rsp+8],rbx
+00007ffa`3f489a25 48896c2410      mov     qword ptr [rsp+10h],rbp
+00007ffa`3f489a2a 4889742418      mov     qword ptr [rsp+18h],rsi
+00007ffa`3f489a2f 48897c2420      mov     qword ptr [rsp+20h],rdi
+00007ffa`3f489a34 4156            push    r14
+00007ffa`3f489a36 4883ec20        sub     rsp,20h
+00007ffa`3f489a3a 488bb988470000  mov     rdi,qword ptr [rcx+4788h]
+00007ffa`3f489a41 4c8bf2          mov     r14,rdx
+00007ffa`3f489a44 482bb980470000  sub     rdi,qword ptr [rcx+4780h]
+00007ffa`3f489a4b 488bd9          mov     rbx,rcx
+00007ffa`3f489a4e 48c1ff02        sar     rdi,2
+00007ffa`3f489a52 498bce          mov     rcx,r14
+00007ffa`3f489a55 4863f7          movsxd  rsi,edi
+00007ffa`3f489a58 498be8          mov     rbp,r8
+00007ffa`3f489a5b 488bd6          mov     rdx,rsi
+00007ffa`3f489a5e e82da23700      call    dots_ext_windows_template_debug_x86_64!dots_ext_init+0x20c580 (00007ffa`3f803c90)
+00007ffa`3f489a63 488bd6          mov     rdx,rsi
+00007ffa`3f489a66 488bcd          mov     rcx,rbp
+00007ffa`3f489a69 e822a23700      call    dots_ext_windows_template_debug_x86_64!dots_ext_init+0x20c580 (00007ffa`3f803c90)
+00007ffa`3f489a6e 85ff            test    edi,edi
+00007ffa`3f489a70 7e55            jle     dots_ext_windows_template_debug_x86_64+0xe9ac7 (00007ffa`3f489ac7)
+00007ffa`3f489a72 498bce          mov     rcx,r14
+00007ffa`3f489a75 e8f6463700      call    dots_ext_windows_template_debug_x86_64!dots_ext_init+0x206a60 (00007ffa`3f7fe170)
+00007ffa`3f489a7a 488bcd          mov     rcx,rbp
+00007ffa`3f489a7d 488bf8          mov     rdi,rax
+00007ffa`3f489a80 e8eb463700      call    dots_ext_windows_template_debug_x86_64!dots_ext_init+0x206a60 (00007ffa`3f7fe170)
+00007ffa`3f489a85 4c8bc8          mov     r9,rax
+00007ffa`3f489a88 4885f6          test    rsi,rsi
+00007ffa`3f489a8b 7e3a            jle     dots_ext_windows_template_debug_x86_64+0xe9ac7 (00007ffa`3f489ac7)
+00007ffa`3f489a8d 4533c0          xor     r8d,r8d
+00007ffa`3f489a90 482bf8          sub     rdi,rax
+00007ffa`3f489a93 0f1f4000        nop     dword ptr [rax]
+00007ffa`3f489a97 660f1f840000000000 nop   word ptr [rax+rax]
+00007ffa`3f489aa0 488b8380470000  mov     rax,qword ptr [rbx+4780h]
+00007ffa`3f489aa7 4b8d1481        lea     rdx,[r9+r8*4]
+00007ffa`3f489aab 428b0c80        mov     ecx,dword ptr [rax+r8*4]
+00007ffa`3f489aaf 890c17          mov     dword ptr [rdi+rdx],ecx
+00007ffa`3f489ab2 488b8398470000  mov     rax,qword ptr [rbx+4798h]
+00007ffa`3f489ab9 428b0c80        mov     ecx,dword ptr [rax+r8*4]
+00007ffa`3f489abd 49ffc0          inc     r8
+00007ffa`3f489ac0 890a            mov     dword ptr [rdx],ecx
+00007ffa`3f489ac2 4c3bc6          cmp     r8,rsi
+00007ffa`3f489ac5 7cd9            jl      dots_ext_windows_template_debug_x86_64+0xe9aa0 (00007ffa`3f489aa0)
+00007ffa`3f489ac7 488b8380470000  mov     rax,qword ptr [rbx+4780h]
+00007ffa`3f489ace 483b8388470000  cmp     rax,qword ptr [rbx+4788h]
+00007ffa`3f489ad5 7407            je      dots_ext_windows_template_debug_x86_64+0xe9ade (00007ffa`3f489ade)
+00007ffa`3f489ad7 48898388470000  mov     qword ptr [rbx+4788h],rax
+00007ffa`3f489ade 488b8398470000  mov     rax,qword ptr [rbx+4798h]
+0:000> ub 00007ffa`3f675b10 L20
+dots_ext_windows_template_debug_x86_64!dots_ext_init+0x7e378:
+00007ffa`3f675a88 488d8c24a0000000 lea     rcx,[rsp+0A0h]
+00007ffa`3f675a90 892e            mov     dword ptr [rsi],ebp
+00007ffa`3f675a92 488d9c24a0000000 lea     rbx,[rsp+0A0h]
+00007ffa`3f675a9a 488b3d87742800  mov     rdi,qword ptr [dots_ext_windows_template_debug_x86_64!dots_ext_init+0x305818 (00007ffa`3f8fcf28)]
+00007ffa`3f675aa1 e8ea371900      call    dots_ext_windows_template_debug_x86_64!dots_ext_init+0x211b80 (00007ffa`3f809290)
+00007ffa`3f675aa6 8bc8            mov     ecx,eax
+00007ffa`3f675aa8 8d551b          lea     edx,[rbp+1Bh]
+00007ffa`3f675aab ffd7            call    rdi
+00007ffa`3f675aad 84c0            test    al,al
+00007ffa`3f675aaf 7418            je      dots_ext_windows_template_debug_x86_64!dots_ext_init+0x7e3b9 (00007ffa`3f675ac9)
+00007ffa`3f675ab1 b201            mov     dl,1
+00007ffa`3f675ab3 488d8c2488000000 lea     rcx,[rsp+88h]
+00007ffa`3f675abb e830341900      call    dots_ext_windows_template_debug_x86_64!dots_ext_init+0x2117e0 (00007ffa`3f808ef0)
+00007ffa`3f675ac0 4032ff          xor     dil,dil
+00007ffa`3f675ac3 448d7d01        lea     r15d,[rbp+1]
+00007ffa`3f675ac7 eb03            jmp     dots_ext_windows_template_debug_x86_64!dots_ext_init+0x7e3bc (00007ffa`3f675acc)
+00007ffa`3f675ac9 40b701          mov     dil,1
+00007ffa`3f675acc 41f6c701        test    r15b,1
+00007ffa`3f675ad0 740d            je      dots_ext_windows_template_debug_x86_64!dots_ext_init+0x7e3cf (00007ffa`3f675adf)
+00007ffa`3f675ad2 488d8c2488000000 lea     rcx,[rsp+88h]
+00007ffa`3f675ada e841341900      call    dots_ext_windows_template_debug_x86_64!dots_ext_init+0x211810 (00007ffa`3f808f20)
+00007ffa`3f675adf 4084ff          test    dil,dil
+00007ffa`3f675ae2 740e            je      dots_ext_windows_template_debug_x86_64!dots_ext_init+0x7e3e2 (00007ffa`3f675af2)
+00007ffa`3f675ae4 48c70602000000  mov     qword ptr [rsi],2
+00007ffa`3f675aeb c746081b000000  mov     dword ptr [rsi+8],1Bh
+00007ffa`3f675af2 488d542460      lea     rdx,[rsp+60h]
+00007ffa`3f675af7 488bcb          mov     rcx,rbx
+00007ffa`3f675afa e871351900      call    dots_ext_windows_template_debug_x86_64!dots_ext_init+0x211960 (00007ffa`3f809070)
+00007ffa`3f675aff 4c8d442460      lea     r8,[rsp+60h]
+00007ffa`3f675b04 498bcd          mov     rcx,r13
+00007ffa`3f675b07 488d542468      lea     rdx,[rsp+68h]
+00007ffa`3f675b0c ff542450        call    qword ptr [rsp+50h]
+0:000> u 00007ffa`3f489a20 L50
+dots_ext_windows_template_debug_x86_64+0xe9a20:
+00007ffa`3f489a20 48895c2408      mov     qword ptr [rsp+8],rbx
+00007ffa`3f489a25 48896c2410      mov     qword ptr [rsp+10h],rbp
+00007ffa`3f489a2a 4889742418      mov     qword ptr [rsp+18h],rsi
+00007ffa`3f489a2f 48897c2420      mov     qword ptr [rsp+20h],rdi
+00007ffa`3f489a34 4156            push    r14
+00007ffa`3f489a36 4883ec20        sub     rsp,20h
+00007ffa`3f489a3a 488bb988470000  mov     rdi,qword ptr [rcx+4788h]
+00007ffa`3f489a41 4c8bf2          mov     r14,rdx
+00007ffa`3f489a44 482bb980470000  sub     rdi,qword ptr [rcx+4780h]
+00007ffa`3f489a4b 488bd9          mov     rbx,rcx
+00007ffa`3f489a4e 48c1ff02        sar     rdi,2
+00007ffa`3f489a52 498bce          mov     rcx,r14
+00007ffa`3f489a55 4863f7          movsxd  rsi,edi
+00007ffa`3f489a58 498be8          mov     rbp,r8
+00007ffa`3f489a5b 488bd6          mov     rdx,rsi
+00007ffa`3f489a5e e82da23700      call    dots_ext_windows_template_debug_x86_64!dots_ext_init+0x20c580 (00007ffa`3f803c90)
+00007ffa`3f489a63 488bd6          mov     rdx,rsi
+00007ffa`3f489a66 488bcd          mov     rcx,rbp
+00007ffa`3f489a69 e822a23700      call    dots_ext_windows_template_debug_x86_64!dots_ext_init+0x20c580 (00007ffa`3f803c90)
+00007ffa`3f489a6e 85ff            test    edi,edi
+00007ffa`3f489a70 7e55            jle     dots_ext_windows_template_debug_x86_64+0xe9ac7 (00007ffa`3f489ac7)
+00007ffa`3f489a72 498bce          mov     rcx,r14
+00007ffa`3f489a75 e8f6463700      call    dots_ext_windows_template_debug_x86_64!dots_ext_init+0x206a60 (00007ffa`3f7fe170)
+00007ffa`3f489a7a 488bcd          mov     rcx,rbp
+00007ffa`3f489a7d 488bf8          mov     rdi,rax
+00007ffa`3f489a80 e8eb463700      call    dots_ext_windows_template_debug_x86_64!dots_ext_init+0x206a60 (00007ffa`3f7fe170)
+00007ffa`3f489a85 4c8bc8          mov     r9,rax
+00007ffa`3f489a88 4885f6          test    rsi,rsi
+00007ffa`3f489a8b 7e3a            jle     dots_ext_windows_template_debug_x86_64+0xe9ac7 (00007ffa`3f489ac7)
+00007ffa`3f489a8d 4533c0          xor     r8d,r8d
+00007ffa`3f489a90 482bf8          sub     rdi,rax
+00007ffa`3f489a93 0f1f4000        nop     dword ptr [rax]
+00007ffa`3f489a97 660f1f840000000000 nop   word ptr [rax+rax]
+00007ffa`3f489aa0 488b8380470000  mov     rax,qword ptr [rbx+4780h]
+00007ffa`3f489aa7 4b8d1481        lea     rdx,[r9+r8*4]
+00007ffa`3f489aab 428b0c80        mov     ecx,dword ptr [rax+r8*4]
+00007ffa`3f489aaf 890c17          mov     dword ptr [rdi+rdx],ecx
+00007ffa`3f489ab2 488b8398470000  mov     rax,qword ptr [rbx+4798h]
+00007ffa`3f489ab9 428b0c80        mov     ecx,dword ptr [rax+r8*4]
+00007ffa`3f489abd 49ffc0          inc     r8
+00007ffa`3f489ac0 890a            mov     dword ptr [rdx],ecx
+00007ffa`3f489ac2 4c3bc6          cmp     r8,rsi
+00007ffa`3f489ac5 7cd9            jl      dots_ext_windows_template_debug_x86_64+0xe9aa0 (00007ffa`3f489aa0)
+00007ffa`3f489ac7 488b8380470000  mov     rax,qword ptr [rbx+4780h]
+00007ffa`3f489ace 483b8388470000  cmp     rax,qword ptr [rbx+4788h]
+00007ffa`3f489ad5 7407            je      dots_ext_windows_template_debug_x86_64+0xe9ade (00007ffa`3f489ade)
+00007ffa`3f489ad7 48898388470000  mov     qword ptr [rbx+4788h],rax
+00007ffa`3f489ade 488b8398470000  mov     rax,qword ptr [rbx+4798h]
+00007ffa`3f489ae5 483b83a0470000  cmp     rax,qword ptr [rbx+47A0h]
+00007ffa`3f489aec 7407            je      dots_ext_windows_template_debug_x86_64+0xe9af5 (00007ffa`3f489af5)
+00007ffa`3f489aee 488983a0470000  mov     qword ptr [rbx+47A0h],rax
+00007ffa`3f489af5 488d8bb0470000  lea     rcx,[rbx+47B0h]
+00007ffa`3f489afc 488b5c2430      mov     rbx,qword ptr [rsp+30h]
+00007ffa`3f489b01 488b6c2438      mov     rbp,qword ptr [rsp+38h]
+00007ffa`3f489b06 488b742440      mov     rsi,qword ptr [rsp+40h]
+00007ffa`3f489b0b 488b7c2448      mov     rdi,qword ptr [rsp+48h]
+00007ffa`3f489b10 4883c420        add     rsp,20h
+00007ffa`3f489b14 415e            pop     r14
+00007ffa`3f489b16 e9453af3ff      jmp     dots_ext_windows_template_debug_x86_64+0x1d560 (00007ffa`3f3bd560)
+00007ffa`3f489b1b cc              int     3
+00007ffa`3f489b1c cc              int     3
+00007ffa`3f489b1d cc              int     3
+00007ffa`3f489b1e cc              int     3
+00007ffa`3f489b1f cc              int     3
+00007ffa`3f489b20 48895c2408      mov     qword ptr [rsp+8],rbx
+00007ffa`3f489b25 48896c2410      mov     qword ptr [rsp+10h],rbp
+00007ffa`3f489b2a 4889742418      mov     qword ptr [rsp+18h],rsi
+00007ffa`3f489b2f 48897c2420      mov     qword ptr [rsp+20h],rdi
+00007ffa`3f489b34 4156            push    r14
+00007ffa`3f489b36 4883ec70        sub     rsp,70h
+00007ffa`3f489b3a 488d9998040000  lea     rbx,[rcx+498h]
+00007ffa`3f489b41 488bea          mov     rbp,rdx
+00007ffa`3f489b44 488b5228        mov     rdx,qword ptr [rdx+28h]
+00007ffa`3f489b48 488bf9          mov     rdi,rcx
+00007ffa`3f489b4b 488b0b          mov     rcx,qword ptr [rbx]
+00007ffa`3f489b4e 4c8bc3          mov     r8,rbx
+00007ffa`3f489b51 e8daf70700      call    dots_ext_windows_template_debug_x86_64+0x169330 (00007ffa`3f509330)
+00007ffa`3f489b56 488903          mov     qword ptr [rbx],rax
+00007ffa`3f489b59 4c8bc3          mov     r8,rbx
+00007ffa`3f489b5c 488b5530        mov     rdx,qword ptr [rbp+30h]
+0:000> q
+quit:
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\atlmfc.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\ObjectiveC.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\concurrency.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\cpp_rest.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\stl.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Data.Json.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Geolocation.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Sensors.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Media.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\windows.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\winrt.natvis'

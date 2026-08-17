@@ -110,8 +110,16 @@ Keep formation deterministic and based on realized economy state:
 3. Require actual filled owner slots, target realized margin, sufficient projected owner income,
    and the founders' living-reserve cash.
 4. Choose candidates with stable economic and ID tie-breaks.
-5. Move one building unit and its actual owner operators into the new family without changing total
-   people, money, goods, or building count.
+5. Move one building unit, its actual owner operators, and a conserved household of
+   owner-signature dependents (`owner_slots in the cell * family_household_people_per_owner_slot`,
+   capped by `family_household_max_people`; defaults 256 per slot, 1024 cap, 8 families per
+   cell) into the new family without changing total people, money, goods, or building count.
+   Founders come from the owner signature only. Each FAMILY_COMMIT absorbs undersized
+   branches after normalize (phase 0) and again after formation (phase 2) from remaining
+   anonymous owner-signature people, leaving at least one anonymous person per cohort.
+   All families in a cell together may not exceed half the local population; other
+   professions stay anonymous so they can form their own families. Opening 20-person
+   capitals therefore keep the two gathering-ground operators as the founder household.
 
 The formal `StarterSettlementBootstrap v3` path is the only opening exception: it may declare one
 founder building per capital so native bootstrap immediately creates one conserved founder family

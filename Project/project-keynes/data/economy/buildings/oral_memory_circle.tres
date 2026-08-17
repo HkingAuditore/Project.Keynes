@@ -6,7 +6,7 @@
 script = ExtResource("1")
 id = &"oral_memory_circle"
 display_name = "口述记忆圈"
-economic_sector_id = "manufacturing"
+economic_sector_id = "knowledge"
 semantic_tags = PackedStringArray("industry.knowledge", "starter.knowledge")
 technology_tags = PackedStringArray("tech.oral_memory_practice")
 required_technology_tags = PackedStringArray()
@@ -30,7 +30,7 @@ input_candidate_offsets = PackedInt32Array(0)
 input_candidate_good_ids = PackedStringArray()
 input_candidate_efficiency_q16 = PackedInt32Array()
 output_good_ids = PackedStringArray("technology_points")
-output_quantities_per_day = PackedInt64Array(1200)
+output_quantities_per_day = PackedInt64Array(1000)
 output_cost_shares_q16 = PackedInt32Array()
 resource_ids = PackedStringArray()
 resource_quantities_per_day = PackedInt64Array()

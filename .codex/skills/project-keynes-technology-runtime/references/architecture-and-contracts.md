@@ -29,12 +29,12 @@ Current baseline:
   `resource.freshwater` deposit. Keep hydrology evidence separate from extractable
   `freshwater_fish` and other `ResourceProfile` entries.
 - Map occupancy (`cell.bio_occupancy_bits`) answers “what lives here now”. Generation seeds each
-  species on every continent-scale landmass that has a biome-scale climate envelope and carrier
-  reserve (`pasture` / `wild_game` / `arable_land` / `paddy_land` / `plantation_land`). Satellite
-  islets are skipped unless they are the unique argmax endemic pocket. Runtime neighbor diffusion
-  stays inside a province. Country research signals answer “has this
-  country seen it”; extinction does not revoke evidence. Inspector local species read occupancy;
-  `SIGNAL_PRESENT` / `SIGNAL_COUNT` and start-location routes read country knowledge.
+  species as a compact origin hearth on envelope∩carrier (`UNIQUE_HEARTH` default; reed is
+  `COSMOPOLITAN`). Continent-scale landmasses keep a playable food + fiber/livestock floor via a
+  secondary hearth when needed. Satellite islets are skipped unless they are the unique argmax
+  endemic pocket. Runtime neighbor diffusion stays inside a province. Country research signals
+  answer “has this country seen it”; extinction does not revoke evidence. Inspector local species
+  read occupancy; `SIGNAL_PRESENT` / `SIGNAL_COUNT` and start-location routes read country knowledge.
 - `tech.early_trade` is a zero-cost regional-start node revealed by visible natural gold or silver.
   It unlocks `early_merchant_post`; every formal opening route grants it and prebuilds that service.
 
@@ -104,8 +104,14 @@ The important boundary is:
 3. Government research procurement buys remaining domestic technology-points stock.
 4. Remaining regional imbalances may enter domestic trade.
 5. The next country research day consumes treasury technology points.
-6. Completed research enters `pending`.
-7. On the following activation boundary, apply its permanent `UNIQUE_SOURCE` Modifier.
+6. Completed research enters `pending` and immediately registers its stable
+   Effect instance. Production scheduling runs Effect (85) before Country (255),
+   so the instance must exist before the next Effect morning; waiting until the
+   next country activation loop misses that slot and leaves the node pending.
+   The country slice also raises `country_day_barrier` when Effect still has due
+   work, so the continuation drain can ACK the same calendar day.
+7. On the following activation boundary, apply its permanent `UNIQUE_SOURCE` Modifier
+   after the Effect transaction ACKs.
 8. Only after successful application expose the completed tag and economic unlocks.
 
 This keeps market settlement one day ahead of research and makes effects/unlocks visible atomically.

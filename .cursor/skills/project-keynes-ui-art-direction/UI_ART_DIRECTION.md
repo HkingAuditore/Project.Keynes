@@ -73,6 +73,17 @@ Chinese numeric compaction:
 - Prefer Chinese units such as `1.25万` and `3.56亿`.
 - Do not use English suffixes such as `k`, `M`, or `B` in Chinese UI.
 
+### Player Copy
+
+Player-facing Chinese must read like a cabinet brief, not a systems comment.
+
+- Answer four questions: what is this, how is it now, what risk exists, what can I do.
+- Ban implementation words: 原生, MarketStore, 测试人口, 世界生成页, 修订, 安全边界, 硬前置, 揭示证据, 冻结, 中性环境.
+- Prefer `暂不可用` over `运行时尚未就绪`. Empty states describe the world, not developer import steps.
+- Short labels. Prefer `湿度 51% · 基线 42%`. No parenthetical lectures.
+- Insights: at most 2-4 lines, conclusion first.
+- Formulas and accounting belong in object detail or tooltip.
+
 ### Iconography
 
 Use mature, consistent icon sources before inventing new icons:

@@ -1087,6 +1087,7 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
         error = "catalog_hash_required";
         return false;
     }
+    if (!compile_carrying_catalog(catalog, error)) return false;
     if (!compile_settlement_catalog(catalog, error)) return false;
     if (!compile_family_catalog(catalog, error)) return false;
     if (!compile_person_catalog(catalog, error)) return false;

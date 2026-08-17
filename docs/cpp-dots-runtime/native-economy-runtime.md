@@ -1,8 +1,9 @@
 # 原生阶层与本地市场运行时（Market V2 / Price V4）
 
-PKEC v35 在 Economy 内加入公共工程 `InfrastructureProjectStore`、报价 token 与运河路线
-CSR；国库资产、市场采购、回执和守恒仍复用既有经济机制。领域 API 与跨域 ACK 契约见
-[运河运行时](./canal-runtime.md)。
+PKEC v36 是当前 writer：在 v35 的运河/公共工程、分组建材与停产清算之上，为每格追加
+`support_ema_q16`。格承载力 `K_eff = K_geo × EMA(mix(surplus)×mix(sat_cell))` 驱动物流斯蒂生育；
+`K_geo` 与各族 cover 是派生诊断，不进存档。v35 可读（EMA=1），更早 schema 拒绝。
+领域 API 与跨域 ACK 契约见[运河运行时](./canal-runtime.md)。
 
 2026-07 的高速合批、认证近似冷却、generation-stamped scratch 和两态
 closing audit 契约见
@@ -23,6 +24,16 @@ cohort 满意度不再是单一的生存指标。`_population.composite_satisfac
 
 维度定义、数据驱动权重契约、合成公式、溯源 API、事件 payload、PKEC v30 列布局与
 性能验收数据是[综合满意度运行时](./satisfaction-runtime.md)的职责，本文件不重复。
+
+## 2026-08-17 格承载力三项混合 K（PKEC v36）
+
+马尔萨斯–博塞鲁普骨架保留：`K_geo` 是地力与已解锁食物建筑产量的天花板，不随人口自动上涨；
+`surplus` 是已解锁物资族（17 个 Need + 4 个生产者族）的加权覆盖，未 bindable 的族不进分母；
+`sat_cell` 是阶层人口加权、经 `satisfaction_birth_reference_q16` 重标定的综合满意度。
+`K_eff = K_geo × EMA(mix(surplus)×mix(sat_cell))`。物流斯蒂生育在 `soft_start` 以下为 1，
+贴顶落到更替。cohort 只乘 sat 残差。`support_ema` 进 PKEC v36 与 `state_hash`；
+`K_geo`/各族 cover 只出现在 Inspector 人口页。公式见
+[定点账本](./economy-fixed-point-ledger-formulas.md)。
 
 ## PKEC v22 production climate（历史基础，当前由 PKEC v30 持久化）
 
@@ -151,9 +162,10 @@ sequence、settled day、稳定结果码及实际两类物资/现金支出；它
 - C++ 按建筑数、周期天数和计划利用率确定性重建稀疏生产投入硬预留。多投入配方先按同一可执行比例缩放，只预留能组成完整配方的数量；缺少任一互补投入时不会继续锁住其他投入。若非生存产出会消耗生存食物，则整套配方让家庭生存清算优先，只能使用清算后的余量。商人目标库存至少覆盖实际预留；居民与国内贸易只能消费/导出 `stock - reserve`。`production_input_reserved`、`production_input_reserve_shortfall` 及 selected-cell/CSV v14 逐商品列用于诊断。缓存不进入 PKEC，可从建筑和市场信号状态重建。
 - 正常商人现金不足时，生产者托底只补足正常目标库存的剩余缺口，不再把全部可储存余货无条件入库；超过目标的余量进入真实 discard sink。被托底的数量仍获得冻结本地零售价 20% 的显式发行货币。`production_output_supported` 与 `producer_support_money_issued` 分开报告，货币审计把后者计入 `_explicit_money_mint`。`cycle_flow` 产出不能跨周期存货，但在边界清零前会先获得同周期低价采购/托底机会，剩余瞬态库存再计入 `cycle_flow_discarded`。
 - 生成测试经济不再使用职业固定人均资金：每个 cohort 获得按当前气候、族群和默认价格计算的 30 日 `survival_household` 生存金；业主追加两周期最低有效输入成本；商人追加本地产出目标库存资金。
-- PKEC v35 是当前 writer/reader：保留 FamilyStore、NotablePersonStore、cohort membership、
-  building ownership、Economy Modifier domain、冻结环境、财政与出生余数，并追加家族特性 roll、
-  per-cell influence branch 与有序特性命令 sections。reader 只接受 v30，v29 及更早版本明确拒绝。
+- PKEC v36 是当前 writer/reader：保留 FamilyStore、NotablePersonStore、cohort membership、
+  building ownership、Economy Modifier domain、冻结环境、财政与出生余数、家族特性、
+  per-cell influence 与运河工程，并追加格承载力 `support_ema`。reader 接受 v35（EMA=1）
+  与 v36；v34 及更早明确拒绝。
 - 显赫家族不拆分建筑组或创建第二钱包；成员/所有权采用稀疏边，业主岗位必须由本格同职业家族
   成员实际填充。完整契约见[显赫家族原生运行时](./notable-family-runtime.md)。
 - 重要人物不创建第二人口、钱包或订单；姓名、岗位、建筑、财产与需求均为家族/cohort 已实现结果的
@@ -239,7 +251,7 @@ variant 价格分数先决定替代份额，再形成 market×need 的总量价�
 3. 按 need 优先级约束 cohort 可支配资金。
 4. 对 bundle 的每个 component 做稳定前缀库存分配，以最短 component 决定 bundle fill。
 5. 首选 variant 未满足部分只进行一次同 tick 替代 fallback。
-6. 扣买方资金和库存，按商人人口分配收入，发布 need 满足度/最差 need。
+6. 扣买方资金和库存，按**在世**商人人口分配收入，发布 need 满足度/最差 need。零人口商人槽不算做市商；有人市场若缺在世商人，家庭清算在扣款前从最大非商人 cohort 拆/转 1 人修复，并按本市场格上的活槽分账，而不是盲信 `_merchant_offsets[market]`。
 7. 以日均居民需求更新 EMA，合并上一周期企业需求/供给与成本锚，用 Price V3 冻结压力的
    一阶 N 日积分更新下周期价格。
 
@@ -405,8 +417,9 @@ extract/generation 生成依赖组；同一输入槽的候选 good 属于同一�
 均已满足时建筑才可用。河流/湖泊水系不是这套资源依赖中的 good 或 ResourceProfile，只有
 `landform.freshwater_access` 揭示信号。
 
-普通生产建筑禁止使用 merchant owner。唯一例外是石器期砂金与露天银矿点：无商品投入、保留对应矿工岗位，
-必须消耗匹配的金/银矿藏且只产对应金银。市场接受产出时按固定面值增加业主商人资金，并进入
+普通生产建筑禁止使用 merchant owner。唯一例外是石器期砂金与露天银矿点：商人业主、无商品投入、保留矿工雇员岗位，
+必须消耗匹配的金/银矿藏且只产对应金银。矿藏 ID 仍为 `gold_ore`/`silver_ore`，但目录中不再有同名可交易物资或矿石精炼站。
+市场按 `monetary_issue_value` 全额收购产出并增加业主商人资金，并进入
 `_explicit_money_mint`、`bullion_money_issued`、金银分项发行额与 closing audit。后期金银矿仍由
 industrialist 持有并保留工业投入、矿工和管理岗位。不存在虚空商站铸币分支。
 
@@ -510,6 +523,8 @@ delta 会阻止跨周期重复超采。每条资源边有 `extract` 或 `capacit
 人口结构不再作为建筑生成输入；建筑岗位配置变化会直接改变新地图的职业人口结构。
 
 Inspector 首屏通过 `get_population_cell_summary` 只读取人口聚合值；人口需求、市场、建筑与自然
+资源明细仍走 snapshot。人口页暴露 `carrying_k_geo` / `carrying_k_eff` / 物资覆盖 / 阶层 sat，
+以及各族 bindable cover，不把 21 族做成调试表。
 资源明细由可见标签惰性读取，避免点击成本随全局 goods/building catalog 扩张。完整 snapshot 在
 Facade/UI 只读传递，不再为缓存和返回值各做一次递归深拷贝。
 
@@ -653,8 +668,9 @@ Inspector 诊断 lane，计入 runtime memory，但不进入 state hash 或 PKEC
 是消费后的饥饿满足度阈值，不前置削减劳动力。Q32 饥饿死亡率使用既有 residual、birth/death
 审计和结构回收路径。默认职业年出生/自然死亡率为 20.0%/2.5%，完全满足时净增长目标约 17.5%，
 健康人口理论翻倍时间约 4.3 年；
-出生率折减读 composite 并先按 `satisfaction_birth_reference_q16` 重标定，默认权重为 100%，
-因此严重匮乏会大幅压低出生而不影响完全满意时的 20% 年出生率。
+出生率折减先把 composite 按 `satisfaction_birth_reference_q16` 重标定，再把格级 sat
+混进 `K_eff`；cohort 只乘残差，避免把心情乘两次。未解锁物资族不进 surplus 分母。
+贴上 `K_eff` 后出生落到更替。饥饿死亡仍只读 `SAT_DIM_SUBSISTENCE`。
 出生贡献按地块与民族聚合，Q32 小数余数跨周期累计，并由 PKEC v30 持久化；不新增调度阶段。
 
 建筑基础工资不再预付；生产出售后用 owner 销售后资金统一分配。最终欠薪继续记录在
@@ -1209,8 +1225,15 @@ shadow, stamps, touched lists, mismatch ledger/lane, and counters are transient
 and excluded from PKEC v19 and both hashes. Bootstrap/restore rebuild the shadow;
 commit advances only touched lanes. The first day, restore boundary, anomaly,
 and every 25th day still run a complete verification; mismatch blocks publish
-and disables INCREMENTAL for the session. `PROBE` and `FULL` remain explicit
-validation and rollback modes.
+and disables incremental closing for the rest of the session. Opening fast path
+reuses the last committed close, then live-replaces country cash/goods and the
+combined trade+fiscal+expedition escrow. That is only valid when in-transit
+expedition population and `expedition_funds` still match the copied close. Idle
+colonization start/return changes those holdings before the next opening, so
+the opening scan upgrades to full instead of copying stale cohort funds next
+to a live expedition escrow. `EconomyDailySystem` fatal logs now include
+`money_error` plus the opening/closing money buckets, not only goods sinks.
+`PROBE` and `FULL` remain explicit validation and rollback modes.
 
 `building_commit.review_prepare` now builds one ascending list containing only
 the current rolling phase's populated capital-review cells. Investment finance

@@ -64,6 +64,7 @@ Run from `Project/project-keynes` with a Godot console executable:
 & "<godot_console.exe>" --headless --path . --script res://tests/technology_research_runtime_test.gd
 & "<godot_console.exe>" --headless --path . --script res://tests/technology_procurement_runtime_test.gd
 & "<godot_console.exe>" --headless --path . --script res://tests/technology_modifier_activation_test.gd
+& "<godot_console.exe>" --headless --path . --script res://tests/technology_pending_activation_scheduler_test.gd
 & "<godot_console.exe>" --headless --path . --script res://tests/technology_workspace_smoke_test.gd
 ```
 

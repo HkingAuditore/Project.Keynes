@@ -1160,6 +1160,13 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
             out["done"] = true;
             out["stage"] = research_changed > 0 ? "research_publish" : "idle";
             out["elapsed_ms"] = elapsed_ms(start);
+            // Research completion registers Effect instances after the morning
+            // Effect slot. Raise the barrier so the continuation drain can ACK
+            // before the next country day; country should_run is already false
+            // because _last_research_day == requested_day.
+            if (_effect_runtime_enabled && _effect_runtime != nullptr &&
+                _effect_runtime->should_run(requested_day))
+                out["country_day_barrier"] = true;
             return out;
         }
         const auto command_less = [](const Command &lhs, const Command &rhs) {
@@ -1957,7 +1964,9 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
     out["cursor_end"] = static_cast<int64_t>(cursor_limit);
     out["cursor_total"] = static_cast<int64_t>(cursor_limit);
     out["progress_ratio"] = 1.0;
-    out["country_day_barrier"] = should_run(day);
+    out["country_day_barrier"] = should_run(day) ||
+        (_effect_runtime_enabled && _effect_runtime != nullptr &&
+         _effect_runtime->should_run(day));
     if (!cell_delta_order.empty()) {
         if (!std::is_sorted(cell_delta_order.begin(), cell_delta_order.end()))
             std::sort(cell_delta_order.begin(), cell_delta_order.end());
@@ -2888,6 +2897,34 @@ int64_t NativeCountryRuntime::research_consumed_total() const {
     return total;
 }
 
+bool NativeCountryRuntime::ensure_technology_effect_instance(
+        int32_t slot, int32_t technology, int64_t day_index) {
+    if (!_effect_runtime_enabled || _effect_runtime == nullptr) return false;
+    if (technology < 0 || technology >= static_cast<int32_t>(_technology_ids.size()))
+        return false;
+    const uint64_t handle = make_handle(slot);
+    const int64_t effect_instance_id = static_cast<int64_t>(
+        ((handle & 0x00007fffffffffffULL) << 16U) |
+        static_cast<uint64_t>(technology + 1));
+    const uint32_t effect_generation = static_cast<uint32_t>(handle >> 32U);
+    if (effect_instance_id <= 0 || effect_generation == 0) return false;
+    if (_effect_runtime->has_instance_pod(effect_instance_id, effect_generation)) {
+        // Existing pending nodes must be re-queued. Skip-if-exists alone left
+        // unacked instances (cadence 3650 / consumed due heap / REJECTED ACK)
+        // pending forever after a missed Effect morning.
+        _effect_runtime->nudge_unacked_instance_pod(
+            effect_instance_id, effect_generation, day_index);
+        return true;
+    }
+    std::string effect_error;
+    return _effect_runtime->upsert_instance_pod(
+        effect_instance_id,
+        std::string("technology.") + _technology_ids[static_cast<size_t>(technology)],
+        effect_generation, 0x54454348, technology + 1,
+        handle, handle, effect_generation, 0,
+        day_index, true, effect_error);
+}
+
 int32_t NativeCountryRuntime::run_research_day(int64_t day_index) {
     if (day_index <= _last_research_day || _technology_points_good_id < 0) return 0;
     int32_t changed = 0;
@@ -2910,27 +2947,21 @@ int32_t NativeCountryRuntime::run_research_day(int64_t day_index) {
             if (_effect_runtime_enabled && _effect_runtime != nullptr &&
                 !technology_modifier_key.empty()) {
                 effect_attempted = true;
-                std::string effect_error;
                 const int64_t effect_instance_id = static_cast<int64_t>(
                     ((handle & 0x00007fffffffffffULL) << 16U) |
                     static_cast<uint64_t>(technology + 1));
                 const uint32_t effect_generation = static_cast<uint32_t>(handle >> 32U);
-                bool effect_registered = _effect_runtime->has_instance_pod(
-                    effect_instance_id, effect_generation);
-                if (!effect_registered) {
-                    effect_registered = _effect_runtime->upsert_instance_pod(
-                            effect_instance_id,
-                            std::string("technology.") + _technology_ids[static_cast<size_t>(technology)],
-                            effect_generation, 0x54454348, technology + 1,
-                            handle, handle, effect_generation, 0,
-                            day_index, true, effect_error);
-                    if (!effect_registered) {
-                        effect_registration_failed = true;
-                    }
-                }
-                modifier_ready = effect_registered &&
+                const bool effect_registered =
+                    ensure_technology_effect_instance(slot, technology, day_index);
+                if (!effect_registered) effect_registration_failed = true;
+                const bool fire_acked = effect_registered &&
                     _effect_runtime->instance_fire_acked_pod(
                         effect_instance_id, effect_generation);
+                const bool modifier_applied =
+                    _modifier_runtime != nullptr && _modifier_runtime->configured() &&
+                    _modifier_runtime->has_technology_effect(
+                        handle, technology_modifier_key, technology);
+                modifier_ready = fire_acked || modifier_applied;
             }
             if (!modifier_ready && (!effect_attempted || effect_registration_failed) &&
                 _modifier_runtime != nullptr && _modifier_runtime->configured() &&
@@ -3047,6 +3078,11 @@ int32_t NativeCountryRuntime::run_research_day(int64_t day_index) {
                 if (progress + progress_gain >= effective_cost) {
                     _country_pending_technologies[word_base + technology / 64] |=
                         1ULL << (technology % 64);
+                    // Register the Effect instance on the completion day so the
+                    // next morning's Effect job (priority 85) can fire before
+                    // Country (255) checks ACK. Waiting until the activation
+                    // loop would miss that slot and leave the node pending.
+                    ensure_technology_effect_instance(slot, technology, day_index);
                     ++_country_research_completed_total[static_cast<size_t>(slot)];
                     for (int32_t i = 1; i < length; ++i)
                         _country_research_queues[queue_base + static_cast<size_t>(i - 1)] =

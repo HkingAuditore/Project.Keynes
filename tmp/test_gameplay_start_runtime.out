@@ -1,0 +1,324 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] new-game config is valid
+[native_generation/base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=2400 native_ms=7.632 water=1033 land=1367
+[native_generation/post_base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=2400 native_ms=1.958 lakes=39 rivers=241 volcanoes=2
+[native_generation/vegetation] native_ms=0.771 candidates=1359 none=763 score=[0.293,0.997,1.143] plant_water_land=1365 river_adjacent_desert=0 coastal_highland_desert=0 terrain_weight=[0.180,1.200]
+[native_generation/qa] single_water=0 tiny<=3=0 small<=5=0 bodies=5 largest=785 | land_below_sea=0.3% | terr_distinct=26 entropy=3.604bit | river_ratio=10.042%
+MapGenerator v7: per-cell 74ms (2400 cells, path=gdext_base)
+MapBaker v6: hm=(1024, 606) seed=20260727
+    [fused] terrain=86.3ms erosion=2.5ms(ok=true) river=18.2ms(ok=true) latitude=0.1ms coast_sdf=5.5ms(ok=true)
+  geometry fields (fused C++): 181ms
+  physical circulation hex solve: deferred until DCWorldExt bind (ext=true idx=true soa=false)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+  visual tiles: {"degradation_reason":"","effective_budget_px":1717248,"effective_texels_per_hex":16.0059231284957,"effective_world_units_per_texel":"(0.624538, 0.625)","estimated_peak_bytes":68402880,"estimated_resident_bytes":40340160,"fallback_reason":"","generation_id":1,"grid_size":"(4, 3)","gutter_px":2,"hex_size":10.0,"horizon_path":"neutral_pending","interior_size":"(416, 344)","layer_size":"(420, 348)","layers":[{"bake_ms":73.0366,"coast_sdf_max_dist_px":13.6162313508919,"distance_scale":1.70202891886149,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-7998421492025401339,"edge_neighbor":6771967215382877909,"height":-6377288380730922321,"map_index":6450307276864300286,"terrain_detail":-7641934774365794027,"terrain_normal":-9021415163225453828,"water_depth":-758277128131030513},"layer":0,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571012160152,"shore_carve_band_px":10,"upload_ms":0.091,"wall_ms":73.321},{"bake_ms":78.4315,"coast_sdf_max_dist_px":13.6162313508919,"distance_scale":1.70202891886149,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-6660136868379358185,"edge_neighbor":8167863197151774388,"height":9090371285144646007,"map_index":-6948742182581473000,"terrain_detail":-8815046769961510090,"terrain_normal":8020435380837559882,"water_depth":6359009595622918007},"layer":1,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571012160152,"shore_carve_band_px":10,"upload_ms":0.067,"wall_ms":78.645},{"bake_ms":102.049,"coast_sdf_max_dist_px":13.6162313508919,"distance_scale":1.70202891886149,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-5593062660328447570,"edge_neighbor":-4995920299338347546,"height":5953895044443778346,"map_index":-3856077903363475055,"terrain_detail":-5649278150571540111,"terrain_normal":-8183616854175103561,"water_depth":-8381994794478787810},"layer":2,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571012160152,"shore_carve_band_px":10,"upload_ms":0.069,"wall_ms":102.253},{"bake_ms":72.7797,"coast_sdf_max_dist_px":13.6162313508919,"distance_scale":1.70202891886149,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":2589906929185578443,"edge_neighbor":3531706379993482717,"height":5773439538397999276,"map_index":6170482414055243308,"terrain_detail":-3893667084357522823,"terrain_normal":6283557922571237736,"water_depth":6849891421174093711},"layer":3,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571012160152,"shore_carve_band_px":10,"upload_ms":0.068,"wall_ms":72.977},{"bake_ms":98.6553,"coast_sdf_max_dist_px":13.6162313508919,"distance_scale":1.70202891886149,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":2525510525536294203,"edge_neighbor":6566929236683304054,"height":-6274046510508852539,"map_index":-686314597475543672,"terrain_detail":7208024280776908079,"terrain_normal":-8117238239638853925,"water_depth":-1851342989227659438},"layer":4,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571012160152,"shore_carve_band_px":10,"upload_ms":0.064,"wall_ms":98.846},{"bake_ms":155.9166,"coast_sdf_max_dist_px":13.6162313508919,"distance_scale":1.70202891886149,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":5210671621846794181,"edge_neighbor":-1301658022992726010,"height":-8940001788078195754,"map_index":2492456821225071687,"terrain_detail":-5035459449849027820,"terrain_normal":-2415342485096091545,"water_depth":1044727446385297788},"layer":5,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571012160152,"shore_carve_band_px":10,"upload_ms":0.066,"wall_ms":156.141},{"bake_ms":149.9333,"coast_sdf_max_dist_px":13.6162313508919,"distance_scale":1.70202891886149,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":2369882437588790715,"edge_neighbor":7805467588921681474,"height":1573658244634016951,"map_index":-2900943318464841909,"terrain_detail":2700222479071294030,"terrain_normal":5929615355867854791,"water_depth":6350233327187272168},"layer":6,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571012160152,"shore_carve_band_px":10,"upload_ms":0.069,"wall_ms":150.147},{"bake_ms":83.7808,"coast_sdf_max_dist_px":13.6162313508919,"distance_scale":1.70202891886149,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-4800180653262470888,"edge_neighbor":4802323459157704106,"height":7667895289837250592,"map_index":984523081815090995,"terrain_detail":-4886915495574400723,"terrain_normal":-1699426867073811696,"water_depth":-7585245143868719236},"layer":7,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571012160152,"shore_carve_band_px":10,"upload_ms":0.085,"wall_ms":84.005},{"bake_ms":110.764,"coast_sdf_max_dist_px":13.6162313508919,"distance_scale":1.70202891886149,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-5676494387149785654,"edge_neighbor":-8799592622152049233,"height":-4334145506767975935,"map_index":7480853973919512660,"terrain_detail":7335968834493800619,"terrain_normal":4439266687846641782,"water_depth":-3292433557832709571},"layer":8,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571012160152,"shore_carve_band_px":10,"upload_ms":0.064,"wall_ms":110.983},{"bake_ms":118.8322,"coast_sdf_max_dist_px":13.6162313508919,"distance_scale":1.70202891886149,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":6562871390949391693,"edge_neighbor":-2143359517262376848,"height":1816807819058884562,"map_index":-4115921198361718728,"terrain_detail":4404902476738836479,"terrain_normal":-5497377249755156470,"water_depth":3716137970101744800},"layer":9,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571012160152,"shore_carve_band_px":10,"upload_ms":0.081,"wall_ms":119.066},{"bake_ms":118.2438,"coast_sdf_max_dist_px":13.6162313508919,"distance_scale":1.70202891886149,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":3700721287823221789,"edge_neighbor":8475992538832764150,"height":7998036134587165421,"map_index":-7069291848027641188,"terrain_detail":-3680184114912275120,"terrain_normal":-8010042736665074354,"water_depth":-260993199083761281},"layer":10,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571012160152,"shore_carve_band_px":10,"upload_ms":0.065,"wall_ms":118.462},{"bake_ms":96.0687,"coast_sdf_max_dist_px":13.6162313508919,"distance_scale":1.70202891886149,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":8785173151845220479,"edge_neighbor":-9194072357417389401,"height":371520908703549368,"map_index":6684720214860582971,"terrain_detail":-1169432050135818058,"terrain_normal":-1134957665058197492,"water_depth":-2263056573044617891},"layer":11,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571012160152,"shore_carve_band_px":10,"upload_ms":0.083,"wall_ms":96.303}],"logical_size":"(1664, 1032)","mode":"tiled","path":"visual_tiled_static","profile":"desktop_high","renderer":"mobile","requested_budget_px":1716216,"requested_texels_per_hex":16.0,"requested_tile_world_span":"(320.0, 320.0)","requested_world_units_per_texel":0.625,"tile_world_area":55858.6376953125,"tile_world_span":"(259.8076, 215.0)","total_ms":1262.533,"visual_domain":"[P: (0.0, -20.0), S: (1039.23, 645.0)]","wrap_period_x":1039.23048454133,"wrap_x":true}
+  cell LUT encode: deferred until DCWorldExt bind
+  encode: 4580ms
+MapBaker v6: total 4769ms
+MapGenerator v7: bake 4797ms
+MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+MapGenerator: skip _compute_terrain_perturbed_wind (physical-hex solver writes per-cell)
+[SUS] sim budget strict=false frame=8.00ms warn=2.00ms slice=0.75ms upload=1.50ms scheduler=DCSystemScheduler native_sus=auto
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+[DataCore] _data_core_world_ext bound=true (climate co-processor; class=DCWorldExt)
+[native_world] configure rc=0 reason=configured cells=2400 wrap_period_x=103.923
+[native_generation] path=gdext n=2400 published=9 native_ms=0.206 compute_ms=0.134 flush_ms=0.071
+[hex_cell] facade ENABLED (2400 cells bound; ext=true)
+[DataCore] _baker climate_profile injected=true (fixes WorldData.config==null sea_ice prepare path)
+[phys_solve][oneshot] OK slp=1.27ms wind=0.50ms psi=0.32ms(ran=true) upwelling=0.10ms total=2.72ms
+PhysicalCirculation solve@phase=1.50 total=4ms (C++ one-shot run_physical_solve_pass)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+[physical_init] deferred native refresh complete: 5ms
+[cell_lut] deferred encode: 2ms path=gdext
+[bio-occupancy] seed landmasses=9 provinces=9 species=19
+[bio-occupancy]   bio.maize envelope=175 seeded_landmasses=1 primary_landmass=1 primary_envelope=171 occupied=98
+[bio-occupancy]   bio.wheat envelope=375 seeded_landmasses=1 primary_landmass=1 primary_envelope=345 occupied=203
+[bio-occupancy]   bio.rice envelope=206 seeded_landmasses=1 primary_landmass=1 primary_envelope=200 occupied=118
+[bio-occupancy]   bio.potato envelope=322 seeded_landmasses=1 primary_landmass=1 primary_envelope=290 occupied=155
+[bio-occupancy]   bio.horse envelope=434 seeded_landmasses=1 primary_landmass=1 primary_envelope=399 occupied=205
+[bio-occupancy]   bio.cotton envelope=292 seeded_landmasses=1 primary_landmass=1 primary_envelope=291 occupied=162
+[bio-occupancy]   bio.flax envelope=365 seeded_landmasses=1 primary_landmass=1 primary_envelope=335 occupied=185
+[bio-occupancy]   bio.spice envelope=188 seeded_landmasses=1 primary_landmass=1 primary_envelope=188 occupied=103
+[bio-occupancy]   bio.rubber envelope=121 seeded_landmasses=1 primary_landmass=1 primary_envelope=121 occupied=55
+[bio-occupancy]   bio.sheep envelope=118 seeded_landmasses=1 primary_landmass=1 primary_envelope=105 occupied=60
+[bio-occupancy]   bio.goat envelope=684 seeded_landmasses=1 primary_landmass=1 primary_envelope=638 occupied=316
+[bio-occupancy]   bio.cattle envelope=74 seeded_landmasses=1 primary_landmass=1 primary_envelope=74 occupied=34
+[bio-occupancy]   bio.pig envelope=438 seeded_landmasses=1 primary_landmass=1 primary_envelope=421 occupied=215
+[bio-occupancy]   bio.camel envelope=118 seeded_landmasses=1 primary_landmass=1 primary_envelope=118 occupied=60
+[bio-occupancy]   bio.yak envelope=221 seeded_landmasses=1 primary_landmass=1 primary_envelope=189 occupied=95
+[bio-occupancy]   bio.silkworm envelope=214 seeded_landmasses=1 primary_landmass=1 primary_envelope=214 occupied=91
+[bio-occupancy]   bio.reed envelope=235 seeded_landmasses=1 primary_landmass=1 primary_envelope=222 occupied=141
+[bio-occupancy]   bio.bast_fiber envelope=399 seeded_landmasses=1 primary_landmass=1 primary_envelope=376 occupied=189
+[bio-occupancy]   bio.dye_plant envelope=297 seeded_landmasses=1 primary_landmass=1 primary_envelope=296 occupied=135
+[weather] gdext acceleration ON (class=DCWorldExt)
+[weather] gdext field commit ON
+[weather] gdext distribute ON
+[weather] gdext summary ON
+[weather] hexcell facade ON (skip AoS double-write in hot loop)
+[weather] gdext resident knobs ON (class=KnobsHandle)
+[economy] ACTIVE native graph cells=2400 goods=130 cohorts=18 epoch_days=5 trade=ACTIVE topology_ready=true topology_generation=1 bootstrap=starter_settlement_bootstrap_v8 founder_families=6 founder_people=6
+[country] ACTIVE native authority countries=6 cells=2400 generation=1
+[weather/knobs] resident KnobsHandle path ACTIVE — first to_*_knobs_dict hit (field_rebuild_count=1 expected ≤1; stable Hz target ≤1 Hz)
+[native_daily] ACTIVE: registered native_daily_sim + natural_resource_daily + bio_occupancy_daily; retained season_refresh + ocean_currents boundary jobs
+[DCSystemScheduler] topology: ["season_refresh", "trigger_runtime", "ideology_runtime", "effect_runtime", "modifier_daily", "gameplay_effect", "natural_resource_daily", "bio_occupancy_daily", "enum_atlas_upload", "ocean_currents", "native_daily_sim", "dynamic_visual_atlas_upload", "country_daily", "economy_daily"]
+  [PASS] formal world generated
+  [PASS] formal start bootstrap succeeded
+  [PASS] requested foreign countries generated
+  [PASS] start cell is in range
+  [PASS] start cell is passable land
+  [PASS] regional starter route is classified
+  [PASS] regional route grants every visible starter technology
+  [PASS] regional route prebuilds a complete weak production bundle
+  [PASS] regional route declares all six starter capabilities
+  [PASS] regional route compiles complete grouped construction materials
+  [PASS] regional weak buildings close the five produced goods
+  [PASS] opening top-up only raises missing reserves to profile minimums
+  [PASS] selected food resource freshwater_fish exists locally
+  [PASS] selected food resource fertile_soil exists locally
+  [PASS] selected food resource wild_game exists locally
+  [PASS] selected route resource fertile_soil exists locally
+  [PASS] selected route resource paddy_land exists locally
+  [PASS] selected route resource gold_ore exists locally
+  [PASS] regional starter route is classified
+  [PASS] regional route grants every visible starter technology
+  [PASS] regional route prebuilds a complete weak production bundle
+  [PASS] regional route declares all six starter capabilities
+  [PASS] regional route compiles complete grouped construction materials
+  [PASS] regional weak buildings close the five produced goods
+  [PASS] opening top-up only raises missing reserves to profile minimums
+  [PASS] selected food resource marine_fish exists locally
+  [PASS] selected food resource freshwater_fish exists locally
+  [PASS] selected food resource fertile_soil exists locally
+  [PASS] selected food resource wild_game exists locally
+  [PASS] selected route resource fertile_soil exists locally
+  [PASS] selected route resource paddy_land exists locally
+  [PASS] selected route resource gold_ore exists locally
+  [PASS] regional starter route is classified
+  [PASS] regional route grants every visible starter technology
+  [PASS] regional route prebuilds a complete weak production bundle
+  [PASS] regional route declares all six starter capabilities
+  [PASS] regional route compiles complete grouped construction materials
+  [PASS] regional weak buildings close the five produced goods
+  [PASS] opening top-up only raises missing reserves to profile minimums
+  [PASS] selected food resource marine_fish exists locally
+  [PASS] selected food resource freshwater_fish exists locally
+  [PASS] selected food resource fertile_soil exists locally
+  [PASS] selected food resource wild_game exists locally
+  [PASS] selected route resource fertile_soil exists locally
+  [PASS] selected route resource paddy_land exists locally
+  [PASS] selected route resource silver_ore exists locally
+  [PASS] regional starter route is classified
+  [PASS] regional route grants every visible starter technology
+  [PASS] regional route prebuilds a complete weak production bundle
+  [PASS] regional route declares all six starter capabilities
+  [PASS] regional route compiles complete grouped construction materials
+  [PASS] regional weak buildings close the five produced goods
+  [PASS] opening top-up only raises missing reserves to profile minimums
+  [PASS] selected food resource freshwater_fish exists locally
+  [PASS] selected food resource fertile_soil exists locally
+  [PASS] selected food resource wild_game exists locally
+  [PASS] selected route resource fertile_soil exists locally
+  [PASS] selected route resource pasture exists locally
+  [PASS] selected route resource gold_ore exists locally
+  [PASS] regional starter route is classified
+  [PASS] regional route grants every visible starter technology
+  [PASS] regional route prebuilds a complete weak production bundle
+  [PASS] regional route declares all six starter capabilities
+  [PASS] regional route compiles complete grouped construction materials
+  [PASS] regional weak buildings close the five produced goods
+  [PASS] opening top-up only raises missing reserves to profile minimums
+  [PASS] selected food resource freshwater_fish exists locally
+  [PASS] selected food resource fertile_soil exists locally
+  [PASS] selected food resource wild_game exists locally
+  [PASS] selected route resource fertile_soil exists locally
+  [PASS] selected route resource paddy_land exists locally
+  [PASS] selected route resource gold_ore exists locally
+  [PASS] regional starter route is classified
+  [PASS] regional route grants every visible starter technology
+  [PASS] regional route prebuilds a complete weak production bundle
+  [PASS] regional route declares all six starter capabilities
+  [PASS] regional route compiles complete grouped construction materials
+  [PASS] regional weak buildings close the five produced goods
+  [PASS] opening top-up only raises missing reserves to profile minimums
+  [PASS] selected food resource freshwater_fish exists locally
+  [PASS] selected food resource fertile_soil exists locally
+  [PASS] selected food resource wild_game exists locally
+  [PASS] selected route resource fertile_soil exists locally
+  [PASS] selected route resource paddy_land exists locally
+  [PASS] selected route resource gold_ore exists locally
+  [PASS] one generated world demonstrates differentiated regional routes
+  [PASS] country facade is configured
+  [PASS] every country owns exactly one cell
+  [PASS] country start is owned
+  [PASS] stable country id is preserved
+  [PASS] country has one-cell territory
+  [PASS] country receives its regional starter technologies and closure
+  [PASS] country start is owned
+  [PASS] stable country id is preserved
+  [PASS] country has one-cell territory
+  [PASS] country receives its regional starter technologies and closure
+  [PASS] country start is owned
+  [PASS] stable country id is preserved
+  [PASS] country has one-cell territory
+  [PASS] country receives its regional starter technologies and closure
+  [PASS] country start is owned
+  [PASS] stable country id is preserved
+  [PASS] country has one-cell territory
+  [PASS] country receives its regional starter technologies and closure
+  [PASS] country start is owned
+  [PASS] stable country id is preserved
+  [PASS] country has one-cell territory
+  [PASS] country receives its regional starter technologies and closure
+  [PASS] country start is owned
+  [PASS] stable country id is preserved
+  [PASS] country has one-cell territory
+  [PASS] country receives its regional starter technologies and closure
+  [PASS] stable player country id is preserved
+  [PASS] country distance uses the reduced map-scale requirement
+  [PASS] country starts respect minimum distance
+  [PASS] country starts respect minimum distance
+  [PASS] country starts respect minimum distance
+  [PASS] country starts respect minimum distance
+  [PASS] country starts respect minimum distance
+  [PASS] country starts respect minimum distance
+  [PASS] country starts respect minimum distance
+  [PASS] country starts respect minimum distance
+  [PASS] country starts respect minimum distance
+  [PASS] country starts respect minimum distance
+  [PASS] country starts respect minimum distance
+  [PASS] country starts respect minimum distance
+  [PASS] country starts respect minimum distance
+  [PASS] country starts respect minimum distance
+  [PASS] country starts respect minimum distance
+  [PASS] economy facade is configured
+  [PASS] starter population is exactly 20
+  [PASS] starter leaves non-founder population for native job matching
+  [PASS] starter receives a fifteen-day local-food bridge
+  [PASS] starter stocks every selected construction group material
+  [PASS] starter capital has a deterministic settlement name
+  [PASS] starter contains exactly its regional weak buildings
+  [PASS] starter building freshwater_fishing_camp exists
+  [PASS] starter building bast_fiber_camp exists
+  [PASS] starter building bast_wrap_shelter exists
+  [PASS] starter building early_merchant_post exists
+  [PASS] starter building flood_calendar_shrine exists
+  [PASS] starter building placer_gold_working exists
+  [PASS] starter building reed_cutting_camp exists
+  [PASS] starter route has 20 self-operated job slots
+  [PASS] starter route confines employee slots to precious workings
+  [PASS] starter route does not preallocate professions
+  [PASS] starter excludes estates, mature mines and factories
+  [PASS] starter capital has exactly one founder family
+  [PASS] founder family is attached to the first regional producer
+  [PASS] founder family has exactly one notable founder
+  [PASS] notable founder traces to the regional producer owner job
+  [PASS] starter population is exactly 20
+  [PASS] starter leaves non-founder population for native job matching
+  [PASS] starter receives a fifteen-day local-food bridge
+  [PASS] starter stocks every selected construction group material
+  [PASS] starter capital has a deterministic settlement name
+  [PASS] starter contains exactly its regional weak buildings
+  [PASS] starter building freshwater_fishing_camp exists
+  [PASS] starter building bast_fiber_camp exists
+  [PASS] starter building bast_wrap_shelter exists
+  [PASS] starter building early_merchant_post exists
+  [PASS] starter building flood_calendar_shrine exists
+  [PASS] starter building marine_fish_collector exists
+  [PASS] starter building placer_gold_working exists
+  [PASS] starter building reed_cutting_camp exists
+  [PASS] starter route has 20 self-operated job slots
+  [PASS] starter route confines employee slots to precious workings
+  [PASS] starter route does not preallocate professions
+  [PASS] starter excludes estates, mature mines and factories
+  [PASS] starter capital has exactly one founder family
+  [PASS] founder family is attached to the first regional producer
+  [PASS] founder family has exactly one notable founder
+  [PASS] notable founder traces to the regional producer owner job
+  [PASS] starter population is exactly 20
+  [PASS] starter leaves non-founder population for native job matching
+  [PASS] starter receives a fifteen-day local-food bridge
+  [PASS] starter stocks every selected construction group material
+  [PASS] starter capital has a deterministic settlement name
+  [PASS] starter contains exactly its regional weak buildings
+  [PASS] starter building marine_fish_collector exists
+  [PASS] starter building bast_fiber_camp exists
+  [PASS] starter building bast_wrap_shelter exists
+  [PASS] starter building early_merchant_post exists
+  [PASS] starter building flood_calendar_shrine exists
+  [PASS] starter building reed_cutting_camp exists
+  [PASS] starter building surface_silver_working exists
+  [PASS] starter route has 20 self-operated job slots
+  [PASS] starter route confines employee slots to precious workings
+  [PASS] starter route does not preallocate professions
+  [PASS] starter excludes estates, mature mines and factories
+  [PASS] starter capital has exactly one founder family
+  [PASS] founder family is attached to the first regional producer
+  [PASS] founder family has exactly one notable founder
+  [PASS] notable founder traces to the regional producer owner job
+  [PASS] starter population is exactly 20
+  [PASS] starter leaves non-founder population for native job matching
+  [PASS] starter receives a fifteen-day local-food bridge
+  [PASS] starter stocks every selected construction group material
+  [PASS] starter capital has a deterministic settlement name
+  [PASS] starter contains exactly its regional weak buildings
+  [PASS] starter building freshwater_fishing_camp exists
+  [PASS] starter building bast_fiber_camp exists
+  [PASS] starter building bast_wrap_shelter exists
+  [PASS] starter building early_merchant_post exists
+  [PASS] starter building pastoral_council_tent exists
+  [PASS] starter building placer_gold_working exists
+  [PASS] starter building turf_cutting_ground exists
+  [PASS] starter route has 20 self-operated job slots
+  [PASS] starter route confines employee slots to precious workings
+  [PASS] starter route does not preallocate professions
+  [PASS] starter excludes estates, mature mines and factories
+  [PASS] starter capital has exactly one founder family
+  [PASS] founder family is attached to the first regional producer
+  [PASS] founder family has exactly one notable founder
+  [PASS] notable founder traces to the regional producer owner job
+  [PASS] starter population is exactly 20
+  [PASS] starter leaves non-founder population for native job matching
+  [PASS] starter receives a fifteen-day local-food bridge
+  [PASS] starter stocks every selected construction group material
+  [PASS] starter capital has a deterministic settlement name
+  [PASS] starter contains exactly its regional weak buildings
+  [PASS] starter building freshwater_fishing_camp exists
+  [PASS] starter building bast_fiber_camp exists
+  [PASS] starter building bast_wrap_shelter exists
+  [PASS] starter building early_merchant_post exists
+  [PASS] starter building flood_calendar_shrine exists
+  [PASS] starter building placer_gold_working exists
+  [PASS] starter building reed_cutting_camp exists
+  [PASS] starter route has 20 self-operated job slots
+  [PASS] starter route confines employee slots to precious workings
+  [PASS] starter route does not preallocate professions
+  [PASS] starter excludes estates, mature mines and factories
+  [PASS] starter capital has exactly one founder family
+  [PASS] founder family is attached to the first regional producer
+  [PASS] founder family has exactly one notable founder
+  [PASS] notable founder traces to the regional producer owner job
+  [PASS] starter population is exactly 20
+  [PASS] starter leaves non-founder population for native job matching
+  [PASS] starter receives a fifteen-day local-food bridge
+  [PASS] starter stocks every selected construction group material
+  [PASS] starter capital has a deterministic settlement name
+  [PASS] starter contains exactly its regional weak buildings
+  [PASS] starter building freshwater_fishing_camp exists
+  [PASS] starter building bast_fiber_camp exists
+  [PASS] starter building bast_wrap_shelter exists
+  [PASS] starter building early_merchant_post exists
+  [PASS] starter building flood_calendar_shrine exists
+  [PASS] starter building placer_gold_working exists
+  [PASS] starter building reed_cutting_camp exists
+  [PASS] starter route has 20 self-operated job slots
+  [PASS] starter route confines employee slots to precious workings
+  [PASS] starter route does not preallocate professions
+  [PASS] starter excludes estates, mature mines and factories
+  [PASS] starter capital has exactly one founder family
+  [PASS] founder family is attached to the first regional producer
+  [PASS] founder family has exactly one notable founder
+  [PASS] notable founder traces to the regional producer owner job
+  [PASS] all settlements contribute population
+  [PASS] all capitals receive one founder family and notable person
+  [PASS] production bootstrap source is used
+gameplay start runtime: 0 failures

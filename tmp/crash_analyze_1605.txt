@@ -1,0 +1,234 @@
+﻿
+Microsoft (R) Windows Debugger Version 10.0.22621.755 AMD64
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+
+Loading Dump File [C:\Users\hkinghuang\AppData\Local\CrashDumps\Godot_v4.6.2-stable_win64.exe.56656.dmp]
+User Mini Dump File: Only registers, stack and portions of memory are available
+
+
+************* Path validation summary **************
+Response                         Time (ms)     Location
+Deferred                                       srv*C:\symbols*https://msdl.microsoft.com/download/symbols
+OK                                             d:\Godot\ProjectKeynes\Project.Keynes\Project\project-keynes\addons\dots_ext\bin\windows
+Symbol search path is: srv*C:\symbols*https://msdl.microsoft.com/download/symbols;d:\Godot\ProjectKeynes\Project.Keynes\Project\project-keynes\addons\dots_ext\bin\windows
+Executable search path is: 
+Windows 10 Version 22631 MP (32 procs) Free x64
+Product: WinNt, suite: SingleUserTS
+Edition build lab: 22621.1.amd64fre.ni_release.220506-1250
+Machine Name:
+Debug session time: Mon Aug 17 16:05:45.000 2026 (UTC + 8:00)
+System Uptime: 0 days 1:19:28.248
+Process Uptime: 0 days 0:03:39.000
+................................................................
+................................
+Loading unloaded module list
+..
+This dump file has an exception of interest stored in it.
+The stored exception information can be accessed via .ecxr.
+(dd50.e450): Unknown exception - code c0000374 (first/second chance not available)
+For analysis of this file, run !analyze -v
+ntdll!NtWaitForMultipleObjects+0x14:
+00007ffc`35551954 c3              ret
+0:000> cdb: Reading initial command '.ecxr; k 40; !analyze -v; lm m dots_ext*; q'
+rax=0000000000000018 rbx=00000000c0000374 rcx=0000000000000000
+rdx=0000000000000000 rsi=0000000000000001 rdi=00007ffc356348b0
+rip=00007ffc355bd5f9 rsp=000000299f5f89d0 rbp=0000015c5ea88950
+ r8=00007ffc35503850  r9=0000000000000004 r10=0000000000000000
+r11=000000000000003e r12=0000000000000000 r13=0000015c7f530000
+r14=000000299f5f9208 r15=0000000000000000
+iopl=0         nv up ei pl nz na po nc
+cs=0033  ss=002b  ds=002b  es=002b  fs=0053  gs=002b             efl=00000206
+ntdll!RtlReportFatalFailure+0x9:
+00007ffc`355bd5f9 eb00            jmp     ntdll!RtlReportFatalFailure+0xb (00007ffc`355bd5fb)
+Child-SP          RetAddr               Call Site
+00000029`9f5f89d0 00007ffc`355bd5c3     ntdll!RtlReportFatalFailure+0x9
+00000029`9f5f8a20 00007ffc`355c665a     ntdll!RtlReportCriticalFailure+0x97
+00000029`9f5f8b10 00007ffc`355c693a     ntdll!RtlpHeapHandleError+0x12
+00000029`9f5f8b40 00007ffc`355d2935     ntdll!RtlpHpHeapHandleError+0x7a
+00000029`9f5f8b70 00007ffc`354ec3fc     ntdll!RtlpLogHeapFailure+0x45
+00000029`9f5f8ba0 00007ffc`354eb041     ntdll!RtlpFreeHeapInternal+0x84c
+*** WARNING: Unable to verify checksum for dots_ext.windows.template_debug.x86_64.dll
+00000029`9f5f8c60 00007ffa`3f83f6ec     ntdll!RtlFreeHeap+0x51
+00000029`9f5f8ca0 00007ffa`3f3bd5cd     dots_ext_windows_template_debug_x86_64!std::`dynamic atexit destructor for 'initlocks''+0x180e2c
+00000029`9f5f8cd0 00007ffa`3f6a556e     dots_ext_windows_template_debug_x86_64!pk::NativeCountryRuntime::submit_commands+0xdfd
+(Inline Function) --------`--------     dots_ext_windows_template_debug_x86_64!siglookup+0xe
+00000029`9f5f8d00 00007ffa`3f675b10     dots_ext_windows_template_debug_x86_64!raise+0xc2
+00000029`9f5f91a0 00007ffa`3f691674     dots_ext_windows_template_debug_x86_64!godot::StringName::init_bindings+0xdc0
+00000029`9f5f92b0 00007ffa`3f80d581     dots_ext_windows_template_debug_x86_64!_CallSETranslator<__FrameHandler4>+0x24
+00000029`9f5f9300 00007ff6`e5d7b079     dots_ext_windows_template_debug_x86_64!std::`dynamic atexit destructor for 'initlocks''+0x14ecc1
+00000029`9f5f9360 00007ff6`e3b87e90     Godot_v4_6_2_stable_win64!NoHotPatch+0x5ed8399
+00000029`9f5f9410 00007ff6`e390e972     Godot_v4_6_2_stable_win64!NoHotPatch+0x3ce51b0
+00000029`9f5f94c0 00007ff6`e04dd7ae     Godot_v4_6_2_stable_win64!NoHotPatch+0x3a6bc92
+00000029`9f5f9570 00007ff6`e03c1698     Godot_v4_6_2_stable_win64!NoHotPatch+0x63aace
+00000029`9f5f9ae0 00007ff6`e3b87dbf     Godot_v4_6_2_stable_win64!NoHotPatch+0x51e9b8
+00000029`9f5f9b70 00007ff6`e390e972     Godot_v4_6_2_stable_win64!NoHotPatch+0x3ce50df
+00000029`9f5f9c20 00007ff6`e04dd7ae     Godot_v4_6_2_stable_win64!NoHotPatch+0x3a6bc92
+00000029`9f5f9cd0 00007ff6`e03c1698     Godot_v4_6_2_stable_win64!NoHotPatch+0x63aace
+00000029`9f5fa2f0 00007ff6`e3b87dbf     Godot_v4_6_2_stable_win64!NoHotPatch+0x51e9b8
+00000029`9f5fa380 00007ff6`e390e972     Godot_v4_6_2_stable_win64!NoHotPatch+0x3ce50df
+00000029`9f5fa430 00007ff6`e04dd7ae     Godot_v4_6_2_stable_win64!NoHotPatch+0x3a6bc92
+00000029`9f5fa4e0 00007ff6`e03c1698     Godot_v4_6_2_stable_win64!NoHotPatch+0x63aace
+00000029`9f5fa910 00007ff6`e3b87dbf     Godot_v4_6_2_stable_win64!NoHotPatch+0x51e9b8
+00000029`9f5fa9a0 00007ff6`e3b8827c     Godot_v4_6_2_stable_win64!NoHotPatch+0x3ce50df
+00000029`9f5faa50 00007ff6`e5cff723     Godot_v4_6_2_stable_win64!NoHotPatch+0x3ce559c
+00000029`9f5faab0 00007ff6`e3b3ab4e     Godot_v4_6_2_stable_win64!NoHotPatch+0x5e5ca43
+00000029`9f5fab40 00007ffa`3f814733     Godot_v4_6_2_stable_win64!NoHotPatch+0x3c97e6e
+00000029`9f5fab90 00007ffa`3f605df0     dots_ext_windows_template_debug_x86_64!std::`dynamic atexit destructor for 'initlocks''+0x155e73
+00000029`9f5fac40 00007ffa`3f5fb9e6     dots_ext_windows_template_debug_x86_64!pk::DCWorldExt::run_native_world_generate_base_pass+0x55c0
+00000029`9f5fb2a0 00007ffa`3f6021a6     dots_ext_windows_template_debug_x86_64!pk::DCWorldExt::_run_native_generation_publish_pass+0x446
+00000029`9f5fb390 00007ffa`3f80d581     dots_ext_windows_template_debug_x86_64!pk::DCWorldExt::run_native_world_generate_base_pass+0x1976
+00000029`9f5fb3d0 00007ff6`e5d7b079     dots_ext_windows_template_debug_x86_64!std::`dynamic atexit destructor for 'initlocks''+0x14ecc1
+00000029`9f5fb430 00007ff6`e3b87e90     Godot_v4_6_2_stable_win64!NoHotPatch+0x5ed8399
+00000029`9f5fb4e0 00007ff6`e390e972     Godot_v4_6_2_stable_win64!NoHotPatch+0x3ce51b0
+00000029`9f5fb590 00007ff6`e04f3f24     Godot_v4_6_2_stable_win64!NoHotPatch+0x3a6bc92
+00000029`9f5fb640 00007ff6`e03c1698     Godot_v4_6_2_stable_win64!NoHotPatch+0x651244
+00000029`9f5fc440 00007ff6`e3b87dbf     Godot_v4_6_2_stable_win64!NoHotPatch+0x51e9b8
+00000029`9f5fc4d0 00007ff6`e390e972     Godot_v4_6_2_stable_win64!NoHotPatch+0x3ce50df
+00000029`9f5fc580 00007ff6`e04f3f24     Godot_v4_6_2_stable_win64!NoHotPatch+0x3a6bc92
+00000029`9f5fc630 00007ff6`e03c1698     Godot_v4_6_2_stable_win64!NoHotPatch+0x651244
+00000029`9f5fcb90 00007ff6`e3b87dbf     Godot_v4_6_2_stable_win64!NoHotPatch+0x51e9b8
+00000029`9f5fcc20 00007ff6`e390e972     Godot_v4_6_2_stable_win64!NoHotPatch+0x3ce50df
+00000029`9f5fccd0 00007ff6`e04f3f24     Godot_v4_6_2_stable_win64!NoHotPatch+0x3a6bc92
+00000029`9f5fcd80 00007ff6`e03c1698     Godot_v4_6_2_stable_win64!NoHotPatch+0x651244
+00000029`9f5fd3d0 00007ff6`e3b87dbf     Godot_v4_6_2_stable_win64!NoHotPatch+0x51e9b8
+00000029`9f5fd460 00007ff6`e390e972     Godot_v4_6_2_stable_win64!NoHotPatch+0x3ce50df
+00000029`9f5fd510 00007ff6`e04dd7ae     Godot_v4_6_2_stable_win64!NoHotPatch+0x3a6bc92
+00000029`9f5fd5c0 00007ff6`e03c1698     Godot_v4_6_2_stable_win64!NoHotPatch+0x63aace
+00000029`9f5fdb30 00007ff6`e3b87dbf     Godot_v4_6_2_stable_win64!NoHotPatch+0x51e9b8
+00000029`9f5fdbc0 00007ff6`e390e972     Godot_v4_6_2_stable_win64!NoHotPatch+0x3ce50df
+00000029`9f5fdc70 00007ff6`e04f3f24     Godot_v4_6_2_stable_win64!NoHotPatch+0x3a6bc92
+00000029`9f5fdd20 00007ff6`e03c1698     Godot_v4_6_2_stable_win64!NoHotPatch+0x651244
+00000029`9f5fe260 00007ff6`e3b87dbf     Godot_v4_6_2_stable_win64!NoHotPatch+0x51e9b8
+00000029`9f5fe2f0 00007ff6`e389f3ee     Godot_v4_6_2_stable_win64!NoHotPatch+0x3ce50df
+00000029`9f5fe3a0 00007ff6`e3b96a13     Godot_v4_6_2_stable_win64!NoHotPatch+0x39fc70e
+00000029`9f5fe440 00007ff6`e04f3f24     Godot_v4_6_2_stable_win64!NoHotPatch+0x3cf3d33
+00000029`9f5fe660 00007ff6`e03c1698     Godot_v4_6_2_stable_win64!NoHotPatch+0x651244
+00000029`9f5feaf0 00007ff6`e3b87dbf     Godot_v4_6_2_stable_win64!NoHotPatch+0x51e9b8
+00000029`9f5feb80 00007ff6`e390e972     Godot_v4_6_2_stable_win64!NoHotPatch+0x3ce50df
+00000029`9f5fec30 00007ff6`e04f3f24     Godot_v4_6_2_stable_win64!NoHotPatch+0x3a6bc92
+*******************************************************************************
+*                                                                             *
+*                        Exception Analysis                                   *
+*                                                                             *
+*******************************************************************************
+
+
+KEY_VALUES_STRING: 1
+
+    Key  : Analysis.DebugAnalysisManager
+    Value: Create
+
+    Key  : Analysis.Elapsed.mSec
+    Value: 61898
+
+    Key  : Analysis.Init.Elapsed.mSec
+    Value: 10766
+
+    Key  : Analysis.Memory.CommitPeak.Mb
+    Value: 442
+
+    Key  : Timeline.OS.Boot.DeltaSec
+    Value: 4768
+
+    Key  : Timeline.Process.Start.DeltaSec
+    Value: 219
+
+    Key  : WER.OS.Branch
+    Value: ni_release
+
+    Key  : WER.OS.Timestamp
+    Value: 2022-05-06T12:50:00Z
+
+    Key  : WER.OS.Version
+    Value: 10.0.22621.1
+
+    Key  : WER.Process.Version
+    Value: 4.6.2.0
+
+
+FILE_IN_CAB:  Godot_v4.6.2-stable_win64.exe.56656.dmp
+
+NTGLOBALFLAG:  0
+
+PROCESS_BAM_CURRENT_THROTTLED: 0
+
+PROCESS_BAM_PREVIOUS_THROTTLED: 0
+
+APPLICATION_VERIFIER_FLAGS:  0
+
+CONTEXT:  (.ecxr)
+rax=0000000000000018 rbx=00000000c0000374 rcx=0000000000000000
+rdx=0000000000000000 rsi=0000000000000001 rdi=00007ffc356348b0
+rip=00007ffc355bd5f9 rsp=000000299f5f89d0 rbp=0000015c5ea88950
+ r8=00007ffc35503850  r9=0000000000000004 r10=0000000000000000
+r11=000000000000003e r12=0000000000000000 r13=0000015c7f530000
+r14=000000299f5f9208 r15=0000000000000000
+iopl=0         nv up ei pl nz na po nc
+cs=0033  ss=002b  ds=002b  es=002b  fs=0053  gs=002b             efl=00000206
+ntdll!RtlReportFatalFailure+0x9:
+00007ffc`355bd5f9 eb00            jmp     ntdll!RtlReportFatalFailure+0xb (00007ffc`355bd5fb)
+Resetting default scope
+
+EXCEPTION_RECORD:  (.exr -1)
+ExceptionAddress: 00007ffc355bd5f9 (ntdll!RtlReportFatalFailure+0x0000000000000009)
+   ExceptionCode: c0000374
+  ExceptionFlags: 00000081
+NumberParameters: 1
+   Parameter[0]: 00007ffc356348b0
+
+PROCESS_NAME:  Godot_v4.6.2-stable_win64.exe
+
+ERROR_CODE: (NTSTATUS) 0xc0000374 - <Unable to get error code text>
+
+EXCEPTION_CODE_STR:  c0000374
+
+EXCEPTION_PARAMETER1:  00007ffc356348b0
+
+ADDITIONAL_DEBUG_TEXT:  Followup set based on attribute [Heap_Error_Type] from Frame:[0] on thread:[PSEUDO_THREAD] ; Followup set based on attribute [Is_ChosenCrashFollowupThread] from Frame:[0] on thread:[PSEUDO_THREAD]
+
+FAULTING_THREAD:  ffffffff
+
+STACK_TEXT:  
+00000000`00000000 00000000`00000000 ntdll!RtlpFreeHeapInternal+0x0
+
+
+STACK_COMMAND:  !heap ; ** Pseudo Context ** ManagedPseudo ** Value: ffffffff ** ; kb
+
+SYMBOL_NAME:  ntdll!RtlpFreeHeapInternal+0
+
+MODULE_NAME: ntdll
+
+IMAGE_NAME:  ntdll.dll
+
+FAILURE_BUCKET_ID:  HEAP_CORRUPTION_ACTIONABLE_BlockNotBusy_DOUBLE_FREE_c0000374_ntdll.dll!RtlpFreeHeapInternal
+
+OS_VERSION:  10.0.22621.1
+
+BUILDLAB_STR:  ni_release
+
+OSPLATFORM_TYPE:  x64
+
+OSNAME:  Windows 10
+
+IMAGE_VERSION:  10.0.22621.6060
+
+FAILURE_ID_HASH:  {f9e860eb-b03f-7415-804c-7e671e26c730}
+
+Followup:     MachineOwner
+---------
+
+start             end                 module name
+00007ffa`3f3a0000 00007ffa`3f929000   dots_ext_windows_template_debug_x86_64 C (private pdb symbols)  d:\godot\projectkeynes\project.keynes\project\project-keynes\addons\dots_ext\bin\windows\dots_ext.windows.template_debug.x86_64.pdb
+quit:
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\atlmfc.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\ObjectiveC.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\concurrency.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\cpp_rest.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\stl.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Data.Json.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Geolocation.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Sensors.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Media.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\windows.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\winrt.natvis'

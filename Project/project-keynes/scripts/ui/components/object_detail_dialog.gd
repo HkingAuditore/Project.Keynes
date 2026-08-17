@@ -110,7 +110,10 @@ func tax_editors() -> Array:
 
 func _build_tax_section(kind: String, context_value: Variant, row: Dictionary) -> void:
 	var context: Dictionary = context_value if context_value is Dictionary else {}
-	if context.is_empty() and not row.has("tax_lanes"):
+	# 对象详情只编辑本对象覆盖。地块税种默认留在检视器页上，打开详情时会收起，
+	# 避免工匠/建筑/物资同时出现两层同名税率。
+	var item_lanes := _item_tax_lanes(row)
+	if item_lanes.is_empty():
 		return
 	_tax_section = TaxSectionScene.instantiate() as VBoxContainer
 	_content.add_child(_tax_section)
@@ -119,22 +122,16 @@ func _build_tax_section(kind: String, context_value: Variant, row: Dictionary) -
 	var title := _tax_title(kind)
 	(_tax_section.get_node("Head/Title") as Label).text = title
 	var lanes := _tax_section.get_node("Lanes") as VBoxContainer
-	var all_lanes: Array = []
-	var defaults: Array = context.get("default_lanes", [])
-	for lane_value in defaults:
-		all_lanes.append(lane_value)
-	for lane_value in row.get("tax_lanes", []):
-		all_lanes.append(lane_value)
 	var editable := bool(context.get("editable", false))
 	(_tax_section.get_node("Head/Readonly") as Control).visible = not editable
 	var hint := _tax_section.get_node("Hint") as Label
-	if not bool(context.get("available", not all_lanes.is_empty())):
+	if not bool(context.get("available", true)):
 		hint.text = String(context.get("reason", "该领土没有可调整的税收政策。"))
 		hint.visible = true
 	else:
-		hint.text = "左侧调整当前对象；输入后次日生效。"
+		hint.text = _tax_hint(kind)
 		hint.visible = true
-	for raw in all_lanes:
+	for raw in item_lanes:
 		var lane: Dictionary = raw
 		var editor := TaxLaneScene.instantiate() as TaxLaneEditor
 		lanes.add_child(editor)
@@ -146,15 +143,33 @@ func _build_tax_section(kind: String, context_value: Variant, row: Dictionary) -
 			tax_reset_requested.emit(scope, lane_kind, item_id))
 		editor.set_data(lane)
 		_tax_editors[editor.editor_key(int(context.get("cell", -1)))] = editor
-	lanes.visible = not all_lanes.is_empty()
+	lanes.visible = not item_lanes.is_empty()
+
+
+func _item_tax_lanes(row: Dictionary) -> Array:
+	var item_lanes: Array = []
+	for lane_value in row.get("tax_lanes", []):
+		var lane: Dictionary = lane_value
+		if String(lane.get("scope", "item")) == "default":
+			continue
+		item_lanes.append(lane)
+	return item_lanes
 
 
 func _tax_title(kind: String) -> String:
 	return {
-		"cohort": "所得税调整",
-		"good": "消费税与关税调整",
-		"building": "营业税调整",
+		"cohort": "本阶层所得税",
+		"good": "本物资税赋",
+		"building": "本建筑营业税",
 	}.get(kind, "税收调整")
+
+
+func _tax_hint(kind: String) -> String:
+	return {
+		"cohort": "在此调整本阶层税率，次日生效。",
+		"good": "在此调整本物资税率，次日生效。",
+		"building": "在此调整本建筑税率，次日生效。",
+	}.get(kind, "在此调整本项税率，次日生效。")
 
 
 func set_embedded(embedded: bool = true) -> void:
@@ -360,7 +375,7 @@ func _add_branch_colonization_buttons(family_handle: int, branches: Array) -> Co
 			bool(_player_controller.is_player_owned_cell(source_cell))
 		button.disabled = not owned
 		button.tooltip_text = "仅玩家领土内的家族分支可以派遣" if not owned \
-			else "选择一个可见无主陆地作为目标"
+			else "选择一个可见的无主或本国陆地作为目标"
 		button.pressed.connect(func() -> void:
 			colonization_requested.emit(family_handle, source_cell))
 		rows.add_child(button)
@@ -425,12 +440,18 @@ func _add_rows_card(title_text: String, icon_key: String, accent: Color,
 		var data: Dictionary = raw
 		if not bool(data.get("visible", true)):
 			continue
-		var line := DetailLineScene.instantiate() as HBoxContainer
+		var line := DetailLineScene.instantiate() as VBoxContainer
 		row_box.add_child(line)
-		var name_label := line.get_node("Name") as Label
+		var name_label := line.get_node("Line/Name") as Label
 		name_label.text = String(data.get("name", ""))
-		var value_label := line.get_node("Value") as Label
+		var value_label := line.get_node("Line/Value") as Label
 		value_label.text = String(data.get("value", ""))
+		var detail := String(data.get("detail", "")).strip_edges()
+		var detail_label := line.get_node("Detail") as Label
+		detail_label.text = detail
+		detail_label.visible = not detail.is_empty()
+		var tooltip := String(data.get("tooltip", "")).strip_edges()
+		line.tooltip_text = tooltip if not tooltip.is_empty() else detail
 	return panel
 
 

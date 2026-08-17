@@ -21,13 +21,13 @@ func _initialize() -> void:
 		_fail("owner period demand did not retain physical-capacity context")
 	elif not String(miner_job.get("value", "")).contains("岗位已释放"):
 		_fail("employee period demand did not explain released jobs")
-	elif not String(state.get("detail", "")).contains("建筑仍保留") \
+	elif not String(state.get("detail", "")).contains("连续亏损停产") \
 			or not String(state.get("meta", "")).contains("上一经营期利润率 -50.0%") \
 			or not String(state.get("meta", "")).contains("连续亏损 3 期"):
 		_fail("expanded state summary omitted the cause or prior result")
 	elif String(state.get("icon", "")) != "warning":
 		_fail("collapsed row is missing its abnormal-state icon")
-	elif not String(finance.get("warning", "")).contains("本期停产"):
+	elif not String(finance.get("warning", "")).contains("停产中"):
 		_fail("zero cashflow still lacks suspension context")
 	else:
 		print("[building-inspector-state] PASS")

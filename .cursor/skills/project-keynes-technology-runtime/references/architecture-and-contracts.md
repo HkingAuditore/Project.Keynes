@@ -23,9 +23,10 @@ Current baseline:
 - A new era also requires the preceding era milestone.
 - Each era milestone requires any two of its four marked candidates.
 - Discovery reveals only immediate successors after prerequisite completion; reveal never completes.
-- Map occupancy (`cell.bio_occupancy_bits`) is current species presence. Country research signals
-  are permanent seen-knowledge; local extinction does not revoke evidence. Trade still yields
-  `contact.*` only.
+- Map occupancy (`cell.bio_occupancy_bits`) is current species presence, seeded as compact origin
+  hearths (cosmopolitan reed excepted) with a continent-scale food + fiber/livestock floor.
+  Country research signals are permanent seen-knowledge; local extinction does not revoke
+  evidence. Trade still yields `contact.*` only.
 
 Compilation produces stable-ID lookup, dense IDs in topological order, prerequisite and milestone CSR,
 reverse unlock indices, public definitions, Modifier definition keys, and a catalog hash. Validate
@@ -81,8 +82,16 @@ The important boundary is:
 3. Government research procurement buys remaining domestic technology-points stock.
 4. Remaining regional imbalances may enter domestic trade.
 5. The next country research day consumes treasury technology points.
-6. Completed research enters `pending`.
-7. On the following activation boundary, apply its permanent `UNIQUE_SOURCE` Modifier.
+6. Completed research enters `pending` and immediately registers its stable
+   Effect instance. Production scheduling runs Effect (85) before Country (255),
+   so the instance must exist before the next Effect morning; waiting until the
+   next country activation loop misses that slot and leaves the node pending.
+   The country slice also raises `country_day_barrier` when Effect still has due
+   work, so the continuation drain can ACK the same calendar day.
+7. On the following activation boundary, apply its permanent `UNIQUE_SOURCE` Modifier
+   after the Effect transaction ACKs, or accept the Modifier if that UNIQUE_SOURCE is
+   already present. Pending nodes re-queue unacked Effect instances each country day
+   so a missed Effect morning cannot leave them pending forever.
 8. Only after successful application expose the completed tag and economic unlocks.
 
 This keeps market settlement one day ahead of research and makes effects/unlocks visible atomically.

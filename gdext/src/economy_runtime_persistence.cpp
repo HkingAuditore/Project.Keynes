@@ -41,6 +41,7 @@ Dictionary NativeEconomyRuntime::begin_save(int32_t chunk_bytes) {
         _environment_weather_q16.size() != cells ||
         _cell_last_settlement_day.size() != cells ||
         _birth_residual_q32.size() != cells * _ethnicity_ids.size() ||
+        _cell_support_ema_q16.size() != cells ||
         _cell_settlement_generation.size() != cells ||
         _cell_price_stock_gen.size() != cells ||
         _cell_owner_cash_gen.size() != cells ||
@@ -576,7 +577,12 @@ Dictionary NativeEconomyRuntime::end_restore() {
         const bool treasury_build =
             cmd.opcode == COMMAND_TREASURY_SPONSORED_BUILD;
         const bool canal_build = cmd.opcode == COMMAND_BUILD_CANAL;
+        const bool expedition_player =
+            cmd.opcode == COMMAND_START_FAMILY_EXPEDITION ||
+            cmd.opcode == COMMAND_CANCEL_FAMILY_EXPEDITION;
         int32_t branch = -1;
+        int32_t family = -1;
+        int32_t expedition = -1;
         const bool target_ok = family_reward
             ? (_family_influences.valid_handle(cmd.target_handle, branch) &&
                cmd.i32_0 >= 0 && cmd.i32_0 <= 1 && cmd.i64_0 > 0 &&
@@ -593,6 +599,13 @@ Dictionary NativeEconomyRuntime::end_restore() {
             : canal_build
             ? (_country_runtime != nullptr && _country_runtime->valid_handle(
                    static_cast<int64_t>(cmd.target_handle)) && cmd.i64_0 > 0)
+            : expedition_player
+            ? (cmd.opcode == COMMAND_START_FAMILY_EXPEDITION
+                ? (_families.valid_handle(cmd.target_handle, family) &&
+                   cmd.i32_0 >= 0 && cmd.i32_0 < _cell_count &&
+                   cmd.i32_1 >= 0 && cmd.i32_1 < _cell_count &&
+                   cmd.i64_0 >= 1)
+                : _family_expeditions.valid_handle(cmd.target_handle, expedition))
             : market_target
             ? (cmd.i32_0 >= 0 && cmd.i32_0 < _market.market_count &&
                cmd.i32_1 >= 0 && cmd.i32_1 < _market.good_count &&

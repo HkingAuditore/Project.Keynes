@@ -18,6 +18,7 @@ const MAX_COUNTRY_DISTANCE := 12
 static var _research_signal_index_by_id: Dictionary = {}
 static var _research_signal_occupancy_bit: PackedInt32Array = PackedInt32Array()
 static var _starter_catalog_cache: Dictionary = {}
+static var _active_reserve_overlay: Dictionary = {}
 
 
 static func select_and_prepare(map: MapData, world: WorldData, seed: int, foreign_count: int = 0,
@@ -35,46 +36,35 @@ static func select_and_prepare(map: MapData, world: WorldData, seed: int, foreig
 	for cell_idx in range(map.cell_count()):
 		if not _is_candidate(map, cell_idx, neighbors):
 			continue
-		var gold := _reserve(map, "gold_ore", cell_idx)
-		var silver := _reserve(map, "silver_ore", cell_idx)
-		var precious := maxf(gold, silver)
+		var gold := _raw_reserve(map, "gold_ore", cell_idx)
+		var silver := _raw_reserve(map, "silver_ore", cell_idx)
 		var survival_score := _survival_score(map, cell_idx)
-		if precious <= 0.0:
-			continue
-		var visible_report := VisionSolverScript.compute_visible_for_sources(
-			map, world, PackedInt32Array([cell_idx]))
-		if not bool(visible_report.get("ok", false)):
-			continue
-		var visible: PackedByteArray = visible_report.visible
-		var signal_probe := _signals_for_visible_cells(map, visible, starter_catalog)
-		var starter_route := _starter_route_for_cell(
-			map, cell_idx, neighbors, signal_probe, starter_catalog)
-		if not bool(starter_route.get("ok", false)):
-			continue
 		candidates.append({
 			"cell": cell_idx,
 			"score": survival_score,
 			"survival_score": survival_score,
-			"natural_precious": true,
-			"starter_route": starter_route,
+			"natural_precious": gold > 0.0 or silver > 0.0,
 			"closure_missing_count": 0,
-			"starter_technology_count": (starter_route.starter_technology_ids as PackedStringArray).size(),
-			"starter_building_count": int(starter_route.get(
-				"starter_building_total", (starter_route.starter_building_ids as
-				PackedStringArray).size())),
 		})
 	if candidates.is_empty():
 		return _error("starter_capability_unsatisfied",
-			"没有找到能以真实本地资源和可见地理信号闭合六项开局能力的出生地。")
+			"没有找到气候与通行条件合格的出生地。")
 	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if bool(a.natural_precious) != bool(b.natural_precious):
+			return bool(a.natural_precious)
 		if not is_equal_approx(float(a.survival_score), float(b.survival_score)):
 			return float(a.survival_score) > float(b.survival_score)
-		if int(a.starter_building_count) != int(b.starter_building_count):
-			return int(a.starter_building_count) < int(b.starter_building_count)
 		return int(a.cell) < int(b.cell))
-	var top_count := 1
-	var chosen_index := 0
-	var cell_idx := int(candidates[chosen_index].cell)
+	var chosen: Dictionary = {}
+	for candidate in candidates:
+		if _close_candidate_route(map, world, neighbors, starter_catalog, candidate):
+			chosen = candidate
+			break
+	if chosen.is_empty():
+		return _error("starter_capability_unsatisfied",
+			"没有找到能以真实本地资源和可见地理信号闭合六项开局能力的出生地。")
+	var top_count := maxi(1, candidates.size() / 4)
+	var cell_idx := int(chosen.cell)
 	var minimum_distance := minimum_country_distance(map.width, map.height)
 	var nearest_start := PackedInt32Array()
 	nearest_start.resize(map.cell_count())
@@ -88,17 +78,25 @@ static func select_and_prepare(map: MapData, world: WorldData, seed: int, foreig
 		if int(candidate.cell) != cell_idx:
 			remaining.append(candidate)
 	for _foreign_index in range(foreign_count):
-		var best: Dictionary = {}
-		var best_distance := -1
+		var ordered: Array[Dictionary] = []
 		for candidate in remaining:
-			var candidate_cell := int(candidate.cell)
-			var candidate_distance := int(nearest_start[candidate_cell])
+			var candidate_distance := int(nearest_start[int(candidate.cell)])
 			if candidate_distance < minimum_distance:
 				continue
-			if best.is_empty() or _foreign_candidate_better(
-					candidate, candidate_distance, best, best_distance):
-				best = candidate
-				best_distance = candidate_distance
+			ordered.append(candidate)
+		ordered.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			return _foreign_candidate_better(
+				a, int(nearest_start[int(a.cell)]),
+				b, int(nearest_start[int(b.cell)])))
+		var best: Dictionary = {}
+		var best_distance := -1
+		for candidate in ordered:
+			if not _close_candidate_route(map, world, neighbors, starter_catalog,
+					candidate):
+				continue
+			best = candidate
+			best_distance = int(nearest_start[int(candidate.cell)])
+			break
 		if best.is_empty():
 			return {
 				"ok": false,
@@ -133,7 +131,7 @@ static func select_and_prepare(map: MapData, world: WorldData, seed: int, foreig
 	var foreign_names: PackedStringArray = selected_names.get(
 		"display_names", PackedStringArray())
 	var country_starts: Array[Dictionary] = []
-	var player_precious := _precious_for_cell(map, cell_idx)
+	var player_precious := String(chosen.starter_route.get("precious_resource", ""))
 	var player_start := {
 		"country_id": "country.player",
 		"country_name": player_country_name,
@@ -143,23 +141,25 @@ static func select_and_prepare(map: MapData, world: WorldData, seed: int, foreig
 		"is_player": true,
 		"selection_distance": 0,
 	}
-	player_start.merge((candidates[chosen_index].starter_route as Dictionary).duplicate(true), true)
+	player_start.merge((chosen.starter_route as Dictionary).duplicate(true), true)
 	_append_precious_route(player_start, player_precious)
 	country_starts.append(player_start)
 	for foreign_index in range(foreign_count):
 		var foreign_cell := int(foreign_cells[foreign_index])
+		var foreign_route: Dictionary = foreign_routes[foreign_index]
 		var foreign_start := {
 			"country_id": "country.foreign.%03d" % (foreign_index + 1),
 			"country_name": String(foreign_names[foreign_index]),
 			"name_id": String(foreign_name_ids[foreign_index]),
 			"cell": foreign_cell,
-			"precious_resource": _precious_for_cell(map, foreign_cell),
+			"precious_resource": String(foreign_route.get("precious_resource", "")),
 			"is_player": false,
 			"selection_distance": int(foreign_selection_distances[foreign_index]),
 		}
-		foreign_start.merge(foreign_routes[foreign_index], true)
+		foreign_start.merge(foreign_route, true)
 		_append_precious_route(foreign_start, String(foreign_start.precious_resource))
 		country_starts.append(foreign_start)
+	_apply_start_resource_topups(map, country_starts)
 	return {
 		"ok": true,
 		"code": "ok",
@@ -168,7 +168,7 @@ static func select_and_prepare(map: MapData, world: WorldData, seed: int, foreig
 		"precious_resource": player_precious,
 		"candidate_count": candidates.size(),
 		"top_quartile_count": top_count,
-		"score": float(candidates[chosen_index].score),
+		"score": float(chosen.score),
 		"foreign_count": foreign_count,
 		"minimum_country_distance": minimum_distance,
 		"foreign_cells": foreign_cells,
@@ -200,12 +200,14 @@ static func evaluate_starter_route(map: MapData, cell_idx: int,
 	if not bool(catalog.get("ok", false)) or not bool(visible_report.get("ok", false)):
 		return _error("starter_route_probe_failed", "无法计算出生点可见科技信号。")
 	return _starter_route_for_cell(map, cell_idx, map.neighbor_indices_packed(),
-		_signals_for_visible_cells(map, visible_report.visible, catalog), catalog)
+		_signals_for_visible_cells(map, visible_report.visible, catalog), catalog, {})
 
 
 static func _starter_route_for_cell(map: MapData, cell_idx: int,
 		neighbors: PackedInt32Array, signal_probe: Dictionary,
-		starter_catalog: Dictionary) -> Dictionary:
+		starter_catalog: Dictionary, overlay: Dictionary = {}) -> Dictionary:
+	_active_reserve_overlay = overlay
+	signal_probe = _with_overlay_resource_signals(signal_probe, starter_catalog, overlay)
 	var temperature := float(map.temp_arr[cell_idx])
 	var moisture := float(map.moisture_arr[cell_idx])
 	var elevation := float(map.elevation_arr[cell_idx])
@@ -346,7 +348,7 @@ static func _starter_route_for_cell(map: MapData, cell_idx: int,
 	var best: Dictionary = {}
 	var last_plan_failure: Dictionary = {}
 	var route_plan_attempts := 0
-	const MAX_ROUTE_PLAN_ATTEMPTS := 4
+	const MAX_ROUTE_PLAN_ATTEMPTS := 12
 	for food in revealed_food_options:
 		if route_plan_attempts >= MAX_ROUTE_PLAN_ATTEMPTS:
 			break
@@ -384,12 +386,13 @@ static func _starter_route_for_cell(map: MapData, cell_idx: int,
 						"starter_clothing_resource_id": String(clothing.clothing_resource),
 						"starter_construction_resource_id": String(construction.construction_resource),
 						"starter_input_buffer_good_id": String(clothing.input_buffer),
-						"starter_precious_good_id": precious_resource,
+						"starter_precious_good_id": _precious_good_id(precious_resource),
 						"precious_resource": precious_resource,
 						"missing_resource_ids": PackedStringArray(),
 						"visible_signal_ids": signal_probe.signal_ids,
 						"visible_signal_cells": signal_probe.signal_cells,
 						"geography_fit": 1.0,
+						"reserve_overlay": overlay.duplicate(true),
 						"ok": true,
 					}
 					var planned := StarterEconomyPlannerScript.plan(
@@ -532,7 +535,7 @@ static func _append_precious_route(start: Dictionary, precious_resource: String)
 	start["starter_building_ids"] = buildings
 	if not counts.is_empty() or buildings.size() != old_building_count:
 		start["starter_building_counts"] = counts
-	start["starter_precious_good_id"] = precious_resource
+	start["starter_precious_good_id"] = _precious_good_id(precious_resource)
 
 
 static func _append_precious_route_values(technologies: PackedStringArray,
@@ -824,7 +827,104 @@ static func _relax_minimum_distances(map: MapData, neighbors: PackedInt32Array,
 			tail += 1
 
 
-static func _is_candidate(map: MapData, cell_idx: int, neighbors: PackedInt32Array) -> bool:
+static func _close_candidate_route(map: MapData, world: WorldData,
+		neighbors: PackedInt32Array, starter_catalog: Dictionary,
+		candidate: Dictionary) -> bool:
+	if candidate.has("starter_route"):
+		return bool((candidate.starter_route as Dictionary).get("ok", false))
+	var cell_idx := int(candidate.cell)
+	var overlay := _starter_resource_overlay(map, cell_idx)
+	var visible_report := VisionSolverScript.compute_visible_for_sources(
+		map, world, PackedInt32Array([cell_idx]))
+	if not bool(visible_report.get("ok", false)):
+		candidate["starter_route"] = _error("starter_route_probe_failed",
+			"无法计算出生点可见科技信号。")
+		return false
+	var starter_route := _starter_route_for_cell(
+		map, cell_idx, neighbors,
+		_signals_for_visible_cells(map, visible_report.visible, starter_catalog),
+		starter_catalog, overlay)
+	candidate["starter_route"] = starter_route
+	candidate["starter_building_count"] = int(starter_route.get(
+		"starter_building_total", (starter_route.get(
+			"starter_building_ids", PackedStringArray()) as PackedStringArray).size()))
+	return bool(starter_route.get("ok", false))
+
+
+static func _starter_resource_overlay(map: MapData, cell_idx: int) -> Dictionary:
+	var overlay := {}
+	for resource_id in Profile.OPENING_TOPUP_RESOURCE_IDS:
+		var minimum := float(Profile.MINIMUM_RESERVES.get(String(resource_id), 0.0))
+		if minimum <= 0.0:
+			continue
+		overlay[String(resource_id)] = maxf(
+			_raw_reserve(map, String(resource_id), cell_idx), minimum)
+	var precious_id := _precious_for_raw_cell(map, cell_idx)
+	if precious_id.is_empty():
+		precious_id = "gold_ore"
+	overlay[precious_id] = maxf(
+		_raw_reserve(map, precious_id, cell_idx),
+		float(Profile.MINIMUM_RESERVES.get(precious_id, 0.0)))
+	return overlay
+
+
+static func _with_overlay_resource_signals(signal_probe: Dictionary,
+		catalog: Dictionary, overlay: Dictionary) -> Dictionary:
+	if overlay.is_empty():
+		return signal_probe
+	var counts: Dictionary = (signal_probe.get("counts", {}) as Dictionary).duplicate()
+	var ids: PackedStringArray = catalog.get("research_signal_ids", PackedStringArray())
+	for resource_id in overlay:
+		if float(overlay[resource_id]) <= 0.0:
+			continue
+		var signal_index := ids.find("resource.%s" % String(resource_id))
+		if signal_index >= 0:
+			counts[signal_index] = maxi(int(counts.get(signal_index, 0)), 1)
+	return {
+		"counts": counts,
+		"signal_ids": signal_probe.get("signal_ids", PackedInt32Array()),
+		"signal_cells": signal_probe.get("signal_cells", PackedInt32Array()),
+	}
+
+
+static func _apply_start_resource_topups(map: MapData,
+		country_starts: Array[Dictionary]) -> void:
+	_active_reserve_overlay = {}
+	for start in country_starts:
+		var overlay: Dictionary = start.get("reserve_overlay", {})
+		var cell_idx := int(start.get("cell", -1))
+		var topups := {}
+		var missing := PackedStringArray()
+		for resource_id in overlay:
+			var target := float(overlay[resource_id])
+			var current := _raw_reserve(map, String(resource_id), cell_idx)
+			if target > current + 0.0001:
+				_write_reserve(map, String(resource_id), cell_idx, target)
+				topups[String(resource_id)] = target - current
+				missing.append(String(resource_id))
+		start.erase("reserve_overlay")
+		if not topups.is_empty():
+			start["resource_topups"] = topups
+			start["missing_resource_ids"] = missing
+
+
+static func _write_reserve(map: MapData, resource_id: String, cell_idx: int,
+		amount: float) -> void:
+	for profile in ResourceProfileRegistry.ordered():
+		if profile == null or String(profile.id) != resource_id:
+			continue
+		var field := ResourceProfileRegistry.reserve_map_field(profile)
+		if field.is_empty():
+			return
+		var values = map.get(field)
+		if values == null or cell_idx < 0 or cell_idx >= values.size():
+			return
+		values[cell_idx] = amount
+		map.set(field, values)
+		return
+
+
+static func _is_candidate(map: MapData, cell_idx: int, _neighbors: PackedInt32Array) -> bool:
 	if map.is_water_arr[cell_idx] != 0:
 		return false
 	if not TerrainType.is_passable_land(int(map.terrain_arr[cell_idx])):
@@ -841,18 +941,7 @@ static func _is_candidate(map: MapData, cell_idx: int, neighbors: PackedInt32Arr
 		return false
 	if vitality < Profile.VITALITY_MIN:
 		return false
-	if map.has_river_arr[cell_idx] != 0 or map.is_lake_seed_arr[cell_idx] != 0:
-		return true
-	if _has_coastal_water(map, cell_idx, neighbors):
-		return true
-	var base := cell_idx * 6
-	for direction in range(6):
-		var neighbor := int(neighbors[base + direction])
-		if neighbor >= 0 and (map.has_river_arr[neighbor] != 0 \
-				or map.is_lake_seed_arr[neighbor] != 0 \
-				or int(map.terrain_arr[neighbor]) == int(TerrainType.TERRAIN.LAKE)):
-			return true
-	return false
+	return true
 
 
 static func _survival_score(map: MapData, cell_idx: int) -> float:
@@ -863,6 +952,14 @@ static func _survival_score(map: MapData, cell_idx: int) -> float:
 		+ float(map.vegetation_vitality_arr[cell_idx]) * 0.30
 
 
+static func _precious_for_raw_cell(map: MapData, cell_idx: int) -> String:
+	var natural_gold := _raw_reserve(map, "gold_ore", cell_idx)
+	var natural_silver := _raw_reserve(map, "silver_ore", cell_idx)
+	if natural_gold > 0.0 or natural_silver > 0.0:
+		return "gold_ore" if natural_gold >= natural_silver else "silver_ore"
+	return ""
+
+
 static func _precious_for_cell(map: MapData, cell_idx: int) -> String:
 	var natural_gold := _reserve(map, "gold_ore", cell_idx)
 	var natural_silver := _reserve(map, "silver_ore", cell_idx)
@@ -871,13 +968,24 @@ static func _precious_for_cell(map: MapData, cell_idx: int) -> String:
 	return ""
 
 
-static func _reserve(map: MapData, resource_id: String, cell_idx: int) -> float:
+static func _precious_good_id(precious_resource: String) -> String:
+	return "silver" if precious_resource == "silver_ore" else "gold"
+
+
+static func _raw_reserve(map: MapData, resource_id: String, cell_idx: int) -> float:
 	for profile in ResourceProfileRegistry.ordered():
 		if profile != null and String(profile.id) == resource_id:
 			var field := ResourceProfileRegistry.reserve_map_field(profile)
 			var values = map.get(field)
 			return float(values[cell_idx]) if values != null and cell_idx < values.size() else 0.0
 	return 0.0
+
+
+static func _reserve(map: MapData, resource_id: String, cell_idx: int) -> float:
+	var actual := _raw_reserve(map, resource_id, cell_idx)
+	if _active_reserve_overlay.has(resource_id):
+		return maxf(actual, float(_active_reserve_overlay[resource_id]))
+	return actual
 
 
 static func _stable_hash(seed: int, purpose: String) -> int:

@@ -274,6 +274,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             for (size_t ethnicity = 0; ethnicity < _ethnicity_ids.size(); ++ethnicity)
                 append_le<int64_t>(payload,
                     _birth_residual_q32[birth_lane_begin + ethnicity]);
+            append_le<int32_t>(payload, _cell_support_ema_q16[_save.cell_cursor]);
         }
         if (_save.cell_cursor >= _cell_count) ++_save.section;
         return make_save_chunk(SAVE_SECTION_CELLS,

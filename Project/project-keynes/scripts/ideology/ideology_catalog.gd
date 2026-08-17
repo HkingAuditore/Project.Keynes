@@ -182,8 +182,17 @@ func catalog_view(country_catalog: Dictionary = {}) -> Dictionary:
 		if definition == null:
 			continue
 		rows.append({"id": String(definition.id), "dense_id": i, "icon_key": String(definition.icon_key),
-			"name_key": String(definition.name_key), "detail_key": String(definition.detail_key),
+			"name_key": String(definition.name_key),
+			"display_name": _display_name(definition),
+			"detail_key": String(definition.detail_key),
 			"rarity_weight": definition.rarity_weight, "ideology_slot_cost": definition.ideology_slot_cost,
 			"national_spirit_slot_cost": definition.national_spirit_slot_cost,
 			"acquisition_flags": definition.acquisition_flags})
 	return {"ok": true, "ideologies": rows, "gate_keys": compiled.gate_keys}
+
+
+func _display_name(definition) -> String:
+	var name_key := String(definition.name_key)
+	if not name_key.is_empty() and not name_key.contains("."):
+		return name_key
+	return String(definition.id)

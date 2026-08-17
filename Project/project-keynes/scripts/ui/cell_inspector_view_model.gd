@@ -37,6 +37,8 @@ const TAX_KIND_IDS := {"income": 0, "consumption": 1, "business": 2,
 	"import": 3, "export": 4}
 const TAX_KIND_LABELS := {"income": "所得税", "consumption": "消费税",
 	"business": "营业税", "import": "进口关税", "export": "出口关税"}
+const TAX_DEFAULT_LABELS := {"income": "此地所得税", "consumption": "此地消费税",
+	"business": "此地营业税", "import": "此地进口税", "export": "此地出口税"}
 const TAX_KIND_ACCENTS := {"income": UITokens.ACCENT, "consumption": UITokens.GOOD,
 	"business": UITokens.CLIMATE, "import": UITokens.WATER, "export": UITokens.WATER}
 
@@ -148,12 +150,8 @@ func build(cell: HexCell) -> Dictionary:
 			"accent": _score_color(habitability),
 		},
 		"summary_cards": cards,
-		"colonization_action": {
-			"available": intel_visible and passable_land and not is_water \
-				and not bool(country_summary.get("owned", false)),
-			"target_cell": idx,
-			"reason": "目标必须是当前可见、可通行的无主陆地。",
-		},
+		"colonization_action": _colonization_action(
+			idx, intel_visible, passable_land, is_water, country_summary),
 		"tabs": tabs,
 		"categories": {
 			"geography": geography_category,
@@ -167,7 +165,7 @@ func _build_unexplored_model(cell: HexCell) -> Dictionary:
 		"cell_index": int(cell.index),
 		"header": {
 			"title": "未探索区域",
-			"subtitle": "区域 %d, %d · 云雾之下" % [off.x + 1, off.y + 1],
+			"subtitle": "区域 %d, %d · 未探索" % [off.x + 1, off.y + 1],
 		},
 		"score": {},
 		"summary_cards": [{
@@ -197,7 +195,7 @@ func _out_of_sight_summary_cards(temp: float, moist: float) -> Array:
 			"id": "summary_unexplored",
 			"title": "情报",
 			"value": "视野之外",
-			"subtitle": "仅存地理记录，人口与市场情况未知",
+			"subtitle": "只记得地理，人口与市场未知",
 			"accent": UITokens.TEXT_FAINT,
 			"icon": "geo",
 		},
@@ -228,6 +226,11 @@ func live_patch_revision(cell: HexCell, current_tab: String) -> Dictionary:
 		bool(population_summary.get("ok", false)),
 		int(population_summary.get("population", 0)),
 		int(population_summary.get("cohort_count", 0)),
+		int(population_summary.get("funds", 0)),
+		int(population_summary.get("epoch_income", 0)),
+		int(population_summary.get("epoch_expense", 0)),
+		int(population_summary.get("state_day", -1)),
+		int(population_summary.get("satisfaction_q16", 0)),
 		int(population_summary.get("prosperity_generation", 0)),
 		int(population_summary.get("name_roll_generation", 0)),
 		String(population_summary.get("settlement_name", "")),
@@ -513,6 +516,7 @@ func _decorate_category_with_tax(
 
 
 func _tax_context_for_cell(cell_idx: int, kinds: Array) -> Dictionary:
+	# default_lanes 是地块税种默认，供人口/市场/建筑页渲染；对象详情只用 row.tax_lanes。
 	var country := _country_summary(cell_idx)
 	if not bool(country.get("ok", false)) or not bool(country.get("owned", false)):
 		return {"available": false, "editable": false,
@@ -551,7 +555,8 @@ func _tax_context_for_cell(cell_idx: int, kinds: Array) -> Dictionary:
 			if overridden and kind_id < local_defaults.size() else inherited
 		defaults.append({
 			"scope": "default", "kind": kind,
-			"kind_label": String(TAX_KIND_LABELS.get(kind, kind)),
+			"kind_label": String(TAX_DEFAULT_LABELS.get(kind,
+				TAX_KIND_LABELS.get(kind, kind))),
 			"accent": TAX_KIND_ACCENTS.get(kind, UITokens.ACCENT),
 			"item_id": "", "base": rate, "effective": rate,
 			"default_rate": inherited, "has_override": overridden,
@@ -680,6 +685,22 @@ func _cell_tax_category(cell_idx: int) -> Dictionary:
 	return {"cell_tax_policy": policy}
 
 
+func _colonization_action(cell_idx: int, intel_visible: bool, passable_land: bool,
+		is_water: bool, country_summary: Dictionary) -> Dictionary:
+	var owned := bool(country_summary.get("owned", false))
+	var player_owned := owned and int(country_summary.get("country_handle", 0)) \
+		== _player_country_handle()
+	var available := intel_visible and passable_land and not is_water \
+		and (not owned or player_owned)
+	var kind := "relocate" if player_owned else "colonize"
+	return {
+		"available": available,
+		"kind": kind,
+		"target_cell": cell_idx,
+		"reason": "" if available else "目标必须是当前可见、可通行的无主或本国陆地。",
+	}
+
+
 func _player_country_handle() -> int:
 	if _player_country_resolved:
 		return _player_country_handle_cache
@@ -739,7 +760,7 @@ func _summary_cards(
 			"id": "summary_population",
 			"title": "人口",
 			"value": population_value,
-			"subtitle": "%d 个阶层" % int(population_snapshot.get("cohort_count", 0)) if population_ready else "未生成测试或正式人口",
+			"subtitle": "%d 个阶层" % int(population_snapshot.get("cohort_count", 0)) if population_ready else "尚无人口",
 			"accent": UITokens.ACCENT,
 			"icon": "growth",
 		},
@@ -750,7 +771,7 @@ func _summary_cards(
 				"prosperity_name", "未就绪")) if population_ready else "未就绪",
 			"subtitle": String(population_snapshot.get(
 				"settlement_name", "尚未形成有名聚居地")) \
-				if population_ready else "等待原生经济提交",
+				if population_ready else "聚落尚未成形",
 			"accent": UITokens.GOOD,
 			"icon": "building",
 		},
@@ -822,6 +843,7 @@ func _geography_information_category(
 				"title": "地貌与地表",
 				"icon": "geo",
 				"accent": UITokens.GEO,
+				"insights": geography.get("insights", []),
 				"metrics": physical_metrics,
 				"gauges": geography.get("gauges", []),
 			},
@@ -830,6 +852,7 @@ func _geography_information_category(
 				"title": "气候区与水文",
 				"icon": "water",
 				"accent": UITokens.WATER,
+				"collapsed": true,
 				"metrics": climate_metrics,
 				"gauges": climate_gauges,
 				"charts": climate.get("charts", []),
@@ -839,6 +862,8 @@ func _geography_information_category(
 				"title": "植被与生态",
 				"icon": "eco",
 				"accent": UITokens.ECO,
+				"collapsed": true,
+				"insights": ecology.get("insights", []),
 				"metrics": ecology.get("metrics", []),
 				"gauges": ecology.get("gauges", []),
 				"charts": ecology.get("charts", []),
@@ -876,7 +901,7 @@ func _append_bio_facts_to_geography(category: Dictionary, idx: int) -> void:
 		"accent": UITokens.ECO,
 		"insights": [{
 			"id": "biogeography_note",
-			"text": "当前目击的本地物种，会随气候、植被、承载储量和人类活动变化；不是可采集储量。",
+			"text": "目击物种 · 非储量",
 			"accent": UITokens.ECO,
 			"icon": "crop",
 		}],
@@ -964,7 +989,7 @@ func _geography_category(cell: HexCell, idx: int, terrain_v: int, elev: float, p
 		],
 		"metrics": metrics,
 		"gauges": [
-			{"id": "geography_elevation_gauge", "label": "高程剖面", "value": elev, "accent": UITokens.GEO, "marker": _sea_level, "status_label": _elevation_band(elev, _sea_level), "value_text": _relative_sea_level_text(elev, _sea_level)},
+			{"id": "geography_elevation_gauge", "label": "高程", "value": elev, "accent": UITokens.GEO, "marker": _sea_level, "status_label": _elevation_band(elev, _sea_level), "value_text": _relative_sea_level_text(elev, _sea_level)},
 		],
 	}
 
@@ -975,8 +1000,8 @@ func _climate_category(cell: HexCell, idx: int, temp: float, moist: float, base_
 			{"id": "climate_precip", "title": "降水", "value": _precip_band(float(wf["precip"])), "subtitle": _cloud_band(float(wf["cloud"])), "accent": UITokens.WATER, "icon": "weather"},
 		],
 		"gauges": [
-			{"id": "climate_temp_gauge", "label": "温度指数", "value": temp, "accent": UITokens.CLIMATE, "status_label": _temperature_band(temp), "value_text": "%.2f" % temp},
-			{"id": "climate_moisture_gauge", "label": "湿度指数", "value": moist, "accent": UITokens.WATER, "marker": base_moist, "status_label": _moisture_band(moist), "value_text": "%.2f" % moist},
+			{"id": "climate_temp_gauge", "label": "温度", "value": temp, "accent": UITokens.CLIMATE, "status_label": _temperature_band(temp), "value_text": "%.0f%%" % (temp * 100.0)},
+			{"id": "climate_moisture_gauge", "label": "湿度", "value": moist, "accent": UITokens.WATER, "marker": base_moist, "status_label": _moisture_band(moist), "value_text": "%.0f%%" % (moist * 100.0)},
 		],
 		"charts": [_temperature_chart("climate_temperature", "近期温度变化", idx, temp)],
 	}
@@ -987,7 +1012,7 @@ func _hydrology_category(cell: HexCell, idx: int, wf: Dictionary, snow: float, i
 	var wind := _wind_vector(cell, idx)
 	var upwelling := _upwelling(cell, idx)
 	var metrics := [
-		{"id": "hydrology_wind", "title": "风场", "value": "%.3f" % _wind_speed(cell, idx), "subtitle": _dir_degrees_text(wind), "accent": UITokens.ACCENT, "icon": "wind"},
+		{"id": "hydrology_wind", "title": "风向", "value": _dir_degrees_text(wind), "subtitle": "", "accent": UITokens.ACCENT, "icon": "wind"},
 	]
 	if is_water:
 		metrics.append({"id": "hydrology_current", "title": "洋流", "value": "%.3f" % ocean.length(), "subtitle": _dir_degrees_text(ocean), "accent": UITokens.WATER, "icon": "water"})
@@ -995,10 +1020,10 @@ func _hydrology_category(cell: HexCell, idx: int, wf: Dictionary, snow: float, i
 	return {
 		"metrics": metrics,
 		"gauges": [
-			{"id": "hydrology_vapor_gauge", "label": "水汽指数", "value": float(wf["vapor"]), "accent": UITokens.WATER, "status_label": _moisture_band(float(wf["vapor"])), "value_text": "%.2f" % float(wf["vapor"])},
-			{"id": "hydrology_cloud_gauge", "label": "云量指数", "value": float(wf["cloud"]), "accent": UITokens.WATER, "status_label": _cloud_band(float(wf["cloud"])), "value_text": "%.2f" % float(wf["cloud"])},
-			{"id": "hydrology_precip_gauge", "label": "降水指数", "value": float(wf["precip"]), "accent": UITokens.WATER, "status_label": _precip_band(float(wf["precip"])), "value_text": "%.2f" % float(wf["precip"])},
-			{"id": "hydrology_snow_gauge", "label": "雪盖/海冰", "value": snow, "accent": UITokens.WATER, "status_label": _cover_intensity_band(snow), "value_text": "%.2f" % snow},
+			{"id": "hydrology_vapor_gauge", "label": "水汽", "value": float(wf["vapor"]), "accent": UITokens.WATER, "status_label": _moisture_band(float(wf["vapor"])), "value_text": "%.0f%%" % (float(wf["vapor"]) * 100.0)},
+			{"id": "hydrology_cloud_gauge", "label": "云量", "value": float(wf["cloud"]), "accent": UITokens.WATER, "status_label": _cloud_band(float(wf["cloud"])), "value_text": "%.0f%%" % (float(wf["cloud"]) * 100.0)},
+			{"id": "hydrology_precip_gauge", "label": "降水", "value": float(wf["precip"]), "accent": UITokens.WATER, "status_label": _precip_band(float(wf["precip"])), "value_text": "%.0f%%" % (float(wf["precip"]) * 100.0)},
+			{"id": "hydrology_snow_gauge", "label": "雪盖/海冰", "value": snow, "accent": UITokens.WATER, "status_label": _cover_intensity_band(snow), "value_text": "%.0f%%" % (snow * 100.0)},
 		],
 	}
 
@@ -1166,7 +1191,7 @@ func _family_cell_snapshot(cell_idx: int) -> Dictionary:
 func _family_category(snapshot: Dictionary) -> Dictionary:
 	if snapshot.is_empty() or not bool(snapshot.get("ok", false)):
 		return {"insights": [{"id": "families_unavailable", "text":
-			"家族运行时尚未就绪。", "accent": UITokens.TEXT_MUTED,
+			"家族情报暂不可用。", "accent": UITokens.TEXT_MUTED,
 			"icon": "family.house"}]}
 	var handles: PackedInt64Array = snapshot.get("family_handles", PackedInt64Array())
 	var surnames: PackedStringArray = snapshot.get("surnames", PackedStringArray())
@@ -1199,7 +1224,7 @@ func _family_category(snapshot: Dictionary) -> Dictionary:
 		})
 	if rows.is_empty():
 		return {"insights": [{"id": "families_empty", "text":
-			"此地块尚未形成显赫家族；普通家庭仍以匿名人口统计。",
+			"此地尚无显赫家族。",
 			"accent": UITokens.TEXT_MUTED, "icon": "family.house"}]}
 	return {"family_rows": rows}
 
@@ -1223,12 +1248,17 @@ func _family_trait_rows(snapshot: Dictionary) -> Array:
 	var keys: PackedStringArray = snapshot.get("trait_keys", PackedStringArray())
 	var strengths: PackedInt32Array = snapshot.get("strength_q16", PackedInt32Array())
 	var core: PackedByteArray = snapshot.get("core", PackedByteArray())
+	var descriptions: PackedStringArray = snapshot.get("descriptions", PackedStringArray())
 	for index in range(keys.size()):
+		var detail := String(descriptions[index]).strip_edges() \
+			if index < descriptions.size() else ""
 		rows.append({
 			"name": String(names[index]) if index < names.size() else String(keys[index]),
 			"value": "%s · 强度 %s" % ["核心特性" if index < core.size() \
 				and int(core[index]) != 0 else "附加特性",
 				_q16_percent_text(int(strengths[index]) if index < strengths.size() else 65536)],
+			"detail": detail,
+			"tooltip": detail,
 		})
 	return rows
 
@@ -1348,12 +1378,27 @@ func _family_modifier_rows(snapshot: Dictionary) -> Array:
 	var cell := int(snapshot.get("cell_idx", -1))
 	var keys: PackedStringArray = snapshot.get(
 		"modifier_definition_keys", PackedStringArray())
+	var names: PackedStringArray = snapshot.get(
+		"modifier_display_names", PackedStringArray())
+	var descriptions: PackedStringArray = snapshot.get(
+		"modifier_descriptions", PackedStringArray())
 	var magnitudes: PackedInt32Array = snapshot.get(
 		"modifier_magnitude_q16", PackedInt32Array())
 	for index in range(keys.size()):
-		rows.append({"name": "地块 %d · %s" % [cell, String(keys[index])],
+		var key := String(keys[index])
+		var display := String(names[index]).strip_edges() \
+			if index < names.size() else ""
+		if display.is_empty():
+			display = key
+		var detail := String(descriptions[index]).strip_edges() \
+			if index < descriptions.size() else ""
+		rows.append({
+			"name": "地块 %d · %s" % [cell, display],
 			"value": "效果幅度 %s" % _q16_percent_text(
-				int(magnitudes[index]) if index < magnitudes.size() else 0)})
+				int(magnitudes[index]) if index < magnitudes.size() else 0),
+			"detail": detail,
+			"tooltip": detail,
+		})
 	return rows
 
 
@@ -1362,20 +1407,33 @@ func _family_trigger_rows(snapshot: Dictionary) -> Array:
 	var cell := int(snapshot.get("cell_idx", -1))
 	var keys: PackedStringArray = snapshot.get(
 		"trigger_definition_keys", PackedStringArray())
+	var names: PackedStringArray = snapshot.get(
+		"trigger_display_names", PackedStringArray())
+	var descriptions: PackedStringArray = snapshot.get(
+		"trigger_descriptions", PackedStringArray())
 	var progress: PackedInt64Array = snapshot.get("trigger_progress", PackedInt64Array())
 	var thresholds: PackedInt64Array = snapshot.get("trigger_thresholds", PackedInt64Array())
 	var completed: PackedInt32Array = snapshot.get("trigger_completed", PackedInt32Array())
 	var targets: PackedInt32Array = snapshot.get(
 		"trigger_reward_targets", PackedInt32Array())
 	for index in range(keys.size()):
+		var key := String(keys[index])
+		var display := String(names[index]).strip_edges() \
+			if index < names.size() else ""
+		if display.is_empty():
+			display = key
+		var detail := String(descriptions[index]).strip_edges() \
+			if index < descriptions.size() else ""
 		rows.append({
-			"name": "地块 %d · %s" % [cell, String(keys[index])],
+			"name": "地块 %d · %s" % [cell, display],
 			"value": "%d / %d · 已触发 %d 次 · 奖励归属 %s" % [
 				int(progress[index]) if index < progress.size() else 0,
 				int(thresholds[index]) if index < thresholds.size() else 0,
 				int(completed[index]) if index < completed.size() else 0,
 				"家族分支" if index >= targets.size() or int(targets[index]) == 0 \
 				else "城市公共"],
+			"detail": detail,
+			"tooltip": detail,
 		})
 	return rows
 
@@ -1434,9 +1492,9 @@ func _family_notable_person_rows(facade, family_handle: int) -> Array:
 
 func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}) -> Dictionary:
 	if snapshot.is_empty() or not bool(snapshot.get("ok", false)):
-		return {"insights": [{"id": "population_unavailable", "text": "阶层运行时尚未就绪。", "accent": UITokens.TEXT_MUTED, "icon": "growth"}]}
+		return {"insights": [{"id": "population_unavailable", "text": "人口情报暂不可用。", "accent": UITokens.TEXT_MUTED, "icon": "growth"}]}
 	if not snapshot.has("populations"):
-		return {"insights": [{"id": "population_details_unavailable", "text": "无法读取最新阶层明细。", "accent": UITokens.RISK, "icon": "growth"}]}
+		return {"insights": [{"id": "population_details_unavailable", "text": "无法读取最新人口明细。", "accent": UITokens.RISK, "icon": "growth"}]}
 	var rows := []
 	var handles: PackedInt64Array = snapshot.get("handles", PackedInt64Array())
 	var profession_indices: PackedInt32Array = snapshot.get("profession_ids", PackedInt32Array())
@@ -1667,35 +1725,69 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 		})
 	var insights := []
 	if rows.is_empty():
-		insights.append({"id": "population_empty", "text": "此地块尚无人口。可在世界生成页启用测试人口，或由正式数据源导入。", "accent": UITokens.TEXT_MUTED, "icon": "growth"})
+		insights.append({"id": "population_empty", "text": "此地尚无人口。", "accent": UITokens.TEXT_MUTED, "icon": "growth"})
 	elif not bool(snapshot.get("demand_preview_environment_ready", false)):
-		insights.append({"id": "population_demand_neutral_environment", "text": "环境快照暂不可用，预计需求使用最近冻结或中性环境。", "accent": UITokens.WARN, "icon": "weather"})
+		insights.append({"id": "population_demand_neutral_environment", "text": "需求暂按一般环境估算。", "accent": UITokens.WARN, "icon": "weather"})
 	if not rows.is_empty() and settlement_pending:
-		insights.append({"id": "population_settlement_pending", "text": "已开始追踪此地；下次结算后可查看精确收支来源。", "accent": UITokens.TEXT_MUTED, "icon": "history"})
+		insights.append({"id": "population_settlement_pending", "text": "下次结算后可看精确收支。", "accent": UITokens.TEXT_MUTED, "icon": "history"})
 	var job_capacity := int(snapshot.get("job_capacity", 0))
 	var jobs_filled := int(snapshot.get("jobs_filled", 0))
 	var job_openings := int(snapshot.get("job_openings", 0))
+	var carrying_k_eff := int(snapshot.get("carrying_k_eff", 0))
+	var carrying_k_geo := int(snapshot.get("carrying_k_geo", 0))
+	var carrying_surplus := float(snapshot.get("carrying_surplus_q16", 65536)) / 65536.0
+	var carrying_sat := float(snapshot.get("carrying_sat_q16", 65536)) / 65536.0
+	var population_total := int(snapshot.get("population", 0))
+	if carrying_k_eff > 0:
+		insights.append({
+			"id": "population_carrying",
+			"text": "承载力 %s 人 · 地力 %s · 物资 %.0f%% · 心情 %.0f%%" % [
+				UITokens.format_compact_number_cn(float(carrying_k_eff), 1),
+				UITokens.format_compact_number_cn(float(carrying_k_geo), 1),
+				carrying_surplus * 100.0,
+				carrying_sat * 100.0,
+			],
+			"accent": UITokens.RISK if population_total > carrying_k_eff else UITokens.GOOD,
+			"icon": "growth",
+		})
+	if population_total > 0 and carrying_k_eff > 0 and population_total > carrying_k_eff:
+		insights.append({
+			"id": "population_at_carrying",
+			"text": "人口已贴上格承载力，出生率落到更替水平。",
+			"accent": UITokens.WARN,
+			"icon": "growth",
+		})
+	var family_ids: PackedStringArray = snapshot.get("carrying_family_ids", PackedStringArray())
+	var family_surplus: PackedInt32Array = snapshot.get(
+		"carrying_family_surplus_q16", PackedInt32Array())
+	var family_bindable: PackedByteArray = snapshot.get(
+		"carrying_family_bindable", PackedByteArray())
+	var tight_family := ""
+	var tight_cover := 2.0
+	for family_idx in range(mini(family_ids.size(), family_surplus.size())):
+		if family_idx < family_bindable.size() and family_bindable[family_idx] == 0:
+			continue
+		var cover := float(family_surplus[family_idx]) / 65536.0
+		if cover < tight_cover:
+			tight_cover = cover
+			tight_family = String(family_ids[family_idx])
+	if not tight_family.is_empty() and tight_cover < 0.8:
+		insights.append({
+			"id": "population_carrying_family",
+			"text": "物资最紧的是 %s（覆盖 %.0f%%）。" % [tight_family, tight_cover * 100.0],
+			"accent": UITokens.WARN,
+			"icon": "resource",
+		})
 	var investment_block_reason := int(snapshot.get(
 		"investment_last_block_reason", 0))
 	var investment_review_day := int(snapshot.get("investment_last_review_day", -1))
-	var failed_material_group := int(snapshot.get(
-		"investment_last_failed_material_group", -1))
-	var investment_driver_good := int(snapshot.get(
-		"investment_last_driver_good_id", -1))
-	var investment_required_capital := int(snapshot.get(
-		"investment_last_required_capital", 0))
-	var investment_projected_profit := int(snapshot.get(
-		"investment_last_projected_profit_per_day", 0))
-	var investment_subtitle := "尚无投资审查记录" if investment_review_day < 0 \
-		else "第 %d 天审查%s" % [investment_review_day,
-			" · 缺少第 %d 组建材" % (failed_material_group + 1) \
-			if failed_material_group >= 0 else ""]
-	if investment_review_day >= 0 and investment_driver_good >= 0:
-		investment_subtitle += " · 驱动商品 #%d" % investment_driver_good
-	if investment_required_capital > 0:
-		investment_subtitle += " · 启动资本 %s" % _money_text(investment_required_capital)
-	if investment_projected_profit > 0:
-		investment_subtitle += " · 日利润 %s" % _money_text(investment_projected_profit)
+	if investment_review_day >= 0 and investment_block_reason > 0:
+		insights.append({
+			"id": "population_investment_block",
+			"text": "投资受阻 · %s" % _investment_block_reason_text(investment_block_reason),
+			"accent": UITokens.RISK,
+			"icon": "resource",
+		})
 	return {
 		"insights": insights,
 		"metrics": [
@@ -1703,7 +1795,7 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 			{"id": "population_prosperity", "title": "繁荣度", "value": String(snapshot.get("prosperity_name", "未就绪")), "subtitle": String(snapshot.get("settlement_name", "尚未命名")), "accent": UITokens.GOOD, "icon": "building"},
 			{"id": "population_funds", "title": "总资金", "value": _money_text(int(snapshot.get("funds", 0))), "subtitle": "收入 %s · 支出 %s" % [_money_text(int(snapshot.get("epoch_income", 0))), _money_text(int(snapshot.get("epoch_expense", 0)))], "accent": UITokens.RESOURCE, "icon": "resource"},
 			{"id": "population_jobs", "title": "岗位容量", "value": "%s 个" % UITokens.format_compact_number_cn(float(job_capacity), 1), "subtitle": "已填 %s · 空缺 %s" % [UITokens.format_compact_number_cn(float(jobs_filled), 1), UITokens.format_compact_number_cn(float(job_openings), 1)], "accent": UITokens.GOOD if job_openings > 0 else UITokens.TEXT_MUTED, "icon": "building"},
-			{"id": "population_investment_block", "title": "最近投资阻塞", "value": _investment_block_reason_text(investment_block_reason), "subtitle": investment_subtitle, "accent": UITokens.RISK if investment_block_reason > 0 else UITokens.TEXT_MUTED, "icon": "resource"},
+			{"id": "population_carrying", "title": "格承载力", "value": "%s 人" % UITokens.format_compact_number_cn(float(carrying_k_eff), 1), "subtitle": "地力 %s · 物资 %.0f%% · 心情 %.0f%%" % [UITokens.format_compact_number_cn(float(carrying_k_geo), 1), carrying_surplus * 100.0, carrying_sat * 100.0], "accent": UITokens.RISK if population_total > carrying_k_eff and carrying_k_eff > 0 else UITokens.ACCENT, "icon": "growth"},
 		],
 		"cohort_rows": rows,
 	}
@@ -1892,7 +1984,7 @@ func _need_display_name(stable_id: String) -> String:
 
 func _market_category(snapshot: Dictionary) -> Dictionary:
 	if snapshot.is_empty() or not bool(snapshot.get("ok", false)):
-		return {"insights": [{"id": "market_unavailable", "text": "市场运行时尚未就绪。", "accent": UITokens.TEXT_MUTED, "icon": "resource"}]}
+		return {"insights": [{"id": "market_unavailable", "text": "市场情报暂不可用。", "accent": UITokens.TEXT_MUTED, "icon": "resource"}]}
 	if not snapshot.has("good_ids"):
 		return {"insights": [{"id": "market_details_unavailable", "text": "无法读取最新市场明细。", "accent": UITokens.RISK, "icon": "resource"}]}
 	var rows := []
@@ -1909,6 +2001,7 @@ func _market_category(snapshot: Dictionary) -> Dictionary:
 	var enforce_technology := technology_available.size() == good_ids.size()
 	var market_id := int(snapshot.get("market_id", snapshot.get("cell_idx", -1)))
 	var sample_day := _current_sample_day()
+	var shortage_count := 0
 	for i in range(good_ids.size()):
 		if enforce_technology and technology_available[i] == 0:
 			continue
@@ -1918,6 +2011,8 @@ func _market_category(snapshot: Dictionary) -> Dictionary:
 		var stock_daily := _sample_daily_delta(_market_prev_stock,
 			"%d:%s" % [market_id, stable_id], float(stock[i]) / 1000.0, sample_day)
 		var shortage := float(shortage_q16[i]) * 100.0 / 65536.0 if i < shortage_q16.size() else 0.0
+		if shortage >= 25.0:
+			shortage_count += 1
 		rows.append({
 			"id": "market_%s" % stable_id,
 			"name": display_name,
@@ -1933,28 +2028,47 @@ func _market_category(snapshot: Dictionary) -> Dictionary:
 				{"id": "cost_anchor", "name": "成本锚", "value": _money_text(int(cost_anchor[i])) if i < cost_anchor.size() and cost_anchor[i] > 0 else "—"},
 				{"id": "shortage", "name": "短缺", "value": "%.1f%%" % shortage},
 			],
-			"accent": UITokens.RESOURCE,
+			"accent": UITokens.RISK if shortage >= 25.0 else UITokens.RESOURCE,
 			"icon": GoodProfileRegistry.icon_key(stable_id),
 			"visible": true,
 		})
+	var trade_net := int(snapshot.get("merchant_trade_sale_cash", 0)) \
+		- int(snapshot.get("merchant_trade_purchase_cash", 0))
+	var market_insights := []
+	if shortage_count > 0:
+		market_insights.append({
+			"id": "market_shortage",
+			"text": "%d 种物资短缺" % shortage_count,
+			"accent": UITokens.RISK,
+			"icon": "resource",
+		})
 	return {
-		"insights": [],
+		"insights": market_insights,
 		"metrics": [
-			{"id": "market_id", "title": "本地市场", "value": "#%d" % int(snapshot.get("market_id", -1)), "subtitle": "原生 MarketStore", "accent": UITokens.RESOURCE, "icon": "resource"},
-			{"id": "merchant_cash", "title": "商业现金", "value": _money_text(int(snapshot.get("merchant_cash", 0))), "subtitle": "可动用现金，含 12.5% 营运底线", "accent": UITokens.ACCENT, "icon": "resource"},
-			{"id": "merchant_inventory_liquidation", "title": "库存清算价值", "value": _money_text(int(snapshot.get("merchant_inventory_liquidation_value", 0))), "subtitle": "按当前零售价 × 收购系数估值", "accent": UITokens.RESOURCE, "icon": "resource"},
-			{"id": "merchant_assets", "title": "总商业资产", "value": _money_text(int(snapshot.get("merchant_economic_assets", 0))), "subtitle": "现金 + 库存清算价值", "accent": UITokens.GOOD, "icon": "resource"},
-			{"id": "merchant_coverage", "title": "周转覆盖周期", "value": "%.2f" % (float(snapshot.get("merchant_liquidity_coverage_q16", 65536)) / 65536.0), "subtitle": "期末现金 ÷ 本期经营现金流出", "accent": UITokens.ACCENT, "icon": "resource"},
-			{"id": "merchant_margin", "title": "采购毛利", "value": _money_text(int(snapshot.get("merchant_procurement_margin_value", 0))), "subtitle": "本期采购的理论零售差价", "accent": UITokens.GOOD, "icon": "resource"},
-			{"id": "merchant_trade_net", "title": "贸易净现金流", "value": _money_text(int(snapshot.get("merchant_trade_sale_cash", 0)) - int(snapshot.get("merchant_trade_purchase_cash", 0))), "subtitle": "贸易销售收入 − 贸易采购支出", "accent": UITokens.GOOD if int(snapshot.get("merchant_trade_sale_cash", 0)) >= int(snapshot.get("merchant_trade_purchase_cash", 0)) else UITokens.RISK, "icon": "resource"},
+			{"id": "merchant_cash", "title": "可用现金", "value": _money_text(int(snapshot.get("merchant_cash", 0))), "subtitle": "", "accent": UITokens.ACCENT, "icon": "resource"},
+			{"id": "market_shortage_count", "title": "短缺物资", "value": "%d 种" % shortage_count, "subtitle": "点击物资查看供需", "accent": UITokens.RISK if shortage_count > 0 else UITokens.TEXT_MUTED, "icon": "resource"},
+			{"id": "merchant_trade_net", "title": "贸易净额", "value": _money_text(trade_net), "subtitle": "", "accent": UITokens.GOOD if trade_net >= 0 else UITokens.RISK, "icon": "resource"},
 		],
+		"sections": [{
+			"id": "merchant_accounts",
+			"title": "商家账目",
+			"icon": "resource",
+			"accent": UITokens.RESOURCE,
+			"collapsed": true,
+			"metrics": [
+				{"id": "merchant_inventory_liquidation", "title": "库存估值", "value": _money_text(int(snapshot.get("merchant_inventory_liquidation_value", 0))), "subtitle": "按零售价估值", "accent": UITokens.RESOURCE, "icon": "resource"},
+				{"id": "merchant_assets", "title": "商业资产", "value": _money_text(int(snapshot.get("merchant_economic_assets", 0))), "subtitle": "现金 + 库存", "accent": UITokens.GOOD, "icon": "resource"},
+				{"id": "merchant_coverage", "title": "周转覆盖", "value": "%.1f 期" % (float(snapshot.get("merchant_liquidity_coverage_q16", 65536)) / 65536.0), "subtitle": "现金可支撑经营期数", "accent": UITokens.ACCENT, "icon": "resource"},
+				{"id": "merchant_margin", "title": "采购毛利", "value": _money_text(int(snapshot.get("merchant_procurement_margin_value", 0))), "subtitle": "", "accent": UITokens.GOOD, "icon": "resource"},
+			],
+		}],
 		"market_rows": rows,
 	}
 
 
 func _building_category(snapshot: Dictionary, cell_idx: int = -1) -> Dictionary:
 	if snapshot.is_empty() or not bool(snapshot.get("ok", false)):
-		return {"insights": [{"id": "buildings_unavailable", "text": "建筑运行时尚未就绪。", "accent": UITokens.TEXT_MUTED, "icon": "building"}]}
+		return {"insights": [{"id": "buildings_unavailable", "text": "建筑情报暂不可用。", "accent": UITokens.TEXT_MUTED, "icon": "building"}]}
 	if not snapshot.has("group_type_ids"):
 		return {"insights": [{"id": "building_details_unavailable", "text": "无法读取最新建筑明细。", "accent": UITokens.RISK, "icon": "building"}]}
 	var rows := []
@@ -2112,12 +2226,12 @@ func _building_category(snapshot: Dictionary, cell_idx: int = -1) -> Dictionary:
 		var show_state_summary := false
 		if not is_available:
 			state_label = "技术停用"
-			state_detail = "建筑仍保留，但当前技术条件不可用；本期不开放岗位，也不参与生产。"
+			state_detail = "技术条件不足，本期停产。"
 			state_accent = UITokens.WARN
 			show_state_summary = true
 		elif is_loss_suspended:
 			state_label = "亏损停产"
-			state_detail = "建筑仍保留；因连续经营亏损已释放全部岗位，等待恢复评估。"
+			state_detail = "连续亏损停产，岗位已释放。"
 			var loss_count := int(severe_loss_cycles[i]) if i < severe_loss_cycles.size() else 0
 			var realized_margin := float(realized_profit_margins[i]) * 100.0 / 65536.0 \
 				if i < realized_profit_margins.size() else 0.0
@@ -2128,13 +2242,13 @@ func _building_category(snapshot: Dictionary, cell_idx: int = -1) -> Dictionary:
 			show_state_summary = true
 		elif i < wage_suspended.size() and int(wage_suspended[i]) != 0:
 			state_label = "资金停产"
-			state_detail = "工资未足额支付，本期生产暂停；建筑和岗位配置仍然保留。"
+			state_detail = "工资未付清，本期停产。"
 			state_accent = UITokens.RISK
 			show_state_summary = true
 		elif i < capacity_q16.size() and int(capacity_q16[i]) == 0 \
 				and _building_resource_depleted(snapshot, type_idx):
 			state_label = "资源短缺"
-			state_detail = "本地自然资源不足，当前无法形成有效产能。"
+			state_detail = "本地资源不足，无法生产。"
 			state_accent = UITokens.WARN
 			show_state_summary = true
 		else:
@@ -2159,7 +2273,7 @@ func _building_category(snapshot: Dictionary, cell_idx: int = -1) -> Dictionary:
 			headline_profit_label = "状态"
 			headline_profit = "停用"
 		if is_loss_suspended:
-			finance.warning = "本期停产，无经营流水；上方利润率来自停产前的上一经营期。"
+			finance.warning = "停产中 · 利润率取自上一经营期"
 		rows.append({
 			"id": "building_%d_%d" % [type_idx, i],
 			"name": String(type_names[type_idx]) if type_idx >= 0 and type_idx < type_names.size() else (String(type_ids[type_idx]) if type_idx >= 0 and type_idx < type_ids.size() else "建筑"),
@@ -2193,12 +2307,12 @@ func build_construction_options(cell_idx: int, search: String = "",
 			or not _generator.has_method("get_country_facade") \
 			or not _generator.has_method("get_economy_facade") \
 			or not _generator.has_method("gameplay_start_report"):
-		return {"available": false, "message": "玩家运行时尚未就绪。"}
+		return {"available": false, "message": "建造暂不可用。"}
 	var country = _generator.get_country_facade()
 	var economy = _generator.get_economy_facade()
 	var start: Dictionary = _generator.gameplay_start_report()
 	if country == null or economy == null or not bool(start.get("ok", false)):
-		return {"available": false, "message": "玩家国家尚未就绪。"}
+		return {"available": false, "message": "国家档案暂不可用。"}
 	var player_summary: Dictionary = country.cell_summary(int(start.get("cell", -1)))
 	var target_summary: Dictionary = country.cell_summary(cell_idx)
 	var player_handle := int(player_summary.get("country_handle", 0))

@@ -16,6 +16,8 @@ definition_key = &"stone_age_hunting_camp"
 [sub_resource type="Resource" id="TriggerHuntingBuilding"]
 script = ExtResource("2_definition")
 key = &"family.build_hunting_bonus"
+display_name = "狩猎营地馈赠"
+description = "累计足够狩猎建设后，为家族分支免费建成一座狩猎营地。"
 source_id = 1
 event_type = 6
 payload_schema = 3
@@ -38,6 +40,8 @@ command_key = &"family.population_reward"
 [sub_resource type="Resource" id="TriggerTradePopulation"]
 script = ExtResource("2_definition")
 key = &"family.trade_population_bonus"
+display_name = "商路人口奖励"
+description = "累计足够贸易活动后，为本城公共人口提供奖励。"
 source_id = 1
 event_type = 7
 payload_schema = 4

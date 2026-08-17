@@ -66,17 +66,55 @@ func _run() -> void:
 	panel.set_model_for_selection(model)
 	await process_frame
 	await process_frame
+	var tab_spec: Array = model.get("tabs", [])
+	panel._tabs.set_tabs(tab_spec, "geography", false)
+	panel._tabs.set_tabs(tab_spec, "geography", true)
+	panel._tabs.set_tabs(tab_spec, "population", false)
+	if panel._tabs.get_child_count() != tab_spec.size():
+		failures.append("rebuilding inspector tabs left stale buttons in the tree: %d" %
+			panel._tabs.get_child_count())
+	panel._tabs.set_tabs(tab_spec, "geography",
+		panel._inspector_show_tab_labels(tab_spec))
+	var closed_signals := [0]
+	panel.detail_visibility_changed.connect(func(open: bool) -> void:
+		if not open:
+			closed_signals[0] += 1)
+	panel.show_object_detail({
+		"kind": "cohort", "name": "工人", "subtitle": "测试",
+		"icon": "profession.worker", "row": {},
+	})
+	if panel._inspector_root.size_flags_horizontal == Control.SIZE_EXPAND_FILL:
+		failures.append("open object detail still expands the dossier column")
+	panel.close_detail(false)
+	await process_frame
+	await process_frame
+	if closed_signals[0] == 0 or panel.detail_open():
+		failures.append("closing object detail on cell change skipped the layout signal")
+	if panel._inspector_root.size_flags_horizontal != Control.SIZE_EXPAND_FILL:
+		failures.append("closed object detail did not let the dossier fill the panel")
+	var show_labels := panel._inspector_show_tab_labels(tab_spec)
+	if panel._tabs.get_child_count() != tab_spec.size():
+		panel._tabs.set_tabs(tab_spec, "geography", show_labels)
+		await process_frame
 	for button in panel._tabs._buttons.values():
-		if String((button as Button).text).is_empty():
+		if show_labels and String((button as Button).text).is_empty():
 			failures.append("dossier tab header does not display its short label")
+		if not show_labels and not String((button as Button).text).is_empty():
+			failures.append("crowded dossier tabs still rendered full labels")
 		var icons := (button as Button).find_children("", "IconBadge", true, false)
-		if icons.size() != 1 or absf((icons[0] as Control).get_global_rect().get_center().y -
-			(button as Control).get_global_rect().get_center().y) > 1.0 \
-			or (icons[0] as Control).get_global_rect().get_center().x >= \
-				(button as Control).get_global_rect().get_center().x:
+		if icons.size() != 1:
+			failures.append("dossier tab is missing its icon")
+			continue
+		var button_center: Vector2 = (button as Control).get_global_rect().get_center()
+		var icon_center: Vector2 = (icons[0] as Control).get_global_rect().get_center()
+		if absf(icon_center.y - button_center.y) > 1.0:
+			failures.append("dossier tab icon is not vertically centered")
+		if show_labels and icon_center.x >= button_center.x:
 			failures.append("dossier tab icon is not aligned before its label: button=%s icon=%s" % [
 				(button as Control).get_global_rect(),
-				(icons[0] as Control).get_global_rect() if icons.size() == 1 else Rect2()])
+				(icons[0] as Control).get_global_rect()])
+		if not show_labels and absf(icon_center.x - button_center.x) > 4.0:
+			failures.append("icon-only dossier tab is not centered")
 	if panel._summary_grid.columns != 2:
 		failures.append("dossier summary is not using the compact two-column grid")
 	for raw_card in panel._summary_cards.values():
@@ -86,6 +124,10 @@ func _run() -> void:
 				summary_card.size, panel._summary_grid.size])
 	var overview_count := panel.visible_node_count()
 	var overview_patch := _make_patch("geography")
+	var title_before_partial := panel._title_label.text
+	panel.apply_live_patch({"tab_id": "geography"})
+	if panel._title_label.text != title_before_partial:
+		failures.append("live patch without header reset the dossier title")
 	panel.apply_live_patch(overview_patch)
 	await process_frame
 	if panel.visible_node_count() != overview_count:
@@ -193,6 +235,18 @@ func _run() -> void:
 			detail_text += String((node as Label).text) + "\n"
 		if not detail_text.contains("消费需求"):
 			failures.append("embedded cohort detail did not include demand data")
+		panel.refresh_object_detail({
+			"kind": "cohort", "name": "工人", "subtitle": "阶层 · 区域 1, 1",
+			"icon": "profession.worker", "accent": UITokens.ACCENT,
+			"row": cohort_data.merged({"population": "99 人"}, true),
+		})
+		await process_frame
+		var refreshed_text := ""
+		for node in panel._object_detail_dialog.find_children(
+				"", "Label", true, false):
+			refreshed_text += String((node as Label).text) + "\n"
+		if not refreshed_text.contains("99 人"):
+			failures.append("object detail live refresh did not update visible facts")
 		var detail_nav := panel._object_detail_dialog._section_nav as Control
 		var operations_button := panel._object_detail_dialog._section_buttons.get(
 			"operations") as Button

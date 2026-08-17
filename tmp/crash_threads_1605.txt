@@ -1,0 +1,652 @@
+﻿
+Microsoft (R) Windows Debugger Version 10.0.22621.755 AMD64
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+
+Loading Dump File [C:\Users\hkinghuang\AppData\Local\CrashDumps\Godot_v4.6.2-stable_win64.exe.56656.dmp]
+User Mini Dump File: Only registers, stack and portions of memory are available
+
+
+************* Path validation summary **************
+Response                         Time (ms)     Location
+Deferred                                       srv*C:\symbols*https://msdl.microsoft.com/download/symbols
+Symbol search path is: srv*C:\symbols*https://msdl.microsoft.com/download/symbols
+Executable search path is: 
+Windows 10 Version 22631 MP (32 procs) Free x64
+Product: WinNt, suite: SingleUserTS
+Edition build lab: 22621.1.amd64fre.ni_release.220506-1250
+Machine Name:
+Debug session time: Mon Aug 17 16:05:45.000 2026 (UTC + 8:00)
+System Uptime: 0 days 1:19:28.248
+Process Uptime: 0 days 0:03:39.000
+................................................................
+................................
+Loading unloaded module list
+..
+This dump file has an exception of interest stored in it.
+The stored exception information can be accessed via .ecxr.
+(dd50.e450): Unknown exception - code c0000374 (first/second chance not available)
+For analysis of this file, run !analyze -v
+ntdll!NtWaitForMultipleObjects+0x14:
+00007ffc`35551954 c3              ret
+0:000> cdb: Reading initial command '.symopt+0x40; .ecxr; k 20; u 00007ffa`3f83f6ec-30 L18; u 00007ffa`3f3bd5cd-20 L12; ~*k 6; q'
+Symbol options are 0xB0367:
+  0x00000001 - SYMOPT_CASE_INSENSITIVE
+  0x00000002 - SYMOPT_UNDNAME
+  0x00000004 - SYMOPT_DEFERRED_LOADS
+  0x00000020 - SYMOPT_OMAP_FIND_NEAREST
+  0x00000040 - SYMOPT_LOAD_ANYTHING
+  0x00000100 - SYMOPT_NO_UNQUALIFIED_LOADS
+  0x00000200 - SYMOPT_FAIL_CRITICAL_ERRORS
+  0x00010000 - SYMOPT_AUTO_PUBLICS
+  0x00020000 - SYMOPT_NO_IMAGE_SEARCH
+  0x00080000 - SYMOPT_NO_PROMPTS
+rax=0000000000000018 rbx=00000000c0000374 rcx=0000000000000000
+rdx=0000000000000000 rsi=0000000000000001 rdi=00007ffc356348b0
+rip=00007ffc355bd5f9 rsp=000000299f5f89d0 rbp=0000015c5ea88950
+ r8=00007ffc35503850  r9=0000000000000004 r10=0000000000000000
+r11=000000000000003e r12=0000000000000000 r13=0000015c7f530000
+r14=000000299f5f9208 r15=0000000000000000
+iopl=0         nv up ei pl nz na po nc
+cs=0033  ss=002b  ds=002b  es=002b  fs=0053  gs=002b             efl=00000206
+ntdll!RtlReportFatalFailure+0x9:
+00007ffc`355bd5f9 eb00            jmp     ntdll!RtlReportFatalFailure+0xb (00007ffc`355bd5fb)
+Child-SP          RetAddr               Call Site
+00000029`9f5f89d0 00007ffc`355bd5c3     ntdll!RtlReportFatalFailure+0x9
+00000029`9f5f8a20 00007ffc`355c665a     ntdll!RtlReportCriticalFailure+0x97
+00000029`9f5f8b10 00007ffc`355c693a     ntdll!RtlpHeapHandleError+0x12
+00000029`9f5f8b40 00007ffc`355d2935     ntdll!RtlpHpHeapHandleError+0x7a
+00000029`9f5f8b70 00007ffc`354ec3fc     ntdll!RtlpLogHeapFailure+0x45
+00000029`9f5f8ba0 00007ffc`354eb041     ntdll!RtlpFreeHeapInternal+0x84c
+*** WARNING: Unable to verify checksum for dots_ext.windows.template_debug.x86_64.dll
+00000029`9f5f8c60 00007ffa`3f83f6ec     ntdll!RtlFreeHeap+0x51
+00000029`9f5f8ca0 00007ffa`3f3bd5cd     dots_ext_windows_template_debug_x86_64!dots_ext_init+0x247fdc
+00000029`9f5f8cd0 00007ffa`3f6a556e     dots_ext_windows_template_debug_x86_64+0x1d5cd
+00000029`9f5f8d00 00007ffa`3f675b10     dots_ext_windows_template_debug_x86_64!dots_ext_init+0xade5e
+00000029`9f5f91a0 00007ffa`3f691674     dots_ext_windows_template_debug_x86_64!dots_ext_init+0x7e400
+00000029`9f5f92b0 00007ffa`3f80d581     dots_ext_windows_template_debug_x86_64!dots_ext_init+0x99f64
+00000029`9f5f9300 00007ff6`e5d7b079     dots_ext_windows_template_debug_x86_64!dots_ext_init+0x215e71
+00000029`9f5f9360 00007ff6`e3b87e90     Godot_v4_6_2_stable_win64!NoHotPatch+0x5ed8399
+00000029`9f5f9410 00007ff6`e390e972     Godot_v4_6_2_stable_win64!NoHotPatch+0x3ce51b0
+00000029`9f5f94c0 00007ff6`e04dd7ae     Godot_v4_6_2_stable_win64!NoHotPatch+0x3a6bc92
+00000029`9f5f9570 00007ff6`e03c1698     Godot_v4_6_2_stable_win64!NoHotPatch+0x63aace
+00000029`9f5f9ae0 00007ff6`e3b87dbf     Godot_v4_6_2_stable_win64!NoHotPatch+0x51e9b8
+00000029`9f5f9b70 00007ff6`e390e972     Godot_v4_6_2_stable_win64!NoHotPatch+0x3ce50df
+00000029`9f5f9c20 00007ff6`e04dd7ae     Godot_v4_6_2_stable_win64!NoHotPatch+0x3a6bc92
+00000029`9f5f9cd0 00007ff6`e03c1698     Godot_v4_6_2_stable_win64!NoHotPatch+0x63aace
+00000029`9f5fa2f0 00007ff6`e3b87dbf     Godot_v4_6_2_stable_win64!NoHotPatch+0x51e9b8
+00000029`9f5fa380 00007ff6`e390e972     Godot_v4_6_2_stable_win64!NoHotPatch+0x3ce50df
+00000029`9f5fa430 00007ff6`e04dd7ae     Godot_v4_6_2_stable_win64!NoHotPatch+0x3a6bc92
+00000029`9f5fa4e0 00007ff6`e03c1698     Godot_v4_6_2_stable_win64!NoHotPatch+0x63aace
+00000029`9f5fa910 00007ff6`e3b87dbf     Godot_v4_6_2_stable_win64!NoHotPatch+0x51e9b8
+00000029`9f5fa9a0 00007ff6`e3b8827c     Godot_v4_6_2_stable_win64!NoHotPatch+0x3ce50df
+00000029`9f5faa50 00007ff6`e5cff723     Godot_v4_6_2_stable_win64!NoHotPatch+0x3ce559c
+00000029`9f5faab0 00007ff6`e3b3ab4e     Godot_v4_6_2_stable_win64!NoHotPatch+0x5e5ca43
+00000029`9f5fab40 00007ffa`3f814733     Godot_v4_6_2_stable_win64!NoHotPatch+0x3c97e6e
+00000029`9f5fab90 00007ffa`3f605df0     dots_ext_windows_template_debug_x86_64!dots_ext_init+0x21d023
+00000029`9f5fac40 00007ffa`3f5fb9e6     dots_ext_windows_template_debug_x86_64!dots_ext_init+0xe6e0
+dots_ext_windows_template_debug_x86_64!dots_ext_init+0x247fac:
+00007ffa`3f83f6bc ffc7            inc     edi
+00007ffa`3f83f6be 0022            add     byte ptr [rdx],ah
+00007ffa`3f83f6c0 0000            add     byte ptr [rax],al
+00007ffa`3f83f6c2 00488b          add     byte ptr [rax-75h],cl
+00007ffa`3f83f6c5 5c              pop     rsp
+00007ffa`3f83f6c6 2440            and     al,40h
+00007ffa`3f83f6c8 4883c420        add     rsp,20h
+00007ffa`3f83f6cc 5f              pop     rdi
+00007ffa`3f83f6cd c3              ret
+00007ffa`3f83f6ce cc              int     3
+00007ffa`3f83f6cf cc              int     3
+00007ffa`3f83f6d0 4885c9          test    rcx,rcx
+00007ffa`3f83f6d3 7436            je      dots_ext_windows_template_debug_x86_64!dots_ext_init+0x247ffb (00007ffa`3f83f70b)
+00007ffa`3f83f6d5 53              push    rbx
+00007ffa`3f83f6d6 4883ec20        sub     rsp,20h
+00007ffa`3f83f6da 4c8bc1          mov     r8,rcx
+00007ffa`3f83f6dd 33d2            xor     edx,edx
+00007ffa`3f83f6df 488b0d7a040c00  mov     rcx,qword ptr [dots_ext_windows_template_debug_x86_64!dots_ext_init+0x308450 (00007ffa`3f8ffb60)]
+00007ffa`3f83f6e6 ff15248b0100    call    qword ptr [dots_ext_windows_template_debug_x86_64!dots_ext_init+0x260b00 (00007ffa`3f858210)]
+00007ffa`3f83f6ec 85c0            test    eax,eax
+00007ffa`3f83f6ee 7516            jne     dots_ext_windows_template_debug_x86_64!dots_ext_init+0x247ff6 (00007ffa`3f83f706)
+00007ffa`3f83f6f0 ff15b2890100    call    qword ptr [dots_ext_windows_template_debug_x86_64!dots_ext_init+0x260998 (00007ffa`3f8580a8)]
+00007ffa`3f83f6f6 8bc8            mov     ecx,eax
+00007ffa`3f83f6f8 e8ab9bfeff      call    dots_ext_windows_template_debug_x86_64!dots_ext_init+0x231b98 (00007ffa`3f8292a8)
+dots_ext_windows_template_debug_x86_64+0x1d5ad:
+00007ffa`3f3bd5ad 85c9            test    ecx,ecx
+00007ffa`3f3bd5af 7429            je      dots_ext_windows_template_debug_x86_64+0x1d5da (00007ffa`3f3bd5da)
+00007ffa`3f3bd5b1 48895c2438      mov     qword ptr [rsp+38h],rbx
+00007ffa`3f3bd5b6 66660f1f840000000000 nop word ptr [rax+rax]
+00007ffa`3f3bd5c0 488b19          mov     rbx,qword ptr [rcx]
+00007ffa`3f3bd5c3 ba18000000      mov     edx,18h
+00007ffa`3f3bd5c8 e8df244600      call    dots_ext_windows_template_debug_x86_64!dots_ext_init+0x22839c (00007ffa`3f81faac)
+00007ffa`3f3bd5cd 488bcb          mov     rcx,rbx
+00007ffa`3f3bd5d0 4885db          test    rbx,rbx
+00007ffa`3f3bd5d3 75eb            jne     dots_ext_windows_template_debug_x86_64+0x1d5c0 (00007ffa`3f3bd5c0)
+00007ffa`3f3bd5d5 488b5c2438      mov     rbx,qword ptr [rsp+38h]
+00007ffa`3f3bd5da 488b4708        mov     rax,qword ptr [rdi+8]
+00007ffa`3f3bd5de 4c8d442430      lea     r8,[rsp+30h]
+00007ffa`3f3bd5e3 488900          mov     qword ptr [rax],rax
+00007ffa`3f3bd5e6 488b4708        mov     rax,qword ptr [rdi+8]
+00007ffa`3f3bd5ea 48894008        mov     qword ptr [rax+8],rax
+00007ffa`3f3bd5ee 48c7471000000000 mov     qword ptr [rdi+10h],0
+00007ffa`3f3bd5f6 488b4708        mov     rax,qword ptr [rdi+8]
+
+.  0  Id: dd50.e450 Suspend: 0 Teb: 00000029`9ec26000 Unfrozen
+Child-SP          RetAddr               Call Site
+00000029`9f5f77f8 00007ffc`355992b8     ntdll!NtWaitForMultipleObjects+0x14
+00000029`9f5f7800 00007ffc`3559888e     ntdll!WerpWaitForCrashReporting+0xa8
+00000029`9f5f7880 00007ffc`3559802b     ntdll!RtlReportExceptionHelper+0x33e
+00000029`9f5f7950 00007ffc`355bd634     ntdll!RtlReportException+0x9b
+00000029`9f5f79d0 00007ffc`3553f847     ntdll!RtlReportFatalFailure$filt$0+0x33
+00000029`9f5f7a00 00007ffc`35555e9f     ntdll!_C_specific_handler+0x97
+
+   1  Id: dd50.7f64 Suspend: 0 Teb: 00000029`9ec30000 Unfrozen
+Child-SP          RetAddr               Call Site
+00000029`a1dff128 00007ffc`35519364     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`a1dff130 00007ffc`3262fc39     ntdll!RtlSleepConditionVariableCS+0x104
+00000029`a1dff1b0 00007ffb`c03088d5     KERNELBASE!SleepConditionVariableCS+0x29
+00000029`a1dff1e0 00007ffb`c030b1be     Txumon64!GetInstance+0x2c5b5
+00000029`a1dff230 00007ffb`c030b269     Txumon64!GetInstance+0x2ee9e
+00000029`a1dff900 00007ffb`c031bb1f     Txumon64!GetInstance+0x2ef49
+
+   2  Id: dd50.e194 Suspend: 0 Teb: 00000029`9ec3a000 Unfrozen
+Child-SP          RetAddr               Call Site
+00000029`a3dffb58 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`a3dffb60 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`a3dffbe0 00007ff6`e4afc9d5     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`a3dffc20 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x4c59cf5
+00000029`a3dffc70 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`a3dffcd0 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+   3  Id: dd50.a8d4 Suspend: 0 Teb: 00000029`9ec3c000 Unfrozen
+Child-SP          RetAddr               Call Site
+00000029`a45fed88 00007ffc`32616869     ntdll!NtWaitForMultipleObjects+0x14
+00000029`a45fed90 00007ffc`2ded4a97     KERNELBASE!WaitForMultipleObjectsEx+0xe9
+00000029`a45ff070 00007ffc`2ded480b     CoreMessaging!Microsoft::CoreUI::Dispatch::WaitController::Callback_WaitAny+0xb7
+00000029`a45ff160 00007ffc`2ded45e2     CoreMessaging!Microsoft::CoreUI::Dispatch::Win32EventLoopBridge::Callback_DoWait+0x11b
+00000029`a45ff230 00007ffc`2deba126     CoreMessaging!Microsoft::CoreUI::Dispatch::Win32EventLoopBridge::Callback_Wait+0x52
+00000029`a45ff2b0 00007ffc`2debbd05     CoreMessaging!Microsoft::CoreUI::Dispatch::WaitCollection::Callback_DoGeneralWait+0x1e6
+
+   4  Id: dd50.1c10 Suspend: 0 Teb: 00000029`9ec3e000 Unfrozen "WorkerThread 0"
+Child-SP          RetAddr               Call Site
+00000029`a4dff778 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`a4dff780 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`a4dff800 00007ff6`e3bc98b0     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`a4dff840 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x3d26bd0
+00000029`a4dff8d0 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`a4dff930 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+   5  Id: dd50.cc84 Suspend: 0 Teb: 00000029`9ec40000 Unfrozen "WorkerThread 1"
+Child-SP          RetAddr               Call Site
+00000029`a55ff798 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`a55ff7a0 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`a55ff820 00007ff6`e3bc98b0     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`a55ff860 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x3d26bd0
+00000029`a55ff8f0 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`a55ff950 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+   6  Id: dd50.52dc Suspend: 0 Teb: 00000029`9ec42000 Unfrozen "WorkerThread 2"
+Child-SP          RetAddr               Call Site
+00000029`a5dffcd8 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`a5dffce0 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`a5dffd60 00007ff6`e3bc98b0     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`a5dffda0 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x3d26bd0
+00000029`a5dffe30 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`a5dffe90 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+   7  Id: dd50.d990 Suspend: 0 Teb: 00000029`9ec44000 Unfrozen "WorkerThread 3"
+Child-SP          RetAddr               Call Site
+00000029`a65ff518 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`a65ff520 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`a65ff5a0 00007ff6`e3bc98b0     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`a65ff5e0 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x3d26bd0
+00000029`a65ff670 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`a65ff6d0 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+   8  Id: dd50.a9cc Suspend: 0 Teb: 00000029`9ec46000 Unfrozen "WorkerThread 4"
+Child-SP          RetAddr               Call Site
+00000029`a6dff878 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`a6dff880 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`a6dff900 00007ff6`e3bc98b0     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`a6dff940 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x3d26bd0
+00000029`a6dff9d0 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`a6dffa30 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+   9  Id: dd50.cb74 Suspend: 0 Teb: 00000029`9ec48000 Unfrozen "WorkerThread 5"
+Child-SP          RetAddr               Call Site
+00000029`a75ff9b8 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`a75ff9c0 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`a75ffa40 00007ff6`e3bc98b0     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`a75ffa80 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x3d26bd0
+00000029`a75ffb10 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`a75ffb70 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+  10  Id: dd50.9da0 Suspend: 0 Teb: 00000029`9ec4a000 Unfrozen "WorkerThread 6"
+Child-SP          RetAddr               Call Site
+00000029`a7dff538 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`a7dff540 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`a7dff5c0 00007ff6`e3bc98b0     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`a7dff600 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x3d26bd0
+00000029`a7dff690 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`a7dff6f0 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+  11  Id: dd50.b798 Suspend: 0 Teb: 00000029`9ec4c000 Unfrozen "WorkerThread 7"
+Child-SP          RetAddr               Call Site
+00000029`a85ff898 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`a85ff8a0 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`a85ff920 00007ff6`e3bc98b0     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`a85ff960 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x3d26bd0
+00000029`a85ff9f0 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`a85ffa50 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+  12  Id: dd50.ddc4 Suspend: 0 Teb: 00000029`9ec4e000 Unfrozen "WorkerThread 8"
+Child-SP          RetAddr               Call Site
+00000029`a8dffaf8 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`a8dffb00 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`a8dffb80 00007ff6`e3bc98b0     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`a8dffbc0 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x3d26bd0
+00000029`a8dffc50 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`a8dffcb0 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+  13  Id: dd50.bb04 Suspend: 0 Teb: 00000029`9ec50000 Unfrozen "WorkerThread 9"
+Child-SP          RetAddr               Call Site
+00000029`a95ff658 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`a95ff660 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`a95ff6e0 00007ff6`e3bc98b0     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`a95ff720 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x3d26bd0
+00000029`a95ff7b0 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`a95ff810 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+  14  Id: dd50.e05c Suspend: 0 Teb: 00000029`9ec52000 Unfrozen "WorkerThread 10"
+Child-SP          RetAddr               Call Site
+00000029`a9dff658 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`a9dff660 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`a9dff6e0 00007ff6`e3bc98b0     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`a9dff720 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x3d26bd0
+00000029`a9dff7b0 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`a9dff810 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+  15  Id: dd50.d600 Suspend: 0 Teb: 00000029`9ec54000 Unfrozen "WorkerThread 11"
+Child-SP          RetAddr               Call Site
+00000029`aa5ff9c8 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`aa5ff9d0 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`aa5ffa50 00007ff6`e3bc98b0     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`aa5ffa90 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x3d26bd0
+00000029`aa5ffb20 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`aa5ffb80 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+  16  Id: dd50.480c Suspend: 0 Teb: 00000029`9ec56000 Unfrozen "WorkerThread 12"
+Child-SP          RetAddr               Call Site
+00000029`aadffb68 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`aadffb70 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`aadffbf0 00007ff6`e3bc98b0     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`aadffc30 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x3d26bd0
+00000029`aadffcc0 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`aadffd20 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+  17  Id: dd50.e5e8 Suspend: 0 Teb: 00000029`9ec58000 Unfrozen "WorkerThread 13"
+Child-SP          RetAddr               Call Site
+00000029`ab5ffb98 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`ab5ffba0 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`ab5ffc20 00007ff6`e3bc98b0     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`ab5ffc60 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x3d26bd0
+00000029`ab5ffcf0 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`ab5ffd50 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+  18  Id: dd50.ac5c Suspend: 0 Teb: 00000029`9ec5a000 Unfrozen "WorkerThread 14"
+Child-SP          RetAddr               Call Site
+00000029`abdff6d8 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`abdff6e0 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`abdff760 00007ff6`e3bc98b0     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`abdff7a0 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x3d26bd0
+00000029`abdff830 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`abdff890 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+  19  Id: dd50.98ec Suspend: 0 Teb: 00000029`9ec5c000 Unfrozen "WorkerThread 15"
+Child-SP          RetAddr               Call Site
+00000029`ac5ffae8 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`ac5ffaf0 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`ac5ffb70 00007ff6`e3bc98b0     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`ac5ffbb0 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x3d26bd0
+00000029`ac5ffc40 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`ac5ffca0 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+  20  Id: dd50.698c Suspend: 0 Teb: 00000029`9ec5e000 Unfrozen "WorkerThread 16"
+Child-SP          RetAddr               Call Site
+00000029`acdffb18 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`acdffb20 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`acdffba0 00007ff6`e3bc98b0     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`acdffbe0 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x3d26bd0
+00000029`acdffc70 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`acdffcd0 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+  21  Id: dd50.c158 Suspend: 0 Teb: 00000029`9ec60000 Unfrozen "WorkerThread 17"
+Child-SP          RetAddr               Call Site
+00000029`ad5ff7f8 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`ad5ff800 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`ad5ff880 00007ff6`e3bc98b0     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`ad5ff8c0 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x3d26bd0
+00000029`ad5ff950 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`ad5ff9b0 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+  22  Id: dd50.dfe8 Suspend: 0 Teb: 00000029`9ec62000 Unfrozen "WorkerThread 18"
+Child-SP          RetAddr               Call Site
+00000029`addff6f8 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`addff700 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`addff780 00007ff6`e3bc98b0     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`addff7c0 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x3d26bd0
+00000029`addff850 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`addff8b0 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+  23  Id: dd50.99ec Suspend: 0 Teb: 00000029`9ec64000 Unfrozen "WorkerThread 19"
+Child-SP          RetAddr               Call Site
+00000029`ae5ff908 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`ae5ff910 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`ae5ff990 00007ff6`e3bc98b0     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`ae5ff9d0 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x3d26bd0
+00000029`ae5ffa60 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`ae5ffac0 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+  24  Id: dd50.cbc0 Suspend: 0 Teb: 00000029`9ec66000 Unfrozen "WorkerThread 20"
+Child-SP          RetAddr               Call Site
+00000029`aedff5d8 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`aedff5e0 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`aedff660 00007ff6`e3bc98b0     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`aedff6a0 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x3d26bd0
+00000029`aedff730 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`aedff790 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+  25  Id: dd50.dbc4 Suspend: 0 Teb: 00000029`9ec68000 Unfrozen "WorkerThread 21"
+Child-SP          RetAddr               Call Site
+00000029`af5ff5f8 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`af5ff600 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`af5ff680 00007ff6`e3bc98b0     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`af5ff6c0 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x3d26bd0
+00000029`af5ff750 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`af5ff7b0 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+  26  Id: dd50.b904 Suspend: 0 Teb: 00000029`9ec6a000 Unfrozen "WorkerThread 22"
+Child-SP          RetAddr               Call Site
+00000029`afdffca8 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`afdffcb0 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`afdffd30 00007ff6`e3bc98b0     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`afdffd70 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x3d26bd0
+00000029`afdffe00 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`afdffe60 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+  27  Id: dd50.9348 Suspend: 0 Teb: 00000029`9ec6c000 Unfrozen "WorkerThread 23"
+Child-SP          RetAddr               Call Site
+00000029`b05ff938 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`b05ff940 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`b05ff9c0 00007ff6`e3bc98b0     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`b05ffa00 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x3d26bd0
+00000029`b05ffa90 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`b05ffaf0 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+  28  Id: dd50.dd34 Suspend: 0 Teb: 00000029`9ec6e000 Unfrozen "WorkerThread 24"
+Child-SP          RetAddr               Call Site
+00000029`b0dffa98 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`b0dffaa0 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`b0dffb20 00007ff6`e3bc98b0     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`b0dffb60 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x3d26bd0
+00000029`b0dffbf0 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`b0dffc50 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+  29  Id: dd50.ce8c Suspend: 0 Teb: 00000029`9ec70000 Unfrozen "WorkerThread 25"
+Child-SP          RetAddr               Call Site
+00000029`b15ffc08 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`b15ffc10 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`b15ffc90 00007ff6`e3bc98b0     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`b15ffcd0 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x3d26bd0
+00000029`b15ffd60 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`b15ffdc0 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+  30  Id: dd50.a220 Suspend: 0 Teb: 00000029`9ec72000 Unfrozen "WorkerThread 26"
+Child-SP          RetAddr               Call Site
+00000029`b1dff568 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`b1dff570 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`b1dff5f0 00007ff6`e3bc98b0     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`b1dff630 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x3d26bd0
+00000029`b1dff6c0 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`b1dff720 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+  31  Id: dd50.dc34 Suspend: 0 Teb: 00000029`9ec74000 Unfrozen "WorkerThread 27"
+Child-SP          RetAddr               Call Site
+00000029`b25ff9b8 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`b25ff9c0 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`b25ffa40 00007ff6`e3bc98b0     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`b25ffa80 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x3d26bd0
+00000029`b25ffb10 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`b25ffb70 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+  32  Id: dd50.de90 Suspend: 0 Teb: 00000029`9ec76000 Unfrozen "WorkerThread 28"
+Child-SP          RetAddr               Call Site
+00000029`b2dffc88 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`b2dffc90 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`b2dffd10 00007ff6`e3bc98b0     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`b2dffd50 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x3d26bd0
+00000029`b2dffde0 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`b2dffe40 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+  33  Id: dd50.e37c Suspend: 0 Teb: 00000029`9ec78000 Unfrozen "WorkerThread 29"
+Child-SP          RetAddr               Call Site
+00000029`b35ff808 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`b35ff810 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`b35ff890 00007ff6`e3bc98b0     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`b35ff8d0 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x3d26bd0
+00000029`b35ff960 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`b35ff9c0 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+  34  Id: dd50.1cd8 Suspend: 0 Teb: 00000029`9ec7a000 Unfrozen "WorkerThread 30"
+Child-SP          RetAddr               Call Site
+00000029`b3dff5d8 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`b3dff5e0 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`b3dff660 00007ff6`e3bc98b0     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`b3dff6a0 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x3d26bd0
+00000029`b3dff730 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`b3dff790 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+  35  Id: dd50.af40 Suspend: 0 Teb: 00000029`9ec7c000 Unfrozen "WorkerThread 31"
+Child-SP          RetAddr               Call Site
+00000029`b45ffc98 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`b45ffca0 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`b45ffd20 00007ff6`e3bc98b0     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`b45ffd60 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x3d26bd0
+00000029`b45ffdf0 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`b45ffe50 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+  36  Id: dd50.22c Suspend: 0 Teb: 00000029`9ec7e000 Unfrozen
+Child-SP          RetAddr               Call Site
+00000029`b4dff668 00007ffc`355056d3     ntdll!NtDelayExecution+0x14
+00000029`b4dff670 00007ffc`3260a3ed     ntdll!RtlDelayExecution+0x43
+00000029`b4dff6a0 00007ffb`c02db869     KERNELBASE!SleepEx+0x7d
+00000029`b4dff720 00007ffb`c031bb1f     Txumon64+0xb869
+00000029`b4dff750 00007ffb`c031bbb3     Txumon64!GetInstance+0x3f7ff
+00000029`b4dff780 00007ffc`33f0259d     Txumon64!GetInstance+0x3f893
+
+  37  Id: dd50.da6c Suspend: 0 Teb: 00000029`9ec80000 Unfrozen
+Child-SP          RetAddr               Call Site
+00000029`a25ff848 00007ffc`31b1e38b     ntdll!NtRemoveIoCompletion+0x14
+00000029`a25ff850 00007ffc`33f0259d     mswsock!SockAsyncThread+0x9b
+00000029`a25ff8b0 00007ffc`3550af78     kernel32!BaseThreadInitThunk+0x1d
+00000029`a25ff8e0 00000000`00000000     ntdll!RtlUserThreadStart+0x28
+
+  38  Id: dd50.43c4 Suspend: 0 Teb: 00000029`9ec82000 Unfrozen
+Child-SP          RetAddr               Call Site
+00000029`a2dffb68 00007ffc`355056d3     ntdll!NtDelayExecution+0x14
+00000029`a2dffb70 00007ffc`3260a3ed     ntdll!RtlDelayExecution+0x43
+00000029`a2dffba0 00007ff6`e384faa0     KERNELBASE!SleepEx+0x7d
+00000029`a2dffc20 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x39acdc0
+00000029`a2dffc70 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`a2dffcd0 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+  39  Id: dd50.8d14 Suspend: 0 Teb: 00000029`9ec8c000 Unfrozen
+Child-SP          RetAddr               Call Site
+00000029`b75ffa68 00007ffc`32616869     ntdll!NtWaitForMultipleObjects+0x14
+00000029`b75ffa70 00007ffc`3261676e     KERNELBASE!WaitForMultipleObjectsEx+0xe9
+00000029`b75ffd50 00007ffc`1ab72a1a     KERNELBASE!WaitForMultipleObjects+0xe
+00000029`b75ffd90 00007ffc`33f0259d     msiltcfg!WorkerThread+0x6a
+00000029`b75ffe00 00007ffc`3550af78     kernel32!BaseThreadInitThunk+0x1d
+00000029`b75ffe30 00000000`00000000     ntdll!RtlUserThreadStart+0x28
+
+  40  Id: dd50.19b0 Suspend: 0 Teb: 00000029`9ec90000 Unfrozen
+Child-SP          RetAddr               Call Site
+00000029`b7dffcd8 00007ffc`325f9d0e     ntdll!NtWaitForSingleObject+0x14
+00000029`b7dffce0 00007ffc`0d5b7d70     KERNELBASE!WaitForSingleObjectEx+0x8e
+00000029`b7dffd80 00007ffc`0db0abaa     nvwgf2umx!NVDEV_Thunk+0x245e0
+00000029`b7dffdc0 00007ffc`33f0259d     nvwgf2umx!NVDEV_Thunk+0x57741a
+00000029`b7dffdf0 00007ffc`3550af78     kernel32!BaseThreadInitThunk+0x1d
+00000029`b7dffe20 00000000`00000000     ntdll!RtlUserThreadStart+0x28
+
+  41  Id: dd50.c148 Suspend: 0 Teb: 00000029`9ec92000 Unfrozen
+Child-SP          RetAddr               Call Site
+00000029`b85ff3b8 00007ffc`32616869     ntdll!NtWaitForMultipleObjects+0x14
+00000029`b85ff3c0 00007ffc`3261676e     KERNELBASE!WaitForMultipleObjectsEx+0xe9
+00000029`b85ff6a0 00007ffc`0cda2c36     KERNELBASE!WaitForMultipleObjects+0xe
+00000029`b85ff6e0 00007ffc`0db0abaa     nvwgf2umx!NVAPI_DirectMethods+0x32d16
+00000029`b85ff770 00007ffc`33f0259d     nvwgf2umx!NVDEV_Thunk+0x57741a
+00000029`b85ff7a0 00007ffc`3550af78     kernel32!BaseThreadInitThunk+0x1d
+
+  42  Id: dd50.dd54 Suspend: 0 Teb: 00000029`9ec94000 Unfrozen
+Child-SP          RetAddr               Call Site
+00000029`b8dffca8 00007ffc`325f9d0e     ntdll!NtWaitForSingleObject+0x14
+00000029`b8dffcb0 00007ffc`0d61ba4f     KERNELBASE!WaitForSingleObjectEx+0x8e
+00000029`b8dffd50 00007ffc`0db0abaa     nvwgf2umx!NVDEV_Thunk+0x882bf
+00000029`b8dffeb0 00007ffc`33f0259d     nvwgf2umx!NVDEV_Thunk+0x57741a
+00000029`b8dffee0 00007ffc`3550af78     kernel32!BaseThreadInitThunk+0x1d
+00000029`b8dfff10 00000000`00000000     ntdll!RtlUserThreadStart+0x28
+
+  43  Id: dd50.cfa4 Suspend: 0 Teb: 00000029`9ec96000 Unfrozen "D3D Background Thread 0"
+Child-SP          RetAddr               Call Site
+00000029`b95ff808 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`b95ff810 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`b95ff890 00007ffc`32a23cc9     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`b95ff8d0 00007ffc`32a23a6a     msvcp_win!Concurrency::details::stl_condition_variable_win7::wait+0x19
+00000029`b95ff900 00007ffc`076e09e5     msvcp_win!Cnd_wait+0x2a
+00000029`b95ff930 00007ffc`076dfc74     D3D12Core!BackgroundTaskScheduler::Scheduler::TaskThread+0x99
+
+  44  Id: dd50.9a40 Suspend: 0 Teb: 00000029`9ec98000 Unfrozen "D3D Background Thread 1"
+Child-SP          RetAddr               Call Site
+00000029`b9dff4d8 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`b9dff4e0 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`b9dff560 00007ffc`32a23cc9     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`b9dff5a0 00007ffc`32a23a6a     msvcp_win!Concurrency::details::stl_condition_variable_win7::wait+0x19
+00000029`b9dff5d0 00007ffc`076e09e5     msvcp_win!Cnd_wait+0x2a
+00000029`b9dff600 00007ffc`076dfc74     D3D12Core!BackgroundTaskScheduler::Scheduler::TaskThread+0x99
+
+  45  Id: dd50.dbe0 Suspend: 0 Teb: 00000029`9ec9a000 Unfrozen "D3D Background Thread 2"
+Child-SP          RetAddr               Call Site
+00000029`ba5ffa38 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`ba5ffa40 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`ba5ffac0 00007ffc`32a23cc9     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`ba5ffb00 00007ffc`32a23a6a     msvcp_win!Concurrency::details::stl_condition_variable_win7::wait+0x19
+00000029`ba5ffb30 00007ffc`076e09e5     msvcp_win!Cnd_wait+0x2a
+00000029`ba5ffb60 00007ffc`076dfc74     D3D12Core!BackgroundTaskScheduler::Scheduler::TaskThread+0x99
+
+  46  Id: dd50.534 Suspend: 0 Teb: 00000029`9ec9c000 Unfrozen "D3D Background Thread 3"
+Child-SP          RetAddr               Call Site
+00000029`badff938 00007ffc`3551981b     ntdll!NtWaitForAlertByThreadId+0x14
+00000029`badff940 00007ffc`3262fcf9     ntdll!RtlSleepConditionVariableSRW+0x13b
+00000029`badff9c0 00007ffc`32a23cc9     KERNELBASE!SleepConditionVariableSRW+0x29
+00000029`badffa00 00007ffc`32a23a6a     msvcp_win!Concurrency::details::stl_condition_variable_win7::wait+0x19
+00000029`badffa30 00007ffc`076e09e5     msvcp_win!Cnd_wait+0x2a
+00000029`badffa60 00007ffc`076dfc74     D3D12Core!BackgroundTaskScheduler::Scheduler::TaskThread+0x99
+
+  47  Id: dd50.dee0 Suspend: 0 Teb: 00000029`9eca0000 Unfrozen
+Child-SP          RetAddr               Call Site
+00000029`bb5ff738 00007ffc`32616869     ntdll!NtWaitForMultipleObjects+0x14
+00000029`bb5ff740 00007ffc`3261676e     KERNELBASE!WaitForMultipleObjectsEx+0xe9
+00000029`bb5ffa20 00007ffc`0cda2c36     KERNELBASE!WaitForMultipleObjects+0xe
+00000029`bb5ffa60 00007ffc`0db0abaa     nvwgf2umx!NVAPI_DirectMethods+0x32d16
+00000029`bb5ffaf0 00007ffc`33f0259d     nvwgf2umx!NVDEV_Thunk+0x57741a
+00000029`bb5ffb20 00007ffc`3550af78     kernel32!BaseThreadInitThunk+0x1d
+
+  48  Id: dd50.cff8 Suspend: 0 Teb: 00000029`9eca2000 Unfrozen
+Child-SP          RetAddr               Call Site
+00000029`bbdff508 00007ffc`32616869     ntdll!NtWaitForMultipleObjects+0x14
+00000029`bbdff510 00007ffc`3261676e     KERNELBASE!WaitForMultipleObjectsEx+0xe9
+00000029`bbdff7f0 00007ffc`0cda2c36     KERNELBASE!WaitForMultipleObjects+0xe
+00000029`bbdff830 00007ffc`0db0abaa     nvwgf2umx!NVAPI_DirectMethods+0x32d16
+00000029`bbdff8c0 00007ffc`33f0259d     nvwgf2umx!NVDEV_Thunk+0x57741a
+00000029`bbdff8f0 00007ffc`3550af78     kernel32!BaseThreadInitThunk+0x1d
+
+  49  Id: dd50.e7ec Suspend: 0 Teb: 00000029`9eca4000 Unfrozen "SDL_joystick"
+Child-SP          RetAddr               Call Site
+00000029`bc5ffc18 00007ffc`33d5614a     win32u!NtUserGetMessage+0x14
+00000029`bc5ffc20 00007ff6`e11b13d7     user32!GetMessageW+0x2a
+00000029`bc5ffc80 00007ff6`e12506b8     Godot_v4_6_2_stable_win64!NoHotPatch+0x130e6f7
+00000029`bc5ffd30 00007ff6`e1270d5e     Godot_v4_6_2_stable_win64!NoHotPatch+0x13ad9d8
+00000029`bc5ffd70 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x13ce07e
+00000029`bc5ffda0 00007ffc`3419e70c     msvcrt!_callthreadstartex+0x28
+
+  50  Id: dd50.e3b4 Suspend: 0 Teb: 00000029`9eca6000 Unfrozen
+Child-SP          RetAddr               Call Site
+00000029`bcdff578 00007ffc`355056d3     ntdll!NtDelayExecution+0x14
+00000029`bcdff580 00007ffc`3260a3ed     ntdll!RtlDelayExecution+0x43
+00000029`bcdff5b0 00007ff6`e1050139     KERNELBASE!SleepEx+0x7d
+00000029`bcdff630 00007ff6`e36a20ad     Godot_v4_6_2_stable_win64!NoHotPatch+0x11ad459
+00000029`bcdff740 00007ff6`e4a4e2fa     Godot_v4_6_2_stable_win64!NoHotPatch+0x37ff3cd
+00000029`bcdff7a0 00007ffc`3419e634     Godot_v4_6_2_stable_win64!NoHotPatch+0x4bab61a
+
+  51  Id: dd50.cf98 Suspend: 0 Teb: 00000029`9eca8000 Unfrozen
+Child-SP          RetAddr               Call Site
+00000029`bd5ffda8 00007ffc`325f9d0e     ntdll!NtWaitForSingleObject+0x14
+00000029`bd5ffdb0 00007ffc`0d3bf572     KERNELBASE!WaitForSingleObjectEx+0x8e
+00000029`bd5ffe50 00007ffc`0db0abaa     nvwgf2umx!OpenAdapter10+0x147262
+00000029`bd5ffe80 00007ffc`33f0259d     nvwgf2umx!NVDEV_Thunk+0x57741a
+00000029`bd5ffeb0 00007ffc`3550af78     kernel32!BaseThreadInitThunk+0x1d
+00000029`bd5ffee0 00000000`00000000     ntdll!RtlUserThreadStart+0x28
+
+  52  Id: dd50.a5e8 Suspend: 0 Teb: 00000029`9ecaa000 Unfrozen
+Child-SP          RetAddr               Call Site
+00000029`9eadf7a8 00007ffc`32616869     ntdll!NtWaitForMultipleObjects+0x14
+00000029`9eadf7b0 00007ffc`3261676e     KERNELBASE!WaitForMultipleObjectsEx+0xe9
+00000029`9eadfa90 00007ffc`0d617207     KERNELBASE!WaitForMultipleObjects+0xe
+00000029`9eadfad0 00007ffc`0d6f24ca     nvwgf2umx!NVDEV_Thunk+0x83a77
+00000029`9eadfbc0 00007ffc`0db0abaa     nvwgf2umx!NVDEV_Thunk+0x15ed3a
+00000029`9eadfbf0 00007ffc`33f0259d     nvwgf2umx!NVDEV_Thunk+0x57741a
+
+  53  Id: dd50.cbd0 Suspend: 0 Teb: 00000029`9ecac000 Unfrozen
+Child-SP          RetAddr               Call Site
+00000029`bddff4b8 00007ffc`32616869     ntdll!NtWaitForMultipleObjects+0x14
+00000029`bddff4c0 00007ffc`3261676e     KERNELBASE!WaitForMultipleObjectsEx+0xe9
+00000029`bddff7a0 00007ff6`e466bf39     KERNELBASE!WaitForMultipleObjects+0xe
+00000029`bddff7e0 00007ff6`e466c1dd     Godot_v4_6_2_stable_win64!NoHotPatch+0x47c9259
+00000029`bddff840 00007ff6`e466c886     Godot_v4_6_2_stable_win64!NoHotPatch+0x47c94fd
+00000029`bddff8b0 00007ff6`e4e0346b     Godot_v4_6_2_stable_win64!NoHotPatch+0x47c9ba6
+
+  54  Id: dd50.8368 Suspend: 0 Teb: 00000029`9ecae000 Unfrozen
+Child-SP          RetAddr               Call Site
+00000029`be5ff948 00007ffc`354e58ae     ntdll!NtWaitForWorkViaWorkerFactory+0x14
+00000029`be5ff950 00007ffc`33f0259d     ntdll!TppWorkerThread+0x2ee
+00000029`be5ffc30 00007ffc`3550af78     kernel32!BaseThreadInitThunk+0x1d
+00000029`be5ffc60 00000000`00000000     ntdll!RtlUserThreadStart+0x28
+
+  55  Id: dd50.cb94 Suspend: 0 Teb: 00000029`9ecb2000 Unfrozen
+Child-SP          RetAddr               Call Site
+00000029`9fdff5f8 00007ffc`32616869     ntdll!NtWaitForMultipleObjects+0x14
+00000029`9fdff600 00007ffc`3261676e     KERNELBASE!WaitForMultipleObjectsEx+0xe9
+00000029`9fdff8e0 00007ffc`0cda2c36     KERNELBASE!WaitForMultipleObjects+0xe
+00000029`9fdff920 00007ffc`0db0abaa     nvwgf2umx!NVAPI_DirectMethods+0x32d16
+00000029`9fdff9b0 00007ffc`33f0259d     nvwgf2umx!NVDEV_Thunk+0x57741a
+00000029`9fdff9e0 00007ffc`3550af78     kernel32!BaseThreadInitThunk+0x1d
+
+  56  Id: dd50.e1e0 Suspend: 0 Teb: 00000029`9ecb4000 Unfrozen
+Child-SP          RetAddr               Call Site
+00000029`a05ff408 00007ffc`32616869     ntdll!NtWaitForMultipleObjects+0x14
+00000029`a05ff410 00007ffc`3261676e     KERNELBASE!WaitForMultipleObjectsEx+0xe9
+00000029`a05ff6f0 00007ffc`0cda2c36     KERNELBASE!WaitForMultipleObjects+0xe
+00000029`a05ff730 00007ffc`0db0abaa     nvwgf2umx!NVAPI_DirectMethods+0x32d16
+00000029`a05ff7c0 00007ffc`33f0259d     nvwgf2umx!NVDEV_Thunk+0x57741a
+00000029`a05ff7f0 00007ffc`3550af78     kernel32!BaseThreadInitThunk+0x1d
+quit:
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\atlmfc.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\ObjectiveC.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\concurrency.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\cpp_rest.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\stl.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Data.Json.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Geolocation.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Sensors.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Media.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\windows.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\winrt.natvis'

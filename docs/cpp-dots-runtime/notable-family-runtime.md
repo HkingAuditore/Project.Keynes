@@ -6,7 +6,9 @@
 留在原有 `PopulationCohort` 中，称为匿名人口。`NativeEconomyRuntime` 是家族、成员关系和
 建筑所有权的唯一可变权威；GDScript 只编译姓氏目录与策略、提交经济 bootstrap，并执行只读查询。
 
-家族层包含形成、分支迁移、远程开拓、产业扩张、特性与行为偏好、地块威望、城市效果、衰退和消亡；远程开拓的
+家族层包含形成、分支迁移、远程开拓、产业扩张、特性与行为偏好、地块威望、城市效果、衰退和消亡。
+分支迁移可进入本国已有人口格：同 signature 合并进既有 cohort，本家族已在目标有成员则加强该分支，
+否则长出新分支。远程开拓的
 冻结路线、在途守恒载荷与跨域领土事务见[家族远程开拓运行时](./family-colonization-runtime.md)，家族内部的重要人物稀疏层见
 [家族重要人物原生运行时](./notable-person-runtime.md)。系统仍不包含谱系树、婚姻、继承份额、家族合并、
 经理代理或跨国汇款。跨国影响只能通过现有人口迁移和本地投资产生；收入、消费和企业税仍按交易
@@ -79,7 +81,7 @@ binding。分支/特性/等级无变化时不更新；降级、特性移除或�
 
 ## 形成与消亡
 
-默认策略只在乡村及以上、人口至少 100 的地块评审，每格最多 64 家族；评审以 cell/day 相位
+默认策略只在乡村及以上、人口至少 100 的地块评审，每格最多 8 家族；评审以 cell/day 相位
 错开。候选建筑必须同时满足：
 
 1. 正常营业，存在稳定 building identity；
@@ -88,8 +90,19 @@ binding。分支/特性/等级无变化时不更新；降级、特性移除或�
 4. 预计每名业主日收入高于当地同 signature 生活成本；
 5. 匿名业主人口拥有至少 30 天的创始人生计现金储备。
 
-候选按利润率、收入、建筑类型和业主 signature 确定性择优。创始人口等于一栋建筑的实际业主
-槽位；初始 cash claim 按其在 cohort 中的人口比例取得；首栋建筑的 `owned_count=1`。
+候选按利润率、收入、建筑类型和业主 signature 确定性择优。家庭规模按该家族在该格
+**全部业主槽**乘以 `family_household_people_per_owner_slot`（默认 256，上限
+`family_household_max_people` 默认 1024）计算，因此一槽作坊约 256 人、两槽营地约 512 人，
+四槽起碰到 1024 封顶。创始人口只从业主 signature 的剩余匿名人口吸收，并把 `filled_owner`
+记为业主槽位数。当日 `FAMILY_COMMIT` 在形成之后再吸收一次：只继续吸收业主职业的匿名人口，
+每个 cohort 至少留 1 名匿名者，并且同一地块所有家族合计不超过当地人口一半，其余保持匿名。
+不把待业或其他职业整城吞进第一家。开局 20 人首都因此仍是两名采集业主加匿名多数。
+初始 cash claim 按其在 cohort 中的人口比例取得；
+首栋建筑的 `owned_count=1`。每一轮 `FAMILY_COMMIT` 在归一化后（phase 0）以及形成后
+（phase 2、重建 CSR 前）按当前拥有的业主槽位把偏小的既有家族吸收到同一家庭规模，
+不新增人口、不改账本总量。`family_max_per_cell` 写进 PKEC family policy header，
+改这个值会使旧存档在 restore 时返回 `save_family_policy_profile_mismatch`；
+`family_household_*` 不在该 header 里。
 
 正式新游戏是唯一显式例外：`StarterSettlementBootstrap v3` 为每个首都声明一栋采集营地，原生
 bootstrap 将其两个实际采集者业主直接建立为一个创始家族，并立即重建全部家族 CSR。该操作不
@@ -142,9 +155,9 @@ building/market transaction
 经济图在 `BUILDING_COMMIT` 后依次执行 `FAMILY_COMMIT=16`、`PERSON_COMMIT=17`，再进入
 `AGGREGATE_PUBLISH`。家族阶段：
 
-1. 归一化成员人口/现金 claim，并更新职业就业归因；
+1. 归一化成员人口/现金 claim，并按业主槽把偏小家族吸收到家庭规模目标，再更新职业就业归因；
 2. 按确定 cell work budget 评审形成；
-3. 复核衰退/消亡，压缩边表并重建索引。
+3. 对当日新家族再吸收一次依附人口，复核衰退/消亡，压缩边表并重建索引。
 
 热循环只遍历当前建筑格和稀疏关系边。提交后重建以下 transient CSR：family→cohort、
 cohort→membership、family→building、building→ownership、cell→family。CSR 不进入存档或状态哈希，
@@ -156,9 +169,9 @@ cohort→membership、family→building、building→ownership、cell→family�
 
 - `get_family_cell_snapshot(cell, offset, limit)`：地块家族分页摘要；
 - `get_family_snapshot(handle)`：身份、人口、财产和职业统计；
-- `get_family_traits(handle)`：核心/附加特性、强度和已编译行为偏好；
+- `get_family_traits(handle)`：核心/附加特性、强度和已编译行为偏好；`EconomyFacade` 再附加中文 `descriptions` 与 `effect_display_names`，不进入 native catalog hash 或 PKEC。
 - `get_family_branches(handle, offset, limit)`：地理分支；
-- `get_family_branch_effects(handle, cell)`：威望拆分、Modifier 贡献和 Trigger 进度；
+- `get_family_branch_effects(handle, cell)`：威望拆分、Modifier 贡献和 Trigger 进度；`EconomyFacade` 再附加 modifier/trigger 的中文 `display_names` 与 `descriptions`。
 - `get_family_industries(handle, offset, limit)`：产业与业主占岗；
 - `get_building_cell_snapshot(cell)`：附带所有权 CSR。
 

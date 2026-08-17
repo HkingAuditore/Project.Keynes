@@ -1,11 +1,24 @@
 # 经济存档、catalog migration 与内容扩展 SOP
 
-## PKEC v35（当前 writer）
+## PKEC v36（当前 writer）
+
+v36 在 v35 的 cell 记录末尾追加 `support_ema_q16`（i32）：这是物资族盈余与阶层满意度
+混合因子的慢 EMA（alpha ≈ 1/64 每日），生育读 EMA 以免单期丰收/歉收抖动。
+`K_geo`、各族 cover、`K_eff` 都是派生诊断，不进存档、不进 `state_hash`。
+v35 仍可读取，缺省 EMA=1；v34 及更早继续拒绝。`game_save_coordinator.gd` 的
+`pkec` provider schema 为 36，兼容读取 `[35, 36]`。
+
+格承载力三项混合 `K_eff = K_geo × EMA(mix(surplus)×mix(sat_cell))` 的公式见
+[定点账本公式](./economy-fixed-point-ledger-formulas.md) 与
+[原生经济运行时](./native-economy-runtime.md)。
+
+## PKEC v35（历史 writer）
 
 v35 在 v34 的运河 section 之后固定当前分组建材、ACTIVE/SUSPENDED_LOSS 建筑状态和
 停产清算诊断。header 保存报价/项目数、quote/project/receipt 的 next-id，以及当前建筑
 目录契约。v34 及更早版本不再读取或迁移；建筑目录和建材语义变化使旧存档明确不兼容。
 详见[运河运行时](./canal-runtime.md)。
+当前 reader 接受 v35（EMA 填 1）与 v36。
 
 ## 流式格式
 

@@ -6,7 +6,7 @@ const RelationRowScene := preload("res://scenes/ui/technology_relation_row.tscn"
 signal enqueue_requested(index: int)
 signal remove_requested(index: int)
 
-const STATE_NAMES := ["未知", "已揭示 · 前置未完成", "可研究", "研究队列中", "待生效", "已掌握"]
+const STATE_NAMES := ["未知", "已知但未就绪", "可研究", "研究队列中", "待生效", "已掌握"]
 
 var _index := -1
 var _state := 0
@@ -35,24 +35,24 @@ var _placeholder: Label
 func _ready() -> void:
 	if _body != null:
 		return
-	_body = get_node_or_null("Scroll/Body") as VBoxContainer
-	_header_icon = get_node_or_null("Scroll/Body/Header/HeaderIcon") as IconBadge
-	_name = get_node_or_null("Scroll/Body/Header/Titles/NameLabel") as Label
-	_state_label = get_node_or_null("Scroll/Body/Header/Titles/StateLabel") as Label
-	_placeholder = get_node_or_null("Scroll/Body/Placeholder") as Label
-	_detail_block = get_node_or_null("Scroll/Body/DetailBlock") as VBoxContainer
-	_chips = get_node_or_null("Scroll/Body/DetailBlock/Chips") as BadgeRow
-	_gauge = get_node_or_null("Scroll/Body/DetailBlock/Gauge") as RadialGauge
-	_effects = get_node_or_null("Scroll/Body/DetailBlock/Effects") as InsightList
-	_prerequisite_title = get_node_or_null("Scroll/Body/DetailBlock/PrerequisiteTitle") as Label
-	_prerequisites = get_node_or_null("Scroll/Body/DetailBlock/Prerequisites") as VBoxContainer
-	_hard_successor_title = get_node_or_null("Scroll/Body/DetailBlock/HardSuccessorTitle") as Label
-	_hard_successors = get_node_or_null("Scroll/Body/DetailBlock/HardSuccessors") as VBoxContainer
-	_branch_successor_title = get_node_or_null("Scroll/Body/DetailBlock/BranchSuccessorTitle") as Label
-	_branch_successors = get_node_or_null("Scroll/Body/DetailBlock/BranchSuccessors") as VBoxContainer
-	_application_title = get_node_or_null("Scroll/Body/DetailBlock/ApplicationTitle") as Label
-	_applications = get_node_or_null("Scroll/Body/DetailBlock/Applications") as VBoxContainer
-	_action = get_node_or_null("Scroll/Body/DetailBlock/Action") as Button
+	_body = get_node_or_null("%Body") as VBoxContainer
+	_header_icon = get_node_or_null("%HeaderIcon") as IconBadge
+	_name = get_node_or_null("%NameLabel") as Label
+	_state_label = get_node_or_null("%StateLabel") as Label
+	_placeholder = get_node_or_null("%Placeholder") as Label
+	_detail_block = get_node_or_null("%DetailBlock") as VBoxContainer
+	_chips = get_node_or_null("%Chips") as BadgeRow
+	_gauge = get_node_or_null("%Gauge") as RadialGauge
+	_effects = get_node_or_null("%Effects") as InsightList
+	_prerequisite_title = get_node_or_null("%PrerequisiteTitle") as Label
+	_prerequisites = get_node_or_null("%Prerequisites") as VBoxContainer
+	_hard_successor_title = get_node_or_null("%HardSuccessorTitle") as Label
+	_hard_successors = get_node_or_null("%HardSuccessors") as VBoxContainer
+	_branch_successor_title = get_node_or_null("%BranchSuccessorTitle") as Label
+	_branch_successors = get_node_or_null("%BranchSuccessors") as VBoxContainer
+	_application_title = get_node_or_null("%ApplicationTitle") as Label
+	_applications = get_node_or_null("%Applications") as VBoxContainer
+	_action = get_node_or_null("%Action") as Button
 	if _body == null or _header_icon == null or _name == null \
 			or _state_label == null or _placeholder == null \
 			or _detail_block == null or _chips == null or _gauge == null \
@@ -75,10 +75,10 @@ func show_empty() -> void:
 	_state = 0
 	_submitted = false
 	_header_icon.set_semantic(&"country.technology", UITokens.TEXT_MUTED)
-	_name.text = "研究档案"
+	_name.text = "科技详情"
 	_state_label.text = ""
 	_placeholder.visible = true
-	_placeholder.text = "在科技树中选择一个节点查看它的成本、效果与前后置链条。"
+	_placeholder.text = "在科技树中选择一项科技，查看成本、效果与前置。"
 	_detail_block.visible = false
 
 
@@ -107,7 +107,7 @@ func show_milestone_locked(era_name: String, completed: int, required: int) -> v
 	_state_label.text = era_name
 	_state_label.add_theme_color_override("font_color", UITokens.BRASS_HIGHLIGHT)
 	_placeholder.visible = true
-	_placeholder.text = "完成本时代 %d / %d 项候选后可研究此关隘。名称与效果在可研究后显示。" \
+	_placeholder.text = "完成本时代 %d / %d 项后可研究此关隘。可研究后显示名称与效果。" \
 		% [completed, maxi(1, required)]
 	_detail_block.visible = false
 
@@ -159,11 +159,11 @@ func show_technology(index: int, definition: Dictionary, state: int, fraction: f
 	if required > 0:
 		_prerequisite_title.text = "里程碑候选（任选 %d 项）" % required
 	else:
-		_prerequisite_title.text = "硬前置"
+		_prerequisite_title.text = "需要先完成"
 	_prerequisite_title.visible = not prerequisites.is_empty()
 	_fill_relation_rows(_prerequisites, prerequisites)
 	var hard_successors: Array = relations.get("hard_successors", [])
-	_hard_successor_title.text = "被以下科技作为硬前置"
+	_hard_successor_title.text = "完成后可解锁"
 	_hard_successor_title.visible = not hard_successors.is_empty()
 	_fill_relation_rows(_hard_successors, hard_successors)
 	var branch_successors: Array = relations.get("branch_successors", [])

@@ -22,6 +22,14 @@ double elapsed_ms(const Clock::time_point &start) {
 }
 } // namespace
 
+void NativeEconomyRuntime::commit_bio_introduce(int32_t cell, int32_t bit) {
+    if (cell < 0 || bit < 0 || bit >= 32) return;
+    const uint64_t key = (uint64_t(uint32_t(cell)) << 8) | uint32_t(bit);
+    if (!_bio_introduce_keys.insert(key).second) return;
+    _bio_introduce_cells.push_back(cell);
+    _bio_introduce_bits.push_back(bit);
+}
+
 void NativeEconomyRuntime::queue_bio_introduce_from_good(int32_t cell, int32_t good_id) {
     if (cell < 0 || good_id < 0 ||
         good_id + 1 >= static_cast<int32_t>(_good_occupancy_bit_offsets.size())) {
@@ -36,10 +44,15 @@ void NativeEconomyRuntime::queue_bio_introduce_from_good(int32_t cell, int32_t g
     for (int32_t i = begin; i < end; ++i) {
         const int32_t bit = _good_occupancy_bits[size_t(i)];
         if (bit < 0 || bit >= 32) continue;
-        const uint64_t key = (uint64_t(uint32_t(cell)) << 8) | uint32_t(bit);
-        if (!_bio_introduce_keys.insert(key).second) continue;
-        _bio_introduce_cells.push_back(cell);
-        _bio_introduce_bits.push_back(bit);
+        // Production workers must not insert into the shared unordered_set or
+        // grow the shared vectors. Land in the per-cell ProductionResult and
+        // let merge_building_production_result commit on the joining thread.
+        if (_production_result_sink != nullptr) {
+            _production_result_sink->bio_introduce_cells.push_back(cell);
+            _production_result_sink->bio_introduce_bits.push_back(bit);
+            continue;
+        }
+        commit_bio_introduce(cell, bit);
     }
 }
 
@@ -964,6 +977,16 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 : 0;
             const int64_t fundable_cost = survival_output
                 ? minimum_executable_cost : desired_cost;
+            // A newly completed industrial group has no shortage EMA and may
+            // still carry a PLAN margin of -1 while owner livelihood is high.
+            // Without this cold-start bit, intent stays 1.0 and funded stays 0.
+            const bool never_settled = group.last_output <= 0 &&
+                group.last_input <= 0 && group.last_resource <= 0 &&
+                group.last_resource_generated <= 0;
+            if (never_settled && fundable_cost > 0 &&
+                fundable_cost != std::numeric_limits<int64_t>::max()) {
+                critical = true;
+            }
             if (fundable_cost > 0 && fundable_cost != std::numeric_limits<int64_t>::max() &&
                 (score > 0 || critical)) {
                 candidates.push_back({g, score, fundable_cost,
@@ -2485,6 +2508,12 @@ void NativeEconomyRuntime::merge_building_production_result(ProductionResult &re
         _owner_retained_outputs.end(),
         std::make_move_iterator(result.retained_outputs.begin()),
         std::make_move_iterator(result.retained_outputs.end()));
+    const size_t intro_n = std::min(result.bio_introduce_cells.size(),
+                                    result.bio_introduce_bits.size());
+    for (size_t i = 0; i < intro_n; ++i) {
+        commit_bio_introduce(result.bio_introduce_cells[i],
+                             result.bio_introduce_bits[i]);
+    }
     for (const ProductionCashflowDraft &draft : result.cashflow_drafts) {
         trace_record_cashflow(draft.cell, draft.entry.cohort_handle,
                               draft.entry.source, draft.entry.income,

@@ -4,6 +4,7 @@ extends Resource
 @export var key: StringName = &""
 @export var version: int = 1
 @export var display_name: String = ""
+@export_multiline var description: String = ""
 @export_range(1, 1000000, 1) var weight: int = 1
 @export var core_eligible: bool = true
 @export var prerequisite_keys: PackedStringArray = PackedStringArray()

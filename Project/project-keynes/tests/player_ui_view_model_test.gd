@@ -182,6 +182,9 @@ func _initialize() -> void:
 		failures.append("initial dossier model eagerly built hidden tab data")
 	for lazy_tab in ["population", "families", "market", "buildings"]:
 		categories[lazy_tab] = view_model.build_tab_category(cell, lazy_tab)
+	for banned in ["原生", "MarketStore", "测试人口", "硬前置", "揭示证据", "安全边界", "中性环境"]:
+		if _player_text_contains(categories, banned) or _player_text_contains(model, banned):
+			failures.append("player copy still contains '%s'" % banned)
 	var geography: Dictionary = categories.get("geography", {})
 	var physical: Dictionary = _find_section(geography.get("sections", []), "physical_geography")
 	var climate: Dictionary = _find_section(geography.get("sections", []), "climate_hydrology")
@@ -189,6 +192,11 @@ func _initialize() -> void:
 	var biogeography: Dictionary = _find_section(geography.get("sections", []), "biogeography")
 	if physical.is_empty() or climate.is_empty() or ecology.is_empty():
 		failures.append("geography tab is missing grouped sections")
+	if bool(physical.get("collapsed", false)):
+		failures.append("landform section should stay expanded by default")
+	if not bool(climate.get("collapsed", false)) \
+			or not bool(ecology.get("collapsed", false)):
+		failures.append("climate and ecology gauges should start collapsed")
 	if biogeography.is_empty() or String(biogeography.get("title", "")) != "本地物种":
 		failures.append("geography tab is missing local species facts")
 	var maize_badge := _find_by_id(biogeography.get("badges", []), "bio.maize")
@@ -469,6 +477,15 @@ func _initialize() -> void:
 	if gated_market_rows.size() != 1 \
 			or String(gated_market_rows[0].get("id", "")) != "market_gathered_plants":
 		failures.append("market dossier exposed technology-locked goods")
+	if (gated_market.get("metrics", []) as Array).size() != 3 \
+			or _find_by_id(gated_market.get("metrics", []), "merchant_cash").is_empty() \
+			or _find_by_id(gated_market.get("metrics", []), "market_shortage_count").is_empty() \
+			or _find_by_id(gated_market.get("metrics", []), "merchant_trade_net").is_empty():
+		failures.append("market dossier should keep three player-facing summary cards")
+	var merchant_accounts: Dictionary = _find_section(
+		gated_market.get("sections", []), "merchant_accounts")
+	if merchant_accounts.is_empty() or not bool(merchant_accounts.get("collapsed", false)):
+		failures.append("merchant accounts should remain a collapsed dossier")
 
 	var daily_cache := {}
 	var first_delta: float = view_model._sample_daily_delta(daily_cache, "0:wheat_grain", 10.0, 4)
@@ -609,12 +626,12 @@ func _initialize() -> void:
 		elif not String(_find_by_id(suspended_row.get("job_rows", []),
 				"job_0").get("value", "")).contains("岗位已释放"):
 			failures.append("suspended employee row did not explain why its period demand is zero")
-		elif not String(suspended_state.get("detail", "")).contains("建筑仍保留") \
+		elif not String(suspended_state.get("detail", "")).contains("连续亏损停产") \
 				or not String(suspended_state.get("meta", "")).contains("上一经营期利润率 -50.0%") \
 				or not String(suspended_state.get("meta", "")).contains("连续亏损 3 期"):
 			failures.append("suspended state summary did not expose the cause and prior operating result")
 		elif not String((suspended_row.get("finance", {}) as Dictionary).get(
-				"warning", "")).contains("本期停产"):
+				"warning", "")).contains("停产中"):
 			failures.append("suspended finance card still presents zero cashflow without context")
 
 	map.res_timber_reserve_arr[0] = 12600.0
@@ -743,3 +760,17 @@ func _seed_research_signals(map: MapData, cell_idx: int, signal_ids: PackedStrin
 	if cell_idx < occupancy.size():
 		occupancy[cell_idx] = occupancy_bits_for_cell
 	map.bio_occupancy_bits_arr = occupancy
+
+
+func _player_text_contains(value, needle: String) -> bool:
+	if value is String:
+		return (value as String).contains(needle)
+	if value is Dictionary:
+		for key in value:
+			if _player_text_contains(value[key], needle):
+				return true
+	elif value is Array:
+		for item in value:
+			if _player_text_contains(item, needle):
+				return true
+	return false

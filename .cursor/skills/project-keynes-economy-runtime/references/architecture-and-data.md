@@ -170,12 +170,14 @@ runtime authority.
 
 ## 6. Save and visibility
 
-PKEC schema v11 streams 4–16MB chunks: header, pages, market rows, cell/environment rows, pending
-commands, buildings, construction, audit history, sparse market/labor signals, trade orders,
-trade-flow EMA, end. Save only at a
+Current writer is PKEC v36: cell records append `support_ema_q16` (carrying mix EMA).
+Reader accepts v35 (EMA=1) and v36. Derived `K_geo` / family surplus / `K_eff` are
+Inspector-only and stay out of save, hash, and DataCore. Save streams header, pages, market rows,
+cell/environment rows, pending commands, buildings, construction, audit history, sparse market/labor
+signals, trade orders, trade-flow EMA, and end. Save only at a
 committed boundary. The header stores numeric scales, catalog identity, cycle length, committed day,
 environment identity, matching PKCN schema/generation/hash, submit sequence, trade next ID/resolved
-configuration, and section counts. Restore PKCN v1 first. PKEC v10 migrates to empty trade state and
+configuration, and section counts. Restore PKCN first. PKEC v10 migrates to empty trade state and
 rebuilds topology; PKEC v2-v9 return `legacy_countryless_economy_save_unsupported`; do not
 synthesize a global treasury or per-cell technology during restore.
 
@@ -202,8 +204,8 @@ owner/employee job capacity but leaves all employment counters and market stock 
 native graph to fill. This is a development fixture, not a production historical population provider.
 
 Gold and silver deposits are intentionally early-visible monetary anchors. Gathering technology
-unlocks low-yield merchant-owned gold and silver workings with no goods inputs or employees; they
-extract the matching real deposit and output only bullion. Later employee-bearing mines remain
+unlocks low-yield merchant-owned gold and silver workings with no goods inputs; they extract the
+matching real deposit, employ miners, and output only bullion. Later employee-bearing mines remain
 industrialist-owned production. Accepted bullion uses the native issue path, publishes
 `bullion_money_issued` plus gold/silver splits, and remains inside exact money and goods audits.
 

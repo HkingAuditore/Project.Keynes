@@ -217,9 +217,20 @@ extends Resource
 @export_range(0, 7, 1) var family_min_settlement_tier: int = 2
 @export_range(1, 3650, 1) var family_review_days: int = 30
 @export_range(1, 1000000000, 1) var family_min_population_per_active: int = 100
-@export_range(1, 4096, 1) var family_max_per_cell: int = 64
+## A city keeps only a few notable families. Changing this value invalidates
+## PKEC restores (`save_family_policy_profile_mismatch`).
+@export_range(1, 4096, 1) var family_max_per_cell: int = 8
 @export_range(1, 65536, 1) var family_cells_per_slice: int = 128
 @export_range(1, 32, 1) var family_decline_reviews: int = 3
+## Local notable household size per owned owner post. A city keeps only a few
+## families as an overlay on the anonymous majority. Each household may grow
+## toward dozens or hundreds, but never by swallowing the whole town.
+## Formation and FAMILY_COMMIT absorb remaining anonymous owner-signature
+## people without minting population, leaving at least one anonymous person
+## per cohort and at most half the cell in all families combined.
+## Dispatch still leaves one person behind.
+@export_range(1, 256, 1) var family_household_people_per_owner_slot: int = 256
+@export_range(1, 100000, 1) var family_household_max_people: int = 1024
 
 ## Sparse important-person overlay nested inside family membership. Persons
 ## attribute realized cohort cash flow and demand; they never become a second
@@ -229,6 +240,39 @@ extends Resource
 @export_range(1, 4096, 1) var notable_person_max_per_cell: int = 128
 @export_range(1, 1000000, 1) var notable_person_max_total: int = 65536
 @export_range(1, 65536, 1) var notable_person_records_per_slice: int = 4096
+
+## 格承载力三项混合 K：地理天花板、已解锁物资族盈余、阶层满意度。
+@export var carrying_k_habitat_ref: int = 40
+@export var carrying_k_floor: int = 8
+@export_range(0, 262144, 1) var carrying_river_bonus_q16: int = 72090
+@export_range(0, 65536, 1) var carrying_water_habitability_q16: int = 49152
+@export_range(0, 65536, 1) var carrying_surplus_elasticity_q16: int = 32768
+@export_range(0, 65536, 1) var carrying_sat_elasticity_q16: int = 22938
+@export_range(1, 65536, 1) var carrying_soft_start_q16: int = 45875
+@export_range(0, 65536, 1) var carrying_surplus_floor_q16: int = 16384
+@export_range(65536, 262144, 1) var carrying_surplus_cap_q16: int = 98304
+@export_range(0, 65536, 1) var carrying_sat_floor_q16: int = 8192
+@export_range(1, 65536, 1) var carrying_sat_cap_q16: int = 65536
+@export_range(1, 262144, 1) var carrying_residual_floor_q16: int = 32768
+@export_range(65536, 262144, 1) var carrying_residual_cap_q16: int = 131072
+@export_range(1, 65536, 1) var carrying_support_ema_alpha_q16: int = 1024
+@export_range(0, 65536, 1) var carrying_temp_opt_lo_q16: int = 19661
+@export_range(0, 65536, 1) var carrying_temp_opt_hi_q16: int = 45875
+@export_range(0, 65536, 1) var carrying_paw_opt_lo_q16: int = 16384
+@export_range(0, 65536, 1) var carrying_paw_opt_hi_q16: int = 58982
+@export var carrying_family_weight: PackedInt32Array = PackedInt32Array([
+	10, 7, 5, 4, 4, 2, 4, 3, 3, 2, 1, 1, 1, 2, 3, 1, 1, 3, 2, 2, 1])
+@export var carrying_class_ids: PackedStringArray = PackedStringArray([
+	"farmer", "worker", "general", "unemployed", "technology", "owner"])
+@export var carrying_class_weight_q16: PackedInt32Array = PackedInt32Array([
+	81920, 65536, 65536, 49152, 39322, 32768])
+@export var carrying_landform_habitability_q16: PackedInt32Array = PackedInt32Array([
+	3277, 6554, 26214, 36045, 65536, 58982, 45875, 22938, 6554, 72090,
+	16384, 6554, 19661, 39322, 52429, 29491])
+@export var carrying_vegetation_habitability_q16: PackedInt32Array = PackedInt32Array([
+	32768, 6554, 16384, 13107, 29491, 36045, 29491, 65536, 58982, 65536,
+	45875, 42598, 58982, 49152, 52429, 45875, 19661, 6554, 52429, 45875,
+	49152, 52429, 39322, 32768, 45875, 52429, 36045, 29491])
 
 func to_native_profile() -> Dictionary:
 	return {
@@ -355,9 +399,35 @@ func to_native_profile() -> Dictionary:
 		"family_max_per_cell": family_max_per_cell,
 		"family_cells_per_slice": family_cells_per_slice,
 		"family_decline_reviews": family_decline_reviews,
+		"family_household_people_per_owner_slot":
+			family_household_people_per_owner_slot,
+		"family_household_max_people": family_household_max_people,
 		"notable_person_runtime_mode": notable_person_runtime_mode,
 		"notable_person_max_per_family": notable_person_max_per_family,
 		"notable_person_max_per_cell": notable_person_max_per_cell,
 		"notable_person_max_total": notable_person_max_total,
 		"notable_person_records_per_slice": notable_person_records_per_slice,
+		"carrying_k_habitat_ref": carrying_k_habitat_ref,
+		"carrying_k_floor": carrying_k_floor,
+		"carrying_river_bonus_q16": carrying_river_bonus_q16,
+		"carrying_water_habitability_q16": carrying_water_habitability_q16,
+		"carrying_surplus_elasticity_q16": carrying_surplus_elasticity_q16,
+		"carrying_sat_elasticity_q16": carrying_sat_elasticity_q16,
+		"carrying_soft_start_q16": carrying_soft_start_q16,
+		"carrying_surplus_floor_q16": carrying_surplus_floor_q16,
+		"carrying_surplus_cap_q16": carrying_surplus_cap_q16,
+		"carrying_sat_floor_q16": carrying_sat_floor_q16,
+		"carrying_sat_cap_q16": carrying_sat_cap_q16,
+		"carrying_residual_floor_q16": carrying_residual_floor_q16,
+		"carrying_residual_cap_q16": carrying_residual_cap_q16,
+		"carrying_support_ema_alpha_q16": carrying_support_ema_alpha_q16,
+		"carrying_temp_opt_lo_q16": carrying_temp_opt_lo_q16,
+		"carrying_temp_opt_hi_q16": carrying_temp_opt_hi_q16,
+		"carrying_paw_opt_lo_q16": carrying_paw_opt_lo_q16,
+		"carrying_paw_opt_hi_q16": carrying_paw_opt_hi_q16,
+		"carrying_family_weight": carrying_family_weight,
+		"carrying_class_ids": carrying_class_ids,
+		"carrying_class_weight_q16": carrying_class_weight_q16,
+		"carrying_landform_habitability_q16": carrying_landform_habitability_q16,
+		"carrying_vegetation_habitability_q16": carrying_vegetation_habitability_q16,
 	}

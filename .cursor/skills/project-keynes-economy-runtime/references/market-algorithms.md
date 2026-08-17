@@ -93,7 +93,12 @@ merchant funds += population-weighted revenue share
 merchant epoch_income += revenue share
 ```
 
-Distribute merchant revenue once per market, not per order. Compute total and worst-need satisfaction
+Distribute merchant revenue once per market, not per order, and only across
+living merchant cohorts (`population > 0`). A zero-population merchant lane is
+not a market-maker: repair the cell from the largest non-merchant cohort before
+debiting household funds, then credit the live slots on the market's cells.
+Stale `_merchant_offsets[market]` ranges must not be the sole owner lookup.
+Compute total and worst-need satisfaction
 in one linear pass over need states; do not scan all need states once per cohort.
 
 That same pass also drives composite satisfaction. Four `Σ(weight × satisfaction)` / `Σweight`

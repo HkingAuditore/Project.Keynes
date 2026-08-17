@@ -6,6 +6,8 @@ class_name IdeologyWorkspace
 # second mutable ideology model.
 
 const Q16_ONE := 65536.0
+const IdeaRowScene := preload("res://scenes/ui/ideology_idea_row.tscn")
+const OfferChoiceScene := preload("res://scenes/ui/ideology_offer_choice.tscn")
 
 var _facade = null
 var _country_handle := 0
@@ -21,6 +23,7 @@ var _spirits: Label
 var _hint: Label
 var _offer_button: Button
 var _rows: VBoxContainer
+var _empty: Label
 var _offer: PanelContainer
 var _offer_cards: HBoxContainer
 
@@ -34,12 +37,14 @@ func _ready() -> void:
 	_hint = get_node_or_null("Root/Actions/Hint") as Label
 	_offer_button = get_node_or_null("Root/Actions/OpenOffer") as Button
 	_rows = get_node_or_null("Root/Scroll/Rows") as VBoxContainer
+	_empty = get_node_or_null("Root/Scroll/Rows/EmptyLabel") as Label
 	_offer = get_node_or_null("Root/Offer") as PanelContainer
 	_offer_cards = get_node_or_null("Root/Offer/Cards") as HBoxContainer
 	if _points == null or _slots == null or _spirits == null or _hint == null \
 			or _offer_button == null or _rows == null or _offer == null or _offer_cards == null:
 		push_error("IdeologyWorkspace 必须由 ideology_workspace.tscn 实例化。")
 		return
+	_offer_button.theme_type_variation = &"PKPrimaryButton"
 	_offer_button.pressed.connect(_open_offer)
 
 
@@ -68,7 +73,7 @@ func _apply_model(model: Dictionary) -> void:
 	_catalog = ideology.get("catalog", {})
 	_snapshot = ideology.get("snapshot", {})
 	if not bool(ideology.get("available", false)):
-		_hint.text = String(ideology.get("reason", "理念运行时不可用。"))
+		_hint.text = String(ideology.get("reason", "理念暂不可用。"))
 		_offer_button.disabled = true
 		return
 	_points.text = "理念点 %s" % _q16(int(_snapshot.get("ideology_points_q16", 0)))
@@ -89,6 +94,8 @@ func _apply_model(model: Dictionary) -> void:
 
 func _rebuild_rows() -> void:
 	for child in _rows.get_children():
+		if child == _empty:
+			continue
 		child.queue_free()
 	var metadata := {}
 	for row in _catalog.get("ideologies", []) as Array:
@@ -107,71 +114,73 @@ func _rebuild_rows() -> void:
 			"pending": index < pending.size() and pending[index] != 0,
 		}
 	var known: PackedInt32Array = _snapshot.get("known_ids", PackedInt32Array())
+	if _empty != null:
+		_empty.visible = known.is_empty()
 	for ideology_id in known:
 		var state: Dictionary = state_by_id.get(int(ideology_id), {})
 		_rows.add_child(_row(int(ideology_id), metadata.get(int(ideology_id), {}), state))
-	if known.is_empty():
-		var empty := Label.new()
-		empty.text = "尚未发现理念。通过条件、事件或理念点抽取获得。"
-		empty.theme_type_variation = &"PKMutedLabel"
-		_rows.add_child(empty)
 
 
 func _row(ideology_id: int, metadata: Dictionary, state: Dictionary) -> Control:
-	var card := PanelContainer.new()
-	card.theme_type_variation = &"PKInsetPanel"
-	var body := VBoxContainer.new()
-	body.add_theme_constant_override("separation", 4)
-	card.add_child(body)
-	var title := HBoxContainer.new()
-	body.add_child(title)
-	var name_label := Label.new()
-	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	name_label.text = String(metadata.get("name_key", metadata.get("id", "理念")))
-	name_label.theme_type_variation = &"PKSectionTitle"
-	title.add_child(name_label)
+	var card := IdeaRowScene.instantiate() as PanelContainer
+	var name_label := card.get_node("Body/Title/Name") as Label
+	name_label.text = _display_name(metadata, ideology_id)
 	var location := int(state.get("location", 0))
 	var pending := bool(state.get("pending", false))
-	var status := Label.new()
-	status.text = "正在生效/替换" if pending else ["未装备", "意识形态", "民族精神"][clampi(location, 0, 2)]
-	status.theme_type_variation = &"PKMutedLabel"
-	title.add_child(status)
+	var badges := card.get_node("Body/Title/Slots") as BadgeRow
+	var slot_text: String = "正在生效"
+	if not pending:
+		match clampi(location, 0, 2):
+			1:
+				slot_text = "意识形态"
+			2:
+				slot_text = "民族精神"
+			_:
+				slot_text = "未装备"
+	badges.set_badges([{
+		"text": slot_text,
+		"accent": UITokens.WARN if pending else (UITokens.ACCENT if location > 0 else UITokens.TEXT_MUTED),
+	}])
 	var explanation: Dictionary = _facade.explain_ideology(_country_handle, ideology_id) if _facade != null else {}
 	var level := int(state.get("level", -1))
 	var thresholds: PackedInt64Array = explanation.get("thresholds_q16", PackedInt64Array())
 	var amount := int(state.get("understanding", 0))
 	var next := int(thresholds[level + 1]) if level + 1 < thresholds.size() else amount
-	var progress := ProgressBar.new()
-	progress.show_percentage = false
-	progress.max_value = maxf(1.0, float(next))
-	progress.value = minf(float(amount), progress.max_value)
-	body.add_child(progress)
-	var detail := Label.new()
-	detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	detail.text = "等级 %d  ·  理解度 %s%s" % [maxi(0, level + 1), _q16(amount),
-		"  ·  已满级" if level + 1 >= thresholds.size() else "  ·  下一级 %s" % _q16(next)]
+	var ratio := 1.0 if next <= 0 else clampf(float(amount) / float(maxi(1, next)), 0.0, 1.0)
+	var gauge := card.get_node("Body/Gauge") as GaugeBar
+	gauge.set_data("理解度", ratio, "", "", UITokens.ACCENT, -1.0,
+		"已满级" if level + 1 >= thresholds.size() else "下一级 %s" % _q16(next),
+		_q16(amount))
+	var detail := card.get_node("Body/Detail") as Label
+	detail.text = "等级 %d" % maxi(0, level + 1)
 	detail.tooltip_text = String(metadata.get("detail_key", ""))
-	detail.theme_type_variation = &"PKMutedLabel"
-	body.add_child(detail)
-	var actions := HBoxContainer.new()
-	body.add_child(actions)
-	if location == 0:
-		_add_action(actions, "装备", func() -> void: _command("equip", ideology_id), pending)
-	elif location == 1:
-		_add_action(actions, "卸下", func() -> void: _command("unequip", ideology_id), pending)
+	var equip := card.get_node("Body/Actions/Equip") as Button
+	var unequip := card.get_node("Body/Actions/Unequip") as Button
+	var promote := card.get_node("Body/Actions/Promote") as Button
+	equip.visible = location == 0
+	equip.disabled = pending
+	equip.pressed.connect(func() -> void: _command("equip", ideology_id))
+	unequip.visible = location == 1
+	unequip.disabled = pending
+	unequip.pressed.connect(func() -> void: _command("unequip", ideology_id))
 	var spirit_min := int(explanation.get("min_spirit_level", 99))
-	if location != 2:
-		_add_action(actions, "晋升民族精神", func() -> void: _command("promote", ideology_id),
-			pending or level < spirit_min)
+	promote.visible = location != 2
+	promote.disabled = pending or level < spirit_min
+	promote.pressed.connect(func() -> void: _command("promote", ideology_id))
 	return card
 
 
-func _add_action(host: HBoxContainer, label: String, callback: Callable, disabled: bool) -> void:
-	var button := Button.new()
-	button.text = label
-	button.disabled = disabled
-	button.pressed.connect(callback)
-	host.add_child(button)
+func _display_name(metadata: Dictionary, ideology_id: int) -> String:
+	var display := String(metadata.get("display_name", ""))
+	if not display.is_empty():
+		return display
+	var name_key := String(metadata.get("name_key", ""))
+	if not name_key.is_empty() and not name_key.contains("."):
+		return name_key
+	var stable_id := String(metadata.get("id", ""))
+	if not stable_id.is_empty():
+		return stable_id
+	return "理念 %d" % ideology_id
 
 
 func _open_offer() -> void:
@@ -204,10 +213,9 @@ func _rebuild_offer() -> void:
 		metadata[int((row as Dictionary).get("dense_id", -1))] = row
 	var ids: PackedInt32Array = _snapshot.get("offer_ids", PackedInt32Array())
 	for index in range(ids.size()):
-		var button := Button.new()
+		var button := OfferChoiceScene.instantiate() as Button
 		var info: Dictionary = metadata.get(int(ids[index]), {})
-		button.text = String(info.get("name_key", "理念 %d" % int(ids[index])))
-		button.custom_minimum_size = Vector2(150, 70)
+		button.text = _display_name(info, int(ids[index]))
 		button.tooltip_text = String(info.get("detail_key", ""))
 		button.pressed.connect(func() -> void: _choose_offer(index))
 		_offer_cards.add_child(button)
@@ -222,7 +230,7 @@ func _choose_offer(choice_index: int) -> void:
 
 
 func _show_result(result: Dictionary) -> void:
-	_hint.text = "命令已排入下一安全边界。" if bool(result.get("ok", false)) \
+	_hint.text = "将于明日生效。" if bool(result.get("ok", false)) \
 		else String(result.get("reason", "理念命令被拒绝。"))
 
 

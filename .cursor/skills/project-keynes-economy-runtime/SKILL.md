@@ -59,7 +59,7 @@ queries, UI, and file I/O. Never add a parallel GDScript economy or building sim
 ## Preserve hard invariants
 
 - Keep one aggregate cohort per `(cell, signature)`; keep wealth outside identity.
-- Keep a merchant on every populated cell; conserve population and proportional funds when repairing.
+- Keep a living merchant (`population > 0`) on every populated cell; conserve population and proportional funds when repairing. Zero-population merchant lanes are not market-makers.
 - Treat local merchant cohorts as joint inventory owners; transfer buyer money directly to merchants.
 - Keep one cell equal to one local market until an explicit market-topology migration is designed.
 - Keep domestic transport as movement between those local markets. Trade topology, sparse planning,

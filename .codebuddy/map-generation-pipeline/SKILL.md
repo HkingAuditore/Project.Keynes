@@ -95,6 +95,15 @@ GPU 纹理上传（`ImageTexture.update`/`create_from_image`）。
 **运行期不动**：物理环流季节切换的逐帧分摊路径（`ocean_currents_job.gd` 驱动
 `_physical_solve_step_one`）保持不变——只迁了生成期一次性路径。
 
+## Static research / bio occupancy
+
+`run_research_signal_generation_pass` writes landform CSR only. Bio presence is
+`cell.bio_occupancy_bits` from `run_bio_seed_pass`: compact origin hearths (`max_cost` BFS,
+`fill_keep` thins stands). Default one connected hearth per species; reed may occupy every
+continent-scale wetland stand. Continent-scale landmasses keep a food + fiber/livestock floor.
+Satellite islets are skipped unless they are the unique argmax. `realm.*` is display metadata;
+seeding does not read it.
+
 ## 核心模式（写新 pass / 改 pass 时遵循）
 
 详见 `references/patterns.md`。要点速记：

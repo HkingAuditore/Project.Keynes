@@ -677,11 +677,22 @@ Dictionary DCWorldExt::get_canal_construction_receipts(
 Dictionary DCWorldExt::get_family_colonization_quotes(
         int64_t country_handle, int target_cell, int64_t family_filter,
         int source_filter, int offset, int limit) {
-    if (_economy_runtime == nullptr || _map_data == nullptr) return unavailable();
+    if (_economy_runtime == nullptr || _map_data == nullptr) {
+        Dictionary out;
+        out["ok"] = false;
+        out["code"] = "economy_not_available";
+        out["busy"] = false;
+        out["committed"] = false;
+        out["nonbinding"] = false;
+        return out;
+    }
     const Variant visible_variant = _map_data->get(StringName("visible_arr"));
     if (visible_variant.get_type() != Variant::PACKED_BYTE_ARRAY) {
-        Dictionary out; out["ok"] = false;
-        out["code"] = "colonization_visibility_unavailable"; return out;
+        Dictionary out;
+        out["ok"] = false;
+        out["code"] = "colonization_visibility_unavailable";
+        runtime_from(_economy_runtime)->fill_colonization_query_flags(out);
+        return out;
     }
     const PackedByteArray visible = visible_variant;
     const uint64_t revision = static_cast<uint64_t>(static_cast<int64_t>(

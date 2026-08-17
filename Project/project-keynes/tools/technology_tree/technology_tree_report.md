@@ -267,7 +267,7 @@
 
 #### 效果摘要
 
-解锁建筑：公共火塘；作为必要支撑：覆土木炭窑、砂金淘洗精炼棚、乳胶烟熏凝固棚、传知者议事圈、露天陶器烧造、银矿火试炉
+解锁建筑：公共火塘；作为必要支撑：覆土木炭窑、乳胶烟熏凝固棚、传知者议事圈、露天陶器烧造
 
 #### 机会成本
 
@@ -278,7 +278,7 @@
 - **物资：** 无
 - **建筑 / 生产方式：** 公共火塘 (`communal_hearth`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 覆土木炭窑 (`charcoal_pit`)；砂金淘洗精炼棚 (`gold_washing_refinery`)；乳胶烟熏凝固棚 (`latex_smoking_shelter`)；传知者议事圈 (`lorekeeper_circle`)；露天陶器烧造 (`open_pottery_hearth`)；银矿火试炉 (`silver_fire_assay_hearth`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 覆土木炭窑 (`charcoal_pit`)；乳胶烟熏凝固棚 (`latex_smoking_shelter`)；传知者议事圈 (`lorekeeper_circle`)；露天陶器烧造 (`open_pottery_hearth`)
 
 #### 结构化内容效果
 
@@ -3766,7 +3766,7 @@ timber -8%；作为必要支撑：刀耕火种玉米地
 
 #### 效果摘要
 
-解锁物资：含金砂矿；解锁建筑：河滩淘金场；解锁建筑：木槽溜洗场；可利用资源：金矿；作为必要支撑：砂金淘洗精炼棚
+解锁物资：黄金；解锁建筑：河滩淘金场；解锁建筑：木槽溜洗场；可利用资源：金矿
 
 #### 机会成本
 
@@ -3774,14 +3774,14 @@ timber -8%；作为必要支撑：刀耕火种玉米地
 
 #### 内容解锁
 
-- **物资：** 含金砂矿 (`gold_ore`)
+- **物资：** 黄金 (`gold`)
 - **建筑 / 生产方式：** 河滩淘金场 (`placer_gold_working`)；木槽溜洗场 (`primitive_gold_sluice`)
 - **自然资源：** 金矿 (`gold_ore`)
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 砂金淘洗精炼棚 (`gold_washing_refinery`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
-- **含金砂矿**（`good`）：`good.gold_ore` → `production_access` `unlock` `1.0`；`existing_binding`
+- **黄金**（`good`）：`good.gold` → `production_access` `unlock` `1.0`；`existing_binding`
 - **河滩淘金场**（`building`）：`building.placer_gold_working` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **木槽溜洗场**（`building`）：`building.primitive_gold_sluice` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **金矿**（`resource`）：`resource.gold_ore` → `local_resource_access` `unlock` `1.0`；`existing_binding`
@@ -3901,7 +3901,7 @@ timber -8%；作为必要支撑：刀耕火种玉米地
 
 #### 效果摘要
 
-解锁物资：白银；解锁物资：含银矿石；解锁建筑：浅坑银矿作业；解锁建筑：露天银矿；可利用资源：银矿；作为必要支撑：银矿火试炉
+解锁物资：白银；解锁建筑：浅坑银矿作业；解锁建筑：露天银矿；可利用资源：银矿
 
 #### 机会成本
 
@@ -3909,15 +3909,14 @@ timber -8%；作为必要支撑：刀耕火种玉米地
 
 #### 内容解锁
 
-- **物资：** 白银 (`silver`)；含银矿石 (`silver_ore`)
+- **物资：** 白银 (`silver`)
 - **建筑 / 生产方式：** 浅坑银矿作业 (`shallow_silver_working`)；露天银矿 (`surface_silver_working`)
 - **自然资源：** 银矿 (`silver_ore`)
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 银矿火试炉 (`silver_fire_assay_hearth`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
 - **白银**（`good`）：`good.silver` → `production_access` `unlock` `1.0`；`existing_binding`
-- **含银矿石**（`good`）：`good.silver_ore` → `production_access` `unlock` `1.0`；`existing_binding`
 - **浅坑银矿作业**（`building`）：`building.shallow_silver_working` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **露天银矿**（`building`）：`building.surface_silver_working` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 - **银矿**（`resource`）：`resource.silver_ore` → `local_resource_access` `unlock` `1.0`；`existing_binding`
@@ -9594,7 +9593,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 效果摘要
 
-解锁物资：黄金；解锁建筑：砂金淘洗精炼棚；解锁建筑：银矿火试炉；全社会经济产出 +3%；作为必要支撑：地籍管理局
+解锁物资：黄金；全社会经济产出 +3%；作为必要支撑：地籍管理局
 
 #### 机会成本
 
@@ -9603,15 +9602,13 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 内容解锁
 
 - **物资：** 黄金 (`gold`)
-- **建筑 / 生产方式：** 砂金淘洗精炼棚 (`gold_washing_refinery`)；银矿火试炉 (`silver_fire_assay_hearth`)
+- **建筑 / 生产方式：** 无
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 地籍管理局 (`cadastral_office`)
 
 #### 结构化内容效果
 
 - **黄金**（`good`）：`good.gold` → `production_access` `unlock` `1.0`；`existing_binding`
-- **砂金淘洗精炼棚**（`building`）：`building.gold_washing_refinery` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-- **银矿火试炉**（`building`）：`building.silver_fire_assay_hearth` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 

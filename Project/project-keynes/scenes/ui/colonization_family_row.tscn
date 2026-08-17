@@ -1,0 +1,68 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="1_icon"]
+[ext_resource type="PackedScene" path="res://scenes/ui/badge_row.tscn" id="2_badges"]
+[ext_resource type="Script" path="res://scripts/ui/components/colonization_family_row.gd" id="3_script"]
+
+[node name="ColonizationFamilyRow" type="Button"]
+custom_minimum_size = Vector2(0, 88)
+size_flags_horizontal = 3
+focus_mode = 0
+mouse_default_cursor_shape = 2
+theme_type_variation = &"PKTabButton"
+script = ExtResource("3_script")
+
+[node name="Margin" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 1
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 8
+
+[node name="Line" type="HBoxContainer" parent="Margin"]
+layout_mode = 2
+mouse_filter = 1
+theme_override_constants/separation = 10
+
+[node name="Icon" parent="Margin/Line" instance=ExtResource("1_icon")]
+custom_minimum_size = Vector2(28, 28)
+layout_mode = 2
+size_flags_vertical = 0
+mouse_filter = 2
+
+[node name="Info" type="VBoxContainer" parent="Margin/Line"]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 1
+theme_override_constants/separation = 2
+
+[node name="Name" type="Label" parent="Margin/Line/Info"]
+layout_mode = 2
+mouse_filter = 2
+theme_type_variation = &"PKSectionTitle"
+text_overrun_behavior = 3
+
+[node name="Badges" parent="Margin/Line/Info" instance=ExtResource("2_badges")]
+layout_mode = 2
+mouse_filter = 1
+
+[node name="Effect" type="Label" parent="Margin/Line/Info"]
+layout_mode = 2
+mouse_filter = 2
+text_overrun_behavior = 3
+theme_type_variation = &"PKMutedLabel"
+
+[node name="Population" type="Label" parent="Margin/Line"]
+custom_minimum_size = Vector2(72, 0)
+layout_mode = 2
+size_flags_vertical = 1
+mouse_filter = 2
+horizontal_alignment = 2
+vertical_alignment = 1
+text = "0"

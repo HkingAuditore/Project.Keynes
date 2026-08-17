@@ -1796,15 +1796,34 @@ bool EffectRuntime::instance_fire_acked_pod(int64_t instance_id,
     if (index < 0 || index >= static_cast<int32_t>(_instances.size())) return false;
     const Instance &instance = _instances[static_cast<size_t>(index)];
     if (instance.generation != generation || instance.fire_sequence == 0) return false;
-    // A fire is considered domain-complete only after no non-terminal
-    // transaction for the current instance generation remains. ACKED rows may
-    // already have been compacted, so fire_sequence is the durable evidence.
+    // A fire is domain-complete when nothing is still in flight. ACKED rows may
+    // already have been compacted, so fire_sequence is the durable evidence of
+    // a successful path. REJECTED rows must not poison a later ACKED fire.
+    bool saw_acked = false;
+    bool saw_rejected = false;
     for (const Transaction &transaction : _transactions) {
         if (transaction.source_instance_id != instance_id ||
             transaction.source_generation != generation) continue;
         if (transaction.status != ACKED && transaction.status != REJECTED) return false;
-        if (transaction.status == REJECTED) return false;
+        if (transaction.status == ACKED) saw_acked = true;
+        else saw_rejected = true;
     }
+    if (saw_acked) return true;
+    if (saw_rejected) return false;
+    return true;
+}
+
+bool EffectRuntime::nudge_unacked_instance_pod(int64_t instance_id,
+                                               uint32_t generation,
+                                               int64_t day_index) {
+    const int32_t index = instance_index_for_id(instance_id);
+    if (index < 0 || index >= static_cast<int32_t>(_instances.size())) return false;
+    Instance &instance = _instances[static_cast<size_t>(index)];
+    if (instance.generation != generation || instance.active == 0) return false;
+    if (instance_fire_acked_pod(instance_id, generation)) return true;
+    instance.next_due_day = day_index;
+    mark_dirty(index);
+    schedule_instance(index, day_index);
     return true;
 }
 
@@ -2008,7 +2027,7 @@ bool EffectRuntime::enqueue_family_colonization_pod(
         uint64_t country_handle, uint32_t country_generation,
         uint64_t expedition_handle, uint32_t expedition_generation,
         int32_t target_cell, uint64_t fire_sequence, std::string &error,
-        int64_t *out_transaction_id) {
+        int64_t *out_transaction_id, bool claim_unowned) {
     if (!_configured) { error = "effect_runtime_unconfigured"; return false; }
     if (effect_id <= 0 || effective_day < 0 || country_handle == 0 ||
         country_generation == 0 || expedition_handle == 0 ||
@@ -2018,11 +2037,20 @@ bool EffectRuntime::enqueue_family_colonization_pod(
     }
     const uint64_t base_key = make_hash(static_cast<uint64_t>(effect_id),
         expedition_generation, fire_sequence, 0x434f4c4fU);
+    const uint64_t settle_key = make_hash(static_cast<uint64_t>(effect_id),
+        expedition_generation, fire_sequence, 1);
     for (const Transaction &existing : _transactions) {
-        const Command *first = command_at(existing, 0);
-        if (first != nullptr && first->idempotency_key == base_key) {
-            if (out_transaction_id != nullptr) *out_transaction_id = existing.id;
-            return true;
+        if (existing.program_id != -1 ||
+            existing.source_generation != expedition_generation) continue;
+        for (uint32_t ordinal = 0; ordinal < existing.command_count; ++ordinal) {
+            const Command *command = command_at(existing, ordinal);
+            if (command == nullptr) continue;
+            if (command->idempotency_key == base_key ||
+                command->idempotency_key == settle_key) {
+                if (out_transaction_id != nullptr)
+                    *out_transaction_id = existing.id;
+                return true;
+            }
         }
     }
     if (static_cast<int32_t>(_transactions.size()) >= _max_transactions) {
@@ -2039,17 +2067,19 @@ bool EffectRuntime::enqueue_family_colonization_pod(
     transaction.program_id = -1;
     transaction.effective_day = effective_day;
 
-    Command claim;
-    claim.action = COUNTRY_COMMAND;
-    claim.domain = 7;
-    claim.opcode = NativeCountryRuntime::COMMAND_CLAIM_UNOWNED_TERRITORY;
-    claim.target_handle = country_handle;
-    claim.target_generation = country_generation;
-    claim.command_key_id = -1;
-    claim.command_definition_id = -1;
-    claim.payload[0] = static_cast<int64_t>(static_cast<uint32_t>(target_cell));
-    claim.idempotency_key = base_key;
-    append_command(transaction, claim);
+    if (claim_unowned) {
+        Command claim;
+        claim.action = COUNTRY_COMMAND;
+        claim.domain = 7;
+        claim.opcode = NativeCountryRuntime::COMMAND_CLAIM_UNOWNED_TERRITORY;
+        claim.target_handle = country_handle;
+        claim.target_generation = country_generation;
+        claim.command_key_id = -1;
+        claim.command_definition_id = -1;
+        claim.payload[0] = static_cast<int64_t>(static_cast<uint32_t>(target_cell));
+        claim.idempotency_key = base_key;
+        append_command(transaction, claim);
+    }
 
     Command settle;
     settle.action = ECONOMY_COMMAND;
@@ -2061,10 +2091,11 @@ bool EffectRuntime::enqueue_family_colonization_pod(
     settle.command_definition_id = -1;
     settle.payload[0] = static_cast<int64_t>(static_cast<uint32_t>(target_cell));
     settle.payload[1] = static_cast<int64_t>(country_handle);
-    settle.idempotency_key = make_hash(static_cast<uint64_t>(effect_id),
-        expedition_generation, fire_sequence, 1);
+    settle.payload[2] = claim_unowned ? 1 : 0;
+    settle.idempotency_key = settle_key;
     append_command(transaction, settle);
-    if (transaction.command_count != 2) {
+    const uint32_t expected_commands = claim_unowned ? 2U : 1U;
+    if (transaction.command_count != expected_commands) {
         error = "family_colonization_transaction_capacity_exceeded";
         return false;
     }
@@ -2090,6 +2121,33 @@ bool EffectRuntime::enqueue_family_colonization_pod(
     index_transaction_commands(_transactions.back());
     if (out_transaction_id != nullptr) *out_transaction_id = _transactions.back().id;
     return true;
+}
+
+uint64_t EffectRuntime::family_colonization_settle_idempotency_key(
+        int64_t effect_id, uint32_t expedition_generation,
+        uint64_t fire_sequence) const {
+    return make_hash(static_cast<uint64_t>(effect_id), expedition_generation,
+                     fire_sequence, 1);
+}
+
+bool EffectRuntime::family_colonization_includes_claim(
+        int64_t transaction_id) const {
+    const int32_t index = transaction_index_for_id(transaction_id);
+    if (index < 0) return false;
+    const Transaction &transaction = _transactions[static_cast<size_t>(index)];
+    if (transaction.program_id != -1) return false;
+    for (uint32_t ordinal = 0; ordinal < transaction.command_count; ++ordinal) {
+        const Command *command = command_at(transaction, ordinal);
+        if (command == nullptr) continue;
+        if (command->action == COUNTRY_COMMAND &&
+            command->opcode == NativeCountryRuntime::COMMAND_CLAIM_UNOWNED_TERRITORY)
+            return true;
+        if (command->action == ECONOMY_COMMAND &&
+            command->opcode == NativeEconomyRuntime::COMMAND_SETTLE_FAMILY_EXPEDITION &&
+            command->payload[2] != 0)
+            return true;
+    }
+    return false;
 }
 
 bool EffectRuntime::enqueue_canal_commit_pod(
@@ -3889,7 +3947,9 @@ Dictionary EffectRuntime::dispatch_native_economy(NativeEconomyRuntime *economy_
             const uint64_t packed_i32 = static_cast<uint64_t>(command->payload[0]);
             native.i32_0 = static_cast<int32_t>(packed_i32 & 0xffffffffULL);
             native.i32_1 = static_cast<int32_t>((packed_i32 >> 32U) & 0xffffffffULL);
-            native.i64_0 = command->value_q16;
+            native.i64_0 = command->opcode ==
+                NativeEconomyRuntime::COMMAND_SETTLE_FAMILY_EXPEDITION
+                ? command->payload[2] : command->value_q16;
             native.i64_1 = command->payload[1];
             native.idempotency_key = command->idempotency_key;
             commands.push_back(native);
@@ -4896,19 +4956,31 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
             ++transaction.command_count;
         }
         if (builtin_family_colonization) {
-            if (transaction.command_count != 2)
+            const Command *first = transaction.command_count > 0
+                ? &restored_command_arena[transaction.command_begin] : nullptr;
+            const bool settle_only = transaction.command_count == 1 &&
+                first != nullptr && first->action == ECONOMY_COMMAND &&
+                first->domain == 8 &&
+                first->opcode == NativeEconomyRuntime::COMMAND_SETTLE_FAMILY_EXPEDITION &&
+                first->command_key_id == -1 && first->command_definition_id == -1;
+            const bool claim_and_settle = transaction.command_count == 2;
+            if (settle_only) {
+                // Own-country relocation: Economy SETTLE only.
+            } else if (claim_and_settle) {
+                const Command &claim = restored_command_arena[transaction.command_begin];
+                const Command &settle = restored_command_arena[transaction.command_begin + 1];
+                if (claim.action != COUNTRY_COMMAND || claim.domain != 7 ||
+                    claim.opcode != NativeCountryRuntime::COMMAND_CLAIM_UNOWNED_TERRITORY ||
+                    claim.command_key_id != -1 || claim.command_definition_id != -1 ||
+                    settle.action != ECONOMY_COMMAND || settle.domain != 8 ||
+                    settle.opcode != NativeEconomyRuntime::COMMAND_SETTLE_FAMILY_EXPEDITION ||
+                    settle.command_key_id != -1 || settle.command_definition_id != -1 ||
+                    claim.target_handle != settle.payload[1] ||
+                    claim.payload[0] != settle.payload[0])
+                    return failure("pkef_colonization_transaction_shape_invalid");
+            } else {
                 return failure("pkef_colonization_transaction_shape_invalid");
-            const Command &claim = restored_command_arena[transaction.command_begin];
-            const Command &settle = restored_command_arena[transaction.command_begin + 1];
-            if (claim.action != COUNTRY_COMMAND || claim.domain != 7 ||
-                claim.opcode != NativeCountryRuntime::COMMAND_CLAIM_UNOWNED_TERRITORY ||
-                claim.command_key_id != -1 || claim.command_definition_id != -1 ||
-                settle.action != ECONOMY_COMMAND || settle.domain != 8 ||
-                settle.opcode != NativeEconomyRuntime::COMMAND_SETTLE_FAMILY_EXPEDITION ||
-                settle.command_key_id != -1 || settle.command_definition_id != -1 ||
-                claim.target_handle != settle.payload[1] ||
-                claim.payload[0] != settle.payload[0])
-                return failure("pkef_colonization_transaction_shape_invalid");
+            }
         } else if (builtin_canal_commit) {
             if (transaction.command_count != 1)
                 return failure("pkef_canal_transaction_shape_invalid");

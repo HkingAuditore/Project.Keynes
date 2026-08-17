@@ -302,6 +302,23 @@ func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
 	if id == COMMAND_CONSTRUCTION_BUILD and bool(result.get("ok", false)):
 		result["code"] = "queued"
 		result["message"] = "修建命令已排队，将在下一个经济结算边界执行。"
+	if (id == COMMAND_FAMILY_COLONIZATION_START or \
+			id == COMMAND_FAMILY_COLONIZATION_CANCEL) \
+			and bool(result.get("ok", false)):
+		var queued_code := String(result.get("code", ""))
+		if queued_code == "colonization_queued":
+			result["message"] = "派遣已排队，将在经济结算完成后出发。"
+		elif queued_code == "colonization_cancel_queued":
+			result["message"] = "取消已排队，将在经济结算完成后执行。"
+	if (id == COMMAND_FAMILY_COLONIZATION_START or \
+			id == COMMAND_FAMILY_COLONIZATION_CANCEL) \
+			and not bool(result.get("ok", false)):
+		var colonize_code := String(result.get("code", ""))
+		if colonize_code == "economy_busy_retry":
+			result["message"] = "经济正在结算。可先排队，提交完成后会自动%s。" % \
+				("派遣" if id == COMMAND_FAMILY_COLONIZATION_START else "取消")
+		elif String(result.get("message", "")).strip_edges().is_empty():
+			result["message"] = _colonization_command_message(colonize_code)
 	if not result.has("message"):
 		result["message"] = String(result.get("reason", ""))
 	result["effective_day"] = effective_day
@@ -346,6 +363,18 @@ func get_family_expedition_snapshot(expedition_handle: int) -> Dictionary:
 		return ready
 	return _economy_facade.family_expedition_snapshot(_player_country_handle,
 		expedition_handle)
+
+
+func get_family_snapshot(family_handle: int) -> Dictionary:
+	if _economy_facade == null:
+		return _result(false, "runtime_unavailable", "经济运行时尚未就绪。")
+	return _economy_facade.family_snapshot(family_handle)
+
+
+func get_family_traits(family_handle: int) -> Dictionary:
+	if _economy_facade == null:
+		return _result(false, "runtime_unavailable", "经济运行时尚未就绪。")
+	return _economy_facade.get_family_traits(family_handle)
 
 
 func is_player_owned_cell(cell: int) -> bool:
@@ -810,6 +839,22 @@ func _validate_owned_cell(facade, cell: int) -> Dictionary:
 
 func _next_effective_day() -> int:
 	return maxi(0, _world_clock.day_index() + 1) if _world_clock != null else 0
+
+
+static func _colonization_command_message(code: String) -> String:
+	return {
+		"economy_busy_retry": "经济正在结算。可先排队，提交完成后会自动派遣。",
+		"colonization_queued": "派遣已排队，将在经济结算完成后出发。",
+		"colonization_cancel_queued": "取消已排队，将在经济结算完成后执行。",
+		"economy_paused": "经济已因守恒失败暂停，无法派遣。",
+		"economy_not_available": "经济运行时尚未就绪。",
+		"colonization_requote_required": "地图、视野或领土已经变化，请重新确认报价。",
+		"colonization_population_insufficient": "源分支人口不足，必须至少留下一人。",
+		"colonization_duplicate_target": "本国已有一支开拓队前往该目标。",
+		"colonization_family_cell_capacity": "目标地块的家族数量已达上限。",
+		"colonization_expedition_invalid": "开拓队已结束或句柄已过期。",
+		"colonization_command_invalid": "开拓命令参数不完整。",
+	}.get(code, "当前无法执行开拓。")
 
 
 func _complete_command(id: StringName, result: Dictionary) -> Dictionary:

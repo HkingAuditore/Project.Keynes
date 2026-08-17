@@ -11,6 +11,9 @@ const DEFAULT_PROFILE_PATH := "res://data/economy/default_economy.tres"
 const GOOD_PROFILE_DIR := "res://data/goods"
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const EconomyProfileScript = preload("res://scripts/data/economy_profile.gd")
+const FamilyTraitCatalogScript = preload("res://scripts/family/family_trait_catalog.gd")
+const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
+const TriggerCatalogScript = preload("res://scripts/trigger/trigger_catalog.gd")
 ## 与原生 SAT_DIM_* 枚举同序，供 Inspector 与溯源面板直接展示。
 const SATISFACTION_DIMENSION_NAMES := [
 	"温饱", "基本生活", "舒适", "奢侈", "收入增长", "储蓄", "税负", "社会发展",
@@ -49,6 +52,10 @@ var _ethnicity_display_names: Dictionary = {}
 var _building_display_names: Dictionary = {}
 var _need_display_names: Dictionary = {}
 var _good_display_names: Dictionary = {}
+var _family_trait_descriptions: Dictionary = {}
+var _family_trait_effect_keys: Dictionary = {}
+var _family_modifier_displays: Dictionary = {}
+var _family_trigger_displays: Dictionary = {}
 var _family_trait_sequence: int = 0
 var _construction_receipt_cursor: int = 0
 var _colonization_receipt_cursors: Dictionary = {}
@@ -73,6 +80,7 @@ func configure(world_ext: Object, cell_count: int, seed: int, profile = null) ->
 	_building_display_names = _load_display_names(EconomyCatalogScript.BUILDING_DIR)
 	_need_display_names = EconomyCatalogScript.need_display_names()
 	_good_display_names = _load_display_names(GOOD_PROFILE_DIR)
+	_load_family_effect_displays()
 	var result: Dictionary = _world_ext.configure_economy(
 		native_catalog, _profile.to_native_profile(), cell_count, seed)
 	_configured = bool(result.get("ok", false))
@@ -557,9 +565,9 @@ func dispatch_family_colonization_receipts(country_handle: int) -> void:
 	for raw in page.get("receipts", []):
 		var result: Dictionary = raw
 		result["country_handle"] = country_handle
-		result["ok"] = true
-		result["message"] = _colonization_result_message(
-			String(result.get("code", "")))
+		var code := String(result.get("code", ""))
+		result["ok"] = not code.begins_with("colonization_")
+		result["message"] = _colonization_result_message(code)
 		family_colonization_settled.emit(result)
 	_colonization_receipt_cursors[country_handle] = maxi(cursor,
 		int(page.get("last_receipt_id", cursor)))
@@ -571,7 +579,12 @@ static func _colonization_result_message(code: String) -> String:
 		"CANCELLED_RETURNING": "开拓已取消，队伍正在返程。",
 		"TARGET_LOST_RETURNING": "目标已被占领，队伍正在返程。",
 		"CLAIMED": "开拓成功，目标已纳入领土。",
+		"RELOCATED": "迁徙成功，人员已并入目标地块。",
 		"RETURNED": "开拓队已返回原出发地。",
+		"colonization_requote_required": "地图、视野或领土已变化，排队派遣未能出发。",
+		"colonization_population_insufficient": "结算时源分支人口已不足，排队派遣未能出发。",
+		"colonization_duplicate_target": "本国已有队伍前往该目标，排队派遣未能出发。",
+		"colonization_family_cell_capacity": "目标地块家族已满，排队派遣未能出发。",
 	}.get(code, "开拓队状态已更新。")
 
 
@@ -650,6 +663,9 @@ func get_family_traits(family_handle: int) -> Dictionary:
 		display_names.append(String(names.get(stable_id, stable_id)))
 	snapshot["behavior_selector_stable_ids"] = stable_ids
 	snapshot["behavior_selector_display_names"] = display_names
+	var trait_keys: PackedStringArray = snapshot.get("trait_keys", PackedStringArray())
+	snapshot["descriptions"] = _family_trait_description_column(trait_keys)
+	snapshot["effect_display_names"] = _family_trait_effect_display_names(trait_keys)
 	return snapshot
 
 
@@ -662,7 +678,23 @@ func family_branches(family_handle: int, offset: int = 0, limit: int = 64) -> Di
 func get_family_branch_effects(family_handle: int, cell_idx: int) -> Dictionary:
 	if not _configured or not _world_ext.has_method("get_family_branch_effects"):
 		return {"ok": false, "reason": "family_trait_runtime_unavailable"}
-	return _world_ext.get_family_branch_effects(family_handle, cell_idx)
+	var snapshot: Dictionary = _world_ext.get_family_branch_effects(
+		family_handle, cell_idx)
+	if not bool(snapshot.get("ok", false)):
+		return snapshot
+	var modifier_keys: PackedStringArray = snapshot.get(
+		"modifier_definition_keys", PackedStringArray())
+	snapshot["modifier_display_names"] = _mapped_effect_names(
+		modifier_keys, _family_modifier_displays)
+	snapshot["modifier_descriptions"] = _mapped_effect_descriptions(
+		modifier_keys, _family_modifier_displays)
+	var trigger_keys: PackedStringArray = snapshot.get(
+		"trigger_definition_keys", PackedStringArray())
+	snapshot["trigger_display_names"] = _mapped_effect_names(
+		trigger_keys, _family_trigger_displays)
+	snapshot["trigger_descriptions"] = _mapped_effect_descriptions(
+		trigger_keys, _family_trigger_displays)
+	return snapshot
 
 
 func queue_family_trait_mutation(family_handle: int, operation: Variant,
@@ -1223,6 +1255,115 @@ func _attach_population_display_metadata(snapshot: Dictionary) -> void:
 			String(stable_id), String(stable_id))))
 	snapshot["profession_display_names"] = profession_names
 	snapshot["ethnicity_display_names"] = ethnicity_names
+
+
+func _load_family_effect_displays() -> void:
+	_family_trait_descriptions.clear()
+	_family_trait_effect_keys.clear()
+	_family_modifier_displays.clear()
+	_family_trigger_displays.clear()
+	var trait_catalog = FamilyTraitCatalogScript.load_default()
+	if trait_catalog != null:
+		for definition in trait_catalog.traits:
+			if definition == null:
+				continue
+			var trait_key := String(definition.key).strip_edges()
+			if trait_key.is_empty():
+				continue
+			_family_trait_descriptions[trait_key] = String(
+				definition.description).strip_edges()
+			var effect_keys := PackedStringArray()
+			var seen := {}
+			for effect in definition.modifiers:
+				if effect == null:
+					continue
+				var modifier_key := String(effect.definition_key).strip_edges()
+				if modifier_key.is_empty() or seen.has(modifier_key):
+					continue
+				seen[modifier_key] = true
+				effect_keys.append(modifier_key)
+			for binding in definition.triggers:
+				if binding == null:
+					continue
+				for raw_key in binding.definition_keys_by_tier:
+					var trigger_key := String(raw_key).strip_edges()
+					if trigger_key.is_empty() or seen.has(trigger_key):
+						continue
+					seen[trigger_key] = true
+					effect_keys.append(trigger_key)
+			_family_trait_effect_keys[trait_key] = effect_keys
+	var modifier_catalog = ModifierCatalogScript.load_default()
+	if modifier_catalog != null:
+		for definition in modifier_catalog.definitions:
+			_store_effect_display(_family_modifier_displays, definition)
+	var trigger_catalog = TriggerCatalogScript.load_default()
+	if trigger_catalog != null:
+		for definition in trigger_catalog.definitions:
+			_store_effect_display(_family_trigger_displays, definition)
+
+
+static func _store_effect_display(table: Dictionary, definition: Resource) -> void:
+	if definition == null:
+		return
+	var key := String(definition.get("key")).strip_edges()
+	if key.is_empty():
+		return
+	table[key] = {
+		"display_name": String(definition.get("display_name")).strip_edges(),
+		"description": String(definition.get("description")).strip_edges(),
+	}
+
+
+func _family_trait_description_column(trait_keys: PackedStringArray) -> PackedStringArray:
+	var descriptions := PackedStringArray()
+	for trait_key in trait_keys:
+		descriptions.append(String(_family_trait_descriptions.get(String(trait_key), "")))
+	return descriptions
+
+
+func _family_trait_effect_display_names(trait_keys: PackedStringArray) -> PackedStringArray:
+	var names := PackedStringArray()
+	var seen := {}
+	for trait_key in trait_keys:
+		var effect_keys: PackedStringArray = _family_trait_effect_keys.get(
+			String(trait_key), PackedStringArray())
+		for effect_key in effect_keys:
+			var display := _effect_display_name(String(effect_key))
+			if display.is_empty() or seen.has(display):
+				continue
+			seen[display] = true
+			names.append(display)
+	return names
+
+
+func _effect_display_name(effect_key: String) -> String:
+	var modifier: Dictionary = _family_modifier_displays.get(effect_key, {})
+	var modifier_name := String(modifier.get("display_name", ""))
+	if not modifier_name.is_empty():
+		return modifier_name
+	var trigger: Dictionary = _family_trigger_displays.get(effect_key, {})
+	var trigger_name := String(trigger.get("display_name", ""))
+	if not trigger_name.is_empty():
+		return trigger_name
+	return ""
+
+
+func _mapped_effect_names(keys: PackedStringArray, table: Dictionary) -> PackedStringArray:
+	var names := PackedStringArray()
+	for key in keys:
+		var entry: Dictionary = table.get(String(key), {})
+		var display := String(entry.get("display_name", "")).strip_edges()
+		names.append(display if not display.is_empty() else String(key))
+	return names
+
+
+func _mapped_effect_descriptions(keys: PackedStringArray, table: Dictionary) -> PackedStringArray:
+	var descriptions := PackedStringArray()
+	for key in keys:
+		var entry: Dictionary = table.get(String(key), {})
+		descriptions.append(String(entry.get("description", "")).strip_edges())
+	return descriptions
+
 
 static func _load_display_names(directory: String) -> Dictionary:
 	var result := {}

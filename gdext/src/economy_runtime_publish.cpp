@@ -114,6 +114,14 @@ bool NativeEconomyRuntime::publish_epoch_slice(
         if (_publish_cursor >= _population.active.size()) {
             _closing_totals.country_cash =
                 _country_runtime == nullptr ? 0 : _country_runtime->total_cash();
+            int64_t expedition_population = 0;
+            for (int32_t expedition = 0; expedition < static_cast<int32_t>(
+                    _family_expeditions.active.size()); ++expedition) {
+                if (_family_expeditions.active[expedition] == 0) continue;
+                expedition_population += _family_expeditions.population[expedition];
+            }
+            _closing_totals.transit_population = expedition_population;
+            _closing_totals.population += expedition_population;
             _publish_cursor = 0;
             _publish_phase = PublishPhase::AUDIT_MARKET;
         }
@@ -267,6 +275,18 @@ bool NativeEconomyRuntime::publish_epoch_slice(
         }
         work_done += static_cast<int64_t>(end - start);
         if (_publish_cursor >= _trade_orders.cash_escrow.size()) {
+            int64_t expedition_population = 0;
+            int64_t expedition_funds = 0;
+            sum_family_expedition_holdings(expedition_population,
+                                           expedition_funds,
+                                           _publish_valuation_sat);
+            _closing_totals.expedition_funds = expedition_funds;
+            _closing_totals.escrow_cash = saturating_add(
+                _closing_totals.escrow_cash, expedition_funds,
+                _publish_valuation_sat);
+            _closing_totals.escrow_cash = saturating_add(
+                _closing_totals.escrow_cash, fiscal_escrow_total(),
+                _publish_valuation_sat);
             _publish_cursor = 0;
             _publish_phase = PublishPhase::AUDIT_COUNTRY;
         }

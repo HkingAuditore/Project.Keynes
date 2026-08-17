@@ -1865,6 +1865,14 @@ func gameplay_start_report() -> Dictionary:
 	return _gameplay_start_report.duplicate(true)
 
 
+func _gameplay_start_has_resource_topups(report: Dictionary) -> bool:
+	for start_value in report.get("country_starts", []):
+		var start: Dictionary = start_value
+		if not (start.get("resource_topups", {}) as Dictionary).is_empty():
+			return true
+	return false
+
+
 func _build_gameplay_country_packet() -> Dictionary:
 	if _country_facade == null or _gameplay_start_context.is_empty():
 		return {}
@@ -2102,6 +2110,9 @@ func _continue_economy_inflight(day_index: int) -> void:
 				return
 			if bool(_country_facade.world_ext().country_should_run(day_index)):
 				continue
+		# Country may have registered a technology Effect instance after the
+		# morning Effect slot. Drain the ACK chain before Economy freezes.
+		_drain_native_effect_ack_chain(ctx)
 		if _world_clock_ref != null:
 			_world_clock_ref.request_simulation_backpressure(&"country_day_barrier", false)
 		if _economy_daily_job == null or _economy_facade == null:
@@ -2319,6 +2330,9 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 		if not bool(_gameplay_start_report.get("ok", false)):
 			return
 		_gameplay_start_context.merge(_gameplay_start_report, true)
+		if _gameplay_start_has_resource_topups(_gameplay_start_report):
+			_append_natural_resource_research_signals(map)
+			_publish_bootstrapped_natural_resources_to_runtime(map)
 	# ─── Phase F.1：DCWorldExt 接管 weather field solve（charter §7 P0）──
 	# 把 ext 句柄一次性下发给 WeatherSystem。ext 为 null（gdext 未编译 / 未 bind）
 	# 时 WeatherSystem 自动走 GDScript legacy path，对 caller 完全透明。
@@ -2614,16 +2628,10 @@ func restore_environment_runtime_state(state: Dictionary) -> Dictionary:
 	return result
 
 
-func advance_save_boundary() -> void:
-	# Save requests freeze the clock.  Drain the same ordered native Effect
-	# chain that a normal daily SUS tick would run before continuing Country and
-	# Economy at their own safe boundaries.  This keeps PKEF, PKCN, PKEC and the
-	# gameplay journal from being captured on opposite sides of an ACK.
-	if _world_clock_ref == null or _sus == null:
+func _drain_native_effect_ack_chain(ctx: SusTickContext) -> void:
+	if _sus == null or ctx == null:
 		return
-	var day: int = _world_clock_ref.day_index()
-	var ctx := SusTickContext.make(day, day, _world_clock_ref.speed_multiplier,
-		1.0, &"save_boundary")
+	var day := int(ctx.day_index)
 	if _trigger_daily_job != null and _trigger_facade != null and \
 			bool(_trigger_facade.world_ext().trigger_should_run(day)):
 		_sus.continue_system(&"trigger_runtime", ctx)
@@ -2640,6 +2648,19 @@ func advance_save_boundary() -> void:
 			_effect_facade.world_ext().has_method("gameplay_effect_should_run") and \
 			bool(_effect_facade.world_ext().gameplay_effect_should_run(day)):
 		_sus.continue_system(&"gameplay_effect", ctx)
+
+
+func advance_save_boundary() -> void:
+	# Save requests freeze the clock.  Drain the same ordered native Effect
+	# chain that a normal daily SUS tick would run before continuing Country and
+	# Economy at their own safe boundaries.  This keeps PKEF, PKCN, PKEC and the
+	# gameplay journal from being captured on opposite sides of an ACK.
+	if _world_clock_ref == null or _sus == null:
+		return
+	var day: int = _world_clock_ref.day_index()
+	var ctx := SusTickContext.make(day, day, _world_clock_ref.speed_multiplier,
+		1.0, &"save_boundary")
+	_drain_native_effect_ack_chain(ctx)
 	_continue_economy_inflight(day)
 
 
@@ -10202,6 +10223,8 @@ func _bio_occupancy_base_knobs(map_ref: MapData) -> Dictionary:
 		"species_flags": catalog.get("research_bio_flags", PackedInt32Array()),
 		"species_max_cost": catalog.get("research_bio_max_cost", PackedInt32Array()),
 		"species_fill_keep": catalog.get("research_bio_fill_keep", PackedFloat32Array()),
+		"species_origin_policy": catalog.get("research_bio_origin_policy", PackedInt32Array()),
+		"species_guild": catalog.get("research_bio_guild", PackedInt32Array()),
 		"carrier_reserves": columns,
 	}
 
@@ -10293,8 +10316,10 @@ func _log_bio_occupancy_seed(knobs: Dictionary, seed_res: Dictionary, landmass_c
 	var occupied: PackedInt32Array = seed_res.get("occupied_cell_counts", PackedInt32Array())
 	var origins: PackedInt32Array = seed_res.get("origin_landmass_ids", PackedInt32Array())
 	var seeded: PackedInt32Array = seed_res.get("seeded_landmass_counts", PackedInt32Array())
-	print("[bio-occupancy] seed landmasses=%d provinces=%d species=%d" % [
-		landmass_count, province_count, signal_ids.size()])
+	var hearths: PackedInt32Array = seed_res.get("hearth_cell_counts", PackedInt32Array())
+	print("[bio-occupancy] seed landmasses=%d provinces=%d species=%d secondary_hearths=%d" % [
+		landmass_count, province_count, signal_ids.size(),
+		int(seed_res.get("secondary_hearth_count", 0))])
 	for i in range(signal_ids.size()):
 		var sid := int(signal_ids[i])
 		var name := String(ids[sid]) if sid >= 0 and sid < ids.size() else "?"
@@ -10303,8 +10328,36 @@ func _log_bio_occupancy_seed(knobs: Dictionary, seed_res: Dictionary, landmass_c
 		var occ_n := int(occupied[i]) if i < occupied.size() else 0
 		var origin_id := int(origins[i]) if i < origins.size() else 0
 		var seeded_n := int(seeded[i]) if i < seeded.size() else 0
-		print("[bio-occupancy]   %s envelope=%d seeded_landmasses=%d primary_landmass=%d primary_envelope=%d occupied=%d" % [
-			name, env_n, seeded_n, origin_id, origin_n, occ_n])
+		var hearth_n := int(hearths[i]) if i < hearths.size() else occ_n
+		print("[bio-occupancy]   %s envelope=%d hearth=%d seeded_landmasses=%d primary_landmass=%d primary_envelope=%d occupied=%d" % [
+			name, env_n, hearth_n, seeded_n, origin_id, origin_n, occ_n])
+	var occupancy: PackedInt32Array = seed_res.get("occupancy_bits", PackedInt32Array())
+	var landmass: PackedInt32Array = knobs.get("landmass_ids", PackedInt32Array())
+	var food_bits: Array[int] = []
+	for food_id in ["bio.maize", "bio.wheat", "bio.rice", "bio.potato"]:
+		food_bits.append(ResearchSignalCatalogScript.occupancy_bit_for_signal(catalog, StringName(food_id)))
+	var seen := {}
+	for cell in range(mini(occupancy.size(), landmass.size())):
+		var lid := int(landmass[cell])
+		if lid <= 0 or seen.has(lid):
+			continue
+		seen[lid] = true
+		var foods: Array[String] = []
+		for other in range(occupancy.size()):
+			if int(landmass[other]) != lid:
+				continue
+			var bits := int(occupancy[other])
+			if bits == 0:
+				continue
+			if int(food_bits[0]) >= 0 and (bits & (1 << int(food_bits[0]))) != 0 and not foods.has("maize"):
+				foods.append("maize")
+			if int(food_bits[1]) >= 0 and (bits & (1 << int(food_bits[1]))) != 0 and not foods.has("wheat"):
+				foods.append("wheat")
+			if int(food_bits[2]) >= 0 and (bits & (1 << int(food_bits[2]))) != 0 and not foods.has("rice"):
+				foods.append("rice")
+			if int(food_bits[3]) >= 0 and (bits & (1 << int(food_bits[3]))) != 0 and not foods.has("potato"):
+				foods.append("potato")
+		print("[bio-occupancy]   landmass %d foods=%s" % [lid, ", ".join(foods) if not foods.is_empty() else "none"])
 
 
 func run_bio_occupancy_pass_native(map_ref, run_diffusion: bool = false, day_index: int = 0) -> Dictionary:

@@ -41,8 +41,9 @@ transient，不进入存档、state hash 或 event hash。
 
 - 资源 remaining/harvest/delta 使用 generation-stamped lane。本轮只初始化
   rolling settlement/building 可达 cell，并按 touched lane 构造发布结果。
-  production worker 在各自 `ProductionResult` 收集 touched lane，主线程按
-  升序 cell 结果合并，禁止多个 worker 并发扩容共享 touched vector。
+  production worker 在各自 `ProductionResult` 收集 touched lane 与
+  bio occupancy introductions，主线程按升序 cell 结果合并，禁止多个 worker
+  并发扩容共享 touched vector 或 `_bio_introduce_keys`。
 - CellSummary staging 使用 touched overlay；提交前保持 committed/staging
   隔离，失败时丢弃 overlay，成功 swap 后只同步上轮 touched cell。
 - country epoch 烘焙 country-major 的 good、profession、variant 和

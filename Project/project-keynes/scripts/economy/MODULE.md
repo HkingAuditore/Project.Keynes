@@ -130,9 +130,9 @@
 - 自适应工资的可负担上限使用当前冻结价格下的“满产日收入”，先扣除日投入并预留目标营业利润，再按员工槽位折算；不得再把整个 epoch 的收入直接当作单日工资依据。亏损停产建筑使用同一反事实日收入报价，停产期间岗位目标为零。
 - 国内贸易先取源地真实盈余与目的地缺口，再用确定性整数二分裁剪到交易后仍满足利润率的最大数量；relief 路线只要求交易后价差非负。发运前按最新库存、现金和运力再次裁剪，避免整批候选因一次过量报价被全部拒绝。
 - 商人不能拥有普通生产建筑。例外仅限金银 collector：必须只有一种金/银产出、只消耗严格对应的
-  金/银矿藏、使用 extract 模式且不生成资源；允许后期矿井拥有雇员和工具输入。
-  市场接受金银时按 `monetary_issue_value` 向业主发行货币，计入
-  `explicit_money_mint/bullion_money_issued`，不允许无资源铸币。
+  金/银矿藏、使用 extract 模式且不生成资源。石器期砂金与露天银矿由商人业主经营、可雇矿工、无商品投入；
+  市场按 `monetary_issue_value` 向业主全额发行货币，计入
+  `explicit_money_mint/bullion_money_issued`，不允许无资源铸币。后期工业金银矿仍由 industrialist 持有。
 - 国内贸易默认 ACTIVE，只沿同一冻结国家的可贸易地形运输；发运即托管源货物和目的商人现金，到达边界结算。
 - 生产周期固定为五日滚动相位；世界规模只改变每日到期桶的工作量，不再自动扩大周期。
 - 世界设置中的测试经济 fixture 默认关闭；启用时使用石器中期科技，只在可见资源能支撑配方的
@@ -257,14 +257,15 @@ PKEC save，restore 后在下一次成功生产前显示为未知。
   不参与 PKEC、catalog hash 或模拟权威；动态资金、库存、价格、自留与托底结果仍只能由 native runtime
   或 Inspector/录制数据验证。
 - 现代基线仍由 `tools/codegen/gen_modern_economy_content.ps1` 生成；脚本支持只读 `-Check`，以及
-  只读写 profession/need/plan 的 `-Scope Consumption`。当前全目录为 132 goods、348
+  只读写 profession/need/plan 的 `-Scope Consumption`。当前全目录为 130 goods、350
   production-method buildings、45 professions、17 needs 和 10 consumption plans。消费重平衡不改
   stable-ID 表或 PKEC v14 字节布局，但会改变 catalog hash，旧 hash 存档按现有 mismatch 路径拒绝。
 - `GoodProfile` 额外编译 category、可执行的 `tech.*` `technology_tags`、`stock/cycle_flow` 与金银发行面值；所有 Good 和生产方式至少有一个已知科技绑定，31 个 Resource 至少有一个 `discovery_technology_tags`，Profession 禁止直接持有 `tech.*`。目录同时生成科技反向内容 CSR 与严格 binding hash；其他标签命名空间仍只作元数据。
 - `BuildingProfile.economic_sector_id` 必须显式取 agriculture、extractive、manufacturing、energy
   或 knowledge；运行时继续编译为现有 dense sector 整数，不再按 collector 推断农场/矿场。建筑
   可以是 collector、industrial 或既有 service 类型，owner slots 固定为 1；31 个注册资源全部有
-  collector。merchant 业主例外覆盖所有严格匹配真实矿藏的纯金银 collector。
+  collector。merchant 业主例外覆盖所有严格匹配真实矿藏的纯金银 collector。`gold_ore`/`silver_ore`
+  只作为自然资源存在，不再进入 goods 目录；早期 collector 直接产出铸币 `gold`/`silver`。
 - 31 种资源受 `land/marine_water/freshwater/coastal_land/coastal_or_marine` habitat 门控；
   海鱼储量可存在于沿海陆格和海洋水格，二者各自属于所在 cell；河口及近岸营养只影响初始化
   适生度，不改变资源所有权。淡水鱼仍是可采集自然资源；河湖水系只发布

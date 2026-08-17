@@ -687,7 +687,7 @@
 					"display_name": "公共火塘"
 				}
 			],
-			"effect_summary": "解锁建筑：公共火塘；作为必要支撑：覆土木炭窑、砂金淘洗精炼棚、乳胶烟熏凝固棚、传知者议事圈、露天陶器烧造、银矿火试炉",
+			"effect_summary": "解锁建筑：公共火塘；作为必要支撑：覆土木炭窑、乳胶烟熏凝固棚、传知者议事圈、露天陶器烧造",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 1 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -710,10 +710,6 @@
 					"name": "覆土木炭窑"
 				},
 				{
-					"id": "gold_washing_refinery",
-					"name": "砂金淘洗精炼棚"
-				},
-				{
 					"id": "latex_smoking_shelter",
 					"name": "乳胶烟熏凝固棚"
 				},
@@ -724,10 +720,6 @@
 				{
 					"id": "open_pottery_hearth",
 					"name": "露天陶器烧造"
-				},
-				{
-					"id": "silver_fire_assay_hearth",
-					"name": "银矿火试炉"
 				}
 			],
 			"research_routes": [],
@@ -5804,7 +5796,7 @@
 			"expected_bindings": [
 				{
 					"kind": 1.0,
-					"id": "gold_ore"
+					"id": "gold"
 				},
 				{
 					"kind": 3.0,
@@ -5822,15 +5814,15 @@
 			"content_effects": [
 				{
 					"kind": "good",
-					"id": "gold_ore",
+					"id": "gold",
 					"binding_kind": 1.0,
-					"subject": "good.gold_ore",
+					"subject": "good.gold",
 					"attribute": "production_access",
 					"operation": "unlock",
 					"value": 1.0,
 					"implementation": "GoodProfile.technology_tags",
 					"status": "existing_binding",
-					"display_name": "含金砂矿"
+					"display_name": "黄金"
 				},
 				{
 					"kind": "building",
@@ -5869,10 +5861,10 @@
 					"display_name": "金矿"
 				}
 			],
-			"effect_summary": "解锁物资：含金砂矿；解锁建筑：河滩淘金场；解锁建筑：木槽溜洗场；可利用资源：金矿；作为必要支撑：砂金淘洗精炼棚",
+			"effect_summary": "解锁物资：黄金；解锁建筑：河滩淘金场；解锁建筑：木槽溜洗场；可利用资源：金矿",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 1 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
-			"terminal_reason": "粗陶淘金是铜、锡、有色金属与特种合金在当前目录中的应用端点，其终点效果由gold_ore、gold_ore、placer_gold_working、primitive_gold_sluice消费",
+			"terminal_reason": "粗陶淘金是铜、锡、有色金属与特种合金在当前目录中的应用端点，其终点效果由gold、gold_ore、placer_gold_working、primitive_gold_sluice消费",
 			"branch_family_id": "branch.nonferrous_metals",
 			"era_entry_milestone_id": "",
 			"reveal_category": "environment_observation",
@@ -5886,12 +5878,7 @@
 				"numeric_effect_policy": "explicit_only",
 				"non_numeric_consumers_allowed": true
 			},
-			"support_buildings": [
-				{
-					"id": "gold_washing_refinery",
-					"name": "砂金淘洗精炼棚"
-				}
-			],
+			"support_buildings": [],
 			"research_routes": [],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“粗陶淘金”的对象与处理阶段不同",
@@ -6011,10 +5998,6 @@
 					"id": "silver"
 				},
 				{
-					"kind": 1.0,
-					"id": "silver_ore"
-				},
-				{
 					"kind": 3.0,
 					"id": "silver_ore"
 				},
@@ -6039,18 +6022,6 @@
 					"implementation": "GoodProfile.technology_tags",
 					"status": "existing_binding",
 					"display_name": "白银"
-				},
-				{
-					"kind": "good",
-					"id": "silver_ore",
-					"binding_kind": 1.0,
-					"subject": "good.silver_ore",
-					"attribute": "production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "GoodProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "含银矿石"
 				},
 				{
 					"kind": "building",
@@ -6089,10 +6060,10 @@
 					"display_name": "银矿"
 				}
 			],
-			"effect_summary": "解锁物资：白银；解锁物资：含银矿石；解锁建筑：浅坑银矿作业；解锁建筑：露天银矿；可利用资源：银矿；作为必要支撑：银矿火试炉",
+			"effect_summary": "解锁物资：白银；解锁建筑：浅坑银矿作业；解锁建筑：露天银矿；可利用资源：银矿",
 			"opportunity_cost": "占用通用研究预算，延后同代专业路线锚点",
 			"application_target_ids": [],
-			"terminal_reason": "地表银矿拣采是铜、锡、有色金属与特种合金在当前目录中的应用端点，其终点效果由silver、silver_ore、silver_ore、shallow_silver_working、surface_silver_working消费",
+			"terminal_reason": "地表银矿拣采是铜、锡、有色金属与特种合金在当前目录中的应用端点，其终点效果由silver、silver_ore、shallow_silver_working、surface_silver_working消费",
 			"branch_family_id": "branch.nonferrous_metals",
 			"era_entry_milestone_id": "",
 			"reveal_category": "general_knowledge",
@@ -6108,12 +6079,7 @@
 				"numeric_effect_policy": "explicit_only",
 				"non_numeric_consumers_allowed": true
 			},
-			"support_buildings": [
-				{
-					"id": "silver_fire_assay_hearth",
-					"name": "银矿火试炉"
-				}
-			],
+			"support_buildings": [],
 			"research_routes": [],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“地表银矿拣采”的对象与处理阶段不同",
@@ -16081,14 +16047,6 @@
 				{
 					"kind": 1.0,
 					"id": "gold"
-				},
-				{
-					"kind": 2.0,
-					"id": "gold_washing_refinery"
-				},
-				{
-					"kind": 2.0,
-					"id": "silver_fire_assay_hearth"
 				}
 			],
 			"content_effects": [
@@ -16103,33 +16061,9 @@
 					"implementation": "GoodProfile.technology_tags",
 					"status": "existing_binding",
 					"display_name": "黄金"
-				},
-				{
-					"kind": "building",
-					"id": "gold_washing_refinery",
-					"binding_kind": 2.0,
-					"subject": "building.gold_washing_refinery",
-					"attribute": "construction_and_production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "BuildingProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "砂金淘洗精炼棚"
-				},
-				{
-					"kind": "building",
-					"id": "silver_fire_assay_hearth",
-					"binding_kind": 2.0,
-					"subject": "building.silver_fire_assay_hearth",
-					"attribute": "construction_and_production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "BuildingProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "银矿火试炉"
 				}
 			],
-			"effect_summary": "解锁物资：黄金；解锁建筑：砂金淘洗精炼棚；解锁建筑：银矿火试炉；全社会经济产出 +3%；作为必要支撑：地籍管理局",
+			"effect_summary": "解锁物资：黄金；全社会经济产出 +3%；作为必要支撑：地籍管理局",
 			"opportunity_cost": "占用通用研究预算，延后同代专业路线锚点",
 			"application_target_ids": [],
 			"terminal_reason": "度量衡是当前技术网络中的应用端点，其效果由已绑定内容直接消费",

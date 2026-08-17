@@ -79,6 +79,7 @@ Dictionary NativeEconomyRuntime::population_cell_summary(int32_t cell_idx) const
     out["epoch_id"] = _epoch_id;
     append_settlement_fields(out, cell_idx);
     append_population_employment_fields(out, cell_idx);
+    append_carrying_capacity_fields(out, cell_idx);
     return out;
 }
 
@@ -256,6 +257,7 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
     out["epoch_id"] = _epoch_id;
     append_settlement_fields(out, cell_idx);
     append_population_employment_fields(out, cell_idx);
+    append_carrying_capacity_fields(out, cell_idx);
     PackedInt64Array handles;
     PackedInt32Array signatures;
     PackedInt32Array professions;

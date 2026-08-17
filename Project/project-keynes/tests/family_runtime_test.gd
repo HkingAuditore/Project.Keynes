@@ -51,6 +51,7 @@ func _run() -> void:
 	_expect("family selectors compile tags and categories to exact dense CSR edges",
 		exact_selector_compile and hunting_building_resolved
 		and hunting_profession_resolved)
+	_assert_family_effect_display_copy(compiled)
 	var bad_trait_catalog: Resource = load(
 		"res://data/economy/default_family_traits.tres").duplicate(true)
 	var bad_traits: Array = bad_trait_catalog.get("traits")
@@ -71,6 +72,7 @@ func _run() -> void:
 	var catalog := compiled.duplicate(true)
 	catalog.erase("ok")
 	_test_formal_capital_v2_packet_fallback(catalog)
+	_test_opening_capital_keeps_anonymous_majority(catalog)
 	# Keep one catalog trait outside the deterministic core roll so mutation
 	# ordering and core-removal protection can be exercised in this fixture.
 	catalog.family_core_trait_min = 2
@@ -156,9 +158,11 @@ func _run() -> void:
 	var owner_profession := int(
 		(catalog.signature_profession_ids as PackedInt32Array)[owner_sig])
 	var owner_row := profession_rows.find(owner_profession)
+	var cell_population := int(ext.get_population_cell_snapshot(0).population)
 	_expect("family exposes surname, conserved wealth claim and population",
 		bool(family.get("ok", false)) and String(family.get("surname", "")) != ""
-		and int(family.get("population", 0)) > 0
+		and int(family.get("population", 0)) >= 2
+		and int(family.get("population", 0)) <= cell_population / 2
 		and int(family.get("cash_claim", -1)) >= 0)
 	_expect("family profession statistics include owner employment",
 		owner_row >= 0
@@ -355,15 +359,15 @@ func _run() -> void:
 		family_handle, 0, 64).get("total", 0))
 	var hash_before := int(ext.get_economy_state_hash())
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
-	_expect("PKEC v35 save begins", bool(save_begin.get("ok", false))
-		and int(save_begin.get("schema_version", 0)) == 35)
+	_expect("PKEC v36 save begins", bool(save_begin.get("ok", false))
+		and int(save_begin.get("schema_version", 0)) == 36)
 	var chunks: Array[PackedByteArray] = []
 	for _i in 512:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty():
 			break
 		chunks.append(chunk)
-	_expect("PKEC v35 save completes", not chunks.is_empty()
+	_expect("PKEC v36 save completes", not chunks.is_empty()
 		and bool(ext.end_economy_save().get("ok", false)))
 	var legacy_chunk := chunks[0].duplicate()
 	legacy_chunk[4] = 31
@@ -389,7 +393,7 @@ func _run() -> void:
 		_expect("restore chunk accepted", bool(
 			restored.feed_economy_restore_chunk(chunk).get("ok", false)))
 	var restore_end: Dictionary = restored.end_economy_restore()
-	_expect("PKEC v35 restores family and important-person authority",
+	_expect("PKEC v36 restores family and important-person authority",
 		bool(restore_end.get("ok", false))
 		and int(restore_end.get("restored_families", 0)) == 1
 		and int(restore_end.get("restored_persons", 0)) == person_count_before
@@ -411,6 +415,69 @@ func _run() -> void:
 			== int(person.get("building_handle", 0)))
 	print("=== native notable-family runtime %s ===" % [
 		"PASS" if failures == 0 else "FAIL"])
+
+
+func _test_opening_capital_keeps_anonymous_majority(catalog: Dictionary) -> void:
+	var profile: Dictionary = load(
+		"res://data/economy/default_economy.tres").to_native_profile()
+	profile.family_runtime_mode = "ACTIVE"
+	profile.family_min_settlement_tier = 0
+	profile.family_review_days = 1
+	profile.family_min_population_per_active = 1
+	profile.notable_person_runtime_mode = "ACTIVE"
+	profile.starvation_death_rate_q32 = 0
+	var birth_rates: PackedInt64Array = catalog.signature_birth_rate_q32
+	birth_rates.fill(0)
+	catalog.signature_birth_rate_q32 = birth_rates
+	var building_id := (catalog.building_type_ids as PackedStringArray).find(
+		"gathering_ground")
+	var owner_sig := (catalog.signature_keys as PackedStringArray).find(
+		"forager|default")
+	var unemployed_sig := (catalog.signature_keys as PackedStringArray).find(
+		"unemployed|default")
+	var ext := _new_ext(catalog)
+	_expect("opening-majority country bootstraps", _configure_country(
+		ext, catalog, 260803))
+	_expect("opening-majority economy configures", bool(ext.configure_economy(
+		catalog, profile, 1, 260803).get("ok", false)))
+	var stock := PackedInt64Array()
+	stock.resize((catalog.good_ids as PackedStringArray).size())
+	stock.fill(100000000)
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0]),
+		"signature_ids": PackedInt32Array([owner_sig, unemployed_sig]),
+		"population": PackedInt64Array([2, 18]),
+		"funds": PackedInt64Array([1000000000000000, 1000000000000000]),
+		"forced_named_cells": PackedInt32Array([0]),
+		"founder_family_cells": PackedInt32Array([0]),
+		"founder_family_building_type_ids": PackedInt32Array([building_id]),
+		"founder_family_owner_signature_ids": PackedInt32Array([owner_sig]),
+	}, {
+		"stock": stock,
+		"building_cells": PackedInt32Array([0]),
+		"building_type_ids": PackedInt32Array([building_id]),
+		"building_owner_signature_ids": PackedInt32Array([owner_sig]),
+		"building_counts": PackedInt64Array([1]),
+	})
+	_expect("opening 20-person capital creates one founder family of two operators",
+		bool(boot.get("ok", false))
+		and int(boot.get("founder_family_count", 0)) == 1)
+	if not bool(boot.get("ok", false)):
+		print("opening-majority bootstrap failure=", boot)
+		return
+	var day0 := _run_day(ext, 0)
+	_expect("opening-majority day conserves population",
+		bool(day0.get("done", false)) and int(day0.get("population_error", 1)) == 0)
+	var page: Dictionary = ext.get_family_cell_snapshot(0, 0, 64)
+	_expect("opening capital still has exactly one family",
+		bool(page.get("ok", false)) and int(page.get("total", 0)) == 1)
+	if int(page.get("total", 0)) != 1:
+		return
+	var family_handle := int((page.family_handles as PackedInt64Array)[0])
+	var family_pop := int(ext.get_family_snapshot(family_handle).population)
+	var cell_pop := int(ext.get_population_cell_snapshot(0).population)
+	_expect("opening family stays the two gathering operators, not the whole town",
+		cell_pop == 20 and family_pop == 2)
 
 
 func _test_formal_capital_v2_packet_fallback(catalog: Dictionary) -> void:
@@ -522,3 +589,76 @@ func _run_day(ext: Object, day: int) -> Dictionary:
 		if bool(report.get("done", false)):
 			return report
 	return report
+
+
+func _assert_family_effect_display_copy(compiled: Dictionary) -> void:
+	var trait_catalog: Resource = load("res://data/economy/default_family_traits.tres")
+	var required_traits := {
+		"gathering_affinity": "采集",
+		"hunting_tradition": "狩猎",
+		"mining_enterprise": "采掘",
+		"abundant_table": "食品",
+		"trade_network": "贸易",
+	}
+	var trait_ok: bool = trait_catalog != null and trait_catalog.traits.size() == required_traits.size()
+	if trait_catalog != null:
+		for definition in trait_catalog.traits:
+			var key := String(definition.key)
+			var description := String(definition.description)
+			trait_ok = trait_ok and required_traits.has(key) \
+				and not String(definition.display_name).is_empty() \
+				and description.find(String(required_traits[key])) >= 0
+	_expect("all family traits have Chinese mechanical descriptions", trait_ok)
+	var modifier_keys := PackedStringArray([
+		"family.city.production_boost", "family.city.hunting_output_boost",
+		"family.city.extractive_output_boost", "family.city.birth_boost",
+		"family.city.trade_output_boost", "family.city.food_consumption_boost",
+		"family.city.wild_game_regen_boost",
+	])
+	var modifier_catalog: Resource = load("res://data/modifiers/default_modifier_catalog.tres")
+	var modifier_names := {}
+	if modifier_catalog != null:
+		for definition in modifier_catalog.definitions:
+			var key := String(definition.key)
+			if key.begins_with("family."):
+				modifier_names[key] = String(definition.display_name)
+	var modifiers_ok: bool = true
+	for key in modifier_keys:
+		modifiers_ok = modifiers_ok and not String(modifier_names.get(key, "")).is_empty() \
+			and String(modifier_names.get(key, "")).find(".") < 0
+	_expect("family modifier definitions have Chinese display names",
+		modifiers_ok and modifier_names.size() == modifier_keys.size())
+	var trigger_catalog: Resource = load("res://data/triggers/default_trigger_catalog.tres")
+	var trigger_names := {}
+	if trigger_catalog != null:
+		for definition in trigger_catalog.definitions:
+			var key := String(definition.key)
+			if key.begins_with("family."):
+				trigger_names[key] = String(definition.display_name)
+	_expect("family trigger definitions have Chinese display names",
+		String(trigger_names.get("family.build_hunting_bonus", "")) == "狩猎营地馈赠"
+		and String(trigger_names.get("family.trade_population_bonus", "")) == "商路人口奖励")
+	var facade = load("res://scripts/economy/economy_facade.gd").new()
+	facade._load_family_effect_displays()
+	_expect("facade maps trait descriptions and family effect display names",
+		String(facade._family_trait_descriptions.get("mining_enterprise", "")).find("采掘") >= 0
+		and String((facade._family_modifier_displays.get(
+			"family.city.extractive_output_boost", {}) as Dictionary).get(
+			"display_name", "")) == "采掘产出加成"
+		and String((facade._family_trigger_displays.get(
+			"family.trade_population_bonus", {}) as Dictionary).get(
+			"display_name", "")) == "商路人口奖励")
+	var baseline: Dictionary = trait_catalog.compile_native_columns(compiled)
+	var baseline_hash := int(baseline.get("family_trait_catalog_hash", 0))
+	var mutated: Resource = trait_catalog.duplicate(false)
+	var mutated_traits: Array[Resource] = []
+	for definition in trait_catalog.traits:
+		var copy: Resource = definition.duplicate(false)
+		copy.description = "%s extra" % String(copy.description)
+		mutated_traits.append(copy)
+	mutated.traits = mutated_traits
+	var mutated_result: Dictionary = mutated.compile_native_columns(compiled)
+	_expect("family trait descriptions do not change family_trait_catalog_hash",
+		baseline_hash != 0
+		and int(mutated_result.get("family_trait_catalog_hash", 0)) == baseline_hash
+		and not bool(baseline.has("family_trait_descriptions")))

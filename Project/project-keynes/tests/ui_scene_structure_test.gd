@@ -124,6 +124,9 @@ func _check_component_scenes() -> void:
 		var required_path := String(expectations[scene_path])
 		_expect("%s has complete fixed tree" % scene_path,
 			required_path.is_empty() or scene.has_node(required_path))
+		if scene_path.ends_with("economy_workspace.tscn"):
+			_expect("economy workspace has tax sub-tabs", scene.has_node("Column/TaxTabs"))
+			_expect("economy workspace has treasury insights", scene.has_node("Column/Insights"))
 		scene.free()
 
 

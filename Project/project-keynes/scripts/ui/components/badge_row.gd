@@ -40,3 +40,5 @@ func _apply_badge(badge: Label, data: Dictionary) -> void:
 		+ float(UITokens.SPACE_SM) * 2.0 + 7.0
 	var accent: Color = data.get("accent", UITokens.ACCENT)
 	badge.add_theme_color_override("font_color", accent.lerp(UITokens.TEXT_MAIN, 0.38))
+	badge.tooltip_text = String(data.get("tooltip", "")).strip_edges()
+	badge.mouse_filter = Control.MOUSE_FILTER_PASS

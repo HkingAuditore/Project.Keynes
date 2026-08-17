@@ -27,11 +27,17 @@ const FIXED_BUILDING_IDS := {
 	"placer_gold_working": true,
 	"surface_silver_working": true,
 }
-const PRECIOUS_GOOD_IDS := {"gold_ore": true, "silver_ore": true}
+const PRECIOUS_STARTER_BUILDING_IDS := {
+	"placer_gold_working": true,
+	"surface_silver_working": true,
+}
+const PRECIOUS_GOOD_IDS := {"gold": true, "silver": true}
+const PRECIOUS_RESOURCE_IDS := {"gold_ore": true, "silver_ore": true}
 
 static var _building_profiles: Array = []
 static var _resource_profiles: Dictionary = {}
 static var _climate_profiles: Dictionary = {}
+static var _active_reserve_overlay: Dictionary = {}
 
 
 ## Cold-path, deterministic starter-settlement capacity planner. It only reads
@@ -48,6 +54,9 @@ static func plan(map: MapData, cell_idx: int, starter_route: Dictionary,
 	if selected_ids.is_empty() or technology_ids.is_empty():
 		return _error("starter_planner_route_invalid",
 			"开局经济规划器缺少建筑或科技路线。")
+	_active_reserve_overlay = starter_route.get("reserve_overlay", {})
+	if _active_reserve_overlay == null:
+		_active_reserve_overlay = {}
 	_ensure_profiles_loaded()
 	var completed := {}
 	for technology_id in technology_ids:
@@ -83,12 +92,18 @@ static func plan(map: MapData, cell_idx: int, starter_route: Dictionary,
 			continue
 		if _is_unselected_knowledge_profile(profile, is_selected):
 			continue
-		if not profile.employee_profession_ids.is_empty() \
-				or not profile.employee_slots_per_building.is_empty():
-			if is_selected:
+		var employee_professions: PackedStringArray = profile.employee_profession_ids
+		var employee_slots: PackedInt64Array = profile.employee_slots_per_building
+		var has_employees: bool = not employee_professions.is_empty() \
+				or not employee_slots.is_empty()
+		if has_employees:
+			if is_selected and allows_starter_employee_roles(building_id):
+				pass
+			elif is_selected:
 				return _error("starter_employee_role_forbidden",
 					"石器时代初始建筑不得包含雇员岗位：%s" % building_id)
-			continue
+			else:
+				continue
 		var owner_slots := int(profile.owner_slots_per_building)
 		if owner_slots <= 0:
 			continue
@@ -113,6 +128,7 @@ static func plan(map: MapData, cell_idx: int, starter_route: Dictionary,
 			"id": building_id,
 			"profile": profile,
 			"owner_slots": owner_slots,
+			"employee_slots": _employee_slot_count(profile),
 			"min_count": minimum,
 			"max_count": maximum,
 			"resource_cap": resource_cap,
@@ -538,6 +554,13 @@ static func _evaluate_counts(candidates: Array[Dictionary], counts: PackedInt32A
 		primary_food_building_id)
 	ids = ordered.ids
 	out_counts = ordered.counts
+	var employee_capacity := 0
+	for index in range(ids.size()):
+		for candidate in candidates:
+			if String(candidate.id) != String(ids[index]):
+				continue
+			employee_capacity += int(candidate.get("employee_slots", 0)) * int(out_counts[index])
+			break
 
 	return {
 		"ok": true,
@@ -546,7 +569,7 @@ static func _evaluate_counts(candidates: Array[Dictionary], counts: PackedInt32A
 		"starter_building_ids": ids,
 		"starter_building_counts": out_counts,
 		"starter_job_capacity": STARTER_POPULATION,
-		"starter_employee_job_capacity": 0,
+		"starter_employee_job_capacity": employee_capacity,
 		"primary_food_building_id": primary_food_building_id,
 		"resource_caps": context.resource_caps,
 		"resource_pressure_q16": resource_pressure_q16,
@@ -669,7 +692,7 @@ static func _is_unselected_precious_profile(profile, selected: bool) -> bool:
 		if PRECIOUS_GOOD_IDS.has(String(good_id)):
 			return true
 	for resource_id in profile.resource_ids:
-		if PRECIOUS_GOOD_IDS.has(String(resource_id)):
+		if PRECIOUS_RESOURCE_IDS.has(String(resource_id)):
 			return true
 	return false
 
@@ -841,7 +864,10 @@ static func _reserve(map: MapData, resource_id: String, cell_idx: int) -> float:
 	var values = map.get(field)
 	if not values is PackedFloat32Array or cell_idx < 0 or cell_idx >= values.size():
 		return 0.0
-	return maxf(0.0, float(values[cell_idx]))
+	var actual := maxf(0.0, float(values[cell_idx]))
+	if _active_reserve_overlay.has(resource_id):
+		return maxf(actual, float(_active_reserve_overlay[resource_id]))
+	return actual
 
 
 static func _array_value(values: PackedFloat32Array, index: int,
@@ -860,8 +886,9 @@ static func _validate_facade(plan_result: Dictionary, facade) -> Dictionary:
 				"运行时目录缺少规划建筑：%s" % ids[index])
 		if not (job_spec.employee_professions as PackedStringArray).is_empty() \
 				or not (job_spec.employee_slots as PackedInt64Array).is_empty():
-			return _error("starter_employee_role_forbidden",
-				"石器时代初始建筑不得包含雇员岗位：%s" % ids[index])
+			if not allows_starter_employee_roles(String(ids[index])):
+				return _error("starter_employee_role_forbidden",
+					"石器时代初始建筑不得包含雇员岗位：%s" % ids[index])
 		job_total += int(job_spec.owner_slots) * int(counts[index])
 	if job_total != STARTER_POPULATION:
 		return _error("starter_facade_job_capacity_mismatch",
@@ -897,6 +924,17 @@ static func _primary_building_first(ids: PackedStringArray,
 		ordered_ids.append(ids[index])
 		ordered_counts.append(counts[index])
 	return {"ids": ordered_ids, "counts": ordered_counts}
+
+
+static func allows_starter_employee_roles(building_id: String) -> bool:
+	return PRECIOUS_STARTER_BUILDING_IDS.has(String(building_id))
+
+
+static func _employee_slot_count(profile) -> int:
+	var total := 0
+	for slot in profile.employee_slots_per_building:
+		total += int(slot)
+	return total
 
 
 static func _ensure_profiles_loaded() -> void:

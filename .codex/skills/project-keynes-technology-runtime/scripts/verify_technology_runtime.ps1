@@ -65,6 +65,7 @@ if (-not [string]::IsNullOrWhiteSpace($GodotExe)) {
         "technology_breakthrough_trigger_test.gd",
         "technology_procurement_runtime_test.gd",
         "technology_modifier_activation_test.gd",
+        "technology_pending_activation_scheduler_test.gd",
         "technology_workspace_smoke_test.gd"
     )
     foreach ($test in $tests) {

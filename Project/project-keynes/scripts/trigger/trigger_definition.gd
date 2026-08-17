@@ -3,6 +3,8 @@ extends Resource
 
 @export var key: StringName = &""
 @export var version: int = 1
+@export var display_name: String = ""
+@export_multiline var description: String = ""
 @export var source_id: int = 0
 @export var event_type: int = 0
 @export var payload_schema: int = 0

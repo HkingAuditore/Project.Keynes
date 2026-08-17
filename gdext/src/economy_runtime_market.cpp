@@ -394,6 +394,9 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     thread_local std::vector<int64_t> cohort_tier_weighted_q16;
     thread_local std::vector<int64_t> cohort_tier_weight_q16;
     thread_local std::vector<int64_t> expected_births_q32_by_ethnicity;
+    thread_local std::vector<int64_t> cohort_rescale_sat_q16;
+    thread_local std::array<int64_t, 3> food_family_filled{};
+    thread_local std::array<int64_t, 3> food_family_desired{};
     thread_local std::vector<int32_t> local_by_slot;
     thread_local std::vector<uint32_t> local_by_slot_stamp;
     thread_local uint32_t local_lookup_generation = 0;
@@ -419,6 +422,18 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         _population.for_each_in_cell(market_cell, [&](int32_t slot) { slots.push_back(slot); });
     }
     const int32_t cohort_count = static_cast<int32_t>(slots.size());
+    int64_t opening_market_population = 0;
+    for (const int32_t slot : slots) {
+        opening_market_population = saturating_add(
+            opening_market_population, std::max<int64_t>(0, _population.population[slot]),
+            sat);
+    }
+    thread_local std::vector<int32_t> living_merchants;
+    collect_living_merchant_slots(market, living_merchants);
+    if (opening_market_population > 0 && living_merchants.empty()) {
+        error = "market_revenue_has_no_merchant_owner";
+        return false;
+    }
     if (local_by_slot.size() < _population.active.size()) {
         local_by_slot.resize(_population.active.size(), -1);
         local_by_slot_stamp.resize(_population.active.size(), 0);
@@ -456,6 +471,9 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     cohort_tier_weight_q16.assign(
         static_cast<size_t>(cohort_count) * SAT_TIER_COUNT, 0);
     expected_births_q32_by_ethnicity.assign(_ethnicity_ids.size(), 0);
+    cohort_rescale_sat_q16.assign(cohort_count, Q16_ONE);
+    food_family_filled.fill(0);
+    food_family_desired.fill(0);
     result.retained_consumed_by_good.assign(_market.good_count, 0);
     cohort_working_capital_reserve.assign(cohort_count, 0);
     production_input_floor.assign(_market.good_count, 0);
@@ -1362,6 +1380,18 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     result.fallback_ms += elapsed_ms(fallback_start);
 
     const auto merchant_start = Clock::now();
+    int64_t planned_revenue = 0;
+    for (int32_t local = 0; local < cohort_count; ++local) {
+        const int32_t slot = slots[local];
+        const int64_t spend = std::min(cohort_spend[local], std::max<int64_t>(
+            0, _population.funds[slot] - cohort_working_capital_reserve[local]));
+        planned_revenue = saturating_add(planned_revenue,
+            consumption_tax_active ? cohort_base_spend[local] : spend, sat);
+    }
+    if (planned_revenue > 0 && living_merchants.empty()) {
+        error = "market_revenue_has_no_merchant_owner";
+        return false;
+    }
     int64_t revenue = 0;
     for (int32_t local = 0; local < cohort_count; ++local) {
         const int32_t slot = slots[local];
@@ -1387,12 +1417,10 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         revenue = saturating_add(revenue,
             consumption_tax_active ? cohort_base_spend[local] : spend, sat);
     }
-    const int32_t merchant_begin = _merchant_offsets[market];
-    const int32_t merchant_end = _merchant_offsets[market + 1];
     int64_t merchant_population = 0;
-    for (int32_t k = merchant_begin; k < merchant_end; ++k) {
+    for (const int32_t slot : living_merchants) {
         merchant_population = saturating_add(merchant_population,
-            _population.population[_merchant_slots[k]], sat);
+            _population.population[slot], sat);
     }
     if (revenue > 0 && merchant_population <= 0) {
         error = "market_revenue_has_no_merchant_owner";
@@ -1400,8 +1428,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     }
     int64_t population_prefix = 0;
     int64_t distributed = 0;
-    for (int32_t k = merchant_begin; k < merchant_end; ++k) {
-        const int32_t slot = _merchant_slots[k];
+    for (const int32_t slot : living_merchants) {
         population_prefix = saturating_add(population_prefix, _population.population[slot], sat);
         const int64_t next = merchant_population > 0
             ? mul_div_sat(revenue, population_prefix, merchant_population, sat) : 0;
@@ -1457,7 +1484,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             result.cashflows.push_back({_population.handle_for_slot(slot),
                 CASHFLOW_INCOME_SUBSIDY, -income_tax, 0});
     }
-    result.merchant_count += merchant_end - merchant_begin;
+    result.merchant_count += static_cast<int64_t>(living_merchants.size());
     result.revenue = revenue;
     cohort_worst_q16.assign(cohort_count, Q16_ONE - 1);
     cohort_worst_need.assign(cohort_count, std::numeric_limits<uint16_t>::max());
@@ -1473,6 +1500,18 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         const int32_t local = state.local_cohort;
         cohort_filled[local] = saturating_add(cohort_filled[local], state.filled_units, sat);
         const int32_t stable_need = _needs[state.need_index].stable_id;
+        if (stable_need >= 0 &&
+            static_cast<size_t>(stable_need) < _need_carrying_family.size()) {
+            const int32_t family = _need_carrying_family[static_cast<size_t>(stable_need)];
+            if (family >= 0 && family < 3) {
+                food_family_filled[static_cast<size_t>(family)] = saturating_add(
+                    food_family_filled[static_cast<size_t>(family)],
+                    state.filled_units, sat);
+                food_family_desired[static_cast<size_t>(family)] = saturating_add(
+                    food_family_desired[static_cast<size_t>(family)],
+                    state.desired_units, sat);
+            }
+        }
         if (stable_need >= 0 &&
             stable_need < static_cast<int32_t>(
                 _survival_food_need_mask.size()) &&
@@ -1613,6 +1652,8 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     int64_t remaining_market_population = 0;
     for (int32_t slot : slots) remaining_market_population = saturating_add(
         remaining_market_population, std::max<int64_t>(0, _population.population[slot]), sat);
+    int64_t sat_cell_num = 0;
+    int64_t sat_cell_den = 0;
     for (int32_t local = 0; local < cohort_count; ++local) {
         const int32_t slot = slots[local];
         cohort_food_filled[local] = saturating_add(
@@ -1684,26 +1725,135 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                     _population.satisfaction_dims[dims_base +
                                                   static_cast<size_t>(dim)];
         }
+        const int64_t rescale_q16 = std::clamp<int64_t>(
+            mul_div_sat(composite_q16, Q16_ONE,
+                        std::max(1, _satisfaction_birth_reference_q16), sat),
+            _carrying_sat_floor_q16, _carrying_sat_cap_q16);
+        cohort_rescale_sat_q16[static_cast<size_t>(local)] = rescale_q16;
+        int32_t class_weight = Q16_ONE;
+        if (signature.profession_id >= 0 &&
+            signature.profession_id < static_cast<int32_t>(
+                _profession_class_index.size())) {
+            const int32_t class_index =
+                _profession_class_index[static_cast<size_t>(signature.profession_id)];
+            if (class_index >= 0 && class_index < static_cast<int32_t>(
+                    _carrying_class_weight_q16.size())) {
+                class_weight = std::max(1,
+                    _carrying_class_weight_q16[static_cast<size_t>(class_index)]);
+            }
+        }
+        const int64_t pop = std::max<int64_t>(0, _population.population[slot]);
+        sat_cell_num = saturating_add(sat_cell_num, saturating_mul(
+            saturating_mul(pop, class_weight, sat), rescale_q16, sat), sat);
+        sat_cell_den = saturating_add(sat_cell_den,
+            saturating_mul(pop, class_weight, sat), sat);
+    }
+    const int32_t birth_cell = _market_cell_offsets[market] <
+            _market_cell_offsets[market + 1]
+        ? _market_cells[_market_cell_offsets[market]] : market;
+    int64_t surplus_num = 0;
+    int64_t surplus_den = 0;
+    const size_t family_base = static_cast<size_t>(std::max(0, birth_cell)) *
+        CARRYING_FAMILY_COUNT;
+    if (family_base + CARRYING_FAMILY_COUNT <= _cell_carrying_family_surplus_q16.size() &&
+        family_base + CARRYING_FAMILY_COUNT <= _cell_carrying_family_bindable.size()) {
+        std::fill(_cell_carrying_family_surplus_q16.begin() + family_base,
+                  _cell_carrying_family_surplus_q16.begin() + family_base +
+                      CARRYING_FAMILY_COUNT,
+                  static_cast<int32_t>(Q16_ONE));
+        std::fill(_cell_carrying_family_bindable.begin() + family_base,
+                  _cell_carrying_family_bindable.begin() + family_base +
+                      CARRYING_FAMILY_COUNT,
+                  0);
+    }
+    for (int32_t family = 0; family < CARRYING_FAMILY_COUNT; ++family) {
+        const int64_t food_filled = family < 3
+            ? food_family_filled[static_cast<size_t>(family)] : 0;
+        const int64_t food_desired = family < 3
+            ? food_family_desired[static_cast<size_t>(family)] : 0;
+        const int64_t family_surplus = cell_family_surplus_q16(
+            market, birth_cell, family, food_filled, food_desired,
+            good_demand.data(), good_sales.data(), sat);
+        const int32_t weight = family < static_cast<int32_t>(_carrying_family_weight.size())
+            ? std::max(0, _carrying_family_weight[static_cast<size_t>(family)]) : 0;
+        if (family_base + static_cast<size_t>(family) <
+            _cell_carrying_family_surplus_q16.size()) {
+            _cell_carrying_family_surplus_q16[family_base + static_cast<size_t>(family)] =
+                family_surplus < 0 ? Q16_ONE : static_cast<int32_t>(family_surplus);
+            _cell_carrying_family_bindable[family_base + static_cast<size_t>(family)] =
+                family_surplus < 0 ? 0 : 1;
+        }
+        if (family_surplus < 0 || weight <= 0) continue;
+        surplus_num = saturating_add(surplus_num,
+            saturating_mul(family_surplus, weight, sat), sat);
+        surplus_den = saturating_add(surplus_den, weight, sat);
+    }
+    const int64_t surplus_q16 = surplus_den > 0
+        ? mul_div_sat(surplus_num, 1, surplus_den, sat) : Q16_ONE;
+    const int64_t sat_cell_q16 = sat_cell_den > 0
+        ? std::clamp<int64_t>(mul_div_sat(sat_cell_num, 1, sat_cell_den, sat),
+                              _carrying_sat_floor_q16, _carrying_sat_cap_q16)
+        : Q16_ONE;
+    const int64_t k_geo = cell_k_geo_persons(birth_cell, sat);
+    const int64_t mix_factor = mul_div_sat(
+        carrying_mix_q16(surplus_q16, _carrying_surplus_elasticity_q16, sat),
+        carrying_mix_q16(sat_cell_q16, _carrying_sat_elasticity_q16, sat),
+        Q16_ONE, sat);
+    int32_t ema_fallback = Q16_ONE;
+    int32_t *support_ema_ptr = birth_cell >= 0 &&
+            static_cast<size_t>(birth_cell) < _cell_support_ema_q16.size()
+        ? &_cell_support_ema_q16[static_cast<size_t>(birth_cell)]
+        : &ema_fallback;
+    const int64_t ema_alpha = std::min<int64_t>(
+        Q16_ONE, static_cast<int64_t>(_epoch_days) * _carrying_support_ema_alpha_q16);
+    *support_ema_ptr = static_cast<int32_t>(saturating_add(
+        mul_div_sat(*support_ema_ptr, Q16_ONE - ema_alpha, Q16_ONE, sat),
+        mul_div_sat(mix_factor, ema_alpha, Q16_ONE, sat), sat));
+    const int64_t k_eff = std::max<int64_t>(1, mul_div_sat(
+        k_geo, std::max<int64_t>(1, static_cast<int64_t>(*support_ema_ptr)),
+        Q16_ONE, sat));
+    if (birth_cell >= 0 && static_cast<size_t>(birth_cell) < _cell_carrying_k_geo.size()) {
+        _cell_carrying_k_geo[static_cast<size_t>(birth_cell)] = k_geo;
+        _cell_carrying_k_eff[static_cast<size_t>(birth_cell)] = k_eff;
+        _cell_carrying_surplus_q16[static_cast<size_t>(birth_cell)] =
+            static_cast<int32_t>(surplus_q16);
+        _cell_carrying_sat_q16[static_cast<size_t>(birth_cell)] =
+            static_cast<int32_t>(sat_cell_q16);
+    }
+    const int64_t load_q16 = mul_div_sat(
+        remaining_market_population, Q16_ONE, k_eff, sat);
+    for (int32_t local = 0; local < cohort_count; ++local) {
+        const int32_t slot = slots[local];
+        const uint32_t signature_id = _population.signature_id[slot];
+        const Signature &signature = _signatures[signature_id];
+        const int32_t cell = _population.page_cell[slot / COHORT_PAGE_SIZE];
+        const int64_t survival_q16 = _population.needs_satisfaction[slot];
         if (signature.ethnicity_id >= 0 && signature.ethnicity_id <
                 static_cast<int32_t>(expected_births_q32_by_ethnicity.size())) {
-            // Fertility answers to the whole composite, not just food: a taxed,
-            // savings-less, backward cohort has fewer children. The composite is
-            // rescaled by the birth reference first, otherwise an early-era
-            // cohort — which by construction scores nothing on luxury, savings,
-            // and development — would strangle its own birth rate.
-            const int64_t birth_satisfaction_q16 = std::clamp<int64_t>(
-                mul_div_sat(composite_q16, Q16_ONE,
-                            _satisfaction_birth_reference_q16, sat),
-                0, Q16_ONE);
-            const int64_t birth_weight_q16 = std::clamp<int64_t>(
-                signature.satisfaction_birth_weight_q16, 0, Q16_ONE);
-            const int64_t birth_reduction_q16 = mul_div_sat(
-                birth_weight_q16, Q16_ONE - birth_satisfaction_q16, Q16_ONE, sat);
-            const int64_t birth_factor_q16 = std::clamp<int64_t>(
-                Q16_ONE - birth_reduction_q16, 0, Q16_ONE);
+            int64_t fertility_land_q16 = Q16_ONE;
+            if (load_q16 > _carrying_soft_start_q16) {
+                const int64_t replacement_q16 = std::clamp<int64_t>(
+                    mul_div_sat(std::max<int64_t>(0, signature.death_rate_q32),
+                                Q16_ONE,
+                                std::max<int64_t>(1, signature.birth_rate_q32), sat),
+                    0, Q16_ONE);
+                const int64_t span = std::max<int64_t>(
+                    1, Q16_ONE - _carrying_soft_start_q16);
+                const int64_t t_q16 = std::clamp<int64_t>(
+                    mul_div_sat(load_q16 - _carrying_soft_start_q16, Q16_ONE,
+                                span, sat), 0, Q16_ONE);
+                fertility_land_q16 = saturating_add(Q16_ONE, mul_div_sat(
+                    t_q16, replacement_q16 - Q16_ONE, Q16_ONE, sat), sat);
+            }
+            const int64_t rescale_q16 = cohort_rescale_sat_q16[static_cast<size_t>(local)];
+            const int64_t residual_q16 = std::clamp<int64_t>(
+                mul_div_sat(rescale_q16, Q16_ONE,
+                            std::max<int64_t>(1, sat_cell_q16), sat),
+                _carrying_residual_floor_q16, _carrying_residual_cap_q16);
             int64_t effective_birth_rate_q32 = mul_div_sat(
-                std::max<int64_t>(0, signature.birth_rate_q32), birth_factor_q16,
-                Q16_ONE, sat);
+                mul_div_sat(std::max<int64_t>(0, signature.birth_rate_q32),
+                            fertility_land_q16, Q16_ONE, sat),
+                residual_q16, Q16_ONE, sat);
             if (cell >= 0 && cell < static_cast<int32_t>(
                     _epoch_cell_birth_factor_q16.size())) {
                 effective_birth_rate_q32 = mul_div_sat(
@@ -1751,15 +1901,11 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             remaining_market_population -= deaths;
             result.deaths = saturating_add(result.deaths, deaths, sat);
             if (_population.population[slot] == 0) {
-                const int32_t cell = _population.page_cell[slot / COHORT_PAGE_SIZE];
                 result.structural_commands.push_back({
                     0, slot, cell, static_cast<int32_t>(signature_id), 0, 0, _epoch_id});
             }
         }
     }
-    const int32_t birth_cell = _market_cell_offsets[market] <
-            _market_cell_offsets[market + 1]
-        ? _market_cells[_market_cell_offsets[market]] : market;
     if (population_changed) result.population_changed_cells.push_back(birth_cell);
     for (int32_t ethnicity = 0; ethnicity <
             static_cast<int32_t>(expected_births_q32_by_ethnicity.size()); ++ethnicity) {

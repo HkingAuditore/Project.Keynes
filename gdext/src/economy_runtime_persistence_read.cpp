@@ -31,7 +31,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         error = "save_chunk_header_invalid";
         return false;
     }
-    if (schema != SCHEMA_VERSION) {
+    if (schema < 35 || schema > SCHEMA_VERSION) {
         error = schema <= 31 ? "economy_save_v31_or_earlier_unsupported" :
             (schema == 32 ? "economy_save_v32_or_earlier_unsupported" :
             "economy_save_schema_unsupported");
@@ -400,7 +400,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         // v33/v34 saves contain the retired probe/restart policy fields. They
         // remain decodable, but the current profile is authoritative after
         // migration, including the one-year suspended liquidation window.
-        if ((schema >= SCHEMA_VERSION && !policy_matches) ||
+        if ((schema >= 35 && !policy_matches) ||
             (schema == 11 && _trade_runtime_mode == 2 && !policy_matches)) {
             error = "save_business_policy_profile_mismatch";
             return false;
@@ -434,7 +434,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             saved_resource_horizon == _resource_min_horizon_days &&
             saved_bullion_cap == _bullion_monthly_issue_cap_q16 &&
             saved_support_cap == _producer_support_monthly_cap_q16;
-        if (schema >= SCHEMA_VERSION && !dynamic_policy_matches) {
+        if (schema >= 35 && !dynamic_policy_matches) {
             error = "save_dynamic_policy_profile_mismatch";
             return false;
         }
@@ -586,6 +586,15 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         _cell_living_cost_per_capita.assign(_cell_count, 0);
         _epoch_cell_development_q16.assign(_cell_count, 0);
         _cell_social_pressure_level.assign(_cell_count, 0);
+        _cell_support_ema_q16.assign(_cell_count, Q16_ONE);
+        _cell_carrying_k_geo.assign(_cell_count, _carrying_k_habitat_ref);
+        _cell_carrying_k_eff.assign(_cell_count, _carrying_k_habitat_ref);
+        _cell_carrying_surplus_q16.assign(_cell_count, Q16_ONE);
+        _cell_carrying_sat_q16.assign(_cell_count, Q16_ONE);
+        _cell_carrying_family_surplus_q16.assign(
+            static_cast<size_t>(_cell_count) * CARRYING_FAMILY_COUNT, Q16_ONE);
+        _cell_carrying_family_bindable.assign(
+            static_cast<size_t>(_cell_count) * CARRYING_FAMILY_COUNT, 0);
         _environment_day = environment_day;
         _environment_hash = environment_hash;
         _epoch_days = epoch_days;
@@ -838,6 +847,14 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                         error = "save_cell_birth_residual_invalid";
                         return false;
                     }
+                }
+            }
+            if (schema >= 36) {
+                if (!read_le(bytes, cursor, _cell_support_ema_q16[cell]) ||
+                    _cell_support_ema_q16[cell] < 0 ||
+                    _cell_support_ema_q16[cell] > Q16_ONE * 4) {
+                    error = "save_cell_support_ema_invalid";
+                    return false;
                 }
             }
             _market.cell_to_market[cell] = market;

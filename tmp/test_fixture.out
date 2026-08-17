@@ -1,0 +1,13 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[starter-plan] cold_highland ms=1469 candidates=8 combinations=68 plan=bast_fiber_camp=2|bast_wrap_shelter=1|early_merchant_post=1|gathering_ground=4|pastoral_council_tent=1|placer_gold_working=1|turf_cutting_ground=1
+[starter-plan] tropical_forest ms=12 candidates=8 combinations=63 plan=bast_fiber_camp=2|bast_wrap_shelter=1|deadwood_gathering_camp=1|early_merchant_post=1|gathering_ground=4|oral_memory_circle=1|surface_silver_working=1
+[starter-plan] floodplain ms=16 candidates=8 combinations=68 plan=bast_fiber_camp=3|bast_wrap_shelter=1|early_merchant_post=1|flood_calendar_shrine=1|freshwater_fishing_camp=3|placer_gold_working=1|reed_cutting_camp=1
+[starter-plan] arid_highland ms=87 candidates=11 combinations=320 plan=bast_fiber_camp=3|bast_wrap_shelter=1|deadwood_gathering_camp=1|early_merchant_post=1|oral_memory_circle=1|stone_age_hunting_camp=3|surface_silver_working=1
+[starter-plan] temperate ms=7 candidates=8 combinations=63 plan=bast_fiber_camp=2|bast_wrap_shelter=1|deadwood_gathering_camp=1|early_merchant_post=1|gathering_ground=4|placer_gold_working=1|seasonal_observation_shelter=1
+[starter-plan] coastal ms=16 candidates=8 combinations=68 plan=bast_fiber_camp=3|bast_wrap_shelter=1|early_merchant_post=1|marine_fish_collector=3|reed_cutting_camp=1|surface_silver_working=1|tide_observation_hut=1
+[starter-resource-scale] wild_game building=stone_age_hunting_camp low=0 high=3
+[starter-resource-scale] marine_fish building=marine_fish_collector low=0 high=3
+[starter-resource-scale] fertile_soil building=gathering_ground low=3 high=4
+[starter-resource-scale] timber building=deadwood_gathering_camp low=1 high=1
+[PASS] six fixed geography fixtures select distinct closed starter routes

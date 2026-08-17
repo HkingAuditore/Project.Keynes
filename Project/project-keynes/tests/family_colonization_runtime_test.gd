@@ -55,8 +55,10 @@ func _run() -> void:
 		country_handle, 2, family_handle, 0, 0, 64)
 	_expect("one reverse Dijkstra returns the owned family branch",
 		bool(quotes.get("ok", false)) and int(quotes.get("total", 0)) == 1
+		and String(quotes.get("kind", "")) == "colonize"
 		and int((quotes.route_costs as PackedInt32Array)[0]) == 4
-		and int(quotes.get("expansions", 9000)) <= 8192)
+		and int(quotes.get("expansions", 9000)) <= 8192
+		and quotes.has("busy") and not bool(quotes.get("busy", true)))
 	if int(quotes.get("total", 0)) != 1:
 		print("quotes=", quotes)
 		return
@@ -84,6 +86,9 @@ func _run() -> void:
 		and int(in_transit.population) == 1
 		and int(ext.get_family_snapshot(family_handle).population) ==
 			int(family_before.population))
+	_expect("idle expedition start does not pause the money ledger",
+		not bool(ext.get_economy_report().get("fatal", false))
+		and int(ext.get_economy_report().get("money_error", -1)) == 0)
 	var saved := _save_economy(ext)
 	var restored_fixture := _make_fixture(catalog.duplicate(true), 260810)
 	var restored: Object = restored_fixture.ext
@@ -94,8 +99,8 @@ func _run() -> void:
 			restored_page.get("total", 0)) != 1:
 		print("restore=", restored_result, " page=", restored_page,
 			" saved_schema=", saved.get("schema", 0))
-	_expect("PKEC v35 restores in-flight route, payload and due heap exactly",
-		int(saved.get("schema", 0)) == 35
+	_expect("PKEC v36 restores in-flight route, payload and due heap exactly",
+		int(saved.get("schema", 0)) == 36
 		and bool(restored_result.get("ok", false))
 		and int(restored_page.get("total", 0)) == 1
 		and int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
@@ -117,6 +122,9 @@ func _run() -> void:
 	_expect("return restores the original source even without ownership checks",
 		int(ext.get_family_expeditions(country_handle, 0, 64).total) == 0
 		and int(ext.get_population_cell_snapshot(0).population) == source_before)
+	_expect("return epoch keeps money conservation at zero",
+		not bool(ext.get_economy_report().get("fatal", false))
+		and int(ext.get_economy_report().get("money_error", -1)) == 0)
 	var receipts: Dictionary = ext.get_family_colonization_receipts(
 		country_handle, 0, 64)
 	var codes := PackedStringArray()
@@ -143,24 +151,295 @@ func _run() -> void:
 		family_handle, 0, 2, 1, second_token, 2, 4)
 	_expect("second expedition starts for the cross-domain arrival path",
 		bool(second_start.get("ok", false)))
-	_run_day(ext, 6)
+	# One cooperative slice enqueues SETTLING and typically leaves the frozen
+	# cycle open. SETTLE must then queue into pending and survive EPOCH_BEGIN
+	# preflight instead of being dropped as a fake cohort handle.
+	var arrival_slice: Dictionary = ext.run_economy_slice({
+		"day_index": 6,
+		"tick_index": 6001,
+		"slice_budget_ms": 0.1,
+	})
+	var live_quotes: Dictionary = ext.get_family_colonization_quotes(
+		country_handle, 0, family_handle, 0, 0, 64)
+	_expect("quotes stay readable while a frozen cycle may be open",
+		bool(live_quotes.get("ok", false)) and live_quotes.has("busy")
+		and int(live_quotes.get("total", -1)) == 0)
+	if bool(arrival_slice.get("epoch_active", false)):
+		_expect("an open epoch marks colonization quotes as nonbinding",
+			bool(live_quotes.get("busy", false))
+			and bool(live_quotes.get("nonbinding", false)))
+		var busy_invalid: Dictionary = ext.start_family_colonization(
+			country_handle, family_handle, 0, 2, 1, 1, 6, 99)
+		_expect("invalid tokens are rejected even while an epoch is open",
+			not bool(busy_invalid.get("ok", true))
+			and String(busy_invalid.get("code", "")) != "economy_busy_retry")
+		var side_quotes: Dictionary = ext.get_family_colonization_quotes(
+			country_handle, 1, family_handle, 0, 0, 64)
+		if bool(side_quotes.get("ok", false)) and int(side_quotes.get("total", 0)) > 0:
+			var side_token := int((side_quotes.quote_tokens as PackedInt64Array)[0])
+			var source_during_busy := int(ext.get_population_cell_snapshot(0).population)
+			var queued: Dictionary = ext.start_family_colonization(
+				country_handle, family_handle, 0, 1, 1, side_token, 6, 100)
+			_expect("start queues during a frozen cycle instead of blocking the button",
+				bool(queued.get("ok", false))
+				and String(queued.get("code", "")) == "colonization_queued"
+				and int(ext.get_population_cell_snapshot(0).population) ==
+					source_during_busy)
+			var duplicate_queue: Dictionary = ext.start_family_colonization(
+				country_handle, family_handle, 0, 1, 1, side_token, 6, 101)
+			_expect("queued starts still occupy the target in O(1)",
+				String(duplicate_queue.get("code", "")) ==
+					"colonization_duplicate_target")
+	var second_handle := int(second_start.expedition_handle)
+	var settling: Dictionary = ext.get_family_expedition_snapshot(
+		country_handle, second_handle)
+	_expect("arrival enqueue moves the expedition into SETTLING",
+		int(settling.get("state", -1)) == 2)
 	var premature_economy_dispatch: Dictionary = ext.dispatch_effect_native_economy()
 	var country_dispatch: Dictionary = ext.dispatch_effect_native_country()
 	var country_commit: Dictionary = ext.run_country_slice({"day_index": 6})
 	var country_ack: Dictionary = ext.ack_effect_native_country()
 	var economy_dispatch: Dictionary = ext.dispatch_effect_native_economy()
-	_run_day(ext, 6)
-	var economy_ack: Dictionary = ext.ack_effect_native_economy()
+	var queued_during_epoch := bool(arrival_slice.get("epoch_active", false)) \
+		and _has_expedition(ext, country_handle, second_handle)
+	if queued_during_epoch:
+		_expect("an open epoch queues SETTLE instead of applying it immediately",
+			int(economy_dispatch.get("submitted_transactions", 0)) == 1)
+	var landed := false
+	var economy_ack: Dictionary = {}
+	for day in range(6, 20):
+		_run_day(ext, day)
+		economy_ack = ext.ack_effect_native_economy()
+		if not _has_expedition(ext, country_handle, second_handle):
+			landed = true
+			break
 	_expect("arrival claims neutral territory and settles custody through two ACKs",
 		int(premature_economy_dispatch.get("submitted_transactions", -1)) == 0
 		and int(country_dispatch.get("submitted_transactions", 0)) == 1
 		and bool(country_commit.get("ok", false))
 		and int(country_ack.get("acknowledged", 0)) == 1
 		and int(economy_dispatch.get("submitted_transactions", 0)) == 1
-		and int(economy_ack.get("acknowledged", 0)) == 1
+		and landed
+		and int(economy_ack.get("acknowledged", 0)) >= 0
 		and int(ext.get_country_cell_summary(2).country_handle) == country_handle
-		and int(ext.get_family_expeditions(country_handle, 0, 64).total) == 0
+		and not _has_expedition(ext, country_handle, second_handle)
 		and int(ext.get_population_cell_snapshot(2).population) == 1)
+	_run_owned_cell_relocation(ext, country_handle, family_handle)
+	_run_foreign_target_rejection(catalog.duplicate(true))
+
+
+func _run_owned_cell_relocation(ext: Object, country_handle: int,
+		family_handle: int) -> void:
+	country_handle = int(ext.get_country_cell_summary(0).get("country_handle", 0))
+	_expect("economy remains conserved after the unowned claim landing",
+		not bool(ext.get_economy_report().get("fatal", false))
+		and int(ext.get_economy_report().get("population_error", -1)) == 0
+		and int(ext.get_economy_report().get("money_error", -1)) == 0)
+	var grow_day := int(ext.get_economy_report().get("current_day", 7)) + 1
+	_grow_founder_family(ext, family_handle, 0, 2, grow_day)
+	var neighbors := PackedInt32Array()
+	neighbors.resize(18)
+	neighbors.fill(-1)
+	neighbors[0] = 1
+	neighbors[9] = 0
+	neighbors[6] = 2
+	neighbors[15] = 1
+	var passable := PackedByteArray()
+	var costs := PackedInt32Array()
+	passable.resize(256)
+	costs.resize(256)
+	passable[2] = 1
+	costs[2] = 2
+	ext.capture_economy_trade_topology(neighbors, PackedByteArray([2, 2, 2]),
+		passable, costs, 2)
+	var self_quotes: Dictionary = ext.get_family_colonization_quotes(
+		country_handle, 0, family_handle, 0, 0, 64)
+	_expect("source cell is not a colonization target for its own branch",
+		bool(self_quotes.get("ok", false)) and int(self_quotes.get("total", -1)) == 0)
+	var relocate_quotes: Dictionary = ext.get_family_colonization_quotes(
+		country_handle, 2, family_handle, 0, 0, 64)
+	_expect("owned populated cell returns a relocate quote",
+		bool(relocate_quotes.get("ok", false))
+		and String(relocate_quotes.get("kind", "")) == "relocate"
+		and int(relocate_quotes.get("total", 0)) == 1)
+	if int(relocate_quotes.get("total", 0)) != 1:
+		print("relocate_quotes=", relocate_quotes)
+		return
+	var token := int((relocate_quotes.quote_tokens as PackedInt64Array)[0])
+	var detail: Dictionary = ext.get_family_colonization_quote_detail(token)
+	_expect("relocate quote detail names the owned destination",
+		String(detail.get("kind", "")) == "relocate"
+		and int(detail.get("target_cell", -1)) == 2)
+	var source_before := int(ext.get_population_cell_snapshot(0).population)
+	var dest_before := int(ext.get_population_cell_snapshot(2).population)
+	var family_before := int(ext.get_family_snapshot(family_handle).population)
+	var start_day := int(ext.get_economy_report().get("current_day", 6))
+	var started: Dictionary = ext.start_family_colonization(country_handle,
+		family_handle, 0, 2, 1, token, start_day, 20)
+	_expect("owned-cell relocation extracts conserved transit population",
+		bool(started.get("ok", false))
+		and int(ext.get_population_cell_snapshot(0).population) == source_before - 1
+		and int(ext.get_family_snapshot(family_handle).population) == family_before)
+	if not bool(started.get("ok", false)):
+		print("relocate_start=", started)
+		return
+	var arrival := int(started.get("arrival_day", start_day + 4))
+	var arrival_slice: Dictionary = ext.run_economy_slice({
+		"day_index": arrival,
+		"tick_index": arrival * 1000 + 1,
+		"slice_budget_ms": 0.1,
+	})
+	var remaining := int(ext.get_family_expeditions(country_handle, 0, 64).get("total", 0))
+	var country_dispatch: Dictionary = ext.dispatch_effect_native_country()
+	_expect("owned-cell relocation does not submit a country claim",
+		int(country_dispatch.get("submitted_transactions", -1)) == 0)
+	if remaining > 0:
+		var economy_dispatch: Dictionary = ext.dispatch_effect_native_economy()
+		if bool(arrival_slice.get("epoch_active", false)):
+			_expect("SETTLE-only still queues through an open epoch",
+				int(economy_dispatch.get("submitted_transactions", 0)) == 1)
+	var landed := remaining == 0
+	for day in range(arrival, arrival + 15):
+		if landed:
+			break
+		_run_day(ext, day)
+		ext.ack_effect_native_economy()
+		if int(ext.get_family_expeditions(country_handle, 0, 64).total) == 0:
+			landed = true
+			break
+	var receipts: Dictionary = ext.get_family_colonization_receipts(
+		country_handle, 0, 64)
+	var codes := PackedStringArray()
+	for receipt in receipts.get("receipts", []):
+		codes.append(String(receipt.get("code", "")))
+	_expect("relocation settles into the owned populated cell without claiming",
+		landed
+		and int(ext.get_country_cell_summary(2).country_handle) == country_handle
+		and int(ext.get_population_cell_snapshot(2).population) == dest_before + 1
+		and int(ext.get_population_cell_snapshot(0).population) == source_before - 1
+		and int(ext.get_family_snapshot(family_handle).population) == family_before
+		and codes.has("RELOCATED"))
+
+
+func _run_foreign_target_rejection(catalog: Dictionary) -> void:
+	var fixture := _make_two_country_fixture(catalog, 260811)
+	if fixture.ext == null:
+		return
+	var quotes: Dictionary = fixture.ext.get_family_colonization_quotes(
+		int(fixture.country_handle), 2, 0, -1, 0, 64)
+	_expect("foreign owned cells stay invalid colonization targets",
+		not bool(quotes.get("ok", false))
+		and String(quotes.get("code", "")) == "colonization_target_invalid")
+
+
+func _make_two_country_fixture(catalog: Dictionary, seed: int) -> Dictionary:
+	var map := MapData.new(3, 1)
+	for q in range(3):
+		var cell := HexCell.new(q, 0)
+		cell.terrain = TerrainType.TERRAIN.PLAIN
+		cell.landform = LandformType.LF.PLAIN
+		map.set_cell(cell)
+	map._build_indices()
+	map.init_soa_from_bake()
+	map.visible_arr.fill(1)
+	map.explored_arr.fill(1)
+	map.vision_revision = 1
+	var ext: Object = ClassDB.instantiate("DCWorldExt")
+	if not bool(ext.bind_map_data(map)):
+		_expect("foreign-target map binds", false)
+		return {"ext": null, "country_handle": 0}
+	var modifier_catalog: Dictionary = ModifierCatalogScript.load_default().compile_native_catalog()
+	modifier_catalog.erase("ok")
+	ext.configure_modifiers(modifier_catalog, 3)
+	var effect_catalog := EffectCatalogScript.new()
+	ext.configure_effects(effect_catalog.compile_native_catalog())
+	var country_profile := {
+		"country_runtime_mode": "ACTIVE",
+		"starting_technology_ids": catalog.technology_ids,
+	}
+	if not bool(ext.configure_country(catalog, country_profile, 3, seed).get("ok", false)):
+		_expect("foreign-target country configures", false)
+		return {"ext": null, "country_handle": 0}
+	var technology_indices := PackedInt32Array()
+	technology_indices.resize((catalog.technology_ids as PackedStringArray).size())
+	for index in range(technology_indices.size()):
+		technology_indices[index] = index
+	var both_techs := PackedInt32Array()
+	both_techs.append_array(technology_indices)
+	both_techs.append_array(technology_indices)
+	var tech_n := technology_indices.size()
+	if not bool(ext.bootstrap_country({
+		"country_ids": PackedStringArray(["country.colonization_home",
+			"country.colonization_foreign"]),
+		"country_names": PackedStringArray(["开拓本国", "开拓外国"]),
+		"country_cash": PackedInt64Array([0, 0]),
+		"territory_offsets": PackedInt32Array([0, 1, 2]),
+		"territory_cells": PackedInt32Array([0, 2]),
+		"technology_offsets": PackedInt32Array([0, tech_n, tech_n * 2]),
+		"technology_indices": both_techs,
+		"treasury_offsets": PackedInt32Array([0, 0, 0]),
+		"treasury_good_indices": PackedInt32Array(),
+		"treasury_quantities": PackedInt64Array(),
+	}, PackedByteArray([0, 0, 0])).get("ok", false)):
+		_expect("two-country bootstrap succeeds", false)
+		return {"ext": null, "country_handle": 0}
+	var country_handle := int(ext.get_country_cell_summary(0).country_handle)
+	_expect("foreign cell is owned by a different country",
+		int(ext.get_country_cell_summary(2).country_handle) != 0
+		and int(ext.get_country_cell_summary(2).country_handle) != country_handle)
+	var profile: Dictionary = load(
+		"res://data/economy/default_economy.tres").to_native_profile()
+	profile.family_runtime_mode = "ACTIVE"
+	profile.family_min_settlement_tier = 0
+	profile.family_min_population_per_active = 1
+	profile.notable_person_runtime_mode = "ACTIVE"
+	profile.starvation_death_rate_q32 = 0
+	var birth_rates: PackedInt64Array = catalog.signature_birth_rate_q32
+	birth_rates.fill(0)
+	catalog.signature_birth_rate_q32 = birth_rates
+	if not bool(ext.configure_economy(catalog, profile, 3, seed).get("ok", false)):
+		_expect("foreign-target economy configures", false)
+		return {"ext": null, "country_handle": 0}
+	var neighbors := PackedInt32Array()
+	neighbors.resize(18)
+	neighbors.fill(-1)
+	neighbors[0] = 1
+	neighbors[9] = 0
+	neighbors[6] = 2
+	neighbors[15] = 1
+	var terrain := PackedByteArray([2, 2, 2])
+	var passable := PackedByteArray()
+	var costs := PackedInt32Array()
+	passable.resize(256)
+	costs.resize(256)
+	passable[2] = 1
+	costs[2] = 2
+	ext.capture_economy_trade_topology(neighbors, terrain, passable, costs, 1)
+	var signatures: PackedStringArray = catalog.signature_keys
+	var forager := signatures.find("forager|default")
+	var merchant := signatures.find("merchant|default")
+	var building := (catalog.building_type_ids as PackedStringArray).find(
+		"gathering_ground")
+	var stock := PackedInt64Array()
+	stock.resize(3 * (catalog.good_ids as PackedStringArray).size())
+	stock.fill(1000000)
+	ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0]),
+		"signature_ids": PackedInt32Array([forager, merchant]),
+		"population": PackedInt64Array([10, 2]),
+		"funds": PackedInt64Array([1000000, 1000000]),
+		"forced_named_cells": PackedInt32Array([0]),
+	}, {
+		"stock": stock,
+		"building_cells": PackedInt32Array([0]),
+		"building_type_ids": PackedInt32Array([building]),
+		"building_owner_signature_ids": PackedInt32Array([forager]),
+		"building_counts": PackedInt64Array([1]),
+		"founder_family_cells": PackedInt32Array([0]),
+		"founder_family_building_type_ids": PackedInt32Array([building]),
+		"founder_family_owner_signature_ids": PackedInt32Array([forager]),
+	})
+	return {"ext": ext, "map": map, "country_handle": country_handle}
 
 
 func _make_fixture(catalog: Dictionary, seed: int) -> Dictionary:
@@ -265,6 +544,48 @@ func _make_fixture(catalog: Dictionary, seed: int) -> Dictionary:
 	return {"ext": ext, "map": map, "country_handle": country_handle,
 		"neighbors": neighbors, "terrain": terrain,
 		"passable": passable, "costs": costs}
+
+
+func _grow_founder_family(ext: Object, family_handle: int, cell_idx: int,
+		extra_people: int, day: int) -> void:
+	var branches: Dictionary = ext.get_family_branches(family_handle, 0, 64)
+	var handles: PackedInt64Array = branches.get("branch_handles", PackedInt64Array())
+	var cells: PackedInt32Array = branches.get("cell_indices", PackedInt32Array())
+	var branch_handle := 0
+	for i in range(mini(handles.size(), cells.size())):
+		if int(cells[i]) == cell_idx and int(handles[i]) != 0:
+			branch_handle = int(handles[i])
+			break
+	_expect("source branch influence exists after the first landing",
+		branch_handle != 0)
+	if branch_handle == 0:
+		return
+	var family_before := int(ext.get_family_snapshot(family_handle).population)
+	var submitted: Dictionary = ext.submit_economy_commands({
+		"opcodes": PackedInt32Array([15]),
+		"effective_days": PackedInt64Array([day]),
+		"sequences": PackedInt64Array([50]),
+		"target_handles": PackedInt64Array([branch_handle]),
+		"i32_0": PackedInt32Array([0]),
+		"i32_1": PackedInt32Array([-1]),
+		"i64_0": PackedInt64Array([extra_people]),
+		"i64_1": PackedInt64Array([0]),
+	})
+	_expect("family population reward queues extra source-branch members",
+		bool(submitted.get("ok", false)))
+	var grown := _run_day(ext, day)
+	_expect("extra family members land without breaking conservation",
+		bool(grown.get("done", false)) and not bool(grown.get("fatal", false))
+		and int(ext.get_family_snapshot(family_handle).population) ==
+			family_before + extra_people)
+
+
+func _has_expedition(ext: Object, country_handle: int, expedition_handle: int) -> bool:
+	if expedition_handle == 0:
+		return false
+	var page: Dictionary = ext.get_family_expeditions(country_handle, 0, 64)
+	var handles: PackedInt64Array = page.get("expedition_handles", PackedInt64Array())
+	return handles.has(expedition_handle)
 
 
 func _run_day(ext: Object, day: int) -> Dictionary:

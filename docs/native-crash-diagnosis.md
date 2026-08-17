@@ -191,3 +191,32 @@ MSVC 的 `/fsanitize=address` **不支持只插桩扩展 DLL 而主程序未插�
 3. 判断并发问题一定要看 `~*kb` 的全部线程，只看崩溃线程会漏掉另一半证据
 4. 重编译解决不了代码 bug。若怀疑构建不一致，先比对 dll 字节数——本案例重编译前后
    完全一致，直接排除了这条路
+5. 给并行生产/市场加共享容器时，必须走 `ProductionResult` / task scratch 再在 join 后合并。
+   只修一个 sink（如 `_staging_touched_cells`）不够，后来加的队列同样会再炸一次。
+
+## 9. 案例：生物引入队列堆损坏（2026-08-17）
+
+**现象**：编辑器 F5 跑到大约第 2400 天突然退出，Godot Console 无 ERROR。`godot.log`
+停在天气 LUT / detail_scatter。事件查看器 `0xc0000374`，WER 分类
+`HEAP_CORRUPTION_ACTIONABLE_BlockNotBusy_DOUBLE_FREE`。同签名当天多次。
+
+**定位**：minidump 里 `RtlFreeHeap` 来自 `dots_ext` 对 24 字节节点的
+`unordered_set<uint64_t>::clear()`。调用方 rdata 字符串是 `introduce_bits` /
+`run_diffusion`，对应 `DCWorldExt::run_bio_occupancy_pass` →
+`NativeEconomyRuntime::drain_bio_introduces`。崩溃当下 WorkerThread 都在休眠，
+说明损坏发生更早，clear 只是引爆点。
+
+**根因**：`run_building_production_cell()` 在
+`parallel_for_range("pk_economy_building_production")` 里调用
+`queue_bio_introduce_from_good()`，直接对共享的 `_bio_introduce_keys` /
+`_bio_introduce_cells` / `_bio_introduce_bits` 做 `insert` / `push_back`。
+多个 production worker 并发扩容同一 `unordered_set`，节点被释放两次。这与 §8
+的 `_staging_touched_cells` 是同一类漏网：生产结果已经有 per-cell
+`ProductionResult` 汇合，但这条后来加的生物引入队列没有走它。
+
+**修复**：worker 只把 `(cell, bit)` 写入当前 `ProductionResult`；
+`merge_building_production_result()` 在主线程按 cell 顺序
+`commit_bio_introduce()`。`drain_bio_introduces()` 仍只在主线程清空。
+
+**注意**：`template_debug` 默认 `debug_symbols=no`（跟 `dev_build` 走）。没有匹配
+PDB 时不要相信函数名；用 rdata 字符串和指令序列对源码。

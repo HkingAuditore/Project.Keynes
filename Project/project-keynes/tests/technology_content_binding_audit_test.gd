@@ -104,6 +104,10 @@ func _assert_explicit_economic_sectors(catalog: Dictionary) -> void:
 	for mine_id in ["coal_mine", "iron_ore_collector", "copper_ore_collector"]:
 		var index := ids.find(mine_id)
 		assert(index >= 0 and int(sectors[index]) == 1, mine_id)
+	for knowledge_id in ["oral_memory_circle", "seasonal_observation_shelter",
+			"pastoral_council_tent", "tide_observation_hut", "flood_calendar_shrine"]:
+		var knowledge_index := ids.find(knowledge_id)
+		assert(knowledge_index >= 0 and int(sectors[knowledge_index]) == 4, knowledge_id)
 
 
 func _assert_required_bindings(ids: PackedStringArray, offsets: PackedInt32Array,
