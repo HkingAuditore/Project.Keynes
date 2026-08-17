@@ -295,7 +295,9 @@ Focused fixtures:
 Technology activation is ACK-gated. `NativeCountryRuntime` keeps a completed
 technology in its pending bitset until the stable technology Effect instance
 has fired and both its permanent Modifier plus `technology.adopted` publication
-have reached their owning safe boundaries. A recipe that adds Country/Economy
+have reached their owning safe boundaries. Research completion registers that
+instance on the same country research day, because Effect (priority 85) runs
+before Country (255) on the following morning. A recipe that adds Country/Economy
 commands extends the same required ACK mask; the completed bit is written only
 after every required adapter ACK.
 The country retry does not re-upsert an already existing instance, so the

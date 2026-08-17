@@ -67,7 +67,8 @@ Godot UI / unhandled input
 2. 正式会话和玩家国家归属检查；
 3. 参数类型、范围和研究权重总和检查；
 4. 分配单调 sequence；普通领域命令计算下一日 `effective_day`，需要即时抽离
-   人口的家族开拓使用当前安全边界日；
+   人口的家族开拓使用当前安全边界日。开拓报价在冻结周期内仍可读（`busy/nonbinding`），
+   派遣/取消仍要求 committed 边界；
 5. 调用领域 facade；
 6. 归一化 `{ok, code, message, effective_day, sequence}` 并发射
    `command_completed`。

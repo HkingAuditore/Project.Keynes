@@ -309,11 +309,15 @@ bool NativeEconomyRuntime::configure_profile(const Dictionary &profile, std::str
     _family_min_population_per_active = std::clamp<int64_t>(dict_num<int64_t>(
         profile, "family_min_population_per_active", 100), 1, 1000000000LL);
     _family_max_per_cell = std::clamp(dict_num<int32_t>(
-        profile, "family_max_per_cell", 64), 1, 4096);
+        profile, "family_max_per_cell", 8), 1, 4096);
     _family_cells_per_slice = std::clamp(dict_num<int32_t>(
         profile, "family_cells_per_slice", 128), 1, 65536);
     _family_decline_reviews = std::clamp(dict_num<int32_t>(
         profile, "family_decline_reviews", 3), 1, 32);
+    _family_household_people_per_owner_slot = std::clamp(dict_num<int32_t>(
+        profile, "family_household_people_per_owner_slot", 256), 1, 256);
+    _family_household_max_people = std::clamp(dict_num<int32_t>(
+        profile, "family_household_max_people", 1024), 1, 100000);
     const std::string person_mode = dict_string(
         profile, "notable_person_runtime_mode", "ACTIVE");
     _person_runtime_mode = person_mode == "OFF" ? 0
@@ -405,6 +409,68 @@ void NativeEconomyRuntime::configure_satisfaction_profile(const Dictionary &prof
             _satisfaction_pressure_thresholds_q16[i] = previous;
         }
     }
+    _carrying_k_habitat_ref = std::max<int64_t>(0,
+        dict_num<int64_t>(profile, "carrying_k_habitat_ref", 40));
+    _carrying_k_floor = std::max<int64_t>(0,
+        dict_num<int64_t>(profile, "carrying_k_floor", 8));
+    const int32_t q16 = static_cast<int32_t>(Q16_ONE);
+    _carrying_river_bonus_q16 = std::clamp(
+        dict_num<int32_t>(profile, "carrying_river_bonus_q16", 72090),
+        0, q16 * 4);
+    _carrying_water_habitability_q16 = std::clamp(
+        dict_num<int32_t>(profile, "carrying_water_habitability_q16", 49152),
+        0, q16);
+    _carrying_surplus_elasticity_q16 = std::clamp(
+        dict_num<int32_t>(profile, "carrying_surplus_elasticity_q16", q16 / 2),
+        0, q16);
+    _carrying_sat_elasticity_q16 = std::clamp(
+        dict_num<int32_t>(profile, "carrying_sat_elasticity_q16", 22938),
+        0, q16);
+    _carrying_soft_start_q16 = std::clamp(
+        dict_num<int32_t>(profile, "carrying_soft_start_q16", 45875),
+        1, q16);
+    _carrying_surplus_floor_q16 = std::clamp(
+        dict_num<int32_t>(profile, "carrying_surplus_floor_q16", 16384),
+        0, q16);
+    _carrying_surplus_cap_q16 = std::max(_carrying_surplus_floor_q16,
+        dict_num<int32_t>(profile, "carrying_surplus_cap_q16", 98304));
+    _carrying_sat_floor_q16 = std::clamp(
+        dict_num<int32_t>(profile, "carrying_sat_floor_q16", 8192),
+        0, q16);
+    _carrying_sat_cap_q16 = std::max(_carrying_sat_floor_q16,
+        dict_num<int32_t>(profile, "carrying_sat_cap_q16", q16));
+    _carrying_residual_floor_q16 = std::clamp(
+        dict_num<int32_t>(profile, "carrying_residual_floor_q16", q16 / 2),
+        1, q16 * 4);
+    _carrying_residual_cap_q16 = std::max(_carrying_residual_floor_q16,
+        dict_num<int32_t>(profile, "carrying_residual_cap_q16", q16 * 2));
+    _carrying_support_ema_alpha_q16 = std::clamp(
+        dict_num<int32_t>(profile, "carrying_support_ema_alpha_q16", 1024),
+        1, q16);
+    _carrying_temp_opt_lo_q16 = std::clamp(
+        dict_num<int32_t>(profile, "carrying_temp_opt_lo_q16", 19661),
+        0, q16);
+    _carrying_temp_opt_hi_q16 = std::clamp(
+        dict_num<int32_t>(profile, "carrying_temp_opt_hi_q16", 45875),
+        _carrying_temp_opt_lo_q16, q16);
+    _carrying_paw_opt_lo_q16 = std::clamp(
+        dict_num<int32_t>(profile, "carrying_paw_opt_lo_q16", 16384),
+        0, q16);
+    _carrying_paw_opt_hi_q16 = std::clamp(
+        dict_num<int32_t>(profile, "carrying_paw_opt_hi_q16", 58982),
+        _carrying_paw_opt_lo_q16, q16);
+    _carrying_family_weight = packed_i32(profile, "carrying_family_weight");
+    _carrying_profile_class_ids = packed_strings(profile, "carrying_class_ids");
+    _carrying_profile_class_weight_q16 = packed_i32(
+        profile, "carrying_class_weight_q16");
+    _carrying_landform_habitability_q16 = packed_i32(
+        profile, "carrying_landform_habitability_q16");
+    _carrying_vegetation_habitability_q16 = packed_i32(
+        profile, "carrying_vegetation_habitability_q16");
+    if (_carrying_landform_habitability_q16.size() < CARRYING_LANDFORM_COUNT)
+        _carrying_landform_habitability_q16.resize(CARRYING_LANDFORM_COUNT, q16);
+    if (_carrying_vegetation_habitability_q16.size() < CARRYING_VEGETATION_COUNT)
+        _carrying_vegetation_habitability_q16.resize(CARRYING_VEGETATION_COUNT, q16);
 }
 
 

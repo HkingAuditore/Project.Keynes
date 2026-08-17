@@ -7,8 +7,11 @@ const TreasuryGoodScene := preload("res://scenes/ui/treasury_good_card.tscn")
 const TradeRowScene := preload("res://scenes/ui/economy_trade_row.tscn")
 
 const PAGE_IDS := ["treasury", "income", "consumption", "business", "tariff", "trade"]
+const TOP_PAGE_IDS := ["treasury", "tax", "trade"]
+const TAX_PAGE_IDS := ["income", "consumption", "business", "tariff"]
 const PAGE_DEFINITIONS := {
 	"treasury": {"label": "国库", "icon": &"metric.treasury", "accent": UITokens.RESOURCE},
+	"tax": {"label": "税制", "icon": &"tax.section", "accent": UITokens.BRASS_HIGHLIGHT},
 	"income": {"label": "所得税", "icon": &"tax.income", "accent": UITokens.ACCENT},
 	"consumption": {"label": "消费税", "icon": &"tax.consumption", "accent": UITokens.GOOD},
 	"business": {"label": "营业税", "icon": &"tax.business", "accent": UITokens.CLIMATE},
@@ -18,7 +21,6 @@ const PAGE_DEFINITIONS := {
 const TAX_KIND := {"income": 0, "consumption": 1, "business": 2, "import": 3, "export": 4}
 const KIND_LABELS := {"import": "进口", "export": "出口"}
 const CARD_SIZE := Vector2(240.0, 0.0)
-const HOVER_TINT := Color(1.10, 1.08, 1.03, 1.0)
 const ENTRANCE_STAGGER := 0.022
 const ENTRANCE_MAX_DELAY := 0.30
 # The simulation can advance dozens of days per real second. Summary cards are
@@ -38,7 +40,10 @@ var _status_label: Label
 var _search: LineEdit
 var _overrides_only: Button
 var _tabs: CategoryTabs
+var _tax_tabs: CategoryTabs
+var _insights: InsightList
 var _tab_signature := ""
+var _tax_tab_signature := ""
 var _scroll: ScrollContainer
 var _flow: HFlowContainer
 var _empty_label: Label
@@ -77,6 +82,8 @@ func _ready() -> void:
 	_country_label = get_node_or_null("Column/Header/CountryLabel") as Label
 	_day_label = get_node_or_null("Column/Header/DayLabel") as Label
 	_tabs = get_node_or_null("Column/Tabs") as CategoryTabs
+	_tax_tabs = get_node_or_null("Column/TaxTabs") as CategoryTabs
+	_insights = get_node_or_null("Column/Insights") as InsightList
 	_search = get_node_or_null("Column/Tools/Search") as LineEdit
 	_overrides_only = get_node_or_null("Column/Tools/OverridesOnly") as Button
 	_status_label = get_node_or_null("Column/StatusLabel") as Label
@@ -100,6 +107,8 @@ func _ready() -> void:
 		return
 	section_badge.set_semantic(&"tax.section", UITokens.BRASS_HIGHLIGHT)
 	_tabs.tab_selected.connect(_select_page)
+	if _tax_tabs != null:
+		_tax_tabs.tab_selected.connect(_select_page)
 	_search.text_changed.connect(_apply_filter.unbind(1))
 	_overrides_only.toggled.connect(_apply_filter.unbind(1))
 	if _trade_goods_button != null:
@@ -111,11 +120,9 @@ func _ready() -> void:
 	if _trade_next != null:
 		_trade_next.pressed.connect(_trade_next_page)
 	if _trade_prev != null:
-		_trade_prev.text = "<"
-		_trade_prev.tooltip_text = "上一页"
+		IconButton.apply(_trade_prev, &"action.back", IconButton.MEDIUM, "上一页")
 	if _trade_next != null:
-		_trade_next.text = ">"
-		_trade_next.tooltip_text = "下一页"
+		IconButton.apply(_trade_next, &"action.chevron_right", IconButton.MEDIUM, "下一页")
 	_select_page("treasury")
 
 
@@ -183,69 +190,113 @@ func _apply_model(now_msec: int) -> void:
 	_cash_card.set_data("国库现金",
 		String(treasury.get("cash_text", "—")) if available else "—",
 		String(_model.get("country_name", "玩家国家")), UITokens.RESOURCE, "", "metric.treasury")
-	_tax_card.set_data("上批税收", _money(collected), "所得税 / 消费税 / 营业税",
+	_tax_card.set_data("昨日税收", _money(collected), "所得税 / 消费税 / 营业税",
 		UITokens.BRASS_HIGHLIGHT, "", "tax.section")
-	_subsidy_card.set_data("补贴实付", _money(subsidy), "由财政预留支付",
-		UITokens.CLIMATE, "", "tax.income")
+	var subsidy_gap := maxi(0, requested - subsidy)
+	_subsidy_card.set_data("补贴缺口", _money(subsidy_gap),
+		"实付 %s" % _money(subsidy),
+		UITokens.CLIMATE if subsidy_gap <= 0 else UITokens.RISK, "", "tax.income")
 	_fulfillment_card.set_data("补贴兑现率", "%.1f%%" % (fulfillment * 100.0),
-		"首次启用时预算建立中" if requested > 0 and subsidy == 0 else "上批申请",
+		"首次启用时预算建立中" if requested > 0 and subsidy == 0 else "昨日申请",
 		UITokens.ACCENT, "", "tax.default")
 	_country_label.text = String(_model.get("country_name", ""))
 	var day := int(_model.get("current_day", -1))
 	_day_label.text = "第 %d 天" % (day + 1) if day >= 0 else ""
 	_day_label.visible = day >= 0
 	_refresh_tabs()
+	_refresh_tax_tabs()
 	_refresh_page()
 	if _page == "trade":
 		_apply_trade_summary_cards()
+	_refresh_treasury_insights()
 
 
 func _refresh_tabs() -> void:
-	var presentation: Dictionary = _model.get("tax_presentation", {})
 	var treasury: Dictionary = _model.get("treasury", {})
 	var signature_parts: Array[String] = []
 	var tabs: Array = []
-	for page in PAGE_IDS:
+	for page in TOP_PAGE_IDS:
 		var definition: Dictionary = PAGE_DEFINITIONS[page]
 		var tooltip := String(definition.label)
 		if page == "trade":
-			var trade_summary: Dictionary = _model.get("trade_summary", {})
-			var trade_revision := int(trade_summary.get("revision", _trade_revision))
-			tooltip = "贸易 · 修订 %d" % trade_revision
-			signature_parts.append("trade:%d" % trade_revision)
+			tooltip = "贸易"
+			signature_parts.append("trade")
 		elif page == "treasury":
 			var good_count := int(treasury.get("nonzero_good_count", 0))
 			tooltip = "国库 · %d 种物资" % good_count
 			signature_parts.append("%s:%d" % [page, good_count])
 		else:
-			var page_pres: Dictionary = presentation.get(_presentation_key(page), {})
-			var unlocked_count := (page_pres.get("unlocked", []) as Array).size()
-			var total := int(page_pres.get("total_count", 0))
-			tooltip = "%s · 已解锁 %d/%d" % [String(definition.label), unlocked_count, total]
-			signature_parts.append("%s:%d:%d" % [page, unlocked_count, total])
+			tooltip = "税制"
+			signature_parts.append("tax")
 		tabs.append({"id": page, "label": String(definition.label),
 			"icon": definition.icon, "tooltip": tooltip})
 	var signature := "|".join(signature_parts)
 	if signature == _tab_signature and _tabs.get_child_count() > 0:
+		_tabs.select_tab(_top_page_for(_page))
 		return
 	_tab_signature = signature
-	_tabs.set_tabs(tabs, _page, true)
+	_tabs.set_tabs(tabs, _top_page_for(_page), true)
+
+
+func _refresh_tax_tabs() -> void:
+	if _tax_tabs == null:
+		return
+	var tax_open := _is_tax_page(_page)
+	_tax_tabs.visible = tax_open
+	if not tax_open:
+		return
+	var presentation: Dictionary = _model.get("tax_presentation", {})
+	var signature_parts: Array[String] = []
+	var tabs: Array = []
+	for page in TAX_PAGE_IDS:
+		var definition: Dictionary = PAGE_DEFINITIONS[page]
+		var page_pres: Dictionary = presentation.get(_presentation_key(page), {})
+		var unlocked_count := (page_pres.get("unlocked", []) as Array).size()
+		var total := int(page_pres.get("total_count", 0))
+		signature_parts.append("%s:%d:%d" % [page, unlocked_count, total])
+		tabs.append({"id": page, "label": String(definition.label),
+			"icon": definition.icon,
+			"tooltip": "%s · 已解锁 %d/%d" % [String(definition.label), unlocked_count, total]})
+	var signature := "|".join(signature_parts)
+	if signature == _tax_tab_signature and _tax_tabs.get_child_count() > 0:
+		_tax_tabs.select_tab(_page)
+		return
+	_tax_tab_signature = signature
+	_tax_tabs.set_tabs(tabs, _page, true)
 
 
 func _select_page(page: String) -> void:
+	if page == "tax":
+		page = _page if _is_tax_page(_page) else "income"
 	_page = page
 	if _tabs != null:
-		_tabs.select_tab(page)
+		_tabs.select_tab(_top_page_for(page))
+	if _tax_tabs != null:
+		_refresh_tax_tabs()
+		_tax_tabs.visible = _is_tax_page(page)
+		if _tax_tabs.visible:
+			_tax_tabs.select_tab(page)
 	if _search != null:
-		_search.visible = page != "treasury" and page != "trade"
-		_overrides_only.visible = page != "treasury" and page != "trade"
+		_search.visible = _is_tax_page(page)
+		_overrides_only.visible = _is_tax_page(page)
 	if _trade_views != null:
 		_trade_views.visible = page == "trade"
 		_trade_prev.visible = page == "trade"
 		_trade_next.visible = page == "trade"
 		_trade_page_label.visible = page == "trade"
+	if _insights != null:
+		_insights.visible = page == "treasury"
 	_refresh_page()
+	_refresh_treasury_insights()
 	_animate_cards_in()
+
+
+func _top_page_for(page: String) -> String:
+	return "tax" if _is_tax_page(page) else page
+
+
+func _is_tax_page(page: String) -> bool:
+	return TAX_PAGE_IDS.has(page)
 
 
 # Visibility is synced from a wanted-set instead of hide-all-then-reshow, so a
@@ -556,11 +607,11 @@ func _apply_trade_summary_cards() -> void:
 	var cumulative_imports := int(summary.get("cumulative_import_base", 0))
 	var cumulative_exports := int(summary.get("cumulative_export_base", 0))
 	var cumulative_tariff := int(summary.get("cumulative_tariff_net_income", 0))
-	_tax_card.set_data("上批进口额", _money(imports), "累计 %s" % _money(cumulative_imports),
+	_tax_card.set_data("昨日进口额", _money(imports), "累计 %s" % _money(cumulative_imports),
 		UITokens.GOOD, "", "metric.trade")
-	_subsidy_card.set_data("上批出口额", _money(exports), "累计 %s" % _money(cumulative_exports),
+	_subsidy_card.set_data("昨日出口额", _money(exports), "累计 %s" % _money(cumulative_exports),
 		UITokens.RESOURCE, "", "metric.trade")
-	_fulfillment_card.set_data("上批净出口", _money(net), "累计 %s" % _money(
+	_fulfillment_card.set_data("昨日净出口", _money(net), "累计 %s" % _money(
 		cumulative_exports - cumulative_imports),
 		UITokens.ACCENT, "", "metric.trade")
 	_cash_card.set_data("关税净收入", _money(tariff) if available else "—",
@@ -578,12 +629,14 @@ func _apply_default_summary_cards() -> void:
 	_cash_card.set_data("国库现金",
 		String(treasury.get("cash_text", "—")) if available else "—",
 		String(_model.get("country_name", "玩家国家")), UITokens.RESOURCE, "", "metric.treasury")
-	_tax_card.set_data("上批税收", _money(collected), "所得税 / 消费税 / 营业税",
+	_tax_card.set_data("昨日税收", _money(collected), "所得税 / 消费税 / 营业税",
 		UITokens.BRASS_HIGHLIGHT, "", "tax.section")
-	_subsidy_card.set_data("补贴实付", _money(subsidy), "由财政预留支付",
-		UITokens.CLIMATE, "", "tax.income")
+	var subsidy_gap := maxi(0, requested - subsidy)
+	_subsidy_card.set_data("补贴缺口", _money(subsidy_gap),
+		"实付 %s" % _money(subsidy),
+		UITokens.CLIMATE if subsidy_gap <= 0 else UITokens.RISK, "", "tax.income")
 	_fulfillment_card.set_data("补贴兑现率", "%.1f%%" % (fulfillment * 100.0),
-		"首次启用时预算建立中" if requested > 0 and subsidy == 0 else "上批申请",
+		"首次启用时预算建立中" if requested > 0 and subsidy == 0 else "昨日申请",
 		UITokens.ACCENT, "", "tax.default")
 
 
@@ -645,7 +698,7 @@ func _ensure_card(page: String, item_id: String, label: String,
 	name_label.add_theme_font_override("font", UITokens.font_with_weight(600))
 	var sub_label := panel.get_node("Body/Sub") as Label
 	if is_default:
-		sub_label.text = "适用于所有未单独设置的项目"
+		sub_label.text = "未单独设置的项目适用"
 		sub_label.visible = true
 	var spins := {}
 	var resets := {}
@@ -752,19 +805,54 @@ func _apply_card_frame(card: Dictionary, highlighted: bool) -> void:
 		if bool(card.is_default) or highlighted else &"PKMetricCard"
 
 
-func _watch_card_hover(panel: PanelContainer) -> void:
-	panel.mouse_entered.connect(_lift_card.bind(panel, true))
-	panel.mouse_exited.connect(_lift_card.bind(panel, false))
+func _watch_card_hover(_panel: PanelContainer) -> void:
+	pass
 
 
-func _lift_card(panel: PanelContainer, entered: bool) -> void:
-	if panel.has_meta("hover_tween"):
-		(panel.get_meta("hover_tween") as Tween).kill()
-	var tween := panel.create_tween()
-	tween.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tween.tween_property(panel, "self_modulate",
-		HOVER_TINT if entered else Color.WHITE, UITokens.ANIM_FAST)
-	panel.set_meta("hover_tween", tween)
+func _refresh_treasury_insights() -> void:
+	if _insights == null:
+		return
+	_insights.visible = _page == "treasury"
+	if not _insights.visible:
+		return
+	var fiscal: Dictionary = _model.get("fiscal", {})
+	var trade_summary: Dictionary = _model.get("trade_summary", {})
+	var subsidy := _sum_i64(fiscal.get("subsidy_paid", PackedInt64Array()))
+	var requested := _sum_i64(fiscal.get("subsidy_requested", PackedInt64Array()))
+	var gap := maxi(0, requested - subsidy)
+	var imports := int(trade_summary.get("previous_import_base", 0))
+	var exports := int(trade_summary.get("previous_export_base", 0))
+	var net := int(trade_summary.get("previous_net_export_base", exports - imports))
+	var items: Array = []
+	if gap > 0:
+		items.append({
+			"id": "subsidy_gap",
+			"text": "补贴缺口 %s，国库现金可能不够兑现。" % _money(gap),
+			"accent": UITokens.RISK,
+			"icon": "tax.income",
+		})
+	if net < 0:
+		items.append({
+			"id": "trade_deficit",
+			"text": "贸易逆差 %s。" % _money(-net),
+			"accent": UITokens.RISK,
+			"icon": "metric.trade",
+		})
+	elif net > 0:
+		items.append({
+			"id": "trade_surplus",
+			"text": "贸易顺差 %s。" % _money(net),
+			"accent": UITokens.GOOD,
+			"icon": "metric.trade",
+		})
+	if items.size() < 4:
+		items.append({
+			"id": "market_shortage_hint",
+			"text": "物资短缺请到各地市场档案查看。",
+			"accent": UITokens.TEXT_MUTED,
+			"icon": "resource",
+		})
+	_insights.set_items(items.slice(0, 4))
 
 
 # Every visible card fades in; only the stagger delay is capped, so large

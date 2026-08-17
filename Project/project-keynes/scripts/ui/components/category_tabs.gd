@@ -62,11 +62,19 @@ func select_tab(tab_id: String) -> void:
 
 
 func clear_tabs() -> void:
+	# queue_free 要到帧末才离树。同一帧里再 set_tabs 会让旧按钮继续参与
+	# HBox 最小宽度，页签叠几份后把右侧档案面板撑歪。
 	for child in get_children():
+		remove_child(child)
 		child.queue_free()
 	_buttons.clear()
 	_tab_accents.clear()
 	_current_tab = ""
+
+
+func _get_minimum_size() -> Vector2:
+	# 页签只占用父级给的宽度，不要用子按钮合计最小宽去撑开档案面板。
+	return Vector2(0.0, maxf(custom_minimum_size.y, 36.0))
 
 
 func _refresh_tab_accents() -> void:

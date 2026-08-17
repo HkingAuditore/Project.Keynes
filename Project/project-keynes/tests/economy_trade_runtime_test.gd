@@ -199,8 +199,8 @@ func _run() -> void:
 	_expect("dispatch preserves the source market local-demand reserve",
 		int((source_after_dispatch.stock as PackedInt64Array)[source_good_index]) >= local_target)
 	var saved := _save_economy(ext)
-	_expect("PKEC v35 saves in-transit escrow", bool(saved.get("ok", false)) and
-		int(saved.get("schema", 0)) == 35)
+	_expect("PKEC v36 saves in-transit escrow", bool(saved.get("ok", false)) and
+		int(saved.get("schema", 0)) == 36)
 	var restored := _new_ext(compiled, 2)
 	CountryTestHelper.configure_all_technologies(restored, catalog, 2, 4410)
 	restored.configure_economy(catalog, profile, 2, 4410)
@@ -510,7 +510,7 @@ func _test_tariff_matrix(compiled: Dictionary, catalog: Dictionary) -> void:
 			catalog, positive.profile, 2, 4420).get("ok", false))
 		var economy_restored := _restore_economy(
 			restored, saved_economy.get("chunks", [])) if economy_configured else {"ok": false}
-		_expect("PKEC v35 restores tariff history, aggregates and state hash",
+		_expect("PKEC v36 restores tariff history, aggregates and state hash",
 			bool(saved_country.get("ok", false)) and bool(saved_economy.get("ok", false)) and
 			bool(economy_restored.get("ok", false)) and
 			int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))

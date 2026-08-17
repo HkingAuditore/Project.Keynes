@@ -103,6 +103,8 @@ catalog 编译成 `signature_satisfaction_dimension_weights_q16`
 plan 内不含某档需求时，该档的分母为 0，维度取满分并从合成分母中剔除——
 贫农的 plan 里没有奢侈需求，不应因此被扣分。
 
+`SAT_DIM_SUBSISTENCE` 是例外：档位累加之后立刻用 `survival_q16`（食品篮子与寒冷衣着上限的较低值）覆盖维度值，并**恢复职业的生存权重**。当前内容把主食/肉类/蔬果编在 basic 档，生存维度仍必须进入 worst-dimension 与合成分母，否则空市场的最短板会错误地落在 basic。
+
 ### 合成
 
 ```text
@@ -164,10 +166,11 @@ epoch 起始清零。`record_fiscal` 自身会先调用 `touch_accounting_slot`�
 
 ## 玩法接管
 
-- **出生率**：`birth_input = clamp(composite × Q16 / satisfaction_birth_reference_q16)`，
-  `birth_factor = 1 - satisfaction_birth_weight × (1 - birth_input)`。
-  先按参考值重标定，否则早期 cohort（按构造在奢侈、储蓄、发展上必然得零分）
-  会自己掐死自己的出生率。
+- **出生率**：格级 `sat_cell` 进入承载力 `K_eff`；cohort 只乘
+  `cohort_sat_residual = clamp(rescale(cohort) / sat_cell)`。
+  `rescale` 仍按 `satisfaction_birth_reference_q16` 重标定，否则早期 cohort
+  （按构造在奢侈、储蓄、发展上必然得零分）会自己掐死自己的出生率。
+  贴上 `K_eff` 后 `fertility_land` 落到更替，未解锁 need 不进物资族分母。
 - **饥饿死亡只读 `SAT_DIM_SUBSISTENCE`**，代码里写成显式不变量与注释：
   饿死是生理事实，税重、囊中羞涩或聚落落后都不得致死。
 - **同格就业流动**：`run_building_employment_cell` 的 `hire_order` 排序在利润相同时，

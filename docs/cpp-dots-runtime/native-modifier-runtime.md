@@ -1,8 +1,8 @@
 # Native Modifier Runtime
 
 科技树通过永久 `UNIQUE_SOURCE` Country Modifier 提供四领域研究效率、研究成本、科研机构、
-五部门、生产家族与精确建筑类型产出、施工/贸易和旱涝寒热适应效果。完成节点先 pending，Effect
-中的 Modifier 与 `technology.adopted` 等全部命令 ACK 后才发布完成标签；详见
+五部门、生产家族与精确建筑类型产出、施工/贸易和旱涝寒热适应效果。完成节点先 pending 并登记
+Effect instance，下一轮 Effect→Modifier→`technology.adopted` ACK 后才发布完成标签；详见
 [科技树、科技值与科研经济运行时](./technology-tree-runtime.md)。
 当前 361 节点目录显式作者化 354 个 term。每个正式非开局、非里程碑节点保留 1-6 个真实消费者条款；生产家族
 或同一精确建筑作者合计不超过 +400%，全国部门/研究/贸易作者合计不超过 +400%，含泛化全国条款
@@ -188,7 +188,7 @@ active/peak/bucket/query/bucket read/rebuild/snapshot version、事件计数和�
 | section/schema | 内容 |
 | --- | --- |
 | PKCN v11 | Country authority, technology/research-signal identity, national/cell tax policy + Country Modifier domain blob + native Effect ingress idempotency |
-| PKEC v35 / Modifier schema v2 | Economy authority, family-cell effects + BuildingIdentityStore + Economy Modifier section + native Effect ingress idempotency + canal projects/quotes |
+| PKEC v36 / Modifier schema v2 | Economy authority, family-cell effects + BuildingIdentityStore + Economy Modifier section + native Effect ingress idempotency + canal projects/quotes + carrying-capacity support EMA |
 | PKCM v1 | Climate Modifier domain |
 | PKGP v1 | Gameplay identity/base SoA + Gameplay Modifier domain |
 
@@ -208,7 +208,7 @@ environment、PKCM、WorldClock、PKCN、PKEC、PKGP，再恢复 vision/journal/
 `tests/modifier_runtime_test.gd` 覆盖 apply/remove/expiry、stack refresh、global/group/entity、
 UNIQUE_SOURCE、stale handle、零 factor、Gameplay base/effective、journal v2、report 诊断和四域 round-trip。
 `country_runtime_test.gd` 验证 PKCN v11；`family_runtime_test.gd` 与
-`building_runtime_test.gd` 验证 PKEC v35 save/restore 与状态哈希。
+`building_runtime_test.gd` 验证 PKEC v36 save/restore 与状态哈希。
 正式 `PK_GAME_SAVE_ROUNDTRIP_TEST=1` 也已通过新建世界、PKSV 保存/恢复、authority hash
 对齐和恢复后首个经济周期。两套大型 economy suite 的 v20 存档断言虽通过，但各仍有 4 个
 既有 catalog/平衡断言失败，整体退出码为 1，不能把它们列为全绿门禁。

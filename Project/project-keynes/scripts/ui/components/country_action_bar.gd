@@ -4,13 +4,13 @@ class_name CountryActionBar
 
 signal section_selected(section_id: String)
 
-const BAR_HEIGHT := 60.0
-const BUTTON_SIZE := Vector2(52.0, 44.0)
-const COMPACT_BUTTON_WIDTH := 46.0
-const ICON_SIZE := 28
+const BAR_HEIGHT := 70.0
+const BUTTON_SIZE := Vector2(64.0, 56.0)
+const COMPACT_BUTTON_WIDTH := 56.0
+const ICON_SIZE := 24
 const SECTIONS := [
 	{"id": "technology", "label": "科技", "icon": &"country.technology", "available": true},
-	{"id": "politics", "label": "政治", "icon": &"country.politics", "available": false},
+	{"id": "ideology", "label": "理念", "icon": &"country.politics", "available": true},
 	{"id": "economy", "label": "经济", "icon": &"country.economy", "available": true},
 	{"id": "military", "label": "军事", "icon": &"country.military", "available": false},
 	{"id": "diplomacy", "label": "外交", "icon": &"country.diplomacy", "available": false},
@@ -34,15 +34,20 @@ func _ready() -> void:
 		var section_id := String(definition.id)
 		var available := bool(definition.available)
 		var button := scene_buttons[index] as Button
-		var tooltip := String(definition.label) if available else "%s · 尚未开放" % definition.label
+		var tooltip := String(definition.label) if available else "尚未开放"
 		IconButton.configure(button, tooltip, true, false)
 		button.text = ""
 		button.focus_mode = Control.FOCUS_NONE
 		button.disabled = not available
-		var icon := button.get_node("Center/Icon") as TextureRect
+		var icon := button.get_node("Column/Icon") as TextureRect
 		icon.texture = IconCatalog.texture_for_key(definition.icon)
 		icon.modulate = UITokens.BRASS_HIGHLIGHT.lerp(UITokens.TEXT_MAIN, 0.30) \
 			if available else UITokens.TEXT_FAINT
+		var caption := button.get_node("Column/Caption") as Label
+		caption.text = String(definition.label) if available else ""
+		caption.visible = available
+		caption.add_theme_color_override("font_color",
+			UITokens.TEXT_MAIN if available else UITokens.TEXT_FAINT)
 		if available:
 			button.pressed.connect(func() -> void: section_selected.emit(section_id))
 		_buttons[section_id] = button

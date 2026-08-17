@@ -1,6 +1,8 @@
 extends SceneTree
 
 const StartPolicy = preload("res://scripts/game/start_location_policy.gd")
+const StarterEconomyPlannerScript = preload(
+	"res://scripts/economy/starter_economy_planner.gd")
 const ResourceRegistry = preload("res://scripts/data/resource_profile_registry.gd")
 const ResearchSignalCatalogScript = preload(
 	"res://scripts/research/research_signal_catalog.gd")
@@ -205,19 +207,27 @@ func _assert_plan_contract(label: String, route: Dictionary) -> void:
 	assert(ids.size() == counts.size() and not ids.is_empty(),
 		"%s building ids/counts are parallel" % label)
 	var job_capacity := 0
+	var employee_capacity := 0
 	for index in range(ids.size()):
 		assert(int(counts[index]) > 0, "%s positive count for %s" % [label, ids[index]])
 		var profile: BuildingProfile = load(
 			"res://data/economy/buildings/%s.tres" % ids[index])
 		assert(profile != null, "%s profile exists for %s" % [label, ids[index]])
-		assert(profile.employee_profession_ids.is_empty() and
-			profile.employee_slots_per_building.is_empty(),
-			"%s %s has no employee role" % [label, ids[index]])
+		var allows_employees := StarterEconomyPlannerScript.allows_starter_employee_roles(
+			String(ids[index]))
+		var has_employees := not profile.employee_profession_ids.is_empty() \
+			or not profile.employee_slots_per_building.is_empty()
+		if allows_employees:
+			assert(has_employees, "%s %s keeps authored employee roles" % [label, ids[index]])
+			for slot in profile.employee_slots_per_building:
+				employee_capacity += int(slot) * int(counts[index])
+		else:
+			assert(not has_employees, "%s %s has no employee role" % [label, ids[index]])
 		job_capacity += int(counts[index]) * int(profile.owner_slots_per_building)
 	assert(job_capacity == 20 and int(route.get("starter_job_capacity", 0)) == 20,
 		"%s has exactly 20 self-operated job slots" % label)
-	assert(int(route.get("starter_employee_job_capacity", -1)) == 0,
-		"%s has zero employee slots" % label)
+	assert(int(route.get("starter_employee_job_capacity", -1)) == employee_capacity,
+		"%s confines employee slots to precious workings" % label)
 	assert(not route.has("owner_job_capacity_by_profession"),
 		"%s does not expose a population profession allocation" % label)
 	for fixed_id in ["early_merchant_post", "placer_gold_working",

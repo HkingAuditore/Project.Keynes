@@ -160,6 +160,8 @@ value = 1.02
 [sub_resource type="Resource" id="DefFamilyCityOutput"]
 script = ExtResource("3_definition")
 key = &"family.city.production_boost"
+display_name = "城市产出加成"
+description = "提高本城各类生产的产出系数。"
 domain = 2
 stack_policy = 1
 terms = Array[Resource]([SubResource("TermFamilyCityOutput")])
@@ -173,6 +175,8 @@ value = 1.05
 [sub_resource type="Resource" id="DefFamilyHuntingOutput"]
 script = ExtResource("3_definition")
 key = &"family.city.hunting_output_boost"
+display_name = "狩猎产出加成"
+description = "提高本城狩猎相关产出。"
 domain = 2
 stack_policy = 1
 terms = Array[Resource]([SubResource("TermFamilyHuntingOutput")])
@@ -186,6 +190,8 @@ value = 1.05
 [sub_resource type="Resource" id="DefFamilyExtractiveOutput"]
 script = ExtResource("3_definition")
 key = &"family.city.extractive_output_boost"
+display_name = "采掘产出加成"
+description = "提高本城采掘部门产出。"
 domain = 2
 stack_policy = 1
 terms = Array[Resource]([SubResource("TermFamilyExtractiveOutput")])
@@ -199,6 +205,8 @@ value = 1.03
 [sub_resource type="Resource" id="DefFamilyBirth"]
 script = ExtResource("3_definition")
 key = &"family.city.birth_boost"
+display_name = "出生率加成"
+description = "提高本城人口出生系数。"
 domain = 2
 stack_policy = 1
 terms = Array[Resource]([SubResource("TermFamilyBirth")])
@@ -212,6 +220,8 @@ value = 1.05
 [sub_resource type="Resource" id="DefFamilyTradeOutput"]
 script = ExtResource("3_definition")
 key = &"family.city.trade_output_boost"
+display_name = "贸易产出加成"
+description = "提高本城贸易产出系数。"
 domain = 2
 stack_policy = 1
 terms = Array[Resource]([SubResource("TermFamilyTradeOutput")])
@@ -237,6 +247,8 @@ value = 1.05
 [sub_resource type="Resource" id="DefFamilyFoodConsumption"]
 script = ExtResource("3_definition")
 key = &"family.city.food_consumption_boost"
+display_name = "食品消费加成"
+description = "提高本城主食、肉类与蔬果消费。"
 domain = 2
 stack_policy = 1
 terms = Array[Resource]([SubResource("TermFamilyStapleConsumption"), SubResource("TermFamilyProteinConsumption"), SubResource("TermFamilyProduceConsumption")])
@@ -250,6 +262,8 @@ value = 1.1
 [sub_resource type="Resource" id="DefFamilyWildGameRegen"]
 script = ExtResource("3_definition")
 key = &"family.city.wild_game_regen_boost"
+display_name = "猎物再生加成"
+description = "提高本城野生猎物资源再生。"
 domain = 2
 stack_policy = 1
 terms = Array[Resource]([SubResource("TermFamilyWildGameRegen")])

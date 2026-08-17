@@ -53,7 +53,9 @@ func _run() -> void:
 		int(start.get("foreign_count", -1)) == 5 and country_starts.size() == 6)
 	_expect("start cell is in range", cell_idx >= 0 and cell_idx < map.cell_count())
 	if cell_idx >= 0 and cell_idx < map.cell_count():
-		_expect("start cell has river/lake access", _has_freshwater_access(map, cell_idx))
+		_expect("start cell is passable land",
+			map.is_water_arr[cell_idx] == 0
+			and TerrainType.is_passable_land(int(map.terrain_arr[cell_idx])))
 	var represented_routes := {}
 	for start_value in country_starts:
 		var country_start: Dictionary = start_value
@@ -77,7 +79,7 @@ func _run() -> void:
 			and String(country_start.get("starter_knowledge_good_id", "")) ==
 				"technology_points"
 			and String(country_start.get("starter_precious_good_id", "")) in
-				["gold_ore", "silver_ore"]
+				["gold", "silver"]
 			and technologies.has("tech.early_trade")
 			and route_buildings.has("early_merchant_post"))
 		var construction_offsets: PackedInt32Array = country_start.get(
@@ -102,10 +104,8 @@ func _run() -> void:
 			and selected_materials.size() == selected_quantities.size())
 		_expect("regional weak buildings close the five produced goods",
 			_starter_route_outputs(country_start))
-		_expect("natural-first start never tops up generated resources",
-			not country_start.has("resource_topups") and
-			(country_start.get("missing_resource_ids", PackedStringArray()) as
-				PackedStringArray).is_empty())
+		_expect("opening top-up only raises missing reserves to profile minimums",
+			_topups_are_minimum_fills(country_start, map, int(country_start.get("cell", -1))))
 		for resource_id in country_start.get("starter_food_resource_ids", PackedStringArray()):
 			_expect("selected food resource %s exists locally" % resource_id,
 				not String(resource_id).is_empty() and _resource_reserve(
@@ -228,8 +228,10 @@ func _run() -> void:
 					_building_count(buildings, building_id) == int(route_counts[building_index]))
 			_expect("starter route has 20 self-operated job slots",
 				int(country_start.get("starter_job_capacity", 0)) == 20)
-			_expect("starter route has no employee slots",
-				int(country_start.get("starter_employee_job_capacity", 0)) == 0)
+			_expect("starter route confines employee slots to precious workings",
+				int(country_start.get("starter_employee_job_capacity", 0)) ==
+					_precious_employee_slots(String(country_start.get(
+						"precious_resource", ""))))
 			_expect("starter route does not preallocate professions",
 				not country_start.has("owner_job_capacity_by_profession"))
 			_expect("starter excludes estates, mature mines and factories",
@@ -280,17 +282,25 @@ func _run() -> void:
 	_finish()
 
 
-func _has_freshwater_access(map: MapData, cell_idx: int) -> bool:
-	if map.has_river_arr[cell_idx] != 0 or map.is_lake_seed_arr[cell_idx] != 0:
-		return true
-	var neighbors := map.neighbor_indices_packed()
-	for direction in range(6):
-		var neighbor := int(neighbors[cell_idx * 6 + direction])
-		if neighbor >= 0 and (map.has_river_arr[neighbor] != 0 \
-				or map.is_lake_seed_arr[neighbor] != 0 \
-				or int(map.terrain_arr[neighbor]) == int(TerrainType.TERRAIN.LAKE)):
-			return true
-	return false
+func _topups_are_minimum_fills(country_start: Dictionary, map: MapData,
+		cell_idx: int) -> bool:
+	var topups: Dictionary = country_start.get("resource_topups", {})
+	for resource_id in topups:
+		if float(topups[resource_id]) <= 0.0:
+			return false
+		var current := _resource_reserve(map, String(resource_id), cell_idx)
+		var minimum := float(StartProfile.MINIMUM_RESERVES.get(String(resource_id), 0.0))
+		if current + 0.0001 < minimum:
+			return false
+	return true
+
+
+func _precious_employee_slots(precious_resource: String) -> int:
+	if precious_resource == "gold_ore":
+		return 1
+	if precious_resource == "silver_ore":
+		return 2
+	return 0
 
 
 func _resource_reserve(map: MapData, resource_id: String, cell_idx: int) -> float:

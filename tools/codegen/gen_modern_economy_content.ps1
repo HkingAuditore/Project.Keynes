@@ -19,8 +19,8 @@ $utf8 = [System.Text.UTF8Encoding]::new($false)
 $managedPaths = [System.Collections.Generic.HashSet[string]]::new(
     [System.StringComparer]::OrdinalIgnoreCase)
 $preservedHandAuthoredGoods = @(
-    'bast_fiber','brine','charcoal','gold_ore','natural_rubber','reed_bundle',
-    'seed_cotton','silver_ore','technology_points','turf_block','wrought_iron'
+    'bast_fiber','brine','charcoal','natural_rubber','reed_bundle',
+    'seed_cotton','technology_points','turf_block','wrought_iron'
 )
 foreach ($goodId in $preservedHandAuthoredGoods) {
     [void]$managedPaths.Add([System.IO.Path]::GetFullPath(

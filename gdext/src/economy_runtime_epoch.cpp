@@ -793,7 +793,19 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     _epoch_cost_anchor_price = _market_signals.cost_anchor_price;
     _epoch_begin_vector_init_ms = elapsed_ms(vector_init_started);
     const auto audit_started = Clock::now();
+    int64_t live_expedition_population = 0;
+    int64_t live_expedition_funds = 0;
+    sum_family_expedition_holdings(live_expedition_population,
+                                   live_expedition_funds, _saturation_count);
+    // Idle start/return moves cohort funds into expedition escrow (or back)
+    // before this opening snapshot. Copying last close then live-replacing
+    // escrow would double-count or drop that money. Force a full scan whenever
+    // in-transit holdings drifted since the last committed close.
+    const bool expedition_holdings_changed =
+        live_expedition_population != _closing_totals.transit_population ||
+        live_expedition_funds != _closing_totals.expedition_funds;
     const bool full_audit_verify = _opening_audit_force_full ||
+        expedition_holdings_changed ||
         day_index % _full_audit_verify_interval_days == 0;
     if (full_audit_verify) {
         _opening_totals = audit_totals();
@@ -811,24 +823,12 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
             _opening_totals.country_cash = 0;
         }
         int64_t opening_escrow_saturation = 0;
-        int64_t expedition_escrow_cash = 0;
-        for (int32_t expedition = 0; expedition < static_cast<int32_t>(
-                _family_expeditions.active.size()); ++expedition) {
-            if (_family_expeditions.active[expedition] == 0) continue;
-            const uint32_t begin = _family_expeditions.payload_begin[expedition];
-            const uint32_t end = std::min<uint32_t>(
-                static_cast<uint32_t>(_family_expedition_payloads.size()),
-                begin + _family_expeditions.payload_count[expedition]);
-            for (uint32_t payload = begin; payload < end; ++payload)
-                expedition_escrow_cash = saturating_add(
-                    expedition_escrow_cash,
-                    _family_expedition_payloads[payload].funds,
-                    opening_escrow_saturation);
-        }
+        _opening_totals.expedition_funds = live_expedition_funds;
+        _opening_totals.transit_population = live_expedition_population;
         _opening_totals.escrow_cash = saturating_add(
             saturating_add(trade_escrow_cash(), fiscal_escrow_total(),
                            opening_escrow_saturation),
-            expedition_escrow_cash, opening_escrow_saturation);
+            live_expedition_funds, opening_escrow_saturation);
         _saturation_count += opening_escrow_saturation;
         _opening_totals.goods_stock +=
             current_country_goods - _opening_totals.country_goods;
@@ -876,12 +876,32 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
         if (a.i64_1 != b.i64_1) return a.i64_1 < b.i64_1;
         return a.submit_order < b.submit_order;
     });
+    auto reject_epoch_command = [&](const Command &cmd) {
+        ++_rejected_commands;
+        if (cmd.effect_request_id != 0) {
+            EffectCommandResult &result =
+                _effect_command_results[cmd.effect_request_id];
+            result.complete = 1;
+            result.ok = 0;
+            if (result.reason.empty())
+                result.reason = "effect_economy_epoch_preflight_rejected";
+        }
+        return true;
+    };
     _epoch_commands.erase(std::remove_if(_epoch_commands.begin(), _epoch_commands.end(),
                                          [&](const Command &cmd) {
         const bool family_reward =
             cmd.opcode == COMMAND_FAMILY_FREE_BUILDING ||
             cmd.opcode == COMMAND_FAMILY_POPULATION_REWARD;
-        const bool targets_cohort = !family_reward &&
+        const bool expedition_command =
+            cmd.opcode == COMMAND_START_FAMILY_EXPEDITION ||
+            cmd.opcode == COMMAND_CANCEL_FAMILY_EXPEDITION ||
+            cmd.opcode == COMMAND_SETTLE_FAMILY_EXPEDITION;
+        // Expedition commands target FamilyExpeditionStore handles, not
+        // cohort handles. Treating SETTLE as a cohort write dropped the
+        // command, left the Effect request incomplete, and froze the
+        // expedition in SETTLING.
+        const bool targets_cohort = !family_reward && !expedition_command &&
                                     cmd.opcode != COMMAND_TREASURY_SPONSORED_BUILD &&
                                     cmd.opcode != COMMAND_BUILD_CANAL &&
                                     cmd.opcode != COMMAND_ADD_STOCK &&
@@ -889,50 +909,51 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
                                     cmd.opcode != COMMAND_COUNTRY_GOOD_TO_MARKET &&
                                     cmd.opcode != COMMAND_MARKET_GOOD_TO_COUNTRY;
         int32_t slot = -1;
-        if (targets_cohort && !_population.valid_handle(cmd.target_handle, slot)) {
-            ++_rejected_commands;
-            return true;
-        }
+        if (targets_cohort && !_population.valid_handle(cmd.target_handle, slot))
+            return reject_epoch_command(cmd);
         if ((cmd.opcode == COMMAND_ADD_STOCK || cmd.opcode == COMMAND_REMOVE_STOCK ||
              cmd.opcode == COMMAND_COUNTRY_GOOD_TO_MARKET ||
              cmd.opcode == COMMAND_MARKET_GOOD_TO_COUNTRY) &&
             (cmd.i32_0 < 0 || cmd.i32_0 >= _market.market_count || cmd.i32_1 < 0 ||
              cmd.i32_1 >= _market.good_count)) {
-            ++_rejected_commands;
-            return true;
+            return reject_epoch_command(cmd);
         }
         if ((cmd.opcode == COMMAND_ADD_STOCK || cmd.opcode == COMMAND_COUNTRY_GOOD_TO_MARKET) &&
             _merchant_primary_slot[cmd.i32_0] < 0) {
-            ++_rejected_commands;
-            return true;
+            return reject_epoch_command(cmd);
         }
         if ((cmd.opcode == COMMAND_MOVE_POPULATION &&
              (cmd.i32_0 < 0 || cmd.i32_0 >= _cell_count)) ||
             (cmd.opcode == COMMAND_CHANGE_SIGNATURE &&
              (cmd.i32_0 < 0 || cmd.i32_0 >= static_cast<int32_t>(_signatures.size())))) {
-            ++_rejected_commands;
-            return true;
+            return reject_epoch_command(cmd);
         }
         if ((cmd.opcode == COMMAND_BUILD || cmd.opcode == COMMAND_DEMOLISH ||
              cmd.opcode == COMMAND_TREASURY_SPONSORED_BUILD) &&
             (cmd.i32_0 < 0 || cmd.i32_0 >= _cell_count || cmd.i32_1 < 0 ||
              cmd.i32_1 >= static_cast<int32_t>(_building_types.size()) || cmd.i64_0 <= 0)) {
-            ++_rejected_commands;
-            return true;
+            return reject_epoch_command(cmd);
         }
         if (cmd.opcode == COMMAND_TREASURY_SPONSORED_BUILD &&
             (cmd.i64_0 != 1 ||
              cmd.i64_1 != OWNERSHIP_TREASURY_SPONSORED_PRIVATE ||
              _country_runtime == nullptr || !_country_runtime->valid_handle(
                  static_cast<int64_t>(cmd.target_handle)))) {
-            ++_rejected_commands;
-            return true;
+            return reject_epoch_command(cmd);
         }
         if (cmd.opcode == COMMAND_BUILD_CANAL &&
             (_country_runtime == nullptr || !_country_runtime->valid_handle(
                 static_cast<int64_t>(cmd.target_handle)) || cmd.i64_0 <= 0)) {
-            ++_rejected_commands;
-            return true;
+            return reject_epoch_command(cmd);
+        }
+        if (cmd.opcode == COMMAND_SETTLE_FAMILY_EXPEDITION) {
+            int32_t expedition = -1;
+            if (!_family_expeditions.valid_handle(cmd.target_handle, expedition) ||
+                cmd.i32_0 != _family_expeditions.target_cell[expedition] ||
+                cmd.i64_1 != static_cast<int64_t>(
+                    _family_expeditions.country_handle[expedition])) {
+                return reject_epoch_command(cmd);
+            }
         }
         if (family_reward) {
             int32_t branch = -1;
@@ -943,8 +964,7 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
                 (free_building && (cmd.i32_1 < 0 ||
                     cmd.i32_1 >= static_cast<int32_t>(
                         _building_types.size())))) {
-                ++_rejected_commands;
-                return true;
+                return reject_epoch_command(cmd);
             }
         }
         return false;

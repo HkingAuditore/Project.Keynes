@@ -354,6 +354,15 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _cell_living_cost_per_capita.assign(cell_count, 0);
     _epoch_cell_development_q16.assign(cell_count, 0);
     _cell_social_pressure_level.assign(cell_count, 0);
+    _cell_support_ema_q16.assign(cell_count, Q16_ONE);
+    _cell_carrying_k_geo.assign(cell_count, _carrying_k_habitat_ref);
+    _cell_carrying_k_eff.assign(cell_count, _carrying_k_habitat_ref);
+    _cell_carrying_surplus_q16.assign(cell_count, Q16_ONE);
+    _cell_carrying_sat_q16.assign(cell_count, Q16_ONE);
+    _cell_carrying_family_surplus_q16.assign(
+        static_cast<size_t>(cell_count) * CARRYING_FAMILY_COUNT, Q16_ONE);
+    _cell_carrying_family_bindable.assign(
+        static_cast<size_t>(cell_count) * CARRYING_FAMILY_COUNT, 0);
     uint64_t bootstrap_environment_hash = 1469598103934665603ULL;
     auto mix_bootstrap_environment = [&](uint32_t value) {
         for (int32_t byte = 0; byte < 4; ++byte) {
@@ -768,22 +777,24 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
             const int32_t group_index = find_building_group(
                 cell, type_id, owner_signature);
             const int32_t owner_slot = find_cohort_slot(cell, owner_signature);
-            const int64_t founders =
+            const int64_t owner_slots =
                 _building_types[type_id].owner_slots_per_building;
-            if (group_index < 0 || owner_slot < 0 || founders <= 0 ||
+            if (group_index < 0 || owner_slot < 0 || owner_slots <= 0 ||
                 _buildings[group_index].count <= 0 ||
                 _buildings[group_index].modifier_handle == 0 ||
-                _population.population[owner_slot] < founders) {
+                _population.population[owner_slot] < owner_slots) {
                 out["ok"] = false;
                 out["reason"] = "founder_family_bootstrap_target_invalid";
                 return out;
             }
             _buildings[group_index].filled_owner = std::max(
-                _buildings[group_index].filled_owner, founders);
+                _buildings[group_index].filled_owner, owner_slots);
             _population.owner_employed[owner_slot] = std::max(
-                _population.owner_employed[owner_slot], founders);
+                _population.owner_employed[owner_slot], owner_slots);
+            const int64_t founders = family_household_people_for_slot(
+                owner_slot, owner_slots);
             const int32_t family_index = create_family_for_building(
-                cell, group_index, founders, founders);
+                cell, group_index, founders, owner_slots);
             if (family_index < 0) {
                 out["ok"] = false;
                 out["reason"] = "founder_family_bootstrap_failed";
@@ -1100,7 +1111,11 @@ bool NativeEconomyRuntime::validate_command_pod(const Command &cmd,
         cmd.opcode == COMMAND_FAMILY_POPULATION_REWARD;
     const bool expedition_settle =
         cmd.opcode == COMMAND_SETTLE_FAMILY_EXPEDITION;
-    if (!family_reward && !expedition_settle && cmd.opcode != COMMAND_ADD_STOCK &&
+    const bool expedition_player =
+        cmd.opcode == COMMAND_START_FAMILY_EXPEDITION ||
+        cmd.opcode == COMMAND_CANCEL_FAMILY_EXPEDITION;
+    if (!family_reward && !expedition_settle && !expedition_player &&
+        cmd.opcode != COMMAND_ADD_STOCK &&
         cmd.opcode != COMMAND_REMOVE_STOCK &&
         cmd.opcode != COMMAND_COUNTRY_GOOD_TO_MARKET &&
         cmd.opcode != COMMAND_MARKET_GOOD_TO_COUNTRY) {
@@ -1160,6 +1175,24 @@ bool NativeEconomyRuntime::validate_command_pod(const Command &cmd,
                 _family_expeditions.country_handle[expedition])) {
             error = "colonization_settlement_target_invalid";
             return false;
+        }
+    }
+    if (expedition_player) {
+        if (cmd.opcode == COMMAND_START_FAMILY_EXPEDITION) {
+            int32_t family = -1;
+            if (!_families.valid_handle(cmd.target_handle, family) ||
+                cmd.i32_0 < 0 || cmd.i32_0 >= _cell_count ||
+                cmd.i32_1 < 0 || cmd.i32_1 >= _cell_count ||
+                cmd.i64_0 < 1) {
+                error = "colonization_command_invalid";
+                return false;
+            }
+        } else {
+            int32_t expedition = -1;
+            if (!_family_expeditions.valid_handle(cmd.target_handle, expedition)) {
+                error = "colonization_expedition_invalid";
+                return false;
+            }
         }
     }
     return true;
@@ -1241,12 +1274,9 @@ bool NativeEconomyRuntime::submit_effect_commands_pod(
             std::string commit_error;
             const bool applied = apply_settle_family_expedition(
                 command, commit_error);
-            const bool finalized = applied &&
-                finalize_immediate_family_expedition_settlement(
-                    command.i32_0, commit_error);
             result.complete = 1;
-            result.ok = finalized ? 1 : 0;
-            result.reason = finalized ? std::string{} :
+            result.ok = applied ? 1 : 0;
+            result.reason = applied ? std::string{} :
                 (commit_error.empty()
                     ? "effect_economy_commit_failed" : commit_error);
         } else {

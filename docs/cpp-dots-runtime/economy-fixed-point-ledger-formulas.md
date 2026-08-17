@@ -239,25 +239,37 @@ starvation_deficit = max(0, starvation_satisfaction_threshold - survival_sat)
 
 `survival_sat` 即 `SAT_DIM_SUBSISTENCE`，也是 `needs_satisfaction` 的权威值。
 它**只**参与 `starvation_deficit`；饿死是生理事实，税负、储蓄和聚落发展都不得致死。
-出生率读综合满意度，并先按参考值重标定，否则早期 cohort（按构造在奢侈、储蓄、
-发展维度必然得零分）会自己掐死出生率：
+出生率读综合满意度，但格级 sat 进入 `K_eff`，cohort 只乘残差，避免把心情乘两次。
+未解锁的住房/卫生 need 不进物资族分母，也不另开拥挤死亡：
 
 ```text
-birth_input  = clamp(composite_sat * Q16 / satisfaction_birth_reference_q16, 0, 1)
-birth_factor = 1 - satisfaction_birth_weight * (1 - birth_input)
-effective_birth_rate_q32 = birth_rate_q32 * clamp(birth_factor, 0, 1)
-expected_births_q32 = population * effective_birth_rate_q32 * epoch_days
+K_geo     = max(K_floor, K_habitat + K_resource)
+surplus   = Σ bindable family_weight × family_cover / Σ bindable family_weight
+sat_cell  = Σ pop × class_weight × rescale(composite) / Σ pop × class_weight
+mix(x, e) = lerp(1, x, e)
+support_ema = EMA(mix(surplus, surplus_elasticity) × mix(sat_cell, sat_elasticity))
+K_eff     = K_geo × support_ema
+load      = P / K_eff
+fertility_land = 1                          if load ≤ soft_start
+               lerp(1, death/birth, t)      otherwise
+cohort_sat_residual = clamp(rescale(cohort) / sat_cell)
+effective_birth_rate_q32 = birth_rate_q32 × fertility_land × city.birth_factor × cohort_sat_residual
+expected_births_q32 = population × effective_birth_rate_q32 × epoch_days
 ```
+
+`rescale` 仍按 `satisfaction_birth_reference_q16` 重标定。`K_geo` 用冻结地貌/植被/气候/河湖
+与已解锁食物建筑的最优产量；`support_ema` 进 PKEC v36 与 `state_hash`。
+饥饿死亡公式不变，只读 `SAT_DIM_SUBSISTENCE`。
 
 `composite_sat` 的八维度定义、权重契约与生存闸门见
 [综合满意度运行时](./satisfaction-runtime.md)。
 
 周期开始时仍存活人口先就业和生产，不用上周期满足度削减劳动力。
 职业默认出生率为每日 Q32 `2353407`（约 20.0%/年），自然死亡率为 `294176`（约 2.5%/年），
-完全满足时净增长约 17.5%/年，健康人口理论翻倍时间约 4.3 年；满意度权重为 100%，严重匮乏
-会大幅压低出生。同一 cell
+完全满足时净增长约 17.5%/年，健康人口在 `P ≪ K_eff` 时理论翻倍时间约 4.3 年；贴上格承载力后出生落到更替
+（`death_rate/birth_rate`）。同一 cell
 内按 ethnicity 汇总 `expected_births_q32`；整数部分直接出生，Q32 小数部分写入每格每民族的
-`birth_residual_q32` 并跨周期累计，由 PKEC v30 持久化。
+`birth_residual_q32` 并跨周期累计，由 PKEC 持久化。
 新生人口在结构提交末尾合并到 `unemployed|eth`，资金、收入和就业均为零。
 
 默认饥饿满足度阈值是 50%；

@@ -32,21 +32,24 @@ func _run() -> void:
 	_expect("country action bar has five sections", buttons.size() == 5)
 	_expect("economy replaces taxation in country actions",
 		buttons.has("economy") and not buttons.has("taxation"))
+	_expect("ideology replaces politics in country actions",
+		buttons.has("ideology") and not buttons.has("politics"))
 	for button_value in buttons.values():
 		var action := button_value as Button
 		var action_icons := action.find_children("*", "TextureRect", true, false) \
 			if action != null else []
-		_expect("country action uses icon only",
-			action != null and action.text.is_empty() \
-			and action.find_children("*", "Label", true, false).is_empty())
+		var captions := action.find_children("*", "Label", true, false) \
+			if action != null else []
+		_expect("country action uses icon plus caption",
+			action != null and action.text.is_empty() and captions.size() == 1)
 		_expect("country action icon is compact",
 			action_icons.size() == 1 and (action_icons[0] as TextureRect) \
 				.custom_minimum_size.x == CountryActionBar.ICON_SIZE)
 		_expect("country action has no nested badge",
 			action != null and action.find_children("*", "IconBadge", true, false).is_empty())
-	_expect("country action bar is compact", bar.size.x <= 322.0)
+	_expect("country action bar is compact", bar.size.x <= 422.0)
 	var paused_before := clock.paused
-	for section_id in ["technology", "economy"]:
+	for section_id in ["technology", "ideology", "economy"]:
 		var button := buttons.get(section_id) as Button
 		_expect("%s action exists" % section_id, button != null)
 		if button != null:
@@ -55,7 +58,7 @@ func _run() -> void:
 			await process_frame
 			_expect("%s panel opens" % section_id,
 				panel.is_panel_open() and panel.current_section() == section_id)
-	for section_id in ["politics", "military", "diplomacy"]:
+	for section_id in ["military", "diplomacy"]:
 		var button := buttons.get(section_id) as Button
 		_expect("%s action exists" % section_id, button != null)
 		_expect("%s action is disabled" % section_id,
@@ -387,18 +390,19 @@ func _run() -> void:
 			_expect("live patch preserves the selected detail and its scroll position",
 				right_panel.detail_open() and detail_dialog.title_text() == detail_title_before \
 					and detail_scroll.scroll_vertical == 32)
-			right_panel.close_detail()
-			await process_frame
-			_expect("cohort detail closes without closing the Inspector",
-				not right_panel.detail_open() and right_panel.visible)
-			var cohort_tax_editors := cohort_refs.get("tax_editors", {}) as Dictionary
-			_expect("cohort row owns one editable income tax lane",
-				cohort_tax_editors.size() == 1)
-			if cohort_tax_editors.size() == 1:
-				var income_editor := cohort_tax_editors.values()[0] as TaxLaneEditor
+			var detail_tax: Array = detail_dialog.tax_editors()
+			_expect("cohort detail shows one profession income tax",
+				detail_tax.size() == 1)
+			var page_tax: Array = right_panel.get("_page_tax_editors")
+			_expect("population page exposes one cell income default",
+				page_tax.size() == 1)
+			if detail_tax.size() == 1:
+				var income_editor := detail_tax[0] as TaxLaneEditor
 				var income_data := income_editor.lane_data()
-				_expect("income lane binds the cohort profession id",
-					String(income_data.get("item_id", "")) == sample_profession_id \
+				_expect("cohort detail income lane binds the profession",
+					String(income_data.get("scope", "")) == "item" \
+						and String(income_data.get("item_id", "")) \
+							== sample_profession_id \
 						and bool(income_data.get("editable", false)))
 				var base_rate := int(income_data.get("base", 0))
 				var new_rate := base_rate + 1 if base_rate < 100 else base_rate - 1
@@ -408,12 +412,24 @@ func _run() -> void:
 					int(selected_cell.index), sample_profession_id]
 				var pending_map := right_panel.get("_pending_tax") as Dictionary
 				var pending_entry := pending_map.get(pending_key, {}) as Dictionary
-				_expect("row tax edit enters next-day pending without opening details",
+				_expect("profession tax edit enters next-day pending in object detail",
 					pending_map.has(pending_key) \
 						and int(pending_entry.get("effective_day", -1)) \
 							== int((right_panel.get("_tax_context") as Dictionary) \
 								.get("current_day", -1)) + 1 \
-						and not right_panel.detail_open())
+						and right_panel.detail_open())
+			if page_tax.size() == 1:
+				_expect("cell income default is not the profession override",
+					String((page_tax[0] as TaxLaneEditor).lane_data() \
+						.get("scope", "")) == "default" \
+						and String((page_tax[0] as TaxLaneEditor).lane_data() \
+							.get("kind_label", "")) == "此地所得税")
+			right_panel.close_detail()
+			await process_frame
+			_expect("cohort detail closes without closing the Inspector",
+				not right_panel.detail_open() and right_panel.visible)
+			_expect("cohort row no longer owns nested tax editors",
+				(cohort_refs.get("tax_editors", {}) as Dictionary).is_empty())
 
 		right_panel.select_tab("buildings")
 		await process_frame
@@ -423,16 +439,24 @@ func _run() -> void:
 		_expect("buildings tab builds building rows", not building_rows.is_empty())
 		if not building_rows.is_empty():
 			var building_refs := building_rows.values()[0] as Dictionary
-			var building_editors := building_refs.get("tax_editors", {}) as Dictionary
-			_expect("building row owns one editable business tax lane",
-				building_editors.size() == 1 \
-					and bool((building_editors.values()[0] as TaxLaneEditor) \
-						.lane_data().get("editable", false)))
+			_expect("building row no longer owns nested tax editors",
+				(building_refs.get("tax_editors", {}) as Dictionary).is_empty())
 			(building_refs.get("button") as Button) \
 				.pressed.emit()
 			await process_frame
 			_expect("building row click opens embedded business details",
 				right_panel.detail_open() and detail_dialog.is_open())
+			_expect("building detail shows one business tax",
+				detail_dialog.tax_editors().size() == 1 \
+					and bool((detail_dialog.tax_editors()[0] as TaxLaneEditor) \
+						.lane_data().get("editable", false)))
+			if not detail_dialog.tax_editors().is_empty():
+				_expect("building detail does not keep the cell business default",
+					String((detail_dialog.tax_editors()[0] as TaxLaneEditor) \
+						.lane_data().get("scope", "")) == "item")
+			var building_page_tax := right_panel.get("_page_tax_section") as Control
+			_expect("building detail hides the page business default",
+				building_page_tax == null or not building_page_tax.visible)
 			right_panel.close_detail()
 
 		right_panel.select_tab("market")
@@ -443,22 +467,31 @@ func _run() -> void:
 		_expect("market tab builds good rows", not market_rows.is_empty())
 		if not market_rows.is_empty():
 			var market_refs := market_rows.values()[0] as Dictionary
-			var market_editors := market_refs.get("tax_editors", {}) as Dictionary
-			_expect("good row owns consumption, import and export tax lanes",
-				market_editors.size() == 3)
-			var import_data: Dictionary = {}
-			for editor_value in market_editors.values():
-				var editor_data := (editor_value as TaxLaneEditor).lane_data()
-				if String(editor_data.get("kind", "")) == "import":
-					import_data = editor_data
-			_expect("tariff lanes use live foreign-trade data without placeholders",
-				not import_data.is_empty() \
-					and String(import_data.get("placeholder_note", "")).is_empty())
+			_expect("good row no longer owns nested tax editors",
+				(market_refs.get("tax_editors", {}) as Dictionary).is_empty())
 			(market_refs.get("button") as Button) \
 				.pressed.emit()
 			await process_frame
 			_expect("good row click opens embedded supply details",
 				right_panel.detail_open() and detail_dialog.is_open())
+			var market_detail_tax: Array = detail_dialog.tax_editors()
+			_expect("good detail shows consumption and tariff lanes",
+				market_detail_tax.size() == 3)
+			var import_data: Dictionary = {}
+			var saw_default := false
+			for editor_value in market_detail_tax:
+				var editor_data := (editor_value as TaxLaneEditor).lane_data()
+				if String(editor_data.get("kind", "")) == "import":
+					import_data = editor_data
+				if String(editor_data.get("scope", "")) == "default":
+					saw_default = true
+			_expect("good detail does not keep cell tariff defaults", not saw_default)
+			var market_page_tax := right_panel.get("_page_tax_section") as Control
+			_expect("good detail hides the page consumption default",
+				market_page_tax == null or not market_page_tax.visible)
+			_expect("tariff lanes use live foreign-trade data without placeholders",
+				not import_data.is_empty() \
+					and String(import_data.get("placeholder_note", "")).is_empty())
 			right_panel.close_detail()
 
 		right_panel.select_tab("geography")

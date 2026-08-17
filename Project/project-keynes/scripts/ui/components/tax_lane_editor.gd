@@ -88,7 +88,7 @@ func _refresh_note() -> void:
 	var inherited := int(_data.get("default_rate", 0))
 	var base := int(_data.get("base", inherited))
 	var effective := int(_data.get("effective", base))
-	var prefix := "国家默认" if String(_data.get("scope", "item")) == "default" else "页级默认"
+	var prefix := "国家默认" if String(_data.get("scope", "item")) == "default" else "此地默认"
 	var parts := PackedStringArray(["%s %d%%" % [prefix, inherited]])
 	if effective != base:
 		parts.append("效果后 %d%%" % effective)

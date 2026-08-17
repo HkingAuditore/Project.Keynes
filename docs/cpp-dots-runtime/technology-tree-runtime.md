@@ -45,8 +45,9 @@ Static signal discovery is country-local. A 0→1 explored-cell transition submi
 CSR plus the cell's **current** `bio.*` occupancy bits. Occupancy 0→1 on an already-explored cell
 submits `DISCOVER` again. Local extinction does not delete country evidence. The first native
 generation pass builds landform CSR only; after natural-resource reserves exist, `run_bio_seed_pass`
-writes `cell.bio_occupancy_bits` (carrier-gated, every continent-scale landmass with a
-biome-scale envelope — satellite islets skipped unless they are the unique argmax). A later native
+writes `cell.bio_occupancy_bits` (carrier-gated compact origin hearths; cosmopolitan reed may
+span continents; continent-scale landmasses keep a food + fiber/livestock floor; satellite
+islets skipped unless they are the unique argmax). A later native
 pass appends every `resource.*` fact to the same sorted CSR. GDScript only assembles the returned
 arrays. `NativeCountryRuntime` owns whether a country has observed them. Goods stock and cross-border
 trade never imply Bio occupancy; trade still yields `contact.*` knowledge only. Agricultural
@@ -193,15 +194,25 @@ PKCN v11 为每个国家保存：
 溢出进入同领域下一项目。空队列或阻塞队列的份额进入 `deferred_unallocated_points`，
 不会泄漏到其他领域；调整权重或向空领域入队后重新释放。移出队列不删除已投入进度。
 
-完成节点先进入 pending。下一个国家日先用 `UNIQUE_SOURCE` 永久来源应用科技 Modifier，
-成功后才设置完成标签；因此数值效果与经济解锁在同一日可见。GM “揭示全部未来科技”
-只写 discovered bit。
+完成节点先进入 pending，并在同一研究日登记稳定 Effect instance。生产调度里
+`effect_runtime`（priority 85）早于 `country_daily`（255），若等到下一个国家激活循环
+才 upsert，当天 Effect 已经跑完，ACK 会对不上，节点会一直停在待生效。国家 slice 在
+Effect 仍有到期工作时会升起 `country_day_barrier`（研究日结束后 `country_should_run`
+已为假），让 continuation 抽干 Effect→Modifier→gameplay ACK。下一个国家日先确认
+Effect 事务已 ACK，或确认该科技的 `UNIQUE_SOURCE` Modifier 已经落地，才设置完成标签。
+已登记但未 ACK 的 instance 每个国家日会被重新排入 Effect 队列，避免错过一次 Effect
+早晨后永远停在待生效。GM “揭示全部未来科技”只写 discovered bit。
 
 ## 科技值经济
 
 `technology_points` 是可库存、可国内贸易的普通 Good，数量缩放使用 `GOODS_SCALE=1000`。
 科研机构沿用工业建筑结算：真实就业和普通投入满足后生产，产出先进入当地市场并由商人
-收购。现代技术知识家庭在教育文化 bundle 中少量消费；启蒙以后的指定产业把科技值列为
+收购。开局五座观察建筑仍是两人传知者作坊、无日常原料，但按路线分化：口述记忆圈日产
+`1000` 且无地理/气候门；物候观察棚日产 `1500` 并走 `phenology_observation` 气候；牧群
+议事帐日产 `1600`，要求本地 `pasture` 承载力并用草皮建造；潮汐观察屋/洪水历法祭所分别
+日产 `1700`/`1800`，优先消耗芦苇，祭所还要求 `paddy_land`。它们不进
+`research_institution` 升级族，只吃知识部门产出因子。现代技术知识家庭在教育文化 bundle
+中少量消费；启蒙以后的指定产业把科技值列为
 显式软投入，完全缺货只降低 5%–15% 产量。
 
 经济周期的采购顺序为：
@@ -299,7 +310,7 @@ section tab；section 切换只由底栏 `CountryActionBar` 驱动。经济 sect
   Trigger 定义摘要和全部内容绑定摘要混入 catalog identity。
 - PKEF v9 保存 Effect program hash、实例、事务/ACK 和时代奖励冻结计划；PKTR v5 保存突破
   与发展成就阈值累计、最后采样日、连续进度、来源游标和未派发效果。
-- PKEC v35 保存采购累计、科技值市场/在途状态、实践发布所需的经济权威与联合审计基线。
+- PKEC v36 保存采购累计、科技值市场/在途状态、实践发布所需的经济权威与联合审计基线。
 - PKSV 恢复顺序保持 PKCN 在 PKEC 之前。
 - PKCN/PKEF/PKTR 的旧 schema 或任何相关 catalog identity 变化统一返回
   `catalog_hash_mismatch`，不做 ID 映射、默认补齐或静默迁移。

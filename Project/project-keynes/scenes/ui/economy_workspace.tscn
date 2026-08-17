@@ -1,9 +1,10 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/components/economy_workspace.gd" id="1_script"]
 [ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="2_icon"]
 [ext_resource type="PackedScene" path="res://scenes/ui/metric_card.tscn" id="3_card"]
 [ext_resource type="PackedScene" path="res://scenes/ui/category_tabs.tscn" id="4_tabs"]
+[ext_resource type="PackedScene" path="res://scenes/ui/insight_list.tscn" id="5_insights"]
 
 [node name="EconomyWorkspace" type="Control"]
 layout_mode = 3
@@ -82,8 +83,17 @@ custom_minimum_size = Vector2(150, 72)
 layout_mode = 2
 size_flags_horizontal = 3
 
+[node name="Insights" parent="Column" instance=ExtResource("5_insights")]
+unique_name_in_owner = true
+layout_mode = 2
+
 [node name="Tabs" parent="Column" instance=ExtResource("4_tabs")]
 unique_name_in_owner = true
+layout_mode = 2
+
+[node name="TaxTabs" parent="Column" instance=ExtResource("4_tabs")]
+unique_name_in_owner = true
+visible = false
 layout_mode = 2
 
 [node name="Tools" type="HBoxContainer" parent="Column"]

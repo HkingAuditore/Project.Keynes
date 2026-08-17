@@ -56,6 +56,15 @@ the ordering is not merely a priority convention: Modifier is the safe commit
 boundary for native Effect commands. `EffectFacade.dispatch_transactions()` is
 still called for unsupported/custom commands only.
 
+Country research completion registers the technology Effect instance during
+`country_daily` (255), after that day's Effect slot (85) has already run.
+The country slice then raises `country_day_barrier` when Effect still has due
+work, because `country_should_run` is already false after `_last_research_day`
+advances. `_continue_economy_inflight()` drains the same Effect→Modifier→gameplay
+ACK chain after Country finishes, so the instance can fire before Economy freezes
+and before the next calendar day. `_drain_native_effect_ack_chain()` is shared
+with `advance_save_boundary()`.
+
 Backend fallback：
 
 ```text
@@ -135,7 +144,7 @@ runtime 标记为不可 tick 并暂停 `WorldClock`，只有地图生成、全�
 | `refresh_climate_daily` | `simulation/systems/climate_daily_system.gd` | climate daily round：Pass-A/B、ocean water/land、wind、sea ice hook、transpiration。 | GDScript 6-stage state machine + 多个 C++ pass。 |
 | `natural_resource_daily` | `simulation/systems/natural_resource_daily_system.gd` | 自然资源每日生成/衰减（per-cell reserve）。reads cell.temp/cell.moisture/cell.is_water；writes 各 `cell.res_*_reserve`。 | 单 pass 调 `MapGenerator.run_natural_resource_pass_native` → C++ `run_natural_resource_pass`（slot 权威）+ GDScript fallback。`StridePolicy(stride,0)`，无 bucket phase。**保留边界 job**（native/legacy 两路径都注册）+ `must_run=true`（否则会被 native_daily_sim 超预算后 budget-skip）。 |
 | `country_daily` | `simulation/systems/country_daily_system.gd` | ACTIVE 国家命令图；原子预检/应用/发布领土、名称与科技变化。 | priority 255；`must_run=false`、`max_slices=1`、`use_job_should_run=true`；无到期命令零 slice，跨帧批次使用 `country_day_barrier`。 |
-| `economy_daily` | `simulation/systems/economy_daily_system.gd` | ACTIVE 冻结周期 `ECONOMY_GRAPH`；sample day 读取环境并冻结国家状态；建筑计划/投入 reserve 使用两遍 active-cell continuation，随后按建筑 cell/cohort 预算错峰生产与 N 日居民市场。国内贸易规划复用同一 job 的软 slice。 | priority 260；国家命令先提交；`must_run=false`、`max_slices=1`、`use_job_should_run=true`、starvation=2。`building_cells_per_slice=0` 自动取市场 cell budget 的 1/4 并封顶 512；贸易规划从不申请屏障；只有 `commit_due && !done` 才开 WorldClock same-day catchup 屏障。 |
+| `economy_daily` | `simulation/systems/economy_daily_system.gd` | ACTIVE 冻结周期 `ECONOMY_GRAPH`；sample day 读取环境并冻结国家状态；建筑计划/投入 reserve 使用两遍 active-cell continuation，随后按建筑 cell/cohort 预算错峰生产与 N 日居民市场。国内贸易规划复用同一 job 的软 slice。切片前 `dispatch_effect_native_economy()`，以便 Country 255 ACK 后的 `SETTLE_FAMILY_EXPEDITION` 能立即落地或进入 pending；本国迁徙的 SETTLE-only 事务没有 Country 前置，可在同一切片消费。 | priority 260；国家命令先提交；`must_run=false`、`max_slices=1`、`use_job_should_run=true`、starvation=2。`building_cells_per_slice=0` 自动取市场 cell budget 的 1/4 并封顶 512；贸易规划从不申请屏障；只有 `commit_due && !done` 才开 WorldClock same-day catchup 屏障。 |
 | `modifier_daily` | `simulation/systems/modifier_daily_system.gd` | ACTIVE `MODIFIER_GRAPH`：先过期，再按 producer/sequence 稳定执行命令并发布四域 snapshot version。 | priority 90；`must_run=false`、`max_slices=1`、`use_job_should_run=true`、`use_job_deadline_critical=true`；有当日边界工作时预算旁路一次，保证早于 climate 100、country 255、economy 260。consumer 中产生的命令延至后续安全边界。 |
 | `effect_runtime` | `simulation/systems/effect_runtime_system.gd` | ACTIVE `EFFECT_GRAPH`：对 frozen metric snapshot 评估 dense effect IR/Behavior，声明式 batch 在 worker plan 后稳定串行 merge，生成跨域 transaction，不直接写 domain。 | priority 85；`must_run=false`、`max_slices=1`、`use_job_should_run=true`、`use_job_deadline_critical=true`；`max_work_per_slice` 与每个定义的 `max_work` 共同限制工作量。 |
 | `ideology_runtime` | `simulation/systems/ideology_runtime_system.gd` | Country-scoped ideology collection, slots, offers, understanding and transition intent; it creates no domain write directly. | priority 82；only active ideology rows receive daily visits; `dormant_scan_count=0`. |

@@ -11,118 +11,124 @@ size_flags_horizontal = 3
 theme_type_variation = &"PKPanel"
 script = ExtResource("1_script")
 
-[node name="Scroll" type="ScrollContainer" parent="."]
+[node name="Column" type="VBoxContainer" parent="."]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 8
+
+[node name="Scroll" type="ScrollContainer" parent="Column"]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
 
-[node name="Body" type="VBoxContainer" parent="Scroll"]
+[node name="Body" type="VBoxContainer" parent="Column/Scroll"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 8
 
-[node name="Header" type="HBoxContainer" parent="Scroll/Body"]
+[node name="Header" type="HBoxContainer" parent="Column/Scroll/Body"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 8
 
-[node name="HeaderIcon" parent="Scroll/Body/Header" instance=ExtResource("2_icon")]
+[node name="HeaderIcon" parent="Column/Scroll/Body/Header" instance=ExtResource("2_icon")]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(30, 30)
 layout_mode = 2
 
-[node name="Titles" type="VBoxContainer" parent="Scroll/Body/Header"]
+[node name="Titles" type="VBoxContainer" parent="Column/Scroll/Body/Header"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 1
 
-[node name="NameLabel" type="Label" parent="Scroll/Body/Header/Titles"]
+[node name="NameLabel" type="Label" parent="Column/Scroll/Body/Header/Titles"]
 unique_name_in_owner = true
 layout_mode = 2
 autowrap_mode = 2
 theme_type_variation = &"PKTitle"
 
-[node name="StateLabel" type="Label" parent="Scroll/Body/Header/Titles"]
+[node name="StateLabel" type="Label" parent="Column/Scroll/Body/Header/Titles"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"PKMutedLabel"
 autowrap_mode = 2
 
-[node name="Placeholder" type="Label" parent="Scroll/Body"]
+[node name="Placeholder" type="Label" parent="Column/Scroll/Body"]
 unique_name_in_owner = true
 layout_mode = 2
 autowrap_mode = 2
 theme_type_variation = &"PKMutedLabel"
 
-[node name="DetailBlock" type="VBoxContainer" parent="Scroll/Body"]
+[node name="DetailBlock" type="VBoxContainer" parent="Column/Scroll/Body"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 8
 
-[node name="Chips" parent="Scroll/Body/DetailBlock" instance=ExtResource("3_badges")]
+[node name="Chips" parent="Column/Scroll/Body/DetailBlock" instance=ExtResource("3_badges")]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Gauge" parent="Scroll/Body/DetailBlock" instance=ExtResource("4_gauge")]
+[node name="Gauge" parent="Column/Scroll/Body/DetailBlock" instance=ExtResource("4_gauge")]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(118, 122)
 layout_mode = 2
 size_flags_horizontal = 4
 
-[node name="Effects" parent="Scroll/Body/DetailBlock" instance=ExtResource("5_insights")]
+[node name="Effects" parent="Column/Scroll/Body/DetailBlock" instance=ExtResource("5_insights")]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="PrerequisiteTitle" type="Label" parent="Scroll/Body/DetailBlock"]
+[node name="PrerequisiteTitle" type="Label" parent="Column/Scroll/Body/DetailBlock"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "前置条件"
+text = "需要先完成"
 theme_type_variation = &"PKSectionTitle"
 
-[node name="Prerequisites" type="VBoxContainer" parent="Scroll/Body/DetailBlock"]
+[node name="Prerequisites" type="VBoxContainer" parent="Column/Scroll/Body/DetailBlock"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 2
 
-[node name="HardSuccessorTitle" type="Label" parent="Scroll/Body/DetailBlock"]
+[node name="HardSuccessorTitle" type="Label" parent="Column/Scroll/Body/DetailBlock"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "被以下科技作为硬前置"
+text = "完成后可解锁"
 theme_type_variation = &"PKSectionTitle"
 
-[node name="HardSuccessors" type="VBoxContainer" parent="Scroll/Body/DetailBlock"]
+[node name="HardSuccessors" type="VBoxContainer" parent="Column/Scroll/Body/DetailBlock"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 2
 
-[node name="BranchSuccessorTitle" type="Label" parent="Scroll/Body/DetailBlock"]
+[node name="BranchSuccessorTitle" type="Label" parent="Column/Scroll/Body/DetailBlock"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "主题路线后继"
 theme_type_variation = &"PKSectionTitle"
 
-[node name="BranchSuccessors" type="VBoxContainer" parent="Scroll/Body/DetailBlock"]
+[node name="BranchSuccessors" type="VBoxContainer" parent="Column/Scroll/Body/DetailBlock"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 2
 
-[node name="ApplicationTitle" type="Label" parent="Scroll/Body/DetailBlock"]
+[node name="ApplicationTitle" type="Label" parent="Column/Scroll/Body/DetailBlock"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "跨领域应用"
 theme_type_variation = &"PKSectionTitle"
 
-[node name="Applications" type="VBoxContainer" parent="Scroll/Body/DetailBlock"]
+[node name="Applications" type="VBoxContainer" parent="Column/Scroll/Body/DetailBlock"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 2
 
-[node name="Action" type="Button" parent="Scroll/Body/DetailBlock"]
+[node name="Action" type="Button" parent="Column"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 30)
 layout_mode = 2

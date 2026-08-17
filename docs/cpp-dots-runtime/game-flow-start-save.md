@@ -49,18 +49,25 @@ Do not call `EconomyTestBootstrap` from this path. It remains test/demo data.
 ## Start Policy
 
 `StartLocationProfile` is gameplay configuration, independent of inspector
-habitability presentation. A candidate must be passable land, satisfy the
-temperature/moisture/elevation/vitality ranges, and have river/lake hydrology
-on itself or a neighbor. Candidates are sorted by survival score. Naturally
-gold/silver-bearing candidates are preferred, and a stable hash of
-`seed + player_start` selects within the top quartile.
+habitability presentation. A candidate must be passable land and satisfy the
+temperature/moisture/elevation/vitality ranges. River, lake, and coastal
+hydrology are classification signals, not admission gates. Climate-qualified
+cells enter the pool; naturally gold/silver-bearing cells are preferred, then
+survival score, then cell index. `select_and_prepare` only runs Vision plus
+route closure on the cells it is about to choose, not on the whole map.
 
-No resource deposit is added or topped up by start selection. A candidate must already have natural
-gold or silver and enough local resources and visible signals to close food, clothing, construction,
-knowledge and trade production. Generation fails with a player-facing error when no valid closed
-candidate exists.
+Opening selection may top up `fertile_soil`, `timber`, `wild_game`, `stone`,
+`flint`, `pasture`, and one precious metal (`gold_ore` if the cell has neither)
+to `StartLocationProfile` minimums. It does not invent fish, paddy land, or clay
+on dry inland cells. Overlay reserves are virtual while scoring routes; only the
+chosen player and foreign cells are written back to MapData. Generation fails
+with a player-facing error when no climate-qualified cell can close food,
+clothing, construction, knowledge, precious-metal, and trade production even
+after those minimum fills. `evaluate_starter_route` still reads generated
+geography only, so inspector/fixture probes do not apply top-ups.
 
-Foreign starts use the same survival predicate. Their minimum pairwise land
+Foreign starts use the same climate predicate and the same overlay closure.
+Their minimum pairwise land
 distance is `clamp(round(min(width, height) * 0.15), 4, 12)` over the map's
 six-neighbor topology; disconnected landmasses count as infinitely distant.
 Selection is deterministic and greedily orders candidates by distance from the
@@ -77,7 +84,11 @@ selected from the dependency-closed local options, while the clothing/constructi
 bounded by the available self-operated slots. The packet does not preassign the whole population to
 professions: it reserves only the first producer's founder operators, places the remaining people in
 the native unemployed pool, and lets normal employment matching choose their building and profession
-at economy boundaries. Stone-Age buildings expose no employee roles. Their self-operated/co-operated
+at economy boundaries. Stone-Age buildings expose no employee roles except the
+opening placer-gold and surface-silver workings, which keep their authored miner
+slots. Those employee slots are extra capacity on top of the 20 self-operated
+jobs; bootstrap does not prefill them, so opening `employee_employed` stays 0.
+Their self-operated/co-operated
 jobs use the runtime's owner-role lane because the catalog has only owner and employee lanes; this is
 building capacity, not a landlord marker or a planner-owned population assignment. Fifteen days of the compiled `survival_household` food quantities are bridged
 across every locally discovered, runnable food good in its matching substitute sub-basket; when a basket
@@ -145,7 +156,7 @@ PKID v1 is accepted only when every ideology is inactive. Save capture waits for
 Country/Economy/Gameplay Effect ingress to be idle, so no cross-section snapshot
 can span a preflight/commit/ACK boundary.
 PKCM v1 saves Climate modifiers. PKCN v11 embeds Country modifiers, research,
-tax policy, territory claim and native Effect ingress idempotency; PKEC v35 embeds Economy
+tax policy, territory claim and native Effect ingress idempotency; PKEC v36 embeds Economy
 modifiers, BuildingIdentityStore, family traits/cell influence,
 production-climate state, and Economy Effect ingress idempotency. PKGP v1 saves
 Gameplay identity/base SoA and modifiers; journal v4 saves native
@@ -187,7 +198,7 @@ Restore order is strict:
 4. Restore PKCM, then `WorldClock`.
 5. Restore PKCN v11, including Country modifiers, research state, national/cell tax policy,
    and native Country Effect ingress idempotency.
-6. Restore PKEF v9, then PKEC v35 after trade topology has been configured, including Economy
+6. Restore PKEF v9, then PKEC v36 after trade topology has been configured, including Economy
    modifiers, building identities, notable families, active family expeditions, and production-climate state.
 7. Restore PKGP, then PKFG; re-solve vision and republish `enum_lut.a` and the border
    mesh through `WorldRuntimeHost.refresh_country_visuals()`.
@@ -254,14 +265,15 @@ gold/silver sites and the merchant remain exactly one building. The supported fa
 floodplain, cold highland, tropical forest, arid highland and temperate.
 
 The bootstrap validates the complete direct/required-technology, construction-good, input, output,
-local-resource and resource-generation closure. It never adds gold, silver or any non-precious route
-resource, and it never tops up the former universal fertile-soil/timber/game/stone/flint set. Starting
+local-resource and resource-generation closure. Formal `select_and_prepare` may fill missing
+opening reserves to profile minimums as described in Start Policy; `evaluate_starter_route`
+and inspector probes still fail closed on generated geography. Starting
 buildings cannot require steel, coal, industrial chemicals, industrialists, managers,
 landlords, serfs or indentured labor. The food bridge is 15 days of every locally discovered, runnable
 food sub-basket as authored by `survival_household`, split across multiple substitutes when present;
 `processed_food` receives no fixed grant. Every generated country starts with exactly one
-territory cell, one regional weak bundle, 20 population, 20 self-operated job-capacity slots, zero employee
-slots, a founder operator cohort plus a native unemployed pool, one founder family and one notable
+territory cell, one regional weak bundle, 20 population, 20 self-operated job-capacity slots, employee
+slots only on the matching gold or silver working and left unfilled, a founder operator cohort plus a native unemployed pool, one founder family and one notable
 founder. The first economy cycles may reassign the unemployed cohort into the planned self-operated roles;
 that is ordinary native employment matching and does not introduce employee relationships.
 

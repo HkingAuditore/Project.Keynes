@@ -103,9 +103,25 @@ func _test_dimensions_and_gate(compiled: Dictionary) -> void:
 	_expect("the subsistence gate caps a starving cohort regardless of savings",
 		starving_composite <= ceiling and
 		int(starving_dims[SAT_DIM_SAVINGS]) > starving_composite)
+	var starving_professions: PackedStringArray = starving_snapshot.get(
+		"profession_stable_ids", PackedStringArray())
+	var starving_profession_indices: PackedInt32Array = starving_snapshot.get(
+		"profession_ids", PackedInt32Array())
+	var starving_worsts: PackedInt32Array = starving_snapshot.get(
+		"worst_satisfaction_dimension_by_cohort", PackedInt32Array())
+	var farmer_worst := -1
+	var farmer_row := -1
+	for row in range(starving_profession_indices.size()):
+		var profession_index := int(starving_profession_indices[row])
+		if profession_index < 0 or profession_index >= starving_professions.size():
+			continue
+		if String(starving_professions[profession_index]) != "subsistence_farmer":
+			continue
+		farmer_row = row
+		farmer_worst = int(starving_worsts[row]) if row < starving_worsts.size() else -1
+		break
 	_expect("the worst dimension points at the binding constraint",
-		int((starving_snapshot.get("worst_satisfaction_dimension_by_cohort",
-			PackedInt32Array()) as PackedInt32Array)[0]) == SAT_DIM_SUBSISTENCE)
+		farmer_row >= 0 and farmer_worst == SAT_DIM_SUBSISTENCE)
 	var development := int(fed_dims[SAT_DIM_DEVELOPMENT])
 	_expect("social development stays inside its normalized range",
 		development >= 0 and development < Q16_ONE)
@@ -204,8 +220,8 @@ func _test_save_round_trip(compiled: Dictionary) -> void:
 		_run_cycle(source, cycle)
 	var before: Dictionary = source.get_population_cell_snapshot(0)
 	var saved := _save(source)
-	_expect("PKEC v30 streams the satisfaction columns",
-		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 30)
+	_expect("PKEC v36 streams the satisfaction columns",
+		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 36)
 	if not bool(saved.get("ok", false)):
 		return
 	var restored := _configured_world(compiled, 4004, true)
@@ -243,6 +259,16 @@ func _configured_world(compiled: Dictionary, seed: int, stocked: bool,
 	profile.market_runtime_mode = "ACTIVE"
 	profile.market_cycle_days = 5
 	profile.worker_enabled = false
+	var births: PackedInt64Array = catalog.signature_birth_rate_q32
+	var deaths: PackedInt64Array = catalog.signature_death_rate_q32
+	births.fill(0)
+	deaths.fill(0)
+	catalog.signature_birth_rate_q32 = births
+	catalog.signature_death_rate_q32 = deaths
+	profile.carrying_k_habitat_ref = 100000
+	profile.carrying_k_floor = 100000
+	profile.carrying_surplus_elasticity_q16 = 0
+	profile.carrying_sat_elasticity_q16 = 0
 	if not CountryTestHelper.configure_all_technologies(ext, catalog, 1, seed):
 		_expect("satisfaction test country configures", false)
 		return null

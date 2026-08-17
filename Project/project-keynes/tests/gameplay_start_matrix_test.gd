@@ -77,16 +77,15 @@ func _run_case(label: String, size: Vector2i, seed: int) -> Dictionary:
 		and cell >= 0 and cell < map.cell_count())
 	if cell < 0 or cell >= map.cell_count():
 		return {}
-	_expect("%s start has river/lake or coastal access" % label,
-		_has_water_access(map, cell))
+	_expect("%s start is passable land" % label,
+		map.is_water_arr[cell] == 0
+		and TerrainType.is_passable_land(int(map.terrain_arr[cell])))
 	var player_start: Dictionary = (start.get("country_starts", []) as Array)[0]
 	_expect("%s has a classified regional route" % label,
 		String(player_start.get("regional_route", "")) in ["coastal", "floodplain",
 			"cold_highland", "tropical_forest", "arid_highland", "temperate"])
-	_expect("%s never tops up generated resources" % label,
-		not player_start.has("resource_topups") and
-		(player_start.get("missing_resource_ids", PackedStringArray()) as
-			PackedStringArray).is_empty())
+	_expect("%s opening top-up only raises missing reserves to profile minimums" % label,
+		_topups_are_minimum_fills(player_start, map, cell))
 	for resource_id in player_start.get("starter_food_resource_ids", PackedStringArray()):
 		_expect("%s selected food resource %s exists" % [label, resource_id],
 			not String(resource_id).is_empty() and _resource_reserve(
@@ -136,8 +135,9 @@ func _run_case(label: String, size: Vector2i, seed: int) -> Dictionary:
 			_building_count(buildings, building_id) == int(route_counts[building_index]))
 	_expect("%s route has 20 self-operated job slots" % label,
 		int(player_start.get("starter_job_capacity", 0)) == 20)
-	_expect("%s route has no employee slots" % label,
-		int(player_start.get("starter_employee_job_capacity", 0)) == 0)
+	_expect("%s route confines employee slots to precious workings" % label,
+		int(player_start.get("starter_employee_job_capacity", 0)) ==
+			_precious_employee_slots(String(player_start.get("precious_resource", ""))))
 	_expect("%s route does not preallocate professions" % label,
 		not player_start.has("owner_job_capacity_by_profession"))
 	_expect("%s leaves non-founder population for native job matching" % label,
@@ -181,18 +181,25 @@ func _run_case(label: String, size: Vector2i, seed: int) -> Dictionary:
 	}
 
 
-func _has_water_access(map: MapData, cell: int) -> bool:
-	if map.has_river_arr[cell] != 0 or map.is_lake_seed_arr[cell] != 0:
-		return true
-	var neighbors := map.neighbor_indices_packed()
-	for direction in range(6):
-		var neighbor := int(neighbors[cell * 6 + direction])
-		if neighbor >= 0 and (map.is_water_arr[neighbor] != 0 \
-				or map.has_river_arr[neighbor] != 0 \
-				or map.is_lake_seed_arr[neighbor] != 0 \
-				or int(map.terrain_arr[neighbor]) == int(TerrainType.TERRAIN.LAKE)):
-			return true
-	return false
+func _topups_are_minimum_fills(country_start: Dictionary, map: MapData,
+		cell: int) -> bool:
+	var topups: Dictionary = country_start.get("resource_topups", {})
+	for resource_id in topups:
+		if float(topups[resource_id]) <= 0.0:
+			return false
+		var current := _resource_reserve(map, String(resource_id), cell)
+		var minimum := float(StartProfile.MINIMUM_RESERVES.get(String(resource_id), 0.0))
+		if current + 0.0001 < minimum:
+			return false
+	return true
+
+
+func _precious_employee_slots(precious_resource: String) -> int:
+	if precious_resource == "gold_ore":
+		return 1
+	if precious_resource == "silver_ore":
+		return 2
+	return 0
 
 
 func _resource_reserve(map: MapData, resource_id: String, cell: int) -> float:

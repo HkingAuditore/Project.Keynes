@@ -841,11 +841,11 @@ func _relation_entry(index: int, states: PackedInt32Array, prefix: String = "") 
 
 func _relation_prefix(kind: String, outgoing: bool) -> String:
 	match kind:
-		"hard": return "硬后继" if outgoing else "硬前置"
-		"alternative": return "替代证据"
-		"application": return "应用交汇"
-		"milestone_candidate": return "里程碑候选"
-	return "网络关系"
+		"hard": return "随后解锁" if outgoing else "需要先完成"
+		"alternative": return "发现条件"
+		"application": return "应用"
+		"milestone_candidate": return "时代候选"
+	return "相关科技"
 
 
 func _condition_items(index: int, states: PackedInt32Array) -> Array:
@@ -863,7 +863,7 @@ func _condition_items(index: int, states: PackedInt32Array) -> Array:
 			entry_name = String((_definitions[entry_index] as Dictionary).get(
 				"display_name", entry_id))
 		items.append({
-			"text": "时代门槛：%s（%s）" % [entry_name, "已开放" if entry_met else "未开放"],
+			"text": "时代门槛：%s · %s" % [entry_name, "已开放" if entry_met else "未开放"],
 			"icon": &"technology.state.completed" if entry_met else &"technology.state.locked",
 			"accent": UITokens.GOOD if entry_met else UITokens.WARN,
 			"met": entry_met,
@@ -878,7 +878,7 @@ func _condition_items(index: int, states: PackedInt32Array) -> Array:
 					or not bool(item.get("met", false)):
 				continue
 			var inspiration := item.duplicate()
-			inspiration["text"] = "揭示证据：%s" % String(item.get("text", ""))
+			inspiration["text"] = "发现：%s" % String(item.get("text", ""))
 			items.append(inspiration)
 	var hard_ids: PackedStringArray = definition.get("prerequisite_ids", PackedStringArray())
 	for hard_id in hard_ids:
@@ -889,7 +889,7 @@ func _condition_items(index: int, states: PackedInt32Array) -> Array:
 			hard_name = String((_definitions[hard_index] as Dictionary).get("display_name", hard_name))
 		var hard_met := hard_state >= 5
 		items.append({
-			"text": "核心知识：%s（%s）" % [hard_name, "已完成" if hard_met else "未完成"],
+			"text": "需要先完成：%s · %s" % [hard_name, "已完成" if hard_met else "未完成"],
 			"icon": &"technology.state.completed" if hard_met else &"technology.state.locked",
 			"accent": UITokens.GOOD if hard_met else UITokens.WARN,
 			"met": hard_met,
@@ -905,7 +905,7 @@ func _condition_items(index: int, states: PackedInt32Array) -> Array:
 		if not route_description.is_empty():
 			route_text += "：%s" % route_description
 		items.append({
-			"text": "%s（%s）" % [route_text, "已满足" if route_met else "未满足"],
+			"text": "%s · %s" % [route_text, "已满足" if route_met else "未满足"],
 			"icon": &"technology.state.completed" if route_met else &"technology.state.locked",
 			"accent": UITokens.GOOD if route_met else UITokens.WARN,
 			"met": route_met,

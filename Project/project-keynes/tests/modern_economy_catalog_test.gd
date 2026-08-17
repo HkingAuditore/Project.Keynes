@@ -27,18 +27,94 @@ func _audit_knowledge_building_owners(catalog: Dictionary,
 	var owners: PackedInt32Array = catalog.get("building_owner_profession_ids", PackedInt32Array())
 	var profession_classes: PackedStringArray = catalog.get(
 		"profession_class_ids", PackedStringArray())
+	var goods: PackedStringArray = catalog.get("good_ids", PackedStringArray())
+	var output_offsets: PackedInt32Array = catalog.get(
+		"building_output_offsets", PackedInt32Array())
+	var output_goods: PackedInt32Array = catalog.get(
+		"building_output_good_ids", PackedInt32Array())
+	var points_good := goods.find("technology_points")
 	var knowledge_count := 0
-	for building_idx in range(sectors.size()):
-		if int(sectors[building_idx]) != 4:
-			continue
-		knowledge_count += 1
+	var points_count := 0
+	for building_idx in range(_buildings.size()):
 		var owner_idx := int(owners[building_idx]) if building_idx < owners.size() else -1
 		var owner_class := String(profession_classes[owner_idx]) \
 			if owner_idx >= 0 and owner_idx < profession_classes.size() else ""
-		_expect("knowledge building owner is a technology profession: %s" % _buildings[building_idx],
-			owner_class == "technology")
+		if building_idx < sectors.size() and int(sectors[building_idx]) == 4:
+			knowledge_count += 1
+			_expect("knowledge building owner is a technology profession: %s" %
+				_buildings[building_idx], owner_class == "technology")
+		if _building_outputs_good(output_offsets, output_goods, building_idx, points_good):
+			points_count += 1
+			_expect("technology-points producer owner is a technology profession: %s" %
+				_buildings[building_idx], owner_class == "technology")
 	_expect("knowledge building owner invariant covers all knowledge buildings",
 		knowledge_count > 0)
+	_expect("technology-points producer owner invariant covers all producers",
+		points_count > 0)
+
+
+func _audit_starter_knowledge_routes() -> void:
+	var expected := {
+		"oral_memory_circle": {
+			"output": 1000, "climate": "", "resource": "",
+			"construction": PackedStringArray(["logs", "bast_fiber"]),
+		},
+		"seasonal_observation_shelter": {
+			"output": 1500, "climate": "phenology_observation", "resource": "",
+			"construction": PackedStringArray(["logs", "bast_fiber"]),
+		},
+		"pastoral_council_tent": {
+			"output": 1600, "climate": "pasture_livestock", "resource": "pasture",
+			"construction": PackedStringArray(["turf_block", "bast_fiber"]),
+		},
+		"tide_observation_hut": {
+			"output": 1700, "climate": "", "resource": "",
+			"construction": PackedStringArray(["reed_bundle", "bast_fiber"]),
+		},
+		"flood_calendar_shrine": {
+			"output": 1800, "climate": "", "resource": "paddy_land",
+			"construction": PackedStringArray(["reed_bundle", "bast_fiber"]),
+		},
+	}
+	for building_id in expected:
+		var profile: BuildingProfile = load(
+			"res://data/economy/buildings/%s.tres" % building_id)
+		var spec: Dictionary = expected[building_id]
+		_expect("starter knowledge route stays a lorekeeper workshop: %s" % building_id,
+			profile != null and String(profile.economic_sector_id) == "knowledge"
+			and String(profile.owner_profession_id) == "lorekeeper"
+			and profile.owner_slots_per_building == 2
+			and profile.employee_profession_ids.is_empty()
+			and profile.output_good_ids == PackedStringArray(["technology_points"]))
+		if profile == null:
+			continue
+		_expect("starter knowledge route has a distinct catalog yield: %s" % building_id,
+			profile.output_quantities_per_day == PackedInt64Array([int(spec.output)]))
+		_expect("starter knowledge route uses local construction: %s" % building_id,
+			profile.construction_good_ids == spec.construction)
+		_expect("starter knowledge climate matches the opening biome: %s" % building_id,
+			String(profile.production_climate_profile_id) == String(spec.climate))
+		var resource_id := String(spec.resource)
+		if resource_id == "":
+			_expect("universal starter knowledge has no geography gate: %s" % building_id,
+				profile.condition_opcodes.is_empty())
+		else:
+			_expect("specialized starter knowledge requires local carrying capacity: %s" %
+				building_id, profile.condition_opcodes == PackedInt32Array([1])
+				and profile.condition_signals == PackedInt32Array([10])
+				and profile.condition_compares == PackedInt32Array([4])
+				and profile.condition_reference_ids == PackedStringArray([resource_id])
+				and profile.condition_values == PackedInt64Array([0]))
+
+
+func _building_outputs_good(offsets: PackedInt32Array, goods: PackedInt32Array,
+		building_idx: int, good_idx: int) -> bool:
+	if good_idx < 0 or building_idx < 0 or building_idx + 1 >= offsets.size():
+		return false
+	for edge in range(int(offsets[building_idx]), int(offsets[building_idx + 1])):
+		if int(goods[edge]) == good_idx:
+			return true
+	return false
 
 
 func _audit_two_owner_early_buildings() -> void:
@@ -100,9 +176,10 @@ func _audit(catalog: Dictionary) -> void:
 	var needs: PackedStringArray = catalog.need_ids
 	var resources: PackedStringArray = catalog.building_resource_ids
 	_audit_knowledge_building_owners(catalog, buildings, professions)
+	_audit_starter_knowledge_routes()
 	_audit_two_owner_early_buildings()
-	_expect("network economy catalog has 132 goods", goods.size() == 132)
-	_expect("network economy has 352 production methods", buildings.size() == 352)
+	_expect("network economy catalog has 130 goods", goods.size() == 130)
+	_expect("network economy has 350 production methods", buildings.size() == 350)
 	_expect("45 labor, institutional and research professions", professions.size() == 45)
 	_expect("17 differentiated household needs", needs.size() == 17)
 	_expect("31 registered natural resources", ResourceRegistryScript.count() == 31)
@@ -210,7 +287,9 @@ func _audit(catalog: Dictionary) -> void:
 		String(timber_collector.behavior_id) == "consume_local_resources")
 	_expect("early gold employment and wage scale is bounded",
 		early_gold.owner_slots_per_building == 1 and
-		early_gold.employee_slots_per_building.is_empty())
+		early_gold.employee_profession_ids == PackedStringArray(["miner"]) and
+		early_gold.employee_slots_per_building == PackedInt64Array([1]) and
+		early_gold.employee_reference_wages_per_day == PackedInt64Array([40000]))
 	var bronze_workshop = load("res://data/economy/buildings/bronze_tool_workshop.tres")
 	var guild_hall = load("res://data/economy/buildings/guild_hall.tres")
 	var steam_works = load("res://data/economy/buildings/steam_engine_works.tres")
@@ -237,14 +316,18 @@ func _audit(catalog: Dictionary) -> void:
 			stone_hunting.output_quantities_per_day[1] and
 		stone_hunting.resource_quantities_per_day == PackedInt64Array([715]) and
 		stone_hunting.owner_slots_per_building == 2)
-	_expect("rough bullion sites are locally owner-operated and input-free",
-		String(early_gold.owner_profession_id) == "miner" and
-		String(early_silver.owner_profession_id) == "miner" and
+	_expect("rough bullion sites are merchant-owned mint collectors",
+		String(early_gold.owner_profession_id) == "merchant" and
+		String(early_silver.owner_profession_id) == "merchant" and
 		early_gold.input_good_ids.is_empty() and early_silver.input_good_ids.is_empty() and
-		early_gold.employee_profession_ids.is_empty() and
-		early_silver.employee_profession_ids.is_empty() and
-		early_silver.output_quantities_per_day == PackedInt64Array([80]) and
-		early_silver.resource_quantities_per_day == PackedInt64Array([20]) and
+		early_gold.output_good_ids == PackedStringArray(["gold"]) and
+		early_silver.output_good_ids == PackedStringArray(["silver"]) and
+		early_gold.output_quantities_per_day == PackedInt64Array([100]) and
+		early_gold.resource_quantities_per_day == PackedInt64Array([50]) and
+		early_silver.output_quantities_per_day == PackedInt64Array([1000]) and
+		early_silver.resource_quantities_per_day == PackedInt64Array([200]) and
+		early_silver.employee_profession_ids == PackedStringArray(["miner"]) and
+		early_silver.employee_slots_per_building == PackedInt64Array([2]) and
 		early_gold.technology_tags.has("tech.gold_panning") and
 		early_silver.technology_tags.has("tech.surface_silver_collection"))
 	_expect("bronze workshop uses a small apprentice household",
@@ -738,7 +821,8 @@ func _audit_production_climate(catalog: Dictionary,
 		"production_climate_profile_ids", PackedStringArray())
 	_expect("production climate profiles compile in stable-id order",
 		profile_ids == PackedStringArray(["dryland_crop", "foraging_plants",
-			"paddy_crop", "pasture_livestock", "plantation_crop"]))
+			"paddy_crop", "pasture_livestock", "phenology_observation",
+			"plantation_crop"]))
 	var temp_opt: PackedInt32Array = catalog.get(
 		"production_climate_temperature_opt_q16", PackedInt32Array())
 	var temp_tol: PackedInt32Array = catalog.get(
@@ -769,6 +853,8 @@ func _audit_production_climate(catalog: Dictionary,
 		"rubber_tree_collector": "plantation_crop",
 		"pastoral_camp": "pasture_livestock",
 		"gathering_ground": "foraging_plants",
+		"seasonal_observation_shelter": "phenology_observation",
+		"pastoral_council_tent": "pasture_livestock",
 	}
 	for building_id in expected:
 		var building_idx := buildings.find(building_id)
@@ -777,7 +863,8 @@ func _audit_production_climate(catalog: Dictionary,
 			building_idx >= 0 and building_profiles[building_idx] == profile_idx)
 	for building_id in ["household_weaving_shelter", "timber_collector",
 			"stone_age_hunting_camp", "freshwater_fishing_camp",
-			"marine_fish_collector"]:
+			"marine_fish_collector", "oral_memory_circle", "tide_observation_hut",
+			"flood_calendar_shrine"]:
 		var building_idx := buildings.find(building_id)
 		_expect("%s has no direct climate production penalty" % building_id,
 			building_idx >= 0 and building_profiles[building_idx] == -1)

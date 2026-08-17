@@ -35,6 +35,7 @@ var _map: MapData
 var _selected_cell: HexCell
 var _selected_fog_state := VisionSolver.FOG_VISIBLE
 var _last_cached_panel_ms: int = 0
+var _last_object_detail_ms: int = 0
 var _live_revision_cell := -1
 var _live_revision_tab := ""
 var _live_common_hash := 0
@@ -56,6 +57,7 @@ var _pause_menu
 var _era_reward_dialog: EraRewardDialog
 var _gm_available := false
 var _debug_layer: Control
+var _inspector_suppressed_for_country := false
 
 
 func _ready() -> void:
@@ -176,6 +178,10 @@ func show_cell_panel(cell: HexCell) -> void:
 	_right_panel.set_model_for_selection(_inspector_view_model.build(cell))
 	_selection_context = _revision_selection_context(
 		_inspector_view_model.live_patch_revision(cell, _right_panel.current_tab()))
+	if _country_panel != null and _country_panel.is_panel_open():
+		_inspector_suppressed_for_country = true
+		_right_panel.visible = false
+		return
 	if not _right_panel.visible:
 		UIAnimation.fade_slide_in(_right_panel, Vector2(24.0, 0.0), UITokens.ANIM_MED)
 
@@ -183,6 +189,7 @@ func show_cell_panel(cell: HexCell) -> void:
 func hide_cell_panel() -> void:
 	_selected_cell = null
 	_selection_context = ""
+	_inspector_suppressed_for_country = false
 	_invalidate_live_revision()
 	_set_inspector_trace_cell(-1)
 	if _right_panel != null:
@@ -198,6 +205,8 @@ func refresh_selected_daily_lines(force: bool = false, day_idx: int = -1) -> Dic
 		"live_patch_build_ms": 0.0,
 		"live_patch_apply_ms": 0.0,
 	}
+	if _colonization_panel != null and _colonization_panel.visible:
+		_colonization_panel.refresh_visible()
 	if _selected_cell == null or _inspector_view_model == null or _right_panel == null:
 		return timing
 	# 视野状态变了意味着页签集合变了，打补丁改不动页签栏，必须整块重建。
@@ -213,10 +222,14 @@ func refresh_selected_daily_lines(force: bool = false, day_idx: int = -1) -> Dic
 	timing["tab"] = tab_id
 	_inspector_view_model.observe_temperature(_selected_cell, day_idx)
 	var now_ms := Time.get_ticks_msec()
+	# 快进时档案页签 750ms 合一次。人数/聚落代数不变时旧逻辑会整段 return，
+	# 阶层财富和对象详情就冻在打开那一帧；详情窗口改为至少按日刷新。
 	if not force and now_ms - _last_cached_panel_ms < 750:
+		_refresh_object_detail(false)
+		if _right_panel.detail_open():
+			timing["ran"] = true
 		return timing
 	_last_cached_panel_ms = now_ms
-	var include_category := true
 	var revision: Dictionary = _inspector_view_model.live_patch_revision(
 		_selected_cell, tab_id)
 	var next_selection_context := _revision_selection_context(revision)
@@ -226,53 +239,27 @@ func refresh_selected_daily_lines(force: bool = false, day_idx: int = -1) -> Dic
 		timing["ran"] = true
 		return timing
 	_selection_context = next_selection_context
-	var common_dirty := true
-	var category_dirty := true
-	var cell_idx := int(_selected_cell.index)
-	var same_target := _live_revision_valid and _live_revision_cell == cell_idx \
-		and _live_revision_tab == tab_id
-	if tab_id == "population":
-		var common_hash := int(revision.get("common_hash", 0))
-		var category_generation := int(revision.get("category_generation", -1))
-		var tax_policy_version := int(revision.get("tax_policy_version", -1))
-		common_dirty = force or not same_target or common_hash != _live_common_hash
-		category_dirty = force or not same_target or \
-			category_generation != _live_category_generation or \
-			tax_policy_version != _live_tax_policy_version
-		include_category = category_dirty
-		if not common_dirty and not category_dirty:
-			return timing
 	var build_started_usec := Time.get_ticks_usec()
 	var patch := _inspector_view_model.build_live_patch(
 		_selected_cell,
 		tab_id,
-		include_category,
+		true,
 		revision.get("population_summary", {})
 	)
 	timing["live_patch_build_ms"] = (
 		Time.get_ticks_usec() - build_started_usec) / 1000.0
 	if tab_id == "population":
-		if not common_dirty:
-			patch.erase("header")
-			patch.erase("score")
-			patch.erase("summary_cards")
-		if patch.has("category"):
-			var category_hash := hash(patch["category"])
-			if not force and same_target and category_hash == _live_category_hash:
-				patch.erase("category")
-			else:
-				_live_category_hash = category_hash
-		_live_revision_cell = cell_idx
+		_live_revision_cell = int(_selected_cell.index)
 		_live_revision_tab = tab_id
 		_live_common_hash = int(revision.get("common_hash", 0))
 		_live_category_generation = int(revision.get("category_generation", -1))
 		_live_tax_policy_version = int(revision.get("tax_policy_version", -1))
 		_live_revision_valid = true
-		if not common_dirty and not patch.has("category"):
-			return timing
+		if patch.has("category"):
+			_live_category_hash = hash(patch["category"])
 	var apply_started_usec := Time.get_ticks_usec()
 	_right_panel.apply_live_patch(patch)
-	_refresh_object_detail()
+	_refresh_object_detail(true)
 	timing["live_patch_apply_ms"] = (
 		Time.get_ticks_usec() - apply_started_usec) / 1000.0
 	timing["ran"] = true
@@ -287,6 +274,7 @@ func refresh_selected_panel() -> void:
 	_selection_context = _revision_selection_context(
 		_inspector_view_model.live_patch_revision(
 			_selected_cell, _right_panel.current_tab()))
+	_refresh_object_detail(true)
 
 
 func _revision_selection_context(revision: Dictionary) -> String:
@@ -306,6 +294,7 @@ func _on_country_committed(_report: Dictionary) -> void:
 func open_country_section(section_id: String) -> void:
 	if _country_panel == null or _country_view_model == null:
 		return
+	_hide_inspector_for_country()
 	_country_action_bar.set_active(section_id)
 	_country_panel.show_section(section_id, _country_view_model.build(section_id == "economy"))
 
@@ -315,6 +304,23 @@ func close_country_panel() -> void:
 		_country_panel.close_panel()
 	if _country_action_bar != null:
 		_country_action_bar.set_active("")
+
+
+func _hide_inspector_for_country() -> void:
+	if _right_panel == null or not _right_panel.visible:
+		return
+	_inspector_suppressed_for_country = true
+	_right_panel.visible = false
+
+
+func _restore_inspector_after_country() -> void:
+	if not _inspector_suppressed_for_country:
+		return
+	_inspector_suppressed_for_country = false
+	if _selected_cell == null or _right_panel == null:
+		return
+	_right_panel.visible = true
+	_right_panel.modulate.a = 1.0
 
 
 func refresh_country_summary() -> Dictionary:
@@ -386,8 +392,7 @@ func _on_colonization_start_requested(args: Dictionary) -> void:
 		return
 	var result: Dictionary = _player_controller.request_command(
 		&"family.colonization.start", args)
-	_colonization_panel.set_feedback(String(result.get("message",
-		result.get("code", "开拓命令未能提交。"))), bool(result.get("ok", false)))
+	_colonization_panel.set_command_result(result)
 	if bool(result.get("ok", false)) and result.has("expedition_handle"):
 		_on_expedition_selected(int(result.expedition_handle))
 
@@ -397,8 +402,7 @@ func _on_colonization_cancel_requested(expedition_handle: int) -> void:
 		return
 	var result: Dictionary = _player_controller.request_command(
 		&"family.colonization.cancel", {"expedition_handle": expedition_handle})
-	_colonization_panel.set_feedback(String(result.get("message",
-		result.get("code", "取消命令未能提交。"))), bool(result.get("ok", false)))
+	_colonization_panel.set_command_result(result)
 	if bool(result.get("ok", false)):
 		_on_expedition_selected(expedition_handle)
 
@@ -416,8 +420,9 @@ func _on_player_command_settled(id: StringName, result: Dictionary) -> void:
 	if id == &"family.colonization.start" or \
 			id == &"family.colonization.cancel":
 		if _colonization_panel != null:
-			_colonization_panel.set_feedback(String(result.get(
-				"message", "开拓队状态已更新。")), bool(result.get("ok", true)))
+			if not result.has("message"):
+				result["message"] = "开拓队状态已更新。"
+			_colonization_panel.set_command_result(result)
 			_colonization_panel.refresh_expeditions_if_visible()
 		if _selected_cell != null and String(result.get("code", "")) == "CLAIMED":
 			refresh_selected_panel()
@@ -466,10 +471,13 @@ func _close_object_detail_dialog() -> void:
 		_right_panel.close_detail(false)
 
 
-func _refresh_object_detail() -> void:
+func _refresh_object_detail(force: bool = false) -> void:
 	if _object_detail_context.is_empty() or _selected_cell == null \
 			or _inspector_view_model == null or _right_panel == null \
 			or not _right_panel.detail_open():
+		return
+	var now_ms := Time.get_ticks_msec()
+	if not force and now_ms - _last_object_detail_ms < 200:
 		return
 	if int(_object_detail_context.get("cell_idx", -1)) != int(_selected_cell.index):
 		_close_object_detail_dialog()
@@ -479,6 +487,7 @@ func _refresh_object_detail() -> void:
 	if payload.is_empty():
 		_close_object_detail_dialog()
 		return
+	_last_object_detail_ms = now_ms
 	_right_panel.refresh_object_detail(payload)
 
 
@@ -565,7 +574,12 @@ func dismiss_overlay_menu() -> bool:
 	if _gm_console != null and _gm_console.is_panel_open():
 		_gm_console.close_panel()
 		return true
-	return _map_overlay_toolbar != null and _map_overlay_toolbar.dismiss_submenu()
+	if _map_overlay_toolbar != null and _map_overlay_toolbar.dismiss_submenu():
+		return true
+	if _right_panel != null and _right_panel.visible:
+		clear_selection_requested.emit()
+		return true
+	return false
 
 
 func toggle_pause_menu() -> void:
@@ -722,6 +736,7 @@ func _bind_ui() -> void:
 	_country_panel.close_requested.connect(func() -> void:
 		if _country_action_bar != null:
 			_country_action_bar.set_active("")
+		_restore_inspector_after_country()
 	)
 	_country_panel.section_selected.connect(func(section_id: String) -> void:
 		if _country_action_bar != null:
@@ -843,12 +858,10 @@ func _layout_overlay_legend() -> void:
 func _layout_country_action_bar() -> void:
 	if _country_action_bar == null:
 		return
-	var compact_detail := _right_panel != null and _right_panel.detail_open() \
-		and get_viewport().get_visible_rect().size.x < DETAIL_LAYOUT_BREAKPOINT
-	_country_action_bar.visible = not compact_detail
+	_country_action_bar.visible = true
 	var viewport_width := get_viewport().get_visible_rect().size.x
 	var safe := map_safe_area()
-	var bar_width := 320.0
+	var bar_width := 400.0
 	var side_margin := maxf(safe.position.x + (safe.size.x - bar_width) * 0.5,
 		UITokens.SPACE_SM)
 	var right_margin := maxf(viewport_width - side_margin - bar_width,

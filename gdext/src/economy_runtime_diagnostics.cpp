@@ -99,6 +99,10 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_population.worst_dimension_id);
     cap(_population.flags); cap(_population.demography_residual);
     cap(_birth_residual_q32);
+    cap(_cell_support_ema_q16);
+    cap(_cell_carrying_k_geo); cap(_cell_carrying_k_eff);
+    cap(_cell_carrying_surplus_q16); cap(_cell_carrying_sat_q16);
+    cap(_cell_carrying_family_surplus_q16); cap(_cell_carrying_family_bindable);
     cap(_population.owner_employed); cap(_population.employee_employed);
     cap(_families.active); cap(_families.generation); cap(_families.stable_id);
     cap(_families.surname_id); cap(_families.surname_disambiguator);
@@ -199,6 +203,7 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_epoch_compiled_cell_tax_default_rows);
     cap(_epoch_compiled_cell_tax_default_rates);
     cap(_epoch_country_building_available);
+    cap(_epoch_country_support_yield);
     cap(_epoch_country_good_available);
     cap(_epoch_country_profession_available);
     cap(_epoch_country_variant_available);
@@ -657,6 +662,8 @@ Dictionary NativeEconomyRuntime::compact_report() const {
         _closing_audit_population_full_scan_entries;
     out["closing_audit_market_full_scan_entries"] =
         _closing_audit_market_full_scan_entries;
+    out["closing_audit_incremental_this_epoch"] =
+        _closing_audit_incremental_this_epoch;
     out["investment_scheduled_review_cells"] =
         _investment_scheduled_review_cells;
     out["investment_review_cells"] = _investment_review_cells;
@@ -1195,6 +1202,8 @@ Dictionary NativeEconomyRuntime::report() const {
         _closing_audit_population_full_scan_entries;
     out["closing_audit_market_full_scan_entries"] =
         _closing_audit_market_full_scan_entries;
+    out["closing_audit_incremental_this_epoch"] =
+        _closing_audit_incremental_this_epoch;
     out["investment_scheduled_review_cells"] =
         _investment_scheduled_review_cells;
     out["investment_review_cells"] = _investment_review_cells;
@@ -1878,6 +1887,23 @@ Dictionary NativeEconomyRuntime::report() const {
     out["population_error"] = _epoch_active ? 0 : _closing_totals.population - population_expected;
     out["money_error"] = _epoch_active ? 0
         : money_close - (money_open + _explicit_money_mint - _explicit_money_burn);
+    out["money_open"] = money_open;
+    out["money_close"] = money_close;
+    out["money_expected"] = money_open + _explicit_money_mint - _explicit_money_burn;
+    out["explicit_money_mint"] = _explicit_money_mint;
+    out["explicit_money_burn"] = _explicit_money_burn;
+    out["opening_cohort_funds"] = _opening_totals.cohort_funds;
+    out["closing_cohort_funds"] = _closing_totals.cohort_funds;
+    out["opening_country_cash"] = _opening_totals.country_cash;
+    out["closing_country_cash"] = _closing_totals.country_cash;
+    out["opening_escrow_cash"] = _opening_totals.escrow_cash;
+    out["closing_escrow_cash"] = _closing_totals.escrow_cash;
+    out["opening_expedition_funds"] = _opening_totals.expedition_funds;
+    out["closing_expedition_funds"] = _closing_totals.expedition_funds;
+    out["opening_transit_population"] = _opening_totals.transit_population;
+    out["closing_transit_population"] = _closing_totals.transit_population;
+    out["closing_audit_incremental_this_epoch"] =
+        _closing_audit_incremental_this_epoch;
     out["opening_goods_stock"] = _opening_totals.goods_stock;
     out["closing_goods_stock"] = _closing_totals.goods_stock;
     out["opening_country_goods"] = _opening_totals.country_goods;

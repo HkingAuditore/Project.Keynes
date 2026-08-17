@@ -45,6 +45,8 @@ func set_data(title: String, value: String, subtitle: String = "", accent: Color
 	_value_label.text = value
 	_subtitle_label.text = subtitle
 	_subtitle_label.visible = subtitle != "" and not _compact
+	tooltip_text = "%s：%s" % [title, value] if subtitle.is_empty() \
+		else "%s：%s\n%s" % [title, value, subtitle]
 	var trend_key := IconCatalog.resolve_semantic(StringName(trend))
 	if trend_key == &"":
 		_trend_label.text = ""

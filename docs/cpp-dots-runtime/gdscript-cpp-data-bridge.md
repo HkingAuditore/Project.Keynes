@@ -13,7 +13,7 @@
 
 PKSV persistence is a snapshot boundary, not a new owner. GDScript coordinates
 section capture while each native authority emits its own versioned state:
-PKCN v11, PKEF v9, PKTR v5, PKEC v35, PKCM v1, PKGP v1, and
+PKCN v11, PKEF v9, PKTR v5, PKEC v36, PKCM v1, PKGP v1, and
 `PKEnvironmentRuntime v1`. Environment export includes the
 resident core vectors, weather ping-pong buffers, topology, dirty/active sets,
 round flags, stage cursors, and snapshot generations. Restore validates schema

@@ -124,6 +124,9 @@ public:
                                  const std::string &definition_key,
                                  int32_t technology_id, int64_t day_index,
                                  std::string &error);
+    bool has_technology_effect(uint64_t country_handle,
+                               const std::string &definition_key,
+                               int32_t technology_id) const;
     bool queue_family_group_effect(const std::string &definition_key,
                                    int32_t settlement_cell,
                                    uint64_t branch_stable_id,

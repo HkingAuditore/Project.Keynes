@@ -1259,6 +1259,24 @@ bool ModifierRuntime::apply_technology_effect(uint64_t country_handle,
     return true;
 }
 
+bool ModifierRuntime::has_technology_effect(uint64_t country_handle,
+                                            const std::string &definition_key,
+                                            int32_t technology_id) const {
+    if (!_configured || country_handle == 0 || definition_key.empty() ||
+        technology_id < 0)
+        return false;
+    const int32_t definition = definition_id(definition_key);
+    if (definition < 0 || _definitions[static_cast<size_t>(definition)].domain != COUNTRY)
+        return false;
+    const Store &store = _stores[COUNTRY];
+    const UniqueKey unique{definition, ENTITY, country_handle, 0x54454348ULL,
+                           static_cast<uint64_t>(technology_id + 1)};
+    const auto existing = store.unique_instances.find(unique);
+    return existing != store.unique_instances.end() &&
+        existing->second < store.active.size() &&
+        store.active[existing->second] != 0;
+}
+
 bool ModifierRuntime::queue_family_group_effect(
         const std::string &definition_key, int32_t settlement_cell,
         uint64_t branch_stable_id, int32_t magnitude_q16,

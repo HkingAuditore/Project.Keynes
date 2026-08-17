@@ -2,6 +2,54 @@ extends SceneTree
 
 const PlayerControllerScript = preload("res://scripts/game/player_controller.gd")
 
+class ColonizationQuoteStub:
+	var quotes: Dictionary = {}
+	var detail: Dictionary = {}
+	var snapshot: Dictionary = {
+		"ok": true,
+		"population": 40,
+		"surname": "王",
+		"surname_disambiguator": 0,
+	}
+	var traits: Dictionary = {
+		"ok": true,
+		"display_names": PackedStringArray(["采集传统"]),
+		"core": PackedByteArray([1]),
+		"descriptions": PackedStringArray(["更倾向投资采集建筑，并随威望提高本城总体产出。"]),
+		"behavior_selector_display_names": PackedStringArray(["采集营地"]),
+	}
+
+	func get_family_colonization_quotes(_target_cell: int = 0,
+			_family_filter: int = 0, _source_filter: int = -1,
+			_offset: int = 0, _limit: int = 64) -> Dictionary:
+		return quotes
+
+	func get_family_colonization_quote_detail(_token: int = 0) -> Dictionary:
+		return detail
+
+	func get_family_expeditions(_offset: int = 0, _limit: int = 64) -> Dictionary:
+		return {
+			"ok": true,
+			"busy": bool(quotes.get("busy", false)),
+			"expedition_handles": PackedInt64Array(),
+			"family_handles": PackedInt64Array(),
+			"source_cells": PackedInt32Array(),
+			"target_cells": PackedInt32Array(),
+			"populations": PackedInt64Array(),
+			"departure_days": PackedInt64Array(),
+			"due_days": PackedInt64Array(),
+			"route_costs": PackedInt32Array(),
+			"states": PackedInt32Array(),
+			"total": 0,
+		}
+
+	func get_family_snapshot(_family_handle: int = 0) -> Dictionary:
+		return snapshot
+
+	func get_family_traits(_family_handle: int = 0) -> Dictionary:
+		return traits
+
+
 var _failures := 0
 
 
@@ -72,6 +120,11 @@ func _init() -> void:
 		player != null
 		and player.get_node_or_null("UI/UIRoot/ModalLayer/ColonizationPlannerPanel") != null
 		and player.get_node_or_null("WorldRoot/ColonizationRouteLayer") is Node2D)
+	_run_colonization_planner_busy_display()
+	_run_colonization_planner_family_cards()
+	_run_colonization_planner_effect_fallback()
+	_run_colonization_planner_paused_display()
+	_run_family_effect_display_rows()
 	_expect("player scene mounts one full-screen era reward modal",
 		player != null
 		and player.get_node_or_null("UI/UIRoot/ModalLayer/EraRewardDialog") is EraRewardDialog)
@@ -79,6 +132,259 @@ func _init() -> void:
 		scene.free()
 	print("=== player controller contract: %d failures ===" % _failures)
 	quit(0 if _failures == 0 else 1)
+
+
+func _run_colonization_planner_busy_display() -> void:
+	var stub := ColonizationQuoteStub.new()
+	stub.quotes = {
+		"ok": true, "busy": true, "committed": false, "nonbinding": true,
+		"kind": "colonize", "total": 1,
+		"family_handles": PackedInt64Array([11]),
+		"source_cells": PackedInt32Array([0]),
+		"maximum_populations": PackedInt64Array([9]),
+		"route_costs": PackedInt32Array([4]),
+		"travel_days": PackedInt32Array([4]),
+		"quote_tokens": PackedInt64Array([77]),
+		"surnames": PackedStringArray(["王"]),
+		"surname_disambiguators": PackedInt32Array([0]),
+	}
+	stub.detail = {
+		"ok": true, "busy": true, "route_cost": 4, "travel_days": 4,
+		"profession_display_names": PackedStringArray(["采集"]),
+		"profession_populations": PackedInt64Array([9]),
+	}
+	var panel := _make_planner_panel()
+	panel.set_player_controller(stub)
+	panel.open_target(1585)
+	_expect("busy colonization quotes still list a source branch",
+		panel._has_quote_rows() and panel._status.visible
+		and panel._start.text.find("排队") >= 0)
+	panel._select_quote({
+		"family_handle": 11, "source_cell": 0, "target_cell": 1585,
+		"maximum_population": 9, "route_cost": 4, "travel_days": 4,
+		"quote_token": 77, "surname": "王",
+	})
+	_expect("confirm stays clickable after selecting a busy quote",
+		not panel._start.disabled and panel._start.text.find("排队") >= 0
+		and panel._start.text.find("9") >= 0)
+	panel.set_command_result({"ok": true, "code": "colonization_queued",
+		"message": "派遣已排队，将在经济结算完成后出发。"})
+	_expect("queued start feedback stays on the quote list",
+		panel._has_quote_rows()
+		and panel._feedback.text.find("排队") >= 0)
+	panel.queue_free()
+	var wait_stub := ColonizationQuoteStub.new()
+	wait_stub.quotes = {"ok": false, "code": "economy_busy_retry", "busy": true}
+	var wait_panel := _make_planner_panel()
+	wait_panel.set_player_controller(wait_stub)
+	wait_panel.open_target(1)
+	var waiting := false
+	for child in wait_panel._list.get_children():
+		if child is Label and (String(child.text).find("等待") >= 0 \
+				or String(child.text).find("结算") >= 0):
+			waiting = true
+	_expect("busy quote failures keep a waiting explanation instead of a blank error",
+		waiting and wait_panel._status.visible and wait_panel._start.disabled)
+	wait_panel.queue_free()
+	var empty_stub := ColonizationQuoteStub.new()
+	empty_stub.quotes = {
+		"ok": true, "busy": true, "committed": false, "nonbinding": true,
+		"kind": "colonize", "total": 0,
+		"family_handles": PackedInt64Array(),
+		"source_cells": PackedInt32Array(),
+		"maximum_populations": PackedInt64Array(),
+		"route_costs": PackedInt32Array(),
+		"travel_days": PackedInt32Array(),
+		"quote_tokens": PackedInt64Array(),
+		"surnames": PackedStringArray(),
+		"surname_disambiguators": PackedInt32Array(),
+	}
+	var empty_panel := _make_planner_panel()
+	empty_panel.set_player_controller(empty_stub)
+	empty_panel.open_target(2)
+	var empty_waiting := false
+	var false_empty := false
+	for child in empty_panel._list.get_children():
+		if child is Label:
+			var text := String(child.text)
+			if text.find("结算") >= 0:
+				empty_waiting = true
+			if text.find("没有满足") >= 0:
+				false_empty = true
+	_expect("busy empty quotes stay a waiting state instead of a false no-branch error",
+		empty_waiting and not false_empty and empty_panel._status.visible)
+	empty_panel.queue_free()
+
+
+func _run_colonization_planner_family_cards() -> void:
+	var stub := ColonizationQuoteStub.new()
+	stub.quotes = {
+		"ok": true, "busy": false, "kind": "colonize", "total": 2,
+		"family_handles": PackedInt64Array([11, 11]),
+		"source_cells": PackedInt32Array([3, 8]),
+		"maximum_populations": PackedInt64Array([5, 12]),
+		"route_costs": PackedInt32Array([9, 4]),
+		"travel_days": PackedInt32Array([9, 4]),
+		"quote_tokens": PackedInt64Array([71, 72]),
+		"surnames": PackedStringArray(["王", "王"]),
+		"surname_disambiguators": PackedInt32Array([0, 0]),
+	}
+	stub.detail = {
+		"ok": true, "route_cost": 4, "travel_days": 4,
+		"profession_display_names": PackedStringArray(["采集"]),
+		"profession_populations": PackedInt64Array([12]),
+	}
+	var panel := _make_planner_panel()
+	panel.set_player_controller(stub)
+	panel.open_target(22)
+	var rows := []
+	for child in panel._list.get_children():
+		if child.has_method("display_name"):
+			rows.append(child)
+	var visible := _visible_text(panel._list)
+	_expect("same family collapses to one dispatch card", rows.size() == 1)
+	_expect("dispatch card shows family name, people, and traits",
+		rows.size() == 1 and String(rows[0].display_name()) == "王氏"
+		and visible.find("40") >= 0 and visible.find("采集传统") >= 0
+		and visible.find("偏好：采集营地") >= 0)
+	_expect("dispatch trait chips carry Chinese descriptions as tooltips",
+		rows.size() == 1 and _badge_tooltips(rows[0]).find(
+			"更倾向投资采集建筑，并随威望提高本城总体产出。") >= 0)
+	_expect("dispatch card hides source, cost, and travel debug fields",
+		visible.find("源地") < 0 and visible.find("成本") < 0
+		and visible.find("最多") < 0)
+	panel._select_quote({
+		"family_handle": 11, "source_cell": 8, "target_cell": 22,
+		"quote_token": 72, "surname": "王",
+	})
+	_expect("missing maximum_population still selects a sendable default",
+		int(panel._population.value) >= 1 and panel._selected_quote.get("family_handle", 0) == 11)
+	panel._select_quote({
+		"family_handle": 11, "source_cell": 8, "target_cell": 22,
+		"maximum_population": 12, "route_cost": 4, "travel_days": 4,
+		"quote_token": 72, "surname": "王",
+	})
+	_expect("dispatch defaults to the sendable maximum",
+		int(panel._population.value) == 12 and not panel._start.disabled
+		and panel._start.text.find("12") >= 0)
+	panel.queue_free()
+
+
+func _run_colonization_planner_paused_display() -> void:
+	var stub := ColonizationQuoteStub.new()
+	stub.quotes = {
+		"ok": false, "busy": false, "fatal": true, "committed": false,
+		"code": "economy_paused",
+	}
+	stub.detail = {
+		"ok": false, "busy": false, "fatal": true, "code": "economy_paused",
+	}
+	var panel := _make_planner_panel()
+	panel.set_player_controller(stub)
+	panel.open_target(3)
+	var paused := false
+	for child in panel._list.get_children():
+		if child is Label and String(child.text).find("暂停") >= 0:
+			paused = true
+	_expect("fatal economy quote failures show a paused explanation instead of stale cards",
+		paused and not panel._has_quote_rows() and panel._start.disabled)
+	panel._select_quote({"family_handle": 11, "quote_token": 9})
+	_expect("selecting a quote without maximum_population does not keep confirm enabled after pause",
+		panel._start.disabled or int(panel._population.value) >= 1)
+	panel.queue_free()
+
+
+func _run_colonization_planner_effect_fallback() -> void:
+	var stub := ColonizationQuoteStub.new()
+	stub.traits = {
+		"ok": true,
+		"display_names": PackedStringArray(["商路人脉"]),
+		"core": PackedByteArray([1]),
+		"descriptions": PackedStringArray(["随威望提高本城贸易产出；高威望时累计贸易活动可为本城增加公共人口。"]),
+		"behavior_selector_display_names": PackedStringArray(),
+		"effect_display_names": PackedStringArray(["贸易产出加成", "商路人口奖励"]),
+	}
+	stub.quotes = {
+		"ok": true, "busy": false, "kind": "colonize", "total": 1,
+		"family_handles": PackedInt64Array([11]),
+		"source_cells": PackedInt32Array([8]),
+		"maximum_populations": PackedInt64Array([12]),
+		"route_costs": PackedInt32Array([4]),
+		"travel_days": PackedInt32Array([4]),
+		"quote_tokens": PackedInt64Array([72]),
+		"surnames": PackedStringArray(["王"]),
+		"surname_disambiguators": PackedInt32Array([0]),
+	}
+	var panel := _make_planner_panel()
+	panel.set_player_controller(stub)
+	panel.open_target(22)
+	var visible := _visible_text(panel._list)
+	_expect("dispatch cards without preferences show Chinese effect names",
+		visible.find("商路人脉") >= 0
+		and visible.find("效果：贸易产出加成") >= 0
+		and visible.find("family.city.trade_output_boost") < 0)
+	panel.queue_free()
+
+
+func _run_family_effect_display_rows() -> void:
+	var view_model := CellInspectorViewModel.new()
+	var modifier_rows: Array = view_model._family_modifier_rows({
+		"cell_idx": 12,
+		"modifier_definition_keys": PackedStringArray([
+			"family.city.extractive_output_boost"]),
+		"modifier_display_names": PackedStringArray(["采掘产出加成"]),
+		"modifier_descriptions": PackedStringArray(["提高本城采掘部门产出。"]),
+		"modifier_magnitude_q16": PackedInt32Array([65536]),
+	})
+	var trigger_rows: Array = view_model._family_trigger_rows({
+		"cell_idx": 12,
+		"trigger_definition_keys": PackedStringArray(["family.trade_population_bonus"]),
+		"trigger_display_names": PackedStringArray(["商路人口奖励"]),
+		"trigger_descriptions": PackedStringArray(["累计足够贸易活动后，为本城公共人口提供奖励。"]),
+		"trigger_progress": PackedInt64Array([0]),
+		"trigger_thresholds": PackedInt64Array([20]),
+		"trigger_completed": PackedInt32Array([0]),
+		"trigger_reward_targets": PackedInt32Array([1]),
+	})
+	_expect("family modifier rows use Chinese display names instead of raw keys",
+		modifier_rows.size() == 1
+		and String(modifier_rows[0].get("name", "")).find("采掘产出加成") >= 0
+		and String(modifier_rows[0].get("name", "")).find("extractive_output_boost") < 0
+		and String(modifier_rows[0].get("detail", "")).find("采掘部门产出") >= 0)
+	_expect("family trigger rows use Chinese display names instead of raw keys",
+		trigger_rows.size() == 1
+		and String(trigger_rows[0].get("name", "")).find("商路人口奖励") >= 0
+		and String(trigger_rows[0].get("name", "")).find("trade_population_bonus") < 0
+		and String(trigger_rows[0].get("detail", "")).find("公共人口") >= 0)
+
+
+func _make_planner_panel() -> ColonizationPlannerPanel:
+	var packed := load("res://scenes/ui/colonization_planner_panel.tscn") as PackedScene
+	var panel := packed.instantiate() as ColonizationPlannerPanel
+	root.add_child(panel)
+	return panel
+
+
+func _visible_text(node: Node) -> String:
+	var parts := PackedStringArray()
+	if node is Label:
+		parts.append(String((node as Label).text))
+	elif node is Button:
+		parts.append(String((node as Button).text))
+	for child in node.get_children():
+		parts.append(_visible_text(child))
+	return " ".join(parts)
+
+
+func _badge_tooltips(row: Node) -> PackedStringArray:
+	var tooltips := PackedStringArray()
+	var badges := row.get_node_or_null("Margin/Line/Info/Badges")
+	if badges == null:
+		return tooltips
+	for child in badges.get_children():
+		if child is Label:
+			tooltips.append(String((child as Label).tooltip_text))
+	return tooltips
 
 
 func _code(result: Dictionary) -> String:

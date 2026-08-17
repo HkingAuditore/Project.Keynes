@@ -40,7 +40,8 @@ func _init() -> void:
 func _sector_for(profile: Resource) -> String:
 	var id := String(profile.id).to_lower()
 	var family := String(profile.upgrade_family_id).to_lower()
-	if family == "research_institution" \
+	if _profile_outputs(profile, "technology_points") \
+			or family == "research_institution" \
 			or id.contains("research_") or id.contains("laboratory") \
 			or id.contains("academy") or id.contains("lorekeeper") \
 			or id.contains("learned_society") or id.contains("polytechnic"):
@@ -62,3 +63,7 @@ func _sector_for(profile: Resource) -> String:
 	if String(profile.building_kind) == "collector":
 		return "extractive"
 	return "manufacturing"
+
+
+func _profile_outputs(profile: Resource, good_id: String) -> bool:
+	return profile.output_good_ids.has(good_id)

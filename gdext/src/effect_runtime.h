@@ -180,6 +180,10 @@ public:
         const std::vector<uint64_t> &expected_source_ids,
         std::string &error) const;
     bool instance_fire_acked_pod(int64_t instance_id, uint32_t generation) const;
+    // Re-queue an existing instance that has not reached a domain ACK, without
+    // resetting generation, cadence identity, or fire_sequence.
+    bool nudge_unacked_instance_pod(int64_t instance_id, uint32_t generation,
+                                    int64_t day_index);
     bool set_metric_pod(int64_t instance_id, int32_t metric_id,
                         int64_t revision, int64_t value_q16,
                         std::string &error);
@@ -215,15 +219,20 @@ public:
                                      const std::array<int64_t, 4> &payload,
                                      std::string &error,
                                      int64_t *out_transaction_id = nullptr);
-    // Built-in two-domain transaction used by the Economy-owned expedition
-    // state machine. Both commands share one transaction and therefore remain
-    // unpublished until Country and Economy have independently ACKed.
+    // Built-in colonization transaction used by the Economy-owned expedition
+    // state machine. Unowned targets emit CLAIM then SETTLE and stay unpublished
+    // until Country and Economy ACK. Own-country relocation emits SETTLE only.
     bool enqueue_family_colonization_pod(
         int64_t effect_id, int64_t effective_day, int64_t source_id,
         uint64_t country_handle, uint32_t country_generation,
         uint64_t expedition_handle, uint32_t expedition_generation,
         int32_t target_cell, uint64_t fire_sequence, std::string &error,
-        int64_t *out_transaction_id = nullptr);
+        int64_t *out_transaction_id = nullptr,
+        bool claim_unowned = true);
+    uint64_t family_colonization_settle_idempotency_key(
+        int64_t effect_id, uint32_t expedition_generation,
+        uint64_t fire_sequence) const;
+    bool family_colonization_includes_claim(int64_t transaction_id) const;
     // Built-in geography transaction used by Economy-owned canal projects.
     // The command payload is deliberately only the project handle; the
     // gameplay adapter resolves the bounded route from EconomyRuntime.

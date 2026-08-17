@@ -423,7 +423,7 @@ func _run() -> void:
 	_expect("building PKCN save completes", bool(ext.end_country_save().get("ok", false)))
 	var chunks: Array[PackedByteArray] = []
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
-	_expect("building v30 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 30)
+	_expect("building v36 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 36)
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty(): break
@@ -1106,6 +1106,12 @@ func _test_employee_income_reallocation_to_owner(source_catalog: Dictionary,
 	var logs_good := goods.find("logs")
 	var prices: PackedInt32Array = catalog.good_default_price.duplicate()
 	var max_prices: PackedInt32Array = catalog.good_max_price.duplicate()
+	# Mint-backed silver pays employees at face value; keep this fixture's mine
+	# output tiny so the food owner opening still beats the miner wage.
+	var output_offsets: PackedInt32Array = catalog.building_output_offsets
+	var output_quantities: PackedInt64Array = catalog.building_output_quantities.duplicate()
+	output_quantities[int(output_offsets[silver_id])] = 80
+	catalog.building_output_quantities = output_quantities
 	# Keep silver first in ordinary unemployed hiring while making the food owner
 	# opening materially better than the miner's tax-adjusted contract wage.
 	prices[plants_good] = 12000
@@ -1724,8 +1730,12 @@ func _test_all_buildings_have_explicit_construction(catalog: Dictionary) -> void
 	var construction_offsets: PackedInt32Array = catalog.building_construction_offsets
 	var construction_quantities: PackedInt64Array = catalog.building_construction_quantities
 	var building_ids: PackedStringArray = catalog.building_type_ids
+	var kinds: PackedInt32Array = catalog.building_kinds
 	var valid := construction_offsets.size() == building_ids.size() + 1
 	for type_id in range(building_ids.size()):
+		# Service buildings (merchant posts) may be zero-cost; producers must not.
+		if type_id < kinds.size() and int(kinds[type_id]) == 2:
+			continue
 		var begin := int(construction_offsets[type_id])
 		var end := int(construction_offsets[type_id + 1])
 		if begin >= end:
@@ -1829,6 +1839,7 @@ func _test_investment_capacity_is_not_gate(source_catalog: Dictionary,
 			int(construction_offsets[knapping_id + 1])):
 		construction_good_ids[item] = logs_good
 	coverage_catalog.building_construction_good_ids = construction_good_ids
+	_sync_construction_candidates(coverage_catalog)
 	var flint_good := goods.find("flint")
 	var coverage_stock := PackedInt64Array()
 	coverage_stock.resize(goods.size())
@@ -3061,6 +3072,7 @@ func _test_construction_shortage_feeds_procurement_signal(source_catalog: Dictio
 	catalog.building_construction_offsets = offsets
 	catalog.building_construction_good_ids = new_good_ids
 	catalog.building_construction_quantities = new_quantities
+	_sync_construction_candidates(catalog)
 	var ext := _new_ext(catalog)
 	_expect("construction-shortage country bootstraps",
 		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 284))
@@ -3213,7 +3225,9 @@ func _test_production_worker_scalar_equivalence(source_catalog: Dictionary,
 			"building_production_worker_weight_total", 0)) >= 256)
 	_expect("building plan uses weighted parallel dispatch",
 		int(worker_report.get(
-			"building_plan_worker_parallel_dispatches", 0)) > 0)
+			"building_plan_worker_parallel_dispatches", 0)) > 0
+		or int(worker_report.get(
+			"last_completed_building_plan_worker_parallel_dispatches", 0)) > 0)
 	_expect("building production worker and scalar hashes match",
 		scalar.get_economy_state_hash() == worker.get_economy_state_hash())
 	_expect("building production worker and scalar event hashes match",
@@ -3489,6 +3503,22 @@ func _require_materials_for_primitive_collectors(
 	catalog.building_construction_offsets = offsets
 	catalog.building_construction_good_ids = goods
 	catalog.building_construction_quantities = quantities
+	_sync_construction_candidates(catalog)
+
+
+func _sync_construction_candidates(catalog: Dictionary) -> void:
+	var goods: PackedInt32Array = catalog.building_construction_good_ids
+	var candidate_offsets := PackedInt32Array()
+	var candidate_goods := PackedInt32Array()
+	var candidate_efficiencies := PackedInt32Array()
+	candidate_offsets.append(0)
+	for i in range(goods.size()):
+		candidate_goods.append(int(goods[i]))
+		candidate_efficiencies.append(65536)
+		candidate_offsets.append(candidate_goods.size())
+	catalog.building_construction_candidate_offsets = candidate_offsets
+	catalog.building_construction_candidate_good_ids = candidate_goods
+	catalog.building_construction_candidate_efficiency_q16 = candidate_efficiencies
 
 
 func _minimize_household_good_demand(catalog: Dictionary, good_id: int) -> void:

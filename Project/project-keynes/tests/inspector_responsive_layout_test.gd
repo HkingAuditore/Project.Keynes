@@ -56,6 +56,7 @@ func _check_scene_geometry(failures: PackedStringArray) -> void:
 	panel.visible = true
 	panel._detail_shell.visible = true
 	panel._inspector_root.visible = true
+	panel._sync_split_layout()
 	for panel_width in [860.0, 1040.0]:
 		panel.custom_minimum_size.x = panel_width
 		panel.offset_left = -panel_width
@@ -76,3 +77,12 @@ func _check_scene_geometry(failures: PackedStringArray) -> void:
 			failures.append("%.0fpx embedded object detail did not fill its workspace: dialog=%s root=%s shell=%s" % [
 				panel_width, dialog.size, panel._object_detail_dialog.size,
 				panel._detail_shell.size])
+	panel._detail_shell.visible = false
+	panel._sync_split_layout()
+	panel.custom_minimum_size.x = 460.0
+	panel.offset_left = -460.0
+	await process_frame
+	if panel._inspector_root.size_flags_horizontal != Control.SIZE_EXPAND_FILL \
+			or panel._inspector_root.size.x < 400.0:
+		failures.append("closed dossier did not fill the 460px panel: flags=%d size=%s" % [
+			panel._inspector_root.size_flags_horizontal, panel._inspector_root.size])

@@ -263,11 +263,10 @@ Dictionary DCWorldExt::run_gameplay_effects(int64_t day_index) {
             ++committed;
             continue;
         }
-        if (_gameplay_max_events <= 0 ||
-            static_cast<int32_t>(_gameplay_events.size()) >= _gameplay_max_events) {
+        if (_gameplay_max_events <= 0) {
             result.complete = 1;
             result.ok = 0;
-            result.reason = "effect_publish_event_journal_capacity_exceeded";
+            result.reason = "effect_publish_event_journal_disabled";
             ++rejected;
             continue;
         }

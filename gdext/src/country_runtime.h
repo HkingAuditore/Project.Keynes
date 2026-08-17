@@ -441,6 +441,8 @@ private:
     int64_t progress_for(int32_t slot, int32_t technology) const;
     void set_progress(int32_t slot, int32_t technology, int64_t value);
     int32_t run_research_day(int64_t day_index);
+    bool ensure_technology_effect_instance(int32_t slot, int32_t technology,
+                                           int64_t day_index);
 
     bool _configured = false;
     bool _bootstrapped = false;

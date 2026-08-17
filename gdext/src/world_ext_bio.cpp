@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <queue>
 #include <unordered_set>
 #include <utility>
@@ -105,6 +106,8 @@ struct SpeciesView {
     std::vector<int32_t> flags;
     std::vector<int32_t> max_cost;
     std::vector<float> fill_keep;
+    std::vector<int32_t> origin_policy;
+    std::vector<int32_t> guild;
 };
 
 template <typename T, typename Packed>
@@ -154,6 +157,24 @@ bool load_species(const Dictionary &knobs, SpeciesView &sp, String &reason) {
     copy_packed(flags, sp.flags);
     copy_packed(max_cost, sp.max_cost);
     copy_packed(fill_keep, sp.fill_keep);
+    const PackedInt32Array origin_policy = knobs.get("species_origin_policy", PackedInt32Array());
+    const PackedInt32Array guild = knobs.get("species_guild", PackedInt32Array());
+    if (origin_policy.size() == n) {
+        copy_packed(origin_policy, sp.origin_policy);
+    } else if (origin_policy.size() == 0) {
+        sp.origin_policy.assign(size_t(n), 0);
+    } else {
+        reason = String("bio_species_shape_invalid");
+        return false;
+    }
+    if (guild.size() == n) {
+        copy_packed(guild, sp.guild);
+    } else if (guild.size() == 0) {
+        sp.guild.assign(size_t(n), 0);
+    } else {
+        reason = String("bio_species_shape_invalid");
+        return false;
+    }
     return true;
 }
 
@@ -254,6 +275,189 @@ int32_t species_index_for_bit(const SpeciesView &sp, int32_t bit) {
         if (sp.bits[s] == bit) return s;
     }
     return -1;
+}
+
+constexpr int32_t kOriginHearth = 0;
+constexpr int32_t kOriginCosmopolitan = 1;
+constexpr int32_t kGuildFood = 1;
+constexpr int32_t kGuildGrazer = 2;
+constexpr int32_t kGuildFiber = 3;
+constexpr int32_t kMinOriginEnvelope = 8;
+constexpr int32_t kMinContinentCells = 8;
+constexpr float kMinContinentShare = 0.18f;
+
+void cell_cube(int cell, int width, int &q, int &r, int &s) {
+    const int col = cell % width;
+    const int row = cell / width;
+    q = col - (row - (row & 1)) / 2;
+    r = row;
+    s = -q - r;
+}
+
+int hex_dist(int a, int b, int width, int n) {
+    if (width <= 0 || n <= 0 || (n % width) != 0) {
+        return std::abs(a - b);
+    }
+    int qa = 0, ra = 0, sa = 0, qb = 0, rb = 0, sb = 0;
+    cell_cube(a, width, qa, ra, sa);
+    cell_cube(b, width, qb, rb, sb);
+    const int dq = qa - qb;
+    const int dr = ra - rb;
+    const int ds = sa - sb;
+    const int d0 = (std::abs(dq) + std::abs(dr) + std::abs(ds)) / 2;
+    const int d1 = (std::abs(dq - width) + std::abs(dr) + std::abs(ds + width)) / 2;
+    const int d2 = (std::abs(dq + width) + std::abs(dr) + std::abs(ds - width)) / 2;
+    return std::min(d0, std::min(d1, d2));
+}
+
+bool guild_slot_free(int cell, int species, const SpeciesView &sp, const int32_t *occ) {
+    const int32_t guild = sp.guild[species];
+    if (guild != kGuildFood && guild != kGuildGrazer) return true;
+    const int32_t bits = occ[cell];
+    if (bits == 0) return true;
+    for (int s = 0; s < sp.count; ++s) {
+        if (s == species || sp.guild[s] != guild) continue;
+        const int32_t bit = sp.bits[s];
+        if (bit < 0 || bit >= 32) continue;
+        if ((bits & (1 << bit)) != 0) return false;
+    }
+    return true;
+}
+
+int pick_origin_cell(int species, int lid, int preferred, int n, int width,
+                     const SpeciesView &sp, const int32_t *landmass,
+                     const uint8_t *water, const uint8_t *veg, const uint8_t *lf,
+                     const uint8_t *river, const float *temp, const float *moist,
+                     const float *elev, const std::vector<PackedFloat32Array> &reserves,
+                     const int32_t *occ) {
+    if (preferred >= 0 && preferred < n && landmass[preferred] == lid &&
+        envelope_ok(preferred, species, sp, water, veg, lf, river, temp, moist, elev) &&
+        carrier_ok(preferred, species, sp, reserves) &&
+        guild_slot_free(preferred, species, sp, occ)) {
+        return preferred;
+    }
+    int best = -1;
+    int best_d = 1 << 30;
+    for (int cell = 0; cell < n; ++cell) {
+        if (landmass[cell] != lid) continue;
+        if (!envelope_ok(cell, species, sp, water, veg, lf, river, temp, moist, elev))
+            continue;
+        if (!carrier_ok(cell, species, sp, reserves)) continue;
+        if (!guild_slot_free(cell, species, sp, occ)) continue;
+        const int d = (preferred >= 0) ? hex_dist(cell, preferred, width, n) : 0;
+        if (d < best_d) {
+            best_d = d;
+            best = cell;
+        }
+    }
+    return best;
+}
+
+int32_t fill_hearth(int species, int origin, int lid, int n, int seed,
+                    const SpeciesView &sp, const int32_t *landmass,
+                    const int32_t *nb, const uint8_t *water, const uint8_t *veg,
+                    const uint8_t *lf, const uint8_t *river, const float *temp,
+                    const float *moist, const float *elev,
+                    const std::vector<PackedFloat32Array> &reserves,
+                    int32_t *occ, int32_t cost_cap = -1) {
+    const int32_t bit = sp.bits[species];
+    if (bit < 0 || bit >= 32 || origin < 0 || origin >= n) return 0;
+    const int32_t cap = cost_cap > 0 ? cost_cap : std::max(1, sp.max_cost[species]);
+    std::vector<int32_t> best(size_t(n), 1 << 29);
+    using Node = std::pair<int32_t, int32_t>;
+    std::priority_queue<Node, std::vector<Node>, std::greater<Node>> pq;
+    best[size_t(origin)] = 0;
+    pq.push(Node(0, origin));
+    int32_t occupied = 0;
+    while (!pq.empty()) {
+        const Node cur = pq.top();
+        pq.pop();
+        const int32_t cost = cur.first;
+        const int cell = cur.second;
+        if (cost != best[size_t(cell)]) continue;
+        if (cost > cap) continue;
+        const float decay = 1.0f - 0.35f * float(cost) / float(cap);
+        const float keep = sp.fill_keep[species] * std::max(0.15f, decay);
+        const bool keep_cell = cell == origin ||
+            bio_unit(bio_hash(uint32_t(seed), uint32_t(species + 17), uint32_t(cell))) < keep;
+        if (keep_cell && guild_slot_free(cell, species, sp, occ)) {
+            if ((occ[cell] & (1 << bit)) == 0) {
+                occ[cell] |= (1 << bit);
+                occupied += 1;
+            }
+        }
+        const int32_t base = cell * 6;
+        for (int d = 0; d < 6; ++d) {
+            const int32_t nxt = nb[base + d];
+            if (nxt < 0 || nxt >= n) continue;
+            if (landmass[nxt] != lid) continue;
+            if (!envelope_ok(nxt, species, sp, water, veg, lf, river, temp, moist, elev))
+                continue;
+            if (!carrier_ok(nxt, species, sp, reserves)) continue;
+            const int32_t step = traversal_cost(lf[nxt], veg[nxt], water[nxt]);
+            const int32_t nc = cost + std::max(1, step);
+            if (nc <= cap && nc < best[size_t(nxt)]) {
+                best[size_t(nxt)] = nc;
+                pq.push(Node(nc, nxt));
+            }
+        }
+    }
+    return occupied;
+}
+
+int32_t fill_landmass_envelope(int species, int lid, int n, int seed, bool thin,
+                               const SpeciesView &sp, const int32_t *landmass,
+                               const uint8_t *water, const uint8_t *veg,
+                               const uint8_t *lf, const uint8_t *river,
+                               const float *temp, const float *moist,
+                               const float *elev,
+                               const std::vector<PackedFloat32Array> &reserves,
+                               int origin, int32_t *occ) {
+    const int32_t bit = sp.bits[species];
+    if (bit < 0 || bit >= 32) return 0;
+    int32_t occupied = 0;
+    for (int cell = 0; cell < n; ++cell) {
+        if (landmass[cell] != lid) continue;
+        if (!envelope_ok(cell, species, sp, water, veg, lf, river, temp, moist, elev))
+            continue;
+        if (!carrier_ok(cell, species, sp, reserves)) continue;
+        const bool keep_cell = !thin || cell == origin ||
+            bio_unit(bio_hash(uint32_t(seed), uint32_t(species + 17), uint32_t(cell))) <
+                sp.fill_keep[species];
+        if (!keep_cell) continue;
+        if (!guild_slot_free(cell, species, sp, occ)) continue;
+        if ((occ[cell] & (1 << bit)) == 0) {
+            occ[cell] |= (1 << bit);
+            occupied += 1;
+        }
+    }
+    return occupied;
+}
+
+bool landmass_has_guild(int lid, int guild, int n, const SpeciesView &sp,
+                        const int32_t *landmass, const int32_t *occ) {
+    for (int cell = 0; cell < n; ++cell) {
+        if (landmass[cell] != lid) continue;
+        const int32_t bits = occ[cell];
+        if (bits == 0) continue;
+        for (int s = 0; s < sp.count; ++s) {
+            if (sp.guild[s] != guild) continue;
+            const int32_t bit = sp.bits[s];
+            if (bit >= 0 && bit < 32 && (bits & (1 << bit)) != 0) return true;
+        }
+    }
+    return false;
+}
+
+bool landmass_has_species(int lid, int species, int n, const SpeciesView &sp,
+                          const int32_t *landmass, const int32_t *occ) {
+    const int32_t bit = sp.bits[species];
+    if (bit < 0 || bit >= 32) return false;
+    const int32_t mask = 1 << bit;
+    for (int cell = 0; cell < n; ++cell) {
+        if (landmass[cell] == lid && (occ[cell] & mask) != 0) return true;
+    }
+    return false;
 }
 
 } // namespace
@@ -477,6 +681,10 @@ Dictionary DCWorldExt::run_bio_seed_pass(const Dictionary &knobs) {
     const float *moist = moist_arr.ptr();
     const float *elev = elev_arr.ptr();
     const int32_t *landmass = landmass_arr.ptr();
+    const int32_t *nb = neighbors.ptr();
+    const int width = int(knobs.get("width", 0));
+    const int height = int(knobs.get("height", 0));
+    const int hex_width = (width > 0 && height > 0 && width * height == n) ? width : 0;
 
     PackedInt32Array occupancy;
     occupancy.resize(n);
@@ -495,120 +703,267 @@ Dictionary DCWorldExt::run_bio_seed_pass(const Dictionary &knobs) {
     int32_t largest_land = 0;
     for (int32_t lid = 1; lid <= max_landmass; ++lid)
         largest_land = std::max(largest_land, landmass_size[size_t(lid)]);
-    // Continent-scale landmasses all get a local stand. Satellite islets that
-    // only hold a handful of cells stay empty unless they are the unique argmax
-    // (endemic pocket). Floor tracks the largest landmass so tiny test maps and
-    // 2400-cell worlds use the same rule.
-    constexpr int32_t kMinOriginEnvelope = 8;
-    constexpr int32_t kMinContinentCells = 8;
-    constexpr float kMinContinentShare = 0.18f;
     const int32_t continent_floor = std::max(
         kMinContinentCells,
         int32_t(std::lround(float(largest_land) * kMinContinentShare)));
 
-    std::vector<int32_t> candidates;
-    candidates.reserve(size_t(n));
-    std::vector<int32_t> origin_weight(size_t(max_landmass + 1), 0);
-    std::vector<int32_t> origin_best(size_t(max_landmass + 1), -1);
-    std::vector<uint8_t> seed_lm(size_t(max_landmass + 1), 0);
+    std::vector<std::vector<int32_t>> weight(size_t(sp.count),
+                                             std::vector<int32_t>(size_t(max_landmass + 1), 0));
+    std::vector<std::vector<int32_t>> best_cell(size_t(sp.count),
+                                                std::vector<int32_t>(size_t(max_landmass + 1), -1));
     PackedInt32Array envelope_counts;
     PackedInt32Array origin_envelope_counts;
     PackedInt32Array occupied_counts;
     PackedInt32Array origin_landmasses;
     PackedInt32Array seeded_landmass_counts;
+    PackedInt32Array hearth_cell_counts;
     envelope_counts.resize(sp.count);
     origin_envelope_counts.resize(sp.count);
     occupied_counts.resize(sp.count);
     origin_landmasses.resize(sp.count);
     seeded_landmass_counts.resize(sp.count);
+    hearth_cell_counts.resize(sp.count);
     int32_t *envelope_n = envelope_counts.ptrw();
     int32_t *origin_envelope_n = origin_envelope_counts.ptrw();
     int32_t *occupied_n = occupied_counts.ptrw();
     int32_t *origin_ids = origin_landmasses.ptrw();
     int32_t *seeded_n = seeded_landmass_counts.ptrw();
+    int32_t *hearth_n = hearth_cell_counts.ptrw();
     std::memset(envelope_n, 0, size_t(sp.count) * sizeof(int32_t));
     std::memset(origin_envelope_n, 0, size_t(sp.count) * sizeof(int32_t));
     std::memset(occupied_n, 0, size_t(sp.count) * sizeof(int32_t));
     std::memset(origin_ids, 0, size_t(sp.count) * sizeof(int32_t));
     std::memset(seeded_n, 0, size_t(sp.count) * sizeof(int32_t));
+    std::memset(hearth_n, 0, size_t(sp.count) * sizeof(int32_t));
 
     for (int s = 0; s < sp.count; ++s) {
-        const int32_t bit = sp.bits[s];
-        if (bit < 0 || bit >= 32) continue;
-        candidates.clear();
-        origin_weight.assign(size_t(max_landmass + 1), 0);
-        origin_best.assign(size_t(max_landmass + 1), -1);
-        seed_lm.assign(size_t(max_landmass + 1), 0);
+        if (sp.bits[s] < 0 || sp.bits[s] >= 32) continue;
+        int32_t env = 0;
         for (int cell = 0; cell < n; ++cell) {
             if (!envelope_ok(cell, s, sp, water, veg, lf, river, temp, moist, elev))
                 continue;
             if (!carrier_ok(cell, s, sp, reserves)) continue;
             const int32_t lid = landmass[cell];
             if (lid <= 0) continue;
-            candidates.push_back(cell);
-            origin_weight[size_t(lid)] += 1;
-            const int32_t prev = origin_best[size_t(lid)];
+            env += 1;
+            weight[size_t(s)][size_t(lid)] += 1;
+            const int32_t prev = best_cell[size_t(s)][size_t(lid)];
             if (prev < 0) {
-                origin_best[size_t(lid)] = cell;
+                best_cell[size_t(s)][size_t(lid)] = cell;
             } else {
-                const float prev_fit = 1.0f - std::abs(
-                    temp[prev] - 0.5f * (sp.temp_lo[s] + sp.temp_hi[s]));
-                const float cur_fit = 1.0f - std::abs(
-                    temp[cell] - 0.5f * (sp.temp_lo[s] + sp.temp_hi[s]));
-                if (cur_fit > prev_fit) origin_best[size_t(lid)] = cell;
+                const float mid = 0.5f * (sp.temp_lo[s] + sp.temp_hi[s]);
+                const float prev_fit = 1.0f - std::abs(temp[prev] - mid);
+                const float cur_fit = 1.0f - std::abs(temp[cell] - mid);
+                if (cur_fit > prev_fit) best_cell[size_t(s)][size_t(lid)] = cell;
             }
         }
-        envelope_n[s] = int32_t(candidates.size());
-        int32_t best_w = 0;
-        for (int32_t lid = 1; lid <= max_landmass; ++lid)
-            best_w = std::max(best_w, origin_weight[size_t(lid)]);
-        if (best_w <= 0) continue;
-        uint32_t tie_n = 0;
-        for (int32_t lid = 1; lid <= max_landmass; ++lid) {
-            if (origin_weight[size_t(lid)] == best_w) tie_n += 1;
+        envelope_n[s] = env;
+    }
+
+    std::vector<int> order;
+    order.reserve(size_t(sp.count));
+    for (int s = 0; s < sp.count; ++s) order.push_back(s);
+    std::sort(order.begin(), order.end(), [&](int a, int b) {
+        const bool ca = sp.origin_policy[a] == kOriginCosmopolitan;
+        const bool cb = sp.origin_policy[b] == kOriginCosmopolitan;
+        if (ca != cb) return !ca && cb;
+        const float va = std::max(0.01f, sp.temp_hi[a] - sp.temp_lo[a]) *
+                         std::max(0.01f, sp.moist_hi[a] - sp.moist_lo[a]) *
+                         std::max(0.01f, sp.elev_hi[a] - sp.elev_lo[a]);
+        const float vb = std::max(0.01f, sp.temp_hi[b] - sp.temp_lo[b]) *
+                         std::max(0.01f, sp.moist_hi[b] - sp.moist_lo[b]) *
+                         std::max(0.01f, sp.elev_hi[b] - sp.elev_lo[b]);
+        if (va != vb) return va < vb;
+        return a < b;
+    });
+
+    std::vector<int32_t> landmass_load(size_t(max_landmass + 1), 0);
+    std::vector<int32_t> placed_core;
+    std::vector<int32_t> placed_guild;
+    std::vector<int32_t> placed_lid;
+    bool catalog_has_food = false;
+    bool catalog_has_support = false;
+    for (int s = 0; s < sp.count; ++s) {
+        if (sp.guild[s] == kGuildFood) catalog_has_food = true;
+        if (sp.guild[s] == kGuildGrazer || sp.guild[s] == kGuildFiber)
+            catalog_has_support = true;
+    }
+
+    auto place_on_landmass = [&](int s, int32_t lid, bool secondary) {
+        const int32_t w = weight[size_t(s)][size_t(lid)];
+        const int preferred = best_cell[size_t(s)][size_t(lid)];
+        if (w <= 0 || preferred < 0) return 0;
+        const int origin = pick_origin_cell(s, lid, preferred, n, hex_width, sp, landmass,
+                                            water, veg, lf, river, temp, moist, elev,
+                                            reserves, occ);
+        if (origin < 0) return 0;
+        int32_t added = 0;
+        if (w < kMinOriginEnvelope) {
+            added = fill_landmass_envelope(s, lid, n, seed, false, sp, landmass, water, veg,
+                                           lf, river, temp, moist, elev, reserves, origin, occ);
+        } else {
+            const int32_t cap = secondary
+                ? std::max(1, sp.max_cost[s] / 2)
+                : std::max(1, sp.max_cost[s]);
+            added = fill_hearth(s, origin, lid, n, seed, sp, landmass, nb, water, veg, lf,
+                                river, temp, moist, elev, reserves, occ, cap);
         }
-        const uint32_t pick = uint32_t(
-            (uint64_t(bio_hash(uint32_t(seed), uint32_t(s + 1), 0xC0FFEEu)) *
-             uint64_t(tie_n)) >> 32);
-        uint32_t seen = 0;
-        int32_t origin_landmass = 0;
-        for (int32_t lid = 1; lid <= max_landmass; ++lid) {
-            if (origin_weight[size_t(lid)] != best_w) continue;
-            if (seen == pick) {
-                origin_landmass = lid;
-                break;
+        if (added <= 0) return 0;
+        occupied_n[s] += added;
+        hearth_n[s] += added;
+        seeded_n[s] += 1;
+        landmass_load[size_t(lid)] += 1;
+        placed_core.push_back(origin);
+        placed_guild.push_back(sp.guild[s]);
+        placed_lid.push_back(lid);
+        if (!secondary) {
+            origin_ids[s] = lid;
+            origin_envelope_n[s] = w;
+        }
+        return added;
+    };
+
+    int32_t secondary_hearths = 0;
+    for (int s : order) {
+        if (sp.bits[s] < 0 || sp.bits[s] >= 32) continue;
+        if (sp.origin_policy[s] == kOriginCosmopolitan) {
+            int32_t best_w = 0;
+            for (int32_t lid = 1; lid <= max_landmass; ++lid)
+                best_w = std::max(best_w, weight[size_t(s)][size_t(lid)]);
+            if (best_w <= 0) continue;
+            int32_t origin_landmass = 0;
+            uint32_t tie_n = 0;
+            for (int32_t lid = 1; lid <= max_landmass; ++lid) {
+                if (weight[size_t(s)][size_t(lid)] == best_w) tie_n += 1;
             }
-            seen += 1;
+            const uint32_t pick = uint32_t(
+                (uint64_t(bio_hash(uint32_t(seed), uint32_t(s + 1), 0xC0FFEEu)) *
+                 uint64_t(std::max(1u, tie_n))) >> 32);
+            uint32_t seen = 0;
+            for (int32_t lid = 1; lid <= max_landmass; ++lid) {
+                if (weight[size_t(s)][size_t(lid)] != best_w) continue;
+                if (seen == pick) {
+                    origin_landmass = lid;
+                    break;
+                }
+                seen += 1;
+            }
+            origin_ids[s] = origin_landmass;
+            origin_envelope_n[s] = weight[size_t(s)][size_t(origin_landmass)];
+            int32_t occupied = 0;
+            int32_t seeded = 0;
+            for (int32_t lid = 1; lid <= max_landmass; ++lid) {
+                const int32_t w = weight[size_t(s)][size_t(lid)];
+                if (w <= 0) continue;
+                const bool continent = landmass_size[size_t(lid)] >= continent_floor;
+                const bool stand = w >= kMinOriginEnvelope;
+                if (lid != origin_landmass && !(continent && stand)) continue;
+                const int origin = best_cell[size_t(s)][size_t(lid)];
+                occupied += fill_landmass_envelope(s, lid, n, seed, stand, sp, landmass,
+                                                   water, veg, lf, river, temp, moist, elev,
+                                                   reserves, origin, occ);
+                seeded += 1;
+                landmass_load[size_t(lid)] += 1;
+            }
+            occupied_n[s] = occupied;
+            hearth_n[s] = occupied;
+            seeded_n[s] = seeded;
+            continue;
         }
-        if (origin_landmass <= 0) continue;
-        origin_ids[s] = origin_landmass;
-        origin_envelope_n[s] = origin_weight[size_t(origin_landmass)];
-        int32_t seeded = 0;
+
+        struct Cand {
+            int32_t lid = 0;
+            int core = -1;
+            int32_t w = 0;
+        };
+        std::vector<Cand> cands;
         for (int32_t lid = 1; lid <= max_landmass; ++lid) {
-            const int32_t w = origin_weight[size_t(lid)];
+            const int32_t w = weight[size_t(s)][size_t(lid)];
             if (w <= 0) continue;
-            const bool primary = lid == origin_landmass;
             const bool continent = landmass_size[size_t(lid)] >= continent_floor;
-            const bool stand = w >= kMinOriginEnvelope;
-            if (!primary && !(continent && stand)) continue;
-            seed_lm[size_t(lid)] = 1;
-            seeded += 1;
+            if (continent && w >= kMinOriginEnvelope) {
+                cands.push_back(Cand{lid, best_cell[size_t(s)][size_t(lid)], w});
+            }
         }
-        seeded_n[s] = seeded;
-        int32_t occupied = 0;
-        for (int32_t cell : candidates) {
-            const int32_t lid = landmass[cell];
-            if (lid <= 0 || seed_lm[size_t(lid)] == 0) continue;
-            const int32_t origin = origin_best[size_t(lid)];
-            const float keep = origin_weight[size_t(lid)] < kMinOriginEnvelope
-                ? 1.0f : sp.fill_keep[s];
-            const bool keep_cell = cell == origin ||
-                bio_unit(bio_hash(uint32_t(seed), uint32_t(s + 17), uint32_t(cell))) < keep;
-            if (!keep_cell) continue;
-            occ[cell] |= (1 << bit);
-            occupied += 1;
+        if (cands.empty()) {
+            int32_t best_w = 0;
+            for (int32_t lid = 1; lid <= max_landmass; ++lid)
+                best_w = std::max(best_w, weight[size_t(s)][size_t(lid)]);
+            for (int32_t lid = 1; lid <= max_landmass; ++lid) {
+                if (weight[size_t(s)][size_t(lid)] == best_w && best_w > 0) {
+                    cands.push_back(Cand{lid, best_cell[size_t(s)][size_t(lid)],
+                                         weight[size_t(s)][size_t(lid)]});
+                }
+            }
         }
-        occupied_n[s] = occupied;
+        if (cands.empty()) continue;
+
+        float best_score = -1.0e30f;
+        int best_i = 0;
+        for (int i = 0; i < int(cands.size()); ++i) {
+            const Cand &c = cands[size_t(i)];
+            float score = float(c.w);
+            score -= 80.0f * float(landmass_load[size_t(c.lid)]);
+            for (size_t p = 0; p < placed_core.size(); ++p) {
+                if (placed_lid[p] != c.lid) continue;
+                const int d = std::max(1, hex_dist(c.core, placed_core[p], hex_width, n));
+                float penalty = 48.0f / float(d);
+                if (placed_guild[p] != 0 && placed_guild[p] == sp.guild[s])
+                    penalty *= 2.5f;
+                score -= penalty;
+            }
+            const bool needs_food = catalog_has_food &&
+                !landmass_has_guild(c.lid, kGuildFood, n, sp, landmass, occ);
+            const bool needs_support = catalog_has_support &&
+                !landmass_has_guild(c.lid, kGuildGrazer, n, sp, landmass, occ) &&
+                !landmass_has_guild(c.lid, kGuildFiber, n, sp, landmass, occ);
+            if (needs_food && sp.guild[s] == kGuildFood) score += 140.0f;
+            if (needs_support && (sp.guild[s] == kGuildGrazer || sp.guild[s] == kGuildFiber))
+                score += 90.0f;
+            score += bio_unit(bio_hash(uint32_t(seed), uint32_t(s + 3), uint32_t(c.lid))) * 0.01f;
+            if (score > best_score) {
+                best_score = score;
+                best_i = i;
+            }
+        }
+        place_on_landmass(s, cands[size_t(best_i)].lid, false);
+    }
+
+    for (int32_t lid = 1; lid <= max_landmass; ++lid) {
+        if (landmass_size[size_t(lid)] < continent_floor) continue;
+        if (catalog_has_food && !landmass_has_guild(lid, kGuildFood, n, sp, landmass, occ)) {
+            int best_s = -1;
+            int32_t best_w = 0;
+            for (int s = 0; s < sp.count; ++s) {
+                if (sp.guild[s] != kGuildFood) continue;
+                if (landmass_has_species(lid, s, n, sp, landmass, occ)) continue;
+                const int32_t w = weight[size_t(s)][size_t(lid)];
+                if (w > best_w) {
+                    best_w = w;
+                    best_s = s;
+                }
+            }
+            if (best_s >= 0 && place_on_landmass(best_s, lid, true) > 0)
+                secondary_hearths += 1;
+        }
+        const bool has_support =
+            landmass_has_guild(lid, kGuildGrazer, n, sp, landmass, occ) ||
+            landmass_has_guild(lid, kGuildFiber, n, sp, landmass, occ);
+        if (catalog_has_support && !has_support) {
+            int best_s = -1;
+            int32_t best_w = 0;
+            for (int s = 0; s < sp.count; ++s) {
+                if (sp.guild[s] != kGuildGrazer && sp.guild[s] != kGuildFiber) continue;
+                if (landmass_has_species(lid, s, n, sp, landmass, occ)) continue;
+                const int32_t w = weight[size_t(s)][size_t(lid)];
+                if (w > best_w) {
+                    best_w = w;
+                    best_s = s;
+                }
+            }
+            if (best_s >= 0 && place_on_landmass(best_s, lid, true) > 0)
+                secondary_hearths += 1;
+        }
     }
 
     out["ok"] = true;
@@ -619,6 +974,8 @@ Dictionary DCWorldExt::run_bio_seed_pass(const Dictionary &knobs) {
     out["occupied_cell_counts"] = occupied_counts;
     out["origin_landmass_ids"] = origin_landmasses;
     out["seeded_landmass_counts"] = seeded_landmass_counts;
+    out["hearth_cell_counts"] = hearth_cell_counts;
+    out["secondary_hearth_count"] = secondary_hearths;
     return out;
 }
 

@@ -24,3 +24,14 @@ const MINIMUM_RESERVES := {
 	"gold_ore": 15000.0,
 	"silver_ore": 15000.0,
 }
+
+## Opening top-up never invents fish, paddy or clay on dry inland cells.
+## Pasture is included so knowledge can close without generation-time weather.
+const OPENING_TOPUP_RESOURCE_IDS := [
+	"fertile_soil",
+	"timber",
+	"wild_game",
+	"stone",
+	"flint",
+	"pasture",
+]

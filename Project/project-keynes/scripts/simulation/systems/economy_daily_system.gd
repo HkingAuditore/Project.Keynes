@@ -74,6 +74,11 @@ func tick(ctx) -> Dictionary:
 		"slice_budget_ms": slice_budget_ms,
 	}
 	var ext: Object = facade.world_ext()
+	# Country daily ACKs CLAIM at priority 255. Dispatch SETTLE before this
+	# slice so an idle cycle can land immediately, and a frozen cycle can
+	# queue the command into pending for the next EPOCH_BEGIN.
+	if ext.has_method("dispatch_effect_native_economy"):
+		ext.dispatch_effect_native_economy()
 	var compact_slice: bool = ctx != null and \
 		ctx.source == &"country_economy_continuation" and \
 		ext.has_method("run_economy_slice_compact")
@@ -107,7 +112,36 @@ func tick(ctx) -> Dictionary:
 	if bool(result.get("fatal", false)) and not _fatal_reported:
 		_fatal_reported = true
 		var fatal_report: Dictionary = facade.report() if facade != null else result
-		var goods_diagnostics := {
+		var conservation_diagnostics := {
+			"fatal_reason": fatal_report.get("fatal_reason", "missing"),
+			"money_error": fatal_report.get("money_error", "missing"),
+			"money_open": fatal_report.get("money_open", "missing"),
+			"money_close": fatal_report.get("money_close", "missing"),
+			"money_expected": fatal_report.get("money_expected", "missing"),
+			"explicit_money_mint": fatal_report.get("explicit_money_mint", "missing"),
+			"explicit_money_burn": fatal_report.get("explicit_money_burn", "missing"),
+			"opening_cohort_funds": fatal_report.get("opening_cohort_funds", "missing"),
+			"closing_cohort_funds": fatal_report.get("closing_cohort_funds", "missing"),
+			"opening_country_cash": fatal_report.get("opening_country_cash", "missing"),
+			"closing_country_cash": fatal_report.get("closing_country_cash", "missing"),
+			"opening_escrow_cash": fatal_report.get("opening_escrow_cash", "missing"),
+			"closing_escrow_cash": fatal_report.get("closing_escrow_cash", "missing"),
+			"opening_expedition_funds": fatal_report.get("opening_expedition_funds", "missing"),
+			"closing_expedition_funds": fatal_report.get("closing_expedition_funds", "missing"),
+			"producer_support_money_issued": fatal_report.get(
+				"producer_support_money_issued", "missing"),
+			"bullion_money_issued": fatal_report.get("bullion_money_issued", "missing"),
+			"closing_audit_mode": fatal_report.get("closing_audit_mode", "missing"),
+			"closing_audit_incremental_this_epoch": fatal_report.get(
+				"closing_audit_incremental_this_epoch", "missing"),
+			"opening_audit_fast_paths": fatal_report.get(
+				"opening_audit_fast_paths", "missing"),
+			"opening_audit_full_verifications": fatal_report.get(
+				"opening_audit_full_verifications", "missing"),
+			"closing_audit_fast_paths": fatal_report.get(
+				"closing_audit_fast_paths", "missing"),
+			"closing_audit_full_verifications": fatal_report.get(
+				"closing_audit_full_verifications", "missing"),
 			"goods_error": fatal_report.get("goods_error", "missing"),
 			"production_output_stock": fatal_report.get("production_output_stock", "missing"),
 			"production_output_retained": fatal_report.get("production_output_retained", "missing"),
@@ -124,8 +158,8 @@ func tick(ctx) -> Dictionary:
 			"sample_day": fatal_report.get("sample_day", "missing"),
 			"last_completed_sample_day": fatal_report.get("last_completed_sample_day", "missing"),
 		}
-		push_error("[economy_daily] native economy paused: %s goods=%s" % [
-			String(result.get("fatal_reason", "unknown")), JSON.stringify(goods_diagnostics)])
+		push_error("[economy_daily] native economy paused: %s conservation=%s" % [
+			String(result.get("fatal_reason", "unknown")), JSON.stringify(conservation_diagnostics)])
 	var executed_stage := String(result.get(
 		"executed_stage", result.get("stage", "economy_daily")))
 	var executed_substage := String(result.get("executed_substage", ""))
@@ -227,7 +261,14 @@ func last_perf_report() -> Dictionary:
 		"production_result_allocation_growth_bytes", "publish_ms",
 		"building_commit_breakdown_ms", "building_commit_breakdown_work",
 			"memory_bytes", "population_error", "money_error", "goods_error",
+			"money_open", "money_close", "money_expected",
+			"explicit_money_mint", "explicit_money_burn",
+			"opening_cohort_funds", "closing_cohort_funds",
+			"opening_country_cash", "closing_country_cash",
+			"opening_escrow_cash", "closing_escrow_cash",
+			"opening_expedition_funds", "closing_expedition_funds",
 			"closing_audit_mode", "closing_audit_runtime_disabled",
+			"closing_audit_incremental_this_epoch",
 			"closing_audit_fast_paths", "closing_audit_full_verifications",
 			"closing_audit_mismatches",
 			"closing_audit_mismatch_ledger", "closing_audit_mismatch_lane",

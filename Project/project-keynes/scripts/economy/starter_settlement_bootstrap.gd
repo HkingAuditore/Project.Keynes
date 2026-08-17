@@ -84,8 +84,9 @@ static func build_many(map: MapData, facade: EconomyFacade,
 					"初始建筑职业配置无效：%s" % building_id)
 			if not (job_spec.employee_professions as PackedStringArray).is_empty() \
 					or not (job_spec.employee_slots as PackedInt64Array).is_empty():
-				return _error("starter_employee_role_forbidden",
-					"石器时代初始建筑不得包含雇员岗位：%s" % building_id)
+				if not StarterEconomyPlannerScript.allows_starter_employee_roles(building_id):
+					return _error("starter_employee_role_forbidden",
+						"石器时代初始建筑不得包含雇员岗位：%s" % building_id)
 			var owner_profession := String(job_spec.owner_profession)
 			var owner_signature := facade.signature_id(
 				StringName(owner_profession), &"default")
@@ -247,7 +248,7 @@ static func _fallback_start(start_cell: int, precious_resource: String) -> Dicti
 		"starter_clothing_resource_id": "fertile_soil",
 		"starter_construction_resource_id": "timber",
 		"starter_input_buffer_good_id": "bast_fiber",
-		"starter_precious_good_id": precious_resource,
+		"starter_precious_good_id": "silver" if precious_resource == "silver_ore" else "gold",
 	}
 
 

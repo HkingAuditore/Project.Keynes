@@ -77,6 +77,23 @@ func _initialize() -> void:
 			or int(population_lane.get("base", -1)) != 25 \
 			or int(population_lane.get("effective", -1)) != 26:
 		failures.append("income lane did not bind the profession override")
+	var default_lane: Dictionary = ((population.get("tax_context", {}) as Dictionary) \
+		.get("default_lanes", []) as Array)[0]
+	if String(default_lane.get("kind_label", "")) != "此地所得税" \
+			or String(default_lane.get("scope", "")) != "default":
+		failures.append("page income default reused the object income label")
+	var building_default: Dictionary = ((buildings.get("tax_context", {}) as Dictionary) \
+		.get("default_lanes", []) as Array)[0]
+	if String(building_default.get("kind_label", "")) != "此地营业税":
+		failures.append("page business default reused the object business label")
+	var market_default_labels := PackedStringArray()
+	for lane_value in ((market.get("tax_context", {}) as Dictionary) \
+			.get("default_lanes", []) as Array):
+		market_default_labels.append(String((lane_value as Dictionary).get("kind_label", "")))
+	if not market_default_labels.has("此地消费税") \
+			or not market_default_labels.has("此地进口税") \
+			or not market_default_labels.has("此地出口税"):
+		failures.append("page good defaults reused the object tariff labels")
 
 	generator.country.country_handle = 9
 	var foreign := view_model._decorate_category_with_tax(0, "population", {

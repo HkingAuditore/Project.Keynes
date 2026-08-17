@@ -66,7 +66,7 @@ func _set_pending(message: String) -> void:
 	_status.modulate = Color(0.82, 0.84, 0.9)
 
 func show_error(message: String) -> void:
-	_set_pending("奖励提交未完成：%s\n游戏保持暂停，请重试安全边界处理。" % message)
+	_set_pending("奖励提交未完成：%s\n游戏保持暂停，请稍后重试。" % message)
 	_status.modulate = Color(1.0, 0.48, 0.42)
 
 func show_pending() -> void:
