@@ -136,6 +136,15 @@ void NativeEconomyRuntime::append_population_employment_fields(
     int32_t dominant_reason = INVESTMENT_REJECTION_NONE;
     int32_t failed_material_group = -1;
     std::array<int64_t, INVESTMENT_REJECTION_UNSUPPORTED_KIND + 1> counts{};
+    const InvestmentDiagnostic *best_market_candidate = nullptr;
+    int64_t best_market_strength = -1;
+    int64_t best_market_profit = -1;
+    int64_t best_market_capital = std::numeric_limits<int64_t>::max();
+    out["investment_last_driver_good_id"] = -1;
+    out["investment_last_driver_pressure_q16"] = 0;
+    out["investment_last_driver_utilization_q16"] = 0;
+    out["investment_last_required_capital"] = 0;
+    out["investment_last_projected_profit_per_day"] = 0;
     if (_investment_diagnostic_cell == cell_idx) {
         for (const InvestmentDiagnostic &item : _investment_diagnostics) {
             if (item.rejection_reason > INVESTMENT_REJECTION_NONE &&
@@ -146,12 +155,52 @@ void NativeEconomyRuntime::append_population_employment_fields(
                 failed_material_group < 0) {
                 failed_material_group = item.failed_material_group;
             }
+            const int64_t market_strength = std::max(
+                item.driver_pressure_q16, item.driver_utilization_q16);
+            // A type with no positive shortage/utilization is not a useful
+            // explanation for an employment stall. Ignore those zero-signal
+            // rows even when they are numerous, then rank the strongest real
+            // market opportunity and expose its actual rejection reason.
+            if (item.driver_good_id < 0 || market_strength <= 0) continue;
+            if (best_market_candidate == nullptr ||
+                market_strength > best_market_strength ||
+                (market_strength == best_market_strength &&
+                 item.projected_profit_per_day > best_market_profit) ||
+                (market_strength == best_market_strength &&
+                 item.projected_profit_per_day == best_market_profit &&
+                 item.required_capital < best_market_capital) ||
+                (market_strength == best_market_strength &&
+                 item.projected_profit_per_day == best_market_profit &&
+                 item.required_capital == best_market_capital &&
+                 item.type_id < best_market_candidate->type_id)) {
+                best_market_candidate = &item;
+                best_market_strength = market_strength;
+                best_market_profit = item.projected_profit_per_day;
+                best_market_capital = item.required_capital;
+            }
         }
-        for (int32_t reason = INVESTMENT_REJECTION_NONE + 1;
-             reason <= INVESTMENT_REJECTION_UNSUPPORTED_KIND; ++reason) {
-            if (counts[static_cast<size_t>(reason)] >
-                counts[static_cast<size_t>(dominant_reason)]) {
-                dominant_reason = reason;
+        if (best_market_candidate != nullptr) {
+            dominant_reason = best_market_candidate->rejection_reason;
+            failed_material_group = best_market_candidate->rejection_reason ==
+                INVESTMENT_REJECTION_MATERIALS
+                ? best_market_candidate->failed_material_group : -1;
+            out["investment_last_driver_good_id"] =
+                best_market_candidate->driver_good_id;
+            out["investment_last_driver_pressure_q16"] =
+                best_market_candidate->driver_pressure_q16;
+            out["investment_last_driver_utilization_q16"] =
+                best_market_candidate->driver_utilization_q16;
+            out["investment_last_required_capital"] =
+                best_market_candidate->required_capital;
+            out["investment_last_projected_profit_per_day"] =
+                best_market_candidate->projected_profit_per_day;
+        } else {
+            for (int32_t reason = INVESTMENT_REJECTION_NONE + 1;
+                 reason <= INVESTMENT_REJECTION_UNSUPPORTED_KIND; ++reason) {
+                if (counts[static_cast<size_t>(reason)] >
+                    counts[static_cast<size_t>(dominant_reason)]) {
+                    dominant_reason = reason;
+                }
             }
         }
     }
