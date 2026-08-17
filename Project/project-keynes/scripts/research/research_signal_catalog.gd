@@ -222,6 +222,7 @@ const NETWORK_SIGNAL_ROWS := [
 ## get a secondary fill. Cosmopolitan reed covers continent wetlands.
 ## Runtime neighbor diffusion stays inside a province; local farming can introduce.
 const OCCUPANCY_FLAG_NEED_WETLAND_OR_RIVER := 1
+const OCCUPANCY_FLAG_NEED_WETLAND := 256
 const OCCUPANCY_FLAG_NEED_HIGHLAND := 2
 const OCCUPANCY_FLAG_FORBID_TROPICAL_FOREST := 4
 const OCCUPANCY_FLAG_NEED_ARID := 8
@@ -283,9 +284,9 @@ const BIO_OCCUPANCY_BY_ID := {
 	},
 	"bio.rice": {
 		"carrier": "arable_land", "carrier_alt": "paddy_land",
-		"temp_lo": 0.46, "temp_hi": 0.95, "moist_lo": 0.42, "moist_hi": 1.0,
-		"elev_lo": 0.0, "elev_hi": 0.68, "veg": [],
-		"flags": OCCUPANCY_FLAG_NEED_WETLAND_OR_RIVER,
+		"temp_lo": 0.48, "temp_hi": 0.95, "moist_lo": 0.48, "moist_hi": 1.0,
+		"elev_lo": 0.0, "elev_hi": 0.55, "veg": [],
+		"flags": OCCUPANCY_FLAG_NEED_WETLAND,
 		"max_cost": 14, "fill_keep": 0.58, "guild": OCCUPANCY_GUILD_FOOD,
 		"habitat_class": OCCUPANCY_HABITAT_WETLAND_FOOD,
 		"introduce_goods": ["rice_grain"],

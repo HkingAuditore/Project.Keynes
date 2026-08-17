@@ -126,8 +126,9 @@ landmass and barrier provinces from hex neighbors, and `run_bio_seed_pass` place
 species by filling **100% of habitat** (`envelope ∩ carrier`) on one origin landmass.
 `UNIQUE_HEARTH` (default) still has a single primary origin, but that origin is a full stand, not a
 compact BFS hearth. Vacant `habitat_class` niches on other continent-scale landmasses get a matching
-secondary fill (forest gets pig, wetland gets rice, dry land gets camel/goat) instead of copying the
-whole species list. `COSMOPOLITAN` (reed) occupies every continent-scale wetland/river stand.
+secondary fill (forest gets pig, wetland/delta/monsoon basins get rice, dry land gets camel/goat)
+instead of copying the whole species list. Rice does **not** follow every river cell; reed does.
+`COSMOPOLITAN` (reed) occupies every continent-scale wetland/river stand.
 Placement prefers narrow envelopes; same-class origins repel so wheat and maize do not share a
 landmass. Food and grazer guilds still share at most one species per cell. Continent-scale landmasses
 (at least 8 cells, and size ≥ 18% of the largest landmass) keep a playable food + fiber/livestock
@@ -901,7 +902,7 @@ Ocean land 算法概要：
 - `map_generator.gd::_seed_bio_occupancy`（资源 bootstrap 之后一次：陆块+省，再按主产地铺满生境 + 空生态位补齐播种）
 - `BioOccupancyDailySystem`（`bio_occupancy_daily`，写 `cell.bio_occupancy_bits`；已占领格用气候余量持久化，植被演替与承载日清不立刻灭绝；引种与同省扩散仍走严格信封+承载）— [`scripts/simulation/systems/bio_occupancy_daily_system.gd`](../../Project/project-keynes/scripts/simulation/systems/bio_occupancy_daily_system.gd)
 
-生成期占领 ⊆ 气候信封 ∩ 主产地陆块（100% 铺满 `envelope ∩ carrier`）∩ 空生态位补齐 ∩ 承载储量>ε。默认每种一块主产地；芦苇可多陆。空生态位按 `habitat_class` 补齐（林有猪、河边有稻、干地有骆驼/山羊），而不是复制整包或再调半径。覆盖底盘保证每块大陆级陆块至少一种食物和一条纤维/牲畜路。食物/牧场公会尽量不同格。卫星岛跳过，除非它是该物种唯一适生陆块。马铃薯走中高海拔冷凉开敞带（不绑旱地承载），牦牛走更高更冷的高寒带，骆驼走干草原与荒漠。不按地球史把物种打包到固定旧世界/新世界。骆驼/牦牛/野生马铃薯可以不绑牧场或旱地承载。运行期邻格扩散仍限同省。羊/牛/马等绑 `pasture`，猪绑 `wild_game`，玉米/小麦绑 `arable_land`，橡胶只绑 `plantation_land`；承载只门控播种、扩散和引种，不门控已占领格的日持久化。本格农业生产可绕过省界引种，但仍要信封和承载；跨邦贸易只发 `contact.*`。
+生成期占领 ⊆ 气候信封 ∩ 主产地陆块（100% 铺满 `envelope ∩ carrier`）∩ 空生态位补齐 ∩ 承载储量>ε。默认每种一块主产地；芦苇可多陆。空生态位按 `habitat_class` 补齐（林有猪、湿地/三角洲/季风盆地有稻、干地有骆驼/山羊），而不是复制整包或再调半径。稻不沿每条河铺开；芦苇才沿河/湿地广布。覆盖底盘保证每块大陆级陆块至少一种食物和一条纤维/牲畜路。食物/牧场公会尽量不同格。卫星岛跳过，除非它是该物种唯一适生陆块。马铃薯走中高海拔冷凉开敞带（不绑旱地承载），牦牛走更高更冷的高寒带，骆驼走干草原与荒漠。不按地球史把物种打包到固定旧世界/新世界。骆驼/牦牛/野生马铃薯可以不绑牧场或旱地承载。运行期邻格扩散仍限同省。羊/牛/马等绑 `pasture`，猪绑 `wild_game`，玉米/小麦绑 `arable_land`，橡胶只绑 `plantation_land`；承载只门控播种、扩散和引种，不门控已占领格的日持久化。本格农业生产可绕过省界引种，但仍要信封和承载；跨邦贸易只发 `contact.*`。
 
 **模型（统一 profile，可选线性或种群生态动态）**：普通资源每 tick、每 cell、每资源 r
 采用**半隐式（IMEX）积分** —— 把生成/衰减拆成「常数生产项 P」与「线性损失率 L」，

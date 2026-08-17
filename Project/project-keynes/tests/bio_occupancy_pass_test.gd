@@ -82,6 +82,15 @@ func _test_catalog_and_schema() -> void:
 			pig_habitat = int(habitats[i])
 	_expect("wheat habitat is open_food", wheat_habitat == ResearchSignalCatalog.OCCUPANCY_HABITAT_OPEN_FOOD)
 	_expect("pig habitat is forest_grazer", pig_habitat == ResearchSignalCatalog.OCCUPANCY_HABITAT_FOREST_GRAZER)
+	var rice_flags := -1
+	var rice_flag_bit := ResearchSignalCatalog.occupancy_bit_for_signal(catalog, &"bio.rice")
+	var flags: PackedInt32Array = catalog.get("research_bio_flags", PackedInt32Array())
+	for i in range(mini(flags.size(), bits.size())):
+		if int(bits[i]) == rice_flag_bit:
+			rice_flags = int(flags[i])
+			break
+	_expect("rice needs wetland not generic river",
+		rice_flags == ResearchSignalCatalog.OCCUPANCY_FLAG_NEED_WETLAND)
 
 
 func _test_native_passes() -> void:
@@ -347,6 +356,9 @@ func _test_origin_hearth_is_compact(ext) -> void:
 		map.moisture_arr[cell] = 0.50
 		map.elevation_arr[cell] = 0.20
 		map.has_river_arr[cell] = 1 if not water and off.y == 1 else 0
+		if not water and off.y == 1 and off.x >= 6 and off.x <= 17:
+			map.vegetation_arr[cell] = VegetationType.VEG.MARSH
+			map.moisture_arr[cell] = 0.72
 		map.has_volcano_arr[cell] = 0
 		map.res_arable_land_reserve_arr[cell] = 0.0 if water else 80.0
 		map.res_pasture_reserve_arr[cell] = 0.0
@@ -375,21 +387,26 @@ func _test_origin_hearth_is_compact(ext) -> void:
 	var reed_bit := ResearchSignalCatalog.occupancy_bit_for_signal(catalog, &"bio.reed")
 	var wheat_cols := PackedInt32Array()
 	var rice_count := 0
+	var rice_on_grass := 0
 	var reed_count := 0
 	for cell in range(map.cell_count()):
 		if map.is_water_arr[cell] != 0:
 			continue
 		var hex: HexCell = map.cell_at(cell)
 		var col := int(HexUtils.cube_to_offset(hex.q, hex.r).x)
-		if (int(occupancy[cell]) & (1 << wheat_bit)) != 0:
+		var bits := int(occupancy[cell])
+		if (bits & (1 << wheat_bit)) != 0:
 			wheat_cols.append(col)
-		if (int(occupancy[cell]) & (1 << rice_bit)) != 0:
+		if (bits & (1 << rice_bit)) != 0:
 			rice_count += 1
-		if (int(occupancy[cell]) & (1 << reed_bit)) != 0:
+			if int(map.vegetation_arr[cell]) != int(VegetationType.VEG.MARSH):
+				rice_on_grass += 1
+		if (bits & (1 << reed_bit)) != 0:
 			reed_count += 1
 	_expect("wheat occupies a regional hearth", wheat_cols.size() >= 12)
 	_expect("reeds occupy river cells without wetland vegetation", reed_count >= 8)
-	_expect("rice occupies a river hearth", rice_count >= 3)
+	_expect("rice occupies wetland cells", rice_count >= 3)
+	_expect("rice stays off grassland rivers", rice_on_grass == 0)
 	var origin_env: PackedInt32Array = seed_res.get("origin_envelope_cell_counts", PackedInt32Array())
 	var occupied_n: PackedInt32Array = seed_res.get("occupied_cell_counts", PackedInt32Array())
 	var occ_bits: PackedInt32Array = knobs.get("species_occupancy_bits", PackedInt32Array())
