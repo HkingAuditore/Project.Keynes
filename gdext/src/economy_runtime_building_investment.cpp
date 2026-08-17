@@ -168,6 +168,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
         int64_t max_batch_count = 0;
         int64_t allocated_count = 0;
         int64_t jobs_per_building = 0;
+        int64_t merchant_credit = 0;
         bool uses_merchant_credit = false;
     };
     auto better = [](const Candidate &a, const Candidate &b,
@@ -283,12 +284,23 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
             existing.representative_group = g;
         existing.installed_count = saturating_add(
             existing.installed_count, group.count, _saturation_count);
-        const int64_t utilized_q16 = group.operating_state == 1
+        // `last_capacity_q16` is the maximum executable share after inputs,
+        // resources, climate, and funding are applied. It is not the share
+        // the market currently intends to use. Reserve only the executable
+        // capacity that is still genuinely idle; treating the gap to 100%
+        // as idle makes climate/resource-limited but fully utilized buildings
+        // suppress valid investment and employment catch-up.
+        const int64_t physical_capacity_q16 = group.operating_state == 1
             ? 0
             : std::clamp<int64_t>(group.last_capacity_q16, 0, Q16_ONE);
+        const int64_t planned_utilization_q16 = group.operating_state == 1
+            ? 0
+            : std::clamp<int64_t>(group.planned_utilization_q16, 0, Q16_ONE);
+        const int64_t idle_capacity_q16 = std::max<int64_t>(
+            0, physical_capacity_q16 - planned_utilization_q16);
         existing.idle_capacity_q16 = saturating_add(
             existing.idle_capacity_q16,
-            saturating_mul(group.count, Q16_ONE - utilized_q16,
+            saturating_mul(group.count, idle_capacity_q16,
                 _saturation_count),
             _saturation_count);
         if (group.operating_state != 1) {
@@ -1104,6 +1116,10 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                             saturating_mul(owner_livelihood, 30,
                                 _saturation_count),
                             _saturation_count), _saturation_count), _saturation_count);
+                if (diagnostic != nullptr) {
+                    diagnostic->required_capital = required_capital;
+                    diagnostic->projected_profit_per_day = daily_profit;
+                }
                 const int64_t payback = daily_profit > 0
                     ? (required_capital + daily_profit - 1) / daily_profit
                     : std::numeric_limits<int64_t>::max();
@@ -1113,6 +1129,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 }
                 bool had_eligible_sponsor = false;
                 int64_t sponsor_capital = required_capital;
+                int64_t merchant_credit = 0;
                 int64_t willing_population = 0;
                 int64_t transferable_capital = 0;
                 int64_t income_improvement_q16 = 0;
@@ -1141,8 +1158,15 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                         exposure - std::min(exposure, outstanding),
                         merchant_cash - std::min(merchant_cash, reserve)));
                     if (available_credit >= construction_cost) {
+                        // Credit may fund the bounded startup reserve as well as
+                        // construction during employment catch-up. Ordinary
+                        // reviews retain the existing construction-only credit
+                        // contract.
+                        const int64_t credit_cover = employment_catchup
+                            ? std::min(required_capital, available_credit)
+                            : construction_cost;
                         sponsor_capital = std::max<int64_t>(
-                            0, required_capital - construction_cost);
+                            0, required_capital - credit_cover);
                         bool credit_sponsor_eligible = false;
                         sponsor = find_entrepreneur_source(
                             cell, target_signature, sponsor_capital,
@@ -1154,6 +1178,10 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                         had_eligible_sponsor = had_eligible_sponsor ||
                             credit_sponsor_eligible;
                         uses_merchant_credit = sponsor >= 0;
+                        if (uses_merchant_credit) {
+                            merchant_credit = std::max<int64_t>(
+                                0, required_capital - sponsor_capital);
+                        }
                     }
                 }
                 if (sponsor < 0) {
@@ -1221,6 +1249,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 candidate.willing_population = willing_population;
                 candidate.transferable_capital = transferable_capital;
                 candidate.income_improvement_q16 = income_improvement_q16;
+                candidate.merchant_credit = merchant_credit;
                 candidate.uses_merchant_credit = uses_merchant_credit;
                 const int64_t target_gap = mul_div_sat(
                     std::max<int64_t>(0, driver.deficit),
@@ -1269,7 +1298,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     diagnostic->rejection_reason = INVESTMENT_REJECTION_NONE;
                     diagnostic->score_q16 = candidate.score_q16;
                     diagnostic->payback_days = payback;
-                    diagnostic->required_capital = sponsor_capital;
+                    diagnostic->required_capital = required_capital;
                     diagnostic->projected_profit_per_day = daily_profit;
                 }
                 if (existing_group >= 0) {
@@ -1348,7 +1377,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 if (!portfolio[j].uses_merchant_credit) continue;
                 used = saturating_add(used, saturating_mul(
                     portfolio[j].allocated_count,
-                    portfolio[j].construction_cost, _saturation_count),
+                    portfolio[j].merchant_credit, _saturation_count),
                     _saturation_count);
             }
             return used;
@@ -1459,10 +1488,10 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
             if (capital_cap < cap) ++_building_investment_capital_limited;
             cap = std::min(cap, capital_cap);
             if (candidate.uses_merchant_credit &&
-                candidate.construction_cost > 0) {
+                candidate.merchant_credit > 0) {
                 const int64_t credit_cap = std::max<int64_t>(
                     0, available_credit - previously_allocated_credit()) /
-                    candidate.construction_cost;
+                    candidate.merchant_credit;
                 if (credit_cap < cap) ++_building_investment_capital_limited;
                 cap = std::min(cap, credit_cap);
             }
@@ -1677,6 +1706,20 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 max_type_owner_population, owner_population);
         }
         if (active_types <= 0 || total_buildings <= 0) continue;
+        int64_t portfolio_credit_required = 0;
+        for (int32_t i = 0; i < portfolio_size; ++i) {
+            if (!portfolio[i].uses_merchant_credit ||
+                portfolio[i].allocated_count <= 0) continue;
+            portfolio_credit_required = saturating_add(
+                portfolio_credit_required,
+                saturating_mul(portfolio[i].allocated_count,
+                    portfolio[i].merchant_credit, _saturation_count),
+                _saturation_count);
+        }
+        if (portfolio_credit_required > available_credit) {
+            error = "building_investment_startup_credit_overcommit";
+            return false;
+        }
 
         for (int32_t i = 0; i < portfolio_size; ++i) {
             Candidate &candidate = portfolio[i];
@@ -1703,6 +1746,9 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 _saturation_count);
             const int64_t required_capital = saturating_mul(
                 candidate.allocated_count, candidate.required_capital,
+                _saturation_count);
+            const int64_t merchant_credit = saturating_mul(
+                candidate.allocated_count, candidate.merchant_credit,
                 _saturation_count);
             bool source_drained = false;
             if (profession_transition && !move_cohort_population(
@@ -1783,6 +1829,31 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     -(_epoch_id * std::max<int64_t>(1, _cell_count) +
                       cell * 4 + i + 1), &legs);
             }
+            if (merchant_credit > 0) {
+                if (debit_local_merchants(cell, merchant_credit,
+                                          CASHFLOW_MERCHANT_BUSINESS,
+                                          &_saturation_count) != merchant_credit) {
+                    error = "building_investment_startup_credit_preflight_drift";
+                    return false;
+                }
+                touch_accounting_slot(owner_slot);
+                _population.funds[owner_slot] = saturating_add(
+                    _population.funds[owner_slot], merchant_credit,
+                    _saturation_count);
+                trace_record_cashflow(cell, _population.handle_for_slot(owner_slot),
+                                      CASHFLOW_OTHER, merchant_credit, 0);
+                _investment_outstanding_credit_by_cell[cell] = saturating_add(
+                    _investment_outstanding_credit_by_cell[cell],
+                    merchant_credit, _saturation_count);
+                _merchant_credit_drawn = saturating_add(
+                    _merchant_credit_drawn, merchant_credit, _saturation_count);
+                if (cell >= 0 && cell < static_cast<int32_t>(
+                        _merchant_credit_drawn_by_cell.size())) {
+                    _merchant_credit_drawn_by_cell[cell] = saturating_add(
+                        _merchant_credit_drawn_by_cell[cell], merchant_credit,
+                        _saturation_count);
+                }
+            }
         }
         // Population slots are stable and later ordinals never revisit this
         // cell. Defer the global merchant CSR rebuild until the deterministic
@@ -1817,6 +1888,24 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
             if (_pending_construction.size() != pending_before + 1) {
                 error = "building_investment_preflight_drift";
                 return false;
+            }
+            if (candidate.merchant_credit > 0) {
+                PendingConstruction &pending = _pending_construction.back();
+                const int64_t credit = saturating_mul(
+                    candidate.allocated_count, candidate.merchant_credit,
+                    _saturation_count);
+                pending.merchant_debt_principal = saturating_add(
+                    pending.merchant_debt_principal, credit,
+                    _saturation_count);
+                const int64_t premium = saturating_add(
+                    saturating_mul(credit, _merchant_credit_premium_q16,
+                                   _saturation_count),
+                    Q16_ONE - 1, _saturation_count) / Q16_ONE;
+                pending.merchant_debt_premium = saturating_add(
+                    pending.merchant_debt_premium, premium,
+                    _saturation_count);
+                pending.merchant_debt_term_cycles_left = static_cast<uint16_t>(
+                    _merchant_credit_term_cycles);
             }
             _pending_construction.back().sponsor_family_handle =
                 candidate.sponsor_family_handle;

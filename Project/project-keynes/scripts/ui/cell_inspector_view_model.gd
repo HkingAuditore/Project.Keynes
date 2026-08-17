@@ -1680,10 +1680,22 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 	var investment_review_day := int(snapshot.get("investment_last_review_day", -1))
 	var failed_material_group := int(snapshot.get(
 		"investment_last_failed_material_group", -1))
+	var investment_driver_good := int(snapshot.get(
+		"investment_last_driver_good_id", -1))
+	var investment_required_capital := int(snapshot.get(
+		"investment_last_required_capital", 0))
+	var investment_projected_profit := int(snapshot.get(
+		"investment_last_projected_profit_per_day", 0))
 	var investment_subtitle := "尚无投资审查记录" if investment_review_day < 0 \
 		else "第 %d 天审查%s" % [investment_review_day,
 			" · 缺少第 %d 组建材" % (failed_material_group + 1) \
 			if failed_material_group >= 0 else ""]
+	if investment_review_day >= 0 and investment_driver_good >= 0:
+		investment_subtitle += " · 驱动商品 #%d" % investment_driver_good
+	if investment_required_capital > 0:
+		investment_subtitle += " · 启动资本 %s" % _money_text(investment_required_capital)
+	if investment_projected_profit > 0:
+		investment_subtitle += " · 日利润 %s" % _money_text(investment_projected_profit)
 	return {
 		"insights": insights,
 		"metrics": [

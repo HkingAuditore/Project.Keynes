@@ -1602,7 +1602,7 @@ func _test_high_unemployment_investment_catchup(
 			artisan_sig, hunter_sig, forager_sig, unemployed_sig, merchant_sig]),
 		"population": PackedInt64Array([1, 20, 3, 35, 1]),
 		"funds": PackedInt64Array([
-			1000000000, 1000000000, 1000000000, 3500000000, 1000000000]),
+			1000, 20000, 3000, 35, 1000000000]),
 	}, {
 		"stock": stock,
 		"price": prices,
@@ -1620,6 +1620,8 @@ func _test_high_unemployment_investment_catchup(
 	var first_start_day := -1
 	var catchup_seen := false
 	var jobs_started := 0
+	var startup_credit_drawn := 0
+	var startup_credit_backed_by_debt := false
 	var ledgers_ok := true
 	for epoch in range(74):
 		var report := _run_day(ext, epoch)
@@ -1630,6 +1632,10 @@ func _test_high_unemployment_investment_catchup(
 				first_start_day = simulation_day
 		catchup_seen = catchup_seen or int(report.get(
 			"building_investment_employment_catchup_cells", 0)) > 0
+		startup_credit_drawn += int(report.get("merchant_credit_drawn", 0))
+		if int(report.get("merchant_credit_drawn", 0)) > 0:
+			startup_credit_backed_by_debt = startup_credit_backed_by_debt or int(
+				report.get("merchant_credit_outstanding", 0)) > 0
 		ledgers_ok = ledgers_ok and int(report.get("population_error", 1)) == 0 and \
 			int(report.get("money_error", 1)) == 0 and \
 			int(report.get("goods_error", 1)) == 0
@@ -1640,7 +1646,8 @@ func _test_high_unemployment_investment_catchup(
 		"unemployed_by_cohort", PackedInt64Array()))
 	_expect("high unemployment activates catch-up and starts jobs within 30 days",
 		catchup_seen and jobs_started > 0 and first_start_day > 0 and
-		first_start_day <= 30)
+		first_start_day <= 30 and startup_credit_drawn > 0 and
+		startup_credit_backed_by_debt)
 	_expect("employment catch-up lowers unemployment strictly below 25 percent in 365 days",
 		total_population == 60 and unemployed_population * 4 < total_population)
 	_expect("employment-catchup regression conserves every ledger", ledgers_ok)

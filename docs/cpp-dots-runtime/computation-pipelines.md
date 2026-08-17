@@ -2912,6 +2912,29 @@ Production reports count profiled/limited groups and average climate capacity.
 Worker tasks write disjoint due cells and reduce in stable order, preserving the
 scalar state hash.
 
+Investment review uses the same capacity semantics. For an active installed
+group, reserved idle capacity is `max(0, last_capacity_q16 -
+planned_utilization_q16)` per building. `last_capacity_q16` is the maximum
+executable share after input, resource, climate, and funding limits; it is not
+itself market utilization. Suspended groups contribute no idle capacity, while
+pending construction continues to reserve its full prospective capacity. This
+prevents a resource- or climate-limited building that is already using all of
+its executable capacity from suppressing a valid market signal and employment
+catch-up investment.
+
+When a profitable candidate passes technology, resource, input, material,
+target-margin, and payback gates but its sponsor lacks liquid startup capital,
+ACTIVE merchant credit may fund the construction bundle plus the bounded input,
+wage, and 30-day owner-livelihood reserve. The transferred cash remains in the
+new owner cohort after construction spending, while the complete draw and
+premium are attached to pending construction and then the committed building;
+normal production repayment, delinquency, liquidation, and bad-debt accounting
+remain authoritative. Portfolio allocation caps the combined draw by the same
+per-cell exposure and merchant cash reserve used by ordinary construction.
+Selected-cell investment diagnostics rank positive market-pressure candidates
+before zero-signal catalog types, so the population panel reports the actual
+economic gate instead of the modal `MARKET_SIGNAL` rejection.
+
 Opening audit 在非校验日复用上一个精确 committed close，并单独刷新 native country cash/goods
 贡献；`economy_full_audit_verify_interval_days`（默认 25 个模拟日，即 5 个经济周期）定期恢复完整 opening scan。closing
 population/market/transit/escrow/country audit 和三项守恒检查仍每个 rolling transaction 完整
