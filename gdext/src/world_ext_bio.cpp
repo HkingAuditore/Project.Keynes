@@ -39,6 +39,7 @@ constexpr int32_t kFlagNeedDryOrHighland = 16;
 constexpr int32_t kFlagForbidArid = 32;
 constexpr int32_t kFlagForbidWarm = 64;
 constexpr int32_t kFlagForbidCold = 128;
+constexpr int32_t kFlagNeedWetland = 256;
 
 uint32_t bio_hash(uint32_t seed, uint32_t a, uint32_t b) {
     uint32_t h = seed ^ (a * 0x9e3779b9u) ^ (b * 0x85ebca6bu);
@@ -67,6 +68,10 @@ bool veg_tropical_forest(uint8_t veg) {
 
 bool veg_wetland(uint8_t veg) {
     return veg == 19 || veg == 20 || veg == 21 || veg == 27;
+}
+
+bool veg_monsoon_forest(uint8_t veg) {
+    return veg == 25;
 }
 
 bool veg_arid(uint8_t veg) {
@@ -229,6 +234,10 @@ bool envelope_ok(int cell, int species, const SpeciesView &sp,
     const int32_t flags = sp.flags[species];
     if ((flags & kFlagNeedWetlandOrRiver) != 0) {
         if (river[cell] == 0 && !veg_wetland(veg[cell]) && lf[cell] != kLfDelta)
+            return false;
+    }
+    if ((flags & kFlagNeedWetland) != 0) {
+        if (!veg_wetland(veg[cell]) && lf[cell] != kLfDelta && !veg_monsoon_forest(veg[cell]))
             return false;
     }
     if ((flags & kFlagNeedHighland) != 0 && !lf_highland(lf[cell], e))

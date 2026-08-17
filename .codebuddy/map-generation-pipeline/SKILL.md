@@ -101,7 +101,8 @@ GPU 纹理上传（`ImageTexture.update`/`create_from_image`）。
 `cell.bio_occupancy_bits` from `run_bio_seed_pass`: UNIQUE_HEARTH species fill 100% of
 envelope∩carrier on one origin landmass; vacant `habitat_class` niches on other
 continent-scale landmasses get a matching secondary fill. Cosmopolitan reed covers
-continent wetlands. Same-class origins repel; food and grazer guilds still share at most
+continent wetlands. Rice occupies wetland, delta, and monsoon-forest basins rather than
+every river cell. Same-class origins repel; food and grazer guilds still share at most
 one species per cell. Continent-scale landmasses keep a playable food + fiber/livestock
 floor. Satellite islets are skipped unless they are the unique argmax. `realm.*` is
 display metadata; seeding does not read it.
