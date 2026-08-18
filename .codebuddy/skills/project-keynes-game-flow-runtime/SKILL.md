@@ -78,14 +78,14 @@ formal path. Require exactly 20 people. Self-operated job slots follow the
 survival-core buildings and stay at or below 20 per opening country. Remaining
 people enter the unemployed pool for native job matching. Prefill owner operators
 on opening food buildings (`gathering_ground` and `stone_age_hunting_camp`) so the
-food plan runs; do not prefill knowledge, trade, or mine operators. Opening lots must remain operable from granted production/output/resource technologies; leftover construction-material techs (deadwood, bast, reed, turf) gate later construction, not standing food camps. Allow employee roles only on `placer_gold_working` (1 miner)
+food plan runs; do not prefill knowledge, trade, or mine operators. Opening lots must remain operable from granted production/output/resource technologies. Formal starts always top up timber and grant/prebuild exactly one `deadwood_gathering_camp`; leftover construction-material techs (bast, reed, turf) gate later construction, not standing food camps. Allow employee roles only on `placer_gold_working` (1 miner)
 and `surface_silver_working` (2 miners); do not prefill those slots. Other
 Stone-Age starter buildings must remain owner-only. Require gathering and hunting
 camps when local reserves exist, the matching precious-metal work site,
 `early_merchant_post`, and hide scraping only on cold highland. Do not prebuild any
 knowledge shed; reveal one geographically operable knowledge-practice technology,
 seed its construction materials, and deposit 10000 authored technology points in
-the treasury. Do not prebuild leftover fishing, deadwood, or bast camps. Aggregate all starts through EconomyFacade
+the treasury. Do not prebuild leftover fishing or bast camps. Aggregate all starts through EconomyFacade
 catalog helpers and fixed-point packets, provide the 15-day local food bridge, and retain population/money/goods
 conservation checks.
 Require one native founder family per capital, conserving the gathering ground's two occupied

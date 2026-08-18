@@ -82,8 +82,9 @@ technology remains in its own domain; a milestone may be assigned to any carrier
 
 Research allocation uses integer largest remainder. It must produce exactly 7/3 for 10 points at
 70%/30%, preserve minimum units deterministically, carry overflow to the next technology in the same
-domain, and defer empty/blocked-domain shares without leaking them elsewhere. A weight change or new
-queue entry releases deferred stock for redistribution.
+domain, and defer blocked-domain remainders without leaking them elsewhere. Empty-domain shares
+stay in the treasury and are reallocated by current weights on later research days. A weight
+change or new queue entry releases deferred stock for redistribution.
 
 Consumed technology points leave the country goods treasury at their physical quantity. Progress is
 `consumed quantity × domain research-efficiency Modifier`, then research-cost effects are applied by the

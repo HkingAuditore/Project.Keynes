@@ -91,10 +91,11 @@ Every opening country receives exactly 20 people. Self-operated job-capacity slo
 follow the survival-core buildings and stay at or below 20; leftover people enter
 the native unemployed pool for ordinary employment matching. The opening grant is
 the survival core—gathering, hunting, early trade, one precious-metal working, one
-oral-memory knowledge building, and hide scraping only on cold highland—not every
+deadwood gathering camp, and hide scraping only on cold highland—not every
 visible zero-cost starter node. The physical food producer is
-selected from the local gathering/hunting options. Construction materials are
-bootstrap stock from the food seed building's candidate groups. The packet does not preassign the whole population to
+selected from the local gathering/hunting options. Opening timber is topped up to
+the profile minimum, so the construction backbone is always `logs` from that camp.
+Knowledge-shed materials remain bootstrap stock. The packet does not preassign the whole population to
 professions: it prefills owner operators on the opening food buildings (gathering
 and hunting) so the 110% food plan actually runs, places the remaining people in
 the native unemployed pool, and lets normal employment matching choose later jobs
@@ -272,7 +273,7 @@ For economy changes, retain 60-day, two-year, and ten-year conservation soaks.
 Formal new games no longer grant four universal technologies or a universal settlement bundle.
 `StartLocationPolicy` classifies each capital from the capital ring's Bio/resource/landform/climate
 evidence and grants only the survival-core technologies: gathering, hunting, early trade, gold-panning
-or surface-silver collection, and hide scraping on cold highland. It does not grant a knowledge
+or surface-silver collection, deadwood collection, and hide scraping on cold highland. It does not grant a knowledge
 practice and does not prebuild a knowledge shed. Remaining Stone-Age handling/knowledge nodes stay
 in the catalog as ordinary researchable technologies; empty-prerequisite Stone-Age nodes require any
 one completed knowledge practice before they can enter a research queue.
@@ -280,16 +281,17 @@ one completed knowledge practice before they can enter a research queue.
 `tech.early_trade`, writes `discovered_technology_*` for the one geographically chosen knowledge
 practice, and deposits 10000 authored technology points in the country treasury.
 `StarterSettlementBootstrap` prebuilds gathering and hunting camps when the
-local reserves exist, the matching precious-metal work site, an
+local reserves exist, one `deadwood_gathering_camp`, the matching precious-metal work site, an
 `early_merchant_post`, and a hide-scraping shelter only on cold highland. It stocks the selected
 knowledge-shed construction recipe so the player can build after research. The planner emits parallel `starter_building_ids`/`starter_building_counts`;
-gold/silver sites and the merchant remain exactly one building. The supported families are coastal,
+gold/silver sites, the merchant, and the deadwood camp remain exactly one building. The supported families are coastal,
 floodplain, cold highland, tropical forest, arid highland and temperate.
 
 The bootstrap validates direct/required-technology tags and the food-seed construction contract.
-Opening lots operate from granted production, output, and resource technologies. Stone-age
-`starter.construction` collectors (deadwood, earth pit, reed, turf, rubble) have a zero-bill
-recipe so researching those leftovers can plant the camp without a prior material industry.
+Opening lots operate from granted production, output, and resource technologies. Formal starts always
+top up timber, so the opening construction producer is deadwood. Other stone-age
+`starter.construction` collectors (earth pit, reed, turf, rubble) keep a zero-bill
+recipe so researching those leftovers can plant the camp without a prior extra material industry.
 Other buildings still pay construction goods; bootstrap stock covers the prebuilt food core.
 Formal `select_and_prepare` may fill missing
 opening reserves to profile minimums as described in Start Policy; `evaluate_starter_route`

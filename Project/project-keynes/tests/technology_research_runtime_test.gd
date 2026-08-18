@@ -144,8 +144,48 @@ func _init() -> void:
 	_expect("Trigger definition changes reject PKCN with catalog_hash_mismatch",
 		not bool(trigger_incompatible_restore.get("ok", false)) and String(
 			trigger_incompatible_restore.get("reason", "")) == "catalog_hash_mismatch")
+	_expect_equal_weight_progress_accumulates(compiled, profile, packet, ids)
 	print("technology research runtime: %s" % ("PASS" if _failures == 0 else "FAIL"))
 	quit(0 if _failures == 0 else 1)
+
+
+func _expect_equal_weight_progress_accumulates(compiled: Dictionary, profile: Resource,
+		packet: Dictionary, ids: PackedStringArray) -> void:
+	var ext: Object = ClassDB.instantiate("DCWorldExt")
+	ext.create_entities(1)
+	var facade = CountryFacadeScript.new()
+	_expect("equal-weight country configures", bool(facade.configure(
+		ext, 1, 42, profile, compiled).get("ok", false)))
+	_expect("equal-weight country bootstraps", bool(facade.bootstrap(
+		PackedByteArray([0]), packet).get("ok", false)))
+	var handle := int(facade.cell_summary(0).country_handle)
+	_expect("equal-weight discovery queues", bool(facade.discover_research_signal(
+		handle, &"resource.arable_land", 0, 1, 0, 1).get("ok", false))
+		and bool(facade.discover_research_signal(
+			handle, &"landform.coast", 0, 1, 0, 2).get("ok", false))
+		and bool(facade.discover_research_signal(
+			handle, &"resource.silica_sand", 0, 1, 0, 3).get("ok", false)))
+	_expect("equal-weight discovery commits", bool(ext.run_country_slice(
+		{"day_index": 0}).get("done", false)))
+	_expect("equal-weight enqueue keeps default 25/25/25/25", bool(facade.enqueue_research(
+		handle, &"tech.maize_garden_horticulture", 0, -1, 1, 10).get("ok", false)))
+	_expect("equal-weight day 1 commits", bool(ext.run_country_slice(
+		{"day_index": 1}).get("done", false)))
+	var seasonal := ids.find("tech.maize_garden_horticulture")
+	var day1: Dictionary = facade.research_snapshot(handle)
+	_expect("equal weights consume one quarter without parking empty-domain stock",
+		int(day1.technology_progress[seasonal]) == 2500
+		and int(day1.technology_points_stock) == 7500
+		and int(day1.deferred_unallocated_points) == 0
+		and int(day1.consumed_total) == 2500)
+	_expect("equal-weight day 2 commits", bool(ext.run_country_slice(
+		{"day_index": 2}).get("done", false)))
+	var day2: Dictionary = facade.research_snapshot(handle)
+	_expect("queued domain keeps accumulating from remaining treasury",
+		int(day2.technology_progress[seasonal]) == 4375
+		and int(day2.technology_points_stock) == 5625
+		and int(day2.deferred_unallocated_points) == 0
+		and int(day2.consumed_total) == 4375)
 
 func _expect(label: String, condition: bool) -> void:
 	if condition:

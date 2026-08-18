@@ -55,8 +55,9 @@ Also use `civ-grounded-development` for repository changes. Add
 - Do not bypass market settlement by sending research-building output directly to the country treasury.
 - Do not let procurement precede private consumption or violate merchant payment, price signals, or
   cash/goods conservation.
-- Do not spill an empty or blocked domain's allocation into another domain; preserve it as deferred
-  stock until policy or queue state releases it.
+- Do not spill a blocked domain's allocation into another domain; preserve it as deferred stock
+  until policy or queue state releases it. Empty-domain shares remain in the treasury and are
+  reallocated by current weights on later research days.
 - Do not expose completion tags before permanent `UNIQUE_SOURCE` technology Modifiers apply
   successfully, and do not let `GRANT_TECHNOLOGY` bypass this path.
 - Do not use Modifiers to directly create/delete cash, inventory, or technology points.

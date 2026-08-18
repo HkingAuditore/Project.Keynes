@@ -119,7 +119,8 @@ catalogs without labeling the comparison invalid.
 - Revealed or GM-granted nodes are accidentally marked complete.
 - `GRANT_TECHNOLOGY` writes completion bits without applying Modifier sources.
 - A blocked queue silently skips to a later node.
-- Empty-domain shares leak into another domain instead of deferred stock.
+- A blocked queue's share leaks into another domain instead of deferred stock.
+- Empty-domain shares are parked as deferred stock, freezing later research days until a weight is maxed.
 - Rounding destroys minimum technology-point units.
 - Procurement buys before households/firms or pays no merchant.
 - Research output teleports directly from a building to country treasury.
