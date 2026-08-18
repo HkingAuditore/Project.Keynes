@@ -40,10 +40,6 @@ Per lane:
 - `population:i64`, `funds:i64`.
 - `epoch_income:i64`, `epoch_expense:i64`, `income_ema:i64`.
 - `needs_satisfaction:u16`, `worst_need_id:u16`, `flags:u16`.
-- `composite_satisfaction:u16`, `worst_dimension_id:u8`, `satisfaction_dims:u16 × SAT_DIM_COUNT`
-  (stride-stored), `income_baseline_ema:i64`, `epoch_tax_paid:i64`,
-  `epoch_subsidy_received:i64` — the composite satisfaction authority, ~43 B/slot. All of them
-  enter `state_hash` and PKEC v30. See `docs/cpp-dots-runtime/satisfaction-runtime.md`.
 - `demography_residual:i64` reserved by the structural ABI; Market V2 does not run demography.
 
 Use `(generation << 32) | slot_index` as the external handle. Increment generation on release and
@@ -128,18 +124,13 @@ Coarse public API:
 - begin/read/end save
 - begin/feed/end restore
 - fixed-math probe and deterministic state hash
-- `explain_cohort_satisfaction(handle)` and `get_cell_satisfaction_attractiveness(cell)`:
-  pure reads, only safe between native slices, called only while the Inspector is open
 
 Do not add per-cohort setters.
 
 The Inspector opens with `get_population_cell_summary(cell)`, which returns only aggregate population,
 funds, income/expense, cohort count, and satisfaction. Full population, market, building, and natural
-resource detail is queried lazily for the visible tab. `get_population_cell_snapshot(cell)` publishes
-the composite satisfaction columns for every cohort — `overall_satisfaction_by_cohort_q16`,
-`satisfaction_dims_by_cohort_q16` (stride `satisfaction_dimension_count`),
-`worst_satisfaction_dimension_by_cohort`, `living_standard_level_by_cohort` — without any trace
-filter, and also emits a cold-path cohort-major CSR demand preview:
+resource detail is queried lazily for the visible tab. `get_population_cell_snapshot(cell)` also emits
+a cold-path cohort-major CSR demand preview:
 
 ```text
 demand_good_offsets       cohort_count + 1
@@ -170,16 +161,16 @@ runtime authority.
 
 ## 6. Save and visibility
 
-Current writer is PKEC v36: cell records append `support_ema_q16` (carrying mix EMA).
-Reader accepts v35 (EMA=1) and v36. Derived `K_geo` / family surplus / `K_eff` are
-Inspector-only and stay out of save, hash, and DataCore. Save streams header, pages, market rows,
-cell/environment rows, pending commands, buildings, construction, audit history, sparse market/labor
-signals, trade orders, trade-flow EMA, and end. Save only at a
+PKEC schema v36 streams 4–16MB chunks: header, pages, market rows, cell/environment rows, pending
+commands, buildings, construction, audit history, sparse market/labor signals, trade orders,
+trade-flow EMA, per-cell `support_ema_q16`, end. Save only at a
 committed boundary. The header stores numeric scales, catalog identity, cycle length, committed day,
 environment identity, matching PKCN schema/generation/hash, submit sequence, trade next ID/resolved
-configuration, and section counts. Restore PKCN first. PKEC v10 migrates to empty trade state and
+configuration, and section counts. Restore PKCN first. Writer is v36; reader accepts v35 with
+`support_ema = 1`. PKEC v10 migrates to empty trade state and
 rebuilds topology; PKEC v2-v9 return `legacy_countryless_economy_save_unsupported`; do not
-synthesize a global treasury or per-cell technology during restore.
+synthesize a global treasury or per-cell technology during restore. `K_geo`, family cover, and
+`K_eff` are derived inspector diagnostics and stay out of the save bytes and `state_hash`.
 
 During `building_employment`, `building_production`, `household_market`, `structural_commit`, or
 `wait_commit`, save and gameplay systems must not
@@ -204,20 +195,17 @@ owner/employee job capacity but leaves all employment counters and market stock 
 native graph to fill. This is a development fixture, not a production historical population provider.
 
 Gold and silver deposits are intentionally early-visible monetary anchors. Gathering technology
-unlocks low-yield merchant-owned gold and silver workings with no goods inputs; they extract the
-matching real deposit, employ miners, and output only bullion. Later employee-bearing mines remain
+unlocks low-yield merchant-owned gold and silver workings with no goods inputs or employees; they
+extract the matching real deposit and output only bullion. Later employee-bearing mines remain
 industrialist-owned production. Accepted bullion uses the native issue path, publishes
 `bullion_money_issued` plus gold/silver splits, and remains inside exact money and goods audits.
 
 Player Inspector visibility is technology-filtered without changing native authority. Market
 snapshots retain the complete dense goods catalog for stable indices, save, and hashing, while the
 ViewModel renders only rows whose `good_technology_available` value is true. Natural-resource
-reserves remain physically present in MapData. The Inspector is the viewing player's dossier:
-visible cells, including unowned land, use that country's completed technologies against
-`discovery_technology_tags`. Extraction stays cell-local and still requires a
-technology-available collector on the selected cell. An empty filtered list means the current
-technologies have not identified local deposits; it must not be presented as "resource types are
-unconfigured". Missing snapshot metadata fails open so stale/unavailable native detail does not
+reserves remain physically present in MapData; the ViewModel renders only resources that satisfy
+`discovery_technology_tags` and have at least one technology-available collector in the selected
+cell's country. Missing snapshot metadata fails open so stale/unavailable native detail does not
 silently erase the whole dossier.
 
 ## 7. Source map

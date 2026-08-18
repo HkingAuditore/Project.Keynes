@@ -68,6 +68,8 @@ static func build_many(map: MapData, facade: EconomyFacade,
 		var first_owner_signature := -1
 		var first_owner_slots := 0
 		var job_capacity := 0
+		var food_owner_slots_by_signature := {}
+		var food_owner_total := 0
 		for building_index in range(route_buildings.size()):
 			var building_id := String(route_buildings[building_index])
 			var planned_count := int(route_counts[building_index])
@@ -93,7 +95,8 @@ static func build_many(map: MapData, facade: EconomyFacade,
 			if owner_signature < 0:
 				return _error("starter_signature_missing",
 					"经济目录缺少初始职业：%s" % owner_profession)
-			job_capacity += planned_count * int(job_spec.owner_slots)
+			var owner_slots := int(job_spec.owner_slots)
+			job_capacity += planned_count * owner_slots
 			building_cells.append(start_cell)
 			building_types.append(building_type)
 			building_owners.append(owner_signature)
@@ -102,22 +105,32 @@ static func build_many(map: MapData, facade: EconomyFacade,
 			if first_building_type < 0:
 				first_building_type = building_type
 				first_owner_signature = owner_signature
-				first_owner_slots = int(job_spec.owner_slots)
+				first_owner_slots = owner_slots
+			if _is_opening_food_building(building_id):
+				food_owner_slots_by_signature[owner_signature] = int(
+					food_owner_slots_by_signature.get(owner_signature, 0)) \
+					+ planned_count * owner_slots
+				food_owner_total += planned_count * owner_slots
 		starter_building_offsets.append(starter_building_ids.size())
 
-		if job_capacity != STARTER_POPULATION:
+		if job_capacity <= 0 or job_capacity > STARTER_POPULATION:
 			return _error("starter_population_capacity_mismatch",
-				"初始建筑必须恰好提供 20 个可自主匹配岗位容量。")
+				"初始建筑自营岗位容量必须为正且不超过 20。")
 		if first_owner_slots <= 0 or first_owner_slots >= STARTER_POPULATION:
 			return _error("starter_founder_capacity_invalid",
 				"首栋生产建筑必须为待业人口保留可自主匹配的岗位空间。")
-		_append_population_row(signature_ids, cell_indices, populations, funds,
-			start_cell, first_owner_signature, first_owner_slots)
+		if food_owner_total <= 0 or food_owner_total >= STARTER_POPULATION:
+			return _error("starter_food_operator_capacity_invalid",
+				"开局食品建筑自营岗位必须为正且为待业人口留出匹配空间。")
+		for owner_signature in food_owner_slots_by_signature.keys():
+			_append_population_row(signature_ids, cell_indices, populations, funds,
+				start_cell, int(owner_signature),
+				int(food_owner_slots_by_signature[owner_signature]))
 		var unemployed_signature := facade.signature_id(&"unemployed", &"default")
 		if unemployed_signature < 0:
 			return _error("starter_signature_missing", "经济目录缺少 unemployed 职业。")
 		_append_population_row(signature_ids, cell_indices, populations, funds,
-			start_cell, unemployed_signature, STARTER_POPULATION - first_owner_slots)
+			start_cell, unemployed_signature, STARTER_POPULATION - food_owner_total)
 		total_population += STARTER_POPULATION
 
 		var food_goods: PackedStringArray = start.get(
@@ -136,7 +149,8 @@ static func build_many(map: MapData, facade: EconomyFacade,
 		if clothing_good.is_empty() or goods.find(clothing_good) < 0:
 			return _error("starter_good_missing", "经济目录缺少开局衣物：%s" % clothing_good)
 		stock[start_cell * goods.size() + goods.find(clothing_good)] += \
-			STARTER_POPULATION * LOCAL_INPUT_BUFFER_DAYS * GOODS_SCALE
+			STARTER_POPULATION * (SURVIVAL_DAYS if route_buildings.has(
+				"hide_scraping_shelter") else LOCAL_INPUT_BUFFER_DAYS) * GOODS_SCALE
 		var construction_seed := String(start.get(
 			"starter_construction_seed_building_id", ""))
 		var selected_construction_goods: PackedStringArray = start.get(
@@ -160,6 +174,21 @@ static func build_many(map: MapData, facade: EconomyFacade,
 				LOCAL_INPUT_BUFFER_DAYS * GOODS_SCALE
 			stock[start_cell * goods.size() + good_index] += maxi(
 				four_seed_buildings, three_day_buffer)
+		var pending_knowledge_goods: PackedStringArray = start.get(
+			"pending_knowledge_construction_good_ids", PackedStringArray())
+		var pending_knowledge_quantities: PackedInt64Array = start.get(
+			"pending_knowledge_construction_quantities", PackedInt64Array())
+		if pending_knowledge_goods.size() != pending_knowledge_quantities.size():
+			return _error("starter_knowledge_construction_invalid",
+				"待建知识棚建材 ID 与数量必须一一对应。")
+		for pending_index in range(pending_knowledge_goods.size()):
+			var pending_good := String(pending_knowledge_goods[pending_index])
+			var pending_good_index := goods.find(pending_good)
+			if pending_good.is_empty() or pending_good_index < 0:
+				return _error("starter_good_missing",
+					"经济目录缺少待建知识棚建材：%s" % pending_good)
+			stock[start_cell * goods.size() + pending_good_index] += maxi(
+				int(pending_knowledge_quantities[pending_index]), 0)
 		var input_buffer_good := String(start.get("starter_input_buffer_good_id", ""))
 		if not input_buffer_good.is_empty():
 			var input_index := goods.find(input_buffer_good)
@@ -206,7 +235,7 @@ static func build_many(map: MapData, facade: EconomyFacade,
 		"starter_building_offsets": starter_building_offsets,
 		"starter_building_ids": starter_building_ids,
 		"survival_days": SURVIVAL_DAYS,
-		"source": "starter_settlement_bootstrap_v8",
+		"source": "starter_settlement_bootstrap_v9",
 	}
 
 
@@ -221,12 +250,12 @@ static func _append_population_row(signature_ids: PackedInt32Array,
 
 static func _fallback_start(start_cell: int, precious_resource: String) -> Dictionary:
 	var technologies := PackedStringArray([
-		"tech.gathering", "tech.wild_flax_collection", "tech.deadwood_collection",
-		"tech.oral_memory_practice", "tech.early_trade",
+		"tech.gathering", "tech.hunting", "tech.early_trade",
+		"tech.deadwood_collection",
 	])
 	var buildings := PackedStringArray([
-		"gathering_ground", "bast_fiber_camp", "bast_wrap_shelter",
-		"deadwood_gathering_camp", "oral_memory_circle", "early_merchant_post",
+		"gathering_ground", "stone_age_hunting_camp", "early_merchant_post",
+		"deadwood_gathering_camp",
 	])
 	if precious_resource == "silver_ore":
 		technologies.append("tech.surface_silver_collection")
@@ -239,17 +268,29 @@ static func _fallback_start(start_cell: int, precious_resource: String) -> Dicti
 		"precious_resource": precious_resource,
 		"regional_route": "fallback",
 		"starter_technology_ids": technologies,
+		"starter_discovered_technology_ids": PackedStringArray([
+			"tech.oral_memory_practice",
+		]),
+		"pending_knowledge_tech_id": "tech.oral_memory_practice",
+		"pending_knowledge_building_id": "oral_memory_circle",
 		"starter_building_ids": buildings,
-		"starter_food_good_ids": PackedStringArray(["gathered_plants"]),
+		"starter_food_good_ids": PackedStringArray(["gathered_plants", "game_meat"]),
 		"starter_clothing_good_id": "clothing",
 		"starter_construction_good_id": "logs",
 		"starter_knowledge_good_id": "technology_points",
-		"starter_food_resource_ids": PackedStringArray(["fertile_soil"]),
-		"starter_clothing_resource_id": "fertile_soil",
+		"starter_food_resource_ids": PackedStringArray(["fertile_soil", "wild_game"]),
+		"starter_clothing_resource_id": "",
 		"starter_construction_resource_id": "timber",
-		"starter_input_buffer_good_id": "bast_fiber",
+		"starter_input_buffer_good_id": "raw_hide",
 		"starter_precious_good_id": "silver" if precious_resource == "silver_ore" else "gold",
+		"starter_treasury_good_id": "technology_points",
+		"starter_treasury_quantity":
+			StarterEconomyPlannerScript.STARTER_TREASURY_TECHNOLOGY_POINTS,
 	}
+
+
+static func _is_opening_food_building(building_id: String) -> bool:
+	return building_id == "gathering_ground" or building_id == "stone_age_hunting_camp"
 
 
 static func _food_bridge_quantities(food_goods: PackedStringArray) -> Dictionary:

@@ -112,7 +112,11 @@ The important boundary is:
    The country slice also raises `country_day_barrier` when Effect still has due
    work, so the continuation drain can ACK the same calendar day.
 7. On the following activation boundary, apply its permanent `UNIQUE_SOURCE` Modifier
-   after the Effect transaction ACKs.
+   after the Effect transaction ACKs, or accept the Modifier if that UNIQUE_SOURCE is
+   already present. If the Effect instance exists but still has not ACKed, the country
+   day applies the same UNIQUE_SOURCE directly (idempotent replace) so a missed Effect
+   morning, incomplete continuation drain, or wedged Effect slice cannot leave the node
+   pending forever. Pending nodes also re-queue unacked Effect instances each country day.
 8. Only after successful application expose the completed tag and economic unlocks.
 
 This keeps market settlement one day ahead of research and makes effects/unlocks visible atomically.

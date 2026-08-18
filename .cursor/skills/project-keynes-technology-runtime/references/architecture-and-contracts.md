@@ -17,22 +17,44 @@ technology catalog and validates every `tech.*` reference. It must not invent ID
 
 Current baseline:
 
-- 81 definitions: four completed roots and 77 researchable technologies.
-- 11 eras and four domains: agriculture, engineering, science, society.
-- Normal nodes require all direct prerequisites.
-- A new era also requires the preceding era milestone.
-- Each era milestone requires any two of its four marked candidates.
-- Discovery reveals only immediate successors after prerequisite completion; reveal never completes.
-- Map occupancy (`cell.bio_occupancy_bits`) is current species presence, seeded as a full
-  origin-habitat fill plus vacant habitat-class packing (cosmopolitan reed excepted)
-  with a continent-scale food + fiber/livestock floor.
-  Country research signals are permanent seen-knowledge; local extinction does not revoke
-  evidence. Trade still yields `contact.*` only.
+- 361 definitions: 23 regional-start processing nodes and 338 researchable technologies.
+- 11 eras, four domains, four backbones, and twenty-four dynamic branch families.
+- Each era has exactly eight milestone candidates and requires any four.
+- Eligibility requires the previous milestone, every core prerequisite, and any one complete research route when routes exist.
+- Nonstone specialist anchors require the previous milestone and previous same-lane anchor;
+  backbone anchors require the previous milestone.
+- Geography, resource, contact and practice evidence appears only in reveal-condition IR. It may
+  inspire and reveal a node but never bypass a prerequisite or complete research.
+- Rivers, lakes and wetlands publish `landform.freshwater_access`; there is no
+  `resource.freshwater` deposit. Keep hydrology evidence separate from extractable
+  `freshwater_fish` and other `ResourceProfile` entries.
+- Map occupancy (`cell.bio_occupancy_bits`) answers “what lives here now”. Generation seeds each
+  UNIQUE_HEARTH species by filling envelope∩carrier on one origin landmass, then packs vacant
+  `habitat_class` niches on other continent-scale landmasses. Reed is `COSMOPOLITAN`.
+  Continent-scale landmasses keep a playable food + fiber/livestock floor.
+  Satellite islets are skipped unless they are the unique argmax
+  endemic pocket. Runtime neighbor diffusion stays inside a province. Country research signals
+  answer “has this country seen it”; extinction does not revoke evidence. Inspector local species
+  read occupancy; `SIGNAL_PRESENT` / `SIGNAL_COUNT` and start-location routes read country knowledge.
+- `tech.early_trade` is a zero-cost regional-start node revealed by visible natural gold or silver.
+  It unlocks `early_merchant_post`; every formal opening route grants it and prebuilds that service.
 
-Compilation produces stable-ID lookup, dense IDs in topological order, prerequisite and milestone CSR,
-reverse unlock indices, public definitions, Modifier definition keys, and a catalog hash. Validate
-duplicate/missing IDs, cycles, backward era edges, unreachable milestones, missing Modifier references,
-and invalid economy `tech.*` tags before native bootstrap.
+`Project/project-keynes/data/technology/technology_network.json` is the sole authoring source.
+`TechnologyCatalog` strictly parses it and remains the sole compiled/runtime authority. The authoring
+file includes explicit hard prerequisites, reveal conditions, research routes, Modifier terms,
+content bindings and the static visual edge kinds: hard, alternative, application, and
+milestone_candidate. Alternative edges identify their route and are shown only for the selected node.
+
+Compilation produces stable-ID lookup, dense IDs in topological order, prerequisite/milestone and
+Modifier-term CSR, unique Effect recipe identity, route/condition IR, reverse unlock indices and public
+definitions. Economy adds reverse Good/Building/Resource bindings and Trigger definition identity.
+Validate duplicate/missing IDs, cycles, backward era edges, unreachable milestones, empty consumers,
+missing Modifier references, direct profession gates, and invalid economy `tech.*` tags before bootstrap.
+
+The native catalog keeps Chinese player-facing authoring text in the exact catalog identity.
+`public_definitions()` exposes those names and summaries plus Chinese `route_display_names` beside
+stable `route.*` tags. Internal IDs remain hidden from players; catalog text changes intentionally
+invalidate strict PKCN saves in this no-migration rebuild.
 
 Key files:
 
@@ -91,8 +113,10 @@ The important boundary is:
    work, so the continuation drain can ACK the same calendar day.
 7. On the following activation boundary, apply its permanent `UNIQUE_SOURCE` Modifier
    after the Effect transaction ACKs, or accept the Modifier if that UNIQUE_SOURCE is
-   already present. Pending nodes re-queue unacked Effect instances each country day
-   so a missed Effect morning cannot leave them pending forever.
+   already present. If the Effect instance exists but still has not ACKed, the country
+   day applies the same UNIQUE_SOURCE directly (idempotent replace) so a missed Effect
+   morning, incomplete continuation drain, or wedged Effect slice cannot leave the node
+   pending forever. Pending nodes also re-queue unacked Effect instances each country day.
 8. Only after successful application expose the completed tag and economic unlocks.
 
 This keeps market settlement one day ahead of research and makes effects/unlocks visible atomically.
@@ -128,9 +152,10 @@ Each researchable technology maps to a permanent country Modifier definition:
 - stacking `UNIQUE_SOURCE`.
 
 Consumers include four domain research efficiencies, research cost, research-institution output, five
-economic-sector outputs, construction cost/time, and domestic-trade capacity/speed. Building catalogs
-compile one main sector dense ID; production queries a frozen country factor rather than creating one
-Modifier per building instance.
+economic-sector outputs, every production-family output, generated exact-building-type output stats,
+four climate-loss factors, construction cost/time, and domestic-trade capacity/speed. Economy freezes
+country×family, country×building-type, and climate factors at epoch capture rather than creating one
+Country Modifier per building instance.
 
 Modifiers may alter production results, consumed-points-to-progress conversion, construction
 parameters, or trade capacity. They must not directly mutate ledger quantities.
@@ -138,20 +163,37 @@ parameters, or trade capacity. They must not directly mutate ledger quantities.
 ## UI contract
 
 `TechnologyWorkspace` is a full-screen section mounted by the lightweight `CountryPanel` shell, which
-owns nothing but a section title bar and the content area. The tree is a single self-drawn
-`TechnologyTreeView`; `GraphEdit` is no longer used and no per-technology child node is created.
-Geometry is baked once by the pure-function `TechnologyTreeLayout` and never moves.
+owns nothing but a section title bar and the content area. `GraphEdit` is not used and no
+per-technology child node is created. `TechnologyTreeLayout.build()` bakes the immutable full DAG;
+`build_focus()` derives a bounded one-domain, three-era working set for the self-drawn
+`TechnologyTreeView`. The four authoritative research domains own top-level navigation; `main_lane`
+only orders nodes inside dependency layers and remains visible route metadata. Cross-domain hard
+relations become selected-node navigation portals while same-domain out-of-window links use era navigation; selected application relations use dashed
+lines, and milestone candidates collapse into a progress summary.
 
-Fog clips drawing to the researchable set plus its immediate unknown frontier. Revealed-but-locked
-nodes (hard prerequisites incomplete) stay unnamed like undiscovered ones. The pan/zoom range
-equals the visible bounding box, so neither the catalog size nor the remaining era count is
-observable. Unknown nodes must not leak semantic content through any visible or assistive channel.
+The separate self-drawn `TechnologyOverviewView` is a domain-by-visible-era navigation map. Its four
+rows are stable while columns exist only for discovered eras, and activation returns to focus mode.
+Policy is a permanent 280px left column. Detail is a 384px right drawer below 1600 px and may be pinned
+only on wider screens; its content wraps within the drawer and scrolls vertically. Opening focus prefers
+the queue head of the highest-weight non-empty domain, otherwise the deepest available frontier.
+
+Fog clips focus drawing to the researchable set plus its immediate unknown frontier. Revealed-but-locked
+nodes stay unnamed like undiscovered ones. Overview omits
+undiscovered route names and future era columns, so neither the catalog size nor the remaining era count
+is observable. Unknown nodes must not leak semantic content through any visible or assistive channel.
 Domain color is only supplemental; pair states with icon, border, and text.
+
+All revealed technology names, effect summaries, route badges, prerequisite names, and research-signal
+evidence are Chinese presentation strings. UI code resolves those labels from public definitions and
+signal metadata; it never displays stable IDs or native authoring text as the normal player-facing label.
 
 Every policy control commits on release and there is no submit button: the weight dial renormalises
 the other three domains and uses largest-remainder rounding to keep `sum == 10000`; the budget slider
 is expressed as a treasury share per day with "off" at the far-left stop. Queue drag/drop submits
 country commands and never mutates authoritative state locally.
+
+Daily refreshes do not rebuild focused geometry when only progress changes. Hidden overview geometry
+is not refreshed; relation rows rebuild only after selected or related technology states change.
 
 Key files:
 
@@ -171,10 +213,13 @@ Key files:
 
 Current versions:
 
-- `NewGameConfig` v2: starting cash, procurement budget, four weights, automatic-purchase flag.
-- PKCN v3: catalog hash, all research state, queues, policy, deferred stock, pending items, counters.
-- PKEC v21: procurement stage/counters, technology-points market/in-transit state, audit baselines.
+- `NewGameConfig` v3: foreign-country count, starting cash, procurement budget, four weights,
+  automatic-purchase flag; v2 migrates with zero foreign countries.
+- PKCN v11: catalog/content/Trigger identity, all research/signal state, queues, policy, deferred stock,
+  pending items, evidence provenance and counters.
+- PKEF v9: unique technology recipes, transactions/ACK and era-reward plans.
+- PKTR v5: Trigger accumulation, last development sample day, consecutive progress, and pending effects.
+- PKEC v34: procurement/practice state, technology-points market/in-transit state and audit baselines.
 
-Restore PKCN before PKEC. Reject old technology-tree schemas with
-`legacy_technology_tree_save_unsupported`; reject catalog or Modifier hash mismatch. Do not silently
-migrate or populate defaults during restore.
+Restore PKCN before PKEC. Reject old PKCN/PKEF/PKTR schemas and any related catalog identity change
+with `catalog_hash_mismatch`. Do not silently migrate IDs or populate defaults during restore.

@@ -499,11 +499,13 @@ func family_colonization_quotes(country_handle: int, target_cell: int,
 		family_filter, source_filter, offset, limit)
 
 
-func family_colonization_quote_detail(quote_token: int) -> Dictionary:
+func family_colonization_quote_detail(quote_token: int,
+		population: int = -1) -> Dictionary:
 	if not _configured or not _world_ext.has_method(
 			"get_family_colonization_quote_detail"):
 		return {"ok": false, "code": "family_colonization_unavailable"}
-	var detail: Dictionary = _world_ext.get_family_colonization_quote_detail(quote_token)
+	var detail: Dictionary = _world_ext.get_family_colonization_quote_detail(
+		quote_token, population)
 	if not bool(detail.get("ok", false)):
 		return detail
 	var stable_ids: PackedStringArray = _catalog.get(
@@ -517,6 +519,13 @@ func family_colonization_quote_detail(quote_token: int) -> Dictionary:
 		names.append(String(_profession_display_names.get(stable_id, stable_id)))
 	detail["profession_stable_ids"] = ids
 	detail["profession_display_names"] = names
+	var building_ids: PackedStringArray = _catalog.get(
+		"building_type_ids", PackedStringArray())
+	var kit_names := PackedStringArray()
+	for type_id in detail.get("kit_building_ids", PackedInt32Array()):
+		kit_names.append(String(building_ids[type_id]) if type_id >= 0 \
+			and type_id < building_ids.size() else "")
+	detail["kit_building_stable_ids"] = kit_names
 	return detail
 
 
@@ -1166,6 +1175,9 @@ func demolish(cell_idx: int, building_id: StringName, count: int, owner_handle: 
 
 func report() -> Dictionary:
 	return _world_ext.get_economy_report() if _configured else {"configured": false}
+
+func native_catalog() -> Dictionary:
+	return _catalog.duplicate(false)
 
 func signature_id(profession_id: StringName, ethnicity_id: StringName) -> int:
 	var key := "%s|%s" % [String(profession_id), String(ethnicity_id)]

@@ -75,8 +75,9 @@ func tick(ctx) -> Dictionary:
 	}
 	var ext: Object = facade.world_ext()
 	# Country daily ACKs CLAIM at priority 255. Dispatch SETTLE before this
-	# slice so an idle cycle can land immediately, and a frozen cycle can
-	# queue the command into pending for the next EPOCH_BEGIN.
+	# slice so a claimed party already in SETTLING can land, and a frozen
+	# cycle can still join LEDGER_APPLY. Newly arrived parties are enqueued
+	# inside run_economy_slice after process_due, then dispatched again.
 	if ext.has_method("dispatch_effect_native_economy"):
 		ext.dispatch_effect_native_economy()
 	var compact_slice: bool = ctx != null and \

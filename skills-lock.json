@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "skills": {
+    "cpp-dots-runtime-development": {
+      "source": "D:\\Godot\\ProjectKeynes\\Project.Keynes",
+      "sourceType": "local",
+      "computedHash": "3b6e0c4d7303fd749d8a6ca7480e9a6863da3e95b06d21b0cb87a69939d24d35"
+    },
+    "project-keynes-country-runtime": {
+      "source": "D:\\Godot\\ProjectKeynes\\Project.Keynes",
+      "sourceType": "local",
+      "computedHash": "7379a8d94a3cfa5e970919853126b400e76da17e4366b9ddd219ff09a10ef529"
+    },
+    "project-keynes-economy-analysis": {
+      "source": "D:\\Godot\\ProjectKeynes\\Project.Keynes",
+      "sourceType": "local",
+      "computedHash": "a857edc2ef165e2fca184730daf00edce7b38265ad39b88f759467b6df818bbc"
+    },
+    "project-keynes-economy-runtime": {
+      "source": "D:\\Godot\\ProjectKeynes\\Project.Keynes",
+      "sourceType": "local",
+      "computedHash": "b870dfa54944f28601e2153fbe66d1bb81324942914d182752459faf4e21148c"
+    },
+    "project-keynes-effect-runtime": {
+      "source": "D:\\Godot\\ProjectKeynes\\Project.Keynes",
+      "sourceType": "local",
+      "computedHash": "c32588dd2ac7d2a6c075128d38e24b0ba2c2467b5c3192e1b87a9452ad4872f2"
+    },
+    "project-keynes-family-runtime": {
+      "source": "D:\\Godot\\ProjectKeynes\\Project.Keynes",
+      "sourceType": "local",
+      "computedHash": "28d49f416d5525b5250f9c76b69dc96c80e563353d4dc7e93ed45520b5243048"
+    },
+    "project-keynes-game-flow-runtime": {
+      "source": "D:\\Godot\\ProjectKeynes\\Project.Keynes",
+      "sourceType": "local",
+      "computedHash": "db4c03901719ee968834c12fbe12399d1928a2def9e9025b589f85cbeb5b3127"
+    },
+    "project-keynes-headless-perf": {
+      "source": "D:\\Godot\\ProjectKeynes\\Project.Keynes",
+      "sourceType": "local",
+      "computedHash": "fda586f96ab286798704160cd7a292221f867fd2ff1761b0b96682de415d6269"
+    },
+    "project-keynes-modifier-runtime": {
+      "source": "D:\\Godot\\ProjectKeynes\\Project.Keynes",
+      "sourceType": "local",
+      "computedHash": "f10bee4a7e6b45df1a6791cf7b9aef63a4cea3daefa098a77d699be2daf35c47"
+    },
+    "project-keynes-player-controller": {
+      "source": "D:\\Godot\\ProjectKeynes\\Project.Keynes",
+      "sourceType": "local",
+      "computedHash": "69c5ecd05232fc76bcbd95b9679a0978141215e72024de23604d3bbf841a504e"
+    },
+    "project-keynes-runtime-hotloop-optimization": {
+      "source": "D:\\Godot\\ProjectKeynes\\Project.Keynes",
+      "sourceType": "local",
+      "computedHash": "7647544acaefc370faefb4b1603a6641810396cb728dae80f5e6c1685e914008"
+    },
+    "project-keynes-tax-runtime": {
+      "source": "D:\\Godot\\ProjectKeynes\\Project.Keynes",
+      "sourceType": "local",
+      "computedHash": "acb0ee1d1199cbae1d864ac3b8fb40b06577b57f619bf0580e40ff4df73e44a1"
+    },
+    "project-keynes-technology-runtime": {
+      "source": "D:\\Godot\\ProjectKeynes\\Project.Keynes",
+      "sourceType": "local",
+      "computedHash": "0afd04fb1cbc4b810361e87531fa4504e561b69447070ff4d1bb4b881ad988b5"
+    },
+    "project-keynes-technology-tree-design": {
+      "source": "D:\\Godot\\ProjectKeynes\\Project.Keynes",
+      "sourceType": "local",
+      "computedHash": "dbbc74a27d4f058aa2fff1cb0625a46bb8eca7de28903e9645e00898f49998de"
+    },
+    "vegetation-visual-pcg": {
+      "source": "D:\\Godot\\ProjectKeynes\\Project.Keynes",
+      "sourceType": "local",
+      "computedHash": "943c4aedb86229bd655cece1c589f5401c13a30ca1cccee26a06094e7ffd856a"
+    }
+  }
+}

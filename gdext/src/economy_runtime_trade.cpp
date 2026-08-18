@@ -200,6 +200,45 @@ bool NativeEconomyRuntime::capture_trade_topology(
     return true;
 }
 
+bool NativeEconomyRuntime::capture_trade_visibility(
+        const uint8_t *visible, int32_t count, bool fog_solved, bool from_map,
+        std::string &error) {
+    _trade_visibility_manual = !from_map;
+    _epoch_player_country_slot = _country_runtime != nullptr
+        ? _country_runtime->starting_country_slot() : -1;
+    if (!fog_solved) {
+        _epoch_trade_vision_gated = false;
+        _epoch_cell_visible.clear();
+        return true;
+    }
+    if (!_configured || visible == nullptr || count != _cell_count) {
+        error = "trade_visibility_snapshot_invalid";
+        return false;
+    }
+    _epoch_cell_visible.assign(visible, visible + count);
+    _epoch_trade_vision_gated = true;
+    return true;
+}
+
+bool NativeEconomyRuntime::trade_vision_allows_pair(
+        int32_t source, int32_t destination) const {
+    // 未解算 = 全知。解算后只有玩家开局国参与的订单要求两端当前可见；
+    // AI↔AI 与走廊格不受玩家迷雾限制。
+    if (!_epoch_trade_vision_gated) return true;
+    if (source < 0 || destination < 0 || source >= _cell_count ||
+        destination >= _cell_count) return false;
+    if (_epoch_cell_visible.size() != static_cast<size_t>(_cell_count)) return true;
+    const int32_t player = _epoch_player_country_slot;
+    if (player < 0) return true;
+    if (_epoch_cell_country.size() != static_cast<size_t>(_cell_count)) return true;
+    if (_epoch_cell_country[static_cast<size_t>(source)] != player &&
+        _epoch_cell_country[static_cast<size_t>(destination)] != player) {
+        return true;
+    }
+    return _epoch_cell_visible[static_cast<size_t>(source)] != 0 &&
+        _epoch_cell_visible[static_cast<size_t>(destination)] != 0;
+}
+
 bool NativeEconomyRuntime::refresh_canal_topology(
         const uint8_t *canal_edge_mask, const float *canal_water,
         int32_t count, std::string &error) {
@@ -624,6 +663,12 @@ bool NativeEconomyRuntime::route_trade_source(
     }
     const TradeSignal &source = _trade_plan.sources[source_index];
     auto append_candidate = [&](const TradeSignal &destination, int32_t route_cost) {
+        if (!trade_vision_allows_pair(source.cell, destination.cell)) {
+            ++_trade_rejected_vision;
+            record_trade_signal_attempt(
+                destination.cell, source.good, TRADE_SIGNAL_DIAG_ROUTE);
+            return false;
+        }
         record_trade_signal_attempt(
             destination.cell, source.good, TRADE_SIGNAL_DIAG_NONE);
         int64_t sat = 0;
@@ -774,6 +819,12 @@ bool NativeEconomyRuntime::route_trade_source(
             if (destination.cell == source.cell ||
                 _trade_topology.component[source.cell] !=
                     _trade_topology.component[destination.cell]) continue;
+            if (!trade_vision_allows_pair(source.cell, destination.cell)) {
+                ++_trade_rejected_vision;
+                record_trade_signal_attempt(
+                    destination.cell, source.good, TRADE_SIGNAL_DIAG_ROUTE);
+                continue;
+            }
             const uint64_t key =
                 (static_cast<uint64_t>(static_cast<uint32_t>(source.cell)) << 32) |
                 static_cast<uint32_t>(destination.cell);
@@ -1947,6 +1998,12 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
             if (candidate.destination >= 0 && candidate.good >= 0)
                 record_trade_signal_attempt(candidate.destination, candidate.good,
                     TRADE_SIGNAL_DIAG_ROUTE);
+            continue;
+        }
+        if (!trade_vision_allows_pair(candidate.source, candidate.destination)) {
+            ++_trade_rejected_vision;
+            record_trade_signal_attempt(candidate.destination, candidate.good,
+                TRADE_SIGNAL_DIAG_ROUTE);
             continue;
         }
         if (candidate.source_price_stock_generation !=

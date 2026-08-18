@@ -11,6 +11,7 @@
 #include <godot_cpp/variant/packed_byte_array.hpp>
 #include <godot_cpp/variant/packed_int32_array.hpp>
 #include <godot_cpp/variant/packed_int64_array.hpp>
+#include <godot_cpp/variant/packed_string_array.hpp>
 
 namespace pk {
 
@@ -309,15 +310,71 @@ void NativeEconomyRuntime::publish_country_development_facts() {
     if (_country_runtime == nullptr || _epoch_country_count <= 0 ||
         _epoch_country_handles.size() != static_cast<size_t>(_epoch_country_count))
         return;
+    const Clock::time_point class_opinion_started = Clock::now();
     const size_t metric_count = _development_metric_types.size();
-    if (metric_count == 0 ||
+    const bool development_columns_invalid = metric_count != 0 && (
         _development_metric_signal_indices.size() != metric_count ||
         _development_metric_era_indices.size() != metric_count ||
         _development_metric_subject_kinds.size() != metric_count ||
         _development_metric_subject_offsets.size() != metric_count + 1 ||
         _development_metric_qualifier_thresholds.size() != metric_count ||
-        _development_metric_duration_days.size() != metric_count)
-        return;
+        _development_metric_duration_days.size() != metric_count);
+    const bool publish_development = metric_count != 0 &&
+        !development_columns_invalid;
+    const int32_t class_count =
+        static_cast<int32_t>(_political_class_ids.size());
+    CountryClassOpinionSnapshot &class_snapshot =
+        _class_opinion_buffers[static_cast<size_t>(
+            1 - _class_opinion_committed_buffer)];
+    class_snapshot.revision = ++_class_opinion_revision;
+    class_snapshot.class_hash = _political_class_hash;
+    class_snapshot.epoch_day = _sample_day;
+    class_snapshot.commit_day = _current_day;
+    class_snapshot.country_count = _epoch_country_count;
+    class_snapshot.class_count = class_count;
+    class_snapshot.country_handles.assign(_epoch_country_handles.begin(),
+        _epoch_country_handles.end());
+    class_snapshot.country_generations.assign(
+        static_cast<size_t>(_epoch_country_count), 0);
+    for (int32_t country = 0; country < _epoch_country_count; ++country)
+        class_snapshot.country_generations[static_cast<size_t>(country)] =
+            static_cast<uint32_t>(_epoch_country_handles[
+                static_cast<size_t>(country)] >> 32U);
+    const size_t class_row_count = static_cast<size_t>(
+        std::max(0, _epoch_country_count)) *
+        static_cast<size_t>(std::max(0, class_count));
+    class_snapshot.population.assign(class_row_count, 0);
+    class_snapshot.funds.assign(class_row_count, 0);
+    class_snapshot.owner_employed.assign(class_row_count, 0);
+    class_snapshot.satisfaction_weighted.assign(class_row_count, 0);
+    class_snapshot.satisfaction_q16.assign(class_row_count, 0);
+    uint64_t cells_scanned = 0;
+    uint64_t slots_scanned = 0;
+    auto finalize_class_snapshot = [&]() {
+        uint64_t zero_population_rows = 0;
+        for (size_t row = 0; row < class_row_count; ++row) {
+            const int64_t population =
+                class_snapshot.population[row];
+            if (population <= 0) {
+                ++zero_population_rows;
+                class_snapshot.satisfaction_q16[row] = 0;
+                continue;
+            }
+            class_snapshot.satisfaction_q16[row] =
+                static_cast<int32_t>(std::clamp<int64_t>(
+                    class_snapshot.satisfaction_weighted[row] /
+                        population, 0, Q16_ONE));
+        }
+        _class_opinion_cells_scanned += cells_scanned;
+        _class_opinion_slots_scanned += slots_scanned;
+        _last_class_opinion_cells_scanned = cells_scanned;
+        _last_class_opinion_slots_scanned = slots_scanned;
+        _class_opinion_zero_population_rows += zero_population_rows;
+        _last_class_opinion_zero_population_rows = zero_population_rows;
+        _class_opinion_ms = elapsed_ms(class_opinion_started);
+        _class_opinion_committed_buffer =
+            1 - _class_opinion_committed_buffer;
+    };
 
     // These values are the stable enum shared with DevelopmentAchievementCatalog.
     constexpr int32_t METRIC_POPULATION = 1;
@@ -399,6 +456,7 @@ void NativeEconomyRuntime::publish_country_development_facts() {
     // cells never enter the development scan or emit a fact.
     if (_committed_cells.size() == static_cast<size_t>(_cell_count)) {
         for (const int32_t cell : _market_cells) {
+            ++cells_scanned;
             if (cell < 0 || cell >= _cell_count ||
                 _committed_cells[static_cast<size_t>(cell)].population <= 0 ||
                 cell >= static_cast<int32_t>(_epoch_cell_country.size()))
@@ -415,6 +473,7 @@ void NativeEconomyRuntime::publish_country_development_facts() {
             int64_t cell_population = 0;
             int64_t cell_satisfaction = 0;
             _population.for_each_in_cell(cell, [&](int32_t slot) {
+                ++slots_scanned;
                 const int64_t people = std::max<int64_t>(
                     0, _population.population[static_cast<size_t>(slot)]);
                 if (people <= 0) return;
@@ -424,6 +483,43 @@ void NativeEconomyRuntime::publish_country_development_facts() {
                     saturating_mul(static_cast<int64_t>(_population
                         .composite_satisfaction[static_cast<size_t>(slot)]),
                         people, _saturation_count), _saturation_count);
+                const uint32_t signature_id =
+                    _population.signature_id[static_cast<size_t>(slot)];
+                if (signature_id >= _signatures.size()) return;
+                const int32_t profession =
+                    _signatures[signature_id].profession_id;
+                if (profession < 0 || profession >= static_cast<int32_t>(
+                        _profession_political_class_index.size()))
+                    return;
+                const int32_t political_class =
+                    _profession_political_class_index[
+                        static_cast<size_t>(profession)];
+                if (political_class < 0 ||
+                        political_class >= class_count)
+                    return;
+                const size_t class_row =
+                    static_cast<size_t>(country) *
+                        static_cast<size_t>(class_count) +
+                    static_cast<size_t>(political_class);
+                class_snapshot.population[class_row] = saturating_add(
+                    class_snapshot.population[class_row], people,
+                    _saturation_count);
+                class_snapshot.funds[class_row] = saturating_add(
+                    class_snapshot.funds[class_row],
+                    std::max<int64_t>(0, _population.funds[
+                        static_cast<size_t>(slot)]), _saturation_count);
+                class_snapshot.owner_employed[class_row] = saturating_add(
+                    class_snapshot.owner_employed[class_row],
+                    std::max<int64_t>(0, _population.owner_employed[
+                        static_cast<size_t>(slot)]), _saturation_count);
+                class_snapshot.satisfaction_weighted[class_row] =
+                    saturating_add(
+                        class_snapshot.satisfaction_weighted[class_row],
+                        saturating_mul(static_cast<int64_t>(
+                            _population.composite_satisfaction[
+                                static_cast<size_t>(slot)]),
+                            people, _saturation_count),
+                        _saturation_count);
             });
             for (size_t metric = 0; metric < metric_count; ++metric) {
                 const int32_t type = _development_metric_types[metric];
@@ -459,6 +555,8 @@ void NativeEconomyRuntime::publish_country_development_facts() {
             }
         }
     }
+    finalize_class_snapshot();
+    if (!publish_development) return;
 
     const int64_t period_days = std::max<int64_t>(1, _epoch_days);
     for (const BuildingGroup &group : _buildings) {
@@ -611,6 +709,57 @@ bool NativeEconomyRuntime::trace_detail_for_cell(int32_t cell) const {
     return _trace_mode == TRACE_SELECTIVE && cell >= 0 &&
            ((cell < static_cast<int32_t>(_trace_cell_mask.size()) &&
              _trace_cell_mask[cell] != 0) || cell == _inspector_trace_cell);
+}
+
+Dictionary NativeEconomyRuntime::country_class_opinion_snapshot_debug() const {
+    const CountryClassOpinionSnapshot &snapshot =
+        country_class_opinion_snapshot();
+    PackedStringArray class_ids;
+    PackedInt64Array country_handles;
+    PackedInt32Array country_generations;
+    PackedInt64Array population;
+    PackedInt64Array funds;
+    PackedInt64Array owner_employed;
+    PackedInt64Array satisfaction_weighted;
+    PackedInt32Array satisfaction_q16;
+    for (const std::string &id : _political_class_ids)
+        class_ids.append(String(id.c_str()));
+    for (const uint64_t value : snapshot.country_handles)
+        country_handles.append(static_cast<int64_t>(value));
+    for (const uint32_t value : snapshot.country_generations)
+        country_generations.append(static_cast<int32_t>(value));
+    for (const int64_t value : snapshot.population) population.append(value);
+    for (const int64_t value : snapshot.funds) funds.append(value);
+    for (const int64_t value : snapshot.owner_employed)
+        owner_employed.append(value);
+    for (const int64_t value : snapshot.satisfaction_weighted)
+        satisfaction_weighted.append(value);
+    for (const int32_t value : snapshot.satisfaction_q16)
+        satisfaction_q16.append(value);
+    Dictionary out;
+    out["ok"] = true;
+    out["revision"] = static_cast<int64_t>(snapshot.revision);
+    out["class_hash"] = static_cast<int64_t>(snapshot.class_hash);
+    out["epoch_day"] = snapshot.epoch_day;
+    out["commit_day"] = snapshot.commit_day;
+    out["country_count"] = snapshot.country_count;
+    out["class_count"] = snapshot.class_count;
+    out["class_ids"] = class_ids;
+    out["country_handles"] = country_handles;
+    out["country_generations"] = country_generations;
+    out["population"] = population;
+    out["funds"] = funds;
+    out["owner_employed"] = owner_employed;
+    out["satisfaction_weighted"] = satisfaction_weighted;
+    out["satisfaction_q16"] = satisfaction_q16;
+    out["cells_scanned"] =
+        static_cast<int64_t>(_class_opinion_cells_scanned);
+    out["slots_scanned"] =
+        static_cast<int64_t>(_class_opinion_slots_scanned);
+    out["zero_population_rows"] =
+        static_cast<int64_t>(_class_opinion_zero_population_rows);
+    out["elapsed_ms"] = _class_opinion_ms;
+    return out;
 }
 
 

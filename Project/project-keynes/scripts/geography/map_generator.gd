@@ -160,6 +160,7 @@ const StartLocationPolicyScript = preload("res://scripts/game/start_location_pol
 const StarterSettlementBootstrapScript = preload("res://scripts/economy/starter_settlement_bootstrap.gd")
 const DiagnosticsBusScript = preload("res://scripts/geography/diagnostics_bus.gd")
 const TerrainGeneratorScript = preload("res://scripts/geography/map_generation/terrain_gen.gd")
+const PkmapIOScript = preload("res://scripts/geography/pkmap_io.gd")
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
 const ResearchSignalCatalogScript = preload("res://scripts/research/research_signal_catalog.gd")
 
@@ -1056,7 +1057,10 @@ var _ideology_facade = null
 var _ideology_daily_job = null
 const ECONOMY_CONTINUATION_FALLBACK_BUDGET_MS := 8.0
 const ECONOMY_CONTINUATION_MAX_SLICES_PER_FRAME := 64
+const EFFECT_ACK_CHAIN_MAX_PASSES := 8
+const BARRIER_DIAG_LOG_STRIDE := 60
 var _continuation_perf_pending: Dictionary = {}
+var _barrier_diag_count: int = 0
 var _test_economy_bootstrap_enabled: bool = false
 var _test_economy_population_scale: int = EconomyTestBootstrapScript.DEFAULT_POPULATION_SCALE
 var _gameplay_start_context: Dictionary = {}
@@ -1255,7 +1259,11 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 			+ "请检查：GDExtension DLL 是否已 rebuild、DCWorldExt 是否注册、"
 			+ "ClimateProfile.native_generation_mode 是否为 ACTIVE(2)。中止本次生成。")
 		return {}
-	print("MapGenerator v7: per-cell %dms (%d cells, path=gdext_base)" % [Time.get_ticks_msec() - t_total, map.cell_count()])
+	print("MapGenerator v7: per-cell %dms (%d cells, path=%s)" % [
+		Time.get_ticks_msec() - t_total,
+		map.cell_count(),
+		String(_native_generation_base_report.get("path", "gdext_base")),
+	])
 	bake_progress.emit("continents", 0.28)
 	await _yield_generation_frame()
 
@@ -1533,15 +1541,6 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 		push_error("[country] configure failed: %s" % String(country_configured.get("reason", "unknown")))
 		_country_facade = null
 		return
-	if _data_core_world_ext.has_method("configure_ideologies"):
-		var ideology_facade := IdeologyFacadeScript.new()
-		var ideology_configured: Dictionary = ideology_facade.configure(
-			_data_core_world_ext, _country_facade.native_catalog())
-		if bool(ideology_configured.get("ok", false)):
-			_ideology_facade = ideology_facade
-		else:
-			push_error("[ideology] configure failed: %s" % String(
-				ideology_configured.get("reason", "unknown")))
 	if _save_restore_preparation_enabled:
 		_save_restore_seed = seed_value
 		print("[save/restore] country configured without bootstrap; awaiting PKCN")
@@ -1564,6 +1563,16 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 		push_error("[economy] configure failed: %s" % String(
 			economy_configured.get("reason", "unknown")))
 		return
+	if _data_core_world_ext.has_method("configure_ideologies"):
+		var ideology_facade := IdeologyFacadeScript.new()
+		var ideology_configured: Dictionary = ideology_facade.configure(
+			_data_core_world_ext, _country_facade.native_catalog(), null,
+			_economy_facade.native_catalog())
+		if bool(ideology_configured.get("ok", false)):
+			_ideology_facade = ideology_facade
+		else:
+			push_error("[ideology] configure failed: %s" % String(
+				ideology_configured.get("reason", "unknown")))
 	# Production bootstrap remains empty. The explicit test fixture is a
 	# generation-time cold path and never becomes a historical population source.
 	var population_packet: Dictionary = {}
@@ -1735,7 +1744,8 @@ func _register_country_economy_systems(scheduler_profile) -> Dictionary:
 			_trigger_daily_job, scheduler_profile, false, &"trigger_runtime", 1)
 		_runtime_register_system(_trigger_daily_job)
 	if _ideology_facade != null and _ideology_facade.is_configured():
-		_ideology_daily_job = IdeologyRuntimeSystemScript.new(_ideology_facade)
+		_ideology_daily_job = IdeologyRuntimeSystemScript.new(
+			_ideology_facade, _world_clock_ref)
 		_sus.configure_job_from_profile(
 			_ideology_daily_job, scheduler_profile, false, &"ideology_runtime", 1)
 		_runtime_register_system(_ideology_daily_job)
@@ -1784,6 +1794,10 @@ func get_effect_report() -> Dictionary:
 	return _effect_facade.report() if _effect_facade != null else {"configured": false}
 
 
+func get_ideology_report() -> Dictionary:
+	return _ideology_facade.report() if _ideology_facade != null else {"configured": false}
+
+
 func get_modifier_report() -> Dictionary:
 	return _modifier_facade.report() if _modifier_facade != null else {"configured": false}
 
@@ -1826,6 +1840,14 @@ func prepare_economy_save_restore_runtime() -> Dictionary:
 		return {"ok": false, "reason": "economy_restore_already_prepared"}
 	var configured := _configure_economy_runtime(_sus_map, _save_restore_seed)
 	if bool(configured.get("ok", false)):
+		if _data_core_world_ext.has_method("configure_ideologies"):
+			var ideology_facade := IdeologyFacadeScript.new()
+			var ideology_configured: Dictionary = ideology_facade.configure(
+				_data_core_world_ext, _country_facade.native_catalog(), null,
+				_economy_facade.native_catalog())
+			if not bool(ideology_configured.get("ok", false)):
+				return ideology_configured
+			_ideology_facade = ideology_facade
 		print("[save/restore] PKCN restored; economy configured and awaiting PKEC")
 	return configured
 
@@ -1894,11 +1916,19 @@ func _build_gameplay_country_packet() -> Dictionary:
 	var research_signal_cells := PackedInt32Array()
 	var research_signal_days := PackedInt64Array()
 	var treasury_offsets := PackedInt32Array([0])
+	var treasury_good_indices := PackedInt32Array()
+	var treasury_quantities := PackedInt64Array()
+	var discovered_offsets := PackedInt32Array([0])
+	var all_discovered_indices := PackedInt32Array()
 	var research_weights := PackedInt32Array()
 	var research_budgets := PackedInt64Array()
 	var research_auto_purchase := PackedByteArray()
 	var configured_weights: PackedInt32Array = research_config.get(
 		"domain_weights_bp", PackedInt32Array([2500, 2500, 2500, 2500]))
+	var points_good := (catalog.get("good_ids", PackedStringArray()) as PackedStringArray).find(
+		"technology_points")
+	if points_good < 0:
+		return {}
 	for start_value in country_starts:
 		var start: Dictionary = start_value
 		var country_id := String(start.get("country_id", ""))
@@ -1942,7 +1972,23 @@ func _build_gameplay_country_packet() -> Dictionary:
 			research_signal_cells.append(int(signal_cells[signal_edge]))
 			research_signal_days.append(0)
 		research_signal_offsets.append(research_signal_indices.size())
-		treasury_offsets.append(0)
+		var discovered_ids: PackedStringArray = start.get(
+			"starter_discovered_technology_ids", PackedStringArray())
+		var seen_discovered := {}
+		for discovered_id in discovered_ids:
+			var discovered_index := (catalog.technology_ids as PackedStringArray).find(
+				String(discovered_id))
+			if discovered_index < 0 or seen_discovered.has(discovered_index) \
+					or seen_technology.has(discovered_index):
+				continue
+			seen_discovered[discovered_index] = true
+			all_discovered_indices.append(discovered_index)
+		discovered_offsets.append(all_discovered_indices.size())
+		var treasury_quantity := int(start.get("starter_treasury_quantity", 0))
+		if treasury_quantity > 0:
+			treasury_good_indices.append(points_good)
+			treasury_quantities.append(treasury_quantity)
+		treasury_offsets.append(treasury_good_indices.size())
 		for weight in configured_weights:
 			research_weights.append(weight)
 		research_budgets.append(int(research_config.get(
@@ -1957,13 +2003,15 @@ func _build_gameplay_country_packet() -> Dictionary:
 		"territory_cells": territory_cells,
 		"technology_offsets": technology_offsets,
 		"technology_indices": all_technology_indices,
+		"discovered_technology_offsets": discovered_offsets,
+		"discovered_technology_indices": all_discovered_indices,
 		"research_signal_offsets": research_signal_offsets,
 		"research_signal_indices": research_signal_indices,
 		"research_signal_cells": research_signal_cells,
 		"research_signal_days": research_signal_days,
 		"treasury_offsets": treasury_offsets,
-		"treasury_good_indices": PackedInt32Array(),
-		"treasury_quantities": PackedInt64Array(),
+		"treasury_good_indices": treasury_good_indices,
+		"treasury_quantities": treasury_quantities,
 		"research_weights_bp": research_weights,
 		"research_daily_budgets": research_budgets,
 		"research_auto_purchase": research_auto_purchase,
@@ -2108,13 +2156,36 @@ func _continue_economy_inflight(day_index: int) -> void:
 			if float(Time.get_ticks_usec() - started_us) / 1000.0 >= budget_ms:
 				_finish_continuation_perf_frame(started_us, continuation_count, frame_max_slice_ms, budget_ms)
 				return
-			if bool(_country_facade.world_ext().country_should_run(day_index)):
-				continue
-		# Country may have registered a technology Effect instance after the
-		# morning Effect slot. Drain the ACK chain before Economy freezes.
-		_drain_native_effect_ack_chain(ctx)
+			# Do not skip the ACK drain while country_should_run stays true.
+			# Research completions register Effect instances that keep
+			# country_should_run true via pending commands until Effect/Modifier/
+			# gameplay ACK. Skipping ACK here livelocks leftover Stone-Age nodes.
+		# Country may register a technology Effect after the morning Effect slot.
+		# Drain Trigger/Ideology opportunistically, then the hard Effect→Modifier
+		# →gameplay ACK chain. Trigger/Ideology should_run can stay true for
+		# tomorrow's queued work; that must not starve an in-flight economy epoch
+		# or pin WorldClock on country_day_barrier.
+		continuation_count += _drain_native_effect_ack_chain(ctx)
+		_ack_native_effect_domain_bindings()
+		var ack_passes := 1
+		while ack_passes < EFFECT_ACK_CHAIN_MAX_PASSES and \
+				_hard_effect_ack_chain_due(day_index):
+			continuation_count += _drain_native_effect_ack_chain(ctx)
+			_ack_native_effect_domain_bindings()
+			ack_passes += 1
+			if float(Time.get_ticks_usec() - started_us) / 1000.0 >= budget_ms:
+				break
+		var hard_ack_due := _hard_effect_ack_chain_due(day_index)
 		if _world_clock_ref != null:
-			_world_clock_ref.request_simulation_backpressure(&"country_day_barrier", false)
+			var economy_inflight := _economy_daily_job != null and _economy_facade != null \
+				and bool(_economy_facade.world_ext().economy_should_run(day_index))
+			# Keep the country barrier only while an in-flight economy epoch still
+			# needs catchup. Otherwise release it so the next render frame can
+			# advance a day and Country's UNIQUE_SOURCE fallback can fire.
+			_world_clock_ref.request_simulation_backpressure(
+				&"country_day_barrier", hard_ack_due and economy_inflight)
+			if hard_ack_due:
+				_log_stuck_day_barrier(day_index, economy_inflight)
 		if _economy_daily_job == null or _economy_facade == null:
 			if _world_clock_ref != null:
 				_world_clock_ref.request_simulation_backpressure(&"economy_day_barrier", false)
@@ -2628,26 +2699,97 @@ func restore_environment_runtime_state(state: Dictionary) -> Dictionary:
 	return result
 
 
-func _drain_native_effect_ack_chain(ctx: SusTickContext) -> void:
-	if _sus == null or ctx == null:
+func _native_effect_ack_chain_due(day: int) -> bool:
+	return _hard_effect_ack_chain_due(day)
+
+
+func _hard_effect_ack_chain_due(day: int) -> bool:
+	if _effect_daily_job != null and _effect_facade != null and \
+			bool(_effect_facade.world_ext().effect_should_run(day)):
+		return true
+	if _modifier_daily_job != null and _modifier_facade != null and \
+			bool(_modifier_facade.world_ext().modifier_should_run(day)):
+		return true
+	if _gameplay_effect_job != null and _effect_facade != null and \
+			_effect_facade.world_ext().has_method("gameplay_effect_should_run") and \
+			bool(_effect_facade.world_ext().gameplay_effect_should_run(day)):
+		return true
+	return false
+
+
+func _ack_native_effect_domain_bindings() -> void:
+	if _modifier_facade != null:
+		var modifier_ext: Object = _modifier_facade.world_ext()
+		if modifier_ext != null and modifier_ext.has_method("ack_effect_native_modifier"):
+			modifier_ext.ack_effect_native_modifier()
+	if _country_facade != null:
+		var country_ext: Object = _country_facade.world_ext()
+		if country_ext != null and country_ext.has_method("ack_effect_native_country"):
+			country_ext.ack_effect_native_country()
+	if _economy_facade != null:
+		var economy_ext: Object = _economy_facade.world_ext()
+		if economy_ext != null and economy_ext.has_method("ack_effect_native_economy"):
+			economy_ext.ack_effect_native_economy()
+	if _effect_facade != null:
+		var effect_ext: Object = _effect_facade.world_ext()
+		if effect_ext != null and effect_ext.has_method("ack_effect_native_gameplay"):
+			effect_ext.ack_effect_native_gameplay()
+
+
+func _log_stuck_day_barrier(day: int, economy_inflight: bool) -> void:
+	_barrier_diag_count += 1
+	if _barrier_diag_count > 8 and (_barrier_diag_count % BARRIER_DIAG_LOG_STRIDE) != 0:
 		return
+	var hard_flags := PackedStringArray()
+	var extra_flags := PackedStringArray()
+	if _trigger_daily_job != null and _trigger_facade != null \
+			and bool(_trigger_facade.world_ext().trigger_should_run(day)):
+		extra_flags.append("trigger")
+	if _ideology_daily_job != null and _ideology_facade != null \
+			and bool(_ideology_facade.world_ext().ideology_should_run(day)):
+		extra_flags.append("ideology")
+	if _effect_daily_job != null and _effect_facade != null \
+			and bool(_effect_facade.world_ext().effect_should_run(day)):
+		hard_flags.append("effect")
+	if _modifier_daily_job != null and _modifier_facade != null \
+			and bool(_modifier_facade.world_ext().modifier_should_run(day)):
+		hard_flags.append("modifier")
+	if _gameplay_effect_job != null and _effect_facade != null \
+			and _effect_facade.world_ext().has_method("gameplay_effect_should_run") \
+			and bool(_effect_facade.world_ext().gameplay_effect_should_run(day)):
+		hard_flags.append("gameplay")
+	print("[sim/barrier] day=%d pulse=%d economy_inflight=%s hard_ack=%s extra=%s"
+		% [day, _barrier_diag_count, str(economy_inflight), ",".join(hard_flags),
+			",".join(extra_flags)])
+
+
+func _drain_native_effect_ack_chain(ctx: SusTickContext) -> int:
+	if _sus == null or ctx == null:
+		return 0
 	var day := int(ctx.day_index)
+	var drained := 0
 	if _trigger_daily_job != null and _trigger_facade != null and \
 			bool(_trigger_facade.world_ext().trigger_should_run(day)):
 		_sus.continue_system(&"trigger_runtime", ctx)
+		drained += 1
 	if _ideology_daily_job != null and _ideology_facade != null and \
 			bool(_ideology_facade.world_ext().ideology_should_run(day)):
 		_sus.continue_system(&"ideology_runtime", ctx)
+		drained += 1
 	if _effect_daily_job != null and _effect_facade != null and \
 			bool(_effect_facade.world_ext().effect_should_run(day)):
 		_sus.continue_system(&"effect_runtime", ctx)
+		drained += 1
 	if _modifier_daily_job != null and _modifier_facade != null and \
 			bool(_modifier_facade.world_ext().modifier_should_run(day)):
 		_sus.continue_system(&"modifier_daily", ctx)
+		drained += 1
 	if _gameplay_effect_job != null and _effect_facade != null and \
 			_effect_facade.world_ext().has_method("gameplay_effect_should_run") and \
 			bool(_effect_facade.world_ext().gameplay_effect_should_run(day)):
 		_sus.continue_system(&"gameplay_effect", ctx)
+		drained += 1
+	return drained
 
 
 func advance_save_boundary() -> void:
@@ -2752,6 +2894,8 @@ func set_world_clock_ref(world_clock_node) -> void:
 	# barrier requests and continuation pulse connection aligned with the host.
 	if _country_daily_job != null:
 		_country_daily_job.world_clock = _world_clock_ref
+	if _ideology_daily_job != null:
+		_ideology_daily_job.world_clock = _world_clock_ref
 	if _economy_daily_job != null:
 		_economy_daily_job.world_clock = _world_clock_ref
 	if _world_clock_ref.has_signal("simulation_backpressure_pulse"):
@@ -9088,11 +9232,100 @@ func _native_generation_profile_dict() -> Dictionary:
 	return out
 
 
+func _generate_cells_from_pkmap(cfg: MapConfig, seed: int) -> MapData:
+	var path := String(cfg.pkmap_path).strip_edges()
+	if path.is_empty():
+		push_error("[native_generation/pkmap] pkmap_path 为空；中止，不回退程序生成")
+		_native_generation_base_report = {
+			"rc": -1,
+			"path": "pkmap",
+			"fallback": false,
+			"fallback_reason": "pkmap_path_empty",
+		}
+		return null
+	var loaded: Dictionary = PkmapIOScript.read_pkmap(path)
+	if not bool(loaded.get("ok", false)):
+		push_error("[native_generation/pkmap] 读包失败 code=%s message=%s；中止，不回退程序生成" % [
+			String(loaded.get("code", "unknown")),
+			String(loaded.get("message", "")),
+		])
+		_native_generation_base_report = {
+			"rc": -1,
+			"path": "pkmap",
+			"fallback": false,
+			"fallback_reason": String(loaded.get("code", "pkmap_read_failed")),
+		}
+		return null
+	var header: Dictionary = loaded.get("header", {})
+	var width := int(loaded.get("width", 0))
+	var height := int(loaded.get("height", 0))
+	var n := int(loaded.get("n_cells", width * height))
+	if n != width * height or n != int(cfg.width) * int(cfg.height):
+		push_error("[native_generation/pkmap] 尺寸不匹配 n=%d header=%dx%d cfg=%dx%d；中止" % [
+			n, width, height, int(cfg.width), int(cfg.height),
+		])
+		_native_generation_base_report = {
+			"rc": -1,
+			"path": "pkmap",
+			"fallback": false,
+			"fallback_reason": "size_mismatch",
+		}
+		return null
+	var payload: Dictionary = loaded.get("payload", {})
+	var final_res: Dictionary = PkmapIOScript.native_result_from_payload(payload, header)
+	if _terrain_generator == null:
+		_terrain_generator = TerrainGeneratorScript.new(self)
+	var map: MapData = _terrain_generator.assemble_native_result(final_res, cfg)
+	if map == null:
+		push_error("[native_generation/pkmap] assemble_native_result 失败；中止，不回退程序生成")
+		_native_generation_base_report = {
+			"rc": -1,
+			"path": "pkmap",
+			"fallback": false,
+			"fallback_reason": "assemble_failed",
+		}
+		return null
+	var ext := _ensure_generation_world_ext()
+	if ext == null or not ext.has_method("restuff_generation_river_cache"):
+		push_error("[native_generation/pkmap] 缺 restuff_generation_river_cache（DLL 未 rebuild?）；中止")
+		_native_generation_base_report = {
+			"rc": -1,
+			"path": "pkmap",
+			"fallback": false,
+			"fallback_reason": "missing_restuff_generation_river_cache",
+		}
+		return null
+	var restuff_in := final_res.duplicate(true)
+	restuff_in["width"] = width
+	restuff_in["height"] = height
+	restuff_in["n_cells"] = n
+	var restuff: Dictionary = ext.restuff_generation_river_cache(restuff_in)
+	if int(restuff.get("rc", -1)) != 0 or not bool(restuff.get("ok", false)):
+		push_error("[native_generation/pkmap] restuff 失败 reason=%s；中止" % String(restuff.get("reason", "")))
+		_native_generation_base_report = {
+			"rc": -1,
+			"path": "pkmap",
+			"fallback": false,
+			"fallback_reason": String(restuff.get("reason", "restuff_failed")),
+		}
+		return null
+	_native_generation_base_report = {
+		"rc": 0,
+		"path": "pkmap",
+		"fallback": false,
+		"n_cells": n,
+		"pkmap_path": path,
+		"seed": seed,
+	}
+	print("[native_generation/pkmap] path=pkmap n=%d file=%s restuff=ok" % [n, path])
+	return map
 
 
 # native generation ACTIVE 路径：C++ 负责 base SoA + post-base 湖泊/河流/
 # 生态/地标后处理；GDScript 只发送请求、校验 PackedArray 并装配 HexCell。
 func _generate_cells_native_base(cfg: MapConfig, seed: int) -> MapData:
+	if cfg != null and String(cfg.map_source) == "pkmap":
+		return _generate_cells_from_pkmap(cfg, seed)
 	var cp := _c()
 	if not _native_mode_is_active(cp, "native_generation_mode"):
 		_native_generation_base_report = {

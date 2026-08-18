@@ -168,6 +168,8 @@ Dictionary NativeEconomyRuntime::begin_restore() {
     _family_expedition_route_costs.clear();
     _family_expedition_payloads.clear();
     _family_expedition_person_handles.clear();
+    _family_expedition_cargo.clear();
+    _family_expedition_kit_buildings.clear();
     _family_expedition_target_index.clear();
     _family_expedition_due_heap.clear();
     _colonization_receipts.clear();
@@ -705,6 +707,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
         }
     }
     rebuild_building_cell_offsets();
+    _pending_building_topology_rebuild = false;
     if (_auto_slice_by_scale)
         _cells_per_slice = std::clamp(_market.market_count, 1, 128);
     if (_auto_building_slice_by_scale)

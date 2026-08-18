@@ -19,6 +19,25 @@ func set_context(generator) -> void:
 	_generator = generator
 
 
+func player_completed_technology_ids() -> PackedStringArray:
+	if _generator == null or not _generator.has_method("gameplay_start_report") \
+			or not _generator.has_method("get_country_facade"):
+		return PackedStringArray()
+	var start_report: Dictionary = _generator.gameplay_start_report()
+	var start_cell := int(start_report.get("cell", -1))
+	var facade = _generator.get_country_facade()
+	if not bool(start_report.get("ok", false)) or facade == null or start_cell < 0 \
+			or not facade.has_method("snapshot"):
+		return PackedStringArray()
+	var summary: Dictionary = facade.cell_summary(start_cell)
+	if not bool(summary.get("ok", false)) or not bool(summary.get("owned", false)):
+		return PackedStringArray()
+	var snapshot: Dictionary = facade.snapshot(int(summary.get("country_handle", 0)))
+	if not bool(snapshot.get("ok", false)):
+		return PackedStringArray()
+	return snapshot.get("technology_ids", PackedStringArray())
+
+
 func build(include_treasury: bool = false) -> Dictionary:
 	if _generator == null or not _generator.has_method("gameplay_start_report") \
 			or not _generator.has_method("get_country_facade"):

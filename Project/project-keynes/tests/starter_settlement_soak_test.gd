@@ -51,6 +51,20 @@ func _run() -> void:
 		print("starter bootstrap failure: ", start)
 	_expect("formal starter bootstrap succeeds",
 		bool(start.get("ok", false)) and start_cell >= 0)
+	var player_start: Dictionary = {}
+	if (start.get("country_starts", []) as Array).size() > 0:
+		player_start = (start.get("country_starts", []) as Array)[0]
+	_expect("soak grants gathering and hunting",
+		(player_start.get("starter_technology_ids", PackedStringArray()) as PackedStringArray).has(
+			"tech.gathering")
+		and (player_start.get("starter_technology_ids", PackedStringArray()) as PackedStringArray).has(
+			"tech.hunting"))
+	if String(player_start.get("regional_route", "")) == "cold_highland":
+		_expect("cold soak grants hide scraping",
+			(player_start.get("starter_technology_ids", PackedStringArray()) as PackedStringArray).has(
+				"tech.hide_scraping")
+			and (player_start.get("starter_building_ids", PackedStringArray()) as PackedStringArray).has(
+				"hide_scraping_shelter"))
 	var economy = generator.get_economy_facade()
 	_expect("starter economy is configured", economy != null and economy.is_configured())
 	if economy == null or not economy.is_configured() or start_cell < 0:
@@ -58,6 +72,10 @@ func _run() -> void:
 		return
 	_expect("starter population begins at exactly 20",
 		int(economy.population_cell_snapshot(start_cell).get("population", 0)) == 20)
+	var opening_buildings: Dictionary = economy.building_cell_snapshot(start_cell)
+	_expect("opening food lots operate without leftover construction techs",
+		_food_lots_operable(opening_buildings,
+			player_start.get("starter_building_ids", PackedStringArray())))
 	var opening_families: Dictionary = economy.family_cell_snapshot(start_cell, 0, 64)
 	var opening_family_handles: PackedInt64Array = opening_families.get(
 		"family_handles", PackedInt64Array())
@@ -132,19 +150,39 @@ func _run_day(generator: MapGenerator, economy, clock: WorldClock, day: int) -> 
 	var ctx := SusTickContext.make(
 		day, day, phase, 1.0, &"country_economy_continuation")
 	for _slice in range(MAX_SLICES_PER_DAY):
-		if bool(ext.country_should_run(day)):
+		# Research completions emit Effect recipes. Dispatch those first, then
+		# let Country consume the resulting effect commands in the same slice
+		# before ACK. Country-before-drain left native_country_ack_pending=1.
+		var drained := int(generator.call("_drain_native_effect_ack_chain", ctx))
+		var country_busy := bool(ext.country_should_run(day))
+		if country_busy:
 			scheduler.continue_system(&"country_daily", ctx)
-			await process_frame
-			continue
+		generator.call("_ack_native_effect_domain_bindings")
+		var ack_passes := 1
+		while ack_passes < 8 and bool(generator.call("_hard_effect_ack_chain_due", day)):
+			drained += int(generator.call("_drain_native_effect_ack_chain", ctx))
+			if bool(ext.country_should_run(day)):
+				scheduler.continue_system(&"country_daily", ctx)
+			generator.call("_ack_native_effect_domain_bindings")
+			ack_passes += 1
 		if bool(ext.economy_should_run(day)):
 			var continued: Dictionary = scheduler.continue_system(&"economy_daily", ctx)
 			if bool(continued.get("fatal", false)):
 				return ext.get_economy_report()
 			await process_frame
 			continue
+		if country_busy or bool(ext.country_should_run(day)) \
+				or bool(generator.call("_hard_effect_ack_chain_due", day)):
+			await process_frame
+			continue
 		var report: Dictionary = ext.get_economy_report()
 		report["done"] = true
 		return report
+	print("starter soak drain stuck day=%d country=%s economy=%s ack=%s" % [
+		day,
+		ext.country_should_run(day) if ext.has_method("country_should_run") else "n/a",
+		ext.economy_should_run(day) if ext.has_method("economy_should_run") else "n/a",
+		generator.call("_hard_effect_ack_chain_due", day)])
 	return {"fatal": true, "fatal_reason": "starter_soak_slice_limit"}
 
 
@@ -164,6 +202,28 @@ func _variant_is_finite(value) -> bool:
 			for entry in value:
 				if not is_finite(float(entry)):
 					return false
+	return true
+
+
+func _food_lots_operable(snapshot: Dictionary, route_buildings: PackedStringArray) -> bool:
+	if not route_buildings.has("gathering_ground"):
+		return false
+	for building_id in ["gathering_ground", "stone_age_hunting_camp"]:
+		if not route_buildings.has(building_id):
+			continue
+		var ids: PackedStringArray = snapshot.get("building_type_ids", PackedStringArray())
+		var available = snapshot.get("building_technology_available", PackedByteArray())
+		var type_index := ids.find(building_id)
+		if type_index < 0 or type_index >= available.size() or int(available[type_index]) == 0:
+			return false
+		var group_types: PackedInt32Array = snapshot.get("group_type_ids", PackedInt32Array())
+		var filled: PackedInt64Array = snapshot.get("filled_owner", PackedInt64Array())
+		var fill := 0
+		for group in range(mini(group_types.size(), filled.size())):
+			if int(group_types[group]) == type_index:
+				fill += int(filled[group])
+		if fill <= 0:
+			return false
 	return true
 
 

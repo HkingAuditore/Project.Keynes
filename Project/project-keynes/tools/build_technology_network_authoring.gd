@@ -329,7 +329,11 @@ func _validate(payload: Dictionary) -> Dictionary:
 		var is_formal := not bool(node.get("is_milestone", false)) \
 			and not bool(node.get("is_starting", false)) \
 			and not bool(node.get("is_starter_eligible", false))
-		if is_formal and (modifier_terms.is_empty() or modifier_terms.size() > 6):
+		var has_content := not (node.get("expected_bindings", []) as Array).is_empty() \
+			or not (node.get("content_effects", []) as Array).is_empty()
+		if is_formal and modifier_terms.size() > 6:
+			return _fail("technology_modifier_term_count_invalid:%s" % id)
+		if is_formal and modifier_terms.is_empty() and not has_content:
 			return _fail("technology_modifier_term_count_invalid:%s" % id)
 		if modifier_terms.is_empty() and not bool(node.get("is_starter_eligible", false)):
 			empty_modifier_nodes += 1

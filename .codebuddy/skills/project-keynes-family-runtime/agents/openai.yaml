@@ -1,0 +1,4 @@
+interface:
+  display_name: "Project.Keynes Family Runtime"
+  short_description: "Maintain family traits, prestige, effects, and PKEC"
+  default_prompt: "Use $project-keynes-family-runtime to implement or review notable-family traits, cell prestige, effects, ownership, employment, and save behavior."

@@ -260,9 +260,11 @@ void NativeEconomyRuntime::audit_touch_market_lane(size_t index) {
 }
 
 void NativeEconomyRuntime::sum_family_expedition_holdings(
-        int64_t &population, int64_t &funds, int64_t &saturation) const {
+        int64_t &population, int64_t &funds, int64_t &goods,
+        int64_t &saturation) const {
     population = 0;
     funds = 0;
+    goods = 0;
     for (int32_t expedition = 0; expedition < static_cast<int32_t>(
             _family_expeditions.active.size()); ++expedition) {
         if (_family_expeditions.active[expedition] == 0) continue;
@@ -275,6 +277,13 @@ void NativeEconomyRuntime::sum_family_expedition_holdings(
         for (uint32_t payload = begin; payload < end; ++payload)
             funds = saturating_add(funds,
                 _family_expedition_payloads[payload].funds, saturation);
+        const uint32_t cargo_begin = _family_expeditions.cargo_begin[expedition];
+        const uint32_t cargo_end = std::min<uint32_t>(
+            static_cast<uint32_t>(_family_expedition_cargo.size()),
+            cargo_begin + _family_expeditions.cargo_count[expedition]);
+        for (uint32_t cargo = cargo_begin; cargo < cargo_end; ++cargo)
+            goods = saturating_add(goods,
+                _family_expedition_cargo[cargo].quantity, saturation);
     }
 }
 
@@ -321,12 +330,15 @@ NativeEconomyRuntime::incremental_audit_totals() const {
     totals.transit_goods = transit;
     int64_t expedition_population = 0;
     int64_t expedition_funds = 0;
+    int64_t expedition_goods = 0;
     int64_t ignored_saturation = 0;
     sum_family_expedition_holdings(expedition_population, expedition_funds,
-                                   ignored_saturation);
+                                   expedition_goods, ignored_saturation);
     totals.population += expedition_population - totals.transit_population;
     totals.transit_population = expedition_population;
     totals.expedition_funds = expedition_funds;
+    totals.goods_stock += expedition_goods - totals.expedition_goods;
+    totals.expedition_goods = expedition_goods;
     const int64_t escrow = trade_escrow_cash();
     totals.escrow_cash = saturating_add(
         saturating_add(escrow, fiscal_escrow_total(), ignored_saturation),
@@ -1042,6 +1054,7 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
     }
     _epoch_cell_country = std::move(snapshot.cell_country_slot);
     _epoch_country_handles = std::move(snapshot.country_handles);
+    _epoch_player_country_slot = _country_runtime->starting_country_slot();
     _epoch_country_technologies = std::move(snapshot.country_technologies);
     _epoch_country_count = snapshot.country_count;
     _epoch_country_technology_words = snapshot.technology_words;
@@ -1148,6 +1161,8 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
             const int32_t group_end = _building_dependency_branch_group_offsets[
                 static_cast<size_t>(branch + 1)];
             for (int32_t group = group_begin; group < group_end; ++group) {
+                if (!building_dependency_group_required_for_operation(group))
+                    continue;
                 bool group_ready = false;
                 for (int32_t tag = _building_dependency_tag_offsets[
                         static_cast<size_t>(group)];
@@ -6484,14 +6499,17 @@ NativeEconomyRuntime::AuditTotals NativeEconomyRuntime::audit_totals() const {
     }
     totals.transit_goods = trade_transit_goods();
     int64_t expedition_funds = 0;
+    int64_t expedition_goods = 0;
     sum_family_expedition_holdings(totals.transit_population, expedition_funds,
-                                   valuation_sat);
+                                   expedition_goods, valuation_sat);
     totals.expedition_funds = expedition_funds;
+    totals.expedition_goods = expedition_goods;
     totals.population += totals.transit_population;
     totals.escrow_cash = saturating_add(saturating_add(
         trade_escrow_cash(), fiscal_escrow_total(), valuation_sat),
         expedition_funds, valuation_sat);
     totals.goods_stock += totals.transit_goods;
+    totals.goods_stock += expedition_goods;
     if (_country_runtime != nullptr) {
         for (int32_t good = 0; good < _market.good_count; ++good) {
             const int64_t country_good =
@@ -6827,12 +6845,18 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
             out["elapsed_ms"] = elapsed_ms(slice_start);
             return out;
         }
-        // Country ACK happens at priority 255. Pull SETTLE into this idle
-        // boundary before process_due inspects SETTLING, so a claimed
-        // expedition can land immediately instead of waiting another day.
-        if (_effect_runtime != nullptr)
-            _effect_runtime->dispatch_native_economy(this);
-        recover_lost_family_settlement_commands();
+        // Country ACK happens at priority 255. Pull already-submitted SETTLE
+        // into this idle boundary before process_due inspects SETTLING, so a
+        // claimed expedition can land immediately instead of waiting another
+        // day. process_due itself is what enqueues a newly arrived party, so
+        // dispatch again afterwards: SETTLE-only relocate has no Country
+        // prerequisite and must not sit in SETTLING until the next freeze.
+        auto pull_due_family_settlements = [this]() {
+            if (_effect_runtime != nullptr)
+                _effect_runtime->dispatch_native_economy(this);
+            recover_lost_family_settlement_commands();
+        };
+        pull_due_family_settlements();
         if (!process_due_canal_projects(day_index, error) ||
             !process_due_family_expeditions(day_index, error)) {
             fail(error);
@@ -6841,6 +6865,7 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
             out["elapsed_ms"] = elapsed_ms(slice_start);
             return out;
         }
+        pull_due_family_settlements();
         const bool cycle_due = day_index > _last_committed_day;
         if (cycle_due && trade_planner_should_run()) {
             _stage = Stage::TRADE_PLANNING;
@@ -8837,9 +8862,7 @@ bool NativeEconomyRuntime::family_free_building_resources_legal(
         int32_t cell, int32_t type_id, int64_t count) const {
     if (cell < 0 || cell >= _cell_count || type_id < 0 ||
         type_id >= static_cast<int32_t>(_building_types.size()) || count <= 0 ||
-        _building_cell_offsets.size() != static_cast<size_t>(_cell_count + 1) ||
-        _pending_construction_cell_offsets.size() !=
-            static_cast<size_t>(_cell_count + 1)) {
+        _building_cell_offsets.size() != static_cast<size_t>(_cell_count + 1)) {
         return false;
     }
     const BuildingType &reward_type = _building_types[type_id];
@@ -8890,15 +8913,19 @@ bool NativeEconomyRuntime::family_free_building_resources_legal(
             add_commitment(_buildings[group].type_id,
                            _buildings[group].count);
         }
-        for (int32_t cursor = _pending_construction_cell_offsets[cell];
-             cursor < _pending_construction_cell_offsets[cell + 1]; ++cursor) {
-            const int32_t pending_index =
-                _pending_construction_cell_indices[cursor];
-            if (pending_index < 0 || pending_index >= static_cast<int32_t>(
-                    _pending_construction.size())) return false;
-            const PendingConstruction &pending =
-                _pending_construction[pending_index];
-            add_commitment(pending.type_id, pending.count);
+        if (_pending_construction_cell_offsets.size() ==
+                static_cast<size_t>(_cell_count + 1)) {
+            for (int32_t cursor = _pending_construction_cell_offsets[cell];
+                 cursor < _pending_construction_cell_offsets[cell + 1];
+                 ++cursor) {
+                const int32_t pending_index =
+                    _pending_construction_cell_indices[cursor];
+                if (pending_index < 0 || pending_index >= static_cast<int32_t>(
+                        _pending_construction.size())) return false;
+                const PendingConstruction &pending =
+                    _pending_construction[pending_index];
+                add_commitment(pending.type_id, pending.count);
+            }
         }
         // Reward commands are applied after the epoch's pending CSR is frozen.
         // Only the newly appended tail can be absent from that local index.
@@ -11659,6 +11686,25 @@ int64_t NativeEconomyRuntime::state_hash() const {
             for (uint32_t person = 0; person < payload.person_count; ++person)
                 mix_u64(_family_expedition_person_handles[payload.person_begin + person]);
         }
+        const uint32_t cargo_begin = _family_expeditions.cargo_begin[i];
+        const uint32_t cargo_count = _family_expeditions.cargo_count[i];
+        mix_u64(cargo_count);
+        for (uint32_t c = 0; c < cargo_count; ++c) {
+            const FamilyExpeditionCargoLine &line =
+                _family_expedition_cargo[cargo_begin + c];
+            mix_u64(static_cast<uint32_t>(line.good_id));
+            mix_u64(static_cast<uint64_t>(line.quantity));
+            mix_u64(line.flags);
+        }
+        const uint32_t kit_begin = _family_expeditions.kit_building_begin[i];
+        const uint32_t kit_count = _family_expeditions.kit_building_count[i];
+        mix_u64(kit_count);
+        for (uint32_t k = 0; k < kit_count; ++k) {
+            const FamilyExpeditionKitBuilding &row =
+                _family_expedition_kit_buildings[kit_begin + k];
+            mix_u64(static_cast<uint32_t>(row.type_id));
+            mix_u64(static_cast<uint64_t>(row.count));
+        }
     }
     for (int32_t i = 0; i < static_cast<int32_t>(_persons.active.size()); ++i) {
         mix_u64(0x504552534f4eULL);
@@ -12027,6 +12073,8 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _family_expedition_route_costs.clear();
     _family_expedition_payloads.clear();
     _family_expedition_person_handles.clear();
+    _family_expedition_cargo.clear();
+    _family_expedition_kit_buildings.clear();
     _family_expedition_target_index.clear();
     _family_expedition_due_heap.clear();
     _colonization_receipts.clear();
@@ -12118,6 +12166,19 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _structural_funds_to_treasury = 0;
     _market_cell_offsets.clear();
     _market_cells.clear();
+    _profession_political_class_index.clear();
+    _political_class_ids.clear();
+    _political_class_hash = 0;
+    _class_opinion_buffers = {};
+    _class_opinion_committed_buffer = 0;
+    _class_opinion_revision = 0;
+    _class_opinion_cells_scanned = 0;
+    _class_opinion_slots_scanned = 0;
+    _class_opinion_zero_population_rows = 0;
+    _last_class_opinion_cells_scanned = 0;
+    _last_class_opinion_slots_scanned = 0;
+    _last_class_opinion_zero_population_rows = 0;
+    _class_opinion_ms = 0.0;
     _merchant_primary_slot.clear();
     _merchant_offsets.clear();
     _merchant_slots.clear();
@@ -12174,6 +12235,11 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _resource_current_generation = 0;
     _last_published_resource_deltas.clear();
     _epoch_cell_country.clear();
+    _epoch_cell_visible.clear();
+    _epoch_player_country_slot = -1;
+    _epoch_trade_vision_gated = false;
+    _trade_visibility_manual = false;
+    _trade_rejected_vision = 0;
     _epoch_country_technologies.clear();
     _epoch_country_building_available.clear();
     _epoch_country_support_yield.clear();

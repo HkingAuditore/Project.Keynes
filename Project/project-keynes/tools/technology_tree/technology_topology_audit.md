@@ -1,7 +1,7 @@
 # Technology Topology and Building Progression Audit
 
 - Nodes: `361`
-- Hard prerequisite edges: `397`
+- Hard prerequisite edges: `403`
 - Zero hard prerequisites: `62`
 - One hard prerequisite: `243`
 - Multiple hard prerequisites: `56`

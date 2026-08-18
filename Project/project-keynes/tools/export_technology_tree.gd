@@ -24,7 +24,7 @@ const EXPECTED_ERA_COUNT := 11
 const EXPECTED_DOMAIN_COUNT := 4
 const EXPECTED_MILESTONE_CANDIDATE_COUNT := 8
 const EXPECTED_MILESTONE_REQUIRED_COUNT := 4
-const MAX_VISUAL_EDGE_COUNT := 1500
+const MAX_VISUAL_EDGE_COUNT := 1800
 const VISUAL_EDGE_KINDS := ["hard", "alternative", "application", "branch", "milestone_candidate"]
 
 

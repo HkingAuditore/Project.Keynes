@@ -1,6 +1,6 @@
 ---
 name: project-keynes-game-flow-runtime
-description: Guide Project.Keynes formal startup, session routing, NewGameConfig, deterministic player start selection, one-cell player-country bootstrap, production starter settlements, PKSV complete saves, safe-boundary capture, and ordered restore. Use when changing the main menu, new/load game flow, GameFlowService, player spawn resources, StarterSettlementBootstrap, GameSaveCoordinator, SaveRepository, WorldClock persistence, environment persistence, PKCN/PKEC save ordering, autosave, pause/exit flow, or related tests and documentation.
+description: Guide Project.Keynes formal startup, session routing, NewGameConfig, deterministic player/foreign start selection, one-cell country bootstrap, production starter settlements, PKSV complete saves, safe-boundary capture, and ordered restore. Use when changing the main menu, new/load game flow, GameFlowService, country spawn resources, StarterSettlementBootstrap, GameSaveCoordinator, SaveRepository, WorldClock persistence, environment persistence, PKCN/PKEC save ordering, autosave, pause/exit flow, or related tests and documentation.
 ---
 
 # Project.Keynes Game Flow Runtime
@@ -44,9 +44,9 @@ Use this sequence without reordering:
 
 1. Physical/static world generation.
 2. Natural-resource generation and publication.
-3. Deterministic start selection and resource top-up.
-4. PKCN player-country bootstrap.
-5. Production starter-settlement packet construction.
+3. Deterministic player/foreign start selection and resource top-up.
+4. One-shot PKCN multi-country bootstrap with the player in slot 0.
+5. Aggregated production starter-settlement packet construction.
 6. PKEC economy bootstrap and conservation audit.
 7. Country then economy scheduler registration.
 8. UI, selection, and camera publication.
@@ -65,19 +65,36 @@ exists. Do not fall back to an arbitrary tile.
   precious metal to profile minimums. Do not invent fish, paddy, or clay on dry
   inland cells. After MapData writes, republish reserves and resource research
   signals. `evaluate_starter_route` must not apply top-ups.
-- Create stable country id `country.player` with exactly the start cell in its
-  territory CSR. Keep every other cell unowned.
+- Create stable country id `country.player` with exactly the player start cell.
+- Select `NewGameConfig v3`'s `0..12` foreign countries using pairwise
+  six-neighbor land distance, with disconnected land treated as infinitely far.
+- Use stable foreign IDs `country.foreign.NNN`, unique resource-backed names,
+  one start cell each, and keep all remaining cells unowned.
 
 ## Enforce the Settlement Contract
 
 Use `StarterSettlementBootstrap`; never call `EconomyTestBootstrap` from the
-formal path. Require exactly 20 people and exactly 20 self-operated job slots.
-Allow employee roles only on `placer_gold_working` (1 miner) and
-`surface_silver_working` (2 miners); do not prefill those slots. Other Stone-Age
-starter buildings must remain owner-only. Require the planner's closed regional
-bundle plus the matching precious-metal work site and `early_merchant_post`.
-Use EconomyFacade catalog helpers and fixed-point packets, provide the 15-day
-local food bridge, and retain population/money/goods conservation checks.
+formal path. Require exactly 20 people. Self-operated job slots follow the
+survival-core buildings and stay at or below 20 per opening country. Remaining
+people enter the unemployed pool for native job matching. Prefill owner operators
+on opening food buildings (`gathering_ground` and `stone_age_hunting_camp`) so the
+food plan runs; do not prefill knowledge, trade, or mine operators. Opening lots must remain operable from granted production/output/resource technologies; leftover construction-material techs (deadwood, bast, reed, turf) gate later construction, not standing food camps. Allow employee roles only on `placer_gold_working` (1 miner)
+and `surface_silver_working` (2 miners); do not prefill those slots. Other
+Stone-Age starter buildings must remain owner-only. Require gathering and hunting
+camps when local reserves exist, the matching precious-metal work site,
+`early_merchant_post`, and hide scraping only on cold highland. Do not prebuild any
+knowledge shed; reveal one geographically operable knowledge-practice technology,
+seed its construction materials, and deposit 10000 authored technology points in
+the treasury. Do not prebuild leftover fishing, deadwood, or bast camps. Aggregate all starts through EconomyFacade
+catalog helpers and fixed-point packets, provide the 15-day local food bridge, and retain population/money/goods
+conservation checks.
+Require one native founder family per capital, conserving the gathering ground's two occupied
+forager owners as its membership and ownership, and immediately promote exactly one of them as the
+named notable founder with a traceable owner job and building handle. Do not lower ordinary family
+formation thresholds to satisfy this opening contract.
+Keep the explicit v3 founder columns, but require native fallback recognition from a forced-named
+capital plus its actual gathering ground when a cached v2 packet omits them. Early-session repair is
+bounded to days 0..30, requires filled matching owner posts, and must be idempotent.
 
 ## Enforce PKSV Boundaries
 
@@ -110,8 +127,9 @@ Run at minimum:
 
 - Headless project startup.
 - `new_game_config_test.gd` and `save_repository_test.gd`.
-- `gameplay_start_runtime_test.gd` for start resources, freshwater, one-cell
-  ownership, 20 population, buildings, and production-bootstrap source.
+- `gameplay_start_runtime_test.gd` for deterministic starts, pairwise distance,
+  unique identity, one-cell ownership, 20 population per country, buildings,
+  and production-bootstrap source.
 - `environment_runtime_smoke_test.gd` for byte-exact native state round-trip.
 - `game_save_roundtrip_test.gd`, which hashes `explored_arr` across save/load.
   It runs as a real session via `PK_GAME_SAVE_ROUNDTRIP_TEST=1`, not with

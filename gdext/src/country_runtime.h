@@ -195,6 +195,7 @@ public:
     int32_t research_signal_evidence_count(int32_t country_slot,
                                            int32_t signal_id) const;
     int32_t country_slot_for_cell(int32_t cell) const;
+    int32_t starting_country_slot() const { return _starting_country_slot; }
     int64_t country_handle_for_cell(int32_t cell) const;
     bool valid_handle(int64_t handle) const;
     int64_t total_cash() const;
@@ -443,6 +444,7 @@ private:
     int32_t run_research_day(int64_t day_index);
     bool ensure_technology_effect_instance(int32_t slot, int32_t technology,
                                            int64_t day_index);
+    bool ack_chain_due(int64_t day_index) const;
 
     bool _configured = false;
     bool _bootstrapped = false;

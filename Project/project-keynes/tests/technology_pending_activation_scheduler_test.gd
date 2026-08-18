@@ -29,14 +29,17 @@ func _init() -> void:
 	var gathering := (compiled.technology_ids as PackedStringArray).find("tech.gathering")
 	var maize_identification := (compiled.technology_ids as PackedStringArray).find(
 		"tech.maize_identification")
+	var oral_memory := (compiled.technology_ids as PackedStringArray).find(
+		"tech.oral_memory_practice")
 	_expect("country bootstraps", bool(country.bootstrap(PackedByteArray([0]), {
 		"country_ids": PackedStringArray(["country.scheduler"]),
 		"country_names": PackedStringArray(["Scheduler"]),
 		"country_cash": PackedInt64Array([0]),
 		"territory_offsets": PackedInt32Array([0, 1]),
 		"territory_cells": PackedInt32Array([0]),
-		"technology_offsets": PackedInt32Array([0, 2]),
-		"technology_indices": PackedInt32Array([gathering, maize_identification]),
+		"technology_offsets": PackedInt32Array([0, 3]),
+		"technology_indices": PackedInt32Array([
+			gathering, maize_identification, oral_memory]),
 		"treasury_offsets": PackedInt32Array([0, 1]),
 		"treasury_good_indices": PackedInt32Array([points_good]),
 		"treasury_quantities": PackedInt64Array([10000000]),
@@ -85,14 +88,16 @@ func _run_stuck_pending_recovery(compiled: Dictionary) -> void:
 	effect.register_domain_adapters(modifiers, country, null)
 	var points_good := (compiled.good_ids as PackedStringArray).find("technology_points")
 	var hunting := (compiled.technology_ids as PackedStringArray).find("tech.hunting")
+	var oral_memory := (compiled.technology_ids as PackedStringArray).find(
+		"tech.oral_memory_practice")
 	_expect("recovery bootstraps", bool(country.bootstrap(PackedByteArray([0]), {
 		"country_ids": PackedStringArray(["country.recovery"]),
 		"country_names": PackedStringArray(["Recovery"]),
 		"country_cash": PackedInt64Array([0]),
 		"territory_offsets": PackedInt32Array([0, 1]),
 		"territory_cells": PackedInt32Array([0]),
-		"technology_offsets": PackedInt32Array([0, 1]),
-		"technology_indices": PackedInt32Array([hunting]),
+		"technology_offsets": PackedInt32Array([0, 2]),
+		"technology_indices": PackedInt32Array([hunting, oral_memory]),
 		"treasury_offsets": PackedInt32Array([0, 1]),
 		"treasury_good_indices": PackedInt32Array([points_good]),
 		"treasury_quantities": PackedInt64Array([10000000]),
@@ -129,14 +134,16 @@ func _run_missed_effect_nudge_recovery(compiled: Dictionary) -> void:
 	effect.register_domain_adapters(modifiers, country, null)
 	var points_good := (compiled.good_ids as PackedStringArray).find("technology_points")
 	var hunting := (compiled.technology_ids as PackedStringArray).find("tech.hunting")
+	var oral_memory := (compiled.technology_ids as PackedStringArray).find(
+		"tech.oral_memory_practice")
 	_expect("nudge bootstraps", bool(country.bootstrap(PackedByteArray([0]), {
 		"country_ids": PackedStringArray(["country.nudge"]),
 		"country_names": PackedStringArray(["Nudge"]),
 		"country_cash": PackedInt64Array([0]),
 		"territory_offsets": PackedInt32Array([0, 1]),
 		"territory_cells": PackedInt32Array([0]),
-		"technology_offsets": PackedInt32Array([0, 1]),
-		"technology_indices": PackedInt32Array([hunting]),
+		"technology_offsets": PackedInt32Array([0, 2]),
+		"technology_indices": PackedInt32Array([hunting, oral_memory]),
 		"treasury_offsets": PackedInt32Array([0, 1]),
 		"treasury_good_indices": PackedInt32Array([points_good]),
 		"treasury_quantities": PackedInt64Array([10000000]),
@@ -151,13 +158,9 @@ func _run_missed_effect_nudge_recovery(compiled: Dictionary) -> void:
 	var tech := (compiled.technology_ids as PackedStringArray).find("tech.animal_husbandry")
 	_expect("nudge completion stays pending",
 		int(country.research_snapshot(handle).technology_states[tech]) == 4)
-	for day in range(2, 7):
-		_expect("nudge country-only day %d" % day, bool(ext.run_country_slice(
-			{"day_index": day}).get("done", false)))
-	_expect("missed Effect mornings keep pending until nudged fire",
-		int(country.research_snapshot(handle).technology_states[tech]) == 4)
-	_run_production_day_no_drain(ext, 7)
-	_expect("nudged pending animal husbandry activates",
+	_expect("nudge country-only day 2", bool(ext.run_country_slice(
+		{"day_index": 2}).get("done", false)))
+	_expect("UNIQUE_SOURCE fallback activates after missed Effect ACK",
 		int(country.research_snapshot(handle).technology_states[tech]) == 5
 		and (country.snapshot(handle).technology_ids as PackedStringArray).has(
 			"tech.animal_husbandry"))
@@ -184,17 +187,24 @@ func _run_production_day(ext: Object, day: int) -> void:
 	# when a newly registered technology instance is still due.
 	if bool(country_slice.get("country_day_barrier", false)) \
 			or (ext.has_method("effect_should_run") and bool(ext.effect_should_run(day))):
-		_expect("effect drain day %d" % day, bool(ext.run_effect_daily(day).get("ok", false)))
-		ext.dispatch_effect_native_modifier()
-		if ext.has_method("dispatch_effect_native_country"):
-			ext.dispatch_effect_native_country()
-		if ext.has_method("dispatch_effect_native_economy"):
-			ext.dispatch_effect_native_economy()
-		ext.dispatch_effect_native_gameplay()
-		_expect("modifier drain day %d" % day, bool(ext.run_modifier_daily(day).get("ok", false)))
-		ext.ack_effect_native_modifier()
-		ext.run_gameplay_effects(day)
-		ext.ack_effect_native_gameplay()
+		for _pass in range(8):
+			if ext.has_method("effect_should_run") and not bool(ext.effect_should_run(day)) \
+					and ext.has_method("modifier_should_run") \
+					and not bool(ext.modifier_should_run(day)) \
+					and ext.has_method("gameplay_effect_should_run") \
+					and not bool(ext.gameplay_effect_should_run(day)):
+				break
+			_expect("effect drain day %d pass" % day, bool(ext.run_effect_daily(day).get("ok", false)))
+			ext.dispatch_effect_native_modifier()
+			if ext.has_method("dispatch_effect_native_country"):
+				ext.dispatch_effect_native_country()
+			if ext.has_method("dispatch_effect_native_economy"):
+				ext.dispatch_effect_native_economy()
+			ext.dispatch_effect_native_gameplay()
+			_expect("modifier drain day %d pass" % day, bool(ext.run_modifier_daily(day).get("ok", false)))
+			ext.ack_effect_native_modifier()
+			ext.run_gameplay_effects(day)
+			ext.ack_effect_native_gameplay()
 
 func _run_production_day_no_drain(ext: Object, day: int) -> void:
 	_expect("effect no-drain day %d" % day, bool(ext.run_effect_daily(day).get("ok", false)))

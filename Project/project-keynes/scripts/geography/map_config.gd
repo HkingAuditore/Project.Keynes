@@ -21,6 +21,10 @@ var river_count: int = 5
 # 随机种子（0 = 每次使用随机种子）
 var seed: int = 0
 
+# 地图来源：procedural 走 native full_pass；pkmap 读作者编译包并硬中止失败（无程序生成回退）
+var map_source: String = "procedural"
+var pkmap_path: String = ""
+
 # --- Systemic Ocean Currents 开关 ──────────────────────────────────────
 # 主开关：关闭时跳过 _apply_ocean_heat_transport_pass、海冰的洋流修正、
 # 海洋生物的 upwelling 放宽、F7 调试层。仅保留视觉洋流（旧行为）。

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Project.Keynes Tax Runtime"
+  short_description: "Maintain native tax policy, fiscal escrow, and behavior"
+  default_prompt: "Use $project-keynes-tax-runtime to implement or review Project.Keynes taxation, subsidies, fiscal settlement, and tax-aware behavior."

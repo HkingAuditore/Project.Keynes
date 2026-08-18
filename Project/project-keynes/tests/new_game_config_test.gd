@@ -66,6 +66,82 @@ func _init() -> void:
 	unknown.base.land_layout = "not-a-layout"
 	_expect("unknown layout becomes custom",
 		bool(unknown.validate().ok) and String(unknown.base.land_layout) == "custom")
+	_expect("default map source is procedural",
+		String(config.base.get("map_source", "")) == NewGameConfig.MAP_SOURCE_PROCEDURAL)
+	var pkmap_empty := NewGameConfig.new()
+	pkmap_empty.country.name = "ok"
+	pkmap_empty.base.initial_seed = 1
+	pkmap_empty.base.map_source = NewGameConfig.MAP_SOURCE_PKMAP
+	pkmap_empty.base.pkmap_path = ""
+	_expect("empty pkmap path rejected",
+		String(pkmap_empty.validate().code) == "pkmap_path_empty")
+	pkmap_empty.base.pkmap_path = "user://missing_authored_map.pkmap"
+	_expect("missing pkmap rejected",
+		String(pkmap_empty.validate().code) == "pkmap_missing")
+	var fixture_path := "user://new_game_config_fixture.pkmap"
+	var written: Dictionary = PkmapIO.write_pkmap(fixture_path, {
+		"width": 12,
+		"height": 10,
+		"n_cells": 120,
+		"sea_level": 0.44,
+		"seed": 42,
+	}, {})
+	_expect("fixture pkmap written", bool(written.get("ok", false)))
+	var pkmap_ok := NewGameConfig.new()
+	pkmap_ok.country.name = "ok"
+	pkmap_ok.base.initial_seed = 7
+	pkmap_ok.base.map_width = 60
+	pkmap_ok.base.map_height = 40
+	pkmap_ok.base.map_source = NewGameConfig.MAP_SOURCE_PKMAP
+	pkmap_ok.base.pkmap_path = ProjectSettings.globalize_path(fixture_path)
+	var pkmap_validation := pkmap_ok.validate()
+	_expect("valid pkmap accepted", bool(pkmap_validation.get("ok", false)))
+	_expect("pkmap stamps width", int(pkmap_ok.base.map_width) == 12)
+	_expect("pkmap stamps height", int(pkmap_ok.base.map_height) == 10)
+	_expect("pkmap stamps seed", int(pkmap_ok.base.initial_seed) == 42)
+	_expect("pkmap stamps sea level", is_equal_approx(float(pkmap_ok.base.sea_level), 0.44))
+	var pkmap_encoded := pkmap_ok.to_dictionary()
+	var pkmap_decoded := NewGameConfig.from_dictionary(pkmap_encoded)
+	_expect("pkmap round trip", bool(pkmap_decoded.ok)
+		and String((pkmap_decoded.config as NewGameConfig).base.get("map_source", ""))
+			== NewGameConfig.MAP_SOURCE_PKMAP
+		and String((pkmap_decoded.config as NewGameConfig).base.get("pkmap_path", ""))
+			== String(pkmap_ok.base.pkmap_path)
+		and int((pkmap_decoded.config as NewGameConfig).base.map_width) == 12)
+	var stale := pkmap_encoded.duplicate(true)
+	(stale.base as Dictionary).erase("map_source")
+	(stale.base as Dictionary).erase("pkmap_path")
+	(stale.base as Dictionary).map_width = 60
+	(stale.base as Dictionary).map_height = 40
+	(stale.base as Dictionary).initial_seed = 9
+	var stale_loaded := NewGameConfig.from_dictionary(stale)
+	_expect("legacy v3 without map_source is procedural", bool(stale_loaded.ok)
+		and String((stale_loaded.config as NewGameConfig).base.get("map_source", ""))
+			== NewGameConfig.MAP_SOURCE_PROCEDURAL
+		and String((stale_loaded.config as NewGameConfig).base.get("pkmap_path", "")) == "")
+	var bad_header := {
+		"width": 12,
+		"height": 10,
+		"n_cells": 120,
+		"sea_level": 0.5,
+		"seed": 3,
+		"generator_hash": "0".repeat(64),
+	}
+	var bad_path := "user://new_game_config_incompatible.pkmap"
+	var header_bytes := JSON.stringify(bad_header).to_utf8_buffer()
+	var bad_file := FileAccess.open(bad_path, FileAccess.WRITE)
+	bad_file.store_buffer("PKMP".to_ascii_buffer())
+	bad_file.store_32(1)
+	bad_file.store_32(header_bytes.size())
+	bad_file.store_buffer(header_bytes)
+	bad_file.close()
+	var pkmap_bad := NewGameConfig.new()
+	pkmap_bad.country.name = "ok"
+	pkmap_bad.base.initial_seed = 1
+	pkmap_bad.base.map_source = NewGameConfig.MAP_SOURCE_PKMAP
+	pkmap_bad.base.pkmap_path = ProjectSettings.globalize_path(bad_path)
+	_expect("incompatible pkmap rejected",
+		String(pkmap_bad.validate().code) == "pkmap_incompatible")
 	var setup_climate := NewGameConfig.derive_climate({
 		"continent_spacing": 55,
 		"island_amount": 50,

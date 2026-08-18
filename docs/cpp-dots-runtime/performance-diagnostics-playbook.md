@@ -55,6 +55,24 @@ fallback. A growing `due_queue_count` with zero
 `dormant_instances_scanned` is expected sparse scheduling, not a missed full
 scan.
 
+## Ideology 与 class-opinion diagnostics
+
+正式 perf CSV 的 `bd_ideology_*` 组同时记录
+`transition_poll_ms`、`command_apply_ms`、`active_progress_ms`、
+`last_slice_ms`、`max_slice_ms` 和确定性工作量。无 pending 的静止窗口必须满足
+`sparse_idea_scan_count=0`、`dormant_scan_count=0`；命令压力下
+`command_queue_resorts=0`、`command_queue_shift_steps=0`。联动结构命令的
+`synergy_candidates_visited` 增量应等于反向 CSR 关联候选，而不是 catalog
+synergy 总数。`class_snapshot_reads` 只能由结构命令或 explain 增长，不能在
+quiescent daily path 增长。
+
+`bd_class_opinion_*` 从 Economy COMMIT 报告累计和 last-scan 指标。正常提交时
+`last_cells_scanned` 等于稳定 `_market_cells` 行数，`last_slots_scanned` 等于该
+扫描访问的 active cohort 数；同一 COMMIT 不应出现第二次理念 cohort 扫描。
+先用这些计数器确认工作量，再解释 `ms`。门禁为 64 国 × 12 active 的 ideology
+p95 ≤ 0.35 ms；512 国压测每 continuation slice p95 ≤ 0.42 ms 且 native call
+≤ 1 ms；6400 格 class-opinion 聚合中位数目标 < 1 ms。
+
 2026-07-28 debug headless after（60x40、50 日、speed 50、seed 20260718）中，
 `modifier_daily` avg/median/p95/max 为 0.0844/0.0765/0.1110/0.1140 ms，50/50 为
 `MODIFIER_GRAPH` 且无 skip；总 SUS median/p95 为 7.4355/9.8540 ms。该次没有匹配的
@@ -1460,7 +1478,11 @@ stage 判断：
 正常冻结周期中 `epoch_active=true/commit_due=false` 时不得出现屏障；世界日应继续推进。
 只有 `commit_due=true && done=false` 才应看到 `economy_day_barrier`，此时模拟日不前进，
 real-frame pulse 会在 `sim_frame_budget_ms` 时间盒内连续执行 bounded ranges，令
-`continuation_slices` 增加并最终解除；耗尽预算后留到下一帧。周期边界出现全量尖峰时，检查
+`continuation_slices` 增加并最终解除；耗尽预算后留到下一帧。`country_day_barrier`
+只应由未完成的 Country 批次，或硬 ACK（Effect→Modifier→gameplay）仍到期且经济 catchup
+仍在进行时钉住日历。Trigger/Ideology 的 `should_run` 可以因为次日队列而长期为真，
+不得单独阻止经济 catchup。若 UI 可交互但日历不动，先看 `[clock/step]` 的 `barrier=`
+与节流的 `[sim/barrier]`（`hard_ack=` 只有 effect/modifier/gameplay）。周期边界出现全量尖峰时，检查
 是否误恢复“全 cohort 会计清零”或“无结构变化也重建 merchant CSR”。`building_commit` 返回的
 `next_stage=aggregate_publish` 不表示本片已执行 publish；只有下一片
 `executed_stage=aggregate_publish` 才计入发布耗时。

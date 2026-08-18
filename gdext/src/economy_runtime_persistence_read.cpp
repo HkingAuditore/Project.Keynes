@@ -636,6 +636,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         _family_expedition_route_costs.clear();
         _family_expedition_payloads.clear();
         _family_expedition_person_handles.clear();
+        _family_expedition_cargo.clear();
+        _family_expedition_kit_buildings.clear();
         _family_expedition_target_index.clear();
         _family_expedition_due_heap.clear();
         _colonization_receipts.clear();
@@ -1903,6 +1905,53 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 error = "save_family_expedition_population_mismatch";
                 return false;
             }
+            uint32_t cargo_count = 0;
+            uint32_t kit_count = 0;
+            _family_expeditions.cargo_begin.push_back(static_cast<uint32_t>(
+                _family_expedition_cargo.size()));
+            _family_expeditions.kit_building_begin.push_back(
+                static_cast<uint32_t>(_family_expedition_kit_buildings.size()));
+            if (schema >= 37) {
+                if (!read_le(bytes, cursor, cargo_count) ||
+                    cargo_count > 100000) {
+                    error = "save_family_expedition_cargo_invalid";
+                    return false;
+                }
+                for (uint32_t c = 0; c < cargo_count; ++c) {
+                    FamilyExpeditionCargoLine line;
+                    if (!read_le(bytes, cursor, line.good_id) ||
+                        !read_le(bytes, cursor, line.quantity) ||
+                        !read_le(bytes, cursor, line.flags) ||
+                        line.good_id < 0 || line.good_id >= _market.good_count ||
+                        line.quantity <= 0 ||
+                        (line.flags != EXPEDITION_CARGO_CONSTRUCTION &&
+                         line.flags != EXPEDITION_CARGO_BUFFER) ||
+                        active == 0) {
+                        error = "save_family_expedition_cargo_invalid";
+                        return false;
+                    }
+                    _family_expedition_cargo.push_back(line);
+                }
+                if (!read_le(bytes, cursor, kit_count) || kit_count > 100000) {
+                    error = "save_family_expedition_kit_invalid";
+                    return false;
+                }
+                for (uint32_t k = 0; k < kit_count; ++k) {
+                    FamilyExpeditionKitBuilding row;
+                    if (!read_le(bytes, cursor, row.type_id) ||
+                        !read_le(bytes, cursor, row.count) ||
+                        row.type_id < 0 ||
+                        row.type_id >= static_cast<int32_t>(
+                            _building_types.size()) ||
+                        row.count <= 0 || active == 0) {
+                        error = "save_family_expedition_kit_invalid";
+                        return false;
+                    }
+                    _family_expedition_kit_buildings.push_back(row);
+                }
+            }
+            _family_expeditions.cargo_count.push_back(cargo_count);
+            _family_expeditions.kit_building_count.push_back(kit_count);
             if (active != 0) {
                 ++_family_expeditions.active_count;
                 ++_restore.restored_family_expeditions;

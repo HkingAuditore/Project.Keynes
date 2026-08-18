@@ -157,6 +157,16 @@ bool NativeEconomyRuntime::building_available(int32_t cell, int32_t type_id,
         building_dependency_requirements_met(cell, type_id, frozen);
 }
 
+bool NativeEconomyRuntime::building_dependency_group_required_for_operation(
+        int32_t group) const {
+    // Catalog kind 1 = construction goods. Standing lots keep producing once
+    // their process/output/resource tags are known; leftover processing techs
+    // remain a construction and market-good gate.
+    return group < 0 ||
+        group >= static_cast<int32_t>(_building_dependency_kinds.size()) ||
+        _building_dependency_kinds[static_cast<size_t>(group)] != 1;
+}
+
 bool NativeEconomyRuntime::building_dependency_requirements_met(
         int32_t cell, int32_t type_id, bool frozen) const {
     if (type_id < 0 || type_id + 1 >= static_cast<int32_t>(
@@ -189,6 +199,8 @@ bool NativeEconomyRuntime::building_dependency_requirements_met(
             static_cast<size_t>(branch + 1)];
         bool groups_available = true;
         for (int32_t group = group_begin; group < group_end; ++group) {
+            if (!building_dependency_group_required_for_operation(group))
+                continue;
             const int32_t tag_begin = _building_dependency_tag_offsets[
                 static_cast<size_t>(group)];
             const int32_t tag_end = _building_dependency_tag_offsets[

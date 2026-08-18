@@ -29,6 +29,8 @@ var economic_sector_id: String = ""
 
 ## Construction is accepted atomically at an economy sample boundary. The
 ## fixed delay is intentionally small-scope: no builders or staged progress.
+## Empty construction goods are allowed only for zero-day service lots and for
+## `starter.construction` collectors that have no daily good inputs.
 @export_range(0, 36500, 1) var construction_days: int = 0
 @export var construction_good_ids: PackedStringArray = PackedStringArray()
 @export var construction_quantities: PackedInt64Array = PackedInt64Array()

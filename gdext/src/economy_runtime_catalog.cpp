@@ -1967,6 +1967,55 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
             _building_type_labor_signal_professions.end(), baked_keys.begin(),
             baked_keys.end());
     }
+    {
+        const std::vector<int32_t> semantic_offsets =
+            packed_i32(catalog, "building_semantic_tag_offsets");
+        const std::vector<std::string> semantic_tags =
+            packed_strings(catalog, "building_semantic_tags");
+        if (!semantic_offsets.empty()) {
+            if (semantic_offsets.size() != types + 1 ||
+                semantic_offsets.front() != 0 ||
+                !std::is_sorted(semantic_offsets.begin(), semantic_offsets.end()) ||
+                semantic_offsets.back() !=
+                    static_cast<int32_t>(semantic_tags.size())) {
+                error = "building_semantic_tag_column_size_mismatch";
+                return false;
+            }
+            for (size_t type = 0; type < types; ++type) {
+                uint32_t mask = _building_types[type].kit_role_mask;
+                for (int32_t tag = semantic_offsets[type];
+                     tag < semantic_offsets[type + 1]; ++tag) {
+                    const std::string &name = semantic_tags[static_cast<size_t>(tag)];
+                    if (name == "starter.trade")
+                        mask |= BUILDING_KIT_ROLE_TRADE;
+                    else if (name == "starter.construction")
+                        mask |= BUILDING_KIT_ROLE_CONSTRUCTION;
+                    else if (name == "starter.clothing_input")
+                        mask |= BUILDING_KIT_ROLE_CLOTHING_INPUT;
+                    else if (name == "starter.clothing")
+                        mask |= BUILDING_KIT_ROLE_CLOTHING;
+                }
+                _building_types[type].kit_role_mask = mask;
+            }
+        }
+        for (size_t type = 0; type < types; ++type) {
+            const BuildingType &building = _building_types[type];
+            bool survival_food = false;
+            for (int32_t output = building.output_begin;
+                 output < building.output_begin + building.output_count; ++output) {
+                const int32_t good = _building_outputs[output].good_id;
+                if (good >= 0 &&
+                    good < static_cast<int32_t>(_survival_food_good_mask.size()) &&
+                    _survival_food_good_mask[static_cast<size_t>(good)] != 0) {
+                    survival_food = true;
+                    break;
+                }
+            }
+            if (survival_food)
+                _building_types[type].kit_role_mask |=
+                    BUILDING_KIT_ROLE_SURVIVAL_FOOD;
+        }
+    }
     _investment_good_type_offsets.assign(_good_ids.size() + 1, 0);
     for (int32_t type_id = 0;
          type_id < static_cast<int32_t>(_building_types.size()); ++type_id) {

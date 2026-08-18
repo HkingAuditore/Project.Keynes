@@ -88,6 +88,27 @@ func _run() -> void:
 		String(ext.get_country_cell_summary(3).country_name) == "无主之地")
 	_expect("country treasury is sparse and scaled",
 		int(ext.get_country_treasury_snapshot(alpha.country_handle).quantities[0]) == 5000)
+	var oral := technologies.find("tech.oral_memory_practice")
+	var points := goods.find("technology_points")
+	var discover_ext := _new_ext(4)
+	discover_ext.configure_country(catalog, profile, 4, 99)
+	var discover_packet := packet.duplicate(true)
+	discover_packet["discovered_technology_offsets"] = PackedInt32Array([0, 1])
+	discover_packet["discovered_technology_indices"] = PackedInt32Array([oral])
+	discover_packet["treasury_offsets"] = PackedInt32Array([0, 1])
+	discover_packet["treasury_good_indices"] = PackedInt32Array([points])
+	discover_packet["treasury_quantities"] = PackedInt64Array([10000000])
+	_expect("discovered-but-not-completed bootstrap succeeds",
+		oral >= 0 and points >= 0
+		and bool(discover_ext.bootstrap_country(discover_packet, water).get("ok", false)))
+	var discover_country: Dictionary = discover_ext.get_country_cell_summary(0)
+	var discover_research: Dictionary = discover_ext.get_country_research_snapshot(
+		discover_country.country_handle)
+	_expect("bootstrap can reveal a knowledge practice without completing it",
+		int(discover_research.technology_states[oral]) == 2
+		and not (discover_ext.get_country_snapshot(discover_country.country_handle)
+			.technology_ids as PackedStringArray).has("tech.oral_memory_practice")
+		and int(discover_research.technology_points_stock) == 10000000)
 	var claim_ext := _new_ext(4)
 	claim_ext.configure_country(catalog, profile, 4, 1001)
 	claim_ext.bootstrap_country(packet, water)

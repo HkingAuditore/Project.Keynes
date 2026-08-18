@@ -328,7 +328,7 @@ func _register_providers() -> void:
 		_make_provider(&"pkef", 9, PackedStringArray(["pkef"]),
 			"_can_effect_provider", "_write_effect_provider",
 			"_restore_effect_provider"),
-		_make_provider(&"pkec", 36, PackedStringArray(["pkec"]),
+		_make_provider(&"pkec", 37, PackedStringArray(["pkec"]),
 			"_can_economy_provider", "_write_economy_provider", "_restore_economy_provider"),
 		_make_provider(&"pkgp", 1, PackedStringArray(["pkgp"]),
 			"_can_modifier_provider", "_write_gameplay_modifier_provider",
@@ -398,8 +398,9 @@ func _manifest_compatible(raw_manifest) -> bool:
 			# until after partial session restore.
 			schema_compatible = saved_schema == 11
 		elif provider_id == "pkec":
-			# v36 writes support EMA. v35 restores with EMA=1.
-			schema_compatible = saved_schema in [35, 36]
+			# v37 writes expedition cargo/kit. v36 restores with empty cargo.
+			# v35 restores with support EMA=1 and empty cargo.
+			schema_compatible = saved_schema in [35, 36, 37]
 		elif provider_id == "pktr":
 			schema_compatible = saved_schema == 5
 		elif provider_id == "journal":

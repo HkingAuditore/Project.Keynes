@@ -286,14 +286,26 @@ func _assert_networked_crop_and_resource_gates(catalog: Dictionary) -> void:
 	assert(file != null)
 	var parsed = JSON.parse_string(file.get_as_text())
 	assert(parsed is Dictionary)
-	var silver_collection_found := false
+	var identification_first := {
+		"tech.surface_silver_collection": "tech.silver_vein_identification",
+		"tech.gold_panning": "tech.gold_placer_identification",
+		"tech.stone_knapping": "tech.flint_identification",
+		"tech.earth_building": "tech.clay_identification",
+		"tech.wild_tuber_collection": "tech.potato_identification",
+		"tech.wild_flax_collection": "tech.flax_identification",
+		"tech.reed_harvesting": "tech.reed_identification",
+	}
+	var identification_first_seen := {}
 	for node_value in (parsed as Dictionary).get("nodes", []):
 		var node: Dictionary = node_value
-		if String(node.get("id", "")) == "tech.surface_silver_collection":
-			silver_collection_found = true
-			assert("tech.silver_vein_identification" in node.get(
-				"hard_prerequisite_ids", []),
-				"surface silver collection bypasses vein identification")
+		var node_id := String(node.get("id", ""))
+		if identification_first.has(node_id):
+			identification_first_seen[node_id] = true
+			var required_identification := String(identification_first[node_id])
+			assert(required_identification in node.get("hard_prerequisite_ids", []),
+				"%s bypasses %s" % [node_id, required_identification])
+			assert((node.get("reveal_condition", {}) as Dictionary).is_empty(),
+				"%s keeps an object-witness reveal" % node_id)
 		if String(node.get("node_role", "")) != "identification":
 			continue
 		var identification_id := String(node.get("id", ""))
@@ -301,7 +313,7 @@ func _assert_networked_crop_and_resource_gates(catalog: Dictionary) -> void:
 			assert(int(binding.kind) != 2,
 				"identification directly constructs production: %s -> %s" % [
 					identification_id, binding.id])
-	assert(silver_collection_found)
+	assert(identification_first_seen.size() == identification_first.size())
 	_assert_technology_has_binding(catalog, "tech.wild_maize_collection", 2,
 		"wild_maize_stand")
 	for binding in _technology_bindings(catalog, "tech.maize_propagation"):

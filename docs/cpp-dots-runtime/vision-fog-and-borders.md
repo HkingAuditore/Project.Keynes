@@ -29,6 +29,7 @@ flowchart LR
   lut --> wm["world_map.gdshader<br/>灰化 + 可选早退<br/>零新增采样"]
 lut --> wx["weather overlay / curtain<br/>按可见性屏蔽"]
   vis --> ui["Inspector 页签门控"]
+  vis --> trade["Economy sample freeze<br/>玩家参与贸易端点"]
   vis --> save["PKFG 存 explored"]
 ```
 
@@ -554,6 +555,15 @@ ribbon 的内边界截断。
 
 `InspectorPanel` 用页签集合的**签名比对**决定是否重建页签栏。早期的一次性
 `_tabs_ready` 闩锁在这里是错的：同一个面板会在三态之间切换，页签集合会变。
+
+## 玩家贸易门控
+
+`fog_solved` 之前仍按全知处理，贸易不读 `visible`。解算之后，经济周期在 sample
+日从 `MapData.visible_arr` 冻结一份 mask（与殖民报价同一真源，不写回视野）。
+玩家开局国（`starting_country_slot`，生产路径为 slot 0）作为源或目的时，两端都
+必须当前 `FOG_VISIBLE`；AI↔AI 不受玩家视野限制。已发运订单仍按出发契约完成。
+未解算、调试关迷雾（`mark_all_visible`）或测试未调用
+`capture_economy_trade_visibility(..., true)` 时保持旧行为。
 
 ## 存档
 

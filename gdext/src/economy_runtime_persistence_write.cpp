@@ -914,6 +914,28 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                         _family_expedition_person_handles[
                             lane.person_begin + person]);
             }
+            const uint32_t cargo_count = _family_expeditions.active[i] != 0
+                ? _family_expeditions.cargo_count[i] : 0;
+            const uint32_t kit_count = _family_expeditions.active[i] != 0
+                ? _family_expeditions.kit_building_count[i] : 0;
+            append_le<uint32_t>(record, cargo_count);
+            const uint32_t cargo_begin = _family_expeditions.cargo_begin[i];
+            for (uint32_t c = 0; c < cargo_count; ++c) {
+                const FamilyExpeditionCargoLine &line =
+                    _family_expedition_cargo[cargo_begin + c];
+                append_le<int32_t>(record, line.good_id);
+                append_le<int64_t>(record, line.quantity);
+                append_le<uint8_t>(record, line.flags);
+            }
+            append_le<uint32_t>(record, kit_count);
+            const uint32_t kit_begin =
+                _family_expeditions.kit_building_begin[i];
+            for (uint32_t k = 0; k < kit_count; ++k) {
+                const FamilyExpeditionKitBuilding &row =
+                    _family_expedition_kit_buildings[kit_begin + k];
+                append_le<int32_t>(record, row.type_id);
+                append_le<int64_t>(record, row.count);
+            }
             if (!payload.empty() && payload.size() + record.size() + 16U >
                     static_cast<size_t>(budget)) break;
             payload.insert(payload.end(), record.begin(), record.end());

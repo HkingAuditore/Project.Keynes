@@ -75,27 +75,6 @@ Automatic N is `ceil(active_cohorts / target)`, clamped to max-cycle days. Fixed
 deadline at the 10M extreme and then performs bounded same-day catchup. Use auto mode for extreme
 fast-forward performance; use short fixed N for higher simulation fidelity.
 
-## 3b. Worker thread safety invariants
-
-The market fan-out (`pk_economy_markets`) runs `process_market_cell` on WorkerThreadPool threads.
-Anything reachable from there must respect these rules:
-
-- **Per-cell writes are safe.** Cells are partitioned one-per-market, so `_staging_cells[cell]` and
-  `_staging_cell_generation[cell]` never alias across tasks.
-- **Shared containers must never be grown.** Two tasks calling `push_back` on one `std::vector`
-  reallocate concurrently and free the same buffer twice. This corrupts the process heap and crashes
-  minutes later somewhere unrelated. Use a per-task landing buffer and merge after the join, the way
-  `_staging_touched_task_scratch` and `_audit_task_totals_scratch` do.
-- **Per-thread state uses `thread_local` sinks.** `_market_result_sink`, `_production_result_sink`
-  and `_staging_touched_sink` follow this pattern. A sink must be *restored*, not cleared, on exit:
-  `parallel_for_range` may execute tasks on the calling thread.
-- **Size containers before the parallel region.** Lazy `assign`/`resize` inside a worker is itself a
-  race. `stage_cell_summary` keeps a lazy resize only as a scalar-path fallback.
-
-Regression check: run the same seed with `worker_mode=OFF` and `worker_mode=ON`. A defect here is
-probabilistic, so use several seeds. See `docs/native-crash-diagnosis.md` for the page-heap workflow
-that turns such corruption into a deterministic, symbolized stack.
-
 ## 4. Report contract
 
 Preserve general stage/progress/cursor/work fields and at least:

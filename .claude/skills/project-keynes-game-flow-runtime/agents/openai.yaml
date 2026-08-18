@@ -1,0 +1,4 @@
+interface:
+  display_name: "Project Keynes Game Flow Runtime"
+  short_description: "Formal game flow, player starts, and PKSV saves"
+  default_prompt: "Use $project-keynes-game-flow-runtime to implement or review Project.Keynes startup, deterministic player bootstrap, or complete save/load behavior."

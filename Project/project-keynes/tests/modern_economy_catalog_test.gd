@@ -169,6 +169,28 @@ func _scale_i64(values: PackedInt64Array, factor: int) -> PackedInt64Array:
 		out.append(int(value) * factor)
 	return out
 
+
+func _audit_zero_cost_starter_construction() -> void:
+	var zero_cost_ids := PackedStringArray([
+		"deadwood_gathering_camp", "earth_digging_pit", "reed_cutting_camp",
+		"turf_cutting_ground", "rubble_stone_working",
+	])
+	for building_id in zero_cost_ids:
+		var profile: BuildingProfile = load(
+			"res://data/economy/buildings/%s.tres" % building_id)
+		_expect("stone-age construction collector is a zero-bill lot: %s" % building_id,
+			profile != null
+			and EconomyCatalogScript.allows_zero_cost_construction(profile)
+			and profile.construction_good_ids.is_empty()
+			and profile.construction_quantities.is_empty())
+	for building_id in ["gathering_ground", "stone_age_hunting_camp",
+			"bast_fiber_camp", "timber_collector", "stone_collector", "adobe_yard"]:
+		var profile: BuildingProfile = load(
+			"res://data/economy/buildings/%s.tres" % building_id)
+		_expect("later or food buildings keep an explicit construction bill: %s" %
+			building_id, profile != null and not profile.construction_good_ids.is_empty()
+			and not EconomyCatalogScript.allows_zero_cost_construction(profile))
+
 func _audit(catalog: Dictionary) -> void:
 	var goods: PackedStringArray = catalog.good_ids
 	var buildings: PackedStringArray = catalog.building_type_ids
@@ -178,6 +200,7 @@ func _audit(catalog: Dictionary) -> void:
 	_audit_knowledge_building_owners(catalog, buildings, professions)
 	_audit_starter_knowledge_routes()
 	_audit_two_owner_early_buildings()
+	_audit_zero_cost_starter_construction()
 	_expect("network economy catalog has 130 goods", goods.size() == 130)
 	_expect("network economy has 350 production methods", buildings.size() == 350)
 	_expect("45 labor, institutional and research professions", professions.size() == 45)

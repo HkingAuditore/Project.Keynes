@@ -502,11 +502,631 @@
 			}
 		},
 		{
+			"id": "tech.oral_memory_practice",
+			"display_name": "口述记忆实践",
+			"era_id": "stone",
+			"domain_id": "society",
+			"cost_points": 3000.0,
+			"layout_order": 64.0,
+			"network_role": "backbone",
+			"anchor_kind": "backbone",
+			"node_role": "handling",
+			"effect_profile": "starter",
+			"secondary_route_tags": [
+				"route.institution.oral"
+			],
+			"hard_prerequisite_ids": [],
+			"reveal_condition": {
+
+			},
+			"is_milestone": false,
+			"is_era_key": false,
+			"is_starting": false,
+			"is_starter_eligible": false,
+			"starter_capability_tags": [
+				"starter.knowledge"
+			],
+			"modifier_terms": [],
+			"expected_bindings": [
+				{
+					"kind": 1.0,
+					"id": "technology_points"
+				},
+				{
+					"kind": 2.0,
+					"id": "oral_memory_circle"
+				}
+			],
+			"content_effects": [
+				{
+					"kind": "good",
+					"id": "technology_points",
+					"binding_kind": 1.0,
+					"subject": "good.technology_points",
+					"attribute": "production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "GoodProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "科技值"
+				},
+				{
+					"kind": "building",
+					"id": "oral_memory_circle",
+					"binding_kind": 2.0,
+					"subject": "building.oral_memory_circle",
+					"attribute": "construction_and_production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "BuildingProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "口述记忆圈"
+				}
+			],
+			"effect_summary": "解锁物资：科技值；解锁建筑：口述记忆圈",
+			"opportunity_cost": "占用通用研究预算，延后同代专业路线锚点",
+			"application_target_ids": [],
+			"terminal_reason": "口述记忆实践是观察、科学与计算在当前目录中的应用端点，其终点效果由technology_points、oral_memory_circle消费",
+			"branch_family_id": "backbone.knowledge_computation",
+			"era_entry_milestone_id": "",
+			"reveal_category": "general_knowledge",
+			"reveal_summary": "由开局地理求解器揭示，不以通用生存资源或开局视野自动发现",
+			"branch_successor_ids": [],
+			"prerequisite_rationales": [],
+			"branch_successor_rationales": [],
+			"application_target_rationales": [],
+			"effect_design_review": {
+				"status": "reviewed",
+				"numeric_effect_policy": "explicit_only",
+				"non_numeric_consumers_allowed": true
+			},
+			"support_buildings": [],
+			"research_routes": [],
+			"route_exemption_reason": "",
+			"reveal_template_reason": "石器时代节点“口述记忆实践”的对象与处理阶段不同",
+			"topology_review": {
+				"role": "origin",
+				"rationale": "该节点是本路线的知识起点，不以其他科技替代对象发现或基础实践。",
+				"expected_hard_family_ids": []
+			},
+			"building_unlock_review": {
+				"policy": "single",
+				"rationale": "本科技只直接呈现一个代表性建筑或生产方式，其余能力通过后续科技递进。"
+			}
+		},
+		{
+			"id": "tech.phenology_observation",
+			"display_name": "物候观察实践",
+			"era_id": "stone",
+			"domain_id": "science",
+			"cost_points": 3000.0,
+			"layout_order": 65.0,
+			"network_role": "branch",
+			"anchor_kind": "branch",
+			"node_role": "handling",
+			"effect_profile": "starter",
+			"secondary_route_tags": [
+				"route.institution.observation"
+			],
+			"hard_prerequisite_ids": [],
+			"reveal_condition": {
+
+			},
+			"is_milestone": false,
+			"is_era_key": false,
+			"is_starting": false,
+			"is_starter_eligible": false,
+			"starter_capability_tags": [
+				"starter.knowledge"
+			],
+			"modifier_terms": [],
+			"expected_bindings": [
+				{
+					"kind": 1.0,
+					"id": "technology_points"
+				},
+				{
+					"kind": 2.0,
+					"id": "seasonal_observation_shelter"
+				}
+			],
+			"content_effects": [
+				{
+					"kind": "good",
+					"id": "technology_points",
+					"binding_kind": 1.0,
+					"subject": "good.technology_points",
+					"attribute": "production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "GoodProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "科技值"
+				},
+				{
+					"kind": "building",
+					"id": "seasonal_observation_shelter",
+					"binding_kind": 2.0,
+					"subject": "building.seasonal_observation_shelter",
+					"attribute": "construction_and_production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "BuildingProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "物候观察棚"
+				}
+			],
+			"effect_summary": "解锁物资：科技值；解锁建筑：物候观察棚",
+			"opportunity_cost": "占用通用研究预算，延后同代专业路线锚点",
+			"application_target_ids": [],
+			"terminal_reason": "物候观察实践是自然史、生物学与育种科学在当前目录中的应用端点，其终点效果由technology_points、seasonal_observation_shelter消费",
+			"branch_family_id": "branch.natural_history",
+			"era_entry_milestone_id": "",
+			"reveal_category": "environment_observation",
+			"reveal_summary": "由开局地理求解器揭示，不以通用生存资源或开局视野自动发现",
+			"branch_successor_ids": [],
+			"prerequisite_rationales": [],
+			"branch_successor_rationales": [],
+			"application_target_rationales": [],
+			"effect_design_review": {
+				"status": "reviewed",
+				"numeric_effect_policy": "explicit_only",
+				"non_numeric_consumers_allowed": true
+			},
+			"support_buildings": [],
+			"research_routes": [],
+			"route_exemption_reason": "",
+			"reveal_template_reason": "石器时代节点“物候观察实践”的对象与处理阶段不同",
+			"topology_review": {
+				"role": "origin",
+				"rationale": "该节点是本路线的知识起点，不以其他科技替代对象发现或基础实践。",
+				"expected_hard_family_ids": []
+			},
+			"building_unlock_review": {
+				"policy": "single",
+				"rationale": "本科技只直接呈现一个代表性建筑或生产方式，其余能力通过后续科技递进。"
+			}
+		},
+		{
+			"id": "tech.flood_calendar_practice",
+			"display_name": "洪水历法实践",
+			"era_id": "stone",
+			"domain_id": "science",
+			"cost_points": 3000.0,
+			"layout_order": 66.0,
+			"network_role": "branch",
+			"anchor_kind": "branch",
+			"node_role": "handling",
+			"effect_profile": "starter",
+			"secondary_route_tags": [
+				"route.institution.calendar",
+				"route.geography.river"
+			],
+			"hard_prerequisite_ids": [],
+			"reveal_condition": {
+
+			},
+			"is_milestone": false,
+			"is_era_key": false,
+			"is_starting": false,
+			"is_starter_eligible": false,
+			"starter_capability_tags": [
+				"starter.knowledge"
+			],
+			"modifier_terms": [],
+			"expected_bindings": [
+				{
+					"kind": 1.0,
+					"id": "technology_points"
+				},
+				{
+					"kind": 2.0,
+					"id": "flood_calendar_shrine"
+				}
+			],
+			"content_effects": [
+				{
+					"kind": "good",
+					"id": "technology_points",
+					"binding_kind": 1.0,
+					"subject": "good.technology_points",
+					"attribute": "production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "GoodProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "科技值"
+				},
+				{
+					"kind": "building",
+					"id": "flood_calendar_shrine",
+					"binding_kind": 2.0,
+					"subject": "building.flood_calendar_shrine",
+					"attribute": "construction_and_production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "BuildingProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "洪水历法祭所"
+				}
+			],
+			"effect_summary": "解锁物资：科技值；解锁建筑：洪水历法祭所",
+			"opportunity_cost": "占用通用研究预算，延后同代专业路线锚点",
+			"application_target_ids": [],
+			"terminal_reason": "",
+			"branch_family_id": "branch.measurement_instruments",
+			"era_entry_milestone_id": "",
+			"reveal_category": "environment_observation",
+			"reveal_summary": "由开局地理求解器揭示，不以通用生存资源或开局视野自动发现",
+			"branch_successor_ids": [],
+			"prerequisite_rationales": [],
+			"branch_successor_rationales": [],
+			"application_target_rationales": [],
+			"effect_design_review": {
+				"status": "reviewed",
+				"numeric_effect_policy": "explicit_only",
+				"non_numeric_consumers_allowed": true
+			},
+			"support_buildings": [],
+			"research_routes": [],
+			"route_exemption_reason": "",
+			"reveal_template_reason": "石器时代节点“洪水历法实践”的对象与处理阶段不同",
+			"topology_review": {
+				"role": "origin",
+				"rationale": "该节点是本路线的知识起点，不以其他科技替代对象发现或基础实践。",
+				"expected_hard_family_ids": []
+			},
+			"building_unlock_review": {
+				"policy": "single",
+				"rationale": "本科技只直接呈现一个代表性建筑或生产方式，其余能力通过后续科技递进。"
+			}
+		},
+		{
+			"id": "tech.pastoral_route_memory",
+			"display_name": "牧群路线记忆",
+			"era_id": "stone",
+			"domain_id": "society",
+			"cost_points": 3000.0,
+			"layout_order": 67.0,
+			"network_role": "branch",
+			"anchor_kind": "branch",
+			"node_role": "handling",
+			"effect_profile": "starter",
+			"secondary_route_tags": [
+				"route.ecology.pasture",
+				"route.institution.oral"
+			],
+			"hard_prerequisite_ids": [],
+			"reveal_condition": {
+
+			},
+			"is_milestone": false,
+			"is_era_key": false,
+			"is_starting": false,
+			"is_starter_eligible": false,
+			"starter_capability_tags": [
+				"starter.knowledge"
+			],
+			"modifier_terms": [],
+			"expected_bindings": [
+				{
+					"kind": 1.0,
+					"id": "technology_points"
+				},
+				{
+					"kind": 2.0,
+					"id": "pastoral_council_tent"
+				}
+			],
+			"content_effects": [
+				{
+					"kind": "good",
+					"id": "technology_points",
+					"binding_kind": 1.0,
+					"subject": "good.technology_points",
+					"attribute": "production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "GoodProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "科技值"
+				},
+				{
+					"kind": "building",
+					"id": "pastoral_council_tent",
+					"binding_kind": 2.0,
+					"subject": "building.pastoral_council_tent",
+					"attribute": "construction_and_production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "BuildingProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "牧群路线议事帐"
+				}
+			],
+			"effect_summary": "解锁物资：科技值；解锁建筑：牧群路线议事帐",
+			"opportunity_cost": "转入该路线需补齐历史锚点；时代 1 后的生产方式依赖专用资本、岗位或地理条件",
+			"application_target_ids": [],
+			"terminal_reason": "牧群路线记忆是草原、马匹与畜牧业在当前目录中的应用端点，其终点效果由technology_points、pastoral_council_tent消费",
+			"branch_family_id": "branch.pastoral_livestock",
+			"era_entry_milestone_id": "",
+			"reveal_category": "environment_observation",
+			"reveal_summary": "由开局地理求解器揭示，不以通用生存资源或开局视野自动发现",
+			"branch_successor_ids": [],
+			"prerequisite_rationales": [],
+			"branch_successor_rationales": [],
+			"application_target_rationales": [],
+			"effect_design_review": {
+				"status": "reviewed",
+				"numeric_effect_policy": "explicit_only",
+				"non_numeric_consumers_allowed": true
+			},
+			"support_buildings": [],
+			"research_routes": [],
+			"route_exemption_reason": "",
+			"reveal_template_reason": "石器时代节点“牧群路线记忆”的对象与处理阶段不同",
+			"topology_review": {
+				"role": "origin",
+				"rationale": "该节点是本路线的知识起点，不以其他科技替代对象发现或基础实践。",
+				"expected_hard_family_ids": []
+			},
+			"building_unlock_review": {
+				"policy": "single",
+				"rationale": "本科技只直接呈现一个代表性建筑或生产方式，其余能力通过后续科技递进。"
+			}
+		},
+		{
+			"id": "tech.tide_observation",
+			"display_name": "潮汐与航向记忆",
+			"era_id": "stone",
+			"domain_id": "science",
+			"cost_points": 3000.0,
+			"layout_order": 68.0,
+			"network_role": "branch",
+			"anchor_kind": "branch",
+			"node_role": "handling",
+			"effect_profile": "starter",
+			"secondary_route_tags": [
+				"route.geography.coast",
+				"route.institution.observation"
+			],
+			"hard_prerequisite_ids": [],
+			"reveal_condition": {
+
+			},
+			"is_milestone": false,
+			"is_era_key": false,
+			"is_starting": false,
+			"is_starter_eligible": false,
+			"starter_capability_tags": [
+				"starter.knowledge"
+			],
+			"modifier_terms": [],
+			"expected_bindings": [
+				{
+					"kind": 1.0,
+					"id": "technology_points"
+				},
+				{
+					"kind": 2.0,
+					"id": "tide_observation_hut"
+				}
+			],
+			"content_effects": [
+				{
+					"kind": "good",
+					"id": "technology_points",
+					"binding_kind": 1.0,
+					"subject": "good.technology_points",
+					"attribute": "production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "GoodProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "科技值"
+				},
+				{
+					"kind": "building",
+					"id": "tide_observation_hut",
+					"binding_kind": 2.0,
+					"subject": "building.tide_observation_hut",
+					"attribute": "construction_and_production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "BuildingProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "潮汐观察屋"
+				}
+			],
+			"effect_summary": "解锁物资：科技值；解锁建筑：潮汐观察屋",
+			"opportunity_cost": "转入该路线需补齐历史锚点；时代 1 后的生产方式依赖专用资本、岗位或地理条件",
+			"application_target_ids": [],
+			"terminal_reason": "潮汐与航向记忆是渔业、航海、港口与海运物流在当前目录中的应用端点，其终点效果由technology_points、tide_observation_hut消费",
+			"branch_family_id": "branch.maritime_logistics",
+			"era_entry_milestone_id": "",
+			"reveal_category": "environment_observation",
+			"reveal_summary": "由开局地理求解器揭示，不以通用生存资源或开局视野自动发现",
+			"branch_successor_ids": [],
+			"prerequisite_rationales": [],
+			"branch_successor_rationales": [],
+			"application_target_rationales": [],
+			"effect_design_review": {
+				"status": "reviewed",
+				"numeric_effect_policy": "explicit_only",
+				"non_numeric_consumers_allowed": true
+			},
+			"support_buildings": [],
+			"research_routes": [],
+			"route_exemption_reason": "",
+			"reveal_template_reason": "石器时代节点“潮汐与航向记忆”的对象与处理阶段不同",
+			"topology_review": {
+				"role": "origin",
+				"rationale": "该节点是本路线的知识起点，不以其他科技替代对象发现或基础实践。",
+				"expected_hard_family_ids": []
+			},
+			"building_unlock_review": {
+				"policy": "single",
+				"rationale": "本科技只直接呈现一个代表性建筑或生产方式，其余能力通过后续科技递进。"
+			}
+		},
+		{
+			"id": "tech.flint_identification",
+			"display_name": "燧石辨识",
+			"era_id": "stone",
+			"domain_id": "science",
+			"cost_points": 3900.0,
+			"layout_order": 72.0,
+			"network_role": "branch",
+			"anchor_kind": "branch",
+			"node_role": "identification",
+			"effect_profile": "observation",
+			"secondary_route_tags": [
+				"route.material.stone"
+			],
+			"hard_prerequisite_ids": [],
+			"reveal_condition": {
+				"kind": 1.0,
+				"id": "resource.flint",
+				"value": 1.0
+			},
+			"is_milestone": false,
+			"is_era_key": false,
+			"is_starting": false,
+			"is_starter_eligible": false,
+			"starter_capability_tags": [],
+			"modifier_terms": [
+				{
+					"stat": "country.output.family.construction_methods_factor",
+					"operation": 0.0,
+					"value": 0.25,
+					"subject_kind": "building_family",
+					"subject_id": "construction_methods",
+					"subject_display_name": "营造方法",
+					"effect_class": "生产家族产出",
+					"effect_rationale": "材料识别与成形工艺提高建材和营造方法产出。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				}
+			],
+			"expected_bindings": [
+				{
+					"kind": 1.0,
+					"id": "flint"
+				},
+				{
+					"kind": 3.0,
+					"id": "flint"
+				}
+			],
+			"content_effects": [
+				{
+					"kind": "good",
+					"id": "flint",
+					"binding_kind": 1.0,
+					"subject": "good.flint",
+					"attribute": "production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "GoodProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "燧石原料"
+				},
+				{
+					"kind": "resource",
+					"id": "flint",
+					"binding_kind": 3.0,
+					"subject": "resource.flint",
+					"attribute": "local_resource_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "ResourceProfile.discovery_technology_tags",
+					"status": "existing_binding",
+					"display_name": "燧石"
+				}
+			],
+			"effect_summary": "解锁物资：燧石原料；可利用资源：燧石；营造方法产出 +25%；作为必要支撑：石器打制工坊、改良燧石矿坑",
+			"opportunity_cost": "转入该路线需补齐历史锚点；时代 1 后的生产方式依赖专用资本、岗位或地理条件",
+			"application_target_ids": [],
+			"terminal_reason": "燧石辨识是黏土、石材、玻璃、建筑与公共工程在当前目录中的应用端点，其终点效果由flint、flint消费",
+			"branch_family_id": "branch.construction_materials",
+			"era_entry_milestone_id": "",
+			"reveal_category": "environment_observation",
+			"reveal_summary": "燧石辨识由首次资源、生物或地貌目击揭示",
+			"branch_successor_ids": [],
+			"prerequisite_rationales": [],
+			"branch_successor_rationales": [],
+			"application_target_rationales": [],
+			"effect_design_review": {
+				"status": "reviewed",
+				"numeric_effect_policy": "explicit_only",
+				"non_numeric_consumers_allowed": true
+			},
+			"support_buildings": [
+				{
+					"id": "knapping_workshop",
+					"name": "石器打制工坊"
+				},
+				{
+					"id": "method_flint_quarry_r1",
+					"name": "改良燧石矿坑"
+				}
+			],
+			"research_routes": [
+				{
+					"id": "research_route.flint_identification.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
+			"route_exemption_reason": "",
+			"reveal_template_reason": "石器时代节点“燧石辨识”的对象与处理阶段不同",
+			"topology_review": {
+				"role": "origin",
+				"rationale": "该节点是本路线的知识起点，不以其他科技替代对象发现或基础实践。",
+				"expected_hard_family_ids": []
+			},
+			"building_unlock_review": {
+				"policy": "support_only",
+				"rationale": "本科技不直接呈现新建筑；它作为其他生产方式的知识、材料或制度支撑。"
+			}
+		},
+		{
 			"id": "tech.stone_knapping",
 			"display_name": "打制石器",
 			"era_id": "stone",
 			"domain_id": "engineering",
-			"cost_points": 0.0,
+			"cost_points": 3000.0,
 			"layout_order": 2.0,
 			"network_role": "branch",
 			"anchor_kind": "branch",
@@ -515,26 +1135,16 @@
 			"secondary_route_tags": [
 				"route.material.stone"
 			],
-			"hard_prerequisite_ids": [],
+			"hard_prerequisite_ids": [
+				"tech.flint_identification"
+			],
 			"reveal_condition": {
-				"operator": 2.0,
-				"children": [
-					{
-						"kind": 1.0,
-						"id": "resource.flint",
-						"value": 1.0
-					},
-					{
-						"kind": 1.0,
-						"id": "resource.stone",
-						"value": 1.0
-					}
-				]
+
 			},
 			"is_milestone": false,
 			"is_era_key": false,
-			"is_starting": true,
-			"is_starter_eligible": true,
+			"is_starting": false,
+			"is_starter_eligible": false,
 			"starter_capability_tags": [
 				"starter.construction"
 			],
@@ -597,10 +1207,12 @@
 			"terminal_reason": "",
 			"branch_family_id": "branch.construction_materials",
 			"era_entry_milestone_id": "",
-			"reveal_category": "environment_observation",
-			"reveal_summary": "打制石器由首次资源、生物或地貌目击揭示",
+			"reveal_category": "general_knowledge",
+			"reveal_summary": "在掌握核心知识后，打制石器作为后续处理问题被揭示",
 			"branch_successor_ids": [],
-			"prerequisite_rationales": [],
+			"prerequisite_rationales": [
+				"燧石辨识提供土石、陶瓷、玻璃和工程构件制造能力中的识别与证据标准，打制石器直接使用这一能力完成其工艺或组织设计"
+			],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
 			"effect_design_review": {
@@ -626,13 +1238,52 @@
 					"name": "毛石整理场"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.stone_knapping.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“打制石器”的对象与处理阶段不同",
 			"topology_review": {
-				"role": "origin",
-				"rationale": "该节点是本路线的知识起点，不以其他科技替代对象发现或基础实践。",
-				"expected_hard_family_ids": []
+				"role": "continuation",
+				"rationale": "该节点沿既有知识轴递进，保留一条不可替代的核心前置。",
+				"expected_hard_family_ids": [
+					"branch.construction_materials"
+				]
 			},
 			"building_unlock_review": {
 				"policy": "paired",
@@ -644,7 +1295,7 @@
 			"display_name": "火种控制",
 			"era_id": "stone",
 			"domain_id": "science",
-			"cost_points": 0.0,
+			"cost_points": 3000.0,
 			"layout_order": 3.0,
 			"network_role": "branch",
 			"anchor_kind": "branch",
@@ -661,8 +1312,8 @@
 			},
 			"is_milestone": false,
 			"is_era_key": false,
-			"is_starting": true,
-			"is_starter_eligible": true,
+			"is_starting": false,
+			"is_starter_eligible": false,
 			"starter_capability_tags": [
 				"starter.knowledge"
 			],
@@ -722,7 +1373,44 @@
 					"name": "露天陶器烧造"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.fire_control.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“火种控制”的对象与处理阶段不同",
 			"topology_review": {
@@ -797,7 +1485,44 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.seasonal_foraging.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“季节性采集”的对象与处理阶段不同",
 			"topology_review": {
@@ -917,7 +1642,44 @@
 					"name": "木版印刷坊"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.composite_tools.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“复合工具”的对象与处理阶段不同",
 			"topology_review": {
@@ -1037,7 +1799,44 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.natural_observation.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“自然观察”的对象与处理阶段不同",
 			"topology_review": {
@@ -1129,7 +1928,44 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.oral_tradition.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“口述传统”的对象与处理阶段不同",
 			"topology_review": {
@@ -1219,7 +2055,44 @@
 					"name": "刀耕火种玉米地"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.controlled_burning.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“控制性用火”的对象与处理阶段不同",
 			"topology_review": {
@@ -1320,7 +2193,44 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.fishing_boats.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“渔舟”的对象与处理阶段不同",
 			"topology_review": {
@@ -1411,7 +2321,44 @@
 					"name": "自给农庄"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.crop_domestication.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“种子与繁育观察”的对象与处理阶段不同",
 			"topology_review": {
@@ -1501,7 +2448,44 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.clay_identification.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“黏土辨识”的对象与处理阶段不同",
 			"topology_review": {
@@ -1600,7 +2584,44 @@
 					"name": "自然铜冷锤工坊"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.natural_copper_identification.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“自然铜辨识”的对象与处理阶段不同",
 			"topology_review": {
@@ -1692,7 +2713,44 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.natural_copper_working.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“自然铜冷锤”的对象与处理阶段不同",
 			"topology_review": {
@@ -1792,7 +2850,44 @@
 					"name": "铜矿"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.copper_annealing.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“铜退火”的对象与处理阶段不同",
 			"topology_review": {
@@ -1927,7 +3022,44 @@
 					"name": "锡矿"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.tin_identification.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“锡矿辨识”的对象与处理阶段不同",
 			"topology_review": {
@@ -2008,7 +3140,44 @@
 					"name": "游牧营地"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.animal_husbandry.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“畜牧驯养”的对象与处理阶段不同",
 			"topology_review": {
@@ -2140,7 +3309,44 @@
 					"name": "植物纤维抄纸坊"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.fiber_twisting.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“纤维捻制”的对象与处理阶段不同",
 			"topology_review": {
@@ -2227,7 +3433,44 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.food_storage.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“食物储藏”的对象与处理阶段不同",
 			"topology_review": {
@@ -2413,7 +3656,44 @@
 					"name": "传知者议事圈"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.communal_specialization.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“共同体分工”的对象与处理阶段不同",
 			"topology_review": {
@@ -2539,7 +3819,44 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.animal_tracking.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“动物追踪”的对象与处理阶段不同",
 			"topology_review": {
@@ -2559,7 +3876,7 @@
 			"display_name": "淡水岸捕",
 			"era_id": "stone",
 			"domain_id": "agriculture",
-			"cost_points": 0.0,
+			"cost_points": 3000.0,
 			"layout_order": 22.0,
 			"network_role": "branch",
 			"anchor_kind": "branch",
@@ -2576,8 +3893,8 @@
 			},
 			"is_milestone": false,
 			"is_era_key": false,
-			"is_starting": true,
-			"is_starter_eligible": true,
+			"is_starting": false,
+			"is_starter_eligible": false,
 			"starter_capability_tags": [
 				"starter.food"
 			],
@@ -2652,7 +3969,44 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.freshwater_fishing.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“淡水岸捕”的对象与处理阶段不同",
 			"topology_review": {
@@ -2670,7 +4024,7 @@
 			"display_name": "潮间带采集",
 			"era_id": "stone",
 			"domain_id": "agriculture",
-			"cost_points": 0.0,
+			"cost_points": 3000.0,
 			"layout_order": 23.0,
 			"network_role": "branch",
 			"anchor_kind": "branch",
@@ -2687,8 +4041,8 @@
 			},
 			"is_milestone": false,
 			"is_era_key": false,
-			"is_starting": true,
-			"is_starter_eligible": true,
+			"is_starting": false,
+			"is_starter_eligible": false,
 			"starter_capability_tags": [
 				"starter.food"
 			],
@@ -2763,7 +4117,44 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.coastal_fishing.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“潮间带采集”的对象与处理阶段不同",
 			"topology_review": {
@@ -2924,7 +4315,44 @@
 					"name": "露头煤采集场"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.ground_stone_tools.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“磨制石器”的对象与处理阶段不同",
 			"topology_review": {
@@ -2944,7 +4372,7 @@
 			"display_name": "土建筑",
 			"era_id": "stone",
 			"domain_id": "engineering",
-			"cost_points": 0.0,
+			"cost_points": 3000.0,
 			"layout_order": 25.0,
 			"network_role": "branch",
 			"anchor_kind": "branch",
@@ -2953,16 +4381,16 @@
 			"secondary_route_tags": [
 				"route.material.clay"
 			],
-			"hard_prerequisite_ids": [],
+			"hard_prerequisite_ids": [
+				"tech.clay_identification"
+			],
 			"reveal_condition": {
-				"kind": 1.0,
-				"id": "resource.clay",
-				"value": 1.0
+
 			},
 			"is_milestone": false,
 			"is_era_key": false,
-			"is_starting": true,
-			"is_starter_eligible": true,
+			"is_starting": false,
+			"is_starter_eligible": false,
 			"starter_capability_tags": [
 				"starter.construction"
 			],
@@ -3041,10 +4469,12 @@
 			"terminal_reason": "",
 			"branch_family_id": "branch.construction_materials",
 			"era_entry_milestone_id": "",
-			"reveal_category": "environment_observation",
-			"reveal_summary": "土建筑由首次资源、生物或地貌目击揭示",
+			"reveal_category": "general_knowledge",
+			"reveal_summary": "在掌握核心知识后，土建筑作为后续处理问题被揭示",
 			"branch_successor_ids": [],
-			"prerequisite_rationales": [],
+			"prerequisite_rationales": [
+				"黏土辨识提供土石、陶瓷、玻璃和工程构件制造能力中的识别与证据标准，土建筑直接使用这一能力完成其工艺或组织设计"
+			],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
 			"effect_design_review": {
@@ -3070,13 +4500,52 @@
 					"name": "原始黏土坑"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.earth_building.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“土建筑”的对象与处理阶段不同",
 			"topology_review": {
-				"role": "origin",
-				"rationale": "该节点是本路线的知识起点，不以其他科技替代对象发现或基础实践。",
-				"expected_hard_family_ids": []
+				"role": "continuation",
+				"rationale": "该节点沿既有知识轴递进，保留一条不可替代的核心前置。",
+				"expected_hard_family_ids": [
+					"branch.construction_materials"
+				]
 			},
 			"building_unlock_review": {
 				"policy": "paired",
@@ -3144,7 +4613,44 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.seasonal_calendar.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“季节历”的对象与处理阶段不同",
 			"topology_review": {
@@ -3254,7 +4760,44 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.hearth_preservation.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“炉火保存”的对象与处理阶段不同",
 			"topology_review": {
@@ -3347,7 +4890,44 @@
 					"name": "自给农庄"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.household_production.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“家庭生产”的对象与处理阶段不同",
 			"topology_review": {
@@ -3486,7 +5066,44 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.herd_management.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“畜群管理”的对象与处理阶段不同",
 			"topology_review": {
@@ -3568,7 +5185,44 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.maize_identification.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“玉米辨识”的对象与处理阶段不同",
 			"topology_review": {
@@ -3676,7 +5330,44 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.wild_maize_collection.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“野生玉米采集”的对象与处理阶段不同",
 			"topology_review": {
@@ -3752,7 +5443,44 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.maize_seed_saving.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“玉米留种”的对象与处理阶段不同",
 			"topology_review": {
@@ -3853,7 +5581,44 @@
 					"name": "佃作雨养玉米田"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.maize_propagation.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“玉米繁育”的对象与处理阶段不同",
 			"topology_review": {
@@ -3937,7 +5702,44 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.wheat_identification.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“小麦辨识”的对象与处理阶段不同",
 			"topology_review": {
@@ -4045,7 +5847,44 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.wild_wheat_collection.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“野生谷穗采集”的对象与处理阶段不同",
 			"topology_review": {
@@ -4121,7 +5960,44 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.wheat_seed_saving.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“小麦留种”的对象与处理阶段不同",
 			"topology_review": {
@@ -4226,7 +6102,44 @@
 					"name": "小麦农场"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.wheat_propagation.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“小麦繁育”的对象与处理阶段不同",
 			"topology_review": {
@@ -4310,7 +6223,44 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.rice_identification.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“稻类辨识”的对象与处理阶段不同",
 			"topology_review": {
@@ -4418,7 +6368,44 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.wild_rice_collection.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“野生稻采集”的对象与处理阶段不同",
 			"topology_review": {
@@ -4511,7 +6498,44 @@
 					"name": "湿地稻园"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.rice_seed_saving.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“稻种留存”的对象与处理阶段不同",
 			"topology_review": {
@@ -4595,7 +6619,44 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.potato_identification.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“块茎辨识”的对象与处理阶段不同",
 			"topology_review": {
@@ -4613,7 +6674,7 @@
 			"display_name": "野生块茎挖掘",
 			"era_id": "stone",
 			"domain_id": "agriculture",
-			"cost_points": 0.0,
+			"cost_points": 3000.0,
 			"layout_order": 42.0,
 			"network_role": "branch",
 			"anchor_kind": "branch",
@@ -4622,26 +6683,16 @@
 			"secondary_route_tags": [
 				"route.crop.tuber"
 			],
-			"hard_prerequisite_ids": [],
+			"hard_prerequisite_ids": [
+				"tech.potato_identification"
+			],
 			"reveal_condition": {
-				"operator": 2.0,
-				"children": [
-					{
-						"kind": 1.0,
-						"id": "bio.potato",
-						"value": 1.0
-					},
-					{
-						"kind": 1.0,
-						"id": "contact.potato",
-						"value": 1.0
-					}
-				]
+
 			},
 			"is_milestone": false,
 			"is_era_key": false,
-			"is_starting": true,
-			"is_starter_eligible": true,
+			"is_starting": false,
+			"is_starter_eligible": false,
 			"starter_capability_tags": [
 				"starter.food"
 			],
@@ -4688,10 +6739,12 @@
 			"terminal_reason": "野生块茎挖掘是块茎、梯田与高地农业在当前目录中的应用端点，其终点效果由potatoes、wild_tuber_patch消费",
 			"branch_family_id": "branch.tuber_highland",
 			"era_entry_milestone_id": "",
-			"reveal_category": "environment_observation",
-			"reveal_summary": "野生块茎挖掘由首次资源、生物或地貌目击揭示",
+			"reveal_category": "general_knowledge",
+			"reveal_summary": "在掌握核心知识后，野生块茎挖掘作为后续处理问题被揭示",
 			"branch_successor_ids": [],
-			"prerequisite_rationales": [],
+			"prerequisite_rationales": [
+				"块茎辨识提供块茎繁育、坡地耕作与低温保存经验中的识别与证据标准，野生块茎挖掘直接使用这一能力完成其工艺或组织设计"
+			],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
 			"effect_design_review": {
@@ -4700,13 +6753,52 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.wild_tuber_collection.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“野生块茎挖掘”的对象与处理阶段不同",
 			"topology_review": {
-				"role": "origin",
-				"rationale": "该节点是本路线的知识起点，不以其他科技替代对象发现或基础实践。",
-				"expected_hard_family_ids": []
+				"role": "terminal",
+				"rationale": "该节点结束当前路线生命周期或承担时代里程碑收束。",
+				"expected_hard_family_ids": [
+					"branch.tuber_highland"
+				]
 			},
 			"building_unlock_review": {
 				"policy": "single",
@@ -4775,7 +6867,44 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.tuber_storage.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“块茎保存”的对象与处理阶段不同",
 			"topology_review": {
@@ -4878,7 +7007,44 @@
 					"name": "马铃薯农场"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.potato_propagation.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“块茎繁育”的对象与处理阶段不同",
 			"topology_review": {
@@ -4963,7 +7129,44 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.cotton_identification.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“棉花辨识”的对象与处理阶段不同",
 			"topology_review": {
@@ -5043,7 +7246,44 @@
 					"name": "手工轧棉棚"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.wild_cotton_collection.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“野生棉铃采集”的对象与处理阶段不同",
 			"topology_review": {
@@ -5132,7 +7372,44 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.flax_identification.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“亚麻与韧皮辨识”的对象与处理阶段不同",
 			"topology_review": {
@@ -5150,7 +7427,7 @@
 			"display_name": "野生韧皮采集",
 			"era_id": "stone",
 			"domain_id": "agriculture",
-			"cost_points": 0.0,
+			"cost_points": 3000.0,
 			"layout_order": 48.0,
 			"network_role": "branch",
 			"anchor_kind": "branch",
@@ -5159,31 +7436,16 @@
 			"secondary_route_tags": [
 				"route.craft.textiles"
 			],
-			"hard_prerequisite_ids": [],
+			"hard_prerequisite_ids": [
+				"tech.flax_identification"
+			],
 			"reveal_condition": {
-				"operator": 2.0,
-				"children": [
-					{
-						"kind": 1.0,
-						"id": "bio.flax",
-						"value": 1.0
-					},
-					{
-						"kind": 1.0,
-						"id": "bio.bast_fiber",
-						"value": 1.0
-					},
-					{
-						"kind": 1.0,
-						"id": "contact.flax",
-						"value": 1.0
-					}
-				]
+
 			},
 			"is_milestone": false,
 			"is_era_key": false,
-			"is_starting": true,
-			"is_starter_eligible": true,
+			"is_starting": false,
+			"is_starter_eligible": false,
 			"starter_capability_tags": [
 				"starter.clothing"
 			],
@@ -5262,10 +7524,12 @@
 			"terminal_reason": "野生韧皮采集是纤维、纺织、服装与合成纤维在当前目录中的应用端点，其终点效果由bast_fiber、clothing、bast_fiber_camp、bast_wrap_shelter消费",
 			"branch_family_id": "branch.textile_fibers",
 			"era_entry_milestone_id": "",
-			"reveal_category": "environment_observation",
-			"reveal_summary": "野生韧皮采集由首次资源、生物或地貌目击揭示",
+			"reveal_category": "general_knowledge",
+			"reveal_summary": "在掌握核心知识后，野生韧皮采集作为后续处理问题被揭示",
 			"branch_successor_ids": [],
-			"prerequisite_rationales": [],
+			"prerequisite_rationales": [
+				"亚麻与韧皮辨识提供纤维处理、纺纱、织造与服装生产工艺中的识别与证据标准，野生韧皮采集直接使用这一能力完成其工艺或组织设计"
+			],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
 			"effect_design_review": {
@@ -5283,13 +7547,52 @@
 					"name": "沤麻池"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.wild_flax_collection.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“野生韧皮采集”的对象与处理阶段不同",
 			"topology_review": {
-				"role": "origin",
-				"rationale": "该节点是本路线的知识起点，不以其他科技替代对象发现或基础实践。",
-				"expected_hard_family_ids": []
+				"role": "terminal",
+				"rationale": "该节点结束当前路线生命周期或承担时代里程碑收束。",
+				"expected_hard_family_ids": [
+					"branch.textile_fibers"
+				]
 			},
 			"building_unlock_review": {
 				"policy": "paired",
@@ -5365,7 +7668,44 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.spice_identification.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“香料植物辨识”的对象与处理阶段不同",
 			"topology_review": {
@@ -5462,7 +7802,44 @@
 					"name": "林下遮阴香料园"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.wild_spice_collection.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“野生香料采集”的对象与处理阶段不同",
 			"topology_review": {
@@ -5552,7 +7929,44 @@
 					"name": "野生割胶营地"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.rubber_identification.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“橡胶树辨识”的对象与处理阶段不同",
 			"topology_review": {
@@ -5666,7 +8080,44 @@
 					"name": "乳胶烟熏凝固棚"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.wild_latex_tapping.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“野生割胶”的对象与处理阶段不同",
 			"topology_review": {
@@ -5751,7 +8202,44 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.gold_placer_identification.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“砂金辨识”的对象与处理阶段不同",
 			"topology_review": {
@@ -5779,11 +8267,11 @@
 				"route.resource.gold",
 				"route.geography.river"
 			],
-			"hard_prerequisite_ids": [],
+			"hard_prerequisite_ids": [
+				"tech.gold_placer_identification"
+			],
 			"reveal_condition": {
-				"kind": 1.0,
-				"id": "resource.gold_ore",
-				"value": 1.0
+
 			},
 			"is_milestone": false,
 			"is_era_key": false,
@@ -5867,10 +8355,12 @@
 			"terminal_reason": "粗陶淘金是铜、锡、有色金属与特种合金在当前目录中的应用端点，其终点效果由gold、gold_ore、placer_gold_working、primitive_gold_sluice消费",
 			"branch_family_id": "branch.nonferrous_metals",
 			"era_entry_milestone_id": "",
-			"reveal_category": "environment_observation",
-			"reveal_summary": "粗陶淘金由首次资源、生物或地貌目击揭示",
+			"reveal_category": "general_knowledge",
+			"reveal_summary": "在掌握核心知识后，粗陶淘金作为后续处理问题被揭示",
 			"branch_successor_ids": [],
-			"prerequisite_rationales": [],
+			"prerequisite_rationales": [
+				"砂金辨识提供矿物识别、有色冶炼与合金配制能力中的识别与证据标准，粗陶淘金直接使用这一能力完成其工艺或组织设计"
+			],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
 			"effect_design_review": {
@@ -5883,9 +8373,11 @@
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“粗陶淘金”的对象与处理阶段不同",
 			"topology_review": {
-				"role": "origin",
-				"rationale": "该节点是本路线的知识起点，不以其他科技替代对象发现或基础实践。",
-				"expected_hard_family_ids": []
+				"role": "terminal",
+				"rationale": "该节点结束当前路线生命周期或承担时代里程碑收束。",
+				"expected_hard_family_ids": [
+					"branch.nonferrous_metals"
+				]
 			},
 			"building_unlock_review": {
 				"policy": "paired",
@@ -5951,7 +8443,44 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.silver_vein_identification.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“地表银脉辨识”的对象与处理阶段不同",
 			"topology_review": {
@@ -6313,7 +8842,44 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.reed_identification.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“芦苇辨识”的对象与处理阶段不同",
 			"topology_review": {
@@ -6331,7 +8897,7 @@
 			"display_name": "芦苇收割",
 			"era_id": "stone",
 			"domain_id": "engineering",
-			"cost_points": 0.0,
+			"cost_points": 3000.0,
 			"layout_order": 59.0,
 			"network_role": "branch",
 			"anchor_kind": "branch",
@@ -6340,31 +8906,16 @@
 			"secondary_route_tags": [
 				"route.geography.river"
 			],
-			"hard_prerequisite_ids": [],
+			"hard_prerequisite_ids": [
+				"tech.reed_identification"
+			],
 			"reveal_condition": {
-				"operator": 2.0,
-				"children": [
-					{
-						"kind": 1.0,
-						"id": "bio.reed",
-						"value": 1.0
-					},
-					{
-						"kind": 1.0,
-						"id": "landform.marsh",
-						"value": 1.0
-					},
-					{
-						"kind": 1.0,
-						"id": "landform.freshwater_access",
-						"value": 1.0
-					}
-				]
+
 			},
 			"is_milestone": false,
 			"is_era_key": false,
-			"is_starting": true,
-			"is_starter_eligible": true,
+			"is_starting": false,
+			"is_starter_eligible": false,
 			"starter_capability_tags": [
 				"starter.construction"
 			],
@@ -6427,10 +8978,12 @@
 			"terminal_reason": "芦苇收割是水力、风力、水务与流域工程在当前目录中的应用端点，其终点效果由reed_bundle、paddy_land、reed_cutting_camp消费",
 			"branch_family_id": "branch.water_wind",
 			"era_entry_milestone_id": "",
-			"reveal_category": "environment_observation",
-			"reveal_summary": "芦苇收割由首次资源、生物或地貌目击揭示",
+			"reveal_category": "general_knowledge",
+			"reveal_summary": "在掌握核心知识后，芦苇收割作为后续处理问题被揭示",
 			"branch_successor_ids": [],
-			"prerequisite_rationales": [],
+			"prerequisite_rationales": [
+				"芦苇辨识提供水力、风力、水务与流域工程中的识别与证据标准，芦苇收割直接使用这一能力完成其工艺或组织设计"
+			],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
 			"effect_design_review": {
@@ -6439,13 +8992,52 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.reed_harvesting.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“芦苇收割”的对象与处理阶段不同",
 			"topology_review": {
-				"role": "origin",
-				"rationale": "该节点是本路线的知识起点，不以其他科技替代对象发现或基础实践。",
-				"expected_hard_family_ids": []
+				"role": "terminal",
+				"rationale": "该节点结束当前路线生命周期或承担时代里程碑收束。",
+				"expected_hard_family_ids": [
+					"branch.water_wind"
+				]
 			},
 			"building_unlock_review": {
 				"policy": "single",
@@ -6457,7 +9049,7 @@
 			"display_name": "草皮切割",
 			"era_id": "stone",
 			"domain_id": "engineering",
-			"cost_points": 0.0,
+			"cost_points": 3000.0,
 			"layout_order": 60.0,
 			"network_role": "branch",
 			"anchor_kind": "branch",
@@ -6474,8 +9066,8 @@
 			},
 			"is_milestone": false,
 			"is_era_key": false,
-			"is_starting": true,
-			"is_starter_eligible": true,
+			"is_starting": false,
+			"is_starter_eligible": false,
 			"starter_capability_tags": [
 				"starter.construction"
 			],
@@ -6550,7 +9142,44 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.turf_cutting.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“草皮切割”的对象与处理阶段不同",
 			"topology_review": {
@@ -6645,7 +9274,44 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.hide_scraping.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“生皮刮制”的对象与处理阶段不同",
 			"topology_review": {
@@ -6663,7 +9329,7 @@
 			"display_name": "毛皮缝制",
 			"era_id": "stone",
 			"domain_id": "engineering",
-			"cost_points": 0.0,
+			"cost_points": 3000.0,
 			"layout_order": 62.0,
 			"network_role": "branch",
 			"anchor_kind": "branch",
@@ -6681,8 +9347,8 @@
 			},
 			"is_milestone": false,
 			"is_era_key": false,
-			"is_starting": true,
-			"is_starter_eligible": true,
+			"is_starting": false,
+			"is_starter_eligible": false,
 			"starter_capability_tags": [
 				"starter.clothing"
 			],
@@ -6757,7 +9423,44 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.fur_sewing.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“毛皮缝制”的对象与处理阶段不同",
 			"topology_review": {
@@ -6775,7 +9478,7 @@
 			"display_name": "羊毛毡制",
 			"era_id": "stone",
 			"domain_id": "engineering",
-			"cost_points": 0.0,
+			"cost_points": 3000.0,
 			"layout_order": 63.0,
 			"network_role": "branch",
 			"anchor_kind": "branch",
@@ -6793,8 +9496,8 @@
 			},
 			"is_milestone": false,
 			"is_era_key": false,
-			"is_starting": true,
-			"is_starter_eligible": true,
+			"is_starting": false,
+			"is_starter_eligible": false,
 			"starter_capability_tags": [
 				"starter.clothing"
 			],
@@ -6853,547 +9556,46 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.felt_making.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“羊毛毡制”的对象与处理阶段不同",
-			"topology_review": {
-				"role": "origin",
-				"rationale": "该节点是本路线的知识起点，不以其他科技替代对象发现或基础实践。",
-				"expected_hard_family_ids": []
-			},
-			"building_unlock_review": {
-				"policy": "single",
-				"rationale": "本科技只直接呈现一个代表性建筑或生产方式，其余能力通过后续科技递进。"
-			}
-		},
-		{
-			"id": "tech.oral_memory_practice",
-			"display_name": "口述记忆实践",
-			"era_id": "stone",
-			"domain_id": "society",
-			"cost_points": 0.0,
-			"layout_order": 64.0,
-			"network_role": "backbone",
-			"anchor_kind": "backbone",
-			"node_role": "handling",
-			"effect_profile": "starter",
-			"secondary_route_tags": [
-				"route.institution.oral"
-			],
-			"hard_prerequisite_ids": [],
-			"reveal_condition": {
-				"operator": 2.0,
-				"children": [
-					{
-						"kind": 1.0,
-						"id": "weather.repeated_crop_failure",
-						"value": 1.0
-					},
-					{
-						"kind": 1.0,
-						"id": "weather.major_flood",
-						"value": 1.0
-					},
-					{
-						"kind": 1.0,
-						"id": "weather.drought",
-						"value": 1.0
-					}
-				]
-			},
-			"is_milestone": false,
-			"is_era_key": false,
-			"is_starting": true,
-			"is_starter_eligible": true,
-			"starter_capability_tags": [
-				"starter.knowledge"
-			],
-			"modifier_terms": [],
-			"expected_bindings": [
-				{
-					"kind": 1.0,
-					"id": "technology_points"
-				},
-				{
-					"kind": 2.0,
-					"id": "oral_memory_circle"
-				}
-			],
-			"content_effects": [
-				{
-					"kind": "good",
-					"id": "technology_points",
-					"binding_kind": 1.0,
-					"subject": "good.technology_points",
-					"attribute": "production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "GoodProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "科技值"
-				},
-				{
-					"kind": "building",
-					"id": "oral_memory_circle",
-					"binding_kind": 2.0,
-					"subject": "building.oral_memory_circle",
-					"attribute": "construction_and_production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "BuildingProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "口述记忆圈"
-				}
-			],
-			"effect_summary": "解锁物资：科技值；解锁建筑：口述记忆圈",
-			"opportunity_cost": "占用通用研究预算，延后同代专业路线锚点",
-			"application_target_ids": [],
-			"terminal_reason": "口述记忆实践是观察、科学与计算在当前目录中的应用端点，其终点效果由technology_points、oral_memory_circle消费",
-			"branch_family_id": "backbone.knowledge_computation",
-			"era_entry_milestone_id": "",
-			"reveal_category": "general_knowledge",
-			"reveal_summary": "口述记忆实践由首次资源、生物或地貌目击揭示",
-			"branch_successor_ids": [],
-			"prerequisite_rationales": [],
-			"branch_successor_rationales": [],
-			"application_target_rationales": [],
-			"effect_design_review": {
-				"status": "reviewed",
-				"numeric_effect_policy": "explicit_only",
-				"non_numeric_consumers_allowed": true
-			},
-			"support_buildings": [],
-			"research_routes": [],
-			"route_exemption_reason": "",
-			"reveal_template_reason": "石器时代节点“口述记忆实践”的对象与处理阶段不同",
-			"topology_review": {
-				"role": "origin",
-				"rationale": "该节点是本路线的知识起点，不以其他科技替代对象发现或基础实践。",
-				"expected_hard_family_ids": []
-			},
-			"building_unlock_review": {
-				"policy": "single",
-				"rationale": "本科技只直接呈现一个代表性建筑或生产方式，其余能力通过后续科技递进。"
-			}
-		},
-		{
-			"id": "tech.phenology_observation",
-			"display_name": "物候观察实践",
-			"era_id": "stone",
-			"domain_id": "science",
-			"cost_points": 0.0,
-			"layout_order": 65.0,
-			"network_role": "branch",
-			"anchor_kind": "branch",
-			"node_role": "handling",
-			"effect_profile": "starter",
-			"secondary_route_tags": [
-				"route.institution.observation"
-			],
-			"hard_prerequisite_ids": [],
-			"reveal_condition": {
-				"operator": 2.0,
-				"children": [
-					{
-						"kind": 1.0,
-						"id": "weather.frost",
-						"value": 1.0
-					},
-					{
-						"kind": 1.0,
-						"id": "weather.monsoon",
-						"value": 1.0
-					},
-					{
-						"kind": 1.0,
-						"id": "weather.drought",
-						"value": 1.0
-					}
-				]
-			},
-			"is_milestone": false,
-			"is_era_key": false,
-			"is_starting": true,
-			"is_starter_eligible": true,
-			"starter_capability_tags": [
-				"starter.knowledge"
-			],
-			"modifier_terms": [],
-			"expected_bindings": [
-				{
-					"kind": 1.0,
-					"id": "technology_points"
-				},
-				{
-					"kind": 2.0,
-					"id": "seasonal_observation_shelter"
-				}
-			],
-			"content_effects": [
-				{
-					"kind": "good",
-					"id": "technology_points",
-					"binding_kind": 1.0,
-					"subject": "good.technology_points",
-					"attribute": "production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "GoodProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "科技值"
-				},
-				{
-					"kind": "building",
-					"id": "seasonal_observation_shelter",
-					"binding_kind": 2.0,
-					"subject": "building.seasonal_observation_shelter",
-					"attribute": "construction_and_production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "BuildingProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "物候观察棚"
-				}
-			],
-			"effect_summary": "解锁物资：科技值；解锁建筑：物候观察棚",
-			"opportunity_cost": "占用通用研究预算，延后同代专业路线锚点",
-			"application_target_ids": [],
-			"terminal_reason": "物候观察实践是自然史、生物学与育种科学在当前目录中的应用端点，其终点效果由technology_points、seasonal_observation_shelter消费",
-			"branch_family_id": "branch.natural_history",
-			"era_entry_milestone_id": "",
-			"reveal_category": "environment_observation",
-			"reveal_summary": "物候观察实践由首次资源、生物或地貌目击揭示",
-			"branch_successor_ids": [],
-			"prerequisite_rationales": [],
-			"branch_successor_rationales": [],
-			"application_target_rationales": [],
-			"effect_design_review": {
-				"status": "reviewed",
-				"numeric_effect_policy": "explicit_only",
-				"non_numeric_consumers_allowed": true
-			},
-			"support_buildings": [],
-			"research_routes": [],
-			"route_exemption_reason": "",
-			"reveal_template_reason": "石器时代节点“物候观察实践”的对象与处理阶段不同",
-			"topology_review": {
-				"role": "origin",
-				"rationale": "该节点是本路线的知识起点，不以其他科技替代对象发现或基础实践。",
-				"expected_hard_family_ids": []
-			},
-			"building_unlock_review": {
-				"policy": "single",
-				"rationale": "本科技只直接呈现一个代表性建筑或生产方式，其余能力通过后续科技递进。"
-			}
-		},
-		{
-			"id": "tech.flood_calendar_practice",
-			"display_name": "洪水历法实践",
-			"era_id": "stone",
-			"domain_id": "science",
-			"cost_points": 0.0,
-			"layout_order": 66.0,
-			"network_role": "branch",
-			"anchor_kind": "branch",
-			"node_role": "handling",
-			"effect_profile": "starter",
-			"secondary_route_tags": [
-				"route.institution.calendar",
-				"route.geography.river"
-			],
-			"hard_prerequisite_ids": [],
-			"reveal_condition": {
-				"operator": 2.0,
-				"children": [
-					{
-						"kind": 1.0,
-						"id": "landform.floodplain",
-						"value": 1.0
-					},
-					{
-						"kind": 1.0,
-						"id": "landform.river_valley",
-						"value": 1.0
-					},
-					{
-						"kind": 1.0,
-						"id": "weather.major_flood",
-						"value": 1.0
-					}
-				]
-			},
-			"is_milestone": false,
-			"is_era_key": false,
-			"is_starting": true,
-			"is_starter_eligible": true,
-			"starter_capability_tags": [
-				"starter.knowledge"
-			],
-			"modifier_terms": [],
-			"expected_bindings": [
-				{
-					"kind": 1.0,
-					"id": "technology_points"
-				},
-				{
-					"kind": 2.0,
-					"id": "flood_calendar_shrine"
-				}
-			],
-			"content_effects": [
-				{
-					"kind": "good",
-					"id": "technology_points",
-					"binding_kind": 1.0,
-					"subject": "good.technology_points",
-					"attribute": "production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "GoodProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "科技值"
-				},
-				{
-					"kind": "building",
-					"id": "flood_calendar_shrine",
-					"binding_kind": 2.0,
-					"subject": "building.flood_calendar_shrine",
-					"attribute": "construction_and_production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "BuildingProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "洪水历法祭所"
-				}
-			],
-			"effect_summary": "解锁物资：科技值；解锁建筑：洪水历法祭所",
-			"opportunity_cost": "占用通用研究预算，延后同代专业路线锚点",
-			"application_target_ids": [],
-			"terminal_reason": "",
-			"branch_family_id": "branch.measurement_instruments",
-			"era_entry_milestone_id": "",
-			"reveal_category": "environment_observation",
-			"reveal_summary": "洪水历法实践由首次资源、生物或地貌目击揭示",
-			"branch_successor_ids": [],
-			"prerequisite_rationales": [],
-			"branch_successor_rationales": [],
-			"application_target_rationales": [],
-			"effect_design_review": {
-				"status": "reviewed",
-				"numeric_effect_policy": "explicit_only",
-				"non_numeric_consumers_allowed": true
-			},
-			"support_buildings": [],
-			"research_routes": [],
-			"route_exemption_reason": "",
-			"reveal_template_reason": "石器时代节点“洪水历法实践”的对象与处理阶段不同",
-			"topology_review": {
-				"role": "origin",
-				"rationale": "该节点是本路线的知识起点，不以其他科技替代对象发现或基础实践。",
-				"expected_hard_family_ids": []
-			},
-			"building_unlock_review": {
-				"policy": "single",
-				"rationale": "本科技只直接呈现一个代表性建筑或生产方式，其余能力通过后续科技递进。"
-			}
-		},
-		{
-			"id": "tech.pastoral_route_memory",
-			"display_name": "牧群路线记忆",
-			"era_id": "stone",
-			"domain_id": "society",
-			"cost_points": 0.0,
-			"layout_order": 67.0,
-			"network_role": "branch",
-			"anchor_kind": "branch",
-			"node_role": "handling",
-			"effect_profile": "starter",
-			"secondary_route_tags": [
-				"route.ecology.pasture",
-				"route.institution.oral"
-			],
-			"hard_prerequisite_ids": [],
-			"reveal_condition": {
-				"kind": 1.0,
-				"id": "resource.pasture",
-				"value": 1.0
-			},
-			"is_milestone": false,
-			"is_era_key": false,
-			"is_starting": true,
-			"is_starter_eligible": true,
-			"starter_capability_tags": [
-				"starter.knowledge"
-			],
-			"modifier_terms": [],
-			"expected_bindings": [
-				{
-					"kind": 1.0,
-					"id": "technology_points"
-				},
-				{
-					"kind": 2.0,
-					"id": "pastoral_council_tent"
-				}
-			],
-			"content_effects": [
-				{
-					"kind": "good",
-					"id": "technology_points",
-					"binding_kind": 1.0,
-					"subject": "good.technology_points",
-					"attribute": "production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "GoodProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "科技值"
-				},
-				{
-					"kind": "building",
-					"id": "pastoral_council_tent",
-					"binding_kind": 2.0,
-					"subject": "building.pastoral_council_tent",
-					"attribute": "construction_and_production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "BuildingProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "牧群路线议事帐"
-				}
-			],
-			"effect_summary": "解锁物资：科技值；解锁建筑：牧群路线议事帐",
-			"opportunity_cost": "转入该路线需补齐历史锚点；时代 1 后的生产方式依赖专用资本、岗位或地理条件",
-			"application_target_ids": [],
-			"terminal_reason": "牧群路线记忆是草原、马匹与畜牧业在当前目录中的应用端点，其终点效果由technology_points、pastoral_council_tent消费",
-			"branch_family_id": "branch.pastoral_livestock",
-			"era_entry_milestone_id": "",
-			"reveal_category": "environment_observation",
-			"reveal_summary": "牧群路线记忆由首次资源、生物或地貌目击揭示",
-			"branch_successor_ids": [],
-			"prerequisite_rationales": [],
-			"branch_successor_rationales": [],
-			"application_target_rationales": [],
-			"effect_design_review": {
-				"status": "reviewed",
-				"numeric_effect_policy": "explicit_only",
-				"non_numeric_consumers_allowed": true
-			},
-			"support_buildings": [],
-			"research_routes": [],
-			"route_exemption_reason": "",
-			"reveal_template_reason": "石器时代节点“牧群路线记忆”的对象与处理阶段不同",
-			"topology_review": {
-				"role": "origin",
-				"rationale": "该节点是本路线的知识起点，不以其他科技替代对象发现或基础实践。",
-				"expected_hard_family_ids": []
-			},
-			"building_unlock_review": {
-				"policy": "single",
-				"rationale": "本科技只直接呈现一个代表性建筑或生产方式，其余能力通过后续科技递进。"
-			}
-		},
-		{
-			"id": "tech.tide_observation",
-			"display_name": "潮汐与航向记忆",
-			"era_id": "stone",
-			"domain_id": "science",
-			"cost_points": 0.0,
-			"layout_order": 68.0,
-			"network_role": "branch",
-			"anchor_kind": "branch",
-			"node_role": "handling",
-			"effect_profile": "starter",
-			"secondary_route_tags": [
-				"route.geography.coast",
-				"route.institution.observation"
-			],
-			"hard_prerequisite_ids": [],
-			"reveal_condition": {
-				"operator": 2.0,
-				"children": [
-					{
-						"kind": 1.0,
-						"id": "landform.coast",
-						"value": 1.0
-					},
-					{
-						"kind": 1.0,
-						"id": "landform.coastal_estuary",
-						"value": 1.0
-					},
-					{
-						"kind": 1.0,
-						"id": "weather.storm_surge",
-						"value": 1.0
-					}
-				]
-			},
-			"is_milestone": false,
-			"is_era_key": false,
-			"is_starting": true,
-			"is_starter_eligible": true,
-			"starter_capability_tags": [
-				"starter.knowledge"
-			],
-			"modifier_terms": [],
-			"expected_bindings": [
-				{
-					"kind": 1.0,
-					"id": "technology_points"
-				},
-				{
-					"kind": 2.0,
-					"id": "tide_observation_hut"
-				}
-			],
-			"content_effects": [
-				{
-					"kind": "good",
-					"id": "technology_points",
-					"binding_kind": 1.0,
-					"subject": "good.technology_points",
-					"attribute": "production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "GoodProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "科技值"
-				},
-				{
-					"kind": "building",
-					"id": "tide_observation_hut",
-					"binding_kind": 2.0,
-					"subject": "building.tide_observation_hut",
-					"attribute": "construction_and_production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "BuildingProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "潮汐观察屋"
-				}
-			],
-			"effect_summary": "解锁物资：科技值；解锁建筑：潮汐观察屋",
-			"opportunity_cost": "转入该路线需补齐历史锚点；时代 1 后的生产方式依赖专用资本、岗位或地理条件",
-			"application_target_ids": [],
-			"terminal_reason": "潮汐与航向记忆是渔业、航海、港口与海运物流在当前目录中的应用端点，其终点效果由technology_points、tide_observation_hut消费",
-			"branch_family_id": "branch.maritime_logistics",
-			"era_entry_milestone_id": "",
-			"reveal_category": "environment_observation",
-			"reveal_summary": "潮汐与航向记忆由首次资源、生物或地貌目击揭示",
-			"branch_successor_ids": [],
-			"prerequisite_rationales": [],
-			"branch_successor_rationales": [],
-			"application_target_rationales": [],
-			"effect_design_review": {
-				"status": "reviewed",
-				"numeric_effect_policy": "explicit_only",
-				"non_numeric_consumers_allowed": true
-			},
-			"support_buildings": [],
-			"research_routes": [],
-			"route_exemption_reason": "",
-			"reveal_template_reason": "石器时代节点“潮汐与航向记忆”的对象与处理阶段不同",
 			"topology_review": {
 				"role": "origin",
 				"rationale": "该节点是本路线的知识起点，不以其他科技替代对象发现或基础实践。",
@@ -7515,7 +9717,44 @@
 					"name": "升焰陶窑"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.charcoal_burning.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“木炭烧制”的对象与处理阶段不同",
 			"topology_review": {
@@ -7629,7 +9868,44 @@
 					"name": "土法炼铜炉"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.copper_ore_roasting.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“铜矿焙烧”的对象与处理阶段不同",
 			"topology_review": {
@@ -7768,7 +10044,44 @@
 					"name": "日晒盐田"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.brine_collection.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“卤水采集”的对象与处理阶段不同",
 			"topology_review": {
@@ -7779,121 +10092,6 @@
 			"building_unlock_review": {
 				"policy": "single",
 				"rationale": "本科技只直接呈现一个代表性建筑或生产方式，其余能力通过后续科技递进。"
-			}
-		},
-		{
-			"id": "tech.flint_identification",
-			"display_name": "燧石辨识",
-			"era_id": "stone",
-			"domain_id": "science",
-			"cost_points": 3900.0,
-			"layout_order": 72.0,
-			"network_role": "branch",
-			"anchor_kind": "branch",
-			"node_role": "identification",
-			"effect_profile": "observation",
-			"secondary_route_tags": [
-				"route.material.stone"
-			],
-			"hard_prerequisite_ids": [],
-			"reveal_condition": {
-				"kind": 1.0,
-				"id": "resource.flint",
-				"value": 1.0
-			},
-			"is_milestone": false,
-			"is_era_key": false,
-			"is_starting": false,
-			"is_starter_eligible": false,
-			"starter_capability_tags": [],
-			"modifier_terms": [
-				{
-					"stat": "country.output.family.construction_methods_factor",
-					"operation": 0.0,
-					"value": 0.25,
-					"subject_kind": "building_family",
-					"subject_id": "construction_methods",
-					"subject_display_name": "营造方法",
-					"effect_class": "生产家族产出",
-					"effect_rationale": "材料识别与成形工艺提高建材和营造方法产出。",
-					"implementation_status": "runtime_consumed",
-					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
-				}
-			],
-			"expected_bindings": [
-				{
-					"kind": 1.0,
-					"id": "flint"
-				},
-				{
-					"kind": 3.0,
-					"id": "flint"
-				}
-			],
-			"content_effects": [
-				{
-					"kind": "good",
-					"id": "flint",
-					"binding_kind": 1.0,
-					"subject": "good.flint",
-					"attribute": "production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "GoodProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "燧石原料"
-				},
-				{
-					"kind": "resource",
-					"id": "flint",
-					"binding_kind": 3.0,
-					"subject": "resource.flint",
-					"attribute": "local_resource_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "ResourceProfile.discovery_technology_tags",
-					"status": "existing_binding",
-					"display_name": "燧石"
-				}
-			],
-			"effect_summary": "解锁物资：燧石原料；可利用资源：燧石；营造方法产出 +25%；作为必要支撑：石器打制工坊、改良燧石矿坑",
-			"opportunity_cost": "转入该路线需补齐历史锚点；时代 1 后的生产方式依赖专用资本、岗位或地理条件",
-			"application_target_ids": [],
-			"terminal_reason": "燧石辨识是黏土、石材、玻璃、建筑与公共工程在当前目录中的应用端点，其终点效果由flint、flint消费",
-			"branch_family_id": "branch.construction_materials",
-			"era_entry_milestone_id": "",
-			"reveal_category": "environment_observation",
-			"reveal_summary": "燧石辨识由首次资源、生物或地貌目击揭示",
-			"branch_successor_ids": [],
-			"prerequisite_rationales": [],
-			"branch_successor_rationales": [],
-			"application_target_rationales": [],
-			"effect_design_review": {
-				"status": "reviewed",
-				"numeric_effect_policy": "explicit_only",
-				"non_numeric_consumers_allowed": true
-			},
-			"support_buildings": [
-				{
-					"id": "knapping_workshop",
-					"name": "石器打制工坊"
-				},
-				{
-					"id": "method_flint_quarry_r1",
-					"name": "改良燧石矿坑"
-				}
-			],
-			"research_routes": [],
-			"route_exemption_reason": "",
-			"reveal_template_reason": "石器时代节点“燧石辨识”的对象与处理阶段不同",
-			"topology_review": {
-				"role": "origin",
-				"rationale": "该节点是本路线的知识起点，不以其他科技替代对象发现或基础实践。",
-				"expected_hard_family_ids": []
-			},
-			"building_unlock_review": {
-				"policy": "support_only",
-				"rationale": "本科技不直接呈现新建筑；它作为其他生产方式的知识、材料或制度支撑。"
 			}
 		},
 		{
@@ -8028,7 +10226,44 @@
 					"name": "原始黏土坑"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.clay_preparation.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“黏土调制”的对象与处理阶段不同",
 			"topology_review": {
@@ -8147,7 +10382,44 @@
 					"name": "升焰陶窑"
 				}
 			],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.hand_pottery.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“手制陶器”的对象与处理阶段不同",
 			"topology_review": {
@@ -8206,7 +10478,44 @@
 				"non_numeric_consumers_allowed": true
 			},
 			"support_buildings": [],
-			"research_routes": [],
+			"research_routes": [
+				{
+					"id": "research_route.settled_knowledge.knowledge_institution",
+					"display_name": "知识机构入口",
+					"route_type": "institution",
+					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"condition": {
+						"operator": 2.0,
+						"children": [
+							{
+								"kind": 0.0,
+								"id": "tech.oral_memory_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.phenology_observation",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.flood_calendar_practice",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.pastoral_route_memory",
+								"value": 1.0
+							},
+							{
+								"kind": 0.0,
+								"id": "tech.tide_observation",
+								"value": 1.0
+							}
+						]
+					}
+				}
+			],
 			"route_exemption_reason": "",
 			"reveal_template_reason": "石器时代节点“定居知识”的对象与处理阶段不同",
 			"topology_review": {
@@ -53977,6 +56286,1996 @@
 			"kind": "hard"
 		},
 		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.flint_identification",
+			"kind": "alternative",
+			"route_id": "research_route.flint_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.stone_knapping",
+			"kind": "alternative",
+			"route_id": "research_route.stone_knapping.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.fire_control",
+			"kind": "alternative",
+			"route_id": "research_route.fire_control.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.seasonal_foraging",
+			"kind": "alternative",
+			"route_id": "research_route.seasonal_foraging.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.composite_tools",
+			"kind": "alternative",
+			"route_id": "research_route.composite_tools.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.natural_observation",
+			"kind": "alternative",
+			"route_id": "research_route.natural_observation.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.oral_tradition",
+			"kind": "alternative",
+			"route_id": "research_route.oral_tradition.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.controlled_burning",
+			"kind": "alternative",
+			"route_id": "research_route.controlled_burning.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.fishing_boats",
+			"kind": "alternative",
+			"route_id": "research_route.fishing_boats.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.crop_domestication",
+			"kind": "alternative",
+			"route_id": "research_route.crop_domestication.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.clay_identification",
+			"kind": "alternative",
+			"route_id": "research_route.clay_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.natural_copper_identification",
+			"kind": "alternative",
+			"route_id": "research_route.natural_copper_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.natural_copper_working",
+			"kind": "alternative",
+			"route_id": "research_route.natural_copper_working.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.copper_annealing",
+			"kind": "alternative",
+			"route_id": "research_route.copper_annealing.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.tin_identification",
+			"kind": "alternative",
+			"route_id": "research_route.tin_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.animal_husbandry",
+			"kind": "alternative",
+			"route_id": "research_route.animal_husbandry.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.fiber_twisting",
+			"kind": "alternative",
+			"route_id": "research_route.fiber_twisting.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.food_storage",
+			"kind": "alternative",
+			"route_id": "research_route.food_storage.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.communal_specialization",
+			"kind": "alternative",
+			"route_id": "research_route.communal_specialization.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.animal_tracking",
+			"kind": "alternative",
+			"route_id": "research_route.animal_tracking.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.freshwater_fishing",
+			"kind": "alternative",
+			"route_id": "research_route.freshwater_fishing.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.coastal_fishing",
+			"kind": "alternative",
+			"route_id": "research_route.coastal_fishing.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.ground_stone_tools",
+			"kind": "alternative",
+			"route_id": "research_route.ground_stone_tools.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.earth_building",
+			"kind": "alternative",
+			"route_id": "research_route.earth_building.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.seasonal_calendar",
+			"kind": "alternative",
+			"route_id": "research_route.seasonal_calendar.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.hearth_preservation",
+			"kind": "alternative",
+			"route_id": "research_route.hearth_preservation.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.household_production",
+			"kind": "alternative",
+			"route_id": "research_route.household_production.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.herd_management",
+			"kind": "alternative",
+			"route_id": "research_route.herd_management.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.maize_identification",
+			"kind": "alternative",
+			"route_id": "research_route.maize_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.wild_maize_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_maize_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.maize_seed_saving",
+			"kind": "alternative",
+			"route_id": "research_route.maize_seed_saving.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.maize_propagation",
+			"kind": "alternative",
+			"route_id": "research_route.maize_propagation.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.wheat_identification",
+			"kind": "alternative",
+			"route_id": "research_route.wheat_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.wild_wheat_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_wheat_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.wheat_seed_saving",
+			"kind": "alternative",
+			"route_id": "research_route.wheat_seed_saving.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.wheat_propagation",
+			"kind": "alternative",
+			"route_id": "research_route.wheat_propagation.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.rice_identification",
+			"kind": "alternative",
+			"route_id": "research_route.rice_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.wild_rice_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_rice_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.rice_seed_saving",
+			"kind": "alternative",
+			"route_id": "research_route.rice_seed_saving.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.potato_identification",
+			"kind": "alternative",
+			"route_id": "research_route.potato_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.wild_tuber_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_tuber_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.tuber_storage",
+			"kind": "alternative",
+			"route_id": "research_route.tuber_storage.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.potato_propagation",
+			"kind": "alternative",
+			"route_id": "research_route.potato_propagation.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.cotton_identification",
+			"kind": "alternative",
+			"route_id": "research_route.cotton_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.wild_cotton_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_cotton_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.flax_identification",
+			"kind": "alternative",
+			"route_id": "research_route.flax_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.wild_flax_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_flax_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.spice_identification",
+			"kind": "alternative",
+			"route_id": "research_route.spice_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.wild_spice_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_spice_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.rubber_identification",
+			"kind": "alternative",
+			"route_id": "research_route.rubber_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.wild_latex_tapping",
+			"kind": "alternative",
+			"route_id": "research_route.wild_latex_tapping.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.gold_placer_identification",
+			"kind": "alternative",
+			"route_id": "research_route.gold_placer_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.silver_vein_identification",
+			"kind": "alternative",
+			"route_id": "research_route.silver_vein_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.deadwood_collection",
+			"kind": "alternative",
+			"route_id": "research_route.deadwood_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.reed_identification",
+			"kind": "alternative",
+			"route_id": "research_route.reed_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.reed_harvesting",
+			"kind": "alternative",
+			"route_id": "research_route.reed_harvesting.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.turf_cutting",
+			"kind": "alternative",
+			"route_id": "research_route.turf_cutting.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.hide_scraping",
+			"kind": "alternative",
+			"route_id": "research_route.hide_scraping.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.fur_sewing",
+			"kind": "alternative",
+			"route_id": "research_route.fur_sewing.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.felt_making",
+			"kind": "alternative",
+			"route_id": "research_route.felt_making.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.charcoal_burning",
+			"kind": "alternative",
+			"route_id": "research_route.charcoal_burning.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.copper_ore_roasting",
+			"kind": "alternative",
+			"route_id": "research_route.copper_ore_roasting.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.brine_collection",
+			"kind": "alternative",
+			"route_id": "research_route.brine_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.clay_preparation",
+			"kind": "alternative",
+			"route_id": "research_route.clay_preparation.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.hand_pottery",
+			"kind": "alternative",
+			"route_id": "research_route.hand_pottery.knowledge_institution"
+		},
+		{
+			"from": "tech.oral_memory_practice",
+			"to": "tech.settled_knowledge",
+			"kind": "alternative",
+			"route_id": "research_route.settled_knowledge.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.flint_identification",
+			"kind": "alternative",
+			"route_id": "research_route.flint_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.stone_knapping",
+			"kind": "alternative",
+			"route_id": "research_route.stone_knapping.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.fire_control",
+			"kind": "alternative",
+			"route_id": "research_route.fire_control.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.seasonal_foraging",
+			"kind": "alternative",
+			"route_id": "research_route.seasonal_foraging.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.composite_tools",
+			"kind": "alternative",
+			"route_id": "research_route.composite_tools.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.natural_observation",
+			"kind": "alternative",
+			"route_id": "research_route.natural_observation.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.oral_tradition",
+			"kind": "alternative",
+			"route_id": "research_route.oral_tradition.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.controlled_burning",
+			"kind": "alternative",
+			"route_id": "research_route.controlled_burning.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.fishing_boats",
+			"kind": "alternative",
+			"route_id": "research_route.fishing_boats.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.crop_domestication",
+			"kind": "alternative",
+			"route_id": "research_route.crop_domestication.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.clay_identification",
+			"kind": "alternative",
+			"route_id": "research_route.clay_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.natural_copper_identification",
+			"kind": "alternative",
+			"route_id": "research_route.natural_copper_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.natural_copper_working",
+			"kind": "alternative",
+			"route_id": "research_route.natural_copper_working.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.copper_annealing",
+			"kind": "alternative",
+			"route_id": "research_route.copper_annealing.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.tin_identification",
+			"kind": "alternative",
+			"route_id": "research_route.tin_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.animal_husbandry",
+			"kind": "alternative",
+			"route_id": "research_route.animal_husbandry.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.fiber_twisting",
+			"kind": "alternative",
+			"route_id": "research_route.fiber_twisting.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.food_storage",
+			"kind": "alternative",
+			"route_id": "research_route.food_storage.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.communal_specialization",
+			"kind": "alternative",
+			"route_id": "research_route.communal_specialization.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.animal_tracking",
+			"kind": "alternative",
+			"route_id": "research_route.animal_tracking.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.freshwater_fishing",
+			"kind": "alternative",
+			"route_id": "research_route.freshwater_fishing.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.coastal_fishing",
+			"kind": "alternative",
+			"route_id": "research_route.coastal_fishing.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.ground_stone_tools",
+			"kind": "alternative",
+			"route_id": "research_route.ground_stone_tools.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.earth_building",
+			"kind": "alternative",
+			"route_id": "research_route.earth_building.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.seasonal_calendar",
+			"kind": "alternative",
+			"route_id": "research_route.seasonal_calendar.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.hearth_preservation",
+			"kind": "alternative",
+			"route_id": "research_route.hearth_preservation.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.household_production",
+			"kind": "alternative",
+			"route_id": "research_route.household_production.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.herd_management",
+			"kind": "alternative",
+			"route_id": "research_route.herd_management.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.maize_identification",
+			"kind": "alternative",
+			"route_id": "research_route.maize_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.wild_maize_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_maize_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.maize_seed_saving",
+			"kind": "alternative",
+			"route_id": "research_route.maize_seed_saving.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.maize_propagation",
+			"kind": "alternative",
+			"route_id": "research_route.maize_propagation.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.wheat_identification",
+			"kind": "alternative",
+			"route_id": "research_route.wheat_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.wild_wheat_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_wheat_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.wheat_seed_saving",
+			"kind": "alternative",
+			"route_id": "research_route.wheat_seed_saving.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.wheat_propagation",
+			"kind": "alternative",
+			"route_id": "research_route.wheat_propagation.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.rice_identification",
+			"kind": "alternative",
+			"route_id": "research_route.rice_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.wild_rice_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_rice_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.rice_seed_saving",
+			"kind": "alternative",
+			"route_id": "research_route.rice_seed_saving.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.potato_identification",
+			"kind": "alternative",
+			"route_id": "research_route.potato_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.wild_tuber_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_tuber_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.tuber_storage",
+			"kind": "alternative",
+			"route_id": "research_route.tuber_storage.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.potato_propagation",
+			"kind": "alternative",
+			"route_id": "research_route.potato_propagation.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.cotton_identification",
+			"kind": "alternative",
+			"route_id": "research_route.cotton_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.wild_cotton_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_cotton_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.flax_identification",
+			"kind": "alternative",
+			"route_id": "research_route.flax_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.wild_flax_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_flax_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.spice_identification",
+			"kind": "alternative",
+			"route_id": "research_route.spice_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.wild_spice_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_spice_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.rubber_identification",
+			"kind": "alternative",
+			"route_id": "research_route.rubber_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.wild_latex_tapping",
+			"kind": "alternative",
+			"route_id": "research_route.wild_latex_tapping.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.gold_placer_identification",
+			"kind": "alternative",
+			"route_id": "research_route.gold_placer_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.silver_vein_identification",
+			"kind": "alternative",
+			"route_id": "research_route.silver_vein_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.deadwood_collection",
+			"kind": "alternative",
+			"route_id": "research_route.deadwood_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.reed_identification",
+			"kind": "alternative",
+			"route_id": "research_route.reed_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.reed_harvesting",
+			"kind": "alternative",
+			"route_id": "research_route.reed_harvesting.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.turf_cutting",
+			"kind": "alternative",
+			"route_id": "research_route.turf_cutting.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.hide_scraping",
+			"kind": "alternative",
+			"route_id": "research_route.hide_scraping.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.fur_sewing",
+			"kind": "alternative",
+			"route_id": "research_route.fur_sewing.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.felt_making",
+			"kind": "alternative",
+			"route_id": "research_route.felt_making.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.charcoal_burning",
+			"kind": "alternative",
+			"route_id": "research_route.charcoal_burning.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.copper_ore_roasting",
+			"kind": "alternative",
+			"route_id": "research_route.copper_ore_roasting.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.brine_collection",
+			"kind": "alternative",
+			"route_id": "research_route.brine_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.clay_preparation",
+			"kind": "alternative",
+			"route_id": "research_route.clay_preparation.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.hand_pottery",
+			"kind": "alternative",
+			"route_id": "research_route.hand_pottery.knowledge_institution"
+		},
+		{
+			"from": "tech.phenology_observation",
+			"to": "tech.settled_knowledge",
+			"kind": "alternative",
+			"route_id": "research_route.settled_knowledge.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.flint_identification",
+			"kind": "alternative",
+			"route_id": "research_route.flint_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.stone_knapping",
+			"kind": "alternative",
+			"route_id": "research_route.stone_knapping.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.fire_control",
+			"kind": "alternative",
+			"route_id": "research_route.fire_control.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.seasonal_foraging",
+			"kind": "alternative",
+			"route_id": "research_route.seasonal_foraging.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.composite_tools",
+			"kind": "alternative",
+			"route_id": "research_route.composite_tools.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.natural_observation",
+			"kind": "alternative",
+			"route_id": "research_route.natural_observation.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.oral_tradition",
+			"kind": "alternative",
+			"route_id": "research_route.oral_tradition.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.controlled_burning",
+			"kind": "alternative",
+			"route_id": "research_route.controlled_burning.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.fishing_boats",
+			"kind": "alternative",
+			"route_id": "research_route.fishing_boats.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.crop_domestication",
+			"kind": "alternative",
+			"route_id": "research_route.crop_domestication.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.clay_identification",
+			"kind": "alternative",
+			"route_id": "research_route.clay_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.natural_copper_identification",
+			"kind": "alternative",
+			"route_id": "research_route.natural_copper_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.natural_copper_working",
+			"kind": "alternative",
+			"route_id": "research_route.natural_copper_working.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.copper_annealing",
+			"kind": "alternative",
+			"route_id": "research_route.copper_annealing.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.tin_identification",
+			"kind": "alternative",
+			"route_id": "research_route.tin_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.animal_husbandry",
+			"kind": "alternative",
+			"route_id": "research_route.animal_husbandry.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.fiber_twisting",
+			"kind": "alternative",
+			"route_id": "research_route.fiber_twisting.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.food_storage",
+			"kind": "alternative",
+			"route_id": "research_route.food_storage.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.communal_specialization",
+			"kind": "alternative",
+			"route_id": "research_route.communal_specialization.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.animal_tracking",
+			"kind": "alternative",
+			"route_id": "research_route.animal_tracking.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.freshwater_fishing",
+			"kind": "alternative",
+			"route_id": "research_route.freshwater_fishing.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.coastal_fishing",
+			"kind": "alternative",
+			"route_id": "research_route.coastal_fishing.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.ground_stone_tools",
+			"kind": "alternative",
+			"route_id": "research_route.ground_stone_tools.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.earth_building",
+			"kind": "alternative",
+			"route_id": "research_route.earth_building.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.seasonal_calendar",
+			"kind": "alternative",
+			"route_id": "research_route.seasonal_calendar.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.hearth_preservation",
+			"kind": "alternative",
+			"route_id": "research_route.hearth_preservation.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.household_production",
+			"kind": "alternative",
+			"route_id": "research_route.household_production.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.herd_management",
+			"kind": "alternative",
+			"route_id": "research_route.herd_management.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.maize_identification",
+			"kind": "alternative",
+			"route_id": "research_route.maize_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.wild_maize_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_maize_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.maize_seed_saving",
+			"kind": "alternative",
+			"route_id": "research_route.maize_seed_saving.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.maize_propagation",
+			"kind": "alternative",
+			"route_id": "research_route.maize_propagation.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.wheat_identification",
+			"kind": "alternative",
+			"route_id": "research_route.wheat_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.wild_wheat_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_wheat_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.wheat_seed_saving",
+			"kind": "alternative",
+			"route_id": "research_route.wheat_seed_saving.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.wheat_propagation",
+			"kind": "alternative",
+			"route_id": "research_route.wheat_propagation.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.rice_identification",
+			"kind": "alternative",
+			"route_id": "research_route.rice_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.wild_rice_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_rice_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.rice_seed_saving",
+			"kind": "alternative",
+			"route_id": "research_route.rice_seed_saving.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.potato_identification",
+			"kind": "alternative",
+			"route_id": "research_route.potato_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.wild_tuber_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_tuber_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.tuber_storage",
+			"kind": "alternative",
+			"route_id": "research_route.tuber_storage.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.potato_propagation",
+			"kind": "alternative",
+			"route_id": "research_route.potato_propagation.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.cotton_identification",
+			"kind": "alternative",
+			"route_id": "research_route.cotton_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.wild_cotton_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_cotton_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.flax_identification",
+			"kind": "alternative",
+			"route_id": "research_route.flax_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.wild_flax_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_flax_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.spice_identification",
+			"kind": "alternative",
+			"route_id": "research_route.spice_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.wild_spice_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_spice_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.rubber_identification",
+			"kind": "alternative",
+			"route_id": "research_route.rubber_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.wild_latex_tapping",
+			"kind": "alternative",
+			"route_id": "research_route.wild_latex_tapping.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.gold_placer_identification",
+			"kind": "alternative",
+			"route_id": "research_route.gold_placer_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.silver_vein_identification",
+			"kind": "alternative",
+			"route_id": "research_route.silver_vein_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.deadwood_collection",
+			"kind": "alternative",
+			"route_id": "research_route.deadwood_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.reed_identification",
+			"kind": "alternative",
+			"route_id": "research_route.reed_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.reed_harvesting",
+			"kind": "alternative",
+			"route_id": "research_route.reed_harvesting.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.turf_cutting",
+			"kind": "alternative",
+			"route_id": "research_route.turf_cutting.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.hide_scraping",
+			"kind": "alternative",
+			"route_id": "research_route.hide_scraping.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.fur_sewing",
+			"kind": "alternative",
+			"route_id": "research_route.fur_sewing.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.felt_making",
+			"kind": "alternative",
+			"route_id": "research_route.felt_making.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.charcoal_burning",
+			"kind": "alternative",
+			"route_id": "research_route.charcoal_burning.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.copper_ore_roasting",
+			"kind": "alternative",
+			"route_id": "research_route.copper_ore_roasting.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.brine_collection",
+			"kind": "alternative",
+			"route_id": "research_route.brine_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.clay_preparation",
+			"kind": "alternative",
+			"route_id": "research_route.clay_preparation.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.hand_pottery",
+			"kind": "alternative",
+			"route_id": "research_route.hand_pottery.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.settled_knowledge",
+			"kind": "alternative",
+			"route_id": "research_route.settled_knowledge.knowledge_institution"
+		},
+		{
+			"from": "tech.flood_calendar_practice",
+			"to": "tech.irrigation",
+			"kind": "hard"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.flint_identification",
+			"kind": "alternative",
+			"route_id": "research_route.flint_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.stone_knapping",
+			"kind": "alternative",
+			"route_id": "research_route.stone_knapping.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.fire_control",
+			"kind": "alternative",
+			"route_id": "research_route.fire_control.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.seasonal_foraging",
+			"kind": "alternative",
+			"route_id": "research_route.seasonal_foraging.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.composite_tools",
+			"kind": "alternative",
+			"route_id": "research_route.composite_tools.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.natural_observation",
+			"kind": "alternative",
+			"route_id": "research_route.natural_observation.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.oral_tradition",
+			"kind": "alternative",
+			"route_id": "research_route.oral_tradition.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.controlled_burning",
+			"kind": "alternative",
+			"route_id": "research_route.controlled_burning.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.fishing_boats",
+			"kind": "alternative",
+			"route_id": "research_route.fishing_boats.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.crop_domestication",
+			"kind": "alternative",
+			"route_id": "research_route.crop_domestication.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.clay_identification",
+			"kind": "alternative",
+			"route_id": "research_route.clay_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.natural_copper_identification",
+			"kind": "alternative",
+			"route_id": "research_route.natural_copper_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.natural_copper_working",
+			"kind": "alternative",
+			"route_id": "research_route.natural_copper_working.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.copper_annealing",
+			"kind": "alternative",
+			"route_id": "research_route.copper_annealing.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.tin_identification",
+			"kind": "alternative",
+			"route_id": "research_route.tin_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.animal_husbandry",
+			"kind": "alternative",
+			"route_id": "research_route.animal_husbandry.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.fiber_twisting",
+			"kind": "alternative",
+			"route_id": "research_route.fiber_twisting.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.food_storage",
+			"kind": "alternative",
+			"route_id": "research_route.food_storage.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.communal_specialization",
+			"kind": "alternative",
+			"route_id": "research_route.communal_specialization.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.animal_tracking",
+			"kind": "alternative",
+			"route_id": "research_route.animal_tracking.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.freshwater_fishing",
+			"kind": "alternative",
+			"route_id": "research_route.freshwater_fishing.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.coastal_fishing",
+			"kind": "alternative",
+			"route_id": "research_route.coastal_fishing.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.ground_stone_tools",
+			"kind": "alternative",
+			"route_id": "research_route.ground_stone_tools.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.earth_building",
+			"kind": "alternative",
+			"route_id": "research_route.earth_building.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.seasonal_calendar",
+			"kind": "alternative",
+			"route_id": "research_route.seasonal_calendar.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.hearth_preservation",
+			"kind": "alternative",
+			"route_id": "research_route.hearth_preservation.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.household_production",
+			"kind": "alternative",
+			"route_id": "research_route.household_production.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.herd_management",
+			"kind": "alternative",
+			"route_id": "research_route.herd_management.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.maize_identification",
+			"kind": "alternative",
+			"route_id": "research_route.maize_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.wild_maize_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_maize_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.maize_seed_saving",
+			"kind": "alternative",
+			"route_id": "research_route.maize_seed_saving.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.maize_propagation",
+			"kind": "alternative",
+			"route_id": "research_route.maize_propagation.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.wheat_identification",
+			"kind": "alternative",
+			"route_id": "research_route.wheat_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.wild_wheat_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_wheat_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.wheat_seed_saving",
+			"kind": "alternative",
+			"route_id": "research_route.wheat_seed_saving.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.wheat_propagation",
+			"kind": "alternative",
+			"route_id": "research_route.wheat_propagation.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.rice_identification",
+			"kind": "alternative",
+			"route_id": "research_route.rice_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.wild_rice_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_rice_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.rice_seed_saving",
+			"kind": "alternative",
+			"route_id": "research_route.rice_seed_saving.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.potato_identification",
+			"kind": "alternative",
+			"route_id": "research_route.potato_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.wild_tuber_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_tuber_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.tuber_storage",
+			"kind": "alternative",
+			"route_id": "research_route.tuber_storage.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.potato_propagation",
+			"kind": "alternative",
+			"route_id": "research_route.potato_propagation.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.cotton_identification",
+			"kind": "alternative",
+			"route_id": "research_route.cotton_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.wild_cotton_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_cotton_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.flax_identification",
+			"kind": "alternative",
+			"route_id": "research_route.flax_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.wild_flax_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_flax_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.spice_identification",
+			"kind": "alternative",
+			"route_id": "research_route.spice_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.wild_spice_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_spice_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.rubber_identification",
+			"kind": "alternative",
+			"route_id": "research_route.rubber_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.wild_latex_tapping",
+			"kind": "alternative",
+			"route_id": "research_route.wild_latex_tapping.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.gold_placer_identification",
+			"kind": "alternative",
+			"route_id": "research_route.gold_placer_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.silver_vein_identification",
+			"kind": "alternative",
+			"route_id": "research_route.silver_vein_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.deadwood_collection",
+			"kind": "alternative",
+			"route_id": "research_route.deadwood_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.reed_identification",
+			"kind": "alternative",
+			"route_id": "research_route.reed_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.reed_harvesting",
+			"kind": "alternative",
+			"route_id": "research_route.reed_harvesting.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.turf_cutting",
+			"kind": "alternative",
+			"route_id": "research_route.turf_cutting.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.hide_scraping",
+			"kind": "alternative",
+			"route_id": "research_route.hide_scraping.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.fur_sewing",
+			"kind": "alternative",
+			"route_id": "research_route.fur_sewing.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.felt_making",
+			"kind": "alternative",
+			"route_id": "research_route.felt_making.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.charcoal_burning",
+			"kind": "alternative",
+			"route_id": "research_route.charcoal_burning.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.copper_ore_roasting",
+			"kind": "alternative",
+			"route_id": "research_route.copper_ore_roasting.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.brine_collection",
+			"kind": "alternative",
+			"route_id": "research_route.brine_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.clay_preparation",
+			"kind": "alternative",
+			"route_id": "research_route.clay_preparation.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.hand_pottery",
+			"kind": "alternative",
+			"route_id": "research_route.hand_pottery.knowledge_institution"
+		},
+		{
+			"from": "tech.pastoral_route_memory",
+			"to": "tech.settled_knowledge",
+			"kind": "alternative",
+			"route_id": "research_route.settled_knowledge.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.flint_identification",
+			"kind": "alternative",
+			"route_id": "research_route.flint_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.stone_knapping",
+			"kind": "alternative",
+			"route_id": "research_route.stone_knapping.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.fire_control",
+			"kind": "alternative",
+			"route_id": "research_route.fire_control.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.seasonal_foraging",
+			"kind": "alternative",
+			"route_id": "research_route.seasonal_foraging.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.composite_tools",
+			"kind": "alternative",
+			"route_id": "research_route.composite_tools.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.natural_observation",
+			"kind": "alternative",
+			"route_id": "research_route.natural_observation.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.oral_tradition",
+			"kind": "alternative",
+			"route_id": "research_route.oral_tradition.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.controlled_burning",
+			"kind": "alternative",
+			"route_id": "research_route.controlled_burning.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.fishing_boats",
+			"kind": "alternative",
+			"route_id": "research_route.fishing_boats.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.crop_domestication",
+			"kind": "alternative",
+			"route_id": "research_route.crop_domestication.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.clay_identification",
+			"kind": "alternative",
+			"route_id": "research_route.clay_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.natural_copper_identification",
+			"kind": "alternative",
+			"route_id": "research_route.natural_copper_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.natural_copper_working",
+			"kind": "alternative",
+			"route_id": "research_route.natural_copper_working.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.copper_annealing",
+			"kind": "alternative",
+			"route_id": "research_route.copper_annealing.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.tin_identification",
+			"kind": "alternative",
+			"route_id": "research_route.tin_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.animal_husbandry",
+			"kind": "alternative",
+			"route_id": "research_route.animal_husbandry.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.fiber_twisting",
+			"kind": "alternative",
+			"route_id": "research_route.fiber_twisting.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.food_storage",
+			"kind": "alternative",
+			"route_id": "research_route.food_storage.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.communal_specialization",
+			"kind": "alternative",
+			"route_id": "research_route.communal_specialization.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.animal_tracking",
+			"kind": "alternative",
+			"route_id": "research_route.animal_tracking.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.freshwater_fishing",
+			"kind": "alternative",
+			"route_id": "research_route.freshwater_fishing.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.coastal_fishing",
+			"kind": "alternative",
+			"route_id": "research_route.coastal_fishing.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.ground_stone_tools",
+			"kind": "alternative",
+			"route_id": "research_route.ground_stone_tools.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.earth_building",
+			"kind": "alternative",
+			"route_id": "research_route.earth_building.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.seasonal_calendar",
+			"kind": "alternative",
+			"route_id": "research_route.seasonal_calendar.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.hearth_preservation",
+			"kind": "alternative",
+			"route_id": "research_route.hearth_preservation.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.household_production",
+			"kind": "alternative",
+			"route_id": "research_route.household_production.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.herd_management",
+			"kind": "alternative",
+			"route_id": "research_route.herd_management.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.maize_identification",
+			"kind": "alternative",
+			"route_id": "research_route.maize_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.wild_maize_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_maize_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.maize_seed_saving",
+			"kind": "alternative",
+			"route_id": "research_route.maize_seed_saving.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.maize_propagation",
+			"kind": "alternative",
+			"route_id": "research_route.maize_propagation.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.wheat_identification",
+			"kind": "alternative",
+			"route_id": "research_route.wheat_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.wild_wheat_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_wheat_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.wheat_seed_saving",
+			"kind": "alternative",
+			"route_id": "research_route.wheat_seed_saving.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.wheat_propagation",
+			"kind": "alternative",
+			"route_id": "research_route.wheat_propagation.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.rice_identification",
+			"kind": "alternative",
+			"route_id": "research_route.rice_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.wild_rice_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_rice_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.rice_seed_saving",
+			"kind": "alternative",
+			"route_id": "research_route.rice_seed_saving.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.potato_identification",
+			"kind": "alternative",
+			"route_id": "research_route.potato_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.wild_tuber_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_tuber_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.tuber_storage",
+			"kind": "alternative",
+			"route_id": "research_route.tuber_storage.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.potato_propagation",
+			"kind": "alternative",
+			"route_id": "research_route.potato_propagation.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.cotton_identification",
+			"kind": "alternative",
+			"route_id": "research_route.cotton_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.wild_cotton_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_cotton_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.flax_identification",
+			"kind": "alternative",
+			"route_id": "research_route.flax_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.wild_flax_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_flax_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.spice_identification",
+			"kind": "alternative",
+			"route_id": "research_route.spice_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.wild_spice_collection",
+			"kind": "alternative",
+			"route_id": "research_route.wild_spice_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.rubber_identification",
+			"kind": "alternative",
+			"route_id": "research_route.rubber_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.wild_latex_tapping",
+			"kind": "alternative",
+			"route_id": "research_route.wild_latex_tapping.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.gold_placer_identification",
+			"kind": "alternative",
+			"route_id": "research_route.gold_placer_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.silver_vein_identification",
+			"kind": "alternative",
+			"route_id": "research_route.silver_vein_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.deadwood_collection",
+			"kind": "alternative",
+			"route_id": "research_route.deadwood_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.reed_identification",
+			"kind": "alternative",
+			"route_id": "research_route.reed_identification.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.reed_harvesting",
+			"kind": "alternative",
+			"route_id": "research_route.reed_harvesting.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.turf_cutting",
+			"kind": "alternative",
+			"route_id": "research_route.turf_cutting.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.hide_scraping",
+			"kind": "alternative",
+			"route_id": "research_route.hide_scraping.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.fur_sewing",
+			"kind": "alternative",
+			"route_id": "research_route.fur_sewing.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.felt_making",
+			"kind": "alternative",
+			"route_id": "research_route.felt_making.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.charcoal_burning",
+			"kind": "alternative",
+			"route_id": "research_route.charcoal_burning.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.copper_ore_roasting",
+			"kind": "alternative",
+			"route_id": "research_route.copper_ore_roasting.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.brine_collection",
+			"kind": "alternative",
+			"route_id": "research_route.brine_collection.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.clay_preparation",
+			"kind": "alternative",
+			"route_id": "research_route.clay_preparation.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.hand_pottery",
+			"kind": "alternative",
+			"route_id": "research_route.hand_pottery.knowledge_institution"
+		},
+		{
+			"from": "tech.tide_observation",
+			"to": "tech.settled_knowledge",
+			"kind": "alternative",
+			"route_id": "research_route.settled_knowledge.knowledge_institution"
+		},
+		{
+			"from": "tech.flint_identification",
+			"to": "tech.stone_knapping",
+			"kind": "hard"
+		},
+		{
 			"from": "tech.stone_knapping",
 			"to": "tech.ground_stone_tools",
 			"kind": "hard"
@@ -54040,6 +58339,11 @@
 		{
 			"from": "tech.crop_domestication",
 			"to": "tech.seed_selection",
+			"kind": "hard"
+		},
+		{
+			"from": "tech.clay_identification",
+			"to": "tech.earth_building",
 			"kind": "hard"
 		},
 		{
@@ -54264,6 +58568,11 @@
 		},
 		{
 			"from": "tech.potato_identification",
+			"to": "tech.wild_tuber_collection",
+			"kind": "hard"
+		},
+		{
+			"from": "tech.potato_identification",
 			"to": "tech.tuber_storage",
 			"kind": "hard"
 		},
@@ -54304,6 +58613,11 @@
 		},
 		{
 			"from": "tech.flax_identification",
+			"to": "tech.wild_flax_collection",
+			"kind": "hard"
+		},
+		{
+			"from": "tech.flax_identification",
 			"to": "tech.flax_retting",
 			"kind": "hard"
 		},
@@ -54333,13 +58647,18 @@
 			"kind": "hard"
 		},
 		{
+			"from": "tech.gold_placer_identification",
+			"to": "tech.gold_panning",
+			"kind": "hard"
+		},
+		{
 			"from": "tech.silver_vein_identification",
 			"to": "tech.surface_silver_collection",
 			"kind": "hard"
 		},
 		{
-			"from": "tech.flood_calendar_practice",
-			"to": "tech.irrigation",
+			"from": "tech.reed_identification",
+			"to": "tech.reed_harvesting",
 			"kind": "hard"
 		},
 		{

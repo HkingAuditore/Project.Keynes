@@ -1,6 +1,236 @@
-[gd_resource type="Resource" script_class="IdeologyCatalog" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="IdeologyCatalog" load_steps=30 format=3]
 
 [ext_resource type="Script" path="res://scripts/ideology/ideology_catalog.gd" id="1_catalog"]
+[ext_resource type="Script" path="res://scripts/ideology/ideology_profile.gd" id="2_profile"]
+[ext_resource type="Script" path="res://scripts/ideology/ideology_definition.gd" id="3_definition"]
+[ext_resource type="Script" path="res://scripts/ideology/ideology_level_definition.gd" id="4_level"]
+[ext_resource type="Script" path="res://scripts/ideology/ideology_class_stance.gd" id="5_stance"]
+[ext_resource type="Script" path="res://scripts/ideology/ideology_synergy_definition.gd" id="6_synergy"]
+[ext_resource type="Script" path="res://scripts/effect/effect_command.gd" id="7_effect"]
+
+[sub_resource type="Resource" id="Profile"]
+script = ExtResource("2_profile")
+ideology_capacity = 3
+national_spirit_capacity = 2
+max_transition_commands = 64
+
+[sub_resource type="Resource" id="EffectLow"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 4096
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"country.economic_mobilization"
+
+[sub_resource type="Resource" id="EffectHigh"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 8192
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"country.economic_mobilization"
+
+[sub_resource type="Resource" id="EffectSynergy"]
+script = ExtResource("7_effect")
+action = 1
+domain = 1
+opcode = 1
+target_resolver = 1
+value_mode = 0
+value_q16 = 6144
+duration_days = -1
+command_key = &"ideology.persistent"
+definition_key = &"country.economic_mobilization"
+
+[sub_resource type="Resource" id="LevelLow"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 0
+daily_understanding_q16 = 8192
+persistent_effects = Array[Resource]([SubResource("EffectLow")])
+
+[sub_resource type="Resource" id="LevelHigh"]
+script = ExtResource("4_level")
+understanding_threshold_q16 = 196608
+daily_understanding_q16 = 0
+persistent_effects = Array[Resource]([SubResource("EffectHigh")])
+
+[sub_resource type="Resource" id="CollectiveGeneral"]
+script = ExtResource("5_stance")
+class_id = &"general"
+adopt_stance_q16 = 24576
+repeal_stance_q16 = -16384
+promote_stance_q16 = 16384
+
+[sub_resource type="Resource" id="CollectiveFarmer"]
+script = ExtResource("5_stance")
+class_id = &"farmer"
+adopt_stance_q16 = 49152
+repeal_stance_q16 = -32768
+promote_stance_q16 = 32768
+
+[sub_resource type="Resource" id="CollectiveWorker"]
+script = ExtResource("5_stance")
+class_id = &"worker"
+adopt_stance_q16 = 32768
+repeal_stance_q16 = -24576
+promote_stance_q16 = 24576
+
+[sub_resource type="Resource" id="CollectiveTechnology"]
+script = ExtResource("5_stance")
+class_id = &"technology"
+adopt_stance_q16 = 8192
+repeal_stance_q16 = 8192
+promote_stance_q16 = 12288
+
+[sub_resource type="Resource" id="Collective"]
+script = ExtResource("3_definition")
+id = &"idea.collective_stewardship"
+icon_key = &"country.economy"
+name_key = &"共同体治理"
+detail_key = "以共同仓储、互助义务和长期土地责任组织生产。"
+rarity_weight = 120
+national_spirit_min_level = 1
+class_stances = Array[Resource]([SubResource("CollectiveGeneral"), SubResource("CollectiveFarmer"), SubResource("CollectiveWorker"), SubResource("CollectiveTechnology")])
+adopt_threshold_q16 = 8192
+repeal_threshold_q16 = 0
+promote_threshold_q16 = 16384
+exclusion_group = &"economic_order"
+levels = Array[Resource]([SubResource("LevelLow"), SubResource("LevelHigh")])
+
+[sub_resource type="Resource" id="ExchangeGeneral"]
+script = ExtResource("5_stance")
+class_id = &"general"
+adopt_stance_q16 = 16384
+repeal_stance_q16 = 8192
+promote_stance_q16 = 12288
+
+[sub_resource type="Resource" id="ExchangeFarmer"]
+script = ExtResource("5_stance")
+class_id = &"farmer"
+adopt_stance_q16 = -32768
+repeal_stance_q16 = 32768
+promote_stance_q16 = -24576
+adopt_min_support_q16 = -16384
+
+[sub_resource type="Resource" id="ExchangeWorker"]
+script = ExtResource("5_stance")
+class_id = &"worker"
+adopt_stance_q16 = -16384
+repeal_stance_q16 = 24576
+promote_stance_q16 = -8192
+
+[sub_resource type="Resource" id="ExchangeTechnology"]
+script = ExtResource("5_stance")
+class_id = &"technology"
+adopt_stance_q16 = 32768
+repeal_stance_q16 = -8192
+promote_stance_q16 = 24576
+
+[sub_resource type="Resource" id="Exchange"]
+script = ExtResource("3_definition")
+id = &"idea.free_exchange"
+icon_key = &"country.trade"
+name_key = &"自由交换"
+detail_key = "以契约、流通和分散决策鼓励资源重新配置。"
+rarity_weight = 100
+national_spirit_min_level = 1
+class_stances = Array[Resource]([SubResource("ExchangeGeneral"), SubResource("ExchangeFarmer"), SubResource("ExchangeWorker"), SubResource("ExchangeTechnology")])
+adopt_threshold_q16 = 4096
+repeal_threshold_q16 = 8192
+promote_threshold_q16 = 20480
+exclusion_group = &"economic_order"
+levels = Array[Resource]([SubResource("LevelLow"), SubResource("LevelHigh")])
+
+[sub_resource type="Resource" id="ScholarGeneral"]
+script = ExtResource("5_stance")
+class_id = &"general"
+adopt_stance_q16 = 8192
+repeal_stance_q16 = 0
+promote_stance_q16 = 12288
+
+[sub_resource type="Resource" id="ScholarTechnology"]
+script = ExtResource("5_stance")
+class_id = &"technology"
+adopt_stance_q16 = 65536
+repeal_stance_q16 = -32768
+promote_stance_q16 = 49152
+promote_min_support_q16 = 32768
+
+[sub_resource type="Resource" id="Scholar"]
+script = ExtResource("3_definition")
+id = &"idea.scholar_office"
+icon_key = &"country.technology"
+name_key = &"学识官署"
+detail_key = "让记录、测量与专业知识成为公共决策的正式依据。"
+rarity_weight = 80
+national_spirit_min_level = 1
+class_stances = Array[Resource]([SubResource("ScholarGeneral"), SubResource("ScholarTechnology")])
+adopt_threshold_q16 = 8192
+repeal_threshold_q16 = 0
+promote_threshold_q16 = 24576
+levels = Array[Resource]([SubResource("LevelLow"), SubResource("LevelHigh")])
+
+[sub_resource type="Resource" id="CivicGeneral"]
+script = ExtResource("5_stance")
+class_id = &"general"
+adopt_stance_q16 = 24576
+repeal_stance_q16 = -8192
+promote_stance_q16 = 24576
+
+[sub_resource type="Resource" id="CivicWorker"]
+script = ExtResource("5_stance")
+class_id = &"worker"
+adopt_stance_q16 = 49152
+repeal_stance_q16 = -24576
+promote_stance_q16 = 32768
+
+[sub_resource type="Resource" id="CivicFarmer"]
+script = ExtResource("5_stance")
+class_id = &"farmer"
+adopt_stance_q16 = 16384
+repeal_stance_q16 = 8192
+promote_stance_q16 = 12288
+
+[sub_resource type="Resource" id="Civic"]
+script = ExtResource("3_definition")
+id = &"idea.civic_muster"
+icon_key = &"country.military"
+name_key = &"公民动员"
+detail_key = "以普遍义务和基层组织换取危机中的快速协同。"
+rarity_weight = 100
+national_spirit_min_level = 1
+class_stances = Array[Resource]([SubResource("CivicGeneral"), SubResource("CivicWorker"), SubResource("CivicFarmer")])
+adopt_threshold_q16 = 12288
+repeal_threshold_q16 = 0
+promote_threshold_q16 = 20480
+levels = Array[Resource]([SubResource("LevelLow"), SubResource("LevelHigh")])
+
+[sub_resource type="Resource" id="SynergyGranaries"]
+script = ExtResource("6_synergy")
+id = &"synergy.planned_granaries"
+required_ideology_ids = PackedStringArray("idea.collective_stewardship", "idea.scholar_office")
+minimum_levels = PackedInt32Array(0, 0)
+location_masks = PackedByteArray(6, 6)
+persistent_effects = Array[Resource]([SubResource("EffectSynergy")])
+
+[sub_resource type="Resource" id="SynergyCharter"]
+script = ExtResource("6_synergy")
+id = &"synergy.chartered_frontier"
+required_ideology_ids = PackedStringArray("idea.free_exchange", "idea.civic_muster")
+minimum_levels = PackedInt32Array(0, 0)
+location_masks = PackedByteArray(6, 6)
+persistent_effects = Array[Resource]([SubResource("EffectSynergy")])
 
 [resource]
 script = ExtResource("1_catalog")
+profile = SubResource("Profile")
+definitions = Array[Resource]([SubResource("Collective"), SubResource("Exchange"), SubResource("Scholar"), SubResource("Civic")])
+synergies = Array[Resource]([SubResource("SynergyGranaries"), SubResource("SynergyCharter")])

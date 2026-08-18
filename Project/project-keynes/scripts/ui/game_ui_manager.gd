@@ -94,6 +94,7 @@ func set_world_context(
 	if _country_view_model == null:
 		_country_view_model = CountryViewModel.new()
 	_country_view_model.set_context(generator)
+	_refresh_player_discovery_context()
 	if _right_panel != null:
 		_right_panel.reset_for_world()
 	if _country_panel != null and _country_panel.has_method("set_player_controller"):
@@ -289,6 +290,7 @@ func _on_country_committed(_report: Dictionary) -> void:
 	# 明确事件触发整块选择重建，不能在这里摧毁输入焦点和滚动状态。
 	refresh_selected_daily_lines(true)
 	refresh_country_summary()
+	_refresh_player_discovery_context()
 
 
 func open_country_section(section_id: String) -> void:
@@ -623,6 +625,16 @@ func set_resource_discovery_context(
 	if _map_overlay_toolbar != null:
 		_map_overlay_toolbar.set_resource_discovery_context(
 			technology_ids, enforce_discovery)
+
+
+func _refresh_player_discovery_context() -> void:
+	if _country_view_model == null:
+		return
+	var technology_ids: PackedStringArray = \
+		_country_view_model.player_completed_technology_ids()
+	if technology_ids.is_empty():
+		return
+	set_resource_discovery_context(technology_ids, true)
 
 
 func set_player_controller(controller) -> void:

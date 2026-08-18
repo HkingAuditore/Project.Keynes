@@ -10,6 +10,8 @@ const MAX_FOREIGN_COUNT := 12
 const DEFAULT_FOREIGN_COUNT := 5
 const CUSTOM_LAND_LAYOUT := "custom"
 const DEFAULT_LAND_LAYOUT := "two"
+const MAP_SOURCE_PROCEDURAL := "procedural"
+const MAP_SOURCE_PKMAP := "pkmap"
 const SIZE_PRESETS := {
 	"small": Vector2i(40, 28),
 	"standard": Vector2i(60, 40),
@@ -74,6 +76,8 @@ var base: Dictionary = {
 	"map_height": 40,
 	"initial_seed": 1,
 	"land_layout": DEFAULT_LAND_LAYOUT,
+	"map_source": MAP_SOURCE_PROCEDURAL,
+	"pkmap_path": "",
 	"sea_level": 0.50,
 	"num_continents": 2,
 	"continent_size": 0.50,
@@ -148,6 +152,10 @@ func validate() -> Dictionary:
 		return _error("foreign_count_out_of_range",
 			"外国数量必须在 %d 到 %d 之间。" % [MIN_FOREIGN_COUNT, MAX_FOREIGN_COUNT])
 	country.foreign_count = foreign_count
+
+	var map_bind := _bind_map_source()
+	if not bool(map_bind.get("ok", false)):
+		return map_bind
 
 	var seed := int(base.get("initial_seed", 0))
 	if seed < MIN_SEED or seed > MAX_SEED:
@@ -297,6 +305,38 @@ static func from_dictionary(value: Dictionary) -> Dictionary:
 		"config": config,
 		"migrated_from_version": source_version if source_version != SCHEMA_VERSION else 0,
 	}
+
+
+func _bind_map_source() -> Dictionary:
+	var map_source := String(base.get("map_source", MAP_SOURCE_PROCEDURAL)).strip_edges()
+	if map_source.is_empty():
+		map_source = MAP_SOURCE_PROCEDURAL
+	if map_source != MAP_SOURCE_PROCEDURAL and map_source != MAP_SOURCE_PKMAP:
+		return _error("map_source_invalid", "地图来源无效。")
+	if map_source != MAP_SOURCE_PKMAP:
+		base.map_source = MAP_SOURCE_PROCEDURAL
+		base.pkmap_path = ""
+		return {"ok": true, "code": "ok", "message": ""}
+	var path := String(base.get("pkmap_path", "")).strip_edges()
+	if path.is_empty():
+		return _error("pkmap_path_empty", "请选择一份作者地图文件。")
+	if not FileAccess.file_exists(path):
+		return _error("pkmap_missing", "找不到作者地图：%s" % path)
+	var peeked: Dictionary = PkmapIO.peek_pkmap(path)
+	if not bool(peeked.get("ok", false)):
+		return peeked
+	var header: Dictionary = peeked.get("header", {})
+	if String(header.get("generator_hash", "")) != SaveRepository.compatibility_hash():
+		return _error("pkmap_incompatible", "该作者地图与当前生成器不兼容。")
+	base.map_source = MAP_SOURCE_PKMAP
+	base.pkmap_path = path
+	base.map_width = int(peeked.get("width", 0))
+	base.map_height = int(peeked.get("height", 0))
+	base.sea_level = float(peeked.get("sea_level", 0.50))
+	var packed_seed := int(peeked.get("seed", 0))
+	if packed_seed != 0:
+		base.initial_seed = packed_seed
+	return {"ok": true, "code": "ok", "message": ""}
 
 
 static func _pct(controls: Dictionary, name: String, default_value: float) -> float:

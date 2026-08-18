@@ -28,6 +28,11 @@ const COMMAND_CONSTRUCTION_BUILD := &"construction.build"
 const COMMAND_FAMILY_COLONIZATION_START := &"family.colonization.start"
 const COMMAND_FAMILY_COLONIZATION_CANCEL := &"family.colonization.cancel"
 const COMMAND_ERA_REWARD_CHOOSE := &"era_reward.choose"
+const COMMAND_IDEOLOGY_OFFER := &"ideology.offer"
+const COMMAND_IDEOLOGY_CHOOSE := &"ideology.choose"
+const COMMAND_IDEOLOGY_EQUIP := &"ideology.equip"
+const COMMAND_IDEOLOGY_UNEQUIP := &"ideology.unequip"
+const COMMAND_IDEOLOGY_PROMOTE := &"ideology.promote"
 
 const SUPPORTED_COMMANDS := {
 	COMMAND_RESEARCH_SET_WEIGHTS: true,
@@ -47,6 +52,11 @@ const SUPPORTED_COMMANDS := {
 	COMMAND_FAMILY_COLONIZATION_START: true,
 	COMMAND_FAMILY_COLONIZATION_CANCEL: true,
 	COMMAND_ERA_REWARD_CHOOSE: true,
+	COMMAND_IDEOLOGY_OFFER: true,
+	COMMAND_IDEOLOGY_CHOOSE: true,
+	COMMAND_IDEOLOGY_EQUIP: true,
+	COMMAND_IDEOLOGY_UNEQUIP: true,
+	COMMAND_IDEOLOGY_PROMOTE: true,
 }
 
 var _camera = null
@@ -60,6 +70,7 @@ var _command_sequence := 1
 var _pause_before_menu := false
 var _country_facade = null
 var _economy_facade = null
+var _ideology_facade = null
 var _era_reward_locked := false
 var _era_reward_resume_running := false
 var _era_reward_previous_speed := 1.0
@@ -150,9 +161,15 @@ func refresh_country_binding() -> void:
 				old_colonization_callback):
 			_economy_facade.family_colonization_settled.disconnect(
 				old_colonization_callback)
+	if _ideology_facade != null and _ideology_facade.has_signal("command_settled"):
+		var old_ideology_callback := Callable(self, "_on_ideology_command_settled")
+		if _ideology_facade.command_settled.is_connected(old_ideology_callback):
+			_ideology_facade.command_settled.disconnect(old_ideology_callback)
 	_country_facade = next
 	_economy_facade = generator.get_economy_facade() if generator != null \
 			and generator.has_method("get_economy_facade") else null
+	_ideology_facade = generator.get_ideology_facade() if generator != null \
+			and generator.has_method("get_ideology_facade") else null
 	if _country_facade != null and _country_facade.has_signal("country_committed"):
 		var callback := Callable(self, "_on_country_committed")
 		if not _country_facade.country_committed.is_connected(callback):
@@ -171,6 +188,10 @@ func refresh_country_binding() -> void:
 				colonization_callback):
 			_economy_facade.family_colonization_settled.connect(
 				colonization_callback)
+	if _ideology_facade != null and _ideology_facade.has_signal("command_settled"):
+		var ideology_callback := Callable(self, "_on_ideology_command_settled")
+		if not _ideology_facade.command_settled.is_connected(ideology_callback):
+			_ideology_facade.command_settled.connect(ideology_callback)
 	if _country_facade != null:
 		_resolve_player_country()
 		_sync_era_reward_offer()
@@ -293,6 +314,22 @@ func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
 			result = facade.choose_era_reward(
 				int(args.get("offer_generation", 0)),
 				int(args.get("choice_index", -1)), effective_day)
+		COMMAND_IDEOLOGY_OFFER:
+			result = _ideology_facade.request_offer(
+				_player_country_handle, effective_day, sequence)
+		COMMAND_IDEOLOGY_CHOOSE:
+			result = _ideology_facade.choose_offer(_player_country_handle,
+				int(args.get("offer_generation", 0)),
+				int(args.get("choice_index", -1)), effective_day, sequence)
+		COMMAND_IDEOLOGY_EQUIP:
+			result = _ideology_facade.equip(_player_country_handle,
+				int(args.get("ideology_id", -1)), effective_day, sequence)
+		COMMAND_IDEOLOGY_UNEQUIP:
+			result = _ideology_facade.unequip(_player_country_handle,
+				int(args.get("ideology_id", -1)), effective_day, sequence)
+		COMMAND_IDEOLOGY_PROMOTE:
+			result = _ideology_facade.promote(_player_country_handle,
+				int(args.get("ideology_id", -1)), effective_day, sequence)
 		_:
 			result = _result(false, "unsupported_command", "该正式玩家命令尚未开放。")
 	if not result.has("ok"):
@@ -337,12 +374,13 @@ func get_family_colonization_quotes(target_cell: int, family_filter: int = 0,
 		target_cell, family_filter, source_filter, offset, limit)
 
 
-func get_family_colonization_quote_detail(quote_token: int) -> Dictionary:
+func get_family_colonization_quote_detail(quote_token: int,
+		population: int = -1) -> Dictionary:
 	var ready := _resolve_player_country()
 	if not bool(ready.get("ok", false)):
 		return ready
 	var detail: Dictionary = _economy_facade.family_colonization_quote_detail(
-		quote_token)
+		quote_token, population)
 	if bool(detail.get("ok", false)) and int(detail.get(
 			"country_handle", 0)) != _player_country_handle:
 		return _result(false, "colonization_quote_forbidden", "报价不属于玩家国家。")
@@ -502,6 +540,18 @@ func _on_family_colonization_settled(result: Dictionary) -> void:
 	var command_id := COMMAND_FAMILY_COLONIZATION_CANCEL \
 		if String(result.get("code", "")) == "CANCELLED_RETURNING" \
 		else COMMAND_FAMILY_COLONIZATION_START
+	command_settled.emit(command_id, result)
+
+func _on_ideology_command_settled(result: Dictionary) -> void:
+	if int(result.get("country_handle", 0)) != _player_country_handle:
+		return
+	var command_id := {
+		3: COMMAND_IDEOLOGY_OFFER,
+		4: COMMAND_IDEOLOGY_CHOOSE,
+		5: COMMAND_IDEOLOGY_EQUIP,
+		6: COMMAND_IDEOLOGY_UNEQUIP,
+		7: COMMAND_IDEOLOGY_PROMOTE,
+	}.get(int(result.get("opcode", 0)), &"ideology.unknown") as StringName
 	command_settled.emit(command_id, result)
 
 
@@ -739,6 +789,22 @@ func _validate_command_args(id: StringName, args: Dictionary, facade = null) -> 
 					or generation != _era_reward_generation:
 				return _result(false, "era_reward_choice_invalid",
 					"时代奖励代际或选项无效。")
+		COMMAND_IDEOLOGY_OFFER:
+			if _ideology_facade == null:
+				return _result(false, "runtime_unavailable", "理念运行时尚未就绪。")
+		COMMAND_IDEOLOGY_CHOOSE:
+			if _ideology_facade == null:
+				return _result(false, "runtime_unavailable", "理念运行时尚未就绪。")
+			if int(args.get("offer_generation", 0)) <= 0 or \
+					int(args.get("choice_index", -1)) < 0 or \
+					int(args.get("choice_index", -1)) > 2:
+				return _result(false, "invalid_args", "理念候选代际或选项无效。")
+		COMMAND_IDEOLOGY_EQUIP, COMMAND_IDEOLOGY_UNEQUIP, \
+				COMMAND_IDEOLOGY_PROMOTE:
+			if _ideology_facade == null:
+				return _result(false, "runtime_unavailable", "理念运行时尚未就绪。")
+			if int(args.get("ideology_id", -1)) < 0:
+				return _result(false, "invalid_args", "理念标识无效。")
 	return _result(true, "ok", "")
 
 
@@ -849,11 +915,15 @@ static func _colonization_command_message(code: String) -> String:
 		"economy_paused": "经济已因守恒失败暂停，无法派遣。",
 		"economy_not_available": "经济运行时尚未就绪。",
 		"colonization_requote_required": "地图、视野或领土已经变化，请重新确认报价。",
+		"colonization_kit_requote_required": "目标资源或科技已经变化，请重新确认开工包。",
+		"colonization_kit_materials_short": "源地市场库存不足，无法抽出开工包物资。",
+		"colonization_quote_expired": "报价已过期，请重新选择要派遣的家族。",
 		"colonization_population_insufficient": "源分支人口不足，必须至少留下一人。",
 		"colonization_duplicate_target": "本国已有一支开拓队前往该目标。",
 		"colonization_family_cell_capacity": "目标地块的家族数量已达上限。",
 		"colonization_expedition_invalid": "开拓队已结束或句柄已过期。",
 		"colonization_command_invalid": "开拓命令参数不完整。",
+		"colonization_country_snapshot_unavailable": "国家快照尚未就绪，请稍后再试。",
 	}.get(code, "当前无法执行开拓。")
 
 

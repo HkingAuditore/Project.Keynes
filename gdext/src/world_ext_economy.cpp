@@ -222,6 +222,38 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
             out["fatal_reason"] = String(error.c_str());
             return out;
         }
+        bool fog_solved = false;
+        PackedByteArray visible_bytes;
+        const uint8_t *visible_ptr = nullptr;
+        int32_t visible_count = 0;
+        if (_map_data != nullptr) {
+            const Variant fog_variant = _map_data->get(StringName("fog_solved"));
+            fog_solved = fog_variant.get_type() == Variant::BOOL &&
+                static_cast<bool>(fog_variant);
+            if (fog_solved) {
+                const Variant visible_variant =
+                    _map_data->get(StringName("visible_arr"));
+                if (visible_variant.get_type() == Variant::PACKED_BYTE_ARRAY) {
+                    visible_bytes = visible_variant;
+                    visible_ptr = visible_bytes.ptr();
+                    visible_count = visible_bytes.size();
+                }
+            }
+        }
+        if (fog_solved || !runtime->trade_visibility_manual()) {
+            std::string vis_error;
+            if (!runtime->capture_trade_visibility(visible_ptr, visible_count,
+                    fog_solved, true, vis_error)) {
+                Dictionary out;
+                out["ok"] = false;
+                out["done"] = true;
+                out["fatal"] = true;
+                out["path"] = "ECONOMY_GRAPH";
+                out["stage"] = "trade_visibility_snapshot";
+                out["fatal_reason"] = String(vis_error.c_str());
+                return out;
+            }
+        }
     }
     if (runtime->needs_building_context_capture(day_index)) {
         auto f32_ptr = [&](const char *name) -> const float * {
@@ -424,6 +456,12 @@ Dictionary DCWorldExt::get_economy_report() const {
     return runtime_from(_economy_runtime)->report();
 }
 
+Dictionary DCWorldExt::get_country_class_opinion_snapshot() const {
+    return _economy_runtime == nullptr ? unavailable()
+        : runtime_from(_economy_runtime)->
+            country_class_opinion_snapshot_debug();
+}
+
 Dictionary DCWorldExt::get_population_cell_snapshot(int cell_idx) const {
     if (_economy_runtime == nullptr) {
         return unavailable();
@@ -524,6 +562,18 @@ Dictionary DCWorldExt::capture_economy_trade_topology(
         neighbor_indices.ptr(), terrain.ptr(), empty_canal.data(), empty_water.data(),
         trade_passable_lut.ptr(),
         trade_move_cost_lut.ptr(), terrain.size(), static_cast<uint64_t>(generation), error);
+    out["ok"] = ok;
+    if (!ok) out["reason"] = String(error.c_str());
+    return out;
+}
+
+Dictionary DCWorldExt::capture_economy_trade_visibility(
+        const PackedByteArray &visible, bool fog_solved) {
+    if (_economy_runtime == nullptr) return unavailable();
+    Dictionary out;
+    std::string error;
+    const bool ok = runtime_from(_economy_runtime)->capture_trade_visibility(
+        visible.ptr(), visible.size(), fog_solved, false, error);
     out["ok"] = ok;
     if (!ok) out["reason"] = String(error.c_str());
     return out;
@@ -703,10 +753,10 @@ Dictionary DCWorldExt::get_family_colonization_quotes(
 }
 
 Dictionary DCWorldExt::get_family_colonization_quote_detail(
-        int64_t quote_token) const {
+        int64_t quote_token, int64_t population) const {
     return _economy_runtime == nullptr ? unavailable() :
         runtime_from(_economy_runtime)->family_colonization_quote_detail(
-            quote_token);
+            quote_token, population);
 }
 
 Dictionary DCWorldExt::start_family_colonization(

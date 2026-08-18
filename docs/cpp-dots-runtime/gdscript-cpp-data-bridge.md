@@ -13,7 +13,7 @@
 
 PKSV persistence is a snapshot boundary, not a new owner. GDScript coordinates
 section capture while each native authority emits its own versioned state:
-PKCN v11, PKEF v9, PKTR v5, PKEC v36, PKCM v1, PKGP v1, and
+PKCN v11, PKEF v10, PKTR v5, PKID v3, PKEC v37, PKCM v1, PKGP v1, and
 `PKEnvironmentRuntime v1`. Environment export includes the
 resident core vectors, weather ping-pong buffers, topology, dirty/active sets,
 round flags, stage cursors, and snapshot generations. Restore validates schema
@@ -93,7 +93,7 @@ configure 成功后、population/market/building bootstrap 前执行该捕获；
 `PROBE/ACTIVE` 若 API 缺失或捕获失败则中止本次经济初始化，禁止出现“模式已开启但拓扑
 未就绪”的静默状态。地图只提供输入，不持有路线、信号、订单或托管。
 
-Economy bridge 是粗粒度 packet ABI：bootstrap/commands 使用平行 PackedArrays；hot loop 不出现 Dictionary、Callable 或 Object。每个 ACTIVE market cycle 的 sample day 由 `world_ext_economy.cpp` 从 temp/moisture/snow/weather raw slots 捕获一次 Q16 snapshot；周期内不重复跨界。gameplay 与 save 只观察 committed boundary；选中地块 Inspector 是有界冷查询例外。首屏摘要只调用不生成需求预览的 `get_population_cell_summary`；人口、市场、建筑标签按当前可见标签惰性调用 `get_population_cell_snapshot` / `get_market_cell_snapshot` / `get_building_cell_snapshot`。贸易单使用 `get_trade_orders_for_cell(cell, offset, limit)` 分页查询并返回物资行 CSR，禁止全局订单矩阵。完整查询在 native slice 之间同步返回最新数组，in-flight 标记 `snapshot_source=live_slice, committed=false`，边界标记 `snapshot_source=committed`。查询不复制全图、不修改经济状态，也不进入 state hash/存档。人口预计需求另取选中 cell 当前环境 slot，复用同一原生需求内核生成 cohort-major CSR。详见 [Native Economy Runtime](./native-economy-runtime.md) 与 [Domestic Trade Runtime](./domestic-trade-runtime.md)。
+Economy bridge 是粗粒度 packet ABI：bootstrap/commands 使用平行 PackedArrays；hot loop 不出现 Dictionary、Callable 或 Object。每个 ACTIVE market cycle 的 sample day 由 `world_ext_economy.cpp` 从 temp/moisture/snow/weather raw slots 捕获一次 Q16 snapshot；若 `MapData.fog_solved`，同边界再冻结 `visible_arr` 供玩家参与的贸易端点检查。周期内不重复跨界。gameplay 与 save 只观察 committed boundary；选中地块 Inspector 是有界冷查询例外。首屏摘要只调用不生成需求预览的 `get_population_cell_summary`；人口、市场、建筑标签按当前可见标签惰性调用 `get_population_cell_snapshot` / `get_market_cell_snapshot` / `get_building_cell_snapshot`。贸易单使用 `get_trade_orders_for_cell(cell, offset, limit)` 分页查询并返回物资行 CSR，禁止全局订单矩阵。完整查询在 native slice 之间同步返回最新数组，in-flight 标记 `snapshot_source=live_slice, committed=false`，边界标记 `snapshot_source=committed`。查询不复制全图、不修改经济状态，也不进入 state hash/存档。人口预计需求另取选中 cell 当前环境 slot，复用同一原生需求内核生成 cohort-major CSR。详见 [Native Economy Runtime](./native-economy-runtime.md) 与 [Domestic Trade Runtime](./domestic-trade-runtime.md)。
 
 同日经济 continuation 使用绑定方法 `run_economy_slice_compact(ctx)`；它和
 `run_economy_slice(ctx)` 进入同一个 `DCWorldExt::run_economy_slice_internal`，因此环境/建筑上下文
@@ -1025,6 +1025,15 @@ same-day dirty replay, while an unchanged revision waits for normal cadence.
 Native request IDs are intentionally not persistent. PKEF stores an in-flight
 native-bound `PREFLIGHTED` transaction as `PLANNED`, so restore repeats its
 idempotent C++ enqueue instead of retaining a request ID from an older process.
+
+Ideology public opinion does not use a DataCore slot or per-frame PackedArray
+bridge. Economy COMMIT publishes a double-buffered native
+`CountryClassOpinionSnapshot`; `NativeIdeologyRuntime` reads its POD vectors
+directly and caches normalized influence by revision. `DCWorldExt` packs that
+snapshot only for UI/debug. Player writes go through `PlayerController` and the
+producer/sequence command queue. UI reads one compact ideology snapshot plus
+one packed `explain_ideologies()` batch when the support revision or structural
+signature changes; it never performs one native Dictionary call per row.
 
 `EffectFacade` is an adapter transport boundary. For each transaction it asks
 adapters to preflight without mutation, marks the native transaction

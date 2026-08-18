@@ -216,9 +216,11 @@ transactions not claimed by the native bridge.
 
 ## Persistence and diagnostics
 
-`PKEF v9` stores catalog hash, runtime cursors, an in-progress candidate list,
+`PKEF v10` stores catalog hash, runtime cursors, an in-progress candidate list,
 instances, input metrics, published and consumed input revisions, fire sequences, and pending
-transactions/commands. It additionally stores durable `ExternalSourceBinding`
+transactions/commands. External commands persist their effect/source identity
+and include it in the plan hash, so atomic peer batches remain auditable after
+restore. It additionally stores durable `ExternalSourceBinding`
 rows for peer-owned persistent sources: source identity, target handle/generation,
 ideology level/location, binding generation, persistent-template signature and
 program hash. Native adapter request IDs are process-local and are
@@ -229,7 +231,7 @@ wrong protocol, schema, catalog hash, truncation, invalid IDs, and invalid
 transaction status. Domain state is not duplicated in PKEF; its domain-side
 idempotency evidence remains in PKCN, PKEC, or the gameplay journal.
 
-PKEF v9 also owns the complete frozen era-reward Alternative Offer Plan:
+PKEF v10 also owns the complete frozen era-reward Alternative Offer Plan:
 three alternatives, visible weighting reasons, generation-safe targets,
 plan hash, selected choice and its transaction. PKCN v11 stores only the matching
 plan reference and status. PKEF restore rejects any cross-section mismatch with
@@ -242,8 +244,10 @@ missing/mismatched source as well as any additional pending ideology transaction
 for the same country. This prevents an orphaned pre-load transaction from being
 silently granted after the ideology state has forgotten it.
 
-Peer runtimes can enqueue a precompiled external command and retain only the
-returned transaction ID. `transaction_status_pod()` reports a live state or an
+Peer runtimes can enqueue one command or atomically preflight a contiguous
+external transition batch. Batch commands retain individual identity while
+sharing one transaction, reserve, commit and aggregate ACK.
+`transaction_status_pod()` reports a live state or an
 ACKED result through the contiguous durable ACK cursor after ACK compaction;
 REJECTED rows remain queryable so a producer (currently ideology progression)
 can roll back its local intent instead of treating an unknown transaction as a
@@ -253,7 +257,7 @@ successful grant.
 pending ACKs, explicit transaction-state counts, work, elapsed time, behavior
 failures, overflow, due/dirty/candidate counts, flat-slab bytes, native Modifier
 batch timings, worker planning/serial merge timings, worker/fallback path fields,
-the pending idempotency-key count, per-native-adapter pending ACK counts, and last error. `PKEF v9` restore parses into temporary
+the pending idempotency-key count, per-native-adapter pending ACK counts, and last error. `PKEF v10` restore parses into temporary
 vectors and swaps only after all bounds, command masks, plan hash and end marker
 checks pass, so a truncated save cannot clear the live state.
 `explain_effect(instance_id)` reports the resolved program, input revision,
@@ -295,15 +299,16 @@ Focused fixtures:
 Technology activation is ACK-gated. `NativeCountryRuntime` keeps a completed
 technology in its pending bitset until the stable technology Effect instance
 has fired and both its permanent Modifier plus `technology.adopted` publication
-have reached their owning safe boundaries. Research completion registers that
-instance on the same country research day, because Effect (priority 85) runs
-before Country (255) on the following morning. A recipe that adds Country/Economy
-commands extends the same required ACK mask; the completed bit is written only
-after every required adapter ACK.
-The country retry does not re-upsert an already existing instance, so the
-configured cadence is preserved and a second Modifier stack is not produced.
-If Effect registration itself fails, the existing direct Modifier path remains
-an explicit compatibility fallback; a merely pending Effect never falls back.
+have reached their owning safe boundaries, **or** until the next country day
+applies the same permanent `UNIQUE_SOURCE` Modifier directly. Research completion
+registers that instance on the same country research day, because Effect
+(priority 85) runs before Country (255) on the following morning. A recipe that
+adds Country/Economy commands extends the same required ACK mask.
+The country retry does not re-upsert an already existing instance; it nudges an
+unacked instance back onto the due heap. `UNIQUE_SOURCE` replace is idempotent,
+so a later Effect ACK does not create a second stack. If Effect registration
+itself fails, or if the instance exists but still has not ACKed by the next
+country day, the direct Modifier path lands the completed tag.
 
 Person programs are compiled as `person.modifier.<modifier_definition_key>`
 for existing ECONOMY and GAMEPLAY Modifier definitions. Native person promotion

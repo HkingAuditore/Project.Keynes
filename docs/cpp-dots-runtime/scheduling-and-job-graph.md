@@ -56,14 +56,33 @@ the ordering is not merely a priority convention: Modifier is the safe commit
 boundary for native Effect commands. `EffectFacade.dispatch_transactions()` is
 still called for unsupported/custom commands only.
 
+`ideology_runtime` priority 82 uses independent command, pending-ACK, and active
+progress budgets. A slice returning `done=false` keeps a same-day continuation;
+it may not carry unfinished work silently into the next calendar day. Pending
+ACK traversal is O(pending), active progress is O(active), and a quiescent day
+does not inspect sparse discovered ideas. Economy priority 260 publishes the
+next committed class-opinion revision, so ideology commands earlier in the same
+day intentionally consume the previous committed revision.
+
 Country research completion registers the technology Effect instance during
 `country_daily` (255), after that day's Effect slot (85) has already run.
-The country slice then raises `country_day_barrier` when Effect still has due
-work, because `country_should_run` is already false after `_last_research_day`
-advances. `_continue_economy_inflight()` drains the same Effect→Modifier→gameplay
-ACK chain after Country finishes, so the instance can fire before Economy freezes
-and before the next calendar day. `_drain_native_effect_ack_chain()` is shared
-with `advance_save_boundary()`.
+The country slice then raises `country_day_barrier` when Effect or Modifier still
+has due work, because `country_should_run` is already false after `_last_research_day`
+advances. `_continue_economy_inflight()` drains Trigger/Ideology opportunistically,
+then loops the hard Effect→Modifier→gameplay ACK chain. Trigger/Ideology
+`should_run` must not starve an in-flight economy epoch or pin the calendar:
+the country barrier stays up only while that hard ACK chain is still due **and**
+economy catchup is in flight. After Country finishes, continuation still runs
+economy slices even if the hard ACK chain is not yet idle. `_drain_native_effect_ack_chain()`
+is shared with `advance_save_boundary()`. If a pending technology's Effect instance still has
+not ACKed by the next country day, Country applies the permanent `UNIQUE_SOURCE`
+Modifier directly so the completed tag cannot stay pending forever.
+
+Trigger handoff often stamps Country `DISCOVER` commands with
+`effective_day = event.day + 1`. Those future-dated transactions stay queued,
+but `effect_should_run` / `country_should_run` only return true once the command
+is due. Pinning the current day on tomorrow's ACK livelocked the starter soak
+when occupancy/breakthrough evidence first crossed a Trigger threshold.
 
 Backend fallback：
 

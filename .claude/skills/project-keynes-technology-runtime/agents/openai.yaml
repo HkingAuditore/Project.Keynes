@@ -1,0 +1,4 @@
+interface:
+  display_name: "Project.Keynes Technology Runtime"
+  short_description: "Develop and validate the technology tree runtime"
+  default_prompt: "Use $project-keynes-technology-runtime to implement or review a Project.Keynes technology-system change."

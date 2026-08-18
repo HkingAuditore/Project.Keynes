@@ -277,6 +277,9 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::configure_ideologies);
     ClassDB::bind_method(D_METHOD("submit_ideology_commands", "batch"),
                          &DCWorldExt::submit_ideology_commands);
+    ClassDB::bind_method(D_METHOD("poll_ideology_receipts",
+                         "after_receipt_id", "limit"),
+                         &DCWorldExt::poll_ideology_receipts);
     ClassDB::bind_method(D_METHOD("run_ideology_daily", "day_index"),
                          &DCWorldExt::run_ideology_daily);
     ClassDB::bind_method(D_METHOD("ideology_should_run", "day_index"),
@@ -285,6 +288,9 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::get_ideology_snapshot);
     ClassDB::bind_method(D_METHOD("explain_ideology", "country_handle", "ideology_id"),
                          &DCWorldExt::explain_ideology);
+    ClassDB::bind_method(D_METHOD("explain_ideologies",
+                         "country_handle", "ideology_ids"),
+                         &DCWorldExt::explain_ideologies);
     ClassDB::bind_method(D_METHOD("get_ideology_report"),
                          &DCWorldExt::get_ideology_report);
     ClassDB::bind_method(D_METHOD("capture_ideology_state"),
@@ -310,6 +316,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::economy_should_run);
     ClassDB::bind_method(D_METHOD("get_economy_report"),
                          &DCWorldExt::get_economy_report);
+    ClassDB::bind_method(D_METHOD("get_country_class_opinion_snapshot"),
+                         &DCWorldExt::get_country_class_opinion_snapshot);
     ClassDB::bind_method(D_METHOD("get_population_cell_summary", "cell_idx"),
                          &DCWorldExt::get_population_cell_summary);
     ClassDB::bind_method(D_METHOD("get_named_settlement_snapshot"),
@@ -335,6 +343,9 @@ void DCWorldExt::_bind_methods() {
                                   "terrain", "trade_passable_lut",
                                   "trade_move_cost_lut", "generation"),
                          &DCWorldExt::capture_economy_trade_topology, DEFVAL(0));
+    ClassDB::bind_method(D_METHOD("capture_economy_trade_visibility",
+                                  "visible", "fog_solved"),
+                         &DCWorldExt::capture_economy_trade_visibility);
     ClassDB::bind_method(D_METHOD("get_building_cell_snapshot", "cell_idx"),
                          &DCWorldExt::get_building_cell_snapshot);
     ClassDB::bind_method(D_METHOD("get_treasury_construction_quotes",
@@ -362,8 +373,9 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::get_family_colonization_quotes,
                          DEFVAL(0), DEFVAL(-1), DEFVAL(0), DEFVAL(64));
     ClassDB::bind_method(D_METHOD("get_family_colonization_quote_detail",
-                                  "quote_token"),
-                         &DCWorldExt::get_family_colonization_quote_detail);
+                                  "quote_token", "population"),
+                         &DCWorldExt::get_family_colonization_quote_detail,
+                         DEFVAL(int64_t(-1)));
     ClassDB::bind_method(D_METHOD("start_family_colonization",
                                   "country_handle", "family_handle",
                                   "source_cell", "target_cell", "population",
@@ -493,6 +505,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::run_native_world_generate_post_base_pass);
     ClassDB::bind_method(D_METHOD("run_native_world_generate_full_pass", "seed", "cfg", "profile"),
                          &DCWorldExt::run_native_world_generate_full_pass);
+    ClassDB::bind_method(D_METHOD("restuff_generation_river_cache", "input"),
+                         &DCWorldExt::restuff_generation_river_cache);
     ClassDB::bind_method(D_METHOD("run_research_signal_generation_pass", "knobs"),
                          &DCWorldExt::run_research_signal_generation_pass);
     ClassDB::bind_method(D_METHOD("run_bio_province_pass", "knobs"),

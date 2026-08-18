@@ -85,6 +85,8 @@ func set_player_controller(controller) -> void:
 		_technology_workspace.set_player_controller(controller)
 	if _economy_workspace != null and _economy_workspace.has_method("set_player_controller"):
 		_economy_workspace.set_player_controller(controller)
+	if _ideology_workspace != null and _ideology_workspace.has_method("set_player_controller"):
+		_ideology_workspace.set_player_controller(controller)
 
 
 func current_section() -> String:
@@ -146,6 +148,8 @@ func _apply_section() -> void:
 		_economy_workspace.set_model(_model)
 		return
 	if ideology_open:
+		if _ideology_workspace.has_method("set_player_controller"):
+			_ideology_workspace.set_player_controller(_player_controller)
 		_ideology_workspace.set_model(_model)
 		_ideology_workspace.set_compact(_compact)
 		return

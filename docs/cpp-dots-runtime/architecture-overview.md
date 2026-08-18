@@ -19,7 +19,7 @@ generation, bootstrap, PKSV, and restore contract is documented in
 Saving does not introduce a second simulation authority. It freezes new clock
 advancement, drains existing country/economy continuations across render frames,
 then snapshots `DCWorld`, native environment state, PKCM, WorldClock, PKCN v11, PKEC, PKGP,
-PKFG, journal, PKTR v5, PKEF v9, and player view. Restore regenerates static geography and applies
+PKFG, journal, PKTR v5, PKEF v10, PKID v3, and player view. Restore regenerates static geography and applies
 PKCM after environment, PKCN before PKEC, PKGP after PKEC, and PKTR after Economy/domain state.
 PKFG carries only the monotonic `cell_explored` progress;
 current visibility and fog knowledge are derived and are recomputed on restore.
@@ -159,7 +159,7 @@ C++ pass 的目标形态是：循环外解析 slot id 和 knobs，循环内只�
 | C++ pass 输出 | slot + publish/flush/snapshot | 输出必须显式发布到 GDScript 可见层。 |
 | 调度报告 | scheduler report Dictionary | `main.gd` 和 debug console 消费。 |
 | feature gates | `ClimateProfile` / `FeatureFlags` | 由 GDScript 决定 native/fallback 路径。 |
-| 视野与迷雾 | `VisionSolver`（GDScript） | 事件驱动而非每日 tick。`cell.visible`/`cell.explored` 是 schema 组件，`fog_k_arr` 是只供 `enum_lut.a` 消费的派生量；只有 `explored` 进存档。详见 [视野迷雾与国界线](./vision-fog-and-borders.md)。 |
+| 视野与迷雾 | `VisionSolver`（GDScript） | 事件驱动而非每日 tick。`cell.visible`/`cell.explored` 是 schema 组件，`fog_k_arr` 是只供 `enum_lut.a` 消费的派生量；只有 `explored` 进存档。`fog_solved` 之后经济在 sample 日冻结 `visible_arr`，玩家参与的贸易不能以当前不可见格为端点。详见 [视野迷雾与国界线](./vision-fog-and-borders.md)。 |
 
 关键结论：C++ 写入 slot 不会自动让所有 GDScript 读者立刻看到。是否可见取决于该 pass 是否执行了 `_flush_slot_to_map()`、是否返回 `published_to_slot=true`、调用侧是否跳过了重复拷贝，以及 GDScript 读者是否读取的是已更新的 `MapData`/`DCWorld`。
 
@@ -226,7 +226,7 @@ C++ pass 的目标形态是：循环外解析 slot id 和 knobs，循环内只�
 经济运行时通过窄 C++ 指针桥在 sample day 冻结归属、国家科技、generation/hash，并在整个结算
 周期使用该快照。国内贸易拓扑也以该冻结归属生成国家连通分量；新订单只走同一非中立国家，
 已发运订单不因后续边界变化取消。当前 PKCN v11 保存国家状态、研究/研究信号、全国与地块五类税务政策、
-科技/Effect recipe/Trigger/内容绑定 identity、Country Modifier domain 与 Country Effect ingress 幂等证据；PKEC v36 引用匹配的 PKCN identity，并持久化经济状态、显赫家族及其
+科技/Effect recipe/Trigger/内容绑定 identity、Country Modifier domain 与 Country Effect ingress 幂等证据；PKEC v37 引用匹配的 PKCN identity，并持久化经济状态、显赫家族及其
 成员/建筑所有权、家族重要人物与需求归因、补贴权重、财政累计、科研采购累计、BuildingIdentityStore、Economy Modifier
 domain、生产气候冻结/诊断字段与 Economy Effect ingress 幂等证据；
 完整恢复顺序固定为 PKCM、PKCN、PKEC、PKGP。详见
@@ -242,7 +242,7 @@ domain、生产气候冻结/诊断字段与 Economy Effect ingress 幂等证据�
 publication and domain consumers. It owns packed trigger state only; domain
 commands are applied by Modifier/Country/Economy adapters at safe boundaries.
 Technology practice and development thresholds persist in PKTR v5 and hand permanent-signal
-commands to PKEF v9; technology/research state remains PKCN v11 authority.
+commands to PKEF v10; technology/research state remains PKCN v11 authority.
 See [Native Trigger Runtime](./native-trigger-runtime.md).
 
 ## Native prosperity and settlement identity

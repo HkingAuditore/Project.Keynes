@@ -795,15 +795,18 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     const auto audit_started = Clock::now();
     int64_t live_expedition_population = 0;
     int64_t live_expedition_funds = 0;
+    int64_t live_expedition_goods = 0;
     sum_family_expedition_holdings(live_expedition_population,
-                                   live_expedition_funds, _saturation_count);
+                                   live_expedition_funds, live_expedition_goods,
+                                   _saturation_count);
     // Idle start/return moves cohort funds into expedition escrow (or back)
     // before this opening snapshot. Copying last close then live-replacing
     // escrow would double-count or drop that money. Force a full scan whenever
     // in-transit holdings drifted since the last committed close.
     const bool expedition_holdings_changed =
         live_expedition_population != _closing_totals.transit_population ||
-        live_expedition_funds != _closing_totals.expedition_funds;
+        live_expedition_funds != _closing_totals.expedition_funds ||
+        live_expedition_goods != _closing_totals.expedition_goods;
     const bool full_audit_verify = _opening_audit_force_full ||
         expedition_holdings_changed ||
         day_index % _full_audit_verify_interval_days == 0;
@@ -824,6 +827,7 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
         }
         int64_t opening_escrow_saturation = 0;
         _opening_totals.expedition_funds = live_expedition_funds;
+        _opening_totals.expedition_goods = live_expedition_goods;
         _opening_totals.transit_population = live_expedition_population;
         _opening_totals.escrow_cash = saturating_add(
             saturating_add(trade_escrow_cash(), fiscal_escrow_total(),

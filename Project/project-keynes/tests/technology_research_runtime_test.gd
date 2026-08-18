@@ -26,6 +26,7 @@ func _init() -> void:
 	var settled_knowledge := ids.find("tech.settled_knowledge")
 	var previous_maize := ids.find("tech.wild_maize_collection")
 	var previous_maritime := ids.find("tech.fishing_boats")
+	var oral_memory := ids.find("tech.oral_memory_practice")
 	var kiln_firing := ids.find("tech.kiln_firing")
 	var packet := {
 		"country_ids": PackedStringArray(["country.test"]),
@@ -35,10 +36,10 @@ func _init() -> void:
 		"territory_cells": PackedInt32Array([0]),
 		# Research eligibility comes from completed technology prerequisites.
 		# Signals may reveal another node, but never substitute for this chain.
-		"technology_offsets": PackedInt32Array([0, 5]),
+		"technology_offsets": PackedInt32Array([0, 6]),
 		"technology_indices": PackedInt32Array([
 			gathering, stone_knapping, settled_knowledge,
-			previous_maize, previous_maritime]),
+			previous_maize, previous_maritime, oral_memory]),
 		"treasury_offsets": PackedInt32Array([0, 1]),
 		"treasury_good_indices": PackedInt32Array([points_good]),
 		"treasury_quantities": PackedInt64Array([10000]),

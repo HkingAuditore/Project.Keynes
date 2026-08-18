@@ -162,6 +162,34 @@ bool NativeEconomyRuntime::compile_carrying_catalog(const Dictionary &catalog,
     } else {
         class_ids.assign(_profession_ids.size(), "general");
     }
+    // Political classes deliberately have their own intern table. Carrying
+    // weights are a population-capacity concern and must never become the
+    // identity or weighting contract consumed by IdeologyRuntime.
+    _political_class_ids = class_ids;
+    std::sort(_political_class_ids.begin(), _political_class_ids.end());
+    _political_class_ids.erase(
+        std::unique(_political_class_ids.begin(), _political_class_ids.end()),
+        _political_class_ids.end());
+    if (_political_class_ids.empty()) _political_class_ids.push_back("general");
+    _profession_political_class_index.assign(_profession_ids.size(), 0);
+    for (size_t profession = 0; profession < class_ids.size(); ++profession) {
+        const auto found = std::lower_bound(_political_class_ids.begin(),
+            _political_class_ids.end(), class_ids[profession]);
+        _profession_political_class_index[profession] =
+            found == _political_class_ids.end() ||
+                    *found != class_ids[profession]
+                ? 0 : static_cast<int32_t>(
+                    found - _political_class_ids.begin());
+    }
+    _political_class_hash = 1469598103934665603ULL;
+    for (const std::string &id : _political_class_ids) {
+        for (const unsigned char value : id) {
+            _political_class_hash ^= value;
+            _political_class_hash *= 1099511628211ULL;
+        }
+        _political_class_hash ^= 0xffU;
+        _political_class_hash *= 1099511628211ULL;
+    }
     _carrying_class_ids = class_ids;
     std::sort(_carrying_class_ids.begin(), _carrying_class_ids.end());
     _carrying_class_ids.erase(

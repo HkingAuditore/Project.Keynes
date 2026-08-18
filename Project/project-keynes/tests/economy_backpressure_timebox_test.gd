@@ -14,6 +14,9 @@ class FakeRuntime extends RefCounted:
 	func economy_should_run(_day_index: int) -> bool:
 		return remaining > 0
 
+	func trigger_should_run(_day_index: int) -> bool:
+		return remaining > 0
+
 	func report() -> Dictionary:
 		return {"epoch_active": remaining > 0, "fatal": fatal}
 
@@ -44,7 +47,18 @@ class FakeScheduler extends RefCounted:
 	func continue_system(system_id: StringName, ctx: SusTickContext) -> Dictionary:
 		calls.append(system_id)
 		contexts.append(ctx)
-		var runtime := country_runtime if system_id == &"country_daily" else economy_runtime
+		var runtime: FakeRuntime = null
+		if system_id == &"country_daily":
+			runtime = country_runtime
+		elif system_id == &"economy_daily":
+			runtime = economy_runtime
+		if runtime == null:
+			return {
+				"done": true,
+				"stage_name": String(system_id),
+				"next_stage": "",
+				"path": "test",
+			}
 		runtime.remaining = maxi(0, runtime.remaining - 1)
 		return {
 			"done": runtime.remaining == 0,
@@ -128,6 +142,32 @@ func _initialize() -> void:
 	resumed_clock._process(1.0 / 60.0)
 	if resumed_clock.day_index() != 1:
 		failures.append("a drained barrier did not resume day advancement on the next frame")
+
+	var sticky_clock := WorldClock.new()
+	sticky_clock.sim_frame_budget_ms = 8.0
+	sticky_clock.request_simulation_backpressure(&"country_day_barrier", true)
+	sticky_clock.request_simulation_backpressure(&"economy_day_barrier", true)
+	var sticky_trigger := FakeRuntime.new(99)
+	var sticky_economy := FakeRuntime.new(5)
+	var sticky_country := FakeRuntime.new(0)
+	var sticky_scheduler := FakeScheduler.new(sticky_country, sticky_economy)
+	var sticky_generator := MapGenerator.new()
+	sticky_generator._sus = sticky_scheduler
+	sticky_generator._world_clock_ref = sticky_clock
+	sticky_generator._country_daily_job = RefCounted.new()
+	sticky_generator._economy_daily_job = RefCounted.new()
+	sticky_generator._trigger_daily_job = RefCounted.new()
+	sticky_generator._country_facade = FakeFacade.new(sticky_country)
+	sticky_generator._economy_facade = FakeFacade.new(sticky_economy)
+	sticky_generator._trigger_facade = FakeFacade.new(sticky_trigger)
+	sticky_generator._continue_economy_inflight(20)
+	if sticky_economy.remaining != 0:
+		failures.append("a sticky trigger should_run starved in-flight economy catchup")
+	if sticky_clock._simulation_backpressure_sources.has(&"economy_day_barrier") \
+			or sticky_clock._simulation_backpressure_sources.has(&"country_day_barrier"):
+		failures.append("sticky trigger work left a hard day barrier after economy catchup")
+	if not sticky_scheduler.calls.has(&"economy_daily"):
+		failures.append("sticky trigger continuation never reached economy_daily")
 
 	if failures.is_empty():
 		print("[economy-backpressure-timebox] PASS")

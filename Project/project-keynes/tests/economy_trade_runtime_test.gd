@@ -199,8 +199,8 @@ func _run() -> void:
 	_expect("dispatch preserves the source market local-demand reserve",
 		int((source_after_dispatch.stock as PackedInt64Array)[source_good_index]) >= local_target)
 	var saved := _save_economy(ext)
-	_expect("PKEC v36 saves in-transit escrow", bool(saved.get("ok", false)) and
-		int(saved.get("schema", 0)) == 36)
+	_expect("PKEC v37 saves in-transit escrow", bool(saved.get("ok", false)) and
+		int(saved.get("schema", 0)) == 37)
 	var restored := _new_ext(compiled, 2)
 	CountryTestHelper.configure_all_technologies(restored, catalog, 2, 4410)
 	restored.configure_economy(catalog, profile, 2, 4410)
@@ -229,6 +229,7 @@ func _run() -> void:
 
 	_test_probe_is_read_only(compiled, catalog)
 	_test_country_boundary(compiled, catalog)
+	_test_player_vision_gates_foreign_trade(compiled, catalog)
 	_test_tariff_matrix(compiled, catalog)
 	_test_topology_contract(compiled, catalog)
 	_test_cold_start_inventory_horizon(compiled, catalog)
@@ -431,6 +432,80 @@ func _test_country_boundary(compiled: Dictionary, catalog: Dictionary) -> void:
 		int(gameplay_i2[0]) == int(beta.country_slot) and int(gameplay_i3[0]) == good)
 
 
+func _test_player_vision_gates_foreign_trade(compiled: Dictionary, catalog: Dictionary) -> void:
+	var ext := _new_ext(compiled, 5)
+	var technologies: PackedStringArray = compiled.technology_ids
+	var technology_indices := PackedInt32Array()
+	for repeat in range(3):
+		for technology in range(technologies.size()):
+			technology_indices.append(technology)
+	ext.configure_country(catalog, {
+		"country_runtime_mode": "ACTIVE",
+		"starting_technology_ids": PackedStringArray(),
+	}, 5, 4430)
+	ext.bootstrap_country({
+		"country_ids": PackedStringArray(["country.alpha", "country.gamma", "country.beta"]),
+		"country_names": PackedStringArray(["Alpha", "Gamma", "Beta"]),
+		"country_cash": PackedInt64Array([0, 0, 0]),
+		"territory_offsets": PackedInt32Array([0, 1, 2, 3]),
+		"territory_cells": PackedInt32Array([0, 2, 4]),
+		"technology_offsets": PackedInt32Array([0, technologies.size(), technologies.size() * 2,
+			technologies.size() * 3]),
+		"technology_indices": technology_indices,
+		"treasury_offsets": PackedInt32Array([0, 0, 0, 0]),
+		"treasury_good_indices": PackedInt32Array(),
+		"treasury_quantities": PackedInt64Array(),
+	}, PackedByteArray([0, 0, 0, 0, 0]))
+	var profile: Dictionary = load(
+		"res://data/economy/default_economy.tres").to_native_profile()
+	profile.market_cycle_days = 2
+	profile.market_runtime_mode = "ACTIVE"
+	profile.trade_runtime_mode = "ACTIVE"
+	profile.trade_signal_pairs_per_slice = 1048576
+	profile.trade_route_searches_per_slice = 64
+	profile.trade_min_margin_q16 = 0
+	profile.trade_speed_cost_per_day = 4
+	ext.configure_economy(catalog, profile, 5, 4430)
+	_capture_line_topology(ext, 5, 8)
+	var goods: PackedStringArray = compiled.good_ids
+	var good := goods.find("gathered_plants")
+	var stock := PackedInt64Array()
+	stock.resize(goods.size() * 5)
+	stock[good] = 100000000
+	var price := PackedInt32Array()
+	price.resize(goods.size() * 5)
+	for cell in range(5):
+		for g in range(goods.size()):
+			price[cell * goods.size() + g] = int(
+				(compiled.good_default_price as PackedInt32Array)[g])
+	price[good] = int((compiled.good_min_price as PackedInt32Array)[good])
+	var merchant := (compiled.signature_keys as PackedStringArray).find("merchant|default")
+	ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 4]),
+		"signature_ids": PackedInt32Array([merchant, merchant]),
+		"population": PackedInt64Array([100, 100]),
+		"funds": PackedInt64Array([100000000, 100000000]),
+	}, {"stock": stock, "price": price})
+	var fogged := PackedByteArray()
+	fogged.resize(5)
+	fogged.fill(0)
+	fogged[0] = 1
+	_expect("player vision freeze captures",
+		bool(ext.capture_economy_trade_visibility(fogged, true).get("ok", false)))
+	var blocked := _wait_for_trade_order(ext, 0, 10)
+	_expect("player cannot trade with a cell outside current vision",
+		int(blocked.orders.get("total", 0)) == 0 and
+		bool(ext.get_economy_report().get("trade_vision_gated", false)))
+	var revealed := PackedByteArray()
+	revealed.resize(5)
+	revealed.fill(1)
+	_expect("revealed counterpart recaptures",
+		bool(ext.capture_economy_trade_visibility(revealed, true).get("ok", false)))
+	var opened := _wait_for_trade_order_range(ext, 0, int(blocked.day) + 1, 12)
+	_expect("player can trade once the counterpart is visible",
+		int(opened.orders.get("total", 0)) > 0)
+
+
 func _test_tariff_matrix(compiled: Dictionary, catalog: Dictionary) -> void:
 	var positive := _new_tariff_fixture(compiled, catalog, 33, 99, 0, 0, 4420)
 	_expect("positive tariff fixture configures", bool(positive.get("ok", false)))
@@ -510,7 +585,7 @@ func _test_tariff_matrix(compiled: Dictionary, catalog: Dictionary) -> void:
 			catalog, positive.profile, 2, 4420).get("ok", false))
 		var economy_restored := _restore_economy(
 			restored, saved_economy.get("chunks", [])) if economy_configured else {"ok": false}
-		_expect("PKEC v36 restores tariff history, aggregates and state hash",
+		_expect("PKEC v37 restores tariff history, aggregates and state hash",
 			bool(saved_country.get("ok", false)) and bool(saved_economy.get("ok", false)) and
 			bool(economy_restored.get("ok", false)) and
 			int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
@@ -724,6 +799,19 @@ func _wait_for_trade_order(ext: Object, source_cell: int, max_days: int) -> Dict
 	var report: Dictionary = {}
 	var day := -1
 	for candidate_day in range(max_days):
+		if int(orders.get("total", 0)) > 0:
+			break
+		report = _advance_day(ext, candidate_day)
+		day = candidate_day
+		orders = ext.get_trade_orders_for_cell(source_cell, 0, 64)
+	return {"orders": orders, "report": report, "day": day}
+
+func _wait_for_trade_order_range(ext: Object, source_cell: int, start_day: int,
+		max_days: int) -> Dictionary:
+	var orders: Dictionary = ext.get_trade_orders_for_cell(source_cell, 0, 64)
+	var report: Dictionary = {}
+	var day := start_day - 1
+	for candidate_day in range(start_day, start_day + max_days):
 		if int(orders.get("total", 0)) > 0:
 			break
 		report = _advance_day(ext, candidate_day)

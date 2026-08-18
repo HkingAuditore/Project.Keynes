@@ -343,10 +343,15 @@ public:
     // collection/progression state and delegates domain effects elsewhere.
     godot::Dictionary configure_ideologies(const godot::Dictionary &catalog);
     godot::Dictionary submit_ideology_commands(const godot::Dictionary &batch);
+    godot::Dictionary poll_ideology_receipts(int64_t after_receipt_id,
+                                             int32_t limit) const;
     godot::Dictionary run_ideology_daily(int64_t day_index);
     bool ideology_should_run(int64_t day_index) const;
     godot::Dictionary get_ideology_snapshot(int64_t country_handle) const;
-    godot::Dictionary explain_ideology(int64_t country_handle, int32_t ideology_id) const;
+    godot::Dictionary explain_ideology(int64_t country_handle, int32_t ideology_id);
+    godot::Dictionary explain_ideologies(
+        int64_t country_handle,
+        const godot::PackedInt32Array &ideology_ids);
     godot::Dictionary get_ideology_report() const;
     godot::PackedByteArray capture_ideology_state() const;
     godot::Dictionary restore_ideology_state(const godot::PackedByteArray &bytes);
@@ -375,6 +380,7 @@ public:
     godot::Dictionary run_economy_slice_compact(const godot::Dictionary &ctx);
     bool economy_should_run(int64_t day_index) const;
     godot::Dictionary get_economy_report() const;
+    godot::Dictionary get_country_class_opinion_snapshot() const;
     godot::Dictionary get_population_cell_summary(int cell_idx) const;
     godot::Dictionary get_named_settlement_snapshot() const;
     godot::Dictionary get_settlement_delta(int64_t since_revision) const;
@@ -390,6 +396,8 @@ public:
         const godot::PackedByteArray &trade_passable_lut,
         const godot::PackedInt32Array &trade_move_cost_lut,
         int64_t generation = 0);
+    godot::Dictionary capture_economy_trade_visibility(
+        const godot::PackedByteArray &visible, bool fog_solved);
     godot::Dictionary get_building_cell_snapshot(int cell_idx) const;
     godot::Dictionary get_treasury_construction_quotes(
         int64_t country_handle, int cell_idx,
@@ -417,7 +425,7 @@ public:
         int64_t country_handle, int target_cell, int64_t family_filter = 0,
         int source_filter = -1, int offset = 0, int limit = 64);
     godot::Dictionary get_family_colonization_quote_detail(
-        int64_t quote_token) const;
+        int64_t quote_token, int64_t population = -1) const;
     godot::Dictionary start_family_colonization(
         int64_t country_handle, int64_t family_handle, int source_cell,
         int target_cell, int64_t population, int64_t quote_token,
@@ -506,6 +514,9 @@ public:
     godot::Dictionary run_native_world_generate_full_pass(int seed,
                                                           const godot::Dictionary &cfg,
                                                           const godot::Dictionary &profile);
+    // PKMAP 旁路：从冻结合成结果填 `_gen_river_*`，邻居用 index_for_qr 现场重建。
+    // 跳过 post_base 读包时必须调用，否则 run_bake_river_sdf_pass 无河。
+    godot::Dictionary restuff_generation_river_cache(const godot::Dictionary &input);
     // Static, generation-only research evidence. Input/output are packed arrays;
     // no MapData/Object access or per-cell Variant allocation occurs in the loop.
     godot::Dictionary run_research_signal_generation_pass(const godot::Dictionary &knobs);

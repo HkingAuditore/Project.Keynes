@@ -1,0 +1,4 @@
+interface:
+  display_name: "Project Keynes Headless Perf"
+  short_description: "无界面运行并验证 Project.Keynes 性能 CSV"
+  default_prompt: "使用 $project-keynes-headless-perf 无界面运行 50 日性能录制并验证 CSV。"

@@ -4351,6 +4351,101 @@ godot::Dictionary DCWorldExt::run_native_world_generate_post_base_pass(
     return out;
 }
 
+godot::Dictionary DCWorldExt::restuff_generation_river_cache(const godot::Dictionary &input) {
+    using godot::Dictionary;
+    using godot::PackedByteArray;
+    using godot::PackedFloat32Array;
+    using godot::PackedInt32Array;
+    using godot::String;
+
+    Dictionary out;
+    out["rc"] = -1;
+    out["ok"] = false;
+    out["fallback"] = true;
+    out["reason"] = String();
+    out["n_cells"] = 0;
+
+    const int width = int(input.get("width", 0));
+    const int height = int(input.get("height", 0));
+    const int n = int(input.get("n_cells", int64_t(width) * int64_t(height)));
+    if (width <= 0 || height <= 0 || n <= 0 || n != width * height) {
+        out["reason"] = String("invalid_dimensions");
+        return out;
+    }
+
+    PackedInt32Array q_arr = input.get("q_arr", PackedInt32Array());
+    PackedInt32Array r_arr = input.get("r_arr", PackedInt32Array());
+    PackedFloat32Array elevation_arr = input.get("elevation_arr", PackedFloat32Array());
+    PackedByteArray terrain_arr = input.get("terrain_arr", PackedByteArray());
+    PackedByteArray has_river_arr = input.get("has_river_arr", PackedByteArray());
+    PackedFloat32Array river_flow_arr = input.get("river_flow_arr", PackedFloat32Array());
+    PackedInt32Array river_downstream_arr = input.get("river_downstream_arr", PackedInt32Array());
+    if (q_arr.size() != n || r_arr.size() != n || elevation_arr.size() != n || terrain_arr.size() != n) {
+        out["reason"] = String("required_input_size_mismatch");
+        return out;
+    }
+    if (has_river_arr.size() != n) {
+        has_river_arr.resize(n);
+        uint8_t *H = has_river_arr.ptrw();
+        for (int i = 0; i < n; ++i) H[i] = 0;
+    }
+    if (river_flow_arr.size() != n) {
+        river_flow_arr.resize(n);
+        float *F = river_flow_arr.ptrw();
+        for (int i = 0; i < n; ++i) F[i] = 0.0f;
+    }
+    if (river_downstream_arr.size() != n) {
+        river_downstream_arr.resize(n);
+        int32_t *D = river_downstream_arr.ptrw();
+        for (int i = 0; i < n; ++i) D[i] = -1;
+    }
+
+    const int32_t *Q = q_arr.ptr();
+    const int32_t *R = r_arr.ptr();
+    const float *E = elevation_arr.ptr();
+    const uint8_t *TERR = terrain_arr.ptr();
+    const uint8_t *RIV = has_river_arr.ptr();
+    const float *RFLOW = river_flow_arr.ptr();
+    const int32_t *RDOWN = river_downstream_arr.ptr();
+
+    constexpr int DQ[6] = { 1, 1, 0, -1, -1, 0 };
+    constexpr int DR[6] = { 0, -1, -1, 0, 1, 1 };
+    auto index_for_qr = [&](int q, int r) -> int {
+        if (r < 0 || r >= height) return -1;
+        int col = q + ((r - (r & 1)) / 2);
+        col = ((col % width) + width) % width;
+        return r * width + col;
+    };
+
+    _gen_river_n = n;
+    _gen_river_q.assign(size_t(n), 0);
+    _gen_river_r.assign(size_t(n), 0);
+    _gen_river_terrain.assign(size_t(n), 0);
+    _gen_river_elev.assign(size_t(n), 0.0f);
+    _gen_river_has.assign(size_t(n), 0);
+    _gen_river_flow.assign(size_t(n), 0.0f);
+    _gen_river_downstream.assign(size_t(n), -1);
+    _gen_river_neighbors.assign(size_t(n) * 6, -1);
+    for (int i = 0; i < n; ++i) {
+        _gen_river_q[size_t(i)] = Q[i];
+        _gen_river_r[size_t(i)] = R[i];
+        _gen_river_terrain[size_t(i)] = TERR[i];
+        _gen_river_elev[size_t(i)] = E[i];
+        _gen_river_has[size_t(i)] = RIV[i];
+        _gen_river_flow[size_t(i)] = RFLOW[i];
+        _gen_river_downstream[size_t(i)] = RDOWN[i];
+        for (int d = 0; d < 6; ++d) {
+            _gen_river_neighbors[size_t(i) * 6 + size_t(d)] = index_for_qr(Q[i] + DQ[d], R[i] + DR[d]);
+        }
+    }
+
+    out["rc"] = 0;
+    out["ok"] = true;
+    out["fallback"] = false;
+    out["n_cells"] = n;
+    return out;
+}
+
 Dictionary DCWorldExt::_run_native_generation_publish_pass(
     int seed,
     const Dictionary &cfg,

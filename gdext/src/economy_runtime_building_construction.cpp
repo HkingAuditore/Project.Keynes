@@ -9,7 +9,8 @@ namespace pk {
 bool NativeEconomyRuntime::plan_construction_materials(
         int32_t cell, int32_t type_id, int64_t count, int32_t cost_factor_q16,
         ConstructionMaterialPlan &plan,
-        const std::vector<int64_t> *additional_stock) const {
+        const std::vector<int64_t> *additional_stock,
+        std::vector<int64_t> *stock_inout) const {
     plan = ConstructionMaterialPlan{};
     if (cell < 0 || cell >= _cell_count || type_id < 0 ||
         type_id >= static_cast<int32_t>(_building_types.size()) || count <= 0 ||
@@ -25,17 +26,24 @@ bool NativeEconomyRuntime::plan_construction_materials(
         type.construction_begin + type.construction_count >
             static_cast<int32_t>(_building_construction_goods.size())) return false;
 
-    std::vector<int64_t> virtual_stock(_good_ids.size(), 0);
-    for (int32_t good = 0; good < _market.good_count; ++good) {
-        virtual_stock[static_cast<size_t>(good)] = std::max<int64_t>(0,
-            _market.stock[_market.index(market, good)]);
-    }
-    if (additional_stock != nullptr) {
-        for (size_t good = 0; good < virtual_stock.size() &&
-             good < additional_stock->size(); ++good) {
-            virtual_stock[good] = std::max<int64_t>(0, saturating_add(
-                virtual_stock[good], (*additional_stock)[good], sat));
+    std::vector<int64_t> local_stock;
+    std::vector<int64_t> *virtual_stock = stock_inout;
+    if (virtual_stock == nullptr) {
+        local_stock.assign(_good_ids.size(), 0);
+        for (int32_t good = 0; good < _market.good_count; ++good) {
+            local_stock[static_cast<size_t>(good)] = std::max<int64_t>(0,
+                _market.stock[_market.index(market, good)]);
         }
+        if (additional_stock != nullptr) {
+            for (size_t good = 0; good < local_stock.size() &&
+                 good < additional_stock->size(); ++good) {
+                local_stock[good] = std::max<int64_t>(0, saturating_add(
+                    local_stock[good], (*additional_stock)[good], sat));
+            }
+        }
+        virtual_stock = &local_stock;
+    } else if (virtual_stock->size() < _good_ids.size()) {
+        virtual_stock->resize(_good_ids.size(), 0);
     }
     auto add_selection = [&](int32_t good, int64_t quantity) {
         for (size_t index = 0; index < plan.good_ids.size(); ++index) {
@@ -79,8 +87,9 @@ bool NativeEconomyRuntime::plan_construction_materials(
                         sat);
                 }
                 if (candidate.good_id < 0 || candidate.good_id >=
-                        static_cast<int32_t>(virtual_stock.size()) ||
-                    virtual_stock[static_cast<size_t>(candidate.good_id)] < physical) {
+                        static_cast<int32_t>(virtual_stock->size()) ||
+                    (*virtual_stock)[static_cast<size_t>(candidate.good_id)] <
+                        physical) {
                     continue;
                 }
                 const int64_t price = _market.price[_market.index(
@@ -105,7 +114,8 @@ bool NativeEconomyRuntime::plan_construction_materials(
                 plan.failed_group = group_index;
                 return false;
             }
-            virtual_stock[static_cast<size_t>(selected_good)] -= selected_quantity;
+            (*virtual_stock)[static_cast<size_t>(selected_good)] -=
+                selected_quantity;
             add_selection(selected_good, selected_quantity);
             plan.total_cost = saturating_add(plan.total_cost, selected_cost,
                 sat);

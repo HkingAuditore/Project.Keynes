@@ -1,8 +1,8 @@
 # 原生阶层与本地市场运行时（Market V2 / Price V4）
 
-PKEC v36 是当前 writer：在 v35 的运河/公共工程、分组建材与停产清算之上，为每格追加
-`support_ema_q16`。格承载力 `K_eff = K_geo × EMA(mix(surplus)×mix(sat_cell))` 驱动物流斯蒂生育；
-`K_geo` 与各族 cover 是派生诊断，不进存档。v35 可读（EMA=1），更早 schema 拒绝。
+PKEC v37 是当前 writer：在 v36 的 `support_ema_q16` 之上，为家族开拓队追加在途货物
+托管与冻结开工建筑计划。格承载力 `K_eff = K_geo × EMA(mix(surplus)×mix(sat_cell))` 驱动物流斯蒂生育；
+`K_geo` 与各族 cover 是派生诊断，不进存档。v36 可读（空 cargo），v35 可读（EMA=1、空 cargo），更早 schema 拒绝。
 领域 API 与跨域 ACK 契约见[运河运行时](./canal-runtime.md)。
 
 2026-07 的高速合批、认证近似冷却、generation-stamped scratch 和两态
@@ -31,9 +31,20 @@ cohort 满意度不再是单一的生存指标。`_population.composite_satisfac
 `surplus` 是已解锁物资族（17 个 Need + 4 个生产者族）的加权覆盖，未 bindable 的族不进分母；
 `sat_cell` 是阶层人口加权、经 `satisfaction_birth_reference_q16` 重标定的综合满意度。
 `K_eff = K_geo × EMA(mix(surplus)×mix(sat_cell))`。物流斯蒂生育在 `soft_start` 以下为 1，
-贴顶落到更替。cohort 只乘 sat 残差。`support_ema` 进 PKEC v36 与 `state_hash`；
+贴顶落到更替。cohort 只乘 sat 残差。`support_ema` 进 PKEC v36 起的 cell 记录与 `state_hash`；
 `K_geo`/各族 cover 只出现在 Inspector 人口页。公式见
 [定点账本](./economy-fixed-point-ledger-formulas.md)。
+
+Economy configure 会把职业的稳定 `profession_class_id` 独立 intern 为政治阶层
+slot，不复用承载力权重。在 `aggregate_publish` 的 committed swap 之后，
+country-development 的既有人口扫描同时聚合双缓冲
+`CountryClassOpinionSnapshot`：国家句柄/代际、阶层 hash、人口、资金、
+owner-employed、人口加权满意度、epoch/commit day 与单调 revision。行布局固定为
+`country_slot * class_count + class_slot`。该快照是 derived POD，不进入 PKEC；
+Ideology 只读上一个 committed buffer，不扫描 cohort。报告字段
+`class_opinion_last_cells_scanned`、`class_opinion_last_slots_scanned`、
+`class_opinion_last_zero_population_rows` 与 `class_opinion_ms` 提供每次 COMMIT
+工作量，累计字段用于长窗口审计。
 
 ## PKEC v22 production climate（历史基础，当前由 PKEC v30 持久化）
 
@@ -162,10 +173,10 @@ sequence、settled day、稳定结果码及实际两类物资/现金支出；它
 - C++ 按建筑数、周期天数和计划利用率确定性重建稀疏生产投入硬预留。多投入配方先按同一可执行比例缩放，只预留能组成完整配方的数量；缺少任一互补投入时不会继续锁住其他投入。若非生存产出会消耗生存食物，则整套配方让家庭生存清算优先，只能使用清算后的余量。商人目标库存至少覆盖实际预留；居民与国内贸易只能消费/导出 `stock - reserve`。`production_input_reserved`、`production_input_reserve_shortfall` 及 selected-cell/CSV v14 逐商品列用于诊断。缓存不进入 PKEC，可从建筑和市场信号状态重建。
 - 正常商人现金不足时，生产者托底只补足正常目标库存的剩余缺口，不再把全部可储存余货无条件入库；超过目标的余量进入真实 discard sink。被托底的数量仍获得冻结本地零售价 20% 的显式发行货币。`production_output_supported` 与 `producer_support_money_issued` 分开报告，货币审计把后者计入 `_explicit_money_mint`。`cycle_flow` 产出不能跨周期存货，但在边界清零前会先获得同周期低价采购/托底机会，剩余瞬态库存再计入 `cycle_flow_discarded`。
 - 生成测试经济不再使用职业固定人均资金：每个 cohort 获得按当前气候、族群和默认价格计算的 30 日 `survival_household` 生存金；业主追加两周期最低有效输入成本；商人追加本地产出目标库存资金。
-- PKEC v36 是当前 writer/reader：保留 FamilyStore、NotablePersonStore、cohort membership、
+- PKEC v37 是当前 writer/reader：保留 FamilyStore、NotablePersonStore、cohort membership、
   building ownership、Economy Modifier domain、冻结环境、财政与出生余数、家族特性、
-  per-cell influence 与运河工程，并追加格承载力 `support_ema`。reader 接受 v35（EMA=1）
-  与 v36；v34 及更早明确拒绝。
+  per-cell influence、运河工程与格承载力 `support_ema`，并追加开拓队 cargo/kit CSR。
+  reader 接受 v35（EMA=1、空 cargo）、v36（空 cargo）与 v37；v34 及更早明确拒绝。
 - 显赫家族不拆分建筑组或创建第二钱包；成员/所有权采用稀疏边，业主岗位必须由本格同职业家族
   成员实际填充。完整契约见[显赫家族原生运行时](./notable-family-runtime.md)。
 - 重要人物不创建第二人口、钱包或订单；姓名、岗位、建筑、财产与需求均为家族/cohort 已实现结果的
@@ -328,6 +339,8 @@ transient 数据，不进入 PKEC v19 或 state hash；state hash 按稳定 grou
 `building_structure_group_merge_ms/market_cache_ms/labor_cache_ms` 公开结构路径与成本。
 
 冻结国家快照同时烘焙 country-major 建筑可用位与升序 building-type CSR。`building_available()`
+只要求建筑的 direct/required 科技以及投入/产出/资源依赖组；施工材料组（kind 1）不进入开工门。
+新建造仍通过 `good_market_available()` 与 `plan_construction_materials()` 选择已解锁材料。
 在 ACTIVE epoch 内走 O(1) 稠密位查询，投资目录直接遍历该国 CSR；两者均为 transient cache，
 不改变 catalog 顺序、PKEC v19 或 state hash。`building_commit.investment` 与普通建筑图分开使用
 默认 96-cell batch，report 公开 `investment_cells_per_slice`；profile 为 0 时自动采用 96，正值
@@ -335,10 +348,12 @@ transient 数据，不进入 PKEC v19 或 state hash；state hash 按稳定 grou
 rolling phase 与资本复核 phase 的 cell，非复核 cell 的 owner-vacancy 诊断沿现有 building CSR
 直接计算，不构造全 epoch `(cell,type)` 哈希表。
 
-贸易另提供 `capture_economy_trade_topology()` 粗粒度地图输入和分页
+贸易另提供 `capture_economy_trade_topology()` 粗粒度地图输入、
+`capture_economy_trade_visibility()` 测试夹具，以及分页
 `get_trade_orders_for_cell(cell, offset, limit)` 冷查询；禁止跨桥返回全局路线/订单矩阵。
 正式地图由 `MapGenerator._setup_economy_runtime()` 在 economy configure 后、bootstrap 前
-捕获一次静态邻接、terrain passability 与 move-cost LUT。默认 `trade_runtime_mode=ACTIVE`；
+捕获一次静态邻接、terrain passability 与 move-cost LUT。`fog_solved` 之后每个 market-cycle
+sample 再冻结 `visible_arr`：玩家开局国参与的贸易两端必须当前可见。默认 `trade_runtime_mode=ACTIVE`；
 非 `OFF` 模式捕获失败会中止经济初始化，不允许继续运行一个 topology-not-ready 的假 ACTIVE。
 
 调试录制控制面另提供 `start_economy_csv_recording(config)`、
@@ -430,6 +445,7 @@ stable good ID 排列的候选 CSR，并附带 good-level Q16 生产效率。每
 中按 `price / efficiency` 选择最低有效成本；生产期还要求本地正库存。物理消耗为
 `ceil(effective_required / efficiency)` 乘以该产能实际需要的输入购买比例；若完整物理需求为正且购买比例为正，scaled 购买量至少为 1，避免硬输入在极低利用率下被截断为“零成本免费生产”。库存、业主现金与 goods audit 仍记录实际物理数量。
 这使早期木材等配方可以直接使用打制石器、青铜、金属或精密工具，不再需要商品转换站；每个输入槽仍按建筑时代设置最低品质，因此探索以后不会再选中打制石器，信息/AI 只接受精密工具。石器狩猎营地的工具槽当前设为 `32768`，无工具时仍能低效狩猎，有工具时恢复到完整效率。
+玩家新建建筑列表必须展开当前科技可用的输入候选显示名，并标注非 100% 的 Q16 效率；不得只渲染槽位代表物资的 `display_name`。石器时代伐木场因此显示打制石器，而不是代表物资 `tools` 的「金属工具」。运行时仍按冻结科技可用候选的有效成本选择，不因 UI 文案改变。
 
 `upgrade_family_id/upgrade_tier` 编译为稳定 family 目录与逐建筑 tier。BUILD 检查同族最高已解锁
 档位，旧档返回 `building_tier_obsolete_for_construction`；生产仍只检查该建筑原始科技，因此旧
@@ -1108,8 +1124,9 @@ allowlist. Collectors use the same market-signal, local-resource, construction-m
 payback, and sponsor-capital gates as industrial buildings. Services without a marketable output
 naturally fail the market-signal gate until their content provides an investable demand signal. Every generated
 and curated `BuildingProfile` carries an explicit construction bill selected by technology era,
-scaled by owner and employee slots, and filtered to avoid self-output bootstrap cycles; the catalog
-rejects any profile that omits construction goods. Output demand combines flow deficit with the persistent gap between current
+scaled by owner and employee slots, and filtered to avoid self-output bootstrap cycles, except
+zero-day service lots and `starter.construction` collectors with no daily good inputs. The catalog
+rejects any other profile that omits construction goods. Output demand combines flow deficit with the persistent gap between current
 stock and `merchant_inventory_target`; a type is rejected with reason 15 only when both
 shortage and projected utilization are below their configured thresholds.
 
@@ -1228,7 +1245,7 @@ and every 25th day still run a complete verification; mismatch blocks publish
 and disables incremental closing for the rest of the session. Opening fast path
 reuses the last committed close, then live-replaces country cash/goods and the
 combined trade+fiscal+expedition escrow. That is only valid when in-transit
-expedition population and `expedition_funds` still match the copied close. Idle
+expedition population, `expedition_funds` and `expedition_goods` still match the copied close. Idle
 colonization start/return changes those holdings before the next opening, so
 the opening scan upgrades to full instead of copying stale cohort funds next
 to a live expedition escrow. `EconomyDailySystem` fatal logs now include

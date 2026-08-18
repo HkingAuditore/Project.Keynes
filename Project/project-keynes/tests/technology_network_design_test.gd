@@ -194,6 +194,51 @@ func _init() -> void:
 			"branch_successor_ids", []).size()
 	assert(branch_edges == authored_branch_edges)
 
+	# Object-specific first handling is revealed only after identification.
+	# Seeing the object must not make gathering/processing independently researchable.
+	var identification_first := {
+		"tech.stone_knapping": "tech.flint_identification",
+		"tech.earth_building": "tech.clay_identification",
+		"tech.wild_tuber_collection": "tech.potato_identification",
+		"tech.wild_flax_collection": "tech.flax_identification",
+		"tech.reed_harvesting": "tech.reed_identification",
+		"tech.gold_panning": "tech.gold_placer_identification",
+		"tech.wild_maize_collection": "tech.maize_identification",
+		"tech.surface_silver_collection": "tech.silver_vein_identification",
+	}
+	for handling_id in identification_first:
+		var handling: Dictionary = node_by_id[String(handling_id)]
+		var identification_id := String(identification_first[handling_id])
+		assert(identification_id in handling.hard_prerequisite_ids, handling_id)
+		assert((handling.get("reveal_condition", {}) as Dictionary).is_empty(), handling_id)
+		assert(int(node_index[identification_id]) < int(node_index[String(handling_id)]),
+			handling_id)
+
+	var knowledge_ids := PackedStringArray([
+		"tech.oral_memory_practice", "tech.phenology_observation",
+		"tech.flood_calendar_practice", "tech.pastoral_route_memory",
+		"tech.tide_observation",
+	])
+	for knowledge_id in knowledge_ids:
+		var knowledge: Dictionary = node_by_id[String(knowledge_id)]
+		assert(not bool(knowledge.get("is_starter_eligible", false)), knowledge_id)
+		assert((knowledge.get("hard_prerequisite_ids", []) as Array).is_empty(), knowledge_id)
+		assert((knowledge.get("reveal_condition", {}) as Dictionary).is_empty(), knowledge_id)
+		assert(int(node_index[String(knowledge_id)]) < int(node_index["tech.flint_identification"]),
+			knowledge_id)
+	for origin_id in ["tech.flint_identification", "tech.fire_control",
+			"tech.freshwater_fishing",
+			"tech.seasonal_foraging", "tech.animal_husbandry",
+			"tech.hide_scraping", "tech.turf_cutting"]:
+		var origin: Dictionary = node_by_id[String(origin_id)]
+		var origin_routes: Array = origin.get("research_routes", [])
+		assert(origin_routes.size() == 1, origin_id)
+		assert(String((origin_routes[0] as Dictionary).get("id", "")).ends_with(
+			".knowledge_institution"), origin_id)
+	var deadwood: Dictionary = node_by_id["tech.deadwood_collection"]
+	assert(bool(deadwood.get("is_starter_eligible", false)))
+	assert((deadwood.get("research_routes", []) as Array).is_empty())
+
 	# Locked regression sample: plantation estate management has a genuine
 	# development reveal and three strategically different research routes.
 	var plantation: Dictionary = node_by_id["tech.estate_plantation_management"]

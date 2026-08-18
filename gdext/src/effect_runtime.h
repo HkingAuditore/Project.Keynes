@@ -26,7 +26,7 @@ class DCWorldExt;
 class EffectRuntime {
 public:
     static constexpr int32_t PROTOCOL_VERSION = 1;
-    static constexpr int32_t SAVE_SCHEMA_VERSION = 9;
+    static constexpr int32_t SAVE_SCHEMA_VERSION = 10;
     static constexpr int64_t Q16_ONE = 65536;
 
     enum Instruction : int32_t {
@@ -91,6 +91,21 @@ public:
         // Index into the catalog's behavior_command_keys table. -1 means the
         // behavior uses the domain/opcode default adapter key.
         int32_t command_key_id = -1;
+        std::array<int64_t, 4> payload{};
+    };
+    struct ExternalEffectCommandPod {
+        int64_t effect_id = 0;
+        int64_t source_id = 0;
+        std::string program_key;
+        uint64_t fire_sequence = 0;
+        int32_t action = CUSTOM_DOMAIN_COMMAND;
+        int32_t domain = -1;
+        int32_t opcode = 0;
+        int64_t resolved_value = 0;
+        int32_t duration_days = -1;
+        int32_t stacks = 1;
+        std::string command_key;
+        std::string definition_key;
         std::array<int64_t, 4> payload{};
     };
 
@@ -219,6 +234,15 @@ public:
                                      const std::array<int64_t, 4> &payload,
                                      std::string &error,
                                      int64_t *out_transaction_id = nullptr);
+    // Atomically validates and plans one peer-owned transition. Individual
+    // command source identities remain on the command rows, while all domains
+    // share one transaction reserve, status and aggregate ACK.
+    bool enqueue_external_effect_batch_pod(
+        int64_t effective_day, int32_t source_type,
+        int64_t transition_source_id, uint64_t source_handle,
+        uint64_t target_handle, uint32_t target_generation,
+        const ExternalEffectCommandPod *commands, size_t command_count,
+        std::string &error, int64_t *out_transaction_id = nullptr);
     // Built-in colonization transaction used by the Economy-owned expedition
     // state machine. Unowned targets emit CLAIM then SETTLE and stay unpublished
     // until Country and Economy ACK. Own-country relocation emits SETTLE only.
@@ -370,6 +394,8 @@ private:
         int32_t command_definition_id = -1;
         std::array<int64_t, 4> payload{};
         uint64_t idempotency_key = 0;
+        int64_t external_effect_id = 0;
+        int64_t external_source_id = 0;
     };
     struct Transaction {
         int64_t id = 0;
