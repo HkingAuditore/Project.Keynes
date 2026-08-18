@@ -2,6 +2,7 @@ extends Control
 class_name MapOverlayToolbar
 
 const OverlayButtonScene := preload("res://scenes/ui/map_overlay_icon_button.tscn")
+const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
 
 signal overlay_requested(request: Dictionary)
 signal overlay_cleared()
@@ -66,7 +67,9 @@ func set_resource_discovery_context(
 ) -> void:
 	_technology_ids = technology_ids
 	_enforce_discovery = enforce_discovery
-	if _category == Category.RESOURCES:
+	if not _active_overlay_allowed():
+		_on_clear_pressed()
+	if _category == Category.RESOURCES or _category == Category.BIOLOGY:
 		_rebuild_secondary()
 
 
@@ -262,7 +265,12 @@ func _add_resource_buttons() -> void:
 
 
 func _add_biology_buttons() -> void:
+	var compiled: Dictionary = TechnologyCatalogScript.compile_native_catalog()
 	for entry in ResearchSignalCatalog.occupancy_overlay_entries():
+		var signal_id := String(entry.get("id", ""))
+		if _enforce_discovery and not TechnologyCatalogScript.signal_named_by_completed_technologies(
+				signal_id, _technology_ids, compiled):
+			continue
 		var display_name := String(entry.get("display_name", ""))
 		var icon_key := entry.get("icon_key", &"ecology.growth") as StringName
 		var button := _make_icon_button(
@@ -305,3 +313,19 @@ func _on_clear_pressed() -> void:
 	for button in _mode_buttons:
 		button.button_pressed = false
 	overlay_cleared.emit()
+
+
+func _active_overlay_allowed() -> bool:
+	if _active_request.is_empty() or not _enforce_discovery:
+		return true
+	var mode := int(_active_request.get("mode", OverlayMode.MODE.NONE))
+	if mode == OverlayMode.MODE.RESOURCE_RESERVE:
+		var resource_id := StringName(_active_request.get("resource_id", &""))
+		for profile in ResourceProfileRegistry.ordered():
+			if profile != null and profile.id == resource_id:
+				return ResourceProfileRegistry.discovery_visible(profile, _technology_ids)
+		return false
+	if mode == OverlayMode.MODE.BIO_OCCUPANCY:
+		return TechnologyCatalogScript.signal_named_by_completed_technologies(
+			String(_active_request.get("signal_id", "")), _technology_ids)
+	return true

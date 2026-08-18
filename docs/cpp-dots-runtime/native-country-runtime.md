@@ -1,7 +1,7 @@
 # Native Country Runtime（PKCN v11）
 
 PKCN v11 保留玩家时代奖励的最小交叉引用：plan ID、Offer 代际、里程碑科技和
-`OPEN / SELECTED_PENDING / RESOLVED / ERROR` 状态。完整备选仍由 PKEF v9 持有；
+`OPEN / SELECTED_PENDING / RESOLVED / ERROR` 状态。完整备选仍由 PKEF v10 持有；
 PKEF 恢复时必须与该引用逐字段一致。PKCN v11 额外把科技/研究信号/Effect recipe 与
 Modifier term identity、Trigger 定义摘要及完整内容绑定摘要混入国家 catalog hash。
 旧 schema 或任一 identity 不一致统一返回 `catalog_hash_mismatch`。

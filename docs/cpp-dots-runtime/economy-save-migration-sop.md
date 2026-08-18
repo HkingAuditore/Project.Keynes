@@ -1,12 +1,25 @@
 # 经济存档、catalog migration 与内容扩展 SOP
 
-## PKEC v36（当前 writer）
+## PKEC v37（当前 writer）
+
+v37 在 v36 的家族开拓队记录末尾追加开工包货物 CSR 与冻结建筑计划：每条
+expedition 在 payload 之后写 `cargo_count` 行（`good_id:i32`、`quantity:i64`、
+`flags:u8`）和 `kit_count` 行（`type_id:i32`、`count:i64`）。`flags=0` 是到达
+消耗的建材，`flags=1` 是落地写入目标市场的生存桥接库存。出发只从源地市场划走；
+到达消耗 construction cargo 并立刻插入家族所有的已建成组，审计记入
+`construction_goods_consumed`。在途货物进入 `AuditTotals.expedition_goods` 与
+`state_hash`。v36 在途队伍按空 cargo/kit 迁移，到达行为与无开工包时相同。
+`game_save_coordinator.gd` 的 `pkec` provider schema 为 37，兼容读取
+`[35, 36, 37]`。v35 仍缺省 EMA=1 且 cargo 为空。开拓合同见
+[家族远程开拓运行时](./family-colonization-runtime.md)。
+
+## PKEC v36（历史 writer）
 
 v36 在 v35 的 cell 记录末尾追加 `support_ema_q16`（i32）：这是物资族盈余与阶层满意度
 混合因子的慢 EMA（alpha ≈ 1/64 每日），生育读 EMA 以免单期丰收/歉收抖动。
 `K_geo`、各族 cover、`K_eff` 都是派生诊断，不进存档、不进 `state_hash`。
-v35 仍可读取，缺省 EMA=1；v34 及更早继续拒绝。`game_save_coordinator.gd` 的
-`pkec` provider schema 为 36，兼容读取 `[35, 36]`。
+v35 仍可读取，缺省 EMA=1；v34 及更早继续拒绝。当前 reader 把 v36 在途开拓队
+当作 `cargo_count=0`。
 
 格承载力三项混合 `K_eff = K_geo × EMA(mix(surplus)×mix(sat_cell))` 的公式见
 [定点账本公式](./economy-fixed-point-ledger-formulas.md) 与
@@ -18,7 +31,7 @@ v35 在 v34 的运河 section 之后固定当前分组建材、ACTIVE/SUSPENDED_
 停产清算诊断。header 保存报价/项目数、quote/project/receipt 的 next-id，以及当前建筑
 目录契约。v34 及更早版本不再读取或迁移；建筑目录和建材语义变化使旧存档明确不兼容。
 详见[运河运行时](./canal-runtime.md)。
-当前 reader 接受 v35（EMA 填 1）与 v36。
+当前 reader 接受 v35（EMA 填 1、空 cargo）、v36（空 cargo）与 v37。
 
 ## 流式格式
 

@@ -62,7 +62,7 @@ static func select_and_prepare(map: MapData, world: WorldData, seed: int, foreig
 			break
 	if chosen.is_empty():
 		return _error("starter_capability_unsatisfied",
-			"没有找到能以真实本地资源和可见地理信号闭合六项开局能力的出生地。")
+			"没有找到能以真实本地资源和可见地理信号闭合生存核心开局的出生地。")
 	var top_count := maxi(1, candidates.size() / 4)
 	var cell_idx := int(chosen.cell)
 	var minimum_distance := minimum_country_distance(map.width, map.height)
@@ -232,185 +232,104 @@ static func _starter_route_for_cell(map: MapData, cell_idx: int,
 	if precious_resource.is_empty():
 		return _error("starter_precious_metal_unavailable",
 			"首都格没有天然金矿或银矿。")
-	var food_options: Array[Dictionary] = []
-	if coastal and _reserve(map, "marine_fish", cell_idx) > 0.0:
-		food_options.append(_route_option(["tech.coastal_fishing"],
-			["marine_fish_collector"], {"food_good": "fish", "food_resource": "marine_fish"}))
-	if riverine and _reserve(map, "freshwater_fish", cell_idx) > 0.0:
-		food_options.append(_route_option(["tech.freshwater_fishing"],
-			["freshwater_fishing_camp"], {"food_good": "fish", "food_resource": "freshwater_fish"}))
-	if region in ["cold_highland", "arid_highland"] \
-			and _reserve(map, "fertile_soil", cell_idx) > 0.0 \
-			and _probe_has_signal(signal_probe, starter_catalog, "bio.potato"):
-		food_options.append(_route_option(["tech.wild_tuber_collection"],
-			["wild_tuber_patch"], {"food_good": "potatoes", "food_resource": "fertile_soil"}))
-	if _reserve(map, "fertile_soil", cell_idx) > 0.0:
-		food_options.append(_route_option(["tech.gathering"],
-			["gathering_ground"],
-			{"food_good": "gathered_plants", "food_resource": "fertile_soil"}))
-	if _reserve(map, "wild_game", cell_idx) > 0.0:
-		# Hunting camp construction still spends gathered_plants, so the hunting
-		# food closure carries gathering when soil evidence can reveal it.
-		# Gathering does not reveal hunting; grassland no longer stands in.
-		var hunting_food_techs: Array = ["tech.hunting"]
-		if _reserve(map, "fertile_soil", cell_idx) > 0.0:
-			hunting_food_techs.append("tech.gathering")
-		food_options.append(_route_option(hunting_food_techs,
-			["stone_age_hunting_camp"],
-			{"food_good": "game_meat", "food_resource": "wild_game"}))
-
-	var clothing_options: Array[Dictionary] = []
-	if _reserve(map, "fertile_soil", cell_idx) > 0.0 \
-			and (_probe_has_signal(signal_probe, starter_catalog, "bio.flax") \
-				or _probe_has_signal(signal_probe, starter_catalog, "bio.bast_fiber")):
-		# Bast clothing requires seeing flax or bast plants, not just fertile soil.
-		clothing_options.append(_route_option(["tech.gathering", "tech.wild_flax_collection"],
-			["bast_fiber_camp", "bast_wrap_shelter"],
-			{"clothing_resource": "fertile_soil", "input_buffer": "bast_fiber"}))
-	if _reserve(map, "wild_game", cell_idx) > 0.0:
-		var hide_techs: Array = ["tech.hunting", "tech.hide_scraping"]
-		if _reserve(map, "fertile_soil", cell_idx) > 0.0:
-			hide_techs.append("tech.gathering")
-		clothing_options.append(_route_option(hide_techs,
-			["stone_age_hunting_camp", "hide_scraping_shelter"],
-			{"clothing_resource": "wild_game", "input_buffer": "raw_hide"}))
-
-	var construction_options: Array[Dictionary] = []
-	if _reserve(map, "paddy_land", cell_idx) > 0.0:
-		construction_options.append(_route_option(["tech.reed_harvesting"],
-			["reed_cutting_camp"], {"construction_good": "reed_bundle", "construction_resource": "paddy_land"}))
-	if _reserve(map, "pasture", cell_idx) > 0.0:
-		construction_options.append(_route_option(["tech.turf_cutting"],
-			["turf_cutting_ground"], {"construction_good": "turf_block", "construction_resource": "pasture"}))
-	if _reserve(map, "timber", cell_idx) > 0.0:
-		construction_options.append(_route_option(["tech.deadwood_collection"],
-			["deadwood_gathering_camp"], {"construction_good": "logs", "construction_resource": "timber"}))
-	if _reserve(map, "stone", cell_idx) > 0.0:
-		construction_options.append(_route_option(
-			["tech.stone_knapping", "tech.ground_stone_tools"],
-			["rubble_stone_working"],
-			{"construction_good": "raw_stone", "construction_resource": "stone"}))
-	if _reserve(map, "clay", cell_idx) > 0.0:
-		construction_options.append(_route_option(["tech.earth_building"],
-			["earth_digging_pit"], {"construction_good": "clay", "construction_resource": "clay"}))
-
-	var knowledge_options: Array[Dictionary] = [
-		# Knowledge buildings consume their local construction good. Keep the
-		# material technology in the same route so the building dependency is
-		# closed before bootstrap, rather than granting a hidden prerequisite.
-		_route_option(["tech.reed_harvesting", "tech.flood_calendar_practice"],
-			["reed_cutting_camp", "flood_calendar_shrine"], {}),
-		_route_option(["tech.turf_cutting", "tech.pastoral_route_memory"],
-			["turf_cutting_ground", "pastoral_council_tent"], {}),
-		_route_option(["tech.deadwood_collection", "tech.oral_memory_practice"],
-			["deadwood_gathering_camp", "oral_memory_circle"], {}),
-		_route_option(["tech.deadwood_collection", "tech.phenology_observation"],
-			["deadwood_gathering_camp", "seasonal_observation_shelter"], {}),
-		_route_option(["tech.reed_harvesting", "tech.tide_observation"],
-			["reed_cutting_camp", "tide_observation_hut"], {}),
-	]
-	var precious_option := _route_option(
-		["tech.gold_panning"] if precious_resource == "gold_ore" else ["tech.surface_silver_collection"],
-		["placer_gold_working"] if precious_resource == "gold_ore" else ["surface_silver_working"], {})
-	var trade_option := _route_option(["tech.early_trade"], ["early_merchant_post"], {})
-
-	# Food discoveries are cumulative at the technology boundary. A coastal,
-	# freshwater, fertile or game signal contributes every revealed starter tech;
-	# the physical opening bundle still prebuilds one dependency-closed producer
-	# because owner slots and construction inputs are finite.
-	var revealed_food_options: Array[Dictionary] = []
-	for option in food_options:
-		if _starter_technologies_revealed(option.technology_ids, signal_probe, starter_catalog):
-			revealed_food_options.append(option)
-	if revealed_food_options.is_empty():
-		return _error("starter_food_unavailable", "出生点没有已发现的可运行食物生产方式。")
-	# Food discovery is a set, not the single producer chosen for the physical
-	# opening bundle. Keep every revealed substitute available to the bootstrap
-	# food bridge, while deduplicating fish exposed by coastal and freshwater
-	# routes and shared fertile-soil inputs.
+	var is_cold := region == "cold_highland"
+	var technologies := PackedStringArray()
+	var buildings := PackedStringArray()
 	var discovered_food_goods := PackedStringArray()
 	var discovered_food_resources := PackedStringArray()
-	for food in revealed_food_options:
-		_append_unique(discovered_food_goods, String(food.food_good))
-		_append_unique(discovered_food_resources, String(food.food_resource))
-	# Technologies are discoveries, not a one-route prize. The physical bundle
-	# below still chooses one clothing/construction/knowledge closure because its
-	# owner slots and construction inputs must fit the actual opening cell.
+	if _reserve(map, "fertile_soil", cell_idx) > 0.0:
+		_append_unique(technologies, "tech.gathering")
+		_append_unique(buildings, "gathering_ground")
+		_append_unique(discovered_food_goods, "gathered_plants")
+		_append_unique(discovered_food_resources, "fertile_soil")
+	if _reserve(map, "wild_game", cell_idx) > 0.0:
+		_append_unique(technologies, "tech.hunting")
+		_append_unique(buildings, "stone_age_hunting_camp")
+		_append_unique(discovered_food_goods, "game_meat")
+		_append_unique(discovered_food_resources, "wild_game")
+	if discovered_food_goods.is_empty():
+		return _error("starter_food_unavailable", "出生点没有已发现的可运行食物生产方式。")
+	_append_unique(technologies, "tech.early_trade")
+	_append_unique(buildings, "early_merchant_post")
+	if precious_resource == "gold_ore":
+		_append_unique(technologies, "tech.gold_panning")
+		_append_unique(buildings, "placer_gold_working")
+	else:
+		_append_unique(technologies, "tech.surface_silver_collection")
+		_append_unique(buildings, "surface_silver_working")
+	var clothing_resource := ""
+	var input_buffer := ""
+	if is_cold:
+		if _reserve(map, "wild_game", cell_idx) <= 0.0:
+			return _error("starter_clothing_unavailable",
+				"寒冷出生点缺少猎物，无法预建生皮刮制。")
+		_append_unique(technologies, "tech.hide_scraping")
+		_append_unique(buildings, "hide_scraping_shelter")
+		clothing_resource = "wild_game"
+		input_buffer = "raw_hide"
+	var construction := StarterEconomyPlannerScript.select_construction_backbone(
+		map, cell_idx)
+	if not bool(construction.get("ok", false)):
+		return construction
+	var construction_tech := String(construction.get("tech_id", ""))
+	var construction_building := String(construction.get("building_id", ""))
+	var construction_good := String(construction.get("good_id", ""))
+	var construction_resource := String(construction.get("resource_id", ""))
+	if construction_tech.is_empty() or construction_building.is_empty() \
+			or construction_good.is_empty() or construction_resource.is_empty():
+		return _error("starter_construction_backbone_unavailable",
+			"出生点没有可揭示的初始建材采集营。")
+	_append_unique(technologies, construction_tech)
+	_append_unique(buildings, construction_building)
+	if not _starter_technologies_revealed(technologies, signal_probe, starter_catalog):
+		return _error("starter_reveal_condition_unsatisfied",
+			"生存核心科技缺少当前可见地理证据。")
+	var validation := _validate_starter_technologies(
+		technologies, buildings, signal_probe, starter_catalog)
+	if not bool(validation.get("ok", false)):
+		return validation
+	var pending_knowledge := StarterEconomyPlannerScript.select_pending_knowledge(
+		map, cell_idx, region)
+	if not bool(pending_knowledge.get("ok", false)):
+		return pending_knowledge
+	var pending_tech := String(pending_knowledge.get("tech_id", ""))
+	var pending_building := String(pending_knowledge.get("building_id", ""))
+	if pending_tech.is_empty() or pending_building.is_empty():
+		return _error("starter_knowledge_route_missing", "出生点没有可揭示的初始知识实践。")
 	var discovered_technologies := PackedStringArray()
-	# Discovery is catalog-wide: a visible starter node is granted even when it
-	# does not participate in the six-capability physical opening bundle.
-	for technology_id in starter_catalog.get(
-			"starter_eligible_technology_ids", PackedStringArray()):
-		var singleton := PackedStringArray([String(technology_id)])
-		if _starter_technologies_revealed(singleton, signal_probe, starter_catalog):
-			_append_unique(discovered_technologies, String(technology_id))
-
-	var best: Dictionary = {}
-	var last_plan_failure: Dictionary = {}
-	var route_plan_attempts := 0
-	const MAX_ROUTE_PLAN_ATTEMPTS := 12
-	for food in revealed_food_options:
-		if route_plan_attempts >= MAX_ROUTE_PLAN_ATTEMPTS:
-			break
-		for clothing in clothing_options:
-			if route_plan_attempts >= MAX_ROUTE_PLAN_ATTEMPTS:
-				break
-			for construction in construction_options:
-				if route_plan_attempts >= MAX_ROUTE_PLAN_ATTEMPTS:
-					break
-				for knowledge in knowledge_options:
-					if route_plan_attempts >= MAX_ROUTE_PLAN_ATTEMPTS:
-						break
-					var technologies := discovered_technologies.duplicate()
-					var buildings := PackedStringArray()
-					_append_many_unique(buildings, food.building_ids)
-					for option in [clothing, construction, knowledge, precious_option, trade_option]:
-						_append_many_unique(buildings, option.building_ids)
-					if not _starter_technologies_revealed(technologies, signal_probe, starter_catalog):
-						continue
-					var validation := _validate_starter_technologies(
-						technologies, buildings, signal_probe, starter_catalog)
-					if not bool(validation.get("ok", false)):
-						continue
-					var route := {
-						"regional_route": region,
-						"starter_technology_ids": technologies,
-						"starter_building_ids": buildings,
-						"starter_food_good_ids": discovered_food_goods,
-						"starter_clothing_good_id": "clothing",
-						# This legacy scalar is only the regional preference. The starter
-						# planner compiles the authoritative grouped construction contract.
-						"starter_construction_good_id": String(construction.construction_good),
-						"starter_knowledge_good_id": "technology_points",
-						"starter_food_resource_ids": discovered_food_resources,
-						"starter_clothing_resource_id": String(clothing.clothing_resource),
-						"starter_construction_resource_id": String(construction.construction_resource),
-						"starter_input_buffer_good_id": String(clothing.input_buffer),
-						"starter_precious_good_id": _precious_good_id(precious_resource),
-						"precious_resource": precious_resource,
-						"missing_resource_ids": PackedStringArray(),
-						"visible_signal_ids": signal_probe.signal_ids,
-						"visible_signal_cells": signal_probe.signal_cells,
-						"geography_fit": 1.0,
-						"reserve_overlay": overlay.duplicate(true),
-						"ok": true,
-					}
-					var planned := StarterEconomyPlannerScript.plan(
-						map, cell_idx, route)
-					route_plan_attempts += 1
-					if not bool(planned.get("ok", false)):
-						last_plan_failure = planned
-						continue
-					route.merge(planned, true)
-					if best.is_empty() or _starter_route_better(route, best):
-						best = route
-	if best.is_empty():
+	_append_unique(discovered_technologies, pending_tech)
+	var route := {
+		"regional_route": region,
+		"starter_technology_ids": technologies,
+		"starter_discovered_technology_ids": discovered_technologies,
+		"pending_knowledge_tech_id": pending_tech,
+		"pending_knowledge_building_id": pending_building,
+		"starter_building_ids": buildings,
+		"starter_food_good_ids": discovered_food_goods,
+		"starter_clothing_good_id": "clothing",
+		"starter_construction_good_id": construction_good,
+		"starter_knowledge_good_id": "technology_points",
+		"starter_food_resource_ids": discovered_food_resources,
+		"starter_clothing_resource_id": clothing_resource,
+		"starter_construction_resource_id": construction_resource,
+		"starter_input_buffer_good_id": input_buffer,
+		"starter_precious_good_id": _precious_good_id(precious_resource),
+		"precious_resource": precious_resource,
+		"missing_resource_ids": PackedStringArray(),
+		"visible_signal_ids": signal_probe.signal_ids,
+		"visible_signal_cells": signal_probe.signal_cells,
+		"geography_fit": 1.0,
+		"reserve_overlay": overlay.duplicate(true),
+		"ok": true,
+	}
+	var planned := StarterEconomyPlannerScript.plan(map, cell_idx, route)
+	if not bool(planned.get("ok", false)):
 		var failure := _error("starter_capability_unsatisfied",
-			"没有闭合食物、衣物、建材、知识、贵金属和贸易能力的出生点路线。")
-		if not last_plan_failure.is_empty():
-			failure["planner_failure"] = last_plan_failure
+			"没有闭合采集、狩猎、贵金属和贸易核心的出生点路线。")
+		failure["planner_failure"] = planned
 		return failure
-	return best
+	route.merge(planned, true)
+	return route
 
 
 static func _route_option(technology_ids: Array, building_ids: Array,
@@ -515,8 +434,8 @@ static func _starter_route_better(candidate: Dictionary, current: Dictionary) ->
 	var current_buildings: PackedStringArray = current.starter_building_ids
 	if candidate_buildings.size() != current_buildings.size():
 		return candidate_buildings.size() < current_buildings.size()
-	# Discovery count is deliberately absent: all visible technologies have
-	# already been unioned. Only the bounded physical owner bundle is a tie-break.
+	# Discovery count is deliberately absent: the opening grant is a fixed
+	# survival core, not a union of every visible starter node.
 	return str(candidate_buildings) < str(current_buildings)
 
 
@@ -613,11 +532,13 @@ static func _validate_starter_technologies(technology_ids: PackedStringArray,
 		var tags: PackedStringArray = catalog.technology_starter_capability_tags
 		for edge in range(offsets[technology_index], offsets[technology_index + 1]):
 			capabilities[String(tags[edge])] = true
-	for required in ["starter.food", "starter.clothing", "starter.construction",
-			"starter.knowledge", "starter.precious_metal", "starter.trade"]:
+	for required in ["starter.food", "starter.precious_metal", "starter.trade",
+			"starter.construction"]:
 		if not capabilities.has(required):
 			return _error("starter_capability_unsatisfied",
 				"开局路线缺少能力：%s" % required)
+	if technology_ids.has("tech.hide_scraping") and not capabilities.has("starter.clothing"):
+		return _error("starter_capability_unsatisfied", "寒冷开局缺少衣着能力。")
 	var building_type_ids: PackedStringArray = catalog.get("building_type_ids", PackedStringArray())
 	var completed := {}; for id in technology_ids: completed[String(id)] = true
 	var total_owner_slots := 0
@@ -636,31 +557,6 @@ static func _validate_starter_technologies(technology_ids: PackedStringArray,
 		for edge in range(required_offsets[building_index], required_offsets[building_index + 1]):
 			if not completed.has(String(required_tags[edge])):
 				return _error("starter_building_required_technology_missing", "%s 缺少 required technology %s" % [building_id, required_tags[edge]])
-		var branch_offsets: PackedInt32Array = catalog.get("building_dependency_branch_offsets", PackedInt32Array())
-		var branch_tech_offsets: PackedInt32Array = catalog.get("building_dependency_branch_technology_offsets", PackedInt32Array())
-		var branch_techs: PackedInt32Array = catalog.get("building_dependency_branch_technologies", PackedInt32Array())
-		var branch_group_offsets: PackedInt32Array = catalog.get("building_dependency_branch_group_offsets", PackedInt32Array())
-		var dependency_tag_offsets: PackedInt32Array = catalog.get("building_dependency_tag_offsets", PackedInt32Array())
-		var dependency_tags: PackedInt32Array = catalog.get("building_dependency_tags", PackedInt32Array())
-		var branch_begin := int(branch_offsets[building_index]); var branch_end := int(branch_offsets[building_index + 1]); var branch_ok := false
-		for branch in range(branch_begin, branch_end):
-			var tech_ok := true
-			for edge in range(branch_tech_offsets[branch], branch_tech_offsets[branch + 1]):
-				if not completed.has(String(stable_ids[branch_techs[edge]])): tech_ok = false; break
-			if not tech_ok:
-				continue
-			var groups_ok := true
-			for group in range(branch_group_offsets[branch], branch_group_offsets[branch + 1]):
-				var group_ok := false
-				for edge in range(dependency_tag_offsets[group], dependency_tag_offsets[group + 1]):
-					if completed.has(String(stable_ids[dependency_tags[edge]])):
-						group_ok = true; break
-				if not group_ok:
-					groups_ok = false; break
-			if groups_ok:
-				branch_ok = true; break
-		if not branch_ok:
-			return _error("starter_building_dependency_missing", "开局建筑依赖未闭合：%s" % building_id)
 		var owner_slots: PackedInt64Array = catalog.get("building_owner_slots", PackedInt64Array())
 		total_owner_slots += int(owner_slots[building_index])
 	if total_owner_slots > 20:

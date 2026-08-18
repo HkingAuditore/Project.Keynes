@@ -27,6 +27,7 @@ const MINIMUM_RESERVES := {
 
 ## Opening top-up never invents fish, paddy or clay on dry inland cells.
 ## Pasture is included so knowledge can close without generation-time weather.
+## Timber is always topped up: the opening construction backbone is deadwood.
 const OPENING_TOPUP_RESOURCE_IDS := [
 	"fertile_soil",
 	"timber",

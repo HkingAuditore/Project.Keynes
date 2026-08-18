@@ -188,7 +188,7 @@ active/peak/bucket/query/bucket read/rebuild/snapshot version、事件计数和�
 | section/schema | 内容 |
 | --- | --- |
 | PKCN v11 | Country authority, technology/research-signal identity, national/cell tax policy + Country Modifier domain blob + native Effect ingress idempotency |
-| PKEC v36 / Modifier schema v2 | Economy authority, family-cell effects + BuildingIdentityStore + Economy Modifier section + native Effect ingress idempotency + canal projects/quotes + carrying-capacity support EMA |
+| PKEC v37 / Modifier schema v2 | Economy authority, family-cell effects + BuildingIdentityStore + Economy Modifier section + native Effect ingress idempotency + canal projects/quotes + carrying-capacity support EMA + expedition cargo/kit |
 | PKCM v1 | Climate Modifier domain |
 | PKGP v1 | Gameplay identity/base SoA + Gameplay Modifier domain |
 
@@ -208,7 +208,7 @@ environment、PKCM、WorldClock、PKCN、PKEC、PKGP，再恢复 vision/journal/
 `tests/modifier_runtime_test.gd` 覆盖 apply/remove/expiry、stack refresh、global/group/entity、
 UNIQUE_SOURCE、stale handle、零 factor、Gameplay base/effective、journal v2、report 诊断和四域 round-trip。
 `country_runtime_test.gd` 验证 PKCN v11；`family_runtime_test.gd` 与
-`building_runtime_test.gd` 验证 PKEC v36 save/restore 与状态哈希。
+`building_runtime_test.gd` 验证 PKEC v37 save/restore 与状态哈希。
 正式 `PK_GAME_SAVE_ROUNDTRIP_TEST=1` 也已通过新建世界、PKSV 保存/恢复、authority hash
 对齐和恢复后首个经济周期。两套大型 economy suite 的 v20 存档断言虽通过，但各仍有 4 个
 既有 catalog/平衡断言失败，整体退出码为 1，不能把它们列为全绿门禁。

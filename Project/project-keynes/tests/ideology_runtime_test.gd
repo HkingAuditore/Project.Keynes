@@ -6,6 +6,7 @@ const Q16_ONE := 65536
 
 var _checks := 0
 var _failures := 0
+var _next_sequence := 1
 
 func _init() -> void:
 	_run()
@@ -105,15 +106,19 @@ func _run() -> void:
 	_expect("pending restore modifier configures", bool(pending_modifier.configure(pending_restored, 1).get("ok", false)))
 	_expect("pending restore Effect configures", bool(pending_restored.configure_effects(_effect_catalog().compile_native_catalog()).get("ok", false)))
 	_expect("pending restore Ideology configures", bool(pending_restored.configure_ideologies(catalog).get("ok", false)))
-	_expect("matching PKEF pending transactions restore with PKID", bool(pending_restored.restore_effect_state(pending_effect_bytes).get("ok", false))
-		and bool(pending_restored.restore_ideology_state(pending_ideology_bytes).get("ok", false)))
+	var pending_effect_result: Dictionary = pending_restored.restore_effect_state(pending_effect_bytes)
+	var pending_ideology_result: Dictionary = pending_restored.restore_ideology_state(pending_ideology_bytes)
+	_expect("matching PKEF pending transactions restore with PKID", bool(pending_effect_result.get("ok", false))
+		and bool(pending_ideology_result.get("ok", false)))
 	var stale_restored := _country_ext(country_ir)
 	var stale_modifier := ModifierFacadeScript.new()
 	_expect("stale restore modifier configures", bool(stale_modifier.configure(stale_restored, 1).get("ok", false)))
 	_expect("stale restore Effect configures", bool(stale_restored.configure_effects(_effect_catalog().compile_native_catalog()).get("ok", false)))
 	_expect("stale restore Ideology configures", bool(stale_restored.configure_ideologies(catalog).get("ok", false)))
-	_expect("PKID rejects an unknown pending ideology transaction", bool(stale_restored.restore_effect_state(pending_effect_bytes).get("ok", false))
-		and not bool(stale_restored.restore_ideology_state(bytes).get("ok", true)))
+	var stale_effect_result: Dictionary = stale_restored.restore_effect_state(pending_effect_bytes)
+	var stale_ideology_result: Dictionary = stale_restored.restore_ideology_state(bytes)
+	_expect("PKID rejects an unknown pending ideology transaction", bool(stale_effect_result.get("ok", false))
+		and not bool(stale_ideology_result.get("ok", true)))
 	_test_effect_link_after_ideology_configuration(country_ir, catalog)
 	_test_native_publish_event_adapter(country_ir)
 
@@ -169,17 +174,18 @@ func _test_native_publish_event_adapter(country_ir: Dictionary) -> void:
 	_expect("event adapter evaluates", bool(ext.run_effect_daily(1).get("ok", false)))
 	_expect("event adapter dispatches native modifier", int(ext.dispatch_effect_native_modifier().get("submitted_transactions", 0)) == 1)
 	var gameplay_dispatch: Dictionary = ext.dispatch_effect_native_gameplay()
-	_expect("event/gameplay/custom dispatches native gameplay", int(gameplay_dispatch.get("submitted_transactions", 0)) == 3
+	_expect("event/gameplay/custom share one atomic transition", int(gameplay_dispatch.get("submitted_transactions", 0)) == 1
 		and int(gameplay_dispatch.get("submitted_commands", 0)) == 3)
 	var poll: Dictionary = ext.poll_effect_transactions(0, 16)
 	_expect("native ideology transactions never enter GDScript fallback polling",
-		int(poll.get("count", 0)) == 0 and int(poll.get("native_claimed_transactions", 0)) >= 2)
+		int(poll.get("count", 0)) == 0 and int(poll.get("native_claimed_transactions", 0)) >= 1)
 	ext.run_modifier_daily(1)
 	ext.ack_effect_native_modifier()
 	var gameplay: Dictionary = ext.run_gameplay_effects(1)
 	_expect("Gameplay/PublishEvent/Custom commits exactly once to the native journal",
 		bool(gameplay.get("ok", false)) and int(gameplay.get("committed", 0)) == 3)
-	_expect("native gameplay ACK succeeds", int(ext.ack_effect_native_gameplay().get("acknowledged", 0)) == 3)
+	_expect("native gameplay ACK settles the aggregate transition",
+		int(ext.ack_effect_native_gameplay().get("acknowledged", 0)) == 1)
 	ext.run_ideology_daily(2)
 	var journal: Dictionary = ext.snapshot_gameplay_event_journal({})
 	_expect("journal persists Effect idempotency evidence", int(journal.get("version", 0)) == 4
@@ -204,7 +210,40 @@ func _catalog() -> Dictionary:
 	return {
 		"protocol_version": 1, "ideology_capacity": 2, "national_spirit_capacity": 1,
 		"offer_choice_count": 3, "offer_cost_q16": Q16_ONE, "max_commands_per_slice": 64,
-		"ideology_ids": ids, "acquisition_flags": PackedByteArray([3, 2, 2, 2]),
+		"political_class_ids": PackedStringArray(["general"]),
+		"stance_offsets": PackedInt32Array([0, 0, 0, 0, 0]),
+		"stance_class_indices": PackedInt32Array(),
+		"stance_adopt_q16": PackedInt32Array(),
+		"stance_repeal_q16": PackedInt32Array(),
+		"stance_promote_q16": PackedInt32Array(),
+		"stance_adopt_min_q16": PackedInt32Array(),
+		"stance_repeal_min_q16": PackedInt32Array(),
+		"stance_promote_min_q16": PackedInt32Array(),
+		"adopt_thresholds_q16": PackedInt32Array([0, 0, 0, 0]),
+		"repeal_thresholds_q16": PackedInt32Array([0, 0, 0, 0]),
+		"promote_thresholds_q16": PackedInt32Array([0, 0, 0, 0]),
+		"exclusion_group_ids": PackedInt32Array([-1, -1, -1, -1]),
+		"synergy_ids": PackedStringArray(),
+		"synergy_requirement_offsets": PackedInt32Array([0]),
+		"synergy_requirement_ideology_ids": PackedInt32Array(),
+		"synergy_requirement_min_levels": PackedInt32Array(),
+		"synergy_requirement_location_masks": PackedByteArray(),
+		"synergy_effect_offsets": PackedInt32Array([0]),
+		"synergy_effect_actions": PackedInt32Array(),
+		"synergy_effect_domains": PackedInt32Array(),
+		"synergy_effect_opcodes": PackedInt32Array(),
+		"synergy_effect_values_q16": PackedInt64Array(),
+		"synergy_effect_duration_days": PackedInt32Array(),
+		"synergy_effect_stacks": PackedInt32Array(),
+		"synergy_effect_command_keys": PackedStringArray(),
+		"synergy_effect_definition_keys": PackedStringArray(),
+		"synergy_effect_payload_i0": PackedInt64Array(),
+		"synergy_effect_payload_i1": PackedInt64Array(),
+		"synergy_effect_payload_i2": PackedInt64Array(),
+		"synergy_effect_payload_i3": PackedInt64Array(),
+		"ideology_synergy_offsets": PackedInt32Array([0, 0, 0, 0, 0]),
+		"ideology_synergy_ids": PackedInt32Array(),
+		"ideology_ids": ids, "acquisition_flags": PackedByteArray([3, 3, 2, 2]),
 		"rarity_weights": PackedInt32Array([1, 1, 1, 1]),
 		"ideology_slot_costs": PackedInt32Array([1, 1, 1, 1]),
 		"spirit_slot_costs": PackedInt32Array([1, 1, 1, 1]),
@@ -320,13 +359,15 @@ func _commit_effect(ext: Object, day: int) -> void:
 
 func _commands(rows: Array[Dictionary]) -> Dictionary:
 	var out := {"opcodes": PackedInt32Array(), "effective_days": PackedInt64Array(),
-		"source_priorities": PackedInt32Array(), "sequences": PackedInt64Array(),
+		"source_priorities": PackedInt32Array(), "producer_ids": PackedInt32Array(),
+		"sequences": PackedInt64Array(),
 		"country_handles": PackedInt64Array(), "ideology_ids": PackedInt32Array(),
 		"values_q16": PackedInt64Array(), "offer_generations": PackedInt64Array(),
 		"choice_indices": PackedInt32Array(), "gate_ids": PackedInt32Array()}
 	for row in rows:
 		out.opcodes.append(int(row.op)); out.effective_days.append(int(row.day))
-		out.source_priorities.append(0); out.sequences.append(int(row.day) + int(row.op))
+		out.source_priorities.append(0); out.producer_ids.append(1)
+		out.sequences.append(_next_sequence); _next_sequence += 1
 		out.country_handles.append(int(row.handle)); out.ideology_ids.append(int(row.get("idea", -1)))
 		out.values_q16.append(int(row.get("value", 0))); out.offer_generations.append(int(row.get("offer", 0)))
 		out.choice_indices.append(int(row.get("choice", -1))); out.gate_ids.append(-1)

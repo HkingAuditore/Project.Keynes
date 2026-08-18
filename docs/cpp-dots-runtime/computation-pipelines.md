@@ -53,7 +53,7 @@ callbacks keep the serial route until their owner can prove thread safety.
 - 某个机制现在到底跑在 C++、DataCore 还是 GDScript？
 - 继续推进 total C++/DOTS 化时，下一步应该迁移哪一段？
 
-## Economy pipeline（PKEC v36 当前，v24 历史基础）
+## Economy pipeline（PKEC v37 当前，v24 历史基础）
 
 经济图仍由 `NativeEconomyRuntime` 权威执行，未增加 DataCore slot 或 GDScript fallback。
 `building_plan` 生成授信额度，`building_employment` 只为 ACTIVE 建筑分配岗位，
@@ -109,7 +109,7 @@ generation-stamped 首触 shadow delta 计算增量 totals。PROBE 每日全量�
 | Dynamic visual atlas | 部分 C++ patch/stride | raster/patch helpers | smooth prep、dirty queue、GPU upload；不再负责 weather_lut 发布。 |
 
 | Debug data overlay bake | C++ pixel fan-out + GDScript 采样/GPU upload（ImageTexture/PackedByteArray 持久化复用，day-dirty + skip_day 节流） | `encode_overlay_atlas` | `DataOverlayBaker.bake` 逐通道 per-cell 采样、`tex.update`、stats、fallback。详见本文 "Debug Data Overlay bake" 节。 |
-| Native world generation base + post-base + publish（生成期） | **ACTIVE 默认（dots-total-cpp 2026-06-18，唯一路径，无 GDScript fallback）**：C++ base SoA generation + C++ post-base 地貌/生态/河流处理；bind 后 C++ slot publish。**base+post_base 已融合为单次 `run_native_world_generate_full_pass`（step4，2026-06-25）** | `run_native_world_generate_full_pass`（融合优先）, `run_native_world_generate_base_pass`, `run_native_world_generate_post_base_pass`, `run_native_world_generate_pass`, `start_native_generation`, `run_native_generation_slice`, `finish_native_generation` | 发送请求、校验、装配 HexCell/MapData；native 失败硬中止 push_error。 |
+| Native world generation base + post-base + publish（生成期） | **ACTIVE 默认（dots-total-cpp 2026-06-18，唯一路径，无 GDScript fallback）**：C++ base SoA generation + C++ post-base 地貌/生态/河流处理；bind 后 C++ slot publish。**base+post_base 已融合为单次 `run_native_world_generate_full_pass`（step4，2026-06-25）**。**作者地图旁路（2026-08-18）**：外部 Python 写 PKAUTH → headless `compile_authored_map.gd` 调同一份 DLL 的 `run_native_world_generate_post_base_pass` 冻成 PKMAP；`MapConfig.map_source=pkmap` 时 `generate()` 跳过 full_pass，`assemble_native_result` + `restuff_generation_river_cache` 后从 bake 继续，失败硬中止。详见 [authored-map-pipeline.md](./authored-map-pipeline.md)。 | `run_native_world_generate_full_pass`（融合优先）, `run_native_world_generate_base_pass`, `run_native_world_generate_post_base_pass`, `restuff_generation_river_cache`, `run_native_world_generate_pass`, `start_native_generation`, `run_native_generation_slice`, `finish_native_generation` | 发送请求、校验、装配 HexCell/MapData；native / PKMAP 失败硬中止 push_error。 |
 | Bake-time static texture encoders（生成期） | C++ byte payload + GDScript GPU upload | `encode_bake_height_tex_data`, `encode_bake_terrain_normal_tex_data`, `encode_bake_horizon_tex_data`, `encode_bake_enum_atlas_payload`, `encode_bake_flow_tex_data`, `encode_bake_r8_tex_data`, `encode_bake_upwelling_tex_data` | `Image.create_from_data`、`ImageTexture.update/create_from_image`、ext 缺失时 debug fallback。 |
 | Bake-time 几何场编排（生成期 terrain-index/erosion/river SDF/latitude/coast SDF） | **C++ 单次融合驱动 `run_bake_geometry_fields_pass`（融合优先 + 旧 per-pass 回退）** | 内部串 `run_bake_terrain_index_pass`/`run_bake_erosion_pass`/`run_bake_river_sdf_pass`/`run_bake_latitude_field_pass`/`run_bake_coast_sdf_pass` | GDScript 一次请求→解包到 `world.*`+重建 lookup；河流图遍历读 ext 暂存拓扑（零再传输）；river/coast carve 就地作用 height_final；GPU 上传。中间 height buffer 不跨语言往返。 |
 | Native daily sim | Partial ACTIVE continuation | `run_native_daily_slice`, debug `run_native_daily_tick`, shadow `run_native_sim_tick` | SUS shell、round-start bundle、fallback/debug、front objects、weather LUT/Godot visual intents。 |
@@ -1109,6 +1109,7 @@ CSR 包并 bootstrap country authority，再配置 economy；随后把每国 20 
 所需的重复建筑，再由剩余岗位反推初始人口。贫瘠格可以为 0，资源丰富格最多为 300。
 
 Market V2 固定一地块一市场。周期起点读取温度/湿度/积雪/天气 Q16 snapshot，
+并在 `fog_solved` 时冻结 `visible_arr` 供玩家贸易端点检查；
 按 plan→need→variant→component CSR 从冻结状态计算 N 日连续财富、民族和环境需求；同一
 variant 的 components 作为互补 bundle 清算，不同 variants 做一次替代 fallback。
 主食、蛋白质、蔬果和衣着先从 `survival_household` 计算无财富/价格弹性的冻结下限；普通需求仍

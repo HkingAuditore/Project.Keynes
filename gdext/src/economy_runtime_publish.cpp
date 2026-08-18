@@ -279,8 +279,12 @@ bool NativeEconomyRuntime::publish_epoch_slice(
             int64_t expedition_funds = 0;
             sum_family_expedition_holdings(expedition_population,
                                            expedition_funds,
+                                           _closing_totals.expedition_goods,
                                            _publish_valuation_sat);
             _closing_totals.expedition_funds = expedition_funds;
+            _closing_totals.goods_stock = saturating_add(
+                _closing_totals.goods_stock, _closing_totals.expedition_goods,
+                _publish_valuation_sat);
             _closing_totals.escrow_cash = saturating_add(
                 _closing_totals.escrow_cash, expedition_funds,
                 _publish_valuation_sat);

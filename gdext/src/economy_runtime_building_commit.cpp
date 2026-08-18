@@ -12,6 +12,14 @@ bool NativeEconomyRuntime::commit_ready_construction(
         std::vector<int32_t> &changed_cells, bool prune_empty_groups) {
     bool changed = false;
     bool topology_changed = false;
+    if (_pending_building_topology_rebuild) {
+        // Sort kit-appended groups into the compact lane before lower_bound
+        // treats the current size as a fully ordered prefix.
+        rebuild_building_role_storage();
+        refresh_building_modifier_factors();
+        _pending_building_topology_rebuild = false;
+        changed = true;
+    }
     std::vector<PendingConstruction> sponsored_completed;
     const int32_t sorted_group_count = static_cast<int32_t>(_buildings.size());
     const auto group_key = [](const BuildingGroup &group) {

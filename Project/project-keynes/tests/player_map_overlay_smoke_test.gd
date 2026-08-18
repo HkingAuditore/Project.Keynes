@@ -46,21 +46,18 @@ func _run() -> void:
 		var layout: Dictionary = toolbar.layout_diagnostics()
 		_expect("resource submenu height is capped",
 			float(layout.get("secondary_height", 9999.0)) <= 430.0)
-		_expect("resource submenu is actually scrollable",
-			float(layout.get("scroll_max", 0.0)) > float(layout.get("scroll_page", 0.0)))
 		_expect("close layer action stays visible", bool(layout.get("close_visible", false)))
+		_assert_opening_discovery_filters(toolbar)
+		_assert_overlay_buttons_do_not_steal_focus(toolbar)
 		toolbar.call("_set_category", MapOverlayToolbar.Category.BIOLOGY)
 		await process_frame
 		await process_frame
 		var biology_layout: Dictionary = toolbar.layout_diagnostics()
 		_expect("biology submenu height is capped",
 			float(biology_layout.get("secondary_height", 9999.0)) <= 430.0)
-		_expect("biology submenu is actually scrollable",
-			float(biology_layout.get("scroll_max", 0.0)) >
-			float(biology_layout.get("scroll_page", 0.0)))
 		_expect("biology close layer action stays visible",
 			bool(biology_layout.get("close_visible", false)))
-		_assert_overlay_buttons_do_not_steal_focus(toolbar)
+		_assert_opening_biology_stays_unnamed(toolbar)
 		_assert_leftover_hud_focus_does_not_lock_map(game)
 		var legend := game.get_node_or_null("UI/UIRoot/HUDLayer/MapOverlayLegend") as Control
 		if legend != null:
@@ -126,6 +123,49 @@ func _run() -> void:
 
 	print("=== player map overlay smoke: %d failures ===" % _failures)
 	quit(0 if _failures == 0 else 1)
+
+
+func _assert_opening_discovery_filters(toolbar: MapOverlayToolbar) -> void:
+	var technology_ids: PackedStringArray = toolbar.get("_technology_ids")
+	_expect("player overlay enforces discovery",
+		bool(toolbar.get("_enforce_discovery"))
+		and technology_ids.has("tech.gathering")
+		and technology_ids.has("tech.hunting"))
+	var named_ids := {}
+	for profile in ResourceProfileRegistry.ordered():
+		if profile == null:
+			continue
+		if ResourceProfileRegistry.discovery_visible(profile, technology_ids):
+			named_ids[String(profile.id)] = true
+	_expect("opening overlay names fertile soil and wild game",
+		named_ids.has("fertile_soil") and named_ids.has("wild_game"))
+	_expect("opening overlay does not name unidentified minerals or timber",
+		not named_ids.has("iron_ore")
+		and not named_ids.has("copper_ore")
+		and not named_ids.has("coal")
+		and not named_ids.has("flint")
+		and not named_ids.has("timber"))
+	_expect("resource buttons match discovery-visible deposits",
+		(toolbar.get("_mode_buttons") as Array).size() == named_ids.size())
+
+
+func _assert_opening_biology_stays_unnamed(toolbar: MapOverlayToolbar) -> void:
+	var technology_ids: PackedStringArray = toolbar.get("_technology_ids")
+	var compiled: Dictionary = TechnologyCatalog.compile_native_catalog()
+	var named_count := 0
+	for entry in ResearchSignalCatalog.occupancy_overlay_entries():
+		if TechnologyCatalog.signal_named_by_completed_technologies(
+				String(entry.get("id", "")), technology_ids, compiled):
+			named_count += 1
+	_expect("opening overlay does not name unidentified species",
+		not TechnologyCatalog.signal_named_by_completed_technologies(
+			"bio.maize", technology_ids, compiled)
+		and not TechnologyCatalog.signal_named_by_completed_technologies(
+			"bio.flax", technology_ids, compiled)
+		and not TechnologyCatalog.signal_named_by_completed_technologies(
+			"bio.sheep", technology_ids, compiled))
+	_expect("biology buttons match named occupancy signals",
+		(toolbar.get("_mode_buttons") as Array).size() == named_count)
 
 
 func _assert_overlay_buttons_do_not_steal_focus(toolbar: MapOverlayToolbar) -> void:

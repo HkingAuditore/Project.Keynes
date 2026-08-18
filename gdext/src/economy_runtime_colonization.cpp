@@ -61,7 +61,9 @@ void NativeEconomyRuntime::FamilyExpeditionStore::clear() {
     target_cell.clear(); departure_day.clear(); due_day.clear();
     route_cost.clear(); speed.clear(); state.clear(); population.clear();
     route_begin.clear(); route_count.clear(); payload_begin.clear();
-    payload_count.clear(); effect_transaction_id.clear();
+    payload_count.clear(); cargo_begin.clear(); cargo_count.clear();
+    kit_building_begin.clear(); kit_building_count.clear();
+    effect_transaction_id.clear();
     idempotency_key.clear(); free_indices.clear(); active_count = 0;
 }
 
@@ -71,6 +73,8 @@ int32_t NativeEconomyRuntime::FamilyExpeditionStore::allocate() {
         index = free_indices.back();
         free_indices.pop_back();
         generation[index] = std::max<uint32_t>(1, generation[index] + 1);
+        cargo_begin[index] = 0; cargo_count[index] = 0;
+        kit_building_begin[index] = 0; kit_building_count[index] = 0;
     } else {
         index = static_cast<int32_t>(active.size());
         active.push_back(0); generation.push_back(1); stable_id.push_back(0);
@@ -81,6 +85,8 @@ int32_t NativeEconomyRuntime::FamilyExpeditionStore::allocate() {
         state.push_back(EXPEDITION_OUTBOUND); population.push_back(0);
         route_begin.push_back(0); route_count.push_back(0);
         payload_begin.push_back(0); payload_count.push_back(0);
+        cargo_begin.push_back(0); cargo_count.push_back(0);
+        kit_building_begin.push_back(0); kit_building_count.push_back(0);
         effect_transaction_id.push_back(0); idempotency_key.push_back(0);
     }
     active[index] = 1;
@@ -455,6 +461,13 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
     std::sort(reached_sources.begin(), reached_sources.end());
     reached_sources.erase(std::unique(reached_sources.begin(),
                                       reached_sources.end()), reached_sources.end());
+    uint64_t dest_kit_identity = 1;
+    if (!reached_sources.empty()) {
+        ColonizationKitPlan dest_preview;
+        plan_colonization_kit(reached_sources.front(), target_cell,
+            COLONIZATION_KIT_MIN_OWNER_SLOTS, 1, false, dest_preview);
+        dest_kit_identity = dest_preview.dest_identity;
+    }
     struct Candidate { uint64_t family; int32_t source; int64_t maximum;
         int32_t cost; int32_t days; uint64_t token; };
     std::vector<Candidate> candidates;
@@ -499,7 +512,7 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
                     static_cast<uint64_t>(static_cast<uint32_t>(source)),
                     static_cast<uint64_t>(static_cast<uint32_t>(target_cell)),
                     _trade_topology.topology_generation, country_snapshot.generation,
-                    vision_hash, route_hash})
+                    vision_hash, route_hash, dest_kit_identity})
                 token = trace_hash_mix(token, value);
             token &= 0x7fffffffffffffffULL;
             if (token == 0) token = 1;
@@ -521,6 +534,7 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
             entry.topology_generation = _trade_topology.topology_generation;
             entry.country_generation = country_snapshot.generation;
             entry.vision_hash = vision_hash; entry.route_hash = route_hash;
+            entry.dest_kit_identity = dest_kit_identity;
             entry.route_begin = static_cast<uint32_t>(
                 _colonization_quote_route_cells.size());
             entry.route_count = static_cast<uint32_t>(route.size());
@@ -589,7 +603,7 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
 }
 
 Dictionary NativeEconomyRuntime::family_colonization_quote_detail(
-        int64_t quote_token_value) const {
+        int64_t quote_token_value, int64_t population) const {
     Dictionary out;
     fill_colonization_query_flags(out);
     if (!_bootstrapped || _fatal || _restore.active) {
@@ -648,6 +662,28 @@ Dictionary NativeEconomyRuntime::family_colonization_quote_detail(
     }
     out["profession_ids"] = profession_ids;
     out["profession_populations"] = profession_populations;
+    ColonizationKitPlan kit;
+    const int64_t kit_population = population > 0
+        ? std::min(population, quote.maximum_population)
+        : quote.maximum_population;
+    plan_colonization_kit(quote.source_cell, quote.target_cell, kit_population,
+        quote.travel_days, false, kit);
+    PackedInt32Array kit_building_ids;
+    PackedInt64Array kit_building_counts;
+    for (const FamilyExpeditionKitBuilding &row : kit.buildings) {
+        kit_building_ids.push_back(row.type_id);
+        kit_building_counts.push_back(row.count);
+    }
+    PackedInt32Array kit_missing_goods;
+    for (const int32_t good : kit.missing_good_ids)
+        kit_missing_goods.push_back(good);
+    out["kit_building_ids"] = kit_building_ids;
+    out["kit_building_counts"] = kit_building_counts;
+    out["kit_supported_population"] = kit.supported_population;
+    out["kit_food_coverage_q16"] = kit.food_coverage_q16;
+    out["kit_missing_goods"] = kit_missing_goods;
+    out["kit_partial"] = kit.kit_partial != 0;
+    out["kit_place_buildings"] = kit.place_buildings != 0;
     return out;
 }
 
@@ -932,6 +968,12 @@ bool NativeEconomyRuntime::apply_start_family_expedition(
             quote.target_cell)) {
         error = "colonization_family_cell_capacity"; return false;
     }
+    ColonizationKitPlan kit;
+    plan_colonization_kit(quote.source_cell, quote.target_cell, cmd.i64_0,
+        quote.travel_days, _epoch_active, kit);
+    if (!_epoch_active && kit.dest_identity != quote.dest_kit_identity) {
+        error = "colonization_kit_requote_required"; return false;
+    }
     const int32_t expedition = _family_expeditions.allocate();
     _family_expeditions.stable_id[expedition] =
         _next_family_expedition_stable_id++;
@@ -962,7 +1004,15 @@ bool NativeEconomyRuntime::apply_start_family_expedition(
         static_cast<uint64_t>(cmd.sequence));
     _family_expeditions.idempotency_key[expedition] =
         idempotency_key == 0 ? 1 : idempotency_key;
+    if (!extract_family_expedition_cargo(expedition, kit, error)) {
+        _family_expeditions.release(expedition);
+        if (error.empty()) error = "colonization_kit_materials_short";
+        return false;
+    }
     if (!extract_family_expedition_payload(expedition, cmd.i64_0, error)) {
+        std::string ignored;
+        restore_family_expedition_cargo(expedition, quote.source_cell, false,
+            ignored);
         _family_expeditions.release(expedition);
         return false;
     }
@@ -1378,6 +1428,8 @@ bool NativeEconomyRuntime::apply_settle_family_expedition(
     const uint64_t country_handle = _family_expeditions.country_handle[expedition];
     if (!restore_family_expedition_payload(expedition, destination, error))
         return false;
+    if (!settle_family_expedition_kit(expedition, destination, error))
+        return false;
     bool claimed = cmd.i64_0 != 0;
     if (!claimed && _effect_runtime != nullptr)
         claimed = _effect_runtime->family_colonization_includes_claim(
@@ -1435,8 +1487,30 @@ void NativeEconomyRuntime::recover_lost_family_settlement_commands() {
         command.submit_order = _next_submit_order++;
         command.effect_request_id = found->second;
         command.effect_idempotency_key = settle_key;
-        _pending_commands.push_back(command);
+        queue_family_settlement_command(command);
     }
+}
+
+bool NativeEconomyRuntime::stage_allows_in_epoch_family_settlement() const {
+    if (!_epoch_active || _fatal) return false;
+    switch (_stage) {
+        case Stage::EPOCH_BEGIN:
+        case Stage::TRADE_PLANNING:
+        case Stage::BUILDING_PLAN:
+        case Stage::TRADE_SETTLE:
+        case Stage::LEDGER_APPLY:
+            return true;
+        default:
+            return false;
+    }
+}
+
+void NativeEconomyRuntime::queue_family_settlement_command(
+        const Command &command) {
+    if (_epoch_active && stage_allows_in_epoch_family_settlement())
+        _epoch_commands.push_back(command);
+    else
+        _pending_commands.push_back(command);
 }
 
 bool NativeEconomyRuntime::process_due_family_expeditions(
@@ -1488,6 +1562,9 @@ bool NativeEconomyRuntime::process_due_family_expeditions(
         if (_family_expeditions.state[expedition] == EXPEDITION_RETURNING) {
             if (!restore_family_expedition_payload(expedition,
                     _family_expeditions.source_cell[expedition], error)) return false;
+            if (!restore_family_expedition_cargo(expedition,
+                    _family_expeditions.source_cell[expedition], false, error))
+                return false;
             note_family_expedition_audit_invalidation();
             append_colonization_receipt(expedition, 0,
                 _family_expeditions.departure_day[expedition], day, 5, "RETURNED");

@@ -1,6 +1,7 @@
 #include "world_ext.h"
 
 #include "country_runtime.h"
+#include "economy_runtime.h"
 #include "effect_runtime.h"
 #include "ideology_runtime.h"
 
@@ -26,6 +27,8 @@ Dictionary DCWorldExt::configure_ideologies(const Dictionary &catalog) {
     if (_ideology_runtime == nullptr) _ideology_runtime = new NativeIdeologyRuntime();
     ideology_runtime_from(_ideology_runtime)->attach_country_runtime(
         static_cast<NativeCountryRuntime *>(_country_runtime));
+    ideology_runtime_from(_ideology_runtime)->attach_economy_runtime(
+        static_cast<NativeEconomyRuntime *>(_economy_runtime));
     ideology_runtime_from(_ideology_runtime)->attach_effect_runtime(
         static_cast<EffectRuntime *>(_effect_runtime));
     return ideology_runtime_from(_ideology_runtime)->configure(catalog);
@@ -34,6 +37,13 @@ Dictionary DCWorldExt::configure_ideologies(const Dictionary &catalog) {
 Dictionary DCWorldExt::submit_ideology_commands(const Dictionary &batch) {
     return _ideology_runtime == nullptr ? unavailable()
         : ideology_runtime_from(_ideology_runtime)->submit_commands(batch);
+}
+
+Dictionary DCWorldExt::poll_ideology_receipts(int64_t after_receipt_id,
+        int32_t limit) const {
+    return _ideology_runtime == nullptr ? unavailable()
+        : ideology_runtime_from(_ideology_runtime)->poll_receipts(
+            after_receipt_id, limit);
 }
 
 Dictionary DCWorldExt::run_ideology_daily(int64_t day_index) {
@@ -51,9 +61,16 @@ Dictionary DCWorldExt::get_ideology_snapshot(int64_t country_handle) const {
         : ideology_runtime_from(_ideology_runtime)->snapshot(country_handle);
 }
 
-Dictionary DCWorldExt::explain_ideology(int64_t country_handle, int32_t ideology_id) const {
+Dictionary DCWorldExt::explain_ideology(int64_t country_handle, int32_t ideology_id) {
     return _ideology_runtime == nullptr ? unavailable()
         : ideology_runtime_from(_ideology_runtime)->explain(country_handle, ideology_id);
+}
+
+Dictionary DCWorldExt::explain_ideologies(int64_t country_handle,
+        const PackedInt32Array &ideology_ids) {
+    return _ideology_runtime == nullptr ? unavailable()
+        : ideology_runtime_from(_ideology_runtime)->explain_batch(
+            country_handle, ideology_ids);
 }
 
 Dictionary DCWorldExt::get_ideology_report() const {

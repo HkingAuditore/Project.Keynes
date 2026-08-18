@@ -195,7 +195,7 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_cell_price_stock_gen); cap(_cell_owner_cash_gen); cap(_cell_population_gen);
     cap(_cell_building_structure_gen); cap(_cell_technology_gen);
     cap(_cell_resource_gen); cap(_cell_trade_gen);
-    cap(_epoch_cell_country); cap(_epoch_country_technologies);
+    cap(_epoch_cell_country); cap(_epoch_cell_visible); cap(_epoch_country_technologies);
     cap(_epoch_cell_compiled_tax_policy);
     cap(_epoch_cell_active_tax_mask);
     cap(_epoch_compiled_cell_tax_policies);
@@ -922,6 +922,27 @@ Dictionary NativeEconomyRuntime::report() const {
                 sizeof(SettlementChange));
     out["settlement_memory_bytes"] = settlement_memory;
     out["publish_ms"] = _publish_ms;
+    const CountryClassOpinionSnapshot &class_opinion =
+        country_class_opinion_snapshot();
+    out["class_opinion_revision"] =
+        static_cast<int64_t>(class_opinion.revision);
+    out["class_opinion_class_hash"] =
+        static_cast<int64_t>(class_opinion.class_hash);
+    out["class_opinion_country_count"] = class_opinion.country_count;
+    out["class_opinion_class_count"] = class_opinion.class_count;
+    out["class_opinion_cells"] =
+        static_cast<int64_t>(_class_opinion_cells_scanned);
+    out["class_opinion_slots_scanned"] =
+        static_cast<int64_t>(_class_opinion_slots_scanned);
+    out["class_opinion_zero_population_rows"] =
+        static_cast<int64_t>(_class_opinion_zero_population_rows);
+    out["class_opinion_last_cells_scanned"] =
+        static_cast<int64_t>(_last_class_opinion_cells_scanned);
+    out["class_opinion_last_slots_scanned"] =
+        static_cast<int64_t>(_last_class_opinion_slots_scanned);
+    out["class_opinion_last_zero_population_rows"] =
+        static_cast<int64_t>(_last_class_opinion_zero_population_rows);
+    out["class_opinion_ms"] = _class_opinion_ms;
     Dictionary publish_breakdown_ms;
     Dictionary publish_breakdown_work;
     Dictionary publish_cumulative_breakdown_ms;
@@ -934,6 +955,10 @@ Dictionary NativeEconomyRuntime::report() const {
         publish_cumulative_breakdown_ms[key.c_str()] = _publish_phase_ms[phase];
         publish_cumulative_breakdown_work[key.c_str()] = _publish_phase_work[phase];
     }
+    publish_breakdown_ms["aggregate_publish.class_opinion"] =
+        _class_opinion_ms;
+    publish_breakdown_work["aggregate_publish.class_opinion"] =
+        static_cast<int64_t>(_last_class_opinion_slots_scanned);
     const size_t trade_init_phase = static_cast<size_t>(PublishPhase::TRADE_INIT);
     if (_publish_slice_phase_ms[trade_init_phase] > 0.0 &&
         _executed_substage.rfind("trade_init.", 0) == 0) {
@@ -1844,6 +1869,8 @@ Dictionary NativeEconomyRuntime::report() const {
     out["trade_rejected_stock"] = _trade_rejected_stock;
     out["trade_rejected_cash"] = _trade_rejected_cash;
     out["trade_rejected_route"] = _trade_rejected_route;
+    out["trade_rejected_vision"] = _trade_rejected_vision;
+    out["trade_vision_gated"] = _epoch_trade_vision_gated;
     out["trade_rejected_order_cap"] = _trade_rejected_order_cap;
     out["trade_active_keys_pruned"] = _trade_active_keys_pruned;
     out["trade_deficit_episodes_started"] = _trade_deficit_episodes_started;

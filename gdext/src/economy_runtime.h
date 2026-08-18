@@ -40,7 +40,20 @@ public:
     // economy saves are intentionally incompatible and are rejected.
     // 36: cell carrying-capacity mix (K_geo × surplus × sat) and support EMA.
     // v35 saves restore with support_ema = 1. Pre-v35 economy saves stay rejected.
-    static constexpr int32_t SCHEMA_VERSION = 36;
+    // 37: family-expedition cargo escrow and frozen colonization starter kits.
+    // v36 in-flight expeditions restore with cargo_count = 0.
+    static constexpr int32_t SCHEMA_VERSION = 37;
+    static constexpr uint32_t BUILDING_KIT_ROLE_TRADE = 1u;
+    static constexpr uint32_t BUILDING_KIT_ROLE_CONSTRUCTION = 2u;
+    static constexpr uint32_t BUILDING_KIT_ROLE_CLOTHING_INPUT = 4u;
+    static constexpr uint32_t BUILDING_KIT_ROLE_CLOTHING = 8u;
+    static constexpr uint32_t BUILDING_KIT_ROLE_SURVIVAL_FOOD = 16u;
+    static constexpr uint8_t EXPEDITION_CARGO_CONSTRUCTION = 0;
+    static constexpr uint8_t EXPEDITION_CARGO_BUFFER = 1;
+    static constexpr int32_t COLONIZATION_KIT_MIN_OWNER_SLOTS = 3;
+    static constexpr int32_t COLONIZATION_KIT_FOOD_COVERAGE_Q16 = 72090;
+    static constexpr int32_t COLONIZATION_KIT_BRIDGE_EXTRA_DAYS = 15;
+    static constexpr int32_t COLONIZATION_KIT_CLOTHING_BUFFER_DAYS = 3;
     static constexpr int32_t ROLLING_PHASE_COUNT = 5;
     static constexpr int32_t CARRYING_FAMILY_COUNT = 21;
     static constexpr int32_t CARRYING_NEED_FAMILY_COUNT = 17;
@@ -238,7 +251,7 @@ public:
         const uint8_t *visible, int32_t visible_count,
         uint64_t vision_revision);
     godot::Dictionary family_colonization_quote_detail(
-        int64_t quote_token) const;
+        int64_t quote_token, int64_t population = -1) const;
     void fill_colonization_query_flags(godot::Dictionary &out) const;
     godot::Dictionary submit_family_colonization_start(
         int64_t country_handle, int64_t family_handle, int32_t source_cell,
@@ -379,6 +392,10 @@ public:
                                 const int32_t *trade_move_cost_lut,
                                 int32_t count, uint64_t generation,
                                 std::string &error);
+    bool capture_trade_visibility(const uint8_t *visible, int32_t count,
+                                  bool fog_solved, bool from_map,
+                                  std::string &error);
+    bool trade_visibility_manual() const { return _trade_visibility_manual; }
     bool refresh_canal_topology(const uint8_t *canal_edge_mask,
                                 const float *canal_water,
                                 int32_t count, std::string &error);
@@ -394,6 +411,26 @@ public:
                                       std::vector<int32_t> &route_edge_dirs,
                                       uint64_t &topology_hash,
                                       std::string &error) const;
+    struct CountryClassOpinionSnapshot {
+        uint64_t revision = 0;
+        uint64_t class_hash = 0;
+        int64_t epoch_day = -1;
+        int64_t commit_day = -1;
+        int32_t country_count = 0;
+        int32_t class_count = 0;
+        std::vector<uint64_t> country_handles;
+        std::vector<uint32_t> country_generations;
+        std::vector<int64_t> population;
+        std::vector<int64_t> funds;
+        std::vector<int64_t> owner_employed;
+        std::vector<int64_t> satisfaction_weighted;
+        std::vector<int32_t> satisfaction_q16;
+    };
+    const CountryClassOpinionSnapshot &country_class_opinion_snapshot() const {
+        return _class_opinion_buffers[
+            static_cast<size_t>(_class_opinion_committed_buffer)];
+    }
+    godot::Dictionary country_class_opinion_snapshot_debug() const;
 
 private:
     friend class EconomyCsvRecorder;
@@ -594,6 +631,7 @@ private:
         int32_t market_signal_count = 0;
         int32_t labor_signal_begin = 0;
         int32_t labor_signal_count = 0;
+        uint32_t kit_role_mask = 0;
     };
 
     struct JobRole {
@@ -909,6 +947,29 @@ private:
         int32_t reserved_slot = -1;
     };
 
+    struct FamilyExpeditionCargoLine {
+        int32_t good_id = -1;
+        int64_t quantity = 0;
+        uint8_t flags = 0;
+    };
+
+    struct FamilyExpeditionKitBuilding {
+        int32_t type_id = -1;
+        int64_t count = 0;
+    };
+
+    struct ColonizationKitPlan {
+        std::vector<FamilyExpeditionKitBuilding> buildings;
+        std::vector<FamilyExpeditionCargoLine> cargo;
+        std::vector<int32_t> missing_good_ids;
+        int64_t supported_population = 0;
+        int64_t food_coverage_q16 = 0;
+        uint8_t kit_partial = 0;
+        uint8_t place_buildings = 0;
+        uint64_t kit_hash = 0;
+        uint64_t dest_identity = 0;
+    };
+
     struct FamilyExpeditionStore {
         std::vector<uint8_t> active;
         std::vector<uint32_t> generation;
@@ -927,6 +988,10 @@ private:
         std::vector<uint32_t> route_count;
         std::vector<uint32_t> payload_begin;
         std::vector<uint32_t> payload_count;
+        std::vector<uint32_t> cargo_begin;
+        std::vector<uint32_t> cargo_count;
+        std::vector<uint32_t> kit_building_begin;
+        std::vector<uint32_t> kit_building_count;
         std::vector<int64_t> effect_transaction_id;
         std::vector<uint64_t> idempotency_key;
         std::vector<int32_t> free_indices;
@@ -952,6 +1017,7 @@ private:
         uint64_t country_generation = 0;
         uint64_t vision_hash = 0;
         uint64_t route_hash = 0;
+        uint64_t dest_kit_identity = 0;
         uint32_t route_begin = 0;
         uint32_t route_count = 0;
     };
@@ -1595,6 +1661,7 @@ private:
         int64_t transit_population = 0;
         int64_t escrow_cash = 0;
         int64_t expedition_funds = 0;
+        int64_t expedition_goods = 0;
         int64_t merchant_cash = 0;
         int64_t merchant_inventory_retail_value = 0;
         int64_t merchant_inventory_liquidation_value = 0;
@@ -2772,6 +2839,7 @@ private:
     int64_t _trade_rejected_stock = 0;
     int64_t _trade_rejected_cash = 0;
     int64_t _trade_rejected_route = 0;
+    int64_t _trade_rejected_vision = 0;
     int64_t _trade_rejected_order_cap = 0;
     int64_t _trade_orders_dispatched = 0;
     int64_t _trade_orders_arrived = 0;
@@ -3070,6 +3138,8 @@ private:
     std::vector<int32_t> _family_expedition_route_costs;
     std::vector<FamilyExpeditionPayload> _family_expedition_payloads;
     std::vector<uint64_t> _family_expedition_person_handles;
+    std::vector<FamilyExpeditionCargoLine> _family_expedition_cargo;
+    std::vector<FamilyExpeditionKitBuilding> _family_expedition_kit_buildings;
     std::unordered_map<uint64_t, int32_t> _family_expedition_target_index;
     std::vector<std::pair<int64_t, int32_t>> _family_expedition_due_heap;
     std::vector<ColonizationReceipt> _colonization_receipts;
@@ -3227,9 +3297,10 @@ private:
     // Per-group cache for refresh_building_modifier_factors, keyed on every
     // input of group.output_factor_q16 / modifier_handle: every frozen
     // country factor value, country handle, ECONOMY store snapshot_version,
-    // and the (type, owner) identity. _buildings is append-only (groups are
-    // never erased or reordered), so this parallel array stays aligned across
-    // epochs. Cache hits skip both ensure_building_identity and the ECONOMY
+    // and the (type, owner) identity. During a frozen epoch `_buildings` is
+    // append-only; topology rebuilds permute the compact lane only at
+    // BUILDING_COMMIT / idle boundaries and remap this cache with them.
+    // Cache hits skip both ensure_building_identity and the ECONOMY
     // effective_value query. Transient; never saved or hashed.
     struct BuildingFactorCacheEntry {
         int64_t country_factor_q16 = std::numeric_limits<int64_t>::min();
@@ -3370,6 +3441,19 @@ private:
     std::vector<std::string> _profession_ids;
     std::vector<int32_t> _profession_class_index;
     std::vector<std::string> _carrying_class_ids;
+    std::vector<int32_t> _profession_political_class_index;
+    std::vector<std::string> _political_class_ids;
+    uint64_t _political_class_hash = 0;
+    std::array<CountryClassOpinionSnapshot, 2> _class_opinion_buffers;
+    int32_t _class_opinion_committed_buffer = 0;
+    uint64_t _class_opinion_revision = 0;
+    uint64_t _class_opinion_cells_scanned = 0;
+    uint64_t _class_opinion_slots_scanned = 0;
+    uint64_t _class_opinion_zero_population_rows = 0;
+    uint64_t _last_class_opinion_cells_scanned = 0;
+    uint64_t _last_class_opinion_slots_scanned = 0;
+    uint64_t _last_class_opinion_zero_population_rows = 0;
+    double _class_opinion_ms = 0.0;
     std::vector<std::string> _carrying_family_ids;
     std::vector<int32_t> _carrying_family_need_stable;
     std::vector<int32_t> _carrying_family_good_offsets;
@@ -3555,8 +3639,10 @@ private:
     std::vector<int32_t> _building_all_technology_offsets;
     std::vector<int32_t> _building_all_required_technologies;
     // Material/resource dependency gates compiled from Good/Resource technology
-    // tags. A building direct branch is usable only when every dependency group
-    // has at least one completed technology tag (candidate inputs are one group).
+    // tags. Operating availability requires every input/output/resource group
+    // to have at least one completed technology tag. Construction-good groups
+    // (kind 1) gate new builds via good_market_available / material planning,
+    // not already-standing lots.
     std::vector<int32_t> _building_dependency_branch_offsets;
     std::vector<int32_t> _building_dependency_branch_technologies;
     std::vector<int32_t> _building_dependency_branch_technology_offsets;
@@ -3580,6 +3666,10 @@ private:
     EffectRuntime *_effect_runtime = nullptr;
     TriggerRuntime *_trigger_runtime = nullptr;
     std::vector<int32_t> _epoch_cell_country;
+    std::vector<uint8_t> _epoch_cell_visible;
+    int32_t _epoch_player_country_slot = -1;
+    bool _epoch_trade_vision_gated = false;
+    bool _trade_visibility_manual = false;
     std::vector<uint64_t> _epoch_country_technologies;
     std::vector<uint64_t> _epoch_country_handles;
     // Catalog-resolved tax stat ids and the per-epoch effective integer rates.
@@ -3794,6 +3884,11 @@ private:
     std::vector<ResourceAmount> _building_resource_generation;
     std::vector<ConditionToken> _building_conditions;
     std::vector<BuildingGroup> _buildings;
+    // Kit settlement may append groups during LEDGER_APPLY. Reordering and
+    // market-signal rebuild wait for BUILDING_COMMIT so frozen epoch group
+    // indices and production reserves stay aligned. Idle-boundary landings
+    // rebuild immediately and leave this false.
+    bool _pending_building_topology_rebuild = false;
     // Handle -> compact group index acceleration for `_buildings`. Rebuilt
     // lazily whenever the group lane changes size and verified on every hit,
     // so a stale entry degrades into a rebuild instead of a wrong index.
@@ -3916,6 +4011,7 @@ private:
     bool trade_planner_should_run() const;
     bool run_trade_planner_slice(int64_t &work_done, std::string &error);
     bool begin_trade_plan_slice(int64_t &work_done, std::string &error);
+    bool trade_vision_allows_pair(int32_t source, int32_t destination) const;
     bool route_trade_source(int32_t source_index, int32_t expansion_budget,
                             int32_t &expansions_done, bool &source_done,
                             std::string &error);
@@ -4016,15 +4112,27 @@ private:
     bool extract_family_expedition_payload(int32_t expedition,
                                            int64_t requested,
                                            std::string &error);
+    bool extract_family_expedition_cargo(int32_t expedition,
+                                         const ColonizationKitPlan &kit,
+                                         std::string &error);
+    bool restore_family_expedition_cargo(int32_t expedition,
+                                         int32_t destination_cell,
+                                         bool consume_construction,
+                                         std::string &error);
     bool restore_family_expedition_payload(int32_t expedition,
                                             int32_t destination_cell,
                                             std::string &error);
+    bool settle_family_expedition_kit(int32_t expedition,
+                                      int32_t destination_cell,
+                                      std::string &error);
     bool finalize_immediate_family_expedition_settlement(
         int32_t destination_cell, std::string &error);
     void release_family_expedition_reservations(int32_t expedition);
     bool process_due_family_expeditions(int64_t day, std::string &error);
     bool family_expedition_settle_inflight(uint64_t expedition_handle) const;
     void recover_lost_family_settlement_commands();
+    bool stage_allows_in_epoch_family_settlement() const;
+    void queue_family_settlement_command(const Command &command);
     void rebuild_family_expedition_indices();
     void push_family_expedition_due(int32_t expedition);
     void append_colonization_receipt(int32_t expedition, int64_t sequence,
@@ -4062,6 +4170,29 @@ private:
                                           int32_t count) const;
     uint64_t family_expedition_target_key(uint64_t country_handle,
                                           int32_t target_cell) const;
+    bool cell_has_submitted_or_pending_buildings(int32_t cell) const;
+    bool colonization_kit_type_eligible(int32_t source_cell, int32_t target_cell,
+                                        int32_t type_id, bool frozen) const;
+    int64_t colonization_kit_output_per_building(int32_t target_cell,
+                                                 int32_t type_id,
+                                                 int32_t good_id) const;
+    int64_t colonization_kit_input_per_building(int32_t type_id,
+                                                int32_t good_id) const;
+    int64_t colonization_kit_daily_food_required(int32_t target_cell,
+                                                 int64_t population) const;
+    uint64_t hash_colonization_kit_plan(const ColonizationKitPlan &kit) const;
+    void fill_colonization_kit_buffer(int32_t source_cell, int32_t target_cell,
+                                      int64_t population, int32_t travel_days,
+                                      ColonizationKitPlan &kit) const;
+    void add_colonization_kit_cargo(ColonizationKitPlan &kit, int32_t good_id,
+                                    int64_t quantity, uint8_t flags,
+                                    int64_t &sat) const;
+    void sort_colonization_kit_cargo(ColonizationKitPlan &kit) const;
+    bool plan_colonization_kit(int32_t source_cell, int32_t target_cell,
+                               int64_t population, int32_t travel_days,
+                               bool frozen, ColonizationKitPlan &kit) const;
+    bool adjust_market_stock(int32_t cell, int32_t good_id, int64_t delta,
+                             std::string &error);
     bool publish_epoch_slice(int64_t &work_done, std::string &error);
     void reset_publish_state();
     bool compile_building_catalog(const godot::Dictionary &catalog, std::string &error);
@@ -4100,6 +4231,7 @@ private:
                             bool frozen = true) const;
     bool building_dependency_requirements_met(int32_t cell, int32_t type_id,
                                               bool frozen) const;
+    bool building_dependency_group_required_for_operation(int32_t group) const;
     bool building_constructible(int32_t cell, int32_t type_id,
                                 bool frozen = true) const;
     // O(1) signature lookup helpers backed by _signature_by_profession_ethnicity.
@@ -4159,7 +4291,8 @@ private:
     bool plan_construction_materials(int32_t cell, int32_t type_id,
                                      int64_t count, int32_t cost_factor_q16,
                                      ConstructionMaterialPlan &plan,
-                                     const std::vector<int64_t> *additional_stock = nullptr) const;
+                                     const std::vector<int64_t> *additional_stock = nullptr,
+                                     std::vector<int64_t> *stock_inout = nullptr) const;
     bool apply_demolish_command(const Command &cmd, int32_t owner_slot, std::string &error);
     bool run_building_employment_cell(int32_t cell,
                                       bool allow_owner_job_reallocation,
@@ -4420,7 +4553,7 @@ private:
     void audit_touch_population_lane(int32_t slot);
     void audit_touch_market_lane(size_t index);
     void sum_family_expedition_holdings(int64_t &population, int64_t &funds,
-                                        int64_t &saturation) const;
+                                        int64_t &goods, int64_t &saturation) const;
     void note_family_expedition_audit_invalidation();
     AuditTotals incremental_audit_totals() const;
     void commit_incremental_audit_shadow();

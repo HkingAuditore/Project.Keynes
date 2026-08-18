@@ -34,8 +34,7 @@ const BASE_FIELDS := [
 	{"name": "num_continents", "label": "大陆块数", "hint": "调大：大陆核心更多、更分散", "type": "int", "default": 2, "min": 1, "max": 8, "step": 1},
 	{"name": "continent_size", "label": "大陆整体大小", "hint": "调大：每块大陆更大、更容易连成片", "type": "float", "default": 0.9, "min": 0.2, "max": 0.9, "step": 0.01},
 	{"name": "generate_test_economy_data", "label": "生成测试经济数据", "hint": "仅用于开发测试：按石器时代科技与可见资源生成临时人口和建筑，市场库存从零开始。", "type": "bool", "default": false},
-	{
-		"name": "test_economy_population_scale",
+	{"name": "test_economy_population_scale",
 		"label": "测试人口规模",
 		"hint": "混合模式按当地资源承载力，让同一世界同时出现十人、百人、千人、万人级聚落。",
 		"type": "option",
@@ -48,6 +47,7 @@ const BASE_FIELDS := [
 			{"label": "万人级（1000 倍）", "value": 1000},
 		],
 	},
+	{"name": "pkmap_path", "label": "PKMAP 路径", "hint": "开发入口：填作者编译的 .pkmap。空=程序生成。失败硬中止。", "type": "string", "default": ""},
 ]
 
 const CLIMATE_GROUPS := [
@@ -316,6 +316,14 @@ func _create_field_control(field: Dictionary) -> Control:
 		check.custom_minimum_size = _control_min_size(0.0, DESKTOP_CONTROL_HEIGHT)
 		check.toggled.connect(func(_pressed: bool) -> void: _on_field_changed())
 		return check
+	if field_type == "string":
+		var edit := LineEdit.new()
+		edit.text = str(field.get("default", ""))
+		edit.placeholder_text = "可选：.pkmap 绝对路径"
+		edit.custom_minimum_size = _control_min_size(220.0, DESKTOP_CONTROL_HEIGHT)
+		edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		edit.text_changed.connect(func(_text: String) -> void: _on_field_changed())
+		return edit
 
 	var min_value := float(field.get("min", 0.0))
 	var max_value := _field_max_value(field)
@@ -435,6 +443,8 @@ func _apply_config(config: Dictionary) -> void:
 func _set_control_value(control: Control, value) -> void:
 	if control is SpinBox:
 		(control as SpinBox).value = float(value)
+	elif control is LineEdit:
+		(control as LineEdit).text = str(value)
 	elif control is CheckBox:
 		(control as CheckBox).button_pressed = bool(value)
 	elif control is OptionButton:
@@ -456,6 +466,8 @@ func _control_value(control: Control, field_type: String):
 	if control is SpinBox:
 		var v := (control as SpinBox).value
 		return int(round(v)) if field_type == "int" else float(v)
+	if control is LineEdit:
+		return (control as LineEdit).text
 	if control is CheckBox:
 		return (control as CheckBox).button_pressed
 	if control is OptionButton:

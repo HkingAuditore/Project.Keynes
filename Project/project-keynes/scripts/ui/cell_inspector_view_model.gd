@@ -57,6 +57,7 @@ var _need_display_names_loaded := false
 var _player_country_resolved := false
 var _player_country_handle_cache := -1
 var _research_signal_catalog: Dictionary = {}
+var _technology_catalog: Dictionary = {}
 
 
 func set_context(map: MapData, generator, view_adapter: DCViewAdapter, world_clock: WorldClock, sea_level: float, hex_size: float) -> void:
@@ -870,7 +871,7 @@ func _geography_information_category(
 			},
 		],
 	}
-	_append_bio_facts_to_geography(category, idx)
+	_append_bio_facts_to_geography(category, idx, _resource_visibility_context(idx))
 	return category
 
 
@@ -890,8 +891,9 @@ func _append_resources_to_geography(category: Dictionary, idx: int,
 
 ## 本地物种是当前占领层目击，会随气候、植被、承载储量和人类活动变化。
 ## 不是可采集储量；国家知识另计，局部灭绝不会撤销已发现证据。
-func _append_bio_facts_to_geography(category: Dictionary, idx: int) -> void:
-	var badges := _cell_bio_badges(idx)
+func _append_bio_facts_to_geography(category: Dictionary, idx: int,
+		visibility: Dictionary = {}) -> void:
+	var badges := _cell_bio_badges(idx, visibility)
 	if badges.is_empty():
 		return
 	var section := {
@@ -912,7 +914,7 @@ func _append_bio_facts_to_geography(category: Dictionary, idx: int) -> void:
 	category["sections"] = sections
 
 
-func _cell_bio_badges(idx: int) -> Array:
+func _cell_bio_badges(idx: int, visibility: Dictionary = {}) -> Array:
 	if _map == null or idx < 0:
 		return []
 	var catalog := _ensure_research_signal_catalog()
@@ -928,6 +930,12 @@ func _cell_bio_badges(idx: int) -> Array:
 	var signal_ids: PackedStringArray = catalog.get("research_signal_ids", PackedStringArray())
 	var occupancy_bits: PackedInt32Array = catalog.get("research_signal_occupancy_bit", PackedInt32Array())
 	var kind_count := mini(kinds.size(), mini(names.size(), mini(signal_ids.size(), occupancy_bits.size())))
+	var enforce_discovery := bool(visibility.get("enforce_discovery", false))
+	var technology_ids: PackedStringArray = visibility.get(
+		"technology_ids", PackedStringArray())
+	var technology_catalog := {}
+	if enforce_discovery:
+		technology_catalog = _ensure_technology_catalog()
 	var badges := []
 	for signal_index in range(kind_count):
 		if int(kinds[signal_index]) != ResearchSignalDefinition.Kind.BIO:
@@ -935,11 +943,15 @@ func _cell_bio_badges(idx: int) -> Array:
 		var bit := int(occupancy_bits[signal_index])
 		if bit < 0 or bit >= 32 or (bits & (1 << bit)) == 0:
 			continue
+		var signal_id := String(signal_ids[signal_index])
+		if enforce_discovery and not TechnologyCatalog.signal_named_by_completed_technologies(
+				signal_id, technology_ids, technology_catalog):
+			continue
 		var display_name := String(names[signal_index])
 		if display_name.is_empty():
 			continue
 		badges.append({
-			"id": String(signal_ids[signal_index]),
+			"id": signal_id,
 			"text": display_name,
 			"accent": UITokens.ECO,
 		})
@@ -954,6 +966,16 @@ func _ensure_research_signal_catalog() -> Dictionary:
 		return {}
 	_research_signal_catalog = compiled
 	return _research_signal_catalog
+
+
+func _ensure_technology_catalog() -> Dictionary:
+	if not _technology_catalog.is_empty():
+		return _technology_catalog
+	var compiled: Dictionary = TechnologyCatalog.compile_native_catalog()
+	if not bool(compiled.get("ok", false)):
+		return {}
+	_technology_catalog = compiled
+	return _technology_catalog
 
 
 func _rows_from_category(category: Dictionary, rows_key: String) -> Array:
@@ -1998,10 +2020,21 @@ func _market_category(snapshot: Dictionary) -> Dictionary:
 	var shortage_q16: PackedInt32Array = snapshot.get("shortage_q16", PackedInt32Array())
 	var technology_available: PackedByteArray = snapshot.get(
 		"good_technology_available", PackedByteArray())
+	var trade_enabled: PackedByteArray = snapshot.get(
+		"good_trade_enabled", PackedByteArray())
+	var trade_inbound: PackedInt64Array = snapshot.get(
+		"trade_inbound", PackedInt64Array())
+	var trade_outbound: PackedInt64Array = snapshot.get(
+		"trade_outbound", PackedInt64Array())
+	var trade_import_ema: PackedInt64Array = snapshot.get(
+		"trade_import_ema", PackedInt64Array())
+	var trade_export_ema: PackedInt64Array = snapshot.get(
+		"trade_export_ema", PackedInt64Array())
 	var enforce_technology := technology_available.size() == good_ids.size()
 	var market_id := int(snapshot.get("market_id", snapshot.get("cell_idx", -1)))
 	var sample_day := _current_sample_day()
 	var shortage_count := 0
+	var in_transit_kinds := 0
 	for i in range(good_ids.size()):
 		if enforce_technology and technology_available[i] == 0:
 			continue
@@ -2013,27 +2046,54 @@ func _market_category(snapshot: Dictionary) -> Dictionary:
 		var shortage := float(shortage_q16[i]) * 100.0 / 65536.0 if i < shortage_q16.size() else 0.0
 		if shortage >= 25.0:
 			shortage_count += 1
+		var allow_trade := _market_trade_enabled(trade_enabled, i)
+		var inbound := _packed_i64_at(trade_inbound, i) if allow_trade else 0
+		var outbound := _packed_i64_at(trade_outbound, i) if allow_trade else 0
+		var import_flow := _packed_i64_at(trade_import_ema, i) if allow_trade else 0
+		var export_flow := _packed_i64_at(trade_export_ema, i) if allow_trade else 0
+		var in_transit := inbound > 0 or outbound > 0
+		if in_transit:
+			in_transit_kinds += 1
+		var stock_plain := _goods_unit_text(int(stock[i]) if i < stock.size() else 0)
+		var detail_rows := [
+			{"id": "household_demand", "name": "居民需求", "value": UITokens.format_compact_number_cn(float(demand_ema[i]) / 1000.0, 2) if i < demand_ema.size() else "0"},
+			{"id": "business_demand", "name": "产业需求", "value": UITokens.format_compact_number_cn(float(business_demand_ema[i]) / 1000.0, 2) if i < business_demand_ema.size() else "0"},
+			{"id": "supply", "name": "供给", "value": UITokens.format_compact_number_cn(float(offered_supply_ema[i]) / 1000.0, 2) if i < offered_supply_ema.size() else "0"},
+			{"id": "cost_anchor", "name": "成本锚", "value": _money_text(int(cost_anchor[i])) if i < cost_anchor.size() and cost_anchor[i] > 0 else "—"},
+			{"id": "shortage", "name": "短缺", "value": "%.1f%%" % shortage},
+		]
+		if inbound > 0:
+			detail_rows.append({"id": "trade_inbound", "name": "运入",
+				"value": _goods_unit_text(inbound)})
+		if outbound > 0:
+			detail_rows.append({"id": "trade_outbound", "name": "运出",
+				"value": _goods_unit_text(outbound)})
+		if import_flow > 0:
+			detail_rows.append({"id": "trade_import_flow", "name": "进口均量",
+				"value": _goods_unit_text(import_flow)})
+		if export_flow > 0:
+			detail_rows.append({"id": "trade_export_flow", "name": "出口均量",
+				"value": _goods_unit_text(export_flow)})
 		rows.append({
 			"id": "market_%s" % stable_id,
 			"name": display_name,
 			"good_id": stable_id,
-			"stock": "%s 单位" % UITokens.format_compact_number_cn(float(stock[i]) / 1000.0, 2),
+			"stock": "%s · 在途" % stock_plain if in_transit else stock_plain,
+			"stock_plain": stock_plain,
 			"price": _money_text(prices[i] if i < prices.size() else 0),
 			"delta": _daily_delta_text(stock_daily),
 			"risk": "短缺" if shortage >= 25.0 else "",
-			"detail_rows": [
-				{"id": "household_demand", "name": "居民需求", "value": UITokens.format_compact_number_cn(float(demand_ema[i]) / 1000.0, 2) if i < demand_ema.size() else "0"},
-				{"id": "business_demand", "name": "产业需求", "value": UITokens.format_compact_number_cn(float(business_demand_ema[i]) / 1000.0, 2) if i < business_demand_ema.size() else "0"},
-				{"id": "supply", "name": "供给", "value": UITokens.format_compact_number_cn(float(offered_supply_ema[i]) / 1000.0, 2) if i < offered_supply_ema.size() else "0"},
-				{"id": "cost_anchor", "name": "成本锚", "value": _money_text(int(cost_anchor[i])) if i < cost_anchor.size() and cost_anchor[i] > 0 else "—"},
-				{"id": "shortage", "name": "短缺", "value": "%.1f%%" % shortage},
-			],
+			"trade_inbound": _goods_unit_text(inbound) if inbound > 0 else "",
+			"trade_outbound": _goods_unit_text(outbound) if outbound > 0 else "",
+			"detail_rows": detail_rows,
 			"accent": UITokens.RISK if shortage >= 25.0 else UITokens.RESOURCE,
 			"icon": GoodProfileRegistry.icon_key(stable_id),
 			"visible": true,
 		})
 	var trade_net := int(snapshot.get("merchant_trade_sale_cash", 0)) \
 		- int(snapshot.get("merchant_trade_purchase_cash", 0))
+	var arrival_days := _trade_arrival_days(
+		int(snapshot.get("trade_next_arrival_day", -1)), sample_day)
 	var market_insights := []
 	if shortage_count > 0:
 		market_insights.append({
@@ -2042,12 +2102,19 @@ func _market_category(snapshot: Dictionary) -> Dictionary:
 			"accent": UITokens.RISK,
 			"icon": "resource",
 		})
+	if in_transit_kinds > 0:
+		market_insights.append({
+			"id": "market_trade_in_transit",
+			"text": _market_trade_insight_text(in_transit_kinds, arrival_days),
+			"accent": UITokens.ACCENT,
+			"icon": "metric.trade",
+		})
 	return {
 		"insights": market_insights,
 		"metrics": [
 			{"id": "merchant_cash", "title": "可用现金", "value": _money_text(int(snapshot.get("merchant_cash", 0))), "subtitle": "", "accent": UITokens.ACCENT, "icon": "resource"},
 			{"id": "market_shortage_count", "title": "短缺物资", "value": "%d 种" % shortage_count, "subtitle": "点击物资查看供需", "accent": UITokens.RISK if shortage_count > 0 else UITokens.TEXT_MUTED, "icon": "resource"},
-			{"id": "merchant_trade_net", "title": "贸易净额", "value": _money_text(trade_net), "subtitle": "", "accent": UITokens.GOOD if trade_net >= 0 else UITokens.RISK, "icon": "resource"},
+			{"id": "merchant_trade_net", "title": "贸易净额", "value": _money_text(trade_net), "subtitle": _market_trade_subtitle(in_transit_kinds, arrival_days), "accent": UITokens.GOOD if trade_net >= 0 else UITokens.RISK, "icon": "resource"},
 		],
 		"sections": [{
 			"id": "merchant_accounts",
@@ -2324,9 +2391,10 @@ func build_construction_options(cell_idx: int, search: String = "",
 	if not bool(page.get("ok", false)):
 		return {"available": false, "message": "暂时无法取得建造报价。"}
 	var price_by_good := _construction_market_prices(cell_idx)
+	var unlocked_goods := _unlocked_good_ids(_market_snapshot(cell_idx))
 	for raw in page.get("items", []):
 		var item: Dictionary = raw
-		_decorate_construction_item(item, economy, price_by_good)
+		_decorate_construction_item(item, economy, price_by_good, unlocked_goods)
 	page["available"] = true
 	return page
 
@@ -2341,15 +2409,15 @@ func _construction_market_prices(cell_idx: int) -> Dictionary:
 	return prices
 
 
-func _decorate_construction_item(item: Dictionary, economy, prices: Dictionary) -> void:
+func _decorate_construction_item(item: Dictionary, economy, prices: Dictionary,
+		unlocked_goods: Dictionary = {}) -> void:
 	var building_id := String(item.get("building_id", ""))
 	item["icon"] = _building_icon(building_id)
 	var placement: Dictionary = economy.building_placement_spec(StringName(building_id)) \
 		if economy.has_method("building_placement_spec") else {}
 	var job_spec: Dictionary = economy.building_job_spec(StringName(building_id)) \
 		if economy.has_method("building_job_spec") else {}
-	item["inputs"] = _construction_recipe_rows(placement, "input_good_ids",
-		"input_quantities", "原材料")
+	item["inputs"] = _construction_input_recipe_rows(placement, unlocked_goods)
 	item["outputs"] = _construction_recipe_rows(placement, "output_good_ids",
 		"output_quantities", "产出")
 	var jobs: Array = []
@@ -2389,6 +2457,77 @@ func _construction_recipe_rows(placement: Dictionary, ids_key: String,
 				if index < quantities.size() else "—",
 			"label": label})
 	return rows
+
+
+func _construction_input_recipe_rows(placement: Dictionary,
+		unlocked_goods: Dictionary) -> Array:
+	var rows: Array = []
+	var ids: PackedStringArray = placement.get("input_good_ids", PackedStringArray())
+	var quantities: PackedInt64Array = placement.get("input_quantities", PackedInt64Array())
+	for index in range(ids.size()):
+		rows.append({
+			"name": _construction_input_candidate_label(placement, index, unlocked_goods),
+			"quantity": "%.3f /日" % (float(quantities[index]) / 1000.0) \
+				if index < quantities.size() else "—",
+			"label": "原材料",
+		})
+	return rows
+
+
+func _construction_input_candidate_label(placement: Dictionary, input_idx: int,
+		unlocked_goods: Dictionary) -> String:
+	var ids: PackedStringArray = placement.get("input_good_ids", PackedStringArray())
+	var fallback_id := String(ids[input_idx]) if input_idx >= 0 and input_idx < ids.size() else ""
+	var offsets: PackedInt32Array = placement.get(
+		"input_candidate_offsets", PackedInt32Array())
+	var candidates: PackedStringArray = placement.get(
+		"input_candidate_good_ids", PackedStringArray())
+	var efficiencies: PackedInt32Array = placement.get(
+		"input_candidate_efficiency_q16", PackedInt32Array())
+	if input_idx < 0 or input_idx + 1 >= offsets.size():
+		return _format_input_candidate_label(fallback_id, 65536)
+	var entries: Array[Dictionary] = []
+	for candidate_idx in range(int(offsets[input_idx]), int(offsets[input_idx + 1])):
+		if candidate_idx < 0 or candidate_idx >= candidates.size():
+			continue
+		entries.append({
+			"id": String(candidates[candidate_idx]),
+			"efficiency": int(efficiencies[candidate_idx]) \
+				if candidate_idx < efficiencies.size() else 65536,
+		})
+	var enforce := not unlocked_goods.is_empty()
+	var visible: Array[Dictionary] = []
+	for entry in entries:
+		if not enforce or bool(unlocked_goods.get(String(entry.id), false)):
+			visible.append(entry)
+	if visible.is_empty():
+		visible = entries
+	if visible.is_empty():
+		return _format_input_candidate_label(fallback_id, 65536)
+	visible.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var left_efficiency := int(a.efficiency)
+		var right_efficiency := int(b.efficiency)
+		if left_efficiency != right_efficiency:
+			return left_efficiency < right_efficiency
+		return String(a.id) < String(b.id))
+	var labels := PackedStringArray()
+	for entry in visible:
+		labels.append(_format_input_candidate_label(
+			String(entry.id), int(entry.efficiency)))
+	return " / ".join(labels)
+
+
+func _unlocked_good_ids(snapshot: Dictionary) -> Dictionary:
+	var ids: PackedStringArray = snapshot.get("good_ids", PackedStringArray())
+	var available: PackedByteArray = snapshot.get(
+		"good_technology_available", PackedByteArray())
+	var unlocked := {}
+	if ids.is_empty() or available.size() != ids.size():
+		return unlocked
+	for index in range(ids.size()):
+		if available[index] != 0:
+			unlocked[String(ids[index])] = true
+	return unlocked
 
 
 func _construction_profession_name(profession_id: String) -> String:
@@ -2439,11 +2578,8 @@ func _input_candidate_label(snapshot: Dictionary, input_idx: int, local_input_id
 		var good_idx := int(candidates[candidate_idx]) if candidate_idx < candidates.size() else -1
 		if good_idx < 0 or good_idx >= good_ids.size():
 			continue
-		var label := _good_display_name(String(good_ids[good_idx]))
 		var efficiency := int(efficiencies[candidate_idx]) if candidate_idx < efficiencies.size() else 65536
-		if efficiency != 65536:
-			label += " %.0f%%" % (float(efficiency) * 100.0 / 65536.0)
-		labels.append(label)
+		labels.append(_format_input_candidate_label(String(good_ids[good_idx]), efficiency))
 	var candidate_label := " / ".join(labels) \
 		if not labels.is_empty() else _good_display_name(fallback_id)
 	var selected_offsets: PackedInt32Array = snapshot.get(
@@ -2645,6 +2781,13 @@ func _profession_name(snapshot: Dictionary, profession_idx: int) -> String:
 	return String(ids[profession_idx]) if profession_idx >= 0 and profession_idx < ids.size() else "未知阶层"
 
 
+func _format_input_candidate_label(good_id: String, efficiency_q16: int) -> String:
+	var label := _good_display_name(good_id)
+	if efficiency_q16 != 65536:
+		label += " %.0f%%" % (float(efficiency_q16) * 100.0 / 65536.0)
+	return label
+
+
 func _good_display_name(stable_id: String) -> String:
 	var profile = GoodProfileRegistry.profile_by_id(stable_id)
 	return String(profile.display_name) if profile != null and String(profile.display_name) != "" else stable_id
@@ -2675,6 +2818,44 @@ func _sum_i64(values: PackedInt64Array) -> int:
 
 func _money_text(subunits: int) -> String:
 	return UITokens.format_compact_number_cn(float(subunits) / 10000.0, 2)
+
+
+func _goods_unit_text(subunits: int) -> String:
+	return "%s 单位" % UITokens.format_compact_number_cn(float(maxi(0, subunits)) / 1000.0, 2)
+
+
+func _packed_i64_at(values: PackedInt64Array, index: int) -> int:
+	return int(values[index]) if index >= 0 and index < values.size() else 0
+
+
+func _market_trade_enabled(enabled: PackedByteArray, index: int) -> bool:
+	if enabled.is_empty() or index < 0 or index >= enabled.size():
+		return true
+	return enabled[index] != 0
+
+
+func _trade_arrival_days(next_arrival_day: int, sample_day: int) -> int:
+	if next_arrival_day < 0:
+		return -1
+	return maxi(0, next_arrival_day - sample_day)
+
+
+func _market_trade_insight_text(in_transit_kinds: int, arrival_days: int) -> String:
+	if arrival_days < 0:
+		return "%d 种物资在途。" % in_transit_kinds
+	if arrival_days == 0:
+		return "%d 种物资在途，下一批今日到货。" % in_transit_kinds
+	return "%d 种物资在途，下一批还有 %d 日到货。" % [in_transit_kinds, arrival_days]
+
+
+func _market_trade_subtitle(in_transit_kinds: int, arrival_days: int) -> String:
+	if in_transit_kinds <= 0:
+		return "无在途"
+	if arrival_days < 0:
+		return "在途 %d 种" % in_transit_kinds
+	if arrival_days == 0:
+		return "在途 %d 种 · 今日到货" % in_transit_kinds
+	return "在途 %d 种 · %d 日后到货" % [in_transit_kinds, arrival_days]
 
 
 func _cashflow_source_name(source_id: String, income: bool) -> String:

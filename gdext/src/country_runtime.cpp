@@ -653,6 +653,10 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
     const std::vector<int32_t> territory_cells = packed_i32(packet, "territory_cells");
     const std::vector<int32_t> tech_offsets = packed_i32(packet, "technology_offsets");
     const std::vector<int32_t> tech_indices = packed_i32(packet, "technology_indices");
+    const std::vector<int32_t> discovered_offsets =
+        packed_i32(packet, "discovered_technology_offsets");
+    const std::vector<int32_t> discovered_indices =
+        packed_i32(packet, "discovered_technology_indices");
     const std::vector<int32_t> research_signal_offsets =
         packed_i32(packet, "research_signal_offsets");
     const std::vector<int32_t> research_signal_indices =
@@ -732,6 +736,9 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
             return fail("country_bootstrap_shape_invalid");
         if ((!tech_offsets.empty() && (tech_offsets.size() != ids.size() + 1 || tech_offsets.front() != 0 ||
              tech_offsets.back() != static_cast<int32_t>(tech_indices.size()))) ||
+            (!discovered_offsets.empty() && (discovered_offsets.size() != ids.size() + 1 ||
+             discovered_offsets.front() != 0 ||
+             discovered_offsets.back() != static_cast<int32_t>(discovered_indices.size()))) ||
             (!research_signal_offsets.empty() &&
              (research_signal_offsets.size() != ids.size() + 1 || research_signal_offsets.front() != 0 ||
               research_signal_offsets.back() != static_cast<int32_t>(research_signal_indices.size()) ||
@@ -773,6 +780,16 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
                     if (tech < 0 || tech >= static_cast<int32_t>(_technology_ids.size()))
                         return fail("country_bootstrap_technology_invalid");
                     _country_technologies[slot * _technology_words + tech / 64] |= 1ULL << (tech % 64);
+                }
+            }
+            if (!discovered_offsets.empty()) {
+                for (int32_t edge = discovered_offsets[slot];
+                     edge < discovered_offsets[slot + 1]; ++edge) {
+                    const int32_t tech = discovered_indices[static_cast<size_t>(edge)];
+                    if (tech < 0 || tech >= static_cast<int32_t>(_technology_ids.size()))
+                        return fail("country_bootstrap_discovered_technology_invalid");
+                    _country_discovered[slot * _technology_words + tech / 64] |=
+                        1ULL << (tech % 64);
                 }
             }
             if (!treasury_offsets.empty()) {
@@ -1092,6 +1109,10 @@ bool NativeCountryRuntime::has_pending_effect_commands() const {
 bool NativeCountryRuntime::should_run(int64_t day_index) const {
     if (!_configured || !_bootstrapped || _mode == MODE_OFF) return false;
     if (_command_batch.active) return true;
+    // Trigger/Effect often enqueue DISCOVER with effective_day = event.day + 1.
+    // Incomplete effect results for those future commands must not pin today;
+    // the due-command scan below already covers same-day Effect work, and an
+    // in-flight batch is handled by _command_batch.active.
     for (const Command &command : _pending_commands)
         if (command.effective_day <= day_index) return true;
     if (day_index > _last_research_day && _technology_points_good_id >= 0) {
@@ -1164,8 +1185,7 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
             // Effect slot. Raise the barrier so the continuation drain can ACK
             // before the next country day; country should_run is already false
             // because _last_research_day == requested_day.
-            if (_effect_runtime_enabled && _effect_runtime != nullptr &&
-                _effect_runtime->should_run(requested_day))
+            if (ack_chain_due(requested_day))
                 out["country_day_barrier"] = true;
             return out;
         }
@@ -1964,9 +1984,7 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
     out["cursor_end"] = static_cast<int64_t>(cursor_limit);
     out["cursor_total"] = static_cast<int64_t>(cursor_limit);
     out["progress_ratio"] = 1.0;
-    out["country_day_barrier"] = should_run(day) ||
-        (_effect_runtime_enabled && _effect_runtime != nullptr &&
-         _effect_runtime->should_run(day));
+    out["country_day_barrier"] = should_run(day) || ack_chain_due(day);
     if (!cell_delta_order.empty()) {
         if (!std::is_sorted(cell_delta_order.begin(), cell_delta_order.end()))
             std::sort(cell_delta_order.begin(), cell_delta_order.end());
@@ -2897,6 +2915,14 @@ int64_t NativeCountryRuntime::research_consumed_total() const {
     return total;
 }
 
+bool NativeCountryRuntime::ack_chain_due(int64_t day_index) const {
+    if (_effect_runtime_enabled && _effect_runtime != nullptr &&
+        _effect_runtime->should_run(day_index))
+        return true;
+    return _modifier_runtime != nullptr && _modifier_runtime->configured() &&
+        _modifier_runtime->should_run(day_index);
+}
+
 bool NativeCountryRuntime::ensure_technology_effect_instance(
         int32_t slot, int32_t technology, int64_t day_index) {
     if (!_effect_runtime_enabled || _effect_runtime == nullptr) return false;
@@ -2941,19 +2967,15 @@ int32_t NativeCountryRuntime::run_research_day(int64_t day_index) {
             const std::string &technology_modifier_key =
                 _technology_modifier_definition_keys[static_cast<size_t>(technology)];
             bool modifier_ready = technology_modifier_key.empty();
-            bool effect_attempted = false;
-            bool effect_registration_failed = false;
             const uint64_t handle = make_handle(slot);
             if (_effect_runtime_enabled && _effect_runtime != nullptr &&
                 !technology_modifier_key.empty()) {
-                effect_attempted = true;
                 const int64_t effect_instance_id = static_cast<int64_t>(
                     ((handle & 0x00007fffffffffffULL) << 16U) |
                     static_cast<uint64_t>(technology + 1));
                 const uint32_t effect_generation = static_cast<uint32_t>(handle >> 32U);
                 const bool effect_registered =
                     ensure_technology_effect_instance(slot, technology, day_index);
-                if (!effect_registered) effect_registration_failed = true;
                 const bool fire_acked = effect_registered &&
                     _effect_runtime->instance_fire_acked_pod(
                         effect_instance_id, effect_generation);
@@ -2963,9 +2985,14 @@ int32_t NativeCountryRuntime::run_research_day(int64_t day_index) {
                         handle, technology_modifier_key, technology);
                 modifier_ready = fire_acked || modifier_applied;
             }
-            if (!modifier_ready && (!effect_attempted || effect_registration_failed) &&
+            if (!modifier_ready &&
                 _modifier_runtime != nullptr && _modifier_runtime->configured() &&
                 !technology_modifier_key.empty()) {
+                // UNIQUE_SOURCE is idempotent. If the Effect instance exists but
+                // never ACKs (missed morning, incomplete drain, wedged slice),
+                // the next country day still applies the permanent Modifier so
+                // pending cannot last forever. A later Effect ACK replaces the
+                // same UNIQUE_SOURCE and does not double-count.
                 std::string modifier_error;
                 modifier_ready = _modifier_runtime->apply_technology_effect(
                     handle, technology_modifier_key, technology, day_index, modifier_error);
@@ -3082,7 +3109,13 @@ int32_t NativeCountryRuntime::run_research_day(int64_t day_index) {
                     // next morning's Effect job (priority 85) can fire before
                     // Country (255) checks ACK. Waiting until the activation
                     // loop would miss that slot and leave the node pending.
-                    ensure_technology_effect_instance(slot, technology, day_index);
+                    // Content-only leftover nodes have empty modifier keys; their
+                    // unlocks are catalog tags, not Effect ACK. Instantiating the
+                    // adopted-only recipe left native_country_ack_pending forever.
+                    const std::string &completed_modifier_key =
+                        _technology_modifier_definition_keys[static_cast<size_t>(technology)];
+                    if (!completed_modifier_key.empty())
+                        ensure_technology_effect_instance(slot, technology, day_index);
                     ++_country_research_completed_total[static_cast<size_t>(slot)];
                     for (int32_t i = 1; i < length; ++i)
                         _country_research_queues[queue_base + static_cast<size_t>(i - 1)] =

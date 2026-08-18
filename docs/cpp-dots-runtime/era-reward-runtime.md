@@ -38,7 +38,7 @@ ACK 后才关闭弹窗，并按打开前状态恢复运行或继续暂停。`pla
 意图、速度和 generation，读档后会重新挂载同一冻结 Offer。
 
 持久化采用精确版本：PKCN v11 保存 `{plan_id, offer_generation, milestone, status}`；
-PKEF v9 保存完整三备选、理由、冻结目标、plan hash、选择和 pending 事务。恢复固定先
+PKEF v10 保存完整三备选、理由、冻结目标、plan hash、选择和 pending 事务。恢复固定先
 PKCN 后 PKEF，PKEF 逐字段审计 PKCN 引用；任何旧 schema 或目录差异返回
 `catalog_hash_mismatch`，不迁移也不补发历史奖励。
 

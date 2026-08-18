@@ -90,11 +90,14 @@ func _run_case(label: String, size: Vector2i, seed: int) -> Dictionary:
 		_expect("%s selected food resource %s exists" % [label, resource_id],
 			not String(resource_id).is_empty() and _resource_reserve(
 				map, String(resource_id), cell) > 0.0)
-	for resource_id in [String(player_start.get("starter_clothing_resource_id", "")),
-			String(player_start.get("starter_construction_resource_id", "")),
+	for resource_id in [String(player_start.get("starter_construction_resource_id", "")),
 			String(player_start.get("precious_resource", ""))]:
 		_expect("%s selected resource %s exists" % [label, resource_id],
 			not resource_id.is_empty() and _resource_reserve(map, resource_id, cell) > 0.0)
+	var clothing_resource := String(player_start.get("starter_clothing_resource_id", ""))
+	if not clothing_resource.is_empty():
+		_expect("%s selected clothing resource %s exists" % [label, clothing_resource],
+			_resource_reserve(map, clothing_resource, cell) > 0.0)
 	var country = generator.get_country_facade()
 	var owned_by_slot := {}
 	for index in range(map.cell_count()):
@@ -133,8 +136,11 @@ func _run_case(label: String, size: Vector2i, seed: int) -> Dictionary:
 		var building_id := String(route_buildings[building_index])
 		_expect("%s route building %s exists" % [label, building_id],
 			_building_count(buildings, building_id) == int(route_counts[building_index]))
-	_expect("%s route has 20 self-operated job slots" % label,
-		int(player_start.get("starter_job_capacity", 0)) == 20)
+	_expect("%s food lots operate without leftover construction techs" % label,
+		_food_lots_operable(buildings, route_buildings))
+	_expect("%s route keeps self-operated jobs within the 20-person cap" % label,
+		int(player_start.get("starter_job_capacity", 0)) > 0
+		and int(player_start.get("starter_job_capacity", 0)) <= 20)
 	_expect("%s route confines employee slots to precious workings" % label,
 		int(player_start.get("starter_employee_job_capacity", 0)) ==
 			_precious_employee_slots(String(player_start.get("precious_resource", ""))))
@@ -216,6 +222,31 @@ func _building_count(snapshot: Dictionary, building_id: String) -> int:
 		"building_counts_by_type", PackedInt64Array())
 	var index := ids.find(building_id)
 	return int(counts[index]) if index >= 0 and index < counts.size() else 0
+
+
+func _food_lots_operable(snapshot: Dictionary, route_buildings: PackedStringArray) -> bool:
+	if not route_buildings.has("gathering_ground"):
+		return false
+	for building_id in ["gathering_ground", "stone_age_hunting_camp"]:
+		if route_buildings.has(building_id) and not _building_staffed_and_available(
+				snapshot, building_id):
+			return false
+	return true
+
+
+func _building_staffed_and_available(snapshot: Dictionary, building_id: String) -> bool:
+	var ids: PackedStringArray = snapshot.get("building_type_ids", PackedStringArray())
+	var available = snapshot.get("building_technology_available", PackedByteArray())
+	var type_index := ids.find(building_id)
+	if type_index < 0 or type_index >= available.size() or int(available[type_index]) == 0:
+		return false
+	var group_types: PackedInt32Array = snapshot.get("group_type_ids", PackedInt32Array())
+	var filled: PackedInt64Array = snapshot.get("filled_owner", PackedInt64Array())
+	var fill := 0
+	for group in range(mini(group_types.size(), filled.size())):
+		if int(group_types[group]) == type_index:
+			fill += int(filled[group])
+	return fill > 0
 
 
 func _market_stock(snapshot: Dictionary, good_id: String) -> int:

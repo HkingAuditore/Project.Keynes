@@ -237,6 +237,8 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _family_expedition_route_costs.clear();
     _family_expedition_payloads.clear();
     _family_expedition_person_handles.clear();
+    _family_expedition_cargo.clear();
+    _family_expedition_kit_buildings.clear();
     _family_expedition_target_index.clear();
     _family_expedition_due_heap.clear();
     _colonization_receipts.clear();
@@ -300,6 +302,7 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _market.clear();
     _market_signals.clear(cell_count);
     _buildings.clear();
+    _pending_building_topology_rebuild = false;
     _building_handle_index_clean = false;
     _building_groups_rebuild_scratch.clear();
     _building_existing_indices_scratch.clear();
@@ -450,6 +453,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     _epoch_commands.clear();
     _structural_commands.clear();
     _buildings.clear();
+    _pending_building_topology_rebuild = false;
     _building_handle_index_clean = false;
     _building_groups_rebuild_scratch.clear();
     _building_existing_indices_scratch.clear();
@@ -818,6 +822,36 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
         rebuild_person_indices();
         bind_notable_person_jobs();
         update_person_equity_shares();
+    }
+
+    // Opening food lots are pre-staffed from their owner-profession cohorts so
+    // gathering/hunting produce on the first epoch. Construction-material techs
+    // are not part of the survival-core grant, and these lots must not wait for
+    // a later hire after an unavailable clamp.
+    for (BuildingGroup &group : _buildings) {
+        if (group.count <= 0 || group.type_id < 0 ||
+            group.type_id >= static_cast<int32_t>(_building_type_ids.size()) ||
+            group.type_id >= static_cast<int32_t>(_building_types.size())) {
+            continue;
+        }
+        const std::string &type_id = _building_type_ids[group.type_id];
+        if (type_id != "gathering_ground" &&
+            type_id != "stone_age_hunting_camp") {
+            continue;
+        }
+        const int64_t owner_slots = saturating_mul(
+            group.count,
+            _building_types[group.type_id].owner_slots_per_building,
+            _saturation_count);
+        const int32_t owner_slot = find_cohort_slot(
+            group.cell, group.owner_signature_id);
+        if (owner_slot < 0 || owner_slots <= 0) continue;
+        const int64_t fill = std::min(
+            owner_slots,
+            std::max<int64_t>(0, _population.population[owner_slot]));
+        group.filled_owner = std::max(group.filled_owner, fill);
+        _population.owner_employed[owner_slot] = std::max(
+            _population.owner_employed[owner_slot], fill);
     }
 
     if (_configured_target_cohorts_per_slice == 0) {
@@ -1279,6 +1313,8 @@ bool NativeEconomyRuntime::submit_effect_commands_pod(
             result.reason = applied ? std::string{} :
                 (commit_error.empty()
                     ? "effect_economy_commit_failed" : commit_error);
+        } else if (command.opcode == COMMAND_SETTLE_FAMILY_EXPEDITION) {
+            queue_family_settlement_command(command);
         } else {
             _pending_commands.push_back(command);
         }

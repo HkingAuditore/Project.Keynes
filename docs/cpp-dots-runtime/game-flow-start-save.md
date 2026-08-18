@@ -20,9 +20,16 @@ v2 loads migrate to `0` so existing saves retain their single-country opening.
 `sea_level`, plus `world_controls.continent_spacing` and `island_amount`; the
 default is `two`, sized so the two cores stay separated instead of merging into
 one Pangaea. Missing or unknown ids validate as `custom` and keep the stored
-numeric knobs. Always validate through
+numeric knobs. `base.map_source` is `procedural` (default) or `pkmap`. When
+`pkmap`, `base.pkmap_path` must point to an existing `.pkmap`; `validate()` peeks
+the header, rejects a mismatched `generator_hash`, and stamps width, height,
+sea level, and seed from the pack. Missing `map_source` / `pkmap_path` on older
+v3 dictionaries remains procedural. Always validate through
 `validate()` or `from_dictionary()` before generation. The resolved nonzero
-seed, including a UI-generated random seed, is the value stored in PKSV.
+seed, including a UI-generated random seed or a packed PKMAP seed, is the value
+stored in PKSV. Author-map saves keep the file path as their terrain identity;
+moving or deleting that `.pkmap` fails closed on load and does not regenerate
+from seed.
 
 ## Generation and Bootstrap Order
 
@@ -62,8 +69,10 @@ to `StartLocationProfile` minimums. It does not invent fish, paddy land, or clay
 on dry inland cells. Overlay reserves are virtual while scoring routes; only the
 chosen player and foreign cells are written back to MapData. Generation fails
 with a player-facing error when no climate-qualified cell can close food,
-clothing, construction, knowledge, precious-metal, and trade production even
-after those minimum fills. `evaluate_starter_route` still reads generated
+knowledge, precious-metal, and trade production even
+after those minimum fills. Clothing production is required only on the cold
+highland route. Construction materials are provisioned as bootstrap stock rather
+than a completed opening industry. `evaluate_starter_route` still reads generated
 geography only, so inspector/fixture probes do not apply top-ups.
 
 Foreign starts use the same climate predicate and the same overlay closure.
@@ -78,15 +87,20 @@ country-name pack, excluding the player's display name.
 
 ## Twenty-Person Settlements
 
-Every opening country receives exactly 20 people and exactly 20 self-operated job-capacity slots. Every starter technology
-whose reveal condition is already met by visible geography is completed; the physical food producer is
-selected from the dependency-closed local options, while the clothing/construction/knowledge bundle is
-bounded by the available self-operated slots. The packet does not preassign the whole population to
-professions: it reserves only the first producer's founder operators, places the remaining people in
-the native unemployed pool, and lets normal employment matching choose their building and profession
-at economy boundaries. Stone-Age buildings expose no employee roles except the
+Every opening country receives exactly 20 people. Self-operated job-capacity slots
+follow the survival-core buildings and stay at or below 20; leftover people enter
+the native unemployed pool for ordinary employment matching. The opening grant is
+the survival core—gathering, hunting, early trade, one precious-metal working, one
+oral-memory knowledge building, and hide scraping only on cold highland—not every
+visible zero-cost starter node. The physical food producer is
+selected from the local gathering/hunting options. Construction materials are
+bootstrap stock from the food seed building's candidate groups. The packet does not preassign the whole population to
+professions: it prefills owner operators on the opening food buildings (gathering
+and hunting) so the 110% food plan actually runs, places the remaining people in
+the native unemployed pool, and lets normal employment matching choose later jobs
+at economy boundaries. The founder family still binds to the gathering ground. Stone-Age buildings expose no employee roles except the
 opening placer-gold and surface-silver workings, which keep their authored miner
-slots. Those employee slots are extra capacity on top of the 20 self-operated
+slots. Those employee slots are extra capacity on top of the core self-operated
 jobs; bootstrap does not prefill them, so opening `employee_employed` stays 0.
 Their self-operated/co-operated
 jobs use the runtime's owner-role lane because the catalog has only owner and employee lanes; this is
@@ -144,8 +158,8 @@ and load preparation reject a missing or mismatched provider before rebuilding
 the world. The current restore registry order is dynamic world, environment,
 PKCM, clock, PKCN, PKEF, PKEC, PKGP, PKFG, journal, PKTR, PKID, then player
 session/view/preview. PKEF precedes PKEC so Economy can cross-check every settling
-cross-domain transaction against authoritative Effect state. `PKID v2` follows
-`PKEF v9`: every active ideology must match its
+cross-domain transaction against authoritative Effect state. `PKID v3` follows
+`PKEF v10`: every active ideology must match its
 durable external binding by identity, generation, level, location, template
 signature, and Effect program hash. Missing/mismatched bindings or unknown
 pending transitions fail restore; PKID and PKEF must also agree on the exact
@@ -156,12 +170,12 @@ PKID v1 is accepted only when every ideology is inactive. Save capture waits for
 Country/Economy/Gameplay Effect ingress to be idle, so no cross-section snapshot
 can span a preflight/commit/ACK boundary.
 PKCM v1 saves Climate modifiers. PKCN v11 embeds Country modifiers, research,
-tax policy, territory claim and native Effect ingress idempotency; PKEC v36 embeds Economy
+tax policy, territory claim and native Effect ingress idempotency; PKEC v37 embeds Economy
 modifiers, BuildingIdentityStore, family traits/cell influence,
 production-climate state, and Economy Effect ingress idempotency. PKGP v1 saves
 Gameplay identity/base SoA and modifiers; journal v4 saves native
 `PUBLISH_EVENT` Effect idempotency evidence; PKTR v5 saves static/dynamic branch
-and technology-practice Trigger accumulation. PKEF v9 saves Effect recipe/program
+and technology-practice Trigger accumulation. PKEF v10 saves Effect recipe/program
 identity and pending ACK state. Old PKCN/PKEF/PKTR schemas or related catalog
 identity changes are rejected with `catalog_hash_mismatch`.
 
@@ -193,16 +207,18 @@ or cancel.
 Restore order is strict:
 
 1. Validate PKSV header, compatibility hash, section hashes, and required set.
-2. Regenerate static terrain from the complete saved `NewGameConfig`.
+2. Regenerate static terrain from the complete saved `NewGameConfig`. A `pkmap`
+   source reloads that file through the generate bypass; it does not replay the
+   original seed through procedural hydrology.
 3. Restore dynamic `DCWorld` and the full native environment provider.
 4. Restore PKCM, then `WorldClock`.
 5. Restore PKCN v11, including Country modifiers, research state, national/cell tax policy,
    and native Country Effect ingress idempotency.
-6. Restore PKEF v9, then PKEC v36 after trade topology has been configured, including Economy
+6. Restore PKEF v10, then PKEC v37 after trade topology has been configured, including Economy
    modifiers, building identities, notable families, active family expeditions, and production-climate state.
 7. Restore PKGP, then PKFG; re-solve vision and republish `enum_lut.a` and the border
    mesh through `WorldRuntimeHost.refresh_country_visuals()`.
-8. Restore journal v4 and PKTR v5, then PKID v2
+8. Restore journal v4 and PKTR v5, then PKID v3
    ideology state. PKID verifies its active PKEF bindings before the session is
    allowed to resume.
 9. Rebuild derived views/render resources and scheduler topology.
@@ -251,28 +267,38 @@ economy settlement cycle (`game_save_roundtrip_test.gd`); debug/release GDExtens
 desktop/narrow UI checks.
 For economy changes, retain 60-day, two-year, and ten-year conservation soaks.
 
-## Regional technology/economy bootstrap v7
+## Regional technology/economy bootstrap v9
 
 Formal new games no longer grant four universal technologies or a universal settlement bundle.
 `StartLocationPolicy` classifies each capital from the capital ring's Bio/resource/landform/climate
-evidence and returns all discovered starter technologies plus one dependency-closed physical food,
-clothing, construction, precious-metal and knowledge bundle. `MapGenerator` grants every visible
-zero-cost starter technology plus recursive structural prerequisites, including the zero-cost
-`tech.early_trade`; `StarterSettlementBootstrap` prebuilds the selected physically closed food
-producer, the planner's resource-bounded clothing/construction/knowledge closure and an
-`early_merchant_post`. The planner emits parallel `starter_building_ids`/`starter_building_counts`;
+evidence and grants only the survival-core technologies: gathering, hunting, early trade, gold-panning
+or surface-silver collection, and hide scraping on cold highland. It does not grant a knowledge
+practice and does not prebuild a knowledge shed. Remaining Stone-Age handling/knowledge nodes stay
+in the catalog as ordinary researchable technologies; empty-prerequisite Stone-Age nodes require any
+one completed knowledge practice before they can enter a research queue.
+`MapGenerator` grants that core plus recursive structural prerequisites, including the zero-cost
+`tech.early_trade`, writes `discovered_technology_*` for the one geographically chosen knowledge
+practice, and deposits 10000 authored technology points in the country treasury.
+`StarterSettlementBootstrap` prebuilds gathering and hunting camps when the
+local reserves exist, the matching precious-metal work site, an
+`early_merchant_post`, and a hide-scraping shelter only on cold highland. It stocks the selected
+knowledge-shed construction recipe so the player can build after research. The planner emits parallel `starter_building_ids`/`starter_building_counts`;
 gold/silver sites and the merchant remain exactly one building. The supported families are coastal,
 floodplain, cold highland, tropical forest, arid highland and temperate.
 
-The bootstrap validates the complete direct/required-technology, construction-good, input, output,
-local-resource and resource-generation closure. Formal `select_and_prepare` may fill missing
+The bootstrap validates direct/required-technology tags and the food-seed construction contract.
+Opening lots operate from granted production, output, and resource technologies. Stone-age
+`starter.construction` collectors (deadwood, earth pit, reed, turf, rubble) have a zero-bill
+recipe so researching those leftovers can plant the camp without a prior material industry.
+Other buildings still pay construction goods; bootstrap stock covers the prebuilt food core.
+Formal `select_and_prepare` may fill missing
 opening reserves to profile minimums as described in Start Policy; `evaluate_starter_route`
 and inspector probes still fail closed on generated geography. Starting
 buildings cannot require steel, coal, industrial chemicals, industrialists, managers,
-landlords, serfs or indentured labor. The food bridge is 15 days of every locally discovered, runnable
+landlords, serfs or indentured labor. The food bridge is 15 days of every locally granted, runnable
 food sub-basket as authored by `survival_household`, split across multiple substitutes when present;
 `processed_food` receives no fixed grant. Every generated country starts with exactly one
-territory cell, one regional weak bundle, 20 population, 20 self-operated job-capacity slots, employee
+territory cell, one survival-core bundle, 20 population, core self-operated job-capacity slots at or below 20, employee
 slots only on the matching gold or silver working and left unfilled, a founder operator cohort plus a native unemployed pool, one founder family and one notable
 founder. The first economy cycles may reassign the unemployed cohort into the planned self-operated roles;
 that is ordinary native employment matching and does not introduce employee relationships.

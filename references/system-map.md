@@ -42,7 +42,7 @@ order.
 
 - 地图生成和地形水文：读 `docs/terrain-generation-current.md`、`gdext/src/world_ext_generate.cpp`、`Project/project-keynes/scripts/geography/map_config.gd`、`Project/project-keynes/scripts/data/climate_profile.gd`。
 - C++/DOTS 运行时：读 `docs/cpp-dots-runtime/architecture-overview.md`、`docs/cpp-dots-runtime/gdscript-cpp-data-bridge.md`、`docs/cpp-dots-runtime/scheduling-and-job-graph.md`、`gdext/src/world_ext*.cpp`、`gdext/src/sus_scheduler_ext.cpp`、`gdext/src/system_schedule.cpp`。
-- 理念：读 `docs/cpp-dots-runtime/native-ideology-runtime.md`、`gdext/src/ideology_runtime.*`、`Project/project-keynes/scripts/ideology/`、`Project/project-keynes/scripts/ui/components/ideology_workspace.gd`。理念状态由独立 native runtime 持有，Effect/Modifier/Country 不接管其收藏、槽位或理解度。
+- 理念：读 `docs/cpp-dots-runtime/native-ideology-runtime.md`、`gdext/src/ideology_runtime.*`、`Project/project-keynes/scripts/ideology/`、`Project/project-keynes/scripts/ui/components/ideology_workspace.gd`。理念状态由独立 native runtime 持有；Economy 只发布 committed 国家×阶层事实，Effect 只提交原子后果批，PlayerController 只提交命令，均不接管理念收藏、槽位、民意规则、联动或理解度。
 - 气候/天气/海洋：读 `Project/project-keynes/scripts/simulation/systems/climate_daily_system.gd`、`Project/project-keynes/scripts/weather/weather_system.gd`、`Project/project-keynes/scripts/weather/field_solver.gd`、`Project/project-keynes/scripts/simulation/sus/jobs/ocean_currents_job.gd`、`docs/cpp-dots-runtime/computation-pipelines.md`。
 - 渲染和视觉：读 `Project/project-keynes/scripts/rendering/map_baker.gd`、`Project/project-keynes/scripts/rendering/hex_renderer.gd`、`Project/project-keynes/scripts/rendering/weather_layer.gd`、`Project/project-keynes/scripts/rendering/shrub_layer.gd`、`Project/project-keynes/shaders/world_map.gdshader`。
 - 视野迷雾与国界：读 `docs/cpp-dots-runtime/vision-fog-and-borders.md`、`Project/project-keynes/scripts/geography/vision_solver.gd`、`Project/project-keynes/scripts/rendering/fog_of_war_layer.gd`、`Project/project-keynes/scripts/rendering/country_border_layer.gd`。
@@ -397,6 +397,7 @@ bootstrap 守恒创建一个两人采集者家族、归属一栋采集营地并�
 `PERSON_COMMIT` 统一提交。GDScript 只补显示名和稳定目录 ID。
 
 国内贸易软规划以 neighbor、terrain LUT 映射后的 passable/enter-cost 和冻结国界作为唯一失效语义；
+玩家开局国的跨格贸易另受 sample 日冻结的 `visible_arr` 约束（`fog_solved` 之前不生效）。
 原始 terrain ID 的季节性重分类不重置 scan。CSV v8 summary 发布 scan/route cursor、规范化拓扑哈希、
 计划重置计数和最近原因，供长时间经济切片检查规划活性。
 
@@ -442,7 +443,7 @@ DataCore 或 MapData。
 - DataCore mirror: `cell.country_slot` / `MapData.country_slot_arr` only.
 - Economy consumer: narrow native bridge in `economy_runtime.{h,cpp}`; frozen country epoch,
   country/cohort cash transfer, country/market goods transfer, and combined conservation.
-- Persistence: PKCN v11 first, then PKEF v9 and PKEC v34 with matching schema/generation/hash；PKTR v4 preserves Trigger accumulation；旧默认 v11 ACTIVE
+- Persistence: PKCN v11 first, then PKEF v10 and PKEC v37 with matching schema/generation/hash；PKTR v5 preserves Trigger accumulation；旧默认 v11 ACTIVE
   因商人策略从 25%/1 日改为 12.5%/30 日分档库存基线而明确拒绝，ACTIVE 同时拒绝 v11 PROBE 和 v10。生产者收购系数现为 good-specific 硬上限（默认 95%），短缺只影响采购量/优先级；国内贸易复用同一 12.5% 营运底线，并以目的地冻结余额统一完成预检与扣款。新增商人流动性指标只进入 report、选中格快照和 Economy CSV v19，不进入 PKEC v16 或 hash。
 - Player-facing read path: selected cell → `CountryFacade.cell_summary()` →
   `CellInspectorViewModel`; country commits rebuild selected summary, daily ticks live-patch values.

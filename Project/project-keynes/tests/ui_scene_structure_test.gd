@@ -57,6 +57,9 @@ func _check_main_menu() -> void:
 	for page_name in ["HomePage", "NewGamePage", "LoadGamePage", "SettingsPage"]:
 		_expect("main menu has %s" % page_name,
 			scene.has_node("PageMargin/PageStack/%s" % page_name))
+	_expect("main menu has map source option", scene.has_node("%MapSourceOption"))
+	_expect("main menu has pkmap browse button", scene.has_node("%BrowsePkmapButton"))
+	_expect("main menu has pkmap dialog", scene.has_node("%PkmapDialog"))
 	root.add_child(scene)
 	await process_frame
 	_expect("main menu keeps four static pages",

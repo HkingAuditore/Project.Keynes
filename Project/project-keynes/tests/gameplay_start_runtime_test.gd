@@ -67,15 +67,38 @@ func _run() -> void:
 			"starter_technology_ids", PackedStringArray())
 		var route_buildings: PackedStringArray = country_start.get(
 			"starter_building_ids", PackedStringArray())
-		_expect("regional route grants every visible starter technology",
-			technologies.size() >= 5 and technologies.size() <= 24)
-		_expect("regional route prebuilds a complete weak production bundle",
-			route_buildings.size() >= 5 and route_buildings.size() <= 12)
-		_expect("regional route declares all six starter capabilities",
+		var pending_tech := String(country_start.get("pending_knowledge_tech_id", ""))
+		var pending_building := String(country_start.get(
+			"pending_knowledge_building_id", ""))
+		var discovered: PackedStringArray = country_start.get(
+			"starter_discovered_technology_ids", PackedStringArray())
+		_expect("regional route grants the survival-core starter technologies",
+			technologies.size() >= 5 and technologies.size() <= 7
+			and technologies.has("tech.gathering")
+			and technologies.has("tech.hunting")
+			and technologies.has("tech.early_trade")
+			and technologies.has("tech.deadwood_collection")
+			and not technologies.has("tech.oral_memory_practice")
+			and not technologies.has(pending_tech))
+		_expect("regional route prebuilds the survival-core buildings",
+			route_buildings.size() >= 5 and route_buildings.size() <= 8
+			and route_buildings.has("gathering_ground")
+			and route_buildings.has("deadwood_gathering_camp")
+			and not route_buildings.has("oral_memory_circle")
+			and not route_buildings.has(pending_building)
+			and route_buildings.has("early_merchant_post"))
+		_expect("regional route reveals one pending knowledge practice",
+			not pending_tech.is_empty()
+			and not pending_building.is_empty()
+			and discovered.has(pending_tech)
+			and int(country_start.get("starter_treasury_quantity", 0)) == 10000000
+			and not (country_start.get("pending_knowledge_construction_good_ids",
+				PackedStringArray()) as PackedStringArray).is_empty())
+		_expect("regional route declares food, knowledge, precious metal and trade",
 			not (country_start.get("starter_food_good_ids", PackedStringArray()) as
 				PackedStringArray).is_empty()
-			and not String(country_start.get("starter_clothing_good_id", "")).is_empty()
-			and not String(country_start.get("starter_construction_good_id", "")).is_empty()
+			and String(country_start.get("starter_clothing_good_id", "")) == "clothing"
+			and String(country_start.get("starter_construction_good_id", "")) == "logs"
 			and String(country_start.get("starter_knowledge_good_id", "")) ==
 				"technology_points"
 			and String(country_start.get("starter_precious_good_id", "")) in
@@ -102,7 +125,7 @@ func _run() -> void:
 			and construction_candidates.size() == construction_efficiencies.size()
 			and not selected_materials.is_empty()
 			and selected_materials.size() == selected_quantities.size())
-		_expect("regional weak buildings close the five produced goods",
+		_expect("starter buildings close food, knowledge and precious output",
 			_starter_route_outputs(country_start))
 		_expect("opening top-up only raises missing reserves to profile minimums",
 			_topups_are_minimum_fills(country_start, map, int(country_start.get("cell", -1))))
@@ -110,12 +133,18 @@ func _run() -> void:
 			_expect("selected food resource %s exists locally" % resource_id,
 				not String(resource_id).is_empty() and _resource_reserve(
 					map, String(resource_id), int(country_start.get("cell", -1))) > 0.0)
-		for resource_id in [String(country_start.get("starter_clothing_resource_id", "")),
-				String(country_start.get("starter_construction_resource_id", "")),
+		for resource_id in [String(country_start.get("starter_construction_resource_id", "")),
 				String(country_start.get("precious_resource", ""))]:
 			_expect("selected route resource %s exists locally" % resource_id,
 				not resource_id.is_empty() and _resource_reserve(
 					map, resource_id, int(country_start.get("cell", -1))) > 0.0)
+		var clothing_resource := String(country_start.get("starter_clothing_resource_id", ""))
+		if not clothing_resource.is_empty():
+			_expect("selected clothing resource %s exists locally" % clothing_resource,
+				_resource_reserve(map, clothing_resource,
+					int(country_start.get("cell", -1))) > 0.0
+				and route_buildings.has("hide_scraping_shelter")
+				and technologies.has("tech.hide_scraping"))
 	_expect("one generated world demonstrates differentiated regional routes",
 		represented_routes.size() >= 2)
 
@@ -154,6 +183,19 @@ func _run() -> void:
 					break
 			_expect("country receives its regional starter technologies and closure",
 				has_route_technologies and completed_ids.size() >= starter_ids.size())
+			var pending_tech := String(country_start.get("pending_knowledge_tech_id", ""))
+			var research: Dictionary = country.research_snapshot(
+				int(summary.get("country_handle", -1)))
+			var catalog_ids: PackedStringArray = country.native_catalog().get(
+				"technology_ids", PackedStringArray())
+			var pending_index := catalog_ids.find(pending_tech)
+			_expect("country treasury seeds opening technology points",
+				int(research.get("technology_points_stock", 0)) == 10000000)
+			_expect("country discovers the pending knowledge practice without completing it",
+				pending_index >= 0
+				and int((research.get("technology_states", PackedInt32Array()) as
+					PackedInt32Array)[pending_index]) == 2
+				and not completed_ids.has(pending_tech))
 		var start_summary: Dictionary = country.cell_summary(cell_idx)
 		var player: Dictionary = country.snapshot(int(start_summary.get("country_handle", -1)))
 		_expect("stable player country id is preserved",
@@ -210,6 +252,18 @@ func _run() -> void:
 					market, String(selected_materials[material_index])) >= expected_stock
 			_expect("starter stocks every selected construction group material",
 				complete_material_seed)
+			var pending_goods: PackedStringArray = country_start.get(
+				"pending_knowledge_construction_good_ids", PackedStringArray())
+			var pending_quantities: PackedInt64Array = country_start.get(
+				"pending_knowledge_construction_quantities", PackedInt64Array())
+			var knowledge_materials_present := not pending_goods.is_empty() \
+				and pending_goods.size() == pending_quantities.size()
+			for pending_index in range(pending_goods.size()):
+				knowledge_materials_present = knowledge_materials_present \
+					and _market_stock(market, String(pending_goods[pending_index])) \
+						>= int(pending_quantities[pending_index])
+			_expect("starter stocks pending knowledge-shed construction materials",
+				knowledge_materials_present)
 			_expect("starter capital has a deterministic settlement name",
 				bool(population.get("settlement_name_active", false)) and
 				bool(population.get("settlement_name_forced", false)) and
@@ -226,8 +280,11 @@ func _run() -> void:
 				var building_id := String(route_buildings[building_index])
 				_expect("starter building %s exists" % building_id,
 					_building_count(buildings, building_id) == int(route_counts[building_index]))
-			_expect("starter route has 20 self-operated job slots",
-				int(country_start.get("starter_job_capacity", 0)) == 20)
+			_expect("starter food lots operate without leftover construction techs",
+				_food_lots_operable(buildings, route_buildings))
+			_expect("starter route keeps self-operated jobs within the 20-person cap",
+				int(country_start.get("starter_job_capacity", 0)) > 0
+				and int(country_start.get("starter_job_capacity", 0)) <= 20)
 			_expect("starter route confines employee slots to precious workings",
 				int(country_start.get("starter_employee_job_capacity", 0)) ==
 					_precious_employee_slots(String(country_start.get(
@@ -278,7 +335,7 @@ func _run() -> void:
 		int(start.get("founder_family_count", 0)) == country_starts.size()
 		and int(start.get("founder_person_count", 0)) == country_starts.size())
 	_expect("production bootstrap source is used",
-		String(start.get("settlement_source", "")) == "starter_settlement_bootstrap_v8")
+		String(start.get("settlement_source", "")) == "starter_settlement_bootstrap_v9")
 	_finish()
 
 
@@ -347,6 +404,31 @@ func _building_count(snapshot: Dictionary, building_id: String) -> int:
 	return int(counts[index]) if index >= 0 and index < counts.size() else 0
 
 
+func _food_lots_operable(snapshot: Dictionary, route_buildings: PackedStringArray) -> bool:
+	if not route_buildings.has("gathering_ground"):
+		return false
+	for building_id in ["gathering_ground", "stone_age_hunting_camp"]:
+		if route_buildings.has(building_id) and not _building_staffed_and_available(
+				snapshot, building_id):
+			return false
+	return true
+
+
+func _building_staffed_and_available(snapshot: Dictionary, building_id: String) -> bool:
+	var ids: PackedStringArray = snapshot.get("building_type_ids", PackedStringArray())
+	var available = snapshot.get("building_technology_available", PackedByteArray())
+	var type_index := ids.find(building_id)
+	if type_index < 0 or type_index >= available.size() or int(available[type_index]) == 0:
+		return false
+	var group_types: PackedInt32Array = snapshot.get("group_type_ids", PackedInt32Array())
+	var filled: PackedInt64Array = snapshot.get("filled_owner", PackedInt64Array())
+	var fill := 0
+	for group in range(mini(group_types.size(), filled.size())):
+		if int(group_types[group]) == type_index:
+			fill += int(filled[group])
+	return fill > 0
+
+
 func _market_stock(snapshot: Dictionary, good_id: String) -> int:
 	var ids: PackedStringArray = snapshot.get("good_ids", PackedStringArray())
 	var stock: PackedInt64Array = snapshot.get("stock", PackedInt64Array())
@@ -397,10 +479,20 @@ func _starter_route_outputs(country_start: Dictionary) -> bool:
 		physical_food_output = physical_food_output or produced.has(String(food_good))
 	if not physical_food_output:
 		return false
-	for key in ["starter_clothing_good_id", "starter_construction_good_id", "starter_knowledge_good_id",
-			"starter_precious_good_id"]:
-		if not produced.has(String(country_start.get(key, ""))):
-			return false
+	var knowledge_building := String(country_start.get(
+		"pending_knowledge_building_id", ""))
+	if knowledge_building.is_empty():
+		return false
+	var knowledge_profile: BuildingProfile = load(
+		"res://data/economy/buildings/%s.tres" % knowledge_building)
+	if knowledge_profile == null or not knowledge_profile.output_good_ids.has(
+			String(country_start.get("starter_knowledge_good_id", ""))):
+		return false
+	if not produced.has(String(country_start.get("starter_precious_good_id", ""))):
+		return false
+	if buildings.has("hide_scraping_shelter") \
+			and not produced.has(String(country_start.get("starter_clothing_good_id", ""))):
+		return false
 	return true
 
 

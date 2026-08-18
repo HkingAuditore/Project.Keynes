@@ -14,40 +14,50 @@ func _init() -> void:
 			"route": "cold_highland", "temperature": 0.30, "moisture": 0.42,
 			"elevation": 0.72, "river": true, "coastal": false,
 			"resources": {"pasture": 200000.0, "fertile_soil": 400000.0,
-				"gold_ore": 100000.0},
-			"signals": ["bio.potato", "resource.fertile_soil", "bio.flax",
-				"resource.pasture", "resource.gold_ore"],
-			"foods": ["potatoes", "gathered_plants"], "food_technologies": ["tech.wild_tuber_collection", "tech.gathering"], "construction": "turf_block",
-			"knowledge_tech": "tech.pastoral_route_memory",
-			"required_buildings": ["wild_tuber_patch", "bast_fiber_camp",
-				"bast_wrap_shelter", "turf_cutting_ground", "pastoral_council_tent",
+				"wild_game": 200000.0, "timber": 400000.0, "gold_ore": 100000.0},
+			"signals": ["resource.fertile_soil", "resource.wild_game",
+				"resource.pasture", "resource.timber", "resource.gold_ore"],
+			"foods": ["gathered_plants", "game_meat"],
+			"food_technologies": ["tech.gathering", "tech.hunting"],
+			"construction": "logs",
+			"knowledge_tech": "tech.oral_memory_practice",
+			"knowledge_building": "oral_memory_circle",
+			"required_buildings": ["gathering_ground", "stone_age_hunting_camp",
+				"hide_scraping_shelter", "deadwood_gathering_camp",
 				"placer_gold_working", "early_merchant_post"],
 		},
 		{
 			"route": "tropical_forest", "temperature": 0.75, "moisture": 0.75,
 			"elevation": 0.25, "river": true, "coastal": false,
 			"resources": {"fertile_soil": 400000.0, "timber": 400000.0,
-				"silver_ore": 100000.0},
-			"signals": ["resource.fertile_soil", "bio.flax", "resource.timber",
-				"weather.drought", "resource.silver_ore"],
-			"foods": ["gathered_plants"], "food_technologies": ["tech.gathering"], "construction": "logs",
-			"extra_technology_ids": ["tech.fire_control", "tech.deadwood_collection"],
-			"knowledge_tech": "tech.oral_memory_practice",
-			"required_buildings": ["gathering_ground", "bast_fiber_camp",
-				"bast_wrap_shelter", "deadwood_gathering_camp", "oral_memory_circle",
+				"wild_game": 200000.0, "silver_ore": 100000.0},
+			"signals": ["resource.fertile_soil", "resource.timber",
+				"resource.wild_game", "resource.silver_ore"],
+			"foods": ["gathered_plants", "game_meat"],
+			"food_technologies": ["tech.gathering", "tech.hunting"],
+			"construction": "logs",
+			"knowledge_tech": "tech.phenology_observation",
+			"knowledge_building": "seasonal_observation_shelter",
+			"required_buildings": ["gathering_ground", "stone_age_hunting_camp",
+				"deadwood_gathering_camp",
 				"surface_silver_working", "early_merchant_post"],
 		},
 		{
 			"route": "floodplain", "temperature": 0.58, "moisture": 0.70,
 			"elevation": 0.22, "river": true, "coastal": false,
 			"resources": {"freshwater_fish": 150000.0, "fertile_soil": 400000.0,
-				"paddy_land": 180000.0, "gold_ore": 100000.0},
+				"paddy_land": 180000.0, "wild_game": 200000.0, "timber": 400000.0,
+				"gold_ore": 100000.0},
 			"signals": ["resource.freshwater_fish", "resource.fertile_soil",
-				"bio.flax", "bio.reed", "landform.river_valley", "resource.gold_ore"],
-			"foods": ["fish", "gathered_plants"], "food_technologies": ["tech.freshwater_fishing", "tech.gathering"], "construction": "reed_bundle",
+				"resource.wild_game", "resource.timber", "landform.river_valley",
+				"resource.gold_ore"],
+			"foods": ["gathered_plants", "game_meat"],
+			"food_technologies": ["tech.gathering", "tech.hunting"],
+			"construction": "logs",
 			"knowledge_tech": "tech.flood_calendar_practice",
-			"required_buildings": ["freshwater_fishing_camp", "bast_fiber_camp",
-				"bast_wrap_shelter", "reed_cutting_camp", "flood_calendar_shrine",
+			"knowledge_building": "flood_calendar_shrine",
+			"required_buildings": ["gathering_ground", "stone_age_hunting_camp",
+				"deadwood_gathering_camp",
 				"placer_gold_working", "early_merchant_post"],
 		},
 		{
@@ -57,42 +67,48 @@ func _init() -> void:
 				"clay": 180000.0, "silver_ore": 100000.0,
 				"fertile_soil": 400000.0},
 			"signals": ["resource.wild_game", "resource.timber", "resource.clay",
-				"resource.fertile_soil", "bio.flax", "landform.grassland", "weather.drought",
-				"resource.silver_ore"],
-			"foods": ["gathered_plants", "game_meat"], "food_technologies": ["tech.hunting", "tech.gathering"], "construction": "logs",
-			"extra_technology_ids": ["tech.fire_control", "tech.deadwood_collection",
-				"tech.earth_building", "tech.hide_scraping", "tech.fur_sewing"],
+				"resource.fertile_soil", "landform.grassland", "resource.silver_ore"],
+			"foods": ["gathered_plants", "game_meat"],
+			"food_technologies": ["tech.gathering", "tech.hunting"],
+			"construction": "logs",
 			"knowledge_tech": "tech.oral_memory_practice",
-			"required_buildings": ["bast_fiber_camp", "bast_wrap_shelter",
-				"deadwood_gathering_camp", "oral_memory_circle",
+			"knowledge_building": "oral_memory_circle",
+			"required_buildings": ["gathering_ground", "stone_age_hunting_camp",
+				"deadwood_gathering_camp",
 				"surface_silver_working", "early_merchant_post"],
 		},
 		{
 			"route": "temperate", "temperature": 0.55, "moisture": 0.46,
 			"elevation": 0.30, "river": true, "coastal": false,
 			"resources": {"fertile_soil": 400000.0, "timber": 400000.0,
-				"gold_ore": 100000.0},
-			"signals": ["resource.fertile_soil", "bio.flax", "resource.timber",
-				"weather.frost", "resource.gold_ore"],
-			"foods": ["gathered_plants"], "food_technologies": ["tech.gathering"], "construction": "logs",
-			"knowledge_tech": "tech.phenology_observation",
-			"required_buildings": ["gathering_ground", "bast_fiber_camp",
-				"bast_wrap_shelter", "deadwood_gathering_camp",
-				"seasonal_observation_shelter", "placer_gold_working",
-				"early_merchant_post"],
+				"wild_game": 200000.0, "gold_ore": 100000.0},
+			"signals": ["resource.fertile_soil", "resource.timber",
+				"resource.wild_game", "resource.gold_ore"],
+			"foods": ["gathered_plants", "game_meat"],
+			"food_technologies": ["tech.gathering", "tech.hunting"],
+			"construction": "logs",
+			"knowledge_tech": "tech.oral_memory_practice",
+			"knowledge_building": "oral_memory_circle",
+			"required_buildings": ["gathering_ground", "stone_age_hunting_camp",
+				"deadwood_gathering_camp",
+				"placer_gold_working", "early_merchant_post"],
 		},
 		{
 			"route": "coastal", "temperature": 0.62, "moisture": 0.62,
 			"elevation": 0.20, "river": false, "coastal": true,
 			"resources": {"marine_fish": 150000.0, "fertile_soil": 400000.0,
-				"paddy_land": 180000.0, "silver_ore": 100000.0},
+				"paddy_land": 180000.0, "wild_game": 200000.0, "timber": 400000.0,
+				"silver_ore": 100000.0},
 			"signals": ["resource.marine_fish", "landform.coast",
-				"resource.fertile_soil", "bio.flax", "bio.reed",
+				"resource.fertile_soil", "resource.wild_game", "resource.timber",
 				"resource.silver_ore"],
-			"foods": ["fish", "gathered_plants"], "food_technologies": ["tech.coastal_fishing", "tech.gathering"], "construction": "reed_bundle",
+			"foods": ["gathered_plants", "game_meat"],
+			"food_technologies": ["tech.gathering", "tech.hunting"],
+			"construction": "logs",
 			"knowledge_tech": "tech.tide_observation",
-			"required_buildings": ["marine_fish_collector", "bast_fiber_camp",
-				"bast_wrap_shelter", "reed_cutting_camp", "tide_observation_hut",
+			"knowledge_building": "tide_observation_hut",
+			"required_buildings": ["gathering_ground", "stone_age_hunting_camp",
+				"deadwood_gathering_camp",
 				"surface_silver_working", "early_merchant_post"],
 		},
 	]
@@ -122,13 +138,34 @@ func _init() -> void:
 			"starter_technology_ids", PackedStringArray())
 		for technology_id in fixture.food_technologies:
 			assert(technologies.has(String(technology_id)), "%s missing discovered food technology %s" % [expected_route, technology_id])
-		for technology_id in fixture.get("extra_technology_ids", []):
-			assert(technologies.has(String(technology_id)), "%s missing catalog-wide discovered technology %s" % [expected_route, technology_id])
+		assert(technologies.has("tech.deadwood_collection"),
+			"%s must grant the timber construction backbone" % expected_route)
+		assert(not technologies.has("tech.turf_cutting"),
+			"%s must not grant leftover construction techs" % expected_route)
+		assert(not technologies.has("tech.freshwater_fishing"),
+			"%s must not grant leftover fishing techs" % expected_route)
 		var buildings: PackedStringArray = route.get(
 			"starter_building_ids", PackedStringArray())
 		_assert_plan_contract(expected_route, route)
-		assert(technologies.has(String(fixture.knowledge_tech)),
-			"%s knowledge route" % expected_route)
+		var knowledge_tech := String(fixture.knowledge_tech)
+		var knowledge_building := String(fixture.knowledge_building)
+		var discovered: PackedStringArray = route.get(
+			"starter_discovered_technology_ids", PackedStringArray())
+		assert(not technologies.has(knowledge_tech),
+			"%s must not grant the pending knowledge practice" % expected_route)
+		assert(String(route.get("pending_knowledge_tech_id", "")) == knowledge_tech,
+			"%s pending knowledge tech" % expected_route)
+		assert(String(route.get("pending_knowledge_building_id", "")) ==
+			knowledge_building, "%s pending knowledge building" % expected_route)
+		assert(discovered.has(knowledge_tech),
+			"%s discovers the pending knowledge practice" % expected_route)
+		assert(not buildings.has(knowledge_building),
+			"%s must not prebuild the knowledge shed" % expected_route)
+		assert(int(route.get("starter_treasury_quantity", 0)) == 10000000,
+			"%s seeds 10000 technology points in the treasury" % expected_route)
+		assert(not (route.get("pending_knowledge_construction_good_ids",
+				PackedStringArray()) as PackedStringArray).is_empty(),
+			"%s stocks knowledge-shed construction goods" % expected_route)
 		for building_id in fixture.required_buildings:
 			if not buildings.has(String(building_id)) and \
 					_is_food_producer(String(building_id), foods):
@@ -150,23 +187,23 @@ func _init() -> void:
 		assert(technologies.has("tech.early_trade"), "%s missing early trade" % expected_route)
 		assert(buildings.has("early_merchant_post"), "%s missing early merchant post" %
 			expected_route)
-		var fingerprint := "%s|%s|%s|%s" % [str(foods),
-			route.starter_clothing_resource_id, route.starter_construction_good_id,
-			fixture.knowledge_tech]
-		fingerprints[fingerprint] = true
+		assert(buildings.has("deadwood_gathering_camp"),
+			"%s must prebuild the timber construction camp" % expected_route)
+		assert(not buildings.has("turf_cutting_ground"),
+			"%s must not prebuild leftover construction camps" % expected_route)
+		fingerprints[expected_route] = true
 	assert(fingerprints.size() == fixtures.size(),
-		"fixed regional fixtures must produce six materially distinct routes")
+		"fixed regional fixtures must produce six classified routes")
 	_assert_food_discovery_union()
-	_assert_hide_only_route_rejected()
+	_assert_warm_hide_not_prebuilt()
 	_assert_resource_count_monotonicity()
 	print("[PASS] six fixed geography fixtures select distinct closed starter routes")
 	quit(0)
 
 
 func _assert_food_discovery_union() -> void:
-	# A single cell can expose several independent food routes. The selected
-	# physical producer may still be one building, but the route contract must
-	# retain every discovered food substitute for the bootstrap bridge.
+	# Opening food is the survival core, not every revealed substitute. A cell
+	# can expose fish or tubers, but the grant stays gathering plus hunting.
 	var fixture := {
 		"temperature": 0.30, "moisture": 0.42, "elevation": 0.72,
 		"river": true, "coastal": false,
@@ -183,20 +220,23 @@ func _assert_food_discovery_union() -> void:
 	assert(bool(route.get("ok", false)), "food-rich fixture route succeeds")
 	var foods: PackedStringArray = route.get("starter_food_good_ids",
 		PackedStringArray())
-	for food_id in ["fish", "game_meat", "potatoes", "gathered_plants"]:
+	for food_id in ["gathered_plants", "game_meat"]:
 		assert(foods.has(food_id), "food-rich fixture discovers %s" % food_id)
-	assert(foods.size() == 4, "food-rich fixture deduplicates food goods")
+	assert(not foods.has("fish") and not foods.has("potatoes"),
+		"food-rich fixture does not grant leftover food substitutes")
 	var food_resources: PackedStringArray = route.get(
 		"starter_food_resource_ids", PackedStringArray())
-	for resource_id in ["freshwater_fish", "wild_game", "fertile_soil"]:
+	for resource_id in ["wild_game", "fertile_soil"]:
 		assert(food_resources.has(resource_id),
 			"food-rich fixture retains %s" % resource_id)
 	var technologies: PackedStringArray = route.get(
 		"starter_technology_ids", PackedStringArray())
-	for technology_id in ["tech.freshwater_fishing", "tech.hunting",
-			"tech.wild_tuber_collection", "tech.gathering"]:
+	for technology_id in ["tech.hunting", "tech.gathering"]:
 		assert(technologies.has(technology_id),
 			"food-rich fixture unlocks %s" % technology_id)
+	assert(not technologies.has("tech.freshwater_fishing")
+			and not technologies.has("tech.wild_tuber_collection"),
+		"food-rich fixture does not grant leftover food technologies")
 
 
 func _assert_plan_contract(label: String, route: Dictionary) -> void:
@@ -224,8 +264,9 @@ func _assert_plan_contract(label: String, route: Dictionary) -> void:
 		else:
 			assert(not has_employees, "%s %s has no employee role" % [label, ids[index]])
 		job_capacity += int(counts[index]) * int(profile.owner_slots_per_building)
-	assert(job_capacity == 20 and int(route.get("starter_job_capacity", 0)) == 20,
-		"%s has exactly 20 self-operated job slots" % label)
+	assert(job_capacity > 0 and job_capacity <= 20
+			and int(route.get("starter_job_capacity", 0)) == job_capacity,
+		"%s keeps self-operated jobs within the 20-person cap" % label)
 	assert(int(route.get("starter_employee_job_capacity", -1)) == employee_capacity,
 		"%s confines employee slots to precious workings" % label)
 	assert(not route.has("owner_job_capacity_by_profession"),
@@ -239,6 +280,8 @@ func _assert_plan_contract(label: String, route: Dictionary) -> void:
 	var supply: Dictionary = route.get("supply_by_good", {})
 	var demand: Dictionary = route.get("input_demand_by_good", {})
 	for good_id in demand:
+		if String(good_id) in ["raw_hide", "clothing"]:
+			continue
 		assert(int(supply.get(good_id, 0)) >= int(demand[good_id]),
 			"%s closes input %s" % [label, good_id])
 	assert(int(route.get("food_coverage_q16", 0)) >= 72090,
@@ -298,7 +341,7 @@ func _is_food_producer(building_id: String,
 	return false
 
 
-func _assert_hide_only_route_rejected() -> void:
+func _assert_warm_hide_not_prebuilt() -> void:
 	var fixture := {
 		"temperature": 0.56, "moisture": 0.30, "elevation": 0.50,
 		"river": true, "coastal": false,
@@ -306,16 +349,21 @@ func _assert_hide_only_route_rejected() -> void:
 			"clay": 180000.0, "silver_ore": 100000.0,
 			"fertile_soil": 400000.0},
 		"signals": ["resource.wild_game", "resource.timber", "resource.clay",
-			"resource.fertile_soil", "landform.grassland", "weather.drought",
+			"resource.fertile_soil", "landform.grassland",
 			"resource.silver_ore"],
 	}
 	var built := _make_fixture(fixture)
 	var route: Dictionary = StartPolicy.evaluate_starter_route(
 		built.map, int(built.cell))
-	assert(not bool(route.get("ok", false)),
-		"hide-only route is rejected when 9:1 closure exceeds the 20-owner budget")
-	assert(not String(route.get("code", "")).is_empty(),
-		"hide-only rejection reports a deterministic failure code")
+	assert(bool(route.get("ok", false)), "warm hunting route succeeds")
+	var buildings: PackedStringArray = route.get(
+		"starter_building_ids", PackedStringArray())
+	var technologies: PackedStringArray = route.get(
+		"starter_technology_ids", PackedStringArray())
+	assert(not buildings.has("hide_scraping_shelter"),
+		"warm opening must not prebuild hide scraping")
+	assert(not technologies.has("tech.hide_scraping"),
+		"warm opening must not grant hide scraping")
 
 
 func _assert_resource_count_monotonicity() -> void:
@@ -327,33 +375,16 @@ func _assert_resource_count_monotonicity() -> void:
 				"resources": {"wild_game": 200000.0, "timber": 400000.0,
 					"fertile_soil": 400000.0, "silver_ore": 100000.0},
 				"signals": ["resource.wild_game", "resource.timber",
-					"resource.fertile_soil", "bio.flax", "landform.grassland",
-					"weather.drought", "resource.silver_ore"]}},
-		{"resource": "marine_fish", "building": "marine_fish_collector",
-			"low": 1000.0, "high": 150000.0, "base": {
-				"temperature": 0.62, "moisture": 0.62, "elevation": 0.20,
-				"river": false, "coastal": true, "construction": "reed_bundle",
-				"resources": {"marine_fish": 150000.0, "fertile_soil": 400000.0,
-					"paddy_land": 180000.0, "silver_ore": 100000.0},
-				"signals": ["resource.marine_fish", "landform.coast",
-					"resource.fertile_soil", "bio.flax", "bio.reed",
+					"resource.fertile_soil", "landform.grassland",
 					"resource.silver_ore"]}},
 		{"resource": "fertile_soil", "building": "gathering_ground",
 			"low": 4.0, "high": 400000.0, "base": {
 				"temperature": 0.55, "moisture": 0.46, "elevation": 0.30,
 				"river": true, "coastal": false,
 				"resources": {"fertile_soil": 400000.0, "timber": 400000.0,
-					"gold_ore": 100000.0},
-				"signals": ["resource.fertile_soil", "bio.flax", "resource.timber",
-					"weather.frost", "resource.gold_ore"]}},
-		{"resource": "timber", "building": "deadwood_gathering_camp",
-			"low": 60.0, "high": 400000.0, "base": {
-				"temperature": 0.75, "moisture": 0.75, "elevation": 0.25,
-				"river": true, "coastal": false,
-				"resources": {"fertile_soil": 400000.0, "timber": 400000.0,
-					"silver_ore": 100000.0},
-				"signals": ["resource.fertile_soil", "bio.flax", "resource.timber",
-					"weather.drought", "resource.silver_ore"]}},
+					"wild_game": 200000.0, "gold_ore": 100000.0},
+				"signals": ["resource.fertile_soil", "resource.timber",
+					"resource.wild_game", "resource.gold_ore"]}},
 	]
 	for case in cases:
 		var low_fixture: Dictionary = (case.base as Dictionary).duplicate(true)

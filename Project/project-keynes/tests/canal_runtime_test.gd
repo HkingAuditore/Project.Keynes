@@ -105,7 +105,7 @@ func _run() -> void:
 	var saved := _save_economy(ext)
 	var restored: Dictionary = _restore_economy(ext, saved.get("chunks", []))
 	var restored_report: Dictionary = ext.get_economy_report()
-	if int(saved.get("schema", 0)) != 36 or not bool(restored.get("ok", false)) \
+	if int(saved.get("schema", 0)) != 37 or not bool(restored.get("ok", false)) \
 			or int(ext.get_economy_state_hash()) != hash_before_restore \
 			or int(restored_report.get("canal_project_building_count", 0)) != 1:
 		print("restore debug saved=", saved.get("schema", 0), " result=", restored,
@@ -115,8 +115,8 @@ func _run() -> void:
 				"awaiting": restored_report.get("canal_project_awaiting_effect_count", -1),
 				"projects": restored_report.get("canal_project_count", -1),
 			})
-	_expect("PKEC v36 restores an in-flight canal project exactly",
-		int(saved.get("schema", 0)) == 36 and bool(restored.get("ok", false))
+	_expect("PKEC v37 restores an in-flight canal project exactly",
+		int(saved.get("schema", 0)) == 37 and bool(restored.get("ok", false))
 		and int(ext.get_economy_state_hash()) == hash_before_restore
 		and int(restored_report.get("canal_project_building_count", 0)) == 1)
 

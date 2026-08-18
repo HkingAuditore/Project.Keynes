@@ -423,7 +423,7 @@ func _run() -> void:
 	_expect("building PKCN save completes", bool(ext.end_country_save().get("ok", false)))
 	var chunks: Array[PackedByteArray] = []
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
-	_expect("building v36 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 36)
+	_expect("building v37 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 37)
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty(): break
@@ -1731,13 +1731,25 @@ func _test_all_buildings_have_explicit_construction(catalog: Dictionary) -> void
 	var construction_quantities: PackedInt64Array = catalog.building_construction_quantities
 	var building_ids: PackedStringArray = catalog.building_type_ids
 	var kinds: PackedInt32Array = catalog.building_kinds
+	var semantic_offsets: PackedInt32Array = catalog.building_semantic_tag_offsets
+	var semantic_tags: PackedStringArray = catalog.building_semantic_tags
 	var valid := construction_offsets.size() == building_ids.size() + 1
 	for type_id in range(building_ids.size()):
-		# Service buildings (merchant posts) may be zero-cost; producers must not.
-		if type_id < kinds.size() and int(kinds[type_id]) == 2:
-			continue
 		var begin := int(construction_offsets[type_id])
 		var end := int(construction_offsets[type_id + 1])
+		# Service lots and stone-age starter.construction collectors may be
+		# zero-bill; other producers still need a positive recipe.
+		if type_id < kinds.size() and int(kinds[type_id]) == 2:
+			continue
+		var starter_construction := false
+		if type_id + 1 < semantic_offsets.size():
+			for tag in range(int(semantic_offsets[type_id]),
+					int(semantic_offsets[type_id + 1])):
+				if String(semantic_tags[tag]) == "starter.construction":
+					starter_construction = true
+					break
+		if starter_construction and begin >= end:
+			continue
 		if begin >= end:
 			valid = false
 			break
@@ -1745,7 +1757,7 @@ func _test_all_buildings_have_explicit_construction(catalog: Dictionary) -> void
 			if int(construction_quantities[edge]) <= 0:
 				valid = false
 				break
-	_expect("all building types consume positive explicit construction materials", valid)
+	_expect("non-starter producers consume positive explicit construction materials", valid)
 
 
 func _test_investment_capacity_is_not_gate(source_catalog: Dictionary,

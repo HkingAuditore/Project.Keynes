@@ -26,6 +26,7 @@ const FIXED_BUILDING_IDS := {
 	"early_merchant_post": true,
 	"placer_gold_working": true,
 	"surface_silver_working": true,
+	"deadwood_gathering_camp": true,
 }
 const PRECIOUS_STARTER_BUILDING_IDS := {
 	"placer_gold_working": true,
@@ -33,6 +34,17 @@ const PRECIOUS_STARTER_BUILDING_IDS := {
 }
 const PRECIOUS_GOOD_IDS := {"gold": true, "silver": true}
 const PRECIOUS_RESOURCE_IDS := {"gold_ore": true, "silver_ore": true}
+const STARTER_TREASURY_TECHNOLOGY_POINTS := 10000 * GOODS_SCALE
+const FALLBACK_KNOWLEDGE_TECH_ID := "tech.oral_memory_practice"
+const FALLBACK_KNOWLEDGE_BUILDING_ID := "oral_memory_circle"
+const CONSTRUCTION_BACKBONE := [
+	{
+		"tech_id": "tech.deadwood_collection",
+		"building_id": "deadwood_gathering_camp",
+		"resource_id": "timber",
+		"good_id": "logs",
+	},
+]
 
 static var _building_profiles: Array = []
 static var _resource_profiles: Dictionary = {}
@@ -65,28 +77,13 @@ static func plan(map: MapData, cell_idx: int, starter_route: Dictionary,
 	for building_id in selected_ids:
 		selected[String(building_id)] = true
 
-	var relevant_goods := {}
-	for good_id in starter_route.get("starter_food_good_ids", PackedStringArray()):
-		relevant_goods[String(good_id)] = true
-	for key in ["starter_clothing_good_id", "starter_construction_good_id",
-			"starter_knowledge_good_id", "starter_precious_good_id"]:
-		var stable_id := String(starter_route.get(key, ""))
-		if not stable_id.is_empty():
-			relevant_goods[stable_id] = true
-	for profile in _building_profiles:
-		if selected.has(String(profile.id)):
-			for input_good in profile.input_good_ids:
-				relevant_goods[String(input_good)] = true
-
 	var candidates: Array[Dictionary] = []
 	var profile_by_id := {}
 	for profile in _building_profiles:
 		profile_by_id[String(profile.id)] = profile
 		var building_id := String(profile.id)
 		var is_selected := selected.has(building_id)
-		if not is_selected and not _technology_available(profile, completed):
-			continue
-		if not is_selected and not _profile_relevant(profile, relevant_goods):
+		if not is_selected:
 			continue
 		if _is_unselected_precious_profile(profile, is_selected):
 			continue
@@ -109,12 +106,13 @@ static func plan(map: MapData, cell_idx: int, starter_route: Dictionary,
 			continue
 		var resource_cap := _resource_building_count_cap(profile, map, cell_idx)
 		if resource_cap == 0 or not _conditions_met(profile, map, cell_idx):
-			if is_selected:
-				return _error("starter_building_geography_unsatisfied",
-					"当地资源或地理条件不能承载初始建筑：%s" % building_id)
+			# Optional food producers (especially hunting on a thin reserve) can
+			# drop out; the remaining selected core still has to close food.
 			continue
 		var fixed := FIXED_BUILDING_IDS.has(building_id) \
-			or _profile_outputs(profile, "technology_points")
+			or _profile_outputs(profile, "technology_points") \
+			or _profile_outputs(profile, "clothing") \
+			or String(building_id) == "stone_age_hunting_camp"
 		var minimum := 1 if is_selected else 0
 		var maximum := 1 if fixed else STARTER_POPULATION / owner_slots
 		if resource_cap >= 0:
@@ -141,9 +139,13 @@ static func plan(map: MapData, cell_idx: int, starter_route: Dictionary,
 			if String(candidate.id) == String(building_id):
 				found = true
 				break
-		if not found:
-			return _error("starter_building_missing",
-				"规划目录缺少路线建筑：%s" % building_id)
+		if found:
+			continue
+		if String(building_id) == "stone_age_hunting_camp" \
+				or String(building_id) == "hide_scraping_shelter":
+			continue
+		return _error("starter_building_missing",
+			"规划目录缺少路线建筑：%s" % building_id)
 	if candidates.is_empty():
 		return _error("starter_planner_no_candidates", "当地没有可规划的石器时代建筑。")
 	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
@@ -176,7 +178,7 @@ static func plan(map: MapData, cell_idx: int, starter_route: Dictionary,
 		return {
 			"ok": false,
 			"code": "starter_capacity_plan_unsatisfied",
-			"message": "当地资源无法组成恰好覆盖 20 个可自主匹配岗位容量的可持续开局产业。",
+			"message": "当地资源无法组成不超过 20 个自营岗位的可持续开局产业。",
 			"candidate_building_ids": _candidate_ids(candidates),
 			"evaluated_combinations": int(search.evaluated),
 		}
@@ -189,9 +191,100 @@ static func plan(map: MapData, cell_idx: int, starter_route: Dictionary,
 	if not bool(construction_contract.get("ok", false)):
 		return construction_contract
 	best.merge(construction_contract, true)
+	var pending_construction := _compile_pending_knowledge_construction(
+		starter_route, profile_by_id)
+	if not bool(pending_construction.get("ok", false)):
+		return pending_construction
+	best.merge(pending_construction, true)
 	best["candidate_building_ids"] = _candidate_ids(candidates)
 	best["evaluated_combinations"] = int(search.evaluated)
+	best["starter_treasury_good_id"] = "technology_points"
+	best["starter_treasury_quantity"] = STARTER_TREASURY_TECHNOLOGY_POINTS
 	return best
+
+
+static func select_pending_knowledge(map: MapData, cell_idx: int,
+		region: String) -> Dictionary:
+	_ensure_profiles_loaded()
+	var preferred := _preferred_knowledge_for_region(region)
+	var preferred_building := String(preferred.get("building_id", ""))
+	if not preferred_building.is_empty() \
+			and _knowledge_building_operable(map, cell_idx, preferred_building):
+		return {
+			"ok": true,
+			"tech_id": String(preferred.tech_id),
+			"building_id": preferred_building,
+		}
+	return {
+		"ok": true,
+		"tech_id": FALLBACK_KNOWLEDGE_TECH_ID,
+		"building_id": FALLBACK_KNOWLEDGE_BUILDING_ID,
+	}
+
+
+static func select_construction_backbone(map: MapData, cell_idx: int) -> Dictionary:
+	_ensure_profiles_loaded()
+	for option_value in CONSTRUCTION_BACKBONE:
+		var option: Dictionary = option_value
+		var building_id := String(option.get("building_id", ""))
+		if building_id.is_empty() or not _knowledge_building_operable(
+				map, cell_idx, building_id):
+			continue
+		return {
+			"ok": true,
+			"tech_id": String(option.tech_id),
+			"building_id": building_id,
+			"resource_id": String(option.resource_id),
+			"good_id": String(option.good_id),
+		}
+	return _error("starter_construction_backbone_unavailable",
+		"出生点没有可工的枯枝采集营。")
+
+
+static func _preferred_knowledge_for_region(region: String) -> Dictionary:
+	match region:
+		"coastal":
+			return {
+				"tech_id": "tech.tide_observation",
+				"building_id": "tide_observation_hut",
+			}
+		"floodplain":
+			return {
+				"tech_id": "tech.flood_calendar_practice",
+				"building_id": "flood_calendar_shrine",
+			}
+		"arid_highland":
+			return {
+				"tech_id": "tech.pastoral_route_memory",
+				"building_id": "pastoral_council_tent",
+			}
+		"tropical_forest":
+			return {
+				"tech_id": "tech.phenology_observation",
+				"building_id": "seasonal_observation_shelter",
+			}
+		_:
+			return {"tech_id": "", "building_id": ""}
+
+
+static func _knowledge_building_operable(map: MapData, cell_idx: int,
+		building_id: String) -> bool:
+	var profile = _building_profile_by_id(building_id)
+	if profile == null:
+		return false
+	if not _conditions_met(profile, map, cell_idx):
+		return false
+	if _resource_building_count_cap(profile, map, cell_idx) == 0:
+		return false
+	return _production_climate_q16(profile, map, cell_idx) > 0
+
+
+static func _building_profile_by_id(building_id: String):
+	_ensure_profiles_loaded()
+	for profile in _building_profiles:
+		if String(profile.id) == building_id:
+			return profile
+	return null
 
 
 static func _compile_starter_construction_contract(plan_result: Dictionary,
@@ -207,9 +300,12 @@ static func _compile_starter_construction_contract(plan_result: Dictionary,
 		return _error("starter_construction_groups_missing",
 			"开局食物种子建筑没有建材组：%s" % seed_building_id)
 
-	# A good is locally reachable when it is already provisioned or when an
-	# unlocked, geographically executable local building can produce it.
+	# Opening construction is granted as bootstrap stock, so every authored
+	# seed-group candidate is locally reachable without extra producer buildings.
 	var locally_reachable := _starter_initial_goods(starter_route)
+	for group in seed_groups:
+		for candidate in group.candidates:
+			locally_reachable[String(candidate.good_id)] = true
 	for profile in _building_profiles:
 		if not _technology_available(profile, completed) \
 				or not _conditions_met(profile, map, cell_idx) \
@@ -283,6 +379,61 @@ static func _compile_starter_construction_contract(plan_result: Dictionary,
 	}
 
 
+static func _compile_pending_knowledge_construction(starter_route: Dictionary,
+		profile_by_id: Dictionary) -> Dictionary:
+	var building_id := String(starter_route.get("pending_knowledge_building_id", ""))
+	if building_id.is_empty():
+		return {
+			"ok": true,
+			"pending_knowledge_construction_good_ids": PackedStringArray(),
+			"pending_knowledge_construction_quantities": PackedInt64Array(),
+		}
+	if not profile_by_id.has(building_id):
+		return _error("starter_knowledge_building_missing",
+			"开局待建知识棚不在规划目录：%s" % building_id)
+	var groups := _construction_groups(profile_by_id[building_id])
+	if groups.is_empty():
+		return _error("starter_knowledge_construction_missing",
+			"待建知识棚缺少建材配方：%s" % building_id)
+	# Bootstrap stocks one copy of the chosen recipe, so every authored
+	# candidate is reachable without leftover gathering techs.
+	var preferred_good := String(starter_route.get("starter_construction_good_id", ""))
+	var selected_by_good := {}
+	for group in groups:
+		var viable: Array[Dictionary] = []
+		for candidate in group.candidates:
+			var good_id := String(candidate.good_id)
+			viable.append({
+				"good_id": good_id,
+				"physical": _construction_physical_quantity(
+					int(group.quantity), int(candidate.efficiency_q16)),
+			})
+		if viable.is_empty():
+			return _error("starter_knowledge_construction_unreachable",
+				"待建知识棚没有可用建材候选：%s" % building_id)
+		viable.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			var a_preferred := String(a.good_id) == preferred_good
+			var b_preferred := String(b.good_id) == preferred_good
+			if a_preferred != b_preferred:
+				return a_preferred
+			if int(a.physical) != int(b.physical):
+				return int(a.physical) < int(b.physical)
+			return String(a.good_id) < String(b.good_id))
+		var selected: Dictionary = viable[0]
+		selected_by_good[String(selected.good_id)] = int(selected_by_good.get(
+			String(selected.good_id), 0)) + int(selected.physical)
+	var selected_good_ids := PackedStringArray(selected_by_good.keys())
+	selected_good_ids.sort()
+	var selected_quantities := PackedInt64Array()
+	for good_id in selected_good_ids:
+		selected_quantities.append(int(selected_by_good[String(good_id)]))
+	return {
+		"ok": true,
+		"pending_knowledge_construction_good_ids": selected_good_ids,
+		"pending_knowledge_construction_quantities": selected_quantities,
+	}
+
+
 static func _validate_starter_construction_closure(plan_result: Dictionary,
 		starter_route: Dictionary, completed: Dictionary, map: MapData,
 		cell_idx: int, profile_by_id: Dictionary,
@@ -339,6 +490,14 @@ static func _starter_initial_goods(starter_route: Dictionary) -> Dictionary:
 	return goods
 
 
+static func _starter_buffered_goods(starter_route: Dictionary) -> Dictionary:
+	var goods := _starter_initial_goods(starter_route)
+	var construction_good := String(starter_route.get("starter_construction_good_id", ""))
+	if not construction_good.is_empty():
+		goods[construction_good] = true
+	return goods
+
+
 static func _construction_groups(profile) -> Array[Dictionary]:
 	var groups: Array[Dictionary] = []
 	var good_ids: PackedStringArray = profile.construction_good_ids
@@ -386,11 +545,10 @@ static func _search_counts(candidates: Array[Dictionary], index: int,
 		counts: PackedInt32Array, owner_slots: int, suffix_min: PackedInt32Array,
 		suffix_max: PackedInt32Array, context: Dictionary,
 		search: Dictionary) -> void:
-	if owner_slots + int(suffix_min[index]) > STARTER_POPULATION \
-			or owner_slots + int(suffix_max[index]) < STARTER_POPULATION:
+	if owner_slots + int(suffix_min[index]) > STARTER_POPULATION:
 		return
 	if index >= candidates.size():
-		if owner_slots != STARTER_POPULATION:
+		if owner_slots <= 0 or owner_slots > STARTER_POPULATION:
 			return
 		search.evaluated = int(search.evaluated) + 1
 		var result := _evaluate_counts(candidates, counts, context)
@@ -469,6 +627,7 @@ static func _compile_search_context(candidates: Array[Dictionary], map: MapData,
 		"clothing_good_id": String(starter_route.get(
 			"starter_clothing_good_id", "clothing")),
 		"clothing_demand": _clothing_demand(map, cell_idx),
+		"buffered_goods": _starter_buffered_goods(starter_route),
 		"resource_limits": resource_limits,
 		"resource_caps": resource_caps,
 	}
@@ -498,10 +657,13 @@ static func _evaluate_counts(candidates: Array[Dictionary], counts: PackedInt32A
 
 	var upstream_excess := 0
 	var weakest_supply_q16 := Q16_ONE * 16
+	var buffered: Dictionary = context.get("buffered_goods", {})
 	for good_id in inputs:
 		var demand := int(inputs[good_id])
 		var available := int(supply.get(good_id, 0))
 		if available < demand:
+			if buffered.has(String(good_id)):
+				continue
 			return {}
 		var coverage_q16 := available * Q16_ONE / maxi(1, demand)
 		weakest_supply_q16 = mini(weakest_supply_q16, coverage_q16)
@@ -524,12 +686,14 @@ static func _evaluate_counts(candidates: Array[Dictionary], counts: PackedInt32A
 	weakest_supply_q16 = mini(weakest_supply_q16, int(food.coverage_q16))
 	var clothing_demand := int(context.clothing_demand)
 	var clothing_supply := int(supply.get(String(context.clothing_good_id), 0))
-	if clothing_supply * Q16_ONE < clothing_demand * MIN_FOOD_COVERAGE_Q16:
-		return {}
-	var clothing_coverage_q16 := clothing_supply * Q16_ONE / maxi(1, clothing_demand)
-	weakest_supply_q16 = mini(weakest_supply_q16, clothing_coverage_q16)
+	# Clothing production is not an opening closure. Cold starts still prebuild
+	# a scraping shelter for later matching, but the 15-day clothing bridge
+	# covers the first days.
+	var clothing_coverage_q16 := Q16_ONE
+	if clothing_supply > 0:
+		clothing_coverage_q16 = clothing_supply * Q16_ONE / maxi(1, clothing_demand)
 	var overproduction := upstream_excess + int(food.excess)
-	if clothing_coverage_q16 > TARGET_FOOD_MAX_Q16:
+	if clothing_supply > 0 and clothing_coverage_q16 > TARGET_FOOD_MAX_Q16:
 		overproduction += clothing_supply - clothing_demand * TARGET_FOOD_MAX_Q16 / Q16_ONE
 
 	# This is a building-capacity report only. It is deliberately not split by
@@ -555,10 +719,12 @@ static func _evaluate_counts(candidates: Array[Dictionary], counts: PackedInt32A
 	ids = ordered.ids
 	out_counts = ordered.counts
 	var employee_capacity := 0
+	var job_capacity := 0
 	for index in range(ids.size()):
 		for candidate in candidates:
 			if String(candidate.id) != String(ids[index]):
 				continue
+			job_capacity += int(candidate.owner_slots) * int(out_counts[index])
 			employee_capacity += int(candidate.get("employee_slots", 0)) * int(out_counts[index])
 			break
 
@@ -568,7 +734,7 @@ static func _evaluate_counts(candidates: Array[Dictionary], counts: PackedInt32A
 		"message": "",
 		"starter_building_ids": ids,
 		"starter_building_counts": out_counts,
-		"starter_job_capacity": STARTER_POPULATION,
+		"starter_job_capacity": job_capacity,
 		"starter_employee_job_capacity": employee_capacity,
 		"primary_food_building_id": primary_food_building_id,
 		"resource_caps": context.resource_caps,
@@ -587,14 +753,16 @@ static func _evaluate_counts(candidates: Array[Dictionary], counts: PackedInt32A
 
 
 static func _plan_better(candidate: Dictionary, current: Dictionary) -> bool:
-	if int(candidate.weakest_supply_coverage_q16) != int(current.weakest_supply_coverage_q16):
-		return int(candidate.weakest_supply_coverage_q16) > int(current.weakest_supply_coverage_q16)
-	if int(candidate.resource_pressure_q16) != int(current.resource_pressure_q16):
-		return int(candidate.resource_pressure_q16) < int(current.resource_pressure_q16)
-	if int(candidate.overproduction_quantity) != int(current.overproduction_quantity):
-		return int(candidate.overproduction_quantity) < int(current.overproduction_quantity)
+	# Valid plans already meet the 110% food floor. Prefer the smallest core
+	# bundle so leftover population stays in the unemployed pool.
 	if int(candidate.starter_building_total) != int(current.starter_building_total):
 		return int(candidate.starter_building_total) < int(current.starter_building_total)
+	if int(candidate.overproduction_quantity) != int(current.overproduction_quantity):
+		return int(candidate.overproduction_quantity) < int(current.overproduction_quantity)
+	if int(candidate.resource_pressure_q16) != int(current.resource_pressure_q16):
+		return int(candidate.resource_pressure_q16) < int(current.resource_pressure_q16)
+	if int(candidate.weakest_supply_coverage_q16) != int(current.weakest_supply_coverage_q16):
+		return int(candidate.weakest_supply_coverage_q16) > int(current.weakest_supply_coverage_q16)
 	return String(candidate.plan_fingerprint) < String(current.plan_fingerprint)
 
 
@@ -890,7 +1058,8 @@ static func _validate_facade(plan_result: Dictionary, facade) -> Dictionary:
 				return _error("starter_employee_role_forbidden",
 					"石器时代初始建筑不得包含雇员岗位：%s" % ids[index])
 		job_total += int(job_spec.owner_slots) * int(counts[index])
-	if job_total != STARTER_POPULATION:
+	if job_total <= 0 or job_total > STARTER_POPULATION \
+			or job_total != int(plan_result.get("starter_job_capacity", -1)):
 		return _error("starter_facade_job_capacity_mismatch",
 			"规划目录与运行时目录的可自主匹配岗位容量不一致。")
 	return {"ok": true}

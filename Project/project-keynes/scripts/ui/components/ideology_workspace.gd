@@ -6,16 +6,21 @@ class_name IdeologyWorkspace
 # second mutable ideology model.
 
 const Q16_ONE := 65536.0
+const PlayerControllerScript = preload("res://scripts/game/player_controller.gd")
 const IdeaRowScene := preload("res://scenes/ui/ideology_idea_row.tscn")
 const OfferChoiceScene := preload("res://scenes/ui/ideology_offer_choice.tscn")
 
 var _facade = null
+var _player_controller = null
 var _country_handle := 0
 var _current_day := 0
 var _catalog: Dictionary = {}
 var _snapshot: Dictionary = {}
-var _sequence := 300000
+var _live_explain: Dictionary = {}
+var _live_by_id := {}
 var _signature := ""
+var _explain_signature := ""
+var _pending_promotion_id := -1
 
 var _points: Label
 var _slots: Label
@@ -26,6 +31,7 @@ var _rows: VBoxContainer
 var _empty: Label
 var _offer: PanelContainer
 var _offer_cards: HBoxContainer
+var _promotion_dialog: ConfirmationDialog
 
 
 func _ready() -> void:
@@ -46,6 +52,12 @@ func _ready() -> void:
 		return
 	_offer_button.theme_type_variation = &"PKPrimaryButton"
 	_offer_button.pressed.connect(_open_offer)
+	_promotion_dialog = ConfirmationDialog.new()
+	_promotion_dialog.title = "确认晋升民族精神"
+	_promotion_dialog.dialog_text = "民族精神晋升不可逆，并会占用民族精神槽位。"
+	_promotion_dialog.ok_button_text = "确认晋升"
+	_promotion_dialog.confirmed.connect(_confirm_promotion)
+	add_child(_promotion_dialog)
 
 
 func set_model(model: Dictionary) -> void:
@@ -63,6 +75,17 @@ func refresh_model(model: Dictionary) -> void:
 func set_compact(compact: bool) -> void:
 	if _offer_cards != null:
 		_offer_cards.visible = not compact or bool(_snapshot.get("offer_active", false))
+
+func set_player_controller(controller) -> void:
+	if _player_controller != null and _player_controller.has_signal("command_settled"):
+		var old_callback := Callable(self, "_on_player_command_settled")
+		if _player_controller.command_settled.is_connected(old_callback):
+			_player_controller.command_settled.disconnect(old_callback)
+	_player_controller = controller
+	if _player_controller != null and _player_controller.has_signal("command_settled"):
+		var callback := Callable(self, "_on_player_command_settled")
+		if not _player_controller.command_settled.is_connected(callback):
+			_player_controller.command_settled.connect(callback)
 
 
 func _apply_model(model: Dictionary) -> void:
@@ -83,13 +106,95 @@ func _apply_model(model: Dictionary) -> void:
 		int(_snapshot.get("national_spirit_slots_capacity", 0))]
 	_offer_button.disabled = bool(_snapshot.get("offer_active", false))
 	_offer_button.text = "三选一已锁定" if bool(_snapshot.get("offer_active", false)) else "抽取理念（三选一）"
-	var signature := "%s|%s|%s|%s" % [_snapshot.get("known_ids", PackedInt32Array()),
-		_snapshot.get("understanding_q16", PackedInt64Array()), _snapshot.get("levels", PackedInt32Array()),
+	var known: PackedInt32Array = _snapshot.get("known_ids", PackedInt32Array())
+	var explain_signature := "%d|%d|%s|%s|%s|%s" % [
+		_country_handle, int(_snapshot.get("support_revision", 0)), known,
+		_snapshot.get("levels", PackedInt32Array()),
+		_snapshot.get("locations", PackedInt32Array()),
 		_snapshot.get("transition_pending", PackedByteArray())]
+	if explain_signature != _explain_signature:
+		_explain_signature = explain_signature
+		_refresh_live_explain(known)
+	var signature := "%s|%s|%s|%s|%d" % [known,
+		_snapshot.get("understanding_q16", PackedInt64Array()), _snapshot.get("levels", PackedInt32Array()),
+		_snapshot.get("transition_pending", PackedByteArray()),
+		int(_live_explain.get("support_revision", 0))]
 	if signature != _signature:
 		_signature = signature
 		_rebuild_rows()
 	_rebuild_offer()
+
+
+func _refresh_live_explain(known: PackedInt32Array) -> void:
+	_live_explain = _facade.explain_ideologies(_country_handle, known) \
+		if _facade != null else {}
+	_live_by_id.clear()
+	if not bool(_live_explain.get("ok", false)):
+		return
+	var ids: PackedInt32Array = _live_explain.get("ideology_ids", PackedInt32Array())
+	var support: PackedInt32Array = _live_explain.get("support_q16", PackedInt32Array())
+	var thresholds: PackedInt32Array = _live_explain.get("support_thresholds_q16", PackedInt32Array())
+	var blockers: PackedInt32Array = _live_explain.get("support_blocking_classes", PackedInt32Array())
+	var available: PackedByteArray = _live_explain.get("support_available", PackedByteArray())
+	var allowed: PackedByteArray = _live_explain.get("support_allowed", PackedByteArray())
+	var equip_allowed: PackedByteArray = _live_explain.get("equip_allowed", PackedByteArray())
+	var unequip_allowed: PackedByteArray = _live_explain.get("unequip_allowed", PackedByteArray())
+	var promote_allowed: PackedByteArray = _live_explain.get("promote_allowed", PackedByteArray())
+	var stance_offsets: PackedInt32Array = _live_explain.get("stance_offsets", PackedInt32Array())
+	var stance_classes: PackedInt32Array = _live_explain.get("stance_class_indices", PackedInt32Array())
+	var influence: PackedInt64Array = _live_explain.get("class_influence", PackedInt64Array())
+	var adopt_contributions: PackedInt64Array = _live_explain.get("adopt_contributions", PackedInt64Array())
+	var repeal_contributions: PackedInt64Array = _live_explain.get("repeal_contributions", PackedInt64Array())
+	var promote_contributions: PackedInt64Array = _live_explain.get("promote_contributions", PackedInt64Array())
+	var synergy_offsets: PackedInt32Array = _live_explain.get("affected_synergy_offsets", PackedInt32Array())
+	var synergy_ids: PackedInt32Array = _live_explain.get("affected_synergy_ids", PackedInt32Array())
+	var synergy_current: PackedByteArray = _live_explain.get("current_synergy_active", PackedByteArray())
+	var synergy_equip: PackedByteArray = _live_explain.get("equip_synergy_active", PackedByteArray())
+	var synergy_unequip: PackedByteArray = _live_explain.get("unequip_synergy_active", PackedByteArray())
+	var synergy_promote: PackedByteArray = _live_explain.get("promote_synergy_active", PackedByteArray())
+	for index in ids.size():
+		var support_rows: Array[Dictionary] = []
+		for direction in 3:
+			var row := index * 3 + direction
+			support_rows.append({
+				"support_q16": int(support[row]) if row < support.size() else 0,
+				"threshold_q16": int(thresholds[row]) if row < thresholds.size() else 0,
+				"blocking_class": int(blockers[row]) if row < blockers.size() else -1,
+				"available": row < available.size() and available[row] != 0,
+				"allowed": row < allowed.size() and allowed[row] != 0,
+			})
+		var class_rows: Array[Dictionary] = []
+		var stance_begin := int(stance_offsets[index]) if index < stance_offsets.size() else 0
+		var stance_end := int(stance_offsets[index + 1]) if index + 1 < stance_offsets.size() else stance_begin
+		for row in range(stance_begin, stance_end):
+			class_rows.append({
+				"class_index": int(stance_classes[row]),
+				"influence": int(influence[row]),
+				"contributions": [
+					int(adopt_contributions[row]),
+					int(repeal_contributions[row]),
+					int(promote_contributions[row]),
+				],
+			})
+		var synergy_rows: Array[Dictionary] = []
+		var synergy_begin := int(synergy_offsets[index]) if index < synergy_offsets.size() else 0
+		var synergy_end := int(synergy_offsets[index + 1]) if index + 1 < synergy_offsets.size() else synergy_begin
+		for row in range(synergy_begin, synergy_end):
+			synergy_rows.append({
+				"id": int(synergy_ids[row]),
+				"current": row < synergy_current.size() and synergy_current[row] != 0,
+				"equip": row < synergy_equip.size() and synergy_equip[row] != 0,
+				"unequip": row < synergy_unequip.size() and synergy_unequip[row] != 0,
+				"promote": row < synergy_promote.size() and synergy_promote[row] != 0,
+			})
+		_live_by_id[int(ids[index])] = {
+			"support": support_rows,
+			"classes": class_rows,
+			"synergies": synergy_rows,
+			"equip_allowed": index < equip_allowed.size() and equip_allowed[index] != 0,
+			"unequip_allowed": index < unequip_allowed.size() and unequip_allowed[index] != 0,
+			"promote_allowed": index < promote_allowed.size() and promote_allowed[index] != 0,
+		}
 
 
 func _rebuild_rows() -> void:
@@ -118,10 +223,12 @@ func _rebuild_rows() -> void:
 		_empty.visible = known.is_empty()
 	for ideology_id in known:
 		var state: Dictionary = state_by_id.get(int(ideology_id), {})
-		_rows.add_child(_row(int(ideology_id), metadata.get(int(ideology_id), {}), state))
+		_rows.add_child(_row(int(ideology_id), metadata.get(int(ideology_id), {}),
+			state, _live_by_id.get(int(ideology_id), {})))
 
 
-func _row(ideology_id: int, metadata: Dictionary, state: Dictionary) -> Control:
+func _row(ideology_id: int, metadata: Dictionary, state: Dictionary,
+		live: Dictionary) -> Control:
 	var card := IdeaRowScene.instantiate() as PanelContainer
 	var name_label := card.get_node("Body/Title/Name") as Label
 	name_label.text = _display_name(metadata, ideology_id)
@@ -141,9 +248,8 @@ func _row(ideology_id: int, metadata: Dictionary, state: Dictionary) -> Control:
 		"text": slot_text,
 		"accent": UITokens.WARN if pending else (UITokens.ACCENT if location > 0 else UITokens.TEXT_MUTED),
 	}])
-	var explanation: Dictionary = _facade.explain_ideology(_country_handle, ideology_id) if _facade != null else {}
 	var level := int(state.get("level", -1))
-	var thresholds: PackedInt64Array = explanation.get("thresholds_q16", PackedInt64Array())
+	var thresholds: PackedInt64Array = metadata.get("level_thresholds_q16", PackedInt64Array())
 	var amount := int(state.get("understanding", 0))
 	var next := int(thresholds[level + 1]) if level + 1 < thresholds.size() else amount
 	var ratio := 1.0 if next <= 0 else clampf(float(amount) / float(maxi(1, next)), 0.0, 1.0)
@@ -152,22 +258,88 @@ func _row(ideology_id: int, metadata: Dictionary, state: Dictionary) -> Control:
 		"已满级" if level + 1 >= thresholds.size() else "下一级 %s" % _q16(next),
 		_q16(amount))
 	var detail := card.get_node("Body/Detail") as Label
-	detail.text = "等级 %d" % maxi(0, level + 1)
-	detail.tooltip_text = String(metadata.get("detail_key", ""))
+	var direction := 0 if location == 0 else 1
+	detail.text = "等级 %d · %s" % [maxi(0, level + 1),
+		_support_summary(live, direction)]
+	detail.tooltip_text = _support_tooltip(metadata, live, direction)
 	var equip := card.get_node("Body/Actions/Equip") as Button
 	var unequip := card.get_node("Body/Actions/Unequip") as Button
 	var promote := card.get_node("Body/Actions/Promote") as Button
 	equip.visible = location == 0
-	equip.disabled = pending
+	equip.disabled = pending or not bool(live.get("equip_allowed", false))
 	equip.pressed.connect(func() -> void: _command("equip", ideology_id))
 	unequip.visible = location == 1
-	unequip.disabled = pending
+	unequip.disabled = pending or not bool(live.get("unequip_allowed", false))
 	unequip.pressed.connect(func() -> void: _command("unequip", ideology_id))
-	var spirit_min := int(explanation.get("min_spirit_level", 99))
-	promote.visible = location != 2
-	promote.disabled = pending or level < spirit_min
-	promote.pressed.connect(func() -> void: _command("promote", ideology_id))
+	var spirit_min := int(metadata.get("min_spirit_level", 99))
+	promote.visible = location == 1
+	promote.disabled = pending or level < spirit_min \
+		or not bool(live.get("promote_allowed", false))
+	promote.pressed.connect(func() -> void: _request_promotion(ideology_id))
 	return card
+
+
+func _support_summary(live: Dictionary, direction: int) -> String:
+	var rows: Array = live.get("support", [])
+	if direction < 0 or direction >= rows.size():
+		return "民意不可用"
+	var support: Dictionary = rows[direction]
+	if not bool(support.get("available", false)):
+		return "民意待发布"
+	var label := "通过" if bool(support.get("allowed", false)) else "未通过"
+	return "民意 %s %s / %s" % [
+		label,
+		_q16_signed(int(support.get("support_q16", 0))),
+		_q16_signed(int(support.get("threshold_q16", 0))),
+	]
+
+
+func _support_tooltip(metadata: Dictionary, live: Dictionary,
+		direction: int) -> String:
+	var lines: PackedStringArray = PackedStringArray([
+		String(metadata.get("detail_key", "")),
+		_support_summary(live, direction),
+	])
+	var class_ids: PackedStringArray = _catalog.get(
+		"political_class_ids", PackedStringArray())
+	for row in live.get("classes", []) as Array:
+		var info := row as Dictionary
+		var class_index := int(info.get("class_index", -1))
+		var contributions: Array = info.get("contributions", [])
+		var contribution := int(contributions[direction]) \
+			if direction >= 0 and direction < contributions.size() else 0
+		var class_label := String(class_ids[class_index]) \
+			if class_index >= 0 and class_index < class_ids.size() \
+			else "阶层 %d" % class_index
+		lines.append("%s：%+.2f（影响力 %d）" % [
+			class_label, float(contribution) / Q16_ONE,
+			int(info.get("influence", 0)),
+		])
+	var gained: PackedStringArray = PackedStringArray()
+	var lost: PackedStringArray = PackedStringArray()
+	var expected_key: String = ["equip", "unequip", "promote"][
+		clampi(direction, 0, 2)]
+	for row in live.get("synergies", []) as Array:
+		var synergy := row as Dictionary
+		var current := bool(synergy.get("current", false))
+		var expected := bool(synergy.get(expected_key, current))
+		if expected and not current:
+			gained.append(_synergy_name(int(synergy.get("id", -1))))
+		elif current and not expected:
+			lost.append(_synergy_name(int(synergy.get("id", -1))))
+	if not gained.is_empty():
+		lines.append("预计获得联动：%s" % "、".join(gained))
+	if not lost.is_empty():
+		lines.append("预计失去联动：%s" % "、".join(lost))
+	return "\n".join(lines)
+
+
+func _synergy_name(synergy_id: int) -> String:
+	for row in _catalog.get("synergies", []) as Array:
+		var metadata := row as Dictionary
+		if int(metadata.get("dense_id", -1)) == synergy_id:
+			return String(metadata.get("id", "联动 %d" % synergy_id))
+	return "联动 %d" % synergy_id
 
 
 func _display_name(metadata: Dictionary, ideology_id: int) -> String:
@@ -184,21 +356,52 @@ func _display_name(metadata: Dictionary, ideology_id: int) -> String:
 
 
 func _open_offer() -> void:
-	if _facade == null:
+	if _player_controller == null:
 		return
-	var result: Dictionary = _facade.request_offer(_country_handle, _effective_day(), _next_sequence())
+	var result: Dictionary = _player_controller.request_command(
+		PlayerControllerScript.COMMAND_IDEOLOGY_OFFER)
 	_show_result(result)
 
 
 func _command(kind: String, ideology_id: int) -> void:
-	if _facade == null:
+	if _player_controller == null:
 		return
-	var result: Dictionary = {}
-	match kind:
-		"equip": result = _facade.equip(_country_handle, ideology_id, _effective_day(), _next_sequence())
-		"unequip": result = _facade.unequip(_country_handle, ideology_id, _effective_day(), _next_sequence())
-		"promote": result = _facade.promote(_country_handle, ideology_id, _effective_day(), _next_sequence())
+	var command_id := {
+		"equip": PlayerControllerScript.COMMAND_IDEOLOGY_EQUIP,
+		"unequip": PlayerControllerScript.COMMAND_IDEOLOGY_UNEQUIP,
+		"promote": PlayerControllerScript.COMMAND_IDEOLOGY_PROMOTE,
+	}.get(kind, &"") as StringName
+	var result: Dictionary = _player_controller.request_command(
+		command_id, {"ideology_id": ideology_id})
 	_show_result(result)
+
+
+func _request_promotion(ideology_id: int) -> void:
+	if _promotion_dialog == null:
+		return
+	_pending_promotion_id = ideology_id
+	_promotion_dialog.popup_centered()
+
+
+func _confirm_promotion() -> void:
+	if _pending_promotion_id < 0:
+		return
+	var ideology_id := _pending_promotion_id
+	_pending_promotion_id = -1
+	_command("promote", ideology_id)
+
+
+func _on_player_command_settled(id: StringName, result: Dictionary) -> void:
+	if id not in [
+		PlayerControllerScript.COMMAND_IDEOLOGY_OFFER,
+		PlayerControllerScript.COMMAND_IDEOLOGY_CHOOSE,
+		PlayerControllerScript.COMMAND_IDEOLOGY_EQUIP,
+		PlayerControllerScript.COMMAND_IDEOLOGY_UNEQUIP,
+		PlayerControllerScript.COMMAND_IDEOLOGY_PROMOTE,
+	]:
+		return
+	_hint.text = "理念命令已生效。" if bool(result.get("ok", false)) \
+		else String(result.get("reason", "理念命令被拒绝。"))
 
 
 func _rebuild_offer() -> void:
@@ -222,10 +425,13 @@ func _rebuild_offer() -> void:
 
 
 func _choose_offer(choice_index: int) -> void:
-	if _facade == null:
+	if _player_controller == null:
 		return
-	var result: Dictionary = _facade.choose_offer(_country_handle,
-		int(_snapshot.get("offer_generation", 0)), choice_index, _effective_day(), _next_sequence())
+	var result: Dictionary = _player_controller.request_command(
+		PlayerControllerScript.COMMAND_IDEOLOGY_CHOOSE, {
+			"offer_generation": int(_snapshot.get("offer_generation", 0)),
+			"choice_index": choice_index,
+		})
 	_show_result(result)
 
 
@@ -234,14 +440,9 @@ func _show_result(result: Dictionary) -> void:
 		else String(result.get("reason", "理念命令被拒绝。"))
 
 
-func _effective_day() -> int:
-	return maxi(0, _current_day + 1)
-
-
-func _next_sequence() -> int:
-	_sequence += 1
-	return _sequence
-
-
 func _q16(value: int) -> String:
 	return "%.2f" % (float(value) / Q16_ONE)
+
+
+func _q16_signed(value: int) -> String:
+	return "%+.2f" % (float(value) / Q16_ONE)

@@ -136,7 +136,8 @@ static func build() -> Resource:
 	var ideology_catalog: Resource = IdeologyCatalogScript.load_default()
 	var ideology_country_catalog := EconomyCatalogScript.compile_native_catalog()
 	if ideology_catalog != null and bool(ideology_country_catalog.get("ok", false)):
-		var ideology_ir: Dictionary = ideology_catalog.compile_native_catalog(ideology_country_catalog)
+		var ideology_ir: Dictionary = ideology_catalog.compile_native_catalog(
+			ideology_country_catalog, ideology_country_catalog)
 		if not bool(ideology_ir.get("ok", false)):
 			return null
 		definitions.append(_ideology_command_definition(ideology_ir))

@@ -1,7 +1,7 @@
 # C++/DOTS Runtime 开发文档索引
 
 - [运河运行时](./canal-runtime.md)：API-ready 的权威边状态、经济施工、Effect 原子提交、
-  贸易/殖民边成本、局地水文、Visual Tile 与 PKEC v36；PlayerController 尚未注册。
+  贸易/殖民边成本、局地水文、Visual Tile 与 PKEC v37；PlayerController 尚未注册。
 
 ## Formal game flow and PKSV
 
@@ -10,7 +10,7 @@
 
 - [科技树、科技值与科研经济运行时](./technology-tree-runtime.md)：180 项权威目录、环境/资源
   研究条件、实践突破、全内容绑定、科技值市场与国家采购、Effect/Modifier ACK，以及
-  PKCN v11/PKEF v9/PKTR v5/PKEC v36 存档契约。
+  PKCN v11/PKEF v10/PKTR v5/PKID v3/PKEC v37 存档契约。
 
 - [环境驱动的科技路线差异化](./technology-route-differentiation.md)：把地理、气候、植被、
   资源、社会发展、Trigger、Effect 和经济内容组织成可分化、可重放、可审计的科技路线。
@@ -45,14 +45,14 @@ cohort 与家族分支的八维度综合满意度、阶层权重、生存闸门�
 
 - [Native Modifier Runtime](./native-modifier-runtime.md)：四域 ModifierStore、固定公式、
   generation handle、scope/bucket、daily freeze、气候/国家/经济/Gameplay 接入、
-  PKCN v11/PKEC v36/PKCM v1/PKGP v1 与验证状态。
+  PKCN v11/PKEC v37/PKCM v1/PKGP v1 与验证状态。
 - 修改 stat、definition、命令协议、调度依赖、领域公式或存档 schema 时，必须先读并同步
   这份主说明与 `project-keynes-modifier-runtime` Skill。
 
 ## Tax and fiscal runtime
 
 - [税收与财政结算运行时](./tax-fiscal-runtime.md)：五类国家税务政策、职业/物资/建筑覆盖、
-  国家级税率 Modifier、财政托管、应税事件、PKCN v11/PKEC v36 存档和国家经济 UI。
+  国家级税率 Modifier、财政托管、应税事件、PKCN v11/PKEC v37 存档和国家经济 UI。
 
 ## 阅读顺序
 
@@ -79,6 +79,7 @@ cohort 与家族分支的八维度综合满意度、阶层权重、生存闸门�
 6. [Computation Pipelines](./computation-pipelines.md)
    - 按机制列出 climate、ocean、weather、sea ice、transpiration、atlas upload 等计算链路。
    - 每个机制都记录 GDScript wrapper、C++ kernel、输入输出、publish/flush、fallback 和性能风险。
+   - 作者地图外部编译（PKAUTH → post_base → PKMAP 旁路）见 [Authored Map Pipeline](./authored-map-pipeline.md)。
 
 7. [Performance Diagnostics Playbook](./performance-diagnostics-playbook.md)
    - 解释 `[SUS-cpp]`、`[fast tick WARN]`、`largest=... path=...`、`published=true`、`psi_path=gdscript`、`transp/native breakdown ...` 等日志。
@@ -101,7 +102,7 @@ cohort 与家族分支的八维度综合满意度、阶层权重、生存闸门�
     - 冻结国家 epoch、科技门控、国家资产转移、货币/商品联合守恒与 hash 边界。
 
 12. [Country Scheduling / Save](./country-scheduling-save.md)
-   - `country_daily`、命令屏障、PKCN v11 + PKEF v9 + PKTR v5 + PKEC v36 顺序与兼容性拒绝。
+   - `country_daily`、命令屏障、PKCN v11 + PKEF v10 + PKTR v5 + PKID v3 + PKEC v37 顺序与兼容性拒绝。
 
 13. [Economy Fixed Point / Ledger / Formula](./economy-fixed-point-ledger-formulas.md)
    - 定点 ABI、守恒、命令和原生 batch 公式规范。

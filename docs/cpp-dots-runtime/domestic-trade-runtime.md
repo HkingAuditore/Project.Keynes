@@ -51,6 +51,10 @@ restore 与真实拓扑变化仍显式清空缓存。
   初始化时由 `MapGenerator` 在 economy configure 后、bootstrap 前通过
   `capture_economy_trade_topology()` 粗粒度捕获一次。非 `OFF` 模式下捕获失败会使本次经济
   初始化显式失败；启动报告必须满足 `trade_topology_ready=true` 且 topology generation 非零。
+- 玩家贸易视野与 Inspector/`FOG_VISIBLE` 对齐。`MapData.fog_solved` 为假时不读可见性
+  （全知，兼容测试与未解算帧）。为真时，经济在 sample 日冻结 `visible_arr`：开局国作为
+  源或目的的候选，两端都必须当前可见。AI↔AI 不受玩家视野限制。路径走廊不必可见。
+  已发运订单按出发契约完成。该 mask 不进 PKEC / state hash。
 
 ## 预算化规划
 
@@ -133,7 +137,7 @@ pending/accepted target、拓扑哈希、规范化拓扑变化/计划重置计�
 
 PKEC v11 在 v10 国家桥格式上增加贸易订单和贸易流 EMA sections，并在 header 保存稳定
 `next_order_id` 与已解析贸易配置。路线缓存、拓扑、Dijkstra scratch、未完成扫描和候选不存档。
-加载后先恢复当前 PKCN v11，再恢复 PKEC v36；贸易拓扑由下一次地图捕获重建。
+加载后先恢复当前 PKCN v11，再恢复 PKEC v37；贸易拓扑由下一次地图捕获重建。
 
 PKEC v12 增加企业停产状态、连续计数、采购意图容量、实际利润率、实际出库 EMA 和对应策略参数。
 参数一致的 v11 ACTIVE 才可迁移并将新增字段初始化为确定性默认值；当前 12.5% / 30 日分档库存基线商人策略

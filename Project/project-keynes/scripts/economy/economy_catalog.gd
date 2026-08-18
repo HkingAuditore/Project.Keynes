@@ -1244,10 +1244,8 @@ static func _compile_building_columns(profession_index: Dictionary,
 			employee_reference_wages.append(role_reference)
 		employee_offsets.append(employee_professions.size())
 
-		var zero_cost_service: bool = building_kind == "service" \
-			and int(profile.construction_days) == 0 \
-			and profile.construction_good_ids.is_empty()
-		if profile.construction_good_ids.is_empty() and not zero_cost_service:
+		var zero_cost_construction: bool = allows_zero_cost_construction(profile)
+		if profile.construction_good_ids.is_empty() and not zero_cost_construction:
 			return {"ok": false, "reason": "building requires explicit construction goods: %s" % stable_id}
 		var error := ""
 		if not profile.construction_good_ids.is_empty():
@@ -1747,6 +1745,24 @@ static func _append_building_goods(ids: PackedStringArray, quantities: PackedInt
 		out_ids.append(int(good_index[stable_id]))
 		out_quantities.append(int(quantities[i]))
 	return ""
+
+
+## Zero-bill lots: merchant-style services, or stone-age construction
+## collectors tagged `starter.construction` with no daily good inputs.
+## Industrial buildings and later collectors still need an explicit bill.
+static func allows_zero_cost_construction(profile: Resource) -> bool:
+	if profile == null or int(profile.construction_days) != 0 \
+			or not profile.construction_good_ids.is_empty():
+		return false
+	var kind := String(profile.building_kind)
+	if kind == "service":
+		return true
+	if kind != "collector" or not profile.input_good_ids.is_empty():
+		return false
+	for tag in profile.semantic_tags:
+		if String(tag).strip_edges() == "starter.construction":
+			return true
+	return false
 
 
 static func _append_construction_candidates(profile: Resource,

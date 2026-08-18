@@ -59,6 +59,36 @@ func _init() -> void:
 	_expect("plantation land-institution route is eligible",
 		_state(plantation, "tech.estate_plantation_management") == 2)
 
+	var flint_locked := _fixture(PackedStringArray(["tech.gathering"]),
+		PackedStringArray(["resource.flint"]))
+	_expect("flint stays ineligible until a knowledge practice is completed",
+		_state(flint_locked, "tech.flint_identification") == 1)
+	var flint_open := _fixture(
+		PackedStringArray(["tech.gathering", "tech.oral_memory_practice"]),
+		PackedStringArray(["resource.flint"]))
+	_expect("one completed knowledge practice opens flint research",
+		_state(flint_open, "tech.flint_identification") == 2)
+
+	var seasonal_locked := _fixture(PackedStringArray(["tech.gathering"]),
+		PackedStringArray())
+	_expect("seasonal foraging stays ineligible until a knowledge practice is completed",
+		_state(seasonal_locked, "tech.seasonal_foraging") == 1)
+	var seasonal_open := _fixture(
+		PackedStringArray(["tech.gathering", "tech.oral_memory_practice"]),
+		PackedStringArray())
+	_expect("one completed knowledge practice opens seasonal foraging",
+		_state(seasonal_open, "tech.seasonal_foraging") == 2)
+
+	var hide_locked := _fixture(PackedStringArray(["tech.hunting"]),
+		PackedStringArray(["resource.wild_game"]))
+	_expect("hide scraping stays ineligible on a warm start until knowledge",
+		_state(hide_locked, "tech.hide_scraping") == 1)
+	var hide_open := _fixture(
+		PackedStringArray(["tech.hunting", "tech.oral_memory_practice"]),
+		PackedStringArray(["resource.wild_game"]))
+	_expect("one completed knowledge practice opens hide scraping",
+		_state(hide_open, "tech.hide_scraping") == 2)
+
 	print("technology eligibility v3: %s" % ("PASS" if _failures == 0 else "FAIL"))
 	quit(0 if _failures == 0 else 1)
 

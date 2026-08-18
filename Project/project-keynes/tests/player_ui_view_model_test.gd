@@ -71,6 +71,36 @@ class PlayerDiscoveryGenerator extends RefCounted:
 		return {"ok": true, "cell": start_cell}
 
 
+class ConstructionRecipeEconomy extends RefCounted:
+	func building_placement_spec(building_id: StringName) -> Dictionary:
+		if String(building_id) != "timber_collector":
+			return {"ok": false}
+		return {
+			"ok": true,
+			"input_good_ids": PackedStringArray(["tools"]),
+			"input_quantities": PackedInt64Array([200]),
+			"input_candidate_offsets": PackedInt32Array([0, 4]),
+			"input_candidate_good_ids": PackedStringArray([
+				"bronze_tools", "chipped_stone_tools", "precision_tools", "tools"]),
+			"input_candidate_efficiency_q16": PackedInt32Array([
+				52429, 32768, 98304, 65536]),
+			"output_good_ids": PackedStringArray(["logs"]),
+			"output_quantities": PackedInt64Array([7090]),
+		}
+
+	func building_job_spec(_building_id: StringName) -> Dictionary:
+		return {
+			"ok": true,
+			"owner_profession": "forager",
+			"owner_slots": 2,
+			"employee_professions": PackedStringArray(),
+			"employee_slots": PackedInt64Array(),
+		}
+
+	func profession_display_name(profession_id: StringName) -> String:
+		return "采集者" if String(profession_id) == "forager" else String(profession_id)
+
+
 func _initialize() -> void:
 	var failures := PackedStringArray()
 	var map := MapData.new(1, 1)
@@ -280,6 +310,16 @@ func _initialize() -> void:
 			or not _find_by_id(gated_resources, "rare_earth").is_empty() \
 			or gated_iron.is_empty() or bool(gated_iron.get("extractable", true)):
 		failures.append("resource dossier did not enforce discovery and extraction technology")
+	var opening_resources: Array = view_model._resource_state(0, false, {
+		"enforce_discovery": true,
+		"technology_ids": PackedStringArray(["tech.gathering", "tech.hunting"]),
+	})
+	if _find_by_id(opening_resources, "fertile_soil").is_empty() \
+			or _find_by_id(opening_resources, "wild_game").is_empty() \
+			or not _find_by_id(opening_resources, "iron_ore").is_empty() \
+			or not _find_by_id(opening_resources, "copper_ore").is_empty() \
+			or not _find_by_id(opening_resources, "timber").is_empty():
+		failures.append("opening techs must name soil/game without naming unidentified minerals")
 	var undiscovered := view_model._resources_category([], {"enforce_discovery": true})
 	var undiscovered_insight := _find_by_id(
 		undiscovered.get("insights", []), "resource_undiscovered")
@@ -298,6 +338,18 @@ func _initialize() -> void:
 	var explored_bio := _find_section(explored_geo.get("sections", []), "biogeography")
 	if explored_bio.is_empty() or _find_by_id(explored_bio.get("badges", []), "bio.maize").is_empty():
 		failures.append("remembered geography must keep local species facts")
+	var unnamed_bio: Array = explored_view_model._cell_bio_badges(0, {
+		"enforce_discovery": true,
+		"technology_ids": PackedStringArray(["tech.gathering"]),
+	})
+	if not _find_by_id(unnamed_bio, "bio.maize").is_empty():
+		failures.append("undiscovered species must not be named after gathering-only techs")
+	var named_bio: Array = explored_view_model._cell_bio_badges(0, {
+		"enforce_discovery": true,
+		"technology_ids": PackedStringArray(["tech.maize_identification"]),
+	})
+	if _find_by_id(named_bio, "bio.maize").is_empty():
+		failures.append("identified species must keep their display names")
 	if not _find_section(explored_geo.get("sections", []), "natural_resources").is_empty():
 		failures.append("explored-but-unseen cells must not expose live natural-resource intel")
 
@@ -486,6 +538,67 @@ func _initialize() -> void:
 		gated_market.get("sections", []), "merchant_accounts")
 	if merchant_accounts.is_empty() or not bool(merchant_accounts.get("collapsed", false)):
 		failures.append("merchant accounts should remain a collapsed dossier")
+	var gated_plants: Dictionary = gated_market_rows[0] if gated_market_rows.size() == 1 else {}
+	if String(gated_plants.get("stock", "")).contains("在途") \
+			or not _find_by_id(gated_plants.get("detail_rows", []), "trade_inbound").is_empty() \
+			or not _find_by_id(gated_market.get("insights", []),
+				"market_trade_in_transit").is_empty() \
+			or String(_find_by_id(gated_market.get("metrics", []),
+				"merchant_trade_net").get("subtitle", "")) != "无在途":
+		failures.append("zero-flow market dossier leaked cross-cell trade copy")
+
+	var trade_market: Dictionary = view_model._market_category({
+		"ok": true,
+		"market_id": 0,
+		"good_ids": PackedStringArray(["gathered_plants", "cloth", "autonomous_systems"]),
+		"good_technology_available": PackedByteArray([1, 1, 0]),
+		"good_trade_enabled": PackedByteArray([1, 0, 1]),
+		"stock": PackedInt64Array([1000, 2000, 0]),
+		"price": PackedInt32Array([10000, 10000, 10000]),
+		"demand_ema": PackedInt64Array([0, 0, 0]),
+		"business_demand_ema": PackedInt64Array([0, 0, 0]),
+		"offered_supply_ema": PackedInt64Array([0, 0, 0]),
+		"cost_anchor_price": PackedInt32Array([0, 0, 0]),
+		"shortage_q16": PackedInt32Array([0, 0, 0]),
+		"trade_inbound": PackedInt64Array([3000, 4000, 5000]),
+		"trade_outbound": PackedInt64Array([0, 0, 0]),
+		"trade_import_ema": PackedInt64Array([1500, 0, 0]),
+		"trade_export_ema": PackedInt64Array([0, 0, 0]),
+		"trade_next_arrival_day": 4,
+		"merchant_trade_sale_cash": 20000,
+		"merchant_trade_purchase_cash": 5000,
+	})
+	var trade_rows: Array = trade_market.get("market_rows", [])
+	if trade_rows.size() != 2:
+		failures.append("trade market dossier changed technology gating")
+	else:
+		var plants: Dictionary = trade_rows[0]
+		var cloth: Dictionary = trade_rows[1]
+		if String(plants.get("id", "")) != "market_gathered_plants" \
+				or String(plants.get("stock", "")) != "1 单位 · 在途" \
+				or String(plants.get("stock_plain", "")) != "1 单位" \
+				or String(plants.get("trade_inbound", "")) != "3 单位" \
+				or String(plants.get("trade_outbound", "")) != "" \
+				or String(_find_by_id(plants.get("detail_rows", []),
+					"trade_inbound").get("value", "")) != "3 单位" \
+				or String(_find_by_id(plants.get("detail_rows", []),
+					"trade_import_flow").get("value", "")) != "1.5 单位" \
+				or not _find_by_id(plants.get("detail_rows", []),
+					"trade_outbound").is_empty():
+			failures.append("in-transit good did not expose curated inbound trade facts")
+		if String(cloth.get("stock", "")).contains("在途") \
+				or String(cloth.get("trade_inbound", "")) != "" \
+				or not _find_by_id(cloth.get("detail_rows", []),
+					"trade_inbound").is_empty():
+			failures.append("trade-disabled good still showed inbound cargo")
+	var trade_insight: Dictionary = _find_by_id(
+		trade_market.get("insights", []), "market_trade_in_transit")
+	var trade_net_card: Dictionary = _find_by_id(
+		trade_market.get("metrics", []), "merchant_trade_net")
+	if String(trade_insight.get("text", "")) != "1 种物资在途，下一批还有 4 日到货。" \
+			or String(trade_net_card.get("subtitle", "")) != "在途 1 种 · 4 日后到货" \
+			or (trade_market.get("metrics", []) as Array).size() != 3:
+		failures.append("market trade summary cards did not stay curated")
 
 	var daily_cache := {}
 	var first_delta: float = view_model._sample_daily_delta(daily_cache, "0:wheat_grain", 10.0, 4)
@@ -674,6 +787,35 @@ func _initialize() -> void:
 			or not CellInspectorViewModel._family_behavior_selector_visible(
 			0, "unlocked_building", family_visibility):
 		failures.append("family detail did not filter locked behavior selectors")
+
+	var recipe_view_model := CellInspectorViewModel.new()
+	var stone_item := {"building_id": "timber_collector", "materials": []}
+	recipe_view_model._decorate_construction_item(
+		stone_item, ConstructionRecipeEconomy.new(), {},
+		{"chipped_stone_tools": true})
+	var stone_inputs: Array = stone_item.get("inputs", [])
+	var stone_input_name := String((stone_inputs[0] as Dictionary).get("name", "")) \
+		if not stone_inputs.is_empty() else ""
+	var stone_input_qty := String((stone_inputs[0] as Dictionary).get("quantity", "")) \
+		if not stone_inputs.is_empty() else ""
+	if not stone_input_name.begins_with("打制石器") \
+			or stone_input_name.contains("金属工具") \
+			or stone_input_name.contains("青铜工具") \
+			or stone_input_name.contains("精密工具") \
+			or stone_input_qty != "0.200 /日":
+		failures.append("stone-age construction list still labels logging inputs as metal tools")
+	var later_item := {"building_id": "timber_collector", "materials": []}
+	recipe_view_model._decorate_construction_item(
+		later_item, ConstructionRecipeEconomy.new(), {},
+		{"chipped_stone_tools": true, "bronze_tools": true, "tools": true})
+	var later_inputs: Array = later_item.get("inputs", [])
+	var later_input_name := String((later_inputs[0] as Dictionary).get("name", "")) \
+		if not later_inputs.is_empty() else ""
+	if not later_input_name.contains("打制石器") \
+			or not later_input_name.contains("青铜工具") \
+			or not later_input_name.contains("金属工具") \
+			or later_input_name.contains("精密工具"):
+		failures.append("unlocked logging input substitutes were not listed by current technology")
 
 	if failures.is_empty():
 		print("[player-ui-view-model] PASS")

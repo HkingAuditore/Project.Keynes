@@ -18,7 +18,8 @@ func _init() -> void:
 		quit(1)
 		return
 	var effective := OS.get_cmdline_user_args().has("--effective")
-	var failures := audit(catalog, effective)
+	var include_construction := OS.get_cmdline_user_args().has("--construction")
+	var failures := audit(catalog, effective, include_construction)
 	if OS.get_cmdline_user_args().has("--candidates"):
 		_print_candidate_summary(catalog, failures)
 		quit(0)
@@ -92,7 +93,8 @@ static func _print_candidate_summary(catalog: Dictionary, failures: Array) -> vo
 		with_candidate, without_candidate, failures.size()])
 
 
-static func audit(catalog: Dictionary, effective: bool = false) -> Array:
+static func audit(catalog: Dictionary, effective: bool = false,
+		include_construction: bool = false) -> Array:
 	var technology_ids: PackedStringArray = catalog.technology_ids
 	var prerequisite_offsets: PackedInt32Array = catalog.technology_prerequisite_offsets
 	var prerequisites: PackedInt32Array = catalog.technology_prerequisites
@@ -149,6 +151,8 @@ static func audit(catalog: Dictionary, effective: bool = false) -> Array:
 				if satisfied:
 					continue
 				var kind := int(dependency_kinds[group])
+				if kind == 1 and not include_construction:
+					continue
 				var dependency_id := int(dependency_ids[group])
 				var ids := resource_ids if kind in [4, 5] else good_ids
 				missing_dependencies.append({

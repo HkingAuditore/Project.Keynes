@@ -19,6 +19,7 @@ const MOBILE_WEATHER_FIELD_ADVECT_STEPS: int = 2
 const MAP_OVERLAY_REFRESH_INTERVAL_MSEC: int = 100
 const SettlementLabelLayerScript = preload(
 	"res://scripts/rendering/settlement_label_layer.gd")
+const PkmapIOScript = preload("res://scripts/geography/pkmap_io.gd")
 
 @export var map_width: int = 60
 @export var map_height: int = 40
@@ -254,6 +255,7 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 	cfg.sea_level = sea_level
 	cfg.river_count = river_count
 	cfg.seed = seed_override if seed_override >= 0 else initial_seed
+	_apply_pkmap_override(cfg)
 
 	_generator = MapGenerator.new()
 	_generator.set_test_economy_bootstrap_enabled(generate_test_economy_data)
@@ -573,13 +575,40 @@ func get_sim_breakdowns() -> Dictionary:
 		out["ocean"] = _generator.sus_ocean_currents_breakdown()
 	var tick_report := get_sus_last_tick_report()
 	var economy_job = tick_report.get("economy_daily", {})
+	var economy_report: Dictionary = {}
 	if economy_job is Dictionary \
 			and str((economy_job as Dictionary).get("skipped_reason", "")) == "" \
 			and _generator.has_method("get_economy_report"):
-		var economy: Dictionary = _generator.get_economy_report()
-		if not economy.is_empty():
-			economy["_tick_idx"] = _fast_tick_count
-			out["economy"] = economy
+		economy_report = _generator.get_economy_report()
+		if not economy_report.is_empty():
+			economy_report["_tick_idx"] = _fast_tick_count
+			out["economy"] = economy_report
+			out["class_opinion"] = {
+				"_tick_idx": _fast_tick_count,
+				"revision": economy_report.get("class_opinion_revision", 0),
+				"class_hash": economy_report.get("class_opinion_class_hash", 0),
+				"country_count": economy_report.get("class_opinion_country_count", 0),
+				"class_count": economy_report.get("class_opinion_class_count", 0),
+				"cells_scanned": economy_report.get("class_opinion_cells", 0),
+				"slots_scanned": economy_report.get("class_opinion_slots_scanned", 0),
+				"last_cells_scanned": economy_report.get("class_opinion_last_cells_scanned", 0),
+				"last_slots_scanned": economy_report.get("class_opinion_last_slots_scanned", 0),
+				"zero_population_rows": economy_report.get(
+					"class_opinion_zero_population_rows", 0),
+				"last_zero_population_rows": economy_report.get(
+					"class_opinion_last_zero_population_rows", 0),
+				"ms": economy_report.get("class_opinion_ms", 0.0),
+			}
+	if _generator.has_method("get_ideology_report"):
+		var ideology: Dictionary = _generator.get_ideology_report()
+		if bool(ideology.get("configured", false)):
+			ideology["_tick_idx"] = _fast_tick_count
+			out["ideology"] = ideology
+	if _generator.has_method("get_effect_report"):
+		var effect: Dictionary = _generator.get_effect_report()
+		if bool(effect.get("configured", false)):
+			effect["_tick_idx"] = _fast_tick_count
+			out["effect"] = effect
 	return out.duplicate(false)
 
 
@@ -2637,6 +2666,44 @@ func _apply_world_setup_base_config() -> void:
 		mobile_terrain_horizon_enabled = bool((render as Dictionary).get(
 			"mobile_terrain_horizon_enabled", mobile_terrain_horizon_enabled
 		))
+
+
+func _cmdline_pkmap_path() -> String:
+	for raw in OS.get_cmdline_user_args():
+		var item := str(raw)
+		if item.begins_with("pkmap="):
+			return item.substr(6).strip_edges()
+	return ""
+
+
+func _apply_pkmap_override(cfg: MapConfig) -> void:
+	if cfg == null:
+		return
+	var path := ""
+	var setup := _world_setup_config()
+	var base = setup.get("base", {})
+	if base is Dictionary:
+		path = String((base as Dictionary).get("pkmap_path", "")).strip_edges()
+	var cmdline := _cmdline_pkmap_path()
+	if not cmdline.is_empty():
+		path = cmdline
+	if path.is_empty():
+		return
+	cfg.map_source = "pkmap"
+	cfg.pkmap_path = path
+	var peeked: Dictionary = PkmapIOScript.peek_pkmap(path)
+	if not bool(peeked.get("ok", false)):
+		push_error("[pkmap] 无法预读 %s：%s" % [path, String(peeked.get("message", ""))])
+		return
+	cfg.width = int(peeked.get("width", cfg.width))
+	cfg.height = int(peeked.get("height", cfg.height))
+	cfg.sea_level = float(peeked.get("sea_level", cfg.sea_level))
+	var packed_seed := int(peeked.get("seed", 0))
+	if packed_seed != 0:
+		cfg.seed = packed_seed
+	map_width = cfg.width
+	map_height = cfg.height
+	sea_level = cfg.sea_level
 
 
 func _load_runtime_climate_profile() -> ClimateProfile:

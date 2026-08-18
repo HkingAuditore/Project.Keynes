@@ -31,6 +31,8 @@ var _ideology_ms := PackedFloat64Array()
 var _effect_ms := PackedFloat64Array()
 var _modifier_ms := PackedFloat64Array()
 var _gameplay_ms := PackedFloat64Array()
+var _ideology_slice_ms := PackedFloat64Array()
+var _next_sequence := 1
 
 func _init() -> void:
 	_run()
@@ -131,6 +133,17 @@ func _run() -> void:
 	var visits_delta := int(ideology_report.get("active_visits", 0)) - baseline_visits
 	_expect("active dense traversal matches 50 days x 15 x 512", visits_delta == MEASURED_DAYS * ACTIVE_PER_COUNTRY * COUNTRY_COUNT)
 	_expect("dormant ideology scan count is zero", int(ideology_report.get("dormant_scan_count", -1)) == 0)
+	_expect("sparse ideology scan count is zero",
+		int(ideology_report.get("sparse_idea_scan_count", -1)) == 0)
+	_expect("command queue never re-sorts or shifts its head",
+		int(ideology_report.get("command_queue_resorts", -1)) == 0
+		and int(ideology_report.get("command_queue_shift_steps", -1)) == 0)
+	_expect("quiescent daily path does not read class opinion",
+		int(ideology_report.get("class_snapshot_reads", -1)) == 0)
+	_expect("continuation slice p95 stays within 0.42 ms",
+		_p95(_ideology_slice_ms) <= 0.42)
+	_expect("no measured native ideology slice exceeds 1 ms",
+		_max_value(_ideology_slice_ms) <= 1.0)
 	_expect("dormant Effect scan count is zero", int(effect_report.get("dormant_instances_scanned", -1)) == 0)
 	_expect("Effect queue has no overflow", int(effect_report.get("overflow_count", -1)) == 0)
 	_expect("all stress Effect transactions are native claimed", int(effect_report.get("native_modifier_transactions", 0)) > 0)
@@ -177,6 +190,30 @@ func _ideology_catalog() -> Dictionary:
 	var out := {"protocol_version": 1, "ideology_capacity": IDEOLOGY_CAPACITY,
 		"national_spirit_capacity": SPIRIT_CAPACITY, "offer_choice_count": 3,
 		"offer_cost_q16": Q16_ONE, "max_commands_per_slice": 4096,
+		"max_transition_commands": 64,
+		"max_transition_polls_per_slice": 4096,
+		"max_active_visits_per_slice": 1024,
+		"political_class_ids": PackedStringArray(["general"]),
+		"stance_offsets": PackedInt32Array([0]),
+		"stance_class_indices": PackedInt32Array(),
+		"stance_adopt_q16": PackedInt32Array(), "stance_repeal_q16": PackedInt32Array(),
+		"stance_promote_q16": PackedInt32Array(), "stance_adopt_min_q16": PackedInt32Array(),
+		"stance_repeal_min_q16": PackedInt32Array(), "stance_promote_min_q16": PackedInt32Array(),
+		"adopt_thresholds_q16": PackedInt32Array(), "repeal_thresholds_q16": PackedInt32Array(),
+		"promote_thresholds_q16": PackedInt32Array(), "exclusion_group_ids": PackedInt32Array(),
+		"synergy_ids": PackedStringArray(), "synergy_requirement_offsets": PackedInt32Array([0]),
+		"synergy_requirement_ideology_ids": PackedInt32Array(),
+		"synergy_requirement_min_levels": PackedInt32Array(),
+		"synergy_requirement_location_masks": PackedByteArray(),
+		"synergy_effect_offsets": PackedInt32Array([0]),
+		"synergy_effect_actions": PackedInt32Array(), "synergy_effect_domains": PackedInt32Array(),
+		"synergy_effect_opcodes": PackedInt32Array(), "synergy_effect_values_q16": PackedInt64Array(),
+		"synergy_effect_duration_days": PackedInt32Array(), "synergy_effect_stacks": PackedInt32Array(),
+		"synergy_effect_command_keys": PackedStringArray(),
+		"synergy_effect_definition_keys": PackedStringArray(),
+		"synergy_effect_payload_i0": PackedInt64Array(), "synergy_effect_payload_i1": PackedInt64Array(),
+		"synergy_effect_payload_i2": PackedInt64Array(), "synergy_effect_payload_i3": PackedInt64Array(),
+		"ideology_synergy_offsets": PackedInt32Array([0]), "ideology_synergy_ids": PackedInt32Array(),
 		"ideology_ids": PackedStringArray(), "acquisition_flags": PackedByteArray(),
 		"rarity_weights": PackedInt32Array(), "ideology_slot_costs": PackedInt32Array(),
 		"spirit_slot_costs": PackedInt32Array(), "national_spirit_min_levels": PackedInt32Array(),
@@ -205,6 +242,12 @@ func _ideology_catalog() -> Dictionary:
 		out.ideology_slot_costs.append(1)
 		out.spirit_slot_costs.append(1)
 		out.national_spirit_min_levels.append(0)
+		out.stance_offsets.append(0)
+		out.adopt_thresholds_q16.append(0)
+		out.repeal_thresholds_q16.append(0)
+		out.promote_thresholds_q16.append(0)
+		out.exclusion_group_ids.append(-1)
+		out.ideology_synergy_offsets.append(0)
 		out.level_thresholds_q16.append(0)
 		out.level_daily_understanding_q16.append(0)
 		out.level_offsets.append(out.level_thresholds_q16.size())
@@ -255,18 +298,18 @@ func _effect_catalog() -> Resource:
 
 func _submit_discovery_commands() -> bool:
 	var total := COUNTRY_COUNT * IDEOLOGY_COUNT
-	var sequence := 0
 	for begin in range(0, total, DISCOVER_BATCH):
 		var end := mini(begin + DISCOVER_BATCH, total)
 		var batch := _empty_commands()
 		for flat in range(begin, end):
 			var country := flat / IDEOLOGY_COUNT
 			var idea := flat % IDEOLOGY_COUNT
-			sequence += 1
 			batch.opcodes.append(1)
 			batch.effective_days.append(0)
+			batch.producer_ids.append(1)
 			batch.source_priorities.append(0)
-			batch.sequences.append(sequence)
+			batch.sequences.append(_next_sequence)
+			_next_sequence += 1
 			batch.country_handles.append(_handles[country])
 			batch.ideology_ids.append(idea)
 			batch.values_q16.append(0)
@@ -282,14 +325,14 @@ func _submit_discovery_commands() -> bool:
 
 func _submit_and_run_active_commands(day: int, first_idea: int, end_idea: int, opcode := 5) -> bool:
 	var batch := _empty_commands()
-	var sequence := 0
 	for country in range(COUNTRY_COUNT):
 		for idea in range(first_idea, end_idea):
-			sequence += 1
 			batch.opcodes.append(opcode)
 			batch.effective_days.append(day)
+			batch.producer_ids.append(1)
 			batch.source_priorities.append(0)
-			batch.sequences.append(sequence)
+			batch.sequences.append(_next_sequence)
+			_next_sequence += 1
 			batch.country_handles.append(_handles[country])
 			batch.ideology_ids.append(idea)
 			batch.values_q16.append(0)
@@ -302,7 +345,8 @@ func _submit_and_run_active_commands(day: int, first_idea: int, end_idea: int, o
 
 func _empty_commands() -> Dictionary:
 	return {"opcodes": PackedInt32Array(), "effective_days": PackedInt64Array(),
-		"source_priorities": PackedInt32Array(), "sequences": PackedInt64Array(),
+		"producer_ids": PackedInt32Array(), "source_priorities": PackedInt32Array(),
+		"sequences": PackedInt64Array(),
 		"country_handles": PackedInt64Array(), "ideology_ids": PackedInt32Array(),
 		"values_q16": PackedInt64Array(), "offer_generations": PackedInt64Array(),
 		"choice_indices": PackedInt32Array(), "gate_ids": PackedInt32Array()}
@@ -365,6 +409,7 @@ func _run_ideology_measured(day: int) -> Dictionary:
 	var final_report: Dictionary = {}
 	for _slice in range(MAX_DRAIN_SLICES):
 		final_report = _ext.run_ideology_daily(day)
+		_ideology_slice_ms.append(float(final_report.get("last_slice_ms", 0.0)))
 		if not bool(final_report.get("ok", false)):
 			push_error("measured ideology daily failed: %s" % str(final_report))
 			break
@@ -414,6 +459,23 @@ func _summary(values: PackedFloat64Array) -> String:
 	return "avg=%.3f p95=%.3f max=%.3f" % [total / sorted.size(), float(sorted[p95_index]), float(sorted[-1])]
 
 
+func _p95(values: PackedFloat64Array) -> float:
+	if values.is_empty():
+		return 0.0
+	var sorted := Array(values)
+	sorted.sort()
+	var index := mini(sorted.size() - 1,
+		maxi(0, int(ceil(sorted.size() * 0.95)) - 1))
+	return float(sorted[index])
+
+
+func _max_value(values: PackedFloat64Array) -> float:
+	var result := 0.0
+	for value in values:
+		result = maxf(result, float(value))
+	return result
+
+
 func _write_report(setup_ms: float, started: int, visits_delta: int,
 		ideology_report: Dictionary, effect_report: Dictionary, journal_report: Dictionary) -> void:
 	var path := ProjectSettings.globalize_path("res://../../tmp/ideology_stress_report.csv")
@@ -429,6 +491,10 @@ func _write_report(setup_ms: float, started: int, visits_delta: int,
 	file.store_line("measured_days,%d" % MEASURED_DAYS)
 	file.store_line("active_visits_delta,%d" % visits_delta)
 	file.store_line("dormant_scan_count,%d" % int(ideology_report.get("dormant_scan_count", -1)))
+	file.store_line("sparse_idea_scan_count,%d" % int(ideology_report.get("sparse_idea_scan_count", -1)))
+	file.store_line("command_queue_resorts,%d" % int(ideology_report.get("command_queue_resorts", -1)))
+	file.store_line("command_queue_shift_steps,%d" % int(ideology_report.get("command_queue_shift_steps", -1)))
+	file.store_line("ideology_slice_ms,%s" % _summary(_ideology_slice_ms))
 	file.store_line("effect_dormant_instances_scanned,%d" % int(effect_report.get("dormant_instances_scanned", -1)))
 	file.store_line("effect_overflow_count,%d" % int(effect_report.get("overflow_count", -1)))
 	file.store_line("effect_native_modifier_transactions,%d" % int(effect_report.get("native_modifier_transactions", 0)))

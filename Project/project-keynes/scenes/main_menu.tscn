@@ -129,6 +129,53 @@ text = "确定世界的尺度与开端。所有参数都会写入存档。"
 [node name="Rule" type="HSeparator" parent="PageMargin/PageStack/NewGamePage/Body"]
 layout_mode = 2
 
+[node name="MapSourceField" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Body"]
+layout_mode = 2
+theme_override_constants/separation = 6
+[node name="Label" type="Label" parent="PageMargin/PageStack/NewGamePage/Body/MapSourceField"]
+layout_mode = 2
+text = "世界来源"
+[node name="MapSourceOption" type="OptionButton" parent="PageMargin/PageStack/NewGamePage/Body/MapSourceField"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "程序生成按种子造世界；作者地图读取已编译的 .pkmap。"
+
+[node name="PkmapField" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Body"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 6
+[node name="Label" type="Label" parent="PageMargin/PageStack/NewGamePage/Body/PkmapField"]
+layout_mode = 2
+text = "作者地图"
+[node name="PkmapPickOption" type="OptionButton" parent="PageMargin/PageStack/NewGamePage/Body/PkmapField"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+tooltip_text = "user://maps 中已有的作者地图。"
+[node name="Row" type="HBoxContainer" parent="PageMargin/PageStack/NewGamePage/Body/PkmapField"]
+layout_mode = 2
+theme_override_constants/separation = 8
+[node name="PkmapPathLabel" type="Label" parent="PageMargin/PageStack/NewGamePage/Body/PkmapField/Row"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKMutedLabel"
+text = "尚未选择 .pkmap 文件"
+autowrap_mode = 3
+text_overrun_behavior = 3
+[node name="BrowsePkmapButton" type="Button" parent="PageMargin/PageStack/NewGamePage/Body/PkmapField/Row"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(112, 38)
+layout_mode = 2
+theme_type_variation = &"PKTabButton"
+text = "浏览…"
+[node name="PkmapMetaLabel" type="Label" parent="PageMargin/PageStack/NewGamePage/Body/PkmapField"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKMutedLabel"
+autowrap_mode = 3
+
 [node name="CountryField" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Body"]
 layout_mode = 2
 [node name="Label" type="Label" parent="PageMargin/PageStack/NewGamePage/Body/CountryField"]
@@ -371,3 +418,13 @@ offset_right = -42.0
 offset_bottom = -22.0
 grow_horizontal = 2
 grow_vertical = 0
+
+[node name="PkmapDialog" type="FileDialog" parent="."]
+unique_name_in_owner = true
+visible = false
+title = "选择作者地图"
+ok_button_text = "打开"
+file_mode = 0
+access = 2
+use_native_dialog = true
+filters = PackedStringArray("*.pkmap ; 作者地图")

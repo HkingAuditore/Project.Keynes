@@ -810,3 +810,39 @@ static func public_domain_metadata() -> Array[Dictionary]:
 			"sort_order": index,
 		})
 	return out
+
+
+static func signal_named_by_completed_technologies(
+		signal_id: String, completed_ids: PackedStringArray,
+		compiled: Dictionary = Dictionary()) -> bool:
+	if compiled.is_empty() or not bool(compiled.get("ok", false)):
+		compiled = compile_native_catalog()
+	if not bool(compiled.get("ok", false)) or signal_id.is_empty():
+		return false
+	var signal_ids: PackedStringArray = compiled.get(
+		"research_signal_ids", PackedStringArray())
+	var signal_index := signal_ids.find(signal_id)
+	if signal_index < 0:
+		return false
+	var completed := {}
+	for technology_id in completed_ids:
+		completed[String(technology_id)] = true
+	if completed.is_empty():
+		return false
+	var offsets: PackedInt32Array = compiled.get(
+		"technology_reveal_signal_offsets", PackedInt32Array())
+	var technologies: PackedInt32Array = compiled.get(
+		"technology_reveal_signal_technologies", PackedInt32Array())
+	var technology_ids: PackedStringArray = compiled.get(
+		"technology_ids", PackedStringArray())
+	if signal_index + 1 >= offsets.size():
+		return false
+	for edge in range(int(offsets[signal_index]), int(offsets[signal_index + 1])):
+		if edge < 0 or edge >= technologies.size():
+			continue
+		var technology_index := int(technologies[edge])
+		if technology_index < 0 or technology_index >= technology_ids.size():
+			continue
+		if completed.has(String(technology_ids[technology_index])):
+			return true
+	return false

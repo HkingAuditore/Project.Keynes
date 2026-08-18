@@ -220,8 +220,8 @@ func _test_save_round_trip(compiled: Dictionary) -> void:
 		_run_cycle(source, cycle)
 	var before: Dictionary = source.get_population_cell_snapshot(0)
 	var saved := _save(source)
-	_expect("PKEC v36 streams the satisfaction columns",
-		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 36)
+	_expect("PKEC v37 streams the satisfaction columns",
+		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 37)
 	if not bool(saved.get("ok", false)):
 		return
 	var restored := _configured_world(compiled, 4004, true)

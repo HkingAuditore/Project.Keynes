@@ -278,14 +278,22 @@ func _build_building_details(row: Dictionary) -> void:
 
 func _build_good_details(row: Dictionary) -> void:
 	var risk := String(row.get("risk", ""))
-	_section_targets["overview"] = _add_fact_grid([
-		{"label": "本地库存", "value": String(row.get("stock", "—")), "accent": UITokens.RESOURCE},
+	var inbound := String(row.get("trade_inbound", ""))
+	var outbound := String(row.get("trade_outbound", ""))
+	var facts := [
+		{"label": "本地库存", "value": String(row.get("stock_plain", row.get("stock", "—"))),
+			"accent": UITokens.RESOURCE},
 		{"label": "本地价格", "value": String(row.get("price", "—")), "accent": UITokens.RESOURCE},
 		{"label": "库存日变化", "value": String(row.get("delta", "—")),
 			"accent": _delta_accent(String(row.get("delta", "")))},
 		{"label": "短缺风险", "value": risk if not risk.is_empty() else "无",
 			"accent": UITokens.RISK if not risk.is_empty() else UITokens.TEXT_MUTED},
-	])
+	]
+	if not inbound.is_empty():
+		facts.append({"label": "运入", "value": inbound, "accent": UITokens.ACCENT})
+	if not outbound.is_empty():
+		facts.append({"label": "运出", "value": outbound, "accent": UITokens.ACCENT})
+	_section_targets["overview"] = _add_fact_grid(facts)
 	var operations_target := _add_rows_card("供需明细", "resource", UITokens.RESOURCE,
 		row.get("detail_rows", []))
 	if operations_target != null:

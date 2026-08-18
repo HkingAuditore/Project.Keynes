@@ -406,8 +406,8 @@ source_funds_per_capita >= required_capital
 
 `demand_pressure_q16` 取成交短缺率与正需求缺口比例的较大值。出资人口按 cohort 人口比例携带
 资金转入目标业主 signature，随后复用 BUILD：建材从 merchant-owned stock 扣除，建设款从业主
-cohort 转给本地商人。每地块每个评估窗口至多一座；service 不参与。零建材只适用于 collector，
-industrial 仍必须有显式建材配方。goods audit 继续为：
+cohort 转给本地商人。每地块每个评估窗口至多一座；service 不参与。零建材适用于 service 商栈，以及
+带 `starter.construction`、无日常货物投入的石器建材采集营；industrial 仍必须有显式建材配方。goods audit 继续为：
 
 ```text
 closing_stock = opening_stock + explicit_stock_delta + accepted_output

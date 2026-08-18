@@ -52,14 +52,18 @@ Inspector 外侧，并始终从底边向上生长：
 `init_floor_reserve` / `init_min_reserve` 在乘以
 `CELL_AREA_RESOURCE_SCALE` 后参与参考值，避免保底资源被错误截断为全图 1.0。
 
-## 资源注册与未来发现过滤
+## 资源注册与发现过滤
 
 资源按钮优先使用 `ResourceProfile.icon`，否则读取 `ResourceProfileRegistry.icon_key(profile)`。
 新增资源必须同时注册清晰轮廓图标；菜单代码不得按资源数量或固定下标分支。
 
-`GameUIManager.set_resource_discovery_context(technology_ids, enforce_discovery=false)` 是未来玩家国家科技
-接入点。当前默认展示全部自然资源；启用过滤只影响按钮与可见遮罩，不删除或修改实际储量。
-生物 Overlay 同样不按国家证据过滤物种按钮；未探索格由迷雾盖住，baker 不再滤一遍 `explored`。
+正式玩家路径在世界就绪和国家日常提交后调用
+`GameUIManager.set_resource_discovery_context(player_techs, true)`。
+启用过滤只影响按钮、可见遮罩和 Inspector 名称，不删除或修改实际储量。
+未掌握对应 `discovery_technology_tags` 的矿种不出现在资源菜单里，也不能从菜单点开热图。
+生物 Overlay 与 Inspector 物种徽章按已完成科技的揭示反查命名：完成任一揭示该 `bio.*`
+信号的辨识或处理科技后才显示物种名。探索格仍向 PKCN 提交占用信号以便揭示辨识节点。
+未探索格由迷雾盖住，baker 不再滤一遍 `explored`。调试路径未接通玩家国家时仍可展示全部条目。
 
 ## 性能与生命周期
 

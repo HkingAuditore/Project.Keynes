@@ -8,8 +8,8 @@ InfrastructureProjectStore 是施工/路线权威；Effect 仅负责跨域事务
 
 The current implementation supersedes older historical rows retained in the
 long-form matrix below: country authority is **PKCN v11**, economy authority is
-**PKEC v36**, configurable cross-domain effects are **PKEF v9**, Trigger state is
-**PKTR v5**, ideology state is **PKID v2**, and the native gameplay journal is
+**PKEC v37**, configurable cross-domain effects are **PKEF v10**, Trigger state is
+**PKTR v5**, ideology state is **PKID v3**, and the native gameplay journal is
 **journal v4**. The save
 coordinator restores domain state in its documented order and verifies active
 ideology bindings against PKEF; recovery never replays an effect to repair a
@@ -17,34 +17,35 @@ missing binding. Effect ACK masks identify adapters rather than authored domain
 numbers, so Modifier subdomains cannot alias Country/Economy adapter ACKs in a
 mixed transaction. Legacy PKEC v34 and earlier are rejected with
 `economy_save_schema_unsupported` (or the specific pre-v33 diagnostic). v35
-restores with carrying-capacity `support_ema = 1`.
+restores with carrying-capacity `support_ema = 1`. v36 restores in-flight
+expeditions with empty cargo.
 
 ## Game flow and persistence authorities
 
 | State | Authority | Persistent provider | Rule |
 | --- | --- | --- | --- |
 | Pending new/load request | `GameFlowService` | none; one-shot process state | Never use `Engine` meta on the product path |
-| Validated world creation inputs | `NewGameConfig v3` | PKSV `new_game_config` | Store seed, foreign count, starting country cash and research policy; v2 migrates with zero foreigners |
+| Validated world creation inputs | `NewGameConfig v3` | PKSV `new_game_config` | Store seed, foreign count, starting country cash and research policy; optional `base.map_source=pkmap` plus `pkmap_path`; v2 migrates with zero foreigners |
 | Player and foreign identity/territory | PKCN / `NativeCountryRuntime` | PKSV `pkcn` plus player-only `player_context` | Player is slot 0; each opening country owns one cell; only `cell.country_slot` is mirrored to cells |
-| Population, market, buildings, family traits/cell influence, notable families and important people, family expedition custody, prosperity/settlement identity, taxable events and fiscal escrow | PKEC / `NativeEconomyRuntime` | PKSV `pkec` / PKEC v36 | Restore after PKCN, PKEF and trade topology; v34 and earlier are incompatible; v35 restores with support EMA=1 |
-| Composite cohort satisfaction (8 dimensions), family branch satisfaction, published social-pressure level, cell carrying capacity | PKEC / `NativeEconomyRuntime` | embedded in PKEC v36 | Authoritative for births, hire order, branch promotion and `ECONOMY_SOCIAL_PRESSURE`; starvation still reads only `SAT_DIM_SUBSISTENCE`; `K_eff` mixes geography, bindable-family surplus and class-weighted sat |
+| Population, market, buildings, family traits/cell influence, notable families and important people, family expedition custody (people/funds/cargo), prosperity/settlement identity, taxable events and fiscal escrow | PKEC / `NativeEconomyRuntime` | PKSV `pkec` / PKEC v37 | Restore after PKCN, PKEF and trade topology; v34 and earlier are incompatible; v35 restores with support EMA=1; v36 restores empty expedition cargo |
+| Composite cohort satisfaction (8 dimensions), family branch satisfaction, published social-pressure level, cell carrying capacity | PKEC / `NativeEconomyRuntime` | embedded in PKEC v37 | Authoritative for births, hire order, branch promotion and `ECONOMY_SOCIAL_PRESSURE`; starvation still reads only `SAT_DIM_SUBSISTENCE`; `K_eff` mixes geography, bindable-family surplus and class-weighted sat |
 | Dynamic cell SoA | `DCWorld` / `DCWorldExt` by component contract | PKSV `dynamic_world` | Missing provider fails the save |
 | Native environment rounds | `EnvironmentRuntime` | `PKEnvironmentRuntime v1` in PKSV `environment` | Persist arrays, ping-pong, dirty sets, topology and cursors, not counters only |
 | Climate modifiers | Climate `ModifierStore` | PKSV `pkcm` / PKCM v1 | Publishes frozen add/factor; climate still owns temperature history |
 | Country research, technology, treasury, territory claim and national/cell tax policy | PKCN / `NativeCountryRuntime` | PKSV `pkcn` / PKCN v11 | Owns discovery/evidence, research, neutral-only colonization claim, five national defaults/overrides, interned sparse per-cell policies, fiscal cash bridge, native Effect ingress idempotency and the era-reward plan reference; catalog identity includes technology recipes/terms, Trigger definitions and content bindings |
 | Country modifiers | Country `ModifierStore` | embedded in PKCN v11 | Technology, production-family, climate-adaptation and fine-grained tax-rate effects alter frozen national/cell consumers, never ledgers directly |
-| Economy/building/family-cell modifiers | Economy `ModifierStore` + `BuildingIdentityStore` | embedded in PKEC v36, Modifier schema v2 | Factors feed frozen output/birth/consumption/resource helpers, never ledgers directly |
+| Economy/building/family-cell modifiers | Economy `ModifierStore` + `BuildingIdentityStore` | embedded in PKEC v37, Modifier schema v2 | Factors feed frozen output/birth/consumption/resource helpers, never ledgers directly |
 | Gameplay modifiers | Gameplay `ModifierStore` + base/identity SoA | PKSV `pkgp` / PKGP v1 | Explicit native handles only; no Godot Object reflection |
-| Configurable effects and cross-domain plans | `EffectRuntime` | PKSV `pkef` / PKEF v9 | Owns catalog IR, unique technology recipes, flat metric slabs, due/dirty candidates, colonization CLAIM+SETTLE or SETTLE-only transactions, durable external bindings and ACKs; never owns country/economy/Modifier stores |
+| Configurable effects and cross-domain plans | `EffectRuntime` | PKSV `pkef` / PKEF v10 | Owns catalog IR, unique technology recipes, flat metric slabs, due/dirty candidates, atomic external transition batches, colonization CLAIM+SETTLE or SETTLE-only transactions, durable external bindings and ACKs; never owns country/economy/Modifier stores |
 | Trigger accumulation, technology-practice breakthroughs and development duration | `TriggerRuntime` | PKSV `pktr` / PKTR v5 | Owns source cursors, aggregate/remainder/window state, last sample day, fire sequence and unhanded effects; threshold crossing hands typed Country-signal commands to Effect and never writes Country or Economy directly |
-| Country ideology collection/progression/offers | `NativeIdeologyRuntime` | PKSV `pkid` / PKID v2 | Owns sparse country idea state, slots, points, offer RNG and gates; active states verify PKEF external binding identity rather than replay effects |
+| Country ideology collection/progression/offers/public-opinion gates/synergies | `NativeIdeologyRuntime` | PKSV `pkid` / PKID v3 | Owns sparse country idea state, slots, points, offer RNG, directional support policy, exclusion and synergy state; reads committed Economy class facts and verifies PKEF external identity rather than replaying effects |
 | Effect-originated gameplay events | native Gameplay journal | PKSV `journal` v4 | `gameplay_effect` is the POD ingress/ACK boundary; journal stores normal event IDs and `event_id=-1` custom geography-commit idempotency evidence |
 | Calendar/RNG/time mode | `WorldClock` | PKSV `world_clock` | Restore date, carry, RNG, publish indices, pause and speed |
 | Cell exploration progress | `VisionSolver` writing `cell.explored` | PKSV `pkfg` (`PKFogOfWar v1`) | Monotonic; restore after PKCN because re-solving reads territory |
 | Current visibility and fog knowledge | `VisionSolver` writing `cell.visible` and `MapData.fog_k_arr` | none; derived | Pure function of territory plus baked terrain; recomputed on restore, never saved |
 | Selection/camera | `PlayerController` + `MapCamera` Godot boundary | PKSV `player_view` | Restore after derived map/render resources exist; PlayerController owns input/session orchestration, MapCamera owns smoothing/inertia |
-| Player construction intent/receipt | `PlayerController` + `EconomyFacade` boundary; settlement in `NativeEconomyRuntime`, treasury in `NativeCountryRuntime` | Pending command remains in PKEC v36; receipt is transient | Quotes are bounded/nonbinding; execution atomically consumes treasury goods, local-market goods and treasury cash without a new scheduler stage |
-| Player family colonization intent/receipt | `PlayerController` + `EconomyFacade`; custody in `NativeEconomyRuntime`, claim in `NativeCountryRuntime`, transaction in `EffectRuntime` | PKEC v36 + PKCN v11 + PKEF v9 | Quotes remain readable during a frozen cycle as nonbinding; start/cancel still require the committed boundary because departure extracts real population. Unowned arrival waits for Country+Economy ACK, own-country relocation publishes after Economy ACK |
+| Player construction intent/receipt | `PlayerController` + `EconomyFacade` boundary; settlement in `NativeEconomyRuntime`, treasury in `NativeCountryRuntime` | Pending command remains in PKEC v37; receipt is transient | Quotes are bounded/nonbinding; execution atomically consumes treasury goods, local-market goods and treasury cash without a new scheduler stage |
+| Player family colonization intent/receipt | `PlayerController` + `EconomyFacade`; custody in `NativeEconomyRuntime`, claim in `NativeCountryRuntime`, transaction in `EffectRuntime` | PKEC v37 + PKCN v11 + PKEF v10 | Quotes remain readable during a frozen cycle as nonbinding; start/cancel still require the committed boundary because departure extracts real population and source-market cargo. Unowned arrival waits for Country+Economy ACK, own-country relocation publishes after Economy ACK. Greenfield arrival consumes construction cargo and inserts family-owned buildings; developed cells only deposit the survival bridge |
 
 Transient 经济缓存与 climate/ocean hot-state capsule 不改变本矩阵的权威
 划分；具体边界见
@@ -66,7 +67,7 @@ Transient 经济缓存与 climate/ocean hot-state capsule 不改变本矩阵的�
 | `sea_ice_daily` | `SeaIceDailySystem` / climate round sea-ice stage；native daily report 另有 `authority_report.sea_ice`。 | `DCWorldExt::run_sea_ice_daily_pass` 写 sea-ice/terrain-related slots。 | Slot flush + dynamic visual LUT/atlas dirty intent；native daily graph report 宣告 `cell_sea_ice_frac` 等 published slots。 | Sea-ice helper fallback retained where ext unavailable. | Native daily graph 中 `sea_ice_knobs` 存在时可报告 native graph owner；native round 完成后 phase 可升为 `native_active_verified`。 | Terrain flip visibility、visual LUT/Godot upload 是 retained boundaries，不再阻塞 simulation authority。 |
 | `enum_atlas_upload` | `EnumAtlasUploadSystem` owns dirty patch cadence. | C++ encoder may produce patch bytes; DataCore slots are read-only inputs. | GDScript `ImageTexture` / atlas upload. | GDScript fan-out/upload fallback. | Not simulation authority; visual boundary only. | GPU upload and texture lifetime remain Godot-side. |
 | `dynamic_visual_atlas_upload` | `DynamicVisualAtlasUploadSystem` owns LUT/atlas stride and catch-up. | C++ LUT/patch encoders read slots and return byte buffers. `encode_cell_luts` also takes an optional `fog_k_arr` and emits `enum_lut` as RGBA8 (4 bytes per slot) with fog knowledge in A. | GDScript Image/ImageTexture update; weather LUT is published by weather commit path. | GDScript encoder fallback; it must write the same `fog_k`. | Not simulation authority; optional visual job. | GPU upload, dirty queue, renderer interpolation. Vision changes do not set the climate/weather dirty mask, so `refresh_country_visuals()` forces its own LUT rebake instead of waiting for the stride. |
-| Vision / fog of war | `VisionSolver` owns the whole solve; it is event-driven off `country_committed` plus one bootstrap pass, never a daily tick. | Writes `cell.visible` / `cell.explored` (U8 schema components, `owner="vision"`) and the derived `MapData.fog_k_arr`. Reads baked `WorldData.cell_view_height` / `cell_view_block`. | `enum_lut.a` for terrain graying and the fog layer; `fog_state()` for Inspector gating; PKFG for `explored`. | GDScript is currently the authority, not a fallback. A future `world_ext_vision.cpp` port keeps this file as the fallback. | Not simulation authority; it never advances a tick or participates in the native daily graph. | Fog is inert outside a formal session: `_resolve_fog_of_war_enabled()` requires a gameplay start context, otherwise `mark_all_visible()` saturates every array. |
+| Vision / fog of war | `VisionSolver` owns the whole solve; it is event-driven off `country_committed` plus one bootstrap pass, never a daily tick. | Writes `cell.visible` / `cell.explored` (U8 schema components, `owner="vision"`) and the derived `MapData.fog_k_arr`. Reads baked `WorldData.cell_view_height` / `cell_view_block`. | `enum_lut.a` for terrain graying and the fog layer; `fog_state()` for Inspector gating; PKFG for `explored`; Economy samples a frozen `visible` mask at market-cycle freeze when `fog_solved` so player-involved trade cannot pick currently invisible endpoints; family colonization still reads live `visible_arr`. | GDScript is currently the authority, not a fallback. A future `world_ext_vision.cpp` port keeps this file as the fallback. | Not a daily graph owner. It never advances a tick. Economy/colonization consume the published arrays; they do not write vision. | Fog is inert outside a formal session: `_resolve_fog_of_war_enabled()` requires a gameplay start context, otherwise `mark_all_visible()` saturates every array and trade stays ungated-equivalent. |
 | Country border visuals | `CountryBorderLayer` rebuilds a full `ArrayMesh` on every territory change. | None; it only reads `country_slot_arr` and `neighbor_index`. | Godot `MeshInstance2D` at z=6; camera zoom only pushes `border_world_width`, it never rebuilds geometry. | No fallback; a missing shader disables the layer. | Visual boundary only. | Geometry is mandatory here — dithered `map_index_atlas` makes shader-side edge detection produce broken lines. |
 | Player map overlay | `WorldRuntimeHost` owns request/dirty/throttle state; it does not own simulation values. | `DataOverlayBaker.bake_cell_lut` reads the already-published `DCViewAdapter`/`MapData` snapshot and writes one RGBA8 texel per cell. | `DataOverlayLayer` binds static map-index atlas + dynamic LUT and performs Godot `ImageTexture.update`. | No simulation fallback; legacy full-raster baker remains debug-only. | Visual consumer only; it never writes slots, economy stores, MapData, or save state. | First/switch refresh is immediate; dirty refresh is coalesced to 10 Hz after authoritative flush. |
 | `native_environment_runtime` | `NativeEnvironmentRuntimeSystem` thin scheduler job; native runtime owns internal shadow/probe state. | `EnvironmentRuntime` / `DCWorldExt` where available. | Report-only unless a specific pass publishes slots. | Skip/hard fail when native runtime unavailable. | SHADOW/probe thin job unless a concrete owner gate promotes it. | Needs per-system publish contract before authority. |
@@ -83,7 +84,7 @@ owner-lot、两组四档升级族、Price V3 稀疏企业信号、自适应工�
 ECONOMY_GRAPH/BUILDING_GRAPH 内完成。GDScript 只编译 profile/technology tags、桥接 30 个注册自然
 资源 slots、提交命令和查询选中 cell；不存在 GDScript 货币、价格、生产或贸易 fallback。
 国家身份、领土、科技和国库由 `NativeCountryRuntime` 单一权威持有；经济周期冻结国家映射与科技，
-现金/商品审计包含国家资产及贸易托管。当前持久格式为 PKCN v11 + PKEC v36，必须先恢复 PKCN；
+现金/商品审计包含国家资产、贸易托管与开拓货物托管。当前持久格式为 PKCN v11 + PKEC v37，必须先恢复 PKCN；
 PKEC v30 及更早版本统一返回明确的不兼容错误。
 
 cohort 综合满意度（八维度 composite）同属该权威：`_population.composite_satisfaction`
@@ -229,7 +230,7 @@ Country, Economy, and Gameplay remain owners of effect application.
 
 `EffectRuntime` is the next graph owner at priority 85. It owns packed effect
 definitions, active instances, frozen metric revisions, deterministic plans,
-cross-domain transactions, durable external bindings, and PKEF v9 ACK state. Declarative candidate planning
+cross-domain transactions, durable external bindings, and PKEF v10 ACK state. Declarative candidate planning
 may run in workers over frozen slabs, while stable transaction replay remains a
 single EffectRuntime writer. Known Effect-to-Modifier, all 14 Country opcodes,
 all 15 Economy opcodes, and the Gameplay/PublishEvent/registered-CustomDomain

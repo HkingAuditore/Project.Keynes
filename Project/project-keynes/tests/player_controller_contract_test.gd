@@ -24,7 +24,8 @@ class ColonizationQuoteStub:
 			_offset: int = 0, _limit: int = 64) -> Dictionary:
 		return quotes
 
-	func get_family_colonization_quote_detail(_token: int = 0) -> Dictionary:
+	func get_family_colonization_quote_detail(_token: int = 0,
+			_population: int = -1) -> Dictionary:
 		return detail
 
 	func get_family_expeditions(_offset: int = 0, _limit: int = 64) -> Dictionary:
@@ -121,6 +122,7 @@ func _init() -> void:
 		and player.get_node_or_null("UI/UIRoot/ModalLayer/ColonizationPlannerPanel") != null
 		and player.get_node_or_null("WorldRoot/ColonizationRouteLayer") is Node2D)
 	_run_colonization_planner_busy_display()
+	_run_colonization_kit_error_copy()
 	_run_colonization_planner_family_cards()
 	_run_colonization_planner_effect_fallback()
 	_run_colonization_planner_paused_display()
@@ -216,6 +218,21 @@ func _run_colonization_planner_busy_display() -> void:
 	empty_panel.queue_free()
 
 
+func _run_colonization_kit_error_copy() -> void:
+	_expect("kit requote uses a specific Chinese explanation",
+		ColonizationPlannerPanel._reason_text(
+			"colonization_kit_requote_required").find("开工包") >= 0
+		and ColonizationPlannerPanel._reason_text(
+			"colonization_kit_materials_short").find("库存") >= 0)
+	_expect("player start maps kit errors instead of the generic fallback",
+		PlayerController._colonization_command_message(
+			"colonization_kit_requote_required").find("开工包") >= 0
+		and PlayerController._colonization_command_message(
+			"colonization_kit_materials_short").find("库存") >= 0
+		and PlayerController._colonization_command_message(
+			"colonization_kit_requote_required").find("当前无法执行开拓") < 0)
+
+
 func _run_colonization_planner_family_cards() -> void:
 	var stub := ColonizationQuoteStub.new()
 	stub.quotes = {
@@ -233,6 +250,12 @@ func _run_colonization_planner_family_cards() -> void:
 		"ok": true, "route_cost": 4, "travel_days": 4,
 		"profession_display_names": PackedStringArray(["采集"]),
 		"profession_populations": PackedInt64Array([12]),
+		"kit_building_ids": PackedInt32Array([1, 2]),
+		"kit_building_counts": PackedInt64Array([1, 1]),
+		"kit_building_stable_ids": PackedStringArray(["gathering_ground",
+			"early_merchant_post"]),
+		"kit_partial": false,
+		"kit_place_buildings": true,
 	}
 	var panel := _make_planner_panel()
 	panel.set_player_controller(stub)
@@ -266,7 +289,21 @@ func _run_colonization_planner_family_cards() -> void:
 	})
 	_expect("dispatch defaults to the sendable maximum",
 		int(panel._population.value) == 12 and not panel._start.disabled
-		and panel._start.text.find("12") >= 0)
+		and panel._start.text.find("12") >= 0
+		and panel._start.text.find("安家") >= 0)
+	stub.detail["kit_partial"] = true
+	stub.detail["kit_place_buildings"] = false
+	stub.detail["kit_building_ids"] = PackedInt32Array()
+	panel._select_quote({
+		"family_handle": 11, "source_cell": 8, "target_cell": 22,
+		"maximum_population": 12, "route_cost": 4, "travel_days": 4,
+		"quote_token": 72, "surname": "王",
+	})
+	_expect("partial kits keep a brass shortage explanation",
+		panel._start.text.find("12") >= 0
+		and panel._start.text.find("安家") < 0
+		and (panel._start.tooltip_text.find("口粮") >= 0
+			or panel._feedback.text.find("口粮") >= 0))
 	panel.queue_free()
 
 

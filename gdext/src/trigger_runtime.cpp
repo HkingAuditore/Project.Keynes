@@ -1105,7 +1105,7 @@ Dictionary TriggerRuntime::handoff_effects(EffectRuntime *effect_runtime,
             std::string error;
             if (!ideology_runtime->submit_trigger_command_pod(effect.opcode,
                     effect.effective_day, effect.source_priority,
-                    static_cast<int64_t>(effect.fire_sequence), effect.target_handle,
+                    effect.id, effect.target_handle,
                     static_cast<int32_t>(effect.payload[0]), effect.resolved_value,
                     static_cast<uint32_t>(std::max<int64_t>(0, effect.payload[1])),
                     static_cast<int32_t>(effect.payload[2]),

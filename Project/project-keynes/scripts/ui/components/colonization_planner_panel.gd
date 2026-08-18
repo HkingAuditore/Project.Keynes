@@ -60,7 +60,7 @@ func _ready() -> void:
 	], "quotes", true)
 	_tabs.tab_selected.connect(_on_tab_selected)
 	_population.value_changed.connect(func(_value: float) -> void:
-		_update_start_enabled())
+		_refresh_selected_kit())
 	_start.pressed.connect(_submit_selected)
 	visible = false
 
@@ -125,6 +125,11 @@ func set_command_result(result: Dictionary) -> void:
 		_feedback.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
 		return
 	_feedback.add_theme_color_override("font_color", UITokens.RISK)
+	if code == "colonization_requote_required" \
+			or code == "colonization_kit_requote_required" \
+			or code == "colonization_quote_expired":
+		_quotes_identity = ""
+		_show_quotes()
 
 
 func refresh_expeditions_if_visible() -> void:
@@ -201,6 +206,8 @@ func _show_quotes() -> void:
 	_apply_kind(String(page.get("kind", "colonize")))
 	_set_busy_status(_economy_busy)
 	var quotes := _collapse_quotes(page)
+	var keep_population := int(_population.value) if not _selected_quote.is_empty() else 0
+	var restored := false
 	for quote in quotes:
 		var family_handle := int(quote.get("family_handle", 0))
 		var maximum_population := int(quote.get("maximum_population", 0))
@@ -220,13 +227,22 @@ func _show_quotes() -> void:
 		_list.add_child(row)
 		if int(_selected_quote.get("family_handle", 0)) == family_handle:
 			row.set_pressed_no_signal(true)
+			_selected_quote = decorated.duplicate(true)
+			var maximum := maxi(1, maximum_population)
+			_population.max_value = maximum
+			_population.value = clampi(keep_population, 1, maximum) \
+				if keep_population > 0 else maximum
+			restored = true
 	if quotes.is_empty():
 		if _economy_busy:
 			_add_note("经济正在结算。家族列表将在提交后刷新，也可先查看在途队伍。",
 				UITokens.TEXT_MUTED)
 		else:
 			_add_note("没有可派遣的家族。", UITokens.WARN)
-	_update_start_enabled()
+	if restored:
+		_refresh_selected_kit()
+	else:
+		_update_start_enabled()
 
 
 func _on_quote_row_pressed(quote: Dictionary, row: Button) -> void:
@@ -242,24 +258,7 @@ func _select_quote(quote: Dictionary) -> void:
 	var maximum := maxi(1, int(quote.get("maximum_population", 1)))
 	_population.max_value = maximum
 	_population.value = maximum
-	var detail: Dictionary = {}
-	if _controller != null:
-		detail = _controller.get_family_colonization_quote_detail(
-			int(quote.get("quote_token", 0)))
-	_economy_busy = _economy_busy or bool(detail.get("busy", false))
-	if not bool(detail.get("ok", false)):
-		_update_start_enabled()
-		var detail_code := String(detail.get("code", "command_rejected"))
-		if _transient_query_failure(detail_code, detail):
-			_feedback.text = "经济正在结算，提交完成后即可派遣。"
-			_feedback.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
-			return
-		_feedback.text = _reason_text(detail_code)
-		_feedback.add_theme_color_override("font_color", UITokens.RISK)
-		return
-	_selected_quote.merge(detail, true)
-	_update_start_enabled()
-	route_requested.emit(detail)
+	_refresh_selected_kit()
 
 
 func _submit_selected() -> void:
@@ -392,6 +391,15 @@ static func _reason_text(code: String) -> String:
 		"colonization_population_insufficient": "源分支人口不足，必须至少留下一人。",
 		"colonization_duplicate_target": "本国已有一支开拓队前往该目标。",
 		"colonization_requote_required": "地图、视野或领土已经变化，请重新确认报价。",
+		"colonization_kit_requote_required": "目标资源或科技已经变化，请重新确认开工包。",
+		"colonization_kit_materials_short": "源地市场库存不足，无法抽出开工包物资。",
+		"colonization_quote_expired": "报价已过期，请重新选择要派遣的家族。",
+		"colonization_quote_corrupt": "报价数据已失效，请重新打开开拓面板。",
+		"colonization_quote_forbidden": "报价不属于玩家国家。",
+		"colonization_command_invalid": "开拓命令参数不完整。",
+		"colonization_country_snapshot_unavailable": "国家快照尚未就绪，请稍后再试。",
+		"colonization_country_invalid": "玩家国家句柄无效。",
+		"family_colonization_unavailable": "开拓报价接口尚未就绪。",
 		"colonization_family_cell_capacity": "目标地块的家族数量已达上限。",
 		"economy_busy_retry": "经济正在结算。派遣已可排队，提交完成后自动出发。",
 		"colonization_queued": "派遣已排队，将在经济结算完成后出发。",
@@ -423,6 +431,30 @@ func _set_busy_status(busy: bool) -> void:
 	_status.add_theme_color_override("font_color", UITokens.WARN)
 
 
+func _refresh_selected_kit() -> void:
+	if _selected_quote.is_empty():
+		_update_start_enabled()
+		return
+	var detail: Dictionary = {}
+	if _controller != null:
+		detail = _controller.get_family_colonization_quote_detail(
+			int(_selected_quote.get("quote_token", 0)), int(_population.value))
+	_economy_busy = _economy_busy or bool(detail.get("busy", false))
+	if not bool(detail.get("ok", false)):
+		_update_start_enabled()
+		var detail_code := String(detail.get("code", "command_rejected"))
+		if _transient_query_failure(detail_code, detail):
+			_feedback.text = "经济正在结算，提交完成后即可派遣。"
+			_feedback.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
+			return
+		_feedback.text = _reason_text(detail_code)
+		_feedback.add_theme_color_override("font_color", UITokens.RISK)
+		return
+	_selected_quote.merge(detail, true)
+	_update_start_enabled()
+	route_requested.emit(detail)
+
+
 func _update_start_enabled() -> void:
 	if _start == null:
 		return
@@ -433,12 +465,26 @@ func _update_start_enabled() -> void:
 	_start.disabled = not has_selection
 	var count := int(_population.value) if has_selection else 0
 	var count_text := UITokens.format_compact_number_cn(float(count), 0)
+	var kit_partial := bool(_selected_quote.get("kit_partial", false))
+	var place_buildings := bool(_selected_quote.get("kit_place_buildings", false))
+	var kit_ids: PackedInt32Array = _selected_quote.get(
+		"kit_building_ids", PackedInt32Array())
+	var complete_kit := place_buildings and not kit_partial and not kit_ids.is_empty()
 	if _economy_busy:
 		_start.text = "排队派遣 %s 人" % count_text if has_selection else "排队派遣"
 		_start.tooltip_text = "经济正在结算。现在确认后会排队，提交完成后自动出发。"
+	elif complete_kit:
+		_start.text = "派遣 %s 人并安家" % count_text if has_selection else "确认派遣"
+		_start.tooltip_text = _kit_summary_text(_selected_quote)
 	else:
 		_start.text = "派遣 %s 人" % count_text if has_selection else "确认派遣"
-		_start.tooltip_text = ""
+		_start.tooltip_text = "建材不足，只携带口粮" if kit_partial \
+			else _kit_summary_text(_selected_quote)
+	if has_selection and kit_partial and not _economy_busy \
+			and _feedback.text.find("排队") < 0 \
+			and _feedback.text.find("已经出发") < 0:
+		_feedback.text = "建材不足，只携带口粮"
+		_feedback.add_theme_color_override("font_color", UITokens.WARN)
 
 
 static func _transient_query_failure(code: String, page: Dictionary) -> bool:
@@ -551,6 +597,23 @@ static func _family_display_name(surname: String, disambiguator: int) -> String:
 static func _quote_tooltip(quote: Dictionary) -> String:
 	return "路线成本 %d · 预计 %d 日抵达" % [
 		int(quote.get("route_cost", 0)), int(quote.get("travel_days", 1))]
+
+
+static func _kit_summary_text(quote: Dictionary) -> String:
+	var names: PackedStringArray = quote.get(
+		"kit_building_stable_ids", PackedStringArray())
+	var counts: PackedInt64Array = quote.get(
+		"kit_building_counts", PackedInt64Array())
+	if names.is_empty():
+		return ""
+	var parts := PackedStringArray()
+	for index in range(names.size()):
+		var label := String(names[index]).strip_edges()
+		if label.is_empty():
+			continue
+		var count := int(counts[index]) if index < counts.size() else 1
+		parts.append("%s×%d" % [label, count])
+	return "开工包：%s" % "、".join(parts) if not parts.is_empty() else ""
 
 
 func _family_view_for(family_handle: int, fallback_people: int) -> Dictionary:

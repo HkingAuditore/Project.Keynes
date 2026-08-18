@@ -3,6 +3,7 @@ extends Resource
 
 const IdeologyLevelDefinitionScript = preload("res://scripts/ideology/ideology_level_definition.gd")
 const IdeologyRequirementScript = preload("res://scripts/ideology/ideology_requirement.gd")
+const IdeologyClassStanceScript = preload("res://scripts/ideology/ideology_class_stance.gd")
 
 enum Acquisition { DISCOVER = 1, DRAW = 2 }
 
@@ -16,6 +17,11 @@ enum Acquisition { DISCOVER = 1, DRAW = 2 }
 @export_flags("Discover", "Draw") var acquisition_flags: int = Acquisition.DISCOVER | Acquisition.DRAW
 @export_range(0, 63, 1) var national_spirit_min_level: int = 0
 @export var draw_requirements: Array[Resource] = []
+@export var class_stances: Array[Resource] = []
+@export_range(-65536, 65536, 1) var adopt_threshold_q16: int = 0
+@export_range(-65536, 65536, 1) var repeal_threshold_q16: int = 0
+@export_range(-65536, 65536, 1) var promote_threshold_q16: int = 16384
+@export var exclusion_group: StringName = &""
 @export var levels: Array[Resource] = []
 
 func validate() -> String:
@@ -37,4 +43,15 @@ func validate() -> String:
 		if requirement == null or not requirement is IdeologyRequirementScript \
 			or requirement.key == &"":
 			return "ideology_requirement_invalid"
+	var seen_classes := {}
+	for stance in class_stances:
+		if stance == null or not stance is IdeologyClassStanceScript:
+			return "ideology_stance_resource_invalid"
+		var stance_error: String = stance.validate()
+		if not stance_error.is_empty():
+			return stance_error
+		var class_id := String(stance.class_id)
+		if seen_classes.has(class_id):
+			return "ideology_stance_class_duplicate"
+		seen_classes[class_id] = true
 	return ""
