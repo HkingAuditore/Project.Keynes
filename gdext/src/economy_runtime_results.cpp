@@ -141,6 +141,8 @@ void NativeEconomyRuntime::ProductionResult::reset() {
     retained_outputs.clear();
     trace_drafts.clear();
     cashflow_drafts.clear();
+    bio_introduce_cells.clear();
+    bio_introduce_bits.clear();
     allocation_growth_count = 0;
     allocation_growth_bytes = 0;
 }
@@ -150,7 +152,9 @@ int64_t NativeEconomyRuntime::ProductionResult::capacity_bytes() const {
         resource_touched_lanes.capacity() * sizeof(size_t) +
         retained_outputs.capacity() * sizeof(OwnerRetainedOutput) +
         trace_drafts.capacity() * sizeof(ProductionTraceDraft) +
-        cashflow_drafts.capacity() * sizeof(ProductionCashflowDraft));
+        cashflow_drafts.capacity() * sizeof(ProductionCashflowDraft) +
+        bio_introduce_cells.capacity() * sizeof(int32_t) +
+        bio_introduce_bits.capacity() * sizeof(int32_t));
     for (const ProductionTraceDraft &draft : trace_drafts)
         bytes += static_cast<int64_t>(draft.legs.capacity() * sizeof(EventLeg));
     return bytes;
