@@ -3,12 +3,12 @@
 - Nodes: 361
 - Branch families: 24
 - Hard prerequisite edges: 403 (no indegree cap)
-- Alternative evidence edges: 1001
+- Alternative evidence edges: 996
 - Milestone candidate edges: 88 (8 per era, require 4)
-- Nodes with research routes: 296
-- Research routes: 687
+- Nodes with research routes: 295
+- Research routes: 686
 - Authored branch successor edges: 7
-- Unlock-only/no-Modifier nodes: 28
+- Unlock-only/no-Modifier nodes: 27
 
 ## Explicit effect semantics
 

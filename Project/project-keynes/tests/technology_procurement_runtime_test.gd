@@ -93,16 +93,25 @@ func _init() -> void:
 	var purchased := int(after_purchase.technology_points_stock)
 	var research_day: Dictionary = ext.run_country_slice({"day_index": 2})
 	var after_research: Dictionary = country.research_snapshot(handle)
+	var first_share := purchased / 4
 	_expect("purchased stock enters research on the next country day",
 		bool(research_day.get("done", false))
-		and int(after_research.consumed_total) == purchased / 4
-		and int(after_research.deferred_unallocated_points) == purchased * 3 / 4)
+		and int(after_research.consumed_total) == first_share
+		and int(after_research.deferred_unallocated_points) == 0
+		and int(after_research.technology_points_stock) == purchased - first_share)
+	var research_day2: Dictionary = ext.run_country_slice({"day_index": 3})
+	var after_research2: Dictionary = country.research_snapshot(handle)
+	var second_share := (purchased - first_share) / 4
+	_expect("empty-domain shares remain available on later research days",
+		bool(research_day2.get("done", false))
+		and int(after_research2.consumed_total) == first_share + second_share
+		and int(after_research2.deferred_unallocated_points) == 0)
 	var in_flight: Dictionary = ext.run_economy_slice({"day_index": 2, "tick_index": 2000})
 	_expect("research consumption is accepted during the frozen epoch",
 		not bool(in_flight.get("fatal", false))
 		and not bool(in_flight.get("done", false)))
 	var closing := _run_day(ext, 4)
-	var research_consumed_in_epoch := int(after_research.consumed_total) - int(before.consumed_total)
+	var research_consumed_in_epoch := int(after_research2.consumed_total) - int(before.consumed_total)
 	_expect("five-day epoch conserves research goods",
 		bool(closing.get("done", false))
 		and not bool(closing.get("fatal", false))

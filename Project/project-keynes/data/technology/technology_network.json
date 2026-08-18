@@ -56605,12 +56605,6 @@
 		},
 		{
 			"from": "tech.oral_memory_practice",
-			"to": "tech.deadwood_collection",
-			"kind": "alternative",
-			"route_id": "research_route.deadwood_collection.knowledge_institution"
-		},
-		{
-			"from": "tech.oral_memory_practice",
 			"to": "tech.reed_identification",
 			"kind": "alternative",
 			"route_id": "research_route.reed_identification.knowledge_institution"
@@ -57001,12 +56995,6 @@
 		},
 		{
 			"from": "tech.phenology_observation",
-			"to": "tech.deadwood_collection",
-			"kind": "alternative",
-			"route_id": "research_route.deadwood_collection.knowledge_institution"
-		},
-		{
-			"from": "tech.phenology_observation",
 			"to": "tech.reed_identification",
 			"kind": "alternative",
 			"route_id": "research_route.reed_identification.knowledge_institution"
@@ -57394,12 +57382,6 @@
 			"to": "tech.silver_vein_identification",
 			"kind": "alternative",
 			"route_id": "research_route.silver_vein_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.flood_calendar_practice",
-			"to": "tech.deadwood_collection",
-			"kind": "alternative",
-			"route_id": "research_route.deadwood_collection.knowledge_institution"
 		},
 		{
 			"from": "tech.flood_calendar_practice",
@@ -57798,12 +57780,6 @@
 		},
 		{
 			"from": "tech.pastoral_route_memory",
-			"to": "tech.deadwood_collection",
-			"kind": "alternative",
-			"route_id": "research_route.deadwood_collection.knowledge_institution"
-		},
-		{
-			"from": "tech.pastoral_route_memory",
 			"to": "tech.reed_identification",
 			"kind": "alternative",
 			"route_id": "research_route.reed_identification.knowledge_institution"
@@ -58191,12 +58167,6 @@
 			"to": "tech.silver_vein_identification",
 			"kind": "alternative",
 			"route_id": "research_route.silver_vein_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.tide_observation",
-			"to": "tech.deadwood_collection",
-			"kind": "alternative",
-			"route_id": "research_route.deadwood_collection.knowledge_institution"
 		},
 		{
 			"from": "tech.tide_observation",

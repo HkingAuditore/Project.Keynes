@@ -1118,9 +1118,16 @@ bool NativeCountryRuntime::should_run(int64_t day_index) const {
     if (day_index > _last_research_day && _technology_points_good_id >= 0) {
         for (uint64_t word : _country_pending_technologies) if (word != 0) return true;
         for (size_t slot = 0; slot < _countries.active.size(); ++slot) {
+            if (_countries.active[slot] == 0) continue;
             const int64_t stock = _country_goods[
                 slot * _good_ids.size() + static_cast<size_t>(_technology_points_good_id)];
-            if (stock > _country_research_deferred_points[slot]) return true;
+            if (stock <= _country_research_deferred_points[slot]) continue;
+            const size_t queue_base = slot * 4U;
+            for (int32_t domain = 0; domain < 4; ++domain) {
+                if (_country_research_queue_lengths[
+                        queue_base + static_cast<size_t>(domain)] != 0)
+                    return true;
+            }
         }
     }
     return false;
@@ -2565,7 +2572,9 @@ bool NativeCountryRuntime::research_procurement_policy(int32_t country_slot, boo
     }
     const int64_t stock = _country_goods[
         slot * _good_ids.size() + static_cast<size_t>(_technology_points_good_id)];
-    remaining_points = std::max<int64_t>(0, remaining_points - stock);
+    const int64_t unreserved = std::max<int64_t>(
+        0, stock - _country_research_deferred_points[slot]);
+    remaining_points = std::max<int64_t>(0, remaining_points - unreserved);
     return true;
 }
 
@@ -3051,9 +3060,11 @@ int32_t NativeCountryRuntime::run_research_day(int64_t day_index) {
         int64_t newly_deferred = 0;
         for (int32_t domain = 0; domain < 4; ++domain) {
             int64_t domain_points = shares[domain];
+            const size_t length_index = static_cast<size_t>(slot) * 4U +
+                static_cast<size_t>(domain);
+            const uint8_t initial_length =
+                _country_research_queue_lengths[length_index];
             while (domain_points > 0) {
-                const size_t length_index = static_cast<size_t>(slot) * 4U +
-                    static_cast<size_t>(domain);
                 uint8_t &length = _country_research_queue_lengths[length_index];
                 if (length == 0) break;
                 const size_t queue_base = (static_cast<size_t>(slot) * 4U +
@@ -3125,7 +3136,14 @@ int32_t NativeCountryRuntime::run_research_day(int64_t day_index) {
                     break;
                 }
             }
-            newly_deferred += domain_points;
+            // Empty domains leave unused shares in the treasury so later days
+            // can still fund queued domains at the current weights. Parking
+            // those shares as deferred stock made available=0 after one day,
+            // which froze progress unless the player maxed a domain weight.
+            // A domain that actually had queue work (blocked head or leftover
+            // after completion) still parks its remainder.
+            if (initial_length > 0)
+                newly_deferred += domain_points;
         }
         if (consumed > 0) {
             stock -= consumed;
