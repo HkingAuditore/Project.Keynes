@@ -22,7 +22,8 @@ double elapsed_ms(const Clock::time_point &start) {
 }
 } // namespace
 
-void NativeEconomyRuntime::queue_bio_introduce_from_good(int32_t cell, int32_t good_id) {
+void NativeEconomyRuntime::queue_bio_introduce_from_good(
+        ProductionResult &result, int32_t cell, int32_t good_id) {
     if (cell < 0 || good_id < 0 ||
         good_id + 1 >= static_cast<int32_t>(_good_occupancy_bit_offsets.size())) {
         return;
@@ -36,10 +37,8 @@ void NativeEconomyRuntime::queue_bio_introduce_from_good(int32_t cell, int32_t g
     for (int32_t i = begin; i < end; ++i) {
         const int32_t bit = _good_occupancy_bits[size_t(i)];
         if (bit < 0 || bit >= 32) continue;
-        const uint64_t key = (uint64_t(uint32_t(cell)) << 8) | uint32_t(bit);
-        if (!_bio_introduce_keys.insert(key).second) continue;
-        _bio_introduce_cells.push_back(cell);
-        _bio_introduce_bits.push_back(bit);
+        result.bio_introduce_cells.push_back(cell);
+        result.bio_introduce_bits.push_back(bit);
     }
 }
 
@@ -1299,7 +1298,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     _saturation_count);
                 if (qty > 0) {
                     offers.push_back({item.good_id, owner_slot, g, qty, 0, qty});
-                    queue_bio_introduce_from_good(cell, item.good_id);
+                    queue_bio_introduce_from_good(result, cell, item.good_id);
                 }
                 group.last_output = saturating_add(
                     group.last_output, qty, _saturation_count);
@@ -2472,6 +2471,18 @@ void NativeEconomyRuntime::merge_building_production_result(ProductionResult &re
     merge(_merchant_credit_repaid, result.merchant_credit_repaid);
     merge(_merchant_credit_premium_repaid,
           result.merchant_credit_premium_repaid);
+    const size_t bio_event_count = std::min(
+        result.bio_introduce_cells.size(), result.bio_introduce_bits.size());
+    for (size_t i = 0; i < bio_event_count; ++i) {
+        const int32_t cell = result.bio_introduce_cells[i];
+        const int32_t bit = result.bio_introduce_bits[i];
+        if (cell < 0 || bit < 0 || bit >= 32) continue;
+        const uint64_t key = (uint64_t(uint32_t(cell)) << 8) |
+            uint32_t(bit);
+        if (!_bio_introduce_keys.insert(key).second) continue;
+        _bio_introduce_cells.push_back(cell);
+        _bio_introduce_bits.push_back(bit);
+    }
     merge(_production_result_allocation_growth_count,
           result.allocation_growth_count);
     merge(_production_result_allocation_growth_bytes,

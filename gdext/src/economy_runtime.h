@@ -2060,6 +2060,8 @@ private:
         std::vector<OwnerRetainedOutput> retained_outputs;
         std::vector<ProductionTraceDraft> trace_drafts;
         std::vector<ProductionCashflowDraft> cashflow_drafts;
+        std::vector<int32_t> bio_introduce_cells;
+        std::vector<int32_t> bio_introduce_bits;
         int64_t allocation_growth_count = 0;
         int64_t allocation_growth_bytes = 0;
 
@@ -4124,7 +4126,8 @@ private:
     int64_t available_resource_amount(const ResourceAmount &item, int32_t cell) const;
     void ensure_resource_lane(size_t index);
     void consume_resource_amount(const ResourceAmount &item, int32_t cell, int64_t quantity);
-    void queue_bio_introduce_from_good(int32_t cell, int32_t good_id);
+    void queue_bio_introduce_from_good(ProductionResult &result,
+                                       int32_t cell, int32_t good_id);
     bool resource_is_renewable(int32_t resource_id) const;
     int64_t renewable_safe_harvest(int32_t resource_id, int32_t cell) const;
     bool commit_ready_construction(std::vector<int32_t> &changed_cells,
