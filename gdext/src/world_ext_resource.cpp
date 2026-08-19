@@ -213,6 +213,62 @@ inline float natres_step_scalar_ecology_dt(float t_val, float m_val, float reser
     return v;
 }
 
+inline void natres_apply_one_cell(const NatResRuntime &rr, int i, int dt_days,
+                                  bool have_habitat, const uint8_t *HABITAT,
+                                  bool have_water, const uint8_t *WATER,
+                                  double &seg) {
+    if (rr.habitat_bit != 0 &&
+        (!have_habitat || (HABITAT[i] & rr.habitat_bit) == 0)) {
+        if (rr.R[i] != 0.0f) {
+            seg -= double(rr.R[i]);
+            rr.R[i] = 0.0f;
+        }
+        if (rr.use_extra) rr.X[i] = 0.0f;
+        return;
+    }
+    if (rr.land_gate && have_water && WATER != nullptr && WATER[i] != 0) {
+        if (rr.R[i] != 0.0f) {
+            seg -= double(rr.R[i]);
+            rr.R[i] = 0.0f;
+        }
+        if (rr.use_extra) rr.X[i] = 0.0f;
+        return;
+    }
+    const float reserve = rr.R[i];
+    const float extra_change = rr.use_extra ? rr.X[i] : 0.0f;
+    float v = reserve;
+    if (!rr.has_natural_dynamics && rr.use_extra) {
+        const double exact = std::max(
+            0.0, static_cast<double>(reserve) +
+                 static_cast<double>(extra_change));
+        v = static_cast<float>(exact);
+        rr.X[i] = exact > 0.0
+            ? static_cast<float>(exact - static_cast<double>(v))
+            : 0.0f;
+    } else {
+        const float reserve_after_external =
+            std::max(0.0f, reserve + extra_change);
+        v = rr.use_ecology
+                ? natres_step_scalar_ecology_dt(
+                    rr.temperature[i], rr.moisture[i], reserve, extra_change, rr, dt_days)
+                : (rr.use_climate_fit
+                    ? natres_step_scalar_fit_dt(
+                        rr.temperature[i], rr.moisture[i], reserve, extra_change, rr, dt_days)
+                    : natres_step_scalar_dt(rr.temperature[i], rr.moisture[i], reserve,
+                                           rr.lo, rr.inv_span,
+                                           rr.c0, rr.c1, rr.c2,
+                                           rr.inv_denom, extra_change,
+                                           dt_days));
+        if (rr.has_regen_modifier && v > reserve_after_external) {
+            v = reserve_after_external +
+                (v - reserve_after_external) * rr.regen_factors[i];
+        }
+        if (rr.use_extra) rr.X[i] = 0.0f;
+    }
+    seg += double(v - reserve);
+    rr.R[i] = v;
+}
+
 #if defined(PK_HAVE_AVX2) && PK_HAVE_AVX2
 // 8-lane 水平求和（与 world_ext_demo.cpp 的 hsum 同实现）。
 inline float natres_hsum256(__m256 v) {
@@ -409,7 +465,21 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
 
     const int resource_count = knobs.has("resource_count") ? int(knobs["resource_count"]) : 0;
     if (resource_count <= 0) return fail("no_resources");
-    const int dt_days = std::max(1, std::min(30, knobs.has("dt_days") ? int(knobs["dt_days"]) : 1));
+    const int dt_days = std::max(1, std::min(60, knobs.has("dt_days") ? int(knobs["dt_days"]) : 1));
+    PackedInt32Array cell_indices = knobs.has("cell_indices")
+        ? PackedInt32Array(knobs["cell_indices"]) : PackedInt32Array();
+    PackedInt32Array cell_dt_days = knobs.has("cell_dt_days")
+        ? PackedInt32Array(knobs["cell_dt_days"]) : PackedInt32Array();
+    const bool indexed = !cell_indices.is_empty();
+    if (indexed) {
+        for (int k = 0; k < cell_indices.size(); ++k) {
+            const int cell = cell_indices[k];
+            if (cell < 0 || cell >= n_cells)
+                return fail("cell_indices_out_of_range");
+        }
+        if (!cell_dt_days.is_empty() && cell_dt_days.size() != cell_indices.size())
+            return fail("cell_dt_days_size_mismatch");
+    }
     PackedFloat32Array regen_factors = knobs.has("regen_factors")
         ? PackedFloat32Array(knobs["regen_factors"]) : PackedFloat32Array();
     const int64_t expected_regen_factor_count = int64_t(resource_count) * int64_t(n_cells);
@@ -540,10 +610,19 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
         const bool use_ecology = ecology_capacity[r] > 0.0f;
         float * const X = _slots.write[sid_extra].arr_f32.ptrw();
         bool has_extra_change = false;
-        for (int i = 0; i < n_cells; ++i) {
-            if (X[i] != 0.0f) {
-                has_extra_change = true;
-                break;
+        if (indexed) {
+            for (int k = 0; k < cell_indices.size(); ++k) {
+                if (X[cell_indices[k]] != 0.0f) {
+                    has_extra_change = true;
+                    break;
+                }
+            }
+        } else {
+            for (int i = 0; i < n_cells; ++i) {
+                if (X[i] != 0.0f) {
+                    has_extra_change = true;
+                    break;
+                }
             }
         }
         const bool has_natural_dynamics = gb != 0.0f || gt != 0.0f || gm != 0.0f || gs != 0.0f ||
@@ -610,20 +689,17 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
     }
 
     if (!dynamic_resources.empty()) {
-        mt_candidate = !force_seq
+        mt_candidate = !indexed && !force_seq
                 && n_cells >= NATRES_PARALLEL_SEQ_THRESHOLD
                 && pk::parallel_default_n_tasks(n_cells) > 1;
-        // 多核：只 dispatch 一次，按 cell range 分块；task 内循环所有动态资源。
-        // 旧实现每个资源各 dispatch 一次，2400 cell × 9 resource 会产生 9 轮
-        // WorkerThreadPool 固定开销。融合后仍按资源内 8-cell SIMD，结果数组一致。
         auto run_range = [&](int begin, int end, DeltaEmit &local) {
             double seg = 0.0;
             for (const NatResRuntime &rr : dynamic_resources) {
-                float * const __restrict R = rr.R;
                 int i = begin;
 #if defined(PK_HAVE_AVX2) && PK_HAVE_AVX2
                 if (!force_scalar && dt_days <= 1 && !rr.use_climate_fit &&
                     !rr.use_extra && rr.habitat_bit == 0 && !rr.has_regen_modifier) {
+                    float * const __restrict R = rr.R;
                     const __m256 vlo = _mm256_set1_ps(rr.lo);
                     const __m256 vinv_span = _mm256_set1_ps(rr.inv_span);
                     const __m256 vc0 = _mm256_set1_ps(rr.c0);
@@ -642,72 +718,33 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
                     seg += double(natres_hsum256(vacc));
                 }
 #endif
-                for (; i < end; ++i) {  // 标量尾段（AVX2）/ 全量（非 AVX2 构建）
-                    if (rr.habitat_bit != 0 &&
-                        (!have_habitat || (HABITAT[i] & rr.habitat_bit) == 0)) {
-                        if (R[i] != 0.0f) {
-                            seg -= double(R[i]);
-                            R[i] = 0.0f;
-                        }
-                        if (rr.use_extra) rr.X[i] = 0.0f;
-                        continue;
-                    }
-                    if (rr.land_gate && WATER[i] != 0) {
-                        if (R[i] != 0.0f) {
-                            seg -= double(R[i]);
-                            R[i] = 0.0f;
-                        }
-                        if (rr.use_extra) rr.X[i] = 0.0f;
-                        continue;
-                    }
-                    const float reserve = R[i];
-                    const float extra_change = rr.use_extra ? rr.X[i] : 0.0f;
-                    float v = reserve;
-                    if (!rr.has_natural_dynamics && rr.use_extra) {
-                        // Province-scale deposits can exceed float32's unit precision. Preserve
-                        // the unrepresentable extraction remainder in the existing extra slot so
-                        // repeated small mine deltas eventually reduce the authoritative reserve.
-                        const double exact = std::max(
-                            0.0, static_cast<double>(reserve) +
-                                 static_cast<double>(extra_change));
-                        v = static_cast<float>(exact);
-                        rr.X[i] = exact > 0.0
-                            ? static_cast<float>(exact - static_cast<double>(v))
-                            : 0.0f;
-                    } else {
-                        const float reserve_after_external =
-                            std::max(0.0f, reserve + extra_change);
-                        v = rr.use_ecology
-                                ? natres_step_scalar_ecology_dt(
-                                    rr.temperature[i], rr.moisture[i], reserve, extra_change, rr, dt_days)
-                                : (rr.use_climate_fit
-                                    ? natres_step_scalar_fit_dt(
-                                        rr.temperature[i], rr.moisture[i], reserve, extra_change, rr, dt_days)
-                                    : natres_step_scalar_dt(rr.temperature[i], rr.moisture[i], reserve,
-                                                           rr.lo, rr.inv_span,
-                                                           rr.c0, rr.c1, rr.c2,
-                                                           rr.inv_denom, extra_change,
-                                                           dt_days));
-                        if (rr.has_regen_modifier && v > reserve_after_external) {
-                            v = reserve_after_external +
-                                (v - reserve_after_external) * rr.regen_factors[i];
-                        }
-                        if (rr.use_extra) rr.X[i] = 0.0f;
-                    }
-                    seg += double(v - reserve);
-                    R[i] = v;
-                }
+                for (; i < end; ++i)
+                    natres_apply_one_cell(rr, i, dt_days, have_habitat, HABITAT,
+                                          have_water, WATER, seg);
             }
             local.sum += seg;
         };
 
         const auto t_loop0 = std::chrono::high_resolution_clock::now();
-        // 2400-cell mobile maps are too small for WTP to win even after fusion:
-        // SIMD+1T beats SIMD+MT because dispatch/wait dominates the math. Keep
-        // the same fused body, but let only larger maps cross into WTP.
-        pk::parallel_for_range_with_emit<DeltaEmit>("pk_natural_resource_fused", n_cells,
-                                                    n_tasks_hint, NATRES_PARALLEL_SEQ_THRESHOLD,
-                                                    delta_acc, run_range);
+        if (indexed) {
+            double seg = 0.0;
+            const int n_index = cell_indices.size();
+            const bool per_cell_dt = cell_dt_days.size() == n_index;
+            for (int k = 0; k < n_index; ++k) {
+                const int cell = cell_indices[k];
+                const int cell_dt = per_cell_dt
+                    ? std::max(1, std::min(60, int(cell_dt_days[k])))
+                    : dt_days;
+                for (const NatResRuntime &rr : dynamic_resources)
+                    natres_apply_one_cell(rr, cell, cell_dt, have_habitat, HABITAT,
+                                          have_water, WATER, seg);
+            }
+            delta_acc.sum += seg;
+        } else {
+            pk::parallel_for_range_with_emit<DeltaEmit>("pk_natural_resource_fused", n_cells,
+                                                        n_tasks_hint, NATRES_PARALLEL_SEQ_THRESHOLD,
+                                                        delta_acc, run_range);
+        }
         const auto t_loop1 = std::chrono::high_resolution_clock::now();
         loop_ms = std::chrono::duration<double, std::milli>(t_loop1 - t_loop0).count();
 
@@ -734,13 +771,16 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
     out["input_resource_count"] = resource_count;
     out["n_cells"] = n_cells;
     out["dt_days"] = dt_days;
+    out["indexed_cell_count"] = indexed ? cell_indices.size() : n_cells;
     out["total_delta"] = delta_acc.sum;
     out["native_ms"] = std::chrono::duration<double, std::milli>(t1 - t0).count();
     out["compute_ms"] = std::chrono::duration<double, std::milli>(t1 - t_setup).count();
     out["setup_ms"] = std::chrono::duration<double, std::milli>(t_setup - t0).count();
     out["loop_ms"] = loop_ms;
     out["flush_ms"] = flush_ms;
-    out["loop_layout"] = mt_candidate ? "cell_range_fused_mt" : (dt_days > 1 ? "cell_range_fused_seq_dt" : "cell_range_fused_seq");
+    out["loop_layout"] = indexed ? "cell_indices"
+        : (mt_candidate ? "cell_range_fused_mt"
+            : (dt_days > 1 ? "cell_range_fused_seq_dt" : "cell_range_fused_seq"));
     out["loop_dispatches"] = mt_candidate ? 1 : 0;
     out["skipped_static_resources"] = skipped_static_resources;
     out["regen_modifier_snapshot_version"] = knobs.has("regen_modifier_snapshot_version")

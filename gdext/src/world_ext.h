@@ -381,12 +381,14 @@ public:
     godot::Dictionary run_economy_slice(const godot::Dictionary &ctx);
     godot::Dictionary run_economy_slice_compact(const godot::Dictionary &ctx);
     bool economy_should_run(int64_t day_index) const;
+    godot::PackedInt32Array get_economy_live_cells();
     godot::Dictionary get_economy_report() const;
     godot::Dictionary get_country_class_opinion_snapshot() const;
     godot::Dictionary get_population_cell_summary(int cell_idx) const;
     godot::Dictionary get_named_settlement_snapshot() const;
     godot::Dictionary get_settlement_delta(int64_t since_revision) const;
-    godot::Dictionary get_population_cell_snapshot(int cell_idx) const;
+    godot::Dictionary get_population_cell_snapshot(
+        int cell_idx, bool include_details = true) const;
     godot::Dictionary get_market_cell_snapshot(int cell_idx) const;
     godot::Dictionary explain_cohort_satisfaction(int64_t cohort_handle) const;
     godot::Dictionary get_cell_satisfaction_attractiveness(int cell_idx) const;
@@ -463,6 +465,9 @@ public:
     godot::Dictionary run_economy_production_climate_math_probe(
         const godot::Dictionary &vectors) const;
     int64_t get_economy_state_hash() const;
+    godot::Dictionary inject_economy_cadence_timing(double market_cycle_ms,
+                                                    double slow_cycle_ms,
+                                                    double investment_cycle_ms = -1.0);
     godot::Dictionary reset_economy(const godot::String &reason);
     godot::Dictionary start_economy_csv_recording(const godot::Dictionary &config);
     godot::Dictionary request_stop_economy_csv_recording();

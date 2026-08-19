@@ -712,9 +712,10 @@ Dictionary NativeEconomyRuntime::end_restore() {
         _cells_per_slice = std::clamp(_market.market_count, 1, 128);
     if (_auto_building_slice_by_scale)
         _building_cells_per_slice = AUTO_BUILDING_CELLS_PER_SLICE;
-    choose_epoch_days(_population.active_count);
-    _epoch_days = ROLLING_PHASE_COUNT;
-    _commit_lag_budget_days = ROLLING_PHASE_COUNT - 1;
+    refresh_cadence_estimates();
+    if (_restore.schema_version < 38)
+        synthesize_cadence_locks_from_legacy_save();
+    _commit_lag_budget_days = std::max(0, locked_market_cycle_days() - 1);
     if (_restore.schema_version < 15) {
         for (int32_t cell = 0; cell < _cell_count; ++cell) {
             const int64_t phase = cell % ROLLING_PHASE_COUNT;

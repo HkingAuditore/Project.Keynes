@@ -9,7 +9,7 @@ building_output_efficiency_q16 = 131072
 # 6400-cell profile. Zero remains available for benchmark/custom auto ranges.
 building_plan_cells_per_slice = 128
 market_cycle_days = 5
-market_min_cycle_days = 5
+market_min_cycle_days = 1
 market_max_cycle_days = 5
 investment_review_days = 30
 investment_max_growth_share_q16 = 16384

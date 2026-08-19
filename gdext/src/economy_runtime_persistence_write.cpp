@@ -146,6 +146,12 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         append_le<uint64_t>(payload, _next_canal_quote_token);
         append_le<uint64_t>(payload, _next_canal_project_id);
         append_le<int64_t>(payload, _next_canal_receipt_id);
+        append_le<int32_t>(payload, _locked_market_cycle_days);
+        append_le<int64_t>(payload, _market_cycle_start_day);
+        append_le<int32_t>(payload, _locked_slow_cycle_days);
+        append_le<int64_t>(payload, _slow_cycle_start_day);
+        append_le<int32_t>(payload, _locked_investment_cycle_days);
+        append_le<int64_t>(payload, _investment_cycle_start_day);
         append_id_table(payload, _profession_ids);
         append_id_table(payload, _ethnicity_ids);
         append_id_table(payload, _good_ids);
@@ -247,7 +253,9 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             append_le<uint32_t>(payload, _cell_technology_gen[_save.cell_cursor]);
             append_le<uint32_t>(payload, _cell_resource_gen[_save.cell_cursor]);
             append_le<uint32_t>(payload, _cell_trade_gen[_save.cell_cursor]);
-            append_le<int32_t>(payload, _save.cell_cursor % ROLLING_PHASE_COUNT);
+            append_le<int32_t>(payload, (( _save.cell_cursor %
+                std::max(1, locked_market_cycle_days())) +
+                locked_market_cycle_days()) % locked_market_cycle_days());
             const size_t fiscal_cell = static_cast<size_t>(_save.cell_cursor);
             append_le<uint64_t>(payload,
                 fiscal_cell < _fiscal_previous_country_handles.size()

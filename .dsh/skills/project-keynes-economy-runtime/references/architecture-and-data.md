@@ -168,6 +168,12 @@ Variants under one need are substitutes; multiple components under one variant a
 These columns are bounded query output only and do not change catalog identity, save layout, or
 runtime authority.
 
+Daily Inspector list refresh uses `get_population_cell_snapshot(cell, include_details=false)`.
+That list snapshot keeps cohort handles, population, funds, employment, composite satisfaction,
+living standard, and settlement income/expense totals, and sets `demand_preview_included=false`.
+It omits demand preview CSR, welfare need rows, satisfaction-dimension matrices, and cashflow
+source rows. Object detail and the first visible population tab still use the default full snapshot.
+
 ## 6. Save and visibility
 
 PKEC schema v11 streams 4–16MB chunks: header, pages, market rows, cell/environment rows, pending

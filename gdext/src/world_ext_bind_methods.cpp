@@ -316,6 +316,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::run_economy_slice_compact);
     ClassDB::bind_method(D_METHOD("economy_should_run", "day_index"),
                          &DCWorldExt::economy_should_run);
+    ClassDB::bind_method(D_METHOD("get_economy_live_cells"),
+                         &DCWorldExt::get_economy_live_cells);
     ClassDB::bind_method(D_METHOD("get_economy_report"),
                          &DCWorldExt::get_economy_report);
     ClassDB::bind_method(D_METHOD("get_country_class_opinion_snapshot"),
@@ -326,8 +328,10 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::get_named_settlement_snapshot);
     ClassDB::bind_method(D_METHOD("get_settlement_delta", "since_revision"),
                          &DCWorldExt::get_settlement_delta);
-    ClassDB::bind_method(D_METHOD("get_population_cell_snapshot", "cell_idx"),
-                         &DCWorldExt::get_population_cell_snapshot);
+    ClassDB::bind_method(D_METHOD("get_population_cell_snapshot", "cell_idx",
+                                  "include_details"),
+                         &DCWorldExt::get_population_cell_snapshot,
+                         DEFVAL(true));
     ClassDB::bind_method(D_METHOD("get_market_cell_snapshot", "cell_idx"),
                          &DCWorldExt::get_market_cell_snapshot);
     ClassDB::bind_method(D_METHOD("explain_cohort_satisfaction", "cohort_handle"),
@@ -443,6 +447,11 @@ void DCWorldExt::_bind_methods() {
         &DCWorldExt::run_economy_production_climate_math_probe);
     ClassDB::bind_method(D_METHOD("get_economy_state_hash"),
                          &DCWorldExt::get_economy_state_hash);
+    ClassDB::bind_method(D_METHOD("inject_economy_cadence_timing",
+                                 "market_cycle_ms", "slow_cycle_ms",
+                                 "investment_cycle_ms"),
+                         &DCWorldExt::inject_economy_cadence_timing,
+                         DEFVAL(-1.0));
     ClassDB::bind_method(D_METHOD("reset_economy", "reason"),
                          &DCWorldExt::reset_economy);
     ClassDB::bind_method(D_METHOD("start_economy_csv_recording", "config"),

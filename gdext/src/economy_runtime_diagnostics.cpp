@@ -274,6 +274,7 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_income_taxable_base_by_slot);
     cap(_income_subsidy_floor_by_slot);
     cap(_epoch_market_ids); cap(_epoch_market_work_weights);
+    cap(_economy_live_cells);
     cap(_epoch_settlement_cells); cap(_epoch_building_cells);
     cap(_epoch_plan_cells);
     cap(_household_post_saturation_scratch);
@@ -804,11 +805,7 @@ Dictionary NativeEconomyRuntime::compact_report() const {
     out["commit_due"] = commit_due;
     out["boundary_continuation_required"] = false;
     out["cycle_deadline_day"] = deadline_day;
-    out["market_cycle_days"] = _epoch_days;
-    out["market_configured_cycle_days"] = _configured_epoch_days;
-    out["estimated_market_slices_per_epoch"] = _estimated_market_slices_per_epoch;
-    out["estimated_building_slices_per_epoch"] = _estimated_building_slices_per_epoch;
-    out["estimated_total_slices_per_epoch"] = _estimated_total_slices_per_epoch;
+    write_cadence_report(out);
     out["workload_deadline_feasible"] = _workload_deadline_feasible;
     out["workload_cycle_clamped"] = _workload_cycle_clamped;
     return out;
@@ -841,7 +838,7 @@ Dictionary NativeEconomyRuntime::report() const {
     out["bootstrapped"] = _bootstrapped;
     out["epoch_active"] = _epoch_active;
     out["epoch_id"] = _epoch_id;
-    out["epoch_days"] = _epoch_days;
+    write_cadence_report(out);
     out["sample_day"] = _sample_day;
     out["current_day"] = _current_day;
     out["commit_day"] = _commit_day;
@@ -863,7 +860,6 @@ Dictionary NativeEconomyRuntime::report() const {
         _building_plan_cells_per_slice_override > 0
         ? _building_plan_cells_per_slice_override
         : std::min(65536, std::max(1, _building_cells_per_slice) * 2);
-    out["building_plan_days"] = _building_plan_days;
     out["plan_evaluate_cells"] =
         static_cast<int64_t>(_epoch_plan_cells.size());
     out["household_post_building_cells_per_slice"] =
@@ -1009,6 +1005,7 @@ Dictionary NativeEconomyRuntime::report() const {
     out["prepare_reuse_count"] = _prepare_reuse_count;
     out["workset_cells_planned"] = _workset_cells_planned;
     out["workset_cells_executed"] = _workset_cells_executed;
+    out["economy_live_cells"] = static_cast<int32_t>(_economy_live_cells.size());
     out["duplicate_range_count"] = _duplicate_range_count;
     out["market_result_allocation_growth_count"] =
         _market_result_allocation_growth_count;
@@ -1485,9 +1482,6 @@ Dictionary NativeEconomyRuntime::report() const {
         _last_completed_perf.building_structure_market_cache_ms;
     out["last_completed_building_structure_labor_cache_ms"] =
         _last_completed_perf.building_structure_labor_cache_ms;
-    out["settlement_mode"] = "rolling_five_phase";
-    out["settlement_phase"] = _rolling_phase;
-    out["settlement_phase_count"] = ROLLING_PHASE_COUNT;
     out["due_cells"] = _rolling_due_cells;
     out["processed_due_cells"] = _rolling_processed_cells;
     out["deferred_cells"] = _rolling_deferred_cells;
@@ -1965,11 +1959,8 @@ Dictionary NativeEconomyRuntime::report() const {
     out["cycle_deadline_day"] = deadline_day;
     out["days_until_commit"] = _epoch_active
         ? std::max<int64_t>(0, deadline_day - _current_day) : 0;
-    out["market_cycle_days"] = _epoch_days;
-    out["market_configured_cycle_days"] = _configured_epoch_days;
-    out["market_min_cycle_days"] = _min_epoch_days;
+    write_cadence_report(out);
     out["market_target_cohorts_per_slice"] = _target_cohorts_per_slice;
-    out["market_max_cycle_days"] = _max_epoch_days;
     out["market_cells_per_slice"] = _cells_per_slice;
     out["building_cells_per_slice"] = _building_cells_per_slice;
     out["estimated_market_slices_per_epoch"] =
@@ -2026,7 +2017,7 @@ Dictionary NativeEconomyRuntime::report() const {
     out["births"] = _births;
     out["deaths"] = _deaths;
     out["period_transactions"] = true;
-    out["max_command_latency_days"] = _epoch_days;
+    out["max_command_latency_days"] = locked_market_cycle_days();
     out["pending_commands"] = static_cast<int64_t>(_pending_commands.size());
     out["catalog_hash"] = _catalog_hash;
     out["building_catalog_hash"] = _building_catalog_hash;

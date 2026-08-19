@@ -23,6 +23,7 @@ const MAP_REMAINING_MIN_WIDTH := 320.0
 const OVERLAY_LEGEND_WIDTH := 198.0
 const GM_PANEL_TARGET_WIDTH := 560.0
 const GM_PANEL_MIN_WIDTH := 300.0
+const INSPECTOR_FULL_PATCH_INTERVAL_MSEC := 750
 var _top_bar: PlayerTopBar
 var _right_panel: InspectorPanel
 var _loading_overlay: WorldLoadingOverlay
@@ -332,14 +333,17 @@ func refresh_selected_daily_lines(force: bool = false, day_idx: int = -1) -> Dic
 	timing["tab"] = tab_id
 	_inspector_view_model.observe_temperature(_selected_cell, day_idx)
 	var now_ms := Time.get_ticks_msec()
-	# 快进时档案页签 750ms 合一次。人数/聚落代数不变时旧逻辑会整段 return，
-	# 阶层财富和对象详情就冻在打开那一帧；详情窗口改为至少按日刷新。
-	if not force and now_ms - _last_cached_panel_ms < 750:
+	var population_list := tab_id == "population"
+	# 市场/建筑/地理的完整 category 仍按墙钟合并。人口列表改走无需求预览的
+	# list snapshot，每个模拟日都能改人数，不再被 750ms 拖住。
+	if not force and not population_list \
+			and now_ms - _last_cached_panel_ms < INSPECTOR_FULL_PATCH_INTERVAL_MSEC:
 		_refresh_object_detail(false)
 		if _right_panel.detail_open():
 			timing["ran"] = true
 		return timing
-	_last_cached_panel_ms = now_ms
+	if not population_list:
+		_last_cached_panel_ms = now_ms
 	var revision: Dictionary = _inspector_view_model.live_patch_revision(
 		_selected_cell, tab_id)
 	var next_selection_context := _revision_selection_context(revision)
@@ -354,22 +358,31 @@ func refresh_selected_daily_lines(force: bool = false, day_idx: int = -1) -> Dic
 		_selected_cell,
 		tab_id,
 		true,
-		revision.get("population_summary", {})
+		revision.get("population_summary", {}),
+		not population_list
 	)
 	timing["live_patch_build_ms"] = (
 		Time.get_ticks_usec() - build_started_usec) / 1000.0
-	if tab_id == "population":
+	if population_list:
+		var next_category_hash := 0
+		if patch.has("category"):
+			next_category_hash = hash(patch["category"])
+		var same_target := _live_revision_valid \
+			and _live_revision_cell == int(_selected_cell.index) \
+			and _live_revision_tab == tab_id
+		if same_target and next_category_hash == _live_category_hash:
+			patch.erase("category")
+		else:
+			_live_category_hash = next_category_hash
 		_live_revision_cell = int(_selected_cell.index)
 		_live_revision_tab = tab_id
 		_live_common_hash = int(revision.get("common_hash", 0))
 		_live_category_generation = int(revision.get("category_generation", -1))
 		_live_tax_policy_version = int(revision.get("tax_policy_version", -1))
 		_live_revision_valid = true
-		if patch.has("category"):
-			_live_category_hash = hash(patch["category"])
 	var apply_started_usec := Time.get_ticks_usec()
 	_right_panel.apply_live_patch(patch)
-	_refresh_object_detail(true)
+	_refresh_object_detail(force or not population_list)
 	timing["live_patch_apply_ms"] = (
 		Time.get_ticks_usec() - apply_started_usec) / 1000.0
 	timing["ran"] = true

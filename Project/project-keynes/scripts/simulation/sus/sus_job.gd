@@ -66,6 +66,12 @@ var _in_flight: bool = false
 ## Starvation counter（2026-05-11）：每次被 frame_budget_exhausted 跳过 +1，
 ## 任意一次 run_slice 实际执行后清零。由 SUS 维护。
 var _starvation_count: int = 0
+var _policy_skip_reason: String = ""
+var _atlas_ff_was_fast: bool = false
+var _atlas_ff_catchup_pending: bool = false
+var _atlas_last_success_msec: int = 0
+const FAST_FORWARD_ATLAS_SPEED: float = 20.0
+const FAST_FORWARD_ATLAS_INTERVAL_MSEC: int = 100
 
 
 ## DataCore 接入（2026-05-11，dots-foundation-and-weather-migration）：
@@ -104,6 +110,42 @@ func should_run(ctx: SusTickContext) -> bool:
 ## and bounded; SUS calls it before the ordinary frame-budget gate.
 func is_deadline_critical(_ctx: SusTickContext) -> bool:
 	return false
+
+
+func policy_skip_reason() -> String:
+	return _policy_skip_reason
+
+
+func mark_atlas_upload_success() -> void:
+	_atlas_last_success_msec = Time.get_ticks_msec()
+	_atlas_ff_catchup_pending = false
+	_policy_skip_reason = ""
+
+
+func take_fast_forward_atlas_catchup() -> bool:
+	if not _atlas_ff_catchup_pending:
+		return false
+	_atlas_ff_catchup_pending = false
+	return true
+
+
+func should_skip_fast_forward_visual(ctx: SusTickContext) -> bool:
+	_policy_skip_reason = ""
+	var speed: float = float(ctx.speed_scale) if ctx != null else 1.0
+	if speed < FAST_FORWARD_ATLAS_SPEED:
+		if _atlas_ff_was_fast:
+			_atlas_ff_was_fast = false
+			_atlas_ff_catchup_pending = true
+		return false
+	_atlas_ff_was_fast = true
+	if starvation_threshold > 0 and _starvation_count >= starvation_threshold:
+		return false
+	var now_msec: int = Time.get_ticks_msec()
+	if _atlas_last_success_msec <= 0 \
+			or now_msec - _atlas_last_success_msec >= FAST_FORWARD_ATLAS_INTERVAL_MSEC:
+		return false
+	_policy_skip_reason = "fast_forward_deferred"
+	return true
 
 
 ## Run a single slice. Implementations should:

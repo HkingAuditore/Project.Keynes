@@ -837,7 +837,7 @@ void NativeEconomyRuntime::trace_begin_epoch() {
     _staging_events.period_days = std::max(1, _epoch_days);
     const bool inspector_trace_due = _inspector_trace_cell >= 0 &&
         _inspector_trace_cell < _cell_count &&
-        _inspector_trace_cell % ROLLING_PHASE_COUNT == _rolling_phase;
+        cell_in_market_workset(_inspector_trace_cell, _sample_day);
     _staging_events.cashflow_cell =
         (_trace_mode == TRACE_SELECTIVE || _trace_mode == TRACE_FULL_DEBUG) &&
                 inspector_trace_due

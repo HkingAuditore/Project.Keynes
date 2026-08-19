@@ -13,11 +13,13 @@ $gdext = Join-Path $root 'gdext'
 $required = @(
     'gdext\src\economy_runtime.h',
     'gdext\src\economy_runtime.cpp',
+    'gdext\src\economy_runtime_cadence.cpp',
     'gdext\src\world_ext_economy.cpp',
     'Project\project-keynes\scripts\simulation\systems\economy_daily_system.gd',
     'Project\project-keynes\scripts\data\economy_profile.gd',
     'Project\project-keynes\data\economy\default_economy.tres',
-    'Project\project-keynes\tests\goods_storage_schema_test.gd'
+    'Project\project-keynes\tests\goods_storage_schema_test.gd',
+    'Project\project-keynes\tests\economy_cadence_runtime_test.gd'
 )
 foreach ($relative in $required) {
     if (-not (Test-Path -LiteralPath (Join-Path $root $relative))) {
@@ -63,6 +65,8 @@ if ($Godot) {
     if ($LASTEXITCODE -ne 0) { throw 'EconomyDailySystem parse failed' }
     & $GodotExe --headless --path $project --script res://tests/goods_storage_schema_test.gd
     if ($LASTEXITCODE -ne 0) { throw 'Focused economy test failed' }
+    & $GodotExe --headless --path $project --script res://tests/economy_cadence_runtime_test.gd
+    if ($LASTEXITCODE -ne 0) { throw 'Economy cadence runtime test failed' }
     & $GodotExe --headless --path $project --script res://tests/building_runtime_test.gd
     if ($LASTEXITCODE -ne 0) { throw 'Building runtime test failed' }
     & $GodotExe --headless --path $project --script res://tests/building_resource_chain_test.gd

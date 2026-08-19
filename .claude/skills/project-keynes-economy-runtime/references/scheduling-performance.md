@@ -25,8 +25,10 @@ Stages are stable diagnostic ABI:
    epoch income and post-production stock.
 9. `structural_commit`: stable-sort and apply ECB work.
 10. `wait_commit`: keep completed internal state hidden until `sample_day + N - 1`.
-11. `building_commit`: commit ready construction, then run the 180-day industrial capital review
-    before publication and rebuild sparse employment ranges when structure or population changes.
+11. `building_commit`: commit ready construction, then run the locked plan
+    cycle (P in 5–15) and the longer investment cycle (I in 10–30, I > P)
+    before publication and rebuild sparse
+    employment ranges when structure or population changes.
 12. `aggregate_publish`: publish summaries, market rows, audits, trade EMA, and report.
 
 Do not publish half-computed market rows. Do not run market work inside the environmental
@@ -53,27 +55,33 @@ Current production defaults:
 
 ```text
 market_runtime_mode = ACTIVE
-market_cycle_days = 5
-market_max_cycle_days = 365
-market_target_cohorts_per_slice = 0
+market_cycle_days = 5   # maximum market interval; native locks N in 1–5
+market_min_cycle_days = 1
+market_max_cycle_days = 5
+building_plan_days = 5–15        # locked P, not shared with investment
+investment_review_days = 10–30   # locked I, must be longer than P
+economy_cadence_target_ms = 8
 worker_market_threshold = 64
 trade_runtime_mode = PROBE
-trade_signal_pairs_per_slice = 16384
-trade_route_searches_per_slice = 8
 ```
 
-Trade planning limits are deterministic work units. Never use measured wall time to decide how far
-the simulation advances. An unfinished trade planning slice never raises a WorldClock barrier.
+`market_cycle_days=0` is ignored (treated as 5). It does not restore 50/334
+auto-fast-forward. N, P, and I are chosen at their own cycle boundaries from live
+economy cells (population > 0, or a building, or pending construction) plus
+previous-cycle machine timing. Cadence milliseconds are accumulated only when
+`aggregate_publish` COMMIT finishes the day. The daily workset is live cells ∩
+the market bucket; empty wilderness is not settled.
+Tests inject fixed cycle milliseconds, or set
+`economy_cadence_force_market_days` / `economy_cadence_force_plan_days`
+(`economy_cadence_force_slow_days` is a plan alias) /
+`economy_cadence_force_investment_days` (0 keeps
+automatic locking) when a small fixture must reproduce a historical 5/10/30
+bucket. Those force keys are test-only and never part of production profiles.
+Forcing plan without forcing investment still yields I > P.
 
-`market_cycle_days=0` enables automatic cycle selection. With target 0, effective cohort budgets are:
-
-- up to 500k active cohorts: 4k per slice
-- up to 2M: 12k per slice
-- above 2M: 30k per slice
-
-Automatic N is `ceil(active_cohorts / target)`, clamped to max-cycle days. Fixed N=5 may miss its
-deadline at the 10M extreme and then performs bounded same-day catchup. Use auto mode for extreme
-fast-forward performance; use short fixed N for higher simulation fidelity.
+Trade planning limits are deterministic work units. Never use measured wall time
+to decide how far the simulation advances. An unfinished trade planning slice
+never raises a WorldClock barrier.
 
 ## 4. Report contract
 
@@ -95,14 +103,15 @@ Worker stage milliseconds are task CPU totals. Slice `elapsed_ms` is wall time.
 
 ## 5. Performance evidence
 
-Windows, Godot 4.6.2, template_release, explicit auto cadence:
+Windows, Godot 4.6.2, template_release, historical explicit auto cadence
+(N=50/334). These figures are not the current production lock (N in 1–5):
 
 | Profile | N | Samples | avg | p95 | max | Runtime memory |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | 10k cells / 200k cohorts / 100 goods / 16 needs | 50 | 2500 | 1.883ms | 2.766ms | 3.126ms | 101.0MB |
 | 100k cells / 10M cohorts / 200 goods / 16 needs | 334 | 668 | 5.542ms | 6.333ms | 9.394ms | 1680.6MB |
 
-These figures do not describe default fixed N=5. Label benchmark cadence explicitly.
+These figures do not describe the current locked N∈[1,5] production path. Label benchmark cadence explicitly.
 
 ## 6. Approximation evidence
 
@@ -130,6 +139,10 @@ behavioral approximation error.
 - High approximation error with zero audits: shorten N or improve the versioned approximation model.
 - High market-signal time: compare sparse edge count with actual building input/output roles; a
   `market_count × good_count` scan or per-building duplicate keys is a regression.
+- `due_cells` near `cell_count / N` on a mostly empty map: the live workset leaked empty
+  wilderness back into `epoch_begin`.
+- `cadence_market_ms_per_knife` an order of magnitude above `last_completed_*` market-side
+  milliseconds: COMMIT-only cadence accumulation regressed to per-slice notes.
 - Persistent zero utilization: inspect expected revenue, operating cost, target margin, supply
   elasticity, and frozen producer settlement price before changing employment rules.
 - `save_requires_committed_boundary`: expected during any active or wait-commit stage.
@@ -148,7 +161,8 @@ Price V3 signal updates occur after both utility and normal production phases. P
 the current epoch reads only the previous committed signal EMA, preserving the frozen-cycle contract
 and preventing scheduler-order feedback.
 
-Endogenous construction uses completed-period profit and demand signals, but starts at most one
-industrial building per cell when the committed day crosses a 180-day boundary. It reuses BUILD
+Endogenous construction uses completed-period profit and demand signals, but
+starts at most one industrial building per cell when the locked investment cycle I
+is due and the cell is also in that day's market workset. It reuses BUILD
 material/payment/event ledgers and reports candidates, owner mobility, starts, and funds/material
-blocks. The review cadence is derived from committed time and adds no save field.
+blocks. PKEC v39 persists locked N/P/I and cycle starts.

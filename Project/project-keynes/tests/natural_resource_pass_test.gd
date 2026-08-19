@@ -30,6 +30,7 @@ func _run() -> void:
 	print("=== natural resource pass test ===")
 	_test_schema_entries()
 	_test_registry_knobs()
+	_test_wilderness_bucket_selection()
 	_test_native_pass()
 	print("=== natural resource pass summary: %d checks, %d failures ===" % [_checks, _failures])
 
@@ -177,6 +178,33 @@ func _slot_index(slots: PackedStringArray, name: String) -> int:
 		if slots[i] == name:
 			return i
 	return -1
+
+
+func _test_wilderness_bucket_selection() -> void:
+	var gen := MapGenerator.new()
+	gen._reset_natural_resource_cadence(120, 0)
+	var live := PackedInt32Array([0, 4, 8])
+	var planned: Dictionary = gen.collect_natural_resource_pass_cells(1, live)
+	var indices: PackedInt32Array = planned.get("cell_indices", PackedInt32Array())
+	var dts: PackedInt32Array = planned.get("cell_dt_days", PackedInt32Array())
+	var seen := {}
+	for k in range(indices.size()):
+		seen[int(indices[k])] = int(dts[k])
+	_expect("live cells always enter the resource pass",
+		seen.has(0) and seen.has(4) and seen.has(8))
+	_expect("wilderness bucket day 1 includes cell % 60 == 1",
+		seen.has(1) and seen.has(61) and not seen.has(2))
+	_expect("live and wilderness catchup dt is the real elapsed interval",
+		int(seen.get(0, -1)) == 1 and int(seen.get(1, -1)) == 1)
+	_expect("day-1 indexed set is live union one wilderness bucket",
+		indices.size() == 5)
+	var later: Dictionary = gen.collect_natural_resource_pass_cells(60, live)
+	var later_seen := {}
+	for cell in later.get("cell_indices", PackedInt32Array()):
+		later_seen[int(cell)] = true
+	_expect("wilderness 60-day bucket does not rescan every empty cell",
+		later_seen.has(0) and later_seen.has(60) and not later_seen.has(1)
+		and int(later.get("cell_indices", PackedInt32Array()).size()) == 4)
 
 
 # ─── 3. 原生 pass + A/B 对拍 ─────────────────────────────────────
@@ -342,6 +370,16 @@ func _test_native_pass() -> void:
 		ext.run_natural_resource_pass(knobs)
 		igot = map.get(fields[ii])
 		_expect("dt=5 applies iron external delta exactly once", absf(igot[0] - 1.5) < 1e-4)
+		igot[0] = 2.0
+		iextra[0] = 0.25
+		map.set(fields[ii], igot)
+		map.set(extra_fields[ii], iextra)
+		ext.refresh_slots_from_map()
+		knobs["dt_days"] = 60
+		ext.run_natural_resource_pass(knobs)
+		igot = map.get(fields[ii])
+		_expect("dt=60 applies iron extra_change exactly once", absf(igot[0] - 2.25) < 1e-4)
+		knobs["dt_days"] = 1
 
 		# 数亿级省域矿床的 float32 ULP 大于单矿周期扣减；extra slot 必须累计余量，
 		# 不能因为本周期 reserve 无法表示变化就把开采量清零。
@@ -611,6 +649,105 @@ func _test_native_pass() -> void:
 		_expect("regen factor report publishes frozen snapshot",
 			int(modifier_result.get("regen_modifier_snapshot_version", 0)) == 42 and
 			int(modifier_result.get("active_regen_factor_count", 0)) == 1)
+
+	knobs.erase("regen_factors")
+	if fertile_i >= 0:
+		var fertile_profile = profiles[fertile_i]
+		var fertile: PackedFloat32Array = map.get(fields[fertile_i])
+		var fertile_extra: PackedFloat32Array = map.get(extra_fields[fertile_i])
+		fertile[0] = 8.0
+		fertile[1] = 8.0
+		fertile_extra.fill(0.0)
+		fertile_extra[0] = -1.0
+		temp[0] = float(fertile_profile.temp_lo) + float(fertile_profile.climate_temp_opt) * (
+			float(fertile_profile.temp_hi) - float(fertile_profile.temp_lo))
+		temp[1] = temp[0]
+		moist[0] = float(fertile_profile.climate_moisture_opt)
+		moist[1] = moist[0]
+		map.set(fields[fertile_i], fertile)
+		map.set(extra_fields[fertile_i], fertile_extra)
+		map.temp_arr = temp
+		map.moisture_arr = moist
+		map.temp_30d_arr = temp.duplicate()
+		map.plant_available_water_arr = moist.duplicate()
+		var selected_temp: PackedFloat32Array = map.temp_30d_arr if \
+			String(fertile_profile.runtime_temperature_signal) == "mean_30d" else map.temp_arr
+		var selected_moist: PackedFloat32Array = map.plant_available_water_arr if \
+			String(fertile_profile.runtime_moisture_signal) == "plant_available_water" else map.moisture_arr
+		var closed: PackedFloat32Array = _reference_step(
+			fertile_i, fertile, fertile_extra, selected_temp, selected_moist, water, habitat, n, 60)
+		var iterated := fertile.duplicate()
+		var iterated_extra := fertile_extra.duplicate()
+		for _day in range(60):
+			iterated = _reference_step(
+				fertile_i, iterated, iterated_extra, selected_temp, selected_moist, water, habitat, n, 1)
+			iterated_extra.fill(0.0)
+		_expect("dt=60 IMEX closed form matches 60 daily steps",
+			absf(closed[0] - iterated[0]) < maxf(0.02, absf(iterated[0]) * 0.001))
+		ext.refresh_slots_from_map()
+		knobs["dt_days"] = 60
+		ext.run_natural_resource_pass(knobs)
+		fertile = map.get(fields[fertile_i])
+		_expect("native dt=60 matches IMEX closed form",
+			absf(fertile[0] - closed[0]) < maxf(0.02, absf(closed[0]) * 0.001))
+		fertile_extra = map.get(extra_fields[fertile_i])
+		_expect("dt=60 extra_change applied once then cleared",
+			is_equal_approx(fertile_extra[0], 0.0))
+
+	if wild_i >= 0:
+		var wild_profile = profiles[wild_i]
+		var wild: PackedFloat32Array = map.get(fields[wild_i])
+		var wild_extra: PackedFloat32Array = map.get(extra_fields[wild_i])
+		var capacity := float(wild_profile.ecology_capacity) * \
+			ResourceProfileRegistry.CELL_AREA_RESOURCE_SCALE
+		wild[0] = capacity * 0.4
+		wild_extra.fill(0.0)
+		wild_extra[0] = -2.0
+		var ideal_temp := float(wild_profile.temp_lo) + float(wild_profile.climate_temp_opt) * (
+			float(wild_profile.temp_hi) - float(wild_profile.temp_lo))
+		temp[0] = ideal_temp
+		moist[0] = wild_profile.climate_moisture_opt
+		map.set(fields[wild_i], wild)
+		map.set(extra_fields[wild_i], wild_extra)
+		map.temp_arr = temp
+		map.moisture_arr = moist
+		map.temp_30d_arr = temp.duplicate()
+		map.plant_available_water_arr = moist.duplicate()
+		var bh_closed: PackedFloat32Array = _reference_step(
+			wild_i, wild, wild_extra, temp, moist, water, habitat, n, 60)
+		var bh_iter := wild.duplicate()
+		var bh_extra := wild_extra.duplicate()
+		for _day in range(60):
+			bh_iter = _reference_step(wild_i, bh_iter, bh_extra, temp, moist, water, habitat, n, 1)
+			bh_extra.fill(0.0)
+		_expect("BH dt=60 daily iteration matches 60 daily steps",
+			absf(bh_closed[0] - bh_iter[0]) < maxf(0.05, absf(bh_iter[0]) * 0.002))
+		ext.refresh_slots_from_map()
+		knobs["dt_days"] = 60
+		ext.run_natural_resource_pass(knobs)
+		wild = map.get(fields[wild_i])
+		_expect("native BH dt=60 matches daily iteration",
+			absf(wild[0] - bh_closed[0]) < maxf(0.05, absf(bh_closed[0]) * 0.002))
+
+	if timber_i >= 0:
+		var timber: PackedFloat32Array = map.get(fields[timber_i])
+		var timber_extra: PackedFloat32Array = map.get(extra_fields[timber_i])
+		var before_other: float = timber[1]
+		timber_extra.fill(0.0)
+		map.set(fields[timber_i], timber)
+		map.set(extra_fields[timber_i], timber_extra)
+		ext.refresh_slots_from_map()
+		knobs["dt_days"] = 1
+		knobs["cell_indices"] = PackedInt32Array([0])
+		var indexed_res: Dictionary = ext.run_natural_resource_pass(knobs)
+		timber = map.get(fields[timber_i])
+		_expect("cell_indices leaves non-listed cells unchanged",
+			is_equal_approx(timber[1], before_other))
+		_expect("indexed pass reports cell_indices layout",
+			str(indexed_res.get("loop_layout", "")) == "cell_indices")
+		knobs.erase("cell_indices")
+		knobs.erase("cell_dt_days")
+		knobs["dt_days"] = 1
 
 
 func _profile_index(profiles: Array, id_name: String) -> int:

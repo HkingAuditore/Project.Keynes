@@ -23,23 +23,31 @@ Market V2 / Price V3 现采用 `production_income_consumption_v12`：周期起�
 
 ## 周期选择
 
-`EconomyProfile` 提供：
+市场结算锁定 **N∈[1,5]**，生产计划锁定 **P∈[5,15]**，投资锁定 **I∈[10,30]** 且 **I > P**。
+三套周期只在各自完整周期开始时改档；周期内分桶是 `cell % N` / `cell % P` / `cell % I`，
+中途改档会换桶、漏结或双结。
 
-- `market_cycle_days`：生产默认 0，按市场、cohort 与建筑工作量自动；其他正数强制 N。
-- `market_min_cycle_days`：自动周期下限，默认 5。
-- `market_max_cycle_days`：自动周期上限，默认 365。
-- `market_target_cohorts_per_slice`：0 为规模自动；小/中/大世界分别使用
-  4k/12k/30k cohort。
+`EconomyProfile` 提供的是上下限，不是开局写死的固定周期：
 
-自动公式先计算 `raw = max(market ranges, cohort ranges) + 4 * building ranges + 4`，
-再对超过五日基础周期的部分增加 50% 的确定性 scheduler availability slack，最后 clamp 到周期上限。
-cell range 同时受计划 `markets_per_slice` 和实际 cohort 数约束，因此人口分布不均时不会
-静默生成超长 slice；若周期上限导致工作未完成，截止日进入 same-day catchup。
+- `market_cycle_days` / `market_max_cycle_days`：市场上限，生产默认 5。
+- `market_min_cycle_days`：市场下限，默认 1。
+- `building_plan_days`：计划周期范围提示（生产锁 5–15）；不再与投资锁成同一个值。
+- `investment_review_days`：投资周期范围提示（生产锁 10–30，且必须长于当前 P）。
+- `economy_cadence_target_ms`：一天预算毫秒，默认 8，只在周期边界与实测每刀毫秒相除。
+- `market_target_cohorts_per_slice`：0 为规模自动；小/中/大世界分别使用 4k/12k/30k cohort。
 
-生产默认使用确定性工作量自动周期。显式正数保留固定周期：200k cohort 的旧纯市场档得到 50 日，
-10M cohort 得到 334 日。周期越长，平均与 p95 越低，但价格、财富和环境反馈延迟/误差
-越大。固定 5 日在极端 10M 档无法于五个普通 slice 内完成，会在截止日进入有界
-same-day catchup；若目标是极限规模流畅快进，应把 profile 改为 0 自动。
+选档只数经济活格（人口>0 ∪ 已建建筑 ∪ 在建）、活跃 cohort、有建筑格，再加上一周期**本侧**经济图实测 `native_ms` 的 EMA。
+计划刀数与投资刀数分开。不问整张空地图。冷启动无实测时偏勤（开局 1 格 N=1、P 近 5、I 近 10）。
+弱设备同样 M 会得到更大 N / 更长 P / 更长 I。`market_cycle_days=0` 不再启用 50/334 日快进档。
+速度倍率不参与选档。
+
+每天工作集：先从 CSR 并集得到 `_economy_live_cells`，再取
+`cell % N == (day - cycle_start) % N`。空野不进市场清算、就业、生产、计划、投资和开采 lane。
+账期用该格 `cell_last_settlement_day` 实际间隔，上限 5。P 与 I 尽量取当前 N 的倍数；对不上则推迟到该格下一次市场日。
+`due_cells` / `workset_cells_executed` 是「当日活格 ∩ 市场桶」。只读诊断 `economy_live_cells` 不进 hash。
+cadence 毫秒只在 `aggregate_publish` 的 COMMIT 完成时累加；禁止每个 publish 切片都记一刀。
+报告 `market_cycle_days` 发本周期有效 N，并写出 P/I、周期起点、剩余天数、刀数和每刀毫秒。
+`locked_slow_cycle_days` 仍等于 P，兼容旧报告字段。
 
 ## 图阶段
 
@@ -48,8 +56,8 @@ same-day catchup；若目标是极限规模流畅快进，应把 profile 改为 
    report/性能 CSV 将该调用细分为 scan body/finalize、route prepare/expand/finalize 和 other，
    但这些墙钟诊断不参与预算或确定性推进。
 2. `epoch_begin`：校验 matrix/merchant 索引，捕获 sample day 环境并冻结输入。
-3. `building_plan`：第一遍（evaluate）只推进 `cell % building_plan_days == day % building_plan_days`
-   抽取的 plan 子集（默认每格 10 天评审一次，knob 经 PKEC v25 持久化并等值校验），计算建筑严重
+3. `building_plan`：第一遍（evaluate）只推进锁定计划周期 P 到期且落在当天市场工作集的格
+   （开局 P 近 5，后期可到 15；PKEC v39 持久化锁定 P/I 与周期起点），计算建筑严重
    亏损/恢复与利用率计划；第二遍（reserve）仍对全部到期建筑 cell 重建生产投入 reserve，未评审格
    沿用最近一次计划。两遍完成前不进入账本或生产阶段。
 4. `trade_settle`：结算到期货物/卖方托管，货物可参与当期本地市场。
@@ -64,8 +72,8 @@ same-day catchup；若目标是极限规模流畅快进，应把 profile 改为 
     对账，不在同周期招聘新生人口。
 11. `wait_commit`：若提前算完，保持内部结果不可见，等待 `sample_day + N - 1`。
 12. `building_commit`：按 review prepare、special reset、recovery review、construction commit、
-    investment prepare、investment、finalize 七个确定子阶段推进。恢复复核使用按 `cell % investment_review_days`
-    烘焙的 group CSR，每片最多 4096 group；review prepare 先生成升序的实际到期 cell 列表，
+    investment prepare、investment、finalize 七个确定子阶段推进。恢复复核与投资准备只访问
+    锁定投资周期 I 到期且落在当天市场工作集的 cell，每片最多 4096 group；review prepare 先生成升序的实际到期 cell 列表，
     investment prepare 在竣工提交后只为该列表聚合 merchant、pending construction、
     resource commitment 和 existing type；投资评估随后使用独立 96-cell batch。
     价格驱动的内生资本评估遍历全部已解锁 building type；
@@ -78,7 +86,7 @@ same-day catchup；若目标是极限规模流畅快进，应把 profile 改为 
     finalize 整批重复 reconcile。
     投资目录另以 market active-good bitset 和 output-good→building-type CSR 做保守候选闭包；
     既有/在建类型及其施工物资始终保留。默认 ACTIVE，周期完整复核发现任何遗漏时会自动退回
-    全目录扫描；该缓存不改变固定五日滚动语义。
+    全目录扫描；该缓存不改变锁定 N/S 滚动语义。
 13. `family_commit`：在建筑结构稳定后归一化成员人口与现金 claim，更新家族职业/业主岗位归因，
     按 cell/day 相位有界评审新家族，再复核衰退、消亡并重建稀疏 CSR。它不新建钱包或税务流水，
     `OFF` 且无历史家族时常数时间跳过。
@@ -120,17 +128,21 @@ in-flight 本身不是错误，周期内世界日正常推进。report 提供
   `simulation_backpressure_pulse`，经 `DCSystemScheduler.continue_system` 在同一天 catchup。
 - commit 或 reset 后解除屏障。
 
-因此正常错峰不会把 334 日周期压缩成 334 个真实 frame，也不会让未完成周期跨过结算日。
+因此正常错峰不会把未完成周期压进截止日前的若干真实 frame，也不会让未完成周期跨过结算日。
+生产档 N 上限为 5；历史上 N=50/334 的自动快进不再是生产路径。
 
 ## ACTIVE 与报告
 
 本地市场与国内贸易均默认 ACTIVE。贸易使用独立 `trade_runtime_mode`，按
 OFF → PROBE → ACTIVE 门禁上线；PROBE 不改变库存、资金、订单或 authoritative state hash。
 
-除通用 stage/cursor/timing/audit 字段外，报告必须包含：`market_cycle_days`、
-`market_target_cohorts_per_slice`、`approximation_version/model`、`period_transactions`、
-`max_command_latency_days`、deadline 字段、merchant repairs、price cap hits 与
-continuation slices。
+除通用 stage/cursor/timing/audit 字段外，报告必须包含：锁定的
+`market_cycle_days`/`locked_market_cycle_days`、`locked_plan_cycle_days`、
+`locked_investment_cycle_days`（`locked_slow_cycle_days` 等于 P）、
+周期起点与剩余天数、刀数与每刀毫秒、`cadence_change_reason`、
+`market_target_cohorts_per_slice`、`approximation_version/model`、
+`period_transactions`、`max_command_latency_days`、deadline 字段、
+merchant repairs、price cap hits 与 continuation slices。
 
 `STRUCTURAL_COMMIT` 可能释放当期死亡的唯一 merchant cohort。所有受影响 cell 必须在
 building employment reconcile 与 `BUILDING_COMMIT` 的内生施工交易之前修复 merchant
@@ -206,45 +218,45 @@ v11 在 `building_production` 的正常商人现金结算后，仅把目标库�
 20% 增加 owner 资金与 `explicit_money_mint`；超过目标的余量进入 discard。该发行在同一 building slice 内完成，不新增 stage。事件现金流 schema v4 沿用
 `producer_support_issuance`，CSV v16 summary 保留托底数量、发行额、金银货币流、贸易活性游标和拒绝诊断，building 行新增 owner 容量、
 实际业主席位、利用率折算生产等效人数和真实空缺口径。
-外部 stage ABI 和冻结/截止日屏障不变；生产默认 cadence 已由后述 workload-auto 规则取代固定五日。
+外部 stage ABI 和冻结/截止日屏障不变。生产 cadence 是锁定的市场 N∈[1,5]、
+计划 P∈[5,15] 与投资 I∈[10,30]（I > P），不再使用 workload-auto 50/334。
 
 v12 在 `building_commit` 增加原生内生投资。评估使用本周期已完成的企业计划和市场信号，
-但只在跨过 30 日边界时允许新增建筑；普通周期不会重复扩建。已有业主空缺仍由
+但只在锁定投资周期 I 到期且落在当天市场工作集时允许新增建筑；普通市场日不会重复扩建。已有业主空缺仍由
 `building_employment` 优先处理。所有已解锁建筑类型进入同一经济评估；缺少可销售产出的 service
 会自然失败于市场信号门槛，collector 仍须通过市场需求、资源、建材、营运资金、业主生活费、
 盈利和回收期门槛，并复用 BUILD 的建材库存、
-出资者资金、商人收入、事件和守恒账本。该节流由 committed day 推导，不新增 PKEC 字段。
-## 2026-07-20 cadence changes
+出资者资金、商人收入、事件和守恒账本。节流由锁定 I 与市场相位共同推导；PKEC v39 持久化 N/P/I。
+## 锁定周期 cadence（PKEC v39）
 
-The production default is workload-auto cadence (`market_cycle_days=0`) with a
-five-day floor. Explicit positive values remain forced for tests and manual
-high-fidelity runs. Auto mode fixes market ranges at at most 128 markets and
-building ranges at 256 active building cells, then estimates the deadline as:
+市场结算锁定 **N∈[1,5]**，生产计划锁定 **P∈[5,15]**，投资锁定 **I∈[10,30]** 且 **I > P**。
+三套周期只在各自完整周期开始时改档。选档只数经济活格（人口>0 ∪ 已建建筑 ∪ 在建）、活跃 cohort、有建筑格，再加上
+一周期本侧实测毫秒 EMA；不问空地图，也不读当前帧尖峰或速度倍率。冷启动偏勤。
+`market_cycle_days=0` 当作上限 5，不恢复 50/334 快进档。测试通过
+`inject_economy_cadence_timing` 注入固定周期耗时（第三参可选，默认复用计划侧毫秒）。
 
-`max(market cell ranges, cohort ranges) + 4 * building ranges + 4 fixed stages`,
-plus 50 percent deterministic scheduler slack above the five-day floor.
-
-The estimate is clamped by `market_max_cycle_days`. Reports expose configured
-and effective cadence, market/building/total slice estimates,
-`workload_deadline_feasible`, and `workload_cycle_clamped`. These values depend
-only on authoritative workload, never frame rate or speed scale.
+每天市场工作集：活格 ∩ `cell % N == (day - cycle_start) % N`。账期用该格
+`cell_last_settlement_day` 的真实间隔，clamp 到 1–5。P/I 尽量取当前 N 的倍数；到期但当天
+不在市场桶则推迟到该格下次市场日。报告写出锁定 N/P/I、周期起点、剩余天数、刀数和每刀毫秒。
+EMA 是设备校准，不进存档和 state hash。v38 读档把已存 S 当作 P，并合成 I > P。
+`note_completed_epoch_cadence_ms()` 只在整日 COMMIT 完成时调用，因此 `cadence_market_ms_per_knife`
+反映真实每刀，而不是每个 publish 切片。
 
 At a due boundary, one pending trade-planner slice is returned separately from
 `epoch_begin`. `boundary_continuation_required` requests one same-day WorldClock
 continuation so trade scanning no longer stacks with the first building-plan
 range and does not shift the sample day. This is distinct from deadline
-catch-up; normal auto workloads must report zero deadline barrier slices.
+catch-up; normal locked-cycle workloads must report zero deadline barrier slices.
 
-Investment review is an independent 180-day boundary checked in
-`building_commit`; vacancy repair still runs whenever a committed cycle exposes
-an owner opening. Each cell may start at most one building per review.
+Vacancy repair still runs whenever a committed cycle exposes an owner opening.
+Each cell may start at most one building per slow-cycle review.
 
 Trade signal collection is fused into existing building and market per-good
 work. The sparse planner continues between settlement boundaries under its scan
 and route budgets. At each settlement boundary, a completed candidate set or safe
 completed prefix may dispatch after stock, cash, capacity, topology, and country
 revalidation. No daily all-building-type scan was added: the full constructible
-catalog is evaluated only on the 180-day investment review for populated cells.
+catalog is evaluated only on the locked slow-cycle investment review for populated cells.
 
 `building_commit_phase` separates ready-construction commit, bounded investment
 review-cell ranges, and final employment reconciliation. `review_prepare` builds
@@ -262,18 +274,21 @@ after finalization. Candidate evaluation may later move to read-only worker
 ranges, but sponsor funds, materials, population movement, and construction
 creation must be revalidated and committed in stable cell order.
 
-## Rolling five-phase graph (introduced in PKEC v22, retained by PKEC v30)
+## Locked-cycle graph (PKEC v39; rolling buckets introduced in PKEC v22)
 
-The former global epoch and workload-selected cadence are superseded. Every day
-the native graph builds the sorted workset for `cell_id % 5 == day % 5` and
-finishes that bucket through bounded same-day continuation. One native call may
-consume up to eight deterministic ranges in stable graph order. The normal wall
-budget is 0.8 ms; at `speed_scale>=20` native uses at least 1.8 ms to amortize
-the GDScript/GDExtension/SUS bridge. Wall time only decides whether to yield
-before the next range and never changes a decision or range boundary.
-`done=false` raises the existing day barrier and real-frame pulse until the final publish. Each cell
-uses a fixed five-day transaction, so adjacent committed dates differ by at most
-four days and one cell's consecutive settlement dates differ by exactly five.
+The former global epoch and 50/334 workload-auto cadence are superseded. Every
+day the native graph builds the sorted workset for live cells that also satisfy
+`cell % N == (day - cycle_start) % N` and finishes that bucket through bounded
+same-day continuation. Live cells are `population > 0` or have a building or
+pending construction. Empty wilderness is omitted from market/employment/production
+lanes. N is locked in 1–5 at a market-cycle boundary. One native
+call may consume up to eight deterministic ranges in stable graph order. The
+normal wall budget is 0.8 ms; at `speed_scale>=20` native uses at least 1.8 ms
+to amortize the GDScript/GDExtension/SUS bridge. Wall time only decides whether
+to yield before the next range and never changes a decision, range boundary, or
+locked N/S. `done=false` raises the existing day barrier and real-frame pulse
+until the final publish. Accounting uses that cell's actual elapsed days,
+clamped to 1–5, not a newly chosen N.
 
 Daily order is country snapshot, resource update, trade arrival/refund, eligible
 commands, due local transactions, sparse trade planning/dispatch, then stable
@@ -307,7 +322,7 @@ therefore be zero.
 The same body runs as one task below `worker_market_threshold`, when workers are
 disabled or unavailable, when the range/group workload is too small, or when a
 non-identity cell-to-market mapping is detected. These fallbacks are native and
-do not change five-day cadence, the range boundary, or same-day continuation.
+do not change locked N/S cadence, the range boundary, or same-day continuation.
 The frame timebox can schedule another continuation after this range completes;
 it cannot preempt a production range already executing.
 

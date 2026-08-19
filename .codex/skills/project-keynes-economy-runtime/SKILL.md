@@ -1,6 +1,6 @@
 ---
 name: project-keynes-economy-runtime
-description: Guides Project.Keynes native economy runtime development and review, covering PopulationCohort, merchant-owned MarketStore, domestic trade topology/planning/orders, need/variant/component consumption, sparse building construction/employment/production, tax-aware settlement and behavior, frozen settlement cycles, EconomyDailySystem scheduling, fixed-point conservation, save schema, performance/approximation diagnosis, and content expansion. Use when modifying gdext/src/economy_runtime.*, world_ext_economy.cpp, economy profiles/catalog/facade, goods/needs/professions/ethnicities/buildings, taxation events or predictions, terrain trade movement, economy scheduling/UI/save/tests, or investigating economy correctness, latency, memory, and replay behavior.
+description: Guides Project.Keynes native economy runtime development and review, covering PopulationCohort, merchant-owned MarketStore, domestic trade topology/planning/orders, need/variant/component consumption, sparse building construction/employment/production, frozen settlement cycles, EconomyDailySystem scheduling, fixed-point conservation, save schema, performance/approximation diagnosis, and content expansion. Use when modifying gdext/src/economy_runtime.*, world_ext_economy.cpp, economy profiles/catalog/facade, goods/needs/professions/ethnicities/buildings, terrain trade movement, economy scheduling/UI/save/tests, or investigating economy correctness, latency, memory, and replay behavior.
 ---
 
 # Project.Keynes Economy Runtime
@@ -9,12 +9,6 @@ Use this skill together with `cpp-dots-runtime-development` and
 `project-keynes-runtime-architecture` when they are available. Treat the current source as the
 final truth; use these references to avoid rediscovering invariants and to detect source/document
 drift.
-
-Also load `project-keynes-tax-runtime` for tax policy, fiscal escrow, tax bases, subsidies,
-tax-aware purchase/employment/investment behavior, tariff placeholders, or PKCN/PKEC tax migration.
-Load `project-keynes-family-runtime` for notable-family identity, membership, family-owned buildings,
-owner-job constraints, profession attribution, family formation/lifecycle, surname catalogs, family
-queries/UI, or PKEC family sections.
 
 ## Ground the task
 
@@ -29,9 +23,10 @@ Read the files relevant to the requested change before editing:
 - Clock continuation: `scripts/geography/map_generator.gd`, `world_clock.gd`.
 - Profiles/content: `scripts/data/*profile.gd`, `data/economy/`, `data/economy/buildings/`,
   `data/goods/`.
-- Tests: `tests/goods_storage_schema_test.gd`, `tests/economy_runtime_bench.gd`,
-  `tests/building_runtime_test.gd`, `tests/building_runtime_bench.gd`, and economy bootstrap/map
-  generation tests when building-first population changes.
+- Tests: `tests/goods_storage_schema_test.gd`, `tests/economy_cadence_runtime_test.gd`,
+  `tests/economy_runtime_bench.gd`, `tests/building_runtime_test.gd`,
+  `tests/building_runtime_bench.gd`, and economy bootstrap/map generation tests when
+  building-first population changes.
 
 Read bundled references by task:
 
@@ -40,8 +35,8 @@ Read bundled references by task:
 - Read [market-algorithms.md](references/market-algorithms.md) for demand, wealth, environment,
   substitutes, complements, merchants, clearing, price, domestic trade candidates/orders,
   building transactions/wages, rounding, or conservation.
-- Read [scheduling-performance.md](references/scheduling-performance.md) for frozen cycles,
-  building stages, default five-day cadence, deadline catchup, ACTIVE/PROBE, reports, latency,
+- Read [scheduling-performance.md](references/scheduling-performance.md) for locked
+  N∈[1,5] / P∈[5,15] / I∈[10,30] (I > P) cycles, deadline catchup, ACTIVE/PROBE, reports, latency,
   memory, or error.
 - Read [extension-and-verification.md](references/extension-and-verification.md) before adding a
   good, profession, ethnicity, need, building, curve, command, native behavior, save field, or
@@ -65,7 +60,7 @@ queries, UI, and file I/O. Never add a parallel GDScript economy or building sim
 ## Preserve hard invariants
 
 - Keep one aggregate cohort per `(cell, signature)`; keep wealth outside identity.
-- Keep a merchant on every populated cell; conserve population and proportional funds when repairing.
+- Keep a living merchant (`population > 0`) on every populated cell; conserve population and proportional funds when repairing. Zero-population merchant lanes are not market-makers.
 - Treat local merchant cohorts as joint inventory owners; transfer buyer money directly to merchants.
 - Keep one cell equal to one local market until an explicit market-topology migration is designed.
 - Keep domestic transport as movement between those local markets. Trade topology, sparse planning,
@@ -75,8 +70,7 @@ queries, UI, and file I/O. Never add a parallel GDScript economy or building sim
   Objects. DataCore may expose only sampled geographic/resource inputs and resource deltas.
 - Keep country identity, technology, cash, and goods treasury in `NativeCountryRuntime`; economy
   freezes the native country snapshot at sample day. Never restore per-cell technology or a global
-  economy treasury. Tax policy and cash treasury remain country-owned; taxable events, frozen
-  rates, fiscal escrow, and fiscal history remain economy-owned.
+  economy treasury.
 - Keep sparse building groups in stable `(cell, type, owner signature)` order. Store the sponsor's
   stable cohort signature as owner identity; do not add employer or building identity to cohort
   signatures.
@@ -92,9 +86,8 @@ queries, UI, and file I/O. Never add a parallel GDScript economy or building sim
   inspector queries may read the latest slice-complete native state, must report `snapshot_source`,
   and must stay bounded; never copy or publish a global cohort-by-good or order matrix.
 - Keep generic production, employment, wages, and transport outside household Market V2. The native
-  building graph, domestic trade graph, and dedicated tax/fiscal settlement are explicit staged
-  exceptions. Keep cross-country trade execution, active tariffs, politics, and unrelated country
-  systems outside this runtime until their own authority contracts are designed.
+  building graph and PKEC v11 domestic trade graph are explicit staged exceptions. Keep tax,
+  cross-country trade/tariffs, politics, and natural demography outside this runtime until designed.
 
 ## Preserve the building graph contract
 
@@ -130,9 +123,13 @@ queries, UI, and file I/O. Never add a parallel GDScript economy or building sim
 
 ## Treat cadence as a gameplay/performance contract
 
-Use `market_cycle_days=5` as the production default. Use `0` only when explicitly selecting
-cohort-budget auto cadence. Do not present the N=50/N=334 automatic performance figures as the
-default five-day behavior.
+Market settlement locks N in 1–5. Production plans lock P in 5–15. Investment
+locks I in 10–30 and must be longer than the current P. Each changes only at
+its own completed cycle boundary, using populated work plus previous-cycle
+machine timing for that side. `market_cycle_days=5` is the production
+maximum and late-game stagger cap, not a start-of-game fixed period. Do not
+restore `market_cycle_days=0` 50/334 auto-fast-forward. Do not present those
+historical N=50/N=334 figures as default behavior.
 
 When changing cadence or approximation:
 
@@ -141,7 +138,9 @@ When changing cadence or approximation:
   funds/stock before household clearing; mid-cycle gameplay writes must remain deferred.
 - Freeze building ownership, role fills, construction readiness, geographic/resource context, and
   production inputs for the same cycle boundary; do not let mid-cycle gameplay writes leak into it.
-- Multiply period demand by N and normalize demand/income EMA inputs back to daily values.
+- Multiply period demand by that cell's actual elapsed days (clamped 1–5) and
+  normalize demand/income EMA inputs back to daily values. Do not multiply by a
+  newly chosen N.
 - Keep `wait_commit` until `sample_day + N - 1`.
 - Allow normal day progression before the deadline.
 - Raise `economy_day_barrier` only when `commit_due && !done`, then catch up on real-frame pulses.
@@ -184,5 +183,5 @@ Include:
   evidence. For building changes, include construction, employment, merchant cash-cap/discard,
   wages, resource delta, and sparse-world evidence.
 - Release avg/p95/max and memory when performance can change.
-- Whether default five-day mode or explicit auto cadence was benchmarked.
+- Whether locked N/S or a historical auto/fixed-five path was benchmarked.
 - Remaining blockers and intentionally excluded systems.

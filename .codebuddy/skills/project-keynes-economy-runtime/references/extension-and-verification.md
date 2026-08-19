@@ -57,9 +57,11 @@ save pending-command encoding, and stale-handle tests.
 
 ## 3. Required tests
 
-Run `tests/goods_storage_schema_test.gd`. Preserve coverage for:
+Run `tests/goods_storage_schema_test.gd` and `tests/economy_cadence_runtime_test.gd`.
+Preserve coverage for:
 
-- default ACTIVE/five-day configuration
+- opening one-cell N=1, P near 5, I > P, and locked N∈[1,5] / P∈[5,15] / I∈[10,30]
+- injected timing, mid-cycle lock hold, no missed cells, v39 save/restore
 - merchant repair and population/fund conservation
 - buyer-to-merchant transfers and no anonymous market cash
 - stock consumption, EMA, price, environment substitution
@@ -84,7 +86,9 @@ From `gdext/` on Windows:
 
 Close Godot before linking loaded DLLs. Run focused tests with Godot 4.6.2 headless.
 
-The benchmark script explicitly sets auto cadence and must run against template_release:
+The benchmark script must run against template_release. Current production
+locks N in 1–5; do not treat historical `--desktop` auto N=50/334 figures as
+the default path:
 
 ```text
 res://tests/economy_runtime_bench.gd

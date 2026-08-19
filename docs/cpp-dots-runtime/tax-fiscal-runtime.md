@@ -127,6 +127,11 @@ market 完成后，`household_market/income_subsidy` 子阶段按 cohort 汇总�
 后有效率与基础率不同时卡片附注“修正后 X%”。卡片节点复用，每日刷新不重建树。关税页
 可编辑，但显示“待跨国贸易接入”。
 
+地块档案的税种默认与对象详情细项共用 `TaxLaneEditor`。SpinBox 箭头、拖动与回车/
+失焦一样提交次日命令；草稿和 pending 值在 Inspector live patch 中保留，不能被仍未
+生效的继承税率（常见为 0%）写回。国家经济页的税种默认仍是预览后确认；职业、物资、
+建筑和关税细项覆盖同样保留箭头/拖动草稿，live refresh 不得写回继承默认。
+
 最低验证集为 country、economy rolling、building、modifier、game-save 和玩家国家 UI
 focused suites，加 debug/release 构建及 50 日 production-path benchmark。确定性测试必须
 覆盖 worker 数、slice budget、continuation、保存恢复和财政 hash。

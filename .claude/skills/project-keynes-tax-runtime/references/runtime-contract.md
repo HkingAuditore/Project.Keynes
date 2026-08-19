@@ -292,6 +292,10 @@ Submit one command only when a SpinBox/input is confirmed, not for every key or 
 next-day pending state until both the effective day and a newer policy version are observed. Import
 and export remain editable with a foreign-trade-not-connected message.
 
+Cell Inspector tax editors share that confirm-then-pending rule. Arrow, drag, Enter, and focus-loss
+all confirm; live patches must keep the draft or pending rate and must not write the inherited
+default back over an in-progress edit.
+
 Cache rows and update visible values in place. Do not rebuild the node tree or reset scroll position
 on daily refresh. Keep the workspace usable at 1280×720.
 

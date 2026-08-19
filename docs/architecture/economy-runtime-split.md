@@ -368,7 +368,7 @@ coordination and aggregate `COMMIT` ordering.
 3. Focused economy correctness tests and the relevant benchmark.
 4. Scalar/worker deterministic state-hash comparison.
 5. Population, money and goods audit error exactly zero.
-6. Default `market_cycle_days=5` evidence; do not substitute auto cadence.
+6. Locked market N in 1–5 evidence; do not restore or substitute 50/334 auto cadence.
 7. Save/restore and event schema evidence when persistence-facing code moves.
 8. Update `docs/cpp-dots-runtime/computation-pipelines.md`, economy docs and
    `references/system-map.md` whenever authority, stage, report or schema

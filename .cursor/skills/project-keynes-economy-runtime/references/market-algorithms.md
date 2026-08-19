@@ -34,8 +34,11 @@ signals, and four environment signals. Population alive at the boundary enters e
 building input purchases, output sales, and income distribution then update funds and stock before
 household clearing. Producer-retained food fills one aggregate emergency calorie pool across staple,
 protein, and produce needs, while active owner lots protect next-period physical-input cash from
-household spending. Calculate the whole N-day period from that state. The production default is N=5. Setting
-`market_cycle_days=0` selects scale-driven automatic N.
+household spending. Calculate the whole period from that frozen state using the
+cell's actual elapsed days (`clamp(day - cell_last_settlement_day, 1, 5)`), not
+a newly chosen N. Production locks market N in 1–5 at cycle boundaries.
+`market_cycle_days=0` is ignored and treated as the maximum 5; it does not
+select the retired 50/334 auto-fast-forward path.
 
 This is an approximation, not N sequential daily integrations. Keep its state invisible until
 the period deadline. Commands arriving after sample day apply next period.

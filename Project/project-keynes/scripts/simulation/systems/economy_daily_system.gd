@@ -6,10 +6,11 @@ const ResourceRegistryScript = preload("res://scripts/data/resource_profile_regi
 
 var facade = null
 var world_clock: WorldClock = null
+var generator = null
 var _last_report: Dictionary = {}
 var _fatal_reported: bool = false
 
-func _init(p_facade, p_world_clock: WorldClock = null) -> void:
+func _init(p_facade, p_world_clock: WorldClock = null, p_generator = null) -> void:
 	id = &"economy_daily"
 	priority = 260
 	must_run = false
@@ -21,6 +22,7 @@ func _init(p_facade, p_world_clock: WorldClock = null) -> void:
 	policy = SusPolicyScript.AlwaysPolicy.new()
 	facade = p_facade
 	world_clock = p_world_clock
+	generator = p_generator
 
 func feature_flag() -> StringName:
 	return &""
@@ -74,6 +76,9 @@ func tick(ctx) -> Dictionary:
 		"slice_budget_ms": slice_budget_ms,
 	}
 	var ext: Object = facade.world_ext()
+	if generator != null and generator.has_method("catchup_natural_resources_for_live_cells"):
+		generator.catchup_natural_resources_for_live_cells(
+			int(ctx.day_index) if ctx != null else 0)
 	# Country daily ACKs CLAIM at priority 255. Dispatch SETTLE before this
 	# slice so a claimed party already in SETTLING can land, and a frozen
 	# cycle can still join LEDGER_APPLY. Newly arrived parties are enqueued

@@ -5122,45 +5122,6 @@ int32_t NativeEconomyRuntime::find_entrepreneur_source(
     return best_slot;
 }
 
-int32_t NativeEconomyRuntime::choose_epoch_days(int64_t cohorts) {
-    const int64_t rolling_markets = (_market.market_count + ROLLING_PHASE_COUNT - 1) /
-        ROLLING_PHASE_COUNT;
-    const int64_t rolling_cohorts = (cohorts + ROLLING_PHASE_COUNT - 1) /
-        ROLLING_PHASE_COUNT;
-    const int64_t market_cell_slices = rolling_markets <= 0 ? 0 :
-        (rolling_markets + std::max(1, _cells_per_slice) - 1) /
-            std::max(1, _cells_per_slice);
-    const int64_t market_cohort_slices = rolling_cohorts <= 0 ? 0 :
-        (rolling_cohorts + std::max<int64_t>(1, _target_cohorts_per_slice) - 1) /
-            std::max<int64_t>(1, _target_cohorts_per_slice);
-    _estimated_market_slices_per_epoch = static_cast<int32_t>(std::clamp<int64_t>(
-        std::max<int64_t>({1, market_cell_slices, market_cohort_slices}), 1,
-        std::numeric_limits<int32_t>::max()));
-
-    const int64_t building_ranges = std::max<int64_t>(0,
-        (estimate_building_ranges() + ROLLING_PHASE_COUNT - 1) /
-            ROLLING_PHASE_COUNT);
-    _estimated_building_slices_per_epoch = static_cast<int32_t>(
-        std::min<int64_t>(std::numeric_limits<int32_t>::max(), building_ranges * 4));
-    // Two planning passes, employment and production consume four building
-    // ranges. The fixed allowance covers ledger/dispatch/structural/publish
-    // boundaries that cannot always fuse with a range-bearing call.
-    constexpr int64_t FIXED_STAGE_MARGIN = 4;
-    const int64_t raw_total = static_cast<int64_t>(
-        _estimated_market_slices_per_epoch) +
-        _estimated_building_slices_per_epoch + FIXED_STAGE_MARGIN;
-    // SUS may legitimately budget-skip economy while native climate/visual
-    // work occupies the frame. Reserve deterministic slack for that known
-    // scheduler boundary; cadence never reads wall time or frame duration.
-    const int64_t estimated_total = raw_total;
-    _estimated_total_slices_per_epoch = static_cast<int32_t>(std::clamp<int64_t>(
-        estimated_total, 1, std::numeric_limits<int32_t>::max()));
-
-    _workload_cycle_clamped = false;
-    _workload_deadline_feasible = true;
-    return ROLLING_PHASE_COUNT;
-}
-
 int32_t NativeEconomyRuntime::building_slice_end(int32_t active_begin) const {
     return building_slice_end(active_begin, _building_cells_per_slice,
                               _building_groups_per_slice);
@@ -11504,6 +11465,12 @@ int64_t NativeEconomyRuntime::state_hash() const {
     mix_u64(static_cast<uint64_t>(_cell_count));
     mix_u64(static_cast<uint64_t>(_epoch_id));
     mix_u64(static_cast<uint64_t>(_epoch_days));
+    mix_u64(static_cast<uint64_t>(_locked_market_cycle_days));
+    mix_u64(static_cast<uint64_t>(_market_cycle_start_day));
+    mix_u64(static_cast<uint64_t>(_locked_slow_cycle_days));
+    mix_u64(static_cast<uint64_t>(_slow_cycle_start_day));
+    mix_u64(static_cast<uint64_t>(_locked_investment_cycle_days));
+    mix_u64(static_cast<uint64_t>(_investment_cycle_start_day));
     mix_u64(static_cast<uint64_t>(_last_committed_day));
     mix_u64(static_cast<uint64_t>(_environment_day));
     mix_u64(static_cast<uint64_t>(_environment_hash));
@@ -12068,6 +12035,26 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _current_day = -1;
     _commit_day = -1;
     _last_committed_day = -1;
+    _cadence_initialized = false;
+    _locked_market_cycle_days = MARKET_CYCLE_MIN_DAYS;
+    _market_cycle_start_day = 0;
+    _locked_slow_cycle_days = PLAN_CYCLE_MIN_DAYS;
+    _slow_cycle_start_day = 0;
+    _locked_investment_cycle_days = INVEST_CYCLE_MIN_DAYS;
+    _investment_cycle_start_day = 0;
+    _market_ms_per_knife_ema = 0.0;
+    _slow_ms_per_knife_ema = 0.0;
+    _investment_ms_per_knife_ema = 0.0;
+    _cycle_market_ms_accum = 0.0;
+    _cycle_slow_ms_accum = 0.0;
+    _cycle_investment_ms_accum = 0.0;
+    _injected_cycle_market_ms = -1.0;
+    _injected_cycle_slow_ms = -1.0;
+    _injected_cycle_investment_ms = -1.0;
+    _forced_market_cycle_days = 0;
+    _forced_slow_cycle_days = 0;
+    _forced_investment_cycle_days = 0;
+    _cadence_change_reason = 1;
     _next_submit_order = 1;
     _next_event_id = 1;
     _event_stream_hash = 1469598103934665603ULL;
@@ -12379,6 +12366,7 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _cell_resource_gen.clear();
     _cell_trade_gen.clear();
     _epoch_market_ids.clear();
+    _economy_live_cells.clear();
     _epoch_settlement_cells.clear();
     _epoch_building_cells.clear();
     _epoch_plan_cells.clear();

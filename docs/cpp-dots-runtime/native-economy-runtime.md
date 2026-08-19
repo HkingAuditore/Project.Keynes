@@ -1,8 +1,12 @@
 # 原生阶层与本地市场运行时（Market V2 / Price V4）
 
-PKEC v37 是当前 writer：在 v36 的 `support_ema_q16` 之上，为家族开拓队追加在途货物
-托管与冻结开工建筑计划。格承载力 `K_eff = K_geo × EMA(mix(surplus)×mix(sat_cell))` 驱动物流斯蒂生育；
-`K_geo` 与各族 cover 是派生诊断，不进存档。v36 可读（空 cargo），v35 可读（EMA=1、空 cargo），更早 schema 拒绝。
+PKEC v39 是当前 writer：在 v38 锁定市场 N 之上，把生产计划 P∈[5,15] 与投资 I∈[10,30]
+分开锁定，且 I > P。三套周期只在各自完整周期边界重选；选档用经济活格刀数
+（人口>0 ∪ 已建建筑 ∪ 在建，不是全图 cell_count）加上一周期本侧实测毫秒 EMA，
+且该毫秒只在 `aggregate_publish` COMMIT 完成时累计，不恢复 `market_cycle_days=0` 的 50/334 日快进档。
+每天工作集是活格 ∩ 市场桶；`due_cells` 不再等于 `cell_count / N`。
+v38 读档时 P=已存 S（5–30 包络内），并合成 I > P。v37 读档时 N=5、P=已存 plan days。
+v36 可读（空 cargo），v35 可读（EMA=1、空 cargo），更早 schema 拒绝。
 领域 API 与跨域 ACK 契约见[运河运行时](./canal-runtime.md)。
 
 2026-07 的高速合批、认证近似冷却、generation-stamped scratch 和两态
@@ -297,10 +301,11 @@ same-day barrier continuation 使用 `run_economy_slice_compact`，返回
 delta flush、CSV committed capture 与 gameplay event publish 均不绕过；仅返回 Dictionary 形状不同。
 
 `population_cell_summary()` 与 population/market/building selected-cell snapshot
-都发布该地块的 `settlement_generation`。人口 Inspector 先用 summary generation
-判断详细 cohort/market category 是否可能变化，再对新构建的 category 做内容 hash；
-generation 未变时只允许刷新公共 header/score/summary，不得重复构建或 apply 人口明细。
-公共区域使用其实际渲染字段的 hash，因此气候或国家摘要更新不受人口 generation 限制。
+都发布该地块的 `settlement_generation`。人口 Inspector 每日列表 live patch 走
+`get_population_cell_snapshot(cell, include_details=false)`，刷新可见人数、财富和净值；
+不得用 `settlement_generation` 冻结这些列表数字。对象详情与首次打开人口页仍走完整
+snapshot（含需求预览、福利 CSR 与现金流分项）。完整 category 的内容 hash 只用于跳过
+相同列表的控件 apply，不代替 list snapshot 本身。
 
 `trade_plan_ms` 是当前一次 `run_economy_slice()` 中 planner 的墙钟时间，不是 epoch、
 simulation day 或进程累计值。未执行 planner 的 native slice 必须报告 `0`；跨 slice
@@ -344,9 +349,7 @@ transient 数据，不进入 PKEC v19 或 state hash；state hash 按稳定 grou
 在 ACTIVE epoch 内走 O(1) 稠密位查询，投资目录直接遍历该国 CSR；两者均为 transient cache，
 不改变 catalog 顺序、PKEC v19 或 state hash。`building_commit.investment` 与普通建筑图分开使用
 默认 96-cell batch，report 公开 `investment_cells_per_slice`；profile 为 0 时自动采用 96，正值
-作为确定性覆盖。投资准备只聚合当日同时命中五日
-rolling phase 与资本复核 phase 的 cell，非复核 cell 的 owner-vacancy 诊断沿现有 building CSR
-直接计算，不构造全 epoch `(cell,type)` 哈希表。
+作为确定性覆盖。投资准备只聚合当日同时命中锁定市场桶 N 与投资周期 I 的 cell；I 到期但不在当天市场工作集的格推迟到该格下一次市场日。
 
 贸易另提供 `capture_economy_trade_topology()` 粗粒度地图输入、
 `capture_economy_trade_visibility()` 测试夹具，以及分页
@@ -392,8 +395,9 @@ sample 再冻结 `visible_arr`：玩家开局国参与的贸易两端必须当�
 
 ## 实测门槛
 
-Windows / Godot 4.6.2 / template_release / 2026-07-11。下表是显式
-`market_cycle_days=0` 的自动周期性能档；该模式现为生产默认：
+Windows / Godot 4.6.2 / template_release / 2026-07-11。下表是历史显式
+`market_cycle_days=0` 自动周期（N=50/334）性能档，**不是**当前生产默认。
+当前生产是锁定 N∈[1,5]、P∈[5,15]、I∈[10,30] 且 I > P：
 
 | 档位 | 样本 | avg | p95 | max | runtime memory | ACTIVE 结论 |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
@@ -538,8 +542,9 @@ delta 会阻止跨周期重复超采。每条资源边有 `extract` 或 `capacit
 容量。重复建筑只削减到该目标，每种已投放类型至少保留一栋；不具备最低承载力的地块不生成人口。
 人口结构不再作为建筑生成输入；建筑岗位配置变化会直接改变新地图的职业人口结构。
 
-Inspector 首屏通过 `get_population_cell_summary` 只读取人口聚合值；人口需求、市场、建筑与自然
-资源明细仍走 snapshot。人口页暴露 `carrying_k_geo` / `carrying_k_eff` / 物资覆盖 / 阶层 sat，
+Inspector 首屏通过 `get_population_cell_summary` 只读取人口聚合值；人口页每日列表
+走 `include_details=false` 的 snapshot，需求、福利分项与市场价仍留给对象详情和完整页
+重建。人口页暴露 `carrying_k_geo` / `carrying_k_eff` / 物资覆盖 / 阶层 sat，
 以及各族 bindable cover，不把 21 族做成调试表。
 资源明细由可见标签惰性读取，避免点击成本随全局 goods/building catalog 扩张。完整 snapshot 在
 Facade/UI 只读传递，不再为缓存和返回值各做一次递归深拷贝。
@@ -696,7 +701,7 @@ Inspector 诊断 lane，计入 runtime memory，但不进入 state hash 或 PKEC
 服务。前两项在基础设施/服务经济落地前作为明确的无家庭需求资本品保留；scientific_instruments
 仍有精密工具生产下游。允许的跨 need 复用仅为 refined_fuel、computers、beverages 和 fur，
 Inspector 会聚合显示。需求/计划变更只改变 catalog hash；旧 hash 的 PKEC 按现有
-`save_catalog_scale_or_capacity_mismatch` 路径拒绝，byte schema 与五日默认 cadence 不变。
+`save_catalog_scale_or_capacity_mismatch` 路径拒绝；byte schema 现为 PKEC v39，cadence 为锁定 N/P/I。
 生成目录遵守 16 needs、每 need 8 variants、每 variant 4 components 的运行时合同；本轮加入
 野味后实际最大 variant 数为 5，最大 component 数仍为 2。聚焦处理量以当前 schema 测试输出为准。
 
@@ -724,7 +729,7 @@ SELECTIVE 的 building slices 为 `2.152/8.834/8.834ms`、`113.3MB`，三项审�
   all-slice max `11.801ms`，runtime memory `111.9MB`。
   `production_output_discarded=0`、`building_wages_unpaid=0`，population/money/goods error 为 `0/0/0`。
 
-以上是历史显式固定五日 cadence 证据，不与 workload-auto 数据混用。
+以上是历史显式固定五日 / workload-auto 证据，不与当前锁定 N∈[1,5]、P/I 分锁混用。
 
 同日 habitat/geology/crop-capacity 收口后的 `TRACE_OFF` 复核：100 goods / 200k cohorts 为
 avg/p95/max `2.290/2.961/3.589ms`、`94.2MB`；200 goods / 10M cohorts 为
