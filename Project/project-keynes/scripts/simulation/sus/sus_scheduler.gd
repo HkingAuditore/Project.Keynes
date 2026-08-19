@@ -393,9 +393,14 @@ func tick(ctx: SusTickContext) -> void:
 
 		# Policy gate.
 		if not job.should_run(ctx):
-			report["skipped_reason"] = "policy_gated"
+			var skip_reason := "policy_gated"
+			if job.has_method("policy_skip_reason"):
+				var custom := str(job.policy_skip_reason())
+				if custom != "":
+					skip_reason = custom
+			report["skipped_reason"] = skip_reason
 			_last_report[job.id] = report
-			_record_skipped(job.id, "policy_gated")
+			_record_skipped(job.id, skip_reason)
 			jobs_skipped += 1
 			continue
 

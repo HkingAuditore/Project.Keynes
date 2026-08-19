@@ -84,8 +84,14 @@ func tick(ctx) -> Dictionary:
 		return {"done": true, "work_done": 0, "elapsed_ms": 0.0, "progress_ratio": 1.0}
 
 	var res: Dictionary = {}
-	if generator.has_method("run_natural_resource_pass_native"):
-		res = generator.run_natural_resource_pass_native(map, stride)
+	if generator != null and generator.has_method("run_natural_resource_pass_scheduled"):
+		var day_idx: int = int(ctx.day_index) if ctx != null else 0
+		var live_cells := PackedInt32Array()
+		if generator.has_method("economy_live_cells"):
+			live_cells = generator.economy_live_cells()
+		res = generator.run_natural_resource_pass_scheduled(map, day_idx, live_cells)
+	elif generator != null and generator.has_method("run_natural_resource_pass_native"):
+		res = generator.run_natural_resource_pass_native(map, 1)
 	_last_path = str(res.get("path", "gdscript"))
 
 	var elapsed_ms: float = (Time.get_ticks_usec() - t0) / 1000.0
@@ -112,7 +118,8 @@ func tick(ctx) -> Dictionary:
 		"published_resource_count": int(res.get("published_resource_count", res.get("resource_count", 0))),
 		"input_resource_count": int(res.get("input_resource_count", res.get("resource_count", 0))),
 		"published_to_slot": bool(res.get("published_to_slot", false)),
-		"dt_days": int(res.get("dt_days", stride)),
+		"dt_days": int(res.get("dt_days", 1)),
+		"indexed_cell_count": int(res.get("indexed_cell_count", 0)),
 		"total_delta": float(res.get("total_delta", 0.0)),
 	}
 

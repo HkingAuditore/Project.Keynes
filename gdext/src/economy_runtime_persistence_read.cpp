@@ -81,6 +81,12 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         int32_t canal_quote_count = 0, canal_project_count = 0;
         uint64_t next_canal_quote_token = 1, next_canal_project_id = 1;
         int64_t next_canal_receipt_id = 1;
+        int32_t saved_locked_market_cycle_days = MARKET_CYCLE_MAX_DAYS;
+        int64_t saved_market_cycle_start_day = 0;
+        int32_t saved_locked_slow_cycle_days = SLOW_CYCLE_MIN_DAYS;
+        int64_t saved_slow_cycle_start_day = 0;
+        int32_t saved_locked_investment_cycle_days = INVEST_CYCLE_MIN_DAYS;
+        int64_t saved_investment_cycle_start_day = 0;
         int32_t country_schema = 0;
         uint64_t country_generation = 0, country_hash = 0;
         uint64_t next_submit = 0;
@@ -237,9 +243,12 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             return false;
         }
         int32_t saved_building_plan_days = _building_plan_days;
-        if (schema >= 25 &&
-            (!read_le(bytes, cursor, saved_building_plan_days) ||
-             saved_building_plan_days != _building_plan_days)) {
+        if (schema >= 25 && !read_le(bytes, cursor, saved_building_plan_days)) {
+            error = "save_building_plan_days_mismatch";
+            return false;
+        }
+        if (schema >= 25 && schema < 38 &&
+            saved_building_plan_days != _building_plan_days) {
             error = "save_building_plan_days_mismatch";
             return false;
         }
@@ -330,6 +339,26 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             error = "save_canal_header_invalid";
             return false;
         }
+        if (schema >= 38 &&
+            (!read_le(bytes, cursor, saved_locked_market_cycle_days) ||
+             !read_le(bytes, cursor, saved_market_cycle_start_day) ||
+             !read_le(bytes, cursor, saved_locked_slow_cycle_days) ||
+             !read_le(bytes, cursor, saved_slow_cycle_start_day) ||
+             saved_locked_market_cycle_days < MARKET_CYCLE_MIN_DAYS ||
+             saved_locked_market_cycle_days > MARKET_CYCLE_MAX_DAYS ||
+             saved_locked_slow_cycle_days < SLOW_CYCLE_MIN_DAYS ||
+             saved_locked_slow_cycle_days > SLOW_CYCLE_MAX_DAYS)) {
+            error = "save_cadence_header_invalid";
+            return false;
+        }
+        if (schema >= 39 &&
+            (!read_le(bytes, cursor, saved_locked_investment_cycle_days) ||
+             !read_le(bytes, cursor, saved_investment_cycle_start_day) ||
+             saved_locked_investment_cycle_days < INVEST_CYCLE_MIN_DAYS ||
+             saved_locked_investment_cycle_days > INVEST_CYCLE_MAX_DAYS)) {
+            error = "save_cadence_investment_header_invalid";
+            return false;
+        }
         if (!read_id_table(bytes, cursor, professions) || !read_id_table(bytes, cursor, ethnicities) ||
             !read_id_table(bytes, cursor, good_ids) || !read_id_table(bytes, cursor, plan_ids) ||
             cursor != bytes.size()) {
@@ -410,7 +439,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             saved_trade_export_fraction == _trade_export_inventory_fraction_q16 &&
             saved_trade_import_fraction == _trade_import_fill_fraction_q16 &&
             saved_trade_response_days == _trade_response_days &&
-            saved_investment_review_days == _investment_review_days &&
+            (schema >= 38 ||
+             saved_investment_review_days == _investment_review_days) &&
             saved_investment_shortage == _investment_min_shortage_q16 &&
             saved_investment_utilization == _investment_min_utilization_q16 &&
             saved_investment_payback_days == _investment_max_payback_days &&
@@ -599,9 +629,44 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         _environment_hash = environment_hash;
         _epoch_days = epoch_days;
         _commit_lag_budget_days = std::max(0, epoch_days - 1);
+        if (schema >= 38) {
+            _locked_market_cycle_days = saved_locked_market_cycle_days;
+            _market_cycle_start_day = saved_market_cycle_start_day;
+            _locked_slow_cycle_days = saved_locked_slow_cycle_days;
+            _slow_cycle_start_day = saved_slow_cycle_start_day;
+            if (schema >= 39) {
+                _locked_investment_cycle_days =
+                    saved_locked_investment_cycle_days;
+                _investment_cycle_start_day =
+                    saved_investment_cycle_start_day;
+            } else {
+                _locked_investment_cycle_days =
+                    longer_investment_cycle_days(
+                        _locked_slow_cycle_days,
+                        _locked_market_cycle_days,
+                        saved_investment_review_days);
+                const int32_t invest_cycle = std::max(
+                    1, _locked_investment_cycle_days);
+                if (last_day < 0) {
+                    _investment_cycle_start_day = 0;
+                } else {
+                    const int64_t phase =
+                        ((last_day % invest_cycle) + invest_cycle) %
+                        invest_cycle;
+                    _investment_cycle_start_day = last_day - phase;
+                }
+            }
+            apply_locked_slow_days();
+            _cadence_initialized = true;
+            _cadence_change_reason = 0;
+        } else {
+            _building_plan_days = saved_building_plan_days;
+        }
         if (_auto_slice_by_scale) {
-            _cells_per_slice = std::max(1, (markets + std::max(1, epoch_days) - 1) /
-                                               std::max(1, epoch_days));
+            const int32_t n = std::max(1, schema >= 38
+                ? saved_locked_market_cycle_days
+                : MARKET_CYCLE_MAX_DAYS);
+            _cells_per_slice = std::max(1, (markets + n - 1) / n);
         }
         if (_auto_building_slice_by_scale) {
             _building_cells_per_slice = std::min(
@@ -782,6 +847,11 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             }
             if (schema >= 15) {
                 int32_t saved_phase = -1;
+                const int32_t expected_phase = schema >= 38
+                    ? ((cell % std::max(1, locked_market_cycle_days())) +
+                        locked_market_cycle_days()) %
+                        locked_market_cycle_days()
+                    : cell % ROLLING_PHASE_COUNT;
                 if (!read_le(bytes, cursor, _cell_last_settlement_day[cell]) ||
                     !read_le(bytes, cursor, _cell_settlement_generation[cell]) ||
                     !read_le(bytes, cursor, _cell_price_stock_gen[cell]) ||
@@ -792,7 +862,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                     !read_le(bytes, cursor, _cell_resource_gen[cell]) ||
                     !read_le(bytes, cursor, _cell_trade_gen[cell]) ||
                     !read_le(bytes, cursor, saved_phase) ||
-                    saved_phase != cell % ROLLING_PHASE_COUNT) {
+                    saved_phase != expected_phase) {
                     error = "save_cell_rolling_state_invalid";
                     return false;
                 }

@@ -17,7 +17,7 @@ class CountingEconomyFacade extends RefCounted:
 			"settlement_name_active": true,
 			"settlement_name": "长安"}
 
-	func population_cell_snapshot(_cell_idx: int) -> Dictionary:
+	func population_cell_snapshot(_cell_idx: int, _include_details: bool = true) -> Dictionary:
 		population_calls += 1
 		return {"ok": false}
 
@@ -160,6 +160,10 @@ func _initialize() -> void:
 	if counting_generator.facade.population_calls != 1 \
 			or counting_generator.facade.market_calls != 2:
 		failures.append("dirty population generation did not build both detail snapshots")
+	lazy_view_model.build_live_patch(cell, "population", true, {}, false)
+	if counting_generator.facade.population_calls != 2 \
+			or counting_generator.facade.market_calls != 2:
+		failures.append("population list live patch queried market demand detail")
 	var named_model := lazy_view_model.build(cell)
 	if String(named_model.get("header", {}).get("title", "")) != "长安 · 乡村":
 		failures.append("named settlement header did not replace terrain title")

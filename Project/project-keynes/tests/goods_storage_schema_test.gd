@@ -170,18 +170,24 @@ func _test_default_active_gate(compiled: Dictionary) -> void:
 	_expect("empty ACTIVE bootstrap succeeds", bool(boot.get("ok", false)))
 	_expect("default domestic trade mode is ACTIVE",
 		String(ext.get_economy_report().get("trade_runtime_mode", "")) == "ACTIVE")
-	_expect("default market cycle is five days", int(boot.get("market_cycle_days", 0)) == 5)
-	_expect("default cadence is fixed at five days",
+	_expect("small empty world locks daily market cadence",
+		int(boot.get("market_cycle_days", 0)) == 1 and
+		int(boot.get("locked_market_cycle_days", 0)) == 1 and
+		int(boot.get("locked_slow_cycle_days", 0)) >= 5 and
+		int(boot.get("locked_slow_cycle_days", 0)) <= 30)
+	_expect("profile market cycle is the 1–5 cap, not a forced five-day lock",
 		int(boot.get("market_configured_cycle_days", -1)) == 5 and
-		int(boot.get("market_min_cycle_days", 0)) == 5 and
+		int(boot.get("market_min_cycle_days", 0)) == 1 and
+		int(boot.get("market_max_cycle_days", 0)) == 5 and
 		bool(boot.get("workload_deadline_feasible", false)))
 	var scaled_ext: Object = _new_ext(1200, 0.5)
 	_expect("scaled auto profile configures", bool(scaled_ext.configure_economy(
 		catalog, profile.to_native_profile(), 1200, 2).get("ok", false)))
 	var scaled_boot: Dictionary = scaled_ext.bootstrap_economy({}, {})
-	_expect("world scale changes the rolling workset, not cadence",
-		int(scaled_boot.get("market_cycle_days", 0)) == 5 and
-		int(scaled_boot.get("settlement_phase_count", 0)) == 5 and
+	_expect("empty large maps still lock daily because only populated work counts",
+		int(scaled_boot.get("market_cycle_days", 0)) == 1 and
+		int(scaled_boot.get("settlement_phase_count", 0)) == 1 and
+		int(scaled_boot.get("market_max_cycle_days", 0)) == 5 and
 		bool(scaled_boot.get("workload_deadline_feasible", false)))
 	_expect("default merchant inventory baseline is sixty days",
 		int(ext.get_economy_report().get("merchant_market_making_days_q16", 0)) == 3932160)
@@ -340,11 +346,12 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	print("  [household-workload] needs=%d variants=%d components=%d" % [
 		int(report.get("processed_needs", -1)), int(report.get("processed_variants", -1)),
 		int(report.get("processed_components", -1))])
-	# The extra component visits are the bounded same-period shortage fallback.
+	# Daily N=1 on a one-cell opening world does not take the 5-day shortage
+	# fallback path; that path adds extra component visits when N>1.
 	_expect("worker and merchant process the bounded catalog shape",
 		int(report.get("processed_needs", -1)) == 27 \
 		and int(report.get("processed_variants", -1)) == 77 \
-		and int(report.get("processed_components", -1)) == 88)
+		and int(report.get("processed_components", -1)) == 83)
 	_expect("market population conservation exact", int(report.get("population_error", 1)) == 0)
 	_expect("market money conservation exact", int(report.get("money_error", 1)) == 0)
 	_expect("market goods conservation exact", int(report.get("goods_error", 1)) == 0)
@@ -404,7 +411,7 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
 	if not bool(save_begin.get("ok", false)):
 		print("  PKEC begin failed=", save_begin)
-	_expect("v37 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 37)
+	_expect("v39 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 39)
 	var chunks: Array[PackedByteArray] = []
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
@@ -556,11 +563,14 @@ func _test_price_quantity_response(compiled: Dictionary) -> void:
 	baseline.submit_economy_commands(_stock_commands(0, goods, basket, 0))
 	_run_day(baseline, 0)
 	var baseline_market: Dictionary = baseline.get_market_cell_snapshot(0)
-	for day in range(8):
+	# Lock N=5 so this is one missed settlement period, then buy on the next
+	# due bucket for cell 0 (day 5). Eight daily N=1 misses create catch-up
+	# demand larger than the price effect.
+	for day in range(5):
 		_run_day(expensive, day)
 	var expensive_before: Dictionary = expensive.get_market_cell_snapshot(0)
-	expensive.submit_economy_commands(_stock_commands(0, goods, basket, 8))
-	_run_day(expensive, 8)
+	expensive.submit_economy_commands(_stock_commands(0, goods, basket, 5))
+	_run_day(expensive, 5)
 	var expensive_market: Dictionary = expensive.get_market_cell_snapshot(0)
 	var baseline_protein := _basket_consumed(baseline_market, protein_ids, 2000000)
 	var expensive_protein := _basket_consumed(expensive_market, protein_ids, 2000000)
@@ -689,11 +699,11 @@ func _test_cycle_approximation(compiled: Dictionary) -> void:
 		approx_report = _run_day(approximate, day)
 		hashes_match = hashes_match and \
 			reference.get_economy_state_hash() == approximate.get_economy_state_hash()
-	_expect("cycle configuration cannot override fixed five-day cadence",
-		int(reference.get_economy_report().get("market_cycle_days", 0)) == 5 and
-		int(approximate.get_economy_report().get("market_cycle_days", 0)) == 5)
-	_expect("fixed-cadence requests remain state-identical", hashes_match)
-	_expect("fixed five-day settlement conserves money and goods",
+	_expect("profile max does not force a five-day lock on a one-cell world",
+		int(reference.get_economy_report().get("market_cycle_days", 0)) == 1 and
+		int(approximate.get_economy_report().get("market_cycle_days", 0)) == 1)
+	_expect("same injected cadence keeps worker hashes identical", hashes_match)
+	_expect("locked-cycle settlement conserves money and goods",
 		int(approx_report.money_error) == 0 and int(approx_report.goods_error) == 0)
 
 func _measure_cycle_error(compiled: Dictionary, days: int) -> Dictionary:
@@ -727,9 +737,11 @@ func _configured_cycle_worker(compiled: Dictionary, cycle_days: int, seed: int) 
 	var profile := _native_profile(false, 1)
 	profile.auto_slice_by_scale = false
 	profile.cells_per_slice = 1
-	profile.market_cycle_days = cycle_days
-	profile.market_max_cycle_days = cycle_days
+	profile.market_cycle_days = 5
+	profile.market_min_cycle_days = 1
+	profile.market_max_cycle_days = 5
 	ext.configure_economy(catalog, profile, 1, seed)
+	ext.inject_economy_cadence_timing(0.01, 0.01)
 	var signature: int = (compiled.signature_keys as PackedStringArray).find("worker|default")
 	ext.bootstrap_economy({"cell_indices": PackedInt32Array([0]),
 		"signature_ids": PackedInt32Array([signature]), "population": PackedInt64Array([100]),
@@ -746,6 +758,7 @@ func _test_cycle_deadline_catchup(compiled: Dictionary) -> void:
 	profile.market_cycle_days = 5
 	profile.market_max_cycle_days = 5
 	ext.configure_economy(catalog, profile, 10, 901)
+	ext.inject_economy_cadence_timing(1000000.0, 1000000.0)
 	var signature: int = (compiled.signature_keys as PackedStringArray).find("worker|default")
 	var cells := PackedInt32Array()
 	var signatures := PackedInt32Array()
@@ -830,6 +843,7 @@ func _configured_price_worker(compiled: Dictionary, seed: int) -> Object:
 	profile.starvation_death_rate_q32 = 0
 	_expect("price-response economy configures",
 		bool(ext.configure_economy(catalog, profile, 1, seed).get("ok", false)))
+	ext.inject_economy_cadence_timing(1000000.0, 1000000.0)
 	var signature: int = (compiled.signature_keys as PackedStringArray).find("worker|default")
 	var boot: Dictionary = ext.bootstrap_economy({
 		"cell_indices": PackedInt32Array([0]),
@@ -845,6 +859,7 @@ func _configured_many_workers(compiled: Dictionary, workers: bool, cells: int) -
 	var catalog := compiled.duplicate(true)
 	catalog.erase("ok")
 	ext.configure_economy(catalog, _native_profile(workers, 1), cells, 91)
+	ext.inject_economy_cadence_timing(0.01, 0.01)
 	var signature: int = (compiled.signature_keys as PackedStringArray).find("worker|default")
 	var cell_indices := PackedInt32Array()
 	var signatures := PackedInt32Array()

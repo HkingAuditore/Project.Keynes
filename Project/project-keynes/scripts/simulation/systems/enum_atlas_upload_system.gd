@@ -34,6 +34,7 @@ func _init(p_generator, p_baker: _MapBakerScript, p_map: MapData,
 	max_slices_per_tick = 1
 	must_run = false
 	starvation_threshold = 0
+	use_job_should_run = true
 	generator = p_generator
 	baker = p_baker
 	map = p_map
@@ -69,6 +70,8 @@ func should_run(ctx: SusTickContext) -> bool:
 		return false
 	if not bool(generator.has_pending_enum_atlas_upload()):
 		return false
+	if should_skip_fast_forward_visual(ctx):
+		return false
 	return super.should_run(ctx)
 
 
@@ -99,6 +102,7 @@ func tick(_ctx) -> Dictionary:
 		generator.record_enum_atlas_upload_report(report)
 	elif generator.has_method("record_enum_atlas_upload"):
 		generator.record_enum_atlas_upload(axis, elapsed_ms)
+	mark_atlas_upload_success()
 	return {
 		"stage_name": "atlas_%s" % axis if axis != "" else "atlas_noop",
 		"substage": str(report.get("path", "")),

@@ -957,7 +957,7 @@ reserve'      = max(0, (reserve_ext + P) / (1 + L))       # dt_days=1
 
 当 `P > 0` 且 `decay_self > 0` 时，动态平衡点 `reserve* = P/decay_self`。`extra_change`
 是每 cell 每资源的一次性外部增减量：先应用一次，再按 `dt_days` 对自然 P/L 做闭式 catchup，
-因此五日 stride 不会把一次采收重复五遍；pass 消费后清零。**历史问题**：旧式
+因此空野 60 日 stride 不会把一次采收重复六十遍；pass 消费后清零。**历史问题**：旧式
 `reserve' = clamp(reserve + gen − decay)` 对旧 `capacity` 模型下刚性配置会被硬上限
 clamp 成横跳；当前模型改为无硬上限的半隐式线性自衰减。
 
@@ -1081,10 +1081,13 @@ habitat 按原始 suit 降序排序，在最适宜的前 N 个地块确保最低
 
 - 读 slot：`cell_temp` / `cell_moisture` / `cell_is_water` / `cell_resource_habitat_mask` 以及每个 `extra_change_slots[r]`。
 - 写 slot：每个 `reserve_slots[r]`（如 `cell_res_timber_reserve` / `cell_res_iron_ore_reserve`）与对应 `extra_change_slots[r]`，逐资源 `_flush_slot_to_map`。动态资源消费后清零 external delta；静态省域矿床若本次小额扣减低于大储量的 float32 ULP，则把未能落入 reserve 的精确余量保留在原 extra slot，后续周期累计到可表示后再扣减，避免大矿床实际不可耗尽。
-- knobs：`n_cells`、`dt_days`、`resource_count`、`reserve_slots`/`extra_change_slots`、
+- knobs：`n_cells`、`dt_days`（clamp 1–60）、可选 `cell_indices` / `cell_dt_days`（等长；只更新列出的格）、`resource_count`、`reserve_slots`/`extra_change_slots`、
   `habitat_modes/habitat_mask_slot`、`temp_lo/temp_hi`、`gen_*`/`decay_*`、`climate_*_opt/tol`、
   `runtime_climate_fit_weight`、`decay_stress`、`ecology_capacity`、`ecology_growth_rate`、
   `ecology_immigration`、`ecology_stress_mortality_rate`（平行数组按资源索引对齐）。
+  Job 日历 stride **不是**积分 dt。活格通常 `dt_days=1`；空野一次入账最多 60 个仿真日。
+  `extra_change` 先应用一次再放大自然项，不得乘 `native_daily_sim_stride` 或经济 N。
+  返回 Dictionary 另含 `indexed_cell_count` 与 `loop_layout=cell_indices|...`。
 - 返回 Dictionary：`{ done, path, published_to_slot, published_slots, resource_count, published_resource_count, input_resource_count, n_cells, total_delta, native_ms, compute_ms, loop_ms, flush_ms, skipped_static_resources, fallback_reason? }`，其中 `resource_count` 保持为输入资源总数以兼容测试，`published_resource_count` 是实际 loop/flush 的动态资源数；其余契约同 `run_runtime_hydrology_pass`。
 - refresh 边界：`run_natural_resource_pass_native` 把 `cell_temp` / `cell_moisture` / `cell_is_water` 与 `extra_change_slots` 从 `MapData` 回拉到 C++ slots；旧 DLL 无 `refresh_slots_from_map_keys()` 时才退回全量 refresh。
 
@@ -2823,7 +2826,7 @@ household demography 和 structural commit 后再做一次只裁不招的 commit
 `building_employment` 内部先完成失业池招聘，再对剩余 ACTIVE 非服务业主空缺执行一次冻结匹配：
 目标按预期业主日收入降序、来源按收入升序，同民族且目标收入更高时使用
 `seed/day/cell/target_group/source_group` 的确定性概率。同职业只改组填充，跨职业复用 cohort 迁移；
-每个目标/来源组每周期最多成功一次。调度阶段、五日 cadence、DataCore slots 与 GDScript 权威边界不变。
+每个目标/来源组每周期最多成功一次。调度阶段、锁定 N/S cadence、DataCore slots 与 GDScript 权威边界不变。
 有效可采储量合入尚未消费的负 pending
 extra，避免跨经济周期重复超采。资源配方 CSR 额外编译 mode：`extract` 以有效储量限制产能并
 发布负 delta；`capacity` 以 `reserve / (building_count × requirement)` 限产，但不写资源 delta。

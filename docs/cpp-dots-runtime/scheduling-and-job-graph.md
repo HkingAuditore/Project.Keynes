@@ -8,8 +8,8 @@ continuation 报告新增 `continuation_budget_exhausted`、
 `continuation_started_slices`、`continuation_completed_slices` 和
 `continuation_blocked_by_stage`，用于区分预算截断、stage barrier 和正常完成。
 
-Country 的 research pending queue 不新增 SUS node，Economy 仍保持五日 cadence、
-原 stage 顺序和 frozen epoch authority。Bio occupancy 的第一阶段是每日完整覆盖；
+Country 的 research pending queue 不新增 SUS node，Economy 保持锁定市场 N∈[1,5]、
+计划 P∈[5,15]、投资 I∈[10,30]（I > P）、原 stage 顺序和 frozen epoch authority。Bio occupancy 的第一阶段是每日完整覆盖；
 切片开关关闭时 one-shot 是正式路径；打开后 `bio_occupancy_daily` 每次 scheduler
 访问只推进一个固定 `BIO_OCCUPANCY_SLICE_CELLS=2048` 范围。四个阶段
 （persistence/diffusion/merge/publish）通过 `bio_occupancy_day_barrier` 冻结同一
@@ -187,7 +187,7 @@ runtime 标记为不可 tick 并暂停 `WorldClock`，只有地图生成、全�
 | --- | --- | --- | --- |
 | `season_refresh` | `simulation/systems/season_refresh_system.gd` | 日历/轨道相位、B+ path、慢变量缓存、atlas queue。 | Production 入口是 `SeasonRefreshSystem`；旧 `SeasonRefreshJob` 已删除。GDScript stage orchestration，部分 gdext 加速。 |
 | `refresh_climate_daily` | `simulation/systems/climate_daily_system.gd` | climate daily round：Pass-A/B、ocean water/land、wind、sea ice hook、transpiration。 | GDScript 6-stage state machine + 多个 C++ pass。 |
-| `natural_resource_daily` | `simulation/systems/natural_resource_daily_system.gd` | 自然资源每日生成/衰减（per-cell reserve）。reads cell.temp/cell.moisture/cell.is_water；writes 各 `cell.res_*_reserve`。 | 单 pass 调 `MapGenerator.run_natural_resource_pass_native` → C++ `run_natural_resource_pass`（slot 权威）+ GDScript fallback。`StridePolicy(stride,0)`，无 bucket phase。**保留边界 job**（native/legacy 两路径都注册）+ `must_run=true`（否则会被 native_daily_sim 超预算后 budget-skip）。 |
+| `natural_resource_daily` | `simulation/systems/natural_resource_daily_system.gd` | 自然资源每日生成/衰减（per-cell reserve）。reads cell.temp/cell.moisture/cell.is_water；writes 各 `cell.res_*_reserve`。 | 单 pass 调 `MapGenerator.run_natural_resource_pass_scheduled` → C++ `run_natural_resource_pass`（slot 权威）+ GDScript fallback。Job 日历 stride 每天可跑，**不等于**积分 `dt_days`。活格每天 `dt_days=1`（漏跑才按真实间隔补，clamp 1–5）；空野 `cell % 60 == day % 60`，`dt_days=clamp(today-last,1,60)` 一次入账整段自然演化。`extra_change` 只应用一次。`must_run=true`（否则会被 native_daily_sim 超预算后 budget-skip）。 |
 | `country_daily` | `simulation/systems/country_daily_system.gd` | ACTIVE 国家命令图；原子预检/应用/发布领土、名称与科技变化。 | priority 255；`must_run=false`、`max_slices=1`、`use_job_should_run=true`；无到期命令零 slice，跨帧批次使用 `country_day_barrier`。 |
 | `economy_daily` | `simulation/systems/economy_daily_system.gd` | ACTIVE 冻结周期 `ECONOMY_GRAPH`；sample day 读取环境并冻结国家状态；建筑计划/投入 reserve 使用两遍 active-cell continuation，随后按建筑 cell/cohort 预算错峰生产与 N 日居民市场。国内贸易规划复用同一 job 的软 slice。切片前 `dispatch_effect_native_economy()`，以便 Country 255 ACK 后的 `SETTLE_FAMILY_EXPEDITION` 能立即落地或进入 pending；本国迁徙的 SETTLE-only 事务没有 Country 前置，可在同一切片消费。 | priority 260；国家命令先提交；`must_run=false`、`max_slices=1`、`use_job_should_run=true`、starvation=2。`building_cells_per_slice=0` 自动取市场 cell budget 的 1/4 并封顶 512；贸易规划从不申请屏障；只有 `commit_due && !done` 才开 WorldClock same-day catchup 屏障。 |
 | `modifier_daily` | `simulation/systems/modifier_daily_system.gd` | ACTIVE `MODIFIER_GRAPH`：先过期，再按 producer/sequence 稳定执行命令并发布四域 snapshot version。 | priority 90；`must_run=false`、`max_slices=1`、`use_job_should_run=true`、`use_job_deadline_critical=true`；有当日边界工作时预算旁路一次，保证早于 climate 100、country 255、economy 260。consumer 中产生的命令延至后续安全边界。 |
@@ -199,10 +199,10 @@ Modifier 的冻结点、scope 与领域消费顺序见
 [`native-modifier-runtime.md`](./native-modifier-runtime.md)。Modifier store 不得在 climate/economy
 worker 内变更；async climate 只接收主线程冻结的 add/factor 数组。
 | `sea_ice_daily` | `simulation/systems/sea_ice_daily_system.gd` | 海冰日更新和 terrain flip。 | wrapper 调用 native/MapGenerator helper。 |
-| `enum_atlas_upload` | `simulation/systems/enum_atlas_upload_system.gd` / legacy job | cover/vegetation/enum atlas dirty patch 和 GPU upload。 | C++ cached patch + GDScript upload。 |
+| `enum_atlas_upload` | `simulation/systems/enum_atlas_upload_system.gd` / legacy job | cover/vegetation/enum atlas dirty patch 和 GPU upload。 | C++ cached patch + GDScript upload。`must_run=false`。`speed_scale>=20` 时按 100ms 墙钟 defer（`skipped_reason=fast_forward_deferred`），不 consume pending；降回 1×/5× 后 catch-up。 |
 | `weather_refresh` | `simulation/systems/weather_system.gd` / `sus/jobs/weather_refresh_job.gd` | weather field begin/solve/commit、front summary、可选 `hydrology_discharge`、stage-b。 | wrapper 委托 legacy job；staged begin/solve/commit 是当前可见天气权威，merged native 只可在 `weather_native_daily_available()` 放行后使用。运行期水文是链内 stage。 |
 | `ocean_currents` | `simulation/sus/jobs/ocean_currents_job.gd` | physical ocean stages：SLP、wind、PSI、upwelling、raster、pixel commit。 | GDScript stage machine + C++ kernels/raster。同 tick daily wind 若已成功跑 `wind` 段且 physical stage 正在 `phys_wind`，job 会复用该 wind 并让出到下一 tick，避免 daily/physical wind 双跑；`elapsed_ms` 现在按 physical stage-local 计时，`job_elapsed_ms` 保留整 job 墙钟。各 physical stage 内部支持**按 cell 区间切片**（`start_idx`/`end_idx` knob，由 `MapBaker` 的 stage 内 cell cursor 驱动），由 `ClimateProfile.physical_cell_slice_enabled` / `physical_cell_slice_divisor` profile-gate 控制，默认关闭。 |
-| `dynamic_visual_atlas_upload` | `simulation/systems/dynamic_visual_atlas_upload_system.gd` | enum/dyn/eco cell LUT、dirty/stride、ImageTexture update。 | GDScript upload orchestration，C++ patch/raster 辅助；不再发布 `weather_lut`。cell-indirection 主路径会在 dirty mask 明确为 0、LUT 纹理已存在且无生态 transition 待推进时返回 `path=cell_indirection_lut_skip`，避免无效全量 LUT refresh；`weather_lut` 在 `weather_refresh` commit/merged/direct 完成点内联发布。 |
+| `dynamic_visual_atlas_upload` | `simulation/systems/dynamic_visual_atlas_upload_system.gd` | enum/dyn/eco cell LUT、dirty/stride、ImageTexture update。 | GDScript upload orchestration，C++ patch/raster 辅助；不再发布 `weather_lut`。cell-indirection 主路径会在 dirty mask 明确为 0、LUT 纹理已存在且无生态 transition 待推进时返回 `path=cell_indirection_lut_skip`，避免无效全量 LUT refresh；`weather_lut` 在 `weather_refresh` commit/merged/direct 完成点内联发布。快进 `speed_scale>=20` 时与 overlay 同量级按 100ms 墙钟 skip（`fast_forward_deferred`），脏标志留下；降速后 `_lut_refresh_pending` catch-up。 |
 | `native_daily_sim` | `simulation/sus/jobs/native_daily_sim_job.gd` | native daily active/probe path。 | ACTIVE hot path 调 `DCWorldExt::run_native_daily_slice()`，C++ 持有 graph continuation / node cursor；GDScript做 SUS shell、bundle round-start、fallback/debug 和 Godot visual/演替发布边界。stage-b 的 vegetation stride 按调用次数计，vitality/streak 的实际 `day_scale = weather_vegetation_dynamics_stride × native_daily_sim_stride`；C++ 返回的 succession candidates 必须在 GDScript 边界写回 vegetation/base_vegetation 槽位。原生 breakdown 同步发布 `stage_b_call_index/veg_dyn_ran/stage_b_total_runs`，供 tile CSV 区分“尚未跑到 vegetation node”和“已运行但无演替”。Scheduler report 只提升关键字段，不再嵌完整 `native_daily_report` 大字典；slow dump/debug 可回读 `MapGenerator.native_daily_last_result()`。 |
 
 ### Native daily report contract
@@ -796,6 +796,17 @@ and refreshes the LUT instead of waiting for the next stride. This fixes
 intermittent stale snow cover without returning the whole upload job to
 `must_run=true`.
 
+Fast-forward (`SusTickContext.speed_scale >= 20`) is a separate wall-clock gate:
+`enum_atlas_upload` and `dynamic_visual_atlas_upload` skip with
+`skipped_reason=fast_forward_deferred` unless at least 100ms have elapsed since
+the last successful upload or the existing starvation threshold is hit. Skip
+does not consume pending/LUT dirty flags. Dropping below 20× forces a catch-up.
+
+Production `sus_tick_daily` terrain-mirror sync is dirty-flagged. Clean days
+return immediately; only MapData-only terrain/water writes call
+`mark_runtime_terrain_mirror_dirty()`. Indexed dual-write paths (sea-ice flips,
+canals) do not mark dirty.
+
 ### Large-map sea-ice visual freeze fix (2026-06-29)
 
 The cell-indirection LUT carries **every** dynamic visual (temp / moisture / snow
@@ -840,7 +851,7 @@ DC component。无建筑时 BUILDING_GRAPH 零成本跳过；有建筑时只调�
 并比例支付基础工资；最终欠薪保留诊断标记但取消奖金，不追溯停止本期生产。建筑内部仍先运行产出
 `cycle_flow` 的 utility groups 并完成商人收购，再运行其余 collector/industrial groups，最后
 清空剩余 cycle-flow 库存。utility producer 禁止同时消费 cycle-flow，因而不引入递归依赖或
-新的 scheduler node；五日冻结、deadline barrier 和 continuation cursor 均保持原契约。
+新的 scheduler node；锁定周期冻结、deadline barrier 和 continuation cursor 均保持原契约。
 
 该 stage 可在一次既有 production range 内部调用 `parallel_for_range`，按 due cell 分派原生
 WorkerThreadPool 任务。任务只写 cell-local cohort/building/market/resource/signal lane；跨 cell 的
@@ -852,7 +863,7 @@ WorkerThreadPool 任务。任务只写 cell-local cohort/building/market/resourc
 `ProductionResult` lane 由 runtime 持有并在 range 间复用容量。计划与 household post-building
 允许使用普通 building range 两倍的确定性吞吐 batch，投资/finalize 使用独立的默认 96/128-cell
 continuation。它们只改变 native call 边界，稳定 cell/group 求值、主线程归并顺序、SUS 节点、
-五日 cadence、barrier 和 publish 契约均不改变。
+锁定 N/S cadence、barrier 和 publish 契约均不改变。
 
 `epoch_begin` 在进入就业阶段前按冻结样本生成 owner-lot 收入/成本诊断；生活成本与合同工资
 在 `building_employment` 的 active-cell slice 内计算。生产结束后才更新稀疏企业
@@ -887,7 +898,7 @@ slice report 的归因字段为 `executed_stage/executed_substage`；`stage` 与
 
 同日 `country_economy_continuation` 调用 `run_economy_slice_compact`，只跨桥返回调度、屏障、事件和
 当前阶段 breakdown；普通 daily tick 与显式 `get_economy_report` 保持 full report。compact/full
-共享同一 C++ 权威推进和 `DCWorldExt` publish wrapper，不改变五日 cadence、稳定顺序、资源写回、
+共享同一 C++ 权威推进和 `DCWorldExt` publish wrapper，不改变锁定 N/S cadence、稳定顺序、资源写回、
 CSV capture 或 event visibility。MapGenerator 以 `economy_should_run(day)` 与 slice `done/fatal`
 驱动循环，不得在每个 continuation 前后重建完整 report。
 完成 publish COMMIT 时 C++ 复制一次纯诊断 `last_completed_*` 快照，避免下一 epoch 清零 live
@@ -906,7 +917,7 @@ ACTIVE 结算使用 thread-local worker landing buffer，主线程按原顺序�
 内部公式计算，不新增依赖边或可见提交点。compact continuation report 以
 `household_market_breakdown_ms/work` 暴露 settle 的 prepare、worker、aggregate/trade merge、
 trace、other，以及四个收尾子阶段。多个确定性 chunk 可在同一 `slice_budget_ms` 内融合，但
-同一 market 只结算一次，五日 cadence 和 same-day catchup 语义不变。
+同一 market 只结算一次；锁定 N 分桶和 same-day catchup 语义不变。
 
 ## Economy rolling five-phase cadence (2026-07-20, current)
 

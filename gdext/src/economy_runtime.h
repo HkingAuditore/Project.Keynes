@@ -42,7 +42,11 @@ public:
     // v35 saves restore with support_ema = 1. Pre-v35 economy saves stay rejected.
     // 37: family-expedition cargo escrow and frozen colonization starter kits.
     // v36 in-flight expeditions restore with cargo_count = 0.
-    static constexpr int32_t SCHEMA_VERSION = 37;
+    // 38: locked market cadence N (1-5) and shared slow plan/investment S (5-30).
+    // 39: plan P (5-15) and investment I (10-30) lock separately, with I > P.
+    // v38 restores P from saved S (clamped to 15) and synthesizes I > P.
+    // v37 restores as N=5 and P from saved plan days.
+    static constexpr int32_t SCHEMA_VERSION = 39;
     static constexpr uint32_t BUILDING_KIT_ROLE_TRADE = 1u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CONSTRUCTION = 2u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CLOTHING_INPUT = 4u;
@@ -55,6 +59,14 @@ public:
     static constexpr int32_t COLONIZATION_KIT_BRIDGE_EXTRA_DAYS = 15;
     static constexpr int32_t COLONIZATION_KIT_CLOTHING_BUFFER_DAYS = 3;
     static constexpr int32_t ROLLING_PHASE_COUNT = 5;
+    static constexpr int32_t MARKET_CYCLE_MIN_DAYS = 1;
+    static constexpr int32_t MARKET_CYCLE_MAX_DAYS = 5;
+    static constexpr int32_t SLOW_CYCLE_MIN_DAYS = 5;
+    static constexpr int32_t SLOW_CYCLE_MAX_DAYS = 30;
+    static constexpr int32_t PLAN_CYCLE_MIN_DAYS = 5;
+    static constexpr int32_t PLAN_CYCLE_MAX_DAYS = 15;
+    static constexpr int32_t INVEST_CYCLE_MIN_DAYS = 10;
+    static constexpr int32_t INVEST_CYCLE_MAX_DAYS = 30;
     static constexpr int32_t CARRYING_FAMILY_COUNT = 21;
     static constexpr int32_t CARRYING_NEED_FAMILY_COUNT = 17;
     static constexpr int32_t CARRYING_SUPPORT_RESOURCE_COUNT = 7;
@@ -196,11 +208,21 @@ public:
     bool should_run(int64_t day_index) const;
     void drain_bio_introduces(godot::PackedInt32Array &cells,
                               godot::PackedInt32Array &bits);
+    godot::PackedInt32Array economy_live_cells_query();
     godot::Dictionary report() const;
+    // Test-only previous-cycle wall time. Negative values clear the override.
+    // Injected milliseconds participate in N/P/I selection only; they never enter
+    // the authoritative state hash or PKEC. The third argument is optional; a
+    // negative value reuses the plan-cycle milliseconds for investment knives.
+    godot::Dictionary inject_cadence_timing(double market_cycle_ms,
+                                            double plan_cycle_ms,
+                                            double investment_cycle_ms = -1.0);
     godot::Dictionary population_cell_summary(int32_t cell_idx) const;
     godot::Dictionary named_settlement_snapshot() const;
     godot::Dictionary settlement_delta(int64_t since_revision) const;
     godot::Dictionary population_cell_snapshot(int32_t cell_idx) const;
+    godot::Dictionary population_cell_snapshot(
+        int32_t cell_idx, bool include_details) const;
     godot::Dictionary population_cell_snapshot(int32_t cell_idx,
                                                 float temperature,
                                                 float moisture,
@@ -2497,9 +2519,40 @@ private:
     bool _auto_building_slice_by_scale = true;
     int32_t _commands_per_slice = 16384;
     int32_t _epoch_days = 1;
-    int32_t _configured_epoch_days = 0;
-    int32_t _min_epoch_days = 5;
-    int32_t _max_epoch_days = 365;
+    int32_t _configured_epoch_days = MARKET_CYCLE_MAX_DAYS;
+    int32_t _min_epoch_days = MARKET_CYCLE_MIN_DAYS;
+    int32_t _max_epoch_days = MARKET_CYCLE_MAX_DAYS;
+    int32_t _locked_market_cycle_days = MARKET_CYCLE_MIN_DAYS;
+    int64_t _market_cycle_start_day = 0;
+    int32_t _locked_slow_cycle_days = PLAN_CYCLE_MIN_DAYS;
+    int64_t _slow_cycle_start_day = 0;
+    int32_t _locked_investment_cycle_days = INVEST_CYCLE_MIN_DAYS;
+    int64_t _investment_cycle_start_day = 0;
+    int32_t _slow_cycle_min_days = PLAN_CYCLE_MIN_DAYS;
+    int32_t _slow_cycle_max_days = PLAN_CYCLE_MAX_DAYS;
+    int32_t _invest_cycle_min_days = INVEST_CYCLE_MIN_DAYS;
+    int32_t _invest_cycle_max_days = INVEST_CYCLE_MAX_DAYS;
+    bool _cadence_initialized = false;
+    double _cadence_target_ms = 8.0;
+    double _injected_cycle_market_ms = -1.0;
+    double _injected_cycle_slow_ms = -1.0;
+    double _injected_cycle_investment_ms = -1.0;
+    int32_t _forced_market_cycle_days = 0;
+    int32_t _forced_slow_cycle_days = 0;
+    int32_t _forced_investment_cycle_days = 0;
+    double _market_ms_per_knife_ema = 0.0;
+    double _slow_ms_per_knife_ema = 0.0;
+    double _investment_ms_per_knife_ema = 0.0;
+    double _cycle_market_ms_accum = 0.0;
+    double _cycle_slow_ms_accum = 0.0;
+    double _cycle_investment_ms_accum = 0.0;
+    int32_t _estimated_populated_market_knives = 1;
+    int32_t _estimated_slow_knives = 1;
+    int32_t _estimated_investment_knives = 1;
+    int32_t _cadence_machine_knives_per_day = 64;
+    int32_t _cadence_slow_knives_per_day = 64;
+    int32_t _cadence_investment_knives_per_day = 64;
+    int32_t _cadence_change_reason = 1;
     int32_t _estimated_market_slices_per_epoch = 1;
     int32_t _estimated_building_slices_per_epoch = 0;
     int32_t _estimated_total_slices_per_epoch = 1;
@@ -2611,9 +2664,9 @@ private:
     int32_t _trade_import_fill_fraction_q16 = Q16_ONE / 2;
     int32_t _trade_response_days = 15;
     int32_t _investment_review_days = 30;
-    // Per-cell building plan (procurement intent) evaluation cadence. Cells
-    // are evaluated when cell % _building_plan_days == day % _building_plan_days;
-    // reserve rebuild still covers every due building cell each epoch.
+    // Locked slow-cycle length S. Plan evaluation and investment review share
+    // this value. Profile 10/30 are range hints and v37 restore compatibility,
+    // not a fixed production cadence.
     int32_t _building_plan_days = 10;
     int32_t _investment_min_shortage_q16 = Q16_ONE / 8;
     int32_t _investment_min_utilization_q16 = 42598;
@@ -3281,13 +3334,15 @@ private:
     // Transaction worksets are deterministic, sorted and never persisted.
     std::vector<int32_t> _epoch_market_ids;
     std::vector<int64_t> _epoch_market_work_weights;
+    // Scratch union of populated / building / pending-construction cells.
+    // Rebuilt each epoch_begin; never saved or hashed.
+    std::vector<int32_t> _economy_live_cells;
     std::vector<int32_t> _epoch_settlement_cells;
     std::vector<int32_t> _epoch_building_cells;
-    // Subset of _epoch_building_cells whose plan evaluation is due today:
-    // cell % _building_plan_days == day % _building_plan_days. Plan evaluation
-    // is the heavy procurement-intent pass; stretching its per-cell cadence
-    // only makes plans refresh less often (production still consumes the last
-    // computed plan), never breaks stock/cash conservation.
+    // Subset of today's market workset whose plan evaluation is due on the
+    // locked slow cycle S. Cells that are S-due but not in today's market
+    // bucket wait until their next market day. Production still consumes the
+    // last computed plan.
     std::vector<int32_t> _epoch_plan_cells;
     std::vector<int64_t> _household_post_saturation_scratch;
     std::vector<int64_t> _household_post_restarted_scratch;
@@ -4581,6 +4636,43 @@ private:
     AuditTotals audit_totals() const;
     int64_t memory_bytes() const;
     int32_t choose_epoch_days(int64_t cohort_count);
+    void write_cadence_report(godot::Dictionary &out) const;
+    int32_t locked_market_cycle_days() const;
+    int32_t locked_slow_cycle_days() const;
+    int32_t locked_plan_cycle_days() const;
+    int32_t locked_investment_cycle_days() const;
+    int32_t cycle_phase(int64_t day, int64_t start, int32_t cycle) const;
+    bool market_in_workset(int32_t market, int64_t day) const;
+    bool cell_in_market_workset(int32_t cell, int64_t day) const;
+    bool cell_due_slow_review(int32_t cell, int64_t day) const;
+    bool cell_due_plan_review(int32_t cell, int64_t day) const;
+    bool cell_due_investment_review(int32_t cell, int64_t day) const;
+    int32_t workset_elapsed_days(int64_t day_index) const;
+    void rebuild_economy_live_cells();
+    void refresh_cadence_estimates();
+    void maybe_lock_cadence_cycles(int64_t day_index);
+    void lock_market_cycle(int64_t day_index);
+    void lock_slow_cycle(int64_t day_index);
+    void lock_plan_cycle(int64_t day_index);
+    void lock_investment_cycle(int64_t day_index);
+    void apply_locked_slow_days();
+    void note_completed_epoch_cadence_ms();
+    void synthesize_cadence_locks_from_legacy_save();
+    int32_t choose_locked_market_cycle_days(int32_t current_n) const;
+    int32_t choose_locked_slow_cycle_days(int32_t current_s, int32_t n) const;
+    int32_t choose_locked_investment_cycle_days(int32_t current_i, int32_t n,
+                                                int32_t plan_days) const;
+    int32_t choose_locked_cycle_days(int32_t current, int32_t n, int32_t knives,
+                                     double ema, double injected_ms,
+                                     int32_t lo, int32_t hi) const;
+    int32_t longer_investment_cycle_days(int32_t plan_days, int32_t n,
+                                         int32_t candidate) const;
+    int32_t snap_slow_days_to_market_multiple(int32_t s, int32_t n) const;
+    int32_t snap_cycle_days(int32_t value, int32_t n, int32_t lo,
+                            int32_t hi) const;
+    int32_t apply_cadence_hysteresis(int32_t current, int32_t raw) const;
+    int32_t knives_per_day(double ms_per_knife) const;
+    double quantized_ms_per_knife(double cycle_ms, int32_t knives) const;
     int32_t building_slice_end(int32_t active_begin) const;
     int32_t building_slice_end(int32_t active_begin, int32_t cell_cap,
                                int32_t group_cap) const;
@@ -4649,7 +4741,8 @@ private:
                                     const EnvironmentSample &sample,
                                     int64_t &saturation_count) const;
     godot::Dictionary population_cell_snapshot_impl(
-        int32_t cell_idx, const EnvironmentSample &sample) const;
+        int32_t cell_idx, const EnvironmentSample &sample,
+        bool include_details) const;
     void append_population_employment_fields(
         godot::Dictionary &out, int32_t cell_idx) const;
     bool compile_settlement_catalog(const godot::Dictionary &catalog,

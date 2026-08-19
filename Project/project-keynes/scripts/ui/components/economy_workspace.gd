@@ -27,6 +27,7 @@ const ENTRANCE_MAX_DELAY := 0.30
 # reading instruments, so coalesce those bursts while retaining the newest
 # authoritative snapshot for the trailing refresh.
 const LIVE_REFRESH_INTERVAL_MSEC := 200
+const DRAFT_COMMIT_DELAY_SEC := 0.18
 const SUMMARY_CARD_SIZE := Vector2(150.0, 72.0)
 const SUMMARY_CARD_SIZE_COMPACT := Vector2(104.0, 56.0)
 
@@ -64,6 +65,10 @@ var _trade_cache: Dictionary = {}
 var _partner_name_cache: Dictionary = {}
 var _pending: Dictionary = {}
 var _preview_defaults: Dictionary = {}
+var _draft_overrides: Dictionary = {}
+var _draft_timer: Timer
+var _draft_commit_key := ""
+var _draft_commit_kind := ""
 var _player_controller = null
 var _refresh_dirty := false
 var _has_rendered_model := false
@@ -123,6 +128,12 @@ func _ready() -> void:
 		IconButton.apply(_trade_prev, &"action.back", IconButton.MEDIUM, "上一页")
 	if _trade_next != null:
 		IconButton.apply(_trade_next, &"action.chevron_right", IconButton.MEDIUM, "下一页")
+	_draft_timer = Timer.new()
+	_draft_timer.one_shot = true
+	_draft_timer.wait_time = DRAFT_COMMIT_DELAY_SEC
+	_draft_timer.process_mode = Node.PROCESS_MODE_ALWAYS
+	_draft_timer.timeout.connect(_on_draft_commit_timeout)
+	add_child(_draft_timer)
 	_select_page("treasury")
 
 
@@ -130,6 +141,11 @@ func set_model(model: Dictionary) -> void:
 	if _cash_card == null:
 		_ready()
 	_preview_defaults.clear()
+	_draft_overrides.clear()
+	_stop_draft_timer()
+	for row_value in _rows.values():
+		if row_value is Dictionary:
+			(row_value as Dictionary)["signature"] = ""
 	_model = model
 	# Opening/switching to the workspace must paint immediately. Only repeated
 	# live-tick patches are coalesced.
@@ -714,6 +730,8 @@ func _ensure_card(page: String, item_id: String, label: String,
 		spin.get_line_edit().alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		spin.get_line_edit().text_submitted.connect(
 			_on_rate_confirmed.bind(key, kind))
+		spin.get_line_edit().focus_entered.connect(
+			_on_rate_focus_entered.bind(key, kind))
 		spin.get_line_edit().focus_exited.connect(
 			_on_rate_focus_exited.bind(key, kind))
 		spin.value_changed.connect(_on_rate_preview.bind(key, kind))
@@ -763,19 +781,23 @@ func _update_card(card: Dictionary, kind_data: Dictionary) -> void:
 			# Awaiting next-day commit: keep the optimistic state staged at
 			# submit time instead of snapping back to the stale authoritative rate.
 			continue
+		var spin := (card.spins as Dictionary)[kind] as SpinBox
+		var line_edit := spin.get_line_edit()
+		var draft_key := _item_draft_key(kind, String(card.item_id))
+		# Arrow/drag edits do not focus LineEdit. Keep the in-progress item
+		# draft through live refresh until confirm or set_model.
+		if line_edit.has_focus() or spin.has_focus() or _draft_overrides.has(draft_key):
+			(card.rates as Dictionary)[kind] = int(data.get("base", 0))
+			(card.overridden as Dictionary)[kind] = bool(data.get("has_override", false))
+			continue
 		var base := int(data.get("base", 0))
 		var effective := int(data.get("effective", base))
 		var overridden := bool(data.get("has_override", false))
 		var visual_rate := _visual_rate(card, kind, base, overridden)
-		var spin := (card.spins as Dictionary)[kind] as SpinBox
-		var line_edit := spin.get_line_edit()
-		# Never overwrite the field the player is editing; _confirm_spin reads
-		# the authoritative value back on focus loss / Enter.
-		if not line_edit.has_focus():
-			spin.set_value_no_signal(visual_rate)
-			line_edit.add_theme_color_override("font_color",
-				UITokens.BRASS_HIGHLIGHT \
-					if overridden or visual_rate != base else UITokens.TEXT_MUTED)
+		spin.set_value_no_signal(visual_rate)
+		line_edit.add_theme_color_override("font_color",
+			UITokens.BRASS_HIGHLIGHT \
+				if overridden or visual_rate != base else UITokens.TEXT_MUTED)
 		((card.resets as Dictionary)[kind] as Button).visible = overridden
 		(card.overridden as Dictionary)[kind] = overridden
 		(card.rates as Dictionary)[kind] = base
@@ -878,23 +900,75 @@ func _on_rate_confirmed(_text: String, key: String, kind: String) -> void:
 	_confirm_spin(key, kind)
 
 
+func _on_rate_focus_entered(key: String, kind: String) -> void:
+	if _draft_commit_key == key and _draft_commit_kind == kind:
+		_stop_draft_timer()
+
+
 func _on_rate_focus_exited(key: String, kind: String) -> void:
 	_confirm_spin(key, kind)
 
 
 func _on_rate_preview(value: float, key: String, kind: String) -> void:
 	var card: Dictionary = _rows.get(key, {})
-	if card.is_empty() or not bool(card.is_default):
+	if card.is_empty():
 		return
 	var rate := clampi(int(value), -100, 100)
-	var authoritative := int((card.rates as Dictionary).get(kind, 0))
-	if rate == authoritative and not _has_pending_default(kind):
-		_preview_defaults.erase(kind)
-	else:
-		_preview_defaults[kind] = rate
-	# Preview changes only presentation. The command remains confirmed on
-	# Enter/focus loss and retains its next-day authoritative boundary.
-	_refresh_page()
+	if bool(card.is_default):
+		var authoritative := int((card.rates as Dictionary).get(kind, 0))
+		if rate == authoritative and not _has_pending_default(kind):
+			_preview_defaults.erase(kind)
+		else:
+			_preview_defaults[kind] = rate
+		# Preview changes only presentation. The command remains confirmed on
+		# Enter/focus loss and retains its next-day authoritative boundary.
+		_refresh_page()
+		return
+	var item_id := String(card.item_id)
+	if _pending.has("%s:%s" % [kind, item_id]):
+		return
+	var current := int((card.rates as Dictionary).get(kind, 0))
+	var draft_key := _item_draft_key(kind, item_id)
+	if rate == current:
+		_draft_overrides.erase(draft_key)
+		if _draft_commit_key == key and _draft_commit_kind == kind:
+			_stop_draft_timer()
+		return
+	_draft_overrides[draft_key] = rate
+	var spin := (card.spins as Dictionary)[kind] as SpinBox
+	if spin.get_line_edit().has_focus():
+		if _draft_commit_key == key and _draft_commit_kind == kind:
+			_stop_draft_timer()
+		return
+	_schedule_draft_commit(key, kind)
+
+
+func _schedule_draft_commit(key: String, kind: String) -> void:
+	_draft_commit_key = key
+	_draft_commit_kind = kind
+	if _draft_timer != null:
+		_draft_timer.start()
+
+
+func _stop_draft_timer() -> void:
+	if _draft_timer != null:
+		_draft_timer.stop()
+	_draft_commit_key = ""
+	_draft_commit_kind = ""
+
+
+func _on_draft_commit_timeout() -> void:
+	var key := _draft_commit_key
+	var kind := _draft_commit_kind
+	_draft_commit_key = ""
+	_draft_commit_kind = ""
+	if key.is_empty() or kind.is_empty():
+		return
+	_confirm_spin(key, kind)
+
+
+func _item_draft_key(kind: String, item_id: String) -> String:
+	return "%s:%s" % [kind, item_id]
 
 
 # Typing a rate is the override: a value equal to the inherited default clears
@@ -907,6 +981,10 @@ func _confirm_spin(key: String, kind: String) -> void:
 	var rate := int(spin.value)
 	var current := int((card.rates as Dictionary).get(kind, 0))
 	var overridden := bool((card.overridden as Dictionary).get(kind, false))
+	var item_id := String(card.item_id)
+	_draft_overrides.erase(_item_draft_key(kind, item_id))
+	if _draft_commit_key == key and _draft_commit_kind == kind:
+		_stop_draft_timer()
 	if bool(card.is_default):
 		if rate != current or _preview_defaults.has(kind):
 			_submit_rate(kind, String(card.item_id), rate, true)
@@ -947,6 +1025,7 @@ func _on_reset_pressed(key: String, kind: String) -> void:
 func _clear_override(kind: String, item_id: String) -> void:
 	if _player_controller == null:
 		return
+	_draft_overrides.erase(_item_draft_key(kind, item_id))
 	var result: Dictionary = _player_controller.request_command(
 		&"country.tax.clear_override", {
 			"kind": int(TAX_KIND[kind]), "item_id": StringName(item_id)})
@@ -1196,6 +1275,19 @@ func tax_row_rate(page: String, item_id: String, kind: String) -> int:
 	if card.is_empty() or not (card.spins as Dictionary).has(kind):
 		return 0
 	return int(((card.spins as Dictionary)[kind] as SpinBox).value)
+
+
+func preview_item_rate_for_test(page: String, item_id: String, kind: String, rate: int) -> void:
+	var card: Dictionary = _rows.get("%s:%s" % [page, item_id], {})
+	if card.is_empty() or not (card.spins as Dictionary).has(kind):
+		return
+	((card.spins as Dictionary)[kind] as SpinBox).set_value_no_signal(rate)
+	_draft_overrides[_item_draft_key(kind, item_id)] = rate
+	_stop_draft_timer()
+
+
+func confirm_item_rate_for_test(page: String, item_id: String, kind: String) -> void:
+	_confirm_spin("%s:%s" % [page, item_id], kind)
 
 
 func preview_default_rate_for_test(page: String, kind: String, rate: int) -> void:

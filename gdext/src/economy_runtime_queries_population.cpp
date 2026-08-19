@@ -210,7 +210,17 @@ void NativeEconomyRuntime::append_population_employment_fields(
 }
 
 Dictionary NativeEconomyRuntime::population_cell_snapshot(int32_t cell_idx) const {
-    return population_cell_snapshot_impl(cell_idx, environment_sample_for_cell(cell_idx));
+    return population_cell_snapshot(cell_idx, true);
+}
+
+Dictionary NativeEconomyRuntime::population_cell_snapshot(
+        int32_t cell_idx, bool include_details) const {
+    if (!include_details) {
+        EnvironmentSample unused;
+        return population_cell_snapshot_impl(cell_idx, unused, false);
+    }
+    return population_cell_snapshot_impl(
+        cell_idx, environment_sample_for_cell(cell_idx), true);
 }
 
 Dictionary NativeEconomyRuntime::population_cell_snapshot(
@@ -222,11 +232,12 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot(
         const EnvironmentSample frozen = environment_sample_for_cell(cell_idx);
         if (frozen.ready) sample = frozen;
     }
-    return population_cell_snapshot_impl(cell_idx, sample);
+    return population_cell_snapshot_impl(cell_idx, sample, true);
 }
 
 Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
-        int32_t cell_idx, const EnvironmentSample &sample) const {
+        int32_t cell_idx, const EnvironmentSample &sample,
+        bool include_details) const {
     Dictionary out;
     out["cell_idx"] = cell_idx;
     out["committed"] = !_epoch_active && !_fatal;
@@ -330,6 +341,7 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
     out["owner_employed_by_cohort"] = owner_employed;
     out["employee_employed_by_cohort"] = employee_employed;
     out["unemployed_by_cohort"] = unemployed;
+    out["demand_preview_included"] = include_details;
     const EventBatch *settlement_batch = nullptr;
     for (auto it = _committed_event_batches.rbegin();
          it != _committed_event_batches.rend(); ++it) {
@@ -338,29 +350,6 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
             break;
         }
     }
-    PackedStringArray cashflow_source_ids;
-    cashflow_source_ids.push_back("wages");
-    cashflow_source_ids.push_back("owner_operations");
-    cashflow_source_ids.push_back("merchant_household_sales");
-    cashflow_source_ids.push_back("merchant_business_sales");
-    cashflow_source_ids.push_back("transfer");
-    cashflow_source_ids.push_back("household_consumption");
-    cashflow_source_ids.push_back("production_inputs");
-    cashflow_source_ids.push_back("owner_wages");
-    cashflow_source_ids.push_back("construction");
-    cashflow_source_ids.push_back("merchant_procurement");
-    cashflow_source_ids.push_back("other");
-    cashflow_source_ids.push_back("producer_support_issuance");
-    // Indices stay enum-1: tax/subsidy legs recorded via trace_record_cashflow
-    // (CASHFLOW_INCOME_TAX..CASHFLOW_FISCAL_ESCROW) resolve to these ids.
-    cashflow_source_ids.push_back("income_tax");
-    cashflow_source_ids.push_back("consumption_tax");
-    cashflow_source_ids.push_back("business_tax");
-    cashflow_source_ids.push_back("income_subsidy");
-    cashflow_source_ids.push_back("consumption_subsidy");
-    cashflow_source_ids.push_back("business_subsidy");
-    cashflow_source_ids.push_back("fiscal_escrow");
-    out["settlement_cashflow_source_stable_ids"] = cashflow_source_ids;
     out["settlement_detail_available"] = settlement_batch != nullptr;
     out["settlement_detail_pending"] = settlement_batch == nullptr &&
         (_trace_mode == TRACE_SELECTIVE || _trace_mode == TRACE_FULL_DEBUG) &&
@@ -373,7 +362,32 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
     PackedInt64Array settlement_income_by_cohort;
     PackedInt64Array settlement_expense_by_cohort;
     int64_t settlement_saturation = 0;
-    settlement_offsets.push_back(0);
+    if (include_details) {
+        PackedStringArray cashflow_source_ids;
+        cashflow_source_ids.push_back("wages");
+        cashflow_source_ids.push_back("owner_operations");
+        cashflow_source_ids.push_back("merchant_household_sales");
+        cashflow_source_ids.push_back("merchant_business_sales");
+        cashflow_source_ids.push_back("transfer");
+        cashflow_source_ids.push_back("household_consumption");
+        cashflow_source_ids.push_back("production_inputs");
+        cashflow_source_ids.push_back("owner_wages");
+        cashflow_source_ids.push_back("construction");
+        cashflow_source_ids.push_back("merchant_procurement");
+        cashflow_source_ids.push_back("other");
+        cashflow_source_ids.push_back("producer_support_issuance");
+        // Indices stay enum-1: tax/subsidy legs recorded via trace_record_cashflow
+        // (CASHFLOW_INCOME_TAX..CASHFLOW_FISCAL_ESCROW) resolve to these ids.
+        cashflow_source_ids.push_back("income_tax");
+        cashflow_source_ids.push_back("consumption_tax");
+        cashflow_source_ids.push_back("business_tax");
+        cashflow_source_ids.push_back("income_subsidy");
+        cashflow_source_ids.push_back("consumption_subsidy");
+        cashflow_source_ids.push_back("business_subsidy");
+        cashflow_source_ids.push_back("fiscal_escrow");
+        out["settlement_cashflow_source_stable_ids"] = cashflow_source_ids;
+        settlement_offsets.push_back(0);
+    }
     for (int32_t slot : slots) {
         const uint64_t handle = _population.handle_for_slot(slot);
         int64_t total_income = 0;
@@ -382,9 +396,11 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
             for (const CashflowEntry &entry : settlement_batch->cashflows) {
                 if (entry.cohort_handle != handle ||
                     (entry.income == 0 && entry.expense == 0)) continue;
-                settlement_source_indices.push_back(entry.source - 1);
-                settlement_income.push_back(entry.income);
-                settlement_expense.push_back(entry.expense);
+                if (include_details) {
+                    settlement_source_indices.push_back(entry.source - 1);
+                    settlement_income.push_back(entry.income);
+                    settlement_expense.push_back(entry.expense);
+                }
                 total_income = saturating_add(total_income, entry.income,
                                               settlement_saturation);
                 total_expense = saturating_add(total_expense, entry.expense,
@@ -393,12 +409,15 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
         }
         settlement_income_by_cohort.push_back(total_income);
         settlement_expense_by_cohort.push_back(total_expense);
-        settlement_offsets.push_back(settlement_source_indices.size());
+        if (include_details)
+            settlement_offsets.push_back(settlement_source_indices.size());
     }
-    out["settlement_cashflow_offsets"] = settlement_offsets;
-    out["settlement_cashflow_source_indices"] = settlement_source_indices;
-    out["settlement_cashflow_income"] = settlement_income;
-    out["settlement_cashflow_expense"] = settlement_expense;
+    if (include_details) {
+        out["settlement_cashflow_offsets"] = settlement_offsets;
+        out["settlement_cashflow_source_indices"] = settlement_source_indices;
+        out["settlement_cashflow_income"] = settlement_income;
+        out["settlement_cashflow_expense"] = settlement_expense;
+    }
     out["settlement_income_by_cohort"] = settlement_income_by_cohort;
     out["settlement_expense_by_cohort"] = settlement_expense_by_cohort;
     if (settlement_batch != nullptr) {
@@ -420,10 +439,16 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
     PackedInt32Array welfare_need_tiers;
     PackedInt64Array wealth_demand_deltas;
     PackedInt64Array price_demand_deltas;
-    welfare_need_offsets.push_back(0);
-    bool welfare_complete = settlement_batch != nullptr &&
+    if (include_details)
+        welfare_need_offsets.push_back(0);
+    bool welfare_complete = include_details && settlement_batch != nullptr &&
         settlement_batch->welfare_entries.size() == slots.size();
     for (int32_t slot : slots) {
+        const int64_t composite_q16 = _population.composite_satisfaction[slot];
+        overall_satisfaction.push_back(static_cast<int32_t>(composite_q16));
+        living_standard_levels.push_back(living_standard_level_for(composite_q16));
+        if (!include_details)
+            continue;
         const uint64_t handle = _population.handle_for_slot(slot);
         const CohortWelfareEntry *welfare = nullptr;
         if (settlement_batch != nullptr) {
@@ -438,9 +463,6 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
         // The composite and its dimensions are authoritative columns now, so
         // they are always available; only the per-need breakdown still needs a
         // traced settlement batch.
-        const int64_t composite_q16 = _population.composite_satisfaction[slot];
-        overall_satisfaction.push_back(static_cast<int32_t>(composite_q16));
-        living_standard_levels.push_back(living_standard_level_for(composite_q16));
         const size_t dims_base = static_cast<size_t>(slot) *
             static_cast<size_t>(SAT_DIM_COUNT);
         for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim)
@@ -475,27 +497,35 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
                 ? welfare->price_demand_delta_per_capita_daily[good] : 0);
         }
     }
-    out["welfare_detail_available"] = welfare_complete;
     out["overall_satisfaction_by_cohort_q16"] = overall_satisfaction;
     out["living_standard_level_by_cohort"] = living_standard_levels;
-    out["satisfaction_dimension_count"] = SAT_DIM_COUNT;
-    out["satisfaction_dims_by_cohort_q16"] = satisfaction_dims;
-    out["worst_satisfaction_dimension_by_cohort"] = worst_dimensions;
-    out["worst_need_by_cohort"] = worst_needs;
-    out["welfare_need_offsets"] = welfare_need_offsets;
-    out["welfare_need_ids"] = welfare_need_ids;
-    out["welfare_need_satisfaction_q16"] = welfare_need_satisfaction;
-    out["welfare_need_weight_q16"] = welfare_need_weights;
-    out["welfare_need_tiers"] = welfare_need_tiers;
-    out["demand_attribution_good_count"] = _market.good_count;
-    out["demand_wealth_delta_per_capita_daily"] = wealth_demand_deltas;
-    out["demand_price_delta_per_capita_daily"] = price_demand_deltas;
+    if (include_details) {
+        out["welfare_detail_available"] = welfare_complete;
+        out["satisfaction_dimension_count"] = SAT_DIM_COUNT;
+        out["satisfaction_dims_by_cohort_q16"] = satisfaction_dims;
+        out["worst_satisfaction_dimension_by_cohort"] = worst_dimensions;
+        out["worst_need_by_cohort"] = worst_needs;
+        out["welfare_need_offsets"] = welfare_need_offsets;
+        out["welfare_need_ids"] = welfare_need_ids;
+        out["welfare_need_satisfaction_q16"] = welfare_need_satisfaction;
+        out["welfare_need_weight_q16"] = welfare_need_weights;
+        out["welfare_need_tiers"] = welfare_need_tiers;
+        out["demand_attribution_good_count"] = _market.good_count;
+        out["demand_wealth_delta_per_capita_daily"] = wealth_demand_deltas;
+        out["demand_price_delta_per_capita_daily"] = price_demand_deltas;
+    } else {
+        out["welfare_detail_available"] = false;
+        out["satisfaction_dimension_count"] = 0;
+        out["demand_attribution_good_count"] = 0;
+    }
     PackedStringArray profession_stable_ids;
     for (const std::string &id : _profession_ids) profession_stable_ids.push_back(String(id.c_str()));
     PackedStringArray ethnicity_stable_ids;
     for (const std::string &id : _ethnicity_ids) ethnicity_stable_ids.push_back(String(id.c_str()));
     out["profession_stable_ids"] = profession_stable_ids;
     out["ethnicity_stable_ids"] = ethnicity_stable_ids;
+    if (!include_details)
+        return out;
     PackedStringArray demand_good_stable_ids;
     for (const std::string &id : _good_ids) {
         demand_good_stable_ids.push_back(String(id.c_str()));

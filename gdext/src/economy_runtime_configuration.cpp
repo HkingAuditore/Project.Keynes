@@ -325,6 +325,7 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _cell_resource_gen.clear();
     _cell_trade_gen.clear();
     _epoch_market_ids.clear();
+    _economy_live_cells.clear();
     _epoch_settlement_cells.clear();
     _epoch_building_cells.clear();
     _epoch_plan_cells.clear();
@@ -864,7 +865,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     if (_auto_building_slice_by_scale)
         _building_cells_per_slice = AUTO_BUILDING_CELLS_PER_SLICE;
     _epoch_days = choose_epoch_days(_population.active_count);
-    _commit_lag_budget_days = std::max(0, _epoch_days - 1);
+    _commit_lag_budget_days = std::max(0, locked_market_cycle_days() - 1);
     _last_committed_day = -1;
     _cell_last_settlement_day.resize(_cell_count);
     _cell_settlement_generation.assign(_cell_count, 0);
@@ -879,13 +880,14 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
         static_cast<size_t>(_cell_count), 0);
     _fiscal_previous_requests.assign(
         static_cast<size_t>(_cell_count) * ACTIVE_TAX_KIND_COUNT, 0);
+    const int32_t n = locked_market_cycle_days();
     for (int32_t cell = 0; cell < _cell_count; ++cell) {
         _cell_last_settlement_day[cell] =
-            static_cast<int64_t>(cell % ROLLING_PHASE_COUNT) - ROLLING_PHASE_COUNT;
+            static_cast<int64_t>(((cell % n) + n) % n) - n;
     }
-    _settlement_watermark = -ROLLING_PHASE_COUNT;
+    _settlement_watermark = -n;
     _settlement_newest_day = -1;
-    _settlement_max_age_days = ROLLING_PHASE_COUNT - 1;
+    _settlement_max_age_days = n - 1;
     _sample_day = -1;
     _current_day = -1;
     _commit_day = -1;
@@ -917,10 +919,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     out["cohort_count"] = _population.active_count;
     out["market_count"] = _market.market_count;
     out["good_count"] = _market.good_count;
-    out["epoch_days"] = _epoch_days;
-    out["market_cycle_days"] = _epoch_days;
-    out["market_configured_cycle_days"] = _configured_epoch_days;
-    out["market_min_cycle_days"] = _min_epoch_days;
+    write_cadence_report(out);
     out["markets_per_slice"] = _cells_per_slice;
     out["building_cells_per_slice"] = _building_cells_per_slice;
     out["building_output_efficiency_q16"] = _building_output_efficiency_q16;
@@ -959,7 +958,6 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     out["accuracy_exact_probe_rate_q16"] = _accuracy_exact_probe_rate_q16;
     out["accuracy_fallback_cooldown_epochs"] =
         _accuracy_fallback_cooldown_epochs;
-    out["settlement_phase_count"] = ROLLING_PHASE_COUNT;
     out["merchant_count"] = static_cast<int64_t>(_merchant_slots.size());
     out["merchant_repairs"] = merchant_repairs;
     out["building_group_count"] = static_cast<int64_t>(_buildings.size());

@@ -2278,7 +2278,7 @@ Dictionary NativeEconomyRuntime::notable_person_snapshot(
     out["employee_role_index"] = _persons.employee_role_index[person];
     out["job_since_day"] = _persons.job_since_day[person];
     out["attribution_model"] = "cohort_realized_attribution_v1";
-    out["market_cycle_days"] = _epoch_days;
+    out["market_cycle_days"] = locked_market_cycle_days();
     return out;
 }
 

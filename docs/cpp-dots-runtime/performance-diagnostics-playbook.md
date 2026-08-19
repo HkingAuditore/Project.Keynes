@@ -11,9 +11,13 @@ tax 诊断不应出现在 country hot path；PROBE/FULL 才用于 hash/A-B 验�
 维护或 parity 校验仍有问题。
 
 Economy 报告的 `prepare_reuse_count`、`workset_cells_planned`、
-`workset_cells_executed`、`duplicate_range_count` 以及
+`workset_cells_executed`、`duplicate_range_count`、`due_cells` 以及
 `household_market_prepare_ms/worker_ms/merge_ms` 只做 transient 计时，不改变
-PKEC authority、五日 cadence 或 state/event hash。
+PKEC authority、五日 cadence 或 state/event hash。`due_cells` 是当日活格 ∩ 市场桶，
+不是 `cell_count / N`。`economy_live_cells` 是只读诊断。若 `cadence_market_ms_per_knife`
+比 `last_completed_*` 市场侧毫秒高一个数量级，先查 COMMIT 计时是否又被每个 publish
+切片累加。`[SUS-cpp]` 快进尾部若仍被 atlas 主导，先确认 `fast_forward_deferred` 与
+地形镜像 `skipped=true`（`_dc_terrain_mirror_dirty=false`）。
 
 CSV 固定列包含 `country_report_mode`、`country_state_hash_ms`、
 `country_report_build_ms`、`research_queue_size`、`research_full_scan_fallbacks`，
@@ -150,12 +154,10 @@ ACTIVE/SHADOW 切换或旧迁移实验开关。
 - `t_ui_ms`：选中地块 live patch 与顶栏时间状态更新。
 - `bd_ui_live_patch_build_ms`：右侧面板 ViewModel 读取选中地块/原生快照并构造
   live patch 的墙钟。
-- `bd_ui_live_patch_apply_ms`：`InspectorPanel` 把 live patch 应用到当前可见控件的墙钟。
-  `bd_ui_ran=false` 表示该 tick 未达到 750ms 面板刷新节流，或人口 tab 的
-  generation/common hash 均未变化而被脏检查短路；`bd_ui_tab` 记录当前标签页。
-  人口 tab 先比较 selected-cell `settlement_generation`，仅在 generation 变化时读取并构建
-  cohort/market 明细，再以 category hash 避免内容相同的控件 apply。公共气候/国家/人口摘要
-  使用独立 hash，不会被 population generation 冻结。
+-   `bd_ui_live_patch_apply_ms`：`InspectorPanel` 把 live patch 应用到当前可见控件的墙钟。
+  `bd_ui_ran=false` 表示该 tick 未达到非人口页 750ms 面板刷新节流；人口 tab 每个模拟日
+  构造无需求预览的 list live patch，数字不变时用 category hash 跳过控件 apply。
+  对象详情与首次打开人口页仍读取完整 cohort/market 明细。`bd_ui_tab` 记录当前标签页。
 - `fast_ms`：以上路径与少量调度胶水的总墙钟；录制器开销另见
   `fast_ms_after_recorders` / recorder summary。
 - `continuation_*`：从上一个 `fast_tick` 记录完成到当前记录之间，
@@ -260,6 +262,7 @@ refresh_climate_daily ran=0.59ms slices=1 progress=0.25
 
 | reason | 典型含义 | 下一步 |
 | --- | --- | --- |
+| `fast_forward_deferred` | `speed_scale>=20` 时 enum/DVA atlas 按 100ms 墙钟让出热路径，pending/LUT dirty 留下。 | 降回 1×/5× 应出现一次 catch-up；不要当成 `policy_gated`。 |
 | `policy_gated` | job 当前 tick 未落在 `ClimateProfile.sim_stagger_*` 配置的 bucket phase 上。默认这是全平台错峰的正常结果。 | 看 stride/phase 是否符合预期，以及一个完整 bucket 周期内是否至少运行一次。 |
 | `strict_budget_one_job` | `sim_strict_budget_enabled=true` 时，scheduler tick 内轮转只放行一个 optional job。 | 这是 strict round-robin 预算模式，不是 profile bucket；确认是否真的需要打开 strict。 |
 | `frame_budget_exhausted` | tick 内 frame budget 被前面的 slice 吃完，后续 optional job 没启动。 | 看 `largest`、`must_run`、slice budget 和是否长期饿死 simulation authority job。 |
@@ -705,7 +708,7 @@ tick's ψ (`cell_ocean_psi` slot) instead of zero:
   是追踪完整性证据；consumer 落后不得触发 economy backpressure。
 - trace OFF/SELECTIVE 与 worker/scalar 的核心 economy state hash 必须一致；worker/scalar
   `event_stream_hash` 也必须一致。
-- 10M auto cadence 与固定五日建筑 benchmark 必须分别标注，不能用自动 N 性能替代默认档证据。
+- 锁定 N∈[1,5] 与历史 N=50/334 自动快进必须分别标注，不能用旧自动档性能替代当前生产证据。
 
 2026-07-26 weighted economy worker 诊断：
 

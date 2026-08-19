@@ -41,6 +41,11 @@ func _run() -> void:
 	var profile = load("res://data/economy/default_economy.tres").to_native_profile()
 	profile.market_cycle_days = 5
 	profile.market_runtime_mode = "ACTIVE"
+	# Keep focused lifecycle/investment fixtures on the historical 5/10 lock.
+	# Small worlds would otherwise choose N=1 and S=5 from populated knives.
+	profile.economy_cadence_force_market_days = 5
+	profile.economy_cadence_force_slow_days = 10
+	profile.economy_cadence_force_investment_days = 10
 	# Keep focused lifecycle/investment fixtures fast; production default is 30 days.
 	profile.investment_review_days = 10
 	_test_construction_rebuild_preserves_employee_fill(compiled, profile)
@@ -423,7 +428,7 @@ func _run() -> void:
 	_expect("building PKCN save completes", bool(ext.end_country_save().get("ok", false)))
 	var chunks: Array[PackedByteArray] = []
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
-	_expect("building v37 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 37)
+	_expect("building v39 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 39)
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty(): break
@@ -1577,6 +1582,8 @@ func _test_high_unemployment_investment_catchup(
 	var catalog := source_catalog.duplicate(true)
 	var profile := source_profile.duplicate(true)
 	profile.investment_review_days = 30
+	profile.economy_cadence_force_slow_days = 30
+	profile.economy_cadence_force_investment_days = 30
 	profile.resource_safe_harvest_q16 = 0
 	profile.starvation_death_rate_q32 = 0
 	profile.merchant_market_making_days_q16 = 1966080

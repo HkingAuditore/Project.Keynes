@@ -100,7 +100,7 @@ func _run() -> void:
 		print("restore=", restored_result, " page=", restored_page,
 			" saved_schema=", saved.get("schema", 0))
 	_expect("PKEC v37 restores in-flight route, payload, cargo and due heap exactly",
-		int(saved.get("schema", 0)) == 37
+		int(saved.get("schema", 0)) == 39
 		and bool(restored_result.get("ok", false))
 		and int(restored_page.get("total", 0)) == 1
 		and int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
@@ -287,7 +287,7 @@ func _run_greenfield_kit_and_return(catalog: Dictionary) -> void:
 	var restored: Object = restored_fixture.ext
 	var restored_result := _restore_economy(restored, saved.get("chunks", []))
 	_expect("PKEC v37 restores in-flight kit cargo and frozen buildings",
-		int(saved.get("schema", 0)) == 37
+		int(saved.get("schema", 0)) == 39
 		and bool(restored_result.get("ok", false))
 		and int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
 	var cancelled: Dictionary = ext.cancel_family_colonization(
@@ -528,7 +528,7 @@ func _run_zero_stock_partial_kit(catalog: Dictionary) -> void:
 	var restored: Object = restored_fixture.ext
 	var restored_result := _restore_economy(restored, saved.get("chunks", []))
 	_expect("v37 empty-cargo expeditions restore like a v36 in-flight party",
-		int(saved.get("schema", 0)) == 37
+		int(saved.get("schema", 0)) == 39
 		and bool(restored_result.get("ok", false))
 		and int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
 

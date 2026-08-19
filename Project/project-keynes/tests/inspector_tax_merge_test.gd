@@ -124,6 +124,14 @@ func _initialize() -> void:
 	editor._on_text_submitted("")
 	if requests.size() != 1 or requests[0] != ["item", "income", "artisan", 29]:
 		failures.append("tax lane editor did not emit an isolated row override")
+	editor.resolve_pending()
+	editor.set_data(population_lane)
+	editor._spin.set_value_no_signal(41)
+	editor._on_value_changed(41)
+	editor.set_data(population_lane)
+	if int(editor._spin.value) != 41:
+		failures.append("set_data overwrote an in-progress spinbox draft")
+	editor.resolve_pending()
 
 	if failures.is_empty():
 		print("[inspector-tax-merge] PASS")

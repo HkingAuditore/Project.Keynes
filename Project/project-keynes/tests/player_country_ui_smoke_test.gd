@@ -139,6 +139,24 @@ func _run() -> void:
 		first_profession.is_empty() or int(economy.call(
 			"tax_row_rate", "income", first_profession, "income")) ==
 				preview_default)
+	if not first_profession.is_empty():
+		var item_base := int(economy.call(
+			"tax_row_rate", "income", first_profession, "income"))
+		var item_draft := item_base + 3 if item_base <= 97 else item_base - 3
+		economy.call("preview_item_rate_for_test", "income", first_profession,
+			"income", item_draft)
+		_expect("profession override draft stays on the edited row",
+			int(economy.call("tax_row_rate", "income", first_profession, "income"))
+				== item_draft)
+		economy.call("refresh_model", model)
+		await create_timer(EconomyWorkspace.LIVE_REFRESH_INTERVAL_MSEC / 1000.0 + 0.05).timeout
+		_expect("live refresh does not snap a profession override draft",
+			int(economy.call("tax_row_rate", "income", first_profession, "income"))
+				== item_draft)
+		economy.call("set_model", model)
+		_expect("reopening tax workspace clears unconfirmed item drafts",
+			int(economy.call("tax_row_rate", "income", first_profession, "income"))
+				!= item_draft)
 	var unlocked_profession_ids := {}
 	for item in unlocked_professions:
 		unlocked_profession_ids[String((item as Dictionary).get("id", ""))] = true

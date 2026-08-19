@@ -95,12 +95,9 @@ void NativeEconomyRuntime::prepare_investment_review_cells() {
         _investment_scheduled_review_cells = 0;
         return;
     }
-    const int32_t review_days = std::max(1, _investment_review_days);
-    const int32_t review_phase = static_cast<int32_t>(
-        ((_current_day % review_days) + review_days) % review_days);
-    for (int32_t cell = review_phase; cell < _cell_count;
-         cell += review_days) {
-        if (cell % ROLLING_PHASE_COUNT != _rolling_phase ||
+    const int64_t day = _sample_day >= 0 ? _sample_day : _current_day;
+    for (int32_t cell = 0; cell < _cell_count; ++cell) {
+        if (!cell_due_investment_review(cell, day) ||
             _committed_cells[cell].population <= 0) {
             continue;
         }

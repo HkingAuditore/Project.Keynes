@@ -564,6 +564,7 @@ func tick(ctx) -> Dictionary:
 		report["lut_refresh_ms"] = lut_wall_ms
 		_last_breakdown = report.duplicate(false)
 		_last_breakdown["_tick_idx"] = current_fast_tick_idx
+		mark_atlas_upload_success()
 		return report
 
 	# 紧急回退：走旧 one-shot 路径。
@@ -638,6 +639,10 @@ func should_run(ctx: SusTickContext) -> bool:
 	# 用来对比关掉 atlas commit 后 FPS 改善多少，定位 GPU 瓶颈。
 	if Engine.has_meta(&"force_disable_dva_upload") and bool(Engine.get_meta(&"force_disable_dva_upload")):
 		return false
+	if should_skip_fast_forward_visual(ctx):
+		return false
+	if take_fast_forward_atlas_catchup():
+		_lut_refresh_pending = true
 	if not _cpp_commit_queue.is_empty() or _cpp_stride_in_progress:
 		return true
 	if FeatureFlagsScript.cell_indirection_active():
@@ -1209,6 +1214,7 @@ func _step_phase_baker(remaining_budget: int, baker_key: String,
 
 # Stride 完成 tick 的最终 report 组装。
 func _finalize_stride(elapsed_ms: float) -> Dictionary:
+	mark_atlas_upload_success()
 	_dvas_diag_stride_count += 1
 	_dvas_diag_ticks_accum += _total_ticks_used
 	# [diag 2026-05-20 phase-breakdown] 累加本 stride 的 phase ms 切片到窗口累加器。
@@ -1721,6 +1727,8 @@ func _drain_cpp_commit_queue(t_start_us: int) -> Dictionary:
 		_cpp_commit_context.erase("_tick_idx")
 	_last_breakdown = report.duplicate(true)
 	_last_breakdown["_tick_idx"] = current_fast_tick_idx
+	if textures_this_tick > 0:
+		mark_atlas_upload_success()
 	return report
 
 

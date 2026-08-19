@@ -613,7 +613,11 @@ func _sync_data_core_runtime_terrain_mirror(map: MapData, reason: String) -> Dic
 		"is_water_mismatch": 0,
 		"terrain_written": false,
 		"is_water_written": false,
+		"skipped": false,
 	}
+	if not _dc_terrain_mirror_dirty:
+		diag["skipped"] = true
+		return diag
 	if map == null or _data_core_world == null or not _data_core_world.is_bound():
 		return diag
 	if not _data_core_world.has_method("view_u8") or not _data_core_world.has_method("write_u8_dense"):
@@ -647,6 +651,7 @@ func _sync_data_core_runtime_terrain_mirror(map: MapData, reason: String) -> Dic
 
 	diag["terrain_mismatch"] = terrain_mismatch
 	diag["is_water_mismatch"] = is_water_mismatch
+	_dc_terrain_mirror_dirty = false
 	if (terrain_mismatch > 0 or is_water_mismatch > 0) \
 			and _dc_terrain_mirror_sync_log_count < _DC_TERRAIN_MIRROR_SYNC_INITIAL_LOGS:
 		_dc_terrain_mirror_sync_log_count += 1
@@ -655,6 +660,10 @@ func _sync_data_core_runtime_terrain_mirror(map: MapData, reason: String) -> Dic
 			str(bool(diag["terrain_written"])), str(bool(diag["is_water_written"])),
 		])
 	return diag
+
+
+func mark_runtime_terrain_mirror_dirty() -> void:
+	_dc_terrain_mirror_dirty = true
 
 
 func _climate_views_from_world(cp: ClimateProfile) -> Dictionary:
@@ -767,6 +776,7 @@ var _data_core_world_ext: RefCounted = null  # DCWorldExt（来自 gdext，无 G
 var _gameplay_event_bus: GameplayEventBus = GameplayEventBusScript.new()
 const _DC_TERRAIN_MIRROR_SYNC_INITIAL_LOGS: int = 12
 var _dc_terrain_mirror_sync_log_count: int = 0
+var _dc_terrain_mirror_dirty: bool = true
 # DOTS-Total-CPP（任务 6）：ocean_water_pass 同 tick 复用 short-circuit。
 # climate_daily 与 ocean_currents_job 都可能调 _ocean_water_pass；同一 phase
 # 只跑一次。NaN = 未跑过；reset_progress 时清回 NaN。
@@ -1083,6 +1093,10 @@ var _natural_resource_pass_knobs: Dictionary = {}
 var _natural_resource_regen_factors_valid: bool = false
 var _natural_resource_regen_factor_prime_ms: float = 0.0
 var _last_natural_resource_report: Dictionary = {}
+const NATURAL_RESOURCE_WILDERNESS_STRIDE: int = 60
+const NATURAL_RESOURCE_LIVE_CATCHUP_MAX_DAYS: int = 5
+var _natural_resource_last_day: PackedInt32Array = PackedInt32Array()
+var _natural_resource_was_live: PackedByteArray = PackedByteArray()
 var _natural_resource_refresh_keys: PackedStringArray = PackedStringArray([
 	"cell_temp",
 	"cell_moisture",
@@ -1795,7 +1809,7 @@ func _register_country_economy_systems(scheduler_profile) -> Dictionary:
 	_sus.configure_job_from_profile(
 		_country_daily_job, scheduler_profile, false, &"country_daily", 1)
 	_runtime_register_system(_country_daily_job)
-	_economy_daily_job = EconomyDailySystemScript.new(_economy_facade, _world_clock_ref)
+	_economy_daily_job = EconomyDailySystemScript.new(_economy_facade, _world_clock_ref, self)
 	_sus.configure_job_from_profile(
 		_economy_daily_job, scheduler_profile, false, &"economy_daily", 1)
 	_runtime_register_system(_economy_daily_job)
@@ -2426,6 +2440,8 @@ func _setup_sus(map: MapData, world: WorldData, cfg: MapConfig, hex_size: float)
 					_data_core_world_ext.set_diag_logs_enabled(PKLog.enabled)
 				var ext_bound: bool = bool(_data_core_world_ext.bind_map_data(map))
 				print("[DataCore] _data_core_world_ext bound=%s (climate co-processor; class=DCWorldExt)" % str(ext_bound))
+				_dc_terrain_mirror_dirty = true
+				_reset_natural_resource_cadence(map.cell_count(), 0)
 				if not ext_bound:
 					push_warning("[DataCore] DCWorldExt.bind_map_data returned false; climate Pass-A C++ acceleration disabled (will fall back to DataCore/GDScript path)")
 					_data_core_world_ext = null
@@ -7704,9 +7720,13 @@ func _publish_bootstrapped_natural_resources_to_runtime(map_ref: MapData) -> voi
 # 每日资源 pass 入口（由 NaturalResourceDailySystem.tick 调）。
 # 优先 C++ run_natural_resource_pass（slot 权威 + flush 回 MapData）；
 # native 不可用 / 未发布时退回 GDScript fallback 同模板。
-func run_natural_resource_pass_native(map_ref, dt_days: int = 1) -> Dictionary:
+func run_natural_resource_pass_native(
+		map_ref,
+		dt_days: int = 1,
+		cell_indices: PackedInt32Array = PackedInt32Array(),
+		cell_dt_days: PackedInt32Array = PackedInt32Array()) -> Dictionary:
 	var t_wall: int = Time.get_ticks_usec()
-	dt_days = clampi(dt_days, 1, 30)
+	dt_days = clampi(dt_days, 1, NATURAL_RESOURCE_WILDERNESS_STRIDE)
 	if map_ref == null:
 		return _remember_natural_resource_report({"done": true, "path": "skip", "published_to_slot": false})
 	var n_cells: int = map_ref.cell_count()
@@ -7743,6 +7763,15 @@ func run_natural_resource_pass_native(map_ref, dt_days: int = 1) -> Dictionary:
 			refresh_ms = (Time.get_ticks_usec() - refresh_started) / 1000.0
 		_natural_resource_pass_knobs["n_cells"] = n_cells
 		_natural_resource_pass_knobs["dt_days"] = dt_days
+		if cell_indices.is_empty():
+			_natural_resource_pass_knobs.erase("cell_indices")
+			_natural_resource_pass_knobs.erase("cell_dt_days")
+		else:
+			_natural_resource_pass_knobs["cell_indices"] = cell_indices
+			if cell_dt_days.size() == cell_indices.size():
+				_natural_resource_pass_knobs["cell_dt_days"] = cell_dt_days
+			else:
+				_natural_resource_pass_knobs.erase("cell_dt_days")
 		knob_update_ms = (Time.get_ticks_usec() - knob_update_started) / 1000.0
 		var native_call_started: int = Time.get_ticks_usec()
 		var res: Dictionary = _data_core_world_ext.run_natural_resource_pass(_natural_resource_pass_knobs)
@@ -7760,7 +7789,7 @@ func run_natural_resource_pass_native(map_ref, dt_days: int = 1) -> Dictionary:
 
 	var fallback_started: int = Time.get_ticks_usec()
 	var fallback_res: Dictionary = _run_natural_resource_pass_gdscript(
-		map_ref, n_cells, t_wall, dt_days)
+		map_ref, n_cells, t_wall, dt_days, cell_indices, cell_dt_days)
 	fallback_res["factor_lookup_ms"] = factor_lookup_ms
 	fallback_res["slot_refresh_ms"] = 0.0
 	fallback_res["knob_update_ms"] = knob_update_ms
@@ -7773,8 +7802,125 @@ func run_natural_resource_pass_native(map_ref, dt_days: int = 1) -> Dictionary:
 	return _remember_natural_resource_report(fallback_res)
 
 
+func economy_live_cells() -> PackedInt32Array:
+	if _data_core_world_ext != null and _data_core_world_ext.has_method("get_economy_live_cells"):
+		return _data_core_world_ext.get_economy_live_cells()
+	return PackedInt32Array()
+
+
+func _reset_natural_resource_cadence(n_cells: int, last_day: int) -> void:
+	_natural_resource_last_day.resize(maxi(0, n_cells))
+	_natural_resource_was_live.resize(maxi(0, n_cells))
+	_natural_resource_last_day.fill(last_day)
+	_natural_resource_was_live.fill(0)
+
+
+func _ensure_natural_resource_cadence(n_cells: int, day: int) -> void:
+	if _natural_resource_last_day.size() != n_cells \
+			or _natural_resource_was_live.size() != n_cells:
+		_reset_natural_resource_cadence(n_cells, maxi(day - 1, 0))
+
+
+func _natural_resource_dt_for_cell(cell: int, day: int, is_live: bool) -> int:
+	var last: int = int(_natural_resource_last_day[cell])
+	var elapsed: int = clampi(day - last, 1, NATURAL_RESOURCE_WILDERNESS_STRIDE)
+	if is_live and int(_natural_resource_was_live[cell]) != 0:
+		elapsed = clampi(elapsed, 1, NATURAL_RESOURCE_LIVE_CATCHUP_MAX_DAYS)
+	return elapsed
+
+
+func collect_natural_resource_pass_cells(day: int, live_cells: PackedInt32Array) -> Dictionary:
+	var n_cells: int = _natural_resource_last_day.size()
+	var live_set := {}
+	var cell_indices := PackedInt32Array()
+	var cell_dt_days := PackedInt32Array()
+	for cell in live_cells:
+		var idx := int(cell)
+		if idx < 0 or idx >= n_cells:
+			continue
+		live_set[idx] = true
+		if int(_natural_resource_last_day[idx]) >= day:
+			continue
+		cell_indices.append(idx)
+		cell_dt_days.append(_natural_resource_dt_for_cell(idx, day, true))
+	var bucket: int = posmod(day, NATURAL_RESOURCE_WILDERNESS_STRIDE)
+	for idx in range(n_cells):
+		if live_set.has(idx):
+			continue
+		if posmod(idx, NATURAL_RESOURCE_WILDERNESS_STRIDE) != bucket:
+			continue
+		if int(_natural_resource_last_day[idx]) >= day:
+			continue
+		cell_indices.append(idx)
+		cell_dt_days.append(_natural_resource_dt_for_cell(idx, day, false))
+	return {"cell_indices": cell_indices, "cell_dt_days": cell_dt_days, "live_set": live_set}
+
+
+func _commit_natural_resource_pass_days(day: int, cell_indices: PackedInt32Array, live_set: Dictionary) -> void:
+	for cell in cell_indices:
+		var idx := int(cell)
+		if idx < 0 or idx >= _natural_resource_last_day.size():
+			continue
+		_natural_resource_last_day[idx] = day
+		_natural_resource_was_live[idx] = 1 if live_set.has(idx) else 0
+
+
+func run_natural_resource_pass_scheduled(map_ref, day: int, live_cells: PackedInt32Array = PackedInt32Array()) -> Dictionary:
+	if map_ref == null:
+		return _remember_natural_resource_report({"done": true, "path": "skip", "published_to_slot": false})
+	var n_cells: int = map_ref.cell_count()
+	_ensure_natural_resource_cadence(n_cells, day)
+	var planned: Dictionary = collect_natural_resource_pass_cells(day, live_cells)
+	var cell_indices: PackedInt32Array = planned.get("cell_indices", PackedInt32Array())
+	var cell_dt_days: PackedInt32Array = planned.get("cell_dt_days", PackedInt32Array())
+	if cell_indices.is_empty():
+		return _remember_natural_resource_report({
+			"done": true,
+			"path": "indexed_empty",
+			"published_to_slot": true,
+			"dt_days": 1,
+			"indexed_cell_count": 0,
+			"n_cells": n_cells,
+			"total_delta": 0.0,
+		})
+	var res: Dictionary = run_natural_resource_pass_native(map_ref, 1, cell_indices, cell_dt_days)
+	if bool(res.get("published_to_slot", false)) or str(res.get("path", "")) == "gdscript":
+		_commit_natural_resource_pass_days(day, cell_indices, planned.get("live_set", {}))
+	res["indexed_cell_count"] = cell_indices.size()
+	return res
+
+
+func catchup_natural_resources_for_live_cells(day: int) -> Dictionary:
+	if _sus_map == null:
+		return {"done": true, "path": "skip", "indexed_cell_count": 0}
+	_ensure_natural_resource_cadence(_sus_map.cell_count(), day)
+	var live: PackedInt32Array = economy_live_cells()
+	var due := PackedInt32Array()
+	var dts := PackedInt32Array()
+	var live_set := {}
+	for cell in live:
+		var idx := int(cell)
+		if idx < 0 or idx >= _natural_resource_last_day.size():
+			continue
+		live_set[idx] = true
+		if int(_natural_resource_last_day[idx]) >= day:
+			continue
+		due.append(idx)
+		dts.append(_natural_resource_dt_for_cell(idx, day, true))
+	if due.is_empty():
+		return {"done": true, "path": "catchup_empty", "indexed_cell_count": 0}
+	var res: Dictionary = run_natural_resource_pass_native(_sus_map, 1, due, dts)
+	if bool(res.get("published_to_slot", false)) or str(res.get("path", "")) == "gdscript":
+		_commit_natural_resource_pass_days(day, due, live_set)
+	res["indexed_cell_count"] = due.size()
+	return res
+
+
 # GDScript fallback：与 C++ run_natural_resource_pass 严格同模板，直接读写 MapData 数组。
-func _run_natural_resource_pass_gdscript(map_ref, n_cells: int, t_wall: int, dt_days: int = 1) -> Dictionary:
+func _run_natural_resource_pass_gdscript(
+		map_ref, n_cells: int, t_wall: int, dt_days: int = 1,
+		cell_indices: PackedInt32Array = PackedInt32Array(),
+		cell_dt_days: PackedInt32Array = PackedInt32Array()) -> Dictionary:
 	var temp_arr: PackedFloat32Array = map_ref.temp_arr
 	var temp_30d_arr: PackedFloat32Array = map_ref.temp_30d_arr
 	var moist_arr: PackedFloat32Array = map_ref.moisture_arr
@@ -7816,7 +7962,15 @@ func _run_natural_resource_pass_gdscript(map_ref, n_cells: int, t_wall: int, dt_
 			p.decay_stress != 0.0 or p.ecology_capacity > 0.0
 		var regen_row: int = int(regen_rows.get(String(p.id), -1))
 		var regen_offset: int = regen_row * n_cells
-		for i in range(n_cells):
+		var use_index: bool = not cell_indices.is_empty()
+		var n_work: int = cell_indices.size() if use_index else n_cells
+		for k in range(n_work):
+			var i: int = int(cell_indices[k]) if use_index else k
+			if i < 0 or i >= n_cells:
+				continue
+			var step_dt: int = dt_days
+			if use_index and cell_dt_days.size() == n_work:
+				step_dt = clampi(int(cell_dt_days[k]), 1, NATURAL_RESOURCE_WILDERNESS_STRIDE)
 			if habitat_code > 0 and (i >= habitat_arr.size() or not
 					ResourceProfileRegistry.habitat_available(p, int(habitat_arr[i]))):
 				if have_extra:
@@ -7854,7 +8008,7 @@ func _run_natural_resource_pass_gdscript(map_ref, n_cells: int, t_wall: int, dt_
 				var stress_denom := 1.0 + maxf(0.0, float(
 					p.ecology_stress_mortality_rate)) * acute_stress
 				v = reserve_after_external
-				for _day in range(maxi(1, dt_days)):
+				for _day in range(maxi(1, step_dt)):
 					var seeded := v + immigration
 					if capacity <= 0.000001:
 						v = 0.0
@@ -7871,12 +8025,12 @@ func _run_natural_resource_pass_gdscript(map_ref, n_cells: int, t_wall: int, dt_
 					quantity_scale * p.decay_stress * (1.0 - runtime_fit)
 				var L: float = maxf(0.0, p.decay_self)
 				var inv_denom: float = 1.0 / (1.0 + L)
-				if dt_days <= 1:
+				if step_dt <= 1:
 					v = (reserve_after_external + P) * inv_denom
 				elif absf(1.0 - inv_denom) < 0.000001:
-					v = reserve_after_external + P * float(dt_days)
+					v = reserve_after_external + P * float(step_dt)
 				else:
-					var a_pow: float = pow(inv_denom, float(dt_days))
+					var a_pow: float = pow(inv_denom, float(step_dt))
 					var b: float = P * inv_denom
 					v = a_pow * reserve_after_external + b * (1.0 - a_pow) / (1.0 - inv_denom)
 			if v < 0.0:
@@ -7906,6 +8060,7 @@ func _run_natural_resource_pass_gdscript(map_ref, n_cells: int, t_wall: int, dt_
 		"input_resource_count": ResourceProfileRegistry.count(),
 		"n_cells": n_cells,
 		"dt_days": dt_days,
+		"indexed_cell_count": cell_indices.size() if not cell_indices.is_empty() else n_cells,
 		"total_delta": total_delta,
 		"native_ms": (Time.get_ticks_usec() - t_wall) / 1000.0,
 		"regen_modifier_snapshot_version": int(_natural_resource_pass_knobs.get(
@@ -8092,6 +8247,7 @@ func _set_cell_runtime_terrain(map: MapData, cell: HexCell, terrain_id: int,
 			idx = map.index_of(cell)
 		if idx >= 0 and idx < map.cell_count():
 			map.set_runtime_terrain(idx, terrain_id, true)
+			mark_runtime_terrain_mirror_dirty()
 			if sync_axes:
 				_sync_runtime_axes_after_terrain(map, cell, idx, temperature_for_vegetation, snow_cover)
 			return
@@ -8143,8 +8299,10 @@ func _sync_runtime_axes_after_terrain(map: MapData, cell: HexCell, idx: int,
 		if safe_idx >= 0 and safe_idx < map.cell_count():
 			if safe_idx < map.terrain_arr.size():
 				map.terrain_arr[safe_idx] = int(cell.terrain) & 0xFF
+				mark_runtime_terrain_mirror_dirty()
 			if safe_idx < map.is_water_arr.size():
 				map.is_water_arr[safe_idx] = MapData.terrain_is_water_u8(int(cell.terrain))
+				mark_runtime_terrain_mirror_dirty()
 			if safe_idx < map.landform_arr.size():
 				map.landform_arr[safe_idx] = landform & 0xFF
 			if safe_idx < map.vegetation_arr.size():

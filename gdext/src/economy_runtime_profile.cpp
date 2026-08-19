@@ -55,11 +55,45 @@ bool NativeEconomyRuntime::configure_profile(const Dictionary &profile, std::str
         profile, "building_output_efficiency_q16", Q16_ONE),
         static_cast<int32_t>(Q16_ONE), static_cast<int32_t>(Q16_ONE * 4));
     _commands_per_slice = std::clamp(dict_num<int32_t>(profile, "commands_per_slice", 16384), 1, 1 << 20);
-    // Five-day cadence is fixed. World scale changes the rolling workset, not
-    // the economic period or feedback delay.
-    _configured_epoch_days = ROLLING_PHASE_COUNT;
-    _min_epoch_days = ROLLING_PHASE_COUNT;
-    _max_epoch_days = ROLLING_PHASE_COUNT;
+    // market_cycle_days is the longest market interval (1-5). Native locks N
+    // for a full cycle from populated work plus previous-cycle machine timing.
+    // market_cycle_days=0 is not the retired 50/334 auto-fast-forward path.
+    int32_t configured_cycle = dict_num<int32_t>(
+        profile, "market_cycle_days", MARKET_CYCLE_MAX_DAYS);
+    if (configured_cycle <= 0) configured_cycle = MARKET_CYCLE_MAX_DAYS;
+    int32_t configured_min = dict_num<int32_t>(
+        profile, "market_min_cycle_days", MARKET_CYCLE_MIN_DAYS);
+    int32_t configured_max = dict_num<int32_t>(
+        profile, "market_max_cycle_days", configured_cycle);
+    if (configured_min <= 0) configured_min = MARKET_CYCLE_MIN_DAYS;
+    if (configured_max <= 0) configured_max = MARKET_CYCLE_MAX_DAYS;
+    _min_epoch_days = std::clamp(configured_min, MARKET_CYCLE_MIN_DAYS,
+                                 MARKET_CYCLE_MAX_DAYS);
+    _max_epoch_days = std::clamp(std::max(configured_max, configured_cycle),
+                                 _min_epoch_days, MARKET_CYCLE_MAX_DAYS);
+    _configured_epoch_days = _max_epoch_days;
+    _cadence_target_ms = std::clamp(dict_num<double>(
+        profile, "economy_cadence_target_ms", 8.0), 0.5, 32.0);
+    _forced_market_cycle_days = std::clamp(dict_num<int32_t>(
+        profile, "economy_cadence_force_market_days", 0),
+        0, MARKET_CYCLE_MAX_DAYS);
+    _forced_slow_cycle_days = dict_num<int32_t>(
+        profile, "economy_cadence_force_plan_days", 0);
+    if (_forced_slow_cycle_days <= 0) {
+        _forced_slow_cycle_days = dict_num<int32_t>(
+            profile, "economy_cadence_force_slow_days", 0);
+    }
+    if (_forced_slow_cycle_days > 0) {
+        _forced_slow_cycle_days = std::clamp(_forced_slow_cycle_days,
+            PLAN_CYCLE_MIN_DAYS, PLAN_CYCLE_MAX_DAYS);
+    }
+    _forced_investment_cycle_days = dict_num<int32_t>(
+        profile, "economy_cadence_force_investment_days", 0);
+    if (_forced_investment_cycle_days > 0) {
+        _forced_investment_cycle_days = std::clamp(
+            _forced_investment_cycle_days, INVEST_CYCLE_MIN_DAYS,
+            INVEST_CYCLE_MAX_DAYS);
+    }
     _configured_target_cohorts_per_slice = std::clamp<int64_t>(
         dict_num<int64_t>(profile, "market_target_cohorts_per_slice", 0),
         0, 1000000);
@@ -251,6 +285,10 @@ bool NativeEconomyRuntime::configure_profile(const Dictionary &profile, std::str
         profile, "investment_review_days", 30), 1, 3650);
     _building_plan_days = std::clamp(dict_num<int32_t>(
         profile, "building_plan_days", 10), 1, 3650);
+    _slow_cycle_min_days = PLAN_CYCLE_MIN_DAYS;
+    _slow_cycle_max_days = PLAN_CYCLE_MAX_DAYS;
+    _invest_cycle_min_days = INVEST_CYCLE_MIN_DAYS;
+    _invest_cycle_max_days = INVEST_CYCLE_MAX_DAYS;
     // These two thresholds remain in the v35 binary policy payload for
     // archive layout compatibility. No current investment path consults them.
     _investment_min_shortage_q16 = Q16_ONE / 8;

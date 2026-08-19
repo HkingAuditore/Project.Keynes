@@ -263,7 +263,8 @@ func build_live_patch(
 		cell: HexCell,
 		current_tab: String,
 		include_category: bool = true,
-		population_summary_override: Dictionary = {}
+		population_summary_override: Dictionary = {},
+		include_details: bool = true
 ) -> Dictionary:
 	if cell == null or _map == null:
 		return {}
@@ -301,8 +302,10 @@ func build_live_patch(
 				wf, snow, vitality, passable_land, is_water)
 	elif tab_id == "population":
 		if include_category:
-			population_summary = _population_snapshot(idx)
-			category = _population_category(population_summary, _market_snapshot(idx))
+			# 列表 live patch 不拉需求预览和市场价；对象详情仍走完整 snapshot。
+			population_summary = _population_snapshot(idx, include_details)
+			var market := _market_snapshot(idx) if include_details else {}
+			category = _population_category(population_summary, market)
 			category = _decorate_category_with_tax(idx, tab_id, category)
 		else:
 			population_summary = population_summary_override if not \
@@ -1155,13 +1158,13 @@ func _history_category(cell: HexCell) -> Dictionary:
 	}
 
 
-func _population_snapshot(cell_idx: int) -> Dictionary:
+func _population_snapshot(cell_idx: int, include_details: bool = true) -> Dictionary:
 	if _generator == null or not _generator.has_method("get_economy_facade"):
 		return {}
 	var facade = _generator.get_economy_facade()
 	if facade == null or not facade.has_method("population_cell_snapshot"):
 		return {}
-	return facade.population_cell_snapshot(cell_idx)
+	return facade.population_cell_snapshot(cell_idx, include_details)
 
 
 func _population_summary(cell_idx: int) -> Dictionary:
@@ -1517,6 +1520,7 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 		return {"insights": [{"id": "population_unavailable", "text": "人口情报暂不可用。", "accent": UITokens.TEXT_MUTED, "icon": "growth"}]}
 	if not snapshot.has("populations"):
 		return {"insights": [{"id": "population_details_unavailable", "text": "无法读取最新人口明细。", "accent": UITokens.RISK, "icon": "growth"}]}
+	var list_only := not bool(snapshot.get("demand_preview_included", true))
 	var rows := []
 	var handles: PackedInt64Array = snapshot.get("handles", PackedInt64Array())
 	var profession_indices: PackedInt32Array = snapshot.get("profession_ids", PackedInt32Array())
@@ -1571,7 +1575,7 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 	var local_prices := {}
 	var local_technology_available := {}
 	var enforce_local_technology := false
-	if bool(market_snapshot.get("ok", false)):
+	if not list_only and bool(market_snapshot.get("ok", false)):
 		var market_good_ids: PackedStringArray = market_snapshot.get("good_ids", PackedStringArray())
 		var market_prices: PackedInt32Array = market_snapshot.get("price", PackedInt32Array())
 		var market_technology: PackedByteArray = market_snapshot.get(
@@ -1592,10 +1596,10 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 		var living_name := _living_standard_name(living_level)
 		var worst_dimension := int(worst_dimensions[i]) \
 			if i < worst_dimensions.size() else -1
-		var dimension_rows := _satisfaction_dimension_rows(
+		var dimension_rows := [] if list_only else _satisfaction_dimension_rows(
 			satisfaction_dims, dimension_count, i, worst_dimension)
 		var need_satisfaction_by_id := {}
-		if welfare_need_offsets.size() == populations.size() + 1:
+		if not list_only and welfare_need_offsets.size() == populations.size() + 1:
 			var welfare_begin := clampi(int(welfare_need_offsets[i]), 0, welfare_need_ids.size())
 			var welfare_end := clampi(int(welfare_need_offsets[i + 1]), welfare_begin, welfare_need_ids.size())
 			for welfare_cursor in range(welfare_begin, welfare_end):
@@ -1610,7 +1614,7 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 		var owners := int(owner_employed[i]) if i < owner_employed.size() else 0
 		var employees := int(employee_employed[i]) if i < employee_employed.size() else 0
 		var demand_by_good := {}
-		if demand_offsets.size() == populations.size() + 1:
+		if not list_only and demand_offsets.size() == populations.size() + 1:
 			var begin := clampi(int(demand_offsets[i]), 0, demand_good_indices.size())
 			var end := clampi(int(demand_offsets[i + 1]), begin, demand_good_indices.size())
 			for cursor in range(begin, end):
@@ -1623,75 +1627,76 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 		var demand_total_cost := 0
 		var demand_cost_available := true
 		var demand_names := PackedStringArray()
-		var demand_metadata := _demand_good_metadata(snapshot, i)
-		var good_metadata: Dictionary = demand_metadata.get("good_metadata", {}) \
-			if bool(demand_metadata.get("ok", false)) else {}
 		var visible_demand_count := 0
-		for good_idx in range(demand_good_ids.size()):
-			var stable_id := String(demand_good_ids[good_idx])
-			var profile = GoodProfileRegistry.profile_by_id(stable_id)
-			var display_name := String(profile.display_name) if profile != null and String(profile.display_name) != "" else stable_id
-			var quantity := int(demand_by_good.get(good_idx, 0))
-			var has_price := local_prices.has(stable_id)
-			var price := int(local_prices.get(stable_id, 0))
-			var daily_cost := quantity * price / 1000 if has_price else 0
-			var metadata: Dictionary = good_metadata.get(stable_id, {})
-			var good_discovered := not enforce_local_technology \
-				or bool(local_technology_available.get(stable_id, false))
-			var unlocked_alternative := not metadata.is_empty() and enforce_local_technology \
-				and good_discovered
-			var visible := good_discovered and (quantity > 0 or unlocked_alternative)
-			if visible:
-				visible_demand_count += 1
-			if visible and quantity > 0:
-				demand_total += quantity
-				if has_price:
-					demand_total_cost += daily_cost
-				else:
-					demand_cost_available = false
-				if demand_names.size() < 3:
-					demand_names.append(display_name)
-			var need_names: Array = metadata.get("need_names", [])
-			var need_satisfaction_total := 0
-			var need_satisfaction_count := 0
-			for raw_need_id in metadata.get("need_ids", []):
-				var need_id := String(raw_need_id)
-				if need_satisfaction_by_id.has(need_id):
-					need_satisfaction_total += int(need_satisfaction_by_id[need_id])
-					need_satisfaction_count += 1
-			var attribution_idx := i * attribution_good_count + good_idx
-			var attribution_available := welfare_available \
-				and attribution_good_count == demand_good_ids.size() \
-				and attribution_idx >= 0 and attribution_idx < wealth_demand_delta.size() \
-				and attribution_idx < price_demand_delta.size()
-			demand_rows.append({
-				"id": "demand_%s" % stable_id,
-				"stable_id": stable_id,
-				"name": display_name,
-				"value": "%.3f 单位/人/日" % (float(quantity) / 1000.0),
-				"quantity": "%.3f" % (float(quantity) / 1000.0),
-				"price": _money_text(price) if has_price else "—",
-				"daily_cost": _money_text(daily_cost) if has_price else "—",
-				"quantity_raw": quantity,
-				"price_raw": price if has_price else -1,
-				"daily_cost_raw": daily_cost if has_price else -1,
-				"need_ids": metadata.get("need_ids", []),
-				"need_names": need_names,
-				"need_satisfaction_q16": need_satisfaction_total / need_satisfaction_count \
-					if need_satisfaction_count > 0 else -1,
-				"attribution_available": attribution_available,
-				"wealth_delta_raw": int(wealth_demand_delta[attribution_idx]) if attribution_available else 0,
-				"price_delta_raw": int(price_demand_delta[attribution_idx]) if attribution_available else 0,
-				"has_bundle": bool(metadata.get("has_bundle", false)),
-				"has_substitute": bool(metadata.get("has_substitute", false)),
-				"is_unallocated_alternative": quantity <= 0 and unlocked_alternative,
-				"icon": GoodProfileRegistry.icon_key(stable_id),
-				"visible": visible,
-			})
-		demand_groups = _group_demand_rows_by_usage(demand_rows)
+		if not list_only:
+			var demand_metadata := _demand_good_metadata(snapshot, i)
+			var good_metadata: Dictionary = demand_metadata.get("good_metadata", {}) \
+				if bool(demand_metadata.get("ok", false)) else {}
+			for good_idx in range(demand_good_ids.size()):
+				var stable_id := String(demand_good_ids[good_idx])
+				var profile = GoodProfileRegistry.profile_by_id(stable_id)
+				var display_name := String(profile.display_name) if profile != null and String(profile.display_name) != "" else stable_id
+				var quantity := int(demand_by_good.get(good_idx, 0))
+				var has_price := local_prices.has(stable_id)
+				var price := int(local_prices.get(stable_id, 0))
+				var daily_cost := quantity * price / 1000 if has_price else 0
+				var metadata: Dictionary = good_metadata.get(stable_id, {})
+				var good_discovered := not enforce_local_technology \
+					or bool(local_technology_available.get(stable_id, false))
+				var unlocked_alternative := not metadata.is_empty() and enforce_local_technology \
+					and good_discovered
+				var visible := good_discovered and (quantity > 0 or unlocked_alternative)
+				if visible:
+					visible_demand_count += 1
+				if visible and quantity > 0:
+					demand_total += quantity
+					if has_price:
+						demand_total_cost += daily_cost
+					else:
+						demand_cost_available = false
+					if demand_names.size() < 3:
+						demand_names.append(display_name)
+				var need_names: Array = metadata.get("need_names", [])
+				var need_satisfaction_total := 0
+				var need_satisfaction_count := 0
+				for raw_need_id in metadata.get("need_ids", []):
+					var need_id := String(raw_need_id)
+					if need_satisfaction_by_id.has(need_id):
+						need_satisfaction_total += int(need_satisfaction_by_id[need_id])
+						need_satisfaction_count += 1
+				var attribution_idx := i * attribution_good_count + good_idx
+				var attribution_available := welfare_available \
+					and attribution_good_count == demand_good_ids.size() \
+					and attribution_idx >= 0 and attribution_idx < wealth_demand_delta.size() \
+					and attribution_idx < price_demand_delta.size()
+				demand_rows.append({
+					"id": "demand_%s" % stable_id,
+					"stable_id": stable_id,
+					"name": display_name,
+					"value": "%.3f 单位/人/日" % (float(quantity) / 1000.0),
+					"quantity": "%.3f" % (float(quantity) / 1000.0),
+					"price": _money_text(price) if has_price else "—",
+					"daily_cost": _money_text(daily_cost) if has_price else "—",
+					"quantity_raw": quantity,
+					"price_raw": price if has_price else -1,
+					"daily_cost_raw": daily_cost if has_price else -1,
+					"need_ids": metadata.get("need_ids", []),
+					"need_names": need_names,
+					"need_satisfaction_q16": need_satisfaction_total / need_satisfaction_count \
+						if need_satisfaction_count > 0 else -1,
+					"attribution_available": attribution_available,
+					"wealth_delta_raw": int(wealth_demand_delta[attribution_idx]) if attribution_available else 0,
+					"price_delta_raw": int(price_demand_delta[attribution_idx]) if attribution_available else 0,
+					"has_bundle": bool(metadata.get("has_bundle", false)),
+					"has_substitute": bool(metadata.get("has_substitute", false)),
+					"is_unallocated_alternative": quantity <= 0 and unlocked_alternative,
+					"icon": GoodProfileRegistry.icon_key(stable_id),
+					"visible": visible,
+				})
+			demand_groups = _group_demand_rows_by_usage(demand_rows)
 		var income_rows := []
 		var expense_rows := []
-		if settlement_available and settlement_offsets.size() == populations.size() + 1:
+		if not list_only and settlement_available and settlement_offsets.size() == populations.size() + 1:
 			var flow_begin := clampi(int(settlement_offsets[i]), 0, settlement_source_indices.size())
 			var flow_end := clampi(int(settlement_offsets[i + 1]), flow_begin, settlement_source_indices.size())
 			for flow in range(flow_begin, flow_end):
@@ -1748,7 +1753,7 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 	var insights := []
 	if rows.is_empty():
 		insights.append({"id": "population_empty", "text": "此地尚无人口。", "accent": UITokens.TEXT_MUTED, "icon": "growth"})
-	elif not bool(snapshot.get("demand_preview_environment_ready", false)):
+	elif not list_only and not bool(snapshot.get("demand_preview_environment_ready", false)):
 		insights.append({"id": "population_demand_neutral_environment", "text": "需求暂按一般环境估算。", "accent": UITokens.WARN, "icon": "weather"})
 	if not rows.is_empty() and settlement_pending:
 		insights.append({"id": "population_settlement_pending", "text": "下次结算后可看精确收支。", "accent": UITokens.TEXT_MUTED, "icon": "history"})

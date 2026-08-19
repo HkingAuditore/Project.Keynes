@@ -89,7 +89,7 @@ func _init() -> void:
 		and int(report.get("government_research_procured_points", 0)) > 0
 		and int(after_purchase.technology_points_stock) > int(before.technology_points_stock)
 		and after_cash < before_cash
-		and int(report.get("market_cycle_days", 0)) == 5)
+		and int(report.get("market_cycle_days", 0)) == 1)
 	var purchased := int(after_purchase.technology_points_stock)
 	var research_day: Dictionary = ext.run_country_slice({"day_index": 2})
 	var after_research: Dictionary = country.research_snapshot(handle)
@@ -112,7 +112,7 @@ func _init() -> void:
 		and not bool(in_flight.get("done", false)))
 	var closing := _run_day(ext, 4)
 	var research_consumed_in_epoch := int(after_research2.consumed_total) - int(before.consumed_total)
-	_expect("five-day epoch conserves research goods",
+	_expect("in-epoch research goods stay conserved",
 		bool(closing.get("done", false))
 		and not bool(closing.get("fatal", false))
 		and int(closing.get("goods_error", 1)) == 0

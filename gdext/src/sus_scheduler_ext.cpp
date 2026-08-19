@@ -520,9 +520,14 @@ void SusSchedulerExt::tick(Object *ctx) {
             should_run = _policy_should_run(job.policy, job.job_obj, ctx, ctx_view.tick_index);
         }
         if (!should_run) {
-            report["skipped_reason"] = String("policy_gated");
+            String skip_reason = String("policy_gated");
+            if (job.job_obj != nullptr && job.job_obj->has_method("policy_skip_reason")) {
+                const String custom = job.job_obj->call("policy_skip_reason");
+                if (!custom.is_empty()) skip_reason = custom;
+            }
+            report["skipped_reason"] = skip_reason;
             _last_report[Variant(job.id)] = report;
-            _record_skipped(job.id, String("policy_gated"));
+            _record_skipped(job.id, skip_reason);
             jobs_skipped += 1;
             continue;
         }

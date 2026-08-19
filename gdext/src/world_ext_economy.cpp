@@ -444,6 +444,11 @@ bool DCWorldExt::economy_should_run(int64_t day_index) const {
            runtime_from(_economy_runtime)->should_run(day_index);
 }
 
+PackedInt32Array DCWorldExt::get_economy_live_cells() {
+    if (_economy_runtime == nullptr) return PackedInt32Array();
+    return runtime_from(_economy_runtime)->economy_live_cells_query();
+}
+
 Dictionary DCWorldExt::get_economy_report() const {
     if (_economy_runtime == nullptr) {
         Dictionary out;
@@ -462,9 +467,14 @@ Dictionary DCWorldExt::get_country_class_opinion_snapshot() const {
             country_class_opinion_snapshot_debug();
 }
 
-Dictionary DCWorldExt::get_population_cell_snapshot(int cell_idx) const {
+Dictionary DCWorldExt::get_population_cell_snapshot(
+        int cell_idx, bool include_details) const {
     if (_economy_runtime == nullptr) {
         return unavailable();
+    }
+    if (!include_details) {
+        return runtime_from(_economy_runtime)->population_cell_snapshot(
+            cell_idx, false);
     }
     const char *slot_names[4] = {
         "cell_temp", "cell_moisture", "cell_snow_cover", "cell_weather_intensity"
@@ -871,6 +881,14 @@ Dictionary DCWorldExt::run_economy_production_climate_math_probe(
 
 int64_t DCWorldExt::get_economy_state_hash() const {
     return _economy_runtime == nullptr ? 0 : runtime_from(_economy_runtime)->state_hash();
+}
+
+Dictionary DCWorldExt::inject_economy_cadence_timing(double market_cycle_ms,
+                                                     double slow_cycle_ms,
+                                                     double investment_cycle_ms) {
+    if (_economy_runtime == nullptr) return unavailable();
+    return runtime_from(_economy_runtime)->inject_cadence_timing(
+        market_cycle_ms, slow_cycle_ms, investment_cycle_ms);
 }
 
 Dictionary DCWorldExt::reset_economy(const String &reason) {

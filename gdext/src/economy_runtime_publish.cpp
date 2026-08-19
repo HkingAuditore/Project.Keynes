@@ -374,9 +374,9 @@ bool NativeEconomyRuntime::publish_epoch_slice(
         const size_t end = std::min(static_cast<size_t>(_cell_count), start + budget);
         for (; _publish_cursor < end; ++_publish_cursor) {
             if (_staging_cells[_publish_cursor].population <= 0) continue;
-            const int32_t market = _market.cell_to_market[_publish_cursor];
             const int64_t settlement_day =
-                market % ROLLING_PHASE_COUNT == _rolling_phase
+                cell_in_market_workset(static_cast<int32_t>(_publish_cursor),
+                                       _sample_day)
                 ? _sample_day : _cell_last_settlement_day[_publish_cursor];
             if (!_publish_have_populated) {
                 _settlement_watermark = settlement_day;
@@ -546,8 +546,10 @@ bool NativeEconomyRuntime::publish_epoch_slice(
         _audit_ms += slice_ms;
     if (executed_phase == PublishPhase::WATERMARK)
         _watermark_ms += slice_ms;
-    if (executed_phase == PublishPhase::COMMIT && !_epoch_active && !_fatal)
+    if (executed_phase == PublishPhase::COMMIT && !_epoch_active && !_fatal) {
         capture_completed_perf_snapshot();
+        note_completed_epoch_cadence_ms();
+    }
     return true;
 }
 

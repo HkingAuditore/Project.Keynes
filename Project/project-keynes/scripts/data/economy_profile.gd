@@ -23,11 +23,13 @@ extends Resource
 ## Global building output efficiency. It scales goods output only; construction,
 ## production inputs, natural-resource use, and wages keep their catalog values.
 @export_range(65536, 262144, 1) var building_output_efficiency_q16: int = 131072
-## ABI-compatible profile fields. Native v16 fixes all three to five days and
-## distributes cells across five deterministic daily phases.
-@export_range(5, 5, 1) var market_cycle_days: int = 5
-@export_range(5, 5, 1) var market_min_cycle_days: int = 5
-@export_range(5, 5, 1) var market_max_cycle_days: int = 5
+## Longest market interval (1–5). Native locks N for a full cycle from populated
+## work plus previous-cycle machine timing. 5 is the late-game stagger cap, not
+## a start-of-game fixed period. 0 is ignored and treated as 5; the retired
+## 50/334 auto-fast-forward path is not restored.
+@export_range(1, 5, 1) var market_cycle_days: int = 5
+@export_range(1, 5, 1) var market_min_cycle_days: int = 1
+@export_range(1, 5, 1) var market_max_cycle_days: int = 5
 ## Per-native-call cohort guard retained for custom tests. Production rolling
 ## settlement normally completes its entire due phase in one call.
 @export_range(0, 1000000, 1000) var market_target_cohorts_per_slice: int = 0
@@ -186,12 +188,13 @@ extends Resource
 @export_range(0, 65536, 1) var trade_export_inventory_fraction_q16: int = 32768
 @export_range(0, 65536, 1) var trade_import_fill_fraction_q16: int = 32768
 @export_range(1, 365, 1) var trade_response_days: int = 15
-@export_range(1, 3650, 1) var investment_review_days: int = 30
-## Per-cell building plan (procurement intent) evaluation cadence. Plans only
-## steer the next cycles' purchases; refreshing them every 10 days instead of
-## every settlement cycle makes the economy slightly less responsive but never
-## breaks stock/cash conservation. Reserve rebuild still runs every epoch.
-@export_range(1, 3650, 1) var building_plan_days: int = 10
+@export_range(10, 30, 1) var investment_review_days: int = 30
+## Plan P locks in 5–15; investment I locks in 10–30 and must be longer than P.
+## These fields are range hints and v37 restore compatibility, not a shared S.
+@export_range(5, 15, 1) var building_plan_days: int = 10
+## One-day economy budget used only at cycle boundaries to convert measured
+## milliseconds-per-knife into how many knives this machine can finish today.
+@export_range(0.5, 32.0, 0.1) var economy_cadence_target_ms: float = 8.0
 @export_range(1, 36500, 1) var investment_max_payback_days: int = 365
 @export_range(1, 12, 1) var investment_operating_cycles: int = 2
 @export_range(1, 65536, 1) var investment_gap_fill_share_q16: int = 16384
@@ -294,6 +297,7 @@ func to_native_profile() -> Dictionary:
 		"market_cycle_days": market_cycle_days,
 		"market_min_cycle_days": market_min_cycle_days,
 		"market_max_cycle_days": market_max_cycle_days,
+		"economy_cadence_target_ms": economy_cadence_target_ms,
 		"market_target_cohorts_per_slice": market_target_cohorts_per_slice,
 		"commands_per_slice": commands_per_slice,
 		"max_rules_per_plan": max_rules_per_plan,

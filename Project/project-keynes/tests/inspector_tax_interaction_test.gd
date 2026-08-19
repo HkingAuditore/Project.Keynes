@@ -145,6 +145,33 @@ func _run() -> void:
 	inspector.set_model_for_selection(_building_model(5))
 	inspector.select_tab("buildings")
 	var building_model := _building_model(5)
+	var building_page_editors: Array = inspector.get("_page_tax_editors")
+	if building_page_editors.is_empty():
+		failures.append("buildings page did not expose the cell business default")
+	else:
+		var page_editor := building_page_editors[0] as TaxLaneEditor
+		var page_base := int(page_editor.lane_data().get("base", 0))
+		var page_draft := page_base + 6 if page_base <= 94 else page_base - 6
+		page_editor._spin.set_value_no_signal(page_draft)
+		page_editor._on_value_changed(page_draft)
+		inspector.apply_live_patch({
+			"tab_id": "buildings",
+			"category": building_model.categories.buildings,
+		})
+		await process_frame
+		if int(page_editor._spin.value) != page_draft or not page_editor.is_editing():
+			failures.append("live patch snapped the cell business default back to inherit")
+		var page_wait := Time.get_ticks_msec()
+		while Time.get_ticks_msec() - page_wait < int(
+				(TaxLaneEditor.COMMIT_DELAY_SEC + 0.08) * 1000.0):
+			await process_frame
+		page_editor = (inspector.get("_page_tax_editors") as Array)[0] as TaxLaneEditor \
+			if not (inspector.get("_page_tax_editors") as Array).is_empty() else null
+		if page_editor == null \
+				or StringName(controller.calls[-1].id) != &"country.tax.cell.set_default" \
+				or int(controller.calls[-1].args.get("rate_percent", -1)) != page_draft \
+				or not page_editor.is_pending():
+			failures.append("cell business default spin edit did not commit after arrow input")
 	var building_row: Dictionary = building_model.categories.buildings.building_rows[0]
 	var building_defaults: Array = (building_model.categories.buildings.tax_context \
 		as Dictionary).get("default_lanes", []) as Array
@@ -154,16 +181,69 @@ func _run() -> void:
 		mixed_building_lanes.append(building_item_lanes[0])
 	if not building_defaults.is_empty():
 		mixed_building_lanes.append(building_defaults[0])
-	inspector.show_object_detail({
+	var building_payload := {
 		"kind": "building", "name": "铁匠铺",
 		"row": {"tax_lanes": mixed_building_lanes},
 		"tax_context": building_model.categories.buildings.tax_context,
-	})
+	}
+	inspector.show_object_detail(building_payload)
+	if inspector._object_detail_dialog.tax_editors().is_empty():
+		failures.append("building detail did not expose a business tax editor")
+	else:
+		var biz_editor := inspector._object_detail_dialog.tax_editors()[0] \
+			as TaxLaneEditor
+		var biz_id := biz_editor.get_instance_id()
+		var biz_base := int(biz_editor.lane_data().get("base", 0))
+		var biz_draft := biz_base + 7 if biz_base <= 93 else biz_base - 7
+		biz_editor._spin.set_value_no_signal(biz_draft)
+		biz_editor._on_value_changed(biz_draft)
+		inspector.refresh_object_detail(building_payload)
+		await process_frame
+		biz_editor = inspector._object_detail_dialog.tax_editors()[0] as TaxLaneEditor
+		if biz_editor.get_instance_id() != biz_id \
+				or int(biz_editor._spin.value) != biz_draft:
+			failures.append("live detail refresh snapped building business tax back to inherit")
+		var biz_wait := Time.get_ticks_msec()
+		while Time.get_ticks_msec() - biz_wait < int(
+				(TaxLaneEditor.COMMIT_DELAY_SEC + 0.08) * 1000.0):
+			await process_frame
+		var biz_editors: Array = inspector._object_detail_dialog.tax_editors()
+		biz_editor = biz_editors[0] as TaxLaneEditor if not biz_editors.is_empty() else null
+		if biz_editor == null \
+				or StringName(controller.calls[-1].id) != &"country.tax.cell.set_override" \
+				or int(controller.calls[-1].args.get("rate_percent", -1)) != biz_draft \
+				or not biz_editor.is_pending():
+			failures.append("building business tax spin edit did not commit after arrow input")
 	_assert_object_tax_layer(failures, inspector, 1, "building", "business")
 
 	inspector.close_detail()
 	inspector.set_model_for_selection(_market_model(5))
 	inspector.select_tab("market")
+	var market_page_editors: Array = inspector.get("_page_tax_editors")
+	if market_page_editors.is_empty():
+		failures.append("market page did not expose cell consumption/tariff defaults")
+	else:
+		var consumption_editor: TaxLaneEditor = null
+		for editor_value in market_page_editors:
+			var editor := editor_value as TaxLaneEditor
+			if editor != null and String(editor.lane_data().get("kind", "")) == "consumption":
+				consumption_editor = editor
+				break
+		if consumption_editor == null:
+			failures.append("market page did not expose the cell consumption default")
+		else:
+			var market_base := int(consumption_editor.lane_data().get("base", 0))
+			var market_draft := market_base + 5 if market_base <= 95 else market_base - 5
+			consumption_editor._spin.set_value_no_signal(market_draft)
+			consumption_editor._on_value_changed(market_draft)
+			inspector.apply_live_patch({
+				"tab_id": "market",
+				"category": _market_model(5).categories.market,
+			})
+			await process_frame
+			if int(consumption_editor._spin.value) != market_draft \
+					or not consumption_editor.is_editing():
+				failures.append("live patch snapped the cell consumption default back to inherit")
 	var market_row: Dictionary = _market_model(5).categories.market.market_rows[0]
 	var market_defaults: Array = (_market_model(5).categories.market.tax_context \
 		as Dictionary).get("default_lanes", []) as Array

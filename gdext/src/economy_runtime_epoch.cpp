@@ -647,21 +647,29 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     if (!capture_country_epoch(error)) return false;
     _epoch_begin_country_ms = elapsed_ms(country_started);
     const auto workset_started = Clock::now();
-    _rolling_phase = static_cast<int32_t>(
-        ((day_index % ROLLING_PHASE_COUNT) + ROLLING_PHASE_COUNT) %
-        ROLLING_PHASE_COUNT);
+    rebuild_economy_live_cells();
+    maybe_lock_cadence_cycles(day_index);
+    _rolling_phase = cycle_phase(day_index, _market_cycle_start_day,
+                                 locked_market_cycle_days());
     _epoch_market_ids.clear();
     _epoch_settlement_cells.clear();
     _epoch_building_cells.clear();
     _epoch_plan_cells.clear();
-    for (int32_t market = 0; market < _market.market_count; ++market) {
-        if (market % ROLLING_PHASE_COUNT != _rolling_phase) continue;
+    const int32_t market_count = std::max(0, _market.market_count);
+    const bool have_market_map =
+        _market.cell_to_market.size() == static_cast<size_t>(_cell_count);
+    std::vector<uint8_t> market_added(static_cast<size_t>(market_count), 0);
+    for (const int32_t cell : _economy_live_cells) {
+        if (!cell_in_market_workset(cell, day_index)) continue;
+        _epoch_settlement_cells.push_back(cell);
+        int32_t market = cell;
+        if (have_market_map) market = _market.cell_to_market[cell];
+        if (market < 0 || market >= market_count) continue;
+        if (market_added[static_cast<size_t>(market)] != 0) continue;
+        market_added[static_cast<size_t>(market)] = 1;
         _epoch_market_ids.push_back(market);
-        for (int32_t k = _market_cell_offsets[market];
-             k < _market_cell_offsets[market + 1]; ++k) {
-            _epoch_settlement_cells.push_back(_market_cells[k]);
-        }
     }
+    std::sort(_epoch_market_ids.begin(), _epoch_market_ids.end());
     _workset_cells_planned = static_cast<int64_t>(_epoch_settlement_cells.size());
     _resource_touched_lanes.reserve(
         _resource_ids.size() * _epoch_settlement_cells.size());
@@ -699,19 +707,18 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
         _epoch_market_work_weights[relative] = market_work;
     }
     for (const int32_t cell : _building_active_cells) {
-        if (cell % ROLLING_PHASE_COUNT == _rolling_phase)
+        if (cell_in_market_workset(cell, day_index))
             _epoch_building_cells.push_back(cell);
     }
     {
-        const int32_t plan_days = std::max(1, _building_plan_days);
-        const int32_t plan_phase = static_cast<int32_t>(
-            ((day_index % plan_days) + plan_days) % plan_days);
         _epoch_plan_cells.clear();
         for (const int32_t cell : _epoch_building_cells) {
-            if (cell % plan_days == plan_phase)
+            if (cell_due_plan_review(cell, day_index))
                 _epoch_plan_cells.push_back(cell);
         }
     }
+    _epoch_days = workset_elapsed_days(day_index);
+    _commit_lag_budget_days = std::max(0, locked_market_cycle_days() - 1);
     _epoch_begin_workset_ms = elapsed_ms(workset_started);
     const auto fiscal_started = Clock::now();
     if (!prepare_fiscal_budgets(error)) return false;

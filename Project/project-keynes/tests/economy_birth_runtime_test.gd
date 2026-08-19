@@ -28,6 +28,7 @@ func _run() -> void:
 	_test_two_and_ten_year_attractor(compiled)
 	_test_overcrowded_replacement(compiled)
 	_test_unlocked_families_are_neutral(compiled)
+	_test_list_snapshot_omits_demand_preview(compiled)
 	_test_resources_raise_k_geo(compiled)
 	_test_class_weights_compile(compiled)
 	_test_household_survives_merchant_death(compiled)
@@ -151,6 +152,28 @@ func _test_unlocked_families_are_neutral(compiled: Dictionary) -> void:
 		int(snapshot.get("carrying_surplus_q16", 0)),
 		int(bindable[hygiene_idx]) if hygiene_idx >= 0 else -1,
 		int(bindable[housing_idx]) if housing_idx >= 0 else -1])
+
+func _test_list_snapshot_omits_demand_preview(compiled: Dictionary) -> void:
+	var ext := _configured_population_world(compiled, false, 1, 15, 2311)
+	_run_cycle(ext, 0)
+	var full: Dictionary = ext.get_population_cell_snapshot(0, true)
+	var listed: Dictionary = ext.get_population_cell_snapshot(0, false)
+	var full_pops: PackedInt64Array = full.get("populations", PackedInt64Array())
+	var list_pops: PackedInt64Array = listed.get("populations", PackedInt64Array())
+	_expect("list snapshot keeps cohort populations",
+		bool(listed.get("ok", false)) and
+		bool(listed.get("demand_preview_included", true)) == false and
+		bool(full.get("demand_preview_included", false)) == true and
+		list_pops == full_pops and
+		int(listed.get("population", -1)) == int(full.get("population", -2)))
+	_expect("list snapshot omits demand preview CSR",
+		not listed.has("demand_good_offsets") and
+		not listed.has("demand_need_offsets") and
+		(full.get("demand_good_offsets", PackedInt32Array()) as PackedInt32Array).size()
+			== full_pops.size() + 1)
+	print("  list-snapshot cohorts=%d demand_offsets=%d" % [
+		full_pops.size(),
+		(full.get("demand_good_offsets", PackedInt32Array()) as PackedInt32Array).size()])
 
 func _test_resources_raise_k_geo(compiled: Dictionary) -> void:
 	var habitat := _configured_resource_world(compiled, 0.0, 2308)
@@ -314,7 +337,7 @@ func _test_small_population_birth_residual_save_restore(compiled: Dictionary) ->
 		int(source.get_population_cell_summary(0).population) == 1)
 	var saved := _save(source)
 	_expect("PKEC v37 saves accumulated birth residual and support EMA",
-		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 37)
+		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 39)
 	var restored := _new_ext(1, catalog)
 	_expect("small-population restored country configures",
 		CountryTestHelper.configure_all_technologies(restored, catalog, 1, 2304))
