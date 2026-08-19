@@ -418,15 +418,15 @@ func _run() -> void:
 	var person_before_save: Dictionary = ext.get_notable_person_snapshot(person_handle)
 	var hash_before := int(ext.get_economy_state_hash())
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
-	_expect("PKEC v37 save begins", bool(save_begin.get("ok", false))
-		and int(save_begin.get("schema_version", 0)) == 39)
+	_expect("PKEC v40 save begins", bool(save_begin.get("ok", false))
+		and int(save_begin.get("schema_version", 0)) == 40)
 	var chunks: Array[PackedByteArray] = []
 	for _i in 512:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty():
 			break
 		chunks.append(chunk)
-	_expect("PKEC v37 save completes", not chunks.is_empty()
+	_expect("PKEC v40 save completes", not chunks.is_empty()
 		and bool(ext.end_economy_save().get("ok", false)))
 	var legacy_chunk := chunks[0].duplicate()
 	legacy_chunk[4] = 31

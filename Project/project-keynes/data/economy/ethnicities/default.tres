@@ -6,4 +6,4 @@
 script = ExtResource("1")
 id = &"default"
 display_name = "本地人口"
-
+culture_group_id = &"default"

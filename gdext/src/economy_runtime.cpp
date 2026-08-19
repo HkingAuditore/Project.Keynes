@@ -12,6 +12,7 @@
 #include <cstring>
 #include <iterator>
 #include <limits>
+#include <map>
 #include <numeric>
 #include <tuple>
 #include <type_traits>
@@ -9778,15 +9779,22 @@ int32_t NativeEconomyRuntime::create_family_for_building(
     }
     _families.stable_id[family_index] = stable_id;
     _family_stable_ids.insert(stable_id);
+    const int32_t founder_ethnicity = _signatures[group.owner_signature_id].ethnicity_id;
+    const int32_t culture_group = founder_ethnicity >= 0 &&
+        founder_ethnicity < static_cast<int32_t>(_ethnicity_culture_group_ids.size())
+        ? _ethnicity_culture_group_ids[founder_ethnicity] : 0;
     int64_t total_weight = 0;
-    for (int32_t weight : _family_surname_weights) total_weight += weight;
-    int64_t roll = static_cast<int64_t>(trace_hash_mix(hash, 0x5355524eULL) %
-        static_cast<uint64_t>(std::max<int64_t>(1, total_weight)));
+    for (size_t i = 0; i < _family_surname_weights.size(); ++i)
+        if (_family_surname_culture_group_ids[i] == culture_group)
+            total_weight += _family_surname_weights[i];
+    int64_t roll = static_cast<int64_t>(trace_hash_mix(
+        trace_hash_mix(hash, static_cast<uint64_t>(culture_group)),
+        0x5355524eULL) % static_cast<uint64_t>(std::max<int64_t>(1, total_weight)));
     int32_t surname = 0;
-    for (; surname + 1 < static_cast<int32_t>(_family_surname_weights.size());
-         ++surname) {
-        if (roll < _family_surname_weights[surname]) break;
-        roll -= _family_surname_weights[surname];
+    for (int32_t candidate = 0; candidate < static_cast<int32_t>(_family_surname_weights.size()); ++candidate) {
+        if (_family_surname_culture_group_ids[candidate] != culture_group) continue;
+        if (roll < _family_surname_weights[candidate]) { surname = candidate; break; }
+        roll -= _family_surname_weights[candidate];
     }
     uint32_t disambiguator = 0;
     // Only same-surname families can shift the disambiguator, so consult that
@@ -9817,8 +9825,10 @@ int32_t NativeEconomyRuntime::create_family_for_building(
     _families.surname_disambiguator[family_index] = disambiguator;
     _families.founded_day[family_index] = identity_day;
     _families.home_cell[family_index] = cell;
-    _families.origin_ethnicity[family_index] =
-        _signatures[group.owner_signature_id].ethnicity_id;
+    _families.origin_cell[family_index] = cell;
+    _families.origin_ethnicity[family_index] = founder_ethnicity;
+    _families.culture_group_id[family_index] = culture_group;
+    _families.split_sequence[family_index] = 0;
     FamilyMembershipEdge membership;
     membership.family_handle = family_handle;
     membership.cohort_handle = _population.handle_for_slot(slot);
@@ -9945,6 +9955,202 @@ bool NativeEconomyRuntime::form_family_for_cell(int32_t cell) {
     if (slot < 0 || owner_slots <= 0) return false;
     const int64_t founders = family_household_people_for_slot(slot, owner_slots);
     return create_family_for_building(cell, best, founders, owner_slots) >= 0;
+}
+
+void NativeEconomyRuntime::split_family_branches() {
+    if (_family_runtime_mode != 2 || _family_split_population_threshold <= 0)
+        return;
+    struct Candidate { int32_t parent = -1; int32_t cell = -1; int64_t stable = 0; };
+    std::vector<Candidate> candidates;
+    for (int32_t parent = 0; parent < static_cast<int32_t>(_families.active.size()); ++parent) {
+        if (_families.active[parent] == 0) continue;
+        std::map<int32_t, int64_t> branch_population;
+        const uint64_t parent_handle = _families.handle_for_index(parent);
+        for (const FamilyMembershipEdge &edge : _family_memberships) {
+            if (edge.family_handle != parent_handle || edge.people <= 0) continue;
+            int32_t slot = -1;
+            if (!_population.valid_handle(edge.cohort_handle, slot)) continue;
+            const int32_t cell = _population.page_cell[slot / COHORT_PAGE_SIZE];
+            branch_population[cell] += edge.people;
+        }
+        for (const auto &branch : branch_population) {
+            if (branch.first >= 0 && branch.first != _families.origin_cell[parent] &&
+                branch.second >= _family_split_population_threshold)
+                candidates.push_back({parent, branch.first, _families.stable_id[parent]});
+        }
+    }
+    std::sort(candidates.begin(), candidates.end(), [](const Candidate &a, const Candidate &b) {
+        return std::tie(a.stable, a.cell) < std::tie(b.stable, b.cell);
+    });
+    for (const Candidate &candidate : candidates) {
+        const int32_t parent = candidate.parent;
+        if (parent < 0 || parent >= static_cast<int32_t>(_families.active.size()) ||
+            _families.active[parent] == 0) continue;
+        const uint64_t parent_handle = _families.handle_for_index(parent);
+        const uint32_t sequence = _families.split_sequence[parent]++;
+        uint64_t identity = 1469598103934665603ULL;
+        identity = trace_hash_mix(identity, static_cast<uint64_t>(_seed));
+        identity = trace_hash_mix(identity, static_cast<uint64_t>(_families.stable_id[parent]));
+        identity = trace_hash_mix(identity, static_cast<uint32_t>(candidate.cell));
+        identity = trace_hash_mix(identity, sequence);
+        identity = trace_hash_mix(identity, static_cast<uint64_t>(_family_catalog_hash));
+        int64_t child_stable = static_cast<int64_t>((identity & 0x7fffffffffffffffULL) | 1ULL);
+        for (uint64_t probe = 1; _family_stable_ids.count(child_stable) != 0; ++probe)
+            child_stable = static_cast<int64_t>((trace_hash_mix(identity, probe) &
+                0x7fffffffffffffffULL) | 1ULL);
+        const int32_t child = _families.allocate();
+        const uint64_t child_handle = _families.handle_for_index(child);
+        _families.stable_id[child] = child_stable;
+        _family_stable_ids.insert(child_stable);
+        _families.surname_id[child] = _families.surname_id[parent];
+        _families.surname_disambiguator[child] = 0;
+        if (_families.surname_id[child] >= 0 && static_cast<size_t>(
+                _families.surname_id[child]) < _family_surname_members.size()) {
+            auto &bucket = _family_surname_members[_families.surname_id[child]];
+            for (int32_t index : bucket) {
+                if (index >= 0 && index < static_cast<int32_t>(_families.active.size()) &&
+                    _families.active[index] != 0 && _families.surname_id[index] ==
+                        _families.surname_id[child])
+                    _families.surname_disambiguator[child] = std::max(
+                        _families.surname_disambiguator[child],
+                        _families.surname_disambiguator[index] + 1U);
+            }
+            bucket.push_back(child);
+        }
+        _families.founded_day[child] = std::max<int64_t>(0, _current_day);
+        _families.home_cell[child] = candidate.cell;
+        _families.origin_cell[child] = candidate.cell;
+        _families.origin_ethnicity[child] = _families.origin_ethnicity[parent];
+        _families.culture_group_id[child] = _families.culture_group_id[parent];
+        _families.split_sequence[child] = 0;
+        const size_t membership_count = _family_memberships.size();
+        for (size_t e = 0; e < membership_count; ++e) {
+            FamilyMembershipEdge &edge = _family_memberships[e];
+            if (edge.family_handle != parent_handle || edge.people <= 0) continue;
+            int32_t slot = -1;
+            if (!_population.valid_handle(edge.cohort_handle, slot) ||
+                _population.page_cell[slot / COHORT_PAGE_SIZE] != candidate.cell) continue;
+            edge.family_handle = child_handle;
+            edge.owner_employed = std::max<int64_t>(0, edge.owner_employed);
+            edge.employee_employed = std::max<int64_t>(0, edge.employee_employed);
+        }
+        for (FamilyBuildingOwnership &ownership : _family_ownerships) {
+            if (ownership.family_handle != parent_handle || ownership.owned_count <= 0) continue;
+            const int32_t group = building_index_for_handle(ownership.building_handle);
+            if (group >= 0 && group < static_cast<int32_t>(_buildings.size()) &&
+                _buildings[group].cell == candidate.cell)
+                ownership.family_handle = child_handle;
+        }
+        for (int32_t person = 0; person < static_cast<int32_t>(_persons.active.size()); ++person) {
+            if (_persons.active[person] == 0 || _persons.family_handle[person] != parent_handle) continue;
+            int32_t slot = -1;
+            bool move = _population.valid_handle(_persons.cohort_handle[person], slot) &&
+                _population.page_cell[slot / COHORT_PAGE_SIZE] == candidate.cell;
+            const int32_t group = building_index_for_handle(_persons.building_handle[person]);
+            if (!move && group >= 0 && group < static_cast<int32_t>(_buildings.size()) &&
+                _buildings[group].cell == candidate.cell) move = true;
+            if (move) _persons.family_handle[person] = child_handle;
+        }
+        // A split deliberately changes the family's identity: remove exactly
+        // one inherited trait, then deterministically add one or two legal
+        // traits. Effects are reconciled from this final child trait set.
+        std::vector<FamilyTraitRoll> parent_traits;
+        for (const FamilyTraitRoll &roll : _family_traits)
+            if (roll.family_handle == parent_handle) parent_traits.push_back(roll);
+        std::sort(parent_traits.begin(), parent_traits.end(),
+            [](const FamilyTraitRoll &a, const FamilyTraitRoll &b) {
+                return a.trait_id < b.trait_id;
+            });
+        std::vector<FamilyTraitRoll> child_traits;
+        std::vector<int32_t> removable_indices;
+        for (int32_t candidate = 0; candidate < static_cast<int32_t>(
+                parent_traits.size()); ++candidate) {
+            bool required = false;
+            for (int32_t other = 0; other < static_cast<int32_t>(
+                    parent_traits.size()) && !required; ++other) {
+                if (other == candidate) continue;
+                const int32_t trait_id = parent_traits[other].trait_id;
+                for (int32_t p = _family_trait_prerequisite_offsets[trait_id];
+                        p < _family_trait_prerequisite_offsets[trait_id + 1]; ++p)
+                    required |= _family_trait_prerequisites[p] ==
+                        parent_traits[candidate].trait_id;
+            }
+            if (!required) removable_indices.push_back(candidate);
+        }
+        const int32_t removed_index = removable_indices.empty() ? -1 :
+            removable_indices[static_cast<size_t>(trace_hash_mix(identity,
+                0x52454d4f5645ULL) % removable_indices.size())];
+        for (int32_t i = 0; i < static_cast<int32_t>(parent_traits.size()); ++i) {
+            if (i == removed_index) continue;
+            const FamilyTraitRoll &roll = parent_traits[i];
+            child_traits.push_back({child_handle, roll.trait_id,
+                roll.strength_q16, roll.core});
+        }
+        auto has_trait = [&](int32_t trait_id) {
+            return std::any_of(child_traits.begin(), child_traits.end(),
+                [&](const FamilyTraitRoll &roll) { return roll.trait_id == trait_id; });
+        };
+        auto legal_trait = [&](int32_t trait_id) {
+            if (trait_id < 0 || trait_id >= static_cast<int32_t>(_family_trait_ids.size()) ||
+                has_trait(trait_id)) return false;
+            for (int32_t p = _family_trait_prerequisite_offsets[trait_id];
+                    p < _family_trait_prerequisite_offsets[trait_id + 1]; ++p) {
+                if (!has_trait(_family_trait_prerequisites[p])) return false;
+            }
+            for (int32_t p = _family_trait_exclusion_offsets[trait_id];
+                    p < _family_trait_exclusion_offsets[trait_id + 1]; ++p) {
+                if (has_trait(_family_trait_exclusions[p])) return false;
+            }
+            for (const FamilyTraitRoll &roll : child_traits) {
+                for (int32_t p = _family_trait_exclusion_offsets[roll.trait_id];
+                        p < _family_trait_exclusion_offsets[roll.trait_id + 1]; ++p) {
+                    if (_family_trait_exclusions[p] == trait_id) return false;
+                }
+            }
+            return true;
+        };
+        const int32_t additions = 1 + static_cast<int32_t>(
+            trace_hash_mix(identity, 0x414444434f554e54ULL) % 2ULL);
+        for (int32_t add = 0; add < additions; ++add) {
+            std::vector<int32_t> candidates;
+            int64_t total_weight = 0;
+            for (int32_t trait_id = 0; trait_id < static_cast<int32_t>(
+                    _family_trait_ids.size()); ++trait_id) {
+                if (!legal_trait(trait_id)) continue;
+                candidates.push_back(trait_id);
+                total_weight += std::max<int32_t>(1, _family_trait_weights[trait_id]);
+            }
+            if (candidates.empty() || total_weight <= 0) break;
+            int64_t roll = static_cast<int64_t>(trace_hash_mix(identity,
+                0x4144440000ULL + static_cast<uint64_t>(add)) %
+                static_cast<uint64_t>(total_weight));
+            int32_t chosen = candidates.back();
+            for (int32_t trait_id : candidates) {
+                const int64_t weight = std::max<int32_t>(1,
+                    _family_trait_weights[trait_id]);
+                if (roll < weight) { chosen = trait_id; break; }
+                roll -= weight;
+            }
+            const int32_t lo = _family_trait_strength_min_q16[chosen];
+            const int32_t hi = _family_trait_strength_max_q16[chosen];
+            const int32_t step = _family_trait_strength_step_q16[chosen];
+            const int32_t steps = std::max(0, (hi - lo) / step);
+            const int32_t strength = lo + step * static_cast<int32_t>(
+                trace_hash_mix(identity, 0x535452454e475448ULL +
+                    static_cast<uint64_t>(add)) % static_cast<uint64_t>(steps + 1));
+            child_traits.push_back({child_handle, chosen, strength, 0});
+        }
+        _family_traits.insert(_family_traits.end(), child_traits.begin(), child_traits.end());
+        _family_indices_dirty = true;
+        ++_families_formed;
+    }
+    if (!candidates.empty()) {
+        std::sort(_family_traits.begin(), _family_traits.end(),
+            [](const FamilyTraitRoll &a, const FamilyTraitRoll &b) {
+                return std::tie(a.family_handle, a.trait_id) <
+                    std::tie(b.family_handle, b.trait_id);
+            });
+    }
 }
 
 void NativeEconomyRuntime::dissolve_family(uint64_t family_handle) {
@@ -10377,6 +10583,11 @@ bool NativeEconomyRuntime::run_family_commit_slice(int64_t &work_done,
     bool structure_changed = _family_indices_dirty;
     if (_family_indices_dirty) rebuild_family_indices();
     _family_commit_index_ms += elapsed_ms(first_index_started);
+    const int64_t families_before_split = _families.active_count;
+    split_family_branches();
+    structure_changed = structure_changed || _families.active_count != families_before_split ||
+        _family_indices_dirty;
+    if (_family_indices_dirty) rebuild_family_indices();
     const auto lifecycle_started = Clock::now();
     review_family_lifecycle();
     _family_commit_lifecycle_ms += elapsed_ms(lifecycle_started);
@@ -11573,7 +11784,10 @@ int64_t NativeEconomyRuntime::state_hash() const {
         mix_u64(_families.surname_disambiguator[i]);
         mix_u64(static_cast<uint64_t>(_families.founded_day[i]));
         mix_u64(static_cast<uint32_t>(_families.home_cell[i]));
+        mix_u64(static_cast<uint32_t>(_families.origin_cell[i]));
         mix_u64(static_cast<uint32_t>(_families.origin_ethnicity[i]));
+        mix_u64(static_cast<uint32_t>(_families.culture_group_id[i]));
+        mix_u64(_families.split_sequence[i]);
         mix_u64(_families.decline_reviews[i]);
         mix_u64(_families.flags[i]);
     }
@@ -12025,7 +12239,10 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _catalog_compat_hash_v7 = 0;
     _catalog_compat_hash_v8 = 0;
     _catalog_compat_hash_v10 = 0;
+    _catalog_compat_hash_v13 = 0;
+    _catalog_compat_hash_v39 = 0;
     _family_catalog_hash = 0;
+    _family_catalog_compat_hash_v39 = 0;
     _family_trait_catalog_version = 0;
     _family_trait_catalog_hash = 0;
     _building_catalog_hash = 0;

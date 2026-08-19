@@ -62,6 +62,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         int32_t saved_family_review_days = _family_review_days;
         int64_t saved_family_min_population =
             _family_min_population_per_active;
+        int64_t saved_family_split_population_threshold =
+            _family_split_population_threshold;
         int32_t saved_family_max_per_cell = _family_max_per_cell;
         int32_t saved_family_decline_reviews = _family_decline_reviews;
         int64_t saved_person_catalog_hash = _person_catalog_hash;
@@ -254,7 +256,9 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         }
         if (schema >= 26) {
             if (!read_le(bytes, cursor, saved_family_catalog_hash) ||
-                saved_family_catalog_hash != _family_catalog_hash) {
+                (saved_family_catalog_hash != _family_catalog_hash &&
+                 !(schema == 39 && _family_catalog_compat_hash_v39 != 0 &&
+                   saved_family_catalog_hash == _family_catalog_compat_hash_v39))) {
                 error = "save_family_catalog_hash_mismatch";
                 return false;
             }
@@ -262,6 +266,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 !read_le(bytes, cursor, saved_family_min_tier) ||
                 !read_le(bytes, cursor, saved_family_review_days) ||
                 !read_le(bytes, cursor, saved_family_min_population) ||
+                (schema >= 40 && !read_le(bytes, cursor,
+                    saved_family_split_population_threshold)) ||
                 !read_le(bytes, cursor, saved_family_max_per_cell) ||
                 !read_le(bytes, cursor, saved_family_decline_reviews)) {
                 error = "save_family_policy_header_payload_truncated";
@@ -272,6 +278,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 saved_family_review_days != _family_review_days ||
                 saved_family_min_population !=
                     _family_min_population_per_active ||
+                saved_family_split_population_threshold !=
+                    _family_split_population_threshold ||
                 saved_family_max_per_cell != _family_max_per_cell ||
                 saved_family_decline_reviews != _family_decline_reviews) {
                 error = "save_family_policy_profile_mismatch";
@@ -368,7 +376,10 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         const bool market_hash_ok = schema == 10
             ? (_catalog_compat_hash_v10 != 0 && catalog_hash == _catalog_compat_hash_v10)
             : (schema == 13 ? (_catalog_compat_hash_v13 != 0 &&
-                catalog_hash == _catalog_compat_hash_v13) : catalog_hash == _catalog_hash);
+                catalog_hash == _catalog_compat_hash_v13) :
+                (schema == 39 ? (_catalog_compat_hash_v39 != 0 &&
+                    catalog_hash == _catalog_compat_hash_v39) :
+                    catalog_hash == _catalog_hash));
         const bool building_hash_ok = schema == 13
             ? (_building_catalog_compat_hash_v13 != 0 &&
                building_catalog_hash == _building_catalog_compat_hash_v13)
@@ -1488,9 +1499,10 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         _restore.settlement_names_seen = true;
     } else if (schema >= 26 && section == SAVE_SECTION_FAMILY_RECORDS) {
         for (uint32_t record = 0; record < records; ++record) {
-            int32_t index = -1, surname = -1, home_cell = -1, ethnicity = -1;
+            int32_t index = -1, surname = -1, home_cell = -1, origin_cell = -1,
+                    ethnicity = -1, culture_group = -1;
             uint8_t active = 0;
-            uint32_t generation = 0, disambiguator = 0;
+            uint32_t generation = 0, disambiguator = 0, split_sequence = 0;
             int64_t stable_id = 0, founded_day = -1;
             uint16_t decline = 0, flags = 0;
             if (!read_le(bytes, cursor, index) ||
@@ -1501,15 +1513,22 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 !read_le(bytes, cursor, disambiguator) ||
                 !read_le(bytes, cursor, founded_day) ||
                 !read_le(bytes, cursor, home_cell) ||
+                (schema >= 40 && !read_le(bytes, cursor, origin_cell)) ||
                 !read_le(bytes, cursor, ethnicity) ||
+                (schema >= 40 && !read_le(bytes, cursor, culture_group)) ||
+                (schema >= 40 && !read_le(bytes, cursor, split_sequence)) ||
                 !read_le(bytes, cursor, decline) ||
                 !read_le(bytes, cursor, flags) ||
                 index != static_cast<int32_t>(_families.active.size()) ||
                 active > 1 || generation == 0 ||
                 (active != 0 && (stable_id <= 0 || surname < 0 ||
                     surname >= static_cast<int32_t>(_family_surname_ids.size()) ||
-                    home_cell < 0 || home_cell >= _cell_count || ethnicity < 0 ||
-                    ethnicity >= static_cast<int32_t>(_ethnicity_ids.size())))) {
+                    home_cell < 0 || home_cell >= _cell_count ||
+                    (schema >= 40 && (origin_cell < 0 || origin_cell >= _cell_count ||
+                        culture_group < 0 || ethnicity < 0 ||
+                        ethnicity >= static_cast<int32_t>(_ethnicity_culture_group_ids.size()) ||
+                        culture_group != _ethnicity_culture_group_ids[ethnicity])) ||
+                    ethnicity < 0 || ethnicity >= static_cast<int32_t>(_ethnicity_ids.size())))) {
                 error = "save_family_record_invalid";
                 return false;
             }
@@ -1520,7 +1539,13 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             _families.surname_disambiguator.push_back(disambiguator);
             _families.founded_day.push_back(founded_day);
             _families.home_cell.push_back(home_cell);
+            _families.origin_cell.push_back(schema >= 40 ? origin_cell : home_cell);
             _families.origin_ethnicity.push_back(ethnicity);
+            _families.culture_group_id.push_back(schema >= 40 ? culture_group :
+                (ethnicity >= 0 && ethnicity < static_cast<int32_t>(
+                    _ethnicity_culture_group_ids.size())
+                    ? _ethnicity_culture_group_ids[ethnicity] : 0));
+            _families.split_sequence.push_back(schema >= 40 ? split_sequence : 0);
             _families.decline_reviews.push_back(decline);
             _families.flags.push_back(flags);
             if (active != 0) {

@@ -14,13 +14,22 @@
 经理代理或跨国汇款。跨国影响只能通过现有人口迁移和本地投资产生；收入、消费和企业税仍按交易
 发生地与 cohort/building 所属地的冻结国家映射结算。
 
+家族文化身份由民族显式映射到稳定文化组。姓氏在文化组目录内按权重确定性抽取；城市家族名只在
+Facade 查询边界组合当前 `origin_cell` 的聚落显示名、文化组格式和姓氏文本，因此改城市名只改展示，
+不改 FamilyStore 或 state hash。非起源地块分支达到 100 人时，`FAMILY_COMMIT` 按父 stable ID、目标
+cell 顺序执行一次整支分裂；membership、cash claim、建筑 ownership 与重要人物只改归属，不复制账本。
+分裂后的特性混合采用“去一增一至二”：从父家族稳定排序后的特性中确定性移除一个，再按权重和稳定
+hash 从满足前置、排斥和强度规则的合法池中加入 1–2 个新特性。保留特性保留原强度；新增特性从其
+合法 Q16 最小强度开始。子家族 Modifier/Trigger 只依据最终特性和新分支威望重新计算。
+
 ## 权威数据模型
 
 `FamilyStore` 是 generation-safe SoA：
 
 - `stable_id`：存档和确定性身份；运行时引用使用 `(generation,index)` 句柄。
 - `surname_id + surname_disambiguator`：指向稳定排序的姓氏包，不把显示文本作为身份。
-- `founded_day`、`home_cell`、`origin_ethnicity`、`decline_reviews`、`flags`。
+- `founded_day`、可变运营归属 `home_cell`、不可变 `origin_cell`、`origin_ethnicity`、
+  `culture_group_id`、`split_sequence`、`decline_reviews`、`flags`。
 
 关系使用两个稀疏边表：
 
@@ -183,9 +192,10 @@ cohort→membership、family→building、building→ownership、cell→family�
 
 查询只允许在 native slice 间读取，不复制全图、不产生命令、不进入 state hash。
 
-## PKEC v30
+## PKEC v40
 
-当前 writer/reader 均为 PKEC v30。section 15–17 保存 FamilyStore、membership 与 ownership，
+当前 writer/reader 均为 PKEC v40。FamilyStore 记录追加 `origin_cell`、`culture_group_id` 和
+`split_sequence`，family policy header 固定 `family_split_population_threshold=100`；section 15–17 保存 FamilyStore、membership 与 ownership，
 section 18–19 保存人物与人物需求，section 20–22 保存 trait rolls、cell influences 和 pending trait
 commands，section 23 为 END。cell influence 记录自 v30 起追加分支 `satisfaction_q16`。
 恢复校验 generation handle、目录 hash、强度步长、核心数量、唯一
