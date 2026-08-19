@@ -50,6 +50,12 @@ dense ID CSR。建筑、职业、需求、商品和自然资源 profile 可提�
 确定性无放回抽取 2–4 个核心特性及 Q16 强度；核心特性不可删除。附加特性只通过按
 `effective_day/priority/sequence/submit_order` 排序的命令授予、移除或调强度。
 
+当前默认目录（`data/economy/default_family_traits.tres`，version 2）用互斥组保证门第可读：
+生计门第（采集/狩猎/渔户/畜群/垄亩/林薮/矿业）两两互斥；机杼与炉锤互斥；寒门与丰盛餐桌/锦衣高门互斥；
+河洛观象与观潮门风互斥。工艺与门风可叠在一条生计之上。选择器依赖建筑/职业 `semantic_tags`；
+城市制造/能源/知识产出走 `economy.city.building.*_output_factor`。改目录身份会改
+`family_trait_catalog_hash`，旧存档按 catalog mismatch 拒绝。
+
 `FamilyCellInfluenceStore` 为 `(family, settlement cell)` 保存 generation-safe 分支。只要本地仍有
 成员、现金 claim 或建筑所有权，分支就存在。威望分固定为：
 

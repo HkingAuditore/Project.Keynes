@@ -8,6 +8,7 @@ const IdeologyProfileScript = preload("res://scripts/ideology/ideology_profile.g
 const IdeologyClassStanceScript = preload("res://scripts/ideology/ideology_class_stance.gd")
 const IdeologySynergyDefinitionScript = preload("res://scripts/ideology/ideology_synergy_definition.gd")
 const EffectCommandScript = preload("res://scripts/effect/effect_command.gd")
+const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
 
 const PROTOCOL_VERSION := 1
 
@@ -74,6 +75,7 @@ func compile_native_catalog(country_catalog: Dictionary,
 		"national_spirit_capacity": effective_profile.national_spirit_capacity,
 		"offer_choice_count": effective_profile.offer_choice_count,
 		"offer_cost_q16": effective_profile.offer_cost_q16,
+		"starting_points_q16": effective_profile.starting_points_q16,
 		"max_commands_per_slice": effective_profile.max_commands_per_slice,
 		"max_transition_commands": effective_profile.max_transition_commands,
 		"max_transition_polls_per_slice": effective_profile.max_transition_polls_per_slice,
@@ -346,6 +348,7 @@ func catalog_view(country_catalog: Dictionary = {},
 		economy_catalog: Dictionary = {}) -> Dictionary:
 	var compiled := compile_native_catalog(country_catalog, economy_catalog)
 	if not bool(compiled.get("ok", false)): return compiled
+	var modifier_catalog = ModifierCatalogScript.load_default()
 	var rows: Array[Dictionary] = []
 	for i in compiled.ideology_ids.size():
 		var definition = null
@@ -356,8 +359,11 @@ func catalog_view(country_catalog: Dictionary = {},
 		if definition == null:
 			continue
 		var level_thresholds := PackedInt64Array()
+		var level_effect_lines: Array = []
 		for level in definition.levels:
 			level_thresholds.append(level.understanding_threshold_q16)
+			level_effect_lines.append(_present_effect_lines(
+				modifier_catalog, level.persistent_effects))
 		rows.append({"id": String(definition.id), "dense_id": i, "icon_key": String(definition.icon_key),
 			"name_key": String(definition.name_key),
 			"display_name": _display_name(definition),
@@ -367,19 +373,59 @@ func catalog_view(country_catalog: Dictionary = {},
 			"acquisition_flags": definition.acquisition_flags,
 			"min_spirit_level": definition.national_spirit_min_level,
 			"level_thresholds_q16": level_thresholds,
+			"level_effect_lines": level_effect_lines,
 			"adopt_threshold_q16": definition.adopt_threshold_q16,
 			"repeal_threshold_q16": definition.repeal_threshold_q16,
 			"promote_threshold_q16": definition.promote_threshold_q16,
-			"exclusion_group": String(definition.exclusion_group)})
+			"exclusion_group": String(definition.exclusion_group),
+			"exclusion_rivals": _exclusion_rivals(definition),
+			"synergy_names": PackedStringArray(),
+			"synergy_tooltip": ""})
 	var synergy_rows: Array[Dictionary] = []
+	var synergy_by_ideology: Dictionary = {}
 	for i in compiled.synergy_ids.size():
+		var synergy = _synergy_resource(String(compiled.synergy_ids[i]))
+		if synergy == null:
+			continue
+		var required_names := PackedStringArray()
+		for required_id in synergy.required_ideology_ids:
+			required_names.append(_display_name_for_id(String(required_id)))
+		var effect_lines := _present_effect_lines(
+			modifier_catalog, synergy.persistent_effects)
+		var display := _synergy_display_name(synergy)
+		var tooltip := "同时装备%s：%s" % [
+			"与".join(required_names),
+			"、".join(effect_lines) if not effect_lines.is_empty() else "额外国家修正",
+		]
 		synergy_rows.append({
 			"dense_id": i,
 			"id": String(compiled.synergy_ids[i]),
+			"display_name": display,
+			"effect_lines": effect_lines,
+			"required_names": required_names,
+			"tooltip": tooltip,
 		})
+		for required_id in synergy.required_ideology_ids:
+			var key := String(required_id)
+			var attached: Array = synergy_by_ideology.get(key, [])
+			attached.append({"display_name": display, "tooltip": tooltip})
+			synergy_by_ideology[key] = attached
+	for row in rows:
+		var attached: Array = synergy_by_ideology.get(String(row.get("id", "")), [])
+		var names := PackedStringArray()
+		var tooltips := PackedStringArray()
+		for item in attached:
+			names.append(String((item as Dictionary).get("display_name", "")))
+			tooltips.append(String((item as Dictionary).get("tooltip", "")))
+		row["synergy_names"] = names
+		row["synergy_tooltip"] = "\n".join(tooltips)
 	return {"ok": true, "ideologies": rows, "synergies": synergy_rows,
 		"political_class_ids": compiled.political_class_ids,
-		"gate_keys": compiled.gate_keys}
+		"gate_keys": compiled.gate_keys,
+		"ideology_capacity": int(compiled.get("ideology_capacity", 0)),
+		"national_spirit_capacity": int(compiled.get("national_spirit_capacity", 0)),
+		"offer_cost_q16": int(compiled.get("offer_cost_q16", 65536)),
+		"starting_points_q16": int(compiled.get("starting_points_q16", 0))}
 
 
 func _display_name(definition) -> String:
@@ -387,3 +433,51 @@ func _display_name(definition) -> String:
 	if not name_key.is_empty() and not name_key.contains("."):
 		return name_key
 	return String(definition.id)
+
+
+func _display_name_for_id(ideology_id: String) -> String:
+	for definition in definitions:
+		if definition != null and String(definition.id) == ideology_id:
+			return _display_name(definition)
+	return ideology_id
+
+
+func _exclusion_rivals(definition) -> PackedStringArray:
+	var rivals := PackedStringArray()
+	var group := String(definition.exclusion_group).strip_edges()
+	if group.is_empty():
+		return rivals
+	for other in definitions:
+		if other == null or other == definition \
+				or String(other.exclusion_group).strip_edges() != group:
+			continue
+		rivals.append(_display_name(other))
+	return rivals
+
+
+func _synergy_resource(synergy_id: String):
+	for synergy in synergies:
+		if synergy != null and String(synergy.id) == synergy_id:
+			return synergy
+	return null
+
+
+func _synergy_display_name(synergy) -> String:
+	var display := String(synergy.display_name).strip_edges()
+	if not display.is_empty():
+		return display
+	return String(synergy.id)
+
+
+func _present_effect_lines(modifier_catalog, effects: Array[Resource]) -> PackedStringArray:
+	var lines := PackedStringArray()
+	if modifier_catalog == null or not modifier_catalog.has_method("present_definition"):
+		return lines
+	for effect in effects:
+		if effect == null or not effect is EffectCommandScript:
+			continue
+		for line in modifier_catalog.present_definition(
+				effect.definition_key, int(effect.value_q16)):
+			if not lines.has(line):
+				lines.append(line)
+	return lines

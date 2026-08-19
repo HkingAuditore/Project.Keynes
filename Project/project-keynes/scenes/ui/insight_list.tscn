@@ -1,7 +1,24 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/components/insight_list.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://scenes/ui/insight_row.tscn" id="2_row"]
 
 [node name="InsightList" type="VBoxContainer"]
 theme_override_constants/separation = 8
 script = ExtResource("1_script")
+
+[node name="Row0" parent="." instance=ExtResource("2_row")]
+visible = false
+layout_mode = 2
+
+[node name="Row1" parent="." instance=ExtResource("2_row")]
+visible = false
+layout_mode = 2
+
+[node name="Row2" parent="." instance=ExtResource("2_row")]
+visible = false
+layout_mode = 2
+
+[node name="Row3" parent="." instance=ExtResource("2_row")]
+visible = false
+layout_mode = 2

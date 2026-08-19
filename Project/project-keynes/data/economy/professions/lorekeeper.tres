@@ -4,6 +4,7 @@
 script = ExtResource("1")
 id = &"lorekeeper"
 display_name = "传知者"
+semantic_tags = PackedStringArray("industry.knowledge")
 default_consumption_plan_id = &"scholarly_household"
 profession_class_id = &"technology"
 technology_tags = PackedStringArray()

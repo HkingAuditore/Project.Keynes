@@ -121,6 +121,16 @@ func _run() -> void:
 	_expect("resource regen cache reuses unchanged snapshot",
 		not bool(cached_regen.get("cache_rebuilt", true)))
 
+	var manufacturing_request: int = facade.queue_apply(
+		&"family.city.manufacturing_output_boost",
+		{"domain": 2, "scope": 1, "group_handle": 5},
+		{"type": 77, "id": 2002}, -1, 1, 8)
+	ext.run_modifier_daily(8)
+	_expect("city manufacturing output factor applies",
+		bool(facade.get_command_result(manufacturing_request).get("ok", false)) and
+		_near(float(ext.evaluate_modifier_stat(2, 0, 5,
+			"economy.city.building.manufacturing_output_factor", 1.0)), 1.05))
+
 	var unique_target := {"domain": 1, "scope": 2, "entity_handle": 77}
 	var unique_source := {"type": 30, "id": 9}
 	var unique_a := facade.queue_apply(&"country.economic_mobilization",

@@ -128,8 +128,12 @@ market 完成后，`household_market/income_subsidy` 子阶段按 cohort 汇总�
 可编辑，但显示“待跨国贸易接入”。
 
 地块档案的税种默认与对象详情细项共用 `TaxLaneEditor`。SpinBox 箭头、拖动与回车/
-失焦一样提交次日命令；草稿和 pending 值在 Inspector live patch 中保留，不能被仍未
-生效的继承税率（常见为 0%）写回。国家经济页的税种默认仍是预览后确认；职业、物资、
+失焦一样提交次日命令；回车和失焦提交 LineEdit 文本，不能用尚未解析的旧 `SpinBox.value`。
+Godot 4.6 SpinBox 的 `text_submitted` / `editing_toggled` 是延迟信号，提交后可能按旧
+Range 值把输入刷回继承 0%；pending 期间每次 live patch 必须把已确认税率写回 SpinBox。
+草稿和 pending 值在 Inspector live patch 中保留。pending 要等到有效日、更新的
+`policy_version`、以及快照里已出现提交税率（或已清除覆盖）才结束，不能只凭跨日/版本号
+把仍为继承默认（常见 0%）的权威值写回。国家经济页的税种默认仍是预览后确认；职业、物资、
 建筑和关税细项覆盖同样保留箭头/拖动草稿，live refresh 不得写回继承默认。
 
 最低验证集为 country、economy rolling、building、modifier、game-save 和玩家国家 UI

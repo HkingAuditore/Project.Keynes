@@ -378,7 +378,7 @@ bool NativeIdeologyRuntime::validate_catalog(const Dictionary &catalog, std::str
         _political_class_hash^=0xffU; _political_class_hash*=1099511628211ULL;
     }
     _technology_requirements.assign(tech.ptr(), tech.ptr()+tech.size()); _signal_requirements.assign(signals.ptr(), signals.ptr()+signals.size()); _gate_requirements.assign(gates.ptr(),gates.ptr()+gates.size());
-    _ideology_capacity=std::max(0,int32_t(catalog.get("ideology_capacity",6))); _spirit_capacity=std::max(0,int32_t(catalog.get("national_spirit_capacity",3))); _draw_count=int32_t(catalog.get("offer_choice_count",3)); _offer_cost_q16=int64_t(catalog.get("offer_cost_q16",Q16_ONE)); _max_commands_per_slice=std::max(1,int32_t(catalog.get("max_commands_per_slice",4096))); _max_transition_commands=std::max(1,std::min(4096,int32_t(catalog.get("max_transition_commands",256)))); _max_transition_polls_per_slice=std::max(1,int32_t(catalog.get("max_transition_polls_per_slice",4096))); _max_active_visits_per_slice=std::max(1,int32_t(catalog.get("max_active_visits_per_slice",1024))); _opinion_owner_influence_weight=std::max(0,int32_t(catalog.get("opinion_owner_influence_weight",2))); _opinion_funds_per_influence=std::max<int64_t>(1,int64_t(catalog.get("opinion_funds_per_influence",1000000)));
+    _ideology_capacity=std::max(0,int32_t(catalog.get("ideology_capacity",6))); _spirit_capacity=std::max(0,int32_t(catalog.get("national_spirit_capacity",3))); _draw_count=int32_t(catalog.get("offer_choice_count",3)); _offer_cost_q16=int64_t(catalog.get("offer_cost_q16",Q16_ONE)); _starting_points_q16=std::max<int64_t>(0,int64_t(catalog.get("starting_points_q16",0))); _max_commands_per_slice=std::max(1,int32_t(catalog.get("max_commands_per_slice",4096))); _max_transition_commands=std::max(1,std::min(4096,int32_t(catalog.get("max_transition_commands",256)))); _max_transition_polls_per_slice=std::max(1,int32_t(catalog.get("max_transition_polls_per_slice",4096))); _max_active_visits_per_slice=std::max(1,int32_t(catalog.get("max_active_visits_per_slice",1024))); _opinion_owner_influence_weight=std::max(0,int32_t(catalog.get("opinion_owner_influence_weight",2))); _opinion_funds_per_influence=std::max<int64_t>(1,int64_t(catalog.get("opinion_funds_per_influence",1000000)));
     if (_draw_count!=3 || _offer_cost_q16<0) { error="ideology_profile_invalid"; return false; }
     _gate_count=std::max(0,max_gate+1); _idea_words=(count+63)/64; _gate_words=(_gate_count+63)/64;
     return true;
@@ -444,6 +444,7 @@ NativeIdeologyRuntime::CountryState *NativeIdeologyRuntime::country_state_for(
         if (!create && state.handle == 0) return nullptr;
         state = CountryState{};
         state.handle = handle;
+        state.ideology_points_q16 = _starting_points_q16;
         state.rng_state = handle ^ (_catalog_hash + 0x9e3779b97f4a7c15ULL);
         state.known_bits.assign(static_cast<size_t>(_idea_words), 0);
         state.gate_bits.assign(static_cast<size_t>(_gate_words), 0);
@@ -1589,22 +1590,42 @@ Dictionary NativeIdeologyRuntime::snapshot(int64_t handle) const {
     if (!_configured) return fail("ideology_runtime_unconfigured");
     const CountryState *country = country_state_for(static_cast<uint64_t>(handle));
     Dictionary out; out["ok"] = true; out["country_handle"] = handle;
+    out["offer_cost_q16"] = _offer_cost_q16;
+    out["starting_points_q16"] = _starting_points_q16;
     if (country == nullptr) {
-        out["ideology_points_q16"] = 0; out["known_ids"] = PackedInt32Array();
-        out["idea_ids"] = PackedInt32Array(); out["offer_active"] = false;
+        // UI reads this before the first command materializes a country row.
+        // Keep the same keys as a live empty country so slot gauges and draw
+        // cost never collapse to 0/0.
+        out["materialized"] = false;
+        out["ideology_points_q16"] = _starting_points_q16;
+        out["known_ids"] = PackedInt32Array();
+        out["idea_ids"] = PackedInt32Array();
+        out["understanding_q16"] = PackedInt64Array();
+        out["levels"] = PackedInt32Array();
+        out["locations"] = PackedInt32Array();
         out["transition_pending"] = PackedByteArray();
         out["binding_ids"] = PackedInt64Array();
         out["binding_generations"] = PackedInt32Array();
+        out["binding_signatures"] = PackedInt64Array();
+        out["binding_program_hashes"] = PackedInt64Array();
         out["binding_verified"] = PackedByteArray();
         PackedInt32Array empty_transition_offsets;
         empty_transition_offsets.append(0);
         out["transition_transaction_offsets"] = empty_transition_offsets;
         out["transition_transaction_ids"] = PackedInt64Array();
         out["transition_transaction_statuses"] = PackedInt32Array();
+        out["ideology_slots_used"] = 0;
+        out["ideology_slots_capacity"] = _ideology_capacity;
+        out["national_spirit_slots_used"] = 0;
+        out["national_spirit_slots_capacity"] = _spirit_capacity;
+        out["offer_active"] = false;
+        out["offer_generation"] = static_cast<int64_t>(0);
+        out["offer_ids"] = PackedInt32Array();
         out["support_revision"] = static_cast<int64_t>(0);
         out["last_error"] = String(_last_error.c_str());
         return out;
     }
+    out["materialized"] = true;
     PackedInt32Array known_ids, idea_ids, levels, locations;
     PackedInt64Array understanding, binding_ids, binding_signatures,
         binding_program_hashes, transition_transaction_ids;
@@ -2040,6 +2061,7 @@ uint64_t NativeIdeologyRuntime::compute_catalog_hash() const {
     hash = mixv(hash, _ideology_capacity);
     hash = mixv(hash, _spirit_capacity);
     hash = mixv(hash, _offer_cost_q16);
+    hash = mixv(hash, _starting_points_q16);
     hash = mixv(hash, _political_class_hash);
     hash = mixv(hash, _opinion_owner_influence_weight);
     hash = mixv(hash, _opinion_funds_per_influence);

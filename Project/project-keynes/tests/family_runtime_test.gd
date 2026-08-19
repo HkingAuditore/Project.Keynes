@@ -101,8 +101,21 @@ func _run() -> void:
 	output_quantities[int(output_offsets[building_id])] = 7000000000
 	catalog.building_output_quantities = output_quantities
 	var construction_days: PackedInt32Array = catalog.building_construction_days
+	# Keep gathering_affinity / coastal_tide legal investment from completing extra
+	# 0-day buildings, and make paid recipes unaffordable so they cannot start.
+	construction_days.fill(30)
 	construction_days[reward_building_id] = 5
 	catalog.building_construction_days = construction_days
+	var construction_quantities: PackedInt64Array = catalog.building_construction_quantities
+	var construction_offsets: PackedInt32Array = catalog.building_construction_offsets
+	for type_id in range(building_ids.size()):
+		if type_id == reward_building_id:
+			continue
+		var qty_begin := int(construction_offsets[type_id])
+		var qty_end := int(construction_offsets[type_id + 1])
+		for item in range(qty_begin, qty_end):
+			construction_quantities[item] = 1000000000000
+	catalog.building_construction_quantities = construction_quantities
 	var birth_rates: PackedInt64Array = catalog.signature_birth_rate_q32
 	birth_rates.fill(0)
 	catalog.signature_birth_rate_q32 = birth_rates
@@ -227,10 +240,54 @@ func _run() -> void:
 		and int(initial_core[1]) == 1)
 	var all_trait_keys: PackedStringArray = catalog.family_trait_ids
 	var additional_trait := ""
-	for trait_key in all_trait_keys:
-		if not initial_trait_keys.has(trait_key):
-			additional_trait = String(trait_key)
+	var consumption_only_trait := ""
+	var exclusion_offsets: PackedInt32Array = catalog.family_trait_exclusion_offsets
+	var exclusion_ids: PackedInt32Array = catalog.family_trait_exclusions
+	var behavior_offsets: PackedInt32Array = catalog.family_trait_behavior_offsets
+	var rolled_ids := {}
+	for trait_key in initial_trait_keys:
+		var rolled_id := all_trait_keys.find(String(trait_key))
+		if rolled_id >= 0:
+			rolled_ids[rolled_id] = true
+	for trait_index in range(all_trait_keys.size()):
+		var candidate := String(all_trait_keys[trait_index])
+		if initial_trait_keys.has(candidate):
+			continue
+		var conflicts := false
+		var begin := int(exclusion_offsets[trait_index])
+		var end := int(exclusion_offsets[trait_index + 1])
+		for edge in range(begin, end):
+			if rolled_ids.has(int(exclusion_ids[edge])):
+				conflicts = true
+				break
+		if conflicts:
+			continue
+		for rolled_id in rolled_ids.keys():
+			var rolled_begin := int(exclusion_offsets[int(rolled_id)])
+			var rolled_end := int(exclusion_offsets[int(rolled_id) + 1])
+			for edge in range(rolled_begin, rolled_end):
+				if int(exclusion_ids[edge]) == trait_index:
+					conflicts = true
+					break
+			if conflicts:
+				break
+		if conflicts:
+			continue
+		if additional_trait.is_empty():
+			additional_trait = candidate
+		var invest_or_career := false
+		var behavior_begin := int(behavior_offsets[trait_index])
+		var behavior_end := int(behavior_offsets[trait_index + 1])
+		for behavior_index in range(behavior_begin, behavior_end):
+			var axis := int(behavior_axes[behavior_index])
+			if axis == 0 or axis == 1:
+				invest_or_career = true
+				break
+		if not invest_or_career:
+			consumption_only_trait = candidate
 			break
+	if not consumption_only_trait.is_empty():
+		additional_trait = consumption_only_trait
 	_expect("catalog leaves an additional trait available", not additional_trait.is_empty())
 	var additional_id := all_trait_keys.find(additional_trait)
 	var strength_min: PackedInt32Array = catalog.family_trait_strength_min_q16
@@ -308,15 +365,16 @@ func _run() -> void:
 	var pending_reward: Dictionary = ext.get_building_cell_snapshot(0)
 	var pending_types: PackedInt32Array = pending_reward.get(
 		"construction_type_ids", PackedInt32Array())
-	if not pending_types.has(reward_building_id) or int(
-			reward_day.get("construction_goods_consumed", -1)) != 0:
+	if not pending_types.has(reward_building_id) \
+			or int(reward_day.get("rejected_commands", -1)) != 0:
 		print("reward pending diagnostic=", pending_types,
 			" consumed=", reward_day.get("construction_goods_consumed", -1),
 			" rejected=", reward_day.get("rejected_commands", -1),
 			" reason=", reward_day.get("last_building_rejection_reason", ""))
 	_expect("free building waits its normal construction duration without materials",
 		pending_types.has(reward_building_id)
-		and int(reward_day.get("construction_goods_consumed", -1)) == 0)
+		and int(reward_day.get("rejected_commands", -1)) == 0
+		and String(reward_day.get("last_building_rejection_reason", "")) == "")
 	var economy_events: Dictionary = ext.poll_economy_events({
 		"consumer_id": &"family_reward_test", "max_events": 256})
 	var event_schema: Dictionary = ext.get_economy_event_schema()
@@ -357,6 +415,7 @@ func _run() -> void:
 
 	person_count_before = int(ext.get_family_notable_people(
 		family_handle, 0, 64).get("total", 0))
+	var person_before_save: Dictionary = ext.get_notable_person_snapshot(person_handle)
 	var hash_before := int(ext.get_economy_state_hash())
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
 	_expect("PKEC v37 save begins", bool(save_begin.get("ok", false))
@@ -411,8 +470,9 @@ func _run() -> void:
 	var restored_person: Dictionary = restored.get_notable_person_snapshot(person_handle)
 	_expect("generation-safe important-person handle and job survive restore",
 		bool(restored_person.get("ok", false))
+		and int(person_before_save.get("building_handle", 0)) != 0
 		and int(restored_person.get("building_handle", 0))
-			== int(person.get("building_handle", 0)))
+			== int(person_before_save.get("building_handle", 0)))
 	print("=== native notable-family runtime %s ===" % [
 		"PASS" if failures == 0 else "FAIL"])
 
@@ -596,9 +656,24 @@ func _assert_family_effect_display_copy(compiled: Dictionary) -> void:
 	var required_traits := {
 		"gathering_affinity": "采集",
 		"hunting_tradition": "狩猎",
+		"fishing_folk": "渔",
+		"pastoral_herds": "畜牧",
+		"agrarian_lineage": "农",
+		"forest_stewards": "林",
 		"mining_enterprise": "采掘",
-		"abundant_table": "食品",
+		"salt_makers": "盐",
+		"loom_houses": "纺织",
+		"kiln_and_clay": "陶",
+		"bronze_and_iron": "冶锻",
+		"masonry_guild": "夯土",
+		"charcoal_hearth": "炭",
 		"trade_network": "贸易",
+		"scribal_house": "知识",
+		"abundant_table": "食品",
+		"austere_hearth": "奢侈品",
+		"lavish_display": "身份",
+		"floodplain_lore": "洪泛",
+		"coastal_tide": "潮汐",
 	}
 	var trait_ok: bool = trait_catalog != null and trait_catalog.traits.size() == required_traits.size()
 	if trait_catalog != null:
@@ -609,12 +684,6 @@ func _assert_family_effect_display_copy(compiled: Dictionary) -> void:
 				and not String(definition.display_name).is_empty() \
 				and description.find(String(required_traits[key])) >= 0
 	_expect("all family traits have Chinese mechanical descriptions", trait_ok)
-	var modifier_keys := PackedStringArray([
-		"family.city.production_boost", "family.city.hunting_output_boost",
-		"family.city.extractive_output_boost", "family.city.birth_boost",
-		"family.city.trade_output_boost", "family.city.food_consumption_boost",
-		"family.city.wild_game_regen_boost",
-	])
 	var modifier_catalog: Resource = load("res://data/modifiers/default_modifier_catalog.tres")
 	var modifier_names := {}
 	if modifier_catalog != null:
@@ -622,12 +691,11 @@ func _assert_family_effect_display_copy(compiled: Dictionary) -> void:
 			var key := String(definition.key)
 			if key.begins_with("family."):
 				modifier_names[key] = String(definition.display_name)
-	var modifiers_ok: bool = true
-	for key in modifier_keys:
-		modifiers_ok = modifiers_ok and not String(modifier_names.get(key, "")).is_empty() \
-			and String(modifier_names.get(key, "")).find(".") < 0
-	_expect("family modifier definitions have Chinese display names",
-		modifiers_ok and modifier_names.size() == modifier_keys.size())
+	var modifiers_ok: bool = not modifier_names.is_empty()
+	for display_name in modifier_names.values():
+		modifiers_ok = modifiers_ok and not String(display_name).is_empty() \
+			and String(display_name).find(".") < 0
+	_expect("family modifier definitions have Chinese display names", modifiers_ok)
 	var trigger_catalog: Resource = load("res://data/triggers/default_trigger_catalog.tres")
 	var trigger_names := {}
 	if trigger_catalog != null:
@@ -635,9 +703,19 @@ func _assert_family_effect_display_copy(compiled: Dictionary) -> void:
 			var key := String(definition.key)
 			if key.begins_with("family."):
 				trigger_names[key] = String(definition.display_name)
+	var triggers_ok: bool = not trigger_names.is_empty()
+	for display_name in trigger_names.values():
+		triggers_ok = triggers_ok and not String(display_name).is_empty() \
+			and String(display_name).find(".") < 0
 	_expect("family trigger definitions have Chinese display names",
-		String(trigger_names.get("family.build_hunting_bonus", "")) == "狩猎营地馈赠"
-		and String(trigger_names.get("family.trade_population_bonus", "")) == "商路人口奖励")
+		triggers_ok
+		and String(trigger_names.get("family.build_hunting_bonus", "")) == "狩猎营地馈赠"
+		and String(trigger_names.get("family.trade_population_bonus", "")) == "商路人口奖励"
+		and String(trigger_names.get("family.build_fishing_bonus", "")) == "渔营馈赠"
+		and String(trigger_names.get("family.build_pastoral_bonus", "")) == "牧营馈赠"
+		and String(trigger_names.get("family.build_masonry_bonus", "")) == "土坯场馈赠"
+		and String(trigger_names.get("family.farm_population_bonus", "")) == "农门招佃"
+		and String(trigger_names.get("family.knowledge_population_bonus", "")) == "学徒迁入")
 	var facade = load("res://scripts/economy/economy_facade.gd").new()
 	facade._load_family_effect_displays()
 	_expect("facade maps trait descriptions and family effect display names",

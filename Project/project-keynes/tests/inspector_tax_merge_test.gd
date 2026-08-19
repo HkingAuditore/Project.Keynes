@@ -124,6 +124,13 @@ func _initialize() -> void:
 	editor._on_text_submitted("")
 	if requests.size() != 1 or requests[0] != ["item", "income", "artisan", 29]:
 		failures.append("tax lane editor did not emit an isolated row override")
+	requests.clear()
+	editor.resolve_pending()
+	editor.set_data(population_lane)
+	editor._spin.set_value_no_signal(int(population_lane.get("base", 0)))
+	editor._on_text_submitted("41")
+	if requests.size() != 1 or int(requests[0][3]) != 41:
+		failures.append("text_submitted used the stale SpinBox value instead of typed text")
 	editor.resolve_pending()
 	editor.set_data(population_lane)
 	editor._spin.set_value_no_signal(41)
@@ -132,6 +139,13 @@ func _initialize() -> void:
 	if int(editor._spin.value) != 41:
 		failures.append("set_data overwrote an in-progress spinbox draft")
 	editor.resolve_pending()
+	editor.set_data(population_lane)
+	editor.mark_pending(37)
+	editor._spin.set_value_no_signal(0)
+	editor.get_node("Box/Row/Spin").get_line_edit().text = "0 %"
+	editor.set_data(population_lane)
+	if int(editor._spin.value) != 37:
+		failures.append("pending live patch did not restore the confirmed rate after SpinBox reverted")
 
 	if failures.is_empty():
 		print("[inspector-tax-merge] PASS")

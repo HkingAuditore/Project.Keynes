@@ -137,7 +137,11 @@ func _run() -> void:
 	if not pending.has(clear_key) \
 			or StringName(controller.calls[-1].id) != &"country.tax.cell.clear_all":
 		failures.append("confirmed clear-all did not queue the existing clear_all command")
-	inspector._resolve_tax_pending({"current_day": 11, "policy_version": 8})
+	var clear_ctx: Dictionary = (_model(5).categories.population.tax_context as Dictionary) \
+		.duplicate(true)
+	clear_ctx["current_day"] = 11
+	clear_ctx["policy_version"] = 8
+	inspector._resolve_tax_pending(clear_ctx)
 	if pending.has(clear_key):
 		failures.append("policy version advance did not resolve clear-all pending")
 
@@ -172,6 +176,55 @@ func _run() -> void:
 				or int(controller.calls[-1].args.get("rate_percent", -1)) != page_draft \
 				or not page_editor.is_pending():
 			failures.append("cell business default spin edit did not commit after arrow input")
+		else:
+			var stale_category: Dictionary = (building_model.categories.buildings \
+				as Dictionary).duplicate(true)
+			var stale_context: Dictionary = (stale_category.get("tax_context", {}) \
+				as Dictionary).duplicate(true)
+			stale_context["current_day"] = 11
+			stale_context["policy_version"] = 8
+			stale_category["tax_context"] = stale_context
+			inspector.apply_live_patch({
+				"tab_id": "buildings",
+				"category": stale_category,
+			})
+			page_editor = (inspector.get("_page_tax_editors") as Array)[0] as TaxLaneEditor \
+				if not (inspector.get("_page_tax_editors") as Array).is_empty() else null
+			if page_editor == null or not page_editor.is_pending() \
+					or int(page_editor._spin.value) != page_draft:
+				failures.append("next-day live patch with unchanged inherit snapshot snapped pending cell business tax")
+			else:
+				var committed_lane: Dictionary = ((stale_context.get(
+					"default_lanes", []) as Array)[0] as Dictionary).duplicate(true)
+				committed_lane["base"] = page_draft
+				committed_lane["effective"] = page_draft
+				committed_lane["has_override"] = true
+				var committed_context := stale_context.duplicate(true)
+				committed_context["default_lanes"] = [committed_lane]
+				var committed_category := stale_category.duplicate(true)
+				committed_category["tax_context"] = committed_context
+				inspector.apply_live_patch({
+					"tab_id": "buildings",
+					"category": committed_category,
+				})
+				page_editor = (inspector.get("_page_tax_editors") as Array)[0] \
+					as TaxLaneEditor if not (inspector.get("_page_tax_editors") \
+					as Array).is_empty() else null
+				if page_editor == null or page_editor.is_pending() \
+						or int(page_editor._spin.value) != page_draft:
+					failures.append("matching snapshot did not resolve pending cell business tax")
+		page_editor = (inspector.get("_page_tax_editors") as Array)[0] as TaxLaneEditor \
+			if not (inspector.get("_page_tax_editors") as Array).is_empty() else null
+		if page_editor != null:
+			page_editor.resolve_pending()
+			(inspector.get("_pending_tax") as Dictionary).clear()
+			var typed_rate := 22
+			page_editor._spin.set_value_no_signal(page_base)
+			page_editor._on_text_submitted(str(typed_rate))
+			if StringName(controller.calls[-1].id) != &"country.tax.cell.set_default" \
+					or int(controller.calls[-1].args.get("rate_percent", -1)) != typed_rate \
+					or int(page_editor._spin.value) != typed_rate:
+				failures.append("Enter submitted the stale SpinBox value instead of typed text")
 	var building_row: Dictionary = building_model.categories.buildings.building_rows[0]
 	var building_defaults: Array = (building_model.categories.buildings.tax_context \
 		as Dictionary).get("default_lanes", []) as Array

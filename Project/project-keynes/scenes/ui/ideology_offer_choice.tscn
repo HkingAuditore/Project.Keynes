@@ -1,8 +1,62 @@
-[gd_scene format=3]
+[gd_scene load_steps=5 format=3]
 
-[node name="OfferChoice" type="Button"]
-custom_minimum_size = Vector2(150, 70)
+[ext_resource type="Script" path="res://scripts/ui/components/ideology_offer_choice.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="2_icon"]
+[ext_resource type="PackedScene" path="res://scenes/ui/insight_list.tscn" id="3_insights"]
+[ext_resource type="PackedScene" path="res://scenes/ui/badge_row.tscn" id="4_badges"]
+
+[node name="OfferChoice" type="PanelContainer"]
+custom_minimum_size = Vector2(0, 0)
 size_flags_horizontal = 3
-focus_mode = 0
+theme_type_variation = &"PKInsetPanel"
+script = ExtResource("1_script")
+
+[node name="Margin" type="MarginContainer" parent="."]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 8
+
+[node name="Body" type="VBoxContainer" parent="Margin"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Header" type="HBoxContainer" parent="Margin/Body"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Icon" parent="Margin/Body/Header" instance=ExtResource("2_icon")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(24, 26)
+layout_mode = 2
+
+[node name="Name" type="Label" parent="Margin/Body/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKSectionTitle"
+
+[node name="Flavor" type="Label" parent="Margin/Body"]
+unique_name_in_owner = true
+layout_mode = 2
 autowrap_mode = 3
+theme_type_variation = &"PKMutedLabel"
+
+[node name="Effects" parent="Margin/Body" instance=ExtResource("3_insights")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="Badges" parent="Margin/Body" instance=ExtResource("4_badges")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="Choose" type="Button" parent="Margin/Body"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 30)
+layout_mode = 2
+focus_mode = 0
+text = "选择此道路"
 theme_type_variation = &"PKPrimaryButton"
+
+[connection signal="pressed" from="Margin/Body/Choose" to="." method="_on_choose_pressed"]

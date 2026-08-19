@@ -281,6 +281,12 @@ bool ModifierRuntime::compile_catalog(const Dictionary &catalog,
         stat_id("economy.city.building.agriculture_output_factor");
     _building_output_stat_ids[3] =
         stat_id("economy.city.building.extractive_output_factor");
+    _building_output_stat_ids[4] =
+        stat_id("economy.city.building.manufacturing_output_factor");
+    _building_output_stat_ids[5] =
+        stat_id("economy.city.building.energy_output_factor");
+    _building_output_stat_ids[6] =
+        stat_id("economy.city.building.knowledge_output_factor");
     return true;
 }
 
@@ -1370,9 +1376,13 @@ double ModifierRuntime::economy_building_output_factor(uint64_t building_handle,
                                     building_handle, settlement_cell, 1.0);
     factor *= effective_value(ECONOMY, _building_output_stat_ids[1], 0,
                               settlement_cell, 1.0);
-    const int32_t sector_stat = economic_sector == 0
-        ? _building_output_stat_ids[2]
-        : (economic_sector == 1 ? _building_output_stat_ids[3] : -1);
+    const int32_t sector_stat =
+        economic_sector == 0 ? _building_output_stat_ids[2]
+        : economic_sector == 1 ? _building_output_stat_ids[3]
+        : economic_sector == 2 ? _building_output_stat_ids[4]
+        : economic_sector == 3 ? _building_output_stat_ids[5]
+        : economic_sector == 4 ? _building_output_stat_ids[6]
+                               : -1;
     if (sector_stat >= 0)
         factor *= effective_value(ECONOMY, sector_stat, 0, settlement_cell, 1.0);
     return factor;

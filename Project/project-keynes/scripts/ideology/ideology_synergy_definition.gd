@@ -4,6 +4,7 @@ extends Resource
 const EffectCommandScript = preload("res://scripts/effect/effect_command.gd")
 
 @export var id: StringName = &""
+@export var display_name: String = ""
 @export var required_ideology_ids: PackedStringArray = PackedStringArray()
 @export var minimum_levels: PackedInt32Array = PackedInt32Array()
 ## Bit 1 accepts equipped ideology; bit 2 accepts national spirit.

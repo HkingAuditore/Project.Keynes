@@ -324,6 +324,7 @@ private:
     int32_t _spirit_capacity = 3;
     int32_t _draw_count = 3;
     int64_t _offer_cost_q16 = Q16_ONE;
+    int64_t _starting_points_q16 = 0;
     int32_t _max_commands_per_slice = 4096;
     int32_t _max_transition_commands = 256;
     int32_t _max_transition_polls_per_slice = 4096;

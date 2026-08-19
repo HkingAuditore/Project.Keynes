@@ -64,11 +64,38 @@ Definitions remain limited to 64 levels because entry confirmation is a packed
 
 Player writes enter through `PlayerController`, with producer/sequence
 high-water idempotency and bounded per-command receipts. GDScript reads only
-through `IdeologyFacade`. `explain_ideologies()` returns packed support,
-threshold, blocker, class-contribution, eligibility, and hypothetical synergy
-columns for all visible ideas in one native call. Static catalog metadata is
-separate and UI reuses live explain data while support revision and structural
-snapshot signature are unchanged.
+through `IdeologyFacade`. `get_ideology_snapshot()` always returns the same
+column set, including `ideology_slots_capacity`, `national_spirit_slots_capacity`,
+`offer_cost_q16`, and `starting_points_q16`. A country that has not yet received
+an ideology command is `materialized=false` and previews catalog starting points
+without creating a country row. The first command materializes that row and
+endows `starting_points_q16` from the catalog profile. `explain_ideologies()`
+returns packed support, threshold, blocker, class-contribution, eligibility, and
+hypothetical synergy columns for all visible ideas in one native call. Static
+catalog metadata is separate and UI reuses live explain data while support
+revision and structural snapshot signature are unchanged.
+
+The production catalog authors four distinct UniqueSource Country modifiers
+instead of a shared `country.economic_mobilization` stub. Equipping applies
+full Q16 magnitude (`65536`); understanding the second level replaces the
+same definition at double magnitude (`131072`). Synergies add a third
+modifier while both required ideas remain equipped or promoted:
+
+| 道路 / 联动 | 装备后（1 级） | 满级（2 级） |
+| --- | --- | --- |
+| 共同体治理 | 农业部门产出 +6%；旱灾损失 −8% | 效果翻倍 |
+| 自由交换 | 国内贸易容量 +8%；贸易速度 +6% | 效果翻倍 |
+| 学识官署 | 知识部门产出 +6%；科学领域研究效率 +8% | 效果翻倍 |
+| 公民动员 | 国家建设耗时 −6%；全社会经济产出 +3% | 效果翻倍 |
+| 计划仓廪（治理+学识） | 旱灾损失 −10%；农业部门产出 +4% | — |
+| 特许开拓（交换+动员） | 国内贸易容量 +5%；国家建设耗时 −4% | — |
+
+`共同体治理` and `自由交换` remain exclusive via `economic_order`.
+`IdeologyCatalog.catalog_view()` joins those modifier terms into
+player-facing `level_effect_lines`; the ideology panel must show them on
+three-card offers and collection rows. Changing authored ideology
+modifier keys or term values changes the Modifier and Effect catalog
+hashes; existing PKCM/PKEF saves fail closed.
 
 ## Save and restore
 
@@ -92,9 +119,14 @@ than repaired by replaying effects. `configure_effects()` also reattaches an alr
 ideology authority, which preserves the transaction contract during production
 startup where Country/Ideology are configured before Effect.
 
+Development work should follow the `project-keynes-ideology-runtime` Skill in
+`.codex/skills/project-keynes-ideology-runtime/`. That Skill is the agent
+workflow; this document remains the current-state contract.
+
 ## Verification
 
 Run `tests/ideology_runtime_test.gd`,
+`tests/ideology_opinion_synergy_test.gd`,
 `tests/ideology_runtime_stress_test.gd`, and
 `tests/ideology_content_test.gd` plus Trigger/PlayerController fixtures and
 `git diff --check`. Headless CSV exposes ideology phase timings and deterministic

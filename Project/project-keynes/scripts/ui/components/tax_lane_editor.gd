@@ -9,6 +9,7 @@ const COMMIT_DELAY_SEC := 0.18
 
 var _data: Dictionary = {}
 var _pending := false
+var _pending_rate := 0
 var _dirty := false
 var _applying := false
 var _spin: SpinBox
@@ -46,26 +47,39 @@ func set_data(data: Dictionary) -> void:
 	if _spin == null:
 		_ready()
 	var previous_base := int(_data.get("base", int(_spin.value)))
-	_data = data.duplicate(true)
-	var editable := bool(_data.get("editable", false))
-	var accent: Color = _data.get("accent", UITokens.ACCENT)
-	_label.text = String(_data.get("kind_label", _data.get("kind", "税率")))
+	var snapshot := data.duplicate(true)
+	var editable := bool(snapshot.get("editable", false))
+	var accent: Color = snapshot.get("accent", UITokens.ACCENT)
+	_label.text = String(snapshot.get("kind_label", snapshot.get("kind", "税率")))
 	_label.add_theme_color_override("font_color", accent)
 	_spin.editable = editable
+	if _pending:
+		# Godot 4.6 SpinBox 的 text_submitted / editing_toggled 是延迟信号，
+		# 会在提交后按旧 Range 值把 LineEdit 刷成继承 0%。pending 期间每次
+		# live patch 都必须把已确认税率写回去，不能只是“跳过覆盖”。
+		_data = snapshot
+		_data["base"] = _pending_rate
+		_data["has_override"] = true
+		_set_spin_rate(_pending_rate)
+		_reset.visible = false
+		_clock.visible = true
+		_refresh_note()
+		return
+	_data = snapshot
 	# 箭头/拖动不会让 LineEdit 获焦。只要当前显示值已经离开上次权威税率，
 	# 就视为草稿，避免 live patch 把仍未提交的继承税率（常见是 0%）写回去。
 	var displayed := int(_spin.value)
 	var new_base := int(_data.get("base", 0))
-	if not _pending and displayed != previous_base and displayed != new_base:
+	if displayed != previous_base and displayed != new_base:
 		var was_dirty := _dirty
 		_dirty = true
 		if not was_dirty and not _spin.get_line_edit().has_focus() \
 				and _commit_timer != null:
 			_commit_timer.start()
-	if not _pending and not _dirty and not _has_edit_focus():
+	if not _dirty and not _has_edit_focus():
 		_apply_authoritative_value()
 	_reset.visible = editable and bool(_data.get("has_override", false)) \
-		and not _pending and not _dirty
+		and not _dirty
 	_refresh_note()
 
 
@@ -78,13 +92,17 @@ func editor_key(cell_idx: int) -> String:
 
 func mark_pending(rate: int) -> void:
 	_pending = true
+	_pending_rate = rate
 	_dirty = false
 	_stop_commit_timer()
-	_spin.set_value_no_signal(rate)
-	_spin.get_line_edit().add_theme_color_override("font_color", UITokens.BRASS_HIGHLIGHT)
+	_data["base"] = rate
+	_data["has_override"] = true
+	_set_spin_rate(rate)
 	_reset.visible = false
 	_clock.visible = true
 	_refresh_note()
+	# 排在 SpinBox 自身的 DEFERRED text_submitted / editing_toggled 之后。
+	call_deferred("_restore_pending_spin")
 
 
 func resolve_pending() -> void:
@@ -115,13 +133,31 @@ func _has_edit_focus() -> bool:
 
 
 func _apply_authoritative_value() -> void:
-	var base := int(_data.get("base", 0))
-	_applying = true
-	_spin.set_value_no_signal(base)
-	_applying = false
+	_set_spin_rate(int(_data.get("base", 0)))
 	_spin.get_line_edit().add_theme_color_override("font_color",
 		UITokens.BRASS_HIGHLIGHT if bool(_data.get("has_override", false)) \
 		else UITokens.TEXT_MUTED)
+
+
+func _set_spin_rate(rate: int) -> void:
+	if _spin == null:
+		return
+	_applying = true
+	_spin.set_value_no_signal(rate)
+	var line := _spin.get_line_edit()
+	if line != null:
+		var shown := str(rate)
+		if not line.has_focus() and not String(_spin.suffix).is_empty():
+			shown = "%s %s" % [shown, _spin.suffix]
+		if line.text != shown:
+			line.text = shown
+		line.add_theme_color_override("font_color", UITokens.BRASS_HIGHLIGHT)
+	_applying = false
+
+
+func _restore_pending_spin() -> void:
+	if _pending and _spin != null:
+		_set_spin_rate(_pending_rate)
 
 
 func _refresh_note() -> void:
@@ -137,7 +173,8 @@ func _refresh_note() -> void:
 	_note.text = " · ".join(parts)
 
 
-func _on_text_submitted(_text: String) -> void:
+func _on_text_submitted(text: String) -> void:
+	_sync_spin_from_text(text)
 	_submit(true)
 
 
@@ -146,8 +183,29 @@ func _on_text_focus_entered() -> void:
 
 
 func _on_focus_exited() -> void:
+	_sync_spin_from_text(_spin.get_line_edit().text)
 	_submit(false)
 	editing_finished.emit()
+
+
+static func parse_rate_text(text: String, fallback: int) -> int:
+	var cleaned := text.strip_edges().replace("%", "").replace("+", "").strip_edges()
+	cleaned = cleaned.replace(",", ".")
+	if cleaned.is_empty():
+		return fallback
+	if cleaned.is_valid_int():
+		return clampi(cleaned.to_int(), -100, 100)
+	if cleaned.is_valid_float():
+		return clampi(int(round(cleaned.to_float())), -100, 100)
+	return fallback
+
+
+func _sync_spin_from_text(text: String) -> void:
+	if _spin == null:
+		return
+	var rate := parse_rate_text(text, int(_spin.value))
+	if rate != int(_spin.value):
+		_spin.set_value_no_signal(rate)
 
 
 func _on_value_changed(_value: float) -> void:
