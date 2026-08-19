@@ -140,11 +140,22 @@ func _apply_budget_profile_to_job(job, cp, upload_job: bool) -> void:
 		slice_ms = clampf(slice_ms, 0.10, 1.5)
 	else:
 		slice_ms = clampf(slice_ms, 0.10, 1.0)
+	# Bio sliced mode is a same-day transaction. Its native cursor returns one
+	# fixed cell range per call; WorldClock freezes the semantic day while the
+	# staging round is active, so the scheduler must keep the call cooperative.
+	var configured_job_id: StringName = _job_id(job)
+	if configured_job_id == &"bio_occupancy_daily" and \
+			bool(Engine.get_meta(&"bio_occupancy_slice_enabled", false)):
+		slice_ms = minf(slice_ms, 1.0)
 	if job.get("slice_budget_ms") != null:
 		job.slice_budget_ms = slice_ms
 	if job.get("max_slices_per_tick") != null:
 		var job_id: StringName = _job_id(job)
-		if upload_job or job_id == &"season_refresh" \
+		if job_id == &"bio_occupancy_daily":
+			# One fixed range per visit. The day barrier is the transaction
+			# boundary; max_slices must not turn this into an unbounded drain.
+			job.max_slices_per_tick = 1
+		elif upload_job or job_id == &"season_refresh" \
 				or job_id == &"refresh_climate_daily" \
 				or job_id == &"sea_ice_daily" \
 				or job_id == &"ocean_currents" \
@@ -350,7 +361,13 @@ func build_topology() -> bool:
 	for k in range(_topo_order.size()):
 		var idx: int = _topo_order[k]
 		_systems[idx].priority = 100 + k * 10
-	# 重新触发 SUS 内部排序
+	# The native scheduler owns its own shadow descriptors.  Updating only the
+	# GDScript job priority leaves SusSchedulerExt with the pre-topology order
+	# and stale deadline-critical flags, so every topology rebuild must publish
+	# the complete descriptor before the next tick.
+	for system in _systems:
+		_refresh_descriptor_for_job(system)
+	# 重新触发 SUS 内部排序 (the fallback backend keeps a GDScript copy).
 	_sus._jobs.sort_custom(func(a, b): return a.priority < b.priority)
 	_topology_built = true
 	if OS.is_debug_build():

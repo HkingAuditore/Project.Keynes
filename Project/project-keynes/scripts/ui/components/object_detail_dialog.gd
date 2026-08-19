@@ -15,6 +15,7 @@ signal closed()
 signal colonization_requested(family_handle: int, source_cell: int)
 signal tax_override_requested(scope: String, kind: String, item_id: String, rate: int)
 signal tax_reset_requested(scope: String, kind: String, item_id: String)
+signal tax_editing_finished()
 
 const PANEL_MIN_SIZE := Vector2(620.0, 520.0)
 
@@ -92,12 +93,15 @@ func show_details(payload: Dictionary) -> void:
 	_configure_section_nav(kind)
 
 
-func refresh_details(payload: Dictionary) -> void:
+func refresh_details(payload: Dictionary) -> bool:
 	if not visible or payload.is_empty():
-		return
+		return false
+	if has_active_tax_edit():
+		return false
 	var saved_scroll := _scroll.scroll_vertical if _scroll != null else 0
 	show_details(payload)
 	call_deferred("_restore_scroll", saved_scroll)
+	return true
 
 
 func set_player_controller(controller) -> void:
@@ -106,6 +110,14 @@ func set_player_controller(controller) -> void:
 
 func tax_editors() -> Array:
 	return _tax_editors.values()
+
+
+func has_active_tax_edit() -> bool:
+	for editor_value in _tax_editors.values():
+		var editor := editor_value as TaxLaneEditor
+		if editor != null and editor.is_editing():
+			return true
+	return false
 
 
 func _build_tax_section(kind: String, context_value: Variant, row: Dictionary) -> void:
@@ -141,6 +153,8 @@ func _build_tax_section(kind: String, context_value: Variant, row: Dictionary) -
 		editor.reset_requested.connect(func(scope: String, lane_kind: String,
 				item_id: String) -> void:
 			tax_reset_requested.emit(scope, lane_kind, item_id))
+		editor.editing_finished.connect(func() -> void:
+			tax_editing_finished.emit())
 		editor.set_data(lane)
 		_tax_editors[editor.editor_key(int(context.get("cell", -1)))] = editor
 	lanes.visible = not item_lanes.is_empty()

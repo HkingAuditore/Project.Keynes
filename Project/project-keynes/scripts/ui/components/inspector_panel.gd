@@ -74,6 +74,7 @@ var _tax_editors: Dictionary = {}
 var _page_tax_editors: Array = []
 var _page_tax_section: Control = null
 var _pending_tax: Dictionary = {}
+var _deferred_object_detail_payload: Dictionary = {}
 var _construction_model: Dictionary = {}
 var _detail_change_notify := true
 var _section_collapsed: Dictionary = {}
@@ -123,6 +124,8 @@ func _ready() -> void:
 			family_colonization_requested.emit(family_handle, source_cell))
 	_object_detail_dialog.tax_override_requested.connect(_on_tax_override_requested)
 	_object_detail_dialog.tax_reset_requested.connect(_on_tax_reset_requested)
+	_object_detail_dialog.tax_editing_finished.connect(
+		_on_object_tax_editing_finished)
 	var construction_back := get_node(
 		"Margin/Split/DetailShell/ConstructionPane/Header/BackButton") as Button
 	IconButton.apply(construction_back, &"action.back", IconButton.SMALL, "返回地块档案")
@@ -154,6 +157,7 @@ func set_model_for_selection(model: Dictionary) -> void:
 	if new_cell_index != _cell_index:
 		_scroll_by_tab.clear()
 		_pending_tax.clear()
+		_deferred_object_detail_payload.clear()
 		_section_collapsed.clear()
 		close_detail(false)
 		_cell_index = new_cell_index
@@ -858,6 +862,7 @@ func show_object_detail(payload: Dictionary) -> void:
 	if payload.is_empty() or _object_detail_dialog == null:
 		return
 	_construction_pane.visible = false
+	_deferred_object_detail_payload.clear()
 	_object_detail_dialog.visible = true
 	_object_detail_dialog.show_details(payload)
 	_rebuild_tax_editor_registry()
@@ -868,7 +873,27 @@ func refresh_object_detail(payload: Dictionary) -> void:
 	if payload.is_empty() or _object_detail_dialog == null \
 			or not _object_detail_dialog.visible:
 		return
-	_object_detail_dialog.refresh_details(payload)
+	if not _object_detail_dialog.refresh_details(payload):
+		_deferred_object_detail_payload = payload.duplicate(true)
+		return
+	_deferred_object_detail_payload.clear()
+	_rebuild_tax_editor_registry()
+
+
+func _on_object_tax_editing_finished() -> void:
+	if _deferred_object_detail_payload.is_empty():
+		return
+	call_deferred("_apply_deferred_object_detail_refresh")
+
+
+func _apply_deferred_object_detail_refresh() -> void:
+	if _deferred_object_detail_payload.is_empty() \
+			or _object_detail_dialog == null or not _object_detail_dialog.visible:
+		return
+	var payload := _deferred_object_detail_payload
+	if not _object_detail_dialog.refresh_details(payload):
+		return
+	_deferred_object_detail_payload.clear()
 	_rebuild_tax_editor_registry()
 
 
@@ -881,6 +906,7 @@ func _request_object_detail(request: Dictionary) -> void:
 
 
 func close_detail(notify: bool = true) -> void:
+	_deferred_object_detail_payload.clear()
 	_detail_change_notify = notify
 	if _object_detail_dialog != null and _object_detail_dialog.visible:
 		_object_detail_dialog.close_dialog()

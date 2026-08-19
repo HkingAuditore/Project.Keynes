@@ -293,6 +293,7 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _production_merge_ms = 0.0;
     _production_worker_ms = 0.0;
     _market_worker_ms = 0.0;
+    _household_market_prepare_ms = 0.0;
     _market_merge_ms = 0.0;
     _market_merge_aggregate_ms = 0.0;
     _market_merge_trade_ms = 0.0;
@@ -346,6 +347,11 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _epoch_begin_vector_init_ms = 0.0;
     _epoch_begin_audit_lane_ms = 0.0;
     _epoch_begin_commands_ms = 0.0;
+    _prepare_reuse_count = 0;
+    _workset_cells_planned = 0;
+    _workset_cells_executed = 0;
+    _duplicate_range_count = 0;
+    _workset_last_cursor = 0;
     _audit_ms = 0.0;
     _watermark_ms = 0.0;
     _trade_capacity_available = 0;
@@ -527,8 +533,13 @@ void NativeEconomyRuntime::capture_completed_perf_snapshot() {
     snapshot.building_production_worker_ms = _production_worker_ms;
     snapshot.building_production_merge_ms = _production_merge_ms;
     snapshot.household_market_worker_ms = _market_worker_ms;
+    snapshot.household_market_prepare_ms = _household_market_prepare_ms;
     snapshot.household_market_merge_aggregate_ms = _market_merge_aggregate_ms;
     snapshot.household_market_merge_trade_ms = _market_merge_trade_ms;
+    snapshot.prepare_reuse_count = _prepare_reuse_count;
+    snapshot.workset_cells_planned = _workset_cells_planned;
+    snapshot.workset_cells_executed = _workset_cells_executed;
+    snapshot.duplicate_range_count = _duplicate_range_count;
     snapshot.building_investment_ms = _investment_ms;
     snapshot.investment_evaluate_ms = _investment_evaluate_ms;
     snapshot.investment_allocate_ms = _investment_allocate_ms;
@@ -651,6 +662,7 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
             _epoch_settlement_cells.push_back(_market_cells[k]);
         }
     }
+    _workset_cells_planned = static_cast<int64_t>(_epoch_settlement_cells.size());
     _resource_touched_lanes.reserve(
         _resource_ids.size() * _epoch_settlement_cells.size());
     const auto resource_lane_started = Clock::now();
@@ -845,21 +857,11 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     _current_day = day_index;
     begin_incremental_audit_epoch();
     _epoch_active = true;
-    const auto audit_lane_started = Clock::now();
-    // Household settlement visits every cohort and every good row in the
-    // frozen due-market workset. Register those lanes once on the main thread
-    // so workers never mutate shared audit metadata.
-    for (const int32_t cell : _epoch_settlement_cells) {
-        _population.for_each_in_cell(cell, [&](int32_t slot) {
-            audit_touch_population_lane(slot);
-        });
-        const int32_t market = _market.cell_to_market[cell];
-        for (int32_t good = 0; good < _market.good_count; ++good) {
-            audit_touch_market_lane(static_cast<size_t>(
-                _market.index(market, good)));
-        }
-    }
-    _epoch_begin_audit_lane_ms = elapsed_ms(audit_lane_started);
+    // Worker-local result lanes are registered on the owning thread when each
+    // market/production range is merged. This avoids scanning every due cell
+    // and every good at epoch open while preserving the incremental audit
+    // shadow for all actual mutation lanes.
+    _epoch_begin_audit_lane_ms = 0.0;
     _prepare_ms = elapsed_ms(prepare_started);
     ++_epoch_id;
     trace_begin_epoch();

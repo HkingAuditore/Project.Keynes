@@ -5,6 +5,7 @@
 #include <godot_cpp/variant/utility_functions.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -217,6 +218,39 @@ bool load_reserve_columns(const Dictionary &knobs, int n, int species_count,
     }
     return true;
 }
+
+// Daily occupancy continuation state.  All members are transient staging;
+// MapData and the CELL_BIO_OCCUPANCY_BITS slot are touched only by the
+// GDScript caller after `done=true` is returned from the final phase.
+struct BioOccupancySliceState {
+    int n = 0;
+    int seed = 0;
+    int day_index = 0;
+    bool run_diffusion = false;
+    int phase = 0; // 0=persist, 1=diffusion, 2=merge, 3=publish
+    int cursor = 0;
+    double bridge_ms = 0.0;
+    PackedByteArray water;
+    PackedByteArray veg;
+    PackedByteArray lf;
+    PackedByteArray river;
+    PackedByteArray explored;
+    PackedFloat32Array temp;
+    PackedFloat32Array moist;
+    PackedFloat32Array elev;
+    PackedInt32Array province;
+    PackedInt32Array neighbors;
+    PackedInt32Array introduce_cells;
+    PackedInt32Array introduce_bits;
+    SpeciesView species;
+    std::vector<PackedFloat32Array> reserves;
+    std::vector<int32_t> staging;
+    std::vector<int32_t> previous;
+    std::vector<int32_t> additions;
+    std::vector<int32_t> output;
+    std::vector<int32_t> newly_cells;
+    std::vector<int32_t> newly_signals;
+};
 
 bool envelope_ok(int cell, int species, const SpeciesView &sp,
                  const uint8_t *water, const uint8_t *veg, const uint8_t *lf,
@@ -436,6 +470,10 @@ int32_t habitat_class_of(const SpeciesView &sp, int species) {
 }
 
 } // namespace
+
+void destroy_bio_occupancy_slice_state(void *state) {
+    delete static_cast<BioOccupancySliceState *>(state);
+}
 
 Dictionary DCWorldExt::run_bio_province_pass(const Dictionary &knobs) {
     Dictionary out;
@@ -976,7 +1014,279 @@ Dictionary DCWorldExt::run_bio_seed_pass(const Dictionary &knobs) {
     return out;
 }
 
+Dictionary DCWorldExt::run_bio_occupancy_slice(const Dictionary &knobs) {
+    const auto total_started = std::chrono::steady_clock::now();
+    const auto elapsed_ms = [](const auto &started) -> double {
+        return std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - started).count();
+    };
+    Dictionary out;
+    out["ok"] = false;
+    const int n = int(knobs.get("cell_count", 0));
+    const int seed = int(knobs.get("seed", 0));
+    const int day_index = int(knobs.get("day_index", 0));
+    const bool run_diffusion = bool(knobs.get("run_diffusion", false));
+    const int requested_slice_cells = int(knobs.get("bio_slice_cells", 1024));
+    const int slice_cells = std::clamp(requested_slice_cells, 64, 16384);
+    auto fail = [&](const String &reason, const char *stage) {
+        out["reason"] = reason;
+        out["fallback_reason"] = reason;
+        out["fail_stage"] = String(stage);
+        out["path"] = String("gdext_sliced_failed");
+        if (_bio_occupancy_slice_state != nullptr) {
+            destroy_bio_occupancy_slice_state(_bio_occupancy_slice_state);
+            _bio_occupancy_slice_state = nullptr;
+        }
+        return out;
+    };
+    if (n <= 0 || n > 1000000)
+        return fail(String("bio_occupancy_cell_count_invalid"), "validate");
+
+    BioOccupancySliceState *state =
+        static_cast<BioOccupancySliceState *>(_bio_occupancy_slice_state);
+    const bool new_state = state == nullptr || state->n != n ||
+        state->seed != seed || state->day_index != day_index ||
+        state->run_diffusion != run_diffusion;
+    const auto bridge_started = std::chrono::steady_clock::now();
+    if (new_state) {
+        if (state != nullptr) {
+            destroy_bio_occupancy_slice_state(state);
+            state = nullptr;
+            _bio_occupancy_slice_state = nullptr;
+        }
+        state = new BioOccupancySliceState();
+        state->n = n;
+        state->seed = seed;
+        state->day_index = day_index;
+        state->run_diffusion = run_diffusion;
+        state->water = knobs.get("is_water", PackedByteArray());
+        state->veg = knobs.get("vegetation", PackedByteArray());
+        state->lf = knobs.get("landform", PackedByteArray());
+        state->river = knobs.get("has_river", PackedByteArray());
+        state->explored = knobs.get("explored", PackedByteArray());
+        state->temp = knobs.get("temperature", PackedFloat32Array());
+        state->moist = knobs.get("moisture", PackedFloat32Array());
+        state->elev = knobs.get("elevation", PackedFloat32Array());
+        state->province = knobs.get("province_ids", PackedInt32Array());
+        state->neighbors = knobs.get("neighbor_indices", PackedInt32Array());
+        const PackedInt32Array occupancy = knobs.get(
+            "occupancy_bits", PackedInt32Array());
+        if (state->water.size() != n || state->veg.size() != n ||
+            state->lf.size() != n || state->river.size() != n ||
+            state->temp.size() != n || state->moist.size() != n ||
+            state->elev.size() != n || state->province.size() != n ||
+            state->neighbors.size() != n * 6 || occupancy.size() != n) {
+            return fail(String("bio_occupancy_input_shape_invalid"), "validate");
+        }
+        String reason;
+        if (!load_species(knobs, state->species, reason))
+            return fail(reason, "species");
+        if (!load_reserve_columns(knobs, n, state->species.count,
+                                  state->species, state->reserves, reason))
+            return fail(reason, "reserve");
+        state->introduce_cells = knobs.get("introduce_cells", PackedInt32Array());
+        state->introduce_bits = knobs.get("introduce_bits", PackedInt32Array());
+        if (_economy_runtime != nullptr) {
+            PackedInt32Array extra_cells;
+            PackedInt32Array extra_bits;
+            static_cast<NativeEconomyRuntime *>(_economy_runtime)
+                ->drain_bio_introduces(extra_cells, extra_bits);
+            if (extra_cells.size() == extra_bits.size() && extra_cells.size() > 0) {
+                const int32_t old = state->introduce_cells.size();
+                state->introduce_cells.resize(old + extra_cells.size());
+                state->introduce_bits.resize(old + extra_bits.size());
+                int32_t *cell_ptr = state->introduce_cells.ptrw();
+                int32_t *bit_ptr = state->introduce_bits.ptrw();
+                for (int i = 0; i < extra_cells.size(); ++i) {
+                    cell_ptr[old + i] = extra_cells[i];
+                    bit_ptr[old + i] = extra_bits[i];
+                }
+            }
+        }
+        if (state->introduce_cells.size() != state->introduce_bits.size())
+            return fail(String("bio_introduce_shape_invalid"), "validate");
+
+        state->staging.resize(static_cast<size_t>(n));
+        state->previous.resize(static_cast<size_t>(n));
+        state->additions.assign(static_cast<size_t>(n), 0);
+        state->output.assign(static_cast<size_t>(n), 0);
+        const int32_t *occupancy_ptr = occupancy.ptr();
+        for (int cell = 0; cell < n; ++cell) {
+            state->staging[static_cast<size_t>(cell)] = occupancy_ptr[cell];
+            state->previous[static_cast<size_t>(cell)] = occupancy_ptr[cell];
+        }
+        state->bridge_ms = elapsed_ms(bridge_started);
+        _bio_occupancy_slice_state = state;
+    }
+
+    const auto compute_started = std::chrono::steady_clock::now();
+    const uint8_t *water = state->water.ptr();
+    const uint8_t *veg = state->veg.ptr();
+    const uint8_t *lf = state->lf.ptr();
+    const uint8_t *river = state->river.ptr();
+    const uint8_t *explored = state->explored.size() == n
+        ? state->explored.ptr() : nullptr;
+    const float *temp = state->temp.ptr();
+    const float *moist = state->moist.ptr();
+    const float *elev = state->elev.ptr();
+    const int32_t *province = state->province.ptr();
+    const int32_t *nb = state->neighbors.ptr();
+    const int start = state->cursor;
+    const int end = std::min(n, start + slice_cells);
+
+    if (state->phase == 0) {
+        for (int cell = start; cell < end; ++cell) {
+            int32_t bits = state->staging[static_cast<size_t>(cell)];
+            if (bits == 0) continue;
+            for (int s = 0; s < state->species.count; ++s) {
+                const int32_t bit = state->species.bits[s];
+                if (bit < 0 || bit >= 32) continue;
+                const int32_t mask = 1 << bit;
+                if ((bits & mask) != 0 && !persist_ok(
+                        cell, s, state->species, water, temp, moist, elev))
+                    bits &= ~mask;
+            }
+            state->staging[static_cast<size_t>(cell)] = bits;
+        }
+        state->cursor = end;
+        if (state->cursor >= n) {
+            // Introduction is intentionally after persistence, matching the
+            // one-shot pass.  It is a bounded event list, not a cell scan.
+            for (int i = 0; i < state->introduce_cells.size(); ++i) {
+                const int32_t cell = state->introduce_cells[i];
+                const int32_t bit = state->introduce_bits[i];
+                if (cell < 0 || cell >= n || bit < 0 || bit >= 32) continue;
+                const int32_t species = species_index_for_bit(state->species, bit);
+                if (species < 0 || !envelope_ok(cell, species, state->species,
+                        water, veg, lf, river, temp, moist, elev) ||
+                    !carrier_ok(cell, species, state->species, state->reserves))
+                    continue;
+                state->staging[static_cast<size_t>(cell)] |= (1 << bit);
+            }
+            state->cursor = 0;
+            state->phase = state->run_diffusion ? 1 : 3;
+        }
+    } else if (state->phase == 1) {
+        for (int cell = start; cell < end; ++cell) {
+            const int32_t bits = state->staging[static_cast<size_t>(cell)];
+            if (bits == 0) continue;
+            const int32_t pid = province[cell];
+            const int32_t base = cell * 6;
+            for (int s = 0; s < state->species.count; ++s) {
+                const int32_t bit = state->species.bits[s];
+                if (bit < 0 || bit >= 32) continue;
+                const int32_t mask = 1 << bit;
+                if ((bits & mask) == 0) continue;
+                for (int d = 0; d < 6; ++d) {
+                    const int32_t nxt = nb[base + d];
+                    if (nxt < 0 || nxt >= n ||
+                        (state->staging[static_cast<size_t>(nxt)] & mask) != 0 ||
+                        pid <= 0 || province[nxt] != pid ||
+                        !envelope_ok(nxt, s, state->species, water, veg, lf,
+                                     river, temp, moist, elev) ||
+                        !carrier_ok(nxt, s, state->species, state->reserves))
+                        continue;
+                    if (bio_unit(bio_hash(uint32_t(seed),
+                            uint32_t(day_index * 17 + s + 3), uint32_t(nxt))) <
+                        kDiffusionKeep)
+                        state->additions[static_cast<size_t>(nxt)] |= mask;
+                }
+            }
+        }
+        state->cursor = end;
+        if (state->cursor >= n) {
+            state->cursor = 0;
+            state->phase = 2;
+        }
+    } else if (state->phase == 2) {
+        for (int cell = start; cell < end; ++cell)
+            state->staging[static_cast<size_t>(cell)] |=
+                state->additions[static_cast<size_t>(cell)];
+        state->cursor = end;
+        if (state->cursor >= n) {
+            state->cursor = 0;
+            state->phase = 3;
+        }
+    } else {
+        for (int cell = start; cell < end; ++cell) {
+            const int32_t next_bits = state->staging[static_cast<size_t>(cell)];
+            state->output[static_cast<size_t>(cell)] = next_bits;
+            const int32_t added = next_bits &
+                ~state->previous[static_cast<size_t>(cell)];
+            if (added == 0 || explored == nullptr || explored[cell] == 0)
+                continue;
+            for (int s = 0; s < state->species.count; ++s) {
+                const int32_t bit = state->species.bits[s];
+                if (bit >= 0 && bit < 32 && (added & (1 << bit)) != 0) {
+                    state->newly_cells.push_back(cell);
+                    state->newly_signals.push_back(state->species.signal_ids[s]);
+                }
+            }
+        }
+        state->cursor = end;
+    }
+
+    const bool done = state->phase == 3 && state->cursor >= n;
+    const double compute_ms = elapsed_ms(compute_started);
+    out["ok"] = true;
+    out["path"] = String("gdext_sliced");
+    out["done"] = done;
+    out["slice_done"] = done;
+    out["slice_phase"] = state->phase;
+    out["slice_cursor"] = state->cursor;
+    out["slice_cursor_start"] = start;
+    out["slice_cursor_end"] = end;
+    out["slice_cursor_total"] = n;
+    out["processed_cells"] = end - start;
+    out["native_compute_ms"] = compute_ms;
+    out["bio_slice_native_ms"] = compute_ms;
+    out["bridge_ms"] = new_state ? state->bridge_ms : 0.0;
+    out["publish_ms"] = 0.0;
+    out["bio_slice_publish_ms"] = 0.0;
+    out["native_ms"] = elapsed_ms(total_started);
+    out["published_to_slot"] = false;
+    out["slice_enabled"] = true;
+    out["progress_ratio"] = done ? 1.0 :
+        float(state->phase * n + state->cursor) / float(4 * n);
+    if (!done) return out;
+
+    const auto publish_started = std::chrono::steady_clock::now();
+    PackedInt32Array occupancy_out;
+    occupancy_out.resize(n);
+    int32_t *occupancy_out_ptr = occupancy_out.ptrw();
+    std::memcpy(occupancy_out_ptr, state->output.data(),
+                static_cast<size_t>(n) * sizeof(int32_t));
+    PackedInt32Array newly_cells;
+    PackedInt32Array newly_signals;
+    newly_cells.resize(static_cast<int64_t>(state->newly_cells.size()));
+    newly_signals.resize(static_cast<int64_t>(state->newly_signals.size()));
+    for (size_t i = 0; i < state->newly_cells.size(); ++i) {
+        newly_cells.ptrw()[i] = state->newly_cells[i];
+        newly_signals.ptrw()[i] = state->newly_signals[i];
+    }
+    const double publish_ms = elapsed_ms(publish_started);
+    out["occupancy_bits"] = occupancy_out;
+    out["newly_occupied_cells"] = newly_cells;
+    out["newly_occupied_signal_ids"] = newly_signals;
+    out["publish_ms"] = publish_ms;
+    out["bio_slice_publish_ms"] = publish_ms;
+    out["native_ms"] = elapsed_ms(total_started);
+    destroy_bio_occupancy_slice_state(state);
+    _bio_occupancy_slice_state = nullptr;
+    return out;
+}
+
 Dictionary DCWorldExt::run_bio_occupancy_pass(const Dictionary &knobs) {
+    if (_bio_occupancy_slice_state != nullptr) {
+        destroy_bio_occupancy_slice_state(_bio_occupancy_slice_state);
+        _bio_occupancy_slice_state = nullptr;
+    }
+    const auto total_started = std::chrono::steady_clock::now();
+    const auto elapsed_ms = [](const auto &started) -> double {
+        return std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - started).count();
+    };
+    const auto bridge_started = std::chrono::steady_clock::now();
     Dictionary out;
     out["ok"] = false;
     const int n = int(knobs.get("cell_count", 0));
@@ -1042,6 +1352,8 @@ Dictionary DCWorldExt::run_bio_occupancy_pass(const Dictionary &knobs) {
         return out;
     }
 
+    const double bridge_ms = elapsed_ms(bridge_started);
+
     const uint8_t *water = water_arr.ptr();
     const uint8_t *veg = veg_arr.ptr();
     const uint8_t *lf = lf_arr.ptr();
@@ -1052,16 +1364,17 @@ Dictionary DCWorldExt::run_bio_occupancy_pass(const Dictionary &knobs) {
     const float *elev = elev_arr.ptr();
     const int32_t *province = province_arr.ptr();
     const int32_t *nb = neighbors.ptr();
-    std::vector<int32_t> bits_by_cell(size_t(n), 0);
-    std::vector<int32_t> previous(size_t(n), 0);
+    const auto compute_started = std::chrono::steady_clock::now();
+    _bio_occupancy_bits_staging.resize(static_cast<size_t>(n));
+    _bio_occupancy_previous.resize(static_cast<size_t>(n));
     for (int cell = 0; cell < n; ++cell) {
         const int32_t value = occupancy[cell];
-        bits_by_cell[size_t(cell)] = value;
-        previous[size_t(cell)] = value;
+        _bio_occupancy_bits_staging[static_cast<size_t>(cell)] = value;
+        _bio_occupancy_previous[static_cast<size_t>(cell)] = value;
     }
 
     for (int cell = 0; cell < n; ++cell) {
-        int32_t bits = bits_by_cell[size_t(cell)];
+        int32_t bits = _bio_occupancy_bits_staging[static_cast<size_t>(cell)];
         if (bits == 0) continue;
         for (int s = 0; s < sp.count; ++s) {
             const int32_t bit = sp.bits[s];
@@ -1072,7 +1385,7 @@ Dictionary DCWorldExt::run_bio_occupancy_pass(const Dictionary &knobs) {
                 bits &= ~mask;
             }
         }
-        bits_by_cell[size_t(cell)] = bits;
+        _bio_occupancy_bits_staging[static_cast<size_t>(cell)] = bits;
     }
 
     for (int i = 0; i < intro_cells.size(); ++i) {
@@ -1083,13 +1396,15 @@ Dictionary DCWorldExt::run_bio_occupancy_pass(const Dictionary &knobs) {
         if (s < 0) continue;
         if (!envelope_ok(cell, s, sp, water, veg, lf, river, temp, moist, elev)) continue;
         if (!carrier_ok(cell, s, sp, reserves)) continue;
-        bits_by_cell[size_t(cell)] |= (1 << bit);
+        _bio_occupancy_bits_staging[static_cast<size_t>(cell)] |= (1 << bit);
     }
 
     if (run_diffusion) {
-        std::vector<int32_t> additions(size_t(n), 0);
+        _bio_occupancy_additions.resize(static_cast<size_t>(n));
+        std::fill(_bio_occupancy_additions.begin(),
+                  _bio_occupancy_additions.end(), 0);
         for (int cell = 0; cell < n; ++cell) {
-            const int32_t bits = bits_by_cell[size_t(cell)];
+            const int32_t bits = _bio_occupancy_bits_staging[static_cast<size_t>(cell)];
             if (bits == 0) continue;
             const int32_t pid = province[cell];
             const int32_t base = cell * 6;
@@ -1101,44 +1416,64 @@ Dictionary DCWorldExt::run_bio_occupancy_pass(const Dictionary &knobs) {
                 for (int d = 0; d < 6; ++d) {
                     const int32_t nxt = nb[base + d];
                     if (nxt < 0 || nxt >= n) continue;
-                    if ((bits_by_cell[size_t(nxt)] & mask) != 0) continue;
+                    if ((_bio_occupancy_bits_staging[static_cast<size_t>(nxt)] & mask) != 0) continue;
                     if (pid <= 0 || province[nxt] != pid) continue;
                     if (!envelope_ok(nxt, s, sp, water, veg, lf, river, temp, moist, elev))
                         continue;
                     if (!carrier_ok(nxt, s, sp, reserves)) continue;
                     if (bio_unit(bio_hash(uint32_t(seed), uint32_t(day_index * 17 + s + 3),
                                           uint32_t(nxt))) < kDiffusionKeep) {
-                        additions[size_t(nxt)] |= mask;
+                        _bio_occupancy_additions[static_cast<size_t>(nxt)] |= mask;
                     }
                 }
             }
         }
         for (int cell = 0; cell < n; ++cell) {
-            bits_by_cell[size_t(cell)] |= additions[size_t(cell)];
+            _bio_occupancy_bits_staging[static_cast<size_t>(cell)] |=
+                _bio_occupancy_additions[static_cast<size_t>(cell)];
         }
     }
 
-    PackedInt32Array newly_cells;
-    PackedInt32Array newly_signals;
+    const double native_compute_ms = elapsed_ms(compute_started);
+    const auto publish_started = std::chrono::steady_clock::now();
+    PackedInt32Array occupancy_out;
+    occupancy_out.resize(n);
+    int32_t *occupancy_out_ptr = occupancy_out.ptrw();
+    _bio_newly_occupied_cells.resize(0);
+    _bio_newly_occupied_signals.resize(0);
     for (int cell = 0; cell < n; ++cell) {
-        const int32_t added = bits_by_cell[size_t(cell)] & ~previous[size_t(cell)];
-        occupancy[cell] = bits_by_cell[size_t(cell)];
+        const int32_t next_bits = _bio_occupancy_bits_staging[static_cast<size_t>(cell)];
+        const int32_t added = next_bits &
+            ~_bio_occupancy_previous[static_cast<size_t>(cell)];
+        occupancy_out_ptr[cell] = next_bits;
         if (added == 0) continue;
         if (explored != nullptr && explored[cell] == 0) continue;
         for (int s = 0; s < sp.count; ++s) {
             const int32_t bit = sp.bits[s];
             if (bit < 0 || bit >= 32) continue;
             if ((added & (1 << bit)) == 0) continue;
-            newly_cells.push_back(cell);
-            newly_signals.push_back(sp.signal_ids[s]);
+            _bio_newly_occupied_cells.push_back(cell);
+            _bio_newly_occupied_signals.push_back(sp.signal_ids[s]);
         }
     }
 
+    const double publish_ms = elapsed_ms(publish_started);
     out["ok"] = true;
     out["path"] = String("gdext");
-    out["occupancy_bits"] = occupancy;
-    out["newly_occupied_cells"] = newly_cells;
-    out["newly_occupied_signal_ids"] = newly_signals;
+    out["occupancy_bits"] = occupancy_out;
+    out["newly_occupied_cells"] = _bio_newly_occupied_cells;
+    out["newly_occupied_signal_ids"] = _bio_newly_occupied_signals;
+    out["processed_cells"] = n;
+    out["native_compute_ms"] = native_compute_ms;
+    out["bio_slice_native_ms"] = native_compute_ms;
+    out["bridge_ms"] = bridge_ms;
+    out["publish_ms"] = publish_ms;
+    out["bio_slice_publish_ms"] = publish_ms;
+    out["native_ms"] = elapsed_ms(total_started);
+    out["published_to_slot"] = false;
+    out["slice_enabled"] = bool(knobs.get("slice_enabled", false));
+    out["slice_done"] = true;
+    out["slice_cursor"] = n;
     return out;
 }
 

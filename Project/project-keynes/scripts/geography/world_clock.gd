@@ -187,18 +187,14 @@ func _process(delta: float) -> void:
 	# only at a frozen cycle's settlement deadline, stops new days, and emits a
 	# real-frame pulse so same-day catchup can finish without deadlock.
 	var simulation_budget_start_us: int = Time.get_ticks_usec()
-	var hard_day_barrier := _simulation_backpressure_sources.has(&"economy_day_barrier") or \
-		_simulation_backpressure_sources.has(&"country_day_barrier") or \
-		_simulation_backpressure_sources.has(&"ideology_day_barrier")
+	var hard_day_barrier := _has_hard_day_barrier()
 	var had_hard_day_barrier := hard_day_barrier
 	var pulse_start_us: int = Time.get_ticks_usec()
 	if hard_day_barrier:
 		simulation_backpressure_pulse.emit(_last_day)
 		# continuation 可能同步清掉 barrier，但本帧已经消耗过模拟预算。新的一天留到
 		# 下一帧启动，避免 pulse + 完整日 tick 在同一渲染帧叠加成尖峰。
-		hard_day_barrier = _simulation_backpressure_sources.has(&"economy_day_barrier") or \
-			_simulation_backpressure_sources.has(&"country_day_barrier") or \
-			_simulation_backpressure_sources.has(&"ideology_day_barrier")
+		hard_day_barrier = _has_hard_day_barrier()
 	_last_pulse_ms = float(Time.get_ticks_usec() - pulse_start_us) / 1000.0
 	var effective_speed := 0.0 if had_hard_day_barrier or hard_day_barrier else (
 		minf(speed_multiplier, 1.0) if has_simulation_backpressure() else speed_multiplier)
@@ -224,9 +220,7 @@ func _process(delta: float) -> void:
 		ran += 1
 		# A day_changed handler may have raised a country/economy settlement
 		# barrier. Re-read it before this render frame advances another day.
-		hard_day_barrier = _simulation_backpressure_sources.has(&"economy_day_barrier") or \
-			_simulation_backpressure_sources.has(&"country_day_barrier") or \
-			_simulation_backpressure_sources.has(&"ideology_day_barrier")
+		hard_day_barrier = _has_hard_day_barrier()
 
 	# best-effort：本帧没追完的整数天直接丢弃，只保留 < 1 天的小数 carry。这是杜绝
 	# spiral 的关键——债务永不累积，过载时有效倍速平滑降级、FPS 保持稳定。
@@ -512,6 +506,14 @@ func request_simulation_backpressure(source: StringName, active: bool) -> void:
 			sources.append(String(key))
 		sources.sort()
 		simulation_backpressure_changed.emit(is_active, sources)
+
+
+func _has_hard_day_barrier() -> bool:
+	return _simulation_backpressure_sources.has(&"economy_day_barrier") \
+		or _simulation_backpressure_sources.has(&"country_day_barrier") \
+		or _simulation_backpressure_sources.has(&"ideology_day_barrier") \
+		or _simulation_backpressure_sources.has(&"bio_occupancy_day_barrier") \
+		or _simulation_backpressure_sources.has(&"native_daily_day_barrier")
 
 func has_simulation_backpressure() -> bool:
 	return not _simulation_backpressure_sources.is_empty()

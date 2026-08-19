@@ -88,6 +88,17 @@ func _run() -> void:
 		String(ext.get_country_cell_summary(3).country_name) == "无主之地")
 	_expect("country treasury is sparse and scaled",
 		int(ext.get_country_treasury_snapshot(alpha.country_handle).quantities[0]) == 5000)
+	var ui_snapshot: Dictionary = ext.get_country_ui_snapshot(
+		alpha.country_handle, 1)
+	_expect("country UI bridge returns compact revisioned technology section",
+		bool(ui_snapshot.get("ok", false))
+		and int(ui_snapshot.get("section", 0)) == 1
+		and not (ui_snapshot.summary as Dictionary).has("territory_cells")
+		and not (ui_snapshot.summary as Dictionary).has("technology_ids")
+		and (ui_snapshot.get("revision_components", {}) as Dictionary).has(
+			"country_state_version")
+		and ui_snapshot.has("research")
+		and ui_snapshot.has("research_signals"))
 	var oral := technologies.find("tech.oral_memory_practice")
 	var points := goods.find("technology_points")
 	var discover_ext := _new_ext(4)

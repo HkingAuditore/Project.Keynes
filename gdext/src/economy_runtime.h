@@ -1797,6 +1797,10 @@ private:
         std::vector<CohortWelfareEntry> welfare_entries;
         std::vector<StructuralCommand> structural_commands;
         std::vector<int32_t> trade_active_goods;
+        // Worker-local audit lanes. Worker mutation sites cannot append to the
+        // shared audit vectors; the owning thread registers these during merge.
+        std::vector<size_t> audit_population_lanes;
+        std::vector<size_t> audit_market_lanes;
         int64_t allocation_growth_count = 0;
         int64_t allocation_growth_bytes = 0;
         int64_t approximation_decisions = 0;
@@ -2146,6 +2150,9 @@ private:
         std::vector<OwnerRetainedOutput> retained_outputs;
         std::vector<ProductionTraceDraft> trace_drafts;
         std::vector<ProductionCashflowDraft> cashflow_drafts;
+        // Worker-local audit lanes, registered on the joining thread.
+        std::vector<size_t> audit_population_lanes;
+        std::vector<size_t> audit_market_lanes;
         // Worker-local occupancy introductions. The shared
         // `_bio_introduce_keys` set must not be mutated from production
         // workers; merge_building_production_result commits these in cell order.
@@ -2245,9 +2252,14 @@ private:
         double building_production_worker_ms = 0.0;
         double building_production_merge_ms = 0.0;
         double household_market_worker_ms = 0.0;
+        double household_market_prepare_ms = 0.0;
         double household_market_merge_ms = 0.0;
         double household_market_merge_aggregate_ms = 0.0;
         double household_market_merge_trade_ms = 0.0;
+        int64_t prepare_reuse_count = 0;
+        int64_t workset_cells_planned = 0;
+        int64_t workset_cells_executed = 0;
+        int64_t duplicate_range_count = 0;
         double building_investment_ms = 0.0;
         double investment_evaluate_ms = 0.0;
         double investment_allocate_ms = 0.0;
@@ -2947,6 +2959,7 @@ private:
     double _production_merge_ms = 0.0;
     double _production_worker_ms = 0.0;
     double _market_worker_ms = 0.0;
+    double _household_market_prepare_ms = 0.0;
     double _market_merge_ms = 0.0;
     double _market_merge_aggregate_ms = 0.0;
     double _market_merge_trade_ms = 0.0;
@@ -2962,6 +2975,13 @@ private:
     int64_t _settlement_newest_day = -1;
     int64_t _settlement_max_age_days = 0;
     int64_t _rolling_deadline_violations = 0;
+    // Transient epoch workset diagnostics. These counters do not participate
+    // in economy state/event hashes and are reset at every epoch boundary.
+    int64_t _prepare_reuse_count = 0;
+    int64_t _workset_cells_planned = 0;
+    int64_t _workset_cells_executed = 0;
+    int64_t _duplicate_range_count = 0;
+    int32_t _workset_last_cursor = 0;
 
     int32_t _trace_mode = TRACE_SELECTIVE;
     int64_t _trace_memory_budget = 32LL * 1024 * 1024;

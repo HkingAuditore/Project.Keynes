@@ -120,7 +120,13 @@ static int native_daily_node_index_by_name(const String &name) {
 }
 
 static bool native_daily_node_has_builtin_range(const char *name) {
-    return std::strcmp(name, "ocean_water") == 0 ||
+    // climate_pass_a is cell-local: it only reads/writes the same index and
+    // the annual insolation LUT is prepared once before the range loop.  It is
+    // therefore safe to advance with the same deterministic fixed cursor as
+    // the ocean/wind nodes.  The pass itself suppresses visible flushes while
+    // a range is incomplete; the graph finalizer publishes once at completion.
+    return std::strcmp(name, "climate_pass_a") == 0 ||
+           std::strcmp(name, "ocean_water") == 0 ||
            std::strcmp(name, "ocean_land") == 0 ||
            std::strcmp(name, "wind_air") == 0 ||
            std::strcmp(name, "wind_surface") == 0 ||
@@ -913,6 +919,9 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
     auto exec_slice_node = [&](const NativeDailySliceNode &node) -> bool {
         if (std::strcmp(node.name, "climate_pass_a") == 0) {
             Dictionary cp_struct = as_dict(_native_daily_slice_bundle["climate_pass_a_struct"]);
+            // Range metadata is injected into the pass knob dictionary below.
+            // Keep visible publish deferred for every native-daily slice; the
+            // graph-level finalizer owns the single commit boundary.
             cp_struct["defer_visible_publish"] = true;
             const double phase = double(_native_daily_slice_tick_knobs.get("season_phase", 0.0));
             const double season_phase = double(_native_daily_slice_tick_knobs.get("season_phase", phase));

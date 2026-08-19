@@ -1,5 +1,48 @@
 # Performance Diagnostics Playbook
 
+## 2026-08 production diagnostics
+
+优先检查 `country_report_mode`、`country_state_hash_ms`、
+`country_report_build_ms`、`research_queue_size` 和
+`research_full_scan_fallbacks`。ACTIVE/LIGHT 中 state hash、memory 估算和大范围
+tax 诊断不应出现在 country hot path；PROBE/FULL 才用于 hash/A-B 验证。
+若出现 `pending_queue_mismatch`，预期只增加一个 research day 的完整扫描，随后
+`research_queue_size` 恢复为非负值且 pending queue 重新启用；连续增长表示索引
+维护或 parity 校验仍有问题。
+
+Economy 报告的 `prepare_reuse_count`、`workset_cells_planned`、
+`workset_cells_executed`、`duplicate_range_count` 以及
+`household_market_prepare_ms/worker_ms/merge_ms` 只做 transient 计时，不改变
+PKEC authority、五日 cadence 或 state/event hash。
+
+CSV 固定列包含 `country_report_mode`、`country_state_hash_ms`、
+`country_report_build_ms`、`research_queue_size`、`research_full_scan_fallbacks`，
+以及 Economy 的 `prepare_reuse_count`、`workset_cells_planned`、
+`workset_cells_executed`、`duplicate_range_count`、
+`household_market_prepare_ms`、`household_market_worker_ms`、
+`household_market_merge_ms`。这些是 `bd_economy_*` 的稳定别名，便于直接做
+P95/重复 workset 查询；存在 `last_completed_perf_valid` 时固定别名取
+`last_completed_*` 已完成 epoch，避免 fast-tick 恰好采到下一轮 early stage 而记录
+假 0。动态 breakdown 仍保留当前 in-flight 与 last-completed 两套字段，不改变
+authority。
+UI CSV 观察 `country_ui_refresh_reason`、`country_ui_snapshot_ms`,
+`country_ui_cache_hit`、`country_ui_dirty_domains`；面板关闭的日 tick 应为
+`country_summary_ms=0`。Bio 观察 `bio_slice_native_ms`、`bio_slice_publish_ms`、
+`bio_slice_fallback_reason`、`bio_slice_native_ms`、`processed_cells` 与
+`published_to_slot`，确认固定 cursor 的四 phase 已完整 staging publish；
+`path=gdext_one_shot_fallback` 时必须同时存在 `fallback_reason` 和 `fail_stage`，
+且不允许看到部分 occupancy。
+
+启用 sliced Bio 时，单个 `j_bio_occupancy_daily` 应为一个固定 2048-cell range，
+`j_*_slices=1`；同一日的其它 phase 会出现在后续 continuation pulse，而不是同一
+SUS 访问中排空。`bio_occupancy_day_barrier` 持续存在属于正常 in-flight 状态，只有
+最终 `done=true` 且 `published_to_slot=true` 后才应清除。Native daily 同理检查
+`native_daily_day_barrier` 和 `continuation_stage_counts`：pulse 顺序应为
+`native_daily -> bio_occupancy -> country/economy`，以保证固定 day context。
+若 `j_bio_occupancy_daily_skip` 为 `frame_budget_exhausted` 或
+`strict_budget_one_job`，下一 pulse 应看到 pending-day 首片，而不是出现无 barrier
+直接跨日；这是每日语义保护，不是失败回退。
+
 ## Modifier report 与基准
 
 `MapGenerator.get_modifier_report()` / `DCWorldExt.get_modifier_report()` 当前关注：
@@ -680,6 +723,10 @@ tick's ψ (`cell_ocean_psi` slot) instead of zero:
   异常或周期复核日全扫。任何 mismatch 或 ledger error 都是 correctness failure。
   `closing_audit_mismatch_ledger/lane` 定位首个差异，`population/market_touched_lanes`
   与 `population/market_full_scan_entries` 可确认 fast path 是否真实生效。
+- INCREMENTAL worker 路径在各 mutation site 将 population/market lane 记录到
+  thread-local `MarketResult`/`ProductionResult`，主线程 merge 时再按 generation 去重登记；
+  `epoch_begin` 不再预扫描全部 due-cell × good。scalar、FULL/PROBE 与 mismatch fallback
+  仍使用同一权威 lane shadow 契约。
 - 100×64、约 24k building groups 的 2026-07-26 debug headless 诊断中，production
   `44.3 -> 7.7ms`、plan `14.0 -> 3.8ms`、household worker `12.7 -> 7.4ms`；
   该记录只用于阶段 A/B，不是 release 或图形 FPS 证据。

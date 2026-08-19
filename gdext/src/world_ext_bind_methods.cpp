@@ -123,6 +123,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::get_country_tax_policy_snapshot);
     ClassDB::bind_method(D_METHOD("get_country_cell_tax_policy_snapshot", "cell_idx"),
                          &DCWorldExt::get_country_cell_tax_policy_snapshot);
+    ClassDB::bind_method(D_METHOD("get_country_ui_snapshot", "handle", "section_mask"),
+                         &DCWorldExt::get_country_ui_snapshot);
     ClassDB::bind_method(D_METHOD("get_country_fiscal_snapshot", "handle"),
                          &DCWorldExt::get_country_fiscal_snapshot);
     ClassDB::bind_method(D_METHOD("poll_country_events", "after_event_id", "limit"),
@@ -515,6 +517,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::run_bio_seed_pass);
     ClassDB::bind_method(D_METHOD("run_bio_occupancy_pass", "knobs"),
                          &DCWorldExt::run_bio_occupancy_pass);
+    ClassDB::bind_method(D_METHOD("run_bio_occupancy_slice", "knobs"),
+                         &DCWorldExt::run_bio_occupancy_slice);
     ClassDB::bind_method(D_METHOD("run_native_world_generate_pass", "seed", "cfg", "profile"),
                          &DCWorldExt::run_native_world_generate_pass);
     ClassDB::bind_method(D_METHOD("get_native_fronts_snapshot"),

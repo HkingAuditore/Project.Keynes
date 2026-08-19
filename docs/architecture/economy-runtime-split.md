@@ -107,8 +107,8 @@ These are implementation targets, not parallel authorities:
    streaming. It never advances stages or cursors.
 13. `economy_runtime_epoch.cpp`
    Epoch preflight, frozen country snapshot/workset setup, due-command
-   prevalidation, transient epoch vectors, opening audit lanes and completed
-   performance snapshot capture. It does not dispatch ongoing slices.
+   prevalidation, transient epoch vectors, worker-local mutation audit lanes and
+   completed performance snapshot capture. It does not dispatch ongoing slices.
 14. `economy_runtime.cpp`
    Ongoing epoch stage transitions, cursors, worker scheduling, publish
    coordination, event/report handling and cross-module invariants.

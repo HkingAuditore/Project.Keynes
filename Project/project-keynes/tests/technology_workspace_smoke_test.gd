@@ -42,6 +42,17 @@ func _init() -> void:
 	workspace.set_model(_model(definitions, eras, domains))
 	await process_frame
 	await process_frame
+	# CountryPanel opens with a shell and hydrates the section on a deferred
+	# frame.  The first research refresh must bootstrap the static catalog; a
+	# state-only patch would leave the center canvas empty in the player build.
+	var deferred_workspace := WorkspaceScene.instantiate() as Control
+	host.add_child(deferred_workspace)
+	deferred_workspace.set_model({"available": false, "reason": "loading"})
+	deferred_workspace.refresh_research(_model(definitions, eras, domains))
+	var deferred_tree: Control = deferred_workspace.tree_view()
+	_expect("deferred research refresh bootstraps technology catalog",
+		deferred_tree != null and deferred_tree.visibility_report().get("total", 0) == definitions.size())
+	deferred_workspace.queue_free()
 	var maize := (compiled.technology_ids as PackedStringArray).find(
 		"tech.maize_identification")
 	_expect("technology presentation is fully Chinese",

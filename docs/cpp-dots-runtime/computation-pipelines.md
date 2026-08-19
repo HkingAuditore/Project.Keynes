@@ -53,6 +53,20 @@ callbacks keep the serial route until their owner can prove thread safety.
 - 某个机制现在到底跑在 C++、DataCore 还是 GDScript？
 - 继续推进 total C++/DOTS 化时，下一步应该迁移哪一段？
 
+## 2026-08 performance path notes
+
+Country daily 的 ACTIVE 路径使用 LIGHT report 和按 technology index 排序的
+pending activation queue；bootstrap/restore/整批研究状态替换后才重建索引，
+completion 和 activation 分别做有序增量插入/删除，不在后续研究日重扫整棵科技树。
+完整 hash 仅保留在 PROBE/FULL。Economy 的 epoch prepare
+和 due-cell workset 在 continuation 中复用，诊断字段不参与提交。Bio occupancy
+先执行 deterministic full coverage，把 occupancy 写入 staging，只有完整覆盖后
+才发布 slot 和 discovery。开启 `bio_occupancy_slice_enabled` 时，Native 持有
+transient `BioOccupancySliceState`，按固定的整图 cell range 依次完成 persistence、
+diffusion、merge、publish；阶段之间仍由 cursor 分片，任何中间片都不改变
+MapData/slot。slice API 缺失或校验失败时，报告
+`path/fallback_reason/fail_stage/published_to_slot` 并回到旧 one-shot pass。
+
 ## Economy pipeline（PKEC v37 当前，v24 历史基础）
 
 经济图仍由 `NativeEconomyRuntime` 权威执行，未增加 DataCore slot 或 GDScript fallback。
@@ -901,6 +915,14 @@ Ocean land 算法概要：
 - `DCWorldExt::run_bio_province_pass` / `run_bio_seed_pass` / `run_bio_occupancy_pass` — [`gdext/src/world_ext_bio.cpp`](../../gdext/src/world_ext_bio.cpp)
 - `map_generator.gd::_seed_bio_occupancy`（资源 bootstrap 之后一次：陆块+省，再按主产地铺满生境 + 空生态位补齐播种）
 - `BioOccupancyDailySystem`（`bio_occupancy_daily`，写 `cell.bio_occupancy_bits`；已占领格用气候余量持久化，植被演替与承载日清不立刻灭绝；引种与同省扩散仍走严格信封+承载）— [`scripts/simulation/systems/bio_occupancy_daily_system.gd`](../../Project/project-keynes/scripts/simulation/systems/bio_occupancy_daily_system.gd)
+
+生产 sliced 路径仍是 deterministic full-coverage：native staging 依次处理
+`persistence -> diffusion -> merge -> publish`，每次调用固定 2048-cell range，
+不按实际耗时改变范围。`done=false` 时只保留 staging/cursor，MapData、
+`CELL_BIO_OCCUPANCY_BITS` 和 discovery 事件均不可见；`bio_occupancy_day_barrier`
+阻止 WorldClock 跨到下一语义日。最终片复制输出并一次性发布，随后清除 staging 和
+barrier。sliced bridge 缺失或失败回退 `run_bio_occupancy_pass`，报告必须带
+`path/fallback_reason/fail_stage/published_to_slot`；不能发布部分结果。
 
 生成期占领 ⊆ 气候信封 ∩ 主产地陆块（100% 铺满 `envelope ∩ carrier`）∩ 空生态位补齐 ∩ 承载储量>ε。默认每种一块主产地；芦苇可多陆。空生态位按 `habitat_class` 补齐（林有猪、湿地/三角洲/季风盆地有稻、干地有骆驼/山羊），而不是复制整包或再调半径。稻不沿每条河铺开；芦苇才沿河/湿地广布。覆盖底盘保证每块大陆级陆块至少一种食物和一条纤维/牲畜路。食物/牧场公会尽量不同格。卫星岛跳过，除非它是该物种唯一适生陆块。马铃薯走中高海拔冷凉开敞带（不绑旱地承载），牦牛走更高更冷的高寒带，骆驼走干草原与荒漠。不按地球史把物种打包到固定旧世界/新世界。骆驼/牦牛/野生马铃薯可以不绑牧场或旱地承载。运行期邻格扩散仍限同省。羊/牛/马等绑 `pasture`，猪绑 `wild_game`，玉米/小麦绑 `arable_land`，橡胶只绑 `plantation_land`；承载只门控播种、扩散和引种，不门控已占领格的日持久化。本格农业生产可绕过省界引种，但仍要信封和承载；跨邦贸易只发 `contact.*`。
 
@@ -2286,7 +2308,7 @@ encode、GPU 上传和 shader fetch 均被删除；只保留 per-cell 风/洋流
 
 - 当前是 partial ACTIVE continuation，不是所有 legacy/Godot 边界的完全替代。
 - ACTIVE hot path 由 `native_daily_sim_job.gd` 调 `MapGenerator.run_native_daily_slice_from_job()`，再进入 `DCWorldExt::run_native_daily_slice()`。`NativeDailySimJob` 不再把 `run_native_daily_tick_from_job()` 或 `run_native_sim_tick_from_job()` 作为候选热路径；前者只用于 debug/full-run probe，后者只用于 SHADOW/A-B/hash diff。C++ 保存 native daily round state、当前 lightweight slice graph node cursor、progress 和累计 breakdown；每个 SUS tick 执行一个或一批存在的 native node，返回 `done=false` 让下个 tick 继续。`ClimateProfile.native_daily_split_weather_node_enabled` 可把 native daily 的 weather transaction 从旧的一体化 `run_weather_refresh_daily_pass` 拆为 `weather_field`、`weather_commit`、`weather_distribute`、`weather_summary`、`weather_cyclone`、`weather_stage_b` 六个 graph 子节点；默认 false 保留 monolithic pass，移动复杂 profile 开启以压低单帧 weather 峰值。
-- `ClimateProfile.native_daily_node_range_enabled` 默认 false；打开后 `native_daily_node_range_cells` 控制每次 C++ call 最多处理的 cell 数，`native_daily_node_range_nodes` 控制白名单。C++ 只接受已经有 `start_idx/end_idx` 语义的节点：`ocean_water`、`ocean_land`、`wind_air`、`wind_surface`、split weather 下的 `weather_field`。首批 profile 默认列表只含 `ocean_water/ocean_land`；wind/weather field 应在 bit-equal 与 perf 数据确认后再加入 profile。中间 chunk 注入 `defer_flush=true`，只写 C++ slots；末 chunk 才 flush 到 `MapData`，因此后续 graph node 不会读到半发布状态。
+- `ClimateProfile.native_daily_node_range_enabled` 默认 false；打开后 `native_daily_node_range_cells` 控制每次 C++ call 最多处理的 cell 数，`native_daily_node_range_nodes` 控制白名单。当前已验证的 cell-local 节点包括 `climate_pass_a`、`ocean_water`、`ocean_land`、`wind_air`、`wind_surface`、split weather 下的 `weather_field`。`climate_pass_a` 的 annual-insolation LUT 在首片准备，后续片只运行确定性的 `[start_idx,end_idx)` kernel；它不在中间片 flush，完整 graph 结束时才统一发布。`earth_like.tres` 已把 `climate_pass_a` 加入默认白名单；其它 profile 仍可显式保持旧列表。中间 chunk 只写 C++ slots，末端由 graph finalizer flush 到 `MapData`，因此后续 graph node 不会读到半发布状态。
 - `native_daily_finalizer_slice_enabled` 默认 false；打开后 round completion 先返回 `native_daily_finalizer/pending done=false`，下一次 SUS slice 运行 `_native_daily_apply_finalizer()` 并返回 `native_daily_complete`。这是低风险 pseudo-node：先把 finalizer 从 C++ graph done slice 中拆出，若 `finalizer_write_dense_ms` / `finalizer_sparse_write_ms` 仍超预算，再继续把 DataCore 写回细切。移动端若配合 `native_daily_sim_stride=N` 做 N 日权威采样，finalizer slice 必须计入 `native_daily_commit_lag_budget_days`；提交延迟通过 `native_daily_sample_day/current_day/commit_day/age_days/commit_over_budget` report 字段公开，不能隐式跨周期累积。
 - GDScript 只在 round 起点构建 `native_daily_bundle`，后续 continuation tick 发轻量 knobs。`total_ms/native_ms` 表示当前 slice 墙钟，`round_native_ms` 表示 round 累计墙钟。
 - active gate 不应只看 C++ 方法存在，还要看 schema、fronts、schedule graph、fallback 差异报告。

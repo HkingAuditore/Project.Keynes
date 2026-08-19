@@ -758,6 +758,18 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
     const int n = temp_a.size();
     if (n <= 0) { diag("temp_a empty"); return -1.0; }
 
+    // Native-daily fixed cursor support.  The kernel is cell-local, so a
+    // continuation may execute [start_idx, end_idx) without changing the
+    // result of the one-shot pass.  Defaults preserve the existing full-pass
+    // contract for all non-sliced callers.
+    const int start_idx = cp_struct.has("start_idx") ? int(cp_struct["start_idx"]) : 0;
+    const int end_idx_raw = cp_struct.has("end_idx") ? int(cp_struct["end_idx"]) : n;
+    const int end_idx = std::min(std::max(end_idx_raw, start_idx), n);
+    if (start_idx < 0 || start_idx > n || end_idx < start_idx) {
+        diag("invalid range");
+        return -1.0;
+    }
+
     if (moist_a.size()         != n ||
         temp_baseline_a.size() != n || temp_30d_a.size()  != n ||
         temp_365d_a.size()     != n || temp_anom_a.size() != n ||
@@ -961,27 +973,34 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
         }
     };
 
-    pk::parallel_for_range("pk_climate_pass_a", n, n_tasks, /*seq_threshold=*/256, run_range);
+    const int range_n = end_idx - start_idx;
+    if (range_n > 0) {
+        // Dispatch over a zero-based local range, then translate task bounds
+        // back to absolute cell indices.  This keeps worker partitioning and
+        // deterministic cell order identical to the full pass.
+        pk::parallel_for_range("pk_climate_pass_a", range_n, n_tasks, /*seq_threshold=*/256,
+            [&](int begin, int end) { run_range(start_idx + begin, start_idx + end); });
+    }
 
     // §11.2 flush — 与主 pass 一致。A 修复（2026-06）：不再 flush cell_temp，
     // 改 flush 两条 anomaly slot。
     if (!bool(cp_struct.get("defer_visible_publish", false))) {
         _flush_slot_to_map(sid_moisture);
+        _flush_slot_to_map(sid_temp_baseline);
+        _flush_slot_to_map(sid_temp_seas_off);
+        _flush_slot_to_map(sid_ema_init);
+        _flush_slot_to_map(sid_temp_30d);
+        _flush_slot_to_map(sid_temp_365d);
+        _flush_slot_to_map(sid_temp_anom);
+        _flush_slot_to_map(sid_insol_now);
+        _flush_slot_to_map(sid_insol_dev);
+        _flush_slot_to_map(sid_day_length);
+        _flush_slot_to_map(sid_heat_input);
+        _flush_slot_to_map(sid_thermal_energy);
+        _flush_slot_to_map(sid_snowpack);
+        _flush_slot_to_map(sid_ocean_anom);
+        _flush_slot_to_map(sid_local_anom);
     }
-    _flush_slot_to_map(sid_temp_baseline);
-    _flush_slot_to_map(sid_temp_seas_off);
-    _flush_slot_to_map(sid_ema_init);
-    _flush_slot_to_map(sid_temp_30d);
-    _flush_slot_to_map(sid_temp_365d);
-    _flush_slot_to_map(sid_temp_anom);
-    _flush_slot_to_map(sid_insol_now);
-    _flush_slot_to_map(sid_insol_dev);
-    _flush_slot_to_map(sid_day_length);
-    _flush_slot_to_map(sid_heat_input);
-    _flush_slot_to_map(sid_thermal_energy);
-    _flush_slot_to_map(sid_snowpack);
-    _flush_slot_to_map(sid_ocean_anom);
-    _flush_slot_to_map(sid_local_anom);
 
     return 0.0;
 }

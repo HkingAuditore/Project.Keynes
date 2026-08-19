@@ -737,6 +737,32 @@ func _test_occupancy_persistence_and_introduce(ext) -> void:
 	_expect("explored 0→1 occupancy is reported for DISCOVER",
 		intro_new.find(intro_cell) >= 0)
 
+	# Fixed-range cursor parity: intermediate calls keep staging private and the
+	# final call alone publishes occupancy/events.
+	if ext.has_method("run_bio_occupancy_slice"):
+		var reference := knobs.duplicate(true)
+		reference["run_diffusion"] = true
+		reference["day_index"] = 8
+		var reference_res: Dictionary = ext.run_bio_occupancy_pass(reference)
+		var sliced := reference.duplicate(true)
+		sliced["slice_enabled"] = true
+		sliced["bio_slice_cells"] = 4
+		var slice_res: Dictionary = {}
+		var slice_count := 0
+		while slice_count < 128:
+			slice_res = ext.run_bio_occupancy_slice(sliced)
+			slice_count += 1
+			if bool(slice_res.get("done", false)):
+				break
+		_expect("sliced occupancy completes", bool(slice_res.get("done", false)))
+		_expect("sliced occupancy uses fixed phase ranges", slice_count >= 4)
+		_expect("sliced occupancy parity",
+			PackedInt32Array(slice_res.get("occupancy_bits", PackedInt32Array())) ==
+			PackedInt32Array(reference_res.get("occupancy_bits", PackedInt32Array())))
+		_expect("sliced discovery parity",
+			PackedInt32Array(slice_res.get("newly_occupied_cells", PackedInt32Array())) ==
+			PackedInt32Array(reference_res.get("newly_occupied_cells", PackedInt32Array())))
+
 
 func _make_two_continent_map() -> MapData:
 	var width := 10

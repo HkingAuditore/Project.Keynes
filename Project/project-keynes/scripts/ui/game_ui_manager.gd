@@ -58,10 +58,26 @@ var _era_reward_dialog: EraRewardDialog
 var _gm_available := false
 var _debug_layer: Control
 var _inspector_suppressed_for_country := false
+var _country_runtime_facade = null
+var _economy_runtime_facade = null
+var _ideology_runtime_facade = null
+var _country_refresh_queued := false
+var _country_open_generation := 0
+var _country_dirty_domains := 0
+var _country_refresh_reason := ""
+var _country_ui_event_refresh_enabled := true
+var _country_ui_perf_pending: Dictionary = {}
+
+const COUNTRY_DIRTY_TECHNOLOGY := 1
+const COUNTRY_DIRTY_ECONOMY := 2
+const COUNTRY_DIRTY_IDEOLOGY := 4
+const COUNTRY_DIRTY_ALL := COUNTRY_DIRTY_TECHNOLOGY | COUNTRY_DIRTY_ECONOMY | COUNTRY_DIRTY_IDEOLOGY
 
 
 func _ready() -> void:
 	layer = 20
+	_country_ui_event_refresh_enabled = bool(Engine.get_meta(
+		&"country_ui_event_refresh_enabled", true))
 	_gm_available = gm_available_for_build(OS.is_debug_build(), Engine.is_editor_hint())
 	_bind_ui()
 	show_loading("正在生成世界")
@@ -94,6 +110,7 @@ func set_world_context(
 	if _country_view_model == null:
 		_country_view_model = CountryViewModel.new()
 	_country_view_model.set_context(generator)
+	_bind_country_runtime_events(generator)
 	_refresh_player_discovery_context()
 	if _right_panel != null:
 		_right_panel.reset_for_world()
@@ -113,6 +130,98 @@ func set_world_context(
 		_country_panel.visible = false
 	if _country_action_bar != null:
 		_country_action_bar.set_active("")
+
+
+func _bind_country_runtime_events(generator) -> void:
+	if _country_runtime_facade != null and _country_runtime_facade.has_signal(
+			"research_signal_discovered"):
+		var old_research := Callable(self, "_on_country_research_signal_discovered")
+		if _country_runtime_facade.research_signal_discovered.is_connected(old_research):
+			_country_runtime_facade.research_signal_discovered.disconnect(old_research)
+	if _economy_runtime_facade != null and _economy_runtime_facade.has_signal(
+			"economy_event_batch_available"):
+		var old_economy := Callable(self, "_on_economy_event_batch_available")
+		if _economy_runtime_facade.economy_event_batch_available.is_connected(old_economy):
+			_economy_runtime_facade.economy_event_batch_available.disconnect(old_economy)
+	if _ideology_runtime_facade != null and _ideology_runtime_facade.has_signal(
+			"command_settled"):
+		var old_ideology := Callable(self, "_on_ideology_runtime_settled")
+		if _ideology_runtime_facade.command_settled.is_connected(old_ideology):
+			_ideology_runtime_facade.command_settled.disconnect(old_ideology)
+	_country_runtime_facade = generator.get_country_facade() if generator != null \
+		and generator.has_method("get_country_facade") else null
+	_economy_runtime_facade = generator.get_economy_facade() if generator != null \
+		and generator.has_method("get_economy_facade") else null
+	_ideology_runtime_facade = generator.get_ideology_facade() if generator != null \
+		and generator.has_method("get_ideology_facade") else null
+	if _country_runtime_facade != null and _country_runtime_facade.has_signal(
+			"research_signal_discovered"):
+		var research := Callable(self, "_on_country_research_signal_discovered")
+		if not _country_runtime_facade.research_signal_discovered.is_connected(research):
+			_country_runtime_facade.research_signal_discovered.connect(research)
+	if _economy_runtime_facade != null and _economy_runtime_facade.has_signal(
+			"economy_event_batch_available"):
+		var economy := Callable(self, "_on_economy_event_batch_available")
+		if not _economy_runtime_facade.economy_event_batch_available.is_connected(economy):
+			_economy_runtime_facade.economy_event_batch_available.connect(economy)
+	if _ideology_runtime_facade != null and _ideology_runtime_facade.has_signal(
+			"command_settled"):
+		var ideology := Callable(self, "_on_ideology_runtime_settled")
+		if not _ideology_runtime_facade.command_settled.is_connected(ideology):
+			_ideology_runtime_facade.command_settled.connect(ideology)
+	_country_dirty_domains = COUNTRY_DIRTY_ALL
+	_country_refresh_queued = false
+
+
+func _on_country_research_signal_discovered(_event: Dictionary) -> void:
+	_mark_country_panel_dirty(COUNTRY_DIRTY_TECHNOLOGY, "research_signal")
+
+
+func _on_economy_event_batch_available(_meta: Dictionary) -> void:
+	_mark_country_panel_dirty(COUNTRY_DIRTY_ECONOMY, "economy_commit")
+
+
+func _on_ideology_runtime_settled(_result: Dictionary) -> void:
+	_mark_country_panel_dirty(COUNTRY_DIRTY_IDEOLOGY, "ideology_commit")
+
+
+func _country_section_mask(section_id: String) -> int:
+	match section_id:
+		"economy":
+			return COUNTRY_DIRTY_ECONOMY
+		"ideology":
+			return COUNTRY_DIRTY_IDEOLOGY
+		_:
+			return COUNTRY_DIRTY_TECHNOLOGY
+
+
+func _mark_country_panel_dirty(domains: int, reason: String) -> void:
+	_country_dirty_domains |= domains
+	_country_refresh_reason = reason
+	if _country_view_model != null:
+		_country_view_model.invalidate_cache(domains)
+	if _country_panel == null or not _country_panel.is_panel_open() \
+			or _country_refresh_queued:
+		return
+	if not _country_ui_event_refresh_enabled:
+		refresh_country_summary()
+		_country_dirty_domains &= ~_country_section_mask(
+			_country_panel.current_section())
+		return
+	_country_refresh_queued = true
+	call_deferred("_flush_country_panel_refresh")
+
+
+func _flush_country_panel_refresh() -> void:
+	_country_refresh_queued = false
+	if _country_panel == null or not _country_panel.is_panel_open():
+		return
+	var section_mask := _country_section_mask(_country_panel.current_section())
+	if (_country_dirty_domains & section_mask) == 0:
+		return
+	refresh_country_summary()
+	_country_dirty_domains &= ~section_mask
+	_country_refresh_reason = ""
 
 
 func set_diagnostics_source(source: Node) -> void:
@@ -289,7 +398,7 @@ func _on_country_committed(_report: Dictionary) -> void:
 	# 税务提交与日常经济提交都只更新当前页的稳定节点；领土/视野改变由各自的
 	# 明确事件触发整块选择重建，不能在这里摧毁输入焦点和滚动状态。
 	refresh_selected_daily_lines(true)
-	refresh_country_summary()
+	_mark_country_panel_dirty(COUNTRY_DIRTY_ALL, "country_committed")
 	_refresh_player_discovery_context()
 
 
@@ -298,12 +407,53 @@ func open_country_section(section_id: String) -> void:
 		return
 	_hide_inspector_for_country()
 	_country_action_bar.set_active(section_id)
-	_country_panel.show_section(section_id, _country_view_model.build(section_id == "economy"))
+	_country_open_generation += 1
+	var generation := _country_open_generation
+	if not _country_ui_event_refresh_enabled:
+		var started_usec := Time.get_ticks_usec()
+		_country_panel.show_section(section_id, _country_view_model.build_legacy(section_id))
+		_record_country_ui_perf("legacy_full_build", false,
+			(Time.get_ticks_usec() - started_usec) / 1000.0,
+			_country_section_mask(section_id))
+		_country_dirty_domains &= ~_country_section_mask(section_id)
+		return
+	var cached := _country_view_model.cached_section(section_id)
+	if not cached.is_empty():
+		_country_panel.show_section(section_id, cached)
+		_record_country_ui_perf("panel_open_cache", true, 0.0,
+			_country_section_mask(section_id))
+		_country_dirty_domains &= ~_country_section_mask(section_id)
+		return
+	_country_panel.show_section(section_id, {
+		"available": false,
+		"country_name": "国家事务",
+		"reason": "正在载入已提交数据",
+	})
+	call_deferred("_load_country_section_deferred", section_id, generation)
+
+
+func _load_country_section_deferred(section_id: String, generation: int) -> void:
+	if generation != _country_open_generation or _country_panel == null \
+			or not _country_panel.is_panel_open() \
+			or _country_panel.current_section() != section_id:
+		return
+	var started_usec := Time.get_ticks_usec()
+	_country_panel.refresh_summary(_country_view_model.build(section_id))
+	_record_country_ui_perf("panel_open", false,
+		(Time.get_ticks_usec() - started_usec) / 1000.0,
+		_country_section_mask(section_id))
+	_country_dirty_domains &= ~_country_section_mask(section_id)
 
 
 func close_country_panel() -> void:
+	_country_open_generation += 1
 	if _country_panel != null and _country_panel.is_panel_open():
 		_country_panel.close_panel()
+	# A closed panel never needs a fresh Native query. Drop only dynamic section
+	# models so the next open starts from a committed shell and loads details
+	# through the deferred section path; the static catalog remains session-cached.
+	if _country_view_model != null:
+		_country_view_model.invalidate_cache()
 	if _country_action_bar != null:
 		_country_action_bar.set_active("")
 
@@ -331,11 +481,34 @@ func refresh_country_summary() -> Dictionary:
 			or _country_view_model == null:
 		return timing
 	var started_usec := Time.get_ticks_usec()
-	_country_panel.refresh_summary(_country_view_model.build(
-		_country_panel.current_section() == "economy"))
+	var model := _country_view_model.build(_country_panel.current_section()) \
+		if _country_ui_event_refresh_enabled else _country_view_model.build_legacy(
+			_country_panel.current_section())
+	_country_panel.refresh_summary(model)
 	timing["ran"] = true
 	timing["elapsed_ms"] = (Time.get_ticks_usec() - started_usec) / 1000.0
+	_record_country_ui_perf(
+		_country_refresh_reason if not _country_refresh_reason.is_empty() else "explicit",
+		false, float(timing["elapsed_ms"]),
+		_country_section_mask(_country_panel.current_section()))
 	return timing
+
+
+func _record_country_ui_perf(reason: String, cache_hit: bool,
+		snapshot_ms: float, dirty_domains: int) -> void:
+	_country_ui_perf_pending = {
+		"country_ui_refresh_reason": reason,
+		"country_ui_snapshot_ms": maxf(0.0, snapshot_ms),
+		"country_ui_cache_hit": cache_hit,
+		"country_ui_dirty_domains": dirty_domains,
+		"country_ui_event_refresh_enabled": _country_ui_event_refresh_enabled,
+	}
+
+
+func consume_country_ui_perf_summary() -> Dictionary:
+	var out := _country_ui_perf_pending.duplicate(false)
+	_country_ui_perf_pending.clear()
+	return out
 
 
 func _on_inspector_tab_data_requested(tab_id: String) -> void:
@@ -428,7 +601,7 @@ func _on_player_command_settled(id: StringName, result: Dictionary) -> void:
 			_colonization_panel.refresh_expeditions_if_visible()
 		if _selected_cell != null and String(result.get("code", "")) == "CLAIMED":
 			refresh_selected_panel()
-		refresh_country_summary()
+		_mark_country_panel_dirty(COUNTRY_DIRTY_ECONOMY, "colonization_settled")
 		return
 	if id != &"construction.build" or _selected_cell == null or \
 			int(result.get("cell_idx", -1)) != int(_selected_cell.index):
@@ -438,7 +611,7 @@ func _on_player_command_settled(id: StringName, result: Dictionary) -> void:
 		_right_panel.set_construction_feedback(
 			String(result.get("message", "修建命令已结算。")),
 			bool(result.get("ok", false)))
-	refresh_country_summary()
+	_mark_country_panel_dirty(COUNTRY_DIRTY_ECONOMY, "construction_settled")
 
 
 func _invalidate_live_revision() -> void:

@@ -59,6 +59,9 @@
 
 namespace pk {
 
+// Defined in world_ext_bio.cpp where the opaque slice state is complete.
+void destroy_bio_occupancy_slice_state(void *state);
+
 using namespace godot;
 
 
@@ -127,6 +130,10 @@ DCWorldExt::~DCWorldExt() {
     if (_season_round != nullptr) {
         delete static_cast<SeasonRoundState *>(_season_round);
         _season_round = nullptr;
+    }
+    if (_bio_occupancy_slice_state != nullptr) {
+        destroy_bio_occupancy_slice_state(_bio_occupancy_slice_state);
+        _bio_occupancy_slice_state = nullptr;
     }
 }
 

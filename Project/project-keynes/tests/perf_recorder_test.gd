@@ -41,6 +41,7 @@ func _run() -> void:
 	_test_collect_columns_job_triplet_grouped()
 	_test_collect_columns_job_first_seen_order()
 	_test_collect_columns_breakdown_dynamic()
+	_test_economy_telemetry_aliases()
 	_test_format_csv_header_and_rows()
 	_test_format_csv_missing_cell_blank()
 	_test_recorder_skipped_day_no_job_columns()
@@ -161,6 +162,44 @@ func _test_collect_columns_breakdown_dynamic() -> void:
 	var j_idx: int = cols.find("j_climate_ms")
 	var bd_idx: int = cols.find("bd_climate_pass_a_ms")
 	_expect(j_idx < bd_idx, "bd cols come after job cols: j=%d bd=%d" % [j_idx, bd_idx])
+
+
+func _test_economy_telemetry_aliases() -> void:
+	var rows: Array = [{
+		"tick_idx": 7,
+		"bd_economy_prepare_reuse_count": 3,
+		"bd_economy_workset_cells_planned": 6144,
+		"bd_economy_workset_cells_executed": 3072,
+		"bd_economy_duplicate_range_count": 0,
+		"bd_economy_household_market_prepare_ms": 0.4,
+		"bd_economy_household_market_worker_ms": 1.2,
+		"bd_economy_household_market_merge_ms": 0.2,
+	}]
+	var cols: PackedStringArray = PerfRecorder._collect_columns(rows)
+	for key in [
+		"prepare_reuse_count", "workset_cells_planned", "workset_cells_executed",
+		"duplicate_range_count", "household_market_prepare_ms",
+		"household_market_worker_ms", "household_market_merge_ms"]:
+		_expect(cols.find(key) != -1, "economy telemetry fixed column: %s" % key)
+	# The real merge path populates aliases from bd_economy_*; exercise it through
+	# the public recorder input so this test catches accidental prefix drift.
+	var recorder := PerfRecorder.new()
+	recorder._main = null
+	var row := {"tick_idx": 7}
+	recorder._merge_breakdowns(row, {
+		"economy": {
+			"_tick_idx": 7,
+			"prepare_reuse_count": 3,
+			"household_market_worker_ms": 1.2,
+			"last_completed_perf_valid": true,
+			"last_completed_prepare_reuse_count": 9,
+			"last_completed_household_market_worker_ms": 2.4,
+		},
+	})
+	_expect(int(row.get("prepare_reuse_count", -1)) == 9,
+		"economy telemetry prefers completed epoch value")
+	_expect(is_equal_approx(float(row.get("household_market_worker_ms", -1.0)), 2.4),
+		"economy worker timing prefers completed epoch value")
 
 
 # ─── CSV 拼装 ─────────────────────────────────────────────────────

@@ -575,6 +575,16 @@ void SusSchedulerExt::tick(Object *ctx) {
         float   last_slice_wrapper_wall_ms = 0.0f;
         float   last_slice_job_shell_wall_ms = 0.0f;
         float   last_slice_job_shell_wrapper_gap_ms = 0.0f;
+        float   last_bio_slice_native_ms = 0.0f;
+        float   last_bio_slice_publish_ms = 0.0f;
+        String  last_bio_slice_fallback_reason;
+        bool    last_bio_knob_cache_hit = false;
+        float   last_bio_knob_cache_build_ms = 0.0f;
+        float   last_natural_factor_lookup_ms = 0.0f;
+        float   last_natural_slot_refresh_ms = 0.0f;
+        float   last_natural_knob_update_ms = 0.0f;
+        float   last_natural_native_call_ms = 0.0f;
+        float   last_natural_fallback_ms = 0.0f;
         job.in_flight = true;
 
         // Mirror sus_job.gd:_in_flight via Object::set so GDScript-side
@@ -643,6 +653,30 @@ void SusSchedulerExt::tick(Object *ctx) {
             if (last_slice_fallback_path.is_empty() && (bool)slice_result.get("fallback", false)) {
                 last_slice_fallback_path = last_slice_path;
             }
+            last_bio_slice_native_ms = (float)(double)slice_result.get(
+                "bio_slice_native_ms", 0.0);
+            last_bio_slice_publish_ms = (float)(double)slice_result.get(
+                "bio_slice_publish_ms", 0.0);
+            last_bio_slice_fallback_reason = String(slice_result.get(
+                "bio_slice_fallback_reason", slice_result.get("fallback_reason", String())));
+            if (job.id == StringName("bio_occupancy_daily")) {
+                last_bio_knob_cache_hit = (bool)slice_result.get(
+                    "bio_knob_cache_hit", false);
+                last_bio_knob_cache_build_ms = (float)(double)slice_result.get(
+                    "bio_knob_cache_build_ms", 0.0);
+            }
+            if (job.id == StringName("natural_resource_daily")) {
+                last_natural_factor_lookup_ms = (float)(double)slice_result.get(
+                    "factor_lookup_ms", 0.0);
+                last_natural_slot_refresh_ms = (float)(double)slice_result.get(
+                    "slot_refresh_ms", 0.0);
+                last_natural_knob_update_ms = (float)(double)slice_result.get(
+                    "knob_update_ms", 0.0);
+                last_natural_native_call_ms = (float)(double)slice_result.get(
+                    "native_call_ms", 0.0);
+                last_natural_fallback_ms = (float)(double)slice_result.get(
+                    "fallback_ms", 0.0);
+            }
 
             if (!_is_upload_job(job.id) && slice_ms > largest_slice_ms_tick) {
                 largest_slice_ms_tick       = slice_ms;
@@ -689,6 +723,16 @@ void SusSchedulerExt::tick(Object *ctx) {
         report["last_slice_wrapper_wall_ms"] = (double)last_slice_wrapper_wall_ms;
         report["last_slice_job_shell_wall_ms"] = (double)last_slice_job_shell_wall_ms;
         report["last_slice_job_shell_wrapper_gap_ms"] = (double)last_slice_job_shell_wrapper_gap_ms;
+        report["bio_slice_native_ms"] = (double)last_bio_slice_native_ms;
+        report["bio_slice_publish_ms"] = (double)last_bio_slice_publish_ms;
+        report["bio_slice_fallback_reason"] = last_bio_slice_fallback_reason;
+        report["bio_knob_cache_hit"] = last_bio_knob_cache_hit;
+        report["bio_knob_cache_build_ms"] = (double)last_bio_knob_cache_build_ms;
+        report["factor_lookup_ms"] = (double)last_natural_factor_lookup_ms;
+        report["slot_refresh_ms"] = (double)last_natural_slot_refresh_ms;
+        report["knob_update_ms"] = (double)last_natural_knob_update_ms;
+        report["native_call_ms"] = (double)last_natural_native_call_ms;
+        report["fallback_ms"] = (double)last_natural_fallback_ms;
         report["job_wrapper_gap_ms"] =
             (double)std::max(0.0f, job_elapsed_ms - last_slice_wrapper_wall_ms);
         _last_report[Variant(job.id)] = report;

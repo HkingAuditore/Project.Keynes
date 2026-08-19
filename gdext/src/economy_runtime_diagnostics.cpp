@@ -1002,9 +1002,14 @@ Dictionary NativeEconomyRuntime::report() const {
     out["building_production_merge_ms"] = _production_merge_ms;
     out["building_production_worker_ms"] = _production_worker_ms;
     out["household_market_worker_ms"] = _market_worker_ms;
+    out["household_market_prepare_ms"] = _household_market_prepare_ms;
     out["household_market_merge_ms"] = _market_merge_ms;
     out["household_market_merge_aggregate_ms"] = _market_merge_aggregate_ms;
     out["household_market_merge_trade_ms"] = _market_merge_trade_ms;
+    out["prepare_reuse_count"] = _prepare_reuse_count;
+    out["workset_cells_planned"] = _workset_cells_planned;
+    out["workset_cells_executed"] = _workset_cells_executed;
+    out["duplicate_range_count"] = _duplicate_range_count;
     out["market_result_allocation_growth_count"] =
         _market_result_allocation_growth_count;
     out["market_result_allocation_growth_bytes"] =
@@ -1400,12 +1405,22 @@ Dictionary NativeEconomyRuntime::report() const {
         _last_completed_perf.building_production_merge_ms;
     out["last_completed_household_market_worker_ms"] =
         _last_completed_perf.household_market_worker_ms;
+    out["last_completed_household_market_prepare_ms"] =
+        _last_completed_perf.household_market_prepare_ms;
     out["last_completed_household_market_merge_ms"] =
         _last_completed_perf.household_market_merge_ms;
     out["last_completed_household_market_merge_aggregate_ms"] =
         _last_completed_perf.household_market_merge_aggregate_ms;
     out["last_completed_household_market_merge_trade_ms"] =
         _last_completed_perf.household_market_merge_trade_ms;
+    out["last_completed_prepare_reuse_count"] =
+        _last_completed_perf.prepare_reuse_count;
+    out["last_completed_workset_cells_planned"] =
+        _last_completed_perf.workset_cells_planned;
+    out["last_completed_workset_cells_executed"] =
+        _last_completed_perf.workset_cells_executed;
+    out["last_completed_duplicate_range_count"] =
+        _last_completed_perf.duplicate_range_count;
     out["last_completed_building_investment_ms"] =
         _last_completed_perf.building_investment_ms;
     out["last_completed_investment_evaluate_ms"] =

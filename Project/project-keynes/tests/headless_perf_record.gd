@@ -45,6 +45,19 @@ func _run() -> int:
 	var accuracy_preset := str(args.get("accuracy_preset", "")).to_upper()
 	var closing_audit_mode := str(args.get("closing_audit_mode", "")).to_upper()
 	var worker_mode := str(args.get("worker_mode", "")).to_upper()
+	var country_report_mode := str(args.get("country_report_mode", "LIGHT")).to_upper()
+	var country_full_diagnostics := country_report_mode in ["FULL", "PROBE"]
+	var country_light_report_enabled := not country_full_diagnostics
+	var country_pending_queue_enabled := true
+	if args.has("country_pending_queue"):
+		country_pending_queue_enabled = _argument_enabled(
+			args.get("country_pending_queue", "true"))
+	var bio_occupancy_slice_enabled := _argument_enabled(
+		args.get("bio_occupancy_slice_enabled", "false"))
+	Engine.set_meta(&"country_full_diagnostics", country_full_diagnostics)
+	Engine.set_meta(&"country_light_report_enabled", country_light_report_enabled)
+	Engine.set_meta(&"country_pending_queue_enabled", country_pending_queue_enabled)
+	Engine.set_meta(&"bio_occupancy_slice_enabled", bio_occupancy_slice_enabled)
 	# NS 化四方向深化 A/B:ns_gates=ON 在本进程内把 earth_like.tres 的四个方向
 	# gate 全部打开(动量/轨迹表+共享/散度阻尼/洋流),运行结束后恢复原值;
 	# 不落盘(.tres 从不保存)。ns_gates=WIND 只开风场三件套(Phase 1-3)。

@@ -1,5 +1,31 @@
 # Scheduling and Job Graph
 
+## 2026-08 continuation budget contract
+
+固定预算仍为 `sim_frame_budget_ms=8ms`、`sim_slice_budget_ms=3ms`；Country/Economy
+只在 deadline-critical 时获得启动机会，普通诊断不得扩大单片 native 调用。每个
+continuation 报告新增 `continuation_budget_exhausted`、
+`continuation_started_slices`、`continuation_completed_slices` 和
+`continuation_blocked_by_stage`，用于区分预算截断、stage barrier 和正常完成。
+
+Country 的 research pending queue 不新增 SUS node，Economy 仍保持五日 cadence、
+原 stage 顺序和 frozen epoch authority。Bio occupancy 的第一阶段是每日完整覆盖；
+切片开关关闭时 one-shot 是正式路径；打开后 `bio_occupancy_daily` 每次 scheduler
+访问只推进一个固定 `BIO_OCCUPANCY_SLICE_CELLS=2048` 范围。四个阶段
+（persistence/diffusion/merge/publish）通过 `bio_occupancy_day_barrier` 冻结同一
+语义日，只有最终 slice 才允许发布 occupancy/discovery；完成前不得让 WorldClock
+启动下一日。该 job 保持 `must_run=false`、`max_slices_per_tick=1`，不会用 job-local
+8ms 绕过全局预算。slice cursor/staging 是 transient，不跨存档、不进入 state/event
+hash；能力不足或校验失败必须显式回退并记录失败阶段。
+若首片在普通 SUS tick 中被 `frame_budget_exhausted`/`strict_budget_one_job` 跳过，
+MapGenerator 将其转为 pending-day barrier，由下一 pulse 启动首片，不会静默丢失该日。
+
+Native daily ACTIVE 若在 `run_native_daily_slice` 返回 `done=false`，同样设置
+`native_daily_day_barrier`。下一渲染帧的 continuation pulse 优先续接 native daily，
+再续接 Bio，最后才处理 Country/Economy ACK；round 完整提交后才释放 barrier。这样
+不会把不同 day context 混入同一个 native round，也不会让不可抢占的诊断/经济 drain
+延迟 climate 或 occupancy 的提交。
+
 运河不新增 scheduler/runtime：Economy 每日边界推进项目并提交 Effect，Effect gameplay
 adapter 原子发布边；现有 `runtime_hydrology` 尾部运行稀疏运河传播；视觉上传仍是 Godot
 retained boundary，且每帧最多一个 array layer。详见 [运河运行时](./canal-runtime.md)。
@@ -283,11 +309,20 @@ worker 内变更；async climate 只接收主线程冻结的 add/factor 数组�
   graph node 内持有 cell cursor；白名单节点每次只执行 `[start_idx,end_idx)`，未完成时保持
   `_native_daily_slice_node_index` 不变并返回 `done=false`，下一 SUS slice 继续同一节点且不重复
   JIT patch。节点完整处理后才沿用既有 yield / deferred / graph cursor 规则。首批支持节点是
-  `ocean_water`、`ocean_land`、`wind_air`、`wind_surface` 和 split weather 下的
+  `climate_pass_a`、`ocean_water`、`ocean_land`、`wind_air`、`wind_surface` 和 split weather 下的
   `weather_field`；`stage_b`、`runtime_hydrology`、`weather_summary`、`weather_cyclone`
   仍保持整节点。中间 chunk 通过 `defer_flush=true` 留在 C++ slots，末 chunk 才 flush 到
   `MapData`，避免把边界成本乘以 chunk 数。report 字段包括
   `node_range_active`、`node_range_node`、`node_cell_cursor_start/end/count/processed`。
+  `climate_pass_a` 的 range 片使用同一份 annual-insolation cache，所有片都保持
+  `defer_visible_publish=true`；只有 native daily graph 完整提交时才 flush，避免逐片
+  把同一批 slots 复制回 `MapData`。
+- native daily 首片若被 SUS 以 `frame_budget_exhausted` 或
+  `strict_budget_one_job` 跳过，`MapGenerator` 会设置 transient
+  `native_daily_day_pending` 并保持 `native_daily_day_barrier`。下一次 continuation
+  pulse 直接调用 `continue_system("native_daily_sim")` 启动首片，完成或失败后清除
+  pending；因此预算竞争不会静默丢失一个 semantic day。该标记不进入存档、state hash
+  或 event hash，`sus_reset_all()` 会清理它。
 - **Finalizer pseudo-node（2026-07，默认关闭）**：
   `native_daily_finalizer_slice_enabled=true` 时，C++ graph 完成的 slice 先返回
   `stage=native_daily_finalizer substage=pending done=false`，下一次 `NativeDailySimJob`

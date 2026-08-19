@@ -60,15 +60,29 @@ func _init() -> void:
 		int(pending.technology_states[tech]) == 4
 		and not (country.snapshot(handle).technology_ids as PackedStringArray).has(
 			"tech.wild_maize_collection"))
+	var pending_report: Dictionary = country.report()
+	var rebuilds_after_completion := int(pending_report.get(
+		"research_queue_rebuilds", -1))
+	_expect("pending activation queue contains only the completed technology",
+		int(pending_report.get("research_queue_size", -1)) == 1)
 	_run_production_day(ext, 2)
 	var completed: Dictionary = country.research_snapshot(handle)
 	_expect("next production morning activates after Effect ACK",
 		int(completed.technology_states[tech]) == 5
 		and (country.snapshot(handle).technology_ids as PackedStringArray).has(
 			"tech.wild_maize_collection"))
+	var activated_report: Dictionary = country.report()
+	_expect("activation removes the technology from the pending queue",
+		int(activated_report.get("research_queue_size", -1)) == 0)
+	_expect("activation updates the queue incrementally",
+		int(activated_report.get("research_queue_rebuilds", -2)) ==
+			rebuilds_after_completion)
 	_run_production_day(ext, 3)
 	_expect("later production days keep the completed tag",
 		int(country.research_snapshot(handle).technology_states[tech]) == 5)
+	_expect("idle research day does not rebuild the full queue index",
+		int(country.report().get("research_queue_rebuilds", -2)) ==
+			rebuilds_after_completion)
 	_run_stuck_pending_recovery(compiled)
 	print("technology_pending_activation_scheduler_test: %s" % (
 		"PASS" if _failures == 0 else "FAIL"))

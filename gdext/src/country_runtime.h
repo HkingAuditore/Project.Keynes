@@ -163,7 +163,9 @@ public:
     godot::Dictionary reset(const godot::String &reason);
 
     godot::Dictionary cell_summary(int32_t cell) const;
+    godot::Dictionary country_summary(int64_t handle) const;
     godot::Dictionary country_snapshot(int64_t handle) const;
+    godot::PackedStringArray completed_technology_ids(int64_t handle) const;
     godot::Dictionary treasury_snapshot(int64_t handle) const;
     godot::Dictionary research_snapshot(int64_t handle) const;
     godot::Dictionary research_signal_snapshot(int64_t handle) const;
@@ -416,6 +418,13 @@ private:
     bool encode_save(std::vector<uint8_t> &out, std::string &error) const;
     bool decode_save(const std::vector<uint8_t> &bytes, std::string &error);
     void initialize_country_research(int32_t slot);
+    void rebuild_pending_activation_index() const;
+    // FULL/PROBE diagnostics validate the transient activation index against
+    // the authoritative pending bitset.  A mismatch must fall back to the
+    // deterministic technology scan for the current day.
+    bool validate_pending_activation_index() const;
+    void insert_pending_activation(int32_t slot, int32_t technology);
+    void erase_pending_activation(int32_t slot, int32_t technology);
     void refresh_discovery(int32_t slot);
     bool prerequisites_met(int32_t slot, int32_t technology) const;
     bool prerequisites_met(const std::vector<uint64_t> &completed, int32_t slot,
@@ -462,6 +471,15 @@ private:
     bool _effect_runtime_enabled = false;
     int32_t _starting_country_slot = -1;
     uint64_t _generation = 0;
+    bool _full_diagnostics = false;
+    bool _light_report_enabled = true;
+    bool _pending_queue_enabled = true;
+    mutable bool _state_hash_cache_valid = false;
+    mutable uint64_t _state_hash_cache = 0;
+    mutable uint64_t _state_hash_cache_generation = 0;
+    mutable int64_t _state_hash_cache_research_day = -1;
+    mutable uint64_t _state_hash_cache_tax_policy_version = 0;
+    mutable EraRewardReference _state_hash_cache_era_reward{};
     uint64_t _submit_order = 0;
     uint64_t _next_event_id = 1;
     int64_t _last_committed_day = -1;
@@ -510,6 +528,12 @@ private:
     std::vector<int64_t> _country_goods;
     std::vector<uint64_t> _country_discovered;
     std::vector<uint64_t> _country_pending_technologies;
+    mutable std::vector<std::vector<int32_t>> _pending_activation_indices;
+    mutable bool _pending_activation_index_dirty = true;
+    mutable int64_t _pending_activation_count = 0;
+    mutable int64_t _research_queue_rebuilds = 0;
+    int64_t _research_full_scan_fallbacks = 0;
+    std::string _research_queue_fallback_reason;
     std::vector<uint64_t> _country_research_signals;
     std::vector<std::vector<uint64_t>> _country_research_signal_cells;
     std::vector<std::vector<SignalEvidence>> _country_research_signal_evidence;

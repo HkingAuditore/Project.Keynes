@@ -1,5 +1,31 @@
 # GDScript / C++ Data Bridge
 
+## Country UI section snapshot（2026-08）
+
+`CountryFacade.ui_snapshot(handle, section_mask)` 绑定到
+`DCWorldExt.get_country_ui_snapshot(handle, section_mask)`。mask `1/2/4`
+分别表示 technology/economy/ideology；返回 `ok`、handle、generation、
+`country_state_version`、`published_day`、section payload 和
+`revision_components`。后者按请求域包含 `country_state_version`、
+`country_generation`、`economy_trade_revision`、
+`economy_class_opinion_revision`、`ideology_support_revision`。common summary
+直接由 Native 紧凑查询构造，不先分配 `territory_cells`；Economy section 只返回
+税务展示所需的 completed technology ids，也不跨桥复制领土数组。静态科技
+定义、时代、visual edges、研究信号目录不通过该桥重复返回。
+
+`CountryViewModel` 以 section 和 facade revision 做缓存 key。面板关闭时事件
+只设置 dirty；面板打开先显示 shell/廉价 summary，再用 deferred frame 读取当前
+section。UI cache 不写入 DataCore、MapData、存档或任何 state/event hash。
+
+Country report 的 `LIGHT/FULL` 选择由 `country_light_report_enabled`、
+`country_full_diagnostics` 和 runtime mode 决定；LIGHT 不触发 full hash、全量
+memory 估算。Bio occupancy 采用 staging -> 完整 publish 边界；开启
+`bio_occupancy_slice_enabled` 后，`run_bio_occupancy_slice` 以固定的整图 cell
+range 推进 persistence/introduction、diffusion、merge、publish 四个 phase，中间
+片不写 `CELL_BIO_OCCUPANCY_BITS`，最终片才返回 occupancy/discovery。输入 PackedArray
+只在首片捕获，失败丢弃 transient state。one-shot fallback 必须携带
+`path/fallback_reason/fail_stage/published_to_slot`。
+
 ## Modifier PackedArray bridge
 
 `ModifierFacade` 通过 protocol v2 平行 PackedArray 提交 apply/remove/refresh/set-stacks/set-magnitude；
