@@ -1,0 +1,23 @@
+{
+  "skill_name": "project-keynes-ideology-runtime",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "给理念系统加第五条道路「水利公社」，装备后灌溉产出 +5%、洪灾损失 −6%，满级翻倍；与学识官署联动「渠堰册籍」。不要新建独立 runtime，效果必须走现有 UniqueSource Country Modifier 和 Effect ACK。",
+      "expected_output": "Agent extends IdeologyCatalog/default catalog and UniqueSource modifiers, keeps NativeIdeologyRuntime as sole ideology owner, routes persistent effects through one Effect batch, updates content tests and native-ideology-runtime.md, and does not write Modifier/Economy stores from ideology C++.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "玩家装备理念后面板一直转圈，存档重开后这条理念消失。请按 ideology runtime 合同排查，不要猜是 UI 没刷新。",
+      "expected_output": "Agent inspects pending Effect ACK, binding generation, PKID/PKEF restore order, and IdeologyWorkspace snapshot/explain signatures; diagnoses rollback or fail-closed restore rather than adding a GDScript mirror.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "自由交换装备被农民阶层挡住，但 explain 里平均支持已经过线。确认 critical-class floor 和 committed class-opinion snapshot 是否按合同工作，必要时补测试。",
+      "expected_output": "Agent traces evaluate_support against CountryClassOpinionSnapshot, distinguishes weighted average from critical_min_q16, and uses or extends ideology_opinion_synergy_test.gd without sampling live cohorts from ideology.",
+      "files": []
+    }
+  ]
+}

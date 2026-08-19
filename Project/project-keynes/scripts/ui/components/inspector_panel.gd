@@ -508,6 +508,7 @@ func _build_page_tax_section(host: Control, context: Dictionary) -> void:
 		var editor := TaxLaneScene.instantiate() as TaxLaneEditor
 		lanes.add_child(editor)
 		editor.set_data(lane)
+		_restore_lane_pending(editor, lane)
 		_page_tax_editors.append(editor)
 	lanes.visible = not defaults.is_empty()
 	_sync_page_tax_visibility()
@@ -519,6 +520,18 @@ func _page_tax_title(tab_id: String) -> String:
 		"market": "此地消费税与关税",
 		"buildings": "此地营业税",
 	}.get(tab_id, "此地税率")
+
+
+func _restore_lane_pending(editor: TaxLaneEditor, lane: Dictionary) -> void:
+	if editor == null:
+		return
+	var item_key := "default" if String(lane.get("scope", "item")) == "default" \
+		else String(lane.get("item_id", ""))
+	var key := _tax_key(String(lane.get("kind", "")), item_key)
+	if _pending_tax.has(key):
+		editor.mark_pending(int(_pending_tax[key].get("rate", lane.get("base", 0))))
+	elif _pending_tax.has(_clear_all_pending_key()):
+		editor.mark_pending(int(lane.get("base", 0)))
 
 
 func _rebuild_tax_editor_registry() -> void:
@@ -548,6 +561,7 @@ func _apply_page_tax_patch(context: Dictionary) -> void:
 		var kind := String(editor.lane_data().get("kind", ""))
 		if by_kind.has(kind):
 			editor.set_data(by_kind[kind])
+			_restore_lane_pending(editor, by_kind[kind])
 
 
 func _register_tax_editors(editors: Array) -> void:
@@ -594,7 +608,7 @@ func _on_tax_override_requested(
 	var result: Dictionary = _player_controller.request_command(command, args)
 	var key := _tax_key(kind, item_id if scope != "default" else "default")
 	if bool(result.get("ok", false)):
-		_mark_tax_pending(key, rate)
+		_mark_tax_pending(key, rate, "set")
 	else:
 		_resolve_tax_editor_key(key)
 
@@ -617,31 +631,35 @@ func _on_tax_reset_requested(scope: String, kind: String, item_id: String) -> vo
 		var rate := 0
 		if not refs.is_empty():
 			rate = int((refs[0] as TaxLaneEditor).lane_data().get("default_rate", 0))
-		_mark_tax_pending(key, rate)
+		_mark_tax_pending(key, rate, "clear")
 	else:
 		_resolve_tax_editor_key(key)
 
 
-func _mark_tax_pending(key: String, rate: int) -> void:
+func _mark_tax_pending(key: String, rate: int, op: String = "set") -> void:
 	_pending_tax[key] = {
 		"effective_day": int(_tax_context.get("current_day", -1)) + 1,
 		"policy_version": int(_tax_context.get("policy_version", -1)),
 		"rate": rate,
+		"op": op,
 	}
 	for editor_value in _tax_editors.get(key, []):
 		(editor_value as TaxLaneEditor).mark_pending(rate)
 
 
-func _resolve_tax_pending(context: Dictionary) -> void:
+func _resolve_tax_pending(context: Dictionary, category: Dictionary = {}) -> void:
 	var current_day := int(context.get("current_day", -1))
 	var policy_version := int(context.get("policy_version", -1))
 	var resolved: Array[String] = []
 	for key_value in _pending_tax.keys():
 		var key := String(key_value)
 		var pending: Dictionary = _pending_tax[key]
-		if current_day >= int(pending.get("effective_day", current_day + 1)) \
-				and policy_version > int(pending.get("policy_version", policy_version)):
-			resolved.append(key)
+		if current_day < int(pending.get("effective_day", current_day + 1)) \
+				or policy_version <= int(pending.get("policy_version", policy_version)):
+			continue
+		if not _pending_visible_in_snapshot(key, pending, context, category):
+			continue
+		resolved.append(key)
 	for key in resolved:
 		_pending_tax.erase(key)
 		if key == _clear_all_pending_key():
@@ -649,6 +667,55 @@ func _resolve_tax_pending(context: Dictionary) -> void:
 				_resolve_tax_editor_key(String(editor_key))
 		else:
 			_resolve_tax_editor_key(key)
+
+
+func _pending_visible_in_snapshot(
+		key: String,
+		pending: Dictionary,
+		context: Dictionary,
+		category: Dictionary
+) -> bool:
+	var op := String(pending.get("op", "set"))
+	if key == _clear_all_pending_key() or op == "clear_all":
+		var lanes: Array = context.get("default_lanes", [])
+		if lanes.is_empty():
+			return false
+		for lane_value in lanes:
+			if bool((lane_value as Dictionary).get("has_override", true)):
+				return false
+		return true
+	var parts := key.split("/")
+	if parts.size() < 3:
+		return false
+	var lane := _find_snapshot_tax_lane(parts[1], parts[2], context, category)
+	if lane.is_empty():
+		return false
+	if op == "clear":
+		return not bool(lane.get("has_override", true))
+	return bool(lane.get("has_override", false)) \
+		and int(lane.get("base", -999)) == int(pending.get("rate", -1))
+
+
+func _find_snapshot_tax_lane(
+		kind: String,
+		item_key: String,
+		context: Dictionary,
+		category: Dictionary
+) -> Dictionary:
+	if item_key == "default":
+		for lane_value in context.get("default_lanes", []):
+			var lane: Dictionary = lane_value
+			if String(lane.get("kind", "")) == kind:
+				return lane
+		return {}
+	for row_key in ["cohort_rows", "market_rows", "building_rows"]:
+		for row_value in category.get(row_key, []):
+			for lane_value in (row_value as Dictionary).get("tax_lanes", []):
+				var lane: Dictionary = lane_value
+				if String(lane.get("kind", "")) == kind \
+						and String(lane.get("item_id", "")) == item_key:
+					return lane
+	return {}
 
 
 func _resolve_tax_editor_key(key: String) -> void:
@@ -686,6 +753,7 @@ func _on_clear_all_tax_confirmed() -> void:
 	_pending_tax[key] = {
 		"effective_day": int(_tax_context.get("current_day", -1)) + 1,
 		"policy_version": int(_tax_context.get("policy_version", -1)),
+		"op": "clear_all",
 	}
 	for editor_key in _tax_editors.keys():
 		for editor_value in _tax_editors[editor_key]:
@@ -696,9 +764,9 @@ func _on_clear_all_tax_confirmed() -> void:
 func _apply_category_patch(data: Dictionary) -> void:
 	if data.has("tax_context"):
 		_tax_context = data.get("tax_context", {})
-		_resolve_tax_pending(_tax_context)
 		_update_more_button()
 		_apply_page_tax_patch(_tax_context)
+		_resolve_tax_pending(_tax_context, data)
 	_apply_category_block_patch(data)
 	for raw_section in data.get("sections", []):
 		_apply_category_block_patch(raw_section as Dictionary)

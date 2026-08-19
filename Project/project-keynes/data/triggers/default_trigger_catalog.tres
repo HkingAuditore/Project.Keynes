@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="TriggerCatalog" load_steps=10 format=3]
+[gd_resource type="Resource" script_class="TriggerCatalog" load_steps=20 format=3]
 
 [ext_resource type="Script" path="res://scripts/trigger/trigger_catalog.gd" id="1_catalog"]
 [ext_resource type="Script" path="res://scripts/trigger/trigger_definition.gd" id="2_definition"]
@@ -29,6 +29,81 @@ selector_field = 2
 selector_key = &"stone_age_hunting_camp"
 effects = Array[Resource]([SubResource("EffectHuntingBuilding")])
 
+[sub_resource type="Resource" id="EffectFishingBuilding"]
+script = ExtResource("3_effect")
+action = 11
+source_priority = 100
+domain = 2
+value_mode = 1
+command_key = &"family.free_building"
+definition_key = &"freshwater_fishing_camp"
+
+[sub_resource type="Resource" id="TriggerFishingBuilding"]
+script = ExtResource("2_definition")
+key = &"family.build_fishing_bonus"
+display_name = "渔营馈赠"
+description = "累计足够渔捞建设后，为家族分支免费建成一座淡水捕鱼营地。"
+source_id = 1
+event_type = 6
+payload_schema = 3
+aggregator = 2
+value_field = 1
+threshold = 5
+dynamic_binding = true
+selector_field = 2
+selector_key = &"freshwater_fishing_camp"
+effects = Array[Resource]([SubResource("EffectFishingBuilding")])
+
+[sub_resource type="Resource" id="EffectPastoralBuilding"]
+script = ExtResource("3_effect")
+action = 11
+source_priority = 100
+domain = 2
+value_mode = 1
+command_key = &"family.free_building"
+definition_key = &"pastoral_camp"
+
+[sub_resource type="Resource" id="TriggerPastoralBuilding"]
+script = ExtResource("2_definition")
+key = &"family.build_pastoral_bonus"
+display_name = "牧营馈赠"
+description = "累计足够畜牧建设后，为家族分支免费建成一座游牧营地。"
+source_id = 1
+event_type = 6
+payload_schema = 3
+aggregator = 2
+value_field = 1
+threshold = 5
+dynamic_binding = true
+selector_field = 2
+selector_key = &"pastoral_camp"
+effects = Array[Resource]([SubResource("EffectPastoralBuilding")])
+
+[sub_resource type="Resource" id="EffectMasonryBuilding"]
+script = ExtResource("3_effect")
+action = 11
+source_priority = 100
+domain = 2
+value_mode = 1
+command_key = &"family.free_building"
+definition_key = &"adobe_yard"
+
+[sub_resource type="Resource" id="TriggerMasonryBuilding"]
+script = ExtResource("2_definition")
+key = &"family.build_masonry_bonus"
+display_name = "土坯场馈赠"
+description = "累计足够夯土石作建设后，为家族分支免费建成一座日晒土坯场。"
+source_id = 1
+event_type = 6
+payload_schema = 3
+aggregator = 2
+value_field = 1
+threshold = 5
+dynamic_binding = true
+selector_field = 2
+selector_key = &"adobe_yard"
+effects = Array[Resource]([SubResource("EffectMasonryBuilding")])
+
 [sub_resource type="Resource" id="EffectTradePopulation"]
 script = ExtResource("3_effect")
 action = 11
@@ -50,6 +125,54 @@ threshold = 20
 dynamic_binding = true
 selector_field = 5
 effects = Array[Resource]([SubResource("EffectTradePopulation")])
+
+[sub_resource type="Resource" id="EffectFarmPopulation"]
+script = ExtResource("3_effect")
+action = 11
+source_priority = 100
+domain = 2
+value_mode = 1
+command_key = &"family.population_reward"
+
+[sub_resource type="Resource" id="TriggerFarmPopulation"]
+script = ExtResource("2_definition")
+key = &"family.farm_population_bonus"
+display_name = "农门招佃"
+description = "累计足够农舍建设后，为本城公共人口提供奖励。"
+source_id = 1
+event_type = 6
+payload_schema = 3
+aggregator = 2
+value_field = 1
+threshold = 3
+dynamic_binding = true
+selector_field = 2
+selector_key = &"subsistence_farm"
+effects = Array[Resource]([SubResource("EffectFarmPopulation")])
+
+[sub_resource type="Resource" id="EffectKnowledgePopulation"]
+script = ExtResource("3_effect")
+action = 11
+source_priority = 100
+domain = 2
+value_mode = 1
+command_key = &"family.population_reward"
+
+[sub_resource type="Resource" id="TriggerKnowledgePopulation"]
+script = ExtResource("2_definition")
+key = &"family.knowledge_population_bonus"
+display_name = "学徒迁入"
+description = "累计足够知识建筑后，为本城公共人口提供奖励。"
+source_id = 1
+event_type = 6
+payload_schema = 3
+aggregator = 2
+value_field = 1
+threshold = 2
+dynamic_binding = true
+selector_field = 2
+selector_key = &"lorekeeper_circle"
+effects = Array[Resource]([SubResource("EffectKnowledgePopulation")])
 
 [sub_resource type="Resource" id="EffectSocialPressureNotice"]
 script = ExtResource("3_effect")
@@ -73,4 +196,4 @@ effects = Array[Resource]([SubResource("EffectSocialPressureNotice")])
 
 [resource]
 script = ExtResource("1_catalog")
-definitions = Array[Resource]([SubResource("TriggerHuntingBuilding"), SubResource("TriggerTradePopulation"), SubResource("TriggerSocialPressureRelief")])
+definitions = Array[Resource]([SubResource("TriggerHuntingBuilding"), SubResource("TriggerFishingBuilding"), SubResource("TriggerPastoralBuilding"), SubResource("TriggerMasonryBuilding"), SubResource("TriggerTradePopulation"), SubResource("TriggerFarmPopulation"), SubResource("TriggerKnowledgePopulation"), SubResource("TriggerSocialPressureRelief")])

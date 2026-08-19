@@ -615,6 +615,9 @@ When implementing a UI/art change:
 4. Render through components.
    - Reuse existing components first.
    - Add a component only for a recurring visual pattern.
+   - Author the shell and fixed slots in `.tscn` (`@onready` / `%UniqueName`, editor signal connections). Scripts fill data; they do not `Control.new()` a layout.
+   - Instantiate a PackedScene only for variable-length lists (collection rows, badges). Prefer updating existing children over `queue_free` + rebuild.
+   - Put ConfirmationDialog and other popups in the scene, not `ConfirmationDialog.new()`.
 
 5. Apply tokens and motion.
    - Use `UITokens`.

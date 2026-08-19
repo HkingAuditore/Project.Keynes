@@ -90,8 +90,10 @@ Fog gating happens in the view model, not in the panel. `CellInspectorViewModel.
    - Display scores are UI heuristics; never feed them back into simulation.
 
 3. Put visuals in components.
-   - Use components under `scripts/ui/components/`.
+   - Use components under `scripts/ui/components/` with matching `scenes/ui/*.tscn`.
    - Prefer `MetricCard`, `IconBadge`, `GaugeBar`, `RadialGauge`, `BadgeRow`, `CategoryTabs`, `SparklineChart`, and `InsightList`.
+   - Author shells and fixed slots in the scene (`%UniqueName`, editor signals). Scripts fill data; they do not `Control.new()` a layout.
+   - Instantiate a PackedScene only for variable-length lists; put dialogs in the `.tscn`.
    - Add a new component only when existing ones cannot express the pattern cleanly.
 
 4. Use tokens and theme.

@@ -275,12 +275,12 @@ func build_ideology_snapshot(country_handle: int, ui_snapshot: Dictionary) -> Di
 		if _generator != null and _generator.has_method("get_ideology_facade") else null
 	if bool(native_ideology.get("ok", false)) and ideology_facade != null:
 		return {
-			"ideology": {
+			"ideology": _decorate_ideology({
 				"available": true,
 				"facade": ideology_facade,
 				"snapshot": native_ideology,
 				"catalog": ideology_facade.catalog_view(),
-			},
+			}),
 		}
 	return {"ideology": _ideology_model(country_handle)}
 
@@ -466,16 +466,168 @@ func _development_model(country_handle: int, research: Dictionary) -> Dictionary
 
 func _ideology_model(country_handle: int) -> Dictionary:
 	if _generator == null or not _generator.has_method("get_ideology_facade"):
-		return {"available": false, "reason": "理念运行时不可用。"}
+		return {"available": false, "reason": "理念事务暂不可用。"}
 	var facade = _generator.get_ideology_facade()
 	if facade == null or not facade.has_method("is_configured") or not facade.is_configured():
-		return {"available": false, "reason": "理念运行时尚未配置。"}
+		return {"available": false, "reason": "理念事务尚未就绪。"}
 	var snapshot: Dictionary = facade.snapshot(country_handle)
 	var catalog: Dictionary = facade.catalog_view()
 	if not bool(snapshot.get("ok", false)) or not bool(catalog.get("ok", false)):
-		return {"available": false, "reason": String(snapshot.get("reason",
-			catalog.get("reason", "理念快照不可用。")))}
-	return {"available": true, "facade": facade, "snapshot": snapshot, "catalog": catalog}
+		return {"available": false, "reason": ideology_player_reason(String(snapshot.get("reason",
+			catalog.get("reason", "理念档案暂不可用。"))))}
+	return _decorate_ideology({
+		"available": true, "facade": facade, "snapshot": snapshot, "catalog": catalog,
+	})
+
+
+func _decorate_ideology(ideology: Dictionary) -> Dictionary:
+	var presentation := present_ideology(
+		ideology.get("snapshot", {}), ideology.get("catalog", {}))
+	ideology["presentation"] = presentation
+	return ideology
+
+
+static func present_ideology(snapshot: Dictionary, catalog: Dictionary) -> Dictionary:
+	var catalog_capacity := int(catalog.get("ideology_capacity", 0))
+	var catalog_spirits := int(catalog.get("national_spirit_capacity", 0))
+	var catalog_cost := int(catalog.get("offer_cost_q16", 65536))
+	var catalog_start := int(catalog.get("starting_points_q16", 0))
+	var materialized := bool(snapshot.get("materialized",
+		snapshot.has("ideology_slots_capacity")))
+	var slots_capacity := int(snapshot.get("ideology_slots_capacity", catalog_capacity))
+	var spirit_capacity := int(snapshot.get("national_spirit_slots_capacity", catalog_spirits))
+	var offer_cost := int(snapshot.get("offer_cost_q16", catalog_cost))
+	var points := int(snapshot.get("ideology_points_q16", 0))
+	if not materialized:
+		slots_capacity = catalog_capacity if slots_capacity <= 0 else slots_capacity
+		spirit_capacity = catalog_spirits if spirit_capacity <= 0 else spirit_capacity
+		if not snapshot.has("ideology_points_q16") or points <= 0:
+			points = int(snapshot.get("starting_points_q16", catalog_start))
+	var offer_active := bool(snapshot.get("offer_active", false))
+	var known: PackedInt32Array = snapshot.get("known_ids", PackedInt32Array())
+	var can_open_offer := not offer_active and points >= offer_cost
+	var offer_hint := "抽取一次，从三条道路中选择其一。"
+	if offer_active:
+		offer_hint = "三选一已打开，请选择一条道路。"
+	elif points < offer_cost:
+		offer_hint = "抽取需 %s 理念点。" % _q16_display(offer_cost)
+	var empty_insights: Array = [
+		{
+			"icon": &"country.politics",
+			"accent": UITokens.ACCENT,
+			"text": "消耗理念点抽取三选一，选定后进入国家收藏。",
+		},
+		{
+			"icon": &"country.economy",
+			"accent": UITokens.RESOURCE,
+			"text": "每条道路改变不同的产出、贸易、研究或建设系数。",
+		},
+		{
+			"icon": &"country.affairs",
+			"accent": UITokens.BRASS_HIGHLIGHT,
+			"text": "装备占用意识形态槽；理解度积累后可晋升为民族精神。",
+		},
+		{
+			"icon": &"country.economy",
+			"accent": UITokens.RESOURCE,
+			"text": "阶层民意决定能否推行、废止或晋升一条理念。",
+		},
+	]
+	return {
+		"points": points,
+		"points_text": _q16_display(points),
+		"slots_used": int(snapshot.get("ideology_slots_used", 0)),
+		"slots_capacity": slots_capacity,
+		"spirits_used": int(snapshot.get("national_spirit_slots_used", 0)),
+		"spirits_capacity": spirit_capacity,
+		"offer_cost_q16": offer_cost,
+		"offer_cost_text": _q16_display(offer_cost),
+		"offer_active": offer_active,
+		"can_open_offer": can_open_offer,
+		"offer_hint": offer_hint,
+		"known_count": known.size(),
+		"empty": known.is_empty() and not offer_active,
+		"empty_title": "尚未形成国家理念",
+		"empty_detail": "内阁还没有选定一条可推行的道路。",
+		"empty_insights": empty_insights,
+	}
+
+
+static func present_ideology_card(metadata: Dictionary, level: int = 0) -> Dictionary:
+	var effect_sets: Array = metadata.get("level_effect_lines", [])
+	var current_lines := PackedStringArray()
+	if level >= 0 and level < effect_sets.size():
+		current_lines = PackedStringArray(effect_sets[level])
+	elif not effect_sets.is_empty():
+		current_lines = PackedStringArray(effect_sets[0])
+	var insight_items: Array = []
+	var icon := String(metadata.get("icon_key", "country.politics"))
+	for line in current_lines:
+		var text := String(line).strip_edges()
+		if text.is_empty():
+			continue
+		insight_items.append({
+			"text": text,
+			"icon": icon,
+			"accent": UITokens.RESOURCE,
+		})
+	var badges: Array = []
+	var rivals: PackedStringArray = metadata.get("exclusion_rivals", PackedStringArray())
+	if not rivals.is_empty():
+		badges.append({
+			"text": "与%s互斥" % "、".join(rivals),
+			"accent": UITokens.WARN,
+			"tooltip": "同一经济秩序不能同时推行这些道路。",
+		})
+	if effect_sets.size() >= 2 and level + 1 < effect_sets.size():
+		var high := PackedStringArray(effect_sets[level + 1])
+		if not high.is_empty():
+			badges.append({
+				"text": "满级效果翻倍",
+				"accent": UITokens.BRASS_HIGHLIGHT,
+				"tooltip": "、".join(high),
+			})
+	var synergy_names: PackedStringArray = metadata.get("synergy_names", PackedStringArray())
+	if not synergy_names.is_empty():
+		badges.append({
+			"text": "联动 %s" % "、".join(synergy_names),
+			"accent": UITokens.CLIMATE,
+			"tooltip": String(metadata.get("synergy_tooltip", "")),
+		})
+	return {
+		"display_name": String(metadata.get("display_name",
+			metadata.get("name_key", ""))),
+		"detail": String(metadata.get("detail_key", "")),
+		"icon_key": icon,
+		"effects": insight_items,
+		"badges": badges,
+		"summary": "、".join(current_lines),
+	}
+
+
+static func _q16_display(value: int) -> String:
+	return "%.2f" % (float(value) / 65536.0)
+
+
+static func ideology_player_reason(reason: String) -> String:
+	match reason:
+		"ideology_points_insufficient":
+			return "理念点不足。"
+		"ideology_offer_pending":
+			return "已有一次三选一待选择。"
+		"ideology_offer_pool_insufficient":
+			return "当前可抽取的理念不足三次。"
+		"ideology_offer_weight_invalid":
+			return "当前没有可抽取的理念。"
+		"ideology_runtime_unconfigured", "ideology_runtime_unavailable", \
+				"DCWorldExt ideology API unavailable":
+			return "理念事务暂不可用。"
+		"ideology_country_handle_stale", "ideology_country_state_unavailable":
+			return "国家档案已更新，请稍后重试。"
+		"正在载入已提交数据":
+			return "正在整理内阁档案。"
+		_:
+			return reason if not reason.is_empty() else "理念事务暂不可用。"
 
 
 func _treasury_model(facade, country_handle: int) -> Dictionary:

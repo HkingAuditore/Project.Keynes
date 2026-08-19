@@ -6,9 +6,10 @@ class_name IdeologyWorkspace
 # second mutable ideology model.
 
 const Q16_ONE := 65536.0
+const CARD_SIZE := Vector2(150.0, 72.0)
+const CARD_SIZE_COMPACT := Vector2(104.0, 56.0)
 const PlayerControllerScript = preload("res://scripts/game/player_controller.gd")
 const IdeaRowScene := preload("res://scenes/ui/ideology_idea_row.tscn")
-const OfferChoiceScene := preload("res://scenes/ui/ideology_offer_choice.tscn")
 
 var _facade = null
 var _player_controller = null
@@ -16,65 +17,81 @@ var _country_handle := 0
 var _current_day := 0
 var _catalog: Dictionary = {}
 var _snapshot: Dictionary = {}
+var _presentation: Dictionary = {}
 var _live_explain: Dictionary = {}
 var _live_by_id := {}
 var _signature := ""
 var _explain_signature := ""
 var _pending_promotion_id := -1
+var _compact := false
 
-var _points: Label
-var _slots: Label
-var _spirits: Label
+var _points_card: MetricCard
+var _slots_card: MetricCard
+var _spirits_card: MetricCard
 var _hint: Label
 var _offer_button: Button
-var _rows: VBoxContainer
-var _empty: Label
+var _empty: PanelContainer
+var _empty_icon: IconBadge
+var _empty_title: Label
+var _empty_detail: Label
+var _empty_insights: InsightList
 var _offer: PanelContainer
-var _offer_cards: HBoxContainer
+var _choice_0: PanelContainer
+var _choice_1: PanelContainer
+var _choice_2: PanelContainer
+var _collection: VBoxContainer
 var _promotion_dialog: ConfirmationDialog
 
 
 func _ready() -> void:
-	if _rows != null:
+	_bind_nodes()
+	if _empty_icon != null:
+		_empty_icon.set_semantic(&"country.politics", UITokens.ACCENT)
+	_bind_idle_metrics()
+
+
+func _bind_nodes() -> void:
+	if _offer_button != null:
 		return
-	_points = get_node_or_null("Root/Status/Points") as Label
-	_slots = get_node_or_null("Root/Status/Slots") as Label
-	_spirits = get_node_or_null("Root/Status/Spirits") as Label
-	_hint = get_node_or_null("Root/Actions/Hint") as Label
-	_offer_button = get_node_or_null("Root/Actions/OpenOffer") as Button
-	_rows = get_node_or_null("Root/Scroll/Rows") as VBoxContainer
-	_empty = get_node_or_null("Root/Scroll/Rows/EmptyLabel") as Label
-	_offer = get_node_or_null("Root/Offer") as PanelContainer
-	_offer_cards = get_node_or_null("Root/Offer/Cards") as HBoxContainer
-	if _points == null or _slots == null or _spirits == null or _hint == null \
-			or _offer_button == null or _rows == null or _offer == null or _offer_cards == null:
-		push_error("IdeologyWorkspace 必须由 ideology_workspace.tscn 实例化。")
-		return
-	_offer_button.theme_type_variation = &"PKPrimaryButton"
-	_offer_button.pressed.connect(_open_offer)
-	_promotion_dialog = ConfirmationDialog.new()
-	_promotion_dialog.title = "确认晋升民族精神"
-	_promotion_dialog.dialog_text = "民族精神晋升不可逆，并会占用民族精神槽位。"
-	_promotion_dialog.ok_button_text = "确认晋升"
-	_promotion_dialog.confirmed.connect(_confirm_promotion)
-	add_child(_promotion_dialog)
+	_points_card = %PointsCard
+	_slots_card = %SlotsCard
+	_spirits_card = %SpiritsCard
+	_hint = %Hint
+	_offer_button = %OpenOffer
+	_empty = %EmptyState
+	_empty_icon = %EmptyIcon
+	_empty_title = %EmptyTitle
+	_empty_detail = %EmptyDetail
+	_empty_insights = %EmptyInsights
+	_offer = %Offer
+	_choice_0 = %Choice0
+	_choice_1 = %Choice1
+	_choice_2 = %Choice2
+	_collection = %Collection
+	_promotion_dialog = %PromotionDialog
 
 
 func set_model(model: Dictionary) -> void:
-	if _rows == null:
-		_ready()
+	_bind_nodes()
 	_apply_model(model)
 
 
 func refresh_model(model: Dictionary) -> void:
-	if _rows == null:
-		return
+	_bind_nodes()
 	_apply_model(model)
 
 
 func set_compact(compact: bool) -> void:
-	if _offer_cards != null:
-		_offer_cards.visible = not compact or bool(_snapshot.get("offer_active", false))
+	_compact = compact
+	_bind_nodes()
+	if _points_card == null:
+		return
+	_points_card.set_compact(compact)
+	_points_card.custom_minimum_size = CARD_SIZE_COMPACT if compact else CARD_SIZE
+	_slots_card.set_compact(compact)
+	_slots_card.custom_minimum_size = CARD_SIZE_COMPACT if compact else CARD_SIZE
+	_spirits_card.set_compact(compact)
+	_spirits_card.custom_minimum_size = CARD_SIZE_COMPACT if compact else CARD_SIZE
 
 func set_player_controller(controller) -> void:
 	if _player_controller != null and _player_controller.has_signal("command_settled"):
@@ -95,17 +112,22 @@ func _apply_model(model: Dictionary) -> void:
 	_current_day = int(model.get("current_day", 0))
 	_catalog = ideology.get("catalog", {})
 	_snapshot = ideology.get("snapshot", {})
-	if not bool(ideology.get("available", false)):
-		_hint.text = String(ideology.get("reason", "理念暂不可用。"))
-		_offer_button.disabled = true
+	if ideology.is_empty() or not bool(ideology.get("available", false)):
+		var raw_reason := String(ideology.get("reason", model.get("reason", "")))
+		var loading := ideology.is_empty() and not bool(model.get("available", false)) \
+			and (raw_reason.is_empty() or raw_reason == "正在载入已提交数据")
+		_show_shell(CountryViewModel.ideology_player_reason(raw_reason), loading)
 		return
-	_points.text = "理念点 %s" % _q16(int(_snapshot.get("ideology_points_q16", 0)))
-	_slots.text = "意识形态槽 %d / %d" % [int(_snapshot.get("ideology_slots_used", 0)),
-		int(_snapshot.get("ideology_slots_capacity", 0))]
-	_spirits.text = "民族精神槽 %d / %d" % [int(_snapshot.get("national_spirit_slots_used", 0)),
-		int(_snapshot.get("national_spirit_slots_capacity", 0))]
-	_offer_button.disabled = bool(_snapshot.get("offer_active", false))
-	_offer_button.text = "三选一已锁定" if bool(_snapshot.get("offer_active", false)) else "抽取理念（三选一）"
+	_presentation = ideology.get("presentation", {})
+	if _presentation.is_empty():
+		_presentation = CountryViewModel.present_ideology(_snapshot, _catalog)
+	_render_metrics(_presentation)
+	_offer_button.disabled = not bool(_presentation.get("can_open_offer", false))
+	_offer_button.text = "三选一已锁定" if bool(_presentation.get("offer_active", false)) \
+		else "抽取理念（三选一）"
+	_offer_button.tooltip_text = "抽取消耗 %s 理念点。" % String(
+		_presentation.get("offer_cost_text", "1.00"))
+	_hint.text = String(_presentation.get("offer_hint", ""))
 	var known: PackedInt32Array = _snapshot.get("known_ids", PackedInt32Array())
 	var explain_signature := "%d|%d|%s|%s|%s|%s" % [
 		_country_handle, int(_snapshot.get("support_revision", 0)), known,
@@ -123,6 +145,8 @@ func _apply_model(model: Dictionary) -> void:
 		_signature = signature
 		_rebuild_rows()
 	_rebuild_offer()
+	_show_empty_state(bool(_presentation.get("empty", known.is_empty())),
+		_presentation)
 
 
 func _refresh_live_explain(known: PackedInt32Array) -> void:
@@ -198,10 +222,6 @@ func _refresh_live_explain(known: PackedInt32Array) -> void:
 
 
 func _rebuild_rows() -> void:
-	for child in _rows.get_children():
-		if child == _empty:
-			continue
-		child.queue_free()
 	var metadata := {}
 	for row in _catalog.get("ideologies", []) as Array:
 		metadata[int((row as Dictionary).get("dense_id", -1))] = row
@@ -219,23 +239,35 @@ func _rebuild_rows() -> void:
 			"pending": index < pending.size() and pending[index] != 0,
 		}
 	var known: PackedInt32Array = _snapshot.get("known_ids", PackedInt32Array())
-	if _empty != null:
-		_empty.visible = known.is_empty()
-	for ideology_id in known:
-		var state: Dictionary = state_by_id.get(int(ideology_id), {})
-		_rows.add_child(_row(int(ideology_id), metadata.get(int(ideology_id), {}),
-			state, _live_by_id.get(int(ideology_id), {})))
+	_show_empty_state(known.is_empty() and not bool(_snapshot.get("offer_active", false)),
+		_presentation)
+	_sync_collection(known.size())
+	for index in known.size():
+		var ideology_id := int(known[index])
+		var card := _collection.get_child(index)
+		if card.has_method("set_row"):
+			card.call("set_row", _row_data(ideology_id, metadata.get(ideology_id, {}),
+				state_by_id.get(ideology_id, {}), _live_by_id.get(ideology_id, {})))
 
 
-func _row(ideology_id: int, metadata: Dictionary, state: Dictionary,
-		live: Dictionary) -> Control:
-	var card := IdeaRowScene.instantiate() as PanelContainer
-	var name_label := card.get_node("Body/Title/Name") as Label
-	name_label.text = _display_name(metadata, ideology_id)
+func _sync_collection(count: int) -> void:
+	while _collection.get_child_count() > count:
+		var child := _collection.get_child(_collection.get_child_count() - 1)
+		_collection.remove_child(child)
+		child.queue_free()
+	while _collection.get_child_count() < count:
+		var card := IdeaRowScene.instantiate() as PanelContainer
+		card.connect("equip_requested", _on_idea_equip)
+		card.connect("unequip_requested", _on_idea_unequip)
+		card.connect("promote_requested", _request_promotion)
+		_collection.add_child(card)
+
+
+func _row_data(ideology_id: int, metadata: Dictionary, state: Dictionary,
+		live: Dictionary) -> Dictionary:
 	var location := int(state.get("location", 0))
 	var pending := bool(state.get("pending", false))
-	var badges := card.get_node("Body/Title/Slots") as BadgeRow
-	var slot_text: String = "正在生效"
+	var slot_text := "正在生效"
 	if not pending:
 		match clampi(location, 0, 2):
 			1:
@@ -244,39 +276,50 @@ func _row(ideology_id: int, metadata: Dictionary, state: Dictionary,
 				slot_text = "民族精神"
 			_:
 				slot_text = "未装备"
-	badges.set_badges([{
-		"text": slot_text,
-		"accent": UITokens.WARN if pending else (UITokens.ACCENT if location > 0 else UITokens.TEXT_MUTED),
-	}])
 	var level := int(state.get("level", -1))
 	var thresholds: PackedInt64Array = metadata.get("level_thresholds_q16", PackedInt64Array())
 	var amount := int(state.get("understanding", 0))
 	var next := int(thresholds[level + 1]) if level + 1 < thresholds.size() else amount
 	var ratio := 1.0 if next <= 0 else clampf(float(amount) / float(maxi(1, next)), 0.0, 1.0)
-	var gauge := card.get_node("Body/Gauge") as GaugeBar
-	gauge.set_data("理解度", ratio, "", "", UITokens.ACCENT, -1.0,
-		"已满级" if level + 1 >= thresholds.size() else "下一级 %s" % _q16(next),
-		_q16(amount))
-	var detail := card.get_node("Body/Detail") as Label
+	var card_view := CountryViewModel.present_ideology_card(metadata, maxi(0, level))
 	var direction := 0 if location == 0 else 1
-	detail.text = "等级 %d · %s" % [maxi(0, level + 1),
-		_support_summary(live, direction)]
-	detail.tooltip_text = _support_tooltip(metadata, live, direction)
-	var equip := card.get_node("Body/Actions/Equip") as Button
-	var unequip := card.get_node("Body/Actions/Unequip") as Button
-	var promote := card.get_node("Body/Actions/Promote") as Button
-	equip.visible = location == 0
-	equip.disabled = pending or not bool(live.get("equip_allowed", false))
-	equip.pressed.connect(func() -> void: _command("equip", ideology_id))
-	unequip.visible = location == 1
-	unequip.disabled = pending or not bool(live.get("unequip_allowed", false))
-	unequip.pressed.connect(func() -> void: _command("unequip", ideology_id))
 	var spirit_min := int(metadata.get("min_spirit_level", 99))
-	promote.visible = location == 1
-	promote.disabled = pending or level < spirit_min \
-		or not bool(live.get("promote_allowed", false))
-	promote.pressed.connect(func() -> void: _request_promotion(ideology_id))
-	return card
+	return {
+		"ideology_id": ideology_id,
+		"display_name": _display_name(metadata, ideology_id),
+		"slot_badges": [{
+			"text": slot_text,
+			"accent": UITokens.WARN if pending else (
+				UITokens.ACCENT if location > 0 else UITokens.TEXT_MUTED),
+		}],
+		"gauge_title": "理解度",
+		"gauge_ratio": ratio,
+		"gauge_accent": UITokens.ACCENT,
+		"gauge_subtitle": "已满级" if level + 1 >= thresholds.size() else "下一级 %s" % _q16(next),
+		"gauge_value": _q16(amount),
+		"effects": card_view.get("effects", []),
+		"notes": card_view.get("badges", []),
+		"detail": "等级 %d · %s" % [maxi(0, level + 1), _support_summary(live, direction)],
+		"tooltip": "\n".join(PackedStringArray([
+			String(card_view.get("summary", "")),
+			_support_tooltip(metadata, live, direction),
+		])),
+		"equip_visible": location == 0,
+		"equip_disabled": pending or not bool(live.get("equip_allowed", false)),
+		"unequip_visible": location == 1,
+		"unequip_disabled": pending or not bool(live.get("unequip_allowed", false)),
+		"promote_visible": location == 1,
+		"promote_disabled": pending or level < spirit_min \
+			or not bool(live.get("promote_allowed", false)),
+	}
+
+
+func _on_idea_equip(ideology_id: int) -> void:
+	_command("equip", ideology_id)
+
+
+func _on_idea_unequip(ideology_id: int) -> void:
+	_command("unequip", ideology_id)
 
 
 func _support_summary(live: Dictionary, direction: int) -> String:
@@ -338,7 +381,9 @@ func _synergy_name(synergy_id: int) -> String:
 	for row in _catalog.get("synergies", []) as Array:
 		var metadata := row as Dictionary
 		if int(metadata.get("dense_id", -1)) == synergy_id:
-			return String(metadata.get("id", "联动 %d" % synergy_id))
+			var display := String(metadata.get("display_name", ""))
+			return display if not display.is_empty() else String(
+				metadata.get("id", "联动 %d" % synergy_id))
 	return "联动 %d" % synergy_id
 
 
@@ -401,27 +446,30 @@ func _on_player_command_settled(id: StringName, result: Dictionary) -> void:
 	]:
 		return
 	_hint.text = "理念命令已生效。" if bool(result.get("ok", false)) \
-		else String(result.get("reason", "理念命令被拒绝。"))
+		else CountryViewModel.ideology_player_reason(String(
+			result.get("reason", result.get("message", "理念命令被拒绝。"))))
 
 
 func _rebuild_offer() -> void:
-	for child in _offer_cards.get_children():
-		child.queue_free()
 	var active := bool(_snapshot.get("offer_active", false))
 	_offer.visible = active
+	var cards: Array[PanelContainer] = [_choice_0, _choice_1, _choice_2]
 	if not active:
+		for card in cards:
+			card.visible = false
 		return
 	var metadata := {}
 	for row in _catalog.get("ideologies", []) as Array:
 		metadata[int((row as Dictionary).get("dense_id", -1))] = row
 	var ids: PackedInt32Array = _snapshot.get("offer_ids", PackedInt32Array())
-	for index in range(ids.size()):
-		var button := OfferChoiceScene.instantiate() as Button
-		var info: Dictionary = metadata.get(int(ids[index]), {})
-		button.text = _display_name(info, int(ids[index]))
-		button.tooltip_text = String(info.get("detail_key", ""))
-		button.pressed.connect(func() -> void: _choose_offer(index))
-		_offer_cards.add_child(button)
+	for index in cards.size():
+		var card := cards[index]
+		var show := index < ids.size()
+		card.visible = show
+		if not show or not card.has_method("set_card"):
+			continue
+		card.call("set_card", CountryViewModel.present_ideology_card(
+			metadata.get(int(ids[index]), {}), 0))
 
 
 func _choose_offer(choice_index: int) -> void:
@@ -437,7 +485,8 @@ func _choose_offer(choice_index: int) -> void:
 
 func _show_result(result: Dictionary) -> void:
 	_hint.text = "将于明日生效。" if bool(result.get("ok", false)) \
-		else String(result.get("reason", "理念命令被拒绝。"))
+		else CountryViewModel.ideology_player_reason(String(
+			result.get("reason", result.get("message", "理念命令被拒绝。"))))
 
 
 func _q16(value: int) -> String:
@@ -446,3 +495,95 @@ func _q16(value: int) -> String:
 
 func _q16_signed(value: int) -> String:
 	return "%+.2f" % (float(value) / Q16_ONE)
+
+
+func _bind_idle_metrics() -> void:
+	_render_metrics({
+		"points_text": "—",
+		"slots_used": 0,
+		"slots_capacity": 0,
+		"spirits_used": 0,
+		"spirits_capacity": 0,
+	})
+
+
+func _show_shell(reason: String, loading: bool) -> void:
+	_signature = ""
+	_explain_signature = ""
+	_presentation = {}
+	_offer_button.disabled = true
+	_offer_button.text = "抽取理念（三选一）"
+	_hint.text = "正在整理内阁档案。" if loading and reason.is_empty() else (
+		reason if not reason.is_empty() else "理念事务暂不可用。")
+	_offer.visible = false
+	_bind_idle_metrics()
+	_show_empty_state(true, {
+		"empty_title": "正在整理内阁档案" if loading else "理念事务暂不可用",
+		"empty_detail": _hint.text,
+		"empty_insights": [],
+	})
+
+
+func _render_metrics(presentation: Dictionary) -> void:
+	var points_text := String(presentation.get("points_text", "—"))
+	var slots_used := int(presentation.get("slots_used", 0))
+	var slots_capacity := int(presentation.get("slots_capacity", 0))
+	var spirits_used := int(presentation.get("spirits_used", 0))
+	var spirits_capacity := int(presentation.get("spirits_capacity", 0))
+	var cost_text := String(presentation.get("offer_cost_text", ""))
+	var points_subtitle := ("抽取一次消耗 %s" % cost_text) if not cost_text.is_empty() else ""
+	_points_card.set_data("理念点", points_text, points_subtitle,
+		UITokens.ACCENT, "", "country.politics")
+	_slots_card.set_data("意识形态槽", "%d / %d" % [slots_used, slots_capacity],
+		"装备中的国家理念", UITokens.BRASS_HIGHLIGHT, "", "country.affairs")
+	_spirits_card.set_data("民族精神槽", "%d / %d" % [spirits_used, spirits_capacity],
+		"晋升后不可逆", UITokens.RESOURCE, "", "country.economy")
+	_points_card.set_compact(_compact)
+	_slots_card.set_compact(_compact)
+	_spirits_card.set_compact(_compact)
+
+
+func _show_empty_state(visible: bool, presentation: Dictionary) -> void:
+	if _empty == null:
+		return
+	_empty.visible = visible
+	if not visible:
+		return
+	_empty_icon.set_semantic(&"country.politics", UITokens.ACCENT)
+	_empty_title.text = String(presentation.get("empty_title", "尚未形成国家理念"))
+	_empty_detail.text = String(presentation.get("empty_detail",
+		"内阁还没有选定一条可推行的道路。"))
+	var insights: Array = presentation.get("empty_insights", [])
+	if _empty_insights != null:
+		_empty_insights.visible = not insights.is_empty()
+		if not insights.is_empty():
+			_empty_insights.set_items(insights)
+
+
+func hint_text() -> String:
+	return _hint.text if _hint != null else ""
+
+
+func offer_button_disabled() -> bool:
+	return true if _offer_button == null else _offer_button.disabled
+
+
+func empty_state_visible() -> bool:
+	return false if _empty == null else _empty.visible
+
+
+func slots_capacity() -> int:
+	return int(_presentation.get("slots_capacity", 0))
+
+
+func points_text() -> String:
+	return String(_presentation.get("points_text", ""))
+
+
+func offer_choice_summaries() -> PackedStringArray:
+	var summaries := PackedStringArray()
+	for card in [_choice_0, _choice_1, _choice_2]:
+		if card == null or not card.visible or not card.has_method("summary_text"):
+			continue
+		summaries.append(String(card.call("summary_text")))
+	return summaries

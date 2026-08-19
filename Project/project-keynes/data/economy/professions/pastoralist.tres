@@ -4,5 +4,6 @@
 script = ExtResource("1")
 id = &"pastoralist"
 display_name = "牧民"
+semantic_tags = PackedStringArray("activity.pastoral")
 default_consumption_plan_id = &"agrarian_household"
 technology_tags = PackedStringArray()

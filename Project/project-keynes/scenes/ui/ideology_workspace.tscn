@@ -1,6 +1,10 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/components/ideology_workspace.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://scenes/ui/metric_card.tscn" id="2_card"]
+[ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="3_icon"]
+[ext_resource type="PackedScene" path="res://scenes/ui/insight_list.tscn" id="4_insights"]
+[ext_resource type="PackedScene" path="res://scenes/ui/ideology_offer_choice.tscn" id="5_choice"]
 
 [node name="IdeologyWorkspace" type="Control"]
 layout_mode = 3
@@ -20,60 +24,148 @@ grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 8
 
-[node name="Status" type="HBoxContainer" parent="Root"]
+[node name="Cards" type="HBoxContainer" parent="Root"]
 layout_mode = 2
-theme_type_variation = &"PKInsetPanel"
-theme_override_constants/separation = 16
+theme_override_constants/separation = 8
 
-[node name="Points" type="Label" parent="Root/Status"]
+[node name="PointsCard" parent="Root/Cards" instance=ExtResource("2_card")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(150, 72)
 layout_mode = 2
-theme_type_variation = &"PKMutedLabel"
+size_flags_horizontal = 3
 
-[node name="Slots" type="Label" parent="Root/Status"]
+[node name="SlotsCard" parent="Root/Cards" instance=ExtResource("2_card")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(150, 72)
 layout_mode = 2
-theme_type_variation = &"PKMutedLabel"
+size_flags_horizontal = 3
 
-[node name="Spirits" type="Label" parent="Root/Status"]
+[node name="SpiritsCard" parent="Root/Cards" instance=ExtResource("2_card")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(150, 72)
 layout_mode = 2
-theme_type_variation = &"PKMutedLabel"
+size_flags_horizontal = 3
 
 [node name="Actions" type="HBoxContainer" parent="Root"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
 [node name="OpenOffer" type="Button" parent="Root/Actions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 34)
 layout_mode = 2
 text = "抽取理念（三选一）"
 theme_type_variation = &"PKPrimaryButton"
 
 [node name="Hint" type="Label" parent="Root/Actions"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 vertical_alignment = 1
 theme_type_variation = &"PKMutedLabel"
-
-[node name="Offer" type="PanelContainer" parent="Root"]
-visible = false
-layout_mode = 2
-theme_type_variation = &"PKPanel"
-
-[node name="Cards" type="HBoxContainer" parent="Root/Offer"]
-layout_mode = 2
-alignment = 1
-theme_override_constants/separation = 8
 
 [node name="Scroll" type="ScrollContainer" parent="Root"]
 layout_mode = 2
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
 
-[node name="Rows" type="VBoxContainer" parent="Root/Scroll"]
+[node name="Content" type="VBoxContainer" parent="Root/Scroll"]
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_constants/separation = 6
+size_flags_vertical = 3
+theme_override_constants/separation = 8
 
-[node name="EmptyLabel" type="Label" parent="Root/Scroll/Rows"]
+[node name="Offer" type="PanelContainer" parent="Root/Scroll/Content"]
+unique_name_in_owner = true
 visible = false
 layout_mode = 2
-text = "尚未发现理念。"
+theme_type_variation = &"PKPanel"
+
+[node name="OfferBody" type="VBoxContainer" parent="Root/Scroll/Content/Offer"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="OfferTitle" type="Label" parent="Root/Scroll/Content/Offer/OfferBody"]
+layout_mode = 2
+text = "选择一条道路"
+horizontal_alignment = 1
+theme_type_variation = &"PKSectionTitle"
+
+[node name="Cards" type="VBoxContainer" parent="Root/Scroll/Content/Offer/OfferBody"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Choice0" parent="Root/Scroll/Content/Offer/OfferBody/Cards" instance=ExtResource("5_choice")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="Choice1" parent="Root/Scroll/Content/Offer/OfferBody/Cards" instance=ExtResource("5_choice")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="Choice2" parent="Root/Scroll/Content/Offer/OfferBody/Cards" instance=ExtResource("5_choice")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="EmptyState" type="PanelContainer" parent="Root/Scroll/Content"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(0, 220)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_type_variation = &"PKInsetPanel"
+
+[node name="Body" type="MarginContainer" parent="Root/Scroll/Content/EmptyState"]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 16
+
+[node name="Column" type="VBoxContainer" parent="Root/Scroll/Content/EmptyState/Body"]
+layout_mode = 2
+alignment = 1
+theme_override_constants/separation = 10
+
+[node name="EmptyIcon" parent="Root/Scroll/Content/EmptyState/Body/Column" instance=ExtResource("3_icon")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(48, 48)
+layout_mode = 2
+size_flags_horizontal = 4
+
+[node name="EmptyTitle" type="Label" parent="Root/Scroll/Content/EmptyState/Body/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "尚未形成国家理念"
+horizontal_alignment = 1
+theme_type_variation = &"PKSectionTitle"
+
+[node name="EmptyDetail" type="Label" parent="Root/Scroll/Content/EmptyState/Body/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "内阁还没有选定一条可推行的道路。"
+horizontal_alignment = 1
+autowrap_mode = 3
 theme_type_variation = &"PKMutedLabel"
+
+[node name="EmptyInsights" parent="Root/Scroll/Content/EmptyState/Body/Column" instance=ExtResource("4_insights")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="Collection" type="VBoxContainer" parent="Root/Scroll/Content"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="PromotionDialog" type="ConfirmationDialog" parent="."]
+unique_name_in_owner = true
+title = "确认晋升民族精神"
+ok_button_text = "确认晋升"
+dialog_text = "民族精神晋升不可逆，并会占用民族精神槽位。"
+
+[connection signal="pressed" from="Root/Actions/OpenOffer" to="." method="_open_offer"]
+[connection signal="chosen" from="Root/Scroll/Content/Offer/OfferBody/Cards/Choice0" to="." method="_choose_offer" binds= [0]]
+[connection signal="chosen" from="Root/Scroll/Content/Offer/OfferBody/Cards/Choice1" to="." method="_choose_offer" binds= [1]]
+[connection signal="chosen" from="Root/Scroll/Content/Offer/OfferBody/Cards/Choice2" to="." method="_choose_offer" binds= [2]]
+[connection signal="confirmed" from="PromotionDialog" to="." method="_confirm_promotion"]

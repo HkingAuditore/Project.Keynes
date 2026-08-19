@@ -1057,9 +1057,15 @@ bridge. Economy COMMIT publishes a double-buffered native
 `CountryClassOpinionSnapshot`; `NativeIdeologyRuntime` reads its POD vectors
 directly and caches normalized influence by revision. `DCWorldExt` packs that
 snapshot only for UI/debug. Player writes go through `PlayerController` and the
-producer/sequence command queue. UI reads one compact ideology snapshot plus
+Producer/sequence command queue. UI reads one compact ideology snapshot plus
 one packed `explain_ideologies()` batch when the support revision or structural
-signature changes; it never performs one native Dictionary call per row.
+signature changes; it never performs one native Dictionary call per row. An
+unmaterialized country snapshot still includes catalog slot capacities, offer
+cost, and starting-point endowment so the ideology panel can render a playable
+empty collection instead of `0/0` gauges. `IdeologyCatalog.catalog_view()`
+also joins authored UniqueSource Country modifier terms into
+`level_effect_lines` so the ideology panel can show mechanical effects on
+three-card offers and collection rows without reading Modifier stores.
 
 `EffectFacade` is an adapter transport boundary. For each transaction it asks
 adapters to preflight without mutation, marks the native transaction

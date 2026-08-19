@@ -53,7 +53,12 @@ dense ID。运行时查询只使用 dense ID；存档、journal 和 explain 使�
 | `country.output.family.<id>_factor` | Country | `[0, 8]` | frozen country×family building output |
 | `country.output.building.<id>_factor` | Country | `[0, 8]` | frozen country×building-type output |
 | `economy.building.output_factor` | Economy | `[0, 16]` | building output helper |
-| `economy.city.output_factor` | Economy | `[0, 8]` | settlement epoch output cache |
+| `economy.city.output_factor` | Economy | `[0, 16]` | settlement epoch output cache |
+| `economy.city.building.agriculture_output_factor` | Economy | `[0, 16]` | city agriculture building output |
+| `economy.city.building.extractive_output_factor` | Economy | `[0, 16]` | city extractive building output |
+| `economy.city.building.manufacturing_output_factor` | Economy | `[0, 16]` | city manufacturing building output |
+| `economy.city.building.energy_output_factor` | Economy | `[0, 16]` | city energy building output |
+| `economy.city.building.knowledge_output_factor` | Economy | `[0, 16]` | city knowledge building output |
 | `economy.city.birth_factor` | Economy | `[0, 4]` | household demography |
 | `economy.city.consumption_factor` | Economy | `[0, 4]` | cohort demand helper |
 | `economy.city.need.<id>.consumption_factor` | Economy | `[0, 4]` | selected need demand |
@@ -67,6 +72,13 @@ Country store 发布国家产出因子，Economy 再与 Building factor 组合�
 当前 `allowed_operations` 由 GDScript catalog 编译器校验；`value_conversion` 尚未进入 native
 catalog，Economy 仍由 consumer helper 显式做 Q16 转换。`persistable=false` 当前也未改变
 序列化行为。新增依赖这两个字段的 stat 前必须先补 native packed contract、hash 和测试。
+
+理念持久效果使用作者化 UniqueSource Country 定义（`ideology.collective_stewardship`、
+`ideology.free_exchange`、`ideology.scholar_office`、`ideology.civic_muster` 以及
+`ideology.synergy.*`）。它们复用已有 country 部门/贸易/研究/建设/旱灾 stat，不新增
+跨域 ledger。幅度由 Effect `value_q16` 插值：`1.0 + (term.factor - 1.0) * magnitude`。
+玩家可读百分比由 `ModifierCatalog.present_definition()` 生成。新增或改写这些
+definition 会改变 Modifier catalog hash；旧 PKCM 按现有规则 fail-closed。
 
 ## 数据结构
 
@@ -159,7 +171,7 @@ utilization，再乘冻结的 country/building 组合因子。实际生产、工
 工作资本、恢复/清算和投资收益/发行量/缺口估算都复用该 helper。结果进入现有商品结算，
 Modifier 从不直接写 market stock、country treasury 或 cohort funds。
 
-家族以 settlement cell 作为 Economy group。城市总产出、建筑 selector 效率、出生率、need/good
+家族以 settlement cell 作为 Economy group。城市总产出、五部门城市产出、出生率、need/good
 消费量和资源再生率在 epoch/snapshot 边界冻结为连续 Q16 POD；资源原生 pass 与 GDScript fallback
 读取同一冻结因子，不在逐资源热循环查询 ModifierStore。
 

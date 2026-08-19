@@ -1,11 +1,14 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=5 format=3]
 
-[ext_resource type="PackedScene" path="res://scenes/ui/badge_row.tscn" id="1_badges"]
-[ext_resource type="PackedScene" path="res://scenes/ui/gauge_bar.tscn" id="2_gauge"]
+[ext_resource type="Script" path="res://scripts/ui/components/ideology_idea_row.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://scenes/ui/badge_row.tscn" id="2_badges"]
+[ext_resource type="PackedScene" path="res://scenes/ui/gauge_bar.tscn" id="3_gauge"]
+[ext_resource type="PackedScene" path="res://scenes/ui/insight_list.tscn" id="4_insights"]
 
 [node name="IdeaRow" type="PanelContainer"]
 size_flags_horizontal = 3
 theme_type_variation = &"PKInsetPanel"
+script = ExtResource("1_script")
 
 [node name="Body" type="VBoxContainer" parent="."]
 layout_mode = 2
@@ -16,20 +19,32 @@ layout_mode = 2
 theme_override_constants/separation = 8
 
 [node name="Name" type="Label" parent="Body/Title"]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"PKSectionTitle"
 
-[node name="Slots" parent="Body/Title" instance=ExtResource("1_badges")]
+[node name="Slots" parent="Body/Title" instance=ExtResource("2_badges")]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Gauge" parent="Body" instance=ExtResource("2_gauge")]
+[node name="Gauge" parent="Body" instance=ExtResource("3_gauge")]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(160, 54)
 layout_mode = 2
 size_flags_horizontal = 3
 
+[node name="Effects" parent="Body" instance=ExtResource("4_insights")]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="Notes" parent="Body" instance=ExtResource("2_badges")]
+unique_name_in_owner = true
+layout_mode = 2
+
 [node name="Detail" type="Label" parent="Body"]
+unique_name_in_owner = true
 layout_mode = 2
 autowrap_mode = 3
 theme_type_variation = &"PKMutedLabel"
@@ -39,6 +54,7 @@ layout_mode = 2
 theme_override_constants/separation = 8
 
 [node name="Equip" type="Button" parent="Body/Actions"]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 30)
 layout_mode = 2
 focus_mode = 0
@@ -46,6 +62,7 @@ text = "装备"
 theme_type_variation = &"PKPrimaryButton"
 
 [node name="Unequip" type="Button" parent="Body/Actions"]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 30)
 layout_mode = 2
 focus_mode = 0
@@ -53,8 +70,13 @@ text = "卸下"
 theme_type_variation = &"PKTabButton"
 
 [node name="Promote" type="Button" parent="Body/Actions"]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 30)
 layout_mode = 2
 focus_mode = 0
 text = "晋升民族精神"
 theme_type_variation = &"PKTabButton"
+
+[connection signal="pressed" from="Body/Actions/Equip" to="." method="_on_equip_pressed"]
+[connection signal="pressed" from="Body/Actions/Unequip" to="." method="_on_unequip_pressed"]
+[connection signal="pressed" from="Body/Actions/Promote" to="." method="_on_promote_pressed"]

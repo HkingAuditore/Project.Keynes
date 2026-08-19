@@ -32,6 +32,29 @@ const TECHNOLOGY_STATS := [
 	["country.climate.cold_stress_factor", 0.20, 1.0],
 	["country.climate.heat_stress_factor", 0.20, 1.0],
 ]
+const Q16_ONE := 65536
+const STAT_DISPLAY_NAMES := {
+	"country.economy_output_factor": "全社会经济产出",
+	"country.production.input_factor": "全社会生产投入",
+	"country.household.consumption_factor": "全社会家庭消费",
+	"country.resource.use_factor": "全社会自然资源耗用",
+	"country.climate.cold_stress_factor": "寒冷损失",
+	"country.climate.drought_loss_factor": "旱灾损失",
+	"country.climate.flood_loss_factor": "洪灾损失",
+	"country.climate.heat_stress_factor": "热害损失",
+	"country.construction.cost_factor": "国家建设成本",
+	"country.construction.time_factor": "国家建设耗时",
+	"country.output.agriculture_factor": "农业部门产出",
+	"country.output.extractive_factor": "采掘部门产出",
+	"country.output.manufacturing_factor": "制造部门产出",
+	"country.output.energy_factor": "能源部门产出",
+	"country.output.knowledge_factor": "知识部门产出",
+	"country.research.engineering_efficiency": "工程领域研究效率",
+	"country.research.science_efficiency": "科学领域研究效率",
+	"country.research.society_efficiency": "社会领域研究效率",
+	"country.trade.capacity_factor": "国内贸易容量",
+	"country.trade.speed_factor": "贸易速度",
+}
 
 @export var stats: Array[Resource] = []
 @export var definitions: Array[Resource] = []
@@ -316,3 +339,48 @@ func compile_native_catalog() -> Dictionary:
 			out.definition_term_offsets.append(out.term_values.size())
 	out["ok"] = true
 	return out
+
+
+static func present_stat_delta(stat_key: String, operation: int, value: float,
+		magnitude_q16: int = Q16_ONE) -> String:
+	var name := String(STAT_DISPLAY_NAMES.get(stat_key, ""))
+	if name.is_empty() or not is_finite(value):
+		return ""
+	var magnitude := float(magnitude_q16) / float(Q16_ONE)
+	var delta := 0.0
+	match operation:
+		0:
+			delta = value * magnitude
+		1:
+			delta = -value * magnitude
+		2:
+			delta = (value - 1.0) * magnitude
+		3:
+			if is_zero_approx(value):
+				return ""
+			delta = ((1.0 / value) - 1.0) * magnitude
+		_:
+			return ""
+	var percent := int(round(delta * 100.0))
+	if percent == 0:
+		return ""
+	return "%s %+d%%" % [name, percent]
+
+
+func present_definition(definition_key: StringName,
+		magnitude_q16: int = Q16_ONE) -> PackedStringArray:
+	var lines := PackedStringArray()
+	if definition_key == &"":
+		return lines
+	for definition in definitions:
+		if definition == null or definition.key != definition_key:
+			continue
+		for term in definition.terms:
+			if term == null:
+				continue
+			var line := present_stat_delta(String(term.stat_key),
+				int(term.operation), float(term.value), magnitude_q16)
+			if not line.is_empty() and not lines.has(line):
+				lines.append(line)
+		break
+	return lines

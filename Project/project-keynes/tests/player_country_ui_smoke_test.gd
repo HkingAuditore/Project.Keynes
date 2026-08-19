@@ -65,6 +65,25 @@ func _run() -> void:
 			button != null and button.disabled and button.tooltip_text.contains("尚未开放"))
 	_expect("opening country affairs does not pause", clock.paused == paused_before)
 
+	ui.open_country_section("ideology")
+	await process_frame
+	await process_frame
+	var ideology_workspace := panel.get("_ideology_workspace") as Control
+	var ideology_model: Dictionary = panel.get("_model").get("ideology", {})
+	_expect("ideology workspace opens for the ideology action",
+		ideology_workspace != null and ideology_workspace.visible \
+			and panel.current_section() == "ideology")
+	_expect("ideology section snapshot is available",
+		bool(ideology_model.get("available", false)))
+	_expect("ideology empty collection still shows catalog slot capacity",
+		ideology_workspace != null and int(ideology_workspace.call("slots_capacity")) > 0)
+	_expect("ideology empty state explains the first draw",
+		ideology_workspace != null and bool(ideology_workspace.call("empty_state_visible"))
+		and not String(ideology_workspace.call("hint_text")).contains("暂不可用"))
+	_expect("ideology draw action is enabled with starting points",
+		ideology_workspace != null and not bool(ideology_workspace.call(
+			"offer_button_disabled")))
+
 	ui.open_country_section("economy")
 	await process_frame
 	var model: Dictionary = panel.get("_model")

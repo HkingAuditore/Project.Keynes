@@ -30,6 +30,13 @@ func _run() -> void:
 	_expect("country bootstrap supplies a generation-safe handle", handle != 0)
 	var catalog := _catalog()
 	_expect("ideology catalog configures", bool(ext.configure_ideologies(catalog).get("ok", false)))
+	var unmaterialized: Dictionary = ext.get_ideology_snapshot(handle)
+	_expect("unmaterialized snapshot still reports catalog slot capacity",
+		bool(unmaterialized.get("ok", false))
+		and int(unmaterialized.get("ideology_slots_capacity", 0)) == 2
+		and int(unmaterialized.get("national_spirit_slots_capacity", 0)) == 1
+		and int(unmaterialized.get("offer_cost_q16", 0)) == Q16_ONE
+		and not bool(unmaterialized.get("materialized", true)))
 	_expect("discover / points queue", bool(ext.submit_ideology_commands(_commands([
 		{"op": 1, "day": 0, "handle": handle, "idea": 0},
 		{"op": 2, "day": 0, "handle": handle, "value": 3 * Q16_ONE},

@@ -289,7 +289,9 @@ Show treasury, last tax collected, subsidy paid, and fulfillment summary cards. 
 default rate, search/filter, overrides-only mode, base rate, effective rate, and pending state.
 
 Submit one command only when a SpinBox/input is confirmed, not for every key or drag frame. Display
-next-day pending state until both the effective day and a newer policy version are observed. Import
+next-day pending state until the effective day, a newer policy version, and the live snapshot
+actually show the submitted rate (or cleared override). Day and version alone must not snap the
+editor back to an inherited 0%. Import
 and export remain editable with a foreign-trade-not-connected message.
 
 Cache rows and update visible values in place. Do not rebuild the node tree or reset scroll position

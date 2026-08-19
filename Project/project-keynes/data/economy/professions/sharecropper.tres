@@ -8,6 +8,6 @@ id = &"sharecropper"
 display_name = "分成佃农"
 default_consumption_plan_id = &"agrarian_household"
 profession_class_id = &"farmer"
-semantic_tags = PackedStringArray("agriculture", "tenant", "sharecropping")
+semantic_tags = PackedStringArray("agriculture", "tenant", "sharecropping", "activity.farming")
 technology_tags = PackedStringArray("institution.sharecropping")
 satisfaction_dimension_weights_q16 = PackedInt32Array(65536, 39322, 13107, 0, 19661, 26214, 26214, 6554)

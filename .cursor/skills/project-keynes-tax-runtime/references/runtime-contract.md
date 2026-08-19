@@ -289,12 +289,15 @@ Show treasury, last tax collected, subsidy paid, and fulfillment summary cards. 
 default rate, search/filter, overrides-only mode, base rate, effective rate, and pending state.
 
 Submit one command only when a SpinBox/input is confirmed, not for every key or drag frame. Display
-next-day pending state until both the effective day and a newer policy version are observed. Import
-and export remain editable with a foreign-trade-not-connected message.
+next-day pending state until the effective day, a newer policy version, and the live snapshot
+actually show the submitted rate (or cleared override). Day and version alone must not snap the
+editor back to an inherited 0%. Import and export remain editable with a
+foreign-trade-not-connected message.
 
 Cell Inspector tax editors share that confirm-then-pending rule. Arrow, drag, Enter, and focus-loss
-all confirm; live patches must keep the draft or pending rate and must not write the inherited
-default back over an in-progress edit.
+all confirm; Enter and focus-loss submit the LineEdit text, not a stale SpinBox value. Live patches
+must keep the draft or pending rate and must not write the inherited default back over an
+in-progress or still-uncommitted edit.
 
 Cache rows and update visible values in place. Do not rebuild the node tree or reset scroll position
 on daily refresh. Keep the workspace usable at 1280×720.

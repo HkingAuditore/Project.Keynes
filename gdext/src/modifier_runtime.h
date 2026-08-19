@@ -360,8 +360,9 @@ private:
     int32_t _cell_count = 0;
     uint64_t _catalog_hash = 0;
     uint64_t _legacy_catalog_hash_without_tax = 0;
-    static constexpr size_t BUILDING_OUTPUT_STAT_COUNT = 4;
-    int32_t _building_output_stat_ids[BUILDING_OUTPUT_STAT_COUNT] = {-1, -1, -1, -1};
+    static constexpr size_t BUILDING_OUTPUT_STAT_COUNT = 7;
+    int32_t _building_output_stat_ids[BUILDING_OUTPUT_STAT_COUNT] = {
+        -1, -1, -1, -1, -1, -1, -1};
     int64_t _current_day = -1;
     int64_t _next_request_id = 1;
     int64_t _next_event_id = 1;

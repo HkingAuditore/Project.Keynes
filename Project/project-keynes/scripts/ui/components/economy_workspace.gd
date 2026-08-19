@@ -778,8 +778,16 @@ func _update_card(card: Dictionary, kind_data: Dictionary) -> void:
 		var pending := _pending.has("%s:%s" % [kind, String(card.item_id)])
 		((card.pendings as Dictionary)[kind] as Control).visible = pending
 		if pending:
-			# Awaiting next-day commit: keep the optimistic state staged at
-			# submit time instead of snapping back to the stale authoritative rate.
+			var pending_entry: Dictionary = _pending.get(
+				"%s:%s" % [kind, String(card.item_id)], {})
+			var spin := (card.spins as Dictionary)[kind] as SpinBox
+			if pending_entry.has("rate"):
+				var pending_rate := int(pending_entry.rate)
+				spin.set_value_no_signal(pending_rate)
+				var shown := str(pending_rate)
+				if not String(spin.suffix).is_empty():
+					shown = "%s %s" % [shown, spin.suffix]
+				spin.get_line_edit().text = shown
 			continue
 		var spin := (card.spins as Dictionary)[kind] as SpinBox
 		var line_edit := spin.get_line_edit()
@@ -896,7 +904,13 @@ func _animate_cards_in() -> void:
 	UIAnimation.crossfade(_scroll, UITokens.ANIM_FAST)
 
 
-func _on_rate_confirmed(_text: String, key: String, kind: String) -> void:
+func _on_rate_confirmed(text: String, key: String, kind: String) -> void:
+	var card: Dictionary = _rows.get(key, {})
+	if not card.is_empty() and (card.spins as Dictionary).has(kind):
+		var spin := (card.spins as Dictionary)[kind] as SpinBox
+		var rate := TaxLaneEditor.parse_rate_text(text, int(spin.value))
+		if rate != int(spin.value):
+			spin.set_value_no_signal(rate)
 	_confirm_spin(key, kind)
 
 
@@ -978,7 +992,9 @@ func _confirm_spin(key: String, kind: String) -> void:
 	if card.is_empty():
 		return
 	var spin := (card.spins as Dictionary)[kind] as SpinBox
-	var rate := int(spin.value)
+	var rate := TaxLaneEditor.parse_rate_text(spin.get_line_edit().text, int(spin.value))
+	if rate != int(spin.value):
+		spin.set_value_no_signal(rate)
 	var current := int((card.rates as Dictionary).get(kind, 0))
 	var overridden := bool((card.overridden as Dictionary).get(kind, false))
 	var item_id := String(card.item_id)
@@ -1030,7 +1046,7 @@ func _clear_override(kind: String, item_id: String) -> void:
 		&"country.tax.clear_override", {
 			"kind": int(TAX_KIND[kind]), "item_id": StringName(item_id)})
 	if bool(result.get("ok", false)):
-		_mark_pending(kind, item_id)
+		_mark_pending(kind, item_id, _default_rate(kind), "clear")
 		var card: Dictionary = _rows.get("%s:%s" % [_kind_page(kind), item_id], {})
 		if not card.is_empty():
 			var default_rate := _default_rate(kind)
@@ -1059,7 +1075,7 @@ func _submit_rate(kind: String, item_id: String, rate: int, is_default: bool) ->
 	if bool(result.get("ok", false)):
 		if is_default:
 			_preview_defaults.erase(kind)
-		_mark_pending(kind, item_id, rate if is_default else 0)
+		_mark_pending(kind, item_id, rate, "set")
 		var card: Dictionary = _rows.get("%s:%s" % [_kind_page(kind), item_id], {})
 		if not card.is_empty():
 			var spin := (card.spins as Dictionary)[kind] as SpinBox
@@ -1096,15 +1112,15 @@ func _refresh_override_frame(card: Dictionary) -> void:
 
 
 func _mark_pending(kind: String, item_id: String,
-		optimistic_rate: int = 0) -> void:
+		optimistic_rate: int = 0, op: String = "set") -> void:
 	var key := "%s:%s" % [kind, item_id]
 	var policy: Dictionary = _model.get("tax_policy", {})
 	_pending[key] = {
 		"effective_day": _effective_day(),
 		"policy_version": int(policy.get("policy_version", -1)),
+		"rate": optimistic_rate,
+		"op": op,
 	}
-	if item_id == "__default__":
-		(_pending[key] as Dictionary)["rate"] = optimistic_rate
 	var card: Dictionary = _rows.get("%s:%s" % [_kind_page(kind), item_id], {})
 	if not card.is_empty():
 		((card.pendings as Dictionary)[kind] as Control).visible = true
@@ -1124,9 +1140,12 @@ func _resolve_pending_commands() -> void:
 	for key_value in _pending:
 		var key := String(key_value)
 		var pending: Dictionary = _pending[key]
-		if current_day >= int(pending.get("effective_day", current_day + 1)) \
-				and current_version > int(pending.get("policy_version", current_version)):
-			resolved.append(key)
+		if current_day < int(pending.get("effective_day", current_day + 1)) \
+				or current_version <= int(pending.get("policy_version", current_version)):
+			continue
+		if not _policy_reflects_pending(key, pending):
+			continue
+		resolved.append(key)
 	for key in resolved:
 		_pending.erase(key)
 		var kind := key.get_slice(":", 0)
@@ -1134,6 +1153,35 @@ func _resolve_pending_commands() -> void:
 			"%s:%s" % [_kind_page(kind), key.get_slice(":", 1)], {})
 		if not card.is_empty() and (card.pendings as Dictionary).has(kind):
 			((card.pendings as Dictionary)[kind] as Control).visible = false
+
+
+func _policy_reflects_pending(key: String, pending: Dictionary) -> bool:
+	var policy: Dictionary = _model.get("tax_policy", {})
+	var kind := key.get_slice(":", 0)
+	var item_id := key.substr(kind.length() + 1)
+	var op := String(pending.get("op", "set"))
+	var kind_id := int(TAX_KIND.get(kind, -1))
+	if item_id == "__default__":
+		var defaults: PackedInt32Array = policy.get("default_rates", PackedInt32Array())
+		return kind_id >= 0 and kind_id < defaults.size() and pending.has("rate") \
+			and int(defaults[kind_id]) == int(pending.rate)
+	var group: Dictionary = policy.get(kind, {})
+	var ids: PackedStringArray = PackedStringArray()
+	if kind == "income":
+		ids = policy.get("profession_ids", PackedStringArray())
+	elif kind == "business":
+		ids = policy.get("building_type_ids", PackedStringArray())
+	else:
+		ids = policy.get("good_ids", PackedStringArray())
+	var index := ids.find(item_id)
+	var rates: PackedInt32Array = group.get("rates", PackedInt32Array())
+	var flags: PackedByteArray = group.get("has_override", PackedByteArray())
+	if index < 0 or index >= rates.size():
+		return false
+	var overridden := index < flags.size() and flags[index] != 0
+	if op == "clear":
+		return not overridden
+	return overridden and int(rates[index]) == int(pending.get("rate", -1))
 
 
 func _effective_day() -> int:

@@ -54,6 +54,13 @@ cohort 与家族分支的八维度综合满意度、阶层权重、生存闸门�
 - [税收与财政结算运行时](./tax-fiscal-runtime.md)：五类国家税务政策、职业/物资/建筑覆盖、
   国家级税率 Modifier、财政托管、应税事件、PKCN v11/PKEC v37 存档和国家经济 UI。
 
+## Native Ideology Runtime
+
+- [Native Ideology Runtime](./native-ideology-runtime.md)：国家范围理念收藏、槽位、三选一、
+  理解度/等级、阶层民意门、互斥组、联动、ACK 门控 Effect/Modifier 事务与 PKID v3。
+- 修改理念目录、命令、民意公式、联动、Effect 绑定、存档或理念面板时，必须先读并同步
+  这份主说明与 `project-keynes-ideology-runtime` Skill。
+
 ## 阅读顺序
 
 1. [Architecture Overview](./architecture-overview.md)
@@ -138,6 +145,11 @@ Codex 工作流。修改经济运行时文档或默认机制时，必须同步�
 生命周期、查询、PKEC v30 和性能验收。修改显赫家族/人物机制、姓名目录、UI 或存档时必须同时使用
 并同步该 Skill。
 
+理念专项 Skill 位于
+[`project-keynes-ideology-runtime`](../../.codex/skills/project-keynes-ideology-runtime/SKILL.md)，
+约束 `NativeIdeologyRuntime`、阶层民意快照、互斥/联动、Effect ACK、PKID v3 和理念面板。
+修改理念内容、命令、民意门、联动、存档或 UI 时必须同时使用并同步该 Skill。
+
 ## 与现有文档的关系
 
 | 文档 | 本目录如何使用 |
@@ -164,6 +176,7 @@ Codex 工作流。修改经济运行时文档或默认机制时，必须同步�
 | Native economy | `gdext/src/economy_runtime*.cpp`, `Project/project-keynes/scripts/economy/*.gd` | 独立 `ECONOMY_GRAPH`；catalog、profile、configuration、domain、persistence、events 与 query translation units；root 仅保留 stage/worker/publish orchestration；committed gameplay/save 与 selected-cell live Inspector bridge 不变。 |
 | Native country | `gdext/src/country_runtime.cpp`, `gdext/src/world_ext_country.cpp`, `Project/project-keynes/scripts/country/*.gd` | 国家身份、领土、科技、国库、PKCN 与 `country_daily` 权威；只镜像 `cell.country_slot`。 |
 | Native modifier | `gdext/src/modifier_runtime.*`, `gdext/src/world_ext_modifier.cpp`, `Project/project-keynes/scripts/modifier/*.gd` | 四域独立 store、PackedArray command、explain/journal/save 与 `modifier_daily` 冻结发布。 |
+| Native ideology | `gdext/src/ideology_runtime.*`, `gdext/src/world_ext_ideology.cpp`, `Project/project-keynes/scripts/ideology/*.gd` | 国家理念收藏/槽位/三选一/民意门/联动；只提交 Effect 原子批，不写 Modifier/Economy 存储。 |
 | Rendering / physical ocean | `Project/project-keynes/scripts/rendering/map_baker.gd` | SLP/wind/PSI/upwelling/raster 等 ocean currents 物理链路。 |
 | Visual tile rendering | `Project/project-keynes/scripts/rendering/visual_tile_layout.gd`, `visual_tile_set.gd`, `visual_tile_horizon_baker.gd` | 视觉预算、静态 array 生命周期与异步 horizon；不拥有生成或仿真状态。 |
 | Vision / fog | `Project/project-keynes/scripts/geography/vision_solver.gd` | 静态视野场预烘、多源 Dijkstra 解算、`fog_k` 与三态 `fog_state`。 |
