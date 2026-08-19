@@ -4,6 +4,7 @@ extends Resource
 @export var id: StringName = &""
 @export var display_name: String = ""
 @export var icon: Texture2D = null
+@export var culture_group_id: StringName = &"default"
 
 ## Optional signature modifiers. Q16_ONE means unchanged.
 @export var birth_rate_factor_q16: int = 65536

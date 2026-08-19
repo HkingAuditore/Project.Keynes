@@ -115,6 +115,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         append_le<int32_t>(payload, _family_min_settlement_tier);
         append_le<int32_t>(payload, _family_review_days);
         append_le<int64_t>(payload, _family_min_population_per_active);
+        append_le<int64_t>(payload, _family_split_population_threshold);
         append_le<int32_t>(payload, _family_max_per_cell);
         append_le<int32_t>(payload, _family_decline_reviews);
         append_le<int64_t>(payload, _person_catalog_hash);
@@ -649,7 +650,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         return make_save_chunk(SAVE_SECTION_SETTLEMENT_NAMES, records, payload);
     }
     if (_save.section == SAVE_SECTION_FAMILY_RECORDS) {
-        constexpr int32_t record_bytes = 45;
+        constexpr int32_t record_bytes = 57;
         const int32_t max_records = std::max(1, (budget - 16) / record_bytes);
         const int32_t end = std::min<int32_t>(_families.active.size(),
             _save.family_cursor + max_records);
@@ -664,7 +665,10 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             append_le<uint32_t>(payload, _families.surname_disambiguator[i]);
             append_le<int64_t>(payload, _families.founded_day[i]);
             append_le<int32_t>(payload, _families.home_cell[i]);
+            append_le<int32_t>(payload, _families.origin_cell[i]);
             append_le<int32_t>(payload, _families.origin_ethnicity[i]);
+            append_le<int32_t>(payload, _families.culture_group_id[i]);
+            append_le<uint32_t>(payload, _families.split_sequence[i]);
             append_le<uint16_t>(payload, _families.decline_reviews[i]);
             append_le<uint16_t>(payload, _families.flags[i]);
         }
