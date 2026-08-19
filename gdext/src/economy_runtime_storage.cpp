@@ -297,7 +297,8 @@ void NativeEconomyRuntime::PopulationStore::reclaim_empty_pages(int32_t cell) {
 void NativeEconomyRuntime::FamilyStore::clear() {
     active.clear(); generation.clear(); stable_id.clear(); surname_id.clear();
     surname_disambiguator.clear(); founded_day.clear(); home_cell.clear();
-    origin_ethnicity.clear(); decline_reviews.clear(); flags.clear();
+    origin_cell.clear(); origin_ethnicity.clear(); culture_group_id.clear();
+    split_sequence.clear(); decline_reviews.clear(); flags.clear();
     free_indices.clear(); active_count = 0;
 }
 
@@ -311,14 +312,17 @@ int32_t NativeEconomyRuntime::FamilyStore::allocate() {
         index = static_cast<int32_t>(active.size());
         active.push_back(0); generation.push_back(1); stable_id.push_back(0);
         surname_id.push_back(-1); surname_disambiguator.push_back(0);
-        founded_day.push_back(-1); home_cell.push_back(-1);
-        origin_ethnicity.push_back(-1); decline_reviews.push_back(0);
+        founded_day.push_back(-1); home_cell.push_back(-1); origin_cell.push_back(-1);
+        origin_ethnicity.push_back(-1); culture_group_id.push_back(-1);
+        split_sequence.push_back(0); decline_reviews.push_back(0);
         flags.push_back(0);
     }
     active[index] = 1;
     stable_id[index] = 0; surname_id[index] = -1;
     surname_disambiguator[index] = 0; founded_day[index] = -1;
-    home_cell[index] = -1; origin_ethnicity[index] = -1;
+    home_cell[index] = -1; origin_cell[index] = -1;
+    origin_ethnicity[index] = -1; culture_group_id[index] = -1;
+    split_sequence[index] = 0;
     decline_reviews[index] = 0; flags[index] = 0;
     ++active_count;
     return index;

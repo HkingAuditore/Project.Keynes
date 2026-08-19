@@ -1,5 +1,11 @@
 # 经济存档、catalog migration 与内容扩展 SOP
 
+## PKEC v40（当前 writer）
+
+FamilyStore 保存不可变 `origin_cell`、`culture_group_id` 与 `split_sequence`，并把家族分裂阈值
+100 写入 policy header。v39 存档显式迁移为 `origin_cell=home_cell`、按 `origin_ethnicity` 映射
+文化组、`split_sequence=0`；该起源地是兼容性重建，无法还原旧版本真实历史。
+
 ## PKEC v37（当前 writer）
 
 v37 在 v36 的家族开拓队记录末尾追加开工包货物 CSR 与冻结建筑计划：每条

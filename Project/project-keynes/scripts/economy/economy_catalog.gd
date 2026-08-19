@@ -234,6 +234,7 @@ static func compile_native_catalog() -> Dictionary:
 		profession_semantic_tag_offsets.append(profession_semantic_tags.size())
 
 	var ethnicity_ids := PackedStringArray()
+	var ethnicity_culture_group_ids := PackedStringArray()
 	var ethnicity_need_factor := PackedInt32Array()
 	for ethnicity in ethnicities:
 		var stable_id := String(ethnicity.id)
@@ -241,6 +242,10 @@ static func compile_native_catalog() -> Dictionary:
 				or ethnicity.need_modifier_ids.size() != ethnicity.need_quantity_factors_q16.size():
 			return {"ok": false, "reason": "invalid ethnicity: %s" % stable_id}
 		ethnicity_ids.append(stable_id)
+		var culture_group_id := String(ethnicity.culture_group_id).strip_edges()
+		if culture_group_id.is_empty():
+			return {"ok": false, "reason": "ethnicity_missing_culture_group: %s" % stable_id}
+		ethnicity_culture_group_ids.append(culture_group_id)
 		var factors := PackedInt32Array()
 		factors.resize(need_ids.size())
 		factors.fill(Q16_ONE)
@@ -295,6 +300,7 @@ static func compile_native_catalog() -> Dictionary:
 		"profession_semantic_tag_offsets": profession_semantic_tag_offsets,
 		"profession_semantic_tags": profession_semantic_tags,
 		"ethnicity_ids": ethnicity_ids,
+		"ethnicity_culture_group_ids": ethnicity_culture_group_ids,
 		"need_ids": need_ids,
 		"need_living_cost_weights_q16": need_living_cost_weights,
 		"need_satisfaction_tiers": need_satisfaction_tiers,
@@ -661,6 +667,24 @@ static func compile_native_catalog() -> Dictionary:
 	for key in trait_columns:
 		if key != "ok":
 			catalog[key] = trait_columns[key]
+	var family_v39_columns := {
+		"family_surname_pack_id": catalog.family_surname_pack_id,
+		"family_surname_ids": catalog.family_surname_ids,
+		"family_surname_text": catalog.family_surname_text,
+		"family_surname_weights": catalog.family_surname_weights,
+	}
+	var family_v39_hash := hash(family_v39_columns)
+	if family_v39_hash == 0:
+		family_v39_hash = 1
+	var catalog_v39 := catalog.duplicate(true)
+	for key in ["ethnicity_culture_group_ids", "family_culture_group_ids",
+			"family_culture_group_display_names", "family_culture_group_naming_formats",
+			"family_culture_group_separators", "family_culture_group_suffixes",
+			"family_surname_culture_group_ids"]:
+		catalog_v39.erase(key)
+	catalog_v39["family_catalog_hash"] = family_v39_hash
+	catalog["family_catalog_compat_hash_v39"] = family_v39_hash
+	catalog["catalog_compat_hash_v39"] = _catalog_hash(catalog_v39)
 	# Family trait semantics participate in the final economy identity. The
 	# earlier hash remains useful only for explicit legacy readers.
 	catalog["catalog_hash"] = _catalog_hash(catalog)

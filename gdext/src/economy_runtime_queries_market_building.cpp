@@ -1609,7 +1609,8 @@ Dictionary NativeEconomyRuntime::family_cell_snapshot(
         owned_buildings;
     PackedInt32Array notable_person_counts, prestige_levels, prestige_scores;
     PackedStringArray surnames;
-    PackedInt32Array disambiguators, home_cells, origin_ethnicities;
+    PackedInt32Array disambiguators, home_cells, origin_cells,
+        origin_ethnicities, culture_groups;
     const int32_t end = std::min<int32_t>(indices.size(), offset + limit);
     for (int32_t pos = offset; pos < end; ++pos) {
         const int32_t index = indices[pos];
@@ -1626,7 +1627,9 @@ Dictionary NativeEconomyRuntime::family_cell_snapshot(
         cash_claims.push_back(family_cash_claim(handle));
         owned_buildings.push_back(family_owned_buildings(handle));
         home_cells.push_back(_families.home_cell[index]);
+        origin_cells.push_back(_families.origin_cell[index]);
         origin_ethnicities.push_back(_families.origin_ethnicity[index]);
+        culture_groups.push_back(_families.culture_group_id[index]);
         notable_person_counts.push_back(_person_family_offsets.size() ==
                 _families.active.size() + 1
             ? _person_family_offsets[index + 1] - _person_family_offsets[index]
@@ -1658,7 +1661,9 @@ Dictionary NativeEconomyRuntime::family_cell_snapshot(
     out["cash_claims"] = cash_claims;
     out["owned_buildings"] = owned_buildings;
     out["home_cells"] = home_cells;
+    out["origin_cells"] = origin_cells;
     out["origin_ethnicity_ids"] = origin_ethnicities;
+    out["culture_group_ids"] = culture_groups;
     out["notable_person_counts"] = notable_person_counts;
     out["prestige_levels"] = prestige_levels;
     out["prestige_scores_q16"] = prestige_scores;
@@ -1826,7 +1831,29 @@ Dictionary NativeEconomyRuntime::family_snapshot(int64_t family_handle_value) co
         _families.surname_disambiguator[index]);
     out["founded_day"] = _families.founded_day[index];
     out["home_cell"] = _families.home_cell[index];
+    out["origin_cell"] = _families.origin_cell[index];
     out["origin_ethnicity_id"] = _families.origin_ethnicity[index];
+    out["culture_group_id"] = _families.culture_group_id[index];
+    out["culture_group_stable_id"] = _families.culture_group_id[index] >= 0 &&
+        _families.culture_group_id[index] < static_cast<int32_t>(
+            _family_culture_group_ids.size())
+        ? from_utf8(_family_culture_group_ids[_families.culture_group_id[index]]) : String();
+    out["culture_group_display_name"] = _families.culture_group_id[index] >= 0 &&
+        _families.culture_group_id[index] < static_cast<int32_t>(
+            _family_culture_group_display_names.size())
+        ? from_utf8(_family_culture_group_display_names[_families.culture_group_id[index]]) : String();
+    out["culture_group_naming_format"] = _families.culture_group_id[index] >= 0 &&
+        _families.culture_group_id[index] < static_cast<int32_t>(
+            _family_culture_group_naming_formats.size())
+        ? from_utf8(_family_culture_group_naming_formats[_families.culture_group_id[index]]) : String();
+    out["culture_group_separator"] = _families.culture_group_id[index] >= 0 &&
+        _families.culture_group_id[index] < static_cast<int32_t>(
+            _family_culture_group_separators.size())
+        ? from_utf8(_family_culture_group_separators[_families.culture_group_id[index]]) : String();
+    out["culture_group_suffix"] = _families.culture_group_id[index] >= 0 &&
+        _families.culture_group_id[index] < static_cast<int32_t>(
+            _family_culture_group_suffixes.size())
+        ? from_utf8(_family_culture_group_suffixes[_families.culture_group_id[index]]) : String();
     out["decline_reviews"] = _families.decline_reviews[index];
     out["population"] = family_population(handle);
     out["transit_population"] = transit_population;

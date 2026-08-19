@@ -1074,6 +1074,7 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
     _catalog_compat_hash_v8 = dict_num<int64_t>(catalog, "market_catalog_compat_hash_v8", 0);
     _catalog_compat_hash_v10 = dict_num<int64_t>(catalog, "catalog_compat_hash_v10", 0);
     _catalog_compat_hash_v13 = dict_num<int64_t>(catalog, "catalog_compat_hash_v13", 0);
+    _catalog_compat_hash_v39 = dict_num<int64_t>(catalog, "catalog_compat_hash_v39", 0);
     _catalog_compat_hash_v6 = dict_num<int64_t>(catalog, "market_catalog_compat_hash_v6", 0);
     _catalog_compat_hash_v7 = dict_num<int64_t>(catalog, "market_catalog_compat_hash_v7", 0);
     _building_catalog_hash = dict_num<int64_t>(catalog, "building_catalog_hash", 1);
@@ -1184,23 +1185,71 @@ bool NativeEconomyRuntime::compile_family_catalog(
     _family_surname_ids = packed_strings(catalog, "family_surname_ids");
     _family_surname_text = packed_strings(catalog, "family_surname_text");
     _family_surname_weights = packed_i32(catalog, "family_surname_weights");
+    _family_culture_group_ids = packed_strings(catalog, "family_culture_group_ids");
+    _family_culture_group_display_names = packed_strings(catalog, "family_culture_group_display_names");
+    _family_culture_group_naming_formats = packed_strings(catalog, "family_culture_group_naming_formats");
+    _family_culture_group_separators = packed_strings(catalog, "family_culture_group_separators");
+    _family_culture_group_suffixes = packed_strings(catalog, "family_culture_group_suffixes");
+    _family_surname_culture_group_ids = packed_i32(catalog, "family_surname_culture_group_ids");
+    const std::vector<std::string> ethnicity_culture_group_keys =
+        packed_strings(catalog, "ethnicity_culture_group_ids");
+    _ethnicity_culture_group_ids.assign(_ethnicity_ids.size(), -1);
+    if (ethnicity_culture_group_keys.size() != _ethnicity_ids.size()) {
+        error = "ethnicity_culture_group_columns_mismatch";
+        return false;
+    }
+    for (size_t i = 0; i < ethnicity_culture_group_keys.size(); ++i) {
+        const auto it = std::lower_bound(_family_culture_group_ids.begin(),
+            _family_culture_group_ids.end(), ethnicity_culture_group_keys[i]);
+        if (it == _family_culture_group_ids.end() || *it != ethnicity_culture_group_keys[i]) {
+            error = "ethnicity_culture_group_unknown";
+            return false;
+        }
+        _ethnicity_culture_group_ids[i] = static_cast<int32_t>(
+            it - _family_culture_group_ids.begin());
+    }
     _family_catalog_hash = dict_num<int64_t>(catalog, "family_catalog_hash", 0);
-    if (_family_surname_ids.empty() ||
+    _family_catalog_compat_hash_v39 = dict_num<int64_t>(
+        catalog, "family_catalog_compat_hash_v39", 0);
+    if (_family_surname_ids.empty() || _family_culture_group_ids.empty() ||
         _family_surname_ids.size() != _family_surname_text.size() ||
         _family_surname_ids.size() != _family_surname_weights.size() ||
+        _family_surname_ids.size() != _family_surname_culture_group_ids.size() ||
+        _family_culture_group_ids.size() != _family_culture_group_display_names.size() ||
+        _family_culture_group_ids.size() != _family_culture_group_naming_formats.size() ||
+        _family_culture_group_ids.size() != _family_culture_group_separators.size() ||
+        _family_culture_group_ids.size() != _family_culture_group_suffixes.size() ||
         _family_catalog_hash == 0) {
         error = "family_surname_catalog_invalid";
         return false;
+    }
+    for (size_t i = 0; i < _family_culture_group_ids.size(); ++i) {
+        if (_family_culture_group_ids[i].empty() ||
+            (i > 0 && _family_culture_group_ids[i - 1] >= _family_culture_group_ids[i]) ||
+            _family_culture_group_naming_formats[i] != "CITY_SURNAME_SUFFIX" &&
+            _family_culture_group_naming_formats[i] != "CITY_SEPARATOR_SURNAME" &&
+            _family_culture_group_naming_formats[i] != "CITY_SURNAME") {
+            error = "family_culture_group_catalog_invalid";
+            return false;
+        }
     }
     int64_t weight_sum = 0;
     for (size_t i = 0; i < _family_surname_ids.size(); ++i) {
         if (_family_surname_ids[i].empty() || _family_surname_text[i].empty() ||
             _family_surname_weights[i] <= 0 ||
-            (i > 0 && _family_surname_ids[i - 1] >= _family_surname_ids[i])) {
+            (i > 0 && std::tie(_family_surname_culture_group_ids[i - 1],
+                _family_surname_ids[i - 1]) >= std::tie(
+                _family_surname_culture_group_ids[i], _family_surname_ids[i]))) {
             error = "family_surname_catalog_not_sorted_unique";
             return false;
         }
         weight_sum += _family_surname_weights[i];
+        if (_family_surname_culture_group_ids[i] < 0 ||
+            _family_surname_culture_group_ids[i] >=
+                static_cast<int32_t>(_family_culture_group_ids.size())) {
+            error = "family_surname_culture_group_invalid";
+            return false;
+        }
     }
     if (weight_sum <= 0) {
         error = "family_surname_weight_sum_invalid";
