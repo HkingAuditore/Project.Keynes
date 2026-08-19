@@ -47,6 +47,26 @@ func _run() -> void:
 		failures.append("cohort detail left the page income default visible")
 	var row_editor := (inspector._object_detail_dialog.tax_editors()[0] \
 		as TaxLaneEditor)
+	# Live detail refreshes must not replace a tax editor while its LineEdit owns focus.
+	var editor_instance_id := row_editor.get_instance_id()
+	var refreshed_payload := {
+		"kind": "cohort", "name": "工匠（刷新）", "row": {
+			"tax_lanes": [_model(5).categories.population.cohort_rows[0].tax_lanes[0]],
+		}, "tax_context": _model(5).categories.population.tax_context,
+	}
+	row_editor._spin.get_line_edit().grab_focus()
+	inspector.refresh_object_detail(refreshed_payload)
+	await process_frame
+	if (inspector._object_detail_dialog.tax_editors()[0] as TaxLaneEditor).get_instance_id() \
+			!= editor_instance_id \
+			or inspector._object_detail_dialog.title_text() != "工匠":
+		failures.append("live detail refresh replaced a focused tax editor")
+	row_editor._spin.get_line_edit().release_focus()
+	await process_frame
+	await process_frame
+	if inspector._object_detail_dialog.title_text() != "工匠（刷新）":
+		failures.append("deferred detail refresh did not apply after tax edit ended")
+	row_editor = (inspector._object_detail_dialog.tax_editors()[0] as TaxLaneEditor)
 	var base_rate := int(row_editor.lane_data().get("base", -1))
 	row_editor._spin.set_value_no_signal(base_rate + 3)
 	row_editor._on_text_submitted("")

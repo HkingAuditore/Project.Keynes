@@ -50,6 +50,8 @@ void NativeEconomyRuntime::MarketResult::reset() {
     welfare_entries.clear();
     structural_commands.clear();
     trade_active_goods.clear();
+    audit_population_lanes.clear();
+    audit_market_lanes.clear();
     allocation_growth_count = 0;
     allocation_growth_bytes = 0;
     approximation_decisions = 0;
@@ -75,6 +77,8 @@ int64_t NativeEconomyRuntime::MarketResult::capacity_bytes() const {
         welfare_entries.capacity() * sizeof(CohortWelfareEntry) +
         structural_commands.capacity() * sizeof(StructuralCommand) +
         trade_active_goods.capacity() * sizeof(int32_t) +
+        audit_population_lanes.capacity() * sizeof(size_t) +
+        audit_market_lanes.capacity() * sizeof(size_t) +
         approximation_variant_active.capacity() * sizeof(uint8_t));
 }
 
@@ -141,6 +145,8 @@ void NativeEconomyRuntime::ProductionResult::reset() {
     retained_outputs.clear();
     trace_drafts.clear();
     cashflow_drafts.clear();
+    audit_population_lanes.clear();
+    audit_market_lanes.clear();
     bio_introduce_cells.clear();
     bio_introduce_bits.clear();
     allocation_growth_count = 0;
@@ -153,6 +159,8 @@ int64_t NativeEconomyRuntime::ProductionResult::capacity_bytes() const {
         retained_outputs.capacity() * sizeof(OwnerRetainedOutput) +
         trace_drafts.capacity() * sizeof(ProductionTraceDraft) +
         cashflow_drafts.capacity() * sizeof(ProductionCashflowDraft) +
+        audit_population_lanes.capacity() * sizeof(size_t) +
+        audit_market_lanes.capacity() * sizeof(size_t) +
         bio_introduce_cells.capacity() * sizeof(int32_t) +
         bio_introduce_bits.capacity() * sizeof(int32_t));
     for (const ProductionTraceDraft &draft : trace_drafts)

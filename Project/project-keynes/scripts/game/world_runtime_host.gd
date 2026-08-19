@@ -574,6 +574,26 @@ func get_sim_breakdowns() -> Dictionary:
 	if _generator.has_method("sus_ocean_currents_breakdown"):
 		out["ocean"] = _generator.sus_ocean_currents_breakdown()
 	var tick_report := get_sus_last_tick_report()
+	var country_job = tick_report.get("country_daily", {})
+	if country_job is Dictionary and _generator.has_method("get_country_report"):
+		var country_report: Dictionary = _generator.get_country_report()
+		var report_day := int(country_report.get(
+			"last_committed_day", country_report.get("day_index", -1)))
+		var current_day := int(_world_clock.day_index()) if _world_clock != null else report_day
+		if not country_report.is_empty() and report_day >= 0 and report_day >= current_day:
+			var country_breakdown: Dictionary = {
+				"_tick_idx": _fast_tick_count,
+				"country_report_mode": country_report.get(
+					"country_report_mode", country_report.get("report_mode", "")),
+				"country_state_hash_ms": country_report.get(
+					"country_state_hash_ms", country_report.get("state_hash_ms", 0.0)),
+				"country_report_build_ms": country_report.get(
+					"country_report_build_ms", country_report.get("report_build_ms", 0.0)),
+				"research_queue_size": country_report.get("research_queue_size", -1),
+				"research_full_scan_fallbacks": country_report.get(
+					"research_full_scan_fallbacks", 0),
+			}
+			out["country"] = country_breakdown
 	var economy_job = tick_report.get("economy_daily", {})
 	var economy_report: Dictionary = {}
 	if economy_job is Dictionary \
@@ -2118,6 +2138,14 @@ func _publish_fast_tick_perf_sample(
 		"t_ui_ms": t_ui_ms,
 		"continuation_frames": int(continuation.get("frames", 0)),
 		"continuation_slices": int(continuation.get("slices", 0)),
+		"continuation_started_slices": int(
+			continuation.get("continuation_started_slices", 0)),
+		"continuation_completed_slices": int(
+			continuation.get("continuation_completed_slices", 0)),
+		"continuation_budget_exhausted": bool(
+			continuation.get("continuation_budget_exhausted", false)),
+		"continuation_blocked_by_stage": str(
+			continuation.get("continuation_blocked_by_stage", "")),
 		"continuation_country_slices": int(continuation.get("country_slices", 0)),
 		"continuation_economy_slices": int(continuation.get("economy_slices", 0)),
 		"continuation_wall_ms": float(continuation.get("wall_ms", 0.0)),

@@ -231,8 +231,14 @@ void NativeEconomyRuntime::audit_touch_population_lane(int32_t slot) {
         slot >= static_cast<int32_t>(_population.active.size()))
         return;
     const size_t index = static_cast<size_t>(slot);
-    if (_production_result_sink != nullptr || _market_result_sink != nullptr)
+    if (_production_result_sink != nullptr) {
+        _production_result_sink->audit_population_lanes.push_back(index);
         return;
+    }
+    if (_market_result_sink != nullptr) {
+        _market_result_sink->audit_population_lanes.push_back(index);
+        return;
+    }
     if (_audit_population_lane_stamp.size() < _population.active.size()) {
         _audit_population_lane_stamp.resize(_population.active.size(), 0);
         _audit_shadow_population.resize(_population.active.size(), 0);
@@ -248,8 +254,14 @@ void NativeEconomyRuntime::audit_touch_market_lane(size_t index) {
     if (!_epoch_active || _closing_audit_mode == 0 ||
         _closing_audit_runtime_disabled || index >= _market.stock.size())
         return;
-    if (_production_result_sink != nullptr || _market_result_sink != nullptr)
+    if (_production_result_sink != nullptr) {
+        _production_result_sink->audit_market_lanes.push_back(index);
         return;
+    }
+    if (_market_result_sink != nullptr) {
+        _market_result_sink->audit_market_lanes.push_back(index);
+        return;
+    }
     if (_audit_market_lane_stamp.size() < _market.stock.size()) {
         _audit_market_lane_stamp.resize(_market.stock.size(), 0);
         _audit_shadow_market_stock.resize(_market.stock.size(), 0);
@@ -6903,6 +6915,11 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
             out["elapsed_ms"] = elapsed_ms(slice_start);
             return out;
         }
+    } else {
+        // A continuation reuses the frozen epoch workset and prepare state;
+        // count this explicitly so diagnostics can expose duplicate prepare
+        // work without changing the five-day cadence.
+        ++_prepare_reuse_count;
     }
     ++_continuation_slices;
 
@@ -7677,6 +7694,10 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                     ++_high_speed_market_dispatches_saved;
             }
             const int32_t market_count = end - begin;
+            if (begin < _workset_last_cursor || end <= begin ||
+                end > static_cast<int32_t>(_epoch_market_ids.size())) {
+                ++_duplicate_range_count;
+            }
             if (_market_results_scratch.size() < static_cast<size_t>(market_count))
                 _market_results_scratch.resize(static_cast<size_t>(market_count));
             for (int32_t relative = 0; relative < market_count; ++relative) {
@@ -7750,6 +7771,7 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                     _merchant_repairs, slice_merchant_repairs, _saturation_count);
             }
             const double slice_prepare_ms = elapsed_ms(settle_started);
+            _household_market_prepare_ms += slice_prepare_ms;
             _household_slice_phase_ms[HOUSEHOLD_PREPARE] += slice_prepare_ms;
             _household_slice_phase_work[HOUSEHOLD_PREPARE] += market_count;
             const auto worker_started = Clock::now();
@@ -7851,6 +7873,10 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                                                      : market_result.error);
                     break;
                 }
+                for (const size_t lane : market_result.audit_population_lanes)
+                    audit_touch_population_lane(static_cast<int32_t>(lane));
+                for (const size_t lane : market_result.audit_market_lanes)
+                    audit_touch_market_lane(lane);
                 _processed_cells += _market_cell_offsets[market + 1] -
                                     _market_cell_offsets[market];
                 _processed_cohorts = saturating_add(_processed_cohorts,
@@ -8078,21 +8104,27 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                     slice_trade_ms - slice_trace_ms);
             _household_slice_phase_work[HOUSEHOLD_OTHER] += market_count;
             _cell_cursor = end;
+            _workset_last_cursor = _cell_cursor;
+            // _processed_cells is advanced exactly once while merging each
+            // market range, so it is the authoritative executed-cell count.
+            _workset_cells_executed = _processed_cells;
             cursor_end = _cell_cursor;
             cell_range_used = true;
             if (_fatal) break;
             const bool market_range_incomplete =
                 _cell_cursor < static_cast<int32_t>(_epoch_market_ids.size());
+            if (!market_range_incomplete) {
+                if (_merchant_repairs > 0 && !rebuild_merchant_ranges(error)) {
+                    fail(error.empty()
+                        ? "merchant_range_rebuild_after_household_failed"
+                        : error);
+                    break;
+                }
+                _household_post_cursor = 0;
+                _household_market_phase = 1;
+            }
             if (finish_chunk_and_should_yield()) break;
             if (market_range_incomplete) continue;
-            if (_merchant_repairs > 0 && !rebuild_merchant_ranges(error)) {
-                fail(error.empty()
-                    ? "merchant_range_rebuild_after_household_failed"
-                    : error);
-                break;
-            }
-            _household_post_cursor = 0;
-            _household_market_phase = 1;
             continue;
         }
         if (_stage == Stage::GOVERNMENT_RESEARCH_PROCUREMENT) {

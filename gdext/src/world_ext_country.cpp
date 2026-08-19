@@ -164,6 +164,67 @@ Dictionary DCWorldExt::get_country_cell_tax_policy_snapshot(int cell_idx) const 
         : country_runtime_from(_country_runtime)->cell_tax_policy_snapshot(cell_idx);
 }
 
+Dictionary DCWorldExt::get_country_ui_snapshot(int64_t handle,
+                                                int section_mask) const {
+    if (_country_runtime == nullptr) return country_unavailable();
+    NativeCountryRuntime *runtime = country_runtime_from(_country_runtime);
+    Dictionary summary = runtime->country_summary(handle);
+    if (!static_cast<bool>(summary.get("ok", false))) return summary;
+
+    Dictionary out;
+    out["ok"] = true;
+    out["country_handle"] = handle;
+    out["section"] = section_mask;
+    out["section_mask"] = section_mask;
+    out["country_generation"] = static_cast<int64_t>(runtime->generation());
+    out["country_state_version"] = summary.get("state_version", 0);
+    out["revision"] = summary.get("state_version", 0);
+    out["published_day"] = runtime->report().get("last_committed_day", -1);
+    out["summary"] = summary;
+
+    Dictionary revisions;
+    revisions["country_state_version"] = summary.get("state_version", 0);
+    revisions["country_generation"] = static_cast<int64_t>(runtime->generation());
+
+    if ((section_mask & 1) != 0) {
+        out["research"] = runtime->research_snapshot(handle);
+        out["research_signals"] = runtime->research_signal_snapshot(handle);
+    }
+    if ((section_mask & 2) != 0) {
+        Dictionary country = summary.duplicate(false);
+        country["technology_ids"] = runtime->completed_technology_ids(handle);
+        out["country_snapshot"] = country;
+        out["treasury"] = runtime->treasury_snapshot(handle);
+        out["tax_policy"] = runtime->tax_policy_snapshot(handle);
+        out["fiscal"] = get_country_fiscal_snapshot(handle);
+        Dictionary trade = get_country_trade_snapshot(
+            handle, String("summary"), 0, 1);
+        out["trade_summary"] = trade;
+        const int64_t trade_revision = trade.get("revision", int64_t{0});
+        int64_t class_opinion_revision = 0;
+        if (_economy_runtime != nullptr) {
+            class_opinion_revision = static_cast<int64_t>(
+                static_cast<NativeEconomyRuntime *>(_economy_runtime)->
+                    country_class_opinion_snapshot().revision);
+        }
+        out["economy_trade_revision"] = trade_revision;
+        out["economy_class_opinion_revision"] = class_opinion_revision;
+        revisions["economy_trade_revision"] = trade_revision;
+        revisions["economy_class_opinion_revision"] =
+            class_opinion_revision;
+    }
+    if ((section_mask & 4) != 0) {
+        Dictionary ideology = get_ideology_snapshot(handle);
+        out["ideology"] = ideology;
+        const int64_t support_revision = ideology.get(
+            "support_revision", int64_t{0});
+        out["ideology_support_revision"] = support_revision;
+        revisions["ideology_support_revision"] = support_revision;
+    }
+    out["revision_components"] = revisions;
+    return out;
+}
+
 Dictionary DCWorldExt::poll_country_events(int64_t after_event_id, int limit) const {
     return _country_runtime == nullptr ? country_unavailable()
         : country_runtime_from(_country_runtime)->poll_events(after_event_id, limit);

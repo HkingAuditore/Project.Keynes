@@ -439,6 +439,16 @@ func tick(ctx: SusTickContext) -> void:
 		var last_slice_wrapper_wall_ms: float = 0.0
 		var last_slice_job_shell_wall_ms: float = 0.0
 		var last_slice_job_shell_wrapper_gap_ms: float = 0.0
+		var last_bio_slice_native_ms: float = 0.0
+		var last_bio_slice_publish_ms: float = 0.0
+		var last_bio_slice_fallback_reason: String = ""
+		var last_bio_knob_cache_hit: bool = false
+		var last_bio_knob_cache_build_ms: float = 0.0
+		var last_natural_factor_lookup_ms: float = 0.0
+		var last_natural_slot_refresh_ms: float = 0.0
+		var last_natural_knob_update_ms: float = 0.0
+		var last_natural_native_call_ms: float = 0.0
+		var last_natural_fallback_ms: float = 0.0
 		job._in_flight = true
 
 		while true:
@@ -495,6 +505,24 @@ func tick(ctx: SusTickContext) -> void:
 			last_slice_fallback_path = str(slice_result.get("fallback_path", ""))
 			if last_slice_fallback_path == "" and bool(slice_result.get("fallback", false)):
 				last_slice_fallback_path = last_slice_path
+			last_bio_slice_native_ms = float(slice_result.get("bio_slice_native_ms", 0.0))
+			last_bio_slice_publish_ms = float(slice_result.get("bio_slice_publish_ms", 0.0))
+			last_bio_slice_fallback_reason = str(slice_result.get(
+				"bio_slice_fallback_reason", slice_result.get("fallback_reason", "")))
+			if str(job.id) == "bio_occupancy_daily":
+				last_bio_knob_cache_hit = bool(slice_result.get("bio_knob_cache_hit", false))
+				last_bio_knob_cache_build_ms = float(
+					slice_result.get("bio_knob_cache_build_ms", 0.0))
+			if str(job.id) == "natural_resource_daily":
+				last_natural_factor_lookup_ms = float(
+					slice_result.get("factor_lookup_ms", 0.0))
+				last_natural_slot_refresh_ms = float(
+					slice_result.get("slot_refresh_ms", 0.0))
+				last_natural_knob_update_ms = float(
+					slice_result.get("knob_update_ms", 0.0))
+				last_natural_native_call_ms = float(
+					slice_result.get("native_call_ms", 0.0))
+				last_natural_fallback_ms = float(slice_result.get("fallback_ms", 0.0))
 			if not _is_upload_job(job.id) and slice_ms > largest_slice_ms_tick:
 				largest_slice_ms_tick = slice_ms
 				largest_slice_job_tick = job.id
@@ -542,6 +570,16 @@ func tick(ctx: SusTickContext) -> void:
 		report["last_slice_wrapper_wall_ms"] = last_slice_wrapper_wall_ms
 		report["last_slice_job_shell_wall_ms"] = last_slice_job_shell_wall_ms
 		report["last_slice_job_shell_wrapper_gap_ms"] = last_slice_job_shell_wrapper_gap_ms
+		report["bio_slice_native_ms"] = last_bio_slice_native_ms
+		report["bio_slice_publish_ms"] = last_bio_slice_publish_ms
+		report["bio_slice_fallback_reason"] = last_bio_slice_fallback_reason
+		report["bio_knob_cache_hit"] = last_bio_knob_cache_hit
+		report["bio_knob_cache_build_ms"] = last_bio_knob_cache_build_ms
+		report["factor_lookup_ms"] = last_natural_factor_lookup_ms
+		report["slot_refresh_ms"] = last_natural_slot_refresh_ms
+		report["knob_update_ms"] = last_natural_knob_update_ms
+		report["native_call_ms"] = last_natural_native_call_ms
+		report["fallback_ms"] = last_natural_fallback_ms
 		report["job_wrapper_gap_ms"] = maxf(0.0, job_elapsed_ms - last_slice_wrapper_wall_ms)
 		_last_report[job.id] = report
 		_record_stats(job.id, job_elapsed_ms, slices_run)

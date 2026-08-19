@@ -62,10 +62,44 @@ const FIXED_COLUMNS: Array = [
 	"sim_strict_budget_enabled",
 	"sim_budget_warn_ms",
 	"economy_reserved_budget_ms",
+	"country_ui_refresh_reason",
+	"country_ui_snapshot_ms",
+	"country_ui_cache_hit",
+	"country_ui_dirty_domains",
+	"country_ui_event_refresh_enabled",
+	"country_report_mode",
+	"country_state_hash_ms",
+	"country_report_build_ms",
+	"research_queue_size",
+	"research_full_scan_fallbacks",
+	# Economy epoch/workset telemetry. These aliases are copied from the
+	# freshness-gated bd_economy_* breakdown so the CSV contract remains easy to
+	# query without knowing the dynamic breakdown prefix.
+	"prepare_reuse_count",
+	"workset_cells_planned",
+	"workset_cells_executed",
+	"duplicate_range_count",
+	"household_market_prepare_ms",
+	"household_market_worker_ms",
+	"household_market_merge_ms",
+	"bio_slice_native_ms",
+	"bio_slice_publish_ms",
+	"bio_knob_cache_hit",
+	"bio_knob_cache_build_ms",
+	"bio_slice_fallback_reason",
+	"natural_resource_factor_lookup_ms",
+	"natural_resource_slot_refresh_ms",
+	"natural_resource_knob_update_ms",
+	"natural_resource_native_call_ms",
+	"natural_resource_fallback_ms",
 	# The rows are emitted at fast-tick boundaries. These fields describe the
 	# economy/country continuation pulses that completed since the prior row.
 	"continuation_frames",
 	"continuation_slices",
+	"continuation_started_slices",
+	"continuation_completed_slices",
+	"continuation_budget_exhausted",
+	"continuation_blocked_by_stage",
 	"continuation_country_slices",
 	"continuation_economy_slices",
 	"continuation_wall_ms",
@@ -369,6 +403,23 @@ func _merge_jobs(row: Dictionary, report: Dictionary, was_skipped_day: bool) -> 
 		row[key_slice_job_shell] = float(r.get("last_slice_job_shell_wall_ms", 0.0))
 		row[key_slice_job_shell_gap] = float(r.get("last_slice_job_shell_wrapper_gap_ms", 0.0))
 		row[key_job_wrapper_gap] = float(r.get("job_wrapper_gap_ms", 0.0))
+		if str(job_id) == "bio_occupancy_daily":
+			row["bio_slice_native_ms"] = float(r.get("bio_slice_native_ms", 0.0))
+			row["bio_slice_publish_ms"] = float(r.get("bio_slice_publish_ms", 0.0))
+			row["bio_knob_cache_hit"] = bool(r.get("bio_knob_cache_hit", false))
+			row["bio_knob_cache_build_ms"] = float(r.get("bio_knob_cache_build_ms", 0.0))
+			row["bio_slice_fallback_reason"] = str(
+				r.get("bio_slice_fallback_reason", r.get("fallback_reason", "")))
+		if str(job_id) == "natural_resource_daily":
+			row["natural_resource_factor_lookup_ms"] = float(
+				r.get("factor_lookup_ms", 0.0))
+			row["natural_resource_slot_refresh_ms"] = float(
+				r.get("slot_refresh_ms", 0.0))
+			row["natural_resource_knob_update_ms"] = float(
+				r.get("knob_update_ms", 0.0))
+			row["natural_resource_native_call_ms"] = float(
+				r.get("native_call_ms", 0.0))
+			row["natural_resource_fallback_ms"] = float(r.get("fallback_ms", 0.0))
 
 
 # breakdowns = { "ui": {...}, "climate": {...}, "weather": {...}, "economy": {...}, ... }
@@ -412,6 +463,41 @@ func _merge_breakdowns(row: Dictionary, bds: Dictionary) -> void:
 				row[col + "_summary_version"] = 1
 			else:
 				row[col] = value
+			if str(group) == "country" and ks in [
+				"country_report_mode", "country_state_hash_ms",
+				"country_report_build_ms", "research_queue_size",
+				"research_full_scan_fallbacks"]:
+				# Stable aliases for perf gates; keep bd_country_* for existing
+				# consumers and historical CSV compatibility.
+				row[ks] = value
+			if str(group) == "economy" and ks in [
+				"prepare_reuse_count", "workset_cells_planned",
+				"workset_cells_executed", "duplicate_range_count",
+				"household_market_prepare_ms", "household_market_worker_ms",
+				"household_market_merge_ms"]:
+				# Keep the exact plan field names as stable top-level CSV aliases;
+				# the bd_economy_* columns remain available for historical consumers.
+				row[ks] = value
+		if str(group) == "economy" and bool(sub_dict.get(
+				"last_completed_perf_valid", false)):
+			# Performance gates compare completed epochs, not whichever in-flight
+			# stage happened to be sampled at the fast-tick boundary.
+			var completed_aliases := {
+				"prepare_reuse_count": "last_completed_prepare_reuse_count",
+				"workset_cells_planned": "last_completed_workset_cells_planned",
+				"workset_cells_executed": "last_completed_workset_cells_executed",
+				"duplicate_range_count": "last_completed_duplicate_range_count",
+				"household_market_prepare_ms":
+					"last_completed_household_market_prepare_ms",
+				"household_market_worker_ms":
+					"last_completed_household_market_worker_ms",
+				"household_market_merge_ms":
+					"last_completed_household_market_merge_ms",
+			}
+			for alias in completed_aliases:
+				var completed_key: String = completed_aliases[alias]
+				if sub_dict.has(completed_key):
+					row[alias] = sub_dict[completed_key]
 
 
 static func _is_lut_payload(key: String, value) -> bool:

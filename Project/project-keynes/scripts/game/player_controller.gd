@@ -569,8 +569,16 @@ func _on_day_changed(day_idx: int) -> void:
 	var ui_breakdown: Dictionary = {}
 	if _ui_manager != null:
 		ui_breakdown = _ui_manager.refresh_selected_daily_lines(false, day_idx)
-		var country_timing: Dictionary = _ui_manager.refresh_country_summary()
-		ui_breakdown["country_summary_ms"] = float(country_timing.get("elapsed_ms", 0.0))
+		# Country workspaces are event-driven. Daily ticks only patch the selected
+		# cell and clock; country/economy/ideology commits invalidate their section.
+		ui_breakdown["country_summary_ms"] = 0.0
+		if _ui_manager.has_method("consume_country_ui_perf_summary"):
+			var country_ui_perf: Dictionary = _ui_manager.consume_country_ui_perf_summary()
+			for key in country_ui_perf:
+				ui_breakdown[key] = country_ui_perf[key]
+			if not country_ui_perf.is_empty():
+				ui_breakdown["country_summary_ms"] = float(
+					country_ui_perf.get("country_ui_snapshot_ms", 0.0))
 		sync_ui()
 	_runtime_host.finish_daily_tick((Time.get_ticks_usec() - ui_started_usec) / 1000.0, ui_breakdown)
 
@@ -580,7 +588,6 @@ func _on_season_changed(season_idx: int) -> void:
 		_runtime_host.on_season_changed(season_idx)
 	if _ui_manager != null:
 		_ui_manager.refresh_selected_daily_lines(true)
-		_ui_manager.refresh_country_summary()
 	sync_ui()
 
 
@@ -589,7 +596,6 @@ func _on_year_changed(year_idx: int) -> void:
 		_runtime_host.on_year_changed(year_idx)
 	if _ui_manager != null:
 		_ui_manager.refresh_selected_daily_lines(true)
-		_ui_manager.refresh_country_summary()
 	sync_ui()
 
 

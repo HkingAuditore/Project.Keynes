@@ -1042,6 +1042,17 @@ var _sea_ice_daily_job = null
 # `natural_resource_daily` 自然资源每日生成/衰减系统 + 缓存的 C++ pass knobs（系数恒定，仅 n_cells 每 tick 更新）。
 var _natural_resource_daily_job = null
 var _bio_occupancy_daily_job = null
+var _bio_occupancy_slice_inflight: bool = false
+var _bio_occupancy_day_pending: bool = false
+var _native_daily_day_pending: bool = false
+# Bio occupancy 的 species/catalog、邻接索引和 carrier 映射只依赖 MapData
+# 实例及其 cell 数量；动态气候/植被/储量列仍在每次 pass 更新。缓存是
+# GDScript facade 的 transient 数据，不属于模拟 authority、存档或 state hash。
+const _BIO_OCCUPANCY_KNOB_CACHE_VERSION: int = 1
+var _bio_occupancy_knob_cache: Dictionary = {}
+var _bio_occupancy_knob_cache_map_id: int = 0
+var _bio_occupancy_knob_cache_n: int = -1
+var _bio_occupancy_knob_cache_version: int = 0
 var _economy_facade = null
 var _economy_daily_job = null
 var _country_facade = null
@@ -1057,6 +1068,7 @@ var _ideology_facade = null
 var _ideology_daily_job = null
 const ECONOMY_CONTINUATION_FALLBACK_BUDGET_MS := 8.0
 const ECONOMY_CONTINUATION_MAX_SLICES_PER_FRAME := 64
+const BIO_OCCUPANCY_SLICE_CELLS := 2048
 const EFFECT_ACK_CHAIN_MAX_PASSES := 8
 const BARRIER_DIAG_LOG_STRIDE := 60
 var _continuation_perf_pending: Dictionary = {}
@@ -1068,6 +1080,8 @@ var _gameplay_start_report: Dictionary = {}
 var _save_restore_preparation_enabled: bool = false
 var _save_restore_seed: int = 0
 var _natural_resource_pass_knobs: Dictionary = {}
+var _natural_resource_regen_factors_valid: bool = false
+var _natural_resource_regen_factor_prime_ms: float = 0.0
 var _last_natural_resource_report: Dictionary = {}
 var _natural_resource_refresh_keys: PackedStringArray = PackedStringArray([
 	"cell_temp",
@@ -1507,6 +1521,8 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 	_country_daily_job = null
 	_modifier_facade = null
 	_modifier_daily_job = null
+	_natural_resource_regen_factors_valid = false
+	_natural_resource_regen_factor_prime_ms = 0.0
 	_trigger_facade = null
 	_trigger_daily_job = null
 	_ideology_facade = null
@@ -1527,6 +1543,14 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 			modifier_configured.get("reason", "unknown")))
 		_modifier_facade = null
 		return
+	# Resource regeneration factors are derived from the Economy modifier domain.
+	# Keep the packed table across daily passes and invalidate it only when the
+	# modifier journal reports an Economy-domain mutation. The native getter also
+	# owns an equivalent cache, but avoiding the GDScript/C++ payload round-trip
+	# removes a full resource_count*n_cells Variant copy from every resource day.
+	var modifier_events_callback := Callable(self, "_on_modifier_events_available")
+	if not _modifier_facade.modifier_events_available.is_connected(modifier_events_callback):
+		_modifier_facade.modifier_events_available.connect(modifier_events_callback)
 	if _data_core_world_ext.has_method("configure_triggers") and _gameplay_event_bus != null:
 		_trigger_facade = TriggerFacadeScript.new()
 		var trigger_configured: Dictionary = _trigger_facade.configure(
@@ -1535,8 +1559,22 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 			push_error("[trigger] configure failed: %s" % String(trigger_configured.get("reason", "unknown")))
 			_trigger_facade = null
 	_country_facade = CountryFacadeScript.new()
+	# Transient A/B knobs are applied to the facade profile for this world only;
+	# the .tres resource is never saved or mutated by the runtime contract.
+	var country_profile = ResourceLoader.load(
+		CountryFacadeScript.DEFAULT_PROFILE_PATH, "Resource")
+	if country_profile != null:
+		if Engine.has_meta(&"country_full_diagnostics"):
+			country_profile.country_full_diagnostics = bool(
+				Engine.get_meta(&"country_full_diagnostics"))
+		if Engine.has_meta(&"country_light_report_enabled"):
+			country_profile.country_light_report_enabled = bool(
+				Engine.get_meta(&"country_light_report_enabled"))
+		if Engine.has_meta(&"country_pending_queue_enabled"):
+			country_profile.country_pending_queue_enabled = bool(
+				Engine.get_meta(&"country_pending_queue_enabled"))
 	var country_configured: Dictionary = _country_facade.configure(
-		_data_core_world_ext, map.cell_count(), seed_value)
+		_data_core_world_ext, map.cell_count(), seed_value, country_profile)
 	if not bool(country_configured.get("ok", false)):
 		push_error("[country] configure failed: %s" % String(country_configured.get("reason", "unknown")))
 		_country_facade = null
@@ -1616,6 +1654,10 @@ func _setup_economy_runtime(map: MapData, cfg: MapConfig, scheduler_profile) -> 
 		push_error("[economy] bootstrap failed: %s" % String(bootstrapped.get("reason", "unknown")))
 		_economy_facade = null
 		return
+	# Prime modifier-derived resource factors during generation/setup. The table is
+	# immutable between Economy-domain modifier events, so the first gameplay day
+	# does not pay a synchronous resource_count*n_cells bridge lookup.
+	_prime_natural_resource_regen_factors(map.cell_count())
 	# Register only after both native authorities have accepted their bootstrap
 	# packets. Country remains ordered before economy in the daily graph.
 	var registered: Dictionary = _register_country_economy_systems(scheduler_profile)
@@ -2024,31 +2066,40 @@ func consume_continuation_perf_summary() -> Dictionary:
 	return out
 
 
+func _ensure_continuation_perf_pending() -> void:
+	if not _continuation_perf_pending.is_empty():
+		return
+	_continuation_perf_pending = {
+		"frames": 0,
+		"slices": 0,
+		"continuation_started_slices": 0,
+		"continuation_completed_slices": 0,
+		"continuation_budget_exhausted": false,
+		"continuation_blocked_by_stage": "",
+		"country_slices": 0,
+		"economy_slices": 0,
+		"wall_ms": 0.0,
+		"max_frame_wall_ms": 0.0,
+		"max_slice_ms": 0.0,
+		"last_slice_ms": 0.0,
+		"budget_ms": 0.0,
+		"last_stage": "",
+		"last_next_stage": "",
+		"last_substage": "",
+		"last_path": "",
+		"done": false,
+		"stage_counts": {},
+		"stage_wall_ms": {},
+		"stage_max_slice_ms": {},
+		"substage_counts": {},
+		"substage_wall_ms": {},
+		"substage_max_slice_ms": {},
+		"substage_work": {},
+	}
+
+
 func _record_continuation_slice(source: String, result: Dictionary, wall_ms: float) -> float:
-	if _continuation_perf_pending.is_empty():
-		_continuation_perf_pending = {
-			"frames": 0,
-			"slices": 0,
-			"country_slices": 0,
-			"economy_slices": 0,
-			"wall_ms": 0.0,
-			"max_frame_wall_ms": 0.0,
-			"max_slice_ms": 0.0,
-			"last_slice_ms": 0.0,
-			"budget_ms": 0.0,
-			"last_stage": "",
-			"last_next_stage": "",
-			"last_substage": "",
-			"last_path": "",
-			"done": false,
-			"stage_counts": {},
-			"stage_wall_ms": {},
-			"stage_max_slice_ms": {},
-			"substage_counts": {},
-			"substage_wall_ms": {},
-			"substage_max_slice_ms": {},
-			"substage_work": {},
-		}
+	_ensure_continuation_perf_pending()
 	var slice_ms: float = maxf(wall_ms, 0.0)
 	var stage: String = str(result.get("stage_name", result.get("stage", "")))
 	var next_stage: String = str(result.get("next_stage", result.get("stage", "")))
@@ -2102,6 +2153,8 @@ func _record_continuation_slice(source: String, result: Dictionary, wall_ms: flo
 			substage_work[work_key] = int(substage_work.get(work_key, 0)) + work
 		_continuation_perf_pending["substage_work"] = substage_work
 	_continuation_perf_pending["slices"] = int(_continuation_perf_pending.get("slices", 0)) + 1
+	_continuation_perf_pending["continuation_started_slices"] = int(
+		_continuation_perf_pending.get("continuation_started_slices", 0)) + 1
 	var source_key := "%s_slices" % source
 	_continuation_perf_pending[source_key] = int(_continuation_perf_pending.get(source_key, 0)) + 1
 	_continuation_perf_pending["max_slice_ms"] = maxf(
@@ -2111,7 +2164,11 @@ func _record_continuation_slice(source: String, result: Dictionary, wall_ms: flo
 	_continuation_perf_pending["last_next_stage"] = next_stage
 	_continuation_perf_pending["last_substage"] = substage
 	_continuation_perf_pending["last_path"] = path
-	_continuation_perf_pending["done"] = bool(result.get("done", false))
+	var completed := bool(result.get("done", false))
+	_continuation_perf_pending["done"] = completed
+	if completed:
+		_continuation_perf_pending["continuation_completed_slices"] = int(
+			_continuation_perf_pending.get("continuation_completed_slices", 0)) + 1
 	return slice_ms
 
 
@@ -2127,6 +2184,15 @@ func _finish_continuation_perf_frame(started_us: int, frame_slices: int,
 	_continuation_perf_pending["max_slice_ms"] = maxf(
 		float(_continuation_perf_pending.get("max_slice_ms", 0.0)), frame_max_slice_ms)
 	_continuation_perf_pending["budget_ms"] = budget_ms
+	var continuation_done := bool(_continuation_perf_pending.get("done", false))
+	# Completion is a semantic state transition, not permission to hide a
+	# deadline overrun.  The final publish slice can complete after the budget;
+	# keep that fact visible for the render-frame performance gate.
+	var budget_exhausted := budget_ms > 0.0 and frame_wall_ms >= budget_ms
+	_continuation_perf_pending["continuation_budget_exhausted"] = budget_exhausted
+	_continuation_perf_pending["continuation_blocked_by_stage"] = \
+			str(_continuation_perf_pending.get("last_stage", "")) \
+			if not continuation_done else ""
 
 
 func _continue_economy_inflight(day_index: int) -> void:
@@ -2141,9 +2207,47 @@ func _continue_economy_inflight(day_index: int) -> void:
 		var configured_budget = _world_clock_ref.get("sim_frame_budget_ms")
 		if configured_budget != null:
 			budget_ms = maxf(0.25, float(configured_budget))
+	# Allocate the diagnostic accumulator before starting the measured pulse so
+	# dictionary/JSON setup cannot consume the continuation's simulation budget.
+	_ensure_continuation_perf_pending()
 	var started_us := Time.get_ticks_usec()
 	var continuation_count := 0
 	var frame_max_slice_ms := 0.0
+	# Native climate and Bio occupancy are same-day transactions. Continue at
+	# most one deterministic slice per pulse, release their barriers only after
+	# the final publish, and never let a diagnostic/economy drain run ahead of a
+	# still-open climate transaction.
+	if native_daily_round_active():
+		# A pending first slice is not yet represented by the job's own
+		# _native_round_active flag.  Once this pulse starts run_slice(), the job
+		# becomes the authoritative owner of the barrier state.
+		_native_daily_day_pending = false
+		var native_started_us := Time.get_ticks_usec()
+		var native_result: Dictionary = _sus.continue_system(&"native_daily_sim", ctx)
+		var native_slice_ms: float = float(Time.get_ticks_usec() - native_started_us) / 1000.0
+		frame_max_slice_ms = maxf(frame_max_slice_ms,
+			_record_continuation_slice("native_daily", native_result, native_slice_ms))
+		continuation_count += 1
+		if _world_clock_ref != null:
+			_world_clock_ref.request_simulation_backpressure(
+				&"native_daily_day_barrier", native_daily_round_active())
+		if native_daily_round_active() or float(Time.get_ticks_usec() - started_us) / 1000.0 >= budget_ms:
+			_finish_continuation_perf_frame(started_us, continuation_count, frame_max_slice_ms, budget_ms)
+			return
+	if bio_occupancy_round_active():
+		_bio_occupancy_day_pending = false
+		var bio_started_us := Time.get_ticks_usec()
+		var bio_result: Dictionary = _sus.continue_system(&"bio_occupancy_daily", ctx)
+		var bio_slice_ms: float = float(Time.get_ticks_usec() - bio_started_us) / 1000.0
+		frame_max_slice_ms = maxf(frame_max_slice_ms,
+			_record_continuation_slice("bio_occupancy", bio_result, bio_slice_ms))
+		continuation_count += 1
+		if _world_clock_ref != null:
+			_world_clock_ref.request_simulation_backpressure(
+				&"bio_occupancy_day_barrier", bio_occupancy_round_active())
+		if bio_occupancy_round_active() or float(Time.get_ticks_usec() - started_us) / 1000.0 >= budget_ms:
+			_finish_continuation_perf_frame(started_us, continuation_count, frame_max_slice_ms, budget_ms)
+			return
 	while continuation_count < ECONOMY_CONTINUATION_MAX_SLICES_PER_FRAME:
 		if _country_daily_job != null and _country_facade != null and \
 				bool(_country_facade.world_ext().country_should_run(day_index)):
@@ -2156,6 +2260,13 @@ func _continue_economy_inflight(day_index: int) -> void:
 			if float(Time.get_ticks_usec() - started_us) / 1000.0 >= budget_ms:
 				_finish_continuation_perf_frame(started_us, continuation_count, frame_max_slice_ms, budget_ms)
 				return
+			# Keep a pure Country continuation contiguous.  If no hard ACK is
+			# pending, the next Country slice cannot observe a newer dependency;
+			# this avoids needless Country/Economy alternation and preserves the
+			# deterministic command order expected by the day barrier.
+			if bool(_country_facade.world_ext().country_should_run(day_index)) \
+					and not _hard_effect_ack_chain_due(day_index):
+				continue
 			# Do not skip the ACK drain while country_should_run stays true.
 			# Research completions register Effect instances that keep
 			# country_should_run true via pending commands until Effect/Modifier/
@@ -2166,7 +2277,15 @@ func _continue_economy_inflight(day_index: int) -> void:
 		# tomorrow's queued work; that must not starve an in-flight economy epoch
 		# or pin WorldClock on country_day_barrier.
 		continuation_count += _drain_native_effect_ack_chain(ctx)
+		if float(Time.get_ticks_usec() - started_us) / 1000.0 >= budget_ms:
+			_finish_continuation_perf_frame(started_us, continuation_count,
+				frame_max_slice_ms, budget_ms)
+			return
 		_ack_native_effect_domain_bindings()
+		if float(Time.get_ticks_usec() - started_us) / 1000.0 >= budget_ms:
+			_finish_continuation_perf_frame(started_us, continuation_count,
+				frame_max_slice_ms, budget_ms)
+			return
 		var ack_passes := 1
 		while ack_passes < EFFECT_ACK_CHAIN_MAX_PASSES and \
 				_hard_effect_ack_chain_due(day_index):
@@ -2898,6 +3017,8 @@ func set_world_clock_ref(world_clock_node) -> void:
 		_ideology_daily_job.world_clock = _world_clock_ref
 	if _economy_daily_job != null:
 		_economy_daily_job.world_clock = _world_clock_ref
+	if _bio_occupancy_daily_job != null:
+		_bio_occupancy_daily_job.world_clock = _world_clock_ref
 	if _world_clock_ref.has_signal("simulation_backpressure_pulse"):
 		var continuation_cb := Callable(self, "_continue_economy_inflight")
 		if not _world_clock_ref.simulation_backpressure_pulse.is_connected(continuation_cb):
@@ -6043,6 +6164,15 @@ func native_daily_last_result() -> Dictionary:
 	return _native_daily_last_result.duplicate()
 
 
+func native_daily_round_active() -> bool:
+	return _native_daily_day_pending or (_native_daily_sim_job != null \
+			and bool(_native_daily_sim_job.get("_native_round_active")))
+
+
+func bio_occupancy_round_active() -> bool:
+	return _bio_occupancy_slice_inflight or _bio_occupancy_day_pending
+
+
 func sus_tick_daily(world_clock_node, day_index_override: int = -1,
 		season_phase_override: float = NAN) -> Dictionary:
 	if _sus == null:
@@ -6076,6 +6206,39 @@ func sus_tick_daily(world_clock_node, day_index_override: int = -1,
 	var ctx: SusTickContext = SusTickContext.make(di, di, sp, ss, &"day_changed")
 	_sync_data_core_runtime_terrain_mirror(_sus_map, "sus_tick_pre")
 	_sus.tick(ctx)
+	# Bio remains daily-semantic even when its first slice loses the ordinary
+	# frame-budget race. Convert that skip into a same-day pending transaction;
+	# the continuation pulse starts it before WorldClock may advance.
+	var sus_tick_report: Dictionary = _sus.report_last_tick()
+	var bio_tick_report: Dictionary = sus_tick_report.get(&"bio_occupancy_daily",
+		sus_tick_report.get("bio_occupancy_daily", {}))
+	var bio_skip_reason := str(bio_tick_report.get("skipped_reason", ""))
+	if _bio_occupancy_daily_job != null and bio_skip_reason in [
+			"frame_budget_exhausted", "strict_budget_one_job"]:
+		_bio_occupancy_day_pending = true
+	if not _bio_occupancy_slice_inflight and bio_skip_reason == "":
+		var bio_done_reported := bool(bio_tick_report.get("done", true))
+		if bio_done_reported:
+			_bio_occupancy_day_pending = false
+	# Native daily has the same same-day transaction boundary as Bio.  A first
+	# slice skipped by SUS budget must be started by the continuation pulse before
+	# WorldClock is allowed to advance; otherwise that semantic day would be
+	# silently lost because the job has not established _native_round_active yet.
+	var native_tick_report: Dictionary = sus_tick_report.get(&"native_daily_sim",
+		sus_tick_report.get("native_daily_sim", {}))
+	var native_skip_reason := str(native_tick_report.get("skipped_reason", ""))
+	if _native_daily_sim_job != null and native_skip_reason in [
+			"frame_budget_exhausted", "strict_budget_one_job"]:
+		_native_daily_day_pending = true
+	if _native_daily_sim_job != null and native_skip_reason == "":
+		var native_done_reported := bool(native_tick_report.get("done", true))
+		if native_done_reported and not bool(_native_daily_sim_job.get("_native_round_active")):
+			_native_daily_day_pending = false
+	if world_clock_node != null and world_clock_node.has_method("request_simulation_backpressure"):
+		world_clock_node.request_simulation_backpressure(
+			&"native_daily_day_barrier", native_daily_round_active())
+		world_clock_node.request_simulation_backpressure(
+			&"bio_occupancy_day_barrier", bio_occupancy_round_active())
 	if _native_daily_sim_job == null:
 		_run_native_daily_shadow_probe(ctx, _sus_map, _sus_world)
 	var fronts: Array[WeatherFront] = [] as Array[WeatherFront]
@@ -6118,6 +6281,25 @@ func sus_tick_daily(world_clock_node, day_index_override: int = -1,
 ## 地图重新生成 / regenerate 路径调用：清空所有 Job 的进度游标 + pending 缓冲。
 func sus_reset_all() -> void:
 	_abort_all_climate_passes("sus_reset_all")
+	# Drop same-day transient transactions before a map regenerate/restore. The
+	# new world must never inherit a stale Bio/native daily barrier from the old
+	# map, even when reset is requested between continuation pulses.
+	_bio_occupancy_slice_inflight = false
+	_bio_occupancy_day_pending = false
+	_native_daily_slice_round_active = false
+	_native_daily_day_pending = false
+	_native_daily_slice_range_active = false
+	_native_daily_finalizer_pending = false
+	_native_daily_finalizer_pending_res = {}
+	_native_daily_finalizer_pending_breakdown = {}
+	_native_daily_slice_active_bundle = {}
+	_native_daily_slice_bundle_pass_keys = []
+	_native_daily_slice_next_node_index = -1
+	_native_daily_slice_unified_weather_embedded = false
+	_native_daily_reset_contract_round()
+	if _world_clock_ref != null and _world_clock_ref.has_method("request_simulation_backpressure"):
+		_world_clock_ref.request_simulation_backpressure(&"bio_occupancy_day_barrier", false)
+		_world_clock_ref.request_simulation_backpressure(&"native_daily_day_barrier", false)
 	_diagnostics_bus.clear_all()
 	if _sus != null:
 		_sus.reset_all_progress()
@@ -7068,6 +7250,39 @@ func _ensure_natural_resource_knobs() -> void:
 				_natural_resource_refresh_keys.append(slot)
 
 
+func _on_modifier_events_available(batch: Dictionary) -> void:
+	# Modifier events are emitted after the native modifier commit and before
+	# downstream economy/resource consumers in the same daily graph. Only the
+	# Economy domain can affect natural-resource regen factors; climate/country/
+	# gameplay events leave this cache valid.
+	var domains: PackedInt32Array = batch.get("domains", PackedInt32Array())
+	for domain in domains:
+		if int(domain) == ModifierFacadeScript.Domain.ECONOMY:
+			_natural_resource_regen_factors_valid = false
+			return
+
+
+func _prime_natural_resource_regen_factors(n_cells: int) -> Dictionary:
+	if n_cells <= 0 or _data_core_world_ext == null \
+			or not _data_core_world_ext.has_method("get_natural_resource_regen_factors"):
+		return {"ok": false, "reason": "regen_factor_api_unavailable"}
+	_ensure_natural_resource_knobs()
+	var factor_started: int = Time.get_ticks_usec()
+	var factor_result: Dictionary = _data_core_world_ext.get_natural_resource_regen_factors(
+		_natural_resource_pass_knobs.get("resource_ids", PackedStringArray()), n_cells)
+	_natural_resource_regen_factor_prime_ms = (
+		Time.get_ticks_usec() - factor_started) / 1000.0
+	if bool(factor_result.get("ok", false)):
+		_natural_resource_pass_knobs["regen_factors"] = factor_result.get(
+			"factors", PackedFloat32Array())
+		_natural_resource_pass_knobs["regen_modifier_snapshot_version"] = int(
+			factor_result.get("snapshot_version", 0))
+		_natural_resource_pass_knobs["active_regen_factor_count"] = int(
+			factor_result.get("active_factor_count", 0))
+		_natural_resource_regen_factors_valid = true
+	return factor_result
+
+
 func _remember_natural_resource_report(report: Dictionary) -> Dictionary:
 	_last_natural_resource_report = report.duplicate(true)
 	_last_natural_resource_report["_tick_idx"] = _current_fast_tick_idx
@@ -7497,32 +7712,45 @@ func run_natural_resource_pass_native(map_ref, dt_days: int = 1) -> Dictionary:
 	var n_cells: int = map_ref.cell_count()
 	if n_cells <= 0:
 		return _remember_natural_resource_report({"done": true, "path": "skip", "published_to_slot": false})
+	var knob_update_started: int = Time.get_ticks_usec()
 	_ensure_natural_resource_knobs()
+	var knob_update_ms: float = (Time.get_ticks_usec() - knob_update_started) / 1000.0
 	if int(_natural_resource_pass_knobs.get("resource_count", 0)) <= 0:
 		return _remember_natural_resource_report({"done": true, "path": "no_resources", "published_to_slot": false})
-	_natural_resource_pass_knobs.erase("regen_factors")
-	_natural_resource_pass_knobs["regen_modifier_snapshot_version"] = 0
-	_natural_resource_pass_knobs["active_regen_factor_count"] = 0
-	if _data_core_world_ext != null and \
-			_data_core_world_ext.has_method("get_natural_resource_regen_factors"):
-		var factor_result: Dictionary = _data_core_world_ext.get_natural_resource_regen_factors(
-			_natural_resource_pass_knobs.get("resource_ids", PackedStringArray()), n_cells)
-		if bool(factor_result.get("ok", false)):
-			_natural_resource_pass_knobs["regen_factors"] = factor_result.get(
-				"factors", PackedFloat32Array())
-			_natural_resource_pass_knobs["regen_modifier_snapshot_version"] = int(
-				factor_result.get("snapshot_version", 0))
-			_natural_resource_pass_knobs["active_regen_factor_count"] = int(
-				factor_result.get("active_factor_count", 0))
+	var factor_lookup_ms: float = 0.0
+	if not _natural_resource_regen_factors_valid:
+		var factor_started: int = Time.get_ticks_usec()
+		_prime_natural_resource_regen_factors(n_cells)
+		factor_lookup_ms = (Time.get_ticks_usec() - factor_started) / 1000.0
+		if not _natural_resource_regen_factors_valid:
+			# Preserve the legacy no-modifier behavior when the optional getter is
+			# unavailable. An empty factor table means an exact multiplier of 1.0.
+			_natural_resource_pass_knobs.erase("regen_factors")
+			_natural_resource_pass_knobs["regen_modifier_snapshot_version"] = 0
+			_natural_resource_pass_knobs["active_regen_factor_count"] = 0
+			_natural_resource_regen_factors_valid = true
 
 	if _data_core_world_ext != null and _data_core_world_ext.has_method("run_natural_resource_pass"):
+		var refresh_ms: float = 0.0
+		var refresh_started: int = 0
 		if _data_core_world_ext.has_method("refresh_slots_from_map_keys"):
+			refresh_started = Time.get_ticks_usec()
 			_data_core_world_ext.refresh_slots_from_map_keys(_natural_resource_refresh_keys)
+			refresh_ms = (Time.get_ticks_usec() - refresh_started) / 1000.0
 		elif _data_core_world_ext.has_method("refresh_slots_from_map"):
+			refresh_started = Time.get_ticks_usec()
 			_data_core_world_ext.refresh_slots_from_map()
+			refresh_ms = (Time.get_ticks_usec() - refresh_started) / 1000.0
 		_natural_resource_pass_knobs["n_cells"] = n_cells
 		_natural_resource_pass_knobs["dt_days"] = dt_days
+		knob_update_ms = (Time.get_ticks_usec() - knob_update_started) / 1000.0
+		var native_call_started: int = Time.get_ticks_usec()
 		var res: Dictionary = _data_core_world_ext.run_natural_resource_pass(_natural_resource_pass_knobs)
+		var native_call_ms: float = (Time.get_ticks_usec() - native_call_started) / 1000.0
+		res["factor_lookup_ms"] = factor_lookup_ms
+		res["slot_refresh_ms"] = refresh_ms
+		res["knob_update_ms"] = knob_update_ms
+		res["native_call_ms"] = native_call_ms
 		if bool(res.get("published_to_slot", false)):
 			res["dt_days"] = dt_days
 			res["wrapper_wall_ms"] = (Time.get_ticks_usec() - t_wall) / 1000.0
@@ -7530,7 +7758,19 @@ func run_natural_resource_pass_native(map_ref, dt_days: int = 1) -> Dictionary:
 			return _remember_natural_resource_report(res)
 		# native 跑了但没发布任何资源 → 落到 GDScript fallback。
 
-	return _remember_natural_resource_report(_run_natural_resource_pass_gdscript(map_ref, n_cells, t_wall, dt_days))
+	var fallback_started: int = Time.get_ticks_usec()
+	var fallback_res: Dictionary = _run_natural_resource_pass_gdscript(
+		map_ref, n_cells, t_wall, dt_days)
+	fallback_res["factor_lookup_ms"] = factor_lookup_ms
+	fallback_res["slot_refresh_ms"] = 0.0
+	fallback_res["knob_update_ms"] = knob_update_ms
+	fallback_res["native_call_ms"] = 0.0
+	fallback_res["fallback_ms"] = (Time.get_ticks_usec() - fallback_started) / 1000.0
+	fallback_res["wrapper_wall_ms"] = (Time.get_ticks_usec() - t_wall) / 1000.0
+	fallback_res["wrapper_overhead_ms"] = max(0.0,
+		float(fallback_res.get("wrapper_wall_ms", 0.0)) -
+		float(fallback_res.get("native_ms", 0.0)))
+	return _remember_natural_resource_report(fallback_res)
 
 
 # GDScript fallback：与 C++ run_natural_resource_pass 严格同模板，直接读写 MapData 数组。
@@ -10389,50 +10629,92 @@ func _append_natural_resource_research_signals(map: MapData) -> void:
 
 
 func _bio_occupancy_base_knobs(map_ref: MapData) -> Dictionary:
-	var catalog: Dictionary = ResearchSignalCatalogScript.compile_native_catalog()
-	if not bool(catalog.get("ok", false)):
-		return {"ok": false, "reason": String(catalog.get("reason", "catalog"))}
+	var build_started_usec := Time.get_ticks_usec()
+	if map_ref == null:
+		return {"ok": false, "reason": "map_missing"}
 	var n := map_ref.cell_count()
-	var carrier_ids: PackedStringArray = catalog.get("research_bio_carrier_ids", PackedStringArray())
-	var carrier_alts: PackedStringArray = catalog.get("research_bio_carrier_alt_ids", PackedStringArray())
-	var unique_ids: Array[String] = []
-	var index_of := {}
-	var columns: Array = []
+	var map_id := int(map_ref.get_instance_id())
+	var cache_hit := _bio_occupancy_knob_cache_version == _BIO_OCCUPANCY_KNOB_CACHE_VERSION \
+			and _bio_occupancy_knob_cache_map_id == map_id \
+			and _bio_occupancy_knob_cache_n == n \
+			and not _bio_occupancy_knob_cache.is_empty()
+	if not cache_hit:
+		var catalog: Dictionary = ResearchSignalCatalogScript.compile_native_catalog()
+		if not bool(catalog.get("ok", false)):
+			return {"ok": false, "reason": String(catalog.get("reason", "catalog"))}
+		var carrier_ids: PackedStringArray = catalog.get(
+			"research_bio_carrier_ids", PackedStringArray())
+		var carrier_alts: PackedStringArray = catalog.get(
+			"research_bio_carrier_alt_ids", PackedStringArray())
+		var unique_ids: Array[String] = []
+		var index_of := {}
+		for raw_id in carrier_ids:
+			var id := String(raw_id)
+			if id.is_empty() or index_of.has(id):
+				continue
+			index_of[id] = unique_ids.size()
+			unique_ids.append(id)
+		for raw_id in carrier_alts:
+			var id := String(raw_id)
+			if id.is_empty() or index_of.has(id):
+				continue
+			index_of[id] = unique_ids.size()
+			unique_ids.append(id)
+		var primary := PackedInt32Array()
+		var alt := PackedInt32Array()
+		primary.resize(carrier_ids.size())
+		alt.resize(carrier_alts.size())
+		for i in range(carrier_ids.size()):
+			var id := String(carrier_ids[i])
+			primary[i] = int(index_of.get(id, -1)) if not id.is_empty() else -1
+		for i in range(carrier_alts.size()):
+			var id := String(carrier_alts[i])
+			alt[i] = int(index_of.get(id, -1)) if not id.is_empty() else -1
+		_bio_occupancy_knob_cache = {
+			"ok": true,
+			"cell_count": n,
+			"width": map_ref.width,
+			"height": map_ref.height,
+			"seed": _last_seed,
+			"neighbor_indices": map_ref.neighbor_indices_packed(),
+			"species_signal_ids": catalog.get("research_bio_signal_ids", PackedInt32Array()),
+			"species_occupancy_bits": catalog.get("research_bio_occupancy_bits", PackedInt32Array()),
+			"species_carrier_index": primary,
+			"species_carrier_alt_index": alt,
+			"species_temp_lo": catalog.get("research_bio_temp_lo", PackedFloat32Array()),
+			"species_temp_hi": catalog.get("research_bio_temp_hi", PackedFloat32Array()),
+			"species_moist_lo": catalog.get("research_bio_moist_lo", PackedFloat32Array()),
+			"species_moist_hi": catalog.get("research_bio_moist_hi", PackedFloat32Array()),
+			"species_elev_lo": catalog.get("research_bio_elev_lo", PackedFloat32Array()),
+			"species_elev_hi": catalog.get("research_bio_elev_hi", PackedFloat32Array()),
+			"species_veg_mask0": catalog.get("research_bio_veg_mask0", PackedInt32Array()),
+			"species_veg_mask1": catalog.get("research_bio_veg_mask1", PackedInt32Array()),
+			"species_flags": catalog.get("research_bio_flags", PackedInt32Array()),
+			"species_max_cost": catalog.get("research_bio_max_cost", PackedInt32Array()),
+			"species_fill_keep": catalog.get("research_bio_fill_keep", PackedFloat32Array()),
+			"species_origin_policy": catalog.get("research_bio_origin_policy", PackedInt32Array()),
+			"species_guild": catalog.get("research_bio_guild", PackedInt32Array()),
+			"species_habitat_class": catalog.get("research_bio_habitat_class", PackedInt32Array()),
+			"carrier_ids": carrier_ids,
+			"carrier_alts": carrier_alts,
+			"carrier_unique_ids": unique_ids,
+		}
+		_bio_occupancy_knob_cache_map_id = map_id
+		_bio_occupancy_knob_cache_n = n
+		_bio_occupancy_knob_cache_version = _BIO_OCCUPANCY_KNOB_CACHE_VERSION
+	var static_knobs: Dictionary = _bio_occupancy_knob_cache
 	var empty := PackedFloat32Array()
 	empty.resize(n)
-	for raw_id in carrier_ids:
-		var id := String(raw_id)
-		if id.is_empty() or index_of.has(id):
-			continue
-		index_of[id] = unique_ids.size()
-		unique_ids.append(id)
-		columns.append(_bio_reserve_column(map_ref, id, n, empty))
-	for raw_id in carrier_alts:
-		var id := String(raw_id)
-		if id.is_empty() or index_of.has(id):
-			continue
-		index_of[id] = unique_ids.size()
-		unique_ids.append(id)
-		columns.append(_bio_reserve_column(map_ref, id, n, empty))
-	var primary := PackedInt32Array()
-	var alt := PackedInt32Array()
-	primary.resize(carrier_ids.size())
-	alt.resize(carrier_alts.size())
-	for i in range(carrier_ids.size()):
-		var id := String(carrier_ids[i])
-		primary[i] = int(index_of.get(id, -1)) if not id.is_empty() else -1
-	for i in range(carrier_alts.size()):
-		var id := String(carrier_alts[i])
-		alt[i] = int(index_of.get(id, -1)) if not id.is_empty() else -1
+	var columns: Array = []
+	var unique_ids: Array = static_knobs.get("carrier_unique_ids", [])
+	for raw_id in unique_ids:
+		columns.append(_bio_reserve_column(map_ref, String(raw_id), n, empty))
 	var temperature: PackedFloat32Array = map_ref.temp_30d_arr
 	if temperature.size() != n:
 		temperature = map_ref.temp_arr
-	return {
-		"ok": true,
+	var out: Dictionary = static_knobs.duplicate(false)
+	out.merge({
 		"cell_count": n,
-		"width": map_ref.width,
-		"height": map_ref.height,
-		"seed": _last_seed,
 		"is_water": map_ref.is_water_arr,
 		"vegetation": map_ref.vegetation_arr,
 		"landform": map_ref.landform_arr,
@@ -10440,27 +10722,11 @@ func _bio_occupancy_base_knobs(map_ref: MapData) -> Dictionary:
 		"temperature": temperature,
 		"moisture": map_ref.moisture_arr,
 		"elevation": map_ref.elevation_arr,
-		"neighbor_indices": map_ref.neighbor_indices_packed(),
-		"species_signal_ids": catalog.get("research_bio_signal_ids", PackedInt32Array()),
-		"species_occupancy_bits": catalog.get("research_bio_occupancy_bits", PackedInt32Array()),
-		"species_carrier_index": primary,
-		"species_carrier_alt_index": alt,
-		"species_temp_lo": catalog.get("research_bio_temp_lo", PackedFloat32Array()),
-		"species_temp_hi": catalog.get("research_bio_temp_hi", PackedFloat32Array()),
-		"species_moist_lo": catalog.get("research_bio_moist_lo", PackedFloat32Array()),
-		"species_moist_hi": catalog.get("research_bio_moist_hi", PackedFloat32Array()),
-		"species_elev_lo": catalog.get("research_bio_elev_lo", PackedFloat32Array()),
-		"species_elev_hi": catalog.get("research_bio_elev_hi", PackedFloat32Array()),
-		"species_veg_mask0": catalog.get("research_bio_veg_mask0", PackedInt32Array()),
-		"species_veg_mask1": catalog.get("research_bio_veg_mask1", PackedInt32Array()),
-		"species_flags": catalog.get("research_bio_flags", PackedInt32Array()),
-		"species_max_cost": catalog.get("research_bio_max_cost", PackedInt32Array()),
-		"species_fill_keep": catalog.get("research_bio_fill_keep", PackedFloat32Array()),
-		"species_origin_policy": catalog.get("research_bio_origin_policy", PackedInt32Array()),
-		"species_guild": catalog.get("research_bio_guild", PackedInt32Array()),
-		"species_habitat_class": catalog.get("research_bio_habitat_class", PackedInt32Array()),
 		"carrier_reserves": columns,
-	}
+		"_knob_cache_hit": cache_hit,
+		"_knob_cache_build_ms": (Time.get_ticks_usec() - build_started_usec) / 1000.0,
+	})
+	return out
 
 
 func _bio_reserve_column(map_ref: MapData, resource_id: String, n: int,
@@ -10617,7 +10883,8 @@ func _log_bio_occupancy_seed(knobs: Dictionary, seed_res: Dictionary, landmass_c
 		])
 
 
-func run_bio_occupancy_pass_native(map_ref, run_diffusion: bool = false, day_index: int = 0) -> Dictionary:
+func run_bio_occupancy_pass_native(map_ref, run_diffusion: bool = false,
+		day_index: int = 0, slice_enabled: bool = false) -> Dictionary:
 	if map_ref == null or _data_core_world_ext == null \
 			or not _data_core_world_ext.has_method("run_bio_occupancy_pass"):
 		return {"ok": false, "path": "skip", "reason": "native_unavailable"}
@@ -10629,7 +10896,16 @@ func run_bio_occupancy_pass_native(map_ref, run_diffusion: bool = false, day_ind
 	knobs["explored"] = map_ref.explored_arr
 	knobs["run_diffusion"] = run_diffusion
 	knobs["day_index"] = day_index
-	if _data_core_world_ext.has_method("refresh_slots_from_map_keys"):
+	knobs["slice_enabled"] = slice_enabled
+	# Keep phase boundaries (persistence/diffusion/merge/publish) preemptible
+	# while using a fixed deterministic range per call. The round is frozen by
+	# WorldClock until the final publish, so no partial occupancy is visible.
+	if slice_enabled:
+		knobs["bio_slice_cells"] = BIO_OCCUPANCY_SLICE_CELLS
+	# The first sliced call captures the full input snapshot.  Subsequent fixed
+	# cursor calls reuse native staging and must not refresh/copy MapData again.
+	var refresh_inputs := not slice_enabled or not _bio_occupancy_slice_inflight
+	if refresh_inputs and _data_core_world_ext.has_method("refresh_slots_from_map_keys"):
 		_data_core_world_ext.refresh_slots_from_map_keys(PackedStringArray([
 			"cell_bio_occupancy_bits",
 			"cell_res_pasture_reserve",
@@ -10641,12 +10917,39 @@ func run_bio_occupancy_pass_native(map_ref, run_diffusion: bool = false, day_ind
 			"cell_moisture",
 			"cell_vegetation",
 		]))
-	var res: Dictionary = _data_core_world_ext.run_bio_occupancy_pass(knobs)
+	var sliced_call := slice_enabled and \
+			_data_core_world_ext.has_method("run_bio_occupancy_slice")
+	var res: Dictionary = _data_core_world_ext.run_bio_occupancy_slice(knobs) \
+			if sliced_call else _data_core_world_ext.run_bio_occupancy_pass(knobs)
+	res["bio_knob_cache_hit"] = bool(knobs.get("_knob_cache_hit", false))
+	res["bio_knob_cache_build_ms"] = float(knobs.get("_knob_cache_build_ms", 0.0))
+	if slice_enabled and not sliced_call:
+		res["path"] = "gdext_one_shot_fallback"
+		res["bio_slice_fallback_reason"] = "missing_run_bio_occupancy_slice"
+		res["fallback_reason"] = "missing_run_bio_occupancy_slice"
+		res["fail_stage"] = "bio_occupancy_daily"
+		_bio_occupancy_slice_inflight = false
+	if not bool(res.get("ok", false)) and sliced_call:
+		# A failed slice never publishes partial staging.  Retry the legacy pass
+		# with the same knobs so feature-flag rollback remains lossless.
+		var fallback_res: Dictionary = _data_core_world_ext.run_bio_occupancy_pass(knobs)
+		fallback_res["path"] = "gdext_one_shot_fallback"
+		fallback_res["bio_slice_fallback_reason"] = str(res.get("reason", "slice_failed"))
+		fallback_res["fallback_reason"] = str(res.get("reason", "slice_failed"))
+		fallback_res["fail_stage"] = str(res.get("fail_stage", "bio_occupancy_slice"))
+		res = fallback_res
+		_bio_occupancy_slice_inflight = false
 	if bool(res.get("ok", false)):
+		var slice_done := bool(res.get("done", true))
+		_bio_occupancy_slice_inflight = slice_enabled and not slice_done
+		if not slice_done:
+			return res
 		var occupancy: PackedInt32Array = res.get("occupancy_bits", PackedInt32Array())
 		if occupancy.size() == map_ref.cell_count():
 			map_ref.bio_occupancy_bits_arr = occupancy
 			_publish_bio_occupancy_to_runtime(map_ref)
+			res["published_to_slot"] = true
+		_bio_occupancy_slice_inflight = false
 	return res
 
 # Phase 14：永久性地标 — 一旦设定不被季节 / biome 重决策覆盖。

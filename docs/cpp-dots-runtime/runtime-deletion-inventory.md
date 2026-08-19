@@ -13,6 +13,8 @@
 
 ## Current Batch
 
+| Country/Economy/Bio performance diagnostics | Keep for now | Implemented 2026-08 | LIGHT/FULL、pending queue、section snapshot、Bio staging 和 continuation telemetry 均为 transient compatibility/rollback surface；不得删除 FULL、PROBE 或 one-shot fallback。 | 对应 native report、facade bridge 与 `PerfRecorder` 字段 | ACTIVE/LIGHT、PROBE/FULL、UI smoke、hash parity 和 headless soak 均通过后再评估进一步删除。 |
+
 | File / Symbol | Class | Status | Evidence | Replacement / Owner | Validation |
 | --- | --- | --- | --- | --- | --- |
 | `Project/project-keynes/scripts/simulation/sus/jobs/refresh_climate_daily_job.gd` | Immediate delete | Deleted | No production preload remained after `_setup_sus()` was made DCSystem-only. | `simulation/systems/climate_daily_system.gd` | `rg "RefreshClimateDailyJob|refresh_climate_daily_job.gd"` should only show historical docs or none in current runtime docs. |

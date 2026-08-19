@@ -204,6 +204,24 @@ Dictionary NativeCountryRuntime::configure(const Dictionary &catalog,
     if (mode == "OFF") parsed_mode = MODE_OFF;
     else if (mode == "PROBE") parsed_mode = MODE_PROBE;
     else if (mode != "ACTIVE") return fail("country_runtime_mode_invalid");
+    const bool light_report_explicit = profile.has("country_light_report_enabled");
+    _light_report_enabled = dict_num<bool>(
+        profile, "country_light_report_enabled", true);
+    // Direct Native callers and historical tests may only provide the runtime
+    // mode. Keep that legacy contract FULL; the formal CountryProfile always
+    // supplies the transient LIGHT switch explicitly for production ACTIVE.
+    _full_diagnostics = parsed_mode == MODE_PROBE ||
+        dict_num<bool>(profile, "country_full_diagnostics", false) ||
+        !_light_report_enabled || !light_report_explicit;
+    _pending_queue_enabled = dict_num<bool>(
+        profile, "country_pending_queue_enabled", true);
+    _state_hash_cache_valid = false;
+    _pending_activation_index_dirty = true;
+    _pending_activation_indices.clear();
+    _pending_activation_count = 0;
+    _research_queue_rebuilds = 0;
+    _research_full_scan_fallbacks = 0;
+    _research_queue_fallback_reason.clear();
 
     _good_ids = goods;
     _profession_ids = professions;
@@ -639,6 +657,103 @@ void NativeCountryRuntime::initialize_country_research(int32_t slot) {
     _country_research_signal_evidence.resize(countries);
 }
 
+void NativeCountryRuntime::rebuild_pending_activation_index() const {
+    _pending_activation_indices.assign(_countries.active.size(), {});
+    _pending_activation_count = 0;
+    for (int32_t slot = 0;
+         slot < static_cast<int32_t>(_countries.active.size()); ++slot) {
+        if (_countries.active[static_cast<size_t>(slot)] == 0) continue;
+        std::vector<int32_t> &pending =
+            _pending_activation_indices[static_cast<size_t>(slot)];
+        for (int32_t technology = 0;
+             technology < static_cast<int32_t>(_technology_ids.size());
+             ++technology) {
+            const size_t word_index = static_cast<size_t>(slot) *
+                _technology_words + technology / 64;
+            const uint64_t bit = 1ULL << (technology % 64);
+            if ((_country_pending_technologies[word_index] & bit) != 0)
+                pending.push_back(technology);
+        }
+        _pending_activation_count += static_cast<int64_t>(pending.size());
+    }
+    _pending_activation_index_dirty = false;
+    ++_research_queue_rebuilds;
+}
+
+bool NativeCountryRuntime::validate_pending_activation_index() const {
+    if (_pending_activation_index_dirty ||
+        _pending_activation_indices.size() != _countries.active.size() ||
+        _technology_words <= 0 ||
+        _country_pending_technologies.size() !=
+            _countries.active.size() * static_cast<size_t>(_technology_words)) {
+        return false;
+    }
+    int64_t counted = 0;
+    for (int32_t slot = 0;
+         slot < static_cast<int32_t>(_countries.active.size()); ++slot) {
+        const auto &pending = _pending_activation_indices[static_cast<size_t>(slot)];
+        if (_countries.active[static_cast<size_t>(slot)] == 0) {
+            if (!pending.empty()) return false;
+            continue;
+        }
+        int32_t previous = -1;
+        for (const int32_t technology : pending) {
+            if (technology <= previous || technology < 0 ||
+                technology >= static_cast<int32_t>(_technology_ids.size())) {
+                return false;
+            }
+            const size_t word_index = static_cast<size_t>(slot) *
+                static_cast<size_t>(_technology_words) +
+                static_cast<size_t>(technology / 64);
+            const uint64_t bit = uint64_t{1} << (technology % 64);
+            if ((_country_pending_technologies[word_index] & bit) == 0) return false;
+            previous = technology;
+        }
+        int64_t bit_count = 0;
+        const size_t word_base = static_cast<size_t>(slot) *
+            static_cast<size_t>(_technology_words);
+        for (int32_t word = 0; word < _technology_words; ++word) {
+            uint64_t bits = _country_pending_technologies[word_base +
+                static_cast<size_t>(word)];
+            while (bits != 0) {
+                bits &= bits - 1;
+                ++bit_count;
+            }
+        }
+        if (bit_count != static_cast<int64_t>(pending.size())) return false;
+        counted += bit_count;
+    }
+    return counted == _pending_activation_count;
+}
+
+void NativeCountryRuntime::insert_pending_activation(
+        int32_t slot, int32_t technology) {
+    if (_pending_activation_index_dirty || slot < 0 || technology < 0 ||
+        slot >= static_cast<int32_t>(_pending_activation_indices.size()))
+        return;
+    std::vector<int32_t> &pending =
+        _pending_activation_indices[static_cast<size_t>(slot)];
+    const auto position = std::lower_bound(
+        pending.begin(), pending.end(), technology);
+    if (position != pending.end() && *position == technology) return;
+    pending.insert(position, technology);
+    ++_pending_activation_count;
+}
+
+void NativeCountryRuntime::erase_pending_activation(
+        int32_t slot, int32_t technology) {
+    if (_pending_activation_index_dirty || slot < 0 || technology < 0 ||
+        slot >= static_cast<int32_t>(_pending_activation_indices.size()))
+        return;
+    std::vector<int32_t> &pending =
+        _pending_activation_indices[static_cast<size_t>(slot)];
+    const auto position = std::lower_bound(
+        pending.begin(), pending.end(), technology);
+    if (position == pending.end() || *position != technology) return;
+    pending.erase(position);
+    --_pending_activation_count;
+}
+
 Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
                                             const PackedByteArray &is_water) {
     if (!_configured) return fail("country_not_configured");
@@ -681,6 +796,10 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
     _country_goods.clear();
     _country_discovered.clear();
     _country_pending_technologies.clear();
+    _pending_activation_indices.clear();
+    _pending_activation_index_dirty = true;
+    _pending_activation_count = 0;
+    _research_queue_rebuilds = 0;
     _country_research_signals.clear();
     _country_research_signal_cells.clear();
     _country_research_signal_evidence.clear();
@@ -886,6 +1005,7 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
 
     rebuild_cell_csr();
     _generation = 1;
+    _pending_activation_index_dirty = true;
     if (_effect_runtime_enabled && _effect_runtime != nullptr) {
         for (int32_t slot = 0; slot < static_cast<int32_t>(_countries.active.size()); ++slot) {
             const uint64_t handle = make_handle(slot);
@@ -1116,7 +1236,13 @@ bool NativeCountryRuntime::should_run(int64_t day_index) const {
     for (const Command &command : _pending_commands)
         if (command.effective_day <= day_index) return true;
     if (day_index > _last_research_day && _technology_points_good_id >= 0) {
-        for (uint64_t word : _country_pending_technologies) if (word != 0) return true;
+        if (_pending_queue_enabled) {
+            if (_pending_activation_index_dirty) rebuild_pending_activation_index();
+            if (_pending_activation_count > 0) return true;
+        } else {
+            for (uint64_t word : _country_pending_technologies)
+                if (word != 0) return true;
+        }
         for (size_t slot = 0; slot < _countries.active.size(); ++slot) {
             if (_countries.active[slot] == 0) continue;
             const int64_t stock = _country_goods[
@@ -1158,6 +1284,12 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
         out["path"] = "off";
         return out;
     }
+
+    // A slice may commit commands, research progress, goods, territory, or
+    // signal evidence. Invalidate the transient hash cache at the slice
+    // boundary; the generation/research/tax keys still avoid repeated scans
+    // between reports and bridge queries in the same committed state.
+    _state_hash_cache_valid = false;
 
     const Clock::time_point start = Clock::now();
     if (!_command_batch.active) {
@@ -1923,6 +2055,7 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
     if (stage_research) {
         _country_discovered = std::move(staged_discovered);
         _country_pending_technologies = std::move(staged_pending);
+        _pending_activation_index_dirty = true;
         _country_research_progress = std::move(staged_progress);
         _country_research_queues = std::move(staged_research_queues);
         _country_research_queue_lengths = std::move(staged_research_queue_lengths);
@@ -2033,17 +2166,34 @@ void NativeCountryRuntime::publish_report(const char *stage, int64_t day,
                                           double publish_ms, int32_t changed_cells,
                                           int32_t changed_countries, bool published,
                                           const std::string &reason) {
+    const Clock::time_point report_start = Clock::now();
     _report.clear();
     _report["configured"] = _configured;
     _report["bootstrapped"] = _bootstrapped;
     _report["schema_version"] = SCHEMA_VERSION;
     _report["runtime_mode"] = _mode == MODE_ACTIVE ? "ACTIVE" : (_mode == MODE_PROBE ? "PROBE" : "OFF");
+    const char *report_mode = _full_diagnostics ? "FULL" : "LIGHT";
+    _report["report_mode"] = report_mode;
+    // Keep the explicit perf-record column names alongside the short legacy
+    // names. These are transient diagnostics and are intentionally not part of
+    // save/state or event hash contracts.
+    _report["country_report_mode"] = report_mode;
     _report["path"] = _mode == MODE_ACTIVE ? "native_active" : (_mode == MODE_PROBE ? "native_probe" : "off");
     _report["stage"] = stage;
     _report["day_index"] = day;
     _report["country_count"] = static_cast<int64_t>(_countries.active.size());
     _report["cell_count"] = _cell_count;
     _report["pending_commands"] = static_cast<int64_t>(_pending_commands.size());
+    _report["research_queue_size"] = _pending_activation_index_dirty
+        ? static_cast<int64_t>(-1) : _pending_activation_count;
+    _report["research_pending_queue_enabled"] = _pending_queue_enabled;
+    _report["country_light_report_enabled"] = _light_report_enabled;
+    _report["research_queue_rebuilds"] = _research_queue_rebuilds;
+    _report["research_full_scan_fallbacks"] = _research_full_scan_fallbacks;
+    _report["fallback_reason"] = String(_research_queue_fallback_reason.c_str());
+    _report["fail_stage"] = _research_queue_fallback_reason.empty()
+        ? String() : String("research_pending_queue");
+    _report["fallback"] = !_research_queue_fallback_reason.empty();
     _report["cursor_start"] = 0;
     _report["cursor_end"] = changed_cells + changed_countries;
     _report["changed_cells"] = changed_cells;
@@ -2053,70 +2203,100 @@ void NativeCountryRuntime::publish_report(const char *stage, int64_t day,
     _report["aggregate_publish_ms"] = publish_ms;
     _report["native_ms"] = preflight_ms + apply_ms + publish_ms;
     _report["generation"] = static_cast<int64_t>(_generation);
-    _report["state_hash"] = state_hash();
+    const Clock::time_point hash_start = Clock::now();
+    if (_full_diagnostics) {
+        _report["state_hash"] = state_hash();
+        _report["state_hash_stale"] = false;
+    } else {
+        // Keep the compatibility field for startup/save consumers, but never
+        // trigger a full-map scan from the production report path.
+        _report["state_hash"] = static_cast<int64_t>(
+            _state_hash_cache_valid ? _state_hash_cache : 0);
+        _report["state_hash_stale"] = !_state_hash_cache_valid;
+    }
+    const double state_hash_ms = elapsed_ms(hash_start);
+    _report["state_hash_ms"] = state_hash_ms;
+    _report["country_state_hash_ms"] = state_hash_ms;
     _report["published_to_slot"] = published;
     _report["done"] = true;
     _report["country_day_barrier"] = false;
     _report["last_committed_day"] = _last_committed_day;
-    int64_t authoritative_policies = 0;
-    int64_t shared_policies = 0;
-    int64_t cell_tax_overrides = 0;
-    for (size_t id = 1; id < _cell_tax_policy_refcounts.size(); ++id) {
-        if (_cell_tax_policy_refcounts[id] == 0) continue;
-        ++authoritative_policies;
-        if (_cell_tax_policy_refcounts[id] > 1) ++shared_policies;
-        cell_tax_overrides += static_cast<int64_t>(
-            _cell_tax_policies[id].overrides.size());
+    // Cell tax policy statistics require walking the intern table (and can
+    // approach map-sized work). Keep them out of the ACTIVE/LIGHT report;
+    // FULL remains the explicit diagnostic path for these counters.
+    if (_full_diagnostics) {
+        int64_t authoritative_policies = 0;
+        int64_t shared_policies = 0;
+        int64_t cell_tax_overrides = 0;
+        for (size_t id = 1; id < _cell_tax_policy_refcounts.size(); ++id) {
+            if (_cell_tax_policy_refcounts[id] == 0) continue;
+            ++authoritative_policies;
+            if (_cell_tax_policy_refcounts[id] > 1) ++shared_policies;
+            cell_tax_overrides += static_cast<int64_t>(
+                _cell_tax_policies[id].overrides.size());
+        }
+        _report["cell_tax_authoritative_policy_count"] = authoritative_policies;
+        _report["cell_tax_shared_policy_count"] = shared_policies;
+        _report["cell_tax_override_count"] = cell_tax_overrides;
+    } else {
+        _report["cell_tax_authoritative_policy_count"] = 0;
+        _report["cell_tax_shared_policy_count"] = 0;
+        _report["cell_tax_override_count"] = 0;
     }
-    _report["cell_tax_authoritative_policy_count"] = authoritative_policies;
-    _report["cell_tax_shared_policy_count"] = shared_policies;
-    _report["cell_tax_override_count"] = cell_tax_overrides;
     int64_t oldest_due = day;
     for (const Command &command : _pending_commands)
         oldest_due = std::min(oldest_due, command.effective_day);
     _report["pending_latency_days"] = _pending_commands.empty()
         ? 0 : std::max<int64_t>(0, day - oldest_due);
-    int64_t memory_bytes =
-        static_cast<int64_t>(_countries.active.size() * sizeof(uint8_t) +
-        _countries.generation.size() * sizeof(uint32_t) +
-        _countries.territory_count.size() * sizeof(int32_t) +
-        _countries.cash.size() * sizeof(int64_t) +
-        _countries.state_version.size() * sizeof(uint64_t) +
-        _cell_country_slot.size() * sizeof(int32_t) +
-        _country_cell_offsets.size() * sizeof(int32_t) +
-        _country_cells.size() * sizeof(int32_t) +
-        _country_technologies.size() * sizeof(uint64_t) +
-        _country_goods.size() * sizeof(int64_t) +
-        _cell_tax_policy_ids.size() * sizeof(uint32_t) +
-        _cell_tax_policies.size() * sizeof(CellTaxPolicy) +
-        _cell_tax_policy_refcounts.size() * sizeof(uint32_t));
-    for (const CellTaxPolicy &policy : _cell_tax_policies)
-        memory_bytes += static_cast<int64_t>(
-            policy.overrides.capacity() * sizeof(CellTaxOverride));
-    for (const std::string &value : _countries.stable_id) memory_bytes += value.capacity() + 1;
-    for (const std::string &value : _countries.display_name) memory_bytes += value.capacity() + 1;
-    for (const std::string &value : _good_ids) memory_bytes += value.capacity() + 1;
-    for (const std::string &value : _technology_ids) memory_bytes += value.capacity() + 1;
-    memory_bytes += static_cast<int64_t>(_is_water.capacity() * sizeof(uint8_t) +
-        _starting_technologies.capacity() * sizeof(int32_t) +
-        _pending_commands.size() * sizeof(Command) + _events.size() * sizeof(Event));
-    for (const Command &command : _pending_commands)
-        memory_bytes += command.stable_id.capacity() + command.display_name.capacity() + 2;
-    // Account conservatively for unordered-map nodes/buckets. Exact allocator
-    // overhead is implementation-specific; this estimate intentionally rounds up.
-    memory_bytes += static_cast<int64_t>((_good_index.size() + _technology_index.size()) * 64 +
-        (_good_index.bucket_count() + _technology_index.bucket_count()) * sizeof(void *));
-    _report["memory_bytes"] = memory_bytes;
+    if (_full_diagnostics) {
+        int64_t memory_bytes =
+            static_cast<int64_t>(_countries.active.size() * sizeof(uint8_t) +
+            _countries.generation.size() * sizeof(uint32_t) +
+            _countries.territory_count.size() * sizeof(int32_t) +
+            _countries.cash.size() * sizeof(int64_t) +
+            _countries.state_version.size() * sizeof(uint64_t) +
+            _cell_country_slot.size() * sizeof(int32_t) +
+            _country_cell_offsets.size() * sizeof(int32_t) +
+            _country_cells.size() * sizeof(int32_t) +
+            _country_technologies.size() * sizeof(uint64_t) +
+            _country_goods.size() * sizeof(int64_t) +
+            _cell_tax_policy_ids.size() * sizeof(uint32_t) +
+            _cell_tax_policies.size() * sizeof(CellTaxPolicy) +
+            _cell_tax_policy_refcounts.size() * sizeof(uint32_t));
+        for (const CellTaxPolicy &policy : _cell_tax_policies)
+            memory_bytes += static_cast<int64_t>(
+                policy.overrides.capacity() * sizeof(CellTaxOverride));
+        for (const std::string &value : _countries.stable_id) memory_bytes += value.capacity() + 1;
+        for (const std::string &value : _countries.display_name) memory_bytes += value.capacity() + 1;
+        for (const std::string &value : _good_ids) memory_bytes += value.capacity() + 1;
+        for (const std::string &value : _technology_ids) memory_bytes += value.capacity() + 1;
+        memory_bytes += static_cast<int64_t>(_is_water.capacity() * sizeof(uint8_t) +
+            _starting_technologies.capacity() * sizeof(int32_t) +
+            _pending_commands.size() * sizeof(Command) + _events.size() * sizeof(Event));
+        for (const Command &command : _pending_commands)
+            memory_bytes += command.stable_id.capacity() + command.display_name.capacity() + 2;
+        // Account conservatively for unordered-map nodes/buckets. Exact allocator
+        // overhead is implementation-specific; this estimate intentionally rounds up.
+        memory_bytes += static_cast<int64_t>((_good_index.size() + _technology_index.size()) * 64 +
+            (_good_index.bucket_count() + _technology_index.bucket_count()) * sizeof(void *));
+        _report["memory_bytes"] = memory_bytes;
+    } else {
+        _report["memory_bytes"] = 0;
+    }
     if (!reason.empty()) {
         _report["fallback_reason"] = reason.c_str();
         _report["fail_stage"] = stage;
     }
+    const double report_build_ms = elapsed_ms(report_start);
+    _report["report_build_ms"] = report_build_ms;
+    _report["country_report_build_ms"] = report_build_ms;
 }
 
 Dictionary NativeCountryRuntime::report() const { return _report.duplicate(); }
 
 Dictionary NativeCountryRuntime::reset(const String &reason) {
     _bootstrapped = false;
+    _state_hash_cache_valid = false;
     _countries = {};
     _cell_country_slot.assign(static_cast<size_t>(std::max(0, _cell_count)), NEUTRAL_SLOT);
     _country_cell_offsets.clear();
@@ -2125,6 +2305,12 @@ Dictionary NativeCountryRuntime::reset(const String &reason) {
     _country_goods.clear();
     _country_discovered.clear();
     _country_pending_technologies.clear();
+    _pending_activation_indices.clear();
+    _pending_activation_index_dirty = true;
+    _pending_activation_count = 0;
+    _research_queue_rebuilds = 0;
+    _research_full_scan_fallbacks = 0;
+    _research_queue_fallback_reason.clear();
     _country_research_progress.clear();
     _country_research_queues.clear();
     _country_research_queue_lengths.clear();
@@ -2181,30 +2367,63 @@ Dictionary NativeCountryRuntime::cell_summary(int32_t cell) const {
         out["country_handle"] = static_cast<int64_t>(0);
         return out;
     }
+    Dictionary country = country_summary(static_cast<int64_t>(make_handle(slot)));
+    const Array keys = country.keys();
+    for (int64_t index = 0; index < keys.size(); ++index)
+        out[keys[index]] = country[keys[index]];
+    out["cell"] = cell;
+    out["country_slot"] = slot;
+    return out;
+}
+
+Dictionary NativeCountryRuntime::country_summary(int64_t handle) const {
+    int32_t slot = -1;
+    if (!validate_handle(static_cast<uint64_t>(handle), slot))
+        return fail("country_handle_invalid");
     int32_t nonzero_goods = 0;
     for (size_t good = 0; good < _good_ids.size(); ++good)
-        if (_country_goods[static_cast<size_t>(slot) * _good_ids.size() + good] != 0) ++nonzero_goods;
+        if (_country_goods[static_cast<size_t>(slot) * _good_ids.size() + good] != 0)
+            ++nonzero_goods;
     int32_t technologies = 0;
-    for (int32_t tech = 0; tech < static_cast<int32_t>(_technology_ids.size()); ++tech)
+    for (int32_t tech = 0;
+         tech < static_cast<int32_t>(_technology_ids.size()); ++tech)
         if (has_technology(slot, tech)) ++technologies;
+    Dictionary out;
+    out["ok"] = true;
     out["owned"] = true;
-    out["country_handle"] = static_cast<int64_t>(make_handle(slot));
+    out["country_handle"] = handle;
     out["country_id"] = _countries.stable_id[static_cast<size_t>(slot)].c_str();
-    out["country_name"] = String::utf8(_countries.display_name[static_cast<size_t>(slot)].c_str());
-    out["territory_count"] = _countries.territory_count[static_cast<size_t>(slot)];
+    out["country_name"] = String::utf8(
+        _countries.display_name[static_cast<size_t>(slot)].c_str());
+    out["territory_count"] =
+        _countries.territory_count[static_cast<size_t>(slot)];
     out["cash"] = _countries.cash[static_cast<size_t>(slot)];
     out["nonzero_good_count"] = nonzero_goods;
     out["technology_count"] = technologies;
-    out["state_version"] = static_cast<int64_t>(_countries.state_version[static_cast<size_t>(slot)]);
+    out["state_version"] = static_cast<int64_t>(
+        _countries.state_version[static_cast<size_t>(slot)]);
+    out["generation"] = static_cast<int64_t>(_generation);
     return out;
+}
+
+PackedStringArray NativeCountryRuntime::completed_technology_ids(
+        int64_t handle) const {
+    int32_t slot = -1;
+    PackedStringArray technology_ids;
+    if (!validate_handle(static_cast<uint64_t>(handle), slot))
+        return technology_ids;
+    for (int32_t tech = 0;
+         tech < static_cast<int32_t>(_technology_ids.size()); ++tech)
+        if (has_technology(slot, tech))
+            technology_ids.push_back(
+                _technology_ids[static_cast<size_t>(tech)].c_str());
+    return technology_ids;
 }
 
 Dictionary NativeCountryRuntime::country_snapshot(int64_t handle) const {
     int32_t slot = -1;
     if (!validate_handle(static_cast<uint64_t>(handle), slot)) return fail("country_handle_invalid");
-    PackedStringArray technology_ids;
-    for (int32_t tech = 0; tech < static_cast<int32_t>(_technology_ids.size()); ++tech)
-        if (has_technology(slot, tech)) technology_ids.push_back(_technology_ids[static_cast<size_t>(tech)].c_str());
+    PackedStringArray technology_ids = completed_technology_ids(handle);
     PackedInt32Array cells;
     if (slot + 1 < static_cast<int32_t>(_country_cell_offsets.size())) {
         const int32_t begin = _country_cell_offsets[static_cast<size_t>(slot)];
@@ -2212,13 +2431,9 @@ Dictionary NativeCountryRuntime::country_snapshot(int64_t handle) const {
         cells.resize(end - begin);
         if (end > begin) std::memcpy(cells.ptrw(), _country_cells.data() + begin, static_cast<size_t>(end - begin) * sizeof(int32_t));
     }
-    Dictionary out = cell_summary(cells.is_empty() ? -1 : cells[0]);
-    if (out.is_empty()) {
-        out["ok"] = true;
-        out["country_handle"] = handle;
-        out["country_id"] = _countries.stable_id[static_cast<size_t>(slot)].c_str();
-        out["country_name"] = String::utf8(_countries.display_name[static_cast<size_t>(slot)].c_str());
-    }
+    Dictionary out = country_summary(handle);
+    out["cell"] = cells.is_empty() ? -1 : cells[0];
+    out["country_slot"] = slot;
     out["technology_ids"] = technology_ids;
     out["territory_cells"] = cells;
     out["generation"] = static_cast<int64_t>(_generation);
@@ -2962,14 +3177,40 @@ bool NativeCountryRuntime::ensure_technology_effect_instance(
 
 int32_t NativeCountryRuntime::run_research_day(int64_t day_index) {
     if (day_index <= _last_research_day || _technology_points_good_id < 0) return 0;
+    bool use_pending_queue = _pending_queue_enabled;
+    bool pending_queue_fallback = false;
+    if (use_pending_queue && _pending_activation_index_dirty)
+        rebuild_pending_activation_index();
+    // The parity check is transient diagnostics only.  It walks the compact
+    // pending bitset, never the research conditions or full technology graph,
+    // and therefore does not affect the LIGHT production hot path.
+    if (use_pending_queue && _full_diagnostics &&
+        !validate_pending_activation_index()) {
+        use_pending_queue = false;
+        // The configured feature flag remains enabled.  A parity failure is
+        // a one-day safety fallback: the authoritative pending bitset is still
+        // consumed by the deterministic full scan, then the compact index is
+        // rebuilt so the next research day can automatically recover.
+        pending_queue_fallback = true;
+        _research_queue_fallback_reason = "pending_queue_mismatch";
+        _pending_activation_index_dirty = true;
+    }
+    if (pending_queue_fallback) ++_research_full_scan_fallbacks;
     int32_t changed = 0;
     for (int32_t slot = 0; slot < static_cast<int32_t>(_countries.active.size()); ++slot) {
         if (_countries.active[static_cast<size_t>(slot)] == 0) continue;
         const size_t word_base = static_cast<size_t>(slot) * _technology_words;
         bool activated = false;
-        for (int32_t technology = 0;
-             technology < static_cast<int32_t>(_technology_ids.size());
-             ++technology) {
+        std::vector<int32_t> activated_pending;
+        const int32_t candidate_count = use_pending_queue
+            ? static_cast<int32_t>(
+                _pending_activation_indices[static_cast<size_t>(slot)].size())
+            : static_cast<int32_t>(_technology_ids.size());
+        for (int32_t candidate = 0; candidate < candidate_count; ++candidate) {
+            const int32_t technology = use_pending_queue
+                ? _pending_activation_indices[static_cast<size_t>(slot)][
+                    static_cast<size_t>(candidate)]
+                : candidate;
             const size_t word_index = word_base + technology / 64;
             const uint64_t bit = 1ULL << (technology % 64);
             if ((_country_pending_technologies[word_index] & bit) == 0) continue;
@@ -3009,6 +3250,8 @@ int32_t NativeCountryRuntime::run_research_day(int64_t day_index) {
             if (!modifier_ready) continue;
             _country_technologies[word_index] |= bit;
             _country_pending_technologies[word_index] &= ~bit;
+            if (use_pending_queue)
+                activated_pending.push_back(technology);
             // Era rewards are emitted only after the technology's permanent
             // Effect has ACKed and the completed bit becomes authoritative.
             // Research progress reaching its cost never enters this hook.
@@ -3021,6 +3264,8 @@ int32_t NativeCountryRuntime::run_research_day(int64_t day_index) {
             }
             activated = true;
         }
+        for (const int32_t technology : activated_pending)
+            erase_pending_activation(slot, technology);
         if (activated) {
             refresh_discovery(slot);
             _country_research_deferred_points[static_cast<size_t>(slot)] = 0;
@@ -3116,6 +3361,8 @@ int32_t NativeCountryRuntime::run_research_day(int64_t day_index) {
                 if (progress + progress_gain >= effective_cost) {
                     _country_pending_technologies[word_base + technology / 64] |=
                         1ULL << (technology % 64);
+                    if (use_pending_queue)
+                        insert_pending_activation(slot, technology);
                     // Register the Effect instance on the completion day so the
                     // next morning's Effect job (priority 85) can fire before
                     // Country (255) checks ACK. Waiting until the activation
@@ -3153,6 +3400,18 @@ int32_t NativeCountryRuntime::run_research_day(int64_t day_index) {
         }
         _country_research_deferred_points[static_cast<size_t>(slot)] =
             std::min(stock, prior_deferred + newly_deferred);
+    }
+    if (pending_queue_fallback) {
+        // Full-scan mutations intentionally bypass incremental queue updates.
+        // Rebuild from the authoritative pending bits before publishing this
+        // day so the queue is valid and deterministic on the following day.
+        _pending_activation_index_dirty = true;
+        rebuild_pending_activation_index();
+    } else if (use_pending_queue &&
+               _research_queue_fallback_reason == "pending_queue_mismatch") {
+        // A clean parity check after a previous one-day fallback clears the
+        // transient diagnostic marker without changing authority or hashes.
+        _research_queue_fallback_reason.clear();
     }
     _last_research_day = day_index;
     if (changed > 0) ++_generation;
@@ -3476,6 +3735,7 @@ void NativeCountryRuntime::set_era_reward_reference_pod(
     _era_reward_reference.offer_generation = offer_generation;
     _era_reward_reference.milestone_technology = milestone_technology;
     _era_reward_reference.status = status;
+    _state_hash_cache_valid = false;
 }
 
 uint64_t NativeCountryRuntime::catalog_hash_v3() const {
@@ -3553,7 +3813,25 @@ int64_t NativeCountryRuntime::state_hash_v3_compat() const {
     return static_cast<int64_t>(hash);
 }
 
-int64_t NativeCountryRuntime::state_hash() const { return static_cast<int64_t>(compute_state_hash()); }
+int64_t NativeCountryRuntime::state_hash() const {
+    const bool cache_matches = _state_hash_cache_valid &&
+        _state_hash_cache_generation == _generation &&
+        _state_hash_cache_research_day == _last_research_day &&
+        _state_hash_cache_tax_policy_version == _tax_policy_version &&
+        _state_hash_cache_era_reward.plan_id == _era_reward_reference.plan_id &&
+        _state_hash_cache_era_reward.offer_generation == _era_reward_reference.offer_generation &&
+        _state_hash_cache_era_reward.milestone_technology == _era_reward_reference.milestone_technology &&
+        _state_hash_cache_era_reward.status == _era_reward_reference.status;
+    if (!cache_matches) {
+        _state_hash_cache = compute_state_hash();
+        _state_hash_cache_generation = _generation;
+        _state_hash_cache_research_day = _last_research_day;
+        _state_hash_cache_tax_policy_version = _tax_policy_version;
+        _state_hash_cache_era_reward = _era_reward_reference;
+        _state_hash_cache_valid = true;
+    }
+    return static_cast<int64_t>(_state_hash_cache);
+}
 
 void NativeCountryRuntime::mark_slot_publication(bool published, double publish_ms,
                                                   const String &reason) {
@@ -4323,6 +4601,7 @@ bool NativeCountryRuntime::decode_save(const std::vector<uint8_t> &bytes, std::s
     _country_goods = std::move(goods);
     _country_discovered = std::move(discovered);
     _country_pending_technologies = std::move(pending);
+    _pending_activation_index_dirty = true;
     _country_research_signals = std::move(signals);
     _country_research_signal_cells = std::move(signal_cells);
     _country_research_signal_evidence = std::move(signal_evidence);
@@ -4369,6 +4648,7 @@ bool NativeCountryRuntime::decode_save(const std::vector<uint8_t> &bytes, std::s
     _last_committed_day = committed_day;
     _submit_order = std::max(saved_submit_order, max_submit_order);
     _bootstrapped = true;
+    _state_hash_cache_valid = false;
     rebuild_cell_csr();
     publish_report("aggregate_publish", committed_day, 0, 0, 0, _cell_count, country_count, _mode == MODE_ACTIVE);
     return true;

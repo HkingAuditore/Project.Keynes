@@ -20,6 +20,16 @@ order.
 系统拓扑；实现契约见
 [`runtime-performance-optimization-2026-07.md`](../docs/cpp-dots-runtime/runtime-performance-optimization-2026-07.md)。
 
+2026-08 性能治理继续保持同一 authority：Country/Economy/Bio native runtime
+拥有模拟状态，GDScript 只负责 facade、事件 dirty flags、section UI cache 和
+Godot 对象。Country ACTIVE 默认 LIGHT report；`get_country_ui_snapshot` 按域
+读取，研究使用 pending queue。Bio 先走 deterministic full-coverage staging，
+只有完整提交后才写 occupancy slot/事件；任何 sliced-pass 能力不足都必须显式
+记录 `path/fallback_reason/fail_stage/published_to_slot` 并回滚 one-shot。生产
+sliced Bio 每次固定 2048 cells，`bio_occupancy_day_barrier` 在最终 publish 前冻结
+语义日；native daily 未完成时使用 `native_daily_day_barrier`，continuation pulse
+按 native daily -> Bio -> Country/Economy 顺序续接。
+
 本文是 Project.Keynes 的开发读码地图。目标不是替代 `docs/` 下的详细设计文档，而是给后续功能、修 bug、性能诊断和 DOTS/C++ 迁移提供一份“先读这里，再进具体模块”的导航。
 
 ## 快速读码顺序

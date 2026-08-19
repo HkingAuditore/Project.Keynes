@@ -16,7 +16,7 @@ extends Resource
 ## Stage-local batching overrides. Zero keeps deterministic auto batching:
 ## plan/post-buildings use twice the normal building range, investment uses 96
 ## rolling cells, and final employment reconciliation uses 128 affected cells.
-@export_range(0, 65536, 1) var building_plan_cells_per_slice: int = 0
+@export_range(0, 65536, 1) var building_plan_cells_per_slice: int = 128
 @export_range(0, 65536, 1) var household_post_building_cells_per_slice: int = 0
 @export_range(0, 65536, 1) var investment_cells_per_slice: int = 0
 @export_range(0, 65536, 1) var building_finalize_cells_per_slice: int = 0

@@ -404,6 +404,12 @@ func choose_era_reward(offer_generation: int, choice_index: int,
 func report() -> Dictionary:
 	return _world_ext.get_country_report() if _configured else {"configured": false}
 
+
+func ui_snapshot(handle: int, section_mask: int) -> Dictionary:
+	return _world_ext.get_country_ui_snapshot(handle, section_mask) if _configured \
+		and _world_ext.has_method("get_country_ui_snapshot") else {
+			"ok": false, "reason": "country_ui_snapshot_unavailable"}
+
 func dispatch_committed_events(result: Dictionary) -> void:
 	if not _configured or int(result.get("changed_countries", 0)) <= 0:
 		return

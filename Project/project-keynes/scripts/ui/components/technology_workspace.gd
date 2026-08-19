@@ -197,6 +197,12 @@ func set_model(model: Dictionary) -> void:
 func refresh_research(model: Dictionary) -> void:
 	if _tree == null:
 		return
+	# CountryPanel opens with a cheap shell model and loads the section on the
+	# next deferred frame.  That first refresh is also the catalog bootstrap;
+	# patching only research here would leave the tree/layout empty forever.
+	if _definitions.is_empty():
+		set_model(model)
+		return
 	_research = model.get("research", {})
 	_development = model.get("development", _development)
 	_apply_research()

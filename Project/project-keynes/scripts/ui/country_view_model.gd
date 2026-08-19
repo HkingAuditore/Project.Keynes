@@ -13,10 +13,48 @@ const DevelopmentAchievementCatalogScript = preload(
 static var _tax_content_cache: Dictionary = {}
 
 var _generator = null
+var _section_cache: Dictionary = {}
+var _section_cache_revisions: Dictionary = {}
+var _static_catalog_cache: Dictionary = {}
 
 
 func set_context(generator) -> void:
 	_generator = generator
+	_section_cache.clear()
+	_section_cache_revisions.clear()
+
+
+func invalidate_cache(domains: int = -1) -> void:
+	if domains < 0:
+		_section_cache.clear()
+		_section_cache_revisions.clear()
+		return
+	if (domains & 1) != 0:
+		_section_cache.erase("technology")
+		_section_cache_revisions.erase("technology")
+	if (domains & 2) != 0:
+		_section_cache.erase("economy")
+		_section_cache_revisions.erase("economy")
+	if (domains & 4) != 0:
+		_section_cache.erase("ideology")
+		_section_cache_revisions.erase("ideology")
+
+
+func cached_section(section_id: String) -> Dictionary:
+	return _section_cache.get(section_id, {})
+
+
+func build_static_catalog() -> Dictionary:
+	if _static_catalog_cache.is_empty():
+		_static_catalog_cache = {
+			"technology_definitions": TechnologyCatalogScript.public_definitions(),
+			"technology_eras": TechnologyCatalogScript.public_era_metadata(),
+			"technology_domains": TechnologyCatalogScript.public_domain_metadata(),
+			"technology_visual_edges": TechnologyCatalogScript.public_visual_edges(),
+			"technology_lanes": TechnologyCatalogScript.public_lane_metadata(),
+			"research_signal_definitions": ResearchSignalCatalogScript.public_metadata(),
+		}
+	return _static_catalog_cache
 
 
 func player_completed_technology_ids() -> PackedStringArray:
@@ -38,44 +76,50 @@ func player_completed_technology_ids() -> PackedStringArray:
 	return snapshot.get("technology_ids", PackedStringArray())
 
 
-func build(include_treasury: bool = false) -> Dictionary:
-	if _generator == null or not _generator.has_method("gameplay_start_report") \
-			or not _generator.has_method("get_country_facade"):
-		return _unavailable_model("国家档案尚未就绪")
-	var start_report: Dictionary = _generator.gameplay_start_report()
-	var start_cell := int(start_report.get("cell", -1))
-	var facade = _generator.get_country_facade()
-	if not bool(start_report.get("ok", false)) or facade == null or start_cell < 0:
-		return _unavailable_model("当前会话没有可用的玩家国家")
-	var summary: Dictionary = facade.cell_summary(start_cell)
-	if not bool(summary.get("ok", false)) or not bool(summary.get("owned", false)):
-		return _unavailable_model("玩家国家档案暂不可用")
-	var country_handle := int(summary.get("country_handle", 0))
-	var research: Dictionary = facade.research_snapshot(country_handle)
-	research["research_signal_snapshot"] = facade.research_signal_snapshot(country_handle)
+func _build_full_legacy(section_id: String = "technology") -> Dictionary:
+	var normalized_section := section_id if section_id in [
+		"technology", "economy", "ideology"] else "technology"
+	if _section_cache.has(normalized_section):
+		return _section_cache[normalized_section]
+	# Keep the pre-snapshot path intentionally verbose for debug/A-B comparison.
+	# It must not call the compact section bridge, otherwise the fallback would
+	# measure the same query contract as the production event-driven path.
+	var context := _country_context()
+	if not bool(context.get("ok", false)):
+		return _unavailable_model(String(context.get("reason", "国家档案暂不可用")))
+	var facade = context.facade
+	var economy_facade = _generator.get_economy_facade() \
+		if _generator.has_method("get_economy_facade") else null
+	var country_handle := int(context.country_handle)
+	var start_cell := int(context.start_cell)
+	var summary: Dictionary = context.summary
+	var research: Dictionary = facade.research_snapshot(country_handle) \
+		if facade.has_method("research_snapshot") else {}
+	research["research_signal_snapshot"] = facade.research_signal_snapshot(
+		country_handle) if facade.has_method("research_signal_snapshot") else {}
 	var tax_policy: Dictionary = facade.tax_policy_snapshot(country_handle) \
 		if facade.has_method("tax_policy_snapshot") else {}
 	var fiscal: Dictionary = facade.fiscal_snapshot(country_handle) \
 		if facade.has_method("fiscal_snapshot") else {}
-	var economy_facade = _generator.get_economy_facade() \
-		if _generator.has_method("get_economy_facade") else null
 	var trade_summary: Dictionary = economy_facade.country_trade_snapshot(
-		country_handle, "summary", 0, 1) \
-		if economy_facade != null and economy_facade.has_method(
-			"country_trade_snapshot") else {"ok": false,
-			"reason": "country trade API unavailable"}
+		country_handle, "summary", 0, 1) if economy_facade != null and \
+		economy_facade.has_method("country_trade_snapshot") else {
+			"ok": false, "reason": "country trade API unavailable"}
 	var country_snapshot: Dictionary = facade.snapshot(country_handle) \
 		if facade.has_method("snapshot") else {}
 	var tax_availability := _tax_availability(economy_facade, start_cell)
 	var ideology := _ideology_model(country_handle)
-	var treasury := _treasury_model(facade, country_handle) if include_treasury \
-		else _unavailable_treasury("当前页面未请求国库明细")
+	var treasury := _treasury_model(facade, country_handle)
 	var treasury_available := bool(treasury.get("available", false))
 	var cash := int(treasury.get("cash", 0)) if treasury_available \
 		else int(summary.get("cash", 0))
 	research["country_cash"] = cash
 	var development := _development_model(country_handle, research)
-	return {
+	var revision_components := {
+		"country_state_version": int(summary.get("state_version", 0)),
+		"country_generation": int(facade.report().get("generation", 0)),
+	}
+	var model := {
 		"available": true,
 		"country_name": String(summary.get("country_name", "未命名国家")),
 		"country_id": String(summary.get("country_id", "")),
@@ -85,6 +129,14 @@ func build(include_treasury: bool = false) -> Dictionary:
 			if treasury_available else int(summary.get("nonzero_good_count", 0)),
 		"technology_count": int(summary.get("technology_count", 0)),
 		"country_handle": country_handle,
+		"country_state_version": int(summary.get("state_version", 0)),
+		"country_generation": int(facade.report().get("generation", 0)),
+		"revision": int(summary.get("state_version", 0)),
+		"revision_components": revision_components,
+		"economy_trade_revision": int(trade_summary.get("revision", 0)),
+		"economy_class_opinion_revision": 0,
+		"ideology_support_revision": int(ideology.get("snapshot", {}).get(
+			"support_revision", 0)),
 		"country_facade": facade,
 		"treasury": treasury,
 		"tax_policy": tax_policy,
@@ -97,14 +149,187 @@ func build(include_treasury: bool = false) -> Dictionary:
 		"current_day": int(facade.report().get("last_committed_day", -1)),
 		"research": research,
 		"development": development,
-		"technology_definitions": TechnologyCatalogScript.public_definitions(),
-		"technology_eras": TechnologyCatalogScript.public_era_metadata(),
-		"technology_domains": TechnologyCatalogScript.public_domain_metadata(),
-		"technology_visual_edges": TechnologyCatalogScript.public_visual_edges(),
-		"technology_lanes": TechnologyCatalogScript.public_lane_metadata(),
-		"research_signal_definitions": ResearchSignalCatalogScript.public_metadata(),
 		"ideology": ideology,
 	}
+	if normalized_section == "technology":
+		model.merge(build_static_catalog(), true)
+	_section_cache[normalized_section] = model
+	_section_cache_revisions[normalized_section] = revision_components
+	return model
+
+
+func build_legacy(section_id: String = "technology") -> Dictionary:
+	# Explicit A/B/debug entry point. Production event-driven callers use build().
+	return _build_full_legacy(section_id)
+
+
+func _country_context() -> Dictionary:
+	if _generator == null or not _generator.has_method("gameplay_start_report") \
+			or not _generator.has_method("get_country_facade"):
+		return {"ok": false, "reason": "国家档案尚未就绪"}
+	var start_report: Dictionary = _generator.gameplay_start_report()
+	var start_cell := int(start_report.get("cell", -1))
+	var facade = _generator.get_country_facade()
+	if not bool(start_report.get("ok", false)) or facade == null or start_cell < 0:
+		return {"ok": false, "reason": "当前会话没有可用的玩家国家"}
+	var summary: Dictionary = facade.cell_summary(start_cell)
+	if not bool(summary.get("ok", false)) or not bool(summary.get("owned", false)):
+		return {"ok": false, "reason": "玩家国家档案暂不可用"}
+	return {
+		"ok": true,
+		"start_cell": start_cell,
+		"facade": facade,
+		"summary": summary,
+		"country_handle": int(summary.get("country_handle", 0)),
+	}
+
+
+func _section_mask(section_id: String) -> int:
+	return int({"technology": 1, "economy": 2, "ideology": 4}.get(section_id, 1))
+
+
+func build_summary_snapshot(country_handle: int, summary: Dictionary,
+		ui_snapshot: Dictionary = {}) -> Dictionary:
+	var shell: Dictionary = ui_snapshot.get("summary", summary) \
+		if bool(ui_snapshot.get("ok", false)) else summary
+	var revision_components: Dictionary = ui_snapshot.get(
+		"revision_components", {}).duplicate(false)
+	var published_day := int(ui_snapshot.get("published_day", -1))
+	if published_day < 0 and _generator != null and \
+			_generator.has_method("get_country_facade"):
+		var facade = _generator.get_country_facade()
+		if facade != null and facade.has_method("report"):
+			published_day = int(facade.report().get("last_committed_day", -1))
+	return {
+		"available": true,
+		"country_name": String(shell.get("country_name", "未命名国家")),
+		"country_id": String(shell.get("country_id", "")),
+		"territory_count": int(shell.get("territory_count", 0)),
+		"technology_count": int(shell.get("technology_count", 0)),
+		"country_handle": country_handle,
+		"country_state_version": int(ui_snapshot.get("country_state_version", 0)),
+		"country_generation": int(ui_snapshot.get("country_generation", 0)),
+		"revision": int(ui_snapshot.get("revision",
+			ui_snapshot.get("country_state_version", 0))),
+		"revision_components": revision_components,
+		"economy_trade_revision": int(ui_snapshot.get(
+			"economy_trade_revision", 0)),
+		"economy_class_opinion_revision": int(ui_snapshot.get(
+			"economy_class_opinion_revision", 0)),
+		"ideology_support_revision": int(ui_snapshot.get(
+			"ideology_support_revision", 0)),
+		"current_day": published_day,
+	}
+
+
+func build_technology_snapshot(country_handle: int, facade,
+		ui_snapshot: Dictionary) -> Dictionary:
+	var compact_ok := bool(ui_snapshot.get("ok", false))
+	var research: Dictionary = ui_snapshot.get("research", {}) if compact_ok \
+		else (facade.research_snapshot(country_handle) \
+		if facade != null and facade.has_method("research_snapshot") else {})
+	research["research_signal_snapshot"] = ui_snapshot.get(
+		"research_signals", {}) if compact_ok \
+		else (facade.research_signal_snapshot(country_handle) \
+		if facade != null and facade.has_method("research_signal_snapshot") else {})
+	return {
+		"research": research,
+		"development": _development_model(country_handle, research),
+	}
+
+
+func build_economy_snapshot(country_handle: int, facade, economy_facade,
+		ui_snapshot: Dictionary, start_cell: int) -> Dictionary:
+	var compact_ok := bool(ui_snapshot.get("ok", false))
+	var tax_policy: Dictionary = ui_snapshot.get("tax_policy", {}) if compact_ok \
+		else (facade.tax_policy_snapshot(country_handle) \
+		if facade != null and facade.has_method("tax_policy_snapshot") else {})
+	var fiscal: Dictionary = ui_snapshot.get("fiscal", {}) if compact_ok \
+		else (facade.fiscal_snapshot(country_handle) \
+		if facade != null and facade.has_method("fiscal_snapshot") else {})
+	var trade_summary: Dictionary = ui_snapshot.get("trade_summary", {}) if compact_ok \
+		else (economy_facade.country_trade_snapshot(country_handle, "summary", 0, 1) \
+		if economy_facade != null and economy_facade.has_method(
+			"country_trade_snapshot") else {"ok": false,
+			"reason": "country trade API unavailable"})
+	var country_snapshot: Dictionary = ui_snapshot.get("country_snapshot", {}) if compact_ok \
+		else (facade.snapshot(country_handle) \
+		if facade != null and facade.has_method("snapshot") else {})
+	var tax_availability := _tax_availability(economy_facade, start_cell)
+	var treasury: Dictionary = present_treasury(ui_snapshot.get("treasury", {})) \
+		if compact_ok else _treasury_model(facade, country_handle)
+	return {
+		"treasury": treasury,
+		"tax_policy": tax_policy,
+		"tax_presentation": present_tax_policy(tax_policy,
+			country_snapshot.get("technology_ids", PackedStringArray()),
+			tax_availability),
+		"fiscal": fiscal,
+		"trade_summary": trade_summary,
+	}
+
+
+func build_ideology_snapshot(country_handle: int, ui_snapshot: Dictionary) -> Dictionary:
+	var native_ideology: Dictionary = ui_snapshot.get("ideology", {})
+	var ideology_facade = _generator.get_ideology_facade() \
+		if _generator != null and _generator.has_method("get_ideology_facade") else null
+	if bool(native_ideology.get("ok", false)) and ideology_facade != null:
+		return {
+			"ideology": {
+				"available": true,
+				"facade": ideology_facade,
+				"snapshot": native_ideology,
+				"catalog": ideology_facade.catalog_view(),
+			},
+		}
+	return {"ideology": _ideology_model(country_handle)}
+
+
+func build(section_id: String = "technology") -> Dictionary:
+	var normalized_section := section_id if section_id in [
+		"technology", "economy", "ideology"] else "technology"
+	if _section_cache.has(normalized_section):
+		return _section_cache[normalized_section]
+	var context := _country_context()
+	if not bool(context.get("ok", false)):
+		return _unavailable_model(String(context.get("reason", "国家档案暂不可用")))
+	var facade = context.facade
+	var country_handle := int(context.country_handle)
+	var ui_snapshot: Dictionary = facade.ui_snapshot(country_handle,
+		_section_mask(normalized_section)) if facade.has_method("ui_snapshot") else {}
+	var summary_snapshot := build_summary_snapshot(country_handle,
+		context.summary, ui_snapshot)
+	var economy_facade = _generator.get_economy_facade() \
+		if _generator.has_method("get_economy_facade") else null
+	var section_snapshot: Dictionary = {}
+	match normalized_section:
+		"technology":
+			section_snapshot = build_technology_snapshot(country_handle, facade, ui_snapshot)
+		"economy":
+			section_snapshot = build_economy_snapshot(country_handle, facade,
+				economy_facade, ui_snapshot, int(context.start_cell))
+		"ideology":
+			section_snapshot = build_ideology_snapshot(country_handle, ui_snapshot)
+	var treasury: Dictionary = section_snapshot.get("treasury", {})
+	var treasury_available := bool(treasury.get("available", false))
+	var cash := int(treasury.get("cash", 0)) if treasury_available \
+		else int(context.summary.get("cash", 0))
+	var model := summary_snapshot.duplicate(false)
+	model["cash"] = cash
+	model["nonzero_good_count"] = int(treasury.get("nonzero_good_count", 0)) \
+		if treasury_available else int(context.summary.get("nonzero_good_count", 0))
+	model["country_facade"] = facade
+	model["economy_facade"] = economy_facade
+	model.merge(section_snapshot, true)
+	if normalized_section == "technology":
+		var research: Dictionary = model.get("research", {})
+		research["country_cash"] = cash
+		model["research"] = research
+		model.merge(build_static_catalog(), true)
+	_section_cache[normalized_section] = model
+	_section_cache_revisions[normalized_section] = model.get(
+		"revision_components", {}).duplicate(false)
+	return model
 
 
 func _tax_availability(economy_facade, cell: int) -> Dictionary:

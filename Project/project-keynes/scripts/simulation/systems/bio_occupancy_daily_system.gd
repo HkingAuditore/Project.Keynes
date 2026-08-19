@@ -11,18 +11,26 @@ const _SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
 
 var generator = null
 var map: MapData = null
+var world_clock = null
 var diffusion_stride: int = 8
 var _last_path: String = "none"
+var slice_enabled: bool = false
 
 
 func _init(p_generator, p_map: MapData, p_diffusion_stride: int = 8) -> void:
 	id = &"bio_occupancy_daily"
 	priority = 121
 	slice_budget_ms = 0.40
+	slice_enabled = bool(Engine.get_meta(&"bio_occupancy_slice_enabled", false))
+	# A sliced round is a same-day transaction, but it remains cooperative:
+	# one deterministic cell range per scheduler visit, with WorldClock frozen
+	# until the staging buffer is fully committed.
 	max_slices_per_tick = 1
-	must_run = true
+	must_run = false
 	generator = p_generator
 	map = p_map
+	if generator != null:
+		world_clock = generator.get("_world_clock_ref")
 	diffusion_stride = maxi(1, p_diffusion_stride)
 	policy = _SusPolicyScript.StridePolicy.new(1, 0)
 
@@ -70,19 +78,38 @@ func tick(ctx) -> Dictionary:
 	var run_diffusion := (day_index % diffusion_stride) == 0
 	var res: Dictionary = {}
 	if generator.has_method("run_bio_occupancy_pass_native"):
-		res = generator.run_bio_occupancy_pass_native(map, run_diffusion, day_index)
+		res = generator.run_bio_occupancy_pass_native(
+			map, run_diffusion, day_index, slice_enabled)
 	_last_path = str(res.get("path", "none"))
-	_submit_occupancy_discoveries(res, day_index)
+	var done := bool(res.get("done", true))
+	if world_clock != null and world_clock.has_method("request_simulation_backpressure"):
+		world_clock.request_simulation_backpressure(&"bio_occupancy_day_barrier", slice_enabled and not done)
+	if done:
+		_submit_occupancy_discoveries(res, day_index)
 	var elapsed_ms: float = (Time.get_ticks_usec() - t0) / 1000.0
 	return {
-		"done": true,
-		"work_done": map.cell_count(),
+		"done": done,
+		"work_done": int(res.get("processed_cells", map.cell_count())),
 		"elapsed_ms": elapsed_ms,
-		"progress_ratio": 1.0,
+		"progress_ratio": float(res.get("progress_ratio", 1.0)),
 		"stage_name": "bio_occupancy_daily",
 		"path": _last_path,
 		"run_diffusion": run_diffusion,
 		"newly_occupied": int((res.get("newly_occupied_cells", PackedInt32Array()) as PackedInt32Array).size()),
+		"processed_cells": int(res.get("processed_cells", map.cell_count())),
+		"native_compute_ms": float(res.get("native_compute_ms", 0.0)),
+		"bridge_ms": float(res.get("bridge_ms", 0.0)),
+		"publish_ms": float(res.get("publish_ms", 0.0)),
+		"native_ms": float(res.get("native_ms", elapsed_ms)),
+		"published_to_slot": bool(res.get("published_to_slot", false)),
+		"bio_occupancy_slice_enabled": slice_enabled,
+		"bio_slice_native_ms": float(res.get("bio_slice_native_ms", 0.0)),
+		"bio_slice_publish_ms": float(res.get("bio_slice_publish_ms", 0.0)),
+		"bio_knob_cache_hit": bool(res.get("bio_knob_cache_hit", false)),
+		"bio_knob_cache_build_ms": float(res.get("bio_knob_cache_build_ms", 0.0)),
+		"bio_slice_fallback_reason": str(res.get("bio_slice_fallback_reason", "")),
+		"fallback_reason": str(res.get("fallback_reason", "")),
+		"fail_stage": str(res.get("fail_stage", "")),
 	}
 
 

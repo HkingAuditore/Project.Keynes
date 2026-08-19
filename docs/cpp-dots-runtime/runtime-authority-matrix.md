@@ -51,13 +51,44 @@ Transient 经济缓存与 climate/ocean hot-state capsule 不改变本矩阵的�
 划分；具体边界见
 [运行时性能优化契约](runtime-performance-optimization-2026-07.md)。
 
+## 2026-08 性能治理边界
+
+`NativeCountryRuntime` 的生产报告默认 `LIGHT`：只发布 stage、路径、日、
+变更量、generation/state version、published slot、native timing、barrier、
+pending command 和研究队列计数。完整 `state_hash`、cell-tax 诊断遍历和
+memory 估算仅在 `PROBE`、`country_full_diagnostics` 或关闭
+`country_light_report_enabled` 时运行；LIGHT/FULL 都不改变 PKCN state/event
+hash 契约。pending activation queue 是 native 内部 transient 索引，不进入存档。
+该索引只在 bootstrap/restore/整批研究状态替换后重建；正常 completion/activation
+按 technology index 有序增量更新，`research_queue_rebuilds` 用于发现意外全树重建。
+FULL/PROBE 若发现索引与 authoritative pending bitset 不一致，只对当前 research
+day 使用完整 technology scan，随后从 bitset 重建索引；`_pending_queue_enabled`
+不会被永久关闭，下一日 parity 通过后自动回到 queue path，并在报告中保留
+`fallback_reason=pending_queue_mismatch` 与累计 `research_full_scan_fallbacks`。
+
+Country 面板的动态数据仍由 native facade 提供，GDScript 只持有按 section 的
+UI cache。`get_country_ui_snapshot(handle, section_mask)` 一次返回所需 section
+和 revision；静态科技目录只构建一次。事件驱动路径使用 `build()`，旧完整构建
+仅通过 `build_legacy()` 暴露给 debug/A-B 开关。Country/Economy/Bio 状态、MapData 和
+存档 authority 不迁移到 UI。
+
+Bio occupancy 第一阶段每日完整覆盖并写入 native staging，完整 pass 后才发布
+`CELL_BIO_OCCUPANCY_BITS` 与 discovery 事件。`bio_occupancy_slice_enabled` 当前
+默认关闭；打开时 `DCWorldExt` 持有 transient cursor state，按固定 cell range
+完成 persistence/diffusion/merge/publish，生产范围为 2048 cells，最终片才发布。
+in-flight round 设置 `bio_occupancy_day_barrier`，防止 WorldClock 跨日；cursor
+pass 不可用或校验失败时必须报告 `path/fallback_reason/fail_stage/published_to_slot`
+并回退 one-shot；staging 不进入存档或 state/event hash。Native daily 的未完成
+round 也设置 `native_daily_day_barrier`，continuation pulse 先完成 climate，再
+完成 Bio，随后才允许 Country/Economy ACK drain。
+
 本文记录当前日级 runtime 的权威边界。它区分“C++ 加速”“slot 写入”“tick/state authority”“visible publish”和“Godot object boundary”，避免把可运行 native pass 误判成完整 DOTS authority。
 
 | System | Stage / Cursor Owner | Slot Writer | Publish Path | Fallback Owner | ACTIVE Eligibility | Known Blockers |
 | --- | --- | --- | --- | --- | --- | --- |
 | `season_refresh` | `SeasonRefreshSystem` 持有 period counter、round stage、stage cursor；B+ round 可由 `DCWorldExt` probe。 | GDScript helper 与 B+ C++ pass 写 terrain/landform/vegetation/cover/moisture/weather dirty slots。 | `MapData` mutation、dirty mask、enum atlas/detail scatter intents。 | `SeasonRefreshSystem` 12-stage path；B+ 失败回退同 system。 | 默认 GDScript retained；`native_season_refresh_active_owner_enabled=true` 且 B+ state 可证明时，report 可升为 `native_active`。 | Atlas queue、detail scatter 和 Godot upload 是 retained boundaries；只有 owner 未 active 才阻塞 simulation complete。 |
 | `refresh_climate_daily` | `ClimateDailySystem` 持有 `_round_active`、`_pass_cursor`、phase lock；native daily report 镜像 climate state。 | 多个 `DCWorldExt` climate/ocean/wind/sea-ice/transpiration pass 写 slot；GDScript system 仍持 round state。 | Pass 级 `_flush_slot_to_map()` / `published_to_slot`，尾部 debug/CSV/visual intents。 | `ClimateDailySystem` sliced path；旧 `RefreshClimateDailyJob` 已删除。 | Partial native-ready / guarded ACTIVE owner flags；默认仍保留 GDScript round shell。 | Reset/abort/debug boundary、visible publish 与 sync sliced fallback 尚未完全退休。 |
-| `native_daily_sim` | `DCWorldExt::run_native_daily_slice()` 持有 graph continuation、node cursor、round accumulator；GDScript 只保留 SUS shell 与 bundle boundary。 | `SCHEDULE_GRAPH` 节点调用 C++ pass 写 slots。 | Graph report `published_slots`、`visual_dirty_intents`、`authority_report`、`authority_blockers`、`retained_boundaries`；必要时 flush 到 `MapData`。 | 普通 ACTIVE 不再回 full-run；`run_native_daily_tick()` 只作 debug/probe，`run_native_sim_tick()` 作 SHADOW/A-B。 | `run_native_daily_slice` 是唯一 ACTIVE hot path；`graph_coverage_state=complete` 只由 simulation authority blockers 决定；`native_daily_legacy_daily_production_retired=true` 才允许 fallback/test-only handoff。 | Climate/weather/ocean/season owner gates 与 legacy fallback 未退休时仍阻塞；Godot/visual boundaries 只进 `retained_boundaries`。 |
+| `native_daily_sim` | `DCWorldExt::run_native_daily_slice()` 持有 graph continuation、node cursor、round accumulator；GDScript 只保留 SUS shell 与 bundle boundary。 | `SCHEDULE_GRAPH` 节点调用 C++ pass 写 slots。 | Graph report `published_slots`、`visual_dirty_intents`、`authority_report`、`authority_blockers`、`retained_boundaries`；必要时 flush 到 `MapData`。首片被预算跳过时，GDScript 的 transient `native_daily_day_pending` 持有 same-day barrier，continuation 再直接启动 job。 | 普通 ACTIVE 不再回 full-run；`run_native_daily_tick()` 只作 debug/probe，`run_native_sim_tick()` 作 SHADOW/A-B。 | `run_native_daily_slice` 是唯一 ACTIVE hot path；`graph_coverage_state=complete` 只由 simulation authority blockers 决定；`native_daily_legacy_daily_production_retired=true` 才允许 fallback/test-only handoff。 | Climate/weather/ocean/season owner gates 与 legacy fallback 未退休时仍阻塞；Godot/visual boundaries 只进 `retained_boundaries`；pending 标记不进入存档或 hash，reset 时清理。 |
 | `modifier_daily` | `ModifierRuntime` 持有四域 SoA、bucket、expiry heap、命令排序与 snapshot version。 | 不写领域 base slot；发布只读 effective 聚合。 | `MODIFIER_GRAPH` report、command result、journal；PKCM/PKGP 与 PKCN/PKEC 内嵌 domain。 | GDScript fallback 只消费同一 `evaluate_modifier_stat` 公式；无第二份可变 store。 | ACTIVE，priority 90、单 slice、无工作时零 slice。 | 独立 SHADOW 双算和目标规模性能门禁尚未完成。 |
 | `country_daily` | `NativeCountryRuntime` 持有国家 SoA、handle generation、领土 CSR、国家科技/研究信号 bitset、稀疏证据、现金/物资国库、五类税务默认率/稀疏覆盖、命令游标与 state hash。 | 只把 `cell.country_slot` 发布到 DataCore/MapData；名称、科技、证据、国库、税表和 CSR 保持 native。 | 原子 `command_preflight → command_apply → aggregate_publish`；国家事件与粗粒度 snapshot；PKCN v11。 | PROBE/OFF 只作验证门；OFF 时依赖国家的经济禁用，不恢复旧状态。 | 默认 **ACTIVE**；priority 255、`must_run=false`、`use_job_should_run=true`，无到期命令零 slice。 | 不含灭国、科技撤销、外交、战争或 AI；活跃国家至少一格，水域无主。 |
 | `economy_daily` | `NativeEconomyRuntime` 持有滚动五相结算、Population/Settlement/Market/Family/FamilyTrait/FamilyCellInfluence/NotablePerson stores、稀疏关系、BUILDING_GRAPH、国内 Trade、税务与财政 escrow。 | 独立 native vectors；due-cell sample 冻结环境、国家/科技/税率、城市 Modifier 和资源再生 factor。 | `FAMILY_COMMIT` 归一化 claim、评审威望并只在变化时协调 Modifier/Trigger；`PERSON_COMMIT` 绑定人物；发布审计与 PKEC v30。 | 无大规模 GDScript fallback；资源再生保留读取同一 POD 的脚本 fallback。 | 默认 **ACTIVE / 每 cell 固定 5 日**。 | 跨国贸易执行、政治、谱系仍未接入。 |

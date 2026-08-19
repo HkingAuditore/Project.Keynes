@@ -3,6 +3,7 @@ class_name TaxLaneEditor
 
 signal override_requested(scope: String, kind: String, item_id: String, rate: int)
 signal reset_requested(scope: String, kind: String, item_id: String)
+signal editing_finished()
 
 var _data: Dictionary = {}
 var _pending := false
@@ -76,6 +77,10 @@ func lane_data() -> Dictionary:
 	return _data.duplicate(true)
 
 
+func is_editing() -> bool:
+	return _spin != null and _spin.get_line_edit().has_focus()
+
+
 func _apply_authoritative_value() -> void:
 	var base := int(_data.get("base", 0))
 	_spin.set_value_no_signal(base)
@@ -103,6 +108,7 @@ func _on_text_submitted(_text: String) -> void:
 
 func _on_focus_exited() -> void:
 	_submit(false)
+	editing_finished.emit()
 
 
 func _submit(explicit: bool) -> void:
