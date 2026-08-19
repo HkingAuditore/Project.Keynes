@@ -635,6 +635,27 @@ func family_snapshot(family_handle: int) -> Dictionary:
 			if profession_id >= 0 and profession_id < catalog_professions.size()
 			else "")
 	snapshot["profession_stable_ids"] = profession_names
+	var origin_cell := int(snapshot.get("origin_cell", -1))
+	var settlement_name := ""
+	var settlements := named_settlement_snapshot()
+	var cells: PackedInt32Array = settlements.get("cell_indices", PackedInt32Array())
+	var names: PackedStringArray = settlements.get("settlement_names", PackedStringArray())
+	for i in range(mini(cells.size(), names.size())):
+		if int(cells[i]) == origin_cell:
+			settlement_name = String(names[i])
+			break
+	snapshot["origin_settlement_name"] = settlement_name
+	var surname := String(snapshot.get("surname", ""))
+	var format := String(snapshot.get("culture_group_naming_format", "CITY_SURNAME_SUFFIX"))
+	var separator := String(snapshot.get("culture_group_separator", "-"))
+	var suffix := String(snapshot.get("culture_group_suffix", "氏"))
+	var family_name := surname
+	if not settlement_name.is_empty():
+		match format:
+			"CITY_SEPARATOR_SURNAME": family_name = "%s%s%s" % [settlement_name, separator, surname]
+			"CITY_SURNAME": family_name = "%s%s" % [settlement_name, surname]
+			_: family_name = "%s%s%s" % [settlement_name, surname, suffix]
+	snapshot["family_name"] = family_name
 	return snapshot
 
 

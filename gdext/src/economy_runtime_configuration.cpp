@@ -290,6 +290,12 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _person_stable_ids.clear();
     _family_stable_ids.clear();
     _family_surname_members.clear();
+    _family_surname_culture_group_ids.clear();
+    _family_culture_group_ids.clear();
+    _family_culture_group_display_names.clear();
+    _family_culture_group_naming_formats.clear();
+    _family_culture_group_separators.clear();
+    _family_culture_group_suffixes.clear();
     _person_cell_offsets.assign(static_cast<size_t>(cell_count) + 1, 0);
     _person_cell_indices.clear(); _person_building_offsets.clear();
     _person_building_indices.clear(); _person_need_offsets.clear();

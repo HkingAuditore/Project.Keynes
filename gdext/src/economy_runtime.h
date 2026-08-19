@@ -46,7 +46,7 @@ public:
     // 39: plan P (5-15) and investment I (10-30) lock separately, with I > P.
     // v38 restores P from saved S (clamped to 15) and synthesizes I > P.
     // v37 restores as N=5 and P from saved plan days.
-    static constexpr int32_t SCHEMA_VERSION = 39;
+    static constexpr int32_t SCHEMA_VERSION = 40;
     static constexpr uint32_t BUILDING_KIT_ROLE_TRADE = 1u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CONSTRUCTION = 2u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CLOTHING_INPUT = 4u;
@@ -790,7 +790,10 @@ private:
         std::vector<uint32_t> surname_disambiguator;
         std::vector<int64_t> founded_day;
         std::vector<int32_t> home_cell;
+        std::vector<int32_t> origin_cell;
         std::vector<int32_t> origin_ethnicity;
+        std::vector<int32_t> culture_group_id;
+        std::vector<uint32_t> split_sequence;
         std::vector<uint16_t> decline_reviews;
         std::vector<uint16_t> flags;
         std::vector<int32_t> free_indices;
@@ -3542,6 +3545,7 @@ private:
     std::vector<int32_t> _profession_technology_offsets;
     std::vector<int32_t> _profession_required_technologies;
     std::vector<std::string> _ethnicity_ids;
+    std::vector<int32_t> _ethnicity_culture_group_ids;
     std::vector<std::string> _good_ids;
     std::vector<int32_t> _good_occupancy_bit_offsets;
     std::vector<int32_t> _good_occupancy_bits;
@@ -4048,6 +4052,12 @@ private:
     std::vector<std::string> _family_surname_ids;
     std::vector<std::string> _family_surname_text;
     std::vector<int32_t> _family_surname_weights;
+    std::vector<int32_t> _family_surname_culture_group_ids;
+    std::vector<std::string> _family_culture_group_ids;
+    std::vector<std::string> _family_culture_group_display_names;
+    std::vector<std::string> _family_culture_group_naming_formats;
+    std::vector<std::string> _family_culture_group_separators;
+    std::vector<std::string> _family_culture_group_suffixes;
     int64_t _person_catalog_hash = 0;
     std::string _person_given_name_pack_id = "default_zh";
     std::vector<std::string> _person_given_name_ids;
@@ -4059,6 +4069,7 @@ private:
     int32_t _family_min_settlement_tier = 2;
     int32_t _family_review_days = 30;
     int64_t _family_min_population_per_active = 100;
+    int64_t _family_split_population_threshold = 100;
     int32_t _family_max_per_cell = 8;
     int32_t _family_cells_per_slice = 128;
     int32_t _family_decline_reviews = 3;
@@ -4528,6 +4539,7 @@ private:
                                       std::string &error);
     bool run_family_commit_slice(int64_t &work_done, std::string &error);
     void rebuild_family_indices();
+    void split_family_branches();
     void normalize_family_memberships();
     void absorb_family_households();
     int64_t family_household_target_people(int64_t owner_slots) const;

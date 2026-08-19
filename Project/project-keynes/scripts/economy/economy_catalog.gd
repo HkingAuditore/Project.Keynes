@@ -234,6 +234,7 @@ static func compile_native_catalog() -> Dictionary:
 		profession_semantic_tag_offsets.append(profession_semantic_tags.size())
 
 	var ethnicity_ids := PackedStringArray()
+	var ethnicity_culture_group_ids := PackedStringArray()
 	var ethnicity_need_factor := PackedInt32Array()
 	for ethnicity in ethnicities:
 		var stable_id := String(ethnicity.id)
@@ -241,6 +242,10 @@ static func compile_native_catalog() -> Dictionary:
 				or ethnicity.need_modifier_ids.size() != ethnicity.need_quantity_factors_q16.size():
 			return {"ok": false, "reason": "invalid ethnicity: %s" % stable_id}
 		ethnicity_ids.append(stable_id)
+		var culture_group_id := String(ethnicity.culture_group_id).strip_edges()
+		if culture_group_id.is_empty():
+			return {"ok": false, "reason": "ethnicity_missing_culture_group: %s" % stable_id}
+		ethnicity_culture_group_ids.append(culture_group_id)
 		var factors := PackedInt32Array()
 		factors.resize(need_ids.size())
 		factors.fill(Q16_ONE)
@@ -295,6 +300,7 @@ static func compile_native_catalog() -> Dictionary:
 		"profession_semantic_tag_offsets": profession_semantic_tag_offsets,
 		"profession_semantic_tags": profession_semantic_tags,
 		"ethnicity_ids": ethnicity_ids,
+		"ethnicity_culture_group_ids": ethnicity_culture_group_ids,
 		"need_ids": need_ids,
 		"need_living_cost_weights_q16": need_living_cost_weights,
 		"need_satisfaction_tiers": need_satisfaction_tiers,
