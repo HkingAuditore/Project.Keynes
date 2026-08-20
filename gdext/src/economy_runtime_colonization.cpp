@@ -1100,6 +1100,23 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
         for (int64_t i = allocated; i < remaining; ++i)
             ++candidates[remainders[static_cast<size_t>(i - allocated)].candidate].selected;
     }
+    int64_t merchant_population = living_merchant_population(source_cell);
+    int64_t merchant_selected = 0;
+    for (const Candidate &candidate : candidates) {
+        if (candidate.selected > 0 && is_merchant_slot(candidate.slot))
+            merchant_selected += candidate.selected;
+    }
+    int64_t overflow = merchant_selected -
+        std::max<int64_t>(0, merchant_population - 1);
+    for (int32_t i = static_cast<int32_t>(candidates.size()) - 1;
+         i >= 0 && overflow > 0; --i) {
+        Candidate &candidate = candidates[i];
+        if (candidate.selected <= 0 || !is_merchant_slot(candidate.slot))
+            continue;
+        const int64_t reduce = std::min(overflow, candidate.selected);
+        candidate.selected -= reduce;
+        overflow -= reduce;
+    }
     _family_expeditions.payload_begin[expedition] = static_cast<uint32_t>(
         _family_expedition_payloads.size());
     for (Candidate &candidate : candidates) {
@@ -1232,6 +1249,7 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
     }
     _family_indices_dirty = true; _person_indices_dirty = true;
     _structural_touched_cells.push_back(source_cell);
+    if (!repair_cell_merchant_and_rebuild(source_cell, error)) return false;
     _colonization_payload_split_ms = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - started).count();
     return true;
@@ -1322,12 +1340,7 @@ bool NativeEconomyRuntime::restore_family_expedition_payload(
 
 bool NativeEconomyRuntime::finalize_immediate_family_expedition_settlement(
         int32_t destination_cell, std::string &error) {
-    int64_t merchant_repairs = 0;
-    if (!ensure_merchant_invariant(
-            destination_cell, merchant_repairs, error)) return false;
-    if (!rebuild_merchant_ranges(error)) return false;
-    _merchant_repairs = saturating_add(
-        _merchant_repairs, merchant_repairs, _saturation_count);
+    if (!repair_cell_merchant_and_rebuild(destination_cell, error)) return false;
 
     normalize_family_memberships();
     update_family_employment_attribution();
@@ -1430,6 +1443,9 @@ bool NativeEconomyRuntime::apply_settle_family_expedition(
         return false;
     if (!settle_family_expedition_kit(expedition, destination, error))
         return false;
+    if (cmd.i32_1 > 0)
+        apply_family_colonization_population_reward(destination,
+            _family_expeditions.family_handle[expedition], cmd.i32_1);
     bool claimed = cmd.i64_0 != 0;
     if (!claimed && _effect_runtime != nullptr)
         claimed = _effect_runtime->family_colonization_includes_claim(
@@ -1480,6 +1496,8 @@ void NativeEconomyRuntime::recover_lost_family_settlement_commands() {
         command.sequence = static_cast<int64_t>(settle_key & 0x7fffffffffffffffULL);
         command.target_handle = handle;
         command.i32_0 = _family_expeditions.target_cell[expedition];
+        command.i32_1 = _effect_runtime->family_colonization_population_reward(
+            _family_expeditions.effect_transaction_id[expedition]);
         command.i64_0 = _effect_runtime->family_colonization_includes_claim(
             _family_expeditions.effect_transaction_id[expedition]) ? 1 : 0;
         command.i64_1 = static_cast<int64_t>(
@@ -1560,10 +1578,14 @@ bool NativeEconomyRuntime::process_due_family_expeditions(
             continue;
         }
         if (_family_expeditions.state[expedition] == EXPEDITION_RETURNING) {
+            const int32_t source_cell =
+                _family_expeditions.source_cell[expedition];
             if (!restore_family_expedition_payload(expedition,
-                    _family_expeditions.source_cell[expedition], error)) return false;
+                    source_cell, error)) return false;
             if (!restore_family_expedition_cargo(expedition,
-                    _family_expeditions.source_cell[expedition], false, error))
+                    source_cell, false, error))
+                return false;
+            if (!repair_cell_merchant_and_rebuild(source_cell, error))
                 return false;
             note_family_expedition_audit_invalidation();
             append_colonization_receipt(expedition, 0,
@@ -1600,6 +1622,9 @@ bool NativeEconomyRuntime::process_due_family_expeditions(
                 _family_expeditions.handle_for_index(expedition);
             int64_t transaction_id = 0;
             const bool claim_unowned = owner == 0;
+            const int32_t population_reward =
+                family_colonization_population_reward_amount(
+                    _family_expeditions.family_handle[expedition]);
             if (!_effect_runtime->enqueue_family_colonization_pod(
                     _family_expeditions.stable_id[expedition], day,
                     _family_expeditions.stable_id[expedition],
@@ -1609,7 +1634,7 @@ bool NativeEconomyRuntime::process_due_family_expeditions(
                     handle, _family_expeditions.generation[expedition],
                     _family_expeditions.target_cell[expedition],
                     _family_expeditions.idempotency_key[expedition], error,
-                    &transaction_id, claim_unowned)) return false;
+                    &transaction_id, claim_unowned, population_reward)) return false;
             _family_expeditions.effect_transaction_id[expedition] = transaction_id;
             _family_expeditions.state[expedition] = EXPEDITION_SETTLING;
             _family_expeditions.due_day[expedition] = day + 1;

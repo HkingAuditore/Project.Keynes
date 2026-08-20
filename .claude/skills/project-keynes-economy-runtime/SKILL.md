@@ -55,7 +55,9 @@ State which boundary changes:
 
 Keep C++ as the sole mutable owner of cohort, market, building, construction, and employment state.
 Keep GDScript limited to resource compilation, command packing, scheduler/clock shell, selected-cell
-queries, UI, and file I/O. Never add a parallel GDScript economy or building simulation.
+queries, UI, and file I/O. Never add a parallel GDScript economy or building simulation. Family buyer
+discounts (`family.purchase_discount`) must use the existing consumption-subsidy/escrow path and
+treasury cap. Do not invent a family wallet or a second market-price exception account.
 
 ## Preserve hard invariants
 

@@ -149,7 +149,53 @@ public:
         // submit_commands() API; EconomyFacade can enqueue it only after a
         // server-owned quote token has been validated.
         COMMAND_BUILD_CANAL = 20,
+        COMMAND_FAMILY_ABSORB_ANONYMOUS = 21,
+        COMMAND_FAMILY_PURCHASE_DISCOUNT = 22,
     };
+
+    enum FamilyBehaviorScoreTerm : int32_t {
+        FAMILY_SCORE_CANDIDATE_WEIGHT = 0,
+        FAMILY_SCORE_TAX_SENSITIVITY = 1,
+        FAMILY_SCORE_LOCAL_RESOURCE_ABUNDANCE = 2,
+        FAMILY_SCORE_UPGRADE_TIER = 3,
+        FAMILY_SCORE_LOCAL_POPULARITY = 4,
+        FAMILY_SCORE_CAREER_MOBILITY = 5,
+    };
+
+    enum FamilyEffectMetricId : int32_t {
+        FAMILY_METRIC_MAGNITUDE_Q16 = 0,
+        FAMILY_METRIC_FAMILY_POPULATION = 1,
+        FAMILY_METRIC_FAMILY_CASH_CLAIM = 2,
+        FAMILY_METRIC_BRANCH_PRESTIGE_Q16 = 3,
+        FAMILY_METRIC_BRANCH_POPULATION = 4,
+        FAMILY_METRIC_CELL_TEMPERATURE_Q16 = 5,
+        FAMILY_METRIC_CELL_PRECIPITATION_Q16 = 6,
+        FAMILY_METRIC_CELL_RESOURCE_SHORTAGE_Q16 = 7,
+        FAMILY_METRIC_CELL_TRADE_EVENTS = 8,
+        FAMILY_METRIC_CELL_POPULATION = 9,
+        FAMILY_METRIC_CELL_LANDFORM = 10,
+        FAMILY_METRIC_CELL_ESSENTIALS_SHORTAGE_Q16 = 11,
+        FAMILY_METRIC_BRANCH_IS_LOCAL_PRESTIGE_MAX = 12,
+        FAMILY_METRIC_CELL_RAIN_EVENT = 13,
+        FAMILY_METRIC_CELL_RESOURCE_ABUNDANCE_Q16 = 14,
+        FAMILY_METRIC_COUNT = 15,
+    };
+
+    static bool is_family_ledger_command(int32_t opcode) {
+        return opcode == COMMAND_FAMILY_FREE_BUILDING ||
+            opcode == COMMAND_FAMILY_POPULATION_REWARD ||
+            opcode == COMMAND_FAMILY_ABSORB_ANONYMOUS ||
+            opcode == COMMAND_FAMILY_PURCHASE_DISCOUNT;
+    }
+
+    static bool is_registered_economy_effect_opcode(int32_t opcode) {
+        return (opcode >= COMMAND_TRANSFER_TO_COHORT &&
+                opcode <= COMMAND_FAMILY_POPULATION_REWARD) ||
+            (opcode >= COMMAND_START_FAMILY_EXPEDITION &&
+             opcode <= COMMAND_SETTLE_FAMILY_EXPEDITION) ||
+            opcode == COMMAND_FAMILY_ABSORB_ANONYMOUS ||
+            opcode == COMMAND_FAMILY_PURCHASE_DISCOUNT;
+    }
 
     enum ConstructionOwnershipPolicy : int32_t {
         OWNERSHIP_TREASURY_SPONSORED_PRIVATE = 1,
@@ -895,6 +941,8 @@ private:
     // only at FAMILY_COMMIT/restore boundaries; consumption, investment and
     // career hot loops never scan the global trait roll table.
     struct FamilyBehaviorFactorRow {
+        int32_t cell = -1;
+        int32_t score_term = 0;
         int32_t axis = 0;
         int32_t selector_kind = 0;
         int32_t selector_id = 0;
@@ -3276,6 +3324,9 @@ private:
     std::vector<FamilyTraitRoll> _family_traits;
     std::vector<int32_t> _family_behavior_factor_offsets;
     std::vector<FamilyBehaviorFactorRow> _family_behavior_factor_rows;
+    std::vector<int32_t> _family_purchase_factor_q16;
+    std::vector<int32_t> _family_absorb_bonus_q16;
+    std::vector<int32_t> _family_colonization_population_reward;
     std::vector<FamilyTraitCommand> _family_trait_commands;
     std::vector<FamilyModifierBinding> _family_modifier_bindings;
     std::vector<FamilyEffectBinding> _family_effect_bindings;
@@ -3370,6 +3421,12 @@ private:
     std::vector<uint32_t> _cell_resource_gen;
     std::vector<uint32_t> _cell_trade_gen;
     std::vector<int32_t> _cell_effect_shortage_q16;
+    std::vector<int32_t> _cell_essentials_shortage_q16;
+    std::vector<int32_t> _cell_resource_abundance_q16;
+    std::vector<int32_t> _cell_previous_precipitation_q16;
+    std::vector<int32_t> _cell_rain_event_q16;
+    std::vector<uint8_t> _good_is_essential;
+    int32_t _max_building_upgrade_tier = 0;
     // Transaction worksets are deterministic, sorted and never persisted.
     std::vector<int32_t> _epoch_market_ids;
     std::vector<int64_t> _epoch_market_work_weights;
@@ -4090,11 +4147,18 @@ private:
     std::vector<int32_t> _family_trait_prerequisites;
     std::vector<int32_t> _family_trait_exclusion_offsets;
     std::vector<int32_t> _family_trait_exclusions;
+    std::vector<int32_t> _family_trait_technology_prerequisite_offsets;
+    std::vector<int32_t> _family_trait_technology_prerequisites;
     std::vector<int32_t> _family_trait_behavior_offsets;
     std::vector<int32_t> _family_trait_behavior_axes;
     std::vector<int32_t> _family_trait_behavior_selector_kinds;
     std::vector<int32_t> _family_trait_behavior_selector_ids;
     std::vector<int32_t> _family_trait_behavior_factors_q16;
+    std::vector<int32_t> _family_trait_behavior_score_terms;
+    std::vector<int32_t> _family_trait_behavior_condition_offsets;
+    std::vector<int32_t> _family_trait_behavior_condition_ops;
+    std::vector<int32_t> _family_trait_behavior_condition_arg0;
+    std::vector<int64_t> _family_trait_behavior_condition_values;
     std::vector<int32_t> _family_trait_modifier_offsets;
     std::vector<std::string> _family_trait_modifier_definition_keys;
     std::vector<int32_t> _family_trait_modifier_targets;
@@ -4218,9 +4282,14 @@ private:
     int64_t trade_escrow_cash() const;
     bool apply_command(const Command &cmd, std::string &error);
     bool validate_command_pod(const Command &cmd, std::string &error) const;
+    bool family_ledger_command_preflight(const Command &cmd) const;
     bool apply_family_free_building_reward(const Command &cmd,
                                            std::string &error);
     bool apply_family_population_reward(const Command &cmd,
+                                        std::string &error);
+    bool apply_family_absorb_anonymous(const Command &cmd,
+                                       std::string &error);
+    bool apply_family_purchase_discount(const Command &cmd,
                                         std::string &error);
     bool process_market_cell(int32_t market, MarketResult &result, std::string &error);
     bool commit_structural(const StructuralCommand &cmd, std::string &error);
@@ -4589,6 +4658,7 @@ private:
     bool ensure_merchant_invariant(int32_t cell, int64_t &repair_count,
                                    std::string &error);
     bool rebuild_merchant_ranges(std::string &error);
+    bool repair_cell_merchant_and_rebuild(int32_t cell, std::string &error);
     bool run_government_research_procurement(std::string &error);
     void refresh_country_research_goods_consumed();
     bool compile_family_catalog(const godot::Dictionary &catalog,
@@ -4639,7 +4709,31 @@ private:
     int32_t family_trait_behavior_factor_q16(uint64_t family_handle,
                                              int32_t axis,
                                              int32_t selector_kind,
-                                             int32_t selector_id) const;
+                                             int32_t selector_id,
+                                             int32_t cell = -1) const;
+    int32_t family_behavior_score_term_q16(uint64_t family_handle,
+                                           int32_t cell,
+                                           int32_t score_term) const;
+    int32_t family_purchase_pay_factor_q16(int32_t cohort_slot) const;
+    int32_t family_free_building_type_id(const Command &cmd) const;
+    void fill_family_behavior_metrics(int32_t family_index, int32_t branch,
+                                      int32_t cell, int64_t *metrics,
+                                      int32_t metric_count) const;
+    bool evaluate_family_behavior_conditions(int32_t edge,
+                                             const int64_t *metrics,
+                                             int32_t metric_count) const;
+    int32_t building_local_resource_abundance_q16(int32_t cell,
+                                                  int32_t type_id) const;
+    int32_t cell_profession_share_q16(int32_t cell,
+                                      int32_t profession_id) const;
+    bool family_trait_technology_unlocked(int32_t trait_id, int32_t cell) const;
+    void ensure_family_policy_factors();
+    void reset_family_policy_factors(int32_t family_index);
+    int32_t family_colonization_population_reward_amount(
+        uint64_t family_handle) const;
+    void apply_family_colonization_population_reward(int32_t destination,
+                                                     uint64_t family_handle,
+                                                     int64_t amount);
     int32_t family_consumption_factor_q16(int32_t cohort_slot,
                                           int32_t need_id) const;
     int32_t family_good_consumption_factor_q16(int32_t cohort_slot,
@@ -4700,6 +4794,7 @@ private:
         int64_t &saturation_count) const;
     bool slot_has_merchant_profession(int32_t slot) const;
     bool is_merchant_slot(int32_t slot) const;
+    int64_t living_merchant_population(int32_t cell) const;
     bool market_has_living_merchant(int32_t market) const;
     void collect_living_merchant_slots(int32_t market,
                                        std::vector<int32_t> &out) const;

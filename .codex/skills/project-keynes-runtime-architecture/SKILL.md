@@ -117,6 +117,7 @@ Native daily ACTIVE:
 - `NativeDailySimJob` production hot path must call `MapGenerator.run_native_daily_slice_from_job()`.
 - `DCWorldExt::run_native_daily_slice()` owns the native graph continuation cursor and returns `done=false` across slices.
 - `run_native_daily_tick_from_job()` is debug/full-run helper only.
+- `FAMILY_COMMIT` freezes family behavior CSR and publishes FamilyEffect metrics; it does not evaluate effect programs.
 - `run_native_sim_tick_from_job()` is SHADOW/A-B/hash diff helper only.
 
 ## Native Daily Graph

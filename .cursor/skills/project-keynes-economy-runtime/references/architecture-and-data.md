@@ -93,8 +93,10 @@ revenue among merchants by merchant population with stable prefix quotients. Mer
 other cohorts.
 
 For a populated cell without a merchant, convert one person from the largest nonmerchant cohort,
-inherit ethnicity, and transfer proportional funds. Rebuild merchant CSR only after real structural
-changes; normal cycles must reuse it.
+inherit ethnicity, and transfer proportional funds. `rebuild_merchant_ranges` uses that same repair
+before failing; colonization extract, kit owner filling, employment, and investment already keep
+the last living merchant. Rebuild merchant CSR after real structural changes; normal cycles reuse
+it. Epoch preflight checks a living merchant slot, not a stale primary index.
 
 ## 5. Commands and public API
 

@@ -121,7 +121,8 @@ func compile_native_catalog() -> Dictionary:
 					or command.target_resolver > 2 or command.value_mode < 0 \
 					or command.value_mode > 1 or command.stacks <= 0 \
 					or command.duration_days < -1 or command.command_key == &"" \
-					or (command.action != 1 and command.definition_key == &""):
+					or (command.action != 1 and command.action != 3 \
+						and command.definition_key == &""):
 				return {"ok": false, "reason": "effect_command_invalid"}
 			if command.target_resolver == 0 and command.static_target == 0:
 				return {"ok": false, "reason": "effect_command_static_target_invalid"}
@@ -161,7 +162,7 @@ static func _native_command_error(command: Resource) -> String:
 			if command.domain != 1 or command.opcode < 1 or command.opcode > 14:
 				return "effect_country_opcode_unregistered"
 		3:
-			if command.domain != 2 or command.opcode < 1 or command.opcode > 15:
+			if command.domain != 2 or not _economy_opcode_registered(int(command.opcode)):
 				return "effect_economy_opcode_unregistered"
 		4:
 			if command.domain != 3 or command.opcode <= 0:
@@ -175,3 +176,12 @@ static func _native_command_error(command: Resource) -> String:
 		_:
 			return "effect_command_action_unregistered"
 	return ""
+
+
+static func _economy_opcode_registered(opcode: int) -> bool:
+	# 1-15 are the original ledger/family reward opcodes. 17-19 are family
+	# expedition commands. 21-22 are conserved family absorb/discount adapters.
+	# COMMAND_BUILD_CANAL=20 stays domain-only and is not authored here.
+	return (opcode >= 1 and opcode <= 15) \
+		or (opcode >= 17 and opcode <= 19) \
+		or opcode == 21 or opcode == 22

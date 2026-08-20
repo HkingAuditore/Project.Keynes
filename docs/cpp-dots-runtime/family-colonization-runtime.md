@@ -47,7 +47,12 @@ cell CSR 与 cell-family CSR；不会扫描全体家族。距离、parent 和 he
 `FamilyExpeditionStore` 是 generation-safe SoA，路线、累计成本、cohort 载荷和
 重要人物句柄使用扁平 CSR。派遣人数满足 `1 <= population < branch_population`。
 抽取先按稳定顺序消费失业成员，不足部分按非失业 cohort 比例分配，最大余数
-以 `(profession, ethnicity, cohort_handle)` 决定。所有比例运算复用原生
+以 `(profession, ethnicity, cohort_handle)` 决定；不得抽走源地最后一个活着的
+商人。空闲出发会立即 `ensure_merchant_invariant` 并重建商人 CSR：抽离写入的
+`_structural_touched_cells` 会在下一轮 `start_epoch` 被清空，不能再等到
+`STRUCTURAL_COMMIT` 才补商人。开工包落地按建筑转职时同样保留最后一名本地商人；
+`rebuild_merchant_ranges` 若发现有人口格缺少活商人，先走同一套兜底修复，
+只有修复失败才 fatal `merchant_invariant_broken:cell=`。所有比例运算复用原生
 `mul_div_sat`，保留 population、funds、收入/支出 EMA、税与补贴归因、满意度、
 残差、family cash claim 和就业归因；重要人物按 seed、expedition stable ID 与
 person stable ID 确定性随行。
@@ -91,6 +96,11 @@ pending，等下一轮 epoch。`EPOCH_BEGIN` 预检不得把 expedition 句柄�
 同一幂等键把未完成的 Effect 请求重新排入 pending。Country 拒绝时载荷不消费并
 返程；无主开拓在两域 ACK 完整后才对外发布，本国迁徙在 Economy ACK 后发布。
 PKEF v10 restore 接受旧的 2-command CLAIM+SETTLE 以及新的 1-command SETTLE。
+SETTLE 的 `i32_1` 来自 Effect payload[3]（可选守恒 `population_reward`），不得改 payload[0]
+的格子字，否则会破坏 CLAIM/SETTLE 的 PKEF 相等校验。`i32_1>0` 时落地 ACK 后走显式
+`POPULATION_SOURCE` 账本，不凭空加人口。`family.population_reward` 的 `i32_0=-1`
+把人数冻进家族标量，目标是合法 `FamilyCellInfluence` 句柄；创始家族 bootstrap 必须立即
+重建 influence，不能等 4 个 epoch。
 
 事件回执为 `STARTED`、`CANCELLED_RETURNING`、`TARGET_LOST_RETURNING`、
 `CLAIMED`、`RELOCATED`、`RETURNED`。UI 在日期边界消费增量回执，不轮询或每日重建列表。

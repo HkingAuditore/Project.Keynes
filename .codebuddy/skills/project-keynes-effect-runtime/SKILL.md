@@ -56,9 +56,12 @@ Current repository migration boundary:
 
 - technology completion registers `technology.<id>` instances and the
   `technology.modifier` adapter emits the existing country Modifier command;
-- family branch Modifier reconciliation registers
+- legacy family branch Modifier reconciliation registers
   `family.modifier.<definition_key>` instances and publishes branch Q16
   magnitude through the `family.magnitude_q16` metric;
+- authored `family.effect.*` programs carry compiled source/target/operation/
+  lifecycle/stack/selector metadata, use typed targets, and arbitrate by
+  `(target_domain, target_handle, target_generation, stack_key_hash)`;
 - native person promotion and `PERSON_COMMIT` register the current
   `person.modifier.gameplay.generic.bonus` instance; `NotablePersonStore` and
   `PERSON_COMMIT` remain authoritative for people state, ledgers, and structure.
@@ -76,9 +79,9 @@ authored key is invalid.
 
 Register `effect_runtime` after `trigger_runtime` and before `modifier_daily`.
 Use `effect_should_run(day)` and a cooperative `done=false` cursor. Persist
-instances, metric snapshots/revisions, program hash, fire sequence, and pending
-transactions plus the in-progress candidate list and last consumed input revision
-in `PKEF v9`; reject catalog mismatch or truncation. Store a native-bound
+instances, metric snapshots/revisions, program hash, fire sequence, managed lifecycle and
+stack state, pending transactions, the in-progress candidate list, and last consumed input revision
+in `PKEF v11`; reject every older schema, catalog mismatch, or truncation. Store a native-bound
 `PREFLIGHTED` transaction as `PLANNED`: native Modifier request IDs are not
 valid after restart, while the command idempotency key is. A strictly newer metric
 revision may re-evaluate once in the same day; unchanged input obeys cadence.
@@ -95,11 +98,21 @@ slots/tombstones rather than an allocation per transaction or permanent
 historical instance slots. Batch native Modifier commands by command count up to
 `max_native_modifier_commands`, not by a fixed transaction count.
 
+Rejected domain work does not complete a managed lifecycle transition. Preserve the last ACKed
+applied/stack state, retry on the next day, reclaim EVENT_ONCE only after full ACK, and keep an
+explicit retire pending until its REMOVE is ACKed.
+
+Family metrics 0–9 are occupied. Append new keys at the end of `metric_keys`; never reorder.
+`EVENT_COMMAND` may carry a construction-completion `type_id`. Producer `161` Family/Branch ENTITY
+handles that fail generation checks are rejected, not repaired. Colonization `population_reward`
+lives on SETTLE payload[3] (`i32_1`); payload[0] remains the shared CLAIM/SETTLE cell.
+
 ## Required validation
 
 Add focused tests for catalog validation, Q16 arithmetic, condition gating,
 stable target/generation, deterministic plan hash, duplicate idempotency,
-multi-domain ACK, explicit transaction states, overflow, cursor slicing,
+multi-domain ACK, explicit transaction states, rejection retry, EVENT_ONCE/retire ACK gating,
+overflow, cursor slicing,
 atomic PKEF round-trip/truncation rejection, native-bound restore replay,
 instance-slot reuse, and Trigger handoff. Run
 `scripts/verify_effect_runtime.ps1`, `git diff --check`, the native build, and

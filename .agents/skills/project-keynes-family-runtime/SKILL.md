@@ -15,6 +15,8 @@ changing country identity, migration, treasury, or restore ordering.
 Read the current source before editing:
 
 - Read `docs/cpp-dots-runtime/notable-family-runtime.md` completely for the authoritative model.
+  Behavior preferences and FamilyEffect remain two pipes: conditions reuse Effect IR but freeze into
+  CSR at `FAMILY_COMMIT`; conserved rewards are Economy opcodes, never Modifier stats.
 - Read `docs/cpp-dots-runtime/notable-person-runtime.md` completely when important people, names,
   jobs, wealth, demand, lifecycle, queries, or PKEC v41 are in scope.
 - Read `docs/cpp-dots-runtime/satisfaction-runtime.md` when branch `satisfaction_q16`, the
@@ -71,6 +73,9 @@ contract from roadmap text or a previous chat.
   factor caches after restore; never persist these derived caches.
 - Rebuild family/cohort/cell/building→person and person→need CSR at person commit/restore. Keep these
   caches transient too.
+- Rebuild `FamilyCellInfluence` at founder bootstrap (after committed summaries) so branch handles
+  exist before day 0. `FAMILY_COMMIT` also rebuilds when memberships exist but no influence rows;
+  do not wait `FAMILY_INFLUENCE_REFRESH_EPOCHS` for ledger commands.
 - Keep building aggregation keyed by `(cell, building_type, owner_signature)`. Attach family
   `owned_count` to the stable building handle; never add family ID to the building-group key.
 - Keep hot loops free of Godot objects, Dictionaries, strings, allocations, and all-family scans.
@@ -163,11 +168,69 @@ scope unless their authority and save contracts are designed first.
 - Investment persists sponsor family and uses local attributed capital. Family population rewards add
   local membership; city rewards add the selected/default anonymous cohort. Both use explicit
   population-source ledger events. Free construction skips cash/material withdrawal but retains normal
-  time, technology, cell, and resource legality.
+  time, technology, cell, and resource legality. `i32_1` illegal falls back to payload `type_id`.
+
+## Two pipes, not one VM
+
+Keep trait **behavior preferences** (investment/hiring/consumption scoring) and `family.effect.*`
+(Modifier / `EVENT_COMMAND`) as separate pipes. Reuse `EffectCondition` IR, metric slab, ACK, and
+stack from EffectRuntime. Do not invent a family script VM. Evaluate behavior conditions only at
+`FAMILY_COMMIT` / metric revision and freeze Q16 factors into CSR. Investment-day loops must not call
+EffectRuntime per candidate.
+
+## Preserve the frozen behavior CSR
+
+- Compile `FamilyBehaviorPreference.conditions` and `score_term` into packed catalog columns.
+- Freeze family→`(cell, score_term, axis, dense_id)` + Q16 at `FAMILY_COMMIT`. Unconditional edges
+  use `cell=-1`. Failed conditions contribute factor 1 for that round.
+- `family_trait_behavior_factor_q16` must look up that CSR. Never scan every trait roll or
+  `cell × catalog`.
+- Keep the product cap at 4× unless the catalog documents a different bound.
+
+## Append family metrics only at the end
+
+Dense ids 0–9 are occupied: magnitude, family population/cash, branch prestige/population, cell
+temperature/precipitation/shortage/trade events/population. Current appended ids, still immutable
+once shipped: 10 `cell.landform`, 11 `cell.essentials_shortage_q16`, 12
+`branch.is_local_prestige_max`, 13 `cell.rain_event`, 14 `cell.resource_abundance_q16`. Further
+signals append after 14. Publish through `metric_mask` and the existing branch/cell reverse
+indexes. Missing metrics read 0. Do not reorder old ids.
+
+## Score axes are packed columns
+
+Tax sensitivity, local resource abundance, `upgrade_tier`, local popularity, and career mobility are
+catalog `score_term` columns plus frozen scalars, not per-building Dictionaries. They may not bypass
+technology, capital, resource, or profitability gates. Negative career mobility must reduce people
+moved, not only drop hiring preference.
+
+## Conserved rewards are Economy commands
+
+`family.absorb_anonymous`, `family.purchase_discount`, payload-copied `family.free_building`, and
+optional SETTLE `population_reward` (`i32_1` / Effect payload[3]) mutate existing ledgers:
+`POPULATION_SOURCE`, membership absorption, consumption subsidy/escrow. Never register cash,
+population, or goods as Modifier stats. Never create a family wallet. Buyer discounts with no fiscal
+budget are zero and must still conserve. Opcode 20 remains canal-only and is not an Effect command.
+`family.population_reward` with `i32_0=-1` freezes the next SETTLE payload[3] and does not mint.
+Day 0 `FAMILY_COMMIT` may still absorb anonymous people into the household, so tests must assert
+unchanged cell population and zero ledger error, not family-snapshot equality.
+
+## Trait technology gate
+
+Compile `prerequisite_technology_keys` on `FamilyTraitDefinition` the same way FamilyEffect does.
+`assign_core_family_traits` filters with origin/home `cell_has_technology`. Additional-trait commands
+may still grant a locked trait. Catalog hash mismatch rejects old saves; do not bump PKEC for this.
+
+## Extend in this order
+
+1. New condition signal → append a metric, then write the behavior/effect.
+2. New scoring semantic → add an axis/`score_term` column, then touch investment/employment loops.
+3. New conserved reward → add a typed Economy opcode/adapter, then wire `EVENT_COMMAND`.
+Keep `default_family_effects.tres` empty. Do not put Buff-table examples in the default catalog.
 
 ## Keep scheduling and queries bounded
 
-- Keep `FAMILY_COMMIT` after `BUILDING_COMMIT` and before `AGGREGATE_PUBLISH`.
+- Keep `FAMILY_COMMIT` after `BUILDING_COMMIT` and before `AGGREGATE_PUBLISH`. That stage freezes
+  behavior CSR and publishes FamilyEffect metrics; it does not evaluate effect programs.
 - Keep `PERSON_COMMIT` after `FAMILY_COMMIT` and before `AGGREGATE_PUBLISH`. Worker market ranges may
   emit person attribution into `MarketResult`; they must not mutate person authority directly.
 - Keep half-computed family structure invisible to gameplay and save.
@@ -230,7 +293,9 @@ python -m SCons platform=windows target=template_release dev_build=no -j6
 Pop-Location
 ```
 
-Run `family_runtime_test.gd`, `trigger_family_branch_test.gd`, `modifier_runtime_test.gd`,
+Run `family_runtime_test.gd`, `family_behavior_effect_runtime_test.gd`,
+`family_effect_output_runtime_test.gd`, `family_effect_stack_runtime_test.gd`,
+`trigger_family_branch_test.gd`, `modifier_runtime_test.gd`,
 `natural_resource_pass_test.gd`, `settlement_runtime_test.gd`, and affected economy/tax/save tests.
 Run the existing economy verifier for broad changes:
 

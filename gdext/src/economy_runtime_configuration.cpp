@@ -289,6 +289,9 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _family_traits.clear();
     _family_behavior_factor_offsets.clear();
     _family_behavior_factor_rows.clear();
+    _family_purchase_factor_q16.clear();
+    _family_absorb_bonus_q16.clear();
+    _family_colonization_population_reward.clear();
     _family_trait_commands.clear();
     _family_effect_bindings.clear();
     _family_effect_binding_by_instance.clear();
@@ -357,6 +360,10 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _cell_resource_gen.clear();
     _cell_trade_gen.clear();
     _cell_effect_shortage_q16.clear();
+    _cell_essentials_shortage_q16.clear();
+    _cell_resource_abundance_q16.clear();
+    _cell_previous_precipitation_q16.clear();
+    _cell_rain_event_q16.clear();
     _epoch_market_ids.clear();
     _economy_live_cells.clear();
     _epoch_settlement_cells.clear();
@@ -912,6 +919,8 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     _cell_resource_gen.assign(_cell_count, 0);
     _cell_trade_gen.assign(_cell_count, 0);
     _cell_effect_shortage_q16.assign(_cell_count, 0);
+    _cell_essentials_shortage_q16.assign(_cell_count, 0);
+    _cell_resource_abundance_q16.assign(_cell_count, 0);
     _fiscal_previous_country_handles.assign(
         static_cast<size_t>(_cell_count), 0);
     _fiscal_previous_requests.assign(
@@ -937,6 +946,8 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
         _settlements.name_forced[cell] = 1;
         assign_settlement_name(cell);
     }
+    if (founder_family_count > 0)
+        rebuild_family_influences();
     _closing_totals = audit_totals();
     _opening_totals = _closing_totals;
     rebuild_incremental_audit_shadow();
@@ -1067,18 +1078,20 @@ Dictionary NativeEconomyRuntime::submit_commands(const Dictionary &batch) {
     }
     // Preflight the whole batch before mutating the queue.
     for (size_t i = 0; i < n; ++i) {
-        if (opcodes[i] < COMMAND_TRANSFER_TO_COHORT ||
-            opcodes[i] > COMMAND_TREASURY_SPONSORED_BUILD ||
-            days[i] < 0 || sequences[i] < 0 ||
-            (i64_0[i] < 0 && opcodes[i] != COMMAND_ADD_POPULATION)) {
+        const bool family_reward = is_family_ledger_command(opcodes[i]);
+        const bool allowed_opcode =
+            (opcodes[i] >= COMMAND_TRANSFER_TO_COHORT &&
+             opcodes[i] <= COMMAND_TREASURY_SPONSORED_BUILD) ||
+            family_reward;
+        if (!allowed_opcode || days[i] < 0 || sequences[i] < 0 ||
+            (i64_0[i] < 0 && opcodes[i] != COMMAND_ADD_POPULATION &&
+             opcodes[i] != COMMAND_FAMILY_PURCHASE_DISCOUNT &&
+             opcodes[i] != COMMAND_FAMILY_ABSORB_ANONYMOUS)) {
             out["ok"] = false;
             out["reason"] = "command_entry_invalid";
             out["index"] = static_cast<int64_t>(i);
             return out;
         }
-        const bool family_reward =
-            opcodes[i] == COMMAND_FAMILY_FREE_BUILDING ||
-            opcodes[i] == COMMAND_FAMILY_POPULATION_REWARD;
         const bool treasury_build =
             opcodes[i] == COMMAND_TREASURY_SPONSORED_BUILD;
         if (!family_reward && !treasury_build && opcodes[i] != COMMAND_ADD_STOCK &&
@@ -1141,15 +1154,14 @@ Dictionary NativeEconomyRuntime::submit_commands(const Dictionary &batch) {
             return out;
         }
         if (family_reward) {
-            int32_t branch = -1;
-            const bool free_building =
-                opcodes[i] == COMMAND_FAMILY_FREE_BUILDING;
-            if (!_family_influences.valid_handle(
-                    static_cast<uint64_t>(handles[i]), branch) ||
-                i32_0[i] < 0 || i32_0[i] > 1 || i64_0[i] <= 0 ||
-                (free_building && (i32_1[i] < 0 ||
-                    i32_1[i] >= static_cast<int32_t>(
-                        _building_types.size())))) {
+            Command probe;
+            probe.opcode = opcodes[i];
+            probe.target_handle = static_cast<uint64_t>(handles[i]);
+            probe.i32_0 = i32_0[i];
+            probe.i32_1 = i32_1[i];
+            probe.i64_0 = i64_0[i];
+            probe.i64_1 = i64_1[i];
+            if (!family_ledger_command_preflight(probe)) {
                 out["ok"] = false;
                 out["reason"] = "command_family_reward_target_invalid";
                 out["index"] = static_cast<int64_t>(i);
@@ -1168,17 +1180,41 @@ Dictionary NativeEconomyRuntime::submit_commands(const Dictionary &batch) {
     return out;
 }
 
+bool NativeEconomyRuntime::family_ledger_command_preflight(const Command &cmd) const {
+    if (!is_family_ledger_command(cmd.opcode)) return false;
+    int32_t branch = -1;
+    if (!_family_influences.valid_handle(cmd.target_handle, branch)) return false;
+    if (cmd.opcode == COMMAND_FAMILY_FREE_BUILDING)
+        return cmd.i32_0 >= 0 && cmd.i32_0 <= 1 && cmd.i64_0 > 0 &&
+            family_free_building_type_id(cmd) >= 0;
+    if (cmd.opcode == COMMAND_FAMILY_POPULATION_REWARD)
+        return ((cmd.i32_0 >= 0 && cmd.i32_0 <= 1) || cmd.i32_0 == -1) &&
+            cmd.i64_0 > 0;
+    if (cmd.opcode == COMMAND_FAMILY_ABSORB_ANONYMOUS) {
+        if (cmd.i32_0 == 0) return cmd.i64_0 > 0;
+        if (cmd.i32_0 == 1) return cmd.i64_0 >= 0;
+        return false;
+    }
+    if (cmd.opcode == COMMAND_FAMILY_PURCHASE_DISCOUNT)
+        return cmd.i64_0 >= 0 && cmd.i64_0 <= 4 * Q16_ONE;
+    return false;
+}
+
 bool NativeEconomyRuntime::validate_command_pod(const Command &cmd,
                                                 std::string &error) const {
-    if (cmd.opcode < COMMAND_TRANSFER_TO_COHORT ||
-        cmd.opcode > COMMAND_SETTLE_FAMILY_EXPEDITION ||
+    const bool family_reward = is_family_ledger_command(cmd.opcode);
+    const bool opcode_ok =
+        (cmd.opcode >= COMMAND_TRANSFER_TO_COHORT &&
+         cmd.opcode <= COMMAND_SETTLE_FAMILY_EXPEDITION) ||
+        family_reward;
+    if (!opcode_ok ||
         cmd.effective_day < 0 || cmd.sequence < 0 ||
-        (cmd.i64_0 < 0 && cmd.opcode != COMMAND_ADD_POPULATION)) {
+        (cmd.i64_0 < 0 && cmd.opcode != COMMAND_ADD_POPULATION &&
+         cmd.opcode != COMMAND_FAMILY_PURCHASE_DISCOUNT &&
+         cmd.opcode != COMMAND_FAMILY_ABSORB_ANONYMOUS)) {
         error = "command_entry_invalid";
         return false;
     }
-    const bool family_reward = cmd.opcode == COMMAND_FAMILY_FREE_BUILDING ||
-        cmd.opcode == COMMAND_FAMILY_POPULATION_REWARD;
     const bool expedition_settle =
         cmd.opcode == COMMAND_SETTLE_FAMILY_EXPEDITION;
     const bool expedition_player =
@@ -1226,16 +1262,9 @@ bool NativeEconomyRuntime::validate_command_pod(const Command &cmd,
         error = "command_building_target_invalid";
         return false;
     }
-    if (family_reward) {
-        int32_t branch = -1;
-        const bool free_building = cmd.opcode == COMMAND_FAMILY_FREE_BUILDING;
-        if (!_family_influences.valid_handle(cmd.target_handle, branch) ||
-            cmd.i32_0 < 0 || cmd.i32_0 > 1 || cmd.i64_0 <= 0 ||
-            (free_building && (cmd.i32_1 < 0 || cmd.i32_1 >=
-                static_cast<int32_t>(_building_types.size())))) {
-            error = "command_family_reward_target_invalid";
-            return false;
-        }
+    if (family_reward && !family_ledger_command_preflight(cmd)) {
+        error = "command_family_reward_target_invalid";
+        return false;
     }
     if (expedition_settle) {
         int32_t expedition = -1;

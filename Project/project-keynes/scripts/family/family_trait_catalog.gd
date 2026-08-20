@@ -6,6 +6,7 @@ const BehaviorScript = preload("res://scripts/family/family_behavior_preference.
 const ModifierEffectScript = preload("res://scripts/family/family_modifier_effect.gd")
 const TriggerBindingScript = preload("res://scripts/family/family_trigger_binding.gd")
 const TraitDefinitionScript = preload("res://scripts/family/family_trait_definition.gd")
+const EffectConditionScript = preload("res://scripts/effect/effect_condition.gd")
 const Q16_ONE := 65536
 const DEFAULT_TRIGGER_CATALOG_PATH := "res://data/triggers/default_trigger_catalog.tres"
 
@@ -74,11 +75,23 @@ func compile_native_columns(economy_columns: Dictionary,
 	var prerequisites := PackedInt32Array()
 	var exclusion_offsets := PackedInt32Array([0])
 	var exclusions := PackedInt32Array()
+	var technology_prerequisite_offsets := PackedInt32Array([0])
+	var technology_prerequisites := PackedInt32Array()
 	var behavior_offsets := PackedInt32Array([0])
 	var behavior_axes := PackedInt32Array()
 	var behavior_selector_kinds := PackedInt32Array()
 	var behavior_selector_ids := PackedInt32Array()
 	var behavior_factors := PackedInt32Array()
+	var behavior_score_terms := PackedInt32Array()
+	var behavior_condition_offsets := PackedInt32Array([0])
+	var behavior_condition_ops := PackedInt32Array()
+	var behavior_condition_arg0 := PackedInt32Array()
+	var behavior_condition_values := PackedInt64Array()
+	var technology_ids: PackedStringArray = economy_columns.get(
+		"technology_ids", PackedStringArray())
+	var technology_index := {}
+	for technology_dense_id in range(technology_ids.size()):
+		technology_index[String(technology_ids[technology_dense_id])] = technology_dense_id
 	var modifier_offsets := PackedInt32Array([0])
 	var modifier_keys := PackedStringArray()
 	var modifier_targets := PackedInt32Array()
@@ -114,13 +127,42 @@ func compile_native_columns(economy_columns: Dictionary,
 				return {"ok": false, "reason": "family_trait_exclusion_invalid"}
 			exclusions.append(int(index[exclusion_key]))
 		exclusion_offsets.append(exclusions.size())
+		var authored_technology_keys: Array[String] = []
+		for technology in definition.prerequisite_technology_keys:
+			authored_technology_keys.append(String(technology).strip_edges())
+		authored_technology_keys.sort()
+		var technology_seen := {}
+		for technology_key in authored_technology_keys:
+			if technology_key.is_empty() or technology_seen.has(technology_key):
+				return {"ok": false, "reason": "family_trait_technology_prerequisite_duplicate"}
+			technology_seen[technology_key] = true
+			if not technology_ids.is_empty() and not technology_index.has(technology_key):
+				return {"ok": false, "reason": "family_trait_technology_prerequisite_unknown"}
+			if technology_index.has(technology_key):
+				technology_prerequisites.append(int(technology_index[technology_key]))
+		technology_prerequisite_offsets.append(technology_prerequisites.size())
 		for behavior in definition.behaviors:
 			if behavior == null or not behavior is BehaviorScript \
-					or behavior.factor_q16 < 0 or behavior.factor_q16 > Q16_ONE * 4:
+					or behavior.factor_q16 < 0 or behavior.factor_q16 > Q16_ONE * 4 \
+					or int(behavior.score_term) < 0 \
+					or int(behavior.score_term) > BehaviorScript.ScoreTerm.CAREER_MOBILITY:
 				return {"ok": false, "reason": "family_trait_behavior_invalid"}
-			var selectors := _resolve_selectors(behavior, economy_columns)
-			if selectors.is_empty():
-				return {"ok": false, "reason": "family_trait_behavior_selector_unknown"}
+			var compiled_conditions: Array[Resource] = []
+			for condition in behavior.conditions:
+				if condition == null or not condition is EffectConditionScript:
+					return {"ok": false, "reason": "family_trait_behavior_condition_invalid"}
+				if int(condition.op) < 1 or int(condition.op) > 8:
+					return {"ok": false, "reason": "family_trait_behavior_condition_opcode_invalid"}
+				compiled_conditions.append(condition)
+			var selectors := PackedInt32Array()
+			if String(behavior.selector_id).strip_edges().is_empty():
+				if int(behavior.score_term) == BehaviorScript.ScoreTerm.CANDIDATE_WEIGHT:
+					return {"ok": false, "reason": "family_trait_behavior_selector_unknown"}
+				selectors.append(-1)
+			else:
+				selectors = _resolve_selectors(behavior, economy_columns)
+				if selectors.is_empty():
+					return {"ok": false, "reason": "family_trait_behavior_selector_unknown"}
 			for selector in selectors:
 				behavior_axes.append(behavior.axis)
 				# Every cold selector is expanded to exact dense IDs. The native
@@ -128,6 +170,12 @@ func compile_native_columns(economy_columns: Dictionary,
 				behavior_selector_kinds.append(BehaviorScript.SelectorKind.STABLE_ID)
 				behavior_selector_ids.append(selector)
 				behavior_factors.append(behavior.factor_q16)
+				behavior_score_terms.append(int(behavior.score_term))
+				for condition in compiled_conditions:
+					behavior_condition_ops.append(int(condition.op))
+					behavior_condition_arg0.append(int(condition.arg0))
+					behavior_condition_values.append(int(condition.value_q16))
+				behavior_condition_offsets.append(behavior_condition_ops.size())
 		behavior_offsets.append(behavior_axes.size())
 		for effect in definition.modifiers:
 			if effect == null or not effect is ModifierEffectScript \
@@ -174,8 +222,11 @@ func compile_native_columns(economy_columns: Dictionary,
 	var canonical := [version, core_trait_min, core_trait_max, ids, versions, weights,
 		core_eligible, strength_min, strength_max, strength_step,
 		prerequisite_offsets, prerequisites, exclusion_offsets, exclusions,
+		technology_prerequisite_offsets, technology_prerequisites,
 		behavior_offsets, behavior_axes, behavior_selector_kinds, behavior_selector_ids,
-		behavior_factors, modifier_offsets, modifier_keys, modifier_targets,
+		behavior_factors, behavior_score_terms, behavior_condition_offsets,
+		behavior_condition_ops, behavior_condition_arg0, behavior_condition_values,
+		modifier_offsets, modifier_keys, modifier_targets,
 		modifier_tier_magnitudes, trigger_offsets, trigger_definition_keys,
 		trigger_reward_targets, effect_offsets, effect_keys]
 	var catalog_hash := hash(canonical)
@@ -199,11 +250,18 @@ func compile_native_columns(economy_columns: Dictionary,
 		"family_trait_prerequisites": prerequisites,
 		"family_trait_exclusion_offsets": exclusion_offsets,
 		"family_trait_exclusions": exclusions,
+		"family_trait_technology_prerequisite_offsets": technology_prerequisite_offsets,
+		"family_trait_technology_prerequisites": technology_prerequisites,
 		"family_trait_behavior_offsets": behavior_offsets,
 		"family_trait_behavior_axes": behavior_axes,
 		"family_trait_behavior_selector_kinds": behavior_selector_kinds,
 		"family_trait_behavior_selector_ids": behavior_selector_ids,
 		"family_trait_behavior_factors_q16": behavior_factors,
+		"family_trait_behavior_score_terms": behavior_score_terms,
+		"family_trait_behavior_condition_offsets": behavior_condition_offsets,
+		"family_trait_behavior_condition_ops": behavior_condition_ops,
+		"family_trait_behavior_condition_arg0": behavior_condition_arg0,
+		"family_trait_behavior_condition_values": behavior_condition_values,
 		"family_trait_modifier_offsets": modifier_offsets,
 		"family_trait_modifier_definition_keys": modifier_keys,
 		"family_trait_modifier_targets": modifier_targets,

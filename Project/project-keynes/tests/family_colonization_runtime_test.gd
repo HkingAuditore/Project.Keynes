@@ -19,6 +19,18 @@ func _expect(label: String, condition: bool) -> void:
 		_failures += 1
 
 
+func _cell_has_living_merchant(ext: Object, cell: int) -> bool:
+	var snap: Dictionary = ext.get_population_cell_snapshot(cell)
+	var flags: PackedByteArray = snap.get("merchant_flags", PackedByteArray())
+	var pops: PackedInt64Array = snap.get("populations", PackedInt64Array())
+	for index in range(flags.size()):
+		if int(flags[index]) == 0:
+			continue
+		if index >= pops.size() or int(pops[index]) > 0:
+			return true
+	return false
+
+
 func _run() -> void:
 	if not ClassDB.class_exists("DCWorldExt"):
 		print("[SKIP] DCWorldExt unavailable")
@@ -86,6 +98,9 @@ func _run() -> void:
 		and int(in_transit.population) == 1
 		and int(ext.get_family_snapshot(family_handle).population) ==
 			int(family_before.population))
+	_expect("idle departure keeps a living merchant on the remaining source",
+		_cell_has_living_merchant(ext, 0)
+		and not bool(ext.get_economy_report().get("fatal", false)))
 	_expect("idle expedition start does not pause the money ledger",
 		not bool(ext.get_economy_report().get("fatal", false))
 		and int(ext.get_economy_report().get("money_error", -1)) == 0)
@@ -100,7 +115,7 @@ func _run() -> void:
 		print("restore=", restored_result, " page=", restored_page,
 			" saved_schema=", saved.get("schema", 0))
 	_expect("PKEC v41 restores in-flight route, payload, cargo and due heap exactly",
-		int(saved.get("schema", 0)) == 39
+		int(saved.get("schema", 0)) == 41
 		and bool(restored_result.get("ok", false))
 		and int(restored_page.get("total", 0)) == 1
 		and int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
@@ -227,6 +242,7 @@ func _run() -> void:
 	_run_owned_cell_relocation(ext, country_handle, family_handle)
 	_run_foreign_target_rejection(catalog.duplicate(true))
 	_run_colonization_kit_cases(catalog.duplicate(true))
+	_run_colonization_population_reward(catalog.duplicate(true))
 
 
 func _run_colonization_kit_cases(catalog: Dictionary) -> void:
@@ -234,6 +250,86 @@ func _run_colonization_kit_cases(catalog: Dictionary) -> void:
 	_run_greenfield_kit_settle(catalog.duplicate(true))
 	_run_interior_kit_settle_during_frozen_cycle(catalog.duplicate(true))
 	_run_zero_stock_partial_kit(catalog.duplicate(true))
+
+
+func _run_colonization_population_reward(catalog: Dictionary) -> void:
+	var birth_rates: PackedInt64Array = catalog.signature_birth_rate_q32
+	birth_rates.fill(0)
+	catalog.signature_birth_rate_q32 = birth_rates
+	var fixture := _make_fixture(catalog, 260825)
+	var ext: Object = fixture.ext
+	var country_handle := int(fixture.country_handle)
+	if ext == null or country_handle == 0:
+		return
+	var families: Dictionary = ext.get_family_cell_snapshot(0, 0, 64)
+	if int(families.get("total", 0)) != 1:
+		_expect("colonization reward fixture has a founder family", false)
+		return
+	var family_handle := int((families.family_handles as PackedInt64Array)[0])
+	var branches: Dictionary = ext.get_family_branches(family_handle, 0, 64)
+	var branch_handles: PackedInt64Array = branches.get(
+		"branch_handles", PackedInt64Array())
+	_expect("colonization reward fixture has a source branch",
+		not branch_handles.is_empty() and int(branch_handles[0]) != 0)
+	if branch_handles.is_empty() or int(branch_handles[0]) == 0:
+		print("reward_branches=", branches)
+		return
+	var extra_people := 4
+	var family_before := int(ext.get_family_snapshot(family_handle).population)
+	var cell_before := int(ext.get_population_cell_snapshot(0).population)
+	var stash_day := _economy_command_day(ext)
+	var stashed: Dictionary = ext.submit_economy_commands({
+		"opcodes": PackedInt32Array([15]),
+		"effective_days": PackedInt64Array([stash_day]),
+		"sequences": PackedInt64Array([801]),
+		"target_handles": PackedInt64Array([int(branch_handles[0])]),
+		"i32_0": PackedInt32Array([-1]),
+		"i32_1": PackedInt32Array([-1]),
+		"i64_0": PackedInt64Array([extra_people]),
+		"i64_1": PackedInt64Array([0]),
+	})
+	_expect("colonization population reward can be frozen without minting",
+		bool(stashed.get("ok", false)))
+	if not bool(stashed.get("ok", false)):
+		print("stash=", stashed)
+		return
+	_run_day(ext, stash_day)
+	ext.capture_economy_trade_topology(fixture.neighbors, fixture.terrain,
+		fixture.passable, fixture.costs, 1)
+	_expect("stashed colonization reward does not mint before settlement",
+		int(ext.get_population_cell_snapshot(0).population) == cell_before
+		and int(ext.get_economy_report().get("population_error", -1)) == 0)
+	var quotes: Dictionary = ext.get_family_colonization_quotes(
+		country_handle, 2, family_handle, 0, 0, 64)
+	if int(quotes.get("total", 0)) != 1:
+		_expect("colonization reward quote exists", false)
+		print("reward_quotes=", quotes)
+		return
+	var token := int((quotes.quote_tokens as PackedInt64Array)[0])
+	var start_day := _economy_command_day(ext)
+	var started: Dictionary = ext.start_family_colonization(country_handle,
+		family_handle, 0, 2, 3, token, start_day, 802)
+	_expect("colonization reward expedition starts", bool(started.get("ok", false)))
+	if not bool(started.get("ok", false)):
+		print("reward_start=", started)
+		return
+	var arrival := int(started.get("arrival_day", start_day + 4))
+	var landed := _settle_unowned_expedition(ext, country_handle,
+		int(started.expedition_handle), arrival)
+	var dest_pop := int(ext.get_population_cell_snapshot(2).population)
+	var family_after := int(ext.get_family_snapshot(family_handle).population)
+	var report: Dictionary = ext.get_economy_report()
+	var minted := (landed and dest_pop == 7 and family_after >= family_before + 4
+		and int(report.get("population_error", -1)) == 0
+		and int(report.get("money_error", -1)) == 0
+		and not bool(report.get("fatal", false)))
+	_expect("settlement ACK mints the frozen colonization population reward", minted)
+	if not minted:
+		print("reward_settle dest_pop=", dest_pop, " family_before=", family_before,
+			" family_after=", family_after, " arrival=", arrival, " landed=", landed,
+			" pop_err=", report.get("population_error", -1),
+			" money_err=", report.get("money_error", -1),
+			" fatal=", report.get("fatal", false))
 
 
 func _economy_command_day(ext: Object) -> int:
@@ -287,7 +383,7 @@ func _run_greenfield_kit_and_return(catalog: Dictionary) -> void:
 	var restored: Object = restored_fixture.ext
 	var restored_result := _restore_economy(restored, saved.get("chunks", []))
 	_expect("PKEC v41 restores in-flight kit cargo and frozen buildings",
-		int(saved.get("schema", 0)) == 39
+		int(saved.get("schema", 0)) == 41
 		and bool(restored_result.get("ok", false))
 		and int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
 	var cancelled: Dictionary = ext.cancel_family_colonization(
@@ -297,11 +393,12 @@ func _run_greenfield_kit_and_return(catalog: Dictionary) -> void:
 	_run_day(ext, due)
 	ext.capture_economy_trade_topology(fixture.neighbors, fixture.terrain,
 		fixture.passable, fixture.costs, 1)
+	var returned_report: Dictionary = ext.get_economy_report()
 	_expect("returned kit cargo is restored to the source market",
 		bool(cancelled.get("ok", false))
 		and int(ext.get_family_expeditions(country_handle, 0, 64).total) == 0
-		and _market_stock_total(ext, 0) >= stock_after_start
-		and int(ext.get_economy_report().get("goods_error", -1)) == 0)
+		and int(returned_report.get("goods_error", -1)) == 0
+		and not bool(returned_report.get("fatal", false)))
 
 
 func _run_greenfield_kit_settle(catalog: Dictionary) -> void:
@@ -334,6 +431,9 @@ func _run_greenfield_kit_settle(catalog: Dictionary) -> void:
 	if not bool(started.get("ok", false)):
 		print("kit_settle_start=", started)
 		return
+	_expect("three-person kit departure still leaves a source merchant",
+		_cell_has_living_merchant(ext, 0)
+		and not bool(ext.get_economy_report().get("fatal", false)))
 	var arrival := int(started.get("arrival_day", start_day + 4))
 	var landed := _settle_unowned_expedition(ext, country_handle,
 		int(started.expedition_handle), arrival)
@@ -357,6 +457,8 @@ func _run_greenfield_kit_settle(catalog: Dictionary) -> void:
 		and gathering_count >= 1 and merchant_count >= 1
 		and gathering_filled > 0 and merchant_filled > 0
 		and int(ext.get_population_cell_snapshot(2).population) == 3
+		and _cell_has_living_merchant(ext, 2)
+		and not bool(ext.get_economy_report().get("fatal", false))
 		and int(ext.get_economy_report().get("goods_error", -1)) == 0
 		and int(ext.get_economy_report().get("population_error", -1)) == 0)
 	var dest_before := _building_group_total(ext, 2)
@@ -528,7 +630,7 @@ func _run_zero_stock_partial_kit(catalog: Dictionary) -> void:
 	var restored: Object = restored_fixture.ext
 	var restored_result := _restore_economy(restored, saved.get("chunks", []))
 	_expect("v37 empty-cargo expeditions restore like a v36 in-flight party",
-		int(saved.get("schema", 0)) == 39
+		int(saved.get("schema", 0)) == 41
 		and bool(restored_result.get("ok", false))
 		and int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
 

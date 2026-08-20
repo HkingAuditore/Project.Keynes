@@ -37,6 +37,11 @@ static func build() -> Resource:
 		"cell.resource_shortage_q16",
 		"cell.trade_events",
 		"cell.population",
+		"cell.landform",
+		"cell.essentials_shortage_q16",
+		"branch.is_local_prestige_max",
+		"cell.rain_event",
+		"cell.resource_abundance_q16",
 	])
 	catalog.behavior_command_keys = PackedStringArray()
 	var definitions: Array[Resource] = []
@@ -178,6 +183,13 @@ static func build() -> Resource:
 			definition_seen[trigger_program] = true
 			definitions.append(_trigger_modifier_definition(
 				trigger_modifier_key, int(modifier_domains[i])))
+	for economy_row in _trigger_economy_command_rows():
+		var economy_program := "trigger.economy.%s" % String(economy_row.command_key)
+		if definition_seen.has(economy_program):
+			continue
+		definition_seen[economy_program] = true
+		definitions.append(_trigger_economy_definition(
+			String(economy_row.command_key), int(economy_row.opcode)))
 	if not definition_seen.has("person.modifier"):
 		definitions.append(_person_definition(""))
 	# Ideology owns progression, but its authored command templates must be
@@ -283,6 +295,27 @@ static func _trigger_modifier_definition(modifier_key: String, domain: int) -> R
 	end.op = 12 # END; Trigger handoff emits the typed command directly.
 	definition.instructions = [end]
 	definition.commands = [_command(1, domain, 1, &"trigger.modifier", modifier_key)]
+	return definition
+
+
+static func _trigger_economy_command_rows() -> Array[Dictionary]:
+	return [
+		{"command_key": "family.free_building", "opcode": 14},
+		{"command_key": "family.population_reward", "opcode": 15},
+		{"command_key": "family.absorb_anonymous", "opcode": 21},
+		{"command_key": "family.purchase_discount", "opcode": 22},
+	]
+
+
+static func _trigger_economy_definition(command_key: String, opcode: int) -> Resource:
+	var definition := EffectDefinitionScript.new()
+	definition.key = StringName("trigger.economy.%s" % command_key)
+	definition.version = 1
+	definition.cadence_days = 3650
+	var end := EffectInstructionScript.new()
+	end.op = 12
+	definition.instructions = [end]
+	definition.commands = [_command(3, 2, opcode, StringName(command_key), "")]
 	return definition
 
 

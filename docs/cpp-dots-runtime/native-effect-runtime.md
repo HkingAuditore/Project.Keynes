@@ -205,7 +205,9 @@ second Modifier-definition copy.
   ENTITY handles, SettlementCell and BuildingResource targets are Economy
   GROUP handles, and Country/Climate targets are their ENTITY handles. Economy
   owns the source binding and frozen metrics; Effect owns only the program,
-  instance, stack arbitration, transaction and ACK.
+  instance, stack arbitration, transaction and ACK. Family metrics 0–9 are
+  occupied and must append-only. Built-in colonization SETTLE carries optional
+  `population_reward` on payload[3], never in the CLAIM/SETTLE cell word.
 - Person: native promotion and every `PERSON_COMMIT` reconcile a
   generation-safe `person.modifier.gameplay.generic.bonus` instance. The public
   `EffectFacade.submit_person_modifier_instance()` remains the extension entry

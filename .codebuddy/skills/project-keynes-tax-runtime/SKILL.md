@@ -66,7 +66,8 @@ identifies the domestic importer/exporter and the relevant domestic merchant buy
   merchant relocation.
 - Keep subsidies treasury-capped. First consumption/business negative-rate batch with no history
   pays zero; a negative income lane may seed its first reservation from the current frozen
-  minimum-living request.
+  minimum-living request. Family purchase discounts share that same subsidy/escrow lane; they are
+  not a separate tax account.
 - Reserve subsidy cash before research procurement; collect current positive taxes only for the
   next batch.
 - Keep one worker per cell/lane with no shared treasury writes, locks, atomics, Godot calls,
@@ -135,7 +136,8 @@ Verify:
 - worker/scalar, continuation, save/restore, and replay hash equality;
 - tariff configuration round-trip with zero domestic events;
 - UI unlock-filtered card grid with localized profile display names and catalog icons,
-  input-to-override plus reset-to-default, pending state, merged import/export tariff cards,
+  input-to-override plus reset-to-default, pending state, inspector SpinBox drafts
+  retained across live patches, merged import/export tariff cards,
   filtering, node/scroll reuse;
 - zero strings/Godot/shared treasury writes/transaction allocations in worker hot paths.
 

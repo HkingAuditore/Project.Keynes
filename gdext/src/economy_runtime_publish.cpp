@@ -509,22 +509,54 @@ bool NativeEconomyRuntime::publish_epoch_slice(
                 cell < static_cast<int32_t>(_cell_effect_shortage_q16.size())) {
                 const int32_t market = _market.cell_to_market[cell];
                 int32_t shortage_q16 = 0;
+                int32_t essentials_q16 = 0;
                 if (market >= 0 && market < _market.market_count) {
                     for (int32_t good = 0; good < _market.good_count; ++good) {
                         const int64_t lane = _market.index(market, good);
-                        if (lane >= 0 && lane < static_cast<int64_t>(
-                                _market.last_shortage_q16.size()))
-                            shortage_q16 = std::max<int32_t>(shortage_q16,
-                                _market.last_shortage_q16[
-                                    static_cast<size_t>(lane)]);
+                        if (lane < 0 || lane >= static_cast<int64_t>(
+                                _market.last_shortage_q16.size())) continue;
+                        const int32_t lane_shortage = _market.last_shortage_q16[
+                            static_cast<size_t>(lane)];
+                        shortage_q16 = std::max(shortage_q16, lane_shortage);
+                        if (good < static_cast<int32_t>(_good_is_essential.size()) &&
+                            _good_is_essential[static_cast<size_t>(good)] != 0)
+                            essentials_q16 = std::max(essentials_q16, lane_shortage);
                     }
                 }
                 _cell_effect_shortage_q16[static_cast<size_t>(cell)] =
                     std::clamp<int32_t>(shortage_q16, 0,
                         static_cast<int32_t>(Q16_ONE));
+                if (cell < static_cast<int32_t>(_cell_essentials_shortage_q16.size()))
+                    _cell_essentials_shortage_q16[static_cast<size_t>(cell)] =
+                        std::clamp<int32_t>(essentials_q16, 0,
+                            static_cast<int32_t>(Q16_ONE));
+            }
+            if (cell < static_cast<int32_t>(_cell_resource_abundance_q16.size()) &&
+                _cell_count > 0 && !_resource_snapshot.empty()) {
+                int64_t total = 0;
+                int32_t counted = 0;
+                int64_t sat = 0;
+                const int32_t resource_count = static_cast<int32_t>(
+                    _resource_ids.size());
+                for (int32_t resource = 0; resource < resource_count; ++resource) {
+                    const size_t idx = static_cast<size_t>(resource) *
+                        static_cast<size_t>(_cell_count) + static_cast<size_t>(cell);
+                    if (idx >= _resource_snapshot.size() ||
+                        _resource_snapshot[idx] <= 0) continue;
+                    const int64_t remaining = idx < _resource_remaining.size()
+                        ? std::max<int64_t>(0, _resource_remaining[idx])
+                        : _resource_snapshot[idx];
+                    total = saturating_add(total, mul_div_sat(remaining, Q16_ONE,
+                        _resource_snapshot[idx], sat), sat);
+                    ++counted;
+                }
+                _cell_resource_abundance_q16[static_cast<size_t>(cell)] =
+                    counted > 0 ? static_cast<int32_t>(std::clamp<int64_t>(
+                        total / counted, 0, Q16_ONE)) : Q16_ONE;
             }
             constexpr uint64_t AGGREGATE_EFFECT_METRICS =
-                (1ULL << 7U) | (1ULL << 8U) | (1ULL << 9U);
+                (1ULL << 7U) | (1ULL << 8U) | (1ULL << 9U) |
+                (1ULL << 11U) | (1ULL << 14U);
             refresh_family_effect_metrics_for_cell(cell,
                 family_effect_metric_revision(2), AGGREGATE_EFFECT_METRICS);
         }

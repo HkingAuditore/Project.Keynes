@@ -102,6 +102,11 @@ Rejected domain work does not complete a managed lifecycle transition. Preserve 
 applied/stack state, retry on the next day, reclaim EVENT_ONCE only after full ACK, and keep an
 explicit retire pending until its REMOVE is ACKed.
 
+Family metrics 0–9 are occupied. Append new keys at the end of `metric_keys`; never reorder.
+`EVENT_COMMAND` may carry a construction-completion `type_id`. Producer `161` Family/Branch ENTITY
+handles that fail generation checks are rejected, not repaired. Colonization `population_reward`
+lives on SETTLE payload[3] (`i32_1`); payload[0] remains the shared CLAIM/SETTLE cell.
+
 ## Required validation
 
 Add focused tests for catalog validation, Q16 arithmetic, condition gating,

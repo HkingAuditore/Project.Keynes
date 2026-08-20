@@ -1280,15 +1280,46 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 if (candidate.sponsor_family_handle != 0) {
                     const int32_t stable_preference =
                         family_trait_behavior_factor_q16(
-                            candidate.sponsor_family_handle, 0, 0, type_id);
+                            candidate.sponsor_family_handle, 0, 0, type_id, cell);
                     const int32_t sector_preference =
                         family_trait_behavior_factor_q16(
                             candidate.sponsor_family_handle, 0, 1,
-                            type.economic_sector);
+                            type.economic_sector, cell);
                     candidate.score_q16 = mul_div_sat(candidate.score_q16,
                         stable_preference, Q16_ONE, _saturation_count);
                     candidate.score_q16 = mul_div_sat(candidate.score_q16,
                         sector_preference, Q16_ONE, _saturation_count);
+                    auto mix_score_term = [&](int32_t term, int32_t signal_q16) {
+                        const int32_t factor = family_behavior_score_term_q16(
+                            candidate.sponsor_family_handle, cell, term);
+                        if (factor == Q16_ONE) return;
+                        const int64_t mix = saturating_add(Q16_ONE,
+                            mul_div_sat(static_cast<int64_t>(factor) - Q16_ONE,
+                                std::clamp<int32_t>(signal_q16, 0,
+                                    static_cast<int32_t>(Q16_ONE)),
+                                Q16_ONE, _saturation_count),
+                            _saturation_count);
+                        candidate.score_q16 = mul_div_sat(candidate.score_q16,
+                            mix, Q16_ONE, _saturation_count);
+                    };
+                    if (daily_cash_revenue > 0) {
+                        const int32_t after_share = static_cast<int32_t>(
+                            std::clamp<int64_t>(mul_div_sat(
+                                daily_after_tax_cash_revenue, Q16_ONE,
+                                daily_cash_revenue, _saturation_count),
+                                0, Q16_ONE));
+                        mix_score_term(FAMILY_SCORE_TAX_SENSITIVITY, after_share);
+                    }
+                    mix_score_term(FAMILY_SCORE_LOCAL_RESOURCE_ABUNDANCE,
+                        building_local_resource_abundance_q16(cell, type_id));
+                    if (_max_building_upgrade_tier > 0)
+                        mix_score_term(FAMILY_SCORE_UPGRADE_TIER,
+                            static_cast<int32_t>(mul_div_sat(
+                                type.upgrade_tier, Q16_ONE,
+                                _max_building_upgrade_tier, _saturation_count)));
+                    mix_score_term(FAMILY_SCORE_LOCAL_POPULARITY,
+                        static_cast<int32_t>(std::clamp<int64_t>(
+                            shortage_q16, 0, Q16_ONE)));
                 }
                 type_has_viable_candidate = true;
                 if (diagnostic != nullptr) {

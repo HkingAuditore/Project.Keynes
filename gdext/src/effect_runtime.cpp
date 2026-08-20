@@ -68,8 +68,8 @@ bool native_command_shape_valid(int32_t action, int32_t domain, int32_t opcode,
             }
             break;
         case EffectRuntime::ECONOMY_COMMAND:
-            if (domain != 2 || opcode < NativeEconomyRuntime::COMMAND_TRANSFER_TO_COHORT ||
-                opcode > NativeEconomyRuntime::COMMAND_FAMILY_POPULATION_REWARD) {
+            if (domain != 2 ||
+                !NativeEconomyRuntime::is_registered_economy_effect_opcode(opcode)) {
                 reason = "effect_economy_opcode_unregistered";
                 return false;
             }
@@ -2434,7 +2434,9 @@ bool EffectRuntime::enqueue_trigger_effect_pod(
         const std::array<int64_t, 4> &payload, std::string &error) {
     const std::string program_key = action == COUNTRY_COMMAND
         ? std::string("trigger.country.") + definition_key
-        : std::string("trigger.modifier.") + definition_key;
+        : action == ECONOMY_COMMAND
+            ? std::string("trigger.economy.") + command_key
+            : std::string("trigger.modifier.") + definition_key;
     return enqueue_external_effect_pod(effect_id, effective_day, 0x54524947,
         trigger_id, program_key, target_handle,
         target_handle, target_generation, fire_sequence, action, domain, opcode,
@@ -2452,7 +2454,7 @@ bool EffectRuntime::enqueue_external_effect_pod(
     if (!_configured) { error = "effect_runtime_unconfigured"; return false; }
     if (effect_id <= 0 || target_generation == 0 || target_handle == 0 ||
         domain < 0 || domain >= 32 || stacks <= 0 || command_key.empty() ||
-        definition_key.empty()) {
+        (definition_key.empty() && action != ECONOMY_COMMAND)) {
         error = "trigger_effect_shape_invalid";
         return false;
     }
@@ -2487,7 +2489,12 @@ bool EffectRuntime::enqueue_external_effect_pod(
             candidate.payload[1] == payload[1] &&
             candidate.payload[2] == payload[2] &&
             candidate.payload[3] == payload[3];
-        if (candidate.command_key == command_key &&
+        const bool dynamic_family_economy =
+            action == ECONOMY_COMMAND &&
+            candidate.action == action &&
+            candidate.command_key == command_key &&
+            candidate.opcode == opcode;
+        if ((candidate.command_key == command_key &&
             candidate.definition_key == definition_key &&
             candidate.action == action && candidate.domain == domain &&
             (candidate.opcode == opcode || (modifier_remove &&
@@ -2495,7 +2502,8 @@ bool EffectRuntime::enqueue_external_effect_pod(
             candidate.target_resolver == TARGET_INSTANCE &&
             candidate.duration_days == duration_days &&
             candidate.stacks == stacks &&
-            (candidate.payload == payload || dynamic_country_signal_payload)) {
+            (candidate.payload == payload || dynamic_country_signal_payload)) ||
+            dynamic_family_economy) {
             command_definition_id = i;
             break;
         }
@@ -2802,7 +2810,8 @@ bool EffectRuntime::enqueue_family_colonization_pod(
         uint64_t country_handle, uint32_t country_generation,
         uint64_t expedition_handle, uint32_t expedition_generation,
         int32_t target_cell, uint64_t fire_sequence, std::string &error,
-        int64_t *out_transaction_id, bool claim_unowned) {
+        int64_t *out_transaction_id, bool claim_unowned,
+        int32_t population_reward) {
     if (!_configured) { error = "effect_runtime_unconfigured"; return false; }
     if (effect_id <= 0 || effective_day < 0 || country_handle == 0 ||
         country_generation == 0 || expedition_handle == 0 ||
@@ -2867,6 +2876,9 @@ bool EffectRuntime::enqueue_family_colonization_pod(
     settle.payload[0] = static_cast<int64_t>(static_cast<uint32_t>(target_cell));
     settle.payload[1] = static_cast<int64_t>(country_handle);
     settle.payload[2] = claim_unowned ? 1 : 0;
+    // payload[3] is SETTLE.i32_1: optional conserved population_reward. Keep
+    // it off payload[0] so CLAIM/SETTLE PKEF equality on the cell word holds.
+    settle.payload[3] = std::max<int64_t>(0, population_reward);
     settle.idempotency_key = settle_key;
     append_command(transaction, settle);
     const uint32_t expected_commands = claim_unowned ? 2U : 1U;
@@ -2923,6 +2935,21 @@ bool EffectRuntime::family_colonization_includes_claim(
             return true;
     }
     return false;
+}
+
+int32_t EffectRuntime::family_colonization_population_reward(
+        int64_t transaction_id) const {
+    const int32_t index = transaction_index_for_id(transaction_id);
+    if (index < 0) return 0;
+    const Transaction &transaction = _transactions[static_cast<size_t>(index)];
+    for (uint32_t ordinal = 0; ordinal < transaction.command_count; ++ordinal) {
+        const Command *command = command_at(transaction, ordinal);
+        if (command == nullptr || command->action != ECONOMY_COMMAND ||
+            command->opcode != NativeEconomyRuntime::COMMAND_SETTLE_FAMILY_EXPEDITION)
+            continue;
+        return static_cast<int32_t>(std::max<int64_t>(0, command->payload[3]));
+    }
+    return 0;
 }
 
 bool EffectRuntime::enqueue_canal_commit_pod(
@@ -4972,7 +4999,9 @@ Dictionary EffectRuntime::dispatch_native_economy(NativeEconomyRuntime *economy_
                 continue;
             if (command->domain < 0 || command->domain >= 32 ||
                 command->opcode < NativeEconomyRuntime::COMMAND_TRANSFER_TO_COHORT ||
-                command->opcode > NativeEconomyRuntime::COMMAND_SETTLE_FAMILY_EXPEDITION) {
+                (command->opcode > NativeEconomyRuntime::COMMAND_SETTLE_FAMILY_EXPEDITION &&
+                 command->opcode != NativeEconomyRuntime::COMMAND_FAMILY_ABSORB_ANONYMOUS &&
+                 command->opcode != NativeEconomyRuntime::COMMAND_FAMILY_PURCHASE_DISCOUNT)) {
                 supported = false;
                 break;
             }
@@ -4985,7 +5014,10 @@ Dictionary EffectRuntime::dispatch_native_economy(NativeEconomyRuntime *economy_
             native.target_generation = command->target_generation;
             const uint64_t packed_i32 = static_cast<uint64_t>(command->payload[0]);
             native.i32_0 = static_cast<int32_t>(packed_i32 & 0xffffffffULL);
-            native.i32_1 = static_cast<int32_t>((packed_i32 >> 32U) & 0xffffffffULL);
+            native.i32_1 = command->opcode ==
+                NativeEconomyRuntime::COMMAND_SETTLE_FAMILY_EXPEDITION
+                ? static_cast<int32_t>(command->payload[3])
+                : static_cast<int32_t>((packed_i32 >> 32U) & 0xffffffffULL);
             native.i64_0 = command->opcode ==
                 NativeEconomyRuntime::COMMAND_SETTLE_FAMILY_EXPEDITION
                 ? command->payload[2] : command->value_q16;

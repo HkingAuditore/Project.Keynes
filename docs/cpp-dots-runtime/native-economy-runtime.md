@@ -91,7 +91,10 @@ pending-construction capacity from the marginal-output gap. Established types
 may grow by at most 10% per review; absent types seed at one building. A
 non-merchant must gain at least 50% Q16 disposable income to enter the merchant
 profession. The test fixture creates one merchant post per populated cell, and
-runtime employment protects only the final local merchant.
+runtime employment, colonization extract/kit filling, and merchant-index rebuild
+all protect or repair the final local merchant. Epoch preflight treats a
+zero-population merchant primary as missing and repairs it instead of trusting
+the stale CSR.
 
 Recovery liquidation remains behind the existing executable-but-unprofitable
 review gate. An approved review now retires only confirmed excess capacity,

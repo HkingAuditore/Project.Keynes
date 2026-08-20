@@ -816,19 +816,26 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
                     std::tuple(!b.unemployed, b.profession, b.ethnicity_id,
                         b.handle);
             });
+        int64_t remaining_merchants = living_merchant_population(destination_cell);
         for (const Candidate &candidate : candidates) {
             if (missing <= 0) break;
             if (candidate.slot < 0 ||
                 candidate.slot >= static_cast<int32_t>(_population.active.size()) ||
                 _population.active[candidate.slot] == 0)
                 continue;
-            const int64_t take = std::min(missing,
+            const bool from_merchant = is_merchant_slot(candidate.slot);
+            int64_t take = std::min(missing,
                 _population.population[candidate.slot]);
+            if (from_merchant)
+                take = std::min(take, std::max<int64_t>(0, remaining_merchants - 1));
             if (take <= 0) continue;
             if (!move_cohort_population(candidate.slot, destination_cell,
                     owner_signature, take, error, nullptr, family_handle))
                 return false;
             missing -= take;
+            if (from_merchant)
+                remaining_merchants = std::max<int64_t>(
+                    0, remaining_merchants - take);
         }
         owner_slot = find_cohort_slot(destination_cell, owner_signature);
         const int32_t group_index = find_building_group(

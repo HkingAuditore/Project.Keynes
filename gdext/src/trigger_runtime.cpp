@@ -1,5 +1,6 @@
 #include "trigger_runtime.h"
 #include "effect_runtime.h"
+#include "economy_runtime.h"
 #include "ideology_runtime.h"
 
 #include <godot_cpp/variant/array.hpp>
@@ -891,6 +892,11 @@ void TriggerRuntime::emit_effects(int32_t trigger_id, int32_t state_index,
         effect.command_key = source.command_key;
         effect.definition_key = source.definition_key;
         effect.payload = source.payload;
+        if (effect.action == ECONOMY_COMMAND &&
+            (effect.opcode == NativeEconomyRuntime::COMMAND_FAMILY_FREE_BUILDING ||
+             effect.command_key == "family.free_building") &&
+            event.payload[1] >= 0 && effect.payload[1] == 0)
+            effect.payload[1] = event.payload[1];
         if (effect.action == COUNTRY_COMMAND &&
             effect.opcode == 14) { // NativeCountryRuntime::COMMAND_DISCOVER_COUNTRY_SIGNAL
             const uint64_t signal = static_cast<uint64_t>(effect.payload[0]) & 0xffffffffULL;
@@ -1122,17 +1128,31 @@ Dictionary TriggerRuntime::handoff_effects(EffectRuntime *effect_runtime,
         // their own safe-boundary adapter is migrated.
         const bool native_modifier = effect.action >= MODIFIER_APPLY &&
             effect.action <= MODIFIER_SET_STACKS;
-        if (!native_modifier && effect.action != COUNTRY_COMMAND) {
+        if (!native_modifier && effect.action != COUNTRY_COMMAND &&
+            effect.action != ECONOMY_COMMAND) {
             blocked_reason = "trigger_effect_domain_adapter_required";
             break;
         }
         std::string error;
-        const int32_t effect_action = effect.action == COUNTRY_COMMAND
-            ? EffectRuntime::COUNTRY_COMMAND : effect.action;
+        int32_t effect_action = effect.action;
+        int32_t opcode = effect.opcode;
+        if (effect.action == COUNTRY_COMMAND)
+            effect_action = EffectRuntime::COUNTRY_COMMAND;
+        else if (effect.action == ECONOMY_COMMAND) {
+            effect_action = EffectRuntime::ECONOMY_COMMAND;
+            if (effect.command_key == "family.free_building")
+                opcode = NativeEconomyRuntime::COMMAND_FAMILY_FREE_BUILDING;
+            else if (effect.command_key == "family.population_reward")
+                opcode = NativeEconomyRuntime::COMMAND_FAMILY_POPULATION_REWARD;
+            else if (effect.command_key == "family.absorb_anonymous")
+                opcode = NativeEconomyRuntime::COMMAND_FAMILY_ABSORB_ANONYMOUS;
+            else if (effect.command_key == "family.purchase_discount")
+                opcode = NativeEconomyRuntime::COMMAND_FAMILY_PURCHASE_DISCOUNT;
+        }
         if (!effect_runtime->enqueue_trigger_effect_pod(
                 effect.id, effect.effective_day, effect.trigger_id,
                 effect.target_handle, effect.target_generation,
-                effect.fire_sequence, effect_action, effect.domain, effect.opcode,
+                effect.fire_sequence, effect_action, effect.domain, opcode,
                 effect.resolved_value, effect.duration_days, effect.stacks,
                 effect.command_key, effect.definition_key, effect.payload, error)) {
             blocked_reason = error.empty() ? "trigger_effect_handoff_failed" : error;
