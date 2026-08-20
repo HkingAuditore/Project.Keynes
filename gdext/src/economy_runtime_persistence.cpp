@@ -246,6 +246,8 @@ Dictionary NativeEconomyRuntime::begin_restore() {
     _cell_resource_gen.assign(_cell_count, 0);
     _cell_trade_gen.assign(_cell_count, 0);
     _cell_effect_shortage_q16.assign(_cell_count, 0);
+    _cell_essentials_shortage_q16.assign(_cell_count, 0);
+    _cell_resource_abundance_q16.assign(_cell_count, 0);
     _fiscal_previous_country_handles.assign(
         static_cast<size_t>(_cell_count), 0);
     _fiscal_previous_requests.assign(
@@ -576,24 +578,17 @@ Dictionary NativeEconomyRuntime::end_restore() {
             cmd.opcode == COMMAND_REMOVE_STOCK ||
             cmd.opcode == COMMAND_COUNTRY_GOOD_TO_MARKET ||
             cmd.opcode == COMMAND_MARKET_GOOD_TO_COUNTRY;
-        const bool family_reward =
-            cmd.opcode == COMMAND_FAMILY_FREE_BUILDING ||
-            cmd.opcode == COMMAND_FAMILY_POPULATION_REWARD;
+        const bool family_reward = is_family_ledger_command(cmd.opcode);
         const bool treasury_build =
             cmd.opcode == COMMAND_TREASURY_SPONSORED_BUILD;
         const bool canal_build = cmd.opcode == COMMAND_BUILD_CANAL;
         const bool expedition_player =
             cmd.opcode == COMMAND_START_FAMILY_EXPEDITION ||
             cmd.opcode == COMMAND_CANCEL_FAMILY_EXPEDITION;
-        int32_t branch = -1;
         int32_t family = -1;
         int32_t expedition = -1;
         const bool target_ok = family_reward
-            ? (_family_influences.valid_handle(cmd.target_handle, branch) &&
-               cmd.i32_0 >= 0 && cmd.i32_0 <= 1 && cmd.i64_0 > 0 &&
-               (cmd.opcode != COMMAND_FAMILY_FREE_BUILDING ||
-                (cmd.i32_1 >= 0 && cmd.i32_1 < static_cast<int32_t>(
-                    _building_types.size()))))
+            ? family_ledger_command_preflight(cmd)
             : treasury_build
             ? (_country_runtime != nullptr && _country_runtime->valid_handle(
                    static_cast<int64_t>(cmd.target_handle)) &&
@@ -619,10 +614,15 @@ Dictionary NativeEconomyRuntime::end_restore() {
                 (_country_runtime != nullptr && _country_runtime->valid_handle(
                     static_cast<int64_t>(cmd.target_handle)))))
             : _population.valid_handle(cmd.target_handle, slot);
-        if (cmd.opcode < COMMAND_TRANSFER_TO_COHORT ||
-            cmd.opcode > COMMAND_BUILD_CANAL ||
+        const bool opcode_ok =
+            (cmd.opcode >= COMMAND_TRANSFER_TO_COHORT &&
+             cmd.opcode <= COMMAND_BUILD_CANAL) ||
+            family_reward;
+        if (!opcode_ok ||
             !target_ok || cmd.effective_day < 0 || cmd.sequence < 0 ||
-            (cmd.i64_0 < 0 && cmd.opcode != COMMAND_ADD_POPULATION)) {
+            (cmd.i64_0 < 0 && cmd.opcode != COMMAND_ADD_POPULATION &&
+             cmd.opcode != COMMAND_FAMILY_PURCHASE_DISCOUNT &&
+             cmd.opcode != COMMAND_FAMILY_ABSORB_ANONYMOUS)) {
             out["ok"] = false;
             out["reason"] = "restore_command_invalid";
             return out;

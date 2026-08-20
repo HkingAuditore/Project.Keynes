@@ -39,6 +39,8 @@ enum Opcode {
 	FAMILY_COLONIZATION_START = 17,
 	FAMILY_COLONIZATION_CANCEL = 18,
 	FAMILY_COLONIZATION_SETTLE = 19,
+	FAMILY_ABSORB_ANONYMOUS = 21,
+	FAMILY_PURCHASE_DISCOUNT = 22,
 }
 
 const OWNERSHIP_TREASURY_SPONSORED_PRIVATE := 1
@@ -776,13 +778,21 @@ func queue_family_trigger_reward(effect: Dictionary) -> Dictionary:
 	var building_type := -1
 	if command_key == "family.free_building":
 		opcode = Opcode.FAMILY_FREE_BUILDING
-		var building_ids: PackedStringArray = _catalog.get(
-			"building_type_ids", PackedStringArray())
-		building_type = building_ids.find(String(effect.get("definition_key", "")))
-		if building_type < 0:
-			return {"ok": false, "reason": "family_reward_building_unknown"}
+		var authored := String(effect.get("definition_key", "")).strip_edges()
+		if authored.is_empty():
+			building_type = -1
+		else:
+			var building_ids: PackedStringArray = _catalog.get(
+				"building_type_ids", PackedStringArray())
+			building_type = building_ids.find(authored)
+			if building_type < 0:
+				return {"ok": false, "reason": "family_reward_building_unknown"}
 	elif command_key == "family.population_reward":
 		opcode = Opcode.FAMILY_POPULATION_REWARD
+	elif command_key == "family.absorb_anonymous":
+		opcode = Opcode.FAMILY_ABSORB_ANONYMOUS
+	elif command_key == "family.purchase_discount":
+		opcode = Opcode.FAMILY_PURCHASE_DISCOUNT
 	else:
 		return {"ok": false, "reason": "family_reward_command_unknown"}
 	return submit([{
@@ -792,8 +802,10 @@ func queue_family_trigger_reward(effect: Dictionary) -> Dictionary:
 		"target_handle": int(effect.get("target_handle", 0)),
 		"i32_0": int(effect.get("payload_i0", 0)),
 		"i32_1": building_type,
-		"i64_0": maxi(1, int(effect.get("resolved_value", 1))),
-		"i64_1": int(effect.get("effect_id", 0)),
+		"i64_0": maxi(1, int(effect.get("resolved_value", 1))) \
+			if opcode != Opcode.FAMILY_PURCHASE_DISCOUNT \
+			else int(effect.get("resolved_value", 32768)),
+		"i64_1": int(effect.get("payload_i1", effect.get("effect_id", 0))),
 	}])
 
 

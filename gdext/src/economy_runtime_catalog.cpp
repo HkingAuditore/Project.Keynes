@@ -59,6 +59,10 @@ bool NativeEconomyRuntime::compile_family_trait_catalog(
         catalog, "family_trait_exclusion_offsets");
     _family_trait_exclusions = packed_i32(
         catalog, "family_trait_exclusions");
+    _family_trait_technology_prerequisite_offsets = packed_i32(
+        catalog, "family_trait_technology_prerequisite_offsets");
+    _family_trait_technology_prerequisites = packed_i32(
+        catalog, "family_trait_technology_prerequisites");
     _family_trait_behavior_offsets = packed_i32(
         catalog, "family_trait_behavior_offsets");
     _family_trait_behavior_axes = packed_i32(
@@ -69,6 +73,16 @@ bool NativeEconomyRuntime::compile_family_trait_catalog(
         catalog, "family_trait_behavior_selector_ids");
     _family_trait_behavior_factors_q16 = packed_i32(
         catalog, "family_trait_behavior_factors_q16");
+    _family_trait_behavior_score_terms = packed_i32(
+        catalog, "family_trait_behavior_score_terms");
+    _family_trait_behavior_condition_offsets = packed_i32(
+        catalog, "family_trait_behavior_condition_offsets");
+    _family_trait_behavior_condition_ops = packed_i32(
+        catalog, "family_trait_behavior_condition_ops");
+    _family_trait_behavior_condition_arg0 = packed_i32(
+        catalog, "family_trait_behavior_condition_arg0");
+    _family_trait_behavior_condition_values = packed_i64(
+        catalog, "family_trait_behavior_condition_values");
     _family_trait_modifier_offsets = packed_i32(
         catalog, "family_trait_modifier_offsets");
     _family_trait_modifier_definition_keys = packed_strings(
@@ -99,6 +113,7 @@ bool NativeEconomyRuntime::compile_family_trait_catalog(
     const bool csr_shape =
         _family_trait_prerequisite_offsets.size() == count + 1 &&
         _family_trait_exclusion_offsets.size() == count + 1 &&
+        _family_trait_technology_prerequisite_offsets.size() == count + 1 &&
         _family_trait_behavior_offsets.size() == count + 1 &&
         _family_trait_modifier_offsets.size() == count + 1 &&
         _family_trait_trigger_offsets.size() == count + 1 &&
@@ -110,6 +125,9 @@ bool NativeEconomyRuntime::compile_family_trait_catalog(
         _family_trait_exclusion_offsets.front() == 0 &&
         _family_trait_exclusion_offsets.back() ==
             static_cast<int32_t>(_family_trait_exclusions.size()) &&
+        _family_trait_technology_prerequisite_offsets.front() == 0 &&
+        _family_trait_technology_prerequisite_offsets.back() ==
+            static_cast<int32_t>(_family_trait_technology_prerequisites.size()) &&
         _family_trait_behavior_offsets.front() == 0 &&
         _family_trait_behavior_offsets.back() ==
             static_cast<int32_t>(_family_trait_behavior_axes.size()) &&
@@ -129,6 +147,18 @@ bool NativeEconomyRuntime::compile_family_trait_catalog(
             _family_trait_behavior_selector_ids.size() &&
         _family_trait_behavior_axes.size() ==
             _family_trait_behavior_factors_q16.size() &&
+        _family_trait_behavior_axes.size() ==
+            _family_trait_behavior_score_terms.size() &&
+        _family_trait_behavior_condition_offsets.size() ==
+            _family_trait_behavior_axes.size() + 1 &&
+        !_family_trait_behavior_condition_offsets.empty() &&
+        _family_trait_behavior_condition_offsets.front() == 0 &&
+        _family_trait_behavior_condition_offsets.back() ==
+            static_cast<int32_t>(_family_trait_behavior_condition_ops.size()) &&
+        _family_trait_behavior_condition_ops.size() ==
+            _family_trait_behavior_condition_arg0.size() &&
+        _family_trait_behavior_condition_ops.size() ==
+            _family_trait_behavior_condition_values.size() &&
         _family_trait_modifier_definition_keys.size() ==
         _family_trait_modifier_targets.size() &&
         _family_trait_modifier_tier_magnitudes_q16.size() ==
@@ -169,6 +199,32 @@ bool NativeEconomyRuntime::compile_family_trait_catalog(
             error = "family_trait_exclusion_invalid";
             return false;
         }
+    const int32_t technology_count = static_cast<int32_t>(
+        packed_strings(catalog, "technology_ids").size());
+    for (int32_t id : _family_trait_technology_prerequisites)
+        if (id < 0 || (technology_count > 0 && id >= technology_count)) {
+            error = "family_trait_technology_prerequisite_invalid";
+            return false;
+        }
+    for (int32_t term : _family_trait_behavior_score_terms)
+        if (term < FAMILY_SCORE_CANDIDATE_WEIGHT ||
+            term > FAMILY_SCORE_CAREER_MOBILITY) {
+            error = "family_trait_behavior_score_term_invalid";
+            return false;
+        }
+    for (int32_t op : _family_trait_behavior_condition_ops)
+        if (op < 1 || op > 8) {
+            error = "family_trait_behavior_condition_opcode_invalid";
+            return false;
+        }
+    for (size_t edge = 0; edge + 1 < _family_trait_behavior_condition_offsets.size();
+         ++edge) {
+        if (_family_trait_behavior_condition_offsets[edge] >
+            _family_trait_behavior_condition_offsets[edge + 1]) {
+            error = "family_trait_behavior_condition_shape_invalid";
+            return false;
+        }
+    }
     for (int32_t factor : _family_trait_behavior_factors_q16)
         if (factor < 0 || factor > 4 * Q16_ONE) {
             error = "family_trait_behavior_factor_invalid";
@@ -366,6 +422,15 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
 	_good_transport_load_per_unit_q16 = packed_i32(
 		catalog, "good_transport_load_per_unit_q16");
 	_good_category_ids = packed_strings(catalog, "good_category_ids");
+    _good_is_essential.assign(_good_category_ids.size(), 0);
+    for (size_t good = 0; good < _good_category_ids.size(); ++good) {
+        const std::string &category = _good_category_ids[good];
+        if (category == "staple_food" || category == "protein" ||
+            category == "produce" || category == "clothing" ||
+            category == "housing" || category == "household_goods" ||
+            category == "hygiene" || category == "home_energy")
+            _good_is_essential[good] = 1;
+    }
 	_good_storage_modes = packed_i32(catalog, "good_storage_modes");
 	_good_monetary_issue_values = packed_i64(catalog, "good_monetary_issue_values");
 	_good_technology_tag_offsets = packed_i32(catalog, "good_technology_tag_offsets");
@@ -1484,6 +1549,9 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
 	_building_upgrade_family_ids = packed_strings(catalog, "building_upgrade_family_ids");
 	_building_upgrade_family_indices = packed_i32(catalog, "building_upgrade_family_indices");
 	_building_upgrade_tiers = packed_i32(catalog, "building_upgrade_tiers");
+    _max_building_upgrade_tier = 0;
+    for (int32_t tier : _building_upgrade_tiers)
+        _max_building_upgrade_tier = std::max(_max_building_upgrade_tier, tier);
     _resource_ids = packed_strings(catalog, "building_resource_ids");
     _modifier_sector_ids = packed_strings(catalog, "modifier_sector_ids");
     _modifier_terrain_ids = packed_strings(catalog, "modifier_terrain_ids");

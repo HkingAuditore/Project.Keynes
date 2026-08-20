@@ -82,8 +82,9 @@ the ordering is not merely a priority convention: Modifier is the safe commit
 boundary for native Effect commands. `EffectFacade.dispatch_transactions()` is
 still called for unsupported/custom commands only.
 
-`FAMILY_COMMIT` does not evaluate effect programs. It only reconciles sparse source bindings and
-publishes frozen metric revisions; priority 85 performs evaluation on its next eligible scheduler
+`FAMILY_COMMIT` does not evaluate effect programs. It only reconciles sparse source bindings,
+publishes frozen metric revisions, and freezes family behavior-factor CSR from the same metric
+snapshot; priority 85 performs evaluation on its next eligible scheduler
 visit. A domain rejection leaves the instance due for the next day, while ACKed EVENT_ONCE/retire
 transitions are reclaimed. This keeps structural ownership in Economy and lifecycle/transaction
 ownership in EffectRuntime without a same-stage callback.

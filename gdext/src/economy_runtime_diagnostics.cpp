@@ -111,6 +111,9 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_families.flags); cap(_families.free_indices);
     cap(_family_memberships); cap(_family_ownerships);
     cap(_family_traits); cap(_family_trait_commands);
+    cap(_family_behavior_factor_offsets); cap(_family_behavior_factor_rows);
+    cap(_family_purchase_factor_q16); cap(_family_absorb_bonus_q16);
+    cap(_family_colonization_population_reward);
     cap(_family_modifier_bindings); cap(_family_trigger_bindings);
     cap(_family_effect_bindings);
     for (const FamilyEffectBinding &binding : _family_effect_bindings)
@@ -209,6 +212,8 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_cell_price_stock_gen); cap(_cell_owner_cash_gen); cap(_cell_population_gen);
     cap(_cell_building_structure_gen); cap(_cell_technology_gen);
     cap(_cell_resource_gen); cap(_cell_trade_gen); cap(_cell_effect_shortage_q16);
+    cap(_cell_essentials_shortage_q16); cap(_cell_resource_abundance_q16);
+    cap(_cell_previous_precipitation_q16); cap(_cell_rain_event_q16);
     cap(_epoch_cell_country); cap(_epoch_cell_visible); cap(_epoch_country_technologies);
     cap(_city_output_shared_goods_q16); cap(_city_output_cell_offsets);
     cap(_city_output_good_indices); cap(_city_output_factors_q16);
@@ -767,6 +772,10 @@ Dictionary NativeEconomyRuntime::compact_report() const {
         _family_modifier_bindings.size());
     out["family_trigger_binding_count"] = static_cast<int64_t>(
         _family_trigger_bindings.size());
+    out["family_effect_binding_count"] = static_cast<int64_t>(
+        _family_effect_bindings.size());
+    out["family_behavior_factor_row_count"] = static_cast<int64_t>(
+        _family_behavior_factor_rows.size());
     out["family_expedition_active_count"] = static_cast<int64_t>(std::count(
         _family_expeditions.active.begin(), _family_expeditions.active.end(),
         uint8_t{1}));
@@ -1548,6 +1557,10 @@ Dictionary NativeEconomyRuntime::report() const {
         _family_modifier_bindings.size());
     out["family_trigger_binding_count"] = static_cast<int64_t>(
         _family_trigger_bindings.size());
+    out["family_effect_binding_count"] = static_cast<int64_t>(
+        _family_effect_bindings.size());
+    out["family_behavior_factor_row_count"] = static_cast<int64_t>(
+        _family_behavior_factor_rows.size());
     out["family_expedition_active_count"] = static_cast<int64_t>(std::count(
         _family_expeditions.active.begin(), _family_expeditions.active.end(),
         uint8_t{1}));

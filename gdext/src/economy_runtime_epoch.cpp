@@ -630,11 +630,38 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     _demand_basis_need_score_sums.resize(cache_needs);
     _demand_basis_need_composites.resize(cache_needs);
     _demand_basis_need_environment.resize(cache_needs);
+    bool merchant_index_dirty = false;
     for (int32_t cell = 0; cell < _cell_count; ++cell) {
-        if (_committed_cells[cell].population > 0 && _merchant_primary_slot[cell] < 0) {
-            error = "merchant_invariant_broken_before_cycle";
-            return false;
+        const int32_t primary = _merchant_primary_slot[cell];
+        if (is_merchant_slot(primary)) continue;
+        if (primary < 0 &&
+            (cell >= static_cast<int32_t>(_committed_cells.size()) ||
+             _committed_cells[cell].population <= 0))
+            continue;
+        int64_t population = 0;
+        bool has_living_merchant = false;
+        _population.for_each_in_cell(cell, [&](int32_t slot) {
+            population = saturating_add(population, _population.population[slot],
+                                        _saturation_count);
+            if (!has_living_merchant && is_merchant_slot(slot))
+                has_living_merchant = true;
+        });
+        if (population <= 0) {
+            if (primary >= 0) merchant_index_dirty = true;
+            continue;
         }
+        if (!has_living_merchant) {
+            int64_t repairs = 0;
+            if (!ensure_merchant_invariant(cell, repairs, error)) {
+                if (error.empty()) error = "merchant_invariant_broken_before_cycle";
+                return false;
+            }
+        }
+        merchant_index_dirty = true;
+    }
+    if (merchant_index_dirty && !rebuild_merchant_ranges(error)) {
+        if (error.empty()) error = "merchant_invariant_broken_before_cycle";
+        return false;
     }
     const double preflight_ms = elapsed_ms(epoch_started);
     const auto prepare_started = Clock::now();
@@ -903,9 +930,7 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     };
     _epoch_commands.erase(std::remove_if(_epoch_commands.begin(), _epoch_commands.end(),
                                          [&](const Command &cmd) {
-        const bool family_reward =
-            cmd.opcode == COMMAND_FAMILY_FREE_BUILDING ||
-            cmd.opcode == COMMAND_FAMILY_POPULATION_REWARD;
+        const bool family_reward = is_family_ledger_command(cmd.opcode);
         const bool expedition_command =
             cmd.opcode == COMMAND_START_FAMILY_EXPEDITION ||
             cmd.opcode == COMMAND_CANCEL_FAMILY_EXPEDITION ||
@@ -968,17 +993,8 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
                 return reject_epoch_command(cmd);
             }
         }
-        if (family_reward) {
-            int32_t branch = -1;
-            const bool free_building =
-                cmd.opcode == COMMAND_FAMILY_FREE_BUILDING;
-            if (!_family_influences.valid_handle(cmd.target_handle, branch) ||
-                cmd.i32_0 < 0 || cmd.i32_0 > 1 || cmd.i64_0 <= 0 ||
-                (free_building && (cmd.i32_1 < 0 ||
-                    cmd.i32_1 >= static_cast<int32_t>(
-                        _building_types.size())))) {
-                return reject_epoch_command(cmd);
-            }
+        if (family_reward && !family_ledger_command_preflight(cmd)) {
+            return reject_epoch_command(cmd);
         }
         return false;
     }), _epoch_commands.end());

@@ -785,6 +785,15 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     const bool consumption_tax_active =
         (_epoch_active_tax_mask & static_cast<uint8_t>(
             1U << NativeCountryRuntime::TAX_CONSUMPTION)) != 0;
+    bool family_purchase_discount_active = false;
+    for (int32_t local = 0; local < cohort_count; ++local) {
+        if (family_purchase_pay_factor_q16(slots[local]) < Q16_ONE) {
+            family_purchase_discount_active = true;
+            break;
+        }
+    }
+    const bool subsidy_settlement =
+        consumption_tax_active || family_purchase_discount_active;
     const bool income_tax_active =
         (_epoch_active_tax_mask & static_cast<uint8_t>(
             1U << NativeCountryRuntime::TAX_INCOME)) != 0;
@@ -835,7 +844,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         return subsidy;
     };
     const auto apply_subsidy_quotes = [&](std::vector<BundleOrder> &orders) {
-        if (!consumption_tax_active) return;
+        if (!subsidy_settlement) return;
         thread_local std::vector<int64_t> quoted_remaining;
         quoted_remaining.assign(static_cast<size_t>(_cell_count), 0);
         for (int32_t k = _market_cell_offsets[market];
@@ -852,11 +861,25 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             if (cell < 0 || cell >= _cell_count ||
                 quoted_remaining[cell] <= 0 || order.desired_units <= 0)
                 continue;
-            const int64_t full = full_consumption_subsidy(
-                order, order.desired_units);
-            const int64_t allocated = std::min(
-                full, quoted_remaining[cell]);
-            quoted_remaining[cell] -= allocated;
+            int64_t allocated = 0;
+            if (consumption_tax_active) {
+                const int64_t full = full_consumption_subsidy(
+                    order, order.desired_units);
+                allocated = std::min(full, quoted_remaining[cell]);
+                quoted_remaining[cell] -= allocated;
+            }
+            const int32_t pay = family_purchase_pay_factor_q16(order.slot);
+            if (pay < Q16_ONE && quoted_remaining[cell] > 0) {
+                const int64_t gross = mul_div_sat(
+                    order.desired_units, order.unit_price, GOODS_SCALE, sat);
+                const int64_t family_full = mul_div_sat(
+                    gross, Q16_ONE - pay, Q16_ONE, sat);
+                const int64_t family_alloc = std::min(
+                    family_full, quoted_remaining[cell]);
+                quoted_remaining[cell] -= family_alloc;
+                allocated = saturating_add(allocated, family_alloc, sat);
+            }
+            if (allocated <= 0) continue;
             // Floor the per-unit discount so the quoted order budget is never
             // lower than the net cash ultimately charged at settlement.
             order.quoted_subsidy_per_unit = mul_div_sat(
@@ -1120,7 +1143,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
 
     const auto record_order_settlement = [&](BundleOrder &order) {
         if (order.filled_units <= 0) return;
-        if (!consumption_tax_active) {
+        if (!subsidy_settlement) {
             const int64_t spend = mul_div_sat(
                 order.filled_units, order.unit_price, GOODS_SCALE, sat);
             cohort_spend[order.local_cohort] = saturating_add(
@@ -1156,6 +1179,15 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 positive_tax = saturating_add(positive_tax, transfer, sat);
             else
                 subsidy = saturating_add(subsidy, -transfer, sat);
+        }
+        const int32_t pay = family_purchase_pay_factor_q16(order.slot);
+        if (pay < Q16_ONE && base_spend > 0) {
+            const int64_t family_request = mul_div_sat(
+                base_spend, Q16_ONE - pay, Q16_ONE, sat);
+            const int64_t family_paid = -apply_fiscal_tax(
+                cell, NativeCountryRuntime::TAX_CONSUMPTION,
+                family_request, -100, sat);
+            subsidy = saturating_add(subsidy, family_paid, sat);
         }
         cohort_base_spend[order.local_cohort] = saturating_add(
             cohort_base_spend[order.local_cohort], base_spend, sat);
@@ -1386,7 +1418,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         const int64_t spend = std::min(cohort_spend[local], std::max<int64_t>(
             0, _population.funds[slot] - cohort_working_capital_reserve[local]));
         planned_revenue = saturating_add(planned_revenue,
-            consumption_tax_active ? cohort_base_spend[local] : spend, sat);
+            consumption_tax_active || subsidy_settlement ? cohort_base_spend[local] : spend, sat);
     }
     if (planned_revenue > 0 && living_merchants.empty()) {
         error = "market_revenue_has_no_merchant_owner";
@@ -1415,7 +1447,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             result.cashflows.push_back({_population.handle_for_slot(slot),
                 CASHFLOW_CONSUMPTION_SUBSIDY, subsidy, 0});
         revenue = saturating_add(revenue,
-            consumption_tax_active ? cohort_base_spend[local] : spend, sat);
+            consumption_tax_active || subsidy_settlement ? cohort_base_spend[local] : spend, sat);
     }
     int64_t merchant_population = 0;
     for (const int32_t slot : living_merchants) {

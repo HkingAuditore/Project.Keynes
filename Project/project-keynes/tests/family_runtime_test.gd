@@ -51,6 +51,19 @@ func _run() -> void:
 	_expect("family selectors compile tags and categories to exact dense CSR edges",
 		exact_selector_compile and hunting_building_resolved
 		and hunting_profession_resolved)
+	var score_terms: PackedInt32Array = compiled.get(
+		"family_trait_behavior_score_terms", PackedInt32Array())
+	var condition_offsets: PackedInt32Array = compiled.get(
+		"family_trait_behavior_condition_offsets", PackedInt32Array())
+	var tech_offsets: PackedInt32Array = compiled.get(
+		"family_trait_technology_prerequisite_offsets", PackedInt32Array())
+	var trait_ids: PackedStringArray = compiled.get(
+		"family_trait_ids", PackedStringArray())
+	_expect("family behavior score_term, condition, and technology columns compile",
+		score_terms.size() == behavior_axes.size()
+		and condition_offsets.size() == behavior_axes.size() + 1
+		and tech_offsets.size() == trait_ids.size() + 1
+		and (score_terms.is_empty() or int(score_terms[0]) >= 0))
 	_assert_family_effect_display_copy(compiled)
 	var bad_trait_catalog: Resource = load(
 		"res://data/economy/default_family_traits.tres").duplicate(true)

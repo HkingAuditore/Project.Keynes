@@ -85,8 +85,17 @@ dense ID CSR。建筑、职业、需求、商品和自然资源 profile 可提�
 `satisfactions_q16`，该列进 family state hash 与 PKEC v41。
 
 行为偏好不随威望缩放，只在合法投资、职业迁移和 cohort 消费候选中调整 Q16 分数，不能绕过
-科技、资本、建材、资源、岗位或盈利门槛。商品偏好按家族人口占 cohort 的份额合成，并同时影响
+科技、资本、建材、资源、岗位或盈利门槛。`FamilyBehaviorPreference` 复用 `EffectCondition` IR；
+条件只在 `FAMILY_COMMIT`（以及随后的 CSR 重建）对 `(family, cell)` 求值，失败则该边本轮因子为 1。
+通过的边冻成 family→`(cell, score_term, axis, dense_id)` CSR + Q16，投资/招工/消费热循环只读这张
+表，禁止按候选重跑条件或扫描全部 trait roll。`score_term` 冷编译为 packed 列：候选权重、税率敏感度、
+本地储量分位、`upgrade_tier`、本地热门、职业流动率；这些标量在候选循环里几次 `mul_div_sat`，负向
+流动率必须降低实际迁出人数。乘积帽默认 4×。商品偏好按家族人口占 cohort 的份额合成，并同时影响
 variant 份额和普通需求量；生存需求下限不下降。投资建设持久保存 sponsor family。
+
+核心特性抽取与 FamilyEffect 共用科技前列：`FamilyTraitDefinition.prerequisite_technology_keys`
+在 `assign_core_family_traits` 用 origin/home cell 的 `cell_has_technology` 过滤候选。未解锁特性
+仍可通过附加特性命令授予。改 catalog hash 会拒绝旧档，与现有约定一致。
 
 ## 家族效果目录与执行
 
@@ -97,8 +106,11 @@ variant 份额和普通需求量；生存需求下限不下降。投资建设持
 平衡内容，后续内容包只需追加资源，不需要扩展热循环分支。
 
 Trait 引用在 `EconomyCatalog` 冷编译为稳定 effect ID CSR。Economy 按实际 family/branch/cell
-稀疏建立 `FamilyEffectBinding`，并只发布效果程序声明使用的 metric mask：家族人口/现金 claim、
-分支威望/人口、格温度/降水/短缺/贸易事件/人口。EffectRuntime 按
+稀疏建立 `FamilyEffectBinding`，并只发布效果程序声明使用的 metric mask。dense metric 0–9 已占用
+且不得重排：家族强度/人口/现金 claim、分支威望/人口、格温度/降水/短缺/贸易事件/人口。追加 id 只能
+接在末尾：10 `cell.landform`、11 `cell.essentials_shortage_q16`、12 `branch.is_local_prestige_max`、
+13 `cell.rain_event`、14 `cell.resource_abundance_q16`。发布走既有 branch/cell 反向索引，缺 metric
+读 0。EffectRuntime 按
 `(target_domain,target_handle,target_generation,stack_key_hash)` 建组，确定性执行
 `REPLACE / REFRESH / ADD_STACK / MAX / MIN` 仲裁；同一权威 upsert 幂等，不会把每日协调误当成
 新增 stack 或刷新 duration。
@@ -125,8 +137,18 @@ stack group 都是 transient；权威实例/事务由 PKEF 保存，家族/分�
 威望分档效果在 `FAMILY_COMMIT` 协调到 settlement-cell Economy Modifier bucket 和动态 Trigger
 binding。分支/特性/等级无变化时不更新；降级、特性移除或分支消失立即解绑并清 Trigger 累计。
 建筑完工与跨 cell 国内贸易事实只发布一次，按 `(event_type, cell)` 扇出。免费建筑不扣资金或
-材料但遵守工期、科技、地块和资源预算；人口奖励写显式 `POPULATION_SOURCE` 账本事件。奖励建筑
-使用负 sequence，不能递归计入自己的完成触发。
+材料但遵守工期、科技、地块和资源预算；`i32_1` 非法时回退施工 fact / payload 的 `type_id`
+（好事成双）。人口奖励写显式 `POPULATION_SOURCE` 账本事件。奖励建筑使用负 sequence，不能递归
+计入自己的完成触发。守恒型独立效果走 Economy `EVENT_COMMAND`，禁止把现金/人口/商品注册成
+Modifier stat，也禁止家族第二钱包：
+
+- `family.absorb_anonymous`（opcode 21）：把匿名人口吸收进本家族 membership，总量不变；或 SET
+  家庭规模吸收加成。
+- `family.purchase_discount`（opcode 22）：只对该家族在 cohort 内的需求份额套买方折扣，价差走
+  现有消费补贴/财政 escrow（国库封顶）。无预算则折扣为 0。
+- `SETTLE_FAMILY_EXPEDITION.i32_1>0`：开拓 ACK 后打一条可选 `population_reward`。内置开拓事务把
+  该值放在 Effect payload[3]，避免改 payload[0] 破坏 CLAIM/SETTLE 的 PKEF 相等校验。
+  `family.population_reward` 的 `i32_0=-1` 只把人数冻进家族开拓奖励，不立即铸造人口。
 
 ## 形成与消亡
 
@@ -154,9 +176,12 @@ binding。分支/特性/等级无变化时不更新；降级、特性移除或�
 `family_household_*` 不在该 header 里。
 
 正式新游戏是唯一显式例外：`StarterSettlementBootstrap v3` 为每个首都声明一栋采集营地，原生
-bootstrap 将其两个实际采集者业主直接建立为一个创始家族，并立即重建全部家族 CSR。该操作不
-降低全局形成门槛，不增加人口、资金、商品或建筑数量；测试夹具和普通经济 bootstrap 未提供声明时
-仍从空家族状态开始。
+bootstrap 将其两个实际采集者业主直接建立为一个创始家族，并立即重建全部家族 CSR 与
+`FamilyCellInfluence`。`get_family_branches` 因此在第一日 `FAMILY_COMMIT` 之前就有
+generation-safe handle；账本命令（含 `family.population_reward` 的 `i32_0=-1` 开拓冻结）
+不能等 4 个 epoch 才出现分支句柄。`FAMILY_COMMIT` 在存在 membership 但没有活跃 influence
+行时也会补建。该操作不降低全局形成门槛，不增加人口、资金、商品或建筑数量；测试夹具和普通
+经济 bootstrap 未提供声明时仍从空家族状态开始。
 
 为防止长驻编辑器仍发出 v2 packet，原生 bootstrap 还会从“`forced_named_cells` 中的首都 +
 该地块真实存在的 `gathering_ground`”派生同一声明。仅强制命名、但没有采集营地的测试/普通
@@ -209,8 +234,9 @@ building/market transaction
 3. 对当日新家族再吸收一次依附人口，复核衰退/消亡，压缩边表并重建索引。
 
 热循环只遍历当前建筑格和稀疏关系边。提交后重建以下 transient CSR：family→cohort、
-cohort→membership、family→building、building→ownership、cell→family。CSR 不进入存档或状态哈希，
-恢复后确定性重建。`family_cells_per_slice` 控制形成扫描的 continuation 工作上限；成员与产业边受
+cohort→membership、family→building、building→ownership、cell→family，以及冻结的
+family→`(cell, score_term, axis, id)` 行为因子表。CSR 不进入存档或状态哈希，恢复后确定性重建。
+`family_cells_per_slice` 控制形成扫描的 continuation 工作上限；成员与产业边受
 `family_max_per_cell` 的稀疏上限约束，在冷路径提交点统一归一化和重建 CSR。
 `OFF` 且无历史家族时为常数时间跳过。
 
@@ -244,7 +270,8 @@ binding 与冻结消费/资源因子。FamilyEffect binding 由 trait CSR 和当
 最低验收包括：家族形成门槛、实际业主占岗、职业统计、所有权 CSR、人口/货币/商品守恒、PKEC
 v41 hash round-trip、旧 schema 明确拒绝、特性抽取/命令排序、分支威望滞回、分支满意度门控只挡晋升不挡降级、
 六类目标路由、五类 stack policy、EVENT_ONCE/retire 拒绝重试、精确 selector/stat 校验、
-稀疏 exact-good override、奖励防递归、generation 旧句柄拒绝，以及家族/人物关闭与
+稀疏 exact-good override、奖励防递归、generation 旧句柄拒绝、行为条件冻结 CSR、打分轴、
+科技门、匿名吸收/买方折扣守恒、payload 复制免费建筑，以及家族/人物关闭与
 开启的目标规模性能对比。
 
 ## 维护入口
@@ -252,7 +279,9 @@ v41 hash round-trip、旧 schema 明确拒绝、特性抽取/命令排序、分�
 - 后续开发先加载仓库 Skill：
   [project-keynes-family-runtime](../../.codex/skills/project-keynes-family-runtime/SKILL.md)。
 - 家族行为、重要人物、守恒、职业统计、所有权 CSR 与当前 PKEC 的最小回归入口是
-  `Project/project-keynes/tests/family_runtime_test.gd`。
+  `Project/project-keynes/tests/family_runtime_test.gd`；行为条件、打分轴、科技门与守恒命令
+  见 `family_behavior_effect_runtime_test.gd`、`family_effect_*_test.gd`、
+  `trigger_family_branch_test.gd`。
 - 影响通用经济、税务、国家或调度时，同时加载相应 Economy、Tax、Country 与 Runtime
 Architecture Skill；本页仍是家族模型的项目文档单一事实源。
 

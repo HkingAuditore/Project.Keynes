@@ -275,11 +275,13 @@ public:
         uint64_t expedition_handle, uint32_t expedition_generation,
         int32_t target_cell, uint64_t fire_sequence, std::string &error,
         int64_t *out_transaction_id = nullptr,
-        bool claim_unowned = true);
+        bool claim_unowned = true,
+        int32_t population_reward = 0);
     uint64_t family_colonization_settle_idempotency_key(
         int64_t effect_id, uint32_t expedition_generation,
         uint64_t fire_sequence) const;
     bool family_colonization_includes_claim(int64_t transaction_id) const;
+    int32_t family_colonization_population_reward(int64_t transaction_id) const;
     // Built-in geography transaction used by Economy-owned canal projects.
     // The command payload is deliberately only the project handle; the
     // gameplay adapter resolves the bounded route from EconomyRuntime.
