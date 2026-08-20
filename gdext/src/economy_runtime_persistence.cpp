@@ -37,6 +37,7 @@ Dictionary NativeEconomyRuntime::begin_save(int32_t chunk_bytes) {
         _environment_temperature_30d_q16.size() != cells ||
         _environment_moisture_q16.size() != cells ||
         _environment_plant_available_water_q16.size() != cells ||
+        _environment_precipitation_q16.size() != cells ||
         _environment_snow_q16.size() != cells ||
         _environment_weather_q16.size() != cells ||
         _cell_last_settlement_day.size() != cells ||
@@ -244,6 +245,7 @@ Dictionary NativeEconomyRuntime::begin_restore() {
     _cell_technology_gen.assign(_cell_count, 0);
     _cell_resource_gen.assign(_cell_count, 0);
     _cell_trade_gen.assign(_cell_count, 0);
+    _cell_effect_shortage_q16.assign(_cell_count, 0);
     _fiscal_previous_country_handles.assign(
         static_cast<size_t>(_cell_count), 0);
     _fiscal_previous_requests.assign(
@@ -421,6 +423,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
             _environment_temperature_30d_q16[cell],
             _environment_moisture_q16[cell],
             _environment_plant_available_water_q16[cell],
+            _environment_precipitation_q16[cell],
             _environment_snow_q16[cell],
             _environment_weather_q16[cell],
         };
@@ -1081,6 +1084,10 @@ Dictionary NativeEconomyRuntime::end_restore() {
     }
     rebuild_family_expedition_indices();
     rebuild_family_indices();
+    _family_effect_bindings.clear();
+    _family_effect_binding_by_instance.clear();
+    _family_effect_instances_by_branch.clear();
+    _family_effect_instances_by_cell.clear();
     _family_modifier_bindings.clear();
     for (int32_t branch = 0; branch < static_cast<int32_t>(
              _family_influences.active.size()); ++branch) {

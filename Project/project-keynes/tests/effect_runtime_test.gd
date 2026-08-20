@@ -377,7 +377,7 @@ func _init() -> void:
 
 	var saved: PackedByteArray = ext.capture_effect_state()
 	assert(not saved.is_empty())
-	assert(saved.size() >= 8 and saved.decode_s32(4) == 10, "PKEF v10 header")
+	assert(saved.size() >= 8 and saved.decode_s32(4) == 11, "PKEF v11 header")
 	var truncated := saved.duplicate()
 	truncated.resize(max(0, truncated.size() - 1))
 	var bad_restore: Dictionary = ext.restore_effect_state(truncated)

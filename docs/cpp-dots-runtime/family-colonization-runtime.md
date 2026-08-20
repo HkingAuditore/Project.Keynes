@@ -125,14 +125,14 @@ busy。家族入口进入地图选点模式，Esc/右键退出。
 
 ## 存档与诊断
 
-当前严格版本为 PKCN v11、PKEC v37；PKEF 当前为 v10。科技目录、研究信号、Effect
+当前严格版本为 PKCN v11、PKEC v41；PKEF 当前为 v11。科技目录、研究信号、Effect
 recipe、Trigger 定义或内容绑定摘要变化时，PKCN 以 `catalog_hash_mismatch` 拒绝旧存档。
-完整恢复必须先恢复 PKCN，再恢复 PKEF 与 PKEC，使 PKEC 能交叉验证所有 `SETTLING`
+完整恢复必须先恢复 PKCN 与 PKEF，再恢复 PKEC，使 PKEC 能交叉验证所有 `SETTLING`
 事务。恢复后重建到期堆和活动目标索引。v36 在途队伍 cargo 为空，到达后不落成开工包。
 
 `get_economy_report()` 暴露活动队数、到期堆大小、在途人口、路线查询、载荷拆分
 和跨域提交耗时。核心回归在 `tests/family_colonization_runtime_test.gd`，覆盖冻结
-路线、revision 重验、真实人口/货物托管、O(1) 判重、进度返程、回执、PKEC v37
+路线、revision 重验、真实人口/货物托管、O(1) 判重、进度返程、回执、PKEC v41
 中途恢复，绿地 N≥3 落成采集+商栈、返程退货、已开发格不落成、空库存部分开工包，
 冻结周期内排队的 `SETTLE_FAMILY_EXPEDITION` 能通过 epoch 预检并落地，
 在更高序号格已有建筑时把开工包插入中间格不得打乱守恒，

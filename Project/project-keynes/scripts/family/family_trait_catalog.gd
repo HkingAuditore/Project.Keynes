@@ -18,11 +18,23 @@ const DEFAULT_TRIGGER_CATALOG_PATH := "res://data/triggers/default_trigger_catal
 static func load_default() -> Resource:
 	return ResourceLoader.load(DEFAULT_PATH, "Resource")
 
-
-func compile_native_columns(economy_columns: Dictionary) -> Dictionary:
+func compile_native_columns(economy_columns: Dictionary,
+		known_family_effect_keys: PackedStringArray = PackedStringArray(),
+		known_family_effect_source_kinds: PackedInt32Array = PackedInt32Array()) -> Dictionary:
 	if version <= 0 or core_trait_min < 0 or core_trait_max < core_trait_min:
 		return {"ok": false, "reason": "family_trait_catalog_policy_invalid"}
 	var ordered: Array[Resource] = traits.duplicate()
+	var known_effects := {}
+	if not known_family_effect_source_kinds.is_empty() \
+			and known_family_effect_source_kinds.size() != known_family_effect_keys.size():
+		return {"ok": false, "reason": "family_trait_effect_catalog_shape_invalid"}
+	for effect_index in range(known_family_effect_keys.size()):
+		var effect_key := known_family_effect_keys[effect_index]
+		var stable_key := String(effect_key).strip_edges()
+		if stable_key.is_empty() or known_effects.has(stable_key):
+			return {"ok": false, "reason": "family_trait_effect_catalog_key_invalid"}
+		known_effects[stable_key] = int(known_family_effect_source_kinds[effect_index]) \
+			if not known_family_effect_source_kinds.is_empty() else 0
 	ordered.sort_custom(func(a, b) -> bool:
 		return String(a.key) < String(b.key))
 	var ids := PackedStringArray()
@@ -74,6 +86,8 @@ func compile_native_columns(economy_columns: Dictionary) -> Dictionary:
 	var trigger_offsets := PackedInt32Array([0])
 	var trigger_definition_keys := PackedStringArray()
 	var trigger_reward_targets := PackedInt32Array()
+	var effect_offsets := PackedInt32Array([0])
+	var effect_keys := PackedStringArray()
 	var dynamic_trigger_keys := {}
 	var trigger_reward_by_key := {}
 	var trigger_catalog = ResourceLoader.load(DEFAULT_TRIGGER_CATALOG_PATH, "Resource")
@@ -142,6 +156,20 @@ func compile_native_columns(economy_columns: Dictionary) -> Dictionary:
 				trigger_definition_keys.append(trigger_key)
 			trigger_reward_targets.append(binding.reward_target)
 		trigger_offsets.append(trigger_reward_targets.size())
+		var seen_effect_keys := {}
+		for authored_effect_key in definition.effect_keys:
+			var effect_key := String(authored_effect_key).strip_edges()
+			if effect_key.is_empty() or seen_effect_keys.has(effect_key):
+				return {"ok": false, "reason": "family_trait_effect_key_invalid"}
+			if not known_effects.is_empty() \
+					and not known_effects.has("family.effect.%s" % effect_key):
+				return {"ok": false, "reason": "family_trait_effect_unknown"}
+			if known_effects.has("family.effect.%s" % effect_key) \
+					and int(known_effects["family.effect.%s" % effect_key]) != 0:
+				return {"ok": false, "reason": "family_trait_effect_source_invalid"}
+			seen_effect_keys[effect_key] = true
+			effect_keys.append("family.effect.%s" % effect_key)
+		effect_offsets.append(effect_keys.size())
 
 	var canonical := [version, core_trait_min, core_trait_max, ids, versions, weights,
 		core_eligible, strength_min, strength_max, strength_step,
@@ -149,7 +177,7 @@ func compile_native_columns(economy_columns: Dictionary) -> Dictionary:
 		behavior_offsets, behavior_axes, behavior_selector_kinds, behavior_selector_ids,
 		behavior_factors, modifier_offsets, modifier_keys, modifier_targets,
 		modifier_tier_magnitudes, trigger_offsets, trigger_definition_keys,
-		trigger_reward_targets]
+		trigger_reward_targets, effect_offsets, effect_keys]
 	var catalog_hash := hash(canonical)
 	if catalog_hash == 0:
 		catalog_hash = 1
@@ -183,6 +211,8 @@ func compile_native_columns(economy_columns: Dictionary) -> Dictionary:
 		"family_trait_trigger_offsets": trigger_offsets,
 		"family_trait_trigger_definition_keys_by_tier": trigger_definition_keys,
 		"family_trait_trigger_reward_targets": trigger_reward_targets,
+		"family_trait_effect_offsets": effect_offsets,
+		"family_trait_effect_keys": effect_keys,
 	}
 
 

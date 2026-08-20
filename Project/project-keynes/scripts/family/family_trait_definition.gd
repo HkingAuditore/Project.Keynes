@@ -15,4 +15,5 @@ extends Resource
 @export var behaviors: Array[Resource] = []
 @export var modifiers: Array[Resource] = []
 @export var triggers: Array[Resource] = []
-
+## Stable authoring IDs compiled into the shared Native Effect Runtime.
+@export var effect_keys: PackedStringArray = PackedStringArray()

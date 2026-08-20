@@ -1709,6 +1709,19 @@ bool NativeEconomyRuntime::settle_due_trade_orders(std::string &error) {
                     _trade_orders.line_export_transfers[line]});
             }
             _trade_orders.cargo_delivered[order] = 1;
+            const int32_t source_cell = _trade_orders.sources[order];
+            if (source_cell != destination) {
+                auto increment_trade_fact = [&](int32_t cell) {
+                    if (cell < 0 || cell >= static_cast<int32_t>(
+                            _cell_trade_gen.size()))
+                        return;
+                    if (_cell_trade_gen[static_cast<size_t>(cell)] !=
+                        std::numeric_limits<uint32_t>::max())
+                        ++_cell_trade_gen[static_cast<size_t>(cell)];
+                };
+                increment_trade_fact(source_cell);
+                increment_trade_fact(destination);
+            }
             _trade_settlement_lag_days = std::max<int64_t>(_trade_settlement_lag_days,
                 _sample_day - _trade_orders.arrival_days[order]);
             const bool trace_trade_detail = trace_detail_for_cell(destination) ||

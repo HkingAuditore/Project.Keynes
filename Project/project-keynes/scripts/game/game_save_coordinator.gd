@@ -316,21 +316,21 @@ func _register_providers() -> void:
 		_make_provider(&"environment", 2, PackedStringArray(["environment"]),
 			"_can_environment_provider", "_write_environment_provider",
 			"_restore_environment_provider"),
-		_make_provider(&"pkcm", 1, PackedStringArray(["pkcm"]),
+		_make_provider(&"pkcm", 3, PackedStringArray(["pkcm"]),
 			"_can_modifier_provider", "_write_climate_modifier_provider",
 			"_restore_climate_modifier_provider"),
 		_make_provider(&"world_clock", 1, PackedStringArray(["world_clock"]),
 			"_can_clock_provider", "_write_clock_provider", "_restore_clock_provider"),
 		_make_provider(&"pkcn", 11, PackedStringArray(["pkcn"]),
 			"_can_country_provider", "_write_country_provider", "_restore_country_provider"),
-		# Effect restores before Economy so PKEC v35 can cross-check every
+		# Effect restores before Economy so PKEC v41 can cross-check every
 		# SETTLING expedition transaction against authoritative PKEF state.
-		_make_provider(&"pkef", 9, PackedStringArray(["pkef"]),
+		_make_provider(&"pkef", 11, PackedStringArray(["pkef"]),
 			"_can_effect_provider", "_write_effect_provider",
 			"_restore_effect_provider"),
-		_make_provider(&"pkec", 37, PackedStringArray(["pkec"]),
+		_make_provider(&"pkec", 41, PackedStringArray(["pkec"]),
 			"_can_economy_provider", "_write_economy_provider", "_restore_economy_provider"),
-		_make_provider(&"pkgp", 1, PackedStringArray(["pkgp"]),
+		_make_provider(&"pkgp", 3, PackedStringArray(["pkgp"]),
 			"_can_modifier_provider", "_write_gameplay_modifier_provider",
 			"_restore_gameplay_modifier_provider"),
 		# 视野排在 PKCN 之后：恢复时要先有领土才能重解算可见性。
@@ -341,7 +341,7 @@ func _register_providers() -> void:
 		# must match the payload schema, or list_slots() rejects newly written saves.
 		_make_provider(&"journal", 4, PackedStringArray(["journal"]),
 			"_can_journal_provider", "_write_journal_provider", "_restore_journal_provider"),
-		_make_provider(&"pktr", 5, PackedStringArray(["pktr"]),
+		_make_provider(&"pktr", 6, PackedStringArray(["pktr"]),
 			"_can_trigger_provider", "_write_trigger_provider",
 			"_restore_trigger_provider"),
 		_make_provider(&"pkid", 2, PackedStringArray(["pkid"]),
@@ -398,15 +398,14 @@ func _manifest_compatible(raw_manifest) -> bool:
 			# until after partial session restore.
 			schema_compatible = saved_schema == 11
 		elif provider_id == "pkec":
-			# v37 writes expedition cargo/kit. v36 restores with empty cargo.
-			# v35 restores with support EMA=1 and empty cargo.
-			schema_compatible = saved_schema in [35, 36, 37]
+			# PKEC is exact-version only. Older layouts are never default-filled.
+			schema_compatible = saved_schema == 41
 		elif provider_id == "pktr":
-			schema_compatible = saved_schema == 5
+			schema_compatible = saved_schema == 6
 		elif provider_id == "journal":
 			schema_compatible = saved_schema in [1, 2, 3, 4]
 		elif provider_id == "pkef":
-			schema_compatible = saved_schema in [8, 9]
+			schema_compatible = saved_schema == 11
 		elif provider_id == "pkid":
 			# Legacy saves predate the ideology provider; an absent PKID restores
 			# as an empty ideology state. PKID v1 is readable only for fully

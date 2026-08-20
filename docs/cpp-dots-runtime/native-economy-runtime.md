@@ -1,12 +1,11 @@
 # 原生阶层与本地市场运行时（Market V2 / Price V4）
 
-PKEC v39 是当前 writer：在 v38 锁定市场 N 之上，把生产计划 P∈[5,15] 与投资 I∈[10,30]
+PKEC v41 是当前唯一 writer/reader：保留 v39 引入的生产计划 P∈[5,15] 与投资 I∈[10,30]
 分开锁定，且 I > P。三套周期只在各自完整周期边界重选；选档用经济活格刀数
 （人口>0 ∪ 已建建筑 ∪ 在建，不是全图 cell_count）加上一周期本侧实测毫秒 EMA，
 且该毫秒只在 `aggregate_publish` COMMIT 完成时累计，不恢复 `market_cycle_days=0` 的 50/334 日快进档。
 每天工作集是活格 ∩ 市场桶；`due_cells` 不再等于 `cell_count / N`。
-v38 读档时 P=已存 S（5–30 包络内），并合成 I > P。v37 读档时 N=5、P=已存 plan days。
-v36 可读（空 cargo），v35 可读（EMA=1、空 cargo），更早 schema 拒绝。
+当前 reader 不做隐式迁移；v40 及更早 schema 全部明确拒绝。
 领域 API 与跨域 ACK 契约见[运河运行时](./canal-runtime.md)。
 
 2026-07 的高速合批、认证近似冷却、generation-stamped scratch 和两态
@@ -50,13 +49,12 @@ Ideology 只读上一个 committed buffer，不扫描 cohort。报告字段
 `class_opinion_last_zero_population_rows` 与 `class_opinion_ms` 提供每次 COMMIT
 工作量，累计字段用于长窗口审计。
 
-## PKEC v22 production climate（历史基础，当前由 PKEC v30 持久化）
+## PKEC v22 production climate（历史基础，当前由 PKEC v41 持久化）
 
-PKEC v22 adds frozen 30-day temperature and plant-available water to every cell
-record and four climate diagnostics to every building record. Restore accepts
-v22 only; every older schema returns
-`legacy_climate_production_save_unsupported`. The diagnostics enter state hash
-and restore range validation.
+PKEC v22 introduced frozen 30-day temperature and plant-available water in every
+cell record and four climate diagnostics in every building record. Those fields
+remain in v41, enter the state hash, and participate in restore range validation;
+the current reader accepts only v41.
 
 `ProductionClimateProfile` is compiled by stable ID. Due-cell building prepare
 computes Q16 temperature fit, water fit, and floor/exposure capacity. Employment
@@ -177,10 +175,10 @@ sequence、settled day、稳定结果码及实际两类物资/现金支出；它
 - C++ 按建筑数、周期天数和计划利用率确定性重建稀疏生产投入硬预留。多投入配方先按同一可执行比例缩放，只预留能组成完整配方的数量；缺少任一互补投入时不会继续锁住其他投入。若非生存产出会消耗生存食物，则整套配方让家庭生存清算优先，只能使用清算后的余量。商人目标库存至少覆盖实际预留；居民与国内贸易只能消费/导出 `stock - reserve`。`production_input_reserved`、`production_input_reserve_shortfall` 及 selected-cell/CSV v14 逐商品列用于诊断。缓存不进入 PKEC，可从建筑和市场信号状态重建。
 - 正常商人现金不足时，生产者托底只补足正常目标库存的剩余缺口，不再把全部可储存余货无条件入库；超过目标的余量进入真实 discard sink。被托底的数量仍获得冻结本地零售价 20% 的显式发行货币。`production_output_supported` 与 `producer_support_money_issued` 分开报告，货币审计把后者计入 `_explicit_money_mint`。`cycle_flow` 产出不能跨周期存货，但在边界清零前会先获得同周期低价采购/托底机会，剩余瞬态库存再计入 `cycle_flow_discarded`。
 - 生成测试经济不再使用职业固定人均资金：每个 cohort 获得按当前气候、族群和默认价格计算的 30 日 `survival_household` 生存金；业主追加两周期最低有效输入成本；商人追加本地产出目标库存资金。
-- PKEC v37 是当前 writer/reader：保留 FamilyStore、NotablePersonStore、cohort membership、
+- PKEC v41 是当前唯一 writer/reader：保留 FamilyStore、NotablePersonStore、cohort membership、
   building ownership、Economy Modifier domain、冻结环境、财政与出生余数、家族特性、
-  per-cell influence、运河工程与格承载力 `support_ema`，并追加开拓队 cargo/kit CSR。
-  reader 接受 v35（EMA=1、空 cargo）、v36（空 cargo）与 v37；v34 及更早明确拒绝。
+  per-cell influence、运河工程、格承载力 `support_ema`、七条环境 lane 与开拓队 cargo/kit CSR。
+  reader 不做隐式迁移，v40 及更早明确拒绝。
 - 显赫家族不拆分建筑组或创建第二钱包；成员/所有权采用稀疏边，业主岗位必须由本格同职业家族
   成员实际填充。完整契约见[显赫家族原生运行时](./notable-family-runtime.md)。
 - 重要人物不创建第二人口、钱包或订单；姓名、岗位、建筑、财产与需求均为家族/cohort 已实现结果的
@@ -692,7 +690,7 @@ Inspector 诊断 lane，计入 runtime memory，但不进入 state hash 或 PKEC
 出生率折减先把 composite 按 `satisfaction_birth_reference_q16` 重标定，再把格级 sat
 混进 `K_eff`；cohort 只乘残差，避免把心情乘两次。未解锁物资族不进 surplus 分母。
 贴上 `K_eff` 后出生落到更替。饥饿死亡仍只读 `SAT_DIM_SUBSISTENCE`。
-出生贡献按地块与民族聚合，Q32 小数余数跨周期累计，并由 PKEC v30 持久化；不新增调度阶段。
+出生贡献按地块与民族聚合，Q32 小数余数跨周期累计，并由 PKEC v41 持久化；不新增调度阶段。
 
 建筑基础工资不再预付；生产出售后用 owner 销售后资金统一分配。最终欠薪继续记录在
 `wage_suspended`/unpaid 报告中并取消奖金，但该标记不代表下一轮自动停产。
@@ -701,7 +699,7 @@ Inspector 诊断 lane，计入 runtime memory，但不进入 state hash 或 PKEC
 服务。前两项在基础设施/服务经济落地前作为明确的无家庭需求资本品保留；scientific_instruments
 仍有精密工具生产下游。允许的跨 need 复用仅为 refined_fuel、computers、beverages 和 fur，
 Inspector 会聚合显示。需求/计划变更只改变 catalog hash；旧 hash 的 PKEC 按现有
-`save_catalog_scale_or_capacity_mismatch` 路径拒绝；byte schema 现为 PKEC v39，cadence 为锁定 N/P/I。
+`save_catalog_scale_or_capacity_mismatch` 路径拒绝；byte schema 现为 PKEC v41，cadence 为锁定 N/P/I。
 生成目录遵守 16 needs、每 need 8 variants、每 variant 4 components 的运行时合同；本轮加入
 野味后实际最大 variant 数为 5，最大 component 数仍为 2。聚焦处理量以当前 schema 测试输出为准。
 
@@ -882,7 +880,7 @@ transient. They do not enter PKEC v20 or the state hash. CSV v19 adds the driver
 good, pressure, utilization, sellable, merchant-sold, sell-through, and discard
 columns.
 
-## PKEC v22 rolling settlement (historical foundation, retained by PKEC v30)
+## PKEC v22 rolling settlement (historical foundation, retained by PKEC v41)
 
 The production runtime no longer waits for a global epoch. Stable cell phase is
 `cell_id % 5`; simulation day `d` commits phase `d % 5` with `dt=5`. Bounded

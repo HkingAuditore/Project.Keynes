@@ -110,6 +110,19 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_families.origin_ethnicity); cap(_families.decline_reviews);
     cap(_families.flags); cap(_families.free_indices);
     cap(_family_memberships); cap(_family_ownerships);
+    cap(_family_traits); cap(_family_trait_commands);
+    cap(_family_modifier_bindings); cap(_family_trigger_bindings);
+    cap(_family_effect_bindings);
+    for (const FamilyEffectBinding &binding : _family_effect_bindings)
+        bytes += static_cast<int64_t>(binding.definition_key.capacity());
+    bytes += static_cast<int64_t>(_family_effect_binding_by_instance.size()) *
+        static_cast<int64_t>(sizeof(int64_t) + sizeof(size_t));
+    for (const auto &entry : _family_effect_instances_by_branch)
+        bytes += static_cast<int64_t>(sizeof(entry.first) +
+            entry.second.capacity() * sizeof(int64_t));
+    for (const auto &entry : _family_effect_instances_by_cell)
+        bytes += static_cast<int64_t>(sizeof(entry.first) +
+            entry.second.capacity() * sizeof(int64_t));
     cap(_family_member_offsets); cap(_family_member_edge_indices);
     cap(_family_owned_offsets); cap(_family_owned_edge_indices);
     cap(_family_cohort_offsets); cap(_family_cohort_edge_indices);
@@ -165,6 +178,7 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_market.last_shortage_q16); cap(_market.cell_to_market);
     cap(_environment_temperature_q16); cap(_environment_temperature_30d_q16);
     cap(_environment_moisture_q16); cap(_environment_plant_available_water_q16);
+    cap(_environment_precipitation_q16);
     cap(_environment_snow_q16); cap(_environment_weather_q16);
     cap(_audit_shadow_population); cap(_audit_shadow_funds);
     cap(_audit_shadow_market_stock);
@@ -194,8 +208,12 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_cell_last_settlement_day); cap(_cell_settlement_generation);
     cap(_cell_price_stock_gen); cap(_cell_owner_cash_gen); cap(_cell_population_gen);
     cap(_cell_building_structure_gen); cap(_cell_technology_gen);
-    cap(_cell_resource_gen); cap(_cell_trade_gen);
+    cap(_cell_resource_gen); cap(_cell_trade_gen); cap(_cell_effect_shortage_q16);
     cap(_epoch_cell_country); cap(_epoch_cell_visible); cap(_epoch_country_technologies);
+    cap(_city_output_shared_goods_q16); cap(_city_output_cell_offsets);
+    cap(_city_output_good_indices); cap(_city_output_factors_q16);
+    cap(_city_output_scope_cells_scratch);
+    cap(_city_output_scope_stat_ids_scratch);
     cap(_epoch_cell_compiled_tax_policy);
     cap(_epoch_cell_active_tax_mask);
     cap(_epoch_compiled_cell_tax_policies);
@@ -693,6 +711,25 @@ Dictionary NativeEconomyRuntime::compact_report() const {
         _investment_gate_capital_type_skips;
     out["building_factor_cache_hits"] = _building_factor_cache_hits;
     out["building_factor_cache_misses"] = _building_factor_cache_misses;
+    out["city_good_output_shared_count"] = static_cast<int64_t>(
+        _city_output_shared_goods_q16.size());
+    out["city_good_output_non_neutral_shared_count"] = static_cast<int64_t>(
+        std::count_if(_city_output_shared_goods_q16.begin(),
+            _city_output_shared_goods_q16.end(),
+            [](int32_t value) { return value != Q16_ONE; }));
+    out["city_good_output_override_count"] = static_cast<int64_t>(
+        _city_output_good_indices.size());
+    int64_t city_good_output_override_cells = 0;
+    for (size_t cell = 0; cell + 1 < _city_output_cell_offsets.size(); ++cell)
+        if (_city_output_cell_offsets[cell] != _city_output_cell_offsets[cell + 1])
+            ++city_good_output_override_cells;
+    out["city_good_output_override_cell_count"] =
+        city_good_output_override_cells;
+    out["city_good_output_cache_bytes"] = static_cast<int64_t>(
+        _city_output_shared_goods_q16.capacity() * sizeof(int32_t) +
+        _city_output_cell_offsets.capacity() * sizeof(int32_t) +
+        _city_output_good_indices.capacity() * sizeof(int32_t) +
+        _city_output_factors_q16.capacity() * sizeof(int32_t));
     out["cell_tax_compiled_policy_count"] = static_cast<int64_t>(
         _epoch_compiled_cell_tax_policies.empty()
             ? 0 : _epoch_compiled_cell_tax_policies.size() - 1);
@@ -1573,6 +1610,25 @@ Dictionary NativeEconomyRuntime::report() const {
     out["person_jobs_bound"] = _person_jobs_bound;
     out["person_need_edges_processed"] = _person_need_edges_processed;
     out["memory_bytes"] = memory_bytes();
+    out["city_good_output_shared_count"] = static_cast<int64_t>(
+        _city_output_shared_goods_q16.size());
+    out["city_good_output_non_neutral_shared_count"] = static_cast<int64_t>(
+        std::count_if(_city_output_shared_goods_q16.begin(),
+            _city_output_shared_goods_q16.end(),
+            [](int32_t value) { return value != Q16_ONE; }));
+    out["city_good_output_override_count"] = static_cast<int64_t>(
+        _city_output_good_indices.size());
+    int64_t city_good_output_override_cells = 0;
+    for (size_t cell = 0; cell + 1 < _city_output_cell_offsets.size(); ++cell)
+        if (_city_output_cell_offsets[cell] != _city_output_cell_offsets[cell + 1])
+            ++city_good_output_override_cells;
+    out["city_good_output_override_cell_count"] =
+        city_good_output_override_cells;
+    out["city_good_output_cache_bytes"] = static_cast<int64_t>(
+        _city_output_shared_goods_q16.capacity() * sizeof(int32_t) +
+        _city_output_cell_offsets.capacity() * sizeof(int32_t) +
+        _city_output_good_indices.capacity() * sizeof(int32_t) +
+        _city_output_factors_q16.capacity() * sizeof(int32_t));
     out["canal_next_project_id"] = static_cast<int64_t>(_next_canal_project_id);
     out["cohort_count"] = _population.active_count;
     out["market_count"] = _market.market_count;

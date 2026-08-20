@@ -32,10 +32,10 @@ SoA staging、稀疏 cell delta、事件和 cursor 保留在 C++，通过真实�
 `TRANSFER_TERRITORY` 批次，使用直接稀疏发布快路径；混合命令或重复 cell 仍走通用 staging
 delta 的完整预检。纯领土批次不会复制其不可能修改的科技和国库矩阵。
 
-## PKCN v11 / PKEF v10 / PKTR v5 / PKID v3 / PKEC v37
+## PKCN v11 / PKEF v11 / PKTR v6 / PKID v3 / PKEC v41
 
 PKCN v11 保存时代奖励的最小 plan 引用和状态，完整 Alternative Offer Plan 位于
-PKEF v10。恢复先 PKCN 后 PKEF，并执行双向一致性审计；旧 PKCN 不做迁移。
+PKEF v11。恢复先 PKCN 后 PKEF，并执行双向一致性审计；旧 PKCN 不做迁移。
 
 PKCN v5 adds country-owned research-signal evidence. Permanent discoveries are
 stored as a dense `country × signal` bitset; observed `(signal, cell)` pairs and
@@ -44,17 +44,17 @@ is idempotent per country/signal/cell and is committed through the normal countr
 command barrier. The static signal catalog and its stable IDs participate in the
 country catalog hash, so v4 and older PKCN streams are explicitly rejected.
 
-当前 writer 写出 PKCN v11 与 PKEC v37。PKCN v11 在国家研究、研究信号、全国税务政策、
+当前 writer 写出 PKCN v11 与 PKEC v41。PKCN v11 在国家研究、研究信号、全国税务政策、
 规范化稀疏地块税务政策和
 Country Modifier 状态之外，持久化原生 Country Effect ingress 的 prepared/committed
-结果与命令幂等记录以及无主领土 claim；PKEC v37 在既有经济、家族、建筑身份、生产气候状态和
+结果与命令幂等记录以及无主领土 claim；PKEC v41 在既有经济、家族、建筑身份、生产气候状态和
 support EMA 之外，持久化开拓队 cargo/kit CSR 以及原生 Economy Effect ingress 的待处理结果与幂等证据。恢复后以相同 Effect
-command idempotency key 重投只会补齐 ACK，不会重复授予。reader 接受 PKEC v35（support EMA=1、空 cargo）、v36（空 cargo）与 v37；PKCN 的任一旧版本与 catalog mismatch 均明确返回 `catalog_hash_mismatch`。科技 catalog
+command idempotency key 重投只会补齐 ACK，不会重复授予。reader 只接受 PKEC v41；v40 及更早版本均明确拒绝。PKCN 的任一旧版本与 catalog mismatch 均明确返回 `catalog_hash_mismatch`。科技 catalog
 identity 同时覆盖显式 Effect recipe/Modifier term IR，并混入 Trigger 定义和全部 Good、
-生产方式、Resource 绑定摘要。恢复仍必须先 PKCN 后 PKEC；
+生产方式、Resource 绑定摘要。恢复必须先完成 PKCN 与 PKEF，再恢复 PKEC；
 地块税务编译缓存不持久化，由 PKEC 恢复后的下一个经济 epoch 重建。
 
-PKEF v10 与 PKTR v5 分别严格验证 Effect program/recipe hash 和 Trigger definition hash；
+PKEF v11 与 PKTR v6 分别严格验证 Effect program/recipe hash 和 Trigger definition hash；
 旧 schema 或 hash 变化同样返回 `catalog_hash_mismatch`。完整 PKSV 因而不会用新科技目录
 恢复旧研究、突破累计或待 ACK 事务。
 

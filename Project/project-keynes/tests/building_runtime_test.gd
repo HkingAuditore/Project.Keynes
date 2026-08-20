@@ -428,7 +428,7 @@ func _run() -> void:
 	_expect("building PKCN save completes", bool(ext.end_country_save().get("ok", false)))
 	var chunks: Array[PackedByteArray] = []
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
-	_expect("building v39 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 39)
+	_expect("building v41 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 41)
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty(): break
@@ -3373,7 +3373,8 @@ func _new_ext(catalog: Dictionary, cell_count: int = 1) -> Object:
 	scalar.resize(cell_count)
 	scalar.fill(0.5)
 	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
-			&"cell_plant_available_water", &"cell_snow_cover", &"cell_weather_intensity", &"cell_elevation"]:
+			&"cell_plant_available_water", &"cell_weather_precip", &"cell_snow_cover",
+			&"cell_weather_intensity", &"cell_elevation"]:
 		var sid: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(sid, 0, scalar)
 	var zero_u8 := PackedByteArray()

@@ -1,12 +1,29 @@
 # 经济存档、catalog migration 与内容扩展 SOP
 
-## PKEC v40（当前 writer）
+## PKEC v41（当前 writer/reader）
 
-FamilyStore 保存不可变 `origin_cell`、`culture_group_id` 与 `split_sequence`，并把家族分裂阈值
-100 写入 policy header。v39 存档显式迁移为 `origin_cell=home_cell`、按 `origin_ethnicity` 映射
-文化组、`split_sequence=0`；该起源地是兼容性重建，无法还原旧版本真实历史。
+PKEC v41 是唯一可写、可读 byte schema。它保留 v40 的 FamilyStore
+`origin_cell`、`culture_group_id`、`split_sequence` 与固定分裂阈值 100，并在 cell record 中加入
+`precipitation_q16`。cell record 为 122 bytes；七条冻结环境 lane 及 restore hash 顺序固定为：
 
-## PKEC v37（当前 writer）
+1. temperature
+2. temperature_30d
+3. moisture
+4. plant_available_water
+5. precipitation
+6. snow
+7. weather_intensity
+
+缺少降水、记录尺寸不符、环境 hash 不符、catalog/policy identity 不符或任一 section 截断都会
+原子拒绝恢复。当前 reader 不为 v40 及更早版本填默认值，也不执行隐式 family/Modifier/环境迁移。
+跨版本支持必须由离线、显式、带守恒审计的迁移器产出新的 v41 stream。
+
+## PKEC v40（历史 writer）
+
+v40 首次保存不可变 `origin_cell`、`culture_group_id` 与 `split_sequence`，并把家族分裂阈值
+100 写入 policy header。该布局没有降水 lane，当前 v41 reader 明确拒绝。
+
+## PKEC v37（历史 writer）
 
 v37 在 v36 的家族开拓队记录末尾追加开工包货物 CSR 与冻结建筑计划：每条
 expedition 在 payload 之后写 `cargo_count` 行（`good_id:i32`、`quantity:i64`、
@@ -15,8 +32,8 @@ expedition 在 payload 之后写 `cargo_count` 行（`good_id:i32`、`quantity:i
 到达消耗 construction cargo 并立刻插入家族所有的已建成组，审计记入
 `construction_goods_consumed`。在途货物进入 `AuditTotals.expedition_goods` 与
 `state_hash`。v36 在途队伍按空 cargo/kit 迁移，到达行为与无开工包时相同。
-`game_save_coordinator.gd` 的 `pkec` provider schema 为 37，兼容读取
-`[35, 36, 37]`。v35 仍缺省 EMA=1 且 cargo 为空。开拓合同见
+当前 `game_save_coordinator.gd` 的 `pkec` provider schema 为 41，不再宣称兼容
+`[35, 36, 37]`。开拓合同见
 [家族远程开拓运行时](./family-colonization-runtime.md)。
 
 ## PKEC v36（历史 writer）
@@ -24,8 +41,7 @@ expedition 在 payload 之后写 `cargo_count` 行（`good_id:i32`、`quantity:i
 v36 在 v35 的 cell 记录末尾追加 `support_ema_q16`（i32）：这是物资族盈余与阶层满意度
 混合因子的慢 EMA（alpha ≈ 1/64 每日），生育读 EMA 以免单期丰收/歉收抖动。
 `K_geo`、各族 cover、`K_eff` 都是派生诊断，不进存档、不进 `state_hash`。
-v35 仍可读取，缺省 EMA=1；v34 及更早继续拒绝。当前 reader 把 v36 在途开拓队
-当作 `cargo_count=0`。
+这些默认值只描述当年的 v36 reader；当前 v41 reader 不读取 v35/v36。
 
 格承载力三项混合 `K_eff = K_geo × EMA(mix(surplus)×mix(sat_cell))` 的公式见
 [定点账本公式](./economy-fixed-point-ledger-formulas.md) 与
@@ -37,7 +53,7 @@ v35 在 v34 的运河 section 之后固定当前分组建材、ACTIVE/SUSPENDED_
 停产清算诊断。header 保存报价/项目数、quote/project/receipt 的 next-id，以及当前建筑
 目录契约。v34 及更早版本不再读取或迁移；建筑目录和建材语义变化使旧存档明确不兼容。
 详见[运河运行时](./canal-runtime.md)。
-当前 reader 接受 v35（EMA 填 1、空 cargo）、v36（空 cargo）与 v37。
+当前 v41 reader 不接受 v35、v36 或 v37。
 
 ## 流式格式
 
@@ -64,9 +80,8 @@ PKEC v30 保留 v29 的全部 payload 与 section 集合（END 仍为 23），�
 - `SAVE_SECTION_CELLS` 追加已发布的社会压力等级，避免重载后重放已发过的等级跨越事件。
 
 restore 校验每个维度值与 `worst_dimension_id` 的取值范围，越界即拒绝整个存档。全部新列
-进 `state_hash`；need 分档/权重与 signature 阶层权重列进 `catalog_hash`。当前 reader
-**只接受 v30**；v29 及更早统一返回 `economy_save_v29_or_earlier_unsupported`，
-不提供隐式空状态迁移。`game_save_coordinator.gd` 的 `pkec` provider schema 同步为 30。
+进 `state_hash`；need 分档/权重与 signature 阶层权重列进 `catalog_hash`。上述“只接受 v30”
+是历史 reader 行为；当前 provider/reader 只接受 v41。
 列语义见[综合满意度运行时](./satisfaction-runtime.md)。
 
 ## PKEC v29（历史 writer）
@@ -103,7 +118,7 @@ rolling phase. Its building record adds four signed i64 diagnostics immediately
 after total capacity: temperature fit, water fit, climate capacity, and
 climate-lost output.
 
-The six environment columns share a recomputed restore hash. Fit and capacity
+The historical six environment columns share a recomputed restore hash. Fit and capacity
 must be in `[0,Q16_ONE]`; climate-lost output must be nonnegative. The four
 building diagnostics enter the authoritative state hash. Truncated records,
 invalid ranges, or an environment hash mismatch fail restore and the target does
@@ -116,7 +131,7 @@ production migration.
 
 历史 v16 在建筑记录中加入聚合商人债务本金/溢价、期限、逾期周期、恢复失败审查数、三态运行状态和
 上一期自产生活价值；待建记录保存本金、溢价和期限。上述字段全部进入状态哈希、合法性检查、
-内存统计和选中格快照。当前 reader 的兼容范围以上述 v18-v20 规则为准。
+内存统计和选中格快照。该兼容范围仅描述历史 reader；当前 v41 reader 不接受这些 schema。
 
 section 顺序：
 
@@ -150,7 +165,7 @@ restore 要先配置并完整恢复 PKCN v4，再用当前资源 catalog 调 `co
 - page next/cell、唯一 head、无环、无不可达页
 - active count、generation、population/funds、signature range
 - 同 cell signature 唯一
-- 一地块一市场恒等映射、stock/price/EMA/shortage range、六列环境 snapshot/hash
+- 一地块一市场恒等映射、stock/price/EMA/shortage range、七列环境 snapshot/hash（含 precipitation）
 - 建筑温度 fit、水分 fit、气候能力范围与非负气候减产量
 - pending command opcode、handle generation 和 target range
 - 已恢复 PKCN 的 schema、generation 和 state hash
@@ -160,9 +175,10 @@ restore 要先配置并完整恢复 PKCN v4，再用当前资源 catalog 调 `co
 
 通过后重建 committed summary；`get_economy_state_hash()` 应与保存前一致。
 
-当前写出 schema 为 PKEC v31，并与 PKCN v7 交叉绑定。PKEC v30 及更早版本按当前兼容表处理；后文旧版本章节
-只记录历史格式演进，不代表当前 reader 仍接受这些版本。拓扑和未完成规划从不存档，加载后重建；联合存档
-只允许在国家命令图 idle 且经济位于 committed boundary 时开始。
+当前写出 schema 为 PKEC v41，并与 PKCN v11、PKEF v11 交叉绑定。PKEC v40 及更早版本全部拒绝；
+后文旧版本章节只记录历史格式演进，不代表当前 reader 仍接受。拓扑、FamilyEffect binding、stack
+group、selector/CSR、exact-good override cache 和未完成规划均为派生态，加载后重建；联合存档只允许在
+国家/Effect 命令图 idle 且经济位于 committed boundary 时开始。
 
 ## catalog 身份
 
@@ -170,7 +186,7 @@ restore 要先配置并完整恢复 PKCN v4，再用当前资源 catalog 调 `co
 排序，canonical columns 经 SHA-256 截取为正 `catalog_hash`。移动/重命名 `.tres`
 文件而不改 stable ID 不影响索引。
 
-当前 PKEC v31 与 PKCN v7 要求 save 的稳定 ID 表（含 technology IDs）与当前 catalog 完全一致，
+当前 PKEC v41 与 PKCN v11 要求 save 的稳定 ID 表（含 technology IDs）与当前 catalog 完全一致，
 并要求姓氏 `family_catalog_hash`、人物 `person_catalog_hash` 和特性
 `family_trait_catalog_hash` 一致。不存在当前 reader 可用的 append-only 迁移例外。
 本轮明确不提供旧 187-building/152-good 目录迁移，旧存档按现有 catalog mismatch 路径拒绝。

@@ -196,6 +196,8 @@ func _run() -> int:
 	var start_report: Dictionary = generator.gameplay_start_report() \
 		if generator.has_method("gameplay_start_report") else {}
 	var economy_report: Dictionary = generator.get_economy_report()
+	var effect_report: Dictionary = generator.get_effect_report() \
+		if generator.has_method("get_effect_report") else {}
 	var country_report: Dictionary = country.report() if country != null else {}
 	var economy_configured: bool = economy != null and economy.is_configured() \
 		and bool(economy_report.get("configured", false))
@@ -265,6 +267,8 @@ func _run() -> int:
 					or int(economy_report.get("money_error", 0)) != 0 \
 					or int(economy_report.get("goods_error", 0)) != 0:
 				ledger_failures += 1
+		if generator != null and generator.has_method("get_effect_report"):
+			effect_report = generator.get_effect_report()
 		if fatal:
 			push_error("[headless-perf] fatal economy report at day %d" % day)
 			break
@@ -277,12 +281,28 @@ func _run() -> int:
 	var rows_ok := rows == expected_rows
 	var tariff_totals := _tariff_totals(country, country_handles)
 	var trade_totals := _trade_totals(economy, country_handles)
-	print("[headless-perf/result] label=%s days=%d speed=%.3f seed=%d map=%dx%d formal_start=%s trade_scenario=%s foreign_count=%d import_tariff_rate=%d export_tariff_rate=%d population_scale=%d saved_setup=%s economy_configured=%s country_count=%d population=%d generation_ms=%.1f run_ms=%.1f barrier_pulses=%d ledger_failures=%d fatal=%s trade_orders_dispatched=%d trade_orders_arrived=%d trade_orders_cumulative=%d trade_base_cumulative=%d trade_route_expansions=%d trade_tariff_lanes=%d trade_country_goods=%d trade_country_partners=%d tariff_collected=%d tariff_subsidy_paid=%d economy_memory_bytes=%d rows=%d expected_rows=%d path=%s" % [
+	print("[headless-perf/result] label=%s days=%d speed=%.3f seed=%d map=%dx%d formal_start=%s trade_scenario=%s foreign_count=%d import_tariff_rate=%d export_tariff_rate=%d population_scale=%d saved_setup=%s economy_configured=%s country_count=%d population=%d generation_ms=%.1f run_ms=%.1f barrier_pulses=%d ledger_failures=%d fatal=%s population_error=%d money_error=%d goods_error=%d family_count=%d family_branch_count=%d family_trait_roll_count=%d effect_instances=%d family_effect_stack_groups=%d family_effect_group_members=%d effect_metric_slab_bytes=%d effect_instance_storage_bytes=%d city_good_output_shared_count=%d city_good_output_non_neutral_shared_count=%d city_good_output_override_count=%d city_good_output_override_cell_count=%d city_good_output_cache_bytes=%d trade_orders_dispatched=%d trade_orders_arrived=%d trade_orders_cumulative=%d trade_base_cumulative=%d trade_route_expansions=%d trade_tariff_lanes=%d trade_country_goods=%d trade_country_partners=%d tariff_collected=%d tariff_subsidy_paid=%d economy_memory_bytes=%d rows=%d expected_rows=%d path=%s" % [
 		label, days, speed, actual_seed, actual_width, actual_height,
 		str(not synthetic_test_economy), str(trade_scenario), foreign_count, import_tariff_rate,
 		export_tariff_rate, population_scale, str(use_saved_setup),
 		str(economy_configured), country_count, opening_population,
 		generation_ms, run_ms, barrier_pulses, ledger_failures, str(fatal),
+		int(economy_report.get("population_error", 0)),
+		int(economy_report.get("money_error", 0)),
+		int(economy_report.get("goods_error", 0)),
+		int(economy_report.get("family_count", 0)),
+		int(economy_report.get("family_branch_count", 0)),
+		int(economy_report.get("family_trait_roll_count", 0)),
+		int(effect_report.get("instances", 0)),
+		int(effect_report.get("family_effect_stack_groups", 0)),
+		int(effect_report.get("family_effect_group_members", 0)),
+		int(effect_report.get("metric_slab_bytes", 0)),
+		int(effect_report.get("instance_storage_bytes", 0)),
+		int(economy_report.get("city_good_output_shared_count", 0)),
+		int(economy_report.get("city_good_output_non_neutral_shared_count", 0)),
+		int(economy_report.get("city_good_output_override_count", 0)),
+		int(economy_report.get("city_good_output_override_cell_count", 0)),
+		int(economy_report.get("city_good_output_cache_bytes", 0)),
 		int(economy_report.get("trade_orders_dispatched", 0)),
 		int(economy_report.get("trade_orders_arrived", 0)),
 		int(trade_totals.get("orders", 0)),

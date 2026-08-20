@@ -31,6 +31,7 @@ Dictionary DCWorldExt::configure_modifiers(const Dictionary &catalog,
     if (_modifier_runtime == nullptr) _modifier_runtime = new ModifierRuntime();
     ModifierRuntime *runtime = runtime_from(_modifier_runtime);
     runtime->attach_country_runtime(static_cast<NativeCountryRuntime *>(_country_runtime));
+    runtime->attach_economy_runtime(static_cast<NativeEconomyRuntime *>(_economy_runtime));
     if (_country_runtime != nullptr)
         static_cast<NativeCountryRuntime *>(_country_runtime)->attach_modifier_runtime(runtime);
     if (_economy_runtime != nullptr)

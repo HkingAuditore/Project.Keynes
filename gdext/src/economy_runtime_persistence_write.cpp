@@ -230,7 +230,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                                static_cast<uint32_t>(_save.market_cursor - begin), payload);
     }
     if (_save.section == SAVE_SECTION_CELLS) {
-        const int32_t record_bytes = 118 +
+        const int32_t record_bytes = 122 +
             static_cast<int32_t>(_ethnicity_ids.size()) * 8;
         const int32_t max_records = std::max(1, (budget - 16) / record_bytes);
         const int32_t end = std::min(_cell_count, _save.cell_cursor + max_records);
@@ -243,6 +243,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             append_le<int32_t>(payload, _environment_temperature_30d_q16[_save.cell_cursor]);
             append_le<int32_t>(payload, _environment_moisture_q16[_save.cell_cursor]);
             append_le<int32_t>(payload, _environment_plant_available_water_q16[_save.cell_cursor]);
+            append_le<int32_t>(payload, _environment_precipitation_q16[_save.cell_cursor]);
             append_le<int32_t>(payload, _environment_snow_q16[_save.cell_cursor]);
             append_le<int32_t>(payload, _environment_weather_q16[_save.cell_cursor]);
             append_le<int64_t>(payload, _cell_last_settlement_day[_save.cell_cursor]);

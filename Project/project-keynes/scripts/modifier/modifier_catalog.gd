@@ -118,10 +118,13 @@ func compile_native_catalog() -> Dictionary:
 	# the cold catalog boundary. Runtime consumers resolve them to dense IDs and
 	# only read frozen POD factors in hot loops.
 	var economy_factor_groups := [
-		["economy.city.need.%s.consumption_factor", economy.need_ids],
-		["economy.city.good.%s.consumption_factor", economy.good_ids],
+		["economy.city.need.%s.consumption_factor", economy.need_ids, 4.0],
+		["economy.city.good.%s.consumption_factor", economy.good_ids, 4.0],
+		["economy.city.good.%s.output_factor", economy.good_ids, 16.0],
+		["economy.city.building.%s.output_factor",
+			economy.get("building_type_ids", PackedStringArray()), 16.0],
 		["economy.city.resource.%s.regen_factor",
-			economy.get("building_resource_ids", PackedStringArray())],
+			economy.get("building_resource_ids", PackedStringArray()), 4.0],
 	]
 	for group in economy_factor_groups:
 		for item_id in group[1]:
@@ -132,7 +135,7 @@ func compile_native_catalog() -> Dictionary:
 			out.stat_keys.append(String(factor_key))
 			out.stat_domains.append(2)
 			out.stat_min_values.append(0.0)
-			out.stat_max_values.append(4.0)
+			out.stat_max_values.append(float(group[2]))
 			out.stat_persistable.append(1)
 			stat_domains_by_id.append(2)
 			stat_allowed_operations_by_id.append(15)

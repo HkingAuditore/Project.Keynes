@@ -46,7 +46,9 @@ public:
     // 39: plan P (5-15) and investment I (10-30) lock separately, with I > P.
     // v38 restores P from saved S (clamped to 15) and synthesizes I > P.
     // v37 restores as N=5 and P from saved plan days.
-    static constexpr int32_t SCHEMA_VERSION = 40;
+    // 41: family-effect bindings are catalog-owned native programs. Older
+    // economy saves are intentionally incompatible.
+    static constexpr int32_t SCHEMA_VERSION = 41;
     static constexpr uint32_t BUILDING_KIT_ROLE_TRADE = 1u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CONSTRUCTION = 2u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CLOTHING_INPUT = 4u;
@@ -159,6 +161,7 @@ public:
     void attach_modifier_runtime(ModifierRuntime *runtime) { _modifier_runtime = runtime; }
     void attach_effect_runtime(EffectRuntime *runtime) { _effect_runtime = runtime; }
     void attach_trigger_runtime(TriggerRuntime *runtime) { _trigger_runtime = runtime; }
+    bool valid_family_effect_entity_handle(uint64_t handle) const;
     bool country_restore_allowed() const {
         return !_bootstrapped && !_save.active && !_restore.active;
     }
@@ -198,7 +201,9 @@ public:
     godot::Dictionary run_slice_compact(const godot::Dictionary &ctx);
     bool capture_environment(int64_t day_index, const float *temperature,
                              const float *temperature_30d, const float *moisture,
-                             const float *plant_available_water, const float *snow_cover,
+                             const float *plant_available_water,
+                             const float *precipitation,
+                             const float *snow_cover,
                              const float *weather_intensity, int32_t count,
                              std::string &error);
     bool needs_environment_capture(int64_t day_index) const {
@@ -886,6 +891,16 @@ private:
         uint8_t core = 0;
     };
 
+    // Compiled family-local behavior factors. This transient CSR is rebuilt
+    // only at FAMILY_COMMIT/restore boundaries; consumption, investment and
+    // career hot loops never scan the global trait roll table.
+    struct FamilyBehaviorFactorRow {
+        int32_t axis = 0;
+        int32_t selector_kind = 0;
+        int32_t selector_id = 0;
+        int32_t factor_q16 = Q16_ONE;
+    };
+
     struct FamilyCellInfluenceStore {
         std::vector<uint8_t> active;
         std::vector<uint32_t> generation;
@@ -937,6 +952,18 @@ private:
         uint64_t branch_handle = 0;
         std::string definition_key;
         int32_t reward_target = 0;
+    };
+
+    struct FamilyEffectBinding {
+        uint64_t branch_handle = 0;
+        std::string definition_key;
+        int32_t strength_q16 = 0;
+        int64_t instance_id = 0;
+        uint32_t generation = 0;
+        int32_t target_domain = 0;
+        uint64_t target_handle = 0;
+        uint32_t target_generation = 0;
+        uint64_t metric_mask = 0;
     };
 
     enum FamilyExpeditionState : uint8_t {
@@ -3247,8 +3274,16 @@ private:
     std::vector<FamilyMembershipEdge> _family_memberships;
     std::vector<FamilyBuildingOwnership> _family_ownerships;
     std::vector<FamilyTraitRoll> _family_traits;
+    std::vector<int32_t> _family_behavior_factor_offsets;
+    std::vector<FamilyBehaviorFactorRow> _family_behavior_factor_rows;
     std::vector<FamilyTraitCommand> _family_trait_commands;
     std::vector<FamilyModifierBinding> _family_modifier_bindings;
+    std::vector<FamilyEffectBinding> _family_effect_bindings;
+    std::unordered_map<int64_t, size_t> _family_effect_binding_by_instance;
+    std::unordered_map<uint64_t, std::vector<int64_t>>
+        _family_effect_instances_by_branch;
+    std::unordered_map<int32_t, std::vector<int64_t>>
+        _family_effect_instances_by_cell;
     std::vector<FamilyTriggerBinding> _family_trigger_bindings;
     std::vector<PersonNeedState> _person_needs;
     // Set when a retirement leaves need rows behind. Compaction is deferred to
@@ -3334,6 +3369,7 @@ private:
     std::vector<uint32_t> _cell_technology_gen;
     std::vector<uint32_t> _cell_resource_gen;
     std::vector<uint32_t> _cell_trade_gen;
+    std::vector<int32_t> _cell_effect_shortage_q16;
     // Transaction worksets are deterministic, sorted and never persisted.
     std::vector<int32_t> _epoch_market_ids;
     std::vector<int64_t> _epoch_market_work_weights;
@@ -3390,6 +3426,7 @@ private:
         int64_t landform_sector_factor_q16 = 0;
         uint64_t country_handle = 0;
         uint64_t mod_version = 0;
+        uint64_t exact_building_mod_version = 0;
         int32_t cell = -1;
         int32_t type_id = -1;
         int32_t owner_signature_id = -1;
@@ -3591,6 +3628,7 @@ private:
     std::vector<int32_t> _environment_temperature_30d_q16;
     std::vector<int32_t> _environment_moisture_q16;
     std::vector<int32_t> _environment_plant_available_water_q16;
+    std::vector<int32_t> _environment_precipitation_q16;
     std::vector<int32_t> _environment_snow_q16;
     std::vector<int32_t> _environment_weather_q16;
     std::vector<int32_t> _building_elevation_q16;
@@ -3775,6 +3813,8 @@ private:
     int32_t _city_consumption_stat_id = -1;
     std::vector<int32_t> _city_need_consumption_stat_ids;
     std::vector<int32_t> _city_good_consumption_stat_ids;
+    std::vector<int32_t> _city_good_output_stat_ids;
+    std::vector<int32_t> _city_building_output_stat_ids;
     std::vector<int8_t> _epoch_income_tax_rates;
     std::vector<int8_t> _epoch_consumption_tax_rates;
     std::vector<int8_t> _epoch_business_tax_rates;
@@ -3900,6 +3940,18 @@ private:
     std::vector<int32_t> _city_factor_dirty_cells;
     std::vector<uint64_t> _city_factor_group_cells_scratch;
     std::vector<int32_t> _city_factor_stat_ids_scratch;
+    // Exact city-good production factors use one shared global row plus sparse
+    // per-cell overrides. The CSR scales with authored effects, not
+    // `cell_count * good_count`, and is rebuilt only when one of those stats
+    // changes. Transient; never saved or hashed.
+    uint64_t _epoch_city_output_factor_stat_version = 0;
+    bool _epoch_city_output_factor_valid = false;
+    std::vector<int32_t> _city_output_shared_goods_q16;
+    std::vector<int32_t> _city_output_cell_offsets;
+    std::vector<int32_t> _city_output_good_indices;
+    std::vector<int32_t> _city_output_factors_q16;
+    std::vector<uint64_t> _city_output_scope_cells_scratch;
+    std::vector<int32_t> _city_output_scope_stat_ids_scratch;
     // Epoch-transient country/type availability cache. Technology authority is
     // frozen once per daily transaction, so every cell in a country shares the
     // same result and hot loops can consume the ascending CSR directly.
@@ -4050,6 +4102,8 @@ private:
     std::vector<int32_t> _family_trait_trigger_offsets;
     std::vector<std::string> _family_trait_trigger_definition_keys_by_tier;
     std::vector<int32_t> _family_trait_trigger_reward_targets;
+    std::vector<int32_t> _family_trait_effect_offsets;
+    std::vector<std::string> _family_trait_effect_keys;
     std::string _family_surname_pack_id = "default_zh";
     std::vector<std::string> _family_surname_ids;
     std::vector<std::string> _family_surname_text;
@@ -4445,6 +4499,8 @@ private:
         int64_t &sat) const;
     void refresh_building_modifier_factors();
     void refresh_city_modifier_factors();
+    void refresh_city_output_modifier_factors();
+    int32_t city_good_output_factor_q16(int32_t cell, int32_t good_id) const;
     int64_t planned_owner_demand(const BuildingGroup &group,
                                  int64_t &sat) const;
     int64_t building_debt_due(const BuildingGroup &group, int64_t &sat) const;
@@ -4541,6 +4597,7 @@ private:
                                       std::string &error);
     bool run_family_commit_slice(int64_t &work_done, std::string &error);
     void rebuild_family_indices();
+    void rebuild_family_behavior_cache();
     void split_family_branches();
     void normalize_family_memberships();
     void absorb_family_households();
@@ -4566,6 +4623,19 @@ private:
     void reconcile_family_branch_effects(uint64_t branch_handle,
                                          bool submit_changes);
     void clear_family_branch_effects(uint64_t branch_handle);
+    void rebuild_family_effect_binding_index();
+    void add_family_effect_binding(FamilyEffectBinding binding);
+    void remove_family_effect_binding(size_t index);
+    int64_t family_effect_metric_revision(int32_t phase) const;
+    bool publish_family_effect_metrics(FamilyEffectBinding &binding,
+                                       int64_t revision,
+                                       uint64_t requested_mask);
+    void refresh_family_effect_metrics_for_branch(uint64_t branch_handle,
+                                                  int64_t revision,
+                                                  uint64_t requested_mask);
+    void refresh_family_effect_metrics_for_cell(int32_t cell,
+                                                int64_t revision,
+                                                uint64_t requested_mask);
     int32_t family_trait_behavior_factor_q16(uint64_t family_handle,
                                              int32_t axis,
                                              int32_t selector_kind,

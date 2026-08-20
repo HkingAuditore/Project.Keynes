@@ -144,6 +144,11 @@ func _run() -> void:
 		print("bootstrap failure=", boot)
 		return
 	var day0 := _run_day(ext, 0)
+	if not bool(day0.get("done", false)) or bool(day0.get("fatal", false)) \
+			or int(day0.get("population_error", 1)) != 0 \
+			or int(day0.get("money_error", 1)) != 0 \
+			or int(day0.get("goods_error", 1)) != 0:
+		print("family day0 diagnostic=", day0)
 	_expect("family day conserves all ledgers", bool(day0.get("done", false))
 		and not bool(day0.get("fatal", false))
 		and int(day0.get("population_error", 1)) == 0
@@ -418,15 +423,15 @@ func _run() -> void:
 	var person_before_save: Dictionary = ext.get_notable_person_snapshot(person_handle)
 	var hash_before := int(ext.get_economy_state_hash())
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
-	_expect("PKEC v40 save begins", bool(save_begin.get("ok", false))
-		and int(save_begin.get("schema_version", 0)) == 40)
+	_expect("PKEC v41 save begins", bool(save_begin.get("ok", false))
+		and int(save_begin.get("schema_version", 0)) == 41)
 	var chunks: Array[PackedByteArray] = []
 	for _i in 512:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty():
 			break
 		chunks.append(chunk)
-	_expect("PKEC v40 save completes", not chunks.is_empty()
+	_expect("PKEC v41 save completes", not chunks.is_empty()
 		and bool(ext.end_economy_save().get("ok", false)))
 	var legacy_chunk := chunks[0].duplicate()
 	legacy_chunk[4] = 31
@@ -452,7 +457,7 @@ func _run() -> void:
 		_expect("restore chunk accepted", bool(
 			restored.feed_economy_restore_chunk(chunk).get("ok", false)))
 	var restore_end: Dictionary = restored.end_economy_restore()
-	_expect("PKEC v37 restores family and important-person authority",
+	_expect("PKEC v41 restores family and important-person authority",
 		bool(restore_end.get("ok", false))
 		and int(restore_end.get("restored_families", 0)) == 1
 		and int(restore_end.get("restored_persons", 0)) == person_count_before
@@ -526,6 +531,9 @@ func _test_opening_capital_keeps_anonymous_majority(catalog: Dictionary) -> void
 		print("opening-majority bootstrap failure=", boot)
 		return
 	var day0 := _run_day(ext, 0)
+	if not bool(day0.get("done", false)) or bool(day0.get("fatal", false)) \
+			or int(day0.get("population_error", 1)) != 0:
+		print("opening-majority day0 diagnostic=", day0)
 	_expect("opening-majority day conserves population",
 		bool(day0.get("done", false)) and int(day0.get("population_error", 1)) == 0)
 	var page: Dictionary = ext.get_family_cell_snapshot(0, 0, 64)
@@ -595,7 +603,7 @@ func _new_ext(catalog: Dictionary) -> Object:
 	modifier_catalog.erase("ok")
 	ext.configure_modifiers(modifier_catalog, 1)
 	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
-			&"cell_plant_available_water", &"cell_snow_cover",
+			&"cell_plant_available_water", &"cell_weather_precip", &"cell_snow_cover",
 			&"cell_weather_intensity", &"cell_elevation"]:
 		var sid: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(sid, 0, PackedFloat32Array([0.5]))

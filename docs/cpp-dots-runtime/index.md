@@ -1,7 +1,7 @@
 # C++/DOTS Runtime 开发文档索引
 
 - [运河运行时](./canal-runtime.md)：API-ready 的权威边状态、经济施工、Effect 原子提交、
-  贸易/殖民边成本、局地水文、Visual Tile 与 PKEC v37；PlayerController 尚未注册。
+  贸易/殖民边成本、局地水文、Visual Tile 与 PKEC v41；PlayerController 尚未注册。
 
 ## Formal game flow and PKSV
 
@@ -10,7 +10,7 @@
 
 - [科技树、科技值与科研经济运行时](./technology-tree-runtime.md)：180 项权威目录、环境/资源
   研究条件、实践突破、全内容绑定、科技值市场与国家采购、Effect/Modifier ACK，以及
-  PKCN v11/PKEF v10/PKTR v5/PKID v3/PKEC v37 存档契约。
+  PKCN v11/PKEF v11/PKTR v6/PKID v3/PKEC v41 存档契约。
 
 - [环境驱动的科技路线差异化](./technology-route-differentiation.md)：把地理、气候、植被、
   资源、社会发展、Trigger、Effect 和经济内容组织成可分化、可重放、可审计的科技路线。
@@ -30,14 +30,14 @@
 当前性能缓存、认证近似、closing audit 与 native daily 紧凑边界见
 [运行时性能优化契约（2026-07）](runtime-performance-optimization-2026-07.md)。
 
-显赫家族的原生 SoA、特性、地块威望、成员/建筑稀疏边、守恒财产归属、冷查询与 PKEC v30
+显赫家族的原生 SoA、特性、地块威望、成员/建筑稀疏边、守恒财产归属、FamilyEffect 与 PKEC v41
 契约见[显赫家族原生运行时](./notable-family-runtime.md)。
 
-家族重要人物的稀疏 SoA、姓名、岗位/建筑追溯、已实现收入与消费需求归因、生命周期及 PKEC v30
+家族重要人物的稀疏 SoA、姓名、岗位/建筑追溯、已实现收入与消费需求归因、生命周期及 PKEC v41
 契约见[家族重要人物原生运行时](./notable-person-runtime.md)。
 
 cohort 与家族分支的八维度综合满意度、阶层权重、生存闸门、玩法接管点、explain 溯源、
-社会压力事件与 PKEC v30 satisfaction 列见[综合满意度运行时](./satisfaction-runtime.md)。
+社会压力事件与自 v30 引入、当前保存在 PKEC v41 的 satisfaction 列见[综合满意度运行时](./satisfaction-runtime.md)。
 
 本目录记录 Project.Keynes 当前运行期 C++/DOTS 架构的真实状态，面向后续开发、排障和继续迁移。这里不是历史路线图，也不是一次性验收记录；历史文档仍保留原状，本目录负责把已经落到代码里的调度、数据通信、计算链路和性能诊断规则整理成可执行参考。
 
@@ -45,14 +45,14 @@ cohort 与家族分支的八维度综合满意度、阶层权重、生存闸门�
 
 - [Native Modifier Runtime](./native-modifier-runtime.md)：四域 ModifierStore、固定公式、
   generation handle、scope/bucket、daily freeze、气候/国家/经济/Gameplay 接入、
-  PKCN v11/PKEC v37/PKCM v1/PKGP v1 与验证状态。
+  PKCN v11/PKEC v41/Modifier schema v3/PKCM v1/PKGP v1 与验证状态。
 - 修改 stat、definition、命令协议、调度依赖、领域公式或存档 schema 时，必须先读并同步
   这份主说明与 `project-keynes-modifier-runtime` Skill。
 
 ## Tax and fiscal runtime
 
 - [税收与财政结算运行时](./tax-fiscal-runtime.md)：五类国家税务政策、职业/物资/建筑覆盖、
-  国家级税率 Modifier、财政托管、应税事件、PKCN v11/PKEC v37 存档和国家经济 UI。
+  国家级税率 Modifier、财政托管、应税事件、PKCN v11/PKEC v41 存档和国家经济 UI。
 
 ## Native Ideology Runtime
 
@@ -97,7 +97,7 @@ cohort 与家族分支的八维度综合满意度、阶层权重、生存闸门�
 
 8b. [综合满意度运行时](./satisfaction-runtime.md)
    - 八维度 composite、阶层数据驱动权重、生存闸门、出生率/就业/家族接管、
-     explain 溯源、社会压力事件与 PKEC v30 列。
+     explain 溯源、社会压力事件与当前 PKEC v41 列。
 
 9. [Domestic Trade Runtime](./domestic-trade-runtime.md)
    - 国内六邻接运输、稀疏贸易信号、有界寻路、贸易单托管结算、PKEC v12 与软切片契约。
@@ -109,7 +109,7 @@ cohort 与家族分支的八维度综合满意度、阶层权重、生存闸门�
     - 冻结国家 epoch、科技门控、国家资产转移、货币/商品联合守恒与 hash 边界。
 
 12. [Country Scheduling / Save](./country-scheduling-save.md)
-   - `country_daily`、命令屏障、PKCN v11 + PKEF v10 + PKTR v5 + PKID v3 + PKEC v37 顺序与兼容性拒绝。
+   - `country_daily`、命令屏障、PKCN v11 + PKEF v11 + PKTR v6 + PKID v3 + PKEC v41 顺序与兼容性拒绝。
 
 13. [Economy Fixed Point / Ledger / Formula](./economy-fixed-point-ledger-formulas.md)
    - 定点 ABI、守恒、命令和原生 batch 公式规范。
@@ -142,7 +142,7 @@ Codex 工作流。修改经济运行时文档或默认机制时，必须同步�
 显赫家族专项 Skill 位于
 [`project-keynes-family-runtime`](../../.codex/skills/project-keynes-family-runtime/SKILL.md)，
 约束 FamilyStore、NotablePersonStore、成员/产业稀疏边、业主岗位、守恒财产、人物经济归因、
-生命周期、查询、PKEC v30 和性能验收。修改显赫家族/人物机制、姓名目录、UI 或存档时必须同时使用
+生命周期、查询、PKEC v41 和性能验收。修改显赫家族/人物机制、姓名目录、UI 或存档时必须同时使用
 并同步该 Skill。
 
 理念专项 Skill 位于

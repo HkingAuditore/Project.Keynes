@@ -142,6 +142,53 @@ func submit_instances(batch: Dictionary) -> Dictionary:
 	return _world_ext.submit_effect_instances(batch) if _configured else {
 		"ok": false, "reason": "effect_runtime_unconfigured"}
 
+func submit_family_effect_source(instance_id: int, definition_key: StringName,
+		generation: int, source_kind: int, source_id: int, source_handle: int,
+		target_handle: int, target_generation: int, activation_sequence: int,
+		stack_count: int = 1, level: int = 0, effective_day: int = -1) -> Dictionary:
+	## Trait sources are structural Economy authority and deliberately cannot
+	## enter through this facade. The other source owners provide their own
+	## stable identity and monotonic activation sequence.
+	if not _configured:
+		return {"ok": false, "reason": "effect_runtime_unconfigured"}
+	if instance_id <= 0 or generation <= 0 or source_kind < 1 or source_kind > 5 \
+			or source_id == 0 or target_generation <= 0 \
+			or activation_sequence <= 0 or stack_count <= 0:
+		return {"ok": false, "reason": "family_effect_source_invalid"}
+	var stable_key := String(definition_key).strip_edges()
+	if stable_key.is_empty():
+		return {"ok": false, "reason": "family_effect_definition_missing"}
+	if not stable_key.begins_with("family.effect."):
+		stable_key = "family.effect.%s" % stable_key
+	var day := effective_day
+	if day < 0:
+		day = _clock.day_index() if _clock != null else 0
+	return submit_instances({
+		"instance_ids": PackedInt64Array([instance_id]),
+		"program_keys": PackedStringArray([stable_key]),
+		"generations": PackedInt32Array([generation]),
+		"source_types": PackedInt32Array([0x46465800 | source_kind]),
+		"source_kinds": PackedInt32Array([source_kind]),
+		"source_ids": PackedInt64Array([source_id]),
+		"source_handles": PackedInt64Array([source_handle]),
+		"target_handles": PackedInt64Array([target_handle]),
+		"target_generations": PackedInt32Array([target_generation]),
+		"levels": PackedInt32Array([level]),
+		"stack_counts": PackedInt32Array([stack_count]),
+		"activation_sequences": PackedInt64Array([activation_sequence]),
+		"next_due_days": PackedInt64Array([day]),
+		"active": PackedByteArray([1]),
+	})
+
+func retire_family_effect_source(instance_id: int, generation: int,
+		effective_day: int = -1) -> Dictionary:
+	if not _configured or instance_id <= 0 or generation <= 0:
+		return {"ok": false, "reason": "family_effect_source_invalid"}
+	var day := effective_day
+	if day < 0:
+		day = _clock.day_index() if _clock != null else 0
+	return _world_ext.retire_effect_instance(instance_id, generation, day)
+
 
 func submit_person_modifier_instance(instance_id: int, person_handle: int,
 		person_generation: int, definition_key: StringName,

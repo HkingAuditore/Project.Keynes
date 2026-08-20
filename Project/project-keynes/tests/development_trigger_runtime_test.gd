@@ -93,10 +93,10 @@ func _run() -> void:
 	var same_day := _progress(ext, country_a, metric_index)
 	_expect("same-day sample is deduplicated", int(same_day.get("days", 0)) == 90)
 	var saved: PackedByteArray = ext.capture_trigger_state()
-	_expect("PKTR v5 header", saved.size() >= 8 and saved.decode_s32(4) == 5)
+	_expect("PKTR v6 header", saved.size() >= 8 and saved.decode_s32(4) == 6)
 	var restored: Object = ClassDB.instantiate("DCWorldExt")
 	_expect("restored trigger configures", bool(restored.configure_triggers(compiled).get("ok", false)))
-	_expect("PKTR v5 round-trips", bool(restored.restore_trigger_state(saved).get("ok", false)))
+	_expect("PKTR v6 round-trips", bool(restored.restore_trigger_state(saved).get("ok", false)))
 	# A second country gets an independent state with the same metric.
 	restored.submit_trigger_events(_events(PackedInt64Array([3]), PackedInt64Array([0]),
 		PackedInt64Array([country_b]), PackedInt64Array([500]), metric_index,

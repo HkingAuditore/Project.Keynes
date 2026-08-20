@@ -40,6 +40,13 @@ func compile_native_catalog() -> Dictionary:
 		"effect_keys": PackedStringArray(), "versions": PackedInt32Array(),
 		"cadence_days": PackedInt32Array(), "max_work": PackedInt32Array(),
 		"enabled": PackedByteArray(), "behavior_keys": PackedStringArray(),
+		"source_kinds": PackedInt32Array(), "target_domains": PackedInt32Array(),
+		"operations": PackedInt32Array(), "lifecycles": PackedInt32Array(),
+		"duration_days": PackedInt32Array(),
+		"stack_policies": PackedInt32Array(), "stack_keys": PackedStringArray(),
+		"max_stacks": PackedInt32Array(), "priorities": PackedInt32Array(),
+		"target_selector_kinds": PackedInt32Array(),
+		"target_selector_ids": PackedStringArray(),
 		"condition_offsets": PackedInt32Array([0]), "condition_ops": PackedInt32Array(),
 		"condition_arg0": PackedInt32Array(), "condition_values": PackedInt64Array(),
 		"instruction_offsets": PackedInt32Array([0]), "instruction_ops": PackedInt32Array(),
@@ -76,6 +83,17 @@ func compile_native_catalog() -> Dictionary:
 		out.max_work.append(definition.max_work)
 		out.enabled.append(1 if definition.enabled else 0)
 		out.behavior_keys.append(String(definition.behavior_id))
+		out.source_kinds.append(int(definition.source_kind))
+		out.target_domains.append(int(definition.target_domain))
+		out.operations.append(int(definition.operation))
+		out.lifecycles.append(int(definition.lifecycle))
+		out.duration_days.append(int(definition.duration_days))
+		out.stack_policies.append(int(definition.stack_policy))
+		out.stack_keys.append(String(definition.stack_key))
+		out.max_stacks.append(maxi(1, int(definition.max_stacks)))
+		out.priorities.append(int(definition.priority))
+		out.target_selector_kinds.append(int(definition.target_selector_kind))
+		out.target_selector_ids.append(String(definition.target_selector_id))
 		for condition in definition.conditions:
 			if condition == null or not condition is EffectConditionScript:
 				return {"ok": false, "reason": "effect_condition_resource_invalid"}

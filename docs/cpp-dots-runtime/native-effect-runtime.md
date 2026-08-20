@@ -59,6 +59,14 @@ The current native ABI therefore covers Country opcodes `1..14`, Economy
 opcodes `1..15`, Modifier apply/remove, Gameplay rows on domain `3`, journal
 events on domain `4`, and only the registered CustomDomain audit opcode
 `domain=6/opcode=1`.
+
+Family effects are authored through `FamilyEffectDefinition` and compiled into
+the same packed `EffectDefinition` IR. The cold catalog adds source kind, target
+domain, operation, lifecycle, duration, stack policy/key/cap, priority, target
+selector and metric mask columns. Six source kinds, six target domains, five
+operations, three lifecycles, five stack policies and six selector kinds are
+validated before native configuration. `default_family_effects.tres` is
+intentionally empty: case-study examples are content, not engine defaults.
 An effect with `behavior_id` calls a compile-time registered
 `EffectRuntime::BehaviorFn`; the callback reads a frozen `BehaviorInput` and
 returns POD commands. Behavior commands use integer key IDs from the catalog's
@@ -93,6 +101,13 @@ native ACK, adapter ACK, and retirement do not linearly search every pending
 transaction. The default catalog permits up to 16,000,000 active instances and
 transactions. `max_native_modifier_commands` bounds one C++ Modifier enqueue
 batch independently (default 4,096, configurable up to 4,000,000).
+
+Family-effect instances additionally join a transient group keyed by
+`(target_domain, target_handle, target_generation, stack_key_hash)`. The group
+resolves `REPLACE`, `REFRESH`, `ADD_STACK`, `MAX`, or `MIN` deterministically;
+reconciling the same authoritative source is an idempotent upsert rather than a
+new stack. The group index is rebuilt from instances after restore and is not a
+second persistence authority.
 
 ## Parallel planning
 
@@ -165,6 +180,13 @@ backpressure without advancing the instance cursor; terminal `ACKED` and
 or program arithmetic failures likewise preserve the fire sequence and due day
 for retry instead of silently consuming the effect.
 
+Domain rejection is also retryable lifecycle state. A failed apply, update or
+remove keeps the last ACKed `effect_applied`/stack state and schedules the
+instance for the next day. `EVENT_ONCE` is reclaimed only after its transaction
+is fully ACKed. An explicit retire whose REMOVE is rejected remains pending;
+the shared `TRANSITION_RETIRE` code never turns a rejected one-shot into an
+implicit retirement.
+
 ## Domain migration boundary
 
 `EffectDomainCatalog.build()` compiles executable definitions from the existing
@@ -174,11 +196,16 @@ second Modifier-definition copy.
 - Technology: `CountryRuntime` still owns research and technology bits. On
   completion it registers a generation-safe instance; `technology.modifier`
   emits the existing country Modifier apply command through the native bridge.
-- Family: `NativeEconomyRuntime` still computes traits, strength, prestige and
-  branch lifecycle at `FAMILY_COMMIT`. It publishes only the final branch Q16
-  Modifier magnitude to `family.modifier`; the native bridge uses the established
-  `(cell, FAMILY, branch_stable_id)` Modifier identity. Trait state and Trigger
-  bindings remain Economy/Trigger authority.
+- Family compatibility path: `NativeEconomyRuntime` still computes traits,
+  strength, prestige and branch lifecycle at `FAMILY_COMMIT`. Existing
+  `family.modifier.*` programs publish the final branch Q16 magnitude through
+  the established `(cell, FAMILY, branch_stable_id)` Modifier identity.
+- Family authored path: `family.effect.*` programs use the compiled metadata,
+  typed target resolver and producer `161`. Family/Branch targets are Economy
+  ENTITY handles, SettlementCell and BuildingResource targets are Economy
+  GROUP handles, and Country/Climate targets are their ENTITY handles. Economy
+  owns the source binding and frozen metrics; Effect owns only the program,
+  instance, stack arbitration, transaction and ACK.
 - Person: native promotion and every `PERSON_COMMIT` reconcile a
   generation-safe `person.modifier.gameplay.generic.bonus` instance. The public
   `EffectFacade.submit_person_modifier_instance()` remains the extension entry
@@ -216,7 +243,7 @@ transactions not claimed by the native bridge.
 
 ## Persistence and diagnostics
 
-`PKEF v10` stores catalog hash, runtime cursors, an in-progress candidate list,
+`PKEF v11` stores catalog hash, runtime cursors, an in-progress candidate list,
 instances, input metrics, published and consumed input revisions, fire sequences, and pending
 transactions/commands. External commands persist their effect/source identity
 and include it in the plan hash, so atomic peer batches remain auditable after
@@ -231,7 +258,7 @@ wrong protocol, schema, catalog hash, truncation, invalid IDs, and invalid
 transaction status. Domain state is not duplicated in PKEF; its domain-side
 idempotency evidence remains in PKCN, PKEC, or the gameplay journal.
 
-PKEF v10 also owns the complete frozen era-reward Alternative Offer Plan:
+PKEF v11 also owns the complete frozen era-reward Alternative Offer Plan:
 three alternatives, visible weighting reasons, generation-safe targets,
 plan hash, selected choice and its transaction. PKCN v11 stores only the matching
 plan reference and status. PKEF restore rejects any cross-section mismatch with
@@ -257,7 +284,8 @@ successful grant.
 pending ACKs, explicit transaction-state counts, work, elapsed time, behavior
 failures, overflow, due/dirty/candidate counts, flat-slab bytes, native Modifier
 batch timings, worker planning/serial merge timings, worker/fallback path fields,
-the pending idempotency-key count, per-native-adapter pending ACK counts, and last error. `PKEF v10` restore parses into temporary
+the pending idempotency-key count, per-native-adapter pending ACK counts, family
+effect stack-group/member/byte counts, and last error. `PKEF v11` restore parses into temporary
 vectors and swaps only after all bounds, command masks, plan hash and end marker
 checks pass, so a truncated save cannot clear the live state.
 `explain_effect(instance_id)` reports the resolved program, input revision,
@@ -288,8 +316,8 @@ Focused fixtures:
 - `Project/project-keynes/tests/effect_trigger_handoff_test.gd` validates the
   contiguous native Trigger-to-Effect-to-Modifier handoff.
 - `Project/project-keynes/tests/effect_lifecycle_test.gd` validates native
-  application/removal, independent Modifier cleanup, PKEF tombstones, and
-  instance-slot reuse.
+  application/removal, rejection retry, EVENT_ONCE ACK-gated reclamation,
+  independent Modifier cleanup, PKEF tombstones, and instance-slot reuse.
 - `Project/project-keynes/tests/effect_fallback_adapter_test.gd` validates the
   family/person GDScript compatibility adapters without involving the native
   evaluation hot path.
@@ -299,16 +327,16 @@ Focused fixtures:
 Technology activation is ACK-gated. `NativeCountryRuntime` keeps a completed
 technology in its pending bitset until the stable technology Effect instance
 has fired and both its permanent Modifier plus `technology.adopted` publication
-have reached their owning safe boundaries, **or** until the next country day
-applies the same permanent `UNIQUE_SOURCE` Modifier directly. Research completion
+have reached their owning safe boundaries. Research completion
 registers that instance on the same country research day, because Effect
 (priority 85) runs before Country (255) on the following morning. A recipe that
 adds Country/Economy commands extends the same required ACK mask.
 The country retry does not re-upsert an already existing instance; it nudges an
 unacked instance back onto the due heap. `UNIQUE_SOURCE` replace is idempotent,
-so a later Effect ACK does not create a second stack. If Effect registration
-itself fails, or if the instance exists but still has not ACKed by the next
-country day, the direct Modifier path lands the completed tag.
+so a later Effect ACK does not create a second stack. The direct idempotent
+Modifier fallback is available only when EffectRuntime is unavailable or never
+took ownership; an enabled EffectRuntime may not be bypassed merely because its
+transaction is still awaiting ACK.
 
 Person programs are compiled as `person.modifier.<modifier_definition_key>`
 for existing ECONOMY and GAMEPLAY Modifier definitions. Native person promotion

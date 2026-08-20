@@ -4,21 +4,19 @@
 InfrastructureProjectStore 是施工/路线权威；Effect 仅负责跨域事务；Godot Visual Tile
 只消费脏层。完整契约见 [运河运行时](./canal-runtime.md)。
 
-## Current schema precedence (2026-08-07)
+## Current schema precedence (2026-08-20)
 
 The current implementation supersedes older historical rows retained in the
 long-form matrix below: country authority is **PKCN v11**, economy authority is
-**PKEC v37**, configurable cross-domain effects are **PKEF v10**, Trigger state is
-**PKTR v5**, ideology state is **PKID v3**, and the native gameplay journal is
+**PKEC v41**, configurable cross-domain effects are **PKEF v11**, Trigger state is
+**PKTR v6**, ideology state is **PKID v3**, and the native gameplay journal is
 **journal v4**. The save
 coordinator restores domain state in its documented order and verifies active
 ideology bindings against PKEF; recovery never replays an effect to repair a
 missing binding. Effect ACK masks identify adapters rather than authored domain
 numbers, so Modifier subdomains cannot alias Country/Economy adapter ACKs in a
-mixed transaction. Legacy PKEC v34 and earlier are rejected with
-`economy_save_schema_unsupported` (or the specific pre-v33 diagnostic). v35
-restores with carrying-capacity `support_ema = 1`. v36 restores in-flight
-expeditions with empty cargo.
+mixed transaction. PKEC is exact-version only: every schema other than v41 is
+rejected, with no precipitation, family, Modifier, or expedition defaults.
 
 ## Game flow and persistence authorities
 
@@ -27,25 +25,25 @@ expeditions with empty cargo.
 | Pending new/load request | `GameFlowService` | none; one-shot process state | Never use `Engine` meta on the product path |
 | Validated world creation inputs | `NewGameConfig v3` | PKSV `new_game_config` | Store seed, foreign count, starting country cash and research policy; optional `base.map_source=pkmap` plus `pkmap_path`; v2 migrates with zero foreigners |
 | Player and foreign identity/territory | PKCN / `NativeCountryRuntime` | PKSV `pkcn` plus player-only `player_context` | Player is slot 0; each opening country owns one cell; only `cell.country_slot` is mirrored to cells |
-| Population, market, buildings, family traits/cell influence, notable families and important people, family expedition custody (people/funds/cargo), prosperity/settlement identity, taxable events and fiscal escrow | PKEC / `NativeEconomyRuntime` | PKSV `pkec` / PKEC v37 | Restore after PKCN, PKEF and trade topology; v34 and earlier are incompatible; v35 restores with support EMA=1; v36 restores empty expedition cargo |
-| Composite cohort satisfaction (8 dimensions), family branch satisfaction, published social-pressure level, cell carrying capacity | PKEC / `NativeEconomyRuntime` | embedded in PKEC v37 | Authoritative for births, hire order, branch promotion and `ECONOMY_SOCIAL_PRESSURE`; starvation still reads only `SAT_DIM_SUBSISTENCE`; `K_eff` mixes geography, bindable-family surplus and class-weighted sat |
+| Population, market, buildings, family traits/cell influence, notable families and important people, family expedition custody (people/funds/cargo), prosperity/settlement identity, taxable events and fiscal escrow | PKEC / `NativeEconomyRuntime` | PKSV `pkec` / PKEC v41 | Restore after PKCN, PKEF and trade topology; only exact v41 is accepted; seven frozen environment lanes include precipitation |
+| Composite cohort satisfaction (8 dimensions), family branch satisfaction, published social-pressure level, cell carrying capacity | PKEC / `NativeEconomyRuntime` | embedded in PKEC v41 | Authoritative for births, hire order, branch promotion and `ECONOMY_SOCIAL_PRESSURE`; starvation still reads only `SAT_DIM_SUBSISTENCE`; `K_eff` mixes geography, bindable-family surplus and class-weighted sat |
 | Dynamic cell SoA | `DCWorld` / `DCWorldExt` by component contract | PKSV `dynamic_world` | Missing provider fails the save |
 | Native environment rounds | `EnvironmentRuntime` | `PKEnvironmentRuntime v1` in PKSV `environment` | Persist arrays, ping-pong, dirty sets, topology and cursors, not counters only |
 | Climate modifiers | Climate `ModifierStore` | PKSV `pkcm` / PKCM v1 | Publishes frozen add/factor; climate still owns temperature history |
 | Country research, technology, treasury, territory claim and national/cell tax policy | PKCN / `NativeCountryRuntime` | PKSV `pkcn` / PKCN v11 | Owns discovery/evidence, research, neutral-only colonization claim, five national defaults/overrides, interned sparse per-cell policies, fiscal cash bridge, native Effect ingress idempotency and the era-reward plan reference; catalog identity includes technology recipes/terms, Trigger definitions and content bindings |
 | Country modifiers | Country `ModifierStore` | embedded in PKCN v11 | Technology, production-family, climate-adaptation and fine-grained tax-rate effects alter frozen national/cell consumers, never ledgers directly |
-| Economy/building/family-cell modifiers | Economy `ModifierStore` + `BuildingIdentityStore` | embedded in PKEC v37, Modifier schema v2 | Factors feed frozen output/birth/consumption/resource helpers, never ledgers directly |
+| Economy/building/family-cell modifiers | Economy `ModifierStore` + `BuildingIdentityStore` | embedded in PKEC v41, Modifier schema v3 | Factors feed frozen output/birth/consumption/resource helpers; exact-good uses shared+CSR overrides and exact-building reuses type cache; never writes ledgers directly |
 | Gameplay modifiers | Gameplay `ModifierStore` + base/identity SoA | PKSV `pkgp` / PKGP v1 | Explicit native handles only; no Godot Object reflection |
-| Configurable effects and cross-domain plans | `EffectRuntime` | PKSV `pkef` / PKEF v10 | Owns catalog IR, unique technology recipes, flat metric slabs, due/dirty candidates, atomic external transition batches, colonization CLAIM+SETTLE or SETTLE-only transactions, durable external bindings and ACKs; never owns country/economy/Modifier stores |
-| Trigger accumulation, technology-practice breakthroughs and development duration | `TriggerRuntime` | PKSV `pktr` / PKTR v5 | Owns source cursors, aggregate/remainder/window state, last sample day, fire sequence and unhanded effects; threshold crossing hands typed Country-signal commands to Effect and never writes Country or Economy directly |
+| Configurable effects and cross-domain plans | `EffectRuntime` | PKSV `pkef` / PKEF v11 | Owns catalog IR, FamilyEffect metadata/stack groups, managed lifecycle, unique technology recipes, flat metric slabs, due/dirty candidates, transactions, durable external bindings and ACKs; never owns country/economy/Modifier stores |
+| Trigger accumulation, technology-practice breakthroughs and development duration | `TriggerRuntime` | PKSV `pktr` / PKTR v6 | Owns source cursors, aggregate/remainder/window state, last sample day, fire sequence and unhanded effects; threshold crossing hands typed Country-signal commands to Effect and never writes Country or Economy directly |
 | Country ideology collection/progression/offers/public-opinion gates/synergies | `NativeIdeologyRuntime` | PKSV `pkid` / PKID v3 | Owns sparse country idea state, slots, points, offer RNG, directional support policy, exclusion and synergy state; reads committed Economy class facts and verifies PKEF external identity rather than replaying effects |
 | Effect-originated gameplay events | native Gameplay journal | PKSV `journal` v4 | `gameplay_effect` is the POD ingress/ACK boundary; journal stores normal event IDs and `event_id=-1` custom geography-commit idempotency evidence |
 | Calendar/RNG/time mode | `WorldClock` | PKSV `world_clock` | Restore date, carry, RNG, publish indices, pause and speed |
 | Cell exploration progress | `VisionSolver` writing `cell.explored` | PKSV `pkfg` (`PKFogOfWar v1`) | Monotonic; restore after PKCN because re-solving reads territory |
 | Current visibility and fog knowledge | `VisionSolver` writing `cell.visible` and `MapData.fog_k_arr` | none; derived | Pure function of territory plus baked terrain; recomputed on restore, never saved |
 | Selection/camera | `PlayerController` + `MapCamera` Godot boundary | PKSV `player_view` | Restore after derived map/render resources exist; PlayerController owns input/session orchestration, MapCamera owns smoothing/inertia |
-| Player construction intent/receipt | `PlayerController` + `EconomyFacade` boundary; settlement in `NativeEconomyRuntime`, treasury in `NativeCountryRuntime` | Pending command remains in PKEC v37; receipt is transient | Quotes are bounded/nonbinding; execution atomically consumes treasury goods, local-market goods and treasury cash without a new scheduler stage |
-| Player family colonization intent/receipt | `PlayerController` + `EconomyFacade`; custody in `NativeEconomyRuntime`, claim in `NativeCountryRuntime`, transaction in `EffectRuntime` | PKEC v37 + PKCN v11 + PKEF v10 | Quotes remain readable during a frozen cycle as nonbinding; start/cancel still require the committed boundary because departure extracts real population and source-market cargo. Unowned arrival waits for Country+Economy ACK, own-country relocation publishes after Economy ACK. Greenfield arrival consumes construction cargo and inserts family-owned buildings; developed cells only deposit the survival bridge |
+| Player construction intent/receipt | `PlayerController` + `EconomyFacade` boundary; settlement in `NativeEconomyRuntime`, treasury in `NativeCountryRuntime` | Pending command remains in PKEC v41; receipt is transient | Quotes are bounded/nonbinding; execution atomically consumes treasury goods, local-market goods and treasury cash without a new scheduler stage |
+| Player family colonization intent/receipt | `PlayerController` + `EconomyFacade`; custody in `NativeEconomyRuntime`, claim in `NativeCountryRuntime`, transaction in `EffectRuntime` | PKEC v41 + PKCN v11 + PKEF v11 | Quotes remain readable during a frozen cycle as nonbinding; start/cancel still require the committed boundary because departure extracts real population and source-market cargo. Unowned arrival waits for Country+Economy ACK, own-country relocation publishes after Economy ACK. Greenfield arrival consumes construction cargo and inserts family-owned buildings; developed cells only deposit the survival bridge |
 
 Transient 经济缓存与 climate/ocean hot-state capsule 不改变本矩阵的权威
 划分；具体边界见
@@ -91,7 +89,7 @@ round 也设置 `native_daily_day_barrier`，continuation pulse 先完成 climat
 | `native_daily_sim` | `DCWorldExt::run_native_daily_slice()` 持有 graph continuation、node cursor、round accumulator；GDScript 只保留 SUS shell 与 bundle boundary。 | `SCHEDULE_GRAPH` 节点调用 C++ pass 写 slots。 | Graph report `published_slots`、`visual_dirty_intents`、`authority_report`、`authority_blockers`、`retained_boundaries`；必要时 flush 到 `MapData`。首片被预算跳过时，GDScript 的 transient `native_daily_day_pending` 持有 same-day barrier，continuation 再直接启动 job。 | 普通 ACTIVE 不再回 full-run；`run_native_daily_tick()` 只作 debug/probe，`run_native_sim_tick()` 作 SHADOW/A-B。 | `run_native_daily_slice` 是唯一 ACTIVE hot path；`graph_coverage_state=complete` 只由 simulation authority blockers 决定；`native_daily_legacy_daily_production_retired=true` 才允许 fallback/test-only handoff。 | Climate/weather/ocean/season owner gates 与 legacy fallback 未退休时仍阻塞；Godot/visual boundaries 只进 `retained_boundaries`；pending 标记不进入存档或 hash，reset 时清理。 |
 | `modifier_daily` | `ModifierRuntime` 持有四域 SoA、bucket、expiry heap、命令排序与 snapshot version。 | 不写领域 base slot；发布只读 effective 聚合。 | `MODIFIER_GRAPH` report、command result、journal；PKCM/PKGP 与 PKCN/PKEC 内嵌 domain。 | GDScript fallback 只消费同一 `evaluate_modifier_stat` 公式；无第二份可变 store。 | ACTIVE，priority 90、单 slice、无工作时零 slice。 | 独立 SHADOW 双算和目标规模性能门禁尚未完成。 |
 | `country_daily` | `NativeCountryRuntime` 持有国家 SoA、handle generation、领土 CSR、国家科技/研究信号 bitset、稀疏证据、现金/物资国库、五类税务默认率/稀疏覆盖、命令游标与 state hash。 | 只把 `cell.country_slot` 发布到 DataCore/MapData；名称、科技、证据、国库、税表和 CSR 保持 native。 | 原子 `command_preflight → command_apply → aggregate_publish`；国家事件与粗粒度 snapshot；PKCN v11。 | PROBE/OFF 只作验证门；OFF 时依赖国家的经济禁用，不恢复旧状态。 | 默认 **ACTIVE**；priority 255、`must_run=false`、`use_job_should_run=true`，无到期命令零 slice。 | 不含灭国、科技撤销、外交、战争或 AI；活跃国家至少一格，水域无主。 |
-| `economy_daily` | `NativeEconomyRuntime` 持有滚动五相结算、Population/Settlement/Market/Family/FamilyTrait/FamilyCellInfluence/NotablePerson stores、稀疏关系、BUILDING_GRAPH、国内 Trade、税务与财政 escrow。 | 独立 native vectors；due-cell sample 冻结环境、国家/科技/税率、城市 Modifier 和资源再生 factor。 | `FAMILY_COMMIT` 归一化 claim、评审威望并只在变化时协调 Modifier/Trigger；`PERSON_COMMIT` 绑定人物；发布审计与 PKEC v30。 | 无大规模 GDScript fallback；资源再生保留读取同一 POD 的脚本 fallback。 | 默认 **ACTIVE / 每 cell 固定 5 日**。 | 跨国贸易执行、政治、谱系仍未接入。 |
+| `economy_daily` | `NativeEconomyRuntime` 持有 Population/Settlement/Market/Family/FamilyTrait/FamilyCellInfluence/NotablePerson stores、稀疏关系、BUILDING_GRAPH、国内 Trade、税务与财政 escrow。 | 独立 native vectors；due-cell sample 冻结七条环境 lane、国家/科技/税率、城市 Modifier 和资源再生 factor。 | `FAMILY_COMMIT` 归一化 claim、评审威望并仅在变化时协调 legacy Modifier/Trigger 与 FamilyEffect POD source；`PERSON_COMMIT` 绑定人物；发布审计与 PKEC v41。 | 无大规模 GDScript fallback；资源再生保留读取同一 POD 的脚本 fallback。 | 默认 **ACTIVE / 锁定 N∈[1,5]**。 | 跨国贸易执行、政治、谱系仍未接入。 |
 | `weather_refresh` | `WeatherDCSystem` wrapper 内的 `WeatherRefreshJob` 持有 field stage/front state；`WeatherSystem` 持业务 facade。 | `DCWorldExt` weather field/distribute/summary/stage-b pass 与 GDScript fallback 写 weather slots。 | Weather commit flush、front apply、weather LUT upload intent/Godot upload。 | `WeatherRefreshJob` staged path；merged native 受 readiness gate。 | `weather_native_daily_readiness_report()` 证明 visible publish/front/LUT 后为 `native_ready`；`native_weather_transaction_active_owner_enabled=true` 后为 `native_active`，执行后可升 `native_active_verified`。 | WeatherFront Godot objects、front rebuild、ImageTexture/LUT upload、CSV visible fields 是 retained boundaries；publish readiness 未达成才是 blocker。 |
 | `runtime_hydrology` | Legacy path 由 `WeatherRefreshJob` stage 3 持有；native daily path 由 `SCHEDULE_GRAPH` 的 `runtime_hydrology` node 持有单日执行点。 | `DCWorldExt::run_runtime_hydrology_pass` 后置写 `cell_moisture` 的河道/一环河岸下限，并写 `soil_moisture`、`water_balance_30d`、`river_discharge*`、`river_storage`、`groundwater_storage`、`surface_runoff` slots。 | Pass 内 `_flush_slot_to_map()`；native daily graph report 宣告 hydrology published slots（含 `cell_moisture`）。 | Legacy staged path 保留为 fallback/A-B。 | `runtime_hydrology_enabled=true` 时需要 native bundle 同时包含 `weather_knobs` 与 `runtime_hydrology_knobs`；stage-b 通过 `stage_b_after_hydrology_knobs` 在 hydrology 后运行；publish 成功后 phase 为 `native_active_verified`。 | 缺 `runtime_hydrology_knobs` 才是 blocker；legacy facade 仅作 A/B/test/fallback 入口。 |
 | `ocean_currents` | `OceanCurrentsSystem` wrapper 内的 `OceanCurrentsJob` 持 physical/visual round state；native facade mirrors physical state. | `DCWorldExt` SLP/wind/PSI/upwelling/raster pass 写 slots 或 visual buffers。 | SLP/wind/current/upwelling slot flush；visual raster + texture commit 留在 Godot side。 | `OceanCurrentsJob` physical/visual staged path。 | `native_ocean_physical_active_owner_enabled=true` 且 snapshot owner 为 `native_active` 后，physical state 不再阻塞 simulation complete。 | Visual raster/texture commit、overlay upload、Godot buffers 是 retained boundaries；wrapper `_inner` 未 inline。 |
@@ -115,11 +113,11 @@ owner-lot、两组四档升级族、Price V3 稀疏企业信号、自适应工�
 ECONOMY_GRAPH/BUILDING_GRAPH 内完成。GDScript 只编译 profile/technology tags、桥接 30 个注册自然
 资源 slots、提交命令和查询选中 cell；不存在 GDScript 货币、价格、生产或贸易 fallback。
 国家身份、领土、科技和国库由 `NativeCountryRuntime` 单一权威持有；经济周期冻结国家映射与科技，
-现金/商品审计包含国家资产、贸易托管与开拓货物托管。当前持久格式为 PKCN v11 + PKEC v37，必须先恢复 PKCN；
-PKEC v30 及更早版本统一返回明确的不兼容错误。
+现金/商品审计包含国家资产、贸易托管与开拓货物托管。当前持久格式为 PKCN v11 + PKEC v41，必须先恢复 PKCN 与 PKEF；
+PKEC v40 及更早版本统一返回明确的不兼容错误。
 
 cohort 综合满意度（八维度 composite）同属该权威：`_population.composite_satisfaction`
-及其维度列由 `NativeEconomyRuntime` 独占写入，进 `state_hash` 与 PKEC v30，
+及其维度列由 `NativeEconomyRuntime` 独占写入，进 `state_hash` 与 PKEC v41，
 驱动出生率、同格就业流动排序、家族分支晋升评审与社会压力事件。
 `needs_satisfaction`（`SAT_DIM_SUBSISTENCE`）保留原语义但**只**驱动饥饿死亡。
 GDScript 只编译分档/权重内容并做只读展示，见[综合满意度运行时](./satisfaction-runtime.md)。
@@ -227,7 +225,7 @@ There is no GDScript fallback or new DataCore slot.
 
 `DCWorldExt` owns and publishes the `cell_plant_available_water` slot, while
 `NativeEconomyRuntime` remains the sole owner of frozen Q16 environment samples,
-building climate diagnostics, plans, settlement, hash, and PKEC v22. GDScript
+building climate diagnostics, plans, settlement, hash, and PKEC v41. GDScript
 compiles `ProductionClimateProfile` resources and retains the climate/resource
 reference fallbacks; it never settles production. The change adds no scheduler
 node or GDScript economy authority. Empty profile IDs are an identity capacity.
@@ -256,25 +254,26 @@ save section carries an optional `climate_modes` extension; schema-1 saves remai
 valid and restore with zero/legacy mode state when the extension is absent.
 
 `TriggerRuntime` owns committed event aggregation, condition IR, dynamic family-branch bindings,
-the ordered effect buffer, and PKTR v5. GameplayEventBus owns facts and replay; Modifier,
+the ordered effect buffer, and PKTR v6. GameplayEventBus owns facts and replay; Modifier,
 Country, Economy, and Gameplay remain owners of effect application.
 
 `EffectRuntime` is the next graph owner at priority 85. It owns packed effect
 definitions, active instances, frozen metric revisions, deterministic plans,
-cross-domain transactions, durable external bindings, and PKEF v10 ACK state. Declarative candidate planning
+cross-domain transactions, durable external bindings, FamilyEffect stack arbitration, and PKEF v11 ACK state. Declarative candidate planning
 may run in workers over frozen slabs, while stable transaction replay remains a
 single EffectRuntime writer. Known Effect-to-Modifier, all 14 Country opcodes,
 all 15 Economy opcodes, and the Gameplay/PublishEvent/registered-CustomDomain
 ingress are batch-enqueued in C++ and ACKed at their owning safe boundaries;
 unsupported or unregistered commands retain the adapter boundary
 `preflight -> PREFLIGHTED -> safe commit -> COMMITTED -> ACK`; it never writes
-Trigger, Modifier, Country, Economy, Gameplay or conserved state. PKEF is
-restored after PKTR so trigger-produced pending work resumes against the same
-source snapshot.
+Trigger, Modifier, Country, Economy, Gameplay or conserved state. PKEF restores
+before PKEC so Economy can validate active cross-domain transactions; journal
+and PKTR restore afterward from the same committed domain snapshot.
 
-Technology and family Modifier producers now register instances through this
-owner: country research keeps technology bits in PKCN, while family branch
-strength stays in `FAMILY_COMMIT`; Effect only plans the typed Modifier command.
+Technology and family producers register instances through this owner: country
+research keeps technology bits in PKCN, while family traits, branches, bindings
+and metrics stay in `FAMILY_COMMIT`; Effect only arbitrates stacks and plans the
+typed command.
 Native person promotion and `PERSON_COMMIT` also register the current
 `person.modifier.gameplay.generic.bonus` instance. No person ledger or
 structural authority is moved out of `NotablePersonStore`/`PERSON_COMMIT`.

@@ -82,11 +82,45 @@ dense ID CSR。建筑、职业、需求、商品和自然资源 profile 可提�
 **威望公式一字未改**；满意度只作为**晋升**的否决条件——成员满意度低于社会压力阈值 1 的分支
 无论掌握多少现金与土地都不得上升。降级永不被阻塞，因此这只会减慢晋升。
 `get_family_branches` 与 `family_branches` 字典同时发布 `satisfaction_q16` /
-`satisfactions_q16`，该列进 family state hash 与 PKEC v30。
+`satisfactions_q16`，该列进 family state hash 与 PKEC v41。
 
 行为偏好不随威望缩放，只在合法投资、职业迁移和 cohort 消费候选中调整 Q16 分数，不能绕过
 科技、资本、建材、资源、岗位或盈利门槛。商品偏好按家族人口占 cohort 的份额合成，并同时影响
 variant 份额和普通需求量；生存需求下限不下降。投资建设持久保存 sponsor family。
+
+## 家族效果目录与执行
+
+`FamilyEffectDefinition` 是纯 authoring resource，只在冷启动编译为共享 `EffectDefinition` IR。
+它声明六类来源（Trait、随机池、事件、玩家命令、科技、国家状态）、六类目标（家族、分支、
+聚落格、国家、气候格、格内建筑/商品/资源）、五类运算、三类生命周期、五类 stack policy 和
+六类 target selector。`default_family_effects.tres` 当前有意保持为空；案件中的示例不作为默认
+平衡内容，后续内容包只需追加资源，不需要扩展热循环分支。
+
+Trait 引用在 `EconomyCatalog` 冷编译为稳定 effect ID CSR。Economy 按实际 family/branch/cell
+稀疏建立 `FamilyEffectBinding`，并只发布效果程序声明使用的 metric mask：家族人口/现金 claim、
+分支威望/人口、格温度/降水/短缺/贸易事件/人口。EffectRuntime 按
+`(target_domain,target_handle,target_generation,stack_key_hash)` 建组，确定性执行
+`REPLACE / REFRESH / ADD_STACK / MAX / MIN` 仲裁；同一权威 upsert 幂等，不会把每日协调误当成
+新增 stack 或刷新 duration。
+
+目标路由固定如下：Family/Branch 使用 Economy `ENTITY`，SettlementCell 与
+BuildingResource 使用 Economy `GROUP`，Country 与 Climate 使用各自 `ENTITY`。producer `161`
+的 Family/Branch handle 在 Modifier safe commit 前再次向 Economy 校验 generation；陈旧目标返回
+`modifier_family_effect_handle_stale`。精确 selector 在冷边界强制绑定对应 stat：
+
+```text
+good     -> economy.city.good.<id>.output_factor
+building -> economy.city.building.<id>.output_factor
+resource -> economy.city.resource.<id>.regen_factor
+```
+
+商品输出采用 shared-per-good 加稀疏 `(cell,good)` CSR override；建筑类型复用现有按 type cache，
+资源复用冻结 regen cache。不存在 `cell_count * good_count` 新矩阵。所有 cache、binding 反向索引和
+stack group 都是 transient；权威实例/事务由 PKEF 保存，家族/分支与环境 lane 由 PKEC 保存。
+
+永久、限时与 EVENT_ONCE 都由 ACK 决定已应用/更新/回收状态。领域拒绝不是生命周期决定：实例保留
+最后一次 ACK 状态并排到下一日重试；EVENT_ONCE 只在完整 ACK 后回收，显式 retire 的 REMOVE 被拒绝
+后也保持可重试。
 
 威望分档效果在 `FAMILY_COMMIT` 协调到 settlement-cell Economy Modifier bucket 和动态 Trigger
 binding。分支/特性/等级无变化时不更新；降级、特性移除或分支消失立即解绑并清 Trigger 累计。
@@ -192,21 +226,25 @@ cohort→membership、family→building、building→ownership、cell→family�
 
 查询只允许在 native slice 间读取，不复制全图、不产生命令、不进入 state hash。
 
-## PKEC v40
+## PKEC v41
 
-当前 writer/reader 均为 PKEC v40。FamilyStore 记录追加 `origin_cell`、`culture_group_id` 和
+当前 writer/reader 均严格要求 PKEC v41。FamilyStore 记录包含 `origin_cell`、`culture_group_id` 和
 `split_sequence`，family policy header 固定 `family_split_population_threshold=100`；section 15–17 保存 FamilyStore、membership 与 ownership，
 section 18–19 保存人物与人物需求，section 20–22 保存 trait rolls、cell influences 和 pending trait
-commands，section 23 为 END。cell influence 记录自 v30 起追加分支 `satisfaction_q16`。
+commands，section 23 为 END。v41 的 cell record 将降水加入环境快照，七条环境 lane 按固定顺序
+进入 restore hash；旧 schema 不做隐式迁移。cell influence 记录自 v30 起包含分支
+`satisfaction_q16`。
 恢复校验 generation handle、目录 hash、强度步长、核心数量、唯一
 分支 stable ID、威望范围、连续评审状态和全部引用，再重建 CSR、selector cache、Modifier/Trigger
-binding 与冻结消费/资源因子。派生缓存不进入 PKEC 或 state hash。v29 及更早版本明确拒绝。
+binding 与冻结消费/资源因子。FamilyEffect binding 由 trait CSR 和当前权威分支重新协调，不在 PKEC
+复制 EffectRuntime 的实例权威。派生缓存不进入 PKEC 或 state hash。当前 reader 只接受 v41。
 
 ## 验证要求
 
 最低验收包括：家族形成门槛、实际业主占岗、职业统计、所有权 CSR、人口/货币/商品守恒、PKEC
-v30 hash round-trip、v29 明确拒绝、特性抽取/命令排序、分支威望滞回、分支满意度门控只挡晋升不挡降级、
-动态效果、奖励防递归、generation 旧句柄拒绝，以及家族/人物关闭与
+v41 hash round-trip、旧 schema 明确拒绝、特性抽取/命令排序、分支威望滞回、分支满意度门控只挡晋升不挡降级、
+六类目标路由、五类 stack policy、EVENT_ONCE/retire 拒绝重试、精确 selector/stat 校验、
+稀疏 exact-good override、奖励防递归、generation 旧句柄拒绝，以及家族/人物关闭与
 开启的目标规模性能对比。
 
 ## 维护入口
@@ -220,9 +258,8 @@ Architecture Skill；本页仍是家族模型的项目文档单一事实源。
 
 ## Effect Runtime 接入
 
-家族 Trait 的经济 Modifier 仍由 `FAMILY_COMMIT` 计算最终分支值，但提交
-路径已通过 Native Effect Runtime：分支以
-`(branch_stable_id, cell, modifier_definition_key)` 建立 Effect instance，
-把最终 Q16 强度作为冻结 metric，随后由 `family.modifier` adapter 排入现有
-Modifier Runtime。家族 TraitStore、分支 generation、Trigger binding 以及
-人口/现金/建筑守恒边界不变；grant/remove/set-strength 仍只走家族命令。
+旧的 Trait 威望档 Modifier 继续通过 `family.modifier.*` 程序兼容执行；新
+`family.effect.*` 程序使用独立 catalog identity、typed target resolver 和 producer `161`。
+两者都不改变 FamilyStore、分支 generation、Trigger binding 或人口/现金/建筑守恒边界；
+grant/remove/set-strength 仍只走家族命令。EffectRuntime 从不拥有家族、成员、建筑所有权或环境
+状态，Economy 也不直接写 Effect transaction/ACK。

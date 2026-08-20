@@ -505,6 +505,28 @@ bool NativeEconomyRuntime::publish_epoch_slice(
             ++_cell_owner_cash_gen[cell];
             ++_cell_population_gen[cell];
             ++_cell_resource_gen[cell];
+            if (cell < static_cast<int32_t>(_market.cell_to_market.size()) &&
+                cell < static_cast<int32_t>(_cell_effect_shortage_q16.size())) {
+                const int32_t market = _market.cell_to_market[cell];
+                int32_t shortage_q16 = 0;
+                if (market >= 0 && market < _market.market_count) {
+                    for (int32_t good = 0; good < _market.good_count; ++good) {
+                        const int64_t lane = _market.index(market, good);
+                        if (lane >= 0 && lane < static_cast<int64_t>(
+                                _market.last_shortage_q16.size()))
+                            shortage_q16 = std::max<int32_t>(shortage_q16,
+                                _market.last_shortage_q16[
+                                    static_cast<size_t>(lane)]);
+                    }
+                }
+                _cell_effect_shortage_q16[static_cast<size_t>(cell)] =
+                    std::clamp<int32_t>(shortage_q16, 0,
+                        static_cast<int32_t>(Q16_ONE));
+            }
+            constexpr uint64_t AGGREGATE_EFFECT_METRICS =
+                (1ULL << 7U) | (1ULL << 8U) | (1ULL << 9U);
+            refresh_family_effect_metrics_for_cell(cell,
+                family_effect_metric_revision(2), AGGREGATE_EFFECT_METRICS);
         }
         publish_social_pressure_facts();
         publish_technology_practice_facts();

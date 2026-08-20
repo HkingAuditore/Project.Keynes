@@ -310,6 +310,17 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
     const PackedInt32Array max_work = get_i32(catalog, "max_work");
     const PackedByteArray enabled = get_u8(catalog, "enabled");
     const PackedStringArray behavior_keys = get_strings(catalog, "behavior_keys");
+    const PackedInt32Array source_kinds = get_i32(catalog, "source_kinds");
+    const PackedInt32Array target_domains = get_i32(catalog, "target_domains");
+    const PackedInt32Array operations = get_i32(catalog, "operations");
+    const PackedInt32Array lifecycles = get_i32(catalog, "lifecycles");
+    const PackedInt32Array definition_duration_days = get_i32(catalog, "duration_days");
+    const PackedInt32Array stack_policies = get_i32(catalog, "stack_policies");
+    const PackedStringArray stack_keys = get_strings(catalog, "stack_keys");
+    const PackedInt32Array max_stacks = get_i32(catalog, "max_stacks");
+    const PackedInt32Array priorities = get_i32(catalog, "priorities");
+    const PackedInt32Array target_selector_kinds = get_i32(catalog, "target_selector_kinds");
+    const PackedStringArray target_selector_ids = get_strings(catalog, "target_selector_ids");
     const PackedInt32Array condition_offsets = get_i32(catalog, "condition_offsets");
     const PackedInt32Array condition_ops = get_i32(catalog, "condition_ops");
     const PackedInt32Array condition_arg0 = get_i32(catalog, "condition_arg0");
@@ -337,6 +348,12 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
     const PackedInt64Array command_payload_i3 = get_i64(catalog, "command_payload_i3");
 
     if (condition_offsets.size() != count + 1 ||
+        source_kinds.size() != count || target_domains.size() != count ||
+        operations.size() != count || lifecycles.size() != count ||
+        definition_duration_days.size() != count ||
+        stack_policies.size() != count || stack_keys.size() != count ||
+        max_stacks.size() != count || priorities.size() != count ||
+        target_selector_kinds.size() != count || target_selector_ids.size() != count ||
         instruction_offsets.size() != count + 1 ||
         command_offsets.size() != count + 1 ||
         condition_ops.size() != condition_arg0.size() ||
@@ -431,6 +448,28 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
         definition.instruction_count = i32_at(instruction_offsets, i + 1, 0) - definition.instruction_begin;
         definition.command_begin = i32_at(command_offsets, i, 0);
         definition.command_count = i32_at(command_offsets, i + 1, 0) - definition.command_begin;
+        definition.source_kind = i32_at(source_kinds, i, 0);
+        definition.target_domain = i32_at(target_domains, i, 0);
+        definition.operation = i32_at(operations, i, 0);
+        definition.lifecycle = i32_at(lifecycles, i, 0);
+        definition.duration_days = i32_at(definition_duration_days, i, -1);
+        definition.stack_policy = i32_at(stack_policies, i, 0);
+        definition.stack_key = string_at(stack_keys, i);
+        definition.max_stacks = std::max(1, i32_at(max_stacks, i, 1));
+        definition.priority = i32_at(priorities, i, 0);
+        definition.target_selector_kind = i32_at(target_selector_kinds, i, 0);
+        definition.target_selector_id = string_at(target_selector_ids, i);
+        if (definition.source_kind < 0 || definition.source_kind > 5 ||
+            definition.target_domain < 0 || definition.target_domain > 5 ||
+            definition.operation < 0 || definition.operation > 4 ||
+            definition.lifecycle < 0 || definition.lifecycle > 2 ||
+            definition.stack_policy < 0 || definition.stack_policy > 4 ||
+            (definition.lifecycle == 1 && definition.duration_days < 1) ||
+            (definition.lifecycle != 1 && definition.duration_days == 0) ||
+            definition.max_stacks <= 0 || definition.target_selector_kind < 0 ||
+            definition.target_selector_kind > 5 ||
+            (definition.lifecycle == 1 && definition.command_count == 0))
+            return failure("effect_family_metadata_invalid");
         if (definition.condition_begin < 0 || definition.condition_count < 0 ||
             definition.condition_begin + definition.condition_count > condition_ops.size() ||
             definition.instruction_begin < 0 || definition.instruction_count < 0 ||
@@ -456,6 +495,22 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
         if (condition.op == STATE_GTE && (condition.arg0 < 0 || condition.arg0 > 2))
             return failure("effect_condition_state_invalid");
         _conditions.push_back(condition);
+    }
+    std::vector<int32_t> command_owner(
+        static_cast<size_t>(command_actions.size()), -1);
+    for (int32_t definition_id = 0;
+         definition_id < static_cast<int32_t>(_definitions.size());
+         ++definition_id) {
+        const Definition &definition = _definitions[
+            static_cast<size_t>(definition_id)];
+        for (int32_t command_index = definition.command_begin;
+             command_index < definition.command_begin + definition.command_count;
+             ++command_index) {
+            if (command_index < 0 || command_index >= command_actions.size() ||
+                command_owner[static_cast<size_t>(command_index)] != -1)
+                return failure("effect_command_owner_invalid");
+            command_owner[static_cast<size_t>(command_index)] = definition_id;
+        }
     }
     for (int32_t i = 0; i < instruction_ops.size(); ++i) {
         InstructionRow row;
@@ -486,6 +541,7 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
         command.stacks = std::max(1, command_stacks[i]);
         command.command_key = string_at(command_keys, i);
         command.definition_key = string_at(command_definition_keys, i);
+        command.owner_program_id = command_owner[static_cast<size_t>(i)];
         if (command.action == MODIFIER_COMMAND) {
             if (command.command_key == "technology.modifier")
                 command.native_modifier_adapter = NATIVE_MODIFIER_TECHNOLOGY;
@@ -495,6 +551,10 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
                 command.native_modifier_adapter = NATIVE_MODIFIER_PERSON;
             else if (command.command_key == "trigger.modifier")
                 command.native_modifier_adapter = NATIVE_MODIFIER_TRIGGER;
+            else if (command.owner_program_id >= 0 &&
+                     _definitions[static_cast<size_t>(command.owner_program_id)]
+                         .key.rfind("family.effect.", 0) == 0)
+                command.native_modifier_adapter = NATIVE_MODIFIER_FAMILY_EFFECT;
         }
         command.payload = {command_payload_i0[i], command_payload_i1[i],
                            command_payload_i2[i], command_payload_i3[i]};
@@ -532,6 +592,48 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
         }
         if (definition.condition_count > 0 && condition_depth != 1)
             return failure("effect_condition_stack_invalid");
+        if (definition.lifecycle == 1) {
+            bool has_modifier_command = false;
+            for (int32_t command_index = definition.command_begin;
+                 command_index < definition.command_begin + definition.command_count;
+                 ++command_index) {
+                if (_command_definitions[static_cast<size_t>(command_index)].action ==
+                    MODIFIER_COMMAND) {
+                    has_modifier_command = true;
+                    break;
+                }
+            }
+            if (!has_modifier_command)
+                return failure("effect_duration_requires_modifier_command");
+        }
+        if (definition.key.rfind("family.effect.", 0) == 0) {
+            const int32_t expected_modifier_domain =
+                definition.target_domain == 3 ? ModifierRuntime::COUNTRY
+                : definition.target_domain == 4 ? ModifierRuntime::CLIMATE
+                                                : ModifierRuntime::ECONOMY;
+            if (definition.operation == 3 && definition.condition_count == 0)
+                return failure("effect_conditional_override_requires_condition");
+            if ((definition.operation == 4) != (definition.lifecycle == 2))
+                return failure("effect_event_operation_lifecycle_mismatch");
+            bool has_event_command = false;
+            for (int32_t command_index = definition.command_begin;
+                 command_index < definition.command_begin + definition.command_count;
+                 ++command_index) {
+                const CommandDefinition &command = _command_definitions[
+                    static_cast<size_t>(command_index)];
+                if (definition.operation == 4) {
+                    if (command.action == MODIFIER_COMMAND)
+                        return failure("effect_event_operation_modifier_invalid");
+                    has_event_command = true;
+                } else if (command.action != MODIFIER_COMMAND ||
+                           command.opcode != ModifierRuntime::COMMAND_APPLY ||
+                           command.domain != expected_modifier_domain) {
+                    return failure("effect_family_target_adapter_mismatch");
+                }
+            }
+            if (definition.operation == 4 && !has_event_command)
+                return failure("effect_event_command_missing");
+        }
 
         int32_t value_depth = 0;
         for (int32_t i = definition.instruction_begin;
@@ -554,6 +656,71 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
                 if (command.value_mode == VALUE_STACK_TOP && value_depth < 1)
                     return failure("effect_value_stack_invalid");
             }
+        }
+    }
+
+    // An explicit stack key is a catalog-level contract across definitions.
+    // Runtime grouping is keyed by the resolved target, so incompatible rows
+    // must be rejected before any instance can enter the hot path.
+    std::unordered_map<std::string, int32_t> family_stack_contracts;
+    std::unordered_map<uint64_t, std::string> family_stack_hashes;
+    for (int32_t definition_index = 0;
+         definition_index < static_cast<int32_t>(_definitions.size());
+         ++definition_index) {
+        const Definition &definition = _definitions[
+            static_cast<size_t>(definition_index)];
+        if (definition.key.rfind("family.effect.", 0) != 0) continue;
+        const std::string resolved_stack_key = definition.stack_key.empty()
+            ? definition.key : definition.stack_key;
+        const uint64_t resolved_stack_hash = fnv_string(
+            1469598103934665603ULL, resolved_stack_key);
+        const auto hash_inserted = family_stack_hashes.emplace(
+            resolved_stack_hash, resolved_stack_key);
+        if (!hash_inserted.second &&
+            hash_inserted.first->second != resolved_stack_key)
+            return failure("effect_family_stack_hash_collision");
+        if (definition.operation == 4) {
+            if (definition.stack_policy != 0 || definition.max_stacks != 1)
+                return failure("effect_event_stack_policy_invalid");
+            continue;
+        }
+        for (int32_t command_index = definition.command_begin;
+             command_index < definition.command_begin + definition.command_count;
+             ++command_index) {
+            if (_command_definitions[static_cast<size_t>(command_index)].stacks != 1)
+                return failure("effect_family_command_base_stacks_invalid");
+        }
+        if ((definition.stack_policy == 3 || definition.stack_policy == 4) &&
+            (definition.command_count != 1 || !definition.behavior_id.empty()))
+            return failure("effect_extreme_stack_policy_shape_invalid");
+        if (definition.stack_key.empty()) continue;
+        const auto inserted = family_stack_contracts.emplace(
+            definition.stack_key, definition_index);
+        if (inserted.second) continue;
+        const Definition &reference = _definitions[
+            static_cast<size_t>(inserted.first->second)];
+        if (reference.target_domain != definition.target_domain ||
+            reference.operation != definition.operation ||
+            reference.lifecycle != definition.lifecycle ||
+            reference.duration_days != definition.duration_days ||
+            reference.stack_policy != definition.stack_policy ||
+            reference.max_stacks != definition.max_stacks ||
+            reference.target_selector_kind != definition.target_selector_kind ||
+            reference.target_selector_id != definition.target_selector_id ||
+            reference.command_count != definition.command_count)
+            return failure("effect_family_stack_contract_mismatch");
+        for (int32_t ordinal = 0; ordinal < definition.command_count; ++ordinal) {
+            const CommandDefinition &lhs = _command_definitions[
+                static_cast<size_t>(reference.command_begin + ordinal)];
+            const CommandDefinition &rhs = _command_definitions[
+                static_cast<size_t>(definition.command_begin + ordinal)];
+            if (lhs.action != rhs.action || lhs.domain != rhs.domain ||
+                lhs.opcode != rhs.opcode ||
+                lhs.target_resolver != rhs.target_resolver ||
+                lhs.static_target != rhs.static_target ||
+                lhs.duration_days != rhs.duration_days ||
+                lhs.stacks != rhs.stacks)
+                return failure("effect_family_stack_command_mismatch");
         }
     }
 
@@ -584,6 +751,17 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
         hash = fnv_value(hash, definition.command_begin);
         hash = fnv_value(hash, definition.command_count);
         hash = fnv_string(hash, definition.behavior_id);
+        hash = fnv_value(hash, definition.source_kind);
+        hash = fnv_value(hash, definition.target_domain);
+        hash = fnv_value(hash, definition.operation);
+        hash = fnv_value(hash, definition.lifecycle);
+        hash = fnv_value(hash, definition.duration_days);
+        hash = fnv_value(hash, definition.stack_policy);
+        hash = fnv_string(hash, definition.stack_key);
+        hash = fnv_value(hash, definition.max_stacks);
+        hash = fnv_value(hash, definition.priority);
+        hash = fnv_value(hash, definition.target_selector_kind);
+        hash = fnv_string(hash, definition.target_selector_id);
     }
     for (const Condition &condition : _conditions) {
         hash = fnv_value(hash, condition.op);
@@ -1362,6 +1540,7 @@ void EffectRuntime::reset_runtime_state() {
     _run_cursor = 0;
     _next_transaction_id = 1;
     _acked_transaction_id = 0;
+    _next_activation_sequence = 1;
     _instances.clear();
     _free_instance_indices.clear();
     _instance_ids.clear();
@@ -1369,6 +1548,9 @@ void EffectRuntime::reset_runtime_state() {
     _metric_present.clear();
     _dirty_queue.clear();
     _dirty_epoch_counter = 1;
+    _stack_decision_epoch = 1;
+    _family_effect_groups.clear();
+    _family_effect_candidate_scratch.clear();
     while (!_due_heap.empty()) _due_heap.pop();
     _run_candidates.clear();
     _candidate_cursor = 0;
@@ -1488,6 +1670,12 @@ void EffectRuntime::rebuild_run_candidates(int64_t day_index) {
         for (Instance &instance : _instances) instance.dirty_epoch = 0;
         _dirty_epoch_counter = 1;
     }
+    ++_stack_decision_epoch;
+    if (_stack_decision_epoch == 0) {
+        for (Instance &instance : _instances)
+            instance.stack_decision_epoch = 0;
+        _stack_decision_epoch = 1;
+    }
     while (!_due_heap.empty() && _due_heap.top().day <= day_index) {
         const DueNode node = _due_heap.top();
         _due_heap.pop();
@@ -1554,6 +1742,15 @@ bool EffectRuntime::upsert_instance_pod(int64_t instance_id,
     const int32_t program_id = definition_id_for_key(program_key);
     if (program_id < 0) { error = "effect_program_unknown"; return false; }
     int32_t index = instance_index_for_id(instance_id);
+    const bool created = index < 0;
+    bool had_family_group = false;
+    FamilyEffectGroupKey previous_group;
+    if (index >= 0 && index < static_cast<int32_t>(_instances.size()) &&
+        is_family_effect_instance(_instances[static_cast<size_t>(index)])) {
+        had_family_group = true;
+        previous_group = family_effect_group_key(
+            _instances[static_cast<size_t>(index)]);
+    }
     if (index < 0) {
         if (static_cast<int32_t>(_instance_ids.size()) >= _max_instances) {
             ++_overflow_count; error = "effect_instance_capacity_exceeded"; return false;
@@ -1584,6 +1781,7 @@ bool EffectRuntime::upsert_instance_pod(int64_t instance_id,
         _instance_ids[instance_id] = index;
     }
     Instance &instance = _instances[static_cast<size_t>(index)];
+    const int32_t previous_program_id = instance.program_id;
     const bool generation_changed = instance.generation != generation;
     instance.generation = generation;
     instance.program_id = program_id;
@@ -1595,23 +1793,79 @@ bool EffectRuntime::upsert_instance_pod(int64_t instance_id,
     instance.level = level;
     instance.next_due_day = next_due_day;
     instance.active = active ? 1 : 0;
+    const Definition &definition = _definitions[static_cast<size_t>(program_id)];
+    const bool new_binding = created || generation_changed ||
+        previous_program_id != program_id;
+    instance.source_kind = definition.source_kind;
+    instance.target_domain = definition.target_domain;
+    instance.operation = definition.operation;
+    instance.lifecycle = definition.lifecycle;
+    instance.duration_days = definition.duration_days;
+    instance.stack_policy = definition.stack_policy;
+    instance.max_stacks = definition.max_stacks;
+    instance.priority = definition.priority;
+    instance.stack_key_hash = fnv_string(1469598103934665603ULL,
+        definition.stack_key.empty() ? definition.key : definition.stack_key);
+    if (new_binding) {
+        instance.effect_applied = 0;
+        instance.retire_requested = 0;
+        instance.applied_stack_count = 0;
+        instance.applied_input_revision = 0;
+        instance.last_acked_fire_sequence = 0;
+        instance.activation_sequence = _next_activation_sequence++;
+    }
+    // Upsert is structural reconciliation, not an activation event. Repeating
+    // the same authoritative row must therefore be idempotent for every stack
+    // policy. Event/random/player ingress supplies an explicit stack count via
+    // submit_instances instead of turning daily reconciliation into ADD_STACK.
+    if (new_binding) instance.stack_count = 1;
+    else instance.stack_count = std::clamp(instance.stack_count, 1,
+                                           definition.max_stacks);
+    // A reconciliation/upsert must not refresh a running duration. Expiry is
+    // anchored to the first binding generation; only a new generation or
+    // program binding receives a fresh lifetime.
+    if (definition.lifecycle == 1 &&
+        (new_binding || instance.expires_day < 0)) {
+        instance.expires_day = next_due_day +
+            static_cast<int64_t>(definition.duration_days);
+    } else if (definition.lifecycle != 1) {
+        instance.expires_day = -1;
+    }
     if (generation_changed) {
         for (Transaction &transaction : _transactions) {
             if (transaction.source_instance_id == instance.id &&
                 transaction.source_generation != generation &&
                 transaction.status != ACKED && transaction.status != REJECTED) {
                 untrack_pending_transaction(transaction);
+                unindex_transaction_commands(transaction);
                 transaction.status = REJECTED;
+                apply_rejected_instance_transition(transaction);
                 ++_preflight_rejects;
             }
         }
         instance.fire_sequence = 0;
         instance.input_revision = 0;
         instance.last_evaluated_input_revision = 0;
+        instance.effect_applied = 0;
+        instance.retire_requested = 0;
+        instance.applied_stack_count = 0;
+        instance.applied_input_revision = 0;
+        instance.last_acked_fire_sequence = 0;
         std::fill(_metric_present.begin() + instance.metric_base,
                   _metric_present.begin() + instance.metric_base + _metric_count, 0);
     }
-    mark_dirty(index);
+    const bool has_family_group = is_family_effect_instance(instance);
+    const FamilyEffectGroupKey current_group = has_family_group
+        ? family_effect_group_key(instance) : FamilyEffectGroupKey{};
+    if (had_family_group && (!has_family_group ||
+        !(previous_group == current_group))) {
+        const auto previous = _family_effect_groups.find(previous_group);
+        if (previous != _family_effect_groups.end())
+            for (const int32_t member : previous->second) mark_dirty(member);
+        remove_family_effect_group_member(index, previous_group);
+    }
+    if (has_family_group) add_family_effect_group_member(index);
+    mark_family_effect_group_dirty(index);
     schedule_instance(index, instance.next_due_day);
     _run_cursor = 0;
     ++_instances_submitted;
@@ -1796,6 +2050,7 @@ bool EffectRuntime::instance_fire_acked_pod(int64_t instance_id,
     if (index < 0 || index >= static_cast<int32_t>(_instances.size())) return false;
     const Instance &instance = _instances[static_cast<size_t>(index)];
     if (instance.generation != generation || instance.fire_sequence == 0) return false;
+    if (instance.last_acked_fire_sequence >= instance.fire_sequence) return true;
     // A fire is domain-complete when nothing is still in flight. ACKED rows may
     // already have been compacted, so fire_sequence is the durable evidence of
     // a successful path. REJECTED rows must not poison a later ACKED fire.
@@ -1822,7 +2077,7 @@ bool EffectRuntime::nudge_unacked_instance_pod(int64_t instance_id,
     if (instance.generation != generation || instance.active == 0) return false;
     if (instance_fire_acked_pod(instance_id, generation)) return true;
     instance.next_due_day = day_index;
-    mark_dirty(index);
+    mark_family_effect_group_dirty(index);
     schedule_instance(index, day_index);
     return true;
 }
@@ -1837,14 +2092,306 @@ bool EffectRuntime::set_metric_pod(int64_t instance_id, int32_t metric_id,
         error = "effect_snapshot_metric_invalid"; return false;
     }
     Instance &instance = _instances[static_cast<size_t>(index)];
-    if (revision <= instance.input_revision) return true;
+    // A frozen snapshot is published column by column. Equal revisions are
+    // therefore part of the same atomic logical row and must still update the
+    // requested metric; only genuinely older snapshots are stale.
+    if (revision < instance.input_revision) return true;
     int64_t *metric = metric_ptr(instance, metric_id);
     if (metric == nullptr) { error = "effect_snapshot_metric_invalid"; return false; }
     *metric = value_q16;
     _metric_present[static_cast<size_t>(instance.metric_base) +
                     static_cast<size_t>(metric_id)] = 1;
-    instance.input_revision = revision;
-    mark_dirty(index);
+    if (revision > instance.input_revision) {
+        instance.input_revision = revision;
+        mark_family_effect_group_dirty(index);
+    }
+    return true;
+}
+
+bool EffectRuntime::family_effect_metadata_pod(
+        const std::string &program_key, FamilyEffectMetadataPod &out) const {
+    const int32_t definition_id = definition_id_for_key(program_key);
+    if (definition_id < 0 ||
+        definition_id >= static_cast<int32_t>(_definitions.size()))
+        return false;
+    const Definition &definition = _definitions[
+        static_cast<size_t>(definition_id)];
+    if (definition.key.rfind("family.effect.", 0) != 0) return false;
+    out = FamilyEffectMetadataPod{};
+    out.source_kind = definition.source_kind;
+    out.target_domain = definition.target_domain;
+    out.operation = definition.operation;
+    out.lifecycle = definition.lifecycle;
+    out.duration_days = definition.duration_days;
+    out.stack_policy = definition.stack_policy;
+    out.max_stacks = definition.max_stacks;
+    out.priority = definition.priority;
+    out.target_selector_kind = definition.target_selector_kind;
+    out.target_selector_id = definition.target_selector_id;
+    out.stack_key_hash = fnv_string(1469598103934665603ULL,
+        definition.stack_key.empty() ? definition.key : definition.stack_key);
+    auto include_metric = [&](int32_t metric_id) {
+        if (metric_id >= 0 && metric_id < 64)
+            out.metric_mask |= 1ULL << static_cast<uint32_t>(metric_id);
+    };
+    for (int32_t row = definition.condition_begin;
+         row < definition.condition_begin + definition.condition_count; ++row) {
+        const Condition &condition = _conditions[static_cast<size_t>(row)];
+        if (condition.op == METRIC_GTE || condition.op == METRIC_LTE ||
+            condition.op == METRIC_EQ)
+            include_metric(condition.arg0);
+    }
+    for (int32_t row = definition.instruction_begin;
+         row < definition.instruction_begin + definition.instruction_count; ++row) {
+        const InstructionRow &instruction = _instructions[static_cast<size_t>(row)];
+        if (instruction.op == READ_METRIC) include_metric(instruction.arg0);
+    }
+    return true;
+}
+
+bool EffectRuntime::uses_managed_lifecycle(const Definition &definition) {
+    return definition.lifecycle != 0 ||
+        definition.key.rfind("family.effect.", 0) == 0;
+}
+
+bool EffectRuntime::is_family_effect_instance(const Instance &instance) const {
+    return instance.program_id >= 0 &&
+        instance.program_id < static_cast<int32_t>(_definitions.size()) &&
+        instance.operation != 4 &&
+        _definitions[static_cast<size_t>(instance.program_id)]
+            .key.rfind("family.effect.", 0) == 0;
+}
+
+EffectRuntime::FamilyEffectGroupKey EffectRuntime::family_effect_group_key(
+        const Instance &instance) const {
+    return {instance.target_domain, instance.target_handle,
+            instance.target_generation, instance.stack_key_hash};
+}
+
+void EffectRuntime::add_family_effect_group_member(int32_t instance_index) {
+    if (instance_index < 0 ||
+        instance_index >= static_cast<int32_t>(_instances.size()) ||
+        !is_family_effect_instance(_instances[static_cast<size_t>(instance_index)]))
+        return;
+    auto &members = _family_effect_groups[family_effect_group_key(
+        _instances[static_cast<size_t>(instance_index)])];
+    if (std::find(members.begin(), members.end(), instance_index) == members.end())
+        members.push_back(instance_index);
+}
+
+void EffectRuntime::remove_family_effect_group_member(
+        int32_t instance_index, const FamilyEffectGroupKey &key) {
+    auto found = _family_effect_groups.find(key);
+    if (found == _family_effect_groups.end()) return;
+    auto &members = found->second;
+    members.erase(std::remove(members.begin(), members.end(), instance_index),
+                  members.end());
+    if (members.empty()) _family_effect_groups.erase(found);
+}
+
+void EffectRuntime::rebuild_family_effect_groups() {
+    _family_effect_groups.clear();
+    for (int32_t index = 0; index < static_cast<int32_t>(_instances.size()); ++index)
+        if (_instances[static_cast<size_t>(index)].id > 0)
+            add_family_effect_group_member(index);
+}
+
+void EffectRuntime::mark_family_effect_group_dirty(int32_t instance_index) {
+    if (instance_index < 0 ||
+        instance_index >= static_cast<int32_t>(_instances.size())) return;
+    const Instance &instance = _instances[static_cast<size_t>(instance_index)];
+    if (!is_family_effect_instance(instance)) {
+        mark_dirty(instance_index);
+        return;
+    }
+    const auto found = _family_effect_groups.find(
+        family_effect_group_key(instance));
+    if (found == _family_effect_groups.end()) {
+        mark_dirty(instance_index);
+        return;
+    }
+    for (const int32_t member : found->second) mark_dirty(member);
+}
+
+bool EffectRuntime::preview_family_effect_value(
+        const Definition &definition, const Instance &instance,
+        int64_t &value, std::string &error) const {
+    std::array<int64_t, MAX_STACK> stack{};
+    int32_t sp = 0;
+    const int32_t end = definition.instruction_begin +
+        definition.instruction_count;
+    for (int32_t row_index = definition.instruction_begin;
+         row_index < end; ++row_index) {
+        const InstructionRow &row = _instructions[static_cast<size_t>(row_index)];
+        switch (row.op) {
+            case CONST:
+                if (sp >= MAX_STACK) { error = "effect_value_stack_overflow"; return false; }
+                stack[sp++] = row.value;
+                break;
+            case READ_METRIC:
+                if (sp >= MAX_STACK) { error = "effect_value_stack_overflow"; return false; }
+                stack[sp++] = metric_value(instance, row.arg0);
+                break;
+            case READ_STATE:
+                if (sp >= MAX_STACK) { error = "effect_value_stack_overflow"; return false; }
+                stack[sp++] = state_value(instance, row.arg0);
+                break;
+            case ADD:
+            case SUB:
+            case MUL_Q16:
+            case DIV_FLOOR:
+            case MIN:
+            case MAX:
+                if (sp < 2) { error = "effect_value_stack_underflow"; return false; }
+                if (row.op == ADD) stack[sp - 2] = saturating_add(stack[sp - 2], stack[sp - 1]);
+                else if (row.op == SUB) stack[sp - 2] = saturating_sub(stack[sp - 2], stack[sp - 1]);
+                else if (row.op == MUL_Q16) stack[sp - 2] = mul_q16(stack[sp - 2], stack[sp - 1]);
+                else if (row.op == DIV_FLOOR) {
+                    if (stack[sp - 1] == 0) { error = "effect_division_by_zero"; return false; }
+                    const int64_t quotient = floor_div(stack[sp - 2], stack[sp - 1]);
+                    if (quotient > std::numeric_limits<int64_t>::max() / Q16_ONE ||
+                        quotient < std::numeric_limits<int64_t>::min() / Q16_ONE) {
+                        error = "effect_division_overflow";
+                        return false;
+                    }
+                    stack[sp - 2] = quotient * Q16_ONE;
+                } else if (row.op == MIN) {
+                    stack[sp - 2] = std::min(stack[sp - 2], stack[sp - 1]);
+                } else {
+                    stack[sp - 2] = std::max(stack[sp - 2], stack[sp - 1]);
+                }
+                --sp;
+                break;
+            case CLAMP:
+                if (sp < 1) { error = "effect_value_stack_underflow"; return false; }
+                stack[sp - 1] = std::max(row.value, std::min(
+                    stack[sp - 1], static_cast<int64_t>(row.arg0)));
+                break;
+            case EMIT_COMMAND: {
+                if (row.arg0 < 0 || row.arg0 >= definition.command_count) {
+                    error = "effect_command_index_invalid";
+                    return false;
+                }
+                const CommandDefinition &command = _command_definitions[
+                    static_cast<size_t>(definition.command_begin + row.arg0)];
+                value = command.value_mode == VALUE_STACK_TOP
+                    ? (sp > 0 ? stack[sp - 1] : 0) : command.value;
+                return true;
+            }
+            case END:
+                break;
+            default:
+                error = "effect_instruction_opcode_invalid";
+                return false;
+        }
+    }
+    error = "effect_stack_policy_value_missing";
+    return false;
+}
+
+bool EffectRuntime::resolve_family_effect_group(
+        int32_t instance_index, int64_t day, std::string &error) {
+    if (instance_index < 0 ||
+        instance_index >= static_cast<int32_t>(_instances.size())) {
+        error = "effect_instance_unknown";
+        return false;
+    }
+    Instance &requested = _instances[static_cast<size_t>(instance_index)];
+    if (!is_family_effect_instance(requested)) {
+        requested.stack_decision_epoch = _stack_decision_epoch;
+        requested.desired_stack_count = std::max(1, requested.stack_count);
+        return true;
+    }
+    if (requested.stack_decision_epoch == _stack_decision_epoch) return true;
+    const auto found = _family_effect_groups.find(
+        family_effect_group_key(requested));
+    if (found == _family_effect_groups.end()) {
+        requested.stack_decision_epoch = _stack_decision_epoch;
+        requested.desired_stack_count = 0;
+        return true;
+    }
+    _family_effect_candidate_scratch.clear();
+    for (const int32_t member_index : found->second) {
+        if (member_index < 0 ||
+            member_index >= static_cast<int32_t>(_instances.size())) continue;
+        Instance &member = _instances[static_cast<size_t>(member_index)];
+        member.stack_decision_epoch = _stack_decision_epoch;
+        member.desired_stack_count = 0;
+        if (!member.active || member.retire_requested != 0 ||
+            member.program_id < 0 ||
+            member.program_id >= static_cast<int32_t>(_definitions.size()))
+            continue;
+        const Definition &definition = _definitions[
+            static_cast<size_t>(member.program_id)];
+        if (!definition.enabled ||
+            (definition.lifecycle == 1 && member.expires_day >= 0 &&
+             day >= member.expires_day) ||
+            !evaluate_condition(definition, member))
+            continue;
+        _family_effect_candidate_scratch.push_back(member_index);
+    }
+    if (_family_effect_candidate_scratch.empty()) return true;
+    const int32_t policy = requested.stack_policy;
+    const int32_t group_cap = std::max(1, requested.max_stacks);
+    auto stable_better = [&](int32_t lhs_index, int32_t rhs_index,
+                             bool activation_first) {
+        const Instance &lhs = _instances[static_cast<size_t>(lhs_index)];
+        const Instance &rhs = _instances[static_cast<size_t>(rhs_index)];
+        if (activation_first && lhs.activation_sequence != rhs.activation_sequence)
+            return lhs.activation_sequence > rhs.activation_sequence;
+        if (lhs.priority != rhs.priority) return lhs.priority > rhs.priority;
+        if (!activation_first && lhs.activation_sequence != rhs.activation_sequence)
+            return lhs.activation_sequence > rhs.activation_sequence;
+        return lhs.id < rhs.id;
+    };
+    if (policy == 2) { // ADD_STACK.
+        std::sort(_family_effect_candidate_scratch.begin(),
+                  _family_effect_candidate_scratch.end(),
+                  [&](int32_t lhs, int32_t rhs) {
+                      return stable_better(lhs, rhs, false);
+                  });
+        int32_t remaining = group_cap;
+        for (const int32_t member_index : _family_effect_candidate_scratch) {
+            Instance &member = _instances[static_cast<size_t>(member_index)];
+            const int32_t allocated = std::min(
+                remaining, std::max(1, member.stack_count));
+            member.desired_stack_count = allocated;
+            remaining -= allocated;
+            if (remaining <= 0) break;
+        }
+        return true;
+    }
+    int32_t winner = _family_effect_candidate_scratch.front();
+    int64_t winner_value = 0;
+    if (policy == 3 || policy == 4) { // MAX / MIN.
+        const Instance &first = _instances[static_cast<size_t>(winner)];
+        if (!preview_family_effect_value(
+                _definitions[static_cast<size_t>(first.program_id)], first,
+                winner_value, error)) return false;
+    }
+    for (size_t i = 1; i < _family_effect_candidate_scratch.size(); ++i) {
+        const int32_t candidate_index = _family_effect_candidate_scratch[i];
+        bool choose = false;
+        if (policy == 3 || policy == 4) {
+            const Instance &candidate = _instances[
+                static_cast<size_t>(candidate_index)];
+            int64_t candidate_value = 0;
+            if (!preview_family_effect_value(
+                    _definitions[static_cast<size_t>(candidate.program_id)],
+                    candidate, candidate_value, error)) return false;
+            choose = policy == 3 ? candidate_value > winner_value
+                                 : candidate_value < winner_value;
+            if (candidate_value == winner_value)
+                choose = stable_better(candidate_index, winner, false);
+            if (choose) winner_value = candidate_value;
+        } else {
+            choose = stable_better(candidate_index, winner, policy == 1);
+        }
+        if (choose) winner = candidate_index;
+    }
+    Instance &selected = _instances[static_cast<size_t>(winner)];
+    selected.desired_stack_count = std::min(
+        group_cap, std::max(1, selected.stack_count));
     return true;
 }
 
@@ -1864,6 +2411,17 @@ bool EffectRuntime::retire_instance_pod(int64_t instance_id,
         return false;
     }
     if (instance.active == 0) return true;
+    if (instance.retire_requested != 0) return true;
+    const auto pending = _pending_transactions_by_instance.find(instance.id);
+    if (pending != _pending_transactions_by_instance.end() &&
+        pending->second > 0) {
+        instance.retire_requested = 1;
+        instance.next_due_day = std::max<int64_t>(
+            instance.next_due_day, effective_day + 1);
+        mark_family_effect_group_dirty(index);
+        schedule_instance(index, instance.next_due_day);
+        return true;
+    }
     return create_retirement_transaction(index, effective_day, error);
 }
 
@@ -2464,14 +3022,22 @@ Dictionary EffectRuntime::submit_instances(const Dictionary &batch) {
     const int32_t count = ids.size();
     const PackedInt32Array generations = get_i32(batch, "generations");
     const PackedInt32Array source_types = get_i32(batch, "source_types");
+    const PackedInt32Array declared_source_kinds = get_i32(
+        batch, "source_kinds");
     const PackedInt64Array source_ids = get_i64(batch, "source_ids");
     const PackedInt64Array source_handles = get_i64(batch, "source_handles");
     const PackedInt64Array target_handles = get_i64(batch, "target_handles");
     const PackedInt32Array target_generations = get_i32(batch, "target_generations");
     const PackedInt32Array levels = get_i32(batch, "levels");
+    const PackedInt32Array submitted_stack_counts = get_i32(batch, "stack_counts");
+    const PackedInt64Array activation_sequences = get_i64(
+        batch, "activation_sequences");
     const PackedInt64Array next_due_days = get_i64(batch, "next_due_days");
     const PackedByteArray active = get_u8(batch, "active");
-    if (count <= 0 || count > _max_instances || program_keys.size() != count)
+    if (count <= 0 || count > _max_instances || program_keys.size() != count ||
+        (!submitted_stack_counts.is_empty() && submitted_stack_counts.size() != count) ||
+        (!activation_sequences.is_empty() && activation_sequences.size() != count) ||
+        (!declared_source_kinds.is_empty() && declared_source_kinds.size() != count))
         return failure("effect_instance_columns_invalid");
     int32_t accepted = 0;
     int32_t rejected = 0;
@@ -2484,75 +3050,84 @@ Dictionary EffectRuntime::submit_instances(const Dictionary &batch) {
             ++rejected;
             continue;
         }
-        int32_t index = instance_index_for_id(id);
         const uint32_t generation = static_cast<uint32_t>(std::max(1, i32_at(generations, i, 1)));
+        const Definition &definition = _definitions[static_cast<size_t>(program_id)];
+        if (definition.key.rfind("family.effect.", 0) == 0 &&
+            (declared_source_kinds.is_empty() ||
+             declared_source_kinds[i] != definition.source_kind)) {
+            ++rejected;
+            _last_error = "effect_family_source_kind_mismatch";
+            continue;
+        }
+        const bool requested_active = u8_at(active, i, 1) != 0;
+        if (definition.key.rfind("family.effect.", 0) == 0 &&
+            !requested_active) {
+            ++rejected;
+            _last_error = "effect_family_deactivation_requires_retire";
+            continue;
+        }
+        const int32_t previous_index = instance_index_for_id(id);
+        const bool was_active = previous_index >= 0 &&
+            _instances[static_cast<size_t>(previous_index)].active != 0;
+        const uint64_t previous_activation = previous_index >= 0
+            ? _instances[static_cast<size_t>(previous_index)].activation_sequence
+            : 0;
+        const int64_t due_day = i64_at(next_due_days, i,
+            _current_day >= 0 ? _current_day : 0);
+        std::string error;
+        if (!upsert_instance_pod(id, string_at(program_keys, i), generation,
+                i32_at(source_types, i, 0), i64_at(source_ids, i, 0),
+                static_cast<uint64_t>(i64_at(source_handles, i, 0)),
+                static_cast<uint64_t>(i64_at(target_handles, i, 0)),
+                static_cast<uint32_t>(std::max(0,
+                    i32_at(target_generations, i, 0))),
+                i32_at(levels, i, 0), due_day, requested_active, error)) {
+            ++rejected;
+            _last_error = error;
+            continue;
+        }
+        const int32_t index = instance_index_for_id(id);
         if (index < 0) {
-            if (static_cast<int32_t>(_instance_ids.size()) >= _max_instances) {
-                ++_overflow_count;
-                _last_error = "effect_instance_capacity_exceeded";
-                break;
-            }
-            if (!_free_instance_indices.empty()) {
-                index = _free_instance_indices.back();
-                _free_instance_indices.pop_back();
-                Instance &slot = _instances[static_cast<size_t>(index)];
-                const uint32_t metric_base = slot.metric_base;
-                slot = Instance{};
-                slot.metric_base = metric_base;
-                std::fill(_metric_values.begin() + metric_base,
-                          _metric_values.begin() + metric_base + _metric_count, 0);
-                std::fill(_metric_present.begin() + metric_base,
-                          _metric_present.begin() + metric_base + _metric_count, 0);
-            } else {
-                Instance instance;
-                instance.metric_base = static_cast<uint32_t>(_metric_values.size());
-                _metric_values.resize(_metric_values.size() + static_cast<size_t>(_metric_count), 0);
-                _metric_present.resize(_metric_present.size() + static_cast<size_t>(_metric_count), 0);
-                _instances.push_back(std::move(instance));
-                index = static_cast<int32_t>(_instances.size() - 1);
-            }
-            Instance &slot = _instances[static_cast<size_t>(index)];
-            slot.id = id;
-            slot.generation = generation;
-            slot.program_id = program_id;
-            _instance_ids[id] = index;
+            ++rejected;
+            _last_error = "effect_instance_missing_after_upsert";
+            continue;
         }
-        Instance &instance = _instances[index];
-        const bool generation_changed = instance.generation != generation;
-        instance.generation = generation;
-        instance.program_id = program_id;
-        instance.source_type = i32_at(source_types, i, 0);
-        instance.source_id = i64_at(source_ids, i, 0);
-        instance.source_handle = static_cast<uint64_t>(i64_at(source_handles, i, 0));
-        instance.target_handle = static_cast<uint64_t>(i64_at(target_handles, i, 0));
-        instance.target_generation = static_cast<uint32_t>(std::max(0, i32_at(target_generations, i, 0)));
-        instance.level = i32_at(levels, i, 0);
-        instance.next_due_day = i64_at(next_due_days, i,
-                                       _current_day >= 0 ? _current_day : 0);
-        instance.active = u8_at(active, i, 1) != 0 ? 1 : 0;
-        if (generation_changed) {
-            for (Transaction &transaction : _transactions) {
-                if (transaction.source_instance_id == instance.id &&
-                    transaction.source_generation != generation &&
-                    transaction.status != ACKED &&
-                    transaction.status != REJECTED) {
-                    untrack_pending_transaction(transaction);
-                    transaction.status = REJECTED;
-                    ++_preflight_rejects;
-                }
-            }
-            instance.fire_sequence = 0;
-            instance.input_revision = 0;
-            instance.last_evaluated_input_revision = 0;
-            std::fill(_metric_present.begin() + instance.metric_base,
-                      _metric_present.begin() + instance.metric_base + _metric_count, 0);
+        Instance &instance = _instances[static_cast<size_t>(index)];
+        bool arbitration_changed = false;
+        if (!submitted_stack_counts.is_empty()) {
+            const int32_t requested_stacks = std::clamp(
+                submitted_stack_counts[i], 1,
+                definition.max_stacks);
+            arbitration_changed = arbitration_changed ||
+                requested_stacks != instance.stack_count;
+            instance.stack_count = requested_stacks;
         }
-        mark_dirty(index);
+        const uint64_t submitted_activation = activation_sequences.is_empty()
+            ? 0 : static_cast<uint64_t>(std::max<int64_t>(
+                0, activation_sequences[i]));
+        const bool explicit_activation = submitted_activation >
+            instance.activation_sequence;
+        const bool reactivated = !was_active && requested_active &&
+            previous_activation != 0;
+        if (explicit_activation) {
+            instance.activation_sequence = submitted_activation;
+            _next_activation_sequence = std::max(
+                _next_activation_sequence, submitted_activation + 1);
+            arbitration_changed = true;
+        } else if (reactivated) {
+            instance.activation_sequence = _next_activation_sequence++;
+            arbitration_changed = true;
+        }
+        if ((explicit_activation || reactivated) &&
+            definition.stack_policy == 1 && definition.lifecycle == 1) {
+            instance.expires_day = due_day +
+                static_cast<int64_t>(definition.duration_days);
+        }
+        if (arbitration_changed) mark_family_effect_group_dirty(index);
         schedule_instance(index, instance.next_due_day);
         ++accepted;
         accepted_ids.append(id);
     }
-    _instances_submitted += static_cast<uint64_t>(accepted);
     _run_cursor = 0;
     Dictionary out;
     out["ok"] = true;
@@ -2603,7 +3178,7 @@ Dictionary EffectRuntime::submit_snapshots(const Dictionary &batch) {
                             static_cast<size_t>(metric_id)] = 1;
         }
         instance.input_revision = revision;
-        mark_dirty(instance_index);
+        mark_family_effect_group_dirty(instance_index);
         ++accepted;
     }
     Dictionary out;
@@ -2754,6 +3329,72 @@ void EffectRuntime::untrack_pending_transaction(const Transaction &transaction) 
     else --found->second;
 }
 
+void EffectRuntime::apply_acked_instance_transition(
+        const Transaction &transaction) {
+    if (transaction.instance_transition == TRANSITION_NONE ||
+        transaction.program_id < 0)
+        return;
+    const int32_t index = instance_index_for_id(transaction.source_instance_id);
+    if (index < 0 || index >= static_cast<int32_t>(_instances.size())) return;
+    Instance &instance = _instances[static_cast<size_t>(index)];
+    if (instance.generation != transaction.source_generation) return;
+    instance.last_acked_fire_sequence = std::max(
+        instance.last_acked_fire_sequence,
+        transaction.transition_fire_sequence);
+    switch (transaction.instance_transition) {
+        case TRANSITION_APPLY:
+        case TRANSITION_UPDATE:
+            instance.effect_applied = 1;
+            instance.retire_requested = 0;
+            instance.applied_stack_count = std::max(
+                1, transaction.transition_stack_count);
+            instance.applied_input_revision = std::max(
+                instance.applied_input_revision,
+                transaction.transition_input_revision);
+            break;
+        case TRANSITION_DEACTIVATE:
+            instance.effect_applied = 0;
+            instance.applied_stack_count = 0;
+            instance.applied_input_revision = std::max(
+                instance.applied_input_revision,
+                transaction.transition_input_revision);
+            break;
+        case TRANSITION_RETIRE:
+            instance.effect_applied = 0;
+            instance.retire_requested = 0;
+            instance.applied_stack_count = 0;
+            instance.applied_input_revision = std::max(
+                instance.applied_input_revision,
+                transaction.transition_input_revision);
+            instance.active = 0;
+            instance.schedule_token = 0;
+            break;
+        default:
+            break;
+    }
+}
+
+void EffectRuntime::apply_rejected_instance_transition(
+        const Transaction &transaction) {
+    if (transaction.instance_transition == TRANSITION_NONE ||
+        transaction.program_id < 0) return;
+    const int32_t index = instance_index_for_id(transaction.source_instance_id);
+    if (index < 0 || index >= static_cast<int32_t>(_instances.size())) return;
+    Instance &instance = _instances[static_cast<size_t>(index)];
+    if (instance.generation != transaction.source_generation ||
+        instance.active == 0) return;
+    // Domain rejection is not a lifecycle decision. Preserve the last ACKed
+    // state and make the transition retryable with a new fire sequence.
+    // Explicit retirement sets retire_requested when its REMOVE transaction is
+    // created. EVENT_ONCE also uses TRANSITION_RETIRE, but must remain a normal
+    // retry when its first domain commit is rejected.
+    instance.next_due_day = std::max<int64_t>(
+        _current_day >= 0 ? _current_day + 1 : 0,
+        transaction.effective_day + 1);
+    mark_family_effect_group_dirty(index);
+    schedule_instance(index, instance.next_due_day);
+}
+
 bool EffectRuntime::acknowledge_native_domain(Transaction &transaction,
                                               uint32_t domain_bit) {
     if (domain_bit == 0 || (domain_bit & transaction.required_ack_mask) == 0) {
@@ -2770,6 +3411,7 @@ bool EffectRuntime::acknowledge_native_domain(Transaction &transaction,
     untrack_pending_transaction(transaction);
     transaction.status = ACKED;
     unindex_transaction_commands(transaction);
+    apply_acked_instance_transition(transaction);
     _acked_transaction_id = std::max(_acked_transaction_id, transaction.id);
     ++_transactions_acked;
     return true;
@@ -2795,6 +3437,14 @@ void EffectRuntime::release_retired_instance_if_terminal(int32_t instance_index)
     if (instance.active != 0 || instance.id <= 0) return;
     if (_pending_transactions_by_instance.find(instance.id) !=
         _pending_transactions_by_instance.end()) return;
+    if (is_family_effect_instance(instance)) {
+        const FamilyEffectGroupKey group = family_effect_group_key(instance);
+        const auto found = _family_effect_groups.find(group);
+        if (found != _family_effect_groups.end())
+            for (const int32_t member : found->second)
+                if (member != instance_index) mark_dirty(member);
+        remove_family_effect_group_member(instance_index, group);
+    }
     // Keep the backing slab allocation stable; it is reused when a later
     // upsert reuses the slot. Removing the ID releases lifecycle and
     // scheduling capacity immediately after the domain safe boundary.
@@ -2872,7 +3522,8 @@ void EffectRuntime::compact_terminal_transactions() {
 
 bool EffectRuntime::create_retirement_transaction(int32_t instance_index,
                                                   int64_t effective_day,
-                                                  std::string &error) {
+                                                  std::string &error,
+                                                  bool retire_instance) {
     if (instance_index < 0 || instance_index >= static_cast<int32_t>(_instances.size())) {
         error = "effect_instance_unknown";
         return false;
@@ -2892,49 +3543,57 @@ bool EffectRuntime::create_retirement_transaction(int32_t instance_index,
         return false;
     }
     const Definition &definition = _definitions[instance.program_id];
-    int32_t command_definition_id = -1;
-    for (int32_t ordinal = 0; ordinal < definition.command_count; ++ordinal) {
-        const int32_t id = definition.command_begin + ordinal;
-        if (_command_definitions[id].action == MODIFIER_COMMAND) {
-            command_definition_id = id;
-            break;
+    if (uses_managed_lifecycle(definition) && !instance.effect_applied) {
+        if (retire_instance) {
+            instance.active = 0;
+            instance.schedule_token = 0;
+            release_retired_instance_if_terminal(instance_index);
         }
-    }
-    if (command_definition_id < 0) {
-        error = "effect_retire_modifier_command_missing";
-        return false;
-    }
-    const CommandDefinition &definition_command =
-        _command_definitions[command_definition_id];
-    Command command;
-    command.action = MODIFIER_COMMAND;
-    command.domain = definition_command.domain;
-    command.opcode = ModifierRuntime::COMMAND_REMOVE;
-    command.duration_days = -1;
-    command.stacks = 1;
-    command.command_key_id = command_definition_id;
-    command.command_definition_id = command_definition_id;
-    if (definition_command.target_resolver == TARGET_STATIC) {
-        command.target_handle = definition_command.static_target;
-    } else if (definition_command.target_resolver == TARGET_SOURCE) {
-        command.target_handle = instance.source_handle;
-        command.target_generation = instance.generation;
-    } else {
-        command.target_handle = instance.target_handle;
-        command.target_generation = instance.target_generation;
+        return true;
     }
     ++instance.fire_sequence;
-    command.idempotency_key = command_idempotency_key(instance,
-        static_cast<uint32_t>(definition.command_count));
     Transaction transaction;
     transaction.id = _next_transaction_id++;
     transaction.source_instance_id = instance.id;
     transaction.source_generation = instance.generation;
     transaction.program_id = instance.program_id;
     transaction.effective_day = effective_day;
-    append_command(transaction, command);
+    transaction.instance_transition = retire_instance
+        ? TRANSITION_RETIRE : TRANSITION_DEACTIVATE;
+    transaction.transition_input_revision = instance.input_revision;
+    transaction.transition_fire_sequence = instance.fire_sequence;
+    transaction.transition_stack_count = 0;
+    for (int32_t ordinal = 0; ordinal < definition.command_count; ++ordinal) {
+        const int32_t command_definition_id = definition.command_begin + ordinal;
+        const CommandDefinition &definition_command =
+            _command_definitions[static_cast<size_t>(command_definition_id)];
+        if (definition_command.action != MODIFIER_COMMAND ||
+            definition_command.opcode != ModifierRuntime::COMMAND_APPLY)
+            continue;
+        Command command;
+        command.action = MODIFIER_COMMAND;
+        command.domain = definition_command.domain;
+        command.opcode = ModifierRuntime::COMMAND_REMOVE;
+        command.duration_days = -1;
+        command.stacks = 1;
+        command.command_key_id = command_definition_id;
+        command.command_definition_id = command_definition_id;
+        command.payload = definition_command.payload;
+        if (definition_command.target_resolver == TARGET_STATIC) {
+            command.target_handle = definition_command.static_target;
+        } else if (definition_command.target_resolver == TARGET_SOURCE) {
+            command.target_handle = instance.source_handle;
+            command.target_generation = instance.generation;
+        } else {
+            command.target_handle = instance.target_handle;
+            command.target_generation = instance.target_generation;
+        }
+        command.idempotency_key = command_idempotency_key(instance,
+            static_cast<uint32_t>(definition.command_count + ordinal));
+        append_command(transaction, command);
+    }
     if (transaction.command_count == 0 || transaction.required_ack_mask == 0) {
-        error = "effect_retire_command_invalid";
+        error = "effect_retire_reversible_command_missing";
         return false;
     }
     transaction.plan_hash = 1469598103934665603ULL;
@@ -2944,27 +3603,44 @@ bool EffectRuntime::create_retirement_transaction(int32_t instance_index,
         transaction.source_generation);
     transaction.plan_hash = fnv_value(transaction.plan_hash, transaction.program_id);
     transaction.plan_hash = fnv_value(transaction.plan_hash, transaction.effective_day);
-    transaction.plan_hash = fnv_value(transaction.plan_hash, command.action);
-    transaction.plan_hash = fnv_value(transaction.plan_hash, command.domain);
-    transaction.plan_hash = fnv_value(transaction.plan_hash, command.opcode);
-    transaction.plan_hash = fnv_value(transaction.plan_hash, command.target_handle);
-    transaction.plan_hash = fnv_value(transaction.plan_hash, command.target_generation);
-    transaction.plan_hash = fnv_value(transaction.plan_hash, command.value_q16);
-    transaction.plan_hash = fnv_value(transaction.plan_hash, command.duration_days);
-    transaction.plan_hash = fnv_value(transaction.plan_hash, command.stacks);
-    transaction.plan_hash = fnv_value(transaction.plan_hash, command.command_key_id);
     transaction.plan_hash = fnv_value(transaction.plan_hash,
-        command.command_definition_id);
-    for (const int64_t payload_value : command.payload)
-        transaction.plan_hash = fnv_value(transaction.plan_hash, payload_value);
-    transaction.plan_hash = fnv_value(transaction.plan_hash, command.idempotency_key);
+        transaction.instance_transition);
+    transaction.plan_hash = fnv_value(transaction.plan_hash,
+        transaction.transition_input_revision);
+    transaction.plan_hash = fnv_value(transaction.plan_hash,
+        transaction.transition_fire_sequence);
+    transaction.plan_hash = fnv_value(transaction.plan_hash,
+        transaction.transition_stack_count);
+    for (uint32_t ordinal = 0; ordinal < transaction.command_count; ++ordinal) {
+        const Command *command = command_at(transaction, ordinal);
+        if (command == nullptr) continue;
+        transaction.plan_hash = fnv_value(transaction.plan_hash, command->action);
+        transaction.plan_hash = fnv_value(transaction.plan_hash, command->domain);
+        transaction.plan_hash = fnv_value(transaction.plan_hash, command->opcode);
+        transaction.plan_hash = fnv_value(transaction.plan_hash, command->target_handle);
+        transaction.plan_hash = fnv_value(transaction.plan_hash, command->target_generation);
+        transaction.plan_hash = fnv_value(transaction.plan_hash, command->value_q16);
+        transaction.plan_hash = fnv_value(transaction.plan_hash, command->duration_days);
+        transaction.plan_hash = fnv_value(transaction.plan_hash, command->stacks);
+        transaction.plan_hash = fnv_value(transaction.plan_hash, command->command_key_id);
+        transaction.plan_hash = fnv_value(transaction.plan_hash,
+            command->command_definition_id);
+        for (const int64_t payload_value : command->payload)
+            transaction.plan_hash = fnv_value(transaction.plan_hash, payload_value);
+        transaction.plan_hash = fnv_value(transaction.plan_hash,
+            command->idempotency_key);
+    }
     _transactions.push_back(std::move(transaction));
     _transaction_ids[_transactions.back().id] =
         static_cast<int32_t>(_transactions.size() - 1);
     track_pending_transaction(_transactions.back());
     index_transaction_commands(_transactions.back());
-    instance.active = 0;
-    instance.schedule_token = 0;
+    if (retire_instance) {
+        instance.retire_requested = 1;
+        mark_family_effect_group_dirty(instance_index);
+    }
+    instance.next_due_day = effective_day + 1;
+    schedule_instance(instance_index, instance.next_due_day);
     return true;
 }
 
@@ -3029,7 +3705,13 @@ bool EffectRuntime::execute_program(const Definition &definition, Instance &inst
                 command.domain = definition_command.domain;
                 command.opcode = definition_command.opcode;
                 command.duration_days = definition_command.duration_days;
-                command.stacks = definition_command.stacks;
+                const int32_t source_stacks = is_family_effect_instance(instance)
+                    ? std::max(1, instance.desired_stack_count)
+                    : std::max(1, instance.stack_count);
+                command.stacks = static_cast<int32_t>(std::min<int64_t>(
+                    definition.max_stacks,
+                    static_cast<int64_t>(definition_command.stacks) *
+                        source_stacks));
                 command.payload = definition_command.payload;
                 command.value_q16 = definition_command.value_mode == VALUE_STACK_TOP
                     ? (sp > 0 ? stack[sp - 1] : 0) : definition_command.value;
@@ -3140,7 +3822,10 @@ bool EffectRuntime::execute_program_plan(const Definition &definition,
                 command.domain = definition_command.domain;
                 command.opcode = definition_command.opcode;
                 command.duration_days = definition_command.duration_days;
-                command.stacks = definition_command.stacks;
+                command.stacks = static_cast<int32_t>(std::min<int64_t>(
+                    definition.max_stacks,
+                    static_cast<int64_t>(definition_command.stacks) *
+                        std::max(1, instance.stack_count)));
                 command.payload = definition_command.payload;
                 command.value_q16 = definition_command.value_mode == VALUE_STACK_TOP
                     ? (sp > 0 ? stack[sp - 1] : 0) : definition_command.value;
@@ -3307,7 +3992,8 @@ Dictionary EffectRuntime::run_daily(int64_t day_index) {
         }
         const int32_t cost = std::max(1, definition != nullptr ? definition->max_work : 1);
         if (batch_end > _candidate_cursor && batch_work + cost > budget) break;
-        if (definition != nullptr && !definition->behavior_id.empty()) {
+        if (definition != nullptr && (uses_managed_lifecycle(*definition) ||
+            !definition->behavior_id.empty())) {
             batch_declarative = false;
             break;
         }
@@ -3495,6 +4181,33 @@ Dictionary EffectRuntime::run_daily(int64_t day_index) {
             continue;
         const Definition &definition = _definitions[instance.program_id];
         ++_programs_evaluated;
+        const bool managed_lifecycle = uses_managed_lifecycle(definition);
+        if (managed_lifecycle) {
+            const auto pending = _pending_transactions_by_instance.find(instance.id);
+            if (pending != _pending_transactions_by_instance.end() &&
+                pending->second > 0) {
+                instance.next_due_day = day_index + 1;
+                schedule_instance(instance_index, instance.next_due_day);
+                continue;
+            }
+        }
+        if (instance.retire_requested != 0) {
+            std::string retirement_error;
+            if (!create_retirement_transaction(instance_index, day_index,
+                                                retirement_error, true))
+                return evaluation_failure(retirement_error);
+            instance.dirty_epoch = 0;
+            continue;
+        }
+        if (definition.lifecycle == 1 && instance.expires_day >= 0 &&
+            day_index >= instance.expires_day) {
+            std::string expiry_error;
+            if (!create_retirement_transaction(instance_index, day_index,
+                                               expiry_error))
+                return evaluation_failure(expiry_error);
+            instance.dirty_epoch = 0;
+            continue;
+        }
         if (!definition.enabled) {
             instance.next_due_day = day_index + std::max<int32_t>(1, definition.cadence_days);
             instance.last_evaluated_input_revision = instance.input_revision;
@@ -3502,8 +4215,38 @@ Dictionary EffectRuntime::run_daily(int64_t day_index) {
             instance.dirty_epoch = 0;
             continue;
         }
-        const bool passes = evaluate_condition(definition, instance);
+        bool passes = evaluate_condition(definition, instance);
+        if (passes && is_family_effect_instance(instance)) {
+            std::string arbitration_error;
+            if (!resolve_family_effect_group(instance_index, day_index,
+                                             arbitration_error))
+                return evaluation_failure(arbitration_error);
+            passes = instance.desired_stack_count > 0;
+        }
+        if (managed_lifecycle && !passes && instance.effect_applied) {
+            std::string deactivate_error;
+            if (!create_retirement_transaction(instance_index, day_index,
+                                                deactivate_error, false))
+                return evaluation_failure(deactivate_error);
+            instance.last_evaluated_input_revision = instance.input_revision;
+            instance.dirty_epoch = 0;
+            continue;
+        }
+        const bool managed_update_due = managed_lifecycle && passes &&
+            (!instance.effect_applied ||
+             instance.input_revision > instance.applied_input_revision ||
+             instance.applied_stack_count != (is_family_effect_instance(instance)
+                 ? instance.desired_stack_count
+                 : std::max(1, instance.stack_count)));
         if (passes) {
+            if (managed_lifecycle && !managed_update_due) {
+                instance.next_due_day = day_index + std::max<int32_t>(
+                    1, definition.cadence_days);
+                instance.last_evaluated_input_revision = instance.input_revision;
+                schedule_instance(instance_index, instance.next_due_day);
+                instance.dirty_epoch = 0;
+                continue;
+            }
             ++instance.fire_sequence;
             Transaction transaction;
             transaction.source_instance_id = instance.id;
@@ -3608,11 +4351,33 @@ Dictionary EffectRuntime::run_daily(int64_t day_index) {
                     _run_cursor = _candidate_cursor;
                     return evaluation_failure(_last_error);
                 }
+                if (managed_lifecycle) {
+                    transaction.instance_transition = definition.lifecycle == 2
+                        ? TRANSITION_RETIRE
+                        : (instance.effect_applied ? TRANSITION_UPDATE
+                                                   : TRANSITION_APPLY);
+                    transaction.transition_input_revision = instance.input_revision;
+                    transaction.transition_fire_sequence = instance.fire_sequence;
+                    transaction.transition_stack_count = definition.lifecycle == 2
+                        ? 0 : (is_family_effect_instance(instance)
+                            ? instance.desired_stack_count
+                            : std::max(1, instance.stack_count));
+                }
                 transaction.plan_hash = 1469598103934665603ULL;
                 transaction.plan_hash = fnv_value(transaction.plan_hash, transaction.source_instance_id);
                 transaction.plan_hash = fnv_value(transaction.plan_hash, transaction.source_generation);
                 transaction.plan_hash = fnv_value(transaction.plan_hash, transaction.program_id);
                 transaction.plan_hash = fnv_value(transaction.plan_hash, transaction.effective_day);
+                if (transaction.instance_transition != TRANSITION_NONE) {
+                    transaction.plan_hash = fnv_value(transaction.plan_hash,
+                        transaction.instance_transition);
+                    transaction.plan_hash = fnv_value(transaction.plan_hash,
+                        transaction.transition_input_revision);
+                    transaction.plan_hash = fnv_value(transaction.plan_hash,
+                        transaction.transition_fire_sequence);
+                    transaction.plan_hash = fnv_value(transaction.plan_hash,
+                        transaction.transition_stack_count);
+                }
                 for (uint32_t ordinal = 0; ordinal < transaction.command_count; ++ordinal) {
                     const Command *command = command_at(transaction, ordinal);
                     if (command == nullptr) continue;
@@ -3633,14 +4398,24 @@ Dictionary EffectRuntime::run_daily(int64_t day_index) {
                     transaction.plan_hash = fnv_value(transaction.plan_hash, command->idempotency_key);
                 }
                 transaction.id = _next_transaction_id++;
-                if (transaction.required_ack_mask == 0)
+                if (transaction.required_ack_mask == 0) {
                     transaction.status = COMMITTED;
+                    transaction.status = ACKED;
+                    apply_acked_instance_transition(transaction);
+                    _acked_transaction_id = std::max(
+                        _acked_transaction_id, transaction.id);
+                    ++_transactions_acked;
+                }
                 _transactions.push_back(std::move(transaction));
                 _transaction_ids[_transactions.back().id] =
                     static_cast<int32_t>(_transactions.size() - 1);
-                track_pending_transaction(_transactions.back());
-                index_transaction_commands(_transactions.back());
+                if (_transactions.back().status != ACKED) {
+                    track_pending_transaction(_transactions.back());
+                    index_transaction_commands(_transactions.back());
+                }
             }
+            // Keep EVENT_ONCE active while its transaction is pending. The
+            // ACK gate above retires it; rejection leaves it retryable.
         }
         instance.next_due_day = day_index + std::max<int32_t>(1, definition.cadence_days);
         instance.last_evaluated_input_revision = instance.input_revision;
@@ -3803,6 +4578,34 @@ Dictionary EffectRuntime::dispatch_native_modifier(ModifierRuntime *modifier_run
                     transaction.source_instance_id);
                 native.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
                     command->value_q16, 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
+            } else if (adapter_kind == NATIVE_MODIFIER_FAMILY_EFFECT) {
+                native.producer = 161;
+                native.domain = command->domain;
+                native.source_type = 0x46414d4546464543ULL; // FAMEFFEC
+                native.source_id = static_cast<uint64_t>(source_instance->id);
+                native.magnitude_q16 = static_cast<int32_t>(std::clamp<int64_t>(
+                    command->value_q16, 0, ModifierRuntime::MAX_MAGNITUDE_Q16));
+                switch (source_instance->target_domain) {
+                    case 0: // Family.
+                    case 1: // Branch.
+                        native.scope = ModifierRuntime::ENTITY;
+                        native.entity_handle = command->target_handle;
+                        break;
+                    case 2: // Settlement cell.
+                    case 5: // Building/resource selector within the cell.
+                        native.scope = ModifierRuntime::GROUP;
+                        native.group_handle = command->target_handle;
+                        break;
+                    case 3: // Country.
+                    case 4: // Climate cell.
+                        native.scope = ModifierRuntime::ENTITY;
+                        native.entity_handle = command->target_handle;
+                        break;
+                    default:
+                        supported = false;
+                        break;
+                }
+                if (!supported) break;
             } else if (command->action == MODIFIER_COMMAND) {
                 // Generic declarative Modifier command. Complex target/source
                 // resolvers stay on the adapter path until declared natively.
@@ -3933,7 +4736,9 @@ Dictionary EffectRuntime::ack_native_modifier(ModifierRuntime *modifier_runtime)
         }
         if (failed) {
             untrack_pending_transaction(*transaction);
+            unindex_transaction_commands(*transaction);
             transaction->status = REJECTED;
+            apply_rejected_instance_transition(*transaction);
             ++_preflight_rejects;
             ++rejected;
             _last_error = failure_reason;
@@ -4100,7 +4905,10 @@ Dictionary EffectRuntime::ack_native_country(NativeCountryRuntime *country_runti
             continue;
         }
         if (failed) {
-            untrack_pending_transaction(transaction); transaction.status = REJECTED;
+            untrack_pending_transaction(transaction);
+            unindex_transaction_commands(transaction);
+            transaction.status = REJECTED;
+            apply_rejected_instance_transition(transaction);
             ++_preflight_rejects; ++rejected; _last_error = reason.empty() ? "effect_native_country_rejected" : reason;
         } else {
             acknowledge_native_domain(transaction, binding.domain_bit);
@@ -4287,7 +5095,9 @@ Dictionary EffectRuntime::ack_native_economy(NativeEconomyRuntime *economy_runti
         }
         if (failed) {
             untrack_pending_transaction(transaction);
+            unindex_transaction_commands(transaction);
             transaction.status = REJECTED;
+            apply_rejected_instance_transition(transaction);
             ++_preflight_rejects;
             ++rejected;
             _last_error = reason.empty() ? "effect_native_economy_rejected" : reason;
@@ -4453,7 +5263,9 @@ Dictionary EffectRuntime::ack_native_gameplay(DCWorldExt *world_ext) {
         }
         if (failed) {
             untrack_pending_transaction(transaction);
+            unindex_transaction_commands(transaction);
             transaction.status = REJECTED;
+            apply_rejected_instance_transition(transaction);
             ++_preflight_rejects;
             ++rejected;
             _last_error = reason.empty() ? "effect_native_gameplay_rejected" : reason;
@@ -4528,6 +5340,9 @@ Dictionary EffectRuntime::poll_transactions(int64_t after_transaction_id,
     PackedInt32Array required_masks;
     PackedInt32Array received_masks;
     PackedInt32Array statuses;
+    PackedInt32Array instance_transitions;
+    PackedInt64Array transition_input_revisions;
+    PackedInt64Array transition_fire_sequences;
     PackedInt32Array command_offsets;
     PackedInt32Array command_actions;
     PackedInt32Array command_domains;
@@ -4580,6 +5395,10 @@ Dictionary EffectRuntime::poll_transactions(int64_t after_transaction_id,
         required_masks.append(static_cast<int32_t>(transaction.required_ack_mask));
         received_masks.append(static_cast<int32_t>(transaction.received_ack_mask));
         statuses.append(transaction.status);
+        instance_transitions.append(transaction.instance_transition);
+        transition_input_revisions.append(transaction.transition_input_revision);
+        transition_fire_sequences.append(static_cast<int64_t>(
+            transaction.transition_fire_sequence));
         for (uint32_t ordinal = 0; ordinal < transaction.command_count; ++ordinal) {
             const Command *command = command_at(transaction, ordinal);
             if (command == nullptr) continue;
@@ -4611,6 +5430,9 @@ Dictionary EffectRuntime::poll_transactions(int64_t after_transaction_id,
     out["required_ack_masks"] = required_masks;
     out["received_ack_masks"] = received_masks;
     out["statuses"] = statuses;
+    out["instance_transitions"] = instance_transitions;
+    out["transition_input_revisions"] = transition_input_revisions;
+    out["transition_fire_sequences"] = transition_fire_sequences;
     out["command_offsets"] = command_offsets;
     out["command_actions"] = command_actions;
     out["command_domains"] = command_domains;
@@ -4734,6 +5556,7 @@ Dictionary EffectRuntime::ack_transactions(const Dictionary &batch) {
             untrack_pending_transaction(transaction);
             transaction.status = ACKED;
             unindex_transaction_commands(transaction);
+            apply_acked_instance_transition(transaction);
             _acked_transaction_id = std::max(_acked_transaction_id, transaction.id);
             ++_transactions_acked;
             ++acknowledged;
@@ -4763,6 +5586,24 @@ Dictionary EffectRuntime::explain(int64_t instance_id) const {
     out["program_key"] = String(definition.key.c_str());
     out["program_version"] = definition.version;
     out["level"] = instance.level;
+    out["source_kind"] = instance.source_kind;
+    out["target_domain"] = instance.target_domain;
+    out["operation"] = instance.operation;
+    out["lifecycle"] = instance.lifecycle;
+    out["duration_days"] = instance.duration_days;
+    out["stack_policy"] = instance.stack_policy;
+    out["stack_count"] = instance.stack_count;
+    out["applied_stack_count"] = instance.applied_stack_count;
+    out["max_stacks"] = instance.max_stacks;
+    out["priority"] = instance.priority;
+    out["activation_sequence"] = static_cast<int64_t>(
+        instance.activation_sequence);
+    out["expires_day"] = instance.expires_day;
+    out["effect_applied"] = instance.effect_applied != 0;
+    out["retire_requested"] = instance.retire_requested != 0;
+    out["applied_input_revision"] = instance.applied_input_revision;
+    out["last_acked_fire_sequence"] = static_cast<int64_t>(
+        instance.last_acked_fire_sequence);
     out["next_due_day"] = instance.next_due_day;
     out["input_revision"] = instance.input_revision;
     out["last_evaluated_input_revision"] = instance.last_evaluated_input_revision;
@@ -4789,6 +5630,17 @@ Dictionary EffectRuntime::report() const {
     out["instances"] = static_cast<int32_t>(_instance_ids.size());
     out["instance_storage_slots"] = static_cast<int32_t>(_instances.size());
     out["free_instance_slots"] = static_cast<int32_t>(_free_instance_indices.size());
+    out["family_effect_stack_groups"] = static_cast<int64_t>(
+        _family_effect_groups.size());
+    int64_t family_effect_group_members = 0;
+    int64_t family_effect_group_bytes = 0;
+    for (const auto &entry : _family_effect_groups) {
+        family_effect_group_members += static_cast<int64_t>(entry.second.size());
+        family_effect_group_bytes += static_cast<int64_t>(
+            sizeof(entry.first) + entry.second.capacity() * sizeof(int32_t));
+    }
+    out["family_effect_group_members"] = family_effect_group_members;
+    out["family_effect_group_bytes"] = family_effect_group_bytes;
     out["transactions"] = static_cast<int32_t>(_transactions.size());
     out["external_bindings"] = static_cast<int32_t>(_external_binding_ids.size());
     out["pending_command_idempotency_count"] = static_cast<int64_t>(
@@ -4887,6 +5739,7 @@ PackedByteArray EffectRuntime::capture() const {
     append_le<int32_t>(bytes, _run_cursor);
     append_le<int64_t>(bytes, _next_transaction_id);
     append_le<int64_t>(bytes, _acked_transaction_id);
+    append_le<uint64_t>(bytes, _next_activation_sequence);
     append_le<uint32_t>(bytes, static_cast<uint32_t>(_instances.size()));
     for (const Instance &instance : _instances) {
         append_le<int64_t>(bytes, instance.id);
@@ -4903,6 +5756,23 @@ PackedByteArray EffectRuntime::capture() const {
         append_le<int64_t>(bytes, instance.last_evaluated_input_revision);
         append_le<uint64_t>(bytes, instance.fire_sequence);
         append_le<uint8_t>(bytes, instance.active);
+        append_le<int32_t>(bytes, instance.source_kind);
+        append_le<int32_t>(bytes, instance.target_domain);
+        append_le<int32_t>(bytes, instance.operation);
+        append_le<int32_t>(bytes, instance.lifecycle);
+        append_le<int32_t>(bytes, instance.duration_days);
+        append_le<int32_t>(bytes, instance.stack_policy);
+        append_le<int32_t>(bytes, instance.max_stacks);
+        append_le<int32_t>(bytes, instance.stack_count);
+        append_le<int32_t>(bytes, instance.applied_stack_count);
+        append_le<int32_t>(bytes, instance.priority);
+        append_le<uint64_t>(bytes, instance.activation_sequence);
+        append_le<int64_t>(bytes, instance.expires_day);
+        append_le<uint64_t>(bytes, instance.stack_key_hash);
+        append_le<uint8_t>(bytes, instance.effect_applied);
+        append_le<uint8_t>(bytes, instance.retire_requested);
+        append_le<int64_t>(bytes, instance.applied_input_revision);
+        append_le<uint64_t>(bytes, instance.last_acked_fire_sequence);
         append_le<uint32_t>(bytes, static_cast<uint32_t>(_metric_count));
         for (int32_t metric_id = 0; metric_id < _metric_count; ++metric_id) {
             const int64_t *value = metric_ptr(instance, metric_id);
@@ -4943,6 +5813,10 @@ PackedByteArray EffectRuntime::capture() const {
                 _native_gameplay_bound_transaction_ids.end())
             ? PLANNED : transaction.status;
         append_le<int32_t>(bytes, persisted_status);
+        append_le<int32_t>(bytes, transaction.instance_transition);
+        append_le<int64_t>(bytes, transaction.transition_input_revision);
+        append_le<uint64_t>(bytes, transaction.transition_fire_sequence);
+        append_le<int32_t>(bytes, transaction.transition_stack_count);
         append_le<uint32_t>(bytes, transaction.command_count);
         for (uint32_t ordinal = 0; ordinal < transaction.command_count; ++ordinal) {
             const Command *command = command_at(transaction, ordinal);
@@ -5026,15 +5900,18 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
         !read_le(bytes, size, cursor, hash) || hash != _catalog_hash)
         return failure("catalog_hash_mismatch");
     int64_t current_day = -1, last_day = -1, run_day = -1, next_tx = 1, acked_tx = 0;
+    uint64_t next_activation_sequence = 1;
     int32_t run_cursor = 0;
     uint32_t instance_count = 0, candidate_count = 0, transaction_count = 0;
     if (!read_le(bytes, size, cursor, current_day) || !read_le(bytes, size, cursor, last_day) ||
         !read_le(bytes, size, cursor, run_day) || !read_le(bytes, size, cursor, run_cursor) ||
         !read_le(bytes, size, cursor, next_tx) || !read_le(bytes, size, cursor, acked_tx) ||
+        !read_le(bytes, size, cursor, next_activation_sequence) ||
         !read_le(bytes, size, cursor, instance_count) || instance_count > static_cast<uint32_t>(_max_instances))
         return failure("pkef_instances_invalid");
     if (current_day < -1 || last_day < -1 || run_day < -1 || run_cursor < 0 ||
-        next_tx <= 0 || acked_tx < 0 || acked_tx >= next_tx)
+        next_tx <= 0 || acked_tx < 0 || acked_tx >= next_tx ||
+        next_activation_sequence == 0)
         return failure("pkef_runtime_cursor_invalid");
     std::vector<Instance> restored_instances;
     std::vector<int64_t> restored_metric_values;
@@ -5056,10 +5933,43 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
             !read_le(bytes, size, cursor, instance.input_revision) ||
             !read_le(bytes, size, cursor, instance.last_evaluated_input_revision) ||
             !read_le(bytes, size, cursor, instance.fire_sequence) ||
-            !read_le(bytes, size, cursor, instance.active) || !read_le(bytes, size, cursor, metric_count) ||
+            !read_le(bytes, size, cursor, instance.active) ||
+            !read_le(bytes, size, cursor, instance.source_kind) ||
+            !read_le(bytes, size, cursor, instance.target_domain) ||
+            !read_le(bytes, size, cursor, instance.operation) ||
+            !read_le(bytes, size, cursor, instance.lifecycle) ||
+            !read_le(bytes, size, cursor, instance.duration_days) ||
+            !read_le(bytes, size, cursor, instance.stack_policy) ||
+            !read_le(bytes, size, cursor, instance.max_stacks) ||
+            !read_le(bytes, size, cursor, instance.stack_count) ||
+            !read_le(bytes, size, cursor, instance.applied_stack_count) ||
+            !read_le(bytes, size, cursor, instance.priority) ||
+            !read_le(bytes, size, cursor, instance.activation_sequence) ||
+            !read_le(bytes, size, cursor, instance.expires_day) ||
+            !read_le(bytes, size, cursor, instance.stack_key_hash) ||
+            !read_le(bytes, size, cursor, instance.effect_applied) ||
+            !read_le(bytes, size, cursor, instance.retire_requested) ||
+            !read_le(bytes, size, cursor, instance.applied_input_revision) ||
+            !read_le(bytes, size, cursor, instance.last_acked_fire_sequence) ||
+            !read_le(bytes, size, cursor, metric_count) ||
             metric_count != static_cast<uint32_t>(_metric_count))
             return failure("pkef_instance_truncated_or_metric_mismatch");
-        if (instance.active > 1 || instance.input_revision < 0 ||
+        if (instance.active > 1 || instance.source_kind < 0 || instance.source_kind > 5 ||
+            instance.target_domain < 0 || instance.target_domain > 5 ||
+            instance.operation < 0 || instance.operation > 4 ||
+            instance.lifecycle < 0 || instance.lifecycle > 2 ||
+            instance.stack_policy < 0 || instance.stack_policy > 4 ||
+            instance.max_stacks <= 0 || instance.stack_count <= 0 ||
+            instance.stack_count > instance.max_stacks ||
+            instance.applied_stack_count < 0 ||
+            instance.applied_stack_count > instance.max_stacks ||
+            instance.effect_applied > 1 || instance.retire_requested > 1 ||
+            ((instance.effect_applied == 0) !=
+             (instance.applied_stack_count == 0)) ||
+            instance.applied_input_revision < 0 ||
+            instance.applied_input_revision > instance.input_revision ||
+            instance.last_acked_fire_sequence > instance.fire_sequence ||
+            instance.input_revision < 0 ||
             instance.last_evaluated_input_revision < 0 ||
             instance.last_evaluated_input_revision > instance.input_revision)
             return failure("pkef_instance_identity_invalid");
@@ -5067,14 +5977,34 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
             // Retired slots are persisted so their metric slab rows and free
             // list can be reconstructed without renumbering live instances.
             if (instance.generation != 0 || instance.program_id != -1 ||
-                instance.active != 0)
+                instance.active != 0 || instance.activation_sequence != 0)
                 return failure("pkef_instance_tombstone_invalid");
         } else if (instance.id < 0 || instance.generation == 0 ||
                    instance.program_id < 0 ||
                    instance.program_id >= static_cast<int32_t>(_definitions.size()) ||
+                   instance.activation_sequence == 0 ||
+                   instance.activation_sequence >= next_activation_sequence ||
                    !restored_instance_ids.emplace(instance.id,
                        static_cast<int32_t>(restored_instances.size())).second) {
             return failure("pkef_instance_identity_invalid");
+        }
+        if (instance.id > 0) {
+            const Definition &definition = _definitions[
+                static_cast<size_t>(instance.program_id)];
+            const uint64_t expected_stack_key = fnv_string(
+                1469598103934665603ULL,
+                definition.stack_key.empty() ? definition.key
+                                             : definition.stack_key);
+            if (instance.source_kind != definition.source_kind ||
+                instance.target_domain != definition.target_domain ||
+                instance.operation != definition.operation ||
+                instance.lifecycle != definition.lifecycle ||
+                instance.duration_days != definition.duration_days ||
+                instance.stack_policy != definition.stack_policy ||
+                instance.max_stacks != definition.max_stacks ||
+                instance.priority != definition.priority ||
+                instance.stack_key_hash != expected_stack_key)
+                return failure("pkef_instance_catalog_metadata_mismatch");
         }
         for (uint32_t j = 0; j < metric_count; ++j) {
             int64_t value = 0;
@@ -5133,6 +6063,10 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
             !read_le(bytes, size, cursor, transaction.required_ack_mask) ||
             !read_le(bytes, size, cursor, transaction.received_ack_mask) ||
             !read_le(bytes, size, cursor, transaction.status) ||
+            !read_le(bytes, size, cursor, transaction.instance_transition) ||
+            !read_le(bytes, size, cursor, transaction.transition_input_revision) ||
+            !read_le(bytes, size, cursor, transaction.transition_fire_sequence) ||
+            !read_le(bytes, size, cursor, transaction.transition_stack_count) ||
             !read_le(bytes, size, cursor, command_count) || command_count > 4096)
             return failure("pkef_transaction_truncated");
         const bool builtin_family_colonization = transaction.program_id == -1;
@@ -5146,6 +6080,10 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
               transaction.program_id >= static_cast<int32_t>(_definitions.size()) ||
               restored_instance_ids.find(transaction.source_instance_id) == restored_instance_ids.end())) ||
             transaction.status < PLANNED || transaction.status > RESYNC_REQUIRED ||
+            transaction.instance_transition < TRANSITION_NONE ||
+            transaction.instance_transition > TRANSITION_RETIRE ||
+            transaction.transition_input_revision < 0 ||
+            transaction.transition_stack_count < 0 ||
             !restored_transaction_ids.emplace(transaction.id).second ||
             (transaction.received_ack_mask & ~transaction.required_ack_mask) != 0)
             return failure("pkef_transaction_identity_invalid");
@@ -5156,6 +6094,28 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
                  transaction.status == COMMITTED) &&
                 source_instance.generation != transaction.source_generation)
                 return failure("pkef_transaction_source_generation_invalid");
+            if ((transaction.instance_transition == TRANSITION_NONE) !=
+                    (transaction.transition_fire_sequence == 0) ||
+                (transaction.instance_transition == TRANSITION_NONE &&
+                 transaction.transition_stack_count != 0) ||
+                ((transaction.instance_transition == TRANSITION_APPLY ||
+                  transaction.instance_transition == TRANSITION_UPDATE) &&
+                 (transaction.transition_stack_count <= 0 ||
+                  transaction.transition_stack_count >
+                      source_instance.max_stacks)) ||
+                ((transaction.instance_transition == TRANSITION_DEACTIVATE ||
+                  transaction.instance_transition == TRANSITION_RETIRE) &&
+                 transaction.transition_stack_count != 0) ||
+                transaction.transition_input_revision >
+                    source_instance.input_revision ||
+                transaction.transition_fire_sequence >
+                    source_instance.fire_sequence)
+                return failure("pkef_transaction_transition_invalid");
+        } else if (transaction.instance_transition != TRANSITION_NONE ||
+                   transaction.transition_input_revision != 0 ||
+                   transaction.transition_fire_sequence != 0 ||
+                   transaction.transition_stack_count != 0) {
+            return failure("pkef_builtin_transaction_transition_invalid");
         }
         if ((transaction.status == PLANNED || transaction.status == PREFLIGHTED) &&
             transaction.received_ack_mask != 0)
@@ -5204,11 +6164,27 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
                 const bool remove_alias = command.action == MODIFIER_COMMAND &&
                     command.opcode == ModifierRuntime::COMMAND_REMOVE &&
                     definition.opcode == ModifierRuntime::COMMAND_APPLY;
-                if ((!remove_alias && (definition.action != command.action ||
-                                       definition.domain != command.domain ||
-                                       definition.opcode != command.opcode)) ||
-                    definition.duration_days != command.duration_days ||
-                    definition.stacks != command.stacks ||
+                const bool family_stack_alias = !remove_alias &&
+                    definition.owner_program_id >= 0 &&
+                    definition.owner_program_id < static_cast<int32_t>(
+                        _definitions.size()) &&
+                    _definitions[static_cast<size_t>(
+                        definition.owner_program_id)].key.rfind(
+                            "family.effect.", 0) == 0 &&
+                    definition.stacks == 1 && command.stacks >= 1 &&
+                    command.stacks <= _definitions[static_cast<size_t>(
+                        definition.owner_program_id)].max_stacks;
+                const bool command_shape_matches = remove_alias
+                    ? definition.action == MODIFIER_COMMAND &&
+                        definition.domain == command.domain &&
+                        command.duration_days == -1 && command.stacks == 1
+                    : definition.action == command.action &&
+                        definition.domain == command.domain &&
+                        definition.opcode == command.opcode &&
+                        definition.duration_days == command.duration_days &&
+                        (definition.stacks == command.stacks ||
+                         family_stack_alias);
+                if (!command_shape_matches ||
                     !native_command_shape_valid(command.action, command.domain,
                         command.opcode, definition.target_resolver,
                         command.duration_days, command.stacks, command_error))
@@ -5273,6 +6249,16 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
                                            transaction.program_id);
             expected_plan_hash = fnv_value(expected_plan_hash,
                                            transaction.effective_day);
+            if (transaction.instance_transition != TRANSITION_NONE) {
+                expected_plan_hash = fnv_value(expected_plan_hash,
+                    transaction.instance_transition);
+                expected_plan_hash = fnv_value(expected_plan_hash,
+                    transaction.transition_input_revision);
+                expected_plan_hash = fnv_value(expected_plan_hash,
+                    transaction.transition_fire_sequence);
+                expected_plan_hash = fnv_value(expected_plan_hash,
+                    transaction.transition_stack_count);
+            }
         }
         for (uint32_t ordinal = 0; ordinal < transaction.command_count; ++ordinal) {
             const Command &command = restored_command_arena[
@@ -5424,6 +6410,7 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
     _run_candidates = std::move(restored_candidates);
     _next_transaction_id = next_tx;
     _acked_transaction_id = acked_tx;
+    _next_activation_sequence = next_activation_sequence;
     _instances = std::move(restored_instances);
     _metric_values = std::move(restored_metric_values);
     _metric_present = std::move(restored_metric_present);
@@ -5433,10 +6420,13 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
             static_cast<size_t>(_metric_count));
         _instances[i].dirty_epoch = 0;
         _instances[i].schedule_token = 0;
+        _instances[i].stack_decision_epoch = 0;
+        _instances[i].desired_stack_count = 0;
         if (_instances[i].active)
             schedule_instance(static_cast<int32_t>(i), _instances[i].next_due_day);
     }
     _instance_ids = std::move(restored_instance_ids);
+    rebuild_family_effect_groups();
     _free_instance_indices.clear();
     for (size_t i = 0; i < _instances.size(); ++i)
         if (_instances[i].id == 0)

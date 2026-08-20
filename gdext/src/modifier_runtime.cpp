@@ -1,6 +1,7 @@
 #include "modifier_runtime.h"
 
 #include "country_runtime.h"
+#include "economy_runtime.h"
 
 #include <algorithm>
 #include <chrono>
@@ -474,7 +475,16 @@ bool ModifierRuntime::validate_target(const Command &command, std::string &error
             error = "modifier_country_handle_stale";
             return false;
         }
-        if (command.domain == ECONOMY && !valid_identity(_building_identities, command.entity_handle)) {
+        const bool family_effect_entity = command.domain == ECONOMY &&
+            command.producer == 161 && command.entity_handle != 0;
+        if (family_effect_entity && _economy_runtime != nullptr &&
+            !_economy_runtime->valid_family_effect_entity_handle(
+                command.entity_handle)) {
+            error = "modifier_family_effect_handle_stale";
+            return false;
+        }
+        if (command.domain == ECONOMY && !family_effect_entity &&
+            !valid_identity(_building_identities, command.entity_handle)) {
             error = "modifier_building_handle_stale";
             return false;
         }
@@ -1082,7 +1092,7 @@ double ModifierRuntime::effective_value(int32_t domain, int32_t sid,
     const BucketKey keys[3] = {{sid, GLOBAL, 0}, {sid, GROUP, group_handle},
                                {sid, ENTITY, entity_handle}};
     for (int i = 0; i < 3; ++i) {
-        if (i == 1 && group_handle == 0) continue;
+        if (i == 1 && group_handle == 0 && domain != ECONOMY) continue;
         const auto it = store.buckets.find(keys[i]);
         if (it == store.buckets.end()) continue;
         ++store.bucket_reads;
@@ -1136,6 +1146,37 @@ void ModifierRuntime::collect_scope_ids(int32_t domain, int32_t scope,
     std::sort(out_scope_ids.begin(), out_scope_ids.end());
     out_scope_ids.erase(std::unique(out_scope_ids.begin(), out_scope_ids.end()),
                         out_scope_ids.end());
+}
+
+void ModifierRuntime::collect_scope_stat_entries(
+        int32_t domain, int32_t scope, const int32_t *stat_ids,
+        size_t stat_count, std::vector<uint64_t> &out_scope_ids,
+        std::vector<int32_t> &out_stat_ids) const {
+    out_scope_ids.clear();
+    out_stat_ids.clear();
+    if (!_configured || domain < 0 || domain >= DOMAIN_COUNT ||
+        stat_ids == nullptr || stat_count == 0)
+        return;
+    std::vector<int32_t> wanted(stat_ids, stat_ids + stat_count);
+    std::sort(wanted.begin(), wanted.end());
+    wanted.erase(std::unique(wanted.begin(), wanted.end()), wanted.end());
+    std::vector<std::pair<uint64_t, int32_t>> entries;
+    const Store &store = _stores[domain];
+    entries.reserve(store.buckets.size());
+    for (const auto &entry : store.buckets) {
+        if (entry.first.scope != scope || !std::binary_search(
+                wanted.begin(), wanted.end(), entry.first.stat_id))
+            continue;
+        entries.emplace_back(entry.first.scope_id, entry.first.stat_id);
+    }
+    std::sort(entries.begin(), entries.end());
+    entries.erase(std::unique(entries.begin(), entries.end()), entries.end());
+    out_scope_ids.reserve(entries.size());
+    out_stat_ids.reserve(entries.size());
+    for (const auto &entry : entries) {
+        out_scope_ids.push_back(entry.first);
+        out_stat_ids.push_back(entry.second);
+    }
 }
 
 uint64_t ModifierRuntime::stat_bucket_version(int32_t domain, const int32_t *stat_ids,

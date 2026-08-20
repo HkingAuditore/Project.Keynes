@@ -31,10 +31,10 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         error = "save_chunk_header_invalid";
         return false;
     }
-    if (schema < 35 || schema > SCHEMA_VERSION) {
+    if (schema != SCHEMA_VERSION) {
         error = schema <= 31 ? "economy_save_v31_or_earlier_unsupported" :
             (schema == 32 ? "economy_save_v32_or_earlier_unsupported" :
-            "economy_save_schema_unsupported");
+            "economy_save_pre_family_effect_schema_unsupported");
         return false;
     }
     if (!_restore.header_seen && section != SAVE_SECTION_HEADER) {
@@ -622,6 +622,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         _environment_temperature_30d_q16.assign(_cell_count, 0);
         _environment_moisture_q16.assign(_cell_count, 0);
         _environment_plant_available_water_q16.assign(_cell_count, 0);
+        _environment_precipitation_q16.assign(_cell_count, 0);
         _environment_snow_q16.assign(_cell_count, 0);
         _environment_weather_q16.assign(_cell_count, 0);
         _cell_living_cost_per_capita.assign(_cell_count, 0);
@@ -851,6 +852,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 !read_le(bytes, cursor, _environment_temperature_30d_q16[cell]) ||
                 !read_le(bytes, cursor, _environment_moisture_q16[cell]) ||
                 !read_le(bytes, cursor, _environment_plant_available_water_q16[cell]) ||
+                !read_le(bytes, cursor, _environment_precipitation_q16[cell]) ||
                 !read_le(bytes, cursor, _environment_snow_q16[cell]) ||
                 !read_le(bytes, cursor, _environment_weather_q16[cell])) {
                 error = "save_cell_environment_record_invalid";
