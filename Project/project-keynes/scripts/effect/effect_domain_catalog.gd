@@ -8,6 +8,7 @@ const EffectCommandScript = preload("res://scripts/effect/effect_command.gd")
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const FamilyTraitCatalogScript = preload("res://scripts/family/family_trait_catalog.gd")
+const FamilyEffectCatalogScript = preload("res://scripts/family/family_effect_catalog.gd")
 const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
 const IdeologyCatalogScript = preload("res://scripts/ideology/ideology_catalog.gd")
 const EraRewardCatalogScript = preload("res://scripts/effect/era_reward_catalog.gd")
@@ -22,7 +23,21 @@ static func build() -> Resource:
 	var catalog: Resource = EffectCatalogScript.load_default()
 	if catalog == null:
 		catalog = EffectCatalogScript.new()
-	catalog.metric_keys = PackedStringArray(["family.magnitude_q16"])
+	# Metric zero remains the legacy family branch magnitude used by existing
+	# Modifier programs. Additional typed metrics are reserved for declarative
+	# FamilyEffect conditions and keep the same stable dense ordering.
+	catalog.metric_keys = PackedStringArray([
+		"family.magnitude_q16",
+		"family.population",
+		"family.cash_claim",
+		"branch.prestige_q16",
+		"branch.population",
+		"cell.temperature_q16",
+		"cell.precipitation_q16",
+		"cell.resource_shortage_q16",
+		"cell.trade_events",
+		"cell.population",
+	])
 	catalog.behavior_command_keys = PackedStringArray()
 	var definitions: Array[Resource] = []
 
@@ -74,11 +89,39 @@ static func build() -> Resource:
 	era_reward_ir.erase("ok")
 	catalog.native_extensions = era_reward_ir
 
-	var economy_catalog := EconomyCatalogScript.compile_native_catalog()
+	# Family effects are authored independently from traits and compiled into
+	# the same immutable EffectDefinition table. An empty default catalog is a
+	# valid no-op, so existing worlds retain their current behavior.
+	var family_effect_catalog: Resource = FamilyEffectCatalogScript.load_default()
+	var family_effect_ir: Dictionary = {}
+	if family_effect_catalog != null:
+		family_effect_ir = family_effect_catalog.compile_native_catalog(
+			technology_ids)
+		if not bool(family_effect_ir.get("ok", false)):
+			return null
+		var family_definitions: Array = family_effect_ir.get("definitions", [])
+		for definition in family_definitions:
+			var family_key := String(definition.key)
+			if definition_seen.has(family_key):
+				return null
+			definition_seen[family_key] = true
+			definitions.append(definition)
+		family_effect_ir.erase("ok")
+		family_effect_ir.erase("definitions")
+		for extension_key in family_effect_ir:
+			catalog.native_extensions[extension_key] = family_effect_ir[extension_key]
+
+	var economy_catalog := EconomyCatalogScript.compile_native_catalog(
+		family_effect_catalog)
 	if bool(economy_catalog.get("ok", false)):
 		var trait_catalog = FamilyTraitCatalogScript.load_default()
 		if trait_catalog != null:
-			var trait_columns: Dictionary = trait_catalog.compile_native_columns(economy_catalog)
+			var trait_columns: Dictionary = trait_catalog.compile_native_columns(
+				economy_catalog, family_effect_ir.get(
+					"family_effect_keys", PackedStringArray()) if family_effect_catalog != null \
+					else PackedStringArray(), family_effect_ir.get(
+					"family_effect_source_kinds", PackedInt32Array()) \
+					if family_effect_catalog != null else PackedInt32Array())
 			if bool(trait_columns.get("ok", false)):
 				var keys: PackedStringArray = trait_columns.get(
 					"family_trait_modifier_definition_keys", PackedStringArray())
@@ -100,6 +143,12 @@ static func build() -> Resource:
 	var modifier_catalog_resource: Resource = ModifierCatalogScript.load_default()
 	var modifier_catalog: Dictionary = modifier_catalog_resource.compile_native_catalog() \
 		if modifier_catalog_resource != null else {"ok": false}
+	if family_effect_catalog != null:
+		var family_domain_validation: Dictionary = \
+			family_effect_catalog.validate_domain_bindings(
+				economy_catalog, modifier_catalog)
+		if not bool(family_domain_validation.get("ok", false)):
+			return null
 	if bool(modifier_catalog.get("ok", false)):
 		var modifier_keys: PackedStringArray = modifier_catalog.get(
 			"definition_keys", PackedStringArray())

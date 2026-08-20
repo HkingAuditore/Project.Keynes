@@ -39,7 +39,7 @@ range 推进 persistence/introduction、diffusion、merge、publish 四个 phase
 
 PKSV persistence is a snapshot boundary, not a new owner. GDScript coordinates
 section capture while each native authority emits its own versioned state:
-PKCN v11, PKEF v10, PKTR v5, PKID v3, PKEC v37, PKCM v1, PKGP v1, and
+PKCN v11, PKEF v11, PKTR v6, PKID v3, PKEC v41, PKCM v1, PKGP v1, and
 `PKEnvironmentRuntime v1`. Environment export includes the
 resident core vectors, weather ping-pong buffers, topology, dirty/active sets,
 round flags, stage cursors, and snapshot generations. Restore validates schema
@@ -998,7 +998,7 @@ eight revisions and `2 * cell_count` entries; an expired cursor returns
 
 Trigger catalogs cross the bridge once as protocol v2 packed columns. GDScript owns resource
 configuration and domain adapters; C++ owns dense trigger state, dynamic family branch bindings and
-PKTR v5 bytes. Gameplay facts carry both legacy `entity_id` and generation-safe 64-bit
+PKTR v6 bytes. Gameplay facts carry both legacy `entity_id` and generation-safe 64-bit
 `entity_handle`; economy publishes construction/trade facts once and TriggerRuntime fans them out by
 `(event_type, cell)`.
 
@@ -1013,6 +1013,13 @@ substitution/tag selectors to exact dense CSR edges; C++ owns trait rolls, famil
 pending mutations and all Modifier/Trigger reconciliation. Inspector facade calls are bounded,
 read-only selected-family queries. Selector CSR, reverse indexes and frozen city/resource Q16 factors
 are derived bridge/runtime caches rebuilt after restore, never PKEC or state-hash authority.
+
+`FamilyEffectCatalog` follows the same cold bridge. It compiles semantic metadata and Trait-to-Effect
+CSR into stable columns, then `EffectDomainCatalog` validates every typed target and Modifier stat.
+Daily FamilyEffect coordination uses native POD instance/metric ingress; no Resource, String,
+Dictionary or Callable enters the evaluation loop. Exact-good output cache materialization asks
+Modifier only for existing `(scope_id, stat_id)` buckets, fills shared-per-good defaults and stores
+non-neutral cell overrides in CSR.
 
 ## Visual tile byte bridge
 
@@ -1051,6 +1058,10 @@ same-day dirty replay, while an unchanged revision waits for normal cadence.
 Native request IDs are intentionally not persistent. PKEF stores an in-flight
 native-bound `PREFLIGHTED` transaction as `PLANNED`, so restore repeats its
 idempotent C++ enqueue instead of retaining a request ID from an older process.
+PKEF v11 also persists managed lifecycle/stack state. A rejected apply/update/remove keeps the last
+ACKed state and retries on the next day; EVENT_ONCE and explicit retirement release their instance
+only after the required domain ACK. Family/Branch producer `161` targets are generation-checked again
+inside Modifier safe commit.
 
 Ideology public opinion does not use a DataCore slot or per-frame PackedArray
 bridge. Economy COMMIT publishes a double-buffered native

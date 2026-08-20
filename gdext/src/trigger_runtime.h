@@ -19,7 +19,7 @@ class NativeIdeologyRuntime;
 class TriggerRuntime {
 public:
     static constexpr int32_t PROTOCOL_VERSION = 3;
-    static constexpr int32_t SAVE_SCHEMA_VERSION = 5;
+    static constexpr int32_t SAVE_SCHEMA_VERSION = 6;
 
     enum Scope : int32_t { GLOBAL = 0, GROUP = 1, ENTITY = 2 };
     enum Aggregator : int32_t {

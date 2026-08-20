@@ -26,7 +26,7 @@ class DCWorldExt;
 class EffectRuntime {
 public:
     static constexpr int32_t PROTOCOL_VERSION = 1;
-    static constexpr int32_t SAVE_SCHEMA_VERSION = 10;
+    static constexpr int32_t SAVE_SCHEMA_VERSION = 11;
     static constexpr int64_t Q16_ONE = 65536;
 
     enum Instruction : int32_t {
@@ -78,6 +78,13 @@ public:
         REJECTED = 5,
         RESYNC_REQUIRED = 6,
     };
+    enum InstanceTransition : int32_t {
+        TRANSITION_NONE = 0,
+        TRANSITION_APPLY = 1,
+        TRANSITION_UPDATE = 2,
+        TRANSITION_DEACTIVATE = 3,
+        TRANSITION_RETIRE = 4,
+    };
 
     struct BehaviorCommand {
         int32_t action = CUSTOM_DOMAIN_COMMAND;
@@ -107,6 +114,20 @@ public:
         std::string command_key;
         std::string definition_key;
         std::array<int64_t, 4> payload{};
+    };
+    struct FamilyEffectMetadataPod {
+        int32_t source_kind = 0;
+        int32_t target_domain = 0;
+        int32_t operation = 0;
+        int32_t lifecycle = 0;
+        int32_t duration_days = -1;
+        int32_t stack_policy = 0;
+        int32_t max_stacks = 1;
+        int32_t priority = 0;
+        int32_t target_selector_kind = 0;
+        std::string target_selector_id;
+        uint64_t stack_key_hash = 0;
+        uint64_t metric_mask = 0;
     };
 
     // Durable identity for an external owner (ideology, trigger, etc.).  The
@@ -171,6 +192,8 @@ public:
                              int32_t level, int64_t next_due_day, bool active,
                              std::string &error);
     bool has_instance_pod(int64_t instance_id, uint32_t generation) const;
+    bool family_effect_metadata_pod(const std::string &program_key,
+                                    FamilyEffectMetadataPod &out) const;
     bool upsert_external_binding_pod(int64_t binding_id, uint32_t generation,
                                      int32_t source_type, int64_t source_id,
                                      uint64_t target_handle,
@@ -326,6 +349,7 @@ private:
         NATIVE_MODIFIER_FAMILY = 2,
         NATIVE_MODIFIER_PERSON = 3,
         NATIVE_MODIFIER_TRIGGER = 4,
+        NATIVE_MODIFIER_FAMILY_EFFECT = 5,
     };
     struct CommandDefinition {
         int32_t action = CUSTOM_DOMAIN_COMMAND;
@@ -340,6 +364,7 @@ private:
         std::string command_key;
         std::string definition_key;
         int32_t native_modifier_adapter = NATIVE_MODIFIER_GENERIC;
+        int32_t owner_program_id = -1;
         std::array<int64_t, 4> payload{};
     };
     struct Definition {
@@ -355,6 +380,17 @@ private:
         int32_t command_begin = 0;
         int32_t command_count = 0;
         std::string behavior_id;
+        int32_t source_kind = 0;
+        int32_t target_domain = 0;
+        int32_t operation = 0;
+        int32_t lifecycle = 0;
+        int32_t duration_days = -1;
+        int32_t stack_policy = 0;
+        std::string stack_key;
+        int32_t max_stacks = 1;
+        int32_t priority = 0;
+        int32_t target_selector_kind = 0;
+        std::string target_selector_id;
     };
     struct Instance {
         int64_t id = 0;
@@ -378,6 +414,32 @@ private:
         uint32_t metric_base = 0;
         uint32_t dirty_epoch = 0;
         uint64_t schedule_token = 0;
+        int32_t source_kind = 0;
+        int32_t target_domain = 0;
+        int32_t operation = 0;
+        int32_t lifecycle = 0;
+        int32_t duration_days = -1;
+        int32_t stack_policy = 0;
+        int32_t max_stacks = 1;
+        // Requested source contribution. Group arbitration derives the
+        // applied count without destroying this value, so a capped source can
+        // become active when another source leaves the same stack group.
+        int32_t stack_count = 1;
+        int32_t applied_stack_count = 0;
+        int32_t priority = 0;
+        uint64_t activation_sequence = 0;
+        int64_t expires_day = -1;
+        uint64_t stack_key_hash = 0;
+        // Domain-ACKed application state. Managed definitions only emit when
+        // this state or the frozen input revision changes.
+        uint8_t effect_applied = 0;
+        uint8_t retire_requested = 0;
+        int64_t applied_input_revision = 0;
+        uint64_t last_acked_fire_sequence = 0;
+        // Transient arbitration cache. Recomputed once per dirty candidate
+        // epoch and intentionally excluded from PKEF.
+        uint32_t stack_decision_epoch = 0;
+        int32_t desired_stack_count = 0;
     };
     struct Command {
         int32_t action = CUSTOM_DOMAIN_COMMAND;
@@ -407,8 +469,34 @@ private:
         uint32_t required_ack_mask = 0;
         uint32_t received_ack_mask = 0;
         int32_t status = PLANNED;
+        int32_t instance_transition = TRANSITION_NONE;
+        int64_t transition_input_revision = 0;
+        uint64_t transition_fire_sequence = 0;
+        int32_t transition_stack_count = 0;
         uint32_t command_begin = 0;
         uint32_t command_count = 0;
+    };
+    struct FamilyEffectGroupKey {
+        int32_t target_domain = 0;
+        uint64_t target_handle = 0;
+        uint32_t target_generation = 0;
+        uint64_t stack_key_hash = 0;
+        bool operator==(const FamilyEffectGroupKey &other) const {
+            return target_domain == other.target_domain &&
+                target_handle == other.target_handle &&
+                target_generation == other.target_generation &&
+                stack_key_hash == other.stack_key_hash;
+        }
+    };
+    struct FamilyEffectGroupKeyHash {
+        size_t operator()(const FamilyEffectGroupKey &key) const {
+            uint64_t value = key.stack_key_hash;
+            value ^= key.target_handle + 0x9e3779b97f4a7c15ULL +
+                (value << 6U) + (value >> 2U);
+            value ^= static_cast<uint64_t>(key.target_generation) << 32U;
+            value ^= static_cast<uint32_t>(key.target_domain);
+            return static_cast<size_t>(value);
+        }
     };
     struct PlannedCandidate {
         int32_t candidate_cursor = -1;
@@ -524,11 +612,27 @@ private:
     // domain mask. A transaction may otherwise remain COMMITTED while another
     // native domain is still pending at its own safety boundary.
     bool acknowledge_native_domain(Transaction &transaction, uint32_t domain_bit);
+    void apply_acked_instance_transition(const Transaction &transaction);
+    void apply_rejected_instance_transition(const Transaction &transaction);
+    static bool uses_managed_lifecycle(const Definition &definition);
+    bool is_family_effect_instance(const Instance &instance) const;
+    FamilyEffectGroupKey family_effect_group_key(const Instance &instance) const;
+    void add_family_effect_group_member(int32_t instance_index);
+    void remove_family_effect_group_member(int32_t instance_index,
+                                           const FamilyEffectGroupKey &key);
+    void rebuild_family_effect_groups();
+    void mark_family_effect_group_dirty(int32_t instance_index);
+    bool resolve_family_effect_group(int32_t instance_index, int64_t day,
+                                     std::string &error);
+    bool preview_family_effect_value(const Definition &definition,
+                                     const Instance &instance,
+                                     int64_t &value, std::string &error) const;
     void rebuild_command_idempotency_index();
     void compact_terminal_transactions();
     bool create_retirement_transaction(int32_t instance_index,
                                        int64_t effective_day,
-                                       std::string &error);
+                                       std::string &error,
+                                       bool retire_instance = true);
     void release_retired_instance_if_terminal(int32_t instance_index);
     const Command *command_at(const Transaction &transaction,
                                uint32_t ordinal) const;
@@ -577,6 +681,7 @@ private:
     int32_t _run_cursor = 0;
     int64_t _next_transaction_id = 1;
     int64_t _acked_transaction_id = 0;
+    uint64_t _next_activation_sequence = 1;
     uint64_t _instances_submitted = 0;
     uint64_t _programs_evaluated = 0;
     uint64_t _commands_emitted = 0;
@@ -627,6 +732,10 @@ private:
     std::vector<uint8_t> _metric_present;
     std::vector<int32_t> _dirty_queue;
     uint32_t _dirty_epoch_counter = 1;
+    uint32_t _stack_decision_epoch = 1;
+    std::unordered_map<FamilyEffectGroupKey, std::vector<int32_t>,
+                       FamilyEffectGroupKeyHash> _family_effect_groups;
+    std::vector<int32_t> _family_effect_candidate_scratch;
     std::priority_queue<DueNode, std::vector<DueNode>, std::greater<DueNode>> _due_heap;
     std::vector<int32_t> _run_candidates;
     int32_t _candidate_cursor = 0;

@@ -67,7 +67,7 @@ diffusion、merge、publish；阶段之间仍由 cursor 分片，任何中间片
 MapData/slot。slice API 缺失或校验失败时，报告
 `path/fallback_reason/fail_stage/published_to_slot` 并回到旧 one-shot pass。
 
-## Economy pipeline（PKEC v37 当前，v24 历史基础）
+## Economy pipeline（PKEC v41 当前，v24 历史基础）
 
 经济图仍由 `NativeEconomyRuntime` 权威执行，未增加 DataCore slot 或 GDScript fallback。
 `building_plan` 生成授信额度，`building_employment` 只为 ACTIVE 建筑分配岗位，

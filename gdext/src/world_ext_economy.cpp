@@ -63,6 +63,9 @@ Dictionary DCWorldExt::configure_economy(const Dictionary &catalog,
     if (_economy_csv_recorder != nullptr)
         static_cast<EconomyCsvRecorder *>(_economy_csv_recorder)->request_stop();
     if (_economy_runtime == nullptr) _economy_runtime = new NativeEconomyRuntime();
+    if (_modifier_runtime != nullptr)
+        static_cast<ModifierRuntime *>(_modifier_runtime)->attach_economy_runtime(
+            runtime_from(_economy_runtime));
     runtime_from(_economy_runtime)->attach_country_runtime(
         static_cast<NativeCountryRuntime *>(_country_runtime));
     runtime_from(_economy_runtime)->attach_modifier_runtime(
@@ -173,6 +176,7 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
         const int sid_temp_30d = component_id(StringName("cell_temp_30d"));
         const int sid_moisture = component_id(StringName("cell_moisture"));
         const int sid_plant_water = component_id(StringName("cell_plant_available_water"));
+        const int sid_precip = component_id(StringName("cell_weather_precip"));
         const int sid_snow = component_id(StringName("cell_snow_cover"));
         const int sid_weather = component_id(StringName("cell_weather_intensity"));
         auto valid_f32 = [&](int sid) {
@@ -180,7 +184,7 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
         };
         if (!valid_f32(sid_temp) || !valid_f32(sid_temp_30d) ||
             !valid_f32(sid_moisture) || !valid_f32(sid_plant_water) || !valid_f32(sid_snow) ||
-            !valid_f32(sid_weather)) {
+            !valid_f32(sid_precip) || !valid_f32(sid_weather)) {
             Dictionary out;
             out["ok"] = false;
             out["done"] = true;
@@ -194,6 +198,7 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
         if (_slots[sid_temp_30d].arr_f32.size() != count ||
             _slots[sid_moisture].arr_f32.size() != count ||
             _slots[sid_plant_water].arr_f32.size() != count ||
+            _slots[sid_precip].arr_f32.size() != count ||
             _slots[sid_snow].arr_f32.size() != count ||
             _slots[sid_weather].arr_f32.size() != count) {
             Dictionary out;
@@ -211,6 +216,7 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
                                           _slots[sid_temp_30d].arr_f32.ptr(),
                                           _slots[sid_moisture].arr_f32.ptr(),
                                           _slots[sid_plant_water].arr_f32.ptr(),
+                                          _slots[sid_precip].arr_f32.ptr(),
                                           _slots[sid_snow].arr_f32.ptr(),
                                           _slots[sid_weather].arr_f32.ptr(), count, error)) {
             Dictionary out;

@@ -188,17 +188,17 @@ func _test_worker_scalar_and_save(catalog: Dictionary) -> void:
 		int(scalar.ext.get_economy_state_hash()) == int(
 			worker.ext.get_economy_state_hash()))
 	var saved := _save_economy(worker.ext)
-	_expect("PKEC v37 climate save streams at a committed boundary",
-		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 39)
+	_expect("PKEC v41 climate save streams at a committed boundary",
+		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 41)
 	if not bool(saved.get("ok", false)):
 		return
 	var restored := _configured_runtime(catalog, CELL_COUNT, 4403, false)
 	var restored_profile := _profile(false)
-	_expect("PKEC v22 restore target configures", bool(restored.get("ok", false)) and
+	_expect("PKEC v41 restore target configures", bool(restored.get("ok", false)) and
 		bool(restored.ext.configure_economy(
 			catalog, restored_profile, CELL_COUNT, 4403).get("ok", false)))
 	var restore_result := _restore_economy(restored.ext, saved.chunks)
-	_expect("PKEC v22 round-trip preserves climate state hash",
+	_expect("PKEC v41 round-trip preserves climate state hash",
 		bool(restore_result.get("ok", false)) and
 		int(restored.ext.get_economy_state_hash()) == int(
 			worker.ext.get_economy_state_hash()))
@@ -208,7 +208,7 @@ func _test_worker_scalar_and_save(catalog: Dictionary) -> void:
 	if bool(invalid_result.get("ok", true)) or String(invalid_result.get(
 			"reason", "")) != "save_building_record_invalid":
 		print("  invalid climate restore result=", invalid_result)
-	_expect("PKEC v22 rejects an illegal climate diagnostic without bootstrapping",
+	_expect("PKEC v41 rejects an illegal climate diagnostic without bootstrapping",
 		not bool(invalid_result.get("ok", true)) and
 		String(invalid_result.get("reason", "")) == "save_building_record_invalid" and
 		String(invalid.ext.begin_economy_save(65536).get("reason", "")) ==
@@ -216,7 +216,7 @@ func _test_worker_scalar_and_save(catalog: Dictionary) -> void:
 	var truncated := _configured_runtime(catalog, CELL_COUNT, 4403, false)
 	truncated.ext.configure_economy(catalog, _profile(false), CELL_COUNT, 4403)
 	var truncated_result := _restore_truncated_building(truncated.ext, saved.chunks)
-	_expect("PKEC v22 rejects a truncated climate building record without bootstrapping",
+	_expect("PKEC v41 rejects a truncated climate building record without bootstrapping",
 		not bool(truncated_result.get("ok", true)) and
 		String(truncated_result.get("reason", "")) == "save_chunk_header_invalid" and
 		String(truncated.ext.begin_economy_save(65536).get("reason", "")) ==
@@ -244,7 +244,7 @@ func _configured_runtime(catalog: Dictionary, cell_count: int,
 	var half := _filled_f32(cell_count, 0.5)
 	var slots := {}
 	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
-			&"cell_plant_available_water", &"cell_snow_cover",
+			&"cell_plant_available_water", &"cell_weather_precip", &"cell_snow_cover",
 			&"cell_weather_intensity", &"cell_elevation"]:
 		var sid: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(sid, 0, half)
@@ -420,7 +420,7 @@ func _restore_corrupted_building(ext: Object, chunks: Array) -> Dictionary:
 	for value in chunks:
 		var chunk := (value as PackedByteArray).duplicate()
 		if chunk.size() >= 60 and chunk.decode_u16(6) == 5:
-			# Building payload offset 36 is last_temperature_fit_q16 in PKEC v22.
+			# Building payload offset 36 is last_temperature_fit_q16 in PKEC v41.
 			chunk.encode_s64(16 + 36, Q16_ONE + 1)
 		var fed: Dictionary = ext.feed_economy_restore_chunk(chunk)
 		if not bool(fed.get("ok", false)):

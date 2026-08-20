@@ -101,7 +101,7 @@ func _run() -> void:
 		not bool(fiscal.get("tariffs_active", true)))
 	var saved := _save(runtime)
 	var saved_country := _save_country(runtime)
-	_expect("PKEC v37 saves at a daily committed boundary",
+	_expect("PKEC v41 saves at a daily committed boundary",
 		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 39)
 	var restored := _new_ext(compiled)
 	_expect("restore country matches", CountryTestHelper.configure_all_technologies(
@@ -367,7 +367,7 @@ func _new_ext(catalog: Dictionary) -> Object:
 	scalar.resize(CELL_COUNT)
 	scalar.fill(0.5)
 	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
-			&"cell_plant_available_water", &"cell_snow_cover",
+			&"cell_plant_available_water", &"cell_weather_precip", &"cell_snow_cover",
 			&"cell_weather_intensity", &"cell_elevation"]:
 		var sid: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(sid, 0, scalar)

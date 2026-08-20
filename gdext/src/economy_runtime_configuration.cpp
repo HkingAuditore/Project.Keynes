@@ -84,11 +84,23 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     }
     _city_good_consumption_stat_ids.clear();
     _city_good_consumption_stat_ids.reserve(_good_ids.size());
+    _city_good_output_stat_ids.clear();
+    _city_good_output_stat_ids.reserve(_good_ids.size());
     for (const std::string &good_id : _good_ids) {
         const std::string key = "economy.city.good." + good_id +
             ".consumption_factor";
         _city_good_consumption_stat_ids.push_back(_modifier_runtime != nullptr
             ? _modifier_runtime->stat_id_for_key(key) : -1);
+        _city_good_output_stat_ids.push_back(_modifier_runtime != nullptr
+            ? _modifier_runtime->stat_id_for_key(
+                "economy.city.good." + good_id + ".output_factor") : -1);
+    }
+    _city_building_output_stat_ids.clear();
+    _city_building_output_stat_ids.reserve(_building_type_ids.size());
+    for (const std::string &building_id : _building_type_ids) {
+        _city_building_output_stat_ids.push_back(_modifier_runtime != nullptr
+            ? _modifier_runtime->stat_id_for_key(
+                "economy.city.building." + building_id + ".output_factor") : -1);
     }
     if (_modifier_runtime != nullptr && (_city_birth_stat_id < 0 ||
             _city_consumption_stat_id < 0 || std::any_of(
@@ -97,6 +109,12 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
                 [](int32_t id) { return id < 0; }) || std::any_of(
                 _city_good_consumption_stat_ids.begin(),
                 _city_good_consumption_stat_ids.end(),
+                [](int32_t id) { return id < 0; }) || std::any_of(
+                _city_good_output_stat_ids.begin(),
+                _city_good_output_stat_ids.end(),
+                [](int32_t id) { return id < 0; }) || std::any_of(
+                _city_building_output_stat_ids.begin(),
+                _city_building_output_stat_ids.end(),
                 [](int32_t id) { return id < 0; }))) {
         reset("modifier_city_stat_missing");
         out["ok"] = false;
@@ -218,6 +236,8 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     }
     _epoch_city_factor_valid = false;
     _epoch_city_factor_stat_version = 0;
+    _epoch_city_output_factor_valid = false;
+    _epoch_city_output_factor_stat_version = 0;
     _city_factor_dirty_cells.clear();
     _cell_count = cell_count;
     _seed = seed;
@@ -267,7 +287,13 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _family_memberships.clear();
     _family_ownerships.clear();
     _family_traits.clear();
+    _family_behavior_factor_offsets.clear();
+    _family_behavior_factor_rows.clear();
     _family_trait_commands.clear();
+    _family_effect_bindings.clear();
+    _family_effect_binding_by_instance.clear();
+    _family_effect_instances_by_branch.clear();
+    _family_effect_instances_by_cell.clear();
     _family_modifier_bindings.clear();
     _family_trigger_bindings.clear();
     _person_needs.clear();
@@ -330,6 +356,7 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _cell_technology_gen.clear();
     _cell_resource_gen.clear();
     _cell_trade_gen.clear();
+    _cell_effect_shortage_q16.clear();
     _epoch_market_ids.clear();
     _economy_live_cells.clear();
     _epoch_settlement_cells.clear();
@@ -359,6 +386,7 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _environment_temperature_30d_q16.assign(cell_count, Q16_ONE / 2);
     _environment_moisture_q16.assign(cell_count, Q16_ONE / 2);
     _environment_plant_available_water_q16.assign(cell_count, Q16_ONE / 2);
+    _environment_precipitation_q16.assign(cell_count, 0);
     _environment_snow_q16.assign(cell_count, 0);
     _environment_weather_q16.assign(cell_count, 0);
     _cell_living_cost_per_capita.assign(cell_count, 0);
@@ -386,6 +414,7 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
         mix_bootstrap_environment(Q16_ONE / 2);
         mix_bootstrap_environment(Q16_ONE / 2);
         mix_bootstrap_environment(Q16_ONE / 2);
+        mix_bootstrap_environment(0);
         mix_bootstrap_environment(0);
         mix_bootstrap_environment(0);
     }
@@ -882,6 +911,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     _cell_technology_gen.assign(_cell_count, 0);
     _cell_resource_gen.assign(_cell_count, 0);
     _cell_trade_gen.assign(_cell_count, 0);
+    _cell_effect_shortage_q16.assign(_cell_count, 0);
     _fiscal_previous_country_handles.assign(
         static_cast<size_t>(_cell_count), 0);
     _fiscal_previous_requests.assign(
@@ -981,6 +1011,8 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
         uint8_t{1}));
     out["family_modifier_binding_count"] = static_cast<int64_t>(
         _family_modifier_bindings.size());
+    out["family_effect_binding_count"] = static_cast<int64_t>(
+        _family_effect_bindings.size());
     out["family_trigger_binding_count"] = static_cast<int64_t>(
         _family_trigger_bindings.size());
     out["family_membership_edges_processed"] =

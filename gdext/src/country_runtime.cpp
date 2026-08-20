@@ -3236,13 +3236,12 @@ int32_t NativeCountryRuntime::run_research_day(int64_t day_index) {
                 modifier_ready = fire_acked || modifier_applied;
             }
             if (!modifier_ready &&
+                (!_effect_runtime_enabled || _effect_runtime == nullptr) &&
                 _modifier_runtime != nullptr && _modifier_runtime->configured() &&
                 !technology_modifier_key.empty()) {
-                // UNIQUE_SOURCE is idempotent. If the Effect instance exists but
-                // never ACKs (missed morning, incomplete drain, wedged slice),
-                // the next country day still applies the permanent Modifier so
-                // pending cannot last forever. A later Effect ACK replaces the
-                // same UNIQUE_SOURCE and does not double-count.
+                // Legacy configurations without EffectRuntime retain their
+                // direct idempotent path. Once EffectRuntime is authoritative,
+                // activation must wait for its cross-domain ACK chain.
                 std::string modifier_error;
                 modifier_ready = _modifier_runtime->apply_technology_effect(
                     handle, technology_modifier_key, technology, day_index, modifier_error);

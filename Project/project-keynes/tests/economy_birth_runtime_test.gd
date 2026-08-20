@@ -336,7 +336,7 @@ func _test_small_population_birth_residual_save_restore(compiled: Dictionary) ->
 		int(first_report.get("births", -1)) == 0 and
 		int(source.get_population_cell_summary(0).population) == 1)
 	var saved := _save(source)
-	_expect("PKEC v37 saves accumulated birth residual and support EMA",
+	_expect("PKEC v41 saves accumulated birth residual and support EMA",
 		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 39)
 	var restored := _new_ext(1, catalog)
 	_expect("small-population restored country configures",
@@ -344,7 +344,7 @@ func _test_small_population_birth_residual_save_restore(compiled: Dictionary) ->
 	_expect("small-population restored economy configures",
 		bool(restored.configure_economy(catalog, profile, 1, 2304).get("ok", false)))
 	var restore_result := _restore(restored, saved.get("chunks", []))
-	_expect("PKEC v37 restores accumulated birth residual",
+	_expect("PKEC v41 restores accumulated birth residual",
 		bool(restore_result.get("ok", false)) and
 		source.get_economy_state_hash() == restored.get_economy_state_hash())
 	var source_second := _run_cycle(source, 1)
@@ -447,7 +447,7 @@ func _new_ext(cells: int, catalog: Dictionary = {}) -> Object:
 	zero_f.resize(cells)
 	zero_f.fill(0.0)
 	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
-			&"cell_plant_available_water"]:
+			&"cell_plant_available_water", &"cell_weather_precip"]:
 		var slot: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(slot, 0, climate)
 	for slot_name in [&"cell_snow_cover", &"cell_weather_intensity", &"cell_elevation"]:

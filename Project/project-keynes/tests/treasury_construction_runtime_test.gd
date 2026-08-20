@@ -324,7 +324,7 @@ func _new_ext(catalog: Dictionary) -> Object:
 	ext.create_entities(1)
 	var scalar := PackedFloat32Array([0.5])
 	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
-			&"cell_plant_available_water", &"cell_snow_cover",
+			&"cell_plant_available_water", &"cell_weather_precip", &"cell_snow_cover",
 			&"cell_weather_intensity", &"cell_elevation"]:
 		var slot_id: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(slot_id, 0, scalar)

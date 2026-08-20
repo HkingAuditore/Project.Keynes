@@ -1,7 +1,7 @@
 # 综合满意度运行时（Composite Satisfaction Runtime）
 
 本文件是 cohort 与家族分支满意度的**唯一权威说明**。修改维度定义、权重契约、合成公式、
-玩法接管点、溯源 API、社会压力事件或 PKEC v30 satisfaction 列时，必须同步这里、
+玩法接管点、溯源 API、社会压力事件或 PKEC v41 satisfaction 列时，必须同步这里、
 [原生经济运行时](./native-economy-runtime.md)、
 [定点/守恒/公式规范](./economy-fixed-point-ledger-formulas.md)、
 [经济存档与迁移 SOP](./economy-save-migration-sop.md) 与
@@ -264,6 +264,6 @@ PKEC `SCHEMA_VERSION` 29 → 30，**扩展现有 section 而不新增 section**�
 1707 / 2308 / 1774），因此结论以确定性 `scan_steps_*` 计数器为准。
 
 覆盖测试：`tests/satisfaction_runtime_test.gd`（八维度、生存闸门、阶层权重差异、
-explain 与 attractiveness API、PKEC v30 往返与 state_hash）、
+explain 与 attractiveness API、PKEC v41 往返与 state_hash）、
 `tests/goods_storage_schema_test.gd` 的 `_test_satisfaction_driven_births`、
 `tests/economy_birth_runtime_test.gd`、`tests/inspector_live_patch_test.gd`。

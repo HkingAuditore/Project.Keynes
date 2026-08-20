@@ -83,6 +83,10 @@ bool NativeEconomyRuntime::compile_family_trait_catalog(
         catalog, "family_trait_trigger_definition_keys_by_tier");
     _family_trait_trigger_reward_targets = packed_i32(
         catalog, "family_trait_trigger_reward_targets");
+    _family_trait_effect_offsets = packed_i32(
+        catalog, "family_trait_effect_offsets");
+    _family_trait_effect_keys = packed_strings(
+        catalog, "family_trait_effect_keys");
 
     const size_t count = _family_trait_ids.size();
     const bool primary_shape = count > 0 &&
@@ -98,6 +102,7 @@ bool NativeEconomyRuntime::compile_family_trait_catalog(
         _family_trait_behavior_offsets.size() == count + 1 &&
         _family_trait_modifier_offsets.size() == count + 1 &&
         _family_trait_trigger_offsets.size() == count + 1 &&
+        _family_trait_effect_offsets.size() == count + 1 &&
         !_family_trait_prerequisite_offsets.empty() &&
         _family_trait_prerequisite_offsets.front() == 0 &&
         _family_trait_prerequisite_offsets.back() ==
@@ -113,7 +118,10 @@ bool NativeEconomyRuntime::compile_family_trait_catalog(
             _family_trait_modifier_definition_keys.size()) &&
         _family_trait_trigger_offsets.front() == 0 &&
         _family_trait_trigger_offsets.back() == static_cast<int32_t>(
-            _family_trait_trigger_reward_targets.size());
+            _family_trait_trigger_reward_targets.size()) &&
+        _family_trait_effect_offsets.front() == 0 &&
+        _family_trait_effect_offsets.back() == static_cast<int32_t>(
+            _family_trait_effect_keys.size());
     const bool edge_shape =
         _family_trait_behavior_axes.size() ==
             _family_trait_behavior_selector_kinds.size() &&
@@ -174,6 +182,11 @@ bool NativeEconomyRuntime::compile_family_trait_catalog(
     for (int32_t reward : _family_trait_trigger_reward_targets)
         if (reward < 0 || reward > 1) {
             error = "family_trait_trigger_reward_target_invalid";
+            return false;
+        }
+    for (const std::string &key : _family_trait_effect_keys)
+        if (key.empty() || key.rfind("family.effect.", 0) != 0) {
+            error = "family_trait_effect_key_invalid";
             return false;
         }
     return true;

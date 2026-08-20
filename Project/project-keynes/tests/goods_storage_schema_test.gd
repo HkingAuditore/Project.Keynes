@@ -411,15 +411,15 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
 	if not bool(save_begin.get("ok", false)):
 		print("  PKEC begin failed=", save_begin)
-	_expect("v39 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 39)
+	_expect("v41 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 41)
 	var chunks: Array[PackedByteArray] = []
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty():
 			break
 		chunks.append(chunk)
-	_expect("v30 save emits chunks", chunks.size() >= 12)
-	_expect("v30 save completes", bool(ext.end_economy_save().get("ok", false)))
+	_expect("v41 save emits chunks", chunks.size() >= 12)
+	_expect("v41 save completes", bool(ext.end_economy_save().get("ok", false)))
 	var legacy_target: Object = _new_ext(1, 0.1)
 	legacy_target.configure_economy(catalog, profile, 1, 42)
 	legacy_target.begin_economy_restore()
@@ -886,7 +886,7 @@ func _new_ext(cells: int, temperature: float) -> Object:
 	for slot_name in [&"cell_temp", &"cell_temp_30d"]:
 		var sid: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(sid, 0, climate)
-	for slot_name in [&"cell_moisture", &"cell_plant_available_water",
+	for slot_name in [&"cell_moisture", &"cell_plant_available_water", &"cell_weather_precip",
 			&"cell_snow_cover", &"cell_weather_intensity", &"cell_elevation"]:
 		var sid: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(sid, 0, zero_f)

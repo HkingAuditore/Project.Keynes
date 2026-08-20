@@ -160,7 +160,7 @@ the world. The current restore registry order is dynamic world, environment,
 PKCM, clock, PKCN, PKEF, PKEC, PKGP, PKFG, journal, PKTR, PKID, then player
 session/view/preview. PKEF precedes PKEC so Economy can cross-check every settling
 cross-domain transaction against authoritative Effect state. `PKID v3` follows
-`PKEF v10`: every active ideology must match its
+`PKEF v11`: every active ideology must match its
 durable external binding by identity, generation, level, location, template
 signature, and Effect program hash. Missing/mismatched bindings or unknown
 pending transitions fail restore; PKID and PKEF must also agree on the exact
@@ -171,12 +171,12 @@ PKID v1 is accepted only when every ideology is inactive. Save capture waits for
 Country/Economy/Gameplay Effect ingress to be idle, so no cross-section snapshot
 can span a preflight/commit/ACK boundary.
 PKCM v1 saves Climate modifiers. PKCN v11 embeds Country modifiers, research,
-tax policy, territory claim and native Effect ingress idempotency; PKEC v37 embeds Economy
+tax policy, territory claim and native Effect ingress idempotency; PKEC v41 embeds Economy
 modifiers, BuildingIdentityStore, family traits/cell influence,
 production-climate state, and Economy Effect ingress idempotency. PKGP v1 saves
 Gameplay identity/base SoA and modifiers; journal v4 saves native
-`PUBLISH_EVENT` Effect idempotency evidence; PKTR v5 saves static/dynamic branch
-and technology-practice Trigger accumulation. PKEF v10 saves Effect recipe/program
+`PUBLISH_EVENT` Effect idempotency evidence; PKTR v6 saves static/dynamic branch
+and technology-practice Trigger accumulation. PKEF v11 saves Effect recipe/program
 identity and pending ACK state. Old PKCN/PKEF/PKTR schemas or related catalog
 identity changes are rejected with `catalog_hash_mismatch`.
 
@@ -215,11 +215,11 @@ Restore order is strict:
 4. Restore PKCM, then `WorldClock`.
 5. Restore PKCN v11, including Country modifiers, research state, national/cell tax policy,
    and native Country Effect ingress idempotency.
-6. Restore PKEF v10, then PKEC v37 after trade topology has been configured, including Economy
+6. Restore PKEF v11, then PKEC v41 after trade topology has been configured, including Economy
    modifiers, building identities, notable families, active family expeditions, and production-climate state.
 7. Restore PKGP, then PKFG; re-solve vision and republish `enum_lut.a` and the border
    mesh through `WorldRuntimeHost.refresh_country_visuals()`.
-8. Restore journal v4 and PKTR v5, then PKID v3
+8. Restore journal v4 and PKTR v6, then PKID v3
    ideology state. PKID verifies its active PKEF bindings before the session is
    allowed to resume.
 9. Rebuild derived views/render resources and scheduler topology.
@@ -305,7 +305,7 @@ slots only on the matching gold or silver working and left unfilled, a founder o
 founder. The first economy cycles may reassign the unemployed cohort into the planned self-operated roles;
 that is ordinary native employment matching and does not introduce employee relationships.
 
-Save flow requires `PKTR v5` after journal/domain state. Missing/older PKTR, older PKCN/PKEF,
-PKEC v32 or older, and incompatible catalog hashes reject restore; no empty-trigger or technology
+Save flow requires `PKTR v6` after journal/domain state. Missing/older PKTR, older PKCN/PKEF,
+every non-v41 PKEC, and incompatible catalog hashes reject restore; no empty-trigger or technology
 ID migration is provided.
 

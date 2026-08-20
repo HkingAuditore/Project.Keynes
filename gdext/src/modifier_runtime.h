@@ -18,13 +18,14 @@
 namespace pk {
 
 class NativeCountryRuntime;
+class NativeEconomyRuntime;
 
 // Shared native implementation. Each authority domain owns an independent Store;
 // catalog strings are resolved only at the Godot/save boundary.
 class ModifierRuntime {
 public:
     static constexpr int32_t PROTOCOL_VERSION = 2;
-    static constexpr int32_t SAVE_SCHEMA_VERSION = 2;
+    static constexpr int32_t SAVE_SCHEMA_VERSION = 3;
     static constexpr int64_t PERMANENT_EXPIRY = -1;
     static constexpr int32_t Q16_ONE = 65536;
     static constexpr int32_t MAX_MAGNITUDE_Q16 = Q16_ONE * 4;
@@ -98,6 +99,13 @@ public:
     void collect_scope_ids(int32_t domain, int32_t scope, const int32_t *stat_ids,
                            size_t stat_count,
                            std::vector<uint64_t> &out_scope_ids) const;
+    // Ascending `(scope_id, stat_id)` bucket keys for the requested stat set.
+    // This lets domain caches materialize only real sparse overrides instead
+    // of probing every scope against every catalog stat.
+    void collect_scope_stat_entries(int32_t domain, int32_t scope,
+                                    const int32_t *stat_ids, size_t stat_count,
+                                    std::vector<uint64_t> &out_scope_ids,
+                                    std::vector<int32_t> &out_stat_ids) const;
     // Combined bucket revision of the given stats. Unlike domain_snapshot_version
     // this ignores mutations to unrelated stats, so a cache over a stat subset is
     // not invalidated by every modifier applied elsewhere in the domain.
@@ -158,6 +166,7 @@ public:
     void unregister_person_target(uint64_t handle);
 
     void attach_country_runtime(NativeCountryRuntime *runtime) { _country_runtime = runtime; }
+    void attach_economy_runtime(NativeEconomyRuntime *runtime) { _economy_runtime = runtime; }
     bool serialize_domain(int32_t domain, std::vector<uint8_t> &out,
                           std::string &error) const;
     bool restore_domain(int32_t domain, const std::vector<uint8_t> &bytes,
@@ -394,6 +403,7 @@ private:
     std::unordered_map<BuildingKey, uint64_t, BuildingKeyHash> _building_handles;
     std::unordered_set<uint64_t> _person_targets;
     NativeCountryRuntime *_country_runtime = nullptr;
+    NativeEconomyRuntime *_economy_runtime = nullptr;
 };
 
 } // namespace pk

@@ -14,12 +14,14 @@ const TriggerCatalogScript = preload("res://scripts/trigger/trigger_catalog.gd")
 const DevelopmentAchievementCatalogScript = preload(
 	"res://scripts/research/development_achievement_catalog.gd")
 const FamilyTraitCatalogScript = preload("res://scripts/family/family_trait_catalog.gd")
+const FamilyEffectCatalogScript = preload("res://scripts/family/family_effect_catalog.gd")
 const TerrainTypeScript = preload("res://scripts/geography/terrain_type.gd")
 const LandformTypeScript = preload("res://scripts/geography/landform_type.gd")
 const DEFAULT_SETTLEMENT_PROFILE_PATH := "res://data/economy/default_settlement.tres"
 const DEFAULT_FAMILY_SURNAME_PACK_PATH := "res://data/economy/default_family_surnames.tres"
 const DEFAULT_PERSON_GIVEN_NAME_PACK_PATH := "res://data/economy/default_person_given_names.tres"
 const DEFAULT_FAMILY_TRAIT_CATALOG_PATH := "res://data/economy/default_family_traits.tres"
+const DEFAULT_FAMILY_EFFECT_CATALOG_PATH := "res://data/economy/default_family_effects.tres"
 const Q16_ONE := 65536
 ## Reserved profession that represents unemployed population buckets. It is a
 ## legal signature profession (one signature per ethnicity is auto-generated),
@@ -41,7 +43,9 @@ const SIGNAL_IDS := {
 	"weather_intensity": 3,
 }
 
-static func compile_native_catalog() -> Dictionary:
+static func compile_native_catalog(
+		family_effect_catalog_override: Resource = null,
+		family_trait_catalog_override: Resource = null) -> Dictionary:
 	var professions := _load_resources(PROFESSION_DIR)
 	var ethnicities := _load_resources(ETHNICITY_DIR)
 	var plans := _load_resources(PLAN_DIR)
@@ -658,10 +662,23 @@ static func compile_native_catalog() -> Dictionary:
 	for key in person_columns:
 		if key != "ok":
 			catalog[key] = person_columns[key]
-	var trait_catalog = load(DEFAULT_FAMILY_TRAIT_CATALOG_PATH)
+	var trait_catalog = family_trait_catalog_override
+	if trait_catalog == null:
+		trait_catalog = load(DEFAULT_FAMILY_TRAIT_CATALOG_PATH)
 	if trait_catalog == null or not trait_catalog is FamilyTraitCatalogScript:
 		return {"ok": false, "reason": "default family trait catalog is unavailable"}
-	var trait_columns: Dictionary = trait_catalog.compile_native_columns(catalog)
+	var family_effect_catalog = family_effect_catalog_override
+	if family_effect_catalog == null:
+		family_effect_catalog = load(DEFAULT_FAMILY_EFFECT_CATALOG_PATH)
+	if family_effect_catalog == null or not family_effect_catalog is FamilyEffectCatalogScript:
+		return {"ok": false, "reason": "family effect catalog is unavailable"}
+	var family_effect_ir: Dictionary = family_effect_catalog.compile_native_catalog(
+		catalog.get("technology_ids", PackedStringArray()))
+	if not bool(family_effect_ir.get("ok", false)):
+		return family_effect_ir
+	var trait_columns: Dictionary = trait_catalog.compile_native_columns(
+		catalog, family_effect_ir.get("family_effect_keys", PackedStringArray()),
+		family_effect_ir.get("family_effect_source_kinds", PackedInt32Array()))
 	if not bool(trait_columns.get("ok", false)):
 		return trait_columns
 	for key in trait_columns:

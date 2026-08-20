@@ -199,7 +199,7 @@ func _run() -> void:
 	_expect("dispatch preserves the source market local-demand reserve",
 		int((source_after_dispatch.stock as PackedInt64Array)[source_good_index]) >= local_target)
 	var saved := _save_economy(ext)
-	_expect("PKEC v37 saves in-transit escrow", bool(saved.get("ok", false)) and
+	_expect("PKEC v41 saves in-transit escrow", bool(saved.get("ok", false)) and
 		int(saved.get("schema", 0)) == 39)
 	var restored := _new_ext(compiled, 2)
 	CountryTestHelper.configure_all_technologies(restored, catalog, 2, 4410)
@@ -585,7 +585,7 @@ func _test_tariff_matrix(compiled: Dictionary, catalog: Dictionary) -> void:
 			catalog, positive.profile, 2, 4420).get("ok", false))
 		var economy_restored := _restore_economy(
 			restored, saved_economy.get("chunks", [])) if economy_configured else {"ok": false}
-		_expect("PKEC v37 restores tariff history, aggregates and state hash",
+		_expect("PKEC v41 restores tariff history, aggregates and state hash",
 			bool(saved_country.get("ok", false)) and bool(saved_economy.get("ok", false)) and
 			bool(economy_restored.get("ok", false)) and
 			int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
@@ -1414,7 +1414,7 @@ func _new_ext(catalog: Dictionary, cells: int) -> Object:
 	scalar.resize(cells)
 	scalar.fill(0.5)
 	for slot_name in [&"cell_temp", &"cell_temp_30d", &"cell_moisture",
-			&"cell_plant_available_water", &"cell_snow_cover",
+			&"cell_plant_available_water", &"cell_weather_precip", &"cell_snow_cover",
 			&"cell_weather_intensity", &"cell_elevation"]:
 		var sid: int = ext.register_component(slot_name, 0, 1, false)
 		ext.write_f32_range(sid, 0, scalar)

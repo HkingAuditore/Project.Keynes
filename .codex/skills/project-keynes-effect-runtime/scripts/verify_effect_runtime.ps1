@@ -1,6 +1,7 @@
 param(
     [switch]$Build,
-    [switch]$Godot
+    [switch]$Godot,
+    [string]$GodotPath = "F:\Developent\Godot\Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-stable_win64_console.exe"
 )
 
 $ErrorActionPreference = "Stop"
@@ -32,11 +33,13 @@ if ($Build) {
 }
 
 if ($Godot) {
-    $godot_bin = $env:GODOT_BIN
-    if ([string]::IsNullOrWhiteSpace($godot_bin)) {
-        $godot_bin = "D:\Godot\Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-stable_win64_console.exe"
+    if (-not [string]::IsNullOrWhiteSpace($env:GODOT_BIN)) {
+        $GodotPath = $env:GODOT_BIN
     }
-    & $godot_bin --headless --path $project --script res://tests/effect_runtime_test.gd
+    if (-not (Test-Path -LiteralPath $GodotPath)) {
+        throw "Godot not found: $GodotPath"
+    }
+    & $GodotPath --headless --path $project --script res://tests/effect_runtime_test.gd
     if ($LASTEXITCODE -ne 0) { throw "Effect Runtime headless test failed" }
 }
 

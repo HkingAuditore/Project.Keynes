@@ -54,19 +54,27 @@ Assert-Text "gdext/src/world_ext_climate.cpp" @(
 )
 Assert-Text "gdext/src/economy_runtime.cpp" @(
     "effective_building_output_quantity", "country_economy_output_factor",
-    "ensure_building_identity"
+    "ensure_building_identity", "city_good_output_factor_q16",
+    "collect_scope_stat_entries"
 )
 Assert-Text "gdext/src/economy_runtime_persistence_codec.h" @("SAVE_SECTION_MODIFIERS")
 Assert-Text "gdext/src/country_runtime.h" @("SCHEMA_VERSION = 11")
-Assert-Text "gdext/src/economy_runtime.h" @("SCHEMA_VERSION = 33")
+Assert-Text "gdext/src/economy_runtime.h" @(
+    "SCHEMA_VERSION = 41", "valid_family_effect_entity_handle"
+)
 Assert-Text "gdext/src/modifier_runtime.h" @(
-    "PROTOCOL_VERSION = 2", "SAVE_SCHEMA_VERSION = 2", "COMMAND_SET_MAGNITUDE"
+    "PROTOCOL_VERSION = 2", "SAVE_SCHEMA_VERSION = 3", "COMMAND_SET_MAGNITUDE",
+    "collect_scope_stat_entries"
+)
+Assert-Text "gdext/src/modifier_runtime.cpp" @(
+    "modifier_family_effect_handle_stale", "command.producer == 161"
 )
 Assert-Text "Project/project-keynes/scripts/game/game_save_coordinator.gd" @(
-	'"pkcm"', '"pkgp"', '&"pkcn", 10', '&"pkec", 33'
+	'"pkcm"', '"pkgp"', '&"pkcn", 11', '&"pkec", 41'
 )
 Assert-Text "docs/cpp-dots-runtime/native-modifier-runtime.md" @(
-	"clamp\(\(base \+ sum\(add\)\)", "PKCM v1", "PKCN v11", "PKEC v33", "PKGP v1"
+	"clamp\(\(base \+ sum\(add\)\)", "PKCM v1", "PKCN v11", "PKEC v41",
+	"Modifier schema v3", "PKGP v1"
 )
 Assert-Text ".codex/skills/project-keynes-modifier-runtime/SKILL.md" @(
     "Non-Negotiable Invariants", "verify_modifier_runtime.ps1",

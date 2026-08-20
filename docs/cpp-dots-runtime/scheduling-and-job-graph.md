@@ -82,6 +82,12 @@ the ordering is not merely a priority convention: Modifier is the safe commit
 boundary for native Effect commands. `EffectFacade.dispatch_transactions()` is
 still called for unsupported/custom commands only.
 
+`FAMILY_COMMIT` does not evaluate effect programs. It only reconciles sparse source bindings and
+publishes frozen metric revisions; priority 85 performs evaluation on its next eligible scheduler
+visit. A domain rejection leaves the instance due for the next day, while ACKed EVENT_ONCE/retire
+transitions are reclaimed. This keeps structural ownership in Economy and lifecycle/transaction
+ownership in EffectRuntime without a same-stage callback.
+
 `ideology_runtime` priority 82 uses independent command, pending-ACK, and active
 progress budgets. A slice returning `done=false` keeps a same-day continuation;
 it may not carry unfinished work silently into the next calendar day. Pending
