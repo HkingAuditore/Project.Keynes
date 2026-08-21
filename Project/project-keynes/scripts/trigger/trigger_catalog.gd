@@ -41,9 +41,15 @@ const VALUE_I64 := 1
 const PAYLOAD_I0 := 2
 const PAYLOAD_I1 := 3
 const ACTION_COUNTRY_COMMAND := 10
+const ACTION_ECONOMY_COMMAND := 11
+const ACTION_MODIFIER_APPLY := 1
 const COUNTRY_DOMAIN := 1
 const COMMAND_DISCOVER_COUNTRY_SIGNAL := 14
 const SOURCE_KIND_TRIGGER_OUTPUT := 4
+const EVENT_CONSTRUCTION_COMPLETED := 6
+const EVENT_TRADE_ARRIVED := 7
+const PAYLOAD_CONSTRUCTION_COMPLETED_V1 := 3
+const PAYLOAD_TRADE_ARRIVED_V1 := 8
 
 ## Economy publishes only already-qualified practice facts. TriggerRuntime owns
 ## their durable accumulation; EffectRuntime owns the Country command/ACK.
@@ -155,6 +161,7 @@ func compile_native_catalog() -> Dictionary:
 	compiled_definitions.append_array(_contact_definitions())
 	compiled_definitions.append_array(_weather_definitions())
 	compiled_definitions.append_array(_development_definitions())
+	compiled_definitions.append_array(_family_buff_definitions())
 	var seen := {}
 	for definition in compiled_definitions:
 		if definition == null or not definition is TriggerDefinitionScript:
@@ -399,6 +406,81 @@ static func _breakthrough_definitions() -> Array[Resource]:
 		effect.definition_key = StringName(signal_id)
 		# TriggerRuntime packs the event's first-practice cell into the low word.
 		effect.payload_i0 = signal_index
+		definition.effects = [effect]
+		out.append(definition)
+	return out
+
+
+static func _family_buff_definitions() -> Array[Resource]:
+	var out: Array[Resource] = []
+	out.append_array(_tiered_family_buff_triggers(
+		"family.buff.trade_population", "商路招佃",
+		"累计跨格贸易到达后，为家族分支奖励人口。威望越高，累计次数门槛越高。",
+		SOURCE_NATIVE, EVENT_TRADE_ARRIVED, PAYLOAD_TRADE_ARRIVED_V1,
+		AGG_COUNT, 0, PackedInt32Array([8, 12, 16, 24, 32, 40]),
+		ACTION_ECONOMY_COMMAND, 2, &"family.population_reward", &"", -1, 0))
+	out.append_array(_tiered_family_buff_triggers(
+		"family.buff.market_window", "市集窗口",
+		"三十日内贸易到达次数达标后，刷新本城贸易产出加成。威望越高，窗口内次数门槛越高。",
+		SOURCE_NATIVE, EVENT_TRADE_ARRIVED, PAYLOAD_TRADE_ARRIVED_V1,
+		AGG_WINDOW_COUNT, 30, PackedInt32Array([3, 4, 6, 8, 10, 12]),
+		ACTION_MODIFIER_APPLY, 2, &"family.city.trade_output_boost",
+		&"family.city.trade_output_boost", 30, 1))
+	out.append_array(_tiered_family_buff_triggers(
+		"family.buff.construction_gift", "营造馈赠",
+		"累计建设完工后，为家族分支免费建成一座建筑。威望越高，累计次数门槛越高。",
+		SOURCE_NATIVE, EVENT_CONSTRUCTION_COMPLETED, PAYLOAD_CONSTRUCTION_COMPLETED_V1,
+		AGG_COUNT, 0, PackedInt32Array([2, 3, 4, 5, 6, 8]),
+		ACTION_ECONOMY_COMMAND, 2, &"family.free_building", &"", -1, 0))
+	out.append_array(_tiered_family_buff_triggers(
+		"family.buff.drought_store", "旱年储备",
+		"连续干旱达到天数门槛后，降低本城主食消费。威望越高，连续天数门槛越高。",
+		SOURCE_GDSCRIPT, EVENT_WEATHER_OBSERVED, PAYLOAD_WEATHER_OBSERVED_V1,
+		AGG_CONSECUTIVE_DURATION, 0, PackedInt32Array([30, 45, 60, 90, 120, 180]),
+		ACTION_MODIFIER_APPLY, 2, &"family.city.staple_consumption_cut",
+		&"family.city.staple_consumption_cut", 30, 1, PAYLOAD_I0, 2))
+	return out
+
+
+static func _tiered_family_buff_triggers(prefix: String, display_name: String,
+		description: String, source_id: int, event_type: int, payload_schema: int,
+		aggregator: int, window_days: int, thresholds: PackedInt32Array,
+		action: int, domain: int, command_key: StringName, definition_key: StringName,
+		duration_days: int, opcode: int, selector_field: int = -1,
+		selector_value: int = 0) -> Array[Resource]:
+	var out: Array[Resource] = []
+	for tier in range(mini(6, thresholds.size())):
+		var definition := TriggerDefinitionScript.new()
+		definition.key = StringName("%s_t%d" % [prefix, tier])
+		definition.version = 1
+		definition.display_name = "%s·%d档" % [display_name, tier]
+		definition.description = description
+		definition.source_id = source_id
+		definition.event_type = event_type
+		definition.payload_schema = payload_schema
+		definition.aggregator = aggregator
+		definition.value_field = VALUE_I64
+		definition.scope = SCOPE_ENTITY
+		definition.target_resolver = TARGET_SOURCE_ENTITY
+		definition.threshold = int(thresholds[tier])
+		definition.mode = MODE_REPEAT
+		definition.window_days = window_days
+		definition.dynamic_binding = true
+		definition.selector_field = selector_field
+		definition.selector_value = selector_value
+		definition.condition_ops = PackedInt32Array([2])
+		if aggregator == AGG_CONSECUTIVE_DURATION:
+			definition.duration_field = 0
+			definition.qualifier_threshold = 0
+		var effect := TriggerEffectScript.new()
+		effect.action = action
+		effect.source_priority = 100
+		effect.domain = domain
+		effect.opcode = opcode
+		effect.value_mode = 1
+		effect.duration_days = duration_days
+		effect.command_key = command_key
+		effect.definition_key = definition_key
 		definition.effects = [effect]
 		out.append(definition)
 	return out

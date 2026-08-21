@@ -519,10 +519,18 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
         out["demand_attribution_good_count"] = 0;
     }
     PackedStringArray profession_stable_ids;
-    for (const std::string &id : _profession_ids) profession_stable_ids.push_back(String(id.c_str()));
+    PackedByteArray profession_technology_available;
+    for (int32_t profession = 0;
+         profession < static_cast<int32_t>(_profession_ids.size());
+         ++profession) {
+        profession_stable_ids.push_back(String(_profession_ids[profession].c_str()));
+        profession_technology_available.push_back(
+            profession_available(cell_idx, profession, false) ? 1 : 0);
+    }
     PackedStringArray ethnicity_stable_ids;
     for (const std::string &id : _ethnicity_ids) ethnicity_stable_ids.push_back(String(id.c_str()));
     out["profession_stable_ids"] = profession_stable_ids;
+    out["profession_technology_available"] = profession_technology_available;
     out["ethnicity_stable_ids"] = ethnicity_stable_ids;
     if (!include_details)
         return out;

@@ -231,6 +231,17 @@ void NativeEconomyRuntime::update_settlements_for_changed_cells() {
                  after < _settlement_named_tier &&
                  _settlements.name_forced[cell] == 0)
             release_settlement_name(cell);
+        if (after > before) {
+            if (_family_cell_offsets.size() == static_cast<size_t>(_cell_count) + 1) {
+                for (int32_t cursor = _family_cell_offsets[cell];
+                     cursor < _family_cell_offsets[cell + 1]; ++cursor) {
+                    const int32_t family = _family_cell_indices[
+                        static_cast<size_t>(cursor)];
+                    fire_family_event_once_effect(family,
+                        "family.effect.city_founder");
+                }
+            }
+        }
         revision.changes.push_back({
             cell, after, _settlements.name_active[cell]});
     }

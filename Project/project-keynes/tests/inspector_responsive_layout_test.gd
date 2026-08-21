@@ -77,6 +77,11 @@ func _check_scene_geometry(failures: PackedStringArray) -> void:
 			failures.append("%.0fpx embedded object detail did not fill its workspace: dialog=%s root=%s shell=%s" % [
 				panel_width, dialog.size, panel._object_detail_dialog.size,
 				panel._detail_shell.size])
+		if panel_width == 860.0:
+			panel.show_object_detail(_family_detail_payload())
+			await process_frame
+			await process_frame
+			_check_family_split(failures, panel, expected_detail)
 	panel._detail_shell.visible = false
 	panel._sync_split_layout()
 	panel.custom_minimum_size.x = 460.0
@@ -86,3 +91,74 @@ func _check_scene_geometry(failures: PackedStringArray) -> void:
 			or panel._inspector_root.size.x < 400.0:
 		failures.append("closed dossier did not fill the 460px panel: flags=%d size=%s" % [
 			panel._inspector_root.size_flags_horizontal, panel._inspector_root.size])
+
+
+func _check_family_split(failures: PackedStringArray, panel: InspectorPanel,
+		expected_detail: float) -> void:
+	var dialog := panel._object_detail_dialog.get_node("Center/Dialog") as Control
+	var detail_rect := panel._detail_shell.get_global_rect()
+	var dossier_rect := panel._inspector_root.get_global_rect()
+	var overlap := detail_rect.intersection(dossier_rect)
+	if overlap.size.x > 1.0 and overlap.size.y > 1.0:
+		failures.append("family detail occludes the dossier column: overlap=%s detail=%s dossier=%s" % [
+			overlap, detail_rect, dossier_rect])
+	if absf(panel._detail_shell.size.x - expected_detail) > 1.0 \
+			or absf(panel._inspector_root.size.x - 424.0) > 1.0:
+		failures.append("family detail changed split widths: detail=%s dossier=%s expected_detail=%.0f" % [
+			panel._detail_shell.size, panel._inspector_root.size, expected_detail])
+	if dialog.size.x > panel._detail_shell.size.x + 1.0 \
+			or dialog.size.y + 1.0 < panel._object_detail_dialog.size.y:
+		failures.append("embedded family dialog escaped its shell: dialog=%s root=%s shell=%s" % [
+			dialog.size, panel._object_detail_dialog.size, panel._detail_shell.size])
+	var body := panel._object_detail_dialog.get_node("Center/Dialog/Body") as Control
+	var scroll := panel._object_detail_dialog.get_node("Center/Dialog/Body/Scroll") as ScrollContainer
+	if body == null or scroll == null or scroll.size.y < 80.0 \
+			or body.size.y + 1.0 < panel._object_detail_dialog.size.y:
+		failures.append("family detail did not fill height for scrolling: body=%s scroll=%s root=%s" % [
+			body.size if body != null else Vector2.ZERO,
+			scroll.size if scroll != null else Vector2.ZERO,
+			panel._object_detail_dialog.size])
+
+
+func _family_detail_payload() -> Dictionary:
+	var long_effect := "威望Ⅰ：该家族分支所在的本地块会持续获得以下效果：降雨触发下限降低2%。威望Ⅴ：该家族分支所在的本地块会持续获得以下效果：降雨触发下限降低10%。"
+	return {
+		"kind": "family",
+		"name": "王氏",
+		"subtitle": "苍梧郡 · 聚贤 · 家族档案",
+		"icon": "family.house",
+		"accent": UITokens.ACCENT,
+		"row": {
+			"population": "128",
+			"notable_people": 3,
+			"owned_buildings": "12",
+			"cash_claim": "3.56万",
+			"productive_asset_value": "1.25万",
+			"net_worth": "4.81万",
+			"founded_day": 12,
+			"decline_reviews": 0,
+			"prestige_level": 4,
+			"prestige_score": "90.0%",
+			"trait_rows": [{
+				"name": "求雨世家",
+				"value": "核心特性",
+				"detail": long_effect,
+			}],
+			"behavior_rows": [{
+				"name": "积极的理财",
+				"value": "投资偏好 · 32.0%",
+			}, {
+				"name": "慷慨捐赠",
+				"value": "需求偏好 · 18.0%",
+			}],
+			"effect_rows": [{
+				"name": "地块 18 · 求雨",
+				"value": long_effect,
+				"detail": long_effect,
+			}],
+			"notable_person_rows": [{
+				"name": "王某",
+				"value": "产业所有者 · 纺织工坊",
+			}],
+		},
+	}

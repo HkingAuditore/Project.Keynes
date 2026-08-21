@@ -1289,6 +1289,16 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                         stable_preference, Q16_ONE, _saturation_count);
                     candidate.score_q16 = mul_div_sat(candidate.score_q16,
                         sector_preference, Q16_ONE, _saturation_count);
+                    int32_t family_index = -1;
+                    if (_families.valid_handle(candidate.sponsor_family_handle,
+                            family_index) &&
+                        family_index >= 0 && family_index < static_cast<int32_t>(
+                            _family_investment_factor_q16.size())) {
+                        candidate.score_q16 = mul_div_sat(candidate.score_q16,
+                            _family_investment_factor_q16[
+                                static_cast<size_t>(family_index)],
+                            Q16_ONE, _saturation_count);
+                    }
                     auto mix_score_term = [&](int32_t term, int32_t signal_q16) {
                         const int32_t factor = family_behavior_score_term_q16(
                             candidate.sponsor_family_handle, cell, term);

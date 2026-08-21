@@ -243,6 +243,7 @@ func _run() -> void:
 	_run_foreign_target_rejection(catalog.duplicate(true))
 	_run_colonization_kit_cases(catalog.duplicate(true))
 	_run_colonization_population_reward(catalog.duplicate(true))
+	_run_merchant_clip_population_conservation(catalog.duplicate(true))
 
 
 func _run_colonization_kit_cases(catalog: Dictionary) -> void:
@@ -327,9 +328,96 @@ func _run_colonization_population_reward(catalog: Dictionary) -> void:
 	if not minted:
 		print("reward_settle dest_pop=", dest_pop, " family_before=", family_before,
 			" family_after=", family_after, " arrival=", arrival, " landed=", landed,
-			" pop_err=", report.get("population_error", -1),
-			" money_err=", report.get("money_error", -1),
-			" fatal=", report.get("fatal", false))
+			" report=", report)
+
+
+func _run_merchant_clip_population_conservation(catalog: Dictionary) -> void:
+	var birth_rates: PackedInt64Array = catalog.signature_birth_rate_q32
+	birth_rates.fill(0)
+	catalog.signature_birth_rate_q32 = birth_rates
+	var fixture := _make_fixture(catalog, 260831)
+	var ext: Object = fixture.ext
+	var country_handle := int(fixture.country_handle)
+	if ext == null or country_handle == 0:
+		return
+	var families: Dictionary = ext.get_family_cell_snapshot(0, 0, 64)
+	if int(families.get("total", 0)) != 1:
+		_expect("merchant-clip fixture has a founder family", false)
+		return
+	var family_handle := int((families.family_handles as PackedInt64Array)[0])
+	var branches: Dictionary = ext.get_family_branches(family_handle, 0, 64)
+	var branch_handles: PackedInt64Array = branches.get(
+		"branch_handles", PackedInt64Array())
+	if branch_handles.is_empty() or int(branch_handles[0]) == 0:
+		_expect("merchant-clip fixture has a source branch", false)
+		print("clip_branches=", branches)
+		return
+	var absorb_day := _economy_command_day(ext)
+	var absorbed: Dictionary = ext.submit_economy_commands({
+		"opcodes": PackedInt32Array([21]),
+		"effective_days": PackedInt64Array([absorb_day]),
+		"sequences": PackedInt64Array([900]),
+		"target_handles": PackedInt64Array([int(branch_handles[0])]),
+		"i32_0": PackedInt32Array([0]),
+		"i32_1": PackedInt32Array([-1]),
+		"i64_0": PackedInt64Array([100]),
+		"i64_1": PackedInt64Array([0]),
+	})
+	_expect("founder can absorb anonymous merchants before a near-full dispatch",
+		bool(absorbed.get("ok", false)))
+	if not bool(absorbed.get("ok", false)):
+		print("clip_absorb=", absorbed)
+		return
+	var absorb_report := _run_day(ext, absorb_day)
+	ext.capture_economy_trade_topology(fixture.neighbors, fixture.terrain,
+		fixture.passable, fixture.costs, 1)
+	_expect("absorbing mixed professions keeps the population ledger closed",
+		bool(absorb_report.get("done", false))
+		and not bool(absorb_report.get("fatal", false))
+		and int(ext.get_economy_report().get("population_error", -1)) == 0)
+	var family_pop := int(ext.get_family_snapshot(family_handle).population)
+	var request := family_pop - 1
+	if request < 1:
+		_expect("absorbed founder family can dispatch more than one person", false)
+		print("clip_family_pop=", family_pop)
+		return
+	var quotes: Dictionary = ext.get_family_colonization_quotes(
+		country_handle, 2, family_handle, 0, 0, 64)
+	if int(quotes.get("total", 0)) != 1:
+		_expect("merchant-clip quote exists after absorb", false)
+		print("clip_quotes=", quotes, " family_pop=", family_pop)
+		return
+	var token := int((quotes.quote_tokens as PackedInt64Array)[0])
+	var source_before := int(ext.get_population_cell_snapshot(0).population)
+	var start_day := _economy_command_day(ext)
+	var started: Dictionary = ext.start_family_colonization(country_handle,
+		family_handle, 0, 2, request, token, start_day, 901)
+	var source_after := int(ext.get_population_cell_snapshot(0).population)
+	var in_transit: Dictionary = {}
+	if bool(started.get("ok", false)) and started.has("expedition_handle"):
+		in_transit = ext.get_family_expedition_snapshot(
+			country_handle, int(started.expedition_handle))
+	_expect("merchant-safe extract still sends the quoted headcount",
+		bool(started.get("ok", false))
+		and int(in_transit.get("population", -1)) == request
+		and source_before - source_after == request)
+	if not bool(started.get("ok", false)):
+		print("clip_start=", started, " family_pop=", family_pop,
+			" request=", request)
+		return
+	ext.capture_economy_trade_topology(fixture.neighbors, fixture.terrain,
+		fixture.passable, fixture.costs, 1)
+	var next_day := start_day + 1
+	var settled := _run_day(ext, next_day)
+	var report: Dictionary = ext.get_economy_report()
+	_expect("in-transit merchant-clip expedition conserves population at publish",
+		bool(settled.get("done", false))
+		and not bool(settled.get("fatal", false))
+		and int(report.get("population_error", -1)) == 0
+		and int(report.get("money_error", -1)) == 0
+		and int(report.get("goods_error", -1)) == 0)
+	if bool(report.get("fatal", false)) or int(report.get("population_error", 0)) != 0:
+		print("clip_publish=", report)
 
 
 func _economy_command_day(ext: Object) -> int:

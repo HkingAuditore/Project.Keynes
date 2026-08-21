@@ -19,7 +19,7 @@ Facade 查询边界组合当前 `origin_cell` 的聚落显示名、文化组格�
 不改 FamilyStore 或 state hash。非起源地块分支达到 100 人时，`FAMILY_COMMIT` 按父 stable ID、目标
 cell 顺序执行一次整支分裂；membership、cash claim、建筑 ownership 与重要人物只改归属，不复制账本。
 分裂后的特性混合采用“去一增一至二”：从父家族稳定排序后的特性中确定性移除一个，再按权重和稳定
-hash 从满足前置、排斥和强度规则的合法池中加入 1–2 个新特性。保留特性保留原强度；新增特性从其
+hash 从满足前置、排斥、科技/起源门和强度规则的合法池中加入 1–2 个新特性。保留特性保留原强度；新增特性从其
 合法 Q16 最小强度开始。子家族 Modifier/Trigger 只依据最终特性和新分支威望重新计算。
 
 ## 权威数据模型
@@ -59,11 +59,13 @@ dense ID CSR。建筑、职业、需求、商品和自然资源 profile 可提�
 确定性无放回抽取 2–4 个核心特性及 Q16 强度；核心特性不可删除。附加特性只通过按
 `effective_day/priority/sequence/submit_order` 排序的命令授予、移除或调强度。
 
-当前默认目录（`data/economy/default_family_traits.tres`，version 2）用互斥组保证门第可读：
-生计门第（采集/狩猎/渔户/畜群/垄亩/林薮/矿业）两两互斥；机杼与炉锤互斥；寒门与丰盛餐桌/锦衣高门互斥；
-河洛观象与观潮门风互斥。工艺与门风可叠在一条生计之上。选择器依赖建筑/职业 `semantic_tags`；
-城市制造/能源/知识产出走 `economy.city.building.*_output_factor`。改目录身份会改
-`family_trait_catalog_hash`，旧存档按 catalog mismatch 拒绝。
+当前默认目录由 `data/economy/family_official_buffs.json` 冷启动 hydrate 进
+`default_family_traits.tres` / `default_family_effects.tres`（薄包装，traits/effects 数组为空）。
+第一批正式内容为 98 条偏好（C/I/J）加 48 条效果。互斥组覆盖暴食/节俭、肉食/菜食、进步/守旧、
+精明/老实、多子/少子、百业/一业、抱残/兼收/破旧等轴；同轴多条消费偏好可以共存，靠 4× 乘积帽
+限制极端叠乘。选择器依赖建筑/职业 `semantic_tags`；城市制造/能源/知识产出走
+`economy.city.building.*_output_factor`。改目录身份会改 `family_trait_catalog_hash`，
+旧存档按 catalog mismatch 拒绝，不做隐式迁移。
 
 `FamilyCellInfluenceStore` 为 `(family, settlement cell)` 保存 generation-safe 分支。只要本地仍有
 成员、现金 claim 或建筑所有权，分支就存在。威望分固定为：
@@ -93,8 +95,11 @@ dense ID CSR。建筑、职业、需求、商品和自然资源 profile 可提�
 流动率必须降低实际迁出人数。乘积帽默认 4×。商品偏好按家族人口占 cohort 的份额合成，并同时影响
 variant 份额和普通需求量；生存需求下限不下降。投资建设持久保存 sponsor family。
 
-核心特性抽取与 FamilyEffect 共用科技前列：`FamilyTraitDefinition.prerequisite_technology_keys`
-在 `assign_core_family_traits` 用 origin/home cell 的 `cell_has_technology` 过滤候选。未解锁特性
+核心特性抽取、分家新增特性与 FamilyEffect 随机池共用科技前列：`FamilyTraitDefinition.prerequisite_technology_keys`
+与 `FamilyEffectDefinition.prerequisite_technology_keys`。空前列通过；默认 AND
+（`cell_has_all_requirements`）。设计表「或」条件把 `prerequisite_technology_any` 编成 ANY
+（`cell_has_requirements`）。核心抽取与分家合法池用 origin/home cell 求值。官方 Buff 表的
+「随机出现条件」编译进该前列；点名作物、产业、知识或贸易的随机池效果同样写入进池门。未解锁特性
 仍可通过附加特性命令授予。改 catalog hash 会拒绝旧档，与现有约定一致。
 
 ## 家族效果目录与执行
@@ -102,14 +107,22 @@ variant 份额和普通需求量；生存需求下限不下降。投资建设持
 `FamilyEffectDefinition` 是纯 authoring resource，只在冷启动编译为共享 `EffectDefinition` IR。
 它声明六类来源（Trait、随机池、事件、玩家命令、科技、国家状态）、六类目标（家族、分支、
 聚落格、国家、气候格、格内建筑/商品/资源）、五类运算、三类生命周期、五类 stack policy 和
-六类 target selector。`default_family_effects.tres` 当前有意保持为空；案件中的示例不作为默认
-平衡内容，后续内容包只需追加资源，不需要扩展热循环分支。
+八类 target selector（含 `NEIGHBORS_R1` / `NEIGHBORS_R2`，绑定处只对 `_building_neighbors`
+做 6/18 格扇出）。`default_family_effects.tres` 是指向官方 JSON 的薄包装；形成时随机池**必定**
+抽 1 条独立效果（已有 random_pool 绑定则跳过）。威望缩放的投资/出生/降雨门槛/抗寒容量在
+`FAMILY_COMMIT` 冻成 `_family_investment_factor_q16` / `_family_birth_factor_q16` /
+`_epoch_cell_rain_event_threshold_q16` / `_epoch_cell_cold_capacity_factor_q16`，热循环只读。
+「开枝散叶」按 membership 人口加权出生，禁止写 `economy.city.birth_factor`。后续内容包只需
+追加 JSON/资源，不需要扩展热循环分支。
 
 Trait 引用在 `EconomyCatalog` 冷编译为稳定 effect ID CSR。Economy 按实际 family/branch/cell
 稀疏建立 `FamilyEffectBinding`，并只发布效果程序声明使用的 metric mask。dense metric 0–9 已占用
 且不得重排：家族强度/人口/现金 claim、分支威望/人口、格温度/降水/短缺/贸易事件/人口。追加 id 只能
 接在末尾：10 `cell.landform`、11 `cell.essentials_shortage_q16`、12 `branch.is_local_prestige_max`、
-13 `cell.rain_event`、14 `cell.resource_abundance_q16`。发布走既有 branch/cell 反向索引，缺 metric
+13 `cell.rain_event`、14 `cell.resource_abundance_q16`、15–21 家族自有产业统计、22–36 格级/家族
+政策信号（失业、资源类数、制造建筑数、格级部门/全链、采掘、合法建筑种类、空缺职业、分支数、
+异地分支、人均现金比、知识建筑、可产玉米）。只对有家族绑定的格子填这些 metric，禁止
+`cell × catalog`。发布走既有 branch/cell 反向索引，缺 metric
 读 0。EffectRuntime 按
 `(target_domain,target_handle,target_generation,stack_key_hash)` 建组，确定性执行
 `REPLACE / REFRESH / ADD_STACK / MAX / MIN` 仲裁；同一权威 upsert 幂等，不会把每日协调误当成
@@ -242,11 +255,11 @@ family→`(cell, score_term, axis, id)` 行为因子表。CSR 不进入存档或
 
 玩家接口完全只读：
 
-- `get_family_cell_snapshot(cell, offset, limit)`：地块家族分页摘要；
-- `get_family_snapshot(handle)`：身份、人口、财产和职业统计；
-- `get_family_traits(handle)`：核心/附加特性、强度和已编译行为偏好；`EconomyFacade` 再附加中文 `descriptions` 与 `effect_display_names`，不进入 native catalog hash 或 PKEC。
+- `get_family_cell_snapshot(cell, offset, limit)`：地块家族分页摘要。`EconomyFacade` 再按当前 `origin_cell` 聚落显示名、文化组格式和姓氏文本附加 `family_names` / `origin_settlement_names`；格子详情与开拓面板只展示这组显示名，不把裸姓氏当成家族名。
+- `get_family_snapshot(handle)`：身份、人口、财产和职业统计；`EconomyFacade` 同样组合 `family_name`。当前默认文化组是 `CITY_SURNAME_SUFFIX`（如「长安李氏」）；出生地未达聚落命名门槛时只显示「李氏」。姓氏目录目前只有 `default_zh` / 民族 `default`，所以全图都抽中文姓。
+- `get_family_traits(handle)`：核心/附加特性、强度和已编译行为偏好；`EconomyFacade` 再附加中文 `descriptions`（把设计表 X/Y 占位符按已抽取强度填成数字）。格子详情只显示「核心特性 / 附加特性」，不把内部强度 Q16 百分比展示给玩家。绑定效果 `bound_effect_display_names`/`bound_effect_descriptions` 与 `effect_display_names` 不进入 native catalog hash 或 PKEC。格子详情「行为偏好」只列出当前地块已解锁或已存在建筑能雇佣的职业，以及该地块现有人口职业；未解锁建筑对应的职业（例如石器时代的 AI 研究员）不出现。职业科技位 `profession_technology_available` 若存在会再交叉过滤。
 - `get_family_branches(handle, offset, limit)`：地理分支；
-- `get_family_branch_effects(handle, cell)`：威望拆分、Modifier 贡献和 Trigger 进度；`EconomyFacade` 再附加 modifier/trigger 的中文 `display_names` 与 `descriptions`。
+- `get_family_branch_effects(handle, cell)`：威望拆分、已绑定 FamilyEffect、Modifier 贡献和 Trigger 进度；`EconomyFacade` 再附加效果/modifier/trigger 的中文 `display_names` 与 `descriptions`。格子详情「家族效果」只显示当前威望档的完整表述；偏好把设计表里的 X/Y 占位符按已抽取强度填成具体数字，不把取值范围符号展示给玩家。显示文案不进入 native catalog hash 或 PKEC。
 - `get_family_industries(handle, offset, limit)`：产业与业主占岗；
 - `get_building_cell_snapshot(cell)`：附带所有权 CSR。
 
@@ -269,7 +282,7 @@ binding 与冻结消费/资源因子。FamilyEffect binding 由 trait CSR 和当
 
 最低验收包括：家族形成门槛、实际业主占岗、职业统计、所有权 CSR、人口/货币/商品守恒、PKEC
 v41 hash round-trip、旧 schema 明确拒绝、特性抽取/命令排序、分支威望滞回、分支满意度门控只挡晋升不挡降级、
-六类目标路由、五类 stack policy、EVENT_ONCE/retire 拒绝重试、精确 selector/stat 校验、
+六类目标路由、八类 selector、五类 stack policy、EVENT_ONCE/retire 拒绝重试、精确 selector/stat 校验、
 稀疏 exact-good override、奖励防递归、generation 旧句柄拒绝、行为条件冻结 CSR、打分轴、
 科技门、匿名吸收/买方折扣守恒、payload 复制免费建筑，以及家族/人物关闭与
 开启的目标规模性能对比。

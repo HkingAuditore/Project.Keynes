@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="ModifierCatalog" load_steps=97 format=3]
+[gd_resource type="Resource" script_class="ModifierCatalog" load_steps=112 format=3]
 
 [ext_resource type="Script" path="res://scripts/modifier/modifier_catalog.gd" id="1_catalog"]
 [ext_resource type="Script" path="res://scripts/modifier/modifier_stat_definition.gd" id="2_stat"]
@@ -694,7 +694,119 @@ stack_policy = 1
 default_duration_days = -1
 terms = Array[Resource]([SubResource("TermIdeologyCharterCapacity"), SubResource("TermIdeologyCharterTime")])
 
+[sub_resource type="Resource" id="TermFamilyBirthCut"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.birth_factor"
+operation = 2
+value = 0.97
+
+[sub_resource type="Resource" id="DefFamilyBirthCut"]
+script = ExtResource("3_definition")
+key = &"family.city.birth_cut"
+display_name = "出生率削减"
+description = "降低本城人口出生系数。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyBirthCut")])
+
+[sub_resource type="Resource" id="TermFamilyHedonismConsumption"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.need.luxury.consumption_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="TermFamilyHedonismOutput"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.output_factor"
+operation = 2
+value = 0.97
+
+[sub_resource type="Resource" id="DefFamilyHedonism"]
+script = ExtResource("3_definition")
+key = &"family.city.hedonism"
+display_name = "享乐主义"
+description = "提高本城奢侈消费并略降产出。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyHedonismConsumption"), SubResource("TermFamilyHedonismOutput")])
+
+[sub_resource type="Resource" id="TermFamilyCornOutput"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.good.corn_grain.output_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="DefFamilyCornOutput"]
+script = ExtResource("3_definition")
+key = &"family.city.good.corn_grain.output"
+display_name = "玉米产出加成"
+description = "提高本城玉米产出系数。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyCornOutput")])
+
+[sub_resource type="Resource" id="TermFamilyStapleConsumptionCut"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.need.staple_food.consumption_factor"
+operation = 2
+value = 0.94
+
+[sub_resource type="Resource" id="DefFamilyStapleConsumptionCut"]
+script = ExtResource("3_definition")
+key = &"family.city.staple_consumption_cut"
+display_name = "主食消费削减"
+description = "降低本城主食消费系数。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyStapleConsumptionCut")])
+
+[sub_resource type="Resource" id="TermFamilyResourceRegenCut"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.resource.regen_factor"
+operation = 2
+value = 0.9
+
+[sub_resource type="Resource" id="DefFamilyResourceRegenCut"]
+script = ExtResource("3_definition")
+key = &"family.city.resource_regen_cut"
+display_name = "资源再生削减"
+description = "降低本城资源再生系数。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyResourceRegenCut")])
+
+[sub_resource type="Resource" id="TermFamilyOwnedBuildingOutput"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.output_factor"
+operation = 2
+value = 1.02
+
+[sub_resource type="Resource" id="DefFamilyOwnedBuildingOutput"]
+script = ExtResource("3_definition")
+key = &"family.city.owned_building_output"
+display_name = "祖业产出加成"
+description = "按年期叠加提高本城产出系数。"
+domain = 2
+stack_policy = 1
+max_stacks = 6
+terms = Array[Resource]([SubResource("TermFamilyOwnedBuildingOutput")])
+
+[sub_resource type="Resource" id="TermFamilyCountryTradeCapacity"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.capacity_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="DefFamilyCountryTradeCapacity"]
+script = ExtResource("3_definition")
+key = &"family.country.trade_capacity"
+display_name = "商贸立国"
+description = "提高国家国内贸易容量。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyCountryTradeCapacity")])
+
 [resource]
 script = ExtResource("1_catalog")
 stats = Array[Resource]([SubResource("StatClimate"), SubResource("StatCountry"), SubResource("StatBuilding"), SubResource("StatGameplay"), SubResource("StatCityOutput"), SubResource("StatCityAgricultureOutput"), SubResource("StatCityExtractiveOutput"), SubResource("StatCityManufacturingOutput"), SubResource("StatCityEnergyOutput"), SubResource("StatCityKnowledgeOutput"), SubResource("StatCityBirth"), SubResource("StatCityTradeOutput"), SubResource("StatCityConsumption"), SubResource("StatCityResourceRegen")])
-definitions = Array[Resource]([SubResource("DefClimate"), SubResource("DefCountry"), SubResource("DefBuilding"), SubResource("DefGameplay"), SubResource("DefFamilyCityOutput"), SubResource("DefFamilyHuntingOutput"), SubResource("DefFamilyAgricultureOutput"), SubResource("DefFamilyExtractiveOutput"), SubResource("DefFamilyManufacturingOutput"), SubResource("DefFamilyEnergyOutput"), SubResource("DefFamilyKnowledgeOutput"), SubResource("DefFamilyBirth"), SubResource("DefFamilyTradeOutput"), SubResource("DefFamilyFoodConsumption"), SubResource("DefFamilyProteinConsumption"), SubResource("DefFamilyClothingConsumption"), SubResource("DefFamilyHousingConsumption"), SubResource("DefFamilyHouseholdGoodsConsumption"), SubResource("DefFamilyHomeEnergyConsumption"), SubResource("DefFamilyEducationConsumption"), SubResource("DefFamilyWorkEquipmentConsumption"), SubResource("DefFamilyLuxuryConsumption"), SubResource("DefFamilyStatusConsumption"), SubResource("DefFamilyAustereConsumption"), SubResource("DefFamilyWildGameRegen"), SubResource("DefFamilyFreshwaterFishRegen"), SubResource("DefFamilyMarineFishRegen"), SubResource("DefFamilyPastureRegen"), SubResource("DefFamilyTimberRegen"), SubResource("DefIdeologyCollective"), SubResource("DefIdeologyExchange"), SubResource("DefIdeologyScholar"), SubResource("DefIdeologyCivic"), SubResource("DefIdeologyGranaries"), SubResource("DefIdeologyCharter")])
+definitions = Array[Resource]([SubResource("DefClimate"), SubResource("DefCountry"), SubResource("DefBuilding"), SubResource("DefGameplay"), SubResource("DefFamilyCityOutput"), SubResource("DefFamilyHuntingOutput"), SubResource("DefFamilyAgricultureOutput"), SubResource("DefFamilyExtractiveOutput"), SubResource("DefFamilyManufacturingOutput"), SubResource("DefFamilyEnergyOutput"), SubResource("DefFamilyKnowledgeOutput"), SubResource("DefFamilyBirth"), SubResource("DefFamilyTradeOutput"), SubResource("DefFamilyFoodConsumption"), SubResource("DefFamilyProteinConsumption"), SubResource("DefFamilyClothingConsumption"), SubResource("DefFamilyHousingConsumption"), SubResource("DefFamilyHouseholdGoodsConsumption"), SubResource("DefFamilyHomeEnergyConsumption"), SubResource("DefFamilyEducationConsumption"), SubResource("DefFamilyWorkEquipmentConsumption"), SubResource("DefFamilyLuxuryConsumption"), SubResource("DefFamilyStatusConsumption"), SubResource("DefFamilyAustereConsumption"), SubResource("DefFamilyWildGameRegen"), SubResource("DefFamilyFreshwaterFishRegen"), SubResource("DefFamilyMarineFishRegen"), SubResource("DefFamilyPastureRegen"), SubResource("DefFamilyTimberRegen"), SubResource("DefIdeologyCollective"), SubResource("DefIdeologyExchange"), SubResource("DefIdeologyScholar"), SubResource("DefIdeologyCivic"), SubResource("DefIdeologyGranaries"), SubResource("DefIdeologyCharter"), SubResource("DefFamilyBirthCut"), SubResource("DefFamilyHedonism"), SubResource("DefFamilyCornOutput"), SubResource("DefFamilyStapleConsumptionCut"), SubResource("DefFamilyResourceRegenCut"), SubResource("DefFamilyOwnedBuildingOutput"), SubResource("DefFamilyCountryTradeCapacity")])

@@ -116,7 +116,12 @@ func _run_runtime_checks(compiled: Dictionary) -> void:
 		var has_disambiguator := false
 		for visible_name in exhausted_names:
 			unique_exhausted[String(visible_name)] = true
-			has_disambiguator = has_disambiguator or String(visible_name).contains("·")
+		var disambiguators: PackedInt32Array = exhausted_snapshot.get(
+			"disambiguators", PackedInt32Array())
+		for value in disambiguators:
+			if int(value) > 0:
+				has_disambiguator = true
+				break
 		_expect("组合耗尽后仍保持世界唯一并追加序号",
 			exhausted_names.size() == exhaustion_populations.size() and
 			unique_exhausted.size() == exhaustion_populations.size() and

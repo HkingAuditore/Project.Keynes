@@ -10,6 +10,7 @@ class ColonizationQuoteStub:
 		"population": 40,
 		"surname": "王",
 		"surname_disambiguator": 0,
+		"family_name": "长安王氏",
 	}
 	var traits: Dictionary = {
 		"ok": true,
@@ -54,7 +55,19 @@ class ColonizationQuoteStub:
 var _failures := 0
 
 
+const EconomyFacadeScript = preload("res://scripts/economy/economy_facade.gd")
+
+
 func _init() -> void:
+	_expect("chinese origin family names use city plus surname plus suffix",
+		EconomyFacadeScript.compose_family_display_name(
+			"长安", "李", "CITY_SURNAME_SUFFIX", "-", "氏") == "长安李氏")
+	_expect("separator culture groups use place hyphen surname",
+		EconomyFacadeScript.compose_family_display_name(
+			"Rome", "Smith", "CITY_SEPARATOR_SURNAME", "-", "") == "Rome-Smith")
+	_expect("unnamed origin still keeps the chinese surname suffix",
+		EconomyFacadeScript.compose_family_display_name(
+			"", "王", "CITY_SURNAME_SUFFIX", "-", "氏") == "王氏")
 	var controller = PlayerControllerScript.new()
 	_expect("PlayerController has no frame polling", not controller.has_method("_process"))
 	_expect("unknown player command is rejected", _code(controller.request_command(&"gm.teleport")) == "unsupported_command")
@@ -266,8 +279,8 @@ func _run_colonization_planner_family_cards() -> void:
 			rows.append(child)
 	var visible := _visible_text(panel._list)
 	_expect("same family collapses to one dispatch card", rows.size() == 1)
-	_expect("dispatch card shows family name, people, and traits",
-		rows.size() == 1 and String(rows[0].display_name()) == "王氏"
+	_expect("dispatch card shows origin family name, people, and traits",
+		rows.size() == 1 and String(rows[0].display_name()) == "长安王氏"
 		and visible.find("40") >= 0 and visible.find("采集传统") >= 0
 		and visible.find("偏好：采集营地") >= 0)
 	_expect("dispatch trait chips carry Chinese descriptions as tooltips",
@@ -365,6 +378,22 @@ func _run_colonization_planner_effect_fallback() -> void:
 
 func _run_family_effect_display_rows() -> void:
 	var view_model := CellInspectorViewModel.new()
+	var family_effect_rows: Array = view_model._family_bound_effect_rows({
+		"cell_idx": 12,
+		"effect_definition_keys": PackedStringArray(["family.effect.rain_prayer"]),
+		"effect_display_names": PackedStringArray(["求雨"]),
+		"effect_current_descriptions": PackedStringArray([
+			"威望Ⅰ：该家族分支所在的本地块会持续获得以下效果：降雨触发下限降低2%。"]),
+		"effect_descriptions": PackedStringArray([
+			"威望Ⅰ：该家族分支所在的本地块会持续获得以下效果：降雨触发下限降低2%。\n威望Ⅴ：该家族分支所在的本地块会持续获得以下效果：降雨触发下限降低10%。"]),
+	})
+	_expect("family bound-effect rows use Chinese names and descriptions",
+		family_effect_rows.size() == 1
+		and String(family_effect_rows[0].get("name", "")).find("求雨") >= 0
+		and String(family_effect_rows[0].get("name", "")).find("rain_prayer") < 0
+		and String(family_effect_rows[0].get("value", "")).find("降雨触发下限降低2%") >= 0
+		and String(family_effect_rows[0].get("detail", "")).find("降雨触发下限降低2%") >= 0
+		and String(family_effect_rows[0].get("detail", "")).find("威望Ⅴ") < 0)
 	var modifier_rows: Array = view_model._family_modifier_rows({
 		"cell_idx": 12,
 		"modifier_definition_keys": PackedStringArray([

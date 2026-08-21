@@ -18,6 +18,7 @@
 #include <numeric>
 #include <tuple>
 #include <type_traits>
+#include <unordered_map>
 #include <unordered_set>
 
 #if defined(_MSC_VER) && defined(_M_X64)
@@ -294,7 +295,7 @@ void NativeEconomyRuntime::sum_family_expedition_holdings(
             _family_expeditions.active.size()); ++expedition) {
         if (_family_expeditions.active[expedition] == 0) continue;
         population = saturating_add(population,
-            _family_expeditions.population[expedition], saturation);
+            family_expedition_payload_people(expedition), saturation);
         const uint32_t begin = _family_expeditions.payload_begin[expedition];
         const uint32_t end = std::min<uint32_t>(
             static_cast<uint32_t>(_family_expedition_payloads.size()),
@@ -310,6 +311,23 @@ void NativeEconomyRuntime::sum_family_expedition_holdings(
             goods = saturating_add(goods,
                 _family_expedition_cargo[cargo].quantity, saturation);
     }
+}
+
+int64_t NativeEconomyRuntime::family_expedition_payload_people(
+        int32_t expedition) const {
+    if (expedition < 0 ||
+        expedition >= static_cast<int32_t>(_family_expeditions.active.size()) ||
+        _family_expeditions.active[expedition] == 0)
+        return 0;
+    int64_t people = 0;
+    const uint32_t begin = _family_expeditions.payload_begin[expedition];
+    const uint32_t end = std::min<uint32_t>(
+        static_cast<uint32_t>(_family_expedition_payloads.size()),
+        begin + _family_expeditions.payload_count[expedition]);
+    for (uint32_t payload = begin; payload < end; ++payload)
+        people += std::max<int64_t>(0,
+            _family_expedition_payloads[payload].people);
+    return people;
 }
 
 void NativeEconomyRuntime::note_family_expedition_audit_invalidation() {
@@ -812,8 +830,13 @@ bool NativeEconomyRuntime::capture_environment(int64_t day_index, const float *t
             static_cast<size_t>(i)];
         const int32_t current = _environment_precipitation_q16[i];
         constexpr int32_t RAIN_EVENT_THRESHOLD_Q16 = Q16_ONE / 4;
+        const int32_t threshold =
+            i < static_cast<int32_t>(_epoch_cell_rain_event_threshold_q16.size())
+                ? std::max(1, _epoch_cell_rain_event_threshold_q16[
+                    static_cast<size_t>(i)])
+                : RAIN_EVENT_THRESHOLD_Q16;
         _cell_rain_event_q16[static_cast<size_t>(i)] =
-            (current >= RAIN_EVENT_THRESHOLD_Q16 && current > previous)
+            (current >= threshold && current > previous)
                 ? static_cast<int32_t>(Q16_ONE) : 0;
         _cell_previous_precipitation_q16[static_cast<size_t>(i)] = current;
         mix(static_cast<uint32_t>(_environment_temperature_q16[i]));
@@ -4733,6 +4756,12 @@ void NativeEconomyRuntime::refresh_building_modifier_factors() {
             ? _epoch_country_landform_sector_output_factor_q16[landform_index] : Q16_ONE;
         const int32_t family_owned_factor_q16 =
             family_group_owned_output_factor_q16(static_cast<int32_t>(group_index));
+        const size_t cell_sector_index = static_cast<size_t>(
+            std::max(0, group.cell)) * 5U + static_cast<size_t>(sector);
+        const int32_t cell_sector_factor_q16 =
+            group.cell >= 0 && cell_sector_index <
+                _epoch_cell_sector_output_factor_q16.size()
+            ? _epoch_cell_sector_output_factor_q16[cell_sector_index] : Q16_ONE;
         if (cache.country_factor_q16 == country_factor_q16 &&
             cache.sector_factor_q16 == sector_factor_q16 &&
             cache.research_factor_q16 == research_factor_q16 &&
@@ -4741,6 +4770,7 @@ void NativeEconomyRuntime::refresh_building_modifier_factors() {
             cache.terrain_sector_factor_q16 == terrain_sector_factor_q16 &&
             cache.landform_sector_factor_q16 == landform_sector_factor_q16 &&
             cache.family_owned_factor_q16 == family_owned_factor_q16 &&
+            cache.cell_sector_factor_q16 == cell_sector_factor_q16 &&
             cache.country_handle == country_handle &&
             cache.mod_version == mod_version &&
             cache.exact_building_mod_version == exact_building_mod_version &&
@@ -4770,7 +4800,8 @@ void NativeEconomyRuntime::refresh_building_modifier_factors() {
         if (!cell_country_valid) {
             group.modifier_handle = 0;
             group.output_factor_q16 = modifier_factor_q16(
-                static_cast<double>(family_owned_factor_q16) / Q16_ONE);
+                static_cast<double>(family_owned_factor_q16) / Q16_ONE *
+                static_cast<double>(cell_sector_factor_q16) / Q16_ONE);
         } else {
             group.modifier_handle = _modifier_runtime->ensure_building_identity(
                 group.cell, group.type_id, group.owner_signature_id);
@@ -4791,6 +4822,7 @@ void NativeEconomyRuntime::refresh_building_modifier_factors() {
                 (static_cast<double>(terrain_sector_factor_q16) / Q16_ONE) *
                 (static_cast<double>(landform_sector_factor_q16) / Q16_ONE) *
                 (static_cast<double>(family_owned_factor_q16) / Q16_ONE) *
+                (static_cast<double>(cell_sector_factor_q16) / Q16_ONE) *
                 building_factor * exact_building_factor);
         }
         cache.country_factor_q16 = country_factor_q16;
@@ -4801,6 +4833,7 @@ void NativeEconomyRuntime::refresh_building_modifier_factors() {
         cache.terrain_sector_factor_q16 = terrain_sector_factor_q16;
         cache.landform_sector_factor_q16 = landform_sector_factor_q16;
         cache.family_owned_factor_q16 = family_owned_factor_q16;
+        cache.cell_sector_factor_q16 = cell_sector_factor_q16;
         cache.country_handle = country_handle;
         cache.mod_version = mod_version;
         cache.exact_building_mod_version = exact_building_mod_version;
@@ -8911,7 +8944,8 @@ int64_t NativeEconomyRuntime::family_population(uint64_t family_handle) const {
             if (_family_expeditions.active[i] != 0 &&
                 _family_expeditions.family_handle[i] == family_handle)
                 total = saturating_add(total,
-                    std::max<int64_t>(0, _family_expeditions.population[i]), sat);
+                    family_expedition_payload_people(static_cast<int32_t>(i)),
+                    sat);
         }
         return total;
     };
@@ -9025,12 +9059,8 @@ void NativeEconomyRuntime::assign_core_family_traits(int32_t family_index) {
                      allowed && p < _family_trait_exclusion_offsets[chosen + 1]; ++p)
                     allowed = _family_trait_exclusions[p] != trait_id;
             }
-            const int32_t origin = _families.origin_cell[family_index];
-            const int32_t home = _families.home_cell[family_index];
-            const int32_t tech_cell = origin >= 0 && origin < _cell_count
-                ? origin : home;
-            allowed = allowed && family_trait_technology_unlocked(
-                trait_id, tech_cell);
+            allowed = allowed && family_trait_context_allows(
+                trait_id, family_index);
             if (!allowed) continue;
             candidates.push_back(trait_id);
             total_weight += _family_trait_weights[trait_id];
@@ -9154,6 +9184,40 @@ void NativeEconomyRuntime::rebuild_family_behavior_cache() {
             }
         }
     }
+    for (const FamilyEffectBinding &binding : _family_effect_bindings) {
+        if (binding.definition_key != "family.effect.family_learning") continue;
+        int32_t branch = -1;
+        int32_t family_index = -1;
+        if (!_family_influences.valid_handle(binding.branch_handle, branch) ||
+            !_families.valid_handle(_family_influences.family_handle[branch],
+                family_index))
+            continue;
+        if (_family_knowledge_class_index < 0) {
+            for (size_t i = 0; i < _carrying_class_ids.size(); ++i) {
+                if (_carrying_class_ids[i] == "technology") {
+                    _family_knowledge_class_index = static_cast<int32_t>(i);
+                    break;
+                }
+            }
+        }
+        if (_family_knowledge_class_index < 0) continue;
+        const int32_t factor = static_cast<int32_t>(std::clamp<int64_t>(
+            binding.strength_q16, 0, 4 * Q16_ONE));
+        for (int32_t profession = 0; profession < static_cast<int32_t>(
+                _profession_class_index.size()); ++profession) {
+            if (_profession_class_index[static_cast<size_t>(profession)] !=
+                    _family_knowledge_class_index)
+                continue;
+            FamilyBehaviorFactorRow row;
+            row.cell = -1;
+            row.score_term = 0;
+            row.axis = 1;
+            row.selector_kind = 0;
+            row.selector_id = profession;
+            row.factor_q16 = factor;
+            expanded.push_back({family_index, row});
+        }
+    }
     std::sort(expanded.begin(), expanded.end(), [](const TaggedRow &a,
             const TaggedRow &b) {
         return std::tie(a.family_index, a.row.cell, a.row.score_term, a.row.axis,
@@ -9197,6 +9261,10 @@ void NativeEconomyRuntime::ensure_family_policy_factors() {
     const size_t n = _families.active.size();
     if (_family_purchase_factor_q16.size() < n)
         _family_purchase_factor_q16.resize(n, Q16_ONE);
+    if (_family_investment_factor_q16.size() < n)
+        _family_investment_factor_q16.resize(n, Q16_ONE);
+    if (_family_birth_factor_q16.size() < n)
+        _family_birth_factor_q16.resize(n, Q16_ONE);
     if (_family_absorb_bonus_q16.size() < n)
         _family_absorb_bonus_q16.resize(n, 0);
     if (_family_colonization_population_reward.size() < n)
@@ -9209,6 +9277,10 @@ void NativeEconomyRuntime::reset_family_policy_factors(int32_t family_index) {
             _family_purchase_factor_q16.size()))
         return;
     _family_purchase_factor_q16[static_cast<size_t>(family_index)] = Q16_ONE;
+    if (family_index < static_cast<int32_t>(_family_investment_factor_q16.size()))
+        _family_investment_factor_q16[static_cast<size_t>(family_index)] = Q16_ONE;
+    if (family_index < static_cast<int32_t>(_family_birth_factor_q16.size()))
+        _family_birth_factor_q16[static_cast<size_t>(family_index)] = Q16_ONE;
     if (family_index < static_cast<int32_t>(_family_absorb_bonus_q16.size()))
         _family_absorb_bonus_q16[static_cast<size_t>(family_index)] = 0;
     if (family_index < static_cast<int32_t>(
@@ -9231,13 +9303,191 @@ bool NativeEconomyRuntime::family_trait_technology_unlocked(
     if (trait_id < 0 || trait_id >= static_cast<int32_t>(
             _family_trait_technology_prerequisite_offsets.size()) - 1)
         return true;
-    for (int32_t p = _family_trait_technology_prerequisite_offsets[trait_id];
-         p < _family_trait_technology_prerequisite_offsets[trait_id + 1]; ++p) {
-        if (!cell_has_technology(cell, _family_trait_technology_prerequisites[p],
-                true))
+    const int32_t begin = _family_trait_technology_prerequisite_offsets[
+        static_cast<size_t>(trait_id)];
+    const int32_t end = _family_trait_technology_prerequisite_offsets[
+        static_cast<size_t>(trait_id) + 1];
+    if (begin >= end)
+        return true;
+    const uint8_t match_any =
+        trait_id < static_cast<int32_t>(_family_trait_technology_match_any.size())
+            ? _family_trait_technology_match_any[static_cast<size_t>(trait_id)]
+            : 0;
+    if (match_any != 0)
+        return cell_has_requirements(cell, begin, end,
+            _family_trait_technology_prerequisites, true);
+    return cell_has_all_requirements(cell, begin, end,
+        _family_trait_technology_prerequisites, true);
+}
+
+bool NativeEconomyRuntime::family_effect_technology_unlocked(
+        int32_t effect_id, int32_t cell) const {
+    if (effect_id < 0 || effect_id >= static_cast<int32_t>(
+            _family_effect_prerequisite_offsets.size()) - 1)
+        return true;
+    const int32_t begin = _family_effect_prerequisite_offsets[
+        static_cast<size_t>(effect_id)];
+    const int32_t end = _family_effect_prerequisite_offsets[
+        static_cast<size_t>(effect_id) + 1];
+    if (begin >= end)
+        return true;
+    const uint8_t match_any =
+        effect_id < static_cast<int32_t>(_family_effect_technology_match_any.size())
+            ? _family_effect_technology_match_any[static_cast<size_t>(effect_id)]
+            : 0;
+    if (match_any != 0)
+        return cell_has_requirements(cell, begin, end,
+            _family_effect_prerequisites, true);
+    return cell_has_all_requirements(cell, begin, end,
+        _family_effect_prerequisites, true);
+}
+
+bool NativeEconomyRuntime::family_trait_origin_gates_allow(
+        int32_t trait_id, int32_t origin_cell) const {
+    if (trait_id < 0) return true;
+    const size_t count = _family_trait_ids.size();
+    if (static_cast<size_t>(trait_id) >= count) return true;
+    auto needs_place = [&]() -> bool {
+        const bool landform = trait_id + 1 < static_cast<int32_t>(
+                _family_trait_origin_landform_offsets.size()) &&
+            _family_trait_origin_landform_offsets[trait_id] <
+                _family_trait_origin_landform_offsets[trait_id + 1];
+        const bool water = trait_id < static_cast<int32_t>(
+                _family_trait_origin_adjacent_water.size()) &&
+            _family_trait_origin_adjacent_water[trait_id] != 0;
+        const bool population = trait_id < static_cast<int32_t>(
+                _family_trait_origin_population_max.size()) &&
+            _family_trait_origin_population_max[trait_id] > 0;
+        const bool temperature = trait_id < static_cast<int32_t>(
+                _family_trait_origin_temperature_max_q16.size()) &&
+            _family_trait_origin_temperature_max_q16[trait_id] >= 0;
+        const bool resource = trait_id + 1 < static_cast<int32_t>(
+                _family_trait_required_resource_offsets.size()) &&
+            _family_trait_required_resource_offsets[trait_id] <
+                _family_trait_required_resource_offsets[trait_id + 1];
+        const bool tax = trait_id < static_cast<int32_t>(
+                _family_trait_require_tax_or_subsidy.size()) &&
+            _family_trait_require_tax_or_subsidy[trait_id] != 0;
+        return landform || water || population || temperature || resource || tax;
+    };
+    if (origin_cell < 0 || origin_cell >= _cell_count)
+        return !needs_place();
+    if (trait_id + 1 < static_cast<int32_t>(
+            _family_trait_origin_landform_offsets.size())) {
+        const int32_t begin = _family_trait_origin_landform_offsets[trait_id];
+        const int32_t end = _family_trait_origin_landform_offsets[trait_id + 1];
+        if (begin < end) {
+            const int32_t landform = origin_cell < static_cast<int32_t>(
+                    _building_landform.size())
+                ? _building_landform[static_cast<size_t>(origin_cell)] : -1;
+            bool matched = false;
+            for (int32_t i = begin; i < end; ++i) {
+                if (static_cast<int32_t>(_family_trait_origin_landforms[
+                        static_cast<size_t>(i)]) == landform) {
+                    matched = true;
+                    break;
+                }
+            }
+            if (!matched) return false;
+        }
+    }
+    if (trait_id < static_cast<int32_t>(
+            _family_trait_origin_adjacent_water.size()) &&
+        _family_trait_origin_adjacent_water[trait_id] != 0) {
+        constexpr int32_t kLandformDelta = 9;
+        const int32_t landform = origin_cell < static_cast<int32_t>(
+                _building_landform.size())
+            ? _building_landform[static_cast<size_t>(origin_cell)] : -1;
+        bool wet = landform == kLandformDelta;
+        if (!wet && _building_neighbors.size() ==
+                static_cast<size_t>(_cell_count) * 6 &&
+            _building_is_water.size() == static_cast<size_t>(_cell_count)) {
+            for (int32_t dir = 0; dir < 6 && !wet; ++dir) {
+                const int32_t neighbor = _building_neighbors[
+                    static_cast<size_t>(origin_cell) * 6 + dir];
+                if (neighbor >= 0 && neighbor < _cell_count &&
+                    _building_is_water[static_cast<size_t>(neighbor)] != 0)
+                    wet = true;
+            }
+        }
+        if (!wet) return false;
+    }
+    if (trait_id < static_cast<int32_t>(
+            _family_trait_origin_population_max.size()) &&
+        _family_trait_origin_population_max[trait_id] > 0) {
+        const int64_t population = origin_cell < static_cast<int32_t>(
+                _committed_cells.size())
+            ? _committed_cells[static_cast<size_t>(origin_cell)].population : 0;
+        if (population > _family_trait_origin_population_max[trait_id])
             return false;
     }
+    if (trait_id < static_cast<int32_t>(
+            _family_trait_origin_temperature_max_q16.size()) &&
+        _family_trait_origin_temperature_max_q16[trait_id] >= 0) {
+        const int32_t temperature = origin_cell < static_cast<int32_t>(
+                _environment_temperature_q16.size())
+            ? _environment_temperature_q16[static_cast<size_t>(origin_cell)]
+            : Q16_ONE;
+        if (temperature > _family_trait_origin_temperature_max_q16[trait_id])
+            return false;
+    }
+    if (trait_id + 1 < static_cast<int32_t>(
+            _family_trait_required_resource_offsets.size())) {
+        const int32_t begin = _family_trait_required_resource_offsets[trait_id];
+        const int32_t end = _family_trait_required_resource_offsets[trait_id + 1];
+        if (begin < end) {
+            bool found = false;
+            for (int32_t i = begin; i < end; ++i) {
+                const int32_t resource_id = _family_trait_required_resource_ids[
+                    static_cast<size_t>(i)];
+                if (carrying_resource_stock(resource_id, origin_cell) > 0) {
+                    found = true;
+                    break;
+                }
+                const size_t idx = static_cast<size_t>(std::max(0, resource_id)) *
+                    static_cast<size_t>(_cell_count) +
+                    static_cast<size_t>(origin_cell);
+                if (resource_id >= 0 && idx < _resource_snapshot.size() &&
+                    _resource_snapshot[idx] > 0) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) return false;
+        }
+    }
+    if (trait_id < static_cast<int32_t>(
+            _family_trait_require_tax_or_subsidy.size()) &&
+        _family_trait_require_tax_or_subsidy[trait_id] != 0) {
+        const bool cell_tax = origin_cell < static_cast<int32_t>(
+                _epoch_cell_active_tax_mask.size()) &&
+            _epoch_cell_active_tax_mask[static_cast<size_t>(origin_cell)] != 0;
+        bool country_tax = _epoch_active_tax_mask != 0;
+        if (!cell_tax && !country_tax) {
+            for (int8_t rate : _epoch_business_tax_rates) {
+                if (rate != 0) {
+                    country_tax = true;
+                    break;
+                }
+            }
+        }
+        if (!cell_tax && !country_tax) return false;
+    }
     return true;
+}
+
+bool NativeEconomyRuntime::family_trait_context_allows(
+        int32_t trait_id, int32_t family_index) const {
+    if (family_index < 0 || family_index >= static_cast<int32_t>(
+            _families.active.size()) || _families.active[family_index] == 0)
+        return false;
+    const int32_t origin = _families.origin_cell[family_index];
+    const int32_t home = _families.home_cell[family_index];
+    const int32_t tech_cell = origin >= 0 && origin < _cell_count ? origin : home;
+    const int32_t origin_cell = origin >= 0 && origin < _cell_count
+        ? origin : tech_cell;
+    return family_trait_technology_unlocked(trait_id, tech_cell) &&
+        family_trait_origin_gates_allow(trait_id, origin_cell);
 }
 
 void NativeEconomyRuntime::fill_family_behavior_metrics(
@@ -9359,6 +9609,246 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
         metrics[FAMILY_METRIC_MAX_CHAIN_UPGRADE_FAMILY_ID] =
             stats == nullptr || stats->max_chain_upgrade_family_id < 0
                 ? 0 : count_q16(stats->max_chain_upgrade_family_id);
+    int64_t cell_population = 0;
+    int64_t cell_employed = 0;
+    int64_t cell_funds = 0;
+    std::vector<uint8_t> employed_professions;
+    if (metric_count > FAMILY_METRIC_CELL_UNEMPLOYMENT_Q16 ||
+        metric_count > FAMILY_METRIC_CELL_VACANT_PROFESSION_COUNT ||
+        metric_count > FAMILY_METRIC_FAMILY_CASH_PER_CAPITA_VS_CELL_Q16) {
+        employed_professions.assign(_profession_ids.size(), 0);
+        _population.for_each_in_cell(cell, [&](int32_t slot) {
+            const int64_t people = std::max<int64_t>(0, _population.population[slot]);
+            cell_population += people;
+            const int64_t employed = std::max<int64_t>(0,
+                _population.owner_employed[slot]) +
+                std::max<int64_t>(0, _population.employee_employed[slot]);
+            cell_employed += employed;
+            cell_funds += std::max<int64_t>(0, _population.funds[slot]);
+            const int32_t signature = static_cast<int32_t>(
+                _population.signature_id[slot]);
+            if (employed > 0 && signature >= 0 &&
+                signature < static_cast<int32_t>(_signatures.size())) {
+                const int32_t profession = _signatures[
+                    static_cast<size_t>(signature)].profession_id;
+                if (profession >= 0 &&
+                    static_cast<size_t>(profession) < employed_professions.size())
+                    employed_professions[static_cast<size_t>(profession)] = 1;
+            }
+        });
+    }
+    if (metric_count > FAMILY_METRIC_CELL_UNEMPLOYMENT_Q16) {
+        const int64_t unemployed = std::max<int64_t>(0, cell_population - cell_employed);
+        metrics[FAMILY_METRIC_CELL_UNEMPLOYMENT_Q16] = cell_population > 0
+            ? std::clamp<int64_t>(unemployed * Q16_ONE / cell_population, 0, Q16_ONE)
+            : 0;
+    }
+    if (metric_count > FAMILY_METRIC_CELL_RESOURCE_CLASS_COUNT) {
+        int32_t resource_classes = 0;
+        const size_t resources = _resource_ids.size();
+        if (resources > 0 && _resource_snapshot.size() >=
+                resources * static_cast<size_t>(_cell_count)) {
+            for (size_t resource = 0; resource < resources; ++resource) {
+                const size_t idx = resource * static_cast<size_t>(_cell_count) +
+                    static_cast<size_t>(cell);
+                if (_resource_snapshot[idx] > 0) ++resource_classes;
+            }
+        }
+        metrics[FAMILY_METRIC_CELL_RESOURCE_CLASS_COUNT] = count_q16(resource_classes);
+    }
+    int64_t sector_count[5] = {0, 0, 0, 0, 0};
+    int64_t total_buildings = 0;
+    int32_t manufacturing_groups = 0;
+    int32_t knowledge_groups = 0;
+    int32_t extractive_groups = 0;
+    bool can_produce_corn = false;
+    int32_t vacant_professions = 0;
+    std::vector<uint8_t> demanded_professions(_profession_ids.size(), 0);
+    const bool building_csr = _building_cell_offsets.size() ==
+        static_cast<size_t>(_cell_count) + 1;
+    if (building_csr) {
+        for (int32_t group_index = _building_cell_offsets[cell];
+             group_index < _building_cell_offsets[cell + 1]; ++group_index) {
+            const BuildingGroup &group = _buildings[static_cast<size_t>(group_index)];
+            if (group.count <= 0 || group.type_id < 0 ||
+                group.type_id >= static_cast<int32_t>(_building_types.size()))
+                continue;
+            const int32_t sector = group.type_id < static_cast<int32_t>(
+                    _building_economic_sectors.size())
+                ? _building_economic_sectors[static_cast<size_t>(group.type_id)] : 2;
+            if (sector >= 0 && sector < 5) {
+                sector_count[sector] += group.count;
+                total_buildings += group.count;
+            }
+            if (sector == 2) ++manufacturing_groups;
+            if (sector == 4) ++knowledge_groups;
+            if (sector == 1) ++extractive_groups;
+            const BuildingType &type = _building_types[
+                static_cast<size_t>(group.type_id)];
+            if (_family_corn_good_id >= 0) {
+                for (int32_t output = type.output_begin;
+                     output < type.output_begin + type.output_count; ++output) {
+                    if (_building_outputs[static_cast<size_t>(output)].good_id ==
+                            _family_corn_good_id) {
+                        can_produce_corn = true;
+                        break;
+                    }
+                }
+            }
+            for (int32_t edge = type.labor_signal_begin;
+                 edge < type.labor_signal_begin + type.labor_signal_count; ++edge) {
+                if (edge < 0 || edge >= static_cast<int32_t>(
+                        _building_type_labor_signal_professions.size()))
+                    continue;
+                const int32_t profession = _building_type_labor_signal_professions[
+                    static_cast<size_t>(edge)];
+                if (profession >= 0 &&
+                    static_cast<size_t>(profession) < demanded_professions.size())
+                    demanded_professions[static_cast<size_t>(profession)] = 1;
+            }
+        }
+    }
+    for (size_t profession = 0; profession < demanded_professions.size(); ++profession) {
+        if (demanded_professions[profession] != 0 &&
+            (profession >= employed_professions.size() ||
+             employed_professions[profession] == 0))
+            ++vacant_professions;
+    }
+    if (metric_count > FAMILY_METRIC_CELL_MANUFACTURING_BUILDING_COUNT)
+        metrics[FAMILY_METRIC_CELL_MANUFACTURING_BUILDING_COUNT] =
+            count_q16(manufacturing_groups);
+    int32_t distinct_sectors = 0;
+    int32_t dominant_sector = -1;
+    int64_t dominant_owned = 0;
+    for (int32_t sector = 0; sector < 5; ++sector) {
+        if (sector_count[sector] <= 0) continue;
+        ++distinct_sectors;
+        if (sector_count[sector] > dominant_owned ||
+            (sector_count[sector] == dominant_owned &&
+             (dominant_sector < 0 || sector < dominant_sector))) {
+            dominant_owned = sector_count[sector];
+            dominant_sector = sector;
+        }
+    }
+    if (metric_count > FAMILY_METRIC_CELL_DISTINCT_SECTOR_COUNT)
+        metrics[FAMILY_METRIC_CELL_DISTINCT_SECTOR_COUNT] =
+            count_q16(distinct_sectors);
+    if (metric_count > FAMILY_METRIC_CELL_DOMINANT_SECTOR_ID)
+        metrics[FAMILY_METRIC_CELL_DOMINANT_SECTOR_ID] =
+            dominant_sector < 0 ? -Q16_ONE : count_q16(dominant_sector);
+    if (metric_count > FAMILY_METRIC_CELL_DOMINANT_SECTOR_SHARE_Q16)
+        metrics[FAMILY_METRIC_CELL_DOMINANT_SECTOR_SHARE_Q16] = total_buildings > 0
+            ? static_cast<int32_t>(std::clamp<int64_t>(
+                dominant_owned * Q16_ONE / total_buildings, 0, Q16_ONE)) : 0;
+    if (metric_count > FAMILY_METRIC_CELL_COMPLETE_CHAIN_COUNT) {
+        int32_t complete = 0;
+        if (building_csr) {
+            std::unordered_map<int32_t, uint32_t> owned_tiers;
+            std::unordered_map<int32_t, int32_t> catalog_tier_count;
+            std::unordered_map<int32_t, uint32_t> catalog_tiers;
+            for (size_t type = 0; type < _building_upgrade_family_indices.size();
+                 ++type) {
+                const int32_t family = _building_upgrade_family_indices[type];
+                const int32_t tier = type < _building_upgrade_tiers.size()
+                    ? _building_upgrade_tiers[type] : -1;
+                if (family < 0 || tier < 0 || tier >= 32) continue;
+                const uint32_t bit = 1u << static_cast<uint32_t>(tier);
+                if ((catalog_tiers[family] & bit) == 0)
+                    ++catalog_tier_count[family];
+                catalog_tiers[family] |= bit;
+            }
+            for (int32_t group_index = _building_cell_offsets[cell];
+                 group_index < _building_cell_offsets[cell + 1]; ++group_index) {
+                const BuildingGroup &group = _buildings[
+                    static_cast<size_t>(group_index)];
+                if (group.count <= 0 || group.type_id < 0 ||
+                    group.type_id >= static_cast<int32_t>(
+                        _building_upgrade_family_indices.size()))
+                    continue;
+                const int32_t family = _building_upgrade_family_indices[
+                    static_cast<size_t>(group.type_id)];
+                const int32_t tier = group.type_id < static_cast<int32_t>(
+                        _building_upgrade_tiers.size())
+                    ? _building_upgrade_tiers[static_cast<size_t>(group.type_id)] : -1;
+                if (family < 0 || tier < 0 || tier >= 32) continue;
+                owned_tiers[family] |= 1u << static_cast<uint32_t>(tier);
+            }
+            for (const auto &owned : owned_tiers) {
+                const uint32_t required = catalog_tiers[owned.first];
+                const int32_t required_count = catalog_tier_count[owned.first];
+                if (required_count >= 2 && required != 0 &&
+                    (owned.second & required) == required)
+                    ++complete;
+            }
+        }
+        metrics[FAMILY_METRIC_CELL_COMPLETE_CHAIN_COUNT] = count_q16(complete);
+    }
+    if (metric_count > FAMILY_METRIC_CELL_HAS_EXTRACTIVE_RESOURCE) {
+        bool extractive = extractive_groups > 0;
+        if (!extractive && !_resource_snapshot.empty()) {
+            const size_t resources = _resource_ids.size();
+            for (size_t resource = 0; resource < resources && !extractive; ++resource) {
+                const size_t idx = resource * static_cast<size_t>(_cell_count) +
+                    static_cast<size_t>(cell);
+                if (idx < _resource_snapshot.size() && _resource_snapshot[idx] > 0)
+                    extractive = true;
+            }
+        }
+        metrics[FAMILY_METRIC_CELL_HAS_EXTRACTIVE_RESOURCE] =
+            extractive ? Q16_ONE : 0;
+    }
+    if (metric_count > FAMILY_METRIC_CELL_LEGAL_BUILDING_TYPE_COUNT) {
+        int32_t legal = 0;
+        const int32_t country = cell < static_cast<int32_t>(_epoch_cell_country.size())
+            ? _epoch_cell_country[static_cast<size_t>(cell)] : -1;
+        if (country >= 0 &&
+            country + 1 < static_cast<int32_t>(_epoch_country_building_type_offsets.size()))
+            legal = std::max(0, _epoch_country_building_type_offsets[country + 1] -
+                _epoch_country_building_type_offsets[country]);
+        metrics[FAMILY_METRIC_CELL_LEGAL_BUILDING_TYPE_COUNT] = count_q16(legal);
+    }
+    if (metric_count > FAMILY_METRIC_CELL_VACANT_PROFESSION_COUNT)
+        metrics[FAMILY_METRIC_CELL_VACANT_PROFESSION_COUNT] =
+            count_q16(vacant_professions);
+    if (metric_count > FAMILY_METRIC_FAMILY_BRANCH_COUNT ||
+        metric_count > FAMILY_METRIC_FAMILY_REMOTE_BRANCH_COUNT) {
+        int32_t branches = 0;
+        int32_t remote = 0;
+        const int32_t home = family_index >= 0 && family_index < static_cast<int32_t>(
+                _families.home_cell.size())
+            ? _families.home_cell[family_index] : -1;
+        for (int32_t i = 0; i < static_cast<int32_t>(_family_influences.active.size());
+             ++i) {
+            if (_family_influences.active[i] == 0 || family_handle == 0 ||
+                _family_influences.family_handle[i] != family_handle)
+                continue;
+            ++branches;
+            if (_family_influences.cell[i] != home) ++remote;
+        }
+        if (metric_count > FAMILY_METRIC_FAMILY_BRANCH_COUNT)
+            metrics[FAMILY_METRIC_FAMILY_BRANCH_COUNT] = count_q16(branches);
+        if (metric_count > FAMILY_METRIC_FAMILY_REMOTE_BRANCH_COUNT)
+            metrics[FAMILY_METRIC_FAMILY_REMOTE_BRANCH_COUNT] = count_q16(remote);
+    }
+    if (metric_count > FAMILY_METRIC_FAMILY_CASH_PER_CAPITA_VS_CELL_Q16 &&
+        family_handle != 0) {
+        const int64_t family_people = std::max<int64_t>(1,
+            family_population(family_handle));
+        const int64_t family_cash = family_cash_claim(family_handle);
+        const int64_t family_capita = family_cash / family_people;
+        const int64_t cell_people = std::max<int64_t>(1, cell_population);
+        const int64_t cell_capita = cell_funds / cell_people;
+        metrics[FAMILY_METRIC_FAMILY_CASH_PER_CAPITA_VS_CELL_Q16] = cell_capita > 0
+            ? std::clamp<int64_t>(family_capita * Q16_ONE / cell_capita, 0,
+                4 * Q16_ONE)
+            : (family_capita > 0 ? 4 * Q16_ONE : 0);
+    }
+    if (metric_count > FAMILY_METRIC_CELL_KNOWLEDGE_BUILDING_CLASS_COUNT)
+        metrics[FAMILY_METRIC_CELL_KNOWLEDGE_BUILDING_CLASS_COUNT] =
+            count_q16(knowledge_groups);
+    if (metric_count > FAMILY_METRIC_CELL_CAN_PRODUCE_CORN)
+        metrics[FAMILY_METRIC_CELL_CAN_PRODUCE_CORN] =
+            can_produce_corn ? Q16_ONE : 0;
 }
 
 bool NativeEconomyRuntime::evaluate_family_behavior_conditions(
@@ -10228,6 +10718,21 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
                 _family_trait_trigger_reward_targets[edge];
         }
     }
+    auto add_effect_triggers = [&](const std::string &program_key) {
+        const int32_t effect_id = family_effect_id_for_key(program_key);
+        if (effect_id < 0 ||
+            _family_effect_trigger_definition_keys_by_tier.size() <
+                static_cast<size_t>(effect_id + 1) * 6U)
+            return;
+        const std::string &key = _family_effect_trigger_definition_keys_by_tier[
+            static_cast<size_t>(effect_id) * 6U + static_cast<size_t>(
+                std::clamp(level, 0, 5))];
+        if (key.empty()) return;
+        const int32_t reward = effect_id < static_cast<int32_t>(
+                _family_effect_trigger_reward_targets.size())
+            ? _family_effect_trigger_reward_targets[static_cast<size_t>(effect_id)] : 0;
+        desired_triggers[key] = reward;
+    };
     if (_effect_runtime != nullptr) {
         const auto branch_bindings = _family_effect_instances_by_branch.find(
             branch_handle);
@@ -10298,48 +10803,77 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
                 desired_effects.erase(found);
         }
         for (const auto &item : desired_effects) {
-            const int64_t instance_id = stable_effect_instance_id(item.first);
             if (item.second == 0) continue;
-            if (!submit_changes) {
-                if (_effect_runtime->has_instance_pod(instance_id,
-                        branch_generation)) {
-                    uint64_t target_handle = 0;
-                    uint32_t target_generation = 0;
-                    EffectRuntime::FamilyEffectMetadataPod metadata;
-                    if (!resolve_effect_target(item.first, target_handle,
-                            target_generation, metadata))
-                        continue;
-                    add_family_effect_binding({branch_handle,
-                        item.first, item.second, instance_id, branch_generation,
-                        metadata.target_domain, target_handle,
-                        target_generation, metadata.metric_mask});
-                }
-                continue;
-            }
-            std::string error;
-            uint64_t target_handle = 0;
-            uint32_t target_generation = 0;
+            uint64_t base_target_handle = 0;
+            uint32_t base_target_generation = 0;
             EffectRuntime::FamilyEffectMetadataPod metadata;
-            if (!resolve_effect_target(item.first, target_handle,
-                    target_generation, metadata))
+            if (!resolve_effect_target(item.first, base_target_handle,
+                    base_target_generation, metadata))
                 continue;
-            if (!_effect_runtime->upsert_instance_pod(instance_id,
-                    item.first, branch_generation, 0x46414d54,
-                    static_cast<int64_t>(branch_stable_id), branch_handle,
-                    target_handle, target_generation, level, _current_day,
-                    true, error) || !_effect_runtime->set_metric_pod(instance_id,
-                    0, family_effect_metric_revision(1), item.second, error))
-                continue;
-            add_family_effect_binding({branch_handle, item.first,
-                item.second, instance_id, branch_generation,
-                metadata.target_domain, target_handle, target_generation,
-                metadata.metric_mask});
-            const auto indexed = _family_effect_binding_by_instance.find(instance_id);
-            if (indexed != _family_effect_binding_by_instance.end())
-                publish_family_effect_metrics(
-                    _family_effect_bindings[indexed->second],
-                    family_effect_metric_revision(1),
-                    std::numeric_limits<uint64_t>::max());
+            add_effect_triggers(item.first);
+            const bool event_once = metadata.lifecycle == 2;
+            std::vector<int32_t> target_cells;
+            collect_family_effect_target_cells(_family_influences.cell[branch],
+                metadata.target_selector_kind, target_cells);
+            if (target_cells.empty())
+                target_cells.push_back(_family_influences.cell[branch]);
+            for (int32_t target_cell : target_cells) {
+                uint64_t identity = trace_hash_mix(1469598103934665603ULL,
+                    branch_stable_id);
+                identity = trace_hash_mix(identity, static_cast<uint32_t>(
+                    _family_influences.cell[branch]));
+                identity = trace_hash_mix(identity, static_cast<uint32_t>(
+                    std::max(0, target_cell)));
+                uint64_t definition_hash = 1469598103934665603ULL;
+                for (unsigned char ch : item.first)
+                    definition_hash = trace_hash_mix(definition_hash, ch);
+                identity = trace_hash_mix(identity, definition_hash);
+                const int64_t instance_id = static_cast<int64_t>(identity &
+                    0x7fffffffffffffffULL);
+                uint64_t target_handle = base_target_handle;
+                uint32_t target_generation = base_target_generation;
+                if (metadata.target_selector_kind == 6 ||
+                    metadata.target_selector_kind == 7) {
+                    if (target_cell < 0 || target_cell >= _cell_count) continue;
+                    target_handle = static_cast<uint64_t>(target_cell);
+                    target_generation = 1;
+                }
+                if (!submit_changes) {
+                    if (event_once || _effect_runtime->has_instance_pod(
+                            instance_id, branch_generation)) {
+                        add_family_effect_binding({branch_handle,
+                            item.first, item.second, instance_id, branch_generation,
+                            metadata.target_domain, target_handle,
+                            target_generation, metadata.metric_mask});
+                    }
+                    continue;
+                }
+                if (event_once) {
+                    add_family_effect_binding({branch_handle, item.first,
+                        item.second, instance_id, branch_generation,
+                        metadata.target_domain, target_handle, target_generation,
+                        metadata.metric_mask});
+                    continue;
+                }
+                std::string error;
+                if (!_effect_runtime->upsert_instance_pod(instance_id,
+                        item.first, branch_generation, 0x46414d54,
+                        static_cast<int64_t>(branch_stable_id), branch_handle,
+                        target_handle, target_generation, level, _current_day,
+                        true, error) || !_effect_runtime->set_metric_pod(instance_id,
+                        0, family_effect_metric_revision(1), item.second, error))
+                    continue;
+                add_family_effect_binding({branch_handle, item.first,
+                    item.second, instance_id, branch_generation,
+                    metadata.target_domain, target_handle, target_generation,
+                    metadata.metric_mask});
+                const auto indexed = _family_effect_binding_by_instance.find(instance_id);
+                if (indexed != _family_effect_binding_by_instance.end())
+                    publish_family_effect_metrics(
+                        _family_effect_bindings[indexed->second],
+                        family_effect_metric_revision(1),
+                        std::numeric_limits<uint64_t>::max());
+            }
         }
         std::vector<std::string> sibling_independent;
         for (const FamilyEffectBinding &binding : _family_effect_bindings) {
@@ -10443,6 +10977,10 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
                     target_handle, target_generation, metadata.metric_mask});
             }
         }
+    }
+    for (const FamilyEffectBinding &binding : _family_effect_bindings) {
+        if (binding.branch_handle != branch_handle) continue;
+        add_effect_triggers(binding.definition_key);
     }
     for (FamilyModifierBinding &binding : _family_modifier_bindings) {
         if (binding.branch_handle != branch_handle) continue;
@@ -11442,6 +11980,9 @@ void NativeEconomyRuntime::split_family_branches() {
             (split_flags & FAMILY_FLAG_SPLIT_RETAIN_ONLY) != 0;
         const bool bonus_weight =
             !retain_only && (split_flags & FAMILY_FLAG_SPLIT_BONUS_WEIGHT) != 0;
+        const bool replace_all =
+            !retain_only && !bonus_weight &&
+            (split_flags & FAMILY_FLAG_SPLIT_REPLACE) != 0;
         const int32_t weight_num = bonus_weight
             ? std::max<int32_t>(128, static_cast<int32_t>(
                 split_flags >> FAMILY_FLAG_SPLIT_WEIGHT_SHIFT))
@@ -11469,14 +12010,17 @@ void NativeEconomyRuntime::split_family_branches() {
             }
             if (!required) removable_indices.push_back(candidate);
         }
-        const int32_t removed_index = retain_only || removable_indices.empty() ? -1 :
+        const int32_t removed_index = retain_only || replace_all ||
+            removable_indices.empty() ? -1 :
             removable_indices[static_cast<size_t>(trace_hash_mix(identity,
                 0x52454d4f5645ULL) % removable_indices.size())];
-        for (int32_t i = 0; i < static_cast<int32_t>(parent_traits.size()); ++i) {
-            if (i == removed_index) continue;
-            const FamilyTraitRoll &roll = parent_traits[i];
-            child_traits.push_back({child_handle, roll.trait_id,
-                roll.strength_q16, roll.core});
+        if (!replace_all) {
+            for (int32_t i = 0; i < static_cast<int32_t>(parent_traits.size()); ++i) {
+                if (i == removed_index) continue;
+                const FamilyTraitRoll &roll = parent_traits[i];
+                child_traits.push_back({child_handle, roll.trait_id,
+                    roll.strength_q16, roll.core});
+            }
         }
         auto has_trait = [&](int32_t trait_id) {
             return std::any_of(child_traits.begin(), child_traits.end(),
@@ -11499,7 +12043,7 @@ void NativeEconomyRuntime::split_family_branches() {
                     if (_family_trait_exclusions[p] == trait_id) return false;
                 }
             }
-            return true;
+            return family_trait_context_allows(trait_id, child);
         };
         const int32_t additions = retain_only ? 0 : 1 + static_cast<int32_t>(
             trace_hash_mix(identity, 0x414444434f554e54ULL) % 2ULL);
@@ -11538,6 +12082,29 @@ void NativeEconomyRuntime::split_family_branches() {
             child_traits.push_back({child_handle, chosen, strength, 0});
         }
         _family_traits.insert(_family_traits.end(), child_traits.begin(), child_traits.end());
+        if ((split_flags & (FAMILY_FLAG_SPLIT_GIFT_BUILDING |
+                FAMILY_FLAG_SPLIT_GIFT_POPULATION)) != 0) {
+            int32_t gift_type = -1;
+            for (const FamilyBuildingOwnership &ownership : _family_ownerships) {
+                if (ownership.family_handle != child_handle ||
+                    ownership.owned_count <= 0) continue;
+                const int32_t group = building_index_for_handle(
+                    ownership.building_handle);
+                if (group >= 0 && group < static_cast<int32_t>(_buildings.size()) &&
+                    _buildings[static_cast<size_t>(group)].cell == candidate.cell) {
+                    gift_type = _buildings[static_cast<size_t>(group)].type_id;
+                    break;
+                }
+            }
+            PendingFamilySplitGift gift;
+            gift.family_handle = child_handle;
+            gift.cell = candidate.cell;
+            gift.flags = static_cast<uint16_t>(split_flags &
+                (FAMILY_FLAG_SPLIT_GIFT_BUILDING | FAMILY_FLAG_SPLIT_GIFT_POPULATION));
+            gift.building_type_id = gift_type;
+            gift.population = 8;
+            _pending_family_split_gifts.push_back(gift);
+        }
         _family_indices_dirty = true;
         ++_families_formed;
     }
@@ -11766,6 +12333,12 @@ void NativeEconomyRuntime::rebuild_family_influences() {
                         static_cast<uint8_t>(target);
                     _family_influences.review_streak[branch] = 0;
                     changed = true;
+                    if (target > current) {
+                        int32_t family_index = -1;
+                        if (_families.valid_handle(key.family, family_index))
+                            fire_family_event_once_effect(family_index,
+                                "family.effect.new_nobility");
+                    }
                 }
             }
         }
@@ -11783,7 +12356,10 @@ void NativeEconomyRuntime::rebuild_family_influences() {
         clear_family_branch_effects(handle);
         _family_influences.release(branch);
     }
+    rebuild_family_policy_scalars();
+    rebuild_family_behavior_cache();
     rebuild_family_owned_output_csr();
+    apply_pending_family_split_gifts();
 }
 
 void NativeEconomyRuntime::apply_due_family_trait_commands() {
@@ -13759,8 +14335,13 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _family_behavior_factor_offsets.clear();
     _family_behavior_factor_rows.clear();
     _family_purchase_factor_q16.clear();
+    _family_investment_factor_q16.clear();
+    _family_birth_factor_q16.clear();
     _family_absorb_bonus_q16.clear();
     _family_colonization_population_reward.clear();
+    _pending_family_split_gifts.clear();
+    _family_policy_stamped_cells.clear();
+    _family_trigger_bindings.clear();
     _family_trait_commands.clear();
     _family_effect_bindings.clear();
     _family_effect_binding_by_instance.clear();
@@ -13929,6 +14510,9 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _epoch_cell_birth_factor_q16.clear();
     _epoch_cell_need_consumption_factor_q16.clear();
     _epoch_cell_good_consumption_factor_q16.clear();
+    _epoch_cell_rain_event_threshold_q16.clear();
+    _epoch_cell_cold_capacity_factor_q16.clear();
+    _epoch_cell_sector_output_factor_q16.clear();
     _epoch_city_factor_valid = false;
     _epoch_city_factor_stat_version = 0;
     _city_factor_dirty_cells.clear();

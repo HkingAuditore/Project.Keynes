@@ -629,9 +629,12 @@ func _family_view_for(family_handle: int, fallback_people: int) -> Dictionary:
 		if bool(snapshot.get("ok", false)):
 			view["family_population"] = int(snapshot.get("population",
 				view.family_population))
+			var family_name := String(snapshot.get("family_name", "")).strip_edges()
 			var surname := String(snapshot.get("surname", ""))
 			var disambiguator := int(snapshot.get("surname_disambiguator", 0))
-			if not surname.is_empty():
+			if not family_name.is_empty():
+				view["display_name"] = family_name
+			elif not surname.is_empty():
 				view["display_name"] = _family_display_name(surname, disambiguator)
 	if _controller != null and _controller.has_method("get_family_traits"):
 		var traits: Dictionary = _controller.get_family_traits(family_handle)
@@ -661,6 +664,23 @@ static func _trait_badges(traits: Dictionary) -> Array:
 			"accent": UITokens.ACCENT if is_core else UITokens.TEXT_MUTED,
 			"tooltip": tooltip,
 		})
+	var effect_names: PackedStringArray = traits.get(
+		"bound_effect_display_names", PackedStringArray())
+	var effect_descriptions: PackedStringArray = traits.get(
+		"bound_effect_descriptions", PackedStringArray())
+	if effect_names.is_empty():
+		effect_names = traits.get("effect_display_names", PackedStringArray())
+	for index in range(effect_names.size()):
+		var label := String(effect_names[index]).strip_edges()
+		if label.is_empty():
+			continue
+		var tooltip := String(effect_descriptions[index]).strip_edges() \
+			if index < effect_descriptions.size() else ""
+		badges.append({
+			"text": label,
+			"accent": UITokens.CLIMATE,
+			"tooltip": tooltip,
+		})
 	return badges
 
 
@@ -677,10 +697,10 @@ static func _effect_text(traits: Dictionary) -> String:
 		parts.append(label)
 		if parts.size() >= 3:
 			break
-	if not parts.is_empty():
-		return "偏好：%s" % "、".join(parts)
 	var effect_names: PackedStringArray = traits.get(
-		"effect_display_names", PackedStringArray())
+		"bound_effect_display_names", PackedStringArray())
+	if effect_names.is_empty():
+		effect_names = traits.get("effect_display_names", PackedStringArray())
 	var effect_parts := PackedStringArray()
 	for raw in effect_names:
 		var label := String(raw).strip_edges()
@@ -690,6 +710,10 @@ static func _effect_text(traits: Dictionary) -> String:
 		effect_parts.append(label)
 		if effect_parts.size() >= 3:
 			break
+	if not parts.is_empty() and not effect_parts.is_empty():
+		return "偏好：%s · 效果：%s" % ["、".join(parts), "、".join(effect_parts)]
+	if not parts.is_empty():
+		return "偏好：%s" % "、".join(parts)
 	if not effect_parts.is_empty():
 		return "效果：%s" % "、".join(effect_parts)
 	var trait_names: PackedStringArray = traits.get(

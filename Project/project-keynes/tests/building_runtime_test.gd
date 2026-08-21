@@ -41,6 +41,8 @@ func _run() -> void:
 	var profile = load("res://data/economy/default_economy.tres").to_native_profile()
 	profile.market_cycle_days = 5
 	profile.market_runtime_mode = "ACTIVE"
+	# Building lifecycle fixtures must not roll the official family-effect pool.
+	profile.family_runtime_mode = "OFF"
 	# Keep focused lifecycle/investment fixtures on the historical 5/10 lock.
 	# Small worlds would otherwise choose N=1 and S=5 from populated knives.
 	profile.economy_cadence_force_market_days = 5

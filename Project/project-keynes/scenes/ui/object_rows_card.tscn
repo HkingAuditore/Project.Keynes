@@ -2,6 +2,8 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="1_icon"]
 [node name="RowsCard" type="PanelContainer"]
 theme_type_variation = &"PKInsetPanel"
+size_flags_horizontal = 3
+clip_contents = false
 [node name="Box" type="VBoxContainer" parent="."]
 layout_mode = 2
 theme_override_constants/separation = 4

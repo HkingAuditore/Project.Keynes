@@ -2,6 +2,7 @@ class_name FamilyEffectCatalog
 extends Resource
 
 const DEFAULT_PATH := "res://data/economy/default_family_effects.tres"
+const OfficialCatalogScript = preload("res://scripts/family/family_official_catalog.gd")
 const DefinitionScript = preload("res://scripts/family/family_effect_definition.gd")
 const EffectDefinitionScript = preload("res://scripts/effect/effect_definition.gd")
 
@@ -9,7 +10,8 @@ const EffectDefinitionScript = preload("res://scripts/effect/effect_definition.g
 @export var effects: Array[Resource] = []
 
 static func load_default() -> Resource:
-	return ResourceLoader.load(DEFAULT_PATH, "Resource")
+	var loaded = ResourceLoader.load(DEFAULT_PATH, "Resource")
+	return OfficialCatalogScript.hydrate_effect_catalog(loaded)
 
 func compile_native_catalog(technology_ids: PackedStringArray = PackedStringArray()) -> Dictionary:
 	if version <= 0:
@@ -34,8 +36,11 @@ func compile_native_catalog(technology_ids: PackedStringArray = PackedStringArra
 	var exclusion_offsets := PackedInt32Array([0])
 	var exclusions := PackedInt32Array()
 	var magnitude_by_prestige := PackedInt32Array()
+	var trigger_definition_keys_by_tier := PackedStringArray()
+	var trigger_reward_targets := PackedInt32Array()
 	var prerequisite_offsets := PackedInt32Array([0])
 	var prerequisite_technology_indices := PackedInt32Array()
+	var technology_match_any := PackedByteArray()
 	var technology_index := {}
 	for i in range(technology_ids.size()):
 		technology_index[String(technology_ids[i])] = i
@@ -54,7 +59,7 @@ func compile_native_catalog(technology_ids: PackedStringArray = PackedStringArra
 				or authored.operation < 0 or authored.operation > DefinitionScript.Operation.EVENT_COMMAND \
 				or authored.lifecycle < 0 or authored.lifecycle > DefinitionScript.Lifecycle.EVENT_ONCE \
 				or authored.stack_policy < 0 or authored.stack_policy > DefinitionScript.StackPolicy.MIN \
-				or authored.target_selector_kind < 0 or authored.target_selector_kind > DefinitionScript.TargetSelectorKind.SELECTOR_ID:
+				or authored.target_selector_kind < 0 or authored.target_selector_kind > DefinitionScript.TargetSelectorKind.NEIGHBORS_R2:
 			return {"ok": false, "reason": "family_effect_enum_invalid"}
 		if authored.lifecycle == DefinitionScript.Lifecycle.DURATION and authored.duration_days < 1:
 			return {"ok": false, "reason": "family_effect_duration_invalid"}
@@ -87,6 +92,11 @@ func compile_native_catalog(technology_ids: PackedStringArray = PackedStringArra
 					DefinitionScript.StackPolicy.MAX, DefinitionScript.StackPolicy.MIN]:
 			return {"ok": false, "reason": "family_effect_override_stack_policy_invalid"}
 		if authored.target_selector_kind in [
+				DefinitionScript.TargetSelectorKind.NEIGHBORS_R1,
+				DefinitionScript.TargetSelectorKind.NEIGHBORS_R2] \
+				and authored.target_domain != DefinitionScript.TargetDomain.SETTLEMENT_CELL:
+			return {"ok": false, "reason": "family_effect_neighbor_domain_invalid"}
+		if authored.target_selector_kind in [
 				DefinitionScript.TargetSelectorKind.STATIC_HANDLE,
 				DefinitionScript.TargetSelectorKind.SELECTOR_ID] \
 				and String(authored.target_selector_id).strip_edges().is_empty():
@@ -98,6 +108,9 @@ func compile_native_catalog(technology_ids: PackedStringArray = PackedStringArra
 		if authored.target_selector_kind == DefinitionScript.TargetSelectorKind.SELECTOR_ID \
 				and authored.target_domain != DefinitionScript.TargetDomain.BUILDING_RESOURCE:
 			return {"ok": false, "reason": "family_effect_selector_domain_invalid"}
+		if not authored.trigger_definition_keys_by_tier.is_empty() \
+				and authored.trigger_definition_keys_by_tier.size() != 6:
+			return {"ok": false, "reason": "family_effect_trigger_tier_shape_invalid"}
 		if not authored.magnitude_by_prestige_q16.is_empty() \
 				and authored.magnitude_by_prestige_q16.size() != 6:
 			return {"ok": false, "reason": "family_effect_prestige_magnitude_shape_invalid"}
@@ -158,6 +171,7 @@ func compile_native_catalog(technology_ids: PackedStringArray = PackedStringArra
 			if technology_index.has(technology_key):
 				prerequisite_technology_indices.append(int(technology_index[technology_key]))
 		prerequisite_offsets.append(prerequisite_technology_indices.size())
+		technology_match_any.append(1 if authored.prerequisite_technology_any else 0)
 		seen[key] = true
 		var definition: Resource = authored.to_effect_definition()
 		if definition.instructions.is_empty() and definition.commands.is_empty():
@@ -182,6 +196,13 @@ func compile_native_catalog(technology_ids: PackedStringArray = PackedStringArra
 			prestige = PackedInt32Array([65536, 65536, 65536, 65536, 65536, 65536])
 		for tier in range(6):
 			magnitude_by_prestige.append(int(prestige[tier]))
+		var authored_triggers: PackedStringArray = authored.trigger_definition_keys_by_tier
+		for tier in range(6):
+			if tier < authored_triggers.size():
+				trigger_definition_keys_by_tier.append(String(authored_triggers[tier]).strip_edges())
+			else:
+				trigger_definition_keys_by_tier.append("")
+		trigger_reward_targets.append(int(authored.trigger_reward_target))
 	var key_index := {}
 	for effect_index in range(keys.size()):
 		key_index[String(keys[effect_index])] = effect_index
@@ -207,8 +228,9 @@ func compile_native_catalog(technology_ids: PackedStringArray = PackedStringArra
 		lifecycles, duration_days, stack_policies, stack_keys, max_stacks,
 		priorities, selector_kinds, selector_ids,
 		weights, random_pool_eligible, prerequisite_offsets,
-		prerequisite_technology_indices, exclusion_offsets, exclusions,
-		magnitude_by_prestige]
+		prerequisite_technology_indices, technology_match_any, exclusion_offsets, exclusions,
+		magnitude_by_prestige, trigger_definition_keys_by_tier,
+		trigger_reward_targets]
 	var hash_value := hash(canonical)
 	if hash_value == 0: hash_value = 1
 	return {"ok": true, "definitions": definitions,
@@ -230,9 +252,12 @@ func compile_native_catalog(technology_ids: PackedStringArray = PackedStringArra
 		"family_effect_random_pool_eligible": random_pool_eligible,
 		"family_effect_prerequisite_offsets": prerequisite_offsets,
 		"family_effect_prerequisite_technology_indices": prerequisite_technology_indices,
+		"family_effect_technology_match_any": technology_match_any,
 		"family_effect_exclusion_offsets": exclusion_offsets,
 		"family_effect_exclusions": exclusions,
-		"family_effect_magnitude_by_prestige_q16": magnitude_by_prestige}
+		"family_effect_magnitude_by_prestige_q16": magnitude_by_prestige,
+		"family_effect_trigger_definition_keys_by_tier": trigger_definition_keys_by_tier,
+		"family_effect_trigger_reward_targets": trigger_reward_targets}
 
 ## Cross-catalog checks run after Economy and Modifier have compiled their
 ## stable IDs. Keeping this separate avoids a compile-time dependency cycle:

@@ -432,6 +432,9 @@ func build_object_detail(cell: HexCell, request: Dictionary) -> Dictionary:
 			var family_snapshot: Dictionary = facade.family_snapshot(family_handle)
 			if bool(family_snapshot.get("ok", false)):
 				row.merge(_family_detail_fields(family_snapshot), true)
+				var family_name := String(family_snapshot.get("family_name", "")).strip_edges()
+				if not family_name.is_empty():
+					row["name"] = family_name
 			row["notable_person_rows"] = _family_notable_person_rows(
 				facade, family_handle)
 			if facade.has_method("get_family_traits"):
@@ -446,6 +449,7 @@ func build_object_detail(cell: HexCell, request: Dictionary) -> Dictionary:
 					row["branch_rows"] = _family_branch_rows(branches)
 					var modifier_rows: Array = []
 					var trigger_rows: Array = []
+					var effect_rows: Array = []
 					var branch_cells: PackedInt32Array = branches.get(
 						"cell_indices", PackedInt32Array())
 					for branch_cell in branch_cells:
@@ -459,6 +463,8 @@ func build_object_detail(cell: HexCell, request: Dictionary) -> Dictionary:
 							_family_modifier_rows(effects))
 						trigger_rows.append_array(
 							_family_trigger_rows(effects))
+						effect_rows.append_array(
+							_family_bound_effect_rows(effects))
 						if int(branch_cell) == idx:
 							row["prestige_level"] = int(
 								effects.get("prestige_level", 0))
@@ -466,6 +472,7 @@ func build_object_detail(cell: HexCell, request: Dictionary) -> Dictionary:
 								effects.get("prestige_score_q16", 0)))
 					row["modifier_rows"] = modifier_rows
 					row["trigger_rows"] = trigger_rows
+					row["effect_rows"] = effect_rows
 	var item_id := _object_tax_item_id(kind, row)
 	var country := _country_summary(idx)
 	var off := HexUtils.cube_to_offset(cell.q, cell.r)
@@ -1220,6 +1227,8 @@ func _family_category(snapshot: Dictionary) -> Dictionary:
 			"icon": "family.house"}]}
 	var handles: PackedInt64Array = snapshot.get("family_handles", PackedInt64Array())
 	var surnames: PackedStringArray = snapshot.get("surnames", PackedStringArray())
+	var family_names: PackedStringArray = snapshot.get(
+		"family_names", PackedStringArray())
 	var disambiguators: PackedInt32Array = snapshot.get(
 		"surname_disambiguators", PackedInt32Array())
 	var populations: PackedInt64Array = snapshot.get("populations", PackedInt64Array())
@@ -1234,10 +1243,14 @@ func _family_category(snapshot: Dictionary) -> Dictionary:
 		var suffix := "" if i >= disambiguators.size() or disambiguators[i] == 0 \
 			else "（%d）" % (int(disambiguators[i]) + 1)
 		var family_handle := int(handles[i]) if i < handles.size() else 0
+		var display_name := String(family_names[i]).strip_edges() \
+			if i < family_names.size() else ""
+		if display_name.is_empty():
+			display_name = "%s氏" % String(surnames[i])
 		rows.append({
 			"id": "family_%d" % family_handle,
 			"family_handle": family_handle,
-			"name": "%s氏%s" % [String(surnames[i]), suffix],
+			"name": "%s%s" % [display_name, suffix],
 			"population": UITokens.format_compact_number_cn(float(populations[i]), 1) if i < populations.size() else "0",
 			"notable_people": int(notable_people[i]) if i < notable_people.size() else 0,
 			"owned_buildings": UITokens.format_compact_number_cn(float(owned[i]), 1) if i < owned.size() else "0",
@@ -1271,7 +1284,6 @@ func _family_trait_rows(snapshot: Dictionary) -> Array:
 	var rows: Array = []
 	var names: PackedStringArray = snapshot.get("display_names", PackedStringArray())
 	var keys: PackedStringArray = snapshot.get("trait_keys", PackedStringArray())
-	var strengths: PackedInt32Array = snapshot.get("strength_q16", PackedInt32Array())
 	var core: PackedByteArray = snapshot.get("core", PackedByteArray())
 	var descriptions: PackedStringArray = snapshot.get("descriptions", PackedStringArray())
 	for index in range(keys.size()):
@@ -1279,9 +1291,8 @@ func _family_trait_rows(snapshot: Dictionary) -> Array:
 			if index < descriptions.size() else ""
 		rows.append({
 			"name": String(names[index]) if index < names.size() else String(keys[index]),
-			"value": "%s · 强度 %s" % ["核心特性" if index < core.size() \
+			"value": "核心特性" if index < core.size() \
 				and int(core[index]) != 0 else "附加特性",
-				_q16_percent_text(int(strengths[index]) if index < strengths.size() else 65536)],
 			"detail": detail,
 			"tooltip": detail,
 		})
@@ -1346,13 +1357,79 @@ func _family_behavior_visibility(cell_idx: int) -> Dictionary:
 				result.goods[String(good_ids[index])] = true
 	var population: Dictionary = facade.population_cell_snapshot(cell_idx) \
 		if facade.has_method("population_cell_snapshot") else {}
-	var profession_ids: PackedStringArray = population.get(
-		"profession_stable_ids", PackedStringArray())
-	if not profession_ids.is_empty():
-		result.enforce_professions = true
-		for profession_id in profession_ids:
-			result.professions[String(profession_id)] = true
+	result.professions = _family_behavior_visible_professions(buildings, population)
+	result.enforce_professions = not (result.professions as Dictionary).is_empty()
 	return result
+
+
+static func _family_behavior_visible_professions(buildings: Dictionary,
+		population: Dictionary) -> Dictionary:
+	var catalog: PackedStringArray = population.get(
+		"profession_stable_ids", PackedStringArray())
+	if catalog.is_empty():
+		catalog = buildings.get("profession_stable_ids", PackedStringArray())
+	var hired := {}
+	var type_ids: PackedStringArray = buildings.get(
+		"building_type_ids", PackedStringArray())
+	var type_available: PackedByteArray = buildings.get(
+		"building_technology_available", PackedByteArray())
+	var type_constructible: PackedByteArray = buildings.get(
+		"building_construction_available", PackedByteArray())
+	var type_counts: PackedInt64Array = buildings.get(
+		"building_counts_by_type", PackedInt64Array())
+	var owners: PackedInt32Array = buildings.get(
+		"building_owner_profession_ids", PackedInt32Array())
+	var employee_offsets: PackedInt32Array = buildings.get(
+		"building_employee_offsets", PackedInt32Array())
+	var employee_professions: PackedInt32Array = buildings.get(
+		"building_employee_profession_ids", PackedInt32Array())
+	var can_resolve_roles := not catalog.is_empty() \
+		and owners.size() == type_ids.size() \
+		and employee_offsets.size() == type_ids.size() + 1
+	if can_resolve_roles:
+		for type_index in range(type_ids.size()):
+			var present := type_index < type_counts.size() \
+				and int(type_counts[type_index]) > 0
+			var unlocked := type_index < type_available.size() \
+				and int(type_available[type_index]) != 0
+			var constructible := type_index < type_constructible.size() \
+				and int(type_constructible[type_index]) != 0
+			if not present and not unlocked and not constructible:
+				continue
+			_add_profession_id(hired, catalog, int(owners[type_index]))
+			var begin := int(employee_offsets[type_index])
+			var end := int(employee_offsets[type_index + 1])
+			for role in range(begin, end):
+				if role >= 0 and role < employee_professions.size():
+					_add_profession_id(hired, catalog, int(employee_professions[role]))
+		hired["unemployed"] = true
+		var row_professions: PackedInt32Array = population.get(
+			"profession_ids", PackedInt32Array())
+		for dense_id in row_professions:
+			_add_profession_id(hired, catalog, int(dense_id))
+	var available: PackedByteArray = population.get(
+		"profession_technology_available", PackedByteArray())
+	if available.size() == catalog.size() and not catalog.is_empty():
+		if hired.is_empty() and not can_resolve_roles:
+			for index in range(catalog.size()):
+				if int(available[index]) != 0:
+					hired[String(catalog[index])] = true
+			return hired
+		var filtered := {}
+		for profession_id in hired.keys():
+			var index := catalog.find(String(profession_id))
+			if index >= 0 and int(available[index]) == 0:
+				continue
+			filtered[String(profession_id)] = true
+		return filtered
+	return hired
+
+
+static func _add_profession_id(target: Dictionary, catalog: PackedStringArray,
+		dense_id: int) -> void:
+	if dense_id < 0 or dense_id >= catalog.size():
+		return
+	target[String(catalog[dense_id])] = true
 
 
 static func _family_behavior_selector_visible(axis: int, stable_id: String,
@@ -1394,6 +1471,42 @@ func _family_branch_rows(snapshot: Dictionary) -> Array:
 				_q16_percent_text(int(cash_shares[index]) if index < cash_shares.size() else 0),
 				_q16_percent_text(int(building_shares[index]) if index < building_shares.size() else 0),
 				_prestige_text(target), int(streaks[index]) if index < streaks.size() else 0],
+		})
+	return rows
+
+
+func _family_bound_effect_rows(snapshot: Dictionary) -> Array:
+	var rows: Array = []
+	var cell := int(snapshot.get("cell_idx", -1))
+	var keys: PackedStringArray = snapshot.get(
+		"effect_definition_keys", PackedStringArray())
+	var names: PackedStringArray = snapshot.get(
+		"effect_display_names", PackedStringArray())
+	var descriptions: PackedStringArray = snapshot.get(
+		"effect_descriptions", PackedStringArray())
+	var current_descriptions: PackedStringArray = snapshot.get(
+		"effect_current_descriptions", PackedStringArray())
+	var seen := {}
+	for index in range(keys.size()):
+		var key := String(keys[index]).strip_edges()
+		if key.is_empty() or seen.has(key):
+			continue
+		seen[key] = true
+		var display := String(names[index]).strip_edges() \
+			if index < names.size() else ""
+		if display.is_empty():
+			display = key
+		var detail := String(descriptions[index]).strip_edges() \
+			if index < descriptions.size() else ""
+		var current := String(current_descriptions[index]).strip_edges() \
+			if index < current_descriptions.size() else ""
+		if current.is_empty():
+			current = detail
+		rows.append({
+			"name": "地块 %d · %s" % [cell, display],
+			"value": current,
+			"detail": current,
+			"tooltip": current,
 		})
 	return rows
 

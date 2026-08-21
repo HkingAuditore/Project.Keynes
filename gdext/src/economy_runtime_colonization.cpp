@@ -1025,6 +1025,81 @@ bool NativeEconomyRuntime::apply_start_family_expedition(
     return true;
 }
 
+void NativeEconomyRuntime::unwind_family_expedition_payload_extract(
+        int32_t expedition) {
+    if (expedition < 0 ||
+        expedition >= static_cast<int32_t>(_family_expeditions.active.size()) ||
+        _family_expeditions.active[expedition] == 0) return;
+    const uint64_t family_handle = _family_expeditions.family_handle[expedition];
+    const uint64_t owner = _family_expeditions.handle_for_index(expedition);
+    const uint32_t begin = _family_expeditions.payload_begin[expedition];
+    uint32_t count = _family_expeditions.payload_count[expedition];
+    if (begin > _family_expedition_payloads.size()) return;
+    if (count == 0 && _family_expedition_payloads.size() > begin)
+        count = static_cast<uint32_t>(_family_expedition_payloads.size() - begin);
+    const uint32_t end = std::min<uint32_t>(
+        begin + count, static_cast<uint32_t>(_family_expedition_payloads.size()));
+    uint32_t person_begin = static_cast<uint32_t>(
+        _family_expedition_person_handles.size());
+    for (uint32_t p = begin; p < end; ++p) {
+        FamilyExpeditionPayload &payload = _family_expedition_payloads[p];
+        _population.release_reserved_slot(payload.reserved_slot, owner);
+        payload.reserved_slot = -1;
+        person_begin = std::min(person_begin, payload.person_begin);
+        int32_t slot = -1;
+        if (_population.valid_handle(payload.source_cohort_handle, slot)) {
+            audit_touch_population_lane(slot);
+            touch_accounting_slot(slot);
+            _population.population[slot] += payload.people;
+            _population.funds[slot] += payload.funds;
+            _population.epoch_income[slot] += payload.epoch_income;
+            _population.epoch_expense[slot] += payload.epoch_expense;
+            _population.epoch_in_kind_income[slot] += payload.epoch_in_kind_income;
+            _population.income_ema[slot] += payload.income_ema;
+            _population.epoch_tax_paid[slot] += payload.epoch_tax_paid;
+            _population.epoch_subsidy_received[slot] +=
+                payload.epoch_subsidy_received;
+            _population.income_baseline_ema[slot] += payload.income_baseline_ema;
+            _population.demography_residual[slot] += payload.demography_residual;
+        }
+        auto membership = std::find_if(_family_memberships.begin(),
+            _family_memberships.end(), [&](const FamilyMembershipEdge &edge) {
+                return edge.family_handle == family_handle &&
+                    edge.cohort_handle == payload.source_cohort_handle;
+            });
+        if (membership == _family_memberships.end()) {
+            _family_memberships.push_back({family_handle,
+                payload.source_cohort_handle, payload.people, payload.cash_claim,
+                payload.people, payload.funds, payload.owner_employed,
+                payload.employee_employed});
+        } else {
+            membership->people += payload.people;
+            membership->cash_claim += payload.cash_claim;
+            membership->owner_employed += payload.owner_employed;
+            membership->employee_employed += payload.employee_employed;
+            membership->population_basis += payload.people;
+            membership->funds_basis += payload.cash_claim;
+        }
+        const uint32_t person_end = std::min<uint32_t>(
+            payload.person_begin + payload.person_count,
+            static_cast<uint32_t>(_family_expedition_person_handles.size()));
+        for (uint32_t i = payload.person_begin; i < person_end; ++i) {
+            int32_t person = -1;
+            if (_persons.valid_handle(_family_expedition_person_handles[i],
+                    person))
+                _persons.cohort_handle[person] = payload.source_cohort_handle;
+        }
+    }
+    if (end > begin)
+        _family_expedition_payloads.resize(begin);
+    if (person_begin < _family_expedition_person_handles.size())
+        _family_expedition_person_handles.resize(person_begin);
+    _family_expeditions.payload_count[expedition] = 0;
+    _family_expeditions.population[expedition] = 0;
+    _family_indices_dirty = true;
+    _person_indices_dirty = true;
+}
+
 bool NativeEconomyRuntime::extract_family_expedition_payload(
         int32_t expedition, int64_t requested, std::string &error) {
     const auto started = std::chrono::steady_clock::now();
@@ -1117,8 +1192,35 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
         candidate.selected -= reduce;
         overflow -= reduce;
     }
+    // Leaving the last living merchant can drop selected below the quoted
+    // request. Refill from remaining non-merchant family capacity so the
+    // transit count still matches the command; otherwise reject before
+    // mutating ledgers. A stale scalar of requested people against a smaller
+    // payload is what tripped population_conservation_failed after in-epoch
+    // starts.
+    int64_t selected_total = 0;
+    for (const Candidate &candidate : candidates)
+        selected_total += candidate.selected;
+    int64_t shortfall = requested - selected_total;
+    for (Candidate &candidate : candidates) {
+        if (shortfall <= 0) break;
+        if (is_merchant_slot(candidate.slot) ||
+            candidate.selected >= candidate.people) continue;
+        const int64_t take = std::min(shortfall,
+            candidate.people - candidate.selected);
+        candidate.selected += take;
+        shortfall -= take;
+    }
+    selected_total = 0;
+    for (const Candidate &candidate : candidates)
+        selected_total += candidate.selected;
+    if (selected_total != requested) {
+        error = "colonization_population_insufficient";
+        return false;
+    }
     _family_expeditions.payload_begin[expedition] = static_cast<uint32_t>(
         _family_expedition_payloads.size());
+    _family_expeditions.payload_count[expedition] = 0;
     for (Candidate &candidate : candidates) {
         if (candidate.selected <= 0) continue;
         FamilyMembershipEdge &edge = _family_memberships[candidate.edge];
@@ -1126,7 +1228,9 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
         const int64_t source_population = _population.population[slot];
         if (candidate.selected > edge.people || candidate.selected >=
                 family_population_in_cell(family_handle, source_cell)) {
-            error = "colonization_population_guard_failed"; return false;
+            error = "colonization_population_guard_failed";
+            unwind_family_expedition_payload_extract(expedition);
+            return false;
         }
         FamilyExpeditionPayload payload;
         payload.source_cohort_handle = edge.cohort_handle;
@@ -1225,12 +1329,17 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
         edge.funds_basis = std::max<int64_t>(0,
             edge.funds_basis - payload.cash_claim);
         _family_expedition_payloads.push_back(payload);
+        _family_expeditions.payload_count[expedition] =
+            static_cast<uint32_t>(_family_expedition_payloads.size()) -
+            _family_expeditions.payload_begin[expedition];
     }
     _family_expeditions.payload_count[expedition] = static_cast<uint32_t>(
         _family_expedition_payloads.size()) -
         _family_expeditions.payload_begin[expedition];
     if (_family_expeditions.payload_count[expedition] == 0) {
-        error = "colonization_payload_empty"; return false;
+        error = "colonization_payload_empty";
+        unwind_family_expedition_payload_extract(expedition);
+        return false;
     }
     const uint64_t reservation_owner =
         _family_expeditions.handle_for_index(expedition);
@@ -1244,12 +1353,18 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
             static_cast<uint32_t>(payload.signature), reservation_owner);
         if (payload.reserved_slot < 0) {
             error = "colonization_target_slot_reservation_failed";
+            unwind_family_expedition_payload_extract(expedition);
             return false;
         }
     }
+    _family_expeditions.population[expedition] =
+        family_expedition_payload_people(expedition);
     _family_indices_dirty = true; _person_indices_dirty = true;
     _structural_touched_cells.push_back(source_cell);
-    if (!repair_cell_merchant_and_rebuild(source_cell, error)) return false;
+    if (!repair_cell_merchant_and_rebuild(source_cell, error)) {
+        unwind_family_expedition_payload_extract(expedition);
+        return false;
+    }
     _colonization_payload_split_ms = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - started).count();
     return true;
@@ -1703,7 +1818,7 @@ Dictionary NativeEconomyRuntime::family_expeditions(
             _family_expeditions.family_handle[i]));
         sources.push_back(_family_expeditions.source_cell[i]);
         targets.push_back(_family_expeditions.target_cell[i]);
-        populations.push_back(_family_expeditions.population[i]);
+        populations.push_back(family_expedition_payload_people(i));
         departures.push_back(_family_expeditions.departure_day[i]);
         dues.push_back(_family_expeditions.due_day[i]);
         costs.push_back(_family_expeditions.route_cost[i]);
@@ -1743,7 +1858,7 @@ Dictionary NativeEconomyRuntime::family_expedition_snapshot(
         _family_expeditions.family_handle[expedition]);
     out["source_cell"] = _family_expeditions.source_cell[expedition];
     out["target_cell"] = _family_expeditions.target_cell[expedition];
-    out["population"] = _family_expeditions.population[expedition];
+    out["population"] = family_expedition_payload_people(expedition);
     out["departure_day"] = _family_expeditions.departure_day[expedition];
     out["due_day"] = _family_expeditions.due_day[expedition];
     out["route_cost"] = _family_expeditions.route_cost[expedition];

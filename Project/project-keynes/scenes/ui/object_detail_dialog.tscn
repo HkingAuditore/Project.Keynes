@@ -9,6 +9,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+clip_contents = true
 mouse_filter = 0
 script = ExtResource("1_script")
 [node name="Backdrop" type="ColorRect" parent="."]
@@ -35,6 +36,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+clip_contents = true
 mouse_filter = 1
 [node name="Dialog" type="PanelContainer" parent="Center"]
 custom_minimum_size = Vector2(620, 520)
@@ -50,6 +52,7 @@ offset_right = 310.0
 offset_bottom = 260.0
 grow_horizontal = 2
 grow_vertical = 2
+clip_contents = true
 theme_type_variation = &"PKDialog"
 [node name="Body" type="VBoxContainer" parent="Center/Dialog"]
 layout_mode = 2
@@ -66,9 +69,13 @@ size_flags_horizontal = 3
 theme_override_constants/separation = 0
 [node name="Title" type="Label" parent="Center/Dialog/Body/TitleRow/Titles"]
 layout_mode = 2
+clip_text = true
+text_overrun_behavior = 3
 theme_type_variation = &"PKTitle"
 [node name="Subtitle" type="Label" parent="Center/Dialog/Body/TitleRow/Titles"]
 layout_mode = 2
+clip_text = true
+text_overrun_behavior = 3
 theme_type_variation = &"PKMutedLabel"
 [node name="CloseButton" type="Button" parent="Center/Dialog/Body/TitleRow"]
 custom_minimum_size = Vector2(34, 34)

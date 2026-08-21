@@ -50,6 +50,21 @@ static func build(family_effect_catalog_override: Resource = null) -> Resource:
 		"family.complete_chain_count",
 		"family.max_local_chain_share_q16",
 		"family.max_chain_upgrade_family_id",
+		"cell.unemployment_q16",
+		"cell.resource_class_count",
+		"cell.manufacturing_building_count",
+		"cell.distinct_sector_count",
+		"cell.dominant_sector_id",
+		"cell.dominant_sector_share_q16",
+		"cell.complete_chain_count",
+		"cell.has_extractive_resource",
+		"cell.legal_building_type_count",
+		"cell.vacant_profession_count",
+		"family.branch_count",
+		"family.remote_branch_count",
+		"family.cash_per_capita_vs_cell_q16",
+		"cell.knowledge_building_class_count",
+		"cell.can_produce_corn",
 	])
 	catalog.behavior_command_keys = PackedStringArray()
 	var definitions: Array[Resource] = []
@@ -103,8 +118,9 @@ static func build(family_effect_catalog_override: Resource = null) -> Resource:
 	catalog.native_extensions = era_reward_ir
 
 	# Family effects are authored independently from traits and compiled into
-	# the same immutable EffectDefinition table. An empty default catalog is a
-	# valid no-op, so existing worlds retain their current behavior.
+	# the same immutable EffectDefinition table. The first official catalog is
+	# compiled from family_official_buffs.json; an empty override remains a
+	# valid no-op for tests.
 	var family_effect_catalog: Resource = family_effect_catalog_override
 	if family_effect_catalog == null:
 		family_effect_catalog = FamilyEffectCatalogScript.load_default()

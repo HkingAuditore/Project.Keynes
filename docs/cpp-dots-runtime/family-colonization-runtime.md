@@ -48,7 +48,12 @@ cell CSR 与 cell-family CSR；不会扫描全体家族。距离、parent 和 he
 重要人物句柄使用扁平 CSR。派遣人数满足 `1 <= population < branch_population`。
 抽取先按稳定顺序消费失业成员，不足部分按非失业 cohort 比例分配，最大余数
 以 `(profession, ethnicity, cohort_handle)` 决定；不得抽走源地最后一个活着的
-商人。空闲出发会立即 `ensure_merchant_invariant` 并重建商人 CSR：抽离写入的
+商人。商人保护若裁掉已分配名额，必须立即从剩余非商人成员回填，使实际抽离人数
+仍等于命令人数；回填后仍不足则在改账本之前拒绝并写回执，不得把
+`FamilyExpeditionStore.population` 留在请求人数、载荷 `people` 却更少。在途人口
+审计与家族人口合计一律加总载荷 `people`，不信任可能过期的标量。抽离中途失败
+必须把已扣的源地 cohort / 成员边 / 人物句柄滚回去，不能只 release 开拓队。
+空闲出发会立即 `ensure_merchant_invariant` 并重建商人 CSR：抽离写入的
 `_structural_touched_cells` 会在下一轮 `start_epoch` 被清空，不能再等到
 `STRUCTURAL_COMMIT` 才补商人。开工包落地按建筑转职时同样保留最后一名本地商人；
 `rebuild_merchant_ranges` 若发现有人口格缺少活商人，先走同一套兜底修复，

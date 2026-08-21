@@ -664,12 +664,12 @@ static func compile_native_catalog(
 			catalog[key] = person_columns[key]
 	var trait_catalog = family_trait_catalog_override
 	if trait_catalog == null:
-		trait_catalog = load(DEFAULT_FAMILY_TRAIT_CATALOG_PATH)
+		trait_catalog = FamilyTraitCatalogScript.load_default()
 	if trait_catalog == null or not trait_catalog is FamilyTraitCatalogScript:
 		return {"ok": false, "reason": "default family trait catalog is unavailable"}
 	var family_effect_catalog = family_effect_catalog_override
 	if family_effect_catalog == null:
-		family_effect_catalog = load(DEFAULT_FAMILY_EFFECT_CATALOG_PATH)
+		family_effect_catalog = FamilyEffectCatalogScript.load_default()
 	if family_effect_catalog == null or not family_effect_catalog is FamilyEffectCatalogScript:
 		return {"ok": false, "reason": "family effect catalog is unavailable"}
 	var family_effect_ir: Dictionary = family_effect_catalog.compile_native_catalog(

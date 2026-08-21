@@ -21,6 +21,7 @@ const TaxLaneScene := preload("res://scenes/ui/object_tax_lane.tscn")
 const TAX_KIND_IDS := {"income": 0, "consumption": 1, "business": 2,
 	"import": 3, "export": 4}
 const CLEAR_ALL_MENU_ID := 1
+const SPLIT_DETAIL_MIN_WIDTH := 800.0
 
 signal close_requested()
 signal tab_data_requested(tab_id: String)
@@ -879,6 +880,7 @@ func _dossier_column_width() -> float:
 
 
 func _on_inspector_resized() -> void:
+	_sync_split_layout()
 	if _model.is_empty() or _tabs == null:
 		return
 	var tabs: Array = _model.get("tabs", [])
@@ -988,8 +990,6 @@ func detail_open() -> bool:
 
 func set_compact_detail_mode(compact: bool) -> void:
 	_compact_detail = compact
-	if _inspector_root != null:
-		_inspector_root.visible = not compact or not detail_open()
 	_sync_split_layout()
 
 
@@ -1012,7 +1012,6 @@ func _open_construction() -> void:
 func _show_detail_shell() -> void:
 	_detail_shell.visible = true
 	_sync_split_layout()
-	_inspector_root.visible = not _compact_detail
 	detail_visibility_changed.emit(true)
 
 
@@ -1037,10 +1036,21 @@ func _on_detail_closed() -> void:
 func _sync_split_layout() -> void:
 	if _inspector_root == null or _detail_shell == null:
 		return
+	var split := _inspector_root.get_parent() as Control
+	if split != null:
+		split.clip_contents = true
 	var inspecting := _detail_shell.visible
+	_detail_shell.clip_contents = true
+	# 宽屏分栏需要约 400+424。面板尚未被 GameUIManager 加宽时（或测试里仍是
+	# 460）如果硬拆两列，详情会盖住档案。窄宽度先让详情独占。
+	var can_split := not _compact_detail and size.x >= SPLIT_DETAIL_MIN_WIDTH
+	var show_dossier := not inspecting or can_split
+	_inspector_root.visible = show_dossier
 	_inspector_root.size_flags_horizontal = Control.SIZE_FILL if inspecting \
 		else Control.SIZE_EXPAND_FILL
+	_inspector_root.size_flags_stretch_ratio = 0.0 if inspecting else 1.0
 	_detail_shell.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_detail_shell.size_flags_stretch_ratio = 1.0
 
 
 func _add_group_separator(host: Control = null) -> void:

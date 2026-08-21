@@ -12,6 +12,8 @@ const GOOD_PROFILE_DIR := "res://data/goods"
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const EconomyProfileScript = preload("res://scripts/data/economy_profile.gd")
 const FamilyTraitCatalogScript = preload("res://scripts/family/family_trait_catalog.gd")
+const FamilyEffectCatalogScript = preload("res://scripts/family/family_effect_catalog.gd")
+const FamilyBuffCopyScript = preload("res://scripts/family/family_buff_copy.gd")
 const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
 const TriggerCatalogScript = preload("res://scripts/trigger/trigger_catalog.gd")
 ## 与原生 SAT_DIM_* 枚举同序，供 Inspector 与溯源面板直接展示。
@@ -55,7 +57,9 @@ var _building_display_names: Dictionary = {}
 var _need_display_names: Dictionary = {}
 var _good_display_names: Dictionary = {}
 var _family_trait_descriptions: Dictionary = {}
+var _family_trait_copy: Dictionary = {}
 var _family_trait_effect_keys: Dictionary = {}
+var _family_effect_displays: Dictionary = {}
 var _family_modifier_displays: Dictionary = {}
 var _family_trigger_displays: Dictionary = {}
 var _family_trait_sequence: int = 0
@@ -618,7 +622,11 @@ static func _construction_result_message(code: String) -> String:
 func family_cell_snapshot(cell_idx: int, offset: int = 0, limit: int = 64) -> Dictionary:
 	if not _configured or not _world_ext.has_method("get_family_cell_snapshot"):
 		return {"ok": false, "reason": "family_runtime_unavailable"}
-	return _world_ext.get_family_cell_snapshot(cell_idx, offset, limit)
+	var snapshot: Dictionary = _world_ext.get_family_cell_snapshot(
+		cell_idx, offset, limit)
+	if bool(snapshot.get("ok", false)):
+		_attach_family_display_names(snapshot)
+	return snapshot
 
 
 func family_snapshot(family_handle: int) -> Dictionary:
@@ -638,25 +646,14 @@ func family_snapshot(family_handle: int) -> Dictionary:
 			else "")
 	snapshot["profession_stable_ids"] = profession_names
 	var origin_cell := int(snapshot.get("origin_cell", -1))
-	var settlement_name := ""
-	var settlements := named_settlement_snapshot()
-	var cells: PackedInt32Array = settlements.get("cell_indices", PackedInt32Array())
-	var names: PackedStringArray = settlements.get("settlement_names", PackedStringArray())
-	for i in range(mini(cells.size(), names.size())):
-		if int(cells[i]) == origin_cell:
-			settlement_name = String(names[i])
-			break
+	var settlement_name := String(_settlement_name_lookup().get(origin_cell, ""))
 	snapshot["origin_settlement_name"] = settlement_name
 	var surname := String(snapshot.get("surname", ""))
 	var format := String(snapshot.get("culture_group_naming_format", "CITY_SURNAME_SUFFIX"))
 	var separator := String(snapshot.get("culture_group_separator", "-"))
 	var suffix := String(snapshot.get("culture_group_suffix", "氏"))
-	var family_name := surname
-	if not settlement_name.is_empty():
-		match format:
-			"CITY_SEPARATOR_SURNAME": family_name = "%s%s%s" % [settlement_name, separator, surname]
-			"CITY_SURNAME": family_name = "%s%s" % [settlement_name, surname]
-			_: family_name = "%s%s%s" % [settlement_name, surname, suffix]
+	var family_name := compose_family_display_name(
+		settlement_name, surname, format, separator, suffix)
 	var collision_index := 1
 	var origin_families := family_cell_snapshot(origin_cell, 0, 256)
 	var origin_cells: PackedInt32Array = origin_families.get("origin_cells", PackedInt32Array())
@@ -669,10 +666,78 @@ func family_snapshot(family_handle: int) -> Dictionary:
 	collisions.sort()
 	if collisions.size() > 1:
 		collision_index = collisions.find(int(snapshot.get("stable_id", 0))) + 1
-		family_name += " (%d)" % collision_index
+		family_name += "（%d）" % collision_index
 	snapshot["family_name_collision_index"] = collision_index
 	snapshot["family_name"] = family_name
 	return snapshot
+
+
+static func compose_family_display_name(
+		settlement_name: String,
+		surname: String,
+		format: String = "CITY_SURNAME_SUFFIX",
+		separator: String = "-",
+		suffix: String = "氏") -> String:
+	var stem := surname.strip_edges()
+	if stem.is_empty():
+		stem = "家族"
+	var settlement := settlement_name.strip_edges()
+	if settlement.is_empty():
+		if format == "CITY_SURNAME_SUFFIX" and not suffix.is_empty() \
+				and not stem.ends_with(suffix):
+			return "%s%s" % [stem, suffix]
+		return stem
+	match format:
+		"CITY_SEPARATOR_SURNAME":
+			return "%s%s%s" % [settlement, separator, stem]
+		"CITY_SURNAME":
+			return "%s%s" % [settlement, stem]
+		_:
+			return "%s%s%s" % [settlement, stem, suffix]
+
+
+func _settlement_name_lookup() -> Dictionary:
+	var lookup := {}
+	var settlements := named_settlement_snapshot()
+	var cells: PackedInt32Array = settlements.get("cell_indices", PackedInt32Array())
+	var names: PackedStringArray = settlements.get("settlement_names", PackedStringArray())
+	for i in range(mini(cells.size(), names.size())):
+		lookup[int(cells[i])] = String(names[i])
+	return lookup
+
+
+func _attach_family_display_names(snapshot: Dictionary) -> void:
+	var surnames: PackedStringArray = snapshot.get("surnames", PackedStringArray())
+	var origin_cells: PackedInt32Array = snapshot.get("origin_cells", PackedInt32Array())
+	var culture_groups: PackedInt32Array = snapshot.get(
+		"culture_group_ids", PackedInt32Array())
+	var formats: PackedStringArray = _catalog.get(
+		"family_culture_group_naming_formats", PackedStringArray())
+	var separators: PackedStringArray = _catalog.get(
+		"family_culture_group_separators", PackedStringArray())
+	var suffixes: PackedStringArray = _catalog.get(
+		"family_culture_group_suffixes", PackedStringArray())
+	var settlements := _settlement_name_lookup()
+	var family_names := PackedStringArray()
+	var origin_settlement_names := PackedStringArray()
+	for i in range(surnames.size()):
+		var origin_cell := int(origin_cells[i]) if i < origin_cells.size() else -1
+		var settlement_name := String(settlements.get(origin_cell, ""))
+		var group := int(culture_groups[i]) if i < culture_groups.size() else -1
+		var format := "CITY_SURNAME_SUFFIX"
+		var separator := "-"
+		var suffix := "氏"
+		if group >= 0 and group < formats.size():
+			format = String(formats[group])
+		if group >= 0 and group < separators.size():
+			separator = String(separators[group])
+		if group >= 0 and group < suffixes.size():
+			suffix = String(suffixes[group])
+		origin_settlement_names.append(settlement_name)
+		family_names.append(compose_family_display_name(
+			settlement_name, String(surnames[i]), format, separator, suffix))
+	snapshot["origin_settlement_names"] = origin_settlement_names
+	snapshot["family_names"] = family_names
 
 
 func get_family_traits(family_handle: int) -> Dictionary:
@@ -711,8 +776,25 @@ func get_family_traits(family_handle: int) -> Dictionary:
 	snapshot["behavior_selector_stable_ids"] = stable_ids
 	snapshot["behavior_selector_display_names"] = display_names
 	var trait_keys: PackedStringArray = snapshot.get("trait_keys", PackedStringArray())
-	snapshot["descriptions"] = _family_trait_description_column(trait_keys)
-	snapshot["effect_display_names"] = _family_trait_effect_display_names(trait_keys)
+	snapshot["descriptions"] = _family_trait_description_column(
+		trait_keys, snapshot.get("strength_q16", PackedInt32Array()))
+	var effect_names := _family_trait_effect_display_names(trait_keys)
+	var bound_keys: PackedStringArray = snapshot.get(
+		"effect_definition_keys", PackedStringArray())
+	snapshot["bound_effect_display_names"] = _mapped_effect_names(
+		bound_keys, _family_effect_displays)
+	snapshot["bound_effect_descriptions"] = _mapped_effect_current_descriptions(
+		bound_keys, _family_max_prestige_level(family_handle))
+	var seen := {}
+	for name in effect_names:
+		seen[String(name)] = true
+	for name in snapshot["bound_effect_display_names"]:
+		var label := String(name).strip_edges()
+		if label.is_empty() or seen.has(label):
+			continue
+		seen[label] = true
+		effect_names.append(label)
+	snapshot["effect_display_names"] = effect_names
 	return snapshot
 
 
@@ -741,6 +823,14 @@ func get_family_branch_effects(family_handle: int, cell_idx: int) -> Dictionary:
 		trigger_keys, _family_trigger_displays)
 	snapshot["trigger_descriptions"] = _mapped_effect_descriptions(
 		trigger_keys, _family_trigger_displays)
+	var effect_keys: PackedStringArray = snapshot.get(
+		"effect_definition_keys", PackedStringArray())
+	snapshot["effect_display_names"] = _mapped_effect_names(
+		effect_keys, _family_effect_displays)
+	var prestige_level := int(snapshot.get("prestige_level", 0))
+	snapshot["effect_current_descriptions"] = _mapped_effect_current_descriptions(
+		effect_keys, prestige_level)
+	snapshot["effect_descriptions"] = snapshot["effect_current_descriptions"]
 	return snapshot
 
 
@@ -1300,7 +1390,9 @@ func _attach_population_display_metadata(snapshot: Dictionary) -> void:
 
 func _load_family_effect_displays() -> void:
 	_family_trait_descriptions.clear()
+	_family_trait_copy.clear()
 	_family_trait_effect_keys.clear()
+	_family_effect_displays.clear()
 	_family_modifier_displays.clear()
 	_family_trigger_displays.clear()
 	var trait_catalog = FamilyTraitCatalogScript.load_default()
@@ -1313,6 +1405,12 @@ func _load_family_effect_displays() -> void:
 				continue
 			_family_trait_descriptions[trait_key] = String(
 				definition.description).strip_edges()
+			_family_trait_copy[trait_key] = {
+				"template": String(definition.get("description_template")).strip_edges(),
+				"range_text": String(definition.get("range_text")).strip_edges(),
+				"strength_min_q16": int(definition.strength_min_q16),
+				"strength_max_q16": int(definition.strength_max_q16),
+			}
 			var effect_keys := PackedStringArray()
 			var seen := {}
 			for effect in definition.modifiers:
@@ -1333,6 +1431,10 @@ func _load_family_effect_displays() -> void:
 					seen[trigger_key] = true
 					effect_keys.append(trigger_key)
 			_family_trait_effect_keys[trait_key] = effect_keys
+	var effect_catalog = FamilyEffectCatalogScript.load_default()
+	if effect_catalog != null:
+		for definition in effect_catalog.effects:
+			_store_family_effect_display(definition)
 	var modifier_catalog = ModifierCatalogScript.load_default()
 	if modifier_catalog != null:
 		for definition in modifier_catalog.definitions:
@@ -1340,6 +1442,8 @@ func _load_family_effect_displays() -> void:
 	var trigger_catalog = TriggerCatalogScript.load_default()
 	if trigger_catalog != null:
 		for definition in trigger_catalog.definitions:
+			_store_effect_display(_family_trigger_displays, definition)
+		for definition in TriggerCatalogScript._family_buff_definitions():
 			_store_effect_display(_family_trigger_displays, definition)
 
 
@@ -1355,10 +1459,43 @@ static func _store_effect_display(table: Dictionary, definition: Resource) -> vo
 	}
 
 
-func _family_trait_description_column(trait_keys: PackedStringArray) -> PackedStringArray:
+func _store_family_effect_display(definition: Resource) -> void:
+	if definition == null:
+		return
+	var raw := String(definition.get("key")).strip_edges()
+	if raw.is_empty():
+		return
+	var program_key := raw if raw.begins_with("family.effect.") \
+		else "family.effect.%s" % raw
+	var entry := {
+		"display_name": String(definition.get("display_name")).strip_edges(),
+		"description": String(definition.get("description")).strip_edges(),
+		"prestige_descriptions": FamilyBuffCopyScript.prestige_statements(
+			String(definition.get("description")),
+			definition.get("prestige_descriptions")),
+	}
+	_family_effect_displays[program_key] = entry
+	_family_effect_displays[raw] = entry
+
+
+func _family_trait_description_column(trait_keys: PackedStringArray,
+		strengths: PackedInt32Array = PackedInt32Array()) -> PackedStringArray:
 	var descriptions := PackedStringArray()
-	for trait_key in trait_keys:
-		descriptions.append(String(_family_trait_descriptions.get(String(trait_key), "")))
+	for index in range(trait_keys.size()):
+		var trait_key := String(trait_keys[index])
+		var copy: Dictionary = _family_trait_copy.get(trait_key, {})
+		var template := String(copy.get("template", "")).strip_edges()
+		if template.is_empty():
+			descriptions.append(String(_family_trait_descriptions.get(trait_key, "")))
+			continue
+		var strength := int(strengths[index]) if index < strengths.size() \
+			else int(copy.get("strength_min_q16", 65536))
+		descriptions.append(FamilyBuffCopyScript.interpolate_preference(
+			template,
+			String(copy.get("range_text", "")),
+			strength,
+			int(copy.get("strength_min_q16", 0)),
+			int(copy.get("strength_max_q16", 0))))
 	return descriptions
 
 
@@ -1378,6 +1515,10 @@ func _family_trait_effect_display_names(trait_keys: PackedStringArray) -> Packed
 
 
 func _effect_display_name(effect_key: String) -> String:
+	var family_effect: Dictionary = _family_effect_displays.get(effect_key, {})
+	var family_name := String(family_effect.get("display_name", ""))
+	if not family_name.is_empty():
+		return family_name
 	var modifier: Dictionary = _family_modifier_displays.get(effect_key, {})
 	var modifier_name := String(modifier.get("display_name", ""))
 	if not modifier_name.is_empty():
@@ -1404,6 +1545,32 @@ func _mapped_effect_descriptions(keys: PackedStringArray, table: Dictionary) -> 
 		var entry: Dictionary = table.get(String(key), {})
 		descriptions.append(String(entry.get("description", "")).strip_edges())
 	return descriptions
+
+
+func _mapped_effect_current_descriptions(keys: PackedStringArray,
+		prestige_level: int) -> PackedStringArray:
+	var descriptions := PackedStringArray()
+	for key in keys:
+		var entry: Dictionary = _family_effect_displays.get(String(key), {})
+		var statements: PackedStringArray = entry.get(
+			"prestige_descriptions", PackedStringArray())
+		var current := FamilyBuffCopyScript.statement_for_prestige(
+			statements, prestige_level)
+		if current.is_empty():
+			current = String(entry.get("description", "")).strip_edges()
+		descriptions.append(current)
+	return descriptions
+
+
+func _family_max_prestige_level(family_handle: int) -> int:
+	var branches: Dictionary = family_branches(family_handle, 0, 64)
+	if not bool(branches.get("ok", false)):
+		return 0
+	var prestige := 0
+	var levels: PackedInt32Array = branches.get("prestige_levels", PackedInt32Array())
+	for level in levels:
+		prestige = maxi(prestige, int(level))
+	return prestige
 
 
 static func _load_display_names(directory: String) -> Dictionary:

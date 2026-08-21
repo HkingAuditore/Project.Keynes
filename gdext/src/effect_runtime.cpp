@@ -479,7 +479,7 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
             (definition.lifecycle == 1 && definition.duration_days < 1) ||
             (definition.lifecycle != 1 && definition.duration_days == 0) ||
             definition.max_stacks <= 0 || definition.target_selector_kind < 0 ||
-            definition.target_selector_kind > 5 ||
+            definition.target_selector_kind > 7 ||
             (definition.lifecycle == 1 && definition.command_count == 0))
             return failure("effect_family_metadata_invalid");
         if (definition.condition_begin < 0 || definition.condition_count < 0 ||
