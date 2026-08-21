@@ -70,6 +70,8 @@ enum TargetSelectorKind {
 @export var priority: int = 0
 @export var target_selector_kind: int = TargetSelectorKind.OWNER
 @export var target_selector_id: StringName = &""
+@export var exclusion_keys: PackedStringArray = PackedStringArray()
+@export var magnitude_by_prestige_q16: PackedInt32Array = PackedInt32Array()
 @export var conditions: Array[Resource] = []
 @export var instructions: Array[Resource] = []
 @export var commands: Array[Resource] = []
@@ -95,4 +97,5 @@ func to_effect_definition() -> Resource:
 	definition.priority = priority
 	definition.target_selector_kind = target_selector_kind
 	definition.target_selector_id = target_selector_id
+	definition.magnitude_by_prestige_q16 = magnitude_by_prestige_q16.duplicate()
 	return definition

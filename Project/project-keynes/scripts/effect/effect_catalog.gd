@@ -8,6 +8,7 @@ const EffectInstructionScript = preload("res://scripts/effect/effect_instruction
 const EffectCommandScript = preload("res://scripts/effect/effect_command.gd")
 
 const PROTOCOL_VERSION := 1
+const Q16_ONE := 65536
 
 @export var metric_keys: PackedStringArray = PackedStringArray()
 @export var behavior_command_keys: PackedStringArray = PackedStringArray()
@@ -47,6 +48,7 @@ func compile_native_catalog() -> Dictionary:
 		"max_stacks": PackedInt32Array(), "priorities": PackedInt32Array(),
 		"target_selector_kinds": PackedInt32Array(),
 		"target_selector_ids": PackedStringArray(),
+		"magnitude_by_prestige_q16": PackedInt32Array(),
 		"condition_offsets": PackedInt32Array([0]), "condition_ops": PackedInt32Array(),
 		"condition_arg0": PackedInt32Array(), "condition_values": PackedInt64Array(),
 		"instruction_offsets": PackedInt32Array([0]), "instruction_ops": PackedInt32Array(),
@@ -94,6 +96,16 @@ func compile_native_catalog() -> Dictionary:
 		out.priorities.append(int(definition.priority))
 		out.target_selector_kinds.append(int(definition.target_selector_kind))
 		out.target_selector_ids.append(String(definition.target_selector_id))
+		var prestige := PackedInt32Array(definition.magnitude_by_prestige_q16)
+		if prestige.size() == 0:
+			prestige = PackedInt32Array([Q16_ONE, Q16_ONE, Q16_ONE, Q16_ONE, Q16_ONE, Q16_ONE])
+		if prestige.size() != 6:
+			return {"ok": false, "reason": "effect_prestige_magnitude_shape_invalid"}
+		for tier in range(6):
+			var magnitude := int(prestige[tier])
+			if magnitude < 0 or magnitude > Q16_ONE * 4:
+				return {"ok": false, "reason": "effect_prestige_magnitude_invalid"}
+			out.magnitude_by_prestige_q16.append(magnitude)
 		for condition in definition.conditions:
 			if condition == null or not condition is EffectConditionScript:
 				return {"ok": false, "reason": "effect_condition_resource_invalid"}
@@ -182,6 +194,7 @@ static func _economy_opcode_registered(opcode: int) -> bool:
 	# 1-15 are the original ledger/family reward opcodes. 17-19 are family
 	# expedition commands. 21-22 are conserved family absorb/discount adapters.
 	# COMMAND_BUILD_CANAL=20 stays domain-only and is not authored here.
+	# COMMAND_FAMILY_SET_SPLIT_POLICY=23 only mutates FamilyStore flags.
 	return (opcode >= 1 and opcode <= 15) \
 		or (opcode >= 17 and opcode <= 19) \
-		or opcode == 21 or opcode == 22
+		or opcode == 21 or opcode == 22 or opcode == 23

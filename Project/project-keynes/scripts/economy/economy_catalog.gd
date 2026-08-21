@@ -676,6 +676,10 @@ static func compile_native_catalog(
 		catalog.get("technology_ids", PackedStringArray()))
 	if not bool(family_effect_ir.get("ok", false)):
 		return family_effect_ir
+	family_effect_ir.erase("ok")
+	family_effect_ir.erase("definitions")
+	for key in family_effect_ir:
+		catalog[key] = family_effect_ir[key]
 	var trait_columns: Dictionary = trait_catalog.compile_native_columns(
 		catalog, family_effect_ir.get("family_effect_keys", PackedStringArray()),
 		family_effect_ir.get("family_effect_source_kinds", PackedInt32Array()))

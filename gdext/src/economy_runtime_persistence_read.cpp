@@ -725,6 +725,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         _family_traits.clear();
         _family_trait_commands.clear();
         _family_modifier_bindings.clear();
+        _family_industry_stats.clear();
+        _family_owned_output_rows.clear();
         _person_needs.clear();
         _person_needs_normalized = false;
         _family_member_offsets.clear();

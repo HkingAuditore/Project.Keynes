@@ -291,6 +291,12 @@ func _resolve_selectors(behavior: Resource,
 			stable_ids = economy_columns.get("good_ids", PackedStringArray())
 		_:
 			return PackedInt32Array()
+	if selector_id == "*" or selector_id == "all":
+		var expanded := PackedInt32Array()
+		expanded.resize(stable_ids.size())
+		for index in range(stable_ids.size()):
+			expanded[index] = index
+		return expanded
 	if behavior.selector_kind == BehaviorScript.SelectorKind.STABLE_ID:
 		var dense_id := stable_ids.find(selector_id)
 		return PackedInt32Array([dense_id]) if dense_id >= 0 else PackedInt32Array()

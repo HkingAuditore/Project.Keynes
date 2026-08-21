@@ -18,8 +18,9 @@ const Q16_ONE := 65536
 
 ## Builds the shared Effect IR from existing authoritative domain catalogs.
 ## Domain catalogs remain the source of truth; this only creates executable
-## programs and never duplicates domain state.
-static func build() -> Resource:
+## programs and never duplicates domain state. Tests may inject a FamilyEffect
+## catalog fixture; production callers omit the override and load the default.
+static func build(family_effect_catalog_override: Resource = null) -> Resource:
 	var catalog: Resource = EffectCatalogScript.load_default()
 	if catalog == null:
 		catalog = EffectCatalogScript.new()
@@ -42,6 +43,13 @@ static func build() -> Resource:
 		"branch.is_local_prestige_max",
 		"cell.rain_event",
 		"cell.resource_abundance_q16",
+		"family.has_owned_manufacturing",
+		"family.distinct_sector_count",
+		"family.dominant_sector_id",
+		"family.dominant_sector_share_q16",
+		"family.complete_chain_count",
+		"family.max_local_chain_share_q16",
+		"family.max_chain_upgrade_family_id",
 	])
 	catalog.behavior_command_keys = PackedStringArray()
 	var definitions: Array[Resource] = []
@@ -97,7 +105,9 @@ static func build() -> Resource:
 	# Family effects are authored independently from traits and compiled into
 	# the same immutable EffectDefinition table. An empty default catalog is a
 	# valid no-op, so existing worlds retain their current behavior.
-	var family_effect_catalog: Resource = FamilyEffectCatalogScript.load_default()
+	var family_effect_catalog: Resource = family_effect_catalog_override
+	if family_effect_catalog == null:
+		family_effect_catalog = FamilyEffectCatalogScript.load_default()
 	var family_effect_ir: Dictionary = {}
 	if family_effect_catalog != null:
 		family_effect_ir = family_effect_catalog.compile_native_catalog(
@@ -304,6 +314,7 @@ static func _trigger_economy_command_rows() -> Array[Dictionary]:
 		{"command_key": "family.population_reward", "opcode": 15},
 		{"command_key": "family.absorb_anonymous", "opcode": 21},
 		{"command_key": "family.purchase_discount", "opcode": 22},
+		{"command_key": "family.set_split_policy", "opcode": 23},
 	]
 
 

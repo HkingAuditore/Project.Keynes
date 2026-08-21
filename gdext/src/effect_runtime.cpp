@@ -459,6 +459,18 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
         definition.priority = i32_at(priorities, i, 0);
         definition.target_selector_kind = i32_at(target_selector_kinds, i, 0);
         definition.target_selector_id = string_at(target_selector_ids, i);
+        const PackedInt32Array prestige_magnitudes = get_i32(
+            catalog, "magnitude_by_prestige_q16");
+        for (int32_t tier = 0; tier < 6; ++tier) {
+            const int32_t packed_index = i * 6 + tier;
+            definition.magnitude_by_prestige_q16[tier] =
+                prestige_magnitudes.size() == count * 6
+                    ? i32_at(prestige_magnitudes, packed_index, Q16_ONE)
+                    : Q16_ONE;
+            if (definition.magnitude_by_prestige_q16[tier] < 0 ||
+                definition.magnitude_by_prestige_q16[tier] > 4 * Q16_ONE)
+                return failure("effect_prestige_magnitude_invalid");
+        }
         if (definition.source_kind < 0 || definition.source_kind > 5 ||
             definition.target_domain < 0 || definition.target_domain > 5 ||
             definition.operation < 0 || definition.operation > 4 ||
@@ -492,7 +504,7 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
              condition.op == METRIC_EQ) &&
             (condition.arg0 < 0 || condition.arg0 >= _metric_count))
             return failure("effect_condition_metric_invalid");
-        if (condition.op == STATE_GTE && (condition.arg0 < 0 || condition.arg0 > 2))
+        if (condition.op == STATE_GTE && (condition.arg0 < 0 || condition.arg0 > 3))
             return failure("effect_condition_state_invalid");
         _conditions.push_back(condition);
     }
@@ -522,7 +534,7 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
             return failure("effect_instruction_opcode_invalid");
         if (row.op == READ_METRIC && (row.arg0 < 0 || row.arg0 >= _metric_count))
             return failure("effect_instruction_metric_invalid");
-        if (row.op == READ_STATE && (row.arg0 < 0 || row.arg0 > 2))
+        if (row.op == READ_STATE && (row.arg0 < 0 || row.arg0 > 3))
             return failure("effect_instruction_state_invalid");
         if (row.op == CLAMP && row.value > static_cast<int64_t>(row.arg0))
             return failure("effect_instruction_clamp_invalid");
@@ -564,7 +576,9 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
                 command_error) ||
             command.value_mode < VALUE_CONSTANT || command.value_mode > VALUE_STACK_TOP ||
             command.command_key.empty() ||
-            (command.action != MODIFIER_COMMAND && command.definition_key.empty()) ||
+            (command.action != MODIFIER_COMMAND &&
+             command.action != ECONOMY_COMMAND &&
+             command.definition_key.empty()) ||
             (command.target_resolver == TARGET_STATIC && command.static_target == 0))
             return failure(command_error.empty() ? "effect_command_definition_invalid"
                                                  : command_error.c_str());
@@ -762,6 +776,8 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
         hash = fnv_value(hash, definition.priority);
         hash = fnv_value(hash, definition.target_selector_kind);
         hash = fnv_string(hash, definition.target_selector_id);
+        for (int32_t tier = 0; tier < 6; ++tier)
+            hash = fnv_value(hash, definition.magnitude_by_prestige_q16[tier]);
     }
     for (const Condition &condition : _conditions) {
         hash = fnv_value(hash, condition.op);
@@ -2130,6 +2146,9 @@ bool EffectRuntime::family_effect_metadata_pod(
     out.target_selector_id = definition.target_selector_id;
     out.stack_key_hash = fnv_string(1469598103934665603ULL,
         definition.stack_key.empty() ? definition.key : definition.stack_key);
+    for (int32_t tier = 0; tier < 6; ++tier)
+        out.magnitude_by_prestige_q16[tier] =
+            definition.magnitude_by_prestige_q16[tier];
     auto include_metric = [&](int32_t metric_id) {
         if (metric_id >= 0 && metric_id < 64)
             out.metric_mask |= 1ULL << static_cast<uint32_t>(metric_id);
@@ -2146,6 +2165,25 @@ bool EffectRuntime::family_effect_metadata_pod(
         const InstructionRow &instruction = _instructions[static_cast<size_t>(row)];
         if (instruction.op == READ_METRIC) include_metric(instruction.arg0);
     }
+    return true;
+}
+
+bool EffectRuntime::refresh_managed_duration_pod(int64_t instance_id,
+                                                 uint32_t generation,
+                                                 int64_t day_index) {
+    const int32_t index = instance_index_for_id(instance_id);
+    if (index < 0 || index >= static_cast<int32_t>(_instances.size()))
+        return false;
+    Instance &instance = _instances[static_cast<size_t>(index)];
+    if (instance.generation != generation || instance.program_id < 0 ||
+        instance.program_id >= static_cast<int32_t>(_definitions.size()))
+        return false;
+    const Definition &definition = _definitions[
+        static_cast<size_t>(instance.program_id)];
+    if (definition.lifecycle != 1 || definition.stack_policy != 1)
+        return false;
+    instance.expires_day = std::max<int64_t>(0, day_index) +
+        static_cast<int64_t>(definition.duration_days);
     return true;
 }
 
@@ -3225,6 +3263,14 @@ int64_t EffectRuntime::state_value(const Instance &instance, int32_t state_id) c
         case 0: return static_cast<int64_t>(instance.level) * Q16_ONE;
         case 1: return static_cast<int64_t>(instance.fire_sequence) * Q16_ONE;
         case 2: return instance.input_revision;
+        case 3: {
+            if (instance.expires_day < 0) return 0;
+            const int64_t remaining = std::max<int64_t>(0,
+                instance.expires_day - _current_day);
+            if (remaining > std::numeric_limits<int64_t>::max() / Q16_ONE)
+                return std::numeric_limits<int64_t>::max();
+            return remaining * Q16_ONE;
+        }
         default: return 0;
     }
 }
@@ -4266,6 +4312,11 @@ Dictionary EffectRuntime::run_daily(int64_t day_index) {
                  ? instance.desired_stack_count
                  : std::max(1, instance.stack_count)));
         if (passes) {
+            if (definition.lifecycle == 1 && definition.stack_policy == 1 &&
+                !instance.effect_applied) {
+                instance.expires_day = day_index +
+                    static_cast<int64_t>(definition.duration_days);
+            }
             if (managed_lifecycle && !managed_update_due) {
                 instance.next_due_day = day_index + std::max<int32_t>(
                     1, definition.cadence_days);
@@ -5001,7 +5052,8 @@ Dictionary EffectRuntime::dispatch_native_economy(NativeEconomyRuntime *economy_
                 command->opcode < NativeEconomyRuntime::COMMAND_TRANSFER_TO_COHORT ||
                 (command->opcode > NativeEconomyRuntime::COMMAND_SETTLE_FAMILY_EXPEDITION &&
                  command->opcode != NativeEconomyRuntime::COMMAND_FAMILY_ABSORB_ANONYMOUS &&
-                 command->opcode != NativeEconomyRuntime::COMMAND_FAMILY_PURCHASE_DISCOUNT)) {
+                 command->opcode != NativeEconomyRuntime::COMMAND_FAMILY_PURCHASE_DISCOUNT &&
+                 command->opcode != NativeEconomyRuntime::COMMAND_FAMILY_SET_SPLIT_POLICY)) {
                 supported = false;
                 break;
             }

@@ -128,6 +128,8 @@ public:
         std::string target_selector_id;
         uint64_t stack_key_hash = 0;
         uint64_t metric_mask = 0;
+        int32_t magnitude_by_prestige_q16[6] = {
+            Q16_ONE, Q16_ONE, Q16_ONE, Q16_ONE, Q16_ONE, Q16_ONE};
     };
 
     // Durable identity for an external owner (ideology, trigger, etc.).  The
@@ -194,6 +196,8 @@ public:
     bool has_instance_pod(int64_t instance_id, uint32_t generation) const;
     bool family_effect_metadata_pod(const std::string &program_key,
                                     FamilyEffectMetadataPod &out) const;
+    bool refresh_managed_duration_pod(int64_t instance_id, uint32_t generation,
+                                      int64_t day_index);
     bool upsert_external_binding_pod(int64_t binding_id, uint32_t generation,
                                      int32_t source_type, int64_t source_id,
                                      uint64_t target_handle,
@@ -393,6 +397,8 @@ private:
         int32_t priority = 0;
         int32_t target_selector_kind = 0;
         std::string target_selector_id;
+        int32_t magnitude_by_prestige_q16[6] = {
+            Q16_ONE, Q16_ONE, Q16_ONE, Q16_ONE, Q16_ONE, Q16_ONE};
     };
     struct Instance {
         int64_t id = 0;
