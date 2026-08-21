@@ -579,6 +579,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
             cmd.opcode == COMMAND_COUNTRY_GOOD_TO_MARKET ||
             cmd.opcode == COMMAND_MARKET_GOOD_TO_COUNTRY;
         const bool family_reward = is_family_ledger_command(cmd.opcode);
+        const bool split_policy = cmd.opcode == COMMAND_FAMILY_SET_SPLIT_POLICY;
         const bool treasury_build =
             cmd.opcode == COMMAND_TREASURY_SPONSORED_BUILD;
         const bool canal_build = cmd.opcode == COMMAND_BUILD_CANAL;
@@ -589,6 +590,8 @@ Dictionary NativeEconomyRuntime::end_restore() {
         int32_t expedition = -1;
         const bool target_ok = family_reward
             ? family_ledger_command_preflight(cmd)
+            : split_policy
+            ? family_split_policy_command_preflight(cmd)
             : treasury_build
             ? (_country_runtime != nullptr && _country_runtime->valid_handle(
                    static_cast<int64_t>(cmd.target_handle)) &&
@@ -617,7 +620,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
         const bool opcode_ok =
             (cmd.opcode >= COMMAND_TRANSFER_TO_COHORT &&
              cmd.opcode <= COMMAND_BUILD_CANAL) ||
-            family_reward;
+            family_reward || split_policy;
         if (!opcode_ok ||
             !target_ok || cmd.effective_day < 0 || cmd.sequence < 0 ||
             (cmd.i64_0 < 0 && cmd.opcode != COMMAND_ADD_POPULATION &&
@@ -1095,6 +1098,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
         reconcile_family_branch_effects(
             _family_influences.handle_for_index(branch), false);
     }
+    rebuild_family_owned_output_csr();
     rebuild_person_indices();
     _bootstrapped = true;
     _fatal = false;

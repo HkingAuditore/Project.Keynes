@@ -297,6 +297,8 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _family_effect_binding_by_instance.clear();
     _family_effect_instances_by_branch.clear();
     _family_effect_instances_by_cell.clear();
+    _family_industry_stats.clear();
+    _family_owned_output_rows.clear();
     _family_modifier_bindings.clear();
     _family_trigger_bindings.clear();
     _person_needs.clear();
@@ -1024,6 +1026,10 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
         _family_modifier_bindings.size());
     out["family_effect_binding_count"] = static_cast<int64_t>(
         _family_effect_bindings.size());
+    out["family_owned_output_row_count"] = static_cast<int64_t>(
+        _family_owned_output_rows.size());
+    out["family_industry_stat_count"] = static_cast<int64_t>(
+        _family_industry_stats.size());
     out["family_trigger_binding_count"] = static_cast<int64_t>(
         _family_trigger_bindings.size());
     out["family_membership_edges_processed"] =
@@ -1079,10 +1085,11 @@ Dictionary NativeEconomyRuntime::submit_commands(const Dictionary &batch) {
     // Preflight the whole batch before mutating the queue.
     for (size_t i = 0; i < n; ++i) {
         const bool family_reward = is_family_ledger_command(opcodes[i]);
+        const bool split_policy = opcodes[i] == COMMAND_FAMILY_SET_SPLIT_POLICY;
         const bool allowed_opcode =
             (opcodes[i] >= COMMAND_TRANSFER_TO_COHORT &&
              opcodes[i] <= COMMAND_TREASURY_SPONSORED_BUILD) ||
-            family_reward;
+            family_reward || split_policy;
         if (!allowed_opcode || days[i] < 0 || sequences[i] < 0 ||
             (i64_0[i] < 0 && opcodes[i] != COMMAND_ADD_POPULATION &&
              opcodes[i] != COMMAND_FAMILY_PURCHASE_DISCOUNT &&
@@ -1094,7 +1101,8 @@ Dictionary NativeEconomyRuntime::submit_commands(const Dictionary &batch) {
         }
         const bool treasury_build =
             opcodes[i] == COMMAND_TREASURY_SPONSORED_BUILD;
-        if (!family_reward && !treasury_build && opcodes[i] != COMMAND_ADD_STOCK &&
+        if (!family_reward && !treasury_build && !split_policy &&
+            opcodes[i] != COMMAND_ADD_STOCK &&
             opcodes[i] != COMMAND_REMOVE_STOCK &&
             opcodes[i] != COMMAND_COUNTRY_GOOD_TO_MARKET &&
             opcodes[i] != COMMAND_MARKET_GOOD_TO_COUNTRY) {
@@ -1168,6 +1176,21 @@ Dictionary NativeEconomyRuntime::submit_commands(const Dictionary &batch) {
                 return out;
             }
         }
+        if (split_policy) {
+            Command probe;
+            probe.opcode = opcodes[i];
+            probe.target_handle = static_cast<uint64_t>(handles[i]);
+            probe.i32_0 = i32_0[i];
+            probe.i32_1 = i32_1[i];
+            probe.i64_0 = i64_0[i];
+            probe.i64_1 = i64_1[i];
+            if (!family_split_policy_command_preflight(probe)) {
+                out["ok"] = false;
+                out["reason"] = "command_family_split_policy_invalid";
+                out["index"] = static_cast<int64_t>(i);
+                return out;
+            }
+        }
     }
     for (size_t i = 0; i < n; ++i) {
         _pending_commands.push_back({opcodes[i], days[i], sequences[i],
@@ -1200,13 +1223,28 @@ bool NativeEconomyRuntime::family_ledger_command_preflight(const Command &cmd) c
     return false;
 }
 
+bool NativeEconomyRuntime::family_split_policy_command_preflight(
+        const Command &cmd) const {
+    if (cmd.opcode != COMMAND_FAMILY_SET_SPLIT_POLICY) return false;
+    if (cmd.i32_0 != static_cast<int32_t>(FAMILY_FLAG_SPLIT_RETAIN_ONLY) &&
+        cmd.i32_0 != static_cast<int32_t>(FAMILY_FLAG_SPLIT_BONUS_WEIGHT))
+        return false;
+    if (cmd.i64_0 < 0 || cmd.i64_0 > 255) return false;
+    int32_t family = -1;
+    int32_t branch = -1;
+    if (_families.valid_handle(cmd.target_handle, family)) return true;
+    return _family_influences.valid_handle(cmd.target_handle, branch) &&
+        _families.valid_handle(_family_influences.family_handle[branch], family);
+}
+
 bool NativeEconomyRuntime::validate_command_pod(const Command &cmd,
                                                 std::string &error) const {
     const bool family_reward = is_family_ledger_command(cmd.opcode);
+    const bool split_policy = cmd.opcode == COMMAND_FAMILY_SET_SPLIT_POLICY;
     const bool opcode_ok =
         (cmd.opcode >= COMMAND_TRANSFER_TO_COHORT &&
          cmd.opcode <= COMMAND_SETTLE_FAMILY_EXPEDITION) ||
-        family_reward;
+        family_reward || split_policy;
     if (!opcode_ok ||
         cmd.effective_day < 0 || cmd.sequence < 0 ||
         (cmd.i64_0 < 0 && cmd.opcode != COMMAND_ADD_POPULATION &&
@@ -1220,7 +1258,8 @@ bool NativeEconomyRuntime::validate_command_pod(const Command &cmd,
     const bool expedition_player =
         cmd.opcode == COMMAND_START_FAMILY_EXPEDITION ||
         cmd.opcode == COMMAND_CANCEL_FAMILY_EXPEDITION;
-    if (!family_reward && !expedition_settle && !expedition_player &&
+    if (!family_reward && !split_policy && !expedition_settle &&
+        !expedition_player &&
         cmd.opcode != COMMAND_ADD_STOCK &&
         cmd.opcode != COMMAND_REMOVE_STOCK &&
         cmd.opcode != COMMAND_COUNTRY_GOOD_TO_MARKET &&
@@ -1264,6 +1303,10 @@ bool NativeEconomyRuntime::validate_command_pod(const Command &cmd,
     }
     if (family_reward && !family_ledger_command_preflight(cmd)) {
         error = "command_family_reward_target_invalid";
+        return false;
+    }
+    if (split_policy && !family_split_policy_command_preflight(cmd)) {
+        error = "command_family_split_policy_invalid";
         return false;
     }
     if (expedition_settle) {

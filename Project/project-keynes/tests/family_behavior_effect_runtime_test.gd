@@ -68,21 +68,29 @@ func _test_catalog_compile() -> void:
 	_expect("effect domain catalog compiles trigger.economy family commands",
 		bool(domain_ir.get("ok", false)))
 	var metric_keys: PackedStringArray = domain_ir.get("metric_keys", PackedStringArray())
-	_expect("family effect metrics 0-9 stay stable and 10-14 append at the end",
-		metric_keys.size() >= 15
+	_expect("family effect metrics 0-14 stay stable and 15-21 append at the end",
+		metric_keys.size() >= 22
 		and String(metric_keys[0]) == "family.magnitude_q16"
 		and String(metric_keys[9]) == "cell.population"
 		and String(metric_keys[10]) == "cell.landform"
 		and String(metric_keys[11]) == "cell.essentials_shortage_q16"
 		and String(metric_keys[12]) == "branch.is_local_prestige_max"
 		and String(metric_keys[13]) == "cell.rain_event"
-		and String(metric_keys[14]) == "cell.resource_abundance_q16")
+		and String(metric_keys[14]) == "cell.resource_abundance_q16"
+		and String(metric_keys[15]) == "family.has_owned_manufacturing"
+		and String(metric_keys[16]) == "family.distinct_sector_count"
+		and String(metric_keys[17]) == "family.dominant_sector_id"
+		and String(metric_keys[18]) == "family.dominant_sector_share_q16"
+		and String(metric_keys[19]) == "family.complete_chain_count"
+		and String(metric_keys[20]) == "family.max_local_chain_share_q16"
+		and String(metric_keys[21]) == "family.max_chain_upgrade_family_id")
 	var effect_keys: PackedStringArray = domain_ir.get("effect_keys", PackedStringArray())
 	_expect("trigger.economy family ledger programs are compiled",
 		effect_keys.has("trigger.economy.family.free_building")
 		and effect_keys.has("trigger.economy.family.population_reward")
 		and effect_keys.has("trigger.economy.family.absorb_anonymous")
-		and effect_keys.has("trigger.economy.family.purchase_discount"))
+		and effect_keys.has("trigger.economy.family.purchase_discount")
+		and effect_keys.has("trigger.economy.family.set_split_policy"))
 	var unknown_tech: Resource = _behavior_catalog(
 		"stone_age_hunting_camp", [], PackedStringArray(["tech.does_not_exist"]))
 	var unknown: Dictionary = EconomyCatalogScript.compile_native_catalog(null, unknown_tech)

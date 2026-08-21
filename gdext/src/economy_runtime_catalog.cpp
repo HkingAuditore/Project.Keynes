@@ -245,6 +245,105 @@ bool NativeEconomyRuntime::compile_family_trait_catalog(
             error = "family_trait_effect_key_invalid";
             return false;
         }
+    return compile_family_effect_catalog(catalog, error);
+}
+
+bool NativeEconomyRuntime::compile_family_effect_catalog(
+        const Dictionary &catalog, std::string &error) {
+    _family_effect_catalog_version = dict_num<int32_t>(
+        catalog, "family_effect_catalog_version", 0);
+    _family_effect_catalog_hash = dict_num<int64_t>(
+        catalog, "family_effect_catalog_hash", 0);
+    _family_effect_keys = packed_strings(catalog, "family_effect_keys");
+    _family_effect_source_kinds = packed_i32(catalog, "family_effect_source_kinds");
+    _family_effect_weights = packed_i32(catalog, "family_effect_weights");
+    _family_effect_random_pool_eligible = economy_packed_u8(
+        catalog, "family_effect_random_pool_eligible");
+    _family_effect_prerequisite_offsets = packed_i32(
+        catalog, "family_effect_prerequisite_offsets");
+    _family_effect_prerequisites = packed_i32(
+        catalog, "family_effect_prerequisite_technology_indices");
+    if (_family_effect_prerequisites.empty())
+        _family_effect_prerequisites = packed_i32(
+            catalog, "family_effect_prerequisites");
+    _family_effect_exclusion_offsets = packed_i32(
+        catalog, "family_effect_exclusion_offsets");
+    _family_effect_exclusions = packed_i32(catalog, "family_effect_exclusions");
+    _family_effect_magnitude_by_prestige_q16 = packed_i32(
+        catalog, "family_effect_magnitude_by_prestige_q16");
+    const size_t count = _family_effect_keys.size();
+    if (count == 0) {
+        _family_effect_source_kinds.clear();
+        _family_effect_weights.clear();
+        _family_effect_random_pool_eligible.clear();
+        _family_effect_prerequisite_offsets.assign(1, 0);
+        _family_effect_prerequisites.clear();
+        _family_effect_exclusion_offsets.assign(1, 0);
+        _family_effect_exclusions.clear();
+        _family_effect_magnitude_by_prestige_q16.clear();
+        return true;
+    }
+    if (_family_effect_catalog_version <= 0 || _family_effect_catalog_hash == 0 ||
+        _family_effect_source_kinds.size() != count ||
+        _family_effect_weights.size() != count ||
+        _family_effect_random_pool_eligible.size() != count) {
+        error = "family_effect_catalog_shape_invalid";
+        return false;
+    }
+    if (_family_effect_prerequisite_offsets.empty())
+        _family_effect_prerequisite_offsets.assign(count + 1, 0);
+    if (_family_effect_exclusion_offsets.empty())
+        _family_effect_exclusion_offsets.assign(count + 1, 0);
+    if (_family_effect_prerequisite_offsets.size() != count + 1 ||
+        _family_effect_exclusion_offsets.size() != count + 1 ||
+        _family_effect_prerequisite_offsets.front() != 0 ||
+        _family_effect_exclusion_offsets.front() != 0 ||
+        _family_effect_prerequisite_offsets.back() !=
+            static_cast<int32_t>(_family_effect_prerequisites.size()) ||
+        _family_effect_exclusion_offsets.back() !=
+            static_cast<int32_t>(_family_effect_exclusions.size())) {
+        error = "family_effect_catalog_csr_invalid";
+        return false;
+    }
+    if (_family_effect_magnitude_by_prestige_q16.empty())
+        _family_effect_magnitude_by_prestige_q16.assign(count * 6, Q16_ONE);
+    if (_family_effect_magnitude_by_prestige_q16.size() != count * 6) {
+        error = "family_effect_prestige_magnitude_shape_invalid";
+        return false;
+    }
+    const int32_t technology_count = static_cast<int32_t>(
+        packed_strings(catalog, "technology_ids").size());
+    for (size_t i = 0; i < count; ++i) {
+        if (_family_effect_keys[i].empty() ||
+            _family_effect_keys[i].rfind("family.effect.", 0) != 0 ||
+            (i > 0 && _family_effect_keys[i - 1] >= _family_effect_keys[i]) ||
+            _family_effect_source_kinds[i] < 0 ||
+            _family_effect_source_kinds[i] > 5 ||
+            _family_effect_weights[i] <= 0 ||
+            ((_family_effect_random_pool_eligible[i] != 0) !=
+                (_family_effect_source_kinds[i] == 1))) {
+            error = "family_effect_catalog_entry_invalid";
+            return false;
+        }
+        for (int32_t tier = 0; tier < 6; ++tier) {
+            const int32_t magnitude = _family_effect_magnitude_by_prestige_q16[
+                i * 6 + static_cast<size_t>(tier)];
+            if (magnitude < 0 || magnitude > 4 * Q16_ONE) {
+                error = "family_effect_prestige_magnitude_invalid";
+                return false;
+            }
+        }
+    }
+    for (int32_t id : _family_effect_prerequisites)
+        if (id < 0 || (technology_count > 0 && id >= technology_count)) {
+            error = "family_effect_technology_prerequisite_invalid";
+            return false;
+        }
+    for (int32_t id : _family_effect_exclusions)
+        if (id < 0 || id >= static_cast<int32_t>(count)) {
+            error = "family_effect_exclusion_invalid";
+            return false;
+        }
     return true;
 }
 

@@ -116,6 +116,7 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_family_colonization_population_reward);
     cap(_family_modifier_bindings); cap(_family_trigger_bindings);
     cap(_family_effect_bindings);
+    cap(_family_industry_stats); cap(_family_owned_output_rows);
     for (const FamilyEffectBinding &binding : _family_effect_bindings)
         bytes += static_cast<int64_t>(binding.definition_key.capacity());
     bytes += static_cast<int64_t>(_family_effect_binding_by_instance.size()) *
@@ -774,6 +775,10 @@ Dictionary NativeEconomyRuntime::compact_report() const {
         _family_trigger_bindings.size());
     out["family_effect_binding_count"] = static_cast<int64_t>(
         _family_effect_bindings.size());
+    out["family_owned_output_row_count"] = static_cast<int64_t>(
+        _family_owned_output_rows.size());
+    out["family_industry_stat_count"] = static_cast<int64_t>(
+        _family_industry_stats.size());
     out["family_behavior_factor_row_count"] = static_cast<int64_t>(
         _family_behavior_factor_rows.size());
     out["family_expedition_active_count"] = static_cast<int64_t>(std::count(
@@ -1559,6 +1564,10 @@ Dictionary NativeEconomyRuntime::report() const {
         _family_trigger_bindings.size());
     out["family_effect_binding_count"] = static_cast<int64_t>(
         _family_effect_bindings.size());
+    out["family_owned_output_row_count"] = static_cast<int64_t>(
+        _family_owned_output_rows.size());
+    out["family_industry_stat_count"] = static_cast<int64_t>(
+        _family_industry_stats.size());
     out["family_behavior_factor_row_count"] = static_cast<int64_t>(
         _family_behavior_factor_rows.size());
     out["family_expedition_active_count"] = static_cast<int64_t>(std::count(

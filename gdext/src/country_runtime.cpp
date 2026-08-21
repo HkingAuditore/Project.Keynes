@@ -1,6 +1,7 @@
 #include "country_runtime.h"
 #include "effect_runtime.h"
 #include "modifier_runtime.h"
+#include "economy_runtime.h"
 
 #include <algorithm>
 #include <array>
@@ -3260,6 +3261,9 @@ int32_t NativeCountryRuntime::run_research_day(int64_t day_index) {
                     handle, technology, day_index, reward_error);
                 if (!reward_error.empty())
                     _report["era_reward_error"] = String(reward_error.c_str());
+                if (_economy_runtime != nullptr)
+                    _economy_runtime->notify_era_milestone_activated(
+                        static_cast<uint64_t>(handle));
             }
             activated = true;
         }

@@ -19,6 +19,7 @@ namespace pk {
 class EffectRuntime;
 
 class ModifierRuntime;
+class NativeEconomyRuntime;
 
 // Sole mutable authority for country identity, territory, country technology,
 // and treasury state. Godot values are converted at coarse API boundaries;
@@ -241,6 +242,7 @@ public:
         return _era_reward_reference;
     }
     void attach_modifier_runtime(ModifierRuntime *runtime) { _modifier_runtime = runtime; }
+    void attach_economy_runtime(NativeEconomyRuntime *runtime) { _economy_runtime = runtime; }
     void attach_effect_runtime(EffectRuntime *runtime) {
         _effect_runtime = runtime;
         _effect_runtime_enabled = runtime != nullptr;
@@ -467,6 +469,7 @@ private:
     uint64_t _technology_content_binding_hash = 0;
     uint64_t _technology_trigger_definition_hash = 0;
     ModifierRuntime *_modifier_runtime = nullptr;
+    NativeEconomyRuntime *_economy_runtime = nullptr;
     EffectRuntime *_effect_runtime = nullptr;
     bool _effect_runtime_enabled = false;
     int32_t _starting_country_slot = -1;

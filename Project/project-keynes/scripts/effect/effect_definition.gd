@@ -26,3 +26,4 @@ extends Resource
 @export var priority: int = 0
 @export var target_selector_kind: int = 0
 @export var target_selector_id: StringName = &""
+@export var magnitude_by_prestige_q16: PackedInt32Array = PackedInt32Array()

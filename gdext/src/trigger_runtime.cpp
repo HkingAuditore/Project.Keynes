@@ -1148,6 +1148,8 @@ Dictionary TriggerRuntime::handoff_effects(EffectRuntime *effect_runtime,
                 opcode = NativeEconomyRuntime::COMMAND_FAMILY_ABSORB_ANONYMOUS;
             else if (effect.command_key == "family.purchase_discount")
                 opcode = NativeEconomyRuntime::COMMAND_FAMILY_PURCHASE_DISCOUNT;
+            else if (effect.command_key == "family.set_split_policy")
+                opcode = NativeEconomyRuntime::COMMAND_FAMILY_SET_SPLIT_POLICY;
         }
         if (!effect_runtime->enqueue_trigger_effect_pod(
                 effect.id, effect.effective_day, effect.trigger_id,

@@ -31,6 +31,9 @@ func compile_native_catalog(technology_ids: PackedStringArray = PackedStringArra
 	var selector_ids := PackedStringArray()
 	var weights := PackedInt32Array()
 	var random_pool_eligible := PackedByteArray()
+	var exclusion_offsets := PackedInt32Array([0])
+	var exclusions := PackedInt32Array()
+	var magnitude_by_prestige := PackedInt32Array()
 	var prerequisite_offsets := PackedInt32Array([0])
 	var prerequisite_technology_indices := PackedInt32Array()
 	var technology_index := {}
@@ -95,6 +98,12 @@ func compile_native_catalog(technology_ids: PackedStringArray = PackedStringArra
 		if authored.target_selector_kind == DefinitionScript.TargetSelectorKind.SELECTOR_ID \
 				and authored.target_domain != DefinitionScript.TargetDomain.BUILDING_RESOURCE:
 			return {"ok": false, "reason": "family_effect_selector_domain_invalid"}
+		if not authored.magnitude_by_prestige_q16.is_empty() \
+				and authored.magnitude_by_prestige_q16.size() != 6:
+			return {"ok": false, "reason": "family_effect_prestige_magnitude_shape_invalid"}
+		for magnitude in authored.magnitude_by_prestige_q16:
+			if int(magnitude) < 0 or int(magnitude) > 65536 * 4:
+				return {"ok": false, "reason": "family_effect_prestige_magnitude_invalid"}
 		var expected_modifier_domain := 1 if authored.target_domain == DefinitionScript.TargetDomain.COUNTRY \
 			else (0 if authored.target_domain == DefinitionScript.TargetDomain.CLIMATE else 2)
 		var has_event_command := false
@@ -168,11 +177,38 @@ func compile_native_catalog(technology_ids: PackedStringArray = PackedStringArra
 		selector_ids.append(String(authored.target_selector_id))
 		weights.append(authored.weight)
 		random_pool_eligible.append(1 if authored.random_pool_eligible else 0)
+		var prestige := PackedInt32Array(authored.magnitude_by_prestige_q16)
+		if prestige.is_empty():
+			prestige = PackedInt32Array([65536, 65536, 65536, 65536, 65536, 65536])
+		for tier in range(6):
+			magnitude_by_prestige.append(int(prestige[tier]))
+	var key_index := {}
+	for effect_index in range(keys.size()):
+		key_index[String(keys[effect_index])] = effect_index
+		var short_key := String(keys[effect_index])
+		if short_key.begins_with("family.effect."):
+			key_index[short_key.substr("family.effect.".length())] = effect_index
+	for authored in ordered:
+		var self_key := "family.effect.%s" % String(authored.key).strip_edges()
+		var seen_exclusion := {}
+		for exclusion in authored.exclusion_keys:
+			var exclusion_key := String(exclusion).strip_edges()
+			if exclusion_key.is_empty() or seen_exclusion.has(exclusion_key):
+				return {"ok": false, "reason": "family_effect_exclusion_invalid"}
+			seen_exclusion[exclusion_key] = true
+			if not key_index.has(exclusion_key):
+				return {"ok": false, "reason": "family_effect_exclusion_unknown"}
+			var resolved := int(key_index[exclusion_key])
+			if String(keys[resolved]) == self_key:
+				return {"ok": false, "reason": "family_effect_exclusion_self"}
+			exclusions.append(resolved)
+		exclusion_offsets.append(exclusions.size())
 	var canonical := [version, keys, source_kinds, target_domains, operations,
 		lifecycles, duration_days, stack_policies, stack_keys, max_stacks,
 		priorities, selector_kinds, selector_ids,
 		weights, random_pool_eligible, prerequisite_offsets,
-		prerequisite_technology_indices]
+		prerequisite_technology_indices, exclusion_offsets, exclusions,
+		magnitude_by_prestige]
 	var hash_value := hash(canonical)
 	if hash_value == 0: hash_value = 1
 	return {"ok": true, "definitions": definitions,
@@ -193,7 +229,10 @@ func compile_native_catalog(technology_ids: PackedStringArray = PackedStringArra
 		"family_effect_weights": weights,
 		"family_effect_random_pool_eligible": random_pool_eligible,
 		"family_effect_prerequisite_offsets": prerequisite_offsets,
-		"family_effect_prerequisite_technology_indices": prerequisite_technology_indices}
+		"family_effect_prerequisite_technology_indices": prerequisite_technology_indices,
+		"family_effect_exclusion_offsets": exclusion_offsets,
+		"family_effect_exclusions": exclusions,
+		"family_effect_magnitude_by_prestige_q16": magnitude_by_prestige}
 
 ## Cross-catalog checks run after Economy and Modifier have compiled their
 ## stable IDs. Keeping this separate avoids a compile-time dependency cycle:

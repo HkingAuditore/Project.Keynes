@@ -1855,6 +1855,7 @@ Dictionary NativeEconomyRuntime::family_snapshot(int64_t family_handle_value) co
             _family_culture_group_suffixes.size())
         ? from_utf8(_family_culture_group_suffixes[_families.culture_group_id[index]]) : String();
     out["decline_reviews"] = _families.decline_reviews[index];
+    out["flags"] = static_cast<int32_t>(_families.flags[index]);
     out["population"] = family_population(handle);
     out["transit_population"] = transit_population;
     out["cash_claim"] = cash;
@@ -1984,6 +1985,15 @@ Dictionary NativeEconomyRuntime::family_branch_effects(
     out["last_review_day"] = _family_influences.last_review_day[branch];
     out["modifier_definition_keys"] = definition_keys;
     out["modifier_magnitude_q16"] = magnitudes;
+    PackedStringArray effect_keys;
+    PackedInt32Array effect_magnitudes;
+    for (const FamilyEffectBinding &binding : _family_effect_bindings) {
+        if (binding.branch_handle != branch_handle) continue;
+        effect_keys.push_back(from_utf8(binding.definition_key));
+        effect_magnitudes.push_back(binding.strength_q16);
+    }
+    out["effect_definition_keys"] = effect_keys;
+    out["effect_magnitude_q16"] = effect_magnitudes;
     if (_trigger_runtime != nullptr) {
         const Dictionary progress = _trigger_runtime->branch_progress(
             branch_handle);

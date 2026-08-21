@@ -68,6 +68,9 @@ Dictionary DCWorldExt::configure_economy(const Dictionary &catalog,
             runtime_from(_economy_runtime));
     runtime_from(_economy_runtime)->attach_country_runtime(
         static_cast<NativeCountryRuntime *>(_country_runtime));
+    if (_country_runtime != nullptr)
+        static_cast<NativeCountryRuntime *>(_country_runtime)->attach_economy_runtime(
+            runtime_from(_economy_runtime));
     runtime_from(_economy_runtime)->attach_modifier_runtime(
         static_cast<ModifierRuntime *>(_modifier_runtime));
     runtime_from(_economy_runtime)->attach_trigger_runtime(

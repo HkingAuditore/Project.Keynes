@@ -151,7 +151,14 @@ public:
         COMMAND_BUILD_CANAL = 20,
         COMMAND_FAMILY_ABSORB_ANONYMOUS = 21,
         COMMAND_FAMILY_PURCHASE_DISCOUNT = 22,
+        COMMAND_FAMILY_SET_SPLIT_POLICY = 23,
     };
+
+    static constexpr uint16_t FAMILY_FLAG_SPLIT_RETAIN_ONLY = 1u;
+    static constexpr uint16_t FAMILY_FLAG_SPLIT_BONUS_WEIGHT = 2u;
+    static constexpr uint16_t FAMILY_FLAG_SPLIT_POLICY_MASK =
+        FAMILY_FLAG_SPLIT_RETAIN_ONLY | FAMILY_FLAG_SPLIT_BONUS_WEIGHT;
+    static constexpr uint16_t FAMILY_FLAG_SPLIT_WEIGHT_SHIFT = 8u;
 
     enum FamilyBehaviorScoreTerm : int32_t {
         FAMILY_SCORE_CANDIDATE_WEIGHT = 0,
@@ -178,7 +185,14 @@ public:
         FAMILY_METRIC_BRANCH_IS_LOCAL_PRESTIGE_MAX = 12,
         FAMILY_METRIC_CELL_RAIN_EVENT = 13,
         FAMILY_METRIC_CELL_RESOURCE_ABUNDANCE_Q16 = 14,
-        FAMILY_METRIC_COUNT = 15,
+        FAMILY_METRIC_HAS_OWNED_MANUFACTURING = 15,
+        FAMILY_METRIC_DISTINCT_SECTOR_COUNT = 16,
+        FAMILY_METRIC_DOMINANT_SECTOR_ID = 17,
+        FAMILY_METRIC_DOMINANT_SECTOR_SHARE_Q16 = 18,
+        FAMILY_METRIC_COMPLETE_CHAIN_COUNT = 19,
+        FAMILY_METRIC_MAX_LOCAL_CHAIN_SHARE_Q16 = 20,
+        FAMILY_METRIC_MAX_CHAIN_UPGRADE_FAMILY_ID = 21,
+        FAMILY_METRIC_COUNT = 22,
     };
 
     static bool is_family_ledger_command(int32_t opcode) {
@@ -194,7 +208,8 @@ public:
             (opcode >= COMMAND_START_FAMILY_EXPEDITION &&
              opcode <= COMMAND_SETTLE_FAMILY_EXPEDITION) ||
             opcode == COMMAND_FAMILY_ABSORB_ANONYMOUS ||
-            opcode == COMMAND_FAMILY_PURCHASE_DISCOUNT;
+            opcode == COMMAND_FAMILY_PURCHASE_DISCOUNT ||
+            opcode == COMMAND_FAMILY_SET_SPLIT_POLICY;
     }
 
     enum ConstructionOwnershipPolicy : int32_t {
@@ -208,6 +223,7 @@ public:
     void attach_effect_runtime(EffectRuntime *runtime) { _effect_runtime = runtime; }
     void attach_trigger_runtime(TriggerRuntime *runtime) { _trigger_runtime = runtime; }
     bool valid_family_effect_entity_handle(uint64_t handle) const;
+    void notify_era_milestone_activated(uint64_t country_handle);
     bool country_restore_allowed() const {
         return !_bootstrapped && !_save.active && !_restore.active;
     }
@@ -946,6 +962,26 @@ private:
         int32_t axis = 0;
         int32_t selector_kind = 0;
         int32_t selector_id = 0;
+        int32_t factor_q16 = Q16_ONE;
+    };
+
+    struct FamilyIndustryStats {
+        int32_t family_index = -1;
+        int32_t cell = -1;
+        uint8_t has_owned_manufacturing = 0;
+        int32_t distinct_sector_count = 0;
+        int32_t dominant_sector_id = -1;
+        int32_t dominant_sector_share_q16 = 0;
+        int32_t complete_chain_count = 0;
+        int32_t max_local_chain_share_q16 = 0;
+        int32_t max_chain_upgrade_family_id = -1;
+    };
+
+    struct FamilyOwnedOutputRow {
+        int32_t family_index = -1;
+        int32_t cell = -1;
+        int32_t kind = 0; // 0=all sectors, 1=economic sector, 2=upgrade family.
+        int32_t dense_id = 0;
         int32_t factor_q16 = Q16_ONE;
     };
 
@@ -3364,6 +3400,8 @@ private:
     std::vector<int32_t> _family_building_edge_indices;
     std::vector<int32_t> _family_cell_offsets;
     std::vector<int32_t> _family_cell_indices;
+    std::vector<FamilyIndustryStats> _family_industry_stats;
+    std::vector<FamilyOwnedOutputRow> _family_owned_output_rows;
     bool _family_indices_dirty = true;
     // Derived notable-person CSR; rebuilt at PERSON_COMMIT and restore.
     std::vector<int32_t> _person_family_offsets;
@@ -3487,6 +3525,7 @@ private:
         int32_t cell = -1;
         int32_t type_id = -1;
         int32_t owner_signature_id = -1;
+        int32_t family_owned_factor_q16 = Q16_ONE;
     };
     std::vector<BuildingFactorCacheEntry> _building_factor_cache;
     std::vector<BuildingFactorCacheEntry> _building_factor_cache_rebuild_scratch;
@@ -4168,6 +4207,17 @@ private:
     std::vector<int32_t> _family_trait_trigger_reward_targets;
     std::vector<int32_t> _family_trait_effect_offsets;
     std::vector<std::string> _family_trait_effect_keys;
+    int32_t _family_effect_catalog_version = 0;
+    int64_t _family_effect_catalog_hash = 0;
+    std::vector<std::string> _family_effect_keys;
+    std::vector<int32_t> _family_effect_source_kinds;
+    std::vector<int32_t> _family_effect_weights;
+    std::vector<uint8_t> _family_effect_random_pool_eligible;
+    std::vector<int32_t> _family_effect_prerequisite_offsets;
+    std::vector<int32_t> _family_effect_prerequisites;
+    std::vector<int32_t> _family_effect_exclusion_offsets;
+    std::vector<int32_t> _family_effect_exclusions;
+    std::vector<int32_t> _family_effect_magnitude_by_prestige_q16;
     std::string _family_surname_pack_id = "default_zh";
     std::vector<std::string> _family_surname_ids;
     std::vector<std::string> _family_surname_text;
@@ -4283,6 +4333,7 @@ private:
     bool apply_command(const Command &cmd, std::string &error);
     bool validate_command_pod(const Command &cmd, std::string &error) const;
     bool family_ledger_command_preflight(const Command &cmd) const;
+    bool family_split_policy_command_preflight(const Command &cmd) const;
     bool apply_family_free_building_reward(const Command &cmd,
                                            std::string &error);
     bool apply_family_population_reward(const Command &cmd,
@@ -4291,6 +4342,8 @@ private:
                                        std::string &error);
     bool apply_family_purchase_discount(const Command &cmd,
                                         std::string &error);
+    bool apply_family_set_split_policy(const Command &cmd,
+                                       std::string &error);
     bool process_market_cell(int32_t market, MarketResult &result, std::string &error);
     bool commit_structural(const StructuralCommand &cmd, std::string &error);
     // Core cohort migration primitive extracted from commit_structural. Moves up
@@ -4665,9 +4718,27 @@ private:
                                 std::string &error);
     bool compile_family_trait_catalog(const godot::Dictionary &catalog,
                                       std::string &error);
+    bool compile_family_effect_catalog(const godot::Dictionary &catalog,
+                                       std::string &error);
     bool run_family_commit_slice(int64_t &work_done, std::string &error);
     void rebuild_family_indices();
+    void rebuild_family_industry_metrics();
+    void rebuild_family_owned_output_csr();
     void rebuild_family_behavior_cache();
+    void grant_random_pool_family_effect(int32_t family_index,
+                                         bool submit_changes);
+    void grant_ancestral_precept_for_country(uint64_t country_handle);
+    int32_t family_effect_id_for_key(const std::string &program_key) const;
+    int32_t family_effect_prestige_magnitude_q16(int32_t effect_id,
+                                                 int32_t prestige_level) const;
+    int32_t family_owned_output_factor_q16(int32_t family_index, int32_t cell,
+                                           int32_t sector,
+                                           int32_t upgrade_family) const;
+    int32_t family_group_owned_output_factor_q16(int32_t group_index) const;
+    const FamilyIndustryStats *family_industry_stats_for(
+        int32_t family_index, int32_t cell) const;
+    void apply_family_split_policy_flags(int32_t family_index, uint16_t policy,
+                                         uint8_t weight_q8);
     void split_family_branches();
     void normalize_family_memberships();
     void absorb_family_households();
