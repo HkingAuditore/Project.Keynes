@@ -297,6 +297,37 @@ func _test_technology_gating(compiled: Dictionary, native_catalog: Dictionary) -
 	_expect("technology-locked building is unavailable",
 		advanced_type >= 0 and
 		(buildings.building_technology_available as PackedByteArray)[advanced_type] == 0)
+	var profession_catalog: PackedStringArray = compiled.get(
+		"profession_ids", PackedStringArray())
+	var owner_professions: PackedInt32Array = compiled.get(
+		"building_owner_profession_ids", PackedInt32Array())
+	var employee_offsets: PackedInt32Array = compiled.get(
+		"building_employee_offsets", PackedInt32Array())
+	var employee_professions: PackedInt32Array = compiled.get(
+		"building_employee_profession_ids", PackedInt32Array())
+	var type_available: PackedByteArray = buildings.get(
+		"building_technology_available", PackedByteArray())
+	var hired := {}
+	for type_index in range(mini(types.size(), type_available.size())):
+		if int(type_available[type_index]) == 0:
+			continue
+		if type_index < owner_professions.size():
+			var owner_id := int(owner_professions[type_index])
+			if owner_id >= 0 and owner_id < profession_catalog.size():
+				hired[String(profession_catalog[owner_id])] = true
+		if type_index + 1 >= employee_offsets.size():
+			continue
+		for role in range(int(employee_offsets[type_index]),
+				int(employee_offsets[type_index + 1])):
+			if role < 0 or role >= employee_professions.size():
+				continue
+			var employee_id := int(employee_professions[role])
+			if employee_id >= 0 and employee_id < profession_catalog.size():
+				hired[String(profession_catalog[employee_id])] = true
+	_expect("stone start hides locked professions from family behavior",
+		bool(hired.get("forager", false))
+		and not bool(hired.get("ai_researcher", false))
+		and not bool(hired.get("data_scientist", false)))
 	var technologies: PackedStringArray = compiled.technology_ids
 	var grant: Dictionary = ext.submit_country_commands({
 		"opcodes": PackedInt32Array([4]),

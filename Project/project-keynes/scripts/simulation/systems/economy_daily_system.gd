@@ -120,6 +120,18 @@ func tick(ctx) -> Dictionary:
 		var fatal_report: Dictionary = facade.report() if facade != null else result
 		var conservation_diagnostics := {
 			"fatal_reason": fatal_report.get("fatal_reason", "missing"),
+			"population_error": fatal_report.get("population_error", "missing"),
+			"opening_population": fatal_report.get("opening_population", "missing"),
+			"closing_population": fatal_report.get("closing_population", "missing"),
+			"population_expected": fatal_report.get("population_expected", "missing"),
+			"births": fatal_report.get("births", "missing"),
+			"deaths": fatal_report.get("deaths", "missing"),
+			"external_population_delta": fatal_report.get(
+				"external_population_delta", "missing"),
+			"opening_transit_population": fatal_report.get(
+				"opening_transit_population", "missing"),
+			"closing_transit_population": fatal_report.get(
+				"closing_transit_population", "missing"),
 			"money_error": fatal_report.get("money_error", "missing"),
 			"money_open": fatal_report.get("money_open", "missing"),
 			"money_close": fatal_report.get("money_close", "missing"),

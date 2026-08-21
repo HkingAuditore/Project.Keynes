@@ -32,14 +32,21 @@ Use separate carried and independent effect tables, with one continuous `E###` s
 
 | ID | 效果名称 | 条件 | 对象 | 威望Ⅰ结果 | 威望Ⅱ结果 | 威望Ⅲ结果 | 威望Ⅳ结果 | 威望Ⅴ结果 | 完整表述 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| E001 | 扩张主义 | 该家族成功开拓一个新地块 | 新开拓的地块 | 初始人口+20 | 初始人口+30 | 初始人口+40 | 初始人口+60 | 初始人口+80 | 当该家族每开拓一个地块时，新地块的初始人口按威望Ⅰ—Ⅴ分别直接增加20、30、40、60和80。 |
+| E001 | 扩张主义 | 该家族成功开拓一个新地块 | 新开拓的地块 | 初始人口+20 | 初始人口+30 | 初始人口+40 | 初始人口+60 | 初始人口+80 | 威望Ⅰ：当该家族成功开拓一个新地块时，新地块的初始人口直接增加20。<br>威望Ⅱ：当该家族成功开拓一个新地块时，新地块的初始人口直接增加30。<br>威望Ⅲ：当该家族成功开拓一个新地块时，新地块的初始人口直接增加40。<br>威望Ⅳ：当该家族成功开拓一个新地块时，新地块的初始人口直接增加60。<br>威望Ⅴ：当该家族成功开拓一个新地块时，新地块的初始人口直接增加80。 |
 
 Field rules:
 
 - **条件**: write `无条件` or a concrete event/environment/economy/country predicate. Avoid vague phrases such as “情况良好”.
 - **对象**: name the exact scope—this family, this branch, the local cell, cells within distance N, every branch cell, or every national cell.
 - **威望结果**: fill all five cells. Each tier must be observably distinct through magnitude, threshold, radius, duration, stack cap, affected subjects, or reward quantity.
-- **完整表述**: write a full sentence, not a formula fragment. It must agree with every tier cell and explicitly identify condition, object, result, and tier sequence.
+- **完整表述**: write five independently readable statements, labeled `威望Ⅰ：` through `威望Ⅴ：` and separated by `<br>`. Each statement must restate the condition, exact object, operation, and only that tier's values. Do not make the reader map positional number lists to prestige levels; `威望Ⅰ—Ⅴ`, `威望Ⅱ—Ⅴ`, `分别`, and similar compressed ranges are not acceptable.
+- Prefer a single current event or state that is obvious on the map or economy panel. At most, combine one visible context with one visible event when the combination is the point of the effect.
+- Avoid conditions that require the player to reconstruct a sequence, compare rolling averages, inspect future forecast windows, or remember that no unrelated action occurred between two triggers. Simplify these to common events such as each investment, each trade, each weather occurrence, each technology unlock, or a current shortage.
+- Preserve buildcraft by making simple triggers feed one another through their results. Clearly named stacks are acceptable when their gain and spend/reset events are each simple and visible.
+- Every row and every prestige statement must be understandable without a glossary or another row. Expand shorthand and pronouns into the exact subject: which department, which good, which building, which profession, and which price/stock/resource reference.
+- A derived category is acceptable only when it is a current player-facing category or is enumerated in the row. For example, replace “主部门” with “the economic sector in which the parent family owns the most buildings”, and replace “matching goods” with “goods that satisfy the currently short need”.
+- Do not expose implementation vocabulary as content vocabulary. Translate upgrade families, safe-yield fields, moving averages, selector IDs, and similar internal concepts into visible game objects or plain-language thresholds.
+- A result must name the operation that changes the outcome, not only the final indicator. “亏损幅度-2%” is insufficient; specify, for example, that profitable buildings transfer a stated share of daily profit into a pool and how that pool is distributed to loss-making buildings. State the source and recipient of any transferred cash, goods, or resources.
 
 An effect may have multiple results when they form one coherent choice, such as “consumption rises while production falls”. Split unrelated triggers, targets, or themes into separate rows.
 

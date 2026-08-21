@@ -112,8 +112,13 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_family_memberships); cap(_family_ownerships);
     cap(_family_traits); cap(_family_trait_commands);
     cap(_family_behavior_factor_offsets); cap(_family_behavior_factor_rows);
-    cap(_family_purchase_factor_q16); cap(_family_absorb_bonus_q16);
+    cap(_family_purchase_factor_q16); cap(_family_investment_factor_q16);
+    cap(_family_birth_factor_q16); cap(_family_absorb_bonus_q16);
     cap(_family_colonization_population_reward);
+    cap(_pending_family_split_gifts); cap(_family_policy_stamped_cells);
+    cap(_epoch_cell_rain_event_threshold_q16);
+    cap(_epoch_cell_cold_capacity_factor_q16);
+    cap(_epoch_cell_sector_output_factor_q16);
     cap(_family_modifier_bindings); cap(_family_trigger_bindings);
     cap(_family_effect_bindings);
     cap(_family_industry_stats); cap(_family_owned_output_rows);
@@ -792,7 +797,8 @@ Dictionary NativeEconomyRuntime::compact_report() const {
         for (size_t index = 0; index < _family_expeditions.active.size(); ++index)
             if (_family_expeditions.active[index] != 0)
                 total = saturating_add(total,
-                    _family_expeditions.population[index], local_saturation_count);
+                    family_expedition_payload_people(static_cast<int32_t>(index)),
+                    local_saturation_count);
         return total;
     }();
     out["colonization_route_query_ms"] = _colonization_route_query_ms;
@@ -1581,7 +1587,8 @@ Dictionary NativeEconomyRuntime::report() const {
         for (size_t index = 0; index < _family_expeditions.active.size(); ++index)
             if (_family_expeditions.active[index] != 0)
                 total = saturating_add(total,
-                    _family_expeditions.population[index], local_saturation_count);
+                    family_expedition_payload_people(static_cast<int32_t>(index)),
+                    local_saturation_count);
         return total;
     }();
     out["colonization_route_query_ms"] = _colonization_route_query_ms;
@@ -1999,6 +2006,10 @@ Dictionary NativeEconomyRuntime::report() const {
         _building_resource_capacity_limited_groups;
     out["last_building_rejection_reason"] = String(_last_building_rejection_reason.c_str());
     out["population_error"] = _epoch_active ? 0 : _closing_totals.population - population_expected;
+    out["opening_population"] = _opening_totals.population;
+    out["closing_population"] = _closing_totals.population;
+    out["population_expected"] = population_expected;
+    out["external_population_delta"] = _external_population_delta;
     out["money_error"] = _epoch_active ? 0
         : money_close - (money_open + _explicit_money_mint - _explicit_money_burn);
     out["money_open"] = money_open;

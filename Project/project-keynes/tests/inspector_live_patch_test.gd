@@ -254,10 +254,17 @@ func _run() -> void:
 				or not operations_button.visible:
 			failures.append("cohort detail section navigation is not interactive")
 		else:
+			var operations_target := panel._object_detail_dialog._section_targets.get(
+				"operations") as Control
 			operations_button.pressed.emit()
 			await process_frame
-			if panel._object_detail_dialog._scroll.scroll_vertical <= 0:
-				failures.append("cohort detail operations navigation did not scroll")
+			await process_frame
+			var scroll := panel._object_detail_dialog._scroll
+			var scroll_rect := scroll.get_global_rect() if scroll != null else Rect2()
+			var target_rect := operations_target.get_global_rect() \
+				if operations_target != null else Rect2()
+			if operations_target == null or not scroll_rect.intersects(target_rect):
+				failures.append("cohort detail operations navigation did not reveal the section")
 		if not (cohort_refs.get("tax_editors", {}) as Dictionary).is_empty():
 			failures.append("population row still owns tax editors after tax migration")
 		panel.set_compact_detail_mode(true)

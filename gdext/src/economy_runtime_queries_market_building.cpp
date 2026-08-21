@@ -7,6 +7,7 @@
 #include <cmath>
 #include <limits>
 #include <numeric>
+#include <set>
 
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/packed_byte_array.hpp>
@@ -1775,7 +1776,8 @@ Dictionary NativeEconomyRuntime::family_snapshot(int64_t family_handle_value) co
     for (size_t expedition = 0; expedition < _family_expeditions.active.size(); ++expedition) {
         if (_family_expeditions.active[expedition] == 0 ||
             _family_expeditions.family_handle[expedition] != handle) continue;
-        transit_population += _family_expeditions.population[expedition];
+        transit_population += family_expedition_payload_people(
+            static_cast<int32_t>(expedition));
         const uint32_t begin = _family_expeditions.payload_begin[expedition];
         const uint32_t count = _family_expeditions.payload_count[expedition];
         for (uint32_t p = 0; p < count; ++p) {
@@ -1926,6 +1928,20 @@ Dictionary NativeEconomyRuntime::family_traits(
     out["behavior_selector_kinds"] = behavior_selector_kinds;
     out["behavior_selector_ids"] = behavior_selector_ids;
     out["behavior_factors_q16"] = behavior_factors;
+    PackedStringArray bound_effect_keys;
+    std::set<std::string> unique_effect_keys;
+    for (const FamilyEffectBinding &binding : _family_effect_bindings) {
+        int32_t branch = -1;
+        if (!_family_influences.valid_handle(binding.branch_handle, branch) ||
+            _family_influences.family_handle[static_cast<size_t>(branch)] !=
+                handle ||
+            binding.definition_key.empty())
+            continue;
+        unique_effect_keys.insert(binding.definition_key);
+    }
+    for (const std::string &key : unique_effect_keys)
+        bound_effect_keys.push_back(from_utf8(key));
+    out["effect_definition_keys"] = bound_effect_keys;
     return out;
 }
 

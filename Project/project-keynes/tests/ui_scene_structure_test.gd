@@ -22,6 +22,7 @@ func _run() -> void:
 	await _check_world_setup()
 	await _check_player_game()
 	_check_component_scenes()
+	await _check_embedded_object_detail_row_values()
 	_check_no_runtime_control_new()
 	print("ui scene structure: %d failures" % _failures.size())
 	quit(0 if _failures.is_empty() else 1)
@@ -131,6 +132,136 @@ func _check_component_scenes() -> void:
 			_expect("economy workspace has tax sub-tabs", scene.has_node("Column/TaxTabs"))
 			_expect("economy workspace has treasury insights", scene.has_node("Column/Insights"))
 		scene.free()
+
+
+func _check_embedded_object_detail_row_values() -> void:
+	var cases := [
+		{
+			"kind": "cohort",
+			"name": "商人",
+			"needles": PackedStringArray(["32 人", "61.8%", "+0.12/人"]),
+			"row": {
+				"population": "32 人",
+				"cohort_identity": "本地人口",
+				"wealth": "1.2",
+				"satisfaction": "61.8%",
+				"living_standard": "温饱",
+				"worst_dimension": "税负",
+				"income": "+0.12",
+				"expense": "−0.08",
+				"net": "+0.04",
+				"satisfaction_rows": [
+					{"name": "温饱", "value": "61.8%", "visible": true},
+				],
+				"income_rows": [
+					{"name": "居民销售", "value": "+0.12/人", "visible": true},
+				],
+				"expense_rows": [
+					{"name": "生活消费", "value": "−0.08/人", "visible": true},
+				],
+				"demand_rows": [
+					{"name": "野味", "value": "0.123 单位/人/日", "visible": true},
+				],
+			},
+		},
+		{
+			"kind": "building",
+			"name": "采集营地",
+			"needles": PackedStringArray(["2 栋", "+0.40"]),
+			"row": {
+				"count": "2 栋",
+				"status": "运转",
+				"profit": "+0.40",
+				"job_rows": [
+					{"name": "业主岗位", "value": "2 / 2", "visible": true},
+				],
+			},
+		},
+		{
+			"kind": "family",
+			"name": "长安李氏",
+			"needles": PackedStringArray(["12 人", "3.50"]),
+			"row": {
+				"population": "12 人",
+				"notable_people": 1,
+				"owned_buildings": "1",
+				"cash_claim": "3.50",
+				"productive_asset_value": "1.00",
+				"net_worth": "4.50",
+				"founded_day": 1,
+				"decline_reviews": 0,
+				"prestige_level": 1,
+				"prestige_score": "4.2%",
+			},
+		},
+		{
+			"kind": "good",
+			"name": "原木",
+			"needles": PackedStringArray(["120 单位", "0.80"]),
+			"row": {
+				"stock_plain": "120 单位",
+				"price": "0.80",
+				"delta": "+2",
+			},
+		},
+		{
+			"kind": "resource",
+			"name": "木材",
+			"needles": PackedStringArray(["0.42", "可开采"]),
+			"row": {
+				"value": "0.42",
+				"density": "中",
+				"delta": "+0.01",
+				"extractable": true,
+			},
+		},
+	]
+	for case_value in cases:
+		var case: Dictionary = case_value
+		var host := Control.new()
+		host.clip_contents = true
+		host.custom_minimum_size = Vector2(320, 720)
+		host.size = Vector2(320, 720)
+		root.add_child(host)
+		var dialog := (load("res://scenes/ui/object_detail_dialog.tscn") as PackedScene).instantiate() as ObjectDetailDialog
+		host.add_child(dialog)
+		dialog.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		dialog.set_embedded(true)
+		dialog.show_details({
+			"kind": String(case.kind),
+			"name": String(case.name),
+			"icon": "resource",
+			"row": case.row,
+		})
+		await process_frame
+		await process_frame
+		await process_frame
+		var host_rect := host.get_global_rect()
+		var needles: PackedStringArray = case.needles
+		for needle in needles:
+			var label := _find_value_label(dialog, needle)
+			_expect("%s detail shows %s" % [String(case.kind), needle], label != null)
+			if label == null:
+				continue
+			_expect("%s value %s has layout size" % [String(case.kind), needle],
+				label.size.x >= 8.0 and label.size.y >= 8.0)
+			_expect("%s value %s stays inside the embedded column" % [
+				String(case.kind), needle],
+				host_rect.grow(1.0).encloses(label.get_global_rect()))
+		host.queue_free()
+		await process_frame
+
+
+func _find_value_label(node: Node, needle: String) -> Label:
+	if node is Label and String(node.name) == "Value" \
+			and (node as Label).visible \
+			and String((node as Label).text).find(needle) >= 0:
+		return node as Label
+	for child in node.get_children():
+		var found := _find_value_label(child, needle)
+		if found != null:
+			return found
+	return null
 
 
 func _check_no_runtime_control_new() -> void:

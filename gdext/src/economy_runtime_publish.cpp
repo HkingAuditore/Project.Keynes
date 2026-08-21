@@ -118,7 +118,8 @@ bool NativeEconomyRuntime::publish_epoch_slice(
             for (int32_t expedition = 0; expedition < static_cast<int32_t>(
                     _family_expeditions.active.size()); ++expedition) {
                 if (_family_expeditions.active[expedition] == 0) continue;
-                expedition_population += _family_expeditions.population[expedition];
+                expedition_population += family_expedition_payload_people(
+                    expedition);
             }
             _closing_totals.transit_population = expedition_population;
             _closing_totals.population += expedition_population;

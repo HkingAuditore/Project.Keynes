@@ -160,9 +160,11 @@ scope unless their authority and save contracts are designed first.
 - Coordinate branch Modifier/Trigger bindings only when traits, prestige, or branch existence changes.
   Multiple families stack without a family cap; stat bounds remain authoritative. Disable/remove clears
   Trigger accumulation immediately, and reward-origin facts must not recursively count.
-- Compile authored FamilyEffect metadata and Trait-to-Effect CSR at the cold boundary. Keep the default
-  family-effect catalog empty, route all six target classes through typed POD adapters, and arbitrate
-  `REPLACE/REFRESH/ADD_STACK/MAX/MIN` in EffectRuntime by generation-safe target plus stack key.
+- Compile authored FamilyEffect metadata and Trait-to-Effect CSR at the cold boundary. Hydrate the
+  first official catalog from `family_official_buffs.json` into the default trait/effect wrappers,
+  route all eight target selectors (including neighbor R1/R2) through typed POD adapters, and
+  arbitrate `REPLACE/REFRESH/ADD_STACK/MAX/MIN` in EffectRuntime by generation-safe target plus
+  stack key. Formation grants exactly one random-pool effect.
 - Revalidate producer `161` Family/Branch ENTITY handles at Modifier safe commit. Exact-good output must
   use shared-per-good plus sparse `(cell,good)` overrides; never allocate a cell-by-good matrix.
 - Investment persists sponsor family and uses local attributed capital. Family population rewards add
@@ -192,9 +194,10 @@ EffectRuntime per candidate.
 Dense ids 0–9 are occupied: magnitude, family population/cash, branch prestige/population, cell
 temperature/precipitation/shortage/trade events/population. Current appended ids, still immutable
 once shipped: 10 `cell.landform`, 11 `cell.essentials_shortage_q16`, 12
-`branch.is_local_prestige_max`, 13 `cell.rain_event`, 14 `cell.resource_abundance_q16`. Further
-signals append after 14. Publish through `metric_mask` and the existing branch/cell reverse
-indexes. Missing metrics read 0. Do not reorder old ids.
+`branch.is_local_prestige_max`, 13 `cell.rain_event`, 14 `cell.resource_abundance_q16`,
+15–21 family-owned industry stats, 22–36 cell/family policy signals. Further signals append
+after 36. Publish through `metric_mask` and the existing branch/cell reverse indexes. Missing
+metrics read 0. Do not reorder old ids.
 
 ## Score axes are packed columns
 
@@ -225,7 +228,10 @@ may still grant a locked trait. Catalog hash mismatch rejects old saves; do not 
 1. New condition signal → append a metric, then write the behavior/effect.
 2. New scoring semantic → add an axis/`score_term` column, then touch investment/employment loops.
 3. New conserved reward → add a typed Economy opcode/adapter, then wire `EVENT_COMMAND`.
-Keep `default_family_effects.tres` empty. Do not put Buff-table examples in the default catalog.
+Keep `default_family_traits.tres` and `default_family_effects.tres` as thin wrappers that
+`load_default()` hydrates from `family_official_buffs.json`. That JSON is the first official
+Buff-table catalog (98 traits + 48 effects). Do not invent a family script VM or evaluate
+EffectCondition in investment-day loops.
 
 ## Keep scheduling and queries bounded
 

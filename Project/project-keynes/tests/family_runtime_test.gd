@@ -2,6 +2,7 @@ extends SceneTree
 
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
+const FamilyTraitCatalogScript = preload("res://scripts/family/family_trait_catalog.gd")
 
 var failures := 0
 
@@ -65,8 +66,7 @@ func _run() -> void:
 		and tech_offsets.size() == trait_ids.size() + 1
 		and (score_terms.is_empty() or int(score_terms[0]) >= 0))
 	_assert_family_effect_display_copy(compiled)
-	var bad_trait_catalog: Resource = load(
-		"res://data/economy/default_family_traits.tres").duplicate(true)
+	var bad_trait_catalog: Resource = FamilyTraitCatalogScript.load_default().duplicate(true)
 	var bad_traits: Array = bad_trait_catalog.get("traits")
 	var bad_trait: Resource = bad_traits[0].duplicate(true)
 	var bad_behaviors: Array = bad_trait.get("behaviors")
@@ -114,8 +114,8 @@ func _run() -> void:
 	output_quantities[int(output_offsets[building_id])] = 7000000000
 	catalog.building_output_quantities = output_quantities
 	var construction_days: PackedInt32Array = catalog.building_construction_days
-	# Keep gathering_affinity / coastal_tide legal investment from completing extra
-	# 0-day buildings, and make paid recipes unaffordable so they cannot start.
+	# Keep legal family investment from completing extra 0-day buildings, and
+	# make paid recipes unaffordable so they cannot start.
 	construction_days.fill(30)
 	construction_days[reward_building_id] = 5
 	catalog.building_construction_days = construction_days
@@ -673,38 +673,51 @@ func _run_day(ext: Object, day: int) -> Dictionary:
 
 
 func _assert_family_effect_display_copy(compiled: Dictionary) -> void:
-	var trait_catalog: Resource = load("res://data/economy/default_family_traits.tres")
+	var trait_catalog: Resource = FamilyTraitCatalogScript.load_default()
 	var required_traits := {
-		"gathering_affinity": "采集",
-		"hunting_tradition": "狩猎",
-		"fishing_folk": "渔",
-		"pastoral_herds": "畜牧",
-		"agrarian_lineage": "农",
-		"forest_stewards": "林",
-		"mining_enterprise": "采掘",
-		"salt_makers": "盐",
-		"loom_houses": "纺织",
-		"kiln_and_clay": "陶",
-		"bronze_and_iron": "冶锻",
-		"masonry_guild": "夯土",
-		"charcoal_hearth": "炭",
-		"trade_network": "贸易",
-		"scribal_house": "知识",
-		"abundant_table": "食品",
-		"austere_hearth": "奢侈品",
-		"lavish_display": "身份",
-		"floodplain_lore": "洪泛",
-		"coastal_tide": "潮汐",
+		"c001_gluttony": "暴食",
+		"c002_carnivore": "肉食",
+		"c019_austere": "节俭",
+		"i006_gathering": "采集",
+		"i007_hunting": "狩猎",
+		"i008_fishing": "渔",
+		"i012_mining": "采矿",
+		"j001_wild": "采集",
 	}
-	var trait_ok: bool = trait_catalog != null and trait_catalog.traits.size() == required_traits.size()
+	var trait_ok: bool = trait_catalog != null and trait_catalog.traits.size() == 98
+	var seen_required := {}
 	if trait_catalog != null:
 		for definition in trait_catalog.traits:
 			var key := String(definition.key)
 			var description := String(definition.description)
-			trait_ok = trait_ok and required_traits.has(key) \
-				and not String(definition.display_name).is_empty() \
-				and description.find(String(required_traits[key])) >= 0
+			var display_name := String(definition.display_name)
+			if display_name.is_empty() or description.is_empty():
+				trait_ok = false
+			if required_traits.has(key):
+				seen_required[key] = true
+				var needle := String(required_traits[key])
+				trait_ok = trait_ok and (
+					display_name.find(needle) >= 0 or description.find(needle) >= 0)
+		trait_ok = trait_ok and seen_required.size() == required_traits.size()
 	_expect("all family traits have Chinese mechanical descriptions", trait_ok)
+	var copy_script = load("res://scripts/family/family_buff_copy.gd")
+	_expect("preference copy interpolates placeholder ranges from rolled strength",
+		String(copy_script.interpolate_preference(
+			"主食、蔬果与蛋白质需求的消费量均增加 X%",
+			"X∈[15%,40%]", 9830, 9830, 26214))
+		== "主食、蔬果与蛋白质需求的消费量均增加 15%"
+		and String(copy_script.interpolate_preference(
+			"蛋白质需求的消费量增加 X%，蔬果需求的消费量减少 Y%",
+			"X∈[20%,60%]；Y∈[10%,30%]", 26214, 9830, 26214))
+		== "蛋白质需求的消费量增加 60%，蔬果需求的消费量减少 30%")
+	_expect("effect copy selects the active prestige statement",
+		String(copy_script.statement_for_prestige(PackedStringArray([
+			"威望Ⅰ：人口增长率提高2%。",
+			"威望Ⅱ：人口增长率提高4%。",
+			"威望Ⅲ：人口增长率提高6%。",
+			"威望Ⅳ：人口增长率提高8%。",
+			"威望Ⅴ：人口增长率提高10%。",
+		]), 3)).find("6%") >= 0)
 	var modifier_catalog: Resource = load("res://data/modifiers/default_modifier_catalog.tres")
 	var modifier_names := {}
 	if modifier_catalog != null:
@@ -740,7 +753,13 @@ func _assert_family_effect_display_copy(compiled: Dictionary) -> void:
 	var facade = load("res://scripts/economy/economy_facade.gd").new()
 	facade._load_family_effect_displays()
 	_expect("facade maps trait descriptions and family effect display names",
-		String(facade._family_trait_descriptions.get("mining_enterprise", "")).find("采掘") >= 0
+		String(facade._family_trait_descriptions.get("i012_mining", "")).find("采矿") >= 0
+		and String((facade._family_effect_displays.get(
+			"family.effect.rain_prayer", {}) as Dictionary).get(
+			"display_name", "")) == "求雨"
+		and String((facade._family_effect_displays.get(
+			"family.effect.rain_prayer", {}) as Dictionary).get(
+			"description", "")).find("降雨触发下限降低2%") >= 0
 		and String((facade._family_modifier_displays.get(
 			"family.city.extractive_output_boost", {}) as Dictionary).get(
 			"display_name", "")) == "采掘产出加成"

@@ -2,6 +2,7 @@ class_name FamilyTraitCatalog
 extends Resource
 
 const DEFAULT_PATH := "res://data/economy/default_family_traits.tres"
+const OfficialCatalogScript = preload("res://scripts/family/family_official_catalog.gd")
 const BehaviorScript = preload("res://scripts/family/family_behavior_preference.gd")
 const ModifierEffectScript = preload("res://scripts/family/family_modifier_effect.gd")
 const TriggerBindingScript = preload("res://scripts/family/family_trigger_binding.gd")
@@ -17,7 +18,8 @@ const DEFAULT_TRIGGER_CATALOG_PATH := "res://data/triggers/default_trigger_catal
 
 
 static func load_default() -> Resource:
-	return ResourceLoader.load(DEFAULT_PATH, "Resource")
+	var loaded = ResourceLoader.load(DEFAULT_PATH, "Resource")
+	return OfficialCatalogScript.hydrate_trait_catalog(loaded)
 
 func compile_native_columns(economy_columns: Dictionary,
 		known_family_effect_keys: PackedStringArray = PackedStringArray(),
@@ -77,6 +79,7 @@ func compile_native_columns(economy_columns: Dictionary,
 	var exclusions := PackedInt32Array()
 	var technology_prerequisite_offsets := PackedInt32Array([0])
 	var technology_prerequisites := PackedInt32Array()
+	var technology_match_any := PackedByteArray()
 	var behavior_offsets := PackedInt32Array([0])
 	var behavior_axes := PackedInt32Array()
 	var behavior_selector_kinds := PackedInt32Array()
@@ -101,6 +104,21 @@ func compile_native_columns(economy_columns: Dictionary,
 	var trigger_reward_targets := PackedInt32Array()
 	var effect_offsets := PackedInt32Array([0])
 	var effect_keys := PackedStringArray()
+	var origin_landform_offsets := PackedInt32Array([0])
+	var origin_landforms := PackedByteArray()
+	var origin_adjacent_water := PackedByteArray()
+	var origin_population_max := PackedInt32Array()
+	var origin_temperature_max_q16 := PackedInt32Array()
+	var required_resource_offsets := PackedInt32Array([0])
+	var required_resource_ids := PackedInt32Array()
+	var require_tax_or_subsidy := PackedByteArray()
+	var resource_ids: PackedStringArray = economy_columns.get(
+		"resource_ids", PackedStringArray())
+	if resource_ids.is_empty():
+		resource_ids = economy_columns.get("building_resource_ids", PackedStringArray())
+	var resource_index := {}
+	for resource_dense_id in range(resource_ids.size()):
+		resource_index[String(resource_ids[resource_dense_id])] = resource_dense_id
 	var dynamic_trigger_keys := {}
 	var trigger_reward_by_key := {}
 	var trigger_catalog = ResourceLoader.load(DEFAULT_TRIGGER_CATALOG_PATH, "Resource")
@@ -141,6 +159,7 @@ func compile_native_columns(economy_columns: Dictionary,
 			if technology_index.has(technology_key):
 				technology_prerequisites.append(int(technology_index[technology_key]))
 		technology_prerequisite_offsets.append(technology_prerequisites.size())
+		technology_match_any.append(1 if definition.prerequisite_technology_any else 0)
 		for behavior in definition.behaviors:
 			if behavior == null or not behavior is BehaviorScript \
 					or behavior.factor_q16 < 0 or behavior.factor_q16 > Q16_ONE * 4 \
@@ -218,17 +237,46 @@ func compile_native_columns(economy_columns: Dictionary,
 			seen_effect_keys[effect_key] = true
 			effect_keys.append("family.effect.%s" % effect_key)
 		effect_offsets.append(effect_keys.size())
+		var landform_seen := {}
+		for landform in definition.origin_landforms:
+			var landform_id := int(landform) & 0xff
+			if landform_seen.has(landform_id):
+				return {"ok": false, "reason": "family_trait_origin_landform_duplicate"}
+			landform_seen[landform_id] = true
+			origin_landforms.append(landform_id)
+		origin_landform_offsets.append(origin_landforms.size())
+		origin_adjacent_water.append(1 if definition.origin_adjacent_water else 0)
+		origin_population_max.append(maxi(0, int(definition.origin_population_max)))
+		origin_temperature_max_q16.append(int(definition.origin_temperature_max_q16))
+		var resource_seen := {}
+		var authored_resources: Array[String] = []
+		for resource_id in definition.required_resource_ids:
+			authored_resources.append(String(resource_id).strip_edges())
+		authored_resources.sort()
+		for resource_key in authored_resources:
+			if resource_key.is_empty() or resource_seen.has(resource_key):
+				return {"ok": false, "reason": "family_trait_required_resource_invalid"}
+			resource_seen[resource_key] = true
+			if not resource_ids.is_empty() and not resource_index.has(resource_key):
+				return {"ok": false, "reason": "family_trait_required_resource_unknown"}
+			if resource_index.has(resource_key):
+				required_resource_ids.append(int(resource_index[resource_key]))
+		required_resource_offsets.append(required_resource_ids.size())
+		require_tax_or_subsidy.append(1 if definition.require_tax_or_subsidy else 0)
 
 	var canonical := [version, core_trait_min, core_trait_max, ids, versions, weights,
 		core_eligible, strength_min, strength_max, strength_step,
 		prerequisite_offsets, prerequisites, exclusion_offsets, exclusions,
-		technology_prerequisite_offsets, technology_prerequisites,
+		technology_prerequisite_offsets, technology_prerequisites, technology_match_any,
 		behavior_offsets, behavior_axes, behavior_selector_kinds, behavior_selector_ids,
 		behavior_factors, behavior_score_terms, behavior_condition_offsets,
 		behavior_condition_ops, behavior_condition_arg0, behavior_condition_values,
 		modifier_offsets, modifier_keys, modifier_targets,
 		modifier_tier_magnitudes, trigger_offsets, trigger_definition_keys,
-		trigger_reward_targets, effect_offsets, effect_keys]
+		trigger_reward_targets, effect_offsets, effect_keys,
+		origin_landform_offsets, origin_landforms, origin_adjacent_water,
+		origin_population_max, origin_temperature_max_q16,
+		required_resource_offsets, required_resource_ids, require_tax_or_subsidy]
 	var catalog_hash := hash(canonical)
 	if catalog_hash == 0:
 		catalog_hash = 1
@@ -252,6 +300,7 @@ func compile_native_columns(economy_columns: Dictionary,
 		"family_trait_exclusions": exclusions,
 		"family_trait_technology_prerequisite_offsets": technology_prerequisite_offsets,
 		"family_trait_technology_prerequisites": technology_prerequisites,
+		"family_trait_technology_match_any": technology_match_any,
 		"family_trait_behavior_offsets": behavior_offsets,
 		"family_trait_behavior_axes": behavior_axes,
 		"family_trait_behavior_selector_kinds": behavior_selector_kinds,
@@ -271,6 +320,14 @@ func compile_native_columns(economy_columns: Dictionary,
 		"family_trait_trigger_reward_targets": trigger_reward_targets,
 		"family_trait_effect_offsets": effect_offsets,
 		"family_trait_effect_keys": effect_keys,
+		"family_trait_origin_landform_offsets": origin_landform_offsets,
+		"family_trait_origin_landforms": origin_landforms,
+		"family_trait_origin_adjacent_water": origin_adjacent_water,
+		"family_trait_origin_population_max": origin_population_max,
+		"family_trait_origin_temperature_max_q16": origin_temperature_max_q16,
+		"family_trait_required_resource_offsets": required_resource_offsets,
+		"family_trait_required_resource_ids": required_resource_ids,
+		"family_trait_require_tax_or_subsidy": require_tax_or_subsidy,
 	}
 
 

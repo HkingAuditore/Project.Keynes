@@ -1099,6 +1099,8 @@ Dictionary NativeEconomyRuntime::end_restore() {
             _family_influences.handle_for_index(branch), false);
     }
     rebuild_family_owned_output_csr();
+    rebuild_family_policy_scalars();
+    rebuild_family_behavior_cache();
     rebuild_person_indices();
     _bootstrapped = true;
     _fatal = false;

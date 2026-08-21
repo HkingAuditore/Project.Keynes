@@ -31,6 +31,8 @@ var _tax_section: VBoxContainer
 var _tax_editors: Dictionary = {}
 var _player_controller = null
 var _fact_columns: Array[int] = []
+var _embedded := false
+var _fact_grids: Array[GridContainer] = []
 
 
 func _ready() -> void:
@@ -67,8 +69,11 @@ func show_details(payload: Dictionary) -> void:
 	if _content == null:
 		_ready()
 	visible = true
+	if _embedded:
+		_apply_embedded_chrome(true)
 	_section_targets.clear()
 	_fact_columns.clear()
+	_fact_grids.clear()
 	_header_icon.set_semantic(StringName(payload.get("icon", "resource")),
 		payload.get("accent", UITokens.ACCENT))
 	_title_label.text = String(payload.get("name", "对象详情"))
@@ -91,6 +96,7 @@ func show_details(payload: Dictionary) -> void:
 		"family":
 			_build_family_details(row)
 	_configure_section_nav(kind)
+	call_deferred("_fit_embedded_layout")
 
 
 func refresh_details(payload: Dictionary) -> bool:
@@ -187,20 +193,43 @@ func _tax_hint(kind: String) -> String:
 
 
 func set_embedded(embedded: bool = true) -> void:
+	_embedded = embedded
+	_apply_embedded_chrome(embedded)
+	update_minimum_size()
+
+
+# 嵌入右侧分栏时不能再按模态弹窗的 620 最小宽上报。家族效果长句会把
+# DetailShell 撑破 HBox，盖住地块档案列。嵌入列宽由 Inspector 分配，这里只填满。
+func _get_minimum_size() -> Vector2:
+	return Vector2.ZERO if _embedded else custom_minimum_size
+
+
+func _apply_embedded_chrome(embedded: bool) -> void:
+	clip_contents = true
 	var backdrop := get_node_or_null("Backdrop") as Control
 	var backdrop_close := get_node_or_null("BackdropClose") as Control
+	var center := get_node_or_null("Center") as Control
 	var dialog := get_node_or_null("Center/Dialog") as Control
 	if backdrop != null:
 		backdrop.visible = not embedded
 	if backdrop_close != null:
 		backdrop_close.visible = not embedded
-	if dialog != null:
-		dialog.custom_minimum_size = Vector2.ZERO if embedded else PANEL_MIN_SIZE
-		if embedded:
-			dialog.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		else:
-			dialog.set_anchors_and_offsets_preset(Control.PRESET_CENTER,
-				Control.PRESET_MODE_MINSIZE)
+	if center != null:
+		center.clip_contents = true
+	if dialog == null:
+		return
+	dialog.clip_contents = true
+	dialog.custom_minimum_size = Vector2.ZERO if embedded else PANEL_MIN_SIZE
+	if embedded:
+		dialog.theme_type_variation = &""
+		dialog.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+		dialog.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	else:
+		dialog.theme_type_variation = &"PKDialog"
+		dialog.remove_theme_stylebox_override("panel")
+		dialog.set_anchors_and_offsets_preset(Control.PRESET_CENTER,
+			Control.PRESET_MODE_MINSIZE)
+	dialog.update_minimum_size()
 
 
 func close_dialog() -> void:
@@ -352,11 +381,15 @@ func _build_family_details(row: Dictionary) -> void:
 		people_target = branch_target
 	elif action_target != null:
 		people_target = action_target
+	var family_effect_target := _add_rows_card("家族效果", "growth", UITokens.CLIMATE,
+		row.get("effect_rows", []))
 	var effects_target := _add_rows_card("已激活加成", "growth", UITokens.CLIMATE,
 		row.get("modifier_rows", []))
 	var trigger_target := _add_rows_card("累计触发", "resource", UITokens.RESOURCE,
 		row.get("trigger_rows", []))
-	if effects_target == null:
+	if family_effect_target != null:
+		effects_target = family_effect_target
+	elif effects_target == null:
 		effects_target = trigger_target
 	var people: Array = row.get("notable_person_rows", [])
 	if people.is_empty():
@@ -369,14 +402,20 @@ func _build_family_details(row: Dictionary) -> void:
 			people_target = notable_target
 	if people_target != null:
 		_section_targets["operations"] = people_target
-	if effects_target != null:
+	if family_effect_target != null:
+		_section_targets["effects"] = family_effect_target
+	elif effects_target != null:
 		_section_targets["effects"] = effects_target
+	elif trigger_target != null:
+		_section_targets["effects"] = trigger_target
 
 
 func _add_branch_colonization_buttons(family_handle: int, branches: Array) -> Control:
 	if family_handle == 0 or branches.is_empty():
 		return null
 	var panel := RowsCardScene.instantiate() as PanelContainer
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.clip_contents = false
 	_content.add_child(panel)
 	(panel.get_node("Box/TitleRow/Icon") as IconBadge).set_semantic(
 		&"family.house", UITokens.BRASS_HIGHLIGHT)
@@ -390,6 +429,8 @@ func _add_branch_colonization_buttons(family_handle: int, branches: Array) -> Co
 		if source_cell < 0:
 			continue
 		var button := ActionButtonScene.instantiate() as Button
+		button.clip_text = true
+		button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		button.text = "%s · 进入地图选点" % String(branch.get(
 			"name", "地块 %d" % source_cell))
 		var owned: bool = _player_controller != null and \
@@ -414,10 +455,12 @@ func _delta_accent(delta: String) -> Color:
 
 func _add_fact_grid(facts: Array) -> Control:
 	var panel := FactGridScene.instantiate() as PanelContainer
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_content.add_child(panel)
 	var grid := panel.get_node("Grid") as GridContainer
-	grid.columns = _balanced_fact_columns(facts.size())
+	grid.columns = _fact_columns_for_width(facts.size(), _content_width())
 	_fact_columns.append(grid.columns)
+	_fact_grids.append(grid)
 	for raw in facts:
 		var fact: Dictionary = raw
 		var cell := FactCellScene.instantiate() as VBoxContainer
@@ -426,6 +469,9 @@ func _add_fact_grid(facts: Array) -> Control:
 		label.text = String(fact.get("label", ""))
 		var value := cell.get_node("Value") as Label
 		value.text = String(fact.get("value", "—"))
+		value.clip_text = false
+		value.autowrap_mode = TextServer.AUTOWRAP_OFF
+		value.custom_minimum_size.y = 18
 		value.add_theme_font_override("font", UITokens.font_with_weight(650))
 		value.add_theme_color_override("font_color",
 			fact.get("accent", UITokens.TEXT_MAIN))
@@ -433,7 +479,7 @@ func _add_fact_grid(facts: Array) -> Control:
 
 
 # 事实网格按数量选列，保证最后一行不留孤格：4 项用 2×2，8 项用 4×2，
-# 其余尽量 3 列；7 项拆成 4+3 也比 3+3+1 更整齐。
+# 其余尽量 3 列；7 项拆成 4+3 也比 3+3+1 更整齐。窄列再降到 2 列，避免撑破分栏。
 static func _balanced_fact_columns(fact_count: int) -> int:
 	if fact_count <= 1:
 		return 1
@@ -446,11 +492,67 @@ static func _balanced_fact_columns(fact_count: int) -> int:
 	return 4
 
 
+func _fact_columns_for_width(fact_count: int, width: float) -> int:
+	var balanced := _balanced_fact_columns(fact_count)
+	if width <= 1.0:
+		return balanced
+	if width < 220.0:
+		return 1
+	if width < 420.0:
+		return mini(balanced, 2)
+	return balanced
+
+
+func _content_width() -> float:
+	if _scroll != null and _scroll.size.x > 1.0:
+		return _scroll.size.x
+	if size.x > 1.0:
+		return size.x
+	return 0.0
+
+
+func _fit_embedded_layout() -> void:
+	_constrain_autowrap(_content)
+	_fit_fact_grids()
+	if _embedded and is_inside_tree():
+		call_deferred("_fit_fact_grids")
+
+
+func _constrain_autowrap(node: Node) -> void:
+	if node == null:
+		return
+	if node is Label:
+		var label := node as Label
+		if label.autowrap_mode != TextServer.AUTOWRAP_OFF:
+			label.custom_minimum_size.x = 0
+			label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for child in node.get_children():
+		_constrain_autowrap(child)
+
+
+func _fit_fact_grids() -> void:
+	if _fact_grids.is_empty():
+		return
+	var width := _content_width()
+	if width <= 1.0:
+		return
+	for index in range(_fact_grids.size()):
+		var grid := _fact_grids[index]
+		if grid == null or not is_instance_valid(grid):
+			continue
+		var next_columns := _fact_columns_for_width(grid.get_child_count(), width)
+		grid.columns = next_columns
+		if index < _fact_columns.size():
+			_fact_columns[index] = next_columns
+
+
 func _add_rows_card(title_text: String, icon_key: String, accent: Color,
 		rows: Array) -> Control:
 	if rows.is_empty():
 		return null
 	var panel := RowsCardScene.instantiate() as PanelContainer
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.clip_contents = false
 	_content.add_child(panel)
 	var icon := panel.get_node("Box/TitleRow/Icon") as IconBadge
 	icon.set_semantic(StringName(icon_key), accent)
@@ -466,9 +568,21 @@ func _add_rows_card(title_text: String, icon_key: String, accent: Color,
 		row_box.add_child(line)
 		var name_label := line.get_node("Line/Name") as Label
 		name_label.text = String(data.get("name", ""))
+		name_label.clip_text = true
+		var value_text := String(data.get("value", "")).strip_edges()
 		var value_label := line.get_node("Line/Value") as Label
-		value_label.text = String(data.get("value", ""))
+		value_label.text = value_text
+		# clip_text 会把 Label 最小宽度收成 0。嵌入右侧分栏时 Name 会吃掉整行，
+		# 满意度/收支这种短数字就只剩左边标签。短值必须按文字宽度占位。
 		var detail := String(data.get("detail", "")).strip_edges()
+		var value_too_long := value_text.length() > 22
+		value_label.clip_text = false
+		value_label.visible = not value_text.is_empty() and not value_too_long
+		if value_too_long:
+			if detail.is_empty():
+				detail = value_text
+			elif detail != value_text:
+				detail = "%s\n%s" % [value_text, detail]
 		var detail_label := line.get_node("Detail") as Label
 		detail_label.text = detail
 		detail_label.visible = not detail.is_empty()

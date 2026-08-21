@@ -27,6 +27,8 @@ size_flags_vertical = 4
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
+clip_text = true
+text_overrun_behavior = 3
 vertical_alignment = 1
 [node name="Prestige" type="Label" parent="Margin/Line"]
 custom_minimum_size = Vector2(52, 0)

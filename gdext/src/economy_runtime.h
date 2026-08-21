@@ -156,8 +156,15 @@ public:
 
     static constexpr uint16_t FAMILY_FLAG_SPLIT_RETAIN_ONLY = 1u;
     static constexpr uint16_t FAMILY_FLAG_SPLIT_BONUS_WEIGHT = 2u;
+    static constexpr uint16_t FAMILY_FLAG_SPLIT_REPLACE = 4u;
+    static constexpr uint16_t FAMILY_FLAG_SPLIT_GIFT_BUILDING = 8u;
+    static constexpr uint16_t FAMILY_FLAG_SPLIT_GIFT_POPULATION = 16u;
+    static constexpr uint16_t FAMILY_FLAG_SPLIT_MODE_MASK =
+        FAMILY_FLAG_SPLIT_RETAIN_ONLY | FAMILY_FLAG_SPLIT_BONUS_WEIGHT |
+        FAMILY_FLAG_SPLIT_REPLACE;
     static constexpr uint16_t FAMILY_FLAG_SPLIT_POLICY_MASK =
-        FAMILY_FLAG_SPLIT_RETAIN_ONLY | FAMILY_FLAG_SPLIT_BONUS_WEIGHT;
+        FAMILY_FLAG_SPLIT_MODE_MASK | FAMILY_FLAG_SPLIT_GIFT_BUILDING |
+        FAMILY_FLAG_SPLIT_GIFT_POPULATION;
     static constexpr uint16_t FAMILY_FLAG_SPLIT_WEIGHT_SHIFT = 8u;
 
     enum FamilyBehaviorScoreTerm : int32_t {
@@ -192,7 +199,22 @@ public:
         FAMILY_METRIC_COMPLETE_CHAIN_COUNT = 19,
         FAMILY_METRIC_MAX_LOCAL_CHAIN_SHARE_Q16 = 20,
         FAMILY_METRIC_MAX_CHAIN_UPGRADE_FAMILY_ID = 21,
-        FAMILY_METRIC_COUNT = 22,
+        FAMILY_METRIC_CELL_UNEMPLOYMENT_Q16 = 22,
+        FAMILY_METRIC_CELL_RESOURCE_CLASS_COUNT = 23,
+        FAMILY_METRIC_CELL_MANUFACTURING_BUILDING_COUNT = 24,
+        FAMILY_METRIC_CELL_DISTINCT_SECTOR_COUNT = 25,
+        FAMILY_METRIC_CELL_DOMINANT_SECTOR_ID = 26,
+        FAMILY_METRIC_CELL_DOMINANT_SECTOR_SHARE_Q16 = 27,
+        FAMILY_METRIC_CELL_COMPLETE_CHAIN_COUNT = 28,
+        FAMILY_METRIC_CELL_HAS_EXTRACTIVE_RESOURCE = 29,
+        FAMILY_METRIC_CELL_LEGAL_BUILDING_TYPE_COUNT = 30,
+        FAMILY_METRIC_CELL_VACANT_PROFESSION_COUNT = 31,
+        FAMILY_METRIC_FAMILY_BRANCH_COUNT = 32,
+        FAMILY_METRIC_FAMILY_REMOTE_BRANCH_COUNT = 33,
+        FAMILY_METRIC_FAMILY_CASH_PER_CAPITA_VS_CELL_Q16 = 34,
+        FAMILY_METRIC_CELL_KNOWLEDGE_BUILDING_CLASS_COUNT = 35,
+        FAMILY_METRIC_CELL_CAN_PRODUCE_CORN = 36,
+        FAMILY_METRIC_COUNT = 37,
     };
 
     static bool is_family_ledger_command(int32_t opcode) {
@@ -3361,6 +3383,8 @@ private:
     std::vector<int32_t> _family_behavior_factor_offsets;
     std::vector<FamilyBehaviorFactorRow> _family_behavior_factor_rows;
     std::vector<int32_t> _family_purchase_factor_q16;
+    std::vector<int32_t> _family_investment_factor_q16;
+    std::vector<int32_t> _family_birth_factor_q16;
     std::vector<int32_t> _family_absorb_bonus_q16;
     std::vector<int32_t> _family_colonization_population_reward;
     std::vector<FamilyTraitCommand> _family_trait_commands;
@@ -3526,6 +3550,7 @@ private:
         int32_t type_id = -1;
         int32_t owner_signature_id = -1;
         int32_t family_owned_factor_q16 = Q16_ONE;
+        int32_t cell_sector_factor_q16 = Q16_ONE;
     };
     std::vector<BuildingFactorCacheEntry> _building_factor_cache;
     std::vector<BuildingFactorCacheEntry> _building_factor_cache_rebuild_scratch;
@@ -4023,6 +4048,10 @@ private:
     std::vector<int32_t> _epoch_cell_birth_factor_q16;
     std::vector<int32_t> _epoch_cell_need_consumption_factor_q16;
     std::vector<int32_t> _epoch_cell_good_consumption_factor_q16;
+    std::vector<int32_t> _epoch_cell_rain_event_threshold_q16;
+    std::vector<int32_t> _epoch_cell_cold_capacity_factor_q16;
+    std::vector<int32_t> _epoch_cell_sector_output_factor_q16;
+    std::vector<int32_t> _family_policy_stamped_cells;
     // The city factor tables are pure functions of the city stat buckets in the
     // ECONOMY modifier store, so they survive across epochs and are rebuilt only
     // when those buckets (or the catalog shape behind the tables) change. The
@@ -4188,6 +4217,7 @@ private:
     std::vector<int32_t> _family_trait_exclusions;
     std::vector<int32_t> _family_trait_technology_prerequisite_offsets;
     std::vector<int32_t> _family_trait_technology_prerequisites;
+    std::vector<uint8_t> _family_trait_technology_match_any;
     std::vector<int32_t> _family_trait_behavior_offsets;
     std::vector<int32_t> _family_trait_behavior_axes;
     std::vector<int32_t> _family_trait_behavior_selector_kinds;
@@ -4207,6 +4237,14 @@ private:
     std::vector<int32_t> _family_trait_trigger_reward_targets;
     std::vector<int32_t> _family_trait_effect_offsets;
     std::vector<std::string> _family_trait_effect_keys;
+    std::vector<int32_t> _family_trait_origin_landform_offsets;
+    std::vector<uint8_t> _family_trait_origin_landforms;
+    std::vector<uint8_t> _family_trait_origin_adjacent_water;
+    std::vector<int32_t> _family_trait_origin_population_max;
+    std::vector<int32_t> _family_trait_origin_temperature_max_q16;
+    std::vector<int32_t> _family_trait_required_resource_offsets;
+    std::vector<int32_t> _family_trait_required_resource_ids;
+    std::vector<uint8_t> _family_trait_require_tax_or_subsidy;
     int32_t _family_effect_catalog_version = 0;
     int64_t _family_effect_catalog_hash = 0;
     std::vector<std::string> _family_effect_keys;
@@ -4215,9 +4253,22 @@ private:
     std::vector<uint8_t> _family_effect_random_pool_eligible;
     std::vector<int32_t> _family_effect_prerequisite_offsets;
     std::vector<int32_t> _family_effect_prerequisites;
+    std::vector<uint8_t> _family_effect_technology_match_any;
     std::vector<int32_t> _family_effect_exclusion_offsets;
     std::vector<int32_t> _family_effect_exclusions;
     std::vector<int32_t> _family_effect_magnitude_by_prestige_q16;
+    std::vector<std::string> _family_effect_trigger_definition_keys_by_tier;
+    std::vector<int32_t> _family_effect_trigger_reward_targets;
+    int32_t _family_corn_good_id = -1;
+    int32_t _family_knowledge_class_index = -1;
+    struct PendingFamilySplitGift {
+        uint64_t family_handle = 0;
+        int32_t cell = -1;
+        uint16_t flags = 0;
+        int32_t building_type_id = -1;
+        int64_t population = 0;
+    };
+    std::vector<PendingFamilySplitGift> _pending_family_split_gifts;
     std::string _family_surname_pack_id = "default_zh";
     std::vector<std::string> _family_surname_ids;
     std::vector<std::string> _family_surname_text;
@@ -4376,6 +4427,7 @@ private:
     bool extract_family_expedition_payload(int32_t expedition,
                                            int64_t requested,
                                            std::string &error);
+    void unwind_family_expedition_payload_extract(int32_t expedition);
     bool extract_family_expedition_cargo(int32_t expedition,
                                          const ColonizationKitPlan &kit,
                                          std::string &error);
@@ -4725,6 +4777,7 @@ private:
     void rebuild_family_industry_metrics();
     void rebuild_family_owned_output_csr();
     void rebuild_family_behavior_cache();
+    void rebuild_family_policy_scalars();
     void grant_random_pool_family_effect(int32_t family_index,
                                          bool submit_changes);
     void grant_ancestral_precept_for_country(uint64_t country_handle);
@@ -4798,6 +4851,15 @@ private:
     int32_t cell_profession_share_q16(int32_t cell,
                                       int32_t profession_id) const;
     bool family_trait_technology_unlocked(int32_t trait_id, int32_t cell) const;
+    bool family_effect_technology_unlocked(int32_t effect_id, int32_t cell) const;
+    bool family_trait_origin_gates_allow(int32_t trait_id, int32_t origin_cell) const;
+    bool family_trait_context_allows(int32_t trait_id, int32_t family_index) const;
+    void collect_family_effect_target_cells(
+        int32_t source_cell, int32_t selector_kind,
+        std::vector<int32_t> &out_cells) const;
+    void fire_family_event_once_effect(int32_t family_index,
+                                       const std::string &program_key);
+    void apply_pending_family_split_gifts();
     void ensure_family_policy_factors();
     void reset_family_policy_factors(int32_t family_index);
     int32_t family_colonization_population_reward_amount(
@@ -4879,6 +4941,7 @@ private:
     void audit_touch_market_lane(size_t index);
     void sum_family_expedition_holdings(int64_t &population, int64_t &funds,
                                         int64_t &goods, int64_t &saturation) const;
+    int64_t family_expedition_payload_people(int32_t expedition) const;
     void note_family_expedition_audit_invalidation();
     AuditTotals incremental_audit_totals() const;
     void commit_incremental_audit_shadow();

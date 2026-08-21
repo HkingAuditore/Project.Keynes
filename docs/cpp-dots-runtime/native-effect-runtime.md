@@ -64,9 +64,11 @@ Family effects are authored through `FamilyEffectDefinition` and compiled into
 the same packed `EffectDefinition` IR. The cold catalog adds source kind, target
 domain, operation, lifecycle, duration, stack policy/key/cap, priority, target
 selector and metric mask columns. Six source kinds, six target domains, five
-operations, three lifecycles, five stack policies and six selector kinds are
-validated before native configuration. `default_family_effects.tres` is
-intentionally empty: case-study examples are content, not engine defaults.
+operations, three lifecycles, five stack policies and eight selector kinds are
+validated before native configuration. `default_family_effects.tres` is a thin
+wrapper around the first official FamilyEffect catalog compiled from
+`family_official_buffs.json`; formation always grants exactly one random-pool
+effect when eligible candidates exist.
 An effect with `behavior_id` calls a compile-time registered
 `EffectRuntime::BehaviorFn`; the callback reads a frozen `BehaviorInput` and
 returns POD commands. Behavior commands use integer key IDs from the catalog's

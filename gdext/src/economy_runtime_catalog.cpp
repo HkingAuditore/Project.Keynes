@@ -63,6 +63,8 @@ bool NativeEconomyRuntime::compile_family_trait_catalog(
         catalog, "family_trait_technology_prerequisite_offsets");
     _family_trait_technology_prerequisites = packed_i32(
         catalog, "family_trait_technology_prerequisites");
+    _family_trait_technology_match_any = economy_packed_u8(
+        catalog, "family_trait_technology_match_any");
     _family_trait_behavior_offsets = packed_i32(
         catalog, "family_trait_behavior_offsets");
     _family_trait_behavior_axes = packed_i32(
@@ -101,8 +103,67 @@ bool NativeEconomyRuntime::compile_family_trait_catalog(
         catalog, "family_trait_effect_offsets");
     _family_trait_effect_keys = packed_strings(
         catalog, "family_trait_effect_keys");
+    _family_trait_origin_landform_offsets = packed_i32(
+        catalog, "family_trait_origin_landform_offsets");
+    _family_trait_origin_landforms = economy_packed_u8(
+        catalog, "family_trait_origin_landforms");
+    _family_trait_origin_adjacent_water = economy_packed_u8(
+        catalog, "family_trait_origin_adjacent_water");
+    _family_trait_origin_population_max = packed_i32(
+        catalog, "family_trait_origin_population_max");
+    _family_trait_origin_temperature_max_q16 = packed_i32(
+        catalog, "family_trait_origin_temperature_max_q16");
+    _family_trait_required_resource_offsets = packed_i32(
+        catalog, "family_trait_required_resource_offsets");
+    _family_trait_required_resource_ids = packed_i32(
+        catalog, "family_trait_required_resource_ids");
+    _family_trait_require_tax_or_subsidy = economy_packed_u8(
+        catalog, "family_trait_require_tax_or_subsidy");
 
     const size_t count = _family_trait_ids.size();
+    if (count == 0) {
+        _family_trait_display_names.clear();
+        _family_trait_weights.clear();
+        _family_trait_core_eligible.clear();
+        _family_trait_strength_min_q16.clear();
+        _family_trait_strength_max_q16.clear();
+        _family_trait_strength_step_q16.clear();
+        _family_trait_prerequisite_offsets.assign(1, 0);
+        _family_trait_prerequisites.clear();
+        _family_trait_exclusion_offsets.assign(1, 0);
+        _family_trait_exclusions.clear();
+        _family_trait_technology_prerequisite_offsets.assign(1, 0);
+        _family_trait_technology_prerequisites.clear();
+        _family_trait_technology_match_any.clear();
+        _family_trait_behavior_offsets.assign(1, 0);
+        _family_trait_behavior_axes.clear();
+        _family_trait_behavior_selector_kinds.clear();
+        _family_trait_behavior_selector_ids.clear();
+        _family_trait_behavior_factors_q16.clear();
+        _family_trait_behavior_score_terms.clear();
+        _family_trait_behavior_condition_offsets.assign(1, 0);
+        _family_trait_behavior_condition_ops.clear();
+        _family_trait_behavior_condition_arg0.clear();
+        _family_trait_behavior_condition_values.clear();
+        _family_trait_modifier_offsets.assign(1, 0);
+        _family_trait_modifier_definition_keys.clear();
+        _family_trait_modifier_targets.clear();
+        _family_trait_modifier_tier_magnitudes_q16.clear();
+        _family_trait_trigger_offsets.assign(1, 0);
+        _family_trait_trigger_definition_keys_by_tier.clear();
+        _family_trait_trigger_reward_targets.clear();
+        _family_trait_effect_offsets.assign(1, 0);
+        _family_trait_effect_keys.clear();
+        _family_trait_origin_landform_offsets.assign(1, 0);
+        _family_trait_origin_landforms.clear();
+        _family_trait_origin_adjacent_water.clear();
+        _family_trait_origin_population_max.clear();
+        _family_trait_origin_temperature_max_q16.clear();
+        _family_trait_required_resource_offsets.assign(1, 0);
+        _family_trait_required_resource_ids.clear();
+        _family_trait_require_tax_or_subsidy.clear();
+        return compile_family_effect_catalog(catalog, error);
+    }
     const bool primary_shape = count > 0 &&
         _family_trait_display_names.size() == count &&
         _family_trait_weights.size() == count &&
@@ -110,6 +171,10 @@ bool NativeEconomyRuntime::compile_family_trait_catalog(
         _family_trait_strength_min_q16.size() == count &&
         _family_trait_strength_max_q16.size() == count &&
         _family_trait_strength_step_q16.size() == count;
+    if (_family_trait_technology_match_any.empty())
+        _family_trait_technology_match_any.assign(count, 0);
+    const bool match_any_shape =
+        _family_trait_technology_match_any.size() == count;
     const bool csr_shape =
         _family_trait_prerequisite_offsets.size() == count + 1 &&
         _family_trait_exclusion_offsets.size() == count + 1 &&
@@ -140,6 +205,32 @@ bool NativeEconomyRuntime::compile_family_trait_catalog(
         _family_trait_effect_offsets.front() == 0 &&
         _family_trait_effect_offsets.back() == static_cast<int32_t>(
             _family_trait_effect_keys.size());
+    if (_family_trait_origin_landform_offsets.empty())
+        _family_trait_origin_landform_offsets.assign(count + 1, 0);
+    if (_family_trait_origin_adjacent_water.empty())
+        _family_trait_origin_adjacent_water.assign(count, 0);
+    if (_family_trait_origin_population_max.empty())
+        _family_trait_origin_population_max.assign(count, 0);
+    if (_family_trait_origin_temperature_max_q16.empty())
+        _family_trait_origin_temperature_max_q16.assign(count, -1);
+    if (_family_trait_required_resource_offsets.empty())
+        _family_trait_required_resource_offsets.assign(count + 1, 0);
+    if (_family_trait_require_tax_or_subsidy.empty())
+        _family_trait_require_tax_or_subsidy.assign(count, 0);
+    const bool origin_gate_shape =
+        _family_trait_origin_landform_offsets.size() == count + 1 &&
+        !_family_trait_origin_landform_offsets.empty() &&
+        _family_trait_origin_landform_offsets.front() == 0 &&
+        _family_trait_origin_landform_offsets.back() == static_cast<int32_t>(
+            _family_trait_origin_landforms.size()) &&
+        _family_trait_origin_adjacent_water.size() == count &&
+        _family_trait_origin_population_max.size() == count &&
+        _family_trait_origin_temperature_max_q16.size() == count &&
+        _family_trait_required_resource_offsets.size() == count + 1 &&
+        _family_trait_required_resource_offsets.front() == 0 &&
+        _family_trait_required_resource_offsets.back() == static_cast<int32_t>(
+            _family_trait_required_resource_ids.size()) &&
+        _family_trait_require_tax_or_subsidy.size() == count;
     const bool edge_shape =
         _family_trait_behavior_axes.size() ==
             _family_trait_behavior_selector_kinds.size() &&
@@ -168,7 +259,8 @@ bool NativeEconomyRuntime::compile_family_trait_catalog(
     if (_family_trait_catalog_version <= 0 || _family_trait_catalog_hash == 0 ||
         _family_core_trait_min < 0 ||
         _family_core_trait_max < _family_core_trait_min || !primary_shape ||
-        !csr_shape || !edge_shape) {
+        !match_any_shape ||
+        !csr_shape || !edge_shape || !origin_gate_shape) {
         error = "family_trait_catalog_shape_invalid";
         return false;
     }
@@ -204,6 +296,13 @@ bool NativeEconomyRuntime::compile_family_trait_catalog(
     for (int32_t id : _family_trait_technology_prerequisites)
         if (id < 0 || (technology_count > 0 && id >= technology_count)) {
             error = "family_trait_technology_prerequisite_invalid";
+            return false;
+        }
+    const int32_t resource_count = static_cast<int32_t>(
+        packed_strings(catalog, "resource_ids").size());
+    for (int32_t id : _family_trait_required_resource_ids)
+        if (id < 0 || (resource_count > 0 && id >= resource_count)) {
+            error = "family_trait_required_resource_invalid";
             return false;
         }
     for (int32_t term : _family_trait_behavior_score_terms)
@@ -259,6 +358,8 @@ bool NativeEconomyRuntime::compile_family_effect_catalog(
     _family_effect_weights = packed_i32(catalog, "family_effect_weights");
     _family_effect_random_pool_eligible = economy_packed_u8(
         catalog, "family_effect_random_pool_eligible");
+    _family_effect_technology_match_any = economy_packed_u8(
+        catalog, "family_effect_technology_match_any");
     _family_effect_prerequisite_offsets = packed_i32(
         catalog, "family_effect_prerequisite_offsets");
     _family_effect_prerequisites = packed_i32(
@@ -271,22 +372,35 @@ bool NativeEconomyRuntime::compile_family_effect_catalog(
     _family_effect_exclusions = packed_i32(catalog, "family_effect_exclusions");
     _family_effect_magnitude_by_prestige_q16 = packed_i32(
         catalog, "family_effect_magnitude_by_prestige_q16");
+    _family_effect_trigger_definition_keys_by_tier = packed_strings(
+        catalog, "family_effect_trigger_definition_keys_by_tier");
+    _family_effect_trigger_reward_targets = packed_i32(
+        catalog, "family_effect_trigger_reward_targets");
     const size_t count = _family_effect_keys.size();
     if (count == 0) {
         _family_effect_source_kinds.clear();
         _family_effect_weights.clear();
         _family_effect_random_pool_eligible.clear();
+        _family_effect_technology_match_any.clear();
         _family_effect_prerequisite_offsets.assign(1, 0);
         _family_effect_prerequisites.clear();
         _family_effect_exclusion_offsets.assign(1, 0);
         _family_effect_exclusions.clear();
         _family_effect_magnitude_by_prestige_q16.clear();
+        _family_effect_trigger_definition_keys_by_tier.clear();
+        _family_effect_trigger_reward_targets.clear();
         return true;
     }
     if (_family_effect_catalog_version <= 0 || _family_effect_catalog_hash == 0 ||
         _family_effect_source_kinds.size() != count ||
         _family_effect_weights.size() != count ||
         _family_effect_random_pool_eligible.size() != count) {
+        error = "family_effect_catalog_shape_invalid";
+        return false;
+    }
+    if (_family_effect_technology_match_any.empty())
+        _family_effect_technology_match_any.assign(count, 0);
+    if (_family_effect_technology_match_any.size() != count) {
         error = "family_effect_catalog_shape_invalid";
         return false;
     }
@@ -309,6 +423,15 @@ bool NativeEconomyRuntime::compile_family_effect_catalog(
         _family_effect_magnitude_by_prestige_q16.assign(count * 6, Q16_ONE);
     if (_family_effect_magnitude_by_prestige_q16.size() != count * 6) {
         error = "family_effect_prestige_magnitude_shape_invalid";
+        return false;
+    }
+    if (_family_effect_trigger_definition_keys_by_tier.empty())
+        _family_effect_trigger_definition_keys_by_tier.assign(count * 6, std::string());
+    if (_family_effect_trigger_reward_targets.empty())
+        _family_effect_trigger_reward_targets.assign(count, 0);
+    if (_family_effect_trigger_definition_keys_by_tier.size() != count * 6 ||
+        _family_effect_trigger_reward_targets.size() != count) {
+        error = "family_effect_trigger_tier_shape_invalid";
         return false;
     }
     const int32_t technology_count = static_cast<int32_t>(
@@ -418,6 +541,13 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
     _profession_ids = packed_strings(catalog, "profession_ids");
     _ethnicity_ids = packed_strings(catalog, "ethnicity_ids");
     _good_ids = packed_strings(catalog, "good_ids");
+    _family_corn_good_id = -1;
+    for (size_t i = 0; i < _good_ids.size(); ++i) {
+        if (_good_ids[i] == "corn_grain") {
+            _family_corn_good_id = static_cast<int32_t>(i);
+            break;
+        }
+    }
     _plan_ids = packed_strings(catalog, "plan_ids");
     _technology_ids = packed_strings(catalog, "technology_ids");
     if (_profession_ids.empty() || _ethnicity_ids.empty() || _good_ids.empty() || _plan_ids.empty()) {

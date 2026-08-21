@@ -37,6 +37,44 @@ class CountingGenerator extends RefCounted:
 		return facade
 
 
+class ProfessionUnlockFacade extends RefCounted:
+	func building_cell_snapshot(_cell_idx: int) -> Dictionary:
+		return {
+			"ok": true,
+			"building_type_ids": PackedStringArray(["gathering_ground"]),
+			"building_technology_available": PackedByteArray([1]),
+			"building_construction_available": PackedByteArray([1]),
+			"building_counts_by_type": PackedInt64Array([1]),
+			"building_owner_profession_ids": PackedInt32Array([0]),
+			"building_employee_offsets": PackedInt32Array([0, 0]),
+			"building_employee_profession_ids": PackedInt32Array(),
+			"profession_stable_ids": PackedStringArray([
+				"forager", "ai_researcher"]),
+		}
+
+	func market_cell_snapshot(_cell_idx: int) -> Dictionary:
+		return {
+			"ok": true,
+			"good_ids": PackedStringArray(),
+			"good_technology_available": PackedByteArray(),
+		}
+
+	func population_cell_snapshot(_cell_idx: int,
+			_include_details: bool = true) -> Dictionary:
+		return {
+			"ok": true,
+			"profession_stable_ids": PackedStringArray([
+				"forager", "ai_researcher"]),
+			"profession_technology_available": PackedByteArray([1, 1]),
+			"profession_ids": PackedInt32Array([0]),
+		}
+
+
+class ProfessionUnlockGenerator extends RefCounted:
+	func get_economy_facade():
+		return ProfessionUnlockFacade.new()
+
+
 class PlayerDiscoveryCountryFacade extends RefCounted:
 	var owned_cells := {}
 	var countries := {}
@@ -782,6 +820,23 @@ func _initialize() -> void:
 		"enforce_goods": true, "goods": {"unlocked_good": true},
 		"enforce_professions": true, "professions": {"artisan": true},
 	}
+	var family_name_view := CellInspectorViewModel.new()
+	var family_category: Dictionary = family_name_view._family_category({
+		"ok": true,
+		"family_handles": PackedInt64Array([7]),
+		"surnames": PackedStringArray(["李"]),
+		"family_names": PackedStringArray(["长安李氏"]),
+		"surname_disambiguators": PackedInt32Array([0]),
+		"populations": PackedInt64Array([12]),
+		"cash_claims": PackedInt64Array([0]),
+		"owned_buildings": PackedInt64Array([1]),
+		"notable_person_counts": PackedInt32Array([1]),
+		"prestige_levels": PackedInt32Array([1]),
+	})
+	var family_rows: Array = family_category.get("family_rows", [])
+	if family_rows.size() != 1 \
+			or String(family_rows[0].get("name", "")) != "长安李氏":
+		failures.append("family list did not use origin settlement display names")
 	if CellInspectorViewModel._family_behavior_selector_visible(
 			0, "locked_building", family_visibility) \
 			or CellInspectorViewModel._family_behavior_selector_visible(
@@ -791,6 +846,27 @@ func _initialize() -> void:
 			or not CellInspectorViewModel._family_behavior_selector_visible(
 			0, "unlocked_building", family_visibility):
 		failures.append("family detail did not filter locked behavior selectors")
+	var profession_mask_view := CellInspectorViewModel.new()
+	profession_mask_view._generator = ProfessionUnlockGenerator.new()
+	var profession_visibility: Dictionary = \
+		profession_mask_view._family_behavior_visibility(0)
+	var profession_rows: Array = profession_mask_view._family_behavior_rows({
+		"behavior_axes": PackedInt32Array([1, 1]),
+		"behavior_selector_stable_ids": PackedStringArray([
+			"forager", "ai_researcher"]),
+		"behavior_selector_display_names": PackedStringArray([
+			"采集者", "AI 研究员"]),
+		"behavior_factors_q16": PackedInt32Array([65536, 65536]),
+	}, 0)
+	if not bool(profession_visibility.get("enforce_professions", false)) \
+			or not (profession_visibility.get("professions", {}) as Dictionary).has(
+				"forager") \
+			or (profession_visibility.get("professions", {}) as Dictionary).has(
+				"ai_researcher") \
+			or profession_rows.size() != 1 \
+			or String(profession_rows[0].get("name", "")).find("采集者") < 0 \
+			or String(profession_rows[0].get("name", "")).find("AI") >= 0:
+		failures.append("family behavior rows listed a locked profession")
 
 	var recipe_view_model := CellInspectorViewModel.new()
 	var stone_item := {"building_id": "timber_collector", "materials": []}

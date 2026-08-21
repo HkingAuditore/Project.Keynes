@@ -47,7 +47,7 @@ For the standard family catalog, produce exactly three preference tables and two
 - Write `—` when a preference has no random appearance condition.
 - Define every variable used by a preference, for example `X∈[20%,60%]；Y∈[10%,30%]`.
 - Make every prestige cell explicit. Prestige may improve magnitude, threshold, radius, duration, stack cap, or reward quantity.
-- Write the final effect as one complete natural-language sentence containing the trigger, target, and all five tier outcomes.
+- Write the final effect as five independently readable statements in order: `威望Ⅰ：……` through `威望Ⅴ：……`, separated by `<br>` inside a Markdown table cell. Every statement must repeat the condition, target, operation, and that tier's values. Never compress tiers with phrases such as `威望Ⅰ—Ⅴ`, `威望Ⅱ—Ⅴ`, `分别`, or a positional list of numbers.
 
 Read [design-schema.md](references/design-schema.md) when creating or substantially restructuring a catalog.
 
@@ -70,6 +70,12 @@ Preserve explicit user rules. For example, if the user allows direct population 
 
 - Give each family a recognizable choice pattern, a payoff, and at least one condition or tradeoff that can change its value.
 - Create cross-links among climate, geography, resources, production chains, professions, consumption, trade, and family expansion.
+- Keep activation conditions immediately legible. Prefer no condition or one visible event/state such as “发生降雨”, “完成一次贸易”, “位于海岸”, or “失业率高于15%”. A simple persistent context plus one event is acceptable when both are directly visible.
+- Avoid triggers that require reconstructing hidden history, comparing moving averages, reading future windows, recognizing multi-stage state transitions, or preserving an uninterrupted action sequence. Do not use patterns like price crossing above an average and later crossing back, a forecast over the next N days, or consecutive same-family investments that reset when any other investment occurs unless the user explicitly requests such complexity.
+- Put build depth in interactions among simple effects, targets, rewards, costs, and stacks. If an effect grows, let one common visible event add a clearly named stack and one common visible event spend or reset it; the player should know why it triggered without consulting a log.
+- Make every row terminologically self-contained. Use an existing player-facing catalog/UI name, or define the term in that same row. Do not assume the reader knows invented shorthand such as “主部门”, “同链”, “同产业”, “匹配物资”, or “相关建筑”. Replace it with the actual referent, for example “父家族拥有建筑数量最多的经济部门” or “生产该短缺物资的建筑”.
+- Spell out the reference behind every comparison. Write “当前价格高于该物资的默认价格” instead of “高于基准价格”, and state what a percentage is measured against. Avoid exposing runtime-oriented terms such as upgrade family, safe yield, EMA, or internal selector names unless the current UI uses them and the row explains them.
+- State the operation behind every derived result. For financial effects, identify whether revenue rises, a cost falls, cash is transferred, debt is forgiven, or goods are sold; if money, goods, or resources move, name both source and recipient. Do not write only a summary such as “亏损幅度-2%”, and do not imply creation unless the user explicitly allows it.
 - Use broad bonuses conservatively; reserve extreme values for narrow, conditional, late-era, or mixed effects.
 - Make negative and mixed effects legitimate build pieces, not filler penalties.
 - Cover all current need categories and economic sectors. Cover every current profession either directly or through an explicit group. Use representative goods and buildings across all eleven eras without mechanically generating one row per asset.

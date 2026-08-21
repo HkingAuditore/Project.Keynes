@@ -1892,6 +1892,32 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                     effective_birth_rate_q32,
                     _epoch_cell_birth_factor_q16[cell], Q16_ONE, sat);
             }
+            if (_family_cohort_offsets.size() == _population.active.size() + 1 &&
+                !_family_birth_factor_q16.empty()) {
+                const int64_t cohort_population = std::max<int64_t>(1,
+                    _population.population[slot]);
+                int64_t weighted = saturating_mul(cohort_population, Q16_ONE, sat);
+                for (int32_t p = _family_cohort_offsets[slot];
+                     p < _family_cohort_offsets[slot + 1]; ++p) {
+                    const FamilyMembershipEdge &edge = _family_memberships[
+                        _family_cohort_edge_indices[p]];
+                    if (edge.people <= 0 || edge.family_handle == 0) continue;
+                    int32_t family = -1;
+                    if (!_families.valid_handle(edge.family_handle, family) ||
+                        family < 0 || family >= static_cast<int32_t>(
+                            _family_birth_factor_q16.size()))
+                        continue;
+                    const int32_t factor = _family_birth_factor_q16[
+                        static_cast<size_t>(family)];
+                    if (factor == Q16_ONE) continue;
+                    weighted = saturating_add(weighted,
+                        saturating_mul(edge.people,
+                            static_cast<int64_t>(factor) - Q16_ONE, sat), sat);
+                }
+                const int64_t mix = mul_div_sat(weighted, 1, cohort_population, sat);
+                effective_birth_rate_q32 = mul_div_sat(
+                    effective_birth_rate_q32, mix, Q16_ONE, sat);
+            }
             const int64_t expected_births_q32 = saturating_mul(
                 saturating_mul(std::max<int64_t>(0, _population.population[slot]),
                                effective_birth_rate_q32, sat),

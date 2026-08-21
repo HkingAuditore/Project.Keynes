@@ -45,23 +45,204 @@ func _run() -> void:
 
 
 func _test_catalog_foundation() -> void:
+	var official_traits: Resource = FamilyTraitCatalogScript.load_default()
+	var official_effects: Resource = FamilyEffectCatalogScript.load_default()
+	_expect("load_default hydrates 98 official family traits",
+		official_traits != null and official_traits.traits.size() == 98)
+	_expect("load_default hydrates 48 official family effects",
+		official_effects != null and official_effects.effects.size() == 48)
+	if official_effects != null:
+		var copy_ok: bool = official_effects.effects.size() == 48
+		for definition in official_effects.effects:
+			var display_name := String(definition.display_name).strip_edges()
+			var description := String(definition.description).strip_edges()
+			copy_ok = copy_ok and not display_name.is_empty() \
+				and display_name.find(".") < 0 \
+				and not description.is_empty()
+		_expect("official family effects have Chinese names and descriptions",
+			copy_ok)
+		var design_ok: bool = true
+		for definition in official_effects.effects:
+			var description := String(definition.description)
+			var statements: Variant = definition.prestige_descriptions
+			design_ok = design_ok and description.find("威望Ⅰ") >= 0 \
+				and description.find("威望Ⅴ") >= 0 \
+				and statements.size() == 5 \
+				and String(statements[0]).begins_with("威望Ⅰ") \
+				and String(statements[4]).begins_with("威望Ⅴ")
+		_expect("official family effects keep five prestige statements", design_ok)
+		var placeholder_ok: bool = true
+		for definition in official_traits.traits:
+			placeholder_ok = placeholder_ok \
+				and String(definition.description_template).find("X") >= 0 \
+				and String(definition.range_text).find("X∈") >= 0 \
+				and String(definition.description).find("X") >= 0
+		_expect("official family traits keep placeholder ranges from the design table",
+			placeholder_ok)
+		var wheat_keys := PackedStringArray()
+		var rice_keys := PackedStringArray()
+		var corn_keys := PackedStringArray()
+		var fishing_keys := PackedStringArray()
+		var extractive_keys := PackedStringArray()
+		var mining_keys := PackedStringArray()
+		var fishing_any := false
+		var extractive_any := false
+		var mining_any := false
+		var j003_has_oil := false
+		var corn_effect_keys := PackedStringArray()
+		var effect_gates := {}
+		for definition in official_traits.traits:
+			var key := String(definition.key)
+			if key == "c023_wheat":
+				wheat_keys = definition.prerequisite_technology_keys
+			elif key == "c022_rice":
+				rice_keys = definition.prerequisite_technology_keys
+			elif key == "c024_corn":
+				corn_keys = definition.prerequisite_technology_keys
+			elif key == "i008_fishing":
+				fishing_keys = definition.prerequisite_technology_keys
+				fishing_any = bool(definition.prerequisite_technology_any)
+			elif key == "i002_extractive":
+				extractive_keys = definition.prerequisite_technology_keys
+				extractive_any = bool(definition.prerequisite_technology_any)
+			elif key == "i012_mining":
+				mining_keys = definition.prerequisite_technology_keys
+				mining_any = bool(definition.prerequisite_technology_any)
+			elif key == "j003_forest_mine":
+				for behavior in definition.behaviors:
+					if String(behavior.selector_id) == "petroleum_worker":
+						j003_has_oil = true
+		for definition in official_effects.effects:
+			var effect_key := String(definition.key)
+			if effect_key == "corn_expert":
+				corn_effect_keys = definition.prerequisite_technology_keys
+			effect_gates[effect_key] = [
+				bool(definition.prerequisite_technology_any),
+				definition.prerequisite_technology_keys]
+		_expect("麦食 cannot roll before wild wheat collection is unlocked",
+			wheat_keys.has("tech.wild_wheat_collection"))
+		_expect("米食 cannot roll before paddy rice cultivation is unlocked",
+			rice_keys.has("tech.rice_paddy_cultivation"))
+		_expect("玉米嗜好 cannot roll before wild maize collection is unlocked",
+			corn_keys.has("tech.wild_maize_collection"))
+		_expect("玉米专家 cannot enter the random pool before wild maize collection",
+			corn_effect_keys.has("tech.wild_maize_collection"))
+		_expect("渔户水脉 uses ANY freshwater or coastal fishing",
+			fishing_any
+			and fishing_keys.has("tech.freshwater_fishing")
+			and fishing_keys.has("tech.coastal_fishing"))
+		_expect("重矿 requires identified mineral technologies",
+			extractive_any
+			and extractive_keys.has("tech.iron_ore_identification")
+			and extractive_keys.has("tech.natural_copper_identification")
+			and extractive_keys.has("tech.tin_identification")
+			and extractive_keys.has("tech.gold_placer_identification")
+			and extractive_keys.has("tech.silver_vein_identification")
+			and extractive_keys.has("tech.coal_outcrop_identification"))
+		_expect("矿业经营 identification ANY includes petroleum extraction",
+			mining_any
+			and mining_keys.has("tech.iron_ore_identification")
+			and mining_keys.has("tech.petroleum_extraction"))
+		_expect("林矿世业 does not employ petroleum workers", not j003_has_oil)
+		_expect("植树造林 cannot enter the pool before deadwood collection",
+			not bool(effect_gates["afforestation"][0])
+			and (effect_gates["afforestation"][1] as PackedStringArray).has(
+				"tech.deadwood_collection"))
+		_expect("观潮生计 uses ANY freshwater or coastal fishing",
+			bool(effect_gates["tide_living"][0])
+			and (effect_gates["tide_living"][1] as PackedStringArray).has(
+				"tech.freshwater_fishing")
+			and (effect_gates["tide_living"][1] as PackedStringArray).has(
+				"tech.coastal_fishing"))
+		_expect("山地矿脉 uses ANY mineral identification",
+			bool(effect_gates["mountain_vein"][0])
+			and (effect_gates["mountain_vein"][1] as PackedStringArray).has(
+				"tech.iron_ore_identification"))
+		_expect("trade pool effects require early trade",
+			(effect_gates["trade_zealot"][1] as PackedStringArray).has("tech.early_trade")
+			and (effect_gates["market_boom"][1] as PackedStringArray).has("tech.early_trade")
+			and (effect_gates["branch_network"][1] as PackedStringArray).has("tech.early_trade")
+			and (effect_gates["trade_nation"][1] as PackedStringArray).has("tech.early_trade"))
+		_expect("industry pool effects require the agrarian milestone",
+			(effect_gates["industry_cluster"][1] as PackedStringArray).has(
+				"tech.agrarian_society")
+			and (effect_gates["many_trades"][1] as PackedStringArray).has(
+				"tech.agrarian_society")
+			and (effect_gates["one_industry_city"][1] as PackedStringArray).has(
+				"tech.agrarian_society")
+			and (effect_gates["city_chain"][1] as PackedStringArray).has(
+				"tech.agrarian_society")
+			and (effect_gates["specialized_industry"][1] as PackedStringArray).has(
+				"tech.agrarian_society")
+			and (effect_gates["versatile_crafts"][1] as PackedStringArray).has(
+				"tech.agrarian_society")
+			and (effect_gates["complete_chain"][1] as PackedStringArray).has(
+				"tech.agrarian_society")
+			and (effect_gates["local_monopoly"][1] as PackedStringArray).has(
+				"tech.agrarian_society"))
+		_expect("knowledge pool effects require writing",
+			(effect_gates["knowledge_spread"][1] as PackedStringArray).has("tech.writing")
+			and (effect_gates["family_learning"][1] as PackedStringArray).has("tech.writing"))
 	var compiled: Dictionary = EconomyCatalogScript.compile_native_catalog()
-	_expect("empty default family-effect catalog still compiles into economy IR",
+	var effect_keys: PackedStringArray = compiled.get(
+		"family_effect_keys", PackedStringArray())
+	var trait_ids: PackedStringArray = compiled.get(
+		"family_trait_ids", PackedStringArray())
+	var exclusions: PackedInt32Array = compiled.get(
+		"family_effect_exclusions", PackedInt32Array())
+	_expect("official family catalogs compile into economy IR",
 		bool(compiled.get("ok", false))
 		and int(compiled.get("family_effect_catalog_version", 0)) >= 1
-		and (compiled.get("family_effect_keys", PackedStringArray()) as PackedStringArray).is_empty()
-		and (compiled.get("family_effect_exclusion_offsets", PackedInt32Array()) as PackedInt32Array).size() == 1
-		and (compiled.get("family_effect_magnitude_by_prestige_q16", PackedInt32Array()) as PackedInt32Array).is_empty())
+		and trait_ids.size() == 98
+		and effect_keys.size() == 48
+		and effect_keys.has("family.effect.rain_prayer")
+		and effect_keys.has("family.effect.branching_households")
+		and effect_keys.has("family.effect.century_shop")
+		and (compiled.get("family_effect_exclusion_offsets", PackedInt32Array()) as PackedInt32Array).size() == 49
+		and exclusions.size() > 0
+		and (compiled.get("family_effect_magnitude_by_prestige_q16", PackedInt32Array()) as PackedInt32Array).size() == 48 * 6)
+	var trait_match: PackedByteArray = compiled.get(
+		"family_trait_technology_match_any", PackedByteArray())
+	var effect_match: PackedByteArray = compiled.get(
+		"family_effect_technology_match_any", PackedByteArray())
+	var fishing_id := trait_ids.find("i008_fishing")
+	var extractive_id := trait_ids.find("i002_extractive")
+	var tide_id := effect_keys.find("family.effect.tide_living")
+	_expect("compiled catalogs pack ANY flags for fishing and mineral gates",
+		trait_match.size() == 98
+		and effect_match.size() == 48
+		and fishing_id >= 0 and int(trait_match[fishing_id]) != 0
+		and extractive_id >= 0 and int(trait_match[extractive_id]) != 0
+		and tide_id >= 0 and int(effect_match[tide_id]) != 0)
+	if not bool(compiled.get("ok", false)):
+		print("official catalog=", compiled)
+	var baseline_hash := int(compiled.get("family_effect_catalog_hash", 0))
+	var mutated: Resource = official_effects.duplicate(false)
+	var mutated_rows: Array[Resource] = []
+	for definition in official_effects.effects:
+		var copy: Resource = definition.duplicate(false)
+		copy.display_name = "%sx" % String(copy.display_name)
+		copy.description = "%s extra" % String(copy.description)
+		mutated_rows.append(copy)
+	mutated.effects = mutated_rows
+	var mutated_result: Dictionary = EconomyCatalogScript.compile_native_catalog(mutated)
+	_expect("family effect display copy does not change family_effect_catalog_hash",
+		baseline_hash != 0
+		and bool(mutated_result.get("ok", false))
+		and int(mutated_result.get("family_effect_catalog_hash", 0)) == baseline_hash)
 	var domain: Resource = EffectDomainCatalogScript.build()
-	_expect("effect domain catalog builds without authored buff cases", domain != null)
+	_expect("effect domain catalog builds with official family effects", domain != null)
 	if domain == null:
 		return
 	var domain_ir: Dictionary = domain.compile_native_catalog()
-	_expect("effect domain catalog compiles opcode 23 and metrics 15-21",
+	var metric_keys: PackedStringArray = domain_ir.get(
+		"metric_keys", PackedStringArray())
+	_expect("effect domain catalog compiles opcode 23 and metrics 22-36",
 		bool(domain_ir.get("ok", false))
-		and (domain_ir.get("metric_keys", PackedStringArray()) as PackedStringArray).size() >= 22
-		and String((domain_ir.get("metric_keys", PackedStringArray()) as PackedStringArray)[15])
-			== "family.has_owned_manufacturing"
+		and metric_keys.size() >= 37
+		and String(metric_keys[15]) == "family.has_owned_manufacturing"
+		and String(metric_keys[22]) == "cell.unemployment_q16"
+		and String(metric_keys[36]) == "cell.can_produce_corn"
 		and (domain_ir.get("effect_keys", PackedStringArray()) as PackedStringArray).has(
 			"trigger.economy.family.set_split_policy"))
 	var all_professions := FamilyTraitCatalogScript.new()
@@ -219,8 +400,8 @@ func _test_runtime_channels() -> void:
 	var family_handle := int((page.family_handles as PackedInt64Array)[0])
 	var effects0: Dictionary = ext.get_family_branch_effects(family_handle, 0)
 	var keys0: PackedStringArray = effects0.get("effect_definition_keys", PackedStringArray())
-	_expect("random-pool grant is 0 or 1 independent effect",
-		bool(effects0.get("ok", false)) and keys0.size() <= 1)
+	_expect("random-pool grant is exactly one independent effect",
+		bool(effects0.get("ok", false)) and keys0.size() == 1)
 	var day1 := _run_day(ext, 1)
 	var effects1: Dictionary = ext.get_family_branch_effects(family_handle, 0)
 	var keys1: PackedStringArray = effects1.get("effect_definition_keys", PackedStringArray())

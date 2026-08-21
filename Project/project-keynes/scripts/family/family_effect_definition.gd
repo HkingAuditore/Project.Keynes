@@ -51,14 +51,19 @@ enum TargetSelectorKind {
 	SOURCE_COUNTRY = 3,
 	STATIC_HANDLE = 4,
 	SELECTOR_ID = 5,
+	NEIGHBORS_R1 = 6,
+	NEIGHBORS_R2 = 7,
 }
 
 @export var key: StringName = &""
 @export var version: int = 1
+@export var display_name: String = ""
 @export_multiline var description: String = ""
+@export var prestige_descriptions: PackedStringArray = PackedStringArray()
 @export_range(1, 1000000, 1) var weight: int = 1
 @export var random_pool_eligible: bool = false
 @export var prerequisite_technology_keys: PackedStringArray = PackedStringArray()
+@export var prerequisite_technology_any: bool = false
 @export var source_kind: int = SourceKind.TRAIT
 @export var target_domain: int = TargetDomain.FAMILY
 @export var operation: int = Operation.ADD
@@ -75,12 +80,15 @@ enum TargetSelectorKind {
 @export var conditions: Array[Resource] = []
 @export var instructions: Array[Resource] = []
 @export var commands: Array[Resource] = []
+@export var trigger_definition_keys_by_tier: PackedStringArray = PackedStringArray()
+@export var trigger_reward_target: int = 0
+@export var cadence_days: int = 1
 
 func to_effect_definition() -> Resource:
 	var definition: Resource = load("res://scripts/effect/effect_definition.gd").new()
 	definition.key = StringName("family.effect.%s" % String(key).strip_edges())
 	definition.version = version
-	definition.cadence_days = 1
+	definition.cadence_days = cadence_days if cadence_days > 0 else 1
 	definition.max_work = 128
 	definition.enabled = true
 	definition.conditions = conditions.duplicate()
@@ -99,3 +107,10 @@ func to_effect_definition() -> Resource:
 	definition.target_selector_id = target_selector_id
 	definition.magnitude_by_prestige_q16 = magnitude_by_prestige_q16.duplicate()
 	return definition
+
+
+func program_key() -> String:
+	var raw := String(key).strip_edges()
+	if raw.is_empty() or raw.begins_with("family.effect."):
+		return raw
+	return "family.effect.%s" % raw

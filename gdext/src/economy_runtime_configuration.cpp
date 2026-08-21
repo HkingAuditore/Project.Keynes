@@ -290,8 +290,15 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _family_behavior_factor_offsets.clear();
     _family_behavior_factor_rows.clear();
     _family_purchase_factor_q16.clear();
+    _family_investment_factor_q16.clear();
+    _family_birth_factor_q16.clear();
     _family_absorb_bonus_q16.clear();
     _family_colonization_population_reward.clear();
+    _pending_family_split_gifts.clear();
+    _family_policy_stamped_cells.clear();
+    _epoch_cell_rain_event_threshold_q16.clear();
+    _epoch_cell_cold_capacity_factor_q16.clear();
+    _epoch_cell_sector_output_factor_q16.clear();
     _family_trait_commands.clear();
     _family_effect_bindings.clear();
     _family_effect_binding_by_instance.clear();
@@ -1226,9 +1233,17 @@ bool NativeEconomyRuntime::family_ledger_command_preflight(const Command &cmd) c
 bool NativeEconomyRuntime::family_split_policy_command_preflight(
         const Command &cmd) const {
     if (cmd.opcode != COMMAND_FAMILY_SET_SPLIT_POLICY) return false;
-    if (cmd.i32_0 != static_cast<int32_t>(FAMILY_FLAG_SPLIT_RETAIN_ONLY) &&
-        cmd.i32_0 != static_cast<int32_t>(FAMILY_FLAG_SPLIT_BONUS_WEIGHT))
+    const int32_t mode = cmd.i32_0 & static_cast<int32_t>(FAMILY_FLAG_SPLIT_MODE_MASK);
+    const int32_t gifts = cmd.i32_0 & static_cast<int32_t>(
+        FAMILY_FLAG_SPLIT_GIFT_BUILDING | FAMILY_FLAG_SPLIT_GIFT_POPULATION);
+    if ((cmd.i32_0 & ~static_cast<int32_t>(FAMILY_FLAG_SPLIT_POLICY_MASK)) != 0)
         return false;
+    if (mode != 0 &&
+        mode != static_cast<int32_t>(FAMILY_FLAG_SPLIT_RETAIN_ONLY) &&
+        mode != static_cast<int32_t>(FAMILY_FLAG_SPLIT_BONUS_WEIGHT) &&
+        mode != static_cast<int32_t>(FAMILY_FLAG_SPLIT_REPLACE))
+        return false;
+    (void)gifts;
     if (cmd.i64_0 < 0 || cmd.i64_0 > 255) return false;
     int32_t family = -1;
     int32_t branch = -1;

@@ -38,6 +38,7 @@ func _run() -> void:
 	_test_catalog_compile()
 	_test_behavior_conditions_and_score_terms()
 	_test_trait_technology_gate()
+	_test_trait_technology_any_gate()
 	_test_conserved_family_commands()
 
 
@@ -56,10 +57,16 @@ func _test_catalog_compile() -> void:
 		"family_trait_behavior_condition_offsets", PackedInt32Array())
 	var tech_offsets: PackedInt32Array = compiled.get(
 		"family_trait_technology_prerequisite_offsets", PackedInt32Array())
+	var trait_match: PackedByteArray = compiled.get(
+		"family_trait_technology_match_any", PackedByteArray())
+	var effect_match: PackedByteArray = compiled.get(
+		"family_effect_technology_match_any", PackedByteArray())
 	_expect("default trait catalog packs score_term and condition CSR columns",
 		score_terms.size() == axes.size()
 		and condition_offsets.size() == axes.size() + 1
-		and tech_offsets.size() == (compiled.family_trait_ids as PackedStringArray).size() + 1)
+		and tech_offsets.size() == (compiled.family_trait_ids as PackedStringArray).size() + 1
+		and trait_match.size() == (compiled.family_trait_ids as PackedStringArray).size()
+		and effect_match.size() == (compiled.family_effect_keys as PackedStringArray).size())
 	var domain: Resource = EffectDomainCatalogScript.build()
 	_expect("effect domain catalog builds with appended family metrics", domain != null)
 	if domain == null:
@@ -68,8 +75,8 @@ func _test_catalog_compile() -> void:
 	_expect("effect domain catalog compiles trigger.economy family commands",
 		bool(domain_ir.get("ok", false)))
 	var metric_keys: PackedStringArray = domain_ir.get("metric_keys", PackedStringArray())
-	_expect("family effect metrics 0-14 stay stable and 15-21 append at the end",
-		metric_keys.size() >= 22
+	_expect("family effect metrics 0-21 stay stable and 22-36 append at the end",
+		metric_keys.size() >= 37
 		and String(metric_keys[0]) == "family.magnitude_q16"
 		and String(metric_keys[9]) == "cell.population"
 		and String(metric_keys[10]) == "cell.landform"
@@ -83,7 +90,9 @@ func _test_catalog_compile() -> void:
 		and String(metric_keys[18]) == "family.dominant_sector_share_q16"
 		and String(metric_keys[19]) == "family.complete_chain_count"
 		and String(metric_keys[20]) == "family.max_local_chain_share_q16"
-		and String(metric_keys[21]) == "family.max_chain_upgrade_family_id")
+		and String(metric_keys[21]) == "family.max_chain_upgrade_family_id"
+		and String(metric_keys[22]) == "cell.unemployment_q16"
+		and String(metric_keys[36]) == "cell.can_produce_corn")
 	var effect_keys: PackedStringArray = domain_ir.get("effect_keys", PackedStringArray())
 	_expect("trigger.economy family ledger programs are compiled",
 		effect_keys.has("trigger.economy.family.free_building")
@@ -167,7 +176,7 @@ func _test_trait_technology_gate() -> void:
 		not locked.is_empty())
 	if locked.is_empty():
 		return
-	var gated: Resource = load("res://data/economy/default_family_traits.tres").duplicate(true)
+	var gated: Resource = FamilyTraitCatalogScript.load_default().duplicate(true)
 	var traits: Array = gated.get("traits")
 	for index in range(traits.size()):
 		var trait_def: Resource = traits[index].duplicate(true)
@@ -226,6 +235,60 @@ func _test_trait_technology_gate() -> void:
 	_expect("granted gated trait lands without breaking conservation",
 		bool(day1.get("done", false)) and int(day1.get("population_error", 1)) == 0
 		and after.has(grant_key))
+
+
+func _test_trait_technology_any_gate() -> void:
+	var baseline: Dictionary = EconomyCatalogScript.compile_native_catalog()
+	_expect("baseline catalog compiles for ANY technology-gate fixture",
+		bool(baseline.get("ok", false)))
+	if not bool(baseline.get("ok", false)):
+		return
+	var locked := _locked_technology(baseline)
+	var starting := _starting_technology(baseline)
+	_expect("catalog exposes one starting and one locked technology for ANY",
+		not locked.is_empty() and not starting.is_empty() and locked != starting)
+	if locked.is_empty() or starting.is_empty() or locked == starting:
+		return
+	var gated: Resource = FamilyTraitCatalogScript.load_default().duplicate(true)
+	var traits: Array = gated.get("traits")
+	for index in range(traits.size()):
+		var trait_def: Resource = traits[index].duplicate(true)
+		trait_def.prerequisite_technology_keys = PackedStringArray([starting, locked])
+		trait_def.prerequisite_technology_any = true
+		traits[index] = trait_def
+	gated.set("traits", traits)
+	var compiled: Dictionary = EconomyCatalogScript.compile_native_catalog(null, gated)
+	_expect("ANY gated trait catalog compiles", bool(compiled.get("ok", false)))
+	if not bool(compiled.get("ok", false)):
+		print("ANY gated catalog failure=", compiled)
+		return
+	var starting_ids := PackedStringArray()
+	var flags: PackedInt32Array = compiled.get("technology_flags", PackedInt32Array())
+	var ids: PackedStringArray = compiled.get("technology_ids", PackedStringArray())
+	for index in range(mini(flags.size(), ids.size())):
+		if (int(flags[index]) & FLAG_STARTING) != 0:
+			starting_ids.append(String(ids[index]))
+	var ext := _new_ext(compiled, 0)
+	_expect("ANY-gate country bootstraps with only starting technologies",
+		_configure_country(ext, compiled, 260825, starting_ids))
+	var profile: Dictionary = _active_profile()
+	_expect("ANY-gate economy configures", bool(ext.configure_economy(
+		compiled, profile, 1, 260825).get("ok", false)))
+	if not _bootstrap_opening(ext, compiled):
+		return
+	var day0 := _run_day(ext, 0)
+	_expect("ANY gated core roll conserves population",
+		bool(day0.get("done", false)) and int(day0.get("population_error", 1)) == 0)
+	var page: Dictionary = ext.get_family_cell_snapshot(0, 0, 64)
+	_expect("founder family still forms when core traits use ANY technology",
+		bool(page.get("ok", false)) and int(page.get("total", 0)) == 1)
+	if int(page.get("total", 0)) != 1:
+		return
+	var family_handle := int((page.family_handles as PackedInt64Array)[0])
+	var initial: Dictionary = ext.get_family_traits(family_handle)
+	var initial_keys: PackedStringArray = initial.get("trait_keys", PackedStringArray())
+	_expect("core extraction proceeds when only one of two ANY technologies is unlocked",
+		not initial_keys.is_empty())
 
 
 func _test_conserved_family_commands() -> void:
@@ -431,6 +494,15 @@ func _locked_technology(catalog: Dictionary) -> String:
 	var ids: PackedStringArray = catalog.get("technology_ids", PackedStringArray())
 	for index in range(mini(flags.size(), ids.size()) - 1, -1, -1):
 		if (int(flags[index]) & FLAG_STARTING) == 0:
+			return String(ids[index])
+	return ""
+
+
+func _starting_technology(catalog: Dictionary) -> String:
+	var flags: PackedInt32Array = catalog.get("technology_flags", PackedInt32Array())
+	var ids: PackedStringArray = catalog.get("technology_ids", PackedStringArray())
+	for index in range(mini(flags.size(), ids.size())):
+		if (int(flags[index]) & FLAG_STARTING) != 0:
 			return String(ids[index])
 	return ""
 

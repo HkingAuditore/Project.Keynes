@@ -48,6 +48,9 @@ function Split-MarkdownRow {
 $preferenceRows = [System.Collections.Generic.List[object]]::new()
 $effectRows = [System.Collections.Generic.List[object]]::new()
 $allIds = @{}
+$complexTriggerPattern = '均价|未来\s*\d+\s*日|最近\s*\d+\s*日|近\s*\d+\s*日|随后|中途|连续|上穿|下穿|先.+(?:再|随后)|升级族.+(?:重置|不中断)'
+$undefinedShorthandPattern = '主部门|非主部门|同链|同产业|匹配物资|相关建筑|基准价格|安全产量线|农业气候类型|投入储备目标|盈亏配对|亏损幅度'
+$compressedPrestigePattern = '分别|威望\s*[ⅠⅡⅢⅣⅤ]\s*(?:—|－|~|～|至)\s*[ⅠⅡⅢⅣⅤ]'
 
 for ($index = 0; $index -lt $lines.Count; $index++) {
     $lineNumber = $index + 1
@@ -71,6 +74,9 @@ for ($index = 0; $index -lt $lines.Count; $index++) {
             continue
         }
         $effectRows.Add([pscustomobject]@{ Id = $id; Line = $lineNumber; Cells = $cells })
+        if (($cells -join ' ') -match $undefinedShorthandPattern) {
+            Add-Issue -Severity WARN -Line $lineNumber -Message "Effect $id contains undefined shorthand or an internal metric; spell out the referent in the row."
+        }
         for ($tier = 4; $tier -le 8; $tier++) {
             if ([string]::IsNullOrWhiteSpace($cells[$tier])) {
                 Add-Issue -Severity ERROR -Line $lineNumber -Message "Effect $id has an empty prestige result."
@@ -79,8 +85,18 @@ for ($index = 0; $index -lt $lines.Count; $index++) {
         if ([string]::IsNullOrWhiteSpace($cells[2]) -or [string]::IsNullOrWhiteSpace($cells[3])) {
             Add-Issue -Severity ERROR -Line $lineNumber -Message "Effect $id must define both condition and target."
         }
+        if ($cells[2] -match $complexTriggerPattern) {
+            Add-Issue -Severity WARN -Line $lineNumber -Message "Effect $id uses a history/sequence-dependent trigger; prefer one visible event or current state."
+        }
         if ([string]::IsNullOrWhiteSpace($cells[9]) -or $cells[9] -notmatch '。$') {
-            Add-Issue -Severity ERROR -Line $lineNumber -Message "Effect $id needs a complete Chinese sentence ending in '。'."
+            Add-Issue -Severity ERROR -Line $lineNumber -Message "Effect $id needs complete Chinese prestige statements ending in '。'."
+        }
+        if ($cells[9] -match $compressedPrestigePattern) {
+            Add-Issue -Severity ERROR -Line $lineNumber -Message "Effect $id compresses multiple prestige tiers into a range or positional list; write each tier independently."
+        }
+        $prestigeStatementPattern = '^威望Ⅰ：.+。<br>威望Ⅱ：.+。<br>威望Ⅲ：.+。<br>威望Ⅳ：.+。<br>威望Ⅴ：.+。$'
+        if ($cells[9] -notmatch $prestigeStatementPattern) {
+            Add-Issue -Severity ERROR -Line $lineNumber -Message "Effect $id must contain five ordered, independently labeled prestige statements separated by <br>."
         }
         $duplicateTierText = @($cells[4..8] | Group-Object | Where-Object { $_.Count -gt 1 })
         if ($duplicateTierText.Count -gt 0) {
@@ -92,6 +108,9 @@ for ($index = 0; $index -lt $lines.Count; $index++) {
             continue
         }
         $preferenceRows.Add([pscustomobject]@{ Id = $id; Line = $lineNumber; Cells = $cells })
+        if (($cells -join ' ') -match $undefinedShorthandPattern) {
+            Add-Issue -Severity WARN -Line $lineNumber -Message "Preference $id contains undefined shorthand or an internal metric; spell out the referent in the row."
+        }
         if ([string]::IsNullOrWhiteSpace($cells[1]) -or
                 [string]::IsNullOrWhiteSpace($cells[2]) -or
                 [string]::IsNullOrWhiteSpace($cells[3]) -or
@@ -100,6 +119,9 @@ for ($index = 0; $index -lt $lines.Count; $index++) {
         }
         if ($cells[2] -eq "-") {
             Add-Issue -Severity WARN -Line $lineNumber -Message "Preference $id should use an em dash '—' for no random condition."
+        }
+        if (("$($cells[2]) $($cells[3])") -match $complexTriggerPattern) {
+            Add-Issue -Severity WARN -Line $lineNumber -Message "Preference $id uses history/sequence-dependent activation; prefer one visible event or current state."
         }
         $variables = @([regex]::Matches($cells[3], '(?<![A-Z])[A-Z](?![A-Z])') |
             ForEach-Object { $_.Value } | Sort-Object -Unique)

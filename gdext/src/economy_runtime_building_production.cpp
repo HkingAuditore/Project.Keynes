@@ -122,7 +122,17 @@ int64_t NativeEconomyRuntime::production_climate_capacity_q16(
         Q16_ONE - bounded, Q16_ONE, saturation_count);
     const int64_t adapted_loss = mul_div_sat(exposed_loss, loss_factor_q16,
         Q16_ONE, saturation_count);
-    return std::clamp<int64_t>(Q16_ONE - adapted_loss, 0, Q16_ONE);
+    int64_t capacity = std::clamp<int64_t>(Q16_ONE - adapted_loss, 0, Q16_ONE);
+    if (temperature_fit <= water_fit &&
+        environment.temperature_30d_q16 < climate.temperature_opt_q16 &&
+        cell >= 0 && cell < static_cast<int32_t>(
+            _epoch_cell_cold_capacity_factor_q16.size())) {
+        capacity = mul_div_sat(capacity,
+            _epoch_cell_cold_capacity_factor_q16[static_cast<size_t>(cell)],
+            Q16_ONE, saturation_count);
+        capacity = std::clamp<int64_t>(capacity, 0, Q16_ONE);
+    }
+    return capacity;
 }
 
 void NativeEconomyRuntime::prepare_group_climate_capacity(
@@ -1013,6 +1023,17 @@ bool NativeEconomyRuntime::run_building_production_cell(
             0, saturating_sub(wage_commitment, expected_revenue, _saturation_count));
         int64_t budget = std::max<int64_t>(
             0, owner_cash - std::min(owner_cash, wage_cash_gap));
+        // After construction, remaining cash can sit below the unpaid wage bill.
+        // Critical/survival groups still need that cash as input float; wages may
+        // suspend if revenue does not cover them.
+        if (budget == 0 && owner_cash > 0) {
+            for (const WorkingCapitalCandidate &candidate : candidates) {
+                if (candidate.critical || candidate.survival) {
+                    budget = owner_cash;
+                    break;
+                }
+            }
+        }
         std::stable_sort(candidates.begin(), candidates.end(),
             [](const WorkingCapitalCandidate &a, const WorkingCapitalCandidate &b) {
                 if (a.score_q16 != b.score_q16) return a.score_q16 > b.score_q16;
