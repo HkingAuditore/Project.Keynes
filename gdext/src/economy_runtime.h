@@ -217,6 +217,18 @@ public:
         FAMILY_METRIC_COUNT = 37,
     };
 
+    enum FamilyBehaviorDirtyReason : uint32_t {
+        FAMILY_BEHAVIOR_DIRTY_INITIAL = 1u << 0u,
+        FAMILY_BEHAVIOR_DIRTY_TRAITS = 1u << 1u,
+        FAMILY_BEHAVIOR_DIRTY_EFFECT_BINDINGS = 1u << 2u,
+        FAMILY_BEHAVIOR_DIRTY_INFLUENCES = 1u << 3u,
+        FAMILY_BEHAVIOR_DIRTY_CONDITION_METRICS = 1u << 4u,
+        FAMILY_BEHAVIOR_DIRTY_HOME_CELL = 1u << 5u,
+    };
+    // Internal compact selector. Authored selectors stay exact dense IDs;
+    // this row matches every profession in one precompiled class.
+    static constexpr int32_t FAMILY_BEHAVIOR_SELECTOR_PROFESSION_CLASS = 100;
+
     static bool is_family_ledger_command(int32_t opcode) {
         return opcode == COMMAND_FAMILY_FREE_BUILDING ||
             opcode == COMMAND_FAMILY_POPULATION_REWARD ||
@@ -275,6 +287,17 @@ public:
         int64_t i64_1 = 0;
         uint64_t idempotency_key = 0;
     };
+    enum EffectCommandPreflightResult : int32_t {
+        EFFECT_PREFLIGHT_ACCEPT = 0,
+        EFFECT_PREFLIGHT_RETRY = 1,
+        EFFECT_PREFLIGHT_REJECT = 2,
+    };
+    // Pure, transaction-scoped validation used by EffectRuntime before it
+    // flattens accepted transactions into one native enqueue batch. This does
+    // not reserve request IDs or mutate Economy state.
+    int32_t preflight_effect_commands_pod(const EffectCommand *commands,
+                                          size_t count,
+                                          std::string &error) const;
     bool submit_effect_commands_pod(const EffectCommand *commands, size_t count,
                                     std::vector<int64_t> &request_ids,
                                     std::string &error);
@@ -437,7 +460,9 @@ public:
     const std::vector<std::string> &building_resource_extra_slots() const {
         return _resource_extra_slots;
     }
-    bool drain_building_resource_deltas(std::vector<int64_t> &out);
+    int32_t cell_count() const { return _cell_count; }
+    bool drain_building_resource_deltas(std::vector<size_t> &out_lanes,
+                                        std::vector<int64_t> &out_deltas);
     struct CommittedGameplayFact {
         int32_t kind = 0;
         int32_t cell = -1;
@@ -3278,6 +3303,16 @@ private:
     double _family_commit_index_ms = 0.0;
     double _family_commit_lifecycle_ms = 0.0;
     double _family_commit_influence_ms = 0.0;
+    double _family_behavior_cache_ms = 0.0;
+    int64_t _family_behavior_cache_rebuilds = 0;
+    int64_t _family_behavior_cache_skips = 0;
+    int64_t _family_behavior_metric_contexts_built = 0;
+    int64_t _family_behavior_condition_edges_evaluated = 0;
+    int64_t _family_behavior_class_rows = 0;
+    uint32_t _family_behavior_cache_dirty_reasons =
+        FAMILY_BEHAVIOR_DIRTY_INITIAL;
+    uint32_t _family_behavior_cache_last_reasons = 0;
+    bool _family_behavior_cache_dirty = true;
     double _person_retire_call_ms = 0.0;
     int64_t _person_retire_calls = 0;
     double _rebuild_person_needs_ms = 0.0;
@@ -4773,10 +4808,11 @@ private:
     bool compile_family_effect_catalog(const godot::Dictionary &catalog,
                                        std::string &error);
     bool run_family_commit_slice(int64_t &work_done, std::string &error);
-    void rebuild_family_indices();
+    void rebuild_family_indices(bool rebuild_derived = true);
     void rebuild_family_industry_metrics();
     void rebuild_family_owned_output_csr();
-    void rebuild_family_behavior_cache();
+    bool rebuild_family_behavior_cache();
+    void mark_family_behavior_cache_dirty(uint32_t reason);
     void rebuild_family_policy_scalars();
     void grant_random_pool_family_effect(int32_t family_index,
                                          bool submit_changes);
@@ -4793,7 +4829,7 @@ private:
     void apply_family_split_policy_flags(int32_t family_index, uint16_t policy,
                                          uint8_t weight_q8);
     void split_family_branches();
-    void normalize_family_memberships();
+    void normalize_family_memberships(bool rebuild_derived = true);
     void absorb_family_households();
     int64_t family_household_target_people(int64_t owner_slots) const;
     int64_t family_household_people_for_slot(int32_t slot,
@@ -4813,7 +4849,7 @@ private:
     void review_family_lifecycle();
     void assign_core_family_traits(int32_t family_index);
     void apply_due_family_trait_commands();
-    void rebuild_family_influences();
+    void rebuild_family_influences(bool rebuild_derived = true);
     void reconcile_family_branch_effects(uint64_t branch_handle,
                                          bool submit_changes);
     void clear_family_branch_effects(uint64_t branch_handle);

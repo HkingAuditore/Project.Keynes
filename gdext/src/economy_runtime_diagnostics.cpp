@@ -786,6 +786,18 @@ Dictionary NativeEconomyRuntime::compact_report() const {
         _family_industry_stats.size());
     out["family_behavior_factor_row_count"] = static_cast<int64_t>(
         _family_behavior_factor_rows.size());
+    out["family_behavior_class_row_count"] = _family_behavior_class_rows;
+    out["family_behavior_cache_rebuilds"] =
+        _family_behavior_cache_rebuilds;
+    out["family_behavior_cache_skips"] = _family_behavior_cache_skips;
+    out["family_behavior_metric_contexts_built"] =
+        _family_behavior_metric_contexts_built;
+    out["family_behavior_condition_edges_evaluated"] =
+        _family_behavior_condition_edges_evaluated;
+    out["family_behavior_cache_ms"] = _family_behavior_cache_ms;
+    out["family_behavior_cache_dirty"] = _family_behavior_cache_dirty;
+    out["family_behavior_cache_last_dirty_reasons"] = static_cast<int64_t>(
+        _family_behavior_cache_last_reasons);
     out["family_expedition_active_count"] = static_cast<int64_t>(std::count(
         _family_expeditions.active.begin(), _family_expeditions.active.end(),
         uint8_t{1}));
@@ -1576,6 +1588,18 @@ Dictionary NativeEconomyRuntime::report() const {
         _family_industry_stats.size());
     out["family_behavior_factor_row_count"] = static_cast<int64_t>(
         _family_behavior_factor_rows.size());
+    out["family_behavior_class_row_count"] = _family_behavior_class_rows;
+    out["family_behavior_cache_rebuilds"] =
+        _family_behavior_cache_rebuilds;
+    out["family_behavior_cache_skips"] = _family_behavior_cache_skips;
+    out["family_behavior_metric_contexts_built"] =
+        _family_behavior_metric_contexts_built;
+    out["family_behavior_condition_edges_evaluated"] =
+        _family_behavior_condition_edges_evaluated;
+    out["family_behavior_cache_ms"] = _family_behavior_cache_ms;
+    out["family_behavior_cache_dirty"] = _family_behavior_cache_dirty;
+    out["family_behavior_cache_last_dirty_reasons"] = static_cast<int64_t>(
+        _family_behavior_cache_last_reasons);
     out["family_expedition_active_count"] = static_cast<int64_t>(std::count(
         _family_expeditions.active.begin(), _family_expeditions.active.end(),
         uint8_t{1}));

@@ -173,6 +173,9 @@ Godot `PackedFloat32Array` / `PackedInt32Array` / `PackedByteArray` 是 Copy-on-
 - 消费端必须使用 consumer cursor：`poll_gameplay_events({"consumer_id": ...})` 读取，`ack_gameplay_events(consumer_id, up_to_event_id)` 确认。renderer、UI、debug 不应共用一个 consumer id。
 - 持久化使用 `snapshot_gameplay_event_journal()`，恢复使用 `restore_gameplay_event_journal()`，回放使用 `replay_gameplay_events()`。快照只含 POD/packed payload，不含 Godot Object 引用。
 - ring buffer 溢出不静默：report 必须显示 `dropped_event_count` / `first_dropped_event_id`，consumer 落后看 `consumer_lag`。
+- native 有界日志使用 `std::deque` 保持稳定顺序和 O(1) 尾插/头部淘汰。禁止改回
+  `std::vector.erase(begin())`：到达 8192 条默认上限后，该写法会让每条新事件搬移整个日志，造成
+  运行时间越长、`aggregate_publish.world_gameplay_publish` 越慢。
 
 GDScript 侧统一通过 `scripts/data_core/gameplay_event_bus.gd` 包装 native API。渲染或 UI 不直接解析 C++ raw arrays，除非是在 debug 工具里显式 inspect schema。
 
@@ -182,8 +185,16 @@ GDScript 侧统一通过 `scripts/data_core/gameplay_event_bus.gd` 包装 native
 header + delta-leg journal，并由 `DCWorldExt` 暴露 `get_economy_event_schema`、
 `set_economy_trace_filter`、`poll_economy_events`、`ack_economy_events`、
 `get_economy_trace_report` 与 PKEJ archive chunk API。跨界输出始终是 PackedArrays；
-`EconomyFacade.economy_event_batch` 仅在 committed boundary 批量 emit；冷路径
+`EconomyFacade.economy_event_batch_available` 在 committed boundary 立即发出轻量失效通知；只有
+`economy_event_batch` 存在详细消费者时才调用 `poll_economy_events` 物化 PackedArrays。没有详细
+消费者时 facade 直接 ACK 到 `economy_event_newest_id`，保持 consumer cursor 语义而不构造随后丢弃的
+事件数组。`economy_event_batch` 仍只在 committed boundary 批量 emit；冷路径
 `write_event_archive()` 使用 `FileAccess.COMPRESSION_ZSTD` 写独立压缩 PKEJ 文件。
+
+建筑资源发布同样使用 native 已维护的 touched-lane 列表：`drain_building_resource_deltas` 只返回
+实际非零的 `(resource * cell_count + cell, delta)`，`DCWorldExt` 只更新这些格并按涉及的资源 slot
+各 flush 一次。用于 Economy CSV 的最近一次 dense delta 镜像仍由 native 内部维护；稀疏 bridge
+不改变 committed CSV、DataCore slot、存档或权威哈希。
 
 handler 是只读观察者。需要改变经济时必须提交 economy command，由下一冻结周期处理；禁止
 在 market/building hot loop 中调用 Callable、发逐事件 signal 或构造 Dictionary。

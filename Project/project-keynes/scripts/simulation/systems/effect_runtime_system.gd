@@ -33,15 +33,18 @@ func tick(ctx) -> Dictionary:
 	var result: Dictionary = facade.world_ext().run_effect_daily(day)
 	# C++ owns Effect -> Modifier batching. The facade remains the compatibility
 	# path for unsupported/custom command domains only.
+	# Economy performs generation-safe transaction preflight before any sibling
+	# adapter can enqueue the same multi-domain transaction. A permanent Economy
+	# rejection therefore cannot leave a newly queued Modifier command behind.
+	var native_economy_dispatched: Dictionary = {}
+	if facade.world_ext().has_method("dispatch_effect_native_economy"):
+		native_economy_dispatched = facade.world_ext().dispatch_effect_native_economy()
 	var native_dispatched: Dictionary = {}
 	if facade.world_ext().has_method("dispatch_effect_native_modifier"):
 		native_dispatched = facade.world_ext().dispatch_effect_native_modifier()
 	var native_country_dispatched: Dictionary = {}
 	if facade.world_ext().has_method("dispatch_effect_native_country"):
 		native_country_dispatched = facade.world_ext().dispatch_effect_native_country()
-	var native_economy_dispatched: Dictionary = {}
-	if facade.world_ext().has_method("dispatch_effect_native_economy"):
-		native_economy_dispatched = facade.world_ext().dispatch_effect_native_economy()
 	var native_gameplay_dispatched: Dictionary = {}
 	if facade.world_ext().has_method("dispatch_effect_native_gameplay"):
 		native_gameplay_dispatched = facade.world_ext().dispatch_effect_native_gameplay()
@@ -62,6 +65,10 @@ func tick(ctx) -> Dictionary:
 		"native_country_commands": int(native_country_dispatched.get("submitted_commands", 0)),
 		"native_economy_transactions": int(native_economy_dispatched.get("submitted_transactions", 0)),
 		"native_economy_commands": int(native_economy_dispatched.get("submitted_commands", 0)),
+		"native_economy_rejected_transactions": int(native_economy_dispatched.get(
+			"rejected_transactions", 0)),
+		"native_economy_retryable_transactions": int(native_economy_dispatched.get(
+			"retryable_transactions", 0)),
 		"native_gameplay_transactions": int(native_gameplay_dispatched.get("submitted_transactions", 0)),
 		"native_gameplay_commands": int(native_gameplay_dispatched.get("submitted_commands", 0)),
 		"legacy_fallback_transactions": int(_last_report.get("legacy_fallback_transactions", 0)),

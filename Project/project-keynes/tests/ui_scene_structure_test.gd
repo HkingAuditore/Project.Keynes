@@ -95,6 +95,7 @@ func _check_player_game() -> void:
 		"HUDLayer/MapOverlayLegend", "PanelLayer/RightPanel",
 		"PanelLayer/CountryPanel",
 		"PanelLayer/RightPanel/Margin/Split/DetailShell/ObjectDetail",
+		"PanelLayer/RightPanel/Margin/Split/DetailShell/FamilyWorkspace",
 		"PanelLayer/RightPanel/Margin/Split/DetailShell/ConstructionPane",
 		"ModalLayer/WorldLoadingOverlay",
 		"ModalLayer/PauseMenu"]
@@ -117,6 +118,7 @@ func _check_component_scenes() -> void:
 		"res://scenes/ui/technology_workspace.tscn": "Root/Main/DetailHost/Body/Detail",
 		"res://scenes/ui/technology_overview_view.tscn": "",
 		"res://scenes/ui/object_detail_dialog.tscn": "Center/Dialog/Body/Scroll/Content",
+		"res://scenes/ui/family_workspace.tscn": "SafeMargin/Main/PageArea/PageViewport/PageScroll/PageHost",
 		"res://scenes/ui/world_loading_overlay.tscn": "Center/Card/Content/Progress",
 		"res://scenes/ui/map_overlay_toolbar.tscn": "SecondaryPanel/Margin/Root/ResourceScroll/SecondaryBox",
 		"res://scenes/ui/map_overlay_legend.tscn": "Margin/Root/Vector/Wheel",

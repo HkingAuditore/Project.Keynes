@@ -41,8 +41,9 @@ UI CSV 观察 `country_ui_refresh_reason`、`country_ui_snapshot_ms`,
 `j_*_slices=1`；同一日的其它 phase 会出现在后续 continuation pulse，而不是同一
 SUS 访问中排空。`bio_occupancy_day_barrier` 持续存在属于正常 in-flight 状态，只有
 最终 `done=true` 且 `published_to_slot=true` 后才应清除。Native daily 同理检查
-`native_daily_day_barrier` 和 `continuation_stage_counts`：pulse 顺序应为
-`native_daily -> bio_occupancy -> country/economy`，以保证固定 day context。
+`native_daily_day_barrier` 和 `continuation_stage_counts`，但 native continuation 会在同一
+8ms pulse 内连续排空多个同步切片，并在末尾保留 3ms 的不可抢占片启动余量；这不会改变 job 自身一次 SUS 访问只执行一片的契约。
+pulse 顺序仍应为 `native_daily -> bio_occupancy -> country/economy`，以保证固定 day context。
 若 `j_bio_occupancy_daily_skip` 为 `frame_budget_exhausted` 或
 `strict_budget_one_job`，下一 pulse 应看到 pending-day 首片，而不是出现无 barrier
 直接跨日；这是每日语义保护，不是失败回退。
@@ -173,6 +174,31 @@ ACTIVE/SHADOW 切换或旧迁移实验开关。
   再用子阶段累计/峰值和 work 判断是单位工作过贵还是工作量过大。
   economy continuation 走 `report_mode=compact_slice`，不应在每片前后出现完整
   `get_economy_report()`；否则 report 构造、跨语言包装和 GDScript 深复制会按 slice 数线性放大。
+  `continuation_budget_exhausted` 是整个记录区间的 OR，不是最后一帧状态；
+  `continuation_budget_overrun_frames` 计超限脉冲数，
+  `continuation_max_budget_overrun_ms` 记录最大超预算量。若前一帧超限而最后一帧正常，这三项仍必须
+  保留证据，`continuation_blocked_by_stage` 也保留造成超限的 stage，不能被收尾帧覆盖。
+
+- Family 热路径同时看 `family_commit_*_ms`、`family_behavior_factor_row_count`、
+  `family_behavior_class_row_count` 和 `family_behavior_cache_rebuilds/skips/ms`。同一个
+  `FAMILY_COMMIT` 日界通常只允许一次行为缓存重建；`rebuilds>1` 表示权威 CSR 中间态又触发了派生
+  物化。`family_learning` 应体现为 class row，而不是按 catalog profession 数复制；比较优化前后时
+  还要固定 family/binding 数，不能拿冷开局的少量家族直接对比长档。
+  条件缓存另看 `family_behavior_metric_contexts_built` 与
+  `family_behavior_condition_edges_evaluated`：前者应接近活跃 family-cell 数，后者可远大于前者；若两者
+  同阶于 behavior row 数，说明条件边又开始重复构造完整指标 slab。
+
+- `aggregate_publish` 的 continuation 子阶段除 native publish phase 外，还包含
+  `native_unattributed`、`world_resource_flush`、`world_csv_capture`、`world_gameplay_publish`、
+  `world_event_publish`、`world_bridge`、`effect_dispatch`、`effect_ack`、`event_dispatch` 与
+  `receipt_dispatch`。它们互不重叠：
+  `native_unattributed` 是 `result.elapsed_ms` 减去 native phase 探针；四个 `world_*` phase 是
+  `DCWorldExt` 在 native Economy 返回之后的提交包装；`world_bridge` 是 GDExtension 调用墙钟再减去
+  native 与这些包装 phase 后的残差；其余是 GDScript 边界。`world_gameplay_publish` 随日志填满后升高时，
+  检查 gameplay journal 是否仍为 O(1) 尾插/头淘汰；`world_resource_flush` 按地图面积异常升高时，检查
+  building resource delta 是否误退回 dense 复制/全矩阵扫描。`event_dispatch` 持续偏高且
+  `event_batch_materialized=0` 时不要优化 journal poll，应继续检查 availability signal listener；为 1 时再看
+  详细消费者是否真的需要逐日完整批次。
 
 性能 CSV 在桌面写入仓库 `tmp/perf_record_*.csv`，地块 CSV 写入
 `tmp/tile_data_record_*.csv`，经济录制按提交 epoch 写入 `tmp/economy_record_*.csv`；
@@ -330,6 +356,11 @@ native_daily_sim ran=... progress=0.46
   in/loop/flush 三段计时。2026-06 的 `climate_pass_a` ~1.7ms 隐藏热点（逐日重算 `dc_insolation_annual_mean`
   年均日照积分）就是这样被找出来的。
 - `done=false` 表示 C++ continuation 仍在推进，下个 SUS tick 会绕过 stride 继续执行；这不是失败。
+- continuation pulse 中可紧接着启动下一 native slice，直到预算减 3ms 的启动截止线或 64 片防御上限；
+  因而不要再用“native slice 数≈continuation frame 数”判断是否正常。若
+  `continuation_stage_counts` 中的 `native_daily:*` slice 总数很高但
+  `continuation_frames` 明显更低且
+  `continuation_max_frame_wall_ms` 仍接近/低于预算，这是消除了切片间渲染帧空转的预期结果。
 - 有界降频契约字段用于判断“低频计算是否可控”，而不是只看 `done=false`：
   `native_daily_sample_day` 是本轮权威采样日，`native_daily_commit_day=-1` 表示尚未提交，
   `native_daily_age_days` 是当前日相对采样日的年龄，`native_daily_commit_lag_budget_days`

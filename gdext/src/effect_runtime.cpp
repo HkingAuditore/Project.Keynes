@@ -5013,6 +5013,8 @@ Dictionary EffectRuntime::dispatch_native_economy(NativeEconomyRuntime *economy_
     std::vector<NativeEconomyRuntime::EffectCommand> commands;
     std::vector<PendingTransaction> pending;
     commands.reserve(static_cast<size_t>(_max_native_modifier_commands));
+    int32_t rejected_transactions = 0;
+    int32_t retryable_transactions = 0;
     for (int32_t tx_index = 0; tx_index < static_cast<int32_t>(_transactions.size()); ++tx_index) {
         Transaction &transaction = _transactions[static_cast<size_t>(tx_index)];
         if (transaction.status == ACKED || transaction.status == REJECTED ||
@@ -5087,12 +5089,38 @@ Dictionary EffectRuntime::dispatch_native_economy(NativeEconomyRuntime *economy_
             commands.resize(begin);
             continue;
         }
+        std::string preflight_error;
+        const int32_t preflight = economy_runtime->preflight_effect_commands_pod(
+            commands.data() + begin, count, preflight_error);
+        if (preflight == NativeEconomyRuntime::EFFECT_PREFLIGHT_RETRY) {
+            commands.resize(begin);
+            ++retryable_transactions;
+            if (!preflight_error.empty()) _last_error = preflight_error;
+            continue;
+        }
+        if (preflight != NativeEconomyRuntime::EFFECT_PREFLIGHT_ACCEPT) {
+            commands.resize(begin);
+            untrack_pending_transaction(transaction);
+            unindex_transaction_commands(transaction);
+            transaction.status = REJECTED;
+            apply_rejected_instance_transition(transaction);
+            ++_preflight_rejects;
+            ++rejected_transactions;
+            _last_error = preflight_error.empty()
+                ? "effect_native_economy_preflight_rejected"
+                : preflight_error;
+            continue;
+        }
         pending.push_back({tx_index, begin, count, domain_mask});
     }
     Dictionary out;
     out["ok"] = true;
     out["submitted_transactions"] = 0;
     out["submitted_commands"] = 0;
+    out["rejected_transactions"] = rejected_transactions;
+    out["retryable_transactions"] = retryable_transactions;
+    if (rejected_transactions != 0 || retryable_transactions != 0)
+        out["reason"] = String(_last_error.c_str());
     if (commands.empty()) {
         _last_native_dispatch_ms = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - started).count();

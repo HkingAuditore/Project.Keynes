@@ -124,7 +124,7 @@ int64_t DCWorldExt::_emit_gameplay_event(int64_t tick,
         if (_gameplay_first_dropped_event_id == 0) {
             _gameplay_first_dropped_event_id = _gameplay_events.front().event_id;
         }
-        _gameplay_events.erase(_gameplay_events.begin());
+        _gameplay_events.pop_front();
         _gameplay_dropped_event_count += 1;
     }
     return ev.event_id;
@@ -817,7 +817,6 @@ Dictionary DCWorldExt::restore_gameplay_event_journal(Dictionary snapshot) {
     PackedInt32Array p2 = dictionary_i32_array(snapshot, "payload_i2");
     PackedInt32Array p3 = dictionary_i32_array(snapshot, "payload_i3");
     const int n = ids.size();
-    _gameplay_events.reserve(n);
     for (int i = 0; i < n; ++i) {
         GameplayEventRecord ev;
         ev.event_id = ids[i];

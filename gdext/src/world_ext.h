@@ -20,6 +20,7 @@
 
 #include <array>
 #include <cstdint>
+#include <deque>
 #include <limits>
 #include <unordered_map>
 #include <unordered_set>
@@ -2643,7 +2644,7 @@ private:
         uint8_t ok = 0;
         std::string reason;
     };
-    std::vector<GameplayEventRecord>        _gameplay_events;
+    std::deque<GameplayEventRecord>         _gameplay_events;
     godot::HashMap<godot::StringName, int64_t> _gameplay_consumer_ack;
     int64_t                                 _gameplay_next_event_id = 1;
     int64_t                                 _gameplay_dropped_event_count = 0;

@@ -468,6 +468,8 @@ func build_object_detail(cell: HexCell, request: Dictionary) -> Dictionary:
 						if int(branch_cell) == idx:
 							row["prestige_level"] = int(
 								effects.get("prestige_level", 0))
+							row["prestige_score_q16"] = int(
+								effects.get("prestige_score_q16", 0))
 							row["prestige_score"] = _q16_percent_text(int(
 								effects.get("prestige_score_q16", 0)))
 					row["modifier_rows"] = modifier_rows
@@ -489,6 +491,185 @@ func build_object_detail(cell: HexCell, request: Dictionary) -> Dictionary:
 		"tax_context": category.get("tax_context", {}),
 		"row": row,
 	}
+
+
+## 家族专用档案册契约。保留 build_object_detail() 作为现有 facade、迷雾门控
+## 与低频查询的唯一入口，再把兼容行数据整理成专用组件无需二次解析的结构。
+func build_family_detail(cell: HexCell, request: Dictionary) -> Dictionary:
+	if String(request.get("kind", "")) != "family":
+		return {}
+	var detail := build_object_detail(cell, request)
+	if detail.is_empty() or String(detail.get("kind", "")) != "family":
+		return {}
+	return family_workspace_model(detail)
+
+
+static func family_workspace_model(detail: Dictionary) -> Dictionary:
+	if detail.is_empty() or String(detail.get("kind", "")) != "family":
+		return {}
+	var row: Dictionary = detail.get("row", {})
+	var traits := _family_unique_traits(row.get("trait_rows", []))
+	var preferences := _family_unique_preferences(row.get("behavior_rows", []))
+	var people := _family_unique_rows(row.get("notable_person_rows", []),
+		["id", "handle", "name", "role", "profession", "building"])
+	var branches := _family_unique_rows(row.get("branch_rows", []),
+		["id", "cell", "prestige_level", "population_share_text",
+		"cash_share_text", "building_share_text"])
+	var effects: Array = []
+	effects.append_array(row.get("effect_rows", []))
+	effects.append_array(row.get("modifier_rows", []))
+	effects.append_array(row.get("trigger_rows", []))
+	effects = _family_unique_rows(effects,
+		["cell", "kind", "id", "title", "name", "value", "detail"])
+	effects.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var cell_a := int(a.get("cell", -1))
+		var cell_b := int(b.get("cell", -1))
+		if cell_a != cell_b:
+			return cell_a < cell_b
+		return String(a.get("kind", "")) < String(b.get("kind", "")))
+
+	var sorted_preferences := preferences.duplicate(true)
+	sorted_preferences.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var axis_a := int(a.get("axis", 99))
+		var axis_b := int(b.get("axis", 99))
+		if axis_a != axis_b:
+			return axis_a < axis_b
+		return String(a.get("name", "")) < String(b.get("name", "")))
+	var overview_preferences := preferences.duplicate(true)
+	overview_preferences.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return float(a.get("deviation", 0.0)) > float(b.get("deviation", 0.0)))
+
+	var overview_traits: Array = []
+	for trait_value in traits:
+		if bool((trait_value as Dictionary).get("core", false)):
+			overview_traits.append(trait_value)
+			if overview_traits.size() >= 2:
+				break
+	if overview_traits.size() < 2:
+		for trait_value in traits:
+			if overview_traits.has(trait_value):
+				continue
+			overview_traits.append(trait_value)
+			if overview_traits.size() >= 2:
+				break
+
+	var prestige_q16 := int(row.get("prestige_score_q16", 0))
+	var prestige_percent := float(prestige_q16) * 100.0 / 65536.0
+	var level := int(row.get("prestige_level", 0))
+	return {
+		"kind": "family_workspace",
+		"row_id": String(detail.get("row_id", "")),
+		"header": {
+			"name": String(detail.get("name", row.get("name", "家族档案"))),
+			"subtitle": String(detail.get("subtitle", "")),
+			"crest_icon": "family.workspace.crest",
+			"prestige_level": level,
+			"prestige_label": _prestige_text(level),
+			"prestige_score_q16": prestige_q16,
+			"prestige_percent": prestige_percent,
+			"prestige_progress_text": _q16_percent_text(prestige_q16),
+		},
+		"summary": [
+			{"id": "population", "label": "本家族人口",
+				"value": String(row.get("population", "0")),
+				"icon": "family.metric.population"},
+			{"id": "net_worth", "label": "净资产",
+				"value": String(row.get("net_worth", row.get("cash_claim", "0"))),
+				"icon": "family.metric.wealth"},
+			{"id": "owned_buildings", "label": "产业数",
+				"value": String(row.get("owned_buildings", "0")),
+				"icon": "family.metric.buildings"},
+			{"id": "founded_day", "label": "创立时间",
+				"value": "第%d日" % int(row.get("founded_day", 0)),
+				"icon": "family.metric.time"},
+		],
+		"pages": {
+			"overview": {
+				"traits": overview_traits,
+				"preferences": overview_preferences.slice(0, 4),
+				"effects": effects.slice(0, 4),
+				"people": people.slice(0, 5),
+			},
+			"traits": traits,
+			"preferences": sorted_preferences,
+			"effects": effects,
+			"people": people,
+			"branches": branches,
+		},
+		"actions": {"family_handle": int(row.get("family_handle", 0))},
+	}
+
+
+## Facade snapshots may contain the same presentation row through multiple legacy
+## lanes.  The workspace is a player-facing projection, so collapse only rows that
+## are semantically identical; effects retain their cell in the key to preserve
+## same-name effects bound to different branches.
+static func _family_unique_traits(rows: Array) -> Array:
+	var result: Array = []
+	var seen: Dictionary = {}
+	for row_value in rows:
+		if not row_value is Dictionary:
+			continue
+		var item := (row_value as Dictionary).duplicate(true)
+		var detail_key := _family_text_key(item.get("detail", ""))
+		var effect_key := _family_text_key(item.get("effect_summary", ""))
+		if not effect_key.is_empty() and effect_key == detail_key:
+			item["effect_summary"] = ""
+			effect_key = ""
+		var stable_id := _family_text_key(item.get("id", ""))
+		var key := "id:%s" % stable_id if not stable_id.is_empty() else \
+			"%s|%s|%s" % [_family_text_key(item.get("name", "")),
+			detail_key, effect_key]
+		if seen.has(key):
+			continue
+		seen[key] = true
+		result.append(item)
+	return result
+
+
+static func _family_unique_preferences(rows: Array) -> Array:
+	var result: Array = []
+	var result_index: Dictionary = {}
+	for row_value in rows:
+		if not row_value is Dictionary:
+			continue
+		var item := (row_value as Dictionary).duplicate(true)
+		var axis_key := _family_text_key(item.get("axis", item.get("axis_name", "")))
+		var key := "%s|%s" % [axis_key, _family_text_key(item.get("name", ""))]
+		var deviation := absf(float(item.get("factor_percent", 100.0)) - 100.0)
+		if not result_index.has(key):
+			result_index[key] = result.size()
+			result.append(item)
+			continue
+		var index := int(result_index[key])
+		var current: Dictionary = result[index]
+		var current_deviation := absf(
+			float(current.get("factor_percent", 100.0)) - 100.0)
+		if deviation > current_deviation:
+			result[index] = item
+	return result
+
+
+static func _family_unique_rows(rows: Array, key_fields: Array) -> Array:
+	var result: Array = []
+	var seen: Dictionary = {}
+	for row_value in rows:
+		if not row_value is Dictionary:
+			continue
+		var item := (row_value as Dictionary).duplicate(true)
+		var parts: Array[String] = []
+		for field_value in key_fields:
+			parts.append(_family_text_key(item.get(str(field_value), "")))
+		var key := "|".join(parts)
+		if seen.has(key):
+			continue
+		seen[key] = true
+		result.append(item)
+	return result
+
+
+static func _family_text_key(value: Variant) -> String:
+	return str(value).strip_edges().replace(" ", "").replace("\n", "").replace("\r", "")
 
 
 func _decorate_category_with_tax(
@@ -1289,11 +1470,18 @@ func _family_trait_rows(snapshot: Dictionary) -> Array:
 	for index in range(keys.size()):
 		var detail := String(descriptions[index]).strip_edges() \
 			if index < descriptions.size() else ""
+		var is_core := index < core.size() and int(core[index]) != 0
 		rows.append({
+			"id": String(keys[index]),
+			"key": String(keys[index]),
 			"name": String(names[index]) if index < names.size() else String(keys[index]),
-			"value": "核心特性" if index < core.size() \
-				and int(core[index]) != 0 else "附加特性",
+			"core": is_core,
+			"kind": "core" if is_core else "additional",
+			"kind_label": "核心特性" if is_core else "附加特性",
+			"value": "核心特性" if is_core else "附加特性",
 			"detail": detail,
+			# 当前 facade 只提供一份说明文本；不要把它伪装成第二份效果摘要。
+			"effect_summary": "",
 			"tooltip": detail,
 		})
 	return rows
@@ -1315,11 +1503,21 @@ func _family_behavior_rows(snapshot: Dictionary, cell_idx: int = -1) -> Array:
 		var stable_id := String(stable_ids[index]) if index < stable_ids.size() else ""
 		if not _family_behavior_selector_visible(axis, stable_id, visibility):
 			continue
+		var factor_q16 := int(factors[index]) if index < factors.size() else 65536
+		var factor_percent := float(factor_q16) * 100.0 / 65536.0
+		var axis_name: String = axis_names[axis] if axis >= 0 \
+			and axis < axis_names.size() else "行为"
 		rows.append({
+			"id": "%d:%s" % [axis, stable_id],
+			"stable_id": stable_id,
+			"axis": axis,
+			"axis_name": axis_name,
 			"name": String(names[index]) if index < names.size() else "目标 %d" % index,
-			"value": "%s偏好 · %s" % [axis_names[axis] if axis >= 0 \
-				and axis < axis_names.size() else "行为",
-				_q16_percent_text(int(factors[index]) if index < factors.size() else 65536)],
+			"factor_q16": factor_q16,
+			"factor_percent": factor_percent,
+			"factor_text": _q16_percent_text(factor_q16),
+			"deviation": absf(factor_percent - 100.0),
+			"value": "%s偏好 · %s" % [axis_name, _q16_percent_text(factor_q16)],
 		})
 	return rows
 
@@ -1462,14 +1660,33 @@ func _family_branch_rows(snapshot: Dictionary) -> Array:
 	for index in range(cells.size()):
 		var level := int(levels[index]) if index < levels.size() else 0
 		var target := int(targets[index]) if index < targets.size() else level
+		var cell := int(cells[index])
+		var score_q16 := int(scores[index]) if index < scores.size() else 0
+		var population_q16 := int(population_shares[index]) if index < population_shares.size() else 0
+		var cash_q16 := int(cash_shares[index]) if index < cash_shares.size() else 0
+		var building_q16 := int(building_shares[index]) if index < building_shares.size() else 0
 		rows.append({
-			"cell": int(cells[index]),
-			"name": "地块 %d · 威望 %s" % [int(cells[index]), _prestige_text(level)],
+			"id": "branch:%d" % cell,
+			"kind": "branch",
+			"cell": cell,
+			"prestige_level": level,
+			"prestige_label": _prestige_text(level),
+			"prestige_score_q16": score_q16,
+			"prestige_percent": float(score_q16) * 100.0 / 65536.0,
+			"prestige_text": _q16_percent_text(score_q16),
+			"population_share_q16": population_q16,
+			"population_share_text": _q16_percent_text(population_q16),
+			"cash_share_q16": cash_q16,
+			"cash_share_text": _q16_percent_text(cash_q16),
+			"building_share_q16": building_q16,
+			"building_share_text": _q16_percent_text(building_q16),
+			"target_level": target,
+			"target_label": _prestige_text(target),
+			"review_streak": int(streaks[index]) if index < streaks.size() else 0,
+			"name": "地块 %d · 威望 %s" % [cell, _prestige_text(level)],
 			"value": "总分 %s · 人口 %s / 现金 %s / 建筑 %s · 目标 %s（%d/2）" % [
-				_q16_percent_text(int(scores[index]) if index < scores.size() else 0),
-				_q16_percent_text(int(population_shares[index]) if index < population_shares.size() else 0),
-				_q16_percent_text(int(cash_shares[index]) if index < cash_shares.size() else 0),
-				_q16_percent_text(int(building_shares[index]) if index < building_shares.size() else 0),
+				_q16_percent_text(score_q16), _q16_percent_text(population_q16),
+				_q16_percent_text(cash_q16), _q16_percent_text(building_q16),
 				_prestige_text(target), int(streaks[index]) if index < streaks.size() else 0],
 		})
 	return rows
@@ -1503,6 +1720,11 @@ func _family_bound_effect_rows(snapshot: Dictionary) -> Array:
 		if current.is_empty():
 			current = detail
 		rows.append({
+			"id": "effect:%d:%s" % [cell, key],
+			"kind": "effect",
+			"cell": cell,
+			"effect_key": key,
+			"title": display,
 			"name": "地块 %d · %s" % [cell, display],
 			"value": current,
 			"detail": current,
@@ -1530,10 +1752,18 @@ func _family_modifier_rows(snapshot: Dictionary) -> Array:
 			display = key
 		var detail := String(descriptions[index]).strip_edges() \
 			if index < descriptions.size() else ""
+		var magnitude_q16 := int(magnitudes[index]) if index < magnitudes.size() else 0
 		rows.append({
+			"id": "modifier:%d:%s" % [cell, key],
+			"kind": "modifier",
+			"cell": cell,
+			"modifier_key": key,
+			"title": display,
+			"magnitude_q16": magnitude_q16,
+			"magnitude_percent": float(magnitude_q16) * 100.0 / 65536.0,
+			"magnitude_text": _q16_percent_text(magnitude_q16),
 			"name": "地块 %d · %s" % [cell, display],
-			"value": "效果幅度 %s" % _q16_percent_text(
-				int(magnitudes[index]) if index < magnitudes.size() else 0),
+			"value": "效果幅度 %s" % _q16_percent_text(magnitude_q16),
 			"detail": detail,
 			"tooltip": detail,
 		})
@@ -1562,13 +1792,25 @@ func _family_trigger_rows(snapshot: Dictionary) -> Array:
 			display = key
 		var detail := String(descriptions[index]).strip_edges() \
 			if index < descriptions.size() else ""
+		var progress_value := int(progress[index]) if index < progress.size() else 0
+		var threshold_value := int(thresholds[index]) if index < thresholds.size() else 0
+		var completed_value := int(completed[index]) if index < completed.size() else 0
+		var reward_target := int(targets[index]) if index < targets.size() else 0
 		rows.append({
+			"id": "trigger:%d:%s" % [cell, key],
+			"kind": "trigger",
+			"cell": cell,
+			"trigger_key": key,
+			"title": display,
+			"progress": progress_value,
+			"threshold": threshold_value,
+			"progress_ratio": clampf(float(progress_value) / float(maxi(threshold_value, 1)), 0.0, 1.0),
+			"completed": completed_value,
+			"reward_target": reward_target,
 			"name": "地块 %d · %s" % [cell, display],
 			"value": "%d / %d · 已触发 %d 次 · 奖励归属 %s" % [
-				int(progress[index]) if index < progress.size() else 0,
-				int(thresholds[index]) if index < thresholds.size() else 0,
-				int(completed[index]) if index < completed.size() else 0,
-				"家族分支" if index >= targets.size() or int(targets[index]) == 0 \
+				progress_value, threshold_value, completed_value,
+				"家族分支" if reward_target == 0 \
 				else "城市公共"],
 			"detail": detail,
 			"tooltip": detail,
@@ -1622,7 +1864,14 @@ func _family_notable_person_rows(facade, family_handle: int) -> Array:
 		if not building.is_empty():
 			detail_parts.append(building)
 		rows.append({
+			"id": "person:%d" % int(person_handle),
+			"kind": "person",
+			"person_handle": int(person_handle),
+			"portrait_key": "family.workspace.person",
 			"name": String(person.get("full_name", "未命名人物")),
+			"role": job_text,
+			"profession": profession,
+			"building": building,
 			"value": " · ".join(detail_parts),
 		})
 	return rows

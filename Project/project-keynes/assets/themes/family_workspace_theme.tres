@@ -1,0 +1,276 @@
+[gd_resource type="Theme" load_steps=21 format=3]
+
+[ext_resource type="FontFile" path="res://assets/fonts/source_han/SourceHanSansCN-VF.woff2" id="1_font"]
+[ext_resource type="Texture2D" path="res://assets/ui/family_workspace/bitmap/nav_normal_bitmap.tres" id="2_tab_normal"]
+[ext_resource type="Texture2D" path="res://assets/ui/family_workspace/bitmap/nav_active_bitmap.tres" id="3_tab_active"]
+[ext_resource type="FontFile" path="res://assets/fonts/source_han_serif/SourceHanSerifCN-Regular.otf" id="4_serif"]
+[ext_resource type="Texture2D" path="res://assets/ui/family_workspace/bitmap/card_frame_clean_v4.png" id="5_card_frame"]
+
+[sub_resource type="FontVariation" id="BodyMedium"]
+base_font = ExtResource("1_font")
+variation_opentype = {&"wght": 700.0}
+variation_embolden = 0.18
+
+[sub_resource type="FontVariation" id="BodySemibold"]
+base_font = ExtResource("1_font")
+variation_opentype = {&"wght": 880.0}
+variation_embolden = 0.38
+
+[sub_resource type="FontVariation" id="SerifStrong"]
+base_font = ExtResource("4_serif")
+variation_embolden = 0.9
+
+[sub_resource type="StyleBoxEmpty" id="Empty"]
+
+[sub_resource type="StyleBoxTexture" id="NavNormal"]
+texture = ExtResource("2_tab_normal")
+texture_margin_left = 24.0
+texture_margin_top = 22.0
+texture_margin_right = 24.0
+texture_margin_bottom = 22.0
+content_margin_left = 20.0
+content_margin_top = 9.0
+content_margin_right = 8.0
+content_margin_bottom = 9.0
+
+[sub_resource type="StyleBoxTexture" id="NavHover"]
+texture = ExtResource("2_tab_normal")
+texture_margin_left = 24.0
+texture_margin_top = 22.0
+texture_margin_right = 24.0
+texture_margin_bottom = 22.0
+modulate_color = Color(1.06, 1.03, 0.94, 1)
+content_margin_left = 20.0
+content_margin_top = 8.0
+content_margin_right = 8.0
+content_margin_bottom = 10.0
+
+[sub_resource type="StyleBoxTexture" id="NavPressed"]
+texture = ExtResource("3_tab_active")
+texture_margin_left = 24.0
+texture_margin_top = 22.0
+texture_margin_right = 24.0
+texture_margin_bottom = 22.0
+content_margin_left = 20.0
+content_margin_top = 10.0
+content_margin_right = 8.0
+content_margin_bottom = 8.0
+
+[sub_resource type="StyleBoxTexture" id="Card"]
+texture = ExtResource("5_card_frame")
+modulate_color = Color(1, 1, 1, 0.74)
+texture_margin_left = 24.0
+texture_margin_top = 22.0
+texture_margin_right = 24.0
+texture_margin_bottom = 22.0
+content_margin_left = 14.0
+content_margin_top = 14.0
+content_margin_right = 14.0
+content_margin_bottom = 14.0
+
+[sub_resource type="StyleBoxTexture" id="SummaryBand"]
+texture = ExtResource("5_card_frame")
+modulate_color = Color(1, 1, 1, 0.66)
+texture_margin_left = 24.0
+texture_margin_top = 22.0
+texture_margin_right = 24.0
+texture_margin_bottom = 22.0
+content_margin_left = 12.0
+content_margin_top = 10.0
+content_margin_right = 12.0
+content_margin_bottom = 10.0
+
+[sub_resource type="StyleBoxFlat" id="MetricCell"]
+bg_color = Color(0, 0, 0, 0)
+border_width_right = 1
+border_color = Color(0.34, 0.23, 0.13, 0.36)
+content_margin_left = 8.0
+content_margin_top = 4.0
+content_margin_right = 8.0
+content_margin_bottom = 4.0
+
+[sub_resource type="StyleBoxFlat" id="ActionNormal"]
+content_margin_left = 12.0
+content_margin_top = 8.0
+content_margin_right = 12.0
+content_margin_bottom = 8.0
+bg_color = Color(0.31, 0.22, 0.16, 0.96)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.63, 0.45, 0.25, 0.9)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="ActionHover"]
+content_margin_left = 12.0
+content_margin_top = 8.0
+content_margin_right = 12.0
+content_margin_bottom = 8.0
+bg_color = Color(0.48, 0.25, 0.18, 0.98)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.83, 0.62, 0.32, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="ActionPressed"]
+content_margin_left = 12.0
+content_margin_top = 9.0
+content_margin_right = 12.0
+content_margin_bottom = 7.0
+bg_color = Color(0.42, 0.18, 0.13, 1)
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 3
+border_color = Color(0.91, 0.69, 0.37, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="ActionDisabled"]
+content_margin_left = 12.0
+content_margin_top = 8.0
+content_margin_right = 12.0
+content_margin_bottom = 8.0
+bg_color = Color(0.33, 0.29, 0.23, 0.55)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.35, 0.29, 0.21, 0.55)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="ProgressBackground"]
+bg_color = Color(0.29, 0.23, 0.17, 0.32)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.22, 0.16, 0.11, 0.55)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[sub_resource type="StyleBoxFlat" id="ProgressFill"]
+bg_color = Color(0.57, 0.25, 0.18, 0.9)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.34, 0.19, 0.13, 0.9)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[resource]
+default_font = SubResource("BodyMedium")
+default_font_size = 17
+Label/colors/font_color = Color(0.075, 0.043, 0.022, 1)
+Label/colors/font_shadow_color = Color(0, 0, 0, 0)
+Label/constants/shadow_offset_x = 0
+Label/constants/shadow_offset_y = 0
+Button/colors/font_color = Color(0.075, 0.043, 0.022, 1)
+Button/colors/font_hover_color = Color(0.11, 0.075, 0.05, 1)
+Button/colors/font_pressed_color = Color(1, 0.91, 0.71, 1)
+Button/colors/font_disabled_color = Color(0.37, 0.31, 0.24, 0.7)
+Button/styles/focus = SubResource("Empty")
+ProgressBar/styles/background = SubResource("ProgressBackground")
+ProgressBar/styles/fill = SubResource("ProgressFill")
+FamilyNavButton/base_type = &"Button"
+FamilyNavButton/colors/font_color = Color(0.17, 0.12, 0.075, 1)
+FamilyNavButton/colors/font_hover_color = Color(0.1, 0.07, 0.04, 1)
+FamilyNavButton/colors/font_pressed_color = Color(1, 0.92, 0.72, 1)
+FamilyNavButton/fonts/font = ExtResource("4_serif")
+FamilyNavButton/font_sizes/font_size = 15
+FamilyNavButton/styles/normal = SubResource("NavNormal")
+FamilyNavButton/styles/hover = SubResource("NavHover")
+FamilyNavButton/styles/pressed = SubResource("NavPressed")
+FamilyNavButton/styles/disabled = SubResource("NavNormal")
+FamilyNavButton/styles/focus = SubResource("Empty")
+FamilyNavHitBox/base_type = &"Button"
+FamilyNavHitBox/styles/normal = SubResource("Empty")
+FamilyNavHitBox/styles/hover = SubResource("Empty")
+FamilyNavHitBox/styles/pressed = SubResource("Empty")
+FamilyNavHitBox/styles/disabled = SubResource("Empty")
+FamilyNavHitBox/styles/focus = SubResource("Empty")
+FamilyNavLabel/base_type = &"Label"
+FamilyNavLabel/colors/font_color = Color(0.075, 0.043, 0.022, 1)
+FamilyNavLabel/fonts/font = SubResource("BodySemibold")
+FamilyNavLabel/font_sizes/font_size = 17
+FamilyOverviewHeading/base_type = &"Button"
+FamilyOverviewHeading/colors/font_color = Color(0.18, 0.115, 0.07, 1)
+FamilyOverviewHeading/colors/font_hover_color = Color(0.52, 0.23, 0.16, 1)
+FamilyOverviewHeading/colors/font_pressed_color = Color(0.52, 0.23, 0.16, 1)
+FamilyOverviewHeading/fonts/font = SubResource("BodySemibold")
+FamilyOverviewHeading/font_sizes/font_size = 18
+FamilyOverviewHeading/styles/normal = SubResource("Empty")
+FamilyOverviewHeading/styles/hover = SubResource("Empty")
+FamilyOverviewHeading/styles/pressed = SubResource("Empty")
+FamilyOverviewHeading/styles/focus = SubResource("Empty")
+FamilyCard/base_type = &"PanelContainer"
+FamilyCard/styles/panel = SubResource("Card")
+FamilySummaryBand/base_type = &"PanelContainer"
+FamilySummaryBand/styles/panel = SubResource("SummaryBand")
+FamilyMetricCell/base_type = &"PanelContainer"
+FamilyMetricCell/styles/panel = SubResource("MetricCell")
+FamilyActionButton/base_type = &"Button"
+FamilyActionButton/colors/font_color = Color(1, 0.91, 0.71, 1)
+FamilyActionButton/colors/font_hover_color = Color(1, 0.95, 0.8, 1)
+FamilyActionButton/colors/font_pressed_color = Color(1, 0.91, 0.71, 1)
+FamilyActionButton/colors/font_disabled_color = Color(0.68, 0.61, 0.5, 0.7)
+FamilyActionButton/styles/normal = SubResource("ActionNormal")
+FamilyActionButton/styles/hover = SubResource("ActionHover")
+FamilyActionButton/styles/pressed = SubResource("ActionPressed")
+FamilyActionButton/styles/disabled = SubResource("ActionDisabled")
+FamilyActionButton/styles/focus = SubResource("Empty")
+FamilyTitle/base_type = &"Label"
+FamilyTitle/colors/font_color = Color(0.045, 0.024, 0.012, 1)
+FamilyTitle/fonts/font = SubResource("SerifStrong")
+FamilyTitle/font_sizes/font_size = 31
+FamilySectionTitle/base_type = &"Label"
+FamilySectionTitle/colors/font_color = Color(0.24, 0.075, 0.025, 1)
+FamilySectionTitle/fonts/font = SubResource("BodySemibold")
+FamilySectionTitle/font_sizes/font_size = 20
+FamilyStrongLabel/base_type = &"Label"
+FamilyStrongLabel/colors/font_color = Color(0.075, 0.045, 0.025, 1)
+FamilyStrongLabel/fonts/font = SubResource("BodySemibold")
+FamilyStrongLabel/font_sizes/font_size = 17
+FamilyMetricValue/base_type = &"Label"
+FamilyMetricValue/colors/font_color = Color(0.075, 0.045, 0.025, 1)
+FamilyMetricValue/fonts/font = SubResource("BodySemibold")
+FamilyMetricValue/font_sizes/font_size = 20
+FamilyMutedLabel/base_type = &"Label"
+FamilyMutedLabel/colors/font_color = Color(0.13, 0.082, 0.043, 1)
+FamilyMutedLabel/fonts/font = SubResource("BodyMedium")
+FamilyMutedLabel/font_sizes/font_size = 15
+FamilySubtitle/base_type = &"Label"
+FamilySubtitle/colors/font_color = Color(0.13, 0.082, 0.043, 1)
+FamilySubtitle/fonts/font = SubResource("BodyMedium")
+FamilySubtitle/font_sizes/font_size = 16
+FamilyPrestigeValue/base_type = &"Label"
+FamilyPrestigeValue/colors/font_color = Color(1, 0.9, 0.6, 1)
+FamilyPrestigeValue/colors/font_outline_color = Color(0.075, 0.035, 0.015, 1)
+FamilyPrestigeValue/constants/outline_size = 3
+FamilyPrestigeValue/fonts/font = SubResource("BodySemibold")
+FamilyPrestigeValue/font_sizes/font_size = 27
+FamilyPrestigeCaption/base_type = &"Label"
+FamilyPrestigeCaption/colors/font_color = Color(1, 0.88, 0.58, 1)
+FamilyPrestigeCaption/colors/font_outline_color = Color(0.075, 0.035, 0.015, 1)
+FamilyPrestigeCaption/constants/outline_size = 2
+FamilyPrestigeCaption/fonts/font = SubResource("BodySemibold")
+FamilyPrestigeCaption/font_sizes/font_size = 13

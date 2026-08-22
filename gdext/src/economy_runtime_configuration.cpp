@@ -289,6 +289,16 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _family_traits.clear();
     _family_behavior_factor_offsets.clear();
     _family_behavior_factor_rows.clear();
+    _family_behavior_cache_dirty = true;
+    _family_behavior_cache_dirty_reasons =
+        FAMILY_BEHAVIOR_DIRTY_INITIAL;
+    _family_behavior_cache_last_reasons = 0;
+    _family_behavior_cache_rebuilds = 0;
+    _family_behavior_cache_skips = 0;
+    _family_behavior_metric_contexts_built = 0;
+    _family_behavior_condition_edges_evaluated = 0;
+    _family_behavior_cache_ms = 0.0;
+    _family_behavior_class_rows = 0;
     _family_purchase_factor_q16.clear();
     _family_investment_factor_q16.clear();
     _family_birth_factor_q16.clear();
@@ -1353,6 +1363,51 @@ bool NativeEconomyRuntime::validate_command_pod(const Command &cmd,
         }
     }
     return true;
+}
+
+int32_t NativeEconomyRuntime::preflight_effect_commands_pod(
+        const EffectCommand *commands, size_t count, std::string &error) const {
+    error.clear();
+    if (!_bootstrapped || _save.active || _restore.active) {
+        error = !_bootstrapped ? "economy_not_bootstrapped" :
+            "save_restore_active";
+        return EFFECT_PREFLIGHT_RETRY;
+    }
+    if (_fatal) {
+        error = "economy_fatal";
+        return EFFECT_PREFLIGHT_REJECT;
+    }
+    if ((commands == nullptr && count != 0) || count > 1000000ULL) {
+        error = "effect_economy_command_batch_invalid";
+        return EFFECT_PREFLIGHT_REJECT;
+    }
+    for (size_t i = 0; i < count; ++i) {
+        const EffectCommand &source = commands[i];
+        if (source.idempotency_key == 0 || source.sequence < 0) {
+            error = "effect_economy_command_identity_invalid";
+            return EFFECT_PREFLIGHT_REJECT;
+        }
+        // An already accepted idempotency key is safe to replay regardless of
+        // whether its generation-safe target has since retired.
+        if (_effect_idempotency_requests.find(source.idempotency_key) !=
+                _effect_idempotency_requests.end())
+            continue;
+        Command command;
+        command.opcode = source.opcode;
+        command.effective_day = source.effective_day;
+        command.sequence = source.sequence;
+        command.target_handle = source.target_handle;
+        command.i32_0 = source.i32_0;
+        command.i32_1 = source.i32_1;
+        command.i64_0 = source.i64_0;
+        command.i64_1 = source.i64_1;
+        command.effect_idempotency_key = source.idempotency_key;
+        if (!validate_command_pod(command, error)) {
+            error = "effect_economy_preflight_" + error;
+            return EFFECT_PREFLIGHT_REJECT;
+        }
+    }
+    return EFFECT_PREFLIGHT_ACCEPT;
 }
 
 bool NativeEconomyRuntime::submit_effect_commands_pod(

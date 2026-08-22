@@ -6,6 +6,10 @@ const FamilyTraitCatalogScript = preload("res://scripts/family/family_trait_cata
 const FamilyTraitDefinitionScript = preload("res://scripts/family/family_trait_definition.gd")
 const FamilyBehaviorPreferenceScript = preload("res://scripts/family/family_behavior_preference.gd")
 const EffectDomainCatalogScript = preload("res://scripts/effect/effect_domain_catalog.gd")
+const EffectCatalogScript = preload("res://scripts/effect/effect_catalog.gd")
+const EffectDefinitionScript = preload("res://scripts/effect/effect_definition.gd")
+const EffectInstructionScript = preload("res://scripts/effect/effect_instruction.gd")
+const EffectCommandScript = preload("res://scripts/effect/effect_command.gd")
 const EffectConditionScript = preload("res://scripts/effect/effect_condition.gd")
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
 const LandformTypeScript = preload("res://scripts/geography/landform_type.gd")
@@ -163,6 +167,11 @@ func _test_behavior_conditions_and_score_terms() -> void:
 		mountain.ext.get_economy_report().has("family_behavior_factor_row_count")
 		and int(mountain.ext.get_economy_report().get("family_behavior_factor_row_count", 0))
 			== mountain_rows)
+	_expect("condition metrics are built once per family-cell and reused by trait edges",
+		int(mountain_day.get("family_behavior_metric_contexts_built", 0)) == 1
+		and int(plain_day.get("family_behavior_metric_contexts_built", 0)) == 1
+		and int(mountain_day.get(
+			"family_behavior_condition_edges_evaluated", 0)) >= 1)
 
 
 func _test_trait_technology_gate() -> void:
@@ -433,6 +442,109 @@ func _test_conserved_family_commands() -> void:
 	_expect("colonization reward stash does not mint people before settlement",
 		bool(stash_day.get("done", false)) and int(stash_day.get("population_error", 1)) == 0
 		and int(ext.get_family_snapshot(family_handle).population) == family_before_stash)
+
+	# A permanently invalid Economy target must reject only its own Effect
+	# transaction. A valid neighbour in the same flat native dispatch batch must
+	# still enqueue and commit instead of being retried every continuation slice.
+	var effect_ir: Dictionary = _economy_preflight_catalog().compile_native_catalog()
+	_expect("economy preflight isolation catalog compiles", bool(effect_ir.get("ok", false)))
+	if not bool(effect_ir.get("ok", false)):
+		print("effect catalog=", effect_ir)
+		return
+	_expect("economy preflight isolation Effect configures",
+		bool(ext.configure_effects(effect_ir).get("ok", false)))
+	var effect_day := (ready_day + 6) * 5
+	var branch_generation := int(branch_handle >> 32)
+	var instances: Dictionary = ext.submit_effect_instances({
+		"instance_ids": PackedInt64Array([91001, 91002]),
+		"program_keys": PackedStringArray([
+			"test.economy.invalid_family_reward",
+			"test.economy.valid_absorb",
+		]),
+		"generations": PackedInt32Array([1, 1]),
+		"source_types": PackedInt32Array([1, 1]),
+		"source_ids": PackedInt64Array([family_handle, family_handle]),
+		"source_handles": PackedInt64Array([branch_handle, branch_handle]),
+		"target_handles": PackedInt64Array([1, branch_handle]),
+		"target_generations": PackedInt32Array([0, branch_generation]),
+		"levels": PackedInt32Array([0, 0]),
+		"next_due_days": PackedInt64Array([effect_day, effect_day]),
+		"active": PackedByteArray([1, 1]),
+	})
+	_expect("economy preflight isolation instances submit", bool(instances.get("ok", false)))
+	var effect_evaluate := {}
+	for effect_slice in 8:
+		effect_evaluate = ext.run_effect_daily(effect_day)
+		if not bool(effect_evaluate.get("ok", false)) \
+				or bool(effect_evaluate.get("done", false)):
+			break
+	_expect("economy preflight isolation Effect evaluates",
+		bool(effect_evaluate.get("ok", false))
+		and bool(effect_evaluate.get("done", false)))
+	var dispatch: Dictionary = ext.dispatch_effect_native_economy()
+	var isolated := (bool(dispatch.get("ok", false))
+		and int(dispatch.get("rejected_transactions", 0)) == 1
+		and int(dispatch.get("submitted_transactions", 0)) == 1
+		and int(dispatch.get("submitted_commands", 0)) == 1)
+	_expect("invalid Economy target rejects only its Effect transaction", isolated)
+	if not isolated:
+		print("economy preflight dispatch=", dispatch)
+	var effect_commit := _run_day(ext, ready_day + 6)
+	_expect("valid Economy neighbour commits with conserved ledgers",
+		bool(effect_commit.get("done", false))
+		and int(effect_commit.get("population_error", 1)) == 0
+		and int(effect_commit.get("money_error", 1)) == 0
+		and int(effect_commit.get("goods_error", 1)) == 0)
+	var effect_ack: Dictionary = ext.ack_effect_native_economy()
+	_expect("valid Economy neighbour ACKs after commit",
+		int(effect_ack.get("acknowledged", 0)) == 1)
+	if int(effect_ack.get("acknowledged", 0)) != 1:
+		print("economy preflight ACK=", effect_ack)
+	var effect_report: Dictionary = ext.get_effect_report()
+	_expect("permanent Economy rejection leaves no planned retry",
+		int(effect_report.get("planned_transactions", 0)) == 0
+		and int(effect_report.get("preflight_rejects", 0)) >= 1
+		and not bool(ext.effect_should_run(effect_day)))
+	if int(effect_report.get("planned_transactions", 0)) != 0 \
+			or bool(ext.effect_should_run(effect_day)):
+		print("economy preflight report=", effect_report)
+
+
+func _economy_preflight_catalog() -> Resource:
+	var catalog := EffectCatalogScript.new()
+	catalog.max_instances = 8
+	catalog.max_transactions = 8
+	catalog.definitions = [
+		_economy_preflight_definition(
+			"test.economy.invalid_family_reward", 15, 1),
+		_economy_preflight_definition(
+			"test.economy.valid_absorb", 21, 1),
+	]
+	return catalog
+
+
+func _economy_preflight_definition(key: String, opcode: int, value: int) -> Resource:
+	var definition := EffectDefinitionScript.new()
+	definition.key = StringName(key)
+	definition.cadence_days = 3650
+	var emit := EffectInstructionScript.new()
+	emit.op = 11 # EMIT_COMMAND
+	emit.arg0 = 0
+	var end := EffectInstructionScript.new()
+	end.op = 12 # END
+	definition.instructions = [emit, end]
+	var command := EffectCommandScript.new()
+	command.action = 3 # ECONOMY_COMMAND
+	command.domain = 2
+	command.opcode = opcode
+	command.target_resolver = 1 # TARGET_INSTANCE
+	command.value_mode = 0 # VALUE_CONSTANT
+	command.value_q16 = value
+	command.duration_days = -1
+	command.stacks = 1
+	command.command_key = &"test.economy.preflight"
+	definition.commands = [command]
+	return definition
 
 
 func _behavior_catalog(building_id: String, conditions: Array,

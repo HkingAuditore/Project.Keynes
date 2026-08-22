@@ -1078,6 +1078,9 @@ var _ideology_facade = null
 var _ideology_daily_job = null
 const ECONOMY_CONTINUATION_FALLBACK_BUDGET_MS := 8.0
 const ECONOMY_CONTINUATION_MAX_SLICES_PER_FRAME := 64
+# A native stage is non-preemptible once started. Keep enough room for the next
+# observed desktop p95 slice instead of launching it at the very end of 8ms.
+const NATIVE_DAILY_CONTINUATION_SLICE_HEADROOM_MS := 3.0
 const BIO_OCCUPANCY_SLICE_CELLS := 2048
 const EFFECT_ACK_CHAIN_MAX_PASSES := 8
 const BARRIER_DIAG_LOG_STRIDE := 60
@@ -2089,6 +2092,8 @@ func _ensure_continuation_perf_pending() -> void:
 		"continuation_started_slices": 0,
 		"continuation_completed_slices": 0,
 		"continuation_budget_exhausted": false,
+		"continuation_budget_overrun_frames": 0,
+		"continuation_max_budget_overrun_ms": 0.0,
 		"continuation_blocked_by_stage": "",
 		"country_slices": 0,
 		"economy_slices": 0,
@@ -2198,15 +2203,24 @@ func _finish_continuation_perf_frame(started_us: int, frame_slices: int,
 	_continuation_perf_pending["max_slice_ms"] = maxf(
 		float(_continuation_perf_pending.get("max_slice_ms", 0.0)), frame_max_slice_ms)
 	_continuation_perf_pending["budget_ms"] = budget_ms
-	var continuation_done := bool(_continuation_perf_pending.get("done", false))
 	# Completion is a semantic state transition, not permission to hide a
 	# deadline overrun.  The final publish slice can complete after the budget;
 	# keep that fact visible for the render-frame performance gate.
 	var budget_exhausted := budget_ms > 0.0 and frame_wall_ms >= budget_ms
-	_continuation_perf_pending["continuation_budget_exhausted"] = budget_exhausted
-	_continuation_perf_pending["continuation_blocked_by_stage"] = \
-			str(_continuation_perf_pending.get("last_stage", "")) \
-			if not continuation_done else ""
+	_continuation_perf_pending["continuation_budget_exhausted"] = \
+		bool(_continuation_perf_pending.get(
+			"continuation_budget_exhausted", false)) or budget_exhausted
+	if budget_exhausted:
+		_continuation_perf_pending["continuation_budget_overrun_frames"] = int(
+			_continuation_perf_pending.get(
+				"continuation_budget_overrun_frames", 0)) + 1
+		_continuation_perf_pending["continuation_max_budget_overrun_ms"] = maxf(
+			float(_continuation_perf_pending.get(
+				"continuation_max_budget_overrun_ms", 0.0)),
+			maxf(0.0, frame_wall_ms - budget_ms))
+		var last_stage := str(_continuation_perf_pending.get("last_stage", ""))
+		if not last_stage.is_empty():
+			_continuation_perf_pending["continuation_blocked_by_stage"] = last_stage
 
 
 func _continue_economy_inflight(day_index: int) -> void:
@@ -2227,25 +2241,35 @@ func _continue_economy_inflight(day_index: int) -> void:
 	var started_us := Time.get_ticks_usec()
 	var continuation_count := 0
 	var frame_max_slice_ms := 0.0
-	# Native climate and Bio occupancy are same-day transactions. Continue at
-	# most one deterministic slice per pulse, release their barriers only after
-	# the final publish, and never let a diagnostic/economy drain run ahead of a
-	# still-open climate transaction.
+	var native_launch_deadline_ms := budget_ms - minf(
+		NATIVE_DAILY_CONTINUATION_SLICE_HEADROOM_MS, budget_ms * 0.5)
+	# Native climate and Bio occupancy are same-day transactions. Native slices
+	# are synchronous cooperative stages, including deferred JIT-patch waits, so
+	# drain consecutive slices inside this pulse while the shared frame budget
+	# allows it. Release barriers only after the final publish, and never let a
+	# diagnostic/economy drain run ahead of a still-open climate transaction.
 	if native_daily_round_active():
 		# A pending first slice is not yet represented by the job's own
 		# _native_round_active flag.  Once this pulse starts run_slice(), the job
 		# becomes the authoritative owner of the barrier state.
 		_native_daily_day_pending = false
-		var native_started_us := Time.get_ticks_usec()
-		var native_result: Dictionary = _sus.continue_system(&"native_daily_sim", ctx)
-		var native_slice_ms: float = float(Time.get_ticks_usec() - native_started_us) / 1000.0
-		frame_max_slice_ms = maxf(frame_max_slice_ms,
-			_record_continuation_slice("native_daily", native_result, native_slice_ms))
-		continuation_count += 1
+		while native_daily_round_active() \
+				and continuation_count < ECONOMY_CONTINUATION_MAX_SLICES_PER_FRAME:
+			var native_started_us := Time.get_ticks_usec()
+			var native_result: Dictionary = _sus.continue_system(&"native_daily_sim", ctx)
+			var native_slice_ms: float = float(Time.get_ticks_usec() - native_started_us) / 1000.0
+			frame_max_slice_ms = maxf(frame_max_slice_ms,
+				_record_continuation_slice("native_daily", native_result, native_slice_ms))
+			continuation_count += 1
+			if bool(native_result.get("fatal", false)) \
+					or float(Time.get_ticks_usec() - started_us) / 1000.0 \
+						>= native_launch_deadline_ms:
+				break
 		if _world_clock_ref != null:
 			_world_clock_ref.request_simulation_backpressure(
 				&"native_daily_day_barrier", native_daily_round_active())
-		if native_daily_round_active() or float(Time.get_ticks_usec() - started_us) / 1000.0 >= budget_ms:
+		if native_daily_round_active() \
+				or float(Time.get_ticks_usec() - started_us) / 1000.0 >= native_launch_deadline_ms:
 			_finish_continuation_perf_frame(started_us, continuation_count, frame_max_slice_ms, budget_ms)
 			return
 	if bio_occupancy_round_active():

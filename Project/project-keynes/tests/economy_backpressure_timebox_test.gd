@@ -4,6 +4,7 @@ extends SceneTree
 class FakeRuntime extends RefCounted:
 	var remaining: int
 	var fatal := false
+	var _native_round_active := false
 
 	func _init(slice_count: int) -> void:
 		remaining = slice_count
@@ -37,6 +38,7 @@ class FakeFacade extends RefCounted:
 class FakeScheduler extends RefCounted:
 	var country_runtime: FakeRuntime
 	var economy_runtime: FakeRuntime
+	var native_runtime: FakeRuntime = null
 	var calls: Array[StringName] = []
 	var contexts: Array[SusTickContext] = []
 
@@ -52,6 +54,8 @@ class FakeScheduler extends RefCounted:
 			runtime = country_runtime
 		elif system_id == &"economy_daily":
 			runtime = economy_runtime
+		elif system_id == &"native_daily_sim":
+			runtime = native_runtime
 		if runtime == null:
 			return {
 				"done": true,
@@ -60,15 +64,17 @@ class FakeScheduler extends RefCounted:
 				"path": "test",
 			}
 		runtime.remaining = maxi(0, runtime.remaining - 1)
+		if system_id == &"native_daily_sim":
+			runtime._native_round_active = runtime.remaining > 0
 		return {
 			"done": runtime.remaining == 0,
-			"stage_name": "country_apply" if system_id == &"country_daily" \
-				else "household_market",
+			"stage_name": "native_daily_slice" if system_id == &"native_daily_sim" \
+				else ("country_apply" if system_id == &"country_daily" \
+				else "household_market"),
 			"next_stage": "country_publish" if system_id == &"country_daily" \
 				else "aggregate_publish",
 			"path": "test",
 		}
-
 
 func _initialize() -> void:
 	var clock := WorldClock.new()
@@ -115,6 +121,33 @@ func _initialize() -> void:
 		failures.append("continuation stage total/max timings were not recorded")
 	if String(continuation_perf.get("last_next_stage", "")) != "aggregate_publish":
 		failures.append("continuation next stage was not retained separately")
+
+	var native_clock := WorldClock.new()
+	native_clock.sim_frame_budget_ms = 8.0
+	native_clock.request_simulation_backpressure(&"native_daily_day_barrier", true)
+	var native_runtime := FakeRuntime.new(6)
+	native_runtime._native_round_active = true
+	var native_scheduler := FakeScheduler.new(FakeRuntime.new(0), FakeRuntime.new(0))
+	native_scheduler.native_runtime = native_runtime
+	var native_generator := MapGenerator.new()
+	native_generator._sus = native_scheduler
+	native_generator._world_clock_ref = native_clock
+	native_generator._native_daily_sim_job = native_runtime
+	native_generator._continue_economy_inflight(18)
+	if native_scheduler.calls.size() != 6 or native_runtime.remaining != 0:
+		failures.append("one pulse did not drain consecutive native daily slices")
+	if native_clock._simulation_backpressure_sources.has(&"native_daily_day_barrier"):
+		failures.append("completed native daily drain left its day barrier active")
+	native_runtime.remaining = 100
+	native_runtime._native_round_active = true
+	native_scheduler.calls.clear()
+	native_clock.request_simulation_backpressure(&"native_daily_day_barrier", true)
+	native_generator._continue_economy_inflight(19)
+	if native_scheduler.calls.size() != MapGenerator.ECONOMY_CONTINUATION_MAX_SLICES_PER_FRAME \
+			or native_runtime.remaining != 36:
+		failures.append("native daily drain did not enforce its defensive slice cap")
+	if not native_clock._simulation_backpressure_sources.has(&"native_daily_day_barrier"):
+		failures.append("native slice-cap exhaustion cleared an unfinished day barrier")
 
 	economy_runtime.remaining = 100
 	scheduler.calls.clear()
