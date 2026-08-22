@@ -104,6 +104,21 @@ func _check_workspace_interaction(failures: PackedStringArray) -> void:
 	workspace.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	workspace.show_family(_sample_model(), false)
 	await process_frame
+	var overview_effect_card := workspace.get_node("%PageHost").find_child(
+		"OverviewEffects", true, false) as PanelContainer
+	if overview_effect_card == null:
+		failures.append("overview effect card was not built")
+	else:
+		var effect_grid := overview_effect_card.find_child(
+			"OverviewEffectsGrid", true, false) as GridContainer
+		if effect_grid == null or effect_grid.get_child_count() != 4:
+			failures.append("overview effect grid did not retain all effect rows")
+		if effect_grid != null:
+			for item_root in effect_grid.get_children():
+				var effect_name := (item_root as Control).find_child("Name", true, false) as Label
+				if effect_name == null or effect_name.text_overrun_behavior != TextServer.OVERRUN_TRIM_ELLIPSIS:
+					failures.append("long overview effect title can overflow its grid cell")
+					break
 	if workspace.get_viewport().gui_get_focus_owner() != workspace.get_node("%NavOverview"):
 		failures.append("family workspace did not assign an initial keyboard focus")
 	var page_area := workspace.get_node("SafeMargin/Main/PageArea") as Control
@@ -197,7 +212,20 @@ func _sample_model() -> Dictionary:
 			{"label": "创立时间", "value": "第0日", "icon": "family.metric.time"},
 		],
 		"pages": {
-			"overview": {"traits": [], "preferences": preferences.slice(0, 4), "effects": [], "people": []},
+			"overview": {"traits": [], "preferences": preferences.slice(0, 4), "effects": [
+				{"id": "effect:4:harvest", "kind": "effect", "cell": 4,
+					"title": "地块 1753 · 时代鼓舞 · 威望 IV · 资源转化效率提高8%",
+					"value": "当地产业持续获得资源转化效率与产量加成"},
+				{"id": "effect:5:harvest", "kind": "effect", "cell": 5,
+					"title": "地块 1754 · 时代鼓舞 · 威望 IV · 资源转化效率提高8%",
+					"value": "当地产业持续获得资源转化效率与产量加成"},
+				{"id": "effect:6:harvest", "kind": "effect", "cell": 6,
+					"title": "地块 1755 · 时代鼓舞 · 威望 IV · 资源转化效率提高8%",
+					"value": "当地产业持续获得资源转化效率与产量加成"},
+				{"id": "effect:7:harvest", "kind": "effect", "cell": 7,
+					"title": "地块 1756 · 时代鼓舞 · 威望 IV · 资源转化效率提高8%",
+					"value": "当地产业持续获得资源转化效率与产量加成"}],
+				"people": []},
 			"traits": [{"id": "steady", "name": "稳固", "kind_label": "核心特性", "detail": "家族成员忠诚度自然提升。", "effect_summary": "忠诚度 +55.7%"}],
 			"preferences": preferences,
 			"effects": [{"id": "effect:4:harvest", "kind": "effect", "cell": 4, "title": "丰收", "value": "产量 +20%", "detail": "当地产业持续增产。"}],

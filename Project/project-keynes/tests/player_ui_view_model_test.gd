@@ -55,8 +55,18 @@ class ProfessionUnlockFacade extends RefCounted:
 	func market_cell_snapshot(_cell_idx: int) -> Dictionary:
 		return {
 			"ok": true,
-			"good_ids": PackedStringArray(),
-			"good_technology_available": PackedByteArray(),
+			"good_ids": PackedStringArray(["unlocked_good", "locked_good"]),
+			"good_technology_available": PackedByteArray([1, 0]),
+		}
+
+	func native_catalog() -> Dictionary:
+		return {
+			"need_ids": PackedStringArray(["unlocked_need", "locked_need"]),
+			"good_ids": PackedStringArray(["unlocked_good", "locked_good"]),
+			"need_stable_ids": PackedInt32Array([0, 1]),
+			"need_variant_offsets": PackedInt32Array([0, 1, 2]),
+			"variant_component_offsets": PackedInt32Array([0, 1, 2]),
+			"component_good_ids": PackedInt32Array([0, 1]),
 		}
 
 	func population_cell_snapshot(_cell_idx: int,
@@ -819,6 +829,7 @@ func _initialize() -> void:
 		"enforce_buildings": true, "buildings": {"unlocked_building": true},
 		"enforce_goods": true, "goods": {"unlocked_good": true},
 		"enforce_professions": true, "professions": {"artisan": true},
+		"enforce_needs": true, "needs": {"unlocked_need": true},
 	}
 	var family_name_view := CellInspectorViewModel.new()
 	var family_category: Dictionary = family_name_view._family_category({
@@ -843,6 +854,8 @@ func _initialize() -> void:
 			3, "locked_good", family_visibility) \
 			or CellInspectorViewModel._family_behavior_selector_visible(
 			1, "locked_profession", family_visibility) \
+			or CellInspectorViewModel._family_behavior_selector_visible(
+			2, "locked_need", family_visibility) \
 			or not CellInspectorViewModel._family_behavior_selector_visible(
 			0, "unlocked_building", family_visibility):
 		failures.append("family detail did not filter locked behavior selectors")
@@ -851,22 +864,24 @@ func _initialize() -> void:
 	var profession_visibility: Dictionary = \
 		profession_mask_view._family_behavior_visibility(0)
 	var profession_rows: Array = profession_mask_view._family_behavior_rows({
-		"behavior_axes": PackedInt32Array([1, 1]),
+		"behavior_axes": PackedInt32Array([1, 1, 2, 2]),
 		"behavior_selector_stable_ids": PackedStringArray([
-			"forager", "ai_researcher"]),
+			"forager", "ai_researcher", "unlocked_need", "locked_need"]),
 		"behavior_selector_display_names": PackedStringArray([
-			"采集者", "AI 研究员"]),
-		"behavior_factors_q16": PackedInt32Array([65536, 65536]),
+			"采集者", "AI 研究员", "已解锁需求", "未解锁需求"]),
+		"behavior_factors_q16": PackedInt32Array([65536, 65536, 65536, 65536]),
 	}, 0)
 	if not bool(profession_visibility.get("enforce_professions", false)) \
 			or not (profession_visibility.get("professions", {}) as Dictionary).has(
 				"forager") \
 			or (profession_visibility.get("professions", {}) as Dictionary).has(
 				"ai_researcher") \
-			or profession_rows.size() != 1 \
+			or profession_rows.size() != 2 \
 			or String(profession_rows[0].get("name", "")).find("采集者") < 0 \
-			or String(profession_rows[0].get("name", "")).find("AI") >= 0:
-		failures.append("family behavior rows listed a locked profession")
+			or String(profession_rows[0].get("name", "")).find("AI") >= 0 \
+			or String(profession_rows[1].get("name", "")).find("已解锁需求") < 0 \
+			or String(profession_rows[1].get("name", "")).find("未解锁") >= 0:
+		failures.append("family behavior rows listed a locked selector")
 
 	var recipe_view_model := CellInspectorViewModel.new()
 	var stone_item := {"building_id": "timber_collector", "materials": []}

@@ -331,8 +331,13 @@ func _build_overview_page(page: VBoxContainer) -> void:
 		overview.get("traits", []), 180.0)
 	_add_overview_list_card(top_grid, "preferences", "行为偏好",
 		overview.get("preferences", []), 180.0)
+	var overview_effects: Array = overview.get("effects", [])
+	var effect_columns := 2
+	var effect_rows := maxi(1, ceili(float(overview_effects.size()) / effect_columns)) \
+		if not overview_effects.is_empty() else 1
+	var effect_height := 56.0 + float(effect_rows) * 44.0
 	_add_overview_list_card(page, "effects", "家族效果",
-		overview.get("effects", []), 124.0, true)
+		overview_effects, effect_height, true)
 	_add_overview_people_card(page, overview.get("people", []))
 
 
@@ -391,7 +396,8 @@ func _add_overview_list_item(host: Control, page_id: String,
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	name_label.theme_type_variation = &"FamilyStrongLabel"
 	if page_id == "effects":
-		name_label.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
+		name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		name_label.tooltip_text = name_label.text
 	else:
 		name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	title_row.add_child(name_label)
@@ -399,6 +405,9 @@ func _add_overview_list_item(host: Control, page_id: String,
 	value_label.name = "Value"
 	value_label.text = String(item.get("value", ""))
 	value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	value_label.size_flags_horizontal = Control.SIZE_SHRINK_END
+	value_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	value_label.tooltip_text = value_label.text
 	value_label.theme_type_variation = &"FamilyMutedLabel"
 	value_label.add_theme_color_override("font_color", UITokens.FAMILY_OXBLOOD)
 	title_row.add_child(value_label)
