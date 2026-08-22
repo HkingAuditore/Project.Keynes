@@ -1,10 +1,11 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/components/inspector_panel.gd" id="1_script"]
 [ext_resource type="PackedScene" path="res://scenes/ui/radial_gauge.tscn" id="2_gauge"]
 [ext_resource type="PackedScene" path="res://scenes/ui/category_tabs.tscn" id="3_tabs"]
 [ext_resource type="PackedScene" path="res://scenes/ui/object_detail_dialog.tscn" id="4_detail"]
 [ext_resource type="PackedScene" path="res://scenes/ui/construction_picker.tscn" id="5_construction"]
+[ext_resource type="PackedScene" path="res://scenes/ui/family_workspace.tscn" id="6_family"]
 
 [node name="RightPanel" type="PanelContainer"]
 visible = false
@@ -44,6 +45,12 @@ clip_contents = true
 theme_type_variation = &"PKInsetPanel"
 
 [node name="ObjectDetail" parent="Margin/Split/DetailShell" instance=ExtResource("4_detail")]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="FamilyWorkspace" parent="Margin/Split/DetailShell" instance=ExtResource("6_family")]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3

@@ -918,7 +918,8 @@ bool NativeEconomyRuntime::capture_building_context(
     return true;
 }
 
-bool NativeEconomyRuntime::drain_building_resource_deltas(std::vector<int64_t> &out) {
+bool NativeEconomyRuntime::drain_building_resource_deltas(
+        std::vector<size_t> &out_lanes, std::vector<int64_t> &out_deltas) {
     if (!_resource_deltas_ready) return false;
     for (const size_t index : _last_published_resource_touched_lanes) {
         if (index < _last_published_resource_deltas.size())
@@ -927,14 +928,19 @@ bool NativeEconomyRuntime::drain_building_resource_deltas(std::vector<int64_t> &
     _last_published_resource_touched_lanes.clear();
     _last_published_resource_touched_lanes.reserve(
         _resource_touched_lanes.size());
+    out_lanes.clear();
+    out_deltas.clear();
+    out_lanes.reserve(_resource_touched_lanes.size());
+    out_deltas.reserve(_resource_touched_lanes.size());
     for (const size_t index : _resource_touched_lanes) {
         if (index >= _resource_deltas.size() ||
             index >= _last_published_resource_deltas.size() ||
             _resource_deltas[index] == 0) continue;
         _last_published_resource_deltas[index] = _resource_deltas[index];
         _last_published_resource_touched_lanes.push_back(index);
+        out_lanes.push_back(index);
+        out_deltas.push_back(_resource_deltas[index]);
     }
-    out = _last_published_resource_deltas;
     _resource_deltas_ready = false;
     return true;
 }
@@ -9093,15 +9099,38 @@ void NativeEconomyRuntime::assign_core_family_traits(int32_t family_index) {
             return std::tie(a.family_handle, a.trait_id) <
                 std::tie(b.family_handle, b.trait_id);
         });
+    if (!selected.empty())
+        mark_family_behavior_cache_dirty(FAMILY_BEHAVIOR_DIRTY_TRAITS);
 }
 
-void NativeEconomyRuntime::rebuild_family_behavior_cache() {
+void NativeEconomyRuntime::mark_family_behavior_cache_dirty(uint32_t reason) {
+    _family_behavior_cache_dirty = true;
+    _family_behavior_cache_dirty_reasons |= reason;
+}
+
+bool NativeEconomyRuntime::rebuild_family_behavior_cache() {
+    if (!_family_behavior_cache_dirty) {
+        ++_family_behavior_cache_skips;
+        return false;
+    }
+    const auto cache_started = Clock::now();
+    const uint32_t rebuild_reasons = _family_behavior_cache_dirty_reasons;
     ensure_family_policy_factors();
     struct TaggedRow {
         int32_t family_index = -1;
         FamilyBehaviorFactorRow row;
     };
-    std::vector<std::vector<int32_t>> family_cells(_families.active.size());
+    struct FamilyCellContext {
+        int32_t cell = -1;
+        int32_t branch = -1;
+        std::array<int64_t, FAMILY_METRIC_COUNT> metrics{};
+        bool metrics_ready = false;
+    };
+    // Freeze the branch lookup together with the family cell workset. Looking
+    // up a branch by rescanning the entire influence store for every
+    // conditioned trait edge turns this rebuild into O(edges * branches).
+    std::vector<std::vector<FamilyCellContext>> family_cells(
+        _families.active.size());
     for (int32_t branch = 0; branch < static_cast<int32_t>(
             _family_influences.active.size()); ++branch) {
         if (_family_influences.active[branch] == 0) continue;
@@ -9112,21 +9141,26 @@ void NativeEconomyRuntime::rebuild_family_behavior_cache() {
             continue;
         const int32_t cell = _family_influences.cell[branch];
         if (cell < 0 || cell >= _cell_count) continue;
-        family_cells[static_cast<size_t>(family_index)].push_back(cell);
+        family_cells[static_cast<size_t>(family_index)].push_back(
+            FamilyCellContext{cell, branch, {}, false});
     }
     for (int32_t family = 0; family < static_cast<int32_t>(family_cells.size());
          ++family) {
         auto &cells = family_cells[static_cast<size_t>(family)];
         if (cells.empty() && _families.active[family] != 0) {
             const int32_t home = _families.home_cell[family];
-            if (home >= 0 && home < _cell_count) cells.push_back(home);
+            if (home >= 0 && home < _cell_count)
+                cells.push_back(FamilyCellContext{home, -1, {}, false});
         }
-        std::sort(cells.begin(), cells.end());
-        cells.erase(std::unique(cells.begin(), cells.end()), cells.end());
+        std::sort(cells.begin(), cells.end(), [](const auto &a, const auto &b) {
+            return std::tie(a.cell, a.branch) < std::tie(b.cell, b.branch);
+        });
+        cells.erase(std::unique(cells.begin(), cells.end(),
+            [](const auto &a, const auto &b) { return a.cell == b.cell; }),
+            cells.end());
     }
     std::vector<TaggedRow> expanded;
     expanded.reserve(_family_traits.size() * 2);
-    std::array<int64_t, FAMILY_METRIC_COUNT> metrics{};
     for (const FamilyTraitRoll &roll : _family_traits) {
         int32_t family_index = -1;
         if (!_families.valid_handle(roll.family_handle, family_index) ||
@@ -9160,26 +9194,21 @@ void NativeEconomyRuntime::rebuild_family_behavior_cache() {
                 expanded.push_back({family_index, base});
                 continue;
             }
-            const std::vector<int32_t> &cells =
+            std::vector<FamilyCellContext> &cells =
                 family_cells[static_cast<size_t>(family_index)];
-            for (int32_t cell : cells) {
-                int32_t branch = -1;
-                for (int32_t i = 0; i < static_cast<int32_t>(
-                        _family_influences.active.size()); ++i) {
-                    if (_family_influences.active[i] != 0 &&
-                        _family_influences.family_handle[i] ==
-                            roll.family_handle &&
-                        _family_influences.cell[i] == cell) {
-                        branch = i;
-                        break;
-                    }
+            for (FamilyCellContext &context : cells) {
+                if (!context.metrics_ready) {
+                    fill_family_behavior_metrics(family_index, context.branch,
+                        context.cell, context.metrics.data(), FAMILY_METRIC_COUNT);
+                    context.metrics_ready = true;
+                    ++_family_behavior_metric_contexts_built;
                 }
-                fill_family_behavior_metrics(family_index, branch, cell,
-                    metrics.data(), FAMILY_METRIC_COUNT);
-                if (!evaluate_family_behavior_conditions(edge, metrics.data(),
+                ++_family_behavior_condition_edges_evaluated;
+                if (!evaluate_family_behavior_conditions(edge,
+                        context.metrics.data(),
                         FAMILY_METRIC_COUNT))
                     continue;
-                base.cell = cell;
+                base.cell = context.cell;
                 expanded.push_back({family_index, base});
             }
         }
@@ -9203,20 +9232,14 @@ void NativeEconomyRuntime::rebuild_family_behavior_cache() {
         if (_family_knowledge_class_index < 0) continue;
         const int32_t factor = static_cast<int32_t>(std::clamp<int64_t>(
             binding.strength_q16, 0, 4 * Q16_ONE));
-        for (int32_t profession = 0; profession < static_cast<int32_t>(
-                _profession_class_index.size()); ++profession) {
-            if (_profession_class_index[static_cast<size_t>(profession)] !=
-                    _family_knowledge_class_index)
-                continue;
-            FamilyBehaviorFactorRow row;
-            row.cell = -1;
-            row.score_term = 0;
-            row.axis = 1;
-            row.selector_kind = 0;
-            row.selector_id = profession;
-            row.factor_q16 = factor;
-            expanded.push_back({family_index, row});
-        }
+        FamilyBehaviorFactorRow row;
+        row.cell = -1;
+        row.score_term = FAMILY_SCORE_CANDIDATE_WEIGHT;
+        row.axis = 1;
+        row.selector_kind = FAMILY_BEHAVIOR_SELECTOR_PROFESSION_CLASS;
+        row.selector_id = _family_knowledge_class_index;
+        row.factor_q16 = factor;
+        expanded.push_back({family_index, row});
     }
     std::sort(expanded.begin(), expanded.end(), [](const TaggedRow &a,
             const TaggedRow &b) {
@@ -9255,6 +9278,18 @@ void NativeEconomyRuntime::rebuild_family_behavior_cache() {
     _family_behavior_factor_rows.reserve(merged.size());
     for (const TaggedRow &entry : merged)
         _family_behavior_factor_rows.push_back(entry.row);
+    _family_behavior_class_rows = static_cast<int64_t>(std::count_if(
+        _family_behavior_factor_rows.begin(), _family_behavior_factor_rows.end(),
+        [](const FamilyBehaviorFactorRow &row) {
+            return row.selector_kind ==
+                FAMILY_BEHAVIOR_SELECTOR_PROFESSION_CLASS;
+        }));
+    _family_behavior_cache_dirty = false;
+    _family_behavior_cache_dirty_reasons = 0;
+    _family_behavior_cache_last_reasons = rebuild_reasons;
+    ++_family_behavior_cache_rebuilds;
+    _family_behavior_cache_ms += elapsed_ms(cache_started);
+    return true;
 }
 
 void NativeEconomyRuntime::ensure_family_policy_factors() {
@@ -9922,8 +9957,18 @@ int32_t NativeEconomyRuntime::family_trait_behavior_factor_q16(
         const FamilyBehaviorFactorRow &entry = _family_behavior_factor_rows[
             static_cast<size_t>(row)];
         if (entry.score_term != FAMILY_SCORE_CANDIDATE_WEIGHT) continue;
-        if (entry.axis != axis || entry.selector_kind != selector_kind ||
-            entry.selector_id != selector_id) continue;
+        if (entry.axis != axis) continue;
+        const bool exact_selector = entry.selector_kind == selector_kind &&
+            entry.selector_id == selector_id;
+        const bool profession_class_selector = axis == 1 &&
+            selector_kind == 0 &&
+            entry.selector_kind ==
+                FAMILY_BEHAVIOR_SELECTOR_PROFESSION_CLASS &&
+            selector_id >= 0 && selector_id < static_cast<int32_t>(
+                _profession_class_index.size()) &&
+            _profession_class_index[static_cast<size_t>(selector_id)] ==
+                entry.selector_id;
+        if (!exact_selector && !profession_class_selector) continue;
         if (entry.cell >= 0 && entry.cell != cell) continue;
         factor = factor * entry.factor_q16 / Q16_ONE;
         found = true;
@@ -10337,6 +10382,8 @@ void NativeEconomyRuntime::rebuild_family_effect_binding_index() {
             _family_effect_instances_by_cell[_family_influences.cell[branch]]
                 .push_back(binding.instance_id);
     }
+    mark_family_behavior_cache_dirty(
+        FAMILY_BEHAVIOR_DIRTY_EFFECT_BINDINGS);
 }
 
 void NativeEconomyRuntime::add_family_effect_binding(
@@ -10355,6 +10402,8 @@ void NativeEconomyRuntime::add_family_effect_binding(
     if (_family_influences.valid_handle(stored.branch_handle, branch_index))
         _family_effect_instances_by_cell[_family_influences.cell[branch_index]]
             .push_back(stored.instance_id);
+    mark_family_behavior_cache_dirty(
+        FAMILY_BEHAVIOR_DIRTY_EFFECT_BINDINGS);
 }
 
 void NativeEconomyRuntime::remove_family_effect_binding(size_t index) {
@@ -10386,6 +10435,8 @@ void NativeEconomyRuntime::remove_family_effect_binding(size_t index) {
             _family_effect_bindings[index].instance_id] = index;
     }
     _family_effect_bindings.pop_back();
+    mark_family_behavior_cache_dirty(
+        FAMILY_BEHAVIOR_DIRTY_EFFECT_BINDINGS);
 }
 
 int64_t NativeEconomyRuntime::family_effect_metric_revision(int32_t phase) const {
@@ -10762,6 +10813,8 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
                     if (_effect_runtime->set_metric_pod(binding.instance_id, 0,
                             family_effect_metric_revision(1), magnitude, error)) {
                         binding.strength_q16 = magnitude;
+                        mark_family_behavior_cache_dirty(
+                            FAMILY_BEHAVIOR_DIRTY_EFFECT_BINDINGS);
                     }
                 }
                 publish_family_effect_metrics(binding,
@@ -10790,6 +10843,8 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
                             family_effect_metric_revision(1),
                             strength, error)) {
                     binding.strength_q16 = strength;
+                    mark_family_behavior_cache_dirty(
+                        FAMILY_BEHAVIOR_DIRTY_EFFECT_BINDINGS);
                     publish_family_effect_metrics(binding,
                         family_effect_metric_revision(1),
                         std::numeric_limits<uint64_t>::max());
@@ -11053,7 +11108,7 @@ void NativeEconomyRuntime::reconcile_family_branch_effects(
     }
 }
 
-void NativeEconomyRuntime::rebuild_family_indices() {
+void NativeEconomyRuntime::rebuild_family_indices(bool rebuild_derived) {
     const auto membership_started = Clock::now();
     _family_memberships.erase(std::remove_if(
         _family_memberships.begin(), _family_memberships.end(),
@@ -11222,18 +11277,19 @@ void NativeEconomyRuntime::rebuild_family_indices() {
     _family_cell_indices.reserve(cell_family.size());
     for (const auto &item : cell_family) _family_cell_indices.push_back(item.second);
     _rebuild_family_cellindex_ms += elapsed_ms(cell_index_started);
-    rebuild_family_behavior_cache();
-    rebuild_family_industry_metrics();
-    rebuild_family_owned_output_csr();
+    if (rebuild_derived) {
+        rebuild_family_industry_metrics();
+        rebuild_family_owned_output_csr();
+    }
     _family_indices_dirty = false;
 }
 
-void NativeEconomyRuntime::normalize_family_memberships() {
+void NativeEconomyRuntime::normalize_family_memberships(bool rebuild_derived) {
     // This is the one mandatory rebuild per commit. It runs after all
     // population and building changes for the epoch, so it is what prunes
     // edges orphaned by cohort release or building demolition. The later
     // rebuilds in the commit are gated on the dirty flag and rely on it.
-    rebuild_family_indices();
+    rebuild_family_indices(rebuild_derived);
     bool rescale_emptied_edge = false;
     size_t begin = 0;
     while (begin < _family_memberships.size()) {
@@ -11300,7 +11356,7 @@ void NativeEconomyRuntime::normalize_family_memberships() {
     // stays exact unless an edge was emptied and now has to be pruned.
     if (rescale_emptied_edge) {
         _family_indices_dirty = true;
-        rebuild_family_indices();
+        rebuild_family_indices(rebuild_derived);
     }
 }
 
@@ -12082,6 +12138,8 @@ void NativeEconomyRuntime::split_family_branches() {
             child_traits.push_back({child_handle, chosen, strength, 0});
         }
         _family_traits.insert(_family_traits.end(), child_traits.begin(), child_traits.end());
+        if (!child_traits.empty())
+            mark_family_behavior_cache_dirty(FAMILY_BEHAVIOR_DIRTY_TRAITS);
         if ((split_flags & (FAMILY_FLAG_SPLIT_GIFT_BUILDING |
                 FAMILY_FLAG_SPLIT_GIFT_POPULATION)) != 0) {
             int32_t gift_type = -1;
@@ -12132,6 +12190,7 @@ void NativeEconomyRuntime::dissolve_family(uint64_t family_handle) {
         _family_traits.end(), [&](const FamilyTraitRoll &roll) {
             return roll.family_handle == family_handle;
         }), _family_traits.end());
+    mark_family_behavior_cache_dirty(FAMILY_BEHAVIOR_DIRTY_TRAITS);
     for (int32_t branch = 0; branch < static_cast<int32_t>(
             _family_influences.active.size()); ++branch) {
         if (_family_influences.active[branch] == 0 ||
@@ -12148,7 +12207,7 @@ void NativeEconomyRuntime::dissolve_family(uint64_t family_handle) {
     _family_indices_dirty = true;
 }
 
-void NativeEconomyRuntime::rebuild_family_influences() {
+void NativeEconomyRuntime::rebuild_family_influences(bool rebuild_derived) {
     struct Key {
         uint64_t family = 0;
         int32_t cell = -1;
@@ -12357,8 +12416,12 @@ void NativeEconomyRuntime::rebuild_family_influences() {
         _family_influences.release(branch);
     }
     rebuild_family_policy_scalars();
-    rebuild_family_behavior_cache();
-    rebuild_family_owned_output_csr();
+    mark_family_behavior_cache_dirty(FAMILY_BEHAVIOR_DIRTY_INFLUENCES);
+    if (rebuild_derived) {
+        rebuild_family_industry_metrics();
+        rebuild_family_behavior_cache();
+        rebuild_family_owned_output_csr();
+    }
     apply_pending_family_split_gifts();
 }
 
@@ -12439,6 +12502,8 @@ void NativeEconomyRuntime::apply_due_family_trait_commands() {
             return std::tie(a.family_handle, a.trait_id) <
                 std::tie(b.family_handle, b.trait_id);
         });
+    if (!changed_families.empty())
+        mark_family_behavior_cache_dirty(FAMILY_BEHAVIOR_DIRTY_TRAITS);
     for (int32_t branch = 0; branch < static_cast<int32_t>(
             _family_influences.active.size()); ++branch) {
         if (_family_influences.active[branch] == 0 ||
@@ -12482,7 +12547,11 @@ void NativeEconomyRuntime::review_family_lifecycle() {
                 best_cell = branch.first; best_pop = branch.second;
             }
         }
-        _families.home_cell[i] = best_cell;
+        if (_families.home_cell[i] != best_cell) {
+            _families.home_cell[i] = best_cell;
+            mark_family_behavior_cache_dirty(
+                FAMILY_BEHAVIOR_DIRTY_HOME_CELL);
+        }
         const int64_t phase = (_families.stable_id[i] % _family_review_days +
             _family_review_days) % _family_review_days;
         if ((_current_day % _family_review_days + _family_review_days) %
@@ -12515,13 +12584,22 @@ bool NativeEconomyRuntime::run_family_commit_slice(int64_t &work_done,
         _family_commit_index_ms = 0.0;
         _family_commit_lifecycle_ms = 0.0;
         _family_commit_influence_ms = 0.0;
+        _family_behavior_cache_ms = 0.0;
+        _family_behavior_cache_rebuilds = 0;
+        _family_behavior_cache_skips = 0;
+        _family_behavior_metric_contexts_built = 0;
+        _family_behavior_condition_edges_evaluated = 0;
+        _family_behavior_cache_last_reasons = 0;
         _rebuild_family_membership_ms = 0.0;
         _rebuild_family_ownership_ms = 0.0;
         _rebuild_family_csr_ms = 0.0;
         _rebuild_family_cellindex_ms = 0.0;
         const auto normalize_started = Clock::now();
+        if (!_family_trait_behavior_condition_ops.empty())
+            mark_family_behavior_cache_dirty(
+                FAMILY_BEHAVIOR_DIRTY_CONDITION_METRICS);
         apply_due_family_trait_commands();
-        normalize_family_memberships();
+        normalize_family_memberships(false);
         absorb_family_households();
         _family_commit_normalize_ms += elapsed_ms(normalize_started);
         const auto attribution_started = Clock::now();
@@ -12561,20 +12639,24 @@ bool NativeEconomyRuntime::run_family_commit_slice(int64_t &work_done,
     absorb_family_households();
     const auto first_index_started = Clock::now();
     bool structure_changed = _family_indices_dirty;
-    if (_family_indices_dirty) rebuild_family_indices();
+    if (_family_indices_dirty) rebuild_family_indices(false);
     _family_commit_index_ms += elapsed_ms(first_index_started);
     const int64_t families_before_split = _families.active_count;
     split_family_branches();
     structure_changed = structure_changed || _families.active_count != families_before_split ||
         _family_indices_dirty;
-    if (_family_indices_dirty) rebuild_family_indices();
+    if (_family_indices_dirty) rebuild_family_indices(false);
     const auto lifecycle_started = Clock::now();
     review_family_lifecycle();
     _family_commit_lifecycle_ms += elapsed_ms(lifecycle_started);
     const auto second_index_started = Clock::now();
     structure_changed = structure_changed || _family_indices_dirty;
-    if (_family_indices_dirty) rebuild_family_indices();
+    if (_family_indices_dirty) rebuild_family_indices(false);
     _family_commit_index_ms += elapsed_ms(second_index_started);
+    // Derived caches are published once from the final canonical edge set.
+    // Industry metrics must precede influence/effect reconciliation because
+    // conditional Family metrics read them.
+    rebuild_family_industry_metrics();
     const auto influence_started = Clock::now();
     bool has_influence = false;
     for (uint8_t flag : _family_influences.active) {
@@ -12586,8 +12668,10 @@ bool NativeEconomyRuntime::run_family_commit_slice(int64_t &work_done,
     if (structure_changed ||
         (!_family_memberships.empty() && !has_influence) ||
         (_epoch_id % FAMILY_INFLUENCE_REFRESH_EPOCHS) == 0)
-        rebuild_family_influences();
+        rebuild_family_influences(false);
     _family_commit_influence_ms += elapsed_ms(influence_started);
+    rebuild_family_behavior_cache();
+    rebuild_family_owned_output_csr();
     _family_membership_edges_processed +=
         static_cast<int64_t>(_family_memberships.size());
     _family_ownership_edges_processed +=
@@ -14334,6 +14418,16 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _family_traits.clear();
     _family_behavior_factor_offsets.clear();
     _family_behavior_factor_rows.clear();
+    _family_behavior_cache_dirty = true;
+    _family_behavior_cache_dirty_reasons =
+        FAMILY_BEHAVIOR_DIRTY_INITIAL;
+    _family_behavior_cache_last_reasons = 0;
+    _family_behavior_cache_rebuilds = 0;
+    _family_behavior_cache_skips = 0;
+    _family_behavior_metric_contexts_built = 0;
+    _family_behavior_condition_edges_evaluated = 0;
+    _family_behavior_cache_ms = 0.0;
+    _family_behavior_class_rows = 0;
     _family_purchase_factor_q16.clear();
     _family_investment_factor_q16.clear();
     _family_birth_factor_q16.clear();

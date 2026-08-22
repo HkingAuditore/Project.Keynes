@@ -99,6 +99,8 @@ const FIXED_COLUMNS: Array = [
 	"continuation_started_slices",
 	"continuation_completed_slices",
 	"continuation_budget_exhausted",
+	"continuation_budget_overrun_frames",
+	"continuation_max_budget_overrun_ms",
 	"continuation_blocked_by_stage",
 	"continuation_country_slices",
 	"continuation_economy_slices",

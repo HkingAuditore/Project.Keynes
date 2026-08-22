@@ -83,26 +83,40 @@ func tick(ctx) -> Dictionary:
 	# slice so a claimed party already in SETTLING can land, and a frozen
 	# cycle can still join LEDGER_APPLY. Newly arrived parties are enqueued
 	# inside run_economy_slice after process_due, then dispatched again.
+	var effect_dispatch_started_us := Time.get_ticks_usec()
 	if ext.has_method("dispatch_effect_native_economy"):
 		ext.dispatch_effect_native_economy()
+	var effect_dispatch_ms := float(
+		Time.get_ticks_usec() - effect_dispatch_started_us) / 1000.0
 	var compact_slice: bool = ctx != null and \
 		ctx.source == &"country_economy_continuation" and \
 		ext.has_method("run_economy_slice_compact")
+	var native_call_started_us := Time.get_ticks_usec()
 	var result: Dictionary = ext.run_economy_slice_compact(native_ctx) if compact_slice \
 		else ext.run_economy_slice(native_ctx)
+	var native_call_ms := float(Time.get_ticks_usec() - native_call_started_us) / 1000.0
 	var effect_ack: Dictionary = {}
+	var effect_ack_started_us := Time.get_ticks_usec()
 	if ext.has_method("ack_effect_native_economy"):
 		effect_ack = ext.ack_effect_native_economy()
+	var effect_ack_ms := float(Time.get_ticks_usec() - effect_ack_started_us) / 1000.0
 	# Full slice reports are newly allocated native dictionaries and remain
 	# immutable after this boundary. Continuations keep the last full diagnostic
 	# snapshot so their compact report does not erase recorder/UI fields.
 	if not compact_slice or bool(result.get("fatal", false)):
 		_last_report = result
 		_last_report["_tick_idx"] = int(ctx.tick_index) if ctx != null else -1
+	var event_dispatch_result: Dictionary = {}
+	var event_dispatch_started_us := Time.get_ticks_usec()
 	if facade.has_method("dispatch_committed_events"):
-		facade.dispatch_committed_events(result)
+		event_dispatch_result = facade.dispatch_committed_events(result)
+	var event_dispatch_ms := float(
+		Time.get_ticks_usec() - event_dispatch_started_us) / 1000.0
+	var receipt_dispatch_started_us := Time.get_ticks_usec()
 	if facade.has_method("dispatch_construction_command_receipts"):
 		facade.dispatch_construction_command_receipts()
+	var receipt_dispatch_ms := float(
+		Time.get_ticks_usec() - receipt_dispatch_started_us) / 1000.0
 	var over_budget := bool(result.get("commit_over_budget", false))
 	# A multi-day frozen cycle is expected to remain in-flight while the world
 	# advances. Only stop the calendar at its settlement deadline (or on fatal),
@@ -186,8 +200,31 @@ func tick(ctx) -> Dictionary:
 	var stage_breakdown_ms: Dictionary = result.get("trade_plan_breakdown_ms", {})
 	var stage_breakdown_work: Dictionary = result.get("trade_plan_breakdown_work", {})
 	if executed_stage == "aggregate_publish":
-		stage_breakdown_ms = result.get("publish_breakdown_ms", {})
-		stage_breakdown_work = result.get("publish_breakdown_work", {})
+		stage_breakdown_ms = (result.get("publish_breakdown_ms", {}) as Dictionary).duplicate()
+		stage_breakdown_work = (result.get(
+			"publish_breakdown_work", {}) as Dictionary).duplicate()
+		var native_accounted_ms := 0.0
+		for value in stage_breakdown_ms.values():
+			native_accounted_ms += float(value)
+		var native_reported_ms := float(result.get("elapsed_ms", 0.0))
+		var wrapper_accounted_ms := 0.0
+		for wrapper_phase in ["resource_flush", "csv_capture", "gameplay_publish",
+				"event_publish"]:
+			var wrapper_ms := float(result.get("world_%s_ms" % wrapper_phase, 0.0))
+			stage_breakdown_ms["aggregate_publish.world_%s" % wrapper_phase] = wrapper_ms
+			wrapper_accounted_ms += wrapper_ms
+		stage_breakdown_ms["aggregate_publish.native_unattributed"] = maxf(
+			0.0, native_reported_ms - native_accounted_ms)
+		stage_breakdown_ms["aggregate_publish.world_bridge"] = maxf(
+			0.0, native_call_ms - native_reported_ms - wrapper_accounted_ms)
+		stage_breakdown_ms["aggregate_publish.effect_dispatch"] = effect_dispatch_ms
+		stage_breakdown_ms["aggregate_publish.effect_ack"] = effect_ack_ms
+		stage_breakdown_ms["aggregate_publish.event_dispatch"] = event_dispatch_ms
+		stage_breakdown_ms["aggregate_publish.receipt_dispatch"] = receipt_dispatch_ms
+		stage_breakdown_work["aggregate_publish.event_batch_materialized"] = int(
+			bool(event_dispatch_result.get("materialized", false)))
+		stage_breakdown_work["aggregate_publish.event_count"] = int(
+			event_dispatch_result.get("count", 0))
 	elif executed_stage == "building_commit":
 		stage_breakdown_ms = result.get("building_commit_breakdown_ms", {})
 		stage_breakdown_work = result.get("building_commit_breakdown_work", {})
@@ -267,6 +304,17 @@ func last_perf_report() -> Dictionary:
 		"building_plan_reserve_ms", "building_employment_ms",
 		"building_production_ms", "building_production_worker_ms",
 		"building_production_merge_ms", "building_investment_ms",
+		"family_commit_normalize_ms", "family_commit_attribution_ms",
+		"family_commit_form_ms", "family_commit_index_ms",
+		"family_commit_lifecycle_ms", "family_commit_influence_ms",
+		"rebuild_family_membership_ms", "rebuild_family_ownership_ms",
+		"rebuild_family_csr_ms", "rebuild_family_cellindex_ms",
+		"family_behavior_factor_row_count", "family_behavior_class_row_count",
+		"family_behavior_cache_rebuilds", "family_behavior_cache_skips",
+		"family_behavior_metric_contexts_built",
+		"family_behavior_condition_edges_evaluated",
+		"family_behavior_cache_ms", "family_behavior_cache_dirty",
+		"family_behavior_cache_last_dirty_reasons",
 		"household_market_prepare_ms", "prepare_reuse_count",
 		"workset_cells_planned", "workset_cells_executed",
 		"duplicate_range_count",

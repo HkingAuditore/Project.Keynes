@@ -52,6 +52,17 @@ const RISK := Color(0.70, 0.29, 0.22, 1.0)
 const GOOD := Color(0.44, 0.62, 0.38, 1.0)
 const WARN := Color(0.76, 0.52, 0.25, 1.0)
 
+# Family dossier palette.  These tones are scoped by the family workspace theme;
+# keeping them here prevents feature code from scattering one-off parchment colors.
+const FAMILY_PAPER := Color(0.93, 0.87, 0.73, 1.0)
+const FAMILY_PAPER_SOFT := Color(0.97, 0.93, 0.82, 0.82)
+const FAMILY_INK := Color(0.14, 0.105, 0.075, 1.0)
+const FAMILY_INK_MUTED := Color(0.34, 0.27, 0.20, 1.0)
+const FAMILY_OXBLOOD := Color(0.51, 0.23, 0.17, 1.0)
+const FAMILY_BRASS := Color(0.69, 0.49, 0.24, 1.0)
+const FAMILY_GREEN := Color(0.34, 0.48, 0.31, 1.0)
+const FAMILY_BLUE := Color(0.31, 0.43, 0.53, 1.0)
+
 
 static func accent_for_key(key: String) -> Color:
 	match key:

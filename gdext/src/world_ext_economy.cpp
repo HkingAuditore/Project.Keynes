@@ -8,6 +8,7 @@
 #include "effect_runtime.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <limits>
 
@@ -16,6 +17,13 @@ namespace pk {
 using namespace godot;
 
 namespace {
+
+using BridgeClock = std::chrono::steady_clock;
+
+double bridge_elapsed_ms(BridgeClock::time_point started) {
+    return std::chrono::duration<double, std::milli>(
+        BridgeClock::now() - started).count();
+}
 
 NativeEconomyRuntime *runtime_from(void *opaque) {
     return static_cast<NativeEconomyRuntime *>(opaque);
@@ -327,35 +335,48 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
     Dictionary result = compact
         ? runtime->run_slice_compact(ctx)
         : runtime->run_slice(ctx);
+    double resource_flush_ms = 0.0;
+    double csv_capture_ms = 0.0;
+    double gameplay_publish_ms = 0.0;
+    double event_publish_ms = 0.0;
+    const auto resource_flush_started = BridgeClock::now();
+    std::vector<size_t> resource_delta_lanes;
     std::vector<int64_t> resource_deltas;
-    if (runtime->drain_building_resource_deltas(resource_deltas)) {
-        const int32_t count = runtime->building_resource_extra_slots().empty()
-            ? 0 : static_cast<int32_t>(resource_deltas.size() /
-                  runtime->building_resource_extra_slots().size());
+    if (runtime->drain_building_resource_deltas(
+            resource_delta_lanes, resource_deltas)) {
+        const int32_t count = runtime->cell_count();
+        const auto &extra_slots = runtime->building_resource_extra_slots();
+        std::vector<int32_t> slot_ids(extra_slots.size(), -1);
+        std::vector<uint8_t> slot_changed(extra_slots.size(), 0);
+        for (size_t r = 0; r < extra_slots.size(); ++r)
+            slot_ids[r] = component_id(StringName(extra_slots[r].c_str()));
         int64_t changed = 0;
-        for (size_t r = 0; r < runtime->building_resource_extra_slots().size(); ++r) {
-            const int sid = component_id(StringName(runtime->building_resource_extra_slots()[r].c_str()));
+        for (size_t cursor = 0; cursor < resource_delta_lanes.size(); ++cursor) {
+            const size_t flat = resource_delta_lanes[cursor];
+            const size_t r = count > 0 ? flat / static_cast<size_t>(count) : 0;
+            if (count <= 0 || r >= extra_slots.size()) continue;
+            const int sid = slot_ids[r];
             if (sid < 0 || sid >= _slots.size() || _slots[sid].dtype != SlotDType::F32 ||
                 _slots[sid].arr_f32.size() != count) continue;
             Slot &slot = _slots.write[sid];
             float *dst = slot.arr_f32.ptrw();
-            bool slot_changed = false;
-            for (int32_t cell = 0; cell < count; ++cell) {
-                const int64_t delta = resource_deltas[r * static_cast<size_t>(count) + cell];
-                if (delta == 0) continue;
-                dst[cell] += static_cast<float>(delta) /
-                             static_cast<float>(NativeEconomyRuntime::GOODS_SCALE);
-                slot_changed = true;
-                ++changed;
-            }
-            if (slot_changed) _flush_slot_to_map(sid);
+            const int32_t cell = static_cast<int32_t>(
+                flat % static_cast<size_t>(count));
+            dst[cell] += static_cast<float>(resource_deltas[cursor]) /
+                         static_cast<float>(NativeEconomyRuntime::GOODS_SCALE);
+            slot_changed[r] = 1;
+            ++changed;
         }
+        for (size_t r = 0; r < slot_changed.size(); ++r)
+            if (slot_changed[r] != 0) _flush_slot_to_map(slot_ids[r]);
         result["building_resource_delta_cells"] = changed;
         result["published_to_slot"] = changed > 0;
     }
+    resource_flush_ms = bridge_elapsed_ms(resource_flush_started);
     // The recorder observes only a fully published epoch. Resource slots have
     // already received building deltas above, so all five tables share one
     // committed boundary.
+    const auto csv_capture_started = BridgeClock::now();
     if (_economy_csv_recorder != nullptr) {
         EconomyCsvRecorder *recorder =
             static_cast<EconomyCsvRecorder *>(_economy_csv_recorder);
@@ -376,8 +397,10 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
                 result["economy_csv_capture_reason"] = String(capture_reason.c_str());
         }
     }
+    csv_capture_ms = bridge_elapsed_ms(csv_capture_started);
     const int64_t newest_event_id = static_cast<int64_t>(
         result.get("economy_event_newest_id", int64_t{0}));
+    const auto gameplay_publish_started = BridgeClock::now();
     std::vector<NativeEconomyRuntime::CommittedGameplayFact> gameplay_facts;
     if (runtime->drain_committed_gameplay_facts(gameplay_facts)) {
         int32_t published_facts = 0;
@@ -430,6 +453,8 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
         }
         result["economy_gameplay_facts_published"] = published_facts;
     }
+    gameplay_publish_ms = bridge_elapsed_ms(gameplay_publish_started);
+    const auto event_publish_started = BridgeClock::now();
     if (static_cast<bool>(result.get("done", false)) &&
         newest_event_id > _economy_last_notified_event_id) {
         const int32_t epoch = static_cast<int32_t>(std::clamp<int64_t>(
@@ -444,6 +469,13 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
                              count, epoch, newest, count, 0);
         _economy_last_notified_event_id = newest_event_id;
         result["economy_event_batch_published"] = true;
+    }
+    event_publish_ms = bridge_elapsed_ms(event_publish_started);
+    if (String(result.get("executed_stage", "")) == "aggregate_publish") {
+        result["world_resource_flush_ms"] = resource_flush_ms;
+        result["world_csv_capture_ms"] = csv_capture_ms;
+        result["world_gameplay_publish_ms"] = gameplay_publish_ms;
+        result["world_event_publish_ms"] = event_publish_ms;
     }
     return result;
 }

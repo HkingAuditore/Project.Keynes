@@ -1457,10 +1457,13 @@ bool NativeEconomyRuntime::finalize_immediate_family_expedition_settlement(
         int32_t destination_cell, std::string &error) {
     if (!repair_cell_merchant_and_rebuild(destination_cell, error)) return false;
 
-    normalize_family_memberships();
+    normalize_family_memberships(false);
     update_family_employment_attribution();
-    if (_family_indices_dirty) rebuild_family_indices();
-    rebuild_family_influences();
+    if (_family_indices_dirty) rebuild_family_indices(false);
+    rebuild_family_industry_metrics();
+    rebuild_family_influences(false);
+    rebuild_family_behavior_cache();
+    rebuild_family_owned_output_csr();
     if (_person_indices_dirty) rebuild_person_indices();
 
     if (destination_cell >= 0 && destination_cell < _cell_count) {

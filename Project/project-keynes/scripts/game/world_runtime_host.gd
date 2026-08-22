@@ -2144,6 +2144,10 @@ func _publish_fast_tick_perf_sample(
 			continuation.get("continuation_completed_slices", 0)),
 		"continuation_budget_exhausted": bool(
 			continuation.get("continuation_budget_exhausted", false)),
+		"continuation_budget_overrun_frames": int(
+			continuation.get("continuation_budget_overrun_frames", 0)),
+		"continuation_max_budget_overrun_ms": float(
+			continuation.get("continuation_max_budget_overrun_ms", 0.0)),
 		"continuation_blocked_by_stage": str(
 			continuation.get("continuation_blocked_by_stage", "")),
 		"continuation_country_slices": int(continuation.get("country_slices", 0)),

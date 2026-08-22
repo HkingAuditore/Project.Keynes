@@ -7,6 +7,9 @@
 continuation 报告新增 `continuation_budget_exhausted`、
 `continuation_started_slices`、`continuation_completed_slices` 和
 `continuation_blocked_by_stage`，用于区分预算截断、stage barrier 和正常完成。
+跨多个渲染帧聚合时 exhausted 取 OR，并累计
+`continuation_budget_overrun_frames` / `continuation_max_budget_overrun_ms`；最后一帧正常完成
+不得抹掉前一帧的预算超限证据。
 
 Country 的 research pending queue 不新增 SUS node，Economy 保持锁定市场 N∈[1,5]、
 计划 P∈[5,15]、投资 I∈[10,30]（I > P）、原 stage 顺序和 frozen epoch authority。Bio occupancy 的第一阶段是每日完整覆盖；
@@ -22,7 +25,10 @@ MapGenerator 将其转为 pending-day barrier，由下一 pulse 启动首片，�
 
 Native daily ACTIVE 若在 `run_native_daily_slice` 返回 `done=false`，同样设置
 `native_daily_day_barrier`。下一渲染帧的 continuation pulse 优先续接 native daily，
-再续接 Bio，最后才处理 Country/Economy ACK；round 完整提交后才释放 barrier。这样
+并在同一 `sim_frame_budget_ms` 内连续推进同步切片（包含 deferred JIT patch 的下一调用），
+直到 round 完成、到达“预算减 3ms 不可抢占片余量”的启动截止线或 64 片防御上限；然后再续接 Bio，最后才处理
+Country/Economy ACK。C++ 仍独占 graph/node/range cursor，每次 native call 仍是不可抢占的
+原子切片；这里改变的只是切片之间是否强制空等一个渲染帧。round 完整提交后才释放 barrier。这样
 不会把不同 day context 混入同一个 native round，也不会让不可抢占的诊断/经济 drain
 延迟 climate 或 occupancy 的提交。
 
@@ -75,8 +81,11 @@ cadence writes. Behavior callbacks remain serial until their owner declares
 them thread-safe. No-worker platforms use the same plan/replay contract on the
 calling thread.
 
-After its native evaluation slice, `EffectRuntimeSystem` calls the C++
-`dispatch_effect_native_modifier()` batch bridge. `ModifierDailySystem` calls
+After its native evaluation slice, `EffectRuntimeSystem` first calls the C++
+Economy adapter, then Modifier, Country, and Gameplay adapters. Economy goes
+first because its generation-safe transaction preflight can terminally reject
+a malformed family command before a mixed transaction stages a new Modifier
+row. `ModifierDailySystem` calls
 `ack_effect_native_modifier()` immediately after `run_modifier_daily()`. Thus
 the ordering is not merely a priority convention: Modifier is the safe commit
 boundary for native Effect commands. `EffectFacade.dispatch_transactions()` is
@@ -330,6 +339,11 @@ worker 内变更；async climate 只接收主线程冻结的 add/factor 数组�
   pulse 直接调用 `continue_system("native_daily_sim")` 启动首片，完成或失败后清除
   pending；因此预算竞争不会静默丢失一个 semantic day。该标记不进入存档、state hash
   或 event hash，`sus_reset_all()` 会清理它。
+- continuation pulse 可在同一帧预算内多次调用 `continue_system("native_daily_sim")`。
+  deferred node 只要求 GDScript 在下一调用前同步构造 JIT patch，不代表异步等待；因此可以在
+  同一 pulse 继续。循环只决定何时启动下一原子切片，不改变 C++ graph/node/range cursor、
+  frozen day context 或最终 publish 边界；达到下一片启动截止线、8ms 预算或 64 片防御上限仍保留
+  `native_daily_day_barrier`，留给下一渲染帧。
 - **Finalizer pseudo-node（2026-07，默认关闭）**：
   `native_daily_finalizer_slice_enabled=true` 时，C++ graph 完成的 slice 先返回
   `stage=native_daily_finalizer substage=pending done=false`，下一次 `NativeDailySimJob`
@@ -434,11 +448,16 @@ worker 内变更；async climate 只接收主线程冻结的 add/factor 数组�
 - renderer/UI/debug 用独立 consumer cursor poll，不参与 simulation authority，也不影响 C++ scheduler 的依赖图。
 - chunked detail apply 由 `HexRenderer._drain_detail_refresh_queue()` 在渲染帧中按 `detail_scatter_refresh_layers_per_frame` 推进；这是 Godot object/MultiMesh 提交，不应放进 C++ SUS job。
 - 诊断时把 `event_bus_ms` / native pass ms / `gd_chunk_apply_ms` 分开看：事件产生慢看 native stage，consumer lag 看 event bus report，chunk apply 慢看 `[detail_scatter/SLOW_LAYER] chunks=...`。
+- gameplay journal 达到容量上限后的淘汰必须是 O(1) `pop_front`；当前底层为 `std::deque`。
+  若 `aggregate_publish.world_gameplay_publish` 随运行时长抬升，首先检查是否重新引入了连续数组的
+  头删搬移，再检查事实产生数量，不能把这种容器成本误判成 GDExtension bridge 成本。
 
 经济事件遵守同一消费隔离，但详细记录留在 economy-owned journal：市场 worker 只生成本 market
 fragment，主线程按 market index 合并；`aggregate_publish` 守恒成功后才令 batch 可见。
 `EconomyDailySystem` 看到 `economy_event_batch_published=true` 后通知 facade handler，不增加
-depends、must_run 或 economy backpressure。consumer 落后只形成 lag/gap 诊断，不阻塞 WorldClock。
+depends、must_run 或 economy backpressure。常规 UI 只订阅轻量 availability signal；没有详细 batch
+订阅者时 facade 直接推进自身 ACK cursor，不执行 packed journal poll。consumer 落后只形成 lag/gap
+诊断，不阻塞 WorldClock。
 
 ## Job descriptor 字段
 

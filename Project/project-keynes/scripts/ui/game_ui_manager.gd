@@ -17,6 +17,7 @@ signal era_reward_choice_requested(offer_generation: int, choice_index: int)
 
 const RIGHT_PANEL_WIDTH := 460.0
 const DETAIL_LAYOUT_BREAKPOINT := 1180.0
+const FAMILY_WORKSPACE_BREAKPOINT := 1280.0
 const DETAIL_PANEL_MIN_WIDTH := 860.0
 const DETAIL_PANEL_MAX_WIDTH := 1040.0
 const MAP_REMAINING_MIN_WIDTH := 320.0
@@ -641,16 +642,21 @@ func _on_object_details_requested(request: Dictionary) -> void:
 	if _selected_cell == null or _inspector_view_model == null \
 			or _right_panel == null:
 		return
-	var payload := _inspector_view_model.build_object_detail(_selected_cell, request)
+	var is_family := String(request.get("kind", "")) == "family"
+	var payload := _inspector_view_model.build_family_detail(_selected_cell, request) \
+		if is_family else _inspector_view_model.build_object_detail(_selected_cell, request)
 	if payload.is_empty():
 		return
 	_object_detail_context = {
 		"cell_idx": int(_selected_cell.index),
-		"kind": String(payload.get("kind", "")),
+		"kind": "family" if is_family else String(payload.get("kind", "")),
 		"item_id": String(payload.get("item_id", "")),
 	}
 	_object_detail_context["request"] = request.duplicate(true)
-	_right_panel.show_object_detail(payload)
+	if is_family:
+		_right_panel.show_family_workspace(payload)
+	else:
+		_right_panel.show_object_detail(payload)
 
 
 func _close_object_detail_dialog() -> void:
@@ -671,12 +677,17 @@ func _refresh_object_detail(force: bool = false) -> void:
 		_close_object_detail_dialog()
 		return
 	var request: Dictionary = _object_detail_context.get("request", {})
-	var payload := _inspector_view_model.build_object_detail(_selected_cell, request)
+	var is_family := String(_object_detail_context.get("kind", "")) == "family"
+	var payload := _inspector_view_model.build_family_detail(_selected_cell, request) \
+		if is_family else _inspector_view_model.build_object_detail(_selected_cell, request)
 	if payload.is_empty():
 		_close_object_detail_dialog()
 		return
 	_last_object_detail_ms = now_ms
-	_right_panel.refresh_object_detail(payload)
+	if is_family:
+		_right_panel.refresh_family_workspace(payload)
+	else:
+		_right_panel.refresh_object_detail(payload)
 
 
 func _set_inspector_trace_cell(cell_idx: int) -> void:
@@ -1024,7 +1035,10 @@ func _on_inspector_detail_visibility_changed(open: bool) -> void:
 	_layout_overlay_legend()
 	_layout_country_action_bar()
 	_layout_gm_panel()
-	if open and get_viewport().get_visible_rect().size.x >= DETAIL_LAYOUT_BREAKPOINT \
+	var wide_threshold := FAMILY_WORKSPACE_BREAKPOINT \
+		if _right_panel != null and _right_panel.family_workspace_open() \
+		else DETAIL_LAYOUT_BREAKPOINT
+	if open and get_viewport().get_visible_rect().size.x >= wide_threshold \
 			and _player_controller != null and _player_controller.has_method(
 			"ensure_selected_visible"):
 		_player_controller.ensure_selected_visible()
@@ -1034,7 +1048,9 @@ func _layout_overlay_legend() -> void:
 	if _map_overlay_legend == null:
 		return
 	var compact_detail := _right_panel != null and _right_panel.detail_open() \
-		and get_viewport().get_visible_rect().size.x < DETAIL_LAYOUT_BREAKPOINT
+		and get_viewport().get_visible_rect().size.x < (
+			FAMILY_WORKSPACE_BREAKPOINT if _right_panel.family_workspace_open() \
+			else DETAIL_LAYOUT_BREAKPOINT)
 	_map_overlay_legend.modulate.a = 0.0 if compact_detail else 1.0
 	_map_overlay_legend.mouse_filter = Control.MOUSE_FILTER_IGNORE \
 		if compact_detail else Control.MOUSE_FILTER_PASS
@@ -1078,7 +1094,8 @@ func _layout_gm_panel() -> void:
 		return
 	var viewport_width := get_viewport().get_visible_rect().size.x
 	var compact_detail := _right_panel != null and _right_panel.detail_open() \
-		and viewport_width < DETAIL_LAYOUT_BREAKPOINT
+		and viewport_width < (FAMILY_WORKSPACE_BREAKPOINT \
+			if _right_panel.family_workspace_open() else DETAIL_LAYOUT_BREAKPOINT)
 	_gm_console.modulate.a = 0.0 if compact_detail else 1.0
 	_gm_console.mouse_filter = Control.MOUSE_FILTER_IGNORE \
 		if compact_detail else Control.MOUSE_FILTER_PASS
@@ -1123,7 +1140,8 @@ func _layout_right_panel() -> void:
 	# 会被解释成"相对顶部锚点"而不是"相对底部锚点"，面板会被压扁到顶部一小条。
 	var viewport_width := get_viewport().get_visible_rect().size.x
 	var detail_open := _right_panel.detail_open()
-	var layout := inspector_layout_for_width(viewport_width, detail_open)
+	var family_open := _right_panel.family_workspace_open()
+	var layout := inspector_layout_for_width(viewport_width, detail_open, family_open)
 	var compact := bool(layout.get("compact", false))
 	_right_panel.set_compact_detail_mode(compact)
 	var panel_width := float(layout.get("panel_width", RIGHT_PANEL_WIDTH))
@@ -1143,7 +1161,16 @@ func _layout_right_panel() -> void:
 
 
 static func inspector_layout_for_width(viewport_width: float,
-		detail_open: bool) -> Dictionary:
+		detail_open: bool, family_open: bool = false) -> Dictionary:
+	if detail_open and family_open:
+		var family_compact := viewport_width < FAMILY_WORKSPACE_BREAKPOINT
+		var family_width := viewport_width if family_compact else viewport_width * 0.5
+		return {
+			"compact": family_compact,
+			"panel_width": family_width,
+			"detail_width": family_width,
+			"map_width": 0.0 if family_compact else viewport_width - family_width,
+		}
 	var compact := viewport_width < DETAIL_LAYOUT_BREAKPOINT
 	var panel_width := RIGHT_PANEL_WIDTH
 	if detail_open:

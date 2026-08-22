@@ -22,6 +22,8 @@ const TAX_KIND_IDS := {"income": 0, "consumption": 1, "business": 2,
 	"import": 3, "export": 4}
 const CLEAR_ALL_MENU_ID := 1
 const SPLIT_DETAIL_MIN_WIDTH := 800.0
+const INSPECTOR_MARGIN_TOP := 12
+const INSPECTOR_MARGIN_BOTTOM := 16
 
 signal close_requested()
 signal tab_data_requested(tab_id: String)
@@ -48,8 +50,10 @@ var _tabs: CategoryTabs
 var _scroll: ScrollContainer
 var _content_box: VBoxContainer
 var _inspector_root: VBoxContainer
+var _outer_margin: MarginContainer
 var _detail_shell: PanelContainer
 var _object_detail_dialog: ObjectDetailDialog
+var _family_workspace: FamilyWorkspace
 var _construction_pane: VBoxContainer
 var _construction_picker: ConstructionPicker
 var _more_button: MenuButton
@@ -79,6 +83,8 @@ var _deferred_object_detail_payload: Dictionary = {}
 var _construction_model: Dictionary = {}
 var _detail_change_notify := true
 var _section_collapsed: Dictionary = {}
+var _family_chrome_active := false
+var _empty_panel_style := StyleBoxEmpty.new()
 const InspectorIconBadgeScene := preload("res://scenes/ui/icon_badge.tscn")
 
 
@@ -93,8 +99,10 @@ func _ready() -> void:
 	_scroll = get_node_or_null("%Scroll") as ScrollContainer
 	_content_box = get_node_or_null("%ContentBox") as VBoxContainer
 	_inspector_root = get_node_or_null("%InspectorRoot") as VBoxContainer
+	_outer_margin = get_node_or_null("Margin") as MarginContainer
 	_detail_shell = get_node_or_null("%DetailShell") as PanelContainer
 	_object_detail_dialog = get_node_or_null("%ObjectDetail") as ObjectDetailDialog
+	_family_workspace = get_node_or_null("%FamilyWorkspace") as FamilyWorkspace
 	_construction_pane = get_node_or_null("%ConstructionPane") as VBoxContainer
 	_construction_picker = get_node_or_null("%ConstructionPicker") as ConstructionPicker
 	_more_button = get_node_or_null("%MoreButton") as MenuButton
@@ -104,7 +112,8 @@ func _ready() -> void:
 	if _title_label == null or _subtitle_label == null or _score_gauge == null \
 			or _summary_grid == null or _tabs == null or _scroll == null \
 			or _content_box == null or close_button == null or _detail_shell == null \
-			or _object_detail_dialog == null or _construction_picker == null:
+			or _object_detail_dialog == null or _family_workspace == null \
+			or _construction_picker == null:
 		push_error("InspectorPanel 必须通过 inspector_panel.tscn 实例化。")
 		return
 	IconButton.apply(close_button, &"action.close", IconButton.SMALL, "关闭地块档案")
@@ -127,6 +136,10 @@ func _ready() -> void:
 	_object_detail_dialog.tax_reset_requested.connect(_on_tax_reset_requested)
 	_object_detail_dialog.tax_editing_finished.connect(
 		_on_object_tax_editing_finished)
+	_family_workspace.closed.connect(_on_detail_closed)
+	_family_workspace.colonization_requested.connect(
+		func(family_handle: int, source_cell: int) -> void:
+			family_colonization_requested.emit(family_handle, source_cell))
 	var construction_back := get_node(
 		"Margin/Split/DetailShell/ConstructionPane/Header/BackButton") as Button
 	IconButton.apply(construction_back, &"action.back", IconButton.SMALL, "返回地块档案")
@@ -149,6 +162,8 @@ func set_player_controller(controller) -> void:
 	_player_controller = controller
 	if _object_detail_dialog != null:
 		_object_detail_dialog.set_player_controller(controller)
+	if _family_workspace != null:
+		_family_workspace.set_player_controller(controller)
 
 
 func set_model_for_selection(model: Dictionary) -> void:
@@ -931,12 +946,36 @@ func set_construction_feedback(message: String, ok: bool) -> void:
 func show_object_detail(payload: Dictionary) -> void:
 	if payload.is_empty() or _object_detail_dialog == null:
 		return
+	_set_family_chrome(false)
 	_construction_pane.visible = false
+	_family_workspace.hide_immediately()
 	_deferred_object_detail_payload.clear()
 	_object_detail_dialog.visible = true
 	_object_detail_dialog.show_details(payload)
 	_rebuild_tax_editor_registry()
 	_show_detail_shell()
+
+
+func show_family_workspace(payload: Dictionary, animate: bool = true) -> void:
+	if payload.is_empty() or _family_workspace == null:
+		return
+	_set_family_chrome(true)
+	_deferred_object_detail_payload.clear()
+	_object_detail_dialog.visible = false
+	_construction_pane.visible = false
+	_family_workspace.show_family(payload, animate)
+	_show_detail_shell()
+
+
+func refresh_family_workspace(payload: Dictionary) -> void:
+	if payload.is_empty() or _family_workspace == null \
+			or not _family_workspace.visible:
+		return
+	_family_workspace.set_model(payload)
+
+
+func family_workspace_open() -> bool:
+	return _family_workspace != null and _family_workspace.visible
 
 
 func refresh_object_detail(payload: Dictionary) -> void:
@@ -978,7 +1017,13 @@ func _request_object_detail(request: Dictionary) -> void:
 func close_detail(notify: bool = true) -> void:
 	_deferred_object_detail_payload.clear()
 	_detail_change_notify = notify
-	if _object_detail_dialog != null and _object_detail_dialog.visible:
+	if _family_workspace != null and _family_workspace.visible:
+		if notify:
+			_family_workspace.request_close()
+		else:
+			_family_workspace.hide_immediately()
+			_on_detail_closed()
+	elif _object_detail_dialog != null and _object_detail_dialog.visible:
 		_object_detail_dialog.close_dialog()
 	else:
 		_on_detail_closed()
@@ -990,6 +1035,8 @@ func detail_open() -> bool:
 
 func set_compact_detail_mode(compact: bool) -> void:
 	_compact_detail = compact
+	if _family_workspace != null:
+		_family_workspace.set_fullscreen_mode(compact)
 	_sync_split_layout()
 
 
@@ -1002,7 +1049,9 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 
 func _open_construction() -> void:
+	_set_family_chrome(false)
 	_object_detail_dialog.visible = false
+	_family_workspace.hide_immediately()
 	_construction_pane.visible = true
 	_construction_picker.set_model(_construction_model)
 	_rebuild_tax_editor_registry()
@@ -1020,8 +1069,10 @@ func _on_detail_closed() -> void:
 		return
 	var was_open := _detail_shell.visible
 	_object_detail_dialog.visible = false
+	_family_workspace.hide_immediately()
 	_construction_pane.visible = false
 	_detail_shell.visible = false
+	_set_family_chrome(false)
 	_sync_split_layout()
 	_inspector_root.visible = true
 	for list in [_cohort_list, _market_list, _building_list, _resource_list, _family_list]:
@@ -1031,6 +1082,28 @@ func _on_detail_closed() -> void:
 		detail_visibility_changed.emit(false)
 	_detail_change_notify = true
 	_rebuild_tax_editor_registry()
+
+
+func _set_family_chrome(active: bool) -> void:
+	if _family_chrome_active == active:
+		return
+	_family_chrome_active = active
+	if active:
+		# 家族档案自带完整书册外框；通用 Inspector 的深色底、阴影和
+		# 内容边距会额外生成一层黑色矩形，家族模式下必须撤掉。
+		add_theme_stylebox_override(&"panel", _empty_panel_style)
+		if _detail_shell != null:
+			_detail_shell.add_theme_stylebox_override(&"panel", _empty_panel_style)
+		if _outer_margin != null:
+			_outer_margin.add_theme_constant_override(&"margin_top", 0)
+			_outer_margin.add_theme_constant_override(&"margin_bottom", 0)
+	else:
+		remove_theme_stylebox_override(&"panel")
+		if _detail_shell != null:
+			_detail_shell.remove_theme_stylebox_override(&"panel")
+		if _outer_margin != null:
+			_outer_margin.add_theme_constant_override(&"margin_top", INSPECTOR_MARGIN_TOP)
+			_outer_margin.add_theme_constant_override(&"margin_bottom", INSPECTOR_MARGIN_BOTTOM)
 
 
 func _sync_split_layout() -> void:
@@ -1043,7 +1116,9 @@ func _sync_split_layout() -> void:
 	_detail_shell.clip_contents = true
 	# 宽屏分栏需要约 400+424。面板尚未被 GameUIManager 加宽时（或测试里仍是
 	# 460）如果硬拆两列，详情会盖住档案。窄宽度先让详情独占。
-	var can_split := not _compact_detail and size.x >= SPLIT_DETAIL_MIN_WIDTH
+	var family_open := _family_workspace != null and _family_workspace.visible
+	var can_split := not family_open and not _compact_detail \
+		and size.x >= SPLIT_DETAIL_MIN_WIDTH
 	var show_dossier := not inspecting or can_split
 	_inspector_root.visible = show_dossier
 	_inspector_root.size_flags_horizontal = Control.SIZE_FILL if inspecting \

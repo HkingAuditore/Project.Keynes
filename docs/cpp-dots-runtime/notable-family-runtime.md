@@ -95,6 +95,19 @@ dense ID CSR。建筑、职业、需求、商品和自然资源 profile 可提�
 流动率必须降低实际迁出人数。乘积帽默认 4×。商品偏好按家族人口占 cohort 的份额合成，并同时影响
 variant 份额和普通需求量；生存需求下限不下降。投资建设持久保存 sponsor family。
 
+成员、所有权和 cell 反向索引是权威 CSR；产业统计、影响力、行为因子和 owned-output 是派生缓存。
+`FAMILY_COMMIT` 先完成所有权威 CSR 与生命周期变更，再按“产业统计 → 影响力 → 行为因子 →
+owned-output”只发布一次派生层，禁止每次 `rebuild_family_indices()` 顺带重建整张行为表。行为缓存用
+traits / effect bindings / influences / condition metrics / home-cell dirty reason 驱动；存在动态行为条件时
+每个日界最多重建一次，无变化的中间调用直接跳过。一次重建为首次遇到动态条件的
+`(family, cell)` 惰性构造一个 `FamilyCellContext` 指标 slab，后续条件 trait edge 复用该 slab；禁止每条 edge 重复扫描人口、建筑、
+资源和影响力表。`family_learning` 对职业的逐项复制压成一个
+profession-class selector，查询时以 `_profession_class_index` 匹配，精确职业 selector 语义保持不变。
+报告字段 `family_behavior_cache_rebuilds/skips/ms/last_dirty_reasons` 与
+`family_behavior_class_row_count` 用于检查是否回退到重复全量物化；
+`family_behavior_metric_contexts_built` 应随 family-cell 数增长，
+`family_behavior_condition_edges_evaluated` 则记录复用这些上下文的条件边次数。
+
 核心特性抽取、分家新增特性与 FamilyEffect 随机池共用科技前列：`FamilyTraitDefinition.prerequisite_technology_keys`
 与 `FamilyEffectDefinition.prerequisite_technology_keys`。空前列通过；默认 AND
 （`cell_has_all_requirements`）。设计表「或」条件把 `prerequisite_technology_any` 编成 ANY

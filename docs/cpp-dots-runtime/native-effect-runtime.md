@@ -56,7 +56,7 @@ configure time, so declarative dispatch does not compare command-key strings in
 the daily adapter path; only the compile-time Behavior compatibility extension
 retains a cold legacy key branch.
 The current native ABI therefore covers Country opcodes `1..14`, Economy
-opcodes `1..15`, Modifier apply/remove, Gameplay rows on domain `3`, journal
+opcodes `1..19` and `21..23` (quoted canal opcode 20 is domain-only), Modifier apply/remove, Gameplay rows on domain `3`, journal
 events on domain `4`, and only the registered CustomDomain audit opcode
 `domain=6/opcode=1`.
 
@@ -140,7 +140,7 @@ stale handles before commit. Known `technology.modifier`, `family.modifier`,
 `modifier_daily`, and C++ ACKs the Effect transaction. A native-bound
 transaction is hidden from the fallback poll path to prevent duplicate enqueue.
 Native adapters claim complete POD transactions for Modifier, all current Country
-opcodes (1..14), all current Economy opcodes (1..15), `GAMEPLAY_COMMAND`,
+opcodes (1..14), Effect-callable Economy opcodes (1..19 and 21..23), `GAMEPLAY_COMMAND`,
 `PUBLISH_EVENT`, and the registered CustomDomain audit command. Country and
 Economy only stage requests; their own command/ledger boundary preflights and
 commits them, then Effect observes a durable idempotent ACK. Gameplay,
@@ -152,6 +152,17 @@ compile time until a C++ adapter explicitly registers their domain/opcode
 shape; they never fall through to GDScript.
 Native-owned transactions are excluded from `EffectFacade.poll_transactions()`,
 so ideology never reaches the GDScript compatibility transport.
+
+Economy dispatch additionally performs a **transaction-scoped, mutation-free**
+preflight before flattening commands into the native submission batch. An
+unbootstrapped/restoring Economy returns retryable backpressure; a malformed
+opcode, stale generation or invalid family target terminally rejects only that
+Effect transaction and applies the normal rejected-instance transition. Valid
+neighbouring transactions are still submitted in one batch. The flat batch may
+therefore never use one invalid row to keep unrelated transactions in `PLANNED`
+or drive `effect_should_run(day)` on every continuation pulse. The already
+accepted idempotency-key path remains valid even if its target retires before
+ACK observation.
 
 Transaction ACK masks are keyed by native adapter identity, not by the authored
 `command.domain`. This distinction is required because a Modifier command uses
@@ -188,6 +199,12 @@ instance for the next day. `EVENT_ONCE` is reclaimed only after its transaction
 is fully ACKed. An explicit retire whose REMOVE is rejected remains pending;
 the shared `TRANSITION_RETIRE` code never turns a rejected one-shot into an
 implicit retirement.
+
+“Retryable lifecycle” does not mean retrying the same rejected transaction in
+the same day: the rejected transaction is terminal and unindexed immediately;
+only the source instance may create a new fire sequence on a later day. This
+distinction prevents permanent Economy validation failures from becoming a
+same-day scheduler livelock.
 
 ## Domain migration boundary
 

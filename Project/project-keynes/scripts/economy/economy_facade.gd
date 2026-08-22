@@ -1673,15 +1673,34 @@ func trace_report() -> Dictionary:
 		return {"ok": false, "reason": "economy event API unavailable"}
 	return _world_ext.get_economy_trace_report()
 
-func dispatch_committed_events(meta: Dictionary) -> void:
+func dispatch_committed_events(meta: Dictionary) -> Dictionary:
 	if not bool(meta.get("economy_event_batch_published", false)):
-		return
+		return {"published": false, "materialized": false, "count": 0}
 	economy_event_batch_available.emit(meta)
+	# The availability signal is the normal UI invalidation path. Do not build
+	# twenty PackedArrays for every committed day when nobody consumes the
+	# detailed batch signal. Advance this facade-owned cursor directly so a
+	# listener connected later starts at the next committed batch, matching the
+	# old eager poll+ack behavior without materializing discarded rows.
+	if economy_event_batch.get_connections().is_empty():
+		var newest_id := int(meta.get("economy_event_newest_id", 0))
+		var acknowledged := ack_events(&"economy_facade_handlers", newest_id)
+		return {
+			"published": true,
+			"materialized": false,
+			"count": 0,
+			"acked_event_id": int(acknowledged.get("acked_event_id", newest_id)),
+		}
 	var batch := poll_events(&"economy_facade_handlers")
 	if int(batch.get("count", 0)) <= 0:
-		return
+		return {"published": true, "materialized": true, "count": 0}
 	economy_event_batch.emit(batch)
 	ack_events(&"economy_facade_handlers", int(batch.get("last_event_id", 0)))
+	return {
+		"published": true,
+		"materialized": true,
+		"count": int(batch.get("count", 0)),
+	}
 
 func begin_event_archive(chunk_bytes: int = -1) -> Dictionary:
 	if not _configured or not _world_ext.has_method("begin_economy_event_archive"):
