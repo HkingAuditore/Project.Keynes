@@ -1523,9 +1523,9 @@ func _family_behavior_rows(snapshot: Dictionary, cell_idx: int = -1) -> Array:
 
 
 func _family_behavior_visibility(cell_idx: int) -> Dictionary:
-	var result := {"buildings": {}, "goods": {}, "professions": {},
+	var result := {"buildings": {}, "goods": {}, "professions": {}, "needs": {},
 		"enforce_buildings": false, "enforce_goods": false,
-		"enforce_professions": false}
+		"enforce_professions": false, "enforce_needs": false}
 	if cell_idx < 0:
 		return result
 	var facade = _generator.get_economy_facade() if _generator != null \
@@ -1553,6 +1553,13 @@ func _family_behavior_visibility(cell_idx: int) -> Dictionary:
 		for index in range(good_ids.size()):
 			if good_available[index] != 0:
 				result.goods[String(good_ids[index])] = true
+		var catalog: Dictionary = facade.native_catalog() \
+			if facade.has_method("native_catalog") else {}
+		var need_visibility := _family_behavior_visible_needs(
+			catalog, good_ids, good_available)
+		if bool(need_visibility.get("ok", false)):
+			result.needs = need_visibility.get("needs", {})
+			result.enforce_needs = true
 	var population: Dictionary = facade.population_cell_snapshot(cell_idx) \
 		if facade.has_method("population_cell_snapshot") else {}
 	result.professions = _family_behavior_visible_professions(buildings, population)
@@ -1630,6 +1637,59 @@ static func _add_profession_id(target: Dictionary, catalog: PackedStringArray,
 	target[String(catalog[dense_id])] = true
 
 
+static func _family_behavior_visible_needs(catalog: Dictionary,
+		market_good_ids: PackedStringArray,
+		good_available: PackedByteArray) -> Dictionary:
+	var need_ids: PackedStringArray = catalog.get("need_ids", PackedStringArray())
+	var good_ids: PackedStringArray = catalog.get("good_ids", PackedStringArray())
+	var need_entries: PackedInt32Array = catalog.get(
+		"need_stable_ids", PackedInt32Array())
+	var need_variant_offsets: PackedInt32Array = catalog.get(
+		"need_variant_offsets", PackedInt32Array())
+	var variant_component_offsets: PackedInt32Array = catalog.get(
+		"variant_component_offsets", PackedInt32Array())
+	var component_good_ids: PackedInt32Array = catalog.get(
+		"component_good_ids", PackedInt32Array())
+	if need_ids.is_empty() or good_ids.is_empty() \
+			or market_good_ids.size() != good_available.size() \
+			or need_variant_offsets.size() != need_entries.size() + 1 \
+			or variant_component_offsets.is_empty() \
+			or variant_component_offsets[-1] != component_good_ids.size():
+		return {"ok": false}
+	var market_unlocks := {}
+	for index in range(market_good_ids.size()):
+		market_unlocks[String(market_good_ids[index])] = int(good_available[index]) != 0
+	var visible := {}
+	for entry in range(need_entries.size()):
+		var need_index := int(need_entries[entry])
+		if need_index < 0 or need_index >= need_ids.size():
+			return {"ok": false}
+		var variant_begin := int(need_variant_offsets[entry])
+		var variant_end := int(need_variant_offsets[entry + 1])
+		if variant_begin < 0 or variant_end <= variant_begin \
+				or variant_end > variant_component_offsets.size() - 1:
+			return {"ok": false}
+		# A need is available when one complete substitute bundle can be bought
+		# locally; partially unlocked bundles must not leak the preference row.
+		for variant in range(variant_begin, variant_end):
+			var component_begin := int(variant_component_offsets[variant])
+			var component_end := int(variant_component_offsets[variant + 1])
+			if component_begin < 0 or component_end <= component_begin \
+					or component_end > component_good_ids.size():
+				return {"ok": false}
+			var variant_unlocked := true
+			for component in range(component_begin, component_end):
+				var good_index := int(component_good_ids[component])
+				if good_index < 0 or good_index >= good_ids.size() \
+						or not bool(market_unlocks.get(String(good_ids[good_index]), false)):
+					variant_unlocked = false
+					break
+			if variant_unlocked:
+				visible[String(need_ids[need_index])] = true
+				break
+	return {"ok": true, "needs": visible}
+
+
 static func _family_behavior_selector_visible(axis: int, stable_id: String,
 		visibility: Dictionary) -> bool:
 	if stable_id.is_empty():
@@ -1640,6 +1700,8 @@ static func _family_behavior_selector_visible(axis: int, stable_id: String,
 		return (visibility.get("goods", {}) as Dictionary).has(stable_id)
 	if axis == 1 and bool(visibility.get("enforce_professions", false)):
 		return (visibility.get("professions", {}) as Dictionary).has(stable_id)
+	if axis == 2 and bool(visibility.get("enforce_needs", false)):
+		return (visibility.get("needs", {}) as Dictionary).has(stable_id)
 	return true
 
 
