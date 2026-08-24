@@ -225,11 +225,19 @@ func build_summary_snapshot(country_handle: int, summary: Dictionary,
 func build_technology_snapshot(country_handle: int, facade,
 		ui_snapshot: Dictionary) -> Dictionary:
 	var compact_ok := bool(ui_snapshot.get("ok", false))
-	var research: Dictionary = ui_snapshot.get("research", {}) if compact_ok \
+	var compact_research = ui_snapshot.get("research", null) if compact_ok else null
+	var compact_states = compact_research.get("technology_states", null) \
+		if compact_research is Dictionary else null
+	var compact_research_ok: bool = compact_research is Dictionary \
+		and (not compact_research.has("ok") or bool(compact_research.get("ok", false))) \
+		and compact_states is PackedInt32Array and not (compact_states as PackedInt32Array).is_empty()
+	var research: Dictionary = compact_research if compact_research_ok \
 		else (facade.research_snapshot(country_handle) \
 		if facade != null and facade.has_method("research_snapshot") else {})
-	research["research_signal_snapshot"] = ui_snapshot.get(
-		"research_signals", {}) if compact_ok \
+	var compact_signals = ui_snapshot.get("research_signals", null) if compact_ok else null
+	var signals_ok: bool = compact_signals is Dictionary \
+		and (not compact_signals.has("ok") or bool(compact_signals.get("ok", false)))
+	research["research_signal_snapshot"] = compact_signals if signals_ok \
 		else (facade.research_signal_snapshot(country_handle) \
 		if facade != null and facade.has_method("research_signal_snapshot") else {})
 	return {

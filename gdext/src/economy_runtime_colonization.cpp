@@ -474,6 +474,11 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
     for (const int32_t source : reached_sources) {
         if (_family_cell_offsets.size() != static_cast<size_t>(_cell_count + 1))
             continue;
+        ColonizationKitPlan source_preview;
+        plan_colonization_kit(source, target_cell, 1, 1, false, source_preview);
+        const uint64_t source_stock_identity =
+            source_preview.source_stock_identity == 0
+            ? 1 : source_preview.source_stock_identity;
         for (int32_t p = _family_cell_offsets[source];
              p < _family_cell_offsets[source + 1]; ++p) {
             const int32_t family = _family_cell_indices[p];
@@ -512,7 +517,8 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
                     static_cast<uint64_t>(static_cast<uint32_t>(source)),
                     static_cast<uint64_t>(static_cast<uint32_t>(target_cell)),
                     _trade_topology.topology_generation, country_snapshot.generation,
-                    vision_hash, route_hash, dest_kit_identity})
+                    vision_hash, route_hash, dest_kit_identity,
+                    source_stock_identity})
                 token = trace_hash_mix(token, value);
             token &= 0x7fffffffffffffffULL;
             if (token == 0) token = 1;
@@ -535,6 +541,7 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
             entry.country_generation = country_snapshot.generation;
             entry.vision_hash = vision_hash; entry.route_hash = route_hash;
             entry.dest_kit_identity = dest_kit_identity;
+            entry.source_stock_identity = source_stock_identity;
             entry.route_begin = static_cast<uint32_t>(
                 _colonization_quote_route_cells.size());
             entry.route_count = static_cast<uint32_t>(route.size());
@@ -682,6 +689,8 @@ Dictionary NativeEconomyRuntime::family_colonization_quote_detail(
     out["kit_supported_population"] = kit.supported_population;
     out["kit_food_coverage_q16"] = kit.food_coverage_q16;
     out["kit_missing_goods"] = kit_missing_goods;
+    out["kit_source_stock_identity"] = static_cast<int64_t>(
+        kit.source_stock_identity);
     out["kit_partial"] = kit.kit_partial != 0;
     out["kit_place_buildings"] = kit.place_buildings != 0;
     return out;
@@ -971,7 +980,8 @@ bool NativeEconomyRuntime::apply_start_family_expedition(
     ColonizationKitPlan kit;
     plan_colonization_kit(quote.source_cell, quote.target_cell, cmd.i64_0,
         quote.travel_days, _epoch_active, kit);
-    if (!_epoch_active && kit.dest_identity != quote.dest_kit_identity) {
+    if (!_epoch_active && (kit.dest_identity != quote.dest_kit_identity ||
+            kit.source_stock_identity != quote.source_stock_identity)) {
         error = "colonization_kit_requote_required"; return false;
     }
     const int32_t expedition = _family_expeditions.allocate();

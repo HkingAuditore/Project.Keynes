@@ -202,6 +202,35 @@ func _initialize() -> void:
 	if not sticky_scheduler.calls.has(&"economy_daily"):
 		failures.append("sticky trigger continuation never reached economy_daily")
 
+	var fatal_clock := WorldClock.new()
+	var fatal_economy := FakeRuntime.new(0)
+	fatal_economy.fatal = true
+	var fatal_scheduler := FakeScheduler.new(FakeRuntime.new(0), fatal_economy)
+	var fatal_generator := MapGenerator.new()
+	fatal_generator._sus = fatal_scheduler
+	fatal_generator._world_clock_ref = fatal_clock
+	fatal_generator._economy_daily_job = RefCounted.new()
+	fatal_generator._economy_facade = FakeFacade.new(fatal_economy)
+	fatal_clock.request_simulation_backpressure(&"economy_day_barrier", true)
+	fatal_generator._continue_economy_inflight(23)
+	if fatal_clock._simulation_backpressure_sources.has(&"economy_day_barrier"):
+		failures.append("fatal economy state left a permanent world-clock barrier")
+
+	var direct_fatal_clock := WorldClock.new()
+	var direct_fatal_economy := FakeRuntime.new(1)
+	direct_fatal_economy.fatal = true
+	var direct_fatal_scheduler := FakeScheduler.new(
+		FakeRuntime.new(0), direct_fatal_economy)
+	var direct_fatal_generator := MapGenerator.new()
+	direct_fatal_generator._sus = direct_fatal_scheduler
+	direct_fatal_generator._world_clock_ref = direct_fatal_clock
+	direct_fatal_generator._economy_daily_job = RefCounted.new()
+	direct_fatal_generator._economy_facade = FakeFacade.new(direct_fatal_economy)
+	direct_fatal_clock.request_simulation_backpressure(&"economy_day_barrier", true)
+	direct_fatal_generator._continue_economy_inflight(23)
+	if direct_fatal_clock._simulation_backpressure_sources.has(&"economy_day_barrier"):
+		failures.append("direct fatal economy result left a permanent world-clock barrier")
+
 	if failures.is_empty():
 		print("[economy-backpressure-timebox] PASS")
 		quit(0)

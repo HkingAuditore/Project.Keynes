@@ -48,6 +48,9 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _epoch_producer_discarded_current.clear();
     _epoch_nonhousehold_withdrawals.clear();
     _epoch_cost_anchor_price.clear();
+    _epoch_research_good_id = -1;
+    _epoch_research_demand_by_cell.clear();
+    _epoch_research_demand_by_market.clear();
     _owner_retained_outputs.clear();
     // Persistent sparse key set: each rolling phase contributes its changed
     // markets, so a planner generation covers the whole world without a dense
@@ -745,6 +748,7 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
         }
     }
     _epoch_days = workset_elapsed_days(day_index);
+    refresh_epoch_research_demand();
     _commit_lag_budget_days = std::max(0, locked_market_cycle_days() - 1);
     _epoch_begin_workset_ms = elapsed_ms(workset_started);
     const auto fiscal_started = Clock::now();

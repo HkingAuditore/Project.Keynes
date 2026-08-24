@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="1900" viewBox="0 0 900 1900">
+  <rect width="900" height="1900" fill="#101318"/>
+  <style>
+    .title { font: 500 34px sans-serif; fill: #f4f7fb; }
+    .section { font: 500 25px sans-serif; fill: #dce6f1; }
+    .name { font: 500 21px sans-serif; fill: #f4f7fb; }
+    .body { font: 400 17px sans-serif; fill: #c9d2dc; }
+    .muted { font: 400 15px sans-serif; fill: #9aa8b6; }
+    .box { fill: #1b222b; stroke: #536170; stroke-width: 2; rx: 10; }
+    .knowledge { fill: #1d2b3a; stroke: #6f9bc4; }
+    .candidate { fill: #302b1d; stroke: #c7a653; }
+    .milestone { fill: #1c3024; stroke: #6caf7b; stroke-width: 3; }
+    .line { stroke: #93a1af; stroke-width: 2.5; fill: none; marker-end: url(#arrow); }
+    .route { stroke: #8bb4d6; stroke-width: 2; stroke-dasharray: 8 7; fill: none; marker-end: url(#arrowBlue); }
+  </style>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 z" fill="#93a1af"/></marker>
+    <marker id="arrowBlue" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L9,3 L0,6 z" fill="#8bb4d6"/></marker>
+  </defs>
+
+  <text x="40" y="58" class="title">石器时代科技树</text>
+  <text x="40" y="88" class="muted">实线：硬前置　虚线：研究路线　“揭示”：地图信号　★：里程碑候选</text>
+
+  <text x="40" y="135" class="section">一、知识入口</text>
+  <rect x="40" y="155" width="245" height="90" class="box knowledge"/>
+  <text x="58" y="187" class="name">口述记忆实践</text><text x="58" y="215" class="body">揭示：无｜解锁：科技值、口述记忆圈</text>
+  <rect x="327" y="155" width="245" height="90" class="box knowledge"/>
+  <text x="345" y="187" class="name">物候观察实践</text><text x="345" y="215" class="body">揭示：无｜解锁：科技值、观察棚</text>
+  <rect x="614" y="155" width="245" height="90" class="box knowledge"/>
+  <text x="632" y="187" class="name">洪水历法实践</text><text x="632" y="215" class="body">揭示：无｜解锁：科技值、历法祭所</text>
+  <rect x="183" y="265" width="245" height="90" class="box knowledge"/>
+  <text x="201" y="297" class="name">牧群路线记忆</text><text x="201" y="325" class="body">揭示：无｜解锁：科技值、议事帐</text>
+  <rect x="471" y="265" width="245" height="90" class="box knowledge"/>
+  <text x="489" y="297" class="name">潮汐与航向记忆</text><text x="489" y="325" class="body">揭示：无｜解锁：科技值、观察屋</text>
+
+  <text x="40" y="430" class="section">二、石器、火与陶器</text>
+  <rect x="40" y="455" width="250" height="105" class="box candidate"/>
+  <text x="58" y="488" class="name">★ 燧石辨识</text><text x="58" y="516" class="body">揭示：燧石｜路线：口述</text><text x="58" y="542" class="body">解锁：燧石资源利用</text>
+  <rect x="325" y="455" width="250" height="105" class="box"/>
+  <text x="343" y="488" class="name">打制石器</text><text x="343" y="516" class="body">硬前置：燧石辨识</text><text x="343" y="542" class="body">解锁：打制石器、燧石采掘场</text>
+  <rect x="610" y="455" width="250" height="105" class="box candidate"/>
+  <text x="628" y="488" class="name">★ 磨制石器</text><text x="628" y="516" class="body">硬前置：打制石器</text><text x="628" y="542" class="body">解锁：原石、采石场、整理场</text>
+  <path d="M290 507 H325" class="line"/><path d="M575 507 H610" class="line"/>
+
+  <rect x="40" y="600" width="250" height="105" class="box candidate"/>
+  <text x="58" y="633" class="name">★ 复合工具</text><text x="58" y="661" class="body">硬前置：燧石辨识</text><text x="58" y="687" class="body">解锁：石器工坊、组织化伐木场</text>
+  <rect x="325" y="600" width="250" height="105" class="box candidate"/>
+  <text x="343" y="633" class="name">★ 火种控制</text><text x="343" y="661" class="body">揭示：木材｜路线：口述</text><text x="343" y="687" class="body">解锁：公共火塘</text>
+  <rect x="610" y="600" width="250" height="105" class="box"/>
+  <text x="628" y="633" class="name">木炭烧制</text><text x="628" y="661" class="body">硬前置：火种控制；揭示：木材</text><text x="628" y="687" class="body">解锁：木炭、覆土木炭窑</text>
+  <path d="M575 652 H610" class="line"/>
+
+  <rect x="40" y="745" width="380" height="105" class="box"/>
+  <text x="58" y="778" class="name">黏土辨识 → 土建筑／黏土调制</text><text x="58" y="806" class="body">揭示：黏土｜路线：洪水历法</text><text x="58" y="832" class="body">解锁：黏土坑、土料坑、砖块</text>
+  <rect x="480" y="745" width="380" height="105" class="box candidate"/>
+  <text x="498" y="778" class="name">★ 手制陶器</text><text x="498" y="806" class="body">硬前置：黏土调制</text><text x="498" y="832" class="body">解锁：陶器、露天陶器烧造</text>
+  <path d="M420 797 H480" class="line"/>
+
+  <text x="40" y="925" class="section">三、资源、生计与农业</text>
+  <rect x="40" y="950" width="250" height="105" class="box"/>
+  <text x="58" y="983" class="name">采集 → 季节性采集</text><text x="58" y="1011" class="body">揭示：肥沃土壤；季节性采集</text><text x="58" y="1037" class="body">解锁：植物食物、采集营地</text>
+  <rect x="325" y="950" width="250" height="105" class="box"/>
+  <text x="343" y="983" class="name">食物储藏 → 炉火保存</text><text x="343" y="1011" class="body">硬前置：季节性采集</text><text x="343" y="1037" class="body">揭示：土壤、野味或淡水鱼</text>
+  <rect x="610" y="950" width="250" height="105" class="box candidate"/>
+  <text x="628" y="983" class="name">★ 畜牧驯养 → 畜群管理</text><text x="628" y="1011" class="body">硬前置：狩猎 → 畜牧驯养</text><text x="628" y="1037" class="body">揭示：羊、马或牛｜解锁：游牧营地</text>
+  <path d="M290 1002 H325" class="line"/>
+
+  <rect x="40" y="1095" width="380" height="115" class="box candidate"/>
+  <text x="58" y="1128" class="name">★ 自然观察 → 作物辨识</text><text x="58" y="1156" class="body">路线：物候；硬前置：自然观察</text><text x="58" y="1182" class="body">揭示：玉米、小麦、稻、块茎、棉花或亚麻</text>
+  <rect x="480" y="1095" width="380" height="115" class="box"/>
+  <text x="498" y="1128" class="name">野生采集 → 留种／保存 → 繁育</text><text x="498" y="1156" class="body">每条作物支线必须先完成对应辨识</text><text x="498" y="1182" class="body">解锁：对应作物、采集地与农场</text>
+  <path d="M420 1152 H480" class="line"/>
+
+  <rect x="40" y="1260" width="380" height="105" class="box"/>
+  <text x="58" y="1293" class="name">淡水岸捕／潮间带采集／渔舟</text><text x="58" y="1321" class="body">揭示：淡水鱼或海洋鱼</text><text x="58" y="1347" class="body">路线：洪水历法或潮汐｜解锁：捕鱼营地、渔场</text>
+  <rect x="480" y="1260" width="380" height="105" class="box"/>
+  <text x="498" y="1293" class="name">纤维捻制</text><text x="498" y="1321" class="body">硬前置：自然观察</text><text x="498" y="1347" class="body">揭示：亚麻、棉花或韧皮｜解锁：布料、织造棚</text>
+
+  <text x="40" y="1440" class="section">四、其他资源链</text>
+  <rect x="40" y="1465" width="380" height="105" class="box"/>
+  <text x="58" y="1498" class="name">自然铜辨识 → 冷锤 → 铜退火 → 铜矿焙烧</text><text x="58" y="1526" class="body">揭示：铜矿｜路线：口述或物候</text><text x="58" y="1552" class="body">逐级硬前置｜解锁：铜矿、冷锤工坊、青铜作坊</text>
+  <rect x="480" y="1465" width="380" height="105" class="box"/>
+  <text x="498" y="1498" class="name">砂金／银脉辨识与采集</text><text x="498" y="1526" class="body">揭示：金矿＋淡水，或银矿</text><text x="498" y="1552" class="body">解锁：黄金、白银及采掘场；可进入早期贸易</text>
+
+  <rect x="40" y="1630" width="820" height="175" class="box milestone"/>
+  <text x="62" y="1665" class="name">石器时代里程碑：定居知识</text>
+  <text x="62" y="1697" class="body">12 个候选中完成任意 4 个：</text>
+  <text x="62" y="1725" class="body">种子与繁育观察、复合工具、自然观察、共同体分工、野生玉米采集、手制陶器、季节历、早期贸易、</text>
+  <text x="62" y="1753" class="body">燧石辨识、火种控制、畜牧驯养、磨制石器。</text>
+  <text x="62" y="1781" class="body">完成后开放：农耕时代</text>
+
+  <path d="M162 245 V455" class="route"/><path d="M450 245 V455" class="route"/><path d="M737 245 V745" class="route"/>
+</svg>

@@ -61,4 +61,4 @@ func _draw() -> void:
 	var font := _value_font
 	var font_size := 24
 	var text_size := font.get_string_size(pct, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size)
-	draw_string(font, center + Vector2(-text_size.x * 0.5, 8.0), pct, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, UITokens.TEXT_MAIN)
+	draw_string(font, center + Vector2(-text_size.x * 0.5, 8.0), pct, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, UITokens.ARCHIVE_INK)

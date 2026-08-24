@@ -7,7 +7,7 @@
 
 [node name="IdeaRow" type="PanelContainer"]
 size_flags_horizontal = 3
-theme_type_variation = &"PKInsetPanel"
+theme_type_variation = &"PKPaperCard"
 script = ExtResource("1_script")
 
 [node name="Body" type="VBoxContainer" parent="."]
@@ -22,7 +22,7 @@ theme_override_constants/separation = 8
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-theme_type_variation = &"PKSectionTitle"
+theme_type_variation = &"PKWorkspaceTitle"
 
 [node name="Slots" parent="Body/Title" instance=ExtResource("2_badges")]
 unique_name_in_owner = true

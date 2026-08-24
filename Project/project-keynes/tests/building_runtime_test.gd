@@ -77,6 +77,7 @@ func _run() -> void:
 	_test_same_profession_owner_income_reallocation(catalog, profile)
 	_test_owner_income_reallocation_prefers_unemployed(catalog, profile)
 	_test_endogenous_owner_investment(catalog, profile)
+	_test_first_research_building_auto_investment(catalog, profile)
 	_test_high_unemployment_investment_catchup(catalog, profile)
 	_test_collector_endogenous_investment(catalog, profile)
 	_test_all_buildings_have_explicit_construction(catalog)
@@ -1577,6 +1578,157 @@ func _test_endogenous_owner_investment(source_catalog: Dictionary,
 	_expect("non-review day prevents repeat expansion",
 		int(day31.get("building_investments_started", 0)) == 0 and
 		total_building_count == invested_total)
+
+
+func _test_first_research_building_auto_investment(source_catalog: Dictionary,
+		source_profile: Dictionary) -> void:
+	var catalog := source_catalog.duplicate(true)
+	var profile := source_profile.duplicate(true)
+	profile.market_cycle_days = 5
+	profile.market_runtime_mode = "ACTIVE"
+	profile.family_runtime_mode = "OFF"
+	profile.economy_cadence_force_market_days = 5
+	profile.economy_cadence_force_slow_days = 10
+	profile.economy_cadence_force_investment_days = 10
+	profile.investment_review_days = 10
+	profile.merchant_market_making_days_q16 = 1966080
+	profile.resource_safe_harvest_q16 = 0
+	profile.starvation_death_rate_q32 = 0
+
+	var building_ids: PackedStringArray = catalog.building_type_ids
+	var technology_ids: PackedStringArray = catalog.technology_ids
+	var signatures: PackedStringArray = catalog.signature_keys
+	var goods: PackedStringArray = catalog.good_ids
+	var oral_memory_id := building_ids.find("oral_memory_circle")
+	var gathering_id := building_ids.find("gathering_ground")
+	var oral_memory_technology := technology_ids.find("tech.oral_memory_practice")
+	var gathering_technology := technology_ids.find("tech.gathering")
+	var queued_technology := technology_ids.find("tech.natural_observation")
+	var research_good := goods.find("technology_points")
+	var lorekeeper_sig := signatures.find("lorekeeper|default")
+	var forager_sig := signatures.find("forager|default")
+	var merchant_sig := signatures.find("merchant|default")
+	var domain_indices: PackedInt32Array = catalog.technology_domain_indices
+	var research_domain := int(domain_indices[queued_technology]) \
+		if queued_technology >= 0 and queued_technology < domain_indices.size() else 0
+	_expect("first-research fixture catalog contains the required entries",
+		oral_memory_id >= 0 and gathering_id >= 0 and
+		oral_memory_technology >= 0 and gathering_technology >= 0 and
+		queued_technology >= 0 and research_good >= 0 and
+		lorekeeper_sig >= 0 and forager_sig >= 0 and merchant_sig >= 0)
+	if oral_memory_id < 0 or gathering_id < 0 or oral_memory_technology < 0 \
+			or gathering_technology < 0 or queued_technology < 0 or research_good < 0 \
+			or lorekeeper_sig < 0 or forager_sig < 0 or merchant_sig < 0:
+		return
+
+	var ext := _new_ext(catalog)
+	var country_catalog := catalog.duplicate(false)
+	country_catalog.erase("ok")
+	var country_profile := {
+		"country_runtime_mode": "ACTIVE",
+		"country_light_report_enabled": false,
+		"starting_technology_ids": PackedStringArray([
+			"tech.oral_memory_practice", "tech.gathering"]),
+	}
+	_expect("first-research country configures", bool(ext.configure_country(
+		country_catalog, country_profile, 1, 4285).get("ok", false)))
+	var country_boot: Dictionary = ext.bootstrap_country({
+		"country_ids": PackedStringArray(["country.first_research"]),
+		"country_names": PackedStringArray(["First Research"]),
+		"country_cash": PackedInt64Array([1000000000]),
+		"territory_offsets": PackedInt32Array([0, 1]),
+		"territory_cells": PackedInt32Array([0]),
+		"technology_offsets": PackedInt32Array([0, 2]),
+		"technology_indices": PackedInt32Array([
+			oral_memory_technology, gathering_technology]),
+		"discovered_technology_offsets": PackedInt32Array([0, 3]),
+		"discovered_technology_indices": PackedInt32Array([
+			oral_memory_technology, gathering_technology, queued_technology]),
+	}, PackedByteArray([0]))
+	_expect("first-research country bootstraps", bool(country_boot.get("ok", false)))
+	var country_handle := int(ext.get_country_cell_summary(0).get("country_handle", 0))
+	var research_commands := {
+		"opcodes": PackedInt32Array([6, 9]),
+		"effective_days": PackedInt64Array([0, 0]),
+		"sequences": PackedInt64Array([1, 2]),
+		"target_handles": PackedInt64Array([country_handle, country_handle]),
+		"cell_indices": PackedInt32Array([-1, -1]),
+		"aux_i32": PackedInt32Array([queued_technology, 1]),
+		"domain_i32": PackedInt32Array([research_domain, -1]),
+		"position_i32": PackedInt32Array([-1, -1]),
+		"weight0_bp": PackedInt32Array([0, 0]),
+		"weight1_bp": PackedInt32Array([0, 0]),
+		"weight2_bp": PackedInt32Array([0, 0]),
+		"weight3_bp": PackedInt32Array([0, 0]),
+		"value_i64": PackedInt64Array([0, 1000000]),
+		"tax_kinds": PackedInt32Array([-1, -1]),
+		"tax_item_indices": PackedInt32Array([-1, -1]),
+		"tax_rate_percent": PackedInt32Array([0, 0]),
+		"stable_ids": PackedStringArray(["", ""]),
+		"display_names": PackedStringArray(["", ""]),
+	}
+	var commands: Dictionary = ext.submit_country_commands(research_commands)
+	_expect("first-research queue and automatic procurement commit",
+		country_handle != 0 and bool(commands.get("ok", false)) and
+		bool(ext.run_country_slice({"day_index": 0}).get("ok", false)))
+
+	_expect("first-research economy configures", bool(ext.configure_economy(
+		catalog, profile, 1, 4285).get("ok", false)))
+	var stock := PackedInt64Array()
+	stock.resize(goods.size())
+	stock.fill(1000000000)
+	stock[research_good] = 0
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0, 0]),
+		"signature_ids": PackedInt32Array([
+			lorekeeper_sig, forager_sig, merchant_sig]),
+		"population": PackedInt64Array([20, 10, 1]),
+		"funds": PackedInt64Array([1000000000, 1000000000, 1000000000]),
+	}, {
+		"stock": stock,
+		"building_cells": PackedInt32Array([0]),
+		"building_type_ids": PackedInt32Array([gathering_id]),
+		"building_owner_signature_ids": PackedInt32Array([forager_sig]),
+		"building_counts": PackedInt64Array([1]),
+	})
+	_expect("first-research economy fixture bootstraps", bool(boot.get("ok", false)))
+	var opening_buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	_expect("first-research fixture starts without a research building",
+		int((opening_buildings.building_counts_by_type as PackedInt64Array)[
+			oral_memory_id]) == 0 and _good_value(
+			ext.get_market_cell_snapshot(0), "stock", "technology_points") == 0)
+	_expect("first-research trace registers", bool(
+		ext.set_economy_inspector_trace_cell(0).get("ok", false)))
+
+	var first_research_start := -1
+	var first_research_report := {}
+	var ledgers_ok := true
+	for day in range(5):
+		var report := _run_day(ext, day)
+		ledgers_ok = ledgers_ok and int(report.get("population_error", 1)) == 0 and \
+			int(report.get("money_error", 1)) == 0 and \
+			int(report.get("goods_error", 1)) == 0
+		if int(report.get("building_investments_started", 0)) > 0 and \
+				first_research_start < 0:
+			first_research_start = day
+			first_research_report = report
+
+	var final_buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	var diagnostic_types: PackedInt32Array = final_buildings.get(
+		"investment_candidate_type_ids", PackedInt32Array())
+	var diagnostic_driver_goods: PackedInt32Array = final_buildings.get(
+		"investment_candidate_driver_good_id", PackedInt32Array())
+	var oral_diagnostic := diagnostic_types.find(oral_memory_id)
+	_expect("zero-stock research demand makes the first research type a candidate",
+		oral_diagnostic >= 0 and oral_diagnostic < diagnostic_driver_goods.size() and
+		int(diagnostic_driver_goods[oral_diagnostic]) == research_good)
+	_expect("automatic investment starts the first research building",
+		first_research_start >= 0 and
+		int(first_research_report.get("building_investments_started", 0)) >= 1)
+	_expect("first research building is committed after investment",
+		int((final_buildings.building_counts_by_type as PackedInt64Array)[
+			oral_memory_id]) >= 1)
+	_expect("research auto-investment preserves every ledger", ledgers_ok)
 
 
 func _test_high_unemployment_investment_catchup(

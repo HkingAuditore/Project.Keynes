@@ -345,7 +345,7 @@ bool NativeEconomyRuntime::configure_profile(const Dictionary &profile, std::str
     _family_review_days = std::clamp(dict_num<int32_t>(
         profile, "family_review_days", 30), 1, 3650);
     _family_min_population_per_active = std::clamp<int64_t>(dict_num<int64_t>(
-        profile, "family_min_population_per_active", 100), 1, 1000000000LL);
+        profile, "family_min_population_per_active", 150), 1, 1000000000LL);
     _family_max_per_cell = std::clamp(dict_num<int32_t>(
         profile, "family_max_per_cell", 8), 1, 4096);
     _family_cells_per_slice = std::clamp(dict_num<int32_t>(

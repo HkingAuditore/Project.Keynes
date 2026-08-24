@@ -654,9 +654,13 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 const int32_t signal = market_signal_index(cell, output.good_id);
                 const bool monetary_issue =
                     _good_monetary_issue_values[output.good_id] > 0;
+                const int64_t research_demand =
+                    epoch_research_demand_daily(cell, output.good_id);
                 const int64_t demand = saturating_add(
                     _market.demand_ema[index],
-                    signal >= 0 ? _market_signals.business_demand_ema[signal] : 0,
+                    saturating_add(
+                        signal >= 0 ? _market_signals.business_demand_ema[signal] : 0,
+                        research_demand, _saturation_count),
                     _saturation_count);
                 const int64_t supply = signal >= 0
                     ? _market_signals.offered_supply_ema[signal] : 0;
@@ -990,6 +994,8 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     const GoodAmount &output =
                         _building_outputs[type.output_begin + i];
                     const OutputInvestmentSignal &output_signal = output_signals[i];
+                    const int64_t research_demand =
+                        epoch_research_demand_daily(cell, output.good_id);
                     const int64_t prospective_quantity =
                         effective_building_output_quantity_for_target(
                             cell, type_id, target_signature,
@@ -1018,8 +1024,21 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                         0, prospective_quantity - retained_quantity);
                     const int64_t issue_value =
                         _good_monetary_issue_values[output.good_id];
+                    const bool government_research_output =
+                        output.good_id == _epoch_research_good_id &&
+                        research_demand > 0;
                     int64_t absorption_q16 = issue_value > 0 ? Q16_ONE : 0;
-                    if (issue_value <= 0 && output_signal.sellable > 0) {
+                    if (issue_value <= 0 && government_research_output &&
+                        sellable_quantity > 0) {
+                        // Government research procurement is a cash-backed
+                        // buyer even before the first producer exists. Use
+                        // only the demand-covered share so a large research
+                        // institution cannot project revenue from points the
+                        // country has neither queued nor budgeted.
+                        absorption_q16 = std::min<int64_t>(Q16_ONE,
+                            mul_div_sat(research_demand, Q16_ONE,
+                                sellable_quantity, _saturation_count));
+                    } else if (issue_value <= 0 && output_signal.sellable > 0) {
                         absorption_q16 = output_signal.sell_through_q16;
                     } else if (issue_value <= 0 && sellable_quantity > 0) {
                         absorption_q16 = std::clamp<int64_t>(mul_div_sat(
@@ -1031,6 +1050,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                         _saturation_count);
                     const int64_t settlement_price = issue_value > 0
                         ? issue_value
+                        : government_research_output ? retail_price
                         : mul_div_sat(retail_price,
                             _good_merchant_buy_factor_q16[output.good_id], Q16_ONE,
                             _saturation_count);

@@ -7,9 +7,16 @@ signal portal_requested(index: int)
 
 const LayoutScript = preload("res://scripts/ui/technology_tree_layout.gd")
 const VIEW_PADDING := 34.0
-const NAME_FONT_SIZE := 13
-const ERA_FONT_SIZE := 13
+const NAME_FONT_SIZE := 18
+const NAME_FONT_MIN_SIZE := 14
+const ERA_FONT_SIZE := 16
 const PORTAL_SIZE := Vector2(26.0, 24.0)
+const BAND_PAPER_FOCUS := Color(0.975, 0.94, 0.84, 1.0)
+const BAND_PAPER_ADJACENT := Color(0.91, 0.845, 0.70, 1.0)
+const CARD_PAPER := Color(0.965, 0.925, 0.82, 0.98)
+const CARD_PAPER_DIM := Color(0.89, 0.83, 0.70, 0.96)
+const CARD_PAPER_UNKNOWN := Color(0.80, 0.75, 0.65, 0.96)
+const SELECTED_WALNUT := Color(0.20, 0.105, 0.052, 0.985)
 const STATE_NAMES := ["未知", "已揭示", "可研究", "研究队列", "待生效", "已掌握"]
 # Names and effects are shown only when the node is researchable or later.
 # State 1 (revealed, hard prerequisites incomplete) stays fogged like unknown.
@@ -86,7 +93,7 @@ func patch_states(states: PackedInt32Array, progress: PackedInt64Array) -> void:
 		var signature := _recompute_visibility()
 		if signature != _visibility_signature:
 			_visibility_signature = signature
-			_rebuild_focus()
+			_rebuild_focus(false)
 	if _selected >= 0 and not _is_visible(_selected) and not _focus_contains(_selected):
 		_selected = -1
 		_chain_up.clear()
@@ -181,9 +188,11 @@ func _recompute_visibility() -> int:
 	return signature
 
 
-func _rebuild_focus() -> void:
+func _rebuild_focus(recenter: bool = true) -> void:
 	if _definitions.is_empty() or _layout.is_empty():
 		return
+	var previous_offset := _offset
+	var had_focus := not _focus_layout.is_empty()
 	var canvas := size if size.x >= 1.0 else Vector2(720.0, 480.0)
 	_canvas_key = Vector2i(int(canvas.x), int(canvas.y))
 	_focus_layout = LayoutScript.build_focus(_definitions, _eras, _domains,
@@ -198,7 +207,14 @@ func _rebuild_focus() -> void:
 		var group := "%s:%s" % [String(portal.direction), owner_era]
 		_portal_slots[cursor] = int(side_counts.get(group, 0))
 		side_counts[group] = int(side_counts.get(group, 0)) + 1
-	_center_content()
+	if recenter or not had_focus:
+		_center_content()
+	else:
+		# State patches can arrive several times per second at high simulation
+		# speed. Keep the player's atlas viewport stable while only the node
+		# visibility and edge geometry change underneath it.
+		_offset = previous_offset
+		_clamp_offset()
 	queue_redraw()
 
 
@@ -206,7 +222,8 @@ func _center_content() -> void:
 	var bounds: Rect2 = _focus_layout.get("content_rect", Rect2())
 	if bounds.size.x <= 0.0 or size.x <= 0.0:
 		return
-	_offset = size * 0.5 - (bounds.position + bounds.size * 0.5)
+	_offset.x = size.x * 0.5 - (bounds.position.x + bounds.size.x * 0.5)
+	_offset.y = VIEW_PADDING - bounds.position.y
 	_clamp_offset()
 
 
@@ -377,7 +394,7 @@ func _clamp_offset() -> void:
 	else:
 		_offset.x = clampf(_offset.x, size.x - padded.end.x, -padded.position.x)
 	if padded.size.y <= size.y:
-		_offset.y = (size.y - padded.size.y) * 0.5 - padded.position.y
+		_offset.y = -padded.position.y
 	else:
 		_offset.y = clampf(_offset.y, size.y - padded.end.y, -padded.position.y)
 
@@ -418,13 +435,16 @@ func _draw_bands() -> void:
 		var band: Dictionary = band_value
 		var rect: Rect2 = band.rect
 		var focus := bool(band.get("is_focus", false))
-		draw_rect(rect, Color(0.052, 0.046, 0.037, 0.52 if focus else 0.25), true)
+		draw_rect(rect, BAND_PAPER_FOCUS if focus else BAND_PAPER_ADJACENT, true)
 		draw_line(Vector2(rect.position.x, rect.position.y),
 			Vector2(rect.end.x, rect.position.y),
-			UITokens.BRASS_HIGHLIGHT if focus else UITokens.PANEL_BORDER_SOFT,
+			UITokens.ARCHIVE_BRASS if focus else UITokens.ARCHIVE_RULE,
 			2.0 if focus else 1.0)
+		if focus:
+			draw_line(Vector2(rect.position.x, rect.end.y), Vector2(rect.end.x, rect.end.y),
+				Color(UITokens.ARCHIVE_RULE, 0.45), 1.0)
 		var label := String(band.get("display_name", ""))
-		var colour := UITokens.TEXT_MAIN if focus else UITokens.TEXT_MUTED
+		var colour := UITokens.ARCHIVE_INK if focus else UITokens.ARCHIVE_INK_MUTED
 		draw_string(font, rect.position + Vector2(12.0, 21.0), label,
 			HORIZONTAL_ALIGNMENT_LEFT, -1.0, ERA_FONT_SIZE, colour)
 		var lanes: Array = band.get("lanes", [])
@@ -438,19 +458,18 @@ func _draw_bands() -> void:
 				wash.a = 0.07
 				draw_rect(lane_rect, wash, true)
 			if domain > 0:
-				var rule := Color(UITokens.PANEL_BORDER_SOFT.r, UITokens.PANEL_BORDER_SOFT.g,
-					UITokens.PANEL_BORDER_SOFT.b, 0.28 if focus else 0.16)
+				var rule := Color(UITokens.ARCHIVE_RULE, 0.34 if focus else 0.18)
 				var rule_x := lane_rect.position.x - 7.0
 				draw_line(Vector2(rule_x, lane_rect.position.y + 2.0),
 					Vector2(rule_x, rect.end.y - 8.0), rule, 1.0)
 			var header := String(lane.get("display_name", ""))
-			var header_colour := accent.lerp(UITokens.TEXT_MAIN, 0.35) if focus \
-				else UITokens.TEXT_FAINT
+			var header_colour := accent.lerp(UITokens.ARCHIVE_INK, 0.35) if focus \
+				else UITokens.ARCHIVE_INK_MUTED
 			_draw_glyph(IconCatalog.technology_domain_semantic(String(lane.get("id", ""))),
 				Vector2(lane_rect.position.x + 8.0, rect.position.y + 42.0), 10, header_colour)
 			draw_string(font, Vector2(lane_rect.position.x + 24.0, rect.position.y + 42.0),
 				header, HORIZONTAL_ALIGNMENT_LEFT, maxf(24.0, lane_rect.size.x - 32.0),
-				11, header_colour)
+				13, header_colour)
 
 
 func _draw_edges() -> void:
@@ -464,8 +483,9 @@ func _draw_edges() -> void:
 		var emphasis := _selected < 0 or from == _selected or to == _selected \
 			or _chain_up.has(from) or _chain_down.has(to)
 		var colour := _accent_for(int((_definitions[to] as Dictionary).get(
-			"domain_index", _domain_index_of(_definitions[to]))))
-		colour.a = 0.78 if emphasis else 0.18
+			"domain_index", _domain_index_of(_definitions[to])))).lerp(
+				UITokens.ARCHIVE_INK, 0.24)
+		colour.a = 0.76 if emphasis else 0.24
 		if kind == "application":
 			_draw_dashed_polyline(edge.points, colour, 1.0, 4.0, 5.0)
 		elif kind == "branch":
@@ -517,13 +537,13 @@ func _draw_milestone_progress() -> void:
 		var node_rect: Rect2 = node.rect
 		var rect := Rect2(node_rect.position + Vector2(12.0, node_rect.size.y - 9.0),
 			Vector2(node_rect.size.x - 24.0, 4.0))
-		draw_rect(rect, Color(0.025, 0.022, 0.018, 0.90), true)
+		draw_rect(rect, Color(UITokens.ARCHIVE_INK, 0.18), true)
 		draw_rect(Rect2(rect.position, Vector2(rect.size.x * clampf(
 			float(completed) / float(required), 0.0, 1.0), rect.size.y)),
-			Color(UITokens.BRASS_HIGHLIGHT, 0.72 if bool(node.get("is_focus_era", false)) \
-				else 0.38), true)
-		draw_rect(rect, UITokens.BRASS_HIGHLIGHT if bool(node.get("is_focus_era", false)) \
-			else UITokens.PANEL_BORDER_SOFT, false, 1.0)
+			Color(UITokens.ARCHIVE_BRASS, 0.90 if bool(node.get("is_focus_era", false)) \
+				else 0.52), true)
+		draw_rect(rect, UITokens.ARCHIVE_BRASS if bool(node.get("is_focus_era", false)) \
+			else UITokens.ARCHIVE_RULE, false, 1.0)
 
 
 func _draw_portal(cursor: int) -> void:
@@ -532,14 +552,14 @@ func _draw_portal(cursor: int) -> void:
 	var rect := _portal_rect(portal, cursor)
 	var target := int(portal.target)
 	var hover := cursor == _hovered_portal
-	var colour := UITokens.BRASS_HIGHLIGHT if hover else UITokens.PANEL_BORDER_SOFT
-	draw_rect(rect, Color(0.066, 0.058, 0.047, 0.92), true)
+	var colour := UITokens.ARCHIVE_BRASS if hover else UITokens.ARCHIVE_RULE
+	draw_rect(rect, UITokens.ARCHIVE_PAPER_LIGHT if hover else CARD_PAPER_DIM, true)
 	draw_rect(rect, colour, false, 1.0)
 	var incoming := String(portal.direction) == "incoming"
 	var owner := int(portal.owner)
 	_draw_glyph(&"action.back" if incoming else &"action.chevron_right",
 		rect.position + Vector2(8.0, 17.0), 11,
-		UITokens.TEXT_MAIN if hover else UITokens.TEXT_MUTED)
+		UITokens.ARCHIVE_INK if hover else UITokens.ARCHIVE_INK_MUTED)
 
 
 func _draw_node(node: Dictionary) -> void:
@@ -551,41 +571,46 @@ func _draw_node(node: Dictionary) -> void:
 	var domain := int(node.domain)
 	var is_milestone := bool(node.get("is_milestone", false)) \
 		or bool(definition.get("is_milestone", false))
-	var accent := UITokens.BRASS_HIGHLIGHT if is_milestone else _accent_for(domain)
+	var accent := UITokens.ARCHIVE_BRASS if is_milestone else _accent_for(domain)
 	var emphasis := _emphasis_for(index)
+	var text_colour := _node_text_colour(emphasis)
+	var muted_text_colour := _node_text_colour(emphasis, true)
 	draw_style_box(_card_style(domain, state, known, emphasis, is_milestone), rect)
 	if is_milestone and not known:
-		_draw_glyph(&"technology.milestone", rect.position + Vector2(16.0, 24.0), 13,
-			Color(accent.r, accent.g, accent.b, 0.82))
-		draw_string(_name_font, rect.position + Vector2(40.0, 24.0), "时代里程碑",
+		_draw_glyph(&"technology.milestone", rect.position + Vector2(16.0, 28.0), 14,
+			text_colour if emphasis == 2 else Color(accent.r, accent.g, accent.b, 0.92))
+		draw_string(_name_font, rect.position + Vector2(40.0, 28.0), "时代里程碑",
 			HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 52.0, NAME_FONT_SIZE,
-			UITokens.TEXT_MAIN)
+			text_colour)
 		var era_name := _era_name(int(node.get("era_index", 0)))
-		draw_string(get_theme_default_font(), rect.position + Vector2(40.0, 42.0),
-			era_name, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 52.0, 11,
-			UITokens.TEXT_MUTED)
+		draw_string(get_theme_default_font(), rect.position + Vector2(40.0, 49.0),
+			era_name, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 52.0, 12,
+			muted_text_colour)
 		return
 	if not known:
-		_draw_glyph(&"technology.state.unknown", rect.position + Vector2(13.0, 31.0), 12,
-			Color(accent.r, accent.g, accent.b, 0.45))
-		draw_string(_name_font, rect.position + Vector2(35.0, 31.0), "未知科技",
+		_draw_glyph(&"technology.state.unknown", rect.position + Vector2(14.0, 36.0), 13,
+			Color(accent.r, accent.g, accent.b, 0.72))
+		draw_string(_name_font, rect.position + Vector2(38.0, 36.0), "未知科技",
 			HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 46.0, NAME_FONT_SIZE,
-			UITokens.TEXT_FAINT)
+			muted_text_colour)
 		return
 	_draw_glyph(&"technology.milestone" if is_milestone \
 		else IconCatalog.technology_domain_semantic(String(definition.get("domain_id", ""))),
-		rect.position + Vector2(13.0, 24.0 if is_milestone else 30.0), 12, accent)
+		rect.position + Vector2(14.0, 28.0 if is_milestone else 36.0), 13,
+		text_colour if emphasis == 2 else accent)
 	var label := String(definition.get("display_name", ""))
-	draw_string(_name_font, rect.position + Vector2(35.0, 24.0 if is_milestone else 29.0),
-		label, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 60.0, NAME_FONT_SIZE,
-		UITokens.TEXT_MAIN if emphasis > 0 else UITokens.TEXT_MUTED)
+	var label_font_size := _fitted_name_size(label, rect.size.x - 60.0)
+	draw_string(_name_font, rect.position + Vector2(38.0, 28.0 if is_milestone else 35.0),
+		label, HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 60.0, label_font_size,
+		text_colour)
 	if is_milestone:
-		draw_string(get_theme_default_font(), rect.position + Vector2(35.0, 42.0),
-			"时代里程碑", HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 60.0, 11,
-			UITokens.BRASS_HIGHLIGHT)
+		draw_string(get_theme_default_font(), rect.position + Vector2(38.0, 49.0),
+			"时代里程碑", HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 60.0, 12,
+			muted_text_colour)
 	else:
 		_draw_glyph(IconCatalog.technology_state_semantic(state),
-			rect.position + Vector2(rect.size.x - 22.0, 29.0), 11, _state_colour(state))
+			rect.position + Vector2(rect.size.x - 24.0, 35.0), 12,
+			text_colour if emphasis == 2 else _state_colour(state))
 		_draw_progress(index, rect, accent, emphasis == 0)
 
 
@@ -598,7 +623,7 @@ func _draw_progress(index: int, rect: Rect2, accent: Color, dim: bool) -> void:
 	var fraction := clampf(earned / cost, 0.0, 1.0)
 	var track := Rect2(rect.position + Vector2(12.0, rect.size.y - 9.0),
 		Vector2(rect.size.x - 24.0, 3.0))
-	draw_rect(track, Color(0.020, 0.018, 0.015, 0.82), true)
+	draw_rect(track, Color(UITokens.ARCHIVE_INK, 0.18), true)
 	if fraction > 0.0:
 		var colour := accent.lerp(UITokens.BRASS_HIGHLIGHT, 0.42)
 		colour.a = 0.45 if dim else 1.0
@@ -626,13 +651,27 @@ func _emphasis_for(index: int) -> int:
 	return 0
 
 
+func _node_text_colour(emphasis: int, muted: bool = false) -> Color:
+	if emphasis == 2:
+		return Color(UITokens.ARCHIVE_PAPER, 0.82) if muted else UITokens.ARCHIVE_PAPER_LIGHT
+	return UITokens.ARCHIVE_INK_MUTED if muted or emphasis == 0 else UITokens.ARCHIVE_INK
+
+
+func _fitted_name_size(label: String, available_width: float) -> int:
+	var font_size := NAME_FONT_SIZE
+	while font_size > NAME_FONT_MIN_SIZE and _name_font.get_string_size(
+			label, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size).x > available_width:
+		font_size -= 1
+	return font_size
+
+
 func _state_colour(state: int) -> Color:
 	match state:
-		2: return UITokens.BRASS_HIGHLIGHT
-		3: return UITokens.WATER.lerp(UITokens.TEXT_MAIN, 0.30)
-		4: return UITokens.WARN
-		5: return UITokens.GOOD
-		_: return UITokens.TEXT_FAINT
+		2: return UITokens.ARCHIVE_BRASS
+		3: return UITokens.WATER.lerp(UITokens.ARCHIVE_INK, 0.30)
+		4: return UITokens.WARN.lerp(UITokens.ARCHIVE_INK, 0.18)
+		5: return UITokens.GOOD.lerp(UITokens.ARCHIVE_INK, 0.18)
+		_: return UITokens.ARCHIVE_INK_MUTED
 
 
 func _accent_for(domain: int) -> Color:
@@ -659,18 +698,18 @@ func _card_style(domain: int, state: int, known: bool, emphasis: int,
 	style.corner_radius_top_right = UITokens.RADIUS_SM
 	style.corner_radius_bottom_left = UITokens.RADIUS_SM
 	style.corner_radius_bottom_right = UITokens.RADIUS_SM
-	style.border_width_left = 3 if known or is_milestone else 1
-	style.border_width_top = 1
-	style.border_width_right = 1
-	style.border_width_bottom = 1
-	style.bg_color = UITokens.CARD_BG_HOVER if emphasis == 2 else UITokens.CARD_BG
-	if emphasis == 0:
-		style.bg_color.a = 0.55
+	style.border_width_left = 4 if known or is_milestone else 1
+	style.border_width_top = 2 if emphasis == 2 else 1
+	style.border_width_right = 2 if emphasis == 2 else 1
+	style.border_width_bottom = 2 if emphasis == 2 else 1
+	var paper := CARD_PAPER.lerp(accent, 0.06 if not is_milestone else 0.10)
+	style.bg_color = SELECTED_WALNUT if emphasis == 2 else (
+		CARD_PAPER_DIM if emphasis == 0 else paper)
 	style.border_color = Color(accent.r, accent.g, accent.b,
-		0.96 if emphasis == 2 else (0.78 if is_milestone else (0.58 if emphasis == 1 else 0.20)))
+		1.0 if emphasis == 2 else (0.88 if is_milestone else (0.68 if emphasis == 1 else 0.34)))
 	if not known and not is_milestone:
-		style.bg_color = Color(0.036, 0.032, 0.027, 0.58)
-		style.border_color.a = 0.20
+		style.bg_color = SELECTED_WALNUT if emphasis == 2 else CARD_PAPER_UNKNOWN
+		style.border_color = Color(UITokens.ARCHIVE_RULE, 0.92 if emphasis == 2 else 0.48)
 	_card_styles[key] = style
 	return style
 

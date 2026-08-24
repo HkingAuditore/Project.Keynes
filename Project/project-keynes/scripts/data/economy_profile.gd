@@ -219,7 +219,8 @@ extends Resource
 @export_enum("OFF", "PROBE", "ACTIVE") var family_runtime_mode: String = "ACTIVE"
 @export_range(0, 7, 1) var family_min_settlement_tier: int = 2
 @export_range(1, 3650, 1) var family_review_days: int = 30
-@export_range(1, 1000000000, 1) var family_min_population_per_active: int = 100
+## Ordinary family formation starts only in cells with at least 150 people.
+@export_range(1, 1000000000, 1) var family_min_population_per_active: int = 150
 ## A city keeps only a few notable families. Changing this value invalidates
 ## PKEC restores (`save_family_policy_profile_mismatch`).
 @export_range(1, 4096, 1) var family_max_per_cell: int = 8

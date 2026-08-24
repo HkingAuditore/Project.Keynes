@@ -918,6 +918,12 @@ PKEC 字段。
 实际耗时改变结果。未完成时 `economy_should_run()` 继续返回软任务，但
 `economy_day_barrier=false`，因此 WorldClock 正常前进。
 
+若经济图进入 `FATAL`（例如守恒校验失败），经济域保持故障报告并停止新的经济 slice；
+`EconomyDailySystem` 与 continuation backstop 必须同时清除 `economy`/
+`economy_day_barrier`。否则 `economy_should_run()` 在 FATAL 后永久为 false，
+WorldClock 将无法再收到能清除 barrier 的 continuation，导致整个世界停在最后一天。
+清除该 barrier 只恢复非经济域的时钟、气候和国家更新，不会隐藏或自动修复经济 fatal。
+
 slice report 的归因字段为 `executed_stage/executed_substage`；`stage` 与 `next_stage` 描述返回后的
 状态。SUS continuation 统计必须使用 executed 字段，否则 publish 的最后一片会被误记为
 `trade_planning`。

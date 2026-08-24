@@ -5,7 +5,7 @@
 
 [node name="MetricCard" type="PanelContainer"]
 clip_contents = true
-theme_type_variation = &"PKMetricCard"
+theme_type_variation = &"PKPaperCard"
 script = ExtResource("1_script")
 
 [node name="Margin" type="MarginContainer" parent="."]

@@ -5,8 +5,8 @@ extends RefCounted
 # full catalog and never move afterwards, so fog can hide nodes without the
 # remaining tree shifting under the player's cursor.
 
-const NODE_SIZE := Vector2(152.0, 50.0)
-const MILESTONE_SIZE := Vector2(208.0, 66.0)
+const NODE_SIZE := Vector2(176.0, 60.0)
+const MILESTONE_SIZE := Vector2(236.0, 76.0)
 const COLUMN_GAP := 26.0
 const ROW_GAP := 44.0
 const ERA_HEADER_HEIGHT := 30.0
@@ -15,13 +15,14 @@ const ERA_GAP := 18.0
 const EDGE_SEGMENTS := 14
 const BARYCENTRE_PASSES := 3
 const FALLBACK_DOMAIN_IDS := ["agriculture", "engineering", "science", "society"]
-const FOCUS_ROW_GAP := 34.0
+const FOCUS_ROW_GAP := 38.0
 const LANE_GAP := 14.0
 const LANE_HEADER_HEIGHT := 22.0
 const LANE_INSET := 10.0
 const SIBLING_GAP := 12.0
 const MIN_NODE_WIDTH := 32.0
-const MAX_NODE_WIDTH := 184.0
+const MAX_NODE_WIDTH := 252.0
+const MAX_FOCUS_CANVAS_WIDTH := 1600.0
 
 
 static func build(definitions: Array, eras: Array, domains: Array = [],
@@ -402,7 +403,8 @@ static func build_focus(definitions: Array, eras: Array, domains: Array,
 
 static func _lane_metrics(canvas_size: Vector2, domain_count: int) -> Dictionary:
 	var count := maxi(1, domain_count)
-	var canvas_w := canvas_size.x if canvas_size.x >= 200.0 else 720.0
+	var canvas_w := minf(canvas_size.x if canvas_size.x >= 200.0 else 720.0,
+		MAX_FOCUS_CANVAS_WIDTH)
 	var inner := maxf(80.0, canvas_w - LANE_INSET * 2.0)
 	if inner > canvas_w:
 		inner = canvas_w

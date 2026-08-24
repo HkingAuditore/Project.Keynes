@@ -16,8 +16,8 @@ signal exit_game_requested()
 signal era_reward_choice_requested(offer_generation: int, choice_index: int)
 
 const RIGHT_PANEL_WIDTH := 460.0
-const DETAIL_LAYOUT_BREAKPOINT := 1180.0
-const FAMILY_WORKSPACE_BREAKPOINT := 1280.0
+const DETAIL_LAYOUT_BREAKPOINT := UITokens.DETAIL_BREAKPOINT_COMPACT
+const FAMILY_WORKSPACE_BREAKPOINT := UITokens.ARCHIVE_BREAKPOINT_COMPACT
 const DETAIL_PANEL_MIN_WIDTH := 860.0
 const DETAIL_PANEL_MAX_WIDTH := 1040.0
 const MAP_REMAINING_MIN_WIDTH := 320.0
@@ -947,10 +947,7 @@ func _bind_ui() -> void:
 			_country_action_bar.set_active("")
 		_restore_inspector_after_country()
 	)
-	_country_panel.section_selected.connect(func(section_id: String) -> void:
-		if _country_action_bar != null:
-			_country_action_bar.set_active(section_id)
-	)
+	_country_panel.section_selected.connect(open_country_section)
 
 	_loading_overlay = get_node("UIRoot/ModalLayer/WorldLoadingOverlay") as WorldLoadingOverlay
 
@@ -1147,7 +1144,9 @@ func _layout_right_panel() -> void:
 	var panel_width := float(layout.get("panel_width", RIGHT_PANEL_WIDTH))
 	_right_panel.set_anchors_preset(Control.PRESET_RIGHT_WIDE)
 	_right_panel.offset_left = -panel_width
-	_right_panel.offset_top = 68.0  # 与 inspector_panel.tscn 原始烘焙值保持一致
+	var top_bar_height := _top_bar.size.y if _top_bar != null and _top_bar.size.y > 0.0 \
+		else PlayerTopBar.BAR_HEIGHT
+	_right_panel.offset_top = top_bar_height + UITokens.SPACE_MD
 	_right_panel.offset_right = 0.0
 	_right_panel.offset_bottom = -12.0  # 与 inspector_panel.tscn 原始烘焙值保持一致
 	_right_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN

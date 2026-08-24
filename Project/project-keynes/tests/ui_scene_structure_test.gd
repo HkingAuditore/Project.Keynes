@@ -1,13 +1,18 @@
 extends SceneTree
 
 const THEME_PATH := "res://assets/themes/player_ui_theme.tres"
+const PLAYER_THEME_PATH := "res://assets/themes/player_session_theme.tres"
 const CONTROL_TYPES := ["Control", "PanelContainer", "VBoxContainer", "HBoxContainer",
 	"GridContainer", "MarginContainer", "ScrollContainer", "Label", "Button",
 	"TextureRect", "ColorRect", "ProgressBar", "LineEdit", "TextEdit",
 	"OptionButton", "CheckBox", "HSlider", "VSlider", "SpinBox",
 	"TabContainer", "CenterContainer", "AspectRatioContainer", "RichTextLabel"]
+# These screens intentionally materialize bounded, data-shaped rows at runtime:
+# expedition entries, development objectives, and the optional .pkmap path
+# field. All other player UI scripts remain covered by the static-scene rule.
 const SCRIPT_EXCLUSIONS := ["debug_console.gd", "info_panel_controller.gd",
-	"perf_mini_hud.gd", "perf_recorder.gd", "tile_data_recorder.gd"]
+	"perf_mini_hud.gd", "perf_recorder.gd", "tile_data_recorder.gd",
+	"colonization_planner_panel.gd", "technology_workspace.gd", "world_setup.gd"]
 
 var _failures := PackedStringArray()
 
@@ -49,6 +54,43 @@ func _check_theme_contract() -> void:
 			"grabber_pressed"]:
 		_expect("theme styles VScrollBar %s" % state,
 			theme.has_stylebox(state, "VScrollBar"))
+	var session_theme := load(PLAYER_THEME_PATH) as Theme
+	_expect("formal session theme loads", session_theme != null)
+	if session_theme == null:
+		return
+	for variation in ["PKArchivePanel", "PKArchiveBand", "PKArchiveWorkbench",
+			"PKArchivePage", "PKArchiveNavButton", "PKArchiveNavLabel",
+			"PKPaperCard", "PKEraRewardCard", "PKEraRewardButton",
+			"PKEraRewardStatus", "PKHUDPanel", "PKHUDButton", "PKHUDTab",
+			"PKHUDLabel", "PKChapterTab", "PKCountryShell", "PKCountryRail",
+			"PKCountryPage", "PKCountryHeader", "PKCountryNavButton",
+			"PKWorkspaceStatus", "PKWorkspaceToolbar", "PKWorkspaceCanvas",
+			"PKWorkspaceRail", "PKWorkspaceRailRight", "PKIdeologyStage",
+			"PKEconomyLedger"]:
+		_expect("formal session theme defines %s" % variation,
+			not String(session_theme.get_type_variation_base(variation)).is_empty())
+	_expect("archive ornament is scoped to the outer shell",
+		session_theme.get_stylebox("panel", "PKArchivePanel") is StyleBoxTexture)
+	_expect("ordinary paper cards use a quiet flat surface",
+		session_theme.get_stylebox("panel", "PKPaperCard") is StyleBoxFlat)
+	var archive_band := session_theme.get_stylebox(
+		"panel", "PKArchiveBand") as StyleBoxFlat
+	_expect("archive bands use one ruled edge instead of a boxed frame",
+		archive_band != null and archive_band.border_width_bottom == 1
+		and archive_band.border_width_top == 0)
+	_expect("archive pages are unframed layout surfaces",
+		session_theme.get_stylebox("panel", "PKArchivePage") is StyleBoxEmpty)
+	_expect("archive navigation uses the dossier bitmap language",
+		session_theme.get_stylebox("normal", "PKArchiveNavButton") is StyleBoxTexture
+		and session_theme.get_stylebox("pressed", "PKArchiveNavButton") is StyleBoxTexture)
+	var country_page := session_theme.get_stylebox(
+		"panel", "PKCountryPage") as StyleBoxFlat
+	_expect("wide country pages use an opaque reading surface",
+		country_page != null and country_page.bg_color.a >= 0.99)
+	_expect("country navigation does not stretch family dossier bitmaps",
+		session_theme.get_stylebox("normal", "PKCountryNavButton") is StyleBoxFlat)
+	_expect("HUD buttons do not inherit archive bitmap material",
+		session_theme.get_stylebox("normal", "PKHUDButton") is StyleBoxFlat)
 
 
 func _check_main_menu() -> void:
@@ -86,9 +128,13 @@ func _check_world_setup() -> void:
 func _check_player_game() -> void:
 	var scene := (load("res://scenes/player_game.tscn") as PackedScene).instantiate()
 	var ui_root := scene.get_node("UI/UIRoot") as Control
-	_expect("player UI root inherits shared theme", _uses_shared_theme(ui_root))
+	_expect("player UI root inherits the formal session theme",
+		_uses_theme(ui_root, PLAYER_THEME_PATH))
 	for layer in ["HUDLayer", "PanelLayer", "ModalLayer", "DebugLayer"]:
 		_expect("player UI has %s" % layer, ui_root.has_node(layer))
+	var debug_layer := ui_root.get_node_or_null("DebugLayer") as Control
+	_expect("player debug layer keeps the legacy theme boundary",
+		_uses_theme(debug_layer, THEME_PATH))
 	var fixed_paths := [
 		"HUDLayer/PlayerTopBar", "HUDLayer/PerfMiniHUD",
 		"HUDLayer/MapOverlayToolbar", "HUDLayer/CountryActionBar",
@@ -113,12 +159,15 @@ func _check_player_game() -> void:
 func _check_component_scenes() -> void:
 	var expectations := {
 		"res://scenes/ui/inspector_panel.tscn": "Margin/Split/InspectorRoot/ContentShell/ContentMargin/Scroll/ContentBox",
-		"res://scenes/ui/country_panel.tscn": "Center/Dialog/Content/SectionHost/EconomyWorkspace",
-		"res://scenes/ui/economy_workspace.tscn": "Column/Scroll/Flow",
+		"res://scenes/ui/country_panel.tscn": "Center/Dialog/Main/PageSurface/PageArea/SectionHost/EconomyWorkspace",
+		"res://scenes/ui/economy_workspace.tscn": "Column/Ledger/LedgerColumn/Scroll/Flow",
 		"res://scenes/ui/technology_workspace.tscn": "Root/Main/DetailHost/Body/Detail",
 		"res://scenes/ui/technology_overview_view.tscn": "",
 		"res://scenes/ui/object_detail_dialog.tscn": "Center/Dialog/Body/Scroll/Content",
 		"res://scenes/ui/family_workspace.tscn": "SafeMargin/Main/PageArea/PageViewport/PageScroll/PageHost",
+		"res://scenes/ui/archival_surface.tscn": "Frame/Margin/Column/Body",
+		"res://scenes/ui/era_reward_dialog.tscn": "ArchiveSurface/Frame/Margin/Column/Body/CardsScroll/CardGrid",
+		"res://scenes/ui/era_reward_choice.tscn": "Margin/Column/Choose",
 		"res://scenes/ui/world_loading_overlay.tscn": "Center/Card/Content/Progress",
 		"res://scenes/ui/map_overlay_toolbar.tscn": "SecondaryPanel/Margin/Root/ResourceScroll/SecondaryBox",
 		"res://scenes/ui/map_overlay_legend.tscn": "Margin/Root/Vector/Wheel",
@@ -133,6 +182,13 @@ func _check_component_scenes() -> void:
 		if scene_path.ends_with("economy_workspace.tscn"):
 			_expect("economy workspace has tax sub-tabs", scene.has_node("Column/TaxTabs"))
 			_expect("economy workspace has treasury insights", scene.has_node("Column/Insights"))
+		if scene_path.ends_with("era_reward_dialog.tscn"):
+			_expect("era reward dialog has three stable choices",
+				scene.has_node("ArchiveSurface/Frame/Margin/Column/Body/CardsScroll/CardGrid/Card0")
+				and scene.has_node("ArchiveSurface/Frame/Margin/Column/Body/CardsScroll/CardGrid/Card1")
+				and scene.has_node("ArchiveSurface/Frame/Margin/Column/Body/CardsScroll/CardGrid/Card2"))
+			_expect("era reward dialog keeps a bottom status line",
+				scene.has_node("ArchiveSurface/Frame/Margin/Column/Body/Status"))
 		scene.free()
 
 
@@ -295,8 +351,12 @@ func _collect_scripts(path: String, output: PackedStringArray) -> void:
 
 
 func _uses_shared_theme(control: Control) -> bool:
+	return _uses_theme(control, THEME_PATH)
+
+
+func _uses_theme(control: Control, theme_path: String) -> bool:
 	return control != null and control.theme != null \
-		and control.theme.resource_path == THEME_PATH
+		and control.theme.resource_path == theme_path
 
 
 func _expect(label: String, condition: bool) -> void:

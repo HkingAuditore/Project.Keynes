@@ -89,7 +89,7 @@ func _apply_row(_row_id: String, refs: Dictionary, data: Dictionary) -> void:
 	if delta_label.text != delta:
 		delta_label.text = delta
 	var delta_color := UITokens.GOOD if delta.begins_with("+") \
-		else (UITokens.RISK if delta.begins_with("-") else UITokens.TEXT_MUTED)
+		else (UITokens.RISK if delta.begins_with("-") else UITokens.ARCHIVE_INK_MUTED)
 	if not applied.has("delta_color") or applied["delta_color"] != delta_color:
 		delta_label.add_theme_color_override("font_color", delta_color)
 	var risk := String(data.get("risk", ""))

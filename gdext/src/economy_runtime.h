@@ -159,6 +159,10 @@ public:
     static constexpr uint16_t FAMILY_FLAG_SPLIT_REPLACE = 4u;
     static constexpr uint16_t FAMILY_FLAG_SPLIT_GIFT_BUILDING = 8u;
     static constexpr uint16_t FAMILY_FLAG_SPLIT_GIFT_POPULATION = 16u;
+    // Only the formal starter bootstrap may create a household below the
+    // ordinary notable-family minimum. Child branches are ordinary families.
+    static constexpr uint16_t FAMILY_FLAG_STARTER = 32u;
+    static constexpr int64_t FAMILY_MIN_ACTIVE_PEOPLE = 20;
     static constexpr uint16_t FAMILY_FLAG_SPLIT_MODE_MASK =
         FAMILY_FLAG_SPLIT_RETAIN_ONLY | FAMILY_FLAG_SPLIT_BONUS_WEIGHT |
         FAMILY_FLAG_SPLIT_REPLACE;
@@ -1151,6 +1155,7 @@ private:
         uint8_t place_buildings = 0;
         uint64_t kit_hash = 0;
         uint64_t dest_identity = 0;
+        uint64_t source_stock_identity = 0;
     };
 
     struct FamilyExpeditionStore {
@@ -1201,6 +1206,7 @@ private:
         uint64_t vision_hash = 0;
         uint64_t route_hash = 0;
         uint64_t dest_kit_identity = 0;
+        uint64_t source_stock_identity = 0;
         uint32_t route_begin = 0;
         uint32_t route_count = 0;
     };
@@ -3496,6 +3502,13 @@ private:
     std::vector<int64_t> _epoch_nonhousehold_withdrawals;
     std::vector<int32_t> _epoch_cost_anchor_price;
     std::vector<int64_t> _production_input_reserve;
+    // Country research demand is derived once from the frozen country policy,
+    // prices, and population at epoch begin. It is deliberately transient:
+    // country treasury/goods remain Country authority and this cache is not
+    // part of PKEC or the economy state hash.
+    int32_t _epoch_research_good_id = -1;
+    std::vector<int64_t> _epoch_research_demand_by_cell;
+    std::vector<int64_t> _epoch_research_demand_by_market;
     // Building retention and household clearing share the same frozen basis.
     // These non-authoritative arrays avoid repeating elasticity/pow work.
     std::vector<int64_t> _demand_basis_cache_day;
@@ -4012,8 +4025,10 @@ private:
     std::vector<int64_t> _fiscal_previous_requests;
     std::vector<uint64_t> _fiscal_previous_country_handles;
     // Epoch-transient reservation weights. Income lanes are seeded from the
-    // frozen minimum-living subsidy floor so a newly enabled negative income
-    // rate can pay its baseline without waiting for one historical batch.
+    // frozen minimum-living subsidy floor for current cohorts plus a bounded
+    // prospective floor for available owner/employee professions, so a newly
+    // enabled negative income rate can attract a transition without waiting
+    // for one historical batch.
     std::vector<int64_t> _fiscal_reservation_requests;
     std::vector<int64_t> _fiscal_current_requests;
     std::vector<int64_t> _fiscal_budgets;
@@ -4324,7 +4339,7 @@ private:
     int32_t _family_runtime_mode = 2; // 0=OFF, 1=PROBE, 2=ACTIVE.
     int32_t _family_min_settlement_tier = 2;
     int32_t _family_review_days = 30;
-    int64_t _family_min_population_per_active = 100;
+    int64_t _family_min_population_per_active = 150;
     int64_t _family_split_population_threshold = 100;
     int32_t _family_max_per_cell = 8;
     int32_t _family_cells_per_slice = 128;
@@ -4766,6 +4781,10 @@ private:
                                         BuildingPlanResult &result,
                                         std::string &error);
     int32_t market_signal_index(int32_t cell, int32_t good) const;
+    int64_t epoch_research_demand_daily(int32_t cell, int32_t good) const;
+    int64_t epoch_research_demand_daily_for_market(int32_t market,
+                                                   int32_t good) const;
+    void refresh_epoch_research_demand();
     PricePressure price_pressure(int32_t market, int32_t good, int64_t household_demand,
                                  int64_t stock, int64_t shortage_q16,
                                  int32_t signal_index, int64_t &saturation_count) const;
@@ -4843,7 +4862,8 @@ private:
     void clamp_family_owner_employment_for_cell(int32_t cell);
     int32_t create_family_for_building(int32_t cell, int32_t building_index,
                                        int64_t founders,
-                                       int64_t filled_owner);
+                                       int64_t filled_owner,
+                                       bool allow_small_starter = false);
     bool repair_forced_capital_founder(int32_t cell);
     bool form_family_for_cell(int32_t cell);
     void review_family_lifecycle();

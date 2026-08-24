@@ -136,7 +136,7 @@ func _apply_authoritative_value() -> void:
 	_set_spin_rate(int(_data.get("base", 0)))
 	_spin.get_line_edit().add_theme_color_override("font_color",
 		UITokens.BRASS_HIGHLIGHT if bool(_data.get("has_override", false)) \
-		else UITokens.TEXT_MUTED)
+		else UITokens.ARCHIVE_INK_MUTED)
 
 
 func _set_spin_rate(rate: int) -> void:

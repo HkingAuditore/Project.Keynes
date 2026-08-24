@@ -20,7 +20,7 @@ script = ExtResource("1_script")
 offset_right = 56.0
 offset_bottom = 204.0
 mouse_filter = 0
-theme_type_variation = &"PKPanel"
+theme_type_variation = &"PKHUDPanel"
 
 [node name="Margin" type="MarginContainer" parent="PrimaryPanel"]
 layout_mode = 2
@@ -46,9 +46,9 @@ layout_mode = 2
 visible = false
 clip_contents = true
 offset_left = 60.0
-offset_right = 122.0
+offset_right = 132.0
 mouse_filter = 0
-theme_type_variation = &"PKPanel"
+theme_type_variation = &"PKPaperCard"
 
 [node name="Margin" type="MarginContainer" parent="SecondaryPanel"]
 layout_mode = 2

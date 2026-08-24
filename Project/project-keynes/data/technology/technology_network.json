@@ -14,9 +14,13 @@
 				"tech.natural_observation",
 				"tech.communal_specialization",
 				"tech.wild_maize_collection",
-				"tech.hand_pottery",
-				"tech.seasonal_calendar",
-				"tech.early_trade"
+			"tech.hand_pottery",
+			"tech.seasonal_calendar",
+			"tech.early_trade",
+			"tech.flint_identification",
+			"tech.fire_control",
+			"tech.animal_husbandry",
+			"tech.ground_stone_tools"
 			]
 		},
 		{
@@ -32,9 +36,13 @@
 				"tech.celestial_calendars",
 				"tech.permanent_settlements",
 				"tech.rice_paddy_cultivation",
-				"tech.bronze_casting",
-				"tech.irrigation_surveying",
-				"tech.record_keeping"
+			"tech.bronze_casting",
+			"tech.irrigation_surveying",
+			"tech.record_keeping",
+			"tech.dryland_farming",
+			"tech.pastoralism",
+			"tech.weaving",
+			"tech.kiln_firing"
 			]
 		},
 		{
@@ -49,10 +57,14 @@
 				"tech.road_engineering",
 				"tech.writing",
 				"tech.state_bureaucracy",
-				"tech.tenant_paddy_management",
-				"tech.iron_smelting",
-				"tech.natural_philosophy",
-				"tech.market_institutions"
+			"tech.tenant_paddy_management",
+			"tech.iron_smelting",
+			"tech.natural_philosophy",
+			"tech.market_institutions",
+			"tech.masonry",
+			"tech.currency",
+			"tech.canal_engineering",
+			"tech.scholarly_academies"
 			]
 		},
 		{
@@ -67,10 +79,14 @@
 				"tech.movable_type_printing",
 				"tech.scholastic_method",
 				"tech.guild_organization",
-				"tech.forest_management",
-				"tech.blast_furnace",
-				"tech.magnetic_navigation",
-				"tech.regional_granaries"
+			"tech.forest_management",
+			"tech.blast_furnace",
+			"tech.magnetic_navigation",
+			"tech.regional_granaries",
+			"tech.water_power",
+			"tech.woodblock_printing",
+			"tech.urban_waterworks",
+			"tech.coal_mining"
 			]
 		},
 		{
@@ -86,9 +102,13 @@
 				"tech.cartography",
 				"tech.double_entry_bookkeeping",
 				"tech.crop_acclimatization",
-				"tech.oceanic_ship_design",
-				"tech.interregional_botany",
-				"tech.chartered_companies"
+			"tech.oceanic_ship_design",
+			"tech.interregional_botany",
+			"tech.chartered_companies",
+			"tech.oceanic_navigation",
+			"tech.coastal_shipyards",
+			"tech.commercial_estates",
+			"tech.commodity_crop_management"
 			]
 		},
 		{
@@ -104,9 +124,13 @@
 				"tech.experimental_science",
 				"tech.cooperative_association",
 				"tech.crop_breeding",
-				"tech.atmospheric_engine",
-				"tech.scientific_classification",
-				"tech.property_cadastre"
+			"tech.atmospheric_engine",
+			"tech.scientific_classification",
+			"tech.property_cadastre",
+			"tech.precision_engineering",
+			"tech.public_health",
+			"tech.hydraulic_engineering",
+			"tech.agricultural_cooperatives"
 			]
 		},
 		{
@@ -122,9 +146,13 @@
 				"tech.thermodynamics",
 				"tech.factory_system",
 				"tech.fertilizer_processing",
-				"tech.steam_power",
-				"tech.industrial_chemistry",
-				"tech.labor_organization"
+			"tech.steam_power",
+			"tech.industrial_chemistry",
+			"tech.labor_organization",
+			"tech.industrial_organization",
+			"tech.rail_logistics",
+			"tech.mechanized_printing",
+			"tech.assembly_line"
 			]
 		},
 		{
@@ -140,9 +168,13 @@
 				"tech.industrial_research",
 				"tech.public_education",
 				"tech.modern_husbandry",
-				"tech.electric_grid",
-				"tech.modern_medicine",
-				"tech.corporate_management"
+			"tech.electric_grid",
+			"tech.modern_medicine",
+			"tech.corporate_management",
+			"tech.mass_production",
+			"tech.electric_generation",
+			"tech.electric_motors",
+			"tech.telecommunications"
 			]
 		},
 		{
@@ -157,10 +189,14 @@
 				"tech.electronic_control",
 				"tech.national_laboratories",
 				"tech.state_enterprises",
-				"tech.corporate_agribusiness",
-				"tech.nuclear_energy",
-				"tech.deep_geophysics",
-				"tech.global_logistics"
+			"tech.corporate_agribusiness",
+			"tech.nuclear_energy",
+			"tech.deep_geophysics",
+			"tech.global_logistics",
+			"tech.advanced_metallurgy",
+			"tech.nuclear_fission",
+			"tech.operations_research",
+			"tech.mechanized_mining"
 			]
 		},
 		{
@@ -175,10 +211,14 @@
 				"tech.digital_control",
 				"tech.digital_computing",
 				"tech.knowledge_economy",
-				"tech.precision_irrigation",
-				"tech.semiconductor_manufacturing",
-				"tech.satellite_observation",
-				"tech.platform_coordination"
+			"tech.precision_irrigation",
+			"tech.semiconductor_manufacturing",
+			"tech.satellite_observation",
+			"tech.platform_coordination",
+			"tech.information_theory",
+			"tech.software_engineering",
+			"tech.networked_computing",
+			"tech.geographic_information_systems"
 			]
 		},
 		{
@@ -193,10 +233,14 @@
 				"tech.autonomous_systems",
 				"tech.machine_learning",
 				"tech.human_machine_cogovernance",
-				"tech.intelligent_breeding",
-				"tech.robotic_manufacturing",
-				"tech.climate_modeling",
-				"tech.algorithmic_governance"
+			"tech.intelligent_breeding",
+			"tech.robotic_manufacturing",
+			"tech.climate_modeling",
+			"tech.algorithmic_governance",
+			"tech.neural_networks",
+			"tech.autonomous_mining",
+			"tech.smart_grid",
+			"tech.adaptive_irrigation"
 			]
 		}
 	],
@@ -516,9 +560,7 @@
 				"route.institution.oral"
 			],
 			"hard_prerequisite_ids": [],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -609,9 +651,7 @@
 				"route.institution.observation"
 			],
 			"hard_prerequisite_ids": [],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -703,9 +743,7 @@
 				"route.geography.river"
 			],
 			"hard_prerequisite_ids": [],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -797,9 +835,7 @@
 				"route.institution.oral"
 			],
 			"hard_prerequisite_ids": [],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -891,9 +927,7 @@
 				"route.institution.observation"
 			],
 			"hard_prerequisite_ids": [],
-			"reveal_condition": {
-
-			},
+			"reveal_condition": {},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -1076,7 +1110,7 @@
 					"id": "research_route.flint_identification.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -1243,7 +1277,7 @@
 					"id": "research_route.stone_knapping.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -1378,7 +1412,7 @@
 					"id": "research_route.fire_control.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -1490,7 +1524,7 @@
 					"id": "research_route.seasonal_foraging.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -1552,7 +1586,7 @@
 				"route.material.stone",
 				"route.craft.tools"
 			],
-			"hard_prerequisite_ids": [],
+			"hard_prerequisite_ids": ["tech.flint_identification"],
 			"reveal_condition": {
 
 			},
@@ -1620,7 +1654,7 @@
 			"reveal_category": "general_knowledge",
 			"reveal_summary": "复合工具由首次资源、生物或地貌目击揭示",
 			"branch_successor_ids": [],
-			"prerequisite_rationales": [],
+			"prerequisite_rationales": ["燧石辨识提供可加工材料的识别标准，复合工具在此基础上组织多材料工具。"],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
 			"effect_design_review": {
@@ -1647,7 +1681,7 @@
 					"id": "research_route.composite_tools.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -1804,7 +1838,7 @@
 					"id": "research_route.natural_observation.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -1933,7 +1967,7 @@
 					"id": "research_route.oral_tradition.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -2060,7 +2094,7 @@
 					"id": "research_route.controlled_burning.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -2198,7 +2232,7 @@
 					"id": "research_route.fishing_boats.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -2257,10 +2291,16 @@
 			"secondary_route_tags": [
 				"route.crop.general"
 			],
-			"hard_prerequisite_ids": [],
+			"hard_prerequisite_ids": ["tech.natural_observation"],
 			"reveal_condition": {
-
-			},
+                "operator": 2.0,
+                "children": [
+                    {"kind": 1.0, "id": "bio.maize", "value": 1.0},
+                    {"kind": 1.0, "id": "bio.wheat", "value": 1.0},
+                    {"kind": 1.0, "id": "bio.rice", "value": 1.0},
+                    {"kind": 1.0, "id": "bio.potato", "value": 1.0}
+                ]
+            },
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -2291,7 +2331,7 @@
 			"reveal_category": "general_knowledge",
 			"reveal_summary": "种子与繁育观察由首次资源、生物或地貌目击揭示",
 			"branch_successor_ids": [],
-			"prerequisite_rationales": [],
+			"prerequisite_rationales": ["自然观察提供季节、生长与繁育记录，种子与繁育观察将其应用于作物选择。"],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
 			"effect_design_review": {
@@ -2326,7 +2366,7 @@
 					"id": "research_route.crop_domestication.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -2453,7 +2493,7 @@
 					"id": "research_route.clay_identification.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -2539,11 +2579,27 @@
 			],
 			"expected_bindings": [
 				{
+					"kind": 2.0,
+					"id": "copper_ore_collector"
+				},
+				{
 					"kind": 3.0,
 					"id": "copper_ore"
 				}
 			],
 			"content_effects": [
+				{
+					"kind": "building",
+					"id": "copper_ore_collector",
+					"binding_kind": 2.0,
+					"subject": "building.copper_ore_collector",
+					"attribute": "construction_and_production_access",
+					"operation": "unlock",
+					"value": 1.0,
+					"implementation": "BuildingProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "铜矿"
+				},
 				{
 					"kind": "resource",
 					"id": "copper_ore",
@@ -2557,7 +2613,7 @@
 					"display_name": "铜矿"
 				}
 			],
-			"effect_summary": "可利用资源：铜矿；铜矿采掘产出 +12%；作为必要支撑：铜矿、自然铜冷锤工坊",
+			"effect_summary": "可利用资源：铜矿；解锁建筑：铜矿；铜矿采掘产出 +12%；作为必要支撑：自然铜冷锤工坊",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 1 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -2589,7 +2645,7 @@
 					"id": "research_route.natural_copper_identification.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -2630,8 +2686,8 @@
 				"expected_hard_family_ids": []
 			},
 			"building_unlock_review": {
-				"policy": "support_only",
-				"rationale": "本科技不直接呈现新建筑；它作为其他生产方式的知识、材料或制度支撑。"
+				"policy": "paired",
+				"rationale": "资源辨识同时提供最早期的铜矿采集能力；后续加工方式仍由独立工艺科技递进。"
 			}
 		},
 		{
@@ -2718,7 +2774,7 @@
 					"id": "research_route.natural_copper_working.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -2855,7 +2911,7 @@
 					"id": "research_route.copper_annealing.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -3027,7 +3083,7 @@
 					"id": "research_route.tin_identification.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -3145,7 +3201,7 @@
 					"id": "research_route.animal_husbandry.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -3206,7 +3262,7 @@
 			"secondary_route_tags": [
 				"route.craft.textiles"
 			],
-			"hard_prerequisite_ids": [],
+			"hard_prerequisite_ids": ["tech.natural_observation"],
 			"reveal_condition": {
 				"operator": 2.0,
 				"children": [
@@ -3291,7 +3347,7 @@
 			"reveal_category": "environment_observation",
 			"reveal_summary": "纤维捻制由首次资源、生物或地貌目击揭示",
 			"branch_successor_ids": [],
-			"prerequisite_rationales": [],
+			"prerequisite_rationales": ["自然观察提供纤维植物的识别与采集时序，纤维捻制将其转化为可用材料。"],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
 			"effect_design_review": {
@@ -3314,7 +3370,7 @@
 					"id": "research_route.fiber_twisting.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -3373,27 +3429,8 @@
 			"secondary_route_tags": [
 				"route.institution.storage"
 			],
-			"hard_prerequisite_ids": [],
-			"reveal_condition": {
-				"operator": 2.0,
-				"children": [
-					{
-						"kind": 1.0,
-						"id": "breakthrough.seed_saving",
-						"value": 1.0
-					},
-					{
-						"kind": 1.0,
-						"id": "resource.fertile_soil",
-						"value": 1.0
-					},
-					{
-						"kind": 1.0,
-						"id": "weather.repeated_crop_failure",
-						"value": 1.0
-					}
-				]
-			},
+			"hard_prerequisite_ids": ["tech.seasonal_foraging"],
+			"reveal_condition": {"operator": 2.0, "children": [{"kind": 1.0, "id": "resource.fertile_soil", "value": 1.0}, {"kind": 1.0, "id": "resource.wild_game", "value": 1.0}, {"kind": 1.0, "id": "resource.freshwater_fish", "value": 1.0}]},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -3424,7 +3461,7 @@
 			"reveal_category": "general_knowledge",
 			"reveal_summary": "食物储藏由首次资源、生物或地貌目击揭示",
 			"branch_successor_ids": [],
-			"prerequisite_rationales": [],
+			"prerequisite_rationales": ["季节性采集积累了稳定的食物收获经验，食物储藏将其转化为跨季节库存。"],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
 			"effect_design_review": {
@@ -3438,7 +3475,7 @@
 					"id": "research_route.food_storage.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -3661,7 +3698,7 @@
 					"id": "research_route.communal_specialization.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -3824,7 +3861,7 @@
 					"id": "research_route.animal_tracking.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -3974,7 +4011,7 @@
 					"id": "research_route.freshwater_fishing.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -4122,7 +4159,7 @@
 					"id": "research_route.coastal_fishing.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -4320,7 +4357,7 @@
 					"id": "research_route.ground_stone_tools.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -4505,7 +4542,7 @@
 					"id": "research_route.earth_building.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -4618,7 +4655,7 @@
 					"id": "research_route.seasonal_calendar.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -4765,7 +4802,7 @@
 					"id": "research_route.hearth_preservation.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -4895,7 +4932,7 @@
 					"id": "research_route.household_production.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -4956,7 +4993,7 @@
 			"secondary_route_tags": [
 				"route.ecology.pasture"
 			],
-			"hard_prerequisite_ids": [],
+			"hard_prerequisite_ids": ["tech.animal_husbandry"],
 			"reveal_condition": {
 				"operator": 2.0,
 				"children": [
@@ -5057,7 +5094,9 @@
 			"reveal_category": "environment_observation",
 			"reveal_summary": "畜群管理由首次资源、生物或地貌目击揭示",
 			"branch_successor_ids": [],
-			"prerequisite_rationales": [],
+			"prerequisite_rationales": [
+				"畜牧驯养提供持续饲养与繁育能力，畜群管理在此基础上建立可运行的群体生产体系。"
+			],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
 			"effect_design_review": {
@@ -5071,7 +5110,7 @@
 					"id": "research_route.herd_management.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -5130,7 +5169,7 @@
 			"secondary_route_tags": [
 				"route.crop.maize"
 			],
-			"hard_prerequisite_ids": [],
+			"hard_prerequisite_ids": ["tech.natural_observation"],
 			"reveal_condition": {
 				"operator": 2.0,
 				"children": [
@@ -5176,7 +5215,7 @@
 			"reveal_category": "environment_observation",
 			"reveal_summary": "玉米辨识由首次资源、生物或地貌目击揭示",
 			"branch_successor_ids": [],
-			"prerequisite_rationales": [],
+			"prerequisite_rationales": ["先形成系统性的自然观察方法，才能把偶然目击稳定为可传承的物种辨识知识。"],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
 			"effect_design_review": {
@@ -5190,7 +5229,7 @@
 					"id": "research_route.maize_identification.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -5335,7 +5374,7 @@
 					"id": "research_route.wild_maize_collection.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -5448,7 +5487,7 @@
 					"id": "research_route.maize_seed_saving.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -5586,7 +5625,7 @@
 					"id": "research_route.maize_propagation.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -5647,7 +5686,7 @@
 			"secondary_route_tags": [
 				"route.crop.wheat"
 			],
-			"hard_prerequisite_ids": [],
+			"hard_prerequisite_ids": ["tech.natural_observation"],
 			"reveal_condition": {
 				"operator": 2.0,
 				"children": [
@@ -5693,7 +5732,7 @@
 			"reveal_category": "environment_observation",
 			"reveal_summary": "小麦辨识由首次资源、生物或地貌目击揭示",
 			"branch_successor_ids": [],
-			"prerequisite_rationales": [],
+			"prerequisite_rationales": ["先形成系统性的自然观察方法，才能把偶然目击稳定为可传承的物种辨识知识。"],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
 			"effect_design_review": {
@@ -5707,7 +5746,7 @@
 					"id": "research_route.wheat_identification.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -5852,7 +5891,7 @@
 					"id": "research_route.wild_wheat_collection.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -5965,7 +6004,7 @@
 					"id": "research_route.wheat_seed_saving.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -6107,7 +6146,7 @@
 					"id": "research_route.wheat_propagation.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -6168,7 +6207,7 @@
 			"secondary_route_tags": [
 				"route.crop.rice"
 			],
-			"hard_prerequisite_ids": [],
+			"hard_prerequisite_ids": ["tech.natural_observation"],
 			"reveal_condition": {
 				"operator": 2.0,
 				"children": [
@@ -6214,7 +6253,7 @@
 			"reveal_category": "environment_observation",
 			"reveal_summary": "稻类辨识由首次资源、生物或地貌目击揭示",
 			"branch_successor_ids": [],
-			"prerequisite_rationales": [],
+			"prerequisite_rationales": ["先形成系统性的自然观察方法，才能把偶然目击稳定为可传承的物种辨识知识。"],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
 			"effect_design_review": {
@@ -6228,7 +6267,7 @@
 					"id": "research_route.rice_identification.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -6373,7 +6412,7 @@
 					"id": "research_route.wild_rice_collection.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -6503,7 +6542,7 @@
 					"id": "research_route.rice_seed_saving.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -6564,7 +6603,7 @@
 			"secondary_route_tags": [
 				"route.crop.tuber"
 			],
-			"hard_prerequisite_ids": [],
+			"hard_prerequisite_ids": ["tech.natural_observation"],
 			"reveal_condition": {
 				"operator": 2.0,
 				"children": [
@@ -6610,7 +6649,7 @@
 			"reveal_category": "environment_observation",
 			"reveal_summary": "块茎辨识由首次资源、生物或地貌目击揭示",
 			"branch_successor_ids": [],
-			"prerequisite_rationales": [],
+			"prerequisite_rationales": ["先形成系统性的自然观察方法，才能把偶然目击稳定为可传承的物种辨识知识。"],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
 			"effect_design_review": {
@@ -6624,7 +6663,7 @@
 					"id": "research_route.potato_identification.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -6758,7 +6797,7 @@
 					"id": "research_route.wild_tuber_collection.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -6872,7 +6911,7 @@
 					"id": "research_route.tuber_storage.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -7012,7 +7051,7 @@
 					"id": "research_route.potato_propagation.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -7074,7 +7113,7 @@
 				"route.crop.tropical",
 				"route.craft.textiles"
 			],
-			"hard_prerequisite_ids": [],
+			"hard_prerequisite_ids": ["tech.natural_observation"],
 			"reveal_condition": {
 				"operator": 2.0,
 				"children": [
@@ -7120,7 +7159,7 @@
 			"reveal_category": "environment_observation",
 			"reveal_summary": "棉花辨识由首次资源、生物或地貌目击揭示",
 			"branch_successor_ids": [],
-			"prerequisite_rationales": [],
+			"prerequisite_rationales": ["先形成系统性的自然观察方法，才能把偶然目击稳定为可传承的物种辨识知识。"],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
 			"effect_design_review": {
@@ -7134,7 +7173,7 @@
 					"id": "research_route.cotton_identification.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -7251,7 +7290,7 @@
 					"id": "research_route.wild_cotton_collection.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -7312,7 +7351,7 @@
 			"secondary_route_tags": [
 				"route.craft.textiles"
 			],
-			"hard_prerequisite_ids": [],
+			"hard_prerequisite_ids": ["tech.natural_observation"],
 			"reveal_condition": {
 				"operator": 2.0,
 				"children": [
@@ -7363,7 +7402,7 @@
 			"reveal_category": "environment_observation",
 			"reveal_summary": "亚麻与韧皮辨识由首次资源、生物或地貌目击揭示",
 			"branch_successor_ids": [],
-			"prerequisite_rationales": [],
+			"prerequisite_rationales": ["先形成系统性的自然观察方法，才能把偶然目击稳定为可传承的物种辨识知识。"],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
 			"effect_design_review": {
@@ -7377,7 +7416,7 @@
 					"id": "research_route.flax_identification.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -7552,7 +7591,7 @@
 					"id": "research_route.wild_flax_collection.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -7673,7 +7712,7 @@
 					"id": "research_route.spice_identification.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -7807,7 +7846,7 @@
 					"id": "research_route.wild_spice_collection.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -7934,7 +7973,7 @@
 					"id": "research_route.rubber_identification.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -8085,7 +8124,7 @@
 					"id": "research_route.wild_latex_tapping.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -8207,7 +8246,7 @@
 					"id": "research_route.gold_placer_identification.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -8448,7 +8487,7 @@
 					"id": "research_route.silver_vein_identification.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -8847,7 +8886,7 @@
 					"id": "research_route.reed_identification.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -8997,7 +9036,7 @@
 					"id": "research_route.reed_harvesting.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -9147,7 +9186,7 @@
 					"id": "research_route.turf_cutting.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -9279,7 +9318,7 @@
 					"id": "research_route.hide_scraping.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -9339,12 +9378,8 @@
 				"route.craft.textiles",
 				"route.climate.cold"
 			],
-			"hard_prerequisite_ids": [],
-			"reveal_condition": {
-				"kind": 1.0,
-				"id": "resource.wild_game",
-				"value": 1.0
-			},
+			"hard_prerequisite_ids": ["tech.animal_husbandry"],
+			"reveal_condition": {"operator": 2.0, "children": [{"kind": 1.0, "id": "bio.sheep", "value": 1.0}, {"kind": 1.0, "id": "resource.wild_game", "value": 1.0}]},
 			"is_milestone": false,
 			"is_era_key": false,
 			"is_starting": false,
@@ -9414,7 +9449,7 @@
 			"reveal_category": "environment_observation",
 			"reveal_summary": "毛皮缝制由首次资源、生物或地貌目击揭示",
 			"branch_successor_ids": [],
-			"prerequisite_rationales": [],
+			"prerequisite_rationales": ["畜牧驯养提供持续的兽皮与毛皮来源，毛皮缝制将其加工为衣物。"],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
 			"effect_design_review": {
@@ -9428,7 +9463,7 @@
 					"id": "research_route.fur_sewing.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -9488,7 +9523,7 @@
 				"route.craft.textiles",
 				"route.ecology.pasture"
 			],
-			"hard_prerequisite_ids": [],
+			"hard_prerequisite_ids": ["tech.animal_husbandry"],
 			"reveal_condition": {
 				"kind": 1.0,
 				"id": "bio.sheep",
@@ -9547,7 +9582,7 @@
 			"reveal_category": "environment_observation",
 			"reveal_summary": "羊毛毡制由首次资源、生物或地貌目击揭示",
 			"branch_successor_ids": [],
-			"prerequisite_rationales": [],
+			"prerequisite_rationales": ["畜牧驯养提供羊毛等纤维来源，羊毛毡制将其加工为毡材。"],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
 			"effect_design_review": {
@@ -9561,7 +9596,7 @@
 					"id": "research_route.felt_making.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -9621,7 +9656,7 @@
 				"route.energy.fire",
 				"route.ecology.forest"
 			],
-			"hard_prerequisite_ids": [],
+			"hard_prerequisite_ids": ["tech.fire_control"],
 			"reveal_condition": {
 				"kind": 1.0,
 				"id": "resource.timber",
@@ -9691,7 +9726,7 @@
 			"reveal_category": "environment_observation",
 			"reveal_summary": "木炭烧制由首次资源、生物或地貌目击揭示",
 			"branch_successor_ids": [],
-			"prerequisite_rationales": [],
+			"prerequisite_rationales": ["火种控制提供稳定控温基础，木炭烧制进一步建立缺氧燃烧工艺。"],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
 			"effect_design_review": {
@@ -9722,7 +9757,7 @@
 					"id": "research_route.charcoal_burning.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -9811,10 +9846,6 @@
 				{
 					"kind": 1.0,
 					"id": "copper_ore"
-				},
-				{
-					"kind": 2.0,
-					"id": "copper_ore_collector"
 				}
 			],
 			"content_effects": [
@@ -9830,20 +9861,8 @@
 					"status": "existing_binding",
 					"display_name": "铜矿石"
 				},
-				{
-					"kind": "building",
-					"id": "copper_ore_collector",
-					"binding_kind": 2.0,
-					"subject": "building.copper_ore_collector",
-					"attribute": "construction_and_production_access",
-					"operation": "unlock",
-					"value": 1.0,
-					"implementation": "BuildingProfile.technology_tags",
-					"status": "existing_binding",
-					"display_name": "铜矿"
-				}
 			],
-			"effect_summary": "解锁物资：铜矿石；解锁建筑：铜矿；铜矿石 -8%；作为必要支撑：土法炼铜炉",
+			"effect_summary": "解锁物资：铜矿石；铜矿石 -8%；作为必要支撑：土法炼铜炉",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 1 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "铜矿焙烧是铁、煤、矿井、蒸汽与重工业在当前目录中的应用端点，其终点效果由copper_ore、copper_ore_collector消费",
@@ -9873,7 +9892,7 @@
 					"id": "research_route.copper_ore_roasting.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -9935,21 +9954,7 @@
 				"route.resource.minerals"
 			],
 			"hard_prerequisite_ids": [],
-			"reveal_condition": {
-				"operator": 2.0,
-				"children": [
-					{
-						"kind": 1.0,
-						"id": "resource.salt",
-						"value": 1.0
-					},
-					{
-						"kind": 1.0,
-						"id": "resource.sulfur",
-						"value": 1.0
-					}
-				]
-			},
+			"reveal_condition": {"kind": 1.0, "id": "resource.salt", "value": 1.0},
 			"is_milestone": false,
 			"is_era_key": true,
 			"is_starting": false,
@@ -10049,7 +10054,7 @@
 					"id": "research_route.brine_collection.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -10231,7 +10236,7 @@
 					"id": "research_route.clay_preparation.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -10387,7 +10392,7 @@
 					"id": "research_route.hand_pottery.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -10483,7 +10488,7 @@
 					"id": "research_route.settled_knowledge.knowledge_institution",
 					"display_name": "知识机构入口",
 					"route_type": "institution",
-					"description": "先完成口述记忆、物候观察、洪水历法、牧群路线或潮汐观察中的任一知识实践，才能继续这项早期研究。",
+					"description": "先完成任一地区知识实践（口述、物候、洪水、牧群或潮汐）中的一种，才能开展这项研究。",
 					"condition": {
 						"operator": 2.0,
 						"children": [
@@ -11909,7 +11914,9 @@
 				"route.resource.copper"
 			],
 			"hard_prerequisite_ids": [
-				"tech.natural_copper_working"
+				"tech.natural_copper_working",
+				"tech.copper_ore_roasting",
+				"tech.charcoal_burning"
 			],
 			"reveal_condition": {
 				"operator": 2.0,
@@ -12002,7 +12009,9 @@
 			"reveal_summary": "木炭坩埚炼铜由多点观察、初步种植或短期实践揭示",
 			"branch_successor_ids": [],
 			"prerequisite_rationales": [
-				"自然铜冷锤提供矿物识别、有色冶炼与合金配制能力中的操作与材料处理方法，木炭坩埚炼铜直接使用这一能力完成其工艺或组织设计"
+				"自然铜冷锤提供矿物识别、有色冶炼与合金配制能力中的操作与材料处理方法，木炭坩埚炼铜直接使用这一能力完成其工艺或组织设计",
+				"铜矿焙烧提供含铜矿石的预处理能力，木炭坩埚炼铜必须承接这一处理阶段",
+				"木炭烧制提供还原性燃料，木炭坩埚炼铜不得跳过燃料制备"
 			],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
@@ -12052,7 +12061,8 @@
 				"route.resource.tin"
 			],
 			"hard_prerequisite_ids": [
-				"tech.natural_copper_working"
+				"tech.natural_copper_working",
+				"tech.tin_identification"
 			],
 			"reveal_condition": {
 				"operator": 2.0,
@@ -12166,7 +12176,8 @@
 			"reveal_summary": "铜锡配比与铸造由多点观察、初步种植或短期实践揭示",
 			"branch_successor_ids": [],
 			"prerequisite_rationales": [
-				"自然铜冷锤提供矿物识别、有色冶炼与合金配制能力中的操作与材料处理方法，铜锡配比与铸造直接使用这一能力完成其工艺或组织设计"
+				"自然铜冷锤提供矿物识别、有色冶炼与合金配制能力中的操作与材料处理方法，铜锡配比与铸造直接使用这一能力完成其工艺或组织设计",
+				"锡辨识提供合金配制所需的锡矿对象确认，铜锡配比与铸造不得跳过锡资源的识别阶段"
 			],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
@@ -13745,7 +13756,7 @@
 			"secondary_route_tags": [
 				"route.material.clay"
 			],
-			"hard_prerequisite_ids": [],
+			"hard_prerequisite_ids": ["tech.earth_building"],
 			"reveal_condition": {
 				"kind": 1.0,
 				"id": "resource.clay",
@@ -13847,7 +13858,9 @@
 			"reveal_category": "environment_observation",
 			"reveal_summary": "日晒土坯由多点观察、初步种植或短期实践揭示",
 			"branch_successor_ids": [],
-			"prerequisite_rationales": [],
+			"prerequisite_rationales": [
+				"土建提供黏土取土、成形与基础营造能力，日晒土坯在此基础上建立稳定的建筑材料生产。"
+			],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
 			"effect_design_review": {
@@ -16583,7 +16596,7 @@
 				"route.ecology.forest",
 				"route.craft.tools"
 			],
-			"hard_prerequisite_ids": [],
+			"hard_prerequisite_ids": ["tech.composite_tools"],
 			"reveal_condition": {
 				"kind": 1.0,
 				"id": "resource.timber",
@@ -16669,7 +16682,9 @@
 			"reveal_category": "environment_observation",
 			"reveal_summary": "手工锯木由多点观察、初步种植或短期实践揭示",
 			"branch_successor_ids": [],
-			"prerequisite_rationales": [],
+			"prerequisite_rationales": [
+				"复合工具提供锯切与木材加工所需的多材料工具基础，手工锯木在此基础上建立标准木材生产。"
+			],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
 			"effect_design_review": {
@@ -22490,7 +22505,8 @@
 				"route.resource.coal"
 			],
 			"hard_prerequisite_ids": [
-				"tech.coal_outcrop_identification"
+				"tech.coal_outcrop_identification",
+				"tech.ground_stone_tools"
 			],
 			"reveal_condition": {
 				"kind": 1.0,
@@ -22546,7 +22562,8 @@
 			"reveal_summary": "地表煤采集在国家发展指标“population / 500 90d”形成稳定事实后揭示",
 			"branch_successor_ids": [],
 			"prerequisite_rationales": [
-				"露头煤辨识提供矿井、钢铁、蒸汽机械与重型设备能力中的识别与证据标准，地表煤采集直接使用这一能力完成其工艺或组织设计"
+				"露头煤辨识提供矿井、钢铁、蒸汽机械与重型设备能力中的识别与证据标准，地表煤采集直接使用这一能力完成其工艺或组织设计",
+				"磨制石器提供露头煤采集所需的耐用凿掘工具，采煤不得跳过基础工具能力"
 			],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
@@ -24573,7 +24590,9 @@
 				"route.ecology.forest"
 			],
 			"hard_prerequisite_ids": [
-				"tech.writing"
+				"tech.writing",
+				"tech.manuscript_culture",
+				"tech.composite_tools"
 			],
 			"reveal_condition": {
 				"kind": 1.0,
@@ -24645,7 +24664,9 @@
 			"reveal_summary": "木版印刷在国家发展指标“employment / agriculture / 50 180d”形成稳定事实后揭示",
 			"branch_successor_ids": [],
 			"prerequisite_rationales": [
-				"文字提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，木版印刷直接使用这一能力完成其工艺或组织设计"
+				"文字提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，木版印刷直接使用这一能力完成其工艺或组织设计",
+				"手稿文化提供可复制的版面、校勘与书写传统，木版印刷必须承接这一传播基础",
+				"复合工具提供雕版与木材加工所需的工具能力，木版印刷不得跳过基础加工"
 			],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
@@ -24750,7 +24771,9 @@
 				"route.craft.precision"
 			],
 			"hard_prerequisite_ids": [
-				"tech.writing"
+				"tech.writing",
+				"tech.manuscript_culture",
+				"tech.pottery"
 			],
 			"reveal_condition": {
 				"kind": 1.0,
@@ -24822,7 +24845,9 @@
 			"reveal_summary": "活字印刷在国家发展指标“employment / extractive / 50 180d”形成稳定事实后揭示",
 			"branch_successor_ids": [],
 			"prerequisite_rationales": [
-				"文字提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，活字印刷直接使用这一能力完成其工艺或组织设计"
+				"文字提供记录、验证、计算与知识传播方法中的稳定的组织与制度载体，活字印刷直接使用这一能力完成其工艺或组织设计",
+				"手稿文化提供可复制的版面与校勘传统，活字印刷必须承接这一传播基础",
+				"陶器提供活字成形与耐用材料处理能力，活字印刷不得跳过字模制造基础"
 			],
 			"branch_successor_rationales": [],
 			"application_target_rationales": [],
@@ -56276,6 +56301,36 @@
 	},
 	"visual_edges": [
 		{
+			"from": "tech.natural_observation",
+			"to": "tech.maize_identification",
+			"kind": "hard"
+		},
+		{
+			"from": "tech.natural_observation",
+			"to": "tech.wheat_identification",
+			"kind": "hard"
+		},
+		{
+			"from": "tech.natural_observation",
+			"to": "tech.rice_identification",
+			"kind": "hard"
+		},
+		{
+			"from": "tech.natural_observation",
+			"to": "tech.potato_identification",
+			"kind": "hard"
+		},
+		{
+			"from": "tech.natural_observation",
+			"to": "tech.cotton_identification",
+			"kind": "hard"
+		},
+		{
+			"from": "tech.natural_observation",
+			"to": "tech.flax_identification",
+			"kind": "hard"
+		},
+		{
 			"from": "tech.hunting",
 			"to": "tech.animal_husbandry",
 			"kind": "hard"
@@ -56305,21 +56360,9 @@
 		},
 		{
 			"from": "tech.oral_memory_practice",
-			"to": "tech.seasonal_foraging",
-			"kind": "alternative",
-			"route_id": "research_route.seasonal_foraging.knowledge_institution"
-		},
-		{
-			"from": "tech.oral_memory_practice",
 			"to": "tech.composite_tools",
 			"kind": "alternative",
 			"route_id": "research_route.composite_tools.knowledge_institution"
-		},
-		{
-			"from": "tech.oral_memory_practice",
-			"to": "tech.natural_observation",
-			"kind": "alternative",
-			"route_id": "research_route.natural_observation.knowledge_institution"
 		},
 		{
 			"from": "tech.oral_memory_practice",
@@ -56329,27 +56372,9 @@
 		},
 		{
 			"from": "tech.oral_memory_practice",
-			"to": "tech.controlled_burning",
-			"kind": "alternative",
-			"route_id": "research_route.controlled_burning.knowledge_institution"
-		},
-		{
-			"from": "tech.oral_memory_practice",
-			"to": "tech.fishing_boats",
-			"kind": "alternative",
-			"route_id": "research_route.fishing_boats.knowledge_institution"
-		},
-		{
-			"from": "tech.oral_memory_practice",
 			"to": "tech.crop_domestication",
 			"kind": "alternative",
 			"route_id": "research_route.crop_domestication.knowledge_institution"
-		},
-		{
-			"from": "tech.oral_memory_practice",
-			"to": "tech.clay_identification",
-			"kind": "alternative",
-			"route_id": "research_route.clay_identification.knowledge_institution"
 		},
 		{
 			"from": "tech.oral_memory_practice",
@@ -56377,12 +56402,6 @@
 		},
 		{
 			"from": "tech.oral_memory_practice",
-			"to": "tech.animal_husbandry",
-			"kind": "alternative",
-			"route_id": "research_route.animal_husbandry.knowledge_institution"
-		},
-		{
-			"from": "tech.oral_memory_practice",
 			"to": "tech.fiber_twisting",
 			"kind": "alternative",
 			"route_id": "research_route.fiber_twisting.knowledge_institution"
@@ -56404,18 +56423,6 @@
 			"to": "tech.animal_tracking",
 			"kind": "alternative",
 			"route_id": "research_route.animal_tracking.knowledge_institution"
-		},
-		{
-			"from": "tech.oral_memory_practice",
-			"to": "tech.freshwater_fishing",
-			"kind": "alternative",
-			"route_id": "research_route.freshwater_fishing.knowledge_institution"
-		},
-		{
-			"from": "tech.oral_memory_practice",
-			"to": "tech.coastal_fishing",
-			"kind": "alternative",
-			"route_id": "research_route.coastal_fishing.knowledge_institution"
 		},
 		{
 			"from": "tech.oral_memory_practice",
@@ -56455,12 +56462,6 @@
 		},
 		{
 			"from": "tech.oral_memory_practice",
-			"to": "tech.maize_identification",
-			"kind": "alternative",
-			"route_id": "research_route.maize_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.oral_memory_practice",
 			"to": "tech.wild_maize_collection",
 			"kind": "alternative",
 			"route_id": "research_route.wild_maize_collection.knowledge_institution"
@@ -56476,12 +56477,6 @@
 			"to": "tech.maize_propagation",
 			"kind": "alternative",
 			"route_id": "research_route.maize_propagation.knowledge_institution"
-		},
-		{
-			"from": "tech.oral_memory_practice",
-			"to": "tech.wheat_identification",
-			"kind": "alternative",
-			"route_id": "research_route.wheat_identification.knowledge_institution"
 		},
 		{
 			"from": "tech.oral_memory_practice",
@@ -56503,12 +56498,6 @@
 		},
 		{
 			"from": "tech.oral_memory_practice",
-			"to": "tech.rice_identification",
-			"kind": "alternative",
-			"route_id": "research_route.rice_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.oral_memory_practice",
 			"to": "tech.wild_rice_collection",
 			"kind": "alternative",
 			"route_id": "research_route.wild_rice_collection.knowledge_institution"
@@ -56518,12 +56507,6 @@
 			"to": "tech.rice_seed_saving",
 			"kind": "alternative",
 			"route_id": "research_route.rice_seed_saving.knowledge_institution"
-		},
-		{
-			"from": "tech.oral_memory_practice",
-			"to": "tech.potato_identification",
-			"kind": "alternative",
-			"route_id": "research_route.potato_identification.knowledge_institution"
 		},
 		{
 			"from": "tech.oral_memory_practice",
@@ -56545,21 +56528,9 @@
 		},
 		{
 			"from": "tech.oral_memory_practice",
-			"to": "tech.cotton_identification",
-			"kind": "alternative",
-			"route_id": "research_route.cotton_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.oral_memory_practice",
 			"to": "tech.wild_cotton_collection",
 			"kind": "alternative",
 			"route_id": "research_route.wild_cotton_collection.knowledge_institution"
-		},
-		{
-			"from": "tech.oral_memory_practice",
-			"to": "tech.flax_identification",
-			"kind": "alternative",
-			"route_id": "research_route.flax_identification.knowledge_institution"
 		},
 		{
 			"from": "tech.oral_memory_practice",
@@ -56569,21 +56540,9 @@
 		},
 		{
 			"from": "tech.oral_memory_practice",
-			"to": "tech.spice_identification",
-			"kind": "alternative",
-			"route_id": "research_route.spice_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.oral_memory_practice",
 			"to": "tech.wild_spice_collection",
 			"kind": "alternative",
 			"route_id": "research_route.wild_spice_collection.knowledge_institution"
-		},
-		{
-			"from": "tech.oral_memory_practice",
-			"to": "tech.rubber_identification",
-			"kind": "alternative",
-			"route_id": "research_route.rubber_identification.knowledge_institution"
 		},
 		{
 			"from": "tech.oral_memory_practice",
@@ -56593,39 +56552,15 @@
 		},
 		{
 			"from": "tech.oral_memory_practice",
-			"to": "tech.gold_placer_identification",
-			"kind": "alternative",
-			"route_id": "research_route.gold_placer_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.oral_memory_practice",
 			"to": "tech.silver_vein_identification",
 			"kind": "alternative",
 			"route_id": "research_route.silver_vein_identification.knowledge_institution"
 		},
 		{
 			"from": "tech.oral_memory_practice",
-			"to": "tech.reed_identification",
-			"kind": "alternative",
-			"route_id": "research_route.reed_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.oral_memory_practice",
 			"to": "tech.reed_harvesting",
 			"kind": "alternative",
 			"route_id": "research_route.reed_harvesting.knowledge_institution"
-		},
-		{
-			"from": "tech.oral_memory_practice",
-			"to": "tech.turf_cutting",
-			"kind": "alternative",
-			"route_id": "research_route.turf_cutting.knowledge_institution"
-		},
-		{
-			"from": "tech.oral_memory_practice",
-			"to": "tech.hide_scraping",
-			"kind": "alternative",
-			"route_id": "research_route.hide_scraping.knowledge_institution"
 		},
 		{
 			"from": "tech.oral_memory_practice",
@@ -56650,12 +56585,6 @@
 			"to": "tech.copper_ore_roasting",
 			"kind": "alternative",
 			"route_id": "research_route.copper_ore_roasting.knowledge_institution"
-		},
-		{
-			"from": "tech.oral_memory_practice",
-			"to": "tech.brine_collection",
-			"kind": "alternative",
-			"route_id": "research_route.brine_collection.knowledge_institution"
 		},
 		{
 			"from": "tech.oral_memory_practice",
@@ -56677,21 +56606,9 @@
 		},
 		{
 			"from": "tech.phenology_observation",
-			"to": "tech.flint_identification",
-			"kind": "alternative",
-			"route_id": "research_route.flint_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.phenology_observation",
 			"to": "tech.stone_knapping",
 			"kind": "alternative",
 			"route_id": "research_route.stone_knapping.knowledge_institution"
-		},
-		{
-			"from": "tech.phenology_observation",
-			"to": "tech.fire_control",
-			"kind": "alternative",
-			"route_id": "research_route.fire_control.knowledge_institution"
 		},
 		{
 			"from": "tech.phenology_observation",
@@ -56725,27 +56642,9 @@
 		},
 		{
 			"from": "tech.phenology_observation",
-			"to": "tech.fishing_boats",
-			"kind": "alternative",
-			"route_id": "research_route.fishing_boats.knowledge_institution"
-		},
-		{
-			"from": "tech.phenology_observation",
 			"to": "tech.crop_domestication",
 			"kind": "alternative",
 			"route_id": "research_route.crop_domestication.knowledge_institution"
-		},
-		{
-			"from": "tech.phenology_observation",
-			"to": "tech.clay_identification",
-			"kind": "alternative",
-			"route_id": "research_route.clay_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.phenology_observation",
-			"to": "tech.natural_copper_identification",
-			"kind": "alternative",
-			"route_id": "research_route.natural_copper_identification.knowledge_institution"
 		},
 		{
 			"from": "tech.phenology_observation",
@@ -56764,12 +56663,6 @@
 			"to": "tech.tin_identification",
 			"kind": "alternative",
 			"route_id": "research_route.tin_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.phenology_observation",
-			"to": "tech.animal_husbandry",
-			"kind": "alternative",
-			"route_id": "research_route.animal_husbandry.knowledge_institution"
 		},
 		{
 			"from": "tech.phenology_observation",
@@ -56794,18 +56687,6 @@
 			"to": "tech.animal_tracking",
 			"kind": "alternative",
 			"route_id": "research_route.animal_tracking.knowledge_institution"
-		},
-		{
-			"from": "tech.phenology_observation",
-			"to": "tech.freshwater_fishing",
-			"kind": "alternative",
-			"route_id": "research_route.freshwater_fishing.knowledge_institution"
-		},
-		{
-			"from": "tech.phenology_observation",
-			"to": "tech.coastal_fishing",
-			"kind": "alternative",
-			"route_id": "research_route.coastal_fishing.knowledge_institution"
 		},
 		{
 			"from": "tech.phenology_observation",
@@ -56893,12 +56774,6 @@
 		},
 		{
 			"from": "tech.phenology_observation",
-			"to": "tech.rice_identification",
-			"kind": "alternative",
-			"route_id": "research_route.rice_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.phenology_observation",
 			"to": "tech.wild_rice_collection",
 			"kind": "alternative",
 			"route_id": "research_route.wild_rice_collection.knowledge_institution"
@@ -56908,12 +56783,6 @@
 			"to": "tech.rice_seed_saving",
 			"kind": "alternative",
 			"route_id": "research_route.rice_seed_saving.knowledge_institution"
-		},
-		{
-			"from": "tech.phenology_observation",
-			"to": "tech.potato_identification",
-			"kind": "alternative",
-			"route_id": "research_route.potato_identification.knowledge_institution"
 		},
 		{
 			"from": "tech.phenology_observation",
@@ -56947,12 +56816,6 @@
 		},
 		{
 			"from": "tech.phenology_observation",
-			"to": "tech.flax_identification",
-			"kind": "alternative",
-			"route_id": "research_route.flax_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.phenology_observation",
 			"to": "tech.wild_flax_collection",
 			"kind": "alternative",
 			"route_id": "research_route.wild_flax_collection.knowledge_institution"
@@ -56983,39 +56846,9 @@
 		},
 		{
 			"from": "tech.phenology_observation",
-			"to": "tech.gold_placer_identification",
-			"kind": "alternative",
-			"route_id": "research_route.gold_placer_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.phenology_observation",
-			"to": "tech.silver_vein_identification",
-			"kind": "alternative",
-			"route_id": "research_route.silver_vein_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.phenology_observation",
-			"to": "tech.reed_identification",
-			"kind": "alternative",
-			"route_id": "research_route.reed_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.phenology_observation",
 			"to": "tech.reed_harvesting",
 			"kind": "alternative",
 			"route_id": "research_route.reed_harvesting.knowledge_institution"
-		},
-		{
-			"from": "tech.phenology_observation",
-			"to": "tech.turf_cutting",
-			"kind": "alternative",
-			"route_id": "research_route.turf_cutting.knowledge_institution"
-		},
-		{
-			"from": "tech.phenology_observation",
-			"to": "tech.hide_scraping",
-			"kind": "alternative",
-			"route_id": "research_route.hide_scraping.knowledge_institution"
 		},
 		{
 			"from": "tech.phenology_observation",
@@ -57040,12 +56873,6 @@
 			"to": "tech.copper_ore_roasting",
 			"kind": "alternative",
 			"route_id": "research_route.copper_ore_roasting.knowledge_institution"
-		},
-		{
-			"from": "tech.phenology_observation",
-			"to": "tech.brine_collection",
-			"kind": "alternative",
-			"route_id": "research_route.brine_collection.knowledge_institution"
 		},
 		{
 			"from": "tech.phenology_observation",
@@ -57067,27 +56894,9 @@
 		},
 		{
 			"from": "tech.flood_calendar_practice",
-			"to": "tech.flint_identification",
-			"kind": "alternative",
-			"route_id": "research_route.flint_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.flood_calendar_practice",
 			"to": "tech.stone_knapping",
 			"kind": "alternative",
 			"route_id": "research_route.stone_knapping.knowledge_institution"
-		},
-		{
-			"from": "tech.flood_calendar_practice",
-			"to": "tech.fire_control",
-			"kind": "alternative",
-			"route_id": "research_route.fire_control.knowledge_institution"
-		},
-		{
-			"from": "tech.flood_calendar_practice",
-			"to": "tech.seasonal_foraging",
-			"kind": "alternative",
-			"route_id": "research_route.seasonal_foraging.knowledge_institution"
 		},
 		{
 			"from": "tech.flood_calendar_practice",
@@ -57097,27 +56906,9 @@
 		},
 		{
 			"from": "tech.flood_calendar_practice",
-			"to": "tech.natural_observation",
-			"kind": "alternative",
-			"route_id": "research_route.natural_observation.knowledge_institution"
-		},
-		{
-			"from": "tech.flood_calendar_practice",
 			"to": "tech.oral_tradition",
 			"kind": "alternative",
 			"route_id": "research_route.oral_tradition.knowledge_institution"
-		},
-		{
-			"from": "tech.flood_calendar_practice",
-			"to": "tech.controlled_burning",
-			"kind": "alternative",
-			"route_id": "research_route.controlled_burning.knowledge_institution"
-		},
-		{
-			"from": "tech.flood_calendar_practice",
-			"to": "tech.fishing_boats",
-			"kind": "alternative",
-			"route_id": "research_route.fishing_boats.knowledge_institution"
 		},
 		{
 			"from": "tech.flood_calendar_practice",
@@ -57130,12 +56921,6 @@
 			"to": "tech.clay_identification",
 			"kind": "alternative",
 			"route_id": "research_route.clay_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.flood_calendar_practice",
-			"to": "tech.natural_copper_identification",
-			"kind": "alternative",
-			"route_id": "research_route.natural_copper_identification.knowledge_institution"
 		},
 		{
 			"from": "tech.flood_calendar_practice",
@@ -57154,12 +56939,6 @@
 			"to": "tech.tin_identification",
 			"kind": "alternative",
 			"route_id": "research_route.tin_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.flood_calendar_practice",
-			"to": "tech.animal_husbandry",
-			"kind": "alternative",
-			"route_id": "research_route.animal_husbandry.knowledge_institution"
 		},
 		{
 			"from": "tech.flood_calendar_practice",
@@ -57190,12 +56969,6 @@
 			"to": "tech.freshwater_fishing",
 			"kind": "alternative",
 			"route_id": "research_route.freshwater_fishing.knowledge_institution"
-		},
-		{
-			"from": "tech.flood_calendar_practice",
-			"to": "tech.coastal_fishing",
-			"kind": "alternative",
-			"route_id": "research_route.coastal_fishing.knowledge_institution"
 		},
 		{
 			"from": "tech.flood_calendar_practice",
@@ -57235,12 +57008,6 @@
 		},
 		{
 			"from": "tech.flood_calendar_practice",
-			"to": "tech.maize_identification",
-			"kind": "alternative",
-			"route_id": "research_route.maize_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.flood_calendar_practice",
 			"to": "tech.wild_maize_collection",
 			"kind": "alternative",
 			"route_id": "research_route.wild_maize_collection.knowledge_institution"
@@ -57256,12 +57023,6 @@
 			"to": "tech.maize_propagation",
 			"kind": "alternative",
 			"route_id": "research_route.maize_propagation.knowledge_institution"
-		},
-		{
-			"from": "tech.flood_calendar_practice",
-			"to": "tech.wheat_identification",
-			"kind": "alternative",
-			"route_id": "research_route.wheat_identification.knowledge_institution"
 		},
 		{
 			"from": "tech.flood_calendar_practice",
@@ -57301,12 +57062,6 @@
 		},
 		{
 			"from": "tech.flood_calendar_practice",
-			"to": "tech.potato_identification",
-			"kind": "alternative",
-			"route_id": "research_route.potato_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.flood_calendar_practice",
 			"to": "tech.wild_tuber_collection",
 			"kind": "alternative",
 			"route_id": "research_route.wild_tuber_collection.knowledge_institution"
@@ -57322,12 +57077,6 @@
 			"to": "tech.potato_propagation",
 			"kind": "alternative",
 			"route_id": "research_route.potato_propagation.knowledge_institution"
-		},
-		{
-			"from": "tech.flood_calendar_practice",
-			"to": "tech.cotton_identification",
-			"kind": "alternative",
-			"route_id": "research_route.cotton_identification.knowledge_institution"
 		},
 		{
 			"from": "tech.flood_calendar_practice",
@@ -57349,21 +57098,9 @@
 		},
 		{
 			"from": "tech.flood_calendar_practice",
-			"to": "tech.spice_identification",
-			"kind": "alternative",
-			"route_id": "research_route.spice_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.flood_calendar_practice",
 			"to": "tech.wild_spice_collection",
 			"kind": "alternative",
 			"route_id": "research_route.wild_spice_collection.knowledge_institution"
-		},
-		{
-			"from": "tech.flood_calendar_practice",
-			"to": "tech.rubber_identification",
-			"kind": "alternative",
-			"route_id": "research_route.rubber_identification.knowledge_institution"
 		},
 		{
 			"from": "tech.flood_calendar_practice",
@@ -57379,12 +57116,6 @@
 		},
 		{
 			"from": "tech.flood_calendar_practice",
-			"to": "tech.silver_vein_identification",
-			"kind": "alternative",
-			"route_id": "research_route.silver_vein_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.flood_calendar_practice",
 			"to": "tech.reed_identification",
 			"kind": "alternative",
 			"route_id": "research_route.reed_identification.knowledge_institution"
@@ -57394,18 +57125,6 @@
 			"to": "tech.reed_harvesting",
 			"kind": "alternative",
 			"route_id": "research_route.reed_harvesting.knowledge_institution"
-		},
-		{
-			"from": "tech.flood_calendar_practice",
-			"to": "tech.turf_cutting",
-			"kind": "alternative",
-			"route_id": "research_route.turf_cutting.knowledge_institution"
-		},
-		{
-			"from": "tech.flood_calendar_practice",
-			"to": "tech.hide_scraping",
-			"kind": "alternative",
-			"route_id": "research_route.hide_scraping.knowledge_institution"
 		},
 		{
 			"from": "tech.flood_calendar_practice",
@@ -57430,12 +57149,6 @@
 			"to": "tech.copper_ore_roasting",
 			"kind": "alternative",
 			"route_id": "research_route.copper_ore_roasting.knowledge_institution"
-		},
-		{
-			"from": "tech.flood_calendar_practice",
-			"to": "tech.brine_collection",
-			"kind": "alternative",
-			"route_id": "research_route.brine_collection.knowledge_institution"
 		},
 		{
 			"from": "tech.flood_calendar_practice",
@@ -57462,27 +57175,9 @@
 		},
 		{
 			"from": "tech.pastoral_route_memory",
-			"to": "tech.flint_identification",
-			"kind": "alternative",
-			"route_id": "research_route.flint_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.pastoral_route_memory",
 			"to": "tech.stone_knapping",
 			"kind": "alternative",
 			"route_id": "research_route.stone_knapping.knowledge_institution"
-		},
-		{
-			"from": "tech.pastoral_route_memory",
-			"to": "tech.fire_control",
-			"kind": "alternative",
-			"route_id": "research_route.fire_control.knowledge_institution"
-		},
-		{
-			"from": "tech.pastoral_route_memory",
-			"to": "tech.seasonal_foraging",
-			"kind": "alternative",
-			"route_id": "research_route.seasonal_foraging.knowledge_institution"
 		},
 		{
 			"from": "tech.pastoral_route_memory",
@@ -57492,45 +57187,15 @@
 		},
 		{
 			"from": "tech.pastoral_route_memory",
-			"to": "tech.natural_observation",
-			"kind": "alternative",
-			"route_id": "research_route.natural_observation.knowledge_institution"
-		},
-		{
-			"from": "tech.pastoral_route_memory",
 			"to": "tech.oral_tradition",
 			"kind": "alternative",
 			"route_id": "research_route.oral_tradition.knowledge_institution"
 		},
 		{
 			"from": "tech.pastoral_route_memory",
-			"to": "tech.controlled_burning",
-			"kind": "alternative",
-			"route_id": "research_route.controlled_burning.knowledge_institution"
-		},
-		{
-			"from": "tech.pastoral_route_memory",
-			"to": "tech.fishing_boats",
-			"kind": "alternative",
-			"route_id": "research_route.fishing_boats.knowledge_institution"
-		},
-		{
-			"from": "tech.pastoral_route_memory",
 			"to": "tech.crop_domestication",
 			"kind": "alternative",
 			"route_id": "research_route.crop_domestication.knowledge_institution"
-		},
-		{
-			"from": "tech.pastoral_route_memory",
-			"to": "tech.clay_identification",
-			"kind": "alternative",
-			"route_id": "research_route.clay_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.pastoral_route_memory",
-			"to": "tech.natural_copper_identification",
-			"kind": "alternative",
-			"route_id": "research_route.natural_copper_identification.knowledge_institution"
 		},
 		{
 			"from": "tech.pastoral_route_memory",
@@ -57582,18 +57247,6 @@
 		},
 		{
 			"from": "tech.pastoral_route_memory",
-			"to": "tech.freshwater_fishing",
-			"kind": "alternative",
-			"route_id": "research_route.freshwater_fishing.knowledge_institution"
-		},
-		{
-			"from": "tech.pastoral_route_memory",
-			"to": "tech.coastal_fishing",
-			"kind": "alternative",
-			"route_id": "research_route.coastal_fishing.knowledge_institution"
-		},
-		{
-			"from": "tech.pastoral_route_memory",
 			"to": "tech.ground_stone_tools",
 			"kind": "alternative",
 			"route_id": "research_route.ground_stone_tools.knowledge_institution"
@@ -57630,12 +57283,6 @@
 		},
 		{
 			"from": "tech.pastoral_route_memory",
-			"to": "tech.maize_identification",
-			"kind": "alternative",
-			"route_id": "research_route.maize_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.pastoral_route_memory",
 			"to": "tech.wild_maize_collection",
 			"kind": "alternative",
 			"route_id": "research_route.wild_maize_collection.knowledge_institution"
@@ -57654,12 +57301,6 @@
 		},
 		{
 			"from": "tech.pastoral_route_memory",
-			"to": "tech.wheat_identification",
-			"kind": "alternative",
-			"route_id": "research_route.wheat_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.pastoral_route_memory",
 			"to": "tech.wild_wheat_collection",
 			"kind": "alternative",
 			"route_id": "research_route.wild_wheat_collection.knowledge_institution"
@@ -57675,12 +57316,6 @@
 			"to": "tech.wheat_propagation",
 			"kind": "alternative",
 			"route_id": "research_route.wheat_propagation.knowledge_institution"
-		},
-		{
-			"from": "tech.pastoral_route_memory",
-			"to": "tech.rice_identification",
-			"kind": "alternative",
-			"route_id": "research_route.rice_identification.knowledge_institution"
 		},
 		{
 			"from": "tech.pastoral_route_memory",
@@ -57720,21 +57355,9 @@
 		},
 		{
 			"from": "tech.pastoral_route_memory",
-			"to": "tech.cotton_identification",
-			"kind": "alternative",
-			"route_id": "research_route.cotton_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.pastoral_route_memory",
 			"to": "tech.wild_cotton_collection",
 			"kind": "alternative",
 			"route_id": "research_route.wild_cotton_collection.knowledge_institution"
-		},
-		{
-			"from": "tech.pastoral_route_memory",
-			"to": "tech.flax_identification",
-			"kind": "alternative",
-			"route_id": "research_route.flax_identification.knowledge_institution"
 		},
 		{
 			"from": "tech.pastoral_route_memory",
@@ -57744,45 +57367,15 @@
 		},
 		{
 			"from": "tech.pastoral_route_memory",
-			"to": "tech.spice_identification",
-			"kind": "alternative",
-			"route_id": "research_route.spice_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.pastoral_route_memory",
 			"to": "tech.wild_spice_collection",
 			"kind": "alternative",
 			"route_id": "research_route.wild_spice_collection.knowledge_institution"
 		},
 		{
 			"from": "tech.pastoral_route_memory",
-			"to": "tech.rubber_identification",
-			"kind": "alternative",
-			"route_id": "research_route.rubber_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.pastoral_route_memory",
 			"to": "tech.wild_latex_tapping",
 			"kind": "alternative",
 			"route_id": "research_route.wild_latex_tapping.knowledge_institution"
-		},
-		{
-			"from": "tech.pastoral_route_memory",
-			"to": "tech.gold_placer_identification",
-			"kind": "alternative",
-			"route_id": "research_route.gold_placer_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.pastoral_route_memory",
-			"to": "tech.silver_vein_identification",
-			"kind": "alternative",
-			"route_id": "research_route.silver_vein_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.pastoral_route_memory",
-			"to": "tech.reed_identification",
-			"kind": "alternative",
-			"route_id": "research_route.reed_identification.knowledge_institution"
 		},
 		{
 			"from": "tech.pastoral_route_memory",
@@ -57828,12 +57421,6 @@
 		},
 		{
 			"from": "tech.pastoral_route_memory",
-			"to": "tech.brine_collection",
-			"kind": "alternative",
-			"route_id": "research_route.brine_collection.knowledge_institution"
-		},
-		{
-			"from": "tech.pastoral_route_memory",
 			"to": "tech.clay_preparation",
 			"kind": "alternative",
 			"route_id": "research_route.clay_preparation.knowledge_institution"
@@ -57852,27 +57439,9 @@
 		},
 		{
 			"from": "tech.tide_observation",
-			"to": "tech.flint_identification",
-			"kind": "alternative",
-			"route_id": "research_route.flint_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.tide_observation",
 			"to": "tech.stone_knapping",
 			"kind": "alternative",
 			"route_id": "research_route.stone_knapping.knowledge_institution"
-		},
-		{
-			"from": "tech.tide_observation",
-			"to": "tech.fire_control",
-			"kind": "alternative",
-			"route_id": "research_route.fire_control.knowledge_institution"
-		},
-		{
-			"from": "tech.tide_observation",
-			"to": "tech.seasonal_foraging",
-			"kind": "alternative",
-			"route_id": "research_route.seasonal_foraging.knowledge_institution"
 		},
 		{
 			"from": "tech.tide_observation",
@@ -57882,21 +57451,9 @@
 		},
 		{
 			"from": "tech.tide_observation",
-			"to": "tech.natural_observation",
-			"kind": "alternative",
-			"route_id": "research_route.natural_observation.knowledge_institution"
-		},
-		{
-			"from": "tech.tide_observation",
 			"to": "tech.oral_tradition",
 			"kind": "alternative",
 			"route_id": "research_route.oral_tradition.knowledge_institution"
-		},
-		{
-			"from": "tech.tide_observation",
-			"to": "tech.controlled_burning",
-			"kind": "alternative",
-			"route_id": "research_route.controlled_burning.knowledge_institution"
 		},
 		{
 			"from": "tech.tide_observation",
@@ -57909,18 +57466,6 @@
 			"to": "tech.crop_domestication",
 			"kind": "alternative",
 			"route_id": "research_route.crop_domestication.knowledge_institution"
-		},
-		{
-			"from": "tech.tide_observation",
-			"to": "tech.clay_identification",
-			"kind": "alternative",
-			"route_id": "research_route.clay_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.tide_observation",
-			"to": "tech.natural_copper_identification",
-			"kind": "alternative",
-			"route_id": "research_route.natural_copper_identification.knowledge_institution"
 		},
 		{
 			"from": "tech.tide_observation",
@@ -57939,12 +57484,6 @@
 			"to": "tech.tin_identification",
 			"kind": "alternative",
 			"route_id": "research_route.tin_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.tide_observation",
-			"to": "tech.animal_husbandry",
-			"kind": "alternative",
-			"route_id": "research_route.animal_husbandry.knowledge_institution"
 		},
 		{
 			"from": "tech.tide_observation",
@@ -57969,12 +57508,6 @@
 			"to": "tech.animal_tracking",
 			"kind": "alternative",
 			"route_id": "research_route.animal_tracking.knowledge_institution"
-		},
-		{
-			"from": "tech.tide_observation",
-			"to": "tech.freshwater_fishing",
-			"kind": "alternative",
-			"route_id": "research_route.freshwater_fishing.knowledge_institution"
 		},
 		{
 			"from": "tech.tide_observation",
@@ -58020,12 +57553,6 @@
 		},
 		{
 			"from": "tech.tide_observation",
-			"to": "tech.maize_identification",
-			"kind": "alternative",
-			"route_id": "research_route.maize_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.tide_observation",
 			"to": "tech.wild_maize_collection",
 			"kind": "alternative",
 			"route_id": "research_route.wild_maize_collection.knowledge_institution"
@@ -58041,12 +57568,6 @@
 			"to": "tech.maize_propagation",
 			"kind": "alternative",
 			"route_id": "research_route.maize_propagation.knowledge_institution"
-		},
-		{
-			"from": "tech.tide_observation",
-			"to": "tech.wheat_identification",
-			"kind": "alternative",
-			"route_id": "research_route.wheat_identification.knowledge_institution"
 		},
 		{
 			"from": "tech.tide_observation",
@@ -58068,12 +57589,6 @@
 		},
 		{
 			"from": "tech.tide_observation",
-			"to": "tech.rice_identification",
-			"kind": "alternative",
-			"route_id": "research_route.rice_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.tide_observation",
 			"to": "tech.wild_rice_collection",
 			"kind": "alternative",
 			"route_id": "research_route.wild_rice_collection.knowledge_institution"
@@ -58083,12 +57598,6 @@
 			"to": "tech.rice_seed_saving",
 			"kind": "alternative",
 			"route_id": "research_route.rice_seed_saving.knowledge_institution"
-		},
-		{
-			"from": "tech.tide_observation",
-			"to": "tech.potato_identification",
-			"kind": "alternative",
-			"route_id": "research_route.potato_identification.knowledge_institution"
 		},
 		{
 			"from": "tech.tide_observation",
@@ -58110,21 +57619,9 @@
 		},
 		{
 			"from": "tech.tide_observation",
-			"to": "tech.cotton_identification",
-			"kind": "alternative",
-			"route_id": "research_route.cotton_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.tide_observation",
 			"to": "tech.wild_cotton_collection",
 			"kind": "alternative",
 			"route_id": "research_route.wild_cotton_collection.knowledge_institution"
-		},
-		{
-			"from": "tech.tide_observation",
-			"to": "tech.flax_identification",
-			"kind": "alternative",
-			"route_id": "research_route.flax_identification.knowledge_institution"
 		},
 		{
 			"from": "tech.tide_observation",
@@ -58134,21 +57631,9 @@
 		},
 		{
 			"from": "tech.tide_observation",
-			"to": "tech.spice_identification",
-			"kind": "alternative",
-			"route_id": "research_route.spice_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.tide_observation",
 			"to": "tech.wild_spice_collection",
 			"kind": "alternative",
 			"route_id": "research_route.wild_spice_collection.knowledge_institution"
-		},
-		{
-			"from": "tech.tide_observation",
-			"to": "tech.rubber_identification",
-			"kind": "alternative",
-			"route_id": "research_route.rubber_identification.knowledge_institution"
 		},
 		{
 			"from": "tech.tide_observation",
@@ -58158,39 +57643,9 @@
 		},
 		{
 			"from": "tech.tide_observation",
-			"to": "tech.gold_placer_identification",
-			"kind": "alternative",
-			"route_id": "research_route.gold_placer_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.tide_observation",
-			"to": "tech.silver_vein_identification",
-			"kind": "alternative",
-			"route_id": "research_route.silver_vein_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.tide_observation",
-			"to": "tech.reed_identification",
-			"kind": "alternative",
-			"route_id": "research_route.reed_identification.knowledge_institution"
-		},
-		{
-			"from": "tech.tide_observation",
 			"to": "tech.reed_harvesting",
 			"kind": "alternative",
 			"route_id": "research_route.reed_harvesting.knowledge_institution"
-		},
-		{
-			"from": "tech.tide_observation",
-			"to": "tech.turf_cutting",
-			"kind": "alternative",
-			"route_id": "research_route.turf_cutting.knowledge_institution"
-		},
-		{
-			"from": "tech.tide_observation",
-			"to": "tech.hide_scraping",
-			"kind": "alternative",
-			"route_id": "research_route.hide_scraping.knowledge_institution"
 		},
 		{
 			"from": "tech.tide_observation",
@@ -58322,8 +57777,53 @@
 			"kind": "hard"
 		},
 		{
+			"from": "tech.earth_building",
+			"to": "tech.adobe_making",
+			"kind": "hard"
+		},
+		{
 			"from": "tech.natural_copper_identification",
 			"to": "tech.natural_copper_working",
+			"kind": "hard"
+		},
+		{
+			"from": "tech.flint_identification",
+			"to": "tech.composite_tools",
+			"kind": "hard"
+		},
+		{
+			"from": "tech.natural_observation",
+			"to": "tech.crop_domestication",
+			"kind": "hard"
+		},
+		{
+			"from": "tech.natural_observation",
+			"to": "tech.fiber_twisting",
+			"kind": "hard"
+		},
+		{
+			"from": "tech.seasonal_foraging",
+			"to": "tech.food_storage",
+			"kind": "hard"
+		},
+		{
+			"from": "tech.animal_husbandry",
+			"to": "tech.fur_sewing",
+			"kind": "hard"
+		},
+		{
+			"from": "tech.animal_husbandry",
+			"to": "tech.felt_making",
+			"kind": "hard"
+		},
+		{
+			"from": "tech.fire_control",
+			"to": "tech.charcoal_burning",
+			"kind": "hard"
+		},
+		{
+			"from": "tech.composite_tools",
+			"to": "tech.timber_sawing",
 			"kind": "hard"
 		},
 		{
@@ -58337,7 +57837,22 @@
 			"kind": "hard"
 		},
 		{
+			"from": "tech.copper_ore_roasting",
+			"to": "tech.copper_metallurgy",
+			"kind": "hard"
+		},
+		{
+			"from": "tech.charcoal_burning",
+			"to": "tech.copper_metallurgy",
+			"kind": "hard"
+		},
+		{
 			"from": "tech.natural_copper_working",
+			"to": "tech.bronze_casting",
+			"kind": "hard"
+		},
+		{
+			"from": "tech.tin_identification",
 			"to": "tech.bronze_casting",
 			"kind": "hard"
 		},
@@ -58429,6 +57944,11 @@
 		{
 			"from": "tech.hearth_preservation",
 			"to": "tech.fermentation",
+			"kind": "hard"
+		},
+		{
+			"from": "tech.animal_husbandry",
+			"to": "tech.herd_management",
 			"kind": "hard"
 		},
 		{
@@ -59114,6 +58634,26 @@
 		},
 		{
 			"from": "tech.writing",
+			"to": "tech.movable_type_printing",
+			"kind": "hard"
+		},
+		{
+			"from": "tech.manuscript_culture",
+			"to": "tech.woodblock_printing",
+			"kind": "hard"
+		},
+		{
+			"from": "tech.composite_tools",
+			"to": "tech.woodblock_printing",
+			"kind": "hard"
+		},
+		{
+			"from": "tech.manuscript_culture",
+			"to": "tech.movable_type_printing",
+			"kind": "hard"
+		},
+		{
+			"from": "tech.pottery",
 			"to": "tech.movable_type_printing",
 			"kind": "hard"
 		},
@@ -59834,6 +59374,11 @@
 		},
 		{
 			"from": "tech.coal_outcrop_identification",
+			"to": "tech.surface_coal_collection",
+			"kind": "hard"
+		},
+		{
+			"from": "tech.ground_stone_tools",
 			"to": "tech.surface_coal_collection",
 			"kind": "hard"
 		},
@@ -64835,6 +64380,226 @@
 			"to": "tech.autonomous_labor_coordination",
 			"kind": "alternative",
 			"route_id": "research_route.autonomous_labor_coordination.operating_practice"
+		},
+		{
+			"from": "tech.flint_identification",
+			"to": "tech.settled_knowledge",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.fire_control",
+			"to": "tech.settled_knowledge",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.animal_husbandry",
+			"to": "tech.settled_knowledge",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.ground_stone_tools",
+			"to": "tech.settled_knowledge",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.dryland_farming",
+			"to": "tech.agrarian_society",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.pastoralism",
+			"to": "tech.agrarian_society",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.weaving",
+			"to": "tech.agrarian_society",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.kiln_firing",
+			"to": "tech.agrarian_society",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.masonry",
+			"to": "tech.kingdom_administration",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.currency",
+			"to": "tech.kingdom_administration",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.canal_engineering",
+			"to": "tech.kingdom_administration",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.scholarly_academies",
+			"to": "tech.kingdom_administration",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.water_power",
+			"to": "tech.imperial_integration",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.woodblock_printing",
+			"to": "tech.imperial_integration",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.urban_waterworks",
+			"to": "tech.imperial_integration",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.coal_mining",
+			"to": "tech.imperial_integration",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.oceanic_navigation",
+			"to": "tech.global_exchange",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.coastal_shipyards",
+			"to": "tech.global_exchange",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.commercial_estates",
+			"to": "tech.global_exchange",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.commodity_crop_management",
+			"to": "tech.global_exchange",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.precision_engineering",
+			"to": "tech.enlightenment_institutions",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.public_health",
+			"to": "tech.enlightenment_institutions",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.hydraulic_engineering",
+			"to": "tech.enlightenment_institutions",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.agricultural_cooperatives",
+			"to": "tech.enlightenment_institutions",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.industrial_organization",
+			"to": "tech.industrialization",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.rail_logistics",
+			"to": "tech.industrialization",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.mechanized_printing",
+			"to": "tech.industrialization",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.assembly_line",
+			"to": "tech.industrialization",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.mass_production",
+			"to": "tech.electrical_society",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.electric_generation",
+			"to": "tech.electrical_society",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.electric_motors",
+			"to": "tech.electrical_society",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.telecommunications",
+			"to": "tech.electrical_society",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.advanced_metallurgy",
+			"to": "tech.atomic_modernity",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.nuclear_fission",
+			"to": "tech.atomic_modernity",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.operations_research",
+			"to": "tech.atomic_modernity",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.mechanized_mining",
+			"to": "tech.atomic_modernity",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.information_theory",
+			"to": "tech.information_society",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.software_engineering",
+			"to": "tech.information_society",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.networked_computing",
+			"to": "tech.information_society",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.geographic_information_systems",
+			"to": "tech.information_society",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.neural_networks",
+			"to": "tech.cognitive_automation",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.autonomous_mining",
+			"to": "tech.cognitive_automation",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.smart_grid",
+			"to": "tech.cognitive_automation",
+			"kind": "milestone_candidate"
+		},
+		{
+			"from": "tech.adaptive_irrigation",
+			"to": "tech.cognitive_automation",
+			"kind": "milestone_candidate"
 		}
 	]
 }

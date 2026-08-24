@@ -279,10 +279,27 @@ func _run_colonization_planner_family_cards() -> void:
 			rows.append(child)
 	var visible := _visible_text(panel._list)
 	_expect("same family collapses to one dispatch card", rows.size() == 1)
+	_expect("colonization planner reserves a readable archive workspace",
+		panel.custom_minimum_size.x >= 680.0
+		and panel.custom_minimum_size.y >= 640.0)
 	_expect("dispatch card shows origin family name, people, and traits",
 		rows.size() == 1 and String(rows[0].display_name()) == "长安王氏"
-		and visible.find("40") >= 0 and visible.find("采集传统") >= 0
+		and visible.find("40 人") >= 0 and visible.find("采集传统") >= 0
 		and visible.find("偏好：采集营地") >= 0)
+	if rows.size() == 1:
+		var row := rows[0] as Control
+		var effect := row.get_node("Margin/Line/Info/Effect") as Label
+		var badges := row.get_node("Margin/Line/Info/Badges") as BadgeRow
+		var population := row.get_node("Margin/Line/Population") as Label
+		_expect("dispatch card provides enough height for wrapped traits and effects",
+			row.custom_minimum_size.y >= 120.0
+			and badges.max_badge_width >= 184.0
+			and effect.autowrap_mode != TextServer.AUTOWRAP_OFF
+			and effect.max_lines_visible >= 2)
+		_expect("dispatch population is explicit and high contrast",
+			population.text.ends_with(" 人")
+			and population.get_theme_font_size("font_size") >= 20
+			and population.get_theme_color("font_color") == UITokens.ARCHIVE_INK)
 	_expect("dispatch trait chips carry Chinese descriptions as tooltips",
 		rows.size() == 1 and _badge_tooltips(rows[0]).find(
 			"更倾向投资采集建筑，并随威望提高本城总体产出。") >= 0)
@@ -317,6 +334,21 @@ func _run_colonization_planner_family_cards() -> void:
 		and panel._start.text.find("安家") < 0
 		and (panel._start.tooltip_text.find("口粮") >= 0
 			or panel._feedback.text.find("口粮") >= 0))
+	panel.set_command_result({
+		"ok": false, "code": "colonization_kit_materials_short",
+	})
+	_expect("material failure disables repeated dispatch attempts",
+		panel._start.disabled
+		and panel._start.text.find("等待材料") >= 0
+		and panel._feedback.text.find("暂停重复提交") >= 0)
+	stub.detail["kit_partial"] = false
+	stub.detail["kit_place_buildings"] = true
+	stub.detail["kit_building_ids"] = PackedInt32Array([1, 2])
+	var refreshed_tokens := PackedInt64Array([73, 74])
+	stub.quotes["quote_tokens"] = refreshed_tokens
+	panel.refresh_visible()
+	_expect("a changed quote identity rechecks and re-enables dispatch",
+		not panel._start.disabled and panel._start.text.find("安家") >= 0)
 	panel.queue_free()
 
 

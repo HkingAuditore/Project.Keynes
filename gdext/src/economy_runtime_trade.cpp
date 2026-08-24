@@ -538,6 +538,9 @@ int64_t NativeEconomyRuntime::merchant_inventory_target(
     int64_t feasible_daily = _market.demand_ema[index];
     if (signal_index >= 0) feasible_daily = saturating_add(
         feasible_daily, _market_signals.business_demand_ema[signal_index], sat);
+    feasible_daily = saturating_add(
+        feasible_daily,
+        epoch_research_demand_daily_for_market(market, good), sat);
     int64_t protected_daily = std::max<int64_t>(
         std::max<int64_t>(0, realized_withdrawal), feasible_daily);
     // Preserve the configured inventory-day target and add a smoothed

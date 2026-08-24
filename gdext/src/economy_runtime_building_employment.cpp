@@ -633,12 +633,15 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 const int64_t market_index = _market.index(market, good);
                 int64_t shortage_q16 = _market.last_shortage_q16[market_index];
                 const int32_t signal = market_signal_index(cell, good);
-                if (signal >= 0) {
-                    const int64_t business =
-                        _market_signals.business_demand_ema[signal];
+                const int64_t business = saturating_add(
+                    signal >= 0 ? _market_signals.business_demand_ema[signal] : 0,
+                    epoch_research_demand_daily(cell, good),
+                    _saturation_count);
+                if (business > 0) {
                     const int64_t withdrawal =
-                        _market_signals.realized_withdrawal_ema[signal];
-                    if (business > withdrawal && business > 0) {
+                        signal >= 0
+                            ? _market_signals.realized_withdrawal_ema[signal] : 0;
+                    if (business > withdrawal) {
                         const int64_t business_gap_q16 = std::min<int64_t>(
                             Q16_ONE, mul_div_sat(business - withdrawal, Q16_ONE,
                                 business, _saturation_count));

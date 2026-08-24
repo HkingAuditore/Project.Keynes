@@ -16,6 +16,7 @@ var _family_filter := 0
 var _source_filter := -1
 var _selected_quote: Dictionary = {}
 var _economy_busy := false
+var _materials_short_blocked := false
 var _quotes_identity := ""
 var _expeditions_identity := ""
 var _family_view_cache: Dictionary = {}
@@ -49,7 +50,7 @@ func _ready() -> void:
 			or _feedback == null or _start == null or close_button == null:
 		push_error("ColonizationPlannerPanel 必须通过 colonization_planner_panel.tscn 实例化。")
 		return
-	theme_type_variation = &"PKDialog"
+	theme_type_variation = &"PKArchivePanel"
 	IconButton.apply(close_button, &"action.close", IconButton.SMALL, "关闭")
 	close_button.pressed.connect(close_panel)
 	_tabs.set_tabs([
@@ -81,6 +82,7 @@ func open_target(target_cell: int, family_filter: int = 0,
 	_expeditions_identity = ""
 	_family_view_cache.clear()
 	_economy_busy = false
+	_materials_short_blocked = false
 	_title.text = "开拓"
 	_subtitle.text = "选择要派遣的家族"
 	_feedback.text = ""
@@ -95,6 +97,7 @@ func close_panel() -> void:
 		return
 	visible = false
 	_selected_quote.clear()
+	_materials_short_blocked = false
 	route_cleared.emit()
 	closed.emit()
 
@@ -111,6 +114,7 @@ func set_command_result(result: Dictionary) -> void:
 		message = _reason_text(code) if not code.is_empty() else ""
 	_feedback.text = message
 	if ok:
+		_materials_short_blocked = false
 		_feedback.add_theme_color_override("font_color", UITokens.GOOD)
 		if code == "colonization_queued" or code == "colonization_cancel_queued":
 			return
@@ -122,12 +126,18 @@ func set_command_result(result: Dictionary) -> void:
 		_update_start_enabled()
 		if message.is_empty():
 			_feedback.text = "经济正在结算，提交完成后即可派遣。"
-		_feedback.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
+		_feedback.add_theme_color_override("font_color", UITokens.ARCHIVE_INK_MUTED)
 		return
 	_feedback.add_theme_color_override("font_color", UITokens.RISK)
+	if code == "colonization_kit_materials_short":
+		_materials_short_blocked = true
+		_feedback.text = "源地市场材料仍不足，已暂停重复提交；库存补充后会自动重新检查。"
+		_update_start_enabled()
+		return
 	if code == "colonization_requote_required" \
 			or code == "colonization_kit_requote_required" \
 			or code == "colonization_quote_expired":
+		_materials_short_blocked = false
 		_quotes_identity = ""
 		_show_quotes()
 
@@ -149,6 +159,9 @@ func refresh_visible() -> void:
 					return
 			_show_quotes()
 		elif not _has_quote_rows():
+			_show_quotes()
+		elif _materials_short_blocked:
+			# A failed quote is not retryable until its stock identity changes.
 			_show_quotes()
 		return
 	_show_expeditions()
@@ -185,7 +198,7 @@ func _show_quotes() -> void:
 				return
 			_clear_list()
 			_quotes_identity = ""
-			_add_note("正在等待经济提交完成后显示可派遣家族。", UITokens.TEXT_MUTED)
+			_add_note("正在等待经济提交完成后显示可派遣家族。", UITokens.ARCHIVE_INK_MUTED)
 			_update_start_enabled()
 			return
 		_clear_list()
@@ -201,7 +214,10 @@ func _show_quotes() -> void:
 		_set_busy_status(_economy_busy)
 		_update_start_enabled()
 		return
+	var previous_identity := _quotes_identity
 	_quotes_identity = identity
+	if not previous_identity.is_empty() and previous_identity != identity:
+		_materials_short_blocked = false
 	_clear_list()
 	_apply_kind(String(page.get("kind", "colonize")))
 	_set_busy_status(_economy_busy)
@@ -236,7 +252,7 @@ func _show_quotes() -> void:
 	if quotes.is_empty():
 		if _economy_busy:
 			_add_note("经济正在结算。家族列表将在提交后刷新，也可先查看在途队伍。",
-				UITokens.TEXT_MUTED)
+				UITokens.ARCHIVE_INK_MUTED)
 		else:
 			_add_note("没有可派遣的家族。", UITokens.WARN)
 	if restored:
@@ -255,6 +271,7 @@ func _on_quote_row_pressed(quote: Dictionary, row: Button) -> void:
 
 func _select_quote(quote: Dictionary) -> void:
 	_selected_quote = quote.duplicate(true)
+	_materials_short_blocked = false
 	var maximum := maxi(1, int(quote.get("maximum_population", 1)))
 	_population.max_value = maximum
 	_population.value = maximum
@@ -262,7 +279,7 @@ func _select_quote(quote: Dictionary) -> void:
 
 
 func _submit_selected() -> void:
-	if _selected_quote.is_empty():
+	if _selected_quote.is_empty() or _materials_short_blocked or _start.disabled:
 		return
 	start_requested.emit({
 		"family_handle": int(_selected_quote.get("family_handle", 0)),
@@ -293,7 +310,7 @@ func _show_expeditions() -> void:
 			_set_busy_status(true)
 			_clear_list()
 			_expeditions_identity = ""
-			_add_note("正在等待经济提交完成后显示在途队伍。", UITokens.TEXT_MUTED)
+			_add_note("正在等待经济提交完成后显示在途队伍。", UITokens.ARCHIVE_INK_MUTED)
 			return
 		_clear_list()
 		_expeditions_identity = ""
@@ -349,9 +366,9 @@ func _show_expeditions() -> void:
 		_list.add_child(row_wrap)
 	if handles.is_empty():
 		if _economy_busy:
-			_add_note("经济正在结算。在途队伍将在提交后刷新。", UITokens.TEXT_MUTED)
+			_add_note("经济正在结算。在途队伍将在提交后刷新。", UITokens.ARCHIVE_INK_MUTED)
 		else:
-			_add_note("当前没有活动开拓队。", UITokens.TEXT_MUTED)
+			_add_note("当前没有活动开拓队。", UITokens.ARCHIVE_INK_MUTED)
 
 
 func _clear_list() -> void:
@@ -445,7 +462,7 @@ func _refresh_selected_kit() -> void:
 		var detail_code := String(detail.get("code", "command_rejected"))
 		if _transient_query_failure(detail_code, detail):
 			_feedback.text = "经济正在结算，提交完成后即可派遣。"
-			_feedback.add_theme_color_override("font_color", UITokens.TEXT_MUTED)
+			_feedback.add_theme_color_override("font_color", UITokens.ARCHIVE_INK_MUTED)
 			return
 		_feedback.text = _reason_text(detail_code)
 		_feedback.add_theme_color_override("font_color", UITokens.RISK)
@@ -462,7 +479,7 @@ func _update_start_enabled() -> void:
 	var has_selection := not _selected_quote.is_empty()
 	_population_row.visible = on_quotes and has_selection
 	_start.visible = on_quotes
-	_start.disabled = not has_selection
+	_start.disabled = not has_selection or _materials_short_blocked
 	var count := int(_population.value) if has_selection else 0
 	var count_text := UITokens.format_compact_number_cn(float(count), 0)
 	var kit_partial := bool(_selected_quote.get("kit_partial", false))
@@ -470,7 +487,13 @@ func _update_start_enabled() -> void:
 	var kit_ids: PackedInt32Array = _selected_quote.get(
 		"kit_building_ids", PackedInt32Array())
 	var complete_kit := place_buildings and not kit_partial and not kit_ids.is_empty()
-	if _economy_busy:
+	if _materials_short_blocked:
+		_start.text = "等待材料补充" if has_selection else "确认派遣"
+		_start.tooltip_text = "源地市场材料仍不足。库存补充后将重新检查开工包。"
+		if has_selection:
+			_feedback.text = "源地市场材料仍不足，已暂停重复提交；库存补充后会自动重新检查。"
+			_feedback.add_theme_color_override("font_color", UITokens.WARN)
+	elif _economy_busy:
 		_start.text = "排队派遣 %s 人" % count_text if has_selection else "排队派遣"
 		_start.tooltip_text = "经济正在结算。现在确认后会排队，提交完成后自动出发。"
 	elif complete_kit:
@@ -480,7 +503,8 @@ func _update_start_enabled() -> void:
 		_start.text = "派遣 %s 人" % count_text if has_selection else "确认派遣"
 		_start.tooltip_text = "建材不足，只携带口粮" if kit_partial \
 			else _kit_summary_text(_selected_quote)
-	if has_selection and kit_partial and not _economy_busy \
+	if has_selection and kit_partial and not _materials_short_blocked \
+			and not _economy_busy \
 			and _feedback.text.find("排队") < 0 \
 			and _feedback.text.find("已经出发") < 0:
 		_feedback.text = "建材不足，只携带口粮"
@@ -661,7 +685,7 @@ static func _trait_badges(traits: Dictionary) -> Array:
 			if index < descriptions.size() else ""
 		badges.append({
 			"text": label,
-			"accent": UITokens.ACCENT if is_core else UITokens.TEXT_MUTED,
+			"accent": UITokens.ACCENT if is_core else UITokens.ARCHIVE_INK_MUTED,
 			"tooltip": tooltip,
 		})
 	var effect_names: PackedStringArray = traits.get(

@@ -1876,6 +1876,150 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
     return true;
 }
 
+void NativeEconomyRuntime::refresh_epoch_research_demand() {
+    _epoch_research_good_id = -1;
+    _epoch_research_demand_by_cell.assign(
+        static_cast<size_t>(std::max(0, _cell_count)), 0);
+    _epoch_research_demand_by_market.assign(
+        static_cast<size_t>(std::max(0, _market.market_count)), 0);
+    if (_country_runtime == nullptr || !_country_runtime->economy_available() ||
+        _market.market_count <= 0 || _market.good_count <= 0 ||
+        _epoch_country_count <= 0) return;
+
+    const int32_t research_good =
+        _country_runtime->technology_points_good_id();
+    if (research_good < 0 || research_good >= _market.good_count) return;
+    _epoch_research_good_id = research_good;
+
+    const int32_t days = std::max(1, _epoch_days);
+    const size_t country_count = static_cast<size_t>(_epoch_country_count);
+    std::vector<int64_t> population_by_country(country_count, 0);
+    std::vector<int64_t> price_population_by_country(country_count, 0);
+    const int64_t fallback_price = std::max<int64_t>(
+        1, research_good < static_cast<int32_t>(_good_default_price.size())
+            ? _good_default_price[static_cast<size_t>(research_good)] : 1);
+    const bool cell_market_shape = _market.cell_to_market.size() ==
+        static_cast<size_t>(_cell_count);
+    const auto market_for_cell = [&](int32_t cell) {
+        const int32_t market = cell_market_shape
+            ? _market.cell_to_market[static_cast<size_t>(cell)] : cell;
+        return market >= 0 && market < _market.market_count ? market : -1;
+    };
+    for (int32_t cell = 0; cell < _cell_count; ++cell) {
+        if (cell >= static_cast<int32_t>(_epoch_cell_country.size()) ||
+            cell >= static_cast<int32_t>(_committed_cells.size())) continue;
+        const int32_t country = _epoch_cell_country[static_cast<size_t>(cell)];
+        if (country < 0 || country >= _epoch_country_count) continue;
+        const int64_t population = std::max<int64_t>(
+            0, _committed_cells[static_cast<size_t>(cell)].population);
+        if (population <= 0) continue;
+        population_by_country[static_cast<size_t>(country)] = saturating_add(
+            population_by_country[static_cast<size_t>(country)], population,
+            _saturation_count);
+
+        int64_t price = fallback_price;
+        const int32_t market = market_for_cell(cell);
+        if (market >= 0) {
+            const int64_t index = _market.index(market, research_good);
+            if (index >= 0 && index < static_cast<int64_t>(_market.price.size()))
+                price = std::max<int64_t>(1, _market.price[static_cast<size_t>(index)]);
+        }
+        price_population_by_country[static_cast<size_t>(country)] = saturating_add(
+            price_population_by_country[static_cast<size_t>(country)],
+            mul_div_sat(population, price, 1, _saturation_count),
+            _saturation_count);
+    }
+
+    std::vector<int64_t> demand_by_country(country_count, 0);
+    for (int32_t country = 0; country < _epoch_country_count; ++country) {
+        const size_t country_index = static_cast<size_t>(country);
+        if (population_by_country[country_index] <= 0) continue;
+        bool enabled = false;
+        int64_t daily_budget = 0;
+        int64_t remaining_points = 0;
+        if (!_country_runtime->research_procurement_policy(
+                country, enabled, daily_budget, remaining_points) ||
+            !enabled || daily_budget <= 0 || remaining_points <= 0) continue;
+        const int64_t cash = std::max<int64_t>(
+            0, _country_runtime->cash_for_slot(country));
+        const int64_t epoch_budget = std::min<int64_t>(
+            cash, saturating_mul(daily_budget, days, _saturation_count));
+        if (epoch_budget <= 0) continue;
+        const int64_t average_price = std::max<int64_t>(1,
+            price_population_by_country[country_index] /
+                population_by_country[country_index]);
+        const int64_t affordable_points = mul_div_sat(
+            epoch_budget, GOODS_SCALE, average_price, _saturation_count);
+        demand_by_country[country_index] = std::min(
+            std::max<int64_t>(0, remaining_points), affordable_points);
+    }
+
+    // Allocate each country's total once, in ascending cell order. The prefix
+    // split gives an exact population-weighted partition, so a multi-cell
+    // country cannot accidentally copy its national demand to every cell.
+    for (int32_t country = 0; country < _epoch_country_count; ++country) {
+        const size_t country_index = static_cast<size_t>(country);
+        const int64_t total_demand = demand_by_country[country_index];
+        const int64_t total_population = population_by_country[country_index];
+        if (total_demand <= 0 || total_population <= 0) continue;
+        int64_t population_prefix = 0;
+        int64_t allocated = 0;
+        for (int32_t cell = 0; cell < _cell_count; ++cell) {
+            if (cell >= static_cast<int32_t>(_epoch_cell_country.size()) ||
+                cell >= static_cast<int32_t>(_committed_cells.size()) ||
+                _epoch_cell_country[static_cast<size_t>(cell)] != country)
+                continue;
+            const int64_t population = std::max<int64_t>(
+                0, _committed_cells[static_cast<size_t>(cell)].population);
+            if (population <= 0) continue;
+            population_prefix = saturating_add(
+                population_prefix, population, _saturation_count);
+            const int64_t next_allocated = mul_div_sat(
+                total_demand, population_prefix, total_population,
+                _saturation_count);
+            const int64_t share = std::max<int64_t>(
+                0, next_allocated - allocated);
+            _epoch_research_demand_by_cell[static_cast<size_t>(cell)] = share;
+            allocated = next_allocated;
+        }
+    }
+    for (int32_t cell = 0; cell < _cell_count; ++cell) {
+        if (cell >= static_cast<int32_t>(_epoch_research_demand_by_cell.size()))
+            continue;
+        const int32_t market = market_for_cell(cell);
+        if (market < 0 || _epoch_research_demand_by_cell[static_cast<size_t>(cell)] <= 0)
+            continue;
+        _epoch_research_demand_by_market[static_cast<size_t>(market)] = saturating_add(
+            _epoch_research_demand_by_market[static_cast<size_t>(market)],
+            _epoch_research_demand_by_cell[static_cast<size_t>(cell)],
+            _saturation_count);
+    }
+}
+
+int64_t NativeEconomyRuntime::epoch_research_demand_daily(
+        int32_t cell, int32_t good) const {
+    if (good != _epoch_research_good_id || cell < 0 ||
+        cell >= static_cast<int32_t>(_epoch_research_demand_by_cell.size()))
+        return 0;
+    const int64_t quantity = _epoch_research_demand_by_cell[
+        static_cast<size_t>(cell)];
+    if (quantity <= 0) return 0;
+    const int64_t days = std::max<int64_t>(1, _epoch_days);
+    return quantity / days + (quantity % days != 0 ? 1 : 0);
+}
+
+int64_t NativeEconomyRuntime::epoch_research_demand_daily_for_market(
+        int32_t market, int32_t good) const {
+    if (good != _epoch_research_good_id || market < 0 ||
+        market >= static_cast<int32_t>(_epoch_research_demand_by_market.size()))
+        return 0;
+    const int64_t quantity = _epoch_research_demand_by_market[
+        static_cast<size_t>(market)];
+    if (quantity <= 0) return 0;
+    const int64_t days = std::max<int64_t>(1, _epoch_days);
+    return quantity / days + (quantity % days != 0 ? 1 : 0);
+}
+
 int64_t NativeEconomyRuntime::update_cohort_satisfaction(
         int32_t slot, int32_t cell, int64_t subsistence_q16,
         const Signature &signature, const int64_t *tier_weighted_q16,
@@ -4140,7 +4284,10 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
                 const int64_t business_demand = signal >= 0
                     ? _market_signals.business_demand_ema[signal] : 0;
                 const int64_t total_demand = saturating_add(
-                    household_demand, business_demand, _saturation_count);
+                    saturating_add(business_demand,
+                        epoch_research_demand_daily(group.cell, good),
+                        _saturation_count),
+                    household_demand, _saturation_count);
                 output_demand_ema = saturating_add(
                     output_demand_ema, total_demand, _saturation_count);
                 const int64_t input_reserve = signal >= 0 && signal <
@@ -4324,6 +4471,13 @@ NativeEconomyRuntime::PricePressure NativeEconomyRuntime::price_pressure(
             ? _epoch_offered_supply_ema[signal_index]
             : _market_signals.offered_supply_ema[signal_index];
     }
+    // Government research procurement is a frozen non-household buyer. It
+    // must participate in price formation as well as investment candidate
+    // discovery; otherwise the first research producer is valued at the
+    // default price forever because no historical stock withdrawal exists.
+    out.business_demand = saturating_add(
+        out.business_demand,
+        epoch_research_demand_daily_for_market(market, good), sat);
     const int64_t demand = saturating_add(out.household_demand, out.business_demand, sat);
     const int64_t flow = saturating_add(demand, out.supply, sat);
     out.excess_q16 = std::clamp<int64_t>(mul_div_sat(
@@ -5465,10 +5619,11 @@ bool NativeEconomyRuntime::should_run(int64_t day_index) const {
     if (!_epoch_active && _country_runtime != nullptr &&
         _country_runtime->should_run(day_index))
         return false;
-    // Effect ingress is a first-class safe-boundary workload.  Do not let a
-    // quiet market starve a preflighted native Effect transaction while it is
-    // waiting to enter the next frozen ledger cycle.
-    if (has_pending_effect_commands()) return true;
+    // A native Effect command is consumed by the next frozen ledger cycle.
+    // Once the current day has already committed, keeping the economy hot only
+    // because its ACK is pending creates a same-day continuation with no epoch
+    // available to ingest the command. The next day naturally reopens the
+    // cycle and preserves the normal ledger boundary.
     if (!_family_expedition_due_heap.empty() &&
         _family_expedition_due_heap.front().first <= day_index) return true;
     for (const CanalProject &project : _canal_projects) {
@@ -5826,8 +5981,9 @@ void NativeEconomyRuntime::refresh_investment_active_goods_for_market(
     for (int32_t good = 0; good < _market.good_count; ++good) {
         const int64_t index = _market.index(market, good);
         const int32_t signal = market_signal_index(market, good);
-        const int64_t business = signal >= 0
-            ? _market_signals.business_demand_ema[signal] : 0;
+        const int64_t business = saturating_add(
+            signal >= 0 ? _market_signals.business_demand_ema[signal] : 0,
+            epoch_research_demand_daily_for_market(market, good), sat);
         const int64_t supply = signal >= 0
             ? _market_signals.offered_supply_ema[signal] : 0;
         const int64_t realized = signal >= 0
@@ -5865,6 +6021,9 @@ int64_t NativeEconomyRuntime::merchant_procurement_quota(
         feasible_daily = saturating_add(feasible_daily,
             std::max<int64_t>(0, _market_signals.business_demand_ema[signal_index]), sat);
     }
+    feasible_daily = saturating_add(
+        feasible_daily,
+        epoch_research_demand_daily_for_market(market, good), sat);
     const int64_t forecast_daily = std::max<int64_t>(
         std::max<int64_t>(0, realized_withdrawal), feasible_daily);
     const int64_t cycle_withdrawal = saturating_mul(
@@ -11727,10 +11886,10 @@ void NativeEconomyRuntime::update_family_employment_attribution() {
 
 int32_t NativeEconomyRuntime::create_family_for_building(
         int32_t cell, int32_t building_index, int64_t founders,
-        int64_t filled_owner) {
+        int64_t filled_owner, bool allow_small_starter) {
     if (cell < 0 || cell >= _cell_count || building_index < 0 ||
-        building_index >= static_cast<int32_t>(_buildings.size()) ||
-        founders <= 0) return -1;
+        building_index >= static_cast<int32_t>(_buildings.size()) || founders <= 0 ||
+        (!allow_small_starter && founders < FAMILY_MIN_ACTIVE_PEOPLE)) return -1;
     const BuildingGroup &group = _buildings[building_index];
     if (group.cell != cell || group.count <= 0 || group.modifier_handle == 0)
         return -1;
@@ -11804,6 +11963,8 @@ int32_t NativeEconomyRuntime::create_family_for_building(
     _families.origin_ethnicity[family_index] = founder_ethnicity;
     _families.culture_group_id[family_index] = culture_group;
     _families.split_sequence[family_index] = 0;
+    if (allow_small_starter)
+        _families.flags[family_index] |= FAMILY_FLAG_STARTER;
     FamilyMembershipEdge membership;
     membership.family_handle = family_handle;
     membership.cohort_handle = _population.handle_for_slot(slot);
@@ -11859,7 +12020,7 @@ bool NativeEconomyRuntime::repair_forced_capital_founder(int32_t cell) {
         const int64_t founders = family_household_people_for_slot(
             owner_slot, owner_slots);
         return create_family_for_building(cell, group_index, founders,
-            owner_slots) >= 0;
+            owner_slots, true) >= 0;
     }
     return false;
 }
@@ -11929,6 +12090,7 @@ bool NativeEconomyRuntime::form_family_for_cell(int32_t cell) {
     const int64_t owner_slots = type.owner_slots_per_building;
     if (slot < 0 || owner_slots <= 0) return false;
     const int64_t founders = family_household_people_for_slot(slot, owner_slots);
+    if (founders < FAMILY_MIN_ACTIVE_PEOPLE) return false;
     return create_family_for_building(cell, best, founders, owner_slots) >= 0;
 }
 
@@ -11998,7 +12160,10 @@ void NativeEconomyRuntime::split_family_branches() {
         _families.origin_cell[child] = candidate.cell;
         _families.origin_ethnicity[child] = _families.origin_ethnicity[parent];
         _families.culture_group_id[child] = _families.culture_group_id[parent];
-        _families.flags[child] = _families.flags[parent];
+        // A split branch must meet the ordinary family policy; the opening
+        // exception belongs only to the original starter household.
+        _families.flags[child] = static_cast<uint16_t>(
+            _families.flags[parent] & ~FAMILY_FLAG_STARTER);
         _families.split_sequence[child] = 0;
         const size_t membership_count = _family_memberships.size();
         for (size_t e = 0; e < membership_count; ++e) {
@@ -12556,7 +12721,8 @@ void NativeEconomyRuntime::review_family_lifecycle() {
             _family_review_days) % _family_review_days;
         if ((_current_day % _family_review_days + _family_review_days) %
                 _family_review_days != phase) continue;
-        if (assets <= 0 && pop < _family_min_population_per_active) {
+        const bool starter = (_families.flags[i] & FAMILY_FLAG_STARTER) != 0;
+        if (!starter && assets <= 0 && pop < FAMILY_MIN_ACTIVE_PEOPLE) {
             _families.decline_reviews[i] = static_cast<uint16_t>(std::min(
                 65535, static_cast<int>(_families.decline_reviews[i]) + 1));
             if (_families.decline_reviews[i] >= _family_decline_reviews)

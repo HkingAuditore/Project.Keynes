@@ -1,6 +1,7 @@
 extends SceneTree
 
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
+const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
 const ResourceRegistryScript = preload("res://scripts/data/resource_profile_registry.gd")
 const NETWORK_PATH := "res://data/technology/technology_network.json"
 
@@ -68,6 +69,7 @@ func _init() -> void:
 		catalog.profession_technology_tags)
 	_assert_reverse_bindings(catalog)
 	_assert_authoring_bindings_exact(catalog)
+	_assert_public_building_effect_scope(catalog)
 	_assert_binding_distribution(catalog)
 	_assert_critical_direct_consumers(catalog)
 	for resource in ResourceRegistryScript.ordered():
@@ -180,6 +182,38 @@ func _assert_authoring_bindings_exact(catalog: Dictionary) -> void:
 		assert(actual == expected_by_id[technology_id],
 			"authoring binding drift: %s expected=%s actual=%s" % [
 				technology_id, expected_by_id[technology_id], actual])
+
+
+func _assert_public_building_effect_scope(catalog: Dictionary) -> void:
+	var definitions: Array = TechnologyCatalogScript.public_definitions()
+	var technology_ids: PackedStringArray = catalog.technology_ids
+	var building_ids: PackedStringArray = catalog.building_type_ids
+	var required_offsets: PackedInt32Array = \
+		catalog.building_required_technology_tag_offsets
+	for building_index in range(building_ids.size()):
+		var has_required_technology := required_offsets[building_index] \
+			< required_offsets[building_index + 1]
+		assert(TechnologyCatalogScript.COMPOSITE_BUILDING_IDS.has(
+			String(building_ids[building_index])) == has_required_technology,
+			"composite presentation index drift: %s" % building_ids[building_index])
+	for definition_value in definitions:
+		var definition: Dictionary = definition_value
+		for effect_value in definition.get("content_effects", []):
+			var effect: Dictionary = effect_value
+			if String(effect.get("kind", "")) != "building":
+				continue
+			var building_id := String(effect.get("id", ""))
+			var building_index := building_ids.find(building_id)
+			assert(building_index >= 0, building_id)
+			assert(required_offsets[building_index] == required_offsets[building_index + 1],
+				"composite building appears as a single-technology unlock: %s -> %s" % [
+					definition.get("id", ""), building_id])
+	var copper_index := technology_ids.find("tech.natural_copper_identification")
+	assert(copper_index >= 0)
+	var copper_summary := String((definitions[copper_index] as Dictionary).get(
+		"effect_summary", ""))
+	assert(not copper_summary.contains("解锁建筑：铜矿"),
+		"copper composite building leaked into the technology summary")
 
 
 func _assert_binding_distribution(catalog: Dictionary) -> void:
@@ -295,6 +329,13 @@ func _assert_networked_crop_and_resource_gates(catalog: Dictionary) -> void:
 		"tech.wild_flax_collection": "tech.flax_identification",
 		"tech.reed_harvesting": "tech.reed_identification",
 	}
+	# A resource-identification node may unlock the first collector for that
+	# resource. Later processing and production nodes must remain separate.
+	var identification_first_collector_allowlist := {
+		"tech.natural_copper_identification": {
+			"copper_ore_collector": true,
+		}
+	}
 	var identification_first_seen := {}
 	for node_value in (parsed as Dictionary).get("nodes", []):
 		var node: Dictionary = node_value
@@ -310,6 +351,10 @@ func _assert_networked_crop_and_resource_gates(catalog: Dictionary) -> void:
 			continue
 		var identification_id := String(node.get("id", ""))
 		for binding in _technology_bindings(catalog, identification_id):
+			if identification_first_collector_allowlist.has(identification_id) and \
+					bool(identification_first_collector_allowlist[identification_id].get(
+						String(binding.id), false)):
+				continue
 			assert(int(binding.kind) != 2,
 				"identification directly constructs production: %s -> %s" % [
 					identification_id, binding.id])
@@ -337,6 +382,13 @@ func _assert_networked_crop_and_resource_gates(catalog: Dictionary) -> void:
 		["tech.surface_coal_collection", "tech.masonry"])
 	_assert_building_supports(catalog, "natural_copper_workshop",
 		["tech.natural_copper_identification", "tech.stone_knapping"])
+	_assert_building_supports(catalog, "copper_ore_collector",
+		["tech.natural_copper_identification", "tech.stone_knapping"])
+	_assert_technology_has_binding(catalog, "tech.natural_copper_identification",
+		2, "copper_ore_collector")
+	assert(not _technology_has_binding(catalog, "tech.copper_ore_roasting",
+		2, "copper_ore_collector"),
+		"copper extraction must not be gated by the later roasting technology")
 	_assert_building_supports(catalog, "early_copper_smelter",
 		["tech.copper_ore_roasting", "tech.charcoal_burning", "tech.pottery"])
 	_assert_building_supports(catalog, "pottery_kiln",
@@ -607,11 +659,15 @@ func _assert_building_supports(catalog: Dictionary, building_id: String,
 		required_ids: Array) -> void:
 	var building_index := (catalog.building_type_ids as PackedStringArray).find(building_id)
 	assert(building_index >= 0, building_id)
-	var offsets: PackedInt32Array = catalog.building_required_technology_tag_offsets
-	var tags: PackedStringArray = catalog.building_required_technology_tags
 	var actual := PackedStringArray()
-	for edge in range(offsets[building_index], offsets[building_index + 1]):
-		actual.append(String(tags[edge]))
+	var required_offsets: PackedInt32Array = catalog.building_required_technology_tag_offsets
+	var required_tags: PackedStringArray = catalog.building_required_technology_tags
+	for edge in range(required_offsets[building_index], required_offsets[building_index + 1]):
+		actual.append(String(required_tags[edge]))
+	var activation_offsets: PackedInt32Array = catalog.building_technology_tag_offsets
+	var activation_tags: PackedStringArray = catalog.building_technology_tags
+	for edge in range(activation_offsets[building_index], activation_offsets[building_index + 1]):
+		actual.append(String(activation_tags[edge]))
 	for technology_id in required_ids:
 		assert(actual.has(technology_id), "%s missing ALL support %s" % [
 			building_id, technology_id])
@@ -640,6 +696,14 @@ func _assert_technology_has_binding(catalog: Dictionary, technology_id: String,
 		if int(binding.kind) == kind and String(binding.id) == binding_id:
 			return
 	assert(false, "%s missing binding %s" % [technology_id, binding_id])
+
+
+func _technology_has_binding(catalog: Dictionary, technology_id: String,
+		kind: int, binding_id: String) -> bool:
+	for binding in _technology_bindings(catalog, technology_id):
+		if int(binding.kind) == kind and String(binding.id) == binding_id:
+			return true
+	return false
 
 
 func _technology_bindings(catalog: Dictionary, technology_id: String) -> Array[Dictionary]:

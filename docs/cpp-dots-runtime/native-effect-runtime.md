@@ -256,6 +256,12 @@ eligible between instance cadences so missing adapters can be retried.
 `done=false` keeps the same-day cursor alive without unbounded work. Empty
 catalogs and empty instance sets are no-op and do not consume a slice.
 
+Economy commands emitted after that day's frozen Economy epoch has committed
+are intentionally not allowed to reopen a same-day epoch. The command remains
+pending for the next day, when the normal Economy safe boundary opens a new
+frozen cycle and ACKs it exactly once. This preserves the day boundary and
+prevents a late Effect command from causing an idle continuation loop.
+
 After planning, `EffectRuntimeSystem` invokes
 `dispatch_effect_native_modifier()` (a C++-only batch). `ModifierDailySystem`
 invokes `ack_effect_native_modifier()` immediately after `run_modifier_daily()`,

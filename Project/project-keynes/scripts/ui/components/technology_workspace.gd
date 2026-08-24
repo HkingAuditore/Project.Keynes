@@ -7,8 +7,9 @@ const ResearchPredicateScript = preload("res://scripts/research/research_predica
 const DevelopmentAchievementCatalogScript = preload(
 	"res://scripts/research/development_achievement_catalog.gd")
 
-# Full-bleed research screen with a four-domain atlas and a separate network
-# overview. Research policy and technology detail are permanent columns.
+# The desktop research desk keeps policy, atlas, and detail as three distinct
+# reading zones. Compact screens turn the side zones into mutually exclusive
+# drawers so the technology graph never collapses into an unreadable sliver.
 
 signal policy_submitted()
 
@@ -16,10 +17,13 @@ const TechnologyQueueRowScene := preload("res://scenes/ui/technology_queue_row.t
 
 const CASH_SCALE := 10000.0
 const POINT_SCALE := 1000.0
-const POLICY_WIDTH := 280.0
-const DETAIL_WIDTH := 320.0
-const COMPACT_POLICY_WIDTH := 220.0
-const COMPACT_DETAIL_WIDTH := 260.0
+const POLICY_WIDTH := 320.0
+const DETAIL_WIDTH := 360.0
+const COMPACT_POLICY_WIDTH := 300.0
+const COMPACT_DETAIL_WIDTH := 320.0
+const COMPACT_RAIL_WIDTH := 42.0
+const INTERNAL_COMPACT_WIDTH := 1120.0
+const LIVE_REFRESH_INTERVAL_MSEC := 120
 const DOMAIN_COUNT := 4
 const MODE_FOCUS := 0
 const MODE_OVERVIEW := 1
@@ -35,6 +39,7 @@ var _technology_indices: Dictionary = {}
 var _signal_indices: Dictionary = {}
 var _signal_names: Dictionary = {}
 var _research: Dictionary = {}
+var _has_valid_research := false
 var _development: Dictionary = {}
 var _queue_signature := ""
 var _detail_signature := ""
@@ -45,6 +50,9 @@ var _focus_era := 0
 var _manual_focus := false
 var _initial_focus_pending := true
 var _compact := false
+var _compact_requested := false
+var _policy_open := true
+var _detail_open := true
 
 var _status_chips: Dictionary = {}
 var _policy_panel: PanelContainer
@@ -54,6 +62,10 @@ var _tree: Control
 var _overview: Control
 var _detail: Control
 var _detail_host: PanelContainer
+var _policy_rail: Button
+var _detail_rail: Button
+var _policy_close: Button
+var _detail_close: Button
 var _main: Control
 var _focus_mode: Button
 var _overview_mode: Button
@@ -66,11 +78,16 @@ var _queue_headers: Array = []
 var _queue_rows: Array = []
 var _development_rows: Array = []
 var _development_signature := ""
+var _pending_refresh_model: Dictionary = {}
+var _refresh_dirty := false
+var _last_render_msec := 0
+var _has_rendered_model := false
 
 
 func _ready() -> void:
 	if _tree != null:
 		return
+	set_process(false)
 	var required_paths := {
 		"policy_panel": "Root/Main/PolicyPanel",
 		"dial": "Root/Main/PolicyPanel/Scroll/Body/Dial",
@@ -88,6 +105,10 @@ func _ready() -> void:
 	_tree = get_node_or_null(required_paths.tree) as Control
 	_overview = get_node_or_null(required_paths.overview) as Control
 	_detail_host = get_node_or_null(required_paths.detail_host) as PanelContainer
+	_policy_rail = get_node_or_null("Root/Main/PolicyRail") as Button
+	_detail_rail = get_node_or_null("Root/Main/DetailRail") as Button
+	_policy_close = get_node_or_null("Root/Main/PolicyPanel/Scroll/Body/Header/Close") as Button
+	_detail_close = get_node_or_null("Root/Main/DetailHost/Body/Header/Close") as Button
 	_detail = get_node_or_null(required_paths.detail) as Control
 	_main = get_node_or_null("Root/Main") as Control
 	_focus_mode = get_node_or_null("Root/Toolbar/Row/FocusMode") as Button
@@ -127,7 +148,7 @@ func _ready() -> void:
 		var icon := chip.get_node("Icon") as IconBadge
 		var value := chip.get_node("Value") as Label
 		icon.set_semantic(item.icon, item.accent)
-		value.add_theme_color_override("font_color", (item.accent as Color).lerp(UITokens.TEXT_MAIN, 0.60))
+		value.add_theme_color_override("font_color", (item.accent as Color).lerp(UITokens.ARCHIVE_INK, 0.60))
 		_status_chips[String(item.id)] = chip
 		_status_chips["%s_value" % String(item.id)] = value
 	for domain in range(DOMAIN_COUNT):
@@ -154,6 +175,14 @@ func _ready() -> void:
 	_search.text_submitted.connect(_on_search_submitted)
 	IconButton.apply(_prev_era, &"action.back", IconButton.SMALL, "上一个已知时代")
 	IconButton.apply(_next_era, &"action.chevron_right", IconButton.SMALL, "下一个已知时代")
+	IconButton.apply(_policy_rail, &"action.chevron_right", IconButton.MEDIUM, "打开研究管理")
+	IconButton.apply(_detail_rail, &"action.back", IconButton.MEDIUM, "打开科技详情")
+	IconButton.apply(_policy_close, &"action.close", IconButton.SMALL, "收起研究管理")
+	IconButton.apply(_detail_close, &"action.close", IconButton.SMALL, "收起科技详情")
+	_policy_rail.pressed.connect(_set_policy_open.bind(true))
+	_detail_rail.pressed.connect(_set_detail_open.bind(true))
+	_policy_close.pressed.connect(_set_policy_open.bind(false))
+	_detail_close.pressed.connect(_set_detail_open.bind(false))
 	var relocate := get_node("Root/Toolbar/Row/Relocate") as Button
 	IconButton.apply(relocate, &"system.target", IconButton.SMALL, "重新定位研究前沿")
 	relocate.pressed.connect(_apply_default_focus)
@@ -163,8 +192,9 @@ func _ready() -> void:
 func set_model(model: Dictionary) -> void:
 	if _tree == null:
 		_ready()
-	_research = model.get("research", {})
-	_development = model.get("development", {})
+	_pending_refresh_model.clear()
+	_refresh_dirty = false
+	set_process(false)
 	if _definitions.is_empty():
 		_definitions = model.get("technology_definitions", [])
 		_eras = model.get("technology_eras", [])
@@ -190,7 +220,18 @@ func set_model(model: Dictionary) -> void:
 			_ensure_focus_domain()
 			_dial.configure(_domains)
 			_configure_queues()
+	var candidate := _research_from_model(model)
+	if not candidate.is_empty():
+		_research = candidate
+		_has_valid_research = true
+	elif not _has_valid_research:
+		_research = {}
+	var candidate_development = model.get("development", null)
+	if candidate_development is Dictionary and not (candidate_development as Dictionary).is_empty():
+		_development = candidate_development
 	_apply_research()
+	_has_rendered_model = true
+	_last_render_msec = Time.get_ticks_msec()
 
 
 # Daily ticks reuse this path: only cached values and visible text change.
@@ -203,9 +244,62 @@ func refresh_research(model: Dictionary) -> void:
 	if _definitions.is_empty():
 		set_model(model)
 		return
-	_research = model.get("research", {})
-	_development = model.get("development", _development)
+	# Country UI snapshots can be transiently unavailable while a country day
+	# publishes. Never replace a valid tree with that shell/error payload.
+	var candidate := _research_from_model(model)
+	if candidate.is_empty():
+		return
+	var now := Time.get_ticks_msec()
+	if _has_rendered_model and now - _last_render_msec < LIVE_REFRESH_INTERVAL_MSEC:
+		_pending_refresh_model = model
+		_refresh_dirty = true
+		set_process(true)
+		return
+	_apply_refresh_model(model, now)
+
+
+func _process(_delta: float) -> void:
+	if not _refresh_dirty:
+		set_process(false)
+		return
+	var now := Time.get_ticks_msec()
+	if now - _last_render_msec < LIVE_REFRESH_INTERVAL_MSEC:
+		return
+	var model := _pending_refresh_model
+	_pending_refresh_model.clear()
+	_refresh_dirty = false
+	_apply_refresh_model(model, now)
+
+
+func _apply_refresh_model(model: Dictionary, now_msec: int) -> void:
+	var candidate := _research_from_model(model)
+	if candidate.is_empty():
+		return
+	_research = candidate
+	_has_valid_research = true
+	var candidate_development = model.get("development", null)
+	if candidate_development is Dictionary and not (candidate_development as Dictionary).is_empty():
+		_development = candidate_development
 	_apply_research()
+	_last_render_msec = now_msec
+	_has_rendered_model = true
+	set_process(false)
+
+
+func _research_from_model(model: Dictionary) -> Dictionary:
+	var value = model.get("research", null)
+	if not value is Dictionary:
+		return {}
+	var candidate: Dictionary = value
+	if candidate.has("ok") and not bool(candidate.get("ok", false)):
+		return {}
+	var states_value = candidate.get("technology_states", null)
+	if not states_value is PackedInt32Array:
+		return {}
+	var states: PackedInt32Array = states_value
+	if states.is_empty() or (not _definitions.is_empty() and states.size() != _definitions.size()):
+		return {}
+	return candidate
 
 
 func set_player_controller(controller) -> void:
@@ -215,11 +309,20 @@ func set_player_controller(controller) -> void:
 func set_compact(compact: bool) -> void:
 	if _policy_panel == null:
 		return
-	_compact = compact
+	_compact_requested = compact
+	_update_effective_compact()
+
+
+func _update_effective_compact() -> void:
+	var effective := _compact_requested or (size.x > 0.0 and size.x < INTERNAL_COMPACT_WIDTH)
+	if _compact != effective:
+		_compact = effective
+		_policy_open = not effective
+		_detail_open = not effective
 	for key in ["purchased", "completed"]:
 		var chip := _status_chips.get(key) as Control
 		if chip != null:
-			chip.visible = not compact
+			chip.visible = not _compact
 	_apply_column_layout()
 
 
@@ -234,7 +337,7 @@ func reset_navigation() -> void:
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_RESIZED:
-		_apply_column_layout()
+		_update_effective_compact()
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
@@ -256,10 +359,10 @@ func navigation_report() -> Dictionary:
 		"domain": _focus_domain,
 		"lane": _focus_domain,
 		"era": _focus_era,
-		"policy_open": true,
-		"detail_open": true,
-		"policy_pinned": true,
-		"detail_pinned": true,
+		"policy_open": _policy_open,
+		"detail_open": _detail_open,
+		"policy_pinned": not _compact,
+		"detail_pinned": not _compact,
 	}
 
 
@@ -465,11 +568,19 @@ func _column_detail_width() -> float:
 	return COMPACT_DETAIL_WIDTH if _compact else DETAIL_WIDTH
 
 
-func _set_policy_open(_open: bool) -> void:
+
+func _set_policy_open(open: bool) -> void:
+	_policy_open = true if not _compact else open
+	if _compact and open:
+		_detail_open = false
 	_apply_column_layout()
 
 
-func _set_detail_open(_open: bool) -> void:
+
+func _set_detail_open(open: bool) -> void:
+	_detail_open = true if not _compact else open
+	if _compact and open:
+		_policy_open = false
 	_apply_column_layout()
 
 
@@ -478,18 +589,24 @@ func _apply_column_layout() -> void:
 		return
 	var left := _column_policy_width()
 	var right := _column_detail_width()
-	_policy_panel.visible = true
-	_detail_host.visible = true
+	_policy_panel.visible = _policy_open
+	_detail_host.visible = _detail_open
+	_policy_rail.visible = _compact and not _policy_open
+	_detail_rail.visible = _compact and not _detail_open
+	_policy_close.visible = _compact
+	_detail_close.visible = _compact
 	_policy_panel.offset_left = 0.0
 	_policy_panel.offset_right = left
 	_detail_host.offset_left = -right
 	_detail_host.offset_right = 0.0
 	_detail_host.clip_contents = true
+	var canvas_left := left if _policy_open else (COMPACT_RAIL_WIDTH if _compact else 0.0)
+	var canvas_right := -right if _detail_open else (-COMPACT_RAIL_WIDTH if _compact else 0.0)
 	for canvas in [_tree, _overview]:
 		if canvas == null:
 			continue
-		canvas.offset_left = left
-		canvas.offset_right = -right
+		canvas.offset_left = canvas_left
+		canvas.offset_right = canvas_right
 
 
 func _configure_queues() -> void:
@@ -501,7 +618,7 @@ func _configure_queues() -> void:
 		var name_label := header.name as Label
 		name_label.text = _domain_name(domain)
 		name_label.add_theme_color_override("font_color",
-			accent.lerp(UITokens.TEXT_MAIN, 0.52))
+			accent.lerp(UITokens.ARCHIVE_INK, 0.52))
 
 
 func _apply_research() -> void:

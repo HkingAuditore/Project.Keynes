@@ -2,6 +2,7 @@ extends SceneTree
 
 
 var _failures := 0
+var _capture_dir := ""
 
 
 func _init() -> void:
@@ -9,6 +10,10 @@ func _init() -> void:
 
 
 func _run() -> void:
+	for argument in OS.get_cmdline_user_args():
+		var normalized := argument.trim_prefix("--")
+		if normalized.begins_with("capture_dir="):
+			_capture_dir = normalized.trim_prefix("capture_dir=")
 	root.size = Vector2i(1280, 720)
 	var packed := load("res://scenes/player_game.tscn") as PackedScene
 	var game := packed.instantiate()
@@ -58,11 +63,27 @@ func _run() -> void:
 			await process_frame
 			_expect("%s panel opens" % section_id,
 				panel.is_panel_open() and panel.current_section() == section_id)
+			await _capture_workspace(section_id)
 	for section_id in ["military", "diplomacy"]:
 		var button := buttons.get(section_id) as Button
 		_expect("%s action exists" % section_id, button != null)
 		_expect("%s action is disabled" % section_id,
 			button != null and button.disabled and button.tooltip_text.contains("尚未开放"))
+	var navigation: Dictionary = panel.navigation_report()
+	_expect("country dossier has one complete chapter navigation system",
+		int(navigation.get("desktop_count", 0)) == 5
+		and int(navigation.get("mobile_count", 0)) == 5
+		and String(navigation.get("active", "")) == "economy")
+	_expect("wide country dossier uses the archival bookmark rail",
+		bool(navigation.get("desktop_visible", false))
+		and not bool(navigation.get("mobile_visible", true)))
+	var dossier_buttons: Dictionary = panel.get("_nav_buttons")
+	var technology_chapter := dossier_buttons.get("technology") as Button
+	if technology_chapter != null:
+		technology_chapter.pressed.emit()
+		await process_frame
+	_expect("country dossier chapter navigation switches the live workspace",
+		panel.current_section() == "technology")
 	_expect("opening country affairs does not pause", clock.paused == paused_before)
 
 	ui.open_country_section("ideology")
@@ -308,6 +329,10 @@ func _run() -> void:
 	_expect("compact country dialog fills available viewport height",
 		compact_rect.size.y >= compact_viewport.size.y - PlayerTopBar.BAR_HEIGHT \
 			- CountryActionBar.BAR_HEIGHT - UITokens.SPACE_SM * 2.0 - 1.0)
+	var compact_dossier_navigation: Dictionary = panel.navigation_report()
+	_expect("compact country dossier folds chapters into a horizontal navigator",
+		bool(compact_dossier_navigation.get("mobile_visible", false))
+		and not bool(compact_dossier_navigation.get("desktop_visible", true)))
 	ui.open_country_section("economy")
 	await process_frame
 	var goods_scroll := economy.get("_scroll") as ScrollContainer
@@ -318,10 +343,10 @@ func _run() -> void:
 	var compact_workspace := panel.get("_technology_workspace") as Control
 	var compact_tree := compact_workspace.tree_view() as Control
 	var compact_navigation: Dictionary = compact_workspace.navigation_report()
-	_expect("compact technology layout keeps both columns resident",
-		bool(compact_navigation.policy_open) and bool(compact_navigation.detail_open)
-		and compact_tree.offset_left == TechnologyWorkspace.COMPACT_POLICY_WIDTH
-		and compact_tree.offset_right == -TechnologyWorkspace.COMPACT_DETAIL_WIDTH)
+	_expect("compact technology layout preserves the atlas with side drawers",
+		not bool(compact_navigation.policy_open) and not bool(compact_navigation.detail_open)
+		and compact_tree.offset_left == TechnologyWorkspace.COMPACT_RAIL_WIDTH
+		and compact_tree.offset_right == -TechnologyWorkspace.COMPACT_RAIL_WIDTH)
 	root.size = Vector2i(1280, 720)
 	await process_frame
 	await process_frame
@@ -657,6 +682,20 @@ func _run() -> void:
 		not bool(unavailable.get("available", true)) and not String(unavailable.get("reason", "")).is_empty())
 	var capture_path := OS.get_environment("PK_COUNTRY_UI_CAPTURE_PATH")
 	if not capture_path.is_empty():
+		panel.close_panel()
+		right_panel.select_tab("geography")
+		await create_timer(UITokens.ANIM_FAST + 0.05).timeout
+		var capture_size_text := OS.get_environment("PK_COUNTRY_UI_CAPTURE_SIZE")
+		if not capture_size_text.is_empty():
+			var size_parts := capture_size_text.to_lower().split("x", false, 1)
+			if size_parts.size() == 2:
+				var capture_size := Vector2i(
+					maxi(640, int(size_parts[0])), maxi(360, int(size_parts[1])))
+				DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+				DisplayServer.window_set_size(capture_size)
+				root.size = capture_size
+				await process_frame
+				await process_frame
 		await process_frame
 		await process_frame
 		var image := root.get_texture().get_image()
@@ -672,6 +711,21 @@ func _run() -> void:
 	_expect("Escape closes country panel", not panel.is_panel_open())
 	_expect("Escape close preserves pause state", clock.paused == paused_before)
 	_finish()
+
+
+func _capture_workspace(section_id: String) -> void:
+	if _capture_dir.is_empty():
+		return
+	DirAccess.make_dir_recursive_absolute(_capture_dir)
+	await create_timer(UITokens.ANIM_MED + 0.05).timeout
+	await RenderingServer.frame_post_draw
+	var image := root.get_texture().get_image()
+	if image == null:
+		push_error("UI capture failed for %s" % section_id)
+		return
+	var output := _capture_dir.path_join("country_%s_1280x720.png" % section_id)
+	var error := image.save_png(output)
+	print("[ui-capture] %s error=%d" % [output, error])
 
 
 func _expect(label: String, condition: bool) -> void:

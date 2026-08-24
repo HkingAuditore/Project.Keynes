@@ -53,7 +53,7 @@ func update_dynamic(state: int, fraction: float) -> void:
 		return
 	IconButton.apply_to_label(_state, IconCatalog.technology_state_semantic(state), 11)
 	_state.add_theme_color_override("font_color",
-		UITokens.WARN if state >= 4 else _accent.lerp(UITokens.TEXT_MAIN, 0.50))
+		UITokens.WARN if state >= 4 else _accent.lerp(UITokens.ARCHIVE_INK, 0.50))
 	_progress.value = clampf(fraction, 0.0, 1.0) * 100.0
 
 

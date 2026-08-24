@@ -264,7 +264,7 @@ func _build_cohort_details(row: Dictionary) -> void:
 		_add_muted_note(status)
 	_section_targets["overview"] = _add_fact_grid([
 		{"label": "人口", "value": String(row.get("population", "—")), "accent": UITokens.ACCENT},
-		{"label": "身份", "value": String(row.get("cohort_identity", "本地人口")), "accent": UITokens.TEXT_MAIN},
+		{"label": "身份", "value": String(row.get("cohort_identity", "本地人口")), "accent": UITokens.ARCHIVE_INK},
 		{"label": "人均财富", "value": String(row.get("wealth", "—")).trim_prefix("人均 "), "accent": UITokens.RESOURCE},
 		{"label": "满意度", "value": String(row.get("satisfaction", "—")), "accent": row.get("living_accent", UITokens.ACCENT)},
 		{"label": "生活水平", "value": String(row.get("living_standard", "—")), "accent": row.get("living_accent", UITokens.ACCENT)},
@@ -330,7 +330,7 @@ func _build_good_details(row: Dictionary) -> void:
 		{"label": "库存日变化", "value": String(row.get("delta", "—")),
 			"accent": _delta_accent(String(row.get("delta", "")))},
 		{"label": "短缺风险", "value": risk if not risk.is_empty() else "无",
-			"accent": UITokens.RISK if not risk.is_empty() else UITokens.TEXT_MUTED},
+			"accent": UITokens.RISK if not risk.is_empty() else UITokens.ARCHIVE_INK_MUTED},
 	]
 	if not inbound.is_empty():
 		facts.append({"label": "运入", "value": inbound, "accent": UITokens.ACCENT})
@@ -351,7 +351,7 @@ func _build_resource_details(row: Dictionary) -> void:
 			"accent": _delta_accent(String(row.get("delta", "")))},
 		{"label": "开采条件", "value": "本地建筑可开采" if bool(row.get("extractable", false)) \
 			else "本地无可开采建筑", "accent": UITokens.GOOD if bool(row.get("extractable", false)) \
-			else UITokens.TEXT_MUTED},
+			else UITokens.ARCHIVE_INK_MUTED},
 	])
 
 
@@ -363,8 +363,8 @@ func _build_family_details(row: Dictionary) -> void:
 		{"label": "现金财产", "value": String(row.get("cash_claim", "—")), "accent": UITokens.RESOURCE},
 		{"label": "生产资产", "value": String(row.get("productive_asset_value", "—")), "accent": UITokens.RESOURCE},
 		{"label": "净资产", "value": String(row.get("net_worth", "—")), "accent": UITokens.GOOD},
-		{"label": "创立日", "value": "第 %d 日" % int(row.get("founded_day", 0)), "accent": UITokens.TEXT_MAIN},
-		{"label": "衰退复核", "value": "%d 次" % int(row.get("decline_reviews", 0)), "accent": UITokens.TEXT_MUTED},
+		{"label": "创立日", "value": "第 %d 日" % int(row.get("founded_day", 0)), "accent": UITokens.ARCHIVE_INK},
+		{"label": "衰退复核", "value": "%d 次" % int(row.get("decline_reviews", 0)), "accent": UITokens.ARCHIVE_INK_MUTED},
 		{"label": "本地威望", "value": "%s · %s" % [
 			["0", "I", "II", "III", "IV", "V"][clampi(int(row.get("prestige_level", 0)), 0, 5)],
 			String(row.get("prestige_score", "0.0%"))], "accent": UITokens.ACCENT},
@@ -450,7 +450,7 @@ func _delta_accent(delta: String) -> Color:
 		return UITokens.GOOD
 	if delta.begins_with("-") or delta.begins_with("−"):
 		return UITokens.RISK
-	return UITokens.TEXT_MUTED
+	return UITokens.ARCHIVE_INK_MUTED
 
 
 func _add_fact_grid(facts: Array) -> Control:
@@ -474,7 +474,7 @@ func _add_fact_grid(facts: Array) -> Control:
 		value.custom_minimum_size.y = 18
 		value.add_theme_font_override("font", UITokens.font_with_weight(650))
 		value.add_theme_color_override("font_color",
-			fact.get("accent", UITokens.TEXT_MAIN))
+			fact.get("accent", UITokens.ARCHIVE_INK))
 	return panel
 
 
@@ -623,7 +623,7 @@ func _add_finance_card(finance: Dictionary) -> Control:
 	return panel
 
 
-func _add_muted_note(text: String, color: Color = UITokens.TEXT_MUTED) -> Control:
+func _add_muted_note(text: String, color: Color = UITokens.ARCHIVE_INK_MUTED) -> Control:
 	var note := NoteScene.instantiate() as Label
 	note.text = text
 	note.add_theme_color_override("font_color", color)

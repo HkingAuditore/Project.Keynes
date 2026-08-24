@@ -1,6 +1,8 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/era_reward_dialog.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://scenes/ui/archival_surface.tscn" id="2_archive"]
+[ext_resource type="PackedScene" path="res://scenes/ui/era_reward_choice.tscn" id="3_choice"]
 
 [node name="EraRewardDialog" type="Control"]
 process_mode = 3
@@ -22,212 +24,72 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 0
-color = Color(0.025, 0.035, 0.06, 0.965)
+color = Color(0.055, 0.038, 0.025, 0.9)
 
-[node name="Margin" type="MarginContainer" parent="."]
+[node name="ArchiveSurface" parent="." instance=ExtResource("2_archive")]
+unique_name_in_owner = true
+editable_children = true
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = 18.0
+offset_right = -24.0
+offset_bottom = -18.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_constants/margin_left = 40
-theme_override_constants/margin_top = 32
-theme_override_constants/margin_right = 40
-theme_override_constants/margin_bottom = 32
+z_index = 1
+mouse_filter = 2
 
-[node name="Column" type="VBoxContainer" parent="Margin"]
+[node name="Prompt" type="PanelContainer" parent="ArchiveSurface/Frame/Margin/Column/Body"]
 layout_mode = 2
-theme_override_constants/separation = 14
+theme_type_variation = &"PKArchiveBand"
 
-[node name="Title" type="Label" parent="Margin/Column"]
+[node name="Margin" type="MarginContainer" parent="ArchiveSurface/Frame/Margin/Column/Body/Prompt"]
+layout_mode = 2
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 8
+
+[node name="Text" type="Label" parent="ArchiveSurface/Frame/Margin/Column/Body/Prompt/Margin"]
 unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 30
-text = "时代提升：选择时代奖励"
+text = "从下列三项时代方案中择一，选择后将提交本次晋升的正式效果。"
 horizontal_alignment = 1
+autowrap_mode = 2
+theme_type_variation = &"PKMutedLabel"
 
-[node name="Subtitle" type="Label" parent="Margin/Column"]
+[node name="CardsScroll" type="ScrollContainer" parent="ArchiveSurface/Frame/Margin/Column/Body"]
 layout_mode = 2
-text = "奖励目标已冻结。选择后将等待所有效果安全提交完成。"
-horizontal_alignment = 1
-modulate = Color(0.72, 0.78, 0.88, 1)
-
-[node name="CardsScroll" type="ScrollContainer" parent="Margin/Column"]
-layout_mode = 2
+custom_minimum_size = Vector2(0, 300)
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
 
-[node name="CardGrid" type="GridContainer" parent="Margin/Column/CardsScroll"]
+[node name="CardGrid" type="GridContainer" parent="ArchiveSurface/Frame/Margin/Column/Body/CardsScroll"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-size_flags_vertical = 3
-theme_override_constants/h_separation = 18
-theme_override_constants/v_separation = 18
+theme_override_constants/h_separation = 14
+theme_override_constants/v_separation = 14
 columns = 3
 
-[node name="Card0" type="PanelContainer" parent="Margin/Column/CardsScroll/CardGrid"]
-custom_minimum_size = Vector2(300, 410)
+[node name="Card0" parent="ArchiveSurface/Frame/Margin/Column/Body/CardsScroll/CardGrid" instance=ExtResource("3_choice")]
 layout_mode = 2
-size_flags_horizontal = 3
 
-[node name="Margin" type="MarginContainer" parent="Margin/Column/CardsScroll/CardGrid/Card0"]
+[node name="Card1" parent="ArchiveSurface/Frame/Margin/Column/Body/CardsScroll/CardGrid" instance=ExtResource("3_choice")]
 layout_mode = 2
-theme_override_constants/margin_left = 20
-theme_override_constants/margin_top = 20
-theme_override_constants/margin_right = 20
-theme_override_constants/margin_bottom = 20
 
-[node name="Column" type="VBoxContainer" parent="Margin/Column/CardsScroll/CardGrid/Card0/Margin"]
+[node name="Card2" parent="ArchiveSurface/Frame/Margin/Column/Body/CardsScroll/CardGrid" instance=ExtResource("3_choice")]
 layout_mode = 2
-theme_override_constants/separation = 12
 
-[node name="Icon" type="Label" parent="Margin/Column/CardsScroll/CardGrid/Card0/Margin/Column"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 16
-text = "REWARD"
-horizontal_alignment = 1
-modulate = Color(0.85, 0.7, 0.3, 1)
-
-[node name="Title" type="Label" parent="Margin/Column/CardsScroll/CardGrid/Card0/Margin/Column"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 22
-text = "奖励一"
-horizontal_alignment = 1
-autowrap_mode = 2
-
-[node name="Description" type="Label" parent="Margin/Column/CardsScroll/CardGrid/Card0/Margin/Column"]
-layout_mode = 2
-size_flags_vertical = 3
-text = "奖励说明"
-autowrap_mode = 2
-
-[node name="Target" type="Label" parent="Margin/Column/CardsScroll/CardGrid/Card0/Margin/Column"]
-layout_mode = 2
-text = "目标：玩家国家"
-autowrap_mode = 2
-modulate = Color(0.75, 0.85, 1, 1)
-
-[node name="Reason" type="Label" parent="Margin/Column/CardsScroll/CardGrid/Card0/Margin/Column"]
-layout_mode = 2
-text = "适配理由"
-autowrap_mode = 2
-modulate = Color(0.72, 0.78, 0.88, 1)
-
-[node name="Choose" type="Button" parent="Margin/Column/CardsScroll/CardGrid/Card0/Margin/Column"]
-layout_mode = 2
-text = "选择此奖励"
-
-[node name="Card1" type="PanelContainer" parent="Margin/Column/CardsScroll/CardGrid"]
-custom_minimum_size = Vector2(300, 410)
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="Margin" type="MarginContainer" parent="Margin/Column/CardsScroll/CardGrid/Card1"]
-layout_mode = 2
-theme_override_constants/margin_left = 20
-theme_override_constants/margin_top = 20
-theme_override_constants/margin_right = 20
-theme_override_constants/margin_bottom = 20
-
-[node name="Column" type="VBoxContainer" parent="Margin/Column/CardsScroll/CardGrid/Card1/Margin"]
-layout_mode = 2
-theme_override_constants/separation = 12
-
-[node name="Icon" type="Label" parent="Margin/Column/CardsScroll/CardGrid/Card1/Margin/Column"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 16
-text = "REWARD"
-horizontal_alignment = 1
-modulate = Color(0.85, 0.7, 0.3, 1)
-
-[node name="Title" type="Label" parent="Margin/Column/CardsScroll/CardGrid/Card1/Margin/Column"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 22
-text = "奖励二"
-horizontal_alignment = 1
-autowrap_mode = 2
-
-[node name="Description" type="Label" parent="Margin/Column/CardsScroll/CardGrid/Card1/Margin/Column"]
-layout_mode = 2
-size_flags_vertical = 3
-text = "奖励说明"
-autowrap_mode = 2
-
-[node name="Target" type="Label" parent="Margin/Column/CardsScroll/CardGrid/Card1/Margin/Column"]
-layout_mode = 2
-text = "目标：玩家国家"
-autowrap_mode = 2
-modulate = Color(0.75, 0.85, 1, 1)
-
-[node name="Reason" type="Label" parent="Margin/Column/CardsScroll/CardGrid/Card1/Margin/Column"]
-layout_mode = 2
-text = "适配理由"
-autowrap_mode = 2
-modulate = Color(0.72, 0.78, 0.88, 1)
-
-[node name="Choose" type="Button" parent="Margin/Column/CardsScroll/CardGrid/Card1/Margin/Column"]
-layout_mode = 2
-text = "选择此奖励"
-
-[node name="Card2" type="PanelContainer" parent="Margin/Column/CardsScroll/CardGrid"]
-custom_minimum_size = Vector2(300, 410)
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="Margin" type="MarginContainer" parent="Margin/Column/CardsScroll/CardGrid/Card2"]
-layout_mode = 2
-theme_override_constants/margin_left = 20
-theme_override_constants/margin_top = 20
-theme_override_constants/margin_right = 20
-theme_override_constants/margin_bottom = 20
-
-[node name="Column" type="VBoxContainer" parent="Margin/Column/CardsScroll/CardGrid/Card2/Margin"]
-layout_mode = 2
-theme_override_constants/separation = 12
-
-[node name="Icon" type="Label" parent="Margin/Column/CardsScroll/CardGrid/Card2/Margin/Column"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 16
-text = "REWARD"
-horizontal_alignment = 1
-modulate = Color(0.85, 0.7, 0.3, 1)
-
-[node name="Title" type="Label" parent="Margin/Column/CardsScroll/CardGrid/Card2/Margin/Column"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 22
-text = "奖励三"
-horizontal_alignment = 1
-autowrap_mode = 2
-
-[node name="Description" type="Label" parent="Margin/Column/CardsScroll/CardGrid/Card2/Margin/Column"]
-layout_mode = 2
-size_flags_vertical = 3
-text = "奖励说明"
-autowrap_mode = 2
-
-[node name="Target" type="Label" parent="Margin/Column/CardsScroll/CardGrid/Card2/Margin/Column"]
-layout_mode = 2
-text = "目标：玩家国家"
-autowrap_mode = 2
-modulate = Color(0.75, 0.85, 1, 1)
-
-[node name="Reason" type="Label" parent="Margin/Column/CardsScroll/CardGrid/Card2/Margin/Column"]
-layout_mode = 2
-text = "适配理由"
-autowrap_mode = 2
-modulate = Color(0.72, 0.78, 0.88, 1)
-
-[node name="Choose" type="Button" parent="Margin/Column/CardsScroll/CardGrid/Card2/Margin/Column"]
-layout_mode = 2
-text = "选择此奖励"
-
-[node name="Status" type="Label" parent="Margin/Column"]
+[node name="Status" type="Label" parent="ArchiveSurface/Frame/Margin/Column/Body"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 48)
+custom_minimum_size = Vector2(0, 42)
 layout_mode = 2
 text = ""
 horizontal_alignment = 1
 vertical_alignment = 1
 autowrap_mode = 2
+theme_type_variation = &"PKEraRewardStatus"

@@ -173,13 +173,32 @@ void NativeEconomyRuntime::fill_colonization_kit_buffer(
         return;
     const int32_t market = _market.cell_to_market[source_cell];
     if (market < 0 || market >= _market.market_count) return;
+    kit.source_stock_identity = 1469598103934665603ULL;
+    for (int32_t good = 0; good < _market.good_count; ++good) {
+        kit.source_stock_identity = trace_hash_mix(
+            kit.source_stock_identity,
+            static_cast<uint64_t>(std::max<int64_t>(0,
+                _market.stock[_market.index(market, good)])));
+    }
+    if (kit.source_stock_identity == 0) kit.source_stock_identity = 1;
     const EnvironmentSample sample = environment_sample_for_cell(target_cell);
     const int32_t days = std::max(1, travel_days) +
         COLONIZATION_KIT_BRIDGE_EXTRA_DAYS;
     int64_t sat = 0;
     auto source_stock = [&](int32_t good) -> int64_t {
         if (good < 0 || good >= _market.good_count) return 0;
-        return std::max<int64_t>(0, _market.stock[_market.index(market, good)]);
+        // Construction materials and previously selected bridge goods already
+        // reserve the source market stock.  Every subsequent line must draw
+        // from the remaining balance, otherwise a good shared by the build
+        // plan and the survival bridge can be billed twice and fail at start.
+        int64_t reserved = 0;
+        for (const FamilyExpeditionCargoLine &line : kit.cargo) {
+            if (line.good_id != good || line.quantity <= 0) continue;
+            reserved = saturating_add(reserved, line.quantity, sat);
+        }
+        const int64_t stock = std::max<int64_t>(0,
+            _market.stock[_market.index(market, good)]);
+        return std::max<int64_t>(0, stock - reserved);
     };
     auto pick_stocked_good = [&](const std::vector<uint8_t> &mask,
                                  int32_t preferred) -> int32_t {

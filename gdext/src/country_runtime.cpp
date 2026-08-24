@@ -1236,7 +1236,7 @@ bool NativeCountryRuntime::should_run(int64_t day_index) const {
     // in-flight batch is handled by _command_batch.active.
     for (const Command &command : _pending_commands)
         if (command.effective_day <= day_index) return true;
-    if (day_index > _last_research_day && _technology_points_good_id >= 0) {
+    if (_technology_points_good_id >= 0) {
         if (_pending_queue_enabled) {
             if (_pending_activation_index_dirty) rebuild_pending_activation_index();
             if (_pending_activation_count > 0) return true;
@@ -1246,6 +1246,22 @@ bool NativeCountryRuntime::should_run(int64_t day_index) const {
         }
         for (size_t slot = 0; slot < _countries.active.size(); ++slot) {
             if (_countries.active[slot] == 0) continue;
+            // A completion can be left at the queue head when the final
+            // research point was consumed before the completion sweep. Keep
+            // the same-day country continuation alive so it can finalize the
+            // head without waiting for another enqueue command or calendar day.
+            for (int32_t domain = 0; domain < 4; ++domain) {
+                const size_t length_index = slot * 4U +
+                    static_cast<size_t>(domain);
+                if (_country_research_queue_lengths[length_index] == 0) continue;
+                const size_t queue_base = length_index * 8U;
+                const int32_t technology = _country_research_queues[queue_base];
+                if (technology >= 0 && !has_technology(static_cast<int32_t>(slot), technology) &&
+                    progress_for(static_cast<int32_t>(slot), technology) >=
+                        effective_research_cost(static_cast<int32_t>(slot), technology))
+                    return true;
+            }
+            if (day_index <= _last_research_day) continue;
             const int64_t stock = _country_goods[
                 slot * _good_ids.size() + static_cast<size_t>(_technology_points_good_id)];
             if (stock <= _country_research_deferred_points[slot]) continue;
@@ -2782,7 +2798,7 @@ bool NativeCountryRuntime::research_procurement_policy(int32_t country_slot, boo
         for (int32_t position = 0; position < _country_research_queue_lengths[length_index]; ++position) {
             const int32_t tech = _country_research_queues[queue_base + position];
             remaining_points += std::max<int64_t>(
-                0, _technology_costs[static_cast<size_t>(tech)] -
+                0, effective_research_cost(country_slot, tech) -
                 progress_for(country_slot, tech));
         }
     }
@@ -3083,6 +3099,53 @@ void NativeCountryRuntime::set_progress(int32_t slot, int32_t technology, int64_
     }
 }
 
+int64_t NativeCountryRuntime::effective_research_cost(
+        int32_t slot, int32_t technology) const {
+    if (technology < 0 || technology >= static_cast<int32_t>(_technology_costs.size()))
+        return 1;
+    double cost_factor = 1.0;
+    if (_modifier_runtime != nullptr && _modifier_runtime->configured()) {
+        cost_factor = _modifier_runtime->effective_value(
+            ModifierRuntime::COUNTRY, "country.research.cost_factor",
+            make_handle(slot), 0, 1.0);
+    }
+    return std::max<int64_t>(1, static_cast<int64_t>(std::llround(
+        static_cast<double>(_technology_costs[static_cast<size_t>(technology)]) *
+        cost_factor)));
+}
+
+bool NativeCountryRuntime::finalize_research_head_if_complete(
+        int32_t slot, int32_t domain, int64_t day_index,
+        bool use_pending_queue) {
+    if (slot < 0 || domain < 0 || domain >= 4) return false;
+    const size_t length_index = static_cast<size_t>(slot) * 4U +
+        static_cast<size_t>(domain);
+    uint8_t &length = _country_research_queue_lengths[length_index];
+    if (length == 0) return false;
+    const size_t queue_base = length_index * 8U;
+    const int32_t technology = _country_research_queues[queue_base];
+    if (technology < 0 || has_technology(slot, technology) ||
+        !prerequisites_met(slot, technology) ||
+        progress_for(slot, technology) < effective_research_cost(slot, technology))
+        return false;
+
+    const size_t word_index = static_cast<size_t>(slot) * _technology_words +
+        static_cast<size_t>(technology / 64);
+    const uint64_t bit = uint64_t{1} << (technology % 64);
+    _country_pending_technologies[word_index] |= bit;
+    if (use_pending_queue) insert_pending_activation(slot, technology);
+    const std::string &modifier_key =
+        _technology_modifier_definition_keys[static_cast<size_t>(technology)];
+    if (!modifier_key.empty())
+        ensure_technology_effect_instance(slot, technology, day_index);
+    ++_country_research_completed_total[static_cast<size_t>(slot)];
+    for (int32_t i = 1; i < length; ++i)
+        _country_research_queues[queue_base + static_cast<size_t>(i - 1)] =
+            _country_research_queues[queue_base + static_cast<size_t>(i)];
+    _country_research_queues[queue_base + static_cast<size_t>(--length)] = -1;
+    return true;
+}
+
 int32_t NativeCountryRuntime::country_slot_for_cell(int32_t cell) const {
     return cell >= 0 && cell < _cell_count ? _cell_country_slot[static_cast<size_t>(cell)] : NEUTRAL_SLOT;
 }
@@ -3177,7 +3240,12 @@ bool NativeCountryRuntime::ensure_technology_effect_instance(
 }
 
 int32_t NativeCountryRuntime::run_research_day(int64_t day_index) {
-    if (day_index <= _last_research_day || _technology_points_good_id < 0) return 0;
+    if (_technology_points_good_id < 0) return 0;
+    // Research allocation is once per day, but pending technologies may be
+    // ACKed by Effect/Modifier later in the same day. Keep the activation
+    // pass live for same-day continuations instead of making the completed
+    // node wait for a new research command or the next calendar day.
+    const bool research_due = day_index > _last_research_day;
     bool use_pending_queue = _pending_queue_enabled;
     bool pending_queue_fallback = false;
     if (use_pending_queue && _pending_activation_index_dirty)
@@ -3276,9 +3344,22 @@ int32_t NativeCountryRuntime::run_research_day(int64_t day_index) {
             ++changed;
         }
 
+        // Completion is a state transition, not a technology-points
+        // purchase. If the final fractional unit was consumed on the
+        // previous day, the treasury may now be empty even though the queue
+        // head is complete. Finalize such heads before the stock early exit.
+        for (int32_t domain = 0; domain < 4; ++domain) {
+            while (finalize_research_head_if_complete(
+                    slot, domain, day_index, use_pending_queue)) {
+                ++_countries.state_version[static_cast<size_t>(slot)];
+                ++changed;
+            }
+        }
+
         int64_t &stock = _country_goods[
             static_cast<size_t>(slot) * _good_ids.size() +
             static_cast<size_t>(_technology_points_good_id)];
+        if (!research_due) continue;
         const int64_t prior_deferred = std::min(
             _country_research_deferred_points[static_cast<size_t>(slot)], stock);
         const int64_t available = stock - prior_deferred;
@@ -3327,12 +3408,8 @@ int32_t NativeCountryRuntime::run_research_day(int64_t day_index) {
                 }
                 if (!prerequisites_met(slot, technology)) break;
                 const int64_t progress = progress_for(slot, technology);
-                double cost_factor = 1.0;
                 double efficiency = 1.0;
                 if (_modifier_runtime != nullptr && _modifier_runtime->configured()) {
-                    cost_factor = _modifier_runtime->effective_value(
-                        ModifierRuntime::COUNTRY, "country.research.cost_factor",
-                        make_handle(slot), 0, 1.0);
                     static const char *EFFICIENCY_STATS[4] = {
                         "country.research.agriculture_efficiency",
                         "country.research.engineering_efficiency",
@@ -3343,10 +3420,7 @@ int32_t NativeCountryRuntime::run_research_day(int64_t day_index) {
                         ModifierRuntime::COUNTRY, EFFICIENCY_STATS[domain],
                         make_handle(slot), 0, 1.0);
                 }
-                const int64_t effective_cost = std::max<int64_t>(
-                    1, static_cast<int64_t>(std::llround(
-                        static_cast<double>(_technology_costs[
-                            static_cast<size_t>(technology)]) * cost_factor)));
+                const int64_t effective_cost = effective_research_cost(slot, technology);
                 const int64_t remaining = std::max<int64_t>(
                     0, effective_cost - progress);
                 const int64_t spend_needed = std::max<int64_t>(
@@ -3416,7 +3490,7 @@ int32_t NativeCountryRuntime::run_research_day(int64_t day_index) {
         // transient diagnostic marker without changing authority or hashes.
         _research_queue_fallback_reason.clear();
     }
-    _last_research_day = day_index;
+    if (research_due) _last_research_day = day_index;
     if (changed > 0) ++_generation;
     return changed;
 }

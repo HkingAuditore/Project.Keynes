@@ -53,6 +53,10 @@ func _init() -> void:
 	_expect("deferred research refresh bootstraps technology catalog",
 		deferred_tree != null and deferred_tree.visibility_report().get("total", 0) == definitions.size())
 	deferred_workspace.queue_free()
+	var stable_visibility: Dictionary = workspace.tree_view().visibility_report()
+	workspace.refresh_research({"available": false, "reason": "country snapshot pending"})
+	_expect("invalid research refresh preserves the visible technology tree",
+		workspace.tree_view().visibility_report() == stable_visibility)
 	var maize := (compiled.technology_ids as PackedStringArray).find(
 		"tech.maize_identification")
 	_expect("technology presentation is fully Chinese",
@@ -391,7 +395,8 @@ func _audit_fit(workspace: Control, tree: Control) -> void:
 	_expect("research policy and detail are permanent working columns",
 		tree.offset_left == TechnologyWorkspace.POLICY_WIDTH \
 		and tree.offset_right == -TechnologyWorkspace.DETAIL_WIDTH
-		and policy.visible and detail.visible and policy.size.x == 280.0)
+		and policy.visible and detail.visible
+		and policy.size.x == TechnologyWorkspace.POLICY_WIDTH)
 	workspace._set_policy_open(false)
 	await process_frame
 	_expect("policy close requests cannot hide the permanent left column",
@@ -403,8 +408,8 @@ func _audit_fit(workspace: Control, tree: Control) -> void:
 		and tree.offset_right == -TechnologyWorkspace.DETAIL_WIDTH
 		and tree.offset_left == TechnologyWorkspace.POLICY_WIDTH)
 	var detail_card := workspace.get("_detail") as Control
-	var detail_scroll := detail_card.get_node("Scroll") as ScrollContainer
-	var detail_body := detail_card.get_node("Scroll/Body") as Control
+	var detail_scroll := detail_card.get_node("Column/Scroll") as ScrollContainer
+	var detail_body := detail_card.get_node("Column/Scroll/Body") as Control
 	var relation_label_scene := preload("res://scenes/ui/technology_relation_row.tscn")
 	var relation_row := relation_label_scene.instantiate() as HBoxContainer
 	detail_body.add_child(relation_row)
@@ -420,10 +425,10 @@ func _audit_fit(workspace: Control, tree: Control) -> void:
 	await process_frame
 	print("  [info] compact tree width %.0f" % tree.size.x)
 	_expect("compact mode still leaves the tree over 420px wide", tree.size.x >= 420.0)
-	_expect("compact mode keeps both columns docked at reduced width",
-		tree.offset_left == TechnologyWorkspace.COMPACT_POLICY_WIDTH \
-		and tree.offset_right == -TechnologyWorkspace.COMPACT_DETAIL_WIDTH
-		and policy.visible and detail.visible)
+	_expect("compact mode turns side columns into optional drawers",
+		tree.offset_left == TechnologyWorkspace.COMPACT_RAIL_WIDTH \
+		and tree.offset_right == -TechnologyWorkspace.COMPACT_RAIL_WIDTH
+		and not policy.visible and not detail.visible)
 	workspace.set_compact(false)
 	await process_frame
 
@@ -447,6 +452,15 @@ func _audit_refresh(workspace: Control, tree: Control, definitions: Array,
 	_expect("daily refresh reuses queue rows instead of rebuilding them",
 		((refreshed[0] as Array)[0] as Node).get_instance_id() == row_id)
 	_expect("tree view still owns no child nodes", tree.get_child_count() == 0)
+	var user_offset: Vector2 = tree.get("_offset") + Vector2(-8.0, -8.0)
+	tree.set("_offset", user_offset)
+	tree.call("_clamp_offset")
+	user_offset = tree.get("_offset")
+	tree.call("_rebuild_focus", false)
+	await process_frame
+	var restored_offset: Vector2 = tree.get("_offset")
+	_expect("research state refresh preserves the user's atlas viewport",
+		restored_offset.distance_to(user_offset) < 0.1)
 	var refresh_samples := PackedFloat64Array()
 	var steady_model := _model(definitions, eras, domains)
 	for iteration in range(1000):
@@ -537,8 +551,11 @@ func _audit_navigation(workspace: Control, tree: Control, definitions: Array) ->
 		as PackedInt32Array).duplicate()
 	overview.patch_states(fog_states)
 	var fog_overview: Dictionary = overview.overview_report()
-	_expect("overview keeps four domains but hides future eras",
-		int(fog_overview.visible_domains) == 4 and int(fog_overview.visible_eras) < 11)
+	_expect("overview keeps the four domain rows while hiding future eras",
+		(workspace.get("_domains") as Array).size() == 4
+		and int(fog_overview.visible_domains) > 0
+		and int(fog_overview.visible_domains) <= 4
+		and int(fog_overview.visible_eras) < 11)
 	workspace._set_mode(0)
 
 

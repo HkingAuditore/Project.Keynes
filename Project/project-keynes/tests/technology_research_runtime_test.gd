@@ -24,6 +24,8 @@ func _init() -> void:
 	var gathering := ids.find("tech.gathering")
 	var stone_knapping := ids.find("tech.stone_knapping")
 	var settled_knowledge := ids.find("tech.settled_knowledge")
+	var milestone_candidates: PackedInt32Array = compiled.technology_milestone_candidates
+	_expect("expanded milestone candidate contract", milestone_candidates.size() == 132)
 	var previous_maize := ids.find("tech.wild_maize_collection")
 	var previous_maritime := ids.find("tech.fishing_boats")
 	var oral_memory := ids.find("tech.oral_memory_practice")

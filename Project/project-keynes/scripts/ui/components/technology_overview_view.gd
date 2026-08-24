@@ -4,10 +4,10 @@ class_name TechnologyOverviewView
 signal cell_activated(domain_id: String, era_index: int, technology_index: int)
 
 const LABEL_WIDTH := 214.0
-const HEADER_HEIGHT := 34.0
-const ROW_HEIGHT := 28.0
+const HEADER_HEIGHT := 44.0
+const ROW_HEIGHT := 56.0
 const CELL_GAP := 4.0
-const DOT_RADIUS := 3.0
+const DOT_RADIUS := 5.0
 
 var _definitions: Array = []
 var _eras: Array = []
@@ -188,15 +188,15 @@ func _draw() -> void:
 		var x := LABEL_WIDTH + era_column * cell_width
 		draw_string(_label_font, Vector2(x + 6.0, 22.0),
 			String((_eras[era_index] as Dictionary).get("display_name", "")),
-			HORIZONTAL_ALIGNMENT_LEFT, cell_width - 8.0, 12, UITokens.TEXT_MUTED)
+			HORIZONTAL_ALIGNMENT_LEFT, cell_width - 8.0, 14, UITokens.ARCHIVE_INK_MUTED)
 		draw_line(Vector2(x, HEADER_HEIGHT - 4.0),
 			Vector2(x, size.y), UITokens.PANEL_BORDER_SOFT, 1.0)
 	for row in range(_domains.size()):
 		var domain: Dictionary = _domains[row]
 		var label := String(domain.get("display_name", domain.get("id", "")))
 		var y := HEADER_HEIGHT + int(row) * ROW_HEIGHT
-		draw_string(_label_font, Vector2(8.0, y + 18.0), label,
-			HORIZONTAL_ALIGNMENT_LEFT, LABEL_WIDTH - 16.0, 12, UITokens.TEXT_MAIN)
+		draw_string(_label_font, Vector2(8.0, y + 33.0), label,
+			HORIZONTAL_ALIGNMENT_LEFT, LABEL_WIDTH - 16.0, 15, UITokens.ARCHIVE_INK)
 		draw_line(Vector2(0.0, y + ROW_HEIGHT - 1.0), Vector2(size.x, y + ROW_HEIGHT - 1.0),
 			Color(UITokens.PANEL_BORDER_SOFT, 0.35), 1.0)
 	for index in range(_cells.size()):
@@ -207,8 +207,9 @@ func _draw_cell(index: int) -> void:
 	var cell: Dictionary = _cells[index]
 	var rect: Rect2 = cell.rect
 	var hover := index == _hovered
-	draw_rect(rect, Color(0.075, 0.065, 0.052, 0.88 if hover else 0.56), true)
-	draw_rect(rect, UITokens.BRASS_HIGHLIGHT if hover else UITokens.PANEL_BORDER_SOFT,
+	draw_rect(rect, UITokens.ARCHIVE_PAPER_LIGHT if hover \
+		else Color(0.90, 0.84, 0.71, 0.88), true)
+	draw_rect(rect, UITokens.ARCHIVE_BRASS if hover else UITokens.ARCHIVE_RULE,
 		false, 1.0)
 	var technologies: Array = cell.technologies
 	var count := technologies.size()
@@ -223,8 +224,8 @@ func _draw_cell(index: int) -> void:
 
 func _state_colour(state: int) -> Color:
 	match state:
-		2: return UITokens.BRASS_HIGHLIGHT
-		3: return UITokens.WATER.lerp(UITokens.TEXT_MAIN, 0.24)
-		4: return UITokens.WARN
-		5: return UITokens.GOOD
-		_: return UITokens.TEXT_FAINT
+		2: return UITokens.ARCHIVE_BRASS
+		3: return UITokens.WATER.lerp(UITokens.ARCHIVE_INK, 0.24)
+		4: return UITokens.WARN.lerp(UITokens.ARCHIVE_INK, 0.18)
+		5: return UITokens.GOOD.lerp(UITokens.ARCHIVE_INK, 0.18)
+		_: return UITokens.ARCHIVE_INK_MUTED

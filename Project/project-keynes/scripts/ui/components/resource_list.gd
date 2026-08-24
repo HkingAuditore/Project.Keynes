@@ -73,7 +73,7 @@ func _apply_row(refs: Dictionary, data: Dictionary) -> void:
 	name_label.text = String(data.get("name", "资源"))
 	var density_label := refs.get("density") as Label
 	density_label.text = String(data.get("density", ""))
-	density_label.add_theme_color_override("font_color", accent.lerp(UITokens.TEXT_MAIN, 0.18))
+	density_label.add_theme_color_override("font_color", accent.lerp(UITokens.ARCHIVE_INK, 0.18))
 	var value_label := refs.get("value") as Label
 	value_label.text = String(data.get("value", ""))
 	var delta_label := refs.get("delta") as Label
@@ -81,5 +81,5 @@ func _apply_row(refs: Dictionary, data: Dictionary) -> void:
 	var delta_text := delta_label.text
 	delta_label.add_theme_color_override(
 		"font_color",
-		UITokens.GOOD if delta_text.contains("+") else (UITokens.RISK if delta_text.contains("-") else UITokens.TEXT_MUTED)
+		UITokens.GOOD if delta_text.contains("+") else (UITokens.RISK if delta_text.contains("-") else UITokens.ARCHIVE_INK_MUTED)
 	)

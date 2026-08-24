@@ -24,15 +24,17 @@ func _init() -> void:
 		"tech.maize_identification")
 	var oral_memory := (compiled.technology_ids as PackedStringArray).find(
 		"tech.oral_memory_practice")
+	var phenology_observation := (compiled.technology_ids as PackedStringArray).find(
+		"tech.phenology_observation")
 	var country_packet := {
 		"country_ids": PackedStringArray(["country.procurement"]),
 		"country_names": PackedStringArray(["Procurement"]),
 		"country_cash": PackedInt64Array([100000000]),
 		"territory_offsets": PackedInt32Array([0, 1]),
 		"territory_cells": PackedInt32Array([0]),
-		"technology_offsets": PackedInt32Array([0, 3]),
+		"technology_offsets": PackedInt32Array([0, 4]),
 		"technology_indices": PackedInt32Array([
-			gathering, maize_identification, oral_memory]),
+			gathering, maize_identification, oral_memory, phenology_observation]),
 	}
 	_expect("country bootstraps", bool(country.bootstrap(
 		PackedByteArray([0]), country_packet).get("ok", false)))

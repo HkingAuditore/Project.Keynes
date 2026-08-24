@@ -22,64 +22,67 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_constants/separation = 8
+theme_override_constants/separation = 9
 
 [node name="Header" type="HBoxContainer" parent="Column"]
+visible = false
 custom_minimum_size = Vector2(0, 28)
 layout_mode = 2
 theme_override_constants/separation = 8
-
 [node name="SectionIcon" parent="Column/Header" instance=ExtResource("2_icon")]
 custom_minimum_size = Vector2(24, 26)
 layout_mode = 2
-
 [node name="Title" type="Label" parent="Column/Header"]
 layout_mode = 2
 text = "国家财政"
 vertical_alignment = 1
 theme_type_variation = &"PKSectionTitle"
-
 [node name="CountryLabel" type="Label" parent="Column/Header"]
 unique_name_in_owner = true
 layout_mode = 2
 vertical_alignment = 1
 theme_type_variation = &"PKMutedLabel"
-
 [node name="Spacer" type="Control" parent="Column/Header"]
 layout_mode = 2
 size_flags_horizontal = 3
-
 [node name="DayLabel" type="Label" parent="Column/Header"]
 unique_name_in_owner = true
 layout_mode = 2
 vertical_alignment = 1
 theme_type_variation = &"PKMutedLabel"
 
+[node name="SummaryHeading" type="HBoxContainer" parent="Column"]
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+[node name="Title" type="Label" parent="Column/SummaryHeading"]
+layout_mode = 2
+text = "财政摘要"
+theme_type_variation = &"PKWorkspaceTitle"
+[node name="Rule" type="HSeparator" parent="Column/SummaryHeading"]
+layout_mode = 2
+size_flags_horizontal = 3
+
 [node name="Cards" type="HBoxContainer" parent="Column"]
 layout_mode = 2
-theme_override_constants/separation = 8
-
+theme_override_constants/separation = 10
 [node name="CashCard" parent="Column/Cards" instance=ExtResource("3_card")]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(150, 72)
+custom_minimum_size = Vector2(180, 78)
 layout_mode = 2
 size_flags_horizontal = 3
-
 [node name="TaxCard" parent="Column/Cards" instance=ExtResource("3_card")]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(150, 72)
+custom_minimum_size = Vector2(180, 78)
 layout_mode = 2
 size_flags_horizontal = 3
-
 [node name="SubsidyCard" parent="Column/Cards" instance=ExtResource("3_card")]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(150, 72)
+custom_minimum_size = Vector2(180, 78)
 layout_mode = 2
 size_flags_horizontal = 3
-
 [node name="FulfillmentCard" parent="Column/Cards" instance=ExtResource("3_card")]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(150, 72)
+custom_minimum_size = Vector2(180, 78)
 layout_mode = 2
 size_flags_horizontal = 3
 
@@ -90,94 +93,111 @@ layout_mode = 2
 [node name="Tabs" parent="Column" instance=ExtResource("4_tabs")]
 unique_name_in_owner = true
 layout_mode = 2
-
 [node name="TaxTabs" parent="Column" instance=ExtResource("4_tabs")]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 
-[node name="Tools" type="HBoxContainer" parent="Column"]
+[node name="Ledger" type="PanelContainer" parent="Column"]
 layout_mode = 2
-theme_override_constants/separation = 8
+size_flags_vertical = 3
+theme_type_variation = &"PKEconomyLedger"
+[node name="LedgerColumn" type="VBoxContainer" parent="Column/Ledger"]
+layout_mode = 2
+theme_override_constants/separation = 9
 
-[node name="Search" type="LineEdit" parent="Column/Tools"]
+[node name="LedgerHeading" type="HBoxContainer" parent="Column/Ledger/LedgerColumn"]
+custom_minimum_size = Vector2(0, 34)
+layout_mode = 2
+theme_override_constants/separation = 10
+[node name="Title" type="Label" parent="Column/Ledger/LedgerColumn/LedgerHeading"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "国库清册"
+theme_type_variation = &"PKWorkspaceTitle"
+[node name="Subtitle" type="Label" parent="Column/Ledger/LedgerColumn/LedgerHeading"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-placeholder_text = "搜索职业、物资或建筑"
+vertical_alignment = 1
+text_overrun_behavior = 3
+theme_type_variation = &"PKMutedLabel"
 
-[node name="OverridesOnly" type="Button" parent="Column/Tools"]
+[node name="Tools" type="HBoxContainer" parent="Column/Ledger/LedgerColumn"]
+layout_mode = 2
+theme_override_constants/separation = 8
+[node name="Search" type="LineEdit" parent="Column/Ledger/LedgerColumn/Tools"]
 unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 28)
+custom_minimum_size = Vector2(260, 34)
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "搜索职业、物资或建筑"
+[node name="OverridesOnly" type="Button" parent="Column/Ledger/LedgerColumn/Tools"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(120, 34)
 layout_mode = 2
 toggle_mode = true
 focus_mode = 0
 text = "仅看覆盖项"
 theme_type_variation = &"PKTabButton"
-
-[node name="TradeViews" type="HBoxContainer" parent="Column/Tools"]
+[node name="TradeViews" type="HBoxContainer" parent="Column/Ledger/LedgerColumn/Tools"]
 visible = false
 layout_mode = 2
 theme_override_constants/separation = 2
-
-[node name="Goods" type="Button" parent="Column/Tools/TradeViews"]
-custom_minimum_size = Vector2(72, 28)
+[node name="Goods" type="Button" parent="Column/Ledger/LedgerColumn/Tools/TradeViews"]
+custom_minimum_size = Vector2(80, 34)
 layout_mode = 2
 toggle_mode = true
 text = "商品"
 theme_type_variation = &"PKTabButton"
-
-[node name="Partners" type="Button" parent="Column/Tools/TradeViews"]
-custom_minimum_size = Vector2(72, 28)
+[node name="Partners" type="Button" parent="Column/Ledger/LedgerColumn/Tools/TradeViews"]
+custom_minimum_size = Vector2(80, 34)
 layout_mode = 2
 toggle_mode = true
 text = "伙伴"
 theme_type_variation = &"PKTabButton"
-
-[node name="TradePrev" type="Button" parent="Column/Tools"]
+[node name="TradePrev" type="Button" parent="Column/Ledger/LedgerColumn/Tools"]
 visible = false
-custom_minimum_size = Vector2(28, 28)
+custom_minimum_size = Vector2(34, 34)
 layout_mode = 2
 focus_mode = 0
-
-[node name="TradePage" type="Label" parent="Column/Tools"]
+[node name="TradePage" type="Label" parent="Column/Ledger/LedgerColumn/Tools"]
 visible = false
-custom_minimum_size = Vector2(78, 28)
+custom_minimum_size = Vector2(84, 34)
 layout_mode = 2
 horizontal_alignment = 1
 vertical_alignment = 1
 theme_type_variation = &"PKMutedLabel"
-
-[node name="TradeNext" type="Button" parent="Column/Tools"]
+[node name="TradeNext" type="Button" parent="Column/Ledger/LedgerColumn/Tools"]
 visible = false
-custom_minimum_size = Vector2(28, 28)
+custom_minimum_size = Vector2(34, 34)
 layout_mode = 2
 focus_mode = 0
 
-[node name="StatusLabel" type="Label" parent="Column"]
+[node name="StatusLabel" type="Label" parent="Column/Ledger/LedgerColumn"]
 unique_name_in_owner = true
 layout_mode = 2
 horizontal_alignment = 1
 autowrap_mode = 2
 theme_type_variation = &"PKMutedLabel"
 
-[node name="Scroll" type="ScrollContainer" parent="Column"]
+[node name="Scroll" type="ScrollContainer" parent="Column/Ledger/LedgerColumn"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
-
-[node name="Flow" type="HFlowContainer" parent="Column/Scroll"]
+[node name="Flow" type="HFlowContainer" parent="Column/Ledger/LedgerColumn/Scroll"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_constants/h_separation = 8
-theme_override_constants/v_separation = 8
-
-[node name="EmptyLabel" type="Label" parent="Column/Scroll/Flow"]
+theme_override_constants/h_separation = 10
+theme_override_constants/v_separation = 10
+[node name="EmptyLabel" type="Label" parent="Column/Ledger/LedgerColumn/Scroll/Flow"]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 80)
 layout_mode = 2
 size_flags_horizontal = 3
 text = "没有符合条件的项目"
 horizontal_alignment = 1
-theme_type_variation = &"PKMutedLabel"
+vertical_alignment = 1
+theme_type_variation = &"PKWorkspaceLabel"

@@ -4,7 +4,7 @@ class_name CountryActionBar
 
 signal section_selected(section_id: String)
 
-const BAR_HEIGHT := 70.0
+const BAR_HEIGHT := 74.0
 const BUTTON_SIZE := Vector2(64.0, 56.0)
 const COMPACT_BUTTON_WIDTH := 56.0
 const ICON_SIZE := 24
@@ -41,8 +41,7 @@ func _ready() -> void:
 		button.disabled = not available
 		var icon := button.get_node("Column/Icon") as TextureRect
 		icon.texture = IconCatalog.texture_for_key(definition.icon)
-		icon.modulate = UITokens.BRASS_HIGHLIGHT.lerp(UITokens.TEXT_MAIN, 0.30) \
-			if available else UITokens.TEXT_FAINT
+		icon.modulate = UITokens.BRASS_HIGHLIGHT if available else UITokens.TEXT_FAINT
 		var caption := button.get_node("Column/Caption") as Label
 		caption.text = String(definition.label) if available else ""
 		caption.visible = available
