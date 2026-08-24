@@ -1,0 +1,95 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/era_reward_dialog.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://scenes/ui/archival_surface.tscn" id="2_archive"]
+[ext_resource type="PackedScene" path="res://scenes/ui/era_reward_choice.tscn" id="3_choice"]
+
+[node name="EraRewardDialog" type="Control"]
+process_mode = 3
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+script = ExtResource("1_script")
+
+[node name="Shade" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+color = Color(0.055, 0.038, 0.025, 0.9)
+
+[node name="ArchiveSurface" parent="." instance=ExtResource("2_archive")]
+unique_name_in_owner = true
+editable_children = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = 18.0
+offset_right = -24.0
+offset_bottom = -18.0
+grow_horizontal = 2
+grow_vertical = 2
+z_index = 1
+mouse_filter = 2
+
+[node name="Prompt" type="PanelContainer" parent="ArchiveSurface/Frame/Margin/Column/Body"]
+layout_mode = 2
+theme_type_variation = &"PKArchiveBand"
+
+[node name="Margin" type="MarginContainer" parent="ArchiveSurface/Frame/Margin/Column/Body/Prompt"]
+layout_mode = 2
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 8
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 8
+
+[node name="Text" type="Label" parent="ArchiveSurface/Frame/Margin/Column/Body/Prompt/Margin"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "从下列三项时代方案中择一，选择后将提交本次晋升的正式效果。"
+horizontal_alignment = 1
+autowrap_mode = 2
+theme_type_variation = &"PKMutedLabel"
+
+[node name="CardsScroll" type="ScrollContainer" parent="ArchiveSurface/Frame/Margin/Column/Body"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 300)
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="CardGrid" type="GridContainer" parent="ArchiveSurface/Frame/Margin/Column/Body/CardsScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/h_separation = 14
+theme_override_constants/v_separation = 14
+columns = 3
+
+[node name="Card0" parent="ArchiveSurface/Frame/Margin/Column/Body/CardsScroll/CardGrid" instance=ExtResource("3_choice")]
+layout_mode = 2
+
+[node name="Card1" parent="ArchiveSurface/Frame/Margin/Column/Body/CardsScroll/CardGrid" instance=ExtResource("3_choice")]
+layout_mode = 2
+
+[node name="Card2" parent="ArchiveSurface/Frame/Margin/Column/Body/CardsScroll/CardGrid" instance=ExtResource("3_choice")]
+layout_mode = 2
+
+[node name="Status" type="Label" parent="ArchiveSurface/Frame/Margin/Column/Body"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 42)
+layout_mode = 2
+text = ""
+horizontal_alignment = 1
+vertical_alignment = 1
+autowrap_mode = 2
+theme_type_variation = &"PKEraRewardStatus"

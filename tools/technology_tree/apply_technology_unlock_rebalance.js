@@ -7,6 +7,8 @@ const childProcess = require("child_process");
 const ROOT = path.resolve(__dirname, "../../Project/project-keynes");
 const NETWORK_PATH = path.join(ROOT, "data/technology/technology_network.json");
 const BUILDINGS_DIR = path.join(ROOT, "data/economy/buildings");
+const GOODS_DIR = path.join(ROOT, "data/goods");
+const RESOURCES_DIR = path.join(ROOT, "data/resources");
 const REPO_ROOT = path.resolve(ROOT, "../..");
 
 // The checkout may contain a partially authored network with trailing commas.
@@ -41,10 +43,34 @@ function readHeadBuilding(fileName) {
   }
 }
 
+function readHeadGood(fileName) {
+  try {
+    return childProcess.execFileSync("git", [
+      "show", `HEAD:Project/project-keynes/data/goods/${fileName}`,
+    ], { cwd: REPO_ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+  } catch (_) {
+    return "";
+  }
+}
+
 function rewritePackedStrings(text, field, values) {
   const line = `${field} = PackedStringArray(${values.map((value) => `"${value}"`).join(", ")})`;
   const pattern = new RegExp(`^${field}\\s*=\\s*PackedStringArray\\(.*?\\)$`, "ms");
   if (!pattern.test(text)) throw new Error(`${field} missing from building resource`);
+  return text.replace(pattern, line);
+}
+
+function packedIntegers(text, field) {
+  const match = text.match(new RegExp(
+    `^${field}\\s*=\\s*PackedInt(?:32|64)Array\\((.*?)\\)$`, "ms"));
+  return match ? [...match[1].matchAll(/-?\d+/g)].map((value) => Number(value[0])) : [];
+}
+
+function rewritePackedIntegers(text, field, values) {
+  const line = `${field} = PackedInt64Array(${values.join(", ")})`;
+  const pattern = new RegExp(
+    `^${field}\\s*=\\s*PackedInt(?:32|64)Array\\(.*?\\)$`, "ms");
+  if (!pattern.test(text)) throw new Error(`${field} missing from resource`);
   return text.replace(pattern, line);
 }
 
@@ -58,6 +84,21 @@ function bindingEffect(buildingId, displayName) {
     operation: "unlock",
     value: 1,
     implementation: "BuildingProfile.technology_tags",
+    status: "catalog_rebind",
+    display_name: displayName,
+  };
+}
+
+function goodEffect(goodId, displayName) {
+  return {
+    kind: "good",
+    id: goodId,
+    binding_kind: 1,
+    subject: `good.${goodId}`,
+    attribute: "production_access",
+    operation: "unlock",
+    value: 1,
+    implementation: "GoodProfile.technology_tags",
     status: "catalog_rebind",
     display_name: displayName,
   };
@@ -126,24 +167,51 @@ function addBuildingBinding(node, buildingId, displayName) {
   node.effect_summary = `解锁建筑：${displayName}`;
 }
 
-function cleanEffectSummary(node, buildingNames) {
-  const activeNames = new Set((node.content_effects || [])
+function removeGoodBinding(node, goodId) {
+  node.expected_bindings = (node.expected_bindings || []).filter((binding) =>
+    !(Number(binding.kind) === 1 && String(binding.id) === goodId));
+  node.content_effects = (node.content_effects || []).filter((effect) =>
+    !(String(effect.kind) === "good" && String(effect.id) === goodId));
+}
+
+function addGoodBinding(node, goodId, displayName) {
+  removeGoodBinding(node, goodId);
+  node.expected_bindings.push({ kind: 1, id: goodId });
+  node.content_effects.push(goodEffect(goodId, displayName));
+}
+
+function cleanEffectSummary(node, buildingNames, goodNames) {
+  const activeBuildingNames = new Set((node.content_effects || [])
     .filter((effect) => String(effect.kind) === "building")
     .map((effect) => String(effect.display_name || "").trim())
     .filter((name) => name.length > 0));
+  const activeGoodNames = new Set((node.content_effects || [])
+    .filter((effect) => String(effect.kind) === "good")
+    .map((effect) => String(effect.display_name || "").trim())
+    .filter((name) => name.length > 0));
   const chunks = String(node.effect_summary || "").split("；");
-  node.effect_summary = chunks.filter((chunkValue) => {
+  const retainedChunks = chunks.filter((chunkValue) => {
     const chunk = String(chunkValue).trim();
     if (chunk.startsWith("作为必要支撑")) return false;
     if (chunk.startsWith("解锁建筑：") || chunk.startsWith("解锁建筑: ")) {
       const name = chunk.replace(/^解锁建筑[:：]\s*/, "");
-      return activeNames.has(name);
+      return activeBuildingNames.has(name);
+    }
+    if (chunk.startsWith("解锁物资：") || chunk.startsWith("解锁物资: ")) {
+      const name = chunk.replace(/^解锁物资[:：]\s*/, "");
+      return activeGoodNames.has(name);
     }
     return chunk.length > 0;
-  }).join("；");
-  if (node.effect_summary.length === 0 && activeNames.size > 0) {
-    node.effect_summary = [...activeNames].map((name) => `解锁建筑：${name}`).join("；");
+  });
+  for (const name of activeGoodNames) {
+    if (!retainedChunks.some((chunk) => chunk === `解锁物资：${name}` ||
+        chunk === `解锁物资: ${name}`)) retainedChunks.push(`解锁物资：${name}`);
   }
+  for (const name of activeBuildingNames) {
+    if (!retainedChunks.some((chunk) => chunk === `解锁建筑：${name}` ||
+        chunk === `解锁建筑: ${name}`)) retainedChunks.push(`解锁建筑：${name}`);
+  }
+  node.effect_summary = retainedChunks.join("；");
 }
 
 function normalizeNode(node) {
@@ -249,19 +317,21 @@ function main() {
   const eraIndex = new Map(payload.eras.map((era, index) => [String(era.id), index]));
   const stoneWhitelist = new Set([
     "stone_age_hunting_camp", "gathering_ground", "early_merchant_post",
-    "placer_gold_working", "surface_silver_working", "deadwood_gathering_camp",
+    "placer_gold_working", "deadwood_gathering_camp",
     "hide_scraping_shelter", "early_knowledge_institution", "communal_hearth",
-    "flint_quarry", "freshwater_fishing_camp", "marine_fish_collector",
+    "flint_quarry", "knapping_workshop", "stone_collector",
+    "freshwater_fishing_camp", "marine_fish_collector", "bast_fiber_camp",
+    "bast_wrap_shelter",
   ]);
 
   // Every era receives a deliberately paced learning load. The sequence is
   // monotonic and nearly arithmetic while accounting for every active
   // building exactly once.
   const eraBuildingTargets = new Map([
-    ["stone", 12], ["agrarian", 16], ["kingdom", 20], ["empire", 24],
+    ["stone", 15], ["agrarian", 17], ["kingdom", 20], ["empire", 24],
     ["exploration", 28], ["enlightenment", 32], ["steam", 36],
-    ["electrical", 40], ["atomic", 44], ["information", 48],
-    ["intelligent", 51],
+    ["electrical", 40], ["atomic", 44], ["information", 46],
+    ["intelligent", 49],
   ]);
   const preferredBuildingEra = new Map([
     ["method_marine_fish_collector_r2", "agrarian"],
@@ -280,6 +350,7 @@ function main() {
     ["upland_rice_plot", "agrarian"],
     ["potato_collector", "agrarian"],
     ["subsistence_farm", "agrarian"],
+    ["surface_silver_working", "agrarian"],
   ]);
   const minimumBuildingEra = new Map([
     ["guild_weaving_house", "kingdom"],
@@ -290,8 +361,6 @@ function main() {
     ["cobbler_shop", "kingdom"],
     ["tannery", "kingdom"],
     ["felt_making_tent", "kingdom"],
-    ["bast_fiber_camp", "kingdom"],
-    ["bast_wrap_shelter", "kingdom"],
     ["fur_sewing_shelter", "kingdom"],
     ["household_weaving_shelter", "kingdom"],
     ["lorekeeper_circle", "kingdom"],
@@ -325,11 +394,49 @@ function main() {
   ]);
   const milestoneCandidateTargets = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18];
   const milestoneRequiredTargets = [4, 4, 4, 4, 5, 5, 5, 6, 6, 7, 7];
+  const applicationSupportBySector = {
+    agriculture: [
+      "tech.permanent_settlements", "tech.crop_rotation", "tech.intensive_crop_rotation",
+      "tech.commercial_estates", "tech.agricultural_improvement", "tech.mechanized_agriculture",
+      "tech.motorized_agriculture", "tech.industrial_agronomy", "tech.precision_agriculture",
+      "tech.automated_agriculture",
+    ],
+    extractive: [
+      "tech.ground_stone_tools", "tech.market_institutions", "tech.mine_timbering",
+      "tech.deep_mining", "tech.geological_prospecting", "tech.industrial_coal_mining",
+      "tech.petroleum_extraction", "tech.mechanized_mining", "tech.geographic_information_systems",
+      "tech.autonomous_mining",
+    ],
+    manufacturing: [
+      "tech.permanent_settlements", "tech.market_institutions", "tech.guild_organization",
+      "tech.chartered_companies", "tech.mechanical_workshops", "tech.factory_system",
+      "tech.mass_production", "tech.operations_research", "tech.digital_control",
+      "tech.robotic_manufacturing",
+    ],
+    energy: [
+      "tech.charcoal_burning", "tech.market_institutions", "tech.water_power",
+      "tech.chartered_companies", "tech.hydraulic_engineering", "tech.steam_power",
+      "tech.electric_grid", "tech.nuclear_energy", "tech.digital_control", "tech.smart_grid",
+    ],
+    knowledge: [
+      "tech.record_keeping", "tech.writing", "tech.scholarly_academies",
+      "tech.chartered_universities", "tech.experimental_science", "tech.industrial_research",
+      "tech.national_laboratories", "tech.software_engineering", "tech.machine_learning",
+    ],
+  };
+  const primitiveApplicationSupport = {
+    agriculture: "tech.gathering",
+    extractive: "tech.stone_knapping",
+    manufacturing: "tech.composite_tools",
+    energy: "tech.fire_control",
+    knowledge: "tech.early_knowledge_institution",
+  };
 
   const buildings = [];
   for (const fileName of fs.readdirSync(BUILDINGS_DIR).filter((name) => name.endsWith(".tres")).sort()) {
     const filePath = path.join(BUILDINGS_DIR, fileName);
     const text = fs.readFileSync(filePath, "utf8");
+	const id = scalar(text, "id", path.parse(fileName).name);
     const rawDirect = packedStrings(text, "technology_tags").filter((tag) => tag.startsWith("tech."));
     let direct = rawDirect;
     let required = packedStrings(text, "required_technology_tags").filter((tag) => tag.startsWith("tech."));
@@ -338,47 +445,113 @@ function main() {
       .filter((tag) => tag.startsWith("tech."));
     const headRequired = packedStrings(headText, "required_technology_tags")
       .filter((tag) => tag.startsWith("tech."));
-    if (headDirect.length === 1 && nodeById.has(headDirect[0])) {
-      direct = headDirect;
-      required = headRequired;
-    } else if (direct.length === 1 && !nodeById.has(direct[0]) &&
-        existingApplicationById.has(direct[0])) {
-      const applicationId = direct[0];
+	if (direct.length === 1 && nodeById.has(direct[0])) {
+	  required = [];
+	} else if (direct.length === 1 && !nodeById.has(direct[0]) &&
+		direct[0] === `tech.application.${id}` &&
+		nodeById.has(`tech.method.${id}`)) {
+	  direct = [`tech.method.${id}`];
+	  required = [];
+	} else if (headDirect.length === 1 && nodeById.has(headDirect[0])) {
+	  direct = headDirect;
+	  required = headRequired;
+	} else if (direct.length === 1 && !nodeById.has(direct[0]) &&
+		(existingApplicationById.has(direct[0]) ||
+		  (direct[0] === `tech.method.${id}` &&
+			existingApplicationById.has(`tech.application.${id}`)))) {
+	  const applicationId = existingApplicationById.has(direct[0])
+		? direct[0] : `tech.application.${id}`;
       const application = existingApplicationById.get(applicationId);
       const specialDirect = {
         "tech.copper_mining_application": "tech.natural_copper_identification",
         "tech.application.early_tin_mine": "tech.copper_metallurgy",
         "tech.application.early_copper_mine": "tech.mine_timbering",
         "tech.application.ore_bronzesmith_camp": "tech.copper_annealing",
+        "tech.application.knapping_workshop": "tech.stone_knapping",
       };
-      const restoredDirect = specialDirect[applicationId] || headDirect[0] ||
-        String((application.hard_prerequisite_ids || [])[0] || "");
+      const restoredDirect = specialDirect[applicationId] ||
+        headDirect.find((id) => nodeById.has(id)) ||
+        (application.hard_prerequisite_ids || []).find((id) => nodeById.has(String(id))) ||
+        "";
       if (!restoredDirect || !nodeById.has(restoredDirect)) {
         throw new Error(`${fileName}: cannot recover direct technology from ${applicationId}`);
       }
       direct = [restoredDirect];
-      required = headRequired.length > 0 ? headRequired :
-        (application.hard_prerequisite_ids || [])
-          .filter((id) => String(id) !== restoredDirect);
+	  const foundationIds = Array.isArray(application.application_foundation_ids)
+		? application.application_foundation_ids.map(String)
+		: (application.hard_prerequisite_ids || []).filter((id, index) => {
+		  const rationale = String((application.prerequisite_rationales || [])[index] || "");
+		  return !rationale.startsWith("建筑配方需要") && !rationale.startsWith("建筑");
+		}).map(String);
+	  let recoveredRequired = foundationIds.filter((id) => id !== restoredDirect);
+	  const generatedSupportIds = new Set([
+		...Object.values(applicationSupportBySector).flat(),
+		...Object.values(primitiveApplicationSupport),
+	  ]);
+	  if (!Array.isArray(application.application_foundation_ids) &&
+		  recoveredRequired.length === 1 && generatedSupportIds.has(recoveredRequired[0])) {
+		recoveredRequired = [];
+	  }
+      required = applicationId === "tech.application.knapping_workshop" ? [] :
+        (headRequired.length > 0 ? headRequired :
+		  recoveredRequired);
     }
     if (direct.length !== 1) throw new Error(`${fileName}: expected exactly one direct technology`);
-    const id = scalar(text, "id", path.parse(fileName).name);
     buildings.push({
       fileName,
       filePath,
       text,
       id,
       displayName: scalar(text, "display_name", id),
+      sector: scalar(text, "economic_sector_id", "manufacturing"),
       direct: direct[0],
       required,
+      constructionGoods: packedStrings(text, "construction_good_ids"),
+      constructionQuantities: packedIntegers(text, "construction_quantities"),
+	  constructionCandidateOffsets: packedIntegers(text, "construction_candidate_offsets"),
+	  constructionCandidateGoods: packedStrings(text, "construction_candidate_good_ids"),
+      inputGoods: packedStrings(text, "input_good_ids"),
+	  inputRequiredQ16: packedIntegers(text, "input_required_q16"),
+	  inputCandidateOffsets: packedIntegers(text, "input_candidate_offsets"),
+	  inputCandidateGoods: packedStrings(text, "input_candidate_good_ids"),
+      outputGoods: packedStrings(text, "output_good_ids"),
+      resourceIds: packedStrings(text, "resource_ids"),
     });
   }
+
+  const goods = [];
+  for (const fileName of fs.readdirSync(GOODS_DIR).filter((name) => name.endsWith(".tres")).sort()) {
+    const filePath = path.join(GOODS_DIR, fileName);
+    const text = fs.readFileSync(filePath, "utf8");
+    const headText = readHeadGood(fileName);
+    const currentTechnologyTags = packedStrings(text, "technology_tags")
+      .filter((tag) => tag.startsWith("tech."));
+    const headTechnologyTags = packedStrings(headText, "technology_tags")
+      .filter((tag) => tag.startsWith("tech."));
+    goods.push({
+      fileName,
+      filePath,
+      text,
+      id: scalar(text, "id", path.parse(fileName).name),
+      displayName: scalar(text, "display_name", path.parse(fileName).name),
+      technologyTags: headTechnologyTags.length > 0 ? headTechnologyTags : currentTechnologyTags,
+    });
+  }
+	const resourceTechnologyTags = new Map();
+	for (const fileName of fs.readdirSync(RESOURCES_DIR)
+		.filter((name) => name.endsWith(".tres")).sort()) {
+	  const text = fs.readFileSync(path.join(RESOURCES_DIR, fileName), "utf8");
+	  const resourceId = scalar(text, "id", path.parse(fileName).name);
+	  resourceTechnologyTags.set(resourceId,
+		packedStrings(text, "discovery_technology_tags").filter((tag) => tag.startsWith("tech.")));
+	}
 
   // Rebuild the visible binding index from the building profiles below. This
   // removes stale bindings left by older generated application nodes and
   // guarantees that a building cannot remain unlocked by its former source.
   for (const node of nodes) {
     for (const building of buildings) removeBuildingBinding(node, building.id);
+    for (const good of goods) removeGoodBinding(node, good.id);
   }
 
   // Add one universal early knowledge institution before the remaining stone
@@ -417,6 +590,8 @@ function main() {
   unified.reveal_condition = {};
   unified.reveal_category = "environment_observation";
   unified.reveal_summary = "出生地的生存观察信号揭示统一的早期知识机构";
+  setHardPrerequisites(unified, ["tech.gathering"],
+    "稳定记录与传承生存观察，需要先形成基础采集共同体");
   unified.expected_bindings = [{ kind: 1, id: "technology_points" }, { kind: 2, id: "early_knowledge_institution" }];
   unified.content_effects = [
     {
@@ -482,6 +657,50 @@ function main() {
   ];
   fishingBoats.route_exemption_reason = "";
 
+  // Material recognition cannot substitute for the craft being composed.
+  // Composite tools are downstream of actual knapping, while controlled
+  // burning is downstream of retaining and managing fire.
+  setHardPrerequisites(nodeById.get("tech.stone_knapping"),
+    ["tech.flint_identification"], "打制石器需要先辨识可剥片的燧石");
+  setHardPrerequisites(nodeById.get("tech.ground_stone_tools"),
+    ["tech.stone_knapping"], "磨制石器建立在打制石器的成形经验上");
+  setHardPrerequisites(nodeById.get("tech.composite_tools"),
+    ["tech.stone_knapping"], "复合工具必须先掌握可实际制造的打制石器");
+  setHardPrerequisites(nodeById.get("tech.controlled_burning"),
+    ["tech.fire_control"], "控制性用火必须先掌握火种控制");
+  setHardPrerequisites(nodeById.get("tech.turf_cutting"),
+    ["tech.stone_knapping"], "草皮切割需要可制造的石刃工具");
+  setHardPrerequisites(nodeById.get("tech.brine_collection"),
+    ["tech.gathering"], "卤水采集建立在基础采集组织之上");
+
+  // Technologies that previously relied only on contextual research routes
+  // still need an indispensable, visible knowledge foundation.  These are
+  // semantic craft/institution dependencies, not era-capacity supports.
+  const requiredKnowledgeFoundations = new Map([
+    ["tech.fire_control", ["tech.deadwood_collection"]],
+    ["tech.weights_and_measures", ["tech.writing"]],
+    ["tech.urban_food_supply", ["tech.public_storehouses", "tech.estate_accounting"]],
+    ["tech.deep_mining", ["tech.mine_timbering", "tech.mine_ventilation"]],
+    ["tech.mass_production", ["tech.factory_system", "tech.interchangeable_parts"]],
+    ["tech.corporate_management", ["tech.double_entry_bookkeeping", "tech.industrial_statistics"]],
+    ["tech.industrial_quality_control", ["tech.industrial_statistics", "tech.industrial_research"]],
+    ["tech.corporate_agribusiness", ["tech.global_logistics", "tech.corporate_management"]],
+    ["tech.nuclear_fuel_cycle", ["tech.industrial_chemistry", "tech.national_laboratories", "tech.specialty_alloys"]],
+    ["tech.automated_logistics", ["tech.global_logistics", "tech.software_engineering", "tech.semiconductor_manufacturing"]],
+    ["tech.human_machine_collaboration", ["tech.platform_coordination", "tech.machine_learning"]],
+    ["tech.robotic_manufacturing", ["tech.electronic_control", "tech.advanced_metallurgy", "tech.human_machine_collaboration"]],
+    ["tech.autonomous_mining", ["tech.sensor_networks", "tech.robotic_manufacturing"]],
+    ["tech.intelligent_breeding", ["tech.biotechnology", "tech.distributed_intelligence"]],
+    ["tech.algorithmic_management", ["tech.operations_research", "tech.networked_computing", "tech.machine_learning"]],
+    ["tech.adaptive_irrigation", ["tech.intelligent_breeding", "tech.autonomous_logistics", "tech.algorithmic_management"]],
+  ]);
+  for (const [technologyId, prerequisiteIds] of requiredKnowledgeFoundations) {
+    const node = nodeById.get(technologyId);
+    if (!node) throw new Error(`missing knowledge-foundation technology ${technologyId}`);
+    setHardPrerequisites(node, prerequisiteIds,
+      "该工艺或制度必须建立在所列基础知识已经实际掌握之上");
+  }
+
   // Copper identification, working, annealing, tin identification and ore
   // roasting all move out of stone age. Their direct building bindings are
   // re-evaluated below, with explicit applications for mining and bronze work.
@@ -531,8 +750,30 @@ function main() {
   retained.splice(gatheringIndex + 1, 0, unified);
 
   const refreshedById = new Map(retained.map((node) => [String(node.id), node]));
+	const dependencyGoodGroups = (building) => {
+	  const groups = [];
+	  for (let index = 0; index < building.constructionGoods.length; index += 1) {
+		const begin = Number(building.constructionCandidateOffsets[index] || 0);
+		const end = Number(building.constructionCandidateOffsets[index + 1] || 0);
+		groups.push(end > begin
+		  ? building.constructionCandidateGoods.slice(begin, end)
+		  : [building.constructionGoods[index]]);
+	  }
+	  for (let index = 0; index < building.inputGoods.length; index += 1) {
+		const requiredQ16 = building.inputRequiredQ16.length > 0
+		  ? Number(building.inputRequiredQ16[index] || 0) : 65536;
+		if (requiredQ16 <= 0) continue;
+		const begin = Number(building.inputCandidateOffsets[index] || 0);
+		const end = Number(building.inputCandidateOffsets[index + 1] || 0);
+		groups.push(end > begin
+		  ? building.inputCandidateGoods.slice(begin, end)
+		  : [building.inputGoods[index]]);
+	  }
+	  return groups.filter((group) => group.length > 0);
+	};
   const earliestBuildingEra = new Map();
   const plannedBuildingEra = new Map();
+	const buildingScheduleOrder = new Map();
   const unassignedBuildings = new Set();
   for (const building of buildings) {
     const source = refreshedById.get(building.direct);
@@ -543,6 +784,15 @@ function main() {
       if (requiredNode) earliestIndex = Math.max(earliestIndex,
         eraIndex.get(String(requiredNode.era_id)));
     }
+	for (const resourceId of building.resourceIds) {
+	  const candidates = (resourceTechnologyTags.get(resourceId) || [])
+		.map((id) => refreshedById.get(id)).filter(Boolean);
+	  if (candidates.length === 0) {
+		throw new Error(`${building.id}: resource recognition technology missing for ${resourceId}`);
+	  }
+	  earliestIndex = Math.max(earliestIndex, Math.min(...candidates.map((node) =>
+		eraIndex.get(String(node.era_id)))));
+	}
     if (!stoneWhitelist.has(building.id)) earliestIndex = Math.max(earliestIndex, 1);
     if (minimumBuildingEra.has(building.id)) earliestIndex = Math.max(earliestIndex,
       eraIndex.get(minimumBuildingEra.get(building.id)));
@@ -558,34 +808,59 @@ function main() {
     throw new Error("stone building whitelist does not match its era target");
   }
   const buildingById = new Map(buildings.map((building) => [building.id, building]));
+	for (const buildingId of stoneWhitelist) {
+	  buildingScheduleOrder.set(buildingId, buildingScheduleOrder.size);
+	}
+  const availableProductionGoods = new Set();
+	for (const buildingId of stoneWhitelist) {
+	  const building = buildingById.get(buildingId);
+	  if (!building) throw new Error(`stone whitelist building missing: ${buildingId}`);
+	  for (const goodId of building.outputGoods) availableProductionGoods.add(goodId);
+	}
+	const dependenciesAvailable = (building) => dependencyGoodGroups(building)
+	  .every((group) => group.some((goodId) => availableProductionGoods.has(goodId)));
   for (let targetEraIndex = 1; targetEraIndex < payload.eras.length; targetEraIndex += 1) {
     const targetEraId = String(payload.eras[targetEraIndex].id);
     const targetCount = eraBuildingTargets.get(targetEraId);
-    const candidates = [...unassignedBuildings]
-      .filter((id) => earliestBuildingEra.get(id) <= targetEraIndex)
-      .sort((a, b) => {
-        const aPreferred = preferredBuildingEra.get(a) === targetEraId ? 0 : 1;
-        const bPreferred = preferredBuildingEra.get(b) === targetEraId ? 0 : 1;
-        if (aPreferred !== bPreferred) return aPreferred - bPreferred;
-        const earliestDelta = earliestBuildingEra.get(a) - earliestBuildingEra.get(b);
-        if (earliestDelta !== 0) return earliestDelta;
-        const aBuilding = buildingById.get(a);
-        const bBuilding = buildingById.get(b);
-        const aSource = refreshedById.get(aBuilding.direct);
-        const bSource = refreshedById.get(bBuilding.direct);
-        const layoutDelta = Number(aSource.layout_order || 0) -
-          Number(bSource.layout_order || 0);
-        if (layoutDelta !== 0) return layoutDelta;
-        const sourceDelta = String(aSource.id).localeCompare(String(bSource.id));
-        return sourceDelta !== 0 ? sourceDelta : a.localeCompare(b);
-      });
-    if (candidates.length < targetCount) {
-      throw new Error(`${targetEraId}: only ${candidates.length} buildings available for target ${targetCount}`);
-    }
-    for (const buildingId of candidates.slice(0, targetCount)) {
-      plannedBuildingEra.set(buildingId, targetEraId);
-      unassignedBuildings.delete(buildingId);
-    }
+	for (let slot = 0; slot < targetCount; slot += 1) {
+	  const candidates = [...unassignedBuildings]
+		.filter((id) => earliestBuildingEra.get(id) <= targetEraIndex &&
+		  dependenciesAvailable(buildingById.get(id)))
+		.sort((a, b) => {
+		  const aPreferred = preferredBuildingEra.get(a) === targetEraId ? 0 : 1;
+		  const bPreferred = preferredBuildingEra.get(b) === targetEraId ? 0 : 1;
+		  if (aPreferred !== bPreferred) return aPreferred - bPreferred;
+		  const earliestDelta = earliestBuildingEra.get(a) - earliestBuildingEra.get(b);
+		  if (earliestDelta !== 0) return earliestDelta;
+		  const aBuilding = buildingById.get(a);
+		  const bBuilding = buildingById.get(b);
+		  const aSource = refreshedById.get(aBuilding.direct);
+		  const bSource = refreshedById.get(bBuilding.direct);
+		  const layoutDelta = Number(aSource.layout_order || 0) -
+			Number(bSource.layout_order || 0);
+		  if (layoutDelta !== 0) return layoutDelta;
+		  const sourceDelta = String(aSource.id).localeCompare(String(bSource.id));
+		  return sourceDelta !== 0 ? sourceDelta : a.localeCompare(b);
+		});
+	  if (candidates.length === 0) {
+		const blocked = [...unassignedBuildings]
+		  .filter((id) => earliestBuildingEra.get(id) <= targetEraIndex)
+		  .slice(0, 12).map((id) => {
+			const building = buildingById.get(id);
+			const missing = dependencyGoodGroups(building)
+			  .filter((group) => !group.some((goodId) => availableProductionGoods.has(goodId)));
+			return `${id}:${JSON.stringify(missing)}`;
+		  });
+		throw new Error(`${targetEraId}: supply-closed building slot ${slot + 1}/${targetCount} unavailable; ${blocked.join(",")}`);
+	  }
+	  const buildingId = candidates[0];
+	  plannedBuildingEra.set(buildingId, targetEraId);
+	  buildingScheduleOrder.set(buildingId, buildingScheduleOrder.size);
+	  unassignedBuildings.delete(buildingId);
+	  for (const goodId of buildingById.get(buildingId).outputGoods) {
+		availableProductionGoods.add(goodId);
+	  }
+	}
   }
   if (unassignedBuildings.size !== 0 || plannedBuildingEra.size !== buildings.length) {
     throw new Error(`building era allocation incomplete: ${[...unassignedBuildings].join(",")}`);
@@ -613,19 +888,26 @@ function main() {
   for (const building of buildings) {
     const source = refreshedById.get(building.direct);
     if (!source) throw new Error(`${building.fileName}: direct technology missing ${building.direct}`);
-    const sourceEraIndex = eraIndex.get(String(source.era_id));
+	let sourceEraIndex = eraIndex.get(String(source.era_id));
     const targetEraId = plannedBuildingEra.get(building.id);
     const targetEraIndex = eraIndex.get(targetEraId);
+	const isVisibleMethodTechnology = String(building.direct).startsWith("tech.method.");
+	if ((keepDirect.has(building.id) || isVisibleMethodTechnology) &&
+		targetEraIndex > sourceEraIndex) {
+	  source.era_id = targetEraId;
+	  sourceEraIndex = targetEraIndex;
+	}
     const hasConflict = requiredSets.get(building.direct).size > 1;
     const mustMoveStoneBuilding = source.era_id === "stone" && !stoneWhitelist.has(building.id);
     const mustDelayBuilding = targetEraIndex > sourceEraIndex;
-    const needsExplicitApplication = !keepDirect.has(building.id) &&
+	const needsExplicitApplication = !keepDirect.has(building.id) &&
+	  !isVisibleMethodTechnology &&
       !stoneWhitelist.has(building.id) && (
-      building.id === "copper_ore_collector" ||
-      building.id === "early_tin_mine" ||
-      building.id === "early_copper_mine" ||
-      building.id === "ore_bronzesmith_camp" ||
-      hasConflict || mustMoveStoneBuilding || mustDelayBuilding);
+        building.id === "copper_ore_collector" ||
+        building.id === "early_tin_mine" ||
+        building.id === "early_copper_mine" ||
+        building.id === "ore_bronzesmith_camp" ||
+        hasConflict || mustMoveStoneBuilding || mustDelayBuilding);
     if (needsExplicitApplication) {
       const applicationId = specialApplicationIds.get(building.id) ||
         `tech.application.${building.id}`;
@@ -637,6 +919,9 @@ function main() {
       const application = makeApplicationNode(source, building, applicationId,
         prerequisiteIds, eraId);
       if (building.id === "copper_ore_collector") {
+		setHardPrerequisites(application,
+		  ["tech.natural_copper_identification", "tech.stone_knapping"],
+		  "铜矿开采必须汇合自然铜辨识与可实际制造的打制石器");
         application.display_name = "铜矿开采";
         application.effect_summary = "解锁建筑：铜矿；要求自然铜辨识与打制石器";
         application.opportunity_cost = "自然铜辨识与打制石器汇合后，才能把矿物观察转化为铜矿开采。";
@@ -652,7 +937,13 @@ function main() {
         setHardPrerequisites(application,
           ["tech.copper_annealing", "tech.bronze_casting", "tech.tin_identification"],
           "露天青铜作坊需要退火、青铜铸造与锡矿辨识");
+	  } else if (building.id === "iron_tool_workshop") {
+		setHardPrerequisites(application, ["tech.iron_smelting"],
+		  "铁制工具工坊必须先掌握铁冶炼，块炼铁与燃料供应由配方闭包补齐");
       }
+	  application.application_foundation_ids = [
+		...new Set(application.hard_prerequisite_ids.map(String)),
+	  ];
       appNodes.push(application);
       appAssignments.set(building.id, applicationId);
     } else {
@@ -687,7 +978,14 @@ function main() {
   // hidden multi-tech field.
   for (const building of buildings) {
     const targetTech = appAssignments.get(building.id) || building.direct;
-    let text = rewritePackedStrings(building.text, "technology_tags", [
+    let sourceText = building.text;
+    if (building.constructionGoods.some((goodId) => building.outputGoods.includes(goodId))) {
+      const replacementGoods = building.constructionGoods.map((goodId) =>
+        building.outputGoods.includes(goodId) ? "logs" : goodId);
+      sourceText = rewritePackedStrings(sourceText, "construction_good_ids", replacementGoods);
+      building.constructionGoods = replacementGoods;
+    }
+    let text = rewritePackedStrings(sourceText, "technology_tags", [
       ...packedStrings(building.text, "technology_tags").filter((tag) => !tag.startsWith("tech.")),
       targetTech,
     ]);
@@ -723,6 +1021,201 @@ function main() {
     node.network_role = "branch";
   }
   const nodeByRetainedId = new Map(retained.map((node) => [String(node.id), node]));
+	const collectHardAncestry = (technologyId, output = new Set()) => {
+	  if (!nodeByRetainedId.has(technologyId) || output.has(technologyId)) return output;
+	  output.add(technologyId);
+	  for (const prerequisite of nodeByRetainedId.get(technologyId).hard_prerequisite_ids || []) {
+		collectHardAncestry(String(prerequisite), output);
+	  }
+	  return output;
+	};
+	const targetTechnologyForBuilding = (building) =>
+	  appAssignments.get(building.id) || building.direct;
+
+	// Every unlock package, application or ordinary, must include executable
+	// construction and input supply.  Producer technologies are selected from
+	// the actual recipe and may never point to a later era or back to a
+	// dependent package.
+	const unresolvedDependencies = [];
+	for (const building of buildings) {
+	  const targetTechnologyId = targetTechnologyForBuilding(building);
+	  const targetNode = nodeByRetainedId.get(targetTechnologyId);
+	  if (!targetNode) throw new Error(`${building.id}: target technology missing`);
+	  if (Boolean(targetNode.is_starter_eligible)) continue;
+	  for (const dependencyGroup of dependencyGoodGroups(building)) {
+		let ancestry = collectHardAncestry(targetTechnologyId, new Set());
+		const producers = buildings.filter((producer) => producer.id !== building.id &&
+		  producer.outputGoods.some((goodId) => dependencyGroup.includes(goodId)))
+		  .map((producer) => {
+			const technologyId = targetTechnologyForBuilding(producer);
+			const node = nodeByRetainedId.get(technologyId);
+			return { producer, technologyId, node };
+		  });
+		if (producers.some((candidate) => candidate.technologyId === targetTechnologyId ||
+		  (ancestry.has(candidate.technologyId) &&
+			Number(buildingScheduleOrder.get(candidate.producer.id)) <
+			  Number(buildingScheduleOrder.get(building.id))))) {
+		  continue;
+		}
+		const targetEraIndex = eraIndex.get(String(plannedBuildingEra.get(building.id)));
+		const candidates = producers.filter((candidate) => candidate.node &&
+		  eraIndex.get(String(plannedBuildingEra.get(candidate.producer.id))) <= targetEraIndex &&
+		  Number(buildingScheduleOrder.get(candidate.producer.id)) <
+			Number(buildingScheduleOrder.get(building.id)) &&
+		  candidate.technologyId !== targetTechnologyId &&
+		  !collectHardAncestry(candidate.technologyId, new Set()).has(targetTechnologyId))
+		  .sort((a, b) => eraIndex.get(String(plannedBuildingEra.get(a.producer.id))) -
+			eraIndex.get(String(plannedBuildingEra.get(b.producer.id))) ||
+			Number(buildingScheduleOrder.get(a.producer.id)) -
+			Number(buildingScheduleOrder.get(b.producer.id)) ||
+			a.producer.id.localeCompare(b.producer.id));
+		if (candidates.length === 0) {
+		  unresolvedDependencies.push(`${targetTechnologyId}/${building.id}/${dependencyGroup.join("|")}`);
+		  continue;
+		}
+		const selected = candidates[0];
+		if (!targetNode.hard_prerequisite_ids.includes(selected.technologyId)) {
+		  targetNode.hard_prerequisite_ids.push(selected.technologyId);
+		  targetNode.prerequisite_rationales.push(
+			`建筑${building.id}需要${dependencyGroup.join("或")}，其可运行生产方法由${selected.technologyId}提供。`);
+		}
+	  }
+	  for (const resourceId of building.resourceIds) {
+		let ancestry = collectHardAncestry(targetTechnologyId, new Set());
+		const recognitionIds = resourceTechnologyTags.get(resourceId) || [];
+		if (recognitionIds.some((id) => ancestry.has(id) || id === targetTechnologyId)) continue;
+		const candidates = recognitionIds.map((technologyId) => ({
+		  technologyId, node: nodeByRetainedId.get(technologyId),
+		})).filter((candidate) => candidate.node &&
+		  eraIndex.get(String(candidate.node.era_id)) <= eraIndex.get(String(targetNode.era_id)) &&
+		  !collectHardAncestry(candidate.technologyId, new Set()).has(targetTechnologyId))
+		  .sort((a, b) => eraIndex.get(String(a.node.era_id)) -
+			eraIndex.get(String(b.node.era_id)) ||
+			Number(a.node.layout_order || 0) - Number(b.node.layout_order || 0) ||
+			a.technologyId.localeCompare(b.technologyId));
+		if (candidates.length === 0) {
+		  unresolvedDependencies.push(`${targetTechnologyId}/${building.id}/resource:${resourceId}`);
+		  continue;
+		}
+		const selected = candidates[0];
+		if (!targetNode.hard_prerequisite_ids.includes(selected.technologyId)) {
+		  targetNode.hard_prerequisite_ids.push(selected.technologyId);
+		  targetNode.prerequisite_rationales.push(
+			`建筑${building.id}利用资源${resourceId}，必须先由${selected.technologyId}完成辨识。`);
+		}
+	  }
+	}
+	if (unresolvedDependencies.length > 0) {
+	  throw new Error(`building supply dependencies unresolved: ${unresolvedDependencies.join(",")}`);
+	}
+	const unresolvedApplications = appNodes.filter((application) =>
+	  new Set(application.hard_prerequisite_ids || []).size < 2);
+	if (unresolvedApplications.length > 0) {
+	  const convertedIds = new Map();
+	  for (const node of unresolvedApplications) {
+		const oldId = String(node.id);
+		const building = buildings.find((candidate) =>
+		  targetTechnologyForBuilding(candidate) === oldId);
+		if (!building) throw new Error(`${oldId}: single-foundation building missing`);
+		const methodId = `tech.method.${building.id}`;
+		if (nodeByRetainedId.has(methodId)) throw new Error(`${methodId}: duplicate method technology`);
+		convertedIds.set(oldId, methodId);
+		node.id = methodId;
+		node.display_name = `方法：${building.displayName}`;
+		node.anchor_kind = "backbone";
+		node.network_role = "branch";
+		node.node_role = "applied_method";
+		node.route_exemption_reason = "该基础方法的不可替代知识由唯一可见硬前置完整表达。";
+		node.reveal_category = "method_progression";
+		node.reveal_summary = "完成基础工艺后揭示这一具体生产方法";
+		node.application_foundation_ids = [];
+		appAssignments.set(building.id, methodId);
+		nodeByRetainedId.delete(oldId);
+		nodeByRetainedId.set(methodId, node);
+		knownIds.delete(oldId);
+		knownIds.add(methodId);
+	  }
+	  for (const node of retained) {
+		node.hard_prerequisite_ids = (node.hard_prerequisite_ids || [])
+		  .map((id) => convertedIds.get(String(id)) || String(id));
+		node.branch_successor_ids = (node.branch_successor_ids || [])
+		  .map((id) => convertedIds.get(String(id)) || String(id));
+	  }
+	  for (const edge of payload.visual_edges) {
+		edge.from = convertedIds.get(String(edge.from || "")) || edge.from;
+		edge.to = convertedIds.get(String(edge.to || "")) || edge.to;
+	  }
+	  visualKeys.clear();
+	  for (const edge of payload.visual_edges) {
+		visualKeys.add(`${edge.from}>${edge.to}>${edge.kind}`);
+	  }
+	  for (const building of buildings) {
+		if (!appAssignments.has(building.id)) continue;
+		const targetTechnologyId = appAssignments.get(building.id);
+		if (!String(targetTechnologyId).startsWith("tech.method.")) continue;
+		let text = fs.readFileSync(building.filePath, "utf8");
+		text = rewritePackedStrings(text, "technology_tags", [
+		  ...packedStrings(text, "technology_tags").filter((tag) => !tag.startsWith("tech.")),
+		  targetTechnologyId,
+		]);
+		fs.writeFileSync(building.filePath, text, "utf8");
+	  }
+	}
+
+  // A Good technology tag is a production permit. Rebind every authored tag
+  // to a technology that directly unlocks a real producer; the underlying
+  // scientific or craft principle remains visible as that producer's hard
+  // foundation instead of exposing demand before supply exists.
+  for (const node of retained) {
+    for (const good of goods) removeGoodBinding(node, good.id);
+  }
+  for (const good of goods) {
+    const producers = buildings.filter((building) => building.outputGoods.includes(good.id));
+    if (producers.length === 0) throw new Error(`${good.id}: no production building`);
+    const reboundTags = [];
+    for (const authoredTag of good.technologyTags) {
+      const authoredNode = nodeByRetainedId.get(authoredTag);
+      if (!authoredNode) throw new Error(`${good.id}: unknown authored technology ${authoredTag}`);
+      const authoredEra = eraIndex.get(String(authoredNode.era_id));
+      const ranked = producers.map((building) => {
+        const targetId = targetTechnologyForBuilding(building);
+        const targetNode = nodeByRetainedId.get(targetId);
+        const ancestry = collectHardAncestry(targetId, new Set());
+        return {
+          building,
+          targetId,
+          targetNode,
+          supported: ancestry.has(authoredTag) ? 0 : 1,
+          era: eraIndex.get(String(targetNode.era_id)),
+        };
+      }).filter((candidate) => candidate.era >= authoredEra)
+        .sort((a, b) => a.supported - b.supported || a.era - b.era ||
+          a.building.id.localeCompare(b.building.id));
+      if (ranked.length === 0) {
+        // A late technology that only improves or consumes an established
+        // good is not a production permit and must not reveal that good.
+        continue;
+      }
+      const selected = ranked[0];
+      if (selected.targetId !== authoredTag && selected.supported !== 0 &&
+          !selected.targetNode.hard_prerequisite_ids.includes(authoredTag)) {
+        selected.targetNode.hard_prerequisite_ids.push(authoredTag);
+        selected.targetNode.prerequisite_rationales.push(
+          `生产${good.displayName}必须先掌握${authoredNode.display_name}。`);
+      }
+      addUnique(reboundTags, selected.targetId);
+    }
+    if (reboundTags.length === 0) throw new Error(`${good.id}: production technology missing`);
+    let text = rewritePackedStrings(good.text, "technology_tags", [
+      ...packedStrings(good.text, "technology_tags").filter((tag) => !tag.startsWith("tech.")),
+      ...reboundTags,
+    ]);
+    fs.writeFileSync(good.filePath, text, "utf8");
+    for (const technologyId of reboundTags) {
+      addGoodBinding(nodeByRetainedId.get(technologyId), good.id, good.displayName);
+    }
+  }
+
   for (let eraPosition = 0; eraPosition < payload.eras.length; eraPosition += 1) {
     const era = payload.eras[eraPosition];
     const eraId = String(era.id);
@@ -756,10 +1249,9 @@ function main() {
       });
     }
   }
-  // Re-establish a deterministic topological order after moving copper and
-  // fishing nodes. Era order is authoritative; prerequisites from a later era
-  // are stale legacy gates and are removed rather than creating a backward
-  // edge. Milestones are emitted after all candidates in their era.
+  // Re-establish a deterministic topological order after moving complete
+  // unlock packages. A backward-era prerequisite is an authoring error: the
+  // successor package must move with its knowledge foundation.
   for (const building of buildings) {
     const targetTech = appAssignments.get(building.id) || building.direct;
     const targetNode = nodeByRetainedId.get(targetTech);
@@ -778,7 +1270,8 @@ function main() {
     }
   }
   const buildingNames = new Set(buildings.map((building) => building.displayName));
-  for (const node of retained) cleanEffectSummary(node, buildingNames);
+  const goodNames = new Set(goods.map((good) => good.displayName));
+  for (const node of retained) cleanEffectSummary(node, buildingNames, goodNames);
 
   for (const [eraId, targetCount] of eraBuildingTargets) {
     const actualCount = retained.reduce((count, node) => count +
@@ -786,7 +1279,14 @@ function main() {
         ? (node.expected_bindings || []).filter((binding) => Number(binding.kind) === 2).length
         : 0), 0);
     if (actualCount !== targetCount) {
-      throw new Error(`${eraId} building unlock count ${actualCount} != ${targetCount}`);
+	  const actualIds = retained.filter((node) => String(node.era_id) === eraId)
+		.flatMap((node) => (node.expected_bindings || [])
+		  .filter((binding) => Number(binding.kind) === 2).map((binding) => String(binding.id)));
+	  const plannedIds = buildings.filter((building) => plannedBuildingEra.get(building.id) === eraId)
+		.map((building) => building.id);
+	  throw new Error(`${eraId} building unlock count ${actualCount} != ${targetCount}; extra=${
+		actualIds.filter((id) => !plannedIds.includes(id))}; missing=${
+		plannedIds.filter((id) => !actualIds.includes(id))}`);
     }
   }
   const stableNodeCompare = (a, b) => {
@@ -800,11 +1300,23 @@ function main() {
     const rationales = [];
     for (let index = 0; index < (node.hard_prerequisite_ids || []).length; index += 1) {
       const prerequisite = String(node.hard_prerequisite_ids[index]);
-      if (!prerequisite || prerequisite === String(node.id) || ids.includes(prerequisite)) continue;
-      if (!nodeByRetainedId.has(prerequisite)) continue;
+      if (!prerequisite) {
+        throw new Error(`${node.id}: empty hard prerequisite at index ${index}`);
+      }
+      if (prerequisite === String(node.id)) {
+        throw new Error(`${node.id}: technology cannot require itself`);
+      }
+      if (ids.includes(prerequisite)) continue;
+      if (!nodeByRetainedId.has(prerequisite)) {
+        throw new Error(`${node.id}: unknown hard prerequisite ${prerequisite}`);
+      }
       const prerequisiteNode = nodeByRetainedId.get(prerequisite);
       if ((eraIndex.get(String(prerequisiteNode.era_id)) ?? 0) >
-          (eraIndex.get(String(node.era_id)) ?? 0)) continue;
+          (eraIndex.get(String(node.era_id)) ?? 0)) {
+        throw new Error(
+          `${node.id}: prerequisite ${prerequisite} belongs to later era ` +
+          `${prerequisiteNode.era_id}; move the complete successor unlock package forward`);
+      }
       ids.push(prerequisite);
       rationales.push(String((node.prerequisite_rationales || [])[index] ||
         `该科技需要先完成 ${prerequisite}。`));
@@ -815,6 +1327,13 @@ function main() {
     for (const route of node.research_routes || []) {
       route.condition = removeConditionTechnologyIds(route.condition, hardPrerequisites);
     }
+    node.research_routes = (node.research_routes || []).filter((route) =>
+      route.condition && typeof route.condition === "object" &&
+      (route.condition.kind !== undefined || route.condition.operator !== undefined));
+    if (node.research_routes.length === 0 &&
+        !String(node.route_exemption_reason || "").trim()) {
+      node.route_exemption_reason = "不可替代知识已经由可见硬前置完整表达。";
+    }
   }
   const collectHardAncestors = (technologyId, output) => {
     if (!nodeByRetainedId.has(technologyId) || output.has(technologyId)) return;
@@ -824,7 +1343,7 @@ function main() {
     }
   };
   for (const node of retained) {
-    if ((eraIndex.get(String(node.era_id)) || 0) < 2) continue;
+    const nodeEra = eraIndex.get(String(node.era_id)) || 0;
     const ancestors = new Set();
     for (const prerequisite of node.hard_prerequisite_ids || []) {
       collectHardAncestors(String(prerequisite), ancestors);
@@ -833,7 +1352,7 @@ function main() {
     for (const ancestorId of ancestors) {
       collectConditionSignalIds(nodeByRetainedId.get(ancestorId).reveal_condition, impliedSignals);
     }
-    if (Number(node.reveal_condition?.kind) === 1 &&
+    if (nodeEra >= 2 && Number(node.reveal_condition?.kind) === 1 &&
         impliedSignals.has(String(node.reveal_condition.id || ""))) {
       node.reveal_condition = {};
       node.reveal_summary = "完成不可替代的核心知识前置后揭示";
@@ -846,6 +1365,10 @@ function main() {
         [...routeSignals].every((id) => impliedSignals.has(id));
       return !hasEvidence || !fullyImplied;
     });
+	if (node.research_routes.length === 0 &&
+		!String(node.route_exemption_reason || "").trim()) {
+	  node.route_exemption_reason = "不可替代知识已经由可见硬前置完整表达。";
+	}
   }
   const validRouteIds = new Set(retained.flatMap((node) =>
     (node.research_routes || []).map((route) => String(route.id))));
@@ -864,12 +1387,12 @@ function main() {
           !remaining.has(String(prerequisite)));
       }).sort(stableNodeCompare);
       if (available.length === 0) {
-        const cycleNodeId = [...remaining].sort((a, b) => stableNodeCompare(b, a))[0];
-        const cycleNode = nodeByRetainedId.get(cycleNodeId);
-        const last = cycleNode.hard_prerequisite_ids.length - 1;
-        cycleNode.hard_prerequisite_ids.splice(last, 1);
-        cycleNode.prerequisite_rationales.splice(last, 1);
-        continue;
+        const blocked = [...remaining].sort(stableNodeCompare).map((id) => {
+          const internalPrerequisites = (nodeByRetainedId.get(id).hard_prerequisite_ids || [])
+            .map(String).filter((prerequisite) => remaining.has(prerequisite));
+          return `${id}<-[${internalPrerequisites.join(",")}]`;
+        });
+        throw new Error(`hard prerequisite cycle in era ${eraId}: ${blocked.join("; ")}`);
       }
       for (const id of available) {
         if (id !== String(era.milestone_id)) {
@@ -885,6 +1408,32 @@ function main() {
   }
   payload.nodes = topological;
   for (const node of payload.nodes) {
+    const alternativeGroups = String(node.id) === "tech.fishing_boats"
+      ? [["tech.coastal_fishing", "tech.freshwater_fishing"]]
+      : [];
+    const requiredIds = [...new Set((node.hard_prerequisite_ids || []).map(String))];
+    if (String(node.anchor_kind || "") === "application" && requiredIds.length < 2) {
+      throw new Error(`${node.id}: application technology must have at least two knowledge foundations`);
+    }
+    let exemptionReason = "";
+    if (requiredIds.length === 0 && alternativeGroups.length === 0) {
+      if (Boolean(node.is_starter_eligible)) {
+        exemptionReason = "开局生存能力不依赖更早的可研究工艺。";
+      } else if (Boolean(node.is_milestone)) {
+        exemptionReason = "时代里程碑由本时代候选完成数构成，不使用节点硬前置。";
+      } else if (String(node.node_role || "") === "identification") {
+        exemptionReason = "纯观察辨识由资源或环境证据揭示，不预设加工能力。";
+      } else {
+        throw new Error(`${node.id}: non-observation technology lacks a knowledge foundation`);
+      }
+    }
+    node.knowledge_basis = {
+      required_ids: requiredIds,
+      alternative_groups: alternativeGroups,
+      exemption_reason: exemptionReason,
+    };
+  }
+  for (const node of payload.nodes) {
     for (const prerequisite of node.hard_prerequisite_ids || []) {
       addHardVisualEdge(String(prerequisite), String(node.id));
     }
@@ -894,7 +1443,7 @@ function main() {
   // should not depend on a fixed node count.
   payload.semantic_review = payload.semantic_review || {};
   payload.semantic_review.unlock_policy =
-    "每个活动建筑恰好绑定一个可见 tech.*；多科技汇合使用显式 application 节点。";
+    "每项科技是不可拆分的知识-产能-时代解锁包；商品与基础生产方法同科技解锁，每个活动建筑恰好绑定一个可见 tech.*，多科技汇合使用显式 application 节点。";
   fs.writeFileSync(NETWORK_PATH, `${JSON.stringify(payload, null, "\t")}\n`, "utf8");
   console.log(`technology rebalance complete: ${payload.nodes.length} nodes, ${appNodes.length} application nodes`);
 }

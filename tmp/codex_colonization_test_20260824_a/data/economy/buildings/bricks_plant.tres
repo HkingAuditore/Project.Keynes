@@ -1,0 +1,41 @@
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"bricks_plant"
+display_name = "制砖厂"
+economic_sector_id = "manufacturing"
+semantic_tags = PackedStringArray()
+technology_tags = PackedStringArray("industry.construction", "tech.application.bricks_plant")
+required_technology_tags = PackedStringArray()
+construction_good_ids = PackedStringArray("logs", "raw_stone")
+construction_quantities = PackedInt64Array(3000, 3000)
+owner_profession_id = &"artisan"
+employee_profession_ids = PackedStringArray("apprentice")
+employee_slots_per_building = PackedInt64Array(3)
+employee_wage_policy_ids = PackedStringArray("fixed")
+employee_reference_wages_per_day = PackedInt64Array(11936)
+input_good_ids = PackedStringArray("clay")
+input_quantities_per_day = PackedInt64Array(1000)
+input_required_q16 = PackedInt32Array()
+input_category_ids = PackedStringArray("")
+input_min_quality_levels = PackedInt32Array(0)
+input_candidate_offsets = PackedInt32Array(0, 0)
+input_candidate_good_ids = PackedStringArray()
+input_candidate_efficiency_q16 = PackedInt32Array()
+output_good_ids = PackedStringArray("bricks")
+output_quantities_per_day = PackedInt64Array(3710)
+output_cost_shares_q16 = PackedInt32Array()
+resource_ids = PackedStringArray()
+resource_quantities_per_day = PackedInt64Array()
+resource_interaction_modes = PackedStringArray()
+resource_access_modes = PackedStringArray()
+resource_generation_ids = PackedStringArray()
+resource_generation_quantities_per_day = PackedInt64Array()
+condition_opcodes = PackedInt32Array()
+condition_signals = PackedInt32Array()
+condition_compares = PackedInt32Array()
+condition_reference_ids = PackedStringArray()
+condition_values = PackedInt64Array()

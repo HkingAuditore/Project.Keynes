@@ -1,0 +1,53 @@
+[gd_resource type="Resource" script_class="ResourceProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/resource_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"salt"
+discovery_technology_tags = PackedStringArray("tech.brine_collection")
+display_name = "盐"
+reserve_component = &"cell.res_salt_reserve"
+init_reserve_scale = 8.0
+init_min_coverage = 0.04
+init_min_reserve = 10000.0
+land_only = true
+temp_lo = 0.0
+temp_hi = 1.0
+gen_base = 2.0
+gen_temp = 2.0
+gen_moisture = -2.5
+gen_self = 5.0
+decay_base = 0.0
+decay_temp = 0.0
+decay_moisture = 5.0
+decay_self = 0.001
+init_base = -1000.0
+init_temp = 600.0
+init_moisture = -1250.0
+init_elevation = -400.0
+init_noise = 900.0
+init_noise_scale = 0.06
+init_landform_weights = {
+2: 600.0,
+5: 500.0,
+10: 900.0,
+11: 3750.0,
+15: 800.0
+}
+init_vegetation_weights = {
+0: 900.0,
+16: 900.0,
+17: 1300.0,
+18: 800.0
+}
+climate_temp_opt = 0.72
+climate_temp_tol = 0.45
+climate_moisture_opt = 0.18
+climate_moisture_tol = 0.28
+init_climate_fit = 1100.0
+runtime_climate_fit_weight = 0.45
+decay_stress = 3.0
+geology_family_id = &"evaporite"
+init_province = 500.0
+init_belt = 300.0

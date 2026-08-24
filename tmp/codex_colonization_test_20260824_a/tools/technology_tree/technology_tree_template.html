@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Project.Keynes 科技图谱 · 排查视图</title>
+<style>
+  /* ── 图谱基调：暗色羊皮纸 + 黄铜 + 珐琅点缀 ─────────── */
+  :root {
+    --ink: #16120d;
+    --ink-2: #1d1812;
+    --parchment: #241e15;
+    --parchment-2: #2a2318;
+    --brass: #c7a25a;
+    --brass-dim: #87683d;
+    --brass-faint: rgba(199, 162, 90, 0.28);
+    --rule: rgba(199, 162, 90, 0.16);
+    --text: #f0e6cf;
+    --text-2: #c2b295;
+    --text-3: #8a7c62;
+    --serif: "Noto Serif SC", "Songti SC", "SimSun", Georgia, serif;
+    --sans: "Segoe UI", "Microsoft YaHei", sans-serif;
+    --mono: Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background:
+      radial-gradient(1200px 500px at 20% -10%, rgba(199,162,90,0.05), transparent 60%),
+      radial-gradient(900px 600px at 95% 110%, rgba(90,60,30,0.10), transparent 55%),
+      var(--ink);
+    color: var(--text); font: 13px/1.55 var(--sans);
+    overflow: hidden;
+  }
+  #app { display: flex; flex-direction: column; height: 100%; }
+
+  /* ── 顶部：题名 + 时代导航 + 图例 + 搜索 ────────────── */
+  #topbar {
+    display: flex; align-items: center; gap: 16px;
+    padding: 10px 18px 9px;
+    background: linear-gradient(180deg, #241d13, #1b1610);
+    border-bottom: 1px solid var(--brass-faint);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.45);
+    z-index: 10; flex-wrap: wrap; row-gap: 8px;
+  }
+  .brand { display: flex; flex-direction: column; line-height: 1.15; margin-right: 4px; }
+  .brand .cn { font: 600 17px var(--serif); color: var(--brass); letter-spacing: 3px; }
+  .brand .en { font: 10px var(--mono); color: var(--text-3); letter-spacing: 1.5px; }
+  #era-nav { display: flex; gap: 2px; flex-wrap: wrap; }
+  .era-tab {
+    padding: 3px 9px; border-radius: 3px; cursor: pointer;
+    color: var(--text-2); font-size: 12px; border: 1px solid transparent;
+    transition: color .15s, border-color .15s, background .15s;
+  }
+  .era-tab:hover { color: var(--brass); border-color: var(--brass-faint); background: rgba(199,162,90,0.06); }
+  .era-tab b { color: var(--text-3); font-weight: 400; font-size: 10px; margin-left: 3px; }
+  .spacer { flex: 1; }
+  #legend { display: flex; gap: 6px; }
+  #edge-legend { display: flex; gap: 4px; }
+  .legend-chip {
+    display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none;
+    padding: 3px 10px 3px 8px; border-radius: 12px;
+    border: 1px solid var(--rule); background: rgba(36,29,19,0.6);
+    color: var(--text-2); font-size: 12px; transition: opacity .15s, border-color .15s;
+  }
+  .legend-chip:hover { border-color: var(--brass-dim); }
+  .legend-chip.off { opacity: 0.32; }
+  .legend-chip .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .legend-chip b { font-weight: 400; color: var(--text-3); font-size: 11px; }
+  .edge-chip {
+    display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none;
+    padding: 3px 8px; border: 1px solid var(--rule); border-radius: 3px;
+    background: rgba(36,29,19,0.6); color: var(--text-2); font-size: 11px;
+  }
+  .edge-chip:hover { border-color: var(--brass-dim); }
+  .edge-chip.off { opacity: 0.32; }
+  .edge-chip b { color: var(--text-3); font-weight: 400; }
+  .edge-swatch { width: 18px; height: 0; border-top: 2px solid #7b6947; }
+  .edge-swatch.application { border-top-color: #69978c; border-top-style: dashed; }
+  .edge-swatch.alternative { border-top-color: #7897b4; border-top-style: dotted; }
+  .edge-swatch.branch { border-top-color: #9a6b38; border-top-style: dashed; }
+  .edge-swatch.milestone_candidate { border-top-color: var(--brass); border-top-style: dashed; }
+  #search {
+    background: rgba(20,16,10,0.8); border: 1px solid var(--rule); color: var(--text);
+    border-radius: 4px; padding: 5px 12px; width: 200px; outline: none;
+    transition: border-color .15s;
+  }
+  #search:focus { border-color: var(--brass-dim); }
+  #search::placeholder { color: var(--text-3); }
+  .seg { display: flex; border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; }
+  .seg button {
+    background: transparent; color: var(--text-2); border: none; padding: 4px 10px;
+    cursor: pointer; font-size: 11.5px; transition: background .15s, color .15s;
+  }
+  .seg button:hover { background: rgba(199,162,90,0.10); color: var(--brass); }
+  .seg button.on { background: rgba(199,162,90,0.16); color: var(--brass); }
+
+  /* ── 主区 ─────────────────────────────────────────── */
+  #main { display: flex; flex: 1; min-height: 0; }
+
+  /* 详情侧栏：行政档案卡 */
+  #detail {
+    width: 384px; flex: none; overflow-y: auto;
+    background: linear-gradient(180deg, #211b12, #1a1510);
+    border-right: 1px solid var(--brass-faint);
+    padding: 18px 20px 40px;
+  }
+  #detail::-webkit-scrollbar, #scroller::-webkit-scrollbar { width: 10px; height: 10px; }
+  #detail::-webkit-scrollbar-thumb, #scroller::-webkit-scrollbar-thumb {
+    background: #3a2f1e; border-radius: 5px; border: 2px solid var(--ink); }
+  #detail::-webkit-scrollbar-track, #scroller::-webkit-scrollbar-track { background: transparent; }
+
+  .d-kicker { font: 11px var(--mono); color: var(--text-3); letter-spacing: 2px; margin-bottom: 6px; }
+  .d-title { font: 600 22px/1.3 var(--serif); margin: 0 0 2px; padding-left: 10px; }
+  .d-sub { color: var(--text-3); font: 11px var(--mono); margin: 0 0 12px; padding-left: 10px; }
+  .d-badges { margin: 2px 0 4px; }
+  .badge {
+    display: inline-block; font-size: 11px; padding: 2px 9px; margin: 0 6px 6px 0;
+    border-radius: 10px; border: 1px solid var(--rule); color: var(--text-2);
+    background: rgba(36,29,19,0.5);
+  }
+  .badge.brass { color: var(--brass); border-color: var(--brass-dim); }
+  .badge.enamel { color: #9db8c9; border-color: #4a5c6b; }
+  .d-sec {
+    margin-top: 16px; padding-top: 10px;
+    border-top: 1px solid var(--rule);
+  }
+  .d-sec > h3 {
+    font: 600 12px var(--sans); color: var(--brass); letter-spacing: 3px;
+    margin: 0 0 8px;
+  }
+  .kv { display: flex; justify-content: space-between; padding: 2px 0; }
+  .kv span:first-child { color: var(--text-3); }
+  .kv span:last-child { color: var(--text); }
+  .d-desc { color: var(--text-2); padding: 2px 0; }
+  .rel-chip {
+    display: inline-block; margin: 0 6px 6px 0; padding: 3px 11px; border-radius: 11px;
+    border: 1px solid var(--rule); background: rgba(36,29,19,0.5);
+    color: var(--text-2); cursor: pointer; font-size: 12px;
+    transition: border-color .15s, color .15s;
+  }
+  .rel-chip:hover { border-color: var(--brass); color: var(--brass); }
+  .rel-chip.soft { border-style: dashed; }
+  .rel-chip .m { color: var(--text-3); font-size: 10px; margin-left: 4px; }
+  .cond-line { font: 12px var(--mono); color: #b9c9a8; padding: 1px 0; }
+  .term { padding: 5px 0 4px; border-bottom: 1px dashed rgba(199,162,90,0.12); }
+  .term .t-head { display: flex; justify-content: space-between; }
+  .term .t-label { color: var(--text); }
+  .term .t-val { color: #a8c69a; font-family: var(--mono); }
+  .term .t-key { color: var(--text-3); font: 10.5px var(--mono); word-break: break-all; }
+  .overview-table { border-collapse: collapse; width: 100%; }
+  .overview-table th, .overview-table td {
+    border: 1px solid rgba(199,162,90,0.10); padding: 4px 6px;
+    text-align: center; font-size: 12px; font-weight: 400;
+  }
+  .overview-table th { color: var(--brass); font-size: 11px; letter-spacing: 1px; background: rgba(199,162,90,0.05); }
+  .overview-table td.era-name { text-align: left; color: var(--text-2); white-space: nowrap; }
+  .overview-table td.cell { cursor: pointer; color: var(--text); transition: background .12s; }
+  .overview-table td.cell:hover { background: rgba(199,162,90,0.14); }
+  .overview-table td.zero { color: #574c3a; }
+  .overview-note { color: var(--text-3); font-size: 11.5px; margin-top: 14px; line-height: 1.7; }
+  .unlock-group { margin-bottom: 10px; }
+  .unlock-title { color: var(--text-2); font-size: 12px; margin-bottom: 5px; }
+  .unlock-count { color: var(--text-3); font-size: 10.5px; margin-left: 6px; }
+  .unlock-chip {
+    display: inline-block; margin: 0 5px 5px 0; padding: 2px 10px; border-radius: 3px;
+    border: 1px solid rgba(199,162,90,0.14); background: rgba(199,162,90,0.05);
+    color: var(--text); font-size: 12px;
+  }
+  .effect-row { padding: 5px 0; border-bottom: 1px dashed rgba(199,162,90,0.12); }
+  .effect-row .effect-name { color: var(--text); }
+  .effect-row .effect-spec { color: var(--text-3); font: 10.5px var(--mono); word-break: break-word; }
+
+  /* ── 科技树舞台 ───────────────────────────────────── */
+  #scroller { flex: 1; overflow: auto; }
+  #stage-wrap { transform-origin: 0 0; }
+  #stage { position: relative; }
+  #edges { position: absolute; left: 0; top: 0; pointer-events: none; }
+  .edge { fill: none; stroke: #6b5b3e; stroke-width: 1.3; opacity: 0.38; }
+  .edge.application { stroke: #69978c; stroke-dasharray: 7 6; opacity: 0.14; }
+  .edge.alternative { stroke: #7897b4; stroke-dasharray: 2 5; opacity: 0.25; }
+  .edge.branch { stroke: #9a6b38; stroke-dasharray: 9 5; opacity: 0.18; }
+  .edge.milestone_candidate { stroke: var(--brass-dim); stroke-dasharray: 4 5; opacity: 0.10; }
+  .edge.filtered { opacity: 0 !important; }
+  .edge.dim { opacity: 0.05; }
+  .edge.hot { stroke: var(--brass); opacity: 1; stroke-width: 2; filter: drop-shadow(0 0 3px rgba(199,162,90,0.5)); }
+
+  /* 时代横向条带：一个时代覆盖它所跨越的全部行（含里程碑独占行） */
+  .era-band { position: absolute; border-top: 1px solid var(--brass-faint); z-index: 0; }
+  .era-band.zebra { background: rgba(240,230,207,0.014); }
+  .era-band .era-title {
+    position: absolute; top: 12px; left: 28px; right: 120px;
+    pointer-events: none; user-select: none; z-index: 1;
+  }
+  .era-band .era-title .era-name { font: 600 15px var(--serif); color: var(--brass); letter-spacing: 5px; }
+  .era-band .era-title .era-meta { font-size: 10.5px; color: var(--text-3); letter-spacing: 1px; margin-top: 2px; }
+  .era-band .era-watermark {
+    position: absolute; top: 50%; right: 40px; transform: translateY(-50%);
+    font: 600 64px var(--serif); color: rgba(199,162,90,0.045); pointer-events: none; user-select: none;
+  }
+  /* 里程碑独占行：横贯整树的衬带 */
+  .milestone-row {
+    position: absolute; left: 0;
+    background: linear-gradient(90deg, transparent, rgba(199,162,90,0.05) 20%, rgba(199,162,90,0.05) 80%, transparent);
+    border-top: 1px solid rgba(199,162,90,0.10);
+    border-bottom: 1px solid rgba(199,162,90,0.10);
+    pointer-events: none;
+  }
+
+  .node {
+    position: absolute; width: 200px; cursor: pointer; z-index: 2;
+    background: linear-gradient(180deg, var(--parchment-2), var(--parchment));
+    border: 1px solid rgba(199,162,90,0.22); border-radius: 6px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.4), inset 0 1px 0 rgba(240,230,207,0.05);
+    padding: 7px 10px 6px 13px;
+    transition: opacity .15s, box-shadow .15s, border-color .15s, transform .15s;
+  }
+  .node::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    border-radius: 6px 0 0 6px; background: var(--spine, var(--brass-dim));
+  }
+  .node:hover {
+    border-color: var(--brass-dim);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.55), 0 0 0 1px rgba(199,162,90,0.25);
+    transform: translateY(-1px);
+  }
+  .node .n-name {
+    font: 600 13px/1.3 var(--serif); color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .node .n-meta {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-top: 3px; font-size: 10.5px; color: var(--text-3);
+  }
+  .node .n-cost { color: var(--text-2); font-family: var(--mono); font-size: 10.5px; }
+  .node .n-mark { position: absolute; top: 6px; right: 8px; width: 7px; height: 7px; }
+  .node .n-mark.key { background: var(--brass); transform: rotate(45deg); border-radius: 1px; }
+  .node .n-mark.start { background: #9db8c9; border-radius: 50%; }
+  .node.milestone {
+    width: 216px;
+    background: linear-gradient(180deg, #2e2517, #251e12);
+    border: 1px solid var(--brass-dim);
+    box-shadow: 0 0 0 1px rgba(199,162,90,0.15), 0 4px 16px rgba(0,0,0,0.5);
+    padding: 9px 12px 8px 14px;
+  }
+  .node.milestone .n-name { color: var(--brass); font-size: 14px; }
+  .node.backbone { border-color: rgba(157,184,201,0.38); }
+  .node.milestone .n-tag {
+    display: inline-block; margin-top: 4px; font-size: 10px; letter-spacing: 2px;
+    color: var(--brass); border: 1px solid var(--brass-faint); border-radius: 8px;
+    padding: 1px 8px;
+  }
+  .node.selected {
+    border-color: var(--brass);
+    box-shadow: 0 0 0 1px var(--brass), 0 0 18px rgba(199,162,90,0.35);
+  }
+  .node.dim { opacity: 0.10; }
+  .node.search-hit { border-color: #a8c69a; box-shadow: 0 0 0 1px #a8c69a, 0 0 14px rgba(168,198,154,0.25); }
+</style>
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <div class="brand"><span class="cn">科技图谱</span><span class="en">TECHNOLOGY ATLAS</span></div>
+    <nav id="era-nav"></nav>
+    <div class="spacer"></div>
+    <div id="legend"></div>
+    <div id="edge-legend"></div>
+    <input id="search" placeholder="搜索名称 / id / 路线…">
+    <div class="seg" id="zoom-seg">
+      <button data-zoom="1" class="on">100%</button><button data-zoom="0.72">72%</button><button data-zoom="0.5">50%</button>
+    </div>
+  </header>
+  <div id="main">
+    <aside id="detail"></aside>
+    <div id="scroller"><div id="stage-wrap"><div id="stage">
+      <svg id="edges"></svg>
+    </div></div></div>
+  </div>
+</div>
+
+<script>
+let TEMPLATE_PREVIEW = false;
+const DATA = (() => {
+  try {
+    return __TECHNOLOGY_TREE_DATA__;
+  } catch (error) {
+    // The authoring template is also safe to open directly. The exporter
+    // replaces the single token above with the authoritative catalog payload.
+    TEMPLATE_PREVIEW = true;
+    return { eras: [], domains: [], lanes: [], edges: [], nodes: [] };
+  }
+})();
+
+const NODE_W = 200, NODE_H = 56;
+const MILESTONE_W = 260, MILESTONE_H = 74;
+const MIN_LINE_CAP = 5;             // 窄屏下限，不足则横向滚动
+const MAX_LINE_CAP = 9;             // 超宽屏也不把一行拉成细带
+const MIN_COL_GAP = 18;             // 行内最小水平间距
+const MAX_SPREAD_GAP = NODE_W * 0.92; // 短行拉开的上限，避免两张卡飞到两端
+const STAGGER_Y = 15;               // 奇偶列错落，做出层次
+const LINE_GAP = 18;                // 同层折行之间的垂直间距
+const ROW_GAP = 40;                 // 依赖层之间的垂直间距（留给连线弧度）
+const PAD_TOP = 56, PAD_SIDE = 28, PAD_BOTTOM = 48;
+const ERA_PAD = 52;                 // 给时代题名留出不与卡片重叠的顶带
+const MILESTONE_PAD = 22;           // 里程碑独占行的上下留白
+const BARYCENTRE_PASSES = 4;
+const SVGNS = "http://www.w3.org/2000/svg";
+const ERA_NUMERALS = ["Ⅰ","Ⅱ","Ⅲ","Ⅳ","Ⅴ","Ⅵ","Ⅶ","Ⅷ","Ⅸ","Ⅹ","Ⅺ"];
+
+const nodesById = {}; DATA.nodes.forEach(n => nodesById[n.id] = n);
+const domainsById = {}; DATA.domains.forEach(d => domainsById[d.id] = d);
+const erasById = {}; DATA.eras.forEach(e => erasById[e.id] = e);
+const incomingEdges = {}, outgoingEdges = {};
+DATA.nodes.forEach(n => { incomingEdges[n.id] = []; outgoingEdges[n.id] = []; });
+DATA.edges.forEach(e => {
+  if (outgoingEdges[e.from] && incomingEdges[e.to]) {
+    outgoingEdges[e.from].push(e); incomingEdges[e.to].push(e);
+  }
+});
+const STRUCTURAL_EDGE_KINDS = new Set(["hard", "milestone_candidate"]);
+DATA.nodes.forEach((n, i) => n._order = i);   // 目录序（拓扑序）作为确定性 tiebreak
+const laneRank = {};
+(DATA.lanes || []).forEach((lane, i) => { laneRank[lane.id] = i; });
+
+let pos = {}, DEPTH = {}, ERA_BANDS = [];
+let STAGE_W = 0, STAGE_H = 0, currentZoom = 1;
+
+function viewportMetrics() {
+  const scroller = document.getElementById("scroller");
+  const avail = Math.max(scroller ? scroller.clientWidth : 0, 720);
+  const cap = Math.min(MAX_LINE_CAP, Math.max(MIN_LINE_CAP,
+    Math.floor((avail - 2 * PAD_SIDE + MIN_COL_GAP) / (NODE_W + MIN_COL_GAP))));
+  const packed = cap * NODE_W + (cap - 1) * MIN_COL_GAP + 2 * PAD_SIDE;
+  const stageW = Math.max(avail, packed);
+  const usable = stageW - 2 * PAD_SIDE;
+  const colGap = cap > 1 ? (usable - cap * NODE_W) / (cap - 1) : MIN_COL_GAP;
+  return { lineCap: cap, stageW, colGap, usable };
+}
+
+// Era is the primary layout boundary. Dependencies may cross an era boundary,
+// but nodes never do. Inside an era, structural edges determine local layers;
+// domain and branch-family order provide deterministic crossing reduction.
+function layout(metrics) {
+  const { lineCap, stageW, colGap, usable } = metrics;
+  const placed = {};
+  const depth = {};
+  const eraBands = [];
+  const domainRank = {};
+  DATA.domains.forEach((domain, index) => { domainRank[domain.id] = index; });
+  let y = PAD_TOP;
+  const lineHeight = NODE_H + STAGGER_Y + 18;
+
+  function placeLine(line, originY, wrapIndex) {
+    const count = line.length;
+    let gap, x0;
+    if (count >= lineCap) {
+      gap = colGap;
+      x0 = PAD_SIDE;
+    } else if (count === 1) {
+      gap = 0;
+      x0 = PAD_SIDE + (usable - NODE_W) / 2;
+    } else {
+      gap = Math.min(MAX_SPREAD_GAP,
+        Math.max(MIN_COL_GAP, (usable - count * NODE_W) / (count - 1)));
+      const lineWidth = count * NODE_W + (count - 1) * gap;
+      x0 = PAD_SIDE + (usable - lineWidth) / 2;
+    }
+    line.forEach((node, index) => {
+      const laneJitter = ((laneRank[node.layout_lane] || 0) % 3) * 4;
+      const wrapJitter = (wrapIndex % 2) * 6;
+      placed[node.id] = {
+        x: x0 + index * (NODE_W + gap),
+        y: originY + (index % 2) * STAGGER_Y + laneJitter + wrapJitter,
+        h: NODE_H,
+      };
+    });
+  }
+
+  DATA.eras.forEach((era, eraIndex) => {
+    const members = DATA.nodes.filter(node => node.era_id === era.id);
+    const memberIds = new Set(members.map(node => node.id));
+    const milestone = members.find(node => node.is_milestone) || null;
+    const normals = members.filter(node => !node.is_milestone);
+    const localDepth = {};
+    const visit = (id, stack) => {
+      if (localDepth[id] !== undefined) return localDepth[id];
+      if (stack.has(id)) return 0;
+      stack.add(id);
+      let best = -1;
+      incomingEdges[id]
+        .filter(edge => STRUCTURAL_EDGE_KINDS.has(edge.kind)
+          && memberIds.has(edge.from) && !nodesById[edge.from].is_milestone)
+        .forEach(edge => { best = Math.max(best, visit(edge.from, stack)); });
+      stack.delete(id);
+      localDepth[id] = best + 1;
+      depth[id] = eraIndex * 1000 + localDepth[id];
+      return localDepth[id];
+    };
+    normals.forEach(node => visit(node.id, new Set()));
+
+    const maxLocalDepth = normals.length
+      ? Math.max(...normals.map(node => localDepth[node.id])) : -1;
+    const rows = [];
+    for (let layer = 0; layer <= maxLocalDepth; layer++)
+      rows.push(normals.filter(node => localDepth[node.id] === layer));
+
+    const indexInRow = {};
+    rows.forEach(row => {
+      row.sort((left, right) => {
+        const leftDomain = domainRank[left.domain_id] ?? 99;
+        const rightDomain = domainRank[right.domain_id] ?? 99;
+        if (leftDomain !== rightDomain) return leftDomain - rightDomain;
+        const leftLane = laneRank[left.layout_lane] ?? 9999;
+        const rightLane = laneRank[right.layout_lane] ?? 9999;
+        return leftLane !== rightLane ? leftLane - rightLane : left._order - right._order;
+      });
+      row.forEach((node, index) => { indexInRow[node.id] = index; });
+    });
+    const barycentre = (node, downward) => {
+      const related = (downward ? incomingEdges[node.id] : outgoingEdges[node.id])
+        .filter(edge => STRUCTURAL_EDGE_KINDS.has(edge.kind))
+        .map(edge => downward ? edge.from : edge.to)
+        .filter(id => memberIds.has(id) && indexInRow[id] !== undefined);
+      if (!related.length) return indexInRow[node.id];
+      return related.reduce((sum, id) => sum + indexInRow[id], 0) / related.length;
+    };
+    for (let pass = 0; pass < BARYCENTRE_PASSES; pass++) {
+      const downward = pass % 2 === 0;
+      const order = downward ? [...rows.keys()] : [...rows.keys()].reverse();
+      order.forEach(rowIndex => {
+        const row = rows[rowIndex];
+        row.sort((left, right) => {
+          const delta = barycentre(left, downward) - barycentre(right, downward);
+          if (Math.abs(delta) > 0.4) return delta;
+          const leftLane = laneRank[left.layout_lane] ?? 9999;
+          const rightLane = laneRank[right.layout_lane] ?? 9999;
+          return leftLane !== rightLane ? leftLane - rightLane : left._order - right._order;
+        });
+        row.forEach((node, index) => { indexInRow[node.id] = index; });
+      });
+    }
+
+    const bandTop = y;
+    y += ERA_PAD;
+    rows.forEach(row => {
+      let wrapIndex = 0;
+      for (let start = 0; start < row.length; start += lineCap) {
+        placeLine(row.slice(start, start + lineCap), y, wrapIndex);
+        y += lineHeight + (start + lineCap < row.length ? LINE_GAP : 0);
+        wrapIndex += 1;
+      }
+      y += ROW_GAP;
+    });
+
+    let milestoneTop = 0;
+    let milestoneBottom = 0;
+    if (milestone) {
+      y += MILESTONE_PAD;
+      milestoneTop = y - MILESTONE_PAD;
+      placed[milestone.id] = {
+        x: (stageW - MILESTONE_W) / 2, y, h: MILESTONE_H,
+      };
+      depth[milestone.id] = eraIndex * 1000 + maxLocalDepth + 1;
+      y += MILESTONE_H;
+      milestoneBottom = y + MILESTONE_PAD;
+      y += MILESTONE_PAD;
+    }
+    const bandBottom = Math.max(y + ERA_PAD, bandTop + ERA_PAD * 2 + MILESTONE_H);
+    eraBands.push({
+      era, top: bandTop, bottom: bandBottom,
+      milestoneId: milestone ? milestone.id : null,
+      msTop: milestoneTop, msBottom: milestoneBottom,
+    });
+    y = bandBottom;
+  });
+  return { pos: placed, depth, eraBands, width: stageW, height: y + PAD_BOTTOM };
+}
+
+function validateEraPartition(result) {
+  result.eraBands.forEach((band, index) => {
+    if (index > 0 && result.eraBands[index - 1].bottom > band.top)
+      throw new Error(`Era bands overlap: ${result.eraBands[index - 1].era.id} / ${band.era.id}`);
+    DATA.nodes.filter(node => node.era_id === band.era.id).forEach(node => {
+      const point = result.pos[node.id];
+      if (!point || point.y < band.top || point.y + point.h > band.bottom)
+        throw new Error(`Technology escaped era band: ${node.id} / ${band.era.id}`);
+    });
+  });
+}
+
+const stage = document.getElementById("stage");
+const svg = document.getElementById("edges");
+const wrap = document.getElementById("stage-wrap");
+const bandEls = [];
+const milestoneRowEls = [];
+
+function applyStageSize() {
+  stage.style.width = STAGE_W + "px";
+  stage.style.height = STAGE_H + "px";
+  svg.setAttribute("width", STAGE_W);
+  svg.setAttribute("height", STAGE_H);
+  wrap.style.width = STAGE_W * currentZoom + "px";
+  wrap.style.height = STAGE_H * currentZoom + "px";
+}
+
+function renderBands() {
+  bandEls.forEach(el => el.remove());
+  milestoneRowEls.forEach(el => el.remove());
+  bandEls.length = 0;
+  milestoneRowEls.length = 0;
+  ERA_BANDS.forEach((band, ei) => {
+    const el = document.createElement("div");
+    el.className = "era-band" + (ei % 2 ? " zebra" : "");
+    el.dataset.eraId = band.era.id;
+    el.style.cssText = `left:0;width:${STAGE_W}px;top:${band.top}px;height:${band.bottom - band.top}px`;
+    el.innerHTML = `<div class="era-title">
+        <div class="era-name">${band.era.display_name}</div>
+        <div class="era-meta">${band.era.node_count} 项 · ${fmtCost(band.era.min_cost)}–${fmtCost(band.era.max_cost)}</div>
+      </div>
+      <div class="era-watermark">${ERA_NUMERALS[ei] || ""}</div>`;
+    stage.insertBefore(el, svg);
+    bandEls.push(el);
+    if (band.milestoneId) {
+      const sep = document.createElement("div");
+      sep.className = "milestone-row";
+      sep.style.cssText = `top:${band.msTop}px;height:${band.msBottom - band.msTop}px;width:${STAGE_W}px`;
+      stage.insertBefore(sep, svg);
+      milestoneRowEls.push(sep);
+    }
+  });
+}
+
+function relayout() {
+  const result = layout(viewportMetrics());
+  validateEraPartition(result);
+  pos = result.pos;
+  DEPTH = result.depth;
+  ERA_BANDS = result.eraBands;
+  STAGE_W = result.width;
+  STAGE_H = result.height;
+  applyStageSize();
+  renderBands();
+  DATA.nodes.forEach(n => {
+    const p = pos[n.id];
+    const el = nodeEls[n.id];
+    if (el) {
+      el.style.left = p.x + "px";
+      el.style.top = p.y + "px";
+    }
+  });
+  edgeEls.forEach(updateEdgePath);
+}
+
+// 首次布局在节点 DOM 创建前只算坐标。
+const initialLayout = layout(viewportMetrics());
+validateEraPartition(initialLayout);
+({ pos, depth: DEPTH, eraBands: ERA_BANDS, width: STAGE_W, height: STAGE_H } = initialLayout);
+applyStageSize();
+renderBands();
+
+const nodeEls = {};
+DATA.nodes.forEach(n => {
+  const p = pos[n.id];
+  const dom = domainsById[n.domain_id];
+  const el = document.createElement("div");
+  el.className = "node" + (n.is_milestone ? " milestone" : "")
+    + (n.network_role === "backbone" ? " backbone" : "");
+  el.style.cssText = `left:${p.x}px;top:${p.y}px;--spine:${dom.accent}`;
+  const mark = n.is_starter_eligible ? '<div class="n-mark start" title="区域开局候选"></div>'
+    : (!n.is_milestone && n.is_era_key) ? '<div class="n-mark key" title="时代关键"></div>' : "";
+  el.innerHTML = `
+    <div class="n-name">${n.display_name}</div>
+    <div class="n-meta"><span>${dom.display_name}</span><span class="n-cost">${fmtCost(n.cost_points)}</span></div>
+    ${n.is_milestone ? '<div class="n-tag">时 代 里 程 碑</div>' : ""}${mark}`;
+  el.addEventListener("click", ev => { ev.stopPropagation(); select(n.id); });
+  el.addEventListener("mouseenter", () => applyChain(n.id));
+  el.addEventListener("mouseleave", () => applyChain(selectedId));
+  stage.appendChild(el);
+  nodeEls[n.id] = el;
+});
+
+const edgeEls = [];
+DATA.edges.forEach(e => {
+  if (nodesById[e.from] && nodesById[e.to] && isDrawnEdge(e)) edgeEls.push(drawEdge(e));
+});
+
+function isDrawnEdge(edge) {
+  // 时代门已经由里程碑行表达；再从里程碑拉硬前置边会扇到整代科技。
+  if (edge.kind === "hard" && nodesById[edge.from] && nodesById[edge.from].is_milestone) return false;
+  return true;
+}
+
+function edgePathD(edge) {
+  const fromId = edge.from || edge.dataset.from, toId = edge.to || edge.dataset.to;
+  const a = pos[fromId], b = pos[toId];
+  const aw = nodesById[fromId].is_milestone ? MILESTONE_W : NODE_W;
+  const bw = nodesById[toId].is_milestone ? MILESTONE_W : NODE_W;
+  const x1 = a.x + aw / 2, y1 = a.y + a.h, x2 = b.x + bw / 2, y2 = b.y;
+  const dy = Math.max(22, Math.abs(y2 - y1) * 0.46);
+  return `M ${x1} ${y1} C ${x1} ${y1 + dy}, ${x2} ${y2 - dy}, ${x2} ${y2}`;
+}
+
+function drawEdge(edge) {
+  const path = document.createElementNS(SVGNS, "path");
+  path.setAttribute("d", edgePathD(edge));
+  path.setAttribute("class", `edge ${edge.kind}`);
+  path.dataset.from = edge.from; path.dataset.to = edge.to; path.dataset.kind = edge.kind;
+  svg.appendChild(path);
+  return path;
+}
+
+function updateEdgePath(path) {
+  path.setAttribute("d", edgePathD(path));
+}
+
+// ── 链路高亮：前置追溯到时代里程碑为止，不穿过里程碑扇出整代科技 ──
+function chainOf(id) {
+  const hot = new Set([id]);
+  const up = cid => incomingEdges[cid].filter(e => STRUCTURAL_EDGE_KINDS.has(e.kind)).forEach(e => {
+    if (hot.has(e.from)) return;
+    hot.add(e.from);
+    if (nodesById[e.from].is_milestone) return;
+    up(e.from);
+  });
+  const down = cid => {
+    if (nodesById[cid].is_milestone) return;
+    outgoingEdges[cid].filter(e => STRUCTURAL_EDGE_KINDS.has(e.kind)).forEach(e => {
+      if (hot.has(e.to)) return;
+      hot.add(e.to);
+      down(e.to);
+    });
+  };
+  up(id); down(id);
+  [...incomingEdges[id], ...outgoingEdges[id]].forEach(e => {
+    if (!STRUCTURAL_EDGE_KINDS.has(e.kind)) { hot.add(e.from); hot.add(e.to); }
+  });
+  return hot;
+}
+
+let selectedId = null;
+function applyChain(id) {
+  if (!id) { clearChain(); return; }
+  const hot = chainOf(id);
+  DATA.nodes.forEach(n => nodeEls[n.id].classList.toggle("dim", !hot.has(n.id)));
+  edgeEls.forEach(e => {
+    const on = hot.has(e.dataset.from) && hot.has(e.dataset.to);
+    e.classList.toggle("dim", !on);
+    e.classList.toggle("hot", on);
+  });
+}
+function clearChain() {
+  DATA.nodes.forEach(n => nodeEls[n.id].classList.remove("dim"));
+  edgeEls.forEach(e => e.classList.remove("dim", "hot"));
+}
+
+// ── 详情面板 ──
+const detail = document.getElementById("detail");
+const STAT_LABELS = [
+  [/^country\.economy_output_factor$/, () => "全社会经济产出"],
+  [/^country\.production\.input_factor$/, () => "全社会生产投入"],
+  [/^country\.household\.consumption_factor$/, () => "全社会家庭消费"],
+  [/^country\.resource\.use_factor$/, () => "全社会自然资源耗用"],
+  [/^country\.output\.good\.([^.]+)_factor$/, m => `商品产出 · ${m[1]}`],
+  [/^country\.input\.good\.([^.]+)_factor$/, m => `生产投入 · ${m[1]}`],
+  [/^country\.consumption\.good\.([^.]+)_factor$/, m => `家庭消费 · ${m[1]}`],
+  [/^country\.resource\.([^.]+)\.use_factor$/, m => `自然资源利用 · ${m[1]}`],
+  [/^country\.resource\.([^.]+)\.managed_generation_factor$/, m => `资源再生 · ${m[1]}`],
+  [/^country\.output\.(terrain|landform)\.([^.]+)\.([^.]+)_factor$/,
+    m => `地理生产 · ${m[1]}.${m[2]} · ${m[3]}`],
+  [/^country\.output\.family\.([^.]+)_factor$/, m => `生产家族产出 · ${m[1]}`],
+  [/^country\.output\.building\.([^.]+)_factor$/, m => `指定建筑产出 · ${m[1]}`],
+  [/^country\.output\.agriculture_factor$/, () => "农业部门产出"],
+  [/^country\.output\.energy_factor$/, () => "能源部门产出"],
+  [/^country\.trade\.capacity_factor$/, () => "国内贸易容量"],
+  [/^country\.research\.institution_output_factor$/, () => "科研机构产出"],
+  [/^country\.research\.cost_factor$/, () => "研究成本"],
+  [/^country\.research\.agriculture_efficiency$/, () => "农业领域研究效率"],
+  [/^country\.climate\.drought_loss_factor$/, () => "旱灾损失"],
+  [/^country\.climate\.flood_loss_factor$/, () => "洪灾损失"],
+  [/^country\.climate\.cold_stress_factor$/, () => "寒冷损害"],
+  [/^country\.climate\.heat_stress_factor$/, () => "热害损失"],
+];
+function statLabel(key) {
+  for (const [re, fn] of STAT_LABELS) { const m = key.match(re); if (m) return fn(m); }
+  return key;
+}
+
+function termLabel(term) {
+  return term.subject_display_name || statLabel(term.stat);
+}
+
+// 经济内容解锁与 ALL 支撑关系（来自 EconomyCatalog 权威反向绑定）
+function renderUnlocks(u) {
+  if (!u) return "";
+  const group = (title, list) => list.length
+    ? `<div class="unlock-group"><div class="unlock-title">${title}<span class="unlock-count">${list.length}</span></div>
+       <div>${list.map(e => `<span class="unlock-chip" title="${e.id}">${esc(e.name)}</span>`).join("")}</div></div>`
+    : "";
+  const body = group("建筑", u.buildings) + group("物资", u.goods) + group("自然资源", u.resources);
+  const support = group("作为 ALL 支撑条件参与的生产方式", u.support_buildings || []);
+  return (body ? `<div class="d-sec"><h3>直接解锁</h3>${body}</div>` : "")
+    + (support ? `<div class="d-sec"><h3>产业交汇</h3>${support}</div>` : "");
+}
+
+function renderContentEffects(effects) {
+  if (!effects || !effects.length) return "";
+  const rows = effects.map(e => `<div class="effect-row">
+    <div class="effect-name">${esc(e.display_name || e.id || e.subject)}</div>
+    <div class="effect-spec">${esc(e.kind)} · ${esc(e.attribute)} · ${esc(e.operation)} ${esc(e.value)} · ${esc(e.status)}</div>
+  </div>`).join("");
+  return `<div class="d-sec"><h3>结构化内容效果</h3>${rows}</div>`;
+}
+
+function renderOverview() {
+  const rows = DATA.eras.map(era => {
+    const cells = DATA.domains.map(dom => {
+      const c = DATA.nodes.filter(n => n.era_id === era.id && n.domain_id === dom.id).length;
+      return `<td class="cell${c ? "" : " zero"}" data-era="${era.id}" data-dom="${dom.id}">${c || "·"}</td>`;
+    }).join("");
+    return `<tr><td class="era-name">${era.display_name}</td>${cells}</tr>`;
+  }).join("");
+  detail.innerHTML = `
+    <div class="d-kicker">TECHNOLOGY CATALOG</div>
+    <h2 class="d-title" style="padding-left:0">分布总览</h2>
+    <div class="d-sub" style="padding-left:0">${DATA.nodes.length} 项科技 · ${DATA.eras.length} 个时代 · ${DATA.domains.length} 个领域</div>
+    <div class="d-sec"><h3>时代 × 领域 分布</h3>
+      <table class="overview-table">
+        <tr><th style="text-align:left">时代</th>${DATA.domains.map(d =>
+          `<th><span style="color:${d.accent}">●</span> ${d.display_name}</th>`).join("")}</tr>
+        ${rows}
+      </table>
+    </div>
+    <div class="overview-note">
+      点击单元格可高亮对应「时代 × 领域」的全部节点；<br>
+      点击树中节点查看成本、研发前置、发现启发与数值效果；<br>
+      顶栏边类型开关可分别查看硬前置、替代路线、应用交汇、分支关系与里程碑候选；<br>
+      悬停节点高亮其知识链，前置追溯到时代里程碑即止；Esc 清除选中。
+    </div>`;
+  detail.querySelectorAll("td.cell").forEach(td => td.addEventListener("click", () => {
+    focusEraDomain(td.dataset.era, td.dataset.dom);
+  }));
+}
+
+function focusEraDomain(eraId, domId) {
+  clearSelection();
+  const hits = new Set(DATA.nodes.filter(n => n.era_id === eraId && n.domain_id === domId).map(n => n.id));
+  DATA.nodes.forEach(n => nodeEls[n.id].classList.toggle("dim", !hits.has(n.id)));
+  edgeEls.forEach(e => e.classList.add("dim"));
+  const first = DATA.nodes.find(n => n.era_id === eraId);
+  if (first) nodeEls[first.id].scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+}
+
+function select(id) {
+  selectedId = id;
+  DATA.nodes.forEach(n => nodeEls[n.id].classList.toggle("selected", n.id === id));
+  applyChain(id);
+  renderDetail(nodesById[id]);
+}
+function clearSelection() {
+  selectedId = null;
+  DATA.nodes.forEach(n => nodeEls[n.id].classList.remove("selected", "dim"));
+  clearChain();
+}
+
+function renderDetail(n) {
+  const dom = domainsById[n.domain_id], era = erasById[n.era_id];
+  const badges = [];
+  if (n.is_starter_eligible) badges.push('<span class="badge enamel">区域开局候选</span>');
+  if (n.is_milestone) badges.push('<span class="badge brass">时代里程碑</span>');
+  if (!n.is_milestone && n.is_era_key) badges.push('<span class="badge brass">时代关键 · 里程碑候选</span>');
+  (n.route_display_names && n.route_display_names.length ? n.route_display_names : n.route_tags)
+    .forEach(t => badges.push(`<span class="badge">${esc(t)}</span>`));
+
+  const inspiration = n.reveal_condition_lines.length
+    ? n.reveal_condition_lines.map(l =>
+        `<div class="cond-line" style="padding-left:${l.depth * 16}px">${l.depth ? "└ " : ""}${esc(l.text)}</div>`).join("")
+    : '<div class="cond-line" style="color:var(--text-3)">无额外发现线索。</div>';
+
+  const terms = n.modifier_terms.length
+    ? n.modifier_terms.map(t => `<div class="term">
+        <div class="t-head"><span class="t-label">${esc(termLabel(t))}</span><span class="t-val">${fmtTerm(t)}</span></div>
+        <div class="t-key">${t.stat}</div>
+        <div class="d-desc">${esc(t.effect_rationale || "")}</div>
+        <div class="t-key">运行时消费者 · ${esc(t.runtime_consumer || "未声明")}</div></div>`).join("")
+    : '<div class="cond-line" style="color:var(--text-3)">无数值效果（开局即完成）。</div>';
+
+  const chip = (id, soft, tag) => {
+    const t = nodesById[id];
+    return `<span class="rel-chip${soft ? " soft" : ""}" data-goto="${id}">${t ? t.display_name : id}${tag ? `<span class="m">${tag}</span>` : ""}</span>`;
+  };
+  const relationList = (ids, reasons, soft, tag) => (ids || []).map((id, i) =>
+    `<div class="cond-line">${chip(id, soft, tag)}${reasons && reasons[i] ?
+      `<div class="d-desc" style="margin-top:4px">${esc(reasons[i])}</div>` : ""}</div>`).join("");
+  const prereqs = relationList(n.prerequisite_ids, n.prerequisite_rationales, false, "") ||
+    '<span style="color:var(--text-3)">无（时代入口）</span>';
+  const hardSuccessors = outgoingEdges[n.id].filter(e => e.kind === "hard").map(e => e.to);
+  const succs = relationList(hardSuccessors, n.hard_successor_rationales, false, "") ||
+    '<span style="color:var(--text-3)">无（末端）</span>';
+  const sameLane = relationList(n.branch_successor_ids, n.branch_successor_rationales, false, "主题") ||
+    '<span style="color:var(--text-3)">无</span>';
+  const applicationOut = relationList(n.application_target_ids,
+    n.application_target_rationales, true, "应用");
+  const applicationIn = incomingEdges[n.id].filter(e => e.kind === "application")
+    .map(e => chip(e.from, true, "输入")).join("");
+  const applicationBlock = applicationOut || applicationIn
+    ? `<div class="d-sec"><h3>跨领域应用</h3><div>${applicationOut}${applicationIn}</div></div>` : "";
+  const topologyReview = n.topology_review && n.topology_review.role
+    ? `<div class="d-sec"><h3>拓扑审查</h3><div class="kv"><span>角色</span><span>${esc(n.topology_review.role)}</span></div><div class="d-desc">${esc(n.topology_review.rationale || "")}</div></div>` : "";
+  const buildingReview = n.building_unlock_review && n.building_unlock_review.policy
+    ? `<div class="d-sec"><h3>建筑解锁审查</h3><div class="kv"><span>政策</span><span>${esc(n.building_unlock_review.policy)}</span></div><div class="d-desc">${esc(n.building_unlock_review.rationale || "")}</div></div>` : "";
+  const research = n.condition_lines && n.condition_lines.length
+    ? n.condition_lines.map(l =>
+        `<div class="cond-line" style="padding-left:${l.depth * 16}px">${l.depth ? "└ " : ""}${esc(l.text)}</div>`).join("")
+    : '<div class="cond-line" style="color:var(--text-3)">无替代知识路径。</div>';
+  const milestoneBlock = n.is_milestone
+    ? `<div class="d-sec"><h3>里程碑候选 · 任选 ${n.milestone_required_count} 项</h3>` +
+      n.milestone_candidate_ids.map(cid => chip(cid, true)).join("") + "</div>"
+    : "";
+
+  const unlockBlock = renderUnlocks(n.unlocks);
+
+  detail.innerHTML = `
+    <div class="d-kicker">${era.display_name} · ${dom.display_name}</div>
+    <h2 class="d-title" style="border-left:3px solid ${dom.accent}">${n.display_name}</h2>
+    <div class="d-sub" style="padding-left:13px">${n.id}</div>
+    <div class="d-badges">${badges.join("")}</div>
+    <div class="d-sec"><h3>基本信息</h3>
+      <div class="kv"><span>研究成本</span><span>${n.cost_points.toLocaleString("zh-CN")} 科技值</span></div>
+      <div class="kv"><span>效果档案</span><span style="font-family:var(--mono);font-size:11.5px">${n.effect_profile}</span></div>
+      <div class="kv"><span>网络角色</span><span style="font-family:var(--mono);font-size:11.5px">${esc(n.network_role || "")}</span></div>
+      <div class="kv"><span>锚点类型</span><span style="font-family:var(--mono);font-size:11.5px">${esc(n.anchor_kind || "")}</span></div>
+      <div class="kv"><span>节点角色</span><span style="font-family:var(--mono);font-size:11.5px">${esc(n.node_role || "")}</span></div>
+      <div class="kv"><span>布局泳道</span><span style="font-family:var(--mono);font-size:11.5px">${esc(n.layout_lane || "")}</span></div>
+    </div>
+    <div class="d-sec"><h3>内容</h3><div class="d-desc">${esc(n.effect_summary)}</div></div>
+    <div class="d-sec"><h3>机会成本</h3><div class="d-desc">${esc(n.opportunity_cost || "无")}</div></div>
+    ${unlockBlock}
+    ${renderContentEffects(n.content_effects)}
+    <div class="d-sec"><h3>硬前置 · 全部必须完成</h3><div>${prereqs}</div></div>
+    <div class="d-sec"><h3>替代知识路径</h3>${research}</div>
+    ${milestoneBlock}
+    <div class="d-sec"><h3>发现启发 · 仅用于揭示</h3>${inspiration}</div>
+    <div class="d-sec"><h3>数值效果 · 永久修正</h3>${terms}</div>
+    <div class="d-sec"><h3>主题路线后继</h3><div>${sameLane}</div></div>
+    ${applicationBlock}
+    ${topologyReview}${buildingReview}
+    <div class="d-sec"><h3>被以下科技作为硬前置</h3><div>${succs}</div></div>
+    ${n.terminal_reason ? `<div class="d-sec"><h3>终点理由</h3><div class="d-desc">${esc(n.terminal_reason)}</div></div>` : ""}`;
+  detail.scrollTop = 0;
+  detail.querySelectorAll("[data-goto]").forEach(el => el.addEventListener("click", ev => {
+    ev.stopPropagation();
+    const id = el.getAttribute("data-goto");
+    select(id);
+    nodeEls[id].scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+  }));
+}
+
+document.getElementById("scroller").addEventListener("click", ev => {
+  if (ev.target.closest(".node")) return;
+  clearSelection();
+  renderOverview();
+});
+document.addEventListener("keydown", ev => { if (ev.key === "Escape") { clearSelection(); renderOverview(); } });
+
+// ── 顶部：时代导航 / 图例 / 搜索 / 缩放 ──
+const eraNav = document.getElementById("era-nav");
+DATA.eras.forEach((era, col) => {
+  const tab = document.createElement("span");
+  tab.className = "era-tab";
+  tab.innerHTML = `${era.display_name}<b>${era.node_count}</b>`;
+  tab.addEventListener("click", () => {
+    const first = DATA.nodes.find(n => n.era_id === era.id);
+    if (first) nodeEls[first.id].scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+  });
+  eraNav.appendChild(tab);
+});
+
+const legend = document.getElementById("legend");
+const domainOn = {};
+DATA.domains.forEach(d => {
+  domainOn[d.id] = true;
+  const count = DATA.nodes.filter(n => n.domain_id === d.id).length;
+  const el = document.createElement("span");
+  el.className = "legend-chip";
+  el.innerHTML = `<span class="dot" style="background:${d.accent}"></span>${d.display_name}<b>${count}</b>`;
+  el.addEventListener("click", () => {
+    domainOn[d.id] = !domainOn[d.id];
+    el.classList.toggle("off", !domainOn[d.id]);
+    DATA.nodes.forEach(n => nodeEls[n.id].style.visibility = domainOn[n.domain_id] ? "visible" : "hidden");
+    edgeEls.forEach(e => e.style.visibility =
+      domainOn[nodesById[e.dataset.from].domain_id] && domainOn[nodesById[e.dataset.to].domain_id]
+        ? "visible" : "hidden");
+  });
+  legend.appendChild(el);
+});
+
+const EDGE_META = {
+  hard: ["硬前置", ""],
+  application: ["应用交汇", "application"],
+  alternative: ["替代说明", "alternative"],
+  branch: ["分支关系", "branch"],
+  milestone_candidate: ["里程碑候选", "milestone_candidate"],
+};
+const edgeOn = { hard: true, application: true, alternative: true, branch: false, milestone_candidate: false };
+const edgeLegend = document.getElementById("edge-legend");
+Object.entries(EDGE_META).forEach(([kind, meta]) => {
+  const count = DATA.edges.filter(e => e.kind === kind && isDrawnEdge(e)).length;
+  const el = document.createElement("span");
+  el.className = "edge-chip" + (edgeOn[kind] ? "" : " off");
+  el.innerHTML = `<span class="edge-swatch ${meta[1]}"></span>${meta[0]}<b>${count}</b>`;
+  el.title = count ? `显示或隐藏${meta[0]}边` : `当前目录没有${meta[0]}边`;
+  if (!count) el.classList.add("off");
+  el.addEventListener("click", () => {
+    if (!count) return;
+    edgeOn[kind] = !edgeOn[kind];
+    el.classList.toggle("off", !edgeOn[kind]);
+    edgeEls.forEach(edge => {
+      if (edge.dataset.kind === kind) edge.classList.toggle("filtered", !edgeOn[kind]);
+    });
+  });
+  edgeLegend.appendChild(el);
+});
+edgeEls.forEach(edge => edge.classList.toggle("filtered", !edgeOn[edge.dataset.kind]));
+
+const searchInput = document.getElementById("search");
+searchInput.addEventListener("input", () => {
+  const q = searchInput.value.trim().toLowerCase();
+  DATA.nodes.forEach(n => nodeEls[n.id].classList.remove("search-hit"));
+  if (!q) return;
+  DATA.nodes.forEach(n => {
+    if (n.display_name.toLowerCase().includes(q) || n.id.toLowerCase().includes(q)
+        || n.route_tags.some(t => t.toLowerCase().includes(q))
+        || n.effect_summary.toLowerCase().includes(q)
+        || (n.content_effects || []).some(e => String(e.display_name || e.id).toLowerCase().includes(q))
+        || n.modifier_terms.some(t => String(t.subject_display_name || t.stat).toLowerCase().includes(q)))
+      nodeEls[n.id].classList.add("search-hit");
+  });
+});
+searchInput.addEventListener("keydown", ev => {
+  if (ev.key !== "Enter") return;
+  const hit = DATA.nodes.find(n => nodeEls[n.id].classList.contains("search-hit"));
+  if (hit) { select(hit.id); nodeEls[hit.id].scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" }); }
+});
+
+document.querySelectorAll("#zoom-seg button").forEach(btn => btn.addEventListener("click", () => {
+  document.querySelectorAll("#zoom-seg button").forEach(b => b.classList.toggle("on", b === btn));
+  currentZoom = parseFloat(btn.dataset.zoom);
+  wrap.style.transform = `scale(${currentZoom})`;
+  applyStageSize();
+}));
+
+let resizeTimer = 0;
+new ResizeObserver(() => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(relayout, 80);
+}).observe(document.getElementById("scroller"));
+
+// ── 工具函数 ──
+function fmtCost(v) {
+  if (v >= 100000000) return trimNum(v / 100000000) + " 亿";
+  if (v >= 10000) return trimNum(v / 10000) + " 万";
+  return v.toLocaleString("zh-CN");
+}
+function trimNum(x) { return x.toFixed(x >= 100 ? 0 : x >= 10 ? 1 : 2).replace(/\.0+$/, "").replace(/(\.\d*?)0+$/, "$1"); }
+function fmtTerm(t) {
+  if (t.operation === 0) return "+" + (t.value * 100).toFixed(1).replace(/\.0$/, "") + "%";
+  if (t.operation === 1) return "−" + (t.value * 100).toFixed(1).replace(/\.0$/, "") + "%";
+  if (t.operation === 2) return "× " + t.value;
+  if (t.operation === 3) return "÷ " + t.value;
+  return String(t.value);
+}
+function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
+
+if (TEMPLATE_PREVIEW) {
+  document.getElementById("detail").innerHTML = `
+    <div class="d-title">Technology tree template</div>
+    <div class="d-sub">No catalog data is embedded in this source template.</div>
+    <div class="section"><div class="sec-title">Open the generated report</div>
+    <div class="effect">technology_tree_report.html</div></div>`;
+} else {
+  renderOverview();
+}
+</script>
+</body>
+</html>

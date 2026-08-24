@@ -1,0 +1,45 @@
+[gd_resource type="Resource" script_class="ResourceProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/resource_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"tin_ore"
+discovery_technology_tags = PackedStringArray("tech.tin_identification")
+display_name = "锡矿"
+reserve_component = &"cell.res_tin_ore_reserve"
+habitat_mode = "land"
+init_reserve_scale = 8
+init_min_coverage = 0.03
+init_min_reserve = 200000
+init_target_coverage = 0.03
+init_target_reserve_density = 30000
+init_richness_exponent = 2.1
+init_micro_coverage = 0.07
+init_micro_reserve_share = 0.12
+init_micro_min_reserve = 20000
+    temp_lo = 0.0
+    temp_hi = 1.0
+gen_base = 0
+gen_self = 0
+decay_self = 0
+init_base = -360000
+init_temp = 0
+init_moisture = 0
+init_elevation = 90000
+init_river = 50000
+init_volcano = 0
+init_climate_fit = 0
+init_noise = 160000
+init_noise_scale = 0.07
+geology_family_id = &"felsic"
+init_province = 190000
+init_province_scale = 0.012
+init_belt = 230000
+init_belt_scale = 0.035
+climate_temp_opt = 0.5
+climate_temp_tol = 1
+climate_moisture_opt = 0.5
+climate_moisture_tol = 1
+ecology_capacity = 0
+ecology_growth_rate = 0
+ecology_immigration = 0
+ecology_stress_mortality_rate = 0

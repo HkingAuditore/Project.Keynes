@@ -1,0 +1,42 @@
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"method_smart_husbandry"
+display_name = "智能牧业站"
+building_kind = "collector"
+economic_sector_id = "agriculture"
+semantic_tags = PackedStringArray("method.livestock", "method.autonomous")
+technology_tags = PackedStringArray("tech.application.method_smart_husbandry")
+required_technology_tags = PackedStringArray()
+upgrade_family_id = &"smart_livestock_husbandry"
+upgrade_tier = 1
+production_climate_profile_id = &"pasture_livestock"
+construction_days = 180
+construction_good_ids = PackedStringArray("construction_components", "steel", "concrete", "electrical_equipment")
+construction_quantities = PackedInt64Array(42000, 30000, 28000, 10000)
+owner_profession_id = &"landlord"
+employee_profession_ids = PackedStringArray("agricultural_worker", "technician", "engineer", "manager")
+employee_slots_per_building = PackedInt64Array(12, 5, 3, 2)
+employee_wage_policy_ids = PackedStringArray("adaptive", "adaptive", "adaptive", "adaptive")
+employee_reference_wages_per_day = PackedInt64Array(14740, 17136, 19500, 17136)
+input_good_ids = PackedStringArray("agricultural_machinery", "electricity", "computers", "autonomous_systems")
+input_quantities_per_day = PackedInt64Array(800, 900, 400, 400)
+input_required_q16 = PackedInt32Array(32768, 32768, 32768, 32768)
+input_candidate_offsets = PackedInt32Array(0)
+output_good_ids = PackedStringArray("livestock_products")
+output_quantities_per_day = PackedInt64Array(61000)
+target_operating_margin_q16 = 6554
+supply_price_elasticity_q16 = 32768
+resource_ids = PackedStringArray("pasture")
+resource_quantities_per_day = PackedInt64Array(61000)
+resource_interaction_modes = PackedStringArray("capacity")
+resource_access_modes = PackedStringArray("local")
+behavior_id = "consume_local_resources"
+condition_opcodes = PackedInt32Array(1)
+condition_signals = PackedInt32Array(10)
+condition_compares = PackedInt32Array(4)
+condition_reference_ids = PackedStringArray("pasture")
+condition_values = PackedInt64Array(0)

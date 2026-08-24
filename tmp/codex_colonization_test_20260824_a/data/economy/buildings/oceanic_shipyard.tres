@@ -1,0 +1,43 @@
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"oceanic_shipyard"
+display_name = "远洋造船厂"
+economic_sector_id = "manufacturing"
+semantic_tags = PackedStringArray()
+technology_tags = PackedStringArray("tech.application.oceanic_shipyard")
+required_technology_tags = PackedStringArray()
+construction_good_ids = PackedStringArray("lumber", "bricks", "construction_components")
+construction_quantities = PackedInt64Array(5250, 5250, 3500)
+owner_profession_id = &"guild_master"
+employee_profession_ids = PackedStringArray("journeyman")
+employee_slots_per_building = PackedInt64Array(6)
+employee_wage_policy_ids = PackedStringArray("fixed")
+employee_reference_wages_per_day = PackedInt64Array(16222)
+input_good_ids = PackedStringArray("lumber", "cloth", "copper", "glass", "tools")
+input_quantities_per_day = PackedInt64Array(4000, 1000, 500, 500, 200)
+input_required_q16 = PackedInt32Array()
+input_category_ids = PackedStringArray("", "", "", "", "tools")
+input_min_quality_levels = PackedInt32Array(0, 0, 0, 0, 3)
+input_candidate_offsets = PackedInt32Array(0)
+input_candidate_good_ids = PackedStringArray()
+input_candidate_efficiency_q16 = PackedInt32Array()
+output_good_ids = PackedStringArray("oceanic_vessels")
+output_quantities_per_day = PackedInt64Array(3003)
+output_cost_shares_q16 = PackedInt32Array()
+resource_ids = PackedStringArray()
+resource_quantities_per_day = PackedInt64Array()
+resource_interaction_modes = PackedStringArray()
+resource_access_modes = PackedStringArray()
+resource_generation_ids = PackedStringArray()
+resource_generation_quantities_per_day = PackedInt64Array()
+condition_opcodes = PackedInt32Array()
+condition_signals = PackedInt32Array()
+condition_compares = PackedInt32Array()
+condition_reference_ids = PackedStringArray()
+condition_values = PackedInt64Array()
+wage_policy_id = "fixed"
+wage_per_employee_per_day = 16222

@@ -1,0 +1,44 @@
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"method_autonomous_forestry"
+display_name = "自主林业经营站"
+building_kind = "collector"
+economic_sector_id = "extractive"
+semantic_tags = PackedStringArray("method.forestry", "method.autonomous")
+technology_tags = PackedStringArray("tech.application.method_autonomous_forestry")
+required_technology_tags = PackedStringArray()
+upgrade_family_id = &"precision_forestry"
+upgrade_tier = 2
+construction_days = 210
+construction_good_ids = PackedStringArray("construction_components", "steel", "concrete", "advanced_chips")
+construction_quantities = PackedInt64Array(50000, 35000, 30000, 12000)
+owner_profession_id = &"industrialist"
+employee_profession_ids = PackedStringArray("forestry_worker", "technician", "engineer", "data_scientist", "manager")
+employee_slots_per_building = PackedInt64Array(4, 5, 3, 3, 2)
+employee_wage_policy_ids = PackedStringArray("adaptive", "adaptive", "adaptive", "adaptive", "adaptive")
+employee_reference_wages_per_day = PackedInt64Array(14740, 17136, 19500, 22500, 17136)
+input_good_ids = PackedStringArray("tools", "electricity", "computers", "autonomous_systems", "technology_points")
+input_quantities_per_day = PackedInt64Array(180, 1200, 600, 500, 250)
+input_required_q16 = PackedInt32Array(32768, 32768, 32768, 32768, 16384)
+input_candidate_offsets = PackedInt32Array(0)
+output_good_ids = PackedStringArray("logs")
+output_quantities_per_day = PackedInt64Array(32000)
+target_operating_margin_q16 = 6554
+supply_price_elasticity_q16 = 32768
+resource_ids = PackedStringArray("timber")
+resource_quantities_per_day = PackedInt64Array(700)
+resource_interaction_modes = PackedStringArray("extract")
+resource_access_modes = PackedStringArray("local")
+resource_generation_ids = PackedStringArray("timber")
+resource_generation_quantities_per_day = PackedInt64Array(1350)
+resource_generation_floor_q16 = 6554
+behavior_id = "cultivate_local_resources"
+condition_opcodes = PackedInt32Array(1)
+condition_signals = PackedInt32Array(10)
+condition_compares = PackedInt32Array(4)
+condition_reference_ids = PackedStringArray("timber")
+condition_values = PackedInt64Array(0)

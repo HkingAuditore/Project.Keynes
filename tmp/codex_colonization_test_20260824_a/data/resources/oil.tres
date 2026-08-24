@@ -1,0 +1,42 @@
+[gd_resource type="Resource" script_class="ResourceProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/resource_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"oil"
+discovery_technology_tags = PackedStringArray("tech.petroleum_extraction")
+display_name = "石油"
+reserve_component = &"cell.res_oil_reserve"
+init_reserve_scale = 8.0
+init_min_coverage = 0.04
+init_min_reserve = 10000.0
+land_only = false
+temp_lo = 0.0
+temp_hi = 1.0
+gen_base = 0.0
+gen_temp = 0.0
+gen_moisture = 0.0
+gen_self = 0.0
+decay_base = 0.05
+decay_temp = 0.0
+decay_moisture = 0.0
+decay_self = 0.0
+init_base = -55000.0
+init_temp = 0.0
+init_moisture = 0.0
+init_elevation = -20000.0
+init_noise = 75000.0
+init_noise_scale = 0.05
+init_landform_weights = {
+1: 25000.0,
+2: 40000.0,
+4: 35000.0,
+5: 50000.0,
+9: 60000.0,
+11: 30000.0,
+14: 55000.0
+}
+geology_family_id = &"sedimentary"
+init_province = 45000.0
+init_belt = 25000.0

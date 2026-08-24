@@ -1,0 +1,44 @@
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"printing_academy"
+display_name = "印刷学社"
+economic_sector_id = "knowledge"
+semantic_tags = PackedStringArray()
+technology_tags = PackedStringArray("industry.knowledge", "tech.application.printing_academy")
+required_technology_tags = PackedStringArray()
+upgrade_family_id = &"research_institution"
+upgrade_tier = 5
+construction_days = 80
+construction_good_ids = PackedStringArray("bricks", "lumber", "glass")
+construction_quantities = PackedInt64Array(25000, 15000, 5000)
+owner_profession_id = &"scholar"
+employee_profession_ids = PackedStringArray("scholar", "natural_philosopher")
+employee_slots_per_building = PackedInt64Array(20, 8)
+employee_wage_policy_ids = PackedStringArray("adaptive", "adaptive")
+employee_reference_wages_per_day = PackedInt64Array(16500, 17500)
+input_good_ids = PackedStringArray("printed_materials")
+input_quantities_per_day = PackedInt64Array(2500)
+input_required_q16 = PackedInt32Array(32768)
+input_category_ids = PackedStringArray()
+input_min_quality_levels = PackedInt32Array()
+input_candidate_offsets = PackedInt32Array(0)
+input_candidate_good_ids = PackedStringArray()
+input_candidate_efficiency_q16 = PackedInt32Array()
+output_good_ids = PackedStringArray("technology_points")
+output_quantities_per_day = PackedInt64Array(350000)
+output_cost_shares_q16 = PackedInt32Array()
+resource_ids = PackedStringArray()
+resource_quantities_per_day = PackedInt64Array()
+resource_interaction_modes = PackedStringArray()
+resource_access_modes = PackedStringArray()
+resource_generation_ids = PackedStringArray()
+resource_generation_quantities_per_day = PackedInt64Array()
+condition_opcodes = PackedInt32Array()
+condition_signals = PackedInt32Array()
+condition_compares = PackedInt32Array()
+condition_reference_ids = PackedStringArray()
+condition_values = PackedInt64Array()

@@ -1,0 +1,41 @@
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"method_detergent_plant_r10"
+display_name = "智能化洗涤剂厂"
+economic_sector_id = "manufacturing"
+semantic_tags = PackedStringArray()
+technology_tags = PackedStringArray("industry.chemicals", "tech.application.method_detergent_plant_r10")
+required_technology_tags = PackedStringArray()
+construction_good_ids = PackedStringArray("construction_components", "steel", "concrete", "glass")
+construction_quantities = PackedInt64Array(64000, 48000, 48000, 16000)
+owner_profession_id = &"industrialist"
+employee_profession_ids = PackedStringArray("industrial_worker", "chemist", "technician", "engineer", "manager")
+employee_slots_per_building = PackedInt64Array(32, 12, 9, 6, 4)
+employee_wage_policy_ids = PackedStringArray("adaptive", "adaptive", "adaptive", "adaptive", "adaptive")
+employee_reference_wages_per_day = PackedInt64Array(15608, 17136, 17136, 17136, 17136)
+input_good_ids = PackedStringArray("petrochemicals", "industrial_chemicals", "tools", "electricity", "industrial_machinery", "autonomous_systems")
+input_quantities_per_day = PackedInt64Array(1000, 1000, 300, 600, 200, 500)
+input_required_q16 = PackedInt32Array()
+input_category_ids = PackedStringArray("", "", "tools", "", "", "")
+input_min_quality_levels = PackedInt32Array(0, 0, 4, 0, 0, 0)
+input_candidate_offsets = PackedInt32Array(0, 0, 0, 0, 0, 0, 0)
+input_candidate_good_ids = PackedStringArray()
+input_candidate_efficiency_q16 = PackedInt32Array()
+output_good_ids = PackedStringArray("detergent")
+output_quantities_per_day = PackedInt64Array(63399)
+output_cost_shares_q16 = PackedInt32Array()
+resource_ids = PackedStringArray()
+resource_quantities_per_day = PackedInt64Array()
+resource_interaction_modes = PackedStringArray()
+resource_access_modes = PackedStringArray()
+resource_generation_ids = PackedStringArray()
+resource_generation_quantities_per_day = PackedInt64Array()
+condition_opcodes = PackedInt32Array()
+condition_signals = PackedInt32Array()
+condition_compares = PackedInt32Array()
+condition_reference_ids = PackedStringArray()
+condition_values = PackedInt64Array()

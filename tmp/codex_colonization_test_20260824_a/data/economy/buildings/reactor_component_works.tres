@@ -1,0 +1,43 @@
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"reactor_component_works"
+display_name = "核反应堆设备厂"
+economic_sector_id = "manufacturing"
+semantic_tags = PackedStringArray()
+technology_tags = PackedStringArray("tech.application.reactor_component_works")
+required_technology_tags = PackedStringArray()
+construction_good_ids = PackedStringArray("construction_components", "steel", "concrete", "glass")
+construction_quantities = PackedInt64Array(48000, 36000, 36000, 12000)
+owner_profession_id = &"industrialist"
+employee_profession_ids = PackedStringArray("industrial_worker", "technician", "engineer", "manager")
+employee_slots_per_building = PackedInt64Array(28, 10, 6, 3)
+employee_wage_policy_ids = PackedStringArray("adaptive", "adaptive", "adaptive", "adaptive")
+employee_reference_wages_per_day = PackedInt64Array(15608, 17136, 17136, 17136)
+input_good_ids = PackedStringArray("steel", "rare_earth_metals", "electrical_equipment", "tools", "electricity", "industrial_machinery", "technology_points")
+input_quantities_per_day = PackedInt64Array(1000, 500, 500, 300, 600, 200, 1000)
+input_required_q16 = PackedInt32Array(65536, 65536, 65536, 65536, 65536, 65536, 8192)
+input_category_ids = PackedStringArray("", "", "", "tools", "", "", "")
+input_min_quality_levels = PackedInt32Array(0, 0, 0, 3, 0, 0, 0)
+input_candidate_offsets = PackedInt32Array(0)
+input_candidate_good_ids = PackedStringArray()
+input_candidate_efficiency_q16 = PackedInt32Array()
+output_good_ids = PackedStringArray("reactor_components")
+output_quantities_per_day = PackedInt64Array(10367)
+output_cost_shares_q16 = PackedInt32Array()
+resource_ids = PackedStringArray()
+resource_quantities_per_day = PackedInt64Array()
+resource_interaction_modes = PackedStringArray()
+resource_access_modes = PackedStringArray()
+resource_generation_ids = PackedStringArray()
+resource_generation_quantities_per_day = PackedInt64Array()
+condition_opcodes = PackedInt32Array()
+condition_signals = PackedInt32Array()
+condition_compares = PackedInt32Array()
+condition_reference_ids = PackedStringArray()
+condition_values = PackedInt64Array()
+wage_policy_id = "adaptive"
+wage_per_employee_per_day = 5000

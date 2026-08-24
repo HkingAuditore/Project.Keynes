@@ -1,0 +1,21 @@
+[gd_scene load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/ui/components/sparkline_chart.gd" id="1_script"]
+[node name="SparklineChart" type="Control"]
+custom_minimum_size = Vector2(180, 96)
+script = ExtResource("1_script")
+[node name="TitleLabel" type="Label" parent="."]
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_right = -112.0
+offset_bottom = 24.0
+grow_horizontal = 2
+theme_type_variation = &"PKMutedLabel"
+[node name="ValueLabel" type="Label" parent="."]
+layout_mode = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -108.0
+offset_bottom = 24.0
+grow_horizontal = 0
+horizontal_alignment = 2

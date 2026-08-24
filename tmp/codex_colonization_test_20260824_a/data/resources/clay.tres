@@ -1,0 +1,46 @@
+[gd_resource type="Resource" script_class="ResourceProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/resource_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"clay"
+discovery_technology_tags = PackedStringArray("tech.clay_identification", "tech.earth_building")
+display_name = "黏土"
+reserve_component = &"cell.res_clay_reserve"
+init_reserve_scale = 8.0
+init_min_coverage = 0.05
+init_min_reserve = 10000.0
+land_only = true
+temp_lo = 0.0
+temp_hi = 1.0
+gen_base = 0.0
+gen_temp = 0.0
+gen_moisture = 40.0
+gen_self = 100.0
+decay_base = 0.0
+decay_temp = 0.0
+decay_moisture = 0.0
+decay_self = 0.001
+init_base = -2500.0
+init_temp = 0.0
+init_moisture = 17500.0
+init_river = 17500.0
+init_noise = 5000.0
+init_noise_scale = 0.06
+init_landform_weights = {
+3: 20000.0,
+4: 15000.0,
+5: 20000.0,
+9: 30000.0,
+14: 15000.0
+}
+climate_temp_opt = 0.5
+climate_temp_tol = 0.8
+climate_moisture_opt = 0.75
+climate_moisture_tol = 0.45
+runtime_climate_fit_weight = 0.4
+decay_stress = 40.0
+geology_family_id = &"sedimentary"
+init_province = 45000.0
+init_belt = 25000.0

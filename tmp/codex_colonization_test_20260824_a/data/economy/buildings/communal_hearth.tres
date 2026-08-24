@@ -1,0 +1,41 @@
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"communal_hearth"
+display_name = "公共火塘"
+economic_sector_id = "manufacturing"
+semantic_tags = PackedStringArray()
+technology_tags = PackedStringArray("tech.fire_control")
+required_technology_tags = PackedStringArray()
+construction_good_ids = PackedStringArray("logs", "gathered_plants")
+construction_quantities = PackedInt64Array(500, 250)
+owner_profession_id = &"artisan"
+employee_profession_ids = PackedStringArray()
+employee_slots_per_building = PackedInt64Array()
+employee_wage_policy_ids = PackedStringArray()
+employee_reference_wages_per_day = PackedInt64Array()
+input_good_ids = PackedStringArray("gathered_plants", "game_meat", "logs")
+input_quantities_per_day = PackedInt64Array(7000, 3500, 2000)
+input_required_q16 = PackedInt32Array(65536, 32768, 49152)
+input_category_ids = PackedStringArray()
+input_min_quality_levels = PackedInt32Array()
+input_candidate_offsets = PackedInt32Array(0)
+input_candidate_good_ids = PackedStringArray()
+input_candidate_efficiency_q16 = PackedInt32Array()
+output_good_ids = PackedStringArray("prepared_staples")
+output_quantities_per_day = PackedInt64Array(12628)
+output_cost_shares_q16 = PackedInt32Array()
+resource_ids = PackedStringArray()
+resource_quantities_per_day = PackedInt64Array()
+resource_interaction_modes = PackedStringArray()
+resource_access_modes = PackedStringArray()
+resource_generation_ids = PackedStringArray()
+resource_generation_quantities_per_day = PackedInt64Array()
+condition_opcodes = PackedInt32Array()
+condition_signals = PackedInt32Array()
+condition_compares = PackedInt32Array()
+condition_reference_ids = PackedStringArray()
+condition_values = PackedInt64Array()

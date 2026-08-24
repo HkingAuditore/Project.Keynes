@@ -1,0 +1,43 @@
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"cobbler_shop"
+display_name = "鞋匠铺"
+economic_sector_id = "manufacturing"
+semantic_tags = PackedStringArray()
+technology_tags = PackedStringArray("industry.textile", "tech.application.cobbler_shop")
+required_technology_tags = PackedStringArray()
+upgrade_family_id = &"footwear_making"
+upgrade_tier = 1
+construction_good_ids = PackedStringArray("lumber", "bricks", "construction_components")
+construction_quantities = PackedInt64Array(9750, 9750, 6500)
+owner_profession_id = &"guild_master"
+employee_profession_ids = PackedStringArray("apprentice", "journeyman")
+employee_slots_per_building = PackedInt64Array(6, 6)
+employee_wage_policy_ids = PackedStringArray("fixed", "fixed")
+employee_reference_wages_per_day = PackedInt64Array(11936, 16222)
+input_good_ids = PackedStringArray("leather", "tools")
+input_quantities_per_day = PackedInt64Array(1000, 250)
+input_required_q16 = PackedInt32Array()
+input_category_ids = PackedStringArray("", "tools")
+input_min_quality_levels = PackedInt32Array(0, 2)
+input_candidate_offsets = PackedInt32Array(0, 0, 0)
+input_candidate_good_ids = PackedStringArray()
+input_candidate_efficiency_q16 = PackedInt32Array()
+output_good_ids = PackedStringArray("footwear")
+output_quantities_per_day = PackedInt64Array(12970)
+output_cost_shares_q16 = PackedInt32Array()
+resource_ids = PackedStringArray()
+resource_quantities_per_day = PackedInt64Array()
+resource_interaction_modes = PackedStringArray()
+resource_access_modes = PackedStringArray()
+resource_generation_ids = PackedStringArray()
+resource_generation_quantities_per_day = PackedInt64Array()
+condition_opcodes = PackedInt32Array()
+condition_signals = PackedInt32Array()
+condition_compares = PackedInt32Array()
+condition_reference_ids = PackedStringArray()
+condition_values = PackedInt64Array()

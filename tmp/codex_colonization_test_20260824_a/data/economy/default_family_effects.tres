@@ -1,0 +1,8 @@
+[gd_resource type="Resource" script_class="FamilyEffectCatalog" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/family/family_effect_catalog.gd" id="1_family_effect_catalog"]
+
+[resource]
+script = ExtResource("1_family_effect_catalog")
+version = 1
+effects = Array[Resource]([])

@@ -1,0 +1,379 @@
+// brdf.gdshaderinc
+// ─────────────────────────────────────────────────────────────────────────
+// 职责（What）
+//   Stylized 半 PBR 光照核心：
+//     - LightingContext struct ：抽出 sun/ambient/exposure/hillshade/night 到一个容器
+//     - 主路径 (USE_PBR_BRDF=1) ：Cook-Torrance 微表面（GGX D + Smith G + Schlick F）
+//                                + 能量守恒 (kD = (1-F)·(1-metallic))
+//                                + 线性空间运算 + ACES filmic tonemap
+//     - Legacy 路径 (USE_PBR_BRDF=0) ：v9 Blinn-Phong + Reinhard，单点回退用
+//     - hillshading 二光源旁路：保留为 legacy/debug fallback；昼夜关闭时仍走永昼 PBR
+//
+// 调用方（Who）
+//   - land_pipeline.gdshaderinc::shade_land_surface
+//   - water_pipeline.gdshaderinc::shade_water_surface
+//   - 各自 caller 先构造 LightingContext，然后调 evaluate_brdf(s, lc)
+//
+// 依赖（Why）
+//   - surface_params.gdshaderinc：SurfaceParams
+//   - material_constants.gdshaderinc：USE_PBR_BRDF / VIEW_DIR_TOP_DOWN /
+//       PI / F0_DIELECTRIC_DEFAULT / ROUGHNESS_MIN/MAX /
+//       AMBIENT_FLOOR_LAND/WATER / HILLSHADE_BASE_LIFT / NIGHT_BRIGHTNESS_FLOOR /
+//       SUN_INTENSITY_GAIN / GLOSS_*_LEGACY / SPEC_*_LEGACY
+//   - tonemap.gdshaderinc：srgb_to_linear / linear_to_srgb / apply_tonemap
+//   - uniforms.gdshaderinc：tod_sun_dir / tod_sun_color / tod_ambient_color /
+//       tod_exposure / tod_night_factor / day_night_enabled / hillshade_*
+//
+// 性能（Cost）
+//   evaluate_brdf 主路径：~32 ALU（D_GGX 6 + G_Smith 8 + F_Schlick 5 + 杂项 13）
+//   evaluate_brdf_legacy：~14 ALU（与 v9 一致）
+//   evaluate_hillshade_only：~10 ALU
+//   全部纯 ALU，无纹理 fetch；编译器会按 USE_PBR_BRDF 死代码消除其中一条。
+// ─────────────────────────────────────────────────────────────────────────
+
+// ═══════════════════════════════════════════════════════════════════════
+// 一、LightingContext：所有 BRDF 输入收口
+// ═══════════════════════════════════════════════════════════════════════
+//   把 land/water 各自重复构造的 L/V/sun_color/ambient_color/exposure/...
+//   收成统一的 struct，BRDF 内部不再直接访问 uniform，便于将来：
+//     - 加 IBL：把 ibl_diffuse / ibl_specular 字段加入即可
+//     - 多光源：扩展为数组（GLSL 支持固定大小数组）
+//     - 阴影：加 shadow_factor 字段
+// ─────────────────────────────────────────────────────────────────────
+struct LightingContext {
+	vec3 L;                  // 主光方向，世界空间，已归一化
+	vec3 V;                  // 观察方向，2D top-down 默认 VIEW_DIR_TOP_DOWN
+	vec3 sun_color_linear;   // 主光辐射度（已 srgb_to_linear）
+	vec3 ambient_color_linear; // 环境光（已 srgb_to_linear）
+	float exposure;          // tod_exposure
+	float night_factor;      // tod_night_factor [0,1]
+	float hillshade;         // hillshade_strength [0,1]，作为 stylized 乘子
+	float ambient_floor;     // 环境光下限（land=AMBIENT_FLOOR_LAND, water=AMBIENT_FLOOR_WATER）
+	// [sky-sh-ambient] L1 球谐天光所需的「色板域」原始量（未转线性、未乘增益）：
+	//   方向化环境光在 BRDF 内按本像素法线 earth_sky_sh(...) 求值，替换原平铺 ambient。
+	vec3 amb_palette;        // = ed.amb_col（色板域）
+	vec3 sun_palette;        // = ed.sun_col（色板域，未乘 gain/local_day）
+	vec3 sun_dir_px;         // = ed.sun_dir（逐像素太阳方向，单位向量）
+	float local_day;         // = ed.local_day（白昼系数，驱动方位散射淡入）
+	float direct_shadow;     // terrain horizon direct-light visibility, ambient/emission 不受影响
+	// [terrain-gi 2026-07-31] 与 direct_shadow 同一次 horizon 采样派生的全局光照量：
+	//   sky_visibility ：cosine-weighted 天空可见度，只作用于 ambient，不碰 direct
+	//   bent_normal    ：平均可见方向（纯几何量，未与表面法线混合）
+	//   bounce         ：单次弹射辐照度，已含 (1-V_sky) 与 gi_bounce_strength
+	float sky_visibility;
+	vec3 bent_normal;
+	vec3 bounce;
+	// TODO[future-IBL]: vec3 ibl_diffuse; vec3 ibl_specular;
+};
+
+// [terrain-gi 档 2] 单次弹射色彩溢出。
+// 遮挡几何与地表颜色在此处解耦：烘焙层只记录"最强的两个遮挡方向上落点属于哪个 cell"，
+// 颜色由 bounce_lut 在运行期提供，因此季节、雪盖、植被枯荣、迷雾等每日 LUT 刷新
+// 会自动反映到弹射色上，不触发任何重烘。
+//
+// 方向 id 不入库：这里从中心 tap 的原始 nibble 重新求 top-2 argmax，与烘焙期共用同一规则。
+// 必须使用 nearest_packed 而非 bilinear 结果——4 个 tap 的 argmax 方向可能互不相同，
+// 用插值后的角度求 argmax 会与烘焙期记录的 cell 对不上。
+vec3 gi_evaluate_bounce(vec2 uv, vec4 nearest_packed, float sky_visibility) {
+#ifdef VT_USE_GI_OCCLUDER
+	if (!gi_bounce_bound || gi_bounce_strength <= 0.0 || !gi_lut_bound) {
+		return vec3(0.0);
+	}
+	int nibbles[8];
+	horizon_unpack_all(nearest_packed, nibbles);
+	int best = -1;
+	int second = -1;
+	for (int d = 0; d < 8; d++) {
+		int n = nibbles[d];
+		if (n > best) {
+			second = best;
+			best = n;
+		} else if (n > second) {
+			second = n;
+		}
+	}
+	if (best <= 0) {
+		return vec3(0.0);
+	}
+	// 遮挡强度即该方向被挡掉的可见度份额 1 - cos²(h)。
+	float occ0 = 1.0 - gi_horizon_lut[best].x;
+	float occ1 = (second > 0) ? (1.0 - gi_horizon_lut[second].x) : 0.0;
+	float occ_sum = occ0 + occ1;
+	if (occ_sum <= 1e-4) {
+		return vec3(0.0);
+	}
+	float w0 = occ0 / occ_sum;
+	float w1 = occ1 / occ_sum;
+
+	vec4 occ_texel = visual_sample_gi_occluder(uv);
+	int cid0 = int(occ_texel.r * 255.0 + 0.5) + int(occ_texel.g * 255.0 + 0.5) * 256;
+	int cid1 = int(occ_texel.b * 255.0 + 0.5) + int(occ_texel.a * 255.0 + 0.5) * 256;
+	if (cid0 >= 65535) {
+		return vec3(0.0);
+	}
+	// 次源无效或与主源同 cell 时退化为单源：两边同色则加权和恒等于该 cell 的颜色。
+	if (cid1 >= 65535) {
+		cid1 = cid0;
+	}
+	vec4 e0 = texture(bounce_lut, cell_lut_uv(cid0));
+	vec4 e1 = texture(bounce_lut, cell_lut_uv(cid1));
+	vec3 bounce_albedo = e0.rgb * e0.a * w0 + e1.rgb * e1.a * w1;
+	if (USE_LINEAR_LIGHTING) {
+		bounce_albedo = srgb_to_linear(bounce_albedo);
+	}
+	return bounce_albedo * (1.0 - sky_visibility) * gi_bounce_strength;
+#else
+	return vec3(0.0);
+#endif
+}
+
+// ─── 构造：从 uniforms 与一个 ambient_floor 推导 LightingContext ────────
+// [cylindrical-earth-daylight] 逐像素经纬度日照（晨昏线）驱动昼夜：昼夜系数 / 昼晨昏色
+//   统一由 earth_daylight.eval_earth_daylight() 给出（与水面、植被同一真源），
+//   tod_exposure 保留为全局曝光。昼侧用太阳主光，夜侧用冷蓝月光主光。
+LightingContext make_lighting_context(float ambient_floor, vec2 uv, float lat_signed) {
+	LightingContext lc;
+	EarthDaylight ed = eval_earth_daylight(uv, lat_signed, day_night_enabled);
+
+	// [tod-latitude-sun 2026-06-25] 主光方向：默认使用逐像素物理太阳方向（近似点光源）。
+	// ed.sun_dir 的水平/垂直分量比 = cos(h)/sin(h)，因此纬度与时角不同 → 阴影方向与长度不同。
+	// 为保留正午高悬太阳下的地形立体起伏（避免太阳完全竖直把坡面打平、抹掉地形层次），
+	// 给一个温和的"最高仰角"下限 tod_sun_relief_max_up：把 up 分量截顶后重新归一化，
+	// 让水平分量保持足量，保证坡面仍有方向性明暗（默认 0.88，比旧 0.92 更偏水平、方向感更强）。
+	// day_night 关闭（永昼）→ eval_earth_daylight 返回全局平行光；开启时可按 tod_latitude_sun_enabled
+	// 选择逐像素物理太阳或旧全局 tod_sun_dir。
+	vec3 phys_sun = ed.sun_dir;
+	phys_sun.z = min(phys_sun.z, tod_sun_relief_max_up);
+	phys_sun = normalize(phys_sun);
+	vec3 phys_moon = ed.moon_dir;
+	// 月光保持较低入射角，让午夜仍能读出山脊和沟谷的法线差。
+	phys_moon.z = min(phys_moon.z, 0.72);
+	phys_moon = normalize(phys_moon);
+	float lat_sun_w = (tod_latitude_sun_enabled || !day_night_enabled) ? 1.0 : 0.0;
+	vec3 day_light_dir = normalize(mix(normalize(tod_sun_dir), phys_sun, lat_sun_w));
+	// 日月方向近乎相反，不做向量线性混合，避免晨昏中点归一化零向量。
+	float use_day_key = step(ed.moon_strength, ed.local_day);
+	lc.L = mix(phys_moon, day_light_dir, use_day_key);
+	lc.V = VIEW_DIR_TOP_DOWN;
+
+	if (USE_LINEAR_LIGHTING) {
+		// 太阳在地平线下时切到月光，避免夜里仍出现太阳向阳面。
+		lc.sun_color_linear = srgb_to_linear(ed.sun_col) * (SUN_INTENSITY_GAIN * ed.local_day)
+			+ srgb_to_linear(ed.moon_col) * ed.moon_strength;
+		lc.ambient_color_linear = srgb_to_linear(ed.amb_col);
+	} else {
+		lc.sun_color_linear = ed.sun_col * (SUN_INTENSITY_GAIN * ed.local_day)
+			+ ed.moon_col * ed.moon_strength;
+		lc.ambient_color_linear = ed.amb_col;
+	}
+	lc.exposure = tod_exposure;
+	lc.night_factor = ed.pixel_night;
+	lc.hillshade = hillshade_strength;
+	lc.ambient_floor = ambient_floor;
+	// [sky-sh-ambient] 暂存色板域原始量，供 BRDF 内按法线求方向化天光（见 sky_sh_ambient_brdf）。
+	lc.amb_palette = ed.amb_col;
+	lc.sun_palette = mix(ed.moon_col, ed.sun_col, ed.local_day);
+	lc.sun_dir_px = lc.L;
+	lc.local_day = max(ed.local_day, ed.moon_strength * 0.45);
+	// [terrain-gi 2026-07-31] 一次 horizon 采样同时拿直射遮蔽、天空可见度与 bent normal。
+	// 旧的 terrain_horizon_direct_visibility 会自己再采 4 次；这里必须走统一入口，
+	// 否则同一 uv 会付两遍 horizon 采样成本。
+	TerrainHorizonSample hs = terrain_horizon_evaluate(uv, lc.L);
+	lc.direct_shadow = hs.direct_visibility;
+	lc.sky_visibility = hs.sky_visibility;
+	lc.bent_normal = hs.bent_normal;
+	lc.bounce = hs.has_data
+		? gi_evaluate_bounce(uv, hs.nearest_packed, hs.sky_visibility)
+		: vec3(0.0);
+	return lc;
+}
+
+// [terrain-gi] 地形级环境遮蔽：sky visibility 经倾斜法线修正后的最终 ambient 乘子。
+// 与 SurfaceParams.ao 相乘而非互相替代——后者是材质自身的局部遮蔽（冰川/河流冻结
+// 等按 cover 微调），两者语义不同。
+float gi_ambient_occlusion(LightingContext lc, vec3 N) {
+	return terrain_horizon_apply_normal(lc.sky_visibility, N, lc.bent_normal);
+}
+
+// [terrain-gi] 查天光用的法线：向平均可见方向**偏转**（不是替换）。gi_bent_strength=0
+// 时精确退回几何法线；=1 时几何法线被完全丢弃，环境光只跟随量化过的 bent 方向，
+// 会在扇区边界上出现块状跳变——所以默认值远低于 1，见 uniforms 里的说明。
+vec3 gi_ambient_normal(LightingContext lc, vec3 N) {
+	if (gi_bent_strength <= 0.0) {
+		return N;
+	}
+	vec3 mixed = mix(N, lc.bent_normal, gi_bent_strength);
+	return (dot(mixed, mixed) > 1e-6) ? normalize(mixed) : N;
+}
+
+// [sky-sh-ambient] 在 BRDF 域内求方向化天光：色板域 earth_sky_sh → 按需转线性。
+//   USE_LINEAR_LIGHTING 时与 albedo 同域（线性）；否则直接色板域，与 legacy 路径一致。
+vec3 sky_sh_ambient_brdf(LightingContext lc, vec3 N) {
+	vec3 amb = earth_sky_sh(lc.amb_palette, lc.sun_palette, lc.sun_dir_px, lc.local_day, N);
+	return USE_LINEAR_LIGHTING ? srgb_to_linear(amb) : amb;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 二、Cook-Torrance 微表面 BRDF 组件
+// ═══════════════════════════════════════════════════════════════════════
+
+// ─── D：GGX / Trowbridge-Reitz Normal Distribution Function ────────────
+float D_GGX(float NdotH, float roughness) {
+	float a = roughness * roughness;
+	float a2 = a * a;
+	float denom = NdotH * NdotH * (a2 - 1.0) + 1.0;
+	return a2 / max(PI * denom * denom, 1e-7);
+}
+
+// ─── G：Smith joint masking-shadowing（Schlick-GGX 简化版） ────────────
+float G_SchlickGGX(float NdotX, float k) {
+	return NdotX / max(NdotX * (1.0 - k) + k, 1e-7);
+}
+
+float G_SmithGGX(float NdotL, float NdotV, float roughness) {
+	float r = roughness + 1.0;
+	float k = (r * r) / 8.0;  // 直接光照常用 k
+	return G_SchlickGGX(NdotL, k) * G_SchlickGGX(NdotV, k);
+}
+
+// ─── F：Schlick Fresnel ─────────────────────────────────────────────────
+vec3 F_Schlick(vec3 F0, float VdotH) {
+	float t = pow(clamp(1.0 - VdotH, 0.0, 1.0), 5.0);
+	return F0 + (vec3(1.0) - F0) * t;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 三、Hillshade-Only 旁路（legacy/debug fallback）
+// ═══════════════════════════════════════════════════════════════════════
+//   保留 v9 的 key+fill 双光源 hillshading 行为，供将来 debug fallback 使用。
+//   注意：day_night_enabled=false 只表示"永昼 / 不跑晨昏线"，不再切到这条
+//   未 tonemap 的 sRGB 旁路，否则高 hillshade_strength 会把雪地/浅色地表打爆。
+// ─────────────────────────────────────────────────────────────────────
+vec3 evaluate_hillshade_only(SurfaceParams s) {
+	vec3 N = normalize(s.normal);
+	vec3 key_dir  = normalize(vec3(hillshade_dir.x,      hillshade_dir.y,      0.65));
+	vec3 fill_dir = normalize(vec3(hillshade_fill_dir.x, hillshade_fill_dir.y, 0.50));
+	float light = max(dot(N, key_dir), 0.0) + max(dot(N, fill_dir), 0.0) * 0.40;
+	light = clamp(light, 0.0, 1.0);
+	vec3 lit = s.base_color
+			 * mix(1.0 - hillshade_strength, 1.0 + hillshade_strength, light)
+			 * s.ao;
+	return lit + s.emission;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 四、主 BRDF 入口：根据 USE_PBR_BRDF 分派
+// ═══════════════════════════════════════════════════════════════════════
+//   说明：
+//     - 输出仍在 linear-HDR 域；最终的 linear→sRGB + filmic tonemap 由
+//       global_adjustments.gdshaderinc 末端统一处理。这样 land/water 的
+//       hillshade / 风格化 modulator 在 sRGB 域叠加时仍能保持一致基准。
+//     - emission 在 BRDF 输出后直接相加，不参与 BRDF 计算。
+//     - night_factor 作为整体亮度衰减统一应用（消除 v9 中 land/water 不一致）。
+// ─────────────────────────────────────────────────────────────────────
+
+// ─── 主 PBR 路径：Cook-Torrance + 能量守恒 ──────────────────────────────
+vec3 evaluate_brdf_pbr(SurfaceParams s, LightingContext lc) {
+	vec3 N = normalize(s.normal);
+	vec3 V = normalize(lc.V);
+	vec3 L = normalize(lc.L);
+	vec3 H = normalize(L + V);
+
+	float NdotL = max(dot(N, L), NDOTL_BIAS);
+	float NdotV = max(dot(N, V), NDOTL_BIAS);
+	float NdotH = max(dot(N, H), 0.0);
+	float VdotH = max(dot(V, H), 0.0);
+
+	float roughness = clamp(s.roughness, ROUGHNESS_MIN, ROUGHNESS_MAX);
+
+	// ── albedo 进入 BRDF 前转线性空间 ──────────────────────────────────
+	vec3 albedo = USE_LINEAR_LIGHTING ? srgb_to_linear(s.base_color) : s.base_color;
+
+	// ── F0：dielectric 默认 0.04，metal 用 albedo 替代 ─────────────────
+	vec3 F0 = mix(F0_DIELECTRIC_DEFAULT, albedo, s.metallic);
+
+	// ── Cook-Torrance specular 项 ─────────────────────────────────────
+	float D = D_GGX(NdotH, roughness);
+	float G = G_SmithGGX(NdotL, NdotV, roughness);
+	vec3  F = F_Schlick(F0, VdotH);
+	vec3  spec = (D * G) * F / (4.0 * NdotL * NdotV);
+
+	// ── diffuse 项（能量守恒：metal 没有 diffuse；非金属 = (1-F) · 1） ─
+	vec3 kD = (vec3(1.0) - F) * (1.0 - s.metallic);
+	vec3 diffuse = kD * albedo * INV_PI;
+
+	// ── Direct lighting：(diffuse + spec) · NdotL · sun_color ─────────
+	// Stylized 加成：hillshade 作为 direct 项的乘子（保留 v9 风味，让陡坡更暗）
+	float hill_lift = lc.hillshade + HILLSHADE_BASE_LIFT;
+	vec3 direct = (diffuse + spec) * NdotL * lc.sun_color_linear * hill_lift * lc.direct_shadow;
+
+	// ── Ambient：方向化天光（L1 球谐）· 地形 AO · 材质 ao（ambient_floor 防死黑）──
+	// [terrain-gi 2026-07-31] 天光改按 bent normal 求值、按 sky visibility 遮蔽：山谷不再
+	// 只是"整体变暗"，还会朝天空开口的方向偏色——earth_sky_sh 的 EARTH_SKY_SUNWRAP 项会让
+	// 清晨朝东开口的谷偏暖、被南侧山脊挡住的北坡偏冷。这是本轮 GI 最主要的可读特征。
+	vec3 amb_N = gi_ambient_normal(lc, N);
+	float geo_ao = gi_ambient_occlusion(lc, N);
+	vec3 ambient = max(sky_sh_ambient_brdf(lc, amb_N), vec3(lc.ambient_floor))
+		* albedo * s.ao * geo_ao;
+
+	// ── 单次弹射：被遮挡方向带来的邻域反照率溢出，同样只作用于间接光 ──────
+	ambient += lc.bounce * albedo * lc.sun_color_linear;
+
+	// ── Night atten + exposure ────────────────────────────────────────
+	vec3 lit = direct + ambient;
+	lit *= mix(1.0, NIGHT_BRIGHTNESS_FLOOR, lc.night_factor);
+	lit *= lc.exposure;
+
+	// ── emission：BRDF 输出后直接相加（火山/闪电/夜景灯光接入点） ───────
+	lit += s.emission;
+	return lit;
+}
+
+// ─── Legacy Blinn-Phong 路径（与 v9 视觉等价；USE_PBR_BRDF=0 时使用） ───
+//   保留 land 与 water 分别用的 spec_amp 系数；caller 用 spec_max/spec_min 区分。
+vec3 evaluate_brdf_blinn_phong_legacy(
+		SurfaceParams s, LightingContext lc,
+		float spec_max, float spec_min,
+		float ambient_factor, float diffuse_factor) {
+	vec3 N = normalize(s.normal);
+	vec3 V = normalize(lc.V);
+	vec3 L = normalize(lc.L);
+	vec3 H = normalize(L + V);
+	float NdotL = max(dot(N, L), 0.0);
+	float NdotH = max(dot(N, H), 0.0);
+
+	float roughness = clamp(s.roughness, ROUGHNESS_MIN, ROUGHNESS_MAX);
+	float shininess = mix(GLOSS_MAX_LEGACY, GLOSS_MIN_LEGACY, roughness);
+	float spec_amp = mix(spec_max, spec_min, roughness) * (1.0 - s.metallic);
+
+	vec3 col = s.base_color;
+	// [sky-sh-ambient] legacy 路径同样改用方向化天光（替换平铺 ambient_color_linear）。
+	// [terrain-gi] 与主路径同源：bent normal 定向 + sky visibility 遮蔽 + 弹射溢出。
+	vec3 amb_dir = sky_sh_ambient_brdf(lc, gi_ambient_normal(lc, N));
+	float geo_ao = gi_ambient_occlusion(lc, N);
+	vec3 diffuse = col * (amb_dir * s.ao * geo_ao * ambient_factor
+						+ lc.bounce * lc.sun_color_linear
+						+ lc.sun_color_linear * NdotL * (lc.hillshade + diffuse_factor) * lc.direct_shadow);
+	vec3 specular = lc.sun_color_linear * pow(NdotH, shininess) * spec_amp * lc.direct_shadow;
+	vec3 lit = diffuse + specular + s.emission;
+	lit *= mix(1.0, NIGHT_BRIGHTNESS_FLOOR, lc.night_factor);
+	lit *= lc.exposure;
+	// v9 末端 Reinhard，BRDF 主路径不做（main 路径由 global_adjustments 统一 tonemap）
+	lit = tonemap_reinhard_legacy(lit);
+	return lit;
+}
+
+// ─── 主入口：根据 USE_PBR_BRDF / day_night_enabled 分派 ────────────────
+//   land/water 共用此入口，唯一差异是 caller 提供的 ambient_floor 与 spec 参数。
+//   spec_max / spec_min 仅在 USE_PBR_BRDF=0 的 legacy 路径生效。
+vec3 evaluate_brdf(
+		SurfaceParams s, LightingContext lc,
+		float spec_max_legacy, float spec_min_legacy) {
+	if (USE_PBR_BRDF) {
+		return evaluate_brdf_pbr(s, lc);
+	}
+	// Legacy: 与 v9 等价（HILLSHADE_BASE_LIFT=0.55, ambient_factor=1.0）
+	return evaluate_brdf_blinn_phong_legacy(
+		s, lc, spec_max_legacy, spec_min_legacy,
+		1.0, HILLSHADE_BASE_LIFT);
+}

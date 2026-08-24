@@ -1,0 +1,38 @@
+[gd_resource type="Resource" script_class="WeatherProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/weather_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+weather_type = 5
+display_name = "浓雾"
+moisture_delta = 0.04
+temp_delta = -0.02
+can_form_snow = false
+can_form_flood = false
+has_particles = false
+particle_texture = null
+particle_amount_min = 80
+particle_amount_max = 640
+particle_density_per_px2 = 0.0004
+particle_lifetime = 1.6
+particle_direction = Vector3(0, 1, 0)
+particle_spread = 8.0
+particle_gravity = Vector3(0, 280, 0)
+particle_velocity_min = 220.0
+particle_velocity_max = 320.0
+particle_angular_velocity_min = 0.0
+particle_angular_velocity_max = 0.0
+particle_scale_min = 0.8
+particle_scale_max = 1.4
+particle_base_color = Color(0.85, 0.88, 0.96, 0.80)
+has_overlay = true
+overlay_color = Color(0.84, 0.86, 0.90, 1)
+overlay_base_alpha = 0.92
+has_cloud_shadow = true
+cloud_shadow_color = Color(0.18, 0.20, 0.26, 1)
+cloud_shadow_alpha_scale = 0.42
+enables_lightning = false
+enables_snow_grain = false
+enables_rain_streak = false
+enables_fog_breathe = true

@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="FamilyTraitCatalog" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/family/family_trait_catalog.gd" id="1_catalog"]
+
+[resource]
+script = ExtResource("1_catalog")
+version = 1
+core_trait_min = 2
+core_trait_max = 4
+traits = Array[Resource]([])

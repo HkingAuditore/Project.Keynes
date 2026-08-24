@@ -1667,8 +1667,7 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
                 (batch.pending[word_index] & bit) != 0) {
                 error = "country_research_technology_unavailable"; break;
             }
-            if (!prerequisites_met(batch.technologies, slot, command.aux) ||
-                !research_condition_met(batch.technologies, batch.signals,
+            if (!research_condition_met(batch.technologies, batch.signals,
                                         batch.signal_evidence,
                                         slot, command.aux)) {
                 error = "country_research_requirements_incomplete"; break;
@@ -2892,8 +2891,7 @@ bool NativeCountryRuntime::era_entry_met(const std::vector<uint64_t> &completed,
 }
 
 bool NativeCountryRuntime::prerequisites_met(int32_t slot, int32_t technology) const {
-    return prerequisites_met(_country_technologies, slot, technology) &&
-           research_condition_met(slot, technology);
+    return research_condition_met(slot, technology);
 }
 
 bool NativeCountryRuntime::signal_present(const std::vector<uint64_t> &signals,

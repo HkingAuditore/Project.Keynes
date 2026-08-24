@@ -1,0 +1,365 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/country_panel.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="2_icon"]
+[ext_resource type="PackedScene" path="res://scenes/ui/technology_workspace.tscn" id="3_technology"]
+[ext_resource type="PackedScene" path="res://scenes/ui/economy_workspace.tscn" id="4_economy"]
+[ext_resource type="PackedScene" path="res://scenes/ui/ideology_workspace.tscn" id="5_ideology"]
+
+[node name="CountryPanel" type="Control"]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+script = ExtResource("1_script")
+
+[node name="Scrim" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 0
+color = Color(0.008, 0.007, 0.006, 0.64)
+
+[node name="Center" type="MarginContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 8.0
+offset_top = 68.0
+offset_right = -8.0
+offset_bottom = -64.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Dialog" type="PanelContainer" parent="Center"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+clip_contents = true
+theme_type_variation = &"PKCountryShell"
+
+[node name="Main" type="HBoxContainer" parent="Center/Dialog"]
+layout_mode = 2
+theme_override_constants/separation = 0
+
+[node name="NavRail" type="PanelContainer" parent="Center/Dialog/Main"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(196, 0)
+layout_mode = 2
+theme_type_variation = &"PKCountryRail"
+
+[node name="NavColumn" type="VBoxContainer" parent="Center/Dialog/Main/NavRail"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 5
+
+[node name="Brand" type="VBoxContainer" parent="Center/Dialog/Main/NavRail/NavColumn"]
+layout_mode = 2
+theme_override_constants/separation = 1
+[node name="Title" type="Label" parent="Center/Dialog/Main/NavRail/NavColumn/Brand"]
+layout_mode = 2
+text = "国家事务"
+theme_type_variation = &"PKCountryRailTitle"
+[node name="Subtitle" type="Label" parent="Center/Dialog/Main/NavRail/NavColumn/Brand"]
+layout_mode = 2
+text = "CABINET DOSSIER"
+theme_type_variation = &"PKCountryRailMuted"
+[node name="BrandRule" type="HSeparator" parent="Center/Dialog/Main/NavRail/NavColumn"]
+layout_mode = 2
+[node name="NavKicker" type="Label" parent="Center/Dialog/Main/NavRail/NavColumn"]
+custom_minimum_size = Vector2(0, 24)
+layout_mode = 2
+text = "事务目录"
+vertical_alignment = 1
+theme_type_variation = &"PKCountryRailMuted"
+
+[node name="Technology" type="Button" parent="Center/Dialog/Main/NavRail/NavColumn"]
+custom_minimum_size = Vector2(0, 58)
+layout_mode = 2
+toggle_mode = true
+theme_type_variation = &"PKCountryNavButton"
+[node name="Row" type="HBoxContainer" parent="Center/Dialog/Main/NavRail/NavColumn/Technology"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_constants/separation = 10
+[node name="Icon" type="TextureRect" parent="Center/Dialog/Main/NavRail/NavColumn/Technology/Row"]
+custom_minimum_size = Vector2(28, 28)
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+[node name="Caption" type="Label" parent="Center/Dialog/Main/NavRail/NavColumn/Technology/Row"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "科技研究"
+vertical_alignment = 1
+theme_type_variation = &"PKCountryRailMuted"
+
+[node name="Ideology" type="Button" parent="Center/Dialog/Main/NavRail/NavColumn"]
+custom_minimum_size = Vector2(0, 58)
+layout_mode = 2
+toggle_mode = true
+theme_type_variation = &"PKCountryNavButton"
+[node name="Row" type="HBoxContainer" parent="Center/Dialog/Main/NavRail/NavColumn/Ideology"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_constants/separation = 10
+[node name="Icon" type="TextureRect" parent="Center/Dialog/Main/NavRail/NavColumn/Ideology/Row"]
+custom_minimum_size = Vector2(28, 28)
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+[node name="Caption" type="Label" parent="Center/Dialog/Main/NavRail/NavColumn/Ideology/Row"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "国家理念"
+vertical_alignment = 1
+theme_type_variation = &"PKCountryRailMuted"
+
+[node name="Economy" type="Button" parent="Center/Dialog/Main/NavRail/NavColumn"]
+custom_minimum_size = Vector2(0, 58)
+layout_mode = 2
+toggle_mode = true
+theme_type_variation = &"PKCountryNavButton"
+[node name="Row" type="HBoxContainer" parent="Center/Dialog/Main/NavRail/NavColumn/Economy"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_constants/separation = 10
+[node name="Icon" type="TextureRect" parent="Center/Dialog/Main/NavRail/NavColumn/Economy/Row"]
+custom_minimum_size = Vector2(28, 28)
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+[node name="Caption" type="Label" parent="Center/Dialog/Main/NavRail/NavColumn/Economy/Row"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "财政经济"
+vertical_alignment = 1
+theme_type_variation = &"PKCountryRailMuted"
+
+[node name="Military" type="Button" parent="Center/Dialog/Main/NavRail/NavColumn"]
+custom_minimum_size = Vector2(0, 58)
+layout_mode = 2
+toggle_mode = true
+theme_type_variation = &"PKCountryNavButton"
+[node name="Row" type="HBoxContainer" parent="Center/Dialog/Main/NavRail/NavColumn/Military"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_constants/separation = 10
+[node name="Icon" type="TextureRect" parent="Center/Dialog/Main/NavRail/NavColumn/Military/Row"]
+custom_minimum_size = Vector2(28, 28)
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+[node name="Caption" type="Label" parent="Center/Dialog/Main/NavRail/NavColumn/Military/Row"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "军事统筹"
+vertical_alignment = 1
+theme_type_variation = &"PKCountryRailMuted"
+
+[node name="Diplomacy" type="Button" parent="Center/Dialog/Main/NavRail/NavColumn"]
+custom_minimum_size = Vector2(0, 58)
+layout_mode = 2
+toggle_mode = true
+theme_type_variation = &"PKCountryNavButton"
+[node name="Row" type="HBoxContainer" parent="Center/Dialog/Main/NavRail/NavColumn/Diplomacy"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_constants/separation = 10
+[node name="Icon" type="TextureRect" parent="Center/Dialog/Main/NavRail/NavColumn/Diplomacy/Row"]
+custom_minimum_size = Vector2(28, 28)
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+[node name="Caption" type="Label" parent="Center/Dialog/Main/NavRail/NavColumn/Diplomacy/Row"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "外交往来"
+vertical_alignment = 1
+theme_type_variation = &"PKCountryRailMuted"
+
+[node name="NavSpacer" type="Control" parent="Center/Dialog/Main/NavRail/NavColumn"]
+layout_mode = 2
+size_flags_vertical = 3
+[node name="NavFoot" type="Label" parent="Center/Dialog/Main/NavRail/NavColumn"]
+layout_mode = 2
+text = "王室内阁 · 机密卷宗"
+autowrap_mode = 3
+theme_type_variation = &"PKCountryRailMuted"
+
+[node name="PageSurface" type="PanelContainer" parent="Center/Dialog/Main"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_type_variation = &"PKCountryPage"
+[node name="PageArea" type="VBoxContainer" parent="Center/Dialog/Main/PageSurface"]
+unique_name_in_owner = true
+layout_mode = 2
+clip_contents = true
+theme_override_constants/separation = 10
+
+[node name="MobileNav" type="ScrollContainer" parent="Center/Dialog/Main/PageSurface/PageArea"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(0, 48)
+layout_mode = 2
+horizontal_scroll_mode = 2
+vertical_scroll_mode = 0
+[node name="Buttons" type="HBoxContainer" parent="Center/Dialog/Main/PageSurface/PageArea/MobileNav"]
+layout_mode = 2
+theme_override_constants/separation = 4
+[node name="Technology" type="Button" parent="Center/Dialog/Main/PageSurface/PageArea/MobileNav/Buttons"]
+custom_minimum_size = Vector2(112, 44)
+layout_mode = 2
+text = "科技"
+toggle_mode = true
+theme_type_variation = &"PKChapterTab"
+[node name="Ideology" type="Button" parent="Center/Dialog/Main/PageSurface/PageArea/MobileNav/Buttons"]
+custom_minimum_size = Vector2(112, 44)
+layout_mode = 2
+text = "理念"
+toggle_mode = true
+theme_type_variation = &"PKChapterTab"
+[node name="Economy" type="Button" parent="Center/Dialog/Main/PageSurface/PageArea/MobileNav/Buttons"]
+custom_minimum_size = Vector2(112, 44)
+layout_mode = 2
+text = "经济"
+toggle_mode = true
+theme_type_variation = &"PKChapterTab"
+[node name="Military" type="Button" parent="Center/Dialog/Main/PageSurface/PageArea/MobileNav/Buttons"]
+custom_minimum_size = Vector2(112, 44)
+layout_mode = 2
+text = "军事"
+toggle_mode = true
+theme_type_variation = &"PKChapterTab"
+[node name="Diplomacy" type="Button" parent="Center/Dialog/Main/PageSurface/PageArea/MobileNav/Buttons"]
+custom_minimum_size = Vector2(112, 44)
+layout_mode = 2
+text = "外交"
+toggle_mode = true
+theme_type_variation = &"PKChapterTab"
+
+[node name="Header" type="PanelContainer" parent="Center/Dialog/Main/PageSurface/PageArea"]
+custom_minimum_size = Vector2(0, 72)
+layout_mode = 2
+theme_type_variation = &"PKCountryHeader"
+[node name="HeaderRow" type="HBoxContainer" parent="Center/Dialog/Main/PageSurface/PageArea/Header"]
+layout_mode = 2
+theme_override_constants/separation = 12
+[node name="CountryMark" type="TextureRect" parent="Center/Dialog/Main/PageSurface/PageArea/Header/HeaderRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(48, 48)
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+[node name="CountryBlock" type="VBoxContainer" parent="Center/Dialog/Main/PageSurface/PageArea/Header/HeaderRow"]
+custom_minimum_size = Vector2(240, 0)
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_constants/separation = 0
+[node name="CountryTitle" type="Label" parent="Center/Dialog/Main/PageSurface/PageArea/Header/HeaderRow/CountryBlock"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "国家事务"
+theme_type_variation = &"PKArchiveTitle"
+[node name="CountrySubtitle" type="Label" parent="Center/Dialog/Main/PageSurface/PageArea/Header/HeaderRow/CountryBlock"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "行政档案"
+text_overrun_behavior = 3
+theme_type_variation = &"PKMutedLabel"
+[node name="HeaderDivider" type="VSeparator" parent="Center/Dialog/Main/PageSurface/PageArea/Header/HeaderRow"]
+layout_mode = 2
+[node name="SectionIcon" parent="Center/Dialog/Main/PageSurface/PageArea/Header/HeaderRow" instance=ExtResource("2_icon")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(36, 38)
+layout_mode = 2
+size_flags_vertical = 4
+[node name="SectionBlock" type="VBoxContainer" parent="Center/Dialog/Main/PageSurface/PageArea/Header/HeaderRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+theme_override_constants/separation = 1
+[node name="SectionTitle" type="Label" parent="Center/Dialog/Main/PageSurface/PageArea/Header/HeaderRow/SectionBlock"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "科技研究"
+theme_type_variation = &"PKWorkspaceTitle"
+[node name="SectionSubtitle" type="Label" parent="Center/Dialog/Main/PageSurface/PageArea/Header/HeaderRow/SectionBlock"]
+unique_name_in_owner = true
+layout_mode = 2
+text_overrun_behavior = 3
+theme_type_variation = &"PKMutedLabel"
+[node name="CloseButton" type="Button" parent="Center/Dialog/Main/PageSurface/PageArea/Header/HeaderRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(40, 40)
+layout_mode = 2
+size_flags_vertical = 0
+focus_mode = 0
+theme_type_variation = &"PKIconButton"
+
+[node name="SectionHost" type="MarginContainer" parent="Center/Dialog/Main/PageSurface/PageArea"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+[node name="TechnologyWorkspace" parent="Center/Dialog/Main/PageSurface/PageArea/SectionHost" instance=ExtResource("3_technology")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+[node name="EconomyWorkspace" parent="Center/Dialog/Main/PageSurface/PageArea/SectionHost" instance=ExtResource("4_economy")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+[node name="IdeologyWorkspace" parent="Center/Dialog/Main/PageSurface/PageArea/SectionHost" instance=ExtResource("5_ideology")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2

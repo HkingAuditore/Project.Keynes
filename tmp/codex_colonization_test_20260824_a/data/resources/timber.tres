@@ -1,0 +1,58 @@
+[gd_resource type="Resource" script_class="ResourceProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/resource_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"timber"
+discovery_technology_tags = PackedStringArray("tech.deadwood_collection")
+display_name = "木材"
+reserve_component = &"cell.res_timber_reserve"
+habitat_mode = "land"
+init_reserve_scale = 40.0
+init_min_coverage = 0.3
+init_min_reserve = 30000.0
+land_only = true
+temp_lo = 0.0
+temp_hi = 1.0
+runtime_temperature_signal = "mean_30d"
+runtime_moisture_signal = "plant_available_water"
+gen_base = 0.0
+gen_temp = 0.0
+gen_moisture = 0.0
+gen_self = 10.0
+decay_base = 0.0
+decay_temp = 0.0
+decay_moisture = 0.0
+decay_self = 0.001
+init_base = -1500.0
+init_temp = 0.0
+init_moisture = 500.0
+init_climate_fit = 1200.0
+init_noise = 300.0
+init_noise_scale = 0.06
+init_vegetation_weights = {
+5: 1500.0,
+6: 500.0,
+7: 1750.0,
+8: 1750.0,
+9: 450.0,
+10: 150.0,
+11: 300.0,
+12: 1500.0,
+13: 400.0,
+14: 2000.0,
+15: 1250.0,
+24: 1500.0,
+25: 1500.0
+}
+climate_temp_opt = 0.77
+climate_temp_tol = 0.80
+climate_moisture_opt = 0.70
+climate_moisture_tol = 0.55
+runtime_climate_fit_weight = 0.85
+decay_stress = 1.2
+ecology_capacity = 100000.0
+ecology_growth_rate = 0.01
+ecology_immigration = 0.05
+ecology_stress_mortality_rate = 0.0001

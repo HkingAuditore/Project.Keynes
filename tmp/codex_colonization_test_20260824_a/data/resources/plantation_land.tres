@@ -1,0 +1,39 @@
+[gd_resource type="Resource" script_class="ResourceProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/resource_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"plantation_land"
+discovery_technology_tags = PackedStringArray("tech.cotton_gardening", "tech.spice_shade_gardening", "tech.latex_smoke_coagulation", "tech.crop_acclimatization")
+display_name = "种植园承载力"
+reserve_component = &"cell.res_plantation_land_reserve"
+habitat_mode = "land"
+init_reserve_scale = 1
+init_min_coverage = 0.2
+init_min_reserve = 1400
+    temp_lo = 0.0
+    temp_hi = 1.0
+gen_base = 0
+gen_self = 0
+decay_self = 0
+init_base = -85
+init_temp = 0
+init_moisture = 55
+init_elevation = -20
+init_river = 0
+init_volcano = 0
+init_climate_fit = 150
+init_noise = 35
+init_noise_scale = 0.07
+geology_family_id = &""
+init_province = 0
+init_province_scale = 0.012
+init_belt = 0
+init_belt_scale = 0.035
+climate_temp_opt = 0.72
+climate_temp_tol = 0.3
+climate_moisture_opt = 0.7
+climate_moisture_tol = 0.3
+ecology_capacity = 0
+ecology_growth_rate = 0
+ecology_immigration = 0
+ecology_stress_mortality_rate = 0

@@ -1,0 +1,153 @@
+[gd_scene load_steps=27 format=3 uid="uid://c6x8q3wvfm8sh"]
+
+[ext_resource type="Script" uid="uid://d2jlthr1nqltt" path="res://scripts/game/player_game.gd" id="1_player"]
+[ext_resource type="Script" uid="uid://cr8rfj8egdakv" path="res://scripts/rendering/hex_renderer.gd" id="2_renderer"]
+[ext_resource type="Script" uid="uid://cv6opgqbl5anq" path="res://scripts/rendering/map_camera.gd" id="3_camera"]
+[ext_resource type="Script" uid="uid://6x4pu0j1xdr2" path="res://scripts/geography/world_clock.gd" id="4_clock"]
+[ext_resource type="Script" uid="uid://cdia5pxf0v0uh" path="res://scripts/rendering/cell_highlight.gd" id="5_highlight"]
+[ext_resource type="Script" uid="uid://byvlm8cpk3u5i" path="res://scripts/game/world_runtime_host.gd" id="6_runtime"]
+[ext_resource type="Script" uid="uid://chdm47b1d80b0" path="res://scripts/ui/game_ui_manager.gd" id="7_ui"]
+[ext_resource type="Script" path="res://scripts/game/player_controller.gd" id="8_player_controller"]
+[ext_resource type="Script" uid="uid://doewiqfv0iv3t" path="res://scripts/rendering/data_overlay_layer.gd" id="11_overlay"]
+[ext_resource type="PackedScene" path="res://scenes/ui/player_top_bar.tscn" id="12_top_bar"]
+[ext_resource type="PackedScene" path="res://scenes/ui/inspector_panel.tscn" id="13_inspector"]
+[ext_resource type="PackedScene" path="res://scenes/ui/perf_mini_hud.tscn" id="16_perf"]
+[ext_resource type="PackedScene" path="res://scenes/ui/map_overlay_toolbar.tscn" id="17_overlay_toolbar"]
+[ext_resource type="PackedScene" path="res://scenes/ui/country_action_bar.tscn" id="18_country_bar"]
+[ext_resource type="PackedScene" path="res://scenes/ui/map_overlay_legend.tscn" id="19_legend"]
+[ext_resource type="PackedScene" path="res://scenes/ui/country_panel.tscn" id="20_country_panel"]
+[ext_resource type="PackedScene" path="res://scenes/ui/world_loading_overlay.tscn" id="21_loading"]
+[ext_resource type="PackedScene" path="res://scenes/ui/pause_menu.tscn" id="22_pause"]
+[ext_resource type="Theme" path="res://assets/themes/player_session_theme.tres" id="23_theme"]
+[ext_resource type="Script" path="res://scripts/rendering/colonization_route_layer.gd" id="24_colonization_route"]
+[ext_resource type="PackedScene" path="res://scenes/ui/colonization_planner_panel.tscn" id="25_colonization_panel"]
+[ext_resource type="PackedScene" path="res://scenes/ui/era_reward_dialog.tscn" id="26_era_reward"]
+[ext_resource type="Theme" path="res://assets/themes/player_ui_theme.tres" id="27_legacy_theme"]
+
+[node name="PlayerGame" type="Node2D" unique_id=198229795]
+script = ExtResource("1_player")
+
+[node name="WorldRoot" type="Node2D" parent="." unique_id=1950342253]
+
+[node name="HexRenderer" type="Node2D" parent="WorldRoot" unique_id=1885530707]
+show_behind_parent = true
+top_level = true
+script = ExtResource("2_renderer")
+weather_strength = 0.5
+terrain_material_albedo_strength = 0.62
+terrain_material_normal_strength = 0.425
+terrain_material_roughness_strength = 0.69
+terrain_material_world_size = 256.0
+terrain_horizon_strength = 0.8
+terrain_horizon_softness = 0.75
+terrain_horizon_max_angle = 1.5708
+terrain_horizon_cast_floor = 0.41
+
+[node name="CellHighlight" type="Node2D" parent="WorldRoot" unique_id=2013937119]
+top_level = true
+z_index = 10
+script = ExtResource("5_highlight")
+
+[node name="DataOverlayLayer" type="Node2D" parent="WorldRoot" unique_id=2064388670]
+script = ExtResource("11_overlay")
+
+[node name="ColonizationRouteLayer" type="Node2D" parent="WorldRoot"]
+top_level = true
+z_index = 12
+script = ExtResource("24_colonization_route")
+
+[node name="MapCamera" type="Camera2D" parent="." unique_id=372859515]
+script = ExtResource("3_camera")
+
+[node name="WorldClock" type="Node" parent="." unique_id=1779671533]
+script = ExtResource("4_clock")
+debug_step_log = false
+
+[node name="RuntimeHost" type="Node" parent="." unique_id=1075796029]
+script = ExtResource("6_runtime")
+
+[node name="UI" type="CanvasLayer" parent="." unique_id=1030090401]
+script = ExtResource("7_ui")
+
+[node name="UIRoot" type="Control" parent="UI"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme = ExtResource("23_theme")
+
+[node name="HUDLayer" type="Control" parent="UI/UIRoot"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="PlayerTopBar" parent="UI/UIRoot/HUDLayer" instance=ExtResource("12_top_bar")]
+unique_name_in_owner = true
+
+[node name="PerfMiniHUD" parent="UI/UIRoot/HUDLayer" instance=ExtResource("16_perf")]
+unique_name_in_owner = true
+
+[node name="MapOverlayToolbar" parent="UI/UIRoot/HUDLayer" instance=ExtResource("17_overlay_toolbar")]
+unique_name_in_owner = true
+
+[node name="CountryActionBar" parent="UI/UIRoot/HUDLayer" instance=ExtResource("18_country_bar")]
+unique_name_in_owner = true
+
+[node name="MapOverlayLegend" parent="UI/UIRoot/HUDLayer" instance=ExtResource("19_legend")]
+unique_name_in_owner = true
+
+[node name="PanelLayer" type="Control" parent="UI/UIRoot"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="RightPanel" parent="UI/UIRoot/PanelLayer" instance=ExtResource("13_inspector")]
+unique_name_in_owner = true
+
+[node name="CountryPanel" parent="UI/UIRoot/PanelLayer" instance=ExtResource("20_country_panel")]
+unique_name_in_owner = true
+
+[node name="ModalLayer" type="Control" parent="UI/UIRoot"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="ColonizationPlannerPanel" parent="UI/UIRoot/ModalLayer" instance=ExtResource("25_colonization_panel")]
+unique_name_in_owner = true
+
+[node name="EraRewardDialog" parent="UI/UIRoot/ModalLayer" instance=ExtResource("26_era_reward")]
+unique_name_in_owner = true
+
+[node name="WorldLoadingOverlay" parent="UI/UIRoot/ModalLayer" instance=ExtResource("21_loading")]
+unique_name_in_owner = true
+
+[node name="PauseMenu" parent="UI/UIRoot/ModalLayer" instance=ExtResource("22_pause")]
+unique_name_in_owner = true
+
+[node name="DebugLayer" type="Control" parent="UI/UIRoot"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme = ExtResource("27_legacy_theme")
+
+[node name="PlayerController" type="Node" parent="." unique_id=1023979025]
+script = ExtResource("8_player_controller")

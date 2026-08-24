@@ -1,0 +1,430 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/main_menu.gd" id="1_menu"]
+[ext_resource type="Theme" path="res://assets/themes/player_ui_theme.tres" id="2_theme"]
+
+[node name="MainMenu" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("2_theme")
+script = ExtResource("1_menu")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.03, 0.055, 0.052, 0.48)
+
+[node name="PageMargin" type="MarginContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 56
+theme_override_constants/margin_top = 42
+theme_override_constants/margin_right = 42
+theme_override_constants/margin_bottom = 34
+
+[node name="PageStack" type="Control" parent="PageMargin"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(520, 0)
+layout_mode = 2
+size_flags_horizontal = 0
+
+[node name="HomePage" type="VBoxContainer" parent="PageMargin/PageStack" groups=["main_menu_pages"]]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 10
+
+[node name="Title" type="Label" parent="PageMargin/PageStack/HomePage"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.85098, 0.772549, 0.54902, 1)
+theme_override_font_sizes/font_size = 46
+text = "PROJECT.KEYNES"
+
+[node name="Subtitle" type="Label" parent="PageMargin/PageStack/HomePage"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.513726, 0.666667, 0.627451, 1)
+theme_override_font_sizes/font_size = 16
+text = "文明、资源与时间的历史模拟"
+
+[node name="Spacer" type="Control" parent="PageMargin/PageStack/HomePage"]
+custom_minimum_size = Vector2(0, 54)
+layout_mode = 2
+
+[node name="NewGameButton" type="Button" parent="PageMargin/PageStack/HomePage" groups=["main_menu_commands"]]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(300, 50)
+layout_mode = 2
+size_flags_horizontal = 0
+text = "新游戏"
+alignment = 0
+
+[node name="LoadGameButton" type="Button" parent="PageMargin/PageStack/HomePage" groups=["main_menu_commands"]]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(300, 50)
+layout_mode = 2
+size_flags_horizontal = 0
+text = "加载游戏"
+alignment = 0
+
+[node name="SettingsButton" type="Button" parent="PageMargin/PageStack/HomePage" groups=["main_menu_commands"]]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(300, 50)
+layout_mode = 2
+size_flags_horizontal = 0
+text = "设置"
+alignment = 0
+
+[node name="QuitButton" type="Button" parent="PageMargin/PageStack/HomePage" groups=["main_menu_commands"]]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(300, 50)
+layout_mode = 2
+size_flags_horizontal = 0
+text = "退出"
+alignment = 0
+
+[node name="NewGamePage" type="ScrollContainer" parent="PageMargin/PageStack" groups=["main_menu_pages"]]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+horizontal_scroll_mode = 0
+
+[node name="Body" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage"]
+custom_minimum_size = Vector2(520, 0)
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Title" type="Label" parent="PageMargin/PageStack/NewGamePage/Body"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.85098, 0.772549, 0.54902, 1)
+theme_override_font_sizes/font_size = 30
+text = "建立新的国家"
+
+[node name="Subtitle" type="Label" parent="PageMargin/PageStack/NewGamePage/Body"]
+layout_mode = 2
+text = "确定世界的尺度与开端。所有参数都会写入存档。"
+
+[node name="Rule" type="HSeparator" parent="PageMargin/PageStack/NewGamePage/Body"]
+layout_mode = 2
+
+[node name="MapSourceField" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Body"]
+layout_mode = 2
+theme_override_constants/separation = 6
+[node name="Label" type="Label" parent="PageMargin/PageStack/NewGamePage/Body/MapSourceField"]
+layout_mode = 2
+text = "世界来源"
+[node name="MapSourceOption" type="OptionButton" parent="PageMargin/PageStack/NewGamePage/Body/MapSourceField"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "程序生成按种子造世界；作者地图读取已编译的 .pkmap。"
+
+[node name="PkmapField" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Body"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 6
+[node name="Label" type="Label" parent="PageMargin/PageStack/NewGamePage/Body/PkmapField"]
+layout_mode = 2
+text = "作者地图"
+[node name="PkmapPickOption" type="OptionButton" parent="PageMargin/PageStack/NewGamePage/Body/PkmapField"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+tooltip_text = "user://maps 中已有的作者地图。"
+[node name="Row" type="HBoxContainer" parent="PageMargin/PageStack/NewGamePage/Body/PkmapField"]
+layout_mode = 2
+theme_override_constants/separation = 8
+[node name="PkmapPathLabel" type="Label" parent="PageMargin/PageStack/NewGamePage/Body/PkmapField/Row"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKMutedLabel"
+text = "尚未选择 .pkmap 文件"
+autowrap_mode = 3
+text_overrun_behavior = 3
+[node name="BrowsePkmapButton" type="Button" parent="PageMargin/PageStack/NewGamePage/Body/PkmapField/Row"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(112, 38)
+layout_mode = 2
+theme_type_variation = &"PKTabButton"
+text = "浏览…"
+[node name="PkmapMetaLabel" type="Label" parent="PageMargin/PageStack/NewGamePage/Body/PkmapField"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"PKMutedLabel"
+autowrap_mode = 3
+
+[node name="CountryField" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Body"]
+layout_mode = 2
+[node name="Label" type="Label" parent="PageMargin/PageStack/NewGamePage/Body/CountryField"]
+layout_mode = 2
+text = "国家名称"
+[node name="CountryEdit" type="LineEdit" parent="PageMargin/PageStack/NewGamePage/Body/CountryField"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "国家名称"
+text = "新国家"
+max_length = 32
+
+[node name="ForeignField" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Body"]
+layout_mode = 2
+[node name="Label" type="Label" parent="PageMargin/PageStack/NewGamePage/Body/ForeignField"]
+layout_mode = 2
+text = "外国数量"
+[node name="ForeignCount" type="SpinBox" parent="PageMargin/PageStack/NewGamePage/Body/ForeignField"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "生成在玩家国家一定距离之外的其他国家"
+
+[node name="SeedField" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Body"]
+layout_mode = 2
+[node name="Label" type="Label" parent="PageMargin/PageStack/NewGamePage/Body/SeedField"]
+layout_mode = 2
+text = "地图种子"
+[node name="Row" type="HBoxContainer" parent="PageMargin/PageStack/NewGamePage/Body/SeedField"]
+layout_mode = 2
+theme_override_constants/separation = 8
+[node name="SeedBox" type="SpinBox" parent="PageMargin/PageStack/NewGamePage/Body/SeedField/Row"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = 1.0
+max_value = 2147483647.0
+step = 1.0
+[node name="RandomSeedButton" type="Button" parent="PageMargin/PageStack/NewGamePage/Body/SeedField/Row"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(44, 38)
+layout_mode = 2
+text = "随机"
+
+[node name="SizeField" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Body"]
+layout_mode = 2
+[node name="Label" type="Label" parent="PageMargin/PageStack/NewGamePage/Body/SizeField"]
+layout_mode = 2
+text = "地图尺寸"
+[node name="SizeOption" type="OptionButton" parent="PageMargin/PageStack/NewGamePage/Body/SizeField"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="DimensionField" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Body"]
+layout_mode = 2
+[node name="Label" type="Label" parent="PageMargin/PageStack/NewGamePage/Body/DimensionField"]
+layout_mode = 2
+text = "自定义宽高"
+[node name="Row" type="HBoxContainer" parent="PageMargin/PageStack/NewGamePage/Body/DimensionField"]
+layout_mode = 2
+theme_override_constants/separation = 8
+[node name="WidthBox" type="SpinBox" parent="PageMargin/PageStack/NewGamePage/Body/DimensionField/Row"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+[node name="HeightBox" type="SpinBox" parent="PageMargin/PageStack/NewGamePage/Body/DimensionField/Row"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="LayoutField" type="VBoxContainer" parent="PageMargin/PageStack/NewGamePage/Body"]
+layout_mode = 2
+theme_override_constants/separation = 6
+[node name="Label" type="Label" parent="PageMargin/PageStack/NewGamePage/Body/LayoutField"]
+layout_mode = 2
+text = "陆地布局"
+[node name="LayoutOption" type="OptionButton" parent="PageMargin/PageStack/NewGamePage/Body/LayoutField"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "决定大陆块数与海洋分隔，而不是只改地图尺寸。"
+[node name="LayoutHint" type="Label" parent="PageMargin/PageStack/NewGamePage/Body/LayoutField"]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 3
+text = "两块被海洋隔开的主陆，适合对峙与跨海接触。"
+
+[node name="AdvancedButton" type="Button" parent="PageMargin/PageStack/NewGamePage/Body"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 38)
+layout_mode = 2
+toggle_mode = true
+text = "高级地图设置"
+alignment = 0
+[node name="AdvancedGrid" type="GridContainer" parent="PageMargin/PageStack/NewGamePage/Body"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+columns = 2
+theme_override_constants/h_separation = 12
+theme_override_constants/v_separation = 8
+
+[node name="NewActions" type="HBoxContainer" parent="PageMargin/PageStack/NewGamePage/Body"]
+custom_minimum_size = Vector2(0, 58)
+layout_mode = 2
+theme_override_constants/separation = 8
+alignment = 2
+[node name="NewBackButton" type="Button" parent="PageMargin/PageStack/NewGamePage/Body/NewActions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(112, 42)
+layout_mode = 2
+text = "返回"
+[node name="StartButton" type="Button" parent="PageMargin/PageStack/NewGamePage/Body/NewActions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(112, 42)
+layout_mode = 2
+text = "开始游戏"
+
+[node name="LoadGamePage" type="ScrollContainer" parent="PageMargin/PageStack" groups=["main_menu_pages"]]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+horizontal_scroll_mode = 0
+[node name="Body" type="VBoxContainer" parent="PageMargin/PageStack/LoadGamePage"]
+custom_minimum_size = Vector2(520, 0)
+layout_mode = 2
+theme_override_constants/separation = 12
+[node name="Title" type="Label" parent="PageMargin/PageStack/LoadGamePage/Body"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 30
+text = "加载游戏"
+[node name="Subtitle" type="Label" parent="PageMargin/PageStack/LoadGamePage/Body"]
+layout_mode = 2
+text = "三个手动槽位与一个自动存档槽位。"
+[node name="Rule" type="HSeparator" parent="PageMargin/PageStack/LoadGamePage/Body"]
+layout_mode = 2
+[node name="LoadSlots" type="VBoxContainer" parent="PageMargin/PageStack/LoadGamePage/Body"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 8
+[node name="LoadActions" type="HBoxContainer" parent="PageMargin/PageStack/LoadGamePage/Body"]
+layout_mode = 2
+alignment = 2
+[node name="LoadBackButton" type="Button" parent="PageMargin/PageStack/LoadGamePage/Body/LoadActions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(112, 42)
+layout_mode = 2
+text = "返回"
+
+[node name="SettingsPage" type="ScrollContainer" parent="PageMargin/PageStack" groups=["main_menu_pages"]]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+horizontal_scroll_mode = 0
+[node name="Body" type="VBoxContainer" parent="PageMargin/PageStack/SettingsPage"]
+custom_minimum_size = Vector2(520, 0)
+layout_mode = 2
+theme_override_constants/separation = 12
+[node name="Title" type="Label" parent="PageMargin/PageStack/SettingsPage/Body"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 30
+text = "设置"
+[node name="Subtitle" type="Label" parent="PageMargin/PageStack/SettingsPage/Body"]
+layout_mode = 2
+text = "显示、界面与声音设置会立即应用。"
+[node name="Rule" type="HSeparator" parent="PageMargin/PageStack/SettingsPage/Body"]
+layout_mode = 2
+
+[node name="WindowModeLabel" type="Label" parent="PageMargin/PageStack/SettingsPage/Body"]
+layout_mode = 2
+text = "窗口模式"
+[node name="WindowMode" type="OptionButton" parent="PageMargin/PageStack/SettingsPage/Body"]
+unique_name_in_owner = true
+layout_mode = 2
+[node name="ResolutionLabel" type="Label" parent="PageMargin/PageStack/SettingsPage/Body"]
+layout_mode = 2
+text = "分辨率"
+[node name="Resolution" type="OptionButton" parent="PageMargin/PageStack/SettingsPage/Body"]
+unique_name_in_owner = true
+layout_mode = 2
+[node name="Vsync" type="CheckBox" parent="PageMargin/PageStack/SettingsPage/Body"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "垂直同步"
+[node name="RenderQualityLabel" type="Label" parent="PageMargin/PageStack/SettingsPage/Body"]
+layout_mode = 2
+text = "渲染质量"
+[node name="RenderQuality" type="OptionButton" parent="PageMargin/PageStack/SettingsPage/Body"]
+unique_name_in_owner = true
+layout_mode = 2
+[node name="UIScaleLabel" type="Label" parent="PageMargin/PageStack/SettingsPage/Body"]
+layout_mode = 2
+text = "界面缩放"
+[node name="UIScale" type="OptionButton" parent="PageMargin/PageStack/SettingsPage/Body"]
+unique_name_in_owner = true
+layout_mode = 2
+[node name="VolumeLabel" type="Label" parent="PageMargin/PageStack/SettingsPage/Body"]
+layout_mode = 2
+text = "主音量"
+[node name="Volume" type="HSlider" parent="PageMargin/PageStack/SettingsPage/Body"]
+unique_name_in_owner = true
+layout_mode = 2
+max_value = 1.0
+step = 0.01
+[node name="Muted" type="CheckBox" parent="PageMargin/PageStack/SettingsPage/Body"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "静音"
+[node name="SettingsActions" type="HBoxContainer" parent="PageMargin/PageStack/SettingsPage/Body"]
+layout_mode = 2
+alignment = 2
+[node name="SettingsBackButton" type="Button" parent="PageMargin/PageStack/SettingsPage/Body/SettingsActions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(112, 42)
+layout_mode = 2
+text = "返回"
+[node name="ApplySettingsButton" type="Button" parent="PageMargin/PageStack/SettingsPage/Body/SettingsActions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(112, 42)
+layout_mode = 2
+text = "应用"
+
+[node name="StatusLabel" type="Label" parent="."]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 12
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 56.0
+offset_top = -56.0
+offset_right = -42.0
+offset_bottom = -22.0
+grow_horizontal = 2
+grow_vertical = 0
+
+[node name="PkmapDialog" type="FileDialog" parent="."]
+unique_name_in_owner = true
+visible = false
+title = "选择作者地图"
+ok_button_text = "打开"
+file_mode = 0
+access = 2
+use_native_dialog = true
+filters = PackedStringArray("*.pkmap ; 作者地图")

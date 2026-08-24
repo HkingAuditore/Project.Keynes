@@ -1,0 +1,39 @@
+[gd_resource type="Resource" script_class="ResourceProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/resource_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"silica_sand"
+discovery_technology_tags = PackedStringArray("tech.natural_observation")
+display_name = "硅砂"
+reserve_component = &"cell.res_silica_sand_reserve"
+habitat_mode = "land"
+init_reserve_scale = 8
+init_min_coverage = 0.05
+init_min_reserve = 10000
+    temp_lo = 0.0
+    temp_hi = 1.0
+gen_base = 0
+gen_self = 0
+decay_self = 0
+init_base = -190000
+init_temp = 0
+init_moisture = 0
+init_elevation = 0
+init_river = 100000
+init_volcano = 0
+init_climate_fit = 0
+init_noise = 220000
+init_noise_scale = 0.07
+geology_family_id = &"surface"
+init_province = 120000
+init_province_scale = 0.012
+init_belt = 80000
+init_belt_scale = 0.035
+climate_temp_opt = 0.5
+climate_temp_tol = 1
+climate_moisture_opt = 0.5
+climate_moisture_tol = 1
+ecology_capacity = 0
+ecology_growth_rate = 0
+ecology_immigration = 0
+ecology_stress_mortality_rate = 0

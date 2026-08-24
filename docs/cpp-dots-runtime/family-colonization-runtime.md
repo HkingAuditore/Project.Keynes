@@ -136,6 +136,10 @@ busy。家族入口进入地图选点模式，Esc/右键退出。
 枯枝营（若资源允许）、早期商栈，以及 `max(1, travel_days) + 15` 日口粮/衣物桥接。
 衣物桥接与口粮相同，按衣着 need 的 `base_qty_per_person` × 日数计（生存方案为每人每日 2 毫单位），
 而不是每人每日 1 整件衣物。采集营 `tools` 类投入按 `max(旅行日+15, 开工包建筑数)` 记入 `EXPEDITION_CARGO_BUFFER`。
+桥接食物/衣着按各自 need 的单组件 variant 顺序从源地市场混装；工具先取 preferred good，
+再按已编译输入候选顺序混装；开拓建材同样在每个 construction candidate group 内按效率折算后
+混装。cargo 始终记录各具体物资的实际物理量，不允许跨 need/输入组/建材组抵扣。普通 BUILD 与
+投资仍要求单个候选独自满足一组，并按现有低成本规则选择，不启用开拓专用 split policy。
 已有建筑或在建的目标只带桥接库存，不落成新建筑。`N < 3` 标记 `kit_partial`，
 只带桥接。绿地 `N >= 3` **不允许带着空建筑列表出发**：库存不够就留在 `PREPARING`，
 每日到期堆只对上次缺货 ID 做 `O(缺货数)` 库存哈希；哈希不变则 `due_day = day+1` 再入堆，
@@ -152,7 +156,9 @@ payload/cargo/kit 为 0，并写出缺货 CSR。reader 接受 v41 与 v42：v41 
 且仍要求 payload≥1。科技目录、研究信号、Effect recipe、Trigger 定义或内容绑定摘要变化时，
 PKCN 以 `catalog_hash_mismatch` 拒绝旧存档。完整恢复必须先恢复 PKCN 与 PKEF，再恢复 PKEC，
 使 PKEC 能交叉验证所有 `SETTLING` 事务。恢复后重建到期堆和活动目标索引；筹备队保留保存时的
-缺货 identity，库存变化后才重规划。v36 在途队伍 cargo 为空，到达后不落成开工包。
+缺货 identity；revision 3 把不足组的全部候选纳入监听，任一替代库存变化后才重规划。
+`kit_missing_good_ids` 因而表示不足组的库存监听候选，而非每种物资都必须分别齐套。
+v36 在途队伍 cargo 为空，到达后不落成开工包。
 
 `get_economy_report()` 暴露活动队数、到期堆大小、在途人口、路线查询、载荷拆分
 和跨域提交耗时。核心回归在 `tests/family_colonization_runtime_test.gd`，覆盖冻结

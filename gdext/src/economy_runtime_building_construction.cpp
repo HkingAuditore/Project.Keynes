@@ -10,7 +10,8 @@ bool NativeEconomyRuntime::plan_construction_materials(
         int32_t cell, int32_t type_id, int64_t count, int32_t cost_factor_q16,
         ConstructionMaterialPlan &plan,
         const std::vector<int64_t> *additional_stock,
-        std::vector<int64_t> *stock_inout) const {
+        std::vector<int64_t> *stock_inout,
+        bool split_candidates) const {
     plan = ConstructionMaterialPlan{};
     if (cell < 0 || cell >= _cell_count || type_id < 0 ||
         type_id >= static_cast<int32_t>(_building_types.size()) || count <= 0 ||
@@ -66,6 +67,57 @@ bool NativeEconomyRuntime::plan_construction_materials(
                 _building_construction_candidate_offsets[group];
             const int32_t candidate_end =
                 _building_construction_candidate_offsets[group + 1];
+            const int64_t required = std::max<int64_t>(1, mul_div_sat(
+                preferred.quantity, cost_factor, Q16_ONE, sat));
+            if (split_candidates) {
+                int64_t remaining = required;
+                for (int32_t pass = 0; pass < 2 && remaining > 0; ++pass) {
+                    for (int32_t candidate_index = candidate_begin;
+                         candidate_index < candidate_end && remaining > 0;
+                         ++candidate_index) {
+                        const ConstructionCandidate &candidate =
+                            _building_construction_candidates[candidate_index];
+                        const bool preferred_candidate = candidate.good_id ==
+                            preferred.good_id;
+                        if ((pass == 0) != preferred_candidate ||
+                            candidate.good_id < 0 || candidate.good_id >=
+                                static_cast<int32_t>(virtual_stock->size()) ||
+                            !good_market_available(cell, candidate.good_id, true)) {
+                            continue;
+                        }
+                        const int32_t efficiency = std::max<int32_t>(
+                            1, candidate.efficiency_q16);
+                        int64_t physical_needed = mul_div_sat(
+                            remaining, Q16_ONE, efficiency, sat);
+                        if (mul_div_sat(physical_needed, efficiency,
+                                Q16_ONE, sat) < remaining) {
+                            physical_needed = saturating_add(
+                                physical_needed, 1, sat);
+                        }
+                        const int64_t available = std::max<int64_t>(0,
+                            (*virtual_stock)[static_cast<size_t>(candidate.good_id)]);
+                        const int64_t physical = std::min(
+                            available, physical_needed);
+                        if (physical <= 0) continue;
+                        (*virtual_stock)[static_cast<size_t>(candidate.good_id)] -=
+                            physical;
+                        add_selection(candidate.good_id, physical);
+                        const int64_t price = _market.price[_market.index(
+                            market, candidate.good_id)];
+                        plan.total_cost = saturating_add(plan.total_cost,
+                            mul_div_sat(physical, price, GOODS_SCALE, sat), sat);
+                        const int64_t credited = mul_div_sat(
+                            physical, efficiency, Q16_ONE, sat);
+                        remaining = std::max<int64_t>(0,
+                            remaining - std::min(remaining, credited));
+                    }
+                }
+                if (remaining > 0) {
+                    plan.failed_group = group_index;
+                    return false;
+                }
+                continue;
+            }
             int32_t selected_good = -1;
             int64_t selected_quantity = 0;
             int64_t selected_cost = std::numeric_limits<int64_t>::max();
@@ -74,9 +126,6 @@ bool NativeEconomyRuntime::plan_construction_materials(
                 const ConstructionCandidate &candidate =
                     _building_construction_candidates[candidate_index];
                 if (!good_market_available(cell, candidate.good_id, true)) continue;
-                const int64_t required = std::max<int64_t>(1, mul_div_sat(
-                    preferred.quantity, cost_factor, Q16_ONE,
-                    sat));
                 int64_t physical = mul_div_sat(required, Q16_ONE,
                     std::max<int32_t>(1, candidate.efficiency_q16),
                     sat);

@@ -1,0 +1,63 @@
+[gd_resource type="Resource" script_class="ResourceProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/resource_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"wild_game"
+discovery_technology_tags = PackedStringArray("tech.hunting", "tech.animal_tracking")
+display_name = "野生动物"
+semantic_tags = PackedStringArray("ecology.wildlife", "activity.hunting")
+reserve_component = &"cell.res_wild_game_reserve"
+init_reserve_scale = 3.0
+land_only = true
+temp_lo = 0.0
+temp_hi = 1.0
+runtime_temperature_signal = "mean_30d"
+runtime_moisture_signal = "plant_available_water"
+gen_base = 0.0
+gen_temp = 0.0
+gen_moisture = 0.0
+gen_self = 0.45
+decay_base = 0.0
+decay_temp = 0.0
+decay_moisture = 0.0
+decay_self = 0.006
+init_base = -20.0
+init_temp = 0.0
+init_moisture = 12.0
+init_river = 18.0
+init_climate_fit = 55.0
+init_noise = 20.0
+init_noise_scale = 0.055
+init_landform_weights = {
+4: 18.0,
+5: 24.0,
+6: 16.0,
+9: 22.0,
+13: 20.0,
+14: 18.0
+}
+init_vegetation_weights = {
+7: 22.0,
+9: 34.0,
+10: 30.0,
+12: 28.0,
+13: 24.0,
+14: 38.0,
+15: 34.0,
+20: 28.0,
+21: 32.0,
+24: 30.0,
+25: 32.0
+}
+climate_temp_opt = 0.52
+climate_temp_tol = 0.42
+climate_moisture_opt = 0.55
+climate_moisture_tol = 0.38
+runtime_climate_fit_weight = 0.75
+decay_stress = 0.55
+ecology_capacity = 1200.0
+ecology_growth_rate = 0.001495
+ecology_immigration = 0.01
+ecology_stress_mortality_rate = 0.0

@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="TerrainProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/terrain_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+terrain_type = 2
+display_name = "PLAIN"
+display_name_cn = "平原"
+passable_land = true
+passable_sea = false
+move_cost = 1
+trade_passable = true
+trade_move_cost = 1
+base_color = Color(0.698039, 0.639216, 0.368627, 1)

@@ -1,0 +1,812 @@
+[gd_resource type="Resource" script_class="ModifierCatalog" load_steps=112 format=3]
+
+[ext_resource type="Script" path="res://scripts/modifier/modifier_catalog.gd" id="1_catalog"]
+[ext_resource type="Script" path="res://scripts/modifier/modifier_stat_definition.gd" id="2_stat"]
+[ext_resource type="Script" path="res://scripts/modifier/modifier_definition.gd" id="3_definition"]
+[ext_resource type="Script" path="res://scripts/modifier/modifier_term.gd" id="4_term"]
+
+[sub_resource type="Resource" id="StatClimate"]
+script = ExtResource("2_stat")
+key = &"climate.cell.radiative_target"
+domain = 0
+min_value = 0.0
+max_value = 1.0
+
+[sub_resource type="Resource" id="StatCountry"]
+script = ExtResource("2_stat")
+key = &"country.economy_output_factor"
+domain = 1
+min_value = 0.0
+max_value = 16.0
+value_conversion = 1
+
+[sub_resource type="Resource" id="StatBuilding"]
+script = ExtResource("2_stat")
+key = &"economy.building.output_factor"
+domain = 2
+min_value = 0.0
+max_value = 16.0
+value_conversion = 1
+
+[sub_resource type="Resource" id="StatGameplay"]
+script = ExtResource("2_stat")
+key = &"gameplay.generic.value"
+domain = 3
+min_value = -1000000000.0
+max_value = 1000000000.0
+
+[sub_resource type="Resource" id="StatCityOutput"]
+script = ExtResource("2_stat")
+key = &"economy.city.output_factor"
+domain = 2
+min_value = 0.0
+max_value = 16.0
+value_conversion = 1
+
+[sub_resource type="Resource" id="StatCityAgricultureOutput"]
+script = ExtResource("2_stat")
+key = &"economy.city.building.agriculture_output_factor"
+domain = 2
+min_value = 0.0
+max_value = 16.0
+value_conversion = 1
+
+[sub_resource type="Resource" id="StatCityExtractiveOutput"]
+script = ExtResource("2_stat")
+key = &"economy.city.building.extractive_output_factor"
+domain = 2
+min_value = 0.0
+max_value = 16.0
+value_conversion = 1
+
+[sub_resource type="Resource" id="StatCityManufacturingOutput"]
+script = ExtResource("2_stat")
+key = &"economy.city.building.manufacturing_output_factor"
+domain = 2
+min_value = 0.0
+max_value = 16.0
+value_conversion = 1
+
+[sub_resource type="Resource" id="StatCityEnergyOutput"]
+script = ExtResource("2_stat")
+key = &"economy.city.building.energy_output_factor"
+domain = 2
+min_value = 0.0
+max_value = 16.0
+value_conversion = 1
+
+[sub_resource type="Resource" id="StatCityKnowledgeOutput"]
+script = ExtResource("2_stat")
+key = &"economy.city.building.knowledge_output_factor"
+domain = 2
+min_value = 0.0
+max_value = 16.0
+value_conversion = 1
+
+[sub_resource type="Resource" id="StatCityBirth"]
+script = ExtResource("2_stat")
+key = &"economy.city.birth_factor"
+domain = 2
+min_value = 0.0
+max_value = 4.0
+value_conversion = 1
+
+[sub_resource type="Resource" id="StatCityTradeOutput"]
+script = ExtResource("2_stat")
+key = &"economy.city.trade_output_factor"
+domain = 2
+min_value = 0.0
+max_value = 8.0
+value_conversion = 1
+
+[sub_resource type="Resource" id="StatCityConsumption"]
+script = ExtResource("2_stat")
+key = &"economy.city.consumption_factor"
+domain = 2
+min_value = 0.0
+max_value = 4.0
+value_conversion = 1
+
+[sub_resource type="Resource" id="StatCityResourceRegen"]
+script = ExtResource("2_stat")
+key = &"economy.city.resource.regen_factor"
+domain = 2
+min_value = 0.0
+max_value = 4.0
+value_conversion = 1
+
+[sub_resource type="Resource" id="TermClimate"]
+script = ExtResource("4_term")
+stat_key = &"climate.cell.radiative_target"
+operation = 0
+value = 0.05
+
+[sub_resource type="Resource" id="DefClimate"]
+script = ExtResource("3_definition")
+key = &"climate.radiative_warming"
+domain = 0
+stack_policy = 2
+max_stacks = 8
+default_duration_days = 30
+terms = Array[Resource]([SubResource("TermClimate")])
+
+[sub_resource type="Resource" id="TermCountry"]
+script = ExtResource("4_term")
+stat_key = &"country.economy_output_factor"
+operation = 2
+value = 1.1
+
+[sub_resource type="Resource" id="DefCountry"]
+script = ExtResource("3_definition")
+key = &"country.economic_mobilization"
+domain = 1
+stack_policy = 1
+max_stacks = 1
+default_duration_days = 90
+terms = Array[Resource]([SubResource("TermCountry")])
+
+[sub_resource type="Resource" id="TermBuilding"]
+script = ExtResource("4_term")
+stat_key = &"economy.building.output_factor"
+operation = 2
+value = 1.15
+
+[sub_resource type="Resource" id="DefBuilding"]
+script = ExtResource("3_definition")
+key = &"economy.building.productivity_boost"
+domain = 2
+stack_policy = 2
+max_stacks = 5
+default_duration_days = 60
+terms = Array[Resource]([SubResource("TermBuilding")])
+
+[sub_resource type="Resource" id="TermGameplay"]
+script = ExtResource("4_term")
+stat_key = &"gameplay.generic.value"
+operation = 0
+value = 1.0
+
+[sub_resource type="Resource" id="DefGameplay"]
+script = ExtResource("3_definition")
+key = &"gameplay.generic.bonus"
+domain = 3
+stack_policy = 0
+max_stacks = 100
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermGameplay")])
+
+[sub_resource type="Resource" id="TermFamilyCityOutput"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.output_factor"
+operation = 2
+value = 1.02
+
+[sub_resource type="Resource" id="DefFamilyCityOutput"]
+script = ExtResource("3_definition")
+key = &"family.city.production_boost"
+display_name = "城市产出加成"
+description = "提高本城各类生产的产出系数。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyCityOutput")])
+
+[sub_resource type="Resource" id="TermFamilyHuntingOutput"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.building.agriculture_output_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="DefFamilyHuntingOutput"]
+script = ExtResource("3_definition")
+key = &"family.city.hunting_output_boost"
+display_name = "狩猎产出加成"
+description = "提高本城狩猎相关产出。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyHuntingOutput")])
+
+[sub_resource type="Resource" id="TermFamilyAgricultureOutput"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.building.agriculture_output_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="DefFamilyAgricultureOutput"]
+script = ExtResource("3_definition")
+key = &"family.city.agriculture_output_boost"
+display_name = "农业产出加成"
+description = "提高本城农业部门产出。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyAgricultureOutput")])
+
+[sub_resource type="Resource" id="TermFamilyExtractiveOutput"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.building.extractive_output_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="DefFamilyExtractiveOutput"]
+script = ExtResource("3_definition")
+key = &"family.city.extractive_output_boost"
+display_name = "采掘产出加成"
+description = "提高本城采掘部门产出。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyExtractiveOutput")])
+
+[sub_resource type="Resource" id="TermFamilyManufacturingOutput"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.building.manufacturing_output_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="DefFamilyManufacturingOutput"]
+script = ExtResource("3_definition")
+key = &"family.city.manufacturing_output_boost"
+display_name = "制造产出加成"
+description = "提高本城制造部门产出。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyManufacturingOutput")])
+
+[sub_resource type="Resource" id="TermFamilyEnergyOutput"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.building.energy_output_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="DefFamilyEnergyOutput"]
+script = ExtResource("3_definition")
+key = &"family.city.energy_output_boost"
+display_name = "能源产出加成"
+description = "提高本城能源部门产出。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyEnergyOutput")])
+
+[sub_resource type="Resource" id="TermFamilyKnowledgeOutput"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.building.knowledge_output_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="DefFamilyKnowledgeOutput"]
+script = ExtResource("3_definition")
+key = &"family.city.knowledge_output_boost"
+display_name = "知识产出加成"
+description = "提高本城知识部门产出。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyKnowledgeOutput")])
+
+[sub_resource type="Resource" id="TermFamilyBirth"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.birth_factor"
+operation = 2
+value = 1.03
+
+[sub_resource type="Resource" id="DefFamilyBirth"]
+script = ExtResource("3_definition")
+key = &"family.city.birth_boost"
+display_name = "出生率加成"
+description = "提高本城人口出生系数。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyBirth")])
+
+[sub_resource type="Resource" id="TermFamilyTradeOutput"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.trade_output_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="DefFamilyTradeOutput"]
+script = ExtResource("3_definition")
+key = &"family.city.trade_output_boost"
+display_name = "贸易产出加成"
+description = "提高本城贸易产出系数。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyTradeOutput")])
+
+[sub_resource type="Resource" id="TermFamilyStapleConsumption"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.need.staple_food.consumption_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermFamilyProteinConsumption"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.need.protein.consumption_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermFamilyProduceConsumption"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.need.produce.consumption_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="DefFamilyFoodConsumption"]
+script = ExtResource("3_definition")
+key = &"family.city.food_consumption_boost"
+display_name = "食品消费加成"
+description = "提高本城主食、肉类与蔬果消费。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyStapleConsumption"), SubResource("TermFamilyProteinConsumption"), SubResource("TermFamilyProduceConsumption")])
+
+[sub_resource type="Resource" id="DefFamilyProteinConsumption"]
+script = ExtResource("3_definition")
+key = &"family.city.protein_consumption_boost"
+display_name = "肉食消费加成"
+description = "提高本城肉类与蛋白消费。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyProteinConsumption")])
+
+[sub_resource type="Resource" id="TermFamilyClothingConsumption"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.need.clothing.consumption_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="DefFamilyClothingConsumption"]
+script = ExtResource("3_definition")
+key = &"family.city.clothing_consumption_boost"
+display_name = "衣着消费加成"
+description = "提高本城衣着消费。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyClothingConsumption")])
+
+[sub_resource type="Resource" id="TermFamilyHousingConsumption"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.need.housing.consumption_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="DefFamilyHousingConsumption"]
+script = ExtResource("3_definition")
+key = &"family.city.housing_consumption_boost"
+display_name = "住房消费加成"
+description = "提高本城住房消费。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyHousingConsumption")])
+
+[sub_resource type="Resource" id="TermFamilyHouseholdGoodsConsumption"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.need.household_goods.consumption_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="DefFamilyHouseholdGoodsConsumption"]
+script = ExtResource("3_definition")
+key = &"family.city.household_goods_consumption_boost"
+display_name = "器具消费加成"
+description = "提高本城家庭用品消费。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyHouseholdGoodsConsumption")])
+
+[sub_resource type="Resource" id="TermFamilyHomeEnergyConsumption"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.need.home_energy.consumption_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="DefFamilyHomeEnergyConsumption"]
+script = ExtResource("3_definition")
+key = &"family.city.home_energy_consumption_boost"
+display_name = "家用能源消费加成"
+description = "提高本城家用能源消费。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyHomeEnergyConsumption")])
+
+[sub_resource type="Resource" id="TermFamilyEducationConsumption"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.need.education_culture.consumption_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="DefFamilyEducationConsumption"]
+script = ExtResource("3_definition")
+key = &"family.city.education_consumption_boost"
+display_name = "文教消费加成"
+description = "提高本城教育与文化消费。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyEducationConsumption")])
+
+[sub_resource type="Resource" id="TermFamilyWorkEquipmentConsumption"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.need.work_equipment.consumption_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="DefFamilyWorkEquipmentConsumption"]
+script = ExtResource("3_definition")
+key = &"family.city.work_equipment_consumption_boost"
+display_name = "工具消费加成"
+description = "提高本城职业装备消费。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyWorkEquipmentConsumption")])
+
+[sub_resource type="Resource" id="TermFamilyLuxuryConsumption"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.need.luxury.consumption_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="DefFamilyLuxuryConsumption"]
+script = ExtResource("3_definition")
+key = &"family.city.luxury_consumption_boost"
+display_name = "奢侈消费加成"
+description = "提高本城奢侈品消费。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyLuxuryConsumption")])
+
+[sub_resource type="Resource" id="TermFamilyStatusConsumption"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.need.status_goods.consumption_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="DefFamilyStatusConsumption"]
+script = ExtResource("3_definition")
+key = &"family.city.status_consumption_boost"
+display_name = "身份消费加成"
+description = "提高本城身份用品消费。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyStatusConsumption")])
+
+[sub_resource type="Resource" id="TermFamilyAustereLuxury"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.need.luxury.consumption_factor"
+operation = 2
+value = 0.92
+
+[sub_resource type="Resource" id="TermFamilyAustereStatus"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.need.status_goods.consumption_factor"
+operation = 2
+value = 0.92
+
+[sub_resource type="Resource" id="DefFamilyAustereConsumption"]
+script = ExtResource("3_definition")
+key = &"family.city.austere_consumption"
+display_name = "寒门俭用"
+description = "压低本城奢侈品与身份用品消费。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyAustereLuxury"), SubResource("TermFamilyAustereStatus")])
+
+[sub_resource type="Resource" id="TermFamilyWildGameRegen"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.resource.wild_game.regen_factor"
+operation = 2
+value = 1.1
+
+[sub_resource type="Resource" id="DefFamilyWildGameRegen"]
+script = ExtResource("3_definition")
+key = &"family.city.wild_game_regen_boost"
+display_name = "猎物再生加成"
+description = "提高本城野生猎物资源再生。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyWildGameRegen")])
+
+[sub_resource type="Resource" id="TermFamilyFreshwaterFishRegen"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.resource.freshwater_fish.regen_factor"
+operation = 2
+value = 1.1
+
+[sub_resource type="Resource" id="DefFamilyFreshwaterFishRegen"]
+script = ExtResource("3_definition")
+key = &"family.city.freshwater_fish_regen_boost"
+display_name = "淡水鱼再生加成"
+description = "提高本城淡水鱼资源再生。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyFreshwaterFishRegen")])
+
+[sub_resource type="Resource" id="TermFamilyMarineFishRegen"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.resource.marine_fish.regen_factor"
+operation = 2
+value = 1.1
+
+[sub_resource type="Resource" id="DefFamilyMarineFishRegen"]
+script = ExtResource("3_definition")
+key = &"family.city.marine_fish_regen_boost"
+display_name = "海鱼再生加成"
+description = "提高本城海鱼资源再生。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyMarineFishRegen")])
+
+[sub_resource type="Resource" id="TermFamilyPastureRegen"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.resource.pasture.regen_factor"
+operation = 2
+value = 1.1
+
+[sub_resource type="Resource" id="DefFamilyPastureRegen"]
+script = ExtResource("3_definition")
+key = &"family.city.pasture_regen_boost"
+display_name = "牧场再生加成"
+description = "提高本城牧场承载力再生。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyPastureRegen")])
+
+[sub_resource type="Resource" id="TermFamilyTimberRegen"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.resource.timber.regen_factor"
+operation = 2
+value = 1.1
+
+[sub_resource type="Resource" id="DefFamilyTimberRegen"]
+script = ExtResource("3_definition")
+key = &"family.city.timber_regen_boost"
+display_name = "木材再生加成"
+description = "提高本城木材资源再生。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyTimberRegen")])
+
+[sub_resource type="Resource" id="TermIdeologyCollectiveAgri"]
+script = ExtResource("4_term")
+stat_key = &"country.output.agriculture_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologyCollectiveDrought"]
+script = ExtResource("4_term")
+stat_key = &"country.climate.drought_loss_factor"
+operation = 2
+value = 0.92
+
+[sub_resource type="Resource" id="DefIdeologyCollective"]
+script = ExtResource("3_definition")
+key = &"ideology.collective_stewardship"
+display_name = "共同体治理"
+description = "共同仓储与土地责任提高农业产出，并减轻旱灾损失。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyCollectiveAgri"), SubResource("TermIdeologyCollectiveDrought")])
+
+[sub_resource type="Resource" id="TermIdeologyExchangeCapacity"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.capacity_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="TermIdeologyExchangeSpeed"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.speed_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="DefIdeologyExchange"]
+script = ExtResource("3_definition")
+key = &"ideology.free_exchange"
+display_name = "自由交换"
+description = "契约与流通扩大国内贸易容量并加快运输。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyExchangeCapacity"), SubResource("TermIdeologyExchangeSpeed")])
+
+[sub_resource type="Resource" id="TermIdeologyScholarKnowledge"]
+script = ExtResource("4_term")
+stat_key = &"country.output.knowledge_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="TermIdeologyScholarScience"]
+script = ExtResource("4_term")
+stat_key = &"country.research.science_efficiency"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="DefIdeologyScholar"]
+script = ExtResource("3_definition")
+key = &"ideology.scholar_office"
+display_name = "学识官署"
+description = "记录与测量进入公共决策，提高知识产出与科学研究效率。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyScholarKnowledge"), SubResource("TermIdeologyScholarScience")])
+
+[sub_resource type="Resource" id="TermIdeologyCivicTime"]
+script = ExtResource("4_term")
+stat_key = &"country.construction.time_factor"
+operation = 2
+value = 0.94
+
+[sub_resource type="Resource" id="TermIdeologyCivicOutput"]
+script = ExtResource("4_term")
+stat_key = &"country.economy_output_factor"
+operation = 2
+value = 1.03
+
+[sub_resource type="Resource" id="DefIdeologyCivic"]
+script = ExtResource("3_definition")
+key = &"ideology.civic_muster"
+display_name = "公民动员"
+description = "普遍义务缩短建设耗时，并小幅提高全社会产出。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyCivicTime"), SubResource("TermIdeologyCivicOutput")])
+
+[sub_resource type="Resource" id="TermIdeologyGranariesDrought"]
+script = ExtResource("4_term")
+stat_key = &"country.climate.drought_loss_factor"
+operation = 2
+value = 0.9
+
+[sub_resource type="Resource" id="TermIdeologyGranariesAgri"]
+script = ExtResource("4_term")
+stat_key = &"country.output.agriculture_factor"
+operation = 2
+value = 1.04
+
+[sub_resource type="Resource" id="DefIdeologyGranaries"]
+script = ExtResource("3_definition")
+key = &"ideology.synergy.planned_granaries"
+display_name = "计划仓廪"
+description = "共同体仓储与学识计量并用，进一步压低旱灾损失并提高农业产出。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyGranariesDrought"), SubResource("TermIdeologyGranariesAgri")])
+
+[sub_resource type="Resource" id="TermIdeologyCharterCapacity"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.capacity_factor"
+operation = 2
+value = 1.05
+
+[sub_resource type="Resource" id="TermIdeologyCharterTime"]
+script = ExtResource("4_term")
+stat_key = &"country.construction.time_factor"
+operation = 2
+value = 0.96
+
+[sub_resource type="Resource" id="DefIdeologyCharter"]
+script = ExtResource("3_definition")
+key = &"ideology.synergy.chartered_frontier"
+display_name = "特许开拓"
+description = "自由交换与公民动员并用，扩大贸易容量并加快边地建设。"
+domain = 1
+stack_policy = 1
+default_duration_days = -1
+terms = Array[Resource]([SubResource("TermIdeologyCharterCapacity"), SubResource("TermIdeologyCharterTime")])
+
+[sub_resource type="Resource" id="TermFamilyBirthCut"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.birth_factor"
+operation = 2
+value = 0.97
+
+[sub_resource type="Resource" id="DefFamilyBirthCut"]
+script = ExtResource("3_definition")
+key = &"family.city.birth_cut"
+display_name = "出生率削减"
+description = "降低本城人口出生系数。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyBirthCut")])
+
+[sub_resource type="Resource" id="TermFamilyHedonismConsumption"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.need.luxury.consumption_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="TermFamilyHedonismOutput"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.output_factor"
+operation = 2
+value = 0.97
+
+[sub_resource type="Resource" id="DefFamilyHedonism"]
+script = ExtResource("3_definition")
+key = &"family.city.hedonism"
+display_name = "享乐主义"
+description = "提高本城奢侈消费并略降产出。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyHedonismConsumption"), SubResource("TermFamilyHedonismOutput")])
+
+[sub_resource type="Resource" id="TermFamilyCornOutput"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.good.corn_grain.output_factor"
+operation = 2
+value = 1.08
+
+[sub_resource type="Resource" id="DefFamilyCornOutput"]
+script = ExtResource("3_definition")
+key = &"family.city.good.corn_grain.output"
+display_name = "玉米产出加成"
+description = "提高本城玉米产出系数。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyCornOutput")])
+
+[sub_resource type="Resource" id="TermFamilyStapleConsumptionCut"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.need.staple_food.consumption_factor"
+operation = 2
+value = 0.94
+
+[sub_resource type="Resource" id="DefFamilyStapleConsumptionCut"]
+script = ExtResource("3_definition")
+key = &"family.city.staple_consumption_cut"
+display_name = "主食消费削减"
+description = "降低本城主食消费系数。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyStapleConsumptionCut")])
+
+[sub_resource type="Resource" id="TermFamilyResourceRegenCut"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.resource.regen_factor"
+operation = 2
+value = 0.9
+
+[sub_resource type="Resource" id="DefFamilyResourceRegenCut"]
+script = ExtResource("3_definition")
+key = &"family.city.resource_regen_cut"
+display_name = "资源再生削减"
+description = "降低本城资源再生系数。"
+domain = 2
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyResourceRegenCut")])
+
+[sub_resource type="Resource" id="TermFamilyOwnedBuildingOutput"]
+script = ExtResource("4_term")
+stat_key = &"economy.city.output_factor"
+operation = 2
+value = 1.02
+
+[sub_resource type="Resource" id="DefFamilyOwnedBuildingOutput"]
+script = ExtResource("3_definition")
+key = &"family.city.owned_building_output"
+display_name = "祖业产出加成"
+description = "按年期叠加提高本城产出系数。"
+domain = 2
+stack_policy = 1
+max_stacks = 6
+terms = Array[Resource]([SubResource("TermFamilyOwnedBuildingOutput")])
+
+[sub_resource type="Resource" id="TermFamilyCountryTradeCapacity"]
+script = ExtResource("4_term")
+stat_key = &"country.trade.capacity_factor"
+operation = 2
+value = 1.06
+
+[sub_resource type="Resource" id="DefFamilyCountryTradeCapacity"]
+script = ExtResource("3_definition")
+key = &"family.country.trade_capacity"
+display_name = "商贸立国"
+description = "提高国家国内贸易容量。"
+domain = 1
+stack_policy = 1
+terms = Array[Resource]([SubResource("TermFamilyCountryTradeCapacity")])
+
+[resource]
+script = ExtResource("1_catalog")
+stats = Array[Resource]([SubResource("StatClimate"), SubResource("StatCountry"), SubResource("StatBuilding"), SubResource("StatGameplay"), SubResource("StatCityOutput"), SubResource("StatCityAgricultureOutput"), SubResource("StatCityExtractiveOutput"), SubResource("StatCityManufacturingOutput"), SubResource("StatCityEnergyOutput"), SubResource("StatCityKnowledgeOutput"), SubResource("StatCityBirth"), SubResource("StatCityTradeOutput"), SubResource("StatCityConsumption"), SubResource("StatCityResourceRegen")])
+definitions = Array[Resource]([SubResource("DefClimate"), SubResource("DefCountry"), SubResource("DefBuilding"), SubResource("DefGameplay"), SubResource("DefFamilyCityOutput"), SubResource("DefFamilyHuntingOutput"), SubResource("DefFamilyAgricultureOutput"), SubResource("DefFamilyExtractiveOutput"), SubResource("DefFamilyManufacturingOutput"), SubResource("DefFamilyEnergyOutput"), SubResource("DefFamilyKnowledgeOutput"), SubResource("DefFamilyBirth"), SubResource("DefFamilyTradeOutput"), SubResource("DefFamilyFoodConsumption"), SubResource("DefFamilyProteinConsumption"), SubResource("DefFamilyClothingConsumption"), SubResource("DefFamilyHousingConsumption"), SubResource("DefFamilyHouseholdGoodsConsumption"), SubResource("DefFamilyHomeEnergyConsumption"), SubResource("DefFamilyEducationConsumption"), SubResource("DefFamilyWorkEquipmentConsumption"), SubResource("DefFamilyLuxuryConsumption"), SubResource("DefFamilyStatusConsumption"), SubResource("DefFamilyAustereConsumption"), SubResource("DefFamilyWildGameRegen"), SubResource("DefFamilyFreshwaterFishRegen"), SubResource("DefFamilyMarineFishRegen"), SubResource("DefFamilyPastureRegen"), SubResource("DefFamilyTimberRegen"), SubResource("DefIdeologyCollective"), SubResource("DefIdeologyExchange"), SubResource("DefIdeologyScholar"), SubResource("DefIdeologyCivic"), SubResource("DefIdeologyGranaries"), SubResource("DefIdeologyCharter"), SubResource("DefFamilyBirthCut"), SubResource("DefFamilyHedonism"), SubResource("DefFamilyCornOutput"), SubResource("DefFamilyStapleConsumptionCut"), SubResource("DefFamilyResourceRegenCut"), SubResource("DefFamilyOwnedBuildingOutput"), SubResource("DefFamilyCountryTradeCapacity")])

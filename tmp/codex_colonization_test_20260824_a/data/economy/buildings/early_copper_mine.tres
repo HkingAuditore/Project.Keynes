@@ -1,0 +1,47 @@
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"early_copper_mine"
+display_name = "浅层铜矿"
+building_kind = "collector"
+economic_sector_id = "extractive"
+semantic_tags = PackedStringArray("activity.mining", "industry.primary")
+technology_tags = PackedStringArray("tech.application.early_copper_mine")
+required_technology_tags = PackedStringArray()
+upgrade_family_id = &"copper_extraction"
+upgrade_tier = 2
+construction_good_ids = PackedStringArray("logs", "raw_stone")
+construction_quantities = PackedInt64Array(5250, 3500)
+owner_profession_id = &"landlord"
+employee_profession_ids = PackedStringArray("enslaved_laborer")
+employee_slots_per_building = PackedInt64Array(6)
+employee_wage_policy_ids = PackedStringArray("fixed")
+employee_reference_wages_per_day = PackedInt64Array(11936)
+input_good_ids = PackedStringArray()
+input_quantities_per_day = PackedInt64Array()
+input_required_q16 = PackedInt32Array()
+input_category_ids = PackedStringArray()
+input_min_quality_levels = PackedInt32Array()
+input_candidate_offsets = PackedInt32Array(0)
+input_candidate_good_ids = PackedStringArray()
+input_candidate_efficiency_q16 = PackedInt32Array()
+output_good_ids = PackedStringArray("copper_ore")
+output_quantities_per_day = PackedInt64Array(11882)
+output_cost_shares_q16 = PackedInt32Array()
+resource_ids = PackedStringArray("copper_ore")
+resource_quantities_per_day = PackedInt64Array(5941)
+resource_interaction_modes = PackedStringArray("extract")
+resource_access_modes = PackedStringArray("local")
+resource_generation_ids = PackedStringArray()
+resource_generation_quantities_per_day = PackedInt64Array()
+behavior_id = "consume_local_resources"
+condition_opcodes = PackedInt32Array()
+condition_signals = PackedInt32Array()
+condition_compares = PackedInt32Array()
+condition_reference_ids = PackedStringArray()
+condition_values = PackedInt64Array()
+wage_policy_id = "fixed"
+wage_per_employee_per_day = 11936

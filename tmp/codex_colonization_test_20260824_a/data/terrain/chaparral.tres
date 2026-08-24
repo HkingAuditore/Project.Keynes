@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="TerrainProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/terrain_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+terrain_type = 27
+display_name = "CHAPARRAL"
+display_name_cn = "硬叶灌丛"
+passable_land = true
+passable_sea = false
+move_cost = 2
+trade_passable = true
+trade_move_cost = 2
+base_color = Color(0.580392, 0.560784, 0.360784, 1)

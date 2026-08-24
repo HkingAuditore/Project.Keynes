@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="VegetationProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/vegetation_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+veg_type = 17
+display_name_cn = "极旱沙漠"
+transpiration = 0.02
+albedo = 0.4
+eco_score = -0.8
+ideal_temp = 0.78
+ideal_moist = 0.05
+temp_tolerance = 0.19
+moist_tolerance = 0.16
+next_richer = 16
+next_harsher = -1

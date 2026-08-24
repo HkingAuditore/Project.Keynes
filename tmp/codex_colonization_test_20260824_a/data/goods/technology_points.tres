@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"technology_points"
+technology_tags = PackedStringArray("tech.early_knowledge_institution")
+display_name = "科技值"
+category_id = &"knowledge"
+substitution_category_ids = PackedStringArray("knowledge")
+storage_mode = "stock"
+trade_enabled = true
+transport_load_per_unit_q16 = 8192
+default_price = 10000
+initial_stock = 0
+min_price = 1000
+max_price = 1000000
+merchant_buy_price_factor_q16 = 62259

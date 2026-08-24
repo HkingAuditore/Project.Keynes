@@ -59,28 +59,29 @@ Do not call `EconomyTestBootstrap` from this path. It remains test/demo data.
 habitability presentation. A candidate must be passable land and satisfy the
 temperature/moisture/elevation/vitality ranges. River, lake, and coastal
 hydrology are classification signals, not admission gates. Climate-qualified
-cells enter the pool; naturally gold/silver-bearing cells are preferred, then
+cells enter the pool; naturally placer-gold-bearing cells are preferred, then
 survival score, then cell index. `select_and_prepare` only runs Vision plus
 route closure on the cells it is about to choose, not on the whole map.
 
 Opening selection may top up `fertile_soil`, `timber`, `wild_game`, `stone`,
-`flint`, `pasture`, and one precious metal (`gold_ore` if the cell has neither)
+`flint`, `pasture`, and `gold_ore`
 to `StartLocationProfile` minimums. It does not invent fish, paddy land, or clay
 on dry inland cells. Overlay reserves are virtual while scoring routes; only the
 chosen player and foreign cells are written back to MapData. Generation fails
 with a player-facing error when no climate-qualified cell can close food,
-knowledge, precious-metal, and trade production even
+knowledge, placer-gold, and trade production even
 after those minimum fills. Clothing production is required only on the cold
 highland route. Construction materials are provisioned as bootstrap stock rather
 than a completed opening industry. `evaluate_starter_route` still reads generated
-geography only, so inspector/fixture probes do not apply top-ups.
+geography only, so inspector/fixture probes do not apply top-ups; a silver-only
+cell therefore fails the formal Stone-Age route probe.
 
 Foreign starts use the same climate predicate and the same overlay closure.
 Their minimum pairwise land
 distance is `clamp(round(min(width, height) * 0.15), 4, 12)` over the map's
 six-neighbor topology; disconnected landmasses count as infinitely distant.
 Selection is deterministic and greedily orders candidates by distance from the
-nearest selected start, natural precious metal, survival score, then cell index.
+nearest selected start, natural placer gold, survival score, then cell index.
 Generation fails rather than reducing the requested count or relaxing distance.
 Display names are selected without replacement from the resource-backed Chinese
 country-name pack, excluding the player's display name.
@@ -90,7 +91,7 @@ country-name pack, excluding the player's display name.
 Every opening country receives exactly 20 people. Self-operated job-capacity slots
 follow the survival-core buildings and stay at or below 20; leftover people enter
 the native unemployed pool for ordinary employment matching. The opening grant is
-the survival core—gathering, hunting, early trade, one precious-metal working, one
+the survival core—gathering, hunting, early trade, one placer-gold working, one
 deadwood gathering camp, and hide scraping only on cold highland—not every
 visible zero-cost starter node. The physical food producer is
 selected from the local gathering/hunting options. Opening timber is topped up to
@@ -100,9 +101,8 @@ professions: it prefills owner operators on the opening food buildings (gatherin
 and hunting) so the 110% food plan actually runs, places the remaining people in
 the native unemployed pool, and lets normal employment matching choose later jobs
 at economy boundaries. The founder family still binds to the gathering ground. Stone-Age buildings expose no employee roles except the
-opening placer-gold and surface-silver workings, which keep their authored miner
-slots. Those employee slots are extra capacity on top of the core self-operated
-jobs; bootstrap does not prefill them, so opening `employee_employed` stays 0.
+opening placer-gold working, which keeps its authored miner slot. That employee slot is extra capacity on top of the core self-operated
+jobs; bootstrap does not prefill it, so opening `employee_employed` stays 0.
 Their self-operated/co-operated
 jobs use the runtime's owner-role lane because the catalog has only owner and employee lanes; this is
 building capacity, not a landlord marker or a planner-owned population assignment. Fifteen days of the compiled `survival_household` food quantities are bridged
@@ -272,8 +272,8 @@ For economy changes, retain 60-day, two-year, and ten-year conservation soaks.
 
 Formal new games no longer grant four universal technologies or a universal settlement bundle.
 `StartLocationPolicy` classifies each capital from the capital ring's Bio/resource/landform/climate
-evidence and grants only the survival-core technologies: gathering, hunting, early trade, gold-panning
-or surface-silver collection, deadwood collection, and hide scraping on cold highland. It does not grant a knowledge
+evidence and grants only the survival-core technologies: gathering, hunting, early trade, gold-panning,
+deadwood collection, and hide scraping on cold highland. It does not grant a knowledge
 practice and does not prebuild a knowledge shed. Remaining Stone-Age handling/knowledge nodes stay
 in the catalog as ordinary researchable technologies; empty-prerequisite Stone-Age nodes require any
 one completed knowledge practice before they can enter a research queue.
@@ -281,11 +281,11 @@ one completed knowledge practice before they can enter a research queue.
 `tech.early_trade`, writes `discovered_technology_*` for the one geographically chosen knowledge
 practice, and deposits 3000 authored technology points in the country treasury.
 `StarterSettlementBootstrap` prebuilds gathering and hunting camps when the
-local reserves exist, one `deadwood_gathering_camp`, the matching precious-metal work site, an
+local reserves exist, one `deadwood_gathering_camp`, one placer-gold work site, an
 `early_merchant_post`, and a hide-scraping shelter only on cold highland. It stocks the selected
 knowledge-shed construction recipe so automatic investment can seed the first research
 building after that practice completes. The planner emits parallel `starter_building_ids`/`starter_building_counts`;
-gold/silver sites, the merchant, and the deadwood camp remain exactly one building. The supported families are coastal,
+the placer-gold site, merchant, and deadwood camp remain exactly one building. The supported families are coastal,
 floodplain, cold highland, tropical forest, arid highland and temperate.
 
 The bootstrap validates direct/required-technology tags and the food-seed construction contract.
@@ -302,7 +302,7 @@ landlords, serfs or indentured labor. The food bridge is 15 days of every locall
 food sub-basket as authored by `survival_household`, split across multiple substitutes when present;
 `processed_food` receives no fixed grant. Every generated country starts with exactly one
 territory cell, one survival-core bundle, 20 population, core self-operated job-capacity slots at or below 20, employee
-slots only on the matching gold or silver working and left unfilled, a founder operator cohort plus a native unemployed pool, one founder family and one notable
+slots only on the placer-gold working and left unfilled, a founder operator cohort plus a native unemployed pool, one founder family and one notable
 founder. The first economy cycles may reassign the unemployed cohort into the planned self-operated roles;
 that is ordinary native employment matching and does not introduce employee relationships.
 

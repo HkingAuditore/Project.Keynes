@@ -1,0 +1,35 @@
+[gd_scene load_steps=3 format=3]
+[ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="1_icon"]
+[ext_resource type="Script" path="res://scripts/ui/components/tax_lane_editor.gd" id="2_script"]
+[node name="TaxLane" type="VBoxContainer"]
+script = ExtResource("2_script")
+[node name="Box" type="VBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 3
+[node name="Row" type="HBoxContainer" parent="Box"]
+layout_mode = 2
+theme_override_constants/separation = 4
+[node name="Label" type="Label" parent="Box/Row"]
+custom_minimum_size = Vector2(64, 0)
+layout_mode = 2
+vertical_alignment = 1
+[node name="Spin" type="SpinBox" parent="Box/Row"]
+custom_minimum_size = Vector2(88, 30)
+layout_mode = 2
+size_flags_horizontal = 3
+min_value = -100.0
+max_value = 100.0
+suffix = "%"
+[node name="Reset" type="Button" parent="Box/Row"]
+custom_minimum_size = Vector2(24, 26)
+layout_mode = 2
+focus_mode = 0
+theme_type_variation = &"PKIconButton"
+[node name="Clock" parent="Box/Row" instance=ExtResource("1_icon")]
+visible = false
+custom_minimum_size = Vector2(18, 20)
+layout_mode = 2
+tooltip_text = "命令已确认，将于下一日生效"
+[node name="Note" type="Label" parent="Box"]
+layout_mode = 2
+theme_type_variation = &"PKMutedLabel"

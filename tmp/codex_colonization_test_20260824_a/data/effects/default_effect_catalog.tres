@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="EffectCatalog" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/effect/effect_catalog.gd" id="1_effect_catalog"]
+
+[resource]
+script = ExtResource("1_effect_catalog")
+metric_keys = PackedStringArray()
+definitions = []
+max_instances = 4096
+max_transactions = 8192
+max_work_per_slice = 1024

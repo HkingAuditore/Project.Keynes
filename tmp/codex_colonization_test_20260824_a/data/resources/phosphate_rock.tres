@@ -1,0 +1,45 @@
+[gd_resource type="Resource" script_class="ResourceProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/resource_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"phosphate_rock"
+discovery_technology_tags = PackedStringArray("tech.soil_experimentation")
+display_name = "磷矿石"
+reserve_component = &"cell.res_phosphate_rock_reserve"
+habitat_mode = "land"
+init_reserve_scale = 8
+init_min_coverage = 0.04
+init_min_reserve = 2500000
+init_target_coverage = 0.04
+init_target_reserve_density = 500000
+init_richness_exponent = 1.4
+init_micro_coverage = 0.08
+init_micro_reserve_share = 0.15
+init_micro_min_reserve = 250000
+    temp_lo = 0.0
+    temp_hi = 1.0
+gen_base = 0
+gen_self = 0
+decay_self = 0
+init_base = -330000
+init_temp = 0
+init_moisture = 0
+init_elevation = 0
+init_river = 0
+init_volcano = 0
+init_climate_fit = 0
+init_noise = 180000
+init_noise_scale = 0.07
+geology_family_id = &"sedimentary"
+init_province = 260000
+init_province_scale = 0.012
+init_belt = 160000
+init_belt_scale = 0.035
+climate_temp_opt = 0.5
+climate_temp_tol = 1
+climate_moisture_opt = 0.5
+climate_moisture_tol = 1
+ecology_capacity = 0
+ecology_growth_rate = 0
+ecology_immigration = 0
+ecology_stress_mortality_rate = 0

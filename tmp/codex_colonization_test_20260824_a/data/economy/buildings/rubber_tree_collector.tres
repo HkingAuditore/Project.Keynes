@@ -1,0 +1,46 @@
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"rubber_tree_collector"
+display_name = "橡胶种植园"
+building_kind = "collector"
+economic_sector_id = "agriculture"
+semantic_tags = PackedStringArray()
+technology_tags = PackedStringArray("industry.primary", "tech.application.rubber_tree_collector")
+required_technology_tags = PackedStringArray()
+production_climate_profile_id = &"plantation_crop"
+construction_good_ids = PackedStringArray("lumber", "bricks", "construction_components")
+construction_quantities = PackedInt64Array(8250, 8250, 5500)
+owner_profession_id = &"landlord"
+employee_profession_ids = PackedStringArray("indentured_laborer")
+employee_slots_per_building = PackedInt64Array(10)
+employee_wage_policy_ids = PackedStringArray("fixed")
+employee_reference_wages_per_day = PackedInt64Array(14740)
+input_good_ids = PackedStringArray()
+input_quantities_per_day = PackedInt64Array()
+input_required_q16 = PackedInt32Array()
+input_category_ids = PackedStringArray()
+input_min_quality_levels = PackedInt32Array()
+input_candidate_offsets = PackedInt32Array(0)
+input_candidate_good_ids = PackedStringArray()
+input_candidate_efficiency_q16 = PackedInt32Array()
+output_good_ids = PackedStringArray("latex")
+output_quantities_per_day = PackedInt64Array(21854)
+target_operating_margin_q16 = 6554
+supply_price_elasticity_q16 = 32768
+output_cost_shares_q16 = PackedInt32Array()
+resource_ids = PackedStringArray("plantation_land", "fertile_soil")
+resource_quantities_per_day = PackedInt64Array(21854, 21854)
+resource_interaction_modes = PackedStringArray("capacity", "capacity")
+resource_access_modes = PackedStringArray("local", "local")
+resource_generation_ids = PackedStringArray()
+resource_generation_quantities_per_day = PackedInt64Array()
+behavior_id = "consume_local_resources"
+condition_opcodes = PackedInt32Array()
+condition_signals = PackedInt32Array()
+condition_compares = PackedInt32Array()
+condition_reference_ids = PackedStringArray()
+condition_values = PackedInt64Array()

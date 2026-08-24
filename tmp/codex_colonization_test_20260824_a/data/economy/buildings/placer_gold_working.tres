@@ -1,0 +1,49 @@
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"placer_gold_working"
+display_name = "河滩淘金场"
+building_kind = "collector"
+economic_sector_id = "extractive"
+semantic_tags = PackedStringArray("activity.mining", "industry.primary")
+technology_tags = PackedStringArray("tech.gold_panning")
+required_technology_tags = PackedStringArray()
+upgrade_family_id = &"gold_extraction"
+upgrade_tier = 1
+construction_good_ids = PackedStringArray("logs", "bast_fiber")
+construction_quantities = PackedInt64Array(25, 25)
+construction_candidate_offsets = PackedInt32Array(0, 5, 8)
+construction_candidate_good_ids = PackedStringArray("logs", "raw_stone", "adobe_brick", "reed_bundle", "turf_block", "bast_fiber", "reed_bundle", "turf_block")
+construction_candidate_efficiency_q16 = PackedInt32Array(65536, 65536, 65536, 32768, 32768, 65536, 65536, 65536)
+owner_profession_id = &"merchant"
+owner_slots_per_building = 1
+employee_profession_ids = PackedStringArray("miner")
+employee_slots_per_building = PackedInt64Array(1)
+employee_wage_policy_ids = PackedStringArray("adaptive")
+employee_reference_wages_per_day = PackedInt64Array(40000)
+input_good_ids = PackedStringArray()
+input_quantities_per_day = PackedInt64Array()
+input_required_q16 = PackedInt32Array()
+input_category_ids = PackedStringArray()
+input_min_quality_levels = PackedInt32Array()
+input_candidate_offsets = PackedInt32Array(0)
+input_candidate_good_ids = PackedStringArray()
+input_candidate_efficiency_q16 = PackedInt32Array()
+output_good_ids = PackedStringArray("gold")
+output_quantities_per_day = PackedInt64Array(100)
+output_cost_shares_q16 = PackedInt32Array()
+resource_ids = PackedStringArray("gold_ore")
+resource_quantities_per_day = PackedInt64Array(50)
+resource_interaction_modes = PackedStringArray("extract")
+resource_access_modes = PackedStringArray("local")
+resource_generation_ids = PackedStringArray()
+resource_generation_quantities_per_day = PackedInt64Array()
+behavior_id = "consume_local_resources"
+condition_opcodes = PackedInt32Array()
+condition_signals = PackedInt32Array()
+condition_compares = PackedInt32Array()
+condition_reference_ids = PackedStringArray()
+condition_values = PackedInt64Array()

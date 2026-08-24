@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"watershed_governance_center"
+display_name = "流域治理中心"
+economic_sector_id = "knowledge"
+semantic_tags = PackedStringArray("method.watershed", "method.research")
+technology_tags = PackedStringArray("tech.application.watershed_governance_center")
+required_technology_tags = PackedStringArray()
+construction_days = 160
+construction_good_ids = PackedStringArray("construction_components", "steel", "concrete", "glass")
+construction_quantities = PackedInt64Array(35000, 25000, 40000, 12000)
+owner_profession_id = &"research_scientist"
+employee_profession_ids = PackedStringArray("research_scientist", "engineer", "data_scientist", "technician")
+employee_slots_per_building = PackedInt64Array(18, 10, 8, 6)
+employee_wage_policy_ids = PackedStringArray("adaptive", "adaptive", "adaptive", "adaptive")
+employee_reference_wages_per_day = PackedInt64Array(21000, 19500, 22500, 17136)
+input_good_ids = PackedStringArray("scientific_instruments", "computers", "electricity")
+input_quantities_per_day = PackedInt64Array(2500, 3000, 5000)
+input_required_q16 = PackedInt32Array(32768, 32768, 32768)
+input_candidate_offsets = PackedInt32Array(0)
+output_good_ids = PackedStringArray("technology_points")
+output_quantities_per_day = PackedInt64Array(3500000)
+condition_opcodes = PackedInt32Array(1)
+condition_signals = PackedInt32Array(9)
+condition_compares = PackedInt32Array(0)
+condition_reference_ids = PackedStringArray("")
+condition_values = PackedInt64Array(1)
