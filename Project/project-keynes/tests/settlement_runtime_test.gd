@@ -89,11 +89,11 @@ func _run_runtime_checks(compiled: Dictionary) -> void:
 			capital_restore_ok = bool(capital_end.get("ok", false))
 			if not capital_restore_ok:
 				print("  capital restore end failed: ", capital_end)
-		_expect("首都强制命名状态可随 PKEC v41 恢复",
+		_expect("首都强制命名状态可随 PKEC v42 恢复",
 			capital_restore_ok and
 			bool(restored_capital.get_population_cell_summary(0).get(
 				"settlement_name_forced", false)))
-		_expect("首都强制命名 PKEC v41 状态哈希一致",
+		_expect("首都强制命名 PKEC v42 状态哈希一致",
 			capital_restore_ok and
 			restored_capital.get_economy_state_hash() ==
 				capital.get_economy_state_hash())
@@ -153,7 +153,7 @@ func _run_runtime_checks(compiled: Dictionary) -> void:
 		int(renamed.get("name_roll_generation", 0)) == 1)
 
 	var chunks := _save_chunks(source)
-	_expect("PKEC v41 可导出", not chunks.is_empty())
+	_expect("PKEC v42 可导出", not chunks.is_empty())
 	var restored: Object = _configured_world(
 		compiled, PackedInt64Array(), 7401, false)
 	if restored != null and not chunks.is_empty():
@@ -165,8 +165,8 @@ func _run_runtime_checks(compiled: Dictionary) -> void:
 			restore_ok = bool(restored.feed_economy_restore_chunk(chunk).get(
 				"ok", false))
 		var ended: Dictionary = restored.end_economy_restore() if restore_ok else {}
-		_expect("PKEC v41 可往返恢复", bool(ended.get("ok", false)))
-		_expect("PKEC v41 状态哈希一致",
+		_expect("PKEC v42 可往返恢复", bool(ended.get("ok", false)))
+		_expect("PKEC v42 状态哈希一致",
 			bool(ended.get("ok", false)) and
 			restored.get_economy_state_hash() ==
 				source.get_economy_state_hash())

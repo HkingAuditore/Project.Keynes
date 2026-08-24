@@ -42,14 +42,16 @@ restore 与真实拓扑变化仍显式清空缓存。
 
 - `TerrainProfile.trade_passable` 与正整数 `trade_move_cost` 构成独立贸易通行层。边
   `u -> v` 的成本是进入 `v` 的成本，且两端都必须可贸易通行。陆地内容显式继承现有
-  `passable_land/move_cost`；水域默认关闭，可由内容显式开启；零成本可通行是配置错误。
+  `passable_land/move_cost`。捕获后若 `water_class != NONE`（由 `cell_base_landform` 分类，
+  `SEA_ICE` 除外），该格被覆盖为不可贸易通行，不当市场源/目的；零成本可通行仍是配置错误。
 - `GoodProfile.trade_enabled` 控制商品是否进入贸易扫描，
   `transport_load_per_unit_q16` 给出单位货物的 Q16 运力负载。`cycle_flow` 商品强制禁运。
-- v1 的 `trade_zone_id` 等于冻结的 `cell_country`。路径上的每个地块必须属于同一非中立国家；
-  国界/地形变更只使新规划失效，已经发运的订单按出发契约完成。
-- `MapData` 只提供静态六邻接和 256 项 terrain LUT；它不是贸易状态 owner。生产路径在经济
-  初始化时由 `MapGenerator` 在 economy configure 后、bootstrap 前通过
-  `capture_economy_trade_topology()` 粗粒度捕获一次。非 `OFF` 模式下捕获失败会使本次经济
+- v1 的 `trade_zone_id` 等于冻结的 `cell_country`。路径上的每个**陆地**地块必须属于同一非中立国家；
+  水体只作门户走廊，不进入国界检查。国界/地形变更只使新规划失效，已经发运的订单按出发契约完成。
+- `MapData` 提供静态六邻接、256 项 terrain LUT、以及可选的 `base_landform`/`has_river` 列；
+  它不是贸易状态 owner。生产路径在经济初始化时由 `MapGenerator` 在 economy configure 后、
+  bootstrap 前通过 `capture_economy_trade_topology()` 粗粒度捕获一次，并传入
+  `base_landform_arr` 与 `has_river_arr`。非 `OFF` 模式下捕获失败会使本次经济
   初始化显式失败；启动报告必须满足 `trade_topology_ready=true` 且 topology generation 非零。
 - 玩家贸易视野与 Inspector/`FOG_VISIBLE` 对齐。`MapData.fog_solved` 为假时不读可见性
   （全知，兼容测试与未解算帧）。为真时，经济在 sample 日冻结 `visible_arr`：开局国作为
@@ -69,10 +71,14 @@ restore 与真实拓扑变化仍显式清空缓存。
 每个 native slice 256 次有效 Dijkstra 扩展的总上限，一个 source 未完成时保留 heap、stamp、
 accepted/pending target 和 expansion cursor 到下一片。
 
-计划失效只看规范化贸易拓扑内容哈希与冻结 `cell → country` 归属哈希。拓扑内容哈希只包含六邻接、
-由 terrain LUT 映射后的 `passable` 和 `enter_cost`，不包含原始 `terrain_id`；因此季节性地形重分类若不改变
-贸易通行语义，不会丢弃未完成扫描。国家现金、国库物资或科技变化造成的通用 country generation 增长也
-不重置路线扫描。实际通行/成本或国界变化仍会确定性失效并重建连通分量。
+计划失效只看规范化贸易拓扑内容哈希与冻结 `cell → country` 归属哈希。拓扑内容哈希包含六邻接、
+由 `cell_base_terrain` LUT 映射后的陆地 `passable`/`enter_cost`、`cell_base_landform` 导出的
+`water_class`、以及 `cell_has_river`；不包含原始 `terrain_id`。季节性海冰只改 `cell_terrain`，
+不改基线地形/地貌，因此不会丢弃未完成扫描。水体格被覆盖为 `passable=0`，不当市场节点。
+河运/浅海/远海/深海能力按科技冻结；海岸门户 CSR 把同一航道上的陆地格连成跳跃边
+（进入成本 1 + 换装罚分 2），搜索堆只扩展陆地。国家现金、国库物资或科技变化造成的通用
+country generation 增长不重置路线扫描；能力变化只改路线缓存键中的 layer。实际通行/成本、
+水体分类或运河边变化仍会确定性失效并重建连通分量。
 
 1. 分片扫描 market-major `(cell, good)`，只保留有库存盈余或价格/库存缺口的稀疏信号；未解锁 good、禁运 good、`cycle_flow` good 不进入贸易扫描。
 2. 对盈余源运行多目标有界整数 Dijkstra；找到 K 个可盈利目的地或达到 source 扩展上限即停止。
@@ -180,8 +186,10 @@ dispatch 的二次价格、库存、现金、运力和拓扑检查保证部分�
 
 ## v1 非目标
 
-不含跨国贸易、关税、自贸区、外交、逐边拥堵、运输工资、运输建筑产能、港口或换装。
-水域可以作为内容配置的普通贸易地块，但不模拟真正的陆海联运。
+不含跨国贸易、关税、自贸区、外交、逐边拥堵、运输工资、运输建筑产能、港口建筑或换装作业。
+陆海联运复用同一陆地六邻接图：海格只是走廊几何，海岸陆地是传送门；不占领水面，也不把海洋
+标成可贸易节点。河运独立；海事等级嵌套（深海可走远海/浅海，远海可走浅海）。湖泊在河运或
+海事 ≥ 1 时通行。`tech.fishing_boats` 只保留产出 Modifier，不开放运输。
 ## 2026-07-18 bounded planner completion
 
 The profile default planning slice permits 32 completed route searches (valid

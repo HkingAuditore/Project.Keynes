@@ -456,6 +456,14 @@ static func compile_native_catalog(
 		if building_binding_count == 0:
 			return {"ok": false, "reason": "building_technology_binding_missing",
 				"id": String(building_columns.building_type_ids[building_index_value])}
+		if building_binding_count != 1:
+			return {"ok": false, "reason": "building_technology_binding_must_be_single",
+				"id": String(building_columns.building_type_ids[building_index_value]),
+				"count": building_binding_count}
+		if int(building_required_tag_offsets[building_index_value + 1]) \
+				!= int(building_required_tag_offsets[building_index_value]):
+			return {"ok": false, "reason": "building_required_technology_tags_forbidden",
+				"id": String(building_columns.building_type_ids[building_index_value])}
 		for tag_index in range(building_required_tag_offsets[building_index_value],
 				building_required_tag_offsets[building_index_value + 1]):
 			var required_tag := String(
@@ -1793,8 +1801,9 @@ static func _append_building_goods(ids: PackedStringArray, quantities: PackedInt
 
 
 ## Zero-bill lots: merchant-style services, or stone-age construction
-## collectors tagged `starter.construction` with no daily good inputs.
-## Industrial buildings and later collectors still need an explicit bill.
+## collectors tagged `starter.construction` whose daily inputs are empty or
+## all-soft complements. Industrial buildings and later collectors still need
+## an explicit bill.
 static func allows_zero_cost_construction(profile: Resource) -> bool:
 	if profile == null or int(profile.construction_days) != 0 \
 			or not profile.construction_good_ids.is_empty():
@@ -1802,12 +1811,24 @@ static func allows_zero_cost_construction(profile: Resource) -> bool:
 	var kind := String(profile.building_kind)
 	if kind == "service":
 		return true
-	if kind != "collector" or not profile.input_good_ids.is_empty():
+	if kind != "collector" or not _daily_inputs_are_all_soft(profile):
 		return false
 	for tag in profile.semantic_tags:
 		if String(tag).strip_edges() == "starter.construction":
 			return true
 	return false
+
+
+static func _daily_inputs_are_all_soft(profile: Resource) -> bool:
+	if profile.input_good_ids.is_empty():
+		return true
+	var required: PackedInt32Array = profile.input_required_q16
+	if required.size() != profile.input_good_ids.size():
+		return false
+	for required_q16 in required:
+		if int(required_q16) >= Q16_ONE:
+			return false
+	return true
 
 
 static func _append_construction_candidates(profile: Resource,

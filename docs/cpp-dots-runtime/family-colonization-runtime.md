@@ -22,20 +22,20 @@ ColonizationPlannerPanel
 
 ## 路线与报价
 
-`start/cancel` 在空闲边界立即抽离守恒人口；冻结周期内改为写入 `_pending_commands`，
-由下一轮 `LEDGER_APPLY` 再抽离。报价仍是只读预览。排队占用 `(country,target)`，
-避免同一目标被点两次。若结算时人口不足或路线失效，命令被拒绝并写回执，不让经济 fatal。
-报价直接消费经济运行时现有 packed 六邻接、逐格 `passable` 与 `enter_cost`。
-合法目标是当前可见、可通行的无主或本国陆地，且 `source != target`；外国格返回
-`colonization_target_invalid`。报价字典带 `kind`：`colonize`（无主）或
-`relocate`（本国）。目标查询只执行一次反向整数 Dijkstra，然后遍历本国领土
-cell CSR 与 cell-family CSR；不会扫描全体家族。距离、parent 和 heap scratch
-长期复用，generation stamp 避免每次清空全图数组，单次搜索最多扩展 8192 格。
+`start/cancel` 在空闲边界立即占用目标。开工包已完整时同一次调用抽离守恒人口与源地货物进入 `OUTBOUND`；绿地 `N >= 3` 且开工包不完整则写入 `EXPEDITION_PREPARING`，**不抽人、不抽货**，人留在源地继续生产缺货。冻结周期内改为写入 `_pending_commands`，由下一轮 `LEDGER_APPLY` 再占用或抽离。报价仍是只读预览。排队与筹备都占用 `(country,target)`，避免同一目标被点两次。若结算时人口不足、目标易主或路线失效，命令被拒绝或筹备被释放并写回执，不让经济 fatal。
+报价直接消费经济运行时现有 packed 六邻接、逐格陆地 `passable`/`enter_cost`，以及同一套
+水运门户 CSR。合法目标是当前可见、可通行的无主或本国陆地，且 `source != target`；外国格
+与水体格返回 `colonization_target_invalid`，Country claim 仍拒绝 `_is_water`。报价字典带
+`kind`：`colonize`（无主）或 `relocate`（本国）。目标查询只执行一次反向整数 Dijkstra，
+然后遍历本国领土 cell CSR 与 cell-family CSR；不会扫描全体家族。距离、parent 和 heap
+scratch 长期复用，generation stamp 避免每次清空全图数组，单次搜索最多扩展 8192 格。
 本家族已在目标有成员时允许加强该分支；否则新分支受 `_family_max_per_cell`
 （默认 8，一城只有几家）限制。
 
-路线必须全程可见、为可通行陆地，并且只经过本国或无主地块。进入下一格的
-成本计入总成本，默认速度为每日至少一点成本。报价 token 绑定国家、家族、
+陆地路段必须可见，并且只经过本国或无主地块。海/湖走廊按开拓国 live 科技能力跳跃，
+水体格不要求可见、不进入搜索堆；还原路线时再展开走廊格子供 UI 与累计成本使用。进入下一格的
+成本计入总成本，默认速度为每日至少一点成本。河运把两端 `has_river` 的陆地边成本减半。
+报价 token 绑定国家、家族、
 源地、目标、拓扑 generation、国家 generation、视野 hash、路线 hash 与
 目标侧开工包 identity。确认时 revision 改变会重算；路线 hash 相同可接受，
 否则返回 `colonization_requote_required`。目标资源/科技变化返回
@@ -46,6 +46,7 @@ cell CSR 与 cell-family CSR；不会扫描全体家族。距离、parent 和 he
 
 `FamilyExpeditionStore` 是 generation-safe SoA，路线、累计成本、cohort 载荷和
 重要人物句柄使用扁平 CSR。派遣人数满足 `1 <= population < branch_population`。
+`PREPARING` 把意图人数记在 `population` 标量上，payload/cargo 保持为空，人不进开拓队 escrow。
 抽取先按稳定顺序消费失业成员，不足部分按非失业 cohort 比例分配，最大余数
 以 `(profession, ethnicity, cohort_handle)` 决定；不得抽走源地最后一个活着的
 商人。商人保护若裁掉已分配名额，必须立即从剩余非商人成员回填，使实际抽离人数
@@ -118,7 +119,7 @@ SETTLE 的 `i32_1` 来自 Effect payload[3]（可选守恒 `population_reward`�
 源地编号、职业构成、路线成本和旅行日不进入默认文案，后两者仅留在
 tooltip。同一家族多个可达源地合成一张卡，并自动选人口最多的源分支。
 选中后人数默认填满可派遣上限。完整开工包时主按钮显示「派遣 N 人并安家」；
-部分开工或只带桥接库存时按钮保持「派遣 N 人」，并用黄铜说明「建材不足，只携带口粮」。
+绿地开工包不完整时显示「开始筹备 N 人」，成功码 `colonization_preparing`，切到「在途」页显示「筹备中」与缺货行。迁徙或部分桥接库存仍显示「派遣 N 人」，并用黄铜说明「建材不足，只携带口粮」。物资不够不再禁用按钮。
 冻结周期顶部仍用黄铜
 提示结算中，确认按钮改为「排队派遣 N 人」并保持可点；点击后命令进入 pending，
 提交完成后自动抽离人口与源地货物出发。取消同样可在结算中排队。若结算中暂时没有可列家族，
@@ -132,28 +133,37 @@ busy。家族入口进入地图选点模式，Esc/右键退出。
 ## 开工包
 
 无主或本国空地（已提交建筑组 = 0 且无在建）携带完整开工包：口粮采集营、可选衣物链、
-枯枝营（若资源允许）、早期商栈，以及 `travel_days + 15` 日口粮/衣物桥接。
+枯枝营（若资源允许）、早期商栈，以及 `max(1, travel_days) + 15` 日口粮/衣物桥接。
+衣物桥接与口粮相同，按衣着 need 的 `base_qty_per_person` × 日数计（生存方案为每人每日 2 毫单位），
+而不是每人每日 1 整件衣物。采集营 `tools` 类投入按 `max(旅行日+15, 开工包建筑数)` 记入 `EXPEDITION_CARGO_BUFFER`。
 已有建筑或在建的目标只带桥接库存，不落成新建筑。`N < 3` 标记 `kit_partial`，
-只带桥接。规划在 `economy_runtime_colonization_kit.cpp` 内按目标缓存，复杂度
-`O(unlocked_types)`，禁止把 GDScript `StarterEconomyPlanner` 的 20 人穷举搬进报价热路径。
-物资只从源地市场划走；库存在 `start` 时不够则回执 `colonization_kit_materials_short`，不抽人。
+只带桥接。绿地 `N >= 3` **不允许带着空建筑列表出发**：库存不够就留在 `PREPARING`，
+每日到期堆只对上次缺货 ID 做 `O(缺货数)` 库存哈希；哈希不变则 `due_day = day+1` 再入堆，
+变了才重跑 `plan_colonization_kit`。规划复杂度仍是 `O(unlocked_types)`，禁止把
+GDScript `StarterEconomyPlanner` 的 20 人穷举搬进报价热路径，也不扫全图、不跑投资周期 I。
+物资只从源地市场划走；`N < 3` 抽货失败仍可回执 `colonization_kit_materials_short`。
+到达仍一次性插入冻结开工计划；若 BUFFER 里还有建材，落地当天对目标再 `plan_colonization_kit` 一次
+（`ignore_existing=true`，用剩余业主槽封顶），用剩余建材补插。
 
 ## 存档与诊断
 
-当前严格版本为 PKCN v11、PKEC v41；PKEF 当前为 v11。科技目录、研究信号、Effect
-recipe、Trigger 定义或内容绑定摘要变化时，PKCN 以 `catalog_hash_mismatch` 拒绝旧存档。
-完整恢复必须先恢复 PKCN 与 PKEF，再恢复 PKEC，使 PKEC 能交叉验证所有 `SETTLING`
-事务。恢复后重建到期堆和活动目标索引。v36 在途队伍 cargo 为空，到达后不落成开工包。
+当前写出为 PKCN v11、PKEC v42；PKEF 当前为 v11。v42 允许 `EXPEDITION_PREPARING` 且
+payload/cargo/kit 为 0，并写出缺货 CSR。reader 接受 v41 与 v42：v41 不得含 PREPARING，
+且仍要求 payload≥1。科技目录、研究信号、Effect recipe、Trigger 定义或内容绑定摘要变化时，
+PKCN 以 `catalog_hash_mismatch` 拒绝旧存档。完整恢复必须先恢复 PKCN 与 PKEF，再恢复 PKEC，
+使 PKEC 能交叉验证所有 `SETTLING` 事务。恢复后重建到期堆和活动目标索引；筹备队保留保存时的
+缺货 identity，库存变化后才重规划。v36 在途队伍 cargo 为空，到达后不落成开工包。
 
 `get_economy_report()` 暴露活动队数、到期堆大小、在途人口、路线查询、载荷拆分
 和跨域提交耗时。核心回归在 `tests/family_colonization_runtime_test.gd`，覆盖冻结
-路线、revision 重验、真实人口/货物托管、O(1) 判重、进度返程、回执、PKEC v41
-中途恢复，绿地 N≥3 落成采集+商栈、返程退货、已开发格不落成、空库存部分开工包，
+路线、revision 重验、真实人口/货物托管、O(1) 判重、进度返程、回执、PKEC v42
+中途恢复，零库存绿地 N=3 进入 PREPARING、人不离开源地、补库存后下一 idle 日 OUTBOUND，
+绿地 N≥3 落成采集+商栈、返程退货、已开发格不落成，
 冻结周期内排队的 `SETTLE_FAMILY_EXPEDITION` 能通过 epoch 预检并落地，
 在更高序号格已有建筑时把开工包插入中间格不得打乱守恒，
 冻结周期内报价仍可读，`start/cancel` 在 `economy_busy` 时改为 `colonization_queued` /
 `colonization_cancel_queued` 并在下一轮 ledger 抽离或返程，
 以及本国已有人口格的 SETTLE-only 迁徙、`source == target` 无报价和外国目标拒绝。
-`player_controller_contract_test.gd` 覆盖开拓面板在结算中仍显示家族卡片，确认按钮可点并显示排队，以及同家族多源地合并为单卡、默认填满可派遣人数、完整开工包按钮文案。
+`player_controller_contract_test.gd` 覆盖开拓面板在结算中仍显示家族卡片，确认按钮可点并显示排队，以及同家族多源地合并为单卡、默认填满可派遣人数、完整开工包「安家」文案、不完整绿地「开始筹备」、物资不够不再锁按钮。
 缺 `maximum_population` 的选中字典不得崩溃；`economy_paused` 必须显示暂停说明而不是保留旧卡。
 

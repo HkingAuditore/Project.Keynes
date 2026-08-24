@@ -2474,6 +2474,10 @@ $buildingTechnologyCalibrations = @{
     method_concrete_plant_r9 = @{ direct='tech.digital_control'; required=@('tech.industrial_quality_control','tech.sensor_networks') }
     method_highland_precision_agriculture = @{ direct='tech.precision_agriculture'; required=@('tech.highland_tuber_farming','tech.geographic_information_systems','tech.biotechnology') }
     method_autonomous_forestry = @{ direct='tech.autonomous_systems'; required=@('tech.satellite_observation','tech.smart_grid','tech.scientific_agents') }
+    # 2026-08-24 解锁错位修复（解锁即可建原则）：主解锁移动到与实际能力门槛同代的技术。
+    ore_bronzesmith_camp = @{ direct='tech.bronze_casting'; required=@('tech.tin_identification') }
+    ranching_station = @{ direct='tech.mechanized_agriculture'; required=@() }
+    felt_making_tent = @{ direct='tech.wool_husbandry'; required=@() }
 }
 foreach ($buildingId in $buildingTechnologyCalibrations.Keys) {
     $path = Join-Path $buildingsDir "$buildingId.tres"

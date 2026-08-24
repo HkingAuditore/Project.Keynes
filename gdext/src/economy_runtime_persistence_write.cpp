@@ -949,6 +949,23 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                 append_le<int32_t>(record, row.type_id);
                 append_le<int64_t>(record, row.count);
             }
+            uint64_t missing_identity = 0;
+            uint32_t missing_count = 0;
+            uint32_t missing_begin = 0;
+            if (_family_expeditions.active[i] != 0) {
+                missing_identity =
+                    _family_expeditions.kit_missing_stock_identity[i];
+                missing_count = _family_expeditions.missing_good_count[i];
+                missing_begin = _family_expeditions.missing_good_begin[i];
+            }
+            append_le<uint64_t>(record, missing_identity);
+            append_le<uint32_t>(record, missing_count);
+            for (uint32_t m = 0; m < missing_count; ++m) {
+                append_le<int32_t>(record,
+                    _family_expedition_missing_good_ids[missing_begin + m]);
+                append_le<int64_t>(record,
+                    _family_expedition_missing_good_quantities[missing_begin + m]);
+            }
             if (!payload.empty() && payload.size() + record.size() + 16U >
                     static_cast<size_t>(budget)) break;
             payload.insert(payload.end(), record.begin(), record.end());

@@ -922,6 +922,9 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     PackedByteArray pending_operating_state;
     PackedInt32Array recovery_cooldown_cycles;
     PackedInt64Array investment_driver_discard_q16;
+    PackedInt64Array investment_stealable;
+    PackedInt64Array investment_challenger_unit_cost;
+    PackedInt64Array investment_incumbent_unit_cost;
     PackedInt32Array realized_profit_margin_q16;
     PackedInt32Array severe_loss_cycles;
     PackedInt32Array recovery_cycles;
@@ -1048,6 +1051,12 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
             ? investment_diagnostic->driver_sell_through_q16 : 0);
         investment_driver_discard_q16.push_back(investment_diagnostic != nullptr
             ? investment_diagnostic->driver_discard_q16 : 0);
+        investment_stealable.push_back(investment_diagnostic != nullptr
+            ? investment_diagnostic->stealable : 0);
+        investment_challenger_unit_cost.push_back(investment_diagnostic != nullptr
+            ? investment_diagnostic->challenger_unit_cost : 0);
+        investment_incumbent_unit_cost.push_back(investment_diagnostic != nullptr
+            ? investment_diagnostic->incumbent_unit_cost : 0);
         realized_profit_margin_q16.push_back(group.realized_profit_margin_q16);
         severe_loss_cycles.push_back(group.severe_loss_cycles);
         recovery_cycles.push_back(group.recovery_cycles);
@@ -1153,6 +1162,9 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     PackedInt64Array investment_candidate_driver_merchant_sold;
     PackedInt64Array investment_candidate_driver_sell_through_q16;
     PackedInt64Array investment_candidate_driver_discard_q16;
+    PackedInt64Array investment_candidate_stealable;
+    PackedInt64Array investment_candidate_challenger_unit_cost;
+    PackedInt64Array investment_candidate_incumbent_unit_cost;
     PackedInt32Array investment_candidate_failed_material_group;
     PackedInt32Array investment_candidate_selected_material_offsets;
     PackedInt32Array investment_candidate_selected_material_good_ids;
@@ -1181,6 +1193,11 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
                 item.driver_sell_through_q16);
             investment_candidate_driver_discard_q16.push_back(
                 item.driver_discard_q16);
+            investment_candidate_stealable.push_back(item.stealable);
+            investment_candidate_challenger_unit_cost.push_back(
+                item.challenger_unit_cost);
+            investment_candidate_incumbent_unit_cost.push_back(
+                item.incumbent_unit_cost);
             investment_candidate_failed_material_group.push_back(
                 item.failed_material_group);
             for (size_t material = 0;
@@ -1261,6 +1278,9 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     out["investment_driver_merchant_sold"] = investment_driver_merchant_sold;
     out["investment_driver_sell_through_q16"] = investment_driver_sell_through_q16;
     out["investment_driver_discard_q16"] = investment_driver_discard_q16;
+    out["investment_stealable"] = investment_stealable;
+    out["investment_challenger_unit_cost"] = investment_challenger_unit_cost;
+    out["investment_incumbent_unit_cost"] = investment_incumbent_unit_cost;
     out["investment_candidate_diagnostic_day"] = _investment_diagnostic_cell == cell_idx
         ? _investment_diagnostic_day : -1;
     out["investment_candidate_type_ids"] = investment_candidate_type_ids;
@@ -1296,6 +1316,11 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
         investment_candidate_driver_sell_through_q16;
     out["investment_candidate_driver_discard_q16"] =
         investment_candidate_driver_discard_q16;
+    out["investment_candidate_stealable"] = investment_candidate_stealable;
+    out["investment_candidate_challenger_unit_cost"] =
+        investment_candidate_challenger_unit_cost;
+    out["investment_candidate_incumbent_unit_cost"] =
+        investment_candidate_incumbent_unit_cost;
     out["realized_profit_margin_q16"] = realized_profit_margin_q16;
     out["severe_loss_cycles"] = severe_loss_cycles;
     out["recovery_cycles"] = recovery_cycles;

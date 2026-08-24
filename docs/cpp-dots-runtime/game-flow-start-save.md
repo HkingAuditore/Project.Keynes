@@ -279,11 +279,12 @@ in the catalog as ordinary researchable technologies; empty-prerequisite Stone-A
 one completed knowledge practice before they can enter a research queue.
 `MapGenerator` grants that core plus recursive structural prerequisites, including the zero-cost
 `tech.early_trade`, writes `discovered_technology_*` for the one geographically chosen knowledge
-practice, and deposits 10000 authored technology points in the country treasury.
+practice, and deposits 3000 authored technology points in the country treasury.
 `StarterSettlementBootstrap` prebuilds gathering and hunting camps when the
 local reserves exist, one `deadwood_gathering_camp`, the matching precious-metal work site, an
 `early_merchant_post`, and a hide-scraping shelter only on cold highland. It stocks the selected
-knowledge-shed construction recipe so the player can build after research. The planner emits parallel `starter_building_ids`/`starter_building_counts`;
+knowledge-shed construction recipe so automatic investment can seed the first research
+building after that practice completes. The planner emits parallel `starter_building_ids`/`starter_building_counts`;
 gold/silver sites, the merchant, and the deadwood camp remain exactly one building. The supported families are coastal,
 floodplain, cold highland, tropical forest, arid highland and temperate.
 

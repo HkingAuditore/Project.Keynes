@@ -22,19 +22,17 @@ func _init() -> void:
 		"tech.gathering")
 	var maize_identification := (compiled.technology_ids as PackedStringArray).find(
 		"tech.maize_identification")
-	var oral_memory := (compiled.technology_ids as PackedStringArray).find(
-		"tech.oral_memory_practice")
-	var phenology_observation := (compiled.technology_ids as PackedStringArray).find(
-		"tech.phenology_observation")
+	var early_knowledge := (compiled.technology_ids as PackedStringArray).find(
+		"tech.early_knowledge_institution")
 	var country_packet := {
 		"country_ids": PackedStringArray(["country.procurement"]),
 		"country_names": PackedStringArray(["Procurement"]),
 		"country_cash": PackedInt64Array([100000000]),
 		"territory_offsets": PackedInt32Array([0, 1]),
 		"territory_cells": PackedInt32Array([0]),
-		"technology_offsets": PackedInt32Array([0, 4]),
+		"technology_offsets": PackedInt32Array([0, 3]),
 		"technology_indices": PackedInt32Array([
-			gathering, maize_identification, oral_memory, phenology_observation]),
+			gathering, maize_identification, early_knowledge]),
 	}
 	_expect("country bootstraps", bool(country.bootstrap(
 		PackedByteArray([0]), country_packet).get("ok", false)))
@@ -56,8 +54,10 @@ func _init() -> void:
 	# multi-day economy epoch is still frozen.
 	profile.market_cycle_days = 5
 	profile.market_runtime_mode = "ACTIVE"
-	_expect("economy configures", bool(ext.configure_economy(
-		native_catalog, profile, 1, 9042).get("ok", false)))
+	var economy_config: Dictionary = ext.configure_economy(native_catalog, profile, 1, 9042)
+	if not bool(economy_config.get("ok", false)):
+		print("  economy configure diagnostic=", economy_config)
+	_expect("economy configures", bool(economy_config.get("ok", false)))
 	var signatures: PackedStringArray = compiled.signature_keys
 	var merchant := signatures.find("merchant|default")
 	var stock := PackedInt64Array()

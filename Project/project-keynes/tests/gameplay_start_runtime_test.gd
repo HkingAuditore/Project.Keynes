@@ -87,11 +87,11 @@ func _run() -> void:
 			and not route_buildings.has("oral_memory_circle")
 			and not route_buildings.has(pending_building)
 			and route_buildings.has("early_merchant_post"))
-		_expect("regional route reveals one pending knowledge practice",
-			not pending_tech.is_empty()
-			and not pending_building.is_empty()
+		_expect("regional route reveals the unified pending knowledge institution",
+			pending_tech == "tech.early_knowledge_institution"
+			and pending_building == "early_knowledge_institution"
 			and discovered.has(pending_tech)
-			and int(country_start.get("starter_treasury_quantity", 0)) == 10000000
+			and int(country_start.get("starter_treasury_quantity", 0)) == 3000000
 			and not (country_start.get("pending_knowledge_construction_good_ids",
 				PackedStringArray()) as PackedStringArray).is_empty())
 		_expect("regional route declares food, knowledge, precious metal and trade",
@@ -190,7 +190,7 @@ func _run() -> void:
 				"technology_ids", PackedStringArray())
 			var pending_index := catalog_ids.find(pending_tech)
 			_expect("country treasury seeds opening technology points",
-				int(research.get("technology_points_stock", 0)) == 10000000)
+				int(research.get("technology_points_stock", 0)) == 3000000)
 			_expect("country discovers the pending knowledge practice without completing it",
 				pending_index >= 0
 				and int((research.get("technology_states", PackedInt32Array()) as

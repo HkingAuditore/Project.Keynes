@@ -3,6 +3,7 @@
 #include "modifier_runtime.h"
 
 #include <algorithm>
+#include <limits>
 #include <tuple>
 
 namespace pk {
@@ -264,13 +265,15 @@ void NativeEconomyRuntime::fill_colonization_kit_buffer(
             EXPEDITION_CARGO_BUFFER, sat);
     }
     int32_t clothing_good = -1;
+    int32_t clothing_need_index = -1;
     if (_survival_clothing_need_stable_id >= 0 &&
         _survival_clothing_need_stable_id < static_cast<int32_t>(
             _survival_required_need_indices.size())) {
-        const int32_t need_index =
+        clothing_need_index =
             _survival_required_need_indices[_survival_clothing_need_stable_id];
-        if (need_index >= 0 && need_index < static_cast<int32_t>(_needs.size())) {
-            const Need &need = _needs[need_index];
+        if (clothing_need_index >= 0 &&
+            clothing_need_index < static_cast<int32_t>(_needs.size())) {
+            const Need &need = _needs[clothing_need_index];
             for (int32_t variant = 0; variant < need.variant_count; ++variant) {
                 const VariantChoice &choice =
                     _variants[need.variant_begin + variant];
@@ -289,18 +292,66 @@ void NativeEconomyRuntime::fill_colonization_kit_buffer(
         }
     }
     clothing_good = pick_stocked_good(_survival_clothing_good_mask, clothing_good);
-    if (clothing_good >= 0) {
-        const int64_t wanted = saturating_mul(population,
-            saturating_mul(COLONIZATION_KIT_CLOTHING_BUFFER_DAYS, GOODS_SCALE,
-                sat), sat);
+    if (clothing_good >= 0 && clothing_need_index >= 0 &&
+        clothing_need_index < static_cast<int32_t>(_needs.size())) {
+        const Need &clothing_need = _needs[clothing_need_index];
+        int64_t units = saturating_mul(population,
+            clothing_need.base_qty_per_person, sat);
+        units = saturating_mul(units, days, sat);
+        units = mul_div_sat(units,
+            sample_environment_curve(clothing_need.quantity_env_curve, sample),
+            Q16_ONE, sat);
+        int64_t qty_per_need = GOODS_SCALE;
+        for (int32_t variant = 0; variant < clothing_need.variant_count;
+             ++variant) {
+            const VariantChoice &choice =
+                _variants[clothing_need.variant_begin + variant];
+            if (choice.component_count != 1) continue;
+            const NeedComponent &component =
+                _components[choice.component_begin];
+            if (component.good_id != clothing_good) continue;
+            qty_per_need = std::max<int64_t>(1, component.qty_per_need);
+            break;
+        }
+        const int64_t wanted = mul_div_sat(units, qty_per_need, GOODS_SCALE, sat);
         const int64_t available = source_stock(clothing_good);
         if (available < wanted) {
             kit.missing_good_ids.push_back(clothing_good);
             kit.kit_partial = 1;
         }
         if (available > 0)
-            add_colonization_kit_cargo(kit, clothing_good, std::min(wanted, available),
-                EXPEDITION_CARGO_BUFFER, sat);
+            add_colonization_kit_cargo(kit, clothing_good,
+                std::min(wanted, available), EXPEDITION_CARGO_BUFFER, sat);
+    }
+    int64_t kit_building_total = 0;
+    for (const FamilyExpeditionKitBuilding &row : kit.buildings)
+        kit_building_total = saturating_add(kit_building_total, row.count, sat);
+    const int32_t tool_days = std::max(days, std::max<int32_t>(1,
+        static_cast<int32_t>(std::min<int64_t>(kit_building_total,
+            static_cast<int64_t>(std::numeric_limits<int32_t>::max())))));
+    for (const FamilyExpeditionKitBuilding &row : kit.buildings) {
+        if (row.type_id < 0 ||
+            row.type_id >= static_cast<int32_t>(_building_type_ids.size()) ||
+            _building_type_ids[static_cast<size_t>(row.type_id)] !=
+                "gathering_ground")
+            continue;
+        const BuildingType &type = _building_types[row.type_id];
+        for (int32_t input = 0; input < type.input_count; ++input) {
+            const ProductionInput &item =
+                _building_inputs[type.input_begin + input];
+            if (!colonization_good_is_tools(item.preferred_good_id)) continue;
+            int64_t wanted = saturating_mul(item.quantity, row.count, sat);
+            wanted = saturating_mul(wanted, tool_days, sat);
+            if (wanted <= 0) continue;
+            const int64_t available = source_stock(item.preferred_good_id);
+            if (available < wanted) {
+                kit.missing_good_ids.push_back(item.preferred_good_id);
+                kit.kit_partial = 1;
+            }
+            if (available > 0)
+                add_colonization_kit_cargo(kit, item.preferred_good_id,
+                    std::min(wanted, available), EXPEDITION_CARGO_BUFFER, sat);
+        }
     }
     std::sort(kit.missing_good_ids.begin(), kit.missing_good_ids.end());
     kit.missing_good_ids.erase(std::unique(kit.missing_good_ids.begin(),
@@ -309,14 +360,15 @@ void NativeEconomyRuntime::fill_colonization_kit_buffer(
 
 bool NativeEconomyRuntime::plan_colonization_kit(
         int32_t source_cell, int32_t target_cell, int64_t population,
-        int32_t travel_days, bool frozen, ColonizationKitPlan &kit) const {
+        int32_t travel_days, bool frozen, ColonizationKitPlan &kit,
+        bool ignore_existing) const {
     kit = ColonizationKitPlan{};
     kit.supported_population = std::max<int64_t>(0, population);
     if (source_cell < 0 || source_cell >= _cell_count ||
         target_cell < 0 || target_cell >= _cell_count || population <= 0)
         return false;
     const bool has_existing = cell_has_submitted_or_pending_buildings(target_cell);
-    kit.place_buildings = has_existing ? 0 : 1;
+    kit.place_buildings = (has_existing && !ignore_existing) ? 0 : 1;
     kit.dest_identity = 1469598103934665603ULL;
     kit.dest_identity = trace_hash_mix(kit.dest_identity, kit.place_buildings);
     // Mix the target cell's committed resource picture, not the per-epoch
@@ -535,8 +587,11 @@ bool NativeEconomyRuntime::plan_colonization_kit(
     };
 
     std::vector<int32_t> missing;
+    std::vector<int32_t> material_missing;
     while (!planned.empty() && !materials_fit(&missing)) {
         kit.kit_partial = 1;
+        material_missing.insert(material_missing.end(), missing.begin(),
+            missing.end());
         auto worst = std::max_element(planned.begin(), planned.end(),
             [](const Planned &a, const Planned &b) {
                 return std::tie(a.drop_rank, a.type_id) <
@@ -553,9 +608,9 @@ bool NativeEconomyRuntime::plan_colonization_kit(
         }
         missing.clear();
     }
-    if (!missing.empty()) {
+    if (!material_missing.empty()) {
         kit.missing_good_ids.insert(kit.missing_good_ids.end(),
-            missing.begin(), missing.end());
+            material_missing.begin(), material_missing.end());
         kit.kit_partial = 1;
     }
     rebuild_buildings();
@@ -777,6 +832,91 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
         }
         placed.push_back({row.type_id, row.count});
         inserted = true;
+    }
+    ColonizationKitPlan extra;
+    int64_t used_slots = 0;
+    for (int32_t group = 0; group < static_cast<int32_t>(_buildings.size());
+         ++group) {
+        if (_buildings[group].cell != destination_cell ||
+            _buildings[group].count <= 0)
+            continue;
+        const int32_t type_id = _buildings[group].type_id;
+        if (type_id < 0 ||
+            type_id >= static_cast<int32_t>(_building_types.size()))
+            continue;
+        used_slots = saturating_add(used_slots, saturating_mul(
+            _buildings[group].count,
+            std::max<int64_t>(1,
+                _building_types[type_id].owner_slots_per_building),
+            _saturation_count), _saturation_count);
+    }
+    const int64_t remaining_slots = std::max<int64_t>(0,
+        _family_expeditions.population[expedition] - used_slots);
+    if (remaining_slots > 0 &&
+        plan_colonization_kit(destination_cell, destination_cell,
+            remaining_slots, 1, true, extra, true) &&
+        extra.place_buildings != 0 && !extra.buildings.empty()) {
+        bool extra_affordable = true;
+        for (const FamilyExpeditionCargoLine &line : extra.cargo) {
+            if (line.flags != EXPEDITION_CARGO_CONSTRUCTION ||
+                line.quantity <= 0)
+                continue;
+            if (market_stock(destination_cell, line.good_id) < line.quantity) {
+                extra_affordable = false;
+                break;
+            }
+        }
+        if (extra_affordable) {
+            for (const FamilyExpeditionCargoLine &line : extra.cargo) {
+                if (line.flags != EXPEDITION_CARGO_CONSTRUCTION ||
+                    line.quantity <= 0)
+                    continue;
+                std::string ignored;
+                adjust_market_stock(destination_cell, line.good_id,
+                    -line.quantity, ignored);
+            }
+            for (const FamilyExpeditionKitBuilding &row : extra.buildings) {
+                if (row.type_id < 0 ||
+                    row.type_id >= static_cast<int32_t>(_building_types.size()) ||
+                    row.count <= 0)
+                    continue;
+                const BuildingType &type = _building_types[row.type_id];
+                const int32_t owner_signature =
+                    signature_for_profession_ethnicity(
+                        type.owner_profession_id, std::max(0, ethnicity));
+                if (owner_signature < 0) continue;
+                const int32_t existing = find_building_group(
+                    destination_cell, row.type_id, owner_signature);
+                if (existing >= 0) {
+                    _buildings[existing].count = saturating_add(
+                        _buildings[existing].count, row.count,
+                        _saturation_count);
+                    _building_handle_index_clean = false;
+                    if (_modifier_runtime != nullptr &&
+                        _buildings[existing].modifier_handle == 0) {
+                        _buildings[existing].modifier_handle =
+                            _modifier_runtime->ensure_building_identity(
+                                destination_cell, row.type_id, owner_signature);
+                    }
+                } else {
+                    BuildingGroup group;
+                    group.cell = destination_cell;
+                    group.type_id = row.type_id;
+                    group.owner_signature_id = owner_signature;
+                    group.count = row.count;
+                    if (_modifier_runtime != nullptr) {
+                        group.modifier_handle =
+                            _modifier_runtime->ensure_building_identity(
+                                destination_cell, row.type_id, owner_signature);
+                    }
+                    _buildings.push_back(group);
+                    ++_building_structure_new_groups;
+                    inserted_new_group = true;
+                }
+                placed.push_back({row.type_id, row.count});
+                inserted = true;
+            }
+        }
     }
     if (!inserted) return true;
     // Do not rebuild market/labor CSRs during LEDGER_APPLY. Frozen epoch

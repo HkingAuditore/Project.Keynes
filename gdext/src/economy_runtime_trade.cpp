@@ -117,7 +117,8 @@ bool NativeEconomyRuntime::capture_trade_topology(
         const int32_t *neighbor_indices, const uint8_t *terrain,
         const uint8_t *canal_edge_mask, const float *canal_water,
         const uint8_t *trade_passable_lut, const int32_t *trade_move_cost_lut,
-        int32_t count, uint64_t generation, std::string &error) {
+        int32_t count, uint64_t generation, std::string &error,
+        const uint8_t *landform, const uint8_t *has_river) {
     if (!_configured || count != _cell_count || neighbor_indices == nullptr ||
         terrain == nullptr || canal_edge_mask == nullptr || canal_water == nullptr ||
         trade_passable_lut == nullptr ||
@@ -138,9 +139,13 @@ bool NativeEconomyRuntime::capture_trade_topology(
     std::vector<int32_t> edge_cost(static_cast<size_t>(count) * 6, 0);
     std::vector<uint8_t> canal_mask(static_cast<size_t>(count), 0);
     std::vector<float> canal_water_snapshot(static_cast<size_t>(count), 0.0f);
+    std::vector<uint8_t> water_class;
+    std::vector<uint8_t> river;
+    fill_trade_water_columns(terrain, landform, has_river, count, water_class, river);
     for (int32_t cell = 0; cell < count; ++cell) {
         const uint8_t terrain_id = terrain[cell];
-        passable[cell] = trade_passable_lut[terrain_id] != 0 ? 1 : 0;
+        const bool navigable_water = water_class[static_cast<size_t>(cell)] != WATER_CLASS_NONE;
+        passable[cell] = (!navigable_water && trade_passable_lut[terrain_id] != 0) ? 1 : 0;
         enter_cost[cell] = passable[cell] != 0 ? trade_move_cost_lut[terrain_id] : 0;
         if (passable[cell] != 0 && enter_cost[cell] <= 0) {
             error = "trade_passable_cell_has_nonpositive_cost";
@@ -148,6 +153,8 @@ bool NativeEconomyRuntime::capture_trade_topology(
         }
         mix_u32(passable[cell]);
         mix_u32(static_cast<uint32_t>(enter_cost[cell]));
+        mix_u32(water_class[static_cast<size_t>(cell)]);
+        mix_u32(river[static_cast<size_t>(cell)]);
         canal_mask[cell] = canal_edge_mask[cell] & 0x3fU;
         canal_water_snapshot[cell] = std::max(0.0f, canal_water[cell]);
         mix_u32(canal_mask[cell]);
@@ -191,11 +198,14 @@ bool NativeEconomyRuntime::capture_trade_topology(
     _trade_topology.edge_cost.swap(edge_cost);
     _trade_topology.canal_edge_mask.swap(canal_mask);
     _trade_topology.canal_water.swap(canal_water_snapshot);
+    _trade_topology.water_class.swap(water_class);
+    _trade_topology.has_river.swap(river);
     _trade_topology.component.assign(static_cast<size_t>(count), -1);
     _trade_topology.topology_hash = normalized_hash;
     _trade_topology.topology_generation = resolved_generation;
     _trade_topology.component_country_hash = 0;
     _trade_topology.ready = true;
+    build_water_transport_graphs();
     _trade_plan.clear_transient();
     return true;
 }
@@ -263,6 +273,10 @@ bool NativeEconomyRuntime::refresh_canal_topology(
         water[cell] = std::max(0.0f, canal_water[cell]);
         mix_u32(_trade_topology.passable[cell]);
         mix_u32(static_cast<uint32_t>(_trade_topology.enter_cost[cell]));
+        mix_u32(_trade_topology.water_class.size() == static_cast<size_t>(count)
+            ? _trade_topology.water_class[static_cast<size_t>(cell)] : 0);
+        mix_u32(_trade_topology.has_river.size() == static_cast<size_t>(count)
+            ? _trade_topology.has_river[static_cast<size_t>(cell)] : 0);
         mix_u32(mask[cell]);
         for (int direction = 0; direction < 6; ++direction) {
             const int32_t neighbor = _trade_topology.neighbors[cell * 6 + direction];
@@ -292,8 +306,16 @@ bool NativeEconomyRuntime::refresh_canal_topology(
     _trade_topology.edge_cost.swap(costs);
     _trade_topology.topology_hash = normalized;
     ++_trade_topology.topology_generation;
-    _trade_topology.component_country_hash = 0;
-    _trade_topology.component.assign(static_cast<size_t>(count), -1);
+    if (_trade_topology.component_layers.size() ==
+            static_cast<size_t>(WATER_LAYER_COUNT) * static_cast<size_t>(count)) {
+        _trade_topology.component.assign(
+            _trade_topology.component_layers.begin(),
+            _trade_topology.component_layers.begin() + count);
+        _trade_topology.component_country_hash = normalized;
+    } else {
+        _trade_topology.component_country_hash = 0;
+        _trade_topology.component.assign(static_cast<size_t>(count), -1);
+    }
     ++_trade_topology_content_change_count;
     ++_trade_plan_reset_count;
     _trade_last_plan_reset_reason = "canal_topology_changed";
@@ -579,15 +601,18 @@ int64_t NativeEconomyRuntime::merchant_inventory_target(
 
 int32_t NativeEconomyRuntime::cached_trade_route_cost(
         int32_t source, int32_t destination, int32_t country, int32_t &expansions) {
-    (void)country;
     expansions = 0;
     if (source == destination) return 0;
+    const uint8_t cap = water_capability_for_country(country, true);
+    const int32_t layer = water_layer_index(cap);
     if (source < 0 || destination < 0 || source >= _cell_count || destination >= _cell_count ||
-        _trade_plan.route_cache_keys.empty() || _trade_topology.component[source] < 0 ||
-        _trade_topology.component[source] != _trade_topology.component[destination])
+        _trade_plan.route_cache_keys.empty())
         return -1;
-    const uint64_t key = (static_cast<uint64_t>(static_cast<uint32_t>(source)) << 32) |
-                         static_cast<uint32_t>(destination);
+    const int32_t source_component = trade_component_for(source, cap);
+    if (source_component < 0 ||
+        source_component != trade_component_for(destination, cap))
+        return -1;
+    const uint64_t key = trade_route_cache_key(source, destination, layer);
     const size_t mask = _trade_plan.route_cache_keys.size() - 1;
     size_t slot = static_cast<size_t>((key ^ (key >> 33) ^ (key >> 17)) & mask);
     for (size_t probe = 0; probe < 8; ++probe, slot = (slot + 1) & mask) {
@@ -625,12 +650,10 @@ int32_t NativeEconomyRuntime::cached_trade_route_cost(
                 ? -1 : static_cast<int32_t>(current.first);
             break;
         }
-        for (int32_t direction = 0; direction < 6; ++direction) {
-            const int32_t neighbor = _trade_topology.neighbors[
-                static_cast<size_t>(cell) * 6 + direction];
-            if (neighbor < 0 || _trade_topology.passable[neighbor] == 0) continue;
-            const int64_t next = current.first + std::max(1,
-                _trade_topology.edge_cost[static_cast<size_t>(cell) * 6 + direction]);
+        collect_transport_successors(cell, cap, false);
+        for (size_t i = 0; i < _transport_succ_cells.size(); ++i) {
+            const int32_t neighbor = _transport_succ_cells[i];
+            const int64_t next = current.first + std::max(1, _transport_succ_costs[i]);
             if (_trade_plan.distance_stamp[neighbor] == stamp &&
                 _trade_plan.distance[neighbor] <= next) continue;
             _trade_plan.distance_stamp[neighbor] = stamp;
@@ -800,8 +823,10 @@ bool NativeEconomyRuntime::route_trade_source(
         _trade_plan.route_search_accepted = 0;
         _trade_plan.route_search_pending_targets = 0;
         _trade_plan.route_search_expansions = 0;
-        if (_trade_plan.route_cache_keys.empty() ||
-            _trade_topology.component[source.cell] < 0) {
+        const uint8_t cap = water_capability_for_country(source.country, true);
+        const int32_t layer = water_layer_index(cap);
+        const int32_t source_component = trade_component_for(source.cell, cap);
+        if (_trade_plan.route_cache_keys.empty() || source_component < 0) {
             _trade_plan.route_search_active = false;
             _trade_plan.route_search_source = -1;
             source_done = true;
@@ -820,17 +845,15 @@ bool NativeEconomyRuntime::route_trade_source(
              it->good == source.good; ++it) {
             const TradeSignal &destination = *it;
             if (destination.cell == source.cell ||
-                _trade_topology.component[source.cell] !=
-                    _trade_topology.component[destination.cell]) continue;
+                source_component != trade_component_for(destination.cell, cap)) continue;
             if (!trade_vision_allows_pair(source.cell, destination.cell)) {
                 ++_trade_rejected_vision;
                 record_trade_signal_attempt(
                     destination.cell, source.good, TRADE_SIGNAL_DIAG_ROUTE);
                 continue;
             }
-            const uint64_t key =
-                (static_cast<uint64_t>(static_cast<uint32_t>(source.cell)) << 32) |
-                static_cast<uint32_t>(destination.cell);
+            const uint64_t key = trade_route_cache_key(
+                source.cell, destination.cell, layer);
             size_t slot = static_cast<size_t>(
                 (key ^ (key >> 33) ^ (key >> 17)) & mask);
             bool found = false;
@@ -880,6 +903,8 @@ bool NativeEconomyRuntime::route_trade_source(
 
     const uint32_t stamp = _trade_plan.search_stamp;
     const size_t mask = _trade_plan.route_cache_keys.size() - 1;
+    const uint8_t cap = water_capability_for_country(source.country, true);
+    const int32_t layer = water_layer_index(cap);
     const int32_t bounded_expansion_budget = std::max(0, expansion_budget);
     const auto expand_started = Clock::now();
     while (!_trade_plan.heap.empty() &&
@@ -902,9 +927,7 @@ bool NativeEconomyRuntime::route_trade_source(
             const int32_t route_cost = current.first > std::numeric_limits<int32_t>::max()
                 ? -1 : static_cast<int32_t>(current.first);
             if (route_cost > 0) {
-                const uint64_t key =
-                    (static_cast<uint64_t>(static_cast<uint32_t>(source.cell)) << 32) |
-                    static_cast<uint32_t>(cell);
+                const uint64_t key = trade_route_cache_key(source.cell, cell, layer);
                 size_t slot = static_cast<size_t>(
                     (key ^ (key >> 33) ^ (key >> 17)) & mask);
                 size_t insert_slot = slot;
@@ -922,12 +945,10 @@ bool NativeEconomyRuntime::route_trade_source(
                     ++_trade_plan.route_search_accepted;
             }
         }
-        for (int32_t direction = 0; direction < 6; ++direction) {
-            const int32_t neighbor = _trade_topology.neighbors[
-                static_cast<size_t>(cell) * 6 + direction];
-            if (neighbor < 0 || _trade_topology.passable[neighbor] == 0) continue;
-            const int64_t next = current.first + std::max(1,
-                _trade_topology.edge_cost[static_cast<size_t>(cell) * 6 + direction]);
+        collect_transport_successors(cell, cap, false);
+        for (size_t i = 0; i < _transport_succ_cells.size(); ++i) {
+            const int32_t neighbor = _transport_succ_cells[i];
+            const int64_t next = current.first + std::max(1, _transport_succ_costs[i]);
             if (_trade_plan.distance_stamp[neighbor] == stamp &&
                 _trade_plan.distance[neighbor] <= next) continue;
             _trade_plan.distance_stamp[neighbor] = stamp;

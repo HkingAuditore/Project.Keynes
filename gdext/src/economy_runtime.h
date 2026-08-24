@@ -48,7 +48,10 @@ public:
     // v37 restores as N=5 and P from saved plan days.
     // 41: family-effect bindings are catalog-owned native programs. Older
     // economy saves are intentionally incompatible.
-    static constexpr int32_t SCHEMA_VERSION = 41;
+    // 42: family expeditions may occupy a target in EXPEDITION_PREPARING
+    // with empty payload/cargo until the colonization kit is complete.
+    // v41 remains readable and must not contain PREPARING records.
+    static constexpr int32_t SCHEMA_VERSION = 42;
     static constexpr uint32_t BUILDING_KIT_ROLE_TRADE = 1u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CONSTRUCTION = 2u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CLOTHING_INPUT = 4u;
@@ -59,7 +62,11 @@ public:
     static constexpr int32_t COLONIZATION_KIT_MIN_OWNER_SLOTS = 3;
     static constexpr int32_t COLONIZATION_KIT_FOOD_COVERAGE_Q16 = 72090;
     static constexpr int32_t COLONIZATION_KIT_BRIDGE_EXTRA_DAYS = 15;
-    static constexpr int32_t COLONIZATION_KIT_CLOTHING_BUFFER_DAYS = 3;
+    // Bump when preparing-kit buffer demand changes so in-flight PREPARING
+    // parties replan even if source stock of the previous missing goods is
+    // unchanged. Revision 2: clothing uses need.base_qty_per_person, not 1.0
+    // goods per person-day.
+    static constexpr uint64_t COLONIZATION_PREPARING_STOCK_HASH_REVISION = 2;
     static constexpr int32_t ROLLING_PHASE_COUNT = 5;
     static constexpr int32_t MARKET_CYCLE_MIN_DAYS = 1;
     static constexpr int32_t MARKET_CYCLE_MAX_DAYS = 5;
@@ -524,6 +531,46 @@ public:
                                      std::string &error);
     int32_t building_resource_access_cells(int32_t cell, int32_t resource_id,
                                            int32_t *out_cells, int32_t capacity) const;
+    static constexpr uint8_t WATER_CLASS_NONE = 0;
+    static constexpr uint8_t WATER_CLASS_LAKE = 1;
+    static constexpr uint8_t WATER_CLASS_SHALLOW = 2;
+    static constexpr uint8_t WATER_CLASS_FAR = 3;
+    static constexpr uint8_t WATER_CLASS_DEEP = 4;
+    static constexpr uint8_t WATER_CAP_RIVER = 1u;
+    static constexpr uint8_t WATER_CAP_SHALLOW_SEA = 2u;
+    static constexpr uint8_t WATER_CAP_FAR_SEA = 4u;
+    static constexpr uint8_t WATER_CAP_DEEP_SEA = 8u;
+    static constexpr int32_t WATER_LAYER_COUNT = 8;
+    static constexpr int32_t WATER_PORTAL_GRAPH_COUNT = 4;
+    static constexpr int32_t WATER_TRANSFER_PENALTY = 2;
+    static constexpr int32_t WATER_ENTER_COST = 1;
+
+    static int32_t water_maritime_level(uint8_t cap) {
+        if ((cap & WATER_CAP_DEEP_SEA) != 0) return 3;
+        if ((cap & WATER_CAP_FAR_SEA) != 0) return 2;
+        if ((cap & WATER_CAP_SHALLOW_SEA) != 0) return 1;
+        return 0;
+    }
+    static int32_t water_layer_index(uint8_t cap) {
+        return ((cap & WATER_CAP_RIVER) != 0 ? 4 : 0) + water_maritime_level(cap);
+    }
+    static int32_t water_portal_graph_index(uint8_t cap) {
+        const int32_t level = water_maritime_level(cap);
+        if (level >= 1) return level;
+        if ((cap & WATER_CAP_RIVER) != 0) return 0;
+        return -1;
+    }
+    static uint8_t water_capability_from_layer(int32_t layer) {
+        layer = std::clamp(layer, 0, WATER_LAYER_COUNT - 1);
+        uint8_t cap = 0;
+        if (layer >= 4) cap |= WATER_CAP_RIVER;
+        const int32_t maritime = layer % 4;
+        if (maritime >= 1) cap |= WATER_CAP_SHALLOW_SEA;
+        if (maritime >= 2) cap |= WATER_CAP_FAR_SEA;
+        if (maritime >= 3) cap |= WATER_CAP_DEEP_SEA;
+        return cap;
+    }
+
     bool capture_trade_topology(const int32_t *neighbor_indices,
                                 const uint8_t *terrain,
                                 const uint8_t *canal_edge_mask,
@@ -531,7 +578,9 @@ public:
                                 const uint8_t *trade_passable_lut,
                                 const int32_t *trade_move_cost_lut,
                                 int32_t count, uint64_t generation,
-                                std::string &error);
+                                std::string &error,
+                                const uint8_t *landform = nullptr,
+                                const uint8_t *has_river = nullptr);
     bool capture_trade_visibility(const uint8_t *visible, int32_t count,
                                   bool fog_solved, bool from_map,
                                   std::string &error);
@@ -540,6 +589,13 @@ public:
                                 const float *canal_water,
                                 int32_t count, std::string &error);
     int32_t trade_edge_cost(int32_t from_cell, int32_t to_cell) const;
+    int32_t trade_land_step_cost(int32_t from_cell, int32_t to_cell,
+                                 uint8_t cap) const;
+    int32_t trade_component_for(int32_t cell, uint8_t cap) const;
+    uint8_t water_capability_for_country(int32_t country_slot, bool frozen) const;
+    uint8_t water_capability_for_handle(uint64_t country_handle, bool frozen) const;
+    bool water_class_navigable(uint8_t water_class, uint8_t cap) const;
+    bool cells_are_hex_neighbors(int32_t a, int32_t b) const;
     uint64_t canal_topology_hash() const {
         return _trade_topology.ready ? _trade_topology.topology_hash : 0;
     }
@@ -1105,6 +1161,7 @@ private:
         EXPEDITION_OUTBOUND = 1,
         EXPEDITION_SETTLING = 2,
         EXPEDITION_RETURNING = 3,
+        EXPEDITION_PREPARING = 4,
     };
 
     struct FamilyExpeditionPayload {
@@ -1180,6 +1237,9 @@ private:
         std::vector<uint32_t> cargo_count;
         std::vector<uint32_t> kit_building_begin;
         std::vector<uint32_t> kit_building_count;
+        std::vector<uint64_t> kit_missing_stock_identity;
+        std::vector<uint32_t> missing_good_begin;
+        std::vector<uint32_t> missing_good_count;
         std::vector<int64_t> effect_transaction_id;
         std::vector<uint64_t> idempotency_key;
         std::vector<int32_t> free_indices;
@@ -1264,6 +1324,7 @@ private:
         INVESTMENT_REJECTION_MARKET_SIGNAL = 15,
         INVESTMENT_REJECTION_GROWTH_LIMIT = 16,
         INVESTMENT_REJECTION_UNSUPPORTED_KIND = 17,
+        INVESTMENT_REJECTION_NO_COST_ADVANTAGE = 18,
     };
 
     struct InvestmentDiagnostic {
@@ -1278,6 +1339,9 @@ private:
         int64_t driver_merchant_sold = 0;
         int64_t driver_sell_through_q16 = 0;
         int64_t driver_discard_q16 = 0;
+        int64_t stealable = 0;
+        int64_t challenger_unit_cost = 0;
+        int64_t incumbent_unit_cost = 0;
         int64_t score_q16 = 0;
         int64_t payback_days = 0;
         int64_t required_capital = 0;
@@ -1298,6 +1362,15 @@ private:
         int64_t sell_through_q16 = 0;
         int64_t discard_q16 = 0;
         int64_t driver_strength_q16 = 0;
+        int64_t nameplate_output = 0;
+        int64_t demand = 0;
+    };
+
+    struct InvestmentIncumbentLane {
+        int32_t good_id = -1;
+        int32_t type_id = -1;
+        int64_t unit_cost = 0;
+        int64_t daily_offered = 0;
     };
 
     struct PopulationStore {
@@ -1450,6 +1523,28 @@ private:
         }
     };
 
+    struct WaterPortalGraph {
+        std::vector<int32_t> cell_portal;
+        std::vector<int32_t> portal_cells;
+        std::vector<int32_t> offsets;
+        std::vector<int32_t> targets;
+        std::vector<int32_t> costs;
+        std::vector<int32_t> reverse_offsets;
+        std::vector<int32_t> reverse_targets;
+        std::vector<int32_t> reverse_costs;
+
+        void clear() {
+            cell_portal.clear();
+            portal_cells.clear();
+            offsets.clear();
+            targets.clear();
+            costs.clear();
+            reverse_offsets.clear();
+            reverse_targets.clear();
+            reverse_costs.clear();
+        }
+    };
+
     struct TradeTopologyStore {
         std::vector<int32_t> neighbors;
         std::vector<uint8_t> passable;
@@ -1458,6 +1553,10 @@ private:
         std::vector<uint8_t> canal_edge_mask;
         std::vector<float> canal_water;
         std::vector<int32_t> component;
+        std::vector<uint8_t> water_class;
+        std::vector<uint8_t> has_river;
+        WaterPortalGraph water_portals[WATER_PORTAL_GRAPH_COUNT];
+        std::vector<int32_t> component_layers;
         uint64_t topology_generation = 0;
         uint64_t topology_hash = 0;
         // Hash of the frozen cell->country ownership map used to build
@@ -1474,6 +1573,10 @@ private:
             canal_edge_mask.clear();
             canal_water.clear();
             component.clear();
+            water_class.clear();
+            has_river.clear();
+            for (WaterPortalGraph &graph : water_portals) graph.clear();
+            component_layers.clear();
             topology_generation = 0;
             topology_hash = 0;
             component_country_hash = 0;
@@ -2417,6 +2520,8 @@ private:
         int64_t investment_sparse_skipped_types = 0;
         int64_t investment_sparse_mismatches = 0;
         int64_t investment_sparse_dense_fallbacks = 0;
+        int64_t investment_displacement_type_evaluations = 0;
+        int64_t building_investment_displacement_starts = 0;
         int64_t approximation_decisions = 0;
         int64_t approximation_exact_probes = 0;
         int64_t approximation_certificate_failures = 0;
@@ -2844,6 +2949,7 @@ private:
     int32_t _investment_max_type_owner_share_q16 = Q16_ONE / 2;
     int32_t _investment_max_growth_share_q16 = 16384;
     int32_t _investment_new_type_seed_buildings = 1;
+    int32_t _investment_displacement_min_advantage_q16 = Q16_ONE / 16;
     int32_t _investment_merchant_transition_min_improvement_q16 = Q16_ONE / 2;
     int32_t _investment_sparse_mode = 2;
     int32_t _recovery_liquidation_max_share_q16 = Q16_ONE / 4;
@@ -2975,6 +3081,7 @@ private:
     int64_t _building_investment_jobs_started = 0;
     int64_t _building_investment_employment_gap = 0;
     int64_t _building_investment_employment_catchup_cells = 0;
+    int64_t _building_investment_displacement_starts = 0;
     int64_t _desired_business_demand = 0;
     int64_t _funded_business_demand = 0;
     int64_t _unfunded_business_demand = 0;
@@ -3158,6 +3265,7 @@ private:
     // construction cost, so every sponsor search for that (cell, type) is
     // guaranteed to fail. Exact no-false-negative early-out.
     int64_t _investment_gate_capital_type_skips = 0;
+    int64_t _investment_displacement_type_evaluations = 0;
     int64_t _approximation_decisions = 0;
     int64_t _approximation_exact_probes = 0;
     int64_t _approximation_certificate_failures = 0;
@@ -3390,6 +3498,8 @@ private:
     std::vector<uint64_t> _family_expedition_person_handles;
     std::vector<FamilyExpeditionCargoLine> _family_expedition_cargo;
     std::vector<FamilyExpeditionKitBuilding> _family_expedition_kit_buildings;
+    std::vector<int32_t> _family_expedition_missing_good_ids;
+    std::vector<int64_t> _family_expedition_missing_good_quantities;
     std::unordered_map<uint64_t, int32_t> _family_expedition_target_index;
     std::vector<std::pair<int64_t, int32_t>> _family_expedition_due_heap;
     std::vector<ColonizationReceipt> _colonization_receipts;
@@ -3405,6 +3515,8 @@ private:
     std::vector<uint32_t> _colonization_parent_stamp;
     std::vector<std::pair<int64_t, int32_t>> _colonization_route_heap;
     uint32_t _colonization_search_stamp = 0;
+    std::vector<int32_t> _transport_succ_cells;
+    std::vector<int32_t> _transport_succ_costs;
     double _colonization_route_query_ms = 0.0;
     double _colonization_payload_split_ms = 0.0;
     double _colonization_cross_domain_ms = 0.0;
@@ -3640,6 +3752,7 @@ private:
     std::vector<uint32_t> _investment_cell_finance_stamp;
     uint32_t _investment_scratch_generation = 0;
     std::vector<OutputInvestmentSignal> _investment_output_signals_scratch;
+    std::vector<InvestmentIncumbentLane> _investment_incumbent_lanes_scratch;
     std::vector<int32_t> _investment_employment_cells;
     std::vector<int32_t> _investment_review_cell_indices;
     // Catalog-derived output-good -> building-type CSR plus per-market active
@@ -3938,6 +4051,10 @@ private:
     std::vector<int32_t> _building_dependency_tag_offsets;
     std::vector<int32_t> _building_dependency_tags;
     std::vector<std::string> _technology_ids;
+    int32_t _water_tech_river = -1;
+    int32_t _water_tech_shallow = -1;
+    int32_t _water_tech_far = -1;
+    int32_t _water_tech_deep = -1;
     std::vector<int32_t> _development_metric_signal_indices;
     std::vector<int32_t> _development_metric_era_indices;
     std::vector<int32_t> _development_metric_types;
@@ -4093,6 +4210,7 @@ private:
     std::vector<int32_t> _epoch_country_climate_loss_factor_q16;
     std::vector<int32_t> _epoch_country_trade_capacity_factor_q16;
     std::vector<int32_t> _epoch_country_trade_speed_factor_q16;
+    std::vector<uint8_t> _epoch_country_water_capability;
     std::vector<int32_t> _epoch_country_construction_cost_factor_q16;
     std::vector<int32_t> _epoch_country_construction_time_factor_q16;
     std::vector<int32_t> _epoch_cell_birth_factor_q16;
@@ -4374,6 +4492,25 @@ private:
                             std::string &error);
     int32_t cached_trade_route_cost(int32_t source, int32_t destination,
                                     int32_t country, int32_t &expansions);
+    void collect_transport_successors(int32_t cell, uint8_t cap, bool reverse);
+    void build_water_transport_graphs();
+    void build_water_portal_graph(int32_t graph_index);
+    void build_water_component_layers();
+    bool reconstruct_water_corridor(int32_t from_portal, int32_t to_portal,
+                                    uint8_t cap,
+                                    std::vector<int32_t> &water_cells) const;
+    void fill_trade_water_columns(const uint8_t *terrain, const uint8_t *landform,
+                                  const uint8_t *has_river, int32_t count,
+                                  std::vector<uint8_t> &water_class,
+                                  std::vector<uint8_t> &river) const;
+    bool append_colonization_route_step(int32_t from_cell, int32_t to_cell,
+                                        uint8_t cap, int64_t reverse_from,
+                                        int64_t reverse_to,
+                                        std::vector<int32_t> &route,
+                                        std::vector<int32_t> &cumulative,
+                                        int64_t &running) const;
+    static uint64_t trade_route_cache_key(int32_t source, int32_t destination,
+                                          int32_t layer);
     int32_t estimate_trade_price(int32_t market, int32_t good,
                                  int64_t stock_after, int64_t &sat) const;
     int64_t trade_relief_pressure_q16(int32_t market, int32_t good,
@@ -4495,6 +4632,22 @@ private:
         int32_t destination_cell, std::string &error);
     void release_family_expedition_reservations(int32_t expedition);
     bool process_due_family_expeditions(int64_t day, std::string &error);
+    int64_t family_expedition_displayed_population(int32_t expedition) const;
+    int64_t market_stock(int32_t cell, int32_t good_id) const;
+    bool colonization_good_is_tools(int32_t good_id) const;
+    uint64_t hash_preparing_missing_stock(int32_t source_cell,
+                                          const int32_t *good_ids,
+                                          uint32_t count) const;
+    void store_preparing_missing_goods(int32_t expedition,
+                                       const ColonizationKitPlan &kit);
+    void refresh_preparing_family_expedition_missing(int32_t expedition);
+    void abort_preparing_family_expedition(int32_t expedition, int64_t day,
+                                           uint8_t kind, const char *code);
+    bool launch_preparing_family_expedition(int32_t expedition, int64_t day,
+                                            const ColonizationKitPlan &kit,
+                                            std::string &error);
+    bool advance_preparing_family_expedition(int32_t expedition, int64_t day,
+                                             std::string &error);
     bool family_expedition_settle_inflight(uint64_t expedition_handle) const;
     void recover_lost_family_settlement_commands();
     bool stage_allows_in_epoch_family_settlement() const;
@@ -4556,7 +4709,8 @@ private:
     void sort_colonization_kit_cargo(ColonizationKitPlan &kit) const;
     bool plan_colonization_kit(int32_t source_cell, int32_t target_cell,
                                int64_t population, int32_t travel_days,
-                               bool frozen, ColonizationKitPlan &kit) const;
+                               bool frozen, ColonizationKitPlan &kit,
+                               bool ignore_existing = false) const;
     bool adjust_market_stock(int32_t cell, int32_t good_id, int64_t delta,
                              std::string &error);
     bool publish_epoch_slice(int64_t &work_done, std::string &error);
@@ -4600,6 +4754,9 @@ private:
     bool building_dependency_group_required_for_operation(int32_t group) const;
     bool building_constructible(int32_t cell, int32_t type_id,
                                 bool frozen = true) const;
+    int64_t allocated_output_operating_cost(
+        const BuildingType &type, int32_t output_index,
+        int64_t operating_cost, int64_t &sat) const;
     // O(1) signature lookup helpers backed by _signature_by_profession_ethnicity.
     // Return -1 when no such signature exists (e.g. unemployed profession absent).
     inline int32_t signature_for_profession_ethnicity(int32_t profession_id,

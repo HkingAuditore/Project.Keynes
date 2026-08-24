@@ -194,6 +194,8 @@ public:
         int64_t building_investment_jobs_started = 0;
         int64_t building_investment_employment_gap = 0;
         int64_t building_investment_employment_catchup_cells = 0;
+        int64_t building_investment_displacement_starts = 0;
+        int64_t investment_displacement_type_evaluations = 0;
         int64_t desired_business_demand = 0;
         int64_t funded_business_demand = 0;
         int64_t unfunded_business_demand = 0;
@@ -307,6 +309,9 @@ public:
         int64_t investment_driver_merchant_sold = 0;
         int64_t investment_driver_sell_through_q16 = 0;
         int64_t investment_driver_discard_q16 = 0;
+        int64_t investment_stealable = 0;
+        int64_t investment_challenger_unit_cost = 0;
+        int64_t investment_incumbent_unit_cost = 0;
         int32_t investment_failed_material_group = -1;
         std::string investment_selected_material_good_ids;
         std::string investment_selected_material_quantities;

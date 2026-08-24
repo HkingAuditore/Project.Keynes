@@ -259,6 +259,8 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _family_expedition_person_handles.clear();
     _family_expedition_cargo.clear();
     _family_expedition_kit_buildings.clear();
+    _family_expedition_missing_good_ids.clear();
+    _family_expedition_missing_good_quantities.clear();
     _family_expedition_target_index.clear();
     _family_expedition_due_heap.clear();
     _colonization_receipts.clear();

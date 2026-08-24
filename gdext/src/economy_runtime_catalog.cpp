@@ -550,6 +550,14 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
     }
     _plan_ids = packed_strings(catalog, "plan_ids");
     _technology_ids = packed_strings(catalog, "technology_ids");
+    const std::vector<int32_t> technology_prerequisite_offsets = packed_i32(
+        catalog, "technology_prerequisite_offsets");
+    const std::vector<int32_t> technology_prerequisites = packed_i32(
+        catalog, "technology_prerequisites");
+    _water_tech_river = -1;
+    _water_tech_shallow = -1;
+    _water_tech_far = -1;
+    _water_tech_deep = -1;
     if (_profession_ids.empty() || _ethnicity_ids.empty() || _good_ids.empty() || _plan_ids.empty()) {
         error = "catalog_id_table_empty";
         return false;
@@ -584,6 +592,45 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
         error = "technology_count_exceeds_4096";
         return false;
     }
+    if (technology_prerequisite_offsets.size() != _technology_ids.size() + 1 ||
+        technology_prerequisite_offsets.empty() ||
+        technology_prerequisite_offsets.front() != 0 ||
+        !std::is_sorted(technology_prerequisite_offsets.begin(),
+                        technology_prerequisite_offsets.end()) ||
+        technology_prerequisite_offsets.back() !=
+            static_cast<int32_t>(technology_prerequisites.size())) {
+        error = "technology_prerequisite_catalog_invalid";
+        return false;
+    }
+    const size_t technology_ancestor_words = (_technology_ids.size() + 63) / 64;
+    std::vector<uint64_t> technology_ancestor_bits(
+        _technology_ids.size() * technology_ancestor_words, 0);
+    for (size_t technology = 0; technology < _technology_ids.size(); ++technology) {
+        uint64_t *row = technology_ancestor_bits.data() +
+            technology * technology_ancestor_words;
+        row[technology / 64] |= uint64_t{1} << (technology % 64);
+        for (int32_t edge = technology_prerequisite_offsets[technology];
+             edge < technology_prerequisite_offsets[technology + 1]; ++edge) {
+            const int32_t prerequisite = technology_prerequisites[static_cast<size_t>(edge)];
+            if (prerequisite < 0 || prerequisite >= static_cast<int32_t>(technology)) {
+                error = "technology_prerequisite_order_invalid";
+                return false;
+            }
+            const uint64_t *prerequisite_row = technology_ancestor_bits.data() +
+                static_cast<size_t>(prerequisite) * technology_ancestor_words;
+            for (size_t word = 0; word < technology_ancestor_words; ++word)
+                row[word] |= prerequisite_row[word];
+        }
+    }
+    auto resolve_tech = [&](const char *id) -> int32_t {
+        const auto it = std::find(_technology_ids.begin(), _technology_ids.end(), id);
+        return it == _technology_ids.end()
+            ? -1 : static_cast<int32_t>(it - _technology_ids.begin());
+    };
+    _water_tech_river = resolve_tech("tech.river_transport");
+    _water_tech_shallow = resolve_tech("tech.celestial_navigation");
+    _water_tech_far = resolve_tech("tech.oceanic_navigation");
+    _water_tech_deep = resolve_tech("tech.oceanic_ship_design");
     auto compile_technology_tags = [&](const std::vector<int32_t> &tag_offsets,
                                        const std::vector<std::string> &tags,
                                        size_t item_count,
@@ -1101,26 +1148,28 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
             _building_all_technology_offsets, _building_all_required_technologies,
             "building_required_technology_catalog_invalid")) return false;
     _building_technology_practice_masks.assign(_building_type_ids.size(), 0);
-    auto type_has_tag = [&](size_t type, const char *wanted) {
-        if (type + 1 >= _building_technology_tag_offsets.size()) return false;
-        for (int32_t i = _building_technology_tag_offsets[type];
-             i < _building_technology_tag_offsets[type + 1]; ++i) {
-            if (_building_technology_tags[static_cast<size_t>(i)] == wanted)
-                return true;
-        }
-        return false;
-    };
-    auto type_has_required_tag = [&](size_t type, const char *wanted) {
-        if (type + 1 >= _building_required_technology_tag_offsets.size()) return false;
-        for (int32_t i = _building_required_technology_tag_offsets[type];
-             i < _building_required_technology_tag_offsets[type + 1]; ++i) {
-            if (_building_required_technology_tags[static_cast<size_t>(i)] == wanted)
-                return true;
-        }
-        return false;
-    };
     auto type_has_technology = [&](size_t type, const char *wanted) {
-        return type_has_tag(type, wanted) || type_has_required_tag(type, wanted);
+        const auto wanted_it = std::find(_technology_ids.begin(), _technology_ids.end(), wanted);
+        if (wanted_it == _technology_ids.end()) return false;
+        const size_t wanted_id = static_cast<size_t>(wanted_it - _technology_ids.begin());
+        auto requirement_has_ancestor = [&](int32_t requirement) {
+            return requirement >= 0 &&
+                requirement < static_cast<int32_t>(_technology_ids.size()) &&
+                (technology_ancestor_bits[static_cast<size_t>(requirement) *
+                    technology_ancestor_words + wanted_id / 64] &
+                    (uint64_t{1} << (wanted_id % 64))) != 0;
+        };
+        for (int32_t edge = _building_technology_offsets[type];
+             edge < _building_technology_offsets[type + 1]; ++edge)
+            if (requirement_has_ancestor(
+                    _building_required_technologies[static_cast<size_t>(edge)]))
+                return true;
+        for (int32_t edge = _building_all_technology_offsets[type];
+             edge < _building_all_technology_offsets[type + 1]; ++edge)
+            if (requirement_has_ancestor(
+                    _building_all_required_technologies[static_cast<size_t>(edge)]))
+                return true;
+        return false;
     };
     auto type_outputs = [&](size_t type, const char *wanted) {
         if (type >= _building_types.size()) return false;
@@ -1150,10 +1199,10 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
             mask |= practice_bit(PRACTICE_DRYLAND_DAYS) |
                     practice_bit(PRACTICE_DRYLAND_DROUGHTS);
         }
-        if (type_has_tag(type, "tech.irrigation") ||
-            type_has_tag(type, "tech.canal_engineering") ||
-            type_has_tag(type, "tech.hydraulic_engineering") ||
-            type_has_tag(type, "tech.rice_paddy_cultivation"))
+        if (type_has_technology(type, "tech.irrigation") ||
+            type_has_technology(type, "tech.canal_engineering") ||
+            type_has_technology(type, "tech.hydraulic_engineering") ||
+            type_has_technology(type, "tech.rice_paddy_cultivation"))
             mask |= practice_bit(PRACTICE_HYDRAULIC_ENGINEERING);
         if (type_outputs(type, "tools") ||
             id.find("tool_workshop") != std::string::npos)
@@ -1161,25 +1210,25 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
         if (type_outputs(type, "printed_materials"))
             mask |= practice_bit(PRACTICE_PRINTING);
         if (id.rfind("steam_", 0) == 0 ||
-            type_has_tag(type, "tech.steam_power"))
+            type_has_technology(type, "tech.steam_power"))
             mask |= practice_bit(PRACTICE_STEAM_POWER);
         if (id.find("electric") != std::string::npos ||
-            type_has_tag(type, "tech.electrification") ||
-            type_has_tag(type, "tech.electric_grid"))
+            type_has_technology(type, "tech.electrification") ||
+            type_has_technology(type, "tech.electric_grid"))
             mask |= practice_bit(PRACTICE_ELECTRIFICATION);
         if (building.kind == 1 && building.employee_count > 0)
             mask |= practice_bit(PRACTICE_INDUSTRIAL_ORGANIZATION);
-        if (type_has_tag(type, "tech.robotic_manufacturing") ||
-            type_has_tag(type, "tech.autonomous_systems") ||
-            type_has_tag(type, "tech.automated_agriculture") ||
-            type_has_tag(type, "tech.autonomous_mining") ||
-            type_has_tag(type, "tech.digital_control") ||
-            type_has_tag(type, "tech.automated_logistics") ||
+        if (type_has_technology(type, "tech.robotic_manufacturing") ||
+            type_has_technology(type, "tech.autonomous_systems") ||
+            type_has_technology(type, "tech.automated_agriculture") ||
+            type_has_technology(type, "tech.autonomous_mining") ||
+            type_has_technology(type, "tech.digital_control") ||
+            type_has_technology(type, "tech.automated_logistics") ||
             id.find("robot") != std::string::npos)
             mask |= practice_bit(PRACTICE_AUTOMATION);
         if (id == "computing_research_center" ||
             id == "industrial_research_laboratory" ||
-            type_has_tag(type, "tech.climate_modeling"))
+            type_has_technology(type, "tech.climate_modeling"))
             mask |= practice_bit(PRACTICE_CLIMATE_MODELING);
         if (type_outputs(type, "corn_grain") || type_outputs(type, "wheat_grain") ||
             type_outputs(type, "rice_grain") || type_outputs(type, "potatoes") ||

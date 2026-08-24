@@ -269,10 +269,10 @@ static func _fallback_start(start_cell: int, precious_resource: String) -> Dicti
 		"regional_route": "fallback",
 		"starter_technology_ids": technologies,
 		"starter_discovered_technology_ids": PackedStringArray([
-			"tech.oral_memory_practice",
+			"tech.early_knowledge_institution",
 		]),
-		"pending_knowledge_tech_id": "tech.oral_memory_practice",
-		"pending_knowledge_building_id": "oral_memory_circle",
+		"pending_knowledge_tech_id": "tech.early_knowledge_institution",
+		"pending_knowledge_building_id": "early_knowledge_institution",
 		"starter_building_ids": buildings,
 		"starter_food_good_ids": PackedStringArray(["gathered_plants", "game_meat"]),
 		"starter_clothing_good_id": "clothing",

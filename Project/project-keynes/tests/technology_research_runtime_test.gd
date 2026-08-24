@@ -25,10 +25,12 @@ func _init() -> void:
 	var stone_knapping := ids.find("tech.stone_knapping")
 	var settled_knowledge := ids.find("tech.settled_knowledge")
 	var milestone_candidates: PackedInt32Array = compiled.technology_milestone_candidates
-	_expect("expanded milestone candidate contract", milestone_candidates.size() == 132)
+	_expect("era-scaled milestone candidate contract", milestone_candidates.size() == 143)
 	var previous_maize := ids.find("tech.wild_maize_collection")
 	var previous_maritime := ids.find("tech.fishing_boats")
-	var oral_memory := ids.find("tech.oral_memory_practice")
+	var early_knowledge := ids.find("tech.early_knowledge_institution")
+	var maize_propagation := ids.find("tech.maize_propagation")
+	var household_production := ids.find("tech.household_production")
 	var kiln_firing := ids.find("tech.kiln_firing")
 	var packet := {
 		"country_ids": PackedStringArray(["country.test"]),
@@ -38,10 +40,11 @@ func _init() -> void:
 		"territory_cells": PackedInt32Array([0]),
 		# Research eligibility comes from completed technology prerequisites.
 		# Signals may reveal another node, but never substitute for this chain.
-		"technology_offsets": PackedInt32Array([0, 6]),
+		"technology_offsets": PackedInt32Array([0, 8]),
 		"technology_indices": PackedInt32Array([
 			gathering, stone_knapping, settled_knowledge,
-			previous_maize, previous_maritime, oral_memory]),
+			previous_maize, previous_maritime, early_knowledge,
+			maize_propagation, household_production]),
 		"treasury_offsets": PackedInt32Array([0, 1]),
 		"treasury_good_indices": PackedInt32Array([points_good]),
 		"treasury_quantities": PackedInt64Array([10000]),

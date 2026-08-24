@@ -55,6 +55,10 @@ func _audit_knowledge_building_owners(catalog: Dictionary,
 
 func _audit_starter_knowledge_routes() -> void:
 	var expected := {
+		"early_knowledge_institution": {
+			"output": 2000, "climate": "", "resource": "",
+			"construction": PackedStringArray(["logs", "bast_fiber"]),
+		},
 		"oral_memory_circle": {
 			"output": 1000, "climate": "", "resource": "",
 			"construction": PackedStringArray(["logs", "bast_fiber"]),
@@ -120,11 +124,11 @@ func _building_outputs_good(offsets: PackedInt32Array, goods: PackedInt32Array,
 func _audit_two_owner_early_buildings() -> void:
 	var expected := {
 		"freshwater_fishing_camp": {
-			"input": PackedInt64Array(), "output": PackedInt64Array([1940]),
-			"resource": PackedInt64Array([97])},
+			"input": PackedInt64Array([100]), "output": PackedInt64Array([3880]),
+			"resource": PackedInt64Array([194])},
 		"marine_fish_collector": {
-			"input": PackedInt64Array(), "output": PackedInt64Array([2000]),
-			"resource": PackedInt64Array([250])},
+			"input": PackedInt64Array([100]), "output": PackedInt64Array([4000]),
+			"resource": PackedInt64Array([500])},
 		"bast_wrap_shelter": {
 			"input": PackedInt64Array([240]), "output": PackedInt64Array([180]),
 			"resource": PackedInt64Array()},
@@ -191,6 +195,71 @@ func _audit_zero_cost_starter_construction() -> void:
 			building_id, profile != null and not profile.construction_good_ids.is_empty()
 			and not EconomyCatalogScript.allows_zero_cost_construction(profile))
 
+
+func _audit_soft_complement_policy(catalog: Dictionary) -> void:
+	const MINT_IDS := {
+		"placer_gold_working": true,
+		"surface_silver_working": true,
+		"shallow_silver_working": true,
+		"primitive_gold_sluice": true,
+	}
+	const PRODUCTIVITY_GOODS := {
+		"tools": true,
+		"chipped_stone_tools": true,
+		"bronze_tools": true,
+		"precision_tools": true,
+		"fertilizer": true,
+		"farm_machinery": true,
+		"agricultural_machinery": true,
+		"industrial_machinery": true,
+	}
+	const PRODUCTIVITY_CATEGORIES := {
+		"tools": true,
+		"fertilizer": true,
+		"farm_machinery": true,
+	}
+	var building_ids: PackedStringArray = catalog.building_type_ids
+	for building_id in building_ids:
+		var profile: BuildingProfile = load(
+			"res://data/economy/buildings/%s.tres" % building_id)
+		if profile == null:
+			_expect("soft-complement profile loads: %s" % building_id, false)
+			continue
+		var input_count := profile.input_good_ids.size()
+		if input_count > 0:
+			_expect("authored inputs keep matching required_q16: %s" % building_id,
+				profile.input_required_q16.size() == input_count)
+		var has_soft_complement := false
+		for slot in range(input_count):
+			var good_id := String(profile.input_good_ids[slot])
+			var category_id := String(profile.input_category_ids[slot]) \
+				if slot < profile.input_category_ids.size() else ""
+			var required_q16 := 65536
+			if slot < profile.input_required_q16.size():
+				required_q16 = int(profile.input_required_q16[slot])
+			var productivity := PRODUCTIVITY_GOODS.has(good_id) \
+				or PRODUCTIVITY_CATEGORIES.has(category_id)
+			if productivity:
+				_expect("productivity complement stays soft: %s[%d]" % [building_id, slot],
+					required_q16 < 65536)
+				if PRODUCTIVITY_CATEGORIES.has("tools") and (category_id == "tools" \
+						or good_id == "tools" or good_id.ends_with("_tools")):
+					_expect("tool slot uses the tools category: %s[%d]" % [building_id, slot],
+						category_id == "tools")
+				if required_q16 < 65536:
+					has_soft_complement = true
+			elif required_q16 < 65536:
+				has_soft_complement = true
+		var skip_extractor := MINT_IDS.has(String(building_id)) \
+			or String(profile.economic_sector_id) == "knowledge" \
+			or String(profile.building_kind) == "service" \
+			or String(profile.upgrade_family_id) == "household_cloth"
+		if String(profile.building_kind) == "collector" \
+				and not profile.resource_ids.is_empty() and not skip_extractor:
+			_expect("extractive collector keeps a soft complement: %s" % building_id,
+				has_soft_complement)
+
+
 func _audit(catalog: Dictionary) -> void:
 	var goods: PackedStringArray = catalog.good_ids
 	var buildings: PackedStringArray = catalog.building_type_ids
@@ -201,6 +270,7 @@ func _audit(catalog: Dictionary) -> void:
 	_audit_starter_knowledge_routes()
 	_audit_two_owner_early_buildings()
 	_audit_zero_cost_starter_construction()
+	_audit_soft_complement_policy(catalog)
 	_expect("network economy catalog has 130 goods", goods.size() == 130)
 	_expect("network economy has 350 production methods", buildings.size() == 350)
 	_expect("45 labor, institutional and research professions", professions.size() == 45)
@@ -266,10 +336,13 @@ func _audit(catalog: Dictionary) -> void:
 	var gathering = load("res://data/economy/buildings/gathering_ground.tres")
 	var stone_hunting = load(
 		"res://data/economy/buildings/stone_age_hunting_camp.tres")
-	_expect("stone hunting remains a tool-free subsistence practice",
+	_expect("stone hunting keeps a soft tool complement",
 		stone_hunting != null and
-		stone_hunting.input_good_ids.is_empty() and
-		stone_hunting.input_quantities_per_day.is_empty())
+		stone_hunting.input_good_ids == PackedStringArray(["tools"]) and
+		stone_hunting.input_quantities_per_day == PackedInt64Array([200]) and
+		stone_hunting.input_required_q16 == PackedInt32Array([32768]) and
+		stone_hunting.input_category_ids == PackedStringArray(["tools"]) and
+		stone_hunting.input_min_quality_levels == PackedInt32Array([1]))
 	var stone_collector = load("res://data/economy/buildings/stone_collector.tres")
 	var timber_collector = load("res://data/economy/buildings/timber_collector.tres")
 	var bronze_tools = load("res://data/economy/buildings/bronze_tool_workshop.tres")
@@ -333,11 +406,11 @@ func _audit(catalog: Dictionary) -> void:
 	_expect("stone hunting sustains its hunter and yields fewer hides",
 		stone_hunting != null and
 		stone_hunting.output_good_ids == PackedStringArray(["game_meat", "raw_hide"]) and
-		stone_hunting.output_quantities_per_day == PackedInt64Array([3335, 40]) and
+		stone_hunting.output_quantities_per_day == PackedInt64Array([6670, 80]) and
 		stone_hunting.output_quantities_per_day[0] >= 171 and
 		stone_hunting.output_quantities_per_day[0] >
 			stone_hunting.output_quantities_per_day[1] and
-		stone_hunting.resource_quantities_per_day == PackedInt64Array([715]) and
+		stone_hunting.resource_quantities_per_day == PackedInt64Array([1430]) and
 		stone_hunting.owner_slots_per_building == 2)
 	_expect("rough bullion sites are merchant-owned mint collectors",
 		String(early_gold.owner_profession_id) == "merchant" and
@@ -1189,16 +1262,16 @@ func _audit_subsistence_upgrade_families(catalog: Dictionary) -> void:
 	var tiers: PackedInt32Array = catalog.building_upgrade_tiers
 	var expected := {
 		"subsistence_food": [
-			["gathering_ground", 1, 7000],
-			["subsistence_farm", 2, 8000],
-			["three_field_smallholding", 3, 12000],
-			["improved_smallholding", 4, 16000],
+			["gathering_ground", 1, 14000, 1],
+			["subsistence_farm", 2, 16000, 1],
+			["three_field_smallholding", 3, 24000, 2],
+			["improved_smallholding", 4, 32000, 2],
 		],
 		"household_cloth": [
-			["household_weaving_shelter", 1, 110],
-			["household_loom", 2, 1320],
-			["cottage_weaving", 3, 2400],
-			["improved_domestic_loom", 4, 3600],
+			["household_weaving_shelter", 1, 110, 1],
+			["household_loom", 2, 1320, 0],
+			["cottage_weaving", 3, 2400, 0],
+			["improved_domestic_loom", 4, 3600, 0],
 		],
 	}
 	var output_offsets: PackedInt32Array = catalog.building_output_offsets
@@ -1218,7 +1291,7 @@ func _audit_subsistence_upgrade_families(catalog: Dictionary) -> void:
 			_expect("upgrade tier is unique and aligned: %s" % row[0],
 				type_id >= 0 and family_indices[type_id] == family_index and
 				tiers[type_id] == row[1])
-			var expected_inputs := 1 if row[0] == "household_weaving_shelter" else 0
+			var expected_inputs := int(row[3])
 			_expect("subsistence tier has bounded inputs and no employees: %s" % row[0],
 				type_id >= 0 and
 				input_offsets[type_id + 1] - input_offsets[type_id] == expected_inputs and

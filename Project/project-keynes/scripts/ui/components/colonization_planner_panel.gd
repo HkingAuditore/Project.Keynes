@@ -16,7 +16,6 @@ var _family_filter := 0
 var _source_filter := -1
 var _selected_quote: Dictionary = {}
 var _economy_busy := false
-var _materials_short_blocked := false
 var _quotes_identity := ""
 var _expeditions_identity := ""
 var _family_view_cache: Dictionary = {}
@@ -82,7 +81,6 @@ func open_target(target_cell: int, family_filter: int = 0,
 	_expeditions_identity = ""
 	_family_view_cache.clear()
 	_economy_busy = false
-	_materials_short_blocked = false
 	_title.text = "开拓"
 	_subtitle.text = "选择要派遣的家族"
 	_feedback.text = ""
@@ -97,7 +95,6 @@ func close_panel() -> void:
 		return
 	visible = false
 	_selected_quote.clear()
-	_materials_short_blocked = false
 	route_cleared.emit()
 	closed.emit()
 
@@ -114,7 +111,6 @@ func set_command_result(result: Dictionary) -> void:
 		message = _reason_text(code) if not code.is_empty() else ""
 	_feedback.text = message
 	if ok:
-		_materials_short_blocked = false
 		_feedback.add_theme_color_override("font_color", UITokens.GOOD)
 		if code == "colonization_queued" or code == "colonization_cancel_queued":
 			return
@@ -129,15 +125,9 @@ func set_command_result(result: Dictionary) -> void:
 		_feedback.add_theme_color_override("font_color", UITokens.ARCHIVE_INK_MUTED)
 		return
 	_feedback.add_theme_color_override("font_color", UITokens.RISK)
-	if code == "colonization_kit_materials_short":
-		_materials_short_blocked = true
-		_feedback.text = "源地市场材料仍不足，已暂停重复提交；库存补充后会自动重新检查。"
-		_update_start_enabled()
-		return
 	if code == "colonization_requote_required" \
 			or code == "colonization_kit_requote_required" \
 			or code == "colonization_quote_expired":
-		_materials_short_blocked = false
 		_quotes_identity = ""
 		_show_quotes()
 
@@ -151,18 +141,12 @@ func refresh_visible() -> void:
 	if not visible:
 		return
 	if _current_tab == "quotes":
-		if _economy_busy:
-			if _controller != null and _has_quote_rows():
-				var probe: Dictionary = _controller.get_family_expeditions(0, 1)
-				if bool(probe.get("ok", true)) and probe.has("busy") \
-						and bool(probe.get("busy", false)):
-					return
-			_show_quotes()
-		elif not _has_quote_rows():
-			_show_quotes()
-		elif _materials_short_blocked:
-			# A failed quote is not retryable until its stock identity changes.
-			_show_quotes()
+		if _economy_busy and _controller != null and _has_quote_rows():
+			var probe: Dictionary = _controller.get_family_expeditions(0, 1)
+			if bool(probe.get("ok", true)) and probe.has("busy") \
+					and bool(probe.get("busy", false)):
+				return
+		_show_quotes()
 		return
 	_show_expeditions()
 
@@ -214,10 +198,7 @@ func _show_quotes() -> void:
 		_set_busy_status(_economy_busy)
 		_update_start_enabled()
 		return
-	var previous_identity := _quotes_identity
 	_quotes_identity = identity
-	if not previous_identity.is_empty() and previous_identity != identity:
-		_materials_short_blocked = false
 	_clear_list()
 	_apply_kind(String(page.get("kind", "colonize")))
 	_set_busy_status(_economy_busy)
@@ -271,7 +252,6 @@ func _on_quote_row_pressed(quote: Dictionary, row: Button) -> void:
 
 func _select_quote(quote: Dictionary) -> void:
 	_selected_quote = quote.duplicate(true)
-	_materials_short_blocked = false
 	var maximum := maxi(1, int(quote.get("maximum_population", 1)))
 	_population.max_value = maximum
 	_population.value = maximum
@@ -279,7 +259,7 @@ func _select_quote(quote: Dictionary) -> void:
 
 
 func _submit_selected() -> void:
-	if _selected_quote.is_empty() or _materials_short_blocked or _start.disabled:
+	if _selected_quote.is_empty() or _start.disabled:
 		return
 	start_requested.emit({
 		"family_handle": int(_selected_quote.get("family_handle", 0)),
@@ -345,8 +325,9 @@ func _show_expeditions() -> void:
 				"text": _state_text(state),
 				"accent": UITokens.WARN if returning else UITokens.ACCENT,
 			}],
-			"effect": "",
-			"tooltip": "第 %d 日抵达" % int(dues[index]) if index < dues.size() else "",
+			"effect": _preparing_missing_text(int(handles[index]), state),
+			"tooltip": _expedition_row_tooltip(int(handles[index]), state,
+				int(dues[index]) if index < dues.size() else -1),
 		})
 		row.toggle_mode = false
 		row.pressed.connect(expedition_selected.emit.bind(int(handles[index])))
@@ -399,7 +380,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 static func _state_text(state: int) -> String:
-	return {1: "前往中", 2: "落地结算中", 3: "返程中"}.get(state, "未知")
+	return {1: "前往中", 2: "落地结算中", 3: "返程中", 4: "筹备中"}.get(state, "未知")
 
 
 static func _reason_text(code: String) -> String:
@@ -410,6 +391,8 @@ static func _reason_text(code: String) -> String:
 		"colonization_requote_required": "地图、视野或领土已经变化，请重新确认报价。",
 		"colonization_kit_requote_required": "目标资源或科技已经变化，请重新确认开工包。",
 		"colonization_kit_materials_short": "源地市场库存不足，无法抽出开工包物资。",
+		"colonization_preparing": "开拓队已开始筹备，人仍留在源地生产缺货物资。",
+		"colonization_cancelled": "开拓筹备已取消，目标占用已释放。",
 		"colonization_quote_expired": "报价已过期，请重新选择要派遣的家族。",
 		"colonization_quote_corrupt": "报价数据已失效，请重新打开开拓面板。",
 		"colonization_quote_forbidden": "报价不属于玩家国家。",
@@ -479,7 +462,7 @@ func _update_start_enabled() -> void:
 	var has_selection := not _selected_quote.is_empty()
 	_population_row.visible = on_quotes and has_selection
 	_start.visible = on_quotes
-	_start.disabled = not has_selection or _materials_short_blocked
+	_start.disabled = not has_selection
 	var count := int(_population.value) if has_selection else 0
 	var count_text := UITokens.format_compact_number_cn(float(count), 0)
 	var kit_partial := bool(_selected_quote.get("kit_partial", false))
@@ -487,23 +470,21 @@ func _update_start_enabled() -> void:
 	var kit_ids: PackedInt32Array = _selected_quote.get(
 		"kit_building_ids", PackedInt32Array())
 	var complete_kit := place_buildings and not kit_partial and not kit_ids.is_empty()
-	if _materials_short_blocked:
-		_start.text = "等待材料补充" if has_selection else "确认派遣"
-		_start.tooltip_text = "源地市场材料仍不足。库存补充后将重新检查开工包。"
-		if has_selection:
-			_feedback.text = "源地市场材料仍不足，已暂停重复提交；库存补充后会自动重新检查。"
-			_feedback.add_theme_color_override("font_color", UITokens.WARN)
-	elif _economy_busy:
+	var preparing_kit := place_buildings and (kit_partial or kit_ids.is_empty())
+	if _economy_busy:
 		_start.text = "排队派遣 %s 人" % count_text if has_selection else "排队派遣"
 		_start.tooltip_text = "经济正在结算。现在确认后会排队，提交完成后自动出发。"
 	elif complete_kit:
 		_start.text = "派遣 %s 人并安家" % count_text if has_selection else "确认派遣"
 		_start.tooltip_text = _kit_summary_text(_selected_quote)
+	elif preparing_kit:
+		_start.text = "开始筹备 %s 人" % count_text if has_selection else "开始筹备"
+		_start.tooltip_text = "占用目标并每日检查缺货；人留在源地继续生产，齐套后再出发。"
 	else:
 		_start.text = "派遣 %s 人" % count_text if has_selection else "确认派遣"
 		_start.tooltip_text = "建材不足，只携带口粮" if kit_partial \
 			else _kit_summary_text(_selected_quote)
-	if has_selection and kit_partial and not _materials_short_blocked \
+	if has_selection and kit_partial and not preparing_kit \
 			and not _economy_busy \
 			and _feedback.text.find("排队") < 0 \
 			and _feedback.text.find("已经出发") < 0:
@@ -557,9 +538,47 @@ static func _expeditions_identity_of(page: Dictionary) -> String:
 	var parts := PackedStringArray()
 	for index in range(handles.size()):
 		var state := int(states[index]) if index < states.size() else 0
-		parts.append("%d:%d" % [int(handles[index]), state])
+		var missing := 0
+		var identities: PackedInt64Array = page.get(
+			"kit_missing_stock_identities", PackedInt64Array())
+		if index < identities.size():
+			missing = int(identities[index])
+		parts.append("%d:%d:%d" % [int(handles[index]), state, missing])
 	return "%s|%s" % [int(page.get("total", 0)), ",".join(parts)]
 
+
+
+
+func _preparing_missing_text(handle: int, state: int) -> String:
+	if state != 4 or _controller == null or not _controller.has_method(
+			"get_family_expedition_snapshot"):
+		return ""
+	var snap: Dictionary = _controller.get_family_expedition_snapshot(handle)
+	if not bool(snap.get("ok", false)):
+		return ""
+	var ids: PackedInt32Array = snap.get("kit_missing_good_ids", PackedInt32Array())
+	var qtys: PackedInt64Array = snap.get(
+		"kit_missing_good_quantities", PackedInt64Array())
+	if ids.is_empty():
+		return "筹备中，等待开工包齐套"
+	var parts := PackedStringArray()
+	for i in range(ids.size()):
+		var qty := int(qtys[i]) if i < qtys.size() else 0
+		var good_name := "物资#%d" % int(ids[i])
+		if _controller != null and _controller.has_method("good_display_name"):
+			good_name = String(_controller.good_display_name(int(ids[i])))
+		parts.append("%s %s" % [good_name,
+			UITokens.format_compact_number_cn(float(qty) / 1000.0, 1)])
+	return "源地库存仍不足：" + "，".join(parts)
+
+
+func _expedition_row_tooltip(handle: int, state: int, due_day: int) -> String:
+	var missing := _preparing_missing_text(handle, state)
+	if not missing.is_empty():
+		return missing
+	if due_day >= 0:
+		return "第 %d 日抵达" % due_day
+	return ""
 
 func _collapse_quotes(page: Dictionary) -> Array:
 	var families: PackedInt64Array = page.get("family_handles", PackedInt64Array())
