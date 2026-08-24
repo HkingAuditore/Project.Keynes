@@ -509,6 +509,51 @@ func _test_conserved_family_commands() -> void:
 			or bool(ext.effect_should_run(effect_day)):
 		print("economy preflight report=", effect_report)
 
+	# The Economy epoch for effect_day is already closed here. A newly emitted
+	# same-day Economy Effect must wait for the next frozen cycle instead of
+	# keeping the world clock in a no-op same-day continuation forever.
+	var late_instance: Dictionary = ext.submit_effect_instances({
+		"instance_ids": PackedInt64Array([91003]),
+		"program_keys": PackedStringArray(["test.economy.valid_absorb"]),
+		"generations": PackedInt32Array([1]),
+		"source_types": PackedInt32Array([1]),
+		"source_ids": PackedInt64Array([family_handle]),
+		"source_handles": PackedInt64Array([branch_handle]),
+		"target_handles": PackedInt64Array([branch_handle]),
+		"target_generations": PackedInt32Array([branch_generation]),
+		"levels": PackedInt32Array([0]),
+		"next_due_days": PackedInt64Array([effect_day]),
+		"active": PackedByteArray([1]),
+	})
+	_expect("same-day late Economy Effect instance submits",
+		bool(late_instance.get("ok", false)))
+	var late_evaluate := {}
+	for effect_slice in 8:
+		late_evaluate = ext.run_effect_daily(effect_day)
+		if not bool(late_evaluate.get("ok", false)) \
+				or bool(late_evaluate.get("done", false)):
+			break
+	_expect("same-day late Economy Effect evaluates",
+		bool(late_evaluate.get("ok", false))
+		and bool(late_evaluate.get("done", false)))
+	var late_dispatch: Dictionary = ext.dispatch_effect_native_economy()
+	_expect("same-day late Economy Effect dispatches once",
+		int(late_dispatch.get("submitted_transactions", 0)) == 1
+		and int(late_dispatch.get("submitted_commands", 0)) == 1)
+	var late_same_day := _run_day(ext, ready_day + 6)
+	var late_same_day_ack: Dictionary = ext.ack_effect_native_economy()
+	_expect("closed Economy day does not spin on late Effect ACK",
+		bool(late_same_day.get("done", false))
+		and int(late_same_day_ack.get("acknowledged", 0)) == 0)
+	var late_next_day := _run_day(ext, ready_day + 7)
+	var late_next_day_ack: Dictionary = ext.ack_effect_native_economy()
+	_expect("next Economy day commits late Effect exactly once",
+		bool(late_next_day.get("done", false))
+		and int(late_next_day.get("population_error", 1)) == 0
+		and int(late_next_day.get("money_error", 1)) == 0
+		and int(late_next_day.get("goods_error", 1)) == 0
+		and int(late_next_day_ack.get("acknowledged", 0)) == 1)
+
 
 func _economy_preflight_catalog() -> Resource:
 	var catalog := EffectCatalogScript.new()

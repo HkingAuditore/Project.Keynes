@@ -7,7 +7,7 @@ signal day_night_toggled(enabled: bool)
 signal setup_requested()
 signal gm_requested()
 
-const BAR_HEIGHT := 52.0
+const BAR_HEIGHT := 56.0
 const SPEED_PRESETS: Array[float] = [1.0, 2.0, 5.0, 10.0, 20.0, 50.0]
 
 var _date_label: Label

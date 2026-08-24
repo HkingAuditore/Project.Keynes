@@ -2354,6 +2354,14 @@ func _continue_economy_inflight(day_index: int) -> void:
 			# fatal state remains distinguishable from a completed continuation.
 			var report: Dictionary = _economy_facade.report()
 			if bool(report.get("fatal", false)):
+				# FATAL is terminal for the economy graph, so no future economy slice
+				# can clear the hard barrier. Release it defensively or WorldClock
+				# remains permanently stuck on the last day.
+				if _world_clock_ref != null:
+					_world_clock_ref.request_simulation_backpressure(
+						&"economy", false)
+					_world_clock_ref.request_simulation_backpressure(
+						&"economy_day_barrier", false)
 				_finish_continuation_perf_frame(started_us, continuation_count, frame_max_slice_ms, budget_ms)
 				return
 			if _world_clock_ref != null:
@@ -2367,6 +2375,14 @@ func _continue_economy_inflight(day_index: int) -> void:
 			_record_continuation_slice("economy", economy_result, economy_slice_ms))
 		continuation_count += 1
 		if bool(economy_result.get("fatal", false)):
+			# A continuation may surface the terminal result directly. Keep this
+			# backstop beside the cold-report path so no fatal route can strand the
+			# WorldClock behind an economy barrier.
+			if _world_clock_ref != null:
+				_world_clock_ref.request_simulation_backpressure(
+					&"economy", false)
+				_world_clock_ref.request_simulation_backpressure(
+					&"economy_day_barrier", false)
 			_finish_continuation_perf_frame(started_us, continuation_count, frame_max_slice_ms, budget_ms)
 			return
 		if bool(economy_result.get("done", false)) or \

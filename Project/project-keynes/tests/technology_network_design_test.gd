@@ -4,7 +4,7 @@ const NETWORK_PATH := "res://data/technology/technology_network.json"
 const EXPECTED_NODES := 361
 const EXPECTED_ERAS := 11
 const EXPECTED_DOMAINS := 4
-const CANDIDATES_PER_ERA := 8
+const CANDIDATES_PER_ERA := 12
 const CANDIDATES_REQUIRED := 4
 const ResearchPredicateScript = preload("res://scripts/research/research_predicate.gd")
 
@@ -56,6 +56,36 @@ func _init() -> void:
 		assert(node_by_id.has(milestone_id), milestone_id)
 	for candidate_id in candidate_ids:
 		assert(node_by_id.has(candidate_id), candidate_id)
+
+	var expected_added_candidates := {
+		"stone": ["tech.flint_identification", "tech.fire_control",
+			"tech.animal_husbandry", "tech.ground_stone_tools"],
+		"agrarian": ["tech.dryland_farming", "tech.pastoralism",
+			"tech.weaving", "tech.kiln_firing"],
+		"kingdom": ["tech.masonry", "tech.currency", "tech.canal_engineering",
+			"tech.scholarly_academies"],
+		"empire": ["tech.water_power", "tech.woodblock_printing",
+			"tech.urban_waterworks", "tech.coal_mining"],
+		"exploration": ["tech.oceanic_navigation", "tech.coastal_shipyards",
+			"tech.commercial_estates", "tech.commodity_crop_management"],
+		"enlightenment": ["tech.precision_engineering", "tech.public_health",
+			"tech.hydraulic_engineering", "tech.agricultural_cooperatives"],
+		"steam": ["tech.industrial_organization", "tech.rail_logistics",
+			"tech.mechanized_printing", "tech.assembly_line"],
+		"electrical": ["tech.mass_production", "tech.electric_generation",
+			"tech.electric_motors", "tech.telecommunications"],
+		"atomic": ["tech.advanced_metallurgy", "tech.nuclear_fission",
+			"tech.operations_research", "tech.mechanized_mining"],
+		"information": ["tech.information_theory", "tech.software_engineering",
+			"tech.networked_computing", "tech.geographic_information_systems"],
+		"intelligent": ["tech.neural_networks", "tech.autonomous_mining",
+			"tech.smart_grid", "tech.adaptive_irrigation"],
+	}
+	for era_value in eras:
+		var era_check: Dictionary = era_value
+		for added_id in expected_added_candidates[String(era_check.id)]:
+			assert(String(added_id) in (era_check.milestone_candidate_ids as Array),
+				"missing expanded milestone candidate: %s" % added_id)
 
 	var route_by_id := {}
 	var route_target_by_id := {}
@@ -188,6 +218,19 @@ func _init() -> void:
 		assert(route_by_id.has(route_id))
 		assert(String(route_target_by_id[route_id]) == String(edge.get("to", "")))
 	assert(alternative_edges > 0)
+	var visual_hard_edges := {}
+	for edge_value in data.get("visual_edges", []):
+		var edge: Dictionary = edge_value
+		if String(edge.get("kind", "")) != "hard":
+			continue
+		var edge_key := "%s>%s" % [String(edge.get("from", "")), String(edge.get("to", ""))]
+		visual_hard_edges[edge_key] = true
+	for node_value in nodes:
+		var node: Dictionary = node_value
+		for prerequisite_value in node.get("hard_prerequisite_ids", []):
+			var hard_key := "%s>%s" % [String(prerequisite_value), String(node.id)]
+			assert(visual_hard_edges.has(hard_key),
+				"missing visual hard edge: %s" % hard_key)
 	var authored_branch_edges := 0
 	for node_value in nodes:
 		authored_branch_edges += (node_value as Dictionary).get(
@@ -206,6 +249,42 @@ func _init() -> void:
 		"tech.wild_maize_collection": "tech.maize_identification",
 		"tech.surface_silver_collection": "tech.silver_vein_identification",
 	}
+	var early_prerequisites := {
+		"tech.composite_tools": "tech.flint_identification",
+		"tech.timber_sawing": "tech.composite_tools",
+		"tech.natural_copper_working": "tech.natural_copper_identification",
+		"tech.bronze_casting": "tech.tin_identification",
+		"tech.herd_management": "tech.animal_husbandry",
+		"tech.adobe_making": "tech.earth_building",
+		"tech.copper_metallurgy": "tech.copper_ore_roasting",
+		"tech.woodblock_printing": "tech.composite_tools",
+		"tech.movable_type_printing": "tech.pottery",
+		"tech.surface_coal_collection": "tech.ground_stone_tools",
+		"tech.crop_domestication": "tech.natural_observation",
+		"tech.fiber_twisting": "tech.natural_observation",
+		"tech.food_storage": "tech.seasonal_foraging",
+		"tech.charcoal_burning": "tech.fire_control",
+		"tech.fur_sewing": "tech.animal_husbandry",
+		"tech.felt_making": "tech.animal_husbandry",
+	}
+	for technology_id in early_prerequisites:
+		assert(String(early_prerequisites[technology_id]) in
+			(node_by_id[technology_id].hard_prerequisite_ids as Array), technology_id)
+	for technology_id in ["tech.copper_metallurgy", "tech.woodblock_printing",
+			"tech.movable_type_printing"]:
+		assert((node_by_id[technology_id].hard_prerequisite_ids as Array).size() >= 2,
+			technology_id)
+	var route_groups := {}
+	for technology_id in ["tech.composite_tools", "tech.crop_domestication",
+			"tech.fire_control", "tech.animal_husbandry"]:
+		var route_condition: Dictionary = node_by_id[technology_id].research_routes[0].condition
+		route_groups[technology_id] = JSON.stringify(route_condition)
+	assert(route_groups["tech.composite_tools"] == route_groups["tech.crop_domestication"])
+	assert(route_groups["tech.crop_domestication"] == route_groups["tech.fire_control"])
+	assert(route_groups["tech.fire_control"] == route_groups["tech.animal_husbandry"])
+	var crop_reveal := JSON.stringify(node_by_id["tech.crop_domestication"].reveal_condition)
+	for crop_signal in ["bio.maize", "bio.wheat", "bio.rice", "bio.potato"]:
+		assert(crop_reveal.contains(crop_signal), crop_signal)
 	for handling_id in identification_first:
 		var handling: Dictionary = node_by_id[String(handling_id)]
 		var identification_id := String(identification_first[handling_id])
@@ -226,6 +305,37 @@ func _init() -> void:
 		assert((knowledge.get("reveal_condition", {}) as Dictionary).is_empty(), knowledge_id)
 		assert(int(node_index[String(knowledge_id)]) < int(node_index["tech.flint_identification"]),
 			knowledge_id)
+
+	# Early knowledge is a regional research source, not a mutually exclusive
+	# branch gate. Every stone knowledge-institution route accepts any one of the
+	# five regional practices; hard prerequisites and resource reveals remain
+	# separate gates.
+	var expected_opening_knowledge := PackedStringArray([
+		"tech.oral_memory_practice", "tech.phenology_observation",
+		"tech.flood_calendar_practice", "tech.pastoral_route_memory",
+		"tech.tide_observation",
+	])
+	var opening_route_count := 0
+	for node_value in nodes:
+		var node: Dictionary = node_value
+		if String(node.get("era_id", "")) != "stone":
+			continue
+		for route_value in node.get("research_routes", []):
+			var route: Dictionary = route_value
+			if not String(route.get("id", "")).ends_with(".knowledge_institution"):
+				continue
+			opening_route_count += 1
+			var route_techs := PackedStringArray()
+			_collect_atoms(route.condition, route_techs, PackedStringArray())
+			assert(route_techs == expected_opening_knowledge,
+				"stone route must accept every regional knowledge practice: %s" % node.id)
+	assert(opening_route_count > 0)
+
+	for plant_id in ["tech.maize_identification", "tech.wheat_identification",
+			"tech.rice_identification", "tech.potato_identification",
+			"tech.cotton_identification", "tech.flax_identification"]:
+		assert("tech.natural_observation" in
+			(node_by_id[plant_id].hard_prerequisite_ids as Array), plant_id)
 	for origin_id in ["tech.flint_identification", "tech.fire_control",
 			"tech.freshwater_fishing",
 			"tech.seasonal_foraging", "tech.animal_husbandry",

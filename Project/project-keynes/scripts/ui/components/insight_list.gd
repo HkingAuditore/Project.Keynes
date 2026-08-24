@@ -40,7 +40,7 @@ func update_items(items: Array) -> void:
 		_icons[i].set_semantic(
 			StringName(data.get("icon", &"summary.overview")), accent)
 		_labels[i].text = String(data.get("text", ""))
-		_labels[i].add_theme_color_override("font_color", UITokens.TEXT_MAIN)
+		_labels[i].add_theme_color_override("font_color", UITokens.ARCHIVE_INK)
 
 
 func _index_existing_rows() -> void:

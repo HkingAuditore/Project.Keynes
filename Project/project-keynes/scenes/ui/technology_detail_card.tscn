@@ -8,7 +8,7 @@
 
 [node name="TechnologyDetailCard" type="PanelContainer"]
 size_flags_horizontal = 3
-theme_type_variation = &"PKPanel"
+theme_type_variation = &"PKArchivePage"
 script = ExtResource("1_script")
 
 [node name="Column" type="VBoxContainer" parent="."]

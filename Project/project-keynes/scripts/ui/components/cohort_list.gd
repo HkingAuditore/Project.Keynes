@@ -73,7 +73,7 @@ func _apply_row(_row_id: String, refs: Dictionary, data: Dictionary) -> void:
 	panel.visible = bool(data.get("visible", true))
 	(refs.get("icon") as IconBadge).set_semantic(
 		StringName(data.get("icon", &"ecology.growth")), accent)
-	var living_accent: Color = data.get("living_accent", UITokens.TEXT_MUTED)
+	var living_accent: Color = data.get("living_accent", UITokens.ARCHIVE_INK_MUTED)
 	var living_badge := refs.get("living_icon") as IconBadge
 	living_badge.set_semantic(
 		StringName(data.get("living_icon", &"action.history")), living_accent)

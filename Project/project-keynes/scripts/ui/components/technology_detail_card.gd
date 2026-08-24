@@ -30,6 +30,7 @@ var _application_title: Label
 var _applications: VBoxContainer
 var _action: Button
 var _placeholder: Label
+var _scroll: ScrollContainer
 
 
 func _ready() -> void:
@@ -53,6 +54,7 @@ func _ready() -> void:
 	_application_title = get_node_or_null("%ApplicationTitle") as Label
 	_applications = get_node_or_null("%Applications") as VBoxContainer
 	_action = get_node_or_null("%Action") as Button
+	_scroll = get_node_or_null("Column/Scroll") as ScrollContainer
 	if _body == null or _header_icon == null or _name == null \
 			or _state_label == null or _placeholder == null \
 			or _detail_block == null or _chips == null or _gauge == null \
@@ -74,7 +76,7 @@ func show_empty() -> void:
 	_index = -1
 	_state = 0
 	_submitted = false
-	_header_icon.set_semantic(&"country.technology", UITokens.TEXT_MUTED)
+	_header_icon.set_semantic(&"country.technology", UITokens.ARCHIVE_INK_MUTED)
 	_name.text = "科技详情"
 	_state_label.text = ""
 	_placeholder.visible = true
@@ -88,7 +90,7 @@ func show_unknown() -> void:
 	_index = -1
 	_state = 0
 	_submitted = false
-	_header_icon.set_semantic(&"technology.state.unknown", UITokens.TEXT_MUTED)
+	_header_icon.set_semantic(&"technology.state.unknown", UITokens.ARCHIVE_INK_MUTED)
 	_name.text = "未知科技"
 	_state_label.text = STATE_NAMES[0]
 	_placeholder.visible = true
@@ -117,6 +119,9 @@ func show_technology(index: int, definition: Dictionary, state: int, fraction: f
 		relations: Dictionary) -> void:
 	if _body == null:
 		_ready()
+	var saved_scroll := Vector2i.ZERO
+	if _scroll != null:
+		saved_scroll = Vector2i(_scroll.scroll_horizontal, _scroll.scroll_vertical)
 	_index = index
 	_state = state
 	_accent = accent
@@ -173,6 +178,7 @@ func show_technology(index: int, definition: Dictionary, state: int, fraction: f
 	_application_title.visible = not applications.is_empty()
 	_fill_relation_rows(_applications, applications)
 	_apply_action(state)
+	_restore_scroll.call_deferred(saved_scroll)
 
 
 # Daily ticks take this path: gauge value, state text and the action button only.
@@ -310,8 +316,16 @@ func _fill_relation_rows(host: VBoxContainer, entries: Array) -> void:
 		var label := row.get_node("Label") as Label
 		label.text = String(data.get("name", "未知科技"))
 		label.add_theme_color_override("font_color",
-			UITokens.TEXT_MAIN if TechnologyTreeView.presents_state(state) else UITokens.TEXT_FAINT)
+			UITokens.ARCHIVE_INK if TechnologyTreeView.presents_state(state) \
+			else UITokens.ARCHIVE_INK_MUTED)
 		host.add_child(row)
+
+
+func _restore_scroll(saved_scroll: Vector2i) -> void:
+	if _scroll == null:
+		return
+	_scroll.set_deferred("scroll_horizontal", saved_scroll.x)
+	_scroll.set_deferred("scroll_vertical", saved_scroll.y)
 
 
 func _apply_action(state: int) -> void:
@@ -361,10 +375,10 @@ func _state_colour(state: int) -> Color:
 		2:
 			return UITokens.BRASS_HIGHLIGHT
 		3:
-			return UITokens.WATER.lerp(UITokens.TEXT_MAIN, 0.30)
+			return UITokens.WATER.lerp(UITokens.ARCHIVE_INK, 0.30)
 		4:
 			return UITokens.WARN
 		5:
 			return UITokens.GOOD
 		_:
-			return UITokens.TEXT_FAINT
+			return UITokens.ARCHIVE_INK_MUTED

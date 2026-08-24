@@ -5,7 +5,7 @@
 [ext_resource type="Script" path="res://scripts/ui/components/colonization_family_row.gd" id="3_script"]
 
 [node name="ColonizationFamilyRow" type="Button"]
-custom_minimum_size = Vector2(0, 88)
+custom_minimum_size = Vector2(0, 120)
 size_flags_horizontal = 3
 focus_mode = 0
 mouse_default_cursor_shape = 2
@@ -51,18 +51,20 @@ text_overrun_behavior = 3
 [node name="Badges" parent="Margin/Line/Info" instance=ExtResource("2_badges")]
 layout_mode = 2
 mouse_filter = 1
+max_badge_width = 184.0
 
 [node name="Effect" type="Label" parent="Margin/Line/Info"]
 layout_mode = 2
 mouse_filter = 2
-text_overrun_behavior = 3
+autowrap_mode = 3
+max_lines_visible = 2
 theme_type_variation = &"PKMutedLabel"
 
 [node name="Population" type="Label" parent="Margin/Line"]
-custom_minimum_size = Vector2(72, 0)
+custom_minimum_size = Vector2(96, 0)
 layout_mode = 2
 size_flags_vertical = 1
 mouse_filter = 2
 horizontal_alignment = 2
 vertical_alignment = 1
-text = "0"
+text = "0 人"

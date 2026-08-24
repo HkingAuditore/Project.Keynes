@@ -955,16 +955,17 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     ordinary_pressure = std::max(ordinary_pressure, shortage);
                 }
                 const int32_t signal = market_signal_index(cell, good);
-                if (signal >= 0) {
-                    const int64_t demand = _market_signals.business_demand_ema[signal];
+                const int64_t demand = saturating_add(
+                    signal >= 0 ? _market_signals.business_demand_ema[signal] : 0,
+                    epoch_research_demand_daily(cell, good),
+                    _saturation_count);
+                if (demand > 0) {
                     const int64_t stock = _market.stock[idx];
-                    if (demand > 0) {
-                        downstream_pressure = std::max<int64_t>(downstream_pressure,
-                            std::clamp<int64_t>(mul_div_sat(
-                                std::max<int64_t>(0, demand - stock), Q16_ONE,
-                                std::max<int64_t>(1, demand), _saturation_count), 0, Q16_ONE));
-                        critical = true;
-                    }
+                    downstream_pressure = std::max<int64_t>(downstream_pressure,
+                        std::clamp<int64_t>(mul_div_sat(
+                            std::max<int64_t>(0, demand - stock), Q16_ONE,
+                            std::max<int64_t>(1, demand), _saturation_count), 0, Q16_ONE));
+                    critical = true;
                 }
             }
             const int64_t contribution = std::clamp<int64_t>(

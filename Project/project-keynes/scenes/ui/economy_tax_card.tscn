@@ -1,7 +1,7 @@
 [gd_scene load_steps=2 format=3]
 [ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="1_icon"]
 [node name="TaxCard" type="PanelContainer"]
-custom_minimum_size = Vector2(220, 116)
+custom_minimum_size = Vector2(280, 128)
 mouse_default_cursor_shape = 2
 theme_type_variation = &"PKMetricCard"
 [node name="Body" type="VBoxContainer" parent="."]

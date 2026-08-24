@@ -178,7 +178,8 @@ Modifier stat，也禁止家族第二钱包：
 
 ## 形成与消亡
 
-默认策略只在乡村及以上、人口至少 100 的地块评审，每格最多 8 家族；评审以 cell/day 相位
+默认策略只在乡村及以上、人口至少 150 的地块评审，每格最多 8 家族；普通新家族至少需要 20 名
+创始成员，正式开局的 Starter 家族是唯一例外。评审以 cell/day 相位
 错开。候选建筑必须同时满足：
 
 1. 正常营业，存在稳定 building identity；
@@ -214,8 +215,9 @@ generation-safe handle；账本命令（含 `family.population_reward` 的 `i32_
 bootstrap 不触发。若旧会话已在无家族状态下运行，日常 `FAMILY_COMMIT` 会在第 0..30 天检查
 上述权威不变量，并在 owner 岗确已占满时补建一次；权威 membership 边防止同批次重复创建。
 
-每个家族按 `stable_id % family_review_days` 分摊生命周期复核。人口归零立即消亡；无产业且人口
-低于活跃阈值连续达到 `family_decline_reviews` 次后消亡。home cell 取成员最多的分支，同人口时取
+每个家族按 `stable_id % family_review_days` 分摊生命周期复核。人口归零立即消亡；非 Starter 家族
+无产业且人口低于 20 人，连续达到 `family_decline_reviews` 次后消亡；拥有资产的小家族保留，避免
+未经设计的家族合并。home cell 取成员最多的分支，同人口时取
 较小 cell。空槽采用最低 index 确定性复用，并递增 generation，旧句柄不能指向新家族。
 
 ## 业主岗位与职业统计

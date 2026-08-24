@@ -20,7 +20,7 @@ const PAGE_DEFINITIONS := {
 }
 const TAX_KIND := {"income": 0, "consumption": 1, "business": 2, "import": 3, "export": 4}
 const KIND_LABELS := {"import": "进口", "export": "出口"}
-const CARD_SIZE := Vector2(240.0, 0.0)
+const CARD_SIZE := Vector2(280.0, 0.0)
 const ENTRANCE_STAGGER := 0.022
 const ENTRANCE_MAX_DELAY := 0.30
 # The simulation can advance dozens of days per real second. Summary cards are
@@ -28,8 +28,8 @@ const ENTRANCE_MAX_DELAY := 0.30
 # authoritative snapshot for the trailing refresh.
 const LIVE_REFRESH_INTERVAL_MSEC := 200
 const DRAFT_COMMIT_DELAY_SEC := 0.18
-const SUMMARY_CARD_SIZE := Vector2(150.0, 72.0)
-const SUMMARY_CARD_SIZE_COMPACT := Vector2(104.0, 56.0)
+const SUMMARY_CARD_SIZE := Vector2(180.0, 78.0)
+const SUMMARY_CARD_SIZE_COMPACT := Vector2(112.0, 60.0)
 
 var _cash_card: MetricCard
 var _tax_card: MetricCard
@@ -54,6 +54,10 @@ var _trade_partners_button: Button
 var _trade_prev: Button
 var _trade_next: Button
 var _trade_page_label: Label
+var _ledger_title: Label
+var _ledger_subtitle: Label
+var _summary_heading: Control
+var _summary_cards: Control
 var _rows: Dictionary = {}
 var _trade_rows: Dictionary = {}
 var _model: Dictionary = {}
@@ -89,18 +93,23 @@ func _ready() -> void:
 	_tabs = get_node_or_null("Column/Tabs") as CategoryTabs
 	_tax_tabs = get_node_or_null("Column/TaxTabs") as CategoryTabs
 	_insights = get_node_or_null("Column/Insights") as InsightList
-	_search = get_node_or_null("Column/Tools/Search") as LineEdit
-	_overrides_only = get_node_or_null("Column/Tools/OverridesOnly") as Button
-	_status_label = get_node_or_null("Column/StatusLabel") as Label
-	_scroll = get_node_or_null("Column/Scroll") as ScrollContainer
-	_flow = get_node_or_null("Column/Scroll/Flow") as HFlowContainer
-	_empty_label = get_node_or_null("Column/Scroll/Flow/EmptyLabel") as Label
-	_trade_views = get_node_or_null("Column/Tools/TradeViews") as HBoxContainer
-	_trade_goods_button = get_node_or_null("Column/Tools/TradeViews/Goods") as Button
-	_trade_partners_button = get_node_or_null("Column/Tools/TradeViews/Partners") as Button
-	_trade_prev = get_node_or_null("Column/Tools/TradePrev") as Button
-	_trade_next = get_node_or_null("Column/Tools/TradeNext") as Button
-	_trade_page_label = get_node_or_null("Column/Tools/TradePage") as Label
+	var ledger_root := "Column/Ledger/LedgerColumn"
+	_search = get_node_or_null(ledger_root + "/Tools/Search") as LineEdit
+	_overrides_only = get_node_or_null(ledger_root + "/Tools/OverridesOnly") as Button
+	_status_label = get_node_or_null(ledger_root + "/StatusLabel") as Label
+	_scroll = get_node_or_null(ledger_root + "/Scroll") as ScrollContainer
+	_flow = get_node_or_null(ledger_root + "/Scroll/Flow") as HFlowContainer
+	_empty_label = get_node_or_null(ledger_root + "/Scroll/Flow/EmptyLabel") as Label
+	_trade_views = get_node_or_null(ledger_root + "/Tools/TradeViews") as HBoxContainer
+	_trade_goods_button = get_node_or_null(ledger_root + "/Tools/TradeViews/Goods") as Button
+	_trade_partners_button = get_node_or_null(ledger_root + "/Tools/TradeViews/Partners") as Button
+	_trade_prev = get_node_or_null(ledger_root + "/Tools/TradePrev") as Button
+	_trade_next = get_node_or_null(ledger_root + "/Tools/TradeNext") as Button
+	_trade_page_label = get_node_or_null(ledger_root + "/Tools/TradePage") as Label
+	_ledger_title = get_node_or_null(ledger_root + "/LedgerHeading/Title") as Label
+	_ledger_subtitle = get_node_or_null(ledger_root + "/LedgerHeading/Subtitle") as Label
+	_summary_heading = get_node_or_null("Column/SummaryHeading") as Control
+	_summary_cards = get_node_or_null("Column/Cards") as Control
 	var section_badge := get_node_or_null("Column/Header/SectionIcon") as IconBadge
 	if _cash_card == null or _tax_card == null or _subsidy_card == null \
 			or _fulfillment_card == null or _country_label == null \
@@ -158,6 +167,12 @@ func set_player_controller(controller) -> void:
 
 func set_compact(compact: bool) -> void:
 	_compact = compact
+	if _summary_heading != null:
+		_summary_heading.visible = not compact
+	if _summary_cards != null:
+		_summary_cards.visible = not compact
+	if _insights != null:
+		_insights.visible = not compact
 	var card_size := SUMMARY_CARD_SIZE_COMPACT if compact else SUMMARY_CARD_SIZE
 	for card in [_cash_card, _tax_card, _subsidy_card, _fulfillment_card]:
 		if card != null:
@@ -301,7 +316,11 @@ func _select_page(page: String) -> void:
 		_trade_next.visible = page == "trade"
 		_trade_page_label.visible = page == "trade"
 	if _insights != null:
-		_insights.visible = page == "treasury"
+		_insights.visible = page == "treasury" and not _compact
+	if _ledger_title != null:
+		var definition: Dictionary = PAGE_DEFINITIONS.get(page, {})
+		_ledger_title.text = "%s账簿" % String(definition.get("label", "财政"))
+		_ledger_subtitle.text = _page_description(page)
 	_refresh_page()
 	_refresh_treasury_insights()
 	_animate_cards_in()
@@ -313,6 +332,17 @@ func _top_page_for(page: String) -> String:
 
 func _is_tax_page(page: String) -> bool:
 	return TAX_PAGE_IDS.has(page)
+
+
+func _page_description(page: String) -> String:
+	match page:
+		"treasury": return "国家库存与战略物资的可用余额"
+		"income": return "按职业审定所得税覆盖与实际税率"
+		"consumption": return "按商品审定消费税覆盖与实际税率"
+		"business": return "按建筑类型审定营业税覆盖与实际税率"
+		"tariff": return "管理进口与出口关税"
+		"trade": return "核对商品流量、贸易伙伴与关税影响"
+		_: return "国家财政账目"
 
 
 # Visibility is synced from a wanted-set instead of hide-all-then-reshow, so a
@@ -805,7 +835,7 @@ func _update_card(card: Dictionary, kind_data: Dictionary) -> void:
 		spin.set_value_no_signal(visual_rate)
 		line_edit.add_theme_color_override("font_color",
 			UITokens.BRASS_HIGHLIGHT \
-				if overridden or visual_rate != base else UITokens.TEXT_MUTED)
+				if overridden or visual_rate != base else UITokens.ARCHIVE_INK_MUTED)
 		((card.resets as Dictionary)[kind] as Button).visible = overridden
 		(card.overridden as Dictionary)[kind] = overridden
 		(card.rates as Dictionary)[kind] = base
@@ -842,7 +872,7 @@ func _watch_card_hover(_panel: PanelContainer) -> void:
 func _refresh_treasury_insights() -> void:
 	if _insights == null:
 		return
-	_insights.visible = _page == "treasury"
+	_insights.visible = _page == "treasury" and not _compact
 	if not _insights.visible:
 		return
 	var fiscal: Dictionary = _model.get("fiscal", {})
@@ -879,7 +909,7 @@ func _refresh_treasury_insights() -> void:
 		items.append({
 			"id": "market_shortage_hint",
 			"text": "物资短缺请到各地市场档案查看。",
-			"accent": UITokens.TEXT_MUTED,
+			"accent": UITokens.ARCHIVE_INK_MUTED,
 			"icon": "resource",
 		})
 	_insights.set_items(items.slice(0, 4))
@@ -1052,7 +1082,7 @@ func _clear_override(kind: String, item_id: String) -> void:
 			var default_rate := _default_rate(kind)
 			var spin := (card.spins as Dictionary)[kind] as SpinBox
 			spin.set_value_no_signal(default_rate)
-			spin.get_line_edit().add_theme_color_override("font_color", UITokens.TEXT_MUTED)
+			spin.get_line_edit().add_theme_color_override("font_color", UITokens.ARCHIVE_INK_MUTED)
 			(card.rates as Dictionary)[kind] = default_rate
 			(card.overridden as Dictionary)[kind] = false
 			((card.resets as Dictionary)[kind] as Button).visible = false
@@ -1106,8 +1136,8 @@ func _refresh_override_frame(card: Dictionary) -> void:
 	for value in (card.overridden as Dictionary).values():
 		any_override = any_override or bool(value)
 	(card.name as Label).add_theme_color_override("font_color",
-		UITokens.BRASS_HIGHLIGHT.lerp(UITokens.TEXT_MAIN, 0.35) \
-			if any_override else UITokens.TEXT_MAIN)
+		UITokens.ARCHIVE_BRASS.lerp(UITokens.ARCHIVE_INK, 0.35) \
+			if any_override else UITokens.ARCHIVE_INK)
 	_apply_card_frame(card, any_override)
 
 
@@ -1246,7 +1276,7 @@ func _set_status(text: String, warn: bool = false) -> void:
 	_status_label.text = text
 	_status_label.visible = text != ""
 	_status_label.add_theme_color_override("font_color",
-		UITokens.WARN if warn else UITokens.TEXT_MUTED)
+		UITokens.WARN if warn else UITokens.ARCHIVE_INK_MUTED)
 
 
 func _sum_i64(values: PackedInt64Array) -> int:

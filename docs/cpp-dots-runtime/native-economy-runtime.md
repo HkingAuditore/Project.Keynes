@@ -603,7 +603,9 @@ worker 仅把居民消费与商人居民销售写入局部结果，主线程再�
 来源处扣缴；负所得税先写入逐 cohort 临时应税收入，在全部 household clearing 完成后的
 `income_subsidy` 子阶段，以
 `max(汇总应税收入, survival_household 本地每日成本 × 人口 × 周期天数)` 申请，并在 cell
-预算不足时按 cohort 申请同比例兑现。最低生活税基不进入正税。消费/业主结算同时按财政税率
+预算不足时按 cohort 申请同比例兑现。财政预算在 epoch 开始除当前 cohort 外，还为本国已解锁
+建筑的 owner/employee 职业按民族预留一份有界的最低生活所得补贴 floor，因此目标职业当前为零人口
+或目标建筑尚不存在时，税后收入比较仍能看到可兑现的所得补贴。最低生活税基不进入正税。消费/业主结算同时按财政税率
 记录 `income_tax`、`consumption_tax`、`business_tax` 支出腿和 `income_subsidy`、`consumption_subsidy`、
 `business_subsidy` 收入腿（负税率），人口快照的 `settlement_cashflow_source_stable_ids`
 一并导出这些来源，Inspector 阶层收支按来源名展示税收支出与补贴收入。人口快照返回上次提交

@@ -19,7 +19,7 @@ offset_top = 68.0
 offset_bottom = -12.0
 grow_horizontal = 0
 grow_vertical = 2
-theme_type_variation = &"PKPanel"
+theme_type_variation = &"PKArchivePanel"
 script = ExtResource("1_script")
 
 [node name="Margin" type="MarginContainer" parent="."]
@@ -42,7 +42,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 clip_contents = true
-theme_type_variation = &"PKInsetPanel"
+theme_type_variation = &"PKArchivePage"
 
 [node name="ObjectDetail" parent="Margin/Split/DetailShell" instance=ExtResource("4_detail")]
 unique_name_in_owner = true
@@ -101,7 +101,7 @@ color = Color(0.92, 0.72, 0.38, 0.72)
 
 [node name="Header" type="PanelContainer" parent="Margin/Split/InspectorRoot"]
 layout_mode = 2
-theme_type_variation = &"PKInsetPanel"
+theme_type_variation = &"PKArchiveBand"
 
 [node name="Row" type="HBoxContainer" parent="Margin/Split/InspectorRoot/Header"]
 layout_mode = 2
@@ -122,6 +122,8 @@ theme_override_constants/separation = 1
 unique_name_in_owner = true
 layout_mode = 2
 text = "地块档案"
+clip_text = true
+text_overrun_behavior = 3
 theme_type_variation = &"PKTitle"
 
 [node name="SubtitleLabel" type="Label" parent="Margin/Split/InspectorRoot/Header/Row/Titles"]
@@ -132,8 +134,10 @@ theme_type_variation = &"PKMutedLabel"
 [node name="ColonizationButton" type="Button" parent="Margin/Split/InspectorRoot/Header/Row"]
 unique_name_in_owner = true
 visible = false
+custom_minimum_size = Vector2(56, 32)
 layout_mode = 2
 text = "开拓"
+theme_type_variation = &"PKPrimaryButton"
 
 [node name="MoreButton" type="MenuButton" parent="Margin/Split/InspectorRoot/Header/Row"]
 unique_name_in_owner = true
@@ -155,7 +159,7 @@ theme_type_variation = &"PKIconButton"
 
 [node name="Summary" type="PanelContainer" parent="Margin/Split/InspectorRoot"]
 layout_mode = 2
-theme_type_variation = &"PKInsetPanel"
+theme_type_variation = &"PKArchiveBand"
 
 [node name="Row" type="HBoxContainer" parent="Margin/Split/InspectorRoot/Summary"]
 layout_mode = 2
@@ -186,7 +190,7 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
-theme_type_variation = &"PKInsetPanel"
+theme_type_variation = &"PKArchivePage"
 
 [node name="ContentMargin" type="MarginContainer" parent="Margin/Split/InspectorRoot/ContentShell"]
 layout_mode = 2

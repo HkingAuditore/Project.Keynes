@@ -56,7 +56,7 @@ func _draw() -> void:
 		draw_line(Vector2(rect.position.x, grid_y), Vector2(rect.end.x, grid_y), Color(0.70, 0.55, 0.31, 0.10), 1.0)
 	draw_rect(rect, UITokens.PANEL_BORDER_SOFT, false, 1.0)
 	if values.is_empty():
-		draw_string(get_theme_default_font(), rect.position + Vector2(10.0, rect.size.y * 0.58), "暂无观测", HORIZONTAL_ALIGNMENT_LEFT, -1.0, 12, UITokens.TEXT_FAINT)
+		draw_string(get_theme_default_font(), rect.position + Vector2(10.0, rect.size.y * 0.58), "暂无观测", HORIZONTAL_ALIGNMENT_LEFT, -1.0, 12, UITokens.ARCHIVE_INK_MUTED)
 		return
 	var range_min := min_value
 	var range_max := max_value
@@ -82,7 +82,7 @@ func _draw() -> void:
 		pts.append(Vector2(x, y))
 	if pts.size() == 1:
 		draw_circle(pts[0], 3.0, accent)
-		draw_string(get_theme_default_font(), rect.position + Vector2(10.0, rect.size.y * 0.58), "正在积累逐日样本", HORIZONTAL_ALIGNMENT_LEFT, -1.0, 12, UITokens.TEXT_FAINT)
+		draw_string(get_theme_default_font(), rect.position + Vector2(10.0, rect.size.y * 0.58), "正在积累逐日样本", HORIZONTAL_ALIGNMENT_LEFT, -1.0, 12, UITokens.ARCHIVE_INK_MUTED)
 		return
 	var fill_pts := pts.duplicate()
 	fill_pts.append(Vector2(pts[pts.size() - 1].x, rect.end.y))

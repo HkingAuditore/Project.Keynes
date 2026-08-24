@@ -860,7 +860,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
             const int64_t founders = family_household_people_for_slot(
                 owner_slot, owner_slots);
             const int32_t family_index = create_family_for_building(
-                cell, group_index, founders, owner_slots);
+                cell, group_index, founders, owner_slots, true);
             if (family_index < 0) {
                 out["ok"] = false;
                 out["reason"] = "founder_family_bootstrap_failed";

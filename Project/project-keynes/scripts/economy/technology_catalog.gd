@@ -10,6 +10,74 @@ const NETWORK_DATA_PATH := "res://data/technology/technology_network.json"
 
 static var _network_payload_cache: Dictionary = {}
 
+# Building IDs whose direct technology tag is only one axis of an ALL gate.
+# Keep this cold-path projection beside the technology presentation contract;
+# EconomyCatalog still validates the authoritative required_technology_tags.
+const COMPOSITE_BUILDING_IDS: PackedStringArray = [
+	"adobe_yard", "bark_paper_workshop", "basic_semiconductor_fab", "bloomery",
+	"bread_plant", "bricks_plant", "bunded_rice_field", "cabinetmaker_workshop",
+	"cadastral_office", "canned_fish_plant", "canning_workshop", "charcoal_pit",
+	"classical_masonry_yard", "cloth_plant", "coal_adit", "concrete_plant",
+	"construction_components_plant", "copper_ore_collector", "cottage_weaving",
+	"cotton_collector", "cotton_garden", "cotton_ginning_shelter", "dairy_products_plant",
+	"detergent_plant", "dryland_wheat_field", "early_clay_pit", "early_copper_mine",
+	"early_copper_smelter", "early_iron_mine", "early_tin_mine", "early_tin_smelter",
+	"estate_paddy", "explosives_plant", "fertile_soil_collector", "fine_clothing_plant",
+	"fine_furniture_plant", "fired_brick_kiln", "flax_collector", "flax_retting_pit",
+	"floodplain_maize_plot", "floodplain_wheat_plot", "footwear_plant", "furniture_plant",
+	"gas_power_plant", "geospatial_analysis_center", "gold_mine", "hide_scraping_shelter",
+	"highland_tuber_plot", "household_appliances_plant", "household_loom", "hydropower_station",
+	"improved_domestic_loom", "industrial_machinery_plant", "industrial_salt_mine",
+	"iron_tool_workshop", "jewelry_plant", "knapping_workshop", "landed_estate",
+	"latex_smoking_shelter", "lead_ore_collector", "lead_plant", "leather_plant",
+	"limestone_collector", "lorekeeper_circle", "maize_garden", "mechanized_farm",
+	"mechanized_slaughterhouse", "merchant_post", "method_aluminum_plant_r10",
+	"method_automated_port", "method_automobiles_plant_r10", "method_autonomous_forestry",
+	"method_autonomous_shipping", "method_batteries_plant_r10", "method_cement_plant_r9",
+	"method_coke_ovens_r9", "method_concrete_plant_r9", "method_cotton_collector_r6",
+	"method_detergent_plant_r10", "method_edible_oil_plant_r6", "method_electric_motor_plant_r10",
+	"method_electronic_components_plant_r10", "method_engines_plant_r10",
+	"method_explosives_plant_r10", "method_explosives_plant_r8", "method_flax_collector_r3",
+	"method_flax_collector_r5", "method_flint_quarry_r1", "method_forest_remote_sensing",
+	"method_highland_precision_agriculture", "method_household_appliances_plant_r10",
+	"method_industrial_machinery_plant_r9", "method_insulated_cable_plant_r10",
+	"method_landed_estate_r6", "method_lead_ore_collector_r9", "method_lead_plant_r9",
+	"method_limestone_collector_r6", "method_lubricants_plant_r9", "method_lumber_plant_r6",
+	"method_machine_parts_plant_r9", "method_manganese_ore_collector_r10",
+	"method_marine_fish_collector_r4", "method_natural_gas_collector_r10",
+	"method_nuclear_fuel_plant_r10", "method_oceanic_shipyard_r7", "method_packaging_plant_r7",
+	"method_petrochemicals_plant_r10", "method_phosphate_rock_collector_r9",
+	"method_plastics_plant_r10", "method_potato_collector_r6", "method_pottery_kiln_r3",
+	"method_precision_tool_workshop_r10", "method_precision_tool_workshop_r8",
+	"method_printed_materials_plant_r7", "method_radio_equipment_works_r10",
+	"method_rare_earth_collector_r10", "method_rare_earth_metals_plant_r10",
+	"method_reactor_component_works_r10", "method_refined_fuel_plant_r10",
+	"method_rice_collector_r3", "method_rice_collector_r5", "method_rubber_tree_collector_r6",
+	"method_saltpeter_collector_r10", "method_saltpeter_collector_r8",
+	"method_scientific_instrument_works_r10", "method_scientific_instrument_works_r8",
+	"method_smart_husbandry", "method_soap_plant_r6", "method_specialty_commodity_plantation",
+	"method_spice_plants_collector_r6", "method_stainless_steel_plant_r10",
+	"method_steam_engine_works_r9", "method_steam_shipping", "method_stone_collector_r2",
+	"method_sulfur_collector_r10", "method_sulfur_collector_r8",
+	"method_synthetic_fiber_plant_r10", "method_synthetic_rubber_plant_r10",
+	"method_wheat_farm_r3", "method_wheat_farm_r5", "method_wire_plant_r10",
+	"method_zinc_ore_collector_r9", "method_zinc_plant_r9", "movable_type_print_shop",
+	"natural_copper_workshop", "natural_gas_collector", "oil_collector", "oil_power_plant",
+	"open_pottery_hearth", "ore_bronzesmith_camp", "packaging_plant", "paper_plant",
+	"parchment_workshop", "pastoral_camp", "plant_fiber_paper_workshop",
+	"polytechnic_institute", "potato_collector", "pottery_kiln", "primitive_clay_pit",
+	"primitive_gold_sluice", "printed_materials_plant", "printing_academy",
+	"processed_food_plant", "rainfed_maize_field", "rainfed_wheat_plot", "rare_earth_collector",
+	"rice_collector", "rubber_tapping_camp", "rubber_tree_collector", "rubble_stone_working",
+	"shallow_silver_working", "sharecrop_paddy", "silica_sand_collector", "silver_mine",
+	"small_game_trapline", "smart_water_network", "solar_salt_pan", "spice_plants_collector",
+	"spice_shade_garden", "staple_food_plant", "subsistence_farm", "surface_coal_gathering",
+	"swidden_maize_plot", "synthetic_textile_mill", "tenant_paddy",
+	"tenant_rainfed_maize_field", "tenant_rainfed_wheat_field", "tin_ore_collector",
+	"upland_rice_plot", "watershed_governance_center", "wetland_rice_garden", "wheat_farm",
+	"woodblock_printing_house", "zinc_ore_collector",
+]
+
 const DOMAIN_IDS := ["agriculture", "engineering", "science", "society"]
 const DOMAIN_NAMES := ["农业", "工程", "科学", "社会"]
 const DOMAIN_COLORS := [
@@ -130,7 +198,7 @@ static func compile_native_catalog() -> Dictionary:
 		var milestone_id := String(era_row.get("milestone_id", ""))
 		var candidate_ids: Array = era_row.get("milestone_candidate_ids", [])
 		var candidate_required := int(era_row.get("candidate_required", 0))
-		if candidate_ids.size() != 8 or candidate_required != 4:
+		if candidate_ids.size() != 12 or candidate_required != 4:
 			return {"ok": false, "reason": "technology_era_candidate_contract_invalid",
 				"era_id": authored_era_id}
 		era_index[authored_era_id] = i
@@ -201,13 +269,16 @@ static func compile_native_catalog() -> Dictionary:
 				var candidate_index := int(id_to_index.get(candidate_id, -1))
 				if candidate_index < 0 or candidate_index >= row_index:
 					return {"ok": false, "reason": "technology_era_candidate_invalid", "id": row_id, "candidate": candidate_id}
+				if String(technology_rows[candidate_index].get("era_id", "")) != era:
+					return {"ok": false, "reason": "technology_era_candidate_wrong_era", "id": row_id, "candidate": candidate_id}
 				milestone_candidates.append(candidate_index)
 		milestone_offsets.append(milestone_candidates.size())
 		milestone_required.append(int(milestone_required_by_id.get(row_id, 0)) if is_milestone else 0)
 		flags.append((FLAG_ERA_KEY if milestone_candidate_ids.has(row_id) else 0) \
 			| (FLAG_MILESTONE if is_milestone else 0) \
 			| (FLAG_STARTING if is_starter else 0))
-		effects.append(String(row.get("effect_summary", "")))
+		effects.append(_visible_effect_summary(
+			String(row.get("effect_summary", "")), row.get("content_effects", [])))
 		profiles.append(String(row.get("effect_profile", "")))
 		var route_seen := {}
 		for route_tag in secondary_routes:
@@ -407,6 +478,52 @@ static func _validate_content_effects(effects: Array, expected_bindings: Array) 
 		if not bool(expected[key]):
 			return false
 	return true
+
+
+static func _building_has_required_technology(building_id: String) -> bool:
+	return COMPOSITE_BUILDING_IDS.has(building_id)
+
+
+static func _visible_content_effects(effects: Array) -> Array:
+	var visible: Array = []
+	for effect_value in effects:
+		if not effect_value is Dictionary:
+			visible.append(effect_value)
+			continue
+		var effect: Dictionary = effect_value
+		if String(effect.get("kind", "")) == "building" \
+				and _building_has_required_technology(String(effect.get("id", ""))):
+			continue
+		visible.append(effect.duplicate(true))
+	return visible
+
+
+static func _visible_effect_summary(summary: String, effects: Array) -> String:
+	var composite_names := PackedStringArray()
+	for effect_value in effects:
+		if not effect_value is Dictionary:
+			continue
+		var effect: Dictionary = effect_value
+		if String(effect.get("kind", "")) != "building" \
+				or not _building_has_required_technology(String(effect.get("id", ""))):
+			continue
+		var display_name := String(effect.get("display_name", "")).strip_edges()
+		if not display_name.is_empty() and not composite_names.has(display_name):
+			composite_names.append(display_name)
+	if composite_names.is_empty():
+		return summary
+	var visible_chunks := PackedStringArray()
+	for raw_chunk in summary.split("；", false):
+		var chunk := String(raw_chunk).strip_edges()
+		var hidden := false
+		for display_name in composite_names:
+			if chunk == "解锁建筑：%s" % display_name \
+					or chunk == "解锁建筑: %s" % display_name:
+				hidden = true
+				break
+		if not hidden and not chunk.is_empty():
+			visible_chunks.append(chunk)
+	return "；".join(visible_chunks)
 
 
 static func _compile_research_routes(nodes: Array, technology_ids: PackedStringArray,
@@ -725,7 +842,8 @@ static func public_definitions() -> Array[Dictionary]:
 			"reveal_summary": String(source.get("reveal_summary", "")),
 			"modifier_terms": (source.get("modifier_terms", []) as Array).duplicate(true),
 			"expected_bindings": (source.get("expected_bindings", []) as Array).duplicate(true),
-			"content_effects": (source.get("content_effects", []) as Array).duplicate(true),
+			"content_effects": _visible_content_effects(
+				source.get("content_effects", []) as Array),
 			"opportunity_cost": String(source.get("opportunity_cost", "")),
 			"branch_successor_ids": PackedStringArray(source.get("branch_successor_ids", [])),
 			"branch_successor_rationales": PackedStringArray(

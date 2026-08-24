@@ -190,6 +190,33 @@ func _run() -> void:
 	_expect("income-floor restored replay remains deterministic",
 		int(floor_restored.get_economy_state_hash()) ==
 			int(floor_runtime.get_economy_state_hash()))
+	_test_prospective_income_subsidy(compiled, catalog, profile)
+
+func _test_prospective_income_subsidy(compiled: Dictionary, catalog: Dictionary,
+		profile: Dictionary) -> void:
+	var runtime := _new_runtime(compiled, catalog, profile, 92017, false)
+	if runtime == null:
+		return
+	var summary: Dictionary = runtime.get_country_cell_summary(0)
+	var handle := int(summary.get("country_handle", 0))
+	var population: Dictionary = runtime.get_population_cell_snapshot(0)
+	var handles: PackedInt64Array = population.get("handles", PackedInt64Array())
+	_expect("prospective subsidy fixture has a source cohort", not handles.is_empty())
+	if handles.is_empty():
+		return
+	_expect("prospective subsidy fixture funds the country",
+		_transfer_from_cohort(runtime, int(handles[0]), 500000, 0, 1))
+	var industrialist := (compiled.signature_keys as PackedStringArray).find(
+		"industrialist|default")
+	_expect("negative tax targets an empty owner profession",
+		industrialist >= 0 and _set_income_tax_override(
+			runtime, handle, industrialist, -20, 1, 2))
+	_validate_day(runtime, 0)
+	_validate_day(runtime, 1)
+	var fiscal: Dictionary = runtime.get_country_fiscal_snapshot(handle)
+	_expect("empty target profession receives prospective subsidy budget",
+		_sum_i64(fiscal.get("subsidy_requested", PackedInt64Array())) > 0 and
+		_sum_i64(fiscal.get("subsidy_paid", PackedInt64Array())) > 0)
 
 func _new_runtime(compiled: Dictionary, catalog: Dictionary,
 		profile: Dictionary, seed: int, stock_survival: bool = true) -> Object:
@@ -483,6 +510,32 @@ func _set_income_tax(ext: Object, handle: int, rate: int,
 		"value_i64": PackedInt64Array([0]),
 		"tax_kinds": PackedInt32Array([0]),
 		"tax_item_indices": PackedInt32Array([-1]),
+		"tax_rate_percent": PackedInt32Array([rate]),
+		"stable_ids": PackedStringArray([""]),
+		"display_names": PackedStringArray([""]),
+	}
+	return bool(ext.submit_country_commands(batch).get("ok", false)) \
+		and bool(ext.run_country_slice({"day_index": day}).get("ok", false))
+
+
+func _set_income_tax_override(ext: Object, handle: int, profession: int,
+		rate: int, day: int, sequence: int) -> bool:
+	var batch := {
+		"opcodes": PackedInt32Array([11]),
+		"effective_days": PackedInt64Array([day]),
+		"sequences": PackedInt64Array([sequence]),
+		"target_handles": PackedInt64Array([handle]),
+		"cell_indices": PackedInt32Array([-1]),
+		"aux_i32": PackedInt32Array([-1]),
+		"domain_i32": PackedInt32Array([-1]),
+		"position_i32": PackedInt32Array([-1]),
+		"weight0_bp": PackedInt32Array([0]),
+		"weight1_bp": PackedInt32Array([0]),
+		"weight2_bp": PackedInt32Array([0]),
+		"weight3_bp": PackedInt32Array([0]),
+		"value_i64": PackedInt64Array([0]),
+		"tax_kinds": PackedInt32Array([0]),
+		"tax_item_indices": PackedInt32Array([profession]),
 		"tax_rate_percent": PackedInt32Array([rate]),
 		"stable_ids": PackedStringArray([""]),
 		"display_names": PackedStringArray([""]),

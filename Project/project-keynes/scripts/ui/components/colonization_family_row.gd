@@ -21,8 +21,8 @@ func _ready() -> void:
 	focus_mode = Control.FOCUS_NONE
 	mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	_population.add_theme_font_override("font", UITokens.font_with_weight(650))
-	_population.add_theme_font_size_override("font_size", UITokens.FONT_VALUE)
-	_population.add_theme_color_override("font_color", UITokens.BRASS_HIGHLIGHT)
+	_population.add_theme_font_size_override("font_size", 20)
+	_population.add_theme_color_override("font_color", UITokens.ARCHIVE_INK)
 
 
 func set_row(data: Dictionary) -> void:
@@ -39,8 +39,9 @@ func set_row(data: Dictionary) -> void:
 	var effect := String(data.get("effect", "")).strip_edges()
 	_effect.text = effect
 	_effect.visible = not effect.is_empty()
-	_population.text = UITokens.format_compact_number_cn(
+	_population.text = "%s 人" % UITokens.format_compact_number_cn(
 		float(data.get("population", 0)), 0)
+	_population.tooltip_text = "可派遣人口：%s" % _population.text
 	tooltip_text = String(data.get("tooltip", ""))
 
 

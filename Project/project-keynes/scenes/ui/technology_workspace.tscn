@@ -28,8 +28,9 @@ grow_vertical = 2
 theme_override_constants/separation = 8
 
 [node name="StatusStrip" type="PanelContainer" parent="Root"]
+custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
-theme_type_variation = &"PKInsetPanel"
+theme_type_variation = &"PKWorkspaceStatus"
 
 [node name="Row" type="HBoxContainer" parent="Root/StatusStrip"]
 layout_mode = 2
@@ -45,7 +46,7 @@ layout_mode = 2
 layout_mode = 2
 text = "—"
 vertical_alignment = 1
-theme_type_variation = &"PKMutedLabel"
+theme_type_variation = &"PKWorkspaceLabel"
 
 [node name="Points" type="HBoxContainer" parent="Root/StatusStrip/Row"]
 layout_mode = 2
@@ -57,7 +58,7 @@ layout_mode = 2
 layout_mode = 2
 text = "—"
 vertical_alignment = 1
-theme_type_variation = &"PKMutedLabel"
+theme_type_variation = &"PKWorkspaceLabel"
 
 [node name="Treasury" type="HBoxContainer" parent="Root/StatusStrip/Row"]
 layout_mode = 2
@@ -69,7 +70,7 @@ layout_mode = 2
 layout_mode = 2
 text = "—"
 vertical_alignment = 1
-theme_type_variation = &"PKMutedLabel"
+theme_type_variation = &"PKWorkspaceLabel"
 
 [node name="Queued" type="HBoxContainer" parent="Root/StatusStrip/Row"]
 layout_mode = 2
@@ -81,7 +82,7 @@ layout_mode = 2
 layout_mode = 2
 text = "—"
 vertical_alignment = 1
-theme_type_variation = &"PKMutedLabel"
+theme_type_variation = &"PKWorkspaceLabel"
 
 [node name="Completed" type="HBoxContainer" parent="Root/StatusStrip/Row"]
 layout_mode = 2
@@ -93,7 +94,7 @@ layout_mode = 2
 layout_mode = 2
 text = "—"
 vertical_alignment = 1
-theme_type_variation = &"PKMutedLabel"
+theme_type_variation = &"PKWorkspaceLabel"
 
 [node name="Purchased" type="HBoxContainer" parent="Root/StatusStrip/Row"]
 layout_mode = 2
@@ -105,18 +106,19 @@ layout_mode = 2
 layout_mode = 2
 text = "—"
 vertical_alignment = 1
-theme_type_variation = &"PKMutedLabel"
+theme_type_variation = &"PKWorkspaceLabel"
 
 [node name="Toolbar" type="PanelContainer" parent="Root"]
+custom_minimum_size = Vector2(0, 44)
 layout_mode = 2
-theme_type_variation = &"PKInsetPanel"
+theme_type_variation = &"PKWorkspaceToolbar"
 
 [node name="Row" type="HBoxContainer" parent="Root/Toolbar"]
 layout_mode = 2
 theme_override_constants/separation = 6
 
 [node name="FocusMode" type="Button" parent="Root/Toolbar/Row"]
-custom_minimum_size = Vector2(64, 28)
+custom_minimum_size = Vector2(72, 32)
 layout_mode = 2
 text = "聚焦"
 toggle_mode = true
@@ -124,7 +126,7 @@ button_pressed = true
 theme_type_variation = &"PKTabButton"
 
 [node name="OverviewMode" type="Button" parent="Root/Toolbar/Row"]
-custom_minimum_size = Vector2(64, 28)
+custom_minimum_size = Vector2(72, 32)
 layout_mode = 2
 text = "总览"
 toggle_mode = true
@@ -135,7 +137,7 @@ layout_mode = 2
 
 [node name="EraPlate" type="PanelContainer" parent="Root/Toolbar/Row"]
 layout_mode = 2
-theme_type_variation = &"PKInsetPanel"
+theme_type_variation = &"PKWorkspaceCanvas"
 
 [node name="EraRow" type="HBoxContainer" parent="Root/Toolbar/Row/EraPlate"]
 layout_mode = 2
@@ -167,7 +169,7 @@ size_flags_horizontal = 3
 mouse_filter = 2
 
 [node name="Search" type="LineEdit" parent="Root/Toolbar/Row"]
-custom_minimum_size = Vector2(148, 28)
+custom_minimum_size = Vector2(220, 32)
 layout_mode = 2
 placeholder_text = "搜索科技…"
 clear_button_enabled = true
@@ -183,6 +185,16 @@ layout_mode = 2
 size_flags_vertical = 3
 clip_contents = true
 
+[node name="CanvasSurface" type="PanelContainer" parent="Root/Main"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_type_variation = &"PKWorkspaceCanvas"
+
 [node name="Tree" parent="Root/Main" instance=ExtResource("6_tree")]
 unique_name_in_owner = true
 layout_mode = 1
@@ -191,8 +203,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-offset_left = 280.0
-offset_right = -320.0
+offset_left = 320.0
+offset_right = -360.0
 
 [node name="Overview" parent="Root/Main" instance=ExtResource("8_overview")]
 unique_name_in_owner = true
@@ -203,8 +215,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-offset_left = 280.0
-offset_right = -320.0
+offset_left = 320.0
+offset_right = -360.0
 
 [node name="PolicyRail" type="Button" parent="Root/Main"]
 visible = false
@@ -212,10 +224,11 @@ layout_mode = 1
 anchors_preset = 5
 anchor_right = 0.0
 anchor_bottom = 1.0
-offset_right = 40.0
+offset_right = 42.0
 grow_vertical = 2
 text = ""
 focus_mode = 0
+theme_type_variation = &"PKTabButton"
 
 [node name="DetailRail" type="Button" parent="Root/Main"]
 visible = false
@@ -225,11 +238,12 @@ anchor_left = 1.0
 anchor_top = 0.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -40.0
+offset_left = -42.0
 grow_horizontal = 0
 grow_vertical = 2
 text = ""
 focus_mode = 0
+theme_type_variation = &"PKTabButton"
 
 [node name="PolicyPanel" type="PanelContainer" parent="Root/Main"]
 unique_name_in_owner = true
@@ -238,9 +252,9 @@ layout_mode = 1
 anchors_preset = 5
 anchor_right = 0.0
 anchor_bottom = 1.0
-offset_right = 280.0
+offset_right = 320.0
 grow_vertical = 2
-theme_type_variation = &"PKPanel"
+theme_type_variation = &"PKWorkspaceRail"
 
 [node name="Scroll" type="ScrollContainer" parent="Root/Main/PolicyPanel"]
 layout_mode = 2
@@ -257,7 +271,7 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 3
 text = "研究管理"
-theme_type_variation = &"PKSectionTitle"
+theme_type_variation = &"PKWorkspaceTitle"
 [node name="Pin" type="Button" parent="Root/Main/PolicyPanel/Scroll/Body/Header"]
 visible = false
 custom_minimum_size = Vector2(28, 24)
@@ -372,10 +386,10 @@ anchor_left = 1.0
 anchor_top = 0.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-offset_left = -320.0
+offset_left = -360.0
 grow_horizontal = 0
 grow_vertical = 2
-theme_type_variation = &"PKPanel"
+theme_type_variation = &"PKWorkspaceRailRight"
 
 [node name="Body" type="VBoxContainer" parent="Root/Main/DetailHost"]
 layout_mode = 2
@@ -386,7 +400,7 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 3
 text = "科技详情"
-theme_type_variation = &"PKSectionTitle"
+theme_type_variation = &"PKWorkspaceTitle"
 [node name="Pin" type="Button" parent="Root/Main/DetailHost/Body/Header"]
 visible = false
 custom_minimum_size = Vector2(28, 24)

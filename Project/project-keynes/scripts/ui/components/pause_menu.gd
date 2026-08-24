@@ -28,6 +28,7 @@ func _ready() -> void:
 func open() -> void:
 	visible = true
 	_show_main()
+	call_deferred("_grab_first_focus")
 	visibility_requested.emit(true)
 
 
@@ -168,3 +169,12 @@ func _add_button(text_value: String, icon: String, callback: Callable) -> Button
 	button.pressed.connect(callback)
 	_rows.add_child(button)
 	return button
+
+
+func _grab_first_focus() -> void:
+	if not visible or _rows == null:
+		return
+	for child in _rows.get_children():
+		if child is Button and not (child as Button).disabled:
+			(child as Button).grab_focus()
+			return

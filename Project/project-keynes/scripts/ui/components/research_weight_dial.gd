@@ -233,7 +233,7 @@ func _draw() -> void:
 		draw_polyline(ring, tint, 1.4 if strong or balance else 1.0, true)
 	for i in range(AXIS_DIRECTIONS.size()):
 		var live := i == _dragging or i == _hovered
-		var arm: Color = _accent(i).lerp(UITokens.TEXT_MAIN, 0.30) if live \
+		var arm: Color = _accent(i).lerp(UITokens.ARCHIVE_INK, 0.30) if live \
 			else Color(UITokens.PANEL_BORDER_SOFT.r, UITokens.PANEL_BORDER_SOFT.g,
 				UITokens.PANEL_BORDER_SOFT.b, 0.66)
 		draw_line(centre, centre + AXIS_DIRECTIONS[i] * radius, arm,
@@ -255,8 +255,8 @@ func _draw() -> void:
 	draw_arc(centre, CENTRE_RADIUS, 0.0, TAU, 28,
 		Color(UITokens.PANEL_BORDER.r, UITokens.PANEL_BORDER.g,
 			UITokens.PANEL_BORDER.b, 0.55), 1.0, true)
-	draw_circle(centre, 2.8, Color(UITokens.TEXT_FAINT.r, UITokens.TEXT_FAINT.g,
-		UITokens.TEXT_FAINT.b, 0.80))
+	draw_circle(centre, 2.8, Color(UITokens.ARCHIVE_INK_MUTED.r,
+		UITokens.ARCHIVE_INK_MUTED.g, UITokens.ARCHIVE_INK_MUTED.b, 0.80))
 	var active := _dragging if _dragging >= 0 else _hovered
 	if active >= 0:
 		_draw_active_chip(active)
@@ -268,7 +268,8 @@ func _draw_handle(domain: int) -> void:
 	var active := domain == _dragging or domain == _hovered
 	var handle_radius := HANDLE_RADIUS + (2.0 if active else 0.0)
 	draw_circle(position + Vector2(0.0, 1.0), handle_radius + 1.2, Color(0.0, 0.0, 0.0, 0.42))
-	draw_circle(position, handle_radius, accent.lerp(UITokens.TEXT_MAIN, 0.42 if active else 0.16))
+	draw_circle(position, handle_radius, accent.lerp(UITokens.ARCHIVE_INK,
+		0.42 if active else 0.16))
 	draw_arc(position, handle_radius - 1.0, 0.0, TAU, 16,
 		Color(1.0, 0.93, 0.72, 0.55 if active else 0.28), 1.0, true)
 
@@ -297,7 +298,7 @@ func _draw_axis_icon(domain: int, centre: Vector2, radius: float) -> void:
 	var active := domain == _dragging or domain == _hovered
 	draw_string(IconCatalog.FONT_AWESOME, origin, glyph, HORIZONTAL_ALIGNMENT_LEFT,
 		-1.0, ICON_FONT_SIZE,
-		_accent(domain).lerp(UITokens.TEXT_MAIN, 0.55 if active else 0.20))
+		_accent(domain).lerp(UITokens.ARCHIVE_INK, 0.55 if active else 0.20))
 
 
 # The share is spelled out only for the arm under the cursor, right where the
@@ -321,7 +322,7 @@ func _draw_active_chip(domain: int) -> void:
 	draw_rect(box, Color(0.048, 0.041, 0.033, 0.92))
 	draw_rect(box, Color(accent.r, accent.g, accent.b, 0.58), false, 1.0)
 	draw_string(_label_font, origin, text, HORIZONTAL_ALIGNMENT_LEFT, -1.0,
-		VALUE_FONT_SIZE, accent.lerp(UITokens.TEXT_MAIN, 0.78))
+		VALUE_FONT_SIZE, accent.lerp(UITokens.ARCHIVE_INK, 0.78))
 
 
 # Largest-remainder rounding keeps the committed basis points at exactly 10000,

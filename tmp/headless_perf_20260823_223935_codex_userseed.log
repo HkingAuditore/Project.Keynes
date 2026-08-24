@@ -1,0 +1,264 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[native_generation/base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=2400 native_ms=7.113 water=1990 land=410
+[native_generation/post_base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=2400 native_ms=1.129 lakes=0 rivers=47 volcanoes=0
+[native_generation/vegetation] native_ms=0.374 candidates=414 none=1757 score=[0.000,1.300,1.129] plant_water_land=414 river_adjacent_desert=0 coastal_highland_desert=0 terrain_weight=[0.180,1.200]
+[native_generation/qa] single_water=0 tiny<=3=0 small<=5=0 bodies=1 largest=1986 | land_below_sea=0.5% | terr_distinct=17 entropy=2.055bit | river_ratio=1.958%
+MapGenerator v7: per-cell 91ms (2400 cells, path=gdext)
+MapBaker v6: hm=(1024, 606) seed=2080922576
+    [fused] terrain=71.7ms erosion=3.7ms(ok=true) river=8.0ms(ok=true) latitude=0.1ms coast_sdf=4.9ms(ok=true)
+  geometry fields (fused C++): 170ms
+  physical circulation hex solve: deferred until DCWorldExt bind (ext=true idx=true soa=false)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+  visual tiles: {"degradation_reason":"","effective_budget_px":1335168,"effective_texels_per_hex":14.1134163904991,"effective_world_units_per_texel":"(1.561685, 1.555921)","estimated_peak_bytes":52958880,"estimated_resident_bytes":31232160,"fallback_reason":"","generation_id":1,"grid_size":"(3, 2)","gutter_px":2,"hex_size":22.0,"horizon_path":"neutral_pending","interior_size":"(488, 456)","layer_size":"(492, 460)","layers":[{"bake_ms":80.0242,"coast_sdf_max_dist_px":12.00627660199,"distance_scale":1.50078457524874,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":5042236374487232439,"edge_neighbor":7440491459938451878,"height":-291126631887674565,"map_index":-3548485301930106347,"terrain_detail":4050595558505061374,"terrain_normal":7451917012940028115,"water_depth":2601746093428824022},"layer":0,"normal_radius_px":"(6, 6)","raster_scale":"(1.49663, 1.504951)","river_sdf_max_dist_px":5.25274601337061,"shore_carve_band_px":9,"upload_ms":0.072,"wall_ms":80.21},{"bake_ms":102.7283,"coast_sdf_max_dist_px":12.00627660199,"distance_scale":1.50078457524874,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-3304708239658614383,"edge_neighbor":-6568379047478861760,"height":640742750286732721,"map_index":7142802206139782105,"terrain_detail":7408070294691148338,"terrain_normal":1882272355866046123,"water_depth":9092225674563195578},"layer":1,"normal_radius_px":"(6, 6)","raster_scale":"(1.49663, 1.504951)","river_sdf_max_dist_px":5.25274601337061,"shore_carve_band_px":9,"upload_ms":0.066,"wall_ms":102.945},{"bake_ms":77.9385,"coast_sdf_max_dist_px":12.00627660199,"distance_scale":1.50078457524874,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":3116814481911270573,"edge_neighbor":6638583503969544769,"height":312414882018199497,"map_index":4150256865214791910,"terrain_detail":3456667088972076500,"terrain_normal":6357364965737801397,"water_depth":770522425808449770},"layer":2,"normal_radius_px":"(6, 6)","raster_scale":"(1.49663, 1.504951)","river_sdf_max_dist_px":5.25274601337061,"shore_carve_band_px":9,"upload_ms":0.071,"wall_ms":78.156},{"bake_ms":53.4878,"coast_sdf_max_dist_px":12.00627660199,"distance_scale":1.50078457524874,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":4011968664953384301,"edge_neighbor":7945502518721666771,"height":7278728125438200533,"map_index":4817787712932340571,"terrain_detail":4843417481508240241,"terrain_normal":2921346207161697625,"water_depth":6090242481328258546},"layer":3,"normal_radius_px":"(6, 6)","raster_scale":"(1.49663, 1.504951)","river_sdf_max_dist_px":5.25274601337061,"shore_carve_band_px":9,"upload_ms":0.065,"wall_ms":53.67},{"bake_ms":117.4185,"coast_sdf_max_dist_px":12.00627660199,"distance_scale":1.50078457524874,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":8260435307329681760,"edge_neighbor":5310613609474225626,"height":-3553304009603361861,"map_index":7525561920791191850,"terrain_detail":-4816839793428783254,"terrain_normal":6436676160956862844,"water_depth":6982743799615682678},"layer":4,"normal_radius_px":"(6, 6)","raster_scale":"(1.49663, 1.504951)","river_sdf_max_dist_px":5.25274601337061,"shore_carve_band_px":9,"upload_ms":0.063,"wall_ms":117.572},{"bake_ms":55.3181,"coast_sdf_max_dist_px":12.00627660199,"distance_scale":1.50078457524874,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-6234038685058995921,"edge_neighbor":-3072490046338926225,"height":216856079311567180,"map_index":-6303288945660748617,"terrain_detail":6331325038971525264,"terrain_normal":-5867787037514547344,"water_depth":-8523166156260542915},"layer":5,"normal_radius_px":"(6, 6)","raster_scale":"(1.49663, 1.504951)","river_sdf_max_dist_px":5.25274601337061,"shore_carve_band_px":9,"upload_ms":0.084,"wall_ms":55.54}],"logical_size":"(1464, 912)","mode":"tiled","path":"visual_tiled_static","profile":"desktop_auto","renderer":"mobile","requested_budget_px":1313865,"requested_texels_per_hex":14.0,"requested_tile_world_span":"(804.5714, 804.5714)","requested_world_units_per_texel":1.57142857142857,"tile_world_area":540711.621551514,"tile_world_span":"(762.1024, 709.5)","total_ms":490.204,"visual_domain":"[P: (0.0, -44.0), S: (2286.307, 1419.0)]","wrap_period_x":2286.30706599092,"wrap_x":true}
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/organic.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:359)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:342)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1175)
+       [3] generate (res://scripts/geography/map_generator.gd:1381)
+       [4] generate_world (res://scripts/game/world_runtime_host.gd:272)
+       [5] _run (res://tests/headless_perf_record.gd:179)
+       [6] _init (res://tests/headless_perf_record.gd:25)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/dry_sand.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:359)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:342)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1175)
+       [3] generate (res://scripts/geography/map_generator.gd:1381)
+       [4] generate_world (res://scripts/game/world_runtime_host.gd:272)
+       [5] _run (res://tests/headless_perf_record.gd:179)
+       [6] _init (res://tests/headless_perf_record.gd:25)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/rock.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:359)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:342)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1175)
+       [3] generate (res://scripts/geography/map_generator.gd:1381)
+       [4] generate_world (res://scripts/game/world_runtime_host.gd:272)
+       [5] _run (res://tests/headless_perf_record.gd:179)
+       [6] _init (res://tests/headless_perf_record.gd:25)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/snow_wet.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:359)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:342)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1175)
+       [3] generate (res://scripts/geography/map_generator.gd:1381)
+       [4] generate_world (res://scripts/game/world_runtime_host.gd:272)
+       [5] _run (res://tests/headless_perf_record.gd:179)
+       [6] _init (res://tests/headless_perf_record.gd:25)
+  cell LUT encode: deferred until DCWorldExt bind
+  encode: 3501ms
+MapBaker v6: total 3671ms
+MapGenerator v7: bake 3708ms
+MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+MapGenerator: skip _compute_terrain_perturbed_wind (physical-hex solver writes per-cell)
+[SUS] sim budget strict=false frame=8.00ms warn=2.00ms slice=0.75ms upload=1.50ms scheduler=DCSystemScheduler native_sus=auto
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+[DataCore] _data_core_world_ext bound=true (climate co-processor; class=DCWorldExt)
+[native_world] configure rc=0 reason=configured cells=2400 wrap_period_x=103.923
+[native_generation] path=gdext n=2400 published=9 native_ms=0.176 compute_ms=0.099 flush_ms=0.076
+[hex_cell] facade ENABLED (2400 cells bound; ext=true)
+[DataCore] _baker climate_profile injected=true (fixes WorldData.config==null sea_ice prepare path)
+[phys_solve][oneshot] OK slp=1.37ms wind=0.46ms psi=0.47ms(ran=true) upwelling=0.08ms total=2.96ms
+PhysicalCirculation solve@phase=1.50 total=3ms (C++ one-shot run_physical_solve_pass)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+[physical_init] deferred native refresh complete: 3ms
+[cell_lut] deferred encode: 3ms path=gdext
+[bio-occupancy] seed landmasses=5 provinces=5 species=19 secondary_hearths=2
+[bio-occupancy]   bio.maize envelope=43 hearth=41 seeded_landmasses=1 primary_landmass=4 primary_envelope=42 occupied=41 occupied/envelope=0.98
+[bio-occupancy]   bio.wheat envelope=34 hearth=15 seeded_landmasses=2 primary_landmass=4 primary_envelope=13 occupied=15 occupied/envelope=1.15
+[bio-occupancy]   bio.rice envelope=60 hearth=46 seeded_landmasses=1 primary_landmass=4 primary_envelope=46 occupied=46 occupied/envelope=1.00
+[bio-occupancy]   bio.potato envelope=27 hearth=18 seeded_landmasses=1 primary_landmass=1 primary_envelope=18 occupied=18 occupied/envelope=1.00
+[bio-occupancy]   bio.horse envelope=34 hearth=15 seeded_landmasses=1 primary_landmass=1 primary_envelope=18 occupied=15 occupied/envelope=0.83
+[bio-occupancy]   bio.cotton envelope=109 hearth=107 seeded_landmasses=1 primary_landmass=4 primary_envelope=107 occupied=107 occupied/envelope=1.00
+[bio-occupancy]   bio.flax envelope=30 hearth=15 seeded_landmasses=1 primary_landmass=1 primary_envelope=15 occupied=15 occupied/envelope=1.00
+[bio-occupancy]   bio.spice envelope=105 hearth=99 seeded_landmasses=1 primary_landmass=4 primary_envelope=99 occupied=99 occupied/envelope=1.00
+[bio-occupancy]   bio.rubber envelope=65 hearth=63 seeded_landmasses=1 primary_landmass=4 primary_envelope=63 occupied=63 occupied/envelope=1.00
+[bio-occupancy]   bio.sheep envelope=5 hearth=0 seeded_landmasses=0 primary_landmass=0 primary_envelope=0 occupied=0 occupied/envelope=0.00
+[bio-occupancy]   bio.goat envelope=134 hearth=5 seeded_landmasses=1 primary_landmass=1 primary_envelope=36 occupied=5 occupied/envelope=0.14
+[bio-occupancy]   bio.cattle envelope=3 hearth=3 seeded_landmasses=1 primary_landmass=4 primary_envelope=3 occupied=3 occupied/envelope=1.00
+[bio-occupancy]   bio.pig envelope=136 hearth=112 seeded_landmasses=1 primary_landmass=4 primary_envelope=112 occupied=112 occupied/envelope=1.00
+[bio-occupancy]   bio.camel envelope=11 hearth=11 seeded_landmasses=1 primary_landmass=4 primary_envelope=11 occupied=11 occupied/envelope=1.00
+[bio-occupancy]   bio.yak envelope=82 hearth=43 seeded_landmasses=1 primary_landmass=1 primary_envelope=43 occupied=43 occupied/envelope=1.00
+[bio-occupancy]   bio.silkworm envelope=114 hearth=105 seeded_landmasses=1 primary_landmass=4 primary_envelope=105 occupied=105 occupied/envelope=1.00
+[bio-occupancy]   bio.reed envelope=67 hearth=43 seeded_landmasses=1 primary_landmass=4 primary_envelope=43 occupied=43 occupied/envelope=1.00
+[bio-occupancy]   bio.bast_fiber envelope=68 hearth=55 seeded_landmasses=2 primary_landmass=4 primary_envelope=39 occupied=55 occupied/envelope=1.41
+[bio-occupancy]   bio.dye_plant envelope=115 hearth=113 seeded_landmasses=1 primary_landmass=4 primary_envelope=113 occupied=113 occupied/envelope=1.00
+[bio-occupancy]   landmass 1 classes=cold_grazer, dry_grazer, highland_food, open_grazer, fiber_open, fiber_forest, open_food foods=potato, wheat
+[bio-occupancy]   landmass 2 classes=none foods=none
+[bio-occupancy]   landmass 3 classes=none foods=none
+[bio-occupancy]   landmass 4 classes=fiber_open, tropical, forest_grazer, fiber_forest, wetland_food, fiber_wet, open_food, dry_grazer, open_grazer foods=rice, maize, wheat
+[bio-occupancy]   landmass 5 classes=none foods=none
+[weather] gdext acceleration ON (class=DCWorldExt)
+[weather] gdext field commit ON
+[weather] gdext distribute ON
+[weather] gdext summary ON
+[weather] hexcell facade ON (skip AoS double-write in hot loop)
+[weather] gdext resident knobs ON (class=KnobsHandle)
+[economy] ACTIVE native graph cells=2400 goods=130 cohorts=24 epoch_days=1 trade=ACTIVE topology_ready=true topology_generation=1 bootstrap=starter_settlement_bootstrap_v9 founder_families=6 founder_people=6
+[country] ACTIVE native authority countries=6 cells=2400 generation=1
+[weather/knobs] resident KnobsHandle path ACTIVE — first to_*_knobs_dict hit (field_rebuild_count=1 expected ≤1; stable Hz target ≤1 Hz)
+[native_daily] ACTIVE: registered native_daily_sim + natural_resource_daily + bio_occupancy_daily; retained season_refresh + ocean_currents boundary jobs
+[DCSystemScheduler] topology: ["season_refresh", "trigger_runtime", "ideology_runtime", "effect_runtime", "modifier_daily", "gameplay_effect", "natural_resource_daily", "bio_occupancy_daily", "enum_atlas_upload", "ocean_currents", "native_daily_sim", "dynamic_visual_atlas_upload", "country_daily", "economy_daily"]
+[perf-record] start (start_tick=0)
+[season_refresh] b_plus_start path=gdext handle=1 season=0 n_cells=2400
+[DCSystemScheduler][RT] ocean_skip#1 tick=1 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[detail_scatter] tick-sync queued=160 (vegetation=76)
+[DCSystemScheduler][RT] ocean_skip#2 tick=2 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#3 tick=3 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[phys_solve][RT] start#1 phase=0.0438 pending=nan solve_ocean=true ext=true idx=true soa=true
+[slp_field] path-decision call#1: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true -> cpp_gate=true
+[slp_field] commit-diag call#1: rc=0.075 slp_out=2400 n_cells=2400 map_slp=2400 published=false
+[slp_field][RT-DIAG] call#1 phase=0.0438 rc=0.075 slp_out=2400 n=2400 published=false -> commit_ok
+[natural_resource/slow-dump] tick=5 day=5 wall=3.40 cpp=0.551 compute=0.266 loop=0.012 flush=0.159 wrapper=2.603 layout=cell_indices dispatches=0 resources=11/31 skipped_static=20 published=true total_delta=-611024.13822
+[DCSystemScheduler][RT] ocean_skip#4 tick=5 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[detail_scatter] tick-sync queued=58 (vegetation=0)
+[DCSystemScheduler][RT] ocean_skip#5 tick=7 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[slp_field] path-decision call#2: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true -> cpp_gate=true
+[slp_field] commit-diag call#2: rc=0.065 slp_out=2400 n_cells=2400 map_slp=2400 published=false
+[slp_field][RT-DIAG] call#2 phase=0.0438 rc=0.065 slp_out=2400 n=2400 published=false -> commit_ok
+[DCSystemScheduler][RT] ocean_skip#6 tick=9 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#7 tick=10 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#8 tick=11 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[slp_field] path-decision call#3: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true -> cpp_gate=true
+[slp_field] commit-diag call#3: rc=0.086 slp_out=2400 n_cells=2400 map_slp=2400 published=false
+[slp_field][RT-DIAG] call#3 phase=0.0438 rc=0.086 slp_out=2400 n=2400 published=false -> commit_ok
+[DCSystemScheduler][RT] ocean_skip#9 tick=13 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#10 tick=14 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#11 tick=15 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[slp_field][RT-DIAG] call#4 phase=0.0438 rc=0.080 slp_out=2400 n=2400 published=false -> commit_ok
+[DCSystemScheduler][RT] ocean_skip#12 tick=17 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#13 tick=19 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[slp_field][RT-DIAG] call#5 phase=0.0438 rc=0.066 slp_out=2400 n=2400 published=false -> commit_ok
+[DCSystemScheduler][RT] ocean_skip#14 tick=21 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#15 tick=22 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#16 tick=23 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#17 tick=25 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#18 tick=26 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#19 tick=27 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#20 tick=29 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#21 tick=31 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[slp_field] gdext path ACTIVE — first run elapsed=0.32ms (legacy GDScript baseline ~36ms; target < 3ms)
+[DCSystemScheduler][RT] ocean_skip#22 tick=33 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#23 tick=34 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#24 tick=35 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#25 tick=37 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#26 tick=38 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#27 tick=39 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[psi_solver] path-decision call#1: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true heat=true -> cpp_gate=true
+[psi_solver] gdext path ACTIVE — first run elapsed=0.40ms (legacy GDScript stage3+4+5 baseline ~32+ms; target < 5ms)
+[psi_solver] commit-diag call#1: rc=0.401 n_water=1623 n_cells=2400 published=true
+[DCSystemScheduler][RT] ocean_skip#28 tick=41 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#29 tick=43 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[upwelling/DIAG#1] gate: prof=true pflag_attr=true pflag_val=true ext=true method=true wind_cpp=true idx=true -> cpp_gate=true
+[upwelling/DIAG#1] cpp-call: ret_type=27 fallback=false reason='' elapsed_native_ms=0.009
+[upwelling/DIAG#1] BREAKDOWN: T1_nb_pack=0.00ms T2_knobs=0.01ms T3_refresh_slots=0.11ms T4_cpp_call=0.02ms (n=2400)
+[DCSystemScheduler][RT] ocean_skip#30 tick=45 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#31 tick=46 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#32 tick=47 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#33 tick=49 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#34 tick=50 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#35 tick=51 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#36 tick=53 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#37 tick=55 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#38 tick=57 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#39 tick=58 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#40 tick=59 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#41 tick=61 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#42 tick=62 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#43 tick=63 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[natural_resource/slow-dump] tick=65 day=65 wall=3.69 cpp=0.403 compute=0.206 loop=0.032 flush=0.089 wrapper=3.005 layout=cell_indices dispatches=0 resources=11/31 skipped_static=20 published=true total_delta=-7022484.44382
+[DCSystemScheduler][RT] ocean_skip#44 tick=65 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[sim/barrier] day=65 pulse=1 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=2 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=3 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=4 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=5 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=6 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=7 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=8 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=60 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=120 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=180 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=240 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=300 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=360 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=420 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=480 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=540 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=600 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=660 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=720 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=780 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=840 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=900 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=960 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=1020 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=1080 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=1140 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=1200 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=1260 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=1320 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=1380 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=1440 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=1500 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=1560 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=1620 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=1680 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=1740 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=1800 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=1860 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=1920 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=1980 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=2040 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=2100 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=2160 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=2220 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=2280 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=2340 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=2400 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=2460 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=2520 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=2580 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=2640 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=2700 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=2760 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=2820 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=2880 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=2940 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=3000 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=3060 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=3120 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=3180 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=3240 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=3300 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=3360 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=3420 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=3480 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=3540 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=3600 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=3660 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=3720 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=3780 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=3840 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=3900 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=3960 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=4020 economy_inflight=true hard_ack=effect extra=
+[sim/barrier] day=65 pulse=4080 economy_inflight=true hard_ack=effect extra=
+ERROR: [headless-perf] hard barrier did not drain at day 65
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _run (res://tests/headless_perf_record.gd:259)
+       [1] _init (res://tests/headless_perf_record.gd:25)
+[perf-record] exported rows=65 cols=1680 → F:/Developent/Godot/Project.Keynes/tmp/perf_record_20260823_223954.csv
+[headless-perf/result] label=codex_userseed days=80 speed=50.000 seed=2080922576 map=60x40 formal_start=true trade_scenario=false foreign_count=5 import_tariff_rate=0 export_tariff_rate=0 population_scale=0 saved_setup=false economy_configured=true country_count=6 population=120 generation_ms=11361.1 run_ms=4434.1 barrier_pulses=4189 ledger_failures=0 fatal=true population_error=0 money_error=0 goods_error=0 family_count=6 family_branch_count=6 family_trait_roll_count=14 effect_instances=22 family_effect_stack_groups=5 family_effect_group_members=5 effect_metric_slab_bytes=7542 effect_instance_storage_bytes=5824 city_good_output_shared_count=130 city_good_output_non_neutral_shared_count=0 city_good_output_override_count=0 city_good_output_override_cell_count=0 city_good_output_cache_bytes=10124 trade_orders_dispatched=0 trade_orders_arrived=0 trade_orders_cumulative=0 trade_base_cumulative=0 trade_route_expansions=246 trade_tariff_lanes=0 trade_country_goods=0 trade_country_partners=0 tariff_collected=0 tariff_subsidy_paid=0 economy_memory_bytes=42984714 rows=65 expected_rows=65 path=F:/Developent/Godot/Project.Keynes/tmp/perf_record_20260823_223954.csv
+ERROR: 24 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 311 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

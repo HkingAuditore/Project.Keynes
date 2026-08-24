@@ -1,0 +1,78 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/era_reward_choice.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="2_icon"]
+
+[node name="EraRewardChoice" type="PanelContainer"]
+custom_minimum_size = Vector2(280, 302)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"PKEraRewardCard"
+script = ExtResource("1_script")
+
+[node name="Margin" type="MarginContainer" parent="."]
+layout_mode = 2
+theme_override_constants/margin_left = 16
+theme_override_constants/margin_top = 14
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 14
+
+[node name="Column" type="VBoxContainer" parent="Margin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Top" type="HBoxContainer" parent="Margin/Column"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Icon" parent="Margin/Column/Top" instance=ExtResource("2_icon")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(58, 58)
+layout_mode = 2
+
+[node name="Labels" type="VBoxContainer" parent="Margin/Column/Top"]
+layout_mode = 2
+size_flags_horizontal = 3
+alignment = 1
+
+[node name="Category" type="Label" parent="Margin/Column/Top/Labels"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "时代方案"
+theme_type_variation = &"PKSectionTitle"
+
+[node name="Title" type="Label" parent="Margin/Column/Top/Labels"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "暂无方案"
+autowrap_mode = 2
+theme_type_variation = &"PKTitle"
+
+[node name="Description" type="Label" parent="Margin/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+text = "当前没有可用的时代奖励。"
+autowrap_mode = 2
+theme_type_variation = &"PKWorkspaceLabel"
+
+[node name="Target" type="Label" parent="Margin/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "作用对象：玩家国家"
+autowrap_mode = 2
+theme_type_variation = &"PKMutedLabel"
+
+[node name="Reason" type="Label" parent="Margin/Column"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "适配：通用时代方案"
+autowrap_mode = 2
+theme_type_variation = &"PKMutedLabel"
+
+[node name="Choose" type="Button" parent="Margin/Column"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 38)
+layout_mode = 2
+theme_type_variation = &"PKEraRewardButton"
+text = "采纳此方案"

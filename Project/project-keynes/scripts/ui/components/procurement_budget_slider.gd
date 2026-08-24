@@ -100,16 +100,16 @@ func _draw() -> void:
 	var font := get_theme_default_font()
 	var enabled := is_enabled()
 	_draw_glyph(IconCatalog.good_semantic("technology_points"), Vector2(3.0, 14.0), 12,
-		UITokens.CLIMATE.lerp(UITokens.TEXT_MAIN, 0.40))
+		UITokens.CLIMATE.lerp(UITokens.ARCHIVE_INK, 0.40))
 	draw_string(_label_font, Vector2(21.0, 14.0), "科技值采购",
-		HORIZONTAL_ALIGNMENT_LEFT, -1.0, UITokens.FONT_SMALL, UITokens.TEXT_MUTED)
+		HORIZONTAL_ALIGNMENT_LEFT, -1.0, UITokens.FONT_SMALL, UITokens.ARCHIVE_INK_MUTED)
 	var value_text := "关闭" if not enabled else "每日 %s" % \
 		UITokens.format_compact_number_cn(float(_limit) / CASH_SCALE, 2)
 	var value_extent := _label_font.get_string_size(
 		value_text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, UITokens.FONT_SMALL)
 	draw_string(_label_font, Vector2(size.x - value_extent.x - 1.0, 14.0), value_text,
 		HORIZONTAL_ALIGNMENT_LEFT, -1.0, UITokens.FONT_SMALL,
-		UITokens.BRASS_HIGHLIGHT if enabled else UITokens.TEXT_FAINT)
+		UITokens.BRASS_HIGHLIGHT if enabled else UITokens.ARCHIVE_INK_MUTED)
 	var track := Rect2(GRABBER_RADIUS, TRACK_TOP, maxf(1.0, size.x - GRABBER_RADIUS * 2.0),
 		TRACK_HEIGHT)
 	draw_rect(track, Color(0.024, 0.021, 0.018, 0.94), true)
@@ -132,7 +132,7 @@ func _draw() -> void:
 	draw_arc(grabber, radius - 1.0, 0.0, TAU, 18,
 		Color(1.0, 0.93, 0.72, 0.66 if _dragging or _hovered else 0.34), 1.1, true)
 	draw_string(font, Vector2(1.0, 58.0), _preview_text(),
-		HORIZONTAL_ALIGNMENT_LEFT, size.x - 2.0, UITokens.FONT_SMALL, UITokens.TEXT_FAINT)
+		HORIZONTAL_ALIGNMENT_LEFT, size.x - 2.0, UITokens.FONT_SMALL, UITokens.ARCHIVE_INK_MUTED)
 
 
 func _preview_text() -> String:

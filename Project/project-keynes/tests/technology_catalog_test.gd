@@ -75,7 +75,7 @@ func _init() -> void:
 	assert(hunting_summary.contains("作为必要支撑"))
 	for era in TechnologyCatalogScript.public_era_metadata():
 		assert(int((era as Dictionary).candidate_required) == 4)
-		assert(((era as Dictionary).milestone_candidate_ids as PackedStringArray).size() == 8)
+		assert(((era as Dictionary).milestone_candidate_ids as PackedStringArray).size() == 12)
 	var researchable := 0
 	var milestones := 0
 	var recipe_ids := {}
@@ -122,7 +122,7 @@ func _init() -> void:
 		if (int(catalog.technology_flags[i]) & 2) != 0:
 			milestones += 1
 			assert(int(catalog.technology_milestone_required_counts[i]) == 4)
-			assert(int(catalog.technology_milestone_offsets[i + 1]) - int(catalog.technology_milestone_offsets[i]) == 8)
+			assert(int(catalog.technology_milestone_offsets[i + 1]) - int(catalog.technology_milestone_offsets[i]) == 12)
 	assert(researchable == EXPECTED_TECHNOLOGY_COUNT - EXPECTED_STARTER_COUNT)
 	assert(milestones == 11)
 	assert(recipe_ids.size() == EXPECTED_TECHNOLOGY_COUNT - EXPECTED_STARTER_COUNT)
@@ -152,7 +152,7 @@ func _init() -> void:
 		visual_kind_counts[kind] += 1
 		if kind == "alternative":
 			assert(not String((edge as Dictionary).get("route_id", "")).is_empty())
-	assert(int(visual_kind_counts.milestone_candidate) == 88)
+	assert(int(visual_kind_counts.milestone_candidate) == 132)
 	assert(int(visual_kind_counts.alternative) > 0)
 	var authored_branch_edges := 0
 	for definition_value in definitions:

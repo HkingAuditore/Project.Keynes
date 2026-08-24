@@ -18,10 +18,11 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/country_panel.tscn" id="20_country_panel"]
 [ext_resource type="PackedScene" path="res://scenes/ui/world_loading_overlay.tscn" id="21_loading"]
 [ext_resource type="PackedScene" path="res://scenes/ui/pause_menu.tscn" id="22_pause"]
-[ext_resource type="Theme" path="res://assets/themes/player_ui_theme.tres" id="23_theme"]
+[ext_resource type="Theme" path="res://assets/themes/player_session_theme.tres" id="23_theme"]
 [ext_resource type="Script" path="res://scripts/rendering/colonization_route_layer.gd" id="24_colonization_route"]
 [ext_resource type="PackedScene" path="res://scenes/ui/colonization_planner_panel.tscn" id="25_colonization_panel"]
 [ext_resource type="PackedScene" path="res://scenes/ui/era_reward_dialog.tscn" id="26_era_reward"]
+[ext_resource type="Theme" path="res://assets/themes/player_ui_theme.tres" id="27_legacy_theme"]
 
 [node name="PlayerGame" type="Node2D" unique_id=198229795]
 script = ExtResource("1_player")
@@ -146,6 +147,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
+theme = ExtResource("27_legacy_theme")
 
 [node name="PlayerController" type="Node" parent="." unique_id=1023979025]
 script = ExtResource("8_player_controller")

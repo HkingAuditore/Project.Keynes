@@ -15,7 +15,7 @@ func _ready() -> void:
 	if _icon == null or _title == null or _detail == null:
 		push_error("SectionPlaceholderScreen 必须通过 section_placeholder_screen.tscn 实例化。")
 		return
-	_icon.set_semantic(&"country.affairs", UITokens.TEXT_MUTED)
+	_icon.set_semantic(&"country.affairs", UITokens.ARCHIVE_INK_MUTED)
 
 
 func set_section(label: String, icon: StringName, accent: Color) -> void:

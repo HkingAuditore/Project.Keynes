@@ -6,8 +6,8 @@ class_name IdeologyWorkspace
 # second mutable ideology model.
 
 const Q16_ONE := 65536.0
-const CARD_SIZE := Vector2(150.0, 72.0)
-const CARD_SIZE_COMPACT := Vector2(104.0, 56.0)
+const CARD_SIZE := Vector2(180.0, 78.0)
+const CARD_SIZE_COMPACT := Vector2(112.0, 60.0)
 const PlayerControllerScript = preload("res://scripts/game/player_controller.gd")
 const IdeaRowScene := preload("res://scenes/ui/ideology_idea_row.tscn")
 
@@ -36,6 +36,7 @@ var _empty_title: Label
 var _empty_detail: Label
 var _empty_insights: InsightList
 var _offer: PanelContainer
+var _scroll: ScrollContainer
 var _choice_0: PanelContainer
 var _choice_1: PanelContainer
 var _choice_2: PanelContainer
@@ -64,6 +65,7 @@ func _bind_nodes() -> void:
 	_empty_detail = %EmptyDetail
 	_empty_insights = %EmptyInsights
 	_offer = %Offer
+	_scroll = get_node_or_null("Root/Scroll") as ScrollContainer
 	_choice_0 = %Choice0
 	_choice_1 = %Choice1
 	_choice_2 = %Choice2
@@ -92,6 +94,9 @@ func set_compact(compact: bool) -> void:
 	_slots_card.custom_minimum_size = CARD_SIZE_COMPACT if compact else CARD_SIZE
 	_spirits_card.set_compact(compact)
 	_spirits_card.custom_minimum_size = CARD_SIZE_COMPACT if compact else CARD_SIZE
+	_empty.custom_minimum_size = Vector2(0.0, 210.0) if compact else Vector2(560.0, 250.0)
+	for choice in [_choice_0, _choice_1, _choice_2]:
+		choice.custom_minimum_size.x = 260.0 if compact else 320.0
 
 func set_player_controller(controller) -> void:
 	if _player_controller != null and _player_controller.has_signal("command_settled"):
@@ -123,8 +128,8 @@ func _apply_model(model: Dictionary) -> void:
 		_presentation = CountryViewModel.present_ideology(_snapshot, _catalog)
 	_render_metrics(_presentation)
 	_offer_button.disabled = not bool(_presentation.get("can_open_offer", false))
-	_offer_button.text = "三选一已锁定" if bool(_presentation.get("offer_active", false)) \
-		else "抽取理念（三选一）"
+	_offer_button.text = "遴选进行中" if bool(_presentation.get("offer_active", false)) \
+		else "召开理念遴选"
 	_offer_button.tooltip_text = "抽取消耗 %s 理念点。" % String(
 		_presentation.get("offer_cost_text", "1.00"))
 	_hint.text = String(_presentation.get("offer_hint", ""))
@@ -222,6 +227,9 @@ func _refresh_live_explain(known: PackedInt32Array) -> void:
 
 
 func _rebuild_rows() -> void:
+	var saved_scroll := 0
+	if _scroll != null:
+		saved_scroll = _scroll.scroll_vertical
 	var metadata := {}
 	for row in _catalog.get("ideologies", []) as Array:
 		metadata[int((row as Dictionary).get("dense_id", -1))] = row
@@ -248,6 +256,8 @@ func _rebuild_rows() -> void:
 		if card.has_method("set_row"):
 			card.call("set_row", _row_data(ideology_id, metadata.get(ideology_id, {}),
 				state_by_id.get(ideology_id, {}), _live_by_id.get(ideology_id, {})))
+	if _scroll != null:
+		_scroll.set_deferred("scroll_vertical", saved_scroll)
 
 
 func _sync_collection(count: int) -> void:
@@ -290,7 +300,7 @@ func _row_data(ideology_id: int, metadata: Dictionary, state: Dictionary,
 		"slot_badges": [{
 			"text": slot_text,
 			"accent": UITokens.WARN if pending else (
-				UITokens.ACCENT if location > 0 else UITokens.TEXT_MUTED),
+				UITokens.ACCENT if location > 0 else UITokens.ARCHIVE_INK_MUTED),
 		}],
 		"gauge_title": "理解度",
 		"gauge_ratio": ratio,
@@ -553,11 +563,8 @@ func _show_empty_state(visible: bool, presentation: Dictionary) -> void:
 	_empty_title.text = String(presentation.get("empty_title", "尚未形成国家理念"))
 	_empty_detail.text = String(presentation.get("empty_detail",
 		"内阁还没有选定一条可推行的道路。"))
-	var insights: Array = presentation.get("empty_insights", [])
 	if _empty_insights != null:
-		_empty_insights.visible = not insights.is_empty()
-		if not insights.is_empty():
-			_empty_insights.set_items(insights)
+		_empty_insights.visible = false
 
 
 func hint_text() -> String:

@@ -279,6 +279,76 @@ bool NativeEconomyRuntime::prepare_fiscal_budgets(std::string &error) {
                 ? std::max<int64_t>(0, _fiscal_previous_requests[lane]) : 0;
             if (kind == NativeCountryRuntime::TAX_INCOME) {
                 int64_t baseline_request = 0;
+                // Reserve a bounded floor for occupations that can be entered
+                // during this epoch even when their cohort is currently empty.
+                // Investment and employment use the same fiscal lane, so a
+                // negative income rate on a newly opened owner/employee role
+                // must have budget behind it before it can attract population.
+                thread_local std::vector<int64_t>
+                    prospective_subsidy_by_ethnicity;
+                prospective_subsidy_by_ethnicity.assign(
+                    _ethnicity_ids.size(), 0);
+                if (country >= 0 && country + 1 < static_cast<int32_t>(
+                        _epoch_country_building_type_offsets.size())) {
+                    const int32_t type_begin =
+                        _epoch_country_building_type_offsets[country];
+                    const int32_t type_end =
+                        _epoch_country_building_type_offsets[country + 1];
+                    auto consider_profession = [&](int32_t profession) {
+                        if (profession < 0 || profession >=
+                                static_cast<int32_t>(_profession_ids.size()))
+                            return;
+                        const size_t profession_available_index =
+                            static_cast<size_t>(country) * _profession_ids.size() +
+                            static_cast<size_t>(profession);
+                        if (profession_available_index >=
+                                _epoch_country_profession_available.size() ||
+                            _epoch_country_profession_available[
+                                profession_available_index] == 0)
+                            return;
+                        const int8_t rate = frozen_tax_rate(
+                            cell, NativeCountryRuntime::TAX_INCOME, profession);
+                        if (rate >= 0) return;
+                        for (int32_t ethnicity = 0; ethnicity <
+                                static_cast<int32_t>(_ethnicity_ids.size());
+                             ++ethnicity) {
+                            const int32_t signature =
+                                signature_for_profession_ethnicity(
+                                    profession, ethnicity);
+                            if (signature < 0) continue;
+                            const int64_t floor_base = saturating_mul(
+                                living_cost_for_signature(
+                                    cell, signature, _living_cost_base_plan_id,
+                                    _saturation_count),
+                                std::max(1, _epoch_days), _saturation_count);
+                            const int64_t subsidy = mul_div_sat(
+                                floor_base, std::abs(static_cast<int32_t>(rate)),
+                                100, _saturation_count);
+                            prospective_subsidy_by_ethnicity[
+                                static_cast<size_t>(ethnicity)] = std::max(
+                                    prospective_subsidy_by_ethnicity[
+                                        static_cast<size_t>(ethnicity)],
+                                    subsidy);
+                        }
+                    };
+                    for (int32_t cursor = type_begin; cursor < type_end;
+                         ++cursor) {
+                        if (cursor < 0 || cursor >= static_cast<int32_t>(
+                                _epoch_country_building_type_indices.size()))
+                            continue;
+                        const int32_t type_id =
+                            _epoch_country_building_type_indices[cursor];
+                        if (type_id < 0 || type_id >= static_cast<int32_t>(
+                                _building_types.size())) continue;
+                        const BuildingType &type = _building_types[type_id];
+                        consider_profession(type.owner_profession_id);
+                        for (int32_t role = 0; role < type.employee_count;
+                             ++role) {
+                            consider_profession(_building_employee_roles[
+                                type.employee_begin + role].profession_id);
+                        }
+                    }
+                }
                 _population.for_each_in_cell(cell, [&](int32_t slot) {
                     const int32_t signature = static_cast<int32_t>(
                         _population.signature_id[slot]);
@@ -287,25 +357,51 @@ bool NativeEconomyRuntime::prepare_fiscal_budgets(std::string &error) {
                         ? _signatures[signature].profession_id : -1;
                     const int8_t rate = frozen_tax_rate(
                         cell, NativeCountryRuntime::TAX_INCOME, profession);
-                    if (rate >= 0 ||
-                        _population.population[slot] <= 0) return;
+                    if (_population.population[slot] <= 0) return;
                     const int64_t per_person_daily = living_cost_for_signature(
                         cell, signature, _living_cost_base_plan_id,
                         _saturation_count);
-                    const int64_t floor_base = saturating_mul(
-                        saturating_mul(
-                            per_person_daily,
-                            std::max<int64_t>(0, _population.population[slot]),
-                            _saturation_count),
-                        std::max(1, _epoch_days), _saturation_count);
-                    _income_subsidy_floor_by_slot[slot] = floor_base;
-                    baseline_request = saturating_add(
-                        baseline_request,
-                        mul_div_sat(
-                            floor_base,
-                            std::abs(static_cast<int32_t>(rate)), 100,
-                            _saturation_count),
+                    const int64_t floor_base_per_person = saturating_mul(
+                        per_person_daily, std::max(1, _epoch_days),
                         _saturation_count);
+                    const int64_t population = std::max<int64_t>(
+                        0, _population.population[slot]);
+                    const int64_t floor_base = saturating_mul(
+                        floor_base_per_person, population, _saturation_count);
+                    if (rate < 0) {
+                        _income_subsidy_floor_by_slot[slot] = floor_base;
+                        baseline_request = saturating_add(
+                            baseline_request,
+                            mul_div_sat(
+                                floor_base,
+                                std::abs(static_cast<int32_t>(rate)), 100,
+                                _saturation_count),
+                            _saturation_count);
+                    }
+                    const int32_t ethnicity = signature >= 0 && signature <
+                            static_cast<int32_t>(_signatures.size())
+                        ? _signatures[signature].ethnicity_id : -1;
+                    if (ethnicity >= 0 && ethnicity < static_cast<int32_t>(
+                            prospective_subsidy_by_ethnicity.size())) {
+                        const int64_t current_subsidy = rate < 0
+                            ? mul_div_sat(
+                                floor_base_per_person,
+                                std::abs(static_cast<int32_t>(rate)), 100,
+                                _saturation_count)
+                            : 0;
+                        const int64_t incremental = std::max<int64_t>(
+                            0, prospective_subsidy_by_ethnicity[
+                                static_cast<size_t>(ethnicity)] -
+                                current_subsidy);
+                        baseline_request = saturating_add(
+                            baseline_request,
+                            saturating_mul(
+                                incremental,
+                                std::max<int64_t>(0,
+                                    _population.population[slot]),
+                                _saturation_count),
+                            _saturation_count);
+                    }
                 });
                 reservation_request = std::max(
                     reservation_request, baseline_request);

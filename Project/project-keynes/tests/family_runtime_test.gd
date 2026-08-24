@@ -20,6 +20,10 @@ func _expect(label: String, condition: bool) -> void:
 
 func _run() -> void:
 	print("=== native notable-family runtime test ===")
+	var default_profile: Dictionary = load(
+		"res://data/economy/default_economy.tres").to_native_profile()
+	_expect("ordinary family cell threshold defaults to 150",
+		int(default_profile.get("family_min_population_per_active", 0)) == 150)
 	var compiled: Dictionary = EconomyCatalogScript.compile_native_catalog()
 	_expect("family surname catalog compiles", bool(compiled.get("ok", false))
 		and int(compiled.get("family_catalog_hash", 0)) != 0
@@ -86,6 +90,7 @@ func _run() -> void:
 	catalog.erase("ok")
 	_test_formal_capital_v2_packet_fallback(catalog)
 	_test_opening_capital_keeps_anonymous_majority(catalog)
+	_test_ordinary_family_minimum(catalog)
 	# Keep one catalog trait outside the deterministic core roll so mutation
 	# ordering and core-removal protection can be exercised in this fixture.
 	catalog.family_core_trait_min = 2
@@ -143,14 +148,14 @@ func _run() -> void:
 	var boot: Dictionary = ext.bootstrap_economy({
 		"cell_indices": PackedInt32Array([0, 0]),
 		"signature_ids": PackedInt32Array([owner_sig, merchant_sig]),
-		"population": PackedInt64Array([10, 2]),
+		"population": PackedInt64Array([20, 30]),
 		"funds": PackedInt64Array([1000000000000000, 1000000000000000]),
 	}, {
 		"stock": stock,
 		"building_cells": PackedInt32Array([0]),
 		"building_type_ids": PackedInt32Array([building_id]),
 		"building_owner_signature_ids": PackedInt32Array([owner_sig]),
-		"building_counts": PackedInt64Array([1]),
+		"building_counts": PackedInt64Array([10]),
 	})
 	_expect("family fixture bootstraps", bool(boot.get("ok", false)))
 	if not bool(boot.get("ok", false)):
@@ -192,7 +197,7 @@ func _run() -> void:
 	var cell_population := int(ext.get_population_cell_snapshot(0).population)
 	_expect("family exposes surname, conserved wealth claim and population",
 		bool(family.get("ok", false)) and String(family.get("surname", "")) != ""
-		and int(family.get("population", 0)) >= 2
+		and int(family.get("population", 0)) >= 20
 		and int(family.get("population", 0)) <= cell_population / 2
 		and int(family.get("cash_claim", -1)) >= 0)
 	_expect("family profession statistics include owner employment",
@@ -559,6 +564,59 @@ func _test_opening_capital_keeps_anonymous_majority(catalog: Dictionary) -> void
 	var cell_pop := int(ext.get_population_cell_snapshot(0).population)
 	_expect("opening family stays the two gathering operators, not the whole town",
 		cell_pop == 20 and family_pop == 2)
+
+
+func _test_ordinary_family_minimum(catalog: Dictionary) -> void:
+	var profile: Dictionary = load(
+		"res://data/economy/default_economy.tres").to_native_profile()
+	profile.family_runtime_mode = "ACTIVE"
+	profile.family_min_settlement_tier = 0
+	profile.family_review_days = 1
+	profile.family_min_population_per_active = 1
+	profile.notable_person_runtime_mode = "OFF"
+	profile.starvation_death_rate_q32 = 0
+	var building_id := (catalog.building_type_ids as PackedStringArray).find(
+		"gathering_ground")
+	var owner_sig := (catalog.signature_keys as PackedStringArray).find(
+		"forager|default")
+	var merchant_sig := (catalog.signature_keys as PackedStringArray).find(
+		"merchant|default")
+	var target_margins: PackedInt32Array = catalog.building_target_operating_margin_q16
+	target_margins[building_id] = 0
+	catalog.building_target_operating_margin_q16 = target_margins
+	var output_offsets: PackedInt32Array = catalog.building_output_offsets
+	var output_quantities: PackedInt64Array = catalog.building_output_quantities
+	output_quantities[int(output_offsets[building_id])] = 7000000000
+	catalog.building_output_quantities = output_quantities
+	var ext := _new_ext(catalog)
+	_expect("small-owner fixture country bootstraps",
+		_configure_country(ext, catalog, 260804))
+	_expect("small-owner fixture economy configures",
+		bool(ext.configure_economy(catalog, profile, 1, 260804).get("ok", false)))
+	var stock := PackedInt64Array()
+	stock.resize((catalog.good_ids as PackedStringArray).size())
+	stock.fill(100000000)
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0]),
+		"signature_ids": PackedInt32Array([owner_sig, merchant_sig]),
+		"population": PackedInt64Array([10, 140]),
+		"funds": PackedInt64Array([1000000000000000, 1000000000000000]),
+	}, {
+		"stock": stock,
+		"building_cells": PackedInt32Array([0]),
+		"building_type_ids": PackedInt32Array([building_id]),
+		"building_owner_signature_ids": PackedInt32Array([owner_sig]),
+		"building_counts": PackedInt64Array([1]),
+	})
+	_expect("small-owner fixture bootstraps", bool(boot.get("ok", false)))
+	if not bool(boot.get("ok", false)):
+		return
+	var day0 := _run_day(ext, 0)
+	var families: Dictionary = ext.get_family_cell_snapshot(0, 0, 64)
+	_expect("ordinary family below 20 founders is rejected",
+		bool(day0.get("done", false))
+		and int(day0.get("population_error", 1)) == 0
+		and int(families.get("total", 0)) == 0)
 
 
 func _test_formal_capital_v2_packet_fallback(catalog: Dictionary) -> void:

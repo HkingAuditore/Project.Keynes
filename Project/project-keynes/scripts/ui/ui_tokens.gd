@@ -63,6 +63,26 @@ const FAMILY_BRASS := Color(0.69, 0.49, 0.24, 1.0)
 const FAMILY_GREEN := Color(0.34, 0.48, 0.31, 1.0)
 const FAMILY_BLUE := Color(0.31, 0.43, 0.53, 1.0)
 
+# Formal player-session archive surfaces. Keep these separate from the legacy
+# dark theme used by the development menu and GM tooling.
+const ARCHIVE_REFERENCE_SIZE := Vector2i(1600, 960)
+# Ordinary tile/object detail keeps the map visible until the narrower drawer
+# no longer has room for its dossier column. Family workspaces use the wider
+# archival breakpoint because their two-page composition needs more breathing
+# room.
+const DETAIL_BREAKPOINT_COMPACT := 1180.0
+const ARCHIVE_BREAKPOINT_COMPACT := 1280.0
+const ARCHIVE_BREAKPOINT_MEDIUM := 1366.0
+const ARCHIVE_PAPER := Color(0.93, 0.87, 0.73, 1.0)
+const ARCHIVE_PAPER_LIGHT := Color(0.98, 0.94, 0.82, 1.0)
+const ARCHIVE_INK := Color(0.12, 0.07, 0.035, 1.0)
+const ARCHIVE_INK_MUTED := Color(0.29, 0.20, 0.13, 0.92)
+const ARCHIVE_WALNUT := Color(0.09, 0.065, 0.045, 0.97)
+const ARCHIVE_OXBLOOD := Color(0.48, 0.16, 0.10, 1.0)
+const ARCHIVE_BRASS := Color(0.69, 0.49, 0.24, 1.0)
+const ARCHIVE_RULE := Color(0.40, 0.28, 0.16, 0.55)
+const ARCHIVE_CONTENT_MARGIN := 16
+
 
 static func accent_for_key(key: String) -> Color:
 	match key:
