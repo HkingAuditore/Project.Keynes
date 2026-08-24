@@ -114,8 +114,8 @@ func _run() -> void:
 			restored_page.get("total", 0)) != 1:
 		print("restore=", restored_result, " page=", restored_page,
 			" saved_schema=", saved.get("schema", 0))
-	_expect("PKEC v41 restores in-flight route, payload, cargo and due heap exactly",
-		int(saved.get("schema", 0)) == 41
+	_expect("PKEC v42 restores in-flight route, payload, cargo and due heap exactly",
+		int(saved.get("schema", 0)) == 42
 		and bool(restored_result.get("ok", false))
 		and int(restored_page.get("total", 0)) == 1
 		and int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
@@ -463,6 +463,21 @@ func _run_greenfield_kit_and_return(catalog: Dictionary) -> void:
 		and stock_after_start < stock_before
 		and int(ext.get_economy_report().get("goods_error", -1)) == 0
 		and int(ext.get_economy_report().get("population_error", -1)) == 0)
+	var kit_snap: Dictionary = ext.get_family_expedition_snapshot(
+		country_handle, int(started.get("expedition_handle", 0)))
+	var cargo_qtys: PackedInt64Array = kit_snap.get(
+		"cargo_quantities", PackedInt64Array())
+	var cargo_flags: PackedInt32Array = kit_snap.get(
+		"cargo_flags", PackedInt32Array())
+	var travel_days := maxi(1, int(detail.get("travel_days", 1)))
+	var clothing_days := travel_days + 15
+	var clothing_ok := false
+	for i in range(cargo_qtys.size()):
+		var flag := int(cargo_flags[i]) if i < cargo_flags.size() else 0
+		if flag == 1 and int(cargo_qtys[i]) == 3 * clothing_days * 1000:
+			clothing_ok = true
+			break
+	_expect("clothing buffer equals travel days plus 15", clothing_ok)
 	if not bool(started.get("ok", false)):
 		print("kit_start=", started, " detail=", detail)
 		return
@@ -470,8 +485,8 @@ func _run_greenfield_kit_and_return(catalog: Dictionary) -> void:
 	var restored_fixture := _make_fixture(catalog.duplicate(true), 260820)
 	var restored: Object = restored_fixture.ext
 	var restored_result := _restore_economy(restored, saved.get("chunks", []))
-	_expect("PKEC v41 restores in-flight kit cargo and frozen buildings",
-		int(saved.get("schema", 0)) == 41
+	_expect("PKEC v42 restores in-flight kit cargo and frozen buildings",
+		int(saved.get("schema", 0)) == 42
 		and bool(restored_result.get("ok", false))
 		and int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
 	var cancelled: Dictionary = ext.cancel_family_colonization(
@@ -705,20 +720,92 @@ func _run_zero_stock_partial_kit(catalog: Dictionary) -> void:
 	_expect("zero source stock drops paid buildings and marks the kit partial",
 		bool(detail.get("ok", false)) and bool(detail.get("kit_partial", false))
 		and not kit_ids.has(gathering))
+	var source_before := int(ext.get_population_cell_snapshot(0).population)
 	var start_day := _economy_command_day(ext)
 	var started: Dictionary = ext.start_family_colonization(country_handle,
 		family_handle, 0, 2, 3, token, start_day, 601)
-	_expect("partial kits may still depart when only the survival bridge is short",
-		bool(started.get("ok", false)))
+	_expect("zero-stock greenfield N=3 occupies the target as PREPARING",
+		bool(started.get("ok", false))
+		and String(started.get("code", "")) == "colonization_preparing")
 	if not bool(started.get("ok", false)):
 		print("zero_stock_start=", started)
 		return
+	var page: Dictionary = ext.get_family_expeditions(country_handle, 0, 64)
+	var states: PackedInt32Array = page.get("states", PackedInt32Array())
+	_expect("preparing expeditions stay in state 4 without extracting people",
+		int(page.get("total", 0)) == 1
+		and states.size() == 1 and int(states[0]) == 4
+		and int(ext.get_population_cell_snapshot(0).population) == source_before)
+	var snap: Dictionary = ext.get_family_expedition_snapshot(
+		country_handle, int(started.get("expedition_handle", 0)))
+	var missing_ids: PackedInt32Array = snap.get(
+		"kit_missing_good_ids", PackedInt32Array())
+	_expect("preparing snapshot publishes missing goods",
+		bool(snap.get("ok", false)) and not missing_ids.is_empty())
+	var cancelled: Dictionary = ext.cancel_family_colonization(
+		country_handle, int(started.expedition_handle), start_day, 602)
+	_expect("cancelling preparation does not extract people",
+		bool(cancelled.get("ok", false))
+		and String(cancelled.get("code", "")) == "colonization_cancelled"
+		and int(ext.get_population_cell_snapshot(0).population) == source_before
+		and int(ext.get_family_expeditions(country_handle, 0, 64).total) == 0)
+	started = ext.start_family_colonization(country_handle,
+		family_handle, 0, 2, 3, token, start_day, 603)
+	_expect("second prepare after cancel occupies the target again",
+		bool(started.get("ok", false)))
+	snap = ext.get_family_expedition_snapshot(
+		country_handle, int(started.get("expedition_handle", 0)))
+	var good_count := (catalog.good_ids as PackedStringArray).size()
+	var opcodes := PackedInt32Array()
+	var days := PackedInt64Array()
+	var seqs := PackedInt64Array()
+	var handles := PackedInt64Array()
+	var cells := PackedInt32Array()
+	var goods := PackedInt32Array()
+	var qtys := PackedInt64Array()
+	var zeros := PackedInt64Array()
+	var clothing := (catalog.good_ids as PackedStringArray).find("clothing")
+	for i in range(good_count):
+		opcodes.append(4)
+		days.append(start_day)
+		seqs.append(800 + i)
+		handles.append(0)
+		cells.append(0)
+		goods.append(i)
+		# Clothing demand follows need.base_qty_per_person (2 milli/person/day),
+		# not 1.0 goods per person-day. 8000 milli is enough for the authored
+		# need and far short of the old 3×days×1000 formula.
+		qtys.append(8000 if i == clothing else 1000000000)
+		zeros.append(0)
+	var filled: Dictionary = ext.submit_economy_commands({
+		"opcodes": opcodes,
+		"effective_days": days,
+		"sequences": seqs,
+		"target_handles": handles,
+		"i32_0": cells,
+		"i32_1": goods,
+		"i64_0": qtys,
+		"i64_1": zeros,
+	})
+	_expect("missing kit goods can be injected at the source market",
+		bool(filled.get("ok", false)))
+	var launched := false
+	for day in range(start_day + 1, start_day + 8):
+		_run_day(ext, day)
+		page = ext.get_family_expeditions(country_handle, 0, 64)
+		states = page.get("states", PackedInt32Array())
+		if int(page.get("total", 0)) == 1 and states.size() == 1 and int(states[0]) == 1:
+			launched = true
+			break
+	_expect("modest clothing stock is enough for the authored clothing need",
+		launched
+		and int(ext.get_population_cell_snapshot(0).population) < source_before)
 	var saved := _save_economy(ext)
 	var restored_fixture := _make_fixture(catalog.duplicate(true), 260822, 0)
 	var restored: Object = restored_fixture.ext
 	var restored_result := _restore_economy(restored, saved.get("chunks", []))
-	_expect("v37 empty-cargo expeditions restore like a v36 in-flight party",
-		int(saved.get("schema", 0)) == 41
+	_expect("v42 preparing/outbound expeditions restore with matching state hash",
+		int(saved.get("schema", 0)) == 42
 		and bool(restored_result.get("ok", false))
 		and int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
 

@@ -171,6 +171,8 @@ Dictionary NativeEconomyRuntime::begin_restore() {
     _family_expedition_person_handles.clear();
     _family_expedition_cargo.clear();
     _family_expedition_kit_buildings.clear();
+    _family_expedition_missing_good_ids.clear();
+    _family_expedition_missing_good_quantities.clear();
     _family_expedition_target_index.clear();
     _family_expedition_due_heap.clear();
     _colonization_receipts.clear();
@@ -1086,6 +1088,13 @@ Dictionary NativeEconomyRuntime::end_restore() {
         }
     }
     rebuild_family_expedition_indices();
+    for (int32_t expedition = 0; expedition < static_cast<int32_t>(
+            _family_expeditions.active.size()); ++expedition) {
+        if (_family_expeditions.active[expedition] == 0 ||
+            _family_expeditions.state[expedition] != EXPEDITION_PREPARING)
+            continue;
+        refresh_preparing_family_expedition_missing(expedition);
+    }
     rebuild_family_indices();
     _family_effect_bindings.clear();
     _family_effect_binding_by_instance.clear();

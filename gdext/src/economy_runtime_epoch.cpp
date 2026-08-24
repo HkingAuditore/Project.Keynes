@@ -126,6 +126,7 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _building_investment_jobs_started = 0;
     _building_investment_employment_gap = 0;
     _building_investment_employment_catchup_cells = 0;
+    _building_investment_displacement_starts = 0;
     _trade_signal_max_age_days = 0;
     _trade_first_dispatch_delay_max_days = 0;
     _trade_response_deadline_misses = 0;
@@ -252,6 +253,7 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _investment_scheduled_review_cells = 0;
     _investment_review_cells = 0;
     _investment_type_evaluations = 0;
+    _investment_displacement_type_evaluations = 0;
     _investment_market_signal_rejections = 0;
     _investment_ethnicity_evaluations = 0;
     _investment_sparse_considered_types = 0;
@@ -485,6 +487,10 @@ void NativeEconomyRuntime::capture_completed_perf_snapshot() {
     snapshot.investment_review_cells = _investment_review_cells;
     snapshot.investment_type_evaluations =
         _investment_type_evaluations;
+    snapshot.investment_displacement_type_evaluations =
+        _investment_displacement_type_evaluations;
+    snapshot.building_investment_displacement_starts =
+        _building_investment_displacement_starts;
     snapshot.investment_market_signal_rejections =
         _investment_market_signal_rejections;
     snapshot.investment_ethnicity_evaluations =

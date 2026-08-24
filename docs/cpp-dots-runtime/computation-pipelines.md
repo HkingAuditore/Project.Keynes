@@ -2865,9 +2865,8 @@ UI 不再用建筑数量推断招聘空缺。
 
 生产 output 先按 owner 当前消费计划预留可直接满足的单组件 variant 商品，再把余量形成
 cell-local offers。商人按 `max(可行日需求, 实际出库 EMA) + 出口 EMA` 和 target inventory days 计算库存缺口，冻结期初现金并
-保留 12.5%，库存基线取 30 日并乘 good-specific 比例（必需品更高、奢侈品更低）。`producer price = retail price × merchant_buy_price_factor_q16`，默认系数 `62259/65536≈95%` 且为硬上限；短缺不会再把它抬到 100%。采购按 `缺口 × producer price` 的价值权重及稳定
-good/group 顺序采购；库存达到目标时不再
-收购。商人现金不足时，20% 零售价的生产者托底也只补足剩余目标缺口，超目标余量计入 discarded。household market 先用
+保留 12.5%，库存基线取 30 日并乘 good-specific 比例（必需品更高、奢侈品更低）。`producer price = retail price × merchant_buy_price_factor_q16`，默认系数 `62259/65536≈95%` 且为硬上限；短缺不会再把它抬到 100%。同货报价按单位经营成本升序（merit-order）填满采购配额，边际成本档按可售数量比例分享剩余配额；库存达到目标时不再
+收购。商人现金不足时，20% 零售价的生产者托底也只补足**配额未满**的剩余目标，不再用铸币养活已被更低成本厂挤出配额的高成本余量。超目标余量计入 discarded。成本锚按 `merchant_sold` 加权。household market 先用
 
 国内贸易的目的地预算在派单批次内冻结为
 `max(0, merchant_cash - existing_order_reserved_cash - 12.5% operating_floor)`，
@@ -2992,8 +2991,10 @@ output-deficit utilization by input stock/supply coverage instead of nameplate c
 No stage, bridge, slot, save, hash, or cadence contract changes.
 
 The current investment scan admits every output driver with positive marginal
-deficit and positive projected utilization into the existing viability path.
-Shortage pressure and utilization rank candidates directly. Historical
+deficit, or with stealable higher-cost incumbent supply of the same good, into
+the existing viability path. Shortage pressure and utilization rank candidates
+directly; displacement pressure is `min(1, stealable / max(demand, 1))`.
+Historical
 sell-through discounts projected merchant cash revenue, while discard remains
 an output/utilization diagnostic; neither is a hard profitability gate. The
 legacy minimum-shortage and minimum-utilization policy fields remain serialized

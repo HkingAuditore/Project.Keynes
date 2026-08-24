@@ -3,7 +3,7 @@
 [resource]
 script = ExtResource("1")
 id = &"manganese_ore"
-discovery_technology_tags = PackedStringArray("tech.mineral_spectral_survey")
+discovery_technology_tags = PackedStringArray("tech.mineral_spectral_survey", "tech.deep_geophysics")
 display_name = "锰矿"
 reserve_component = &"cell.res_manganese_ore_reserve"
 habitat_mode = "land"

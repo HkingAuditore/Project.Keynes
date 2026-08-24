@@ -135,9 +135,11 @@ living-cost price term.
 ## Domestic trade planning and settlement
 
 Keep one cell equal to one local market. Build a separate trade topology from frozen six-neighbor
-indices, positive terrain enter costs, and frozen country ownership. Every vertex on a v1 route must
-belong to the same non-neutral country. Do not materialize all-pairs distances or a dense
-market-by-good trade matrix.
+indices, positive terrain enter costs, base landform water classes, river flags, and frozen country
+ownership. Water cells are corridors, not markets: capture marks them impassable and precomputes
+coastal portal CSR so Dijkstra only expands land. Route cache keys include the country's frozen
+water-capability layer. Every land vertex on a v1 route must belong to the same non-neutral
+country. Do not materialize all-pairs distances or a dense market-by-good trade matrix.
 
 Scan market-major pairs with a round-robin deterministic work budget and retain only sparse surplus
 and deficit signals. For a selected surplus source, run bounded integer multi-target Dijkstra and
@@ -177,8 +179,12 @@ and produce calorie pool; exact variants consume first and leftover self-produce
 emergency cross-food calories. Producers also retain the minimum clothing share implied by frozen
 cold exposure. All other and excess output enters the local market. Retained goods
 create no cashflow; consume them before paid household orders and attribute any unused amount
-to the source building's discarded output. Remaining offers sort by local retail price descending
-and use each good's configured merchant buy factor;
+to the source building's discarded output. Remaining offers sort by `(good, unit_cost, group)` and fill merchant quota
+from lowest unit cost; identical-cost offers at the marginal tier still share
+the leftover quota in proportion to sellable quantity. Unit cost allocates the group's current
+`last_operating_cost` across outputs. Producer-support mint only covers quota
+that cheaper offers did not already fill. Cost-anchor retail targets weight by
+`merchant_sold`, not offered quantity. Offers still use each good's configured merchant buy factor;
 merchant positive funds cap the normally purchased quantity. Put every remaining storable unit into
 merchant-owned inventory and issue the producer one-fifth of frozen local retail value; record that
 payment as explicit money mint rather than merchant spending. Non-storable cycle-flow remainder is

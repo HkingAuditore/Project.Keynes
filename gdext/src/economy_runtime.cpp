@@ -1463,6 +1463,30 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
         static_cast<size_t>(std::max(0, _epoch_country_count)), Q16_ONE);
     _epoch_country_trade_speed_factor_q16.assign(
         static_cast<size_t>(std::max(0, _epoch_country_count)), Q16_ONE);
+    _epoch_country_water_capability.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
+    auto country_has_frozen_tech = [&](int32_t country, int32_t tech) {
+        if (tech < 0 || country < 0 || country >= _epoch_country_count ||
+            _epoch_country_technology_words <= 0) return false;
+        const size_t index = static_cast<size_t>(country) *
+            static_cast<size_t>(_epoch_country_technology_words) +
+            static_cast<size_t>(tech / 64);
+        return index < _epoch_country_technologies.size() &&
+            (_epoch_country_technologies[index] &
+                (uint64_t{1} << (tech % 64))) != 0;
+    };
+    for (int32_t country = 0; country < _epoch_country_count; ++country) {
+        uint8_t cap = 0;
+        if (country_has_frozen_tech(country, _water_tech_river))
+            cap |= WATER_CAP_RIVER;
+        if (country_has_frozen_tech(country, _water_tech_shallow))
+            cap |= WATER_CAP_SHALLOW_SEA;
+        if (country_has_frozen_tech(country, _water_tech_far))
+            cap |= WATER_CAP_FAR_SEA;
+        if (country_has_frozen_tech(country, _water_tech_deep))
+            cap |= WATER_CAP_DEEP_SEA;
+        _epoch_country_water_capability[static_cast<size_t>(country)] = cap;
+    }
     _epoch_country_construction_cost_factor_q16.assign(
         static_cast<size_t>(std::max(0, _epoch_country_count)), Q16_ONE);
     _epoch_country_construction_time_factor_q16.assign(
@@ -14167,6 +14191,18 @@ int64_t NativeEconomyRuntime::state_hash() const {
             mix_u64(static_cast<uint32_t>(row.type_id));
             mix_u64(static_cast<uint64_t>(row.count));
         }
+        mix_u64(_family_expeditions.kit_missing_stock_identity[i]);
+        const uint32_t missing_begin =
+            _family_expeditions.missing_good_begin[i];
+        const uint32_t missing_count =
+            _family_expeditions.missing_good_count[i];
+        mix_u64(missing_count);
+        for (uint32_t m = 0; m < missing_count; ++m) {
+            mix_u64(static_cast<uint32_t>(
+                _family_expedition_missing_good_ids[missing_begin + m]));
+            mix_u64(static_cast<uint64_t>(
+                _family_expedition_missing_good_quantities[missing_begin + m]));
+        }
     }
     for (int32_t i = 0; i < static_cast<int32_t>(_persons.active.size()); ++i) {
         mix_u64(0x504552534f4eULL);
@@ -14560,6 +14596,8 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _family_expedition_person_handles.clear();
     _family_expedition_cargo.clear();
     _family_expedition_kit_buildings.clear();
+    _family_expedition_missing_good_ids.clear();
+    _family_expedition_missing_good_quantities.clear();
     _family_expedition_target_index.clear();
     _family_expedition_due_heap.clear();
     _colonization_receipts.clear();

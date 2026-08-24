@@ -310,6 +310,9 @@ bool NativeEconomyRuntime::configure_profile(const Dictionary &profile, std::str
         static_cast<int32_t>(Q16_ONE));
     _investment_new_type_seed_buildings = std::clamp(dict_num<int32_t>(
         profile, "investment_new_type_seed_buildings", 1), 1, 1024);
+    _investment_displacement_min_advantage_q16 = std::clamp(dict_num<int32_t>(
+        profile, "investment_displacement_min_advantage_q16",
+        Q16_ONE / 16), 1, static_cast<int32_t>(Q16_ONE));
     _investment_merchant_transition_min_improvement_q16 =
         std::clamp(dict_num<int32_t>(
             profile, "investment_merchant_transition_min_improvement_q16",

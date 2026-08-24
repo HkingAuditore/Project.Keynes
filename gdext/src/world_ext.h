@@ -400,7 +400,9 @@ public:
         const godot::PackedByteArray &terrain,
         const godot::PackedByteArray &trade_passable_lut,
         const godot::PackedInt32Array &trade_move_cost_lut,
-        int64_t generation = 0);
+        int64_t generation = 0,
+        const godot::PackedByteArray &landform = godot::PackedByteArray(),
+        const godot::PackedByteArray &has_river = godot::PackedByteArray());
     godot::Dictionary capture_economy_trade_visibility(
         const godot::PackedByteArray &visible, bool fog_solved);
     godot::Dictionary get_building_cell_snapshot(int cell_idx) const;

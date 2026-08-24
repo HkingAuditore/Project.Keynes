@@ -231,7 +231,7 @@ silently erase the whole dossier.
 
 ## 7. Source map
 
-- Native types/graph/math/save: `gdext/src/economy_runtime.{h,cpp}`
+- Native types/graph/math/save: `gdext/src/economy_runtime.{h,cpp}`, `economy_runtime_water.cpp`
 - Environment capture/API forwarding: `gdext/src/world_ext_economy.cpp`
 - GDExtension binding: `world_ext.h`, `world_ext_bind_methods.cpp`
 - Catalog/facade: `scripts/economy/economy_catalog.gd`, `economy_facade.gd`
@@ -239,7 +239,7 @@ silently erase the whole dossier.
 - Content: `data/economy/`, `data/goods/`
 - UI: `scripts/ui/cell_inspector_view_model.gd`
 - Focused tests: `tests/goods_storage_schema_test.gd`, `economy_runtime_bench.gd`
-- Trade tests: `tests/economy_trade_runtime_test.gd`
+- Trade tests: `tests/economy_trade_runtime_test.gd`, `tests/water_transport_runtime_test.gd`
 
 ### Inspector settlement cashflow
 
@@ -272,6 +272,15 @@ highest technology-available tier and rejects an older BUILD with
 existing older assets continue operating. Building snapshots expose family indices, tiers, highest
 available tiers, and construction availability. These catalog additions change the catalog hash but
 not the PKEC v11 byte layout.
+
+At `building_commit`, endogenous owner investment reviews unlocked types on the
+investment cycle. A type still enters on a market deficit; when deficit is zero,
+stealable incumbent supply (same good, strictly higher unit cost after
+`investment_displacement_min_advantage_q16`) can still seed utilization. Old
+plants are not rewritten or demolished in the investment pass; cheaper offtake
+leaves them unsold so the existing suspension/liquidation path retires them.
+Expansion still requires target margin, payback, construction stock, and a
+sponsor whose per-capita funds cover materials plus 30 living-cost days.
 
 At `building_commit`, endogenous owner investment may create one industrial building per cell only
 when a 180-day capital-review boundary is crossed. Existing vacancies remain employment concerns.

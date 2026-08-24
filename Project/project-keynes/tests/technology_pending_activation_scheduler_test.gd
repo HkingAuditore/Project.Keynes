@@ -29,19 +29,17 @@ func _init() -> void:
 	var gathering := (compiled.technology_ids as PackedStringArray).find("tech.gathering")
 	var maize_identification := (compiled.technology_ids as PackedStringArray).find(
 		"tech.maize_identification")
-	var oral_memory := (compiled.technology_ids as PackedStringArray).find(
-		"tech.oral_memory_practice")
-	var phenology_observation := (compiled.technology_ids as PackedStringArray).find(
-		"tech.phenology_observation")
+	var early_knowledge := (compiled.technology_ids as PackedStringArray).find(
+		"tech.early_knowledge_institution")
 	_expect("country bootstraps", bool(country.bootstrap(PackedByteArray([0]), {
 		"country_ids": PackedStringArray(["country.scheduler"]),
 		"country_names": PackedStringArray(["Scheduler"]),
 		"country_cash": PackedInt64Array([0]),
 		"territory_offsets": PackedInt32Array([0, 1]),
 		"territory_cells": PackedInt32Array([0]),
-		"technology_offsets": PackedInt32Array([0, 4]),
+		"technology_offsets": PackedInt32Array([0, 3]),
 		"technology_indices": PackedInt32Array([
-			gathering, maize_identification, oral_memory, phenology_observation]),
+			gathering, maize_identification, early_knowledge]),
 		"treasury_offsets": PackedInt32Array([0, 1]),
 		"treasury_good_indices": PackedInt32Array([points_good]),
 		"treasury_quantities": PackedInt64Array([10000000]),
@@ -107,8 +105,7 @@ func _run_single_queue_same_day_activation(compiled: Dictionary) -> void:
 	var points_good := (compiled.good_ids as PackedStringArray).find("technology_points")
 	var gathering := ids.find("tech.gathering")
 	var maize_identification := ids.find("tech.maize_identification")
-	var oral_memory := ids.find("tech.oral_memory_practice")
-	var phenology_observation := ids.find("tech.phenology_observation")
+	var early_knowledge := ids.find("tech.early_knowledge_institution")
 	var tech := ids.find("tech.wild_maize_collection")
 	_expect("single-item country bootstraps", bool(country.bootstrap(PackedByteArray([0]), {
 		"country_ids": PackedStringArray(["country.single_item"]),
@@ -116,9 +113,9 @@ func _run_single_queue_same_day_activation(compiled: Dictionary) -> void:
 		"country_cash": PackedInt64Array([0]),
 		"territory_offsets": PackedInt32Array([0, 1]),
 		"territory_cells": PackedInt32Array([0]),
-		"technology_offsets": PackedInt32Array([0, 4]),
+		"technology_offsets": PackedInt32Array([0, 3]),
 		"technology_indices": PackedInt32Array([
-			gathering, maize_identification, oral_memory, phenology_observation]),
+			gathering, maize_identification, early_knowledge]),
 		"treasury_offsets": PackedInt32Array([0, 1]),
 		"treasury_good_indices": PackedInt32Array([points_good]),
 		"treasury_quantities": PackedInt64Array([10000000]),
@@ -163,19 +160,17 @@ func _run_stuck_pending_recovery(compiled: Dictionary) -> void:
 	effect.register_domain_adapters(modifiers, country, null)
 	var points_good := (compiled.good_ids as PackedStringArray).find("technology_points")
 	var hunting := (compiled.technology_ids as PackedStringArray).find("tech.hunting")
-	var oral_memory := (compiled.technology_ids as PackedStringArray).find(
-		"tech.oral_memory_practice")
-	var phenology_observation := (compiled.technology_ids as PackedStringArray).find(
-		"tech.phenology_observation")
+	var early_knowledge := (compiled.technology_ids as PackedStringArray).find(
+		"tech.early_knowledge_institution")
 	_expect("recovery bootstraps", bool(country.bootstrap(PackedByteArray([0]), {
 		"country_ids": PackedStringArray(["country.recovery"]),
 		"country_names": PackedStringArray(["Recovery"]),
 		"country_cash": PackedInt64Array([0]),
 		"territory_offsets": PackedInt32Array([0, 1]),
 		"territory_cells": PackedInt32Array([0]),
-		"technology_offsets": PackedInt32Array([0, 3]),
+		"technology_offsets": PackedInt32Array([0, 2]),
 		"technology_indices": PackedInt32Array([
-			hunting, oral_memory, phenology_observation]),
+			hunting, early_knowledge]),
 		"treasury_offsets": PackedInt32Array([0, 1]),
 		"treasury_good_indices": PackedInt32Array([points_good]),
 		"treasury_quantities": PackedInt64Array([10000000]),
@@ -212,19 +207,17 @@ func _run_missed_effect_nudge_recovery(compiled: Dictionary) -> void:
 	effect.register_domain_adapters(modifiers, country, null)
 	var points_good := (compiled.good_ids as PackedStringArray).find("technology_points")
 	var hunting := (compiled.technology_ids as PackedStringArray).find("tech.hunting")
-	var oral_memory := (compiled.technology_ids as PackedStringArray).find(
-		"tech.oral_memory_practice")
-	var phenology_observation := (compiled.technology_ids as PackedStringArray).find(
-		"tech.phenology_observation")
+	var early_knowledge := (compiled.technology_ids as PackedStringArray).find(
+		"tech.early_knowledge_institution")
 	_expect("nudge bootstraps", bool(country.bootstrap(PackedByteArray([0]), {
 		"country_ids": PackedStringArray(["country.nudge"]),
 		"country_names": PackedStringArray(["Nudge"]),
 		"country_cash": PackedInt64Array([0]),
 		"territory_offsets": PackedInt32Array([0, 1]),
 		"territory_cells": PackedInt32Array([0]),
-		"technology_offsets": PackedInt32Array([0, 3]),
+		"technology_offsets": PackedInt32Array([0, 2]),
 		"technology_indices": PackedInt32Array([
-			hunting, oral_memory, phenology_observation]),
+			hunting, early_knowledge]),
 		"treasury_offsets": PackedInt32Array([0, 1]),
 		"treasury_good_indices": PackedInt32Array([points_good]),
 		"treasury_quantities": PackedInt64Array([10000000]),

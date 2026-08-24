@@ -1,11 +1,12 @@
 # 原生阶层与本地市场运行时（Market V2 / Price V4）
 
-PKEC v41 是当前唯一 writer/reader：保留 v39 引入的生产计划 P∈[5,15] 与投资 I∈[10,30]
+PKEC v42 是当前 writer；reader 接受 v42 与 v41。v41 不得含 `EXPEDITION_PREPARING`。
+v42 保留 v39 引入的生产计划 P∈[5,15] 与投资 I∈[10,30]
 分开锁定，且 I > P。三套周期只在各自完整周期边界重选；选档用经济活格刀数
 （人口>0 ∪ 已建建筑 ∪ 在建，不是全图 cell_count）加上一周期本侧实测毫秒 EMA，
 且该毫秒只在 `aggregate_publish` COMMIT 完成时累计，不恢复 `market_cycle_days=0` 的 50/334 日快进档。
 每天工作集是活格 ∩ 市场桶；`due_cells` 不再等于 `cell_count / N`。
-当前 reader 不做隐式迁移；v40 及更早 schema 全部明确拒绝。
+当前 reader 不做隐式迁移；v40 及更早 schema 全部明确拒绝。v41 仅向前兼容读。
 领域 API 与跨域 ACK 契约见[运河运行时](./canal-runtime.md)。
 
 2026-07 的高速合批、认证近似冷却、generation-stamped scratch 和两态
@@ -120,7 +121,7 @@ state is introduced.
 
 ## 2026-07-18 石器经济与资源平衡修正
 
-- 国内贸易拓扑只读取 `cell_base_terrain`；气候系统对 `cell_terrain` 的季节性海冰切换不再改变规范化拓扑哈希或重置路线计划。
+- 国内贸易拓扑读取 `cell_base_terrain`、`cell_base_landform` 与 `cell_has_river`；气候系统对 `cell_terrain` 的季节性海冰切换不再改变规范化拓扑哈希或重置路线计划。水体格不当市场节点；科技解锁的河运/浅海/远海/深海通过预计算海岸门户跳跃连通对岸。
 - `satisfaction_q16` 保持兼容，新增同值的 `survival_satisfaction_q16` 与 cohort 数组别名，明确该指标是食品与气候衣着两者较低值，不代表全部舒适/奢侈需求。2026-08-04 起舒适/奢侈由 `composite_satisfaction` 的独立维度表达。
 - 石器食物的商品库存比例从 1.5 调到 1.0，即仍维持完整 30 日目标；生产者托底收购和现金保留规则不变，避免采购量断崖式下降。
 - 火塘配方为每日 `7000` 植物 + `3500` 肉类 → `12628` 加工食品，肉类为 50% 软约束；打制石器为 `100` 燧石 → `220` 工具；家庭织造为 `120` 采集植物 → `110` 布匹，不再无原料产布。伐木建筑只开采森林，不再反向生成人工林。
@@ -178,10 +179,10 @@ sequence、settled day、稳定结果码及实际两类物资/现金支出；它
 - C++ 按建筑数、周期天数和计划利用率确定性重建稀疏生产投入硬预留。多投入配方先按同一可执行比例缩放，只预留能组成完整配方的数量；缺少任一互补投入时不会继续锁住其他投入。若非生存产出会消耗生存食物，则整套配方让家庭生存清算优先，只能使用清算后的余量。商人目标库存至少覆盖实际预留；居民与国内贸易只能消费/导出 `stock - reserve`。`production_input_reserved`、`production_input_reserve_shortfall` 及 selected-cell/CSV v14 逐商品列用于诊断。缓存不进入 PKEC，可从建筑和市场信号状态重建。
 - 正常商人现金不足时，生产者托底只补足正常目标库存的剩余缺口，不再把全部可储存余货无条件入库；超过目标的余量进入真实 discard sink。被托底的数量仍获得冻结本地零售价 20% 的显式发行货币。`production_output_supported` 与 `producer_support_money_issued` 分开报告，货币审计把后者计入 `_explicit_money_mint`。`cycle_flow` 产出不能跨周期存货，但在边界清零前会先获得同周期低价采购/托底机会，剩余瞬态库存再计入 `cycle_flow_discarded`。
 - 生成测试经济不再使用职业固定人均资金：每个 cohort 获得按当前气候、族群和默认价格计算的 30 日 `survival_household` 生存金；业主追加两周期最低有效输入成本；商人追加本地产出目标库存资金。
-- PKEC v41 是当前唯一 writer/reader：保留 FamilyStore、NotablePersonStore、cohort membership、
+- PKEC v42 是当前 writer，reader 接受 v42 与 v41：保留 FamilyStore、NotablePersonStore、cohort membership、
   building ownership、Economy Modifier domain、冻结环境、财政与出生余数、家族特性、
-  per-cell influence、运河工程、格承载力 `support_ema`、七条环境 lane 与开拓队 cargo/kit CSR。
-  reader 不做隐式迁移，v40 及更早明确拒绝。
+  per-cell influence、运河工程、格承载力 `support_ema`、七条环境 lane 与开拓队 cargo/kit/缺货 CSR。
+  PREPARING 允许 payload/cargo 为 0。reader 不做隐式迁移，v40 及更早明确拒绝。
 - 显赫家族不拆分建筑组或创建第二钱包；成员/所有权采用稀疏边，业主岗位必须由本格同职业家族
   成员实际填充。完整契约见[显赫家族原生运行时](./notable-family-runtime.md)。
 - 重要人物不创建第二人口、钱包或订单；姓名、岗位、建筑、财产与需求均为家族/cohort 已实现结果的
@@ -195,7 +196,7 @@ sequence、settled day、稳定结果码及实际两类物资/现金支出；它
 
 - 消费目录新增 need 总量价格弹性和刚需下限。variant 分数仍负责替代选择；总量因子按 market×need 预计算。主食与衣着保留正下限但仍随价格和财富缩量，蛋白质及非刚需可在全体替代品过贵时接近零。
 - 低于目标库存且仍有需求时，生产成本锚通过受单日涨幅上限约束的正向价格压力形成动态软底；库存堆积时下跌按当前价格限速，仍可跌破成本清仓。企业同时按上一周期售罄率缩放下一周期计划利用率，但忽略不超过 1% 的舍入丢弃，并在家庭可用库存不足 `max(1 商品单位, max(实际出库 EMA, 需求 EMA) × 周期日数)` 且短缺率至少 12.5% 时主动恢复。耐储商品保留 1/32 探测下限，易腐/周期流商品保留 1/6 下限；生存食物生产者另按同一业主人口跨过饥饿阈值所需的自留量计算动态下限，取二者较高值。
-- 全建筑目录改用默认生活成本和 80% 保守售出率校准。当前石器狩猎营地为 2 个共同经营岗位，日产 `3335/40` 野味/生皮，不再直接产出毛皮；采集营地为 2 个岗位、日产 `7000` 采集植物；家庭织造棚为 1 个岗位、日产 `900` 布匹并消耗采集植物。早期砂金/露天银矿由 merchant 所有，均雇用 1 个 miner 岗位；露天银矿日产降为 `1000` GOODS_SCALE，资源扣减为 `200`。
+- 全建筑目录改用默认生活成本和 80% 保守售出率校准。当前石器狩猎营地为 2 个共同经营岗位，标称日产 `6670/80` 野味/生皮并抽取 `1430` 野生动物，工具软槽 `32768`（无工具时约一半产能，与补槽前徒手产量对齐）；采集营地为 2 个岗位、标称日产 `14000` 采集植物（承载力占用保持原值）；家庭织造棚为 1 个岗位、日产 `900` 布匹并消耗采集植物。早期砂金/露天银矿由 merchant 所有，均雇用 1 个 miner 岗位；露天银矿日产降为 `1000` GOODS_SCALE，资源扣减为 `200`。
 - `audit_economy_content.ps1` 遍历 260 个建筑并检查 80% 售出率盈利、role 工资、生产原料成本不超过商人收购收入的 60%、工具维护不超过 `100 GOODS_SCALE/岗位/日`、工业总投入/总产出不超过 `3:1`，以及 `2:1` 至 `25:1` extract 效率；蒸汽煤铁矿固定复核约 `12:1`。这是 catalog/content 校准，会改变 building catalog hash，但不改变 PKEC 字节布局。
 
 ### 2026-07-18 调度、贸易与工资稳定性修正
@@ -430,12 +431,17 @@ owner_signature)` 排序的稀疏 POD owner-lot 保存数量，并用 cell CSR �
 欠薪取消奖金并保留诊断，但不追溯取消本期生产。工资仍按本地同职业实际就业权重分配，不铸币且
 保持资金守恒。
 
-建筑编译同时生成 building-dependency branch IR。每条 direct technology 分支冻结其
-`required_technology_tags`，并为 construction goods、inputs、outputs、local resource
-extract/generation 生成依赖组；同一输入槽的候选 good 属于同一替代组。建设、投资、生产和
-开局 bootstrap 共用这套闭包：只有 direct/required 科技、每个物资依赖组和每个自然资源依赖组
-均已满足时建筑才可用。河流/湖泊水系不是这套资源依赖中的 good 或 ResourceProfile，只有
-`landform.freshwater_access` 揭示信号。
+建筑编译同时生成 building-dependency branch IR。每项活动建筑恰好一个 direct technology，
+`required_technology_tags` 必须为空；多科技汇合由科技目录中的可见应用科技硬前置表达。目录继续为
+construction goods、inputs、outputs、local resource extract/generation 生成依赖组，同一输入槽的
+候选 good 属于同一替代组。建设、投资、生产和开局 bootstrap 共用这套闭包：只有直接科技、每个
+物资依赖组和每个自然资源依赖组均已满足时建筑才可用。河流/湖泊水系不是这套资源依赖中的 good 或
+ResourceProfile，只有 `landform.freshwater_access` 揭示信号。
+
+建筑实践发布掩码仍在 catalog 冷启动阶段一次性编译。由于建筑现在通常直接绑定应用科技，编译器会
+读取 `technology_prerequisite_offsets/technology_prerequisites`，构造临时的科技祖先位集，并沿每项
+直接科技的硬前置闭包识别水利、蒸汽、电气、自动化等基础实践。该临时位集约 58 KiB，配置完成后不
+进入热循环、运行时状态、state hash 或 PKEC；建筑建设资格仍只检查其唯一直接科技。
 
 普通生产建筑禁止使用 merchant owner。唯一例外是石器期砂金与露天银矿点：商人业主、无商品投入、保留矿工雇员岗位，
 必须消耗匹配的金/银矿藏且只产对应金银。矿藏 ID 仍为 `gold_ore`/`silver_ore`，但目录中不再有同名可交易物资或矿石精炼站。
@@ -449,7 +455,7 @@ stable good ID 排列的候选 CSR，并附带 good-level Q16 生产效率。每
 `1 - required` 的产能底线，库存/现金越接近完整物理需求，产能越线性恢复到满产。native 在冻结国家科技可用的候选
 中按 `price / efficiency` 选择最低有效成本；生产期还要求本地正库存。物理消耗为
 `ceil(effective_required / efficiency)` 乘以该产能实际需要的输入购买比例；若完整物理需求为正且购买比例为正，scaled 购买量至少为 1，避免硬输入在极低利用率下被截断为“零成本免费生产”。库存、业主现金与 goods audit 仍记录实际物理数量。
-这使早期木材等配方可以直接使用打制石器、青铜、金属或精密工具，不再需要商品转换站；每个输入槽仍按建筑时代设置最低品质，因此探索以后不会再选中打制石器，信息/AI 只接受精密工具。石器狩猎营地的工具槽当前设为 `32768`，无工具时仍能低效狩猎，有工具时恢复到完整效率。
+这使早期木材等配方可以直接使用打制石器、青铜、金属或精密工具，不再需要商品转换站；每个输入槽仍按建筑时代设置最低品质，因此探索以后不会再选中打制石器，信息/AI 只接受精密工具。石器狩猎营地现在有 `tools` 软槽 `32768`、按劳动槽每日 100 工具；标称日产 `6670/80` 野味/生皮并抽取 `1430` 野生动物。无工具时产能与抽取约为标称一半，与补槽前的徒手产量对齐。采集营地同样用软工具并把标称植物产出加倍，但承载力占用保持原值。开局规划器按该软槽底线估算食物与抽取，且不把软互补品当作必须闭环的硬投入。
 玩家新建建筑列表必须展开当前科技可用的输入候选显示名，并标注非 100% 的 Q16 效率；不得只渲染槽位代表物资的 `display_name`。石器时代伐木场因此显示打制石器，而不是代表物资 `tools` 的「金属工具」。运行时仍按冻结科技可用候选的有效成本选择，不因 UI 文案改变。
 
 `upgrade_family_id/upgrade_tier` 编译为稳定 family 目录与逐建筑 tier。BUILD 检查同族最高已解锁
@@ -695,7 +701,7 @@ Inspector 诊断 lane，计入 runtime memory，但不进入 state hash 或 PKEC
 出生率折减先把 composite 按 `satisfaction_birth_reference_q16` 重标定，再把格级 sat
 混进 `K_eff`；cohort 只乘残差，避免把心情乘两次。未解锁物资族不进 surplus 分母。
 贴上 `K_eff` 后出生落到更替。饥饿死亡仍只读 `SAT_DIM_SUBSISTENCE`。
-出生贡献按地块与民族聚合，Q32 小数余数跨周期累计，并由 PKEC v41 持久化；不新增调度阶段。
+出生贡献按地块与民族聚合，Q32 小数余数跨周期累计，并由 PKEC v42 持久化；不新增调度阶段。
 
 建筑基础工资不再预付；生产出售后用 owner 销售后资金统一分配。最终欠薪继续记录在
 `wage_suspended`/unpaid 报告中并取消奖金，但该标记不代表下一轮自动停产。
@@ -704,7 +710,7 @@ Inspector 诊断 lane，计入 runtime memory，但不进入 state hash 或 PKEC
 服务。前两项在基础设施/服务经济落地前作为明确的无家庭需求资本品保留；scientific_instruments
 仍有精密工具生产下游。允许的跨 need 复用仅为 refined_fuel、computers、beverages 和 fur，
 Inspector 会聚合显示。需求/计划变更只改变 catalog hash；旧 hash 的 PKEC 按现有
-`save_catalog_scale_or_capacity_mismatch` 路径拒绝；byte schema 现为 PKEC v41，cadence 为锁定 N/P/I。
+`save_catalog_scale_or_capacity_mismatch` 路径拒绝；byte schema 现为 PKEC v42（v41 可读），cadence 为锁定 N/P/I。
 生成目录遵守 16 needs、每 need 8 variants、每 variant 4 components 的运行时合同；本轮加入
 野味后实际最大 variant 数为 5，最大 component 数仍为 2。聚焦处理量以当前 schema 测试输出为准。
 
@@ -826,6 +832,7 @@ bitset from frozen household/business demand, supply, realized withdrawals,
 exports, stock, and the exact merchant inventory target; ordinary household
 markets do not pay for a second full goods scan. A catalog-baked
 output-good-to-building CSR expands those goods to candidate types. Existing and pending local types are always retained,
+their output goods are enqueued so unlocked competitors of an already-supplied good stay visible,
 and their construction inputs close the candidate set recursively, so repair,
 growth, and same-review construction-shortage feedback cannot disappear.
 `PROBE` evaluates the full country catalog while measuring the subset. `ACTIVE`
@@ -1135,8 +1142,12 @@ and curated `BuildingProfile` carries an explicit construction bill selected by 
 scaled by owner and employee slots, and filtered to avoid self-output bootstrap cycles, except
 zero-day service lots and `starter.construction` collectors with no daily good inputs. The catalog
 rejects any other profile that omits construction goods. Output demand combines flow deficit with the persistent gap between current
-stock and `merchant_inventory_target`; a type is rejected with reason 15 only when both
-shortage and projected utilization are below their configured thresholds.
+stock and `merchant_inventory_target`. When that deficit is zero, a cheaper unlocked type may still
+enter if local incumbents offer the same good at a strictly higher unit cost after
+`investment_displacement_min_advantage_q16` (default 1/16). Rejection 15 is reserved for types with
+no marketable output; rejection 18 (`INVESTMENT_REJECTION_NO_COST_ADVANTAGE`) means no gap and no
+stealable incumbent supply. Utilization, livelihood, margin, and payback then use that stealable
+share exactly as they would a shortage.
 
 The inspector-selected cell owns a bounded transient candidate table containing every
 evaluated unlocked type, including types with no installed group. Rejection reason 17 remains
@@ -1272,6 +1283,25 @@ pending/existing/resource aggregation as its own cooperative phase; the followin
 `investment` phase evaluates and commits bounded review-cell ranges. Both keys are
 always present in `building_commit_breakdown_ms/work`. The planned `>=64` read-only worker result plus
 stable main-thread revalidation/commit split is not yet production behavior.
+
+## 2026-08-24 merit-order offtake and displacement investment
+
+Local producer offers still share one retail price per good. Offtake sorts
+`(good, unit_cost, group)` and fills `merchant_procurement_quota` from
+lowest operating-cost units; equal-cost offers at the marginal tier share the
+leftover quota in proportion to sellable quantity. Producer-support mint no longer props up leftover
+high-cost output once cheaper offers have filled the quota. Price V4 cost
+anchors weight by `merchant_sold`.
+
+Investment sparse closure now enqueues each local group's output goods so
+unlocked challengers of an already-supplied good remain visible. When market
+deficit is zero, stealable incumbent daily offered supply (same good, other
+types, unit cost above challenger × (1 + min advantage)) becomes utilization
+and `desired_count` input. Reports add
+`investment_displacement_type_evaluations` and
+`building_investment_displacement_starts`. Diagnostics add `stealable`,
+`challenger_unit_cost`, and `incumbent_unit_cost`. None of this enters PKEC or
+the state-hash column set.
 
 ## CSV writer backpressure (current)
 

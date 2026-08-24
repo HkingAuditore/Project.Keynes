@@ -329,18 +329,29 @@ func _run_colonization_planner_family_cards() -> void:
 		"maximum_population": 12, "route_cost": 4, "travel_days": 4,
 		"quote_token": 72, "surname": "王",
 	})
-	_expect("partial kits keep a brass shortage explanation",
+	_expect("owned-cell partial kits keep a grain-only dispatch label",
 		panel._start.text.find("12") >= 0
 		and panel._start.text.find("安家") < 0
+		and panel._start.text.find("筹备") < 0
 		and (panel._start.tooltip_text.find("口粮") >= 0
-			or panel._feedback.text.find("口粮") >= 0))
+			or panel._feedback.text.find("口粮") >= 0)
+		and not panel._start.disabled)
+	stub.detail["kit_place_buildings"] = true
+	panel._select_quote({
+		"family_handle": 11, "source_cell": 8, "target_cell": 22,
+		"maximum_population": 12, "route_cost": 4, "travel_days": 4,
+		"quote_token": 72, "surname": "王",
+	})
+	_expect("incomplete greenfield kits offer preparation instead of locking",
+		not panel._start.disabled
+		and panel._start.text.find("筹备") >= 0
+		and panel._start.text.find("12") >= 0)
 	panel.set_command_result({
 		"ok": false, "code": "colonization_kit_materials_short",
 	})
-	_expect("material failure disables repeated dispatch attempts",
-		panel._start.disabled
-		and panel._start.text.find("等待材料") >= 0
-		and panel._feedback.text.find("暂停重复提交") >= 0)
+	_expect("material-short failure no longer disables the confirm button",
+		not panel._start.disabled
+		and panel._start.text.find("等待材料") < 0)
 	stub.detail["kit_partial"] = false
 	stub.detail["kit_place_buildings"] = true
 	stub.detail["kit_building_ids"] = PackedInt32Array([1, 2])

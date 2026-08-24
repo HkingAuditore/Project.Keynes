@@ -1773,7 +1773,9 @@ func _capture_economy_trade_topology(map: MapData) -> Dictionary:
 		map.base_terrain_arr,
 		map.economy_trade_passable_lut(),
 		map.economy_trade_move_cost_lut(),
-		1)
+		1,
+		map.base_landform_arr,
+		map.has_river_arr)
 	return trade_topology
 
 

@@ -1,10 +1,15 @@
 # 经济存档、catalog migration 与内容扩展 SOP
 
-## PKEC v41（当前 writer/reader）
+## PKEC v42（当前 writer；v41 向前兼容读）
 
-PKEC v41 是唯一可写、可读 byte schema。它保留 v40 的 FamilyStore
-`origin_cell`、`culture_group_id`、`split_sequence` 与固定分裂阈值 100，并在 cell record 中加入
-`precipitation_q16`。cell record 为 122 bytes；七条冻结环境 lane 及 restore hash 顺序固定为：
+PKEC v42 是当前可写 byte schema。它保留 v41 的 FamilyStore、降水 lane 与既有 section，
+并在家族开拓队记录末尾追加筹备缺货：每条 expedition 在 cargo/kit 之后写
+`identity:u64`、`missing_count:u32` 以及 `missing_count` 组 `(good_id:i32, quantity:i64)`。
+`EXPEDITION_PREPARING=4` 允许 `payload_count == 0`、`cargo_count == 0`、`kit_count == 0`；
+非 PREPARING 队伍仍写 `missing_count = 0`。reader 接受 v41 与 v42。v41 不得含 PREPARING，
+且仍要求 payload≥1。v40 及更早全部拒绝。不把 PREPARING 静默当成 OUTBOUND。
+
+cell record 仍为 122 bytes；七条冻结环境 lane 及 restore hash 顺序固定为：
 
 1. temperature
 2. temperature_30d
@@ -16,7 +21,13 @@ PKEC v41 是唯一可写、可读 byte schema。它保留 v40 的 FamilyStore
 
 缺少降水、记录尺寸不符、环境 hash 不符、catalog/policy identity 不符或任一 section 截断都会
 原子拒绝恢复。当前 reader 不为 v40 及更早版本填默认值，也不执行隐式 family/Modifier/环境迁移。
-跨版本支持必须由离线、显式、带守恒审计的迁移器产出新的 v41 stream。
+
+## PKEC v41（历史 writer；当前仍可读）
+
+PKEC v41 保留 v40 的 FamilyStore
+`origin_cell`、`culture_group_id`、`split_sequence` 与固定分裂阈值 100，并在 cell record 中加入
+`precipitation_q16`。当前 v42 writer 不再写出 v41；v41 流不含 PREPARING 与缺货 CSR。
+跨版本支持若要把更旧存档迁到 v42，必须由离线、显式、带守恒审计的迁移器产出新 stream。
 
 ## PKEC v40（历史 writer）
 
@@ -32,8 +43,7 @@ expedition 在 payload 之后写 `cargo_count` 行（`good_id:i32`、`quantity:i
 到达消耗 construction cargo 并立刻插入家族所有的已建成组，审计记入
 `construction_goods_consumed`。在途货物进入 `AuditTotals.expedition_goods` 与
 `state_hash`。v36 在途队伍按空 cargo/kit 迁移，到达行为与无开工包时相同。
-当前 `game_save_coordinator.gd` 的 `pkec` provider schema 为 41，不再宣称兼容
-`[35, 36, 37]`。开拓合同见
+当前 `game_save_coordinator.gd` 的 `pkec` provider schema 为 42，读侧兼容 `[41, 42]`。开拓合同见
 [家族远程开拓运行时](./family-colonization-runtime.md)。
 
 ## PKEC v36（历史 writer）
@@ -175,7 +185,7 @@ restore 要先配置并完整恢复 PKCN v4，再用当前资源 catalog 调 `co
 
 通过后重建 committed summary；`get_economy_state_hash()` 应与保存前一致。
 
-当前写出 schema 为 PKEC v41，并与 PKCN v11、PKEF v11 交叉绑定。PKEC v40 及更早版本全部拒绝；
+当前写出 schema 为 PKEC v42，并与 PKCN v11、PKEF v11 交叉绑定。PKEC v41 仅向前兼容读；v40 及更早版本全部拒绝；
 后文旧版本章节只记录历史格式演进，不代表当前 reader 仍接受。拓扑、FamilyEffect binding、stack
 group、selector/CSR、exact-good override cache 和未完成规划均为派生态，加载后重建；联合存档只允许在
 国家/Effect 命令图 idle 且经济位于 committed boundary 时开始。
@@ -186,7 +196,7 @@ group、selector/CSR、exact-good override cache 和未完成规划均为派生�
 排序，canonical columns 经 SHA-256 截取为正 `catalog_hash`。移动/重命名 `.tres`
 文件而不改 stable ID 不影响索引。
 
-当前 PKEC v41 与 PKCN v11 要求 save 的稳定 ID 表（含 technology IDs）与当前 catalog 完全一致，
+当前 PKEC v42 与 PKCN v11 要求 save 的稳定 ID 表（含 technology IDs）与当前 catalog 完全一致，
 并要求姓氏 `family_catalog_hash`、人物 `person_catalog_hash` 和特性
 `family_trait_catalog_hash` 一致。不存在当前 reader 可用的 append-only 迁移例外。
 本轮明确不提供旧 187-building/152-good 目录迁移，旧存档按现有 catalog mismatch 路径拒绝。

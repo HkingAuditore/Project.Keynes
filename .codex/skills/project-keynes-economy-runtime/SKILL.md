@@ -99,9 +99,11 @@ treasury cap. Do not invent a family wallet or a second market-price exception a
 - Run `building_employment` and `building_production` before `household_market`, then hold completed
   internal state in `wait_commit` until the frozen deadline; run `building_commit` immediately before
   publish. Empty building worlds must skip the first two stages without changing results.
-- Buy construction and production inputs from local merchant cohorts. Sort producer offers by local
-  retail price descending, apply the configured merchant buy factor, and cap normal purchases by
-  merchant cash. Put remaining storable output into merchant inventory through the audited
+- Buy construction and production inputs from local merchant cohorts. Sort producer offers by
+  `(good, unit_cost, group)`, fill merchant quota from lowest unit cost (equal-cost
+  offers at the marginal tier share leftover quota), apply the configured
+  merchant buy factor, and cap normal purchases by merchant cash. Cost anchors weight by
+  `merchant_sold`. Put remaining storable output into merchant inventory through the audited
   one-fifth-retail producer-support issuance path; only non-storable remainder is discarded.
 - Buy inputs and produce/sell output before wage transfer. Then cap wage transfer by post-sale owner
   cash and pay only committed local employees. Report paid and unpaid wages separately without

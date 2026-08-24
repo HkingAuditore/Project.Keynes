@@ -15,7 +15,7 @@ func _init() -> void:
 	_compiled = EconomyCatalogScript.compile_native_catalog()
 	_expect("schema v3 catalog compiles", bool(_compiled.get("ok", false)))
 	var ids: PackedStringArray = _compiled.get("technology_ids", PackedStringArray())
-	_expect("stable technology count", ids.size() == 361)
+	_expect("stable technology count", ids.size() == 679)
 	_expect("route IR is present", (_compiled.get("research_route_ids", PackedStringArray()) as PackedStringArray).size() > 600)
 
 	# Era milestone is a hard gate, while the node's discovery signal and one
@@ -64,9 +64,9 @@ func _init() -> void:
 	_expect("flint stays ineligible until a knowledge practice is completed",
 		_state(flint_locked, "tech.flint_identification") == 1)
 	var flint_open := _fixture(
-		PackedStringArray(["tech.gathering", "tech.oral_memory_practice"]),
+		PackedStringArray(["tech.gathering", "tech.early_knowledge_institution"]),
 		PackedStringArray(["resource.flint"]))
-	_expect("the oral-memory route opens flint research",
+	_expect("the unified institution route opens flint research",
 		_state(flint_open, "tech.flint_identification") == 2)
 
 	var seasonal_locked := _fixture(PackedStringArray(["tech.gathering"]),
@@ -74,9 +74,9 @@ func _init() -> void:
 	_expect("seasonal foraging stays ineligible until a knowledge practice is completed",
 		_state(seasonal_locked, "tech.seasonal_foraging") == 1)
 	var seasonal_open := _fixture(
-		PackedStringArray(["tech.gathering", "tech.phenology_observation"]),
+		PackedStringArray(["tech.gathering", "tech.early_knowledge_institution"]),
 		PackedStringArray())
-	_expect("one completed knowledge practice opens seasonal foraging",
+	_expect("the unified institution opens seasonal foraging",
 		_state(seasonal_open, "tech.seasonal_foraging") == 2)
 
 	var hide_locked := _fixture(PackedStringArray(["tech.hunting"]),
@@ -84,20 +84,25 @@ func _init() -> void:
 	_expect("hide scraping stays ineligible on a warm start until knowledge",
 		_state(hide_locked, "tech.hide_scraping") == 1)
 	var hide_open := _fixture(
-		PackedStringArray(["tech.hunting", "tech.pastoral_route_memory"]),
+		PackedStringArray(["tech.hunting", "tech.early_knowledge_institution"]),
 		PackedStringArray(["resource.wild_game"]))
-	_expect("the pastoral-memory route opens hide scraping",
+	_expect("the unified institution opens hide scraping",
 		_state(hide_open, "tech.hide_scraping") == 2)
 
-	var coastal_open := _fixture(PackedStringArray(["tech.tide_observation"]),
+	var coastal_open := _fixture(PackedStringArray(["tech.early_knowledge_institution"]),
 		PackedStringArray(["resource.marine_fish"]))
-	_expect("the coastal knowledge start opens its own fishing route",
+	_expect("marine evidence opens coastal fishing after the institution",
 		_state(coastal_open, "tech.coastal_fishing") == 2)
+	var freshwater_open := _fixture(PackedStringArray([
+		"tech.early_knowledge_institution",
+	]), PackedStringArray(["resource.freshwater_fish"]))
+	_expect("freshwater evidence opens freshwater fishing after the institution",
+		_state(freshwater_open, "tech.freshwater_fishing") == 2)
 
 	# Regional knowledge buildings provide technology points; their memory type
 	# must not become a hard gate for unrelated stone technologies.
 	var coastal_alternatives := _fixture(PackedStringArray([
-		"tech.tide_observation", "tech.hunting",
+		"tech.early_knowledge_institution", "tech.hunting",
 	]), PackedStringArray([
 		"resource.timber", "resource.marine_fish",
 	]))
@@ -105,18 +110,27 @@ func _init() -> void:
 		_state(coastal_alternatives, "tech.fire_control") == 2)
 	_expect("coastal knowledge opens husbandry after hunting",
 		_state(coastal_alternatives, "tech.animal_husbandry") == 2)
-	_expect("coastal knowledge opens fishing boats with fish",
-		_state(coastal_alternatives, "tech.fishing_boats") == 2)
+	var boats_from_coast := _fixture(PackedStringArray([
+		"tech.settled_knowledge", "tech.coastal_fishing",
+	]), PackedStringArray(["resource.marine_fish"]))
+	_expect("completed coastal fishing alone opens fishing boats",
+		_state(boats_from_coast, "tech.fishing_boats") == 2)
+	var boats_from_freshwater := _fixture(PackedStringArray([
+		"tech.settled_knowledge", "tech.freshwater_fishing",
+	]), PackedStringArray(["resource.freshwater_fish"]))
+	_expect("completed freshwater fishing alone opens fishing boats",
+		_state(boats_from_freshwater, "tech.fishing_boats") == 2)
 	var coastal_without_fish := _fixture(PackedStringArray([
-		"tech.tide_observation", "tech.hunting",
-	]), PackedStringArray(["resource.timber"]))
-	_expect("fishing boats still require a fish signal",
-		_state(coastal_without_fish, "tech.fishing_boats") == 0)
+		"tech.settled_knowledge", "tech.early_knowledge_institution",
+	]), PackedStringArray(["resource.marine_fish", "resource.freshwater_fish"]))
+	_expect("fishing boats stay ineligible without either fishing technology",
+		_state(coastal_without_fish, "tech.fishing_boats") == 1)
 
 	var coastal_calendar := _fixture(PackedStringArray([
-		"tech.tide_observation", "tech.natural_observation", "tech.oral_tradition",
+		"tech.early_knowledge_institution", "tech.natural_observation",
+		"tech.oral_tradition",
 	]), PackedStringArray())
-	_expect("coastal knowledge opens seasonal calendar after its core history",
+	_expect("the unified institution opens seasonal calendar after its core history",
 		_state(coastal_calendar, "tech.seasonal_calendar") == 2)
 
 	print("technology eligibility v3: %s" % ("PASS" if _failures == 0 else "FAIL"))

@@ -332,6 +332,7 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_investment_resource_commitment_stamp);
     cap(_investment_cell_finance_stamp);
     cap(_investment_output_signals_scratch);
+    cap(_investment_incumbent_lanes_scratch);
     cap(_investment_good_type_offsets);
     cap(_investment_good_type_indices);
     cap(_investment_active_good_words);
@@ -358,6 +359,15 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_trade_topology.enter_cost); cap(_trade_topology.component);
     cap(_trade_topology.edge_cost);
     cap(_trade_topology.canal_edge_mask); cap(_trade_topology.canal_water);
+    cap(_trade_topology.water_class); cap(_trade_topology.has_river);
+    cap(_trade_topology.component_layers);
+    for (const auto &graph : _trade_topology.water_portals) {
+        cap(graph.cell_portal); cap(graph.portal_cells);
+        cap(graph.offsets); cap(graph.targets); cap(graph.costs);
+        cap(graph.reverse_offsets); cap(graph.reverse_targets); cap(graph.reverse_costs);
+    }
+    cap(_epoch_country_water_capability);
+    cap(_transport_succ_cells); cap(_transport_succ_costs);
     cap(_canal_quotes); cap(_canal_projects); cap(_canal_receipts);
     for (const CanalQuote &quote : _canal_quotes) {
         cap(quote.route_cells); cap(quote.route_edge_dirs);
@@ -718,6 +728,8 @@ Dictionary NativeEconomyRuntime::compact_report() const {
         _investment_sparse_mismatches;
     out["investment_sparse_dense_fallbacks"] =
         _investment_sparse_dense_fallbacks;
+    out["investment_displacement_type_evaluations"] =
+        _investment_displacement_type_evaluations;
     out["investment_gate_capital_type_skips"] =
         _investment_gate_capital_type_skips;
     out["building_factor_cache_hits"] = _building_factor_cache_hits;
@@ -1324,6 +1336,8 @@ Dictionary NativeEconomyRuntime::report() const {
         _investment_sparse_mismatches;
     out["investment_sparse_dense_fallbacks"] =
         _investment_sparse_dense_fallbacks;
+    out["investment_displacement_type_evaluations"] =
+        _investment_displacement_type_evaluations;
     out["investment_gate_capital_type_skips"] =
         _investment_gate_capital_type_skips;
     out["approximation_probe_violations"] =
@@ -1423,6 +1437,10 @@ Dictionary NativeEconomyRuntime::report() const {
         _last_completed_perf.investment_sparse_mismatches;
     out["last_completed_investment_sparse_dense_fallbacks"] =
         _last_completed_perf.investment_sparse_dense_fallbacks;
+    out["last_completed_investment_displacement_type_evaluations"] =
+        _last_completed_perf.investment_displacement_type_evaluations;
+    out["last_completed_building_investment_displacement_starts"] =
+        _last_completed_perf.building_investment_displacement_starts;
     out["last_completed_approximation_decisions"] =
         _last_completed_perf.approximation_decisions;
     out["last_completed_approximation_exact_probes"] =
@@ -1714,6 +1732,8 @@ Dictionary NativeEconomyRuntime::report() const {
         _investment_max_growth_share_q16;
     out["investment_new_type_seed_buildings"] =
         _investment_new_type_seed_buildings;
+    out["investment_displacement_min_advantage_q16"] =
+        _investment_displacement_min_advantage_q16;
     out["investment_merchant_transition_min_improvement_q16"] =
         _investment_merchant_transition_min_improvement_q16;
     out["recovery_liquidation_max_share_q16"] =
@@ -1729,6 +1749,8 @@ Dictionary NativeEconomyRuntime::report() const {
     out["building_employee_to_owner_reallocations"] =
         _building_employee_to_owner_reallocations;
     out["building_investments_started"] = _building_investments_started;
+    out["building_investment_displacement_starts"] =
+        _building_investment_displacement_starts;
     out["building_investment_blocked_funds"] =
         _building_investment_blocked_funds;
     out["building_investment_blocked_materials"] =
@@ -1908,6 +1930,14 @@ Dictionary NativeEconomyRuntime::report() const {
         _trade_topology.topology_generation);
     out["trade_topology_hash"] = static_cast<int64_t>(
         _trade_topology.topology_hash);
+    int64_t water_portals = 0;
+    int64_t water_portal_edges = 0;
+    for (const auto &graph : _trade_topology.water_portals) {
+        water_portals += static_cast<int64_t>(graph.portal_cells.size());
+        water_portal_edges += static_cast<int64_t>(graph.targets.size());
+    }
+    out["trade_water_portal_count"] = water_portals;
+    out["trade_water_portal_edges"] = water_portal_edges;
     // Compatibility key retained for CSV/UI readers; this is now the stable
     // frozen border hash rather than the country's treasury mutation generation.
     out["trade_country_generation"] = static_cast<int64_t>(

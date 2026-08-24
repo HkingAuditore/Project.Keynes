@@ -2,7 +2,7 @@ extends SceneTree
 
 ## Composite satisfaction runtime coverage: the eight dimensions, the
 ## subsistence gate, class (profession) weight differentiation, the explain and
-## attractiveness read APIs, and PKEC v41 round-trip plus state hash.
+## attractiveness read APIs, and PKEC v42 round-trip plus state hash.
 
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const CountryTestHelper = preload("res://tests/country_test_helper.gd")
@@ -220,7 +220,7 @@ func _test_save_round_trip(compiled: Dictionary) -> void:
 		_run_cycle(source, cycle)
 	var before: Dictionary = source.get_population_cell_snapshot(0)
 	var saved := _save(source)
-	_expect("PKEC v41 streams the satisfaction columns",
+	_expect("PKEC v42 streams the satisfaction columns",
 		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 39)
 	if not bool(saved.get("ok", false)):
 		return
@@ -228,7 +228,7 @@ func _test_save_round_trip(compiled: Dictionary) -> void:
 	if restored == null:
 		return
 	var restore_result := _restore(restored, saved.get("chunks", []))
-	_expect("PKEC v41 restores the satisfaction columns",
+	_expect("PKEC v42 restores the satisfaction columns",
 		bool(restore_result.get("ok", false)))
 	_expect("composite satisfaction enters the economy state hash",
 		int(source.get_economy_state_hash()) ==

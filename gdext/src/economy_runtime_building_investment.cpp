@@ -167,6 +167,10 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
         int64_t jobs_per_building = 0;
         int64_t merchant_credit = 0;
         bool uses_merchant_credit = false;
+        int64_t stealable = 0;
+        int64_t challenger_unit_cost = 0;
+        int64_t incumbent_unit_cost = 0;
+        bool displaces_incumbents = false;
     };
     auto better = [](const Candidate &a, const Candidate &b,
                      bool employment_catchup) {
@@ -487,7 +491,18 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                         static_cast<size_t>(_cell_count + 1)) {
                     for (int32_t group = _building_cell_offsets[cell];
                          group < _building_cell_offsets[cell + 1]; ++group) {
-                        mark_type(_buildings[group].type_id);
+                        const int32_t local_type = _buildings[group].type_id;
+                        mark_type(local_type);
+                        if (local_type < 0 ||
+                            local_type >= static_cast<int32_t>(
+                                _building_types.size())) continue;
+                        const BuildingType &local_outputs =
+                            _building_types[local_type];
+                        for (int32_t output = 0;
+                             output < local_outputs.output_count; ++output) {
+                            enqueue_good(_building_outputs[
+                                local_outputs.output_begin + output].good_id);
+                        }
                     }
                 }
                 if (_pending_construction_cell_offsets.size() ==
@@ -525,7 +540,8 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
             _current_day % _full_audit_verify_interval_days == 0;
         bool sparse_filter_active = _investment_sparse_mode == 2 &&
             !_investment_sparse_runtime_disabled && sparse_mask_ready &&
-            !capture_investment_diagnostics && !sparse_full_verification;
+            !capture_investment_diagnostics && !sparse_full_verification &&
+            !employment_catchup;
         if (sparse_filter_active) {
             int32_t selected_available_types = 0;
             const int32_t available_type_count =
@@ -574,6 +590,56 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
             cell_credit_construction_cover = std::max<int64_t>(0, std::min(
                 exposure - std::min(exposure, outstanding),
                 merchant_cash - std::min(merchant_cash, reserve)));
+        }
+        std::vector<InvestmentIncumbentLane> &incumbent_lanes =
+            _investment_incumbent_lanes_scratch;
+        incumbent_lanes.clear();
+        if (_building_cell_offsets.size() ==
+                static_cast<size_t>(_cell_count + 1)) {
+            const int64_t epoch_days = std::max(1, _epoch_days);
+            for (int32_t group_index = _building_cell_offsets[cell];
+                 group_index < _building_cell_offsets[cell + 1];
+                 ++group_index) {
+                const BuildingGroup &group = _buildings[group_index];
+                if (group.count <= 0 || group.operating_state == 1 ||
+                    group.type_id < 0 ||
+                    group.type_id >= static_cast<int32_t>(
+                        _building_types.size())) continue;
+                const BuildingType &incumbent_type =
+                    _building_types[group.type_id];
+                const int64_t building_days = saturating_mul(
+                    group.count, epoch_days, _saturation_count);
+                for (int32_t output = 0;
+                     output < incumbent_type.output_count; ++output) {
+                    const GoodAmount &item = _building_outputs[
+                        incumbent_type.output_begin + output];
+                    const int64_t qty = effective_building_output_quantity(
+                        group, item.good_id, item.quantity,
+                        group.last_capacity_q16, building_days,
+                        _saturation_count);
+                    if (qty <= 0) continue;
+                    const int64_t allocated = allocated_output_operating_cost(
+                        incumbent_type, output,
+                        std::max<int64_t>(0, group.last_operating_cost),
+                        _saturation_count);
+                    InvestmentIncumbentLane lane;
+                    lane.good_id = item.good_id;
+                    lane.type_id = group.type_id;
+                    lane.unit_cost = mul_div_sat(
+                        allocated, GOODS_SCALE, qty, _saturation_count);
+                    lane.daily_offered = qty / epoch_days;
+                    if (lane.daily_offered <= 0) continue;
+                    incumbent_lanes.push_back(lane);
+                }
+            }
+            std::stable_sort(incumbent_lanes.begin(), incumbent_lanes.end(),
+                [](const InvestmentIncumbentLane &a,
+                   const InvestmentIncumbentLane &b) {
+                    if (a.good_id != b.good_id) return a.good_id < b.good_id;
+                    if (a.unit_cost != b.unit_cost)
+                        return a.unit_cost < b.unit_cost;
+                    return a.type_id < b.type_id;
+                });
         }
         for (int32_t available_index = available_begin;
              available_index < available_end; ++available_index) {
@@ -692,6 +758,14 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     output_deficit = std::max<int64_t>(
                         output_deficit, effective_unit_output);
                     output_pressure_q16 = Q16_ONE;
+                } else if (research_demand > 0 && supply <= 0) {
+                    // Government procurement is a cash-backed buyer even before
+                    // the first research producer exists. Seed one building of
+                    // entry pressure; absorption later still caps revenue at
+                    // the demand-covered share.
+                    output_deficit = std::max<int64_t>(
+                        output_deficit, effective_unit_output);
+                    output_pressure_q16 = Q16_ONE;
                 }
                 // Offered supply already contains the utilized portion of the
                 // installed stock. Reserve the remaining installed capacity and
@@ -759,6 +833,8 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 }
                 item.driver_strength_q16 = std::max(
                     item.pressure_q16, item.utilization_q16);
+                item.nameplate_output = effective_unit_output;
+                item.demand = demand;
                 output_signals.push_back(item);
                 const OutputInvestmentSignal &candidate = output_signals.back();
                 if (driver_index < 0) {
@@ -780,10 +856,15 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     }
                 }
             }
-            const OutputInvestmentSignal driver = driver_index >= 0
+            OutputInvestmentSignal driver = driver_index >= 0
                 ? output_signals[driver_index] : OutputInvestmentSignal{};
             int64_t shortage_q16 = driver.pressure_q16;
             int64_t utilization_q16 = driver.utilization_q16;
+            int64_t driver_deficit = driver.deficit;
+            int64_t stealable = 0;
+            int64_t challenger_unit_cost = 0;
+            int64_t incumbent_unit_cost = 0;
+            bool displaces_incumbents = false;
             const bool survival_output = driver.good_id >= 0 &&
                 (_survival_food_good_mask[driver.good_id] != 0 ||
                  _survival_clothing_good_mask[driver.good_id] != 0);
@@ -798,8 +879,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 diagnostic->driver_sell_through_q16 = driver.sell_through_q16;
                 diagnostic->driver_discard_q16 = driver.discard_q16;
             }
-            if (driver.good_id < 0 || driver.deficit <= 0 ||
-                utilization_q16 <= 0) {
+            if (driver.good_id < 0) {
                 ++_investment_market_signal_rejections;
                 reject(INVESTMENT_REJECTION_MARKET_SIGNAL);
                 continue;
@@ -959,6 +1039,96 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 reject(INVESTMENT_REJECTION_INPUT_CHAIN);
                 continue;
             }
+            int64_t daily_wages = 0;
+            for (int32_t r = 0; r < type.employee_count; ++r) {
+                const JobRole &role = _building_employee_roles[type.employee_begin + r];
+                daily_wages = saturating_add(daily_wages, saturating_mul(
+                    role.slots_per_building, role.reference_wage_per_day,
+                    _saturation_count), _saturation_count);
+            }
+            const int64_t nameplate_output = std::max<int64_t>(
+                0, driver.nameplate_output);
+            const int64_t full_operating_cost = saturating_add(
+                daily_input_cost, daily_wages, _saturation_count);
+            const int64_t allocated_driver_cost = driver_index >= 0
+                ? allocated_output_operating_cost(
+                    type, driver_index, full_operating_cost, _saturation_count)
+                : 0;
+            challenger_unit_cost = nameplate_output > 0
+                ? mul_div_sat(allocated_driver_cost, GOODS_SCALE,
+                    nameplate_output, _saturation_count)
+                : 0;
+            const int64_t cost_threshold = mul_div_sat(
+                challenger_unit_cost,
+                saturating_add(Q16_ONE,
+                    std::max<int32_t>(0,
+                        _investment_displacement_min_advantage_q16),
+                    _saturation_count),
+                Q16_ONE, _saturation_count);
+            for (const InvestmentIncumbentLane &lane : incumbent_lanes) {
+                if (lane.good_id != driver.good_id ||
+                    lane.type_id == type_id) continue;
+                if (lane.unit_cost <= cost_threshold) continue;
+                stealable = saturating_add(
+                    stealable, lane.daily_offered, _saturation_count);
+                if (incumbent_unit_cost <= 0 ||
+                    lane.unit_cost < incumbent_unit_cost) {
+                    incumbent_unit_cost = lane.unit_cost;
+                }
+            }
+            if (stealable > 0)
+                ++_investment_displacement_type_evaluations;
+            if (driver_deficit > 0 && utilization_q16 > 0) {
+                // Keep the ordinary shortage path.
+            } else if (stealable > 0 && nameplate_output > 0) {
+                utilization_q16 = std::clamp<int64_t>(mul_div_sat(
+                    stealable, Q16_ONE, nameplate_output, _saturation_count),
+                    0, Q16_ONE);
+                shortage_q16 = std::min<int64_t>(Q16_ONE, mul_div_sat(
+                    stealable, Q16_ONE,
+                    std::max<int64_t>(1, driver.demand), _saturation_count));
+                driver_deficit = stealable;
+                driver.deficit = stealable;
+                driver.pressure_q16 = shortage_q16;
+                driver.utilization_q16 = utilization_q16;
+                driver.sellable = 0;
+                displaces_incumbents = true;
+                if (driver_index >= 0 &&
+                    driver_index < static_cast<int32_t>(output_signals.size())) {
+                    output_signals[driver_index].deficit = stealable;
+                    output_signals[driver_index].pressure_q16 = shortage_q16;
+                    output_signals[driver_index].utilization_q16 =
+                        utilization_q16;
+                    output_signals[driver_index].sellable = 0;
+                }
+            } else if (employment_catchup && nameplate_output > 0) {
+                // 位移必须先于 catch-up：高失业格上的低成本挑战者仍要走 stealable。
+                utilization_q16 = std::max<int64_t>(
+                    utilization_q16, Q16_ONE / 6);
+                shortage_q16 = std::max<int64_t>(
+                    shortage_q16, Q16_ONE / 8);
+                if (driver_deficit <= 0) {
+                    driver_deficit = mul_div_sat(
+                        nameplate_output, utilization_q16, Q16_ONE,
+                        _saturation_count);
+                    driver.deficit = driver_deficit;
+                    if (driver_index >= 0 &&
+                        driver_index < static_cast<int32_t>(
+                            output_signals.size())) {
+                        output_signals[driver_index].deficit = driver_deficit;
+                    }
+                }
+                driver.utilization_q16 = utilization_q16;
+                driver.pressure_q16 = shortage_q16;
+            } else {
+                reject(INVESTMENT_REJECTION_NO_COST_ADVANTAGE);
+                if (diagnostic != nullptr) {
+                    diagnostic->stealable = stealable;
+                    diagnostic->challenger_unit_cost = challenger_unit_cost;
+                    diagnostic->incumbent_unit_cost = incumbent_unit_cost;
+                }
+                continue;
+            }
             utilization_q16 = std::min(utilization_q16, input_coverage_bound_q16);
             utilization_q16 = std::min(utilization_q16,
                 production_climate_capacity_q16(
@@ -967,12 +1137,14 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 reject(INVESTMENT_REJECTION_INPUT_CHAIN);
                 continue;
             }
-            int64_t daily_wages = 0;
-            for (int32_t r = 0; r < type.employee_count; ++r) {
-                const JobRole &role = _building_employee_roles[type.employee_begin + r];
-                daily_wages = saturating_add(daily_wages, saturating_mul(
-                    role.slots_per_building, role.reference_wage_per_day,
-                    _saturation_count), _saturation_count);
+            if (diagnostic != nullptr) {
+                diagnostic->shortage_q16 = shortage_q16;
+                diagnostic->utilization_q16 = utilization_q16;
+                diagnostic->driver_pressure_q16 = driver.pressure_q16;
+                diagnostic->driver_utilization_q16 = driver.utilization_q16;
+                diagnostic->stealable = stealable;
+                diagnostic->challenger_unit_cost = challenger_unit_cost;
+                diagnostic->incumbent_unit_cost = incumbent_unit_cost;
             }
             const int64_t daily_variable_cost = mul_div_sat(saturating_add(
                 daily_input_cost, daily_wages, _saturation_count), utilization_q16,
@@ -1040,6 +1212,18 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                                 sellable_quantity, _saturation_count));
                     } else if (issue_value <= 0 && output_signal.sellable > 0) {
                         absorption_q16 = output_signal.sell_through_q16;
+                        // Installed producers can still face a real deficit
+                        // with a 0 sell-through print (quota/cash timing).
+                        // Restrict the deficit fallback to types that already
+                        // have a local group so greenfield challengers keep
+                        // using historical absorption.
+                        if (absorption_q16 <= 0 && output_signal.deficit > 0 &&
+                            sellable_quantity > 0 &&
+                            (existing != nullptr || employment_catchup)) {
+                            absorption_q16 = std::clamp<int64_t>(mul_div_sat(
+                                output_signal.deficit, Q16_ONE, sellable_quantity,
+                                _saturation_count), 0, Q16_ONE);
+                        }
                     } else if (issue_value <= 0 && sellable_quantity > 0) {
                         absorption_q16 = std::clamp<int64_t>(mul_div_sat(
                             output_signal.deficit, Q16_ONE, sellable_quantity,
@@ -1251,7 +1435,11 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 candidate.profit_per_day = daily_profit;
                 candidate.payback_days = payback;
                 candidate.driver_good_id = driver.good_id;
-                candidate.driver_deficit = driver.deficit;
+                candidate.driver_deficit = driver_deficit;
+                candidate.stealable = stealable;
+                candidate.challenger_unit_cost = challenger_unit_cost;
+                candidate.incumbent_unit_cost = incumbent_unit_cost;
+                candidate.displaces_incumbents = displaces_incumbents;
                 for (int32_t i = 0; i < type.output_count; ++i) {
                     const GoodAmount &output =
                         _building_outputs[type.output_begin + i];
@@ -1269,7 +1457,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 candidate.merchant_credit = merchant_credit;
                 candidate.uses_merchant_credit = uses_merchant_credit;
                 const int64_t target_gap = mul_div_sat(
-                    std::max<int64_t>(0, driver.deficit),
+                    std::max<int64_t>(0, driver_deficit),
                     _investment_gap_fill_share_q16, Q16_ONE,
                     _saturation_count);
                 candidate.desired_count =
@@ -1352,12 +1540,15 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                             shortage_q16, 0, Q16_ONE)));
                 }
                 type_has_viable_candidate = true;
-                if (diagnostic != nullptr) {
+            if (diagnostic != nullptr) {
                     diagnostic->rejection_reason = INVESTMENT_REJECTION_NONE;
                     diagnostic->score_q16 = candidate.score_q16;
                     diagnostic->payback_days = payback;
                     diagnostic->required_capital = required_capital;
                     diagnostic->projected_profit_per_day = daily_profit;
+                    diagnostic->stealable = stealable;
+                    diagnostic->challenger_unit_cost = challenger_unit_cost;
+                    diagnostic->incumbent_unit_cost = incumbent_unit_cost;
                 }
                 if (existing_group >= 0) {
                     mark_rejection(existing, INVESTMENT_REJECTION_NONE);
@@ -1972,6 +2163,8 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
             _publish_accum.goods_stock = saturating_sub(
                 _publish_accum.goods_stock, consumed, _saturation_count);
             ++_building_investments_started;
+            if (candidate.displaces_incumbents)
+                ++_building_investment_displacement_starts;
             ++started_types;
             const uint64_t pending_key = cell_key(cell, candidate.type);
             _investment_pending_by_cell_type[pending_key] = saturating_add(

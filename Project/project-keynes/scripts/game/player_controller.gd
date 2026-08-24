@@ -403,6 +403,12 @@ func get_family_expedition_snapshot(expedition_handle: int) -> Dictionary:
 		expedition_handle)
 
 
+func good_display_name(good_index: int) -> String:
+	if _economy_facade != null and _economy_facade.has_method("good_display_name"):
+		return String(_economy_facade.good_display_name(good_index))
+	return "物资#%d" % good_index
+
+
 func get_family_snapshot(family_handle: int) -> Dictionary:
 	if _economy_facade == null:
 		return _result(false, "runtime_unavailable", "经济运行时尚未就绪。")
@@ -923,6 +929,8 @@ static func _colonization_command_message(code: String) -> String:
 		"colonization_requote_required": "地图、视野或领土已经变化，请重新确认报价。",
 		"colonization_kit_requote_required": "目标资源或科技已经变化，请重新确认开工包。",
 		"colonization_kit_materials_short": "源地市场库存不足，无法抽出开工包物资。",
+		"colonization_preparing": "开拓队已开始筹备，人仍留在源地生产缺货物资。",
+		"colonization_cancelled": "开拓筹备已取消，目标占用已释放。",
 		"colonization_quote_expired": "报价已过期，请重新选择要派遣的家族。",
 		"colonization_population_insufficient": "源分支人口不足，必须至少留下一人。",
 		"colonization_duplicate_target": "本国已有一支开拓队前往该目标。",

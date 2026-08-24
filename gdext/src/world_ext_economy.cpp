@@ -132,6 +132,8 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
         // dynamic terrain lane.  In particular, seasonal sea-ice flips must
         // not invalidate and rebuild the route plan every economy cycle.
         const int terrain_sid = component_id(StringName("cell_base_terrain"));
+        const int landform_sid = component_id(StringName("cell_base_landform"));
+        const int river_sid = component_id(StringName("cell_has_river"));
         const int canal_mask_sid = component_id(StringName("cell_canal_edge_mask"));
         const int canal_water_sid = component_id(StringName("cell_canal_water"));
         const Variant neighbor_variant = _map_data->call(
@@ -153,6 +155,16 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
             const PackedByteArray passable = passable_variant;
             const PackedInt32Array costs = cost_variant;
             const int32_t count = _slots[terrain_sid].arr_u8.size();
+            const uint8_t *landform_ptr = nullptr;
+            const uint8_t *has_river_ptr = nullptr;
+            if (landform_sid >= 0 && landform_sid < _slots.size() &&
+                _slots[landform_sid].dtype == SlotDType::U8 &&
+                _slots[landform_sid].arr_u8.size() == count)
+                landform_ptr = _slots[landform_sid].arr_u8.ptr();
+            if (river_sid >= 0 && river_sid < _slots.size() &&
+                _slots[river_sid].dtype == SlotDType::U8 &&
+                _slots[river_sid].arr_u8.size() == count)
+                has_river_ptr = _slots[river_sid].arr_u8.ptr();
             if (neighbors.size() == count * 6 && passable.size() == 256 &&
                 costs.size() == 256) {
                 std::string topology_error;
@@ -161,7 +173,7 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
                         _slots[canal_mask_sid].arr_u8.ptr(),
                         _slots[canal_water_sid].arr_f32.ptr(),
                         passable.ptr(), costs.ptr(),
-                        count, 0, topology_error)) {
+                        count, 0, topology_error, landform_ptr, has_river_ptr)) {
                     Dictionary out;
                     out["ok"] = false;
                     out["done"] = true;
@@ -597,7 +609,8 @@ Dictionary DCWorldExt::get_trade_orders_for_cell(
 Dictionary DCWorldExt::capture_economy_trade_topology(
         const PackedInt32Array &neighbor_indices, const PackedByteArray &terrain,
         const PackedByteArray &trade_passable_lut,
-        const PackedInt32Array &trade_move_cost_lut, int64_t generation) {
+        const PackedInt32Array &trade_move_cost_lut, int64_t generation,
+        const PackedByteArray &landform, const PackedByteArray &has_river) {
     if (_economy_runtime == nullptr) return unavailable();
     Dictionary out;
     if (neighbor_indices.size() != terrain.size() * 6 ||
@@ -609,10 +622,13 @@ Dictionary DCWorldExt::capture_economy_trade_topology(
     std::string error;
     std::vector<uint8_t> empty_canal(static_cast<size_t>(terrain.size()), 0);
     std::vector<float> empty_water(static_cast<size_t>(terrain.size()), 0.0f);
+    const uint8_t *landform_ptr = landform.size() == terrain.size() ? landform.ptr() : nullptr;
+    const uint8_t *river_ptr = has_river.size() == terrain.size() ? has_river.ptr() : nullptr;
     const bool ok = runtime_from(_economy_runtime)->capture_trade_topology(
         neighbor_indices.ptr(), terrain.ptr(), empty_canal.data(), empty_water.data(),
         trade_passable_lut.ptr(),
-        trade_move_cost_lut.ptr(), terrain.size(), static_cast<uint64_t>(generation), error);
+        trade_move_cost_lut.ptr(), terrain.size(), static_cast<uint64_t>(generation),
+        error, landform_ptr, river_ptr);
     out["ok"] = ok;
     if (!ok) out["reason"] = String(error.c_str());
     return out;

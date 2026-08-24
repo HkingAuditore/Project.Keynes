@@ -204,6 +204,9 @@ extends Resource
 ## installed count. A previously absent type uses the separate seed limit.
 @export_range(1, 65536, 1) var investment_max_growth_share_q16: int = 16384
 @export_range(1, 1024, 1) var investment_new_type_seed_buildings: int = 1
+## Challenger unit cost must beat incumbents by at least this Q16 fraction
+## (default 1/16) before a no-gap type can steal their daily offered supply.
+@export_range(1, 65536, 1) var investment_displacement_min_advantage_q16: int = 4096
 ## A non-merchant cohort only changes profession into merchant when its
 ## projected disposable-income improvement reaches this Q16 threshold.
 @export_range(1, 65536, 1) var investment_merchant_transition_min_improvement_q16: int = 32768
@@ -390,6 +393,7 @@ func to_native_profile() -> Dictionary:
 		"investment_max_type_owner_share_q16": investment_max_type_owner_share_q16,
 		"investment_max_growth_share_q16": investment_max_growth_share_q16,
 		"investment_new_type_seed_buildings": investment_new_type_seed_buildings,
+		"investment_displacement_min_advantage_q16": investment_displacement_min_advantage_q16,
 		"investment_merchant_transition_min_improvement_q16": investment_merchant_transition_min_improvement_q16,
 		"recovery_liquidation_max_share_q16": recovery_liquidation_max_share_q16,
 		"resource_min_reserve_q16": resource_min_reserve_q16,

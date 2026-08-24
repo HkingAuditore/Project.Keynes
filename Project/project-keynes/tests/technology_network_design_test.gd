@@ -1,11 +1,11 @@
 extends SceneTree
 
 const NETWORK_PATH := "res://data/technology/technology_network.json"
-const EXPECTED_NODES := 361
+const EXPECTED_NODES := 679
 const EXPECTED_ERAS := 11
 const EXPECTED_DOMAINS := 4
-const CANDIDATES_PER_ERA := 12
-const CANDIDATES_REQUIRED := 4
+const CANDIDATES_PER_ERA := [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
+const CANDIDATES_REQUIRED := [4, 4, 4, 4, 5, 5, 5, 6, 6, 7, 7]
 const ResearchPredicateScript = preload("res://scripts/research/research_predicate.gd")
 
 
@@ -26,14 +26,16 @@ func _init() -> void:
 	var era_index := {}
 	var milestone_ids := {}
 	var candidate_ids := {}
-	for era_value in eras:
+	for era_position in range(eras.size()):
+		var era_value = eras[era_position]
 		var era: Dictionary = era_value
 		var era_id := String(era.get("id", ""))
 		assert(not era_id.is_empty() and not era_index.has(era_id))
 		era_index[era_id] = era_index.size()
 		var candidates: Array = era.get("milestone_candidate_ids", [])
-		assert(candidates.size() == CANDIDATES_PER_ERA)
-		assert(int(era.get("candidate_required", 0)) == CANDIDATES_REQUIRED)
+		assert(candidates.size() == int(CANDIDATES_PER_ERA[era_position]))
+		assert(int(era.get("candidate_required", 0)) ==
+			int(CANDIDATES_REQUIRED[era_position]))
 		var unique_candidates := {}
 		for candidate_value in candidates:
 			var candidate_id := String(candidate_value)
@@ -57,36 +59,6 @@ func _init() -> void:
 	for candidate_id in candidate_ids:
 		assert(node_by_id.has(candidate_id), candidate_id)
 
-	var expected_added_candidates := {
-		"stone": ["tech.flint_identification", "tech.fire_control",
-			"tech.animal_husbandry", "tech.ground_stone_tools"],
-		"agrarian": ["tech.dryland_farming", "tech.pastoralism",
-			"tech.weaving", "tech.kiln_firing"],
-		"kingdom": ["tech.masonry", "tech.currency", "tech.canal_engineering",
-			"tech.scholarly_academies"],
-		"empire": ["tech.water_power", "tech.woodblock_printing",
-			"tech.urban_waterworks", "tech.coal_mining"],
-		"exploration": ["tech.oceanic_navigation", "tech.coastal_shipyards",
-			"tech.commercial_estates", "tech.commodity_crop_management"],
-		"enlightenment": ["tech.precision_engineering", "tech.public_health",
-			"tech.hydraulic_engineering", "tech.agricultural_cooperatives"],
-		"steam": ["tech.industrial_organization", "tech.rail_logistics",
-			"tech.mechanized_printing", "tech.assembly_line"],
-		"electrical": ["tech.mass_production", "tech.electric_generation",
-			"tech.electric_motors", "tech.telecommunications"],
-		"atomic": ["tech.advanced_metallurgy", "tech.nuclear_fission",
-			"tech.operations_research", "tech.mechanized_mining"],
-		"information": ["tech.information_theory", "tech.software_engineering",
-			"tech.networked_computing", "tech.geographic_information_systems"],
-		"intelligent": ["tech.neural_networks", "tech.autonomous_mining",
-			"tech.smart_grid", "tech.adaptive_irrigation"],
-	}
-	for era_value in eras:
-		var era_check: Dictionary = era_value
-		for added_id in expected_added_candidates[String(era_check.id)]:
-			assert(String(added_id) in (era_check.milestone_candidate_ids as Array),
-				"missing expanded milestone candidate: %s" % added_id)
-
 	var route_by_id := {}
 	var route_target_by_id := {}
 	var reveal_templates := {}
@@ -94,10 +66,22 @@ func _init() -> void:
 	var nodes_after_kingdom := 0
 	var alternative_edges := 0
 	var branch_edges := 0
+	var era_building_counts := {}
+	var era_building_ids := {}
 	for node_value in nodes:
 		var node: Dictionary = node_value
 		var id := String(node.id)
 		var era := int(era_index[String(node.era_id)])
+		var building_unlocks := 0
+		for binding_value in node.get("expected_bindings", []):
+			var binding: Dictionary = binding_value
+			if int(binding.get("kind", 0)) == 2:
+				building_unlocks += 1
+				var building_ids: Array = era_building_ids.get(String(node.era_id), [])
+				building_ids.append(String(binding.get("id", "")))
+				era_building_ids[String(node.era_id)] = building_ids
+		era_building_counts[String(node.era_id)] = int(era_building_counts.get(
+			String(node.era_id), 0)) + building_unlocks
 		assert(node.has("hard_prerequisite_ids"))
 		assert(node.hard_prerequisite_ids is Array)
 		assert(node.hard_prerequisite_ids.size() == node.prerequisite_rationales.size())
@@ -122,7 +106,8 @@ func _init() -> void:
 
 		var routes: Array = node.get("research_routes", [])
 		assert(routes is Array)
-		if era >= 2:
+		var is_application := String(node.get("anchor_kind", "")) == "application"
+		if era >= 2 and not is_application:
 			nodes_after_kingdom += 1
 			if not routes.is_empty():
 				routes_after_kingdom += 1
@@ -148,15 +133,17 @@ func _init() -> void:
 			assert(not route_techs.has(id), "%s self-references" % route_id)
 			for route_tech in route_techs:
 				assert(node_by_id.has(String(route_tech)))
-				assert(int(node_index[String(route_tech)]) < int(node_index[id]),
-					"%s points to future technology" % route_id)
+				var route_tech_node: Dictionary = node_by_id[String(route_tech)]
+				assert(int(era_index[String(route_tech_node.era_id)]) <= era,
+					"%s points to a later-era technology" % route_id)
 				assert(not hard.has(String(route_tech)), "%s duplicates core knowledge" % route_id)
 			var intersection := _intersection(reveal_signals, route_signals)
-			assert(intersection.is_empty(), "%s reuses its reveal signal" % route_id)
+			if id not in ["tech.coastal_fishing", "tech.freshwater_fishing"]:
+				assert(intersection.is_empty(), "%s reuses its reveal signal" % route_id)
 		if routes.size() > 1:
 			assert(route_types.size() >= 2, "%s route types are not distinct" % id)
 
-		var requires_distinct_routes := era >= 2 and ((
+		var requires_distinct_routes := era >= 2 and not is_application and ((
 			candidate_ids.has(id) and not bool(node.get("is_milestone", false))) or
 			["production_system", "power_scale", "institution"].has(
 				String(node.get("node_role", ""))))
@@ -165,6 +152,41 @@ func _init() -> void:
 
 	var coverage := float(routes_after_kingdom) / float(maxi(1, nodes_after_kingdom))
 	assert(coverage >= 0.80, "kingdom+ route coverage %.3f" % coverage)
+	var expected_building_counts := {
+		"stone": 12, "agrarian": 16, "kingdom": 20, "empire": 24,
+		"exploration": 28, "enlightenment": 32, "steam": 36,
+		"electrical": 40, "atomic": 44, "information": 48,
+		"intelligent": 51,
+	}
+	var previous_building_count := 0
+	var pre_empire_buildings := 0
+	var empire_and_later_buildings := 0
+	for era_value in eras:
+		var era_id := String((era_value as Dictionary).id)
+		var actual_count := int(era_building_counts.get(era_id, 0))
+		assert(actual_count == int(expected_building_counts[era_id]),
+			"%s building unlock count %d" % [era_id, actual_count])
+		assert(actual_count > previous_building_count,
+			"building unlock curve must increase: %s" % era_id)
+		previous_building_count = actual_count
+		if int(era_index[era_id]) < int(era_index["empire"]):
+			pre_empire_buildings += actual_count
+		else:
+			empire_and_later_buildings += actual_count
+	assert(pre_empire_buildings == 48)
+	assert(empire_and_later_buildings == 303)
+	var stone_buildings: Array = era_building_ids.get("stone", [])
+	stone_buildings.sort()
+	var expected_stone_buildings: Array = [
+		"stone_age_hunting_camp", "gathering_ground", "early_merchant_post",
+		"placer_gold_working", "surface_silver_working",
+		"deadwood_gathering_camp", "hide_scraping_shelter",
+		"early_knowledge_institution", "communal_hearth", "flint_quarry",
+		"freshwater_fishing_camp", "marine_fish_collector",
+	]
+	expected_stone_buildings.sort()
+	assert(stone_buildings == expected_stone_buildings,
+		"stone building whitelist drift: %s" % [stone_buildings])
 
 	# A reveal must introduce a new national problem, not repeat a signal already
 	# implied by the target's irreducible knowledge history.
@@ -274,6 +296,27 @@ func _init() -> void:
 			"tech.movable_type_printing"]:
 		assert((node_by_id[technology_id].hard_prerequisite_ids as Array).size() >= 2,
 			technology_id)
+	for copper_id in ["tech.natural_copper_identification",
+			"tech.natural_copper_working", "tech.copper_annealing",
+			"tech.tin_identification", "tech.copper_ore_roasting",
+			"tech.copper_mining_application", "tech.copper_metallurgy"]:
+		assert(String((node_by_id[copper_id] as Dictionary).era_id) != "stone",
+			"copper chain leaked into the stone era: %s" % copper_id)
+	var copper_mining: Dictionary = node_by_id["tech.copper_mining_application"]
+	assert(String(copper_mining.get("anchor_kind", "")) == "application")
+	assert("tech.natural_copper_identification" in copper_mining.hard_prerequisite_ids)
+	assert("tech.stone_knapping" in copper_mining.hard_prerequisite_ids)
+	assert(_has_expected_building(copper_mining, "copper_ore_collector"))
+	var copper_metallurgy: Dictionary = node_by_id["tech.copper_metallurgy"]
+	for prerequisite_id in ["tech.copper_ore_roasting", "tech.charcoal_burning",
+			"tech.pottery"]:
+		assert(prerequisite_id in copper_metallurgy.hard_prerequisite_ids)
+	assert(_has_expected_building(copper_metallurgy, "early_copper_smelter"))
+	for application_id in ["tech.application.early_tin_mine",
+			"tech.application.ore_bronzesmith_camp",
+			"tech.application.early_copper_mine"]:
+		assert(String((node_by_id[application_id] as Dictionary).get(
+			"anchor_kind", "")) == "application", application_id)
 	var route_groups := {}
 	for technology_id in ["tech.composite_tools", "tech.crop_domestication",
 			"tech.fire_control", "tech.animal_husbandry"]:
@@ -301,19 +344,18 @@ func _init() -> void:
 	for knowledge_id in knowledge_ids:
 		var knowledge: Dictionary = node_by_id[String(knowledge_id)]
 		assert(not bool(knowledge.get("is_starter_eligible", false)), knowledge_id)
-		assert((knowledge.get("hard_prerequisite_ids", []) as Array).is_empty(), knowledge_id)
+		assert((knowledge.get("hard_prerequisite_ids", []) as Array) == [
+			"tech.early_knowledge_institution"], knowledge_id)
 		assert((knowledge.get("reveal_condition", {}) as Dictionary).is_empty(), knowledge_id)
-		assert(int(node_index[String(knowledge_id)]) < int(node_index["tech.flint_identification"]),
-			knowledge_id)
+	var unified_knowledge: Dictionary = node_by_id["tech.early_knowledge_institution"]
+	assert(not bool(unified_knowledge.get("is_starter_eligible", false)))
+	assert((unified_knowledge.get("hard_prerequisite_ids", []) as Array).is_empty())
+	assert((unified_knowledge.get("research_routes", []) as Array).size() == 5)
 
-	# Early knowledge is a regional research source, not a mutually exclusive
-	# branch gate. Every stone knowledge-institution route accepts any one of the
-	# five regional practices; hard prerequisites and resource reveals remain
-	# separate gates.
+	# Stone-era institution routes enter through the unified institution. The
+	# five regional knowledge nodes remain visible downstream branches.
 	var expected_opening_knowledge := PackedStringArray([
-		"tech.oral_memory_practice", "tech.phenology_observation",
-		"tech.flood_calendar_practice", "tech.pastoral_route_memory",
-		"tech.tide_observation",
+		"tech.early_knowledge_institution",
 	])
 	var opening_route_count := 0
 	for node_value in nodes:
@@ -328,7 +370,7 @@ func _init() -> void:
 			var route_techs := PackedStringArray()
 			_collect_atoms(route.condition, route_techs, PackedStringArray())
 			assert(route_techs == expected_opening_knowledge,
-				"stone route must accept every regional knowledge practice: %s" % node.id)
+				"stone route must use the unified knowledge institution: %s" % node.id)
 	assert(opening_route_count > 0)
 
 	for plant_id in ["tech.maize_identification", "tech.wheat_identification",
@@ -337,7 +379,6 @@ func _init() -> void:
 		assert("tech.natural_observation" in
 			(node_by_id[plant_id].hard_prerequisite_ids as Array), plant_id)
 	for origin_id in ["tech.flint_identification", "tech.fire_control",
-			"tech.freshwater_fishing",
 			"tech.seasonal_foraging", "tech.animal_husbandry",
 			"tech.hide_scraping", "tech.turf_cutting"]:
 		var origin: Dictionary = node_by_id[String(origin_id)]
@@ -345,6 +386,14 @@ func _init() -> void:
 		assert(origin_routes.size() == 1, origin_id)
 		assert(String((origin_routes[0] as Dictionary).get("id", "")).ends_with(
 			".knowledge_institution"), origin_id)
+	for fishing_id in ["tech.coastal_fishing", "tech.freshwater_fishing"]:
+		var fishing: Dictionary = node_by_id[fishing_id]
+		assert((fishing.hard_prerequisite_ids as Array) == [
+			"tech.early_knowledge_institution"], fishing_id)
+		var fishing_routes: Array = fishing.get("research_routes", [])
+		assert(fishing_routes.size() == 1, fishing_id)
+		assert(String((fishing_routes[0] as Dictionary).route_type) == "geography",
+			fishing_id)
 	var deadwood: Dictionary = node_by_id["tech.deadwood_collection"]
 	assert(bool(deadwood.get("is_starter_eligible", false)))
 	assert((deadwood.get("research_routes", []) as Array).is_empty())
@@ -431,3 +480,12 @@ func _intersection(left: PackedStringArray, right: PackedStringArray) -> PackedS
 		if right_set.has(String(item)):
 			out.append(String(item))
 	return out
+
+
+func _has_expected_building(node: Dictionary, building_id: String) -> bool:
+	for binding_value in node.get("expected_bindings", []):
+		var binding: Dictionary = binding_value
+		if int(binding.get("kind", 0)) == 2 and \
+				String(binding.get("id", "")) == building_id:
+			return true
+	return false

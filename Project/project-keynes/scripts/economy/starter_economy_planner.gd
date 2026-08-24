@@ -34,9 +34,12 @@ const PRECIOUS_STARTER_BUILDING_IDS := {
 }
 const PRECIOUS_GOOD_IDS := {"gold": true, "silver": true}
 const PRECIOUS_RESOURCE_IDS := {"gold_ore": true, "silver_ore": true}
-const STARTER_TREASURY_TECHNOLOGY_POINTS := 10000 * GOODS_SCALE
-const FALLBACK_KNOWLEDGE_TECH_ID := "tech.oral_memory_practice"
-const FALLBACK_KNOWLEDGE_BUILDING_ID := "oral_memory_circle"
+# One pending knowledge practice (catalog cost_points 3000 → 3000 * GOODS_SCALE).
+# A larger grant zeros government procurement remaining_points, so automatic
+# investment never seeds the first unlocked research building.
+const STARTER_TREASURY_TECHNOLOGY_POINTS := 3000 * GOODS_SCALE
+const FALLBACK_KNOWLEDGE_TECH_ID := "tech.early_knowledge_institution"
+const FALLBACK_KNOWLEDGE_BUILDING_ID := "early_knowledge_institution"
 const CONSTRUCTION_BACKBONE := [
 	{
 		"tech_id": "tech.deadwood_collection",
@@ -206,15 +209,9 @@ static func plan(map: MapData, cell_idx: int, starter_route: Dictionary,
 static func select_pending_knowledge(map: MapData, cell_idx: int,
 		region: String) -> Dictionary:
 	_ensure_profiles_loaded()
-	var preferred := _preferred_knowledge_for_region(region)
-	var preferred_building := String(preferred.get("building_id", ""))
-	if not preferred_building.is_empty() \
-			and _knowledge_building_operable(map, cell_idx, preferred_building):
-		return {
-			"ok": true,
-			"tech_id": String(preferred.tech_id),
-			"building_id": preferred_building,
-		}
+	# The institution is universal. Regional geography now selects one of its
+	# five visible research routes, rather than selecting five different
+	# buildings and technologies at game start.
 	return {
 		"ok": true,
 		"tech_id": FALLBACK_KNOWLEDGE_TECH_ID,
@@ -581,16 +578,20 @@ static func _compile_search_context(candidates: Array[Dictionary], map: MapData,
 		var inputs := {}
 		var resources := {}
 		var food_output := 0
+		var complementary_floor_q16 := _complementary_floor_q16(profile)
 		for output_index in range(mini(profile.output_good_ids.size(),
 				profile.output_quantities_per_day.size())):
 			var good_id := String(profile.output_good_ids[output_index])
 			var quantity := int(profile.output_quantities_per_day[output_index]) * \
 				int(candidate.climate_q16) / Q16_ONE
+			quantity = quantity * complementary_floor_q16 / Q16_ONE
 			outputs[good_id] = int(outputs.get(good_id, 0)) + quantity
 			if food_goods.has(good_id):
 				food_output += quantity
 		for input_index in range(mini(profile.input_good_ids.size(),
 				profile.input_quantities_per_day.size())):
+			if not _slot_is_hard_input(profile, input_index):
+				continue
 			var good_id := String(profile.input_good_ids[input_index])
 			inputs[good_id] = int(inputs.get(good_id, 0)) + \
 				int(profile.input_quantities_per_day[input_index])
@@ -602,6 +603,8 @@ static func _compile_search_context(candidates: Array[Dictionary], map: MapData,
 			var resource_key := "%s|%s" % [mode, resource_id]
 			var quantity := float(profile.resource_quantities_per_day[resource_index]) / \
 				float(GOODS_SCALE)
+			if mode != "capacity":
+				quantity = quantity * float(complementary_floor_q16) / float(Q16_ONE)
 			resources[resource_key] = float(resources.get(resource_key, 0.0)) + quantity
 			if not resource_limits.has(resource_key):
 				var reserve := _reserve(map, resource_id, cell_idx)
@@ -631,6 +634,27 @@ static func _compile_search_context(candidates: Array[Dictionary], map: MapData,
 		"resource_limits": resource_limits,
 		"resource_caps": resource_caps,
 	}
+
+
+static func _slot_is_hard_input(profile, input_index: int) -> bool:
+	var required: PackedInt32Array = profile.input_required_q16
+	if required.is_empty() or input_index >= required.size():
+		return true
+	return int(required[input_index]) >= Q16_ONE
+
+
+static func _complementary_floor_q16(profile) -> int:
+	var floor_q16 := Q16_ONE
+	var slot_count := mini(profile.input_good_ids.size(),
+			profile.input_quantities_per_day.size())
+	var required: PackedInt32Array = profile.input_required_q16
+	for input_index in range(slot_count):
+		var required_q16 := Q16_ONE
+		if not required.is_empty() and input_index < required.size():
+			required_q16 = int(required[input_index])
+		if required_q16 < Q16_ONE:
+			floor_q16 = mini(floor_q16, Q16_ONE - required_q16)
+	return floor_q16
 
 
 static func _evaluate_counts(candidates: Array[Dictionary], counts: PackedInt32Array,

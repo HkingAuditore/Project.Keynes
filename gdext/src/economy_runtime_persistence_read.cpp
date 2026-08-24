@@ -31,7 +31,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         error = "save_chunk_header_invalid";
         return false;
     }
-    if (schema != SCHEMA_VERSION) {
+    if (schema != SCHEMA_VERSION && schema != 41) {
         error = schema <= 31 ? "economy_save_v31_or_earlier_unsupported" :
             (schema == 32 ? "economy_save_v32_or_earlier_unsupported" :
             "economy_save_pre_family_effect_schema_unsupported");
@@ -1896,10 +1896,15 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 if (route_cost < 1 || speed < 1 || route_count < 2) {
                     error = "save_family_expedition_route_invalid"; return false;
                 }
-                if (state < EXPEDITION_OUTBOUND || state > EXPEDITION_RETURNING) {
+                const uint8_t max_state = schema >= 42
+                    ? EXPEDITION_PREPARING : EXPEDITION_RETURNING;
+                if (state < EXPEDITION_OUTBOUND || state > max_state ||
+                    (schema < 42 && state == EXPEDITION_PREPARING)) {
                     error = "save_family_expedition_state_invalid"; return false;
                 }
-                if (population < 1 || payload_count < 1) {
+                const bool preparing = state == EXPEDITION_PREPARING;
+                if (population < 1 ||
+                    (preparing ? payload_count != 0 : payload_count < 1)) {
                     error = "save_family_expedition_payload_header_invalid"; return false;
                 }
                 if (idempotency_key == 0 ||
@@ -2000,7 +2005,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 payload_population += lane.people;
                 _family_expedition_payloads.push_back(lane);
             }
-            if (active != 0 && payload_population != population) {
+            if (active != 0 && state != EXPEDITION_PREPARING &&
+                payload_population != population) {
                 error = "save_family_expedition_population_mismatch";
                 return false;
             }
@@ -2051,6 +2057,38 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             }
             _family_expeditions.cargo_count.push_back(cargo_count);
             _family_expeditions.kit_building_count.push_back(kit_count);
+            uint64_t missing_identity = 0;
+            uint32_t missing_count = 0;
+            _family_expeditions.missing_good_begin.push_back(
+                static_cast<uint32_t>(_family_expedition_missing_good_ids.size()));
+            if (schema >= 42) {
+                if (!read_le(bytes, cursor, missing_identity) ||
+                    !read_le(bytes, cursor, missing_count) ||
+                    missing_count > 100000) {
+                    error = "save_family_expedition_missing_invalid";
+                    return false;
+                }
+                for (uint32_t m = 0; m < missing_count; ++m) {
+                    int32_t good_id = -1;
+                    int64_t quantity = 0;
+                    if (!read_le(bytes, cursor, good_id) ||
+                        !read_le(bytes, cursor, quantity) ||
+                        good_id < 0 || quantity < 0 || active == 0) {
+                        error = "save_family_expedition_missing_invalid";
+                        return false;
+                    }
+                    _family_expedition_missing_good_ids.push_back(good_id);
+                    _family_expedition_missing_good_quantities.push_back(quantity);
+                }
+            }
+            if (active != 0 && state == EXPEDITION_PREPARING &&
+                (payload_count != 0 || cargo_count != 0 || kit_count != 0)) {
+                error = "save_family_expedition_preparing_payload_invalid";
+                return false;
+            }
+            _family_expeditions.kit_missing_stock_identity.push_back(
+                missing_identity);
+            _family_expeditions.missing_good_count.push_back(missing_count);
             if (active != 0) {
                 ++_family_expeditions.active_count;
                 ++_restore.restored_family_expeditions;

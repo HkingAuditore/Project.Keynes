@@ -163,15 +163,15 @@ func _test_save_restore_keeps_buckets(compiled: Dictionary) -> void:
 	_expect("PKCN save completes", bool(ext.end_country_save().get("ok", false)))
 	var before_hash: int = ext.get_economy_state_hash()
 	var begin: Dictionary = ext.begin_economy_save(65536)
-	_expect("v41 save begins", bool(begin.get("ok", false)) and
-		int(begin.get("schema_version", 0)) == 41)
+	_expect("v42 save begins", bool(begin.get("ok", false)) and
+		int(begin.get("schema_version", 0)) == 42)
 	var chunks: Array[PackedByteArray] = []
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty():
 			break
 		chunks.append(chunk)
-	_expect("v41 save completes", bool(ext.end_economy_save().get("ok", false)))
+	_expect("v42 save completes", bool(ext.end_economy_save().get("ok", false)))
 	var restored := _new_ext(10)
 	var catalog := compiled.duplicate(true)
 	catalog.erase("ok")
@@ -182,7 +182,7 @@ func _test_save_restore_keeps_buckets(compiled: Dictionary) -> void:
 	for chunk in chunks:
 		restored.feed_economy_restore_chunk(chunk)
 	var end: Dictionary = restored.end_economy_restore()
-	_expect("v41 restore keeps locked cadence",
+	_expect("v42 restore keeps locked cadence",
 		bool(end.get("ok", false)) and
 		int(restored.get_economy_report().get("locked_market_cycle_days", 0)) == before_n and
 		int(restored.get_economy_report().get("market_cycle_start_day", -2)) == before_start and

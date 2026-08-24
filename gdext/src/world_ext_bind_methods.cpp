@@ -1,6 +1,7 @@
 #include "world_ext.h"
 
 #include <godot_cpp/core/class_db.hpp>
+#include <godot_cpp/variant/packed_byte_array.hpp>
 
 namespace pk {
 
@@ -347,8 +348,10 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::get_trade_orders_for_cell, DEFVAL(0), DEFVAL(64));
     ClassDB::bind_method(D_METHOD("capture_economy_trade_topology", "neighbor_indices",
                                   "terrain", "trade_passable_lut",
-                                  "trade_move_cost_lut", "generation"),
-                         &DCWorldExt::capture_economy_trade_topology, DEFVAL(0));
+                                  "trade_move_cost_lut", "generation",
+                                  "landform", "has_river"),
+                         &DCWorldExt::capture_economy_trade_topology, DEFVAL(0),
+                         DEFVAL(PackedByteArray()), DEFVAL(PackedByteArray()));
     ClassDB::bind_method(D_METHOD("capture_economy_trade_visibility",
                                   "visible", "fog_solved"),
                          &DCWorldExt::capture_economy_trade_visibility);

@@ -55,7 +55,9 @@ constexpr const char *SUMMARY_V24_SUFFIX =
     ",suspended_fully_liquidated_groups"
     ",building_investment_jobs_started"
     ",building_investment_employment_gap"
-    ",building_investment_employment_catchup_cells\n";
+    ",building_investment_employment_catchup_cells"
+    ",building_investment_displacement_starts"
+    ",investment_displacement_type_evaluations\n";
 constexpr const char *BUILDING_V24_SUFFIX =
     ",last_temperature_fit_q16"
     ",last_water_fit_q16"
@@ -65,7 +67,10 @@ constexpr const char *BUILDING_V24_SUFFIX =
     ",suspended_liquidation_failed_reviews"
     ",investment_failed_material_group"
     ",investment_selected_material_good_ids"
-    ",investment_selected_material_quantities\n";
+    ",investment_selected_material_quantities"
+    ",investment_stealable"
+    ",investment_challenger_unit_cost"
+    ",investment_incumbent_unit_cost\n";
 
 template <typename T>
 void append_int(std::string &out, T value) {
@@ -658,6 +663,10 @@ bool EconomyCsvRecorder::fill_batch(
             runtime._building_investment_employment_gap;
         row.building_investment_employment_catchup_cells =
             runtime._building_investment_employment_catchup_cells;
+        row.building_investment_displacement_starts =
+            runtime._building_investment_displacement_starts;
+        row.investment_displacement_type_evaluations =
+            runtime._investment_displacement_type_evaluations;
         row.desired_business_demand = runtime._desired_business_demand;
         row.funded_business_demand = runtime._funded_business_demand;
         row.unfunded_business_demand = runtime._unfunded_business_demand;
@@ -919,6 +928,11 @@ bool EconomyCsvRecorder::fill_batch(
                             row.investment_driver_merchant_sold = item.driver_merchant_sold;
                             row.investment_driver_sell_through_q16 = item.driver_sell_through_q16;
                             row.investment_driver_discard_q16 = item.driver_discard_q16;
+                            row.investment_stealable = item.stealable;
+                            row.investment_challenger_unit_cost =
+                                item.challenger_unit_cost;
+                            row.investment_incumbent_unit_cost =
+                                item.incumbent_unit_cost;
                             row.investment_failed_material_group =
                                 item.failed_material_group;
                             for (size_t material = 0;
@@ -1033,6 +1047,11 @@ bool EconomyCsvRecorder::fill_batch(
                     row.investment_driver_merchant_sold = item.driver_merchant_sold;
                     row.investment_driver_sell_through_q16 = item.driver_sell_through_q16;
                     row.investment_driver_discard_q16 = item.driver_discard_q16;
+                    row.investment_stealable = item.stealable;
+                    row.investment_challenger_unit_cost =
+                        item.challenger_unit_cost;
+                    row.investment_incumbent_unit_cost =
+                        item.incumbent_unit_cost;
                     row.investment_failed_material_group =
                         item.failed_material_group;
                     for (size_t material = 0;
@@ -1541,6 +1560,8 @@ bool EconomyCsvRecorder::write_batch(const Batch &batch, int64_t &bytes, std::st
         field(chunk, row.building_investment_jobs_started);
         field(chunk, row.building_investment_employment_gap);
         field(chunk, row.building_investment_employment_catchup_cells);
+        field(chunk, row.building_investment_displacement_starts);
+        field(chunk, row.investment_displacement_type_evaluations);
         chunk.push_back('\n'); if (!maybe_flush(SUMMARY)) goto write_failed;
     }
     if (!flush(SUMMARY)) goto write_failed;
@@ -1620,6 +1641,9 @@ bool EconomyCsvRecorder::write_batch(const Batch &batch, int64_t &bytes, std::st
         field(chunk, row.investment_failed_material_group);
         text_field(chunk, row.investment_selected_material_good_ids);
         text_field(chunk, row.investment_selected_material_quantities);
+        field(chunk, row.investment_stealable);
+        field(chunk, row.investment_challenger_unit_cost);
+        field(chunk, row.investment_incumbent_unit_cost);
         chunk.push_back('\n'); if (!maybe_flush(BUILDINGS)) goto write_failed;
     }
     if (!flush(BUILDINGS)) goto write_failed;

@@ -251,6 +251,44 @@ bool NativeEconomyRuntime::building_constructible(int32_t cell, int32_t type_id,
     return true;
 }
 
+int64_t NativeEconomyRuntime::allocated_output_operating_cost(
+        const BuildingType &type, int32_t output_index,
+        int64_t operating_cost, int64_t &sat) const {
+    if (output_index < 0 || output_index >= type.output_count ||
+        operating_cost <= 0) return 0;
+    int64_t reference_total = 0;
+    if (type.output_cost_share_count == 0) {
+        for (int32_t i = 0; i < type.output_count; ++i) {
+            const GoodAmount &item = _building_outputs[type.output_begin + i];
+            reference_total = saturating_add(reference_total, saturating_mul(
+                item.quantity, _good_default_price[item.good_id], sat), sat);
+        }
+    }
+    int64_t prefix = 0;
+    int64_t allocated_before = 0;
+    int64_t allocated = 0;
+    for (int32_t i = 0; i <= output_index; ++i) {
+        int64_t next = 0;
+        if (type.output_cost_share_count > 0 &&
+            type.output_cost_share_begin + i < static_cast<int32_t>(
+                _building_output_cost_shares_q16.size())) {
+            prefix = saturating_add(prefix,
+                _building_output_cost_shares_q16[
+                    type.output_cost_share_begin + i], sat);
+            next = mul_div_sat(operating_cost, prefix, Q16_ONE, sat);
+        } else {
+            const GoodAmount &item = _building_outputs[type.output_begin + i];
+            prefix = saturating_add(prefix, saturating_mul(
+                item.quantity, _good_default_price[item.good_id], sat), sat);
+            next = reference_total > 0
+                ? mul_div_sat(operating_cost, prefix, reference_total, sat) : 0;
+        }
+        allocated = std::max<int64_t>(0, next - allocated_before);
+        allocated_before = next;
+    }
+    return allocated;
+}
+
 bool NativeEconomyRuntime::run_building_production_cell(
         int32_t cell, ProductionResult &result, std::string &error) {
     ProductionResult *previous_sink = _production_result_sink;
@@ -329,14 +367,19 @@ bool NativeEconomyRuntime::run_building_production_cell(
         int32_t good = -1;
         int32_t owner_slot = -1;
         int32_t group = -1;
+        int32_t output_index = -1;
+        int32_t type_id = -1;
         int64_t qty = 0;
         int64_t retained = 0;
         int64_t sellable = 0;
         int64_t merchant_sold = 0;
         int64_t supported = 0;
         int64_t support_paid = 0;
+        int64_t unit_cost = 0;
     };
     thread_local std::vector<Offer> offers;
+    thread_local std::vector<Offer> accepted_anchor_sales;
+    accepted_anchor_sales.clear();
     thread_local std::vector<int64_t> operation_receipts_by_group;
     thread_local std::vector<int64_t> business_tax_by_group;
     thread_local std::vector<int64_t> business_transfer_by_group;
@@ -1355,15 +1398,33 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     group, item.good_id, item.quantity, scale_q16, building_days,
                     _saturation_count);
                 if (qty > 0) {
-                    offers.push_back({item.good_id, owner_slot, g, qty, 0, qty});
+                    offers.push_back({item.good_id, owner_slot, g, i, group.type_id,
+                        qty, 0, qty});
                     queue_bio_introduce_from_good(cell, item.good_id);
                 }
                 group.last_output = saturating_add(
                     group.last_output, qty, _saturation_count);
             }
         }
+        for (Offer &offer : offers) {
+            if (offer.group < 0 ||
+                offer.group >= static_cast<int32_t>(_buildings.size()) ||
+                offer.qty <= 0 || offer.output_index < 0) continue;
+            const BuildingGroup &group = _buildings[offer.group];
+            if (offer.type_id < 0 ||
+                offer.type_id >= static_cast<int32_t>(_building_types.size()))
+                continue;
+            const BuildingType &type = _building_types[offer.type_id];
+            const int64_t allocated = allocated_output_operating_cost(
+                type, offer.output_index,
+                std::max<int64_t>(0, group.last_operating_cost),
+                _saturation_count);
+            offer.unit_cost = mul_div_sat(
+                allocated, GOODS_SCALE, offer.qty, _saturation_count);
+        }
         std::stable_sort(offers.begin(), offers.end(), [](const Offer &a, const Offer &b) {
             if (a.good != b.good) return a.good < b.good;
+            if (a.unit_cost != b.unit_cost) return a.unit_cost < b.unit_cost;
             return a.group < b.group;
         });
         thread_local std::vector<int64_t> sellable_by_good;
@@ -1636,18 +1697,49 @@ bool NativeEconomyRuntime::run_building_production_cell(
             const int64_t merchant_total = std::min<int64_t>(quota_by_good[good],
                 mul_div_sat(budget_by_good[good], GOODS_SCALE, buy_price,
                     _saturation_count));
-            int64_t sellable_prefix = 0;
-            int64_t merchant_allocated = 0;
-            for (size_t i = good_begin; i < good_end; ++i) {
-                sellable_prefix = saturating_add(
-                    sellable_prefix, offers[i].sellable, _saturation_count);
-                const int64_t next = mul_div_sat(
-                    merchant_total, sellable_prefix,
-                    std::max<int64_t>(1, sellable_by_good[good]),
-                    _saturation_count);
-                offers[i].merchant_sold = std::min<int64_t>(offers[i].sellable,
-                    std::max<int64_t>(0, next - merchant_allocated));
-                merchant_allocated = next;
+            int64_t merchant_remaining = merchant_total;
+            size_t merchant_i = good_begin;
+            while (merchant_i < good_end && merchant_remaining > 0) {
+                size_t tier_end = merchant_i + 1;
+                while (tier_end < good_end &&
+                       offers[tier_end].unit_cost ==
+                           offers[merchant_i].unit_cost) {
+                    ++tier_end;
+                }
+                int64_t tier_sellable = 0;
+                for (size_t j = merchant_i; j < tier_end; ++j) {
+                    tier_sellable = saturating_add(
+                        tier_sellable, offers[j].sellable, _saturation_count);
+                }
+                if (tier_sellable <= merchant_remaining) {
+                    for (size_t j = merchant_i; j < tier_end; ++j) {
+                        offers[j].merchant_sold = std::max<int64_t>(
+                            0, offers[j].sellable);
+                        merchant_remaining = saturating_sub(
+                            merchant_remaining, offers[j].merchant_sold,
+                            _saturation_count);
+                        if (offers[j].merchant_sold > 0)
+                            accepted_anchor_sales.push_back(offers[j]);
+                    }
+                } else if (tier_sellable > 0) {
+                    int64_t allocated = 0;
+                    int64_t prefix = 0;
+                    for (size_t j = merchant_i; j < tier_end; ++j) {
+                        prefix = saturating_add(
+                            prefix, offers[j].sellable, _saturation_count);
+                        const int64_t next = mul_div_sat(
+                            merchant_remaining, prefix, tier_sellable,
+                            _saturation_count);
+                        offers[j].merchant_sold = std::min<int64_t>(
+                            offers[j].sellable,
+                            std::max<int64_t>(0, next - allocated));
+                        allocated = next;
+                        if (offers[j].merchant_sold > 0)
+                            accepted_anchor_sales.push_back(offers[j]);
+                    }
+                    merchant_remaining = 0;
+                }
+                merchant_i = tier_end;
             }
             const int64_t remaining_target = std::max<int64_t>(
                 0, quota_by_good[good] - merchant_total);
@@ -1669,27 +1761,68 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     GOODS_SCALE * PRODUCER_SUPPORT_PRICE_DENOMINATOR,
                     _saturation_count))
                 : 0;
-            int64_t unsold_prefix = 0;
-            int64_t support_allocated = 0;
-            int64_t support_cash_allocated = 0;
+            int64_t support_remaining = support_total;
+            int64_t support_cash_remaining = total_support_paid;
+            size_t support_i = good_begin;
+            while (support_i < good_end && support_remaining > 0) {
+                size_t tier_end = support_i + 1;
+                while (tier_end < good_end &&
+                       offers[tier_end].unit_cost ==
+                           offers[support_i].unit_cost) {
+                    ++tier_end;
+                }
+                int64_t tier_unsold = 0;
+                for (size_t j = support_i; j < tier_end; ++j) {
+                    const int64_t unsold = std::max<int64_t>(
+                        0, offers[j].sellable - offers[j].merchant_sold);
+                    tier_unsold = saturating_add(
+                        tier_unsold, unsold, _saturation_count);
+                }
+                if (tier_unsold <= support_remaining) {
+                    for (size_t j = support_i; j < tier_end; ++j) {
+                        offers[j].supported = std::max<int64_t>(
+                            0, offers[j].sellable - offers[j].merchant_sold);
+                        support_remaining = saturating_sub(
+                            support_remaining, offers[j].supported,
+                            _saturation_count);
+                    }
+                } else if (tier_unsold > 0) {
+                    int64_t allocated = 0;
+                    int64_t prefix = 0;
+                    for (size_t j = support_i; j < tier_end; ++j) {
+                        const int64_t unsold = std::max<int64_t>(
+                            0, offers[j].sellable - offers[j].merchant_sold);
+                        prefix = saturating_add(prefix, unsold, _saturation_count);
+                        const int64_t next = mul_div_sat(
+                            support_remaining, prefix, tier_unsold,
+                            _saturation_count);
+                        offers[j].supported = std::min<int64_t>(
+                            unsold, std::max<int64_t>(0, next - allocated));
+                        allocated = next;
+                    }
+                    support_remaining = 0;
+                }
+                support_i = tier_end;
+            }
             for (size_t i = good_begin; i < good_end; ++i) {
-                const int64_t unsold = std::max<int64_t>(
-                    0, offers[i].sellable - offers[i].merchant_sold);
-                unsold_prefix = saturating_add(
-                    unsold_prefix, unsold, _saturation_count);
-                const int64_t next_support = mul_div_sat(
-                    support_total, unsold_prefix,
-                    std::max<int64_t>(1, remaining_sellable),
-                    _saturation_count);
-                offers[i].supported = std::min<int64_t>(unsold,
-                    std::max<int64_t>(0, next_support - support_allocated));
-                support_allocated = next_support;
-                const int64_t next_cash = mul_div_sat(
-                    total_support_paid, support_allocated,
-                    std::max<int64_t>(1, support_total), _saturation_count);
-                offers[i].support_paid = std::max<int64_t>(
-                    0, next_cash - support_cash_allocated);
-                support_cash_allocated = next_cash;
+                const int64_t cash_take = support_total > 0
+                    ? mul_div_sat(total_support_paid, offers[i].supported,
+                        support_total, _saturation_count)
+                    : 0;
+                offers[i].support_paid = std::min<int64_t>(
+                    support_cash_remaining, std::max<int64_t>(0, cash_take));
+                support_cash_remaining = std::max<int64_t>(
+                    0, support_cash_remaining - offers[i].support_paid);
+            }
+            if (support_cash_remaining > 0) {
+                for (size_t i = good_begin; i < good_end &&
+                     support_cash_remaining > 0; ++i) {
+                    if (offers[i].supported <= 0) continue;
+                    offers[i].support_paid = saturating_add(
+                        offers[i].support_paid, support_cash_remaining,
+                        _saturation_count);
+                    support_cash_remaining = 0;
+                }
             }
             producer_support_remaining = std::max<int64_t>(
                 0, producer_support_remaining - total_support_paid);
@@ -2170,13 +2303,6 @@ bool NativeEconomyRuntime::run_building_production_cell(
         const int64_t building_days = saturating_mul(
             group.count, std::max(1, _epoch_days), _saturation_count);
         if (group.operating_state == 1) continue;
-        const int64_t owner_livelihood = saturating_mul(saturating_mul(
-            living_cost_for_signature(cell, group.owner_signature_id, -1,
-                                      _saturation_count),
-            std::max<int64_t>(0, group.filled_owner), _saturation_count),
-            std::max(1, _epoch_days), _saturation_count);
-        const int64_t viability_operating_cost = saturating_add(
-            group.last_operating_cost, owner_livelihood, _saturation_count);
         for (int32_t i = 0; i < type.input_count; ++i) {
             const ProductionInput &item = _building_inputs[type.input_begin + i];
             const int32_t selected = select_input_candidate(item, false, 0);
@@ -2220,17 +2346,6 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 _unfunded_business_demand, std::max<int64_t>(0, planned - funded),
                 _saturation_count);
         }
-        int64_t reference_total = 0;
-        if (type.output_cost_share_count == 0) {
-            for (int32_t i = 0; i < type.output_count; ++i) {
-                const GoodAmount &item = _building_outputs[type.output_begin + i];
-                reference_total = saturating_add(reference_total, saturating_mul(
-                    item.quantity, _good_default_price[item.good_id], _saturation_count),
-                    _saturation_count);
-            }
-        }
-        int64_t prefix = 0;
-        int64_t allocated_before = 0;
         for (int32_t i = 0; i < type.output_count; ++i) {
             const GoodAmount &item = _building_outputs[type.output_begin + i];
             const int64_t qty = mul_div_sat(saturating_mul(
@@ -2242,30 +2357,99 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 supply_observed[local_signal] = saturating_add(
                     supply_observed[local_signal], qty, _saturation_count);
             }
-            if (qty <= 0) continue;
-            int64_t next_allocated = 0;
-            if (type.output_cost_share_count > 0) {
-                prefix = saturating_add(prefix,
-                    _building_output_cost_shares_q16[type.output_cost_share_begin + i],
-                    _saturation_count);
-                next_allocated = mul_div_sat(viability_operating_cost, prefix,
-                                              Q16_ONE, _saturation_count);
-            } else {
-                prefix = saturating_add(prefix, saturating_mul(
-                    item.quantity, _good_default_price[item.good_id], _saturation_count),
-                    _saturation_count);
-                next_allocated = reference_total > 0 ? mul_div_sat(
-                    viability_operating_cost, prefix, reference_total,
-                    _saturation_count) : 0;
-            }
-            const int64_t allocated = std::max<int64_t>(0, next_allocated - allocated_before);
-            allocated_before = next_allocated;
+        }
+    }
+    for (const Offer &sale : accepted_anchor_sales) {
+        if (sale.merchant_sold <= 0 || sale.good < 0 ||
+            sale.type_id < 0 ||
+            sale.type_id >= static_cast<int32_t>(_building_types.size()) ||
+            sale.group < 0 ||
+            sale.group >= static_cast<int32_t>(_buildings.size())) continue;
+        if (_good_monetary_issue_values[sale.good] > 0) continue;
+        const BuildingGroup &sale_group = _buildings[sale.group];
+        if (sale_group.operating_state == 1) continue;
+        const int32_t output_signal = market_signal_index(cell, sale.good);
+        if (output_signal < cell_signal_begin || output_signal >= cell_signal_end)
+            continue;
+        const BuildingType &sale_type = _building_types[sale.type_id];
+        const int64_t owner_livelihood = saturating_mul(saturating_mul(
+            living_cost_for_signature(cell, sale_group.owner_signature_id, -1,
+                                      _saturation_count),
+            std::max<int64_t>(0, sale_group.filled_owner), _saturation_count),
+            std::max(1, _epoch_days), _saturation_count);
+        const int64_t viability_operating_cost = saturating_add(
+            std::max<int64_t>(0, sale_group.last_operating_cost),
+            owner_livelihood, _saturation_count);
+        const int64_t allocated = allocated_output_operating_cost(
+            sale_type, sale.output_index, viability_operating_cost,
+            _saturation_count);
+        const int64_t unit_cost = sale.qty > 0
+            ? mul_div_sat(allocated, GOODS_SCALE, sale.qty, _saturation_count)
+            : 0;
+        const int64_t required = saturating_add(unit_cost, mul_div_sat(
+            unit_cost, sale_type.target_operating_margin_q16, Q16_ONE,
+            _saturation_count), _saturation_count);
+        const int32_t output_flow = trade_flow_index(cell, sale.good, false);
+        const int64_t output_target = merchant_inventory_target(
+            market, sale.good, output_signal,
+            output_signal >= 0 ? _market_signals.realized_withdrawal_ema[
+                output_signal] : 0,
+            output_flow >= 0 ? _trade_flows.export_ema[output_flow] : 0,
+            sale.qty / std::max(1, _epoch_days), _saturation_count);
+        const int32_t buy_factor = effective_merchant_buy_factor_q16(
+            market, sale.good, output_target,
+            _market.stock[_market.index(market, sale.good)],
+            _saturation_count);
+        const int64_t retail_target = mul_div_sat(
+            required, Q16_ONE,
+            std::max<int32_t>(1, buy_factor),
+            _saturation_count);
+        const size_t local_signal = static_cast<size_t>(
+            output_signal - cell_signal_begin);
+        anchor_weighted[local_signal] = saturating_add(
+            anchor_weighted[local_signal], saturating_mul(
+                retail_target, sale.merchant_sold, _saturation_count),
+            _saturation_count);
+        anchor_quantity[local_signal] = saturating_add(
+            anchor_quantity[local_signal], sale.merchant_sold,
+            _saturation_count);
+    }
+    for (int32_t g = begin; g < end; ++g) {
+        const BuildingGroup &group = _buildings[g];
+        if (group.cell != cell || group.count <= 0 ||
+            group.operating_state == 1 ||
+            !building_available(cell, group.type_id, true)) continue;
+        const BuildingType &type = _building_types[group.type_id];
+        const int64_t building_days = saturating_mul(
+            group.count, std::max(1, _epoch_days), _saturation_count);
+        for (int32_t i = 0; i < type.output_count; ++i) {
+            const GoodAmount &item = _building_outputs[type.output_begin + i];
             if (_good_monetary_issue_values[item.good_id] > 0) continue;
-            const int64_t required = saturating_add(allocated, mul_div_sat(
-                allocated, type.target_operating_margin_q16, Q16_ONE,
+            const int32_t output_signal = market_signal_index(cell, item.good_id);
+            if (output_signal < cell_signal_begin ||
+                output_signal >= cell_signal_end) continue;
+            const size_t local_signal = static_cast<size_t>(
+                output_signal - cell_signal_begin);
+            if (anchor_quantity[local_signal] > 0) continue;
+            const int64_t qty = mul_div_sat(saturating_mul(
+                building_days, item.quantity, _saturation_count),
+                group.last_capacity_q16, Q16_ONE, _saturation_count);
+            if (qty <= 0) continue;
+            const int64_t owner_livelihood = saturating_mul(saturating_mul(
+                living_cost_for_signature(cell, group.owner_signature_id, -1,
+                                          _saturation_count),
+                std::max<int64_t>(0, group.filled_owner), _saturation_count),
+                std::max(1, _epoch_days), _saturation_count);
+            const int64_t viability_operating_cost = saturating_add(
+                std::max<int64_t>(0, group.last_operating_cost),
+                owner_livelihood, _saturation_count);
+            const int64_t allocated = allocated_output_operating_cost(
+                type, i, viability_operating_cost, _saturation_count);
+            const int64_t unit_cost = mul_div_sat(
+                allocated, GOODS_SCALE, qty, _saturation_count);
+            const int64_t required = saturating_add(unit_cost, mul_div_sat(
+                unit_cost, type.target_operating_margin_q16, Q16_ONE,
                 _saturation_count), _saturation_count);
-            const int64_t settlement_unit = mul_div_sat(
-                required, GOODS_SCALE, qty, _saturation_count);
             const int32_t output_flow = trade_flow_index(cell, item.good_id, false);
             const int64_t output_target = merchant_inventory_target(
                 market, item.good_id, output_signal,
@@ -2278,15 +2462,12 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 _market.stock[_market.index(market, item.good_id)],
                 _saturation_count);
             const int64_t retail_target = mul_div_sat(
-                settlement_unit, Q16_ONE,
-                std::max<int32_t>(1, buy_factor),
+                required, Q16_ONE, std::max<int32_t>(1, buy_factor),
                 _saturation_count);
-            if (output_signal < cell_signal_begin || output_signal >= cell_signal_end)
-                continue;
-            const size_t local_signal = static_cast<size_t>(output_signal - cell_signal_begin);
             anchor_weighted[local_signal] = saturating_add(
                 anchor_weighted[local_signal], saturating_mul(
-                    retail_target, qty, _saturation_count), _saturation_count);
+                    retail_target, qty, _saturation_count),
+                _saturation_count);
             anchor_quantity[local_signal] = saturating_add(
                 anchor_quantity[local_signal], qty, _saturation_count);
         }

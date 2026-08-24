@@ -63,6 +63,8 @@ void NativeEconomyRuntime::FamilyExpeditionStore::clear() {
     route_begin.clear(); route_count.clear(); payload_begin.clear();
     payload_count.clear(); cargo_begin.clear(); cargo_count.clear();
     kit_building_begin.clear(); kit_building_count.clear();
+    kit_missing_stock_identity.clear();
+    missing_good_begin.clear(); missing_good_count.clear();
     effect_transaction_id.clear();
     idempotency_key.clear(); free_indices.clear(); active_count = 0;
 }
@@ -75,6 +77,8 @@ int32_t NativeEconomyRuntime::FamilyExpeditionStore::allocate() {
         generation[index] = std::max<uint32_t>(1, generation[index] + 1);
         cargo_begin[index] = 0; cargo_count[index] = 0;
         kit_building_begin[index] = 0; kit_building_count[index] = 0;
+        kit_missing_stock_identity[index] = 0;
+        missing_good_begin[index] = 0; missing_good_count[index] = 0;
     } else {
         index = static_cast<int32_t>(active.size());
         active.push_back(0); generation.push_back(1); stable_id.push_back(0);
@@ -87,6 +91,8 @@ int32_t NativeEconomyRuntime::FamilyExpeditionStore::allocate() {
         payload_begin.push_back(0); payload_count.push_back(0);
         cargo_begin.push_back(0); cargo_count.push_back(0);
         kit_building_begin.push_back(0); kit_building_count.push_back(0);
+        kit_missing_stock_identity.push_back(0);
+        missing_good_begin.push_back(0); missing_good_count.push_back(0);
         effect_transaction_id.push_back(0); idempotency_key.push_back(0);
     }
     active[index] = 1;
@@ -217,6 +223,7 @@ bool NativeEconomyRuntime::plan_family_colonization_route(
         error = "colonization_route_territory_invalid";
         return false;
     }
+    const uint8_t cap = water_capability_for_handle(country_handle, false);
     const size_t cells = static_cast<size_t>(_cell_count);
     if (_colonization_distance.size() != cells) {
         _colonization_distance.resize(cells);
@@ -252,17 +259,14 @@ bool NativeEconomyRuntime::plan_family_colonization_route(
             _colonization_distance[cell] != distance) continue;
         ++expansions;
         if (cell == source_cell) break;
-        for (int32_t direction = 0; direction < 6; ++direction) {
-            const int32_t neighbor = _trade_topology.neighbors[
-                static_cast<size_t>(cell) * 6 + direction];
+        collect_transport_successors(cell, cap, true);
+        for (size_t i = 0; i < _transport_succ_cells.size(); ++i) {
+            const int32_t neighbor = _transport_succ_cells[i];
             if (neighbor < 0 || visible[neighbor] == 0 ||
-                _trade_topology.passable[neighbor] == 0) continue;
+                _trade_topology.passable[static_cast<size_t>(neighbor)] == 0) continue;
             const int64_t owner = _country_runtime->country_handle_for_cell(neighbor);
             if (owner != 0 && owner != static_cast<int64_t>(country_handle)) continue;
-            // Reverse Dijkstra: source->cell enters `cell`, so the reverse edge
-            // carries cell.enter_cost rather than neighbor.enter_cost.
-            const int64_t next = distance + std::max(1,
-                trade_edge_cost(neighbor, cell));
+            const int64_t next = distance + std::max(1, _transport_succ_costs[i]);
             const bool unseen = _colonization_distance_stamp[neighbor] != stamp;
             const bool shorter = !unseen && next < _colonization_distance[neighbor];
             const bool tie = !unseen && next == _colonization_distance[neighbor] &&
@@ -292,15 +296,18 @@ bool NativeEconomyRuntime::plan_family_colonization_route(
             error = "colonization_route_parent_missing";
             return false;
         }
+        const int32_t from = cursor;
         cursor = _colonization_parent[cursor];
-        if (cursor < 0 || route.size() > static_cast<size_t>(_cell_count)) {
+        if (cursor < 0 || route.size() > static_cast<size_t>(_cell_count) * 2) {
             error = "colonization_route_parent_cycle";
             return false;
         }
-        running += std::max(1, trade_edge_cost(route.back(), cursor));
-        route.push_back(cursor);
-        cumulative.push_back(static_cast<int32_t>(std::min<int64_t>(
-            running, std::numeric_limits<int32_t>::max())));
+        if (!append_colonization_route_step(
+                from, cursor, cap, _colonization_distance[from],
+                _colonization_distance[cursor], route, cumulative, running)) {
+            error = "colonization_route_water_invalid";
+            return false;
+        }
     }
     cost = cumulative.back();
     return true;
@@ -410,6 +417,7 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
         _colonization_search_stamp = 1;
     }
     const uint32_t stamp = _colonization_search_stamp;
+    const uint8_t cap = water_capability_for_handle(country_handle, false);
     _colonization_route_heap.clear();
     _colonization_distance[target_cell] = 0;
     _colonization_distance_stamp[target_cell] = stamp;
@@ -433,17 +441,16 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
         if (owner == country_handle_value && visible[cell] != 0 &&
             (source_filter < 0 || source_filter == cell))
             reached_sources.push_back(cell);
-        for (int32_t direction = 0; direction < 6; ++direction) {
-            const int32_t neighbor = _trade_topology.neighbors[
-                static_cast<size_t>(cell) * 6 + direction];
+        collect_transport_successors(cell, cap, true);
+        for (size_t i = 0; i < _transport_succ_cells.size(); ++i) {
+            const int32_t neighbor = _transport_succ_cells[i];
             if (neighbor < 0 || visible[neighbor] == 0 ||
-                _trade_topology.passable[neighbor] == 0) continue;
+                _trade_topology.passable[static_cast<size_t>(neighbor)] == 0) continue;
             const int64_t neighbor_owner =
                 _country_runtime->country_handle_for_cell(neighbor);
             if (neighbor_owner != 0 && neighbor_owner != country_handle_value)
                 continue;
-            const int64_t next = distance + std::max(1,
-                trade_edge_cost(neighbor, cell));
+            const int64_t next = distance + std::max(1, _transport_succ_costs[i]);
             const bool unseen = _colonization_distance_stamp[neighbor] != stamp;
             const bool shorter = !unseen && next < _colonization_distance[neighbor];
             const bool tie = !unseen && next == _colonization_distance[neighbor] &&
@@ -502,14 +509,21 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
                 if (_colonization_parent_stamp[cursor] != stamp) {
                     route.clear(); break;
                 }
+                const int32_t from = cursor;
                 cursor = _colonization_parent[cursor];
-                running += std::max(1, trade_edge_cost(route.back(), cursor));
-                route.push_back(cursor);
-                cumulative.push_back(static_cast<int32_t>(running));
-                route_hash = trace_hash_mix(route_hash,
-                    static_cast<uint32_t>(cursor));
-                route_hash = trace_hash_mix(route_hash,
-                    static_cast<uint32_t>(running));
+                const size_t before = route.size();
+                if (!append_colonization_route_step(
+                        from, cursor, cap, _colonization_distance[from],
+                        _colonization_distance[cursor], route, cumulative, running)) {
+                    route.clear();
+                    break;
+                }
+                for (size_t i = before; i < route.size(); ++i) {
+                    route_hash = trace_hash_mix(route_hash,
+                        static_cast<uint32_t>(route[i]));
+                    route_hash = trace_hash_mix(route_hash,
+                        static_cast<uint32_t>(cumulative[i]));
+                }
             }
             if (route.empty()) continue;
             uint64_t token = 1469598103934665603ULL;
@@ -794,8 +808,12 @@ Dictionary NativeEconomyRuntime::submit_family_colonization_start(
         out["ok"] = false; out["code"] = String(error.c_str()); return out;
     }
     const int32_t expedition = _family_expedition_target_index[target_key];
-    out["ok"] = true; out["code"] = "colonization_started";
-    out["message"] = "Family expedition started";
+    const bool preparing =
+        _family_expeditions.state[expedition] == EXPEDITION_PREPARING;
+    out["ok"] = true;
+    out["code"] = preparing ? "colonization_preparing" : "colonization_started";
+    out["message"] = preparing ? "Family expedition is preparing"
+                               : "Family expedition started";
     out["effective_day"] = effective_day; out["sequence"] = sequence;
     out["expedition_handle"] = static_cast<int64_t>(
         _family_expeditions.handle_for_index(expedition));
@@ -825,6 +843,8 @@ Dictionary NativeEconomyRuntime::submit_family_colonization_cancel(
         out["ok"] = false; out["code"] = "colonization_expedition_invalid";
         return out;
     }
+    const bool preparing =
+        _family_expeditions.state[expedition] == EXPEDITION_PREPARING;
     Command command;
     command.opcode = COMMAND_CANCEL_FAMILY_EXPEDITION;
     command.effective_day = effective_day; command.sequence = sequence;
@@ -842,8 +862,11 @@ Dictionary NativeEconomyRuntime::submit_family_colonization_cancel(
     if (!apply_cancel_family_expedition(command, error)) {
         out["ok"] = false; out["code"] = String(error.c_str()); return out;
     }
-    out["ok"] = true; out["code"] = "colonization_cancelled_returning";
-    out["message"] = "Family expedition is returning";
+    out["ok"] = true;
+    out["code"] = preparing ? "colonization_cancelled"
+                           : "colonization_cancelled_returning";
+    out["message"] = preparing ? "Family expedition preparation cancelled"
+                               : "Family expedition is returning";
     out["effective_day"] = effective_day; out["sequence"] = sequence;
     return out;
 }
@@ -964,6 +987,182 @@ bool NativeEconomyRuntime::apply_family_expedition_player_command(
     return true;
 }
 
+int64_t NativeEconomyRuntime::family_expedition_displayed_population(
+        int32_t expedition) const {
+    if (expedition < 0 ||
+        expedition >= static_cast<int32_t>(_family_expeditions.active.size()) ||
+        _family_expeditions.active[expedition] == 0)
+        return 0;
+    if (_family_expeditions.state[expedition] == EXPEDITION_PREPARING)
+        return std::max<int64_t>(0, _family_expeditions.population[expedition]);
+    return family_expedition_payload_people(expedition);
+}
+
+int64_t NativeEconomyRuntime::market_stock(int32_t cell, int32_t good_id) const {
+    if (cell < 0 || cell >= _cell_count || good_id < 0 ||
+        good_id >= _market.good_count)
+        return 0;
+    const int32_t market = _market.cell_to_market[cell];
+    if (market < 0 || market >= _market.market_count) return 0;
+    return std::max<int64_t>(0, _market.stock[_market.index(market, good_id)]);
+}
+
+bool NativeEconomyRuntime::colonization_good_is_tools(int32_t good_id) const {
+    if (good_id < 0 ||
+        good_id >= static_cast<int32_t>(_good_category_ids.size()))
+        return false;
+    return _good_category_ids[static_cast<size_t>(good_id)] == "tools";
+}
+
+uint64_t NativeEconomyRuntime::hash_preparing_missing_stock(
+        int32_t source_cell, const int32_t *good_ids, uint32_t count) const {
+    if (good_ids == nullptr || count == 0) return 0;
+    uint64_t hash = 1469598103934665603ULL;
+    hash = trace_hash_mix(hash, COLONIZATION_PREPARING_STOCK_HASH_REVISION);
+    for (uint32_t i = 0; i < count; ++i) {
+        hash = trace_hash_mix(hash, static_cast<uint32_t>(good_ids[i]));
+        hash = trace_hash_mix(hash, static_cast<uint64_t>(
+            market_stock(source_cell, good_ids[i])));
+    }
+    return hash;
+}
+
+void NativeEconomyRuntime::store_preparing_missing_goods(
+        int32_t expedition, const ColonizationKitPlan &kit) {
+    _family_expeditions.missing_good_begin[expedition] =
+        static_cast<uint32_t>(_family_expedition_missing_good_ids.size());
+    const int32_t source = _family_expeditions.source_cell[expedition];
+    for (const int32_t good : kit.missing_good_ids) {
+        _family_expedition_missing_good_ids.push_back(good);
+        _family_expedition_missing_good_quantities.push_back(
+            market_stock(source, good));
+    }
+    _family_expeditions.missing_good_count[expedition] =
+        static_cast<uint32_t>(kit.missing_good_ids.size());
+    _family_expeditions.kit_missing_stock_identity[expedition] =
+        hash_preparing_missing_stock(source,
+            kit.missing_good_ids.empty() ? nullptr : kit.missing_good_ids.data(),
+            static_cast<uint32_t>(kit.missing_good_ids.size()));
+}
+
+void NativeEconomyRuntime::refresh_preparing_family_expedition_missing(
+        int32_t expedition) {
+    const uint32_t count = _family_expeditions.missing_good_count[expedition];
+    const uint32_t begin = _family_expeditions.missing_good_begin[expedition];
+    const int32_t source = _family_expeditions.source_cell[expedition];
+    if (count == 0 ||
+        begin + count > _family_expedition_missing_good_ids.size()) {
+        _family_expeditions.kit_missing_stock_identity[expedition] = 0;
+        return;
+    }
+    for (uint32_t i = 0; i < count; ++i) {
+        const int32_t good = _family_expedition_missing_good_ids[begin + i];
+        if (begin + i < _family_expedition_missing_good_quantities.size())
+            _family_expedition_missing_good_quantities[begin + i] =
+                market_stock(source, good);
+    }
+}
+
+void NativeEconomyRuntime::abort_preparing_family_expedition(
+        int32_t expedition, int64_t day, uint8_t kind, const char *code) {
+    const uint64_t key = family_expedition_target_key(
+        _family_expeditions.country_handle[expedition],
+        _family_expeditions.target_cell[expedition]);
+    append_colonization_receipt(expedition, 0,
+        _family_expeditions.departure_day[expedition], day, kind, code);
+    _family_expedition_target_index.erase(key);
+    _family_expeditions.release(expedition);
+    note_family_expedition_audit_invalidation();
+}
+
+bool NativeEconomyRuntime::launch_preparing_family_expedition(
+        int32_t expedition, int64_t day, const ColonizationKitPlan &kit,
+        std::string &error) {
+    const int32_t source = _family_expeditions.source_cell[expedition];
+    if (!extract_family_expedition_cargo(expedition, kit, error)) {
+        error.clear();
+        store_preparing_missing_goods(expedition, kit);
+        _family_expeditions.due_day[expedition] = day + 1;
+        push_family_expedition_due(expedition);
+        return true;
+    }
+    if (!extract_family_expedition_payload(expedition,
+            _family_expeditions.population[expedition], error)) {
+        std::string ignored;
+        restore_family_expedition_cargo(expedition, source, false, ignored);
+        error.clear();
+        _family_expeditions.cargo_count[expedition] = 0;
+        _family_expeditions.kit_building_count[expedition] = 0;
+        store_preparing_missing_goods(expedition, kit);
+        _family_expeditions.due_day[expedition] = day + 1;
+        push_family_expedition_due(expedition);
+        return true;
+    }
+    const int32_t travel = std::max(1,
+        (_family_expeditions.route_cost[expedition] +
+         std::max(1, _family_expeditions.speed[expedition]) - 1) /
+        std::max(1, _family_expeditions.speed[expedition]));
+    _family_expeditions.state[expedition] = EXPEDITION_OUTBOUND;
+    _family_expeditions.departure_day[expedition] = day;
+    _family_expeditions.due_day[expedition] = day + travel;
+    _family_expeditions.missing_good_count[expedition] = 0;
+    _family_expeditions.kit_missing_stock_identity[expedition] = 0;
+    push_family_expedition_due(expedition);
+    note_family_expedition_audit_invalidation();
+    append_colonization_receipt(expedition, 0, day, day, 1, "STARTED");
+    return true;
+}
+
+bool NativeEconomyRuntime::advance_preparing_family_expedition(
+        int32_t expedition, int64_t day, std::string &error) {
+    const int32_t source = _family_expeditions.source_cell[expedition];
+    const int32_t target = _family_expeditions.target_cell[expedition];
+    const uint64_t country = _family_expeditions.country_handle[expedition];
+    const uint64_t family = _family_expeditions.family_handle[expedition];
+    const int64_t people = _family_expeditions.population[expedition];
+    if (!colonization_target_owner_allowed(country, target)) {
+        abort_preparing_family_expedition(expedition, day, 3,
+            "TARGET_LOST_RETURNING");
+        return true;
+    }
+    if (family_population_in_cell(family, source) <= people) {
+        abort_preparing_family_expedition(expedition, day, 7, "PREPARING_ABORTED");
+        return true;
+    }
+    const uint32_t missing_count =
+        _family_expeditions.missing_good_count[expedition];
+    const uint32_t missing_begin =
+        _family_expeditions.missing_good_begin[expedition];
+    if (missing_count > 0 &&
+        missing_begin + missing_count <=
+            _family_expedition_missing_good_ids.size()) {
+        const uint64_t hashed = hash_preparing_missing_stock(source,
+            _family_expedition_missing_good_ids.data() + missing_begin,
+            missing_count);
+        if (hashed ==
+                _family_expeditions.kit_missing_stock_identity[expedition]) {
+            _family_expeditions.due_day[expedition] = day + 1;
+            push_family_expedition_due(expedition);
+            return true;
+        }
+    }
+    ColonizationKitPlan kit;
+    const int32_t travel = std::max(1,
+        (_family_expeditions.route_cost[expedition] +
+         std::max(1, _family_expeditions.speed[expedition]) - 1) /
+        std::max(1, _family_expeditions.speed[expedition]));
+    if (!plan_colonization_kit(source, target, people, travel, false, kit)) {
+        abort_preparing_family_expedition(expedition, day, 7, "PREPARING_ABORTED");
+        return true;
+    }
+    if (kit.kit_partial == 0 && !kit.buildings.empty())
+        return launch_preparing_family_expedition(expedition, day, kit, error);
+    store_preparing_missing_goods(expedition, kit);
+    _family_expeditions.due_day[expedition] = day + 1;
+    push_family_expedition_due(expedition);
+    return true;
+}
+
 bool NativeEconomyRuntime::apply_start_family_expedition(
         const Command &cmd, std::string &error) {
     const auto found = _colonization_quote_index.find(
@@ -980,8 +1179,7 @@ bool NativeEconomyRuntime::apply_start_family_expedition(
     ColonizationKitPlan kit;
     plan_colonization_kit(quote.source_cell, quote.target_cell, cmd.i64_0,
         quote.travel_days, _epoch_active, kit);
-    if (!_epoch_active && (kit.dest_identity != quote.dest_kit_identity ||
-            kit.source_stock_identity != quote.source_stock_identity)) {
+    if (!_epoch_active && kit.dest_identity != quote.dest_kit_identity) {
         error = "colonization_kit_requote_required"; return false;
     }
     const int32_t expedition = _family_expeditions.allocate();
@@ -1014,7 +1212,31 @@ bool NativeEconomyRuntime::apply_start_family_expedition(
         static_cast<uint64_t>(cmd.sequence));
     _family_expeditions.idempotency_key[expedition] =
         idempotency_key == 0 ? 1 : idempotency_key;
+    const bool needs_complete_kit = kit.place_buildings != 0 &&
+        cmd.i64_0 >= COLONIZATION_KIT_MIN_OWNER_SLOTS;
+    const bool kit_incomplete = kit.kit_partial != 0 || kit.buildings.empty();
+    auto occupy_preparing = [&]() {
+        _family_expeditions.payload_count[expedition] = 0;
+        _family_expeditions.cargo_count[expedition] = 0;
+        _family_expeditions.kit_building_count[expedition] = 0;
+        store_preparing_missing_goods(expedition, kit);
+        _family_expeditions.state[expedition] = EXPEDITION_PREPARING;
+        _family_expeditions.due_day[expedition] = cmd.effective_day;
+        _family_expedition_target_index[family_expedition_target_key(
+            quote.country_handle, quote.target_cell)] = expedition;
+        push_family_expedition_due(expedition);
+        note_family_expedition_audit_invalidation();
+        append_colonization_receipt(expedition, cmd.sequence, cmd.effective_day,
+            cmd.effective_day, 1, "PREPARING");
+        return true;
+    };
+    if (needs_complete_kit && kit_incomplete)
+        return occupy_preparing();
     if (!extract_family_expedition_cargo(expedition, kit, error)) {
+        if (needs_complete_kit) {
+            error.clear();
+            return occupy_preparing();
+        }
         _family_expeditions.release(expedition);
         if (error.empty()) error = "colonization_kit_materials_short";
         return false;
@@ -1023,6 +1245,10 @@ bool NativeEconomyRuntime::apply_start_family_expedition(
         std::string ignored;
         restore_family_expedition_cargo(expedition, quote.source_cell, false,
             ignored);
+        if (needs_complete_kit) {
+            error.clear();
+            return occupy_preparing();
+        }
         _family_expeditions.release(expedition);
         return false;
     }
@@ -1519,6 +1745,11 @@ bool NativeEconomyRuntime::apply_cancel_family_expedition(
         error = "colonization_expedition_invalid"; return false;
     }
     if (_family_expeditions.state[expedition] == EXPEDITION_RETURNING) return true;
+    if (_family_expeditions.state[expedition] == EXPEDITION_PREPARING) {
+        abort_preparing_family_expedition(expedition, cmd.effective_day, 2,
+            "CANCELLED");
+        return true;
+    }
     if (_family_expeditions.state[expedition] == EXPEDITION_SETTLING &&
         _family_expeditions.effect_transaction_id[expedition] != 0) {
         error = "colonization_settlement_already_committed"; return false;
@@ -1673,6 +1904,11 @@ bool NativeEconomyRuntime::process_due_family_expeditions(
                 _family_expeditions.active.size()) ||
             _family_expeditions.active[expedition] == 0 ||
             _family_expeditions.due_day[expedition] != top.first) continue;
+        if (_family_expeditions.state[expedition] == EXPEDITION_PREPARING) {
+            if (!advance_preparing_family_expedition(expedition, day, error))
+                return false;
+            continue;
+        }
         if (_family_expeditions.state[expedition] == EXPEDITION_SETTLING) {
             const int64_t transaction_id =
                 _family_expeditions.effect_transaction_id[expedition];
@@ -1821,7 +2057,8 @@ Dictionary NativeEconomyRuntime::family_expeditions(
     });
     offset = std::max(0, offset); limit = std::clamp(limit, 1, 256);
     const int32_t end = std::min<int32_t>(rows.size(), offset + limit);
-    PackedInt64Array handles, families, populations, departures, dues;
+    PackedInt64Array handles, families, populations, departures, dues,
+        missing_identities;
     PackedInt32Array sources, targets, costs, states;
     for (int32_t p = offset; p < end; ++p) {
         const int32_t i = rows[p];
@@ -1831,17 +2068,20 @@ Dictionary NativeEconomyRuntime::family_expeditions(
             _family_expeditions.family_handle[i]));
         sources.push_back(_family_expeditions.source_cell[i]);
         targets.push_back(_family_expeditions.target_cell[i]);
-        populations.push_back(family_expedition_payload_people(i));
+        populations.push_back(family_expedition_displayed_population(i));
         departures.push_back(_family_expeditions.departure_day[i]);
         dues.push_back(_family_expeditions.due_day[i]);
         costs.push_back(_family_expeditions.route_cost[i]);
         states.push_back(_family_expeditions.state[i]);
+        missing_identities.push_back(static_cast<int64_t>(
+            _family_expeditions.kit_missing_stock_identity[i]));
     }
     out["ok"] = true; out["expedition_handles"] = handles;
     out["family_handles"] = families; out["source_cells"] = sources;
     out["target_cells"] = targets; out["populations"] = populations;
     out["departure_days"] = departures; out["due_days"] = dues;
     out["route_costs"] = costs; out["states"] = states;
+    out["kit_missing_stock_identities"] = missing_identities;
     out["offset"] = offset; out["limit"] = limit;
     out["total"] = static_cast<int32_t>(rows.size());
     out["has_more"] = end < static_cast<int32_t>(rows.size());
@@ -1871,7 +2111,7 @@ Dictionary NativeEconomyRuntime::family_expedition_snapshot(
         _family_expeditions.family_handle[expedition]);
     out["source_cell"] = _family_expeditions.source_cell[expedition];
     out["target_cell"] = _family_expeditions.target_cell[expedition];
-    out["population"] = family_expedition_payload_people(expedition);
+    out["population"] = family_expedition_displayed_population(expedition);
     out["departure_day"] = _family_expeditions.departure_day[expedition];
     out["due_day"] = _family_expeditions.due_day[expedition];
     out["route_cost"] = _family_expeditions.route_cost[expedition];
@@ -1880,6 +2120,39 @@ Dictionary NativeEconomyRuntime::family_expedition_snapshot(
     out["effect_transaction_id"] =
         _family_expeditions.effect_transaction_id[expedition];
     out["route_cells"] = route; out["cumulative_costs"] = cumulative;
+    PackedInt32Array cargo_good_ids, cargo_flags, missing_good_ids;
+    PackedInt64Array cargo_quantities, missing_good_quantities;
+    const uint32_t cargo_begin = _family_expeditions.cargo_begin[expedition];
+    const uint32_t cargo_count = _family_expeditions.cargo_count[expedition];
+    for (uint32_t i = 0; i < cargo_count; ++i) {
+        if (cargo_begin + i >= _family_expedition_cargo.size()) break;
+        const FamilyExpeditionCargoLine &line =
+            _family_expedition_cargo[cargo_begin + i];
+        cargo_good_ids.push_back(line.good_id);
+        cargo_quantities.push_back(line.quantity);
+        cargo_flags.push_back(line.flags);
+    }
+    const uint32_t missing_begin =
+        _family_expeditions.missing_good_begin[expedition];
+    const uint32_t missing_count =
+        _family_expeditions.missing_good_count[expedition];
+    for (uint32_t i = 0; i < missing_count; ++i) {
+        if (missing_begin + i >= _family_expedition_missing_good_ids.size())
+            break;
+        missing_good_ids.push_back(
+            _family_expedition_missing_good_ids[missing_begin + i]);
+        missing_good_quantities.push_back(
+            missing_begin + i < _family_expedition_missing_good_quantities.size()
+                ? _family_expedition_missing_good_quantities[missing_begin + i]
+                : 0);
+    }
+    out["cargo_good_ids"] = cargo_good_ids;
+    out["cargo_quantities"] = cargo_quantities;
+    out["cargo_flags"] = cargo_flags;
+    out["kit_missing_good_ids"] = missing_good_ids;
+    out["kit_missing_good_quantities"] = missing_good_quantities;
+    out["kit_missing_stock_identity"] = static_cast<int64_t>(
+        _family_expeditions.kit_missing_stock_identity[expedition]);
     return out;
 }
 

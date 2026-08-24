@@ -84,8 +84,9 @@ Stone-Age starter buildings must remain owner-only. Require gathering and huntin
 camps when local reserves exist, one deadwood camp, the matching precious-metal work site,
 `early_merchant_post`, and hide scraping only on cold highland. Do not prebuild any
 knowledge shed; reveal one geographically operable knowledge-practice technology,
-seed its construction materials, and deposit 10000 authored technology points in
-the treasury. Do not prebuild leftover fishing or bast camps. Aggregate all starts through EconomyFacade
+seed its construction materials, and deposit 3000 authored technology points in
+the treasury so the pending knowledge practice can complete without covering later
+queued techs. Do not prebuild leftover fishing or bast camps. Aggregate all starts through EconomyFacade
 catalog helpers and fixed-point packets, provide the 15-day local food bridge, and retain population/money/goods
 conservation checks.
 Require one native founder family per capital, conserving the gathering ground's two occupied

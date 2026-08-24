@@ -2806,6 +2806,9 @@ bool NativeCountryRuntime::research_procurement_policy(int32_t country_slot, boo
         slot * _good_ids.size() + static_cast<size_t>(_technology_points_good_id)];
     const int64_t unreserved = std::max<int64_t>(
         0, stock - _country_research_deferred_points[slot]);
+    // Unreserved treasury stock is a real buyer gap of zero: government will
+    // not purchase points it already holds. Starter grants must therefore not
+    // cover later queued techs, or automatic investment never sees demand.
     remaining_points = std::max<int64_t>(0, remaining_points - unreserved);
     return true;
 }
