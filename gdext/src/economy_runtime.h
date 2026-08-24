@@ -65,8 +65,9 @@ public:
     // Bump when preparing-kit buffer demand changes so in-flight PREPARING
     // parties replan even if source stock of the previous missing goods is
     // unchanged. Revision 2: clothing uses need.base_qty_per_person, not 1.0
-    // goods per person-day.
-    static constexpr uint64_t COLONIZATION_PREPARING_STOCK_HASH_REVISION = 2;
+    // goods per person-day. Revision 3: every candidate in an underfilled
+    // substitute group participates in the PREPARING stock watch.
+    static constexpr uint64_t COLONIZATION_PREPARING_STOCK_HASH_REVISION = 3;
     static constexpr int32_t ROLLING_PHASE_COUNT = 5;
     static constexpr int32_t MARKET_CYCLE_MIN_DAYS = 1;
     static constexpr int32_t MARKET_CYCLE_MAX_DAYS = 5;
@@ -4815,7 +4816,8 @@ private:
                                      int64_t count, int32_t cost_factor_q16,
                                      ConstructionMaterialPlan &plan,
                                      const std::vector<int64_t> *additional_stock = nullptr,
-                                     std::vector<int64_t> *stock_inout = nullptr) const;
+                                     std::vector<int64_t> *stock_inout = nullptr,
+                                     bool split_candidates = false) const;
     bool apply_demolish_command(const Command &cmd, int32_t owner_slot, std::string &error);
     bool run_building_employment_cell(int32_t cell,
                                       bool allow_owner_job_reallocation,

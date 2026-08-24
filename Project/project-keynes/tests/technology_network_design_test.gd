@@ -1,7 +1,7 @@
 extends SceneTree
 
 const NETWORK_PATH := "res://data/technology/technology_network.json"
-const EXPECTED_NODES := 679
+const EXPECTED_NODES := 671
 const EXPECTED_ERAS := 11
 const EXPECTED_DOMAINS := 4
 const CANDIDATES_PER_ERA := [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
@@ -107,6 +107,36 @@ func _init() -> void:
 		var routes: Array = node.get("research_routes", [])
 		assert(routes is Array)
 		var is_application := String(node.get("anchor_kind", "")) == "application"
+		var knowledge_basis: Dictionary = node.get("knowledge_basis", {})
+		assert(not knowledge_basis.is_empty(), "%s missing knowledge basis" % id)
+		var knowledge_required: Array = knowledge_basis.get("required_ids", [])
+		var knowledge_alternatives: Array = knowledge_basis.get("alternative_groups", [])
+		var knowledge_exemption := String(knowledge_basis.get(
+			"exemption_reason", "")).strip_edges()
+		assert(knowledge_exemption.is_empty() or (knowledge_required.is_empty() \
+			and knowledge_alternatives.is_empty()), "%s mixes knowledge exemption and basis" % id)
+		assert(not (knowledge_required.is_empty() and knowledge_alternatives.is_empty() \
+			and knowledge_exemption.is_empty()), "%s has empty knowledge basis" % id)
+		var hard_history := {}
+		for prerequisite_value in hard:
+			_collect_ancestors(String(prerequisite_value), node_by_id, hard_history)
+		for required_value in knowledge_required:
+			assert(hard_history.has(String(required_value)),
+				"%s knowledge basis is not a hard ancestor: %s" % [id, required_value])
+		var route_knowledge := PackedStringArray()
+		for route_value in routes:
+			_collect_atoms((route_value as Dictionary).get("condition", {}),
+				route_knowledge, PackedStringArray())
+		for group_value in knowledge_alternatives:
+			assert(group_value is Array and not (group_value as Array).is_empty(), id)
+			for alternative_value in group_value as Array:
+				assert(route_knowledge.has(String(alternative_value)),
+					"%s alternative knowledge is not visible: %s" % [id, alternative_value])
+		if is_application:
+			assert(knowledge_required.size() >= 2,
+				"application lacks two knowledge foundations: %s" % id)
+			assert(building_unlocks == 1,
+				"application must unlock exactly one building: %s" % id)
 		if era >= 2 and not is_application:
 			nodes_after_kingdom += 1
 			if not routes.is_empty():
@@ -148,15 +178,18 @@ func _init() -> void:
 			["production_system", "power_scale", "institution"].has(
 				String(node.get("node_role", ""))))
 		if requires_distinct_routes:
-			assert(routes.size() >= 2 and routes.size() <= 3, "%s needs 2-3 routes" % id)
+			assert(routes.size() <= 3, "%s has too many research routes" % id)
+			if routes.is_empty():
+				assert(not String(node.get("route_exemption_reason", "")).strip_edges().is_empty(),
+					"%s needs routes or a visible hard-foundation exemption" % id)
 
 	var coverage := float(routes_after_kingdom) / float(maxi(1, nodes_after_kingdom))
 	assert(coverage >= 0.80, "kingdom+ route coverage %.3f" % coverage)
 	var expected_building_counts := {
-		"stone": 12, "agrarian": 16, "kingdom": 20, "empire": 24,
+		"stone": 15, "agrarian": 17, "kingdom": 20, "empire": 24,
 		"exploration": 28, "enlightenment": 32, "steam": 36,
-		"electrical": 40, "atomic": 44, "information": 48,
-		"intelligent": 51,
+		"electrical": 40, "atomic": 44, "information": 46,
+		"intelligent": 49,
 	}
 	var previous_building_count := 0
 	var pre_empire_buildings := 0
@@ -173,20 +206,36 @@ func _init() -> void:
 			pre_empire_buildings += actual_count
 		else:
 			empire_and_later_buildings += actual_count
-	assert(pre_empire_buildings == 48)
-	assert(empire_and_later_buildings == 303)
+	assert(pre_empire_buildings == 52)
+	assert(empire_and_later_buildings == 299)
 	var stone_buildings: Array = era_building_ids.get("stone", [])
 	stone_buildings.sort()
 	var expected_stone_buildings: Array = [
 		"stone_age_hunting_camp", "gathering_ground", "early_merchant_post",
-		"placer_gold_working", "surface_silver_working",
+		"placer_gold_working",
 		"deadwood_gathering_camp", "hide_scraping_shelter",
 		"early_knowledge_institution", "communal_hearth", "flint_quarry",
-		"freshwater_fishing_camp", "marine_fish_collector",
+		"knapping_workshop", "stone_collector", "freshwater_fishing_camp",
+		"marine_fish_collector", "bast_fiber_camp", "bast_wrap_shelter",
 	]
 	expected_stone_buildings.sort()
 	assert(stone_buildings == expected_stone_buildings,
 		"stone building whitelist drift: %s" % [stone_buildings])
+	assert(not node_by_id.has("tech.application.knapping_workshop"))
+	var stone_knapping: Dictionary = node_by_id["tech.stone_knapping"]
+	assert(_has_expected_building(stone_knapping, "flint_quarry"))
+	assert(_has_expected_building(stone_knapping, "knapping_workshop"))
+	var composite_tools: Dictionary = node_by_id["tech.composite_tools"]
+	assert(composite_tools.hard_prerequisite_ids == ["tech.stone_knapping"])
+	assert((composite_tools.knowledge_basis as Dictionary).required_ids == [
+		"tech.stone_knapping"])
+	assert((node_by_id["tech.controlled_burning"] as Dictionary).hard_prerequisite_ids == [
+		"tech.fire_control"])
+	var wild_flax: Dictionary = node_by_id["tech.wild_flax_collection"]
+	assert(_has_expected_building(wild_flax, "bast_fiber_camp"))
+	assert(_has_expected_building(wild_flax, "bast_wrap_shelter"))
+	var ground_stone: Dictionary = node_by_id["tech.ground_stone_tools"]
+	assert(_has_expected_building(ground_stone, "stone_collector"))
 
 	# A reveal must introduce a new national problem, not repeat a signal already
 	# implied by the target's irreducible knowledge history.
@@ -272,7 +321,7 @@ func _init() -> void:
 		"tech.surface_silver_collection": "tech.silver_vein_identification",
 	}
 	var early_prerequisites := {
-		"tech.composite_tools": "tech.flint_identification",
+		"tech.composite_tools": "tech.stone_knapping",
 		"tech.timber_sawing": "tech.composite_tools",
 		"tech.natural_copper_working": "tech.natural_copper_identification",
 		"tech.bronze_casting": "tech.tin_identification",
@@ -317,14 +366,6 @@ func _init() -> void:
 			"tech.application.early_copper_mine"]:
 		assert(String((node_by_id[application_id] as Dictionary).get(
 			"anchor_kind", "")) == "application", application_id)
-	var route_groups := {}
-	for technology_id in ["tech.composite_tools", "tech.crop_domestication",
-			"tech.fire_control", "tech.animal_husbandry"]:
-		var route_condition: Dictionary = node_by_id[technology_id].research_routes[0].condition
-		route_groups[technology_id] = JSON.stringify(route_condition)
-	assert(route_groups["tech.composite_tools"] == route_groups["tech.crop_domestication"])
-	assert(route_groups["tech.crop_domestication"] == route_groups["tech.fire_control"])
-	assert(route_groups["tech.fire_control"] == route_groups["tech.animal_husbandry"])
 	var crop_reveal := JSON.stringify(node_by_id["tech.crop_domestication"].reveal_condition)
 	for crop_signal in ["bio.maize", "bio.wheat", "bio.rice", "bio.potato"]:
 		assert(crop_reveal.contains(crop_signal), crop_signal)
@@ -349,7 +390,9 @@ func _init() -> void:
 		assert((knowledge.get("reveal_condition", {}) as Dictionary).is_empty(), knowledge_id)
 	var unified_knowledge: Dictionary = node_by_id["tech.early_knowledge_institution"]
 	assert(not bool(unified_knowledge.get("is_starter_eligible", false)))
-	assert((unified_knowledge.get("hard_prerequisite_ids", []) as Array).is_empty())
+	for prerequisite_id in ["tech.gathering", "tech.deadwood_collection"]:
+		assert(prerequisite_id in (unified_knowledge.get(
+			"hard_prerequisite_ids", []) as Array), prerequisite_id)
 	assert((unified_knowledge.get("research_routes", []) as Array).size() == 5)
 
 	# Stone-era institution routes enter through the unified institution. The

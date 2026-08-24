@@ -115,8 +115,8 @@ func _run() -> void:
 	var discover_country: Dictionary = discover_ext.get_country_cell_summary(0)
 	var discover_research: Dictionary = discover_ext.get_country_research_snapshot(
 		discover_country.country_handle)
-	_expect("bootstrap can reveal a knowledge practice without completing it",
-		int(discover_research.technology_states[oral]) == 2
+	_expect("bootstrap can reveal a knowledge practice while its institution prerequisite is incomplete",
+		int(discover_research.technology_states[oral]) == 1
 		and not (discover_ext.get_country_snapshot(discover_country.country_handle)
 			.technology_ids as PackedStringArray).has("tech.oral_memory_practice")
 		and int(discover_research.technology_points_stock) == 10000000)

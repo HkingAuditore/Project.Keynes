@@ -30,9 +30,9 @@ func _init() -> void:
 			"route": "tropical_forest", "temperature": 0.75, "moisture": 0.75,
 			"elevation": 0.25, "river": true, "coastal": false,
 			"resources": {"fertile_soil": 400000.0, "timber": 400000.0,
-				"wild_game": 200000.0, "silver_ore": 100000.0},
+				"wild_game": 200000.0, "gold_ore": 100000.0},
 			"signals": ["resource.fertile_soil", "resource.timber",
-				"resource.wild_game", "resource.silver_ore"],
+				"resource.wild_game", "resource.gold_ore"],
 			"foods": ["gathered_plants", "game_meat"],
 			"food_technologies": ["tech.gathering", "tech.hunting"],
 			"construction": "logs",
@@ -40,7 +40,7 @@ func _init() -> void:
 			"knowledge_building": "early_knowledge_institution",
 			"required_buildings": ["gathering_ground", "stone_age_hunting_camp",
 				"deadwood_gathering_camp",
-				"surface_silver_working", "early_merchant_post"],
+				"placer_gold_working", "early_merchant_post"],
 		},
 		{
 			"route": "floodplain", "temperature": 0.58, "moisture": 0.70,
@@ -64,10 +64,10 @@ func _init() -> void:
 			"route": "arid_highland", "temperature": 0.56, "moisture": 0.30,
 			"elevation": 0.50, "river": true, "coastal": false,
 			"resources": {"wild_game": 200000.0, "timber": 400000.0,
-				"clay": 180000.0, "silver_ore": 100000.0,
+				"clay": 180000.0, "gold_ore": 100000.0,
 				"fertile_soil": 400000.0},
 			"signals": ["resource.wild_game", "resource.timber", "resource.clay",
-				"resource.fertile_soil", "landform.grassland", "resource.silver_ore"],
+				"resource.fertile_soil", "landform.grassland", "resource.gold_ore"],
 			"foods": ["gathered_plants", "game_meat"],
 			"food_technologies": ["tech.gathering", "tech.hunting"],
 			"construction": "logs",
@@ -75,7 +75,7 @@ func _init() -> void:
 			"knowledge_building": "early_knowledge_institution",
 			"required_buildings": ["gathering_ground", "stone_age_hunting_camp",
 				"deadwood_gathering_camp",
-				"surface_silver_working", "early_merchant_post"],
+				"placer_gold_working", "early_merchant_post"],
 		},
 		{
 			"route": "temperate", "temperature": 0.55, "moisture": 0.46,
@@ -98,10 +98,10 @@ func _init() -> void:
 			"elevation": 0.20, "river": false, "coastal": true,
 			"resources": {"marine_fish": 150000.0, "fertile_soil": 400000.0,
 				"paddy_land": 180000.0, "wild_game": 200000.0, "timber": 400000.0,
-				"silver_ore": 100000.0},
+				"gold_ore": 100000.0},
 			"signals": ["resource.marine_fish", "landform.coast",
 				"resource.fertile_soil", "resource.wild_game", "resource.timber",
-				"resource.silver_ore"],
+				"resource.gold_ore"],
 			"foods": ["gathered_plants", "game_meat"],
 			"food_technologies": ["tech.gathering", "tech.hunting"],
 			"construction": "logs",
@@ -109,7 +109,7 @@ func _init() -> void:
 			"knowledge_building": "early_knowledge_institution",
 			"required_buildings": ["gathering_ground", "stone_age_hunting_camp",
 				"deadwood_gathering_camp",
-				"surface_silver_working", "early_merchant_post"],
+				"placer_gold_working", "early_merchant_post"],
 		},
 	]
 	var fingerprints := {}
@@ -196,6 +196,7 @@ func _init() -> void:
 		"fixed regional fixtures must produce six classified routes")
 	_assert_food_discovery_union()
 	_assert_warm_hide_not_prebuilt()
+	_assert_silver_only_not_valid_stone_start()
 	_assert_resource_count_monotonicity()
 	print("[PASS] six fixed geography fixtures select distinct closed starter routes")
 	quit(0)
@@ -271,8 +272,7 @@ func _assert_plan_contract(label: String, route: Dictionary) -> void:
 		"%s confines employee slots to precious workings" % label)
 	assert(not route.has("owner_job_capacity_by_profession"),
 		"%s does not expose a population profession allocation" % label)
-	for fixed_id in ["early_merchant_post", "placer_gold_working",
-			"surface_silver_working"]:
+	for fixed_id in ["early_merchant_post", "placer_gold_working"]:
 		var fixed_index := ids.find(fixed_id)
 		if fixed_index >= 0:
 			assert(int(counts[fixed_index]) == 1,
@@ -346,11 +346,11 @@ func _assert_warm_hide_not_prebuilt() -> void:
 		"temperature": 0.56, "moisture": 0.30, "elevation": 0.50,
 		"river": true, "coastal": false,
 		"resources": {"wild_game": 200000.0, "timber": 400000.0,
-			"clay": 180000.0, "silver_ore": 100000.0,
+			"clay": 180000.0, "gold_ore": 100000.0,
 			"fertile_soil": 400000.0},
 		"signals": ["resource.wild_game", "resource.timber", "resource.clay",
 			"resource.fertile_soil", "landform.grassland",
-			"resource.silver_ore"],
+			"resource.gold_ore"],
 	}
 	var built := _make_fixture(fixture)
 	var route: Dictionary = StartPolicy.evaluate_starter_route(
@@ -366,6 +366,24 @@ func _assert_warm_hide_not_prebuilt() -> void:
 		"warm opening must not grant hide scraping")
 
 
+func _assert_silver_only_not_valid_stone_start() -> void:
+	var fixture := {
+		"temperature": 0.55, "moisture": 0.46, "elevation": 0.30,
+		"river": true, "coastal": false,
+		"resources": {"fertile_soil": 400000.0, "timber": 400000.0,
+			"wild_game": 200000.0, "silver_ore": 100000.0},
+		"signals": ["resource.fertile_soil", "resource.timber",
+			"resource.wild_game", "resource.silver_ore"],
+	}
+	var built := _make_fixture(fixture)
+	var route: Dictionary = StartPolicy.evaluate_starter_route(
+		built.map, int(built.cell))
+	assert(not bool(route.get("ok", false)),
+		"silver-only cells cannot form a formal Stone-Age starter route")
+	assert(String(route.get("code", "")) == "starter_precious_metal_unavailable",
+		"silver-only routes fail at the placer-gold starter requirement")
+
+
 func _assert_resource_count_monotonicity() -> void:
 	var cases: Array[Dictionary] = [
 		{"resource": "wild_game", "building": "stone_age_hunting_camp",
@@ -373,10 +391,10 @@ func _assert_resource_count_monotonicity() -> void:
 				"temperature": 0.56, "moisture": 0.30, "elevation": 0.50,
 				"river": true, "coastal": false,
 				"resources": {"wild_game": 200000.0, "timber": 400000.0,
-					"fertile_soil": 400000.0, "silver_ore": 100000.0},
+					"fertile_soil": 400000.0, "gold_ore": 100000.0},
 				"signals": ["resource.wild_game", "resource.timber",
 					"resource.fertile_soil", "landform.grassland",
-					"resource.silver_ore"]}},
+					"resource.gold_ore"]}},
 		{"resource": "fertile_soil", "building": "gathering_ground",
 			"low": 4.0, "high": 400000.0, "base": {
 				"temperature": 0.55, "moisture": 0.46, "elevation": 0.30,

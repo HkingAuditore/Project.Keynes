@@ -20,9 +20,8 @@ const MINIMUM_RESERVES := {
 	"clay": 120000.0,
 	"freshwater_fish": 90000.0,
 	"marine_fish": 90000.0,
-	# Opening precious deposits are deliberately marginal workings, not mines.
+	# Opening placer-gold deposits are deliberately marginal workings, not mines.
 	"gold_ore": 15000.0,
-	"silver_ore": 15000.0,
 }
 
 ## Opening top-up never invents fish, paddy or clay on dry inland cells.

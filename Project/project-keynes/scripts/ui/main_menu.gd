@@ -44,6 +44,9 @@ var _pkmap_pick_syncing := false
 
 
 func _ready() -> void:
+	if OS.get_cmdline_user_args().has("--editor-tech-tree") or OS.get_cmdline_args().has("--editor-tech-tree"):
+		call_deferred("_open_technology_authoring_editor")
+		return
 	set_process(true)
 	_configure_new_game_form()
 	_bind_settings_controls()
@@ -51,6 +54,9 @@ func _ready() -> void:
 	resized.connect(_apply_responsive_layout)
 	_show_home()
 	_apply_responsive_layout()
+
+func _open_technology_authoring_editor() -> void:
+	get_tree().change_scene_to_file("res://scenes/tools/technology_tree_authoring_editor.tscn")
 
 
 func _process(_delta: float) -> void:

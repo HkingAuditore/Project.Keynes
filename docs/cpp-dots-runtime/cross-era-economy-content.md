@@ -24,8 +24,8 @@
 
 | 设计时代 | 代表科技标签 | 主要新增链条 |
 |---|---|---|
-| 石器时代 | `tech.hunting`, `tech.gathering`, `tech.stone_knapping`, `tech.fire_control` | 狩猎/采集、家庭手织、早期金银矿点、燧石采集、石器打制、公共火塘；生产者本人持有设施 |
-| 早期农业/青铜时代 | `tech.pottery`, `tech.bronze_casting` | 早期自耕农田与家庭织机、陶器；铜锡合金与青铜工具；小规模工匠—学徒和地主—奴隶劳工 |
+| 石器时代 | `tech.hunting`, `tech.gathering`, `tech.stone_knapping`, `tech.fire_control` | 狩猎/采集、韧皮衣物、早期砂金点、燧石采集、石器打制、公共火塘；生产者本人持有设施 |
+| 早期农业/青铜时代 | `tech.pottery`, `tech.bronze_casting` | 地表银矿、早期自耕农田与家庭织机、陶器；铜锡合金与青铜工具；小规模工匠—学徒和地主—奴隶劳工 |
 | 古典时代 | `tech.writing`, `tech.masonry` | 统一手抄本、砖石/石灰/玻璃、金银匠、酿造和直接产建筑构件的石作；少量帮工与依附劳工 |
 | 封建时代 | `tech.manuscript_culture`, `tech.guild_organization` | 轮作、行会直接织布、裁缝、鞋匠、华服和精美家具；地主—农奴、地主—佃农和行会师徒 |
 | 探索时代 | `tech.oceanic_navigation`, `tech.printing_press` | 碎布造纸、印刷、蒸馏、跨洋作物和直接使用布料的远洋船舶 |

@@ -101,8 +101,8 @@ func _run() -> void:
 			and String(country_start.get("starter_construction_good_id", "")) == "logs"
 			and String(country_start.get("starter_knowledge_good_id", "")) ==
 				"technology_points"
-			and String(country_start.get("starter_precious_good_id", "")) in
-				["gold", "silver"]
+			and String(country_start.get("starter_precious_good_id", "")) == "gold"
+			and String(country_start.get("precious_resource", "")) == "gold_ore"
 			and technologies.has("tech.early_trade")
 			and route_buildings.has("early_merchant_post"))
 		var construction_offsets: PackedInt32Array = country_start.get(
@@ -355,8 +355,6 @@ func _topups_are_minimum_fills(country_start: Dictionary, map: MapData,
 func _precious_employee_slots(precious_resource: String) -> int:
 	if precious_resource == "gold_ore":
 		return 1
-	if precious_resource == "silver_ore":
-		return 2
 	return 0
 
 

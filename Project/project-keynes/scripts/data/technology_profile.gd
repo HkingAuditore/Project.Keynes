@@ -8,8 +8,9 @@ extends Resource
 @export var domain_id: StringName = &""
 @export_range(0, 1000000000000, 1) var cost_points: int = 0
 @export var prerequisite_ids: PackedStringArray = PackedStringArray()
-## Discovery is independent from research eligibility. Research routes are
-## authored in technology_network.json and compiled by TechnologyCatalog.
+## Discovery controls information visibility. Research routes are authored as
+## named condition branches and compiled together with prerequisites into one
+## research eligibility condition by TechnologyCatalog.
 @export var reveal_condition: Resource
 @export var research_routes: Array[Dictionary] = []
 @export_multiline var route_exemption_reason: String = ""

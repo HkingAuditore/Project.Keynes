@@ -144,6 +144,13 @@ func _run_case(label: String, size: Vector2i, seed: int) -> Dictionary:
 	_expect("%s route confines employee slots to precious workings" % label,
 		int(player_start.get("starter_employee_job_capacity", 0)) ==
 			_precious_employee_slots(String(player_start.get("precious_resource", ""))))
+	_expect("%s uses the Stone-Age placer-gold starter package" % label,
+		String(player_start.get("precious_resource", "")) == "gold_ore"
+		and String(player_start.get("starter_precious_good_id", "")) == "gold"
+		and route_technologies.has("tech.gold_panning")
+		and not route_technologies.has("tech.surface_silver_collection")
+		and route_buildings.has("placer_gold_working")
+		and not route_buildings.has("surface_silver_working"))
 	_expect("%s route does not preallocate professions" % label,
 		not player_start.has("owner_job_capacity_by_profession"))
 	_expect("%s leaves non-founder population for native job matching" % label,
@@ -154,11 +161,8 @@ func _run_case(label: String, size: Vector2i, seed: int) -> Dictionary:
 			PackedInt64Array())) < 20
 		and _sum_i64(population.get("employee_employed_by_cohort",
 			PackedInt64Array())) == 0)
-	var precious_building := "placer_gold_working" \
-		if String(start.get("precious_resource", "")) == "gold_ore" \
-		else "surface_silver_working"
-	_expect("%s precious work site matches deposit" % label,
-		_building_count(buildings, precious_building) == 1)
+	_expect("%s placer-gold work site matches the opening deposit" % label,
+		_building_count(buildings, "placer_gold_working") == 1)
 	var market: Dictionary = economy.market_cell_snapshot(cell)
 	var food_goods: PackedStringArray = player_start.get(
 		"starter_food_good_ids", PackedStringArray())
@@ -203,8 +207,6 @@ func _topups_are_minimum_fills(country_start: Dictionary, map: MapData,
 func _precious_employee_slots(precious_resource: String) -> int:
 	if precious_resource == "gold_ore":
 		return 1
-	if precious_resource == "silver_ore":
-		return 2
 	return 0
 
 

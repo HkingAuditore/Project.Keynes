@@ -19,7 +19,7 @@ func _init() -> void:
 	if not bool(compiled.get("ok", false)):
 		_finish()
 		return
-	var definitions: Array = TechnologyCatalogScript.public_definitions()
+	var definitions: Array = TechnologyCatalogScript.public_definitions(compiled)
 	var eras: Array = TechnologyCatalogScript.public_era_metadata()
 	var domains: Array = TechnologyCatalogScript.public_domain_metadata()
 	var visual_edges: Array = TechnologyCatalogScript.public_visual_edges()
@@ -82,7 +82,7 @@ func _init() -> void:
 	condition_states[plantation] = 2
 	var route_items: Array = workspace._condition_items(plantation, condition_states)
 	_expect("technology detail explains independent research routes",
-		_items_contain(route_items, "研究路线 · 土地制度路线") and
+		_items_contain(route_items, "研究条件 · 土地制度路线") and
 		not _items_contain(route_items, "替代研究条件"))
 	var development_title := workspace.get_node(
 		"Root/Main/PolicyPanel/Scroll/Body/DevelopmentTitle") as Label

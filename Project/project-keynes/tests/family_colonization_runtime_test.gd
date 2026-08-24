@@ -250,7 +250,91 @@ func _run_colonization_kit_cases(catalog: Dictionary) -> void:
 	_run_greenfield_kit_and_return(catalog.duplicate(true))
 	_run_greenfield_kit_settle(catalog.duplicate(true))
 	_run_interior_kit_settle_during_frozen_cycle(catalog.duplicate(true))
+	_run_mixed_substitute_kit(catalog.duplicate(true))
 	_run_zero_stock_partial_kit(catalog.duplicate(true))
+
+
+func _run_mixed_substitute_kit(catalog: Dictionary) -> void:
+	var fixture := _make_fixture(catalog, 260832, 1000000000, {
+		"prepared_staples": 1,
+		"cloth": 1,
+		"clothing": 0,
+		"footwear": 0,
+		"logs": 1,
+		"raw_stone": 0,
+		"adobe_brick": 0,
+		"turf_block": 0,
+	})
+	var ext: Object = fixture.ext
+	var country_handle := int(fixture.country_handle)
+	if ext == null or country_handle == 0:
+		return
+	var good_ids: PackedStringArray = catalog.good_ids
+	var cloth := good_ids.find("cloth")
+	var fur := good_ids.find("fur")
+	var clothing := good_ids.find("clothing")
+	var footwear := good_ids.find("footwear")
+	var prepared_staples := good_ids.find("prepared_staples")
+	var bread := good_ids.find("bread")
+	var logs := good_ids.find("logs")
+	var reed_bundle := good_ids.find("reed_bundle")
+	var families: Dictionary = ext.get_family_cell_snapshot(0, 0, 64)
+	if int(families.get("total", 0)) != 1:
+		_expect("mixed substitute fixture has a founder family", false)
+		return
+	var family_handle := int((families.family_handles as PackedInt64Array)[0])
+	var quotes: Dictionary = ext.get_family_colonization_quotes(
+		country_handle, 2, family_handle, 0, 0, 64)
+	if int(quotes.get("total", 0)) != 1:
+		_expect("mixed substitute quote exists", false)
+		return
+	var token := int((quotes.quote_tokens as PackedInt64Array)[0])
+	var start_day := _economy_command_day(ext)
+	var started: Dictionary = ext.start_family_colonization(country_handle,
+		family_handle, 0, 2, 3, token, start_day, 1300)
+	_expect("mixed substitute greenfield kit departs without preparing",
+		bool(started.get("ok", false))
+		and String(started.get("code", "")) != "colonization_preparing")
+	if not bool(started.get("ok", false)):
+		return
+	var snap: Dictionary = ext.get_family_expedition_snapshot(
+		country_handle, int(started.get("expedition_handle", 0)))
+	var cargo_goods: PackedInt32Array = snap.get(
+		"cargo_good_ids", PackedInt32Array())
+	var cargo_quantities: PackedInt64Array = snap.get(
+		"cargo_quantities", PackedInt64Array())
+	var cargo_flags: PackedInt32Array = snap.get(
+		"cargo_flags", PackedInt32Array())
+	var cloth_buffer := 0
+	var fur_buffer := 0
+	var staples_buffer := 0
+	var bread_buffer := 0
+	var logs_construction := 0
+	var reed_construction := 0
+	for i in range(cargo_goods.size()):
+		var quantity := int(cargo_quantities[i]) \
+			if i < cargo_quantities.size() else 0
+		var flag := int(cargo_flags[i]) if i < cargo_flags.size() else -1
+		if flag == 1 and int(cargo_goods[i]) == cloth:
+			cloth_buffer += quantity
+		elif flag == 1 and int(cargo_goods[i]) == fur:
+			fur_buffer += quantity
+		elif flag == 1 and int(cargo_goods[i]) == prepared_staples:
+			staples_buffer += quantity
+		elif flag == 1 and int(cargo_goods[i]) == bread:
+			bread_buffer += quantity
+		elif flag == 0 and int(cargo_goods[i]) == logs:
+			logs_construction += quantity
+		elif flag == 0 and int(cargo_goods[i]) == reed_bundle:
+			reed_construction += quantity
+	_expect("staple-food need mixes preferred staples with bread",
+		staples_buffer == 1 and bread_buffer > 0)
+	_expect("clothing bridge mixes preferred cloth with fur",
+		cloth_buffer == 1 and fur_buffer > 0)
+	_expect("construction group mixes logs with a half-efficiency reed candidate",
+		logs_construction == 1 and reed_construction > 0)
+	_expect("mixed substitute departure remains goods-conserved",
+		int(ext.get_economy_report().get("goods_error", -1)) == 0)
 
 
 func _run_colonization_population_reward(catalog: Dictionary) -> void:
@@ -467,17 +551,24 @@ func _run_greenfield_kit_and_return(catalog: Dictionary) -> void:
 		country_handle, int(started.get("expedition_handle", 0)))
 	var cargo_qtys: PackedInt64Array = kit_snap.get(
 		"cargo_quantities", PackedInt64Array())
+	var cargo_goods: PackedInt32Array = kit_snap.get(
+		"cargo_good_ids", PackedInt32Array())
 	var cargo_flags: PackedInt32Array = kit_snap.get(
 		"cargo_flags", PackedInt32Array())
 	var travel_days := maxi(1, int(detail.get("travel_days", 1)))
 	var clothing_days := travel_days + 15
-	var clothing_ok := false
+	var good_ids: PackedStringArray = catalog.good_ids
+	var clothing_candidates := PackedInt32Array([
+		good_ids.find("cloth"), good_ids.find("fur"),
+		good_ids.find("clothing"), good_ids.find("footwear")])
+	var clothing_quantity := 0
 	for i in range(cargo_qtys.size()):
 		var flag := int(cargo_flags[i]) if i < cargo_flags.size() else 0
-		if flag == 1 and int(cargo_qtys[i]) == 3 * clothing_days * 1000:
-			clothing_ok = true
-			break
-	_expect("clothing buffer equals travel days plus 15", clothing_ok)
+		var good := int(cargo_goods[i]) if i < cargo_goods.size() else -1
+		if flag == 1 and clothing_candidates.has(good):
+			clothing_quantity += int(cargo_qtys[i])
+	_expect("clothing buffer equals travel days plus 15",
+		clothing_quantity == 3 * clothing_days * 2 * 98304 / 65536)
 	if not bool(started.get("ok", false)):
 		print("kit_start=", started, " detail=", detail)
 		return
@@ -740,8 +831,15 @@ func _run_zero_stock_partial_kit(catalog: Dictionary) -> void:
 		country_handle, int(started.get("expedition_handle", 0)))
 	var missing_ids: PackedInt32Array = snap.get(
 		"kit_missing_good_ids", PackedInt32Array())
+	var all_goods: PackedStringArray = catalog.good_ids
+	var cloth := all_goods.find("cloth")
+	var fur := all_goods.find("fur")
+	var clothing := all_goods.find("clothing")
+	var footwear := all_goods.find("footwear")
 	_expect("preparing snapshot publishes missing goods",
-		bool(snap.get("ok", false)) and not missing_ids.is_empty())
+		bool(snap.get("ok", false)) and not missing_ids.is_empty()
+		and missing_ids.has(cloth) and missing_ids.has(fur)
+		and missing_ids.has(clothing) and missing_ids.has(footwear))
 	var cancelled: Dictionary = ext.cancel_family_colonization(
 		country_handle, int(started.expedition_handle), start_day, 602)
 	_expect("cancelling preparation does not extract people",
@@ -764,18 +862,23 @@ func _run_zero_stock_partial_kit(catalog: Dictionary) -> void:
 	var goods := PackedInt32Array()
 	var qtys := PackedInt64Array()
 	var zeros := PackedInt64Array()
-	var clothing := (catalog.good_ids as PackedStringArray).find("clothing")
 	for i in range(good_count):
+		var quantity := 1000000000
+		if i == fur:
+			quantity = 8000
+		elif i == cloth or i == clothing or i == footwear:
+			quantity = 0
+		if quantity <= 0:
+			continue
 		opcodes.append(4)
 		days.append(start_day)
 		seqs.append(800 + i)
 		handles.append(0)
 		cells.append(0)
 		goods.append(i)
-		# Clothing demand follows need.base_qty_per_person (2 milli/person/day),
-		# not 1.0 goods per person-day. 8000 milli is enough for the authored
-		# need and far short of the old 3×days×1000 formula.
-		qtys.append(8000 if i == clothing else 1000000000)
+		# A non-preferred clothing candidate alone must wake PREPARING and fill
+		# the authored 2 milli/person/day clothing need.
+		qtys.append(quantity)
 		zeros.append(0)
 	var filled: Dictionary = ext.submit_economy_commands({
 		"opcodes": opcodes,
@@ -1079,7 +1182,8 @@ func _make_two_country_fixture(catalog: Dictionary, seed: int) -> Dictionary:
 	return {"ext": ext, "map": map, "country_handle": country_handle}
 
 
-func _make_fixture(catalog: Dictionary, seed: int, stock_fill: int = 1000000) -> Dictionary:
+func _make_fixture(catalog: Dictionary, seed: int, stock_fill: int = 1000000,
+		stock_overrides: Dictionary = {}) -> Dictionary:
 	var map := MapData.new(3, 1)
 	for q in range(3):
 		var cell := HexCell.new(q, 0)
@@ -1161,6 +1265,11 @@ func _make_fixture(catalog: Dictionary, seed: int, stock_fill: int = 1000000) ->
 	var stock := PackedInt64Array()
 	stock.resize(3 * (catalog.good_ids as PackedStringArray).size())
 	stock.fill(stock_fill)
+	var fixture_good_ids: PackedStringArray = catalog.good_ids
+	for stable_id in stock_overrides:
+		var good_index := fixture_good_ids.find(String(stable_id))
+		if good_index >= 0:
+			stock[good_index] = int(stock_overrides[stable_id])
 	var boot: Dictionary = ext.bootstrap_economy({
 		"cell_indices": PackedInt32Array([0, 0]),
 		"signature_ids": PackedInt32Array([forager, merchant]),

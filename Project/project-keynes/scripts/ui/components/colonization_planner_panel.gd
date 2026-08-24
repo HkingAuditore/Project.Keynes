@@ -569,7 +569,7 @@ func _preparing_missing_text(handle: int, state: int) -> String:
 			good_name = String(_controller.good_display_name(int(ids[i])))
 		parts.append("%s %s" % [good_name,
 			UITokens.format_compact_number_cn(float(qty) / 1000.0, 1)])
-	return "源地库存仍不足：" + "，".join(parts)
+	return "可替代物资合计仍不足：" + "，".join(parts)
 
 
 func _expedition_row_tooltip(handle: int, state: int, due_day: int) -> String:

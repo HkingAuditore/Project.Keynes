@@ -107,6 +107,7 @@ static func compile_native_catalog() -> Dictionary:
 	var milestone_required := PackedInt32Array()
 	var flags := PackedInt32Array()
 	var effects := PackedStringArray()
+	var descriptions := PackedStringArray()
 	var profiles := PackedStringArray()
 	var route_tag_offsets := PackedInt32Array([0])
 	var route_tags := PackedStringArray()
@@ -117,7 +118,9 @@ static func compile_native_catalog() -> Dictionary:
 	var anchor_kinds := PackedStringArray()
 	var starter_capability_offsets := PackedInt32Array([0])
 	var starter_capability_tags := PackedStringArray()
+	var knowledge_basis_json := PackedStringArray()
 	var id_to_index := {}
+	var row_by_id := {}
 	var era_index := {}
 	var era_milestone_ids := PackedStringArray()
 	var era_entry_milestone_ids := PackedStringArray()
@@ -151,6 +154,7 @@ static func compile_native_catalog() -> Dictionary:
 		if not id.begins_with("tech.") or id_to_index.has(id):
 			return {"ok": false, "reason": "technology_id_invalid_or_duplicate", "id": id}
 		id_to_index[id] = ids.size()
+		row_by_id[id] = row
 		ids.append(id)
 		names.append(String(row.get("display_name", "")))
 	var reveal_condition_specs := {}
@@ -194,6 +198,10 @@ static func compile_native_catalog() -> Dictionary:
 					"prerequisite": prerequisite_id}
 			prerequisites.append(prerequisite_index)
 		prerequisite_offsets.append(prerequisites.size())
+		var knowledge_validation := _validate_knowledge_basis(row, row_by_id)
+		if not bool(knowledge_validation.get("ok", false)):
+			return knowledge_validation
+		knowledge_basis_json.append(JSON.stringify(row.get("knowledge_basis", {})))
 		var is_milestone := bool(row.get("is_milestone", false))
 		var candidate_ids: Array = []
 		if is_milestone:
@@ -211,6 +219,7 @@ static func compile_native_catalog() -> Dictionary:
 			| (FLAG_MILESTONE if is_milestone else 0) \
 			| (FLAG_STARTING if is_starter else 0))
 		effects.append(String(row.get("effect_summary", "")))
+		descriptions.append(String(row.get("description", "")))
 		profiles.append(String(row.get("effect_profile", "")))
 		var route_seen := {}
 		for route_tag in secondary_routes:
@@ -268,7 +277,9 @@ static func compile_native_catalog() -> Dictionary:
 		technology_entry_milestones.append(
 			era_entry_milestones[int(era_index[String(technology_era_id)])])
 	var signal_ids: PackedStringArray = signal_catalog.get("research_signal_ids", PackedStringArray())
-	var conditions := _compile_research_routes(technology_rows, ids, signal_ids, era_index)
+	var conditions := _compile_research_conditions(technology_rows, ids, signal_ids, era_index,
+			prerequisite_offsets, prerequisites, milestone_offsets, milestone_candidates,
+			milestone_required, technology_entry_milestones)
 	if not bool(conditions.get("ok", false)):
 		return conditions
 	var reveal_conditions := _compile_condition_specs(ids, signal_ids,
@@ -304,6 +315,7 @@ static func compile_native_catalog() -> Dictionary:
 		"technology_milestone_required_counts": milestone_required,
 		"technology_flags": flags,
 		"technology_effect_summaries": effects,
+		"technology_descriptions": descriptions,
 		"technology_effect_profile_ids": profiles,
 		"technology_effect_recipe_ids": recipe_ids,
 		"technology_effect_recipe_versions": recipe_versions,
@@ -316,6 +328,7 @@ static func compile_native_catalog() -> Dictionary:
 		"technology_anchor_kinds": anchor_kinds,
 		"technology_starter_capability_offsets": starter_capability_offsets,
 		"technology_starter_capability_tags": starter_capability_tags,
+		"technology_knowledge_basis_json": knowledge_basis_json,
 		"technology_modifier_definition_keys": _modifier_definition_keys(
 			ids, modifier_ir.technology_modifier_term_offsets),
 		"technology_domain_ids": PackedStringArray(DOMAIN_IDS),
@@ -383,6 +396,97 @@ static func _compile_explicit_modifier_term_ir(nodes: Array) -> Dictionary:
 	}
 
 
+static func _validate_knowledge_basis(row: Dictionary, row_by_id: Dictionary) -> Dictionary:
+	var technology_id := String(row.get("id", ""))
+	var basis_value: Variant = row.get("knowledge_basis", null)
+	if not basis_value is Dictionary:
+		return {"ok": false, "reason": "technology_knowledge_basis_missing",
+			"id": technology_id}
+	var basis: Dictionary = basis_value
+	var required_ids: Array = basis.get("required_ids", [])
+	var alternative_groups: Array = basis.get("alternative_groups", [])
+	var exemption_reason := String(basis.get("exemption_reason", "")).strip_edges()
+	if (not required_ids.is_empty() or not alternative_groups.is_empty()) \
+			and not exemption_reason.is_empty():
+		return {"ok": false, "reason": "technology_knowledge_basis_exemption_conflict",
+			"id": technology_id}
+	if required_ids.is_empty() and alternative_groups.is_empty() and exemption_reason.is_empty():
+		return {"ok": false, "reason": "technology_knowledge_basis_empty",
+			"id": technology_id}
+	var hard_ancestors := {}
+	_collect_authoring_hard_ancestors(technology_id, row_by_id, hard_ancestors)
+	hard_ancestors.erase(technology_id)
+	var required_seen := {}
+	for required_value in required_ids:
+		var required_id := String(required_value)
+		if required_seen.has(required_id) or not hard_ancestors.has(required_id):
+			return {"ok": false, "reason": "technology_knowledge_required_not_hard_ancestor",
+				"id": technology_id, "required_id": required_id}
+		required_seen[required_id] = true
+	var alternative_seen := {}
+	for group_value in alternative_groups:
+		if not group_value is Array or (group_value as Array).is_empty():
+			return {"ok": false, "reason": "technology_knowledge_alternative_group_invalid",
+				"id": technology_id}
+		for alternative_value in group_value as Array:
+			var alternative_id := String(alternative_value)
+			if alternative_seen.has(alternative_id) or not row_by_id.has(alternative_id) \
+					or not _research_routes_reference_technology(
+						row.get("research_routes", []), alternative_id):
+				return {"ok": false, "reason": "technology_knowledge_alternative_not_visible",
+					"id": technology_id, "alternative_id": alternative_id}
+			alternative_seen[alternative_id] = true
+	if String(row.get("anchor_kind", "")) == "application" and required_ids.size() < 2:
+		return {"ok": false, "reason": "technology_application_foundation_count_invalid",
+			"id": technology_id}
+	if not exemption_reason.is_empty():
+		var exemption_allowed := bool(row.get("is_starter_eligible", false)) \
+			or bool(row.get("is_milestone", false)) \
+			or String(row.get("node_role", "")) == "identification"
+		if not exemption_allowed:
+			return {"ok": false, "reason": "technology_knowledge_exemption_not_allowed",
+				"id": technology_id}
+	return {"ok": true}
+
+
+static func _collect_authoring_hard_ancestors(technology_id: String,
+		row_by_id: Dictionary, out: Dictionary) -> void:
+	if out.has(technology_id) or not row_by_id.has(technology_id):
+		return
+	out[technology_id] = true
+	var row: Dictionary = row_by_id[technology_id]
+	for prerequisite_value in row.get("hard_prerequisite_ids", []):
+		_collect_authoring_hard_ancestors(String(prerequisite_value), row_by_id, out)
+
+
+static func _research_routes_reference_technology(routes_value: Variant,
+		technology_id: String) -> bool:
+	if not routes_value is Array:
+		return false
+	for route_value in routes_value as Array:
+		if route_value is Dictionary and _condition_references_technology(
+				(route_value as Dictionary).get("condition", {}), technology_id):
+			return true
+	return false
+
+
+static func _condition_references_technology(condition_value: Variant,
+		technology_id: String) -> bool:
+	if not condition_value is Dictionary:
+		return false
+	var condition: Dictionary = condition_value
+	if int(condition.get("kind", -1)) == 0 \
+			and String(condition.get("id", "")) == technology_id:
+		return true
+	for child_value in condition.get("children", []):
+		if _condition_references_technology(child_value, technology_id):
+			return true
+	if condition.has("child") and _condition_references_technology(
+			condition.get("child", {}), technology_id):
+		return true
+	return false
+
+
 static func _validate_content_effects(effects: Array, expected_bindings: Array) -> bool:
 	var expected := {}
 	for binding_value in expected_bindings:
@@ -412,8 +516,12 @@ static func _validate_content_effects(effects: Array, expected_bindings: Array) 
 	return true
 
 
-static func _compile_research_routes(nodes: Array, technology_ids: PackedStringArray,
-		signal_ids: PackedStringArray, era_index: Dictionary) -> Dictionary:
+static func _compile_research_conditions(nodes: Array, technology_ids: PackedStringArray,
+		signal_ids: PackedStringArray, era_index: Dictionary,
+		prerequisite_offsets: PackedInt32Array, prerequisites: PackedInt32Array,
+		milestone_offsets: PackedInt32Array, milestone_candidates: PackedInt32Array,
+		milestone_required: PackedInt32Array,
+		technology_entry_milestones: PackedInt32Array) -> Dictionary:
 	var technology_route_offsets := PackedInt32Array([0])
 	var route_ids := PackedStringArray()
 	var route_names := PackedStringArray()
@@ -499,6 +607,45 @@ static func _compile_research_routes(nodes: Array, technology_ids: PackedStringA
 		if routes.size() > 1 and route_type_seen.size() < 2:
 			return {"ok": false, "reason": "technology_research_route_types_not_distinct",
 				"technology_id": technology_id}
+		# The executable research condition is one AND tree.  Route packages are
+		# only one child of that tree; hard prerequisites, milestone candidates,
+		# and the era entry milestone are compiled into the same postfix IR.
+		var route_child_count := routes.size() if not routes.is_empty() else 0
+		var hard_begin := int(prerequisite_offsets[technology])
+		var hard_end := int(prerequisite_offsets[technology + 1])
+		var milestone_begin := int(milestone_offsets[technology])
+		var milestone_end := int(milestone_offsets[technology + 1])
+		var child_count := 0
+		for edge in range(hard_begin, hard_end):
+			total_ops.append(CONDITION_PUSH_TECH_COMPLETED)
+			total_refs.append(int(prerequisites[edge]))
+			total_values.append(1)
+			child_count += 1
+		if milestone_end > milestone_begin:
+			for edge in range(milestone_begin, milestone_end):
+				total_ops.append(CONDITION_PUSH_TECH_COMPLETED)
+				total_refs.append(int(milestone_candidates[edge]))
+				total_values.append(1)
+			total_ops.append(CONDITION_AT_LEAST)
+			total_refs.append(milestone_end - milestone_begin)
+			total_values.append(int(milestone_required[technology]))
+			child_count += 1
+		var entry_milestone := int(technology_entry_milestones[technology]) \
+				if technology < technology_entry_milestones.size() else -1
+		if entry_milestone >= 0:
+			total_ops.append(CONDITION_PUSH_TECH_COMPLETED)
+			total_refs.append(entry_milestone)
+			total_values.append(1)
+			child_count += 1
+		if route_child_count > 0:
+			child_count += 1
+		if child_count > 1:
+			total_ops.append(CONDITION_ALL_OF)
+			total_refs.append(child_count)
+			total_values.append(0)
+		elif child_count == 0:
+			# Empty condition means an unconditional starter node.
+			pass
 		technology_route_offsets.append(route_ids.size())
 		total_offsets.append(total_ops.size())
 	return {
@@ -673,8 +820,9 @@ static func _modifier_definition_keys(ids: PackedStringArray,
 	return out
 
 
-static func public_definitions() -> Array[Dictionary]:
-	var compiled := compile_native_catalog()
+static func public_definitions(compiled_catalog: Dictionary = {}) -> Array[Dictionary]:
+	var compiled := compiled_catalog if not compiled_catalog.is_empty() \
+		else compile_native_catalog()
 	if not bool(compiled.get("ok", false)):
 		return []
 	var network := _network_payload()
@@ -719,6 +867,7 @@ static func public_definitions() -> Array[Dictionary]:
 			"is_era_key": (int(compiled.technology_flags[i]) & 1) != 0,
 			"is_starting": (int(compiled.technology_flags[i]) & 4) != 0,
 			"is_starter_eligible": (compiled.starter_eligible_technology_ids as PackedStringArray).has(technology_id),
+			"description": String(source.get("description", "")),
 			"effect_summary": String(compiled.technology_effect_summaries[i]),
 			"effect_profile": compiled.technology_effect_profile_ids[i],
 			"node_role": String(compiled.technology_node_roles[i]),
@@ -731,6 +880,7 @@ static func public_definitions() -> Array[Dictionary]:
 			"route_tags": public_route_tags,
 			"route_display_names": _localized_route_names(public_route_tags),
 			"research_routes": (source.get("research_routes", []) as Array).duplicate(true),
+			"knowledge_basis": (source.get("knowledge_basis", {}) as Dictionary).duplicate(true),
 			"route_exemption_reason": String(source.get("route_exemption_reason", "")),
 			"reveal_condition": (source.get("reveal_condition", {}) as Dictionary).duplicate(true),
 			"reveal_category": String(source.get("reveal_category", "")),

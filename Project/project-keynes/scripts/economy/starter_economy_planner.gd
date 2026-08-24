@@ -25,15 +25,13 @@ const TARGET_FOOD_MAX_Q16 := 81920 # 125%
 const FIXED_BUILDING_IDS := {
 	"early_merchant_post": true,
 	"placer_gold_working": true,
-	"surface_silver_working": true,
 	"deadwood_gathering_camp": true,
 }
 const PRECIOUS_STARTER_BUILDING_IDS := {
 	"placer_gold_working": true,
-	"surface_silver_working": true,
 }
-const PRECIOUS_GOOD_IDS := {"gold": true, "silver": true}
-const PRECIOUS_RESOURCE_IDS := {"gold_ore": true, "silver_ore": true}
+const PRECIOUS_GOOD_IDS := {"gold": true}
+const PRECIOUS_RESOURCE_IDS := {"gold_ore": true}
 # One pending knowledge practice (catalog cost_points 3000 → 3000 * GOODS_SCALE).
 # A larger grant zeros government procurement remaining_points, so automatic
 # investment never seeds the first unlocked research building.

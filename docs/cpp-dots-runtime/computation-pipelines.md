@@ -1142,6 +1142,11 @@ variant 的 components 作为互补 bundle 清算，不同 variants 做一次替
 买方资金直接按商人人口进入 merchant cohorts，不存在 market cash。不同 market 可由
 WorkerThreadPool 并行；结果按 market index 归并，和 scalar 顺序逐位一致。
 
+家族开拓包复用同一 need/variant 与建筑候选 CSR，但在报价冷路径按作者顺序做组内混装：
+食物/衣着只接受各 need 的单组件 variants，工具和 construction candidates 按 Q16 效率把实际物理量
+折算为等价需求。源地虚拟库存随每条 cargo 递减；只有组内等价贡献合计达到目标才算齐套，禁止
+跨需求组抵扣。普通建造/投资的单候选低成本规划不受该开拓专用 split policy 影响。
+
 成功 `aggregate_publish` 后存在一个独立的 debug-only CSV v23 尾部：`world_ext_economy.cpp`
 先把 building resource delta 发布到 DataCore reserve slot，再由 `EconomyCsvRecorder` 线性复制
 本次 committed 五表快照。两个预分配 buffer 按 `FREE→FILLING→READY→WRITING→FREE`

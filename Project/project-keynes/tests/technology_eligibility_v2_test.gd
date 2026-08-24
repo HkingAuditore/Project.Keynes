@@ -15,7 +15,7 @@ func _init() -> void:
 	_compiled = EconomyCatalogScript.compile_native_catalog()
 	_expect("schema v3 catalog compiles", bool(_compiled.get("ok", false)))
 	var ids: PackedStringArray = _compiled.get("technology_ids", PackedStringArray())
-	_expect("stable technology count", ids.size() == 679)
+	_expect("stable technology count", ids.size() == 671)
 	_expect("route IR is present", (_compiled.get("research_route_ids", PackedStringArray()) as PackedStringArray).size() > 600)
 
 	# Era milestone is a hard gate, while the node's discovery signal and one
@@ -106,10 +106,16 @@ func _init() -> void:
 	]), PackedStringArray([
 		"resource.timber", "resource.marine_fish",
 	]))
-	_expect("coastal knowledge opens fire control with timber",
-		_state(coastal_alternatives, "tech.fire_control") == 2)
+	_expect("fire control remains locked without gathering and deadwood collection",
+		_state(coastal_alternatives, "tech.fire_control") == 1)
 	_expect("coastal knowledge opens husbandry after hunting",
 		_state(coastal_alternatives, "tech.animal_husbandry") == 2)
+	var fire_control_open := _fixture(PackedStringArray([
+		"tech.early_knowledge_institution", "tech.gathering", "tech.hunting",
+		"tech.deadwood_collection",
+	]), PackedStringArray(["resource.timber"]))
+	_expect("fire control opens after its fuel and food supply foundations",
+		_state(fire_control_open, "tech.fire_control") == 2)
 	var boats_from_coast := _fixture(PackedStringArray([
 		"tech.settled_knowledge", "tech.coastal_fishing",
 	]), PackedStringArray(["resource.marine_fish"]))

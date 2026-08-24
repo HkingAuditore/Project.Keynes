@@ -150,7 +150,7 @@ func show_technology(index: int, definition: Dictionary, state: int, fraction: f
 		var route_name := String(route_names[route_index]) \
 			if route_index < route_names.size() else String(route_tags[route_index])
 		chips.append({
-			"text": "路线 · %s" % route_name,
+			"text": "条件 · %s" % route_name,
 			"accent": UITokens.RESOURCE,
 		})
 	_chips.set_badges(chips)

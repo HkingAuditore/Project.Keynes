@@ -1022,9 +1022,9 @@ func _condition_items(index: int, states: PackedInt32Array) -> Array:
 		var route_result := _evaluate_condition(route.get("condition", {}) as Dictionary,
 			states, evidence)
 		var route_met := bool(route_result.get("met", false))
-		var route_name := String(route.get("display_name", "研究路线"))
+		var route_name := String(route.get("display_name", "研究条件"))
 		var route_description := String(route.get("description", ""))
-		var route_text := "研究路线 · %s" % route_name
+		var route_text := "研究条件 · %s" % route_name
 		if not route_description.is_empty():
 			route_text += "：%s" % route_description
 		items.append({
@@ -1035,7 +1035,7 @@ func _condition_items(index: int, states: PackedInt32Array) -> Array:
 		})
 		for route_item_value in route_result.get("items", []) as Array:
 			var route_item: Dictionary = (route_item_value as Dictionary).duplicate()
-			route_item["text"] = "路线 · %s：%s" % [route_name,
+			route_item["text"] = "条件 · %s：%s" % [route_name,
 				String(route_item.get("text", ""))]
 			items.append(route_item)
 	return items

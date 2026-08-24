@@ -201,17 +201,47 @@ void NativeEconomyRuntime::fill_colonization_kit_buffer(
             _market.stock[_market.index(market, good)]);
         return std::max<int64_t>(0, stock - reserved);
     };
-    auto pick_stocked_good = [&](const std::vector<uint8_t> &mask,
-                                 int32_t preferred) -> int32_t {
-        if (preferred >= 0 && preferred < static_cast<int32_t>(mask.size()) &&
-            mask[static_cast<size_t>(preferred)] != 0 &&
-            source_stock(preferred) > 0)
-            return preferred;
-        for (int32_t good = 0; good < static_cast<int32_t>(mask.size()); ++good) {
-            if (mask[static_cast<size_t>(good)] != 0 && source_stock(good) > 0)
-                return good;
+    struct BufferCandidate {
+        int32_t good_id = -1;
+        int64_t contribution_numerator = 0;
+        int64_t contribution_denominator = 1;
+    };
+    auto add_candidate = [](std::vector<BufferCandidate> &candidates,
+                            int32_t good, int64_t numerator,
+                            int64_t denominator) {
+        if (good < 0 || numerator <= 0 || denominator <= 0) return;
+        for (const BufferCandidate &candidate : candidates)
+            if (candidate.good_id == good) return;
+        candidates.push_back({good, numerator, denominator});
+    };
+    auto fill_group = [&](int64_t required,
+                          const std::vector<BufferCandidate> &candidates) {
+        int64_t remaining = std::max<int64_t>(0, required);
+        for (const BufferCandidate &candidate : candidates) {
+            if (remaining <= 0) break;
+            int64_t physical_needed = mul_div_sat(remaining,
+                candidate.contribution_denominator,
+                candidate.contribution_numerator, sat);
+            if (mul_div_sat(physical_needed,
+                    candidate.contribution_numerator,
+                    candidate.contribution_denominator, sat) < remaining) {
+                physical_needed = saturating_add(physical_needed, 1, sat);
+            }
+            const int64_t physical = std::min(
+                source_stock(candidate.good_id), physical_needed);
+            if (physical <= 0) continue;
+            add_colonization_kit_cargo(kit, candidate.good_id, physical,
+                EXPEDITION_CARGO_BUFFER, sat);
+            const int64_t credited = mul_div_sat(physical,
+                candidate.contribution_numerator,
+                candidate.contribution_denominator, sat);
+            remaining = std::max<int64_t>(0,
+                remaining - std::min(remaining, credited));
         }
-        return preferred;
+        if (remaining <= 0) return;
+        kit.kit_partial = 1;
+        for (const BufferCandidate &candidate : candidates)
+            kit.missing_good_ids.push_back(candidate.good_id);
     };
     for (const int32_t stable_id : _survival_food_need_stable_ids) {
         if (stable_id < 0 || stable_id >= static_cast<int32_t>(
@@ -226,73 +256,26 @@ void NativeEconomyRuntime::fill_colonization_kit_buffer(
             sample_environment_curve(need.quantity_env_curve, sample),
             Q16_ONE, sat);
         if (units <= 0) continue;
-        int32_t preferred_good = -1;
-        int64_t qty_per_need = GOODS_SCALE;
+        std::vector<BufferCandidate> candidates;
+        candidates.reserve(static_cast<size_t>(need.variant_count));
         for (int32_t variant = 0; variant < need.variant_count; ++variant) {
             const VariantChoice &choice = _variants[need.variant_begin + variant];
             if (choice.component_count != 1) continue;
             const NeedComponent &component =
                 _components[choice.component_begin];
-            if (component.good_id < 0 ||
-                component.good_id >= static_cast<int32_t>(
-                    _survival_food_good_mask.size()) ||
-                _survival_food_good_mask[static_cast<size_t>(
-                    component.good_id)] == 0)
-                continue;
-            preferred_good = component.good_id;
-            qty_per_need = std::max<int64_t>(1, component.qty_per_need);
-            break;
+            add_candidate(candidates, component.good_id, GOODS_SCALE,
+                std::max<int64_t>(1, component.qty_per_need));
         }
-        const int32_t good = pick_stocked_good(_survival_food_good_mask,
-            preferred_good);
-        if (good < 0) {
-            kit.missing_good_ids.push_back(preferred_good);
-            kit.kit_partial = 1;
-            continue;
-        }
-        const int64_t quantity = mul_div_sat(units, qty_per_need, GOODS_SCALE, sat);
-        const int64_t available = source_stock(good);
-        if (available <= 0) {
-            kit.missing_good_ids.push_back(good);
-            kit.kit_partial = 1;
-            continue;
-        }
-        if (available < quantity) {
-            kit.missing_good_ids.push_back(good);
-            kit.kit_partial = 1;
-        }
-        add_colonization_kit_cargo(kit, good, std::min(quantity, available),
-            EXPEDITION_CARGO_BUFFER, sat);
+        fill_group(units, candidates);
     }
-    int32_t clothing_good = -1;
     int32_t clothing_need_index = -1;
     if (_survival_clothing_need_stable_id >= 0 &&
         _survival_clothing_need_stable_id < static_cast<int32_t>(
             _survival_required_need_indices.size())) {
         clothing_need_index =
             _survival_required_need_indices[_survival_clothing_need_stable_id];
-        if (clothing_need_index >= 0 &&
-            clothing_need_index < static_cast<int32_t>(_needs.size())) {
-            const Need &need = _needs[clothing_need_index];
-            for (int32_t variant = 0; variant < need.variant_count; ++variant) {
-                const VariantChoice &choice =
-                    _variants[need.variant_begin + variant];
-                if (choice.component_count != 1) continue;
-                const NeedComponent &component =
-                    _components[choice.component_begin];
-                if (component.good_id >= 0 &&
-                    component.good_id < static_cast<int32_t>(
-                        _survival_clothing_good_mask.size()) &&
-                    _survival_clothing_good_mask[static_cast<size_t>(
-                        component.good_id)] != 0) {
-                    clothing_good = component.good_id;
-                    break;
-                }
-            }
-        }
     }
-    clothing_good = pick_stocked_good(_survival_clothing_good_mask, clothing_good);
-    if (clothing_good >= 0 && clothing_need_index >= 0 &&
+    if (clothing_need_index >= 0 &&
         clothing_need_index < static_cast<int32_t>(_needs.size())) {
         const Need &clothing_need = _needs[clothing_need_index];
         int64_t units = saturating_mul(population,
@@ -301,7 +284,8 @@ void NativeEconomyRuntime::fill_colonization_kit_buffer(
         units = mul_div_sat(units,
             sample_environment_curve(clothing_need.quantity_env_curve, sample),
             Q16_ONE, sat);
-        int64_t qty_per_need = GOODS_SCALE;
+        std::vector<BufferCandidate> candidates;
+        candidates.reserve(static_cast<size_t>(clothing_need.variant_count));
         for (int32_t variant = 0; variant < clothing_need.variant_count;
              ++variant) {
             const VariantChoice &choice =
@@ -309,19 +293,10 @@ void NativeEconomyRuntime::fill_colonization_kit_buffer(
             if (choice.component_count != 1) continue;
             const NeedComponent &component =
                 _components[choice.component_begin];
-            if (component.good_id != clothing_good) continue;
-            qty_per_need = std::max<int64_t>(1, component.qty_per_need);
-            break;
+            add_candidate(candidates, component.good_id, GOODS_SCALE,
+                std::max<int64_t>(1, component.qty_per_need));
         }
-        const int64_t wanted = mul_div_sat(units, qty_per_need, GOODS_SCALE, sat);
-        const int64_t available = source_stock(clothing_good);
-        if (available < wanted) {
-            kit.missing_good_ids.push_back(clothing_good);
-            kit.kit_partial = 1;
-        }
-        if (available > 0)
-            add_colonization_kit_cargo(kit, clothing_good,
-                std::min(wanted, available), EXPEDITION_CARGO_BUFFER, sat);
+        fill_group(units, candidates);
     }
     int64_t kit_building_total = 0;
     for (const FamilyExpeditionKitBuilding &row : kit.buildings)
@@ -343,14 +318,25 @@ void NativeEconomyRuntime::fill_colonization_kit_buffer(
             int64_t wanted = saturating_mul(item.quantity, row.count, sat);
             wanted = saturating_mul(wanted, tool_days, sat);
             if (wanted <= 0) continue;
-            const int64_t available = source_stock(item.preferred_good_id);
-            if (available < wanted) {
-                kit.missing_good_ids.push_back(item.preferred_good_id);
-                kit.kit_partial = 1;
+            std::vector<BufferCandidate> candidates;
+            candidates.reserve(static_cast<size_t>(item.candidate_count));
+            for (int32_t pass = 0; pass < 2; ++pass) {
+                for (int32_t candidate_index = item.candidate_begin;
+                     candidate_index < item.candidate_begin + item.candidate_count;
+                     ++candidate_index) {
+                    if (candidate_index < 0 || candidate_index >=
+                            static_cast<int32_t>(_building_input_candidates.size()))
+                        continue;
+                    const InputCandidate &candidate =
+                        _building_input_candidates[candidate_index];
+                    const bool preferred = candidate.good_id ==
+                        item.preferred_good_id;
+                    if ((pass == 0) != preferred) continue;
+                    add_candidate(candidates, candidate.good_id,
+                        std::max<int32_t>(1, candidate.efficiency_q16), Q16_ONE);
+                }
             }
-            if (available > 0)
-                add_colonization_kit_cargo(kit, item.preferred_good_id,
-                    std::min(wanted, available), EXPEDITION_CARGO_BUFFER, sat);
+            fill_group(wanted, candidates);
         }
     }
     std::sort(kit.missing_good_ids.begin(), kit.missing_good_ids.end());
@@ -565,7 +551,7 @@ bool NativeEconomyRuntime::plan_colonization_kit(
             if (_building_types[row.type_id].construction_count <= 0)
                 continue;
             if (!plan_construction_materials(source_cell, row.type_id,
-                    row.count, Q16_ONE, plan, nullptr, &stock) ||
+                    row.count, Q16_ONE, plan, nullptr, &stock, true) ||
                 !plan.feasible) {
                 ok = false;
                 if (missing != nullptr && plan.failed_group >= 0) {
@@ -573,9 +559,22 @@ bool NativeEconomyRuntime::plan_colonization_kit(
                         _building_types[row.type_id].construction_begin +
                         plan.failed_group;
                     if (group >= 0 && group < static_cast<int32_t>(
-                            _building_construction_goods.size()))
-                        missing->push_back(
-                            _building_construction_goods[group].good_id);
+                            _building_construction_goods.size()) &&
+                        group + 1 < static_cast<int32_t>(
+                            _building_construction_candidate_offsets.size())) {
+                        const int32_t begin =
+                            _building_construction_candidate_offsets[group];
+                        const int32_t end =
+                            _building_construction_candidate_offsets[group + 1];
+                        for (int32_t candidate = begin; candidate < end;
+                             ++candidate) {
+                            if (candidate >= 0 && candidate < static_cast<int32_t>(
+                                    _building_construction_candidates.size())) {
+                                missing->push_back(
+                                    _building_construction_candidates[candidate].good_id);
+                            }
+                        }
+                    }
                 }
                 break;
             }

@@ -438,8 +438,12 @@ static func compile_native_catalog(
 		building_columns.building_technology_tag_offsets
 	var building_required_tag_offsets: PackedInt32Array = \
 		building_columns.building_required_technology_tag_offsets
+	var building_output_offsets: PackedInt32Array = building_columns.building_output_offsets
+	var building_output_good_ids: PackedInt32Array = building_columns.building_output_good_ids
+	var production_permit_keys := {}
 	for building_index_value in range(building_columns.building_type_ids.size()):
 		var building_binding_count := 0
+		var direct_building_technology_id := ""
 		for tag_index in range(building_tag_offsets[building_index_value],
 				building_tag_offsets[building_index_value + 1]):
 			var tag := String(
@@ -452,6 +456,7 @@ static func compile_native_catalog(
 					"tag": tag}
 			technology_binding_rows[int(technology_index[tag])].append(
 				[2, String(building_columns.building_type_ids[building_index_value])])
+			direct_building_technology_id = tag
 			building_binding_count += 1
 		if building_binding_count == 0:
 			return {"ok": false, "reason": "building_technology_binding_missing",
@@ -472,6 +477,23 @@ static func compile_native_catalog(
 				return {"ok": false, "reason": "unknown_building_required_technology_tag",
 					"id": String(building_columns.building_type_ids[building_index_value]),
 					"tag": required_tag}
+		for output_index in range(building_output_offsets[building_index_value],
+				building_output_offsets[building_index_value + 1]):
+			var output_good_id := String(good_columns.good_ids[
+				int(building_output_good_ids[output_index])])
+			production_permit_keys["%s|%s" % [
+				direct_building_technology_id, output_good_id]] = true
+	for good_index_value in range(good_columns.good_ids.size()):
+		var good_id := String(good_columns.good_ids[good_index_value])
+		for tag_index in range(good_tag_offsets[good_index_value],
+				good_tag_offsets[good_index_value + 1]):
+			var technology_tag := String(
+				good_columns.good_technology_tags[tag_index]).strip_edges()
+			if not technology_tag.begins_with("tech."):
+				continue
+			if not production_permit_keys.has("%s|%s" % [technology_tag, good_id]):
+				return {"ok": false, "reason": "good_technology_producer_missing",
+					"id": good_id, "tag": technology_tag}
 	var resource_ids := PackedStringArray()
 	var resource_tag_offsets := PackedInt32Array([0])
 	var resource_technology_tags := PackedStringArray()

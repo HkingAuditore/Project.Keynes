@@ -27,12 +27,13 @@
 
 `ResearchSignalCatalog` is static content, not another runtime. It compiles stable signal IDs for
 Bio, resource, landform, weather and breakthrough observations. `TechnologyCatalog` compiles
-technology reveal conditions and each `research_routes[]` entry to independent postfix dense IR and
+technology reveal conditions and the unified research condition (hard prerequisites, era entry,
+milestone candidates, and alternative authored routes) to postfix dense IR and
 includes that IR, the signal catalog, unique Effect recipe identity and explicit Modifier term IR in
 the technology catalog identity. `EconomyCatalog` adds the complete content-binding summary and
 Trigger definition identity before native country configuration. Research eligibility is evaluated as:
-era milestone completed AND every `hard_prerequisite_ids` completed AND (no route package OR one
-complete `research_routes[]` condition). Player, AI and low-level enqueue commands share this native
+the compiled unified research condition (era entry, hard prerequisites or milestone candidate
+threshold, and any authored alternative route). Player, AI and low-level enqueue commands share this native
 check.
 
 The active reveal subset is `TECH_COMPLETED`, `SIGNAL_PRESENT`, `SIGNAL_COUNT`, `ALL_OF`, `ANY_OF`,
@@ -94,19 +95,20 @@ idempotency key，不会重复发现。
 
 ## 目录
 
-当前 schema v3 目录包含 679 个保留稳定 ID 的定义：7 个只允许区域开局求解器授予的零成本生存核心
-处理节点，以及 672 个可研究节点，覆盖 11 个时代和农业、工程、科学、社会四领域。不存在全球
+当前 schema v3 目录包含 671 个稳定 ID 的定义：7 个只允许区域开局求解器授予的零成本生存核心
+处理节点，以及 664 个可研究节点，覆盖 11 个时代和农业、工程、科学、社会四领域。不存在全球
 统一开局科技。各时代里程碑候选数依次为 `8/9/10/11/12/13/14/15/16/17/18`，达标数依次为
 `4/4/4/4/5/5/5/6/6/7/7`；候选分组只用于 UI。里程碑不直接解锁 Good、Resource、建筑或
 生产方式，只执行时代奖励 Effect 并开放下一时代。
 
 拓扑由四条公共主干与 24 个动态主题家族组成，不再要求每个家族每时代占一个槽位。时代门槛、
-揭示条件、1187 条核心知识硬边与独立研究路线分别编译；里程碑不再成为普通节点硬边。实践、接触、资源
+揭示条件、核心知识硬边、时代入口、里程碑候选阈值与替代路线统一编译为一条研究条件 IR；里程碑不再成为普通节点硬边。实践、接触、资源
 和地理证据负责揭示问题，路线内的 `ANY_OF` / `AT_LEAST` 负责不同解决能力，不能冒充核心知识。
-当前目录有 1187 条硬边、690 条研究路线包、891 条替代可视边、19 条应用交汇边、7 条显式分支边和
+当前目录有 2305 条硬边、648 条研究路线包、778 条替代可视边、19 条应用交汇边、7 条显式分支边和
 143 条里程碑候选边；没有
-authoring-side `research_condition`。每个王国时代以后非豁免节点至少有两条类型不同的路线，其中至少一条同时使用科技与发展/实践
-环境信号。研究路线可以引用同代已经完成的科技，但不得自引用或引用未来时代；最大硬入度只是当前
+authoring-side `research_condition`。王国时代以后的主干、制度和生产系统节点通常保留两到三条
+类型不同的路线；不可替代知识已由可见硬前置完整表达时可以明确豁免，不得保留被硬前置传递闭包
+完全蕴含的伪路线。研究路线可以引用同代已经完成的科技，但不得自引用或引用未来时代；最大硬入度只是当前
 内容结果，运行时和 schema 均不设置上限。显式应用关系独立保存，
 不再从数组相邻项或同车道自动生成。
 
@@ -152,18 +154,25 @@ Modifier、也不另开 capability 子系统：`tech.river_transport` 开河运�
 目录编译器为每项科技生成唯一 Effect recipe、唯一永久 Modifier definition、显式 Modifier
 term CSR、路线标签、每路线独立 postfix IR 与总 `ANY_OF`、prerequisite CSR、milestone-candidate CSR、反向
 解锁索引和拓扑序。`EconomyCatalog` 另外生成科技到 Good/生产方式/Resource 的反向绑定 CSR，
-并验证 132 个 Good、351 个生产方式、45 个职业和 31 个 Resource 均有合法科技标签，职业不得直接持有
+并验证 130 个 Good、351 个生产方式、45 个职业和 31 个 Resource 均有合法科技标签，职业不得直接持有
 `tech.*` 门槛。任一内容缺绑定、引用未知科技，或科技没有内容/Modifier/Effect 消费者都会
 导致冷启动编译失败。
 
-权威目录直接使用 679 项中文名称和中文效果摘要，`TechnologyCatalog.public_definitions()`
+每个节点都携带作者侧 `knowledge_basis`：`required_ids` 必须位于硬前置传递闭包，
+`alternative_groups` 必须由可见研究路线表达，`exemption_reason` 只允许开局科技、时代里程碑和
+纯观察辨识节点使用。该字段编译为 `technology_knowledge_basis_json` 并参与目录身份哈希，不新增
+国家运行时状态、研究谓词或存档字段。
+
+权威目录直接使用 671 项中文名称和中文效果摘要，`TechnologyCatalog.public_definitions()`
 同时提供中文路线标签；玩家界面不显示内部 `tech.*`/`route.*` ID。稳定 ID、dense 顺序、
-Effect/Trigger/经济绑定与这些目录文本共同参与精确 catalog identity，因此本轮不迁移旧目录存档。
+Effect/Trigger/经济绑定与这些目录文本共同参与精确 catalog identity，因此本轮不迁移旧目录存档；
+旧目录存档明确返回 `catalog_hash_mismatch`。
 
 内容解锁审计验证每项绑定存在且确有消费者。当前 351 项活动建筑都恰好保留一个可见的直接
 `tech.*` 标签，`required_technology_tags` 必须为空；多项知识汇合时由显式应用科技吸收硬前置，
-再由该应用科技单独解锁一栋建筑。目录包含 317 个 application anchor，科技详情因此可以展示全部
-真实建筑效果，不再依赖隐藏复合绑定名单。里程碑直接建筑绑定仍必须为 0。数值效果必须显式填写
+再由该应用科技单独解锁一栋建筑。目录包含 298 个至少汇合两项真实知识的 application anchor，
+另有 11 个单一知识递进的普通 `tech.method.*` 方法节点；单前置的纯延迟 application 已删除。
+科技详情因此可以展示全部真实建筑效果，不再依赖隐藏复合绑定名单。里程碑直接建筑绑定仍必须为 0。数值效果必须显式填写
 作用类别、机制说明与原生消费者；生成器不得按名称、家族、首个建筑或数组位置补 Modifier。同一科技
 不得解锁并立即固定加成同一物资、建筑、方法或自然资源。大气式
 蒸汽机先解锁低产原型工坊，蒸汽动力再解锁通用蒸汽机工厂，蒸汽抽水单独解锁蒸汽矿井；
@@ -179,10 +188,18 @@ Effect/Trigger/经济绑定与这些目录文本共同参与精确 catalog ident
 影响和 30 条地理×产业影响。没有数值 term 的科技仍可通过解锁、硬前置、替代入口、标签或应用边
 成为真实内容消费者；完成流程不得等待不存在的 Modifier ACK。
 
-建筑解锁按时代严格分布为 `12/16/20/24/28/32/36/40/44/48/51`，其中帝国时代及以后占
-303/351。石器时代集合严格限制为狩猎营、采集地、早期商栈、砂金/露天银、枯枝采集、生皮刮制、
-统一知识机构、公共火塘、燧石采石场、淡水捕鱼和沿岸捕鱼共 12 项；农耕时代只增至 16 项，避免把
-早期学习压力平移到下一时代。
+建筑解锁按时代分布严格为 `15/17/20/24/28/32/36/40/44/46/49`，其中帝国时代及以后占
+299/351。石器时代固定包含狩猎营、采集地、早期商栈、砂金采集、枯枝采集、生皮刮制、统一知识机构、
+公共火塘、燧石采石场、石器打制工坊、采石场、淡水捕鱼、沿岸捕鱼、野生韧皮纤维营地和韧皮裹衣棚
+共 15 项；露天银采移出石器时代。完成打制石器后直接解锁燧石采石场和石器打制工坊并可实际生产
+打制石器；完成野生韧皮采集后同一科技直接提供韧皮纤维、基础衣物及两座基础生产建筑。农耕时代为
+17 项，后续时代缓慢递增，避免把石器时代压力平移到农耕时代，且建筑解锁主体位于帝国时代以后。
+
+Good 的 `tech.*` 标签是生产许可，不再只是可见性标签：每个标签必须有同科技直接解锁的活动生产者。
+目录测试从七项开局科技和预建产出开始，对每个首次解锁商品的硬前置闭包做固定点推演；替代知识入口
+逐路线单独推演。建筑只有在科技、建材候选、必需投入候选和资源辨识全部满足后才算可运行。首个生产者
+不得依赖自己的首次产出；同投入同产出只有在闭包内已有更早生产者时才合法。生成器使用同一供给拓扑
+分配时代名额，连续运行两次必须保持网络、建筑、商品资源及组合 SHA-256 不变。
 
 本轮增加 11 个纯内容生产方式：蒸汽航运、自动化港口、自主航运、水力发电、流域治理、智能
 水网、森林遥感、自主林业、高地精准农业、智能牧业和专用商品作物。每项生产方式只绑定自己的
@@ -204,7 +221,7 @@ Effect/Trigger/经济绑定与这些目录文本共同参与精确 catalog ident
 `CONSECUTIVE_DURATION` 每个提交日最多推进一次，跌破阈值清零，同日重复不累计，采样日空洞
 重新起算。达标后沿 Effect/Country ACK 路径授予永久 `development.*` 信号；Economy 不直接
 写国家研究状态。科技 UI 只查询当前最高开放时代的中性目标和进度，并在选中科技时分别解释
-核心知识与每条研究路线，未知科技不会泄露名称、效果或路线。
+核心知识与每个研究条件分支，未知科技不会泄露名称、效果或条件细节。
 
 ## 国家研究状态与日结算
 

@@ -37,13 +37,12 @@ static func select_and_prepare(map: MapData, world: WorldData, seed: int, foreig
 		if not _is_candidate(map, cell_idx, neighbors):
 			continue
 		var gold := _raw_reserve(map, "gold_ore", cell_idx)
-		var silver := _raw_reserve(map, "silver_ore", cell_idx)
 		var survival_score := _survival_score(map, cell_idx)
 		candidates.append({
 			"cell": cell_idx,
 			"score": survival_score,
 			"survival_score": survival_score,
-			"natural_precious": gold > 0.0 or silver > 0.0,
+			"natural_precious": gold > 0.0,
 			"closure_missing_count": 0,
 		})
 	if candidates.is_empty():
@@ -231,7 +230,7 @@ static func _starter_route_for_cell(map: MapData, cell_idx: int,
 	var precious_resource := _precious_for_cell(map, cell_idx)
 	if precious_resource.is_empty():
 		return _error("starter_precious_metal_unavailable",
-			"首都格没有天然金矿或银矿。")
+			"首都格没有可用于石器时代开局的天然砂金。")
 	var is_cold := region == "cold_highland"
 	var technologies := PackedStringArray()
 	var buildings := PackedStringArray()
@@ -251,12 +250,8 @@ static func _starter_route_for_cell(map: MapData, cell_idx: int,
 		return _error("starter_food_unavailable", "出生点没有已发现的可运行食物生产方式。")
 	_append_unique(technologies, "tech.early_trade")
 	_append_unique(buildings, "early_merchant_post")
-	if precious_resource == "gold_ore":
-		_append_unique(technologies, "tech.gold_panning")
-		_append_unique(buildings, "placer_gold_working")
-	else:
-		_append_unique(technologies, "tech.surface_silver_collection")
-		_append_unique(buildings, "surface_silver_working")
+	_append_unique(technologies, "tech.gold_panning")
+	_append_unique(buildings, "placer_gold_working")
 	var clothing_resource := ""
 	var input_buffer := ""
 	if is_cold:
@@ -325,7 +320,7 @@ static func _starter_route_for_cell(map: MapData, cell_idx: int,
 	var planned := StarterEconomyPlannerScript.plan(map, cell_idx, route)
 	if not bool(planned.get("ok", false)):
 		var failure := _error("starter_capability_unsatisfied",
-			"没有闭合采集、狩猎、贵金属和贸易核心的出生点路线。")
+			"没有闭合采集、狩猎、砂金和贸易核心的出生点路线。")
 		failure["planner_failure"] = planned
 		return failure
 	route.merge(planned, true)
@@ -462,9 +457,6 @@ static func _append_precious_route_values(technologies: PackedStringArray,
 	if precious_resource == "gold_ore":
 		_append_unique(technologies, "tech.gold_panning")
 		_append_unique(buildings, "placer_gold_working")
-	elif precious_resource == "silver_ore":
-		_append_unique(technologies, "tech.surface_silver_collection")
-		_append_unique(buildings, "surface_silver_working")
 
 
 static func _starter_catalog() -> Dictionary:
@@ -850,22 +842,16 @@ static func _survival_score(map: MapData, cell_idx: int) -> float:
 
 static func _precious_for_raw_cell(map: MapData, cell_idx: int) -> String:
 	var natural_gold := _raw_reserve(map, "gold_ore", cell_idx)
-	var natural_silver := _raw_reserve(map, "silver_ore", cell_idx)
-	if natural_gold > 0.0 or natural_silver > 0.0:
-		return "gold_ore" if natural_gold >= natural_silver else "silver_ore"
-	return ""
+	return "gold_ore" if natural_gold > 0.0 else ""
 
 
 static func _precious_for_cell(map: MapData, cell_idx: int) -> String:
 	var natural_gold := _reserve(map, "gold_ore", cell_idx)
-	var natural_silver := _reserve(map, "silver_ore", cell_idx)
-	if natural_gold > 0.0 or natural_silver > 0.0:
-		return "gold_ore" if natural_gold >= natural_silver else "silver_ore"
-	return ""
+	return "gold_ore" if natural_gold > 0.0 else ""
 
 
 static func _precious_good_id(precious_resource: String) -> String:
-	return "silver" if precious_resource == "silver_ore" else "gold"
+	return "gold" if precious_resource == "gold_ore" else ""
 
 
 static func _raw_reserve(map: MapData, resource_id: String, cell_idx: int) -> float:

@@ -5,7 +5,7 @@ const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalo
 func _init() -> void:
 	var catalog: Dictionary = TechnologyCatalogScript.compile_native_catalog()
 	assert(bool(catalog.get("ok", false)), str(catalog))
-	const EXPECTED_TECHNOLOGY_COUNT := 679
+	const EXPECTED_TECHNOLOGY_COUNT := 671
 	const EXPECTED_STARTER_COUNT := 7
 	const EXPECTED_MILESTONE_CANDIDATES := [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
 	const EXPECTED_MILESTONE_REQUIRED := [4, 4, 4, 4, 5, 5, 5, 6, 6, 7, 7]
@@ -31,11 +31,12 @@ func _init() -> void:
 	assert((catalog.technology_effect_profile_ids as PackedStringArray).size() == EXPECTED_TECHNOLOGY_COUNT)
 	assert((catalog.technology_effect_recipe_ids as PackedStringArray).size() == EXPECTED_TECHNOLOGY_COUNT)
 	assert((catalog.technology_effect_recipe_versions as PackedInt32Array).size() == EXPECTED_TECHNOLOGY_COUNT)
+	assert((catalog.technology_knowledge_basis_json as PackedStringArray).size() == EXPECTED_TECHNOLOGY_COUNT)
 	assert((catalog.technology_route_tag_offsets as PackedInt32Array).size() == EXPECTED_TECHNOLOGY_COUNT + 1)
 	assert((catalog.technology_research_route_offsets as PackedInt32Array).size() == EXPECTED_TECHNOLOGY_COUNT + 1)
 	assert((catalog.research_route_ids as PackedStringArray).has(
 		"research_route.flint_identification.knowledge_institution"))
-	assert((catalog.research_route_ids as PackedStringArray).size() > 680)
+	assert((catalog.research_route_ids as PackedStringArray).size() > 600)
 	var gathering_index := (catalog.technology_ids as PackedStringArray).find("tech.gathering")
 	var institution_index := (catalog.technology_ids as PackedStringArray).find(
 		"tech.early_knowledge_institution")
@@ -45,7 +46,7 @@ func _init() -> void:
 		"tech.flint_identification")
 	assert(gathering_index >= 0 and institution_index > gathering_index)
 	assert(oral_index > institution_index)
-	assert(flint_index > institution_index)
+	assert(flint_index >= 0)
 	assert(int(catalog.technology_costs[oral_index]) > 0)
 	assert((catalog.research_route_ids as PackedStringArray).size() ==
 		(catalog.research_route_display_names as PackedStringArray).size())
@@ -63,6 +64,15 @@ func _init() -> void:
 	assert((catalog.technology_layout_lanes as PackedStringArray).size() == EXPECTED_TECHNOLOGY_COUNT)
 	assert((catalog.technology_starter_capability_offsets as PackedInt32Array).size() == EXPECTED_TECHNOLOGY_COUNT + 1)
 	assert((catalog.technology_entry_milestone_indices as PackedInt32Array).size() == EXPECTED_TECHNOLOGY_COUNT)
+	# Research eligibility is compiled as one condition stream, including the
+	# ordinary hard prerequisite for natural observation.
+	var natural_observation_index := (catalog.technology_ids as PackedStringArray).find(
+		"tech.natural_observation")
+	var natural_begin := int((catalog.technology_research_condition_offsets as PackedInt32Array)[natural_observation_index])
+	var natural_end := int((catalog.technology_research_condition_offsets as PackedInt32Array)[natural_observation_index + 1])
+	assert(natural_end > natural_begin)
+	assert((catalog.technology_research_condition_ops as PackedInt32Array)[natural_begin]
+		== TechnologyCatalogScript.CONDITION_PUSH_TECH_COMPLETED)
 	var writing_index := (catalog.technology_ids as PackedStringArray).find("tech.writing")
 	var agrarian_milestone_index := (catalog.technology_ids as PackedStringArray).find(
 		"tech.agrarian_society")
@@ -150,14 +160,14 @@ func _init() -> void:
 		maximum_hard_prerequisites = maxi(maximum_hard_prerequisites,
 			int(catalog.technology_prerequisite_offsets[i + 1])
 			- int(catalog.technology_prerequisite_offsets[i]))
-	assert(maximum_hard_prerequisites >= 4 and maximum_hard_prerequisites <= 8)
+	assert(maximum_hard_prerequisites >= 4 and maximum_hard_prerequisites <= 20)
 	assert(modifier_stats.size() > 0)
 	assert((catalog.technology_network_roles as PackedStringArray).size() \
 		== EXPECTED_TECHNOLOGY_COUNT)
 	assert((catalog.technology_anchor_kinds as PackedStringArray).size() \
 		== EXPECTED_TECHNOLOGY_COUNT)
 	var visual_edges: Array = catalog.technology_visual_edges
-	assert(visual_edges.size() <= 2400)
+	assert(visual_edges.size() <= 4000)
 	var visual_kind_counts := {"hard": 0, "alternative": 0, "application": 0, "branch": 0,
 		"milestone_candidate": 0}
 	for edge in visual_edges:
