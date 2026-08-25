@@ -156,6 +156,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         for (int32_t sector = 0; sector < 5; ++sector)
             append_le<int32_t>(payload, _maintenance_horizon_days_by_sector[sector]);
         append_le<int32_t>(payload, _building_maintenance_cost_factor_q16);
+        append_le<int32_t>(payload, _startup_demand_runtime_mode);
         append_id_table(payload, _profession_ids);
         append_id_table(payload, _ethnicity_ids);
         append_id_table(payload, _good_ids);

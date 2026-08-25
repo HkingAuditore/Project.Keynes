@@ -2507,6 +2507,12 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
     _investment_type_stamp.assign(_building_types.size(), 0);
     _investment_good_stamp.assign(_good_ids.size(), 0);
     _investment_review_stamp_generation = 0;
+    _startup_monetary_good_indices.clear();
+    _startup_monetary_good_indices.reserve(_good_ids.size());
+    for (int32_t good = 0; good < static_cast<int32_t>(_good_ids.size()); ++good) {
+        if (_good_monetary_issue_values[good] > 0)
+            _startup_monetary_good_indices.push_back(good);
+    }
     std::sort(upgrade_pairs.begin(), upgrade_pairs.end());
     if (std::adjacent_find(upgrade_pairs.begin(), upgrade_pairs.end()) != upgrade_pairs.end()) {
         error = "building_upgrade_family_tier_duplicate";

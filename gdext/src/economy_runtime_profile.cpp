@@ -244,6 +244,13 @@ bool NativeEconomyRuntime::configure_profile(const Dictionary &profile, std::str
     _market_runtime_mode = runtime_mode == "OFF" ? 0 : (runtime_mode == "PROBE" ? 1 : 2);
     const std::string trade_mode = dict_string(profile, "trade_runtime_mode", "ACTIVE");
     _trade_runtime_mode = trade_mode == "OFF" ? 0 : (trade_mode == "ACTIVE" ? 2 : 1);
+    const std::string startup_demand_mode = dict_string(
+        profile, "startup_demand_runtime_mode", "ACTIVE");
+    if (startup_demand_mode != "OFF" && startup_demand_mode != "ACTIVE") {
+        error = "startup_demand_runtime_mode_invalid";
+        return false;
+    }
+    _startup_demand_runtime_mode = startup_demand_mode == "ACTIVE" ? 1 : 0;
     _trade_capacity_per_merchant_q16 = std::clamp<int64_t>(dict_num<int64_t>(
         profile, "trade_capacity_per_merchant_q16", 64 * Q16_ONE), 1,
         std::numeric_limits<int32_t>::max());

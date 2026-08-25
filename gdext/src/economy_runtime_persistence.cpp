@@ -736,17 +736,6 @@ Dictionary NativeEconomyRuntime::end_restore() {
     for (int32_t cell = 0; cell < _cell_count; ++cell)
         _market_signals.cell_offsets[cell + 1] += _market_signals.cell_offsets[cell];
     rebuild_market_signals();
-    {
-        int64_t investment_mask_saturation = 0;
-        for (int32_t market = 0; market < _market.market_count; ++market)
-            refresh_investment_active_goods_for_market(
-                market, investment_mask_saturation);
-        if (investment_mask_saturation > 0) {
-            out["ok"] = false;
-            out["reason"] = "restore_investment_active_mask_saturated";
-            return out;
-        }
-    }
     for (int32_t cell = 0; cell < _cell_count; ++cell)
         _labor_signals.cell_offsets[cell + 1] += _labor_signals.cell_offsets[cell];
     rebuild_labor_signals();

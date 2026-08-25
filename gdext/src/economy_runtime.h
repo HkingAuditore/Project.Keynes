@@ -51,7 +51,9 @@ public:
     // 42: family expeditions may occupy a target in EXPEDITION_PREPARING
     // with empty payload/cargo until the colonization kit is complete.
     // v41 remains readable and must not contain PREPARING records.
-    static constexpr int32_t SCHEMA_VERSION = 42;
+    // 43: sector maintenance horizons and maintenance cost factor.
+    // 44: resolved startup-demand mode. v43 restores with startup demand OFF.
+    static constexpr int32_t SCHEMA_VERSION = 44;
     static constexpr uint32_t BUILDING_KIT_ROLE_TRADE = 1u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CONSTRUCTION = 2u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CLOTHING_INPUT = 4u;
@@ -807,6 +809,9 @@ private:
         int32_t employee_count = 0;
         int32_t construction_begin = 0;
         int32_t construction_count = 0;
+        int32_t maintenance_begin = 0;
+        int32_t maintenance_count = 0;
+        int32_t maintenance_horizon_days = 0;
         int32_t input_begin = 0;
         int32_t input_count = 0;
         int32_t output_begin = 0;
@@ -920,9 +925,11 @@ private:
         int64_t last_wages_due = 0;
         int64_t last_expected_revenue = 0;
         int64_t last_operating_cost = 0;
+        int64_t last_maintenance_cost = 0;
         int32_t last_margin_gap_q16 = 0;
         int32_t planned_utilization_q16 = Q16_ONE;
         int64_t sample_unit_input_cost = 0;
+        int64_t sample_unit_maintenance_cost = 0;
         int64_t last_base_wages_paid = 0;
         int64_t last_base_wages_due = 0;
         int64_t last_bonus_paid = 0;
@@ -1348,6 +1355,8 @@ private:
         int64_t payback_days = 0;
         int64_t required_capital = 0;
         int64_t projected_profit_per_day = 0;
+        int64_t return_on_capital_q16 = 0;
+        int64_t cost_advantage_q16 = 0;
         int32_t failed_material_group = -1;
         std::vector<int32_t> selected_material_good_ids;
         std::vector<int64_t> selected_material_quantities;
@@ -1366,6 +1375,9 @@ private:
         int64_t driver_strength_q16 = 0;
         int64_t nameplate_output = 0;
         int64_t demand = 0;
+        int64_t startup_demand = 0;
+        int64_t remote_startup_demand = 0;
+        bool startup_incremental = false;
     };
 
     struct InvestmentIncumbentLane {
@@ -1373,6 +1385,33 @@ private:
         int32_t type_id = -1;
         int64_t unit_cost = 0;
         int64_t daily_offered = 0;
+    };
+
+    struct StartupRemoteLane {
+        int32_t country = -1;
+        int32_t component = -1;
+        int32_t good_id = -1;
+        int64_t remaining_daily = 0;
+    };
+
+    struct StartupRemoteGroup {
+        int32_t country = -1;
+        int32_t component = -1;
+        int32_t lane_begin = 0;
+        int32_t lane_end = 0;
+    };
+
+    struct StartupInboundLane {
+        uint64_t cell_good_key = 0;
+        int64_t quantity = 0;
+    };
+
+    struct StartupRemoteAccumulator {
+        int32_t country = -1;
+        int32_t component = -1;
+        int32_t good_id = -1;
+        int64_t demand = 0;
+        int64_t available = 0;
     };
 
     struct PopulationStore {
@@ -2409,6 +2448,9 @@ private:
         int64_t building_resource_generated = 0;
         int64_t building_resource_consumed = 0;
         int64_t production_inputs_consumed = 0;
+        int64_t maintenance_goods_consumed = 0;
+        int64_t maintenance_unmet = 0;
+        int64_t maintenance_unpaid_value = 0;
         int64_t production_output_stock = 0;
         int64_t production_output_discarded = 0;
         int64_t production_output_supported = 0;
@@ -2522,6 +2564,14 @@ private:
         int64_t investment_sparse_skipped_types = 0;
         int64_t investment_sparse_mismatches = 0;
         int64_t investment_sparse_dense_fallbacks = 0;
+        int64_t startup_demand_seed_count = 0;
+        int64_t startup_demand_touched_lanes = 0;
+        int64_t startup_demand_catalog_edges = 0;
+        int64_t startup_demand_cycle_skips = 0;
+        int64_t startup_demand_remote_lanes = 0;
+        int64_t startup_demand_matched_review_cells = 0;
+        int64_t startup_demand_buildings_started = 0;
+        int64_t startup_demand_scratch_bytes = 0;
         int64_t investment_displacement_type_evaluations = 0;
         int64_t building_investment_displacement_starts = 0;
         int64_t approximation_decisions = 0;
@@ -2562,6 +2612,7 @@ private:
         double investment_prepare_lanes_ms = 0.0;
         double investment_prepare_pending_ms = 0.0;
         double investment_prepare_groups_ms = 0.0;
+        double startup_demand_prepare_ms = 0.0;
         double finalize_construction_ms = 0.0;
         double finalize_reconcile_ms = 0.0;
         double building_factor_refresh_ms = 0.0;
@@ -2910,6 +2961,8 @@ private:
     // 73 five-day reviews are approximately one year. The old recovery name
     // is retained only for save/profile compatibility.
     int32_t _recovery_liquidation_failed_reviews = 73;
+    int32_t _maintenance_horizon_days_by_sector[5] = {5475, 2920, 3650, 2190, 7300};
+    int32_t _building_maintenance_cost_factor_q16 = Q16_ONE;
     int32_t _merchant_profession_id = -1;
     std::string _merchant_profession_stable_id = "merchant";
     // Reserved profession representing unemployed population. Resolved from the
@@ -2920,6 +2973,7 @@ private:
     std::string _unemployed_profession_stable_id = "unemployed";
     int32_t _market_runtime_mode = 1; // 0=OFF, 1=PROBE, 2=ACTIVE.
     int32_t _trade_runtime_mode = 2; // 0=OFF, 1=PROBE, 2=ACTIVE.
+    int32_t _startup_demand_runtime_mode = 1; // 0=OFF, 1=ACTIVE.
     int64_t _trade_capacity_per_merchant_q16 = 64 * Q16_ONE;
     int32_t _trade_speed_cost_per_day = 4;
     int32_t _trade_min_margin_q16 = 3277;
@@ -3158,6 +3212,10 @@ private:
     std::vector<int64_t> _merchant_credit_drawn_by_cell;
     int64_t _production_input_reserved = 0;
     int64_t _production_input_reserve_shortfall = 0;
+    int64_t _construction_material_reserved = 0;
+    int64_t _maintenance_goods_consumed = 0;
+    int64_t _maintenance_unmet = 0;
+    int64_t _maintenance_unpaid_value = 0;
     int64_t _labor_signal_updates = 0;
     int64_t _building_resource_generated = 0;
     int64_t _building_resource_consumed = 0;
@@ -3268,6 +3326,14 @@ private:
     // guaranteed to fail. Exact no-false-negative early-out.
     int64_t _investment_gate_capital_type_skips = 0;
     int64_t _investment_displacement_type_evaluations = 0;
+    int64_t _startup_demand_seed_count = 0;
+    int64_t _startup_demand_touched_lanes = 0;
+    int64_t _startup_demand_catalog_edges = 0;
+    int64_t _startup_demand_cycle_skips = 0;
+    int64_t _startup_demand_remote_lanes = 0;
+    int64_t _startup_demand_matched_review_cells = 0;
+    int64_t _startup_demand_buildings_started = 0;
+    int64_t _startup_demand_scratch_bytes = 0;
     int64_t _approximation_decisions = 0;
     int64_t _approximation_exact_probes = 0;
     int64_t _approximation_certificate_failures = 0;
@@ -3445,6 +3511,7 @@ private:
     double _investment_prepare_lanes_ms = 0.0;
     double _investment_prepare_pending_ms = 0.0;
     double _investment_prepare_groups_ms = 0.0;
+    double _startup_demand_prepare_ms = 0.0;
     double _finalize_construction_ms = 0.0;
     double _finalize_reconcile_ms = 0.0;
     double _building_factor_refresh_ms = 0.0;
@@ -3616,6 +3683,7 @@ private:
     std::vector<int64_t> _epoch_nonhousehold_withdrawals;
     std::vector<int32_t> _epoch_cost_anchor_price;
     std::vector<int64_t> _production_input_reserve;
+    std::vector<int64_t> _construction_material_reserve;
     // Country research demand is derived once from the frozen country policy,
     // prices, and population at epoch begin. It is deliberately transient:
     // country treasury/goods remain Country authority and this cache is not
@@ -3757,17 +3825,31 @@ private:
     std::vector<InvestmentIncumbentLane> _investment_incumbent_lanes_scratch;
     std::vector<int32_t> _investment_employment_cells;
     std::vector<int32_t> _investment_review_cell_indices;
-    // Catalog-derived output-good -> building-type CSR plus per-market active
-    // output bitsets. These lanes are rebuildable scheduling data and are
-    // excluded from PKEC and the authoritative state hash.
+    // Catalog-derived output-good -> building-type CSR plus the current review
+    // cell's sparse active-good set. These lanes are rebuildable scheduling
+    // data and are excluded from PKEC and the authoritative state hash.
     std::vector<int32_t> _investment_good_type_offsets;
     std::vector<int32_t> _investment_good_type_indices;
     std::vector<uint64_t> _investment_active_good_words;
+    std::vector<int32_t> _investment_active_goods_scratch;
     std::vector<uint32_t> _investment_type_stamp;
     std::vector<uint32_t> _investment_good_stamp;
     uint32_t _investment_review_stamp_generation = 0;
     std::vector<int32_t> _investment_review_types_scratch;
     std::vector<int32_t> _investment_good_queue_scratch;
+    // v44 transient startup-demand graph. The dense value/stamp pair is the
+    // fixed 12-byte (cell, good) budget; only stamped/touched lanes are read.
+    // Remote/inbound lanes are sparse, rebuilt once per investment batch, and
+    // excluded from PKEC and the authoritative state hash.
+    std::vector<int64_t> _startup_demand_values;
+    std::vector<uint32_t> _startup_demand_stamps;
+    uint32_t _startup_demand_generation = 0;
+    std::vector<uint64_t> _startup_demand_touched_keys;
+    std::vector<int32_t> _startup_monetary_good_indices;
+    std::vector<StartupRemoteLane> _startup_remote_lanes;
+    std::vector<StartupRemoteGroup> _startup_remote_groups;
+    std::vector<StartupInboundLane> _startup_inbound_lanes;
+    std::vector<StartupRemoteAccumulator> _startup_remote_accumulator_scratch;
     // Epoch-transient worker outputs. Keeping the nested vector capacities
     // avoids rebuilding thousands of small buffers every household slice.
     std::vector<MarketResult> _market_results_scratch;
@@ -4147,8 +4229,12 @@ private:
     // frozen minimum-living subsidy floor for current cohorts plus a bounded
     // prospective floor for available owner/employee professions, so a newly
     // enabled negative income rate can attract a transition without waiting
-    // for one historical batch.
+    // for one historical batch. Business lanes get the matching prospective
+    // floor on investment-review cells only, bounded by one building of the
+    // single most valuable subsidised type.
     std::vector<int64_t> _fiscal_reservation_requests;
+    int64_t _fiscal_business_prospective_lanes = 0;
+    int64_t _fiscal_business_prospective_request = 0;
     std::vector<int64_t> _fiscal_current_requests;
     std::vector<int64_t> _fiscal_budgets;
     std::vector<int64_t> _fiscal_remaining;
@@ -4302,6 +4388,9 @@ private:
     // OR list of regional substitutes for that required group.
     std::vector<int32_t> _building_construction_candidate_offsets;
     std::vector<ConstructionCandidate> _building_construction_candidates;
+    std::vector<int32_t> _building_maintenance_author_offsets;
+    std::vector<GoodAmount> _building_maintenance_author_goods;
+    std::vector<GoodAmount> _building_maintenance_goods;
     std::vector<ProductionInput> _building_inputs;
     std::vector<InputCandidate> _building_input_candidates;
     std::vector<GoodAmount> _building_outputs;
@@ -4795,7 +4884,8 @@ private:
     void publish_social_pressure_facts();
     void publish_technology_practice_facts();
     void publish_country_development_facts();
-    bool prepare_fiscal_budgets(std::string &error);
+    bool prepare_fiscal_budgets(int64_t day_index, std::string &error);
+    int64_t prospective_business_subsidy_request(int32_t cell, int32_t country);
     void settle_income_subsidies_for_cell(int32_t cell,
                                           int64_t &saturation_count);
     bool commit_fiscal(std::string &error);
@@ -4846,6 +4936,22 @@ private:
     int64_t investment_merchant_cash(int32_t cell) const;
     int64_t investment_outstanding_credit(int32_t cell) const;
     int64_t investment_resource_committed(size_t index) const;
+    void prepare_startup_demand();
+    void propagate_startup_demand_for_cell(int32_t cell);
+    void begin_startup_demand_generation();
+    void record_startup_demand(int32_t cell, int32_t good_id,
+                               int64_t daily_quantity);
+    int64_t startup_demand_for(int32_t cell, int32_t good_id) const;
+    int64_t remote_startup_demand_for(int32_t cell, int32_t good_id) const;
+    void consume_remote_startup_demand(int32_t cell, int32_t good_id,
+                                       int64_t daily_capacity);
+    int32_t select_startup_producer(int32_t cell, int32_t good_id) const;
+    int32_t select_startup_input_candidate(int32_t cell,
+                                           const ProductionInput &input,
+                                           int64_t &physical_daily) const;
+    int32_t select_startup_construction_candidate(int32_t cell,
+                                                  int32_t group,
+                                                  int64_t &physical_quantity) const;
     int32_t find_entrepreneur_source(int32_t cell, int32_t target_signature,
                                      int64_t required_capital,
                                      int64_t target_income_per_day,
@@ -4919,6 +5025,14 @@ private:
     void rebuild_production_input_reserves(int32_t active_begin = 0,
                                            int32_t active_end = -1,
                                            bool initialize = true);
+    void resolve_building_maintenance_csr();
+    bool is_storable_nonmonetary_good(int32_t good) const;
+    int32_t resolved_maintenance_horizon_days(const BuildingType &type) const;
+    int64_t merchant_protected_reserve(int32_t signal) const;
+    int64_t daily_maintenance_cost_for_type(
+        int32_t cell, const BuildingType &type, int64_t &sat) const;
+    int64_t maintenance_settlement_price(
+        int32_t cell, int32_t good, int64_t &sat) const;
     void rebuild_labor_signals();
     int32_t labor_signal_index(int32_t cell, int32_t profession) const;
     int64_t living_cost_for_signature(int32_t cell, int32_t signature_id,
@@ -4971,8 +5085,8 @@ private:
     CellSummary build_cell_summary(int32_t cell) const;
     void stage_cell_summary(int32_t cell, const CellSummary &summary);
     void finalize_market_result(int32_t market, MarketResult &result);
-    void refresh_investment_active_goods_for_market(int32_t market,
-                                                    int64_t &saturation_count);
+    void refresh_investment_active_goods_for_cell(int32_t cell,
+                                                  int64_t &saturation_count);
     bool rebuild_market_cell_ranges(std::string &error);
     bool ensure_merchant_invariant(int32_t cell, int64_t &repair_count,
                                    std::string &error);

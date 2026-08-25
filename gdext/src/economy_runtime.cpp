@@ -6158,46 +6158,86 @@ bool NativeEconomyRuntime::begin_trade_plan_slice(
 
 
 
-void NativeEconomyRuntime::refresh_investment_active_goods_for_market(
-        int32_t market, int64_t &sat) {
-    if (market < 0 || market >= _market.market_count ||
-        _market.good_count <= 0) return;
-    const size_t words_per_market =
-        (static_cast<size_t>(_market.good_count) + 63U) / 64U;
-    const size_t word_begin = static_cast<size_t>(market) * words_per_market;
-    if (_investment_active_good_words.size() !=
-        static_cast<size_t>(_market.market_count) * words_per_market) {
+void NativeEconomyRuntime::refresh_investment_active_goods_for_cell(
+        int32_t cell, int64_t &sat) {
+    if (cell < 0 || cell >= _cell_count || _market.good_count <= 0 ||
+        _market.cell_to_market.size() != static_cast<size_t>(_cell_count)) {
         return;
     }
-    std::fill(_investment_active_good_words.begin() + word_begin,
-              _investment_active_good_words.begin() + word_begin +
-                  words_per_market,
-              uint64_t{0});
-    for (int32_t good = 0; good < _market.good_count; ++good) {
-        const int64_t index = _market.index(market, good);
-        const int32_t signal = market_signal_index(market, good);
-        const int64_t business = saturating_add(
-            signal >= 0 ? _market_signals.business_demand_ema[signal] : 0,
-            epoch_research_demand_daily_for_market(market, good), sat);
-        const int64_t supply = signal >= 0
-            ? _market_signals.offered_supply_ema[signal] : 0;
-        const int64_t realized = signal >= 0
-            ? _market_signals.realized_withdrawal_ema[signal] : 0;
-        const int32_t flow = trade_flow_index(market, good, false);
-        const int64_t exports = flow >= 0 ? _trade_flows.export_ema[flow] : 0;
-        const int64_t demand = saturating_add(
-            std::max<int64_t>(0, _market.demand_ema[index]),
-            std::max<int64_t>(0, business), sat);
-        const int64_t target = merchant_inventory_target(
-            market, good, signal, realized, exports, supply, sat);
-        const bool active = _good_monetary_issue_values[good] > 0 ||
-            demand > std::max<int64_t>(0, supply) ||
-            _market.stock[index] < target;
-        if (!active) continue;
-        _investment_active_good_words[word_begin +
-            static_cast<size_t>(good / 64)] |=
-            uint64_t{1} << static_cast<uint32_t>(good % 64);
+    const int32_t market = _market.cell_to_market[static_cast<size_t>(cell)];
+    if (market < 0 || market >= _market.market_count) return;
+    const size_t words_per_market =
+        (static_cast<size_t>(_market.good_count) + 63U) / 64U;
+    if (_investment_active_good_words.size() != words_per_market) return;
+    std::fill(_investment_active_good_words.begin(),
+              _investment_active_good_words.end(), uint64_t{0});
+    _investment_active_goods_scratch.clear();
+    auto mark_good = [&](int32_t good) {
+        if (good < 0 || good >= _market.good_count) return;
+        uint64_t &word = _investment_active_good_words[
+            static_cast<size_t>(good / 64)];
+        const uint64_t bit = uint64_t{1} <<
+            static_cast<uint32_t>(good % 64);
+        if ((word & bit) != 0) return;
+        word |= bit;
+        _investment_active_goods_scratch.push_back(good);
+    };
+
+    // All sources below are sparse. No review cell scans the goods catalog.
+    const uint64_t key_begin =
+        static_cast<uint64_t>(static_cast<uint32_t>(cell)) << 32;
+    const uint64_t key_end = key_begin | 0xffffffffULL;
+    auto active = std::lower_bound(
+        _trade_active_keys.begin(), _trade_active_keys.end(), key_begin);
+    for (; active != _trade_active_keys.end() && *active <= key_end; ++active)
+        mark_good(static_cast<int32_t>(*active & 0xffffffffULL));
+
+    if (_market_signals.cell_offsets.size() ==
+            static_cast<size_t>(_cell_count + 1)) {
+        for (int32_t signal = _market_signals.cell_offsets[cell];
+             signal < _market_signals.cell_offsets[cell + 1]; ++signal) {
+            mark_good(_market_signals.good_ids[signal]);
+        }
     }
+
+    // Propagation for the current stable review cell appends a contiguous tail.
+    for (size_t cursor = _startup_demand_touched_keys.size(); cursor > 0;) {
+        const uint64_t key = _startup_demand_touched_keys[--cursor];
+        const int32_t key_cell = static_cast<int32_t>(key >> 32);
+        if (key_cell != cell) break;
+        mark_good(static_cast<int32_t>(key & 0xffffffffULL));
+    }
+
+    if (_trade_topology.component.size() == static_cast<size_t>(_cell_count) &&
+        _epoch_cell_country.size() == static_cast<size_t>(_cell_count)) {
+        const int32_t country = _epoch_cell_country[static_cast<size_t>(cell)];
+        const int32_t component =
+            _trade_topology.component[static_cast<size_t>(cell)];
+        const auto group = std::lower_bound(
+            _startup_remote_groups.begin(), _startup_remote_groups.end(),
+            std::pair<int32_t, int32_t>{country, component},
+            [](const StartupRemoteGroup &lhs,
+               const std::pair<int32_t, int32_t> &rhs) {
+                return std::pair<int32_t, int32_t>{
+                    lhs.country, lhs.component} < rhs;
+            });
+        if (group != _startup_remote_groups.end() &&
+            group->country == country && group->component == component) {
+            for (int32_t lane = group->lane_begin; lane < group->lane_end;
+                 ++lane) {
+                if (_startup_remote_lanes[lane].remaining_daily > 0)
+                    mark_good(_startup_remote_lanes[lane].good_id);
+            }
+        }
+    }
+    for (const int32_t good : _startup_monetary_good_indices) mark_good(good);
+    if (epoch_research_demand_daily(cell, _epoch_research_good_id) > 0)
+        mark_good(_epoch_research_good_id);
+
+    // Keep deterministic candidate order independent of sparse source order.
+    std::sort(_investment_active_goods_scratch.begin(),
+              _investment_active_goods_scratch.end());
+    (void)sat;
 }
 
 
@@ -14115,6 +14155,7 @@ int64_t NativeEconomyRuntime::state_hash() const {
         _catalog_compat_hash_v10 != 0 ? _catalog_compat_hash_v10 : _catalog_hash));
     mix_u64(static_cast<uint64_t>(_building_catalog_hash));
     mix_u64(static_cast<uint64_t>(_prosperity_profile_hash));
+    mix_u64(static_cast<uint64_t>(_startup_demand_runtime_mode));
     mix_u64(static_cast<uint64_t>(_cell_count));
     mix_u64(static_cast<uint64_t>(_epoch_id));
     mix_u64(static_cast<uint64_t>(_epoch_days));
@@ -14848,6 +14889,17 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _market.clear();
     _market_signals.clear(0);
     _market_signals_rebuild_scratch.clear(0);
+    _investment_active_good_words.clear();
+    _investment_active_goods_scratch.clear();
+    _startup_demand_values.clear();
+    _startup_demand_stamps.clear();
+    _startup_demand_generation = 0;
+    _startup_demand_touched_keys.clear();
+    _startup_monetary_good_indices.clear();
+    _startup_remote_lanes.clear();
+    _startup_remote_groups.clear();
+    _startup_inbound_lanes.clear();
+    _startup_remote_accumulator_scratch.clear();
     _labor_signals.clear(0);
     _labor_signals_rebuild_scratch.clear(0);
     _market_signal_overflow_cells.clear();

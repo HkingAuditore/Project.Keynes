@@ -990,7 +990,8 @@ func _audit_household_consumption(catalog: Dictionary) -> void:
 			actual_household_goods.append(goods[good_idx])
 	actual_household_goods.sort()
 	var expected_household_goods := PackedStringArray([
-		"prepared_staples", "bread", "grain", "gathered_plants", "potatoes", "game_meat", "meat", "fish",
+		"prepared_staples", "bread", "grain", "wheat_grain", "rice_grain",
+		"corn_grain", "gathered_plants", "potatoes", "game_meat", "meat", "fish",
 		"canned_fish", "dairy_products", "vegetables", "processed_food", "cloth", "fur",
 		"clothing", "footwear", "construction_components", "pottery", "furniture", "soap",
 		"detergent", "medicinal_herbs", "pharmaceuticals", "logs", "coal", "natural_gas",
@@ -1015,6 +1016,7 @@ func _audit_household_consumption(catalog: Dictionary) -> void:
 	var need_min: PackedInt32Array = catalog.need_wealth_min_q16
 	var need_max: PackedInt32Array = catalog.need_wealth_max_q16
 	var need_variant_offsets: PackedInt32Array = catalog.need_variant_offsets
+	var variant_preferences: PackedInt32Array = catalog.variant_preference_q16
 	var variant_price: PackedInt32Array = catalog.variant_price_elasticity_q16
 	var variant_component_offsets: PackedInt32Array = catalog.variant_component_offsets
 	var component_quantities: PackedInt64Array = catalog.component_qty_per_need
@@ -1066,7 +1068,8 @@ func _audit_household_consumption(catalog: Dictionary) -> void:
 		"quality_of_life": [2, 0, 131072, 1024, 524288, 65536],
 	}
 	var expected_variants := {
-		"staple_food": ["prepared_staples", "bread", "grain", "gathered_plants", "potatoes"],
+		"staple_food": ["prepared_staples", "bread", "grain", "wheat_grain",
+			"rice_grain", "corn_grain", "potatoes", "gathered_plants"],
 		"protein": ["game_meat", "meat", "fish", "canned_fish", "dairy_products"],
 		"produce": ["vegetables", "processed_food"],
 		"clothing": ["cloth", "fur", "clothing", "footwear"],
@@ -1129,8 +1132,23 @@ func _audit_household_consumption(catalog: Dictionary) -> void:
 				for component_idx in range(component_begin, component_end):
 					var good_id := String(goods[household_good_indices[component_idx]])
 					signature.append(good_id)
-					exact = exact and component_quantities[component_idx] == (
-						100 if good_id == "technology_points" else 1000)
+					var expected_quantity := 1000
+					if need_id == "staple_food":
+						expected_quantity = 650 if good_id in [
+							"prepared_staples", "bread"] else (
+							800 if good_id in ["grain", "wheat_grain", "rice_grain",
+								"corn_grain", "potatoes"] else 1000)
+					elif good_id == "technology_points":
+						expected_quantity = 100
+					exact = exact and component_quantities[component_idx] == \
+						expected_quantity
+					if need_id == "staple_food":
+						var expected_preference := 131072 if good_id in [
+							"prepared_staples", "bread"] else (
+							98304 if good_id in ["grain", "wheat_grain", "rice_grain",
+								"corn_grain", "potatoes"] else 65536)
+						exact = exact and variant_preferences[variant_idx] == \
+							expected_preference
 					var uses: Array = good_uses.get(good_id, [])
 					if not uses.has(need_id):
 						uses.append(need_id)

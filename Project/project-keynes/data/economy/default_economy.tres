@@ -18,3 +18,4 @@ suspended_liquidation_failed_reviews = 73
 market_target_cohorts_per_slice = 0
 market_runtime_mode = "ACTIVE"
 trade_runtime_mode = "ACTIVE"
+startup_demand_runtime_mode = "ACTIVE"
