@@ -1894,6 +1894,9 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
         _building_construction_goods.clear();
         _building_construction_candidate_offsets.clear();
         _building_construction_candidates.clear();
+        _building_maintenance_author_offsets.clear();
+        _building_maintenance_author_goods.clear();
+        _building_maintenance_goods.clear();
         _building_inputs.clear();
         _building_input_candidates.clear();
         _building_outputs.clear();
@@ -1954,6 +1957,9 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
     _building_dependency_tags = packed_i32(catalog, "building_dependency_tags");
     const std::vector<int32_t> employee_offsets = packed_i32(catalog, "building_employee_offsets");
     const std::vector<int32_t> construction_offsets = packed_i32(catalog, "building_construction_offsets");
+    const std::vector<int32_t> maintenance_offsets = packed_i32(catalog, "building_maintenance_offsets");
+    const std::vector<int32_t> maintenance_horizons = packed_i32(
+        catalog, "building_maintenance_horizon_days");
     const std::vector<int32_t> input_offsets = packed_i32(catalog, "building_input_offsets");
     const std::vector<int32_t> output_offsets = packed_i32(catalog, "building_output_offsets");
     const std::vector<int32_t> output_cost_share_offsets =
@@ -2004,7 +2010,10 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
                         _building_dependency_tag_offsets.end()) ||
         _building_dependency_tag_offsets.back() !=
             static_cast<int32_t>(_building_dependency_tags.size()) ||
-        !offsets_valid(construction_offsets) || !offsets_valid(input_offsets) ||
+        !offsets_valid(construction_offsets) ||
+        (!maintenance_offsets.empty() && !offsets_valid(maintenance_offsets)) ||
+        (!maintenance_horizons.empty() && maintenance_horizons.size() != types) ||
+        !offsets_valid(input_offsets) ||
         !offsets_valid(output_offsets) || !offsets_valid(resource_offsets) ||
         !offsets_valid(output_cost_share_offsets) ||
         !offsets_valid(generation_offsets) || generation_floors.size() != types ||
@@ -2039,6 +2048,10 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
                 static_cast<int32_t>(construction_candidate_goods.size()));
         }
     }
+    const std::vector<int32_t> maintenance_goods = packed_i32(
+        catalog, "building_maintenance_good_ids");
+    const std::vector<int64_t> maintenance_qty = packed_i64(
+        catalog, "building_maintenance_quantities");
     const std::vector<int32_t> input_goods = packed_i32(catalog, "building_input_good_ids");
     const std::vector<int64_t> input_qty = packed_i64(catalog, "building_input_quantities");
     std::vector<int32_t> input_required_q16 = packed_i32(catalog, "building_input_required_q16");
@@ -2174,6 +2187,20 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
                        "building_construction_good_invalid") ||
         !compile_goods(output_goods, output_qty, _building_outputs,
                        "building_output_good_invalid")) return false;
+    if (maintenance_offsets.empty()) {
+        _building_maintenance_author_offsets.assign(types + 1, 0);
+        _building_maintenance_author_goods.clear();
+    } else {
+        if (maintenance_offsets.back() != static_cast<int32_t>(maintenance_goods.size()) ||
+            maintenance_goods.size() != maintenance_qty.size()) {
+            error = "building_maintenance_column_size_mismatch";
+            return false;
+        }
+        if (!compile_goods(maintenance_goods, maintenance_qty,
+                           _building_maintenance_author_goods,
+                           "building_maintenance_good_invalid")) return false;
+        _building_maintenance_author_offsets = maintenance_offsets;
+    }
     for (GoodAmount &output : _building_outputs) {
         output.quantity = mul_div_sat(output.quantity,
             _building_output_efficiency_q16, Q16_ONE, _saturation_count);
@@ -2317,6 +2344,8 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
             owner_prof[i], owner_slots[i], wages[i],
             employee_offsets[i], employee_offsets[i + 1] - employee_offsets[i],
             construction_offsets[i], construction_offsets[i + 1] - construction_offsets[i],
+            0, 0,
+            maintenance_horizons.empty() ? 0 : std::max(0, maintenance_horizons[i]),
             input_offsets[i], input_offsets[i + 1] - input_offsets[i],
             output_offsets[i], output_offsets[i + 1] - output_offsets[i],
             resource_offsets[i], resource_offsets[i + 1] - resource_offsets[i],
@@ -2327,6 +2356,7 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
             target_margins[i], supply_elasticities[i], output_cost_share_offsets[i],
             output_cost_share_offsets[i + 1] - output_cost_share_offsets[i]};
     }
+    resolve_building_maintenance_csr();
     _building_type_market_signal_goods.clear();
     _building_type_labor_signal_professions.clear();
     _building_type_market_signal_goods.reserve(
@@ -2349,6 +2379,14 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
         for (int32_t output = type.output_begin;
              output < type.output_begin + type.output_count; ++output) {
             baked_keys.push_back(_building_outputs[output].good_id);
+        }
+        for (int32_t item = type.construction_begin;
+             item < type.construction_begin + type.construction_count; ++item) {
+            baked_keys.push_back(_building_construction_goods[item].good_id);
+        }
+        for (int32_t item = type.maintenance_begin;
+             item < type.maintenance_begin + type.maintenance_count; ++item) {
+            baked_keys.push_back(_building_maintenance_goods[item].good_id);
         }
         std::sort(baked_keys.begin(), baked_keys.end());
         baked_keys.erase(std::unique(baked_keys.begin(), baked_keys.end()),

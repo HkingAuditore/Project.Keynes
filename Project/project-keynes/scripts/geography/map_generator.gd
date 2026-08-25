@@ -1058,11 +1058,13 @@ var _native_daily_day_pending: bool = false
 # Bio occupancy 的 species/catalog、邻接索引和 carrier 映射只依赖 MapData
 # 实例及其 cell 数量；动态气候/植被/储量列仍在每次 pass 更新。缓存是
 # GDScript facade 的 transient 数据，不属于模拟 authority、存档或 state hash。
-const _BIO_OCCUPANCY_KNOB_CACHE_VERSION: int = 1
+const _BIO_OCCUPANCY_KNOB_CACHE_VERSION: int = 2
 var _bio_occupancy_knob_cache: Dictionary = {}
 var _bio_occupancy_knob_cache_map_id: int = 0
 var _bio_occupancy_knob_cache_n: int = -1
 var _bio_occupancy_knob_cache_version: int = 0
+var _bio_occupancy_native_configured_map_id: int = 0
+var _bio_observation_country_handle: int = 0
 var _economy_facade = null
 var _economy_daily_job = null
 var _country_facade = null
@@ -10862,6 +10864,14 @@ func _bio_occupancy_base_knobs(map_ref: MapData) -> Dictionary:
 			unique_ids.append(id)
 		var primary := PackedInt32Array()
 		var alt := PackedInt32Array()
+		var carrier_slot_names := PackedStringArray()
+		for raw_id in unique_ids:
+			var slot_name := ""
+			for profile in ResourceProfileRegistry.ordered():
+				if String(profile.id) == String(raw_id):
+					slot_name = ResourceProfileRegistry.reserve_cpp_name(profile)
+					break
+			carrier_slot_names.append(slot_name)
 		primary.resize(carrier_ids.size())
 		alt.resize(carrier_alts.size())
 		for i in range(carrier_ids.size()):
@@ -10898,11 +10908,18 @@ func _bio_occupancy_base_knobs(map_ref: MapData) -> Dictionary:
 			"carrier_ids": carrier_ids,
 			"carrier_alts": carrier_alts,
 			"carrier_unique_ids": unique_ids,
+			"carrier_slot_names": carrier_slot_names,
 		}
 		_bio_occupancy_knob_cache_map_id = map_id
 		_bio_occupancy_knob_cache_n = n
 		_bio_occupancy_knob_cache_version = _BIO_OCCUPANCY_KNOB_CACHE_VERSION
 	var static_knobs: Dictionary = _bio_occupancy_knob_cache
+	if _bio_occupancy_native_configured_map_id != map_id \
+			and _data_core_world_ext != null \
+			and _data_core_world_ext.has_method("configure_bio_occupancy"):
+		var configured: Dictionary = _data_core_world_ext.configure_bio_occupancy(static_knobs)
+		if bool(configured.get("ok", false)):
+			_bio_occupancy_native_configured_map_id = map_id
 	var empty := PackedFloat32Array()
 	empty.resize(n)
 	var columns: Array = []
@@ -10927,6 +10944,28 @@ func _bio_occupancy_base_knobs(map_ref: MapData) -> Dictionary:
 		"_knob_cache_build_ms": (Time.get_ticks_usec() - build_started_usec) / 1000.0,
 	})
 	return out
+
+
+func _bio_occupancy_daily_knobs(map_ref: MapData) -> Dictionary:
+	if map_ref == null:
+		return {"ok": false, "reason": "map_missing"}
+	var map_id := int(map_ref.get_instance_id())
+	if _bio_occupancy_native_configured_map_id != map_id:
+		var configured_knobs := _bio_occupancy_base_knobs(map_ref)
+		if not bool(configured_knobs.get("ok", false)):
+			return configured_knobs
+		if _bio_occupancy_native_configured_map_id != map_id:
+			# Native slots may be unavailable in a focused test harness. Preserve
+			# the PackedArray A/B path instead of changing gameplay semantics.
+			return configured_knobs
+	return {
+		"ok": true,
+		"cell_count": map_ref.cell_count(),
+		"seed": _last_seed,
+		"use_configured_slots": true,
+		"_knob_cache_hit": true,
+		"_knob_cache_build_ms": 0.0,
+	}
 
 
 func _bio_reserve_column(map_ref: MapData, resource_id: String, n: int,
@@ -10977,11 +11016,21 @@ func _seed_bio_occupancy(map_ref: MapData) -> void:
 	if not bool(knobs.get("ok", false)):
 		push_error("[bio-occupancy] species knobs failed: %s" % String(knobs.get("reason", "unknown")))
 		return
-	var province_res: Dictionary = _data_core_world_ext.run_bio_province_pass(knobs)
-	if not bool(province_res.get("ok", false)):
-		push_error("[bio-occupancy] province pass failed: %s" % String(
-			province_res.get("reason", "unknown")))
-		return
+	var province_res: Dictionary = {}
+	var seed_res: Dictionary = {}
+	if _data_core_world_ext.has_method("run_bio_bootstrap_pass"):
+		seed_res = _data_core_world_ext.run_bio_bootstrap_pass(knobs)
+		if not bool(seed_res.get("ok", false)):
+			push_error("[bio-occupancy] bootstrap pass failed: %s" % String(
+				seed_res.get("reason", "unknown")))
+			return
+		province_res = seed_res
+	else:
+		province_res = _data_core_world_ext.run_bio_province_pass(knobs)
+		if not bool(province_res.get("ok", false)):
+			push_error("[bio-occupancy] province pass failed: %s" % String(
+				province_res.get("reason", "unknown")))
+			return
 	var n := map_ref.cell_count()
 	var landmass: PackedInt32Array = province_res.get("landmass_ids", PackedInt32Array())
 	var provinces: PackedInt32Array = province_res.get("province_ids", PackedInt32Array())
@@ -10992,10 +11041,12 @@ func _seed_bio_occupancy(map_ref: MapData) -> void:
 	map_ref.province_id_arr = provinces
 	knobs["province_ids"] = provinces
 	knobs["landmass_ids"] = landmass
-	var seed_res: Dictionary = _data_core_world_ext.run_bio_seed_pass(knobs)
-	if not bool(seed_res.get("ok", false)):
-		push_error("[bio-occupancy] seed pass failed: %s" % String(seed_res.get("reason", "unknown")))
-		return
+	if seed_res.is_empty():
+		seed_res = _data_core_world_ext.run_bio_seed_pass(knobs)
+		if not bool(seed_res.get("ok", false)):
+			push_error("[bio-occupancy] seed pass failed: %s" % String(
+				seed_res.get("reason", "unknown")))
+			return
 	var occupancy: PackedInt32Array = seed_res.get("occupancy_bits", PackedInt32Array())
 	if occupancy.size() != n:
 		push_error("[bio-occupancy] occupancy output shape invalid")
@@ -11084,39 +11135,48 @@ func _log_bio_occupancy_seed(knobs: Dictionary, seed_res: Dictionary, landmass_c
 
 
 func run_bio_occupancy_pass_native(map_ref, run_diffusion: bool = false,
-		day_index: int = 0, slice_enabled: bool = false) -> Dictionary:
+		day_index: int = 0, slice_enabled: bool = false,
+		bio_slice_cells: int = BIO_OCCUPANCY_SLICE_CELLS) -> Dictionary:
 	if map_ref == null or _data_core_world_ext == null \
 			or not _data_core_world_ext.has_method("run_bio_occupancy_pass"):
 		return {"ok": false, "path": "skip", "reason": "native_unavailable"}
-	var knobs := _bio_occupancy_base_knobs(map_ref)
+	var knobs := _bio_occupancy_daily_knobs(map_ref)
 	if not bool(knobs.get("ok", false)):
 		return knobs
-	knobs["province_ids"] = map_ref.province_id_arr
-	knobs["occupancy_bits"] = map_ref.bio_occupancy_bits_arr
-	knobs["explored"] = map_ref.explored_arr
+	if not bool(knobs.get("use_configured_slots", false)):
+		knobs["province_ids"] = map_ref.province_id_arr
+		knobs["occupancy_bits"] = map_ref.bio_occupancy_bits_arr
 	knobs["run_diffusion"] = run_diffusion
 	knobs["day_index"] = day_index
 	knobs["slice_enabled"] = slice_enabled
+	if _bio_observation_country_handle == 0 and _country_facade != null:
+		var start_cell := int(gameplay_start_report().get("cell", -1))
+		if start_cell >= 0:
+			_bio_observation_country_handle = int(_country_facade.cell_summary(
+				start_cell).get("country_handle", 0))
+	if _bio_observation_country_handle != 0:
+		knobs["observation_country_handle"] = _bio_observation_country_handle
+		knobs["observation_effective_day"] = day_index + 1
 	# Keep phase boundaries (persistence/diffusion/merge/publish) preemptible
 	# while using a fixed deterministic range per call. The round is frozen by
 	# WorldClock until the final publish, so no partial occupancy is visible.
 	if slice_enabled:
-		knobs["bio_slice_cells"] = BIO_OCCUPANCY_SLICE_CELLS
+		knobs["bio_slice_cells"] = clampi(bio_slice_cells, 2048, 32768)
 	# The first sliced call captures the full input snapshot.  Subsequent fixed
 	# cursor calls reuse native staging and must not refresh/copy MapData again.
 	var refresh_inputs := not slice_enabled or not _bio_occupancy_slice_inflight
 	if refresh_inputs and _data_core_world_ext.has_method("refresh_slots_from_map_keys"):
-		_data_core_world_ext.refresh_slots_from_map_keys(PackedStringArray([
+		var refresh_keys := PackedStringArray([
 			"cell_bio_occupancy_bits",
-			"cell_res_pasture_reserve",
-			"cell_res_wild_game_reserve",
-			"cell_res_arable_land_reserve",
-			"cell_res_paddy_land_reserve",
-			"cell_res_plantation_land_reserve",
-			"cell_temp",
+			"cell_temp_30d",
 			"cell_moisture",
 			"cell_vegetation",
-		]))
+		])
+		for slot_name in _bio_occupancy_knob_cache.get(
+				"carrier_slot_names", PackedStringArray()):
+			if not refresh_keys.has(slot_name):
+				refresh_keys.append(slot_name)
+		_data_core_world_ext.refresh_slots_from_map_keys(refresh_keys)
 	var sliced_call := slice_enabled and \
 			_data_core_world_ext.has_method("run_bio_occupancy_slice")
 	var res: Dictionary = _data_core_world_ext.run_bio_occupancy_slice(knobs) \

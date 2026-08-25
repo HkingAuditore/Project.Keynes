@@ -234,21 +234,10 @@ bool NativeEconomyRuntime::building_dependency_requirements_met(
 }
 
 bool NativeEconomyRuntime::building_constructible(int32_t cell, int32_t type_id,
-                                                  bool frozen) const {
-    if (!building_available(cell, type_id, frozen) || type_id < 0 ||
-        type_id >= static_cast<int32_t>(_building_upgrade_family_indices.size()) ||
-        type_id >= static_cast<int32_t>(_building_upgrade_tiers.size())) return false;
-    const int32_t family = _building_upgrade_family_indices[type_id];
-    if (family < 0) return true;
-    const int32_t tier = _building_upgrade_tiers[type_id];
-    for (int32_t candidate = 0;
-         candidate < static_cast<int32_t>(_building_upgrade_family_indices.size());
-         ++candidate) {
-        if (_building_upgrade_family_indices[candidate] == family &&
-            _building_upgrade_tiers[candidate] > tier &&
-            building_available(cell, candidate, frozen)) return false;
-    }
-    return true;
+                                                   bool frozen) const {
+    // 技术进步提供更多生产方式，而不是脚本化淘汰旧方式。投资市场会按
+    // 资本回报、单位成本和当地约束选择层级；这里仅判断知识与依赖闭包。
+    return building_available(cell, type_id, frozen);
 }
 
 int64_t NativeEconomyRuntime::allocated_output_operating_cost(
@@ -329,6 +318,9 @@ bool NativeEconomyRuntime::run_building_production_cell(
     int64_t &_building_resource_generated = result.building_resource_generated;
     int64_t &_building_resource_consumed = result.building_resource_consumed;
     int64_t &_production_inputs_consumed = result.production_inputs_consumed;
+    int64_t &_maintenance_goods_consumed = result.maintenance_goods_consumed;
+    int64_t &_maintenance_unmet = result.maintenance_unmet;
+    int64_t &_maintenance_unpaid_value = result.maintenance_unpaid_value;
     int64_t &_production_output_stock = result.production_output_stock;
     int64_t &_production_output_discarded = result.production_output_discarded;
     int64_t &_production_output_supported = result.production_output_supported;
@@ -472,6 +464,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
         group.last_resource_generated = 0;
         group.last_input_cost = group.last_wages_paid = group.last_wages_due = 0;
         group.last_operating_cost = 0;
+        group.last_maintenance_cost = 0;
         group.purchase_intent_capacity_q16 = 0;
         group.last_base_wages_paid = group.last_base_wages_due = 0;
         group.last_bonus_paid = group.last_bonus_due = 0;
@@ -1548,9 +1541,9 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 total_purchase_value, base_weight, _saturation_count);
             const bool survival_good = _survival_food_good_mask[good] != 0 ||
                 _survival_clothing_good_mask[good] != 0;
-            const bool input_gap = signal >= 0 && signal < static_cast<int32_t>(
-                    _production_input_reserve.size()) &&
-                _production_input_reserve[signal] >
+            const int64_t protected_reserve = merchant_protected_reserve(signal);
+            const bool input_gap = signal >= 0 &&
+                protected_reserve >
                     _market.stock[_market.index(market, good)];
             if (survival_good) {
                 _merchant_survival_procurement_required = saturating_add(
@@ -1573,10 +1566,8 @@ bool NativeEconomyRuntime::run_building_production_cell(
                                     0, Q16_ONE),
                 2 * Q16_ONE, Q16_ONE, _saturation_count),
                 _saturation_count);
-            if (signal >= 0 && signal < static_cast<int32_t>(
-                    _production_input_reserve.size())) {
-                const int64_t reserve = std::max<int64_t>(
-                    0, _production_input_reserve[signal]);
+            if (signal >= 0) {
+                const int64_t reserve = merchant_protected_reserve(signal);
                 const int64_t stock = std::max<int64_t>(
                     0, _market.stock[market_index]);
                 if (reserve > stock) {
@@ -1600,9 +1591,8 @@ bool NativeEconomyRuntime::run_building_production_cell(
             if (_survival_food_good_mask[good] != 0 ||
                 _survival_clothing_good_mask[good] != 0) return 0;
             const int32_t signal = market_signal_index(cell, good);
-            if (signal >= 0 && signal < static_cast<int32_t>(
-                    _production_input_reserve.size()) &&
-                _production_input_reserve[signal] >
+            if (signal >= 0 &&
+                merchant_protected_reserve(signal) >
                     _market.stock[_market.index(market, good)]) return 1;
             return 2;
         };
@@ -2208,6 +2198,93 @@ bool NativeEconomyRuntime::run_building_production_cell(
         _building_wages_unpaid = saturating_add(
             _building_wages_unpaid, total_due - owner_paid, _saturation_count);
     }
+    thread_local std::vector<int64_t> maintenance_observed;
+    maintenance_observed.assign(cell_signal_count, 0);
+    for (int32_t g = begin; g < end; ++g) {
+        BuildingGroup &group = _buildings[g];
+        if (group.cell != cell || group.count <= 0 ||
+            group.operating_state == 1 ||
+            !building_available(cell, group.type_id, true)) continue;
+        const BuildingType &type = _building_types[group.type_id];
+        if (type.maintenance_count <= 0) continue;
+        const int32_t owner_slot = find_cohort_slot(cell, group.owner_signature_id);
+        if (owner_slot < 0) continue;
+        const int64_t building_days = saturating_mul(
+            group.count, std::max(1, _epoch_days), _saturation_count);
+        int64_t paid = 0;
+        for (int32_t i = 0; i < type.maintenance_count; ++i) {
+            const GoodAmount &item =
+                _building_maintenance_goods[type.maintenance_begin + i];
+            if (!is_storable_nonmonetary_good(item.good_id)) continue;
+            const int64_t desired = saturating_mul(
+                building_days, item.quantity, _saturation_count);
+            const int32_t signal = market_signal_index(cell, item.good_id);
+            if (signal >= 0 && signal < static_cast<int32_t>(
+                    _epoch_desired_business_demand.size())) {
+                _epoch_desired_business_demand[signal] = saturating_add(
+                    _epoch_desired_business_demand[signal], desired,
+                    _saturation_count);
+            }
+            const int64_t price = maintenance_settlement_price(
+                cell, item.good_id, _saturation_count);
+            const int64_t stock_index = _market.index(market, item.good_id);
+            const int64_t stock = std::max<int64_t>(0, _market.stock[stock_index]);
+            const int64_t affordable = price > 0
+                ? mul_div_sat(std::max<int64_t>(0, _population.funds[owner_slot]),
+                              GOODS_SCALE, price, _saturation_count)
+                : 0;
+            const int64_t bought = std::min(desired, std::min(stock, affordable));
+            const int64_t unmet = std::max<int64_t>(0, desired - bought);
+            _maintenance_unmet = saturating_add(
+                _maintenance_unmet, unmet, _saturation_count);
+            if (unmet > 0 && price > 0) {
+                _maintenance_unpaid_value = saturating_add(
+                    _maintenance_unpaid_value,
+                    mul_div_sat(unmet, price, GOODS_SCALE, _saturation_count),
+                    _saturation_count);
+            }
+            if (bought <= 0 || price <= 0) continue;
+            const int64_t cost = mul_div_sat(
+                bought, price, GOODS_SCALE, _saturation_count);
+            if (cost > _population.funds[owner_slot]) continue;
+            audit_touch_market_lane(static_cast<size_t>(stock_index));
+            _market.stock[stock_index] -= bought;
+            _population.funds[owner_slot] -= cost;
+            _population.epoch_expense[owner_slot] = saturating_add(
+                _population.epoch_expense[owner_slot], cost, _saturation_count);
+            paid = saturating_add(paid, cost, _saturation_count);
+            _maintenance_goods_consumed = saturating_add(
+                _maintenance_goods_consumed, bought, _saturation_count);
+            if (signal >= 0 && signal < static_cast<int32_t>(
+                    _epoch_nonhousehold_withdrawals.size())) {
+                _epoch_nonhousehold_withdrawals[signal] = saturating_add(
+                    _epoch_nonhousehold_withdrawals[signal], bought,
+                    _saturation_count);
+            }
+            if (signal >= 0 && signal < static_cast<int32_t>(
+                    _epoch_funded_business_demand.size())) {
+                _epoch_funded_business_demand[signal] = saturating_add(
+                    _epoch_funded_business_demand[signal], bought,
+                    _saturation_count);
+            }
+            if (signal >= cell_signal_begin && signal < cell_signal_end) {
+                const size_t local = static_cast<size_t>(signal - cell_signal_begin);
+                maintenance_observed[local] = saturating_add(
+                    maintenance_observed[local], bought, _saturation_count);
+            }
+            trace_record_cashflow(cell, _population.handle_for_slot(owner_slot),
+                                  CASHFLOW_PRODUCTION_INPUT, 0, cost);
+            if (credit_local_merchants(cell, cost,
+                                       CASHFLOW_MERCHANT_BUSINESS,
+                                       &_saturation_count) != cost) {
+                error = "building_maintenance_has_no_merchant_owner";
+                return false;
+            }
+        }
+        group.last_maintenance_cost = paid;
+        group.last_operating_cost = saturating_add(
+            group.last_operating_cost, paid, _saturation_count);
+    }
     // Tax positive net operating income only after inputs, actually paid wages,
     // and positive business tax are known. Tax/subsidy transfers themselves are
     // intentionally excluded from this base and losses never cross a cycle.
@@ -2218,9 +2295,10 @@ bool NativeEconomyRuntime::run_building_production_cell(
         for (int32_t g = begin; g < end; ++g) {
             if (_buildings[g].owner_signature_id != owner_signature) continue;
             const int64_t costs = saturating_add(
-                saturating_add(_buildings[g].last_input_cost,
+                saturating_add(saturating_add(_buildings[g].last_input_cost,
                                _buildings[g].last_wages_paid,
                                _saturation_count),
+                    _buildings[g].last_maintenance_cost, _saturation_count),
                 business_tax_active
                     ? business_tax_by_group[g - begin] : 0,
                 _saturation_count);
@@ -2271,7 +2349,9 @@ bool NativeEconomyRuntime::run_building_production_cell(
             std::max<int64_t>(0, group.filled_owner), _saturation_count),
             std::max(1, _epoch_days), _saturation_count);
         const int64_t realized_cost = saturating_add(saturating_add(
-            group.last_input_cost, group.last_base_wages_due, _saturation_count),
+            saturating_add(group.last_input_cost, group.last_base_wages_due,
+                _saturation_count),
+            group.last_maintenance_cost, _saturation_count),
             owner_livelihood, _saturation_count);
         const int64_t after_business_revenue = business_tax_active
             ? saturating_sub(
@@ -2295,6 +2375,9 @@ bool NativeEconomyRuntime::run_building_production_cell(
     supply_observed.assign(cell_signal_count, 0);
     anchor_weighted.assign(cell_signal_count, 0);
     anchor_quantity.assign(cell_signal_count, 0);
+    for (size_t i = 0; i < cell_signal_count; ++i) {
+        business_observed[i] = maintenance_observed[i];
+    }
     for (int32_t g = begin; g < end; ++g) {
         const BuildingGroup &group = _buildings[g];
         if (group.cell != cell || group.count <= 0 ||
@@ -2478,8 +2561,13 @@ bool NativeEconomyRuntime::run_building_production_cell(
             const int32_t good = _market_signals.good_ids[signal];
             supply_observed[local_signal] = std::max<int64_t>(
                 0, supply_observed[local_signal] - retained_by_signal[local_signal]);
-            const int64_t business_daily =
-                business_observed[local_signal] / std::max(1, _epoch_days);
+            const int64_t desired_daily = signal < static_cast<int32_t>(
+                    _epoch_desired_business_demand.size())
+                ? _epoch_desired_business_demand[signal] /
+                    std::max(1, _epoch_days) : 0;
+            const int64_t business_daily = std::max<int64_t>(
+                business_observed[local_signal] / std::max(1, _epoch_days),
+                desired_daily);
             const int64_t supply_daily =
                 supply_observed[local_signal] / std::max(1, _epoch_days);
             const int64_t business_alpha = std::min<int64_t>(Q16_ONE,
@@ -2682,6 +2770,9 @@ void NativeEconomyRuntime::merge_building_production_result(ProductionResult &re
     merge(_building_resource_generated, result.building_resource_generated);
     merge(_building_resource_consumed, result.building_resource_consumed);
     merge(_production_inputs_consumed, result.production_inputs_consumed);
+    merge(_maintenance_goods_consumed, result.maintenance_goods_consumed);
+    merge(_maintenance_unmet, result.maintenance_unmet);
+    merge(_maintenance_unpaid_value, result.maintenance_unpaid_value);
     merge(_production_output_stock, result.production_output_stock);
     merge(_production_output_discarded, result.production_output_discarded);
     merge(_production_output_supported, result.production_output_supported);

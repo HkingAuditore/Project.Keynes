@@ -429,6 +429,7 @@ func _run() -> void:
 		int(signal_snapshot.first_cells[0]) == 0 and
 		int(signal_snapshot.first_days[0]) == 5 and
 		int(signal_snapshot.last_days[0]) == 5)
+	_test_dense_observation_batch(catalog, profile, river_valley)
 
 	var continuation_profile := profile.duplicate(true)
 	continuation_profile.country_max_commands_per_slice = 1
@@ -506,6 +507,43 @@ func _run() -> void:
 	_expect("PKCN catalog mismatch is rejected precisely",
 		String(mismatched.end_country_restore().get("reason", "")) ==
 		"catalog_hash_mismatch")
+
+
+func _test_dense_observation_batch(catalog: Dictionary, profile: Dictionary,
+		signal_id: int) -> void:
+	const CELL_COUNT := 4096
+	var ext := _new_ext(CELL_COUNT)
+	var configured: Dictionary = ext.configure_country(catalog, profile, CELL_COUNT, 991)
+	var packet := {
+		"country_ids": PackedStringArray(["country.batch"]),
+		"country_names": PackedStringArray(["Batch"]),
+		"territory_offsets": PackedInt32Array([0, 1]),
+		"territory_cells": PackedInt32Array([0]),
+	}
+	var water := PackedByteArray()
+	water.resize(CELL_COUNT)
+	var boot: Dictionary = ext.bootstrap_country(packet, water)
+	var handle := int(ext.get_country_cell_summary(0).get("country_handle", 0))
+	var rows: Array[Dictionary] = []
+	rows.resize(CELL_COUNT)
+	for cell in CELL_COUNT:
+		rows[cell] = {"opcode": 14, "day": 1, "sequence": cell,
+			"handle": handle, "cell": cell, "aux": signal_id, "value": 1,
+			"stable_id": "", "name": ""}
+	var submit: Dictionary = ext.submit_country_commands(_commands(rows))
+	var committed: Dictionary = ext.run_country_slice({"day_index": 1})
+	var snapshot: Dictionary = ext.get_country_research_signal_snapshot(handle)
+	var events: Dictionary = ext.poll_country_events(0, 32)
+	var deltas: PackedInt32Array = events.get("evidence_deltas", PackedInt32Array())
+	_expect("dense observation batch configures", bool(configured.get("ok", false)) and
+		bool(boot.get("ok", false)) and bool(submit.get("ok", false)))
+	_expect("dense observation batch sort/unique merges linearly",
+		bool(committed.get("ok", false)) and
+		int(committed.get("observation_batch_input", 0)) == CELL_COUNT and
+		int(committed.get("observation_batch_added", 0)) == CELL_COUNT and
+		int(snapshot.counts[0]) == CELL_COUNT)
+	_expect("dense observation batch emits one aggregate signal event",
+		deltas.size() == 1 and int(deltas[0]) == CELL_COUNT)
 
 func _new_ext(cells: int) -> Object:
 	var ext: Object = ClassDB.instantiate("DCWorldExt")

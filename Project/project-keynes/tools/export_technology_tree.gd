@@ -19,12 +19,12 @@ const HTML_OUTPUT_PATH := "res://tools/technology_tree/technology_tree_report.ht
 const MARKDOWN_OUTPUT_PATH := "res://tools/technology_tree/technology_tree_report.md"
 const PLACEHOLDER := "__TECHNOLOGY_TREE_DATA__"
 
-const EXPECTED_NODE_COUNT := 361
+const EXPECTED_NODE_COUNT := 661
 const EXPECTED_ERA_COUNT := 11
 const EXPECTED_DOMAIN_COUNT := 4
-const EXPECTED_MILESTONE_CANDIDATE_COUNT := 8
-const EXPECTED_MILESTONE_REQUIRED_COUNT := 4
-const MAX_VISUAL_EDGE_COUNT := 1800
+const EXPECTED_MILESTONE_CANDIDATE_COUNTS := [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
+const EXPECTED_MILESTONE_REQUIRED_COUNTS := [4, 4, 4, 4, 5, 5, 5, 6, 6, 7, 7]
+const MAX_VISUAL_EDGE_COUNT := 4000
 const VISUAL_EDGE_KINDS := ["hard", "alternative", "application", "branch", "milestone_candidate"]
 
 
@@ -134,6 +134,7 @@ func _validate(definitions: Array[Dictionary], eras: Array[Dictionary],
 	for i in range(definitions.size()):
 		order[String(definitions[i].get("id", ""))] = i
 	var milestone_count := 0
+	var milestone_era_index := 0
 	for i in range(definitions.size()):
 		var definition: Dictionary = definitions[i]
 		var id := String(definition.get("id", ""))
@@ -146,11 +147,13 @@ func _validate(definitions: Array[Dictionary], eras: Array[Dictionary],
 		if bool(definition.get("is_milestone", false)):
 			milestone_count += 1
 			if (definition.get("milestone_candidate_ids", PackedStringArray())
-					as PackedStringArray).size() != EXPECTED_MILESTONE_CANDIDATE_COUNT:
+					as PackedStringArray).size() != EXPECTED_MILESTONE_CANDIDATE_COUNTS[
+					milestone_era_index]:
 				return "milestone_candidate_count_invalid: %s" % id
 			if int(definition.get("milestone_required_count", 0)) \
-					!= EXPECTED_MILESTONE_REQUIRED_COUNT:
+					!= EXPECTED_MILESTONE_REQUIRED_COUNTS[milestone_era_index]:
 				return "milestone_required_count_invalid: %s" % id
+			milestone_era_index += 1
 		if (definition.get("route_tags", PackedStringArray()) as PackedStringArray).is_empty():
 			return "route_tags_missing: %s" % id
 	if milestone_count != EXPECTED_ERA_COUNT:

@@ -6,6 +6,14 @@ const MAX_COHORT_ROWS := 12
 const MAX_MARKET_ROWS := 18
 const MAX_BUILDING_ROWS := 12
 const MAX_HISTORY := 50
+const COUNTRY_PINNED_REPORT_KEYS := [
+	"country_day_barrier", "stage", "last_committed_day",
+]
+const ECONOMY_PINNED_REPORT_KEYS := [
+	"fatal", "fatal_reason", "stage", "epoch_active", "epoch_id",
+	"current_day", "last_completed_sample_day", "newest_state_day",
+	"population_error", "money_error", "goods_error",
+]
 
 
 static func parse_command(line: String) -> Dictionary:
@@ -166,8 +174,10 @@ static func _format_overview(data: Dictionary) -> Array:
 			{"label": "最近耗时", "value": "%s ms" % runtime.get("last_tick_ms", 0)},
 		]},
 	]
-	_append_scalar_report(sections, "国家运行时", data.get("country", {}))
-	_append_scalar_report(sections, "经济运行时", data.get("economy", {}))
+	_append_scalar_report(sections, "国家运行时", data.get("country", {}),
+		COUNTRY_PINNED_REPORT_KEYS)
+	_append_scalar_report(sections, "经济运行时", data.get("economy", {}),
+		ECONOMY_PINNED_REPORT_KEYS)
 	var recorders: Dictionary = data.get("recorders", {})
 	var recorder_rows := []
 	for key in ["performance", "tiles", "economy"]:
@@ -275,29 +285,57 @@ static func _append_buildings(sections: Array, snapshot: Dictionary) -> void:
 		if rows.size() >= MAX_BUILDING_ROWS:
 			break
 	if rows.is_empty():
+		if snapshot.has("committed") and snapshot.has("busy") \
+				and not bool(snapshot.get("committed", true)) \
+				and not bool(snapshot.get("busy", false)):
+			rows.append({"label": "经济图", "value": "已暂停 · committed=false busy=false"})
 		_append_scalar_rows(rows, snapshot, MAX_BUILDING_ROWS)
 	sections.append({"title": "建筑", "rows": rows if not rows.is_empty() else [
 		{"label": "建筑", "value": "无"}]})
 
 
-static func _append_scalar_report(sections: Array, title: String, report) -> void:
+static func _append_scalar_report(sections: Array, title: String, report,
+		pinned: PackedStringArray = PackedStringArray()) -> void:
 	if not (report is Dictionary) or report.is_empty():
 		return
 	var rows := []
-	_append_scalar_rows(rows, report, MAX_REPORT_ROWS)
+	if title == "经济运行时" and bool(report.get("fatal", false)):
+		rows.append({"label": "状态", "value": "已暂停 · %s" % String(
+			report.get("fatal_reason", "unknown"))})
+	_append_scalar_rows(rows, report, MAX_REPORT_ROWS, pinned)
 	if not rows.is_empty():
 		sections.append({"title": title, "rows": rows})
 
 
-static func _append_scalar_rows(rows: Array, data: Dictionary, limit: int) -> void:
+static func _append_scalar_rows(rows: Array, data: Dictionary, limit: int,
+		pinned: PackedStringArray = PackedStringArray()) -> void:
+	var seen := {}
+	for raw_key in pinned:
+		var pinned_key := String(raw_key)
+		if not data.has(pinned_key) or seen.has(pinned_key):
+			continue
+		if _try_append_scalar_row(rows, pinned_key, data[pinned_key]):
+			seen[pinned_key] = true
+		if rows.size() >= limit:
+			return
 	var keys := data.keys()
 	keys.sort()
 	for key in keys:
-		var value = data[key]
-		if value is bool or value is int or value is float or value is String or value is StringName:
-			rows.append({"label": String(key), "value": str(value)})
+		var label := String(key)
+		if seen.has(label):
+			continue
+		if _try_append_scalar_row(rows, label, data[key]):
+			seen[label] = true
 		if rows.size() >= limit:
-			break
+			return
+
+
+static func _try_append_scalar_row(rows: Array, label: String, value) -> bool:
+	if value is bool or value is int or value is float or value is String \
+			or value is StringName:
+		rows.append({"label": label, "value": str(value)})
+		return true
+	return false
 
 
 static func _tokenize(line: String) -> Dictionary:

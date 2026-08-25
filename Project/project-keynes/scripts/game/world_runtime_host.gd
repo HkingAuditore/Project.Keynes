@@ -93,6 +93,12 @@ var _last_frame_wall_ms: float = 0.0
 var _fog_of_war_enabled: bool = false
 var _player_country_slot: int = -1
 var _player_country_handle: int = 0
+var _physical_visible_arr: PackedByteArray = PackedByteArray()
+var _vision_dirty_indices: PackedInt32Array = PackedInt32Array()
+var _native_vision_configured_n: int = -1
+var _native_vision_configured_map_id: int = 0
+var _magnetic_navigation_dense_id: int = -2
+var _remote_observation_capability: bool = false
 var _session_request: Dictionary = {}
 var _new_game_config: Dictionary = {}
 var _load_slot_id: String = ""
@@ -2455,10 +2461,17 @@ func _connect_country_committed() -> void:
 			facade.research_signal_discovered.connect(signal_callback)
 
 
-func _on_country_committed(_report: Dictionary) -> void:
+func _on_country_committed(report: Dictionary) -> void:
 	if _player_country_slot < 0:
 		_player_country_slot = _resolve_player_country_slot()
-	refresh_country_visuals("country_committed")
+	if int(report.get("changed_cells", 0)) > 0:
+		refresh_country_visuals("country_territory_committed")
+		return
+	var capability_now := _has_remote_observation_capability()
+	if capability_now != _remote_observation_capability:
+		_remote_observation_capability = capability_now
+		var vision := _refresh_vision()
+		_republish_cell_luts(_vision_dirty_indices)
 
 func _on_research_signal_discovered(event: Dictionary) -> void:
 	if _generator == null or not _generator.has_method("get_gameplay_event_bus"):
@@ -2469,7 +2482,8 @@ func _on_research_signal_discovered(event: Dictionary) -> void:
 	bus.publish_event(GameplayEventBus.EVENT_RESEARCH_SIGNAL_DISCOVERED,
 		int(event.get("cell", -1)), _world_clock.day_index() if _world_clock != null else 0,
 		0, GameplayEventBus.SOURCE_GDSCRIPT, 0, GameplayEventBus.PAYLOAD_RESEARCH_SIGNAL_V1,
-		int(event.get("signal", -1)), int(event.get("source_kind", 0)), 0, 1,
+		int(event.get("signal", -1)), int(event.get("source_kind", 0)), 0,
+		int(event.get("evidence_delta", 1)),
 		int(event.get("country_handle", 0)), 1)
 
 
@@ -2482,7 +2496,7 @@ func refresh_country_visuals(reason: String) -> Dictionary:
 	if _player_country_slot < 0:
 		_player_country_slot = _resolve_player_country_slot()
 	out["vision"] = _refresh_vision()
-	out["lut"] = _republish_cell_luts()
+	out["lut"] = _republish_cell_luts(_vision_dirty_indices)
 	out["border"] = _refresh_country_borders()
 	if _settlement_label_layer != null:
 		_settlement_label_layer.set_fog_enabled(_fog_of_war_enabled)
@@ -2540,16 +2554,98 @@ func _resolve_player_country_handle() -> int:
 
 
 func _refresh_vision() -> Dictionary:
-	var previous: PackedByteArray = _current_map.explored_arr.duplicate()
-	var result: Dictionary
+	var ext = _generator.get_data_core_world_ext() if _generator != null \
+		and _generator.has_method("get_data_core_world_ext") else null
+	if ext == null or not ext.has_method("run_vision_research_pass") \
+			or not _ensure_native_vision_configured(ext):
+		var fallback := VisionSolver.solve(_current_map, _world_data, _player_country_slot)
+		_physical_visible_arr = _current_map.visible_arr.duplicate()
+		_vision_dirty_indices.resize(_current_map.cell_count())
+		for cell in _current_map.cell_count():
+			_vision_dirty_indices[cell] = cell
+		return fallback
+	var facade = _generator.get_country_facade() if _generator.has_method("get_country_facade") else null
+	_remote_observation_capability = _has_remote_observation_capability()
+	var result: Dictionary = ext.run_vision_research_pass({
+		"player_slot": _player_country_slot,
+		"remote_observation": _remote_observation_capability,
+		"country_slots": _current_map.country_slot_arr,
+		"visible": _physical_visible_arr,
+		"explored": _current_map.explored_arr,
+		"fog_k": _current_map.fog_k_arr,
+		"bio_occupancy_bits": _current_map.bio_occupancy_bits_arr,
+	})
+	if not bool(result.get("ok", false)):
+		return VisionSolver.solve(_current_map, _world_data, _player_country_slot)
+	_physical_visible_arr = result.get("physical_visible", PackedByteArray())
+	_current_map.explored_arr = result.get("explored_arr", PackedByteArray())
+	_current_map.fog_k_arr = result.get("fog_k_arr", PackedByteArray())
+	_current_map.visible_arr = _physical_visible_arr.duplicate()
+	_vision_dirty_indices = result.get("fog_dirty_indices", PackedInt32Array())
 	if not _fog_of_war_enabled:
-		# 迷雾关：全图视作已探索且可见。UI 门控与 enum_lut.a 因此自动放行，
-		# 不需要在每个消费点再判一次 flag。
-		result = VisionSolver.mark_all_visible(_current_map)
-	else:
-		result = VisionSolver.solve(_current_map, _world_data, _player_country_slot)
-	_submit_discovered_map_signals(previous)
+		# 渲染直通不写回物理视野，也不把历史探索伪造成研究资格。
+		_vision_dirty_indices.resize(_current_map.cell_count())
+		for cell in _current_map.cell_count():
+			_current_map.visible_arr[cell] = 1
+			_current_map.fog_k_arr[cell] = 255
+			_vision_dirty_indices[cell] = cell
+	_current_map.fog_solved = true
+	_current_map.vision_revision += 1
+	_submit_native_observations(facade, result)
 	return result
+
+
+func _ensure_native_vision_configured(ext: Object) -> bool:
+	var n := _current_map.cell_count()
+	var map_id := _current_map.get_instance_id()
+	if _native_vision_configured_n == n and _native_vision_configured_map_id == map_id:
+		return true
+	if _world_data.cell_view_height.size() != n or _world_data.cell_view_block.size() != n:
+		var baked := VisionSolver.bake_static_fields(_current_map, _world_data)
+		if not bool(baked.get("ok", false)):
+			return false
+	var catalog: Dictionary = ResearchSignalCatalog.compile_native_catalog()
+	var configured: Dictionary = ext.configure_vision_research({
+		"cell_count": n,
+		"neighbor_indices": _current_map.neighbor_indices_packed(),
+		"view_height": _world_data.cell_view_height,
+		"view_block": _world_data.cell_view_block,
+		"signal_offsets": _current_map.cell_research_signal_offsets,
+		"signal_ids": _current_map.cell_research_signal_ids,
+		"bio_bits": catalog.get("research_bio_occupancy_bits", PackedInt32Array()),
+		"bio_signals": catalog.get("research_bio_signal_ids", PackedInt32Array()),
+	})
+	if bool(configured.get("ok", false)):
+		_native_vision_configured_n = n
+		_native_vision_configured_map_id = map_id
+		_physical_visible_arr = PackedByteArray()
+	return bool(configured.get("ok", false))
+
+
+func _has_remote_observation_capability() -> bool:
+	if _player_country_handle == 0:
+		_player_country_handle = _resolve_player_country_handle()
+	var facade = _generator.get_country_facade() if _generator != null \
+		and _generator.has_method("get_country_facade") else null
+	if facade == null or _player_country_handle == 0:
+		return false
+	if _magnetic_navigation_dense_id == -2:
+		var ids: PackedStringArray = facade.native_catalog().get(
+			"technology_ids", PackedStringArray())
+		_magnetic_navigation_dense_id = ids.find("tech.magnetic_navigation")
+	return _magnetic_navigation_dense_id >= 0 and facade.has_completed_technology(
+		_player_country_handle, _magnetic_navigation_dense_id)
+
+
+func _submit_native_observations(facade, result: Dictionary) -> void:
+	if facade == null or _player_country_handle == 0:
+		return
+	var cells: PackedInt32Array = result.get("observation_cells", PackedInt32Array())
+	var signals: PackedInt32Array = result.get("observation_signals", PackedInt32Array())
+	if cells.size() != signals.size() or cells.is_empty():
+		return
+	var day := _world_clock.day_index() + 1 if _world_clock != null else 1
+	facade.submit_observation_batch(_player_country_handle, cells, signals, day)
 
 func _submit_discovered_map_signals(previous: PackedByteArray) -> void:
 	if _current_map == null or previous.size() != _current_map.explored_arr.size() \
@@ -2605,13 +2701,13 @@ func _submit_discovered_map_signals(previous: PackedByteArray) -> void:
 ## 迷雾值住在 enum_lut 的 A 通道，所以视野一变就必须重烘一次 LUT。
 ## 不能等 DynamicVisualAtlasUploadSystem 的日刷——它在 dirty_count==0 时会
 ## early-return，视野变化不体现在 climate/weather dirty mask 上。
-func _republish_cell_luts() -> Dictionary:
+func _republish_cell_luts(dirty_indices: PackedInt32Array = PackedInt32Array()) -> Dictionary:
 	if _generator == null or not ("_baker" in _generator):
 		return {"ok": false, "reason": "no_baker"}
 	var baker = _generator._baker
 	if baker == null or not baker.has_method("refresh_cell_luts_daily"):
 		return {"ok": false, "reason": "baker_missing_refresh"}
-	return baker.refresh_cell_luts_daily(_current_map, _world_data)
+	return baker.refresh_cell_luts_daily(_current_map, _world_data, dirty_indices, false)
 
 
 func _refresh_country_borders() -> Dictionary:

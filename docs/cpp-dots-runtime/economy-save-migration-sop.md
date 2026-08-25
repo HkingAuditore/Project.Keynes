@@ -1,8 +1,16 @@
 # 经济存档、catalog migration 与内容扩展 SOP
 
-## PKEC v42（当前 writer；v41 向前兼容读）
+## PKEC v43（当前 writer；v42/v41 向前兼容读）
 
-PKEC v42 是当前可写 byte schema。它保留 v41 的 FamilyStore、降水 lane 与既有 section，
+PKEC v43 是当前可写 byte schema。它在 v42 header 的投资周期字段之后追加部门维护地平线
+（5×int32：agriculture/extractive/manufacturing/energy/knowledge）以及
+`building_maintenance_cost_factor_q16`。`<43` 读取时使用默认 5475/2920/3650/2190/7300 与
+`Q16_ONE`。建筑维护 CSR 与 `construction_material_reserve` 都是可重建缓存，不入库。
+reader 接受 v43、v42 与 v41。
+
+## PKEC v42（历史 writer；当前仍可读）
+
+PKEC v42 保留 v41 的 FamilyStore、降水 lane 与既有 section，
 并在家族开拓队记录末尾追加筹备缺货：每条 expedition 在 cargo/kit 之后写
 `identity:u64`、`missing_count:u32` 以及 `missing_count` 组 `(good_id:i32, quantity:i64)`。
 `EXPEDITION_PREPARING=4` 允许 `payload_count == 0`、`cargo_count == 0`、`kit_count == 0`；
@@ -185,7 +193,7 @@ restore 要先配置并完整恢复 PKCN v4，再用当前资源 catalog 调 `co
 
 通过后重建 committed summary；`get_economy_state_hash()` 应与保存前一致。
 
-当前写出 schema 为 PKEC v42，并与 PKCN v11、PKEF v11 交叉绑定。PKEC v41 仅向前兼容读；v40 及更早版本全部拒绝；
+当前写出 schema 为 PKEC v43，并与 PKCN v11、PKEF v11 交叉绑定。PKEC v42/v41 仅向前兼容读；v40 及更早版本全部拒绝；
 后文旧版本章节只记录历史格式演进，不代表当前 reader 仍接受。拓扑、FamilyEffect binding、stack
 group、selector/CSR、exact-good override cache 和未完成规划均为派生态，加载后重建；联合存档只允许在
 国家/Effect 命令图 idle 且经济位于 committed boundary 时开始。
@@ -196,7 +204,7 @@ group、selector/CSR、exact-good override cache 和未完成规划均为派生�
 排序，canonical columns 经 SHA-256 截取为正 `catalog_hash`。移动/重命名 `.tres`
 文件而不改 stable ID 不影响索引。
 
-当前 PKEC v42 与 PKCN v11 要求 save 的稳定 ID 表（含 technology IDs）与当前 catalog 完全一致，
+当前 PKEC v43 与 PKCN v11 要求 save 的稳定 ID 表（含 technology IDs）与当前 catalog 完全一致，
 并要求姓氏 `family_catalog_hash`、人物 `person_catalog_hash` 和特性
 `family_trait_catalog_hash` 一致。不存在当前 reader 可用的 append-only 迁移例外。
 本轮明确不提供旧 187-building/152-good 目录迁移，旧存档按现有 catalog mismatch 路径拒绝。

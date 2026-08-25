@@ -153,6 +153,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
         int64_t shortage_q16 = 0;
         int64_t utilization_q16 = 0;
         int64_t profit_per_day = 0;
+        int64_t return_on_capital_q16 = 0;
         int64_t score_q16 = 0;
         int64_t payback_days = 0;
         int32_t driver_good_id = -1;
@@ -170,19 +171,26 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
         int64_t stealable = 0;
         int64_t challenger_unit_cost = 0;
         int64_t incumbent_unit_cost = 0;
+        int64_t cost_advantage_q16 = 0;
         bool displaces_incumbents = false;
     };
-    auto better = [](const Candidate &a, const Candidate &b,
-                     bool employment_catchup) {
+    auto better = [](const Candidate &a, const Candidate &b) {
         if (b.type < 0) return true;
-        if (employment_catchup &&
-            a.jobs_per_building != b.jobs_per_building) {
-            return a.jobs_per_building > b.jobs_per_building;
-        }
+        if (a.return_on_capital_q16 != b.return_on_capital_q16)
+            return a.return_on_capital_q16 > b.return_on_capital_q16;
+        if (a.cost_advantage_q16 != b.cost_advantage_q16)
+            return a.cost_advantage_q16 > b.cost_advantage_q16;
+        if (a.driver_good_id == b.driver_good_id &&
+            a.challenger_unit_cost != b.challenger_unit_cost)
+            return a.challenger_unit_cost < b.challenger_unit_cost;
         if (a.score_q16 != b.score_q16) return a.score_q16 > b.score_q16;
+        if (a.payback_days != b.payback_days) return a.payback_days < b.payback_days;
         if (a.income_improvement_q16 != b.income_improvement_q16)
             return a.income_improvement_q16 > b.income_improvement_q16;
-        if (a.payback_days != b.payback_days) return a.payback_days < b.payback_days;
+        if (a.profit_per_day != b.profit_per_day)
+            return a.profit_per_day > b.profit_per_day;
+        if (a.jobs_per_building != b.jobs_per_building)
+            return a.jobs_per_building > b.jobs_per_building;
         if (a.type != b.type) return a.type < b.type;
         return a.target_signature < b.target_signature;
     };
@@ -391,7 +399,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
         auto insert_portfolio = [&](const Candidate &candidate) {
             int32_t pos = portfolio_size;
             for (int32_t i = 0; i < portfolio_size; ++i) {
-                if (better(candidate, portfolio[i], employment_catchup)) {
+                if (better(candidate, portfolio[i])) {
                     pos = i;
                     break;
                 }
@@ -723,10 +731,17 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 const int64_t research_demand =
                     epoch_research_demand_daily(cell, output.good_id);
                 const int64_t demand = saturating_add(
-                    _market.demand_ema[index],
                     saturating_add(
-                        signal >= 0 ? _market_signals.business_demand_ema[signal] : 0,
-                        research_demand, _saturation_count),
+                        _market.demand_ema[index],
+                        saturating_add(
+                            signal >= 0 ? _market_signals.business_demand_ema[signal] : 0,
+                            research_demand, _saturation_count),
+                        _saturation_count),
+                    signal >= 0
+                        ? mul_div_sat(merchant_protected_reserve(signal), Q16_ONE,
+                            std::max<int64_t>(Q16_ONE,
+                                _good_target_inventory_days_q16[output.good_id]),
+                            _saturation_count) : 0,
                     _saturation_count);
                 const int64_t supply = signal >= 0
                     ? _market_signals.offered_supply_ema[signal] : 0;
@@ -1046,10 +1061,17 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     role.slots_per_building, role.reference_wage_per_day,
                     _saturation_count), _saturation_count);
             }
+            const int64_t daily_maintenance = daily_maintenance_cost_for_type(
+                cell, type, _saturation_count);
+            if (daily_maintenance == std::numeric_limits<int64_t>::max()) {
+                reject(INVESTMENT_REJECTION_INPUT_CHAIN);
+                continue;
+            }
             const int64_t nameplate_output = std::max<int64_t>(
                 0, driver.nameplate_output);
             const int64_t full_operating_cost = saturating_add(
-                daily_input_cost, daily_wages, _saturation_count);
+                saturating_add(daily_input_cost, daily_wages, _saturation_count),
+                daily_maintenance, _saturation_count);
             const int64_t allocated_driver_cost = driver_index >= 0
                 ? allocated_output_operating_cost(
                     type, driver_index, full_operating_cost, _saturation_count)
@@ -1147,7 +1169,8 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 diagnostic->incumbent_unit_cost = incumbent_unit_cost;
             }
             const int64_t daily_variable_cost = mul_div_sat(saturating_add(
-                daily_input_cost, daily_wages, _saturation_count), utilization_q16,
+                saturating_add(daily_input_cost, daily_wages, _saturation_count),
+                daily_maintenance, _saturation_count), utilization_q16,
                 Q16_ONE, _saturation_count);
             for (int32_t ethnicity = 0; ethnicity < static_cast<int32_t>(
                     _ethnicity_ids.size()); ++ethnicity) {
@@ -1314,7 +1337,9 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                         _investment_operating_cycles * std::max(1, _epoch_days),
                         _saturation_count), saturating_add(saturating_mul(
                             daily_wages, std::max(1, _epoch_days), _saturation_count),
-                            saturating_mul(owner_livelihood, 30,
+                            saturating_add(saturating_mul(owner_livelihood, 30,
+                                _saturation_count), saturating_mul(
+                                    daily_maintenance, 30, _saturation_count),
                                 _saturation_count),
                             _saturation_count), _saturation_count), _saturation_count);
                 if (diagnostic != nullptr) {
@@ -1324,6 +1349,21 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 const int64_t payback = daily_profit > 0
                     ? (required_capital + daily_profit - 1) / daily_profit
                     : std::numeric_limits<int64_t>::max();
+                const int64_t return_on_capital_q16 = daily_profit > 0
+                    ? mul_div_sat(daily_profit, Q16_ONE,
+                        std::max<int64_t>(1, required_capital),
+                        _saturation_count)
+                    : 0;
+                const int64_t cost_advantage_q16 = incumbent_unit_cost > 0 &&
+                        challenger_unit_cost < incumbent_unit_cost
+                    ? mul_div_sat(incumbent_unit_cost - challenger_unit_cost,
+                        Q16_ONE, incumbent_unit_cost, _saturation_count)
+                    : 0;
+                if (diagnostic != nullptr) {
+                    diagnostic->return_on_capital_q16 =
+                        return_on_capital_q16;
+                    diagnostic->cost_advantage_q16 = cost_advantage_q16;
+                }
                 if (payback > _investment_max_payback_days) {
                     reject(INVESTMENT_REJECTION_PAYBACK);
                     continue;
@@ -1433,12 +1473,14 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 candidate.shortage_q16 = shortage_q16;
                 candidate.utilization_q16 = utilization_q16;
                 candidate.profit_per_day = daily_profit;
+                candidate.return_on_capital_q16 = return_on_capital_q16;
                 candidate.payback_days = payback;
                 candidate.driver_good_id = driver.good_id;
                 candidate.driver_deficit = driver_deficit;
                 candidate.stealable = stealable;
                 candidate.challenger_unit_cost = challenger_unit_cost;
                 candidate.incumbent_unit_cost = incumbent_unit_cost;
+                candidate.cost_advantage_q16 = cost_advantage_q16;
                 candidate.displaces_incumbents = displaces_incumbents;
                 for (int32_t i = 0; i < type.output_count; ++i) {
                     const GoodAmount &output =
@@ -1546,6 +1588,8 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     diagnostic->payback_days = payback;
                     diagnostic->required_capital = required_capital;
                     diagnostic->projected_profit_per_day = daily_profit;
+                    diagnostic->return_on_capital_q16 = return_on_capital_q16;
+                    diagnostic->cost_advantage_q16 = cost_advantage_q16;
                     diagnostic->stealable = stealable;
                     diagnostic->challenger_unit_cost = challenger_unit_cost;
                     diagnostic->incumbent_unit_cost = incumbent_unit_cost;
@@ -1560,7 +1604,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                         _building_investment_payback_days[group] = payback;
                     }
                 }
-                if (better(candidate, type_best, employment_catchup))
+                if (better(candidate, type_best))
                     type_best = candidate;
             }
             if (type_best.type >= 0) {

@@ -328,7 +328,8 @@ bool NativeEconomyRuntime::publish_epoch_slice(
             _production_output_discarded + _production_output_retained -
             _consumed_goods -
             _owner_output_consumed - _construction_goods_consumed -
-            _production_inputs_consumed - _production_output_discarded -
+            _production_inputs_consumed - _maintenance_goods_consumed -
+            _production_output_discarded -
             _cycle_flow_discarded - _bullion_stock_consumed -
             _country_research_goods_consumed;
         if (!_closing_audit_incremental_this_epoch &&

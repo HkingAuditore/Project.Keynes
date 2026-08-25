@@ -41,6 +41,12 @@ var economic_sector_id: String = ""
 @export var construction_candidate_offsets: PackedInt32Array = PackedInt32Array()
 @export var construction_candidate_good_ids: PackedStringArray = PackedStringArray()
 @export var construction_candidate_efficiency_q16: PackedInt32Array = PackedInt32Array()
+## Per-building daily upkeep in GOODS_SCALE. A non-empty recipe fully overrides
+## construction-BOM derivation. Empty arrays fall back to preferred construction
+## goods divided by maintenance_horizon_days, or the sector default when that is 0.
+@export var maintenance_good_ids: PackedStringArray = PackedStringArray()
+@export var maintenance_quantities_per_day: PackedInt64Array = PackedInt64Array()
+@export_range(0, 365000, 1) var maintenance_horizon_days: int = 0
 
 ## V1 has exactly one owner profession. Ownership itself is held by the
 ## sponsoring (cell, signature) cohort identity and survives handle churn.

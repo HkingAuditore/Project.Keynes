@@ -152,6 +152,9 @@ public:
     godot::Dictionary bootstrap(const godot::Dictionary &packet,
                                 const godot::PackedByteArray &is_water);
     godot::Dictionary submit_commands(const godot::Dictionary &batch);
+    godot::Dictionary submit_observation_batch(
+        int64_t handle, const godot::PackedInt32Array &cells,
+        const godot::PackedInt32Array &signals, int64_t effective_day);
     bool submit_effect_commands_pod(const EffectCommand *commands, size_t count,
                                     std::vector<int64_t> &request_ids,
                                     std::string &error);
@@ -167,6 +170,7 @@ public:
     godot::Dictionary country_summary(int64_t handle) const;
     godot::Dictionary country_snapshot(int64_t handle) const;
     godot::PackedStringArray completed_technology_ids(int64_t handle) const;
+    bool has_completed_technology(int64_t handle, int32_t technology_id) const;
     godot::Dictionary treasury_snapshot(int64_t handle) const;
     godot::Dictionary research_snapshot(int64_t handle) const;
     godot::Dictionary research_signal_snapshot(int64_t handle) const;
@@ -292,6 +296,7 @@ private:
         int32_t technology_id = -1;
         int32_t signal_id = -1;
         int32_t signal_source_kind = 0;
+        int32_t evidence_delta = 0;
         std::string stable_id;
         std::string display_name;
     };
@@ -354,6 +359,8 @@ private:
         int64_t day = -1;
         size_t cursor = 0;
         double preflight_ms = 0.0;
+        int64_t observation_batch_input = 0;
+        int64_t observation_batch_added = 0;
         CountryStore countries;
         std::vector<uint64_t> technologies;
         std::vector<int64_t> goods;

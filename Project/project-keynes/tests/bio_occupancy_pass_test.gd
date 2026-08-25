@@ -113,6 +113,9 @@ func _test_native_passes() -> void:
 	_test_cold_and_dry_endemic_envelopes(ext)
 	_test_three_continent_food_floor(ext)
 	_test_occupancy_persistence_and_introduce(ext)
+	_test_capacity_and_legacy_overlap(ext)
+	_test_730_day_natural_diffusion_invariants(ext)
+	_test_configured_slot_fastpath(ext)
 
 
 func _test_landform_csr_excludes_bio(ext) -> bool:
@@ -734,7 +737,7 @@ func _test_occupancy_persistence_and_introduce(ext) -> void:
 		_expect("local production introduces maize without province origin",
 			(int(intro_occ[intro_cell]) & (1 << maize_bit)) != 0)
 	var intro_new: PackedInt32Array = intro.get("newly_occupied_cells", PackedInt32Array())
-	_expect("explored 0→1 occupancy is reported for DISCOVER",
+	_expect("0→1 occupancy is reported for native eligibility filtering",
 		intro_new.find(intro_cell) >= 0)
 
 	# Fixed-range cursor parity: intermediate calls keep staging private and the
@@ -762,6 +765,178 @@ func _test_occupancy_persistence_and_introduce(ext) -> void:
 		_expect("sliced discovery parity",
 			PackedInt32Array(slice_res.get("newly_occupied_cells", PackedInt32Array())) ==
 			PackedInt32Array(reference_res.get("newly_occupied_cells", PackedInt32Array())))
+
+
+func _test_capacity_and_legacy_overlap(ext) -> void:
+	var map := _make_two_continent_map()
+	var host := 1
+	map.temp_arr[host] = 0.55
+	map.moisture_arr[host] = 0.65
+	map.res_pasture_reserve_arr[host] = 80.0
+	map.res_arable_land_reserve_arr[host] = 80.0
+	var ids := PackedStringArray(["bio.horse", "bio.sheep", "bio.cattle", "bio.maize"])
+	var knobs := _species_knobs(map, ids)
+	knobs["province_ids"] = PackedInt32Array()
+	knobs.province_ids.resize(map.cell_count())
+	for cell in map.cell_count():
+		knobs.province_ids[cell] = 1
+	var bits: PackedInt32Array = knobs.species_occupancy_bits
+	var occupancy := PackedInt32Array()
+	occupancy.resize(map.cell_count())
+	knobs["occupancy_bits"] = occupancy
+	knobs["introduce_cells"] = PackedInt32Array([host, host, host, host])
+	knobs["introduce_bits"] = bits
+	var introduced: Dictionary = ext.run_bio_occupancy_pass(knobs)
+	var after: PackedInt32Array = introduced.get("occupancy_bits", PackedInt32Array())
+	var host_bits := int(after[host]) if after.size() == map.cell_count() else 0
+	_expect("production introduction allows three occupants", host_bits != 0 and
+		(host_bits & (1 << int(bits[0]))) != 0 and
+		(host_bits & (1 << int(bits[1]))) != 0 and
+		(host_bits & (1 << int(bits[2]))) != 0)
+	_expect("production introduction rejects the fourth occupant",
+		(host_bits & (1 << int(bits[3]))) == 0)
+	occupancy[host] = (1 << int(bits[0])) | (1 << int(bits[1]))
+	knobs["occupancy_bits"] = occupancy
+	knobs["introduce_cells"] = PackedInt32Array()
+	knobs["introduce_bits"] = PackedInt32Array()
+	var persisted: Dictionary = ext.run_bio_occupancy_pass(knobs)
+	var persisted_bits := int((persisted.get("occupancy_bits", PackedInt32Array()) as PackedInt32Array)[host])
+	_expect("legacy same-guild overlap is preserved",
+		(persisted_bits & (1 << int(bits[0]))) != 0 and
+		(persisted_bits & (1 << int(bits[1]))) != 0)
+
+
+func _test_configured_slot_fastpath(ext) -> void:
+	var map := _make_two_continent_map()
+	map.temp_30d_arr = map.temp_arr.duplicate()
+	var knobs := _species_knobs(map, PackedStringArray(["bio.sheep", "bio.maize"]))
+	var province: Dictionary = ext.run_bio_province_pass({
+		"width": map.width,
+		"height": map.height,
+		"is_water": map.is_water_arr,
+		"landform": map.landform_arr,
+		"vegetation": map.vegetation_arr,
+		"neighbor_indices": map.neighbor_indices_packed(),
+	})
+	if not bool(province.get("ok", false)):
+		_expect("slot fastpath province", false)
+		return
+	map.province_id_arr = province.get("province_ids", PackedInt32Array())
+	var host := 1
+	var target := 2
+	var bits: PackedInt32Array = knobs.species_occupancy_bits
+	map.bio_occupancy_bits_arr.resize(map.cell_count())
+	map.bio_occupancy_bits_arr[host] = 1 << int(bits[0])
+	knobs["province_ids"] = map.province_id_arr
+	knobs["occupancy_bits"] = map.bio_occupancy_bits_arr
+	knobs["introduce_cells"] = PackedInt32Array([target])
+	knobs["introduce_bits"] = PackedInt32Array([int(bits[1])])
+	var reference: Dictionary = ext.run_bio_occupancy_pass(knobs)
+	var expected: PackedInt32Array = reference.get("occupancy_bits", PackedInt32Array())
+	_expect("slot fastpath reference succeeds", bool(reference.get("ok", false)))
+	if not bool(ext.bind_map_data(map)):
+		_expect("slot fastpath binds MapData", false)
+		return
+	var carrier_slots := PackedStringArray()
+	for resource_id in knobs.get("carrier_resource_ids", []):
+		for profile in ResourceProfileRegistry.ordered():
+			if String(profile.id) == String(resource_id):
+				carrier_slots.append(ResourceProfileRegistry.reserve_cpp_name(profile))
+				break
+	var config := knobs.duplicate(false)
+	config["carrier_slot_names"] = carrier_slots
+	var configured: Dictionary = ext.configure_bio_occupancy(config)
+	_expect("native bio config resolves SoA slots", bool(configured.get("ok", false)))
+	if not bool(configured.get("ok", false)):
+		return
+	var slot_knobs := {
+		"cell_count": map.cell_count(),
+		"seed": 42,
+		"day_index": 1,
+		"run_diffusion": false,
+		"use_configured_slots": true,
+		"introduce_cells": PackedInt32Array([target]),
+		"introduce_bits": PackedInt32Array([int(bits[1])]),
+	}
+	var result: Dictionary = ext.run_bio_occupancy_pass(slot_knobs)
+	_expect("configured slot fastpath publishes directly", bool(result.get(
+		"ok", false)) and bool(result.get("published_to_slot", false)))
+	_expect("configured slot fastpath matches PackedArray path",
+		map.bio_occupancy_bits_arr == expected)
+	map.bio_occupancy_bits_arr = knobs.occupancy_bits.duplicate()
+	ext.refresh_slots_from_map_keys(PackedStringArray(["cell_bio_occupancy_bits"]))
+	var sliced := slot_knobs.duplicate(true)
+	sliced["run_diffusion"] = true
+	sliced["day_index"] = 8
+	sliced["bio_slice_cells"] = 4
+	var slice_result: Dictionary = {}
+	for ignored in 128:
+		slice_result = ext.run_bio_occupancy_slice(sliced)
+		if bool(slice_result.get("done", false)):
+			break
+	_expect("configured slot continuation completes", bool(slice_result.get("done", false)))
+	_expect("configured slot continuation publishes only at completion",
+		bool(slice_result.get("published_to_slot", false)))
+
+
+func _test_730_day_natural_diffusion_invariants(ext) -> void:
+	var map := _make_two_continent_map()
+	var compiled: Dictionary = ResearchSignalCatalog.compile_native_catalog()
+	var all_ids: PackedStringArray = compiled.get("research_signal_ids", PackedStringArray())
+	var bio_signal_ids: PackedInt32Array = compiled.get(
+		"research_bio_signal_ids", PackedInt32Array())
+	var species_ids := PackedStringArray()
+	for signal_id in bio_signal_ids:
+		species_ids.append(all_ids[int(signal_id)])
+	var knobs := _species_knobs(map, species_ids)
+	knobs["width"] = map.width; knobs["height"] = map.height
+	var province: Dictionary = ext.run_bio_province_pass(knobs)
+	if not bool(province.get("ok", false)):
+		_expect("730-day province succeeds", false)
+		return
+	knobs["province_ids"] = province.province_ids
+	knobs["landmass_ids"] = province.landmass_ids
+	var seeded: Dictionary = ext.run_bio_seed_pass(knobs)
+	if not bool(seeded.get("ok", false)):
+		_expect("730-day seed succeeds", false)
+		return
+	var occupancy: PackedInt32Array = seeded.occupancy_bits
+	for day in range(1, 731):
+		knobs["occupancy_bits"] = occupancy
+		knobs["day_index"] = day
+		knobs["run_diffusion"] = (day % 8) == 0
+		var result: Dictionary = ext.run_bio_occupancy_pass(knobs)
+		if not bool(result.get("ok", false)):
+			_expect("730-day daily pass succeeds", false)
+			return
+		occupancy = result.occupancy_bits
+	var bits: PackedInt32Array = knobs.species_occupancy_bits
+	var guilds: PackedInt32Array = knobs.species_guild
+	var over_capacity := 0
+	var natural_guild_conflicts := 0
+	for cell_bits in occupancy:
+		if _popcount32(int(cell_bits)) > 3: over_capacity += 1
+		var guild_counts := {}
+		for species in bits.size():
+			var bit := int(bits[species])
+			if bit < 0 or (int(cell_bits) & (1 << bit)) == 0: continue
+			var guild := int(guilds[species])
+			if guild <= 0: continue
+			guild_counts[guild] = int(guild_counts.get(guild, 0)) + 1
+		for count in guild_counts.values():
+			if int(count) > 1: natural_guild_conflicts += 1
+	_expect("730-day natural diffusion never exceeds capacity", over_capacity == 0)
+	_expect("730-day natural diffusion creates no guild overlap",
+		natural_guild_conflicts == 0)
+
+
+func _popcount32(value: int) -> int:
+	var count := 0
+	var scan := value & 0xffffffff
+	while scan != 0:
+		scan &= scan - 1
+		count += 1
+	return count
 
 
 func _make_two_continent_map() -> MapData:

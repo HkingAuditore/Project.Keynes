@@ -164,7 +164,7 @@ func _test_save_restore_keeps_buckets(compiled: Dictionary) -> void:
 	var before_hash: int = ext.get_economy_state_hash()
 	var begin: Dictionary = ext.begin_economy_save(65536)
 	_expect("v42 save begins", bool(begin.get("ok", false)) and
-		int(begin.get("schema_version", 0)) == 42)
+		int(begin.get("schema_version", 0)) == 43)
 	var chunks: Array[PackedByteArray] = []
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)

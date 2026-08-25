@@ -333,6 +333,21 @@ bool NativeEconomyRuntime::configure_profile(const Dictionary &profile, std::str
         static_cast<int32_t>(Q16_ONE));
     _resource_min_horizon_days = std::clamp(dict_num<int32_t>(
         profile, "resource_min_horizon_days", 3650), 1, 365000);
+    {
+        const std::vector<int32_t> horizons = packed_i32(
+            profile, "building_maintenance_horizon_days_by_sector");
+        const int32_t defaults[5] = {5475, 2920, 3650, 2190, 7300};
+        for (int32_t sector = 0; sector < 5; ++sector) {
+            const int32_t value = sector < static_cast<int32_t>(horizons.size())
+                ? horizons[static_cast<size_t>(sector)] : defaults[sector];
+            _maintenance_horizon_days_by_sector[sector] = std::clamp(value, 1, 365000);
+        }
+    }
+    _building_maintenance_cost_factor_q16 = std::clamp(
+        dict_num<int32_t>(profile, "building_maintenance_cost_factor_q16",
+                          static_cast<int32_t>(Q16_ONE)),
+        1, static_cast<int32_t>(Q16_ONE * 4));
+    if (!_building_types.empty()) resolve_building_maintenance_csr();
     _bullion_monthly_issue_cap_q16 = std::clamp(dict_num<int32_t>(
         profile, "bullion_monthly_issue_cap_q16", 655), 0,
         static_cast<int32_t>(Q16_ONE));

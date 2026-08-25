@@ -202,6 +202,8 @@ public:
     godot::Dictionary get_country_treasury_snapshot(int64_t handle) const;
     godot::Dictionary get_country_research_snapshot(int64_t handle) const;
     godot::Dictionary get_country_research_signal_snapshot(int64_t handle) const;
+    bool has_completed_country_technology(int64_t handle,
+                                          int32_t technology_id) const;
     godot::Dictionary get_country_tax_policy_snapshot(int64_t handle) const;
     godot::Dictionary get_country_cell_tax_policy_snapshot(int cell_idx) const;
     godot::Dictionary get_country_ui_snapshot(int64_t handle,
@@ -534,10 +536,17 @@ public:
     // Knobs in / packed arrays out; occupancy is the persisted presence bitset.
     godot::Dictionary run_bio_province_pass(const godot::Dictionary &knobs);
     godot::Dictionary run_bio_seed_pass(const godot::Dictionary &knobs);
+    godot::Dictionary run_bio_bootstrap_pass(const godot::Dictionary &knobs);
+    godot::Dictionary configure_bio_occupancy(const godot::Dictionary &config);
     godot::Dictionary run_bio_occupancy_pass(const godot::Dictionary &knobs);
     // Deterministic cursor continuation.  The opaque state is transient and
     // is published only after the final fixed cell range completes.
     godot::Dictionary run_bio_occupancy_slice(const godot::Dictionary &knobs);
+    godot::Dictionary configure_vision_research(const godot::Dictionary &config);
+    godot::Dictionary run_vision_research_pass(const godot::Dictionary &knobs);
+    godot::Dictionary filter_bio_research_observations(
+        const godot::PackedInt32Array &cells,
+        const godot::PackedInt32Array &signals) const;
     godot::Dictionary run_native_world_generate_pass(int seed,
                                                      const godot::Dictionary &cfg,
                                                      const godot::Dictionary &profile);
@@ -2540,7 +2549,9 @@ private:
     std::vector<int32_t>                      _bio_occupancy_additions;
     godot::PackedInt32Array                   _bio_newly_occupied_cells;
     godot::PackedInt32Array                   _bio_newly_occupied_signals;
+    void                                     *_bio_native_config_state = nullptr;
     void                                     *_bio_occupancy_slice_state = nullptr;
+    void                                     *_vision_research_state = nullptr;
 
     // ─── Phase B+（2026-05-21）：season refresh round 切片调度 opaque state ─
     // 实际类型 pk::SeasonRoundState 在 world_ext.cpp 顶部定义（含 generation
@@ -2703,6 +2714,10 @@ private:
     // ---- helpers ----
     void _ensure_slot_capacity(Slot &slot, int new_count);
     void _flush_slot_to_map(int comp_id);
+    godot::Dictionary _queue_bio_observations(
+        int64_t country_handle, int64_t effective_day,
+        const godot::PackedInt32Array &cells,
+        const godot::PackedInt32Array &signals);
     int64_t _emit_gameplay_event(int64_t tick,
                                  int32_t phase,
                                  int32_t type,

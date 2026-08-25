@@ -15,13 +15,26 @@ var world_clock = null
 var diffusion_stride: int = 8
 var _last_path: String = "none"
 var slice_enabled: bool = false
+var execution_mode: String = "auto"
+var _round_active: bool = false
+var _round_slice_cells: int = 2048
+var _round_native_ms: float = 0.0
+var _round_processed_cells: int = 0
+var _round_slice_enabled: bool = false
+var _round_count: int = 0
+var _full_round_ema_ms: float = 0.0
+var _throughput_cells_per_ms: float = 0.0
 
 
 func _init(p_generator, p_map: MapData, p_diffusion_stride: int = 8) -> void:
 	id = &"bio_occupancy_daily"
 	priority = 121
 	slice_budget_ms = 0.40
-	slice_enabled = bool(Engine.get_meta(&"bio_occupancy_slice_enabled", false))
+	execution_mode = String(Engine.get_meta(&"bio_occupancy_execution_mode", "auto")).to_lower()
+	if execution_mode not in ["auto", "oneshot", "sliced"]:
+		execution_mode = "auto"
+	if bool(Engine.get_meta(&"bio_occupancy_slice_enabled", false)):
+		execution_mode = "sliced"
 	# A sliced round is a same-day transaction, but it remains cooperative:
 	# one deterministic cell range per scheduler visit, with WorldClock frozen
 	# until the staging buffer is fully committed.
@@ -76,16 +89,28 @@ func tick(ctx) -> Dictionary:
 	if ctx != null:
 		day_index = int(ctx.day_index)
 	var run_diffusion := (day_index % diffusion_stride) == 0
+	if not _round_active:
+		_round_active = true
+		_round_native_ms = 0.0
+		_round_processed_cells = 0
+		_round_slice_enabled = _choose_sliced(map.cell_count())
+		_round_slice_cells = clampi(
+			int(round(_throughput_cells_per_ms * 0.75)) if _throughput_cells_per_ms > 0.0 else 2048,
+			2048, 32768)
+	slice_enabled = _round_slice_enabled
 	var res: Dictionary = {}
 	if generator.has_method("run_bio_occupancy_pass_native"):
 		res = generator.run_bio_occupancy_pass_native(
-			map, run_diffusion, day_index, slice_enabled)
+			map, run_diffusion, day_index, slice_enabled, _round_slice_cells)
 	_last_path = str(res.get("path", "none"))
 	var done := bool(res.get("done", true))
+	_round_native_ms += float(res.get("native_compute_ms", 0.0))
+	_round_processed_cells += int(res.get("processed_cells", 0))
 	if world_clock != null and world_clock.has_method("request_simulation_backpressure"):
 		world_clock.request_simulation_backpressure(&"bio_occupancy_day_barrier", slice_enabled and not done)
 	if done:
 		_submit_occupancy_discoveries(res, day_index)
+		_finish_round_timing()
 	var elapsed_ms: float = (Time.get_ticks_usec() - t0) / 1000.0
 	return {
 		"done": done,
@@ -113,7 +138,30 @@ func tick(ctx) -> Dictionary:
 	}
 
 
+func _choose_sliced(cell_count: int) -> bool:
+	if execution_mode == "oneshot":
+		return false
+	if execution_mode == "sliced":
+		return true
+	if _round_count == 0:
+		return cell_count > 50000
+	return _full_round_ema_ms > 1.25
+
+
+func _finish_round_timing() -> void:
+	if _round_native_ms > 0.0:
+		var sample_throughput := float(_round_processed_cells) / _round_native_ms
+		_throughput_cells_per_ms = sample_throughput if _throughput_cells_per_ms <= 0.0 \
+			else lerpf(_throughput_cells_per_ms, sample_throughput, 0.25)
+		_full_round_ema_ms = _round_native_ms if _round_count == 0 \
+			else lerpf(_full_round_ema_ms, _round_native_ms, 0.25)
+	_round_count += 1
+	_round_active = false
+
+
 func _submit_occupancy_discoveries(res: Dictionary, day_index: int) -> void:
+	if bool(res.get("native_evidence_submission", false)):
+		return
 	if generator == null or not generator.has_method("get_country_facade") \
 			or not generator.has_method("gameplay_start_report"):
 		return
@@ -130,17 +178,17 @@ func _submit_occupancy_discoveries(res: Dictionary, day_index: int) -> void:
 	var signals: PackedInt32Array = res.get("newly_occupied_signal_ids", PackedInt32Array())
 	if cells.size() != signals.size() or cells.is_empty():
 		return
-	var commands: Array[Dictionary] = []
-	var day := day_index + 1
-	for i in range(cells.size()):
-		commands.append({
-			"opcode": CountryFacade.Opcode.DISCOVER_COUNTRY_SIGNAL,
-			"target_handle": handle,
-			"signal": int(signals[i]),
-			"cell": int(cells[i]),
-			"value": 1,
-			"effective_day": day,
-			"sequence": int(cells[i]) * 32 + i,
-		})
-	if not commands.is_empty():
-		facade.submit(commands)
+	var ext = generator.get_data_core_world_ext() if generator.has_method(
+		"get_data_core_world_ext") else null
+	if ext == null or not ext.has_method("filter_bio_research_observations"):
+		return
+	var filtered: Dictionary = ext.filter_bio_research_observations(cells, signals)
+	if not bool(filtered.get("ok", false)):
+		return
+	var eligible_cells: PackedInt32Array = filtered.get(
+		"observation_cells", PackedInt32Array())
+	var eligible_signals: PackedInt32Array = filtered.get(
+		"observation_signals", PackedInt32Array())
+	if not eligible_cells.is_empty():
+		facade.submit_observation_batch(handle, eligible_cells, eligible_signals,
+			day_index + 1)

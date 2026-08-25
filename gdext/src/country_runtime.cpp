@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <iterator>
 #include <limits>
 #include <numeric>
 #include <type_traits>
@@ -1450,7 +1451,7 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
     CommandBatchState &batch = _command_batch;
     const int64_t day = batch.day;
     const size_t cursor_start = batch.cursor;
-    const size_t cursor_limit = std::min(batch.commands.size(),
+    size_t cursor_limit = std::min(batch.commands.size(),
         batch.cursor + static_cast<size_t>(_max_commands_per_slice));
     std::string error;
 
@@ -1481,6 +1482,114 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
         }
         return it->second;
     };
+
+    // Observation-only ingress is commutative. Validate the complete batch,
+    // sort/unique once, then linearly merge with the authoritative ordered
+    // evidence vector. This avoids O(n^2) shifts during large visibility
+    // backfills while preserving the same atomic command boundary.
+    const bool observation_only = batch.cursor == 0 && !batch.commands.empty() &&
+        std::all_of(batch.commands.begin(), batch.commands.end(), [](const Command &command) {
+            return command.opcode == COMMAND_DISCOVER_COUNTRY_SIGNAL;
+        });
+    if (observation_only) {
+        struct Observation { int32_t slot; uint64_t key; uint64_t handle; int32_t source; };
+        std::vector<Observation> incoming;
+        incoming.reserve(batch.commands.size());
+        for (const Command &command : batch.commands) {
+            int32_t slot = -1;
+            if (!staged_handle(command.target_handle, slot)) {
+                error = "country_handle_invalid";
+                break;
+            }
+            if (command.aux < 0 || command.aux >= static_cast<int32_t>(_research_signal_ids.size()) ||
+                command.cell < 0 || command.cell >= _cell_count) {
+                error = "country_research_signal_command_invalid";
+                break;
+            }
+            incoming.push_back(Observation{
+                slot,
+                (uint64_t(uint32_t(command.aux)) << 32U) | uint32_t(command.cell),
+                command.target_handle,
+                int32_t(command.value)});
+        }
+        if (error.empty()) {
+            std::sort(incoming.begin(), incoming.end(), [](const Observation &a,
+                                                           const Observation &b) {
+                if (a.slot != b.slot) return a.slot < b.slot;
+                return a.key < b.key;
+            });
+            incoming.erase(std::unique(incoming.begin(), incoming.end(),
+                [](const Observation &a, const Observation &b) {
+                    return a.slot == b.slot && a.key == b.key;
+                }), incoming.end());
+            batch.observation_batch_input = static_cast<int64_t>(batch.commands.size());
+            size_t begin = 0;
+            while (begin < incoming.size()) {
+                size_t end = begin + 1;
+                while (end < incoming.size() && incoming[end].slot == incoming[begin].slot) ++end;
+                const int32_t slot = incoming[begin].slot;
+                std::vector<uint64_t> unique_keys;
+                unique_keys.reserve(end - begin);
+                for (size_t i = begin; i < end; ++i) unique_keys.push_back(incoming[i].key);
+                std::vector<uint64_t> &existing = batch.signal_cells[size_t(slot)];
+                std::vector<uint64_t> added;
+                added.reserve(unique_keys.size());
+                std::set_difference(unique_keys.begin(), unique_keys.end(),
+                    existing.begin(), existing.end(), std::back_inserter(added));
+                if (!added.empty()) {
+                    std::vector<uint64_t> merged;
+                    merged.reserve(existing.size() + added.size());
+                    std::set_union(existing.begin(), existing.end(),
+                        unique_keys.begin(), unique_keys.end(), std::back_inserter(merged));
+                    existing.swap(merged);
+                    batch.observation_batch_added += static_cast<int64_t>(added.size());
+                    batch.countries.state_version[size_t(slot)] += added.size();
+                    mark_country(slot);
+                    size_t added_begin = 0;
+                    while (added_begin < added.size()) {
+                        const int32_t signal = int32_t(added[added_begin] >> 32U);
+                        size_t added_end = added_begin + 1;
+                        while (added_end < added.size() &&
+                               int32_t(added[added_end] >> 32U) == signal) ++added_end;
+                        const int32_t delta = int32_t(added_end - added_begin);
+                        const int32_t first_cell = int32_t(added[added_begin] & 0xffffffffU);
+                        if (_research_signal_words > 0)
+                            batch.signals[size_t(slot) * _research_signal_words + signal / 64] |=
+                                uint64_t{1} << (signal % 64);
+                        std::vector<SignalEvidence> &evidence = batch.signal_evidence[size_t(slot)];
+                        auto evidence_it = std::lower_bound(evidence.begin(), evidence.end(), signal,
+                            [](const SignalEvidence &entry, int32_t value) {
+                                return entry.signal < value;
+                            });
+                        if (evidence_it == evidence.end() || evidence_it->signal != signal) {
+                            SignalEvidence entry;
+                            entry.signal = signal;
+                            entry.first_day = day;
+                            entry.first_cell = first_cell;
+                            evidence_it = evidence.insert(evidence_it, entry);
+                        }
+                        evidence_it->count += delta;
+                        evidence_it->last_day = day;
+                        Event event;
+                        event.day = day;
+                        event.opcode = COMMAND_DISCOVER_COUNTRY_SIGNAL;
+                        event.country_handle = incoming[begin].handle;
+                        event.cell = first_cell;
+                        event.new_country_slot = slot;
+                        event.signal_id = signal;
+                        event.signal_source_kind = incoming[begin].source;
+                        event.evidence_delta = delta;
+                        batch.events.push_back(std::move(event));
+                        added_begin = added_end;
+                    }
+                }
+                begin = end;
+            }
+            batch.cursor = batch.commands.size();
+            cursor_limit = batch.commands.size();
+        }
+    }
+    if (!error.empty()) batch.cursor = cursor_limit;
 
     for (; batch.cursor < cursor_limit; ++batch.cursor) {
         const Command &command = batch.commands[batch.cursor];
@@ -1945,6 +2054,8 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
                 ? command.aux : -1;
             event.signal_source_kind = command.opcode == COMMAND_DISCOVER_COUNTRY_SIGNAL
                 ? static_cast<int32_t>(command.value) : 0;
+            event.evidence_delta = command.opcode == COMMAND_DISCOVER_COUNTRY_SIGNAL &&
+                event_country_handle != 0 ? 1 : 0;
             event.stable_id = command.stable_id;
             event.display_name = command.display_name;
             batch.events.push_back(std::move(event));
@@ -2047,6 +2158,8 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
     const bool stage_signals = batch.stage_signals;
     const bool stage_tax = batch.stage_tax;
     const bool stage_cell_tax = batch.stage_cell_tax;
+    const int64_t observation_batch_input = batch.observation_batch_input;
+    const int64_t observation_batch_added = batch.observation_batch_added;
     std::vector<std::pair<int32_t, int32_t>> signal_refreshes;
     if (stage_signals) {
         signal_refreshes.reserve(batch.commands.size());
@@ -2056,6 +2169,9 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
             if (!validate_handle(command.target_handle, signal_slot)) continue;
             signal_refreshes.emplace_back(signal_slot, command.aux);
         }
+        std::sort(signal_refreshes.begin(), signal_refreshes.end());
+        signal_refreshes.erase(std::unique(signal_refreshes.begin(), signal_refreshes.end()),
+                               signal_refreshes.end());
     }
     for (const Command &command : batch.commands) {
         if (command.effect_request_id == 0) continue;
@@ -2141,6 +2257,8 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
     out["cursor_total"] = static_cast<int64_t>(cursor_limit);
     out["progress_ratio"] = 1.0;
     out["country_day_barrier"] = should_run(day) || ack_chain_due(day);
+    out["observation_batch_input"] = observation_batch_input;
+    out["observation_batch_added"] = observation_batch_added;
     if (!cell_delta_order.empty()) {
         if (!std::is_sorted(cell_delta_order.begin(), cell_delta_order.end()))
             std::sort(cell_delta_order.begin(), cell_delta_order.end());
@@ -2434,6 +2552,57 @@ PackedStringArray NativeCountryRuntime::completed_technology_ids(
             technology_ids.push_back(
                 _technology_ids[static_cast<size_t>(tech)].c_str());
     return technology_ids;
+}
+
+Dictionary NativeCountryRuntime::submit_observation_batch(
+        int64_t handle, const PackedInt32Array &cells,
+        const PackedInt32Array &signals, int64_t effective_day) {
+    if (!_configured || !_bootstrapped) return fail("country_not_bootstrapped");
+    if (_mode == MODE_OFF) return fail("country_runtime_off");
+    if (effective_day < 0 || cells.size() != signals.size())
+        return fail("country_observation_batch_invalid");
+    int32_t country_slot = -1;
+    if (!validate_handle(static_cast<uint64_t>(handle), country_slot))
+        return fail("country_handle_invalid");
+    const int32_t count = cells.size();
+    if (count == 0) {
+        Dictionary out;
+        out["ok"] = true;
+        out["submitted"] = 0;
+        out["pending"] = static_cast<int64_t>(_pending_commands.size());
+        return out;
+    }
+    const int32_t signal_count = static_cast<int32_t>(_research_signal_ids.size());
+    for (int32_t i = 0; i < count; ++i) {
+        if (cells[i] < 0 || cells[i] >= _cell_count ||
+            signals[i] < 0 || signals[i] >= signal_count)
+            return fail("country_observation_batch_invalid");
+    }
+    _pending_commands.reserve(_pending_commands.size() + size_t(count));
+    for (int32_t i = 0; i < count; ++i) {
+        Command command;
+        command.opcode = COMMAND_DISCOVER_COUNTRY_SIGNAL;
+        command.effective_day = effective_day;
+        command.sequence = i;
+        command.target_handle = static_cast<uint64_t>(handle);
+        command.cell = cells[i];
+        command.aux = signals[i];
+        command.value = 1;
+        command.submit_order = ++_submit_order;
+        _pending_commands.push_back(std::move(command));
+    }
+    Dictionary out;
+    out["ok"] = true;
+    out["submitted"] = count;
+    out["pending"] = static_cast<int64_t>(_pending_commands.size());
+    return out;
+}
+
+bool NativeCountryRuntime::has_completed_technology(
+        int64_t handle, int32_t technology_id) const {
+    int32_t slot = -1;
+    return validate_handle(static_cast<uint64_t>(handle), slot) &&
+           has_technology(slot, technology_id);
 }
 
 Dictionary NativeCountryRuntime::country_snapshot(int64_t handle) const {
@@ -3931,7 +4100,8 @@ void NativeCountryRuntime::push_event(Event event) {
 Dictionary NativeCountryRuntime::poll_events(int64_t after_event_id, int32_t limit) const {
     limit = std::clamp(limit, 1, 512);
     PackedInt64Array event_ids, days, handles;
-    PackedInt32Array opcodes, cells, old_slots, new_slots, technologies, signals, signal_sources;
+    PackedInt32Array opcodes, cells, old_slots, new_slots, technologies, signals,
+        signal_sources, evidence_deltas;
     PackedStringArray stable_ids, display_names;
     for (const Event &event : _events) {
         if (event.event_id <= after_event_id || event_ids.size() >= limit) continue;
@@ -3945,6 +4115,7 @@ Dictionary NativeCountryRuntime::poll_events(int64_t after_event_id, int32_t lim
         technologies.push_back(event.technology_id);
         signals.push_back(event.signal_id);
         signal_sources.push_back(event.signal_source_kind);
+        evidence_deltas.push_back(event.evidence_delta);
         stable_ids.push_back(event.stable_id.c_str());
         display_names.push_back(String::utf8(event.display_name.c_str()));
     }
@@ -3960,6 +4131,7 @@ Dictionary NativeCountryRuntime::poll_events(int64_t after_event_id, int32_t lim
     out["technology_ids"] = technologies;
     out["signal_ids"] = signals;
     out["signal_source_kinds"] = signal_sources;
+    out["evidence_deltas"] = evidence_deltas;
     out["stable_ids"] = stable_ids;
     out["display_names"] = display_names;
     out["generation"] = static_cast<int64_t>(_generation);
@@ -3969,7 +4141,13 @@ Dictionary NativeCountryRuntime::poll_events(int64_t after_event_id, int32_t lim
 bool NativeCountryRuntime::encode_save(std::vector<uint8_t> &out, std::string &error) const {
     if (!_bootstrapped) { error = "country_save_not_bootstrapped"; return false; }
     if (_command_batch.active) { error = "country_save_requires_idle_command_graph"; return false; }
-    if (should_run(_last_committed_day)) { error = "country_save_requires_idle_command_graph"; return false; }
+    if (std::any_of(_pending_commands.begin(), _pending_commands.end(),
+            [&](const Command &command) {
+                return command.effective_day <= _last_committed_day;
+            }) || ack_chain_due(_last_committed_day)) {
+        error = "country_save_requires_idle_command_graph";
+        return false;
+    }
     out.clear();
     append_le<uint32_t>(out, SAVE_MAGIC);
     append_le<uint32_t>(out, SCHEMA_VERSION);

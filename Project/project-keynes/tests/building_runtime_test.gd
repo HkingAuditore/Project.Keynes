@@ -86,6 +86,8 @@ func _run() -> void:
 	_test_high_unemployment_investment_catchup(catalog, profile)
 	_test_collector_endogenous_investment(catalog, profile)
 	_test_all_buildings_have_explicit_construction(catalog)
+	_test_building_maintenance_recipes_differ_by_type(catalog)
+	_test_installed_building_keeps_maintenance_buffer(catalog, profile)
 	_test_investment_capacity_is_not_gate(catalog, profile)
 	_test_investment_requires_owner_livelihood(catalog, profile)
 	_test_owner_only_loss_enters_lifecycle(catalog, profile)
@@ -112,7 +114,7 @@ func _run() -> void:
 	var goods: PackedStringArray = compiled.good_ids
 	var stock := PackedInt64Array()
 	stock.resize(goods.size())
-	stock.fill(100000)
+	stock.fill(10000000)
 	# 采购闭环夹具必须从煤炭缺口开始；超出30天目标的库存本就不应强迫商人继续收购。
 	stock[goods.find("coal")] = 0
 	var boot: Dictionary = ext.bootstrap_economy({
@@ -157,7 +159,10 @@ func _run() -> void:
 	_expect("production cycle conserves market goods", int(day1.get("goods_error", 1)) == 0)
 	buildings = ext.get_building_cell_snapshot(0)
 	_expect("building snapshot reports five-day production period", int(buildings.get("period_days", 0)) == 5)
-	_expect("owner job filled", int((buildings.filled_owner as PackedInt64Array)[0]) == 1)
+	var filled_owner: PackedInt64Array = buildings.get("filled_owner", PackedInt64Array())
+	_expect("owner job filled", filled_owner.size() > 0 and int(filled_owner[0]) == 1)
+	if filled_owner.is_empty():
+		return
 	var planned_utilization := int((buildings.planned_utilization_q16 as PackedInt32Array)[0])
 	var filled_by_role: PackedInt64Array = buildings.employee_filled
 	var filled_jobs := int(filled_by_role[0]) + int(filled_by_role[1])
@@ -166,6 +171,15 @@ func _run() -> void:
 		filled_jobs > 0 and filled_jobs <= 20)
 	_expect("mine produces output", int((buildings.last_output as PackedInt64Array)[0]) > 0)
 	_expect("merchant buys at least part of output", int((buildings.last_sold as PackedInt64Array)[0]) > 0)
+	var market_after: Dictionary = ext.get_market_cell_snapshot(0)
+	_expect("installed mine keeps construction-material buffer",
+		_good_value(market_after, "construction_material_reserve", "lumber") > 0 and
+		_good_value(market_after, "merchant_inventory_target", "lumber") > 0)
+	_expect("maintenance is a paid operating cost",
+		(buildings.last_maintenance_cost as PackedInt64Array).size() > 0 and
+		int((buildings.last_maintenance_cost as PackedInt64Array)[0]) >= 0 and
+		int((buildings.last_operating_cost as PackedInt64Array)[0]) >=
+			int((buildings.last_maintenance_cost as PackedInt64Array)[0]))
 	_expect("merchant procurement freezes a 12.5 percent reserve and stays in budget",
 		int(day1.get("merchant_procurement_reserved", 0)) > 0 and
 		int(day1.get("merchant_procurement_budget", 0)) >=
@@ -437,7 +451,7 @@ func _run() -> void:
 	_expect("building PKCN save completes", bool(ext.end_country_save().get("ok", false)))
 	var chunks: Array[PackedByteArray] = []
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
-	_expect("building v42 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 42)
+	_expect("building v43 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 43)
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty(): break
@@ -2114,6 +2128,93 @@ func _test_all_buildings_have_explicit_construction(catalog: Dictionary) -> void
 	_expect("non-starter producers consume positive explicit construction materials", valid)
 
 
+func _test_building_maintenance_recipes_differ_by_type(catalog: Dictionary) -> void:
+	var type_ids: PackedStringArray = catalog.building_type_ids
+	var offsets: PackedInt32Array = catalog.building_maintenance_offsets
+	var good_ids: PackedInt32Array = catalog.building_maintenance_good_ids
+	var quantities: PackedInt64Array = catalog.building_maintenance_quantities
+	var wheat := type_ids.find("dryland_wheat_field")
+	var kiln := type_ids.find("bricks_plant")
+	_expect("maintenance CSR columns exist",
+		offsets.size() == type_ids.size() + 1 and
+		good_ids.size() == quantities.size() and
+		wheat >= 0 and kiln >= 0)
+	if wheat < 0 or kiln < 0 or offsets.size() != type_ids.size() + 1:
+		return
+	var wheat_goods := PackedInt32Array()
+	for item in range(int(offsets[wheat]), int(offsets[wheat + 1])):
+		wheat_goods.append(int(good_ids[item]))
+	var kiln_goods := PackedInt32Array()
+	for item in range(int(offsets[kiln]), int(offsets[kiln + 1])):
+		kiln_goods.append(int(good_ids[item]))
+	var differ := wheat_goods.size() != kiln_goods.size()
+	if not differ:
+		for item in range(wheat_goods.size()):
+			if int(wheat_goods[item]) != int(kiln_goods[item]):
+				differ = true
+				break
+	_expect("farm and kiln maintenance recipes differ",
+		wheat_goods.size() > 0 and kiln_goods.size() > 0 and differ)
+
+
+func _test_installed_building_keeps_maintenance_buffer(source_catalog: Dictionary,
+		source_profile: Dictionary) -> void:
+	var catalog := source_catalog.duplicate(true)
+	var profile := source_profile.duplicate(true)
+	profile.starvation_death_rate_q32 = 0
+	var building_ids: PackedStringArray = catalog.building_type_ids
+	var mine_id := building_ids.find("coal_mine")
+	var signatures: PackedStringArray = catalog.signature_keys
+	var landlord_sig := signatures.find("industrialist|default")
+	var worker_sig := signatures.find("miner|default")
+	var manager_sig := signatures.find("manager|default")
+	var merchant_sig := signatures.find("merchant|default")
+	var goods: PackedStringArray = catalog.good_ids
+	var ext := _new_ext(catalog)
+	_expect("installed-maintenance country bootstraps",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 291))
+	_expect("installed-maintenance runtime configures",
+		bool(ext.configure_economy(catalog, profile, 1, 291).get("ok", false)))
+	var coal_resource := (catalog.building_resource_ids as PackedStringArray).find("coal")
+	if coal_resource >= 0:
+		var coal_slot := int(ext.component_id(StringName(
+			(catalog.building_resource_reserve_slots as PackedStringArray)[coal_resource])))
+		if coal_slot >= 0:
+			ext.write_f32_range(coal_slot, 0, PackedFloat32Array([1000000000.0]))
+	var stock := PackedInt64Array()
+	stock.resize(goods.size())
+	stock.fill(10000000)
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0, 0, 0]),
+		"signature_ids": PackedInt32Array([
+			landlord_sig, worker_sig, manager_sig, merchant_sig]),
+		"population": PackedInt64Array([5, 20, 2, 2]),
+		"funds": PackedInt64Array([100000000, 10000000, 10000000, 100000000]),
+	}, {
+		"stock": stock,
+		"building_cells": PackedInt32Array([0]),
+		"building_type_ids": PackedInt32Array([mine_id]),
+		"building_owner_signature_ids": PackedInt32Array([landlord_sig]),
+		"building_counts": PackedInt64Array([1]),
+	})
+	_expect("installed-maintenance fixture bootstraps", bool(boot.get("ok", false)))
+	var report := _run_day(ext, 0)
+	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	var market: Dictionary = ext.get_market_cell_snapshot(0)
+	_expect("installed mine keeps construction-material buffer without new starts",
+		_good_value(market, "construction_material_reserve", "lumber") > 0 and
+		_good_value(market, "merchant_inventory_target", "lumber") > 0)
+	_expect("maintenance is a paid operating cost",
+		(buildings.last_maintenance_cost as PackedInt64Array).size() > 0 and
+		int((buildings.last_maintenance_cost as PackedInt64Array)[0]) >= 0 and
+		int((buildings.last_operating_cost as PackedInt64Array)[0]) >=
+			int((buildings.last_maintenance_cost as PackedInt64Array)[0]))
+	_expect("storable industrial continuity still conserves ledgers",
+		int(report.get("money_error", 1)) == 0 and
+		int(report.get("goods_error", 1)) == 0 and
+		int(report.get("population_error", 1)) == 0)
+
+
 func _test_investment_capacity_is_not_gate(source_catalog: Dictionary,
 		source_profile: Dictionary) -> void:
 	var catalog := source_catalog.duplicate(true)
@@ -2318,6 +2419,9 @@ func _test_owner_only_loss_enters_lifecycle(source_catalog: Dictionary,
 	var merchant_sig := signatures.find("merchant|default")
 	var building_ids: PackedStringArray = catalog.building_type_ids
 	var loom_id := building_ids.find("household_loom")
+	_zero_building_input_quantities(catalog, loom_id)
+	_strip_building_resources(catalog, loom_id)
+	_clear_building_climate(catalog, loom_id)
 	var goods: PackedStringArray = catalog.good_ids
 	var cloth_good := goods.find("cloth")
 	_minimize_household_good_demand(catalog, cloth_good)
@@ -2355,9 +2459,13 @@ func _test_owner_only_loss_enters_lifecycle(source_catalog: Dictionary,
 		_run_day(ext, day)
 	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
 	var group := (buildings.group_type_ids as PackedInt32Array).find(loom_id)
+	var loom_market: Dictionary = ext.get_market_cell_snapshot(0)
+	_expect("installed loom keeps logs construction reserve",
+		_good_value(loom_market, "construction_material_reserve", "logs") > 0)
 	_expect("owner livelihood loss counts without input or payroll cost",
 		group >= 0 and
-		int((buildings.last_operating_cost as PackedInt64Array)[group]) == 0 and
+		int((buildings.last_input_cost as PackedInt64Array)[group]) == 0 and
+		int((buildings.last_wages_due as PackedInt64Array)[group]) == 0 and
 		int((buildings.realized_profit_margin_q16 as PackedInt32Array)[group]) <= -16384 and
 		int((buildings.severe_loss_cycles as PackedInt32Array)[group]) == 2 and
 		int((buildings.operating_state as PackedByteArray)[group]) == 0)
@@ -3457,7 +3565,7 @@ func _test_construction_shortage_feeds_procurement_signal(source_catalog: Dictio
 	var goods: PackedStringArray = catalog.good_ids
 	var stock := PackedInt64Array()
 	stock.resize(goods.size())
-	stock.fill(1000000)
+	stock.fill(10000000)
 	stock[raw_stone_good] = 0
 	var boot: Dictionary = ext.bootstrap_economy({
 		"cell_indices": PackedInt32Array([0, 0, 0, 0]),

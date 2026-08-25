@@ -51,6 +51,7 @@ Dictionary NativeEconomyRuntime::market_cell_snapshot(int32_t cell_idx) const {
     PackedInt64Array offered_supply_ema;
     PackedInt64Array realized_withdrawal_ema;
     PackedInt64Array production_input_reserve;
+    PackedInt64Array construction_material_reserve;
     PackedInt64Array household_available_stock;
     PackedInt64Array merchant_inventory_target;
     PackedInt64Array merchant_procurement_shortfall;
@@ -155,9 +156,14 @@ Dictionary NativeEconomyRuntime::market_cell_snapshot(int32_t cell_idx) const {
         const int64_t input_reserve = signal >= 0 && signal <
                 static_cast<int32_t>(_production_input_reserve.size())
             ? _production_input_reserve[signal] : 0;
+        const int64_t construction_reserve = signal >= 0 && signal <
+                static_cast<int32_t>(_construction_material_reserve.size())
+            ? _construction_material_reserve[signal] : 0;
         production_input_reserve.push_back(input_reserve);
+        construction_material_reserve.push_back(construction_reserve);
         household_available_stock.push_back(std::max<int64_t>(0,
-            _market.stock[_market.index(market, g)] - input_reserve));
+            _market.stock[_market.index(market, g)] -
+            std::max(input_reserve, construction_reserve)));
         const int32_t flow = const_cast<NativeEconomyRuntime *>(this)->trade_flow_index(
             cell_idx, g, false);
         const int64_t export_ema = flow >= 0 ? _trade_flows.export_ema[flow] : 0;
@@ -243,6 +249,7 @@ Dictionary NativeEconomyRuntime::market_cell_snapshot(int32_t cell_idx) const {
     out["offered_supply_ema"] = offered_supply_ema;
     out["realized_withdrawal_ema"] = realized_withdrawal_ema;
     out["production_input_reserve"] = production_input_reserve;
+    out["construction_material_reserve"] = construction_material_reserve;
     out["household_available_stock"] = household_available_stock;
     out["merchant_inventory_target"] = merchant_inventory_target;
     out["merchant_procurement_shortfall"] = merchant_procurement_shortfall;
@@ -925,6 +932,8 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     PackedInt64Array investment_stealable;
     PackedInt64Array investment_challenger_unit_cost;
     PackedInt64Array investment_incumbent_unit_cost;
+    PackedInt64Array investment_return_on_capital_q16;
+    PackedInt64Array investment_cost_advantage_q16;
     PackedInt32Array realized_profit_margin_q16;
     PackedInt32Array severe_loss_cycles;
     PackedInt32Array recovery_cycles;
@@ -948,6 +957,7 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     PackedInt64Array last_wages_due;
     PackedInt64Array last_expected_revenue;
     PackedInt64Array last_operating_cost;
+    PackedInt64Array last_maintenance_cost;
     PackedInt32Array last_margin_gap_q16;
     PackedInt32Array planned_utilization_q16;
     PackedInt64Array last_base_wages_due;
@@ -1057,6 +1067,12 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
             ? investment_diagnostic->challenger_unit_cost : 0);
         investment_incumbent_unit_cost.push_back(investment_diagnostic != nullptr
             ? investment_diagnostic->incumbent_unit_cost : 0);
+        investment_return_on_capital_q16.push_back(
+            investment_diagnostic != nullptr
+                ? investment_diagnostic->return_on_capital_q16 : 0);
+        investment_cost_advantage_q16.push_back(
+            investment_diagnostic != nullptr
+                ? investment_diagnostic->cost_advantage_q16 : 0);
         realized_profit_margin_q16.push_back(group.realized_profit_margin_q16);
         severe_loss_cycles.push_back(group.severe_loss_cycles);
         recovery_cycles.push_back(group.recovery_cycles);
@@ -1084,6 +1100,7 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
         last_wages_due.push_back(group.last_wages_due);
         last_expected_revenue.push_back(group.last_expected_revenue);
         last_operating_cost.push_back(group.last_operating_cost);
+        last_maintenance_cost.push_back(group.last_maintenance_cost);
         last_margin_gap_q16.push_back(group.last_margin_gap_q16);
         planned_utilization_q16.push_back(group.planned_utilization_q16);
         last_base_wages_due.push_back(group.last_base_wages_due);
@@ -1165,6 +1182,8 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     PackedInt64Array investment_candidate_stealable;
     PackedInt64Array investment_candidate_challenger_unit_cost;
     PackedInt64Array investment_candidate_incumbent_unit_cost;
+    PackedInt64Array investment_candidate_return_on_capital_q16;
+    PackedInt64Array investment_candidate_cost_advantage_q16;
     PackedInt32Array investment_candidate_failed_material_group;
     PackedInt32Array investment_candidate_selected_material_offsets;
     PackedInt32Array investment_candidate_selected_material_good_ids;
@@ -1198,6 +1217,10 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
                 item.challenger_unit_cost);
             investment_candidate_incumbent_unit_cost.push_back(
                 item.incumbent_unit_cost);
+            investment_candidate_return_on_capital_q16.push_back(
+                item.return_on_capital_q16);
+            investment_candidate_cost_advantage_q16.push_back(
+                item.cost_advantage_q16);
             investment_candidate_failed_material_group.push_back(
                 item.failed_material_group);
             for (size_t material = 0;
@@ -1281,6 +1304,9 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     out["investment_stealable"] = investment_stealable;
     out["investment_challenger_unit_cost"] = investment_challenger_unit_cost;
     out["investment_incumbent_unit_cost"] = investment_incumbent_unit_cost;
+    out["investment_return_on_capital_q16"] =
+        investment_return_on_capital_q16;
+    out["investment_cost_advantage_q16"] = investment_cost_advantage_q16;
     out["investment_candidate_diagnostic_day"] = _investment_diagnostic_cell == cell_idx
         ? _investment_diagnostic_day : -1;
     out["investment_candidate_type_ids"] = investment_candidate_type_ids;
@@ -1321,6 +1347,10 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
         investment_candidate_challenger_unit_cost;
     out["investment_candidate_incumbent_unit_cost"] =
         investment_candidate_incumbent_unit_cost;
+    out["investment_candidate_return_on_capital_q16"] =
+        investment_candidate_return_on_capital_q16;
+    out["investment_candidate_cost_advantage_q16"] =
+        investment_candidate_cost_advantage_q16;
     out["realized_profit_margin_q16"] = realized_profit_margin_q16;
     out["severe_loss_cycles"] = severe_loss_cycles;
     out["recovery_cycles"] = recovery_cycles;
@@ -1346,6 +1376,7 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     out["last_wages_due"] = last_wages_due;
     out["last_expected_revenue"] = last_expected_revenue;
     out["last_operating_cost"] = last_operating_cost;
+    out["last_maintenance_cost"] = last_maintenance_cost;
     out["last_margin_gap_q16"] = last_margin_gap_q16;
     out["planned_utilization_q16"] = planned_utilization_q16;
     out["last_base_wages_due"] = last_base_wages_due;

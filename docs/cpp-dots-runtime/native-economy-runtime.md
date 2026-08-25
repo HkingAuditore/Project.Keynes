@@ -1,6 +1,6 @@
 # 原生阶层与本地市场运行时（Market V2 / Price V4）
 
-PKEC v42 是当前 writer；reader 接受 v42 与 v41。v41 不得含 `EXPEDITION_PREPARING`。
+PKEC v43 是当前 writer；reader 接受 v43、v42 与 v41。v41 不得含 `EXPEDITION_PREPARING`。
 v42 保留 v39 引入的生产计划 P∈[5,15] 与投资 I∈[10,30]
 分开锁定，且 I > P。三套周期只在各自完整周期边界重选；选档用经济活格刀数
 （人口>0 ∪ 已建建筑 ∪ 在建，不是全图 cell_count）加上一周期本侧实测毫秒 EMA，
@@ -95,7 +95,12 @@ profession. The test fixture creates one merchant post per populated cell, and
 runtime employment, colonization extract/kit filling, and merchant-index rebuild
 all protect or repair the final local merchant. Epoch preflight treats a
 zero-population merchant primary as missing and repairs it instead of trusting
-the stale CSR.
+the stale CSR. Household demography can still zero a merchant cohort immediately;
+`STRUCTURAL_REMOVE_EMPTY` and merchant repair wait until after
+`government_research_procurement` and `trade_dispatch`. Procurement therefore
+pays only living merchants (`population > 0`) and skips dead lanes instead of
+debiting country treasury and then failing the epoch. Country treasury has no
+rollback for `purchase_research_points`.
 
 Recovery liquidation remains behind the existing executable-but-unprofitable
 review gate. An approved review now retires only confirmed excess capacity,
@@ -176,10 +181,10 @@ sequence、settled day、稳定结果码及实际两类物资/现金支出；它
 - `GoodProfile.inventory_target_ratio_q16` 在 catalog 配置阶段预计算为 dense 有效天数列；热循环不做字符串分类或额外目录遍历。catalog 同时保留 legacy `good_target_inventory_days_q16` 兼容列，使编辑器误加载旧 DLL 时仍能完成 economy/population bootstrap；新版 DLL 优先读取比例列。
 - ACTIVE owner-lot 在家庭清算前按已到岗业主份额、计划利用率和冻结单位投入成本保留下周期营运资金；该资金仍在 owner cohort 账户内，但不会被本期居民订单花掉。报告发布 `owner_working_capital_reserved`。
 - 生产者只保留生存食品健康下限和寒冷条件下最低衣物；普通非生存自产商品全部进入市场。剩余自产食物可作为跨主食/蛋白质/蔬果的紧急热量。实际消费的自用物按冻结零售价计入来源建筑的实物收入而不产生现金，并进入实际出库 EMA；该价值影响经济收益和岗位选择，但不能偿债。
-- C++ 按建筑数、周期天数和计划利用率确定性重建稀疏生产投入硬预留。多投入配方先按同一可执行比例缩放，只预留能组成完整配方的数量；缺少任一互补投入时不会继续锁住其他投入。若非生存产出会消耗生存食物，则整套配方让家庭生存清算优先，只能使用清算后的余量。商人目标库存至少覆盖实际预留；居民与国内贸易只能消费/导出 `stock - reserve`。`production_input_reserved`、`production_input_reserve_shortfall` 及 selected-cell/CSV v14 逐商品列用于诊断。缓存不进入 PKEC，可从建筑和市场信号状态重建。
+- C++ 按建筑数、周期天数和计划利用率确定性重建稀疏生产投入硬预留。多投入配方先按同一可执行比例缩放，只预留能组成完整配方的数量；缺少任一互补投入时不会继续锁住其他投入。若非生存产出会消耗生存食物，则整套配方让家庭生存清算优先，只能使用清算后的余量。同一 CSR 遍历同时写入 `construction_material_reserve`：已安装建筑的作者维护日量（空配方则按部门地平线摊首选建造货）乘周期天数，并与一座建造 BOM 取 max。暂停组仍贡献维护预留。商人目标库存覆盖 `max(投入预留, 维护/建造预留)`；居民与国内贸易只能消费/导出 `stock - max(投入预留, 维护预留)`。业主在销售与工资之后按配方向商人付费购买维护货，买不起只记 unmet。`production_input_reserved`、`construction_material_reserved`、`maintenance_goods_consumed` / `maintenance_unmet` 及 selected-cell/CSV 逐商品列用于诊断。两份预留都是可重建缓存，不进入 PKEC。
 - 正常商人现金不足时，生产者托底只补足正常目标库存的剩余缺口，不再把全部可储存余货无条件入库；超过目标的余量进入真实 discard sink。被托底的数量仍获得冻结本地零售价 20% 的显式发行货币。`production_output_supported` 与 `producer_support_money_issued` 分开报告，货币审计把后者计入 `_explicit_money_mint`。`cycle_flow` 产出不能跨周期存货，但在边界清零前会先获得同周期低价采购/托底机会，剩余瞬态库存再计入 `cycle_flow_discarded`。
 - 生成测试经济不再使用职业固定人均资金：每个 cohort 获得按当前气候、族群和默认价格计算的 30 日 `survival_household` 生存金；业主追加两周期最低有效输入成本；商人追加本地产出目标库存资金。
-- PKEC v42 是当前 writer，reader 接受 v42 与 v41：保留 FamilyStore、NotablePersonStore、cohort membership、
+- PKEC v43 是当前 writer，reader 接受 v43、v42 与 v41：保留 FamilyStore、NotablePersonStore、cohort membership、
   building ownership、Economy Modifier domain、冻结环境、财政与出生余数、家族特性、
   per-cell influence、运河工程、格承载力 `support_ema`、七条环境 lane 与开拓队 cargo/kit/缺货 CSR。
   PREPARING 允许 payload/cargo 为 0。reader 不做隐式迁移，v40 及更早明确拒绝。
@@ -461,7 +466,11 @@ stable good ID 排列的候选 CSR，并附带 good-level Q16 生产效率。每
 `upgrade_family_id/upgrade_tier` 编译为稳定 family 目录与逐建筑 tier。BUILD 检查同族最高已解锁
 档位，旧档返回 `building_tier_obsolete_for_construction`；生产仍只检查该建筑原始科技，因此旧
 owner-lot 继续生产且不会自动转换。快照发布 family、tier、highest available tier 和当前可建状态。
-食物与家庭织布各只有 gathering、pottery、guild、steam 四档，蒸汽后不再扩展。
+`subsistence_food` 与 `household_cloth` 家族仍保留 gathering、pottery、guild、steam 等历史层级，
+但这只是家庭/小农升级族的构造选择，不是食物产能的时代上限。农业专门化、机械化、精准农业和
+自动化建筑继续在电气、原子、信息与智能时代提供新生产法；食物容量按每名劳动者的完整
+`survival_household` 生存篮子标定，后期基线为蒸汽 `6.0`、电气 `18.0`、原子 `40.0`、信息
+`90.0`、智能 `180.0`。Modifier 和地域因子仍可在运行时继续放大该基线。
 
 科技 Country Modifier 的生产家族和精确建筑类型 stat 在 `configure()` 时解析为 dense ID；
 `capture_country_epoch()` 将国家×家族与国家×建筑类型因子冻结为连续 Q16 表。建筑组缓存把国家、
@@ -701,7 +710,7 @@ Inspector 诊断 lane，计入 runtime memory，但不进入 state hash 或 PKEC
 出生率折减先把 composite 按 `satisfaction_birth_reference_q16` 重标定，再把格级 sat
 混进 `K_eff`；cohort 只乘残差，避免把心情乘两次。未解锁物资族不进 surplus 分母。
 贴上 `K_eff` 后出生落到更替。饥饿死亡仍只读 `SAT_DIM_SUBSISTENCE`。
-出生贡献按地块与民族聚合，Q32 小数余数跨周期累计，并由 PKEC v42 持久化；不新增调度阶段。
+出生贡献按地块与民族聚合，Q32 小数余数跨周期累计，并由 PKEC v43 持久化；不新增调度阶段。
 
 建筑基础工资不再预付；生产出售后用 owner 销售后资金统一分配。最终欠薪继续记录在
 `wage_suspended`/unpaid 报告中并取消奖金，但该标记不代表下一轮自动停产。
@@ -710,7 +719,7 @@ Inspector 诊断 lane，计入 runtime memory，但不进入 state hash 或 PKEC
 服务。前两项在基础设施/服务经济落地前作为明确的无家庭需求资本品保留；scientific_instruments
 仍有精密工具生产下游。允许的跨 need 复用仅为 refined_fuel、computers、beverages 和 fur，
 Inspector 会聚合显示。需求/计划变更只改变 catalog hash；旧 hash 的 PKEC 按现有
-`save_catalog_scale_or_capacity_mismatch` 路径拒绝；byte schema 现为 PKEC v42（v41 可读），cadence 为锁定 N/P/I。
+`save_catalog_scale_or_capacity_mismatch` 路径拒绝；byte schema 现为 PKEC v43（v42/v41 可读），cadence 为锁定 N/P/I。
 生成目录遵守 16 needs、每 need 8 variants、每 variant 4 components 的运行时合同；本轮加入
 野味后实际最大 variant 数为 5，最大 component 数仍为 2。聚焦处理量以当前 schema 测试输出为准。
 

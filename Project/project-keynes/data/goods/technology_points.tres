@@ -5,7 +5,7 @@
 [resource]
 script = ExtResource("1")
 id = &"technology_points"
-technology_tags = PackedStringArray("tech.early_knowledge_institution")
+technology_tags = PackedStringArray("tech.early_knowledge_institution", "tech.application.lorekeeper_circle", "tech.application.oral_memory_circle", "tech.application.flood_calendar_shrine", "tech.application.seasonal_observation_shelter", "tech.application.tide_observation_hut", "tech.method.pastoral_council_tent", "tech.application.scribal_school", "tech.application.classical_academy", "tech.application.chartered_university", "tech.application.printing_academy", "tech.application.industrial_research_laboratory", "tech.application.learned_society", "tech.application.cadastral_office", "tech.application.polytechnic_institute", "tech.national_laboratories", "tech.software_engineering", "tech.application.watershed_governance_center", "tech.application.geospatial_analysis_center", "tech.machine_learning", "tech.algorithmic_governance")
 display_name = "科技值"
 category_id = &"knowledge"
 substitution_category_ids = PackedStringArray("knowledge")

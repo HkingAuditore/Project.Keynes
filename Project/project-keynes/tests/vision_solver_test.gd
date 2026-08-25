@@ -19,6 +19,7 @@ func _init() -> void:
 	_test_source_probe_matches_solve()
 	_test_explored_is_monotonic()
 	_test_fog_state_and_disabled_path()
+	_test_native_vision_research_boundary()
 	print("vision solver: %d checks, %d failures" % [_checks, _failures])
 	quit(0 if _failures == 0 else 1)
 
@@ -33,6 +34,79 @@ func _test_source_probe_matches_solve() -> void:
 	VisionSolver.solve(map, world, 0)
 	_expect("startup probe matches formal vision solve",
 		bool(probe.get("ok", false)) and probe.visible == map.visible_arr)
+
+
+func _test_native_vision_research_boundary() -> void:
+	if not ClassDB.class_exists("DCWorldExt"):
+		return
+	var map := _make_map(LF.PLAIN, VEG.NONE)
+	var world := WorldData.new()
+	VisionSolver.bake_static_fields(map, world)
+	var n := map.cell_count()
+	var source := _center_index(map)
+	var foreign := int(map.neighbor_indices_packed()[source * 6])
+	var distant := 0
+	map.country_slot_arr[source] = 0
+	map.explored_arr[distant] = 1
+	var offsets := PackedInt32Array()
+	offsets.resize(n + 1)
+	var static_ids := PackedInt32Array()
+	for cell in n:
+		if cell == source:
+			static_ids.append(10)
+		if cell == foreign:
+			static_ids.append(11)
+		if cell == distant:
+			static_ids.append(12)
+		offsets[cell + 1] = static_ids.size()
+	var occupancy := PackedInt32Array()
+	occupancy.resize(n)
+	occupancy[foreign] = 1
+	var ext := DCWorldExt.new()
+	var configured: Dictionary = ext.configure_vision_research({
+		"cell_count": n,
+		"neighbor_indices": map.neighbor_indices_packed(),
+		"view_height": world.cell_view_height,
+		"view_block": world.cell_view_block,
+		"signal_offsets": offsets,
+		"signal_ids": static_ids,
+		"bio_bits": PackedInt32Array([0]),
+		"bio_signals": PackedInt32Array([20]),
+	})
+	_expect("native vision config succeeds", bool(configured.get("ok", false)))
+	var owned_only: Dictionary = ext.run_vision_research_pass({
+		"player_slot": 0, "remote_observation": false,
+		"country_slots": map.country_slot_arr, "visible": PackedByteArray(),
+		"explored": map.explored_arr, "fog_k": map.fog_k_arr,
+		"bio_occupancy_bits": occupancy,
+	})
+	_expect("native vision solve succeeds", bool(owned_only.get("ok", false)))
+	var owned_cells: PackedInt32Array = owned_only.get("observation_cells", PackedInt32Array())
+	_expect("owned territory provides evidence by default",
+		owned_cells.has(source) and not owned_cells.has(foreign))
+	var reference := _make_map(LF.PLAIN, VEG.NONE)
+	reference.country_slot_arr[source] = 0
+	reference.explored_arr[distant] = 1
+	var reference_world := WorldData.new()
+	VisionSolver.solve(reference, reference_world, 0)
+	_expect("native visible matches GDScript fallback",
+		PackedByteArray(owned_only.physical_visible) == reference.visible_arr)
+	_expect("native fog blur matches GDScript fallback",
+		PackedByteArray(owned_only.fog_k_arr) == reference.fog_k_arr)
+	var remote: Dictionary = ext.run_vision_research_pass({
+		"player_slot": 0, "remote_observation": true,
+		"country_slots": map.country_slot_arr,
+		"visible": owned_only.physical_visible,
+		"explored": owned_only.explored_arr,
+		"fog_k": owned_only.fog_k_arr,
+		"bio_occupancy_bits": occupancy,
+	})
+	var remote_cells: PackedInt32Array = remote.get("observation_cells", PackedInt32Array())
+	var remote_signals: PackedInt32Array = remote.get("observation_signals", PackedInt32Array())
+	_expect("capability backfills current visible foreign evidence",
+		remote_cells.has(foreign) and remote_signals.has(11) and remote_signals.has(20))
+	_expect("historical exploration is not remote evidence",
+		not remote_cells.has(distant) or int((remote.physical_visible as PackedByteArray)[distant]) != 0)
 
 
 ## 平原上：源格必可见，可见集连通且远小于全图，边界不可见。

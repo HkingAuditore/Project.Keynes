@@ -386,6 +386,7 @@ static func compile_native_catalog(
 	catalog["market_catalog_compat_hash_v8"] = _catalog_hash(market_v8_columns)
 	var building_columns := _compile_building_columns(
 		profession_index, good_index, good_columns.good_storage_modes,
+		good_columns.good_monetary_issue_values,
 		good_columns.good_substitution_category_offsets,
 		good_columns.good_substitution_category_ids,
 		good_columns.good_production_quality_levels,
@@ -1004,6 +1005,7 @@ static func _carrying_category_goods(offsets: PackedInt32Array, ids: PackedStrin
 
 static func _compile_building_columns(profession_index: Dictionary,
 		good_index: Dictionary, good_storage_modes: PackedInt32Array,
+		good_monetary_issue_values: PackedInt64Array,
 		good_substitution_category_offsets: PackedInt32Array,
 		good_substitution_category_ids: PackedStringArray,
 		good_quality_levels: PackedInt32Array,
@@ -1171,6 +1173,10 @@ static func _compile_building_columns(profession_index: Dictionary,
 	var construction_candidate_offsets := PackedInt32Array([0])
 	var construction_candidate_goods := PackedInt32Array()
 	var construction_candidate_efficiencies := PackedInt32Array()
+	var maintenance_offsets := PackedInt32Array([0])
+	var maintenance_goods := PackedInt32Array()
+	var maintenance_quantities := PackedInt64Array()
+	var maintenance_horizon_days := PackedInt32Array()
 	var input_offsets := PackedInt32Array([0])
 	var input_goods := PackedInt32Array()
 	var input_quantities := PackedInt64Array()
@@ -1334,6 +1340,29 @@ static func _compile_building_columns(profession_index: Dictionary,
 		if construction_candidate_error != "":
 			return {"ok": false, "reason": "%s: %s" % [construction_candidate_error, stable_id]}
 		construction_offsets.append(construction_goods.size())
+		var authored_maintenance_ids: PackedStringArray = profile.maintenance_good_ids
+		var authored_maintenance_qty: PackedInt64Array = profile.maintenance_quantities_per_day
+		if authored_maintenance_ids.size() != authored_maintenance_qty.size():
+			return {"ok": false, "reason": "building maintenance columns mismatch: %s" % stable_id}
+		if not authored_maintenance_ids.is_empty():
+			for item in range(authored_maintenance_ids.size()):
+				var maintenance_id := String(authored_maintenance_ids[item])
+				if not good_index.has(maintenance_id) or int(authored_maintenance_qty[item]) <= 0:
+					return {"ok": false, "reason": "invalid building maintenance good: %s" % stable_id}
+				var maintenance_good := int(good_index[maintenance_id])
+				if maintenance_good < 0 or maintenance_good >= good_storage_modes.size() \
+						or int(good_storage_modes[maintenance_good]) != 0:
+					continue
+				if maintenance_good < good_monetary_issue_values.size() \
+						and int(good_monetary_issue_values[maintenance_good]) > 0:
+					continue
+				maintenance_goods.append(maintenance_good)
+				maintenance_quantities.append(int(authored_maintenance_qty[item]))
+		var horizon := int(profile.maintenance_horizon_days)
+		if horizon < 0:
+			return {"ok": false, "reason": "invalid building maintenance horizon: %s" % stable_id}
+		maintenance_horizon_days.append(horizon)
+		maintenance_offsets.append(maintenance_goods.size())
 		error = _append_building_goods(profile.input_good_ids,
 			profile.input_quantities_per_day, good_index, input_goods, input_quantities)
 		if error != "": return {"ok": false, "reason": "%s: %s" % [error, stable_id]}
@@ -1565,6 +1594,10 @@ static func _compile_building_columns(profession_index: Dictionary,
 		"building_construction_candidate_offsets": construction_candidate_offsets,
 		"building_construction_candidate_good_ids": construction_candidate_goods,
 		"building_construction_candidate_efficiency_q16": construction_candidate_efficiencies,
+		"building_maintenance_offsets": maintenance_offsets,
+		"building_maintenance_good_ids": maintenance_goods,
+		"building_maintenance_quantities": maintenance_quantities,
+		"building_maintenance_horizon_days": maintenance_horizon_days,
 		"building_input_offsets": input_offsets,
 		"building_input_good_ids": input_goods,
 		"building_input_quantities": input_quantities,
@@ -1690,6 +1723,7 @@ static func _compile_building_dependency_columns(buildings: Dictionary,
 		"building_construction_candidate_good_ids", PackedInt32Array())
 	var input_offsets: PackedInt32Array = buildings.building_input_offsets
 	var input_goods: PackedInt32Array = buildings.building_input_good_ids
+	var input_required: PackedInt32Array = buildings.building_input_required_q16
 	var input_candidate_offsets: PackedInt32Array = buildings.building_input_candidate_offsets
 	var input_candidate_goods: PackedInt32Array = buildings.building_input_candidate_good_ids
 	var output_offsets: PackedInt32Array = buildings.building_output_offsets
@@ -1769,6 +1803,11 @@ static func _compile_building_dependency_columns(buildings: Dictionary,
 				if not bool(result.get("ok", false)):
 					return result
 			for edge in range(input_offsets[building_index], input_offsets[building_index + 1]):
+				# Soft complements are demand sinks, not operational prerequisites.
+				# Compiling them into the technology dependency CSR would make an
+				# optional recipe input a hidden hard unlock gate.
+				if int(input_required[edge]) < 65536:
+					continue
 				var candidates := []
 				if edge + 1 < input_candidate_offsets.size():
 					for candidate_edge in range(input_candidate_offsets[edge], input_candidate_offsets[edge + 1]):

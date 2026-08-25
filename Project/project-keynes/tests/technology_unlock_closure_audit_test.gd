@@ -17,6 +17,7 @@ func _init() -> void:
 		push_error(str(catalog))
 		quit(1)
 		return
+	_assert_optional_inputs_are_not_dependency_gates(catalog)
 	var effective := OS.get_cmdline_user_args().has("--effective")
 	var include_construction := OS.get_cmdline_user_args().has("--construction")
 	var failures := audit(catalog, effective, include_construction)
@@ -112,6 +113,10 @@ static func audit(catalog: Dictionary, effective: bool = false,
 	var dependency_tags: PackedInt32Array = catalog.building_dependency_tags
 	var good_ids: PackedStringArray = catalog.good_ids
 	var resource_ids: PackedStringArray = catalog.building_resource_ids
+	var prebuilt_starter_technologies := {}
+	for starter_id in catalog.starter_eligible_technology_ids:
+		prebuilt_starter_technologies[(technology_ids as PackedStringArray).find(
+			String(starter_id))] = true
 	var closures: Array = []
 	closures.resize(technology_ids.size())
 	for technology in range(technology_ids.size()):
@@ -127,6 +132,8 @@ static func audit(catalog: Dictionary, effective: bool = false,
 				building_branch_offsets[building + 1]):
 			var technology_begin := branch_technology_offsets[branch]
 			var direct_technology := int(branch_technologies[technology_begin])
+			var is_prebuilt_starter := prebuilt_starter_technologies.has(
+				direct_technology)
 			var closure: Dictionary = closures[direct_technology].duplicate()
 			var missing_required := PackedStringArray()
 			for edge in range(technology_begin + 1,
@@ -151,7 +158,7 @@ static func audit(catalog: Dictionary, effective: bool = false,
 				if satisfied:
 					continue
 				var kind := int(dependency_kinds[group])
-				if kind == 1 and not include_construction:
+				if kind == 1 and (not include_construction or is_prebuilt_starter):
 					continue
 				var dependency_id := int(dependency_ids[group])
 				var ids := resource_ids if kind in [4, 5] else good_ids
@@ -168,3 +175,26 @@ static func audit(catalog: Dictionary, effective: bool = false,
 					"missing_dependencies": missing_dependencies,
 				})
 	return failures
+
+
+static func _assert_optional_inputs_are_not_dependency_gates(
+		catalog: Dictionary) -> void:
+	var branch_offsets: PackedInt32Array = catalog.building_dependency_branch_offsets
+	var group_offsets: PackedInt32Array = catalog.building_dependency_branch_group_offsets
+	var kinds: PackedByteArray = catalog.building_dependency_kinds
+	var dependency_ids: PackedInt32Array = catalog.building_dependency_ids
+	var input_offsets: PackedInt32Array = catalog.building_input_offsets
+	var input_ids: PackedInt32Array = catalog.building_input_good_ids
+	var input_required: PackedInt32Array = catalog.building_input_required_q16
+	for building in range((catalog.building_type_ids as PackedStringArray).size()):
+		var compiled_input_ids := {}
+		for branch in range(branch_offsets[building], branch_offsets[building + 1]):
+			for group in range(group_offsets[branch], group_offsets[branch + 1]):
+				if int(kinds[group]) == 2:
+					compiled_input_ids[int(dependency_ids[group])] = true
+		for edge in range(input_offsets[building], input_offsets[building + 1]):
+			if int(input_required[edge]) < 65536:
+				assert(not compiled_input_ids.has(int(input_ids[edge])),
+					"soft input compiled as a technology gate: %s -> %s" % [
+						catalog.building_type_ids[building],
+						catalog.good_ids[int(input_ids[edge])]])

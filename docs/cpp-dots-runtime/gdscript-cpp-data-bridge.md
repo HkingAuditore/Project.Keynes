@@ -1097,3 +1097,17 @@ leave the transaction pollable; the contiguous transport cursor does not skip
 later transactions. Effect commands must call existing domain command APIs and
 must carry the idempotency key through retries.
 
+## Bio/vision cold configuration bridge
+
+Bio definitions, `bit -> species`, guilds, adjacency and carrier component IDs
+cross once through `configure_bio_occupancy()`. Steady daily calls read bound SoA
+slots and publish occupancy by an O(1) MapData reference swap; they do not rebuild
+species Dictionaries, reserve-column Arrays or an occupancy PackedArray at the
+language boundary. Explicit arrays remain for focused tests and PROBE parity.
+
+Vision freezes adjacency, view height/block, static signal CSR and bio-bit mapping
+through `configure_vision_research()`. Solve returns packed render fields plus
+sparse fog dirty indices and sparse 0→1 observations. Bio additions use the same
+native eligibility mask and enqueue directly into
+`NativeCountryRuntime::submit_observation_batch()`.
+

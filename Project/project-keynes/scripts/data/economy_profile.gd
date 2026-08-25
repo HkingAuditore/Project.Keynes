@@ -214,6 +214,14 @@ extends Resource
 @export_range(0, 65536, 1) var resource_min_reserve_q16: int = 22938
 @export_range(0, 65536, 1) var resource_safe_harvest_q16: int = 32768
 @export_range(1, 365000, 1) var resource_min_horizon_days: int = 3650
+## Sector default construction-BOM amortization when a building leaves its
+## maintenance recipe empty. Order: agriculture, extractive, manufacturing,
+## energy, knowledge.
+@export var building_maintenance_horizon_days_by_sector: PackedInt32Array = PackedInt32Array([
+	5475, 2920, 3650, 2190, 7300,
+])
+## Applied only to derived (empty-recipe) daily quantities, not authored recipes.
+@export_range(1, 262144, 1) var building_maintenance_cost_factor_q16: int = 65536
 @export_range(0, 65536, 1) var bullion_monthly_issue_cap_q16: int = 655
 @export_range(0, 65536, 1) var producer_support_monthly_cap_q16: int = 3277
 
@@ -399,6 +407,10 @@ func to_native_profile() -> Dictionary:
 		"resource_min_reserve_q16": resource_min_reserve_q16,
 		"resource_safe_harvest_q16": resource_safe_harvest_q16,
 		"resource_min_horizon_days": resource_min_horizon_days,
+		"building_maintenance_horizon_days_by_sector":
+			building_maintenance_horizon_days_by_sector,
+		"building_maintenance_cost_factor_q16":
+			building_maintenance_cost_factor_q16,
 		"bullion_monthly_issue_cap_q16": bullion_monthly_issue_cap_q16,
 		"producer_support_monthly_cap_q16": producer_support_monthly_cap_q16,
 		"family_runtime_mode": family_runtime_mode,

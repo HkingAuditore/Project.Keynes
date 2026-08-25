@@ -116,7 +116,7 @@ func _run() -> void:
 				"projects": restored_report.get("canal_project_count", -1),
 			})
 	_expect("PKEC v42 restores an in-flight canal project exactly",
-		int(saved.get("schema", 0)) == 39 and bool(restored.get("ok", false))
+		int(saved.get("schema", 0)) == 43 and bool(restored.get("ok", false))
 		and int(ext.get_economy_state_hash()) == hash_before_restore
 		and int(restored_report.get("canal_project_building_count", 0)) == 1)
 

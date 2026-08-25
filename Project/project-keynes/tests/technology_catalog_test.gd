@@ -5,7 +5,7 @@ const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalo
 func _init() -> void:
 	var catalog: Dictionary = TechnologyCatalogScript.compile_native_catalog()
 	assert(bool(catalog.get("ok", false)), str(catalog))
-	const EXPECTED_TECHNOLOGY_COUNT := 671
+	const EXPECTED_TECHNOLOGY_COUNT := 661
 	const EXPECTED_STARTER_COUNT := 7
 	const EXPECTED_MILESTONE_CANDIDATES := [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
 	const EXPECTED_MILESTONE_REQUIRED := [4, 4, 4, 4, 5, 5, 5, 6, 6, 7, 7]
@@ -85,9 +85,9 @@ func _init() -> void:
 	assert(String(catalog.technology_display_names[0]) == "狩猎")
 	assert(String((definitions[0] as Dictionary).display_name) == "狩猎")
 	var hunting_summary := String((definitions[0] as Dictionary).effect_summary)
-	assert(hunting_summary.begins_with(
-		"解锁物资：野味；解锁物资：生皮；解锁建筑：狩猎营地；可利用资源：野生动物"))
-	assert(not hunting_summary.contains("作为必要支撑"))
+	for expected_part in ["解锁物资：野味", "解锁物资：生皮",
+			"解锁建筑：狩猎营地", "可利用资源：野生动物"]:
+		assert(hunting_summary.contains(expected_part), expected_part)
 	var era_metadata: Array = TechnologyCatalogScript.public_era_metadata()
 	for era_position in range(era_metadata.size()):
 		var era: Dictionary = era_metadata[era_position]

@@ -237,6 +237,7 @@ const OCCUPANCY_GUILD_NONE := 0
 const OCCUPANCY_GUILD_FOOD := 1
 const OCCUPANCY_GUILD_GRAZER := 2
 const OCCUPANCY_GUILD_FIBER := 3
+const OCCUPANCY_GUILD_SPECIALTY := 4
 const OCCUPANCY_HABITAT_NONE := 0
 const OCCUPANCY_HABITAT_OPEN_FOOD := 1
 const OCCUPANCY_HABITAT_WETLAND_FOOD := 2
@@ -328,7 +329,7 @@ const BIO_OCCUPANCY_BY_ID := {
 		"carrier": "arable_land", "carrier_alt": "",
 		"temp_lo": 0.60, "temp_hi": 1.0, "moist_lo": 0.45, "moist_hi": 1.0,
 		"elev_lo": 0.0, "elev_hi": 0.70, "veg": _VEG_TROPICAL_FOREST, "flags": 0,
-		"max_cost": 12, "fill_keep": 0.50, "guild": OCCUPANCY_GUILD_NONE,
+		"max_cost": 12, "fill_keep": 0.50, "guild": OCCUPANCY_GUILD_SPECIALTY,
 		"habitat_class": OCCUPANCY_HABITAT_TROPICAL,
 		"introduce_goods": ["spices"],
 	},
@@ -336,7 +337,7 @@ const BIO_OCCUPANCY_BY_ID := {
 		"carrier": "plantation_land", "carrier_alt": "",
 		"temp_lo": 0.60, "temp_hi": 1.0, "moist_lo": 0.52, "moist_hi": 1.0,
 		"elev_lo": 0.0, "elev_hi": 0.68, "veg": _VEG_RUBBER, "flags": 0,
-		"max_cost": 12, "fill_keep": 0.48, "guild": OCCUPANCY_GUILD_NONE,
+		"max_cost": 12, "fill_keep": 0.48, "guild": OCCUPANCY_GUILD_SPECIALTY,
 		"habitat_class": OCCUPANCY_HABITAT_TROPICAL,
 		"introduce_goods": ["latex"],
 	},
@@ -396,7 +397,7 @@ const BIO_OCCUPANCY_BY_ID := {
 		"carrier": "", "carrier_alt": "",
 		"temp_lo": 0.55, "temp_hi": 0.92, "moist_lo": 0.56, "moist_hi": 1.0,
 		"elev_lo": 0.0, "elev_hi": 0.72, "veg": _VEG_FOREST, "flags": 0,
-		"max_cost": 12, "fill_keep": 0.45, "guild": OCCUPANCY_GUILD_NONE,
+		"max_cost": 12, "fill_keep": 0.45, "guild": OCCUPANCY_GUILD_SPECIALTY,
 		"habitat_class": OCCUPANCY_HABITAT_TROPICAL,
 		"introduce_goods": [],
 	},
