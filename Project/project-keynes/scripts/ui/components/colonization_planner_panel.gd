@@ -482,13 +482,13 @@ func _update_start_enabled() -> void:
 		_start.tooltip_text = "占用目标并每日检查缺货；人留在源地继续生产，齐套后再出发。"
 	else:
 		_start.text = "派遣 %s 人" % count_text if has_selection else "确认派遣"
-		_start.tooltip_text = "建材不足，只携带口粮" if kit_partial \
+		_start.tooltip_text = "基础物资不足，只携带当前可用物资" if kit_partial \
 			else _kit_summary_text(_selected_quote)
 	if has_selection and kit_partial and not preparing_kit \
 			and not _economy_busy \
 			and _feedback.text.find("排队") < 0 \
 			and _feedback.text.find("已经出发") < 0:
-		_feedback.text = "建材不足，只携带口粮"
+		_feedback.text = "基础物资不足，只携带当前可用物资"
 		_feedback.add_theme_color_override("font_color", UITokens.WARN)
 
 
@@ -567,9 +567,9 @@ func _preparing_missing_text(handle: int, state: int) -> String:
 		var good_name := "物资#%d" % int(ids[i])
 		if _controller != null and _controller.has_method("good_display_name"):
 			good_name = String(_controller.good_display_name(int(ids[i])))
-		parts.append("%s %s" % [good_name,
+		parts.append("%s 当前库存 %s" % [good_name,
 			UITokens.format_compact_number_cn(float(qty) / 1000.0, 1)])
-	return "可替代物资合计仍不足：" + "，".join(parts)
+	return "可替代物资当前库存仍不足：" + "，".join(parts)
 
 
 func _expedition_row_tooltip(handle: int, state: int, due_day: int) -> String:

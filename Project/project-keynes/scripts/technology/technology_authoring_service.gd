@@ -12,7 +12,7 @@ func load_network() -> Dictionary:
 	var file := FileAccess.open(NETWORK_PATH, FileAccess.READ)
 	if file == null:
 		return {"ok": false, "reason": "technology_network_missing"}
-	var parsed := JSON.parse_string(file.get_as_text())
+	var parsed: Variant = JSON.parse_string(file.get_as_text())
 	file.close()
 	if not parsed is Dictionary:
 		return {"ok": false, "reason": "technology_network_json_invalid"}

@@ -329,12 +329,14 @@ func _run_colonization_planner_family_cards() -> void:
 		"maximum_population": 12, "route_cost": 4, "travel_days": 4,
 		"quote_token": 72, "surname": "王",
 	})
-	_expect("owned-cell partial kits keep a grain-only dispatch label",
+	_expect("owned-cell partial kits keep a basic-supplies dispatch label",
 		panel._start.text.find("12") >= 0
 		and panel._start.text.find("安家") < 0
 		and panel._start.text.find("筹备") < 0
-		and (panel._start.tooltip_text.find("口粮") >= 0
-			or panel._feedback.text.find("口粮") >= 0)
+		and (panel._start.tooltip_text.find("基础物资") >= 0
+			or panel._feedback.text.find("基础物资") >= 0)
+		and panel._start.tooltip_text.find("建材不足") < 0
+		and panel._feedback.text.find("建材不足") < 0
 		and not panel._start.disabled)
 	stub.detail["kit_place_buildings"] = true
 	panel._select_quote({

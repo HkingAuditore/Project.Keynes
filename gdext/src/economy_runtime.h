@@ -66,8 +66,9 @@ public:
     // parties replan even if source stock of the previous missing goods is
     // unchanged. Revision 2: clothing uses need.base_qty_per_person, not 1.0
     // goods per person-day. Revision 3: every candidate in an underfilled
-    // substitute group participates in the PREPARING stock watch.
-    static constexpr uint64_t COLONIZATION_PREPARING_STOCK_HASH_REVISION = 3;
+    // substitute group participates in the PREPARING stock watch. Revision 4:
+    // staple, protein, and produce candidates share one aggregate food pool.
+    static constexpr uint64_t COLONIZATION_PREPARING_STOCK_HASH_REVISION = 4;
     static constexpr int32_t ROLLING_PHASE_COUNT = 5;
     static constexpr int32_t MARKET_CYCLE_MIN_DAYS = 1;
     static constexpr int32_t MARKET_CYCLE_MAX_DAYS = 5;
