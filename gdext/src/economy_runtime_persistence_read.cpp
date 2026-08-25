@@ -31,7 +31,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         error = "save_chunk_header_invalid";
         return false;
     }
-    if (schema != SCHEMA_VERSION && schema != 42 && schema != 41) {
+    if (schema != SCHEMA_VERSION && schema != 43 && schema != 42 && schema != 41) {
         error = schema <= 31 ? "economy_save_v31_or_earlier_unsupported" :
             (schema == 32 ? "economy_save_v32_or_earlier_unsupported" :
             "economy_save_pre_family_effect_schema_unsupported");
@@ -369,6 +369,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         }
         int32_t saved_maintenance_horizons[5] = {5475, 2920, 3650, 2190, 7300};
         int32_t saved_maintenance_cost_factor = Q16_ONE;
+        int32_t saved_startup_demand_mode = 0;
         if (schema >= 43) {
             for (int32_t sector = 0; sector < 5; ++sector) {
                 if (!read_le(bytes, cursor, saved_maintenance_horizons[sector]) ||
@@ -384,6 +385,12 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 error = "save_maintenance_policy_header_invalid";
                 return false;
             }
+        }
+        if (schema >= 44 &&
+            (!read_le(bytes, cursor, saved_startup_demand_mode) ||
+             saved_startup_demand_mode < 0 || saved_startup_demand_mode > 1)) {
+            error = "save_startup_demand_mode_invalid";
+            return false;
         }
         if (!read_id_table(bytes, cursor, professions) || !read_id_table(bytes, cursor, ethnicities) ||
             !read_id_table(bytes, cursor, good_ids) || !read_id_table(bytes, cursor, plan_ids) ||
@@ -605,9 +612,14 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         _market.demand_ema.assign(static_cast<size_t>(markets) * goods, 0);
         _market.last_shortage_q16.assign(static_cast<size_t>(markets) * goods, 0);
         _investment_active_good_words.assign(
-            static_cast<size_t>(markets) *
-                ((static_cast<size_t>(goods) + 63U) / 64U),
-            0);
+            (static_cast<size_t>(goods) + 63U) / 64U, 0);
+        _investment_active_goods_scratch.clear();
+        _startup_demand_values.assign(
+            static_cast<size_t>(markets) * static_cast<size_t>(goods), 0);
+        _startup_demand_stamps.assign(
+            static_cast<size_t>(markets) * static_cast<size_t>(goods), 0);
+        _startup_demand_generation = 0;
+        _startup_demand_touched_keys.clear();
         _trade_active_keys.clear();
         _trade_active_key_present.assign(static_cast<size_t>(markets) * goods, 0);
         _market.cell_to_market.assign(_cell_count, -1);
@@ -696,6 +708,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 if (!_building_types.empty())
                     resolve_building_maintenance_csr();
             }
+            _startup_demand_runtime_mode = schema >= 44
+                ? saved_startup_demand_mode : 0;
             _cadence_initialized = true;
             _cadence_change_reason = 0;
         } else {

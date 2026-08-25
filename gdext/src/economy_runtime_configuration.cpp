@@ -405,6 +405,15 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _investment_output_signals_scratch.reserve(max_building_outputs);
     _investment_employment_cells.clear();
     _investment_review_cell_indices.clear();
+    _investment_active_goods_scratch.clear();
+    _startup_demand_values.clear();
+    _startup_demand_stamps.clear();
+    _startup_demand_generation = 0;
+    _startup_demand_touched_keys.clear();
+    _startup_remote_lanes.clear();
+    _startup_remote_groups.clear();
+    _startup_inbound_lanes.clear();
+    _startup_remote_accumulator_scratch.clear();
     _building_context_day = -1;
     // A game may be saved before the first daily environment capture. Keep the
     // persistent lanes valid from configuration onward so the PKSV/PKEC path is
@@ -545,6 +554,12 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     _investment_outstanding_credit_by_cell.clear();
     _investment_employment_cells.clear();
     _investment_review_cell_indices.clear();
+    _investment_active_goods_scratch.clear();
+    _startup_demand_touched_keys.clear();
+    _startup_remote_lanes.clear();
+    _startup_remote_groups.clear();
+    _startup_inbound_lanes.clear();
+    _startup_remote_accumulator_scratch.clear();
     std::string country_error;
     if (!capture_country_epoch(country_error)) {
         out["ok"] = false;
@@ -648,17 +663,12 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     _trade_active_key_present.assign(static_cast<size_t>(matrix_size), 0);
     const size_t investment_good_words =
         (static_cast<size_t>(_market.good_count) + 63U) / 64U;
-    _investment_active_good_words.assign(
-        static_cast<size_t>(market_count) * investment_good_words, 0);
-    for (int32_t market = 0; market < market_count; ++market) {
-        for (int32_t good = 0; good < _market.good_count; ++good) {
-            if (_good_monetary_issue_values[good] <= 0) continue;
-            const size_t word = static_cast<size_t>(market) *
-                investment_good_words + static_cast<size_t>(good / 64);
-            _investment_active_good_words[word] |=
-                uint64_t{1} << static_cast<uint32_t>(good % 64);
-        }
-    }
+    _investment_active_good_words.assign(investment_good_words, 0);
+    _investment_active_goods_scratch.clear();
+    _startup_demand_values.assign(static_cast<size_t>(matrix_size), 0);
+    _startup_demand_stamps.assign(static_cast<size_t>(matrix_size), 0);
+    _startup_demand_generation = 0;
+    _startup_demand_touched_keys.clear();
     _market.cell_to_market.resize(_cell_count);
     for (int32_t c = 0; c < _cell_count; ++c) _market.cell_to_market[c] = c % market_count;
     for (int32_t m = 0; m < market_count; ++m) {

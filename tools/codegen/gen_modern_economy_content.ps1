@@ -541,7 +541,8 @@ living_cost_weight_q16 = $($row[2])
 
 $needSpecs = @(
     @{id='staple_food'; tier='essential'; base=550; wealth=4096; min=49152; max=81920; price=98304; quantityPrice=16384; quantityFloor=32768;
-        variants=@(@('prepared_staples'),@('bread'),@('grain'),@('gathered_plants'),@('potatoes'))},
+        variants=@(@('prepared_staples'),@('bread'),@('grain'),@('wheat_grain'),
+            @('rice_grain'),@('corn_grain'),@('potatoes'),@('gathered_plants'))},
     @{id='protein'; tier='essential'; base=180; wealth=16384; min=32768; max=131072; price=98304; quantityPrice=98304; quantityFloor=9830;
         variants=@(@('game_meat'),@('meat'),@('fish'),@('canned_fish'),@('dairy_products'))},
     @{id='produce'; tier='essential'; base=300; wealth=16384; min=32768; max=131072; price=98304; quantityPrice=65536; quantityFloor=4096;
@@ -604,12 +605,26 @@ function Write-Plan([string]$Id, [string]$Name, [string[]]$IncludedNeeds,
         foreach ($variant in $spec.variants) {
             $variantIds += "$($spec.id)_$v"
             $preferenceGood = [string]$variant[0]
-            $preferences += $(if ($PreferenceOverrides.ContainsKey($preferenceGood)) {
+            $preferences += $(if ($spec.id -eq 'staple_food') {
+                if ($preferenceGood -in @('prepared_staples','bread')) { 131072 }
+                elseif ($preferenceGood -in @('grain','wheat_grain','rice_grain',
+                        'corn_grain','potatoes')) { 98304 }
+                else { 65536 }
+            } elseif ($PreferenceOverrides.ContainsKey($preferenceGood)) {
                 [int]$PreferenceOverrides[$preferenceGood]
             } else { 65536 })
             $variantElasticity += [int]$spec.price
             $variantEnv += $(if ($spec.id -eq 'clothing' -and $variant -contains 'fur') { 'cold_fur_preference' } elseif ($spec.id -eq 'clothing') { 'warm_cloth_preference' } else { '' })
-            foreach ($good in $variant) { $componentIds += $good; $componentQty += 1000; $c++ }
+            foreach ($good in $variant) {
+                $componentIds += $good
+                $componentQty += $(if ($spec.id -eq 'staple_food') {
+                    if ($good -in @('prepared_staples','bread')) { 650 }
+                    elseif ($good -in @('grain','wheat_grain','rice_grain',
+                            'corn_grain','potatoes')) { 800 }
+                    else { 1000 }
+                } else { 1000 })
+                $c++
+            }
             if ($Id -eq 'technical_household' -and $spec.id -eq 'education_culture') {
                 # Technical households buy a knowledge point alongside every
                 # education variant; keep the authored 100-unit service scale.
@@ -675,6 +690,10 @@ Write-Plan 'artisan_household' '工匠型家庭消费' `
     ($coreNeeds + @('education_culture','work_equipment','luxury')) 105 105 80 @{
     clothing=81920; precision_tools=98304; manuscripts=81920; fine_furniture=73728
 }
+Write-Plan 'scholarly_household' '学术家庭消费' `
+    ($coreNeeds + @('education_culture','work_equipment','luxury')) 105 105 80 @{
+    clothing=81920; precision_tools=98304; manuscripts=81920; fine_furniture=73728
+}
 Write-Plan 'technical_household' '技术型家庭消费' `
     ($coreNeeds + @('transport','communication','education_culture','recreation','durable_goods','work_equipment','luxury')) 110 125 120 @{
     precision_tools=81920; computers=98304; telecom_equipment=81920; pharmaceuticals=81920
@@ -686,6 +705,15 @@ Write-Plan 'merchant_household' '商人家庭消费' `
 Write-Plan 'owner_household' '业主家庭消费' `
     ($coreNeeds + @('transport','communication','education_culture','recreation','durable_goods','luxury','status_goods')) 120 175 240 @{
     fine_clothing=98304; fine_furniture=98304; jewelry=98304; fur=81920; automobiles=81920
+}
+
+if ($Scope -eq 'Consumption') {
+    foreach ($directory in @($professionsDir, $needsDir, $plansDir)) {
+        Assert-FullyManaged $directory
+    }
+    $planCount = @(Get-ChildItem -LiteralPath $plansDir -Filter '*.tres' -File).Count
+    Write-Host "Generated $($professionRows.Count) professions, $($needRows.Count) needs, and $planCount consumption plans."
+    return
 }
 
 $deps = @{
@@ -1582,6 +1610,12 @@ function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[
     if ($Behavior -eq 'cultivate_local_resources') {
         $generationIds = $Resources; $generationQty = @($Resources | ForEach-Object { [long]1050 }); $floor = 6554
     }
+    # The steam-era ocean fishery operates an installed fleet. Its authored
+    # replacement flow is a real terminal sink for ocean-going vessels.
+    $maintenanceLines = if ($Id -eq 'method_marine_fish_collector_r4') {
+        "maintenance_good_ids = PackedStringArray(`"oceanic_vessels`")`n" +
+        "maintenance_quantities_per_day = PackedInt64Array(40)"
+    } else { '' }
     # Timber collection remains viable without tools; tools scale the remaining
     # half of capacity through the existing soft-input contract.
     $inputRequiredQ16 = if ($Id -eq 'timber_collector') { @(32768) } else { @() }
@@ -1609,6 +1643,7 @@ technology_tags = PackedStringArray("industry.$Category", "$technology")
 upgrade_family_id = &"$Family"
 upgrade_tier = $Tier
 construction_days = 0
+$maintenanceLines
 owner_profession_id = &"$Owner"
 owner_slots_per_building = 1
 employee_profession_ids = $(PSArray $roleIds)

@@ -171,6 +171,10 @@ extends Resource
 
 ## Domestic cross-cell trade rolls out independently from the local market.
 @export_enum("OFF", "PROBE", "ACTIVE") var trade_runtime_mode: String = "ACTIVE"
+## Transient investment-only demand propagation. ACTIVE may open an existing
+## investment demand gate, but never writes market demand, price, trade, or EMA
+## state. OFF preserves the pre-v44 investment behavior.
+@export_enum("OFF", "ACTIVE") var startup_demand_runtime_mode: String = "ACTIVE"
 @export_range(1, 2147483647, 1) var trade_capacity_per_merchant_q16: int = 4194304
 @export_range(1, 1000000, 1) var trade_speed_cost_per_day: int = 4
 @export_range(0, 65536, 1) var trade_min_margin_q16: int = 3277
@@ -375,6 +379,7 @@ func to_native_profile() -> Dictionary:
 		"suspended_liquidation_failed_reviews": suspended_liquidation_failed_reviews,
 		"market_runtime_mode": market_runtime_mode,
 		"trade_runtime_mode": trade_runtime_mode,
+		"startup_demand_runtime_mode": startup_demand_runtime_mode,
 		"trade_capacity_per_merchant_q16": trade_capacity_per_merchant_q16,
 		"trade_speed_cost_per_day": trade_speed_cost_per_day,
 		"trade_min_margin_q16": trade_min_margin_q16,

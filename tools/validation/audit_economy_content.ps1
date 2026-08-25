@@ -44,17 +44,36 @@ function Assert-Chinese-DisplayName([hashtable]$Profile, [string]$Label) {
 }
 
 $technologyRank = @{}
-@('tech.hunting','tech.gathering','tech.stone_knapping','tech.fire_control') | ForEach-Object { $technologyRank[$_] = 0 }
-@('tech.pottery','tech.bronze_casting') | ForEach-Object { $technologyRank[$_] = 1 }
-@('tech.writing','tech.masonry') | ForEach-Object { $technologyRank[$_] = 2 }
-@('tech.manuscript_culture','tech.guild_organization') | ForEach-Object { $technologyRank[$_] = 3 }
-@('tech.oceanic_navigation','tech.printing_press') | ForEach-Object { $technologyRank[$_] = 4 }
-@('tech.experimental_science','tech.precision_engineering') | ForEach-Object { $technologyRank[$_] = 5 }
-@('tech.coke_smelting','tech.steam_power') | ForEach-Object { $technologyRank[$_] = 6 }
-@('tech.electrification','tech.radio','tech.electrochemistry') | ForEach-Object { $technologyRank[$_] = 7 }
-@('tech.geological_prospecting','tech.advanced_metallurgy','tech.nuclear_fission') | ForEach-Object { $technologyRank[$_] = 8 }
-@('tech.digital_computing','tech.networked_computing') | ForEach-Object { $technologyRank[$_] = 9 }
-@('tech.machine_learning','tech.autonomous_systems') | ForEach-Object { $technologyRank[$_] = 10 }
+$technologyNetworkPath = Join-Path $project 'data/technology/technology_network.json'
+if (-not (Test-Path -LiteralPath $technologyNetworkPath)) {
+    throw "authoritative technology network missing: $technologyNetworkPath"
+}
+$technologyNetwork = [System.IO.File]::ReadAllText(
+    $technologyNetworkPath) | ConvertFrom-Json
+$technologyEraRank = @{}
+foreach ($era in @($technologyNetwork.eras)) {
+    $eraId = [string]$era.id
+    if ([string]::IsNullOrWhiteSpace($eraId) -or
+        $technologyEraRank.ContainsKey($eraId)) {
+        $failures.Add("invalid or duplicate technology era: $eraId")
+        continue
+    }
+    $technologyEraRank[$eraId] = [int]$era.sort_order
+}
+foreach ($node in @($technologyNetwork.nodes)) {
+    $technologyId = [string]$node.id
+    $eraId = [string]$node.era_id
+    if ([string]::IsNullOrWhiteSpace($technologyId) -or
+        $technologyRank.ContainsKey($technologyId)) {
+        $failures.Add("invalid or duplicate technology node: $technologyId")
+        continue
+    }
+    if (-not $technologyEraRank.ContainsKey($eraId)) {
+        $failures.Add("technology node has unknown era: $technologyId -> $eraId")
+        continue
+    }
+    $technologyRank[$technologyId] = [int]$technologyEraRank[$eraId]
+}
 
 function Rank([string[]]$Tags, [string]$Label) {
     $rank = -1
@@ -64,7 +83,8 @@ function Rank([string[]]$Tags, [string]$Label) {
             $failures.Add("unknown technology tag: $Label -> $tag")
             continue
         }
-        $rank = [Math]::Max($rank, [int]$technologyRank[$tag])
+        $tagRank = [int]$technologyRank[$tag]
+        $rank = if ($rank -lt 0) { $tagRank } else { [Math]::Min($rank, $tagRank) }
     }
     return $rank
 }
@@ -152,10 +172,6 @@ $forbiddenBroadCategories = @('primary','forestry','construction','food','textil
     'metals','machinery','consumer','energy')
 $singleProducerExceptions = @{
     chipped_stone_tools='one canonical knapping method; redundant hafted shelter retired'
-}
-$deferredCapitalGoods = @{
-    railway_equipment='awaits railway infrastructure or transport-service demand'
-    oceanic_vessels='awaits port, fleet, or transport-service demand'
 }
 foreach ($good in $goods.Values) {
     foreach ($category in $good.Categories) {
@@ -260,9 +276,10 @@ foreach ($file in Get-ChildItem -LiteralPath $professionDir -Filter '*.tres') {
     $p = Read-Profile $file
     $id = @(Values $p.id)[0]
     Assert-Chinese-DisplayName $p "profession:$id"
-    $rank = Rank @(Values $p.technology_tags) "profession:$id"
-    if ($rank -lt 0 -and $id -ne 'unemployed') {
-        $failures.Add("profession has no executable technology: $id")
+    $professionTechnologyTags = @(Values $p.technology_tags)
+    $rank = Rank $professionTechnologyTags "profession:$id"
+    if (@($professionTechnologyTags | Where-Object { $_.StartsWith('tech.') }).Count -gt 0) {
+        $failures.Add("profession has forbidden executable technology binding: $id")
     }
     $planId = @(Values $p.default_consumption_plan_id)[0]
     if (-not $expectedProfessionPlans.ContainsKey($id) -or
@@ -351,6 +368,8 @@ foreach ($file in Get-ChildItem -LiteralPath $buildingDir -Filter '*.tres') {
     $outputs = @(Values $p.output_good_ids)
     $constructionGoods = @(Values $p.construction_good_ids)
     $constructionQuantities = @(Numbers $p.construction_quantities)
+    $maintenanceGoods = @(Values $p.maintenance_good_ids)
+    $maintenanceQuantities = @(Numbers $p.maintenance_quantities_per_day)
     $inputQuantities = @(Numbers $p.input_quantities_per_day)
     $outputQuantities = @(Numbers $p.output_quantities_per_day)
     $resources = @(Values $p.resource_ids)
@@ -370,7 +389,8 @@ foreach ($file in Get-ChildItem -LiteralPath $buildingDir -Filter '*.tres') {
     $ownerSlots = if ($p.ContainsKey('owner_slots_per_building')) {
         [long]$p.owner_slots_per_building
     } else { 1 }
-    $kind = @(Values $p.building_kind)[0]
+    $kindValues = @(Values $p.building_kind)
+    $kind = if ($kindValues.Count -gt 0) { $kindValues[0] } else { 'industrial' }
     $family = @(Values $p.upgrade_family_id)[0]
     $tier = if ($p.ContainsKey('upgrade_tier')) { [int]$p.upgrade_tier } else { 0 }
     $candidateSlots = @()
@@ -418,6 +438,7 @@ foreach ($file in Get-ChildItem -LiteralPath $buildingDir -Filter '*.tres') {
         Roles = $roles; RolePolicies = $rolePolicies; Family = $family; Tier = $tier
         CandidateSlots = $candidateSlots; InputQuantities = $inputQuantities
         ConstructionGoods = $constructionGoods; ConstructionQuantities = $constructionQuantities
+        MaintenanceGoods = $maintenanceGoods; MaintenanceQuantities = $maintenanceQuantities
         OutputQuantities = $outputQuantities; OwnerSlots = $ownerSlots
         RoleSlots = $roleSlots; RoleWages = $roleWages; Revenue = [double]0
         InputCost = [double]0; OperatingCost = [double]0
@@ -450,6 +471,23 @@ foreach ($file in Get-ChildItem -LiteralPath $buildingDir -Filter '*.tres') {
         }
         if ([int]$goods[$constructionGood].Rank -gt $rank -and $id -ne 'merchant_post') {
             $failures.Add("construction technology inversion: $id -> $constructionGood")
+        }
+    }
+    if ($maintenanceGoods.Count -ne $maintenanceQuantities.Count) {
+        $failures.Add("building maintenance columns mismatched: $id")
+    }
+    for ($maintenanceIndex = 0; $maintenanceIndex -lt $maintenanceGoods.Count;
+            $maintenanceIndex++) {
+        $maintenanceGood = $maintenanceGoods[$maintenanceIndex]
+        if (-not $goods.ContainsKey($maintenanceGood)) {
+            $failures.Add("maintenance good missing: $id -> $maintenanceGood")
+            continue
+        }
+        if ([long]$maintenanceQuantities[$maintenanceIndex] -le 0) {
+            $failures.Add("maintenance quantity must be positive: $id -> $maintenanceGood")
+        }
+        if ([int]$goods[$maintenanceGood].Rank -gt $rank) {
+            $failures.Add("maintenance technology inversion: $id -> $maintenanceGood")
         }
     }
     if ($resources.Count -ne $resourceModes.Count -or
@@ -532,6 +570,9 @@ foreach ($file in Get-ChildItem -LiteralPath $buildingDir -Filter '*.tres') {
     foreach ($good in $constructionGoods) {
         if (-not $goods.ContainsKey($good)) { $failures.Add("construction good missing: $id -> $good") }
         else { $goods[$good].Consumers.Add($id) }
+    }
+    foreach ($good in $maintenanceGoods) {
+        if ($goods.ContainsKey($good)) { $goods[$good].Consumers.Add($id) }
     }
     foreach ($good in $outputs) {
         if (-not $goods.ContainsKey($good)) {
@@ -1049,7 +1090,8 @@ $needPolicies = @{
     status_goods=@(1,'luxury',98304,1024,524288,32768)
 }
 $expectedNeedVariants = @{
-    staple_food=@('prepared_staples','bread','grain','gathered_plants','potatoes')
+    staple_food=@('prepared_staples','bread','grain','wheat_grain','rice_grain',
+        'corn_grain','potatoes','gathered_plants')
     protein=@('game_meat','meat','fish','canned_fish','dairy_products')
     produce=@('vegetables','processed_food')
     clothing=@('cloth','fur','clothing','footwear')
@@ -1084,7 +1126,8 @@ $allowedCrossNeedUses = @{
 }
 $forbiddenHouseholdGoods = @('railway_equipment','oceanic_vessels','scientific_instruments','electricity')
 $expectedHouseholdGoods = @(
-    'prepared_staples','bread','grain','gathered_plants','potatoes','game_meat','meat','fish','canned_fish','dairy_products',
+    'prepared_staples','bread','grain','wheat_grain','rice_grain','corn_grain',
+    'gathered_plants','potatoes','game_meat','meat','fish','canned_fish','dairy_products',
     'vegetables','processed_food','cloth','fur','clothing','footwear','construction_components',
     'pottery','furniture','soap','detergent','medicinal_herbs','pharmaceuticals','logs','coal',
     'natural_gas','refined_fuel','horses','automobiles','radio_equipment','telecom_equipment',
@@ -1180,9 +1223,25 @@ foreach ($file in Get-ChildItem -LiteralPath $planDir -Filter '*.tres') {
             if ($variantKeys.ContainsKey($variantKey)) {
                 $failures.Add("duplicate need variant: $planId -> $needId -> $variantKey")
             } else { $variantKeys[$variantKey] = $true }
+            if ($needId -eq 'staple_food' -and $components.Count -eq 1) {
+                $stapleGood = [string]$components[0]
+                $expectedPreference = if ($stapleGood -in @(
+                        'prepared_staples','bread')) { 131072 }
+                    elseif ($stapleGood -in @('grain','wheat_grain','rice_grain',
+                        'corn_grain','potatoes')) { 98304 }
+                    else { 65536 }
+                if ($variantPreferences[$variantIndex] -ne $expectedPreference) {
+                    $failures.Add("staple preference drift: $planId -> $stapleGood")
+                }
+            }
             for ($componentIndex = $componentBegin; $componentIndex -lt $componentEnd; $componentIndex++) {
                 $good = $componentGoodIds[$componentIndex]
-                $expectedComponentQuantity = if ($good -eq 'technology_points') { 100 } else { 1000 }
+                $expectedComponentQuantity = if ($needId -eq 'staple_food' -and
+                        $good -in @('prepared_staples','bread')) { 650 }
+                    elseif ($needId -eq 'staple_food' -and $good -in @(
+                        'grain','wheat_grain','rice_grain','corn_grain','potatoes')) { 800 }
+                    elseif ($good -eq 'technology_points') { 100 }
+                    else { 1000 }
                 if ($componentQuantities[$componentIndex] -ne $expectedComponentQuantity) {
                     $failures.Add("household component quantity drift: $planId -> $needId -> $good")
                 }
@@ -1376,13 +1435,44 @@ for ($eraRank = 0; $eraRank -le 10; $eraRank++) {
     if ($eraRank -eq 10) { $reachableGoods = $eraReachable }
 }
 
+$terminalReachableGoods = [System.Collections.Generic.HashSet[string]]::new(
+    [System.StringComparer]::Ordinal)
+foreach ($good in $goods.Values) {
+    if ($good.Demanded -or $good.Id -in @('gold','silver','technology_points')) {
+        [void]$terminalReachableGoods.Add($good.Id)
+    }
+}
+$terminalChanged = $true
+while ($terminalChanged) {
+    $terminalChanged = $false
+    foreach ($good in $goods.Values) {
+        if ($terminalReachableGoods.Contains($good.Id)) { continue }
+        foreach ($consumerId in $good.Consumers) {
+            if (-not $buildings.ContainsKey($consumerId)) { continue }
+            $reachesTerminal = $false
+            foreach ($outputId in $buildings[$consumerId].Outputs) {
+                if ($terminalReachableGoods.Contains($outputId)) {
+                    $reachesTerminal = $true
+                    break
+                }
+            }
+            if ($reachesTerminal) {
+                if ($terminalReachableGoods.Add($good.Id)) {
+                    $terminalChanged = $true
+                }
+                break
+            }
+        }
+    }
+}
+
 foreach ($good in $goods.Values) {
     if ($good.Producers.Count -eq 0 -and ($good.Consumers.Count -gt 0 -or $good.Demanded)) {
         $failures.Add("good has no producer: $($good.Id)")
     }
-    if ($good.Producers.Count -gt 0 -and $good.Consumers.Count -eq 0 -and -not $good.Demanded -and
-        $good.Id -notin @('gold','silver') -and -not $deferredCapitalGoods.ContainsKey($good.Id)) {
-        $failures.Add("produced good has no use: $($good.Id)")
+    if ($good.Producers.Count -gt 0 -and
+        -not $terminalReachableGoods.Contains($good.Id)) {
+        $failures.Add("produced good has no executable terminal path: $($good.Id)")
     }
     if ($good.Producers.Count -eq 0 -and $good.Consumers.Count -eq 0 -and -not $good.Demanded) {
         $failures.Add("unreferenced good: $($good.Id)")

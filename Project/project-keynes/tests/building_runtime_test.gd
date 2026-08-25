@@ -44,6 +44,9 @@ func _run() -> void:
 	var profile = load("res://data/economy/default_economy.tres").to_native_profile()
 	profile.market_cycle_days = 5
 	profile.market_runtime_mode = "ACTIVE"
+	# Legacy lifecycle/investment fixtures validate the pre-v44 path. Focused
+	# startup-demand fixtures opt into ACTIVE explicitly.
+	profile.startup_demand_runtime_mode = "OFF"
 	# Building lifecycle fixtures must not roll the official family-effect pool.
 	profile.family_runtime_mode = "OFF"
 	# Keep focused lifecycle/investment fixtures on the historical 5/10 lock.
@@ -70,7 +73,7 @@ func _run() -> void:
 	_test_production_input_soft_shortage(catalog, profile)
 	_test_producer_support_issuance(catalog, profile)
 	_test_cycle_flow_output_clears_before_discard(catalog, profile)
-	_test_construction_shortage_feeds_procurement_signal(catalog, profile)
+	_test_construction_shortage_does_not_pollute_demand_ema(catalog, profile)
 	_test_owner_fill_reconciles_after_population_loss(catalog, profile)
 	_test_last_building_demolition_releases_profession_cohorts(catalog, profile)
 	_test_non_due_construction_employment_metrics(catalog, profile)
@@ -451,7 +454,7 @@ func _run() -> void:
 	_expect("building PKCN save completes", bool(ext.end_country_save().get("ok", false)))
 	var chunks: Array[PackedByteArray] = []
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
-	_expect("building v43 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 43)
+	_expect("building v44 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 44)
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty(): break
@@ -1584,7 +1587,7 @@ func _test_endogenous_owner_investment(source_catalog: Dictionary,
 		int(investment_day.get("building_owner_mobility", 0)) >= 1 and
 		int(investment_day.get("building_investment_capital_transferred", 0)) > 0 and
 		String(investment_day.get("building_investment_model", "")) ==
-			"endogenous_owner_portfolio_v8" and
+			"endogenous_owner_portfolio_v9" and
 		int(investment_day.get("investment_max_growth_share_q16", 0)) == 16384 and
 		int(investment_day.get("investment_new_type_seed_buildings", 0)) == 1 and
 		int(investment_day.get(
@@ -1598,7 +1601,7 @@ func _test_endogenous_owner_investment(source_catalog: Dictionary,
 			else 65536) and
 		total_building_count == 15 +
 			int(investment_day.get("building_investment_buildings_started", 0)))
-	_expect("investment v8 publishes one consistent marginal-output driver",
+	_expect("investment v9 publishes one consistent marginal-output driver",
 		knapping_diagnostic >= 0 and
 		int(driver_goods[knapping_diagnostic]) == tool_good and
 		int(driver_pressures[knapping_diagnostic]) ==
@@ -2135,6 +2138,9 @@ func _test_building_maintenance_recipes_differ_by_type(catalog: Dictionary) -> v
 	var quantities: PackedInt64Array = catalog.building_maintenance_quantities
 	var wheat := type_ids.find("dryland_wheat_field")
 	var kiln := type_ids.find("bricks_plant")
+	var ocean_fishery := type_ids.find("method_marine_fish_collector_r4")
+	var oceanic_vessels := (catalog.good_ids as PackedStringArray).find(
+		"oceanic_vessels")
 	_expect("maintenance CSR columns exist",
 		offsets.size() == type_ids.size() + 1 and
 		good_ids.size() == quantities.size() and
@@ -2155,6 +2161,15 @@ func _test_building_maintenance_recipes_differ_by_type(catalog: Dictionary) -> v
 				break
 	_expect("farm and kiln maintenance recipes differ",
 		wheat_goods.size() > 0 and kiln_goods.size() > 0 and differ)
+	var ocean_maintenance_ok := ocean_fishery >= 0 and oceanic_vessels >= 0
+	if ocean_maintenance_ok:
+		var begin := int(offsets[ocean_fishery])
+		var end := int(offsets[ocean_fishery + 1])
+		ocean_maintenance_ok = end - begin == 1 and \
+			int(good_ids[begin]) == oceanic_vessels and \
+			int(quantities[begin]) == 40
+	_expect("ocean fishery has an executable oceanic-vessel replacement sink",
+		ocean_maintenance_ok)
 
 
 func _test_installed_building_keeps_maintenance_buffer(source_catalog: Dictionary,
@@ -3525,7 +3540,7 @@ func _test_cycle_flow_output_clears_before_discard(source_catalog: Dictionary,
 		int(report.get("money_error", 1)) == 0 and
 		int(report.get("goods_error", 1)) == 0)
 
-func _test_construction_shortage_feeds_procurement_signal(source_catalog: Dictionary,
+func _test_construction_shortage_does_not_pollute_demand_ema(source_catalog: Dictionary,
 		source_profile: Dictionary) -> void:
 	var catalog := source_catalog.duplicate(true)
 	var profile := source_profile.duplicate(true)
@@ -3593,10 +3608,9 @@ func _test_construction_shortage_feeds_procurement_signal(source_catalog: Dictio
 		int(report.get("rejected_commands", 0)) > 0 and
 		str(report.get("last_building_rejection_reason", "")) ==
 			"building_construction_stock_insufficient")
-	_expect("construction shortage is converted into demand",
-		_good_value(market, "business_demand_ema", "raw_stone") > 0)
-	_expect("construction shortage contributes to merchant target",
-		_good_value(market, "merchant_inventory_target", "raw_stone") > 0 and
+	_expect("rejected construction does not pollute business demand EMA",
+		_good_value(market, "business_demand_ema", "raw_stone") == 0)
+	_expect("rejected construction preserves every ledger",
 		int(report.get("population_error", 1)) == 0 and
 		int(report.get("money_error", 1)) == 0 and
 		int(report.get("goods_error", 1)) == 0)

@@ -337,10 +337,19 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_investment_good_type_offsets);
     cap(_investment_good_type_indices);
     cap(_investment_active_good_words);
+    cap(_investment_active_goods_scratch);
     cap(_investment_type_stamp);
     cap(_investment_good_stamp);
     cap(_investment_review_types_scratch);
     cap(_investment_good_queue_scratch);
+    cap(_startup_demand_values);
+    cap(_startup_demand_stamps);
+    cap(_startup_demand_touched_keys);
+    cap(_startup_monetary_good_indices);
+    cap(_startup_remote_lanes);
+    cap(_startup_remote_groups);
+    cap(_startup_inbound_lanes);
+    cap(_startup_remote_accumulator_scratch);
     cap(_market_results_scratch);
     for (const MarketResult &result : _market_results_scratch)
         bytes += result.capacity_bytes();
@@ -1526,6 +1535,24 @@ Dictionary NativeEconomyRuntime::report() const {
         _last_completed_perf.investment_prepare_pending_ms;
     out["last_completed_investment_prepare_groups_ms"] =
         _last_completed_perf.investment_prepare_groups_ms;
+    out["last_completed_startup_demand_prepare_ms"] =
+        _last_completed_perf.startup_demand_prepare_ms;
+    out["last_completed_startup_demand_seed_count"] =
+        _last_completed_perf.startup_demand_seed_count;
+    out["last_completed_startup_demand_touched_lanes"] =
+        _last_completed_perf.startup_demand_touched_lanes;
+    out["last_completed_startup_demand_catalog_edges"] =
+        _last_completed_perf.startup_demand_catalog_edges;
+    out["last_completed_startup_demand_cycle_skips"] =
+        _last_completed_perf.startup_demand_cycle_skips;
+    out["last_completed_startup_demand_remote_lanes"] =
+        _last_completed_perf.startup_demand_remote_lanes;
+    out["last_completed_startup_demand_matched_review_cells"] =
+        _last_completed_perf.startup_demand_matched_review_cells;
+    out["last_completed_startup_demand_buildings_started"] =
+        _last_completed_perf.startup_demand_buildings_started;
+    out["last_completed_startup_demand_scratch_bytes"] =
+        _last_completed_perf.startup_demand_scratch_bytes;
     out["last_completed_finalize_construction_ms"] =
         _last_completed_perf.finalize_construction_ms;
     out["last_completed_finalize_reconcile_ms"] =
@@ -1730,7 +1757,20 @@ Dictionary NativeEconomyRuntime::report() const {
     out["unemployed_population"] = _unemployed_population;
     out["construction_goods_consumed"] = _construction_goods_consumed;
     out["explicit_stock_delta"] = _explicit_stock_delta;
-    out["building_investment_model"] = "endogenous_owner_portfolio_v8";
+    out["building_investment_model"] = "endogenous_owner_portfolio_v9";
+    out["startup_demand_runtime_mode"] =
+        _startup_demand_runtime_mode == 0 ? "OFF" : "ACTIVE";
+    out["startup_demand_seed_count"] = _startup_demand_seed_count;
+    out["startup_demand_touched_lanes"] = _startup_demand_touched_lanes;
+    out["startup_demand_catalog_edges"] = _startup_demand_catalog_edges;
+    out["startup_demand_cycle_skips"] = _startup_demand_cycle_skips;
+    out["startup_demand_remote_lanes"] = _startup_demand_remote_lanes;
+    out["startup_demand_matched_review_cells"] =
+        _startup_demand_matched_review_cells;
+    out["startup_demand_buildings_started"] =
+        _startup_demand_buildings_started;
+    out["startup_demand_prepare_ms"] = _startup_demand_prepare_ms;
+    out["startup_demand_scratch_bytes"] = _startup_demand_scratch_bytes;
     out["investment_gap_fill_share_q16"] =
         _investment_gap_fill_share_q16;
     out["investment_portfolio_max_types"] =

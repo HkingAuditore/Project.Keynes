@@ -129,6 +129,14 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _building_investment_employment_gap = 0;
     _building_investment_employment_catchup_cells = 0;
     _building_investment_displacement_starts = 0;
+    _startup_demand_seed_count = 0;
+    _startup_demand_touched_lanes = 0;
+    _startup_demand_catalog_edges = 0;
+    _startup_demand_cycle_skips = 0;
+    _startup_demand_remote_lanes = 0;
+    _startup_demand_matched_review_cells = 0;
+    _startup_demand_buildings_started = 0;
+    _startup_demand_scratch_bytes = 0;
     _trade_signal_max_age_days = 0;
     _trade_first_dispatch_delay_max_days = 0;
     _trade_response_deadline_misses = 0;
@@ -324,6 +332,7 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _investment_prepare_lanes_ms = 0.0;
     _investment_prepare_pending_ms = 0.0;
     _investment_prepare_groups_ms = 0.0;
+    _startup_demand_prepare_ms = 0.0;
     _finalize_construction_ms = 0.0;
     _finalize_reconcile_ms = 0.0;
     _building_factor_refresh_ms = 0.0;
@@ -511,6 +520,16 @@ void NativeEconomyRuntime::capture_completed_perf_snapshot() {
         _investment_sparse_mismatches;
     snapshot.investment_sparse_dense_fallbacks =
         _investment_sparse_dense_fallbacks;
+    snapshot.startup_demand_seed_count = _startup_demand_seed_count;
+    snapshot.startup_demand_touched_lanes = _startup_demand_touched_lanes;
+    snapshot.startup_demand_catalog_edges = _startup_demand_catalog_edges;
+    snapshot.startup_demand_cycle_skips = _startup_demand_cycle_skips;
+    snapshot.startup_demand_remote_lanes = _startup_demand_remote_lanes;
+    snapshot.startup_demand_matched_review_cells =
+        _startup_demand_matched_review_cells;
+    snapshot.startup_demand_buildings_started =
+        _startup_demand_buildings_started;
+    snapshot.startup_demand_scratch_bytes = _startup_demand_scratch_bytes;
     snapshot.approximation_decisions = _approximation_decisions;
     snapshot.approximation_exact_probes = _approximation_exact_probes;
     snapshot.approximation_certificate_failures =
@@ -561,6 +580,7 @@ void NativeEconomyRuntime::capture_completed_perf_snapshot() {
     snapshot.investment_prepare_lanes_ms = _investment_prepare_lanes_ms;
     snapshot.investment_prepare_pending_ms = _investment_prepare_pending_ms;
     snapshot.investment_prepare_groups_ms = _investment_prepare_groups_ms;
+    snapshot.startup_demand_prepare_ms = _startup_demand_prepare_ms;
     snapshot.finalize_construction_ms = _finalize_construction_ms;
     snapshot.finalize_reconcile_ms = _finalize_reconcile_ms;
     snapshot.building_factor_refresh_ms = _building_factor_refresh_ms;
