@@ -30120,6 +30120,9 @@
 			"is_starting": false,
 			"is_starter_eligible": false,
 			"starter_capability_tags": [],
+			"runtime_capability_tags": [
+				"research.observe_visible_foreign"
+			],
 			"modifier_terms": [
 				{
 					"stat": "country.output.family.maritime_operations_factor",
