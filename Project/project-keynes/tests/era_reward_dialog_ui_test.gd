@@ -38,17 +38,20 @@ func _run() -> void:
 		and first.get_node("Margin/Column/Top/Icon").icon_key == &"economy.building")
 	_expect("second card keeps a generic-fit explanation",
 		String(second.get_node("Margin/Column/Reason").text).find("通用时代方案") >= 0)
+	var first_choose := first.get_node("Margin/Column/Choose") as Button
+	var second_choose := second.get_node("Margin/Column/Choose") as Button
+	var third_choose := third.get_node("Margin/Column/Choose") as Button
 	_expect("missing third offer disables only the empty choice",
-		(not (first.get_node("Margin/Column/Choose") as Button).disabled
-		and not (second.get_node("Margin/Column/Choose") as Button).disabled
-		and (third.get_node("Margin/Column/Choose") as Button).disabled)
-	(first.get_node("Margin/Column/Choose") as Button).emit_signal("pressed")
+		(not first_choose.disabled
+		and not second_choose.disabled
+		and third_choose.disabled))
+	first_choose.emit_signal("pressed")
 	_expect("choice keeps the original generation and index", _choice_generation == 17
 		and _choice_index == 0)
 	dialog.show_pending()
 	_expect("pending state disables all choices",
-		(first.get_node("Margin/Column/Choose") as Button).disabled
-		and (second.get_node("Margin/Column/Choose") as Button).disabled)
+		first_choose.disabled
+		and second_choose.disabled)
 	dialog.show_error("效果未完成")
 	_expect("error state keeps a readable status line",
 		String(dialog.get_node("ArchiveSurface/Frame/Margin/Column/Body/Status").text).find("效果未完成") >= 0)

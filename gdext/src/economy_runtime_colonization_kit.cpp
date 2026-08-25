@@ -243,6 +243,14 @@ void NativeEconomyRuntime::fill_colonization_kit_buffer(
         for (const BufferCandidate &candidate : candidates)
             kit.missing_good_ids.push_back(candidate.good_id);
     };
+    // The expedition carries one aggregate food bridge. The household
+    // runtime still keeps staple, protein, and produce as separate needs, but
+    // a stocked food candidate from any of those needs can keep a travelling
+    // party alive until the destination starts producing.
+    int64_t food_units = 0;
+    std::vector<BufferCandidate> food_candidates;
+    food_candidates.reserve(static_cast<size_t>(
+        _survival_food_need_stable_ids.size()) * 4);
     for (const int32_t stable_id : _survival_food_need_stable_ids) {
         if (stable_id < 0 || stable_id >= static_cast<int32_t>(
                 _survival_required_need_indices.size())) continue;
@@ -256,18 +264,17 @@ void NativeEconomyRuntime::fill_colonization_kit_buffer(
             sample_environment_curve(need.quantity_env_curve, sample),
             Q16_ONE, sat);
         if (units <= 0) continue;
-        std::vector<BufferCandidate> candidates;
-        candidates.reserve(static_cast<size_t>(need.variant_count));
+        food_units = saturating_add(food_units, units, sat);
         for (int32_t variant = 0; variant < need.variant_count; ++variant) {
             const VariantChoice &choice = _variants[need.variant_begin + variant];
             if (choice.component_count != 1) continue;
             const NeedComponent &component =
                 _components[choice.component_begin];
-            add_candidate(candidates, component.good_id, GOODS_SCALE,
+            add_candidate(food_candidates, component.good_id, GOODS_SCALE,
                 std::max<int64_t>(1, component.qty_per_need));
         }
-        fill_group(units, candidates);
     }
+    fill_group(food_units, food_candidates);
     int32_t clothing_need_index = -1;
     if (_survival_clothing_need_stable_id >= 0 &&
         _survival_clothing_need_stable_id < static_cast<int32_t>(
