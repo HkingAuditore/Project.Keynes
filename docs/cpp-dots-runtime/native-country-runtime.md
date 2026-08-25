@@ -108,9 +108,15 @@ handle、重复 good、非负数量和全部余额，再一次性提交并只递
 
 ## 国家视觉挂钩
 
-`CountryFacade.country_committed` 是领土变更的唯一广播点。`WorldRuntimeHost` 订阅它并
-调用 `refresh_country_visuals()`，按顺序重算视野、强制重烘 `enum_lut`（迷雾知识度住在
-它的 A 通道）、重建国界 mesh。领土变更极少，所以全量重建，不做增量。
+`CountryFacade.country_committed` 是唯一广播点。`WorldRuntimeHost` 仅在报告的
+`changed_cells > 0` 时重算视野和国界；纯证据、税务和国库 commit 不触发全图工作。
+磁针导航 capability 首次完成会单独重算科研资格与迷雾 LUT，但不重建国界。
+
+`DISCOVER_COUNTRY_SIGNAL` 的 observation-only 批次在 native 内按
+`(signal << 32) | cell` sort/unique，再与已有有序 evidence 线性合并。每个
+`(country, signal)` 只刷新一次 reveal condition，并只发一条携带
+`evidence_delta` 与首格的聚合事件。标量命令仍走同一个国家日安全边界；不存在
+第二份证据 authority 或绕过 barrier 的写入。
 
 注意 Inspector 的国家摘要受迷雾门控：`FOG_UNEXPLORED` 的格子不展示任何国家信息，
 即使 `get_country_cell_summary()` 能返回。自然资源检查器对 `FOG_VISIBLE` 格子使用观察者

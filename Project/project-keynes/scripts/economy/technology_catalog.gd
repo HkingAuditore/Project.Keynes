@@ -118,6 +118,8 @@ static func compile_native_catalog() -> Dictionary:
 	var anchor_kinds := PackedStringArray()
 	var starter_capability_offsets := PackedInt32Array([0])
 	var starter_capability_tags := PackedStringArray()
+	var runtime_capability_offsets := PackedInt32Array([0])
+	var runtime_capability_tags := PackedStringArray()
 	var knowledge_basis_json := PackedStringArray()
 	var id_to_index := {}
 	var row_by_id := {}
@@ -238,6 +240,14 @@ static func compile_native_catalog() -> Dictionary:
 		for capability_tag in row.get("starter_capability_tags", []):
 			starter_capability_tags.append(String(capability_tag))
 		starter_capability_offsets.append(starter_capability_tags.size())
+		var runtime_capability_seen := {}
+		for capability_tag in row.get("runtime_capability_tags", []):
+			var normalized_capability := String(capability_tag).strip_edges()
+			if normalized_capability.is_empty() or runtime_capability_seen.has(normalized_capability):
+				return {"ok": false, "reason": "technology_runtime_capability_invalid", "id": row_id}
+			runtime_capability_seen[normalized_capability] = true
+			runtime_capability_tags.append(normalized_capability)
+		runtime_capability_offsets.append(runtime_capability_tags.size())
 		var research_spec: Dictionary = (row.get("research_condition", {}) as Dictionary).duplicate(true)
 		if not research_spec.is_empty():
 			return {"ok": false, "reason": "technology_legacy_research_condition_forbidden",
@@ -328,6 +338,8 @@ static func compile_native_catalog() -> Dictionary:
 		"technology_anchor_kinds": anchor_kinds,
 		"technology_starter_capability_offsets": starter_capability_offsets,
 		"technology_starter_capability_tags": starter_capability_tags,
+		"technology_runtime_capability_offsets": runtime_capability_offsets,
+		"technology_runtime_capability_tags": runtime_capability_tags,
 		"technology_knowledge_basis_json": knowledge_basis_json,
 		"technology_modifier_definition_keys": _modifier_definition_keys(
 			ids, modifier_ir.technology_modifier_term_offsets),
@@ -850,6 +862,10 @@ static func public_definitions(compiled_catalog: Dictionary = {}) -> Array[Dicti
 			compiled.technology_starter_capability_tags.slice(
 				compiled.technology_starter_capability_offsets[i],
 				compiled.technology_starter_capability_offsets[i + 1])
+		var runtime_capabilities: PackedStringArray = \
+			compiled.technology_runtime_capability_tags.slice(
+				compiled.technology_runtime_capability_offsets[i],
+				compiled.technology_runtime_capability_offsets[i + 1])
 		out.append({
 			"id": ids[i],
 			"display_name": String(compiled.technology_display_names[i]),
@@ -877,6 +893,7 @@ static func public_definitions(compiled_catalog: Dictionary = {}) -> Array[Dicti
 			"layout_lane": String(compiled.technology_layout_lanes[i]),
 			"branch_family_id": String(compiled.technology_layout_lanes[i]),
 			"starter_capability_tags": starter_capabilities,
+			"runtime_capability_tags": runtime_capabilities,
 			"route_tags": public_route_tags,
 			"route_display_names": _localized_route_names(public_route_tags),
 			"research_routes": (source.get("research_routes", []) as Array).duplicate(true),

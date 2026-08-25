@@ -3,7 +3,7 @@
 > 状态：Market V2 / Price V4 ACTIVE（`production_income_consumption_v12`）。功能、守恒、确定性与
 > 200k/10M 性能门槛已通过。范围包含 cohort、商人所有权、消费、本地市场、需求 EMA/价格、环境需求、
 > 替代品/互补 bundle、Inspector、BUILDING_GRAPH、显赫家族、冻结国家科技、国内 Trade V1、
-> 税收财政、PKEC v42 流式存档与 PKEJ 分层事件；国家身份、领土、科技、研究、税务政策和国库由
+> 税收财政、PKEC v43 流式存档与 PKEJ 分层事件；国家身份、领土、科技、研究、税务政策和国库由
 > NativeCountryRuntime 权威持有；跨国贸易结算/关税事件、政治、年龄、微观家庭与谱系尚未接入；
 > 自然出生和死亡由原生 household/structural 路径处理。
 
@@ -385,7 +385,7 @@ rebuilding the full diagnostic report for every slice. Normal daily calls and
 explicit report/UI/recorder reads keep the full report. Both entry points share
 the same native authority and `DCWorldExt` resource/event/CSV publication wrapper.
 
-Current saves are PKEC v42. It retains the frozen environment, production-climate,
+Current saves are PKEC v43. It retains the frozen environment, production-climate,
 settlement, subsidy, fiscal, notable-family, person, and birth-residual authority from earlier
 schemas, plus family trait rolls, per-cell influence branches, and ordered trait-mutation
 commands, and adds the composite-satisfaction columns: per-cohort composite, the eight
@@ -567,7 +567,7 @@ the three new deterministic policy controls and explicitly rejects v17.
 - No prosperity/name fields enter MapData, HexCell, or DataCore.
 - Inspector consumes selected-cell summaries; `SettlementLabelLayer` consumes
   full snapshot plus bounded deltas with fog, LOD, collision and pool limits.
-- Current PKEC v42 preserves the settlement state introduced by v24; older schemas are rejected.
+- Current PKEC v43 preserves the settlement state introduced by v24; older schemas are rejected.
 - Production bootstrap marks opening-country cells as forced-name capitals:
   they retain the exact 20-person contract and population-derived tier, but
   always receive a deterministic settlement name. The bit round-trips in current

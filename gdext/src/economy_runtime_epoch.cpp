@@ -102,6 +102,8 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _building_structure_role_span_reuses = 0;
     _building_structure_role_span_appends = 0;
     _building_investment_candidates = 0;
+    _fiscal_business_prospective_lanes = 0;
+    _fiscal_business_prospective_request = 0;
     _building_owner_mobility = 0;
     _building_owner_job_reallocations = 0;
     _building_owner_job_profession_changes = 0;
@@ -207,6 +209,10 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _owner_working_capital_reserved = 0;
     _production_input_reserved = 0;
     _production_input_reserve_shortfall = 0;
+    _construction_material_reserved = 0;
+    _maintenance_goods_consumed = 0;
+    _maintenance_unmet = 0;
+    _maintenance_unpaid_value = 0;
     _labor_signal_updates = 0;
     _building_resource_generated = 0;
     _building_resource_consumed = 0;
@@ -758,7 +764,7 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     _commit_lag_budget_days = std::max(0, locked_market_cycle_days() - 1);
     _epoch_begin_workset_ms = elapsed_ms(workset_started);
     const auto fiscal_started = Clock::now();
-    if (!prepare_fiscal_budgets(error)) return false;
+    if (!prepare_fiscal_budgets(day_index, error)) return false;
     _epoch_begin_fiscal_ms = elapsed_ms(fiscal_started);
     const auto resource_lane_2_started = Clock::now();
     for (int32_t resource = 0;
@@ -837,6 +843,7 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     _building_recovery_probe_capacity_q16.assign(_buildings.size(), 0);
     _building_recovery_liquidation_eligible.assign(_buildings.size(), 0);
     _production_input_reserve.assign(_market_signals.good_ids.size(), 0);
+    _construction_material_reserve.assign(_market_signals.good_ids.size(), 0);
     _epoch_business_demand_ema = _market_signals.business_demand_ema;
     _epoch_desired_business_demand.assign(_market_signals.good_ids.size(), 0);
     _epoch_funded_business_demand.assign(_market_signals.good_ids.size(), 0);

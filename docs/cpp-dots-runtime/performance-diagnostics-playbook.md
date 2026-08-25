@@ -1573,6 +1573,11 @@ real-frame pulse 会在 `sim_frame_budget_ms` 时间盒内连续执行 bounded r
 
 UI 看到 `committed=false/busy=true` 时应同时收到 `snapshot_source=live_slice` 的完整选中
 地块数组；若只有聚合摘要，说明 DLL/API 版本不匹配或查询契约回退，而不是正常等待。
+`committed=false/busy=false` 表示经济图已 FATAL：`should_run` 永久为 false，continuation
+会清掉 `economy_day_barrier`，因此日历和 UI 继续，但 `epoch_id`/`state_day` 停在最后一次
+失败提交。没有 `[sim/barrier]` 是预期。GM 总览「经济运行时」只显示 14 个标量，必须把
+`fatal`/`fatal_reason`/`stage`/`epoch_id`/`current_day` 钉在前面；按字母序会先列出
+`accuracy_*`，把 FATAL 整段挤出视野。
 Facade 缓存仅作异常兜底，不能用旧缓存覆盖更新的 live snapshot。save 返回
 `save_requires_committed_boundary` 仍属于
 正常隔离，不应绕过。
@@ -1761,3 +1766,23 @@ The GPU summaries are viewport observations, not a replacement for CPU texture m
 WebGL2 has no shader printf, and arbitrary texture readback is backend-dependent. Always keep
 the captured `gpu_texture_size_view16` and the browser WebGL shader/link console output with
 the report.
+
+## Bio / vision / evidence gates (2026-08-25)
+
+Record `native_compute_ms`, `bridge_ms`, `publish_ms`, execution mode, frozen
+slice size and complete-round EMA for bio. After warm-up,
+`configured_slot_fastpath=true` is required. Check non-diffusion p95 ≤1.5 ms,
+diffusion p95 ≤4 ms and at least 40% median/p95 improvement on the same release
+build, seed and map.
+
+For vision record physical solve, eligibility 0→1 count, fog dirty count and
+observation count separately. The 100k-cell vision+eligibility target is p95
+≤5 ms. For country backfill record observation input/added and aggregate event
+count; p95 target is ≤10 ms. An evidence-only country commit must increment
+neither vision-solve nor border-rebuild counters. Fog rendering disabled must
+not change observation counts.
+
+Determinism requires matching occupancy/visible/explored/fog/evidence hashes for
+worker counts and one-shot versus continuation. At 100k cells, bio and vision
+new transient scratch each remain below 8 MB. Run release measurements only;
+headless debug results are correctness diagnostics, not performance acceptance.

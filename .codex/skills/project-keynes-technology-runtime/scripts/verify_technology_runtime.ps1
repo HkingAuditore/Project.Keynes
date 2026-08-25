@@ -61,6 +61,8 @@ if (-not [string]::IsNullOrWhiteSpace($GodotExe)) {
         "technology_catalog_test.gd",
         "technology_network_design_test.gd",
         "technology_content_binding_audit_test.gd",
+        "technology_unlock_closure_audit_test.gd",
+        "technology_industry_chain_balance_test.gd",
         "technology_research_runtime_test.gd",
         "technology_breakthrough_trigger_test.gd",
         "technology_procurement_runtime_test.gd",
@@ -74,6 +76,11 @@ if (-not [string]::IsNullOrWhiteSpace($GodotExe)) {
         if ($LASTEXITCODE -ne 0) {
             throw "$test failed with exit code $LASTEXITCODE"
         }
+    }
+    Write-Host "[technology-runtime] running technology_unlock_closure_audit_test.gd --construction"
+    & $GodotExe --headless --path $projectRoot --script "res://tests/technology_unlock_closure_audit_test.gd" -- --construction
+    if ($LASTEXITCODE -ne 0) {
+        throw "technology_unlock_closure_audit_test.gd --construction failed with exit code $LASTEXITCODE"
     }
 }
 else {

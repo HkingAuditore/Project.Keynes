@@ -103,7 +103,9 @@ other cohorts.
 
 For a populated cell without a merchant, convert one person from the largest nonmerchant cohort,
 inherit ethnicity, and transfer proportional funds. Rebuild merchant CSR only after real structural
-changes; normal cycles must reuse it.
+changes; normal cycles must reuse it. Do not treat a stale CSR range as a living merchant:
+zero-population merchant lanes are not market-makers, and government research procurement must
+skip them rather than debit country treasury and fail.
 
 ## 5. Commands and public API
 
@@ -254,7 +256,9 @@ reports `settlement_detail_pending` until the first traced commit.
 `NativeEconomyRuntime` also owns sparse building owner-lots, pending construction, committed role
 fills, and per-cohort owner/employee employment counts. Keep `(cell, signature)` cohort identity;
 ownership stores the sponsor's stable signature identity rather than adding employer to signatures.
-Buildings stay outside MapData/HexCell/component slots. The bridge only samples geographic/resource
+Buildings stay outside MapData/HexCell/component slots. Each `BuildingType` compiles a maintenance
+CSR (authored daily goods, or construction BOM amortized by sector horizon) that investment, owner
+purchases, and merchant construction reserves read. The bridge only samples geographic/resource
 slots and publishes resource extraction through `extra_change`.
 
 PKEC v8 extends owner-lot/role state with adaptive contract wages, living-cost and local-wage

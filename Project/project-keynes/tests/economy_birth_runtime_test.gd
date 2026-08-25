@@ -337,7 +337,7 @@ func _test_small_population_birth_residual_save_restore(compiled: Dictionary) ->
 		int(source.get_population_cell_summary(0).population) == 1)
 	var saved := _save(source)
 	_expect("PKEC v42 saves accumulated birth residual and support EMA",
-		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 39)
+		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 43)
 	var restored := _new_ext(1, catalog)
 	_expect("small-population restored country configures",
 		CountryTestHelper.configure_all_technologies(restored, catalog, 1, 2304))

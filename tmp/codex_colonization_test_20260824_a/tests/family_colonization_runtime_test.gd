@@ -251,6 +251,7 @@ func _run_colonization_kit_cases(catalog: Dictionary) -> void:
 	_run_greenfield_kit_settle(catalog.duplicate(true))
 	_run_interior_kit_settle_during_frozen_cycle(catalog.duplicate(true))
 	_run_mixed_substitute_kit(catalog.duplicate(true))
+	_run_aggregate_food_bridge(catalog.duplicate(true))
 	_run_zero_stock_partial_kit(catalog.duplicate(true))
 
 
@@ -335,6 +336,81 @@ func _run_mixed_substitute_kit(catalog: Dictionary) -> void:
 		logs_construction == 1 and reed_construction > 0)
 	_expect("mixed substitute departure remains goods-conserved",
 		int(ext.get_economy_report().get("goods_error", -1)) == 0)
+
+
+func _run_aggregate_food_bridge(catalog: Dictionary) -> void:
+	# A single stocked food candidate must satisfy the expedition's aggregate
+	# bridge even when every other staple/protein/produce candidate is absent.
+	var fixture := _make_fixture(catalog, 260833, 1000000, {
+		"prepared_staples": 1000000,
+		"bread": 0,
+		"grain": 0,
+		"gathered_plants": 0,
+		"potatoes": 0,
+		"game_meat": 0,
+		"meat": 0,
+		"fish": 0,
+		"canned_fish": 0,
+		"dairy_products": 0,
+		"vegetables": 0,
+		"processed_food": 0,
+	})
+	var ext: Object = fixture.ext
+	var country_handle := int(fixture.country_handle)
+	if ext == null or country_handle == 0:
+		return
+	var families: Dictionary = ext.get_family_cell_snapshot(0, 0, 64)
+	if int(families.get("total", 0)) != 1:
+		_expect("aggregate-food fixture has a founder family", false)
+		return
+	var family_handle := int((families.family_handles as PackedInt64Array)[0])
+	var quotes: Dictionary = ext.get_family_colonization_quotes(
+		country_handle, 2, family_handle, 0, 0, 64)
+	if int(quotes.get("total", 0)) != 1:
+		_expect("aggregate-food quote exists", false)
+		print("aggregate_food_quotes=", quotes)
+		return
+	var token := int((quotes.quote_tokens as PackedInt64Array)[0])
+	var detail: Dictionary = ext.get_family_colonization_quote_detail(token, 3)
+	var missing: PackedInt32Array = detail.get(
+		"kit_missing_goods", PackedInt32Array())
+	_expect("one stocked food candidate fills the aggregate bridge",
+		bool(detail.get("ok", false))
+		and not bool(detail.get("kit_partial", true))
+		and missing.is_empty())
+	if not bool(detail.get("ok", false)):
+		print("aggregate_food_detail=", detail)
+		return
+	var start_day := _economy_command_day(ext)
+	var started: Dictionary = ext.start_family_colonization(country_handle,
+		family_handle, 0, 2, 3, token, start_day, 633)
+	_expect("aggregate food bridge departs without preparing",
+		bool(started.get("ok", false))
+		and String(started.get("code", "")) != "colonization_preparing")
+	if not bool(started.get("ok", false)):
+		print("aggregate_food_start=", started)
+		return
+	var snapshot: Dictionary = ext.get_family_expedition_snapshot(
+		country_handle, int(started.get("expedition_handle", 0)))
+	var good_ids: PackedStringArray = catalog.good_ids
+	var prepared_staples := good_ids.find("prepared_staples")
+	var staple_buffer := 0
+	var cargo_goods: PackedInt32Array = snapshot.get(
+		"cargo_good_ids", PackedInt32Array())
+	var cargo_quantities: PackedInt64Array = snapshot.get(
+		"cargo_quantities", PackedInt64Array())
+	var cargo_flags: PackedInt32Array = snapshot.get(
+		"cargo_flags", PackedInt32Array())
+	for i in range(cargo_goods.size()):
+		if i < cargo_flags.size() and int(cargo_flags[i]) == 1 \
+				and int(cargo_goods[i]) == prepared_staples:
+			staple_buffer += int(cargo_quantities[i]) \
+				if i < cargo_quantities.size() else 0
+	_expect("aggregate food bridge carries the stocked staple candidate",
+		staple_buffer > 0)
+	_expect("aggregate food bridge preserves economy ledgers",
+		int(ext.get_economy_report().get("goods_error", -1)) == 0
+		and int(ext.get_economy_report().get("population_error", -1)) == 0)
 
 
 func _run_colonization_population_reward(catalog: Dictionary) -> void:

@@ -31,7 +31,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         error = "save_chunk_header_invalid";
         return false;
     }
-    if (schema != SCHEMA_VERSION && schema != 41) {
+    if (schema != SCHEMA_VERSION && schema != 42 && schema != 41) {
         error = schema <= 31 ? "economy_save_v31_or_earlier_unsupported" :
             (schema == 32 ? "economy_save_v32_or_earlier_unsupported" :
             "economy_save_pre_family_effect_schema_unsupported");
@@ -367,6 +367,24 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             error = "save_cadence_investment_header_invalid";
             return false;
         }
+        int32_t saved_maintenance_horizons[5] = {5475, 2920, 3650, 2190, 7300};
+        int32_t saved_maintenance_cost_factor = Q16_ONE;
+        if (schema >= 43) {
+            for (int32_t sector = 0; sector < 5; ++sector) {
+                if (!read_le(bytes, cursor, saved_maintenance_horizons[sector]) ||
+                    saved_maintenance_horizons[sector] < 1 ||
+                    saved_maintenance_horizons[sector] > 365000) {
+                    error = "save_maintenance_policy_header_invalid";
+                    return false;
+                }
+            }
+            if (!read_le(bytes, cursor, saved_maintenance_cost_factor) ||
+                saved_maintenance_cost_factor < 1 ||
+                saved_maintenance_cost_factor > Q16_ONE * 4) {
+                error = "save_maintenance_policy_header_invalid";
+                return false;
+            }
+        }
         if (!read_id_table(bytes, cursor, professions) || !read_id_table(bytes, cursor, ethnicities) ||
             !read_id_table(bytes, cursor, good_ids) || !read_id_table(bytes, cursor, plan_ids) ||
             cursor != bytes.size()) {
@@ -669,6 +687,15 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 }
             }
             apply_locked_slow_days();
+            if (schema >= 43) {
+                for (int32_t sector = 0; sector < 5; ++sector)
+                    _maintenance_horizon_days_by_sector[sector] =
+                        saved_maintenance_horizons[sector];
+                _building_maintenance_cost_factor_q16 =
+                    saved_maintenance_cost_factor;
+                if (!_building_types.empty())
+                    resolve_building_maintenance_csr();
+            }
             _cadence_initialized = true;
             _cadence_change_reason = 0;
         } else {

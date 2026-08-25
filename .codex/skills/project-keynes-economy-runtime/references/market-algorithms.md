@@ -211,11 +211,15 @@ funds but is excluded from both order budgeting and final household settlement, 
 consumption cannot strand an otherwise viable producer without operating cash.
 
 Rebuild a deterministic sparse `(cell, input good)` reserve from active building counts, planned
-utilization, period length, and the cheapest available input candidate. Merchant inventory targets
-must cover this reserve. Household clearing and domestic export may use only stock above it. The
-reserve is derived state rather than a PKEC field: rebuild it after catalog/building restoration and
-whenever the sparse building signal shape or cycle plan changes. Report both the requested reserve
-and its remaining stock shortfall.
+utilization, period length, and the cheapest available input candidate. The same building-cell walk
+writes `construction_material_reserve` from each type's compiled daily maintenance recipe (authored
+quantities, or construction BOM divided by the sector horizon). Merchant inventory targets must
+cover `max(input reserve, construction reserve)`. Household clearing and domestic export may use
+only stock above that protected floor. Continuity procurement quotas apply to every storable
+non-monetary good below 1.2× target, not only survival goods. Owners buy maintenance after wages
+from merchant stock at settlement price; unpaid quantity is unmet, never a free sink. Both reserves
+are derived state rather than PKEC fields. Report requested input reserve, construction reserve,
+consumed maintenance, and unmet maintenance.
 
 At a 30-day capital-review boundary, a fully owned industrial lot can expand only if it already
 meets its configured target margin, planned utilization is at least 75%, demand pressure is at least

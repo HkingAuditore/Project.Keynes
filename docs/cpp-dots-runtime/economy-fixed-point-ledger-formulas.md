@@ -353,7 +353,8 @@ market_stock += accepted_goods
 ```text
 closing_stock = opening_stock + explicit_stock_delta + accepted_output
                  - household_consumption - construction_inputs
-                 - production_inputs - production_output_discarded
+                 - production_inputs - maintenance_goods
+                 - production_output_discarded
                  - cycle_flow_discarded - country_research_goods_consumed
 ```
 
@@ -373,12 +374,14 @@ closing_stock = opening_stock + explicit_stock_delta + accepted_output
 
 生产投入另有商品侧预留。运行时按建筑数、周期天数、计划利用率和每槽 `input_required_q16`
 向上取整下一周期实际需要购买的物理投入；当计划利用率低于软输入的无货产能底线时，该槽不预留。
-对每个 input slot 优先选择库存覆盖率最高、再按冻结有效价格和 stable ID 决胜的可用候选；同组互补输入按共同可执行比例缩放后聚合为稀疏 `(cell, good)` 预留：
+对每个 input slot 优先选择库存覆盖率最高、再按冻结有效价格和 stable ID 决胜的可用候选；同组互补输入按共同可执行比例缩放后聚合为稀疏 `(cell, good)` 预留。同一建筑 CSR 遍历还写入维护/建造预留：作者日量 × count × epoch_days，并与一座建造 BOM 取 max；空维护配方按部门地平线摊首选建造货。日维护现金进入投资 `daily_operating_cost` 与实现利润率。业主在工资后向商人购买，买不起只记 unmet。
+
+可存非铸币品在库存低于 1.2×目标时保持 continuity 收购配额，不再只覆盖生存品。
 
 ```text
-household_available_stock = max(0, stock - production_input_reserve)
-merchant_inventory_target = max(normal_target, production_input_reserve)
-exportable_stock           = max(0, stock - production_input_reserve)
+household_available_stock = max(0, stock - max(production_input_reserve, construction_material_reserve))
+merchant_inventory_target = max(normal_target, production_input_reserve, construction_material_reserve)
+exportable_stock           = max(0, stock - max(production_input_reserve, construction_material_reserve))
 ```
 
 预留本身不改变库存所有权，也不是 goods sink；居民和国内贸易只能清算预留以上的库存。缓存由建筑

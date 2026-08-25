@@ -127,6 +127,9 @@ public:
         int64_t owner_working_capital_reserved = 0;
         int64_t production_input_reserved = 0;
         int64_t production_input_reserve_shortfall = 0;
+        int64_t construction_material_reserved = 0;
+        int64_t maintenance_goods_consumed = 0;
+        int64_t maintenance_unmet = 0;
         int32_t trade_runtime_mode = 0;
         bool trade_topology_ready = false;
         int64_t trade_topology_generation = 0;
@@ -312,6 +315,8 @@ public:
         int64_t investment_stealable = 0;
         int64_t investment_challenger_unit_cost = 0;
         int64_t investment_incumbent_unit_cost = 0;
+        int64_t investment_return_on_capital_q16 = 0;
+        int64_t investment_cost_advantage_q16 = 0;
         int32_t investment_failed_material_group = -1;
         std::string investment_selected_material_good_ids;
         std::string investment_selected_material_quantities;
@@ -383,6 +388,7 @@ public:
         int64_t offered_supply_ema = 0;
         int64_t realized_withdrawal_ema = 0;
         int64_t production_input_reserve = 0;
+        int64_t construction_material_reserve = 0;
         int64_t household_available_stock = 0;
         int64_t merchant_inventory_target = 0;
         int64_t merchant_procurement_shortfall = 0;

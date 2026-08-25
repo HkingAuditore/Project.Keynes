@@ -214,6 +214,7 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_epoch_cost_anchor_price);
     cap(_epoch_nonhousehold_withdrawals);
     cap(_production_input_reserve);
+    cap(_construction_material_reserve);
     cap(_cell_last_settlement_day); cap(_cell_settlement_generation);
     cap(_cell_price_stock_gen); cap(_cell_owner_cash_gen); cap(_cell_population_gen);
     cap(_cell_building_structure_gen); cap(_cell_technology_gen);
@@ -432,6 +433,9 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_building_types); cap(_building_type_market_signal_goods);
     cap(_building_type_labor_signal_professions);
     cap(_building_employee_roles); cap(_building_construction_goods);
+    cap(_building_maintenance_author_offsets);
+    cap(_building_maintenance_author_goods);
+    cap(_building_maintenance_goods);
 	cap(_building_upgrade_family_ids); cap(_building_upgrade_family_indices);
 	cap(_building_upgrade_tiers);
     cap(_building_inputs); cap(_building_input_candidates);
@@ -762,6 +766,10 @@ Dictionary NativeEconomyRuntime::compact_report() const {
         _epoch_compiled_cell_tax_overrides.size());
     out["cell_tax_cache_bytes"] = _epoch_cell_tax_cache_bytes;
     out["cell_tax_epoch_compile_ms"] = _epoch_cell_tax_compile_ms;
+    out["fiscal_business_prospective_lanes"] =
+        _fiscal_business_prospective_lanes;
+    out["fiscal_business_prospective_request"] =
+        _fiscal_business_prospective_request;
     out["approximation_probe_violations"] =
         _approximation_probe_violations;
     out["approximation_probe_max_spend_error_q16"] =
@@ -910,6 +918,7 @@ Dictionary NativeEconomyRuntime::report() const {
         _production_output_discarded + _production_output_retained -
         _consumed_goods - _owner_output_consumed -
         _construction_goods_consumed - _production_inputs_consumed -
+        _maintenance_goods_consumed -
         _production_output_discarded - _cycle_flow_discarded -
         _bullion_stock_consumed - _country_research_goods_consumed;
     out["path"] = "ECONOMY_GRAPH";
@@ -1905,6 +1914,10 @@ Dictionary NativeEconomyRuntime::report() const {
     out["production_input_reserved"] = _production_input_reserved;
     out["production_input_reserve_shortfall"] =
         _production_input_reserve_shortfall;
+    out["construction_material_reserved"] = _construction_material_reserved;
+    out["maintenance_goods_consumed"] = _maintenance_goods_consumed;
+    out["maintenance_unmet"] = _maintenance_unmet;
+    out["maintenance_unpaid_value"] = _maintenance_unpaid_value;
     out["owner_working_capital_reserved"] = _owner_working_capital_reserved;
     out["building_severe_loss_threshold_q16"] = _building_severe_loss_threshold_q16;
     out["building_severe_loss_cycles"] = _building_severe_loss_cycles;

@@ -384,7 +384,7 @@ int64_t NativeEconomyRuntime::trade_relief_pressure_q16(
     }
     if (signal >= 0 && signal < static_cast<int32_t>(
             _production_input_reserve.size())) {
-        const int64_t reserve = std::max<int64_t>(0, _production_input_reserve[signal]);
+        const int64_t reserve = merchant_protected_reserve(signal);
         const int64_t stock = std::max<int64_t>(0, _market.stock[index]);
         if (reserve > stock) {
             pressure = std::max<int64_t>(pressure, std::clamp<int64_t>(
@@ -413,9 +413,8 @@ int64_t NativeEconomyRuntime::trade_local_stock_target(
     int64_t target = mul_div_sat(
         demand, _good_target_inventory_days_q16[good], Q16_ONE, sat);
     target = mul_div_sat(target, _trade_import_fill_fraction_q16, Q16_ONE, sat);
-    if (signal >= 0 && signal < static_cast<int32_t>(
-            _production_input_reserve.size())) {
-        target = std::max(target, _production_input_reserve[signal]);
+    if (signal >= 0) {
+        target = std::max(target, merchant_protected_reserve(signal));
     }
     return std::max<int64_t>(0, target);
 }
@@ -437,8 +436,8 @@ int64_t NativeEconomyRuntime::trade_export_floor(
         merchant_target, _trade_export_inventory_fraction_q16, Q16_ONE, sat);
     floor = std::max(floor, saturating_mul(
         realized, _trade_export_floor_days, sat));
-    if (signal >= 0 && signal < static_cast<int32_t>(_production_input_reserve.size())) {
-        floor = std::max(floor, _production_input_reserve[signal]);
+    if (signal >= 0) {
+        floor = std::max(floor, merchant_protected_reserve(signal));
     }
     return std::clamp<int64_t>(floor, 0, std::max<int64_t>(0, stock));
 }
@@ -592,9 +591,8 @@ int64_t NativeEconomyRuntime::merchant_inventory_target(
     int64_t target = mul_div_sat(saturating_add(
         protected_daily, std::max<int64_t>(0, export_ema), sat),
         _good_target_inventory_days_q16[good], Q16_ONE, sat);
-    if (signal_index >= 0 && signal_index < static_cast<int32_t>(
-            _production_input_reserve.size())) {
-        target = std::max(target, _production_input_reserve[signal_index]);
+    if (signal_index >= 0) {
+        target = std::max(target, merchant_protected_reserve(signal_index));
     }
     return std::max<int64_t>(0, target);
 }

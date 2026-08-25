@@ -411,12 +411,24 @@ bool NativeEconomyRuntime::apply_build_command(const Command &cmd, int32_t owner
                 type.construction_begin + material_plan.failed_group];
             const int32_t signal = ensure_market_signal_index(cell,
                 preferred.good_id);
+            const int64_t daily_need = std::max<int64_t>(1,
+                preferred.quantity * count / std::max<int32_t>(1, _epoch_days));
             if (signal >= 0 && signal < static_cast<int32_t>(
                     _market_signals.business_demand_ema.size())) {
                 _market_signals.business_demand_ema[signal] = std::max(
-                    _market_signals.business_demand_ema[signal],
-                    std::max<int64_t>(1, preferred.quantity * count /
-                        std::max<int32_t>(1, _epoch_days)));
+                    _market_signals.business_demand_ema[signal], daily_need);
+            }
+            if (signal >= 0 && signal < static_cast<int32_t>(
+                    _epoch_desired_business_demand.size())) {
+                _epoch_desired_business_demand[signal] = saturating_add(
+                    _epoch_desired_business_demand[signal],
+                    preferred.quantity * count, _saturation_count);
+            }
+            if (signal >= 0 && signal < static_cast<int32_t>(
+                    _construction_material_reserve.size())) {
+                _construction_material_reserve[signal] = std::max(
+                    _construction_material_reserve[signal],
+                    preferred.quantity * count);
             }
         }
         _last_building_rejection_reason = "building_construction_stock_insufficient";

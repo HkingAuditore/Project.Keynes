@@ -115,6 +115,42 @@ func submit(commands: Array[Dictionary]) -> Dictionary:
 		batch.display_names.append(String(command.get("display_name", "")))
 	return _world_ext.submit_country_commands(batch)
 
+
+func submit_observation_batch(handle: int, cells: PackedInt32Array,
+		signals: PackedInt32Array, effective_day: int) -> Dictionary:
+	if not _configured or cells.size() != signals.size():
+		return {"ok": false, "reason": "country_observation_batch_invalid"}
+	var n := cells.size()
+	if n == 0:
+		return {"ok": true, "accepted": 0}
+	var batch := {
+		"opcodes": PackedInt32Array(), "effective_days": PackedInt64Array(),
+		"sequences": PackedInt64Array(), "target_handles": PackedInt64Array(),
+		"cell_indices": cells, "aux_i32": signals, "domain_i32": PackedInt32Array(),
+		"position_i32": PackedInt32Array(), "weight0_bp": PackedInt32Array(),
+		"weight1_bp": PackedInt32Array(), "weight2_bp": PackedInt32Array(),
+		"weight3_bp": PackedInt32Array(), "value_i64": PackedInt64Array(),
+		"tax_kinds": PackedInt32Array(), "tax_item_indices": PackedInt32Array(),
+		"tax_rate_percent": PackedInt32Array(), "stable_ids": PackedStringArray(),
+		"display_names": PackedStringArray(),
+	}
+	for key in ["opcodes", "effective_days", "sequences", "target_handles",
+			"domain_i32", "position_i32", "weight0_bp", "weight1_bp", "weight2_bp",
+			"weight3_bp", "value_i64", "tax_kinds", "tax_item_indices",
+			"tax_rate_percent", "stable_ids", "display_names"]:
+		batch[key].resize(n)
+	for i in range(n):
+		batch.opcodes[i] = Opcode.DISCOVER_COUNTRY_SIGNAL
+		batch.effective_days[i] = effective_day
+		batch.sequences[i] = i
+		batch.target_handles[i] = handle
+		batch.value_i64[i] = 1
+		batch.domain_i32[i] = -1
+		batch.position_i32[i] = -1
+		batch.tax_kinds[i] = -1
+		batch.tax_item_indices[i] = -1
+	return _world_ext.submit_country_commands(batch)
+
 func create_country(stable_id: StringName, display_name: String, first_cell: int,
 		effective_day: int, sequence: int) -> Dictionary:
 	return submit([{"opcode": Opcode.CREATE_COUNTRY, "stable_id": String(stable_id),
@@ -368,6 +404,11 @@ func research_signal_snapshot(handle: int) -> Dictionary:
 	return _world_ext.get_country_research_signal_snapshot(handle) if _configured \
 			and _world_ext.has_method("get_country_research_signal_snapshot") else {}
 
+
+func has_completed_technology(handle: int, dense_id: int) -> bool:
+	return _configured and _world_ext.has_method("has_completed_country_technology") \
+		and _world_ext.has_completed_country_technology(handle, dense_id)
+
 func _technology_index(technology_id: StringName) -> int:
 	var ids: PackedStringArray = _catalog.get("technology_ids", PackedStringArray())
 	return ids.find(String(technology_id))
@@ -422,6 +463,7 @@ func dispatch_committed_events(result: Dictionary) -> void:
 	var cells: PackedInt32Array = events.get("cells", PackedInt32Array())
 	var signal_ids: PackedInt32Array = events.get("signal_ids", PackedInt32Array())
 	var sources: PackedInt32Array = events.get("signal_source_kinds", PackedInt32Array())
+	var evidence_deltas: PackedInt32Array = events.get("evidence_deltas", PackedInt32Array())
 	for i in opcodes.size():
 		if int(opcodes[i]) != Opcode.DISCOVER_COUNTRY_SIGNAL:
 			continue
@@ -430,6 +472,7 @@ func dispatch_committed_events(result: Dictionary) -> void:
 			"cell": int(cells[i]) if i < cells.size() else -1,
 			"signal": int(signal_ids[i]) if i < signal_ids.size() else -1,
 			"source_kind": int(sources[i]) if i < sources.size() else 0,
+			"evidence_delta": int(evidence_deltas[i]) if i < evidence_deltas.size() else 1,
 		})
 	country_committed.emit(result.duplicate(true))
 

@@ -20,7 +20,8 @@ func _ready() -> void:
 	if not result.ok:
 		_show_status(String(result.reason), true)
 	_build_ui()
-	_rebuild_graph()
+	# GraphEdit creates its internal connections layer during its ready notification.
+	call_deferred("_rebuild_graph")
 
 func _build_ui() -> void:
 	var root := VBoxContainer.new()
@@ -50,6 +51,7 @@ func _build_ui() -> void:
 	graph.right_disconnects = true
 	graph.connection_request.connect(_on_connection_request)
 	graph.disconnection_request.connect(_on_disconnection_request)
+	graph.node_selected.connect(_on_graph_node_selected)
 	graph.gui_input.connect(_on_graph_input)
 	split.add_child(graph)
 	var scroll := ScrollContainer.new()
@@ -60,8 +62,10 @@ func _build_ui() -> void:
 	scroll.add_child(details)
 
 func _rebuild_graph() -> void:
+	graph.clear_connections()
 	for child in graph.get_children():
-		child.queue_free()
+		if child is GraphNode:
+			child.queue_free()
 	node_controls.clear()
 	node_name_to_id.clear()
 	for row_value in service.nodes():
@@ -74,7 +78,6 @@ func _rebuild_graph() -> void:
 		node.position_offset = Vector2(float(row.get("layout_order", 0)) * 210.0,
 			float(row.get("ui_row", 0)) * 110.0)
 		node.set_meta("technology_id", id)
-		node.selected.connect(func() -> void: _select(id))
 		var label := Label.new()
 		label.text = id
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -148,7 +151,7 @@ func _add_json_field(title: String, key: String, value: Variant) -> void:
 	var label := Label.new(); label.text = "%s（受目录校验约束的 JSON）" % title; details.add_child(label)
 	var field := TextEdit.new(); field.text = JSON.stringify(value, "  "); field.custom_minimum_size.y = 120; details.add_child(field)
 	field.focus_exited.connect(func() -> void:
-		var parsed := JSON.parse_string(field.text)
+		var parsed: Variant = JSON.parse_string(field.text)
 		if parsed == null:
 			_show_status("%s JSON 无效" % title, true)
 			return
@@ -195,6 +198,10 @@ func _on_search_changed(query: String) -> void:
 		var row := service.node_by_id(String(id))
 		var hit := q.is_empty() or String(row.get("display_name", "")).to_lower().contains(q) or String(id).to_lower().contains(q)
 		node_controls[id].modulate = Color.WHITE if hit else Color(0.35, 0.35, 0.35)
+
+func _on_graph_node_selected(node: Node) -> void:
+	if node != null and node.has_meta("technology_id"):
+		_select(String(node.get_meta("technology_id")))
 
 func _on_connection_request(from: StringName, _from_port: int, to: StringName, _to_port: int) -> void:
 	var source := String(node_name_to_id.get(String(from), "")); var target := String(node_name_to_id.get(String(to), ""))

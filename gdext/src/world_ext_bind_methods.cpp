@@ -120,6 +120,9 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::get_country_research_snapshot);
     ClassDB::bind_method(D_METHOD("get_country_research_signal_snapshot", "handle"),
                          &DCWorldExt::get_country_research_signal_snapshot);
+    ClassDB::bind_method(D_METHOD("has_completed_country_technology", "handle",
+                                 "technology_id"),
+                         &DCWorldExt::has_completed_country_technology);
     ClassDB::bind_method(D_METHOD("get_country_tax_policy_snapshot", "handle"),
                          &DCWorldExt::get_country_tax_policy_snapshot);
     ClassDB::bind_method(D_METHOD("get_country_cell_tax_policy_snapshot", "cell_idx"),
@@ -527,10 +530,20 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::run_bio_province_pass);
     ClassDB::bind_method(D_METHOD("run_bio_seed_pass", "knobs"),
                          &DCWorldExt::run_bio_seed_pass);
+    ClassDB::bind_method(D_METHOD("run_bio_bootstrap_pass", "knobs"),
+                         &DCWorldExt::run_bio_bootstrap_pass);
+    ClassDB::bind_method(D_METHOD("configure_bio_occupancy", "config"),
+                         &DCWorldExt::configure_bio_occupancy);
     ClassDB::bind_method(D_METHOD("run_bio_occupancy_pass", "knobs"),
                          &DCWorldExt::run_bio_occupancy_pass);
     ClassDB::bind_method(D_METHOD("run_bio_occupancy_slice", "knobs"),
                          &DCWorldExt::run_bio_occupancy_slice);
+    ClassDB::bind_method(D_METHOD("configure_vision_research", "config"),
+                         &DCWorldExt::configure_vision_research);
+    ClassDB::bind_method(D_METHOD("run_vision_research_pass", "knobs"),
+                         &DCWorldExt::run_vision_research_pass);
+    ClassDB::bind_method(D_METHOD("filter_bio_research_observations", "cells", "signals"),
+                         &DCWorldExt::filter_bio_research_observations);
     ClassDB::bind_method(D_METHOD("run_native_world_generate_pass", "seed", "cfg", "profile"),
                          &DCWorldExt::run_native_world_generate_pass);
     ClassDB::bind_method(D_METHOD("get_native_fronts_snapshot"),

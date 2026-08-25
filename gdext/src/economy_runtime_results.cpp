@@ -110,6 +110,9 @@ void NativeEconomyRuntime::ProductionResult::reset() {
     building_resource_generated = 0;
     building_resource_consumed = 0;
     production_inputs_consumed = 0;
+    maintenance_goods_consumed = 0;
+    maintenance_unmet = 0;
+    maintenance_unpaid_value = 0;
     production_output_stock = 0;
     production_output_discarded = 0;
     production_output_supported = 0;

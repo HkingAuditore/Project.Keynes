@@ -653,11 +653,9 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                     std::max<int64_t>(labor_shortage_priority_q16[local_group],
                         shortage_q16));
                 if (_survival_food_good_mask[good] != 0) {
-                    const int64_t reserve = signal >= 0 && signal <
-                            static_cast<int32_t>(_production_input_reserve.size())
-                        ? _production_input_reserve[signal] : 0;
                     const int64_t household_stock = std::max<int64_t>(
-                        0, _market.stock[market_index] - reserve);
+                        0, _market.stock[market_index] -
+                            merchant_protected_reserve(signal));
                     if (household_stock <= 1 || shortage_q16 >= Q16_ONE / 8) {
                         labor_survival_priority[local_group] = 1;
                     }

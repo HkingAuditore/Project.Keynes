@@ -15,7 +15,7 @@ func _init() -> void:
 	_compiled = EconomyCatalogScript.compile_native_catalog()
 	_expect("schema v3 catalog compiles", bool(_compiled.get("ok", false)))
 	var ids: PackedStringArray = _compiled.get("technology_ids", PackedStringArray())
-	_expect("stable technology count", ids.size() == 671)
+	_expect("stable technology count", ids.size() == 661)
 	_expect("route IR is present", (_compiled.get("research_route_ids", PackedStringArray()) as PackedStringArray).size() > 600)
 
 	# Era milestone is a hard gate, while the node's discovery signal and one
@@ -89,14 +89,16 @@ func _init() -> void:
 	_expect("the unified institution opens hide scraping",
 		_state(hide_open, "tech.hide_scraping") == 2)
 
-	var coastal_open := _fixture(PackedStringArray(["tech.early_knowledge_institution"]),
+	var coastal_open := _fixture(PackedStringArray([
+		"tech.early_knowledge_institution", "tech.wild_flax_collection",
+	]),
 		PackedStringArray(["resource.marine_fish"]))
-	_expect("marine evidence opens coastal fishing after the institution",
+	_expect("marine evidence opens coastal fishing after knowledge and net fiber",
 		_state(coastal_open, "tech.coastal_fishing") == 2)
 	var freshwater_open := _fixture(PackedStringArray([
-		"tech.early_knowledge_institution",
+		"tech.early_knowledge_institution", "tech.wild_flax_collection",
 	]), PackedStringArray(["resource.freshwater_fish"]))
-	_expect("freshwater evidence opens freshwater fishing after the institution",
+	_expect("freshwater evidence opens fishing after knowledge and net fiber",
 		_state(freshwater_open, "tech.freshwater_fishing") == 2)
 
 	# Regional knowledge buildings provide technology points; their memory type

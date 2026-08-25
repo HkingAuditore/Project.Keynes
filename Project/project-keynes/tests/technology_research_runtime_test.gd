@@ -31,6 +31,13 @@ func _init() -> void:
 	var early_knowledge := ids.find("tech.early_knowledge_institution")
 	var maize_propagation := ids.find("tech.maize_propagation")
 	var household_production := ids.find("tech.household_production")
+	var magnetic_navigation := ids.find("tech.magnetic_navigation")
+	var capability_offsets: PackedInt32Array = compiled.technology_runtime_capability_offsets
+	var capability_tags: PackedStringArray = compiled.technology_runtime_capability_tags
+	var magnetic_capabilities := capability_tags.slice(
+		capability_offsets[magnetic_navigation], capability_offsets[magnetic_navigation + 1])
+	_expect("magnetic navigation compiles remote observation capability",
+		magnetic_capabilities.has("research.observe_visible_foreign"))
 	var kiln_firing := ids.find("tech.kiln_firing")
 	var packet := {
 		"country_ids": PackedStringArray(["country.test"]),
@@ -52,6 +59,9 @@ func _init() -> void:
 	_expect("country research bootstraps", bool(facade.bootstrap(
 		PackedByteArray([0]), packet).get("ok", false)))
 	var handle := int(facade.cell_summary(0).country_handle)
+	_expect("dense completed-technology query is O(1) and handle-safe",
+		facade.has_completed_technology(handle, gathering) and
+		not facade.has_completed_technology(handle, magnetic_navigation))
 	_expect("discovery inspiration queues", bool(facade.discover_research_signal(
 		handle, &"resource.arable_land", 0, 1, 0, 1).get("ok", false))
 		and bool(facade.discover_research_signal(

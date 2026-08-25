@@ -15,6 +15,7 @@ const ERA_IDS := [
 ]
 const ALLOWED_REVEAL_CATEGORIES := [
 	"general_knowledge", "environment_observation", "practice_diffusion", "composite_science",
+	"application_intersection", "method_progression",
 ]
 const ALLOWED_EDGE_KINDS := [
 	"hard", "alternative", "application", "branch", "milestone_candidate",
@@ -171,13 +172,14 @@ func _validate(payload: Dictionary) -> Dictionary:
 	var families: Array = payload.get("branch_families", [])
 	var nodes: Array = payload.get("nodes", [])
 	if eras.size() != 11 or domains.size() != 4 or backbones.size() != 4 \
-			or families.size() != 24 or nodes.size() < 361:
+			or families.size() != 24 or nodes.size() != 661:
 		return _fail("technology_network_shape_invalid")
 	if payload.has("specialist_lanes"):
 		return _fail("technology_legacy_lane_metadata_present")
 	var era_index := {}
 	var milestone_by_era := {}
 	var candidate_ids := {}
+	var milestone_candidate_edges := 0
 	for index in range(eras.size()):
 		var era: Dictionary = eras[index]
 		var era_id := String(era.get("id", ""))
@@ -186,9 +188,12 @@ func _validate(payload: Dictionary) -> Dictionary:
 		var milestone_id := String(era.get("milestone_id", ""))
 		var entry_id := String(era.get("entry_milestone_id", ""))
 		var candidates: Array = era.get("milestone_candidate_ids", [])
-		if milestone_id.is_empty() or candidates.size() != 8 \
-				or int(era.get("candidate_required", 0)) != 4:
+		var candidate_required := int(era.get("candidate_required", 0))
+		if milestone_id.is_empty() or candidates.size() < 8 or candidates.size() > 18 \
+				or candidate_required < 4 or candidate_required > 7 \
+				or candidate_required > candidates.size():
 			return _fail("technology_era_milestone_contract_invalid:%s" % era_id)
+		milestone_candidate_edges += candidates.size()
 		if (index == 0 and not entry_id.is_empty()) or (index > 0 and entry_id != String(
 			(eras[index - 1] as Dictionary).get("milestone_id", ""))):
 			return _fail("technology_era_entry_contract_invalid:%s" % era_id)
@@ -227,6 +232,7 @@ func _validate(payload: Dictionary) -> Dictionary:
 	var research_route_count := 0
 	var empty_modifier_nodes := 0
 	var branch_successor_edges := 0
+	var formal_nodes_without_direct_consumer := PackedStringArray()
 	var adjacency := {}
 	var indegree := {}
 	for id in node_by_id:
@@ -329,12 +335,15 @@ func _validate(payload: Dictionary) -> Dictionary:
 		var is_formal := not bool(node.get("is_milestone", false)) \
 			and not bool(node.get("is_starting", false)) \
 			and not bool(node.get("is_starter_eligible", false))
-		var has_content := not (node.get("expected_bindings", []) as Array).is_empty() \
-			or not (node.get("content_effects", []) as Array).is_empty()
+		var has_direct_consumer := not (node.get("expected_bindings", []) as Array).is_empty() \
+			or not (node.get("content_effects", []) as Array).is_empty() \
+			or not (node.get("support_buildings", []) as Array).is_empty() \
+			or not (node.get("branch_successor_ids", []) as Array).is_empty() \
+			or not (node.get("application_target_ids", []) as Array).is_empty()
 		if is_formal and modifier_terms.size() > 6:
 			return _fail("technology_modifier_term_count_invalid:%s" % id)
-		if is_formal and modifier_terms.is_empty() and not has_content:
-			return _fail("technology_modifier_term_count_invalid:%s" % id)
+		if is_formal and modifier_terms.is_empty() and not has_direct_consumer:
+			formal_nodes_without_direct_consumer.append(id)
 		if modifier_terms.is_empty() and not bool(node.get("is_starter_eligible", false)):
 			empty_modifier_nodes += 1
 		var unlocked_content := {}
@@ -378,6 +387,9 @@ func _validate(payload: Dictionary) -> Dictionary:
 				return _fail("technology_application_target_unknown:%s" % id)
 			if String(application_rationales[target_index]).strip_edges().is_empty():
 				return _fail("technology_application_rationale_missing:%s" % id)
+	for id in formal_nodes_without_direct_consumer:
+		if (adjacency[String(id)] as Array).is_empty():
+			return _fail("technology_real_consumer_missing:%s" % id)
 	var ready: Array[String] = []
 	for id in indegree:
 		if int(indegree[id]) == 0:
@@ -400,6 +412,9 @@ func _validate(payload: Dictionary) -> Dictionary:
 		var node: Dictionary = node_value
 		if int(era_index[String(node.era_id)]) < 2:
 			continue
+		if String(node.get("reveal_category", "")) in [
+				"application_intersection", "method_progression"]:
+			continue
 		post_kingdom_total += 1
 		if not (node.get("research_routes", []) as Array).is_empty():
 			post_kingdom_with_routes += 1
@@ -411,14 +426,19 @@ func _validate(payload: Dictionary) -> Dictionary:
 		var has_hard_successor := not (adjacency[id] as Array).is_empty()
 		var has_authored_successor := not (node.get("branch_successor_ids", []) as Array).is_empty() \
 			or not (node.get("application_target_ids", []) as Array).is_empty()
+		var has_runtime_endpoint := not (node.get("expected_bindings", []) as Array).is_empty() \
+			or not (node.get("content_effects", []) as Array).is_empty() \
+			or not (node.get("support_buildings", []) as Array).is_empty() \
+			or not (node.get("modifier_terms", []) as Array).is_empty()
 		if not has_hard_successor and not has_authored_successor \
+				and not has_runtime_endpoint \
 				and String(node.get("terminal_reason", "")).strip_edges().is_empty():
 			return _fail("technology_terminal_reason_missing:%s" % id)
 	return {
 		"ok": true,
 		"hard_edges": hard_edges,
 		"alternative_edges": _count_route_technology_atoms(nodes),
-		"milestone_candidate_edges": eras.size() * 8,
+		"milestone_candidate_edges": milestone_candidate_edges,
 		"research_route_nodes": research_route_nodes,
 		"research_route_count": research_route_count,
 		"empty_modifier_nodes": empty_modifier_nodes,
@@ -582,7 +602,7 @@ func _audit_report(payload: Dictionary, validation: Dictionary) -> String:
 		"- Branch families: %d" % (payload.branch_families as Array).size(),
 		"- Hard prerequisite edges: %d (no indegree cap)" % int(validation.hard_edges),
 		"- Alternative evidence edges: %d" % int(validation.alternative_edges),
-		"- Milestone candidate edges: %d (8 per era, require 4)" % int(validation.milestone_candidate_edges),
+		"- Milestone candidate edges: %d (8–18 per era, require 4–7)" % int(validation.milestone_candidate_edges),
 		"- Nodes with research routes: %d" % int(validation.research_route_nodes),
 		"- Research routes: %d" % int(validation.research_route_count),
 		"- Authored branch successor edges: %d" % int(validation.branch_successor_edges),

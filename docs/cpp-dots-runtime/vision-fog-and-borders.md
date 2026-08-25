@@ -601,3 +601,24 @@ ribbon 的内边界截断。
   Fog/Weather 连续性。
 - 仿真侧回归看 `bd_dynamic_visual_atlas_lut_refresh_ms`（含整个 `encode_cell_luts`）
   与 `t_sus_ms` 的比值；迷雾层的全屏 fragment 成本只能在 GPU 侧量。
+
+## 物理视野与科研资格（2026-08-25）
+
+生产路径由 `configure_vision_research()` / `run_vision_research_pass()` 在 C++
+执行 bucket-Dijkstra 和两轮六边形 blur；`VisionSolver` 保留一个验证周期作为
+逐格 parity 回滚。物理视野是独立瞬态数组。关闭迷雾只把渲染
+`visible/fog_k` 直通为全图，不改变物理视野、科研资格或 `explored`。
+
+```text
+eligible = owned_by_player
+        OR (research.observe_visible_foreign AND physically_visible)
+```
+
+资格 mask 常驻原生内存。只有 0→1 的格扫描静态 CSR 与当前生物占领；
+1→0 只清资格，不撤销证据。历史 `explored` 从不构成境外证据。完成
+`tech.magnetic_navigation` 时，O(1) 完成位查询检测 capability 跃迁，只回填
+当前物理视野中的境外格。
+
+`country_committed` 仍是唯一广播，但 `changed_cells > 0` 才重算视野和国界。
+纯证据、税务或国库提交不触发这两个 O(n) 工作；capability 跃迁只重算视野，
+不重建国界。vision pass 返回 fog dirty indices，地图 LUT 只刷新这些格。

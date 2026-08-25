@@ -251,7 +251,7 @@ func _building_dependencies_available(catalog: Dictionary, building_index: int,
 	var input_candidate_offsets: PackedInt32Array = catalog.building_input_candidate_offsets
 	var input_candidate_goods: PackedInt32Array = catalog.building_input_candidate_good_ids
 	for edge in range(input_offsets[building_index], input_offsets[building_index + 1]):
-		if int(input_required[edge]) <= 0:
+		if int(input_required[edge]) < 65536:
 			continue
 		if not _good_group_available(catalog, edge, int(input_goods[edge]),
 				input_candidate_offsets, input_candidate_goods, available_goods):
@@ -293,8 +293,20 @@ func _append_building_outputs(catalog: Dictionary, building_index: int,
 	var changed := false
 	var offsets: PackedInt32Array = catalog.building_output_offsets
 	var goods: PackedInt32Array = catalog.building_output_good_ids
+	var owner_index := _building_direct_technology_index(catalog, building_index)
+	var owner_id := String(catalog.technology_ids[owner_index])
+	var good_tag_offsets: PackedInt32Array = catalog.good_technology_tag_offsets
+	var good_tags: PackedStringArray = catalog.good_technology_tags
 	for edge in range(offsets[building_index], offsets[building_index + 1]):
-		var good_id := String(catalog.good_ids[int(goods[edge])])
+		var good_index := int(goods[edge])
+		var owned_unlock := false
+		for tag_edge in range(good_tag_offsets[good_index], good_tag_offsets[good_index + 1]):
+			if String(good_tags[tag_edge]) == owner_id:
+				owned_unlock = true
+				break
+		if not owned_unlock:
+			continue
+		var good_id := String(catalog.good_ids[good_index])
 		if not available_goods.has(good_id):
 			available_goods[good_id] = true
 			changed = true
@@ -324,9 +336,32 @@ func _assert_no_construction_self_output(catalog: Dictionary) -> void:
 			outputs[int(catalog.building_output_good_ids[output_edge])] = true
 		for construction_edge in range(catalog.building_construction_offsets[building_index],
 				catalog.building_construction_offsets[building_index + 1]):
-			assert(not outputs.has(int(catalog.building_construction_good_ids[
-				construction_edge])), "first producer construction self-lock: %s" %
+			var construction_good := int(catalog.building_construction_good_ids[
+				construction_edge])
+			assert(not outputs.has(construction_good) or
+				_has_hard_ancestor_producer(catalog, building_index, construction_good),
+				"first producer construction self-lock: %s" %
 				catalog.building_type_ids[building_index])
+
+
+func _has_hard_ancestor_producer(catalog: Dictionary, building_index: int,
+		good_index: int) -> bool:
+	var owner := _building_direct_technology_index(catalog, building_index)
+	var ancestors := {}
+	for edge in range(catalog.technology_prerequisite_offsets[owner],
+			catalog.technology_prerequisite_offsets[owner + 1]):
+		_add_technology_with_hard_ancestors(catalog,
+			String(catalog.technology_ids[int(catalog.technology_prerequisites[edge])]),
+			ancestors)
+	for producer_index in range((catalog.building_type_ids as PackedStringArray).size()):
+		if producer_index == building_index or not ancestors.has(
+				_building_direct_technology_index(catalog, producer_index)):
+			continue
+		for output_edge in range(catalog.building_output_offsets[producer_index],
+				catalog.building_output_offsets[producer_index + 1]):
+			if int(catalog.building_output_good_ids[output_edge]) == good_index:
+				return true
+	return false
 
 
 func _assert_explicit_economic_sectors(catalog: Dictionary) -> void:
@@ -711,7 +746,7 @@ func _assert_engineering_method_scope(catalog: Dictionary) -> void:
 		"tech.electronic_control": ["zinc_plant"],
 		"tech.geographic_information_systems": ["method_limestone_collector_r6"],
 		"tech.highland_tuber_farming": ["method_potato_collector_r6"],
-		"tech.copper_metallurgy": ["early_tin_mine"],
+		"tech.application.early_tin_mine": ["early_tin_mine"],
 		"tech.industrial_agronomy": ["method_agricultural_machinery_plant_r9"],
 	}
 	for technology_id in expected_direct:
@@ -778,8 +813,14 @@ func _assert_specialized_production_methods(catalog: Dictionary) -> void:
 		"highland_tuber_plot", "potatoes", 120)
 	_assert_output_gain(catalog, "method_smart_husbandry", "livestock_products",
 		"ranching_station", "livestock_products", 120)
-	assert(_output_reference_value(catalog, "method_specialty_commodity_plantation") * 100 \
-		>= _output_reference_value(catalog, "method_rubber_tree_collector_r6") * 120)
+	var plantation_productivity := _output_reference_value(catalog,
+		"method_specialty_commodity_plantation") / maxi(1,
+			_total_employee_slots(catalog, "method_specialty_commodity_plantation"))
+	var rubber_productivity := _output_reference_value(catalog,
+		"method_rubber_tree_collector_r6") / maxi(1,
+			_total_employee_slots(catalog, "method_rubber_tree_collector_r6"))
+	assert(plantation_productivity * 100 >= rubber_productivity * 120,
+		"specialty plantation labor productivity gain below 20%")
 
 	var ordinary_roles := ["industrial_worker", "machinist"]
 	_assert_labor_replacement(catalog, "method_steam_shipping",
@@ -851,6 +892,17 @@ func _employee_slots(catalog: Dictionary, building_id: String,
 	for edge in range(offsets[building], offsets[building + 1]):
 		if profession_ids.has(String(professions[role_ids[edge]])):
 			total += int(slots[edge])
+	return total
+
+
+func _total_employee_slots(catalog: Dictionary, building_id: String) -> int:
+	var building := (catalog.building_type_ids as PackedStringArray).find(building_id)
+	assert(building >= 0, building_id)
+	var offsets: PackedInt32Array = catalog.building_employee_offsets
+	var slots: PackedInt64Array = catalog.building_employee_slots
+	var total := 0
+	for edge in range(offsets[building], offsets[building + 1]):
+		total += int(slots[edge])
 	return total
 
 

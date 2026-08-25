@@ -134,6 +134,11 @@ Government procurement:
 
 - executes after private demand;
 - scans owned markets in stable `(price, cell_id)` order;
+- buys only from markets that still have a living merchant (`population > 0`);
+  zero-population merchant CSR lanes are not market-makers. Household deaths can
+  empty a merchant cohort before `STRUCTURAL_REMOVE_EMPTY` and merchant repair;
+  those markets skip this cycle instead of debiting country treasury and failing
+  the economy graph. `purchase_research_points` has no rollback.
 - is limited by budget, country cash, market stock, and remaining queued research demand;
 - debits country cash, pays local merchants, removes market stock, and credits country goods treasury;
 - participates in demand EMA, prices, authoritative hashes, and cash/goods conservation;

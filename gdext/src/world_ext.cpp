@@ -61,6 +61,8 @@ namespace pk {
 
 // Defined in world_ext_bio.cpp where the opaque slice state is complete.
 void destroy_bio_occupancy_slice_state(void *state);
+void destroy_bio_native_config_state(void *state);
+void destroy_vision_research_state(void *state);
 
 using namespace godot;
 
@@ -134,6 +136,14 @@ DCWorldExt::~DCWorldExt() {
     if (_bio_occupancy_slice_state != nullptr) {
         destroy_bio_occupancy_slice_state(_bio_occupancy_slice_state);
         _bio_occupancy_slice_state = nullptr;
+    }
+    if (_bio_native_config_state != nullptr) {
+        destroy_bio_native_config_state(_bio_native_config_state);
+        _bio_native_config_state = nullptr;
+    }
+    if (_vision_research_state != nullptr) {
+        destroy_vision_research_state(_vision_research_state);
+        _vision_research_state = nullptr;
     }
 }
 

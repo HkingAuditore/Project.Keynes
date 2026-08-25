@@ -96,7 +96,10 @@ For a populated cell without a merchant, convert one person from the largest non
 inherit ethnicity, and transfer proportional funds. `rebuild_merchant_ranges` uses that same repair
 before failing; colonization extract, kit owner filling, employment, and investment already keep
 the last living merchant. Rebuild merchant CSR after real structural changes; normal cycles reuse
-it. Epoch preflight checks a living merchant slot, not a stale primary index.
+it. Epoch preflight checks a living merchant slot, not a stale primary index. Government research
+procurement must also check living merchants before debiting country treasury: household deaths can
+empty a merchant cohort before `STRUCTURAL_REMOVE_EMPTY`, and `purchase_research_points` has no
+rollback.
 
 ## 5. Commands and public API
 
@@ -241,7 +244,9 @@ reports `settlement_detail_pending` until the first traced commit.
 `NativeEconomyRuntime` also owns sparse building owner-lots, pending construction, committed role
 fills, and per-cohort owner/employee employment counts. Keep `(cell, signature)` cohort identity;
 ownership stores the sponsor's stable signature identity rather than adding employer to signatures.
-Buildings stay outside MapData/HexCell/component slots. The bridge only samples geographic/resource
+Buildings stay outside MapData/HexCell/component slots. Each `BuildingType` compiles a maintenance
+CSR (authored daily goods, or construction BOM amortized by sector horizon) that investment, owner
+purchases, and merchant construction reserves read. The bridge only samples geographic/resource
 slots and publishes resource extraction through `extra_change`.
 
 PKEC v8 extends owner-lot/role state with adaptive contract wages, living-cost and local-wage

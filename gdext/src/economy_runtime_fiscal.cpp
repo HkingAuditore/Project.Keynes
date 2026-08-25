@@ -163,7 +163,65 @@ int32_t NativeEconomyRuntime::tariff_epoch_lane_index(
     return lane;
 }
 
-bool NativeEconomyRuntime::prepare_fiscal_budgets(std::string &error) {
+int64_t NativeEconomyRuntime::prospective_business_subsidy_request(
+        int32_t cell, int32_t country) {
+    if (cell < 0 || cell >= _cell_count || country < 0 ||
+        country + 1 >= static_cast<int32_t>(
+            _epoch_country_building_type_offsets.size()) ||
+        _market.cell_to_market.size() != static_cast<size_t>(_cell_count))
+        return 0;
+    const int32_t market = _market.cell_to_market[static_cast<size_t>(cell)];
+    if (market < 0 || market >= _market.market_count) return 0;
+    const int32_t type_begin = _epoch_country_building_type_offsets[country];
+    const int32_t type_end = _epoch_country_building_type_offsets[country + 1];
+    const int64_t days = std::max(1, _epoch_days);
+    int64_t best = 0;
+    for (int32_t cursor = type_begin; cursor < type_end; ++cursor) {
+        if (cursor < 0 || cursor >= static_cast<int32_t>(
+                _epoch_country_building_type_indices.size())) continue;
+        const int32_t type_id = _epoch_country_building_type_indices[cursor];
+        if (type_id < 0 ||
+            type_id >= static_cast<int32_t>(_building_types.size())) continue;
+        const int8_t rate = frozen_tax_rate(
+            cell, NativeCountryRuntime::TAX_BUSINESS, type_id);
+        if (rate >= 0) continue;
+        const BuildingType &type = _building_types[type_id];
+        int64_t daily_revenue = 0;
+        for (int32_t i = 0; i < type.output_count; ++i) {
+            const GoodAmount &output =
+                _building_outputs[type.output_begin + i];
+            if (output.good_id < 0 || output.quantity <= 0 ||
+                output.good_id >= static_cast<int32_t>(_good_ids.size()))
+                continue;
+            // Nameplate quantity on purpose: the effective-output helper
+            // interns a modifier identity for a building that does not exist
+            // yet, and this only needs a bounded escrow scale. A low quote
+            // cannot under-fund the greenfield quote itself, because
+            // expected_fiscal_transfer clamps at the budget/request ratio and
+            // a fully covered lane still reports the whole rate.
+            const int64_t quantity = output.quantity;
+            const int64_t issue_value =
+                _good_monetary_issue_values[output.good_id];
+            const int64_t settlement = issue_value > 0
+                ? issue_value
+                : mul_div_sat(
+                    _market.price[_market.index(market, output.good_id)],
+                    _good_merchant_buy_factor_q16[output.good_id], Q16_ONE,
+                    _saturation_count);
+            daily_revenue = saturating_add(daily_revenue, mul_div_sat(
+                quantity, settlement, GOODS_SCALE, _saturation_count),
+                _saturation_count);
+        }
+        if (daily_revenue <= 0) continue;
+        best = std::max(best, mul_div_sat(
+            saturating_mul(daily_revenue, days, _saturation_count),
+            std::abs(static_cast<int32_t>(rate)), 100, _saturation_count));
+    }
+    return best;
+}
+
+bool NativeEconomyRuntime::prepare_fiscal_budgets(int64_t day_index,
+                                                  std::string &error) {
     if (_country_runtime == nullptr) {
         error = "country_runtime_required";
         return false;
@@ -405,6 +463,25 @@ bool NativeEconomyRuntime::prepare_fiscal_budgets(std::string &error) {
                 });
                 reservation_request = std::max(
                     reservation_request, baseline_request);
+            } else if (kind == NativeCountryRuntime::TAX_BUSINESS &&
+                       cell_due_investment_review(cell, day_index)) {
+                // Without this the business lane can only ever budget what a
+                // previous epoch actually requested, so a cell with no
+                // subsidised producer yet quotes zero to a greenfield
+                // entrant: expected_fiscal_transfer needs both a reservation
+                // request and a budget before it returns anything. Seed the
+                // review cells this epoch will actually evaluate, bounded by
+                // one building of the single most valuable subsidised type so
+                // the escrow stays proportional to what investment can start.
+                const int64_t prospective =
+                    prospective_business_subsidy_request(cell, country);
+                if (prospective > reservation_request) {
+                    ++_fiscal_business_prospective_lanes;
+                    _fiscal_business_prospective_request = saturating_add(
+                        _fiscal_business_prospective_request,
+                        prospective - reservation_request, _saturation_count);
+                    reservation_request = prospective;
+                }
             }
             _fiscal_reservation_requests[lane] = reservation_request;
             requested_by_country[country] = saturating_add(

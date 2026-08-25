@@ -41,10 +41,62 @@ func _init() -> void:
 	_expect(history.size() == 2 and GMPanelViewModel.history_entry(history, 0) == "time.speed value=2",
 		"bounded unique history", failures)
 
+	var overview := GMPanelViewModel.format_snapshot("overview", {
+		"ok": true,
+		"data": {
+			"world": {"ready": true, "seed": 1, "width": 2, "height": 2, "cells": 4},
+			"clock": {"day_index": 2862, "year": 0, "month": 11, "day": 0,
+				"paused": false, "speed": 50.0},
+			"runtime": {"fast_tick": 2862, "last_tick_ms": 10},
+			"economy": {
+				"accuracy_candidate_top_k": 2,
+				"accuracy_choice_temperature_q16": 983,
+				"age_days": 0,
+				"approximation_decisions": 0,
+				"current_day": 1371,
+				"epoch_active": false,
+				"epoch_id": 1361,
+				"fatal": true,
+				"fatal_reason": "goods_conservation_failed",
+				"goods_error": 1,
+				"last_completed_sample_day": 1370,
+				"money_error": 0,
+				"newest_state_day": 1371,
+				"population_error": 0,
+				"stage": "fatal",
+			},
+		},
+	})
+	var economy_rows := _section_rows(overview, "经济运行时")
+	_expect(not economy_rows.is_empty() and String(economy_rows[0].get("label", "")) == "状态"
+			and String(economy_rows[0].get("value", "")).begins_with("已暂停"),
+		"economy fatal status first", failures)
+	_expect(_row_value(economy_rows, "fatal") == "true", "economy fatal pinned", failures)
+	_expect(_row_value(economy_rows, "fatal_reason") == "goods_conservation_failed",
+		"economy fatal_reason pinned", failures)
+	_expect(_row_value(economy_rows, "accuracy_candidate_top_k") == "",
+		"accuracy keys do not hide fatal", failures)
+
 	for failure in failures:
 		push_error("[gm-view-model] FAIL: %s" % failure)
 	print("[gm-view-model] %s" % ("PASS" if failures.is_empty() else "FAIL"))
 	quit(0 if failures.is_empty() else 1)
+
+
+func _section_rows(sections: Array, title: String) -> Array:
+	for raw in sections:
+		var section: Dictionary = raw
+		if String(section.get("title", "")) == title:
+			return section.get("rows", [])
+	return []
+
+
+func _row_value(rows: Array, label: String) -> String:
+	for raw in rows:
+		var row: Dictionary = raw
+		if String(row.get("label", "")) == label:
+			return String(row.get("value", ""))
+	return ""
 
 
 func _expect(condition: bool, label: String, failures: PackedStringArray) -> void:

@@ -493,7 +493,8 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             if (signal >= static_cast<int32_t>(_production_input_reserve.size())) continue;
             const int32_t good = _market_signals.good_ids[signal];
             production_input_floor[good] = saturating_add(
-                production_input_floor[good], _production_input_reserve[signal], sat);
+                production_input_floor[good],
+                merchant_protected_reserve(signal), sat);
         }
     }
     if (trace_detail) {
