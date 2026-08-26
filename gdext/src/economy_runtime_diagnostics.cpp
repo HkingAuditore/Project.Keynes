@@ -103,6 +103,12 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_cell_carrying_k_geo); cap(_cell_carrying_k_eff);
     cap(_cell_carrying_surplus_q16); cap(_cell_carrying_sat_q16);
     cap(_cell_carrying_family_surplus_q16); cap(_cell_carrying_family_bindable);
+    cap(_cell_food_output_eq_period); cap(_cell_food_input_eq_period);
+    cap(_cell_food_import_eq_period); cap(_cell_food_export_eq_period);
+    cap(_cell_food_access_eq_period);
+    cap(_cell_food_output_eq_previous); cap(_cell_food_input_eq_previous);
+    cap(_cell_food_import_eq_previous); cap(_cell_food_export_eq_previous);
+    cap(_cell_food_access_eq_previous); cap(_cell_food_flow_valid);
     cap(_population.owner_employed); cap(_population.employee_employed);
     cap(_families.active); cap(_families.generation); cap(_families.stable_id);
     cap(_families.surname_id); cap(_families.surname_disambiguator);
@@ -984,6 +990,11 @@ Dictionary NativeEconomyRuntime::report() const {
     out["processed_needs"] = _processed_needs;
     out["processed_variants"] = _processed_variants;
     out["processed_components"] = _processed_components;
+    out["carrying_old_resource_scan_steps"] = _carrying_old_resource_scan_steps;
+    out["food_output_events"] = _food_output_events;
+    out["food_input_events"] = _food_input_events;
+    out["food_trade_events"] = _food_trade_events;
+    out["food_access_events"] = _food_access_events;
     out["fallback_ms"] = _fallback_ms;
     out["merchant_settle_ms"] = _merchant_settle_ms;
     out["price_ms"] = _price_ms;

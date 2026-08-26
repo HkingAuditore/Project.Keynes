@@ -1,6 +1,6 @@
 # 原生阶层与本地市场运行时（Market V2 / Price V4）
 
-PKEC v44 是当前 writer；reader 接受 v44、v43、v42 与 v41。v43 旧存档恢复时将
+PKEC v45 是当前 writer；reader 接受 v45、v44、v43、v42 与 v41。v43 旧存档恢复时将
 `startup_demand_runtime_mode` 固定为 `OFF`；v41 不得含 `EXPEDITION_PREPARING`。
 v42 保留 v39 引入的生产计划 P∈[5,15] 与投资 I∈[10,30]
 分开锁定，且 I > P。三套周期只在各自完整周期边界重选；选档用经济活格刀数
@@ -50,15 +50,15 @@ cohort 满意度不再是单一的生存指标。`_population.composite_satisfac
 维度定义、数据驱动权重契约、合成公式、溯源 API、事件 payload、PKEC v30 列布局与
 性能验收数据是[综合满意度运行时](./satisfaction-runtime.md)的职责，本文件不重复。
 
-## 2026-08-17 格承载力三项混合 K（PKEC v36）
+## 2026-08 真实物流承载力（PKEC v45）
 
-马尔萨斯–博塞鲁普骨架保留：`K_geo` 是地力与已解锁食物建筑产量的天花板，不随人口自动上涨；
-`surplus` 是已解锁物资族（17 个 Need + 4 个生产者族）的加权覆盖，未 bindable 的族不进分母；
-`sat_cell` 是阶层人口加权、经 `satisfaction_birth_reference_q16` 重标定的综合满意度。
-`K_eff = K_geo × EMA(mix(surplus)×mix(sat_cell))`。物流斯蒂生育在 `soft_start` 以下为 1，
-贴顶落到更替。cohort 只乘 sat 残差。`support_ema` 进 PKEC v36 起的 cell 记录与 `state_hash`；
-`K_geo`/各族 cover 只出现在 Inspector 人口页。公式见
-[定点账本](./economy-fixed-point-ledger-formulas.md)。
+承载力只读取上一完整经济周期已结算的食物流量，不扫描自然资源或寻找最佳建筑。
+本地净食物当量为实际产出减生产投入；有效供给再加已送达进口并减已发出出口。
+`local_food_capacity_persons = local_net / days / per_person_food`，
+`effective_food_capacity_persons = effective_supply / days / per_person_food`。
+家庭购买是所有权转移，不重复计入产出；加工链按输出当量减输入当量。
+`food_access_q16` 仅记录家庭实际购买与生产者自留消费，生育仍由综合满意度和有效供养负载共同决定。
+首个尚无完整物流周期时不施加密度约束。查询字段见 `carrying_schema_version=2`。
 
 Economy configure 会把职业的稳定 `profession_class_id` 独立 intern 为政治阶层
 slot，不复用承载力权重。在 `aggregate_publish` 的 committed swap 之后，
@@ -205,9 +205,9 @@ sequence、settled day、稳定结果码及实际两类物资/现金支出；它
 - C++ 按建筑数、周期天数和计划利用率确定性重建稀疏生产投入硬预留。多投入配方先按同一可执行比例缩放，只预留能组成完整配方的数量；缺少任一互补投入时不会继续锁住其他投入。若非生存产出会消耗生存食物，则整套配方让家庭生存清算优先，只能使用清算后的余量。同一 CSR 遍历同时写入 `construction_material_reserve`：已安装建筑的作者维护日量（空配方则按部门地平线摊首选建造货）乘周期天数，并与一座建造 BOM 取 max。暂停组仍贡献维护预留。商人目标库存覆盖 `max(投入预留, 维护/建造预留)`；居民与国内贸易只能消费/导出 `stock - max(投入预留, 维护预留)`。业主在销售与工资之后按配方向商人付费购买维护货，买不起只记 unmet。`production_input_reserved`、`construction_material_reserved`、`maintenance_goods_consumed` / `maintenance_unmet` 及 selected-cell/CSV 逐商品列用于诊断。两份预留都是可重建缓存，不进入 PKEC。
 - 正常商人现金不足时，生产者托底只补足正常目标库存的剩余缺口，不再把全部可储存余货无条件入库；超过目标的余量进入真实 discard sink。被托底的数量仍获得冻结本地零售价 20% 的显式发行货币。`production_output_supported` 与 `producer_support_money_issued` 分开报告，货币审计把后者计入 `_explicit_money_mint`。`cycle_flow` 产出不能跨周期存货，但在边界清零前会先获得同周期低价采购/托底机会，剩余瞬态库存再计入 `cycle_flow_discarded`。
 - 生成测试经济不再使用职业固定人均资金：每个 cohort 获得按当前气候、族群和默认价格计算的 30 日 `survival_household` 生存金；业主追加两周期最低有效输入成本；商人追加本地产出目标库存资金。
-- PKEC v44 是当前 writer，reader 接受 v44、v43、v42 与 v41：保留 FamilyStore、NotablePersonStore、cohort membership、
+- PKEC v45 是当前 writer，reader 接受 v45、v44、v43、v42 与 v41：保留 FamilyStore、NotablePersonStore、cohort membership、
   building ownership、Economy Modifier domain、冻结环境、财政与出生余数、家族特性、
-  per-cell influence、运河工程、格承载力 `support_ema`、七条环境 lane 与开拓队 cargo/kit/缺货 CSR。
+  per-cell influence、运河工程、上一期真实食物流量承载力、七条环境 lane 与开拓队 cargo/kit/缺货 CSR。
   PREPARING 允许 payload/cargo 为 0。reader 不做隐式迁移，v40 及更早明确拒绝。
 - 显赫家族不拆分建筑组或创建第二钱包；成员/所有权采用稀疏边，业主岗位必须由本格同职业家族
   成员实际填充。完整契约见[显赫家族原生运行时](./notable-family-runtime.md)。
@@ -730,7 +730,7 @@ Inspector 诊断 lane，计入 runtime memory，但不进入 state hash 或 PKEC
 出生率折减先把 composite 按 `satisfaction_birth_reference_q16` 重标定，再把格级 sat
 混进 `K_eff`；cohort 只乘残差，避免把心情乘两次。未解锁物资族不进 surplus 分母。
 贴上 `K_eff` 后出生落到更替。饥饿死亡仍只读 `SAT_DIM_SUBSISTENCE`。
-出生贡献按地块与民族聚合，Q32 小数余数跨周期累计，并由 PKEC v44 持久化；不新增调度阶段。
+出生贡献按地块与民族聚合，Q32 小数余数跨周期累计，并由 PKEC v45 持久化；不新增调度阶段。
 
 建筑基础工资不再预付；生产出售后用 owner 销售后资金统一分配。最终欠薪继续记录在
 `wage_suspended`/unpaid 报告中并取消奖金，但该标记不代表下一轮自动停产。
@@ -739,7 +739,7 @@ Inspector 诊断 lane，计入 runtime memory，但不进入 state hash 或 PKEC
 服务。前两项在基础设施/服务经济落地前作为明确的无家庭需求资本品保留；scientific_instruments
 仍有精密工具生产下游。允许的跨 need 复用仅为 refined_fuel、computers、beverages 和 fur，
 Inspector 会聚合显示。需求/计划变更只改变 catalog hash；旧 hash 的 PKEC 按现有
-`save_catalog_scale_or_capacity_mismatch` 路径拒绝；byte schema 现为 PKEC v44（v43/v42/v41 可读），v43 旧存档按 `startup_demand_runtime_mode=OFF` 恢复，cadence 为锁定 N/P/I。
+`save_catalog_scale_or_capacity_mismatch` 路径拒绝；byte schema 现为 PKEC v45（v44/v43/v42/v41 可读），旧存档的食物流量标记为无效并在首个新周期重建，cadence 为锁定 N/P/I。
 生成目录遵守 16 needs、每 need 8 variants、每 variant 4 components 的运行时合同；本轮加入
 野味后实际最大 variant 数为 5，最大 component 数仍为 2。聚焦处理量以当前 schema 测试输出为准。
 

@@ -42,6 +42,57 @@ int32_t lut_or_one(const std::vector<int32_t> &lut, int32_t index) {
 
 } // namespace
 
+void NativeEconomyRuntime::accumulate_trade_food_flow(
+        int32_t cell, int32_t good, int64_t import_qty,
+        int64_t export_qty, int64_t &sat) {
+    if (cell < 0 || cell >= _cell_count || good < 0 ||
+        good >= static_cast<int32_t>(_good_food_equivalent_q16.size())) return;
+    const int64_t coefficient = _good_food_equivalent_q16[
+        static_cast<size_t>(good)];
+    if (coefficient <= 0) return;
+    ++_food_trade_events;
+    const size_t lane = static_cast<size_t>(cell);
+    if (lane >= _cell_food_import_eq_period.size()) return;
+    _cell_food_import_eq_period[lane] = saturating_add(
+        _cell_food_import_eq_period[lane],
+        mul_div_sat(std::max<int64_t>(0, import_qty), coefficient, Q16_ONE, sat), sat);
+    _cell_food_export_eq_period[lane] = saturating_add(
+        _cell_food_export_eq_period[lane],
+        mul_div_sat(std::max<int64_t>(0, export_qty), coefficient, Q16_ONE, sat), sat);
+}
+
+void NativeEconomyRuntime::commit_food_flow_snapshot() {
+    const size_t cells = static_cast<size_t>(std::max(0, _cell_count));
+    if (_cell_food_output_eq_period.size() != cells ||
+        _cell_food_input_eq_period.size() != cells ||
+        _cell_food_import_eq_period.size() != cells ||
+        _cell_food_export_eq_period.size() != cells ||
+        _cell_food_access_eq_period.size() != cells) return;
+    _cell_food_output_eq_previous.swap(_cell_food_output_eq_period);
+    _cell_food_input_eq_previous.swap(_cell_food_input_eq_period);
+    _cell_food_import_eq_previous.swap(_cell_food_import_eq_period);
+    _cell_food_export_eq_previous.swap(_cell_food_export_eq_period);
+    _cell_food_access_eq_previous.swap(_cell_food_access_eq_period);
+    if (_cell_food_flow_valid.size() != cells)
+        _cell_food_flow_valid.resize(cells, 0);
+    std::fill(_cell_food_flow_valid.begin(), _cell_food_flow_valid.end(), 1);
+    _food_flow_previous_period_days = std::max(1, _epoch_days);
+    const int64_t denominator = saturating_mul(
+        _food_flow_previous_period_days,
+        std::max<int64_t>(1, _carrying_survival_food_per_person),
+        _saturation_count);
+    for (size_t cell = 0; cell < cells; ++cell) {
+        const int64_t local = std::max<int64_t>(0,
+            _cell_food_output_eq_previous[cell] -
+            _cell_food_input_eq_previous[cell]);
+        const int64_t effective = std::max<int64_t>(0, local +
+            _cell_food_import_eq_previous[cell] -
+            _cell_food_export_eq_previous[cell]);
+        _cell_carrying_k_geo[cell] = denominator > 0 ? local / denominator : 0;
+        _cell_carrying_k_eff[cell] = denominator > 0 ? effective / denominator : 0;
+    }
+}
+
 bool NativeEconomyRuntime::compile_carrying_catalog(const Dictionary &catalog,
                                                     std::string &error) {
     _carrying_family_ids = packed_strings(catalog, "carrying_family_ids");
@@ -223,23 +274,26 @@ bool NativeEconomyRuntime::compile_carrying_catalog(const Dictionary &catalog,
         _carrying_family_weight.assign(
             kDefaultFamilyWeight, kDefaultFamilyWeight + CARRYING_FAMILY_COUNT);
     }
-    _carrying_survival_food_per_person = 1;
+    // Food-equivalent coefficients normalize one authored survival need to
+    // Q16_ONE, so the denominator is the number of food needs, not raw goods
+    // quantities (which may differ between grain, bread, or substitutes).
+    _carrying_survival_food_per_person = 0;
     if (_living_cost_base_plan_id >= 0 &&
         _living_cost_base_plan_id < static_cast<int32_t>(_plans.size())) {
-        int64_t food_need = 0;
+        int64_t food_need_count = 0;
         int64_t sat = 0;
         const Plan &plan = _plans[static_cast<size_t>(_living_cost_base_plan_id)];
         for (int32_t n = 0; n < plan.need_count; ++n) {
             const Need &need = _needs[static_cast<size_t>(plan.need_begin + n)];
             if (need.stable_id >= 0 &&
-                static_cast<size_t>(need.stable_id) < _need_carrying_family.size() &&
-                _need_carrying_family[static_cast<size_t>(need.stable_id)] >= 0 &&
-                _need_carrying_family[static_cast<size_t>(need.stable_id)] < 3) {
-                food_need = saturating_add(food_need, std::max<int64_t>(
-                    0, need.base_qty_per_person), sat);
+                static_cast<size_t>(need.stable_id) < _survival_food_need_mask.size() &&
+                _survival_food_need_mask[static_cast<size_t>(need.stable_id)] != 0) {
+                ++food_need_count;
             }
         }
-        if (food_need > 0) _carrying_survival_food_per_person = food_need;
+        if (food_need_count > 0)
+            _carrying_survival_food_per_person = saturating_mul(
+                food_need_count, Q16_ONE, sat);
     }
     return true;
 }
@@ -520,39 +574,52 @@ void NativeEconomyRuntime::append_carrying_capacity_fields(
         Dictionary &out, int32_t cell_idx) const {
     if (cell_idx < 0 || cell_idx >= _cell_count) return;
     const size_t cell = static_cast<size_t>(cell_idx);
+    const int64_t flow_days = std::max<int32_t>(1, _food_flow_previous_period_days);
+    const bool valid = cell < _cell_food_flow_valid.size() &&
+        _cell_food_flow_valid[cell] != 0;
+    const int64_t local_net = valid && cell < _cell_food_output_eq_previous.size()
+        ? std::max<int64_t>(0, _cell_food_output_eq_previous[cell] -
+            _cell_food_input_eq_previous[cell]) : 0;
+    const int64_t effective_supply = valid && cell < _cell_food_import_eq_previous.size()
+        ? std::max<int64_t>(0, local_net + _cell_food_import_eq_previous[cell] -
+            _cell_food_export_eq_previous[cell]) : 0;
+    const int64_t local_daily = local_net / flow_days;
+    const int64_t effective_daily = effective_supply / flow_days;
+    int64_t sat = 0;
+    int64_t population = 0;
+    _population.for_each_in_cell(cell_idx, [&](int32_t slot) {
+        population = saturating_add(population,
+            std::max<int64_t>(0, _population.population[slot]),
+            sat);
+    });
+    int64_t access_q16 = Q16_ONE;
+    if (valid && cell < _cell_food_access_eq_previous.size() && population > 0) {
+        const int64_t denominator = saturating_mul(
+            saturating_mul(population, flow_days,
+                sat),
+            std::max<int64_t>(1, _carrying_survival_food_per_person),
+            sat);
+        access_q16 = denominator > 0 ? std::clamp<int64_t>(mul_div_sat(
+            _cell_food_access_eq_previous[cell], Q16_ONE, denominator,
+            sat), 0, Q16_ONE) : 0;
+    }
+    out["carrying_schema_version"] = 2;
+    out["local_food_output_eq_per_day"] = local_daily;
+    out["effective_food_supply_eq_per_day"] = effective_daily;
+    out["local_food_capacity_persons"] = cell < _cell_carrying_k_geo.size()
+        ? _cell_carrying_k_geo[cell] : 0;
+    out["effective_food_capacity_persons"] = cell < _cell_carrying_k_eff.size()
+        ? _cell_carrying_k_eff[cell] : 0;
+    out["food_access_q16"] = access_q16;
+    out["population_load_q16"] = cell < _cell_carrying_k_eff.size() &&
+            _cell_carrying_k_eff[cell] > 0
+        ? std::clamp<int64_t>(mul_div_sat(population, Q16_ONE,
+            _cell_carrying_k_eff[cell], sat),
+            0, Q16_ONE * 4) : (valid && population > 0 ? Q16_ONE * 4 : 0);
     out["carrying_k_geo"] = cell < _cell_carrying_k_geo.size()
         ? _cell_carrying_k_geo[cell] : 0;
     out["carrying_k_eff"] = cell < _cell_carrying_k_eff.size()
         ? _cell_carrying_k_eff[cell] : 0;
-    out["carrying_surplus_q16"] = cell < _cell_carrying_surplus_q16.size()
-        ? _cell_carrying_surplus_q16[cell] : Q16_ONE;
-    out["carrying_sat_q16"] = cell < _cell_carrying_sat_q16.size()
-        ? _cell_carrying_sat_q16[cell] : Q16_ONE;
-    out["carrying_support_ema_q16"] = cell < _cell_support_ema_q16.size()
-        ? _cell_support_ema_q16[cell] : Q16_ONE;
-    PackedStringArray family_ids;
-    PackedInt32Array family_surplus;
-    PackedByteArray family_bindable;
-    PackedInt32Array family_weight;
-    family_ids.resize(CARRYING_FAMILY_COUNT);
-    family_surplus.resize(CARRYING_FAMILY_COUNT);
-    family_bindable.resize(CARRYING_FAMILY_COUNT);
-    family_weight.resize(CARRYING_FAMILY_COUNT);
-    const size_t base = cell * CARRYING_FAMILY_COUNT;
-    for (int32_t family = 0; family < CARRYING_FAMILY_COUNT; ++family) {
-        family_ids[family] = String(kCarryingFamilyIds[family]);
-        family_weight[family] = family < static_cast<int32_t>(_carrying_family_weight.size())
-            ? _carrying_family_weight[static_cast<size_t>(family)] : 1;
-        const size_t lane = base + static_cast<size_t>(family);
-        family_surplus[family] = lane < _cell_carrying_family_surplus_q16.size()
-            ? _cell_carrying_family_surplus_q16[lane] : Q16_ONE;
-        family_bindable[family] = lane < _cell_carrying_family_bindable.size()
-            ? _cell_carrying_family_bindable[lane] : 0;
-    }
-    out["carrying_family_ids"] = family_ids;
-    out["carrying_family_surplus_q16"] = family_surplus;
-    out["carrying_family_bindable"] = family_bindable;
-    out["carrying_family_weight"] = family_weight;
 }
 
 } // namespace pk

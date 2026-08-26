@@ -27,13 +27,15 @@
 
 `ResearchSignalCatalog` is static content, not another runtime. It compiles stable signal IDs for
 Bio, resource, landform, weather and breakthrough observations. `TechnologyCatalog` compiles
-technology reveal conditions and the unified research condition (hard prerequisites, era entry,
-milestone candidates, and alternative authored routes) to postfix dense IR and
+technology reveal conditions and the unified research condition (hard prerequisites,
+milestone candidates, alternative authored routes, and previous-era entry only on
+era-milestone nodes) to postfix dense IR and
 includes that IR, the signal catalog, unique Effect recipe identity and explicit Modifier term IR in
 the technology catalog identity. `EconomyCatalog` adds the complete content-binding summary and
 Trigger definition identity before native country configuration. Research eligibility is evaluated as:
-the compiled unified research condition (era entry, hard prerequisites or milestone candidate
-threshold, and any authored alternative route). Player, AI and low-level enqueue commands share this native
+the compiled unified research condition (hard prerequisites or milestone candidate
+threshold, any authored alternative route, and previous-era milestone **only for
+era-milestone nodes**). Player, AI and low-level enqueue commands share this native
 check.
 
 The active reveal subset is `TECH_COMPLETED`, `SIGNAL_PRESENT`, `SIGNAL_COUNT`, `ALL_OF`, `ANY_OF`,
@@ -69,8 +71,9 @@ Inspector 认矿与科技树揭示分开：可见格（含无主地）只按观�
 揭示辨识节点。块茎保存、野生香料采集、野生割胶和手制陶器也先要求本对象辨识（陶器还
 要求黏土调制）。
 亚麻/香料/橡胶辨识不再挂在后续处理上；铁矿与露头煤辨识以农耕时代门为硬前置，不再要求
-先炼铁或先拣铁。非石器专业科技硬前置已经没有数量槽位或入度上限；时代开放由独立的
-`entry_milestone_id` 判断，不再注入节点硬前置。块炼铁、地表用煤等复合节点可以同时保留
+先炼铁或先拣铁。非石器专业科技硬前置已经没有数量槽位或入度上限；时代入口只作为**时代里程碑节点**的研究门槛
+（`entry_milestone_id` / `technology_entry_milestone_indices`），不再注入普通节点的研究 IR。
+已揭示且硬前置与路线完成的下一时代科技可以在不完成上一时代里程碑的情况下入队。块炼铁、地表用煤等复合节点可以同时保留
 材料、燃料、炉温、测量与组织基础。棉花园圃以定居知识和野生棉铃采集为硬前置，不再要求
 先完成香料栽培。同泳道按 layout 串起来的无关对象也已拆开：棉花去籽挂棉铃采集，乳胶烟熏
 挂橡胶加工，乳品/鞣革/毛用畜牧/屠宰并行挂畜群管理，玻璃挂窑烧，垄作块茎挂块茎保存，
@@ -101,10 +104,10 @@ idempotency key，不会重复发现。
 处理节点，以及 664 个可研究节点，覆盖 11 个时代和农业、工程、科学、社会四领域。不存在全球
 统一开局科技。各时代里程碑候选数依次为 `8/9/10/11/12/13/14/15/16/17/18`，达标数依次为
 `4/4/4/4/5/5/5/6/6/7/7`；候选分组只用于 UI。里程碑不直接解锁 Good、Resource、建筑或
-生产方式，只执行时代奖励 Effect 并开放下一时代。
+生产方式，只执行时代奖励 Effect，并作为下一时代里程碑的研究门槛。普通节点的研发不再被该门槛挡住。
 
-拓扑由四条公共主干与 24 个动态主题家族组成，不再要求每个家族每时代占一个槽位。时代门槛、
-揭示条件、核心知识硬边、时代入口、里程碑候选阈值与替代路线统一编译为一条研究条件 IR；里程碑不再成为普通节点硬边。实践、接触、资源
+拓扑由四条公共主干与 24 个动态主题家族组成，不再要求每个家族每时代占一个槽位。揭示条件、核心知识硬边、
+里程碑候选阈值与替代路线统一编译为一条研究条件 IR；上一时代里程碑只编译进时代里程碑节点，不再成为普通节点的研究门槛。实践、接触、资源
 和地理证据负责揭示问题，路线内的 `ANY_OF` / `AT_LEAST` 负责不同解决能力，不能冒充核心知识。
 当前目录有 2321 条硬边、648 条研究路线包、670 条替代可视边、19 条应用交汇边、7 条显式分支边和
 143 条里程碑候选边；没有

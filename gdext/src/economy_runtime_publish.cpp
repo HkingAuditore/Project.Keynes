@@ -404,6 +404,12 @@ bool NativeEconomyRuntime::publish_epoch_slice(
         const size_t start = _publish_cursor;
         const size_t end = std::min(_trade_flows.cells.size(), start + budget);
         for (; _publish_cursor < end; ++_publish_cursor) {
+            accumulate_trade_food_flow(
+                _trade_flows.cells[_publish_cursor],
+                _trade_flows.goods[_publish_cursor],
+                _trade_flows.period_import[_publish_cursor],
+                _trade_flows.period_export[_publish_cursor],
+                _publish_valuation_sat);
             const int64_t observed_import = _trade_flows.period_import[_publish_cursor] /
                 std::max(1, _epoch_days);
             const int64_t observed_export = _trade_flows.period_export[_publish_cursor] /
@@ -565,6 +571,7 @@ bool NativeEconomyRuntime::publish_epoch_slice(
         publish_social_pressure_facts();
         publish_technology_practice_facts();
         publish_country_development_facts();
+        commit_food_flow_snapshot();
         _rolling_processed_cells = static_cast<int32_t>(_epoch_settlement_cells.size());
         _rolling_deferred_cells = std::max(
             0, _rolling_due_cells - _rolling_processed_cells);

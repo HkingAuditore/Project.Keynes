@@ -31,7 +31,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         error = "save_chunk_header_invalid";
         return false;
     }
-    if (schema != SCHEMA_VERSION && schema != 43 && schema != 42 && schema != 41) {
+    if (schema != SCHEMA_VERSION && schema != 44 && schema != 43 &&
+        schema != 42 && schema != 41) {
         error = schema <= 31 ? "economy_save_v31_or_earlier_unsupported" :
             (schema == 32 ? "economy_save_v32_or_earlier_unsupported" :
             "economy_save_pre_family_effect_schema_unsupported");
@@ -659,6 +660,18 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         _epoch_cell_development_q16.assign(_cell_count, 0);
         _cell_social_pressure_level.assign(_cell_count, 0);
         _cell_support_ema_q16.assign(_cell_count, Q16_ONE);
+        _cell_food_output_eq_period.assign(_cell_count, 0);
+        _cell_food_input_eq_period.assign(_cell_count, 0);
+        _cell_food_import_eq_period.assign(_cell_count, 0);
+        _cell_food_export_eq_period.assign(_cell_count, 0);
+        _cell_food_access_eq_period.assign(_cell_count, 0);
+        _cell_food_output_eq_previous.assign(_cell_count, 0);
+        _cell_food_input_eq_previous.assign(_cell_count, 0);
+        _cell_food_import_eq_previous.assign(_cell_count, 0);
+        _cell_food_export_eq_previous.assign(_cell_count, 0);
+        _cell_food_access_eq_previous.assign(_cell_count, 0);
+        _cell_food_flow_valid.assign(_cell_count, 0);
+        _food_flow_previous_period_days = 0;
         _cell_carrying_k_geo.assign(_cell_count, _carrying_k_habitat_ref);
         _cell_carrying_k_eff.assign(_cell_count, _carrying_k_habitat_ref);
         _cell_carrying_surplus_q16.assign(_cell_count, Q16_ONE);
@@ -984,6 +997,28 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                     error = "save_cell_support_ema_invalid";
                     return false;
                 }
+            }
+            if (schema >= 45) {
+                int32_t saved_food_days = 0;
+                if (!read_le(bytes, cursor, _cell_food_flow_valid[cell]) ||
+                    !read_le(bytes, cursor, _cell_food_output_eq_previous[cell]) ||
+                    !read_le(bytes, cursor, _cell_food_input_eq_previous[cell]) ||
+                    !read_le(bytes, cursor, _cell_food_import_eq_previous[cell]) ||
+                    !read_le(bytes, cursor, _cell_food_export_eq_previous[cell]) ||
+                    !read_le(bytes, cursor, _cell_food_access_eq_previous[cell]) ||
+                    !read_le(bytes, cursor, saved_food_days) ||
+                    _cell_food_flow_valid[cell] > 1 ||
+                    _cell_food_output_eq_previous[cell] < 0 ||
+                    _cell_food_input_eq_previous[cell] < 0 ||
+                    _cell_food_import_eq_previous[cell] < 0 ||
+                    _cell_food_export_eq_previous[cell] < 0 ||
+                    _cell_food_access_eq_previous[cell] < 0 ||
+                    saved_food_days < 0) {
+                    error = "save_food_flow_payload_invalid";
+                    return false;
+                }
+                _food_flow_previous_period_days = std::max(
+                    _food_flow_previous_period_days, saved_food_days);
             }
             _market.cell_to_market[cell] = market;
             ++_restore.restored_cells;

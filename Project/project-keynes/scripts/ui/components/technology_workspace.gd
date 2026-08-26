@@ -977,7 +977,7 @@ func _condition_items(index: int, states: PackedInt32Array) -> Array:
 	var definition: Dictionary = _definitions[index]
 	var items: Array = []
 	var entry_id := String(definition.get("era_entry_milestone_id", ""))
-	if not entry_id.is_empty():
+	if not entry_id.is_empty() and bool(definition.get("is_milestone", false)):
 		var entry_index := int(_technology_indices.get(entry_id, -1))
 		var entry_met := entry_index >= 0 and entry_index < states.size() \
 			and int(states[entry_index]) >= 4

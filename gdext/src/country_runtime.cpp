@@ -3052,6 +3052,8 @@ bool NativeCountryRuntime::era_entry_met(const std::vector<uint64_t> &completed,
     if (slot < 0 || technology < 0 ||
         technology >= static_cast<int32_t>(_technology_entry_milestone_indices.size())) return false;
     const int32_t entry = _technology_entry_milestone_indices[static_cast<size_t>(technology)];
+    // -1: ordinary node, or the first-era milestone. Previous-era completion is
+    // a research gate only for later-era milestone technologies.
     if (entry < 0) return true;
     const size_t base = static_cast<size_t>(slot) * _technology_words;
     const size_t word = base + static_cast<size_t>(entry / 64);

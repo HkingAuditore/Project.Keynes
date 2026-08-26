@@ -13,6 +13,7 @@ thread_local std::vector<int32_t> *
 
 void NativeEconomyRuntime::MarketResult::reset() {
     ok = true;
+    market = -1;
     error.clear();
     processed_cohorts = 0;
     processed_rules = 0;
@@ -25,6 +26,9 @@ void NativeEconomyRuntime::MarketResult::reset() {
     cycle_flow_discarded = 0;
     retained_output_consumed = 0;
     retained_output_discarded = 0;
+    food_access_eq = 0;
+    food_access_events = 0;
+    food_access_by_cell.clear();
     retained_consumed_by_good.clear();
     building_in_kind_credits.clear();
     owner_working_capital_reserved = 0;
@@ -71,6 +75,7 @@ void NativeEconomyRuntime::MarketResult::reset() {
 
 int64_t NativeEconomyRuntime::MarketResult::capacity_bytes() const {
     return static_cast<int64_t>(
+        food_access_by_cell.capacity() * sizeof(FoodAccessEntry) +
         retained_consumed_by_good.capacity() * sizeof(int64_t) +
         building_in_kind_credits.capacity() * sizeof(BuildingInKindCredit) +
         population_changed_cells.capacity() * sizeof(int32_t) +
@@ -86,6 +91,7 @@ int64_t NativeEconomyRuntime::MarketResult::capacity_bytes() const {
 
 void NativeEconomyRuntime::ProductionResult::reset() {
     ok = true;
+    cell = -1;
     error.clear();
     saturation_count = 0;
     processed_building_groups = 0;
@@ -130,6 +136,10 @@ void NativeEconomyRuntime::ProductionResult::reset() {
     cycle_flow_produced = 0;
     cycle_flow_consumed = 0;
     cycle_flow_discarded = 0;
+    food_output_eq = 0;
+    food_input_eq = 0;
+    food_output_events = 0;
+    food_input_events = 0;
     building_wages_paid = 0;
     building_wages_unpaid = 0;
     building_base_wages_paid = 0;

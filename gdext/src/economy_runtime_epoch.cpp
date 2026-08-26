@@ -30,6 +30,11 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _person_need_edges_processed = 0;
     _person_commit_cursor = 0;
     _person_commit_phase = 0;
+    _food_output_events = 0;
+    _food_input_events = 0;
+    _food_trade_events = 0;
+    _food_access_events = 0;
+    _carrying_old_resource_scan_steps = 0;
     _person_epoch_needs.clear();
     _person_opening_cash_claim = _persons.cash_claim;
     for (int32_t i = 0; i < static_cast<int32_t>(_persons.active.size()); ++i) {
@@ -47,6 +52,16 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _epoch_producer_merchant_sold_current.clear();
     _epoch_producer_discarded_current.clear();
     _epoch_nonhousehold_withdrawals.clear();
+    std::fill(_cell_food_output_eq_period.begin(),
+              _cell_food_output_eq_period.end(), 0);
+    std::fill(_cell_food_input_eq_period.begin(),
+              _cell_food_input_eq_period.end(), 0);
+    std::fill(_cell_food_import_eq_period.begin(),
+              _cell_food_import_eq_period.end(), 0);
+    std::fill(_cell_food_export_eq_period.begin(),
+              _cell_food_export_eq_period.end(), 0);
+    std::fill(_cell_food_access_eq_period.begin(),
+              _cell_food_access_eq_period.end(), 0);
     _epoch_cost_anchor_price.clear();
     _epoch_research_good_id = -1;
     _epoch_research_demand_by_cell.clear();

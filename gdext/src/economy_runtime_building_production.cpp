@@ -318,6 +318,8 @@ bool NativeEconomyRuntime::run_building_production_cell(
     int64_t &_building_resource_generated = result.building_resource_generated;
     int64_t &_building_resource_consumed = result.building_resource_consumed;
     int64_t &_production_inputs_consumed = result.production_inputs_consumed;
+    int64_t &_food_output_eq = result.food_output_eq;
+    int64_t &_food_input_eq = result.food_input_eq;
     int64_t &_maintenance_goods_consumed = result.maintenance_goods_consumed;
     int64_t &_maintenance_unmet = result.maintenance_unmet;
     int64_t &_maintenance_unpaid_value = result.maintenance_unpaid_value;
@@ -726,8 +728,6 @@ bool NativeEconomyRuntime::run_building_production_cell(
         ? _market_signals.cell_offsets[cell + 1] : 0;
     const size_t cell_signal_count = static_cast<size_t>(
         std::max(0, cell_signal_end - cell_signal_begin));
-    thread_local std::vector<int64_t> retained_by_signal;
-    retained_by_signal.assign(cell_signal_count, 0);
     auto physical_input_quantity = [&](int64_t effective,
                                        const InputCandidate &candidate) -> int64_t {
         int64_t physical = mul_div_sat(
@@ -1350,6 +1350,17 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 group.last_input = saturating_add(group.last_input, qty, _saturation_count);
                 _production_inputs_consumed = saturating_add(
                     _production_inputs_consumed, qty, _saturation_count);
+                if (candidate.good_id >= 0 && candidate.good_id <
+                        static_cast<int32_t>(_good_food_equivalent_q16.size())) {
+                    const int64_t coefficient = _good_food_equivalent_q16[
+                        static_cast<size_t>(candidate.good_id)];
+                    if (coefficient > 0) {
+                        ++result.food_input_events;
+                        _food_input_eq = saturating_add(_food_input_eq,
+                            mul_div_sat(qty, coefficient, Q16_ONE,
+                                _saturation_count), _saturation_count);
+                    }
+                }
                 if (_good_storage_modes[candidate.good_id] == 1) {
                     _cycle_flow_consumed = saturating_add(
                         _cycle_flow_consumed, qty, _saturation_count);
@@ -1394,6 +1405,17 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     offers.push_back({item.good_id, owner_slot, g, i, group.type_id,
                         qty, 0, qty});
                     queue_bio_introduce_from_good(cell, item.good_id);
+                    if (item.good_id >= 0 && item.good_id <
+                            static_cast<int32_t>(_good_food_equivalent_q16.size())) {
+                        const int64_t coefficient = _good_food_equivalent_q16[
+                            static_cast<size_t>(item.good_id)];
+                        if (coefficient > 0) {
+                            ++result.food_output_events;
+                            _food_output_eq = saturating_add(_food_output_eq,
+                                mul_div_sat(qty, coefficient, Q16_ONE,
+                                    _saturation_count), _saturation_count);
+                        }
+                    }
                 }
                 group.last_output = saturating_add(
                     group.last_output, qty, _saturation_count);
@@ -1480,12 +1502,6 @@ bool NativeEconomyRuntime::run_building_production_cell(
             if (offer.retained > 0) {
                 _owner_retained_outputs.push_back(
                     {offer.owner_slot, offer.good, offer.group, offer.retained});
-                const int32_t signal = market_signal_index(cell, offer.good);
-                if (signal >= cell_signal_begin && signal < cell_signal_end) {
-                    const size_t local_signal = static_cast<size_t>(signal - cell_signal_begin);
-                    retained_by_signal[local_signal] = saturating_add(
-                        retained_by_signal[local_signal], offer.retained, _saturation_count);
-                }
             }
             if (_good_monetary_issue_values[offer.good] <= 0 && offer.sellable > 0) {
                 sellable_by_good[offer.good] = saturating_add(
@@ -2429,18 +2445,6 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 _unfunded_business_demand, std::max<int64_t>(0, planned - funded),
                 _saturation_count);
         }
-        for (int32_t i = 0; i < type.output_count; ++i) {
-            const GoodAmount &item = _building_outputs[type.output_begin + i];
-            const int64_t qty = mul_div_sat(saturating_mul(
-                building_days, item.quantity, _saturation_count),
-                group.last_capacity_q16, Q16_ONE, _saturation_count);
-            const int32_t output_signal = market_signal_index(cell, item.good_id);
-            if (output_signal >= cell_signal_begin && output_signal < cell_signal_end) {
-                const size_t local_signal = static_cast<size_t>(output_signal - cell_signal_begin);
-                supply_observed[local_signal] = saturating_add(
-                    supply_observed[local_signal], qty, _saturation_count);
-            }
-        }
     }
     for (const Offer &sale : accepted_anchor_sales) {
         if (sale.merchant_sold <= 0 || sale.good < 0 ||
@@ -2559,8 +2563,10 @@ bool NativeEconomyRuntime::run_building_production_cell(
         for (int32_t signal = cell_signal_begin; signal < cell_signal_end; ++signal) {
             const size_t local_signal = static_cast<size_t>(signal - cell_signal_begin);
             const int32_t good = _market_signals.good_ids[signal];
-            supply_observed[local_signal] = std::max<int64_t>(
-                0, supply_observed[local_signal] - retained_by_signal[local_signal]);
+            supply_observed[local_signal] = signal >= 0 && signal <
+                    static_cast<int32_t>(_epoch_producer_sellable_current.size())
+                ? std::max<int64_t>(0,
+                    _epoch_producer_sellable_current[signal]) : 0;
             const int64_t desired_daily = signal < static_cast<int32_t>(
                     _epoch_desired_business_demand.size())
                 ? _epoch_desired_business_demand[signal] /
@@ -2780,6 +2786,19 @@ void NativeEconomyRuntime::merge_building_production_result(ProductionResult &re
     merge(_cycle_flow_produced, result.cycle_flow_produced);
     merge(_cycle_flow_consumed, result.cycle_flow_consumed);
     merge(_cycle_flow_discarded, result.cycle_flow_discarded);
+    merge(_food_output_events, result.food_output_events);
+    merge(_food_input_events, result.food_input_events);
+    if (result.cell >= 0 && result.cell < _cell_count) {
+        const size_t cell = static_cast<size_t>(result.cell);
+        if (cell < _cell_food_output_eq_period.size())
+            _cell_food_output_eq_period[cell] = saturating_add(
+                _cell_food_output_eq_period[cell], result.food_output_eq,
+                _saturation_count);
+        if (cell < _cell_food_input_eq_period.size())
+            _cell_food_input_eq_period[cell] = saturating_add(
+                _cell_food_input_eq_period[cell], result.food_input_eq,
+                _saturation_count);
+    }
     merge(_building_wages_paid, result.building_wages_paid);
     merge(_building_wages_unpaid, result.building_wages_unpaid);
     merge(_building_base_wages_paid, result.building_base_wages_paid);

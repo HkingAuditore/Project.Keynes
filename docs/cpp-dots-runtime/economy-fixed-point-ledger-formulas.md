@@ -239,17 +239,15 @@ starvation_deficit = max(0, starvation_satisfaction_threshold - survival_sat)
 
 `survival_sat` 即 `SAT_DIM_SUBSISTENCE`，也是 `needs_satisfaction` 的权威值。
 它**只**参与 `starvation_deficit`；饿死是生理事实，税负、储蓄和聚落发展都不得致死。
-出生率读综合满意度，但格级 sat 进入 `K_eff`，cohort 只乘残差，避免把心情乘两次。
+出生率读取综合满意度；食物可及性只作为诊断，不再对出生率重复乘除。
 未解锁的住房/卫生 need 不进物资族分母，也不另开拥挤死亡：
 
 ```text
-K_geo     = max(K_floor, K_habitat + K_resource)
-surplus   = Σ bindable family_weight × family_cover / Σ bindable family_weight
-sat_cell  = Σ pop × class_weight × rescale(composite) / Σ pop × class_weight
-mix(x, e) = lerp(1, x, e)
-support_ema = EMA(mix(surplus, surplus_elasticity) × mix(sat_cell, sat_elasticity))
-K_eff     = K_geo × support_ema
-load      = P / K_eff
+local_net_food_eq = max(0, food_output_eq - food_input_eq)
+effective_food_eq = max(0, local_net_food_eq + food_import_eq - food_export_eq)
+local_food_capacity_persons = local_net_food_eq / period_days / per_person_food_eq
+effective_food_capacity_persons = effective_food_eq / period_days / per_person_food_eq
+load      = P / max(1, effective_food_capacity_persons)
 fertility_land = 1                          if load ≤ soft_start
                lerp(1, death/birth, t)      otherwise
 cohort_sat_residual = clamp(rescale(cohort) / sat_cell)
@@ -257,8 +255,9 @@ effective_birth_rate_q32 = birth_rate_q32 × fertility_land × city.birth_factor
 expected_births_q32 = population × effective_birth_rate_q32 × epoch_days
 ```
 
-`rescale` 仍按 `satisfaction_birth_reference_q16` 重标定。`K_geo` 用冻结地貌/植被/气候/河湖
-与已解锁食物建筑的最优产量；`support_ema` 进 PKEC v36 与 `state_hash`。
+`rescale` 仍按 `satisfaction_birth_reference_q16` 重标定。上述食物流量来自上一完整周期的实际结算；
+资源储量、地形、气候和建筑加成仅通过真实产出结果生效。家庭购买属于所有权转移，不得再次加到本地产出；
+加工链按输出减投入计量。上一期流量快照进入 PKEC v45 与 `state_hash`。
 饥饿死亡公式不变，只读 `SAT_DIM_SUBSISTENCE`。
 
 `composite_sat` 的八维度定义、权重契约与生存闸门见

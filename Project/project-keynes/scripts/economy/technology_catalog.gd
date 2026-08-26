@@ -284,9 +284,14 @@ static func compile_native_catalog() -> Dictionary:
 					"era_id": String(era_row.get("id", ""))}
 			era_entry_milestones.append(int(id_to_index[entry_milestone_id]))
 	var technology_entry_milestones := PackedInt32Array()
-	for technology_era_id in era_ids:
-		technology_entry_milestones.append(
-			era_entry_milestones[int(era_index[String(technology_era_id)])])
+	for technology in range(ids.size()):
+		# Ordinary nodes may already be revealed and researched without the
+		# previous-era milestone. Only the era milestone itself keeps that gate.
+		if (int(flags[technology]) & FLAG_MILESTONE) != 0:
+			technology_entry_milestones.append(
+				era_entry_milestones[int(era_index[String(era_ids[technology])])])
+		else:
+			technology_entry_milestones.append(-1)
 	var signal_ids: PackedStringArray = signal_catalog.get("research_signal_ids", PackedStringArray())
 	var conditions := _compile_research_conditions(technology_rows, ids, signal_ids, era_index,
 			prerequisite_offsets, prerequisites, milestone_offsets, milestone_candidates,
@@ -620,9 +625,10 @@ static func _compile_research_conditions(nodes: Array, technology_ids: PackedStr
 		if routes.size() > 1 and route_type_seen.size() < 2:
 			return {"ok": false, "reason": "technology_research_route_types_not_distinct",
 				"technology_id": technology_id}
-		# The executable research condition is one AND tree.  Route packages are
-		# only one child of that tree; hard prerequisites, milestone candidates,
-		# and the era entry milestone are compiled into the same postfix IR.
+		# The executable research condition is one AND tree. Route packages are
+		# only one child of that tree; hard prerequisites, milestone-candidate
+		# thresholds, and (for milestone nodes only) the previous-era entry
+		# milestone are compiled into the same postfix IR.
 		var route_child_count := routes.size() if not routes.is_empty() else 0
 		var hard_begin := int(prerequisite_offsets[technology])
 		var hard_end := int(prerequisite_offsets[technology + 1])
@@ -877,7 +883,9 @@ static func public_definitions(compiled_catalog: Dictionary = {}) -> Array[Dicti
 			"hard_prerequisite_ids": prerequisites_out,
 			"prerequisite_rationales": PackedStringArray(
 				source.get("prerequisite_rationales", [])),
-			"era_entry_milestone_id": String(source.get("era_entry_milestone_id", "")),
+			"era_entry_milestone_id": (
+				"" if int(compiled.technology_entry_milestone_indices[i]) < 0
+				else String(ids[int(compiled.technology_entry_milestone_indices[i])])),
 			"milestone_candidate_ids": candidates_out,
 			"milestone_required_count": compiled.technology_milestone_required_counts[i],
 			"is_milestone": (int(compiled.technology_flags[i]) & 2) != 0,
