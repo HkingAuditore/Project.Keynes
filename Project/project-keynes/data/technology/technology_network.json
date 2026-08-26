@@ -64053,8 +64053,42 @@
 			"is_starter_eligible": false,
 			"starter_capability_tags": [],
 			"modifier_terms": [],
-			"expected_bindings": [],
-			"content_effects": [],
+			"expected_bindings": [
+				{
+					"kind": 1,
+					"id": "glassware"
+				},
+				{
+					"kind": 2,
+					"id": "glassware_factory"
+				}
+			],
+			"content_effects": [
+				{
+					"kind": "good",
+					"id": "glassware",
+					"binding_kind": 1,
+					"subject": "good.glassware",
+					"attribute": "production_access",
+					"operation": "unlock",
+					"value": 1,
+					"implementation": "GoodProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "玻璃器皿"
+				},
+				{
+					"kind": "building",
+					"id": "glassware_factory",
+					"binding_kind": 2,
+					"subject": "building.glassware_factory",
+					"attribute": "construction_and_production_access",
+					"operation": "unlock",
+					"value": 1,
+					"implementation": "BuildingProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "玻璃器皿工厂"
+				}
+			],
 			"effect_summary": "解锁物资：Glassware Factory；解锁建筑：Glassware Factory；作为必要支撑：Glassware Factory",
 			"opportunity_cost": "terminal production upgrade",
 			"application_target_ids": [],
@@ -64130,8 +64164,42 @@
 			"is_starter_eligible": false,
 			"starter_capability_tags": [],
 			"modifier_terms": [],
-			"expected_bindings": [],
-			"content_effects": [],
+			"expected_bindings": [
+				{
+					"kind": 1,
+					"id": "metal_housewares"
+				},
+				{
+					"kind": 2,
+					"id": "metal_housewares_factory"
+				}
+			],
+			"content_effects": [
+				{
+					"kind": "good",
+					"id": "metal_housewares",
+					"binding_kind": 1,
+					"subject": "good.metal_housewares",
+					"attribute": "production_access",
+					"operation": "unlock",
+					"value": 1,
+					"implementation": "GoodProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "金属家用器皿"
+				},
+				{
+					"kind": "building",
+					"id": "metal_housewares_factory",
+					"binding_kind": 2,
+					"subject": "building.metal_housewares_factory",
+					"attribute": "construction_and_production_access",
+					"operation": "unlock",
+					"value": 1,
+					"implementation": "BuildingProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "金属家用器皿工厂"
+				}
+			],
 			"effect_summary": "解锁物资：Metal Housewares Factory；解锁建筑：Metal Housewares Factory；作为必要支撑：Metal Housewares Factory",
 			"opportunity_cost": "terminal production upgrade",
 			"application_target_ids": [],
@@ -64207,8 +64275,42 @@
 			"is_starter_eligible": false,
 			"starter_capability_tags": [],
 			"modifier_terms": [],
-			"expected_bindings": [],
-			"content_effects": [],
+			"expected_bindings": [
+				{
+					"kind": 1,
+					"id": "leather_goods"
+				},
+				{
+					"kind": 2,
+					"id": "leather_goods_factory"
+				}
+			],
+			"content_effects": [
+				{
+					"kind": "good",
+					"id": "leather_goods",
+					"binding_kind": 1,
+					"subject": "good.leather_goods",
+					"attribute": "production_access",
+					"operation": "unlock",
+					"value": 1,
+					"implementation": "GoodProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "皮革制品"
+				},
+				{
+					"kind": "building",
+					"id": "leather_goods_factory",
+					"binding_kind": 2,
+					"subject": "building.leather_goods_factory",
+					"attribute": "construction_and_production_access",
+					"operation": "unlock",
+					"value": 1,
+					"implementation": "BuildingProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "皮革制品工厂"
+				}
+			],
 			"effect_summary": "解锁物资：Leather Goods Factory；解锁建筑：Leather Goods Factory；作为必要支撑：Leather Goods Factory",
 			"opportunity_cost": "terminal production upgrade",
 			"application_target_ids": [],

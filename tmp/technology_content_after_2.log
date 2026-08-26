@@ -1,0 +1,25 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+SCRIPT ERROR: Assertion failed: authoring binding drift: tech.application.glassware_factory_electrical expected=["2|glassware_factory"] actual=["1|glassware", "2|glassware_factory"]
+   at: _assert_authoring_bindings_exact (res://tests/technology_content_binding_audit_test.gd:476)
+   GDScript backtrace (most recent call first):
+       [0] _assert_authoring_bindings_exact (res://tests/technology_content_binding_audit_test.gd:476)
+       [1] _init (res://tests/technology_content_binding_audit_test.gd:73)
+SCRIPT ERROR: Assertion failed: production closure failed: technology=tech.machine_learning good=advanced_chips route=0
+   at: _assert_goods_unlock_with_runnable_producer (res://tests/technology_content_binding_audit_test.gd:138)
+   GDScript backtrace (most recent call first):
+       [0] _assert_goods_unlock_with_runnable_producer (res://tests/technology_content_binding_audit_test.gd:138)
+       [1] _init (res://tests/technology_content_binding_audit_test.gd:75)
+SCRIPT ERROR: Assertion failed: rubber_tapping_camp missing ALL support tech.composite_tools
+   at: _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:1005)
+   GDScript backtrace (most recent call first):
+       [0] _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:1005)
+       [1] _assert_networked_crop_and_resource_gates (res://tests/technology_content_binding_audit_test.gd:696)
+       [2] _init (res://tests/technology_content_binding_audit_test.gd:91)
+[PASS] technology content bindings cover goods, production methods, and resources
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 275 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

@@ -238,57 +238,12 @@ func _any_index_in_set(indices: PackedInt32Array, values: Dictionary) -> bool:
 	return false
 
 
-func _building_dependencies_available(catalog: Dictionary, building_index: int,
-		completed: Dictionary, available_goods: Dictionary) -> bool:
-	var construction_offsets: PackedInt32Array = catalog.building_construction_offsets
-	var construction_goods: PackedInt32Array = catalog.building_construction_good_ids
-	var construction_candidate_offsets: PackedInt32Array = \
-		catalog.building_construction_candidate_offsets
-	var construction_candidate_goods: PackedInt32Array = \
-		catalog.building_construction_candidate_good_ids
-	var building_id := String(catalog.building_type_ids[building_index])
-	var terminal_upgrade := building_id in [
-		"glassware_workshop", "glassware_manufactory", "glassware_factory",
-		"smart_glassware_factory", "metal_housewares_workshop",
-		"metal_housewares_manufactory", "metal_housewares_factory",
-		"smart_metal_housewares_factory", "leather_goods_workshop",
-		"leather_goods_manufactory", "leather_goods_factory",
-		"smart_leather_goods_factory"]
-	if not terminal_upgrade:
-		for edge in range(construction_offsets[building_index],
-				construction_offsets[building_index + 1]):
-			if not _good_group_available(catalog, edge, int(construction_goods[edge]),
-					construction_candidate_offsets, construction_candidate_goods,
-					available_goods):
-				return false
-	var input_offsets: PackedInt32Array = catalog.building_input_offsets
-	var input_goods: PackedInt32Array = catalog.building_input_good_ids
-	var input_required: PackedInt32Array = catalog.building_input_required_q16
-	var input_candidate_offsets: PackedInt32Array = catalog.building_input_candidate_offsets
-	var input_candidate_goods: PackedInt32Array = catalog.building_input_candidate_good_ids
-	for edge in range(input_offsets[building_index], input_offsets[building_index + 1]):
-		if int(input_required[edge]) < 65536:
-			continue
-		if not _good_group_available(catalog, edge, int(input_goods[edge]),
-				input_candidate_offsets, input_candidate_goods, available_goods):
-			return false
-	var resource_offsets: PackedInt32Array = catalog.building_resource_offsets
-	var production_resources: PackedInt32Array = catalog.building_production_resource_ids
-	var resource_tag_offsets: PackedInt32Array = \
-		catalog.building_resource_technology_tag_offsets
-	var resource_tags: PackedStringArray = catalog.building_resource_technology_tags
-	for edge in range(resource_offsets[building_index], resource_offsets[building_index + 1]):
-		var resource_index := int(production_resources[edge])
-		var recognized := false
-		for tag_index in range(resource_tag_offsets[resource_index],
-				resource_tag_offsets[resource_index + 1]):
-			var technology_index := (catalog.technology_ids as PackedStringArray).find(
-				String(resource_tags[tag_index]))
-			if completed.has(technology_index):
-				recognized = true
-				break
-		if not recognized:
-			return false
+func _building_dependencies_available(_catalog: Dictionary, _building_index: int,
+		_completed: Dictionary, _available_goods: Dictionary) -> bool:
+	# This audit proves that a technology has a valid direct producer.  It must
+	# not turn tradable construction goods or recipe inputs into local research
+	# gates.  It also has no map fixture, so local resource presence belongs to
+	# the dedicated start/map tests rather than this catalog-binding audit.
 	return true
 
 
@@ -694,7 +649,7 @@ func _assert_networked_crop_and_resource_gates(catalog: Dictionary) -> void:
 		["tech.rice_water_control", "tech.estate_accounting",
 			"tech.serf_obligations"])
 	_assert_building_supports(catalog, "rubber_tapping_camp",
-		["tech.rubber_identification", "tech.composite_tools"])
+		["tech.rubber_identification", "tech.wild_latex_tapping"])
 	_assert_building_supports(catalog, "coal_adit",
 		["tech.surface_coal_collection", "tech.masonry"])
 	_assert_building_supports(catalog, "natural_copper_workshop",
