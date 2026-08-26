@@ -532,6 +532,22 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     food_family_filled.fill(0);
     food_family_desired.fill(0);
     result.retained_consumed_by_good.assign(_market.good_count, 0);
+    auto food_equivalent = [&](int32_t good, int64_t quantity) -> int64_t {
+        if (good < 0 || good >= static_cast<int32_t>(
+                _good_food_equivalent_q16.size()) || quantity <= 0) return 0;
+        const int64_t coefficient = _good_food_equivalent_q16[
+            static_cast<size_t>(good)];
+        return coefficient > 0 ? mul_div_sat(quantity, coefficient, Q16_ONE, sat) : 0;
+    };
+    auto record_food_access = [&](int32_t cell, int64_t food_eq) {
+        if (cell < 0 || cell >= _cell_count || food_eq <= 0) return;
+        for (MarketResult::FoodAccessEntry &entry : result.food_access_by_cell) {
+            if (entry.cell != cell) continue;
+            entry.food_eq = saturating_add(entry.food_eq, food_eq, sat);
+            return;
+        }
+        result.food_access_by_cell.push_back({cell, food_eq});
+    };
     cohort_working_capital_reserve.assign(cohort_count, 0);
     cohort_wealth_ratio_q16.assign(cohort_count, 0);
     cohort_savings_months_q16.assign(cohort_count, 0);
@@ -1092,6 +1108,10 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         }
         result.retained_consumed_by_good[good_id] = saturating_add(
             result.retained_consumed_by_good[good_id], quantity, sat);
+        const int64_t food_eq = food_equivalent(good_id, quantity);
+        result.food_access_eq = saturating_add(result.food_access_eq, food_eq, sat);
+        if (food_eq > 0) ++result.food_access_events;
+        record_food_access(cell, food_eq);
     };
     for (BundleOrder &order : primary_orders) {
         const VariantChoice &variant = _variants[order.variant_index];
@@ -1232,6 +1252,21 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
 
     const auto record_order_settlement = [&](BundleOrder &order) {
         if (order.filled_units <= 0) return;
+        const int32_t cell = cohort_cell(order.slot);
+        const VariantChoice &variant = _variants[order.variant_index];
+        int64_t food_eq = 0;
+        for (int32_t c = 0; c < variant.component_count; ++c) {
+            const NeedComponent &component =
+                _components[variant.component_begin + c];
+            const int64_t quantity = mul_div_sat(
+                order.filled_units, component_quantity(order.slot, component),
+                GOODS_SCALE, sat);
+            food_eq = saturating_add(food_eq,
+                food_equivalent(component.good_id, quantity), sat);
+        }
+        result.food_access_eq = saturating_add(result.food_access_eq, food_eq, sat);
+        if (food_eq > 0) ++result.food_access_events;
+        record_food_access(cell, food_eq);
         if (!subsidy_settlement) {
             const int64_t spend = mul_div_sat(
                 order.filled_units, order.unit_price, GOODS_SCALE, sat);
@@ -1243,8 +1278,6 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                     need_states[order.need_index].spent_money, spend, sat);
             return;
         }
-        const int32_t cell = cohort_cell(order.slot);
-        const VariantChoice &variant = _variants[order.variant_index];
         int64_t base_spend = 0;
         int64_t positive_tax = 0;
         int64_t subsidy = 0;
@@ -1880,77 +1913,38 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     const int32_t birth_cell = _market_cell_offsets[market] <
             _market_cell_offsets[market + 1]
         ? _market_cells[_market_cell_offsets[market]] : market;
-    int64_t surplus_num = 0;
-    int64_t surplus_den = 0;
-    const size_t family_base = static_cast<size_t>(std::max(0, birth_cell)) *
-        CARRYING_FAMILY_COUNT;
-    if (family_base + CARRYING_FAMILY_COUNT <= _cell_carrying_family_surplus_q16.size() &&
-        family_base + CARRYING_FAMILY_COUNT <= _cell_carrying_family_bindable.size()) {
-        std::fill(_cell_carrying_family_surplus_q16.begin() + family_base,
-                  _cell_carrying_family_surplus_q16.begin() + family_base +
-                      CARRYING_FAMILY_COUNT,
-                  static_cast<int32_t>(Q16_ONE));
-        std::fill(_cell_carrying_family_bindable.begin() + family_base,
-                  _cell_carrying_family_bindable.begin() + family_base +
-                      CARRYING_FAMILY_COUNT,
-                  0);
-    }
-    for (int32_t family = 0; family < CARRYING_FAMILY_COUNT; ++family) {
-        const int64_t food_filled = family < 3
-            ? food_family_filled[static_cast<size_t>(family)] : 0;
-        const int64_t food_desired = family < 3
-            ? food_family_desired[static_cast<size_t>(family)] : 0;
-        const int64_t family_surplus = cell_family_surplus_q16(
-            market, birth_cell, family, food_filled, food_desired,
-            good_demand.data(), good_sales.data(), sat);
-        const int32_t weight = family < static_cast<int32_t>(_carrying_family_weight.size())
-            ? std::max(0, _carrying_family_weight[static_cast<size_t>(family)]) : 0;
-        if (family_base + static_cast<size_t>(family) <
-            _cell_carrying_family_surplus_q16.size()) {
-            _cell_carrying_family_surplus_q16[family_base + static_cast<size_t>(family)] =
-                family_surplus < 0 ? Q16_ONE : static_cast<int32_t>(family_surplus);
-            _cell_carrying_family_bindable[family_base + static_cast<size_t>(family)] =
-                family_surplus < 0 ? 0 : 1;
-        }
-        if (family_surplus < 0 || weight <= 0) continue;
-        surplus_num = saturating_add(surplus_num,
-            saturating_mul(family_surplus, weight, sat), sat);
-        surplus_den = saturating_add(surplus_den, weight, sat);
-    }
-    const int64_t surplus_q16 = surplus_den > 0
-        ? mul_div_sat(surplus_num, 1, surplus_den, sat) : Q16_ONE;
     const int64_t sat_cell_q16 = sat_cell_den > 0
         ? std::clamp<int64_t>(mul_div_sat(sat_cell_num, 1, sat_cell_den, sat),
                               _carrying_sat_floor_q16, _carrying_sat_cap_q16)
         : Q16_ONE;
-    const int64_t k_geo = cell_k_geo_persons(birth_cell, sat);
-    const int64_t mix_factor = mul_div_sat(
-        carrying_mix_q16(surplus_q16, _carrying_surplus_elasticity_q16, sat),
-        carrying_mix_q16(sat_cell_q16, _carrying_sat_elasticity_q16, sat),
-        Q16_ONE, sat);
-    int32_t ema_fallback = Q16_ONE;
-    int32_t *support_ema_ptr = birth_cell >= 0 &&
-            static_cast<size_t>(birth_cell) < _cell_support_ema_q16.size()
-        ? &_cell_support_ema_q16[static_cast<size_t>(birth_cell)]
-        : &ema_fallback;
-    const int64_t ema_alpha = std::min<int64_t>(
-        Q16_ONE, static_cast<int64_t>(_epoch_days) * _carrying_support_ema_alpha_q16);
-    *support_ema_ptr = static_cast<int32_t>(saturating_add(
-        mul_div_sat(*support_ema_ptr, Q16_ONE - ema_alpha, Q16_ONE, sat),
-        mul_div_sat(mix_factor, ema_alpha, Q16_ONE, sat), sat));
-    const int64_t k_eff = std::max<int64_t>(1, mul_div_sat(
-        k_geo, std::max<int64_t>(1, static_cast<int64_t>(*support_ema_ptr)),
-        Q16_ONE, sat));
+    const bool food_flow_valid = birth_cell >= 0 && birth_cell < _cell_count &&
+        static_cast<size_t>(birth_cell) < _cell_food_flow_valid.size() &&
+        _cell_food_flow_valid[static_cast<size_t>(birth_cell)] != 0;
+    const size_t food_lane = static_cast<size_t>(std::max(0, birth_cell));
+    const int64_t local_food_net = food_flow_valid &&
+            food_lane < _cell_food_output_eq_previous.size()
+        ? std::max<int64_t>(0, _cell_food_output_eq_previous[food_lane] -
+            _cell_food_input_eq_previous[food_lane]) : 0;
+    const int64_t effective_food_supply = food_flow_valid &&
+            food_lane < _cell_food_import_eq_previous.size()
+        ? std::max<int64_t>(0, local_food_net +
+            _cell_food_import_eq_previous[food_lane] -
+            _cell_food_export_eq_previous[food_lane]) : 0;
+    const int64_t flow_days = std::max<int32_t>(1, _food_flow_previous_period_days);
+    const int64_t per_person_food = std::max<int64_t>(1,
+        _carrying_survival_food_per_person);
+    const int64_t k_geo = food_flow_valid
+        ? local_food_net / flow_days / per_person_food : 0;
+    const int64_t k_eff = food_flow_valid
+        ? effective_food_supply / flow_days / per_person_food : 0;
     if (birth_cell >= 0 && static_cast<size_t>(birth_cell) < _cell_carrying_k_geo.size()) {
         _cell_carrying_k_geo[static_cast<size_t>(birth_cell)] = k_geo;
         _cell_carrying_k_eff[static_cast<size_t>(birth_cell)] = k_eff;
-        _cell_carrying_surplus_q16[static_cast<size_t>(birth_cell)] =
-            static_cast<int32_t>(surplus_q16);
         _cell_carrying_sat_q16[static_cast<size_t>(birth_cell)] =
             static_cast<int32_t>(sat_cell_q16);
     }
-    const int64_t load_q16 = mul_div_sat(
-        remaining_market_population, Q16_ONE, k_eff, sat);
+    const int64_t load_q16 = food_flow_valid ? mul_div_sat(
+        remaining_market_population, Q16_ONE, std::max<int64_t>(1, k_eff), sat) : 0;
     for (int32_t local = 0; local < cohort_count; ++local) {
         const int32_t slot = slots[local];
         const uint32_t signature_id = _population.signature_id[slot];
@@ -1975,14 +1969,10 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                     t_q16, replacement_q16 - Q16_ONE, Q16_ONE, sat), sat);
             }
             const int64_t rescale_q16 = cohort_rescale_sat_q16[static_cast<size_t>(local)];
-            const int64_t residual_q16 = std::clamp<int64_t>(
-                mul_div_sat(rescale_q16, Q16_ONE,
-                            std::max<int64_t>(1, sat_cell_q16), sat),
-                _carrying_residual_floor_q16, _carrying_residual_cap_q16);
             int64_t effective_birth_rate_q32 = mul_div_sat(
                 mul_div_sat(std::max<int64_t>(0, signature.birth_rate_q32),
                             fertility_land_q16, Q16_ONE, sat),
-                residual_q16, Q16_ONE, sat);
+                rescale_q16, Q16_ONE, sat);
             if (cell >= 0 && cell < static_cast<int32_t>(
                     _epoch_cell_birth_factor_q16.size())) {
                 effective_birth_rate_q32 = mul_div_sat(

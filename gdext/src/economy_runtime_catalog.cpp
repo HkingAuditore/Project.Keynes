@@ -1067,6 +1067,13 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
     for (size_t c = 0; c < component_goods.size(); ++c) {
         _components[c] = {component_goods[c], component_qty[c]};
     }
+    // Derive one canonical food-equivalent coefficient from the authored
+    // survival plan. A component quantity is the number of goods subunits
+    // required for one standard need unit, so one such unit contributes
+    // GOODS_SCALE equivalent food subunits. This keeps production, trade and
+    // household clearing on the same numeric basis without a second content
+    // table.
+    _good_food_equivalent_q16.assign(goods, 0);
     _survival_food_good_mask.assign(goods, uint8_t{0});
     _survival_clothing_good_mask.assign(goods, uint8_t{0});
     for (const Need &need : _needs) {
@@ -1079,14 +1086,37 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
         if (!survival_food_need && !survival_clothing_need) continue;
         for (int32_t v = 0; v < need.variant_count; ++v) {
             const VariantChoice &variant = _variants[need.variant_begin + v];
-            if (variant.component_count != 1) continue;
+            if (survival_food_need && variant.component_count != 1) {
+                error = "survival_food_variant_must_have_one_component:" +
+                    _need_ids[static_cast<size_t>(need.stable_id)];
+                return false;
+            }
             const NeedComponent &component = _components[variant.component_begin];
-            if (component.qty_per_need == GOODS_SCALE) {
-                if (survival_food_need) {
-                    _survival_food_good_mask[component.good_id] = 1;
+            if (survival_food_need) {
+                if (component.qty_per_need <= 0) {
+                    error = "survival_food_component_quantity_invalid:" +
+                        _need_ids[static_cast<size_t>(need.stable_id)];
+                    return false;
                 }
-                if (survival_clothing_need)
-                    _survival_clothing_good_mask[component.good_id] = 1;
+                const int64_t coefficient = std::max<int64_t>(1,
+                    (GOODS_SCALE * Q16_ONE) / component.qty_per_need);
+                const int32_t good = component.good_id;
+                if (_good_food_equivalent_q16[static_cast<size_t>(good)] != 0 &&
+                    _good_food_equivalent_q16[static_cast<size_t>(good)] != coefficient) {
+                    error = "survival_food_good_quantity_inconsistent:" +
+                        _good_ids[static_cast<size_t>(good)];
+                    return false;
+                }
+                _good_food_equivalent_q16[static_cast<size_t>(good)] =
+                    static_cast<int32_t>(std::clamp<int64_t>(coefficient, 1, Q16_ONE * 4));
+                _survival_food_good_mask[static_cast<size_t>(good)] = 1;
+            }
+            if (survival_clothing_need) {
+                for (int32_t c = 0; c < variant.component_count; ++c) {
+                    const int32_t good = _components[variant.component_begin + c].good_id;
+                    if (good >= 0 && good < static_cast<int32_t>(_survival_clothing_good_mask.size()))
+                        _survival_clothing_good_mask[static_cast<size_t>(good)] = 1;
+                }
             }
         }
     }

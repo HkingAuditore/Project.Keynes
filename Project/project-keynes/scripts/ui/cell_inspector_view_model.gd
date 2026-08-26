@@ -2185,18 +2185,18 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 	var jobs_filled := int(snapshot.get("jobs_filled", 0))
 	var job_openings := int(snapshot.get("job_openings", 0))
 	var carrying_k_eff := int(snapshot.get("carrying_k_eff", 0))
-	var carrying_k_geo := int(snapshot.get("carrying_k_geo", 0))
-	var carrying_surplus := float(snapshot.get("carrying_surplus_q16", 65536)) / 65536.0
-	var carrying_sat := float(snapshot.get("carrying_sat_q16", 65536)) / 65536.0
+	var local_food_daily := int(snapshot.get("local_food_output_eq_per_day", 0))
+	var effective_food_daily := int(snapshot.get("effective_food_supply_eq_per_day", 0))
+	var food_access := float(snapshot.get("food_access_q16", 65536)) / 65536.0
 	var population_total := int(snapshot.get("population", 0))
 	if carrying_k_eff > 0:
 		insights.append({
 			"id": "population_carrying",
-			"text": "承载力 %s 人 · 地力 %s · 物资 %.0f%% · 心情 %.0f%%" % [
+			"text": "承载力 %s 人 · 本地产能 %s/日 · 有效供给 %s/日 · 实际取得 %.0f%%" % [
 				UITokens.format_compact_number_cn(float(carrying_k_eff), 1),
-				UITokens.format_compact_number_cn(float(carrying_k_geo), 1),
-				carrying_surplus * 100.0,
-				carrying_sat * 100.0,
+				UITokens.format_compact_number_cn(float(local_food_daily), 1),
+				UITokens.format_compact_number_cn(float(effective_food_daily), 1),
+				food_access * 100.0,
 			],
 			"accent": UITokens.RISK if population_total > carrying_k_eff else UITokens.GOOD,
 			"icon": "growth",
@@ -2207,27 +2207,6 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 			"text": "人口已贴上格承载力，出生率落到更替水平。",
 			"accent": UITokens.WARN,
 			"icon": "growth",
-		})
-	var family_ids: PackedStringArray = snapshot.get("carrying_family_ids", PackedStringArray())
-	var family_surplus: PackedInt32Array = snapshot.get(
-		"carrying_family_surplus_q16", PackedInt32Array())
-	var family_bindable: PackedByteArray = snapshot.get(
-		"carrying_family_bindable", PackedByteArray())
-	var tight_family := ""
-	var tight_cover := 2.0
-	for family_idx in range(mini(family_ids.size(), family_surplus.size())):
-		if family_idx < family_bindable.size() and family_bindable[family_idx] == 0:
-			continue
-		var cover := float(family_surplus[family_idx]) / 65536.0
-		if cover < tight_cover:
-			tight_cover = cover
-			tight_family = String(family_ids[family_idx])
-	if not tight_family.is_empty() and tight_cover < 0.8:
-		insights.append({
-			"id": "population_carrying_family",
-			"text": "物资最紧的是 %s（覆盖 %.0f%%）。" % [tight_family, tight_cover * 100.0],
-			"accent": UITokens.WARN,
-			"icon": "resource",
 		})
 	var investment_block_reason := int(snapshot.get(
 		"investment_last_block_reason", 0))
@@ -2246,7 +2225,7 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 			{"id": "population_prosperity", "title": "繁荣度", "value": String(snapshot.get("prosperity_name", "未就绪")), "subtitle": String(snapshot.get("settlement_name", "尚未命名")), "accent": UITokens.GOOD, "icon": "building"},
 			{"id": "population_funds", "title": "总资金", "value": _money_text(int(snapshot.get("funds", 0))), "subtitle": "收入 %s · 支出 %s" % [_money_text(int(snapshot.get("epoch_income", 0))), _money_text(int(snapshot.get("epoch_expense", 0)))], "accent": UITokens.RESOURCE, "icon": "resource"},
 			{"id": "population_jobs", "title": "岗位容量", "value": "%s 个" % UITokens.format_compact_number_cn(float(job_capacity), 1), "subtitle": "已填 %s · 空缺 %s" % [UITokens.format_compact_number_cn(float(jobs_filled), 1), UITokens.format_compact_number_cn(float(job_openings), 1)], "accent": UITokens.GOOD if job_openings > 0 else UITokens.TEXT_MUTED, "icon": "building"},
-			{"id": "population_carrying", "title": "格承载力", "value": "%s 人" % UITokens.format_compact_number_cn(float(carrying_k_eff), 1), "subtitle": "地力 %s · 物资 %.0f%% · 心情 %.0f%%" % [UITokens.format_compact_number_cn(float(carrying_k_geo), 1), carrying_surplus * 100.0, carrying_sat * 100.0], "accent": UITokens.RISK if population_total > carrying_k_eff and carrying_k_eff > 0 else UITokens.ACCENT, "icon": "growth"},
+			{"id": "population_carrying", "title": "格承载力", "value": "%s 人" % UITokens.format_compact_number_cn(float(carrying_k_eff), 1), "subtitle": "本地 %s/日 · 有效 %s/日 · 取得 %.0f%%" % [UITokens.format_compact_number_cn(float(local_food_daily), 1), UITokens.format_compact_number_cn(float(effective_food_daily), 1), food_access * 100.0], "accent": UITokens.RISK if population_total > carrying_k_eff and carrying_k_eff > 0 else UITokens.ACCENT, "icon": "growth"},
 		],
 		"cohort_rows": rows,
 	}

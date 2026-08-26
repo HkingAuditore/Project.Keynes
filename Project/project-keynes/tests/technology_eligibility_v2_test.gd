@@ -18,19 +18,31 @@ func _init() -> void:
 	_expect("stable technology count", ids.size() == 705)
 	_expect("route IR is present", (_compiled.get("research_route_ids", PackedStringArray()) as PackedStringArray).size() > 600)
 
-	# Era milestone is a hard gate, while the node's discovery signal and one
-	# complete route are separate gates. This is the core v3 eligibility contract.
-	var before_milestone := _fixture(PackedStringArray([
+	# Ordinary next-era nodes: reveal, hard prerequisites and one complete route
+	# are enough. The previous-era milestone is not a research gate.
+	var writing_revealed_only := _fixture(PackedStringArray([
 		"tech.celestial_calendars", "tech.permanent_settlements",
 	]), PackedStringArray(["development.population.500_90d"]))
-	_expect("development-revealed kingdom node remains era-locked",
-		_state(before_milestone, "tech.writing") == 1)
+	_expect("development-revealed kingdom node stays ineligible without a route",
+		_state(writing_revealed_only, "tech.writing") == 1)
+
+	var writing_without_era := _fixture(PackedStringArray([
+		"tech.celestial_calendars", "tech.permanent_settlements",
+	]), PackedStringArray([
+		"development.population.500_90d",
+		"development.employment.agriculture.10_90d",
+	]))
+	_expect("revealed kingdom node is researchable without the agrarian milestone",
+		_state(writing_without_era, "tech.writing") == 2)
+	_attempt_enqueue(writing_without_era, "tech.writing", int(writing_without_era.day))
+	_expect("kingdom node can enter the queue without the agrarian milestone",
+		_state(writing_without_era, "tech.writing") == 3)
 
 	var revealed := _fixture(PackedStringArray([
 		"tech.agrarian_society", "tech.celestial_calendars",
 		"tech.permanent_settlements",
 	]), PackedStringArray(["development.population.500_90d"]))
-	_expect("milestone plus reveal produces revealed state",
+	_expect("milestone plus reveal still requires a complete route",
 		_state(revealed, "tech.writing") == 1)
 
 	_discover(revealed, PackedStringArray(["development.employment.agriculture.10_90d"]))
@@ -39,6 +51,19 @@ func _init() -> void:
 	_attempt_enqueue(revealed, "tech.writing", int(revealed.day))
 	_expect("eligible node can enter the queue",
 		_state(revealed, "tech.writing") == 3)
+
+	var kingdom_milestone_locked := _fixture(PackedStringArray([
+		"tech.crop_rotation", "tech.road_engineering",
+		"tech.writing", "tech.state_bureaucracy",
+	]), PackedStringArray())
+	_expect("kingdom milestone stays era-locked without agrarian_society",
+		_state(kingdom_milestone_locked, "tech.kingdom_administration") == 1)
+	var kingdom_milestone_open := _fixture(PackedStringArray([
+		"tech.agrarian_society", "tech.crop_rotation", "tech.road_engineering",
+		"tech.writing", "tech.state_bureaucracy",
+	]), PackedStringArray())
+	_expect("kingdom milestone opens after the previous era and candidate threshold",
+		_state(kingdom_milestone_open, "tech.kingdom_administration") == 2)
 
 	# The plantation sample has three route packages; the land-institution route
 	# is executable without cotton/spice discovery signals.

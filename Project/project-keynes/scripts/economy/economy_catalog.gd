@@ -492,10 +492,6 @@ static func compile_native_catalog(
 			return {"ok": false, "reason": "building_technology_binding_must_be_single",
 				"id": String(building_columns.building_type_ids[building_index_value]),
 				"count": building_binding_count}
-		if int(building_required_tag_offsets[building_index_value + 1]) \
-				!= int(building_required_tag_offsets[building_index_value]):
-			return {"ok": false, "reason": "building_required_technology_tags_forbidden",
-				"id": String(building_columns.building_type_ids[building_index_value])}
 		for tag_index in range(building_required_tag_offsets[building_index_value],
 				building_required_tag_offsets[building_index_value + 1]):
 			var required_tag := String(

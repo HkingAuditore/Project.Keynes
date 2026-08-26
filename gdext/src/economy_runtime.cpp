@@ -1399,7 +1399,6 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
         _epoch_country_building_type_offsets[country + 1] =
             static_cast<int32_t>(_epoch_country_building_type_indices.size());
     }
-    refresh_epoch_carrying_yields();
     uint64_t topology_hash = 1469598103934665603ULL;
     for (const int32_t country : _epoch_cell_country) {
         const uint32_t value = static_cast<uint32_t>(country);
@@ -8003,8 +8002,8 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                 _production_results_scratch.resize(
                     static_cast<size_t>(cell_count));
             }
-            for (int32_t relative = 0; relative < cell_count; ++relative)
-                _production_results_scratch[relative].reset();
+                for (int32_t relative = 0; relative < cell_count; ++relative)
+                    _production_results_scratch[relative].reset();
             int64_t estimated_work = 0;
             bool disjoint_markets = true;
             _production_cell_weights_scratch.resize(
@@ -8075,6 +8074,8 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                 for (int32_t relative = range_begin; relative < range_end; ++relative) {
                     ProductionResult &result =
                         _production_results_scratch[relative];
+                    result.cell = _epoch_building_cells[
+                        _building_cell_cursor + relative];
                     const int64_t capacity_before = result.capacity_bytes();
                     std::string production_error;
                     result.ok = run_building_production_cell(
@@ -8476,6 +8477,8 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                 _market_results_scratch.resize(static_cast<size_t>(market_count));
             for (int32_t relative = 0; relative < market_count; ++relative) {
                 _market_results_scratch[relative].reset();
+                _market_results_scratch[relative].market =
+                    _epoch_market_ids[begin + relative];
                 if (_accuracy_preset != 0 &&
                     _approximation_runtime_mode != 0 &&
                     _approximation_cooldown_epochs_left == 0) {
@@ -8647,6 +8650,17 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                                                      : market_result.error);
                     break;
                 }
+                for (const MarketResult::FoodAccessEntry &entry :
+                         market_result.food_access_by_cell) {
+                    if (entry.cell < 0 || entry.cell >= _cell_count) continue;
+                    _cell_food_access_eq_period[static_cast<size_t>(entry.cell)] =
+                        saturating_add(
+                            _cell_food_access_eq_period[static_cast<size_t>(entry.cell)],
+                            entry.food_eq, _saturation_count);
+                }
+                _food_access_events = saturating_add(
+                    _food_access_events, market_result.food_access_events,
+                    _saturation_count);
                 for (const size_t lane : market_result.audit_population_lanes)
                     audit_touch_population_lane(static_cast<int32_t>(lane));
                 for (const size_t lane : market_result.audit_market_lanes)
@@ -14263,6 +14277,17 @@ int64_t NativeEconomyRuntime::state_hash() const {
     mix_u64(0x53555050454d41ULL); // "SUPPEMA"
     for (int32_t ema_q16 : _cell_support_ema_q16)
         mix_u64(static_cast<uint32_t>(ema_q16));
+    mix_u64(0x464f4f44464c4f57ULL); // "FOODFLOW"
+    mix_u64(static_cast<uint32_t>(_food_flow_previous_period_days));
+    for (uint8_t valid : _cell_food_flow_valid) mix_u64(valid);
+    for (const std::vector<int64_t> *lane : {
+             &_cell_food_output_eq_previous,
+             &_cell_food_input_eq_previous,
+             &_cell_food_import_eq_previous,
+             &_cell_food_export_eq_previous,
+             &_cell_food_access_eq_previous}) {
+        for (int64_t value : *lane) mix_u64(static_cast<uint64_t>(value));
+    }
     for (int32_t i = 0; i < static_cast<int32_t>(_families.active.size()); ++i) {
         if (_families.active[i] == 0) continue;
         mix_u64(0x46414d494c59ULL);
@@ -14804,6 +14829,18 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _cell_carrying_sat_q16.clear();
     _cell_carrying_family_surplus_q16.clear();
     _cell_carrying_family_bindable.clear();
+    _cell_food_output_eq_period.clear();
+    _cell_food_input_eq_period.clear();
+    _cell_food_import_eq_period.clear();
+    _cell_food_export_eq_period.clear();
+    _cell_food_access_eq_period.clear();
+    _cell_food_output_eq_previous.clear();
+    _cell_food_input_eq_previous.clear();
+    _cell_food_import_eq_previous.clear();
+    _cell_food_export_eq_previous.clear();
+    _cell_food_access_eq_previous.clear();
+    _cell_food_flow_valid.clear();
+    _food_flow_previous_period_days = 0;
     _families.clear();
     _family_expeditions.clear();
     _family_expedition_route_cells.clear();

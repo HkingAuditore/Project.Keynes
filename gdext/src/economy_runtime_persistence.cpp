@@ -43,6 +43,12 @@ Dictionary NativeEconomyRuntime::begin_save(int32_t chunk_bytes) {
         _cell_last_settlement_day.size() != cells ||
         _birth_residual_q32.size() != cells * _ethnicity_ids.size() ||
         _cell_support_ema_q16.size() != cells ||
+        _cell_food_output_eq_previous.size() != cells ||
+        _cell_food_input_eq_previous.size() != cells ||
+        _cell_food_import_eq_previous.size() != cells ||
+        _cell_food_export_eq_previous.size() != cells ||
+        _cell_food_access_eq_previous.size() != cells ||
+        _cell_food_flow_valid.size() != cells ||
         _cell_settlement_generation.size() != cells ||
         _cell_price_stock_gen.size() != cells ||
         _cell_owner_cash_gen.size() != cells ||

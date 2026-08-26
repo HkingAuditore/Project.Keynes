@@ -38,8 +38,8 @@ public:
     // 35: RECOVERY_PROBE is no longer a runtime state. The building catalog
     // and grouped construction contract changed with this version; older
     // economy saves are intentionally incompatible and are rejected.
-    // 36: cell carrying-capacity mix (K_geo × surplus × sat) and support EMA.
-    // v35 saves restore with support_ema = 1. Pre-v35 economy saves stay rejected.
+    // 36: legacy cell carrying-capacity mix and support EMA (read and discarded
+    //     when migrating to v45 real food-flow capacity).
     // 37: family-expedition cargo escrow and frozen colonization starter kits.
     // v36 in-flight expeditions restore with cargo_count = 0.
     // 38: locked market cadence N (1-5) and shared slow plan/investment S (5-30).
@@ -53,7 +53,8 @@ public:
     // v41 remains readable and must not contain PREPARING records.
     // 43: sector maintenance horizons and maintenance cost factor.
     // 44: resolved startup-demand mode. v43 restores with startup demand OFF.
-    static constexpr int32_t SCHEMA_VERSION = 44;
+    // 45: previous-period food-flow carrying-capacity snapshot.
+    static constexpr int32_t SCHEMA_VERSION = 45;
     static constexpr uint32_t BUILDING_KIT_ROLE_TRADE = 1u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CONSTRUCTION = 2u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CLOTHING_INPUT = 4u;
@@ -2093,7 +2094,12 @@ private:
     };
 
     struct MarketResult {
+        struct FoodAccessEntry {
+            int32_t cell = -1;
+            int64_t food_eq = 0;
+        };
         bool ok = true;
+        int32_t market = -1;
         std::string error;
         int64_t processed_cohorts = 0;
         int64_t processed_rules = 0;
@@ -2104,6 +2110,11 @@ private:
         int64_t consumed_goods = 0;
         int64_t cycle_flow_consumed = 0;
         int64_t cycle_flow_discarded = 0;
+        int64_t food_access_eq = 0;
+        int64_t food_access_events = 0;
+        // Sparse per-cell attribution for markets that span legacy multiple
+        // cells. The scalar above remains a cheap aggregate diagnostic.
+        std::vector<FoodAccessEntry> food_access_by_cell;
         int64_t retained_output_consumed = 0;
         int64_t retained_output_discarded = 0;
         std::vector<int64_t> retained_consumed_by_good;
@@ -2428,6 +2439,7 @@ private:
 
     struct ProductionResult {
         bool ok = true;
+        int32_t cell = -1;
         std::string error;
         int64_t saturation_count = 0;
         int64_t processed_building_groups = 0;
@@ -2472,6 +2484,10 @@ private:
         int64_t cycle_flow_produced = 0;
         int64_t cycle_flow_consumed = 0;
         int64_t cycle_flow_discarded = 0;
+        int64_t food_output_eq = 0;
+        int64_t food_input_eq = 0;
+        int64_t food_output_events = 0;
+        int64_t food_input_events = 0;
         int64_t building_wages_paid = 0;
         int64_t building_wages_unpaid = 0;
         int64_t building_base_wages_paid = 0;
@@ -2900,6 +2916,9 @@ private:
     std::vector<uint8_t> _survival_food_need_mask;
     std::vector<int32_t> _survival_required_need_indices;
     std::vector<uint8_t> _survival_food_good_mask;
+    // Q16 standard-food-equivalent per goods subunit, compiled from the
+    // survival household component quantities. Zero means non-food.
+    std::vector<int32_t> _good_food_equivalent_q16;
     std::vector<uint8_t> _survival_clothing_good_mask;
     int32_t _survival_clothing_need_stable_id = -1;
     int32_t _starvation_satisfaction_threshold_q16 = Q16_ONE / 2;
@@ -4374,6 +4393,26 @@ private:
     std::vector<int32_t> _cell_carrying_sat_q16;
     std::vector<int32_t> _cell_carrying_family_surplus_q16;
     std::vector<uint8_t> _cell_carrying_family_bindable;
+    // Previous completed-period food-flow authority. The *_period lanes are
+    // worker/settlement accumulators for the current epoch; demography reads
+    // only the *_previous lanes.
+    std::vector<int64_t> _cell_food_output_eq_period;
+    std::vector<int64_t> _cell_food_input_eq_period;
+    std::vector<int64_t> _cell_food_import_eq_period;
+    std::vector<int64_t> _cell_food_export_eq_period;
+    std::vector<int64_t> _cell_food_access_eq_period;
+    std::vector<int64_t> _cell_food_output_eq_previous;
+    std::vector<int64_t> _cell_food_input_eq_previous;
+    std::vector<int64_t> _cell_food_import_eq_previous;
+    std::vector<int64_t> _cell_food_export_eq_previous;
+    std::vector<int64_t> _cell_food_access_eq_previous;
+    std::vector<uint8_t> _cell_food_flow_valid;
+    int32_t _food_flow_previous_period_days = 0;
+    int64_t _food_output_events = 0;
+    int64_t _food_input_events = 0;
+    int64_t _food_trade_events = 0;
+    int64_t _food_access_events = 0;
+    int64_t _carrying_old_resource_scan_steps = 0;
     int32_t _epoch_country_count = 0;
     int32_t _epoch_country_technology_words = 0;
     uint64_t _epoch_country_generation = 0;
@@ -4829,6 +4868,10 @@ private:
                                     int64_t &sat) const;
     void append_carrying_capacity_fields(godot::Dictionary &out,
                                          int32_t cell_idx) const;
+    void commit_food_flow_snapshot();
+    void accumulate_trade_food_flow(int32_t cell, int32_t good,
+                                    int64_t import_qty, int64_t export_qty,
+                                    int64_t &sat);
     bool evaluate_building_conditions(int32_t type_id, int32_t cell) const;
     bool cell_has_technology(int32_t cell, int32_t technology_id, bool frozen) const;
     bool cell_has_requirements(int32_t cell, int32_t begin, int32_t end,

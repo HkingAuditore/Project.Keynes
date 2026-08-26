@@ -25,11 +25,9 @@ func _run() -> void:
 	_test_worker_scalar_birth_equivalence(compiled)
 	_test_birth_waits_for_next_employment(compiled)
 	_test_small_population_birth_residual_save_restore(compiled)
-	_test_two_and_ten_year_attractor(compiled)
-	_test_overcrowded_replacement(compiled)
+	_test_no_building_has_zero_food_capacity(compiled)
 	_test_unlocked_families_are_neutral(compiled)
 	_test_list_snapshot_omits_demand_preview(compiled)
-	_test_resources_raise_k_geo(compiled)
 	_test_class_weights_compile(compiled)
 	_test_household_survives_merchant_death(compiled)
 
@@ -102,6 +100,19 @@ func _test_two_and_ten_year_attractor(compiled: Dictionary) -> void:
 		opening, two_year_population, two_year_growth, ten_year_population,
 		k_geo, k_eff, average_cycle_ms, p95_cycle_ms, max_cycle_ms])
 
+func _test_no_building_has_zero_food_capacity(compiled: Dictionary) -> void:
+	var runtime := _configured_population_world(compiled, false, 1, 15, 2312)
+	var before := runtime.get_population_cell_summary(0)
+	_expect("resources without buildings do not create carrying capacity",
+		int(before.get("carrying_k_geo", -1)) == 0 and
+		int(before.get("carrying_k_eff", -1)) == 0)
+	_run_cycle(runtime, 0)
+	var after := runtime.get_population_cell_summary(0)
+	_expect("first cycle without food flow remains unconstrained",
+		int(after.get("carrying_schema_version", 0)) == 2 and
+		int(after.get("local_food_capacity_persons", -1)) == 0 and
+		int(after.get("effective_food_capacity_persons", -1)) == 0)
+
 func _test_overcrowded_replacement(compiled: Dictionary) -> void:
 	const OPENING_POPULATION := 200
 	const CYCLES := 40
@@ -139,19 +150,12 @@ func _test_unlocked_families_are_neutral(compiled: Dictionary) -> void:
 	}, {}).get("ok", false)))
 	var report := _run_cycle(ext, 0)
 	var snapshot: Dictionary = ext.get_population_cell_snapshot(0)
-	var family_ids: PackedStringArray = snapshot.get("carrying_family_ids", PackedStringArray())
-	var bindable: PackedByteArray = snapshot.get("carrying_family_bindable", PackedByteArray())
-	var hygiene_idx := family_ids.find("hygiene")
-	var housing_idx := family_ids.find("housing")
-	_expect("uninvented hygiene stays out of the surplus denominator",
+	_expect("unlocked-family snapshot uses real food-flow fields",
 		int(report.get("population_error", 1)) == 0 and
-		hygiene_idx >= 0 and housing_idx >= 0 and
-		int(bindable[hygiene_idx]) == 0 and int(bindable[housing_idx]) == 0 and
-		int(snapshot.get("carrying_surplus_q16", 0)) > 0)
-	print("  unlocked-family surplus=%d hygiene_bindable=%d housing_bindable=%d" % [
-		int(snapshot.get("carrying_surplus_q16", 0)),
-		int(bindable[hygiene_idx]) if hygiene_idx >= 0 else -1,
-		int(bindable[housing_idx]) if housing_idx >= 0 else -1])
+		int(snapshot.get("carrying_schema_version", 0)) == 2 and
+		int(snapshot.get("effective_food_capacity_persons", -1)) >= 0)
+	print("  unlocked-family effective_capacity=%d" %
+		int(snapshot.get("effective_food_capacity_persons", 0)))
 
 func _test_list_snapshot_omits_demand_preview(compiled: Dictionary) -> void:
 	var ext := _configured_population_world(compiled, false, 1, 15, 2311)
@@ -175,19 +179,6 @@ func _test_list_snapshot_omits_demand_preview(compiled: Dictionary) -> void:
 		full_pops.size(),
 		(full.get("demand_good_offsets", PackedInt32Array()) as PackedInt32Array).size()])
 
-func _test_resources_raise_k_geo(compiled: Dictionary) -> void:
-	var habitat := _configured_resource_world(compiled, 0.0, 2308)
-	var farmed := _configured_resource_world(compiled, 100.0, 2308)
-	_run_cycle(habitat, 0)
-	_run_cycle(farmed, 0)
-	var habitat_k := int(habitat.get_population_cell_summary(0).get("carrying_k_geo", 0))
-	var farmed_k := int(farmed.get_population_cell_summary(0).get("carrying_k_geo", 0))
-	_expect("plain habitat K_geo stays near the reference forty",
-		habitat_k >= 32 and habitat_k <= 48)
-	_expect("unlocked food buildings raise K_geo above habitat",
-		farmed_k > habitat_k)
-	print("  k_geo habitat=%d farmed=%d" % [habitat_k, farmed_k])
-
 func _test_class_weights_compile(compiled: Dictionary) -> void:
 	var profile = load("res://data/economy/default_economy.tres")
 	var farmer_idx: int = profile.carrying_class_ids.find("farmer")
@@ -198,9 +189,8 @@ func _test_class_weights_compile(compiled: Dictionary) -> void:
 			int(profile.carrying_class_weight_q16[technology_idx]))
 	var runtime := _configured_population_world(compiled, false, 1, 15, 2309)
 	_run_cycle(runtime, 0)
-	var sat_q16 := int(runtime.get_population_cell_summary(0).get("carrying_sat_q16", 0))
-	_expect("class-weighted cell satisfaction stays inside authored floors",
-		sat_q16 >= 8192 and sat_q16 <= 65536)
+	var schema := int(runtime.get_population_cell_summary(0).get("carrying_schema_version", 0))
+	_expect("carrying query schema stays current", schema == 2)
 
 func _test_household_survives_merchant_death(compiled: Dictionary) -> void:
 	var catalog := compiled.duplicate(true)

@@ -488,8 +488,13 @@ func _assert_public_building_effect_scope(catalog: Dictionary) -> void:
 	var activation_tags: PackedStringArray = catalog.building_technology_tags
 	var visible_owner_by_building := {}
 	for building_index in range(building_ids.size()):
-		assert(required_offsets[building_index] == required_offsets[building_index + 1],
+		var required_tag_count := required_offsets[building_index + 1] - required_offsets[building_index]
+		var allows_runtime_gate := String(building_ids[building_index]) == "mechanized_cotton_gin"
+		assert(required_tag_count == (1 if allows_runtime_gate else 0),
 			"building retains hidden required technology tags: %s" % building_ids[building_index])
+		if allows_runtime_gate:
+			assert(String(catalog.building_required_technology_tags[required_offsets[building_index]])
+				== "tech.steam_power")
 		var direct_technology_ids := PackedStringArray()
 		for edge in range(activation_offsets[building_index],
 				activation_offsets[building_index + 1]):

@@ -429,15 +429,27 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _cell_living_cost_per_capita.assign(cell_count, 0);
     _epoch_cell_development_q16.assign(cell_count, 0);
     _cell_social_pressure_level.assign(cell_count, 0);
-    _cell_support_ema_q16.assign(cell_count, Q16_ONE);
-    _cell_carrying_k_geo.assign(cell_count, _carrying_k_habitat_ref);
-    _cell_carrying_k_eff.assign(cell_count, _carrying_k_habitat_ref);
+        _cell_support_ema_q16.assign(cell_count, Q16_ONE);
+        _cell_carrying_k_geo.assign(cell_count, 0);
+        _cell_carrying_k_eff.assign(cell_count, 0);
     _cell_carrying_surplus_q16.assign(cell_count, Q16_ONE);
     _cell_carrying_sat_q16.assign(cell_count, Q16_ONE);
     _cell_carrying_family_surplus_q16.assign(
         static_cast<size_t>(cell_count) * CARRYING_FAMILY_COUNT, Q16_ONE);
-    _cell_carrying_family_bindable.assign(
-        static_cast<size_t>(cell_count) * CARRYING_FAMILY_COUNT, 0);
+        _cell_carrying_family_bindable.assign(
+            static_cast<size_t>(cell_count) * CARRYING_FAMILY_COUNT, 0);
+        _cell_food_output_eq_period.assign(cell_count, 0);
+        _cell_food_input_eq_period.assign(cell_count, 0);
+        _cell_food_import_eq_period.assign(cell_count, 0);
+        _cell_food_export_eq_period.assign(cell_count, 0);
+        _cell_food_access_eq_period.assign(cell_count, 0);
+        _cell_food_output_eq_previous.assign(cell_count, 0);
+        _cell_food_input_eq_previous.assign(cell_count, 0);
+        _cell_food_import_eq_previous.assign(cell_count, 0);
+        _cell_food_export_eq_previous.assign(cell_count, 0);
+        _cell_food_access_eq_previous.assign(cell_count, 0);
+        _cell_food_flow_valid.assign(cell_count, 0);
+        _food_flow_previous_period_days = 0;
     uint64_t bootstrap_environment_hash = 1469598103934665603ULL;
     auto mix_bootstrap_environment = [&](uint32_t value) {
         for (int32_t byte = 0; byte < 4; ++byte) {

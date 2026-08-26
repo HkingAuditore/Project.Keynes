@@ -72,7 +72,8 @@ development pressure and practice breakthroughs in `reveal_condition` when they 
 the country has encountered. Put strategically distinct solution capabilities in `research_routes[]`;
 from the Kingdom era onward, mainline, institution, production-system and milestone-candidate nodes
 normally need two or three route types. Authoring-side `research_condition` is forbidden. A route may
-bypass professional knowledge but not the previous-era milestone or core principles.
+bypass professional knowledge but not core principles. The previous-era milestone is a research
+gate only for the next era's milestone node, not for ordinary already-revealed technologies.
 
 Use only active operators unless runtime work is explicitly approved:
 

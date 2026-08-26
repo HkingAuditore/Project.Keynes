@@ -76,9 +76,15 @@ func _init() -> void:
 	var writing_index := (catalog.technology_ids as PackedStringArray).find("tech.writing")
 	var agrarian_milestone_index := (catalog.technology_ids as PackedStringArray).find(
 		"tech.agrarian_society")
-	assert(writing_index >= 0 and agrarian_milestone_index >= 0)
+	var kingdom_milestone_index := (catalog.technology_ids as PackedStringArray).find(
+		"tech.kingdom_administration")
+	assert(writing_index >= 0 and agrarian_milestone_index >= 0 and kingdom_milestone_index >= 0)
 	assert(int((catalog.technology_entry_milestone_indices as PackedInt32Array)[writing_index])
+		== -1)
+	assert(int((catalog.technology_entry_milestone_indices as PackedInt32Array)[kingdom_milestone_index])
 		== agrarian_milestone_index)
+	assert(not _research_condition_refs_tech(catalog, writing_index, agrarian_milestone_index))
+	assert(_research_condition_refs_tech(catalog, kingdom_milestone_index, agrarian_milestone_index))
 	assert((catalog.technology_era_entry_milestone_indices as PackedInt32Array).size() == 11)
 	var definitions: Array = TechnologyCatalogScript.public_definitions()
 	assert(definitions.size() == EXPECTED_TECHNOLOGY_COUNT)
@@ -125,6 +131,21 @@ func _init() -> void:
 		assert(String(public_definition.node_role) in ["identification", "handling",
 			"production_system", "power_scale", "institution", "applied_method", "milestone"])
 		assert(not String(public_definition.layout_lane).is_empty())
+		var is_milestone := (int(catalog.technology_flags[i]) \
+			& TechnologyCatalogScript.FLAG_MILESTONE) != 0
+		var era_position := (catalog.technology_era_ids_ordered as PackedStringArray).find(
+			String(catalog.technology_era_ids[i]))
+		assert(era_position >= 0)
+		if is_milestone:
+			assert(int(catalog.technology_entry_milestone_indices[i])
+				== int(catalog.technology_era_entry_milestone_indices[era_position]))
+			var entry_index := int(catalog.technology_entry_milestone_indices[i])
+			var expected_entry_id := "" if entry_index < 0 \
+				else String((catalog.technology_ids as PackedStringArray)[entry_index])
+			assert(String(public_definition.era_entry_milestone_id) == expected_entry_id)
+		else:
+			assert(int(catalog.technology_entry_milestone_indices[i]) == -1)
+			assert(String(public_definition.era_entry_milestone_id).is_empty())
 		var is_starting := (int(catalog.technology_flags[i]) \
 			& TechnologyCatalogScript.FLAG_STARTING) != 0
 		var recipe_id := String(catalog.technology_effect_recipe_ids[i])
@@ -210,6 +231,18 @@ func _init() -> void:
 	print("[PASS] authoritative technology catalog: %d definitions / %d researchable" % [
 		EXPECTED_TECHNOLOGY_COUNT, EXPECTED_TECHNOLOGY_COUNT - EXPECTED_STARTER_COUNT])
 	quit(0)
+
+
+func _research_condition_refs_tech(catalog: Dictionary, technology_index: int,
+		referenced_index: int) -> bool:
+	var offsets: PackedInt32Array = catalog.technology_research_condition_offsets
+	var ops: PackedInt32Array = catalog.technology_research_condition_ops
+	var refs: PackedInt32Array = catalog.technology_research_condition_refs
+	for cursor in range(offsets[technology_index], offsets[technology_index + 1]):
+		if int(ops[cursor]) == TechnologyCatalogScript.CONDITION_PUSH_TECH_COMPLETED \
+				and int(refs[cursor]) == referenced_index:
+			return true
+	return false
 
 
 func _assert_prerequisite(catalog: Dictionary, technology_id: String,

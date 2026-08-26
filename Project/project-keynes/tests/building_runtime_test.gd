@@ -454,7 +454,7 @@ func _run() -> void:
 	_expect("building PKCN save completes", bool(ext.end_country_save().get("ok", false)))
 	var chunks: Array[PackedByteArray] = []
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
-	_expect("building v44 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 44)
+	_expect("building v45 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 45)
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty(): break

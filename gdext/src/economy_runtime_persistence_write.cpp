@@ -234,7 +234,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                                static_cast<uint32_t>(_save.market_cursor - begin), payload);
     }
     if (_save.section == SAVE_SECTION_CELLS) {
-        const int32_t record_bytes = 122 +
+        const int32_t record_bytes = 167 +
             static_cast<int32_t>(_ethnicity_ids.size()) * 8;
         const int32_t max_records = std::max(1, (budget - 16) / record_bytes);
         const int32_t end = std::min(_cell_count, _save.cell_cursor + max_records);
@@ -289,6 +289,26 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                 append_le<int64_t>(payload,
                     _birth_residual_q32[birth_lane_begin + ethnicity]);
             append_le<int32_t>(payload, _cell_support_ema_q16[_save.cell_cursor]);
+            const size_t food_cell = static_cast<size_t>(_save.cell_cursor);
+            append_le<uint8_t>(payload,
+                food_cell < _cell_food_flow_valid.size()
+                    ? _cell_food_flow_valid[food_cell] : 0);
+            append_le<int64_t>(payload,
+                food_cell < _cell_food_output_eq_previous.size()
+                    ? _cell_food_output_eq_previous[food_cell] : 0);
+            append_le<int64_t>(payload,
+                food_cell < _cell_food_input_eq_previous.size()
+                    ? _cell_food_input_eq_previous[food_cell] : 0);
+            append_le<int64_t>(payload,
+                food_cell < _cell_food_import_eq_previous.size()
+                    ? _cell_food_import_eq_previous[food_cell] : 0);
+            append_le<int64_t>(payload,
+                food_cell < _cell_food_export_eq_previous.size()
+                    ? _cell_food_export_eq_previous[food_cell] : 0);
+            append_le<int64_t>(payload,
+                food_cell < _cell_food_access_eq_previous.size()
+                    ? _cell_food_access_eq_previous[food_cell] : 0);
+            append_le<int32_t>(payload, _food_flow_previous_period_days);
         }
         if (_save.cell_cursor >= _cell_count) ++_save.section;
         return make_save_chunk(SAVE_SECTION_CELLS,

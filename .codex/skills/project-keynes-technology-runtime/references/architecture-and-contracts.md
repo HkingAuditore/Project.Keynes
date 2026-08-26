@@ -20,9 +20,10 @@ Current baseline:
 - 361 definitions: 23 regional-start processing nodes and 338 researchable technologies.
 - 11 eras, four domains, four backbones, and twenty-four dynamic branch families.
 - Each era has exactly eight milestone candidates and requires any four.
-- Eligibility requires the previous milestone, every core prerequisite, and any one complete research route when routes exist.
-- Nonstone specialist anchors require the previous milestone and previous same-lane anchor;
-  backbone anchors require the previous milestone.
+- Eligibility requires every core prerequisite and any one complete research route when routes exist.
+  Era-milestone nodes additionally require the previous-era milestone; ordinary nodes do not.
+- Nonstone specialist anchors require previous same-lane knowledge where authored; they do not
+  inherit a universal previous-era research gate.
 - Geography, resource, contact and practice evidence appears only in reveal-condition IR. It may
   inspire and reveal a node but never bypass a prerequisite or complete research.
 - Rivers, lakes and wetlands publish `landform.freshwater_access`; there is no

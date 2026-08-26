@@ -137,7 +137,10 @@ const FOOD_EQUIVALENT_GOODS = new Set([
 
 function directTechnology(resource) {
   const ids = resource.strings("technology_tags").filter((tag) => tag.startsWith("tech."));
-  if (ids.length !== 1) throw new Error(`${resource.id} has ${ids.length} direct technologies`);
+  if (!ids.length) throw new Error(`${resource.id} has no direct technology`);
+  // Method variants may intentionally share one BuildingProfile across two
+  // era-specific application nodes.  The first tag remains the primary
+  // owner for closure diagnostics; EconomyCatalog still compiles every tag.
   return ids[0];
 }
 
@@ -358,7 +361,8 @@ function setHard(id, prerequisites, reason) {
   const basis = node.knowledge_basis ?? {required_ids: [], alternative_groups: [], exemption_reason: ""};
   basis.required_ids = [...new Set([...(basis.required_ids ?? []).filter((value) =>
     prerequisites.includes(value)), ...prerequisites])];
-  basis.exemption_reason = "";
+  basis.exemption_reason = prerequisites.length === 0 && node.node_role === "identification" ?
+    "纯观察辨识由资源或接触证据揭示，不预设加工能力。" : "";
   node.knowledge_basis = basis;
 }
 
@@ -385,10 +389,10 @@ for (const [id, era] of [
   ["tech.application.surface_coal_gathering", "kingdom"],
   ["tech.application.cotton_garden", "agrarian"],
   ["tech.application.flax_retting_pit", "kingdom"],
-  ["tech.application.cotton_ginning_shelter", "kingdom"],
+  ["tech.application.cotton_ginning_shelter", "agrarian"],
   ["tech.application.household_loom", "kingdom"],
   ["tech.application.rubber_tapping_camp", "agrarian"],
-  ["tech.application.latex_smoking_shelter", "kingdom"],
+  ["tech.application.latex_smoking_shelter", "agrarian"],
   ["tech.application.brine_gathering_basin", "agrarian"],
   ["tech.application.solar_salt_pan", "kingdom"],
   ["tech.method.reed_cutting_camp", "agrarian"],
@@ -436,28 +440,24 @@ setHard("tech.application.early_tin_mine",
   ["tech.tin_identification", "tech.ground_stone_tools", "tech.natural_copper_working"],
   "所需的矿物辨识、采掘工具与金属经验。");
 setHard("tech.application.early_tin_smelter",
-  ["tech.bronze_casting", "tech.kiln_firing", "tech.tin_identification",
+  ["tech.kiln_firing", "tech.tin_identification",
     "tech.application.early_tin_mine"], "所需的矿石、炉温与合金知识。");
 setHard("tech.application.ore_bronzesmith_camp",
   ["tech.copper_annealing", "tech.bronze_casting", "tech.application.early_tin_smelter",
-    "tech.application.charcoal_pit"], "所需的精炼金属、配比铸造与燃料工艺。");
+    "tech.charcoal_burning"], "所需的精炼金属、配比铸造与燃料工艺。");
 setHard("tech.application.iron_ore_collector",
-  ["tech.surface_iron_collection", "tech.application.ore_bronzesmith_camp",
-    "tech.ground_stone_tools"], "所需的铁矿辨识、青铜工具与采掘工艺。");
+  ["tech.surface_iron_collection", "tech.ground_stone_tools"], "所需的铁矿辨识与采掘工艺。");
 setHard("tech.application.bloomery",
   ["tech.iron_smelting", "tech.surface_iron_collection", "tech.application.iron_ore_collector",
-    "tech.application.charcoal_pit", "tech.application.primitive_clay_pit"],
+  ],
   "所需的铁矿、木炭与耐火土炉工艺。");
 setHard("tech.application.iron_tool_workshop",
-  ["tech.iron_smelting", "tech.application.bloomery", "tech.bronze_casting",
-    "tech.application.charcoal_pit"], "所需的块炼铁、锻造与燃料工艺。");
+  ["tech.iron_smelting", "tech.application.bloomery"], "所需的块炼铁与锻造工艺。");
 setHard("tech.application.solar_salt_pan",
-  ["tech.salt_preservation", "tech.brine_collection", "tech.application.brine_gathering_basin",
-    "tech.application.primitive_clay_pit"], "所需的卤水、盐渍与池体材料知识。");
+  ["tech.salt_preservation", "tech.application.brine_gathering_basin"], "所需的卤水与盐渍知识。");
 setHard("tech.application.fertilizer_plant",
-  ["tech.synthetic_fertilizer", "tech.application.phosphate_rock_collector",
-    "tech.application.surface_coal_gathering", "tech.application.steam_steel_works"],
-  "所需的磷矿、燃料、钢制设备与肥料化学知识。");
+  ["tech.synthetic_fertilizer", "tech.fertilizer_processing"],
+  "所需的肥料化学与工业处理知识。");
 
 setHard("tech.application.atmospheric_engine_workshop",
   ["tech.atmospheric_engine", "tech.application.surface_coal_gathering",
@@ -488,6 +488,127 @@ setHard("tech.application.cottage_weaving",
 setHard("tech.application.improved_domestic_loom",
   ["tech.mechanical_workshops", "tech.textile_machinery",
     "tech.application.steam_steel_works"], "所需的机械、纺织设备与钢制构件知识。");
+
+// Industry-line closure: only process knowledge is a hard prerequisite.  Raw
+// materials, construction goods, local extraction and optional tools remain
+// market/runtime constraints and are reported below rather than becoming
+// technology gates.
+setHard("tech.natural_copper_working",
+  ["tech.natural_copper_identification", "tech.stone_knapping", "tech.ground_stone_tools"],
+  "所需的自然铜辨识与基础石器加工知识。");
+setHard("tech.copper_ore_roasting",
+  ["tech.copper_annealing", "tech.ground_stone_tools"],
+  "所需的矿石焙烧与基础采掘知识。");
+setHard("tech.copper_mining_application",
+  ["tech.natural_copper_identification", "tech.stone_knapping", "tech.ground_stone_tools"],
+  "所需的矿体辨识与基础挖掘知识。");
+setHard("tech.copper_metallurgy",
+  ["tech.copper_ore_roasting", "tech.charcoal_burning", "tech.pottery"],
+  "所需的矿石冶炼、燃料与炉体知识。");
+setHard("tech.bronze_casting",
+  ["tech.copper_annealing", "tech.tin_identification", "tech.ground_stone_tools"],
+  "所需的铜锡配比与铸造知识。");
+setHard("tech.iron_ore_identification", [], "");
+setHard("tech.surface_iron_collection", ["tech.iron_ore_identification"], "");
+setHard("tech.iron_smelting", ["tech.surface_iron_collection"], "");
+setHard("tech.application.brine_gathering_basin", ["tech.brine_collection", "tech.fire_control"],
+  "所需的卤水采集与控火知识。");
+setHard("tech.salt_preservation", ["tech.brine_collection"],
+  "所需的盐渍保存知识。");
+setHard("tech.application.salt_collector",
+  ["tech.salt_preservation", "tech.ground_stone_tools"],
+  "所需的盐源识别与采集知识。");
+setHard("tech.cotton_gardening",
+  ["tech.wild_cotton_collection", "tech.crop_domestication"],
+  "所需的野生棉铃观察与作物驯化知识。");
+setHard("tech.application.cotton_garden",
+  ["tech.cotton_gardening", "tech.crop_domestication", "tech.rainfed_field_system"],
+  "所需的棉花栽培与雨养田制知识。");
+setHard("tech.application.cotton_ginning_shelter",
+  ["tech.cotton_ginning", "tech.wild_cotton_collection"],
+  "所需的棉花去籽与原料识别知识。");
+setHard("tech.application.cotton_smallholding",
+  ["tech.application.cotton_garden", "tech.cotton_ginning", "tech.customary_tenancy",
+    "tech.rainfed_field_system"], "所需的棉花种植与租佃知识。");
+setHard("tech.application.cotton_collector",
+  ["tech.estate_plantation_management", "tech.cotton_gardening", "tech.indentured_contracts",
+    "tech.commodity_crop_management", "tech.rainfed_field_system"],
+  "所需的庄园、契约与商品作物管理知识。");
+setHard("tech.application.rubber_tapping_camp",
+  ["tech.wild_latex_tapping", "tech.rubber_identification"],
+  "所需的乳胶采集与材料识别知识。");
+setHard("tech.latex_smoke_coagulation",
+  ["tech.rubber_working", "tech.wild_latex_tapping", "tech.fire_control"],
+  "所需的乳胶处理与控火知识。");
+setHard("tech.application.latex_smoking_shelter",
+  ["tech.latex_smoke_coagulation", "tech.wild_latex_tapping", "tech.fire_control",
+    "tech.application.rubber_tapping_camp"], "所需的乳胶烟熏凝固知识。");
+setHard("tech.application.goldsmith_workshop",
+  ["tech.ground_stone_tools", "tech.fire_control"],
+  "所需的贵金属加工与控火知识。");
+setHard("tech.application.gold_mine",
+  ["tech.shaft_sinking", "tech.gold_panning"], "所需的竖井与淘金知识。");
+setHard("tech.application.silver_mine",
+  ["tech.shaft_sinking", "tech.surface_silver_collection"],
+  "所需的竖井与地表银矿采集知识。");
+setHard("tech.currency", ["tech.early_trade", "tech.weights_and_measures"],
+  "所需的贸易与度量知识。");
+setHard("tech.application.fired_brick_kiln",
+  ["tech.kiln_firing", "tech.adobe_making", "tech.clay_preparation",
+    "tech.charcoal_burning", "tech.ground_stone_tools"],
+  "所需的窑烧、黏土与燃料知识。");
+setHard("tech.application.classical_masonry_yard",
+  ["tech.road_engineering", "tech.masonry", "tech.adobe_making", "tech.ground_stone_tools"],
+  "所需的道路、砌筑与测量知识。");
+setHard("tech.application.method_lumber_plant_r4",
+  ["tech.forest_management", "tech.timber_sawing"],
+  "所需的森林管理与锯木知识。");
+setHard("tech.application.bark_paper_workshop",
+  ["tech.bark_paper_making", "tech.writing", "tech.deadwood_collection"],
+  "所需的树皮制纸与书写知识。");
+setHard("tech.application.plant_fiber_paper_workshop",
+  ["tech.plant_fiber_papermaking", "tech.writing", "tech.fiber_twisting",
+    "tech.wild_flax_collection"], "所需的植物纤维制纸与书写知识。");
+setHard("tech.application.parchment_workshop",
+  ["tech.parchment_making", "tech.writing", "tech.hide_tanning"],
+  "所需的皮纸与制革知识。");
+setHard("tech.application.rag_paper_workshop",
+  ["tech.rag_paper_making", "tech.application.flax_collector",
+    "tech.application.flax_retting_pit"], "所需的碎布制纸知识。");
+setHard("tech.application.paper_plant",
+  ["tech.industrial_chemistry", "tech.mechanized_printing", "tech.factory_system"],
+  "所需的现代造纸、印刷与工厂组织知识。");
+setHard("tech.application.composting_yard",
+  ["tech.crop_rotation", "tech.mechanical_workshops", "tech.pastoralism"],
+  "所需的轮作、机械作业与牧业循环知识。");
+setHard("tech.application.sulfur_collector", ["tech.gunpowder_formulation", "tech.ground_stone_tools"],
+  "所需的硫磺识别与基础采掘知识。");
+setHard("tech.application.early_oil_well",
+  ["tech.petroleum_extraction", "tech.petroleum_drilling", "tech.steam_power"],
+  "所需的钻井、石油开采与蒸汽动力知识。");
+setHard("tech.application.oil_collector",
+  ["tech.petroleum_drilling", "tech.machine_tools"],
+  "所需的钻井与机械加工知识。");
+setHard("tech.application.lubricants_plant",
+  ["tech.industrial_ecology", "tech.digital_control", "tech.petroleum_refining"],
+  "所需的石化精炼与过程控制知识。");
+
+// The runtime signal catalog currently exposes resource provenance for these
+// mineral routes, but no generic contact.<mineral> signals. Keep discovery
+// valid against that authoritative vocabulary until contact signals are
+// separately authored in the research catalog.
+for (const [id, signal] of [
+  ["tech.iron_ore_identification", "resource.iron_ore"],
+  ["tech.application.sulfur_collector", "resource.sulfur"],
+]) {
+  const node = nodeById.get(id);
+  if (node) node.reveal_condition = {kind: 1, id: signal, value: 1};
+}
+const goldsmithNode = nodeById.get("tech.application.goldsmith_workshop");
+if (goldsmithNode) goldsmithNode.reveal_condition = {operator: 2, children: [
+  {kind: 1, id: "resource.gold_ore", value: 1},
+  {kind: 1, id: "resource.silver_ore", value: 1},
+]};
 
 // Single-parent method nodes only delayed a method already completely described
 // by its source knowledge. Fold their buildings and all graph references into
@@ -666,9 +787,10 @@ for (const good of goods) {
 // Keep authoring bindings exactly equal to the explicit resource catalogs.
 const buildingEffects = new Map();
 for (const building of buildings) {
-  const owner = buildingOwner.get(building.id);
-  if (!buildingEffects.has(owner)) buildingEffects.set(owner, []);
-  buildingEffects.get(owner).push({id: building.id, name: building.name});
+  for (const owner of building.strings("technology_tags").filter((tag) => tag.startsWith("tech."))) {
+    if (!buildingEffects.has(owner)) buildingEffects.set(owner, []);
+    buildingEffects.get(owner).push({id: building.id, name: building.name});
+  }
 }
 const goodEffects = new Map();
 for (const good of goods) {
@@ -836,9 +958,9 @@ function removeHardPrerequisite(node, prerequisite) {
 }
 
 // Older runs treated every positive input_required_q16 as a research gate.
-// Remove only stale tool-producer edges left by soft tool slots. Exact
-// construction goods, hard input slots, and explicitly authored knowledge
-// foundations continue to gate the technology.
+// Remove only stale tool-producer edges left by soft tool slots. Explicitly
+// authored knowledge foundations continue to gate the technology; construction
+// goods and operating inputs are audited below but never synthesized here.
 const removedSoftToolDependencies = [];
 for (const building of buildings) {
   const owner = buildingOwner.get(building.id);
@@ -876,31 +998,76 @@ for (const building of buildings) {
   }
 }
 
+// These are supply methods, not universal knowledge gates. Remove legacy
+// closure edges in one deterministic pass so existing authoring data is
+// repaired even when the script is run on an older network snapshot.
+const removedSupplierDependencies = [];
+const bannedSupplierPrerequisites = [
+  "tech.application.fired_brick_kiln",
+  "tech.application.classical_masonry_yard",
+  "tech.application.ore_bronzesmith_camp",
+  "tech.application.iron_tool_workshop",
+];
+for (const node of network.nodes) {
+  for (const prerequisite of bannedSupplierPrerequisites) {
+    if (removeHardPrerequisite(node, prerequisite)) {
+      removedSupplierDependencies.push(`${node.id}:${prerequisite}`);
+    }
+  }
+}
+
+// Keep the explicit knowledge contract closed under the authored hard graph.
+// Older snapshots retained removed supplier IDs in knowledge_basis; filtering
+// them here makes the persisted audit data agree with the actual graph.
+for (const node of network.nodes) {
+  const closure = ancestors(node.id, new Map());
+  const basis = node.knowledge_basis ?? {};
+  basis.required_ids = [...new Set([
+    ...(basis.required_ids ?? []),
+    ...(node.hard_prerequisite_ids ?? []),
+  ].filter((id) => id !== node.id && closure.has(id)))];
+  basis.alternative_groups = (basis.alternative_groups ?? []).map((group) =>
+    [...new Set(group.filter((id) => id !== node.id))]).filter((group) => group.length);
+  node.knowledge_basis = basis;
+}
+
+// Construction goods, operating inputs, and local-resource discovery are
+// economic availability constraints, not universal research prerequisites.
+// Keep them visible for review without mutating the authoritative technology
+// graph.  This prevents a producer's technology from becoming a cross-sector
+// hard gate merely because another building can buy its output.
+const constructionSupplyEdges = [];
+const operatingInputEdges = [];
+const resourceSupplyEdges = [];
 for (const building of buildings) {
   const owner = buildingOwner.get(building.id);
   const ownerNode = nodeById.get(owner);
-  if (!ownerNode.is_starting && !ownerNode.is_starter_eligible) {
-    for (const goodId of building.strings("construction_good_ids")) {
-      const technologies = goodTags.get(goodId) ?? [];
-      const alternatives = building.strings("output_good_ids").includes(goodId) ?
-        technologies.filter((technology) => technology !== owner) : technologies;
-      addDependency(owner, alternatives, `建材“${goodById.get(goodId)?.name ?? goodId}”`);
+  if (!ownerNode) continue;
+  for (const goodId of building.strings("construction_good_ids")) {
+    const technologies = goodTags.get(goodId) ?? [];
+    if (technologies.length) {
+      constructionSupplyEdges.push({owner, building: building.id, good: goodId,
+        technologies: [...technologies]});
     }
   }
   const inputIds = building.strings("input_good_ids");
   const configuredRequired = building.ints("input_required_q16");
   for (let slot = 0; slot < inputIds.length; slot += 1) {
     if ((configuredRequired[slot] ?? 65536) < 65536) continue;
-    const alternatives = candidateGoods(building, slot).flatMap((goodId) => goodTags.get(goodId) ?? []);
-    addDependency(owner, alternatives, `必需投入“${goodById.get(inputIds[slot])?.name ?? inputIds[slot]}”`);
+    const alternatives = candidateGoods(building, slot)
+      .flatMap((goodId) => goodTags.get(goodId) ?? []);
+    if (alternatives.length) {
+      operatingInputEdges.push({owner, building: building.id, slot,
+        good: inputIds[slot], technologies: [...new Set(alternatives)]});
+    }
   }
-  for (const resourceId of building.strings("resource_ids")) {
-    addDependency(owner, resourceTechnology.get(resourceId) ?? [],
-      `资源“${resourceById.get(resourceId)?.name ?? resourceId}”辨识`);
-  }
-  for (const resourceId of building.strings("resource_generation_ids")) {
-    addDependency(owner, resourceTechnology.get(resourceId) ?? [],
-      `资源“${resourceById.get(resourceId)?.name ?? resourceId}”经营`);
+  for (const resourceId of [...building.strings("resource_ids"),
+    ...building.strings("resource_generation_ids")]) {
+    const technologies = resourceTechnology.get(resourceId) ?? [];
+    if (technologies.length) {
+      resourceSupplyEdges.push({owner, building: building.id, resource: resourceId,
+        technologies: [...technologies]});
+    }
   }
 }
 
@@ -908,6 +1075,7 @@ for (const building of buildings) {
 // values live in BuildingProfile; runtime production and investment consume the
 // existing packed recipe columns without a balance-time modifier or script.
 function scalarInt(resource, name, fallback = 0) {
+  if (!resource) return fallback;
   const value = Number(resource.props[name] ?? fallback);
   return Number.isFinite(value) ? value : fallback;
 }
@@ -923,7 +1091,7 @@ function laborSlots(building) {
 }
 function recipeValue(ids, quantities) {
   return ids.reduce((sum, id, index) => sum +
-    Math.max(0, quantities[index] ?? 0) * defaultPrice(id), 0);
+    (id ? Math.max(0, quantities[index] ?? 0) * defaultPrice(id) : 0), 0);
 }
 function outputValue(building) {
   return recipeValue(building.strings("output_good_ids"),
@@ -1257,6 +1425,11 @@ console.log(`same_target_modifiers_removed=${removedSameTargetModifiers.length}`
 for (const modifier of removedSameTargetModifiers) console.log(`  ${modifier}`);
 console.log(`soft_tool_dependencies_removed=${removedSoftToolDependencies.length}`);
 for (const dependency of removedSoftToolDependencies) console.log(`  ${dependency}`);
+console.log(`supplier_dependencies_removed=${removedSupplierDependencies.length}`);
+for (const dependency of removedSupplierDependencies) console.log(`  ${dependency}`);
+console.log(`construction_supply_edges_audited=${constructionSupplyEdges.length}`);
+console.log(`operating_input_edges_audited=${operatingInputEdges.length}`);
+console.log(`resource_supply_edges_audited=${resourceSupplyEdges.length}`);
 
 if (WRITE) {
   for (const resource of [...buildings, ...goods]) fs.writeFileSync(resource.path, resource.text, "utf8");

@@ -78,9 +78,10 @@ Also use `civ-grounded-development` for repository changes. Add
 `hard_prerequisite_ids` contains only irreplaceable core knowledge. Authoring-side
 `research_condition` is forbidden: the compiler must reject it when non-empty. Optional
 `research_routes[]` packages contain stable route IDs, Chinese names, route types, explanations and
-conditions. Formal eligibility is previous-era milestone completed AND every hard prerequisite
-completed AND (no route package OR one complete route). A route may substitute for professional
-knowledge, but never for the era milestone or core principles. Geography, resources, contact and
+conditions. Formal eligibility is every hard prerequisite completed AND (no route
+package OR one complete route). Era-milestone nodes additionally require the
+previous-era milestone. A route may substitute for professional knowledge, but
+never for core principles or for an era-milestone node's previous-era gate. Geography, resources, contact and
 practice signals can reveal a problem; development, institutional and practice signals can also be
 part of a route when they express the capability used to solve it. Reveal and route conditions must
 not reuse the same signal atom.
