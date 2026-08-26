@@ -13,7 +13,7 @@ const PAGE_DEFINITIONS := {
 	"treasury": {"label": "国库", "icon": &"metric.treasury", "accent": UITokens.RESOURCE},
 	"tax": {"label": "税制", "icon": &"tax.section", "accent": UITokens.BRASS_HIGHLIGHT},
 	"income": {"label": "所得税", "icon": &"tax.income", "accent": UITokens.ACCENT},
-	"consumption": {"label": "消费税", "icon": &"tax.consumption", "accent": UITokens.GOOD},
+	"consumption": {"label": "交易税", "icon": &"tax.consumption", "accent": UITokens.GOOD},
 	"business": {"label": "营业税", "icon": &"tax.business", "accent": UITokens.CLIMATE},
 	"tariff": {"label": "关税", "icon": &"tax.tariff", "accent": UITokens.WATER},
 	"trade": {"label": "贸易", "icon": &"metric.trade", "accent": UITokens.ACCENT},
@@ -221,7 +221,7 @@ func _apply_model(now_msec: int) -> void:
 	_cash_card.set_data("国库现金",
 		String(treasury.get("cash_text", "—")) if available else "—",
 		String(_model.get("country_name", "玩家国家")), UITokens.RESOURCE, "", "metric.treasury")
-	_tax_card.set_data("昨日税收", _money(collected), "所得税 / 消费税 / 营业税",
+	_tax_card.set_data("昨日税收", _money(collected), "所得税 / 交易税 / 营业税",
 		UITokens.BRASS_HIGHLIGHT, "", "tax.section")
 	var subsidy_gap := maxi(0, requested - subsidy)
 	_subsidy_card.set_data("补贴缺口", _money(subsidy_gap),
@@ -338,7 +338,7 @@ func _page_description(page: String) -> String:
 	match page:
 		"treasury": return "国家库存与战略物资的可用余额"
 		"income": return "按职业审定所得税覆盖与实际税率"
-		"consumption": return "按商品审定消费税覆盖与实际税率"
+		"consumption": return "按商品审定买方交易税覆盖与实际税率"
 		"business": return "按建筑类型审定营业税覆盖与实际税率"
 		"tariff": return "管理进口与出口关税"
 		"trade": return "核对商品流量、贸易伙伴与关税影响"
@@ -370,7 +370,8 @@ func _refresh_page() -> void:
 		return
 	var presentation: Dictionary = _model.get("tax_presentation", {})
 	var page_pres: Dictionary = presentation.get(_presentation_key(_page), {})
-	var defaults: PackedInt32Array = policy.get("default_rates", PackedInt32Array())
+	var defaults := _basis_points_array(policy.get("default_rates_basis_points", PackedInt32Array()),
+		policy.get("default_rates", PackedInt32Array()))
 	var default_card := _ensure_card(_page, "__default__", _default_title(),
 		String(&"tax.default"), true)
 	var default_data := {}
@@ -398,11 +399,11 @@ func _refresh_page() -> void:
 		var complete := true
 		for kind in _page_kinds(_page):
 			var group: Dictionary = kind_groups[kind]
-			var rates: PackedInt32Array = group.get("rates", PackedInt32Array())
+			var rates := _group_basis_points(group, "rates")
 			if index >= rates.size():
 				complete = false
 				break
-			var effective: PackedInt32Array = group.get("effective_rates", rates)
+			var effective := _group_basis_points(group, "effective_rates", rates)
 			var flags: PackedByteArray = group.get("has_override", PackedByteArray())
 			kind_data[kind] = {
 				"base": int(rates[index]),
@@ -675,7 +676,7 @@ func _apply_default_summary_cards() -> void:
 	_cash_card.set_data("国库现金",
 		String(treasury.get("cash_text", "—")) if available else "—",
 		String(_model.get("country_name", "玩家国家")), UITokens.RESOURCE, "", "metric.treasury")
-	_tax_card.set_data("昨日税收", _money(collected), "所得税 / 消费税 / 营业税",
+	_tax_card.set_data("昨日税收", _money(collected), "所得税 / 交易税 / 营业税",
 		UITokens.BRASS_HIGHLIGHT, "", "tax.section")
 	var subsidy_gap := maxi(0, requested - subsidy)
 	_subsidy_card.set_data("补贴缺口", _money(subsidy_gap),
@@ -725,6 +726,50 @@ func _item_ids(policy: Dictionary) -> PackedStringArray:
 	if _page == "business":
 		return policy.get("building_type_ids", PackedStringArray())
 	return policy.get("good_ids", PackedStringArray())
+
+
+func _basis_points_array(preferred, fallback) -> PackedInt32Array:
+	var source: PackedInt32Array = preferred if preferred is PackedInt32Array else PackedInt32Array()
+	if not source.is_empty():
+		return source
+	var legacy: PackedInt32Array = fallback if fallback is PackedInt32Array else PackedInt32Array()
+	var converted := PackedInt32Array()
+	converted.resize(legacy.size())
+	for i in legacy.size():
+		converted[i] = int(legacy[i]) * 100
+	return converted
+
+
+func _group_basis_points(group: Dictionary, key: String,
+		fallback: PackedInt32Array = PackedInt32Array()) -> PackedInt32Array:
+	var preferred_key := "%s_basis_points" % key
+	var preferred: PackedInt32Array = group.get(preferred_key, PackedInt32Array())
+	if not preferred.is_empty():
+		return preferred
+	var legacy: PackedInt32Array = group.get(key, fallback)
+	if legacy.is_empty():
+		return fallback
+	var converted := PackedInt32Array()
+	converted.resize(legacy.size())
+	for i in legacy.size():
+		converted[i] = int(legacy[i]) * 100
+	return converted
+
+
+func _set_spin_basis_points(spin: SpinBox, rate_basis_points: int) -> void:
+	if spin == null:
+		return
+	spin.set_value_no_signal(TaxLaneEditor.basis_points_to_percent(rate_basis_points))
+	var line := spin.get_line_edit()
+	if line == null:
+		return
+	var percent := TaxLaneEditor.basis_points_to_percent(rate_basis_points)
+	var shown := "%d" % int(round(percent)) \
+		if is_equal_approx(percent, round(percent)) else "%.2f" % percent
+	if not line.has_focus() and not String(spin.suffix).is_empty():
+		shown = "%s %s" % [shown, spin.suffix]
+	if line.text != shown:
+		line.text = shown
 
 
 func _ensure_card(page: String, item_id: String, label: String,
@@ -813,11 +858,7 @@ func _update_card(card: Dictionary, kind_data: Dictionary) -> void:
 			var spin := (card.spins as Dictionary)[kind] as SpinBox
 			if pending_entry.has("rate"):
 				var pending_rate := int(pending_entry.rate)
-				spin.set_value_no_signal(pending_rate)
-				var shown := str(pending_rate)
-				if not String(spin.suffix).is_empty():
-					shown = "%s %s" % [shown, spin.suffix]
-				spin.get_line_edit().text = shown
+				_set_spin_basis_points(spin, pending_rate)
 			continue
 		var spin := (card.spins as Dictionary)[kind] as SpinBox
 		var line_edit := spin.get_line_edit()
@@ -832,7 +873,7 @@ func _update_card(card: Dictionary, kind_data: Dictionary) -> void:
 		var effective := int(data.get("effective", base))
 		var overridden := bool(data.get("has_override", false))
 		var visual_rate := _visual_rate(card, kind, base, overridden)
-		spin.set_value_no_signal(visual_rate)
+		_set_spin_basis_points(spin, visual_rate)
 		line_edit.add_theme_color_override("font_color",
 			UITokens.BRASS_HIGHLIGHT \
 				if overridden or visual_rate != base else UITokens.ARCHIVE_INK_MUTED)
@@ -843,12 +884,12 @@ func _update_card(card: Dictionary, kind_data: Dictionary) -> void:
 			var sub := card.sub as Label
 			sub.visible = visual_rate == base and effective != base
 			if sub.visible:
-				sub.text = "修正后 %d%%" % effective
+				sub.text = "修正后 %s" % _format_rate(effective)
 	_refresh_override_frame(card)
 
 
 func _visual_rate(card: Dictionary, kind: String, authoritative_rate: int,
-		overridden: bool) -> int:
+			 overridden: bool) -> int:
 	if bool(card.is_default) or not overridden:
 		if _preview_defaults.has(kind):
 			return int(_preview_defaults[kind])
@@ -857,6 +898,13 @@ func _visual_rate(card: Dictionary, kind: String, authoritative_rate: int,
 		if pending_default.has("rate"):
 			return int(pending_default.rate)
 	return authoritative_rate
+
+
+func _format_rate(rate_basis_points: int) -> String:
+	var percent := TaxLaneEditor.basis_points_to_percent(rate_basis_points)
+	var shown := "%d" % int(round(percent)) \
+		if is_equal_approx(percent, round(percent)) else "%.2f" % percent
+	return "%s%%" % shown
 
 
 func _apply_card_frame(card: Dictionary, highlighted: bool) -> void:
@@ -938,9 +986,11 @@ func _on_rate_confirmed(text: String, key: String, kind: String) -> void:
 	var card: Dictionary = _rows.get(key, {})
 	if not card.is_empty() and (card.spins as Dictionary).has(kind):
 		var spin := (card.spins as Dictionary)[kind] as SpinBox
-		var rate := TaxLaneEditor.parse_rate_text(text, int(spin.value))
-		if rate != int(spin.value):
-			spin.set_value_no_signal(rate)
+		var fallback := int((card.rates as Dictionary).get(kind,
+			TaxLaneEditor.percent_to_basis_points(float(spin.value))))
+		var rate := TaxLaneEditor.parse_rate_text(text, fallback)
+		if rate != fallback:
+			_set_spin_basis_points(spin, rate)
 	_confirm_spin(key, kind)
 
 
@@ -957,7 +1007,7 @@ func _on_rate_preview(value: float, key: String, kind: String) -> void:
 	var card: Dictionary = _rows.get(key, {})
 	if card.is_empty():
 		return
-	var rate := clampi(int(value), -100, 100)
+	var rate := TaxLaneEditor.percent_to_basis_points(value)
 	if bool(card.is_default):
 		var authoritative := int((card.rates as Dictionary).get(kind, 0))
 		if rate == authoritative and not _has_pending_default(kind):
@@ -1022,9 +1072,11 @@ func _confirm_spin(key: String, kind: String) -> void:
 	if card.is_empty():
 		return
 	var spin := (card.spins as Dictionary)[kind] as SpinBox
-	var rate := TaxLaneEditor.parse_rate_text(spin.get_line_edit().text, int(spin.value))
-	if rate != int(spin.value):
-		spin.set_value_no_signal(rate)
+	var fallback := int((card.rates as Dictionary).get(kind,
+		TaxLaneEditor.percent_to_basis_points(float(spin.value))))
+	var rate := TaxLaneEditor.parse_rate_text(spin.get_line_edit().text, fallback)
+	if rate != fallback:
+		_set_spin_basis_points(spin, rate)
 	var current := int((card.rates as Dictionary).get(kind, 0))
 	var overridden := bool((card.overridden as Dictionary).get(kind, false))
 	var item_id := String(card.item_id)
@@ -1056,7 +1108,8 @@ func _default_rate(kind: String) -> int:
 	if pending_default.has("rate"):
 		return int(pending_default.rate)
 	var policy: Dictionary = _model.get("tax_policy", {})
-	var defaults: PackedInt32Array = policy.get("default_rates", PackedInt32Array())
+	var defaults := _basis_points_array(policy.get("default_rates_basis_points", PackedInt32Array()),
+		policy.get("default_rates", PackedInt32Array()))
 	var kind_id := int(TAX_KIND[kind])
 	return int(defaults[kind_id]) if kind_id < defaults.size() else 0
 
@@ -1081,7 +1134,7 @@ func _clear_override(kind: String, item_id: String) -> void:
 		if not card.is_empty():
 			var default_rate := _default_rate(kind)
 			var spin := (card.spins as Dictionary)[kind] as SpinBox
-			spin.set_value_no_signal(default_rate)
+			_set_spin_basis_points(spin, default_rate)
 			spin.get_line_edit().add_theme_color_override("font_color", UITokens.ARCHIVE_INK_MUTED)
 			(card.rates as Dictionary)[kind] = default_rate
 			(card.overridden as Dictionary)[kind] = false
@@ -1097,11 +1150,11 @@ func _submit_rate(kind: String, item_id: String, rate: int, is_default: bool) ->
 	var result: Dictionary
 	if is_default:
 		result = _player_controller.request_command(&"country.tax.set_default", {
-			"kind": int(TAX_KIND[kind]), "rate_percent": rate})
+			"kind": int(TAX_KIND[kind]), "rate_basis_points": rate})
 	else:
 		result = _player_controller.request_command(&"country.tax.set_override", {
 			"kind": int(TAX_KIND[kind]), "item_id": StringName(item_id),
-			"rate_percent": rate})
+			"rate_basis_points": rate})
 	if bool(result.get("ok", false)):
 		if is_default:
 			_preview_defaults.erase(kind)
@@ -1109,7 +1162,7 @@ func _submit_rate(kind: String, item_id: String, rate: int, is_default: bool) ->
 		var card: Dictionary = _rows.get("%s:%s" % [_kind_page(kind), item_id], {})
 		if not card.is_empty():
 			var spin := (card.spins as Dictionary)[kind] as SpinBox
-			spin.set_value_no_signal(rate)
+			_set_spin_basis_points(spin, rate)
 			spin.get_line_edit().add_theme_color_override("font_color",
 				UITokens.BRASS_HIGHLIGHT)
 			(card.rates as Dictionary)[kind] = rate
@@ -1125,7 +1178,8 @@ func _submit_rate(kind: String, item_id: String, rate: int, is_default: bool) ->
 			var card: Dictionary = _rows.get(
 				"%s:__default__" % _kind_page(kind), {})
 			if not card.is_empty():
-				((card.spins as Dictionary)[kind] as SpinBox).set_value_no_signal(
+				_set_spin_basis_points(
+					(card.spins as Dictionary)[kind] as SpinBox,
 					int((card.rates as Dictionary).get(kind, 0)))
 			_refresh_page()
 		_set_status(String(result.get("reason", "税率命令提交失败")))
@@ -1192,7 +1246,8 @@ func _policy_reflects_pending(key: String, pending: Dictionary) -> bool:
 	var op := String(pending.get("op", "set"))
 	var kind_id := int(TAX_KIND.get(kind, -1))
 	if item_id == "__default__":
-		var defaults: PackedInt32Array = policy.get("default_rates", PackedInt32Array())
+		var defaults := _basis_points_array(policy.get("default_rates_basis_points", PackedInt32Array()),
+			policy.get("default_rates", PackedInt32Array()))
 		return kind_id >= 0 and kind_id < defaults.size() and pending.has("rate") \
 			and int(defaults[kind_id]) == int(pending.rate)
 	var group: Dictionary = policy.get(kind, {})
@@ -1204,7 +1259,7 @@ func _policy_reflects_pending(key: String, pending: Dictionary) -> bool:
 	else:
 		ids = policy.get("good_ids", PackedStringArray())
 	var index := ids.find(item_id)
-	var rates: PackedInt32Array = group.get("rates", PackedInt32Array())
+	var rates := _group_basis_points(group, "rates")
 	var flags: PackedByteArray = group.get("has_override", PackedByteArray())
 	if index < 0 or index >= rates.size():
 		return false
@@ -1352,15 +1407,16 @@ func tax_row_rate(page: String, item_id: String, kind: String) -> int:
 	var card: Dictionary = _rows.get("%s:%s" % [page, item_id], {})
 	if card.is_empty() or not (card.spins as Dictionary).has(kind):
 		return 0
-	return int(((card.spins as Dictionary)[kind] as SpinBox).value)
+	return int(round(((card.spins as Dictionary)[kind] as SpinBox).value))
 
 
 func preview_item_rate_for_test(page: String, item_id: String, kind: String, rate: int) -> void:
 	var card: Dictionary = _rows.get("%s:%s" % [page, item_id], {})
 	if card.is_empty() or not (card.spins as Dictionary).has(kind):
 		return
-	((card.spins as Dictionary)[kind] as SpinBox).set_value_no_signal(rate)
-	_draft_overrides[_item_draft_key(kind, item_id)] = rate
+	((card.spins as Dictionary)[kind] as SpinBox).set_value_no_signal(float(rate))
+	_draft_overrides[_item_draft_key(kind, item_id)] = \
+		TaxLaneEditor.percent_to_basis_points(float(rate))
 	_stop_draft_timer()
 
 
@@ -1371,7 +1427,7 @@ func confirm_item_rate_for_test(page: String, item_id: String, kind: String) -> 
 func preview_default_rate_for_test(page: String, kind: String, rate: int) -> void:
 	var card: Dictionary = _rows.get("%s:__default__" % page, {})
 	if not card.is_empty() and (card.spins as Dictionary).has(kind):
-		((card.spins as Dictionary)[kind] as SpinBox).value = rate
+		((card.spins as Dictionary)[kind] as SpinBox).value = float(rate)
 
 
 func confirm_default_rate_for_test(page: String, kind: String) -> void:
@@ -1380,7 +1436,8 @@ func confirm_default_rate_for_test(page: String, kind: String) -> void:
 
 func pending_default_rate_for_test(kind: String) -> int:
 	var pending: Dictionary = _pending.get("%s:__default__" % kind, {})
-	return int(pending.get("rate", 1000))
+	return int(round(TaxLaneEditor.basis_points_to_percent(
+		int(pending.get("rate", 100000)))))
 
 
 func tax_status_text() -> String:

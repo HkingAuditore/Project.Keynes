@@ -28,6 +28,9 @@ func _run() -> void:
 		"res://data/economy/default_economy.tres").to_native_profile()
 	profile.market_runtime_mode = "ACTIVE"
 	profile.trade_runtime_mode = "OFF"
+	profile.economy_cadence_force_market_days = 5
+	profile.economy_cadence_force_plan_days = 10
+	profile.economy_cadence_force_investment_days = 10
 	var runtime := _new_runtime(compiled, catalog, profile, 92015)
 	if runtime == null:
 		return
@@ -101,12 +104,12 @@ func _run() -> void:
 		not bool(fiscal.get("tariffs_active", true)))
 	var saved := _save(runtime)
 	var saved_country := _save_country(runtime)
-	_expect("PKEC v42 saves at a daily committed boundary",
-		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 43)
+	_expect("PKEC v46 saves at a daily committed boundary",
+		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 46)
 	var restored := _new_ext(compiled)
 	_expect("restore country matches", CountryTestHelper.configure_all_technologies(
 		restored, catalog, CELL_COUNT, 92015))
-	_expect("PKCN v11 tax and treasury restore matches",
+	_expect("PKCN v12 tax and treasury restore matches",
 		_restore_country(restored, saved_country.get("chunks", [])))
 	_expect("restore economy configures", bool(restored.configure_economy(
 		catalog, profile, CELL_COUNT, 92015).get("ok", false)))

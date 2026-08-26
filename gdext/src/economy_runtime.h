@@ -54,7 +54,7 @@ public:
     // 43: sector maintenance horizons and maintenance cost factor.
     // 44: resolved startup-demand mode. v43 restores with startup demand OFF.
     // 45: previous-period food-flow carrying-capacity snapshot.
-    static constexpr int32_t SCHEMA_VERSION = 45;
+    static constexpr int32_t SCHEMA_VERSION = 46;
     static constexpr uint32_t BUILDING_KIT_ROLE_TRADE = 1u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CONSTRUCTION = 2u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CLOTHING_INPUT = 4u;
@@ -1378,6 +1378,9 @@ private:
         int64_t sell_through_q16 = 0;
         int64_t discard_q16 = 0;
         int64_t driver_strength_q16 = 0;
+        // Forecast cash value used to choose a multi-output driver. This is a
+        // revenue signal, not an independent shortage or inventory preference.
+        int64_t expected_cash_value = 0;
         int64_t nameplate_output = 0;
         int64_t demand = 0;
         int64_t startup_demand = 0;
@@ -1659,6 +1662,7 @@ private:
         int64_t retail_value = 0;
         int64_t import_transfer = 0;
         int64_t export_transfer = 0;
+        int64_t transaction_transfer = 0;
         int64_t capacity_work = 0;
         int64_t density_q16 = 0;
         int32_t signal_age_days = 0;
@@ -1685,6 +1689,7 @@ private:
         int64_t retail = 0;
         int64_t import_transfer = 0;
         int64_t export_transfer = 0;
+        int64_t transaction_transfer = 0;
         int64_t importer_outlay = 0;
         int64_t exporter_receipt = 0;
         int64_t importer_profit = 0;
@@ -1791,6 +1796,7 @@ private:
         std::vector<int64_t> line_retail_values;
         std::vector<int64_t> line_import_transfers;
         std::vector<int64_t> line_export_transfers;
+        std::vector<int64_t> line_transaction_transfers;
         std::vector<uint8_t> line_flags;
         std::vector<int32_t> seller_offsets;
         std::vector<uint64_t> seller_handles;
@@ -1813,6 +1819,7 @@ private:
             line_unit_prices.clear(); line_destination_prices.clear();
             line_base_values.clear(); line_retail_values.clear();
             line_import_transfers.clear(); line_export_transfers.clear();
+            line_transaction_transfers.clear();
             line_flags.clear(); seller_offsets.assign(1, 0);
             seller_handles.clear(); seller_weights.clear();
             arrival_bucket_days.clear(); arrival_bucket_offsets.assign(1, 0);
@@ -2277,6 +2284,7 @@ private:
         FIELD_TRADE_RETAIL_VALUE = 43,
         FIELD_TRADE_IMPORT_TRANSFER = 44,
         FIELD_TRADE_EXPORT_TRANSFER = 45,
+        FIELD_TRADE_TRANSACTION_TRANSFER = 46,
     };
 
     enum EventSubjectKind : int32_t {
@@ -4212,15 +4220,15 @@ private:
     std::vector<int32_t> _city_good_consumption_stat_ids;
     std::vector<int32_t> _city_good_output_stat_ids;
     std::vector<int32_t> _city_building_output_stat_ids;
-    std::vector<int8_t> _epoch_income_tax_rates;
-    std::vector<int8_t> _epoch_consumption_tax_rates;
-    std::vector<int8_t> _epoch_business_tax_rates;
-    std::vector<int8_t> _epoch_import_tax_rates;
-    std::vector<int8_t> _epoch_export_tax_rates;
+    std::vector<int32_t> _epoch_income_tax_rates;
+    std::vector<int32_t> _epoch_consumption_tax_rates;
+    std::vector<int32_t> _epoch_business_tax_rates;
+    std::vector<int32_t> _epoch_import_tax_rates;
+    std::vector<int32_t> _epoch_export_tax_rates;
     static constexpr size_t CELL_TAX_KIND_COUNT = 5;
     struct CompiledCellTaxOverride {
         int32_t item = -1;
-        int8_t rate = 0;
+        int32_t rate = 0;
     };
     struct CompiledCellTaxPolicy {
         std::array<int32_t, CELL_TAX_KIND_COUNT>
@@ -4234,7 +4242,7 @@ private:
     struct CompiledCellTaxDefaultRow {
         int32_t kind = -1;
         int32_t country = -1;
-        int8_t base_rate = 0;
+        int32_t base_rate = 0;
         int32_t offset = 0;
         int32_t count = 0;
     };
@@ -4243,7 +4251,7 @@ private:
     std::vector<CompiledCellTaxPolicy> _epoch_compiled_cell_tax_policies;
     std::vector<CompiledCellTaxOverride> _epoch_compiled_cell_tax_overrides;
     std::vector<CompiledCellTaxDefaultRow> _epoch_compiled_cell_tax_default_rows;
-    std::vector<int8_t> _epoch_compiled_cell_tax_default_rates;
+    std::vector<int32_t> _epoch_compiled_cell_tax_default_rates;
     int64_t _epoch_cell_tax_cache_bytes = 0;
     double _epoch_cell_tax_compile_ms = 0.0;
     bool _epoch_has_cell_tax_policies = false;
@@ -4265,6 +4273,9 @@ private:
     std::vector<int64_t> _fiscal_current_requests;
     std::vector<int64_t> _fiscal_budgets;
     std::vector<int64_t> _fiscal_remaining;
+    // Frozen promise ratio shared by forecasts and settlement. This prevents
+    // iteration order from changing which rational actor receives a subsidy.
+    std::vector<int32_t> _fiscal_fulfillment_q16;
     std::vector<int64_t> _fiscal_epoch_bases;
     std::vector<int64_t> _fiscal_epoch_assessed;
     std::vector<int64_t> _fiscal_epoch_collected;
@@ -4937,14 +4948,25 @@ private:
     void publish_country_development_facts();
     bool prepare_fiscal_budgets(int64_t day_index, std::string &error);
     int64_t prospective_business_subsidy_request(int32_t cell, int32_t country);
+    struct TransactionQuote {
+        int64_t base_value = 0;
+        int64_t buyer_outlay = 0;
+        int64_t seller_receipt = 0;
+        int64_t fiscal_transfer = 0;
+    };
+    TransactionQuote quote_transaction(int32_t cell, int32_t good,
+                                        int64_t base_value,
+                                        bool settle,
+                                        bool subsidy_eligible,
+                                        int64_t &saturation_count);
     void settle_income_subsidies_for_cell(int32_t cell,
                                           int64_t &saturation_count);
     bool commit_fiscal(std::string &error);
-    int8_t frozen_tax_rate(int32_t cell, int32_t kind, int32_t item) const;
+    int32_t frozen_tax_rate(int32_t cell, int32_t kind, int32_t item) const;
     int64_t apply_fiscal_tax(int32_t cell, int32_t kind, int64_t base,
-                             int8_t rate, int64_t &saturation_count);
+                             int32_t rate, int64_t &saturation_count);
     int64_t expected_fiscal_transfer(int32_t cell, int32_t kind, int64_t base,
-                                     int8_t rate,
+                                     int32_t rate,
                                      int64_t &saturation_count) const;
     int32_t tariff_epoch_lane_index(int32_t cell, int32_t tariff_kind,
                                     bool create);

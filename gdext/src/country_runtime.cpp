@@ -502,7 +502,7 @@ int32_t NativeCountryRuntime::tax_item_count(int32_t kind) const {
     }
 }
 
-const std::vector<int8_t> *NativeCountryRuntime::tax_override_vector(
+const std::vector<int32_t> *NativeCountryRuntime::tax_override_vector(
         int32_t kind) const {
     switch (kind) {
         case TAX_INCOME: return &_country_income_tax_overrides;
@@ -514,19 +514,19 @@ const std::vector<int8_t> *NativeCountryRuntime::tax_override_vector(
     }
 }
 
-std::vector<int8_t> *NativeCountryRuntime::tax_override_vector(int32_t kind) {
-    return const_cast<std::vector<int8_t> *>(
+std::vector<int32_t> *NativeCountryRuntime::tax_override_vector(int32_t kind) {
+    return const_cast<std::vector<int32_t> *>(
         static_cast<const NativeCountryRuntime *>(this)->tax_override_vector(kind));
 }
 
-int8_t NativeCountryRuntime::resolved_tax_rate(
-        const std::vector<int8_t> &defaults,
-        const std::vector<int8_t> &overrides, int32_t country_slot,
+int32_t NativeCountryRuntime::resolved_tax_rate(
+        const std::vector<int32_t> &defaults,
+        const std::vector<int32_t> &overrides, int32_t country_slot,
         int32_t kind, int32_t item, int32_t item_count) {
     if (country_slot < 0 || kind < 0 || kind >= TAX_KIND_COUNT ||
         item < 0 || item >= item_count)
         return 0;
-    const int8_t value = overrides[
+    const int32_t value = overrides[
         static_cast<size_t>(country_slot) * item_count + item];
     return value == TAX_RATE_INHERIT
         ? defaults[static_cast<size_t>(country_slot) * TAX_KIND_COUNT + kind]
@@ -536,7 +536,8 @@ int8_t NativeCountryRuntime::resolved_tax_rate(
 uint64_t NativeCountryRuntime::cell_tax_policy_hash(
         const CellTaxPolicy &policy) {
     uint64_t hash = FNV_OFFSET;
-    hash_bytes(hash, policy.defaults.data(), policy.defaults.size());
+    hash_bytes(hash, policy.defaults.data(),
+               policy.defaults.size() * sizeof(int32_t));
     for (const CellTaxOverride &entry : policy.overrides) {
         hash_bytes(hash, &entry.kind, sizeof(entry.kind));
         hash_bytes(hash, &entry.item, sizeof(entry.item));
@@ -1056,7 +1057,16 @@ Dictionary NativeCountryRuntime::submit_commands(const Dictionary &batch) {
     const std::vector<int64_t> values = packed_i64(batch, "value_i64");
     std::vector<int32_t> tax_kinds = packed_i32(batch, "tax_kinds");
     std::vector<int32_t> tax_items = packed_i32(batch, "tax_item_indices");
-    std::vector<int32_t> tax_rates = packed_i32(batch, "tax_rate_percent");
+    std::vector<int32_t> tax_rates = packed_i32(
+        batch, "tax_rate_basis_points");
+    if (tax_rates.empty()) {
+        tax_rates = packed_i32(batch, "tax_rate_percent");
+        for (int32_t &rate : tax_rates) {
+            rate = static_cast<int32_t>(std::clamp<int64_t>(
+                static_cast<int64_t>(rate) * 100,
+                TAX_RATE_MIN_BP, TAX_RATE_MAX_BP));
+        }
+    }
     const std::vector<std::string> stable_ids = packed_strings(batch, "stable_ids");
     const std::vector<std::string> display_names = packed_strings(batch, "display_names");
     const size_t count = opcodes.size();
@@ -1093,12 +1103,12 @@ Dictionary NativeCountryRuntime::submit_commands(const Dictionary &batch) {
         command.weights_bp[3] = weights3[i];
         command.tax_kind = tax_kinds[i];
         command.tax_item = tax_items[i];
-        command.tax_rate_percent = tax_rates[i];
+        command.tax_rate_basis_points = tax_rates[i];
         if (command.opcode >= COMMAND_SET_TAX_DEFAULT &&
             command.opcode <= COMMAND_CLEAR_TAX_OVERRIDE) {
             if (command.tax_kind < 0 || command.tax_kind >= TAX_KIND_COUNT ||
-                command.tax_rate_percent < -100 ||
-                command.tax_rate_percent > 100 ||
+                command.tax_rate_basis_points < TAX_RATE_MIN_BP ||
+                command.tax_rate_basis_points > TAX_RATE_MAX_BP ||
                 (command.opcode != COMMAND_SET_TAX_DEFAULT &&
                  (command.tax_item < 0 ||
                   command.tax_item >= tax_item_count(command.tax_kind)))) {
@@ -1122,8 +1132,9 @@ Dictionary NativeCountryRuntime::submit_commands(const Dictionary &batch) {
                 (has_item && (command.tax_item < 0 ||
                               command.tax_item >=
                                   tax_item_count(command.tax_kind))) ||
-                (has_rate && (command.tax_rate_percent < -100 ||
-                              command.tax_rate_percent > 100))) {
+                (has_rate &&
+                 (command.tax_rate_basis_points < TAX_RATE_MIN_BP ||
+                  command.tax_rate_basis_points > TAX_RATE_MAX_BP))) {
                 return fail("country_cell_tax_command_invalid");
             }
         }
@@ -1193,7 +1204,16 @@ bool NativeCountryRuntime::submit_effect_commands_pod(
         command.weights_bp[3] = u16(source.payload[2], 48);
         command.tax_kind = lo_i32(source.payload[3]);
         command.tax_item = static_cast<int32_t>(static_cast<int16_t>(u16(source.payload[3], 32)));
-        command.tax_rate_percent = static_cast<int32_t>(static_cast<int16_t>(u16(source.payload[3], 48)));
+        // The effect ABI uses `value` for full-width basis points. Catalogs
+        // compiled before PKCN v12 keep their signed whole-percent payload.
+        command.tax_rate_basis_points =
+            source.opcode >= COMMAND_SET_TAX_DEFAULT &&
+                    source.opcode <= COMMAND_CLEAR_CELL_TAX_POLICY &&
+                    source.value >= TAX_RATE_MIN_BP &&
+                    source.value <= TAX_RATE_MAX_BP
+                ? static_cast<int32_t>(source.value)
+                : static_cast<int32_t>(
+                    static_cast<int16_t>(u16(source.payload[3], 48))) * 100;
         command.value = source.value;
         command.stable_id = source.stable_id == nullptr ? "" : source.stable_id;
         command.display_name = source.display_name == nullptr ? "" : source.display_name;
@@ -1923,8 +1943,8 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
                 break;
             }
             if (command.tax_kind < 0 || command.tax_kind >= TAX_KIND_COUNT ||
-                command.tax_rate_percent < -100 ||
-                command.tax_rate_percent > 100) {
+                command.tax_rate_basis_points < TAX_RATE_MIN_BP ||
+                command.tax_rate_basis_points > TAX_RATE_MAX_BP) {
                 error = "country_tax_command_invalid";
                 break;
             }
@@ -1932,14 +1952,14 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
                 batch.tax_defaults[
                     static_cast<size_t>(slot) * TAX_KIND_COUNT +
                     command.tax_kind] =
-                    static_cast<int8_t>(command.tax_rate_percent);
+                    command.tax_rate_basis_points;
             } else {
                 const int32_t item_count = tax_item_count(command.tax_kind);
                 if (command.tax_item < 0 || command.tax_item >= item_count) {
                     error = "country_tax_item_invalid";
                     break;
                 }
-                std::vector<int8_t> *overrides = nullptr;
+                std::vector<int32_t> *overrides = nullptr;
                 switch (command.tax_kind) {
                     case TAX_INCOME:
                         overrides = &batch.income_tax_overrides; break;
@@ -1961,7 +1981,7 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
                              command.tax_item] =
                     command.opcode == COMMAND_CLEAR_TAX_OVERRIDE
                         ? TAX_RATE_INHERIT
-                        : static_cast<int8_t>(command.tax_rate_percent);
+                        : command.tax_rate_basis_points;
             }
             ++batch.countries.state_version[static_cast<size_t>(slot)];
             mark_country(slot);
@@ -1988,13 +2008,13 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
                 error = "country_cell_tax_kind_invalid";
                 break;
             } else if (command.opcode == COMMAND_SET_CELL_TAX_DEFAULT) {
-                if (command.tax_rate_percent < -100 ||
-                    command.tax_rate_percent > 100) {
+                if (command.tax_rate_basis_points < TAX_RATE_MIN_BP ||
+                    command.tax_rate_basis_points > TAX_RATE_MAX_BP) {
                     error = "country_cell_tax_rate_invalid";
                     break;
                 }
                 policy.defaults[static_cast<size_t>(command.tax_kind)] =
-                    static_cast<int8_t>(command.tax_rate_percent);
+                    command.tax_rate_basis_points;
             } else if (command.opcode == COMMAND_CLEAR_CELL_TAX_DEFAULT) {
                 policy.defaults[static_cast<size_t>(command.tax_kind)] =
                     TAX_RATE_INHERIT;
@@ -2020,14 +2040,14 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
                 if (command.opcode == COMMAND_CLEAR_CELL_TAX_OVERRIDE) {
                     if (exists) policy.overrides.erase(entry);
                 } else {
-                    if (command.tax_rate_percent < -100 ||
-                        command.tax_rate_percent > 100) {
+                    if (command.tax_rate_basis_points < TAX_RATE_MIN_BP ||
+                        command.tax_rate_basis_points > TAX_RATE_MAX_BP) {
                         error = "country_cell_tax_rate_invalid";
                         break;
                     }
                     const CellTaxOverride replacement{
                         command.tax_kind, command.tax_item,
-                        static_cast<int8_t>(command.tax_rate_percent)};
+                        command.tax_rate_basis_points};
                     if (exists) *entry = replacement;
                     else policy.overrides.insert(entry, replacement);
                 }
@@ -2139,17 +2159,17 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
     std::vector<uint64_t> staged_signals = std::move(batch.signals);
     auto staged_signal_cells = std::move(batch.signal_cells);
     auto staged_signal_evidence = std::move(batch.signal_evidence);
-    std::vector<int8_t> staged_tax_defaults =
+    std::vector<int32_t> staged_tax_defaults =
         std::move(batch.tax_defaults);
-    std::vector<int8_t> staged_income_tax =
+    std::vector<int32_t> staged_income_tax =
         std::move(batch.income_tax_overrides);
-    std::vector<int8_t> staged_consumption_tax =
+    std::vector<int32_t> staged_consumption_tax =
         std::move(batch.consumption_tax_overrides);
-    std::vector<int8_t> staged_business_tax =
+    std::vector<int32_t> staged_business_tax =
         std::move(batch.business_tax_overrides);
-    std::vector<int8_t> staged_import_tax =
+    std::vector<int32_t> staged_import_tax =
         std::move(batch.import_tax_overrides);
-    std::vector<int8_t> staged_export_tax =
+    std::vector<int32_t> staged_export_tax =
         std::move(batch.export_tax_overrides);
     auto staged_cell_tax_updates = std::move(batch.cell_tax_updates);
     const bool stage_technologies = batch.stage_technologies;
@@ -2659,16 +2679,18 @@ Dictionary NativeCountryRuntime::tax_policy_snapshot(int64_t handle) const {
 
     auto make_rates = [&](int32_t kind, const char *kind_key,
                           const std::vector<std::string> &item_ids,
-                          const std::vector<int8_t> &values) {
-        PackedInt32Array rates;
-        PackedInt32Array effective_rates;
+                          const std::vector<int32_t> &values) {
+        PackedInt32Array rates, effective_rates;
+        PackedInt32Array rates_percent, effective_rates_percent;
         PackedByteArray overrides;
         const int32_t count = tax_item_count(kind);
         rates.resize(count);
         effective_rates.resize(count);
+        rates_percent.resize(count);
+        effective_rates_percent.resize(count);
         overrides.resize(count);
         for (int32_t item = 0; item < count; ++item) {
-            const int8_t raw = values[
+            const int32_t raw = values[
                 static_cast<size_t>(slot) * count + item];
             const int32_t base_rate = raw == TAX_RATE_INHERIT
                 ? defaults[kind] : raw;
@@ -2677,7 +2699,7 @@ Dictionary NativeCountryRuntime::tax_policy_snapshot(int64_t handle) const {
             if (_modifier_runtime != nullptr &&
                 item < static_cast<int32_t>(item_ids.size())) {
                 const std::string stat_key = std::string("country.tax.") +
-                    kind_key + "." + item_ids[item] + ".rate_pct";
+                    kind_key + "." + item_ids[item] + ".rate_bp";
                 const int32_t stat_id =
                     _modifier_runtime->stat_id_for_key(stat_key);
                 if (stat_id >= 0) {
@@ -2685,15 +2707,19 @@ Dictionary NativeCountryRuntime::tax_policy_snapshot(int64_t handle) const {
                         std::lround(_modifier_runtime->effective_value(
                             ModifierRuntime::COUNTRY, stat_id,
                             static_cast<uint64_t>(handle), 0, base_rate)),
-                        -100, 100));
+                        TAX_RATE_MIN_BP, TAX_RATE_MAX_BP));
                 }
             }
             effective_rates.set(item, effective_rate);
+            rates_percent.set(item, base_rate / 100);
+            effective_rates_percent.set(item, effective_rate / 100);
             overrides.set(item, raw == TAX_RATE_INHERIT ? 0 : 1);
         }
         Dictionary result;
-        result["rates"] = rates;
-        result["effective_rates"] = effective_rates;
+        result["rates_basis_points"] = rates;
+        result["effective_rates_basis_points"] = effective_rates;
+        result["rates"] = rates_percent;
+        result["effective_rates"] = effective_rates_percent;
         result["has_override"] = overrides;
         return result;
     };
@@ -2708,7 +2734,12 @@ Dictionary NativeCountryRuntime::tax_policy_snapshot(int64_t handle) const {
     out["country_handle"] = handle;
     out["policy_version"] = static_cast<int64_t>(_tax_policy_version);
     out["catalog_hash"] = static_cast<int64_t>(catalog_hash());
-    out["default_rates"] = defaults;
+    PackedInt32Array defaults_percent;
+    defaults_percent.resize(TAX_KIND_COUNT);
+    for (int32_t kind = 0; kind < TAX_KIND_COUNT; ++kind)
+        defaults_percent.set(kind, defaults[kind] / 100);
+    out["default_rates_basis_points"] = defaults;
+    out["default_rates"] = defaults_percent;
     out["profession_ids"] = make_ids(_profession_ids);
     out["good_ids"] = make_ids(_good_ids);
     out["building_type_ids"] = make_ids(_building_type_ids);
@@ -2717,6 +2748,7 @@ Dictionary NativeCountryRuntime::tax_policy_snapshot(int64_t handle) const {
     out["consumption"] = make_rates(
         TAX_CONSUMPTION, "consumption", _good_ids,
         _country_consumption_tax_overrides);
+    out["transaction"] = out["consumption"];
     out["business"] = make_rates(
         TAX_BUSINESS, "business", _building_type_ids,
         _country_business_tax_overrides);
@@ -2746,14 +2778,14 @@ Dictionary NativeCountryRuntime::cell_tax_policy_snapshot(int32_t cell) const {
     for (int32_t kind = 0; kind < TAX_KIND_COUNT; ++kind) {
         country_defaults.set(kind, _country_tax_defaults[
             static_cast<size_t>(slot) * TAX_KIND_COUNT + kind]);
-        const int8_t local = policy.defaults[static_cast<size_t>(kind)];
+        const int32_t local = policy.defaults[static_cast<size_t>(kind)];
         local_defaults.set(kind, local == TAX_RATE_INHERIT ? 0 : local);
         has_local_default.set(kind, local == TAX_RATE_INHERIT ? 0 : 1);
     }
 
     auto make_kind = [&](int32_t kind, const char *kind_key) {
         const auto &ids = tax_item_ids(kind);
-        const std::vector<int8_t> *country_overrides =
+        const std::vector<int32_t> *country_overrides =
             tax_override_vector(kind);
         const int32_t count = static_cast<int32_t>(ids.size());
         PackedStringArray item_ids;
@@ -2776,7 +2808,7 @@ Dictionary NativeCountryRuntime::cell_tax_policy_snapshot(int32_t cell) const {
             ++local_cursor;
         for (int32_t item = 0; item < count; ++item) {
             item_ids.set(item, ids[static_cast<size_t>(item)].c_str());
-            const int8_t country_raw = (*country_overrides)[
+            const int32_t country_raw = (*country_overrides)[
                 static_cast<size_t>(slot) * count + item];
             const int32_t country_base = country_raw == TAX_RATE_INHERIT
                 ? country_defaults[kind] : country_raw;
@@ -2789,7 +2821,7 @@ Dictionary NativeCountryRuntime::cell_tax_policy_snapshot(int32_t cell) const {
                 local_cursor < policy.overrides.size() &&
                 policy.overrides[local_cursor].kind == kind &&
                 policy.overrides[local_cursor].item == item;
-            const int8_t local_default =
+            const int32_t local_default =
                 policy.defaults[static_cast<size_t>(kind)];
             const int32_t base_rate = local_item
                 ? policy.overrides[local_cursor].rate
@@ -2809,7 +2841,7 @@ Dictionary NativeCountryRuntime::cell_tax_policy_snapshot(int32_t cell) const {
             if (_modifier_runtime != nullptr) {
                 const std::string stat_key = std::string("country.tax.") +
                     kind_key + "." + ids[static_cast<size_t>(item)] +
-                    ".rate_pct";
+                    ".rate_bp";
                 const int32_t stat_id =
                     _modifier_runtime->stat_id_for_key(stat_key);
                 if (stat_id >= 0) {
@@ -2817,18 +2849,35 @@ Dictionary NativeCountryRuntime::cell_tax_policy_snapshot(int32_t cell) const {
                         std::clamp<int64_t>(std::lround(
                             _modifier_runtime->effective_value(
                                 ModifierRuntime::COUNTRY, stat_id, handle,
-                                0, base_rate)), -100, 100));
+                                0, base_rate)), TAX_RATE_MIN_BP,
+                            TAX_RATE_MAX_BP));
                 }
             }
             effective_rates.set(item, effective_rate);
         }
         Dictionary result;
+        PackedInt32Array country_base_percent, local_item_percent;
+        PackedInt32Array final_base_percent, effective_percent;
+        country_base_percent.resize(count);
+        local_item_percent.resize(count);
+        final_base_percent.resize(count);
+        effective_percent.resize(count);
+        for (int32_t item = 0; item < count; ++item) {
+            country_base_percent.set(item, country_base_rates[item] / 100);
+            local_item_percent.set(item, local_item_rates[item] / 100);
+            final_base_percent.set(item, final_base_rates[item] / 100);
+            effective_percent.set(item, effective_rates[item] / 100);
+        }
         result["item_ids"] = item_ids;
-        result["country_base_rates"] = country_base_rates;
-        result["local_item_rates"] = local_item_rates;
+        result["country_base_rates_basis_points"] = country_base_rates;
+        result["local_item_rates_basis_points"] = local_item_rates;
+        result["final_base_rates_basis_points"] = final_base_rates;
+        result["effective_rates_basis_points"] = effective_rates;
+        result["country_base_rates"] = country_base_percent;
+        result["local_item_rates"] = local_item_percent;
         result["has_local_item"] = has_local_item;
-        result["final_base_rates"] = final_base_rates;
-        result["effective_rates"] = effective_rates;
+        result["final_base_rates"] = final_base_percent;
+        result["effective_rates"] = effective_percent;
         result["source_scopes"] = source_scopes;
         return result;
     };
@@ -2841,11 +2890,21 @@ Dictionary NativeCountryRuntime::cell_tax_policy_snapshot(int32_t cell) const {
     out["country_name"] = String::utf8(
         _countries.display_name[static_cast<size_t>(slot)].c_str());
     out["policy_version"] = static_cast<int64_t>(_tax_policy_version);
-    out["country_default_rates"] = country_defaults;
-    out["local_default_rates"] = local_defaults;
+    PackedInt32Array country_defaults_percent, local_defaults_percent;
+    country_defaults_percent.resize(TAX_KIND_COUNT);
+    local_defaults_percent.resize(TAX_KIND_COUNT);
+    for (int32_t kind = 0; kind < TAX_KIND_COUNT; ++kind) {
+        country_defaults_percent.set(kind, country_defaults[kind] / 100);
+        local_defaults_percent.set(kind, local_defaults[kind] / 100);
+    }
+    out["country_default_rates_basis_points"] = country_defaults;
+    out["local_default_rates_basis_points"] = local_defaults;
+    out["country_default_rates"] = country_defaults_percent;
+    out["local_default_rates"] = local_defaults_percent;
     out["has_local_default"] = has_local_default;
     out["income"] = make_kind(TAX_INCOME, "income");
     out["consumption"] = make_kind(TAX_CONSUMPTION, "consumption");
+    out["transaction"] = out["consumption"];
     out["business"] = make_kind(TAX_BUSINESS, "business");
     out["import"] = make_kind(TAX_IMPORT, "import");
     out["export"] = make_kind(TAX_EXPORT, "export");
@@ -3786,8 +3845,8 @@ bool NativeCountryRuntime::copy_economy_snapshot(EconomySnapshot &out) const {
     out.building_type_count =
         static_cast<int32_t>(_building_type_ids.size());
     auto resolve_all = [&](int32_t kind,
-                           const std::vector<int8_t> &overrides,
-                           std::vector<int8_t> &rates) {
+                           const std::vector<int32_t> &overrides,
+                           std::vector<int32_t> &rates) {
         const int32_t item_count = tax_item_count(kind);
         rates.resize(static_cast<size_t>(out.country_count) * item_count);
         for (int32_t slot = 0; slot < out.country_count; ++slot) {
@@ -3918,22 +3977,22 @@ uint64_t NativeCountryRuntime::compute_state_hash() const {
     if (!_country_research_deferred_points.empty()) hash_bytes(hash, _country_research_deferred_points.data(), _country_research_deferred_points.size() * sizeof(int64_t));
     if (!_country_tax_defaults.empty())
         hash_bytes(hash, _country_tax_defaults.data(),
-                   _country_tax_defaults.size() * sizeof(int8_t));
+                   _country_tax_defaults.size() * sizeof(int32_t));
     if (!_country_income_tax_overrides.empty())
         hash_bytes(hash, _country_income_tax_overrides.data(),
-                   _country_income_tax_overrides.size() * sizeof(int8_t));
+                   _country_income_tax_overrides.size() * sizeof(int32_t));
     if (!_country_consumption_tax_overrides.empty())
         hash_bytes(hash, _country_consumption_tax_overrides.data(),
-                   _country_consumption_tax_overrides.size() * sizeof(int8_t));
+                   _country_consumption_tax_overrides.size() * sizeof(int32_t));
     if (!_country_business_tax_overrides.empty())
         hash_bytes(hash, _country_business_tax_overrides.data(),
-                   _country_business_tax_overrides.size() * sizeof(int8_t));
+                   _country_business_tax_overrides.size() * sizeof(int32_t));
     if (!_country_import_tax_overrides.empty())
         hash_bytes(hash, _country_import_tax_overrides.data(),
-                   _country_import_tax_overrides.size() * sizeof(int8_t));
+                   _country_import_tax_overrides.size() * sizeof(int32_t));
     if (!_country_export_tax_overrides.empty())
         hash_bytes(hash, _country_export_tax_overrides.data(),
-                   _country_export_tax_overrides.size() * sizeof(int8_t));
+                   _country_export_tax_overrides.size() * sizeof(int32_t));
     uint64_t cell_policy_count = 0;
     for (uint32_t id : _cell_tax_policy_ids)
         if (!cell_tax_policy(id).empty()) ++cell_policy_count;
@@ -3943,7 +4002,8 @@ uint64_t NativeCountryRuntime::compute_state_hash() const {
             _cell_tax_policy_ids[static_cast<size_t>(cell)]);
         if (policy.empty()) continue;
         hash_bytes(hash, &cell, sizeof(cell));
-        hash_bytes(hash, policy.defaults.data(), policy.defaults.size());
+        hash_bytes(hash, policy.defaults.data(),
+                   policy.defaults.size() * sizeof(int32_t));
         const uint64_t entry_count = policy.overrides.size();
         hash_bytes(hash, &entry_count, sizeof(entry_count));
         for (const CellTaxOverride &entry : policy.overrides) {
@@ -4235,14 +4295,14 @@ bool NativeCountryRuntime::encode_save(std::vector<uint8_t> &out, std::string &e
             _cell_tax_policy_ids[static_cast<size_t>(cell)]);
         if (policy.empty()) continue;
         append_le<int32_t>(out, cell);
-        for (int8_t rate : policy.defaults) append_le<int8_t>(out, rate);
+        for (int32_t rate : policy.defaults) append_le<int32_t>(out, rate);
         append_le<uint64_t>(out,
             static_cast<uint64_t>(policy.overrides.size()));
         for (const CellTaxOverride &entry : policy.overrides) {
             append_le<int32_t>(out, entry.kind);
             append_string(out, tax_item_ids(entry.kind)[
                 static_cast<size_t>(entry.item)]);
-            append_le<int8_t>(out, entry.rate);
+            append_le<int32_t>(out, entry.rate);
         }
     }
     append_le<uint64_t>(out, static_cast<uint64_t>(_pending_commands.size()));
@@ -4258,7 +4318,7 @@ bool NativeCountryRuntime::encode_save(std::vector<uint8_t> &out, std::string &e
         for (int32_t weight : command.weights_bp) append_le<int32_t>(out, weight);
         append_le<int32_t>(out, command.tax_kind);
         append_le<int32_t>(out, command.tax_item);
-        append_le<int32_t>(out, command.tax_rate_percent);
+        append_le<int32_t>(out, command.tax_rate_basis_points);
         append_le<int64_t>(out, command.value);
         append_string(out, command.stable_id);
         append_string(out, command.display_name);
@@ -4292,10 +4352,11 @@ bool NativeCountryRuntime::decode_save(const std::vector<uint8_t> &bytes, std::s
     int32_t tech_count = 0, tech_words = 0, signal_count = 0, signal_words = 0;
     if (!read_le(bytes, cursor, magic) || !read_le(bytes, cursor, version)) { error = "country_save_truncated"; return false; }
     if (magic != SAVE_MAGIC) { error = "country_save_magic_invalid"; return false; }
-    if (version != SCHEMA_VERSION) {
+    if (version != SCHEMA_VERSION && version != 11) {
         error = "catalog_hash_mismatch";
         return false;
     }
+    const bool legacy_percent_tax_rates = version == 11;
     if (!read_le(bytes, cursor, saved_catalog) || !read_le(bytes, cursor, generation_value) ||
         !read_le(bytes, cursor, committed_day) || !read_le(bytes, cursor, saved_submit_order) ||
         !read_le(bytes, cursor, cell_count) ||
@@ -4535,44 +4596,78 @@ bool NativeCountryRuntime::decode_save(const std::vector<uint8_t> &bytes, std::s
     }
     if (territory_counts != countries.territory_count) { error = "country_save_territory_count_mismatch"; return false; }
     for (int64_t quantity : goods) if (quantity < 0) { error = "country_save_treasury_negative"; return false; }
-    std::vector<int8_t> tax_defaults(
+    std::vector<int32_t> tax_defaults(
         static_cast<size_t>(country_count) * TAX_KIND_COUNT, 0);
-    std::vector<int8_t> income_tax(
+    std::vector<int32_t> income_tax(
         static_cast<size_t>(country_count) * _profession_ids.size(),
         TAX_RATE_INHERIT);
-    std::vector<int8_t> consumption_tax(
+    std::vector<int32_t> consumption_tax(
         static_cast<size_t>(country_count) * _good_ids.size(),
         TAX_RATE_INHERIT);
-    std::vector<int8_t> business_tax(
+    std::vector<int32_t> business_tax(
         static_cast<size_t>(country_count) * _building_type_ids.size(),
         TAX_RATE_INHERIT);
-    std::vector<int8_t> import_tax(
+    std::vector<int32_t> import_tax(
         static_cast<size_t>(country_count) * _good_ids.size(),
         TAX_RATE_INHERIT);
-    std::vector<int8_t> export_tax(
+    std::vector<int32_t> export_tax(
         static_cast<size_t>(country_count) * _good_ids.size(),
         TAX_RATE_INHERIT);
     uint64_t tax_policy_version = 0;
     {
-        if (!read_vector(bytes, cursor, tax_defaults,
-                         static_cast<uint64_t>(country_count) *
-                             TAX_KIND_COUNT) ||
-            !read_vector(bytes, cursor, income_tax,
-                         static_cast<uint64_t>(country_count) *
-                             _profession_ids.size()) ||
-            !read_vector(bytes, cursor, consumption_tax,
-                         static_cast<uint64_t>(country_count) *
-                             _good_ids.size()) ||
-            !read_vector(bytes, cursor, business_tax,
-                         static_cast<uint64_t>(country_count) *
-                             _building_type_ids.size()) ||
-            !read_vector(bytes, cursor, import_tax,
-                         static_cast<uint64_t>(country_count) *
-                             _good_ids.size()) ||
-            !read_vector(bytes, cursor, export_tax,
-                         static_cast<uint64_t>(country_count) *
-                             _good_ids.size()) ||
-            !read_le(bytes, cursor, tax_policy_version) ||
+        bool read_ok = false;
+        if (legacy_percent_tax_rates) {
+            std::vector<int8_t> old_defaults, old_income, old_consumption;
+            std::vector<int8_t> old_business, old_import, old_export;
+            read_ok = read_vector(bytes, cursor, old_defaults,
+                    static_cast<uint64_t>(country_count) * TAX_KIND_COUNT) &&
+                read_vector(bytes, cursor, old_income,
+                    static_cast<uint64_t>(country_count) *
+                        _profession_ids.size()) &&
+                read_vector(bytes, cursor, old_consumption,
+                    static_cast<uint64_t>(country_count) * _good_ids.size()) &&
+                read_vector(bytes, cursor, old_business,
+                    static_cast<uint64_t>(country_count) *
+                        _building_type_ids.size()) &&
+                read_vector(bytes, cursor, old_import,
+                    static_cast<uint64_t>(country_count) * _good_ids.size()) &&
+                read_vector(bytes, cursor, old_export,
+                    static_cast<uint64_t>(country_count) * _good_ids.size());
+            const auto migrate = [](const std::vector<int8_t> &source,
+                                    std::vector<int32_t> &target,
+                                    bool allow_inherit) {
+                target.resize(source.size());
+                for (size_t i = 0; i < source.size(); ++i) {
+                    target[i] = allow_inherit && source[i] == 127
+                        ? TAX_RATE_INHERIT
+                        : static_cast<int32_t>(source[i]) * 100;
+                }
+            };
+            if (read_ok) {
+                migrate(old_defaults, tax_defaults, false);
+                migrate(old_income, income_tax, true);
+                migrate(old_consumption, consumption_tax, true);
+                migrate(old_business, business_tax, true);
+                migrate(old_import, import_tax, true);
+                migrate(old_export, export_tax, true);
+            }
+        } else {
+            read_ok = read_vector(bytes, cursor, tax_defaults,
+                    static_cast<uint64_t>(country_count) * TAX_KIND_COUNT) &&
+                read_vector(bytes, cursor, income_tax,
+                    static_cast<uint64_t>(country_count) *
+                        _profession_ids.size()) &&
+                read_vector(bytes, cursor, consumption_tax,
+                    static_cast<uint64_t>(country_count) * _good_ids.size()) &&
+                read_vector(bytes, cursor, business_tax,
+                    static_cast<uint64_t>(country_count) *
+                        _building_type_ids.size()) &&
+                read_vector(bytes, cursor, import_tax,
+                    static_cast<uint64_t>(country_count) * _good_ids.size()) &&
+                read_vector(bytes, cursor, export_tax,
+                    static_cast<uint64_t>(country_count) * _good_ids.size());
+        }
+        if (!read_ok || !read_le(bytes, cursor, tax_policy_version) ||
             tax_defaults.size() !=
                 static_cast<size_t>(country_count) * TAX_KIND_COUNT ||
             income_tax.size() != static_cast<size_t>(country_count) *
@@ -4588,12 +4683,12 @@ bool NativeCountryRuntime::decode_save(const std::vector<uint8_t> &bytes, std::s
             error = "country_save_tax_shape_invalid";
             return false;
         }
-        const auto rate_valid = [](int8_t rate) {
+        const auto rate_valid = [](int32_t rate) {
             return rate == TAX_RATE_INHERIT ||
-                   (rate >= -100 && rate <= 100);
+                   (rate >= TAX_RATE_MIN_BP && rate <= TAX_RATE_MAX_BP);
         };
-        for (int8_t rate : tax_defaults) {
-            if (rate < -100 || rate > 100) {
+        for (int32_t rate : tax_defaults) {
+            if (rate < TAX_RATE_MIN_BP || rate > TAX_RATE_MAX_BP) {
                 error = "country_save_tax_rate_invalid";
                 return false;
             }
@@ -4627,9 +4722,21 @@ bool NativeCountryRuntime::decode_save(const std::vector<uint8_t> &bytes, std::s
             error = "country_save_cell_tax_cell_invalid";
             return false;
         }
-        for (int8_t &rate : policy.defaults) {
-            if (!read_le(bytes, cursor, rate) ||
-                (rate != TAX_RATE_INHERIT && (rate < -100 || rate > 100))) {
+        for (int32_t &rate : policy.defaults) {
+            if (legacy_percent_tax_rates) {
+                int8_t old_rate = 0;
+                if (!read_le(bytes, cursor, old_rate)) {
+                    error = "country_save_cell_tax_default_invalid";
+                    return false;
+                }
+                rate = old_rate == 127 ? TAX_RATE_INHERIT
+                                       : static_cast<int32_t>(old_rate) * 100;
+            } else if (!read_le(bytes, cursor, rate)) {
+                error = "country_save_cell_tax_default_invalid";
+                return false;
+            }
+            if (rate != TAX_RATE_INHERIT &&
+                (rate < TAX_RATE_MIN_BP || rate > TAX_RATE_MAX_BP)) {
                 error = "country_save_cell_tax_default_invalid";
                 return false;
             }
@@ -4650,14 +4757,25 @@ bool NativeCountryRuntime::decode_save(const std::vector<uint8_t> &bytes, std::s
             CellTaxOverride entry;
             std::string item_id;
             if (!read_le(bytes, cursor, entry.kind) ||
-                !read_string(bytes, cursor, item_id) ||
-                !read_le(bytes, cursor, entry.rate)) {
+                !read_string(bytes, cursor, item_id)) {
+                error = "country_save_cell_tax_entry_truncated";
+                return false;
+            }
+            if (legacy_percent_tax_rates) {
+                int8_t old_rate = 0;
+                if (!read_le(bytes, cursor, old_rate)) {
+                    error = "country_save_cell_tax_entry_truncated";
+                    return false;
+                }
+                entry.rate = static_cast<int32_t>(old_rate) * 100;
+            } else if (!read_le(bytes, cursor, entry.rate)) {
                 error = "country_save_cell_tax_entry_truncated";
                 return false;
             }
             entry.item = tax_item_index(entry.kind, item_id);
             if (entry.kind < 0 || entry.kind >= TAX_KIND_COUNT ||
-                entry.item < 0 || entry.rate < -100 || entry.rate > 100 ||
+                entry.item < 0 || entry.rate < TAX_RATE_MIN_BP ||
+                entry.rate > TAX_RATE_MAX_BP ||
                 entry.kind < previous_kind ||
                 (entry.kind == previous_kind && entry.item <= previous_item)) {
                 error = "country_save_cell_tax_entry_invalid";
@@ -4716,10 +4834,12 @@ bool NativeCountryRuntime::decode_save(const std::vector<uint8_t> &bytes, std::s
         }
         if (!read_le(bytes, cursor, command.tax_kind) ||
             !read_le(bytes, cursor, command.tax_item) ||
-            !read_le(bytes, cursor, command.tax_rate_percent)) {
+            !read_le(bytes, cursor, command.tax_rate_basis_points)) {
             error = "country_save_command_truncated";
             return false;
         }
+        if (legacy_percent_tax_rates)
+            command.tax_rate_basis_points *= 100;
         if (!read_le(bytes, cursor, command.value) ||
             !read_string(bytes, cursor, command.stable_id) || !read_string(bytes, cursor, command.display_name) ||
             !read_le(bytes, cursor, command.submit_order) ||
@@ -4767,8 +4887,8 @@ bool NativeCountryRuntime::decode_save(const std::vector<uint8_t> &bytes, std::s
         if (command.opcode >= COMMAND_SET_TAX_DEFAULT &&
             command.opcode <= COMMAND_CLEAR_TAX_OVERRIDE &&
             (command.tax_kind < 0 || command.tax_kind >= TAX_KIND_COUNT ||
-             command.tax_rate_percent < -100 ||
-             command.tax_rate_percent > 100 ||
+             command.tax_rate_basis_points < TAX_RATE_MIN_BP ||
+             command.tax_rate_basis_points > TAX_RATE_MAX_BP ||
              (command.opcode != COMMAND_SET_TAX_DEFAULT &&
               (command.tax_item < 0 ||
                command.tax_item >= tax_item_count(command.tax_kind))))) {
@@ -4797,8 +4917,9 @@ bool NativeCountryRuntime::decode_save(const std::vector<uint8_t> &bytes, std::s
                  tax_item_ids(command.tax_kind)[
                      static_cast<size_t>(command.tax_item)] !=
                      command.stable_id) ||
-                (has_rate && (command.tax_rate_percent < -100 ||
-                              command.tax_rate_percent > 100))) {
+                (has_rate &&
+                 (command.tax_rate_basis_points < TAX_RATE_MIN_BP ||
+                  command.tax_rate_basis_points > TAX_RATE_MAX_BP))) {
                 error = "country_save_cell_tax_command_invalid";
                 return false;
             }

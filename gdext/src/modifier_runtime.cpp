@@ -1113,14 +1113,14 @@ double ModifierRuntime::effective_value(int32_t domain, const char *key,
 
 void ModifierRuntime::effective_values(int32_t domain, const int32_t *stat_ids,
                                        uint64_t entity_handle,
-                                       const int8_t *base_values,
-                                       int8_t *out_values, size_t count) const {
+                                       const int32_t *base_values,
+                                       int32_t *out_values, size_t count) const {
     if (stat_ids == nullptr || base_values == nullptr || out_values == nullptr) return;
     for (size_t i = 0; i < count; ++i) {
         const double value = effective_value(domain, stat_ids[i], entity_handle, 0,
                                              base_values[i]);
         const int32_t rounded = static_cast<int32_t>(std::round(value));
-        out_values[i] = static_cast<int8_t>(std::clamp(rounded, -100, 100));
+        out_values[i] = rounded;
     }
 }
 

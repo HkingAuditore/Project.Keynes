@@ -42,7 +42,7 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
         out_ids.reserve(item_ids.size());
         for (const std::string &item : item_ids) {
             const std::string key = std::string("country.tax.") + kind + "." +
-                item + ".rate_pct";
+                item + ".rate_bp";
             const int32_t id = _modifier_runtime != nullptr
                 ? _modifier_runtime->stat_id_for_key(key) : -1;
             if (id < 0) {

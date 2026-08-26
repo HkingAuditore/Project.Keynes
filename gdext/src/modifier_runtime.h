@@ -87,8 +87,8 @@ public:
                            uint64_t group_handle, double base_value) const;
     int32_t stat_id_for_key(const std::string &key) const { return stat_id(key); }
     void effective_values(int32_t domain, const int32_t *stat_ids,
-                          uint64_t entity_handle, const int8_t *base_values,
-                          int8_t *out_values, size_t count) const;
+                          uint64_t entity_handle, const int32_t *base_values,
+                          int32_t *out_values, size_t count) const;
     double effective_value(int32_t domain, const char *stat_key, uint64_t entity_handle,
                            uint64_t group_handle, double base_value) const;
     // Ascending, de-duplicated scope ids that currently hold a bucket in

@@ -519,28 +519,40 @@ NativeEconomyRuntime::TradeQuote NativeEconomyRuntime::make_trade_quote(
     quote.foreign = source_country >= 0 && destination_country >= 0 &&
         source_country != destination_country;
     if (quote.foreign) {
-        const int8_t import_rate = frozen_tax_rate(
+        const int32_t import_rate = frozen_tax_rate(
             destination, NativeCountryRuntime::TAX_IMPORT, good);
-        const int8_t export_rate = frozen_tax_rate(
+        const int32_t export_rate = frozen_tax_rate(
             source, NativeCountryRuntime::TAX_EXPORT, good);
         const int64_t import_amount = mul_div_sat(
-            quote.base, std::abs(static_cast<int32_t>(import_rate)), 100,
+            quote.base, std::abs(static_cast<int64_t>(import_rate)), 10000,
             saturation_count);
         const int64_t export_amount = mul_div_sat(
-            quote.base, std::abs(static_cast<int32_t>(export_rate)), 100,
+            quote.base, std::abs(static_cast<int64_t>(export_rate)), 10000,
             saturation_count);
         quote.import_transfer = import_rate < 0 ? -import_amount : import_amount;
         quote.export_transfer = export_rate < 0 ? -export_amount : export_amount;
     }
+    // Inter-cell dispatch is an inventory transfer. Positive transaction tax
+    // applies at the buyer endpoint; negative rates wait for final household
+    // or enterprise-input absorption to prevent closed inventory subsidy loops.
+    const int32_t transaction_rate = frozen_tax_rate(
+        destination, NativeCountryRuntime::TAX_TRANSACTION, good);
+    if (transaction_rate > 0) {
+        quote.transaction_transfer = mul_div_sat(
+            quote.base, transaction_rate, 10000, saturation_count);
+    }
     quote.importer_outlay = saturating_add(
-        quote.base, quote.import_transfer, saturation_count);
+        saturating_add(quote.base, quote.import_transfer, saturation_count),
+        quote.transaction_transfer, saturation_count);
     quote.exporter_receipt = saturating_sub(
         quote.base, quote.export_transfer, saturation_count);
     quote.importer_profit = saturating_sub(
         quote.retail, quote.importer_outlay, saturation_count);
     quote.combined_profit = saturating_sub(
-        saturating_sub(saturating_sub(quote.retail, quote.base, saturation_count),
-                       quote.import_transfer, saturation_count),
+        saturating_sub(saturating_sub(saturating_sub(
+            quote.retail, quote.base, saturation_count),
+            quote.import_transfer, saturation_count),
+            quote.transaction_transfer, saturation_count),
         quote.export_transfer, saturation_count);
     quote.margin_q16 = mul_div_sat(
         quote.combined_profit, Q16_ONE,
@@ -1601,6 +1613,8 @@ void NativeEconomyRuntime::compact_trade_orders(const std::vector<uint8_t> &remo
                 _trade_orders.line_import_transfers[line]);
             next.line_export_transfers.push_back(
                 _trade_orders.line_export_transfers[line]);
+            next.line_transaction_transfers.push_back(
+                _trade_orders.line_transaction_transfers[line]);
             next.line_flags.push_back(_trade_orders.line_flags[line]);
         }
         next.line_offsets.push_back(static_cast<int32_t>(next.line_goods.size()));
@@ -1644,7 +1658,7 @@ bool NativeEconomyRuntime::settle_due_trade_orders(std::string &error) {
             std::vector<EventLeg> trade_legs;
             trade_legs.reserve(static_cast<size_t>(std::max(0,
                 _trade_orders.line_offsets[order + 1] -
-                _trade_orders.line_offsets[order])) * 5U);
+                _trade_orders.line_offsets[order])) * 6U);
             for (int32_t line = _trade_orders.line_offsets[order];
                  line < _trade_orders.line_offsets[order + 1]; ++line) {
                 const int32_t good = _trade_orders.line_goods[line];
@@ -1729,6 +1743,9 @@ bool NativeEconomyRuntime::settle_due_trade_orders(std::string &error) {
                 trade_legs.push_back({FIELD_TRADE_EXPORT_TRANSFER,
                     SUBJECT_TRADE_ORDER, order_id, good, 0,
                     _trade_orders.line_export_transfers[line]});
+                trade_legs.push_back({FIELD_TRADE_TRANSACTION_TRANSFER,
+                    SUBJECT_TRADE_ORDER, order_id, good, 0,
+                    _trade_orders.line_transaction_transfers[line]});
             }
             _trade_orders.cargo_delivered[order] = 1;
             const int32_t source_cell = _trade_orders.sources[order];
@@ -2433,6 +2450,7 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
         clipped.retail_value = best_quote.retail;
         clipped.import_transfer = best_quote.import_transfer;
         clipped.export_transfer = best_quote.export_transfer;
+        clipped.transaction_transfer = best_quote.transaction_transfer;
         clipped.capacity_work = best_total_work;
         clipped.flags = best_quote.foreign ? TRADE_LINE_FOREIGN : 0;
         if (relief_route) clipped.flags |= TRADE_LINE_RELIEF;
@@ -2530,6 +2548,12 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
         }
         const int64_t import_tax = std::max<int64_t>(
             0, clipped.import_transfer);
+        const int64_t transaction_tax = apply_fiscal_tax(
+            candidate.destination, NativeCountryRuntime::TAX_TRANSACTION,
+            clipped.base_value,
+            std::max<int32_t>(0, frozen_tax_rate(candidate.destination,
+                NativeCountryRuntime::TAX_TRANSACTION, candidate.good)),
+            _saturation_count);
         // The merchant pays the base purchase. A positive import transfer is
         // an additional tax expense; a negative transfer is credited from the
         // escrow before the base debit so a subsidy can unlock a cash-poor
@@ -2544,10 +2568,17 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
         const int64_t debited_tax = import_tax > 0
             ? debit_local_merchants(candidate.destination, import_tax,
                 CASHFLOW_IMPORT_TAX) : 0;
-        const int64_t debited = saturating_add(debited_base, debited_tax,
-            _saturation_count);
+        const int64_t debited_transaction = transaction_tax > 0
+            ? debit_local_merchants(candidate.destination, transaction_tax,
+                CASHFLOW_CONSUMPTION_TAX) : 0;
+        const int64_t debited = saturating_add(
+            saturating_add(debited_base, debited_tax, _saturation_count),
+            debited_transaction, _saturation_count);
         const int64_t expected_debit = saturating_add(
-            clipped.base_value, import_tax, _saturation_count);
+            saturating_add(clipped.base_value, import_tax,
+                           _saturation_count),
+            std::max<int64_t>(0, clipped.transaction_transfer),
+            _saturation_count);
         if (debited != expected_debit) {
             if (import_subsidy > 0) {
                 const size_t budget = static_cast<size_t>(destination_country) * 2U;
@@ -2835,7 +2866,7 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
         int64_t capacity = 0;
         int32_t trade_event_flags = 0;
         std::vector<EventLeg> trade_legs;
-        trade_legs.reserve((cursor - begin) * 5U);
+        trade_legs.reserve((cursor - begin) * 6U);
         for (size_t i = begin; i < cursor; ++i) {
             const TradeCandidate &candidate = accepted[i];
             int64_t sat = 0;
@@ -2854,6 +2885,8 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
                 candidate.import_transfer);
             _trade_orders.line_export_transfers.push_back(
                 candidate.export_transfer);
+            _trade_orders.line_transaction_transfers.push_back(
+                candidate.transaction_transfer);
             _trade_orders.line_flags.push_back(candidate.flags);
             trade_event_flags |= static_cast<int32_t>(candidate.flags) << 8;
             const int64_t order_id = _trade_orders.ids.back();
@@ -2872,6 +2905,9 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
             trade_legs.push_back({FIELD_TRADE_EXPORT_TRANSFER,
                 SUBJECT_TRADE_ORDER, order_id, candidate.good, 0,
                 candidate.export_transfer});
+            trade_legs.push_back({FIELD_TRADE_TRANSACTION_TRANSFER,
+                SUBJECT_TRADE_ORDER, order_id, candidate.good, 0,
+                candidate.transaction_transfer});
         }
         _trade_orders.cash_escrow.push_back(cash);
         _trade_orders.capacity_work.push_back(capacity);

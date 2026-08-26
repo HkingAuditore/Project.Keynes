@@ -6,6 +6,8 @@ signal reset_requested(scope: String, kind: String, item_id: String)
 signal editing_finished()
 
 const COMMIT_DELAY_SEC := 0.18
+const TAX_RATE_MIN_BP := -100000
+const TAX_RATE_MAX_BP := 10000
 
 var _data: Dictionary = {}
 var _pending := false
@@ -68,7 +70,7 @@ func set_data(data: Dictionary) -> void:
 	_data = snapshot
 	# 箭头/拖动不会让 LineEdit 获焦。只要当前显示值已经离开上次权威税率，
 	# 就视为草稿，避免 live patch 把仍未提交的继承税率（常见是 0%）写回去。
-	var displayed := int(_spin.value)
+	var displayed := percent_to_basis_points(float(_spin.value))
 	var new_base := int(_data.get("base", 0))
 	if displayed != previous_base and displayed != new_base:
 		var was_dirty := _dirty
@@ -143,10 +145,10 @@ func _set_spin_rate(rate: int) -> void:
 	if _spin == null:
 		return
 	_applying = true
-	_spin.set_value_no_signal(rate)
+	_spin.set_value_no_signal(basis_points_to_percent(rate))
 	var line := _spin.get_line_edit()
 	if line != null:
-		var shown := str(rate)
+		var shown := _format_rate(rate, false)
 		if not line.has_focus() and not String(_spin.suffix).is_empty():
 			shown = "%s %s" % [shown, _spin.suffix]
 		if line.text != shown:
@@ -165,9 +167,9 @@ func _refresh_note() -> void:
 	var base := int(_data.get("base", inherited))
 	var effective := int(_data.get("effective", base))
 	var prefix := "国家默认" if String(_data.get("scope", "item")) == "default" else "此地默认"
-	var parts := PackedStringArray(["%s %d%%" % [prefix, inherited]])
+	var parts := PackedStringArray(["%s %s" % [prefix, _format_rate(inherited)]])
 	if effective != base:
-		parts.append("效果后 %d%%" % effective)
+		parts.append("效果后 %s" % _format_rate(effective))
 	if _pending:
 		parts.append("次日生效")
 	_note.text = " · ".join(parts)
@@ -194,24 +196,40 @@ static func parse_rate_text(text: String, fallback: int) -> int:
 	if cleaned.is_empty():
 		return fallback
 	if cleaned.is_valid_int():
-		return clampi(cleaned.to_int(), -100, 100)
+		return clampi(cleaned.to_int() * 100, TAX_RATE_MIN_BP, TAX_RATE_MAX_BP)
 	if cleaned.is_valid_float():
-		return clampi(int(round(cleaned.to_float())), -100, 100)
+		return percent_to_basis_points(cleaned.to_float())
 	return fallback
+
+
+static func basis_points_to_percent(rate_basis_points: int) -> float:
+	return float(rate_basis_points) / 100.0
+
+
+static func percent_to_basis_points(rate_percent: float) -> int:
+	return clampi(int(round(rate_percent * 100.0)), TAX_RATE_MIN_BP,
+		TAX_RATE_MAX_BP)
+
+
+static func _format_rate(rate_basis_points: int, include_suffix: bool = true) -> String:
+	var percent := basis_points_to_percent(rate_basis_points)
+	var shown := "%d" % int(round(percent)) \
+		if is_equal_approx(percent, round(percent)) else "%.2f" % percent
+	return "%s%%" % shown if include_suffix else shown
 
 
 func _sync_spin_from_text(text: String) -> void:
 	if _spin == null:
 		return
-	var rate := parse_rate_text(text, int(_spin.value))
-	if rate != int(_spin.value):
-		_spin.set_value_no_signal(rate)
+	var rate := parse_rate_text(text, percent_to_basis_points(float(_spin.value)))
+	if rate != percent_to_basis_points(float(_spin.value)):
+		_set_spin_rate(rate)
 
 
 func _on_value_changed(_value: float) -> void:
 	if _applying or _pending or not bool(_data.get("editable", false)):
 		return
-	var rate := int(_spin.value)
+	var rate := percent_to_basis_points(float(_spin.value))
 	if rate == int(_data.get("base", 0)):
 		_dirty = false
 		_stop_commit_timer()
@@ -241,7 +259,7 @@ func _on_commit_timeout() -> void:
 func _submit(explicit: bool) -> void:
 	if _pending or not bool(_data.get("editable", false)):
 		return
-	var rate := int(_spin.value)
+	var rate := percent_to_basis_points(float(_spin.value))
 	if not explicit and rate == int(_data.get("base", 0)):
 		_dirty = false
 		_stop_commit_timer()

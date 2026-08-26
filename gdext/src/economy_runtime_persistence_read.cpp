@@ -31,7 +31,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         error = "save_chunk_header_invalid";
         return false;
     }
-    if (schema != SCHEMA_VERSION && schema != 44 && schema != 43 &&
+    if (schema != SCHEMA_VERSION && schema != 45 && schema != 44 && schema != 43 &&
         schema != 42 && schema != 41) {
         error = schema <= 31 ? "economy_save_v31_or_earlier_unsupported" :
             (schema == 32 ? "economy_save_v32_or_earlier_unsupported" :
@@ -1362,6 +1362,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 int32_t good = -1, price = 0, destination_price = 0;
                 int64_t quantity = 0, base_value = 0, retail_value = 0;
                 int64_t import_transfer = 0, export_transfer = 0;
+                int64_t transaction_transfer = 0;
                 uint8_t line_flags = 0;
                 if (!read_le(bytes, cursor, good) ||
                     !read_le(bytes, cursor, quantity) ||
@@ -1371,6 +1372,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                     !read_le(bytes, cursor, retail_value) ||
                     !read_le(bytes, cursor, import_transfer) ||
                     !read_le(bytes, cursor, export_transfer) ||
+                    (schema >= 46 &&
+                     !read_le(bytes, cursor, transaction_transfer)) ||
                     !read_le(bytes, cursor, line_flags) || good < 0 ||
                     good >= _market.good_count || _good_trade_enabled[good] == 0 ||
                     quantity <= 0 || price < PRICE_NUMERIC_GUARD_MIN ||
@@ -1387,6 +1390,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 _trade_orders.line_retail_values.push_back(retail_value);
                 _trade_orders.line_import_transfers.push_back(import_transfer);
                 _trade_orders.line_export_transfers.push_back(export_transfer);
+                _trade_orders.line_transaction_transfers.push_back(
+                    transaction_transfer);
                 _trade_orders.line_flags.push_back(line_flags);
             }
             _trade_orders.line_offsets.push_back(

@@ -264,26 +264,26 @@ func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
 		COMMAND_RESEARCH_MOVE:
 			result = _request_research_queue(facade, "move", args, effective_day, sequence)
 		COMMAND_COUNTRY_TAX_SET_DEFAULT:
-			result = facade.set_tax_default(_player_country_handle,
-				int(args.kind), int(args.rate_percent), effective_day, sequence)
+			result = facade.set_tax_default_basis_points(_player_country_handle,
+				int(args.kind), _tax_rate_basis_points(args), effective_day, sequence)
 		COMMAND_COUNTRY_TAX_SET_OVERRIDE:
-			result = facade.set_tax_override(_player_country_handle,
-				int(args.kind), StringName(args.item_id), int(args.rate_percent),
+			result = facade.set_tax_override_basis_points(_player_country_handle,
+				int(args.kind), StringName(args.item_id), _tax_rate_basis_points(args),
 				effective_day, sequence)
 		COMMAND_COUNTRY_TAX_CLEAR_OVERRIDE:
 			result = facade.clear_tax_override(_player_country_handle,
 				int(args.kind), StringName(args.item_id), effective_day, sequence)
 		COMMAND_CELL_TAX_SET_DEFAULT:
-			result = facade.set_cell_tax_default(_player_country_handle,
-				int(args.cell), int(args.kind), int(args.rate_percent),
+			result = facade.set_cell_tax_default_basis_points(_player_country_handle,
+				int(args.cell), int(args.kind), _tax_rate_basis_points(args),
 				effective_day, sequence)
 		COMMAND_CELL_TAX_CLEAR_DEFAULT:
 			result = facade.clear_cell_tax_default(_player_country_handle,
 				int(args.cell), int(args.kind), effective_day, sequence)
 		COMMAND_CELL_TAX_SET_OVERRIDE:
-			result = facade.set_cell_tax_override(_player_country_handle,
+			result = facade.set_cell_tax_override_basis_points(_player_country_handle,
 				int(args.cell), int(args.kind), StringName(args.item_id),
-				int(args.rate_percent), effective_day, sequence)
+				_tax_rate_basis_points(args), effective_day, sequence)
 		COMMAND_CELL_TAX_CLEAR_OVERRIDE:
 			result = facade.clear_cell_tax_override(_player_country_handle,
 				int(args.cell), int(args.kind), StringName(args.item_id),
@@ -752,9 +752,9 @@ func _validate_command_args(id: StringName, args: Dictionary, facade = null) -> 
 					id == COMMAND_CELL_TAX_SET_DEFAULT or \
 					id == COMMAND_CELL_TAX_SET_OVERRIDE or \
 					id == COMMAND_COUNTRY_TAX_SET_OVERRIDE:
-				var rate := int(args.get("rate_percent", 101))
-				if rate < -100 or rate > 100:
-					return _result(false, "invalid_tax_rate", "税率必须在 -100 到 100 之间。")
+				var rate := _tax_rate_basis_points(args)
+				if rate < -100000 or rate > 10000:
+					return _result(false, "invalid_tax_rate", "税率必须在 -1000% 到 100% 之间。")
 			if id == COMMAND_COUNTRY_TAX_SET_OVERRIDE or \
 					id == COMMAND_COUNTRY_TAX_CLEAR_OVERRIDE or \
 					id == COMMAND_CELL_TAX_SET_OVERRIDE or \
@@ -901,6 +901,12 @@ func _tax_item_exists(facade, kind: int, item_id: StringName) -> bool:
 		_: return false
 	var ids: PackedStringArray = facade.native_catalog().get(key, PackedStringArray())
 	return ids.find(String(item_id)) >= 0
+
+
+func _tax_rate_basis_points(args: Dictionary) -> int:
+	if args.has("rate_basis_points"):
+		return int(args.get("rate_basis_points", 0))
+	return int(round(float(args.get("rate_percent", 0.0)) * 100.0))
 
 
 func _validate_owned_cell(facade, cell: int) -> Dictionary:

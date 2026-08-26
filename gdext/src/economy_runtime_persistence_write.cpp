@@ -559,6 +559,8 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                     _trade_orders.line_import_transfers[line]);
                 append_le<int64_t>(payload,
                     _trade_orders.line_export_transfers[line]);
+                append_le<int64_t>(payload,
+                    _trade_orders.line_transaction_transfers[line]);
                 append_le<uint8_t>(payload, _trade_orders.line_flags[line]);
             }
             for (int32_t seller = _trade_orders.seller_offsets[order];

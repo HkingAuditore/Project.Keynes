@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <deque>
 #include <string>
 #include <unordered_map>
@@ -26,15 +27,21 @@ class NativeEconomyRuntime;
 // graph stages and economy reads use only POD/SoA storage.
 class NativeCountryRuntime {
 public:
-    static constexpr int32_t SCHEMA_VERSION = 11;
+    static constexpr int32_t SCHEMA_VERSION = 12;
     static constexpr int64_t MONEY_SCALE = 10000;
     static constexpr int64_t GOODS_SCALE = 1000;
     static constexpr int32_t NEUTRAL_SLOT = -1;
-    static constexpr int8_t TAX_RATE_INHERIT = 127;
+    // Tax rates are signed basis points. Positive taxes are capped at 100%,
+    // while subsidies may reach 1000%. INT32_MIN is reserved for inheritance.
+    static constexpr int32_t TAX_RATE_MIN_BP = -100000;
+    static constexpr int32_t TAX_RATE_MAX_BP = 10000;
+    static constexpr int32_t TAX_RATE_INHERIT =
+        std::numeric_limits<int32_t>::min();
 
     enum TaxKind : int32_t {
         TAX_INCOME = 0,
-        TAX_CONSUMPTION = 1,
+        TAX_TRANSACTION = 1,
+        TAX_CONSUMPTION = TAX_TRANSACTION, // Compatibility alias.
         TAX_BUSINESS = 2,
         TAX_IMPORT = 3,
         TAX_EXPORT = 4,
@@ -92,7 +99,7 @@ public:
     struct CellTaxOverride {
         int32_t kind = -1;
         int32_t item = -1;
-        int8_t rate = TAX_RATE_INHERIT;
+        int32_t rate = TAX_RATE_INHERIT;
 
         bool operator==(const CellTaxOverride &other) const {
             return kind == other.kind && item == other.item && rate == other.rate;
@@ -100,14 +107,14 @@ public:
     };
 
     struct CellTaxPolicy {
-        std::array<int8_t, TAX_KIND_COUNT> defaults{
+        std::array<int32_t, TAX_KIND_COUNT> defaults{
             TAX_RATE_INHERIT, TAX_RATE_INHERIT, TAX_RATE_INHERIT,
             TAX_RATE_INHERIT, TAX_RATE_INHERIT};
         std::vector<CellTaxOverride> overrides;
 
         bool empty() const {
             return std::all_of(defaults.begin(), defaults.end(),
-                               [](int8_t rate) { return rate == TAX_RATE_INHERIT; }) &&
+                               [](int32_t rate) { return rate == TAX_RATE_INHERIT; }) &&
                    overrides.empty();
         }
         bool operator==(const CellTaxPolicy &other) const {
@@ -119,11 +126,11 @@ public:
         std::vector<int32_t> cell_country_slot;
         std::vector<uint64_t> country_handles;
         std::vector<uint64_t> country_technologies;
-        std::vector<int8_t> income_tax_rates;
-        std::vector<int8_t> consumption_tax_rates;
-        std::vector<int8_t> business_tax_rates;
-        std::vector<int8_t> import_tax_rates;
-        std::vector<int8_t> export_tax_rates;
+        std::vector<int32_t> income_tax_rates;
+        std::vector<int32_t> consumption_tax_rates;
+        std::vector<int32_t> business_tax_rates;
+        std::vector<int32_t> import_tax_rates;
+        std::vector<int32_t> export_tax_rates;
         std::vector<uint32_t> cell_tax_policy_ids;
         std::vector<CellTaxPolicy> cell_tax_policies;
         int32_t country_count = 0;
@@ -276,7 +283,7 @@ private:
         int32_t weights_bp[4] = {0, 0, 0, 0};
         int32_t tax_kind = -1;
         int32_t tax_item = -1;
-        int32_t tax_rate_percent = 0;
+        int32_t tax_rate_basis_points = 0;
         int64_t value = 0;
         std::string stable_id;
         std::string display_name;
@@ -382,12 +389,12 @@ private:
         bool stage_signals = false;
         bool stage_tax = false;
         bool stage_cell_tax = false;
-        std::vector<int8_t> tax_defaults;
-        std::vector<int8_t> income_tax_overrides;
-        std::vector<int8_t> consumption_tax_overrides;
-        std::vector<int8_t> business_tax_overrides;
-        std::vector<int8_t> import_tax_overrides;
-        std::vector<int8_t> export_tax_overrides;
+        std::vector<int32_t> tax_defaults;
+        std::vector<int32_t> income_tax_overrides;
+        std::vector<int32_t> consumption_tax_overrides;
+        std::vector<int32_t> business_tax_overrides;
+        std::vector<int32_t> import_tax_overrides;
+        std::vector<int32_t> export_tax_overrides;
         std::unordered_map<int32_t, CellTaxPolicy> cell_tax_updates;
         SparseCellDelta cell_delta;
         std::vector<int32_t> cell_delta_order;
@@ -403,10 +410,10 @@ private:
     int32_t append_country(const std::string &stable_id,
                            const std::string &display_name, int64_t cash);
     int32_t tax_item_count(int32_t kind) const;
-    const std::vector<int8_t> *tax_override_vector(int32_t kind) const;
-    std::vector<int8_t> *tax_override_vector(int32_t kind);
-    static int8_t resolved_tax_rate(const std::vector<int8_t> &defaults,
-                                    const std::vector<int8_t> &overrides,
+    const std::vector<int32_t> *tax_override_vector(int32_t kind) const;
+    std::vector<int32_t> *tax_override_vector(int32_t kind);
+    static int32_t resolved_tax_rate(const std::vector<int32_t> &defaults,
+                                    const std::vector<int32_t> &overrides,
                                     int32_t country_slot, int32_t kind,
                                     int32_t item, int32_t item_count);
     static uint64_t cell_tax_policy_hash(const CellTaxPolicy &policy);
@@ -562,12 +569,12 @@ private:
     std::vector<int64_t> _country_research_consumed_total;
     std::vector<int64_t> _country_research_progress_total;
     std::vector<int64_t> _country_research_completed_total;
-    std::vector<int8_t> _country_tax_defaults;
-    std::vector<int8_t> _country_income_tax_overrides;
-    std::vector<int8_t> _country_consumption_tax_overrides;
-    std::vector<int8_t> _country_business_tax_overrides;
-    std::vector<int8_t> _country_import_tax_overrides;
-    std::vector<int8_t> _country_export_tax_overrides;
+    std::vector<int32_t> _country_tax_defaults;
+    std::vector<int32_t> _country_income_tax_overrides;
+    std::vector<int32_t> _country_consumption_tax_overrides;
+    std::vector<int32_t> _country_business_tax_overrides;
+    std::vector<int32_t> _country_import_tax_overrides;
+    std::vector<int32_t> _country_export_tax_overrides;
     std::vector<uint32_t> _cell_tax_policy_ids;
     std::vector<CellTaxPolicy> _cell_tax_policies;
     std::vector<uint32_t> _cell_tax_policy_refcounts;
