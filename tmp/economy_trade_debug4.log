@@ -1,0 +1,111 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] catalog compiles
+  [PASS] accuracy ACTIVE country configures
+  [PASS] accuracy ACTIVE economy configures
+  [PASS] accuracy ACTIVE markets bootstrap
+  [PASS] accuracy ACTIVE uses certified nested frontier
+  [PASS] accuracy ACTIVE preserves exact ledgers
+  [PASS] country configures
+  [PASS] economy configures
+  [PASS] independent trade topology captures
+  [PASS] two markets bootstrap
+  [PASS] opening local cycle commits exactly
+  [PASS] economy publishes population development metric v1
+  [PASS] rolling markets remain within the four-day visibility bound
+  [PASS] trade planner timing is reported on its native slice
+  [PASS] trade planner timing exposes an accounted substage breakdown
+  [PASS] trade planner timing does not leak into the next continuation slice
+  [PASS] profitable domestic route dispatches
+  [PASS] route ETA uses daily transport time
+  [PASS] dispatch escrows goods and cash
+  [PASS] country capacity reservation is bounded
+  [PASS] route order exposes CSR goods lines
+  [PASS] domestic trade preserves the destination merchant operating floor
+  [PASS] trade purchase cash is included in operating outflow
+  [PASS] new shortage receives its first dispatch within the response target
+  [PASS] trade signal records its last dispatch attempt and deadline state
+  [PASS] in-transit committed boundary conserves
+  [PASS] dispatch preserves the source market local-demand reserve
+  [PASS] PKEC v46 saves in-transit escrow
+  [PASS] mid-transit restore preserves order and hash
+  [PASS] arrival settles on its daily ETA
+  [PASS] arrival remains exactly conserved
+  [PASS] restored due-day order settles once
+  [PASS] trade changes authoritative hash only in ACTIVE
+  [PASS] PROBE emits no authoritative orders
+  [PASS] PROBE and OFF committed state hashes match
+  [PASS] third-country transit tariff policy commits
+  [PASS] foreign route crosses neutral and third-country cells
+  [PASS] foreign order freezes both country handles and slots
+  [PASS] foreign flags and per-line tariff fields are exposed
+  [PASS] third-country transit does not create transit tariff events
+  [PASS] foreign dispatch PKEJ keeps tariff basis and signed transfer legs
+  [PASS] foreign arrival gameplay payload V2 keeps endpoint countries
+  [PASS] player vision freeze captures
+  [PASS] player cannot trade with a cell outside current vision
+  [PASS] revealed counterpart recaptures
+  [PASS] player can trade once the counterpart is visible
+  [PASS] positive tariff fixture configures
+  [PASS] positive import/export tariffs preserve a profitable route
+  [PASS] tariff basis and signed transfers use deterministic floor rounding
+  [PASS] tariffs affect both merchant profit tests and seller net escrow
+  [PASS] positive tariffs publish real bases, collections and event counts
+  [PASS] positive tariff cash enters the endpoint treasuries once
+  [PASS] country-good exposes previous-batch and cumulative tariff totals
+  [PASS] country-partner exposes previous-batch and cumulative order totals
+  [PASS] PKEC v46 restores tariff history, aggregates and state hash
+  [PASS] 100 percent export tariff fixture configures
+  [PASS] 100 percent export tariff rejects zero seller receipt
+  [PASS] negative tariff fixture configures
+  [PASS] unfunded nominal subsidies emit a PKEJ intent
+  [PASS] first subsidy intent moves no goods or merchant cash
+  [PASS] next fiscal batch funds the bounded subsidy and dispatches
+  [PASS] negative tariffs freeze the actually funded signed transfers
+  [PASS] tariff fiscal lanes report request, reserve and actual payout
+  [PASS] tariff subsidies never drive either treasury negative and remain conserved
+  [PASS] explicitly enabled water terrain is trade passable
+  [PASS] identical topology refresh ignores unrelated caller generation
+  [PASS] terrain remap with identical trade semantics preserves the plan
+  [PASS] trade liveness diagnostics expose both planning cursors
+  [PASS] real normalized trade-cost change resets the plan once
+  [PASS] zero-cost passable trade terrain is rejected
+  [PASS] cold-start inventory fixture bootstraps
+  [FAIL] zero-supply demand still receives its configured inventory horizon
+DEBUG cold candidate=10 exact=false exceeds=true demand=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 13555, 0, 0, 0, 0, 0, 5607, 0, 0, 404, 573, 4906, 0, 0, 0, 0, 0, 0, 0, 12512, 0, 0, 13673, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 13674, 0, 0, 573, 0, 0, 9667, 7373, 0, 0, 0, 12512, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3964, 0, 0, 0, 0, 0, 13673, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 12513, 0, 0, 13555, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 12513, 1213, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 57906, 12512, 0, 0, 0, 0, 0] business=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] realized=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] offered=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] reserve=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] target=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2439810, 0, 0, 0, 0, 0, 336420, 0, 0, 84180, 117900, 367950, 0, 0, 0, 0, 0, 0, 0, 2252070, 0, 0, 2461050, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2461230, 0, 0, 117900, 0, 0, 1739970, 884700, 0, 0, 0, 2252070, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 237840, 0, 0, 0, 0, 0, 2461050, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2252250, 0, 0, 2439810, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2252250, 109170, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10422990, 2252070, 0, 0, 0, 0, 0] expected=1219950 epoch=2 ratio=[65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 43691, 98304, 65536, 65536, 65536, 98304, 65536, 65536, 65536, 65536, 65536, 81920, 81920, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 98304, 65536, 65536, 98304, 81920, 98304, 65536, 65536, 0, 65536, 65536, 65536, 65536, 43691, 43691, 98304, 65536, 65536, 81920, 43691, 65536, 98304, 65536, 65536, 65536, 65536, 98304, 65536, 65536, 65536, 65536, 65536, 65536, 43691, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 98304, 65536, 65536, 65536, 65536, 65536, 65536, 98304, 81920, 65536, 81920, 65536, 65536, 65536, 65536, 65536, 65536, 81920, 65536, 65536, 98304, 65536, 65536, 98304, 65536, 43691, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 81920, 98304, 98304, 65536, 65536, 65536, 65536, 65536, 65536, 81920, 43691, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 98304, 98304, 65536, 65536, 65536, 65536, 65536] horizon=3932160
+  [PASS] survival shortage relief can route at zero spread
+  [PASS] survival shortage relief remains conserved
+  [PASS] negative expected profit creates no trade order
+  [PASS] unprofitable shortage records an explicit rejection
+  [PASS] long route leaves time to invalidate seller handle
+  [PASS] seller move queues after dispatch
+  [PASS] invalid seller rebinds to current source merchant
+  [PASS] seller rebind settlement remains conserved
+  [PASS] worker and scalar emit identical trade orders
+  [PASS] worker and scalar final trade hashes match
+  [PASS] long-route country configures
+  [PASS] long-route economy configures
+  [PASS] long-route topology captures
+  [PASS] long-route markets bootstrap
+  [PASS] long-route topology change resets planner
+  [PASS] long route reaches incremental route phase
+  [PASS] route search yields at the deterministic expansion budget (active=true cursor=0 expansion=256 budget=256)
+  [PASS] resumable route slice attributes time and deterministic work to expansion
+  [PASS] resumed route search stays within the same expansion budget
+  [PASS] publish-slice country configures
+  [PASS] publish-slice economy configures
+  [PASS] publish-slice topology captures
+  [PASS] publish-slice markets bootstrap
+  [PASS] building commit reaches aggregate publish with optional budgeted fusion
+  [FAIL] publish slices report executed stage and deterministic bounded work
+DEBUG publish substages={ "verify": 1, "prepare": 1, "audit_population": 1, "audit_market": 1, "audit_transit": 1, "audit_escrow": 1, "audit_country": 1, "trade_init.component_prepare": 1, "watermark": 1, "trade_flow": 1, "trade_diagnostics": 1, "trade_init.prepare": 1, "trade_init.inflight_build": 1, "trade_init.inflight_sort": 1, "trade_init.prune": 1, "trade_init.inbound_build": 1, "trade_init.rotate": 1, "trade_init.workspace_clear": 1, "commit": 1, "trade_init": 1, "class_opinion": 1 } breakdown={ "aggregate_publish.prepare": 0.0, "aggregate_publish.audit_population": 0.0, "aggregate_publish.audit_market": 0.0, "aggregate_publish.audit_transit": 0.0, "aggregate_publish.audit_escrow": 0.0, "aggregate_publish.audit_country": 0.0, "aggregate_publish.verify": 0.0, "aggregate_publish.watermark": 0.0, "aggregate_publish.trade_flow": 0.0, "aggregate_publish.trade_diagnostics": 0.0, "aggregate_publish.trade_init": 0.0464, "aggregate_publish.commit": 0.0225, "aggregate_publish.done": 0.0, "aggregate_publish.class_opinion": 0.0038 } cumulative={ "aggregate_publish.prepare": 0.0018, "aggregate_publish.audit_population": 0.0004, "aggregate_publish.audit_market": 0.1374, "aggregate_publish.audit_transit": 0.0004, "aggregate_publish.audit_escrow": 0.0003, "aggregate_publish.audit_country": 0.0006, "aggregate_publish.verify": 0.0003, "aggregate_publish.watermark": 0.0009, "aggregate_publish.trade_flow": 0.0001, "aggregate_publish.trade_diagnostics": 0.0008, "aggregate_publish.trade_init": 0.0545, "aggregate_publish.commit": 0.0225, "aggregate_publish.done": 0.0 }
+  [PASS] partial publish remains outside the save boundary
+  [PASS] publish completes with exact conservation and accounted timing
+  [PASS] PKEC v35 explicitly rejects pre-v35 economy saves
+=== economy trade runtime FAIL ===
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 275 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

@@ -1,0 +1,869 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] catalog compiles
+  [PASS] country configures
+  [PASS] economy configures
+  [PASS] ten local markets bootstrap
+  [PASS] positive income and consumption tax policy commits
+  [PASS] default profile enables BALANCED ACTIVE approximation
+  [PASS] default profile enables INCREMENTAL closing audit
+  [PASS] rolling inspector trace target registers
+  [PASS] rolling inspector target has a cohort
+  [PASS] rolling inspector transfer queues
+  [PASS] day 0 uses bounded multi-chunk continuation
+  [PASS] compact slice keeps scheduler fields without full diagnostics
+  [PASS] day 0 exposes bounded investment continuation
+  [PASS] day 0 exposes sliced household finalization
+  [PASS] day 0 exposes household slice timing breakdown
+  [PASS] day 0 exposes baked building review phases
+  [PASS] day 0 exposes isolated investment prepare timing
+  [PASS] day 0 slices building finalize reconciliation
+  [PASS] day 0 commits one rolling phase
+  [PASS] day 0 preserves completed-epoch performance diagnostics
+  [PASS] day 0 conserves all ledgers
+  [PASS] day 0 cell 0 state date
+  [PASS] day 0 cell 1 state date
+  [PASS] day 0 cell 2 state date
+  [PASS] day 0 cell 3 state date
+  [PASS] day 0 cell 4 state date
+  [PASS] day 0 cell 5 state date
+  [PASS] day 0 cell 6 state date
+  [PASS] day 0 cell 7 state date
+  [PASS] day 0 cell 8 state date
+  [PASS] day 0 cell 9 state date
+  [PASS] non-due trace remains pending before first cell settlement
+  [PASS] day 1 uses bounded multi-chunk continuation
+  [PASS] day 1 exposes bounded investment continuation
+  [PASS] day 1 exposes sliced household finalization
+  [PASS] day 1 exposes household slice timing breakdown
+  [PASS] day 1 exposes baked building review phases
+  [PASS] day 1 exposes isolated investment prepare timing
+  [PASS] day 1 slices building finalize reconciliation
+  [PASS] day 1 commits one rolling phase
+  [PASS] day 1 preserves completed-epoch performance diagnostics
+  [PASS] day 1 conserves all ledgers
+  [PASS] day 1 cell 0 state date
+  [PASS] day 1 cell 1 state date
+  [PASS] day 1 cell 2 state date
+  [PASS] day 1 cell 3 state date
+  [PASS] day 1 cell 4 state date
+  [PASS] day 1 cell 5 state date
+  [PASS] day 1 cell 6 state date
+  [PASS] day 1 cell 7 state date
+  [PASS] day 1 cell 8 state date
+  [PASS] day 1 cell 9 state date
+  [PASS] due trace exposes the classified transfer
+  [PASS] due trace exposes income and consumption tax expense rows
+  [PASS] day 2 uses bounded multi-chunk continuation
+  [PASS] day 2 exposes bounded investment continuation
+  [PASS] day 2 exposes sliced household finalization
+  [PASS] day 2 exposes household slice timing breakdown
+  [PASS] day 2 exposes baked building review phases
+  [PASS] day 2 exposes isolated investment prepare timing
+  [PASS] day 2 slices building finalize reconciliation
+  [PASS] day 2 commits one rolling phase
+  [PASS] day 2 preserves completed-epoch performance diagnostics
+  [PASS] day 2 conserves all ledgers
+  [PASS] day 2 cell 0 state date
+  [PASS] day 2 cell 1 state date
+  [PASS] day 2 cell 2 state date
+  [PASS] day 2 cell 3 state date
+  [PASS] day 2 cell 4 state date
+  [PASS] day 2 cell 5 state date
+  [PASS] day 2 cell 6 state date
+  [PASS] day 2 cell 7 state date
+  [PASS] day 2 cell 8 state date
+  [PASS] day 2 cell 9 state date
+  [PASS] non-due day 2 preserves the last classified trace
+  [PASS] day 3 uses bounded multi-chunk continuation
+  [PASS] day 3 exposes bounded investment continuation
+  [PASS] day 3 exposes sliced household finalization
+  [PASS] day 3 exposes household slice timing breakdown
+  [PASS] day 3 exposes baked building review phases
+  [PASS] day 3 exposes isolated investment prepare timing
+  [PASS] day 3 slices building finalize reconciliation
+  [PASS] day 3 commits one rolling phase
+  [PASS] day 3 preserves completed-epoch performance diagnostics
+  [PASS] day 3 conserves all ledgers
+  [PASS] day 3 cell 0 state date
+  [PASS] day 3 cell 1 state date
+  [PASS] day 3 cell 2 state date
+  [PASS] day 3 cell 3 state date
+  [PASS] day 3 cell 4 state date
+  [PASS] day 3 cell 5 state date
+  [PASS] day 3 cell 6 state date
+  [PASS] day 3 cell 7 state date
+  [PASS] day 3 cell 8 state date
+  [PASS] day 3 cell 9 state date
+  [PASS] non-due day 3 preserves the last classified trace
+  [PASS] day 4 uses bounded multi-chunk continuation
+  [PASS] day 4 exposes bounded investment continuation
+  [PASS] day 4 exposes sliced household finalization
+  [PASS] day 4 exposes household slice timing breakdown
+  [PASS] day 4 exposes baked building review phases
+  [PASS] day 4 exposes isolated investment prepare timing
+  [PASS] day 4 slices building finalize reconciliation
+  [PASS] day 4 commits one rolling phase
+  [PASS] day 4 preserves completed-epoch performance diagnostics
+  [PASS] day 4 conserves all ledgers
+  [PASS] day 4 cell 0 state date
+  [PASS] day 4 cell 1 state date
+  [PASS] day 4 cell 2 state date
+  [PASS] day 4 cell 3 state date
+  [PASS] day 4 cell 4 state date
+  [PASS] day 4 cell 5 state date
+  [PASS] day 4 cell 6 state date
+  [PASS] day 4 cell 7 state date
+  [PASS] day 4 cell 8 state date
+  [PASS] day 4 cell 9 state date
+  [PASS] non-due day 4 preserves the last classified trace
+  [PASS] day 5 uses bounded multi-chunk continuation
+  [PASS] day 5 exposes bounded investment continuation
+  [PASS] day 5 exposes sliced household finalization
+  [PASS] day 5 exposes household slice timing breakdown
+  [PASS] day 5 exposes baked building review phases
+  [PASS] day 5 exposes isolated investment prepare timing
+  [PASS] day 5 slices building finalize reconciliation
+  [PASS] day 5 commits one rolling phase
+  [PASS] day 5 preserves completed-epoch performance diagnostics
+  [PASS] day 5 conserves all ledgers
+  [PASS] day 5 cell 0 state date
+  [PASS] day 5 cell 1 state date
+  [PASS] day 5 cell 2 state date
+  [PASS] day 5 cell 3 state date
+  [PASS] day 5 cell 4 state date
+  [PASS] day 5 cell 5 state date
+  [PASS] day 5 cell 6 state date
+  [PASS] day 5 cell 7 state date
+  [PASS] day 5 cell 8 state date
+  [PASS] day 5 cell 9 state date
+  [PASS] non-due day 5 preserves the last classified trace
+  [PASS] day 6 uses bounded multi-chunk continuation
+  [PASS] day 6 exposes bounded investment continuation
+  [PASS] day 6 exposes sliced household finalization
+  [PASS] day 6 exposes household slice timing breakdown
+  [PASS] day 6 exposes baked building review phases
+  [PASS] day 6 exposes isolated investment prepare timing
+  [PASS] day 6 slices building finalize reconciliation
+  [PASS] day 6 commits one rolling phase
+  [PASS] day 6 preserves completed-epoch performance diagnostics
+  [PASS] day 6 conserves all ledgers
+  [PASS] day 6 cell 0 state date
+  [PASS] day 6 cell 1 state date
+  [PASS] day 6 cell 2 state date
+  [PASS] day 6 cell 3 state date
+  [PASS] day 6 cell 4 state date
+  [PASS] day 6 cell 5 state date
+  [PASS] day 6 cell 6 state date
+  [PASS] day 6 cell 7 state date
+  [PASS] day 6 cell 8 state date
+  [PASS] day 6 cell 9 state date
+  [PASS] day 7 uses bounded multi-chunk continuation
+  [PASS] day 7 exposes bounded investment continuation
+  [PASS] day 7 exposes sliced household finalization
+  [PASS] day 7 exposes household slice timing breakdown
+  [PASS] day 7 exposes baked building review phases
+  [PASS] day 7 exposes isolated investment prepare timing
+  [PASS] day 7 slices building finalize reconciliation
+  [PASS] day 7 commits one rolling phase
+  [PASS] day 7 preserves completed-epoch performance diagnostics
+  [PASS] day 7 conserves all ledgers
+  [PASS] day 7 cell 0 state date
+  [PASS] day 7 cell 1 state date
+  [PASS] day 7 cell 2 state date
+  [PASS] day 7 cell 3 state date
+  [PASS] day 7 cell 4 state date
+  [PASS] day 7 cell 5 state date
+  [PASS] day 7 cell 6 state date
+  [PASS] day 7 cell 7 state date
+  [PASS] day 7 cell 8 state date
+  [PASS] day 7 cell 9 state date
+  [PASS] household tax enters country treasury without tariff events
+  [PASS] PKEC v46 saves at a daily committed boundary
+  [PASS] restore country matches
+  [PASS] PKCN v11 tax and treasury restore matches
+  [PASS] restore economy configures
+  [PASS] rolling save restores exact hash
+  [PASS] day 8 uses bounded multi-chunk continuation
+  [PASS] day 8 exposes bounded investment continuation
+  [PASS] day 8 exposes sliced household finalization
+  [PASS] day 8 exposes household slice timing breakdown
+  [PASS] day 8 exposes baked building review phases
+  [PASS] day 8 exposes isolated investment prepare timing
+  [PASS] day 8 slices building finalize reconciliation
+  [PASS] day 8 commits one rolling phase
+  [PASS] day 8 preserves completed-epoch performance diagnostics
+  [PASS] day 8 conserves all ledgers
+  [PASS] day 8 cell 0 state date
+  [PASS] day 8 cell 1 state date
+  [PASS] day 8 cell 2 state date
+  [PASS] day 8 cell 3 state date
+  [PASS] day 8 cell 4 state date
+  [PASS] day 8 cell 5 state date
+  [PASS] day 8 cell 6 state date
+  [PASS] day 8 cell 7 state date
+  [PASS] day 8 cell 8 state date
+  [PASS] day 8 cell 9 state date
+  [PASS] day 8 uses bounded multi-chunk continuation
+  [PASS] day 8 exposes bounded investment continuation
+  [PASS] day 8 exposes sliced household finalization
+  [PASS] day 8 exposes household slice timing breakdown
+  [PASS] day 8 exposes baked building review phases
+  [PASS] day 8 exposes isolated investment prepare timing
+  [PASS] day 8 slices building finalize reconciliation
+  [PASS] day 8 commits one rolling phase
+  [PASS] day 8 preserves completed-epoch performance diagnostics
+  [PASS] day 8 conserves all ledgers
+  [PASS] day 8 cell 0 state date
+  [PASS] day 8 cell 1 state date
+  [PASS] day 8 cell 2 state date
+  [PASS] day 8 cell 3 state date
+  [PASS] day 8 cell 4 state date
+  [PASS] day 8 cell 5 state date
+  [PASS] day 8 cell 6 state date
+  [PASS] day 8 cell 7 state date
+  [PASS] day 8 cell 8 state date
+  [PASS] day 8 cell 9 state date
+  [PASS] day 8 restored replay hash
+  [PASS] day 9 uses bounded multi-chunk continuation
+  [PASS] day 9 exposes bounded investment continuation
+  [PASS] day 9 exposes sliced household finalization
+  [PASS] day 9 exposes household slice timing breakdown
+  [PASS] day 9 exposes baked building review phases
+  [PASS] day 9 exposes isolated investment prepare timing
+  [PASS] day 9 slices building finalize reconciliation
+  [PASS] day 9 commits one rolling phase
+  [PASS] day 9 preserves completed-epoch performance diagnostics
+  [PASS] day 9 conserves all ledgers
+  [PASS] day 9 cell 0 state date
+  [PASS] day 9 cell 1 state date
+  [PASS] day 9 cell 2 state date
+  [PASS] day 9 cell 3 state date
+  [PASS] day 9 cell 4 state date
+  [PASS] day 9 cell 5 state date
+  [PASS] day 9 cell 6 state date
+  [PASS] day 9 cell 7 state date
+  [PASS] day 9 cell 8 state date
+  [PASS] day 9 cell 9 state date
+  [PASS] day 9 uses bounded multi-chunk continuation
+  [PASS] day 9 exposes bounded investment continuation
+  [PASS] day 9 exposes sliced household finalization
+  [PASS] day 9 exposes household slice timing breakdown
+  [PASS] day 9 exposes baked building review phases
+  [PASS] day 9 exposes isolated investment prepare timing
+  [PASS] day 9 slices building finalize reconciliation
+  [PASS] day 9 commits one rolling phase
+  [PASS] day 9 preserves completed-epoch performance diagnostics
+  [PASS] day 9 conserves all ledgers
+  [PASS] day 9 cell 0 state date
+  [PASS] day 9 cell 1 state date
+  [PASS] day 9 cell 2 state date
+  [PASS] day 9 cell 3 state date
+  [PASS] day 9 cell 4 state date
+  [PASS] day 9 cell 5 state date
+  [PASS] day 9 cell 6 state date
+  [PASS] day 9 cell 7 state date
+  [PASS] day 9 cell 8 state date
+  [PASS] day 9 cell 9 state date
+  [PASS] day 9 restored replay hash
+  [PASS] day 10 uses bounded multi-chunk continuation
+  [PASS] day 10 exposes bounded investment continuation
+  [PASS] day 10 exposes sliced household finalization
+  [PASS] day 10 exposes household slice timing breakdown
+  [PASS] day 10 exposes baked building review phases
+  [PASS] day 10 exposes isolated investment prepare timing
+  [PASS] day 10 slices building finalize reconciliation
+  [PASS] day 10 commits one rolling phase
+  [PASS] day 10 preserves completed-epoch performance diagnostics
+  [PASS] day 10 conserves all ledgers
+  [PASS] day 10 cell 0 state date
+  [PASS] day 10 cell 1 state date
+  [PASS] day 10 cell 2 state date
+  [PASS] day 10 cell 3 state date
+  [PASS] day 10 cell 4 state date
+  [PASS] day 10 cell 5 state date
+  [PASS] day 10 cell 6 state date
+  [PASS] day 10 cell 7 state date
+  [PASS] day 10 cell 8 state date
+  [PASS] day 10 cell 9 state date
+  [PASS] day 10 uses bounded multi-chunk continuation
+  [PASS] day 10 exposes bounded investment continuation
+  [PASS] day 10 exposes sliced household finalization
+  [PASS] day 10 exposes household slice timing breakdown
+  [PASS] day 10 exposes baked building review phases
+  [PASS] day 10 exposes isolated investment prepare timing
+  [PASS] day 10 slices building finalize reconciliation
+  [PASS] day 10 commits one rolling phase
+  [PASS] day 10 preserves completed-epoch performance diagnostics
+  [PASS] day 10 conserves all ledgers
+  [PASS] day 10 cell 0 state date
+  [PASS] day 10 cell 1 state date
+  [PASS] day 10 cell 2 state date
+  [PASS] day 10 cell 3 state date
+  [PASS] day 10 cell 4 state date
+  [PASS] day 10 cell 5 state date
+  [PASS] day 10 cell 6 state date
+  [PASS] day 10 cell 7 state date
+  [PASS] day 10 cell 8 state date
+  [PASS] day 10 cell 9 state date
+  [PASS] day 10 restored replay hash
+  [PASS] day 11 uses bounded multi-chunk continuation
+  [PASS] day 11 exposes bounded investment continuation
+  [PASS] day 11 exposes sliced household finalization
+  [PASS] day 11 exposes household slice timing breakdown
+  [PASS] day 11 exposes baked building review phases
+  [PASS] day 11 exposes isolated investment prepare timing
+  [PASS] day 11 slices building finalize reconciliation
+  [PASS] day 11 commits one rolling phase
+  [PASS] day 11 preserves completed-epoch performance diagnostics
+  [PASS] day 11 conserves all ledgers
+  [PASS] day 11 cell 0 state date
+  [PASS] day 11 cell 1 state date
+  [PASS] day 11 cell 2 state date
+  [PASS] day 11 cell 3 state date
+  [PASS] day 11 cell 4 state date
+  [PASS] day 11 cell 5 state date
+  [PASS] day 11 cell 6 state date
+  [PASS] day 11 cell 7 state date
+  [PASS] day 11 cell 8 state date
+  [PASS] day 11 cell 9 state date
+  [PASS] day 11 uses bounded multi-chunk continuation
+  [PASS] day 11 exposes bounded investment continuation
+  [PASS] day 11 exposes sliced household finalization
+  [PASS] day 11 exposes household slice timing breakdown
+  [PASS] day 11 exposes baked building review phases
+  [PASS] day 11 exposes isolated investment prepare timing
+  [PASS] day 11 slices building finalize reconciliation
+  [PASS] day 11 commits one rolling phase
+  [PASS] day 11 preserves completed-epoch performance diagnostics
+  [PASS] day 11 conserves all ledgers
+  [PASS] day 11 cell 0 state date
+  [PASS] day 11 cell 1 state date
+  [PASS] day 11 cell 2 state date
+  [PASS] day 11 cell 3 state date
+  [PASS] day 11 cell 4 state date
+  [PASS] day 11 cell 5 state date
+  [PASS] day 11 cell 6 state date
+  [PASS] day 11 cell 7 state date
+  [PASS] day 11 cell 8 state date
+  [PASS] day 11 cell 9 state date
+  [PASS] day 11 restored replay hash
+  [PASS] day 12 uses bounded multi-chunk continuation
+  [PASS] day 12 exposes bounded investment continuation
+  [PASS] day 12 exposes sliced household finalization
+  [PASS] day 12 exposes household slice timing breakdown
+  [PASS] day 12 exposes baked building review phases
+  [PASS] day 12 exposes isolated investment prepare timing
+  [PASS] day 12 slices building finalize reconciliation
+  [PASS] day 12 commits one rolling phase
+  [PASS] day 12 preserves completed-epoch performance diagnostics
+  [PASS] day 12 conserves all ledgers
+  [PASS] day 12 cell 0 state date
+  [PASS] day 12 cell 1 state date
+  [PASS] day 12 cell 2 state date
+  [PASS] day 12 cell 3 state date
+  [PASS] day 12 cell 4 state date
+  [PASS] day 12 cell 5 state date
+  [PASS] day 12 cell 6 state date
+  [PASS] day 12 cell 7 state date
+  [PASS] day 12 cell 8 state date
+  [PASS] day 12 cell 9 state date
+  [PASS] day 12 uses bounded multi-chunk continuation
+  [PASS] day 12 exposes bounded investment continuation
+  [PASS] day 12 exposes sliced household finalization
+  [PASS] day 12 exposes household slice timing breakdown
+  [PASS] day 12 exposes baked building review phases
+  [PASS] day 12 exposes isolated investment prepare timing
+  [PASS] day 12 slices building finalize reconciliation
+  [PASS] day 12 commits one rolling phase
+  [PASS] day 12 preserves completed-epoch performance diagnostics
+  [PASS] day 12 conserves all ledgers
+  [PASS] day 12 cell 0 state date
+  [PASS] day 12 cell 1 state date
+  [PASS] day 12 cell 2 state date
+  [PASS] day 12 cell 3 state date
+  [PASS] day 12 cell 4 state date
+  [PASS] day 12 cell 5 state date
+  [PASS] day 12 cell 6 state date
+  [PASS] day 12 cell 7 state date
+  [PASS] day 12 cell 8 state date
+  [PASS] day 12 cell 9 state date
+  [PASS] day 12 restored replay hash
+  [PASS] day 13 uses bounded multi-chunk continuation
+  [PASS] day 13 exposes bounded investment continuation
+  [PASS] day 13 exposes sliced household finalization
+  [PASS] day 13 exposes household slice timing breakdown
+  [PASS] day 13 exposes baked building review phases
+  [PASS] day 13 exposes isolated investment prepare timing
+  [PASS] day 13 slices building finalize reconciliation
+  [PASS] day 13 commits one rolling phase
+  [PASS] day 13 preserves completed-epoch performance diagnostics
+  [PASS] day 13 conserves all ledgers
+  [PASS] day 13 cell 0 state date
+  [PASS] day 13 cell 1 state date
+  [PASS] day 13 cell 2 state date
+  [PASS] day 13 cell 3 state date
+  [PASS] day 13 cell 4 state date
+  [PASS] day 13 cell 5 state date
+  [PASS] day 13 cell 6 state date
+  [PASS] day 13 cell 7 state date
+  [PASS] day 13 cell 8 state date
+  [PASS] day 13 cell 9 state date
+  [PASS] day 13 uses bounded multi-chunk continuation
+  [PASS] day 13 exposes bounded investment continuation
+  [PASS] day 13 exposes sliced household finalization
+  [PASS] day 13 exposes household slice timing breakdown
+  [PASS] day 13 exposes baked building review phases
+  [PASS] day 13 exposes isolated investment prepare timing
+  [PASS] day 13 slices building finalize reconciliation
+  [PASS] day 13 commits one rolling phase
+  [PASS] day 13 preserves completed-epoch performance diagnostics
+  [PASS] day 13 conserves all ledgers
+  [PASS] day 13 cell 0 state date
+  [PASS] day 13 cell 1 state date
+  [PASS] day 13 cell 2 state date
+  [PASS] day 13 cell 3 state date
+  [PASS] day 13 cell 4 state date
+  [PASS] day 13 cell 5 state date
+  [PASS] day 13 cell 6 state date
+  [PASS] day 13 cell 7 state date
+  [PASS] day 13 cell 8 state date
+  [PASS] day 13 cell 9 state date
+  [PASS] day 13 restored replay hash
+  [PASS] day 14 uses bounded multi-chunk continuation
+  [PASS] day 14 exposes bounded investment continuation
+  [PASS] day 14 exposes sliced household finalization
+  [PASS] day 14 exposes household slice timing breakdown
+  [PASS] day 14 exposes baked building review phases
+  [PASS] day 14 exposes isolated investment prepare timing
+  [PASS] day 14 slices building finalize reconciliation
+  [PASS] day 14 commits one rolling phase
+  [PASS] day 14 preserves completed-epoch performance diagnostics
+  [PASS] day 14 conserves all ledgers
+  [PASS] day 14 cell 0 state date
+  [PASS] day 14 cell 1 state date
+  [PASS] day 14 cell 2 state date
+  [PASS] day 14 cell 3 state date
+  [PASS] day 14 cell 4 state date
+  [PASS] day 14 cell 5 state date
+  [PASS] day 14 cell 6 state date
+  [PASS] day 14 cell 7 state date
+  [PASS] day 14 cell 8 state date
+  [PASS] day 14 cell 9 state date
+  [PASS] day 14 uses bounded multi-chunk continuation
+  [PASS] day 14 exposes bounded investment continuation
+  [PASS] day 14 exposes sliced household finalization
+  [PASS] day 14 exposes household slice timing breakdown
+  [PASS] day 14 exposes baked building review phases
+  [PASS] day 14 exposes isolated investment prepare timing
+  [PASS] day 14 slices building finalize reconciliation
+  [PASS] day 14 commits one rolling phase
+  [PASS] day 14 preserves completed-epoch performance diagnostics
+  [PASS] day 14 conserves all ledgers
+  [PASS] day 14 cell 0 state date
+  [PASS] day 14 cell 1 state date
+  [PASS] day 14 cell 2 state date
+  [PASS] day 14 cell 3 state date
+  [PASS] day 14 cell 4 state date
+  [PASS] day 14 cell 5 state date
+  [PASS] day 14 cell 6 state date
+  [PASS] day 14 cell 7 state date
+  [PASS] day 14 cell 8 state date
+  [PASS] day 14 cell 9 state date
+  [PASS] day 14 restored replay hash
+  [PASS] negative consumption tax queues symmetrically
+  [PASS] day 15 uses bounded multi-chunk continuation
+  [PASS] day 15 exposes bounded investment continuation
+  [PASS] day 15 exposes sliced household finalization
+  [PASS] day 15 exposes household slice timing breakdown
+  [PASS] day 15 exposes baked building review phases
+  [PASS] day 15 exposes isolated investment prepare timing
+  [PASS] day 15 slices building finalize reconciliation
+  [PASS] day 15 commits one rolling phase
+  [PASS] day 15 preserves completed-epoch performance diagnostics
+  [PASS] day 15 conserves all ledgers
+  [PASS] day 15 cell 0 state date
+  [PASS] day 15 cell 1 state date
+  [PASS] day 15 cell 2 state date
+  [PASS] day 15 cell 3 state date
+  [PASS] day 15 cell 4 state date
+  [PASS] day 15 cell 5 state date
+  [PASS] day 15 cell 6 state date
+  [PASS] day 15 cell 7 state date
+  [PASS] day 15 cell 8 state date
+  [PASS] day 15 cell 9 state date
+  [PASS] day 15 uses bounded multi-chunk continuation
+  [PASS] day 15 exposes bounded investment continuation
+  [PASS] day 15 exposes sliced household finalization
+  [PASS] day 15 exposes household slice timing breakdown
+  [PASS] day 15 exposes baked building review phases
+  [PASS] day 15 exposes isolated investment prepare timing
+  [PASS] day 15 slices building finalize reconciliation
+  [PASS] day 15 commits one rolling phase
+  [PASS] day 15 preserves completed-epoch performance diagnostics
+  [PASS] day 15 conserves all ledgers
+  [PASS] day 15 cell 0 state date
+  [PASS] day 15 cell 1 state date
+  [PASS] day 15 cell 2 state date
+  [PASS] day 15 cell 3 state date
+  [PASS] day 15 cell 4 state date
+  [PASS] day 15 cell 5 state date
+  [PASS] day 15 cell 6 state date
+  [PASS] day 15 cell 7 state date
+  [PASS] day 15 cell 8 state date
+  [PASS] day 15 cell 9 state date
+  [PASS] first negative-tax batch establishes budget without payout
+  [PASS] day 16 uses bounded multi-chunk continuation
+  [PASS] day 16 exposes bounded investment continuation
+  [PASS] day 16 exposes sliced household finalization
+  [PASS] day 16 exposes household slice timing breakdown
+  [PASS] day 16 exposes baked building review phases
+  [PASS] day 16 exposes isolated investment prepare timing
+  [PASS] day 16 slices building finalize reconciliation
+  [PASS] day 16 commits one rolling phase
+  [PASS] day 16 preserves completed-epoch performance diagnostics
+  [PASS] day 16 conserves all ledgers
+  [PASS] day 16 cell 0 state date
+  [PASS] day 16 cell 1 state date
+  [PASS] day 16 cell 2 state date
+  [PASS] day 16 cell 3 state date
+  [PASS] day 16 cell 4 state date
+  [PASS] day 16 cell 5 state date
+  [PASS] day 16 cell 6 state date
+  [PASS] day 16 cell 7 state date
+  [PASS] day 16 cell 8 state date
+  [PASS] day 16 cell 9 state date
+  [PASS] day 16 uses bounded multi-chunk continuation
+  [PASS] day 16 exposes bounded investment continuation
+  [PASS] day 16 exposes sliced household finalization
+  [PASS] day 16 exposes household slice timing breakdown
+  [PASS] day 16 exposes baked building review phases
+  [PASS] day 16 exposes isolated investment prepare timing
+  [PASS] day 16 slices building finalize reconciliation
+  [PASS] day 16 commits one rolling phase
+  [PASS] day 16 preserves completed-epoch performance diagnostics
+  [PASS] day 16 conserves all ledgers
+  [PASS] day 16 cell 0 state date
+  [PASS] day 16 cell 1 state date
+  [PASS] day 16 cell 2 state date
+  [PASS] day 16 cell 3 state date
+  [PASS] day 16 cell 4 state date
+  [PASS] day 16 cell 5 state date
+  [PASS] day 16 cell 6 state date
+  [PASS] day 16 cell 7 state date
+  [PASS] day 16 cell 8 state date
+  [PASS] day 16 cell 9 state date
+  [PASS] subsidy day 16 restored replay hash
+  [PASS] day 17 uses bounded multi-chunk continuation
+  [PASS] day 17 exposes bounded investment continuation
+  [PASS] day 17 exposes sliced household finalization
+  [PASS] day 17 exposes household slice timing breakdown
+  [PASS] day 17 exposes baked building review phases
+  [PASS] day 17 exposes isolated investment prepare timing
+  [PASS] day 17 slices building finalize reconciliation
+  [PASS] day 17 commits one rolling phase
+  [PASS] day 17 preserves completed-epoch performance diagnostics
+  [PASS] day 17 conserves all ledgers
+  [PASS] day 17 cell 0 state date
+  [PASS] day 17 cell 1 state date
+  [PASS] day 17 cell 2 state date
+  [PASS] day 17 cell 3 state date
+  [PASS] day 17 cell 4 state date
+  [PASS] day 17 cell 5 state date
+  [PASS] day 17 cell 6 state date
+  [PASS] day 17 cell 7 state date
+  [PASS] day 17 cell 8 state date
+  [PASS] day 17 cell 9 state date
+  [PASS] day 17 uses bounded multi-chunk continuation
+  [PASS] day 17 exposes bounded investment continuation
+  [PASS] day 17 exposes sliced household finalization
+  [PASS] day 17 exposes household slice timing breakdown
+  [PASS] day 17 exposes baked building review phases
+  [PASS] day 17 exposes isolated investment prepare timing
+  [PASS] day 17 slices building finalize reconciliation
+  [PASS] day 17 commits one rolling phase
+  [PASS] day 17 preserves completed-epoch performance diagnostics
+  [PASS] day 17 conserves all ledgers
+  [PASS] day 17 cell 0 state date
+  [PASS] day 17 cell 1 state date
+  [PASS] day 17 cell 2 state date
+  [PASS] day 17 cell 3 state date
+  [PASS] day 17 cell 4 state date
+  [PASS] day 17 cell 5 state date
+  [PASS] day 17 cell 6 state date
+  [PASS] day 17 cell 7 state date
+  [PASS] day 17 cell 8 state date
+  [PASS] day 17 cell 9 state date
+  [PASS] subsidy day 17 restored replay hash
+  [PASS] day 18 uses bounded multi-chunk continuation
+  [PASS] day 18 exposes bounded investment continuation
+  [PASS] day 18 exposes sliced household finalization
+  [PASS] day 18 exposes household slice timing breakdown
+  [PASS] day 18 exposes baked building review phases
+  [PASS] day 18 exposes isolated investment prepare timing
+  [PASS] day 18 slices building finalize reconciliation
+  [PASS] day 18 commits one rolling phase
+  [PASS] day 18 preserves completed-epoch performance diagnostics
+  [PASS] day 18 conserves all ledgers
+  [PASS] day 18 cell 0 state date
+  [PASS] day 18 cell 1 state date
+  [PASS] day 18 cell 2 state date
+  [PASS] day 18 cell 3 state date
+  [PASS] day 18 cell 4 state date
+  [PASS] day 18 cell 5 state date
+  [PASS] day 18 cell 6 state date
+  [PASS] day 18 cell 7 state date
+  [PASS] day 18 cell 8 state date
+  [PASS] day 18 cell 9 state date
+  [PASS] day 18 uses bounded multi-chunk continuation
+  [PASS] day 18 exposes bounded investment continuation
+  [PASS] day 18 exposes sliced household finalization
+  [PASS] day 18 exposes household slice timing breakdown
+  [PASS] day 18 exposes baked building review phases
+  [PASS] day 18 exposes isolated investment prepare timing
+  [PASS] day 18 slices building finalize reconciliation
+  [PASS] day 18 commits one rolling phase
+  [PASS] day 18 preserves completed-epoch performance diagnostics
+  [PASS] day 18 conserves all ledgers
+  [PASS] day 18 cell 0 state date
+  [PASS] day 18 cell 1 state date
+  [PASS] day 18 cell 2 state date
+  [PASS] day 18 cell 3 state date
+  [PASS] day 18 cell 4 state date
+  [PASS] day 18 cell 5 state date
+  [PASS] day 18 cell 6 state date
+  [PASS] day 18 cell 7 state date
+  [PASS] day 18 cell 8 state date
+  [PASS] day 18 cell 9 state date
+  [PASS] subsidy day 18 restored replay hash
+  [PASS] day 19 uses bounded multi-chunk continuation
+  [PASS] day 19 exposes bounded investment continuation
+  [PASS] day 19 exposes sliced household finalization
+  [PASS] day 19 exposes household slice timing breakdown
+  [PASS] day 19 exposes baked building review phases
+  [PASS] day 19 exposes isolated investment prepare timing
+  [PASS] day 19 slices building finalize reconciliation
+  [PASS] day 19 commits one rolling phase
+  [PASS] day 19 preserves completed-epoch performance diagnostics
+  [PASS] day 19 conserves all ledgers
+  [PASS] day 19 cell 0 state date
+  [PASS] day 19 cell 1 state date
+  [PASS] day 19 cell 2 state date
+  [PASS] day 19 cell 3 state date
+  [PASS] day 19 cell 4 state date
+  [PASS] day 19 cell 5 state date
+  [PASS] day 19 cell 6 state date
+  [PASS] day 19 cell 7 state date
+  [PASS] day 19 cell 8 state date
+  [PASS] day 19 cell 9 state date
+  [PASS] day 19 uses bounded multi-chunk continuation
+  [PASS] day 19 exposes bounded investment continuation
+  [PASS] day 19 exposes sliced household finalization
+  [PASS] day 19 exposes household slice timing breakdown
+  [PASS] day 19 exposes baked building review phases
+  [PASS] day 19 exposes isolated investment prepare timing
+  [PASS] day 19 slices building finalize reconciliation
+  [PASS] day 19 commits one rolling phase
+  [PASS] day 19 preserves completed-epoch performance diagnostics
+  [PASS] day 19 conserves all ledgers
+  [PASS] day 19 cell 0 state date
+  [PASS] day 19 cell 1 state date
+  [PASS] day 19 cell 2 state date
+  [PASS] day 19 cell 3 state date
+  [PASS] day 19 cell 4 state date
+  [PASS] day 19 cell 5 state date
+  [PASS] day 19 cell 6 state date
+  [PASS] day 19 cell 7 state date
+  [PASS] day 19 cell 8 state date
+  [PASS] day 19 cell 9 state date
+  [PASS] subsidy day 19 restored replay hash
+  [PASS] day 20 uses bounded multi-chunk continuation
+  [PASS] day 20 exposes bounded investment continuation
+  [PASS] day 20 exposes sliced household finalization
+  [PASS] day 20 exposes household slice timing breakdown
+  [PASS] day 20 exposes baked building review phases
+  [PASS] day 20 exposes isolated investment prepare timing
+  [PASS] day 20 slices building finalize reconciliation
+  [PASS] day 20 commits one rolling phase
+  [PASS] day 20 preserves completed-epoch performance diagnostics
+  [PASS] day 20 conserves all ledgers
+  [PASS] day 20 cell 0 state date
+  [PASS] day 20 cell 1 state date
+  [PASS] day 20 cell 2 state date
+  [PASS] day 20 cell 3 state date
+  [PASS] day 20 cell 4 state date
+  [PASS] day 20 cell 5 state date
+  [PASS] day 20 cell 6 state date
+  [PASS] day 20 cell 7 state date
+  [PASS] day 20 cell 8 state date
+  [PASS] day 20 cell 9 state date
+  [PASS] day 20 uses bounded multi-chunk continuation
+  [PASS] day 20 exposes bounded investment continuation
+  [PASS] day 20 exposes sliced household finalization
+  [PASS] day 20 exposes household slice timing breakdown
+  [PASS] day 20 exposes baked building review phases
+  [PASS] day 20 exposes isolated investment prepare timing
+  [PASS] day 20 slices building finalize reconciliation
+  [PASS] day 20 commits one rolling phase
+  [PASS] day 20 preserves completed-epoch performance diagnostics
+  [PASS] day 20 conserves all ledgers
+  [PASS] day 20 cell 0 state date
+  [PASS] day 20 cell 1 state date
+  [PASS] day 20 cell 2 state date
+  [PASS] day 20 cell 3 state date
+  [PASS] day 20 cell 4 state date
+  [PASS] day 20 cell 5 state date
+  [PASS] day 20 cell 6 state date
+  [PASS] day 20 cell 7 state date
+  [PASS] day 20 cell 8 state date
+  [PASS] day 20 cell 9 state date
+  [PASS] subsidy day 20 restored replay hash
+  [PASS] next matching rolling batch pays treasury-capped subsidy
+  [PASS] country configures
+  [PASS] economy configures
+  [PASS] ten local markets bootstrap
+  [PASS] minimum-living subsidy fixture has a treasury donor
+  [PASS] minimum-living subsidy fixture funds treasury before activation
+  [PASS] day 0 uses bounded multi-chunk continuation
+  [PASS] compact slice keeps scheduler fields without full diagnostics
+  [PASS] day 0 exposes bounded investment continuation
+  [PASS] day 0 exposes sliced household finalization
+  [PASS] day 0 exposes household slice timing breakdown
+  [PASS] day 0 exposes baked building review phases
+  [PASS] day 0 exposes isolated investment prepare timing
+  [PASS] day 0 slices building finalize reconciliation
+  [PASS] day 0 commits one rolling phase
+  [PASS] day 0 preserves completed-epoch performance diagnostics
+  [PASS] day 0 conserves all ledgers
+  [PASS] day 0 cell 0 state date
+  [PASS] day 0 cell 1 state date
+  [PASS] day 0 cell 2 state date
+  [PASS] day 0 cell 3 state date
+  [PASS] day 0 cell 4 state date
+  [PASS] day 0 cell 5 state date
+  [PASS] day 0 cell 6 state date
+  [PASS] day 0 cell 7 state date
+  [PASS] day 0 cell 8 state date
+  [PASS] day 0 cell 9 state date
+  [PASS] negative income tax activates on the next due phase
+  [PASS] day 1 uses bounded multi-chunk continuation
+  [PASS] day 1 exposes bounded investment continuation
+  [PASS] day 1 exposes sliced household finalization
+  [PASS] day 1 exposes household slice timing breakdown
+  [PASS] day 1 exposes baked building review phases
+  [PASS] day 1 exposes isolated investment prepare timing
+  [PASS] day 1 slices building finalize reconciliation
+  [PASS] day 1 commits one rolling phase
+  [PASS] day 1 preserves completed-epoch performance diagnostics
+  [PASS] day 1 conserves all ledgers
+  [PASS] day 1 cell 0 state date
+  [PASS] day 1 cell 1 state date
+  [PASS] day 1 cell 2 state date
+  [PASS] day 1 cell 3 state date
+  [PASS] day 1 cell 4 state date
+  [PASS] day 1 cell 5 state date
+  [PASS] day 1 cell 6 state date
+  [PASS] day 1 cell 7 state date
+  [PASS] day 1 cell 8 state date
+  [PASS] day 1 cell 9 state date
+  [PASS] zero-market-income cohorts receive the funded living-cost floor immediately
+  [PASS] income-floor restore country configures
+  [PASS] income-floor country policy and treasury restore
+  [PASS] income-floor economy restore configures
+  [PASS] income-floor save restores exact hash
+  [PASS] day 2 uses bounded multi-chunk continuation
+  [PASS] day 2 exposes bounded investment continuation
+  [PASS] day 2 exposes sliced household finalization
+  [PASS] day 2 exposes household slice timing breakdown
+  [PASS] day 2 exposes baked building review phases
+  [PASS] day 2 exposes isolated investment prepare timing
+  [PASS] day 2 slices building finalize reconciliation
+  [PASS] day 2 commits one rolling phase
+  [PASS] day 2 preserves completed-epoch performance diagnostics
+  [PASS] day 2 conserves all ledgers
+  [PASS] day 2 cell 0 state date
+  [PASS] day 2 cell 1 state date
+  [PASS] day 2 cell 2 state date
+  [PASS] day 2 cell 3 state date
+  [PASS] day 2 cell 4 state date
+  [PASS] day 2 cell 5 state date
+  [PASS] day 2 cell 6 state date
+  [PASS] day 2 cell 7 state date
+  [PASS] day 2 cell 8 state date
+  [PASS] day 2 cell 9 state date
+  [PASS] day 2 uses bounded multi-chunk continuation
+  [PASS] day 2 exposes bounded investment continuation
+  [PASS] day 2 exposes sliced household finalization
+  [PASS] day 2 exposes household slice timing breakdown
+  [PASS] day 2 exposes baked building review phases
+  [PASS] day 2 exposes isolated investment prepare timing
+  [PASS] day 2 slices building finalize reconciliation
+  [PASS] day 2 commits one rolling phase
+  [PASS] day 2 preserves completed-epoch performance diagnostics
+  [PASS] day 2 conserves all ledgers
+  [PASS] day 2 cell 0 state date
+  [PASS] day 2 cell 1 state date
+  [PASS] day 2 cell 2 state date
+  [PASS] day 2 cell 3 state date
+  [PASS] day 2 cell 4 state date
+  [PASS] day 2 cell 5 state date
+  [PASS] day 2 cell 6 state date
+  [PASS] day 2 cell 7 state date
+  [PASS] day 2 cell 8 state date
+  [PASS] day 2 cell 9 state date
+  [PASS] income-floor restored replay remains deterministic
+  [PASS] country configures
+  [PASS] economy configures
+  [PASS] ten local markets bootstrap
+  [PASS] prospective subsidy fixture has a source cohort
+  [PASS] prospective subsidy fixture funds the country
+  [PASS] negative tax targets an empty owner profession
+  [PASS] day 0 uses bounded multi-chunk continuation
+  [PASS] compact slice keeps scheduler fields without full diagnostics
+  [PASS] day 0 exposes bounded investment continuation
+  [PASS] day 0 exposes sliced household finalization
+  [PASS] day 0 exposes household slice timing breakdown
+  [PASS] day 0 exposes baked building review phases
+  [PASS] day 0 exposes isolated investment prepare timing
+  [PASS] day 0 slices building finalize reconciliation
+  [PASS] day 0 commits one rolling phase
+  [PASS] day 0 preserves completed-epoch performance diagnostics
+  [PASS] day 0 conserves all ledgers
+  [PASS] day 0 cell 0 state date
+  [PASS] day 0 cell 1 state date
+  [PASS] day 0 cell 2 state date
+  [PASS] day 0 cell 3 state date
+  [PASS] day 0 cell 4 state date
+  [PASS] day 0 cell 5 state date
+  [PASS] day 0 cell 6 state date
+  [PASS] day 0 cell 7 state date
+  [PASS] day 0 cell 8 state date
+  [PASS] day 0 cell 9 state date
+  [PASS] day 1 uses bounded multi-chunk continuation
+  [PASS] day 1 exposes bounded investment continuation
+  [PASS] day 1 exposes sliced household finalization
+  [PASS] day 1 exposes household slice timing breakdown
+  [PASS] day 1 exposes baked building review phases
+  [PASS] day 1 exposes isolated investment prepare timing
+  [PASS] day 1 slices building finalize reconciliation
+  [PASS] day 1 commits one rolling phase
+  [PASS] day 1 preserves completed-epoch performance diagnostics
+  [PASS] day 1 conserves all ledgers
+  [PASS] day 1 cell 0 state date
+  [PASS] day 1 cell 1 state date
+  [PASS] day 1 cell 2 state date
+  [PASS] day 1 cell 3 state date
+  [PASS] day 1 cell 4 state date
+  [PASS] day 1 cell 5 state date
+  [PASS] day 1 cell 6 state date
+  [PASS] day 1 cell 7 state date
+  [PASS] day 1 cell 8 state date
+  [PASS] day 1 cell 9 state date
+  [PASS] empty target profession receives prospective subsidy budget
+=== economy rolling runtime PASS ===
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 275 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

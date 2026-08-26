@@ -2502,6 +2502,7 @@ Dictionary NativeEconomyRuntime::trade_orders_for_cell(
     PackedInt64Array line_retail_values;
     PackedInt64Array line_import_transfers;
     PackedInt64Array line_export_transfers;
+    PackedInt64Array line_transaction_transfers;
     PackedByteArray line_flags;
     line_offsets.push_back(0);
     for (int32_t order = 0; order < _trade_orders.size(); ++order) {
@@ -2543,6 +2544,8 @@ Dictionary NativeEconomyRuntime::trade_orders_for_cell(
                 _trade_orders.line_import_transfers[line]);
             line_export_transfers.push_back(
                 _trade_orders.line_export_transfers[line]);
+            line_transaction_transfers.push_back(
+                _trade_orders.line_transaction_transfers[line]);
             line_flags.push_back(_trade_orders.line_flags[line]);
             order_base = saturating_add(order_base,
                 _trade_orders.line_base_values[line], query_saturation);
@@ -2583,6 +2586,7 @@ Dictionary NativeEconomyRuntime::trade_orders_for_cell(
     out["line_retail_values"] = line_retail_values;
     out["line_import_transfers"] = line_import_transfers;
     out["line_export_transfers"] = line_export_transfers;
+    out["line_transaction_transfers"] = line_transaction_transfers;
     out["line_flags"] = line_flags;
     return out;
 }

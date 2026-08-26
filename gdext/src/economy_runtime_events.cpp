@@ -1081,6 +1081,7 @@ Dictionary NativeEconomyRuntime::event_schema() const {
     fields["TRADE_RETAIL_VALUE"] = FIELD_TRADE_RETAIL_VALUE;
     fields["TRADE_IMPORT_TRANSFER"] = FIELD_TRADE_IMPORT_TRANSFER;
     fields["TRADE_EXPORT_TRANSFER"] = FIELD_TRADE_EXPORT_TRANSFER;
+    fields["TRADE_TRANSACTION_TRANSFER"] = FIELD_TRADE_TRANSACTION_TRANSFER;
     out["fields"] = fields;
     Dictionary cashflow_sources;
     cashflow_sources["WAGES"] = CASHFLOW_WAGES;

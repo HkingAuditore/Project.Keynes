@@ -235,15 +235,15 @@ func compile_native_catalog() -> Dictionary:
 	]
 	for group in tax_stat_groups:
 		for item_id in group[1]:
-			var tax_key := StringName("country.tax.%s.%s.rate_pct" % [
+			var tax_key := StringName("country.tax.%s.%s.rate_bp" % [
 				String(group[0]), String(item_id)])
 			if stat_ids.has(tax_key):
 				return {"ok": false, "reason": "modifier_stat_key_invalid_or_duplicate"}
 			stat_ids[tax_key] = out.stat_keys.size()
 			out.stat_keys.append(String(tax_key))
 			out.stat_domains.append(1)
-			out.stat_min_values.append(-100.0)
-			out.stat_max_values.append(100.0)
+			out.stat_min_values.append(-100000.0)
+			out.stat_max_values.append(10000.0)
 			out.stat_persistable.append(1)
 			stat_domains_by_id.append(1)
 			stat_allowed_operations_by_id.append(15)

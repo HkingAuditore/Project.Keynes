@@ -66,24 +66,26 @@ Commands:
 - `SET/CLEAR_CELL_TAX_OVERRIDE`
 - `CLEAR_CELL_TAX_POLICY`
 
-Command columns include `tax_kinds`, `tax_item_indices`, and `tax_rate_percent`. The facade validates
-stable IDs and converts them to dense IDs before submission. `CountryDailySystem` commits commands
+Command columns include `tax_kinds`, `tax_item_indices`, and the legacy-named
+`tax_rate_percent` column whose native payload is basis points. The facade validates stable IDs,
+converts user-facing whole percentages to basis points, and converts them to dense IDs before
+submission. `CountryDailySystem` commits commands
 at the effective day before the economy freezes the next epoch.
 
 Stat keys:
 
 ```text
-country.tax.income.<profession>.rate_pct
-country.tax.consumption.<good>.rate_pct
-country.tax.business.<building>.rate_pct
-country.tax.import.<good>.rate_pct
-country.tax.export.<good>.rate_pct
+country.tax.income.<profession>.rate_bp
+country.tax.consumption.<good>.rate_bp
+country.tax.business.<building>.rate_bp
+country.tax.import.<good>.rate_bp
+country.tax.export.<good>.rate_bp
 ```
 
 The country policy and Modifier catalogs must use the same sorted profession/good/building IDs.
 Reject duplicate keys and shape/hash mismatches. The economy resolves stat IDs outside workers,
-batch-queries each country once per epoch, rounds half away from zero, clamps to `[-100,100]`, and
-stores contiguous `int8` arrays.
+batch-queries each country once per epoch, rounds half away from zero, clamps to `[-100000,10000]`,
+and stores contiguous basis-point arrays.
 
 Cell precedence is cell item → cell kind default → country item → country kind
 default, followed by Country Modifier. Economy compiles only used
@@ -99,7 +101,7 @@ original settlement/prediction fast path and skip unnecessary fiscal drafts.
 Unified formula:
 
 ```text
-amount = floor(base * abs(rate_percent) / 100)
+amount = floor(base * abs(rate_bp) / 10000)
 ```
 
 Use saturating `int64` fixed-point helpers. Positive rates transfer payer cash to the cell's country
@@ -264,9 +266,9 @@ paid/unmet subsidy, fulfillment, cumulative values, and inactive tariff state.
 
 Current schemas:
 
-- PKCN v11: tax policy, policy version, country Modifier persistence.
-- PKEC v33: previous subsidy requests, generation-safe country history, fiscal cumulative values,
-  and deterministic hash.
+- PKCN v12: tax policy, policy version, country Modifier persistence.
+- PKEC v46: previous subsidy requests, generation-safe country history, fiscal cumulative values,
+  deterministic hash, and transaction-tax order transfers; v45/v44/v43/v42/v41 remain readable.
 
 PKCN v3/PKEC v22 migrate explicitly to zero rates and empty fiscal history. Modifier catalog
 extension during this migration must validate every old stable stat key, definition version, and

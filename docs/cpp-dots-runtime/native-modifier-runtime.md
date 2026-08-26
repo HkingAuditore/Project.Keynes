@@ -215,8 +215,8 @@ Economy report 另发布 exact-good shared/non-neutral/override/override-cell �
 
 | section/schema | 内容 |
 | --- | --- |
-| PKCN v11 | Country authority, technology/research-signal identity, national/cell tax policy + Country Modifier domain blob + native Effect ingress idempotency |
-| PKEC v41 / Modifier schema v3 | Economy authority, family/cell effects + BuildingIdentityStore + Economy Modifier section + native Effect ingress idempotency + exact environment precipitation lane |
+| PKCN v12 | Country authority, technology/research-signal identity, national/cell tax policy + Country Modifier domain blob + native Effect ingress idempotency |
+| PKEC v46 / Modifier schema v3 | Economy authority, family/cell effects + BuildingIdentityStore + Economy Modifier section + native Effect ingress idempotency + exact environment precipitation lane + transaction-tax order transfers |
 | PKCM v1 | Climate Modifier domain |
 | PKGP v1 | Gameplay identity/base SoA + Gameplay Modifier domain |
 
@@ -225,7 +225,7 @@ term payload。恢复会校验 catalog hash、definition version、term payload�
 不兼容时失败，不重放 apply event。
 
 当前恢复采用严格 catalog hash、definition version 和 term payload 校验。
-PKEC reader 只接受 v41；所有旧 byte schema 均不通过默认值或空 store 迁移；append-only
+PKEC reader 当前接受 v46 及显式列迁移允许的旧版本；所有更早 byte schema 均不通过默认值或空 store 迁移；append-only
 catalog 差异也继续拒绝。focused runtime 未配置 Modifier 时，PKCN/PKEC 写入显式空
 domain marker。生产恢复顺序是 dynamic world、
 environment、PKCM、WorldClock、PKCN、PKEC、PKGP，再恢复 vision/journal/player；PKCN 后先
@@ -235,7 +235,7 @@ environment、PKCM、WorldClock、PKCN、PKEC、PKGP，再恢复 vision/journal/
 
 `tests/modifier_runtime_test.gd` 覆盖 apply/remove/expiry、stack refresh、global/group/entity、
 UNIQUE_SOURCE、stale handle、零 factor、Gameplay base/effective、journal v2、report 诊断和四域 round-trip。
-`country_runtime_test.gd` 验证 PKCN v11；`family_runtime_test.gd` 与
+`country_runtime_test.gd` 验证 PKCN v12；`family_runtime_test.gd` 与
 `building_runtime_test.gd` 验证 PKEC v41 save/restore 与状态哈希；
 `family_effect_output_runtime_test.gd` 覆盖 exact good/building/resource 输出、稀疏 cache 和 stale
 Family/Branch handle 拒绝，`family_effect_stack_runtime_test.gd` 覆盖五类 stack policy。

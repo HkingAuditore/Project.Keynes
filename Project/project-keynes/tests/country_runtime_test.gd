@@ -266,7 +266,7 @@ func _run() -> void:
 	var invalid_rate := _commands([{
 		"opcode": 11, "day": 2, "sequence": 1,
 		"handle": tax_matrix_handle, "cell": -1, "aux": -1,
-		"stable_id": "", "name": "", "tax_kind": 0, "tax_rate": 101,
+		"stable_id": "", "name": "", "tax_kind": 0, "tax_rate_bp": 10001,
 	}])
 	var invalid_item := _commands([{
 		"opcode": 12, "day": 2, "sequence": 2,
@@ -401,7 +401,7 @@ func _run() -> void:
 	for cell_chunk in cell_save_chunks:
 		cell_restored.feed_country_restore_chunk(cell_chunk)
 	var cell_restore_result: Dictionary = cell_restored.end_country_restore()
-	_expect("PKCN v11 sparse cell policies round-trip with exact replay hash",
+	_expect("PKCN v12 sparse cell policies round-trip with exact replay hash",
 		bool(cell_restore_result.get("ok", false)) and
 		int(cell_restored.get_country_state_hash()) ==
 			int(tax_matrix_ext.get_country_state_hash()) and
@@ -472,7 +472,7 @@ func _run() -> void:
 	_expect("pending research signal command queues before PKCN capture",
 		bool(ext.submit_country_commands(pending_signal_commands).get("ok", false)))
 	var save_begin: Dictionary = ext.begin_country_save(4096)
-	_expect("PKCN v11 begins", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 11)
+	_expect("PKCN v12 begins", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 12)
 	var chunks: Array[PackedByteArray] = []
 	while true:
 		var chunk: PackedByteArray = ext.read_country_save_chunk(4096)
@@ -560,6 +560,7 @@ func _commands(rows: Array[Dictionary]) -> Dictionary:
 		"value_i64": PackedInt64Array(),
 		"tax_kinds": PackedInt32Array(),
 		"tax_item_indices": PackedInt32Array(),
+		"tax_rate_basis_points": PackedInt32Array(),
 		"tax_rate_percent": PackedInt32Array(),
 		"stable_ids": PackedStringArray(), "display_names": PackedStringArray()}
 	for row in rows:
@@ -579,6 +580,8 @@ func _commands(rows: Array[Dictionary]) -> Dictionary:
 		out.value_i64.append(int(row.get("value", 0)))
 		out.tax_kinds.append(int(row.get("tax_kind", -1)))
 		out.tax_item_indices.append(int(row.get("tax_item", -1)))
+		out.tax_rate_basis_points.append(int(row.get("tax_rate_bp",
+			int(row.get("tax_rate", 0)) * 100)))
 		out.tax_rate_percent.append(int(row.get("tax_rate", 0)))
 		out.stable_ids.append(String(row.stable_id))
 		out.display_names.append(String(row.name))

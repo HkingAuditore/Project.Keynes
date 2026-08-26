@@ -140,6 +140,8 @@ bool NativeEconomyRuntime::reconcile_building_employment_cells_range(
         });
 
         priority.clear();
+        thread_local std::vector<int64_t> priority_income;
+        priority_income.assign(static_cast<size_t>(last - first), 0);
         for (int32_t g = first; g < last; ++g) {
             BuildingGroup &group = _buildings[g];
             if (group.cell != cell || group.count <= 0 ||
@@ -153,15 +155,17 @@ bool NativeEconomyRuntime::reconcile_building_employment_cells_range(
                 }
                 continue;
             }
+            int64_t priority_sat = 0;
+            priority_income[static_cast<size_t>(g - first)] =
+                projected_owner_income_per_day(group, priority_sat);
+            _saturation_count = saturating_add(
+                _saturation_count, priority_sat, _saturation_count);
             priority.push_back(g);
         }
         std::stable_sort(priority.begin(), priority.end(), [&](int32_t a, int32_t b) {
-            const BuildingGroup &ga = _buildings[a];
-            const BuildingGroup &gb = _buildings[b];
-            if (ga.realized_profit_margin_q16 != gb.realized_profit_margin_q16)
-                return ga.realized_profit_margin_q16 > gb.realized_profit_margin_q16;
-            if (ga.planned_utilization_q16 != gb.planned_utilization_q16)
-                return ga.planned_utilization_q16 > gb.planned_utilization_q16;
+            const int64_t income_a = priority_income[static_cast<size_t>(a - first)];
+            const int64_t income_b = priority_income[static_cast<size_t>(b - first)];
+            if (income_a != income_b) return income_a > income_b;
             return a < b;
         });
 
@@ -605,73 +609,40 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         // employment pass, so per-group target clamps alone are insufficient when
         // several groups share one owner signature.
         thread_local std::vector<int32_t> hire_order;
-        thread_local std::vector<uint8_t> labor_survival_priority;
-        thread_local std::vector<int32_t> labor_shortage_priority_q16;
-        thread_local std::vector<int64_t> labor_tax_retention_q16;
-        // Composite satisfaction of the group's owner cohort as of the previous
-        // epoch. Employment runs before the market pass, so this is always last
-        // epoch's published value and never introduces a same-epoch cycle.
-        thread_local std::vector<int32_t> labor_owner_satisfaction_q16;
-        const bool labor_income_tax_active =
-            (_epoch_active_tax_mask & static_cast<uint8_t>(
-                1U << NativeCountryRuntime::TAX_INCOME)) != 0;
+        thread_local std::vector<int64_t> labor_expected_employee_income;
+        thread_local std::vector<int64_t> labor_expected_owner_income;
         hire_order.clear();
-        labor_survival_priority.assign(static_cast<size_t>(last - first), uint8_t{0});
-        labor_shortage_priority_q16.assign(static_cast<size_t>(last - first), 0);
-        labor_tax_retention_q16.assign(static_cast<size_t>(last - first),
-                                       Q16_ONE);
-        labor_owner_satisfaction_q16.assign(static_cast<size_t>(last - first), 0);
+        labor_expected_employee_income.assign(static_cast<size_t>(last - first), 0);
+        labor_expected_owner_income.assign(static_cast<size_t>(last - first), 0);
         for (int32_t g = first; g < last; ++g) {
             BuildingGroup &group = _buildings[g];
             if (group.cell != cell || group.count <= 0 ||
                 !building_available(cell, group.type_id, true) ||
                 group_owner_target[g - first] <= 0) continue;
             const BuildingType &type = _building_types[group.type_id];
-            const int32_t market = _market.cell_to_market[cell];
-            for (int32_t i = 0; i < type.output_count; ++i) {
-                const int32_t good = _building_outputs[type.output_begin + i].good_id;
-                const int64_t market_index = _market.index(market, good);
-                int64_t shortage_q16 = _market.last_shortage_q16[market_index];
-                const int32_t signal = market_signal_index(cell, good);
-                const int64_t business = saturating_add(
-                    signal >= 0 ? _market_signals.business_demand_ema[signal] : 0,
-                    epoch_research_demand_daily(cell, good),
-                    _saturation_count);
-                if (business > 0) {
-                    const int64_t withdrawal =
-                        signal >= 0
-                            ? _market_signals.realized_withdrawal_ema[signal] : 0;
-                    if (business > withdrawal) {
-                        const int64_t business_gap_q16 = std::min<int64_t>(
-                            Q16_ONE, mul_div_sat(business - withdrawal, Q16_ONE,
-                                business, _saturation_count));
-                        shortage_q16 = std::max(shortage_q16, business_gap_q16);
-                    }
-                }
-                const size_t local_group = static_cast<size_t>(g - first);
-                labor_shortage_priority_q16[local_group] = static_cast<int32_t>(
-                    std::max<int64_t>(labor_shortage_priority_q16[local_group],
-                        shortage_q16));
-                if (_survival_food_good_mask[good] != 0) {
-                    const int64_t household_stock = std::max<int64_t>(
-                        0, _market.stock[market_index] -
-                            merchant_protected_reserve(signal));
-                    if (household_stock <= 1 || shortage_q16 >= Q16_ONE / 8) {
-                        labor_survival_priority[local_group] = 1;
-                    }
-                }
+            int64_t score_sat = 0;
+            labor_expected_owner_income[static_cast<size_t>(g - first)] =
+                projected_owner_income_per_day(group, score_sat);
+            int64_t weighted_net = 0;
+            int64_t weighted_slots = 0;
+            for (int32_t r = 0; r < type.employee_count; ++r) {
+                const JobRole &role = _building_employee_roles[type.employee_begin + r];
+                const int32_t role_index = group.employee_fill_begin + r;
+                const int64_t gross = role_index >= 0 && role_index <
+                        static_cast<int32_t>(_building_role_contract_wage.size())
+                    ? _building_role_contract_wage[role_index]
+                    : role.reference_wage_per_day;
+                const int64_t net = expected_after_tax_income(
+                    cell, role.profession_id, gross, score_sat);
+                const int64_t slots = std::max<int64_t>(0, role.slots_per_building);
+                weighted_net = saturating_add(weighted_net,
+                    saturating_mul(net, slots, score_sat), score_sat);
+                weighted_slots = saturating_add(weighted_slots, slots, score_sat);
             }
-            if (labor_income_tax_active)
-                labor_tax_retention_q16[static_cast<size_t>(g - first)] =
-                    projected_employee_tax_retention_q16(
-                        group, _saturation_count);
-            if (group.owner_signature_id >= 0) {
-                const int32_t owner_slot = _population.find_signature(
-                    cell, static_cast<uint32_t>(group.owner_signature_id));
-                if (owner_slot >= 0)
-                    labor_owner_satisfaction_q16[static_cast<size_t>(g - first)] =
-                        _population.composite_satisfaction[owner_slot];
-            }
+            labor_expected_employee_income[static_cast<size_t>(g - first)] =
+                weighted_slots > 0 ? weighted_net / weighted_slots : 0;
+            _saturation_count = saturating_add(
+                _saturation_count, score_sat, _saturation_count);
             hire_order.push_back(g);
         }
         std::stable_sort(hire_order.begin(), hire_order.end(),
@@ -682,27 +653,14 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 return ga.operating_state == 0;
             const size_t local_a = static_cast<size_t>(a - first);
             const size_t local_b = static_cast<size_t>(b - first);
-            if (labor_survival_priority[local_a] != labor_survival_priority[local_b])
-                return labor_survival_priority[local_a] > labor_survival_priority[local_b];
-            if (labor_shortage_priority_q16[local_a] != labor_shortage_priority_q16[local_b])
-                return labor_shortage_priority_q16[local_a] >
-                    labor_shortage_priority_q16[local_b];
-            if (labor_income_tax_active &&
-                    labor_tax_retention_q16[local_a] !=
-                    labor_tax_retention_q16[local_b])
-                return labor_tax_retention_q16[local_a] >
-                    labor_tax_retention_q16[local_b];
-            if (ga.realized_profit_margin_q16 != gb.realized_profit_margin_q16)
-                return ga.realized_profit_margin_q16 > gb.realized_profit_margin_q16;
-            if (ga.planned_utilization_q16 != gb.planned_utilization_q16)
-                return ga.planned_utilization_q16 > gb.planned_utilization_q16;
-            // Equally profitable employers are separated by how well their owner
-            // class actually lived last epoch, so labour drifts toward the
-            // trades that visibly pay off.
-            if (labor_owner_satisfaction_q16[local_a] !=
-                    labor_owner_satisfaction_q16[local_b])
-                return labor_owner_satisfaction_q16[local_a] >
-                    labor_owner_satisfaction_q16[local_b];
+            if (labor_expected_employee_income[local_a] !=
+                    labor_expected_employee_income[local_b])
+                return labor_expected_employee_income[local_a] >
+                    labor_expected_employee_income[local_b];
+            if (labor_expected_owner_income[local_a] !=
+                    labor_expected_owner_income[local_b])
+                return labor_expected_owner_income[local_a] >
+                    labor_expected_owner_income[local_b];
             return a < b;
         });
 
@@ -946,6 +904,11 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 const int32_t p = role.profession_id;
                 if (!profession_available(cell, p, true)) continue;
                 const int32_t fi = group.employee_fill_begin + r;
+                const int64_t gross_wage = fi >= 0 && fi < static_cast<int32_t>(
+                        _building_role_contract_wage.size())
+                    ? _building_role_contract_wage[fi] : role.reference_wage_per_day;
+                const int64_t expected_wage = expected_after_tax_income(
+                    cell, p, gross_wage, _saturation_count);
                 const int64_t role_target = planned_role_demand(group, role);
                 int64_t need = std::max<int64_t>(0,
                     role_target - std::max<int64_t>(0, _building_employee_filled[fi]));
@@ -960,6 +923,11 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                     if (target_sig < 0) continue;
                     if (target_sig == static_cast<int32_t>(_population.signature_id[pool]))
                         continue;
+                    // Migration cost depends on the actual target ethnicity;
+                    // do not gate every pool by ethnicity 0's living cost.
+                    const int64_t transition_cost = living_cost_for_signature(
+                        cell, target_sig, -1, _saturation_count) / 8;
+                    if (expected_wage <= transition_cost) continue;
                     const int64_t take = std::min(need, avail);
                     if (take <= 0) continue;
                     bool drained = false;
@@ -1090,9 +1058,15 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                     _signatures[source_group.owner_signature_id];
                 const int64_t source_income =
                     projected_owner_income[candidate - first];
+                const int64_t transition_cost = source_signature.profession_id ==
+                        target_signature.profession_id ? 0 :
+                    std::max(living_cost_for_signature(
+                        cell, source_group.owner_signature_id, -1,
+                        _saturation_count) / 8, living_cost_for_signature(
+                        cell, target_group.owner_signature_id, -1,
+                        _saturation_count) / 8);
                 const int64_t required_target = saturating_add(
-                    source_income, mul_div_sat(source_income, Q16_ONE / 8,
-                        Q16_ONE, _saturation_count), _saturation_count);
+                    source_income, transition_cost, _saturation_count);
                 if (source_signature.ethnicity_id != target_signature.ethnicity_id ||
                     target_income < required_target) continue;
                 const int32_t slot = _population.find_signature(
@@ -1155,9 +1129,13 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             for (const EmployeeOwnerSource &candidate : employee_owner_sources) {
                 if (owner_job_group_used[candidate.group - first] != 0 ||
                     _building_employee_filled[candidate.fill_index] <= 0) continue;
-                const int64_t required_target = saturating_add(candidate.income,
-                    mul_div_sat(candidate.income, Q16_ONE / 8, Q16_ONE,
-                                _saturation_count), _saturation_count);
+                const int64_t transition_cost = candidate.profession ==
+                        target_signature.profession_id ? 0 :
+                    living_cost_for_signature(cell,
+                        target_group.owner_signature_id, -1,
+                        _saturation_count) / 8;
+                const int64_t required_target = saturating_add(
+                    candidate.income, transition_cost, _saturation_count);
                 if (target_income < required_target) continue;
                 const int32_t source_signature_id =
                     signature_for_profession_ethnicity(candidate.profession,

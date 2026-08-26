@@ -1,0 +1,109 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] catalog compiles
+  [PASS] accuracy ACTIVE country configures
+  [PASS] accuracy ACTIVE economy configures
+  [PASS] accuracy ACTIVE markets bootstrap
+  [PASS] accuracy ACTIVE uses certified nested frontier
+  [PASS] accuracy ACTIVE preserves exact ledgers
+  [PASS] country configures
+  [PASS] economy configures
+  [PASS] independent trade topology captures
+  [PASS] two markets bootstrap
+  [PASS] opening local cycle commits exactly
+  [PASS] economy publishes population development metric v1
+  [PASS] rolling markets remain within the four-day visibility bound
+  [PASS] trade planner timing is reported on its native slice
+  [PASS] trade planner timing exposes an accounted substage breakdown
+  [PASS] trade planner timing does not leak into the next continuation slice
+  [PASS] profitable domestic route dispatches
+  [PASS] route ETA uses daily transport time
+  [PASS] dispatch escrows goods and cash
+  [PASS] country capacity reservation is bounded
+  [PASS] route order exposes CSR goods lines
+  [PASS] domestic trade preserves the destination merchant operating floor
+  [PASS] trade purchase cash is included in operating outflow
+  [PASS] new shortage receives its first dispatch within the response target
+  [PASS] trade signal records its last dispatch attempt and deadline state
+  [FAIL] in-transit committed boundary conserves
+  [PASS] dispatch preserves the source market local-demand reserve
+  [FAIL] PKEC v46 saves in-transit escrow
+  [FAIL] mid-transit restore preserves order and hash
+  [FAIL] arrival settles on its daily ETA
+  [PASS] arrival remains exactly conserved
+  [FAIL] restored due-day order settles once
+  [PASS] trade changes authoritative hash only in ACTIVE
+  [PASS] PROBE emits no authoritative orders
+  [PASS] PROBE and OFF committed state hashes match
+  [PASS] third-country transit tariff policy commits
+  [PASS] foreign route crosses neutral and third-country cells
+  [PASS] foreign order freezes both country handles and slots
+  [PASS] foreign flags and per-line tariff fields are exposed
+  [PASS] third-country transit does not create transit tariff events
+  [PASS] foreign dispatch PKEJ keeps tariff basis and signed transfer legs
+  [PASS] foreign arrival gameplay payload V2 keeps endpoint countries
+  [PASS] player vision freeze captures
+  [PASS] player cannot trade with a cell outside current vision
+  [PASS] revealed counterpart recaptures
+  [PASS] player can trade once the counterpart is visible
+  [PASS] positive tariff fixture configures
+  [PASS] positive import/export tariffs preserve a profitable route
+  [PASS] tariff basis and signed transfers use deterministic floor rounding
+  [PASS] tariffs affect both merchant profit tests and seller net escrow
+  [PASS] positive tariffs publish real bases, collections and event counts
+  [PASS] positive tariff cash enters the endpoint treasuries once
+  [PASS] country-good exposes previous-batch and cumulative tariff totals
+  [PASS] country-partner exposes previous-batch and cumulative order totals
+  [PASS] PKEC v46 restores tariff history, aggregates and state hash
+  [PASS] 100 percent export tariff fixture configures
+  [PASS] 100 percent export tariff rejects zero seller receipt
+  [PASS] negative tariff fixture configures
+  [PASS] unfunded nominal subsidies emit a PKEJ intent
+  [PASS] first subsidy intent moves no goods or merchant cash
+  [PASS] next fiscal batch funds the bounded subsidy and dispatches
+  [PASS] negative tariffs freeze the actually funded signed transfers
+  [PASS] tariff fiscal lanes report request, reserve and actual payout
+  [PASS] tariff subsidies never drive either treasury negative and remain conserved
+  [PASS] explicitly enabled water terrain is trade passable
+  [PASS] identical topology refresh ignores unrelated caller generation
+  [PASS] terrain remap with identical trade semantics preserves the plan
+  [PASS] trade liveness diagnostics expose both planning cursors
+  [PASS] real normalized trade-cost change resets the plan once
+  [PASS] zero-cost passable trade terrain is rejected
+  [PASS] cold-start inventory fixture bootstraps
+  [FAIL] zero-supply demand still receives its configured inventory horizon
+  [PASS] survival shortage relief can route at zero spread
+  [PASS] survival shortage relief remains conserved
+  [PASS] negative expected profit creates no trade order
+  [PASS] unprofitable shortage records an explicit rejection
+  [PASS] long route leaves time to invalidate seller handle
+  [PASS] seller move queues after dispatch
+  [PASS] invalid seller rebinds to current source merchant
+  [PASS] seller rebind settlement remains conserved
+  [PASS] worker and scalar emit identical trade orders
+  [PASS] worker and scalar final trade hashes match
+  [PASS] long-route country configures
+  [PASS] long-route economy configures
+  [PASS] long-route topology captures
+  [PASS] long-route markets bootstrap
+  [PASS] long-route topology change resets planner
+  [PASS] long route reaches incremental route phase
+  [PASS] route search yields at the deterministic expansion budget (active=true cursor=0 expansion=256 budget=256)
+  [PASS] resumable route slice attributes time and deterministic work to expansion
+  [PASS] resumed route search stays within the same expansion budget
+  [PASS] publish-slice country configures
+  [PASS] publish-slice economy configures
+  [PASS] publish-slice topology captures
+  [PASS] publish-slice markets bootstrap
+  [PASS] building commit reaches aggregate publish with optional budgeted fusion
+  [FAIL] publish slices report executed stage and deterministic bounded work
+  [PASS] partial publish remains outside the save boundary
+  [PASS] publish completes with exact conservation and accounted timing
+  [PASS] PKEC v35 explicitly rejects pre-v35 economy saves
+=== economy trade runtime FAIL ===
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 275 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

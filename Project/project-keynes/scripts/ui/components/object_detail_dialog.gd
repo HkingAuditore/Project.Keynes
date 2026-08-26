@@ -179,7 +179,7 @@ func _item_tax_lanes(row: Dictionary) -> Array:
 func _tax_title(kind: String) -> String:
 	return {
 		"cohort": "本阶层所得税",
-		"good": "本物资税赋",
+		"good": "本物资交易税",
 		"building": "本建筑营业税",
 	}.get(kind, "税收调整")
 

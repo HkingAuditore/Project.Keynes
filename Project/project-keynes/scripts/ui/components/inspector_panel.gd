@@ -533,7 +533,7 @@ func _build_page_tax_section(host: Control, context: Dictionary) -> void:
 func _page_tax_title(tab_id: String) -> String:
 	return {
 		"population": "此地所得税",
-		"market": "此地消费税与关税",
+	"market": "此地交易税与关税",
 		"buildings": "此地营业税",
 	}.get(tab_id, "此地税率")
 
@@ -618,7 +618,7 @@ func _on_tax_override_requested(
 		return
 	var command := &"country.tax.cell.set_default" \
 		if scope == "default" else &"country.tax.cell.set_override"
-	var args := {"cell": _cell_index, "kind": kind_id, "rate_percent": rate}
+	var args := {"cell": _cell_index, "kind": kind_id, "rate_basis_points": rate}
 	if scope != "default":
 		args["item_id"] = StringName(item_id)
 	var result: Dictionary = _player_controller.request_command(command, args)

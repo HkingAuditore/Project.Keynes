@@ -68,16 +68,17 @@ func _run() -> void:
 		failures.append("deferred detail refresh did not apply after tax edit ended")
 	row_editor = (inspector._object_detail_dialog.tax_editors()[0] as TaxLaneEditor)
 	var base_rate := int(row_editor.lane_data().get("base", -1))
-	row_editor._spin.set_value_no_signal(base_rate + 3)
+	row_editor._spin.set_value_no_signal(TaxLaneEditor.basis_points_to_percent(base_rate + 300))
 	row_editor._on_text_submitted("")
-	if row_editor._spin.value != base_rate \
+	if not is_equal_approx(row_editor._spin.value,
+			TaxLaneEditor.basis_points_to_percent(base_rate)) \
 			or not (inspector.get("_pending_tax") as Dictionary).is_empty():
 		failures.append("failed override did not restore the authoritative row rate")
 	if detail_requests != 0 or not inspector.detail_open():
 		failures.append("tax editor input did not remain in the left detail workspace")
 
 	controller.succeed = true
-	row_editor._spin.set_value_no_signal(base_rate + 4)
+	row_editor._spin.set_value_no_signal(TaxLaneEditor.basis_points_to_percent(base_rate + 400))
 	row_editor._on_text_submitted("")
 	var row_key := "cell:5/income/artisan"
 	var pending := inspector.get("_pending_tax") as Dictionary
@@ -97,7 +98,8 @@ func _run() -> void:
 		as TaxLaneEditor)
 	if inspector._object_detail_dialog.tax_editors().size() != 1:
 		failures.append("tab round-trip restored two income tax layers in cohort detail")
-	if not row_editor.is_pending() or int(row_editor._spin.value) != base_rate + 4:
+	if not row_editor.is_pending() or not is_equal_approx(row_editor._spin.value,
+			TaxLaneEditor.basis_points_to_percent(base_rate + 400)):
 		failures.append("tab round-trip lost the pending row rate or marker")
 
 	pending.clear()
@@ -117,7 +119,7 @@ func _run() -> void:
 	if default_editor == null:
 		failures.append("page default edit did not queue set_default")
 	else:
-		inspector._on_tax_override_requested("default", "income", "", 17)
+		inspector._on_tax_override_requested("default", "income", "", 1700)
 		var default_key := "cell:5/income/default"
 		if not pending.has(default_key) or not default_editor.is_pending() \
 				or StringName(controller.calls[-1].id) != &"country.tax.cell.set_default":
@@ -155,15 +157,16 @@ func _run() -> void:
 	else:
 		var page_editor := building_page_editors[0] as TaxLaneEditor
 		var page_base := int(page_editor.lane_data().get("base", 0))
-		var page_draft := page_base + 6 if page_base <= 94 else page_base - 6
-		page_editor._spin.set_value_no_signal(page_draft)
-		page_editor._on_value_changed(page_draft)
+		var page_draft := page_base + 600 if page_base <= 9400 else page_base - 600
+		var page_draft_percent := TaxLaneEditor.basis_points_to_percent(page_draft)
+		page_editor._spin.set_value_no_signal(page_draft_percent)
+		page_editor._on_value_changed(page_draft_percent)
 		inspector.apply_live_patch({
 			"tab_id": "buildings",
 			"category": building_model.categories.buildings,
 		})
 		await process_frame
-		if int(page_editor._spin.value) != page_draft or not page_editor.is_editing():
+		if not is_equal_approx(page_editor._spin.value, page_draft_percent) or not page_editor.is_editing():
 			failures.append("live patch snapped the cell business default back to inherit")
 		var page_wait := Time.get_ticks_msec()
 		while Time.get_ticks_msec() - page_wait < int(
@@ -173,7 +176,7 @@ func _run() -> void:
 			if not (inspector.get("_page_tax_editors") as Array).is_empty() else null
 		if page_editor == null \
 				or StringName(controller.calls[-1].id) != &"country.tax.cell.set_default" \
-				or int(controller.calls[-1].args.get("rate_percent", -1)) != page_draft \
+				or int(controller.calls[-1].args.get("rate_basis_points", -1)) != page_draft \
 				or not page_editor.is_pending():
 			failures.append("cell business default spin edit did not commit after arrow input")
 		else:
@@ -191,7 +194,7 @@ func _run() -> void:
 			page_editor = (inspector.get("_page_tax_editors") as Array)[0] as TaxLaneEditor \
 				if not (inspector.get("_page_tax_editors") as Array).is_empty() else null
 			if page_editor == null or not page_editor.is_pending() \
-					or int(page_editor._spin.value) != page_draft:
+					or not is_equal_approx(page_editor._spin.value, page_draft_percent):
 				failures.append("next-day live patch with unchanged inherit snapshot snapped pending cell business tax")
 			else:
 				var committed_lane: Dictionary = ((stale_context.get(
@@ -211,19 +214,20 @@ func _run() -> void:
 					as TaxLaneEditor if not (inspector.get("_page_tax_editors") \
 					as Array).is_empty() else null
 				if page_editor == null or page_editor.is_pending() \
-						or int(page_editor._spin.value) != page_draft:
+						or not is_equal_approx(page_editor._spin.value, page_draft_percent):
 					failures.append("matching snapshot did not resolve pending cell business tax")
 		page_editor = (inspector.get("_page_tax_editors") as Array)[0] as TaxLaneEditor \
 			if not (inspector.get("_page_tax_editors") as Array).is_empty() else null
 		if page_editor != null:
 			page_editor.resolve_pending()
 			(inspector.get("_pending_tax") as Dictionary).clear()
-			var typed_rate := 22
-			page_editor._spin.set_value_no_signal(page_base)
-			page_editor._on_text_submitted(str(typed_rate))
+			var typed_rate := 2200
+			page_editor._spin.set_value_no_signal(TaxLaneEditor.basis_points_to_percent(page_base))
+			page_editor._on_text_submitted(str(TaxLaneEditor.basis_points_to_percent(typed_rate)))
 			if StringName(controller.calls[-1].id) != &"country.tax.cell.set_default" \
-					or int(controller.calls[-1].args.get("rate_percent", -1)) != typed_rate \
-					or int(page_editor._spin.value) != typed_rate:
+					or int(controller.calls[-1].args.get("rate_basis_points", -1)) != typed_rate \
+					or not is_equal_approx(page_editor._spin.value,
+						TaxLaneEditor.basis_points_to_percent(typed_rate)):
 				failures.append("Enter submitted the stale SpinBox value instead of typed text")
 	var building_row: Dictionary = building_model.categories.buildings.building_rows[0]
 	var building_defaults: Array = (building_model.categories.buildings.tax_context \
@@ -247,14 +251,15 @@ func _run() -> void:
 			as TaxLaneEditor
 		var biz_id := biz_editor.get_instance_id()
 		var biz_base := int(biz_editor.lane_data().get("base", 0))
-		var biz_draft := biz_base + 7 if biz_base <= 93 else biz_base - 7
-		biz_editor._spin.set_value_no_signal(biz_draft)
-		biz_editor._on_value_changed(biz_draft)
+		var biz_draft := biz_base + 700 if biz_base <= 9300 else biz_base - 700
+		var biz_draft_percent := TaxLaneEditor.basis_points_to_percent(biz_draft)
+		biz_editor._spin.set_value_no_signal(biz_draft_percent)
+		biz_editor._on_value_changed(biz_draft_percent)
 		inspector.refresh_object_detail(building_payload)
 		await process_frame
 		biz_editor = inspector._object_detail_dialog.tax_editors()[0] as TaxLaneEditor
 		if biz_editor.get_instance_id() != biz_id \
-				or int(biz_editor._spin.value) != biz_draft:
+				or not is_equal_approx(biz_editor._spin.value, biz_draft_percent):
 			failures.append("live detail refresh snapped building business tax back to inherit")
 		var biz_wait := Time.get_ticks_msec()
 		while Time.get_ticks_msec() - biz_wait < int(
@@ -264,7 +269,7 @@ func _run() -> void:
 		biz_editor = biz_editors[0] as TaxLaneEditor if not biz_editors.is_empty() else null
 		if biz_editor == null \
 				or StringName(controller.calls[-1].id) != &"country.tax.cell.set_override" \
-				or int(controller.calls[-1].args.get("rate_percent", -1)) != biz_draft \
+				or int(controller.calls[-1].args.get("rate_basis_points", -1)) != biz_draft \
 				or not biz_editor.is_pending():
 			failures.append("building business tax spin edit did not commit after arrow input")
 	_assert_object_tax_layer(failures, inspector, 1, "building", "business")
@@ -286,15 +291,16 @@ func _run() -> void:
 			failures.append("market page did not expose the cell consumption default")
 		else:
 			var market_base := int(consumption_editor.lane_data().get("base", 0))
-			var market_draft := market_base + 5 if market_base <= 95 else market_base - 5
-			consumption_editor._spin.set_value_no_signal(market_draft)
-			consumption_editor._on_value_changed(market_draft)
+			var market_draft := market_base + 500 if market_base <= 9500 else market_base - 500
+			var market_draft_percent := TaxLaneEditor.basis_points_to_percent(market_draft)
+			consumption_editor._spin.set_value_no_signal(market_draft_percent)
+			consumption_editor._on_value_changed(market_draft_percent)
 			inspector.apply_live_patch({
 				"tab_id": "market",
 				"category": _market_model(5).categories.market,
 			})
 			await process_frame
-			if int(consumption_editor._spin.value) != market_draft \
+			if not is_equal_approx(consumption_editor._spin.value, market_draft_percent) \
 					or not consumption_editor.is_editing():
 				failures.append("live patch snapped the cell consumption default back to inherit")
 	var market_row: Dictionary = _market_model(5).categories.market.market_rows[0]
@@ -329,17 +335,17 @@ func _run() -> void:
 func _model(cell_idx: int) -> Dictionary:
 	var lane := {
 		"scope": "item", "kind": "income", "kind_label": "所得税",
-		"item_id": "artisan", "base": 10, "effective": 10,
-		"default_rate": 8, "has_override": true, "editable": true,
+		"item_id": "artisan", "base": 1000, "effective": 1000,
+		"default_rate": 800, "has_override": true, "editable": true,
 	}
 	var default_lane := lane.duplicate(true)
 	default_lane["scope"] = "default"
 	default_lane["item_id"] = ""
 	default_lane["kind_label"] = "此地所得税"
-	default_lane["default_rate"] = 8
+	default_lane["default_rate"] = 800
 	default_lane["has_override"] = false
-	default_lane["base"] = 8
-	default_lane["effective"] = 8
+	default_lane["base"] = 800
+	default_lane["effective"] = 800
 	return {
 		"cell_index": cell_idx,
 		"header": {"title": "测试地块", "subtitle": "区域 1, 1"},
@@ -369,16 +375,16 @@ func _model(cell_idx: int) -> Dictionary:
 func _building_model(cell_idx: int) -> Dictionary:
 	var lane := {
 		"scope": "item", "kind": "business", "kind_label": "营业税",
-		"item_id": "forge", "base": 12, "effective": 12,
-		"default_rate": 4, "has_override": true, "editable": true,
+		"item_id": "forge", "base": 1200, "effective": 1200,
+		"default_rate": 400, "has_override": true, "editable": true,
 	}
 	var default_lane := lane.duplicate(true)
 	default_lane["scope"] = "default"
 	default_lane["item_id"] = ""
 	default_lane["kind_label"] = "此地营业税"
 	default_lane["has_override"] = false
-	default_lane["base"] = 4
-	default_lane["effective"] = 4
+	default_lane["base"] = 400
+	default_lane["effective"] = 400
 	return {
 		"cell_index": cell_idx,
 		"header": {"title": "测试地块", "subtitle": "区域 1, 1"},
@@ -409,7 +415,7 @@ func _market_model(cell_idx: int) -> Dictionary:
 	var item_lanes: Array = []
 	var default_lanes: Array = []
 	var label_pairs := {
-		"consumption": ["消费税", "此地消费税"],
+		"consumption": ["交易税", "此地交易税"],
 		"import": ["进口关税", "此地进口税"],
 		"export": ["出口关税", "此地出口税"],
 	}
@@ -417,13 +423,13 @@ func _market_model(cell_idx: int) -> Dictionary:
 		var pair: Array = label_pairs[kind]
 		item_lanes.append({
 			"scope": "item", "kind": kind, "kind_label": pair[0],
-			"item_id": "grain", "base": 6, "effective": 6,
-			"default_rate": 2, "has_override": true, "editable": true,
+			"item_id": "grain", "base": 600, "effective": 600,
+			"default_rate": 200, "has_override": true, "editable": true,
 		})
 		default_lanes.append({
 			"scope": "default", "kind": kind, "kind_label": pair[1],
-			"item_id": "", "base": 2, "effective": 2,
-			"default_rate": 2, "has_override": false, "editable": true,
+			"item_id": "", "base": 200, "effective": 200,
+			"default_rate": 200, "has_override": false, "editable": true,
 		})
 	return {
 		"cell_index": cell_idx,

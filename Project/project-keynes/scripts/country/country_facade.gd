@@ -7,6 +7,8 @@ signal research_signal_discovered(event: Dictionary)
 const DEFAULT_PROFILE_PATH := "res://data/country/default_country.tres"
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const CountryProfileScript = preload("res://scripts/data/country_profile.gd")
+const TAX_RATE_MIN_BP := -100000
+const TAX_RATE_MAX_BP := 10000
 
 enum Opcode {
 	CREATE_COUNTRY = 1,
@@ -89,7 +91,7 @@ func submit(commands: Array[Dictionary]) -> Dictionary:
 		"value_i64": PackedInt64Array(),
 		"tax_kinds": PackedInt32Array(),
 		"tax_item_indices": PackedInt32Array(),
-		"tax_rate_percent": PackedInt32Array(),
+		"tax_rate_basis_points": PackedInt32Array(),
 		"stable_ids": PackedStringArray(),
 		"display_names": PackedStringArray(),
 	}
@@ -110,7 +112,9 @@ func submit(commands: Array[Dictionary]) -> Dictionary:
 		batch.value_i64.append(int(command.get("value", 0)))
 		batch.tax_kinds.append(int(command.get("tax_kind", -1)))
 		batch.tax_item_indices.append(int(command.get("tax_item", -1)))
-		batch.tax_rate_percent.append(int(command.get("tax_rate_percent", 0)))
+		batch.tax_rate_basis_points.append(int(command.get(
+			"tax_rate_basis_points",
+			int(command.get("tax_rate_percent", 0)) * 100)))
 		batch.stable_ids.append(String(command.get("stable_id", "")))
 		batch.display_names.append(String(command.get("display_name", "")))
 	return _world_ext.submit_country_commands(batch)
@@ -131,13 +135,13 @@ func submit_observation_batch(handle: int, cells: PackedInt32Array,
 		"weight1_bp": PackedInt32Array(), "weight2_bp": PackedInt32Array(),
 		"weight3_bp": PackedInt32Array(), "value_i64": PackedInt64Array(),
 		"tax_kinds": PackedInt32Array(), "tax_item_indices": PackedInt32Array(),
-		"tax_rate_percent": PackedInt32Array(), "stable_ids": PackedStringArray(),
+		"tax_rate_basis_points": PackedInt32Array(), "stable_ids": PackedStringArray(),
 		"display_names": PackedStringArray(),
 	}
 	for key in ["opcodes", "effective_days", "sequences", "target_handles",
 			"domain_i32", "position_i32", "weight0_bp", "weight1_bp", "weight2_bp",
 			"weight3_bp", "value_i64", "tax_kinds", "tax_item_indices",
-			"tax_rate_percent", "stable_ids", "display_names"]:
+			"tax_rate_basis_points", "stable_ids", "display_names"]:
 		batch[key].resize(n)
 	for i in range(n):
 		batch.opcodes[i] = Opcode.DISCOVER_COUNTRY_SIGNAL
@@ -239,15 +243,21 @@ func discover_research_signal(handle: int, signal_id: StringName, cell: int,
 
 func set_tax_default(handle: int, kind: int, rate_percent: int,
 		effective_day: int, sequence: int) -> Dictionary:
+	return set_tax_default_basis_points(
+		handle, kind, rate_percent * 100, effective_day, sequence)
+
+
+func set_tax_default_basis_points(handle: int, kind: int, rate_basis_points: int,
+		effective_day: int, sequence: int) -> Dictionary:
 	if kind < TaxKind.INCOME or kind > TaxKind.EXPORT:
 		return {"ok": false, "reason": "invalid tax kind"}
-	if rate_percent < -100 or rate_percent > 100:
-		return {"ok": false, "reason": "tax rate must be within -100..100"}
+	if rate_basis_points < TAX_RATE_MIN_BP or rate_basis_points > TAX_RATE_MAX_BP:
+		return {"ok": false, "reason": "tax rate must be within -100000..10000 bp"}
 	return submit([{
 		"opcode": Opcode.SET_TAX_DEFAULT,
 		"target_handle": handle,
 		"tax_kind": kind,
-		"tax_rate_percent": rate_percent,
+		"tax_rate_basis_points": rate_basis_points,
 		"effective_day": effective_day,
 		"sequence": sequence,
 	}])
@@ -255,18 +265,24 @@ func set_tax_default(handle: int, kind: int, rate_percent: int,
 
 func set_tax_override(handle: int, kind: int, item_id: StringName,
 		rate_percent: int, effective_day: int, sequence: int) -> Dictionary:
+	return set_tax_override_basis_points(
+		handle, kind, item_id, rate_percent * 100, effective_day, sequence)
+
+
+func set_tax_override_basis_points(handle: int, kind: int, item_id: StringName,
+		rate_basis_points: int, effective_day: int, sequence: int) -> Dictionary:
 	var item := _tax_item_index(kind, item_id)
 	if item < 0:
 		return {"ok": false, "reason": "unknown tax item: %s" % String(item_id)}
-	if rate_percent < -100 or rate_percent > 100:
-		return {"ok": false, "reason": "tax rate must be within -100..100"}
+	if rate_basis_points < TAX_RATE_MIN_BP or rate_basis_points > TAX_RATE_MAX_BP:
+		return {"ok": false, "reason": "tax rate must be within -100000..10000 bp"}
 	return submit([{
 		"opcode": Opcode.SET_TAX_OVERRIDE,
 		"target_handle": handle,
 		"tax_kind": kind,
 		"tax_item": item,
 		"stable_id": String(item_id),
-		"tax_rate_percent": rate_percent,
+		"tax_rate_basis_points": rate_basis_points,
 		"effective_day": effective_day,
 		"sequence": sequence,
 	}])
@@ -294,16 +310,22 @@ func tax_policy_snapshot(handle: int) -> Dictionary:
 
 func set_cell_tax_default(handle: int, cell: int, kind: int, rate_percent: int,
 		effective_day: int, sequence: int) -> Dictionary:
+	return set_cell_tax_default_basis_points(
+		handle, cell, kind, rate_percent * 100, effective_day, sequence)
+
+
+func set_cell_tax_default_basis_points(handle: int, cell: int, kind: int,
+		rate_basis_points: int, effective_day: int, sequence: int) -> Dictionary:
 	if kind < TaxKind.INCOME or kind > TaxKind.EXPORT:
 		return {"ok": false, "reason": "invalid tax kind"}
-	if rate_percent < -100 or rate_percent > 100:
-		return {"ok": false, "reason": "tax rate must be within -100..100"}
+	if rate_basis_points < TAX_RATE_MIN_BP or rate_basis_points > TAX_RATE_MAX_BP:
+		return {"ok": false, "reason": "tax rate must be within -100000..10000 bp"}
 	return submit([{
 		"opcode": Opcode.SET_CELL_TAX_DEFAULT,
 		"target_handle": handle,
 		"cell": cell,
 		"tax_kind": kind,
-		"tax_rate_percent": rate_percent,
+		"tax_rate_basis_points": rate_basis_points,
 		"effective_day": effective_day,
 		"sequence": sequence,
 	}])
@@ -326,11 +348,19 @@ func clear_cell_tax_default(handle: int, cell: int, kind: int,
 func set_cell_tax_override(handle: int, cell: int, kind: int,
 		item_id: StringName, rate_percent: int, effective_day: int,
 		sequence: int) -> Dictionary:
+	return set_cell_tax_override_basis_points(
+		handle, cell, kind, item_id, rate_percent * 100,
+		effective_day, sequence)
+
+
+func set_cell_tax_override_basis_points(handle: int, cell: int, kind: int,
+		item_id: StringName, rate_basis_points: int, effective_day: int,
+		sequence: int) -> Dictionary:
 	var item := _tax_item_index(kind, item_id)
 	if item < 0:
 		return {"ok": false, "reason": "unknown tax item: %s" % String(item_id)}
-	if rate_percent < -100 or rate_percent > 100:
-		return {"ok": false, "reason": "tax rate must be within -100..100"}
+	if rate_basis_points < TAX_RATE_MIN_BP or rate_basis_points > TAX_RATE_MAX_BP:
+		return {"ok": false, "reason": "tax rate must be within -100000..10000 bp"}
 	return submit([{
 		"opcode": Opcode.SET_CELL_TAX_OVERRIDE,
 		"target_handle": handle,
@@ -338,7 +368,7 @@ func set_cell_tax_override(handle: int, cell: int, kind: int,
 		"tax_kind": kind,
 		"tax_item": item,
 		"stable_id": String(item_id),
-		"tax_rate_percent": rate_percent,
+		"tax_rate_basis_points": rate_basis_points,
 		"effective_day": effective_day,
 		"sequence": sequence,
 	}])

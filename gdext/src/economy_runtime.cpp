@@ -1181,7 +1181,7 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
         std::move(snapshot.cell_tax_policy_ids);
     std::vector<NativeCountryRuntime::CellTaxPolicy>
         snapshot_cell_tax_policies = std::move(snapshot.cell_tax_policies);
-    const auto tax_shape_valid = [&](const std::vector<int8_t> &rates,
+    const auto tax_shape_valid = [&](const std::vector<int32_t> &rates,
                                      size_t item_count) {
         return rates.size() == static_cast<size_t>(
             std::max(0, _epoch_country_count)) * item_count;
@@ -1509,7 +1509,7 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
             const uint64_t country_handle =
                 _epoch_country_handles[static_cast<size_t>(country)];
             const auto freeze_tax_group = [&](const std::vector<int32_t> &stat_ids,
-                                              std::vector<int8_t> &rates,
+                                              std::vector<int32_t> &rates,
                                               size_t item_count) {
                 if (item_count == 0) return;
                 const size_t begin = static_cast<size_t>(country) * item_count;
@@ -1696,11 +1696,11 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
         }
     };
     const auto ensure_default_row = [&](int32_t country, int32_t kind,
-                                        int8_t base_rate) -> int32_t {
+                                        int32_t base_rate) -> int32_t {
         const uint64_t key =
-            (static_cast<uint64_t>(static_cast<uint32_t>(country)) << 32U) |
-            (static_cast<uint64_t>(static_cast<uint8_t>(kind)) << 16U) |
-            static_cast<uint16_t>(static_cast<int32_t>(base_rate) + 100);
+            (static_cast<uint64_t>(static_cast<uint32_t>(country)) << 40U) |
+            (static_cast<uint64_t>(static_cast<uint8_t>(kind)) << 32U) |
+            static_cast<uint32_t>(base_rate);
         const auto found = default_row_ids.find(key);
         if (found != default_row_ids.end()) return found->second;
         const size_t item_count = item_count_for_kind(kind);
@@ -1752,7 +1752,7 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
                         _epoch_compiled_cell_tax_overrides.size());
                 for (const auto &entry : authority.overrides) {
                     if (entry.kind != kind) continue;
-                    int8_t effective = entry.rate;
+                    int32_t effective = entry.rate;
                     if (_modifier_runtime != nullptr) {
                         const auto &stat_ids = stat_ids_for_kind(kind);
                         _modifier_runtime->effective_values(
@@ -1769,7 +1769,7 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
                 compiled.override_end[static_cast<size_t>(kind)] =
                     static_cast<int32_t>(
                         _epoch_compiled_cell_tax_overrides.size());
-                const int8_t local_default =
+                const int32_t local_default =
                     authority.defaults[static_cast<size_t>(kind)];
                 if (local_default != NativeCountryRuntime::TAX_RATE_INHERIT) {
                     const int32_t row_id = ensure_default_row(
@@ -1783,7 +1783,7 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
                                 row.offset,
                             _epoch_compiled_cell_tax_default_rates.begin() +
                                 row.offset + row.count,
-                            [](int8_t rate) { return rate != 0; })) {
+                            [](int32_t rate) { return rate != 0; })) {
                         compiled.active_mask |=
                             static_cast<uint8_t>(1U << kind);
                     }
@@ -1791,7 +1791,7 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
             }
             compiled.active_mask = 0;
             const auto national_rates_for_kind = [&](int32_t kind)
-                    -> const std::vector<int8_t> & {
+                    -> const std::vector<int32_t> & {
                 switch (kind) {
                     case NativeCountryRuntime::TAX_INCOME:
                         return _epoch_income_tax_rates;
@@ -1816,7 +1816,7 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
                     compiled.default_row_ids[static_cast<size_t>(kind)];
                 for (int32_t item = 0;
                      item < static_cast<int32_t>(item_count); ++item) {
-                    int8_t rate = 0;
+                    int32_t rate = 0;
                     while (override_cursor < override_end &&
                            _epoch_compiled_cell_tax_overrides[
                                static_cast<size_t>(override_cursor)].item < item)
@@ -1856,13 +1856,13 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
     std::vector<uint8_t> country_tax_masks(
         static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
     const auto mark_country_tax = [&](int32_t kind,
-                                      const std::vector<int8_t> &rates,
+                                      const std::vector<int32_t> &rates,
                                       size_t item_count) {
         for (int32_t country = 0; country < _epoch_country_count; ++country) {
             const auto begin = rates.begin() +
                 static_cast<ptrdiff_t>(static_cast<size_t>(country) * item_count);
             if (std::any_of(begin, begin + static_cast<ptrdiff_t>(item_count),
-                            [](int8_t rate) { return rate != 0; }))
+                            [](int32_t rate) { return rate != 0; }))
                 country_tax_masks[static_cast<size_t>(country)] |=
                     static_cast<uint8_t>(1U << kind);
         }
@@ -1900,7 +1900,7 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
             sizeof(CompiledCellTaxOverride) +
         _epoch_compiled_cell_tax_default_rows.size() *
             sizeof(CompiledCellTaxDefaultRow) +
-        _epoch_compiled_cell_tax_default_rates.size() * sizeof(int8_t));
+        _epoch_compiled_cell_tax_default_rates.size() * sizeof(int32_t));
     _epoch_cell_tax_compile_ms = elapsed_ms(cell_tax_compile_started);
     const auto building_factor_started = Clock::now();
     refresh_building_modifier_factors();
@@ -4167,6 +4167,46 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
         int64_t expected_profit_margin = operating <= 0 ? (revenue > 0 ? Q16_ONE : 0) :
             mul_div_sat(saturating_sub(revenue, operating, _saturation_count), Q16_ONE,
                         std::max<int64_t>(MONEY_SCALE, operating), _saturation_count);
+        // Owners and employees evaluate the same after-tax operating cash that
+        // production will settle. Positive business tax is a deductible cost;
+        // negative business tax is a cost reimbursement and negative income tax
+        // is valued only at the funded fiscal fulfillment ratio.
+        const int32_t expected_business_rate = frozen_tax_rate(
+            group.cell, NativeCountryRuntime::TAX_BUSINESS, group.type_id);
+        const int64_t expected_business_eligible_cost = saturating_add(
+            saturating_add(input_cost, employee_wages, _saturation_count),
+            maintenance_cost, _saturation_count);
+        const int64_t expected_business_base = expected_business_rate < 0
+            ? expected_business_eligible_cost : std::max<int64_t>(0, revenue);
+        const int64_t expected_business_transfer = expected_fiscal_transfer(
+            group.cell, NativeCountryRuntime::TAX_BUSINESS,
+            expected_business_base, expected_business_rate, _saturation_count);
+        // Income tax excludes owner livelihood from the tax base. Business
+        // tax is deductible only when positive; a business subsidy is a
+        // transfer and must not recursively increase taxable income.
+        const int64_t expected_income_base = std::max<int64_t>(0,
+            saturating_sub(saturating_sub(
+                revenue, expected_business_eligible_cost, _saturation_count),
+                std::max<int64_t>(0, expected_business_transfer),
+                _saturation_count));
+        const int32_t expected_income_rate = frozen_tax_rate(
+            group.cell, NativeCountryRuntime::TAX_INCOME,
+            type.owner_profession_id);
+        const int64_t expected_income_transfer = expected_fiscal_transfer(
+            group.cell, NativeCountryRuntime::TAX_INCOME,
+            expected_income_rate < 0
+                ? std::max<int64_t>(expected_income_base, owner_living_cost)
+                : expected_income_base,
+            expected_income_rate, _saturation_count);
+        const int64_t expected_after_tax_profit = saturating_sub(
+            saturating_sub(saturating_sub(revenue, operating,
+                _saturation_count), expected_business_transfer,
+                _saturation_count), expected_income_transfer,
+            _saturation_count);
+        expected_profit_margin = operating <= 0
+            ? (expected_after_tax_profit > 0 ? Q16_ONE : 0)
+            : mul_div_sat(expected_after_tax_profit, Q16_ONE,
+                std::max<int64_t>(MONEY_SCALE, operating), _saturation_count);
         expected_profit_margin = std::clamp<int64_t>(
             expected_profit_margin, -Q16_ONE, Q16_ONE);
         group.sample_unit_input_cost = input_cost;
@@ -4190,15 +4230,62 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
                 saturating_add(group.last_input_cost, group.last_base_wages_due,
                 _saturation_count),
                 group.last_maintenance_cost, _saturation_count);
+            const int64_t realized_taxable_cost = saturating_add(
+                saturating_add(group.last_input_cost, group.last_base_wages_paid,
+                    _saturation_count),
+                group.last_maintenance_cost, _saturation_count);
+            const int32_t realized_business_rate = frozen_tax_rate(
+                group.cell, NativeCountryRuntime::TAX_BUSINESS,
+                group.type_id);
+            // Fiscal bases follow realized cash, while lifecycle viability still
+            // includes wage obligations through owner_business_cost.
+            const int64_t realized_business_eligible_cost = realized_taxable_cost;
+            const int64_t realized_business_transfer = realized_business_rate < 0
+                ? expected_fiscal_transfer(
+                    group.cell, NativeCountryRuntime::TAX_BUSINESS,
+                    realized_business_eligible_cost, realized_business_rate,
+                    _saturation_count)
+                : 0;
             const bool positive_self_employment = type.employee_count == 0 &&
-                owner_business_income > owner_business_cost;
+                saturating_add(owner_business_income,
+                    std::max<int64_t>(0, -realized_business_transfer),
+                    _saturation_count) > owner_business_cost;
+            const int32_t realized_profession = group.owner_signature_id >= 0 &&
+                    group.owner_signature_id < static_cast<int32_t>(_signatures.size())
+                ? _signatures[group.owner_signature_id].profession_id : -1;
+            const int32_t realized_income_rate = frozen_tax_rate(
+                group.cell, NativeCountryRuntime::TAX_INCOME,
+                realized_profession);
+            const int64_t realized_income_base = std::max<int64_t>(0,
+                saturating_sub(group.last_revenue, realized_taxable_cost,
+                    _saturation_count));
+            const int64_t realized_income_transfer = expected_fiscal_transfer(
+                group.cell, NativeCountryRuntime::TAX_INCOME,
+                realized_income_rate < 0
+                    ? std::max<int64_t>(realized_income_base, owner_living_cost)
+                    : realized_income_base,
+                realized_income_rate, _saturation_count);
+            const int64_t realized_after_tax_profit = saturating_sub(
+                saturating_sub(
+                    saturating_sub(group.last_revenue, owner_business_cost,
+                        _saturation_count), realized_business_transfer,
+                    _saturation_count),
+                realized_income_transfer, _saturation_count);
+            const int64_t realized_after_tax_margin = mul_div_sat(
+                realized_after_tax_profit, Q16_ONE,
+                std::max<int64_t>(MONEY_SCALE, owner_business_cost),
+                _saturation_count);
             const bool realized_severe_loss = settled_production &&
                 !positive_self_employment &&
-                group.realized_profit_margin_q16 <=
-                    _building_severe_loss_threshold_q16;
+                realized_after_tax_margin <= _building_severe_loss_threshold_q16;
             if (realized_severe_loss) {
-                group.severe_loss_cycles = static_cast<uint16_t>(std::min<int32_t>(
-                    65535, static_cast<int32_t>(group.severe_loss_cycles) + 1));
+                // The observed monetary loss is itself the adaptation signal.
+                // Keep the legacy counter as a diagnostic bit for old saves, but
+                // do not make owners wait through arbitrary review cycles.
+                group.severe_loss_cycles = 1;
+                group.operating_state = 1;
+                group.recovery_cycles = 0;
+                suspended_now = true;
             } else {
                 // Zero settlement covers labor, input, resource and financing
                 // blockages. None is a realized loss observation.
@@ -4206,7 +4293,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
             }
             group.pending_operating_state = 255;
             group.recovery_cooldown_cycles = 0;
-            if (group.severe_loss_cycles >= _building_severe_loss_cycles) {
+            if (!suspended_now && group.severe_loss_cycles >= _building_severe_loss_cycles) {
                 group.operating_state = 1;
                 group.recovery_cycles = 0;
                 suspended_now = true;
@@ -4442,154 +4529,44 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
             }
         }
         if (group.operating_state != 1) {
-            int64_t utilization = group.planned_utilization_q16 > 0
-                ? group.planned_utilization_q16 : Q16_ONE;
-            bool produces_cycle_flow = false;
-            bool produces_survival_food = false;
-            bool all_outputs_have_monetary_absorption = type.output_count > 0;
-            for (int32_t i = 0; i < type.output_count; ++i) {
-                const int32_t good = _building_outputs[type.output_begin + i].good_id;
-                if (_good_storage_modes[good] == 1) {
-                    produces_cycle_flow = true;
-                }
-                produces_survival_food = produces_survival_food ||
-                    _survival_food_good_mask[good] != 0;
-                all_outputs_have_monetary_absorption =
-                    all_outputs_have_monetary_absorption &&
-                    _good_monetary_issue_values[good] > 0;
-            }
-            const int64_t sellable_output = saturating_add(
-                group.last_sold, group.last_discarded, _saturation_count);
-            bool shortage_recovery = false;
-            bool inventory_surplus = false;
-            int64_t inventory_absorption_q16 = Q16_ONE;
-            int64_t output_demand_ema = 0;
-            for (int32_t i = 0; i < type.output_count; ++i) {
-                const int32_t good = _building_outputs[type.output_begin + i].good_id;
-                const int64_t market_index = _market.index(market, good);
-                const int32_t signal = market_signal_index(group.cell, good);
-                const int64_t household_demand = _market.demand_ema[market_index];
-                const int64_t business_demand = signal >= 0
-                    ? _market_signals.business_demand_ema[signal] : 0;
-                const int64_t total_demand = saturating_add(
-                    saturating_add(business_demand,
-                        epoch_research_demand_daily(group.cell, good),
-                        _saturation_count),
-                    household_demand, _saturation_count);
-                output_demand_ema = saturating_add(
-                    output_demand_ema, total_demand, _saturation_count);
-                const int64_t household_available_stock = std::max<int64_t>(
-                    0, _market.stock[market_index] -
-                        merchant_protected_reserve(signal));
-                const int64_t realized = signal >= 0
-                    ? _market_signals.realized_withdrawal_ema[signal] : 0;
-                const int64_t daily_absorption = std::max<int64_t>(
-                    realized, total_demand);
-                const int64_t recovery_stock_limit = std::max<int64_t>(
-                    GOODS_SCALE, saturating_mul(
-                        daily_absorption, std::max(1, _epoch_days),
-                        _saturation_count));
-                const int64_t total_shortage_q16 = total_demand <= 0 ? 0
-                    : std::clamp<int64_t>(Q16_ONE - mul_div_sat(
-                        realized, Q16_ONE, total_demand, _saturation_count),
-                        0, Q16_ONE);
-                if (household_available_stock <= recovery_stock_limit &&
-                    std::max<int64_t>(_market.last_shortage_q16[market_index],
-                                      total_shortage_q16) >=
-                        SHORTAGE_RECOVERY_THRESHOLD_Q16) {
-                    shortage_recovery = true;
-                    break;
-                }
-                if (_good_storage_modes[good] != 0) continue;
-                const int32_t flow = trade_flow_index(group.cell, good, false);
-                const int64_t exports = flow >= 0
-                    ? _trade_flows.export_ema[flow] : 0;
-                const int64_t cold_start_supply = signal >= 0
-                    ? _market_signals.offered_supply_ema[signal] : 0;
-                const int64_t target = merchant_inventory_target(
-                    market, good, signal, realized, exports, cold_start_supply,
-                    _saturation_count);
-                const int64_t stock = _market.stock[market_index];
-                if (stock > target) {
-                    inventory_surplus = true;
-                    const int64_t absorption_q16 = target > 0
-                        ? std::clamp<int64_t>(mul_div_sat(
-                            target, Q16_ONE, stock, _saturation_count), 0, Q16_ONE)
-                        : 0;
-                    inventory_absorption_q16 = std::min(
-                        inventory_absorption_q16, absorption_q16);
-                }
-            }
-            if (group.last_output > 0 && sellable_output > 0) {
-                const int64_t sell_through_q16 = std::clamp<int64_t>(mul_div_sat(
-                    group.last_sold, Q16_ONE, sellable_output, _saturation_count),
-                    0, Q16_ONE);
-                const int64_t discard_rate_q16 = Q16_ONE - sell_through_q16;
-                const int64_t target_utilization = shortage_recovery ||
-                    discard_rate_q16 <= DISCARD_RATE_TOLERANCE_Q16
-                        ? Q16_ONE
-                        : mul_div_sat(utilization, sell_through_q16, Q16_ONE,
-                                      _saturation_count);
-                const int64_t inventory_target_utilization =
-                    inventory_surplus && !shortage_recovery
-                        ? mul_div_sat(utilization, inventory_absorption_q16,
-                                      Q16_ONE, _saturation_count)
-                        : Q16_ONE;
-                // Income/affordability-responsive cap: produce toward the
-                // expected affordable demand. market.demand_ema already folds in
-                // household price & wealth elasticity (i.e. what households can
-                // actually pay for), so scaling output to it curbs chronic
-                // oversupply of cheap goods instead of only reacting once
-                // inventory has already piled up.
-                const int64_t demand_ratio_q16 = group.last_output > 0
-                    ? std::clamp<int64_t>(mul_div_sat(
-                        output_demand_ema, Q16_ONE,
-                        group.last_output, _saturation_count), 0, Q16_ONE)
-                    : Q16_ONE;
-                // Monetary-issue goods have an explicit full-batch sink in
-                // production settlement. Household/business demand EMAs do not
-                // describe that sink, so they must not throttle a pure bullion
-                // producer that the mint will settle at its catalog face value.
-                const int64_t demand_target_utilization =
-                    all_outputs_have_monetary_absorption
-                        ? target_utilization
-                        : (!shortage_recovery
-                            ? std::min<int64_t>(
-                                target_utilization, demand_ratio_q16)
-                            : target_utilization);
-                int64_t response_q16 = std::clamp<int64_t>(
-                    type.supply_price_elasticity_q16, 0, Q16_ONE);
-                // Persistent glut must contract within one or two settlement
-                // cycles. Keep profile elasticity for ordinary adjustment, but
-                // apply a deterministic response floor once discard is material.
-                if (!shortage_recovery && discard_rate_q16 >= SEVERE_DISCARD_RATE_Q16)
-                    response_q16 = Q16_ONE;
-                else if (!shortage_recovery && discard_rate_q16 >= HIGH_DISCARD_RATE_Q16)
-                    response_q16 = std::max<int64_t>(response_q16, 3 * Q16_ONE / 4);
-                utilization = saturating_add(utilization, mul_div_sat(
-                    std::min(demand_target_utilization, inventory_target_utilization) -
-                        utilization,
-                    response_q16, Q16_ONE,
+            // A rational operator scales only against expected after-tax cash
+            // profit. Demand, inventory, sell-through and shortages contribute
+            // to the revenue forecast above, but are not independent priorities
+            // or health gates. Physical input/resource capacity remains applied
+            // below because it is an execution constraint, not a preference.
+            const int64_t expected_operating_cost = saturating_add(
+                saturating_add(input_cost, employee_wages, _saturation_count),
+                saturating_add(owner_living_cost, maintenance_cost,
                     _saturation_count), _saturation_count);
-            } else if (shortage_recovery) {
-                const int64_t response_q16 = std::clamp<int64_t>(
-                    type.supply_price_elasticity_q16, 0, Q16_ONE);
-                utilization = saturating_add(utilization, mul_div_sat(
-                    Q16_ONE - utilization, response_q16, Q16_ONE,
-                    _saturation_count), _saturation_count);
-            }
-            // Keep a small market probe while active. The loss state machine remains
-            // the authority for a complete stop and can later restart the group.
-            // Perishable producers need a larger floor: a 1/32 probe can leave an
-            // otherwise viable fishing or gathering household below subsistence.
-            const int64_t probe_floor_q16 = produces_cycle_flow || produces_survival_food
-                ? Q16_ONE / 6 : Q16_ONE / 32;
-            const int64_t survival_floor_q16 = group_index < static_cast<int32_t>(
-                    _building_survival_utilization_floor_q16.size())
-                ? _building_survival_utilization_floor_q16[group_index] : 0;
-            group.planned_utilization_q16 = static_cast<int32_t>(
-                std::clamp<int64_t>(utilization,
-                    std::max(probe_floor_q16, survival_floor_q16), Q16_ONE));
+            const int64_t expected_business_eligible_cost = saturating_add(
+                saturating_add(input_cost, employee_wages, _saturation_count),
+                maintenance_cost, _saturation_count);
+            const int32_t business_rate = frozen_tax_rate(
+                group.cell, NativeCountryRuntime::TAX_BUSINESS, group.type_id);
+            const int64_t business_base = business_rate < 0
+                ? expected_business_eligible_cost : std::max<int64_t>(0, revenue);
+            const int64_t business_transfer = expected_fiscal_transfer(
+                group.cell, NativeCountryRuntime::TAX_BUSINESS, business_base,
+                business_rate, _saturation_count);
+            const int64_t income_base = std::max<int64_t>(0,
+                saturating_sub(saturating_sub(
+                    revenue, expected_business_eligible_cost, _saturation_count),
+                    std::max<int64_t>(0, business_transfer), _saturation_count));
+            const int32_t income_rate = frozen_tax_rate(
+                group.cell, NativeCountryRuntime::TAX_INCOME,
+                type.owner_profession_id);
+            const int64_t income_transfer = expected_fiscal_transfer(
+                group.cell, NativeCountryRuntime::TAX_INCOME,
+                income_rate < 0
+                    ? std::max<int64_t>(income_base, owner_living_cost)
+                    : income_base,
+                income_rate, _saturation_count);
+            const int64_t expected_profit = saturating_sub(
+                saturating_sub(saturating_sub(revenue, expected_operating_cost,
+                    _saturation_count), business_transfer, _saturation_count),
+                income_transfer, _saturation_count);
+            group.planned_utilization_q16 = expected_profit > 0
+                ? static_cast<int32_t>(Q16_ONE) : 0;
         } else {
             group.planned_utilization_q16 = 0;
         }
@@ -4929,7 +4906,7 @@ int64_t NativeEconomyRuntime::pay_building_wage_amount(
         int64_t income_tax = 0;
         if ((_epoch_active_tax_mask & static_cast<uint8_t>(
                 1U << NativeCountryRuntime::TAX_INCOME)) != 0) {
-            const int8_t income_rate = frozen_tax_rate(
+            const int32_t income_rate = frozen_tax_rate(
                 cell, NativeCountryRuntime::TAX_INCOME, profession_id);
             if (income_rate < 0) {
                 if (slot >= 0 && slot < static_cast<int32_t>(
@@ -5463,17 +5440,22 @@ int64_t NativeEconomyRuntime::projected_owner_income_per_day(
         group.last_expected_revenue,
         saturating_add(saturating_add(input_cost, wage_cost, sat),
                        maintenance_cost, sat), sat);
-    const int8_t business_rate = frozen_tax_rate(
+    const int32_t business_rate = frozen_tax_rate(
         group.cell, NativeCountryRuntime::TAX_BUSINESS, group.type_id);
+    const int64_t eligible_business_cost = saturating_add(
+        saturating_add(input_cost, wage_cost, sat), maintenance_cost, sat);
+    const int64_t business_base = business_rate < 0
+        ? eligible_business_cost
+        : std::max<int64_t>(0, group.last_expected_revenue);
     const int64_t business_transfer = expected_fiscal_transfer(
         group.cell, NativeCountryRuntime::TAX_BUSINESS,
-        std::max<int64_t>(0, group.last_expected_revenue), business_rate, sat);
+        business_base, business_rate, sat);
     const int64_t taxable_income = std::max<int64_t>(0, saturating_sub(
         operating_income, std::max<int64_t>(0, business_transfer), sat));
     const int32_t profession = group.owner_signature_id >= 0 &&
             group.owner_signature_id < static_cast<int32_t>(_signatures.size())
         ? _signatures[group.owner_signature_id].profession_id : -1;
-    const int8_t income_rate = frozen_tax_rate(
+    const int32_t income_rate = frozen_tax_rate(
         group.cell, NativeCountryRuntime::TAX_INCOME, profession);
     int64_t income_subsidy_base = taxable_income;
     if (income_rate < 0) {
@@ -7468,11 +7450,12 @@ void NativeEconomyRuntime::review_recovery_building_group(int32_t g) {
         group.recovery_failed_reviews = 0;
         return;
     }
-    group.recovery_failed_reviews = static_cast<uint16_t>(
-        std::min<int32_t>(65535,
-            static_cast<int32_t>(group.recovery_failed_reviews) + 1));
-    if (group.recovery_failed_reviews < _recovery_liquidation_failed_reviews ||
-        type.owner_profession_id == _merchant_profession_id) return;
+    // The lifecycle decision is already expressed in monetary terms by the
+    // restart-cost and expected-profit gate. Keep one diagnostic marker for
+    // compatibility, but do not delay liquidation behind an arbitrary review
+    // count once a restart is executable and still unprofitable.
+    group.recovery_failed_reviews = 1;
+    if (type.owner_profession_id == _merchant_profession_id) return;
     int64_t unit_period_output = 0;
     for (int32_t output_index = 0; output_index < type.output_count; ++output_index) {
         const GoodAmount &output = _building_outputs[type.output_begin + output_index];
@@ -9911,7 +9894,7 @@ bool NativeEconomyRuntime::family_trait_origin_gates_allow(
             _epoch_cell_active_tax_mask[static_cast<size_t>(origin_cell)] != 0;
         bool country_tax = _epoch_active_tax_mask != 0;
         if (!cell_tax && !country_tax) {
-            for (int8_t rate : _epoch_business_tax_rates) {
+            for (int32_t rate : _epoch_business_tax_rates) {
                 if (rate != 0) {
                     country_tax = true;
                     break;
@@ -14617,6 +14600,8 @@ int64_t NativeEconomyRuntime::state_hash() const {
             mix_u64(static_cast<uint64_t>(_trade_orders.line_retail_values[line]));
             mix_u64(static_cast<uint64_t>(_trade_orders.line_import_transfers[line]));
             mix_u64(static_cast<uint64_t>(_trade_orders.line_export_transfers[line]));
+            mix_u64(static_cast<uint64_t>(
+                _trade_orders.line_transaction_transfers[line]));
             mix_u64(_trade_orders.line_flags[line]);
         }
         for (int32_t seller = _trade_orders.seller_offsets[order];

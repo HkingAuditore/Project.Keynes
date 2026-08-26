@@ -897,11 +897,16 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     return std::numeric_limits<int64_t>::max();
                 }
             }
-            total_cost = saturating_add(total_cost, mul_div_sat(
+            const int64_t base_cost = mul_div_sat(
                 qty, _market.price[_market.index(market, candidate.good_id)],
-                GOODS_SCALE, _saturation_count), _saturation_count);
+                GOODS_SCALE, _saturation_count);
+            const TransactionQuote quote = quote_transaction(
+                cell, candidate.good_id, base_cost, false, true,
+                _saturation_count);
+            total_cost = saturating_add(
+                total_cost, quote.buyer_outlay, _saturation_count);
         }
-        return total_cost;
+        return std::max<int64_t>(0, total_cost);
     };
     auto group_input_cost_at_scale = [&](const BuildingGroup &group,
                                          const BuildingType &type,
@@ -1292,9 +1297,38 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     ",budget=" + std::to_string(settlement_budget);
                 return false;
             }
+            int64_t base_input_cost = 0;
+            int64_t input_fiscal_transfer = 0;
+            int64_t settled_input_outlay = 0;
+            for (int32_t i = 0; i < type.input_count; ++i) {
+                const int32_t selected = quoted_input_candidates[i];
+                const int64_t qty = quoted_input_quantities[i];
+                if (selected < 0 || qty <= 0) continue;
+                const InputCandidate &candidate =
+                    _building_input_candidates[selected];
+                const int64_t base_cost = mul_div_sat(
+                    qty, _market.price[_market.index(
+                        market, candidate.good_id)],
+                    GOODS_SCALE, _saturation_count);
+                const TransactionQuote quote = quote_transaction(
+                    cell, candidate.good_id, base_cost, true, true,
+                    _saturation_count);
+                base_input_cost = saturating_add(
+                    base_input_cost, quote.base_value, _saturation_count);
+                input_fiscal_transfer = saturating_add(
+                    input_fiscal_transfer, quote.fiscal_transfer,
+                    _saturation_count);
+                settled_input_outlay = saturating_add(
+                    settled_input_outlay, quote.buyer_outlay,
+                    _saturation_count);
+            }
+            const int64_t cash_input_outlay = std::max<int64_t>(
+                0, settled_input_outlay);
+            const int64_t input_subsidy_income = std::max<int64_t>(
+                0, -settled_input_outlay);
             const int64_t owner_contribution = std::min<int64_t>(
-                actual_cost, owner_contribution_cap);
-            const int64_t draw = actual_cost - owner_contribution;
+                cash_input_outlay, owner_contribution_cap);
+            const int64_t draw = cash_input_outlay - owner_contribution;
             if (draw > 0) {
                 if (_merchant_credit_runtime_mode != 2 ||
                     group.operating_state != 0 ||
@@ -1306,7 +1340,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
                         std::to_string(cell) +
                         ",group=" + std::to_string(g) +
                         ",type=" + std::to_string(group.type_id) +
-                        ",cost=" + std::to_string(actual_cost) +
+                        ",cost=" + std::to_string(cash_input_outlay) +
                         ",owner_cap=" + std::to_string(owner_contribution_cap) +
                         ",draw=" + std::to_string(draw) +
                         ",credit_cap=" + std::to_string(credit_cap) +
@@ -1366,17 +1400,25 @@ bool NativeEconomyRuntime::run_building_production_cell(
                         _cycle_flow_consumed, qty, _saturation_count);
                 }
             }
-            _population.funds[owner_slot] -= actual_cost;
-            group.last_input_cost = actual_cost;
+            _population.funds[owner_slot] = saturating_add(
+                _population.funds[owner_slot] - cash_input_outlay,
+                input_subsidy_income, _saturation_count);
+            group.last_input_cost = base_input_cost;
             group.last_operating_cost = saturating_add(
-                actual_cost, group.last_wages_due, _saturation_count);
+                cash_input_outlay, group.last_wages_due, _saturation_count);
             _population.epoch_expense[owner_slot] = saturating_add(
-                _population.epoch_expense[owner_slot], actual_cost, _saturation_count);
+                _population.epoch_expense[owner_slot], cash_input_outlay,
+                _saturation_count);
+            _population.epoch_income[owner_slot] = saturating_add(
+                _population.epoch_income[owner_slot], input_subsidy_income,
+                _saturation_count);
+            record_cohort_fiscal(owner_slot, input_fiscal_transfer);
             trace_record_cashflow(cell, _population.handle_for_slot(owner_slot),
-                                  CASHFLOW_PRODUCTION_INPUT, 0, actual_cost);
-            if (credit_local_merchants(cell, actual_cost,
+                                  CASHFLOW_PRODUCTION_INPUT, 0,
+                                  cash_input_outlay);
+            if (credit_local_merchants(cell, base_input_cost,
                                        CASHFLOW_MERCHANT_BUSINESS,
-                                       &_saturation_count) != actual_cost) {
+                                       &_saturation_count) != base_input_cost) {
                 error = "building_input_has_no_merchant_owner";
                 return false;
             }
@@ -1448,6 +1490,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
         thread_local std::vector<int64_t> budget_by_good;
         thread_local std::vector<int64_t> spent_by_good;
         thread_local std::vector<int64_t> weight_by_good;
+        thread_local std::vector<int64_t> procurement_outlay_price_by_good;
         thread_local std::vector<int32_t> buy_factor_by_good;
         thread_local std::vector<int32_t> touched_goods;
         const size_t good_count = static_cast<size_t>(_market.good_count);
@@ -1457,6 +1500,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
         budget_by_good.resize(good_count);
         spent_by_good.resize(good_count);
         weight_by_good.resize(good_count);
+        procurement_outlay_price_by_good.resize(good_count);
         buy_factor_by_good.resize(good_count);
         touched_goods.clear();
         int32_t last_touched = -1;
@@ -1515,6 +1559,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     budget_by_good[offer.good] = 0;
                     spent_by_good[offer.good] = 0;
                     weight_by_good[offer.good] = 0;
+                    procurement_outlay_price_by_good[offer.good] = 0;
                     buy_factor_by_good[offer.good] = 0;
                     touched_goods.push_back(offer.good);
                     last_touched = offer.good;
@@ -1550,8 +1595,14 @@ bool NativeEconomyRuntime::run_building_production_cell(
             const int64_t buy_price = std::max<int64_t>(1, mul_div_sat(
                 _market.price[_market.index(market, good)],
                 buy_factor_by_good[good], Q16_ONE, _saturation_count));
+            const TransactionQuote procurement_quote = quote_transaction(
+                cell, good, buy_price, false, false, _saturation_count);
+            const int64_t outlay_price = std::max<int64_t>(
+                1, procurement_quote.buyer_outlay);
+            procurement_outlay_price_by_good[good] = outlay_price;
             const int64_t base_weight = mul_div_sat(
-                quota_by_good[good], buy_price, GOODS_SCALE, _saturation_count);
+                quota_by_good[good], outlay_price, GOODS_SCALE,
+                _saturation_count);
             purchase_value_by_good[good] = base_weight;
             total_purchase_value = saturating_add(
                 total_purchase_value, base_weight, _saturation_count);
@@ -1701,7 +1752,9 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 std::max<int32_t>(1, buy_factor_by_good[good]),
                 Q16_ONE, _saturation_count));
             const int64_t merchant_total = std::min<int64_t>(quota_by_good[good],
-                mul_div_sat(budget_by_good[good], GOODS_SCALE, buy_price,
+                mul_div_sat(budget_by_good[good], GOODS_SCALE,
+                    std::max<int64_t>(
+                        1, procurement_outlay_price_by_good[good]),
                     _saturation_count));
             int64_t merchant_remaining = merchant_total;
             size_t merchant_i = good_begin;
@@ -1875,21 +1928,30 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 }
             } else {
                 sold = offer.merchant_sold;
-                const int64_t payment = mul_div_sat(
+                const int64_t base_payment = mul_div_sat(
                     sold, buy_price, GOODS_SCALE, _saturation_count);
-                paid = debit_local_merchants(cell, payment,
+                const TransactionQuote procurement_quote = quote_transaction(
+                    cell, offer.good, base_payment, true, false,
+                    _saturation_count);
+                const int64_t buyer_outlay = std::max<int64_t>(
+                    0, procurement_quote.buyer_outlay);
+                const int64_t merchant_paid = debit_local_merchants(
+                    cell, buyer_outlay,
                                              CASHFLOW_MERCHANT_PROCUREMENT,
                                              &_saturation_count);
-                if (paid != payment) {
+                if (merchant_paid != buyer_outlay) {
                     error = "merchant_purchase_payment_drift";
                     return false;
                 }
+                paid = base_payment;
                 spent_by_good[offer.good] = saturating_add(
-                    spent_by_good[offer.good], paid, _saturation_count);
+                    spent_by_good[offer.good], merchant_paid,
+                    _saturation_count);
                 merchant_procurement_remaining = std::max<int64_t>(
-                    0, merchant_procurement_remaining - paid);
+                    0, merchant_procurement_remaining - merchant_paid);
                 _merchant_procurement_spent = saturating_add(
-                    _merchant_procurement_spent, paid, _saturation_count);
+                    _merchant_procurement_spent, merchant_paid,
+                    _saturation_count);
                 const int64_t retail_value = mul_div_sat(
                     sold, _market.price[_market.index(market, offer.good)],
                     GOODS_SCALE, _saturation_count);
@@ -1899,7 +1961,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 _merchant_procurement_factor_weighted_cash_q16 =
                     saturating_add(
                         _merchant_procurement_factor_weighted_cash_q16,
-                        saturating_mul(paid,
+                        saturating_mul(merchant_paid,
                             buy_factor_by_good[offer.good],
                             _saturation_count),
                         _saturation_count);
@@ -1917,13 +1979,15 @@ bool NativeEconomyRuntime::run_building_production_cell(
             int64_t business_tax = 0;
             if (business_tax_active) {
                 const BuildingGroup &tax_group = _buildings[offer.group];
-                const int8_t business_rate = frozen_tax_rate(
+                const int32_t business_rate = frozen_tax_rate(
                     cell, NativeCountryRuntime::TAX_BUSINESS,
                     tax_group.type_id);
-                business_tax = apply_fiscal_tax(
-                    cell, NativeCountryRuntime::TAX_BUSINESS, paid,
-                    business_rate, _saturation_count);
-                record_cohort_fiscal(offer.owner_slot, business_tax);
+                if (business_rate > 0) {
+                    business_tax = apply_fiscal_tax(
+                        cell, NativeCountryRuntime::TAX_BUSINESS, paid,
+                        business_rate, _saturation_count);
+                    record_cohort_fiscal(offer.owner_slot, business_tax);
+                }
             }
             const int64_t producer_after_business_tax = saturating_sub(
                 paid, business_tax, _saturation_count);
@@ -2301,6 +2365,43 @@ bool NativeEconomyRuntime::run_building_production_cell(
         group.last_operating_cost = saturating_add(
             group.last_operating_cost, paid, _saturation_count);
     }
+    // Negative business tax is a cost reimbursement. Inputs use untaxed base
+    // value; only actually paid base wages and maintenance qualify. Bonuses,
+    // owner livelihood, debt service, construction and taxes are excluded.
+    if (business_tax_active) {
+        for (int32_t g = begin; g < end; ++g) {
+            BuildingGroup &group = _buildings[g];
+            const int32_t rate = frozen_tax_rate(
+                cell, NativeCountryRuntime::TAX_BUSINESS, group.type_id);
+            if (rate >= 0 || group.owner_signature_id < 0) continue;
+            const int32_t owner_slot = find_cohort_slot(
+                cell, group.owner_signature_id);
+            if (owner_slot < 0) continue;
+            const int64_t eligible_cost = saturating_add(
+                saturating_add(group.last_input_cost,
+                               group.last_base_wages_paid,
+                               _saturation_count),
+                group.last_maintenance_cost, _saturation_count);
+            const int64_t transfer = apply_fiscal_tax(
+                cell, NativeCountryRuntime::TAX_BUSINESS, eligible_cost,
+                rate, _saturation_count);
+            if (transfer >= 0) continue;
+            const int64_t subsidy = -transfer;
+            business_transfer_by_group[g - begin] = saturating_add(
+                business_transfer_by_group[g - begin], transfer,
+                _saturation_count);
+            touch_accounting_slot(owner_slot);
+            _population.funds[owner_slot] = saturating_add(
+                _population.funds[owner_slot], subsidy, _saturation_count);
+            _population.epoch_income[owner_slot] = saturating_add(
+                _population.epoch_income[owner_slot], subsidy,
+                _saturation_count);
+            record_cohort_fiscal(owner_slot, transfer);
+            trace_record_cashflow(
+                cell, _population.handle_for_slot(owner_slot),
+                CASHFLOW_BUSINESS_SUBSIDY, subsidy, 0);
+        }
+    }
     // Tax positive net operating income only after inputs, actually paid wages,
     // and positive business tax are known. Tax/subsidy transfers themselves are
     // intentionally excluded from this base and losses never cross a cycle.
@@ -2330,7 +2431,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
         const int32_t profession = signature >= 0 &&
                 signature < static_cast<int32_t>(_signatures.size())
             ? _signatures[signature].profession_id : -1;
-        const int8_t income_rate = frozen_tax_rate(
+        const int32_t income_rate = frozen_tax_rate(
             cell, NativeCountryRuntime::TAX_INCOME, profession);
         int64_t income_tax = 0;
         if (income_rate < 0) {
@@ -2369,9 +2470,13 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 _saturation_count),
             group.last_maintenance_cost, _saturation_count),
             owner_livelihood, _saturation_count);
+        // last_revenue is the producer cash actually retained after positive
+        // business tax withholding. Only a negative business transfer is paid
+        // after production, so add that subsidy without double-charging tax.
         const int64_t after_business_revenue = business_tax_active
             ? saturating_sub(
-                group.last_revenue, business_transfer_by_group[g - begin],
+                group.last_revenue,
+                std::min<int64_t>(0, business_transfer_by_group[g - begin]),
                 _saturation_count)
             : group.last_revenue;
         int64_t margin = realized_cost <= 0 ? 0 : mul_div_sat(

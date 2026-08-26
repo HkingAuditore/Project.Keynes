@@ -27,7 +27,7 @@ const OBJECT_TYPE_LABELS := {
 	"family": "家族",
 }
 # 对象类型 → 关联税种（税收契约：所得税按职业、营业税按建筑类型、
-# 消费税与进出口关税按物资；自然资源没有适用税种）。
+# 交易税与进出口关税按物资；自然资源没有适用税种）。
 const OBJECT_TAX_KINDS := {
 	"cohort": ["income"],
 	"building": ["business"],
@@ -35,9 +35,9 @@ const OBJECT_TAX_KINDS := {
 }
 const TAX_KIND_IDS := {"income": 0, "consumption": 1, "business": 2,
 	"import": 3, "export": 4}
-const TAX_KIND_LABELS := {"income": "所得税", "consumption": "消费税",
+const TAX_KIND_LABELS := {"income": "所得税", "consumption": "交易税",
 	"business": "营业税", "import": "进口关税", "export": "出口关税"}
-const TAX_DEFAULT_LABELS := {"income": "此地所得税", "consumption": "此地消费税",
+const TAX_DEFAULT_LABELS := {"income": "此地所得税", "consumption": "此地交易税",
 	"business": "此地营业税", "import": "此地进口税", "export": "此地出口税"}
 const TAX_KIND_ACCENTS := {"income": UITokens.ACCENT, "consumption": UITokens.GOOD,
 	"business": UITokens.CLIMATE, "import": UITokens.WATER, "export": UITokens.WATER}
@@ -729,10 +729,10 @@ func _tax_context_for_cell(cell_idx: int, kinds: Array) -> Dictionary:
 		"country_handle", country.get("country_handle", 0)))
 	var editable := owner_handle == _player_country_handle()
 	var defaults: Array = []
-	var country_defaults: PackedInt32Array = policy.get(
-		"country_default_rates", PackedInt32Array())
-	var local_defaults: PackedInt32Array = policy.get(
-		"local_default_rates", PackedInt32Array())
+	var country_defaults := _tax_basis_points_array(policy,
+		"country_default_rates_basis_points", "country_default_rates")
+	var local_defaults := _tax_basis_points_array(policy,
+		"local_default_rates_basis_points", "local_default_rates")
 	var local_flags: PackedByteArray = policy.get(
 		"has_local_default", PackedByteArray())
 	for kind_value in kinds:
@@ -777,10 +777,10 @@ func _tax_lanes_from_policy(
 	var lanes: Array = []
 	if item_id.is_empty():
 		return lanes
-	var country_defaults: PackedInt32Array = policy.get(
-		"country_default_rates", PackedInt32Array())
-	var local_defaults: PackedInt32Array = policy.get(
-		"local_default_rates", PackedInt32Array())
+	var country_defaults := _tax_basis_points_array(policy,
+		"country_default_rates_basis_points", "country_default_rates")
+	var local_defaults := _tax_basis_points_array(policy,
+		"local_default_rates_basis_points", "local_default_rates")
 	var local_flags: PackedByteArray = policy.get(
 		"has_local_default", PackedByteArray())
 	for kind_value in OBJECT_TAX_KINDS.get(object_kind, []):
@@ -788,15 +788,13 @@ func _tax_lanes_from_policy(
 		var group: Dictionary = policy.get(kind, {})
 		var ids: PackedStringArray = group.get("item_ids", PackedStringArray())
 		var item_index := ids.find(item_id)
-		var rates: PackedInt32Array = group.get(
-			"final_base_rates", PackedInt32Array())
+		var rates := _tax_group_basis_points(group, "final_base_rates")
 		if item_index < 0 or item_index >= rates.size():
 			continue
-		var effective: PackedInt32Array = group.get("effective_rates", rates)
+		var effective := _tax_group_basis_points(group, "effective_rates", rates)
 		var item_flags: PackedByteArray = group.get(
 			"has_local_item", PackedByteArray())
-		var country_bases: PackedInt32Array = group.get(
-			"country_base_rates", PackedInt32Array())
+		var country_bases := _tax_group_basis_points(group, "country_base_rates")
 		var kind_id := int(TAX_KIND_IDS.get(kind, -1))
 		var inherited := int(local_defaults[kind_id]) \
 			if kind_id >= 0 and kind_id < local_flags.size() \
@@ -816,6 +814,35 @@ func _tax_lanes_from_policy(
 			"default_rate": inherited, "editable": editable,
 		})
 	return lanes
+
+
+func _tax_basis_points_array(policy: Dictionary, preferred_key: String,
+		legacy_key: String) -> PackedInt32Array:
+	var preferred: PackedInt32Array = policy.get(preferred_key, PackedInt32Array())
+	if not preferred.is_empty():
+		return preferred
+	var legacy: PackedInt32Array = policy.get(legacy_key, PackedInt32Array())
+	var converted := PackedInt32Array()
+	converted.resize(legacy.size())
+	for i in legacy.size():
+		converted[i] = int(legacy[i]) * 100
+	return converted
+
+
+func _tax_group_basis_points(group: Dictionary, key: String,
+		fallback: PackedInt32Array = PackedInt32Array()) -> PackedInt32Array:
+	var preferred: PackedInt32Array = group.get(
+		"%s_basis_points" % key, PackedInt32Array())
+	if not preferred.is_empty():
+		return preferred
+	var legacy: PackedInt32Array = group.get(key, fallback)
+	if legacy.is_empty():
+		return fallback
+	var converted := PackedInt32Array()
+	converted.resize(legacy.size())
+	for i in legacy.size():
+		converted[i] = int(legacy[i]) * 100
+	return converted
 
 
 func _object_tax_item_id(kind: String, row: Dictionary) -> String:
@@ -3280,7 +3307,7 @@ func _cashflow_source_name(source_id: String, income: bool) -> String:
 		"merchant_procurement": return "商品收购"
 		"producer_support_issuance": return "托底收购"
 		"income_tax": return "所得税"
-		"consumption_tax": return "消费税"
+		"consumption_tax": return "交易税"
 		"business_tax": return "营业税"
 		"income_subsidy": return "收入补贴"
 		"consumption_subsidy": return "消费补贴"

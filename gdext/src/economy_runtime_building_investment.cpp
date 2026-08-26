@@ -1589,8 +1589,15 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                         item.discarded, Q16_ONE, item.sellable,
                         _saturation_count), 0, Q16_ONE);
                 }
-                item.driver_strength_q16 = std::max(
-                    item.pressure_q16, item.utilization_q16);
+                const int64_t unit_price = std::max<int64_t>(1,
+                    _market.price[_market.index(market, output.good_id)]);
+                item.expected_cash_value = monetary_issue
+                    ? mul_div_sat(effective_unit_output,
+                        _good_monetary_issue_values[output.good_id],
+                        GOODS_SCALE, _saturation_count)
+                    : mul_div_sat(std::max<int64_t>(0, demand), unit_price,
+                        GOODS_SCALE, _saturation_count);
+                item.driver_strength_q16 = item.expected_cash_value;
                 item.nameplate_output = effective_unit_output;
                 item.demand = demand;
                 item.startup_demand = local_startup;
@@ -1604,15 +1611,8 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 } else {
                     const OutputInvestmentSignal &current =
                         output_signals[driver_index];
-                    if (candidate.driver_strength_q16 > current.driver_strength_q16 ||
-                        (candidate.driver_strength_q16 == current.driver_strength_q16 &&
-                         candidate.pressure_q16 > current.pressure_q16) ||
-                        (candidate.driver_strength_q16 == current.driver_strength_q16 &&
-                         candidate.pressure_q16 == current.pressure_q16 &&
-                         candidate.utilization_q16 > current.utilization_q16) ||
-                        (candidate.driver_strength_q16 == current.driver_strength_q16 &&
-                         candidate.pressure_q16 == current.pressure_q16 &&
-                         candidate.utilization_q16 == current.utilization_q16 &&
+                    if (candidate.expected_cash_value > current.expected_cash_value ||
+                        (candidate.expected_cash_value == current.expected_cash_value &&
                          candidate.good_id < current.good_id)) {
                         driver_index = i;
                     }
@@ -1627,9 +1627,6 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
             int64_t challenger_unit_cost = 0;
             int64_t incumbent_unit_cost = 0;
             bool displaces_incumbents = false;
-            const bool survival_output = driver.good_id >= 0 &&
-                (_survival_food_good_mask[driver.good_id] != 0 ||
-                 _survival_clothing_good_mask[driver.good_id] != 0);
             if (diagnostic != nullptr) {
                 diagnostic->shortage_q16 = shortage_q16;
                 diagnostic->utilization_q16 = utilization_q16;
@@ -1721,10 +1718,12 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 continue;
             }
             int64_t daily_input_cost = 0;
+            int64_t daily_input_base_cost = 0;
             int64_t input_coverage_bound_q16 = Q16_ONE;
             for (int32_t i = 0; i < type.input_count; ++i) {
                 const ProductionInput &input = _building_inputs[type.input_begin + i];
                 int64_t best_price = std::numeric_limits<int64_t>::max();
+                int64_t best_base_price = 0;
                 int64_t best_coverage_q16 = -1;
                 for (int32_t c = input.candidate_begin;
                      c < input.candidate_begin + input.candidate_count; ++c) {
@@ -1758,14 +1757,19 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                         ? std::min<int64_t>(Q16_ONE, mul_div_sat(
                             effective_period_supply, Q16_ONE, required_period,
                             _saturation_count)) : Q16_ONE;
-                    const int64_t effective_price = mul_div_sat(
+                    const int64_t base_effective_price = mul_div_sat(
                         _market.price[_market.index(market, candidate.good_id)], Q16_ONE,
                         candidate.efficiency_q16, _saturation_count);
+                    const TransactionQuote input_quote = quote_transaction(
+                        cell, candidate.good_id, base_effective_price,
+                        false, true, _saturation_count);
+                    const int64_t effective_price = input_quote.buyer_outlay;
                     if (coverage_q16 > best_coverage_q16 ||
                         (coverage_q16 == best_coverage_q16 &&
                          effective_price < best_price)) {
                         best_coverage_q16 = coverage_q16;
                         best_price = effective_price;
+                        best_base_price = base_effective_price;
                     }
                 }
                 if (best_price == std::numeric_limits<int64_t>::max()) {
@@ -1783,6 +1787,10 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 daily_input_cost = saturating_add(daily_input_cost, mul_div_sat(
                     input.quantity, best_price, GOODS_SCALE, _saturation_count),
                     _saturation_count);
+                daily_input_base_cost = saturating_add(
+                    daily_input_base_cost, mul_div_sat(
+                        input.quantity, best_base_price, GOODS_SCALE,
+                        _saturation_count), _saturation_count);
             }
             if (daily_input_cost == std::numeric_limits<int64_t>::max()) {
                 reject(INVESTMENT_REJECTION_INPUT_CHAIN);
@@ -2004,13 +2012,20 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     (1U << NativeCountryRuntime::TAX_INCOME) |
                     (1U << NativeCountryRuntime::TAX_BUSINESS));
                 if ((_epoch_active_tax_mask & investment_tax_mask) != 0) {
+                    const int32_t business_rate = frozen_tax_rate(
+                        cell, NativeCountryRuntime::TAX_BUSINESS, type_id);
+                    const int64_t eligible_cost_base = mul_div_sat(
+                        saturating_add(saturating_add(
+                            daily_input_base_cost, daily_wages,
+                            _saturation_count), daily_maintenance,
+                            _saturation_count),
+                        utilization_q16, Q16_ONE, _saturation_count);
                     const int64_t business_transfer =
                         expected_fiscal_transfer(
                             cell, NativeCountryRuntime::TAX_BUSINESS,
-                            daily_cash_revenue,
-                            frozen_tax_rate(
-                                cell, NativeCountryRuntime::TAX_BUSINESS,
-                                type_id),
+                            business_rate < 0
+                                ? eligible_cost_base : daily_cash_revenue,
+                            business_rate,
                             _saturation_count);
                     const int64_t taxable_owner_income =
                         std::max<int64_t>(0, saturating_sub(
@@ -2019,7 +2034,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                                 _saturation_count),
                             std::max<int64_t>(0, business_transfer),
                             _saturation_count));
-                    const int8_t income_rate = frozen_tax_rate(
+                    const int32_t income_rate = frozen_tax_rate(
                         cell, NativeCountryRuntime::TAX_INCOME,
                         type.owner_profession_id);
                     const int64_t income_subsidy_base = income_rate < 0
@@ -2258,10 +2273,11 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 }
                 candidate.jobs_per_building = std::max<int64_t>(
                     1, type.owner_slots_per_building);
-                candidate.score_q16 = saturating_add(
-                    (survival_output ? 4 : 2) * shortage_q16,
-                    saturating_add(3 * utilization_q16,
-                        margin_q16, _saturation_count), _saturation_count);
+                // Portfolio ranking is a monetary return decision. Output
+                // pressure and utilization have already informed the revenue
+                // forecast and capacity; they are not additional preferences.
+                candidate.score_q16 = std::max<int64_t>(
+                    return_on_capital_q16, margin_q16);
                 if (candidate.sponsor_family_handle != 0) {
                     const int32_t stable_preference =
                         family_trait_behavior_factor_q16(
@@ -2314,7 +2330,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                                 _max_building_upgrade_tier, _saturation_count)));
                     mix_score_term(FAMILY_SCORE_LOCAL_POPULARITY,
                         static_cast<int32_t>(std::clamp<int64_t>(
-                            shortage_q16, 0, Q16_ONE)));
+                            margin_q16, 0, Q16_ONE)));
                 }
                 type_has_viable_candidate = true;
             if (diagnostic != nullptr) {

@@ -327,15 +327,15 @@ func _test_small_population_birth_residual_save_restore(compiled: Dictionary) ->
 		int(first_report.get("births", -1)) == 0 and
 		int(source.get_population_cell_summary(0).population) == 1)
 	var saved := _save(source)
-	_expect("PKEC v45 saves accumulated birth residual and support EMA",
-		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 45)
+	_expect("PKEC v46 saves accumulated birth residual and support EMA",
+		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 46)
 	var restored := _new_ext(1, catalog)
 	_expect("small-population restored country configures",
 		CountryTestHelper.configure_all_technologies(restored, catalog, 1, 2304))
 	_expect("small-population restored economy configures",
 		bool(restored.configure_economy(catalog, profile, 1, 2304).get("ok", false)))
 	var restore_result := _restore(restored, saved.get("chunks", []))
-	_expect("PKEC v45 restores accumulated birth residual",
+	_expect("PKEC v46 restores accumulated birth residual",
 		bool(restore_result.get("ok", false)) and
 		source.get_economy_state_hash() == restored.get_economy_state_hash())
 	var source_second: Dictionary = {}

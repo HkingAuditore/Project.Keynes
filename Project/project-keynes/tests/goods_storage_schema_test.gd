@@ -32,7 +32,7 @@ func _run() -> void:
 		(catalog.good_ids as PackedStringArray).has("grain") and
 		(catalog.good_ids as PackedStringArray).has("meat"))
 	_expect("merchant profession compiles", (catalog.profession_ids as PackedStringArray).has("merchant"))
-	_expect("modern household needs compile", (catalog.need_ids as PackedStringArray).size() == 17 and
+	_expect("modern household needs compile", (catalog.need_ids as PackedStringArray).size() == 20 and
 		(catalog.need_ids as PackedStringArray).has("staple_food") and
 		(catalog.need_ids as PackedStringArray).has("healthcare") and
 		(catalog.need_ids as PackedStringArray).has("work_equipment") and
@@ -349,9 +349,9 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	# Daily N=1 on a one-cell opening world does not take the 5-day shortage
 	# fallback path; that path adds extra component visits when N>1.
 	_expect("worker and merchant process the bounded catalog shape",
-		int(report.get("processed_needs", -1)) == 27 \
-		and int(report.get("processed_variants", -1)) == 77 \
-		and int(report.get("processed_components", -1)) == 83)
+		int(report.get("processed_needs", -1)) == 12 \
+		and int(report.get("processed_variants", -1)) == 54 \
+		and int(report.get("processed_components", -1)) == 47)
 	_expect("market population conservation exact", int(report.get("population_error", 1)) == 0)
 	_expect("market money conservation exact", int(report.get("money_error", 1)) == 0)
 	_expect("market goods conservation exact", int(report.get("goods_error", 1)) == 0)
@@ -411,7 +411,7 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
 	if not bool(save_begin.get("ok", false)):
 		print("  PKEC begin failed=", save_begin)
-	_expect("v45 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 45)
+	_expect("v46 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 46)
 	var chunks: Array[PackedByteArray] = []
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)

@@ -1,6 +1,12 @@
 # 经济存档、catalog migration 与内容扩展 SOP
 
-## PKEC v45（当前 writer；v44/v43/v42/v41 向前兼容读）
+## PKEC v46（当前 writer；v45/v44/v43/v42/v41 向前兼容读）
+
+PKEC v46 在交易订单每条物资行末尾追加 `transaction_transfer:i64`，保存最终吸收点的
+交易税转移。v45 及更早订单没有该列，读取时按零交易税迁移；其余订单与 cell record
+布局保持不变。
+
+## PKEC v45（历史 writer；v44/v43/v42/v41 向前兼容读）
 
 PKEC v45 在每条 cell 记录末尾追加上一完整周期食物流量：`food_flow_valid:u8`、
 产出/投入/进口/出口/实际取得五个 `i64` 以及 `food_flow_previous_period_days:i32`。
@@ -21,7 +27,7 @@ PKEC v43 在 v42 header 的投资周期字段之后追加部门维护地平线
 （5×int32：agriculture/extractive/manufacturing/energy/knowledge）以及
 `building_maintenance_cost_factor_q16`。`<43` 读取时使用默认 5475/2920/3650/2190/7300 与
 `Q16_ONE`。建筑维护 CSR 与 `construction_material_reserve` 都是可重建缓存，不入库。
-reader 接受 v45、v44、v43、v42 与 v41；v43 恢复时 startup demand 固定为 `OFF`。
+reader 接受 v46、v45、v44、v43、v42 与 v41；v43 恢复时 startup demand 固定为 `OFF`。
 
 ## PKEC v42（历史 writer；当前仍可读）
 
@@ -208,7 +214,7 @@ restore 要先配置并完整恢复 PKCN v4，再用当前资源 catalog 调 `co
 
 通过后重建 committed summary；`get_economy_state_hash()` 应与保存前一致。
 
-当前写出 schema 为 PKEC v45，并与 PKCN v11、PKEF v11 交叉绑定。PKEC v44/v43/v42/v41 仅向前兼容读；v40 及更早版本全部拒绝；
+当前写出 schema 为 PKEC v46，并与 PKCN v12、PKEF v11 交叉绑定。PKEC v45/v44/v43/v42/v41 仅向前兼容读；v40 及更早版本全部拒绝；
 后文旧版本章节只记录历史格式演进，不代表当前 reader 仍接受。拓扑、FamilyEffect binding、stack
 group、selector/CSR、exact-good override cache 和未完成规划均为派生态，加载后重建；联合存档只允许在
 国家/Effect 命令图 idle 且经济位于 committed boundary 时开始。
@@ -219,7 +225,7 @@ group、selector/CSR、exact-good override cache 和未完成规划均为派生�
 排序，canonical columns 经 SHA-256 截取为正 `catalog_hash`。移动/重命名 `.tres`
 文件而不改 stable ID 不影响索引。
 
-当前 PKEC v45 与 PKCN v11 要求 save 的稳定 ID 表（含 technology IDs）与当前 catalog 完全一致，
+当前 PKEC v46 与 PKCN v12 要求 save 的稳定 ID 表（含 technology IDs）与当前 catalog 完全一致，
 并要求姓氏 `family_catalog_hash`、人物 `person_catalog_hash` 和特性
 `family_trait_catalog_hash` 一致。不存在当前 reader 可用的 append-only 迁移例外。
 本轮明确不提供旧 187-building/152-good 目录迁移，旧存档按现有 catalog mismatch 路径拒绝。
