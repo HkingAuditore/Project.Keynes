@@ -19,7 +19,7 @@ const HTML_OUTPUT_PATH := "res://tools/technology_tree/technology_tree_report.ht
 const MARKDOWN_OUTPUT_PATH := "res://tools/technology_tree/technology_tree_report.md"
 const PLACEHOLDER := "__TECHNOLOGY_TREE_DATA__"
 
-const EXPECTED_NODE_COUNT := 661
+const EXPECTED_NODE_COUNT := 705
 const EXPECTED_ERA_COUNT := 11
 const EXPECTED_DOMAIN_COUNT := 4
 const EXPECTED_MILESTONE_CANDIDATE_COUNTS := [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]

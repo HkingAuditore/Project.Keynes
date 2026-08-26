@@ -6,29 +6,29 @@
 
 | 项目 | 数量 |
 | --- | ---: |
-| 科技 | 661 |
+| 科技 | 705 |
 | 时代 | 11 |
 | 领域 | 4 |
 | 里程碑 | 11 |
-| 硬前置边 | 2288 |
+| 硬前置边 | 2460 |
 | 应用交汇边 | 19 |
-| 替代说明边 | 778 |
+| 替代说明边 | 670 |
 | 分支关系边 | 7 |
 | 里程碑候选边 | 143 |
 
 ## 时代目录
 
 - [石器时代](#era-1)（72 项，成本 0-5000）
-- [农耕时代](#era-2)（90 项，成本 3000-12000）
-- [王国时代](#era-3)（52 项，成本 3000-30000）
-- [帝国时代](#era-4)（44 项，成本 3000-70000）
-- [探索时代](#era-5)（40 项，成本 3000-160000）
+- [农耕时代](#era-2)（92 项，成本 3000-12000）
+- [王国时代](#era-3)（63 项，成本 3000-30000）
+- [帝国时代](#era-4)（43 项，成本 3000-70000）
+- [探索时代](#era-5)（41 项，成本 3000-160000）
 - [启蒙时代](#era-6)（57 项，成本 3900-360000）
-- [蒸汽时代](#era-7)（58 项，成本 20400-800000）
-- [电气时代](#era-8)（68 项，成本 8160-1800000）
+- [蒸汽时代](#era-7)（62 项，成本 9360-800000）
+- [电气时代](#era-8)（74 项，成本 9360-1800000）
 - [原子时代](#era-9)（61 项，成本 20400-4000000）
-- [信息时代](#era-10)（61 项，成本 47600-9000000）
-- [智能时代](#era-11)（58 项，成本 108800-20000000）
+- [信息时代](#era-10)（70 项，成本 47600-9000000）
+- [智能时代](#era-11)（70 项，成本 9360-20000000）
 
 <a id="era-1"></a>
 ## 石器时代
@@ -63,7 +63,7 @@
 
 #### 效果摘要
 
-解锁物资：野味；解锁物资：生皮；解锁建筑：狩猎营地；可利用资源：野生动物
+可利用资源：野生动物；解锁物资：野味；解锁物资：生皮；解锁建筑：狩猎营地；作为必要支撑：生皮刮制棚、小型陷阱线
 
 #### 机会成本
 
@@ -134,7 +134,7 @@
 
 #### 效果摘要
 
-解锁物资：采集植物食物；解锁建筑：采集营地；可利用资源：肥沃土壤
+可利用资源：肥沃土壤；解锁物资：采集植物食物；解锁建筑：采集营地；作为必要支撑：商栈
 
 #### 机会成本
 
@@ -274,7 +274,7 @@
 
 #### 效果摘要
 
-解锁物资：原木；解锁建筑：枯枝采集营地；可利用资源：木材
+可利用资源：木材；解锁物资：原木；解锁建筑：枯枝采集营地；作为必要支撑：树皮纸工坊、覆土木炭窑、露天黏土坑、商栈
 
 #### 机会成本
 
@@ -587,7 +587,7 @@
 
 #### 效果摘要
 
-专用商品作物产出 +12%
+专用商品作物产出 +12%；作为必要支撑：野生割胶营地
 
 #### 机会成本
 
@@ -861,7 +861,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-可利用资源：燧石；营造方法产出 +25%
+可利用资源：燧石；营造方法产出 +25%；作为必要支撑：石器打制工坊、改良燧石矿坑
 
 #### 机会成本
 
@@ -931,7 +931,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁物资：打制石器；解锁建筑：燧石采掘场；解锁物资：燧石原料；解锁建筑：石器打制工坊
+解锁物资：打制石器；解锁物资：燧石原料；解锁建筑：燧石采掘场；解锁建筑：石器打制工坊；作为必要支撑：露天黏土坑、石器打制工坊、自然铜冷锤工坊、毛石整理场
 
 #### 机会成本
 
@@ -1009,7 +1009,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：公共火塘；解锁物资：熟制主食
+解锁物资：熟制主食；解锁建筑：公共火塘；作为必要支撑：覆土木炭窑、乳胶烟熏凝固棚、传知者议事圈、露天陶器烧造
 
 #### 机会成本
 
@@ -1145,11 +1145,14 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 发现启发（仅用于揭示）
 
-无
+- 满足其一：
+  - 已发现信号「羊」（bio.sheep）
+  - 已发现信号「马匹」（bio.horse）
+  - 已发现信号「牛」（bio.cattle）
 
 #### 效果摘要
 
-畜牧业产出 +12%
+畜牧业产出 +12%；作为必要支撑：游牧营地
 
 #### 机会成本
 
@@ -1222,7 +1225,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-可利用资源：黏土
+可利用资源：黏土；解锁物资：黏土；解锁建筑：土料挖掘坑；作为必要支撑：日晒土坯场、制砖厂、露天黏土坑、原始黏土坑
 
 #### 机会成本
 
@@ -1294,7 +1297,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-专用商品作物产出 +12%
+专用商品作物产出 +12%；作为必要支撑：林下遮阴香料园
 
 #### 机会成本
 
@@ -1363,7 +1366,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-专用商品作物产出 +12%
+专用商品作物产出 +12%；作为必要支撑：乳胶烟熏凝固棚
 
 #### 机会成本
 
@@ -1433,7 +1436,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁物资：黄金；解锁建筑：河滩淘金场；可利用资源：金矿
+可利用资源：金矿；解锁物资：黄金；解锁建筑：河滩淘金场
 
 #### 机会成本
 
@@ -1570,7 +1573,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-可利用资源：水田承载力
+可利用资源：水田承载力；解锁物资：芦苇束；解锁建筑：芦苇收割营地
 
 #### 机会成本
 
@@ -1710,7 +1713,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-可利用资源：盐；制盐产出 +12%
+可利用资源：盐；制盐产出 +12%；作为必要支撑：日晒盐田
 
 #### 机会成本
 
@@ -1780,7 +1783,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-营造方法产出 +12%
+营造方法产出 +12%；作为必要支撑：制砖厂、烧砖窑、露天陶器烧造、升焰陶窑、原始黏土坑
 
 #### 机会成本
 
@@ -1851,11 +1854,13 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 发现启发（仅用于揭示）
 
-无
+- 满足其一：
+  - 已发现信号「石料」（resource.stone）
+  - 已发现信号「燧石」（resource.flint）
 
 #### 效果摘要
 
-全社会经济产出 +3%
+全社会经济产出 +3%；作为必要支撑：木槽溜洗场、野生割胶营地、木版印刷坊
 
 #### 机会成本
 
@@ -2011,7 +2016,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-timber -8%
+timber -8%；作为必要支撑：刀耕火种玉米地
 
 #### 机会成本
 
@@ -2217,7 +2222,7 @@ timber -8%
 
 #### 效果摘要
 
-解锁物资：原石；可利用资源：石料；营造方法产出 +12%；解锁建筑：采石场
+可利用资源：石料；解锁物资：原石；解锁建筑：毛石整理场；解锁建筑：采石场；营造方法产出 +12%；作为必要支撑：石灰石采石场、石料场、毛石整理场、浅坑银矿作业、露头煤采集场
 
 #### 机会成本
 
@@ -2407,7 +2412,7 @@ timber -8%
 
 #### 效果摘要
 
-可利用资源：牧场承载力
+可利用资源：牧场承载力；解锁物资：草皮块；解锁建筑：草皮切割场
 
 #### 机会成本
 
@@ -2477,7 +2482,7 @@ timber -8%
 
 #### 效果摘要
 
-无
+基础衣物产出 +5%
 
 #### 机会成本
 
@@ -2545,7 +2550,7 @@ timber -8%
 
 #### 效果摘要
 
-无
+基础衣物产出 +4%
 
 #### 机会成本
 
@@ -2612,7 +2617,7 @@ timber -8%
 
 #### 效果摘要
 
-区域知识分支：完成统一早期知识机构后，可继续深化本地观察传统
+社会领域研究效率 +3%
 
 #### 机会成本
 
@@ -2679,7 +2684,7 @@ timber -8%
 
 #### 效果摘要
 
-区域知识分支：完成统一早期知识机构后，可继续深化本地观察传统
+农业领域研究效率 +3%
 
 #### 机会成本
 
@@ -2746,7 +2751,7 @@ timber -8%
 
 #### 效果摘要
 
-区域知识分支：完成统一早期知识机构后，可继续深化本地观察传统
+无
 
 #### 机会成本
 
@@ -2812,7 +2817,7 @@ timber -8%
 
 #### 效果摘要
 
-区域知识分支：完成统一早期知识机构后，可继续深化本地观察传统
+农业领域研究效率 +3%
 
 #### 机会成本
 
@@ -2879,7 +2884,7 @@ timber -8%
 
 #### 效果摘要
 
-区域知识分支：完成统一早期知识机构后，可继续深化本地观察传统
+全社会贸易运输速度 +3%
 
 #### 机会成本
 
@@ -2947,7 +2952,7 @@ timber -8%
 
 #### 效果摘要
 
-timber -8%
+timber -8%；作为必要支撑：块炼炉、土法炼铜炉、烧砖窑、升焰陶窑
 
 #### 机会成本
 
@@ -3017,7 +3022,7 @@ timber -8%
 
 #### 效果摘要
 
-营造方法产出 +12%
+营造方法产出 +12%；作为必要支撑：露天陶器烧造、升焰陶窑
 
 #### 机会成本
 
@@ -3159,7 +3164,7 @@ timber -8%
 
 #### 效果摘要
 
-全社会 +4%
+全社会 +4%；作为必要支撑：家庭棉花园圃、菜蔬农场、亚麻农场、林下遮阴香料园、自给农庄
 
 #### 机会成本
 
@@ -3192,6 +3197,7 @@ timber -8%
 - 应用：家庭棉花园圃 (`tech.application.cotton_garden`)：种子与繁育观察是应用：家庭棉花园圃不可替代的知识基础。
 - 应用：林下遮阴香料园 (`tech.application.spice_shade_garden`)：种子与繁育观察是应用：林下遮阴香料园不可替代的知识基础。
 - 应用：菜蔬农场 (`tech.application.fertile_soil_collector`)：种子与繁育观察是应用：菜蔬农场不可替代的知识基础。
+- 应用：药草园 (`tech.application.medicinal_herb_garden`)：tech.crop\_domestication是药草园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -3233,7 +3239,7 @@ timber -8%
 
 #### 效果摘要
 
-社会领域研究效率 +8%
+社会领域研究效率 +8%；作为必要支撑：传知者议事圈
 
 #### 机会成本
 
@@ -3855,7 +3861,7 @@ timber -8%
 
 #### 效果摘要
 
-社会领域研究效率 +20%
+社会领域研究效率 +20%；作为必要支撑：菜蔬农场、家庭玉米园圃、林下遮阴香料园、自给农庄
 
 #### 机会成本
 
@@ -3886,6 +3892,7 @@ timber -8%
 - 应用：家庭玉米园圃 (`tech.application.maize_garden`)：家庭生产是应用：家庭玉米园圃不可替代的知识基础。
 - 应用：林下遮阴香料园 (`tech.application.spice_shade_garden`)：家庭生产是应用：林下遮阴香料园不可替代的知识基础。
 - 应用：菜蔬农场 (`tech.application.fertile_soil_collector`)：家庭生产是应用：菜蔬农场不可替代的知识基础。
+- 应用：药草园 (`tech.application.medicinal_herb_garden`)：tech.household\_production是药草园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -3927,7 +3934,7 @@ timber -8%
 
 #### 效果摘要
 
-terrain.jungle.agriculture产出 +8%
+解锁物资：玉米；解锁建筑：野生玉米采集地；terrain.jungle.agriculture产出 +8%
 
 #### 机会成本
 
@@ -3997,7 +4004,7 @@ terrain.jungle.agriculture产出 +8%
 
 #### 效果摘要
 
-terrain.steppe.agriculture产出 +12%
+解锁物资：小麦；解锁建筑：野生谷穗采集地；terrain.steppe.agriculture产出 +12%
 
 #### 机会成本
 
@@ -4068,7 +4075,7 @@ terrain.steppe.agriculture产出 +12%
 
 #### 效果摘要
 
-landform.lowland.agriculture产出 +12%
+解锁物资：稻米；解锁建筑：野生稻沼泽；landform.lowland.agriculture产出 +12%
 
 #### 机会成本
 
@@ -4273,7 +4280,7 @@ landform.lowland.agriculture产出 +12%
 
 #### 效果摘要
 
-专用商品作物产出 +12%
+专用商品作物产出 +12%；作为必要支撑：手工轧棉棚
 
 #### 机会成本
 
@@ -4343,7 +4350,7 @@ landform.lowland.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁物资：韧皮纤维；解锁物资：衣物；解锁建筑：野生韧皮纤维营地；解锁建筑：韧皮裹衣棚
+解锁物资：韧皮纤维；解锁建筑：野生韧皮纤维营地；作为必要支撑：亚麻农场、沤麻池
 
 #### 机会成本
 
@@ -4351,7 +4358,7 @@ landform.lowland.agriculture产出 +12%
 
 #### 内容解锁
 
-- **物资：** 韧皮纤维 (`bast_fiber`)
+- **物资：** 亚麻秆/韧皮原料 (`bast_fiber`)
 - **建筑 / 生产方式：** 野生韧皮纤维营地 (`bast_fiber_camp`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
@@ -4379,7 +4386,7 @@ landform.lowland.agriculture产出 +12%
 - 应用：口述记忆圈 (`tech.application.oral_memory_circle`)：野生韧皮采集是应用：口述记忆圈不可替代的知识基础。
 - 应用：洪水历法祭所 (`tech.application.flood_calendar_shrine`)：野生韧皮采集是应用：洪水历法祭所不可替代的知识基础。
 - 应用：家用织机 (`tech.application.household_loom`)：野生韧皮采集是应用：家用织机不可替代的知识基础。
-- 应用：沤麻池 (`tech.application.flax_retting_pit`)：野生韧皮采集是应用：沤麻池不可替代的知识基础。
+- 应用：沤麻池 (`tech.application.flax_retting_pit`)：tech.wild\_flax\_collection是沤麻池不可替代的知识基础。
 - 应用：乳胶烟熏凝固棚 (`tech.application.latex_smoking_shelter`)：野生韧皮采集是应用：乳胶烟熏凝固棚不可替代的知识基础。
 - 应用：毛皮缝制棚 (`tech.application.fur_sewing_shelter`)：野生韧皮采集是应用：毛皮缝制棚不可替代的知识基础。
 - 应用：物候观察棚 (`tech.application.seasonal_observation_shelter`)：野生韧皮采集是应用：物候观察棚不可替代的知识基础。
@@ -4387,6 +4394,7 @@ landform.lowland.agriculture产出 +12%
 - 方法：牧群路线议事帐 (`tech.method.pastoral_council_tent`)：野生韧皮采集是方法：牧群路线议事帐不可替代的知识基础。
 - 应用：毡制帐篷 (`tech.application.felt_making_tent`)：野生韧皮采集是应用：毡制帐篷不可替代的知识基础。
 - 应用：植物纤维抄纸坊 (`tech.application.plant_fiber_paper_workshop`)：野生韧皮采集是应用：植物纤维抄纸坊不可替代的知识基础。
+- 应用：药草园 (`tech.application.medicinal_herb_garden`)：tech.wild\_flax\_collection是药草园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -4429,7 +4437,7 @@ landform.lowland.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁物资：鱼类；解锁建筑：淡水捕鱼营地；可利用资源：淡水鱼群
+可利用资源：淡水鱼群；解锁物资：鱼类；解锁建筑：淡水捕鱼营地
 
 #### 机会成本
 
@@ -4498,7 +4506,7 @@ landform.lowland.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁物资：鱼类；解锁建筑：沿岸渔场；可利用资源：海洋鱼类
+可利用资源：海洋鱼类；解锁物资：鱼类；解锁建筑：沿岸渔场
 
 #### 机会成本
 
@@ -4570,7 +4578,7 @@ landform.lowland.agriculture产出 +12%
 
 #### 效果摘要
 
-布匹织造产出 +12%
+解锁物资：衣物；解锁建筑：韧皮裹衣棚；布匹织造产出 +12%；作为必要支撑：家庭纺织坊、植物纤维抄纸坊
 
 #### 机会成本
 
@@ -4776,7 +4784,7 @@ landform.lowland.agriculture产出 +12%
 
 #### 效果摘要
 
-稻米产出 +12%
+稻米产出 +12%；作为必要支撑：畦埂水稻田、稻作农场、旱稻田、湿地稻园
 
 #### 机会成本
 
@@ -4847,7 +4855,7 @@ landform.lowland.agriculture产出 +12%
 
 #### 效果摘要
 
-landform.plateau.agriculture产出 +12%
+landform.plateau.agriculture产出 +12%；作为必要支撑：冷凉高地块茎田、马铃薯农场
 
 #### 机会成本
 
@@ -4874,6 +4882,11 @@ landform.plateau.agriculture产出 +12%
 
 - 垄作块茎 (`tech.ridge_tuber_cultivation`)：块茎繁育是垄作块茎不可替代的知识基础。
 - 应用：冷凉高地块茎田 (`tech.application.highland_tuber_plot`)：块茎繁育是应用：冷凉高地块茎田不可替代的知识基础。
+- 应用：马铃薯农场 (`tech.application.potato_collector`)：tech.potato\_propagation是马铃薯农场不可替代的知识基础。
+- 应用：机械化马铃薯农场 (`tech.application.method_potato_collector_r6`)：tech.potato\_propagation是机械化马铃薯农场不可替代的知识基础。
+- 应用：改良轮作马铃薯庄园 (`tech.application.method_potato_farm_r5`)：tech.potato\_propagation是改良轮作马铃薯庄园不可替代的知识基础。
+- 应用：精准马铃薯农场 (`tech.application.method_potato_farm_r8`)：tech.potato\_propagation是精准马铃薯农场不可替代的知识基础。
+- 应用：自动化马铃薯农场 (`tech.application.method_potato_farm_r10`)：tech.potato\_propagation是自动化马铃薯农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -4915,7 +4928,7 @@ landform.plateau.agriculture产出 +12%
 
 #### 效果摘要
 
-玉米产出 +25%
+玉米产出 +25%；作为必要支撑：退水玉米地、玉米庄园、家庭玉米园圃、雨养玉米田、刀耕火种玉米地、佃作雨养玉米田
 
 #### 机会成本
 
@@ -4949,6 +4962,8 @@ landform.plateau.agriculture产出 +12%
 - 应用：退水玉米地 (`tech.application.floodplain_maize_plot`)：玉米繁育是应用：退水玉米地不可替代的知识基础。
 - 应用：佃作雨养玉米田 (`tech.application.tenant_rainfed_maize_field`)：玉米繁育是应用：佃作雨养玉米田不可替代的知识基础。
 - 应用：玉米庄园 (`tech.application.landed_estate`)：玉米繁育是应用：玉米庄园不可替代的知识基础。
+- 应用：精准玉米农场 (`tech.application.method_maize_farm_r8`)：tech.maize\_propagation是精准玉米农场不可替代的知识基础。
+- 应用：自动化玉米农场 (`tech.application.method_maize_farm_r10`)：tech.maize\_propagation是自动化玉米农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -4990,7 +5005,7 @@ landform.plateau.agriculture产出 +12%
 
 #### 效果摘要
 
-小麦产出 +28%
+小麦产出 +28%；作为必要支撑：旱作保水小麦田、退水小麦地、佃作小麦庄园、改良轮作小麦庄园、雨养小麦地、佃作雨养小麦田、小麦农场
 
 #### 机会成本
 
@@ -5025,6 +5040,9 @@ landform.plateau.agriculture产出 +12%
 - 系统育种 (`tech.crop_breeding`)：小麦繁育是系统育种不可替代的知识基础。
 - 应用：佃作小麦庄园 (`tech.application.method_wheat_farm_r3`)：小麦繁育是应用：佃作小麦庄园不可替代的知识基础。
 - 应用：改良轮作小麦庄园 (`tech.application.method_wheat_farm_r5`)：小麦繁育是应用：改良轮作小麦庄园不可替代的知识基础。
+- 应用：机械化小麦农场 (`tech.application.method_wheat_farm_r6`)：tech.wheat\_propagation是机械化小麦农场不可替代的知识基础。
+- 应用：精准小麦农场 (`tech.application.method_wheat_farm_r8`)：tech.wheat\_propagation是精准小麦农场不可替代的知识基础。
+- 应用：自动化小麦农场 (`tech.application.method_wheat_farm_r10`)：tech.wheat\_propagation是自动化小麦农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -5144,7 +5162,7 @@ landform.plateau.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：野生块茎采集地；解锁物资：马铃薯
+解锁物资：马铃薯；解锁建筑：野生块茎采集地
 
 #### 机会成本
 
@@ -5185,7 +5203,7 @@ landform.plateau.agriculture产出 +12%
 <a id="era-2"></a>
 ## 农耕时代
 
-共 90 项科技，研究成本范围 3000-12000；时代里程碑：农耕社会 (`tech.agrarian_society`)。
+共 92 项科技，研究成本范围 3000-12000；时代里程碑：农耕社会 (`tech.agrarian_society`)。
 
 ### 渔舟 (`tech.fishing_boats`)
 
@@ -5284,7 +5302,7 @@ landform.plateau.agriculture产出 +12%
 
 #### 效果摘要
 
-可利用资源：铜矿；铜矿采掘产出 +12%
+可利用资源：铜矿；铜矿采掘产出 +12%；作为必要支撑：铜矿、自然铜冷锤工坊
 
 #### 机会成本
 
@@ -5355,7 +5373,7 @@ landform.plateau.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：小型陷阱线
+解锁物资：毛皮；解锁物资：野味；解锁物资：生皮；解锁建筑：小型陷阱线
 
 #### 机会成本
 
@@ -5426,7 +5444,7 @@ landform.plateau.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：原始黏土坑
+解锁物资：黏土；解锁建筑：原始黏土坑；作为必要支撑：日晒土坯场、制砖厂、露天黏土坑、原始黏土坑
 
 #### 机会成本
 
@@ -5501,7 +5519,7 @@ landform.plateau.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：游牧营地；解锁物资：畜牧产品
+解锁物资：畜牧产品；解锁建筑：游牧营地
 
 #### 机会成本
 
@@ -5578,7 +5596,7 @@ landform.plateau.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：露天银矿；解锁物资：白银
+解锁物资：白银；解锁建筑：露天银矿
 
 #### 机会成本
 
@@ -5645,7 +5663,7 @@ landform.plateau.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：伐木场
+解锁物资：原木；解锁建筑：伐木场；作为必要支撑：树皮纸工坊、覆土木炭窑、露天黏土坑、商栈
 
 #### 机会成本
 
@@ -5713,7 +5731,7 @@ landform.plateau.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：覆土木炭窑；解锁物资：木炭
+解锁物资：木炭；解锁建筑：覆土木炭窑；作为必要支撑：块炼炉、土法炼铜炉、烧砖窑、升焰陶窑
 
 #### 机会成本
 
@@ -5789,7 +5807,7 @@ landform.plateau.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：露天黏土坑；解锁物资：黏土
+解锁物资：黏土；解锁建筑：露天黏土坑；作为必要支撑：制砖厂、烧砖窑、露天陶器烧造、升焰陶窑、原始黏土坑
 
 #### 机会成本
 
@@ -5855,7 +5873,7 @@ landform.plateau.agriculture产出 +12%
 
 #### 效果摘要
 
-主粮加工产出 +12%
+主粮加工产出 +12%；作为必要支撑：亚麻庄园
 
 #### 机会成本
 
@@ -5928,7 +5946,7 @@ landform.plateau.agriculture产出 +12%
 
 #### 效果摘要
 
-全社会经济产出 +2%
+全社会经济产出 +2%；作为必要支撑：自给农庄
 
 #### 机会成本
 
@@ -6073,7 +6091,7 @@ landform.plateau.agriculture产出 +12%
 
 #### 效果摘要
 
-畜牧业产出 +12%；解锁物资：马匹；解锁建筑：马匹繁育营地
+解锁物资：马匹；解锁建筑：马匹繁育营地；畜牧业产出 +12%
 
 #### 机会成本
 
@@ -6455,6 +6473,8 @@ landform.hill.agriculture产出 +28%
 #### 被以下科技作为硬前置
 
 - 乳胶烟熏凝固 (`tech.latex_smoke_coagulation`)：天然橡胶加工是乳胶烟熏凝固不可替代的知识基础。
+- 应用：精准橡胶种植园 (`tech.application.method_rubber_tree_collector_r8`)：tech.rubber\_working是精准橡胶种植园不可替代的知识基础。
+- 应用：自动化橡胶种植园 (`tech.application.method_rubber_tree_collector_r10`)：tech.rubber\_working是自动化橡胶种植园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -6567,7 +6587,7 @@ landform.hill.agriculture产出 +28%
 
 #### 效果摘要
 
-landform.lowland.agriculture产出 +22%
+landform.lowland.agriculture产出 +22%；作为必要支撑：畦埂水稻田、分成水田、佃作水田
 
 #### 机会成本
 
@@ -6640,7 +6660,7 @@ landform.lowland.agriculture产出 +22%
 
 #### 效果摘要
 
-营造方法产出 +12%
+营造方法产出 +12%；作为必要支撑：制砖厂、土法炼锡炉、烧砖窑、行会陶窑、锡矿
 
 #### 机会成本
 
@@ -6744,7 +6764,7 @@ landform.lowland.agriculture产出 +22%
 #### 被以下科技作为硬前置
 
 - 植物纤维抄纸 (`tech.plant_fiber_papermaking`)：织机织造是植物纤维抄纸不可替代的知识基础。
-- 应用：行会织造坊 (`tech.application.guild_weaving_house`)：织机织造是应用：行会织造坊不可替代的知识基础。
+- 应用：行会织造坊 (`tech.application.guild_weaving_house`)：tech.loom\_weaving是行会织造坊不可替代的知识基础。
 - 应用：羊毛行会作坊 (`tech.application.method_wool_shed_r3`)：织机织造是应用：羊毛行会作坊不可替代的知识基础。
 - 纺织机械 (`tech.textile_machinery`)：织机织造是纺织机械不可替代的知识基础。
 
@@ -6788,7 +6808,7 @@ landform.lowland.agriculture产出 +22%
 
 #### 效果摘要
 
-营造方法产出 +12%
+营造方法产出 +12%；作为必要支撑：石作工场、烧砖窑
 
 #### 机会成本
 
@@ -6934,7 +6954,7 @@ terrain.jungle.agriculture产出 +12%
 
 #### 效果摘要
 
-可利用资源：水田承载力；terrain.floodplain.agriculture产出 +25%
+可利用资源：水田承载力；terrain.floodplain.agriculture产出 +25%；作为必要支撑：佃作稻庄
 
 #### 机会成本
 
@@ -6961,6 +6981,7 @@ terrain.jungle.agriculture产出 +12%
 
 - 佃作水田 (`tech.tenant_paddy_management`)：水田稻作是佃作水田不可替代的知识基础。
 - 应用：佃作稻庄 (`tech.application.method_rice_collector_r3`)：水田稻作是应用：佃作稻庄不可替代的知识基础。
+- 应用：机械化稻作农场 (`tech.application.method_rice_collector_r6`)：tech.rice\_paddy\_cultivation是机械化稻作农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -7031,7 +7052,7 @@ terrain.jungle.agriculture产出 +12%
 #### 被以下科技作为硬前置
 
 - 防霜窖藏 (`tech.frost_protected_storage`)：垄作块茎是防霜窖藏不可替代的知识基础。
-- 应用：马铃薯农场 (`tech.application.potato_collector`)：垄作块茎是应用：马铃薯农场不可替代的知识基础。
+- 应用：马铃薯农场 (`tech.application.potato_collector`)：tech.ridge\_tuber\_cultivation是马铃薯农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -7075,7 +7096,7 @@ terrain.jungle.agriculture产出 +12%
 
 #### 效果摘要
 
-landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +24%
+landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +24%；作为必要支撑：高地精准块茎农业
 
 #### 机会成本
 
@@ -7105,7 +7126,6 @@ landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +2
 
 - 应用：冷凉高地块茎田 (`tech.application.highland_tuber_plot`)：高地块茎农业是应用：冷凉高地块茎田不可替代的知识基础。
 - 分成租佃 (`tech.sharecropping`)：高地块茎农业是分成租佃不可替代的知识基础。
-- 应用：机械化马铃薯农场 (`tech.application.method_potato_collector_r6`)：高地块茎农业是应用：机械化马铃薯农场不可替代的知识基础。
 - 应用：高地精准块茎农业 (`tech.application.method_highland_precision_agriculture`)：高地块茎农业是应用：高地精准块茎农业不可替代的知识基础。
 
 #### 主题路线后继
@@ -7150,7 +7170,7 @@ landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +2
 
 #### 效果摘要
 
-布匹织造产出 +12%
+布匹织造产出 +12%；作为必要支撑：家庭纺织坊、亚麻庄园、改良亚麻庄园
 
 #### 机会成本
 
@@ -7177,12 +7197,15 @@ landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +2
 
 - 手工纺纱 (`tech.hand_spinning`)：沤麻是手工纺纱不可替代的知识基础。
 - 应用：亚麻农场 (`tech.application.flax_collector`)：沤麻是应用：亚麻农场不可替代的知识基础。
-- 应用：沤麻池 (`tech.application.flax_retting_pit`)：沤麻是应用：沤麻池不可替代的知识基础。
-- 应用：行会织造坊 (`tech.application.guild_weaving_house`)：沤麻是应用：行会织造坊不可替代的知识基础。
+- 应用：沤麻池 (`tech.application.flax_retting_pit`)：tech.flax\_retting是沤麻池不可替代的知识基础。
+- 应用：行会织造坊 (`tech.application.guild_weaving_house`)：tech.flax\_retting是行会织造坊不可替代的知识基础。
 - 契约劳工制度 (`tech.indentured_contracts`)：沤麻是契约劳工制度不可替代的知识基础。
 - 长期租约 (`tech.long_term_leases`)：沤麻是长期租约不可替代的知识基础。
 - 应用：亚麻庄园 (`tech.application.method_flax_collector_r3`)：沤麻是应用：亚麻庄园不可替代的知识基础。
 - 应用：改良亚麻庄园 (`tech.application.method_flax_collector_r5`)：沤麻是应用：改良亚麻庄园不可替代的知识基础。
+- 应用：机械化亚麻农场 (`tech.application.method_flax_collector_r6`)：tech.flax\_retting是机械化亚麻农场不可替代的知识基础。
+- 应用：精准亚麻农场 (`tech.application.method_flax_collector_r8`)：tech.flax\_retting是精准亚麻农场不可替代的知识基础。
+- 应用：自动化亚麻农场 (`tech.application.method_flax_collector_r10`)：tech.flax\_retting是自动化亚麻农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -7226,7 +7249,7 @@ landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +2
 
 #### 效果摘要
 
-布匹织造产出 +25%
+布匹织造产出 +25%；作为必要支撑：家庭棉花园圃
 
 #### 机会成本
 
@@ -7254,6 +7277,7 @@ landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +2
 - 棉花园圃 (`tech.cotton_gardening`)：棉花去籽是棉花园圃不可替代的知识基础。
 - 应用：家庭棉花园圃 (`tech.application.cotton_garden`)：棉花去籽是应用：家庭棉花园圃不可替代的知识基础。
 - 应用：手工轧棉棚 (`tech.application.cotton_ginning_shelter`)：棉花去籽是应用：手工轧棉棚不可替代的知识基础。
+- 应用：佃作棉花田 (`tech.application.cotton_smallholding`)：tech.cotton\_ginning是佃作棉花田不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -7299,7 +7323,7 @@ landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +2
 
 #### 效果摘要
 
-可利用资源：种植园承载力；terrain.jungle.agriculture产出 +24%
+可利用资源：种植园承载力；terrain.jungle.agriculture产出 +24%；作为必要支撑：香料种植园
 
 #### 机会成本
 
@@ -7326,6 +7350,8 @@ landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +2
 
 - 应用：林下遮阴香料园 (`tech.application.spice_shade_garden`)：遮阴香料园是应用：林下遮阴香料园不可替代的知识基础。
 - 应用：香料种植园 (`tech.application.spice_plants_collector`)：遮阴香料园是应用：香料种植园不可替代的知识基础。
+- 应用：药草园 (`tech.application.medicinal_herb_garden`)：tech.spice\_shade\_gardening是药草园不可替代的知识基础。
+- 应用：药材商品园 (`tech.application.medicinal_herb_estate`)：tech.spice\_shade\_gardening是药材商品园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -7367,7 +7393,7 @@ landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +2
 
 #### 效果摘要
 
-timber -10%
+解锁物资：木材；解锁建筑：锯木场；timber -10%；作为必要支撑：细木家具工坊、蒸汽锯木厂
 
 #### 机会成本
 
@@ -7395,7 +7421,7 @@ timber -10%
 
 - 应用：乳品工坊 (`tech.application.creamery`)：手工锯木是应用：乳品工坊不可替代的知识基础。
 - 树皮纸 (`tech.bark_paper_making`)：手工锯木是树皮纸不可替代的知识基础。
-- 应用：行会织造坊 (`tech.application.guild_weaving_house`)：手工锯木提供应用：行会织造坊所需的建材“木材”。
+- 应用：行会织造坊 (`tech.application.guild_weaving_house`)：tech.timber\_sawing是行会织造坊不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：手工锯木是应用：改良锯木场不可替代的知识基础。
 - 应用：家庭纺织坊 (`tech.application.cottage_weaving`)：手工锯木提供应用：家庭纺织坊所需的建材“木材”。
 - 应用：大气式蒸汽机工坊 (`tech.application.atmospheric_engine_workshop`)：手工锯木提供应用：大气式蒸汽机工坊所需的建材“木材”。
@@ -7517,7 +7543,7 @@ timber -10%
 
 #### 效果摘要
 
-畜牧业产出 +28%
+畜牧业产出 +28%；作为必要支撑：制鞋厂、制革厂、皮纸工坊
 
 #### 机会成本
 
@@ -7549,6 +7575,7 @@ timber -10%
 - 劳工组织 (`tech.labor_organization`)：皮革鞣制是劳工组织不可替代的知识基础。
 - 应用：制鞋厂 (`tech.application.footwear_plant`)：皮革鞣制是应用：制鞋厂不可替代的知识基础。
 - 应用：制革厂 (`tech.application.leather_plant`)：皮革鞣制是应用：制革厂不可替代的知识基础。
+- Leather Goods Workshop (`tech.application.leather_goods_workshop_kingdom`)：knowledge prerequisite: tech.herd\_management -\> Leather Goods Workshop
 
 #### 主题路线后继
 
@@ -7876,7 +7903,7 @@ timber -10%
 
 #### 效果摘要
 
-解锁建筑：自然铜冷锤工坊；铜矿采掘产出 +12%；解锁物资：铜
+解锁物资：铜；解锁建筑：自然铜冷锤工坊；铜矿采掘产出 +12%
 
 #### 机会成本
 
@@ -7952,7 +7979,7 @@ timber -10%
 
 #### 效果摘要
 
-解锁建筑：露天陶器烧造；解锁物资：陶器
+解锁物资：陶器；解锁建筑：露天陶器烧造；作为必要支撑：露天陶器烧造、升焰陶窑
 
 #### 机会成本
 
@@ -8021,7 +8048,7 @@ timber -10%
 
 #### 效果摘要
 
-营造方法产出 +12%
+营造方法产出 +12%；作为必要支撑：土法炼铜炉、活字印刷坊
 
 #### 机会成本
 
@@ -8096,7 +8123,7 @@ timber -10%
 
 #### 效果摘要
 
-稻米产出 +12%
+稻米产出 +12%；作为必要支撑：稻作农场、湿地稻园
 
 #### 机会成本
 
@@ -8195,7 +8222,9 @@ timber -10%
 
 #### 被以下科技作为硬前置
 
-无
+- 应用：商品香料园 (`tech.application.spice_managed_garden`)：tech.spice\_cultivation是商品香料园不可替代的知识基础。
+- 应用：药草园 (`tech.application.medicinal_herb_garden`)：tech.spice\_cultivation是药草园不可替代的知识基础。
+- 应用：药材商品园 (`tech.application.medicinal_herb_estate`)：tech.spice\_cultivation是药材商品园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -8310,7 +8339,7 @@ timber -10%
 
 #### 效果摘要
 
-可利用资源：肥沃土壤；可利用资源：旱地承载力；主粮加工产出 +12%
+可利用资源：肥沃土壤；可利用资源：旱地承载力；主粮加工产出 +12%；作为必要支撑：菜蔬农场、亚麻农场、玉米庄园、佃作小麦庄园、改良轮作小麦庄园、雨养玉米田、雨养小麦地、自给农庄、佃作雨养玉米田、佃作雨养小麦田、旱稻田、小麦农场
 
 #### 机会成本
 
@@ -8350,7 +8379,7 @@ timber -10%
 - 应用：佃作雨养玉米田 (`tech.application.tenant_rainfed_maize_field`)：雨养田体系是应用：佃作雨养玉米田不可替代的知识基础。
 - 应用：佃作雨养小麦田 (`tech.application.tenant_rainfed_wheat_field`)：雨养田体系是应用：佃作雨养小麦田不可替代的知识基础。
 - 应用：家庭纺织坊 (`tech.application.cottage_weaving`)：雨养田体系提供应用：家庭纺织坊所需的资源“旱地承载力”辨识。
-- 应用：马铃薯农场 (`tech.application.potato_collector`)：雨养田体系是应用：马铃薯农场不可替代的知识基础。
+- 应用：马铃薯农场 (`tech.application.potato_collector`)：tech.rainfed\_field\_system是马铃薯农场不可替代的知识基础。
 - 应用：三圃制小农场 (`tech.application.three_field_smallholding`)：雨养田体系是应用：三圃制小农场不可替代的知识基础。
 - 系统育种 (`tech.crop_breeding`)：雨养田体系是系统育种不可替代的知识基础。
 - 应用：玉米庄园 (`tech.application.landed_estate`)：雨养田体系是应用：玉米庄园不可替代的知识基础。
@@ -8362,6 +8391,8 @@ timber -10%
 - 应用：改良小农场 (`tech.application.improved_smallholding`)：雨养田体系是应用：改良小农场不可替代的知识基础。
 - 工业农学 (`tech.industrial_agronomy`)：雨养田体系是工业农学不可替代的知识基础。
 - 自动化农业 (`tech.automated_agriculture`)：雨养田体系是自动化农业不可替代的知识基础。
+- 应用：改良轮作马铃薯庄园 (`tech.application.method_potato_farm_r5`)：tech.rainfed\_field\_system是改良轮作马铃薯庄园不可替代的知识基础。
+- 应用：佃作棉花田 (`tech.application.cotton_smallholding`)：tech.rainfed\_field\_system是佃作棉花田不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -8405,7 +8436,7 @@ timber -10%
 
 #### 效果摘要
 
-terrain.steppe.agriculture产出 +22%
+terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦田
 
 #### 机会成本
 
@@ -8616,7 +8647,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-马铃薯产出 +25%
+马铃薯产出 +25%；作为必要支撑：冷凉高地块茎田
 
 #### 机会成本
 
@@ -8686,7 +8717,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-布匹织造产出 +25%
+布匹织造产出 +25%；作为必要支撑：家用织机
 
 #### 机会成本
 
@@ -8759,7 +8790,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-可利用资源：种植园承载力；专用商品作物产出 +12%
+可利用资源：种植园承载力；专用商品作物产出 +12%；作为必要支撑：棉花农场、机械化棉花农场
 
 #### 机会成本
 
@@ -8791,6 +8822,8 @@ terrain.steppe.agriculture产出 +22%
 - 应用：棉花农场 (`tech.application.cotton_collector`)：棉花园圃是应用：棉花农场不可替代的知识基础。
 - 应用：机械化棉花农场 (`tech.application.method_cotton_collector_r6`)：棉花园圃是应用：机械化棉花农场不可替代的知识基础。
 - 应用：受控环境药材农场 (`tech.application.method_medicinal_herbs_collector_r7`)：棉花园圃是应用：受控环境药材农场不可替代的知识基础。
+- 应用：精准棉花农场 (`tech.application.method_cotton_collector_r8`)：tech.cotton\_gardening是精准棉花农场不可替代的知识基础。
+- 应用：自动化棉花农场 (`tech.application.method_cotton_collector_r10`)：tech.cotton\_gardening是自动化棉花农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -8835,7 +8868,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-可利用资源：种植园承载力；专用商品作物产出 +28%
+可利用资源：种植园承载力；专用商品作物产出 +28%；作为必要支撑：橡胶种植园
 
 #### 机会成本
 
@@ -8932,6 +8965,7 @@ terrain.steppe.agriculture产出 +22%
 
 - 应用：硅砂矿坑 (`tech.application.classical_silica_pit`)：早期玻璃烧制是应用：硅砂矿坑不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：早期玻璃烧制是应用：玻璃窑不可替代的知识基础。
+- Glassware Workshop (`tech.application.glassware_workshop_kingdom`)：knowledge prerequisite: tech.kiln\_firing -\> Glassware Workshop
 
 #### 主题路线后继
 
@@ -8973,7 +9007,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-铜矿采掘产出 +12%
+铜矿采掘产出 +12%；作为必要支撑：铜矿
 
 #### 机会成本
 
@@ -9045,7 +9079,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-布匹织造产出 +25%
+解锁物资：布料；解锁建筑：家庭织造棚；布匹织造产出 +25%
 
 #### 机会成本
 
@@ -9116,7 +9150,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-营造方法产出 +12%
+营造方法产出 +12%；作为必要支撑：退水玉米地、退水小麦地
 
 #### 机会成本
 
@@ -9188,7 +9222,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-地籍机构产出 +12%
+地籍机构产出 +12%；作为必要支撑：畦埂水稻田、冷凉高地块茎田
 
 #### 机会成本
 
@@ -9218,6 +9252,7 @@ terrain.steppe.agriculture产出 +22%
 - 应用：冷凉高地块茎田 (`tech.application.highland_tuber_plot`)：家庭土地占有是应用：冷凉高地块茎田不可替代的知识基础。
 - 应用：菜蔬农场 (`tech.application.fertile_soil_collector`)：家庭土地占有是应用：菜蔬农场不可替代的知识基础。
 - 应用：畦埂水稻田 (`tech.application.bunded_rice_field`)：家庭土地占有是应用：畦埂水稻田不可替代的知识基础。
+- 应用：马铃薯农场 (`tech.application.potato_collector`)：tech.household\_landholding是马铃薯农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -9262,7 +9297,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-主粮加工产出 +25%
+主粮加工产出 +25%；作为必要支撑：庄园水田
 
 #### 机会成本
 
@@ -9333,7 +9368,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-解锁建筑：雨养玉米田；玉米产出 +12%；解锁物资：玉米
+解锁物资：玉米；解锁建筑：雨养玉米田
 
 #### 机会成本
 
@@ -9483,7 +9518,7 @@ terrain.steppe.agriculture产出 +22%
 
 #### 效果摘要
 
-terrain.steppe.agriculture产出 +12%
+解锁物资：小麦；解锁建筑：雨养小麦地；terrain.steppe.agriculture产出 +12%
 
 #### 机会成本
 
@@ -9556,7 +9591,7 @@ terrain.steppe.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：旱稻田；稻米产出 +12%；解锁物资：稻米
+解锁物资：稻米；解锁建筑：旱稻田
 
 #### 机会成本
 
@@ -9625,7 +9660,7 @@ terrain.steppe.agriculture产出 +12%
 
 #### 效果摘要
 
-可利用资源：锡矿；锡矿采掘产出 +12%
+可利用资源：锡矿；锡矿采掘产出 +12%；作为必要支撑：土法炼锡炉、露天青铜作坊、锡矿
 
 #### 机会成本
 
@@ -9696,7 +9731,7 @@ terrain.steppe.agriculture产出 +12%
 
 #### 效果摘要
 
-铜矿石 -8%
+铜矿石 -8%；作为必要支撑：土法炼铜炉
 
 #### 机会成本
 
@@ -9768,7 +9803,7 @@ terrain.steppe.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：自给农庄；解锁物资：混合谷物；解锁物资：蔬菜
+解锁物资：混合谷物；解锁物资：蔬菜；解锁建筑：自给农庄；作为必要支撑：畦埂水稻田、冷凉高地块茎田
 
 #### 机会成本
 
@@ -10058,7 +10093,7 @@ terrain.floodplain.agriculture产出 +25%
 
 #### 效果摘要
 
-terrain.floodplain.agriculture产出 +12%
+terrain.floodplain.agriculture产出 +12%；作为必要支撑：畦埂水稻田
 
 #### 机会成本
 
@@ -10131,7 +10166,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：主食厨房；解锁物资：熟制主食
+解锁物资：熟制主食；解锁建筑：主食厨房
 
 #### 机会成本
 
@@ -10201,7 +10236,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-铜矿采掘产出 +12%
+铜矿采掘产出 +12%；作为必要支撑：浅层锡矿、露天青铜作坊、锡矿
 
 #### 机会成本
 
@@ -10349,7 +10384,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-稻米产出 +22%
+稻米产出 +22%；作为必要支撑：庄园水田、佃作稻庄、精耕稻庄、分成水田、佃作水田
 
 #### 机会成本
 
@@ -10380,6 +10415,9 @@ terrain.floodplain.agriculture产出 +12%
 - 应用：佃作稻庄 (`tech.application.method_rice_collector_r3`)：稻田水位控制是应用：佃作稻庄不可替代的知识基础。
 - 应用：庄园水田 (`tech.application.estate_paddy`)：稻田水位控制是应用：庄园水田不可替代的知识基础。
 - 应用：精耕稻庄 (`tech.application.method_rice_collector_r5`)：稻田水位控制是应用：精耕稻庄不可替代的知识基础。
+- 应用：机械化稻作农场 (`tech.application.method_rice_collector_r6`)：tech.rice\_water\_control是机械化稻作农场不可替代的知识基础。
+- 应用：精准稻作农场 (`tech.application.method_rice_collector_r8`)：tech.rice\_water\_control是精准稻作农场不可替代的知识基础。
+- 应用：自动化稻作农场 (`tech.application.method_rice_collector_r10`)：tech.rice\_water\_control是自动化稻作农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -10571,7 +10609,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：野生割胶营地；解锁物资：天然乳胶
+解锁物资：天然乳胶；解锁建筑：野生割胶营地；作为必要支撑：乳胶烟熏凝固棚
 
 #### 机会成本
 
@@ -10641,7 +10679,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：卤水采集池；解锁物资：卤水
+解锁物资：卤水；解锁建筑：卤水采集池；作为必要支撑：日晒盐田
 
 #### 机会成本
 
@@ -10710,7 +10748,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：家庭玉米园圃
+解锁物资：玉米；解锁建筑：家庭玉米园圃
 
 #### 机会成本
 
@@ -10778,7 +10816,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：刀耕火种玉米地
+解锁物资：玉米；解锁建筑：刀耕火种玉米地
 
 #### 机会成本
 
@@ -10846,7 +10884,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：退水玉米地
+解锁物资：玉米；解锁建筑：退水玉米地
 
 #### 机会成本
 
@@ -10914,7 +10952,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：退水小麦地
+解锁物资：小麦；解锁建筑：退水小麦地
 
 #### 机会成本
 
@@ -10983,7 +11021,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：湿地稻园
+解锁物资：稻米；解锁建筑：湿地稻园；作为必要支撑：畦埂水稻田
 
 #### 机会成本
 
@@ -11053,7 +11091,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：亚麻农场；解锁物资：亚麻纤维
+解锁物资：韧皮原料；解锁建筑：亚麻农场；作为必要支撑：家庭纺织坊、亚麻庄园、改良亚麻庄园
 
 #### 机会成本
 
@@ -11061,14 +11099,14 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 内容解锁
 
-- **物资：** 亚麻纤维 (`flax_fiber`)
+- **物资：** 亚麻秆/韧皮原料 (`bast_fiber`)
 - **建筑 / 生产方式：** 亚麻农场 (`flax_collector`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
-- **亚麻纤维**（`good`）：`good.flax_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
+- **韧皮原料**（`good`）：`good.bast_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
 - **亚麻农场**（`building`）：`building.flax_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -11077,8 +11115,9 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 被以下科技作为硬前置
 
-- 应用：行会织造坊 (`tech.application.guild_weaving_house`)：应用：亚麻农场提供应用：行会织造坊所需的必需投入“亚麻纤维”。
-- 应用：碎布造纸工坊 (`tech.application.rag_paper_workshop`)：应用：亚麻农场是应用：碎布造纸工坊不可替代的知识基础。
+- 应用：沤麻池 (`tech.application.flax_retting_pit`)：tech.application.flax\_collector是沤麻池不可替代的知识基础。
+- 应用：行会织造坊 (`tech.application.guild_weaving_house`)：tech.application.flax\_collector是行会织造坊不可替代的知识基础。
+- 应用：碎布造纸工坊 (`tech.application.rag_paper_workshop`)：tech.application.flax\_collector是碎布造纸工坊不可替代的知识基础。
 - 应用：蒸汽纺织厂 (`tech.application.textile_mill`)：应用：亚麻农场是应用：蒸汽纺织厂不可替代的知识基础。
 - 应用：电力纺织厂 (`tech.application.cloth_plant`)：应用：亚麻农场是应用：电力纺织厂不可替代的知识基础。
 - 应用：合成纤维织造厂 (`tech.application.synthetic_textile_mill`)：应用：亚麻农场是应用：合成纤维织造厂不可替代的知识基础。
@@ -11127,7 +11166,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：家庭棉花园圃；解锁物资：籽棉
+解锁物资：籽棉；解锁建筑：家庭棉花园圃；作为必要支撑：棉花农场、机械化棉花农场
 
 #### 机会成本
 
@@ -11152,6 +11191,7 @@ terrain.floodplain.agriculture产出 +12%
 #### 被以下科技作为硬前置
 
 - 应用：手工轧棉棚 (`tech.application.cotton_ginning_shelter`)：应用：家庭棉花园圃是应用：手工轧棉棚不可替代的知识基础。
+- 应用：佃作棉花田 (`tech.application.cotton_smallholding`)：tech.application.cotton\_garden是佃作棉花田不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -11197,7 +11237,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：林下遮阴香料园；解锁物资：香料
+解锁物资：香料；解锁建筑：林下遮阴香料园；作为必要支撑：香料种植园
 
 #### 机会成本
 
@@ -11221,7 +11261,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 被以下科技作为硬前置
 
-无
+- 应用：商品香料园 (`tech.application.spice_managed_garden`)：tech.application.spice\_shade\_garden是商品香料园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -11267,7 +11307,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：乳品工坊；解锁物资：乳制品
+解锁物资：乳制品；解锁建筑：乳品工坊
 
 #### 机会成本
 
@@ -11337,7 +11377,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：日晒土坯场；解锁物资：日晒土坯
+解锁物资：日晒土坯；解锁建筑：日晒土坯场；作为必要支撑：石作工场、烧砖窑
 
 #### 机会成本
 
@@ -11372,6 +11412,10 @@ terrain.floodplain.agriculture产出 +12%
 - 应用：植物纤维抄纸坊 (`tech.application.plant_fiber_paper_workshop`)：应用：日晒土坯场是应用：植物纤维抄纸坊不可替代的知识基础。
 - 应用：树皮纸工坊 (`tech.application.bark_paper_workshop`)：应用：日晒土坯场是应用：树皮纸工坊不可替代的知识基础。
 - 应用：皮纸工坊 (`tech.application.parchment_workshop`)：应用：日晒土坯场是应用：皮纸工坊不可替代的知识基础。
+- 应用：佃作马铃薯田 (`tech.application.tenant_potato_field`)：tech.application.adobe\_yard是佃作马铃薯田不可替代的知识基础。
+- 应用：佃作棉花田 (`tech.application.cotton_smallholding`)：tech.application.adobe\_yard是佃作棉花田不可替代的知识基础。
+- 应用：商品香料园 (`tech.application.spice_managed_garden`)：tech.application.adobe\_yard是商品香料园不可替代的知识基础。
+- 应用：药材商品园 (`tech.application.medicinal_herb_estate`)：tech.application.adobe\_yard是药材商品园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -11415,7 +11459,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：浅层锡矿；解锁物资：锡矿石
+解锁物资：锡矿石；解锁建筑：浅层锡矿；作为必要支撑：浅层铜矿、土法炼锡炉
 
 #### 机会成本
 
@@ -11486,7 +11530,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：冷凉高地块茎田；解锁物资：马铃薯
+解锁物资：马铃薯；解锁建筑：冷凉高地块茎田；作为必要支撑：高地精准块茎农业、机械化马铃薯农场
 
 #### 机会成本
 
@@ -11555,7 +11599,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：土法炼锡炉；解锁物资：锡
+解锁物资：锡；解锁建筑：土法炼锡炉；作为必要支撑：浅层锡矿、露天青铜作坊、锡矿
 
 #### 机会成本
 
@@ -11626,7 +11670,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：露天青铜作坊；解锁物资：青铜工具
+解锁物资：青铜工具；解锁建筑：露天青铜作坊；作为必要支撑：铜矿
 
 #### 机会成本
 
@@ -11676,10 +11720,149 @@ terrain.floodplain.agriculture产出 +12%
 
 无
 
+### 应用：马铃薯农场 (`tech.application.potato_collector`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.potato_collector` |
+| 时代 | 农耕时代 (`agrarian`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 9360 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.tuber\_highland |
+| 主要路线 | 作物 · 块茎作物 (\`route.crop.tuber\`) |
+| 全部路线 | 作物 · 块茎作物 (\`route.crop.tuber\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 垄作块茎 (`tech.ridge_tuber_cultivation`)：tech.ridge\_tuber\_cultivation是马铃薯农场不可替代的知识基础。
+- 块茎繁育 (`tech.potato_propagation`)：tech.potato\_propagation是马铃薯农场不可替代的知识基础。
+- 雨养田体系 (`tech.rainfed_field_system`)：tech.rainfed\_field\_system是马铃薯农场不可替代的知识基础。
+- 家庭土地占有 (`tech.household_landholding`)：tech.household\_landholding是马铃薯农场不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：马铃薯；解锁建筑：马铃薯农场
+
+#### 机会成本
+
+多条知识路线汇合为一个可见应用节点，避免建筑条件隐式叠加。
+
+#### 内容解锁
+
+- **物资：** 马铃薯 (`potatoes`)
+- **建筑 / 生产方式：** 马铃薯农场 (`potato_collector`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **马铃薯**（`good`）：`good.potatoes` → `production_access` `unlock` `1.0`；`existing_binding`
+- **马铃薯农场**（`building`）：`building.potato_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+- 应用：佃作马铃薯田 (`tech.application.tenant_potato_field`)：tech.application.potato\_collector是佃作马铃薯田不可替代的知识基础。
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 应用：药草园 (`tech.application.medicinal_herb_garden`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.medicinal_herb_garden` |
+| 时代 | 农耕时代 (`agrarian`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 9360 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.tropical\_commodities |
+| 主要路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
+| 全部路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 种子与繁育观察 (`tech.crop_domestication`)：tech.crop\_domestication是药草园不可替代的知识基础。
+- 家庭生产 (`tech.household_production`)：tech.household\_production是药草园不可替代的知识基础。
+- 香料栽培 (`tech.spice_cultivation`)：tech.spice\_cultivation是药草园不可替代的知识基础。
+- 遮阴香料园 (`tech.spice_shade_gardening`)：tech.spice\_shade\_gardening是药草园不可替代的知识基础。
+- 野生韧皮采集 (`tech.wild_flax_collection`)：tech.wild\_flax\_collection是药草园不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：药材；解锁建筑：药草园
+
+#### 机会成本
+
+无
+
+#### 内容解锁
+
+- **物资：** 药材 (`medicinal_herbs`)
+- **建筑 / 生产方式：** 药草园 (`medicinal_herb_garden`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **药材**（`good`）：`good.medicinal_herbs` → `production_access` `unlock` `1.0`；`catalog_rebind`
+- **药草园**（`building`）：`building.medicinal_herb_garden` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+- 应用：药材商品园 (`tech.application.medicinal_herb_estate`)：tech.application.medicinal\_herb\_garden是药材商品园不可替代的知识基础。
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
 <a id="era-3"></a>
 ## 王国时代
 
-共 52 项科技，研究成本范围 3000-30000；时代里程碑：王国体系 (`tech.kingdom_administration`)。
+共 63 项科技，研究成本范围 3000-30000；时代里程碑：王国体系 (`tech.kingdom_administration`)。
 
 ### 应用：传知者议事圈 (`tech.application.lorekeeper_circle`)
 
@@ -11712,7 +11895,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：传知者议事圈
+解锁物资：科技值；解锁建筑：传知者议事圈
 
 #### 机会成本
 
@@ -11780,7 +11963,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：商栈
+解锁建筑：商栈；作为必要支撑：传知者议事圈
 
 #### 机会成本
 
@@ -11846,7 +12029,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：口述记忆圈
+解锁物资：科技值；解锁建筑：口述记忆圈
 
 #### 机会成本
 
@@ -11914,7 +12097,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：洪水历法祭所
+解锁物资：科技值；解锁建筑：洪水历法祭所
 
 #### 机会成本
 
@@ -11984,7 +12167,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：菜蔬农场
+解锁物资：蔬菜；解锁建筑：菜蔬农场；作为必要支撑：畦埂水稻田、冷凉高地块茎田
 
 #### 机会成本
 
@@ -12053,7 +12236,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：小麦农场
+解锁物资：小麦；解锁建筑：小麦农场
 
 #### 机会成本
 
@@ -12122,7 +12305,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：稻作农场；解锁物资：稻米
+解锁物资：稻米；解锁建筑：稻作农场；作为必要支撑：畦埂水稻田
 
 #### 机会成本
 
@@ -12191,7 +12374,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-解锁建筑：屠宰场；解锁物资：肉类
+解锁物资：肉类；解锁物资：生皮；解锁建筑：屠宰场
 
 #### 机会成本
 
@@ -12258,7 +12441,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-全社会经济产出 +3%
+全社会经济产出 +3%；作为必要支撑：树皮纸工坊、皮纸工坊、植物纤维抄纸坊
 
 #### 机会成本
 
@@ -12339,7 +12522,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-可利用资源：石灰岩；营造方法产出 +12%
+可利用资源：石灰岩；营造方法产出 +12%；作为必要支撑：石作工场、煤层平硐、石灰石采石场、石料场
 
 #### 机会成本
 
@@ -12481,7 +12664,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-全社会经济产出 +3%
+全社会经济产出 +3%；作为必要支撑：地籍管理局
 
 #### 机会成本
 
@@ -12549,7 +12732,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-国内贸易容量 +8%
+国内贸易容量 +8%；作为必要支撑：珠宝厂
 
 #### 机会成本
 
@@ -12760,7 +12943,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-航运作业产出 +12%；解锁国内河运与湖泊走廊
+航运作业产出 +12%
 
 #### 机会成本
 
@@ -12827,7 +13010,7 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 效果摘要
 
-谷物产出 +18%
+谷物产出 +18%；作为必要支撑：工业榨油厂
 
 #### 机会成本
 
@@ -13382,7 +13565,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-研究机构产出 +25%
+研究机构产出 +25%；作为必要支撑：活字印刷坊、印刷厂、木版印刷坊
 
 #### 机会成本
 
@@ -13527,7 +13710,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-地籍机构产出 +12%
+地籍机构产出 +12%；作为必要支撑：佃作稻庄、佃作水田、佃作雨养玉米田、佃作雨养小麦田
 
 #### 机会成本
 
@@ -13557,6 +13740,11 @@ pharmaceuticals产出 +12%
 - 应用：佃作水田 (`tech.application.tenant_paddy`)：习惯佃作是应用：佃作水田不可替代的知识基础。
 - 庄园谷物经营 (`tech.manorial_cereal_farming`)：习惯佃作是庄园谷物经营不可替代的知识基础。
 - 应用：佃作稻庄 (`tech.application.method_rice_collector_r3`)：习惯佃作是应用：佃作稻庄不可替代的知识基础。
+- 应用：佃作马铃薯田 (`tech.application.tenant_potato_field`)：tech.customary\_tenancy是佃作马铃薯田不可替代的知识基础。
+- 应用：马铃薯庄园 (`tech.application.potato_estate`)：tech.customary\_tenancy是马铃薯庄园不可替代的知识基础。
+- 应用：佃作棉花田 (`tech.application.cotton_smallholding`)：tech.customary\_tenancy是佃作棉花田不可替代的知识基础。
+- 应用：商品香料园 (`tech.application.spice_managed_garden`)：tech.customary\_tenancy是商品香料园不可替代的知识基础。
+- 应用：药材商品园 (`tech.application.medicinal_herb_estate`)：tech.customary\_tenancy是药材商品园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -13598,7 +13786,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-地籍机构产出 +12%
+地籍机构产出 +12%；作为必要支撑：分成水田
 
 #### 机会成本
 
@@ -13666,7 +13854,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-地籍机构产出 +12%
+地籍机构产出 +12%；作为必要支撑：地籍管理局、庄园水田、玉米庄园、亚麻庄园、改良亚麻庄园、精耕稻庄、佃作小麦庄园、改良轮作小麦庄园
 
 #### 机会成本
 
@@ -13703,6 +13891,8 @@ pharmaceuticals产出 +12%
 - 应用：改良轮作小麦庄园 (`tech.application.method_wheat_farm_r5`)：庄园核算是应用：改良轮作小麦庄园不可替代的知识基础。
 - 应用：改良亚麻庄园 (`tech.application.method_flax_collector_r5`)：庄园核算是应用：改良亚麻庄园不可替代的知识基础。
 - 应用：地籍管理局 (`tech.application.cadastral_office`)：庄园核算是应用：地籍管理局不可替代的知识基础。
+- 应用：马铃薯庄园 (`tech.application.potato_estate`)：tech.estate\_accounting是马铃薯庄园不可替代的知识基础。
+- 应用：改良轮作马铃薯庄园 (`tech.application.method_potato_farm_r5`)：tech.estate\_accounting是改良轮作马铃薯庄园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -13771,6 +13961,7 @@ pharmaceuticals产出 +12%
 
 - 应用：佃作雨养玉米田 (`tech.application.tenant_rainfed_maize_field`)：佃作谷物是应用：佃作雨养玉米田不可替代的知识基础。
 - 应用：佃作雨养小麦田 (`tech.application.tenant_rainfed_wheat_field`)：佃作谷物是应用：佃作雨养小麦田不可替代的知识基础。
+- 应用：佃作马铃薯田 (`tech.application.tenant_potato_field`)：tech.tenant\_cereal\_farming是佃作马铃薯田不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -13949,7 +14140,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-iron\_extraction产出 +12%
+iron\_extraction产出 +12%；作为必要支撑：块炼炉、浅层铁矿、铁制工具工坊
 
 #### 机会成本
 
@@ -14020,7 +14211,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-iron\_extraction产出 +12%
+iron\_extraction产出 +12%；作为必要支撑：浅层铁矿
 
 #### 机会成本
 
@@ -14050,6 +14241,7 @@ iron\_extraction产出 +12%
 - 高炉冶炼 (`tech.blast_furnace`)：块炼铁是高炉冶炼不可替代的知识基础。
 - 坩埚钢 (`tech.crucible_steel`)：块炼铁是坩埚钢不可替代的知识基础。
 - 应用：浅层铁矿 (`tech.application.early_iron_mine`)：块炼铁是应用：浅层铁矿不可替代的知识基础。
+- Metal Housewares Workshop (`tech.application.metal_housewares_workshop_kingdom`)：knowledge prerequisite: tech.bronze\_casting -\> Metal Housewares Workshop
 
 #### 主题路线后继
 
@@ -14091,7 +14283,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-可利用资源：煤炭；全社会 +12%
+可利用资源：煤炭；全社会 +12%；作为必要支撑：露头煤采集场
 
 #### 机会成本
 
@@ -14161,7 +14353,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-全社会 +12%
+全社会 +12%；作为必要支撑：煤层平硐
 
 #### 机会成本
 
@@ -14381,7 +14573,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-解锁建筑：家用织机；解锁物资：布料
+解锁物资：布料；解锁建筑：家用织机
 
 #### 机会成本
 
@@ -14448,8 +14640,9 @@ iron\_extraction产出 +12%
 
 #### 硬前置（决定研发资格）
 
-- 沤麻 (`tech.flax_retting`)：沤麻是应用：沤麻池不可替代的知识基础。
-- 野生韧皮采集 (`tech.wild_flax_collection`)：野生韧皮采集是应用：沤麻池不可替代的知识基础。
+- 沤麻 (`tech.flax_retting`)：tech.flax\_retting是沤麻池不可替代的知识基础。
+- 野生韧皮采集 (`tech.wild_flax_collection`)：tech.wild\_flax\_collection是沤麻池不可替代的知识基础。
+- 应用：亚麻农场 (`tech.application.flax_collector`)：tech.application.flax\_collector是沤麻池不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -14457,7 +14650,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-解锁建筑：沤麻池
+解锁物资：亚麻纤维；解锁建筑：沤麻池；作为必要支撑：家庭纺织坊、亚麻庄园、改良亚麻庄园
 
 #### 机会成本
 
@@ -14481,7 +14674,8 @@ iron\_extraction产出 +12%
 
 #### 被以下科技作为硬前置
 
-无
+- 应用：行会织造坊 (`tech.application.guild_weaving_house`)：tech.application.flax\_retting\_pit是行会织造坊不可替代的知识基础。
+- 应用：碎布造纸工坊 (`tech.application.rag_paper_workshop`)：tech.application.flax\_retting\_pit是碎布造纸工坊不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -14526,7 +14720,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-解锁建筑：手工轧棉棚；解锁物资：棉纤维
+解锁物资：棉纤维；解锁建筑：手工轧棉棚；作为必要支撑：家庭棉花园圃
 
 #### 机会成本
 
@@ -14595,7 +14789,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-解锁建筑：露头煤采集场；解锁物资：煤炭
+解锁物资：煤炭；解锁建筑：露头煤采集场；作为必要支撑：煤层平硐
 
 #### 机会成本
 
@@ -14669,7 +14863,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-解锁建筑：日晒盐田
+解锁物资：食盐；解锁建筑：日晒盐田
 
 #### 机会成本
 
@@ -14744,7 +14938,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-解锁建筑：佃作雨养玉米田
+解锁物资：玉米；解锁建筑：佃作雨养玉米田
 
 #### 机会成本
 
@@ -14814,7 +15008,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-解锁建筑：佃作雨养小麦田
+解锁物资：小麦；解锁建筑：佃作雨养小麦田
 
 #### 机会成本
 
@@ -14884,7 +15078,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-解锁建筑：乳胶烟熏凝固棚；解锁物资：凝固天然橡胶
+解锁物资：凝固天然橡胶；解锁建筑：乳胶烟熏凝固棚；作为必要支撑：橡胶种植园
 
 #### 机会成本
 
@@ -14955,7 +15149,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-解锁建筑：分成水田；解锁物资：稻米
+解锁物资：稻米；解锁建筑：分成水田
 
 #### 机会成本
 
@@ -15026,7 +15220,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-解锁建筑：佃作水田
+解锁物资：稻米；解锁建筑：佃作水田
 
 #### 机会成本
 
@@ -15094,7 +15288,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-解锁建筑：地表铁矿采集场；解锁物资：铁矿石
+解锁物资：铁矿石；解锁建筑：地表铁矿采集场；作为必要支撑：块炼炉、浅层铁矿、铁制工具工坊
 
 #### 机会成本
 
@@ -15165,7 +15359,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-解锁建筑：块炼炉；解锁物资：锻铁
+解锁物资：锻铁；解锁建筑：块炼炉；作为必要支撑：浅层铁矿
 
 #### 机会成本
 
@@ -15190,6 +15384,7 @@ iron\_extraction产出 +12%
 #### 被以下科技作为硬前置
 
 - 应用：铁制工具工坊 (`tech.application.iron_tool_workshop`)：应用：块炼炉是应用：铁制工具工坊不可替代的知识基础。
+- Metal Housewares Workshop (`tech.application.metal_housewares_workshop_kingdom`)：knowledge prerequisite: tech.iron\_smelting -\> Metal Housewares Workshop
 
 #### 主题路线后继
 
@@ -15234,7 +15429,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-解锁建筑：铁制工具工坊；解锁物资：金属工具
+解锁物资：金属工具；解锁建筑：铁制工具工坊；作为必要支撑：浅层铁矿
 
 #### 机会成本
 
@@ -15314,7 +15509,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-解锁建筑：青铜工具工坊
+解锁物资：青铜工具；解锁建筑：青铜工具工坊；作为必要支撑：浅层锡矿、露天青铜作坊、锡矿
 
 #### 机会成本
 
@@ -15352,10 +15547,909 @@ iron\_extraction产出 +12%
 
 无
 
+### 应用：烧砖窑 (`tech.application.fired_brick_kiln`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.fired_brick_kiln` |
+| 时代 | 王国时代 (`kingdom`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 8160 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.construction\_materials |
+| 主要路线 | 材料 · 黏土 (\`route.material.clay\`) |
+| 全部路线 | 材料 · 黏土 (\`route.material.clay\`)；能源 · 火 (\`route.energy.fire\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | craft |
+
+#### 硬前置（决定研发资格）
+
+- 窑烧控制 (`tech.kiln_firing`)：窑烧控制是应用：烧砖窑不可替代的知识基础。
+- 日晒土坯 (`tech.adobe_making`)：日晒土坯是应用：烧砖窑不可替代的知识基础。
+- 黏土调制 (`tech.clay_preparation`)：黏土调制是应用：烧砖窑不可替代的知识基础。
+- 木炭烧制 (`tech.charcoal_burning`)：木炭烧制是应用：烧砖窑不可替代的知识基础。
+- 应用：日晒土坯场 (`tech.application.adobe_yard`)：应用：日晒土坯场是应用：烧砖窑不可替代的知识基础。
+- 磨制石器 (`tech.ground_stone_tools`)：磨制石器是应用：烧砖窑不可替代的知识基础。
+- 应用：覆土木炭窑 (`tech.application.charcoal_pit`)：应用：覆土木炭窑是应用：烧砖窑不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：砖块；解锁建筑：烧砖窑；作为必要支撑：制砖厂、土法炼锡炉、烧砖窑、行会陶窑、锡矿
+
+#### 机会成本
+
+多条知识路线汇合为一个可见应用节点，避免建筑条件隐式叠加。
+
+#### 内容解锁
+
+- **物资：** 砖块 (`bricks`)
+- **建筑 / 生产方式：** 烧砖窑 (`fired_brick_kiln`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **砖块**（`good`）：`good.bricks` → `production_access` `unlock` `1.0`；`existing_binding`
+- **烧砖窑**（`building`）：`building.fired_brick_kiln` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+- 铜矿开采 (`tech.copper_mining_application`)：应用：烧砖窑是铜矿开采不可替代的知识基础。
+- 应用：盐场 (`tech.application.salt_collector`)：应用：烧砖窑是应用：盐场不可替代的知识基础。
+- 应用：城邦抄写室 (`tech.application.classical_scriptorium`)：应用：烧砖窑是应用：城邦抄写室不可替代的知识基础。
+- 应用：石灰石采石场 (`tech.application.limestone_collector`)：应用：烧砖窑是应用：石灰石采石场不可替代的知识基础。
+- 应用：石灰厂 (`tech.application.lime_plant`)：应用：烧砖窑是应用：石灰厂不可替代的知识基础。
+- 应用：行会织造坊 (`tech.application.guild_weaving_house`)：tech.application.fired\_brick\_kiln是行会织造坊不可替代的知识基础。
+- 应用：硅砂矿坑 (`tech.application.classical_silica_pit`)：应用：烧砖窑是应用：硅砂矿坑不可替代的知识基础。
+- 应用：组织化伐木场 (`tech.application.method_timber_collector_r2`)：应用：烧砖窑是应用：组织化伐木场不可替代的知识基础。
+- 应用：帆船渔场 (`tech.application.method_marine_fish_collector_r2`)：应用：烧砖窑是应用：帆船渔场不可替代的知识基础。
+- 应用：黏土坑 (`tech.application.clay_collector`)：应用：烧砖窑是应用：黏土坑不可替代的知识基础。
+- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：烧砖窑是应用：改良锯木场不可替代的知识基础。
+- 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：烧砖窑是应用：玻璃窑不可替代的知识基础。
+- 应用：石料场 (`tech.application.method_stone_collector_r2`)：应用：烧砖窑是应用：石料场不可替代的知识基础。
+- 应用：公共营造场 (`tech.application.classical_public_works`)：应用：烧砖窑是应用：公共营造场不可替代的知识基础。
+- 应用：水力锯木场 (`tech.application.method_lumber_plant_r4`)：应用：烧砖窑是应用：水力锯木场不可替代的知识基础。
+- 应用：养马场 (`tech.application.horse_breeder`)：应用：烧砖窑是应用：养马场不可替代的知识基础。
+- 应用：鞋匠铺 (`tech.application.cobbler_shop`)：应用：烧砖窑是应用：鞋匠铺不可替代的知识基础。
+- 应用：酿酒坊 (`tech.application.brewery`)：应用：烧砖窑是应用：酿酒坊不可替代的知识基础。
+- 应用：蒸馏酒坊 (`tech.application.distillery`)：应用：烧砖窑是应用：蒸馏酒坊不可替代的知识基础。
+- 应用：榨油坊 (`tech.application.edible_oil_plant`)：应用：烧砖窑是应用：榨油坊不可替代的知识基础。
+- 应用：古典学院 (`tech.application.classical_academy`)：应用：烧砖窑是应用：古典学院不可替代的知识基础。
+- 应用：庄园牧场 (`tech.application.manorial_pasture`)：应用：烧砖窑是应用：庄园牧场不可替代的知识基础。
+- 应用：家具行会工坊 (`tech.application.guild_hall`)：应用：烧砖窑是应用：家具行会工坊不可替代的知识基础。
+- 应用：煤矿 (`tech.application.coal_mine`)：应用：烧砖窑是应用：煤矿不可替代的知识基础。
+- 应用：堆肥场 (`tech.application.composting_yard`)：应用：烧砖窑是应用：堆肥场不可替代的知识基础。
+- 应用：特许大学 (`tech.application.chartered_university`)：应用：烧砖窑是应用：特许大学不可替代的知识基础。
+- 应用：细木家具工坊 (`tech.application.cabinetmaker_workshop`)：应用：烧砖窑是应用：细木家具工坊不可替代的知识基础。
+- 应用：宫廷裁缝坊 (`tech.application.court_tailor`)：应用：烧砖窑是应用：宫廷裁缝坊不可替代的知识基础。
+- 应用：玉米庄园 (`tech.application.landed_estate`)：应用：烧砖窑是应用：玉米庄园不可替代的知识基础。
+- 应用：庄园水田 (`tech.application.estate_paddy`)：应用：烧砖窑是应用：庄园水田不可替代的知识基础。
+- 应用：药材种植园 (`tech.application.medicinal_herbs_collector`)：应用：烧砖窑是应用：药材种植园不可替代的知识基础。
+- 应用：锡矿 (`tech.application.tin_ore_collector`)：应用：烧砖窑是应用：锡矿不可替代的知识基础。
+- 应用：棉花农场 (`tech.application.cotton_collector`)：应用：烧砖窑是应用：棉花农场不可替代的知识基础。
+- 应用：亚麻庄园 (`tech.application.method_flax_collector_r3`)：应用：烧砖窑是应用：亚麻庄园不可替代的知识基础。
+- 应用：改良亚麻庄园 (`tech.application.method_flax_collector_r5`)：应用：烧砖窑是应用：改良亚麻庄园不可替代的知识基础。
+- 应用：印刷学社 (`tech.application.printing_academy`)：应用：烧砖窑是应用：印刷学社不可替代的知识基础。
+- 应用：罐头工坊 (`tech.application.canning_workshop`)：应用：烧砖窑是应用：罐头工坊不可替代的知识基础。
+- 焦炭冶炼 (`tech.coke_smelting`)：应用：烧砖窑是焦炭冶炼不可替代的知识基础。
+- 应用：炸药厂 (`tech.application.explosives_plant`)：应用：烧砖窑是应用：炸药厂不可替代的知识基础。
+- 应用：浅层铁矿 (`tech.application.early_iron_mine`)：应用：烧砖窑是应用：浅层铁矿不可替代的知识基础。
+- 应用：面包厂 (`tech.application.bread_plant`)：应用：烧砖窑是应用：面包厂不可替代的知识基础。
+- 应用：铅矿 (`tech.application.lead_ore_collector`)：应用：烧砖窑是应用：铅矿不可替代的知识基础。
+- 应用：金矿 (`tech.application.gold_mine`)：应用：烧砖窑是应用：金矿不可替代的知识基础。
+- 应用：深井盐矿 (`tech.application.industrial_salt_mine`)：应用：烧砖窑是应用：深井盐矿不可替代的知识基础。
+- 应用：改良小农场 (`tech.application.improved_smallholding`)：应用：烧砖窑是应用：改良小农场不可替代的知识基础。
+- 应用：水泥厂 (`tech.application.cement_plant`)：应用：烧砖窑是应用：水泥厂不可替代的知识基础。
+- 应用：鱼类罐头厂 (`tech.application.canned_fish_plant`)：应用：烧砖窑是应用：鱼类罐头厂不可替代的知识基础。
+- 应用：制衣厂 (`tech.application.clothing_plant`)：应用：烧砖窑是应用：制衣厂不可替代的知识基础。
+- 应用：玻璃厂 (`tech.application.glass_plant`)：应用：烧砖窑是应用：玻璃厂不可替代的知识基础。
+- 应用：化学工场 (`tech.application.industrial_chemicals_plant`)：应用：烧砖窑是应用：化学工场不可替代的知识基础。
+- 应用：制鞋厂 (`tech.application.footwear_plant`)：应用：烧砖窑是应用：制鞋厂不可替代的知识基础。
+- 应用：家具厂 (`tech.application.furniture_plant`)：应用：烧砖窑是应用：家具厂不可替代的知识基础。
+- 应用：机械零件厂 (`tech.application.machine_parts_plant`)：应用：烧砖窑是应用：机械零件厂不可替代的知识基础。
+- 应用：制革厂 (`tech.application.leather_plant`)：应用：烧砖窑是应用：制革厂不可替代的知识基础。
+- 应用：蒸汽锯木厂 (`tech.application.method_lumber_plant_r6`)：应用：烧砖窑是应用：蒸汽锯木厂不可替代的知识基础。
+- 应用：工业机械厂 (`tech.application.industrial_machinery_plant`)：应用：烧砖窑是应用：工业机械厂不可替代的知识基础。
+- 应用：工业屠宰场 (`tech.application.mechanized_slaughterhouse`)：应用：烧砖窑是应用：工业屠宰场不可替代的知识基础。
+- 应用：工业榨油厂 (`tech.application.method_edible_oil_plant_r6`)：应用：烧砖窑是应用：工业榨油厂不可替代的知识基础。
+- 应用：农业机械厂 (`tech.application.agricultural_machinery_plant`)：应用：烧砖窑是应用：农业机械厂不可替代的知识基础。
+- 应用：工业石灰厂 (`tech.application.method_lime_plant_r6`)：应用：烧砖窑是应用：工业石灰厂不可替代的知识基础。
+- 应用：机械化棉花农场 (`tech.application.method_cotton_collector_r6`)：应用：烧砖窑是应用：机械化棉花农场不可替代的知识基础。
+- 应用：机械化农场 (`tech.application.mechanized_farm`)：应用：烧砖窑是应用：机械化农场不可替代的知识基础。
+- 应用：机械化玉米农场 (`tech.application.method_landed_estate_r6`)：应用：烧砖窑是应用：机械化玉米农场不可替代的知识基础。
+- 应用：乳制品厂 (`tech.application.dairy_products_plant`)：应用：烧砖窑是应用：乳制品厂不可替代的知识基础。
+- 应用：博学学会 (`tech.application.learned_society`)：应用：烧砖窑是应用：博学学会不可替代的知识基础。
+- 应用：地籍管理局 (`tech.application.cadastral_office`)：应用：烧砖窑是应用：地籍管理局不可替代的知识基础。
+- 应用：综合工学院 (`tech.application.polytechnic_institute`)：应用：烧砖窑是应用：综合工学院不可替代的知识基础。
+- 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：烧砖窑是应用：混凝土厂不可替代的知识基础。
+- 应用：建筑构件厂 (`tech.application.construction_components_plant`)：应用：烧砖窑是应用：建筑构件厂不可替代的知识基础。
+- 应用：蒸汽钻井场 (`tech.application.early_oil_well`)：应用：烧砖窑是应用：蒸汽钻井场不可替代的知识基础。
+- 先进冶金 (`tech.advanced_metallurgy`)：应用：烧砖窑是先进冶金不可替代的知识基础。
+- 应用：铝土矿 (`tech.application.bauxite_collector`)：应用：烧砖窑是应用：铝土矿不可替代的知识基础。
+- 应用：工业石灰岩矿场 (`tech.application.method_limestone_collector_r6`)：应用：烧砖窑是应用：工业石灰岩矿场不可替代的知识基础。
+- 应用：机械化小麦农场 (`tech.application.method_wheat_farm_r6`)：tech.application.fired\_brick\_kiln是机械化小麦农场不可替代的知识基础。
+- 应用：机械化稻作农场 (`tech.application.method_rice_collector_r6`)：tech.application.fired\_brick\_kiln是机械化稻作农场不可替代的知识基础。
+- 应用：机械化亚麻农场 (`tech.application.method_flax_collector_r6`)：tech.application.fired\_brick\_kiln是机械化亚麻农场不可替代的知识基础。
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 应用：硅砂矿坑 (`tech.application.classical_silica_pit`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.classical_silica_pit` |
+| 时代 | 王国时代 (`kingdom`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 9360 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.construction\_materials |
+| 主要路线 | 材料 · 合成材料 (\`route.material.materials\`) |
+| 全部路线 | 材料 · 合成材料 (\`route.material.materials\`)；能源 · 火 (\`route.energy.fire\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | craft |
+
+#### 硬前置（决定研发资格）
+
+- 早期玻璃烧制 (`tech.early_glassmaking`)：早期玻璃烧制是应用：硅砂矿坑不可替代的知识基础。
+- 磨制石器 (`tech.ground_stone_tools`)：磨制石器是应用：硅砂矿坑不可替代的知识基础。
+- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：硅砂矿坑不可替代的知识基础。
+- 自然观察 (`tech.natural_observation`)：自然观察是应用：硅砂矿坑不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：硅砂；解锁建筑：硅砂矿坑
+
+#### 机会成本
+
+多条知识路线汇合为一个可见应用节点，避免建筑条件隐式叠加。
+
+#### 内容解锁
+
+- **物资：** 硅砂 (`silica_sand`)
+- **建筑 / 生产方式：** 硅砂矿坑 (`classical_silica_pit`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **硅砂**（`good`）：`good.silica_sand` → `production_access` `unlock` `1.0`；`existing_binding`
+- **硅砂矿坑**（`building`）：`building.classical_silica_pit` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+- 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：硅砂矿坑是应用：玻璃窑不可替代的知识基础。
+- 应用：玻璃厂 (`tech.application.glass_plant`)：应用：硅砂矿坑是应用：玻璃厂不可替代的知识基础。
+- 应用：早期半导体厂 (`tech.application.basic_semiconductor_fab`)：应用：硅砂矿坑是应用：早期半导体厂不可替代的知识基础。
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 应用：制革工坊 (`tech.application.tannery`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.tannery` |
+| 时代 | 王国时代 (`kingdom`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 9360 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.pastoral\_livestock |
+| 主要路线 | 生态 · 野生动物 (\`route.ecology.game\`) |
+| 全部路线 | 生态 · 野生动物 (\`route.ecology.game\`)；工艺 · 纺织 (\`route.craft.textiles\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | craft |
+
+#### 硬前置（决定研发资格）
+
+- 皮革鞣制 (`tech.hide_tanning`)：皮革鞣制是应用：制革工坊不可替代的知识基础。
+- 枯枝采集 (`tech.deadwood_collection`)：枯枝采集是应用：制革工坊不可替代的知识基础。
+- 磨制石器 (`tech.ground_stone_tools`)：磨制石器是应用：制革工坊不可替代的知识基础。
+- 应用：露天青铜作坊 (`tech.application.ore_bronzesmith_camp`)：应用：露天青铜作坊是应用：制革工坊不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：皮革；解锁建筑：制革工坊；作为必要支撑：制鞋厂、制革厂、皮纸工坊
+
+#### 机会成本
+
+多条知识路线汇合为一个可见应用节点，避免建筑条件隐式叠加。
+
+#### 内容解锁
+
+- **物资：** 皮革 (`leather`)
+- **建筑 / 生产方式：** 制革工坊 (`tannery`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **皮革**（`good`）：`good.leather` → `production_access` `unlock` `1.0`；`existing_binding`
+- **制革工坊**（`building`）：`building.tannery` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+- 应用：鞋匠铺 (`tech.application.cobbler_shop`)：应用：制革工坊是应用：鞋匠铺不可替代的知识基础。
+- 应用：制鞋厂 (`tech.application.footwear_plant`)：应用：制革工坊是应用：制鞋厂不可替代的知识基础。
+- Leather Goods Workshop (`tech.application.leather_goods_workshop_kingdom`)：knowledge prerequisite: tech.hide\_tanning -\> Leather Goods Workshop
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 应用：玻璃窑 (`tech.application.classical_glass_kiln`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.classical_glass_kiln` |
+| 时代 | 王国时代 (`kingdom`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 9360 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.construction\_materials |
+| 主要路线 | 材料 · 合成材料 (\`route.material.materials\`) |
+| 全部路线 | 材料 · 合成材料 (\`route.material.materials\`)；能源 · 火 (\`route.energy.fire\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | craft |
+
+#### 硬前置（决定研发资格）
+
+- 早期玻璃烧制 (`tech.early_glassmaking`)：早期玻璃烧制是应用：玻璃窑不可替代的知识基础。
+- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：玻璃窑不可替代的知识基础。
+- 应用：硅砂矿坑 (`tech.application.classical_silica_pit`)：应用：硅砂矿坑是应用：玻璃窑不可替代的知识基础。
+- 应用：露天青铜作坊 (`tech.application.ore_bronzesmith_camp`)：应用：露天青铜作坊是应用：玻璃窑不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：玻璃；解锁建筑：玻璃窑
+
+#### 机会成本
+
+多条知识路线汇合为一个可见应用节点，避免建筑条件隐式叠加。
+
+#### 内容解锁
+
+- **物资：** 玻璃 (`glass`)
+- **建筑 / 生产方式：** 玻璃窑 (`classical_glass_kiln`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **玻璃**（`good`）：`good.glass` → `production_access` `unlock` `1.0`；`existing_binding`
+- **玻璃窑**（`building`）：`building.classical_glass_kiln` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+- 应用：古典学院 (`tech.application.classical_academy`)：应用：玻璃窑是应用：古典学院不可替代的知识基础。
+- 应用：特许大学 (`tech.application.chartered_university`)：应用：玻璃窑是应用：特许大学不可替代的知识基础。
+- 应用：远洋造船厂 (`tech.application.oceanic_shipyard`)：应用：玻璃窑是应用：远洋造船厂不可替代的知识基础。
+- 应用：印刷学社 (`tech.application.printing_academy`)：应用：玻璃窑是应用：印刷学社不可替代的知识基础。
+- 应用：科学仪器工坊 (`tech.application.scientific_instrument_works`)：应用：玻璃窑提供应用：科学仪器工坊所需的建材“玻璃”。
+- 应用：燃煤发电厂 (`tech.application.electricity_plant`)：应用：玻璃窑提供应用：燃煤发电厂所需的建材“玻璃”。
+- 应用：早期电气设备厂 (`tech.application.basic_electrical_equipment_works`)：应用：玻璃窑提供应用：早期电气设备厂所需的建材“玻璃”。
+- 应用：博学学会 (`tech.application.learned_society`)：应用：玻璃窑是应用：博学学会不可替代的知识基础。
+- 应用：综合工学院 (`tech.application.polytechnic_institute`)：应用：玻璃窑是应用：综合工学院不可替代的知识基础。
+- 应用：建筑构件厂 (`tech.application.construction_components_plant`)：应用：玻璃窑是应用：建筑构件厂不可替代的知识基础。
+- 应用：珠宝厂 (`tech.application.jewelry_plant`)：应用：玻璃窑是应用：珠宝厂不可替代的知识基础。
+- 应用：电气化包装厂 (`tech.application.method_packaging_plant_r7`)：应用：玻璃窑是应用：电气化包装厂不可替代的知识基础。
+- 应用：电气印刷厂 (`tech.application.method_printed_materials_plant_r7`)：应用：玻璃窑是应用：电气印刷厂不可替代的知识基础。
+- 应用：高级家具厂 (`tech.application.fine_furniture_plant`)：应用：玻璃窑是应用：高级家具厂不可替代的知识基础。
+- 应用：电化工厂 (`tech.application.electrochemical_works`)：应用：玻璃窑是应用：电化工厂不可替代的知识基础。
+- 应用：电力纺织厂 (`tech.application.cloth_plant`)：应用：玻璃窑是应用：电力纺织厂不可替代的知识基础。
+- 应用：炼油厂 (`tech.application.refined_fuel_plant`)：应用：玻璃窑是应用：炼油厂不可替代的知识基础。
+- 应用：综合食品厂 (`tech.application.processed_food_plant`)：应用：玻璃窑是应用：综合食品厂不可替代的知识基础。
+- 应用：受控环境药材农场 (`tech.application.method_medicinal_herbs_collector_r7`)：应用：玻璃窑是应用：受控环境药材农场不可替代的知识基础。
+- 应用：电动机厂 (`tech.application.electric_motor_plant`)：应用：玻璃窑是应用：电动机厂不可替代的知识基础。
+- 应用：电气化造船厂 (`tech.application.method_oceanic_shipyard_r7`)：应用：玻璃窑是应用：电气化造船厂不可替代的知识基础。
+- 应用：酿造厂 (`tech.application.beverages_plant`)：应用：玻璃窑是应用：酿造厂不可替代的知识基础。
+- 应用：高级成衣厂 (`tech.application.fine_clothing_plant`)：应用：玻璃窑是应用：高级成衣厂不可替代的知识基础。
+- 应用：油田 (`tech.application.oil_collector`)：应用：玻璃窑是应用：油田不可替代的知识基础。
+- 工业农学 (`tech.industrial_agronomy`)：应用：玻璃窑是工业农学不可替代的知识基础。
+- 应用：电池厂 (`tech.application.batteries_plant`)：应用：玻璃窑是应用：电池厂不可替代的知识基础。
+- 国家实验室 (`tech.national_laboratories`)：应用：玻璃窑是国家实验室不可替代的知识基础。
+- 应用：精密工具厂 (`tech.application.method_precision_tool_workshop_r8`)：应用：玻璃窑是应用：精密工具厂不可替代的知识基础。
+- 应用：铁路设备厂 (`tech.application.railway_equipment_plant`)：应用：玻璃窑是应用：铁路设备厂不可替代的知识基础。
+- 应用：燃油发电厂 (`tech.application.oil_power_plant`)：应用：玻璃窑是应用：燃油发电厂不可替代的知识基础。
+- 应用：现代炸药厂 (`tech.application.method_explosives_plant_r8`)：应用：玻璃窑是应用：现代炸药厂不可替代的知识基础。
+- 应用：精密仪器厂 (`tech.application.method_scientific_instrument_works_r8`)：应用：玻璃窑是应用：精密仪器厂不可替代的知识基础。
+- 应用：锰矿 (`tech.application.manganese_ore_collector`)：应用：玻璃窑是应用：锰矿不可替代的知识基础。
+- 应用：电解铝厂 (`tech.application.aluminum_plant`)：应用：玻璃窑是应用：电解铝厂不可替代的知识基础。
+- 应用：天然气田 (`tech.application.natural_gas_collector`)：应用：玻璃窑是应用：天然气田不可替代的知识基础。
+- 应用：现代硝石矿 (`tech.application.method_saltpeter_collector_r8`)：应用：玻璃窑是应用：现代硝石矿不可替代的知识基础。
+- 应用：现代硫矿 (`tech.application.method_sulfur_collector_r8`)：应用：玻璃窑是应用：现代硫矿不可替代的知识基础。
+- 应用：燃气发电厂 (`tech.application.gas_power_plant`)：应用：玻璃窑是应用：燃气发电厂不可替代的知识基础。
+- 应用：石油化工厂 (`tech.application.petrochemicals_plant`)：应用：玻璃窑是应用：石油化工厂不可替代的知识基础。
+- 应用：洗涤剂厂 (`tech.application.detergent_plant`)：应用：玻璃窑是应用：洗涤剂厂不可替代的知识基础。
+- 应用：合成橡胶厂 (`tech.application.synthetic_rubber_plant`)：应用：玻璃窑是应用：合成橡胶厂不可替代的知识基础。
+- 应用：塑料厂 (`tech.application.plastics_plant`)：应用：玻璃窑是应用：塑料厂不可替代的知识基础。
+- 应用：合成纤维厂 (`tech.application.synthetic_fiber_plant`)：应用：玻璃窑是应用：合成纤维厂不可替代的知识基础。
+- 应用：合成纤维织造厂 (`tech.application.synthetic_textile_mill`)：应用：玻璃窑是应用：合成纤维织造厂不可替代的知识基础。
+- 应用：电气设备厂 (`tech.application.electrical_equipment_plant`)：应用：玻璃窑是应用：电气设备厂不可替代的知识基础。
+- 应用：电子元件厂 (`tech.application.electronic_components_plant`)：应用：玻璃窑是应用：电子元件厂不可替代的知识基础。
+- 应用：绝缘电缆厂 (`tech.application.insulated_cable_plant`)：应用：玻璃窑是应用：绝缘电缆厂不可替代的知识基础。
+- 应用：无线电设备厂 (`tech.application.radio_equipment_works`)：应用：玻璃窑是应用：无线电设备厂不可替代的知识基础。
+- 应用：家用电器厂 (`tech.application.household_appliances_plant`)：应用：玻璃窑是应用：家用电器厂不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：应用：玻璃窑是数字计算不可替代的知识基础。
+- 应用：发动机厂 (`tech.application.engines_plant`)：应用：玻璃窑是应用：发动机厂不可替代的知识基础。
+- 应用：汽车厂 (`tech.application.automobiles_plant`)：应用：玻璃窑是应用：汽车厂不可替代的知识基础。
+- 卫星观测 (`tech.satellite_observation`)：应用：玻璃窑是卫星观测不可替代的知识基础。
+- 应用：战略金属冶炼厂 (`tech.application.rare_earth_metals_plant`)：应用：玻璃窑是应用：战略金属冶炼厂不可替代的知识基础。
+- 应用：核燃料厂 (`tech.application.nuclear_fuel_plant`)：应用：玻璃窑是应用：核燃料厂不可替代的知识基础。
+- 应用：核反应堆设备厂 (`tech.application.reactor_component_works`)：应用：玻璃窑是应用：核反应堆设备厂不可替代的知识基础。
+- 应用：核电站 (`tech.application.nuclear_power_plant`)：应用：玻璃窑是应用：核电站不可替代的知识基础。
+- 应用：核医学制药中心 (`tech.application.nuclear_medicine_center`)：应用：玻璃窑是应用：核医学制药中心不可替代的知识基础。
+- 应用：不锈钢厂 (`tech.application.stainless_steel_plant`)：应用：玻璃窑是应用：不锈钢厂不可替代的知识基础。
+- 应用：自动化焦化厂 (`tech.application.method_coke_ovens_r9`)：应用：玻璃窑是应用：自动化焦化厂不可替代的知识基础。
+- 机器学习 (`tech.machine_learning`)：应用：玻璃窑是机器学习不可替代的知识基础。
+- 自动化农业 (`tech.automated_agriculture`)：应用：玻璃窑是自动化农业不可替代的知识基础。
+- Glassware Workshop (`tech.application.glassware_workshop_kingdom`)：knowledge prerequisite: tech.early\_glassmaking -\> Glassware Workshop
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### Glassware Workshop (`tech.application.glassware_workshop_kingdom`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.glassware_workshop_kingdom` |
+| 时代 | 王国时代 (`kingdom`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 9360 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.construction\_materials |
+| 主要路线 | 材料 · 合成材料 (\`route.material.materials\`) |
+| 全部路线 | 材料 · 合成材料 (\`route.material.materials\`)；工艺 · 消费品 (\`route.craft.consumer\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | craft |
+
+#### 硬前置（决定研发资格）
+
+- 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：knowledge prerequisite: tech.early\_glassmaking -\> Glassware Workshop
+- 早期玻璃烧制 (`tech.early_glassmaking`)：knowledge prerequisite: tech.kiln\_firing -\> Glassware Workshop
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：Glassware Workshop；解锁建筑：Glassware Workshop；作为必要支撑：Glassware Workshop
+
+#### 机会成本
+
+terminal production upgrade
+
+#### 内容解锁
+
+- **物资：** 玻璃器皿 (`glassware`)
+- **建筑 / 生产方式：** 玻璃器皿小作坊 (`glassware_workshop`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **Glassware Workshop**（`good`）：`good.glassware` → `production_access` `unlock` `1.0`；`existing_binding`
+- **Glassware Workshop**（`building`）：`building.glassware_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+- Glassware Manufactory (`tech.application.glassware_manufactory_exploration`)：knowledge prerequisite: tech.application.glassware\_workshop\_kingdom -\> Glassware Manufactory
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### Metal Housewares Workshop (`tech.application.metal_housewares_workshop_kingdom`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.metal_housewares_workshop_kingdom` |
+| 时代 | 王国时代 (`kingdom`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 9360 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.construction\_materials |
+| 主要路线 | 材料 · 合成材料 (\`route.material.materials\`) |
+| 全部路线 | 材料 · 合成材料 (\`route.material.materials\`)；工艺 · 消费品 (\`route.craft.consumer\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | craft |
+
+#### 硬前置（决定研发资格）
+
+- 应用：块炼炉 (`tech.application.bloomery`)：knowledge prerequisite: tech.iron\_smelting -\> Metal Housewares Workshop
+- 块炼铁 (`tech.iron_smelting`)：knowledge prerequisite: tech.bronze\_casting -\> Metal Housewares Workshop
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：Metal Housewares Workshop；解锁建筑：Metal Housewares Workshop；作为必要支撑：Metal Housewares Workshop
+
+#### 机会成本
+
+terminal production upgrade
+
+#### 内容解锁
+
+- **物资：** 金属家用器皿 (`metal_housewares`)
+- **建筑 / 生产方式：** 金属家用器皿小作坊 (`metal_housewares_workshop`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **Metal Housewares Workshop**（`good`）：`good.metal_housewares` → `production_access` `unlock` `1.0`；`existing_binding`
+- **Metal Housewares Workshop**（`building`）：`building.metal_housewares_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+- Metal Housewares Manufactory (`tech.application.metal_housewares_manufactory_exploration`)：knowledge prerequisite: tech.application.metal\_housewares\_workshop\_kingdom -\> Metal Housewares Manufactory
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### Leather Goods Workshop (`tech.application.leather_goods_workshop_kingdom`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.leather_goods_workshop_kingdom` |
+| 时代 | 王国时代 (`kingdom`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 9360 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.construction\_materials |
+| 主要路线 | 材料 · 合成材料 (\`route.material.materials\`) |
+| 全部路线 | 材料 · 合成材料 (\`route.material.materials\`)；工艺 · 消费品 (\`route.craft.consumer\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | craft |
+
+#### 硬前置（决定研发资格）
+
+- 应用：制革工坊 (`tech.application.tannery`)：knowledge prerequisite: tech.hide\_tanning -\> Leather Goods Workshop
+- 皮革鞣制 (`tech.hide_tanning`)：knowledge prerequisite: tech.herd\_management -\> Leather Goods Workshop
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：Leather Goods Workshop；解锁建筑：Leather Goods Workshop；作为必要支撑：Leather Goods Workshop
+
+#### 机会成本
+
+terminal production upgrade
+
+#### 内容解锁
+
+- **物资：** 皮革制品 (`leather_goods`)
+- **建筑 / 生产方式：** 皮革制品小作坊 (`leather_goods_workshop`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **Leather Goods Workshop**（`good`）：`good.leather_goods` → `production_access` `unlock` `1.0`；`existing_binding`
+- **Leather Goods Workshop**（`building`）：`building.leather_goods_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+- Leather Goods Manufactory (`tech.application.leather_goods_manufactory_exploration`)：knowledge prerequisite: tech.application.leather\_goods\_workshop\_kingdom -\> Leather Goods Manufactory
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 应用：佃作马铃薯田 (`tech.application.tenant_potato_field`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.tenant_potato_field` |
+| 时代 | 王国时代 (`kingdom`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 20400 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.tuber\_highland |
+| 主要路线 | 作物 · 块茎作物 (\`route.crop.tuber\`) |
+| 全部路线 | 作物 · 块茎作物 (\`route.crop.tuber\`)；制度 · 市场 (\`route.institution.market\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 应用：马铃薯农场 (`tech.application.potato_collector`)：tech.application.potato\_collector是佃作马铃薯田不可替代的知识基础。
+- 习惯佃作 (`tech.customary_tenancy`)：tech.customary\_tenancy是佃作马铃薯田不可替代的知识基础。
+- 佃作谷物 (`tech.tenant_cereal_farming`)：tech.tenant\_cereal\_farming是佃作马铃薯田不可替代的知识基础。
+- 应用：日晒土坯场 (`tech.application.adobe_yard`)：tech.application.adobe\_yard是佃作马铃薯田不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：马铃薯；解锁建筑：佃作马铃薯田
+
+#### 机会成本
+
+无
+
+#### 内容解锁
+
+- **物资：** 马铃薯 (`potatoes`)
+- **建筑 / 生产方式：** 佃作马铃薯田 (`tenant_potato_field`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **马铃薯**（`good`）：`good.potatoes` → `production_access` `unlock` `1.0`；`catalog_rebind`
+- **佃作马铃薯田**（`building`）：`building.tenant_potato_field` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+- 应用：马铃薯庄园 (`tech.application.potato_estate`)：tech.application.tenant\_potato\_field是马铃薯庄园不可替代的知识基础。
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 应用：佃作棉花田 (`tech.application.cotton_smallholding`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.cotton_smallholding` |
+| 时代 | 王国时代 (`kingdom`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 20400 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.tropical\_commodities |
+| 主要路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
+| 全部路线 | 作物 · 热带作物 (\`route.crop.tropical\`)；制度 · 市场 (\`route.institution.market\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 应用：家庭棉花园圃 (`tech.application.cotton_garden`)：tech.application.cotton\_garden是佃作棉花田不可替代的知识基础。
+- 棉花去籽 (`tech.cotton_ginning`)：tech.cotton\_ginning是佃作棉花田不可替代的知识基础。
+- 习惯佃作 (`tech.customary_tenancy`)：tech.customary\_tenancy是佃作棉花田不可替代的知识基础。
+- 雨养田体系 (`tech.rainfed_field_system`)：tech.rainfed\_field\_system是佃作棉花田不可替代的知识基础。
+- 应用：日晒土坯场 (`tech.application.adobe_yard`)：tech.application.adobe\_yard是佃作棉花田不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：籽棉；解锁建筑：佃作棉花田
+
+#### 机会成本
+
+无
+
+#### 内容解锁
+
+- **物资：** 籽棉 (`seed_cotton`)
+- **建筑 / 生产方式：** 佃作棉花田 (`cotton_smallholding`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **籽棉**（`good`）：`good.seed_cotton` → `production_access` `unlock` `1.0`；`catalog_rebind`
+- **佃作棉花田**（`building`）：`building.cotton_smallholding` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 应用：商品香料园 (`tech.application.spice_managed_garden`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.spice_managed_garden` |
+| 时代 | 王国时代 (`kingdom`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 20400 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.tropical\_commodities |
+| 主要路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
+| 全部路线 | 作物 · 热带作物 (\`route.crop.tropical\`)；制度 · 市场 (\`route.institution.market\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 应用：林下遮阴香料园 (`tech.application.spice_shade_garden`)：tech.application.spice\_shade\_garden是商品香料园不可替代的知识基础。
+- 香料栽培 (`tech.spice_cultivation`)：tech.spice\_cultivation是商品香料园不可替代的知识基础。
+- 习惯佃作 (`tech.customary_tenancy`)：tech.customary\_tenancy是商品香料园不可替代的知识基础。
+- 应用：日晒土坯场 (`tech.application.adobe_yard`)：tech.application.adobe\_yard是商品香料园不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：香料；解锁建筑：商品香料园
+
+#### 机会成本
+
+无
+
+#### 内容解锁
+
+- **物资：** 香料 (`spices`)
+- **建筑 / 生产方式：** 商品香料园 (`spice_managed_garden`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **香料**（`good`）：`good.spices` → `production_access` `unlock` `1.0`；`catalog_rebind`
+- **商品香料园**（`building`）：`building.spice_managed_garden` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+- 应用：商业香料种植园 (`tech.application.spice_commercial_plantation`)：tech.application.spice\_managed\_garden是商业香料种植园不可替代的知识基础。
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 应用：药材商品园 (`tech.application.medicinal_herb_estate`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.medicinal_herb_estate` |
+| 时代 | 王国时代 (`kingdom`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 20400 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.tropical\_commodities |
+| 主要路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
+| 全部路线 | 作物 · 热带作物 (\`route.crop.tropical\`)；制度 · 市场 (\`route.institution.market\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 应用：药草园 (`tech.application.medicinal_herb_garden`)：tech.application.medicinal\_herb\_garden是药材商品园不可替代的知识基础。
+- 香料栽培 (`tech.spice_cultivation`)：tech.spice\_cultivation是药材商品园不可替代的知识基础。
+- 遮阴香料园 (`tech.spice_shade_gardening`)：tech.spice\_shade\_gardening是药材商品园不可替代的知识基础。
+- 习惯佃作 (`tech.customary_tenancy`)：tech.customary\_tenancy是药材商品园不可替代的知识基础。
+- 应用：日晒土坯场 (`tech.application.adobe_yard`)：tech.application.adobe\_yard是药材商品园不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：药材；解锁建筑：药材商品园
+
+#### 机会成本
+
+无
+
+#### 内容解锁
+
+- **物资：** 药材 (`medicinal_herbs`)
+- **建筑 / 生产方式：** 药材商品园 (`medicinal_herb_estate`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **药材**（`good`）：`good.medicinal_herbs` → `production_access` `unlock` `1.0`；`catalog_rebind`
+- **药材商品园**（`building`）：`building.medicinal_herb_estate` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
 <a id="era-4"></a>
 ## 帝国时代
 
-共 44 项科技，研究成本范围 3000-70000；时代里程碑：帝国网络 (`tech.imperial_integration`)。
+共 43 项科技，研究成本范围 3000-70000；时代里程碑：帝国网络 (`tech.imperial_integration`)。
 
 ### 应用：木槽溜洗场 (`tech.application.primitive_gold_sluice`)
 
@@ -15387,7 +16481,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-解锁建筑：木槽溜洗场；解锁物资：黄金
+解锁物资：黄金；解锁建筑：木槽溜洗场
 
 #### 机会成本
 
@@ -15455,7 +16549,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-解锁建筑：浅坑银矿作业
+解锁物资：白银；解锁建筑：浅坑银矿作业
 
 #### 机会成本
 
@@ -15524,7 +16618,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-解锁建筑：毛皮缝制棚；解锁物资：衣物
+解锁物资：衣物；解锁建筑：毛皮缝制棚
 
 #### 机会成本
 
@@ -15591,7 +16685,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-解锁建筑：物候观察棚
+解锁物资：科技值；解锁建筑：物候观察棚
 
 #### 机会成本
 
@@ -15659,7 +16753,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-解锁建筑：潮汐观察屋
+解锁物资：科技值；解锁建筑：潮汐观察屋
 
 #### 机会成本
 
@@ -15731,7 +16825,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-解锁建筑：升焰陶窑
+解锁物资：陶器；解锁建筑：升焰陶窑；作为必要支撑：制砖厂、土法炼锡炉、烧砖窑、行会陶窑、锡矿
 
 #### 机会成本
 
@@ -15802,7 +16896,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-解锁建筑：制砖厂；解锁物资：砖块
+解锁物资：砖块；解锁建筑：制砖厂；作为必要支撑：石作工场、烧砖窑
 
 #### 机会成本
 
@@ -15872,7 +16966,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-解锁建筑：面包坊；解锁物资：面包
+解锁物资：面包；解锁建筑：面包坊
 
 #### 机会成本
 
@@ -15938,7 +17032,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-timber +28%；terrain.forest.extractive产出 +22%
+timber +28%；terrain.forest.extractive产出 +22%；作为必要支撑：森林遥感经营站
 
 #### 机会成本
 
@@ -16079,7 +17173,7 @@ timber +28%；terrain.forest.extractive产出 +22%
 
 #### 效果摘要
 
-谷物产出 +22%
+谷物产出 +22%；作为必要支撑：佃作小麦庄园、改良轮作小麦庄园
 
 #### 机会成本
 
@@ -16110,6 +17204,8 @@ timber +28%；terrain.forest.extractive产出 +22%
 - 系统育种 (`tech.crop_breeding`)：集约轮作是系统育种不可替代的知识基础。
 - 应用：佃作小麦庄园 (`tech.application.method_wheat_farm_r3`)：集约轮作是应用：佃作小麦庄园不可替代的知识基础。
 - 应用：改良轮作小麦庄园 (`tech.application.method_wheat_farm_r5`)：集约轮作是应用：改良轮作小麦庄园不可替代的知识基础。
+- 应用：马铃薯庄园 (`tech.application.potato_estate`)：tech.intensive\_crop\_rotation是马铃薯庄园不可替代的知识基础。
+- 应用：改良轮作马铃薯庄园 (`tech.application.method_potato_farm_r5`)：tech.intensive\_crop\_rotation是改良轮作马铃薯庄园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -16289,7 +17385,7 @@ terrain.steppe.energy产出 +24%；landform.plateau.energy产出 +22%
 
 #### 效果摘要
 
-全社会 +8%
+全社会 +8%；作为必要支撑：行会陶窑、包装材料厂、印刷厂
 
 #### 机会成本
 
@@ -16592,7 +17688,7 @@ iron\_extraction产出 +12%
 
 #### 被以下科技作为硬前置
 
-- 应用：碎布造纸工坊 (`tech.application.rag_paper_workshop`)：破布纸是应用：碎布造纸工坊不可替代的知识基础。
+- 应用：碎布造纸工坊 (`tech.application.rag_paper_workshop`)：tech.rag\_paper\_making是碎布造纸工坊不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -16703,7 +17799,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-化学工业产出 +12%
+可利用资源：硫矿；化学工业产出 +12%
 
 #### 机会成本
 
@@ -16731,150 +17827,6 @@ iron\_extraction产出 +12%
 - 火药武器 (`tech.gunpowder_weapons`)：火药配制是火药武器不可替代的知识基础。
 - 应用：硝石矿 (`tech.application.saltpeter_collector`)：火药配制是应用：硝石矿不可替代的知识基础。
 - 应用：硫矿 (`tech.application.sulfur_collector`)：火药配制是应用：硫矿不可替代的知识基础。
-
-#### 主题路线后继
-
-无
-
-#### 跨领域应用
-
-无
-
-#### 作为候选参与的里程碑
-
-无
-
-### 应用：烧砖窑 (`tech.application.fired_brick_kiln`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.application.fired_brick_kiln` |
-| 时代 | 帝国时代 (`empire`) |
-| 领域 | 工程 (`engineering`) |
-| 研究成本 | 8160 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | branch |
-| 锚点类型 | application |
-| 节点角色 | applied\_method |
-| 布局路线 | branch.construction\_materials |
-| 主要路线 | 材料 · 黏土 (\`route.material.clay\`) |
-| 全部路线 | 材料 · 黏土 (\`route.material.clay\`)；能源 · 火 (\`route.energy.fire\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | craft |
-
-#### 硬前置（决定研发资格）
-
-- 窑烧控制 (`tech.kiln_firing`)：窑烧控制是应用：烧砖窑不可替代的知识基础。
-- 日晒土坯 (`tech.adobe_making`)：日晒土坯是应用：烧砖窑不可替代的知识基础。
-- 黏土调制 (`tech.clay_preparation`)：黏土调制是应用：烧砖窑不可替代的知识基础。
-- 木炭烧制 (`tech.charcoal_burning`)：木炭烧制是应用：烧砖窑不可替代的知识基础。
-- 应用：日晒土坯场 (`tech.application.adobe_yard`)：应用：日晒土坯场是应用：烧砖窑不可替代的知识基础。
-- 磨制石器 (`tech.ground_stone_tools`)：磨制石器是应用：烧砖窑不可替代的知识基础。
-- 应用：覆土木炭窑 (`tech.application.charcoal_pit`)：应用：覆土木炭窑是应用：烧砖窑不可替代的知识基础。
-
-#### 发现启发（仅用于揭示）
-
-无
-
-#### 效果摘要
-
-解锁建筑：烧砖窑
-
-#### 机会成本
-
-多条知识路线汇合为一个可见应用节点，避免建筑条件隐式叠加。
-
-#### 内容解锁
-
-- **物资：** 砖块 (`bricks`)
-- **建筑 / 生产方式：** 烧砖窑 (`fired_brick_kiln`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-- **砖块**（`good`）：`good.bricks` → `production_access` `unlock` `1.0`；`existing_binding`
-- **烧砖窑**（`building`）：`building.fired_brick_kiln` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-无
-
-#### 被以下科技作为硬前置
-
-- 铜矿开采 (`tech.copper_mining_application`)：应用：烧砖窑是铜矿开采不可替代的知识基础。
-- 应用：盐场 (`tech.application.salt_collector`)：应用：烧砖窑是应用：盐场不可替代的知识基础。
-- 应用：城邦抄写室 (`tech.application.classical_scriptorium`)：应用：烧砖窑是应用：城邦抄写室不可替代的知识基础。
-- 应用：石灰石采石场 (`tech.application.limestone_collector`)：应用：烧砖窑是应用：石灰石采石场不可替代的知识基础。
-- 应用：石灰厂 (`tech.application.lime_plant`)：应用：烧砖窑是应用：石灰厂不可替代的知识基础。
-- 应用：行会织造坊 (`tech.application.guild_weaving_house`)：应用：烧砖窑是应用：行会织造坊不可替代的知识基础。
-- 应用：硅砂矿坑 (`tech.application.classical_silica_pit`)：应用：烧砖窑是应用：硅砂矿坑不可替代的知识基础。
-- 应用：组织化伐木场 (`tech.application.method_timber_collector_r2`)：应用：烧砖窑是应用：组织化伐木场不可替代的知识基础。
-- 应用：帆船渔场 (`tech.application.method_marine_fish_collector_r2`)：应用：烧砖窑是应用：帆船渔场不可替代的知识基础。
-- 应用：黏土坑 (`tech.application.clay_collector`)：应用：烧砖窑是应用：黏土坑不可替代的知识基础。
-- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：烧砖窑是应用：改良锯木场不可替代的知识基础。
-- 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：烧砖窑是应用：玻璃窑不可替代的知识基础。
-- 应用：石料场 (`tech.application.method_stone_collector_r2`)：应用：烧砖窑是应用：石料场不可替代的知识基础。
-- 应用：公共营造场 (`tech.application.classical_public_works`)：应用：烧砖窑是应用：公共营造场不可替代的知识基础。
-- 应用：水力锯木场 (`tech.application.method_lumber_plant_r4`)：应用：烧砖窑是应用：水力锯木场不可替代的知识基础。
-- 应用：养马场 (`tech.application.horse_breeder`)：应用：烧砖窑是应用：养马场不可替代的知识基础。
-- 应用：鞋匠铺 (`tech.application.cobbler_shop`)：应用：烧砖窑是应用：鞋匠铺不可替代的知识基础。
-- 应用：酿酒坊 (`tech.application.brewery`)：应用：烧砖窑是应用：酿酒坊不可替代的知识基础。
-- 应用：蒸馏酒坊 (`tech.application.distillery`)：应用：烧砖窑是应用：蒸馏酒坊不可替代的知识基础。
-- 应用：榨油坊 (`tech.application.edible_oil_plant`)：应用：烧砖窑是应用：榨油坊不可替代的知识基础。
-- 应用：古典学院 (`tech.application.classical_academy`)：应用：烧砖窑是应用：古典学院不可替代的知识基础。
-- 应用：庄园牧场 (`tech.application.manorial_pasture`)：应用：烧砖窑是应用：庄园牧场不可替代的知识基础。
-- 应用：家具行会工坊 (`tech.application.guild_hall`)：应用：烧砖窑是应用：家具行会工坊不可替代的知识基础。
-- 应用：煤矿 (`tech.application.coal_mine`)：应用：烧砖窑是应用：煤矿不可替代的知识基础。
-- 应用：堆肥场 (`tech.application.composting_yard`)：应用：烧砖窑是应用：堆肥场不可替代的知识基础。
-- 应用：特许大学 (`tech.application.chartered_university`)：应用：烧砖窑是应用：特许大学不可替代的知识基础。
-- 应用：细木家具工坊 (`tech.application.cabinetmaker_workshop`)：应用：烧砖窑是应用：细木家具工坊不可替代的知识基础。
-- 应用：宫廷裁缝坊 (`tech.application.court_tailor`)：应用：烧砖窑是应用：宫廷裁缝坊不可替代的知识基础。
-- 应用：玉米庄园 (`tech.application.landed_estate`)：应用：烧砖窑是应用：玉米庄园不可替代的知识基础。
-- 应用：庄园水田 (`tech.application.estate_paddy`)：应用：烧砖窑是应用：庄园水田不可替代的知识基础。
-- 应用：药材种植园 (`tech.application.medicinal_herbs_collector`)：应用：烧砖窑是应用：药材种植园不可替代的知识基础。
-- 应用：锡矿 (`tech.application.tin_ore_collector`)：应用：烧砖窑是应用：锡矿不可替代的知识基础。
-- 应用：棉花农场 (`tech.application.cotton_collector`)：应用：烧砖窑是应用：棉花农场不可替代的知识基础。
-- 应用：亚麻庄园 (`tech.application.method_flax_collector_r3`)：应用：烧砖窑是应用：亚麻庄园不可替代的知识基础。
-- 应用：改良亚麻庄园 (`tech.application.method_flax_collector_r5`)：应用：烧砖窑是应用：改良亚麻庄园不可替代的知识基础。
-- 应用：印刷学社 (`tech.application.printing_academy`)：应用：烧砖窑是应用：印刷学社不可替代的知识基础。
-- 应用：罐头工坊 (`tech.application.canning_workshop`)：应用：烧砖窑是应用：罐头工坊不可替代的知识基础。
-- 焦炭冶炼 (`tech.coke_smelting`)：应用：烧砖窑是焦炭冶炼不可替代的知识基础。
-- 应用：炸药厂 (`tech.application.explosives_plant`)：应用：烧砖窑是应用：炸药厂不可替代的知识基础。
-- 应用：浅层铁矿 (`tech.application.early_iron_mine`)：应用：烧砖窑是应用：浅层铁矿不可替代的知识基础。
-- 应用：面包厂 (`tech.application.bread_plant`)：应用：烧砖窑是应用：面包厂不可替代的知识基础。
-- 应用：铅矿 (`tech.application.lead_ore_collector`)：应用：烧砖窑是应用：铅矿不可替代的知识基础。
-- 应用：金矿 (`tech.application.gold_mine`)：应用：烧砖窑是应用：金矿不可替代的知识基础。
-- 应用：深井盐矿 (`tech.application.industrial_salt_mine`)：应用：烧砖窑是应用：深井盐矿不可替代的知识基础。
-- 应用：改良小农场 (`tech.application.improved_smallholding`)：应用：烧砖窑是应用：改良小农场不可替代的知识基础。
-- 应用：水泥厂 (`tech.application.cement_plant`)：应用：烧砖窑是应用：水泥厂不可替代的知识基础。
-- 应用：鱼类罐头厂 (`tech.application.canned_fish_plant`)：应用：烧砖窑是应用：鱼类罐头厂不可替代的知识基础。
-- 应用：制衣厂 (`tech.application.clothing_plant`)：应用：烧砖窑是应用：制衣厂不可替代的知识基础。
-- 应用：玻璃厂 (`tech.application.glass_plant`)：应用：烧砖窑是应用：玻璃厂不可替代的知识基础。
-- 应用：化学工场 (`tech.application.industrial_chemicals_plant`)：应用：烧砖窑是应用：化学工场不可替代的知识基础。
-- 应用：制鞋厂 (`tech.application.footwear_plant`)：应用：烧砖窑是应用：制鞋厂不可替代的知识基础。
-- 应用：家具厂 (`tech.application.furniture_plant`)：应用：烧砖窑是应用：家具厂不可替代的知识基础。
-- 应用：机械零件厂 (`tech.application.machine_parts_plant`)：应用：烧砖窑是应用：机械零件厂不可替代的知识基础。
-- 应用：制革厂 (`tech.application.leather_plant`)：应用：烧砖窑是应用：制革厂不可替代的知识基础。
-- 应用：蒸汽锯木厂 (`tech.application.method_lumber_plant_r6`)：应用：烧砖窑是应用：蒸汽锯木厂不可替代的知识基础。
-- 应用：工业机械厂 (`tech.application.industrial_machinery_plant`)：应用：烧砖窑是应用：工业机械厂不可替代的知识基础。
-- 应用：工业屠宰场 (`tech.application.mechanized_slaughterhouse`)：应用：烧砖窑是应用：工业屠宰场不可替代的知识基础。
-- 应用：工业榨油厂 (`tech.application.method_edible_oil_plant_r6`)：应用：烧砖窑是应用：工业榨油厂不可替代的知识基础。
-- 应用：农业机械厂 (`tech.application.agricultural_machinery_plant`)：应用：烧砖窑是应用：农业机械厂不可替代的知识基础。
-- 应用：工业石灰厂 (`tech.application.method_lime_plant_r6`)：应用：烧砖窑是应用：工业石灰厂不可替代的知识基础。
-- 应用：机械化棉花农场 (`tech.application.method_cotton_collector_r6`)：应用：烧砖窑是应用：机械化棉花农场不可替代的知识基础。
-- 应用：机械化农场 (`tech.application.mechanized_farm`)：应用：烧砖窑是应用：机械化农场不可替代的知识基础。
-- 应用：机械化玉米农场 (`tech.application.method_landed_estate_r6`)：应用：烧砖窑是应用：机械化玉米农场不可替代的知识基础。
-- 应用：乳制品厂 (`tech.application.dairy_products_plant`)：应用：烧砖窑是应用：乳制品厂不可替代的知识基础。
-- 应用：博学学会 (`tech.application.learned_society`)：应用：烧砖窑是应用：博学学会不可替代的知识基础。
-- 应用：地籍管理局 (`tech.application.cadastral_office`)：应用：烧砖窑是应用：地籍管理局不可替代的知识基础。
-- 应用：综合工学院 (`tech.application.polytechnic_institute`)：应用：烧砖窑是应用：综合工学院不可替代的知识基础。
-- 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：烧砖窑是应用：混凝土厂不可替代的知识基础。
-- 应用：建筑构件厂 (`tech.application.construction_components_plant`)：应用：烧砖窑是应用：建筑构件厂不可替代的知识基础。
-- 应用：蒸汽钻井场 (`tech.application.early_oil_well`)：应用：烧砖窑是应用：蒸汽钻井场不可替代的知识基础。
-- 先进冶金 (`tech.advanced_metallurgy`)：应用：烧砖窑是先进冶金不可替代的知识基础。
-- 应用：铝土矿 (`tech.application.bauxite_collector`)：应用：烧砖窑是应用：铝土矿不可替代的知识基础。
-- 应用：工业石灰岩矿场 (`tech.application.method_limestone_collector_r6`)：应用：烧砖窑是应用：工业石灰岩矿场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -16920,7 +17872,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-解锁建筑：旱作保水小麦田
+解锁物资：小麦；解锁建筑：旱作保水小麦田
 
 #### 机会成本
 
@@ -17061,7 +18013,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-解锁建筑：铜矿；要求自然铜辨识与打制石器；解锁物资：铜矿石
+解锁物资：铜矿石；解锁建筑：铜矿；作为必要支撑：铜矿、自然铜冷锤工坊
 
 #### 机会成本
 
@@ -17131,7 +18083,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-解锁建筑：盐场；解锁物资：食盐
+解锁物资：食盐；解锁建筑：盐场
 
 #### 机会成本
 
@@ -17200,7 +18152,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-解锁建筑：城邦抄写室；解锁物资：手抄本
+解锁物资：手抄本；解锁建筑：城邦抄写室；作为必要支撑：树皮纸工坊、皮纸工坊、植物纤维抄纸坊
 
 #### 机会成本
 
@@ -17270,7 +18222,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-解锁建筑：石灰石采石场；解锁物资：石灰岩
+解锁物资：石灰岩；解锁建筑：石灰石采石场
 
 #### 机会成本
 
@@ -17408,7 +18360,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-解锁建筑：石灰厂；解锁物资：石灰
+解锁物资：石灰；解锁建筑：石灰厂；作为必要支撑：石作工场、煤层平硐、石灰石采石场、石料场
 
 #### 机会成本
 
@@ -17475,7 +18427,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-全社会 +22%
+全社会 +22%；作为必要支撑：细木家具工坊、活字印刷坊
 
 #### 机会成本
 
@@ -17818,7 +18770,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-地籍机构产出 +25%
+地籍机构产出 +25%；作为必要支撑：庄园水田、玉米庄园
 
 #### 机会成本
 
@@ -18443,11 +19395,12 @@ iron\_extraction产出 +12%
 
 #### 硬前置（决定研发资格）
 
-- 织机织造 (`tech.loom_weaving`)：织机织造是应用：行会织造坊不可替代的知识基础。
-- 沤麻 (`tech.flax_retting`)：沤麻是应用：行会织造坊不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：行会织造坊不可替代的知识基础。
-- 手工锯木 (`tech.timber_sawing`)：手工锯木提供应用：行会织造坊所需的建材“木材”。
-- 应用：亚麻农场 (`tech.application.flax_collector`)：应用：亚麻农场提供应用：行会织造坊所需的必需投入“亚麻纤维”。
+- 织机织造 (`tech.loom_weaving`)：tech.loom\_weaving是行会织造坊不可替代的知识基础。
+- 沤麻 (`tech.flax_retting`)：tech.flax\_retting是行会织造坊不可替代的知识基础。
+- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：tech.application.fired\_brick\_kiln是行会织造坊不可替代的知识基础。
+- 手工锯木 (`tech.timber_sawing`)：tech.timber\_sawing是行会织造坊不可替代的知识基础。
+- 应用：亚麻农场 (`tech.application.flax_collector`)：tech.application.flax\_collector是行会织造坊不可替代的知识基础。
+- 应用：沤麻池 (`tech.application.flax_retting_pit`)：tech.application.flax\_retting\_pit是行会织造坊不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -18455,7 +19408,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-解锁建筑：行会织造坊
+解锁物资：布料；解锁建筑：行会织造坊
 
 #### 机会成本
 
@@ -18496,7 +19449,7 @@ iron\_extraction产出 +12%
 <a id="era-5"></a>
 ## 探索时代
 
-共 40 项科技，研究成本范围 3000-160000；时代里程碑：洲际网络 (`tech.global_exchange`)。
+共 41 项科技，研究成本范围 3000-160000；时代里程碑：洲际网络 (`tech.global_exchange`)。
 
 ### 方法：牧群路线议事帐 (`tech.method.pastoral_council_tent`)
 
@@ -18528,7 +19481,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-解锁建筑：牧群路线议事帐
+解锁物资：科技值；解锁建筑：牧群路线议事帐
 
 #### 机会成本
 
@@ -18600,7 +19553,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-解锁物资：铜；解锁建筑：土法炼铜炉；铜矿采掘产出 +12%
+解锁物资：铜；解锁建筑：土法炼铜炉；铜矿采掘产出 +28%；作为必要支撑：浅层铜矿、土法炼锡炉
 
 #### 机会成本
 
@@ -18628,77 +19581,6 @@ iron\_extraction产出 +12%
 
 - 应用：浅层铜矿 (`tech.application.early_copper_mine`)：木炭坩埚炼铜是应用：浅层铜矿不可替代的知识基础。
 - 应用：线材厂 (`tech.application.wire_plant`)：木炭坩埚炼铜是应用：线材厂不可替代的知识基础。
-
-#### 主题路线后继
-
-无
-
-#### 跨领域应用
-
-无
-
-#### 作为候选参与的里程碑
-
-无
-
-### 应用：硅砂矿坑 (`tech.application.classical_silica_pit`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.application.classical_silica_pit` |
-| 时代 | 探索时代 (`exploration`) |
-| 领域 | 工程 (`engineering`) |
-| 研究成本 | 9360 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | branch |
-| 锚点类型 | application |
-| 节点角色 | applied\_method |
-| 布局路线 | branch.construction\_materials |
-| 主要路线 | 材料 · 合成材料 (\`route.material.materials\`) |
-| 全部路线 | 材料 · 合成材料 (\`route.material.materials\`)；能源 · 火 (\`route.energy.fire\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | craft |
-
-#### 硬前置（决定研发资格）
-
-- 早期玻璃烧制 (`tech.early_glassmaking`)：早期玻璃烧制是应用：硅砂矿坑不可替代的知识基础。
-- 磨制石器 (`tech.ground_stone_tools`)：磨制石器是应用：硅砂矿坑不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：硅砂矿坑不可替代的知识基础。
-- 自然观察 (`tech.natural_observation`)：自然观察是应用：硅砂矿坑不可替代的知识基础。
-
-#### 发现启发（仅用于揭示）
-
-无
-
-#### 效果摘要
-
-解锁建筑：硅砂矿坑；解锁物资：硅砂
-
-#### 机会成本
-
-多条知识路线汇合为一个可见应用节点，避免建筑条件隐式叠加。
-
-#### 内容解锁
-
-- **物资：** 硅砂 (`silica_sand`)
-- **建筑 / 生产方式：** 硅砂矿坑 (`classical_silica_pit`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-- **硅砂**（`good`）：`good.silica_sand` → `production_access` `unlock` `1.0`；`existing_binding`
-- **硅砂矿坑**（`building`）：`building.classical_silica_pit` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-无
-
-#### 被以下科技作为硬前置
-
-- 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：硅砂矿坑是应用：玻璃窑不可替代的知识基础。
-- 应用：玻璃厂 (`tech.application.glass_plant`)：应用：硅砂矿坑是应用：玻璃厂不可替代的知识基础。
-- 应用：早期半导体厂 (`tech.application.basic_semiconductor_fab`)：应用：硅砂矿坑是应用：早期半导体厂不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -18740,7 +19622,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-geospatial\_analysis\_institution产出 +12%
+geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理局、地理空间分析中心
 
 #### 机会成本
 
@@ -18813,7 +19695,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-航运作业产出 +28%；解锁浅海运输走廊
+航运作业产出 +28%
 
 #### 机会成本
 
@@ -18886,7 +19768,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：畦埂水稻田
+解锁物资：稻米；解锁建筑：畦埂水稻田；作为必要支撑：庄园水田、佃作稻庄、精耕稻庄、分成水田、佃作水田
 
 #### 机会成本
 
@@ -18952,7 +19834,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-航运作业产出 +12%；解锁远海运输走廊
+航运作业产出 +12%；作为必要支撑：远洋渔场、蒸汽航运船坞
 
 #### 机会成本
 
@@ -18984,6 +19866,9 @@ geospatial\_analysis\_institution产出 +12%
 - 应用：远洋造船厂 (`tech.application.oceanic_shipyard`)：远洋航海是应用：远洋造船厂不可替代的知识基础。
 - 应用：远洋渔场 (`tech.application.method_marine_fish_collector_r4`)：远洋航海是应用：远洋渔场不可替代的知识基础。
 - 应用：蒸汽航运船坞 (`tech.application.method_steam_shipping`)：远洋航海是应用：蒸汽航运船坞不可替代的知识基础。
+- Glassware Manufactory (`tech.application.glassware_manufactory_exploration`)：knowledge prerequisite: tech.oceanic\_navigation -\> Glassware Manufactory
+- Metal Housewares Manufactory (`tech.application.metal_housewares_manufactory_exploration`)：knowledge prerequisite: tech.oceanic\_navigation -\> Metal Housewares Manufactory
+- Leather Goods Manufactory (`tech.application.leather_goods_manufactory_exploration`)：knowledge prerequisite: tech.oceanic\_navigation -\> Leather Goods Manufactory
 
 #### 主题路线后继
 
@@ -19025,7 +19910,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-航运作业产出 +12%；解锁深海运输走廊
+航运作业产出 +12%；作为必要支撑：电气化造船厂
 
 #### 机会成本
 
@@ -19093,7 +19978,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-研究机构产出 +12%
+研究机构产出 +12%；作为必要支撑：印刷学社
 
 #### 机会成本
 
@@ -19163,7 +20048,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-航运作业产出 +28%
+航运作业产出 +28%；作为必要支撑：电气化造船厂、蒸汽航运船坞
 
 #### 机会成本
 
@@ -19232,7 +20117,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-化学工业产出 +25%
+化学工业产出 +25%；作为必要支撑：现代炸药厂
 
 #### 机会成本
 
@@ -19303,7 +20188,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-铁矿石 -8%；landform.mountain.extractive产出 +24%
+铁矿石 -8%；landform.mountain.extractive产出 +24%；作为必要支撑：金矿、深井盐矿、铅矿、硅砂矿、银矿、锌矿
 
 #### 机会成本
 
@@ -19717,7 +20602,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-全社会 +12%
+全社会 +12%；作为必要支撑：硅砂矿
 
 #### 机会成本
 
@@ -19922,7 +20807,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-专用商品作物产出 +12%
+专用商品作物产出 +12%；作为必要支撑：棉花农场、机械化橡胶种植园、机械化香料种植园、香料种植园
 
 #### 机会成本
 
@@ -19956,6 +20841,12 @@ geospatial\_analysis\_institution产出 +12%
 - 应用：机械化橡胶种植园 (`tech.application.method_rubber_tree_collector_r6`)：商品作物管理是应用：机械化橡胶种植园不可替代的知识基础。
 - 应用：机械化香料种植园 (`tech.application.method_spice_plants_collector_r6`)：商品作物管理是应用：机械化香料种植园不可替代的知识基础。
 - 应用：专用商品作物种植园 (`tech.application.method_specialty_commodity_plantation`)：商品作物管理是应用：专用商品作物种植园不可替代的知识基础。
+- 应用：商业香料种植园 (`tech.application.spice_commercial_plantation`)：tech.commodity\_crop\_management是商业香料种植园不可替代的知识基础。
+- 应用：精准香料种植园 (`tech.application.method_spice_plants_collector_r8`)：tech.commodity\_crop\_management是精准香料种植园不可替代的知识基础。
+- 应用：自动化香料种植园 (`tech.application.method_spice_plants_collector_r10`)：tech.commodity\_crop\_management是自动化香料种植园不可替代的知识基础。
+- 应用：精准药材农场 (`tech.application.method_medicinal_herbs_collector_r8`)：tech.commodity\_crop\_management是精准药材农场不可替代的知识基础。
+- 应用：精准橡胶种植园 (`tech.application.method_rubber_tree_collector_r8`)：tech.commodity\_crop\_management是精准橡胶种植园不可替代的知识基础。
+- 应用：自动化橡胶种植园 (`tech.application.method_rubber_tree_collector_r10`)：tech.commodity\_crop\_management是自动化橡胶种植园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -20337,7 +21228,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-社会领域研究效率 +20%
+社会领域研究效率 +20%；作为必要支撑：棉花农场、橡胶种植园、香料种植园
 
 #### 机会成本
 
@@ -20409,7 +21300,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-专用商品作物产出 +28%
+专用商品作物产出 +28%；作为必要支撑：橡胶种植园
 
 #### 机会成本
 
@@ -20437,6 +21328,7 @@ geospatial\_analysis\_institution产出 +12%
 - 应用：棉花农场 (`tech.application.cotton_collector`)：种植园庄园管理是应用：棉花农场不可替代的知识基础。
 - 应用：香料种植园 (`tech.application.spice_plants_collector`)：种植园庄园管理是应用：香料种植园不可替代的知识基础。
 - 应用：橡胶种植园 (`tech.application.rubber_tree_collector`)：种植园庄园管理是应用：橡胶种植园不可替代的知识基础。
+- 应用：商业香料种植园 (`tech.application.spice_commercial_plantation`)：tech.estate\_plantation\_management是商业香料种植园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -20481,7 +21373,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：改良燧石矿坑
+解锁物资：燧石原料；解锁建筑：改良燧石矿坑；作为必要支撑：露天黏土坑、石器打制工坊、自然铜冷锤工坊、毛石整理场
 
 #### 机会成本
 
@@ -20550,7 +21442,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：组织化伐木场
+解锁物资：原木；解锁建筑：组织化伐木场；作为必要支撑：木槽溜洗场、野生割胶营地、木版印刷坊
 
 #### 机会成本
 
@@ -20621,7 +21513,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：帆船渔场
+解锁物资：鱼类；解锁建筑：帆船渔场
 
 #### 机会成本
 
@@ -20691,7 +21583,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：黏土坑
+解锁物资：黏土；解锁建筑：黏土坑；作为必要支撑：制砖厂、烧砖窑、露天陶器烧造、升焰陶窑、原始黏土坑
 
 #### 机会成本
 
@@ -20759,7 +21651,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：定居采集营地
+解锁物资：采集植物食物；解锁建筑：定居采集营地；作为必要支撑：自给农庄
 
 #### 机会成本
 
@@ -20828,7 +21720,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：改良锯木场；解锁物资：木材
+解锁物资：木材；解锁建筑：改良锯木场；作为必要支撑：细木家具工坊、蒸汽锯木厂
 
 #### 机会成本
 
@@ -20859,7 +21751,6 @@ geospatial\_analysis\_institution产出 +12%
 - 应用：养马场 (`tech.application.horse_breeder`)：应用：改良锯木场是应用：养马场不可替代的知识基础。
 - 应用：羊毛行会作坊 (`tech.application.method_wool_shed_r3`)：应用：改良锯木场是应用：羊毛行会作坊不可替代的知识基础。
 - 应用：佃作稻庄 (`tech.application.method_rice_collector_r3`)：应用：改良锯木场是应用：佃作稻庄不可替代的知识基础。
-- 应用：马铃薯农场 (`tech.application.potato_collector`)：应用：改良锯木场是应用：马铃薯农场不可替代的知识基础。
 - 应用：鞋匠铺 (`tech.application.cobbler_shop`)：应用：改良锯木场是应用：鞋匠铺不可替代的知识基础。
 - 应用：精梳羊毛作坊 (`tech.application.method_wool_shed_r5`)：应用：改良锯木场是应用：精梳羊毛作坊不可替代的知识基础。
 - 应用：酿酒坊 (`tech.application.brewery`)：应用：改良锯木场是应用：酿酒坊不可替代的知识基础。
@@ -20876,7 +21767,7 @@ geospatial\_analysis\_institution产出 +12%
 - 应用：裁缝铺 (`tech.application.tailor_shop`)：应用：改良锯木场是应用：裁缝铺不可替代的知识基础。
 - 应用：煤矿 (`tech.application.coal_mine`)：应用：改良锯木场是应用：煤矿不可替代的知识基础。
 - 应用：堆肥场 (`tech.application.composting_yard`)：应用：改良锯木场是应用：堆肥场不可替代的知识基础。
-- 应用：碎布造纸工坊 (`tech.application.rag_paper_workshop`)：应用：改良锯木场是应用：碎布造纸工坊不可替代的知识基础。
+- 应用：碎布造纸工坊 (`tech.application.rag_paper_workshop`)：tech.application.method\_lumber\_plant\_r2是碎布造纸工坊不可替代的知识基础。
 - 应用：木版印刷坊 (`tech.application.woodblock_printing_house`)：应用：改良锯木场是应用：木版印刷坊不可替代的知识基础。
 - 应用：活字印刷坊 (`tech.application.movable_type_print_shop`)：应用：改良锯木场是应用：活字印刷坊不可替代的知识基础。
 - 应用：硝石矿 (`tech.application.saltpeter_collector`)：应用：改良锯木场是应用：硝石矿不可替代的知识基础。
@@ -20936,7 +21827,7 @@ geospatial\_analysis\_institution产出 +12%
 - 应用：农业机械厂 (`tech.application.agricultural_machinery_plant`)：应用：改良锯木场是应用：农业机械厂不可替代的知识基础。
 - 应用：工业砖厂 (`tech.application.method_bricks_plant_r6`)：应用：改良锯木场是应用：工业砖厂不可替代的知识基础。
 - 应用：工业石灰厂 (`tech.application.method_lime_plant_r6`)：应用：改良锯木场是应用：工业石灰厂不可替代的知识基础。
-- 应用：机械化马铃薯农场 (`tech.application.method_potato_collector_r6`)：应用：改良锯木场是应用：机械化马铃薯农场不可替代的知识基础。
+- 应用：机械化马铃薯农场 (`tech.application.method_potato_collector_r6`)：tech.application.method\_lumber\_plant\_r2是机械化马铃薯农场不可替代的知识基础。
 - 应用：机械化牧场 (`tech.application.ranching_station`)：应用：改良锯木场是应用：机械化牧场不可替代的知识基础。
 - 应用：机械化棉花农场 (`tech.application.method_cotton_collector_r6`)：应用：改良锯木场是应用：机械化棉花农场不可替代的知识基础。
 - 应用：机械化农场 (`tech.application.mechanized_farm`)：应用：改良锯木场是应用：机械化农场不可替代的知识基础。
@@ -20954,76 +21845,12 @@ geospatial\_analysis\_institution产出 +12%
 - 应用：铝土矿 (`tech.application.bauxite_collector`)：应用：改良锯木场是应用：铝土矿不可替代的知识基础。
 - 应用：炼锌厂 (`tech.application.zinc_plant`)：应用：改良锯木场是应用：炼锌厂不可替代的知识基础。
 - 应用：工业石灰岩矿场 (`tech.application.method_limestone_collector_r6`)：应用：改良锯木场是应用：工业石灰岩矿场不可替代的知识基础。
-
-#### 主题路线后继
-
-无
-
-#### 跨领域应用
-
-无
-
-#### 作为候选参与的里程碑
-
-无
-
-### 应用：制革工坊 (`tech.application.tannery`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.application.tannery` |
-| 时代 | 探索时代 (`exploration`) |
-| 领域 | 工程 (`engineering`) |
-| 研究成本 | 9360 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | branch |
-| 锚点类型 | application |
-| 节点角色 | applied\_method |
-| 布局路线 | branch.pastoral\_livestock |
-| 主要路线 | 生态 · 野生动物 (\`route.ecology.game\`) |
-| 全部路线 | 生态 · 野生动物 (\`route.ecology.game\`)；工艺 · 纺织 (\`route.craft.textiles\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | craft |
-
-#### 硬前置（决定研发资格）
-
-- 皮革鞣制 (`tech.hide_tanning`)：皮革鞣制是应用：制革工坊不可替代的知识基础。
-- 枯枝采集 (`tech.deadwood_collection`)：枯枝采集是应用：制革工坊不可替代的知识基础。
-- 磨制石器 (`tech.ground_stone_tools`)：磨制石器是应用：制革工坊不可替代的知识基础。
-- 应用：露天青铜作坊 (`tech.application.ore_bronzesmith_camp`)：应用：露天青铜作坊是应用：制革工坊不可替代的知识基础。
-
-#### 发现启发（仅用于揭示）
-
-无
-
-#### 效果摘要
-
-解锁建筑：制革工坊；解锁物资：皮革
-
-#### 机会成本
-
-多条知识路线汇合为一个可见应用节点，避免建筑条件隐式叠加。
-
-#### 内容解锁
-
-- **物资：** 皮革 (`leather`)
-- **建筑 / 生产方式：** 制革工坊 (`tannery`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-- **皮革**（`good`）：`good.leather` → `production_access` `unlock` `1.0`；`existing_binding`
-- **制革工坊**（`building`）：`building.tannery` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-无
-
-#### 被以下科技作为硬前置
-
-- 应用：鞋匠铺 (`tech.application.cobbler_shop`)：应用：制革工坊是应用：鞋匠铺不可替代的知识基础。
-- 应用：制鞋厂 (`tech.application.footwear_plant`)：应用：制革工坊是应用：制鞋厂不可替代的知识基础。
+- 应用：马铃薯庄园 (`tech.application.potato_estate`)：tech.application.method\_lumber\_plant\_r2是马铃薯庄园不可替代的知识基础。
+- 应用：改良轮作马铃薯庄园 (`tech.application.method_potato_farm_r5`)：tech.application.method\_lumber\_plant\_r2是改良轮作马铃薯庄园不可替代的知识基础。
+- 应用：机械化小麦农场 (`tech.application.method_wheat_farm_r6`)：tech.application.method\_lumber\_plant\_r2是机械化小麦农场不可替代的知识基础。
+- 应用：机械化稻作农场 (`tech.application.method_rice_collector_r6`)：tech.application.method\_lumber\_plant\_r2是机械化稻作农场不可替代的知识基础。
+- 应用：机械化亚麻农场 (`tech.application.method_flax_collector_r6`)：tech.application.method\_lumber\_plant\_r2是机械化亚麻农场不可替代的知识基础。
+- 应用：商业香料种植园 (`tech.application.spice_commercial_plantation`)：tech.application.method\_lumber\_plant\_r2是商业香料种植园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -21069,7 +21896,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：羊毛棚；解锁物资：羊毛
+解锁物资：羊毛；解锁建筑：羊毛棚
 
 #### 机会成本
 
@@ -21137,7 +21964,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：金银器工坊；解锁物资：珠宝
+解锁物资：珠宝；解锁建筑：金银器工坊；作为必要支撑：珠宝厂
 
 #### 机会成本
 
@@ -21206,7 +22033,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：毡制帐篷；解锁物资：衣物
+解锁物资：衣物；解锁建筑：毡制帐篷
 
 #### 机会成本
 
@@ -21358,7 +22185,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：家庭纺织坊
+解锁物资：布料；解锁建筑：家庭纺织坊；作为必要支撑：家用织机
 
 #### 机会成本
 
@@ -21383,6 +22210,210 @@ geospatial\_analysis\_institution产出 +12%
 #### 被以下科技作为硬前置
 
 无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### Glassware Manufactory (`tech.application.glassware_manufactory_exploration`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.glassware_manufactory_exploration` |
+| 时代 | 探索时代 (`exploration`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 9360 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.construction\_materials |
+| 主要路线 | 材料 · 合成材料 (\`route.material.materials\`) |
+| 全部路线 | 材料 · 合成材料 (\`route.material.materials\`)；工艺 · 消费品 (\`route.craft.consumer\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | craft |
+
+#### 硬前置（决定研发资格）
+
+- Glassware Workshop (`tech.application.glassware_workshop_kingdom`)：knowledge prerequisite: tech.application.glassware\_workshop\_kingdom -\> Glassware Manufactory
+- 远洋航海 (`tech.oceanic_navigation`)：knowledge prerequisite: tech.oceanic\_navigation -\> Glassware Manufactory
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：Glassware Manufactory；解锁建筑：Glassware Manufactory；作为必要支撑：Glassware Manufactory
+
+#### 机会成本
+
+terminal production upgrade
+
+#### 内容解锁
+
+- **物资：** 玻璃器皿 (`glassware`)
+- **建筑 / 生产方式：** 玻璃器皿工场 (`glassware_manufactory`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **Glassware Manufactory**（`good`）：`good.glassware` → `production_access` `unlock` `1.0`；`existing_binding`
+- **Glassware Manufactory**（`building`）：`building.glassware_manufactory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+- Glassware Factory (`tech.application.glassware_factory_steam`)：knowledge prerequisite: tech.application.glassware\_manufactory\_exploration -\> Glassware Factory
+- Glassware Factory (`tech.application.glassware_factory_electrical`)：knowledge prerequisite: tech.application.glassware\_manufactory\_exploration -\> Glassware Factory
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### Metal Housewares Manufactory (`tech.application.metal_housewares_manufactory_exploration`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.metal_housewares_manufactory_exploration` |
+| 时代 | 探索时代 (`exploration`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 9360 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.construction\_materials |
+| 主要路线 | 材料 · 合成材料 (\`route.material.materials\`) |
+| 全部路线 | 材料 · 合成材料 (\`route.material.materials\`)；工艺 · 消费品 (\`route.craft.consumer\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | craft |
+
+#### 硬前置（决定研发资格）
+
+- Metal Housewares Workshop (`tech.application.metal_housewares_workshop_kingdom`)：knowledge prerequisite: tech.application.metal\_housewares\_workshop\_kingdom -\> Metal Housewares Manufactory
+- 远洋航海 (`tech.oceanic_navigation`)：knowledge prerequisite: tech.oceanic\_navigation -\> Metal Housewares Manufactory
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：Metal Housewares Manufactory；解锁建筑：Metal Housewares Manufactory；作为必要支撑：Metal Housewares Manufactory
+
+#### 机会成本
+
+terminal production upgrade
+
+#### 内容解锁
+
+- **物资：** 金属家用器皿 (`metal_housewares`)
+- **建筑 / 生产方式：** 金属家用器皿工场 (`metal_housewares_manufactory`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **Metal Housewares Manufactory**（`good`）：`good.metal_housewares` → `production_access` `unlock` `1.0`；`existing_binding`
+- **Metal Housewares Manufactory**（`building`）：`building.metal_housewares_manufactory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+- Metal Housewares Factory (`tech.application.metal_housewares_factory_steam`)：knowledge prerequisite: tech.application.metal\_housewares\_manufactory\_exploration -\> Metal Housewares Factory
+- Metal Housewares Factory (`tech.application.metal_housewares_factory_electrical`)：knowledge prerequisite: tech.application.metal\_housewares\_manufactory\_exploration -\> Metal Housewares Factory
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### Leather Goods Manufactory (`tech.application.leather_goods_manufactory_exploration`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.leather_goods_manufactory_exploration` |
+| 时代 | 探索时代 (`exploration`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 9360 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.construction\_materials |
+| 主要路线 | 材料 · 合成材料 (\`route.material.materials\`) |
+| 全部路线 | 材料 · 合成材料 (\`route.material.materials\`)；工艺 · 消费品 (\`route.craft.consumer\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | craft |
+
+#### 硬前置（决定研发资格）
+
+- Leather Goods Workshop (`tech.application.leather_goods_workshop_kingdom`)：knowledge prerequisite: tech.application.leather\_goods\_workshop\_kingdom -\> Leather Goods Manufactory
+- 远洋航海 (`tech.oceanic_navigation`)：knowledge prerequisite: tech.oceanic\_navigation -\> Leather Goods Manufactory
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：Leather Goods Manufactory；解锁建筑：Leather Goods Manufactory；作为必要支撑：Leather Goods Manufactory
+
+#### 机会成本
+
+terminal production upgrade
+
+#### 内容解锁
+
+- **物资：** 皮革制品 (`leather_goods`)
+- **建筑 / 生产方式：** 皮革制品工场 (`leather_goods_manufactory`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **Leather Goods Manufactory**（`good`）：`good.leather_goods` → `production_access` `unlock` `1.0`；`existing_binding`
+- **Leather Goods Manufactory**（`building`）：`building.leather_goods_manufactory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+- Leather Goods Factory (`tech.application.leather_goods_factory_steam`)：knowledge prerequisite: tech.application.leather\_goods\_manufactory\_exploration -\> Leather Goods Factory
+- Leather Goods Factory (`tech.application.leather_goods_factory_electrical`)：knowledge prerequisite: tech.application.leather\_goods\_manufactory\_exploration -\> Leather Goods Factory
 
 #### 主题路线后继
 
@@ -21431,7 +22462,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：书记学校
+解锁物资：科技值；解锁建筑：书记学校
 
 #### 机会成本
 
@@ -21456,136 +22487,6 @@ geospatial\_analysis\_institution产出 +12%
 #### 被以下科技作为硬前置
 
 无
-
-#### 主题路线后继
-
-无
-
-#### 跨领域应用
-
-无
-
-#### 作为候选参与的里程碑
-
-无
-
-### 应用：玻璃窑 (`tech.application.classical_glass_kiln`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.application.classical_glass_kiln` |
-| 时代 | 启蒙时代 (`enlightenment`) |
-| 领域 | 工程 (`engineering`) |
-| 研究成本 | 9360 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | branch |
-| 锚点类型 | application |
-| 节点角色 | applied\_method |
-| 布局路线 | branch.construction\_materials |
-| 主要路线 | 材料 · 合成材料 (\`route.material.materials\`) |
-| 全部路线 | 材料 · 合成材料 (\`route.material.materials\`)；能源 · 火 (\`route.energy.fire\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | craft |
-
-#### 硬前置（决定研发资格）
-
-- 早期玻璃烧制 (`tech.early_glassmaking`)：早期玻璃烧制是应用：玻璃窑不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：玻璃窑不可替代的知识基础。
-- 应用：硅砂矿坑 (`tech.application.classical_silica_pit`)：应用：硅砂矿坑是应用：玻璃窑不可替代的知识基础。
-- 应用：露天青铜作坊 (`tech.application.ore_bronzesmith_camp`)：应用：露天青铜作坊是应用：玻璃窑不可替代的知识基础。
-
-#### 发现启发（仅用于揭示）
-
-无
-
-#### 效果摘要
-
-解锁建筑：玻璃窑；解锁物资：玻璃
-
-#### 机会成本
-
-多条知识路线汇合为一个可见应用节点，避免建筑条件隐式叠加。
-
-#### 内容解锁
-
-- **物资：** 玻璃 (`glass`)
-- **建筑 / 生产方式：** 玻璃窑 (`classical_glass_kiln`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-- **玻璃**（`good`）：`good.glass` → `production_access` `unlock` `1.0`；`existing_binding`
-- **玻璃窑**（`building`）：`building.classical_glass_kiln` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-无
-
-#### 被以下科技作为硬前置
-
-- 应用：古典学院 (`tech.application.classical_academy`)：应用：玻璃窑是应用：古典学院不可替代的知识基础。
-- 应用：特许大学 (`tech.application.chartered_university`)：应用：玻璃窑是应用：特许大学不可替代的知识基础。
-- 应用：远洋造船厂 (`tech.application.oceanic_shipyard`)：应用：玻璃窑是应用：远洋造船厂不可替代的知识基础。
-- 应用：印刷学社 (`tech.application.printing_academy`)：应用：玻璃窑是应用：印刷学社不可替代的知识基础。
-- 应用：科学仪器工坊 (`tech.application.scientific_instrument_works`)：应用：玻璃窑提供应用：科学仪器工坊所需的建材“玻璃”。
-- 应用：燃煤发电厂 (`tech.application.electricity_plant`)：应用：玻璃窑提供应用：燃煤发电厂所需的建材“玻璃”。
-- 应用：早期电气设备厂 (`tech.application.basic_electrical_equipment_works`)：应用：玻璃窑提供应用：早期电气设备厂所需的建材“玻璃”。
-- 应用：博学学会 (`tech.application.learned_society`)：应用：玻璃窑是应用：博学学会不可替代的知识基础。
-- 应用：综合工学院 (`tech.application.polytechnic_institute`)：应用：玻璃窑是应用：综合工学院不可替代的知识基础。
-- 应用：建筑构件厂 (`tech.application.construction_components_plant`)：应用：玻璃窑是应用：建筑构件厂不可替代的知识基础。
-- 应用：珠宝厂 (`tech.application.jewelry_plant`)：应用：玻璃窑是应用：珠宝厂不可替代的知识基础。
-- 应用：电气化包装厂 (`tech.application.method_packaging_plant_r7`)：应用：玻璃窑是应用：电气化包装厂不可替代的知识基础。
-- 应用：电气印刷厂 (`tech.application.method_printed_materials_plant_r7`)：应用：玻璃窑是应用：电气印刷厂不可替代的知识基础。
-- 应用：高级家具厂 (`tech.application.fine_furniture_plant`)：应用：玻璃窑是应用：高级家具厂不可替代的知识基础。
-- 应用：电化工厂 (`tech.application.electrochemical_works`)：应用：玻璃窑是应用：电化工厂不可替代的知识基础。
-- 应用：电力纺织厂 (`tech.application.cloth_plant`)：应用：玻璃窑是应用：电力纺织厂不可替代的知识基础。
-- 应用：炼油厂 (`tech.application.refined_fuel_plant`)：应用：玻璃窑是应用：炼油厂不可替代的知识基础。
-- 应用：综合食品厂 (`tech.application.processed_food_plant`)：应用：玻璃窑是应用：综合食品厂不可替代的知识基础。
-- 应用：受控环境药材农场 (`tech.application.method_medicinal_herbs_collector_r7`)：应用：玻璃窑是应用：受控环境药材农场不可替代的知识基础。
-- 应用：电动机厂 (`tech.application.electric_motor_plant`)：应用：玻璃窑是应用：电动机厂不可替代的知识基础。
-- 应用：电气化造船厂 (`tech.application.method_oceanic_shipyard_r7`)：应用：玻璃窑是应用：电气化造船厂不可替代的知识基础。
-- 应用：酿造厂 (`tech.application.beverages_plant`)：应用：玻璃窑是应用：酿造厂不可替代的知识基础。
-- 应用：高级成衣厂 (`tech.application.fine_clothing_plant`)：应用：玻璃窑是应用：高级成衣厂不可替代的知识基础。
-- 应用：油田 (`tech.application.oil_collector`)：应用：玻璃窑是应用：油田不可替代的知识基础。
-- 工业农学 (`tech.industrial_agronomy`)：应用：玻璃窑是工业农学不可替代的知识基础。
-- 应用：电池厂 (`tech.application.batteries_plant`)：应用：玻璃窑是应用：电池厂不可替代的知识基础。
-- 国家实验室 (`tech.national_laboratories`)：应用：玻璃窑是国家实验室不可替代的知识基础。
-- 应用：精密工具厂 (`tech.application.method_precision_tool_workshop_r8`)：应用：玻璃窑是应用：精密工具厂不可替代的知识基础。
-- 应用：铁路设备厂 (`tech.application.railway_equipment_plant`)：应用：玻璃窑是应用：铁路设备厂不可替代的知识基础。
-- 应用：燃油发电厂 (`tech.application.oil_power_plant`)：应用：玻璃窑是应用：燃油发电厂不可替代的知识基础。
-- 应用：现代炸药厂 (`tech.application.method_explosives_plant_r8`)：应用：玻璃窑是应用：现代炸药厂不可替代的知识基础。
-- 应用：精密仪器厂 (`tech.application.method_scientific_instrument_works_r8`)：应用：玻璃窑是应用：精密仪器厂不可替代的知识基础。
-- 应用：锰矿 (`tech.application.manganese_ore_collector`)：应用：玻璃窑是应用：锰矿不可替代的知识基础。
-- 应用：电解铝厂 (`tech.application.aluminum_plant`)：应用：玻璃窑是应用：电解铝厂不可替代的知识基础。
-- 应用：天然气田 (`tech.application.natural_gas_collector`)：应用：玻璃窑是应用：天然气田不可替代的知识基础。
-- 应用：现代硝石矿 (`tech.application.method_saltpeter_collector_r8`)：应用：玻璃窑是应用：现代硝石矿不可替代的知识基础。
-- 应用：现代硫矿 (`tech.application.method_sulfur_collector_r8`)：应用：玻璃窑是应用：现代硫矿不可替代的知识基础。
-- 应用：燃气发电厂 (`tech.application.gas_power_plant`)：应用：玻璃窑是应用：燃气发电厂不可替代的知识基础。
-- 应用：石油化工厂 (`tech.application.petrochemicals_plant`)：应用：玻璃窑是应用：石油化工厂不可替代的知识基础。
-- 应用：洗涤剂厂 (`tech.application.detergent_plant`)：应用：玻璃窑是应用：洗涤剂厂不可替代的知识基础。
-- 应用：合成橡胶厂 (`tech.application.synthetic_rubber_plant`)：应用：玻璃窑是应用：合成橡胶厂不可替代的知识基础。
-- 应用：塑料厂 (`tech.application.plastics_plant`)：应用：玻璃窑是应用：塑料厂不可替代的知识基础。
-- 应用：合成纤维厂 (`tech.application.synthetic_fiber_plant`)：应用：玻璃窑是应用：合成纤维厂不可替代的知识基础。
-- 应用：合成纤维织造厂 (`tech.application.synthetic_textile_mill`)：应用：玻璃窑是应用：合成纤维织造厂不可替代的知识基础。
-- 应用：电气设备厂 (`tech.application.electrical_equipment_plant`)：应用：玻璃窑是应用：电气设备厂不可替代的知识基础。
-- 应用：电子元件厂 (`tech.application.electronic_components_plant`)：应用：玻璃窑是应用：电子元件厂不可替代的知识基础。
-- 应用：绝缘电缆厂 (`tech.application.insulated_cable_plant`)：应用：玻璃窑是应用：绝缘电缆厂不可替代的知识基础。
-- 应用：无线电设备厂 (`tech.application.radio_equipment_works`)：应用：玻璃窑是应用：无线电设备厂不可替代的知识基础。
-- 应用：家用电器厂 (`tech.application.household_appliances_plant`)：应用：玻璃窑是应用：家用电器厂不可替代的知识基础。
-- 数字计算 (`tech.digital_computing`)：应用：玻璃窑是数字计算不可替代的知识基础。
-- 应用：发动机厂 (`tech.application.engines_plant`)：应用：玻璃窑是应用：发动机厂不可替代的知识基础。
-- 应用：汽车厂 (`tech.application.automobiles_plant`)：应用：玻璃窑是应用：汽车厂不可替代的知识基础。
-- 卫星观测 (`tech.satellite_observation`)：应用：玻璃窑是卫星观测不可替代的知识基础。
-- 应用：战略金属冶炼厂 (`tech.application.rare_earth_metals_plant`)：应用：玻璃窑是应用：战略金属冶炼厂不可替代的知识基础。
-- 应用：核燃料厂 (`tech.application.nuclear_fuel_plant`)：应用：玻璃窑是应用：核燃料厂不可替代的知识基础。
-- 应用：核反应堆设备厂 (`tech.application.reactor_component_works`)：应用：玻璃窑是应用：核反应堆设备厂不可替代的知识基础。
-- 应用：核电站 (`tech.application.nuclear_power_plant`)：应用：玻璃窑是应用：核电站不可替代的知识基础。
-- 应用：核医学制药中心 (`tech.application.nuclear_medicine_center`)：应用：玻璃窑是应用：核医学制药中心不可替代的知识基础。
-- 应用：不锈钢厂 (`tech.application.stainless_steel_plant`)：应用：玻璃窑是应用：不锈钢厂不可替代的知识基础。
-- 应用：自动化焦化厂 (`tech.application.method_coke_ovens_r9`)：应用：玻璃窑是应用：自动化焦化厂不可替代的知识基础。
-- 机器学习 (`tech.machine_learning`)：应用：玻璃窑是机器学习不可替代的知识基础。
-- 自动化农业 (`tech.automated_agriculture`)：应用：玻璃窑是自动化农业不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -21632,7 +22533,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：石作工场；解锁物资：建筑构件
+解锁物资：建筑构件；解锁建筑：石作工场
 
 #### 机会成本
 
@@ -21661,7 +22562,6 @@ geospatial\_analysis\_institution产出 +12%
 - 应用：养马场 (`tech.application.horse_breeder`)：应用：石作工场是应用：养马场不可替代的知识基础。
 - 应用：羊毛行会作坊 (`tech.application.method_wool_shed_r3`)：应用：石作工场是应用：羊毛行会作坊不可替代的知识基础。
 - 应用：佃作稻庄 (`tech.application.method_rice_collector_r3`)：应用：石作工场是应用：佃作稻庄不可替代的知识基础。
-- 应用：马铃薯农场 (`tech.application.potato_collector`)：应用：石作工场是应用：马铃薯农场不可替代的知识基础。
 - 应用：鞋匠铺 (`tech.application.cobbler_shop`)：应用：石作工场是应用：鞋匠铺不可替代的知识基础。
 - 应用：精梳羊毛作坊 (`tech.application.method_wool_shed_r5`)：应用：石作工场是应用：精梳羊毛作坊不可替代的知识基础。
 - 应用：酿酒坊 (`tech.application.brewery`)：应用：石作工场是应用：酿酒坊不可替代的知识基础。
@@ -21677,7 +22577,7 @@ geospatial\_analysis\_institution产出 +12%
 - 应用：裁缝铺 (`tech.application.tailor_shop`)：应用：石作工场是应用：裁缝铺不可替代的知识基础。
 - 应用：煤矿 (`tech.application.coal_mine`)：应用：石作工场是应用：煤矿不可替代的知识基础。
 - 应用：堆肥场 (`tech.application.composting_yard`)：应用：石作工场是应用：堆肥场不可替代的知识基础。
-- 应用：碎布造纸工坊 (`tech.application.rag_paper_workshop`)：应用：石作工场是应用：碎布造纸工坊不可替代的知识基础。
+- 应用：碎布造纸工坊 (`tech.application.rag_paper_workshop`)：tech.application.classical\_masonry\_yard是碎布造纸工坊不可替代的知识基础。
 - 应用：硝石矿 (`tech.application.saltpeter_collector`)：应用：石作工场是应用：硝石矿不可替代的知识基础。
 - 应用：细木家具工坊 (`tech.application.cabinetmaker_workshop`)：应用：石作工场是应用：细木家具工坊不可替代的知识基础。
 - 应用：宫廷裁缝坊 (`tech.application.court_tailor`)：应用：石作工场是应用：宫廷裁缝坊不可替代的知识基础。
@@ -21733,7 +22633,7 @@ geospatial\_analysis\_institution产出 +12%
 - 应用：农业机械厂 (`tech.application.agricultural_machinery_plant`)：应用：石作工场是应用：农业机械厂不可替代的知识基础。
 - 应用：工业砖厂 (`tech.application.method_bricks_plant_r6`)：应用：石作工场是应用：工业砖厂不可替代的知识基础。
 - 应用：工业石灰厂 (`tech.application.method_lime_plant_r6`)：应用：石作工场是应用：工业石灰厂不可替代的知识基础。
-- 应用：机械化马铃薯农场 (`tech.application.method_potato_collector_r6`)：应用：石作工场是应用：机械化马铃薯农场不可替代的知识基础。
+- 应用：机械化马铃薯农场 (`tech.application.method_potato_collector_r6`)：tech.application.classical\_masonry\_yard是机械化马铃薯农场不可替代的知识基础。
 - 应用：机械化牧场 (`tech.application.ranching_station`)：应用：石作工场是应用：机械化牧场不可替代的知识基础。
 - 应用：机械化棉花农场 (`tech.application.method_cotton_collector_r6`)：应用：石作工场是应用：机械化棉花农场不可替代的知识基础。
 - 应用：机械化农场 (`tech.application.mechanized_farm`)：应用：石作工场是应用：机械化农场不可替代的知识基础。
@@ -21803,6 +22703,12 @@ geospatial\_analysis\_institution产出 +12%
 - 应用：自动化混凝土厂 (`tech.application.method_concrete_plant_r9`)：应用：石作工场是应用：自动化混凝土厂不可替代的知识基础。
 - 机器学习 (`tech.machine_learning`)：应用：石作工场是机器学习不可替代的知识基础。
 - 自动化农业 (`tech.automated_agriculture`)：应用：石作工场是自动化农业不可替代的知识基础。
+- 应用：马铃薯庄园 (`tech.application.potato_estate`)：tech.application.classical\_masonry\_yard是马铃薯庄园不可替代的知识基础。
+- 应用：改良轮作马铃薯庄园 (`tech.application.method_potato_farm_r5`)：tech.application.classical\_masonry\_yard是改良轮作马铃薯庄园不可替代的知识基础。
+- 应用：机械化小麦农场 (`tech.application.method_wheat_farm_r6`)：tech.application.classical\_masonry\_yard是机械化小麦农场不可替代的知识基础。
+- 应用：机械化稻作农场 (`tech.application.method_rice_collector_r6`)：tech.application.classical\_masonry\_yard是机械化稻作农场不可替代的知识基础。
+- 应用：机械化亚麻农场 (`tech.application.method_flax_collector_r6`)：tech.application.classical\_masonry\_yard是机械化亚麻农场不可替代的知识基础。
+- 应用：商业香料种植园 (`tech.application.spice_commercial_plantation`)：tech.application.classical\_masonry\_yard是商业香料种植园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -21848,7 +22754,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：石料场
+解锁物资：原石；解锁建筑：石料场
 
 #### 机会成本
 
@@ -21919,7 +22825,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：植物纤维抄纸坊；解锁物资：纸张
+解锁物资：纸张；解锁建筑：植物纤维抄纸坊
 
 #### 机会成本
 
@@ -21994,7 +22900,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：树皮纸工坊；解锁物资：纸张
+解锁物资：纸张；解锁建筑：树皮纸工坊
 
 #### 机会成本
 
@@ -22064,7 +22970,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：皮纸工坊；解锁物资：纸张
+解锁物资：纸张；解锁建筑：皮纸工坊
 
 #### 机会成本
 
@@ -22133,7 +23039,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：公共营造场
+解锁物资：建筑构件；解锁建筑：公共营造场；作为必要支撑：活字印刷坊、印刷厂、木版印刷坊
 
 #### 机会成本
 
@@ -22201,7 +23107,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：水力锯木场
+解锁物资：木材；解锁建筑：水力锯木场；作为必要支撑：森林遥感经营站
 
 #### 机会成本
 
@@ -22409,7 +23315,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：商业狩猎与毛皮站；解锁物资：毛皮
+解锁物资：毛皮；解锁物资：野味；解锁物资：生皮；解锁建筑：商业狩猎与毛皮站
 
 #### 机会成本
 
@@ -22481,7 +23387,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：行会陶窑
+解锁物资：陶器；解锁建筑：行会陶窑；作为必要支撑：土法炼铜炉、活字印刷坊
 
 #### 机会成本
 
@@ -22550,7 +23456,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：养马场
+解锁物资：马匹；解锁建筑：养马场
 
 #### 机会成本
 
@@ -22619,7 +23525,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：羊毛行会作坊
+解锁物资：羊毛；解锁建筑：羊毛行会作坊
 
 #### 机会成本
 
@@ -22689,7 +23595,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：佃作稻庄
+解锁物资：稻米；解锁建筑：佃作稻庄；作为必要支撑：庄园水田、佃作稻庄、精耕稻庄、分成水田、佃作水田
 
 #### 机会成本
 
@@ -22706,75 +23612,6 @@ geospatial\_analysis\_institution产出 +12%
 
 - **稻米**（`good`）：`good.rice_grain` → `production_access` `unlock` `1.0`；`existing_binding`
 - **佃作稻庄**（`building`）：`building.method_rice_collector_r3` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-无
-
-#### 被以下科技作为硬前置
-
-无
-
-#### 主题路线后继
-
-无
-
-#### 跨领域应用
-
-无
-
-#### 作为候选参与的里程碑
-
-无
-
-### 应用：马铃薯农场 (`tech.application.potato_collector`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.application.potato_collector` |
-| 时代 | 启蒙时代 (`enlightenment`) |
-| 领域 | 农业 (`agriculture`) |
-| 研究成本 | 9360 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | branch |
-| 锚点类型 | application |
-| 节点角色 | applied\_method |
-| 布局路线 | branch.tuber\_highland |
-| 主要路线 | 作物 · 块茎作物 (\`route.crop.tuber\`) |
-| 全部路线 | 作物 · 块茎作物 (\`route.crop.tuber\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | crop |
-
-#### 硬前置（决定研发资格）
-
-- 垄作块茎 (`tech.ridge_tuber_cultivation`)：垄作块茎是应用：马铃薯农场不可替代的知识基础。
-- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：马铃薯农场不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：马铃薯农场不可替代的知识基础。
-- 雨养田体系 (`tech.rainfed_field_system`)：雨养田体系是应用：马铃薯农场不可替代的知识基础。
-
-#### 发现启发（仅用于揭示）
-
-无
-
-#### 效果摘要
-
-解锁建筑：马铃薯农场
-
-#### 机会成本
-
-多条知识路线汇合为一个可见应用节点，避免建筑条件隐式叠加。
-
-#### 内容解锁
-
-- **物资：** 马铃薯 (`potatoes`)
-- **建筑 / 生产方式：** 马铃薯农场 (`potato_collector`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-- **马铃薯**（`good`）：`good.potatoes` → `production_access` `unlock` `1.0`；`existing_binding`
-- **马铃薯农场**（`building`）：`building.potato_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -22828,7 +23665,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：鞋匠铺；解锁物资：鞋履
+解锁物资：鞋履；解锁建筑：鞋匠铺；作为必要支撑：制鞋厂、制革厂、皮纸工坊
 
 #### 机会成本
 
@@ -22898,7 +23735,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：精梳羊毛作坊
+解锁物资：羊毛；解锁建筑：精梳羊毛作坊
 
 #### 机会成本
 
@@ -22968,7 +23805,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：酿酒坊；解锁物资：酒饮
+解锁物资：酒饮；解锁建筑：酿酒坊
 
 #### 机会成本
 
@@ -23040,7 +23877,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：蒸馏酒坊
+解锁物资：酒饮；解锁建筑：蒸馏酒坊
 
 #### 机会成本
 
@@ -23109,7 +23946,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：规模化采石场
+解锁物资：原石；解锁建筑：规模化采石场
 
 #### 机会成本
 
@@ -23179,7 +24016,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：榨油坊；解锁物资：食用油
+解锁物资：食用油；解锁建筑：榨油坊；作为必要支撑：工业榨油厂
 
 #### 机会成本
 
@@ -23252,7 +24089,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：制皂工坊；解锁物资：肥皂
+解锁物资：肥皂；解锁建筑：制皂工坊
 
 #### 机会成本
 
@@ -23322,7 +24159,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：古典学院
+解锁物资：科技值；解锁建筑：古典学院
 
 #### 机会成本
 
@@ -23390,7 +24227,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：修道院抄写室
+解锁物资：手抄本；解锁建筑：修道院抄写室；作为必要支撑：活字印刷坊、印刷厂、木版印刷坊
 
 #### 机会成本
 
@@ -23459,7 +24296,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：商营伐木场
+解锁物资：原木；解锁建筑：商营伐木场；作为必要支撑：森林遥感经营站
 
 #### 机会成本
 
@@ -23528,7 +24365,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：庄园牧场
+解锁物资：畜牧产品；解锁建筑：庄园牧场
 
 #### 机会成本
 
@@ -23597,7 +24434,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：三圃制小农场
+解锁物资：混合谷物；解锁物资：蔬菜；解锁建筑：三圃制小农场；作为必要支撑：佃作小麦庄园、改良轮作小麦庄园
 
 #### 机会成本
 
@@ -23667,7 +24504,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：家具行会工坊；解锁物资：家具
+解锁物资：家具；解锁建筑：家具行会工坊；作为必要支撑：行会陶窑、包装材料厂、印刷厂
 
 #### 机会成本
 
@@ -23736,7 +24573,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：裁缝铺；解锁物资：衣物
+解锁物资：衣物；解锁建筑：裁缝铺；作为必要支撑：行会陶窑、包装材料厂、印刷厂
 
 #### 机会成本
 
@@ -23806,7 +24643,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：煤矿；解锁物资：煤炭
+解锁物资：煤炭；解锁建筑：煤矿
 
 #### 机会成本
 
@@ -23874,7 +24711,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-地籍机构产出 +12%
+地籍机构产出 +12%；作为必要支撑：地籍管理局、改良亚麻庄园、精耕稻庄、改良轮作小麦庄园
 
 #### 机会成本
 
@@ -23904,6 +24741,7 @@ geospatial\_analysis\_institution产出 +12%
 - 应用：改良轮作小麦庄园 (`tech.application.method_wheat_farm_r5`)：长期租约是应用：改良轮作小麦庄园不可替代的知识基础。
 - 应用：改良亚麻庄园 (`tech.application.method_flax_collector_r5`)：长期租约是应用：改良亚麻庄园不可替代的知识基础。
 - 应用：地籍管理局 (`tech.application.cadastral_office`)：长期租约是应用：地籍管理局不可替代的知识基础。
+- 应用：改良轮作马铃薯庄园 (`tech.application.method_potato_farm_r5`)：tech.long\_term\_leases是改良轮作马铃薯庄园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -23950,7 +24788,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-谷物产出 +12%；小麦产出 +12%；稻米产出 +12%；玉米产出 +12%
+谷物产出 +12%；小麦产出 +12%；稻米产出 +12%；玉米产出 +12%；作为必要支撑：改良亚麻庄园、精耕稻庄、改良轮作小麦庄园
 
 #### 机会成本
 
@@ -23987,6 +24825,7 @@ geospatial\_analysis\_institution产出 +12%
 - 应用：精耕稻庄 (`tech.application.method_rice_collector_r5`)：系统育种是应用：精耕稻庄不可替代的知识基础。
 - 应用：改良轮作小麦庄园 (`tech.application.method_wheat_farm_r5`)：系统育种是应用：改良轮作小麦庄园不可替代的知识基础。
 - 应用：改良亚麻庄园 (`tech.application.method_flax_collector_r5`)：系统育种是应用：改良亚麻庄园不可替代的知识基础。
+- 应用：改良轮作马铃薯庄园 (`tech.application.method_potato_farm_r5`)：tech.crop\_breeding是改良轮作马铃薯庄园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -24098,7 +24937,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-金属工具制造产出 +12%
+金属工具制造产出 +12%；作为必要支撑：罐头工坊
 
 #### 机会成本
 
@@ -24168,7 +25007,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-全社会 +6%
+全社会 +6%；作为必要支撑：罐头工坊
 
 #### 机会成本
 
@@ -24242,7 +25081,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-全社会生产投入 -4%
+全社会生产投入 -4%；作为必要支撑：建筑构件厂、包装材料厂
 
 #### 机会成本
 
@@ -24384,7 +25223,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-landform.delta.agriculture产出 +18%；landform.delta.manufacturing产出 -5%
+landform.delta.agriculture产出 +18%；landform.delta.manufacturing产出 -5%；作为必要支撑：混凝土厂、河流水力发电站、流域治理中心
 
 #### 机会成本
 
@@ -24461,7 +25300,7 @@ landform.delta.agriculture产出 +18%；landform.delta.manufacturing产出 -5%
 
 #### 效果摘要
 
-工程领域研究效率 +8%
+工程领域研究效率 +8%；作为必要支撑：地理空间分析中心
 
 #### 机会成本
 
@@ -24601,7 +25440,7 @@ landform.delta.agriculture产出 +18%；landform.delta.manufacturing产出 -5%
 
 #### 效果摘要
 
-terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
+terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%；作为必要支撑：现代硝石矿、现代硫矿
 
 #### 机会成本
 
@@ -25573,7 +26412,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-解锁建筑：大气式蒸汽机工坊；解锁物资：蒸汽机
+解锁物资：蒸汽机；解锁建筑：大气式蒸汽机工坊
 
 #### 机会成本
 
@@ -25616,10 +26455,151 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 无
 
+### 应用：马铃薯庄园 (`tech.application.potato_estate`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.potato_estate` |
+| 时代 | 启蒙时代 (`enlightenment`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 47600 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.tuber\_highland |
+| 主要路线 | 作物 · 块茎作物 (\`route.crop.tuber\`) |
+| 全部路线 | 作物 · 块茎作物 (\`route.crop.tuber\`)；制度 · 市场 (\`route.institution.market\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 应用：佃作马铃薯田 (`tech.application.tenant_potato_field`)：tech.application.tenant\_potato\_field是马铃薯庄园不可替代的知识基础。
+- 庄园核算 (`tech.estate_accounting`)：tech.estate\_accounting是马铃薯庄园不可替代的知识基础。
+- 习惯佃作 (`tech.customary_tenancy`)：tech.customary\_tenancy是马铃薯庄园不可替代的知识基础。
+- 集约轮作 (`tech.intensive_crop_rotation`)：tech.intensive\_crop\_rotation是马铃薯庄园不可替代的知识基础。
+- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：tech.application.method\_lumber\_plant\_r2是马铃薯庄园不可替代的知识基础。
+- 应用：石作工场 (`tech.application.classical_masonry_yard`)：tech.application.classical\_masonry\_yard是马铃薯庄园不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：马铃薯；解锁建筑：马铃薯庄园
+
+#### 机会成本
+
+无
+
+#### 内容解锁
+
+- **物资：** 马铃薯 (`potatoes`)
+- **建筑 / 生产方式：** 马铃薯庄园 (`potato_estate`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **马铃薯**（`good`）：`good.potatoes` → `production_access` `unlock` `1.0`；`catalog_rebind`
+- **马铃薯庄园**（`building`）：`building.potato_estate` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+- 应用：改良轮作马铃薯庄园 (`tech.application.method_potato_farm_r5`)：tech.application.potato\_estate是改良轮作马铃薯庄园不可替代的知识基础。
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 应用：商业香料种植园 (`tech.application.spice_commercial_plantation`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.spice_commercial_plantation` |
+| 时代 | 启蒙时代 (`enlightenment`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 47600 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.tropical\_commodities |
+| 主要路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
+| 全部路线 | 作物 · 热带作物 (\`route.crop.tropical\`)；制度 · 市场 (\`route.institution.market\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 应用：商品香料园 (`tech.application.spice_managed_garden`)：tech.application.spice\_managed\_garden是商业香料种植园不可替代的知识基础。
+- 种植园庄园管理 (`tech.estate_plantation_management`)：tech.estate\_plantation\_management是商业香料种植园不可替代的知识基础。
+- 商品作物管理 (`tech.commodity_crop_management`)：tech.commodity\_crop\_management是商业香料种植园不可替代的知识基础。
+- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：tech.application.method\_lumber\_plant\_r2是商业香料种植园不可替代的知识基础。
+- 应用：石作工场 (`tech.application.classical_masonry_yard`)：tech.application.classical\_masonry\_yard是商业香料种植园不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：香料；解锁建筑：商业香料种植园
+
+#### 机会成本
+
+无
+
+#### 内容解锁
+
+- **物资：** 香料 (`spices`)
+- **建筑 / 生产方式：** 商业香料种植园 (`spice_commercial_plantation`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **香料**（`good`）：`good.spices` → `production_access` `unlock` `1.0`；`catalog_rebind`
+- **商业香料种植园**（`building`）：`building.spice_commercial_plantation` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
 <a id="era-7"></a>
 ## 蒸汽时代
 
-共 58 项科技，研究成本范围 20400-800000；时代里程碑：工业化 (`tech.industrialization`)。
+共 62 项科技，研究成本范围 9360-800000；时代里程碑：工业化 (`tech.industrialization`)。
 
 ### 应用：堆肥场 (`tech.application.composting_yard`)
 
@@ -25655,7 +26635,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-解锁建筑：堆肥场；解锁物资：肥料
+解锁物资：肥料；解锁建筑：堆肥场；作为必要支撑：工业榨油厂
 
 #### 机会成本
 
@@ -25715,10 +26695,11 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 硬前置（决定研发资格）
 
-- 破布纸 (`tech.rag_paper_making`)：破布纸是应用：碎布造纸工坊不可替代的知识基础。
-- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：碎布造纸工坊不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：碎布造纸工坊不可替代的知识基础。
-- 应用：亚麻农场 (`tech.application.flax_collector`)：应用：亚麻农场是应用：碎布造纸工坊不可替代的知识基础。
+- 破布纸 (`tech.rag_paper_making`)：tech.rag\_paper\_making是碎布造纸工坊不可替代的知识基础。
+- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：tech.application.method\_lumber\_plant\_r2是碎布造纸工坊不可替代的知识基础。
+- 应用：石作工场 (`tech.application.classical_masonry_yard`)：tech.application.classical\_masonry\_yard是碎布造纸工坊不可替代的知识基础。
+- 应用：亚麻农场 (`tech.application.flax_collector`)：tech.application.flax\_collector是碎布造纸工坊不可替代的知识基础。
+- 应用：沤麻池 (`tech.application.flax_retting_pit`)：tech.application.flax\_retting\_pit是碎布造纸工坊不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -25726,7 +26707,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-解锁建筑：碎布造纸工坊；解锁物资：纸张
+解锁物资：纸张；解锁建筑：碎布造纸工坊
 
 #### 机会成本
 
@@ -25796,7 +26777,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-解锁建筑：木版印刷坊；解锁物资：印刷品
+解锁物资：印刷品；解锁建筑：木版印刷坊
 
 #### 机会成本
 
@@ -25869,7 +26850,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-解锁建筑：活字印刷坊；解锁物资：印刷品
+解锁物资：印刷品；解锁建筑：活字印刷坊
 
 #### 机会成本
 
@@ -25938,7 +26919,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-解锁建筑：硝石矿；解锁物资：硝石
+解锁物资：硝石；解锁建筑：硝石矿
 
 #### 机会成本
 
@@ -26009,7 +26990,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-解锁建筑：特许大学
+解锁物资：科技值；解锁建筑：特许大学
 
 #### 机会成本
 
@@ -26080,7 +27061,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-解锁建筑：细木家具工坊；解锁物资：精美家具
+解锁物资：精美家具；解锁建筑：细木家具工坊；作为必要支撑：细木家具工坊、活字印刷坊
 
 #### 机会成本
 
@@ -26151,7 +27132,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-解锁建筑：宫廷裁缝坊；解锁物资：华服
+解锁物资：华服；解锁建筑：宫廷裁缝坊；作为必要支撑：细木家具工坊、活字印刷坊
 
 #### 机会成本
 
@@ -26218,7 +27199,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-解锁建筑：浅层铜矿；解锁物资：铜矿石
+解锁物资：铜矿石；解锁建筑：浅层铜矿
 
 #### 机会成本
 
@@ -26291,7 +27272,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-解锁建筑：玉米庄园
+解锁物资：玉米；解锁建筑：玉米庄园
 
 #### 机会成本
 
@@ -26363,7 +27344,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-解锁建筑：佃作小麦庄园
+解锁物资：小麦；解锁建筑：佃作小麦庄园
 
 #### 机会成本
 
@@ -26435,7 +27416,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-解锁建筑：庄园水田
+解锁物资：稻米；解锁建筑：庄园水田
 
 #### 机会成本
 
@@ -26507,7 +27488,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-解锁建筑：精耕稻庄
+解锁物资：稻米；解锁建筑：精耕稻庄
 
 #### 机会成本
 
@@ -26577,7 +27558,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-解锁建筑：远洋造船厂；解锁物资：远洋船舶
+解锁物资：远洋船舶；解锁建筑：远洋造船厂；作为必要支撑：远洋渔场、蒸汽航运船坞
 
 #### 机会成本
 
@@ -26650,7 +27631,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-解锁建筑：包装材料厂；解锁物资：包装材料
+解锁物资：包装材料；解锁建筑：包装材料厂；作为必要支撑：印刷学社
 
 #### 机会成本
 
@@ -26727,7 +27708,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-解锁建筑：印刷厂；解锁物资：印刷品
+解锁物资：印刷品；解锁建筑：印刷厂；作为必要支撑：印刷学社
 
 #### 机会成本
 
@@ -26797,7 +27778,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-解锁建筑：药材种植园；解锁物资：药材
+解锁物资：药材；解锁建筑：药材种植园
 
 #### 机会成本
 
@@ -26867,7 +27848,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-解锁建筑：锡矿
+解锁物资：锡矿石；解锁建筑：锡矿；作为必要支撑：硅砂矿
 
 #### 机会成本
 
@@ -26940,7 +27921,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-解锁建筑：棉花农场
+解锁物资：籽棉；解锁建筑：棉花农场；作为必要支撑：橡胶种植园
 
 #### 机会成本
 
@@ -27011,7 +27992,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-解锁建筑：香料种植园
+解锁物资：香料；解锁建筑：香料种植园；作为必要支撑：橡胶种植园
 
 #### 机会成本
 
@@ -27082,7 +28063,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-解锁建筑：橡胶种植园
+解锁物资：天然乳胶；解锁建筑：橡胶种植园；作为必要支撑：棉花农场、机械化橡胶种植园、机械化香料种植园、香料种植园
 
 #### 机会成本
 
@@ -27152,7 +28133,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-解锁建筑：远洋渔场
+解锁物资：鱼类；解锁建筑：远洋渔场
 
 #### 机会成本
 
@@ -27225,7 +28206,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-解锁建筑：亚麻庄园
+解锁物资：韧皮原料；解锁建筑：亚麻庄园；作为必要支撑：棉花农场、橡胶种植园、香料种植园
 
 #### 机会成本
 
@@ -27233,14 +28214,14 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 内容解锁
 
-- **物资：** 亚麻纤维 (`flax_fiber`)
+- **物资：** 亚麻秆/韧皮原料 (`bast_fiber`)
 - **建筑 / 生产方式：** 亚麻庄园 (`method_flax_collector_r3`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
-- **亚麻纤维**（`good`）：`good.flax_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
+- **韧皮原料**（`good`）：`good.bast_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
 - **亚麻庄园**（`building`）：`building.method_flax_collector_r3` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -27298,7 +28279,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-解锁建筑：改良轮作小麦庄园
+解锁物资：小麦；解锁建筑：改良轮作小麦庄园；作为必要支撑：改良亚麻庄园、精耕稻庄、改良轮作小麦庄园
 
 #### 机会成本
 
@@ -27370,7 +28351,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-解锁建筑：改良亚麻庄园
+解锁物资：韧皮原料；解锁建筑：改良亚麻庄园；作为必要支撑：地籍管理局、改良亚麻庄园、精耕稻庄、改良轮作小麦庄园
 
 #### 机会成本
 
@@ -27378,14 +28359,14 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 内容解锁
 
-- **物资：** 亚麻纤维 (`flax_fiber`)
+- **物资：** 亚麻秆/韧皮原料 (`bast_fiber`)
 - **建筑 / 生产方式：** 改良亚麻庄园 (`method_flax_collector_r5`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
-- **亚麻纤维**（`good`）：`good.flax_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
+- **韧皮原料**（`good`）：`good.bast_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
 - **改良亚麻庄园**（`building`）：`building.method_flax_collector_r5` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -27514,7 +28495,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-解锁建筑：硫矿；解锁物资：硫磺
+解锁物资：硫磺；解锁建筑：硫矿
 
 #### 机会成本
 
@@ -27588,7 +28569,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-解锁建筑：印刷学社
+解锁物资：科技值；解锁建筑：印刷学社
 
 #### 机会成本
 
@@ -27658,7 +28639,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-解锁建筑：煤层平硐；解锁物资：煤炭
+解锁物资：煤炭；解锁建筑：煤层平硐
 
 #### 机会成本
 
@@ -27732,7 +28713,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-解锁建筑：罐头工坊；解锁物资：鱼罐头
+解锁物资：鱼罐头；解锁建筑：罐头工坊
 
 #### 机会成本
 
@@ -27802,7 +28783,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-炼钢产出 +12%；解锁物资：焦炭；解锁建筑：焦化厂
+解锁物资：焦炭；解锁建筑：焦化厂；炼钢产出 +12%；作为必要支撑：自动化焦化厂
 
 #### 机会成本
 
@@ -27944,7 +28925,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-全社会 +6%
+全社会 +6%；作为必要支撑：机械化农场、机械化玉米农场、机械化橡胶种植园、机械化香料种植园
 
 #### 机会成本
 
@@ -27972,10 +28953,14 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 - 机械收割 (`tech.mechanical_reaping`)：机械化农业是机械收割不可替代的知识基础。
 - 机动农业 (`tech.motorized_agriculture`)：机械化农业是机动农业不可替代的知识基础。
 - 应用：农业机械厂 (`tech.application.agricultural_machinery_plant`)：机械化农业是应用：农业机械厂不可替代的知识基础。
+- 应用：机械化马铃薯农场 (`tech.application.method_potato_collector_r6`)：tech.mechanized\_agriculture是机械化马铃薯农场不可替代的知识基础。
 - 应用：机械化棉花农场 (`tech.application.method_cotton_collector_r6`)：机械化农业是应用：机械化棉花农场不可替代的知识基础。
 - 应用：机械化橡胶种植园 (`tech.application.method_rubber_tree_collector_r6`)：机械化农业是应用：机械化橡胶种植园不可替代的知识基础。
 - 应用：机械化香料种植园 (`tech.application.method_spice_plants_collector_r6`)：机械化农业是应用：机械化香料种植园不可替代的知识基础。
 - 集体农业 (`tech.collective_agriculture`)：机械化农业是集体农业不可替代的知识基础。
+- 应用：机械化小麦农场 (`tech.application.method_wheat_farm_r6`)：tech.mechanized\_agriculture是机械化小麦农场不可替代的知识基础。
+- 应用：机械化稻作农场 (`tech.application.method_rice_collector_r6`)：tech.mechanized\_agriculture是机械化稻作农场不可替代的知识基础。
+- 应用：机械化亚麻农场 (`tech.application.method_flax_collector_r6`)：tech.mechanized\_agriculture是机械化亚麻农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -28017,7 +29002,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-全社会 +8%
+全社会 +8%；作为必要支撑：面包厂、鱼类罐头厂、乳制品厂、工业屠宰场、工业榨油厂、工业石灰岩矿场、综合工学院
 
 #### 机会成本
 
@@ -28094,7 +29079,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-金属工具制造产出 +12%
+金属工具制造产出 +12%；作为必要支撑：工业机械厂、蒸汽锯木厂、自动化机械零件厂
 
 #### 机会成本
 
@@ -28168,7 +29153,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-全社会 +12%
+全社会 +12%；作为必要支撑：鱼类罐头厂、蒸汽锯木厂、蒸汽航运船坞
 
 #### 机会成本
 
@@ -28200,6 +29185,9 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 - 应用：蒸汽锯木厂 (`tech.application.method_lumber_plant_r6`)：蒸汽动力是应用：蒸汽锯木厂不可替代的知识基础。
 - 应用：蒸汽机工厂 (`tech.application.steam_engine_works`)：蒸汽动力是应用：蒸汽机工厂不可替代的知识基础。
 - 应用：自动化蒸汽机厂 (`tech.application.method_steam_engine_works_r9`)：蒸汽动力是应用：自动化蒸汽机厂不可替代的知识基础。
+- Glassware Factory (`tech.application.glassware_factory_steam`)：knowledge prerequisite: tech.steam\_power -\> Glassware Factory
+- Metal Housewares Factory (`tech.application.metal_housewares_factory_steam`)：knowledge prerequisite: tech.steam\_power -\> Metal Housewares Factory
+- Leather Goods Factory (`tech.application.leather_goods_factory_steam`)：knowledge prerequisite: tech.steam\_power -\> Leather Goods Factory
 
 #### 主题路线后继
 
@@ -28378,7 +29366,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-可利用资源：硫磺矿；化学工业产出 +12%
+可利用资源：硫磺矿；化学工业产出 +12%；作为必要支撑：洗涤剂厂、炸药厂、制革厂、智能化洗涤剂厂、现代硝石矿、工业制皂厂、现代硫矿、造纸厂
 
 #### 机会成本
 
@@ -28464,7 +29452,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-化学工业产出 +12%
+化学工业产出 +12%；作为必要支撑：自动化磷矿
 
 #### 机会成本
 
@@ -28534,7 +29522,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-小麦产出 +22%
+小麦产出 +22%；作为必要支撑：机械化马铃薯农场
 
 #### 机会成本
 
@@ -28559,9 +29547,10 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 被以下科技作为硬前置
 
-- 应用：机械化马铃薯农场 (`tech.application.method_potato_collector_r6`)：机械收割是应用：机械化马铃薯农场不可替代的知识基础。
+- 应用：机械化马铃薯农场 (`tech.application.method_potato_collector_r6`)：tech.mechanical\_reaping是机械化马铃薯农场不可替代的知识基础。
 - 应用：机械化农场 (`tech.application.mechanized_farm`)：机械收割是应用：机械化农场不可替代的知识基础。
 - 应用：机械化玉米农场 (`tech.application.method_landed_estate_r6`)：机械收割是应用：机械化玉米农场不可替代的知识基础。
+- 应用：机械化小麦农场 (`tech.application.method_wheat_farm_r6`)：tech.mechanical\_reaping是机械化小麦农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -28604,7 +29593,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-全社会 +6%
+全社会 +6%；作为必要支撑：造纸厂、主食加工厂
 
 #### 机会成本
 
@@ -28678,7 +29667,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-布匹产出 +20%；煤 +4%
+布匹产出 +20%；煤 +4%；作为必要支撑：电力纺织厂、高级成衣厂、制鞋厂、改良家用织机
 
 #### 机会成本
 
@@ -28759,7 +29748,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-解锁建筑：焦炭炼钢厂；解锁物资：钢材
+解锁物资：钢材；解锁建筑：焦炭炼钢厂
 
 #### 机会成本
 
@@ -28814,7 +29803,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 - 应用：工业榨油厂 (`tech.application.method_edible_oil_plant_r6`)：应用：焦炭炼钢厂是应用：工业榨油厂不可替代的知识基础。
 - 应用：农业机械厂 (`tech.application.agricultural_machinery_plant`)：应用：焦炭炼钢厂是应用：农业机械厂不可替代的知识基础。
 - 应用：工业石灰厂 (`tech.application.method_lime_plant_r6`)：应用：焦炭炼钢厂是应用：工业石灰厂不可替代的知识基础。
-- 应用：机械化马铃薯农场 (`tech.application.method_potato_collector_r6`)：应用：焦炭炼钢厂是应用：机械化马铃薯农场不可替代的知识基础。
+- 应用：机械化马铃薯农场 (`tech.application.method_potato_collector_r6`)：tech.application.steam\_steel\_works是机械化马铃薯农场不可替代的知识基础。
 - 应用：机械化牧场 (`tech.application.ranching_station`)：应用：焦炭炼钢厂是应用：机械化牧场不可替代的知识基础。
 - 应用：机械化棉花农场 (`tech.application.method_cotton_collector_r6`)：应用：焦炭炼钢厂是应用：机械化棉花农场不可替代的知识基础。
 - 应用：机械化农场 (`tech.application.mechanized_farm`)：应用：焦炭炼钢厂是应用：机械化农场不可替代的知识基础。
@@ -28887,6 +29876,9 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 - 应用：自动化混凝土厂 (`tech.application.method_concrete_plant_r9`)：应用：焦炭炼钢厂是应用：自动化混凝土厂不可替代的知识基础。
 - 机器学习 (`tech.machine_learning`)：应用：焦炭炼钢厂是机器学习不可替代的知识基础。
 - 自动化农业 (`tech.automated_agriculture`)：应用：焦炭炼钢厂是自动化农业不可替代的知识基础。
+- 应用：机械化小麦农场 (`tech.application.method_wheat_farm_r6`)：tech.application.steam\_steel\_works是机械化小麦农场不可替代的知识基础。
+- 应用：机械化稻作农场 (`tech.application.method_rice_collector_r6`)：tech.application.steam\_steel\_works是机械化稻作农场不可替代的知识基础。
+- 应用：机械化亚麻农场 (`tech.application.method_flax_collector_r6`)：tech.application.steam\_steel\_works是机械化亚麻农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -28934,7 +29926,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-解锁建筑：炸药厂；解锁物资：炸药
+解锁物资：炸药；解锁建筑：炸药厂；作为必要支撑：现代炸药厂
 
 #### 机会成本
 
@@ -29078,7 +30070,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-小麦产出 +20%；煤 +4%
+小麦产出 +20%；煤 +4%；作为必要支撑：机械化棉花农场
 
 #### 机会成本
 
@@ -29148,7 +30140,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-全社会生产投入 -5%
+全社会生产投入 -5%；作为必要支撑：制鞋厂、制革厂
 
 #### 机会成本
 
@@ -29287,7 +30279,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%
 
 #### 效果摘要
 
-全社会 +22%
+全社会 +22%；作为必要支撑：面包厂、乳制品厂
 
 #### 机会成本
 
@@ -29565,7 +30557,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-全社会生产投入 -3%
+全社会生产投入 -3%；作为必要支撑：电气化造船厂
 
 #### 机会成本
 
@@ -29641,7 +30633,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-解锁建筑：浅层铁矿
+解锁物资：铁矿石；解锁建筑：浅层铁矿
 
 #### 机会成本
 
@@ -29861,7 +30853,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-解锁建筑：改良家用织机
+解锁物资：布料；解锁建筑：改良家用织机
 
 #### 机会成本
 
@@ -29899,10 +30891,285 @@ timber -8%；煤 +5%
 
 无
 
+### Glassware Factory (`tech.application.glassware_factory_steam`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.glassware_factory_steam` |
+| 时代 | 蒸汽时代 (`steam`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 9360 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.construction\_materials |
+| 主要路线 | 材料 · 合成材料 (\`route.material.materials\`) |
+| 全部路线 | 材料 · 合成材料 (\`route.material.materials\`)；工艺 · 消费品 (\`route.craft.consumer\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | craft |
+
+#### 硬前置（决定研发资格）
+
+- Glassware Manufactory (`tech.application.glassware_manufactory_exploration`)：knowledge prerequisite: tech.application.glassware\_manufactory\_exploration -\> Glassware Factory
+- 蒸汽动力 (`tech.steam_power`)：knowledge prerequisite: tech.steam\_power -\> Glassware Factory
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：Glassware Factory；解锁建筑：Glassware Factory；作为必要支撑：Glassware Factory
+
+#### 机会成本
+
+terminal production upgrade
+
+#### 内容解锁
+
+- **物资：** 玻璃器皿 (`glassware`)
+- **建筑 / 生产方式：** 玻璃器皿工厂 (`glassware_factory`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **Glassware Factory**（`good`）：`good.glassware` → `production_access` `unlock` `1.0`；`existing_binding`
+- **Glassware Factory**（`building`）：`building.glassware_factory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+- Smart Glassware Factory (`tech.application.glassware_smart_factory`)：knowledge prerequisite: tech.application.glassware\_factory\_steam -\> Smart Glassware Factory
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### Metal Housewares Factory (`tech.application.metal_housewares_factory_steam`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.metal_housewares_factory_steam` |
+| 时代 | 蒸汽时代 (`steam`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 9360 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.construction\_materials |
+| 主要路线 | 材料 · 合成材料 (\`route.material.materials\`) |
+| 全部路线 | 材料 · 合成材料 (\`route.material.materials\`)；工艺 · 消费品 (\`route.craft.consumer\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | craft |
+
+#### 硬前置（决定研发资格）
+
+- Metal Housewares Manufactory (`tech.application.metal_housewares_manufactory_exploration`)：knowledge prerequisite: tech.application.metal\_housewares\_manufactory\_exploration -\> Metal Housewares Factory
+- 蒸汽动力 (`tech.steam_power`)：knowledge prerequisite: tech.steam\_power -\> Metal Housewares Factory
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：Metal Housewares Factory；解锁建筑：Metal Housewares Factory；作为必要支撑：Metal Housewares Factory
+
+#### 机会成本
+
+terminal production upgrade
+
+#### 内容解锁
+
+- **物资：** 金属家用器皿 (`metal_housewares`)
+- **建筑 / 生产方式：** 金属家用器皿工厂 (`metal_housewares_factory`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **Metal Housewares Factory**（`good`）：`good.metal_housewares` → `production_access` `unlock` `1.0`；`existing_binding`
+- **Metal Housewares Factory**（`building`）：`building.metal_housewares_factory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+- Smart Metal Housewares Factory (`tech.application.metal_housewares_smart_factory`)：knowledge prerequisite: tech.application.metal\_housewares\_factory\_steam -\> Smart Metal Housewares Factory
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### Leather Goods Factory (`tech.application.leather_goods_factory_steam`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.leather_goods_factory_steam` |
+| 时代 | 蒸汽时代 (`steam`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 9360 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.construction\_materials |
+| 主要路线 | 材料 · 合成材料 (\`route.material.materials\`) |
+| 全部路线 | 材料 · 合成材料 (\`route.material.materials\`)；工艺 · 消费品 (\`route.craft.consumer\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | craft |
+
+#### 硬前置（决定研发资格）
+
+- Leather Goods Manufactory (`tech.application.leather_goods_manufactory_exploration`)：knowledge prerequisite: tech.application.leather\_goods\_manufactory\_exploration -\> Leather Goods Factory
+- 蒸汽动力 (`tech.steam_power`)：knowledge prerequisite: tech.steam\_power -\> Leather Goods Factory
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：Leather Goods Factory；解锁建筑：Leather Goods Factory；作为必要支撑：Leather Goods Factory
+
+#### 机会成本
+
+terminal production upgrade
+
+#### 内容解锁
+
+- **物资：** 皮革制品 (`leather_goods`)
+- **建筑 / 生产方式：** 皮革制品工厂 (`leather_goods_factory`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **Leather Goods Factory**（`good`）：`good.leather_goods` → `production_access` `unlock` `1.0`；`existing_binding`
+- **Leather Goods Factory**（`building`）：`building.leather_goods_factory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+- Smart Leather Goods Factory (`tech.application.leather_goods_smart_factory`)：knowledge prerequisite: tech.application.leather\_goods\_factory\_steam -\> Smart Leather Goods Factory
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 应用：改良轮作马铃薯庄园 (`tech.application.method_potato_farm_r5`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.method_potato_farm_r5` |
+| 时代 | 蒸汽时代 (`steam`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 244800 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.tuber\_highland |
+| 主要路线 | 作物 · 块茎作物 (\`route.crop.tuber\`) |
+| 全部路线 | 作物 · 块茎作物 (\`route.crop.tuber\`)；制度 · 国家治理 (\`route.institution.state\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 应用：马铃薯庄园 (`tech.application.potato_estate`)：tech.application.potato\_estate是改良轮作马铃薯庄园不可替代的知识基础。
+- 系统育种 (`tech.crop_breeding`)：tech.crop\_breeding是改良轮作马铃薯庄园不可替代的知识基础。
+- 块茎繁育 (`tech.potato_propagation`)：tech.potato\_propagation是改良轮作马铃薯庄园不可替代的知识基础。
+- 雨养田体系 (`tech.rainfed_field_system`)：tech.rainfed\_field\_system是改良轮作马铃薯庄园不可替代的知识基础。
+- 庄园核算 (`tech.estate_accounting`)：tech.estate\_accounting是改良轮作马铃薯庄园不可替代的知识基础。
+- 集约轮作 (`tech.intensive_crop_rotation`)：tech.intensive\_crop\_rotation是改良轮作马铃薯庄园不可替代的知识基础。
+- 长期租约 (`tech.long_term_leases`)：tech.long\_term\_leases是改良轮作马铃薯庄园不可替代的知识基础。
+- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：tech.application.method\_lumber\_plant\_r2是改良轮作马铃薯庄园不可替代的知识基础。
+- 应用：石作工场 (`tech.application.classical_masonry_yard`)：tech.application.classical\_masonry\_yard是改良轮作马铃薯庄园不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：马铃薯；解锁建筑：改良轮作马铃薯庄园
+
+#### 机会成本
+
+无
+
+#### 内容解锁
+
+- **物资：** 马铃薯 (`potatoes`)
+- **建筑 / 生产方式：** 改良轮作马铃薯庄园 (`method_potato_farm_r5`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **马铃薯**（`good`）：`good.potatoes` → `production_access` `unlock` `1.0`；`catalog_rebind`
+- **改良轮作马铃薯庄园**（`building`）：`building.method_potato_farm_r5` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
 <a id="era-8"></a>
 ## 电气时代
 
-共 68 项科技，研究成本范围 8160-1800000；时代里程碑：电气社会 (`tech.electrical_society`)。
+共 74 项科技，研究成本范围 9360-1800000；时代里程碑：电气社会 (`tech.electrical_society`)。
 
 ### 应用：面包厂 (`tech.application.bread_plant`)
 
@@ -29940,7 +31207,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-解锁建筑：面包厂
+解锁物资：面包；解锁建筑：面包厂
 
 #### 机会成本
 
@@ -30012,7 +31279,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-解锁建筑：铅矿；解锁物资：铅矿石
+解锁物资：铅矿石；解锁建筑：铅矿
 
 #### 机会成本
 
@@ -30083,7 +31350,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-解锁建筑：锌矿
+解锁物资：锌矿石；解锁建筑：锌矿
 
 #### 机会成本
 
@@ -30155,7 +31422,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-解锁建筑：金矿
+解锁物资：黄金；解锁建筑：金矿
 
 #### 机会成本
 
@@ -30225,7 +31492,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-解锁建筑：银矿
+解锁物资：白银；解锁建筑：银矿
 
 #### 机会成本
 
@@ -30297,7 +31564,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-解锁建筑：深井盐矿
+解锁物资：食盐；解锁建筑：深井盐矿；作为必要支撑：硅砂矿
 
 #### 机会成本
 
@@ -30368,7 +31635,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-解锁建筑：改良小农场
+解锁物资：混合谷物；解锁物资：蔬菜；解锁建筑：改良小农场
 
 #### 机会成本
 
@@ -30441,7 +31708,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-解锁建筑：水泥厂；解锁物资：水泥
+解锁物资：水泥；解锁建筑：水泥厂；作为必要支撑：混凝土厂、河流水力发电站、流域治理中心
 
 #### 机会成本
 
@@ -30513,7 +31780,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-解锁建筑：硅砂矿
+解锁物资：硅砂；解锁建筑：硅砂矿；作为必要支撑：现代硝石矿、现代硫矿
 
 #### 机会成本
 
@@ -30588,7 +31855,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-解锁建筑：鱼类罐头厂
+解锁物资：鱼罐头；解锁建筑：鱼类罐头厂
 
 #### 机会成本
 
@@ -30657,7 +31924,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-解锁建筑：蒸汽动力煤矿
+解锁物资：煤炭；解锁建筑：蒸汽动力煤矿
 
 #### 机会成本
 
@@ -30726,7 +31993,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-解锁建筑：蒸汽动力铁矿
+解锁物资：铁矿石；解锁建筑：蒸汽动力铁矿
 
 #### 机会成本
 
@@ -30797,7 +32064,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-解锁建筑：制衣厂
+解锁物资：衣物；解锁建筑：制衣厂；作为必要支撑：电力纺织厂、高级成衣厂、制鞋厂、改良家用织机
 
 #### 机会成本
 
@@ -30867,7 +32134,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-解锁建筑：蒸汽纺织厂
+解锁物资：布料；解锁建筑：蒸汽纺织厂；作为必要支撑：电力纺织厂、高级成衣厂、制鞋厂、改良家用织机
 
 #### 机会成本
 
@@ -30936,7 +32203,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-解锁建筑：钢制工具厂；解锁物资：金属工具
+解锁物资：金属工具；解锁建筑：钢制工具厂；作为必要支撑：工业机械厂、蒸汽锯木厂、自动化机械零件厂
 
 #### 机会成本
 
@@ -31006,7 +32273,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-解锁建筑：玻璃厂
+解锁物资：玻璃；解锁建筑：玻璃厂；作为必要支撑：洗涤剂厂、炸药厂、制革厂、智能化洗涤剂厂、现代硝石矿、工业制皂厂、现代硫矿、造纸厂
 
 #### 机会成本
 
@@ -31077,7 +32344,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-解锁建筑：化学工场；解锁物资：工业化学品
+解锁物资：工业化学品；解锁建筑：化学工场；作为必要支撑：洗涤剂厂、炸药厂、制革厂、智能化洗涤剂厂、现代硝石矿、工业制皂厂、现代硫矿、造纸厂
 
 #### 机会成本
 
@@ -31156,7 +32423,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-解锁建筑：磷矿；解锁物资：磷矿石
+解锁物资：磷矿石；解锁建筑：磷矿；作为必要支撑：自动化磷矿
 
 #### 机会成本
 
@@ -31232,7 +32499,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-解锁建筑：制鞋厂
+解锁物资：鞋履；解锁建筑：制鞋厂
 
 #### 机会成本
 
@@ -31303,7 +32570,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-解锁建筑：家具厂
+解锁物资：家具；解锁建筑：家具厂
 
 #### 机会成本
 
@@ -31470,6 +32737,9 @@ timber -8%；煤 +5%
 - 应用：早期电气设备厂 (`tech.application.basic_electrical_equipment_works`)：电气化是应用：早期电气设备厂不可替代的知识基础。
 - 电子控制 (`tech.electronic_control`)：电气化是电子控制不可替代的知识基础。
 - 应用：电气设备厂 (`tech.application.electrical_equipment_plant`)：电气化是应用：电气设备厂不可替代的知识基础。
+- Glassware Factory (`tech.application.glassware_factory_electrical`)：knowledge prerequisite: tech.electrification -\> Glassware Factory
+- Metal Housewares Factory (`tech.application.metal_housewares_factory_electrical`)：knowledge prerequisite: tech.electrification -\> Metal Housewares Factory
+- Leather Goods Factory (`tech.application.leather_goods_factory_electrical`)：knowledge prerequisite: tech.electrification -\> Leather Goods Factory
 
 #### 主题路线后继
 
@@ -31584,7 +32854,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-全社会 +12%；全社会家庭消费 +3%
+全社会 +12%；全社会家庭消费 +3%；作为必要支撑：混凝土厂、高级家具厂、家具厂、家用电器厂、工业屠宰场、智能化汽车厂、电气化造船厂、电气化包装厂、电气印刷厂、工业制皂厂、综合食品厂
 
 #### 机会成本
 
@@ -31664,7 +32934,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-可利用资源：石油；石油开采产出 +12%
+可利用资源：石油；石油开采产出 +12%；作为必要支撑：油田
 
 #### 机会成本
 
@@ -31742,7 +33012,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-解锁建筑：蒸汽航运船坞
+解锁物资：远洋船舶；解锁建筑：蒸汽航运船坞
 
 #### 机会成本
 
@@ -31815,7 +33085,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-解锁建筑：机械零件厂；解锁物资：机器零件
+解锁物资：机器零件；解锁建筑：机械零件厂；作为必要支撑：工业机械厂、蒸汽锯木厂、自动化机械零件厂
 
 #### 机会成本
 
@@ -31886,7 +33156,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-解锁建筑：铁路设备工场；解锁物资：铁路设备
+解锁物资：铁路设备；解锁建筑：铁路设备工场
 
 #### 机会成本
 
@@ -31960,7 +33230,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-解锁建筑：造纸厂
+解锁物资：纸张；解锁建筑：造纸厂
 
 #### 机会成本
 
@@ -32034,7 +33304,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-解锁建筑：制革厂
+解锁物资：皮革；解锁建筑：制革厂；作为必要支撑：造纸厂、主食加工厂
 
 #### 机会成本
 
@@ -32105,7 +33375,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-解锁建筑：蒸汽锯木厂
+解锁物资：木材；解锁建筑：蒸汽锯木厂
 
 #### 机会成本
 
@@ -32248,7 +33518,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-解锁建筑：工业机械厂；解锁物资：工业机械
+解锁物资：工业机械；解锁建筑：工业机械厂；作为必要支撑：造纸厂、主食加工厂
 
 #### 机会成本
 
@@ -32346,7 +33616,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-石油开采产出 +12%
+石油开采产出 +12%；作为必要支撑：燃气发电厂、智能化汽车厂、智能化发动机厂
 
 #### 机会成本
 
@@ -32446,6 +33716,8 @@ timber -8%；煤 +5%
 - 应用：受控环境药材农场 (`tech.application.method_medicinal_herbs_collector_r7`)：现代医学是应用：受控环境药材农场不可替代的知识基础。
 - 公共卫生体系 (`tech.public_health_systems`)：现代医学是公共卫生体系不可替代的知识基础。
 - 生物技术 (`tech.biotechnology`)：现代医学是生物技术不可替代的知识基础。
+- 应用：精准药材农场 (`tech.application.method_medicinal_herbs_collector_r8`)：tech.modern\_medicine是精准药材农场不可替代的知识基础。
+- 应用：自动化药材农场 (`tech.application.method_medicinal_herbs_collector_r10`)：tech.modern\_medicine是自动化药材农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -32561,7 +33833,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-化学工业产出 +12%
+化学工业产出 +12%；作为必要支撑：洗涤剂厂、智能化洗涤剂厂
 
 #### 机会成本
 
@@ -32638,7 +33910,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-科学领域研究效率 +8%
+科学领域研究效率 +8%；作为必要支撑：智能化无线电设备厂
 
 #### 机会成本
 
@@ -32709,7 +33981,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-全社会 +10%
+全社会 +10%；作为必要支撑：河流水力发电站
 
 #### 机会成本
 
@@ -32780,7 +34052,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-电力产出 +18%
+电力产出 +18%；作为必要支撑：燃气发电厂、河流水力发电站、自动化港口船舶中心、燃油发电厂
 
 #### 机会成本
 
@@ -32919,7 +34191,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-煤 -4%
+煤 -4%；作为必要支撑：家用电器厂、智能化家用电器厂
 
 #### 机会成本
 
@@ -33015,9 +34287,13 @@ timber -8%；煤 +5%
 
 #### 被以下科技作为硬前置
 
+- 应用：机械化马铃薯农场 (`tech.application.method_potato_collector_r6`)：tech.motorized\_agriculture是机械化马铃薯农场不可替代的知识基础。
 - 应用：机械化橡胶种植园 (`tech.application.method_rubber_tree_collector_r6`)：机动农业是应用：机械化橡胶种植园不可替代的知识基础。
 - 应用：机械化香料种植园 (`tech.application.method_spice_plants_collector_r6`)：机动农业是应用：机械化香料种植园不可替代的知识基础。
 - 工业农学 (`tech.industrial_agronomy`)：机动农业是工业农学不可替代的知识基础。
+- 应用：机械化小麦农场 (`tech.application.method_wheat_farm_r6`)：tech.motorized\_agriculture是机械化小麦农场不可替代的知识基础。
+- 应用：机械化稻作农场 (`tech.application.method_rice_collector_r6`)：tech.motorized\_agriculture是机械化稻作农场不可替代的知识基础。
+- 应用：机械化亚麻农场 (`tech.application.method_flax_collector_r6`)：tech.motorized\_agriculture是机械化亚麻农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -33129,7 +34405,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-全社会经济产出 +3%
+全社会经济产出 +3%；作为必要支撑：电力纺织厂、高级成衣厂、珠宝厂
 
 #### 机会成本
 
@@ -33200,7 +34476,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-肉类 -8%
+肉类 -8%；作为必要支撑：乳制品厂
 
 #### 机会成本
 
@@ -33340,7 +34616,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-全社会 +6%
+全社会 +6%；作为必要支撑：精密仪器厂
 
 #### 机会成本
 
@@ -33484,7 +34760,7 @@ oil -10%
 
 #### 效果摘要
 
-全社会生产投入 -4%
+全社会生产投入 -4%；作为必要支撑：珠宝厂、工业屠宰场、自动化水泥厂、自动化焦化厂、自动化混凝土厂、工业榨油厂、数字化工业机械厂、自动化炼铅厂、自动化润滑油厂、自动化机械零件厂、精密工具厂、自动化蒸汽机厂、自动化炼锌厂、综合食品厂、主食加工厂
 
 #### 机会成本
 
@@ -33576,7 +34852,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：工业屠宰场
+解锁物资：肉类；解锁物资：生皮；解锁建筑：工业屠宰场
 
 #### 机会成本
 
@@ -33651,7 +34927,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：工业制皂厂
+解锁物资：肥皂；解锁建筑：工业制皂厂
 
 #### 机会成本
 
@@ -33726,7 +35002,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：工业榨油厂
+解锁物资：食用油；解锁建筑：工业榨油厂
 
 #### 机会成本
 
@@ -33798,7 +35074,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：农业机械厂；解锁物资：农业机械
+解锁物资：农业机械；解锁建筑：农业机械厂；作为必要支撑：机械化农场、机械化玉米农场、机械化橡胶种植园、机械化香料种植园
 
 #### 机会成本
 
@@ -33822,7 +35098,7 @@ oil -10%
 
 #### 被以下科技作为硬前置
 
-- 应用：机械化马铃薯农场 (`tech.application.method_potato_collector_r6`)：应用：农业机械厂是应用：机械化马铃薯农场不可替代的知识基础。
+- 应用：机械化马铃薯农场 (`tech.application.method_potato_collector_r6`)：tech.application.agricultural\_machinery\_plant是机械化马铃薯农场不可替代的知识基础。
 - 应用：机械化牧场 (`tech.application.ranching_station`)：应用：农业机械厂是应用：机械化牧场不可替代的知识基础。
 - 应用：机械化棉花农场 (`tech.application.method_cotton_collector_r6`)：应用：农业机械厂是应用：机械化棉花农场不可替代的知识基础。
 - 应用：机械化农场 (`tech.application.mechanized_farm`)：应用：农业机械厂是应用：机械化农场不可替代的知识基础。
@@ -33832,6 +35108,9 @@ oil -10%
 - 工业农学 (`tech.industrial_agronomy`)：应用：农业机械厂是工业农学不可替代的知识基础。
 - 自动化农业 (`tech.automated_agriculture`)：应用：农业机械厂是自动化农业不可替代的知识基础。
 - 应用：智能牧业站 (`tech.application.method_smart_husbandry`)：应用：农业机械厂是应用：智能牧业站不可替代的知识基础。
+- 应用：机械化小麦农场 (`tech.application.method_wheat_farm_r6`)：tech.application.agricultural\_machinery\_plant是机械化小麦农场不可替代的知识基础。
+- 应用：机械化稻作农场 (`tech.application.method_rice_collector_r6`)：tech.application.agricultural\_machinery\_plant是机械化稻作农场不可替代的知识基础。
+- 应用：机械化亚麻农场 (`tech.application.method_flax_collector_r6`)：tech.application.agricultural\_machinery\_plant是机械化亚麻农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -33876,7 +35155,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：工业砖厂
+解锁物资：砖块；解锁建筑：工业砖厂；作为必要支撑：面包厂、鱼类罐头厂、乳制品厂、工业屠宰场、工业榨油厂、工业石灰岩矿场、综合工学院
 
 #### 机会成本
 
@@ -33948,7 +35227,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：工业石灰厂
+解锁物资：石灰；解锁建筑：工业石灰厂；作为必要支撑：面包厂、鱼类罐头厂、乳制品厂、工业屠宰场、工业榨油厂、工业石灰岩矿场、综合工学院
 
 #### 机会成本
 
@@ -33993,7 +35272,7 @@ oil -10%
 | 稳定 ID | `tech.application.method_potato_collector_r6` |
 | 时代 | 电气时代 (`electrical`) |
 | 领域 | 农业 (`agriculture`) |
-| 研究成本 | 8160 科技点（`technology_points`） |
+| 研究成本 | 544000 科技点（`technology_points`） |
 | 节点标记 | 无 |
 | 网络角色 | branch |
 | 锚点类型 | application |
@@ -34006,12 +35285,14 @@ oil -10%
 
 #### 硬前置（决定研发资格）
 
-- 高地块茎农业 (`tech.highland_tuber_farming`)：高地块茎农业是应用：机械化马铃薯农场不可替代的知识基础。
-- 机械收割 (`tech.mechanical_reaping`)：机械收割是应用：机械化马铃薯农场不可替代的知识基础。
-- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：机械化马铃薯农场不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：机械化马铃薯农场不可替代的知识基础。
-- 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：机械化马铃薯农场不可替代的知识基础。
-- 应用：农业机械厂 (`tech.application.agricultural_machinery_plant`)：应用：农业机械厂是应用：机械化马铃薯农场不可替代的知识基础。
+- 机动农业 (`tech.motorized_agriculture`)：tech.motorized\_agriculture是机械化马铃薯农场不可替代的知识基础。
+- 机械化农业 (`tech.mechanized_agriculture`)：tech.mechanized\_agriculture是机械化马铃薯农场不可替代的知识基础。
+- 块茎繁育 (`tech.potato_propagation`)：tech.potato\_propagation是机械化马铃薯农场不可替代的知识基础。
+- 机械收割 (`tech.mechanical_reaping`)：tech.mechanical\_reaping是机械化马铃薯农场不可替代的知识基础。
+- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：tech.application.method\_lumber\_plant\_r2是机械化马铃薯农场不可替代的知识基础。
+- 应用：石作工场 (`tech.application.classical_masonry_yard`)：tech.application.classical\_masonry\_yard是机械化马铃薯农场不可替代的知识基础。
+- 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：tech.application.steam\_steel\_works是机械化马铃薯农场不可替代的知识基础。
+- 应用：农业机械厂 (`tech.application.agricultural_machinery_plant`)：tech.application.agricultural\_machinery\_plant是机械化马铃薯农场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -34019,7 +35300,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：机械化马铃薯农场
+解锁物资：马铃薯；解锁建筑：机械化马铃薯农场；作为必要支撑：高地精准块茎农业、机械化马铃薯农场
 
 #### 机会成本
 
@@ -34089,7 +35370,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：机械化牧场
+解锁物资：畜牧产品；解锁建筑：机械化牧场
 
 #### 机会成本
 
@@ -34162,7 +35443,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：机械化棉花农场
+解锁物资：籽棉；解锁建筑：机械化棉花农场；作为必要支撑：机械化农场、机械化玉米农场、机械化橡胶种植园、机械化香料种植园
 
 #### 机会成本
 
@@ -34233,7 +35514,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：机械化农场
+解锁物资：混合谷物；解锁物资：蔬菜；解锁建筑：机械化农场；作为必要支撑：机械化马铃薯农场
 
 #### 机会成本
 
@@ -34305,7 +35586,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：机械化玉米农场
+解锁物资：玉米；解锁建筑：机械化玉米农场；作为必要支撑：机械化马铃薯农场
 
 #### 机会成本
 
@@ -34459,7 +35740,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：科学仪器工坊
+解锁物资：科学仪器；解锁建筑：科学仪器工坊；作为必要支撑：精密仪器厂
 
 #### 机会成本
 
@@ -34539,7 +35820,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：燃煤发电厂；解锁物资：电力
+解锁物资：电力；解锁建筑：燃煤发电厂；作为必要支撑：河流水力发电站
 
 #### 机会成本
 
@@ -34641,7 +35922,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：工业研究实验室
+解锁物资：科技值；解锁建筑：工业研究实验室
 
 #### 机会成本
 
@@ -34709,7 +35990,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：线材厂；解锁物资：金属线材
+解锁物资：金属线材；解锁建筑：线材厂
 
 #### 机会成本
 
@@ -34781,7 +36062,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：化肥厂；解锁物资：肥料
+解锁物资：肥料；解锁建筑：化肥厂
 
 #### 机会成本
 
@@ -34852,7 +36133,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：早期电气设备厂；解锁物资：电气设备
+解锁物资：电气设备；解锁建筑：早期电气设备厂
 
 #### 机会成本
 
@@ -34883,6 +36164,428 @@ oil -10%
 - 应用：智能牧业站 (`tech.application.method_smart_husbandry`)：应用：早期电气设备厂是应用：智能牧业站不可替代的知识基础。
 - 应用：智能化核反应堆设备厂 (`tech.application.method_reactor_component_works_r10`)：应用：早期电气设备厂是应用：智能化核反应堆设备厂不可替代的知识基础。
 - 应用：智能化家用电器厂 (`tech.application.method_household_appliances_plant_r10`)：应用：早期电气设备厂是应用：智能化家用电器厂不可替代的知识基础。
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### Glassware Factory (`tech.application.glassware_factory_electrical`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.glassware_factory_electrical` |
+| 时代 | 电气时代 (`electrical`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 9360 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.construction\_materials |
+| 主要路线 | 材料 · 合成材料 (\`route.material.materials\`) |
+| 全部路线 | 材料 · 合成材料 (\`route.material.materials\`)；工艺 · 消费品 (\`route.craft.consumer\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | craft |
+
+#### 硬前置（决定研发资格）
+
+- Glassware Manufactory (`tech.application.glassware_manufactory_exploration`)：knowledge prerequisite: tech.application.glassware\_manufactory\_exploration -\> Glassware Factory
+- 电气化 (`tech.electrification`)：knowledge prerequisite: tech.electrification -\> Glassware Factory
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：Glassware Factory；解锁建筑：Glassware Factory；作为必要支撑：Glassware Factory
+
+#### 机会成本
+
+terminal production upgrade
+
+#### 内容解锁
+
+- **物资：** 玻璃器皿 (`glassware`)
+- **建筑 / 生产方式：** 玻璃器皿工厂 (`glassware_factory`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **Glassware Factory**（`good`）：`good.glassware` → `production_access` `unlock` `1.0`；`existing_binding`
+- **Glassware Factory**（`building`）：`building.glassware_factory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### Metal Housewares Factory (`tech.application.metal_housewares_factory_electrical`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.metal_housewares_factory_electrical` |
+| 时代 | 电气时代 (`electrical`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 9360 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.construction\_materials |
+| 主要路线 | 材料 · 合成材料 (\`route.material.materials\`) |
+| 全部路线 | 材料 · 合成材料 (\`route.material.materials\`)；工艺 · 消费品 (\`route.craft.consumer\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | craft |
+
+#### 硬前置（决定研发资格）
+
+- Metal Housewares Manufactory (`tech.application.metal_housewares_manufactory_exploration`)：knowledge prerequisite: tech.application.metal\_housewares\_manufactory\_exploration -\> Metal Housewares Factory
+- 电气化 (`tech.electrification`)：knowledge prerequisite: tech.electrification -\> Metal Housewares Factory
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：Metal Housewares Factory；解锁建筑：Metal Housewares Factory；作为必要支撑：Metal Housewares Factory
+
+#### 机会成本
+
+terminal production upgrade
+
+#### 内容解锁
+
+- **物资：** 金属家用器皿 (`metal_housewares`)
+- **建筑 / 生产方式：** 金属家用器皿工厂 (`metal_housewares_factory`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **Metal Housewares Factory**（`good`）：`good.metal_housewares` → `production_access` `unlock` `1.0`；`existing_binding`
+- **Metal Housewares Factory**（`building`）：`building.metal_housewares_factory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### Leather Goods Factory (`tech.application.leather_goods_factory_electrical`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.leather_goods_factory_electrical` |
+| 时代 | 电气时代 (`electrical`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 9360 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.construction\_materials |
+| 主要路线 | 材料 · 合成材料 (\`route.material.materials\`) |
+| 全部路线 | 材料 · 合成材料 (\`route.material.materials\`)；工艺 · 消费品 (\`route.craft.consumer\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | craft |
+
+#### 硬前置（决定研发资格）
+
+- Leather Goods Manufactory (`tech.application.leather_goods_manufactory_exploration`)：knowledge prerequisite: tech.application.leather\_goods\_manufactory\_exploration -\> Leather Goods Factory
+- 电气化 (`tech.electrification`)：knowledge prerequisite: tech.electrification -\> Leather Goods Factory
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：Leather Goods Factory；解锁建筑：Leather Goods Factory；作为必要支撑：Leather Goods Factory
+
+#### 机会成本
+
+terminal production upgrade
+
+#### 内容解锁
+
+- **物资：** 皮革制品 (`leather_goods`)
+- **建筑 / 生产方式：** 皮革制品工厂 (`leather_goods_factory`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **Leather Goods Factory**（`good`）：`good.leather_goods` → `production_access` `unlock` `1.0`；`existing_binding`
+- **Leather Goods Factory**（`building`）：`building.leather_goods_factory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 应用：机械化小麦农场 (`tech.application.method_wheat_farm_r6`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.method_wheat_farm_r6` |
+| 时代 | 电气时代 (`electrical`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 544000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.wheat\_rainfed |
+| 主要路线 | 作物 · 小麦 (\`route.crop.wheat\`) |
+| 全部路线 | 作物 · 小麦 (\`route.crop.wheat\`)；作物 · 机械化 (\`route.crop.mechanized\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 机动农业 (`tech.motorized_agriculture`)：tech.motorized\_agriculture是机械化小麦农场不可替代的知识基础。
+- 机械化农业 (`tech.mechanized_agriculture`)：tech.mechanized\_agriculture是机械化小麦农场不可替代的知识基础。
+- 小麦繁育 (`tech.wheat_propagation`)：tech.wheat\_propagation是机械化小麦农场不可替代的知识基础。
+- 机械收割 (`tech.mechanical_reaping`)：tech.mechanical\_reaping是机械化小麦农场不可替代的知识基础。
+- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：tech.application.method\_lumber\_plant\_r2是机械化小麦农场不可替代的知识基础。
+- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：tech.application.fired\_brick\_kiln是机械化小麦农场不可替代的知识基础。
+- 应用：石作工场 (`tech.application.classical_masonry_yard`)：tech.application.classical\_masonry\_yard是机械化小麦农场不可替代的知识基础。
+- 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：tech.application.steam\_steel\_works是机械化小麦农场不可替代的知识基础。
+- 应用：农业机械厂 (`tech.application.agricultural_machinery_plant`)：tech.application.agricultural\_machinery\_plant是机械化小麦农场不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：小麦；解锁建筑：机械化小麦农场
+
+#### 机会成本
+
+无
+
+#### 内容解锁
+
+- **物资：** 小麦 (`wheat_grain`)
+- **建筑 / 生产方式：** 机械化小麦农场 (`method_wheat_farm_r6`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **小麦**（`good`）：`good.wheat_grain` → `production_access` `unlock` `1.0`；`catalog_rebind`
+- **机械化小麦农场**（`building`）：`building.method_wheat_farm_r6` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 应用：机械化稻作农场 (`tech.application.method_rice_collector_r6`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.method_rice_collector_r6` |
+| 时代 | 电气时代 (`electrical`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 544000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.rice\_irrigation |
+| 主要路线 | 作物 · 水稻 (\`route.crop.rice\`) |
+| 全部路线 | 作物 · 水稻 (\`route.crop.rice\`)；作物 · 机械化 (\`route.crop.mechanized\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 机动农业 (`tech.motorized_agriculture`)：tech.motorized\_agriculture是机械化稻作农场不可替代的知识基础。
+- 机械化农业 (`tech.mechanized_agriculture`)：tech.mechanized\_agriculture是机械化稻作农场不可替代的知识基础。
+- 稻田水位控制 (`tech.rice_water_control`)：tech.rice\_water\_control是机械化稻作农场不可替代的知识基础。
+- 水田稻作 (`tech.rice_paddy_cultivation`)：tech.rice\_paddy\_cultivation是机械化稻作农场不可替代的知识基础。
+- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：tech.application.method\_lumber\_plant\_r2是机械化稻作农场不可替代的知识基础。
+- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：tech.application.fired\_brick\_kiln是机械化稻作农场不可替代的知识基础。
+- 应用：石作工场 (`tech.application.classical_masonry_yard`)：tech.application.classical\_masonry\_yard是机械化稻作农场不可替代的知识基础。
+- 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：tech.application.steam\_steel\_works是机械化稻作农场不可替代的知识基础。
+- 应用：农业机械厂 (`tech.application.agricultural_machinery_plant`)：tech.application.agricultural\_machinery\_plant是机械化稻作农场不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：稻米；解锁建筑：机械化稻作农场
+
+#### 机会成本
+
+无
+
+#### 内容解锁
+
+- **物资：** 稻米 (`rice_grain`)
+- **建筑 / 生产方式：** 机械化稻作农场 (`method_rice_collector_r6`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **稻米**（`good`）：`good.rice_grain` → `production_access` `unlock` `1.0`；`catalog_rebind`
+- **机械化稻作农场**（`building`）：`building.method_rice_collector_r6` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 应用：机械化亚麻农场 (`tech.application.method_flax_collector_r6`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.method_flax_collector_r6` |
+| 时代 | 电气时代 (`electrical`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 544000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.textile\_fibers |
+| 主要路线 | 工艺 · 纺织 (\`route.craft.textiles\`) |
+| 全部路线 | 工艺 · 纺织 (\`route.craft.textiles\`)；作物 · 机械化 (\`route.crop.mechanized\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 机动农业 (`tech.motorized_agriculture`)：tech.motorized\_agriculture是机械化亚麻农场不可替代的知识基础。
+- 机械化农业 (`tech.mechanized_agriculture`)：tech.mechanized\_agriculture是机械化亚麻农场不可替代的知识基础。
+- 沤麻 (`tech.flax_retting`)：tech.flax\_retting是机械化亚麻农场不可替代的知识基础。
+- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：tech.application.method\_lumber\_plant\_r2是机械化亚麻农场不可替代的知识基础。
+- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：tech.application.fired\_brick\_kiln是机械化亚麻农场不可替代的知识基础。
+- 应用：石作工场 (`tech.application.classical_masonry_yard`)：tech.application.classical\_masonry\_yard是机械化亚麻农场不可替代的知识基础。
+- 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：tech.application.steam\_steel\_works是机械化亚麻农场不可替代的知识基础。
+- 应用：农业机械厂 (`tech.application.agricultural_machinery_plant`)：tech.application.agricultural\_machinery\_plant是机械化亚麻农场不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：韧皮原料；解锁建筑：机械化亚麻农场
+
+#### 机会成本
+
+无
+
+#### 内容解锁
+
+- **物资：** 亚麻秆/韧皮原料 (`bast_fiber`)
+- **建筑 / 生产方式：** 机械化亚麻农场 (`method_flax_collector_r6`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **韧皮原料**（`good`）：`good.bast_fiber` → `production_access` `unlock` `1.0`；`catalog_rebind`
+- **机械化亚麻农场**（`building`）：`building.method_flax_collector_r6` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
 
 #### 主题路线后继
 
@@ -34936,7 +36639,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：主食加工厂
+解锁物资：熟制主食；解锁建筑：主食加工厂；作为必要支撑：混凝土厂、高级家具厂、家具厂、家用电器厂、工业屠宰场、智能化汽车厂、电气化造船厂、电气化包装厂、电气印刷厂、工业制皂厂、综合食品厂
 
 #### 机会成本
 
@@ -35011,7 +36714,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：乳制品厂
+解锁物资：乳制品；解锁建筑：乳制品厂
 
 #### 机会成本
 
@@ -35081,7 +36784,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：制药厂；解锁物资：药品
+解锁物资：药品；解锁建筑：制药厂
 
 #### 机会成本
 
@@ -35153,7 +36856,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：机械化橡胶种植园
+解锁物资：天然乳胶；解锁建筑：机械化橡胶种植园
 
 #### 机会成本
 
@@ -35225,7 +36928,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：机械化香料种植园
+解锁物资：香料；解锁建筑：机械化香料种植园
 
 #### 机会成本
 
@@ -35293,7 +36996,7 @@ oil -10%
 
 #### 效果摘要
 
-石油开采产出 +28%
+石油开采产出 +28%；作为必要支撑：现代炸药厂、智能化合成橡胶厂
 
 #### 机会成本
 
@@ -35366,7 +37069,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：精密工具工坊
+解锁物资：精密工具；解锁建筑：精密工具工坊；作为必要支撑：罐头工坊
 
 #### 机会成本
 
@@ -35440,7 +37143,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：博学学会
+解锁物资：科技值；解锁建筑：博学学会
 
 #### 机会成本
 
@@ -35515,7 +37218,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：地籍管理局
+解锁物资：科技值；解锁建筑：地籍管理局
 
 #### 机会成本
 
@@ -35588,7 +37291,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：综合工学院
+解锁物资：科技值；解锁建筑：综合工学院
 
 #### 机会成本
 
@@ -35660,7 +37363,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：混凝土厂；解锁物资：混凝土
+解锁物资：混凝土；解锁建筑：混凝土厂；作为必要支撑：现代炸药厂、智能化合成橡胶厂
 
 #### 机会成本
 
@@ -35784,7 +37487,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：建筑构件厂
+解锁物资：建筑构件；解锁建筑：建筑构件厂
 
 #### 机会成本
 
@@ -35855,7 +37558,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：蒸汽机工厂；解锁物资：蒸汽机
+解锁物资：蒸汽机；解锁建筑：蒸汽机工厂；作为必要支撑：鱼类罐头厂、蒸汽锯木厂、蒸汽航运船坞
 
 #### 机会成本
 
@@ -35928,7 +37631,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：蒸汽钻井场；解锁物资：原油
+解锁物资：原油；解锁建筑：蒸汽钻井场；作为必要支撑：油田
 
 #### 机会成本
 
@@ -36008,7 +37711,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：珠宝厂
+解锁物资：珠宝；解锁建筑：珠宝厂；作为必要支撑：珠宝厂
 
 #### 机会成本
 
@@ -36081,7 +37784,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：电气化包装厂
+解锁物资：包装材料；解锁建筑：电气化包装厂；作为必要支撑：建筑构件厂、包装材料厂
 
 #### 机会成本
 
@@ -36154,7 +37857,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：电气印刷厂
+解锁物资：印刷品；解锁建筑：电气印刷厂；作为必要支撑：建筑构件厂、包装材料厂
 
 #### 机会成本
 
@@ -36228,7 +37931,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：高级家具厂
+解锁物资：精美家具；解锁建筑：高级家具厂
 
 #### 机会成本
 
@@ -36301,7 +38004,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：电化工厂
+解锁物资：工业化学品；解锁建筑：电化工厂；作为必要支撑：洗涤剂厂、智能化洗涤剂厂
 
 #### 机会成本
 
@@ -36376,7 +38079,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：电力纺织厂
+解锁物资：布料；解锁建筑：电力纺织厂；作为必要支撑：混凝土厂、高级家具厂、家具厂、家用电器厂、工业屠宰场、智能化汽车厂、电气化造船厂、电气化包装厂、电气印刷厂、工业制皂厂、综合食品厂
 
 #### 机会成本
 
@@ -36449,7 +38152,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：炼油厂；解锁物资：精炼燃料
+解锁物资：精炼燃料；解锁建筑：炼油厂
 
 #### 机会成本
 
@@ -36527,7 +38230,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：综合食品厂；解锁物资：加工食品
+解锁物资：加工食品；解锁建筑：综合食品厂
 
 #### 机会成本
 
@@ -36600,7 +38303,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：受控环境药材农场
+解锁物资：药材；解锁建筑：受控环境药材农场
 
 #### 机会成本
 
@@ -36672,7 +38375,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：电动机厂；解锁物资：电动机
+解锁物资：电动机；解锁建筑：电动机厂；作为必要支撑：家用电器厂、智能化家用电器厂
 
 #### 机会成本
 
@@ -36755,7 +38458,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：电气化造船厂
+解锁物资：远洋船舶；解锁建筑：电气化造船厂；作为必要支撑：家用电器厂、智能化家用电器厂
 
 #### 机会成本
 
@@ -36829,7 +38532,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：酿造厂
+解锁物资：酒饮；解锁建筑：酿造厂；作为必要支撑：电力纺织厂、高级成衣厂、珠宝厂
 
 #### 机会成本
 
@@ -36904,7 +38607,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：高级成衣厂
+解锁物资：华服；解锁建筑：高级成衣厂；作为必要支撑：电力纺织厂、高级成衣厂、珠宝厂
 
 #### 机会成本
 
@@ -36976,7 +38679,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁建筑：油田
+解锁物资：原油；解锁建筑：油田
 
 #### 机会成本
 
@@ -37050,7 +38753,7 @@ oil -10%
 
 #### 效果摘要
 
-玉米产出 +12%；解锁建筑：电气化集约农场
+解锁物资：混合谷物；解锁物资：蔬菜；解锁建筑：电气化集约农场；玉米产出 +12%
 
 #### 机会成本
 
@@ -37127,7 +38830,7 @@ oil -10%
 
 #### 效果摘要
 
-炼钢产出 +12%；解锁建筑：炼铜厂；解锁建筑：炼锡厂
+解锁物资：铜；解锁物资：锡；解锁建筑：炼铜厂；解锁建筑：炼锡厂；炼钢产出 +12%；作为必要支撑：炼铅厂、智能冶铝厂、自动化炼铅厂、智能战略金属冶炼厂、智能化不锈钢厂、自动化炼锌厂
 
 #### 机会成本
 
@@ -37275,7 +38978,7 @@ oil -10%
 
 #### 效果摘要
 
-可利用资源：铝土矿；geospatial\_analysis\_institution产出 +12%
+可利用资源：铝土矿；可利用资源：锰矿；geospatial\_analysis\_institution产出 +12%；作为必要支撑：天然气田、战略矿山
 
 #### 机会成本
 
@@ -37420,7 +39123,7 @@ oil -10%
 
 #### 效果摘要
 
-石油开采产出 +12%
+石油开采产出 +12%；作为必要支撑：现代炸药厂
 
 #### 机会成本
 
@@ -37491,7 +39194,7 @@ oil -10%
 
 #### 效果摘要
 
-铁矿石 -10%；煤 -10%
+铁矿石 -10%；煤 -10%；作为必要支撑：自动化磷矿、自动化锌矿
 
 #### 机会成本
 
@@ -37632,7 +39335,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-金属工具制造产出 +12%
+金属工具制造产出 +12%；作为必要支撑：自动化润滑油厂、精密工具厂、精密仪器厂
 
 #### 机会成本
 
@@ -37708,7 +39411,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-航运作业产出 +12%
+航运作业产出 +12%；作为必要支撑：自动化港口船舶中心
 
 #### 机会成本
 
@@ -37781,7 +39484,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：铝土矿；解锁物资：铝土矿
+解锁物资：铝土矿；解锁建筑：铝土矿；作为必要支撑：天然气田、战略矿山
 
 #### 机会成本
 
@@ -37851,7 +39554,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：炼铅厂；解锁物资：铅
+解锁物资：铅；解锁建筑：炼铅厂；作为必要支撑：天然气田、战略矿山
 
 #### 机会成本
 
@@ -37917,7 +39620,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-可利用资源：天然气；石化产品产出 +22%；原油 +6%
+可利用资源：天然气；石化产品产出 +22%；原油 +6%；作为必要支撑：燃气发电厂
 
 #### 机会成本
 
@@ -37993,7 +39696,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：电弧炉炼钢厂；解锁物资：钢材
+解锁物资：钢材；解锁建筑：电弧炉炼钢厂；作为必要支撑：自动化焦化厂
 
 #### 机会成本
 
@@ -38067,7 +39770,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：电池厂；解锁物资：电池
+解锁物资：电池；解锁建筑：电池厂；作为必要支撑：洗涤剂厂、智能化洗涤剂厂
 
 #### 机会成本
 
@@ -38142,7 +39845,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-全社会 +7%；解锁建筑：国家实验室
+解锁物资：科技值；解锁建筑：国家实验室；全社会 +7%
 
 #### 机会成本
 
@@ -38210,7 +39913,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-全社会 +10%
+全社会 +10%；作为必要支撑：智能化核反应堆设备厂
 
 #### 机会成本
 
@@ -38279,7 +39982,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-炼钢产出 +28%
+炼钢产出 +28%；作为必要支撑：智能冶铝厂、智能化不锈钢厂
 
 #### 机会成本
 
@@ -38421,7 +40124,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-布匹织造产出 +25%
+布匹织造产出 +25%；作为必要支撑：智能化合成纤维厂、合成纤维织造厂
 
 #### 机会成本
 
@@ -38634,7 +40337,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：精密工具厂；解锁物资：精密工具
+解锁物资：精密工具；解锁建筑：精密工具厂；作为必要支撑：罐头工坊
 
 #### 机会成本
 
@@ -38706,7 +40409,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：铁路设备厂
+解锁物资：铁路设备；解锁建筑：铁路设备厂
 
 #### 机会成本
 
@@ -38777,7 +40480,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：燃油发电厂
+解锁物资：电力；解锁建筑：燃油发电厂
 
 #### 机会成本
 
@@ -38853,7 +40556,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：现代炸药厂
+解锁物资：炸药；解锁建筑：现代炸药厂；作为必要支撑：珠宝厂、工业屠宰场、自动化水泥厂、自动化焦化厂、自动化混凝土厂、工业榨油厂、数字化工业机械厂、自动化炼铅厂、自动化润滑油厂、自动化机械零件厂、精密工具厂、自动化蒸汽机厂、自动化炼锌厂、综合食品厂、主食加工厂
 
 #### 机会成本
 
@@ -38926,7 +40629,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：精密仪器厂；解锁物资：科学仪器
+解锁物资：科学仪器；解锁建筑：精密仪器厂；作为必要支撑：珠宝厂、工业屠宰场、自动化水泥厂、自动化焦化厂、自动化混凝土厂、工业榨油厂、数字化工业机械厂、自动化炼铅厂、自动化润滑油厂、自动化机械零件厂、精密工具厂、自动化蒸汽机厂、自动化炼锌厂、综合食品厂、主食加工厂
 
 #### 机会成本
 
@@ -39202,7 +40905,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-全社会生产投入 -3%
+全社会生产投入 -3%；作为必要支撑：智能战略金属冶炼厂
 
 #### 机会成本
 
@@ -39363,7 +41066,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：炼锌厂
+解锁物资：锌；解锁建筑：炼锌厂；作为必要支撑：自动化润滑油厂、精密工具厂、精密仪器厂
 
 #### 机会成本
 
@@ -39404,7 +41107,7 @@ pharmaceuticals产出 +12%
 <a id="era-10"></a>
 ## 信息时代
 
-共 61 项科技，研究成本范围 47600-9000000；时代里程碑：信息社会 (`tech.information_society`)。
+共 70 项科技，研究成本范围 47600-9000000；时代里程碑：信息社会 (`tech.information_society`)。
 
 ### 应用：锰矿 (`tech.application.manganese_ore_collector`)
 
@@ -39440,7 +41143,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：锰矿；解锁物资：锰矿石
+解锁物资：锰矿石；解锁建筑：锰矿；作为必要支撑：自动化磷矿、自动化锌矿
 
 #### 机会成本
 
@@ -39512,7 +41215,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：电解铝厂；解锁物资：铝
+解锁物资：铝；解锁建筑：电解铝厂；作为必要支撑：智能冶铝厂、智能化不锈钢厂
 
 #### 机会成本
 
@@ -39587,7 +41290,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：天然气田；解锁物资：天然气
+解锁物资：天然气；解锁建筑：天然气田；作为必要支撑：燃气发电厂
 
 #### 机会成本
 
@@ -39662,7 +41365,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：现代硝石矿
+解锁物资：硝石；解锁建筑：现代硝石矿
 
 #### 机会成本
 
@@ -39735,7 +41438,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：现代硫矿
+解锁物资：硫磺；解锁建筑：现代硫矿
 
 #### 机会成本
 
@@ -39803,7 +41506,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-全社会 +8%
+全社会 +8%；作为必要支撑：专用商品作物种植园
 
 #### 机会成本
 
@@ -39832,6 +41535,15 @@ pharmaceuticals产出 +12%
 - 应用：高地精准块茎农业 (`tech.application.method_highland_precision_agriculture`)：精准农业是应用：高地精准块茎农业不可替代的知识基础。
 - 自动化农业 (`tech.automated_agriculture`)：精准农业是自动化农业不可替代的知识基础。
 - 应用：专用商品作物种植园 (`tech.application.method_specialty_commodity_plantation`)：精准农业是应用：专用商品作物种植园不可替代的知识基础。
+- 应用：精准马铃薯农场 (`tech.application.method_potato_farm_r8`)：tech.precision\_agriculture是精准马铃薯农场不可替代的知识基础。
+- 应用：精准小麦农场 (`tech.application.method_wheat_farm_r8`)：tech.precision\_agriculture是精准小麦农场不可替代的知识基础。
+- 应用：精准稻作农场 (`tech.application.method_rice_collector_r8`)：tech.precision\_agriculture是精准稻作农场不可替代的知识基础。
+- 应用：精准玉米农场 (`tech.application.method_maize_farm_r8`)：tech.precision\_agriculture是精准玉米农场不可替代的知识基础。
+- 应用：精准棉花农场 (`tech.application.method_cotton_collector_r8`)：tech.precision\_agriculture是精准棉花农场不可替代的知识基础。
+- 应用：精准亚麻农场 (`tech.application.method_flax_collector_r8`)：tech.precision\_agriculture是精准亚麻农场不可替代的知识基础。
+- 应用：精准香料种植园 (`tech.application.method_spice_plants_collector_r8`)：tech.precision\_agriculture是精准香料种植园不可替代的知识基础。
+- 应用：精准药材农场 (`tech.application.method_medicinal_herbs_collector_r8`)：tech.precision\_agriculture是精准药材农场不可替代的知识基础。
+- 应用：精准橡胶种植园 (`tech.application.method_rubber_tree_collector_r8`)：tech.precision\_agriculture是精准橡胶种植园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -39881,7 +41593,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：燃气发电厂
+解锁物资：电力；解锁建筑：燃气发电厂；作为必要支撑：河流水力发电站
 
 #### 机会成本
 
@@ -39953,7 +41665,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：石油化工厂；解锁物资：石化产品
+解锁物资：石化产品；解锁建筑：石油化工厂；作为必要支撑：现代炸药厂
 
 #### 机会成本
 
@@ -40036,7 +41748,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：洗涤剂厂；解锁物资：洗涤剂
+解锁物资：洗涤剂；解锁建筑：洗涤剂厂；作为必要支撑：现代炸药厂
 
 #### 机会成本
 
@@ -40108,7 +41820,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：合成橡胶厂；解锁物资：合成橡胶
+解锁物资：合成橡胶；解锁建筑：合成橡胶厂；作为必要支撑：现代炸药厂、智能化合成橡胶厂
 
 #### 机会成本
 
@@ -40179,7 +41891,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：塑料厂；解锁物资：塑料
+解锁物资：塑料；解锁建筑：塑料厂
 
 #### 机会成本
 
@@ -40254,7 +41966,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：合成纤维厂；解锁物资：合成纤维
+解锁物资：合成纤维；解锁建筑：合成纤维厂；作为必要支撑：智能化合成纤维厂、合成纤维织造厂
 
 #### 机会成本
 
@@ -40328,7 +42040,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：合成纤维织造厂
+解锁物资：布料；解锁建筑：合成纤维织造厂；作为必要支撑：智能化合成纤维厂、合成纤维织造厂
 
 #### 机会成本
 
@@ -40402,7 +42114,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：电气设备厂
+解锁物资：电气设备；解锁建筑：电气设备厂
 
 #### 机会成本
 
@@ -40477,7 +42189,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：电子元件厂；解锁物资：电子元件
+解锁物资：电子元件；解锁建筑：电子元件厂；作为必要支撑：智能化无线电设备厂
 
 #### 机会成本
 
@@ -40553,7 +42265,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：绝缘电缆厂；解锁物资：绝缘电缆
+解锁物资：绝缘电缆；解锁建筑：绝缘电缆厂；作为必要支撑：燃气发电厂、河流水力发电站、自动化港口船舶中心、燃油发电厂
 
 #### 机会成本
 
@@ -40626,7 +42338,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：无线电设备厂；解锁物资：无线电设备
+解锁物资：无线电设备；解锁建筑：无线电设备厂；作为必要支撑：智能化无线电设备厂
 
 #### 机会成本
 
@@ -40699,7 +42411,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：河流水力发电站
+解锁物资：电力；解锁建筑：河流水力发电站
 
 #### 机会成本
 
@@ -40773,7 +42485,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：家用电器厂；解锁物资：家用电器
+解锁物资：家用电器；解锁建筑：家用电器厂；作为必要支撑：面包厂、乳制品厂
 
 #### 机会成本
 
@@ -40848,7 +42560,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁物资：计算机；解锁建筑：计算机厂；解锁建筑：早期计算机工场；全社会 +6%
+解锁物资：计算机；解锁建筑：计算机厂；解锁建筑：早期计算机工场；全社会 +6%；作为必要支撑：早期半导体厂、地理空间分析中心
 
 #### 机会成本
 
@@ -40892,6 +42604,24 @@ pharmaceuticals产出 +12%
 - 机器学习 (`tech.machine_learning`)：数字计算是机器学习不可替代的知识基础。
 - 自动化农业 (`tech.automated_agriculture`)：数字计算是自动化农业不可替代的知识基础。
 - 算法治理 (`tech.algorithmic_governance`)：数字计算是算法治理不可替代的知识基础。
+- 应用：精准马铃薯农场 (`tech.application.method_potato_farm_r8`)：tech.digital\_computing是精准马铃薯农场不可替代的知识基础。
+- 应用：自动化马铃薯农场 (`tech.application.method_potato_farm_r10`)：tech.digital\_computing是自动化马铃薯农场不可替代的知识基础。
+- 应用：精准小麦农场 (`tech.application.method_wheat_farm_r8`)：tech.digital\_computing是精准小麦农场不可替代的知识基础。
+- 应用：自动化小麦农场 (`tech.application.method_wheat_farm_r10`)：tech.digital\_computing是自动化小麦农场不可替代的知识基础。
+- 应用：精准稻作农场 (`tech.application.method_rice_collector_r8`)：tech.digital\_computing是精准稻作农场不可替代的知识基础。
+- 应用：自动化稻作农场 (`tech.application.method_rice_collector_r10`)：tech.digital\_computing是自动化稻作农场不可替代的知识基础。
+- 应用：精准玉米农场 (`tech.application.method_maize_farm_r8`)：tech.digital\_computing是精准玉米农场不可替代的知识基础。
+- 应用：自动化玉米农场 (`tech.application.method_maize_farm_r10`)：tech.digital\_computing是自动化玉米农场不可替代的知识基础。
+- 应用：精准棉花农场 (`tech.application.method_cotton_collector_r8`)：tech.digital\_computing是精准棉花农场不可替代的知识基础。
+- 应用：自动化棉花农场 (`tech.application.method_cotton_collector_r10`)：tech.digital\_computing是自动化棉花农场不可替代的知识基础。
+- 应用：精准亚麻农场 (`tech.application.method_flax_collector_r8`)：tech.digital\_computing是精准亚麻农场不可替代的知识基础。
+- 应用：自动化亚麻农场 (`tech.application.method_flax_collector_r10`)：tech.digital\_computing是自动化亚麻农场不可替代的知识基础。
+- 应用：精准香料种植园 (`tech.application.method_spice_plants_collector_r8`)：tech.digital\_computing是精准香料种植园不可替代的知识基础。
+- 应用：自动化香料种植园 (`tech.application.method_spice_plants_collector_r10`)：tech.digital\_computing是自动化香料种植园不可替代的知识基础。
+- 应用：精准药材农场 (`tech.application.method_medicinal_herbs_collector_r8`)：tech.digital\_computing是精准药材农场不可替代的知识基础。
+- 应用：自动化药材农场 (`tech.application.method_medicinal_herbs_collector_r10`)：tech.digital\_computing是自动化药材农场不可替代的知识基础。
+- 应用：精准橡胶种植园 (`tech.application.method_rubber_tree_collector_r8`)：tech.digital\_computing是精准橡胶种植园不可替代的知识基础。
+- 应用：自动化橡胶种植园 (`tech.application.method_rubber_tree_collector_r10`)：tech.digital\_computing是自动化橡胶种植园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -41002,7 +42732,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：数字化农业机械厂
+解锁物资：农业机械；解锁建筑：数字化农业机械厂
 
 #### 机会成本
 
@@ -41069,7 +42799,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：精准农场
+解锁物资：混合谷物；解锁物资：蔬菜；解锁建筑：精准农场；作为必要支撑：专用商品作物种植园
 
 #### 机会成本
 
@@ -41205,7 +42935,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-全社会经济产出 +3%；解锁建筑：计算研究中心
+解锁物资：科技值；解锁建筑：计算研究中心；全社会经济产出 +3%
 
 #### 机会成本
 
@@ -41276,7 +43006,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-全社会 +5%
+全社会 +5%；作为必要支撑：智能化电子元件厂
 
 #### 机会成本
 
@@ -41350,7 +43080,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：早期半导体厂；解锁物资：半导体
+解锁物资：半导体；解锁建筑：早期半导体厂；作为必要支撑：智能化电子元件厂
 
 #### 机会成本
 
@@ -41418,7 +43148,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：半导体厂
+解锁物资：半导体；解锁建筑：半导体厂；作为必要支撑：智能化电子元件厂
 
 #### 机会成本
 
@@ -41488,7 +43218,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁物资：通信设备；全社会经济产出 +4%；解锁建筑：通信设备厂
+解锁物资：通信设备；解锁建筑：通信设备厂；全社会经济产出 +4%
 
 #### 机会成本
 
@@ -41563,7 +43293,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-科学领域研究效率 +8%
+科学领域研究效率 +8%；作为必要支撑：智能冶铝厂、自动化港口船舶中心、智能化汽车厂、智能化电池厂、自动化水泥厂、智能化洗涤剂厂、智能化电动机厂、智能化电子元件厂、智能化发动机厂、自动化炸药厂、智能化家用电器厂、数字化工业机械厂、智能化绝缘电缆厂、自动化润滑油厂、自动化机械零件厂、智能化核燃料厂、智能石油化工厂、智能化塑料厂、智能工具厂、智能化无线电设备厂、智能战略矿山、智能战略金属冶炼厂、智能化核反应堆设备厂、智能炼油厂、智能仪器厂、智能化不锈钢厂、自动化蒸汽机厂、智能化合成纤维厂、智能化合成橡胶厂、智能化线材厂
 
 #### 机会成本
 
@@ -41618,6 +43348,14 @@ pharmaceuticals产出 +12%
 - 应用：智能化合成橡胶厂 (`tech.application.method_synthetic_rubber_plant_r10`)：数字控制是应用：智能化合成橡胶厂不可替代的知识基础。
 - 应用：智能仪器厂 (`tech.application.method_scientific_instrument_works_r10`)：数字控制是应用：智能仪器厂不可替代的知识基础。
 - 自主劳动协调 (`tech.autonomous_labor_coordination`)：数字控制是自主劳动协调不可替代的知识基础。
+- 应用：自动化马铃薯农场 (`tech.application.method_potato_farm_r10`)：tech.digital\_control是自动化马铃薯农场不可替代的知识基础。
+- 应用：自动化小麦农场 (`tech.application.method_wheat_farm_r10`)：tech.digital\_control是自动化小麦农场不可替代的知识基础。
+- 应用：自动化玉米农场 (`tech.application.method_maize_farm_r10`)：tech.digital\_control是自动化玉米农场不可替代的知识基础。
+- 应用：自动化棉花农场 (`tech.application.method_cotton_collector_r10`)：tech.digital\_control是自动化棉花农场不可替代的知识基础。
+- 应用：自动化亚麻农场 (`tech.application.method_flax_collector_r10`)：tech.digital\_control是自动化亚麻农场不可替代的知识基础。
+- 应用：自动化香料种植园 (`tech.application.method_spice_plants_collector_r10`)：tech.digital\_control是自动化香料种植园不可替代的知识基础。
+- 应用：自动化药材农场 (`tech.application.method_medicinal_herbs_collector_r10`)：tech.digital\_control是自动化药材农场不可替代的知识基础。
+- 应用：自动化橡胶种植园 (`tech.application.method_rubber_tree_collector_r10`)：tech.digital\_control是自动化橡胶种植园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -41662,7 +43400,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：自动化蒸汽机厂
+解锁物资：蒸汽机；解锁建筑：自动化蒸汽机厂；作为必要支撑：鱼类罐头厂、蒸汽锯木厂、蒸汽航运船坞
 
 #### 机会成本
 
@@ -41731,7 +43469,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：润滑油厂；解锁物资：润滑剂
+解锁物资：润滑剂；解锁建筑：润滑油厂
 
 #### 机会成本
 
@@ -41803,7 +43541,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：自动化润滑油厂
+解锁物资：润滑剂；解锁建筑：自动化润滑油厂
 
 #### 机会成本
 
@@ -41876,7 +43614,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：发动机厂；解锁物资：发动机
+解锁物资：发动机；解锁建筑：发动机厂；作为必要支撑：燃气发电厂、智能化汽车厂、智能化发动机厂
 
 #### 机会成本
 
@@ -41954,7 +43692,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-解锁建筑：汽车厂；解锁物资：汽车
+解锁物资：汽车；解锁建筑：汽车厂；作为必要支撑：燃气发电厂、智能化汽车厂、智能化发动机厂
 
 #### 机会成本
 
@@ -42025,7 +43763,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-航运作业产出 +12%；解锁建筑：自动化港口船舶中心
+解锁物资：远洋船舶；解锁建筑：自动化港口船舶中心；航运作业产出 +12%
 
 #### 机会成本
 
@@ -42095,7 +43833,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-农业领域研究效率 +8%
+农业领域研究效率 +8%；作为必要支撑：高地精准块茎农业、专用商品作物种植园
 
 #### 机会成本
 
@@ -42368,7 +44106,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-geospatial\_analysis\_institution产出 +12%
+geospatial\_analysis\_institution产出 +12%；作为必要支撑：森林遥感经营站、高地精准块茎农业、流域治理中心
 
 #### 机会成本
 
@@ -42399,6 +44137,7 @@ geospatial\_analysis\_institution产出 +12%
 - 应用：流域治理中心 (`tech.application.watershed_governance_center`)：地理信息系统是应用：流域治理中心不可替代的知识基础。
 - 应用：地理空间分析中心 (`tech.application.geospatial_analysis_center`)：地理信息系统是应用：地理空间分析中心不可替代的知识基础。
 - 应用：工业石灰岩矿场 (`tech.application.method_limestone_collector_r6`)：地理信息系统是应用：工业石灰岩矿场不可替代的知识基础。
+- 应用：精准马铃薯农场 (`tech.application.method_potato_farm_r8`)：tech.geographic\_information\_systems是精准马铃薯农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -42468,7 +44207,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 被以下科技作为硬前置
 
-无
+- 应用：精准稻作农场 (`tech.application.method_rice_collector_r8`)：tech.precision\_irrigation是精准稻作农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -42510,7 +44249,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-科学领域研究效率 +8%
+科学领域研究效率 +8%；作为必要支撑：自动化水泥厂、自动化焦化厂、自动化混凝土厂、数字化工业机械厂、自动化炼铅厂、智能牧业站、自动化炼锌厂
 
 #### 机会成本
 
@@ -42588,7 +44327,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：高地精准块茎农业
+解锁物资：马铃薯；解锁建筑：高地精准块茎农业；作为必要支撑：专用商品作物种植园
 
 #### 机会成本
 
@@ -42663,7 +44402,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-geospatial\_analysis\_institution产出 +12%；解锁建筑：森林遥感经营站
+解锁物资：原木；解锁建筑：森林遥感经营站；geospatial\_analysis\_institution产出 +12%；作为必要支撑：自主林业经营站
 
 #### 机会成本
 
@@ -42804,7 +44543,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-解锁建筑：自动化水泥厂
+解锁物资：水泥；解锁建筑：自动化水泥厂；作为必要支撑：混凝土厂、河流水力发电站、流域治理中心
 
 #### 机会成本
 
@@ -42872,7 +44611,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-可利用资源：稀土；可利用资源：锰矿；terrain.desert.extractive产出 +25%
+可利用资源：稀土；可利用资源：锰矿；terrain.desert.extractive产出 +25%；作为必要支撑：自动化铅矿、自动化炼铅厂、智能锰矿、智能天然气田、自动化磷矿、智能战略矿山、智能战略金属冶炼厂、自动化炼锌厂
 
 #### 机会成本
 
@@ -43018,7 +44757,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-geospatial\_analysis\_institution产出 +28%
+geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网控制中心
 
 #### 机会成本
 
@@ -43158,7 +44897,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：自动化铅矿
+解锁物资：铅矿石；解锁建筑：自动化铅矿；作为必要支撑：现代硝石矿、现代硫矿
 
 #### 机会成本
 
@@ -43227,7 +44966,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：自动化磷矿
+解锁物资：磷矿石；解锁建筑：自动化磷矿；作为必要支撑：自动化磷矿
 
 #### 机会成本
 
@@ -43299,7 +45038,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：自动化炼锌厂；解锁物资：锌
+解锁物资：锌；解锁建筑：自动化炼锌厂；作为必要支撑：智能战略金属冶炼厂
 
 #### 机会成本
 
@@ -43366,7 +45105,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：自动化铝土矿
+解锁物资：铝土矿；解锁建筑：自动化铝土矿；作为必要支撑：自动化铅矿、自动化炼铅厂、智能锰矿、智能天然气田、自动化磷矿、智能战略矿山、智能战略金属冶炼厂、自动化炼锌厂
 
 #### 机会成本
 
@@ -43434,7 +45173,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：战略矿山
+解锁物资：战略矿石；解锁建筑：战略矿山；作为必要支撑：自动化铅矿、自动化炼铅厂、智能锰矿、智能天然气田、自动化磷矿、智能战略矿山、智能战略金属冶炼厂、自动化炼锌厂
 
 #### 机会成本
 
@@ -43506,7 +45245,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：战略金属冶炼厂；解锁物资：战略矿物材料
+解锁物资：战略矿物材料；解锁建筑：战略金属冶炼厂；作为必要支撑：智能战略金属冶炼厂
 
 #### 机会成本
 
@@ -43582,7 +45321,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：核燃料厂；解锁物资：核燃料
+解锁物资：核燃料；解锁建筑：核燃料厂
 
 #### 机会成本
 
@@ -43655,7 +45394,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：核反应堆设备厂；解锁物资：反应堆部件
+解锁物资：反应堆部件；解锁建筑：核反应堆设备厂；作为必要支撑：智能化核反应堆设备厂
 
 #### 机会成本
 
@@ -43814,7 +45553,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：核电站
+解锁物资：电力；解锁建筑：核电站；作为必要支撑：智能化核反应堆设备厂
 
 #### 机会成本
 
@@ -43852,10 +45591,626 @@ geospatial\_analysis\_institution产出 +28%
 
 无
 
+### 应用：精准马铃薯农场 (`tech.application.method_potato_farm_r8`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.method_potato_farm_r8` |
+| 时代 | 信息时代 (`information`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 6120000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.tuber\_highland |
+| 主要路线 | 作物 · 块茎作物 (\`route.crop.tuber\`) |
+| 全部路线 | 作物 · 块茎作物 (\`route.crop.tuber\`)；作物 · 精准 (\`route.crop.precision\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 精准农业 (`tech.precision_agriculture`)：tech.precision\_agriculture是精准马铃薯农场不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是精准马铃薯农场不可替代的知识基础。
+- 地理信息系统 (`tech.geographic_information_systems`)：tech.geographic\_information\_systems是精准马铃薯农场不可替代的知识基础。
+- 块茎繁育 (`tech.potato_propagation`)：tech.potato\_propagation是精准马铃薯农场不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：马铃薯；解锁建筑：精准马铃薯农场
+
+#### 机会成本
+
+无
+
+#### 内容解锁
+
+- **物资：** 马铃薯 (`potatoes`)
+- **建筑 / 生产方式：** 精准马铃薯农场 (`method_potato_farm_r8`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **马铃薯**（`good`）：`good.potatoes` → `production_access` `unlock` `1.0`；`catalog_rebind`
+- **精准马铃薯农场**（`building`）：`building.method_potato_farm_r8` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 应用：精准小麦农场 (`tech.application.method_wheat_farm_r8`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.method_wheat_farm_r8` |
+| 时代 | 信息时代 (`information`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 6120000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.wheat\_rainfed |
+| 主要路线 | 作物 · 小麦 (\`route.crop.wheat\`) |
+| 全部路线 | 作物 · 小麦 (\`route.crop.wheat\`)；作物 · 精准 (\`route.crop.precision\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 精准农业 (`tech.precision_agriculture`)：tech.precision\_agriculture是精准小麦农场不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是精准小麦农场不可替代的知识基础。
+- 小麦繁育 (`tech.wheat_propagation`)：tech.wheat\_propagation是精准小麦农场不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：小麦；解锁建筑：精准小麦农场
+
+#### 机会成本
+
+无
+
+#### 内容解锁
+
+- **物资：** 小麦 (`wheat_grain`)
+- **建筑 / 生产方式：** 精准小麦农场 (`method_wheat_farm_r8`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **小麦**（`good`）：`good.wheat_grain` → `production_access` `unlock` `1.0`；`catalog_rebind`
+- **精准小麦农场**（`building`）：`building.method_wheat_farm_r8` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 应用：精准稻作农场 (`tech.application.method_rice_collector_r8`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.method_rice_collector_r8` |
+| 时代 | 信息时代 (`information`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 6120000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.rice\_irrigation |
+| 主要路线 | 作物 · 水稻 (\`route.crop.rice\`) |
+| 全部路线 | 作物 · 水稻 (\`route.crop.rice\`)；作物 · 精准 (\`route.crop.precision\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 精准农业 (`tech.precision_agriculture`)：tech.precision\_agriculture是精准稻作农场不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是精准稻作农场不可替代的知识基础。
+- 精准灌溉 (`tech.precision_irrigation`)：tech.precision\_irrigation是精准稻作农场不可替代的知识基础。
+- 稻田水位控制 (`tech.rice_water_control`)：tech.rice\_water\_control是精准稻作农场不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：稻米；解锁建筑：精准稻作农场
+
+#### 机会成本
+
+无
+
+#### 内容解锁
+
+- **物资：** 稻米 (`rice_grain`)
+- **建筑 / 生产方式：** 精准稻作农场 (`method_rice_collector_r8`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **稻米**（`good`）：`good.rice_grain` → `production_access` `unlock` `1.0`；`catalog_rebind`
+- **精准稻作农场**（`building`）：`building.method_rice_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 应用：精准玉米农场 (`tech.application.method_maize_farm_r8`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.method_maize_farm_r8` |
+| 时代 | 信息时代 (`information`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 6120000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.maize\_horticulture |
+| 主要路线 | 作物 · 玉米 (\`route.crop.maize\`) |
+| 全部路线 | 作物 · 玉米 (\`route.crop.maize\`)；作物 · 精准 (\`route.crop.precision\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 精准农业 (`tech.precision_agriculture`)：tech.precision\_agriculture是精准玉米农场不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是精准玉米农场不可替代的知识基础。
+- 玉米繁育 (`tech.maize_propagation`)：tech.maize\_propagation是精准玉米农场不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：玉米；解锁建筑：精准玉米农场
+
+#### 机会成本
+
+无
+
+#### 内容解锁
+
+- **物资：** 玉米 (`corn_grain`)
+- **建筑 / 生产方式：** 精准玉米农场 (`method_maize_farm_r8`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **玉米**（`good`）：`good.corn_grain` → `production_access` `unlock` `1.0`；`catalog_rebind`
+- **精准玉米农场**（`building`）：`building.method_maize_farm_r8` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 应用：精准棉花农场 (`tech.application.method_cotton_collector_r8`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.method_cotton_collector_r8` |
+| 时代 | 信息时代 (`information`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 6120000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.tropical\_commodities |
+| 主要路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
+| 全部路线 | 作物 · 热带作物 (\`route.crop.tropical\`)；作物 · 精准 (\`route.crop.precision\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 精准农业 (`tech.precision_agriculture`)：tech.precision\_agriculture是精准棉花农场不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是精准棉花农场不可替代的知识基础。
+- 棉花园圃 (`tech.cotton_gardening`)：tech.cotton\_gardening是精准棉花农场不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：籽棉；解锁建筑：精准棉花农场
+
+#### 机会成本
+
+无
+
+#### 内容解锁
+
+- **物资：** 籽棉 (`seed_cotton`)
+- **建筑 / 生产方式：** 精准棉花农场 (`method_cotton_collector_r8`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **籽棉**（`good`）：`good.seed_cotton` → `production_access` `unlock` `1.0`；`catalog_rebind`
+- **精准棉花农场**（`building`）：`building.method_cotton_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 应用：精准亚麻农场 (`tech.application.method_flax_collector_r8`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.method_flax_collector_r8` |
+| 时代 | 信息时代 (`information`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 6120000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.textile\_fibers |
+| 主要路线 | 工艺 · 纺织 (\`route.craft.textiles\`) |
+| 全部路线 | 工艺 · 纺织 (\`route.craft.textiles\`)；作物 · 精准 (\`route.crop.precision\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 精准农业 (`tech.precision_agriculture`)：tech.precision\_agriculture是精准亚麻农场不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是精准亚麻农场不可替代的知识基础。
+- 沤麻 (`tech.flax_retting`)：tech.flax\_retting是精准亚麻农场不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：韧皮原料；解锁建筑：精准亚麻农场
+
+#### 机会成本
+
+无
+
+#### 内容解锁
+
+- **物资：** 亚麻秆/韧皮原料 (`bast_fiber`)
+- **建筑 / 生产方式：** 精准亚麻农场 (`method_flax_collector_r8`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **韧皮原料**（`good`）：`good.bast_fiber` → `production_access` `unlock` `1.0`；`catalog_rebind`
+- **精准亚麻农场**（`building`）：`building.method_flax_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 应用：精准香料种植园 (`tech.application.method_spice_plants_collector_r8`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.method_spice_plants_collector_r8` |
+| 时代 | 信息时代 (`information`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 6120000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.tropical\_commodities |
+| 主要路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
+| 全部路线 | 作物 · 热带作物 (\`route.crop.tropical\`)；作物 · 精准 (\`route.crop.precision\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 精准农业 (`tech.precision_agriculture`)：tech.precision\_agriculture是精准香料种植园不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是精准香料种植园不可替代的知识基础。
+- 商品作物管理 (`tech.commodity_crop_management`)：tech.commodity\_crop\_management是精准香料种植园不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：香料；解锁建筑：精准香料种植园
+
+#### 机会成本
+
+无
+
+#### 内容解锁
+
+- **物资：** 香料 (`spices`)
+- **建筑 / 生产方式：** 精准香料种植园 (`method_spice_plants_collector_r8`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **香料**（`good`）：`good.spices` → `production_access` `unlock` `1.0`；`catalog_rebind`
+- **精准香料种植园**（`building`）：`building.method_spice_plants_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 应用：精准药材农场 (`tech.application.method_medicinal_herbs_collector_r8`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.method_medicinal_herbs_collector_r8` |
+| 时代 | 信息时代 (`information`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 6120000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.tropical\_commodities |
+| 主要路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
+| 全部路线 | 作物 · 热带作物 (\`route.crop.tropical\`)；作物 · 精准 (\`route.crop.precision\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 精准农业 (`tech.precision_agriculture`)：tech.precision\_agriculture是精准药材农场不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是精准药材农场不可替代的知识基础。
+- 现代医学 (`tech.modern_medicine`)：tech.modern\_medicine是精准药材农场不可替代的知识基础。
+- 商品作物管理 (`tech.commodity_crop_management`)：tech.commodity\_crop\_management是精准药材农场不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：药材；解锁建筑：精准药材农场
+
+#### 机会成本
+
+无
+
+#### 内容解锁
+
+- **物资：** 药材 (`medicinal_herbs`)
+- **建筑 / 生产方式：** 精准药材农场 (`method_medicinal_herbs_collector_r8`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **药材**（`good`）：`good.medicinal_herbs` → `production_access` `unlock` `1.0`；`catalog_rebind`
+- **精准药材农场**（`building`）：`building.method_medicinal_herbs_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 应用：精准橡胶种植园 (`tech.application.method_rubber_tree_collector_r8`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.method_rubber_tree_collector_r8` |
+| 时代 | 信息时代 (`information`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 6120000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.tropical\_commodities |
+| 主要路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
+| 全部路线 | 作物 · 热带作物 (\`route.crop.tropical\`)；作物 · 精准 (\`route.crop.precision\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 精准农业 (`tech.precision_agriculture`)：tech.precision\_agriculture是精准橡胶种植园不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是精准橡胶种植园不可替代的知识基础。
+- 商品作物管理 (`tech.commodity_crop_management`)：tech.commodity\_crop\_management是精准橡胶种植园不可替代的知识基础。
+- 天然橡胶加工 (`tech.rubber_working`)：tech.rubber\_working是精准橡胶种植园不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：乳胶；解锁建筑：精准橡胶种植园
+
+#### 机会成本
+
+无
+
+#### 内容解锁
+
+- **物资：** 天然乳胶 (`latex`)
+- **建筑 / 生产方式：** 精准橡胶种植园 (`method_rubber_tree_collector_r8`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **乳胶**（`good`）：`good.latex` → `production_access` `unlock` `1.0`；`catalog_rebind`
+- **精准橡胶种植园**（`building`）：`building.method_rubber_tree_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
 <a id="era-11"></a>
 ## 智能时代
 
-共 58 项科技，研究成本范围 108800-20000000；时代里程碑：认知自动化 (`tech.cognitive_automation`)。
+共 70 项科技，研究成本范围 9360-20000000；时代里程碑：认知自动化 (`tech.cognitive_automation`)。
 
 ### 应用：核医学制药中心 (`tech.application.nuclear_medicine_center`)
 
@@ -43891,7 +46246,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：核医学制药中心
+解锁物资：药品；解锁建筑：核医学制药中心
 
 #### 机会成本
 
@@ -43961,7 +46316,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：不锈钢厂
+解锁物资：不锈钢；解锁建筑：不锈钢厂；作为必要支撑：智能冶铝厂、智能化不锈钢厂
 
 #### 机会成本
 
@@ -44032,7 +46387,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：自动化炼铅厂
+解锁物资：铅；解锁建筑：自动化炼铅厂；作为必要支撑：智能冶铝厂、自动化港口船舶中心、智能化汽车厂、智能化电池厂、自动化水泥厂、智能化洗涤剂厂、智能化电动机厂、智能化电子元件厂、智能化发动机厂、自动化炸药厂、智能化家用电器厂、数字化工业机械厂、智能化绝缘电缆厂、自动化润滑油厂、自动化机械零件厂、智能化核燃料厂、智能石油化工厂、智能化塑料厂、智能工具厂、智能化无线电设备厂、智能战略矿山、智能战略金属冶炼厂、智能化核反应堆设备厂、智能炼油厂、智能仪器厂、智能化不锈钢厂、自动化蒸汽机厂、智能化合成纤维厂、智能化合成橡胶厂、智能化线材厂
 
 #### 机会成本
 
@@ -44101,7 +46456,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：自动化机械零件厂
+解锁物资：机器零件；解锁建筑：自动化机械零件厂；作为必要支撑：智能冶铝厂、自动化港口船舶中心、智能化汽车厂、智能化电池厂、自动化水泥厂、智能化洗涤剂厂、智能化电动机厂、智能化电子元件厂、智能化发动机厂、自动化炸药厂、智能化家用电器厂、数字化工业机械厂、智能化绝缘电缆厂、自动化润滑油厂、自动化机械零件厂、智能化核燃料厂、智能石油化工厂、智能化塑料厂、智能工具厂、智能化无线电设备厂、智能战略矿山、智能战略金属冶炼厂、智能化核反应堆设备厂、智能炼油厂、智能仪器厂、智能化不锈钢厂、自动化蒸汽机厂、智能化合成纤维厂、智能化合成橡胶厂、智能化线材厂
 
 #### 机会成本
 
@@ -44169,7 +46524,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：流域治理中心
+解锁物资：科技值；解锁建筑：流域治理中心；作为必要支撑：智能水网控制中心
 
 #### 机会成本
 
@@ -44238,7 +46593,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：数字化工业机械厂
+解锁物资：工业机械；解锁建筑：数字化工业机械厂
 
 #### 机会成本
 
@@ -44309,7 +46664,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：地理空间分析中心
+解锁物资：科技值；解锁建筑：地理空间分析中心；作为必要支撑：森林遥感经营站、高地精准块茎农业、流域治理中心
 
 #### 机会成本
 
@@ -44381,7 +46736,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：工业石灰岩矿场
+解锁物资：石灰岩；解锁建筑：工业石灰岩矿场；作为必要支撑：森林遥感经营站、高地精准块茎农业、流域治理中心
 
 #### 机会成本
 
@@ -44453,7 +46808,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：自动化焦化厂
+解锁物资：焦炭；解锁建筑：自动化焦化厂；作为必要支撑：自动化水泥厂、自动化焦化厂、自动化混凝土厂、数字化工业机械厂、自动化炼铅厂、智能牧业站、自动化炼锌厂
 
 #### 机会成本
 
@@ -44524,7 +46879,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：自动化混凝土厂
+解锁物资：混凝土；解锁建筑：自动化混凝土厂；作为必要支撑：自动化水泥厂、自动化焦化厂、自动化混凝土厂、数字化工业机械厂、自动化炼铅厂、智能牧业站、自动化炼锌厂
 
 #### 机会成本
 
@@ -44603,7 +46958,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：高端芯片厂；解锁建筑：智能研究院；全社会经济产出 +5%；解锁物资：先进芯片
+解锁物资：先进芯片；解锁物资：科技值；解锁建筑：高端芯片厂；解锁建筑：智能研究院；全社会经济产出 +5%；作为必要支撑：智能化洗涤剂厂、智能石油化工厂、智能化塑料厂、智能炼油厂、智能化合成纤维厂、智能化合成橡胶厂
 
 #### 机会成本
 
@@ -44687,7 +47042,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-全社会经济产出 +6%
+全社会经济产出 +6%；作为必要支撑：自主航运调度港、智能化核燃料厂、智能化核反应堆设备厂、智能牧业站、智能水网控制中心
 
 #### 机会成本
 
@@ -44762,7 +47117,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：自主控制系统厂；解锁物资：自主系统
+解锁物资：自主系统；解锁建筑：自主控制系统厂；作为必要支撑：自主航运调度港、智能化核燃料厂、智能化核反应堆设备厂、智能牧业站、智能水网控制中心
 
 #### 机会成本
 
@@ -44862,7 +47217,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：自动化农场；全社会 +22%
+解锁物资：混合谷物；解锁物资：蔬菜；解锁建筑：自动化农场；全社会 +22%；作为必要支撑：专用商品作物种植园
 
 #### 机会成本
 
@@ -44890,6 +47245,15 @@ geospatial\_analysis\_institution产出 +28%
 #### 被以下科技作为硬前置
 
 - 应用：专用商品作物种植园 (`tech.application.method_specialty_commodity_plantation`)：自动化农业是应用：专用商品作物种植园不可替代的知识基础。
+- 应用：自动化马铃薯农场 (`tech.application.method_potato_farm_r10`)：tech.automated\_agriculture是自动化马铃薯农场不可替代的知识基础。
+- 应用：自动化小麦农场 (`tech.application.method_wheat_farm_r10`)：tech.automated\_agriculture是自动化小麦农场不可替代的知识基础。
+- 应用：自动化稻作农场 (`tech.application.method_rice_collector_r10`)：tech.automated\_agriculture是自动化稻作农场不可替代的知识基础。
+- 应用：自动化玉米农场 (`tech.application.method_maize_farm_r10`)：tech.automated\_agriculture是自动化玉米农场不可替代的知识基础。
+- 应用：自动化棉花农场 (`tech.application.method_cotton_collector_r10`)：tech.automated\_agriculture是自动化棉花农场不可替代的知识基础。
+- 应用：自动化亚麻农场 (`tech.application.method_flax_collector_r10`)：tech.automated\_agriculture是自动化亚麻农场不可替代的知识基础。
+- 应用：自动化香料种植园 (`tech.application.method_spice_plants_collector_r10`)：tech.automated\_agriculture是自动化香料种植园不可替代的知识基础。
+- 应用：自动化药材农场 (`tech.application.method_medicinal_herbs_collector_r10`)：tech.automated\_agriculture是自动化药材农场不可替代的知识基础。
+- 应用：自动化橡胶种植园 (`tech.application.method_rubber_tree_collector_r10`)：tech.automated\_agriculture是自动化橡胶种植园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -45000,7 +47364,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-全社会 +22%
+全社会 +22%；作为必要支撑：智能工具厂
 
 #### 机会成本
 
@@ -45071,7 +47435,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-全社会 +8%
+全社会 +8%；作为必要支撑：智能化电池厂、智能化洗涤剂厂、智能化电动机厂、智能化电子元件厂、自动化炸药厂、智能化家用电器厂、智能化绝缘电缆厂、智能化核燃料厂、智能石油化工厂、智能化塑料厂、智能工具厂、智能化无线电设备厂、智能炼油厂、智能仪器厂、智能化线材厂
 
 #### 机会成本
 
@@ -45113,6 +47477,9 @@ geospatial\_analysis\_institution产出 +28%
 - 应用：智能化汽车厂 (`tech.application.method_automobiles_plant_r10`)：机器人制造是应用：智能化汽车厂不可替代的知识基础。
 - 应用：智能化发动机厂 (`tech.application.method_engines_plant_r10`)：机器人制造是应用：智能化发动机厂不可替代的知识基础。
 - 应用：智能仪器厂 (`tech.application.method_scientific_instrument_works_r10`)：机器人制造是应用：智能仪器厂不可替代的知识基础。
+- Smart Glassware Factory (`tech.application.glassware_smart_factory`)：knowledge prerequisite: tech.robotic\_manufacturing -\> Smart Glassware Factory
+- Smart Metal Housewares Factory (`tech.application.metal_housewares_smart_factory`)：knowledge prerequisite: tech.robotic\_manufacturing -\> Smart Metal Housewares Factory
+- Smart Leather Goods Factory (`tech.application.leather_goods_smart_factory`)：knowledge prerequisite: tech.robotic\_manufacturing -\> Smart Leather Goods Factory
 
 #### 主题路线后继
 
@@ -45158,7 +47525,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：智能化核燃料厂
+解锁物资：核燃料；解锁建筑：智能化核燃料厂
 
 #### 机会成本
 
@@ -45228,7 +47595,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：智能工具厂
+解锁物资：精密工具；解锁建筑：智能工具厂；作为必要支撑：智能工具厂
 
 #### 机会成本
 
@@ -45295,7 +47662,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-铁矿石 -12%；全社会 +15%
+铁矿石 -12%；全社会 +15%；作为必要支撑：智能锰矿、智能天然气田、智能硝石矿、智能硫矿
 
 #### 机会成本
 
@@ -45506,7 +47873,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：智能化电池厂；解锁建筑：智能化电动机厂；电力产出 +22%；解锁物资：电池
+解锁物资：电池；解锁物资：电动机；解锁建筑：智能化电池厂；解锁建筑：智能化电动机厂；电力产出 +22%；作为必要支撑：自主林业经营站、自主航运调度港、智能化电池厂、智能化电动机厂、智能化绝缘电缆厂、智能牧业站、智能化线材厂、智能水网控制中心
 
 #### 机会成本
 
@@ -45584,7 +47951,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：专用商品作物种植园
+解锁物资：天然乳胶；解锁物资：香料；解锁建筑：专用商品作物种植园；作为必要支撑：棉花农场、机械化橡胶种植园、机械化香料种植园、香料种植园
 
 #### 机会成本
 
@@ -45655,7 +48022,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：智能化绝缘电缆厂
+解锁物资：绝缘电缆；解锁建筑：智能化绝缘电缆厂；作为必要支撑：燃气发电厂、河流水力发电站、自动化港口船舶中心、燃油发电厂
 
 #### 机会成本
 
@@ -45724,7 +48091,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：智能化线材厂
+解锁物资：金属线材；解锁建筑：智能化线材厂
 
 #### 机会成本
 
@@ -45795,7 +48162,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：智能牧业站
+解锁物资：畜牧产品；解锁建筑：智能牧业站
 
 #### 机会成本
 
@@ -45864,7 +48231,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：智能锰矿
+解锁物资：锰矿石；解锁建筑：智能锰矿；作为必要支撑：自动化磷矿、自动化锌矿
 
 #### 机会成本
 
@@ -45933,7 +48300,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：智能天然气田
+解锁物资：天然气；解锁建筑：智能天然气田；作为必要支撑：燃气发电厂
 
 #### 机会成本
 
@@ -46002,7 +48369,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：智能战略矿山；解锁物资：战略矿石
+解锁物资：战略矿石；解锁建筑：智能战略矿山；作为必要支撑：智能锰矿、智能天然气田、智能硝石矿、智能硫矿
 
 #### 机会成本
 
@@ -46069,7 +48436,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：智能硝石矿
+解锁物资：硝石；解锁建筑：智能硝石矿；作为必要支撑：智能锰矿、智能天然气田、智能硝石矿、智能硫矿
 
 #### 机会成本
 
@@ -46140,7 +48507,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：智能水网控制中心；全社会生产投入 -3%
+解锁物资：科技值；解锁建筑：智能水网控制中心；全社会生产投入 -3%
 
 #### 机会成本
 
@@ -46208,7 +48575,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-科学领域研究效率 +22%
+科学领域研究效率 +22%；作为必要支撑：自主航运调度港、智能仪器厂
 
 #### 机会成本
 
@@ -46352,7 +48719,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：智能化电子元件厂
+解锁物资：电子元件；解锁建筑：智能化电子元件厂；作为必要支撑：自主航运调度港、智能仪器厂
 
 #### 机会成本
 
@@ -46423,7 +48790,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：智能化无线电设备厂
+解锁物资：无线电设备；解锁建筑：智能化无线电设备厂；作为必要支撑：自主航运调度港、智能仪器厂
 
 #### 机会成本
 
@@ -46494,7 +48861,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：自主航运调度港；航运作业产出 +28%
+解锁物资：远洋船舶；解锁建筑：自主航运调度港；航运作业产出 +28%
 
 #### 机会成本
 
@@ -46631,7 +48998,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-全社会 +8%
+全社会 +8%；作为必要支撑：智能冶铝厂、智能化汽车厂、智能化洗涤剂厂、智能化发动机厂、自动化炸药厂、智能化家用电器厂、智能石油化工厂、智能化塑料厂、智能战略金属冶炼厂、智能化核反应堆设备厂、智能炼油厂、智能化不锈钢厂、智能化合成纤维厂、智能化合成橡胶厂
 
 #### 机会成本
 
@@ -46715,7 +49082,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：自动化炸药厂
+解锁物资：炸药；解锁建筑：自动化炸药厂；作为必要支撑：现代炸药厂
 
 #### 机会成本
 
@@ -46787,7 +49154,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：智能炼油厂
+解锁物资：精炼燃料；解锁建筑：智能炼油厂
 
 #### 机会成本
 
@@ -46859,7 +49226,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：智能化塑料厂
+解锁物资：塑料；解锁建筑：智能化塑料厂
 
 #### 机会成本
 
@@ -46931,7 +49298,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：智能化核反应堆设备厂
+解锁物资：反应堆部件；解锁建筑：智能化核反应堆设备厂
 
 #### 机会成本
 
@@ -47004,7 +49371,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：智能石油化工厂
+解锁物资：石化产品；解锁建筑：智能石油化工厂
 
 #### 机会成本
 
@@ -47078,7 +49445,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：智能化洗涤剂厂
+解锁物资：洗涤剂；解锁建筑：智能化洗涤剂厂
 
 #### 机会成本
 
@@ -47151,7 +49518,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：智能战略金属冶炼厂
+解锁物资：战略矿物材料；解锁建筑：智能战略金属冶炼厂
 
 #### 机会成本
 
@@ -47223,7 +49590,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：智能化家用电器厂
+解锁物资：家用电器；解锁建筑：智能化家用电器厂；作为必要支撑：智能工具厂
 
 #### 机会成本
 
@@ -47296,7 +49663,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：智能化汽车厂
+解锁物资：汽车；解锁建筑：智能化汽车厂；作为必要支撑：智能化电池厂、智能化洗涤剂厂、智能化电动机厂、智能化电子元件厂、自动化炸药厂、智能化家用电器厂、智能化绝缘电缆厂、智能化核燃料厂、智能石油化工厂、智能化塑料厂、智能工具厂、智能化无线电设备厂、智能炼油厂、智能仪器厂、智能化线材厂
 
 #### 机会成本
 
@@ -47368,7 +49735,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：智能化发动机厂
+解锁物资：发动机；解锁建筑：智能化发动机厂；作为必要支撑：智能化电池厂、智能化洗涤剂厂、智能化电动机厂、智能化电子元件厂、自动化炸药厂、智能化家用电器厂、智能化绝缘电缆厂、智能化核燃料厂、智能石油化工厂、智能化塑料厂、智能工具厂、智能化无线电设备厂、智能炼油厂、智能仪器厂、智能化线材厂
 
 #### 机会成本
 
@@ -47435,7 +49802,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-科学领域研究效率 +22%；解锁物资：锌矿石；解锁建筑：智能硫矿；解锁建筑：自动化锌矿
+解锁物资：硫磺；解锁物资：锌矿石；解锁建筑：智能硫矿；解锁建筑：自动化锌矿；科学领域研究效率 +22%；作为必要支撑：自主林业经营站、智能仪器厂
 
 #### 机会成本
 
@@ -47511,7 +49878,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：智能化合成纤维厂
+解锁物资：合成纤维；解锁建筑：智能化合成纤维厂；作为必要支撑：智能冶铝厂、智能化汽车厂、智能化洗涤剂厂、智能化发动机厂、自动化炸药厂、智能化家用电器厂、智能石油化工厂、智能化塑料厂、智能战略金属冶炼厂、智能化核反应堆设备厂、智能炼油厂、智能化不锈钢厂、智能化合成纤维厂、智能化合成橡胶厂
 
 #### 机会成本
 
@@ -47582,7 +49949,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：智能化合成橡胶厂
+解锁物资：合成橡胶；解锁建筑：智能化合成橡胶厂；作为必要支撑：智能冶铝厂、智能化汽车厂、智能化洗涤剂厂、智能化发动机厂、自动化炸药厂、智能化家用电器厂、智能石油化工厂、智能化塑料厂、智能战略金属冶炼厂、智能化核反应堆设备厂、智能炼油厂、智能化不锈钢厂、智能化合成纤维厂、智能化合成橡胶厂
 
 #### 机会成本
 
@@ -47652,7 +50019,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：智能仪器厂
+解锁物资：科学仪器；解锁建筑：智能仪器厂；作为必要支撑：精密仪器厂
 
 #### 机会成本
 
@@ -47721,7 +50088,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：自主林业经营站
+解锁物资：原木；解锁建筑：自主林业经营站；作为必要支撑：自主航运调度港、智能化核燃料厂、智能化核反应堆设备厂、智能牧业站、智能水网控制中心
 
 #### 机会成本
 
@@ -47814,7 +50181,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 被以下科技作为硬前置
 
-无
+- 应用：自动化稻作农场 (`tech.application.method_rice_collector_r10`)：tech.adaptive\_irrigation是自动化稻作农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -47930,7 +50297,7 @@ geospatial\_analysis\_institution产出 +28%
 
 #### 效果摘要
 
-解锁建筑：智能冶铝厂；解锁建筑：智能化不锈钢厂；全社会 +22%；解锁物资：不锈钢
+解锁物资：铝；解锁物资：不锈钢；解锁建筑：智能冶铝厂；解锁建筑：智能化不锈钢厂；全社会 +22%；作为必要支撑：智能冶铝厂、智能化不锈钢厂
 
 #### 机会成本
 
@@ -48039,6 +50406,829 @@ geospatial\_analysis\_institution产出 +28%
 #### 结构化内容效果
 
 无
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### Smart Glassware Factory (`tech.application.glassware_smart_factory`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.glassware_smart_factory` |
+| 时代 | 智能时代 (`intelligent`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 9360 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.construction\_materials |
+| 主要路线 | 材料 · 合成材料 (\`route.material.materials\`) |
+| 全部路线 | 材料 · 合成材料 (\`route.material.materials\`)；工艺 · 消费品 (\`route.craft.consumer\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | craft |
+
+#### 硬前置（决定研发资格）
+
+- Glassware Factory (`tech.application.glassware_factory_steam`)：knowledge prerequisite: tech.application.glassware\_factory\_steam -\> Smart Glassware Factory
+- 机器人制造 (`tech.robotic_manufacturing`)：knowledge prerequisite: tech.robotic\_manufacturing -\> Smart Glassware Factory
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：Smart Glassware Factory；解锁建筑：Smart Glassware Factory；作为必要支撑：Smart Glassware Factory
+
+#### 机会成本
+
+terminal production upgrade
+
+#### 内容解锁
+
+- **物资：** 玻璃器皿 (`glassware`)
+- **建筑 / 生产方式：** 智能玻璃器皿工厂 (`smart_glassware_factory`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **Smart Glassware Factory**（`good`）：`good.glassware` → `production_access` `unlock` `1.0`；`existing_binding`
+- **Smart Glassware Factory**（`building`）：`building.smart_glassware_factory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### Smart Metal Housewares Factory (`tech.application.metal_housewares_smart_factory`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.metal_housewares_smart_factory` |
+| 时代 | 智能时代 (`intelligent`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 9360 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.construction\_materials |
+| 主要路线 | 材料 · 合成材料 (\`route.material.materials\`) |
+| 全部路线 | 材料 · 合成材料 (\`route.material.materials\`)；工艺 · 消费品 (\`route.craft.consumer\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | craft |
+
+#### 硬前置（决定研发资格）
+
+- Metal Housewares Factory (`tech.application.metal_housewares_factory_steam`)：knowledge prerequisite: tech.application.metal\_housewares\_factory\_steam -\> Smart Metal Housewares Factory
+- 机器人制造 (`tech.robotic_manufacturing`)：knowledge prerequisite: tech.robotic\_manufacturing -\> Smart Metal Housewares Factory
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：Smart Metal Housewares Factory；解锁建筑：Smart Metal Housewares Factory；作为必要支撑：Smart Metal Housewares Factory
+
+#### 机会成本
+
+terminal production upgrade
+
+#### 内容解锁
+
+- **物资：** 金属家用器皿 (`metal_housewares`)
+- **建筑 / 生产方式：** 智能金属家用器皿工厂 (`smart_metal_housewares_factory`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **Smart Metal Housewares Factory**（`good`）：`good.metal_housewares` → `production_access` `unlock` `1.0`；`existing_binding`
+- **Smart Metal Housewares Factory**（`building`）：`building.smart_metal_housewares_factory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### Smart Leather Goods Factory (`tech.application.leather_goods_smart_factory`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.leather_goods_smart_factory` |
+| 时代 | 智能时代 (`intelligent`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 9360 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.construction\_materials |
+| 主要路线 | 材料 · 合成材料 (\`route.material.materials\`) |
+| 全部路线 | 材料 · 合成材料 (\`route.material.materials\`)；工艺 · 消费品 (\`route.craft.consumer\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | craft |
+
+#### 硬前置（决定研发资格）
+
+- Leather Goods Factory (`tech.application.leather_goods_factory_steam`)：knowledge prerequisite: tech.application.leather\_goods\_factory\_steam -\> Smart Leather Goods Factory
+- 机器人制造 (`tech.robotic_manufacturing`)：knowledge prerequisite: tech.robotic\_manufacturing -\> Smart Leather Goods Factory
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：Smart Leather Goods Factory；解锁建筑：Smart Leather Goods Factory；作为必要支撑：Smart Leather Goods Factory
+
+#### 机会成本
+
+terminal production upgrade
+
+#### 内容解锁
+
+- **物资：** 皮革制品 (`leather_goods`)
+- **建筑 / 生产方式：** 智能皮革制品工厂 (`smart_leather_goods_factory`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **Smart Leather Goods Factory**（`good`）：`good.leather_goods` → `production_access` `unlock` `1.0`；`existing_binding`
+- **Smart Leather Goods Factory**（`building`）：`building.smart_leather_goods_factory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 应用：自动化马铃薯农场 (`tech.application.method_potato_farm_r10`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.method_potato_farm_r10` |
+| 时代 | 智能时代 (`intelligent`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 12000000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.tuber\_highland |
+| 主要路线 | 作物 · 块茎作物 (\`route.crop.tuber\`) |
+| 全部路线 | 作物 · 块茎作物 (\`route.crop.tuber\`)；人工智能 · 人机协作 (\`route.ai.collaboration\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 自动化农业 (`tech.automated_agriculture`)：tech.automated\_agriculture是自动化马铃薯农场不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是自动化马铃薯农场不可替代的知识基础。
+- 数字控制 (`tech.digital_control`)：tech.digital\_control是自动化马铃薯农场不可替代的知识基础。
+- 块茎繁育 (`tech.potato_propagation`)：tech.potato\_propagation是自动化马铃薯农场不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：马铃薯；解锁建筑：自动化马铃薯农场
+
+#### 机会成本
+
+无
+
+#### 内容解锁
+
+- **物资：** 马铃薯 (`potatoes`)
+- **建筑 / 生产方式：** 自动化马铃薯农场 (`method_potato_farm_r10`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **马铃薯**（`good`）：`good.potatoes` → `production_access` `unlock` `1.0`；`catalog_rebind`
+- **自动化马铃薯农场**（`building`）：`building.method_potato_farm_r10` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 应用：自动化小麦农场 (`tech.application.method_wheat_farm_r10`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.method_wheat_farm_r10` |
+| 时代 | 智能时代 (`intelligent`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 12000000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.wheat\_rainfed |
+| 主要路线 | 作物 · 小麦 (\`route.crop.wheat\`) |
+| 全部路线 | 作物 · 小麦 (\`route.crop.wheat\`)；人工智能 · 人机协作 (\`route.ai.collaboration\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 自动化农业 (`tech.automated_agriculture`)：tech.automated\_agriculture是自动化小麦农场不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是自动化小麦农场不可替代的知识基础。
+- 数字控制 (`tech.digital_control`)：tech.digital\_control是自动化小麦农场不可替代的知识基础。
+- 小麦繁育 (`tech.wheat_propagation`)：tech.wheat\_propagation是自动化小麦农场不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：小麦；解锁建筑：自动化小麦农场
+
+#### 机会成本
+
+无
+
+#### 内容解锁
+
+- **物资：** 小麦 (`wheat_grain`)
+- **建筑 / 生产方式：** 自动化小麦农场 (`method_wheat_farm_r10`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **小麦**（`good`）：`good.wheat_grain` → `production_access` `unlock` `1.0`；`catalog_rebind`
+- **自动化小麦农场**（`building`）：`building.method_wheat_farm_r10` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 应用：自动化稻作农场 (`tech.application.method_rice_collector_r10`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.method_rice_collector_r10` |
+| 时代 | 智能时代 (`intelligent`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 12000000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.rice\_irrigation |
+| 主要路线 | 作物 · 水稻 (\`route.crop.rice\`) |
+| 全部路线 | 作物 · 水稻 (\`route.crop.rice\`)；人工智能 · 人机协作 (\`route.ai.collaboration\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 自动化农业 (`tech.automated_agriculture`)：tech.automated\_agriculture是自动化稻作农场不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是自动化稻作农场不可替代的知识基础。
+- 自适应灌溉 (`tech.adaptive_irrigation`)：tech.adaptive\_irrigation是自动化稻作农场不可替代的知识基础。
+- 稻田水位控制 (`tech.rice_water_control`)：tech.rice\_water\_control是自动化稻作农场不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：稻米；解锁建筑：自动化稻作农场
+
+#### 机会成本
+
+无
+
+#### 内容解锁
+
+- **物资：** 稻米 (`rice_grain`)
+- **建筑 / 生产方式：** 自动化稻作农场 (`method_rice_collector_r10`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **稻米**（`good`）：`good.rice_grain` → `production_access` `unlock` `1.0`；`catalog_rebind`
+- **自动化稻作农场**（`building`）：`building.method_rice_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 应用：自动化玉米农场 (`tech.application.method_maize_farm_r10`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.method_maize_farm_r10` |
+| 时代 | 智能时代 (`intelligent`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 12000000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.maize\_horticulture |
+| 主要路线 | 作物 · 玉米 (\`route.crop.maize\`) |
+| 全部路线 | 作物 · 玉米 (\`route.crop.maize\`)；人工智能 · 人机协作 (\`route.ai.collaboration\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 自动化农业 (`tech.automated_agriculture`)：tech.automated\_agriculture是自动化玉米农场不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是自动化玉米农场不可替代的知识基础。
+- 数字控制 (`tech.digital_control`)：tech.digital\_control是自动化玉米农场不可替代的知识基础。
+- 玉米繁育 (`tech.maize_propagation`)：tech.maize\_propagation是自动化玉米农场不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：玉米；解锁建筑：自动化玉米农场
+
+#### 机会成本
+
+无
+
+#### 内容解锁
+
+- **物资：** 玉米 (`corn_grain`)
+- **建筑 / 生产方式：** 自动化玉米农场 (`method_maize_farm_r10`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **玉米**（`good`）：`good.corn_grain` → `production_access` `unlock` `1.0`；`catalog_rebind`
+- **自动化玉米农场**（`building`）：`building.method_maize_farm_r10` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 应用：自动化棉花农场 (`tech.application.method_cotton_collector_r10`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.method_cotton_collector_r10` |
+| 时代 | 智能时代 (`intelligent`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 12000000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.tropical\_commodities |
+| 主要路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
+| 全部路线 | 作物 · 热带作物 (\`route.crop.tropical\`)；人工智能 · 人机协作 (\`route.ai.collaboration\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 自动化农业 (`tech.automated_agriculture`)：tech.automated\_agriculture是自动化棉花农场不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是自动化棉花农场不可替代的知识基础。
+- 数字控制 (`tech.digital_control`)：tech.digital\_control是自动化棉花农场不可替代的知识基础。
+- 棉花园圃 (`tech.cotton_gardening`)：tech.cotton\_gardening是自动化棉花农场不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：籽棉；解锁建筑：自动化棉花农场
+
+#### 机会成本
+
+无
+
+#### 内容解锁
+
+- **物资：** 籽棉 (`seed_cotton`)
+- **建筑 / 生产方式：** 自动化棉花农场 (`method_cotton_collector_r10`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **籽棉**（`good`）：`good.seed_cotton` → `production_access` `unlock` `1.0`；`catalog_rebind`
+- **自动化棉花农场**（`building`）：`building.method_cotton_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 应用：自动化亚麻农场 (`tech.application.method_flax_collector_r10`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.method_flax_collector_r10` |
+| 时代 | 智能时代 (`intelligent`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 12000000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.textile\_fibers |
+| 主要路线 | 工艺 · 纺织 (\`route.craft.textiles\`) |
+| 全部路线 | 工艺 · 纺织 (\`route.craft.textiles\`)；人工智能 · 人机协作 (\`route.ai.collaboration\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 自动化农业 (`tech.automated_agriculture`)：tech.automated\_agriculture是自动化亚麻农场不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是自动化亚麻农场不可替代的知识基础。
+- 数字控制 (`tech.digital_control`)：tech.digital\_control是自动化亚麻农场不可替代的知识基础。
+- 沤麻 (`tech.flax_retting`)：tech.flax\_retting是自动化亚麻农场不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：韧皮原料；解锁建筑：自动化亚麻农场
+
+#### 机会成本
+
+无
+
+#### 内容解锁
+
+- **物资：** 亚麻秆/韧皮原料 (`bast_fiber`)
+- **建筑 / 生产方式：** 自动化亚麻农场 (`method_flax_collector_r10`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **韧皮原料**（`good`）：`good.bast_fiber` → `production_access` `unlock` `1.0`；`catalog_rebind`
+- **自动化亚麻农场**（`building`）：`building.method_flax_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 应用：自动化香料种植园 (`tech.application.method_spice_plants_collector_r10`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.method_spice_plants_collector_r10` |
+| 时代 | 智能时代 (`intelligent`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 12000000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.tropical\_commodities |
+| 主要路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
+| 全部路线 | 作物 · 热带作物 (\`route.crop.tropical\`)；人工智能 · 人机协作 (\`route.ai.collaboration\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 自动化农业 (`tech.automated_agriculture`)：tech.automated\_agriculture是自动化香料种植园不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是自动化香料种植园不可替代的知识基础。
+- 数字控制 (`tech.digital_control`)：tech.digital\_control是自动化香料种植园不可替代的知识基础。
+- 商品作物管理 (`tech.commodity_crop_management`)：tech.commodity\_crop\_management是自动化香料种植园不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：香料；解锁建筑：自动化香料种植园
+
+#### 机会成本
+
+无
+
+#### 内容解锁
+
+- **物资：** 香料 (`spices`)
+- **建筑 / 生产方式：** 自动化香料种植园 (`method_spice_plants_collector_r10`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **香料**（`good`）：`good.spices` → `production_access` `unlock` `1.0`；`catalog_rebind`
+- **自动化香料种植园**（`building`）：`building.method_spice_plants_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 应用：自动化药材农场 (`tech.application.method_medicinal_herbs_collector_r10`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.method_medicinal_herbs_collector_r10` |
+| 时代 | 智能时代 (`intelligent`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 12000000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.tropical\_commodities |
+| 主要路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
+| 全部路线 | 作物 · 热带作物 (\`route.crop.tropical\`)；人工智能 · 人机协作 (\`route.ai.collaboration\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 自动化农业 (`tech.automated_agriculture`)：tech.automated\_agriculture是自动化药材农场不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是自动化药材农场不可替代的知识基础。
+- 数字控制 (`tech.digital_control`)：tech.digital\_control是自动化药材农场不可替代的知识基础。
+- 现代医学 (`tech.modern_medicine`)：tech.modern\_medicine是自动化药材农场不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：药材；解锁建筑：自动化药材农场
+
+#### 机会成本
+
+无
+
+#### 内容解锁
+
+- **物资：** 药材 (`medicinal_herbs`)
+- **建筑 / 生产方式：** 自动化药材农场 (`method_medicinal_herbs_collector_r10`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **药材**（`good`）：`good.medicinal_herbs` → `production_access` `unlock` `1.0`；`catalog_rebind`
+- **自动化药材农场**（`building`）：`building.method_medicinal_herbs_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 应用：自动化橡胶种植园 (`tech.application.method_rubber_tree_collector_r10`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.method_rubber_tree_collector_r10` |
+| 时代 | 智能时代 (`intelligent`) |
+| 领域 | 农业 (`agriculture`) |
+| 研究成本 | 12000000 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.tropical\_commodities |
+| 主要路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
+| 全部路线 | 作物 · 热带作物 (\`route.crop.tropical\`)；人工智能 · 人机协作 (\`route.ai.collaboration\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | crop |
+
+#### 硬前置（决定研发资格）
+
+- 自动化农业 (`tech.automated_agriculture`)：tech.automated\_agriculture是自动化橡胶种植园不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是自动化橡胶种植园不可替代的知识基础。
+- 数字控制 (`tech.digital_control`)：tech.digital\_control是自动化橡胶种植园不可替代的知识基础。
+- 商品作物管理 (`tech.commodity_crop_management`)：tech.commodity\_crop\_management是自动化橡胶种植园不可替代的知识基础。
+- 天然橡胶加工 (`tech.rubber_working`)：tech.rubber\_working是自动化橡胶种植园不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：乳胶；解锁建筑：自动化橡胶种植园
+
+#### 机会成本
+
+无
+
+#### 内容解锁
+
+- **物资：** 天然乳胶 (`latex`)
+- **建筑 / 生产方式：** 自动化橡胶种植园 (`method_rubber_tree_collector_r10`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **乳胶**（`good`）：`good.latex` → `production_access` `unlock` `1.0`；`catalog_rebind`
+- **自动化橡胶种植园**（`building`）：`building.method_rubber_tree_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`new_content`
 
 #### 永久 Modifier 条款
 

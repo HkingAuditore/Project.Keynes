@@ -779,7 +779,6 @@ func _assert_engineering_method_scope(catalog: Dictionary) -> void:
 		"tech.smart_grid": ["method_electric_motor_plant_r10"],
 		"tech.electronic_control": ["zinc_plant"],
 		"tech.geographic_information_systems": ["method_limestone_collector_r6"],
-		"tech.highland_tuber_farming": ["method_potato_collector_r6"],
 		"tech.application.early_tin_mine": ["early_tin_mine"],
 		"tech.industrial_agronomy": ["method_agricultural_machinery_plant_r9"],
 	}

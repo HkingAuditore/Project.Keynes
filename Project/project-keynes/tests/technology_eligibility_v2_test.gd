@@ -15,7 +15,7 @@ func _init() -> void:
 	_compiled = EconomyCatalogScript.compile_native_catalog()
 	_expect("schema v3 catalog compiles", bool(_compiled.get("ok", false)))
 	var ids: PackedStringArray = _compiled.get("technology_ids", PackedStringArray())
-	_expect("stable technology count", ids.size() == 676)
+	_expect("stable technology count", ids.size() == 705)
 	_expect("route IR is present", (_compiled.get("research_route_ids", PackedStringArray()) as PackedStringArray).size() > 600)
 
 	# Era milestone is a hard gate, while the node's discovery signal and one
@@ -79,6 +79,14 @@ func _init() -> void:
 	_expect("the unified institution opens seasonal foraging",
 		_state(seasonal_open, "tech.seasonal_foraging") == 2)
 
+	var composite_hidden := _fixture(PackedStringArray(["tech.stone_knapping"]),
+		PackedStringArray())
+	_expect("composite tools stay hidden without stone or flint evidence",
+		_state(composite_hidden, "tech.composite_tools") == 0)
+	_discover(composite_hidden, PackedStringArray(["resource.stone"]))
+	_expect("stone evidence reveals composite tools",
+		_state(composite_hidden, "tech.composite_tools") == 2)
+
 	var hide_locked := _fixture(PackedStringArray(["tech.hunting"]),
 		PackedStringArray(["resource.wild_game"]))
 	_expect("hide scraping stays ineligible on a warm start until knowledge",
@@ -110,7 +118,10 @@ func _init() -> void:
 	]))
 	_expect("fire control remains locked without gathering and deadwood collection",
 		_state(coastal_alternatives, "tech.fire_control") == 1)
-	_expect("coastal knowledge opens husbandry after hunting",
+	_expect("husbandry stays hidden without a domesticable animal signal",
+		_state(coastal_alternatives, "tech.animal_husbandry") == 0)
+	_discover(coastal_alternatives, PackedStringArray(["bio.sheep"]))
+	_expect("a domesticable animal signal reveals husbandry",
 		_state(coastal_alternatives, "tech.animal_husbandry") == 2)
 	var fire_control_open := _fixture(PackedStringArray([
 		"tech.early_knowledge_institution", "tech.gathering", "tech.hunting",
