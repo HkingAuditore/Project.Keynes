@@ -765,10 +765,11 @@ let buildingOwner = buildingOwnerMap();
 function producerMap() {
   const out = new Map();
   for (const building of buildings) {
-    const owner = buildingOwner.get(building.id);
     for (const goodId of building.strings("output_good_ids")) {
       if (!out.has(goodId)) out.set(goodId, new Set());
-      out.get(goodId).add(owner);
+      for (const owner of building.strings("technology_tags").filter((tag) => tag.startsWith("tech."))) {
+        out.get(goodId).add(owner);
+      }
     }
   }
   return out;
