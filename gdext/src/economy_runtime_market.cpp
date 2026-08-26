@@ -13,9 +13,44 @@ using Clock = std::chrono::steady_clock;
 
 constexpr int32_t PRICE_NUMERIC_GUARD_MIN = 1;
 constexpr int32_t PRICE_NUMERIC_GUARD_MAX = std::numeric_limits<int32_t>::max();
+constexpr std::array<int32_t, 9> HOUSEHOLD_WEALTH_ANCHORS_Q16 = {
+    4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576};
 
 double elapsed_ms(const Clock::time_point &start) {
     return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
+}
+
+int64_t interpolate_household_wealth_lut(
+        int64_t wealth_ratio_q16, const std::array<int32_t, 9> &lut,
+        int64_t & /*sat*/) {
+    const int64_t ratio = std::clamp<int64_t>(
+        wealth_ratio_q16, HOUSEHOLD_WEALTH_ANCHORS_Q16.front(),
+        HOUSEHOLD_WEALTH_ANCHORS_Q16.back());
+    const auto upper = std::upper_bound(
+        HOUSEHOLD_WEALTH_ANCHORS_Q16.begin(),
+        HOUSEHOLD_WEALTH_ANCHORS_Q16.end(), ratio);
+    if (upper == HOUSEHOLD_WEALTH_ANCHORS_Q16.begin()) return lut.front();
+    if (upper == HOUSEHOLD_WEALTH_ANCHORS_Q16.end()) return lut.back();
+    const size_t hi = static_cast<size_t>(
+        upper - HOUSEHOLD_WEALTH_ANCHORS_Q16.begin());
+    const size_t lo = hi - 1;
+    const int64_t x0 = HOUSEHOLD_WEALTH_ANCHORS_Q16[lo];
+    const int64_t x1 = HOUSEHOLD_WEALTH_ANCHORS_Q16[hi];
+    const int64_t y0 = lut[lo];
+    const int64_t y1 = lut[hi];
+    return y0 + (y1 - y0) * (ratio - x0) / (x1 - x0);
+}
+
+int64_t household_threshold_activation_q16(
+        int64_t savings_months_q16, int32_t threshold_months_q16,
+        int64_t & /*sat*/) {
+    constexpr int64_t q16_one = 65536;
+    if (threshold_months_q16 <= 0) return q16_one;
+    if (savings_months_q16 < threshold_months_q16) return 0;
+    const int64_t full = threshold_months_q16 + threshold_months_q16 / 4;
+    if (savings_months_q16 >= full) return q16_one;
+    return (savings_months_q16 - threshold_months_q16) * q16_one /
+        std::max<int64_t>(1, full - threshold_months_q16);
 }
 } // namespace
 
@@ -153,8 +188,8 @@ int64_t NativeEconomyRuntime::desired_need_units_for_actor(
     const int64_t wealth_pc = std::max<int64_t>(0, actor_funds) / population;
     const int64_t wealth_ratio_q16 = mul_div_sat(
         wealth_pc, Q16_ONE, _wealth_reference_per_capita, sat);
-    int64_t wealth_factor = pow_q16(std::max<int64_t>(1, wealth_ratio_q16),
-                                    need.wealth_elasticity_q16, sat);
+    int64_t wealth_factor = interpolate_household_wealth_lut(
+        wealth_ratio_q16, need.wealth_lut_q16, sat);
     wealth_factor = std::clamp<int64_t>(wealth_factor,
                                         need.wealth_min_q16, need.wealth_max_q16);
     int64_t desired = saturating_mul(population, need.base_qty_per_person, sat);
@@ -249,6 +284,18 @@ void NativeEconomyRuntime::compute_cohort_demand_preview(
     }
     const Plan &plan = _plans[_signatures[signature_id].plan_id];
     const int64_t population = std::max<int64_t>(1, _population.population[slot]);
+    const int64_t wealth_pc = std::max<int64_t>(0, funds_override) / population;
+    const int64_t wealth_ratio_q16 = mul_div_sat(
+        wealth_pc, Q16_ONE, _wealth_reference_per_capita, sat);
+    const int32_t cell = slot >= 0 &&
+            slot / COHORT_PAGE_SIZE < static_cast<int32_t>(_population.page_cell.size())
+        ? _population.page_cell[slot / COHORT_PAGE_SIZE] : -1;
+    const int64_t basic_living_cost = cell >= 0 &&
+            cell < static_cast<int32_t>(_cell_living_cost_per_capita.size())
+        ? _cell_living_cost_per_capita[cell] : 0;
+    const int64_t savings_months_q16 = basic_living_cost > 0
+        ? mul_div_sat(wealth_pc, Q16_ONE,
+            saturating_mul(basic_living_cost, 30, sat), sat) : 0;
     std::vector<int64_t> totals(_market.good_count, 0);
     for (int32_t n = 0; n < plan.need_count; ++n) {
         const int32_t need_index = plan.need_begin + n;
@@ -258,10 +305,18 @@ void NativeEconomyRuntime::compute_cohort_demand_preview(
         int64_t score_sum = 0;
         for (int32_t v = 0; v < need.variant_count; ++v) {
             const int32_t variant_id = need.variant_begin + v;
-            cohort_variant_scores[v] = std::max<int64_t>(0, mul_div_sat(
+            int64_t score = std::max<int64_t>(0, mul_div_sat(
                 variant_scores[variant_id],
                 family_variant_preference_factor_q16(slot, variant_id, sat),
                 Q16_ONE, sat));
+            score = mul_div_sat(score, interpolate_household_wealth_lut(
+                wealth_ratio_q16, _variants[variant_id].wealth_lut_q16, sat),
+                Q16_ONE, sat);
+            score = mul_div_sat(score, household_threshold_activation_q16(
+                savings_months_q16,
+                _variants[variant_id].savings_threshold_months_q16, sat),
+                Q16_ONE, sat);
+            cohort_variant_scores[v] = std::max<int64_t>(0, score);
             score_sum = saturating_add(
                 score_sum, cohort_variant_scores[v], sat);
         }
@@ -362,6 +417,8 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     thread_local std::vector<int64_t> cohort_clothing_required;
     thread_local std::vector<int64_t> cohort_clothing_filled;
     thread_local std::vector<int64_t> cohort_working_capital_reserve;
+    thread_local std::vector<int64_t> cohort_wealth_ratio_q16;
+    thread_local std::vector<int64_t> cohort_savings_months_q16;
     thread_local std::vector<int64_t> production_input_floor;
     thread_local std::vector<int64_t> good_demand;
     thread_local std::vector<int64_t> good_sales;
@@ -476,6 +533,8 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     food_family_desired.fill(0);
     result.retained_consumed_by_good.assign(_market.good_count, 0);
     cohort_working_capital_reserve.assign(cohort_count, 0);
+    cohort_wealth_ratio_q16.assign(cohort_count, 0);
+    cohort_savings_months_q16.assign(cohort_count, 0);
     production_input_floor.assign(_market.good_count, 0);
     good_demand.assign(_market.good_count, 0);
     good_sales.assign(_market.good_count, 0);
@@ -574,6 +633,27 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     compute_cell_living_costs_from_basis(
         market, variant_score_cache, variant_price_cache,
         need_score_sum_cache, need_environment_cache, sat);
+    // These two actor-level values are shared by every Need/variant. Keeping
+    // them out of the inner loop is the key cost bound for class/good wealth
+    // choice; the remaining per-variant work is integer interpolation/multiply.
+    for (int32_t local = 0; local < cohort_count; ++local) {
+        const int32_t slot = slots[local];
+        const int64_t population = std::max<int64_t>(
+            1, _population.population[slot]);
+        const int64_t wealth_pc = std::max<int64_t>(
+            0, _population.funds[slot]) / population;
+        cohort_wealth_ratio_q16[local] = mul_div_sat(
+            wealth_pc, Q16_ONE, _wealth_reference_per_capita, sat);
+        const int32_t cell = slot >= 0 &&
+                slot / COHORT_PAGE_SIZE < static_cast<int32_t>(_population.page_cell.size())
+            ? _population.page_cell[slot / COHORT_PAGE_SIZE] : -1;
+        const int64_t basic_living_cost = cell >= 0 &&
+                cell < static_cast<int32_t>(_cell_living_cost_per_capita.size())
+            ? _cell_living_cost_per_capita[cell] : 0;
+        cohort_savings_months_q16[local] = basic_living_cost > 0
+            ? mul_div_sat(wealth_pc, Q16_ONE,
+                saturating_mul(basic_living_cost, 30, sat), sat) : 0;
+    }
     // Market-invariant anytime frontier. The exact best-scoring variant is
     // always retained, then lower-ranked variants are added until the omitted
     // preference mass is within the configured certificate. Survival families
@@ -929,9 +1009,17 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                     0, variant_score_cache[variant_id]);
                 base_score_sum = saturating_add(
                     base_score_sum, base_score, sat);
-                const int64_t score = mul_div_sat(
+                int64_t score = mul_div_sat(
                     base_score,
                     family_variant_preference_factor_q16(slot, variant_id, sat),
+                    Q16_ONE, sat);
+                score = mul_div_sat(score, interpolate_household_wealth_lut(
+                    cohort_wealth_ratio_q16[local],
+                    _variants[variant_id].wealth_lut_q16, sat),
+                    Q16_ONE, sat);
+                score = mul_div_sat(score, household_threshold_activation_q16(
+                    cohort_savings_months_q16[local],
+                    _variants[variant_id].savings_threshold_months_q16, sat),
                     Q16_ONE, sat);
                 cohort_variant_scores[v] = std::max<int64_t>(0, score);
                 score_sum = saturating_add(
@@ -1244,6 +1332,10 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 good_sales[good] = saturating_add(good_sales[good], pass_demand[good], sat);
                 result.consumed_goods = saturating_add(result.consumed_goods,
                                                        pass_demand[good], sat);
+                if (good < static_cast<int32_t>(_good_storage_modes.size()) &&
+                    _good_storage_modes[good] == 1)
+                    result.cycle_flow_consumed = saturating_add(
+                        result.cycle_flow_consumed, pass_demand[good], sat);
             }
             return true;
         }
@@ -1314,6 +1406,10 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             _market.stock[idx] -= used;
             good_sales[good] = saturating_add(good_sales[good], used, sat);
             result.consumed_goods = saturating_add(result.consumed_goods, used, sat);
+            if (good < static_cast<int32_t>(_good_storage_modes.size()) &&
+                _good_storage_modes[good] == 1)
+                result.cycle_flow_consumed = saturating_add(
+                    result.cycle_flow_consumed, used, sat);
         }
         return false;
     };
@@ -2047,6 +2143,17 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
              flow_index >= 0)) {
             result.trade_active_goods.push_back(good);
         }
+    }
+    // cycle_flow is local and non-storable. It remains available through the
+    // household settlement above, so only the genuine post-settlement remainder
+    // is discarded and never appears in closing stock or the next tick.
+    for (int32_t good : _cycle_flow_good_ids) {
+        const int64_t idx = _market.index(market, good);
+        const int64_t discarded = std::max<int64_t>(0, _market.stock[idx]);
+        audit_touch_market_lane(static_cast<size_t>(idx));
+        _market.stock[idx] = 0;
+        result.cycle_flow_discarded = saturating_add(
+            result.cycle_flow_discarded, discarded, sat);
     }
     result.mutation_hash = trace_hash_mix(result.mutation_hash,
                                           static_cast<uint64_t>(result.revenue));

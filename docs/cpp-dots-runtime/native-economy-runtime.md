@@ -1,6 +1,7 @@
 # 原生阶层与本地市场运行时（Market V2 / Price V4）
 
-PKEC v43 是当前 writer；reader 接受 v43、v42 与 v41。v41 不得含 `EXPEDITION_PREPARING`。
+PKEC v44 是当前 writer；reader 接受 v44、v43、v42 与 v41。v43 旧存档恢复时将
+`startup_demand_runtime_mode` 固定为 `OFF`；v41 不得含 `EXPEDITION_PREPARING`。
 v42 保留 v39 引入的生产计划 P∈[5,15] 与投资 I∈[10,30]
 分开锁定，且 I > P。三套周期只在各自完整周期边界重选；选档用经济活格刀数
 （人口>0 ∪ 已建建筑 ∪ 在建，不是全图 cell_count）加上一周期本侧实测毫秒 EMA，
@@ -17,6 +18,26 @@ closing audit 契约见
 `gdext/src/world_ext_economy.cpp`。`DCWorldExt` 组合持有独立
 `NativeEconomyRuntime`；动态人口和商品状态不进入 DataCore `_slots`，也不回填
 `MapData.goods_*`。
+
+## 2026-08 终端需求、阶层响应与冷启动
+
+当前内容目录为 135 goods、356 buildings、20 needs、11 consumption plans。每个计划都
+包含稳定的八项主食替代：`prepared_staples`、`bread`、`grain`、`wheat_grain`、
+`rice_grain`、`corn_grain`、`potatoes`、`gathered_plants`。小麦、稻米和玉米是可直接
+进入居民 `staple_food` 的栽培主食；`food_fat`、`seasoning`、`domestic_wares`、
+低频 `housing` 维护组合和 `electricity` 公用事业路径也由同一消费目录编译。
+
+居民数量由 Need 财富弹性和商品财富弹性共同决定；计划的
+`variant_class_wealth_elasticity_delta_q16` 调整阶层响应，
+`variant_class_savings_threshold_factor_q16` 调整不同阶层的储蓄门槛。价格先影响
+variant 替代分数，再影响 Need 总量；财富提高不会降低同一阶层的需求，商品涨价不会
+提高该商品需求。所有计算使用 native Q16/LUT，不增加 cohort×variant 稠密状态。
+
+`startup_demand_runtime_mode` 仅接受 `OFF`/`ACTIVE`。ACTIVE 在投资 review batch 中
+从真实家庭、营业、科研和库存缺口沿现有生产 CSR 向上游传播瞬态预期需求；同一
+`(cell, good)` 采用 max 聚合并用 generation stamp 终止环路。预期值不写入价格、库存、
+贸易或任何 EMA，也不进入 PKEC/state hash。国内远程缺口只在同国、同 component、可见
+且可达 lane 内匹配，并按稳定 cell ID 扣减共享容量。
 
 ## 2026-08-04 综合满意度接管（PKEC v30）
 
@@ -184,7 +205,7 @@ sequence、settled day、稳定结果码及实际两类物资/现金支出；它
 - C++ 按建筑数、周期天数和计划利用率确定性重建稀疏生产投入硬预留。多投入配方先按同一可执行比例缩放，只预留能组成完整配方的数量；缺少任一互补投入时不会继续锁住其他投入。若非生存产出会消耗生存食物，则整套配方让家庭生存清算优先，只能使用清算后的余量。同一 CSR 遍历同时写入 `construction_material_reserve`：已安装建筑的作者维护日量（空配方则按部门地平线摊首选建造货）乘周期天数，并与一座建造 BOM 取 max。暂停组仍贡献维护预留。商人目标库存覆盖 `max(投入预留, 维护/建造预留)`；居民与国内贸易只能消费/导出 `stock - max(投入预留, 维护预留)`。业主在销售与工资之后按配方向商人付费购买维护货，买不起只记 unmet。`production_input_reserved`、`construction_material_reserved`、`maintenance_goods_consumed` / `maintenance_unmet` 及 selected-cell/CSV 逐商品列用于诊断。两份预留都是可重建缓存，不进入 PKEC。
 - 正常商人现金不足时，生产者托底只补足正常目标库存的剩余缺口，不再把全部可储存余货无条件入库；超过目标的余量进入真实 discard sink。被托底的数量仍获得冻结本地零售价 20% 的显式发行货币。`production_output_supported` 与 `producer_support_money_issued` 分开报告，货币审计把后者计入 `_explicit_money_mint`。`cycle_flow` 产出不能跨周期存货，但在边界清零前会先获得同周期低价采购/托底机会，剩余瞬态库存再计入 `cycle_flow_discarded`。
 - 生成测试经济不再使用职业固定人均资金：每个 cohort 获得按当前气候、族群和默认价格计算的 30 日 `survival_household` 生存金；业主追加两周期最低有效输入成本；商人追加本地产出目标库存资金。
-- PKEC v43 是当前 writer，reader 接受 v43、v42 与 v41：保留 FamilyStore、NotablePersonStore、cohort membership、
+- PKEC v44 是当前 writer，reader 接受 v44、v43、v42 与 v41：保留 FamilyStore、NotablePersonStore、cohort membership、
   building ownership、Economy Modifier domain、冻结环境、财政与出生余数、家族特性、
   per-cell influence、运河工程、格承载力 `support_ema`、七条环境 lane 与开拓队 cargo/kit/缺货 CSR。
   PREPARING 允许 payload/cargo 为 0。reader 不做隐式迁移，v40 及更早明确拒绝。
@@ -199,10 +220,10 @@ sequence、settled day、稳定结果码及实际两类物资/现金支出；它
 
 ## 2026-07-15 价格弹性、成本底线与生态修正
 
-- 消费目录新增 need 总量价格弹性和刚需下限。variant 分数仍负责替代选择；总量因子按 market×need 预计算。主食与衣着保留正下限但仍随价格和财富缩量，蛋白质及非刚需可在全体替代品过贵时接近零。
+- 消费目录新增 Need 总量价格弹性和刚需下限，并加入商品/阶层财富弹性与储蓄门槛。variant 分数仍负责替代选择；总量因子按 market×need 预计算。主食、采集食物和电力 utility 走同一 native bundle 清算，房屋材料按低频日量摊销。
 - 低于目标库存且仍有需求时，生产成本锚通过受单日涨幅上限约束的正向价格压力形成动态软底；库存堆积时下跌按当前价格限速，仍可跌破成本清仓。企业同时按上一周期售罄率缩放下一周期计划利用率，但忽略不超过 1% 的舍入丢弃，并在家庭可用库存不足 `max(1 商品单位, max(实际出库 EMA, 需求 EMA) × 周期日数)` 且短缺率至少 12.5% 时主动恢复。耐储商品保留 1/32 探测下限，易腐/周期流商品保留 1/6 下限；生存食物生产者另按同一业主人口跨过饥饿阈值所需的自留量计算动态下限，取二者较高值。
 - 全建筑目录改用默认生活成本和 80% 保守售出率校准。当前石器狩猎营地为 2 个共同经营岗位，标称日产 `6670/80` 野味/生皮并抽取 `1430` 野生动物，工具软槽 `32768`（无工具时约一半产能，与补槽前徒手产量对齐）；采集营地为 2 个岗位、标称日产 `14000` 采集植物（承载力占用保持原值）；家庭织造棚为 1 个岗位、日产 `900` 布匹并消耗采集植物。早期砂金/露天银矿由 merchant 所有，均雇用 1 个 miner 岗位；露天银矿日产降为 `1000` GOODS_SCALE，资源扣减为 `200`。
-- `audit_economy_content.ps1` 遍历 260 个建筑并检查 80% 售出率盈利、role 工资、生产原料成本不超过商人收购收入的 60%、工具维护不超过 `100 GOODS_SCALE/岗位/日`、工业总投入/总产出不超过 `3:1`，以及 `2:1` 至 `25:1` extract 效率；蒸汽煤铁矿固定复核约 `12:1`。这是 catalog/content 校准，会改变 building catalog hash，但不改变 PKEC 字节布局。
+- `audit_economy_content.ps1` 现在委托 `audit_economy_content_v2.ps1`，从权威 technology topology 展开 goods/building/Need/plan 图，验证全部 135 goods、356 buildings、20 needs、11 plans 的真实终端和外部来源闭包；孤儿产出、未引用 goods、不可启动的产业 SCC 均拒绝。审计不再依赖过期时代或收益硬编码。
 
 ### 2026-07-18 调度、贸易与工资稳定性修正
 
@@ -651,8 +672,7 @@ TRACE_OFF 为 `2.112/8.914/8.914ms`、111.3MB。两者核心 state hash 均为
 ## 跨时代产业目录与货币发行（2026-07-14）
 
 现代基线由可复现且支持只读 `-Check` 的 `tools/codegen/gen_modern_economy_content.ps1` 生成，
-跨时代扩展后全目录为 120 goods、260
-building types、33 professions、18 household needs 和 9 consumption plans。31 种注册自然资源均至少被一个
+跨时代扩展后全目录为 135 goods、356 building types、45 professions、20 household needs 和 11 consumption plans。31 种注册自然资源均至少被一个
 `collector` 引用；`industrial` 只能消费 goods。所有建筑恰好一个 owner job，科技解锁仅以
 `technology_tags` 进入 catalog/snapshot；只有 `tech.*` 是可执行条件。runtime 把条件解析为 dense technology IDs，
 由 `NativeCountryRuntime` 以每国家 bitset 持久化；经济在周期边界冻结 `cell → country`、国家 generation/hash 与科技 bits，统一过滤物资替代、职业就业、建造与生产。其他标签命名空间只作冷元数据。
@@ -710,7 +730,7 @@ Inspector 诊断 lane，计入 runtime memory，但不进入 state hash 或 PKEC
 出生率折减先把 composite 按 `satisfaction_birth_reference_q16` 重标定，再把格级 sat
 混进 `K_eff`；cohort 只乘残差，避免把心情乘两次。未解锁物资族不进 surplus 分母。
 贴上 `K_eff` 后出生落到更替。饥饿死亡仍只读 `SAT_DIM_SUBSISTENCE`。
-出生贡献按地块与民族聚合，Q32 小数余数跨周期累计，并由 PKEC v43 持久化；不新增调度阶段。
+出生贡献按地块与民族聚合，Q32 小数余数跨周期累计，并由 PKEC v44 持久化；不新增调度阶段。
 
 建筑基础工资不再预付；生产出售后用 owner 销售后资金统一分配。最终欠薪继续记录在
 `wage_suspended`/unpaid 报告中并取消奖金，但该标记不代表下一轮自动停产。
@@ -719,7 +739,7 @@ Inspector 诊断 lane，计入 runtime memory，但不进入 state hash 或 PKEC
 服务。前两项在基础设施/服务经济落地前作为明确的无家庭需求资本品保留；scientific_instruments
 仍有精密工具生产下游。允许的跨 need 复用仅为 refined_fuel、computers、beverages 和 fur，
 Inspector 会聚合显示。需求/计划变更只改变 catalog hash；旧 hash 的 PKEC 按现有
-`save_catalog_scale_or_capacity_mismatch` 路径拒绝；byte schema 现为 PKEC v43（v42/v41 可读），cadence 为锁定 N/P/I。
+`save_catalog_scale_or_capacity_mismatch` 路径拒绝；byte schema 现为 PKEC v44（v43/v42/v41 可读），v43 旧存档按 `startup_demand_runtime_mode=OFF` 恢复，cadence 为锁定 N/P/I。
 生成目录遵守 16 needs、每 need 8 variants、每 variant 4 components 的运行时合同；本轮加入
 野味后实际最大 variant 数为 5，最大 component 数仍为 2。聚焦处理量以当前 schema 测试输出为准。
 
@@ -937,7 +957,7 @@ is below the configured regret certificate. Food/clothing survival families
 are never pruned. An invalid certificate, a failed exact probe, or an active
 cooldown takes the exact local path. `OFF` and `PROBE` remain exact
 rollback/baseline modes. Reports use
-`rolling_cell_settlement_v18_income_floor` and expose decisions, probes, frontier
+`rolling_cell_settlement_v19_class_good_elasticity` and expose decisions, probes, frontier
 size/pruning, certified regret, failures, and fallbacks. These frontiers are
 derived scratch and are not persisted.
 

@@ -824,7 +824,12 @@ void NativeEconomyRuntime::prepare_investment_review_cells() {
         return;
     }
     const int64_t day = _sample_day >= 0 ? _sample_day : _current_day;
-    for (int32_t cell = 0; cell < _cell_count; ++cell) {
+    // The epoch preflight has already built the sorted sparse live-cell set.
+    // Review only cells that can contain population/buildings/pending work;
+    // scanning the full world here would turn an investment batch into a
+    // cell-count operation even when the economy is sparse.
+    for (const int32_t cell : _economy_live_cells) {
+        if (cell < 0 || cell >= _cell_count) continue;
         if (!cell_due_investment_review(cell, day) ||
             _committed_cells[cell].population <= 0) {
             continue;

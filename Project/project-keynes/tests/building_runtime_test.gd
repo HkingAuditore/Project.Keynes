@@ -3476,9 +3476,9 @@ func _test_producer_support_issuance(source_catalog: Dictionary,
 	_expect("support issuance is a distinct producer cashflow",
 		_cashflow_has_source(pop, owner_row, "producer_support_issuance", true))
 	_expect("support issuance is explicitly audited",
-		int(report.get("approximation_version", 0)) == 18 and
+		int(report.get("approximation_version", 0)) == 19 and
 		str(report.get("approximation_model", "")) ==
-			"rolling_cell_settlement_v18_income_floor" and
+			"rolling_cell_settlement_v19_class_good_elasticity" and
 		int(report.get("population_error", 1)) == 0 and
 		int(report.get("money_error", 1)) == 0 and
 		int(report.get("goods_error", 1)) == 0)

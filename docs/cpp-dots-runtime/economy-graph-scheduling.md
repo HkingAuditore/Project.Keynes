@@ -96,6 +96,20 @@ cadence 毫秒只在 `aggregate_publish` 的 COMMIT 完成时累加；禁止每�
     最多 131072 条，cell 水位线及贸易工作区每片最多 4096 条；最后校验成功后才交换 committed
     summaries、推进 generation、发布 trace 并解除 active boundary。
 
+## Startup demand（v44）
+
+`startup_demand_runtime_mode=ACTIVE` 不新增调度阶段；它在现有 `building_commit.investment_prepare`
+的每个 review batch 中运行一次。根需求只来自已执行的家庭需求、营业需求、科研采购和库存目标
+缺口，沿 output-good 到 producer 的 CSR 传播到生产投入与建材。`(cell, good)` 使用 max 聚合，
+generation stamp 跳过环形配方，实际投资门槛（科技、资源、地理、资本、业主、材料和真实库存）
+保持不变。预期需求只作为投资比较器的瞬态输入，永不写入价格、库存、贸易信号或需求/供给 EMA。
+
+国内远程冷启动只在同国且同一贸易 component 的可见、可达 lane 内建立 CSR；来源格按稳定 cell
+ID 评审，成功开工后从共享 lane 扣除有效日产能。报告提供 seed、touched lane、catalog edge、
+cycle skip、remote lane、matched review cell、started building、prepare ms 和 scratch bytes，
+这些计数均为 transient，不进入 PKEC 或 state hash。当前 approximation model 为
+`rolling_cell_settlement_v19_class_good_elasticity`。
+
 `EconomyDailySystem` 把自己的 `slice_budget_ms` 传给原生图。`building_commit` 与
 `aggregate_publish` 可以在墙钟预算尚未耗尽时跨越相邻的廉价子阶段，但同一次原生调用绝不消费
 同一子阶段的第二个数据块；因此 group/cell/audit/workspace 的确定性条目上限保持不变。达到预算、

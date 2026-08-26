@@ -1,0 +1,5 @@
+[application]
+config/name="ProjectKeynesReleaseEconomyBench"
+
+[rendering]
+renderer/rendering_method="gl_compatibility"

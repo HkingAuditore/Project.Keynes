@@ -2603,14 +2603,6 @@ bool NativeEconomyRuntime::run_building_production_cell(
         }
     }
     _market_signal_ms += elapsed_ms(signal_started);
-    for (int32_t good : _cycle_flow_good_ids) {
-        const int64_t idx = _market.index(market, good);
-        const int64_t discarded = std::max<int64_t>(0, _market.stock[idx]);
-        audit_touch_market_lane(static_cast<size_t>(idx));
-        _market.stock[idx] = 0;
-        _cycle_flow_discarded = saturating_add(
-            _cycle_flow_discarded, discarded, _saturation_count);
-    }
     for (int32_t g = begin; g < end; ++g) {
         const BuildingGroup &group = _buildings[g];
         if (group.cell != cell || group.count <= 0) continue;

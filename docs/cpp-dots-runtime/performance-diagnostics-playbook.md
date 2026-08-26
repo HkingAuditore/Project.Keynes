@@ -29,6 +29,23 @@ P95/重复 workset 查询；存在 `last_completed_perf_valid` 时固定别名�
 `last_completed_*` 已完成 epoch，避免 fast-tick 恰好采到下一轮 early stage 而记录
 假 0。动态 breakdown 仍保留当前 in-flight 与 last-completed 两套字段，不改变
 authority。
+
+### Startup demand 与消费响应（v44）
+
+消费热循环仍只访问已触达的 cohort、Need/variant CSR 和冻结价格。财富/商品弹性由
+catalog 冷路径预计算为 Q16 LUT；报告中不应出现 cohort×variant 稠密分配。验证同一
+阶层财富提高时 `demand_ema` 不下降、商品涨价时自身 `demand_ema` 不上升。
+
+投资 review 的冷启动诊断读取 `startup_demand_runtime_mode`、
+`startup_demand_seed_count`、`startup_demand_touched_lanes`、
+`startup_demand_catalog_edges`、`startup_demand_cycle_skips`、
+`startup_demand_remote_lanes`、`startup_demand_matched_review_cells`、
+`startup_demand_buildings_started`、`startup_demand_prepare_ms` 和
+`startup_demand_scratch_bytes`。这些计数必须与实际 touched lane、目录边和 review cell
+一致；若计数随 `cell_count × good_count` 增长，应检查是否回退到全矩阵扫描。预期需求不应
+改变价格、库存、贸易信号或任何 EMA。无缺口场景 ACTIVE 相对 OFF 的 economy avg/p95
+增幅门槛为 2%；晚期稀疏压力场景 avg/p95 不超过 5%、max 不超过 10%。
+
 UI CSV 观察 `country_ui_refresh_reason`、`country_ui_snapshot_ms`,
 `country_ui_cache_hit`、`country_ui_dirty_domains`；面板关闭的日 tick 应为
 `country_summary_ms=0`。Bio 观察 `bio_slice_native_ms`、`bio_slice_publish_ms`、

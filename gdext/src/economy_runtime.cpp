@@ -8664,6 +8664,12 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                                                    _saturation_count);
                 _consumed_goods = saturating_add(_consumed_goods, market_result.consumed_goods,
                                                  _saturation_count);
+                _cycle_flow_consumed = saturating_add(
+                    _cycle_flow_consumed, market_result.cycle_flow_consumed,
+                    _saturation_count);
+                _cycle_flow_discarded = saturating_add(
+                    _cycle_flow_discarded, market_result.cycle_flow_discarded,
+                    _saturation_count);
                 _production_output_retained = saturating_add(
                     _production_output_retained, market_result.retained_output_consumed,
                     _saturation_count);

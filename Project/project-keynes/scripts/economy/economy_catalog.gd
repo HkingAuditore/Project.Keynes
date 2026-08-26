@@ -134,6 +134,8 @@ static func compile_native_catalog(
 	var need_variant_offsets := PackedInt32Array([0])
 	var variant_preference := PackedInt32Array()
 	var variant_elasticity := PackedInt32Array()
+	var variant_class_wealth_elasticity_delta := PackedInt32Array()
+	var variant_class_savings_threshold_factor := PackedInt32Array()
 	var variant_env_curve_ids := PackedInt32Array()
 	var variant_component_offsets := PackedInt32Array([0])
 	var component_good_ids := PackedInt32Array()
@@ -141,7 +143,7 @@ static func compile_native_catalog(
 
 	for plan in plans:
 		var need_count: int = plan.need_ids.size()
-		if need_count > 16 or plan.priorities.size() != need_count \
+		if need_count > 20 or plan.priorities.size() != need_count \
 				or plan.base_qty_per_person.size() != need_count \
 				or plan.wealth_elasticity_q16.size() != need_count \
 				or plan.wealth_min_q16.size() != need_count \
@@ -153,9 +155,21 @@ static func compile_native_catalog(
 				or plan.need_variant_offsets[0] != 0:
 			return {"ok": false, "reason": "invalid need columns in plan %s" % String(plan.id)}
 		var variant_count: int = plan.variant_ids.size()
+		var class_wealth_delta: PackedInt32Array = plan.variant_class_wealth_elasticity_delta_q16
+		var class_threshold_factor: PackedInt32Array = plan.variant_class_savings_threshold_factor_q16
+		# Legacy synthetic resources may omit the new columns. Formal generated
+		# content always authors them explicitly.
+		if class_wealth_delta.is_empty():
+			class_wealth_delta.resize(variant_count)
+			class_wealth_delta.fill(0)
+		if class_threshold_factor.is_empty():
+			class_threshold_factor.resize(variant_count)
+			class_threshold_factor.fill(Q16_ONE)
 		if plan.need_variant_offsets[need_count] != variant_count \
 				or plan.variant_preference_q16.size() != variant_count \
 				or plan.variant_price_elasticity_q16.size() != variant_count \
+				or class_wealth_delta.size() != variant_count \
+				or class_threshold_factor.size() != variant_count \
 				or plan.variant_preference_env_curve_ids.size() != variant_count \
 				or plan.variant_component_offsets.size() != variant_count + 1 \
 				or plan.variant_component_offsets[0] != 0:
@@ -195,6 +209,13 @@ static func compile_native_catalog(
 				return {"ok": false, "reason": "invalid complement bundle in plan %s" % String(plan.id)}
 			variant_preference.append(int(plan.variant_preference_q16[v]))
 			variant_elasticity.append(int(plan.variant_price_elasticity_q16[v]))
+			var wealth_delta := int(class_wealth_delta[v])
+			var threshold_factor := int(class_threshold_factor[v])
+			if wealth_delta < -65536 or wealth_delta > 131072 \
+					or threshold_factor < 0 or threshold_factor > 262144:
+				return {"ok": false, "reason": "invalid class wealth response in plan %s" % String(plan.id)}
+			variant_class_wealth_elasticity_delta.append(wealth_delta)
+			variant_class_savings_threshold_factor.append(threshold_factor)
 			variant_env_curve_ids.append(_optional_index(
 				curve_index, String(plan.variant_preference_env_curve_ids[v])))
 			variant_component_offsets.append(variant_component_offsets[-1] + ce - cb)
@@ -328,6 +349,8 @@ static func compile_native_catalog(
 		"need_variant_offsets": need_variant_offsets,
 		"variant_preference_q16": variant_preference,
 		"variant_price_elasticity_q16": variant_elasticity,
+		"variant_class_wealth_elasticity_delta_q16": variant_class_wealth_elasticity_delta,
+		"variant_class_savings_threshold_factor_q16": variant_class_savings_threshold_factor,
 		"variant_preference_env_curve_ids": variant_env_curve_ids,
 		"variant_component_offsets": variant_component_offsets,
 		"component_good_ids": component_good_ids,
@@ -444,7 +467,7 @@ static func compile_native_catalog(
 	var production_permit_keys := {}
 	for building_index_value in range(building_columns.building_type_ids.size()):
 		var building_binding_count := 0
-		var direct_building_technology_id := ""
+		var direct_building_technology_ids := PackedStringArray()
 		for tag_index in range(building_tag_offsets[building_index_value],
 				building_tag_offsets[building_index_value + 1]):
 			var tag := String(
@@ -457,12 +480,15 @@ static func compile_native_catalog(
 					"tag": tag}
 			technology_binding_rows[int(technology_index[tag])].append(
 				[2, String(building_columns.building_type_ids[building_index_value])])
-			direct_building_technology_id = tag
+			direct_building_technology_ids.append(tag)
 			building_binding_count += 1
 		if building_binding_count == 0:
 			return {"ok": false, "reason": "building_technology_binding_missing",
 				"id": String(building_columns.building_type_ids[building_index_value])}
-		if building_binding_count != 1:
+		var allows_terminal_or_unlock := String(
+			building_columns.building_type_ids[building_index_value]) in [
+				"glassware_factory", "metal_housewares_factory", "leather_goods_factory"]
+		if building_binding_count != (2 if allows_terminal_or_unlock else 1):
 			return {"ok": false, "reason": "building_technology_binding_must_be_single",
 				"id": String(building_columns.building_type_ids[building_index_value]),
 				"count": building_binding_count}
@@ -482,8 +508,9 @@ static func compile_native_catalog(
 				building_output_offsets[building_index_value + 1]):
 			var output_good_id := String(good_columns.good_ids[
 				int(building_output_good_ids[output_index])])
-			production_permit_keys["%s|%s" % [
-				direct_building_technology_id, output_good_id]] = true
+			for direct_technology_id in direct_building_technology_ids:
+				production_permit_keys["%s|%s" % [
+					direct_technology_id, output_good_id]] = true
 	for good_index_value in range(good_columns.good_ids.size()):
 		var good_id := String(good_columns.good_ids[good_index_value])
 		for tag_index in range(good_tag_offsets[good_index_value],

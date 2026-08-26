@@ -15,7 +15,7 @@ func _init() -> void:
 	_compiled = EconomyCatalogScript.compile_native_catalog()
 	_expect("schema v3 catalog compiles", bool(_compiled.get("ok", false)))
 	var ids: PackedStringArray = _compiled.get("technology_ids", PackedStringArray())
-	_expect("stable technology count", ids.size() == 661)
+	_expect("stable technology count", ids.size() == 676)
 	_expect("route IR is present", (_compiled.get("research_route_ids", PackedStringArray()) as PackedStringArray).size() > 600)
 
 	# Era milestone is a hard gate, while the node's discovery signal and one

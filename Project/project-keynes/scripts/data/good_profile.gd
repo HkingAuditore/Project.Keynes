@@ -50,6 +50,13 @@ extends Resource
 ## Market V2 demand and next-day price formation. Inventory targets multiply
 ## EconomyProfile's baseline days by this per-good Q16 ratio.
 @export var demand_price_elasticity_q16: int = 65536
+## Household wealth response is distinct from price elasticity. It is combined
+## with the class-specific variant delta at catalog compile time, then sampled
+## from a native fixed-point LUT in the household hot loop.
+@export_range(-65536, 131072, 1) var household_wealth_elasticity_q16: int = 16384
+## Per-capita savings, expressed as months of basic living cost, required before
+## households consider this good. Zero keeps necessities immediately active.
+@export_range(0, 7864320, 1) var household_savings_threshold_months_q16: int = 65536
 @export var demand_ema_alpha_q16: int = 16384
 @export_range(0, 262144, 1) var inventory_target_ratio_q16: int = 65536
 @export var inventory_weight_q16: int = 32768

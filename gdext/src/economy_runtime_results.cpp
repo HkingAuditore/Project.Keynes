@@ -21,6 +21,8 @@ void NativeEconomyRuntime::MarketResult::reset() {
     processed_components = 0;
     saturation_count = 0;
     consumed_goods = 0;
+    cycle_flow_consumed = 0;
+    cycle_flow_discarded = 0;
     retained_output_consumed = 0;
     retained_output_discarded = 0;
     retained_consumed_by_good.clear();

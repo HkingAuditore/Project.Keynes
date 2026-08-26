@@ -1,7 +1,7 @@
 extends SceneTree
 
 const NETWORK_PATH := "res://data/technology/technology_network.json"
-const EXPECTED_NODES := 661
+const EXPECTED_NODES := 676
 const EXPECTED_ERAS := 11
 const EXPECTED_DOMAINS := 4
 const CANDIDATES_PER_ERA := [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]

@@ -71,6 +71,8 @@ static func compile_native_columns() -> Dictionary:
 	var max_prices := PackedInt32Array()
 	var adjust_q16 := PackedInt32Array()
 	var demand_elasticity := PackedInt32Array()
+	var household_wealth_elasticity_q16 := PackedInt32Array()
+	var household_savings_threshold_months_q16 := PackedInt32Array()
 	var demand_ema_alpha := PackedInt32Array()
 	var inventory_target_ratios_q16 := PackedInt32Array()
 	var compatibility_target_inventory_days_q16 := PackedInt32Array()
@@ -158,6 +160,13 @@ static func compile_native_columns() -> Dictionary:
 		max_prices.append(int(p.get("max_price")))
 		adjust_q16.append(int(p.get("price_adjust_q16")))
 		demand_elasticity.append(int(p.get("demand_price_elasticity_q16")))
+		var wealth_elasticity := int(p.get("household_wealth_elasticity_q16"))
+		var savings_threshold := int(p.get("household_savings_threshold_months_q16"))
+		if wealth_elasticity < -65536 or wealth_elasticity > 131072 \
+				or savings_threshold < 0 or savings_threshold > 7864320:
+			return {"ok": false, "reason": "invalid household wealth metadata: %s" % stable_id}
+		household_wealth_elasticity_q16.append(wealth_elasticity)
+		household_savings_threshold_months_q16.append(savings_threshold)
 		demand_ema_alpha.append(int(p.get("demand_ema_alpha_q16")))
 		var inventory_target_ratio := int(p.get("inventory_target_ratio_q16"))
 		if inventory_target_ratio < 0 or inventory_target_ratio > 262144:
@@ -206,6 +215,8 @@ static func compile_native_columns() -> Dictionary:
 		"good_max_price": max_prices,
 		"good_price_adjust_q16": adjust_q16,
 		"good_demand_price_elasticity_q16": demand_elasticity,
+		"good_household_wealth_elasticity_q16": household_wealth_elasticity_q16,
+		"good_household_savings_threshold_months_q16": household_savings_threshold_months_q16,
 		"good_demand_ema_alpha_q16": demand_ema_alpha,
 		"good_inventory_target_ratios_q16": inventory_target_ratios_q16,
 		"good_target_inventory_days_q16": compatibility_target_inventory_days_q16,

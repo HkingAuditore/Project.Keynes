@@ -1,14 +1,14 @@
 # Technology Network v3 Audit
 
-- Nodes: 671
+- Nodes: 676
 - Branch families: 24
-- Hard prerequisite edges: 2321 (no indegree cap)
+- Hard prerequisite edges: 2318 (no indegree cap)
 - Alternative evidence edges: 670
 - Milestone candidate edges: 143 (8–18 per era, require 4–7)
 - Nodes with research routes: 271
 - Research routes: 648
 - Authored branch successor edges: 7
-- Unlock-only/no-Modifier nodes: 333
+- Unlock-only/no-Modifier nodes: 338
 
 ## Explicit effect semantics
 
@@ -22,21 +22,21 @@
 
 ## Branch families
 
-- 玉米与园圃农业 (`branch.maize_horticulture`): 20 nodes
-- 小麦、谷物与雨养农业 (`branch.wheat_rainfed`): 34 nodes
-- 水稻、水田与灌溉农业 (`branch.rice_irrigation`): 22 nodes
-- 块茎、梯田与高地农业 (`branch.tuber_highland`): 17 nodes
+- 玉米与园圃农业 (`branch.maize_horticulture`): 19 nodes
+- 小麦、谷物与雨养农业 (`branch.wheat_rainfed`): 32 nodes
+- 水稻、水田与灌溉农业 (`branch.rice_irrigation`): 21 nodes
+- 块茎、梯田与高地农业 (`branch.tuber_highland`): 16 nodes
 - 草原、马匹与畜牧业 (`branch.pastoral_livestock`): 34 nodes
 - 热带作物与商品农业 (`branch.tropical_commodities`): 22 nodes
-- 森林、木材、造纸与生物质 (`branch.forest_biomass`): 15 nodes
+- 森林、木材、造纸与生物质 (`branch.forest_biomass`): 14 nodes
 - 渔业、航海、港口与海运物流 (`branch.maritime_logistics`): 19 nodes
-- 纤维、纺织、服装与合成纤维 (`branch.textile_fibers`): 30 nodes
-- 黏土、石材、玻璃、建筑与公共工程 (`branch.construction_materials`): 28 nodes
+- 纤维、纺织、服装与合成纤维 (`branch.textile_fibers`): 29 nodes
+- 黏土、石材、玻璃、建筑与公共工程 (`branch.construction_materials`): 41 nodes
 - 铜、锡、有色金属与特种合金 (`branch.nonferrous_metals`): 24 nodes
 - 铁、煤、矿井、蒸汽与重工业 (`branch.heavy_industry`): 53 nodes
 - 盐、硫、肥料、炸药与工业化学 (`branch.industrial_chemistry`): 24 nodes
 - 石油、内燃机、石化与合成材料 (`branch.petroleum_materials`): 23 nodes
-- 水力、风力、水务与流域工程 (`branch.water_wind`): 15 nodes
+- 水力、风力、水务与流域工程 (`branch.water_wind`): 14 nodes
 - 电力、核能、电网与智能能源 (`branch.electric_intelligent_energy`): 26 nodes
 - 土地产权、租佃与乡村制度 (`branch.land_institutions`): 15 nodes
 - 商业、金融、会计与公司组织 (`branch.commerce_finance`): 11 nodes

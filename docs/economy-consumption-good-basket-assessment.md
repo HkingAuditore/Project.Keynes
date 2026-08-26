@@ -2,7 +2,10 @@
 
 本文评估当前商品目录中一组原料、中间品、资本品和战略品是否适合作为居民的日常消费，以及适合进入哪个消费篮子。
 
-这是内容设计评估，不表示表中的建议已经进入运行时。当前家庭需求不是按商品类别自动推导，而是由 `Need -> variant -> component` 手工定义；`GoodProfile` 的生产替代类别不会自动变成家庭消费。
+这是内容设计评估与当前实现的对照。消费仍不是按商品类别自动推导，而是由
+`Need -> variant -> component` 手工定义；`GoodProfile` 的生产替代类别不会自动变成家庭消费。
+本轮已落地的内容包括：20 个 Need、11 个阶层计划、每个计划八项主食替代，以及
+`food_fat`、`seasoning`、`domestic_wares`、住房低频维护和电力 utility 路径。
 
 相关实现：
 
@@ -32,12 +35,12 @@
 | `bast_fiber` 韧皮纤维 | B | 生存、农猎、早期工匠 | `housing`，条件性 `clothing` | 可用于草屋、粗布、绳索；优先通过成品体现 |
 | `bricks` 砖块 | B | 全体定居居民 | `housing` | 按住房寿命折算，不让居民每天直接买砖 |
 | `cement` 水泥 | B | 产业、技术、商人、业主更高 | `housing` | 建筑维护材料 |
-| `charcoal` 木炭 | A | 生存、农猎、采掘、产业；低电气化地区全体 | `home_energy` | 当前最明显的消费篮子缺口，应与煤炭并列为燃料变体 |
+| `charcoal` 木炭 | A | 生存、农猎、采掘、产业；低电气化地区全体 | `home_energy` | 已与煤炭并列为燃料变体，使用商品财富弹性和阶层门槛 |
 | `clay` 黏土 | B/C | 生存、农猎、早期工匠间接使用 | `housing`、`household_goods` | 通过陶器、砖块、土坯消费，不建议直接买原黏土 |
 | `concrete` 混凝土 | B | 产业、技术、商人、业主；城市居民间接使用 | `housing` | 住房和公共设施维护，低频折算 |
-| `edible_oil` 食用油 | A | 全体，尤其生存、农猎、产业阶层 | `staple_food`，最好新增 `food_fat` | 应有直接烹饪油需求；需避免与 `processed_food` 的上游用油重复计算 |
-| `electricity` 电力 | A* | 电气化后的全体，优先产业、技术、商人、业主 | `home_energy` 的 utility 路径 | 它是唯一 `cycle_flow` 商品，不能直接当普通库存加入篮子；需要家庭公用事业结算 |
-| `glass` 玻璃 | B/C | 全体住房间接使用；高收入阶层可有玻璃器皿 | `housing`，或新增 `glassware` | 原玻璃是建筑和工业投入；若要体现日用品，应增加玻璃器皿等终端品 |
+| `edible_oil` 食用油 | A | 全体，尤其生存、农猎、产业阶层 | `food_fat` | 已作为独立 Need 终端消费，避免与 `processed_food` 上游用油重复计算 |
+| `electricity` 电力 | A* | 电气化后的全体，优先产业、技术、商人、业主 | `home_energy` utility 路径 | 已接入 native cycle-flow 家庭结算；不进入跨周期库存，边界只清除剩余流量 |
+| `glass` 玻璃 | B/C | 全体住房间接使用；高收入阶层可有玻璃器皿 | `housing`；`glassware` 终端 | 原玻璃仍是建筑投入，居民通过住房维护或玻璃器皿消费 |
 | `livestock_products` 畜牧产品 | A*/B | 生存、农猎优先，其他阶层也可作为蛋白质 | `protein` | 只有把它定义成鲜奶、蛋、鲜肉等终端品时才应直接消费；当前更像肉类、乳制品和皮革的上游 |
 | `lime` 石灰 | B/C | 全体住房间接使用 | `housing` | 通过水泥、灰浆、建筑维护体现 |
 | `limestone` 石灰岩 | C/B | 无直接阶层 | 企业建筑投入 | 作为石灰、水泥原料，不直接进家庭篮子 |
@@ -49,7 +52,8 @@
 | `steel` 钢材 | B/C | 全体间接使用，产业、技术、业主更高 | `housing`、`durable_goods` | 通过建筑构件、家电、交通工具等终端品体现 |
 | `turf_block` 草皮块 | B | 生存、农猎，早期聚落 | `housing` | 原始住房维护材料，低频折算 |
 
-当前 `housing` 只有 `construction_components` 变体。因此不建议把砖、水泥、玻璃、钢材等全部作为居民每日互补组件，否则每个家庭都会重复购买完整建筑材料包。
+当前 `housing` 使用八个低频维护组合（从芦苇/韧皮纤维到混凝土/钢/玻璃），并以日量摊销；
+不把完整建筑 BOM 当作每日硬订单，因此不会让每个家庭重复购买全部建筑材料。
 
 ## 消费品的上游材料
 
@@ -124,12 +128,13 @@
 
 ## 优先级建议
 
-1. **优先加入居民消费**：`charcoal`、`edible_oil`、`salt`。
-2. **单独设计特殊路径**：`electricity`。
-3. **条件性补充**：`livestock_products`、`paper`，以及玻璃器皿、皮革制品、便携电池等新的终端商品。
-4. **不要直接加入家庭篮子**：所有矿石、化工原料、机器、船舶、铁路设备、核燃料和反应堆部件。
-5. **住房材料**应进入低频住房维护或折算后的 `housing`，而不是作为居民每天直接购买的原材料。
+1. **已加入居民消费**：`charcoal`、`edible_oil`、`salt`，以及八项主食替代。
+2. **已实现特殊路径**：`electricity` 作为 `home_energy` 的 cycle-flow utility。
+3. **已落地终端品**：`glassware`、`metal_housewares`、`leather_goods`、`writing_materials`、`portable_batteries`。
+4. **仍不直接加入家庭篮子**：所有矿石、化工原料、机器、船舶、铁路设备、核燃料和反应堆部件。
+5. **住房材料**通过低频维护组合和日量摊销进入 `housing`，不是每日完整建筑 BOM。
 
 职业方面，当前 `ProfessionProfile` 只有 `default_consumption_plan_id`，没有职业专属耗材字段。因此化学品、电力、润滑剂、机器零件等应继续由建筑生产图采购，而不是让化学家、工程师、机械师个人购买。
 
-若要落地这些建议，应修改消费计划生成器和验证脚本。新增家庭变体会改变 catalog hash，不能只在单个 `.tres` 文件中临时添加。
+消费内容必须通过 `gen_modern_economy_content.ps1 -Scope Consumption` 修改，并运行
+`audit_economy_content.ps1` 与 catalog contract tests。新增家庭变体会改变 catalog hash，不能只在单个 `.tres` 文件中临时添加。
