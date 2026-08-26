@@ -1,7 +1,7 @@
 ﻿param(
     [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path,
     [switch]$Check,
-    [ValidateSet('All', 'Consumption')]
+    [ValidateSet('All', 'Consumption', 'TerminalChains')]
     [string]$Scope = 'All'
 )
 
@@ -86,8 +86,31 @@ function Is-Consumption-Path([string]$Path) {
     return $false
 }
 
+$terminalChainGoodIds = @('glassware', 'metal_housewares', 'leather_goods')
+$terminalChainBuildingIds = @(
+    'glassware_workshop', 'glassware_manufactory', 'glassware_factory',
+    'smart_glassware_factory', 'metal_housewares_workshop',
+    'metal_housewares_manufactory', 'metal_housewares_factory',
+    'smart_metal_housewares_factory', 'leather_goods_workshop',
+    'leather_goods_manufactory', 'leather_goods_factory',
+    'smart_leather_goods_factory')
+
+function Is-Terminal-Path([string]$Path) {
+    $name = [System.IO.Path]::GetFileNameWithoutExtension($Path)
+    $parent = Split-Path -Leaf (Split-Path -Parent $Path)
+    if ($parent -eq 'goods') { return $terminalChainGoodIds -contains $name }
+    if ($parent -eq 'buildings') { return $terminalChainBuildingIds -contains $name }
+    return $false
+}
+
+function Is-Scoped-Path([string]$Path) {
+    if ($Scope -eq 'Consumption') { return Is-Consumption-Path $Path }
+    if ($Scope -eq 'TerminalChains') { return Is-Terminal-Path $Path }
+    return $true
+}
+
 function Write-Utf8([string]$Path, [string]$Content) {
-    if ($Scope -eq 'Consumption' -and -not (Is-Consumption-Path $Path)) { return }
+    if (-not (Is-Scoped-Path $Path)) { return }
     [void]$managedPaths.Add([System.IO.Path]::GetFullPath($Path))
     if ($Check -and -not $script:syncingCurated -and
         (Curated-Source-For-Target $Path) -ne '') { return }
@@ -144,7 +167,12 @@ function Sync-CuratedDirectory([string]$Source, [string]$Target) {
 function Assert-FullyManaged([string]$Directory) {
     if ($Scope -eq 'Consumption' -and
         -not (Is-Consumption-Path (Join-Path $Directory '_scope_probe'))) { return }
+    if ($Scope -eq 'TerminalChains' -and
+        (Split-Path -Leaf $Directory) -notin @('goods', 'buildings')) { return }
     foreach ($file in Get-ChildItem -LiteralPath $Directory -Filter '*.tres' -File) {
+        if ($Scope -eq 'TerminalChains' -and -not (Is-Terminal-Path $file.FullName)) {
+            continue
+        }
         if (-not $managedPaths.Contains([System.IO.Path]::GetFullPath($file.FullName))) {
             if ($Check) { throw "retired generated file remains: $($file.FullName)" }
             Remove-Item -LiteralPath $file.FullName -Force
@@ -209,7 +237,8 @@ $processedGroups = [ordered]@{
     machinery = @('tools','machine_parts','industrial_machinery','agricultural_machinery',
         'electric_motor','engines','batteries','electrical_equipment','electronic_components',
         'semiconductors','computers','telecom_equipment','household_appliances','automobiles','railway_equipment')
-    consumer = @('jewelry','fine_furniture')
+    consumer = @('jewelry','fine_furniture','glassware','metal_housewares',
+        'leather_goods')
     energy = @('electricity')
 }
 
@@ -244,7 +273,8 @@ $goodNames = @{
     electrical_equipment='电气设备'; electronic_components='电子元件';
     semiconductors='半导体'; computers='计算机'; telecom_equipment='通信设备';
     household_appliances='家用电器'; automobiles='汽车'; railway_equipment='铁路设备';
-    jewelry='珠宝'; fine_furniture='精美家具'; electricity='电力'
+    jewelry='珠宝'; fine_furniture='精美家具'; glassware='玻璃器皿';
+    metal_housewares='金属家用器皿'; leather_goods='皮革制品'; electricity='电力'
 }
 
 # Substitution categories describe recipe roles, not industries. A good may
@@ -302,11 +332,17 @@ function Normalize-CuratedGood([string]$Content, [string]$Id) {
         "category_id = &`"$category`"")
     $membershipLine = 'substitution_category_ids = ' + (PSArray $categories)
     if ([regex]::IsMatch($Content, '(?m)^substitution_category_ids = PackedStringArray\(.*\)\r?$')) {
-        return [regex]::Replace($Content,
+        $Content = [regex]::Replace($Content,
             '(?m)^substitution_category_ids = PackedStringArray\(.*\)\r?$', $membershipLine)
+    } else {
+        $Content = [regex]::Replace($Content, '(?m)^(category_id = &"[^"]+"\r?)$',
+            "`$1`n$membershipLine")
     }
-    return [regex]::Replace($Content, '(?m)^(category_id = &"[^"]+"\r?)$',
-        "`$1`n$membershipLine")
+    if (-not [regex]::IsMatch($Content, '(?m)^household_wealth_elasticity_q16 = ')) {
+        $Content = [regex]::Replace($Content, '(?m)^(technology_tags = .*\r?)$',
+            "`$1`nhousehold_wealth_elasticity_q16 = $(Household-Wealth-Elasticity-For-Good $Id)`nhousehold_savings_threshold_months_q16 = $(Household-Savings-Threshold-For-Good $Id)")
+    }
+    return $Content
 }
 
 $goods = [ordered]@{}
@@ -354,7 +390,7 @@ function Technology-For-Good([string]$Id) {
         paper='tech.writing'; packaging='tech.screw_press_printing'; printed_materials='tech.screw_press_printing'; canned_fish='tech.precision_engineering';
         beverages='tech.guild_organization'; coal='tech.coke_smelting'; coke='tech.coke_smelting';
         iron_ore='tech.masonry'; agricultural_machinery='tech.steam_power';
-        industrial_chemicals='tech.experimental_science'; steel='tech.steam_power';
+        industrial_chemicals='tech.experimental_science'; steel='tech.steam_power'; wrought_iron='tech.iron_smelting';
         industrial_machinery='tech.precision_engineering'; railway_equipment='tech.steam_power';
         electricity='tech.electrification'; electrical_equipment='tech.electrification';
         electric_motor='tech.electrification'; batteries='tech.electrochemistry';
@@ -379,6 +415,9 @@ function Technology-For-Good([string]$Id) {
         flint='tech.stone_knapping'; chipped_stone_tools='tech.stone_knapping'; bronze_tools='tech.bronze_casting';
         steam_engines='tech.steam_power'; precision_tools='tech.precision_engineering';
         scientific_instruments='tech.experimental_science';
+        glassware='tech.application.glassware_workshop_kingdom';
+        metal_housewares='tech.application.metal_housewares_workshop_kingdom';
+        leather_goods='tech.application.leather_goods_workshop_kingdom';
         advanced_chips='tech.machine_learning'; autonomous_systems='tech.autonomous_systems'
     }
     if ($technologyByGood.ContainsKey($Id)) { return $technologyByGood[$Id] }
@@ -396,6 +435,33 @@ function Inventory-Target-Ratio-For-Good([string]$Id) {
     if ($important -contains $Id) { return 81920 } # 1.25 x 30 = 37.5 days.
     if ($luxury -contains $Id) { return 43691 } # Approximately 20 days.
     return 65536 # 1.00 x 30 = 30 days.
+}
+
+function Household-Wealth-Elasticity-For-Good([string]$Id) {
+    if ($Id -in @('gathered_plants','game_meat','cloth','logs','chipped_stone_tools')) { return 0 }
+    if ($Id -in @('grain','wheat_grain','rice_grain','corn_grain','potatoes','salt',
+            'vegetables','charcoal','coal')) { return 8192 }
+    if ($Id -in @('prepared_staples','bread','edible_oil','meat','fish','dairy_products',
+            'clothing','footwear','soap','medicinal_herbs','electricity')) { return 16384 }
+    if ($Id -in @('processed_food','canned_fish','detergent','pharmaceuticals','natural_gas',
+            'refined_fuel','pottery','leather_goods')) { return 24576 }
+    if ($Id -in @('glassware','metal_housewares','printed_materials','radio_equipment',
+            'telecom_equipment','household_appliances','automobiles')) { return 32768 }
+    if ($Id -in @('fine_clothing','fine_furniture','jewelry','spices','autonomous_systems')) { return 65536 }
+    return 16384
+}
+
+function Household-Savings-Threshold-For-Good([string]$Id) {
+    if ($Id -in @('gathered_plants','prepared_staples','bread','grain','wheat_grain',
+            'rice_grain','corn_grain','potatoes','game_meat','meat','fish','dairy_products',
+            'vegetables','edible_oil','salt','cloth','clothing','footwear','logs','charcoal','coal')) { return 0 }
+    if ($Id -in @('processed_food','canned_fish','soap','medicinal_herbs','pottery','electricity')) { return 32768 }
+    if ($Id -in @('detergent','pharmaceuticals','natural_gas','refined_fuel','leather_goods',
+            'glassware','metal_housewares','printed_materials')) { return 65536 }
+    if ($Id -in @('radio_equipment','telecom_equipment','household_appliances')) { return 131072 }
+    if ($Id -in @('automobiles','fine_clothing','fine_furniture')) { return 262144 }
+    if ($Id -in @('jewelry','spices','autonomous_systems')) { return 524288 }
+    return 65536
 }
 
 foreach ($id in $goods.Keys) {
@@ -443,6 +509,8 @@ min_price = $([Math]::Max(1, [int]($price / 10)))
 max_price = $($price * 10)
 price_adjust_q16 = $priceAdjust
 demand_price_elasticity_q16 = $demandElasticity
+household_wealth_elasticity_q16 = $(Household-Wealth-Elasticity-For-Good $id)
+household_savings_threshold_months_q16 = $(Household-Savings-Threshold-For-Good $id)
 demand_ema_alpha_q16 = 16384
 inventory_target_ratio_q16 = $(if ($mode -eq 'cycle_flow') { 0 } else { $inventoryTargetRatio })
 inventory_weight_q16 = 32768
@@ -518,8 +586,10 @@ technology_tags = PackedStringArray()
 
 $needRows = @(
     @('staple_food','食品',65536), @('protein','食品',65536),
-    @('produce','食品',65536), @('clothing','衣着',65536),
+    @('produce','食品',65536), @('food_fat','食用油脂',65536),
+    @('seasoning','调味品',32768), @('clothing','衣着',65536),
     @('housing','居住维护',65536), @('household_goods','家庭用品',32768),
+    @('domestic_wares','家用器皿',32768),
     @('hygiene','清洁卫生',65536), @('healthcare','医疗保健',65536),
     @('home_energy','家庭能源',65536), @('transport','个人交通',32768),
     @('communication','通信',32768), @('education_culture','教育与文化',0),
@@ -547,24 +617,35 @@ $needSpecs = @(
         variants=@(@('game_meat'),@('meat'),@('fish'),@('canned_fish'),@('dairy_products'))},
     @{id='produce'; tier='essential'; base=300; wealth=16384; min=32768; max=131072; price=98304; quantityPrice=65536; quantityFloor=4096;
         variants=@(@('vegetables'),@('processed_food'))},
+    @{id='food_fat'; tier='essential'; base=35; wealth=12288; min=32768; max=131072; price=98304; quantityPrice=49152; quantityFloor=8192;
+        variants=@(@('edible_oil'))},
+    @{id='seasoning'; tier='essential'; base=5; wealth=16384; min=16384; max=196608; price=98304; quantityPrice=65536; quantityFloor=4096;
+        variants=@(@('salt'),@('spices'))},
     @{id='clothing'; tier='essential'; base=3; wealth=32768; min=16384; max=196608; price=65536; quantityPrice=32768; quantityFloor=16384;
         variants=@(@('cloth'),@('fur'),@('clothing'),@('footwear'))},
     @{id='housing'; tier='essential'; base=5; wealth=32768; min=16384; max=196608; price=65536;
-        variants=@(@('construction_components'))},
+        variants=@(@('reed_bundle','bast_fiber'),@('turf_block','lumber'),
+            @('adobe_brick','lumber'),@('raw_stone','lime','lumber'),
+            @('bricks','lime','lumber'),@('cement','glass','steel'),
+            @('concrete','steel','glass'),@('construction_components'))},
     @{id='household_goods'; tier='comfort'; base=2; wealth=49152; min=8192; max=262144; price=49152;
-        variants=@(@('pottery'),@('furniture'))},
+        variants=@(@('furniture'),@('leather_goods'))},
+    @{id='domestic_wares'; tier='comfort'; base=1; wealth=49152; min=8192; max=262144; price=49152;
+        variants=@(@('pottery'),@('glassware'),@('metal_housewares'))},
     @{id='hygiene'; tier='essential'; base=10; wealth=32768; min=16384; max=196608; price=65536;
         variants=@(@('soap'),@('detergent'))},
     @{id='healthcare'; tier='essential'; base=3; wealth=32768; min=16384; max=196608; price=32768;
         variants=@(@('medicinal_herbs'),@('pharmaceuticals'))},
     @{id='home_energy'; tier='essential'; base=80; wealth=32768; min=16384; max=196608; price=65536;
-        variants=@(@('logs'),@('coal'),@('natural_gas'),@('refined_fuel'))},
+        variants=@(@('logs'),@('charcoal'),@('coal'),@('natural_gas'),@('refined_fuel'),@('electricity'))},
     @{id='transport'; tier='comfort'; base=3; wealth=49152; min=8192; max=262144; price=49152;
         variants=@(@('horses'),@('automobiles','refined_fuel'))},
     @{id='communication'; tier='comfort'; base=1; wealth=49152; min=8192; max=262144; price=49152;
-        variants=@(@('radio_equipment'),@('telecom_equipment'))},
+        variants=@(@('radio_equipment'),@('telecom_equipment'),
+            @('radio_equipment','batteries'),
+            @('telecom_equipment','batteries'))},
     @{id='education_culture'; tier='comfort'; base=2; wealth=49152; min=8192; max=262144; price=49152;
-        variants=@(@('manuscripts'),@('printed_materials'),@('computers'))},
+        variants=@(@('manuscripts'),@('paper'),@('printed_materials'),@('computers'))},
     @{id='recreation'; tier='comfort'; base=3; wealth=49152; min=8192; max=262144; price=49152;
         variants=@(@('beverages'),@('computers'))},
     @{id='durable_goods'; tier='luxury'; base=1; wealth=65536; min=4096; max=393216; price=32768;
@@ -574,14 +655,55 @@ $needSpecs = @(
     @{id='luxury'; tier='luxury'; base=1; wealth=98304; min=1024; max=524288; price=32768;
         variants=@(@('beverages'),@('fine_clothing'),@('fine_furniture'))},
     @{id='status_goods'; tier='luxury'; base=1; wealth=98304; min=1024; max=524288; price=32768;
-        variants=@(@('jewelry'),@('fur'),@('spices'))}
+        variants=@(@('jewelry'),@('fur'))}
 )
+
+function Class-Wealth-Delta([string]$PlanId, [string]$GoodId) {
+    $base = switch ($PlanId) {
+        'plan_unemployed' { -8192 }
+        'survival_household' { -4096 }
+        'agrarian_household' { 0 }
+        'hunter_household' { 0 }
+        'extractive_household' { 4096 }
+        'industrial_worker_household' { 4096 }
+        'artisan_household' { 8192 }
+        'scholarly_household' { 8192 }
+        'technical_household' { 12288 }
+        'merchant_household' { 16384 }
+        'owner_household' { 24576 }
+        default { 0 }
+    }
+    if ($GoodId -in @('gathered_plants','game_meat','cloth','logs','chipped_stone_tools')) {
+        $base -= 8192
+    }
+    return [Math]::Max(-65536, [Math]::Min(131072, $base))
+}
+
+function Class-Threshold-Factor([string]$PlanId, [string]$GoodId) {
+    if ((Household-Savings-Threshold-For-Good $GoodId) -eq 0) { return 0 }
+    $factor = switch ($PlanId) {
+        'plan_unemployed' { 131072 }
+        'survival_household' { 98304 }
+        'agrarian_household' { 81920 }
+        'hunter_household' { 81920 }
+        'extractive_household' { 65536 }
+        'industrial_worker_household' { 65536 }
+        'artisan_household' { 57344 }
+        'scholarly_household' { 49152 }
+        'technical_household' { 40960 }
+        'merchant_household' { 32768 }
+        'owner_household' { 24576 }
+        default { 65536 }
+    }
+    return $factor
+}
 
 function Write-Plan([string]$Id, [string]$Name, [string[]]$IncludedNeeds,
         [int]$EssentialScale, [int]$ComfortScale, [int]$LuxuryScale,
         [hashtable]$PreferenceOverrides) {
     $needIds = @(); $priorities = @(); $base = @(); $elasticity = @(); $mins = @(); $maxs = @(); $quantityPrice = @(); $quantityFloor = @(); $env = @()
     $needOffsets = @(0); $variantIds = @(); $preferences = @(); $variantElasticity = @(); $variantEnv = @()
+    $variantClassWealthDelta = @(); $variantClassThresholdFactor = @()
     $componentOffsets = @(0); $componentIds = @(); $componentQty = @()
     $v = 0; $c = 0
     foreach ($needId in $IncludedNeeds) {
@@ -610,10 +732,31 @@ function Write-Plan([string]$Id, [string]$Name, [string[]]$IncludedNeeds,
                 elseif ($preferenceGood -in @('grain','wheat_grain','rice_grain',
                         'corn_grain','potatoes')) { 98304 }
                 else { 65536 }
+            } elseif ($spec.id -eq 'seasoning') {
+                if ($preferenceGood -eq 'salt') { 98304 } else { 65536 }
+            } elseif ($spec.id -eq 'domestic_wares') {
+                switch ($preferenceGood) {
+                    'pottery' { 65536 }
+                    'glassware' { 73728 }
+                    'metal_housewares' { 81920 }
+                    default { 65536 }
+                }
+            } elseif ($spec.id -eq 'home_energy') {
+                switch ($preferenceGood) {
+                    'logs' { 65536 }
+                    'charcoal' { 81920 }
+                    'coal' { 81920 }
+                    'natural_gas' { 98304 }
+                    'refined_fuel' { 90112 }
+                    'electricity' { 131072 }
+                    default { 65536 }
+                }
             } elseif ($PreferenceOverrides.ContainsKey($preferenceGood)) {
                 [int]$PreferenceOverrides[$preferenceGood]
             } else { 65536 })
             $variantElasticity += [int]$spec.price
+            $variantClassWealthDelta += [int](Class-Wealth-Delta $Id $preferenceGood)
+            $variantClassThresholdFactor += [int](Class-Threshold-Factor $Id $preferenceGood)
             $variantEnv += $(if ($spec.id -eq 'clothing' -and $variant -contains 'fur') { 'cold_fur_preference' } elseif ($spec.id -eq 'clothing') { 'warm_cloth_preference' } else { '' })
             foreach ($good in $variant) {
                 $componentIds += $good
@@ -622,6 +765,39 @@ function Write-Plan([string]$Id, [string]$Name, [string[]]$IncludedNeeds,
                     elseif ($good -in @('grain','wheat_grain','rice_grain',
                             'corn_grain','potatoes')) { 800 }
                     else { 1000 }
+                } elseif ($spec.id -eq 'seasoning' -and $good -eq 'spices') { 250
+                } elseif ($spec.id -eq 'domestic_wares' -and $good -eq 'glassware') { 800
+                } elseif ($spec.id -eq 'domestic_wares' -and $good -eq 'metal_housewares') { 700
+                } elseif ($spec.id -eq 'home_energy') {
+                    switch ($good) {
+                        'logs' { 1000 }
+                        'charcoal' { 800 }
+                        'coal' { 700 }
+                        'natural_gas' { 500 }
+                        'refined_fuel' { 500 }
+                        'electricity' { 300 }
+                        default { 1000 }
+                    }
+                } elseif ($spec.id -eq 'housing') {
+                    switch ($good) {
+                        'reed_bundle' { 700 }
+                        'bast_fiber' { 300 }
+                        'turf_block' { 700 }
+                        'adobe_brick' { 800 }
+                        'raw_stone' { 700 }
+                        'bricks' { 700 }
+                        'cement' { 500 }
+                        'concrete' { 600 }
+                        'lime' { 200 }
+                        'lumber' {
+                            if ($variant -contains 'turf_block') { 300 }
+                            elseif ($variant -contains 'adobe_brick') { 200 }
+                            else { 100 }
+                        }
+                        'steel' { 250 }
+                        'glass' { if ($variant -contains 'cement') { 250 } else { 150 } }
+                        default { 1000 }
+                    }
                 } else { 1000 })
                 $c++
             }
@@ -634,7 +810,7 @@ function Write-Plan([string]$Id, [string]$Name, [string[]]$IncludedNeeds,
         }
         $needOffsets += $v
     }
-    if ($componentIds.Count -gt 64) { throw "plan component limit: $Id" }
+    if ($componentIds.Count -gt 128) { throw "plan component limit: $Id" }
     Write-Utf8 (Join-Path $plansDir "$Id.tres") @"
 [gd_resource type="Resource" script_class="ConsumptionPlanProfile" load_steps=2 format=3]
 [ext_resource type="Script" path="res://scripts/data/consumption_plan_profile.gd" id="1"]
@@ -655,15 +831,18 @@ need_variant_offsets = $(PI32 $needOffsets)
 variant_ids = $(PSArray $variantIds)
 variant_preference_q16 = $(PI32 $preferences)
 variant_price_elasticity_q16 = $(PI32 $variantElasticity)
+variant_class_wealth_elasticity_delta_q16 = $(PI32 $variantClassWealthDelta)
+variant_class_savings_threshold_factor_q16 = $(PI32 $variantClassThresholdFactor)
 variant_preference_env_curve_ids = $(PSArray $variantEnv)
 variant_component_offsets = $(PI32 $componentOffsets)
 component_good_ids = $(PSArray $componentIds)
 component_qty_per_need = $(PI64 $componentQty)
 "@
 }
-$coreNeeds = @('staple_food','protein','produce','clothing','housing','household_goods',
+$survivalFoodNeeds = @('staple_food','protein','produce','food_fat','seasoning')
+$coreNeeds = $survivalFoodNeeds + @('clothing','housing','household_goods','domestic_wares',
     'hygiene','healthcare','home_energy')
-Write-Plan 'plan_unemployed' '失业者生存消费' @('staple_food','protein','produce') 80 0 0 @{
+Write-Plan 'plan_unemployed' '失业者生存消费' $survivalFoodNeeds 80 0 0 @{
     grain=81920; gathered_plants=98304; potatoes=81920
 }
 Write-Plan 'survival_household' '生存型家庭消费' $coreNeeds 80 35 0 @{
@@ -719,6 +898,8 @@ if ($Scope -eq 'Consumption') {
 $deps = @{
     lumber=@('logs'); paper=@('logs','industrial_chemicals');
     packaging=@('paper'); printed_materials=@('paper'); furniture=@('lumber','cloth');
+    glassware=@('glass');
+    metal_housewares=@('wrought_iron'); leather_goods=@('leather');
     bricks=@('clay'); lime=@('limestone');
     cement=@('lime','clay'); concrete=@('cement','raw_stone'); glass=@('silica_sand');
     construction_components=@('concrete','steel','glass');
@@ -1261,7 +1442,12 @@ function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[
     [string[]]$Inputs,[string[]]$Outputs,[string[]]$Resources,[string[]]$ResourceModes,
     [string]$Behavior,[string]$Category,[string]$Family = '',[int]$Tier = 0,
     [string]$TechnologyOverride = '',[long[]]$InputQuantityOverride = @(),
-    [string]$RecipeSourceId = '') {
+    [string]$RecipeSourceId = '', [string[]]$TechnologyTagsOverride = @(),
+    [string[]]$RequiredTechnologyTags = @(), [int[]]$InputRequiredQ16Override = @(),
+    [object[]]$InputCandidateOverride = @(), [string[]]$EmployeeProfessionIdsOverride = @(),
+    [long[]]$EmployeeSlotsOverride = @(), [string[]]$EmployeeWagePolicyIdsOverride = @(),
+    [long[]]$EmployeeReferenceWagesOverride = @(), [switch]$PreserveWorkforce) {
+    $requestedOwner = $Owner
     $unitQty = switch ($Id) {
         'marine_fish_collector' { [long]3600 }
         'pastoral_camp' { [long]3000 } 'manorial_pasture' { [long]5000 }
@@ -1284,12 +1470,18 @@ function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[
         'oil_power_plant' { [long]10500 } 'nuclear_power_plant' { [long]18000 }
         default { [long]10000 }
     }
+    [string[]]$directTechnologies = @($TechnologyTagsOverride)
     $technology = $TechnologyOverride
-    if ($technology -eq '') { $technology = Technology-For-Building $Id }
-    if ($technology -eq '') {
+    if ($directTechnologies.Count -eq 0 -and $technology -ne '') {
+        $directTechnologies = @($technology)
+    }
+    if ($directTechnologies.Count -eq 0) { $technology = Technology-For-Building $Id }
+    if ($directTechnologies.Count -eq 0 -and $technology -eq '') {
         if ($Outputs.Count -eq 0) { throw "building lacks output technology: $Id" }
         $technology = Technology-For-Good $Outputs[0]
     }
+    if ($directTechnologies.Count -eq 0) { $directTechnologies = @($technology) }
+    $technology = $directTechnologies[0]
     $rank = Technology-Rank $technology
     [long[]]$inputQtySeed = if ($Inputs.Count -eq 0) {
         @()
@@ -1312,15 +1504,16 @@ function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[
     }
     # Factory operating inputs model maintenance/tooling, installed machinery,
     # and electric drive without creating a second production subsystem.
-    if ($Kind -eq 'industrial' -and $rank -ge 6 -and
+    $isTerminalFamily = $Family -in @('glassware_making','metal_housewares_making','leather_goods_making')
+    if (-not $isTerminalFamily -and $Kind -eq 'industrial' -and $rank -ge 6 -and
         $Outputs -notcontains 'tools' -and $Inputs -notcontains 'tools') {
         $Inputs += 'tools'; $inputQtySeed += [long]300
     }
-    if ($Kind -eq 'industrial' -and $rank -ge 7 -and
+    if (-not $isTerminalFamily -and $Kind -eq 'industrial' -and $rank -ge 7 -and
         $Outputs -notcontains 'electricity' -and $Inputs -notcontains 'electricity') {
         $Inputs += 'electricity'; $inputQtySeed += [long]600
     }
-    if ($Kind -eq 'industrial' -and $rank -ge 7 -and
+    if (-not $isTerminalFamily -and $Kind -eq 'industrial' -and $rank -ge 7 -and
         $Outputs -notcontains 'electricity' -and $Outputs -notcontains 'industrial_machinery' -and
         $Inputs -notcontains 'industrial_machinery') {
         $Inputs += 'industrial_machinery'; $inputQtySeed += [long]200
@@ -1462,6 +1655,18 @@ function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[
             })
         }
     }
+    if ($PreserveWorkforce -or $isTerminalFamily) {
+        if ($EmployeeProfessionIdsOverride.Count -ne $EmployeeSlotsOverride.Count -or
+            $EmployeeProfessionIdsOverride.Count -ne $EmployeeWagePolicyIdsOverride.Count -or
+            $EmployeeProfessionIdsOverride.Count -ne $EmployeeReferenceWagesOverride.Count) {
+            throw "workforce override columns mismatch: $Id"
+        }
+        $Owner = $requestedOwner
+        $roleIds = @($EmployeeProfessionIdsOverride)
+        $roleSlots = @($EmployeeSlotsOverride | ForEach-Object { [long]$_ })
+        $roleWagePolicies = @($EmployeeWagePolicyIdsOverride)
+        $roleWages = @($EmployeeReferenceWagesOverride | ForEach-Object { [long]$_ })
+    }
     for ($roleIndex = 0; $roleIndex -lt $roleIds.Count; $roleIndex++) {
         $roleWages[$roleIndex] = [Math]::Max(
             [long]$roleWages[$roleIndex],
@@ -1470,7 +1675,9 @@ function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[
     $candidateOffsets = @(0); $candidateGoodIds = @(); $candidateEfficiencies = @()
     $candidateSpecs = @()
     $recipeKey = if ([string]::IsNullOrWhiteSpace($RecipeSourceId)) { $Id } else { $RecipeSourceId }
-    if ($explicitInputCandidates.ContainsKey($recipeKey)) {
+    if ($InputCandidateOverride.Count -gt 0) {
+        foreach ($candidateSlot in $InputCandidateOverride) { $candidateSpecs += ,$candidateSlot }
+    } elseif ($explicitInputCandidates.ContainsKey($recipeKey)) {
         $rawCandidateSpecs = $explicitInputCandidates[$recipeKey]
         if ($rawCandidateSpecs -is [hashtable]) {
             $candidateSpecs += ,$rawCandidateSpecs
@@ -1596,6 +1803,23 @@ function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[
         if ($calibratedRevenue -le $dailyCost) {
             throw "unprofitable generated recipe after calibration: $Id revenue=$calibratedRevenue cost=$dailyCost"
         }
+        if ($isTerminalFamily -and $Family -ne '' -and $Tier -gt 0) {
+            $key = "${Family}:$Tier"
+            if ($Tier -gt 1 -and $script:terminalOutputByFamilyTier.ContainsKey("${Family}:$($Tier - 1)")) {
+                $previous = [long]$script:terminalOutputByFamilyTier["${Family}:$($Tier - 1)"]
+                # The balance audit measures value per total labor, so the
+                # authored output floor must also cover each tier's larger
+                # workforce. Tier 3 has the industrial workforce jump.
+                $productivityFloor = switch ($Tier) {
+                    2 { 2.01 } # 1.34 * 15 / 10
+                    3 { 3.58 } # 1.34 * 40 / 15
+                    4 { 2.05 } # 1.34 * 61 / 40
+                    default { 1.34 }
+                }
+                $unitQty = [Math]::Max($unitQty, [long][Math]::Ceiling($previous * $productivityFloor))
+            }
+            $script:terminalOutputByFamilyTier[$key] = [long]$unitQty
+        }
         $outputQty = @($Outputs | ForEach-Object { $unitQty })
         $outputTotal = [long](($outputQty | Measure-Object -Sum).Sum)
         $extractQty = if ($extractCount -gt 0) {
@@ -1618,7 +1842,12 @@ function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[
     } else { '' }
     # Timber collection remains viable without tools; tools scale the remaining
     # half of capacity through the existing soft-input contract.
-    $inputRequiredQ16 = if ($Id -eq 'timber_collector') { @(32768) } else { @() }
+    $inputRequiredQ16 = if ($InputRequiredQ16Override.Count -gt 0) {
+        @($InputRequiredQ16Override | ForEach-Object { [int]$_ })
+    } elseif ($Id -eq 'timber_collector') { @(32768) } else { @() }
+    if ($inputRequiredQ16.Count -gt 0 -and $inputRequiredQ16.Count -ne $Inputs.Count) {
+        throw "input required q16 mismatch: $Id"
+    }
     $agriculturalResources = @('arable_land','paddy_land','plantation_land','pasture','fertile_soil')
     $economicSector = if ($Kind -eq 'collector' -and
         @($Resources | Where-Object { $_ -in $agriculturalResources }).Count -gt 0) {
@@ -1639,7 +1868,8 @@ id = &"$Id"
 display_name = "$Name"
 building_kind = "$Kind"
 economic_sector_id = "$economicSector"
-technology_tags = PackedStringArray("industry.$Category", "$technology")
+technology_tags = PackedStringArray("industry.$Category", $(($directTechnologies | ForEach-Object { '"' + $_ + '"' }) -join ', '))
+$(if ($RequiredTechnologyTags.Count -gt 0) { 'required_technology_tags = ' + (PSArray $RequiredTechnologyTags) } else { '' })
 upgrade_family_id = &"$Family"
 upgrade_tier = $Tier
 construction_days = 0
@@ -1674,13 +1904,83 @@ behavior_id = "$Behavior"
 }
 
 $buildingIds = [System.Collections.Generic.HashSet[string]]::new()
+$script:terminalOutputByFamilyTier = @{}
 function Add-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[string]$Worker,
     [string[]]$Inputs,[string[]]$Outputs,[string[]]$Resources,[string[]]$ResourceModes,
     [string]$Behavior,[string]$Category,[string]$Family = '',[int]$Tier = 0,
     [string]$TechnologyOverride = '',[long[]]$InputQuantityOverride = @(),
-    [string]$RecipeSourceId = '') {
+    [string]$RecipeSourceId = '', [string[]]$TechnologyTagsOverride = @(),
+    [string[]]$RequiredTechnologyTags = @(), [int[]]$InputRequiredQ16Override = @(),
+    [object[]]$InputCandidateOverride = @(), [string[]]$EmployeeProfessionIdsOverride = @(),
+    [long[]]$EmployeeSlotsOverride = @(), [string[]]$EmployeeWagePolicyIdsOverride = @(),
+    [long[]]$EmployeeReferenceWagesOverride = @(), [switch]$PreserveWorkforce) {
     if (-not $buildingIds.Add($Id)) { throw "duplicate building id: $Id" }
-    Write-Building $Id $Name $Kind $Owner $Worker $Inputs $Outputs $Resources $ResourceModes $Behavior $Category $Family $Tier $TechnologyOverride $InputQuantityOverride $RecipeSourceId
+    Write-Building -Id $Id -Name $Name -Kind $Kind -Owner $Owner -Worker $Worker -Inputs $Inputs -Outputs $Outputs -Resources $Resources -ResourceModes $ResourceModes -Behavior $Behavior -Category $Category -Family $Family -Tier $Tier -TechnologyOverride $TechnologyOverride -InputQuantityOverride $InputQuantityOverride -RecipeSourceId $RecipeSourceId -TechnologyTagsOverride $TechnologyTagsOverride -RequiredTechnologyTags $RequiredTechnologyTags -InputRequiredQ16Override $InputRequiredQ16Override -InputCandidateOverride $InputCandidateOverride -EmployeeProfessionIdsOverride $EmployeeProfessionIdsOverride -EmployeeSlotsOverride $EmployeeSlotsOverride -EmployeeWagePolicyIdsOverride $EmployeeWagePolicyIdsOverride -EmployeeReferenceWagesOverride $EmployeeReferenceWagesOverride -PreserveWorkforce:$PreserveWorkforce
+}
+
+function Add-Terminal-Upgrade-Family([string]$Family, [string]$Token, [string]$DisplayName,
+    [string]$OutputGood, [string]$PrimaryInput, [string]$Category = 'consumer') {
+    $familySpecs = @(
+        @{ id="${Token}_workshop"; name="${DisplayName}小作坊"; tier=1;
+           tech=@("tech.application.${Token}_workshop_kingdom");
+           inputs=@($PrimaryInput,'tools'); qty=@(1000,250); req=@(65536,32768);
+           roles=@('artisan','apprentice'); slots=@(6,3); wages=@('fixed','fixed'); refs=@(2500,1000) },
+        @{ id="${Token}_manufactory"; name="${DisplayName}工场"; tier=2;
+           tech=@("tech.application.${Token}_manufactory_exploration");
+           inputs=@($PrimaryInput,'tools'); qty=@(1600,350); req=@(65536,32768);
+           roles=@('artisan','journeyman'); slots=@(8,6); wages=@('fixed','fixed'); refs=@(3000,2500) },
+        @{ id="${Token}_factory"; name="${DisplayName}工厂"; tier=3;
+           tech=@("tech.application.${Token}_factory_steam","tech.application.${Token}_factory_electrical");
+           inputs=@($PrimaryInput,'tools','steam_engines','coal'); qty=@(2400,500,300,600); req=@(65536,32768,32768,32768);
+           roles=@('industrial_worker','technician','manager'); slots=@(28,8,3); wages=@('adaptive','adaptive','adaptive'); refs=@(5000,7000,9000) },
+        @{ id="smart_${Token}_factory"; name="智能${DisplayName}工厂"; tier=4;
+           tech=@("tech.application.${Token}_smart_factory");
+           inputs=@($PrimaryInput,'tools','electricity','autonomous_systems'); qty=@(3200,700,900,300); req=@(65536,32768,32768,32768);
+           roles=@('industrial_worker','technician','engineer','manager'); slots=@(36,12,8,4); wages=@('adaptive','adaptive','adaptive','adaptive'); refs=@(5000,7000,7000,9000) }
+    )
+    if ($Token -eq 'metal_housewares') {
+        $familySpecs[0].inputs = @('wrought_iron','tools')
+        $familySpecs[1].inputs = @('wrought_iron','tools')
+        $familySpecs[2].inputs = @('wrought_iron','tools','steam_engines','coal')
+        $familySpecs[3].inputs = @('wrought_iron','tools','electricity','autonomous_systems')
+        $familySpecs[1].qty=@(1600,350); $familySpecs[1].req=@(65536,32768)
+        $familySpecs[2].qty=@(2400,500,300,600); $familySpecs[2].req=@(65536,32768,32768,32768)
+        $familySpecs[3].inputs=@('wrought_iron','tools','electricity','autonomous_systems')
+    }
+    if ($Token -eq 'leather_goods') {
+        $familySpecs[1].inputs += 'industrial_chemicals'; $familySpecs[1].qty += 150; $familySpecs[1].req += 32768
+        $familySpecs[2].inputs += 'industrial_chemicals'; $familySpecs[2].qty += 250; $familySpecs[2].req += 32768
+        $familySpecs[3].inputs += 'industrial_chemicals'; $familySpecs[3].qty += 400; $familySpecs[3].req += 32768
+    }
+    foreach ($spec in $familySpecs) {
+        $candidateOverride = @()
+        if ($Token -eq 'metal_housewares' -and $spec.tier -ge 2) {
+            $candidateOverride = if ($spec.tier -eq 2) {
+                @(@{ goods=@('wrought_iron','steel','stainless_steel','aluminum'); efficiencies=@(65536,65536,65536,65536) }, $null)
+            } elseif ($spec.tier -eq 3) {
+                @(@{ goods=@('wrought_iron','steel','stainless_steel','aluminum'); efficiencies=@(65536,65536,65536,65536) }, $null,
+                  @{ goods=@('steam_engines','electric_motor'); efficiencies=@(65536,65536) },
+                  @{ goods=@('coal','electricity'); efficiencies=@(65536,65536) })
+            } else {
+                @(@{ goods=@('wrought_iron','steel','stainless_steel','aluminum'); efficiencies=@(65536,65536,65536,65536) }, $null, $null, $null)
+            }
+        } elseif ($Token -eq 'leather_goods' -and $spec.tier -eq 4) {
+            $candidateOverride = @(@{ goods=@('leather','synthetic_fiber'); efficiencies=@(65536,49152) }, $null, $null, $null, $null)
+        } elseif ($spec.tier -eq 3) {
+            $candidateOverride = @($null, $null,
+                @{ goods=@('steam_engines','electric_motor'); efficiencies=@(65536,65536) },
+                @{ goods=@('coal','electricity'); efficiencies=@(65536,65536) })
+        }
+        Add-Building -Id $spec['id'] -Name $spec['name'] -Kind 'industrial' `
+            -Owner $(if ($spec['tier'] -le 2) { 'guild_master' } else { 'industrialist' }) `
+            -Worker 'artisan' -Inputs $spec['inputs'] -Outputs @($OutputGood) -Resources @() `
+            -ResourceModes @() -Behavior 'none' -Category $Category -Family $Family -Tier $spec['tier'] `
+            -TechnologyTagsOverride $spec['tech'] -InputQuantityOverride $spec['qty'] `
+            -InputRequiredQ16Override $spec['req'] -InputCandidateOverride $candidateOverride `
+            -EmployeeProfessionIdsOverride $spec['roles'] -EmployeeSlotsOverride $spec['slots'] `
+            -EmployeeWagePolicyIdsOverride $spec['wages'] -EmployeeReferenceWagesOverride $spec['refs'] `
+            -PreserveWorkforce
+    }
 }
 
 function Write-SelfSufficientBuilding([string]$Id, [string]$Name, [string]$Technology, [string]$Family,
@@ -1830,11 +2130,15 @@ Add-Building 'ore_bronzesmith_camp' '露天青铜作坊' 'industrial' 'artisan' 
 Add-Building 'early_iron_mine' '浅层铁矿' 'collector' 'artisan' 'miner' @('bronze_tools') @('iron_ore') @('iron_ore') @('extract') 'consume_local_resources' 'primary' 'iron_extraction' 1
 Add-Building 'iron_tool_workshop' '铁制工具工坊' 'industrial' 'artisan' 'artisan' @('iron_ore','logs') @('tools') @() @() 'none' 'machinery' 'metal_toolmaking' 1
 Add-Building 'canning_workshop' '罐头工坊' 'industrial' 'guild_master' 'artisan' @('fish','salt','packaging','tools') @('canned_fish') @() @() 'none' 'food' 'fish_canning' 1
+Add-Terminal-Upgrade-Family 'glassware_making' 'glassware' '玻璃器皿' 'glassware' 'glass'
+Add-Terminal-Upgrade-Family 'metal_housewares_making' 'metal_housewares' '金属家用器皿' 'metal_housewares' 'wrought_iron'
+Add-Terminal-Upgrade-Family 'leather_goods_making' 'leather_goods' '皮革制品' 'leather_goods' 'leather'
 
 $explicitIndustryGoods = @(
     'adobe_brick','grain','bread','prepared_staples','livestock_products','meat','dairy_products','raw_hide',
     'wool','leather','cloth','clothing','footwear','paper','beverages','fertilizer',
-    'industrial_chemicals','jewelry','fine_clothing','fine_furniture','construction_components'
+    'industrial_chemicals','jewelry','fine_clothing','fine_furniture','construction_components',
+    'glassware','metal_housewares','leather_goods'
 )
 foreach ($category in $processedGroups.Keys) {
     foreach ($good in $processedGroups[$category]) {
@@ -2330,6 +2634,19 @@ foreach ($sourceId in @($singleMethodSources | Sort-Object)) {
 
 $constructionRecipeOverrides = @{
     classical_glass_kiln = [ordered]@{ logs=750; raw_stone=500 }
+    glassware_workshop = [ordered]@{ logs=500; raw_stone=500 }
+    glassware_manufactory = [ordered]@{ lumber=750; bricks=750; tools=250 }
+    glassware_factory = [ordered]@{ bricks=750; construction_components=500; steel=500; glass=250 }
+    smart_glassware_factory = [ordered]@{ concrete=1000; steel=750; glass=500; electronic_components=300; computers=100 }
+    metal_housewares_workshop = [ordered]@{ logs=500; raw_stone=500 }
+    metal_housewares_manufactory = [ordered]@{ lumber=750; bricks=750; tools=300 }
+    metal_housewares_factory = [ordered]@{ bricks=750; construction_components=500; steel=750; glass=250 }
+    smart_metal_housewares_factory = [ordered]@{ concrete=1000; steel=1000; glass=500; electronic_components=300; computers=100 }
+    leather_goods_workshop = [ordered]@{ logs=500; raw_stone=500 }
+    leather_goods_manufactory = [ordered]@{ lumber=750; bricks=750; tools=250 }
+    leather_goods_factory = [ordered]@{ bricks=750; construction_components=500; steel=500; glass=250 }
+    smart_leather_goods_factory = [ordered]@{ concrete=1000; steel=750; glass=500; electronic_components=300; computers=100 }
+    construction_components_plant = [ordered]@{ lumber=750; bricks=750; steel=500 }
     communal_hearth = [ordered]@{ logs=500; gathered_plants=250 }
     coal_mine = [ordered]@{ lumber=500; bricks=750; construction_components=750 }
     coke_ovens = [ordered]@{ lumber=500; bricks=750; construction_components=750 }
@@ -2339,6 +2656,7 @@ $constructionRecipeOverrides = @{
     household_weaving_shelter = [ordered]@{ logs=2000; gathered_plants=4000 }
     knapping_workshop = [ordered]@{ logs=1000; flint=500 }
     lumber_plant = [ordered]@{ logs=500; gathered_plants=250 }
+    method_lumber_plant_r6 = [ordered]@{ logs=750; bricks=500 }
     marine_fish_collector = [ordered]@{ logs=500; gathered_plants=250 }
     placer_gold_working = [ordered]@{ logs=1000; gathered_plants=500 }
     stone_age_hunting_camp = [ordered]@{ logs=1000; gathered_plants=500 }

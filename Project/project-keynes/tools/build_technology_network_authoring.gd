@@ -172,7 +172,7 @@ func _validate(payload: Dictionary) -> Dictionary:
 	var families: Array = payload.get("branch_families", [])
 	var nodes: Array = payload.get("nodes", [])
 	if eras.size() != 11 or domains.size() != 4 or backbones.size() != 4 \
-			or families.size() != 24 or nodes.size() != 661:
+		or families.size() != 24 or nodes.size() != 676:
 		return _fail("technology_network_shape_invalid")
 	if payload.has("specialist_lanes"):
 		return _fail("technology_legacy_lane_metadata_present")

@@ -22,6 +22,10 @@ extends Resource
 @export var variant_ids: PackedStringArray = PackedStringArray()
 @export var variant_preference_q16: PackedInt32Array = PackedInt32Array()
 @export var variant_price_elasticity_q16: PackedInt32Array = PackedInt32Array()
+## Class-specific additions to the component-weighted good wealth elasticity.
+@export var variant_class_wealth_elasticity_delta_q16: PackedInt32Array = PackedInt32Array()
+## Class-specific multiplier for the maximum component savings threshold.
+@export var variant_class_savings_threshold_factor_q16: PackedInt32Array = PackedInt32Array()
 @export var variant_preference_env_curve_ids: PackedStringArray = PackedStringArray()
 @export var variant_component_offsets: PackedInt32Array = PackedInt32Array([0])
 

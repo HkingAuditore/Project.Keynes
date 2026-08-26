@@ -101,7 +101,7 @@ public:
         Q16_ONE + Q16_ONE / 5;
     static constexpr int64_t Q32_ONE = 4294967296LL;
     static constexpr int32_t MAX_RULES_PER_PLAN = 32;
-    static constexpr int32_t MAX_NEEDS_PER_PLAN = 16;
+    static constexpr int32_t MAX_NEEDS_PER_PLAN = 20;
     static constexpr int32_t MAX_VARIANTS_PER_NEED = 8;
     static constexpr int32_t MAX_COMPONENTS_PER_VARIANT = 4;
     static constexpr int32_t ENV_CURVE_SAMPLES = 17;
@@ -745,6 +745,7 @@ private:
         // rather than from need id strings.
         int32_t satisfaction_tier = SAT_DIM_BASIC;
         int32_t satisfaction_weight_q16 = Q16_ONE;
+        std::array<int32_t, 9> wealth_lut_q16{};
     };
 
     struct VariantChoice {
@@ -754,6 +755,9 @@ private:
         int32_t price_elasticity_q16 = Q16_ONE;
         int32_t preference_env_curve = -1;
         int64_t reference_unit_price = MONEY_SCALE;
+        int32_t wealth_elasticity_q16 = 0;
+        int32_t savings_threshold_months_q16 = 0;
+        std::array<int32_t, 9> wealth_lut_q16{};
     };
 
     struct NeedComponent {
@@ -2098,6 +2102,8 @@ private:
         int64_t processed_components = 0;
         int64_t saturation_count = 0;
         int64_t consumed_goods = 0;
+        int64_t cycle_flow_consumed = 0;
+        int64_t cycle_flow_discarded = 0;
         int64_t retained_output_consumed = 0;
         int64_t retained_output_discarded = 0;
         std::vector<int64_t> retained_consumed_by_good;
@@ -3964,6 +3970,8 @@ private:
     std::vector<int32_t> _good_max_price;
     std::vector<int32_t> _good_price_adjust_q16;
     std::vector<int32_t> _good_demand_price_elasticity_q16;
+    std::vector<int32_t> _good_household_wealth_elasticity_q16;
+    std::vector<int32_t> _good_household_savings_threshold_months_q16;
     std::vector<int32_t> _good_demand_ema_alpha_q16;
     std::vector<int32_t> _good_target_inventory_days_q16;
     std::vector<int32_t> _good_inventory_weight_q16;

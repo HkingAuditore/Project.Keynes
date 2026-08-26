@@ -5,7 +5,7 @@ const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalo
 func _init() -> void:
 	var catalog: Dictionary = TechnologyCatalogScript.compile_native_catalog()
 	assert(bool(catalog.get("ok", false)), str(catalog))
-	const EXPECTED_TECHNOLOGY_COUNT := 661
+	const EXPECTED_TECHNOLOGY_COUNT := 676
 	const EXPECTED_STARTER_COUNT := 7
 	const EXPECTED_MILESTONE_CANDIDATES := [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
 	const EXPECTED_MILESTONE_REQUIRED := [4, 4, 4, 4, 5, 5, 5, 6, 6, 7, 7]

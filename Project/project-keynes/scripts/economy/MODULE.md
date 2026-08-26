@@ -3,7 +3,7 @@
 > 状态：Market V2 / Price V4 ACTIVE（`production_income_consumption_v12`）。功能、守恒、确定性与
 > 200k/10M 性能门槛已通过。范围包含 cohort、商人所有权、消费、本地市场、需求 EMA/价格、环境需求、
 > 替代品/互补 bundle、Inspector、BUILDING_GRAPH、显赫家族、冻结国家科技、国内 Trade V1、
-> 税收财政、PKEC v43 流式存档与 PKEJ 分层事件；国家身份、领土、科技、研究、税务政策和国库由
+> 税收财政、PKEC v44 流式存档与 PKEJ 分层事件；国家身份、领土、科技、研究、税务政策和国库由
 > NativeCountryRuntime 权威持有；跨国贸易结算/关税事件、政治、年龄、微观家庭与谱系尚未接入；
 > 自然出生和死亡由原生 household/structural 路径处理。
 
@@ -86,9 +86,17 @@
 - `NeedProfile`：优先级、基础数量、生活成本 Q16 权重、连续财富函数、环境数量曲线、替代
   variants 与互补 components。
 - `ConsumptionPlanProfile`：按稳定 need ID 组合消费计划。
+- 当前目录为 135 goods、356 buildings、20 needs、11 plans。每个计划包含
+  `prepared_staples`/`bread`/`grain`/`wheat_grain`/`rice_grain`/`corn_grain`/
+  `potatoes`/`gathered_plants` 八项主食替代；小麦等栽培主食与采集植物通过同一
+  `staple_food` bundle 清算。
+- `GoodProfile.household_wealth_elasticity_q16` 与
+  `household_savings_threshold_months_q16`，以及计划的 class delta/factor，均在
+  `EconomyCatalog` 冷路径编译为 native Q16/LUT。财富提高和价格降低分别产生单调的
+  需求响应；储蓄门槛按阶层调整，不创建第二套居民经济。
 - `EnvironmentDemandCurveProfile`：temp/moisture/snow/weather 的 17 点 Q16 曲线。
 - `EconomyProfile`：尺度、slice/worker、自动/强制市场周期、每片 cohort 预算、商人职业、财富参考值，
-  以及独立的市场/贸易 OFF/PROBE/ACTIVE 与确定性贸易工作预算。
+  以及独立的市场/贸易与 `startup_demand_runtime_mode=OFF/ACTIVE` 配置。
 
 ## 行为契约
 
@@ -257,9 +265,8 @@ PKEC save，restore 后在下一次成功生产前显示为未知。
   不参与 PKEC、catalog hash 或模拟权威；动态资金、库存、价格、自留与托底结果仍只能由 native runtime
   或 Inspector/录制数据验证。
 - 现代基线仍由 `tools/codegen/gen_modern_economy_content.ps1` 生成；脚本支持只读 `-Check`，以及
-  只读写 profession/need/plan 的 `-Scope Consumption`。当前全目录为 130 goods、350
-  production-method buildings、45 professions、17 needs 和 10 consumption plans。消费重平衡不改
-  stable-ID 表或 PKEC v14 字节布局，但会改变 catalog hash，旧 hash 存档按现有 mismatch 路径拒绝。
+  只读写 profession/need/plan 的 `-Scope Consumption`。当前全目录为 135 goods、356
+  production-method buildings、45 professions、20 needs 和 11 consumption plans。消费重平衡会改变 catalog hash；旧 hash 存档按现有 mismatch 路径拒绝。
 - `GoodProfile` 额外编译 category、可执行的 `tech.*` `technology_tags`、`stock/cycle_flow` 与金银发行面值；所有 Good 和生产方式至少有一个已知科技绑定，31 个 Resource 至少有一个 `discovery_technology_tags`，Profession 禁止直接持有 `tech.*`。目录同时生成科技反向内容 CSR 与严格 binding hash；其他标签命名空间仍只作元数据。
 - `BuildingProfile.economic_sector_id` 必须显式取 agriculture、extractive、manufacturing、energy
   或 knowledge；运行时继续编译为现有 dense sector 整数，不再按 collector 推断农场/矿场。建筑
@@ -385,13 +392,13 @@ rebuilding the full diagnostic report for every slice. Normal daily calls and
 explicit report/UI/recorder reads keep the full report. Both entry points share
 the same native authority and `DCWorldExt` resource/event/CSV publication wrapper.
 
-Current saves are PKEC v43. It retains the frozen environment, production-climate,
+Current saves are PKEC v44. It retains the frozen environment, production-climate,
 settlement, subsidy, fiscal, notable-family, person, and birth-residual authority from earlier
 schemas, plus family trait rolls, per-cell influence branches, and ordered trait-mutation
 commands, and adds the composite-satisfaction columns: per-cohort composite, the eight
 dimension values, worst dimension, slow income baseline EMA, epoch tax paid and subsidy
 received; per-branch satisfaction; and the published per-cell social-pressure level.
-The reader accepts v42 and v41; v40 and earlier return an explicit incompatible-save
+The reader accepts v43, v42 and v41; v40 and earlier return an explicit incompatible-save
 error. Invalid family/person/cohort/building handles, overclaimed people or cash, invalid person
 jobs/needs, excessive owned counts, catalog/policy mismatch, truncation, range errors, and
 environment-hash mismatch all fail before the runtime becomes bootstrapped.
@@ -567,9 +574,9 @@ the three new deterministic policy controls and explicitly rejects v17.
 - No prosperity/name fields enter MapData, HexCell, or DataCore.
 - Inspector consumes selected-cell summaries; `SettlementLabelLayer` consumes
   full snapshot plus bounded deltas with fog, LOD, collision and pool limits.
-- Current PKEC v43 preserves the settlement state introduced by v24; older schemas are rejected.
+- Current PKEC v44 preserves the settlement state introduced by v24; older schemas are rejected.
 - Production bootstrap marks opening-country cells as forced-name capitals:
   they retain the exact 20-person contract and population-derived tier, but
   always receive a deterministic settlement name. The bit round-trips in current
-  PKEC v41 (the field was introduced in v24) and is exposed as
+  PKEC v44 (the field was introduced in v24) and is exposed as
   `settlement_name_forced`.

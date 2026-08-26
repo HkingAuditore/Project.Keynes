@@ -381,7 +381,7 @@ visuals continue through the existing WeatherFront/LUT boundary.
 `DCWorldExt` 组合持有的 `NativeEconomyRuntime`：PopulationCohort pages、商人共同
 所有的 MarketStore、FamilyStore、NotablePersonStore 与成员/建筑所有权/人物需求稀疏边、企业停产/采购意图/实际出库、
 need/bundle 清算、国内贸易拓扑/订单/托管、账本、滚动五相 continuation、closing audit 和
-PKEC v28 存档全部在 C++。生产 cadence
+PKEC v44 存档全部在 C++。生产 cadence
 固定为 `cell_id % 5 == day % 5`；每个到期 bucket 通过有界 same-day continuation 完整提交，
 贸易规划仍是不会阻塞本地结算的软工作。closing audit 默认 INCREMENTAL：首触 shadow delta
 每日权威提交，并在首日、restore/异常边界及每 25 日完整复核；mismatch 在发布前阻断并关闭
@@ -390,6 +390,12 @@ PKEC v28 存档全部在 C++。生产 cadence
 Inspector 的人口/市场/家族/人物页只查询选中 cell 的 committed 或切片间完整 snapshot；
 人口页的预计单位/人/日由 C++ 复用正式需求内核生成 cohort-major CSR，不保存全局
 cohort×good 矩阵。
+
+当前内容目录为 135 goods、356 buildings、20 needs、11 plans。居民消费由同一 native
+`Need -> variant -> component` CSR 处理；八项主食替代覆盖所有计划。Good/阶层财富弹性、
+储蓄门槛和价格弹性均在 catalog 冷路径预计算，热循环使用定点 LUT。`startup_demand_runtime_mode`
+为 `OFF/ACTIVE`：ACTIVE 只在投资 review batch 传播瞬态上游预期，使用 touched `(cell, good)`
+max/stamp、同国可达 remote lane 和现有投资门槛；预期值不进入 EMA、价格、贸易、PKEC 或 hash。
 
 显赫家族只表示具有可见经济影响的少数人口，匿名多数仍是 cohort 的隐含子集。`cash_claim` 是
 cohort funds 内的守恒归属，建筑估值不进入货币账本；建筑组继续按
@@ -428,13 +434,13 @@ BUILDING_GRAPH 与国内 Trade V1 阶段承担。所得税、消费税和营业�
 NativeEconomyRuntime BUILDING_GRAPH → EconomyFacade/Inspector`。自然资源输入来自 DataCore reserve
 sample，提交为 extra_change delta；建筑和就业本体不进入 MapData/schema。
 
-跨时代经济目录为 31 registered resources / 120 goods / 261 production-method buildings / 33 professions / 18 needs / 8 plans。
+跨时代经济目录为 31 registered resources / 135 goods / 356 production-method buildings / 45 professions / 20 needs / 11 plans。
 `BuildingProfile.building_kind` 强制 collector/industrial 边界，`tech.*` `technology_tags` 由
 国家科技 bitset 在冻结周期内执行。
 两个自给升级族各有 gathering/pottery/guild/steam 四档；BUILD 拒绝已被高档替代的旧档，已有
 建筑继续生产。快照公开 family、tier、最高已解锁档与当前可建状态。
-BUILDING_GRAPH 内部 utility prepass 先生产 `electricity` cycle-flow，普通生产同周期消费并在边界
-清零，家庭能源替代暂不包含电力。`gold`/`silver` producer offer 按固定目录面值进入显式 mint
+BUILDING_GRAPH 内部 utility prepass 先生产 `electricity` cycle-flow，普通生产和居民
+`home_energy` utility 同周期消费并在边界清零。`gold`/`silver` producer offer 按固定目录面值进入显式 mint
 审计，是唯一生产性货币输入；merchant 只可拥有单一产出并严格匹配真实金/银矿藏的 collector，
 后期档允许雇员和工具输入。
 PKEC v8 的 employee-role 自适应工资在 active-cell employment slice 内计算：基础与岗位生活

@@ -61,6 +61,7 @@ const ROUTE_VALUE_NAMES_ZH := {
 	"stone": "石材", "storage": "储藏", "sulfur": "硫", "survey": "测绘",
 	"textiles": "纺织", "thermal": "热能", "tin": "锡", "tools": "工具",
 	"tropical": "热带作物", "tuber": "块茎作物", "university": "大学", "urban": "城市",
+	"consumer": "消费品",
 	"water": "水力", "wheat": "小麦", "wind": "风力", "writing": "文字",
 }
 

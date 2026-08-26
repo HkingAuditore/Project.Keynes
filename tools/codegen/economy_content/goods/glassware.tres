@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"glassware"
+display_name = "玻璃器皿"
+category_id = &"domestic_wares"
+technology_tags = PackedStringArray("tech.application.glassware_workshop_kingdom", "tech.application.glassware_manufactory_exploration", "tech.application.glassware_factory_steam", "tech.application.glassware_factory_electrical", "tech.application.glassware_smart_factory")
+default_price = 30000
+min_price = 3000
+max_price = 300000
+demand_price_elasticity_q16 = 85197
+household_wealth_elasticity_q16 = 32768
+household_savings_threshold_months_q16 = 65536

@@ -125,12 +125,98 @@ func _run() -> void:
 		(buildings.building_kinds as PackedInt32Array).size() == types.size() and
 		(buildings.building_technology_tag_offsets as PackedInt32Array).size() == types.size() + 1 and
 		(buildings.building_technology_tags as PackedStringArray).size() > 0)
+	_test_household_wealth_and_price_response(compiled)
+	_test_cultivated_staple_zero_inventory_demand(compiled)
 	_test_bullion_absorption_feedback(ext, goods, types)
 	_test_bullion_entry_valuation(compiled, native_catalog)
 	if OS.get_cmdline_user_args().has("--bullion-only"):
 		return
 	_test_technology_gating(compiled, native_catalog)
 	_test_upgrade_gating(compiled, native_catalog)
+
+func _test_household_wealth_and_price_response(compiled: Dictionary) -> void:
+	var low_wealth := _household_good_demand(compiled, 1000000, 10000)
+	var high_wealth := _household_good_demand(compiled, 10000000, 10000)
+	var cheap := _household_good_demand(compiled, 1000000, 1000)
+	var expensive := _household_good_demand(compiled, 1000000, 1000000)
+	_expect("household wheat demand is positive at reference wealth", low_wealth > 0)
+	_expect("same class buys at least as much wheat when wealth rises",
+		high_wealth >= low_wealth)
+	_expect("lower wheat price does not reduce household demand",
+		cheap >= expensive)
+
+func _household_good_demand(compiled: Dictionary, funds: int, wheat_price: int) -> int:
+	var catalog := compiled.duplicate(true)
+	catalog.erase("ok")
+	var goods: PackedStringArray = catalog.good_ids
+	var wheat := goods.find("wheat_grain")
+	var prices: PackedInt32Array = catalog.good_default_price.duplicate()
+	var maximums: PackedInt32Array = catalog.good_max_price.duplicate()
+	prices[wheat] = wheat_price
+	maximums[wheat] = maxi(int(maximums[wheat]), wheat_price)
+	catalog.good_default_price = prices
+	catalog.good_max_price = maximums
+	var ext := _new_ext(catalog)
+	var profile: Dictionary = load("res://data/economy/default_economy.tres").to_native_profile()
+	profile.market_cycle_days = 1
+	profile.market_runtime_mode = "ACTIVE"
+	profile.startup_demand_runtime_mode = "OFF"
+	var seed := 2250 + int(funds / 100000)
+	_expect("household response country configures",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 1, seed))
+	_expect("household response runtime configures", bool(
+		ext.configure_economy(catalog, profile, 1, seed).get("ok", false)))
+	var signatures: PackedStringArray = catalog.signature_keys
+	var forager := signatures.find("forager|default")
+	var merchant := signatures.find("merchant|default")
+	var stock := PackedInt64Array()
+	stock.resize(goods.size())
+	stock.fill(1000000000)
+	_expect("household response bootstraps", bool(ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0]),
+		"signature_ids": PackedInt32Array([forager, merchant]),
+		"population": PackedInt64Array([10, 10]),
+		"funds": PackedInt64Array([funds, funds]),
+	}, {"stock": stock}).get("ok", false)))
+	var report := _run_day(ext, 0)
+	_expect("household response cycle commits",
+		bool(report.get("done", false)) and not bool(report.get("fatal", false)))
+	return _good_value(ext.get_market_cell_snapshot(0), "demand_ema", "wheat_grain")
+
+func _test_cultivated_staple_zero_inventory_demand(compiled: Dictionary) -> void:
+	var catalog := compiled.duplicate(true)
+	catalog.erase("ok")
+	var ext := _new_ext(catalog)
+	var profile: Dictionary = load("res://data/economy/default_economy.tres").to_native_profile()
+	profile.market_cycle_days = 1
+	profile.market_runtime_mode = "ACTIVE"
+	profile.startup_demand_runtime_mode = "ACTIVE"
+	_expect("zero-inventory staple country configures",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 2251))
+	_expect("zero-inventory staple runtime configures", bool(
+		ext.configure_economy(catalog, profile, 1, 2251).get("ok", false)))
+	var signatures: PackedStringArray = catalog.signature_keys
+	var forager := signatures.find("forager|default")
+	var merchant := signatures.find("merchant|default")
+	var goods: PackedStringArray = catalog.good_ids
+	var stock := PackedInt64Array()
+	stock.resize(goods.size())
+	stock.fill(0)
+	_expect("zero-inventory staple population bootstraps", bool(ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0]),
+		"signature_ids": PackedInt32Array([forager, merchant]),
+		"population": PackedInt64Array([10, 10]),
+		"funds": PackedInt64Array([1000000, 1000000]),
+	}, {"stock": stock}).get("ok", false)))
+	var report := _run_day(ext, 0)
+	var market := ext.get_market_cell_snapshot(0)
+	_expect("zero-inventory staple cycle commits",
+		bool(report.get("done", false)) and not bool(report.get("fatal", false)))
+	for good in ["wheat_grain", "rice_grain", "corn_grain"]:
+		_expect("zero-inventory cultivated staple emits demand: %s" % good,
+			_good_value(market, "demand_ema", good) > 0)
+	_expect("startup demand remains transient and off EMA",
+		_good_value(market, "business_demand_ema", "wheat_grain") == 0)
 
 func _test_bullion_absorption_feedback(ext: Object, goods: PackedStringArray,
 		types: PackedStringArray) -> void:

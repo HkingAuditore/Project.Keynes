@@ -271,10 +271,11 @@ func _audit(catalog: Dictionary) -> void:
 	_audit_two_owner_early_buildings()
 	_audit_zero_cost_starter_construction()
 	_audit_soft_complement_policy(catalog)
-	_expect("network economy catalog has 130 goods", goods.size() == 130)
-	_expect("network economy has 350 production methods", buildings.size() == 350)
+	_audit_household_consumption_contract(catalog)
+	_expect("network economy catalog has 133 goods", goods.size() == 133)
+	_expect("network economy has 363 production methods", buildings.size() == 363)
 	_expect("45 labor, institutional and research professions", professions.size() == 45)
-	_expect("17 differentiated household needs", needs.size() == 17)
+	_expect("20 differentiated household needs", needs.size() == 20)
 	_expect("31 registered natural resources", ResourceRegistryScript.count() == 31)
 	_expect("building catalog references 31 distinct natural resources", resources.size() == 31)
 	_audit_production_climate(catalog, buildings)
@@ -282,6 +283,7 @@ func _audit(catalog: Dictionary) -> void:
 			"indentured_laborer", "apprentice", "journeyman", "manager", "researcher"]:
 		_expect("labor relation profession exists: %s" % relation_profession,
 			professions.find(relation_profession) >= 0)
+
 	for retired_profession in ["knapper", "potter", "bronze_founder", "mason",
 			"printer", "shipwright", "navigator", "steam_engineer", "electrical_engineer",
 			"nuclear_engineer", "software_developer",
@@ -324,7 +326,6 @@ func _audit(catalog: Dictionary) -> void:
 			"technical_household"]))
 	_expect("occupational and status needs compile",
 		needs.has("work_equipment") and needs.has("status_goods"))
-	_audit_household_consumption(catalog)
 	var corn_farm = load("res://data/economy/buildings/landed_estate.tres")
 	var wheat_farm = load("res://data/economy/buildings/wheat_farm.tres")
 	_expect("corn collector remains an estate crop building",
@@ -911,6 +912,143 @@ func _audit(catalog: Dictionary) -> void:
 			goods[good] in ["railway_equipment", "oceanic_vessels"])
 
 
+func _audit_household_consumption_contract(catalog: Dictionary) -> void:
+	var goods: PackedStringArray = catalog.good_ids
+	var needs: PackedStringArray = catalog.need_ids
+	var plans: PackedStringArray = catalog.plan_ids
+	var plan_offsets: PackedInt32Array = catalog.plan_need_offsets
+	var need_stable: PackedInt32Array = catalog.need_stable_ids
+	var need_offsets: PackedInt32Array = catalog.need_variant_offsets
+	var variant_goods: PackedInt32Array = catalog.component_good_ids
+	var variant_components: PackedInt32Array = catalog.variant_component_offsets
+	var wealth_delta: PackedInt32Array = catalog.variant_class_wealth_elasticity_delta_q16
+	var threshold_factor: PackedInt32Array = catalog.variant_class_savings_threshold_factor_q16
+	_expect("class response columns cover every compiled variant",
+		wealth_delta.size() == variant_goods.size() and
+		threshold_factor.size() == variant_goods.size())
+	var good_wealth: PackedInt32Array = catalog.good_household_wealth_elasticity_q16
+	var good_thresholds: PackedInt32Array = catalog.good_household_savings_threshold_months_q16
+	_expect("per-good household response columns align",
+		good_wealth.size() == goods.size() and good_thresholds.size() == goods.size())
+	var wheat_index := goods.find("wheat_grain")
+	var gathered_index := goods.find("gathered_plants")
+	var batteries_index := goods.find("batteries")
+	_expect("cultivated staple has positive wealth response and no savings gate",
+		wheat_index >= 0 and good_wealth[wheat_index] > 0 and
+		good_thresholds[wheat_index] == 0)
+	_expect("subsistence gathering stays immediately available",
+		gathered_index >= 0 and good_thresholds[gathered_index] == 0)
+	_expect("discretionary batteries have a savings gate",
+		batteries_index >= 0 and good_thresholds[batteries_index] > 0)
+	var staples := ["prepared_staples", "bread", "grain", "wheat_grain",
+		"rice_grain", "corn_grain", "potatoes", "gathered_plants"]
+	var expected_variants := {
+		"staple_food": ["prepared_staples", "bread", "grain", "wheat_grain",
+			"rice_grain", "corn_grain", "potatoes", "gathered_plants"],
+		"protein": ["game_meat", "meat", "fish", "canned_fish", "dairy_products"],
+		"produce": ["vegetables", "processed_food"],
+		"food_fat": ["edible_oil"], "seasoning": ["salt", "spices"],
+		"clothing": ["cloth", "fur", "clothing", "footwear"],
+		"housing": ["reed_bundle+bast_fiber", "turf_block+lumber",
+			"adobe_brick+lumber", "raw_stone+lime+lumber", "bricks+lime+lumber",
+			"cement+glass+steel", "concrete+steel+glass", "construction_components"],
+		"household_goods": ["furniture", "leather_goods"],
+		"domestic_wares": ["pottery", "glassware", "metal_housewares"],
+		"hygiene": ["soap", "detergent"],
+		"healthcare": ["medicinal_herbs", "pharmaceuticals"],
+		"home_energy": ["logs", "charcoal", "coal", "natural_gas", "refined_fuel",
+			"electricity"],
+		"transport": ["horses", "automobiles+refined_fuel"],
+		"communication": ["radio_equipment", "telecom_equipment",
+		"radio_equipment+batteries", "telecom_equipment+batteries"],
+		"education_culture": ["manuscripts", "paper", "printed_materials",
+			"computers"],
+		"recreation": ["beverages", "computers"],
+		"durable_goods": ["household_appliances", "autonomous_systems"],
+		"work_equipment": ["chipped_stone_tools", "bronze_tools", "tools", "precision_tools"],
+		"luxury": ["beverages", "fine_clothing", "fine_furniture"],
+		"status_goods": ["jewelry", "fur"],
+	}
+	var seen_goods := {}
+	for plan_idx in range(plans.size()):
+		var plan_id := String(plans[plan_idx])
+		var begin := int(plan_offsets[plan_idx])
+		var end := int(plan_offsets[plan_idx + 1])
+		var staple_need := -1
+		for row in range(begin, end):
+			var need_id := String(needs[int(need_stable[row])])
+			if need_id == "staple_food":
+				staple_need = row
+			var variant_begin := int(need_offsets[row])
+			var variant_end := int(need_offsets[row + 1])
+			var actual_variants := PackedStringArray()
+			for variant_row in range(variant_begin, variant_end):
+				var component_begin := int(variant_components[variant_row])
+				var component_end := int(variant_components[variant_row + 1])
+				var signature := PackedStringArray()
+				for component_row in range(component_begin, component_end):
+					var component_good := String(goods[int(variant_goods[component_row])])
+					signature.append(component_good)
+					seen_goods[component_good] = true
+				actual_variants.append("+".join(signature))
+			actual_variants.sort()
+			var expected_for_need := PackedStringArray(expected_variants.get(need_id, []))
+			if plan_id == "technical_household" and need_id == "education_culture":
+				expected_for_need = PackedStringArray([
+					"manuscripts+technology_points",
+					"paper+technology_points",
+					"printed_materials+technology_points",
+					"computers+technology_points"])
+			expected_for_need.sort()
+			_expect("plan variant contract: %s/%s" % [plan_id, need_id],
+				actual_variants == expected_for_need)
+			_expect("class response columns align: %s/%s" % [plan_id, need_id],
+				wealth_delta.size() >= variant_end and
+				threshold_factor.size() >= variant_end)
+		_expect("plan has exact eight staple variants: %s" % plan_id,
+			staple_need >= 0 and
+			int(need_offsets[staple_need + 1]) - int(need_offsets[staple_need]) == 8)
+		if staple_need < 0:
+			continue
+		var staple_begin := int(need_offsets[staple_need])
+		var staple_end := int(need_offsets[staple_need + 1])
+		for variant in range(staple_begin, staple_end):
+			var component_begin := int(variant_components[variant])
+			var component_end := int(variant_components[variant + 1])
+			var good := goods[int(variant_goods[component_begin])]
+			_expect("staple good is approved: %s/%s" % [plan_id, good],
+				component_end - component_begin == 1 and good in staples)
+	for required_good in ["glassware", "metal_housewares", "leather_goods"]:
+		_expect("new terminal good exists: %s" % required_good,
+			goods.find(required_good) >= 0)
+	for required_need in ["food_fat", "seasoning", "domestic_wares"]:
+		_expect("new resident need exists: %s" % required_need,
+			needs.find(required_need) >= 0)
+	var actual_household_goods := PackedStringArray()
+	for good_id in seen_goods.keys():
+		actual_household_goods.append(String(good_id))
+	actual_household_goods.sort()
+	var expected_household_goods := PackedStringArray([
+		"prepared_staples", "bread", "grain", "wheat_grain", "rice_grain", "corn_grain",
+		"gathered_plants", "potatoes", "game_meat", "meat", "fish", "canned_fish",
+		"dairy_products", "vegetables", "processed_food", "edible_oil", "salt", "spices",
+		"cloth", "fur", "clothing", "footwear", "reed_bundle", "bast_fiber", "turf_block",
+		"lumber", "adobe_brick", "raw_stone", "lime", "bricks", "cement", "glass", "steel",
+		"concrete", "construction_components", "furniture", "leather_goods", "pottery", "glassware",
+		"metal_housewares", "soap", "detergent", "medicinal_herbs", "pharmaceuticals", "logs",
+		"charcoal", "coal", "natural_gas", "refined_fuel", "electricity", "horses", "automobiles",
+		"radio_equipment", "telecom_equipment", "batteries", "manuscripts", "paper",
+		"printed_materials", "computers", "beverages", "household_appliances", "autonomous_systems",
+		"chipped_stone_tools", "bronze_tools", "tools", "precision_tools", "fine_clothing",
+		"fine_furniture", "jewelry", "technology_points"])
+	expected_household_goods.sort()
+	_expect("direct household good coverage is exact",
+		actual_household_goods == expected_household_goods)
+	for capital_good in ["railway_equipment", "oceanic_vessels", "scientific_instruments"]:
+		_expect("capital good stays outside household demand: %s" % capital_good,
+			not seen_goods.has(capital_good))
+
+
 func _audit_production_climate(catalog: Dictionary,
 		buildings: PackedStringArray) -> void:
 	var profile_ids: PackedStringArray = catalog.get(
@@ -967,244 +1105,8 @@ func _audit_production_climate(catalog: Dictionary,
 
 
 func _audit_household_consumption(catalog: Dictionary) -> void:
-	var goods: PackedStringArray = catalog.good_ids
-	var needs: PackedStringArray = catalog.need_ids
-	var need_names: Dictionary = EconomyCatalogScript.need_display_names()
-	var expected_need_names := {
-		"staple_food": "食品", "protein": "食品", "produce": "食品",
-		"clothing": "衣着", "housing": "居住维护", "household_goods": "家庭用品",
-		"hygiene": "清洁卫生", "healthcare": "医疗保健", "home_energy": "家庭能源",
-		"transport": "个人交通", "communication": "通信",
-		"education_culture": "教育与文化", "recreation": "休闲娱乐",
-		"durable_goods": "耐用消费品", "work_equipment": "职业装备",
-		"luxury": "奢侈消费", "status_goods": "身份消费",
-	}
-	for need_id in expected_need_names:
-		_expect("household need has Chinese display name: %s" % need_id,
-			String(need_names.get(need_id, "")) == String(expected_need_names[need_id]))
-
-	var household_good_indices: PackedInt32Array = catalog.component_good_ids
-	var actual_household_goods := PackedStringArray()
-	for good_idx in household_good_indices:
-		if good_idx >= 0 and good_idx < goods.size() and not actual_household_goods.has(goods[good_idx]):
-			actual_household_goods.append(goods[good_idx])
-	actual_household_goods.sort()
-	var expected_household_goods := PackedStringArray([
-		"prepared_staples", "bread", "grain", "wheat_grain", "rice_grain",
-		"corn_grain", "gathered_plants", "potatoes", "game_meat", "meat", "fish",
-		"canned_fish", "dairy_products", "vegetables", "processed_food", "cloth", "fur",
-		"clothing", "footwear", "construction_components", "pottery", "furniture", "soap",
-		"detergent", "medicinal_herbs", "pharmaceuticals", "logs", "coal", "natural_gas",
-		"refined_fuel", "horses", "automobiles", "radio_equipment", "telecom_equipment",
-		"manuscripts", "printed_materials", "computers", "beverages", "household_appliances",
-		"autonomous_systems", "chipped_stone_tools", "bronze_tools", "tools", "precision_tools",
-		"fine_clothing", "fine_furniture", "jewelry", "spices", "technology_points",
-	])
-	expected_household_goods.sort()
-	_expect("direct household good coverage is exact",
-		actual_household_goods == expected_household_goods)
-	for capital_good in ["railway_equipment", "oceanic_vessels", "scientific_instruments",
-			"electricity"]:
-		_expect("capital or cycle-flow good stays outside household demand: %s" % capital_good,
-			not household_good_indices.has(goods.find(capital_good)))
-
-	var plan_ids: PackedStringArray = catalog.plan_ids
-	var plan_offsets: PackedInt32Array = catalog.plan_need_offsets
-	var need_stable_ids: PackedInt32Array = catalog.need_stable_ids
-	var need_base: PackedInt64Array = catalog.need_base_qty_per_person
-	var need_wealth: PackedInt32Array = catalog.need_wealth_elasticity_q16
-	var need_min: PackedInt32Array = catalog.need_wealth_min_q16
-	var need_max: PackedInt32Array = catalog.need_wealth_max_q16
-	var need_variant_offsets: PackedInt32Array = catalog.need_variant_offsets
-	var variant_preferences: PackedInt32Array = catalog.variant_preference_q16
-	var variant_price: PackedInt32Array = catalog.variant_price_elasticity_q16
-	var variant_component_offsets: PackedInt32Array = catalog.variant_component_offsets
-	var component_quantities: PackedInt64Array = catalog.component_qty_per_need
-	var core_needs := ["staple_food", "protein", "produce", "clothing", "housing",
-		"household_goods", "hygiene", "healthcare", "home_energy"]
-	var expected_plan_needs := {
-		"plan_unemployed": ["staple_food", "protein", "produce"],
-		"survival_household": core_needs,
-		"hunter_household": core_needs + ["work_equipment"],
-		"agrarian_household": core_needs + ["transport", "work_equipment", "recreation"],
-		"extractive_household": core_needs + ["transport", "work_equipment"],
-		"industrial_worker_household": core_needs + ["transport", "work_equipment"],
-		"artisan_household": core_needs + ["education_culture", "work_equipment", "luxury"],
-		"scholarly_household": core_needs + ["education_culture", "work_equipment", "luxury"],
-		"technical_household": core_needs + ["transport", "communication", "education_culture",
-			"recreation", "durable_goods", "work_equipment", "luxury"],
-		"merchant_household": core_needs + ["transport", "communication", "education_culture",
-			"recreation", "durable_goods", "luxury", "status_goods"],
-		"owner_household": core_needs + ["transport", "communication", "education_culture",
-			"recreation", "durable_goods", "luxury", "status_goods"],
-	}
-	var plan_scales := {
-		"plan_unemployed": [80, 0, 0],
-		"survival_household": [80, 35, 0], "hunter_household": [85, 40, 0],
-		"agrarian_household": [95, 75, 0],
-		"extractive_household": [105, 85, 0], "industrial_worker_household": [100, 85, 0],
-		"artisan_household": [105, 105, 80], "scholarly_household": [105, 105, 80],
-		"technical_household": [110, 125, 120],
-		"merchant_household": [115, 150, 180], "owner_household": [120, 175, 240],
-	}
-	var need_policies := {
-		"staple_food": [550, 0, 4096, 49152, 81920, 98304],
-		"protein": [180, 0, 16384, 32768, 131072, 98304],
-		"produce": [300, 0, 16384, 32768, 131072, 98304],
-		"clothing": [3, 0, 32768, 16384, 196608, 65536],
-		"housing": [5, 0, 32768, 16384, 196608, 65536],
-		"household_goods": [2, 1, 49152, 8192, 262144, 49152],
-		"hygiene": [10, 0, 32768, 16384, 196608, 65536],
-		"healthcare": [3, 0, 32768, 16384, 196608, 32768],
-		"home_energy": [80, 0, 32768, 16384, 196608, 65536],
-		"transport": [3, 1, 49152, 8192, 262144, 49152],
-		"communication": [1, 1, 49152, 8192, 262144, 49152],
-		"education_culture": [2, 1, 49152, 8192, 262144, 49152],
-		"recreation": [3, 1, 49152, 8192, 262144, 49152],
-		"durable_goods": [1, 2, 65536, 4096, 393216, 32768],
-		"work_equipment": [2, 1, 49152, 8192, 262144, 49152],
-		"luxury": [1, 2, 98304, 1024, 524288, 32768],
-		"status_goods": [1, 2, 98304, 1024, 524288, 32768],
-		"quality_of_life": [2, 0, 131072, 1024, 524288, 65536],
-	}
-	var expected_variants := {
-		"staple_food": ["prepared_staples", "bread", "grain", "wheat_grain",
-			"rice_grain", "corn_grain", "potatoes", "gathered_plants"],
-		"protein": ["game_meat", "meat", "fish", "canned_fish", "dairy_products"],
-		"produce": ["vegetables", "processed_food"],
-		"clothing": ["cloth", "fur", "clothing", "footwear"],
-		"housing": ["construction_components"], "household_goods": ["pottery", "furniture"],
-		"hygiene": ["soap", "detergent"],
-		"healthcare": ["medicinal_herbs", "pharmaceuticals"],
-		"home_energy": ["logs", "coal", "natural_gas", "refined_fuel"],
-		"transport": ["horses", "automobiles+refined_fuel"],
-		"communication": ["radio_equipment", "telecom_equipment"],
-		"education_culture": ["manuscripts", "printed_materials", "computers"],
-		"recreation": ["beverages", "computers"],
-		"durable_goods": ["household_appliances", "autonomous_systems"],
-		"work_equipment": ["chipped_stone_tools", "bronze_tools", "tools", "precision_tools"],
-		"luxury": ["beverages", "fine_clothing", "fine_furniture"],
-		"status_goods": ["jewelry", "fur", "spices"],
-		"quality_of_life": ["fur", "cloth", "processed_food", "furniture"],
-	}
-	var allowed_cross_uses := {
-		"refined_fuel": ["home_energy", "transport"],
-		"computers": ["education_culture", "recreation"],
-		"beverages": ["recreation", "luxury"],
-		"cloth": ["clothing", "quality_of_life"],
-		"furniture": ["household_goods", "quality_of_life"],
-		"processed_food": ["produce", "quality_of_life"],
-		"fur": ["clothing", "status_goods", "quality_of_life"],
-	}
-	for plan_idx in range(plan_ids.size()):
-		var plan_id := String(plan_ids[plan_idx])
-		var plan_needs := PackedStringArray()
-		for cursor in range(plan_offsets[plan_idx], plan_offsets[plan_idx + 1]):
-			plan_needs.append(needs[need_stable_ids[cursor]])
-		var expected_needs: Array = expected_plan_needs.get(plan_id, [])
-		var scales: Array = plan_scales.get(plan_id, [])
-		var exact := plan_needs.size() <= 16 \
-			and ",".join(plan_needs) == ",".join(expected_needs) and scales.size() == 3
-		var good_uses := {}
-		for local_need_idx in range(plan_needs.size()):
-			var cursor := int(plan_offsets[plan_idx]) + local_need_idx
-			var need_id := String(plan_needs[local_need_idx])
-			var policy: Array = need_policies.get(need_id, [])
-			if policy.size() != 6:
-				exact = false
-				continue
-			var expected_base := 2 if need_id == "quality_of_life" else maxi(1,
-				int(floor((float(policy[0]) * float(scales[policy[1]]) + 50.0) / 100.0)))
-			exact = exact and need_base[cursor] == expected_base \
-				and need_wealth[cursor] == policy[2] and need_min[cursor] == policy[3] \
-				and need_max[cursor] == policy[4]
-			var variant_begin := int(need_variant_offsets[cursor])
-			var variant_end := int(need_variant_offsets[cursor + 1])
-			exact = exact and variant_end > variant_begin and variant_end - variant_begin <= 8
-			var actual_variants := PackedStringArray()
-			for variant_idx in range(variant_begin, variant_end):
-				exact = exact and variant_price[variant_idx] == policy[5]
-				var component_begin := int(variant_component_offsets[variant_idx])
-				var component_end := int(variant_component_offsets[variant_idx + 1])
-				exact = exact and component_end > component_begin \
-					and component_end - component_begin <= 4
-				var signature := PackedStringArray()
-				for component_idx in range(component_begin, component_end):
-					var good_id := String(goods[household_good_indices[component_idx]])
-					signature.append(good_id)
-					var expected_quantity := 1000
-					if need_id == "staple_food":
-						expected_quantity = 650 if good_id in [
-							"prepared_staples", "bread"] else (
-							800 if good_id in ["grain", "wheat_grain", "rice_grain",
-								"corn_grain", "potatoes"] else 1000)
-					elif good_id == "technology_points":
-						expected_quantity = 100
-					exact = exact and component_quantities[component_idx] == \
-						expected_quantity
-					if need_id == "staple_food":
-						var expected_preference := 131072 if good_id in [
-							"prepared_staples", "bread"] else (
-							98304 if good_id in ["grain", "wheat_grain", "rice_grain",
-								"corn_grain", "potatoes"] else 65536)
-						exact = exact and variant_preferences[variant_idx] == \
-							expected_preference
-					var uses: Array = good_uses.get(good_id, [])
-					if not uses.has(need_id):
-						uses.append(need_id)
-					good_uses[good_id] = uses
-				actual_variants.append("+".join(signature))
-			actual_variants.sort()
-			var expected_need_variants := PackedStringArray(expected_variants.get(need_id, []))
-			if plan_id == "technical_household" and need_id == "education_culture":
-				expected_need_variants = PackedStringArray([
-					"manuscripts+technology_points",
-					"printed_materials+technology_points",
-					"computers+technology_points"])
-			expected_need_variants.sort()
-			exact = exact and actual_variants == expected_need_variants
-		for good_id in good_uses:
-			var uses: Array = good_uses[good_id]
-			if uses.size() <= 1:
-				continue
-			var expected_uses: Array = allowed_cross_uses.get(good_id, [])
-			var filtered_expected := PackedStringArray()
-			for expected_use in expected_uses:
-				if plan_needs.has(expected_use):
-					filtered_expected.append(expected_use)
-			var actual_uses := PackedStringArray(uses)
-			filtered_expected.sort()
-			actual_uses.sort()
-			exact = exact and allowed_cross_uses.has(good_id) \
-				and actual_uses == filtered_expected
-		_expect("consumption prototype compiles exact policy and classification: %s" % plan_id, exact)
-
-	var expected_professions := {
-		"owner_household": ["landlord", "industrialist"],
-		"merchant_household": ["merchant"],
-		"survival_household": ["subsistence_farmer", "forager", "enslaved_laborer", "serf", "apprentice"],
-		"hunter_household": ["hunter"],
-		"agrarian_household": ["agricultural_worker", "pastoralist", "fisher",
-			"forestry_worker", "tenant_farmer", "indentured_laborer"],
-		"extractive_household": ["miner", "petroleum_worker"],
-		"industrial_worker_household": ["worker", "construction_worker", "industrial_worker", "transport_worker"],
-		"artisan_household": ["artisan", "metallurgist", "guild_master", "journeyman"],
-		"scholarly_household": ["lorekeeper", "scribe", "scholar", "natural_philosopher"],
-		"technical_household": ["machinist", "technician", "engineer", "chemist", "electrician",
-			"manager", "researcher", "scientist", "research_scientist", "data_scientist",
-			"ai_researcher"],
-	}
-	var professions: PackedStringArray = catalog.profession_ids
-	var ethnicity_count: int = (catalog.ethnicity_ids as PackedStringArray).size()
-	var signature_plan_ids: PackedInt32Array = catalog.signature_plan_ids
-	for plan_id in expected_professions:
-		var expected_plan_idx := plan_ids.find(plan_id)
-		var mapping_ok := expected_plan_idx >= 0
-		for profession_id in expected_professions[plan_id]:
-			var profession_idx := professions.find(String(profession_id))
-			mapping_ok = mapping_ok and profession_idx >= 0 \
-				and int(signature_plan_ids[profession_idx * ethnicity_count]) == expected_plan_idx
-		_expect("profession group uses expected consumption prototype: %s" % plan_id, mapping_ok)
+	# Compatibility entry point for older callers; the contract above is authoritative.
+	_audit_household_consumption_contract(catalog)
 
 
 func _audit_explicit_candidate_validation() -> void:

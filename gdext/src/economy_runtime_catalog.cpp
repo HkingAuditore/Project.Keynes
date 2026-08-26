@@ -18,6 +18,9 @@ using namespace godot;
 using namespace variant_helpers;
 
 namespace {
+constexpr std::array<int32_t, 9> HOUSEHOLD_WEALTH_ANCHORS_Q16 = {
+    4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576};
+
 std::vector<uint8_t> economy_packed_u8(const Dictionary &d, const char *key) {
     std::vector<uint8_t> out;
     const StringName k(key);
@@ -678,6 +681,10 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
     _good_max_price = packed_i32(catalog, "good_max_price");
     _good_price_adjust_q16 = packed_i32(catalog, "good_price_adjust_q16");
     _good_demand_price_elasticity_q16 = packed_i32(catalog, "good_demand_price_elasticity_q16");
+    _good_household_wealth_elasticity_q16 = packed_i32(
+        catalog, "good_household_wealth_elasticity_q16");
+    _good_household_savings_threshold_months_q16 = packed_i32(
+        catalog, "good_household_savings_threshold_months_q16");
     _good_demand_ema_alpha_q16 = packed_i32(catalog, "good_demand_ema_alpha_q16");
     const std::vector<int32_t> good_inventory_target_ratios_q16 = packed_i32(
         catalog, "good_inventory_target_ratios_q16");
@@ -742,10 +749,18 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
         _good_supply_ema_alpha_q16.assign(goods, Q16_ONE / 8);
     if (_good_cost_ema_alpha_q16.empty())
         _good_cost_ema_alpha_q16.assign(goods, Q16_ONE / 16);
+    // Legacy synthetic catalogs predate class/good wealth choice. Neutral
+    // values preserve their exact behavior without weakening formal content.
+    if (_good_household_wealth_elasticity_q16.empty())
+        _good_household_wealth_elasticity_q16.assign(goods, 0);
+    if (_good_household_savings_threshold_months_q16.empty())
+        _good_household_savings_threshold_months_q16.assign(goods, 0);
     if (_good_default_price.size() != goods || _good_default_stock.size() != goods ||
         _good_min_price.size() != goods || _good_max_price.size() != goods ||
         _good_price_adjust_q16.size() != goods ||
         _good_demand_price_elasticity_q16.size() != goods ||
+        _good_household_wealth_elasticity_q16.size() != goods ||
+        _good_household_savings_threshold_months_q16.size() != goods ||
         _good_demand_ema_alpha_q16.size() != goods ||
         _good_target_inventory_days_q16.size() != goods ||
         _good_inventory_weight_q16.size() != goods ||
@@ -794,6 +809,10 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
         if (_good_default_price[i] < PRICE_NUMERIC_GUARD_MIN || _good_min_price[i] < 0 ||
             _good_max_price[i] < _good_min_price[i] || _good_default_stock[i] < 0 ||
             _good_demand_price_elasticity_q16[i] <= 0 ||
+            _good_household_wealth_elasticity_q16[i] < -Q16_ONE ||
+            _good_household_wealth_elasticity_q16[i] > Q16_ONE * 2 ||
+            _good_household_savings_threshold_months_q16[i] < 0 ||
+            _good_household_savings_threshold_months_q16[i] > Q16_ONE * 120 ||
             _good_excess_demand_weight_q16[i] < 0 ||
             _good_cost_anchor_weight_q16[i] < 0 ||
             _good_inactive_reversion_weight_q16[i] < 0 ||
@@ -912,11 +931,21 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
     }
     const std::vector<int32_t> variant_preference = packed_i32(catalog, "variant_preference_q16");
     const std::vector<int32_t> variant_elasticity = packed_i32(catalog, "variant_price_elasticity_q16");
+    std::vector<int32_t> variant_class_wealth_delta = packed_i32(
+        catalog, "variant_class_wealth_elasticity_delta_q16");
+    std::vector<int32_t> variant_class_threshold_factor = packed_i32(
+        catalog, "variant_class_savings_threshold_factor_q16");
     const std::vector<int32_t> variant_env = packed_i32(catalog, "variant_preference_env_curve_ids");
     const std::vector<int32_t> variant_component_offsets = packed_i32(catalog, "variant_component_offsets");
     const size_t variant_count = variant_preference.size();
+    if (variant_class_wealth_delta.empty())
+        variant_class_wealth_delta.assign(variant_count, 0);
+    if (variant_class_threshold_factor.empty())
+        variant_class_threshold_factor.assign(variant_count, Q16_ONE);
     if (need_variant_offsets.back() != static_cast<int32_t>(variant_count) ||
         variant_elasticity.size() != variant_count || variant_env.size() != variant_count ||
+        variant_class_wealth_delta.size() != variant_count ||
+        variant_class_threshold_factor.size() != variant_count ||
         variant_component_offsets.size() != variant_count + 1 || variant_component_offsets.front() != 0) {
         error = "market_v2_variant_columns_invalid";
         return false;
@@ -965,18 +994,31 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
                      need_living_weights[need_stable[n]],
                      need_satisfaction_tiers[need_stable[n]],
                      need_satisfaction_weights[need_stable[n]]};
+        for (size_t anchor = 0; anchor < HOUSEHOLD_WEALTH_ANCHORS_Q16.size(); ++anchor) {
+            _needs[n].wealth_lut_q16[anchor] = static_cast<int32_t>(
+                std::clamp<int64_t>(pow_q16(
+                    HOUSEHOLD_WEALTH_ANCHORS_Q16[anchor],
+                    need_wealth_elasticity[n], _saturation_count),
+                    0, std::numeric_limits<int32_t>::max()));
+        }
     }
     _variants.resize(variant_count);
     for (size_t v = 0; v < variant_count; ++v) {
         const int32_t comp_begin = variant_component_offsets[v];
         const int32_t comp_count = variant_component_offsets[v + 1] - comp_begin;
         if (variant_preference[v] < 0 || variant_elasticity[v] < 0 ||
+            variant_class_wealth_delta[v] < -Q16_ONE ||
+            variant_class_wealth_delta[v] > Q16_ONE * 2 ||
+            variant_class_threshold_factor[v] < 0 ||
+            variant_class_threshold_factor[v] > Q16_ONE * 4 ||
             variant_env[v] < -1 || variant_env[v] >= static_cast<int32_t>(_environment_curves.size()) ||
             comp_count <= 0 || comp_count > MAX_COMPONENTS_PER_VARIANT) {
             error = "market_v2_variant_entry_invalid";
             return false;
         }
         int64_t reference_cost = 0;
+        int64_t weighted_wealth_elasticity = 0;
+        int32_t savings_threshold_months_q16 = 0;
         for (int32_t k = 0; k < comp_count; ++k) {
             const int32_t component = comp_begin + k;
             if (component_goods[component] < 0 || component_goods[component] >= static_cast<int32_t>(goods) ||
@@ -984,12 +1026,42 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
                 error = "market_v2_component_entry_invalid";
                 return false;
             }
-            reference_cost = saturating_add(reference_cost,
-                mul_div_sat(component_qty[component], _good_default_price[component_goods[component]],
-                            GOODS_SCALE, _saturation_count), _saturation_count);
+            const int64_t component_cost = mul_div_sat(
+                component_qty[component], _good_default_price[component_goods[component]],
+                GOODS_SCALE, _saturation_count);
+            reference_cost = saturating_add(
+                reference_cost, component_cost, _saturation_count);
+            weighted_wealth_elasticity = saturating_add(
+                weighted_wealth_elasticity, saturating_mul(
+                    component_cost,
+                    _good_household_wealth_elasticity_q16[component_goods[component]],
+                    _saturation_count), _saturation_count);
+            savings_threshold_months_q16 = std::max(
+                savings_threshold_months_q16,
+                _good_household_savings_threshold_months_q16[
+                    component_goods[component]]);
         }
         _variants[v] = {comp_begin, comp_count, variant_preference[v], variant_elasticity[v],
                         variant_env[v], std::max<int64_t>(1, reference_cost)};
+        const int32_t base_wealth_elasticity = reference_cost > 0
+            ? static_cast<int32_t>(weighted_wealth_elasticity / reference_cost) : 0;
+        _variants[v].wealth_elasticity_q16 = static_cast<int32_t>(
+            std::clamp<int64_t>(
+                static_cast<int64_t>(base_wealth_elasticity) +
+                    variant_class_wealth_delta[v],
+                -Q16_ONE, Q16_ONE * 2));
+        _variants[v].savings_threshold_months_q16 = static_cast<int32_t>(
+            std::clamp<int64_t>(mul_div_sat(
+                savings_threshold_months_q16,
+                variant_class_threshold_factor[v], Q16_ONE,
+                _saturation_count), 0, Q16_ONE * 480));
+        for (size_t anchor = 0; anchor < HOUSEHOLD_WEALTH_ANCHORS_Q16.size(); ++anchor) {
+            _variants[v].wealth_lut_q16[anchor] = static_cast<int32_t>(
+                std::clamp<int64_t>(pow_q16(
+                    HOUSEHOLD_WEALTH_ANCHORS_Q16[anchor],
+                    _variants[v].wealth_elasticity_q16, _saturation_count),
+                    0, std::numeric_limits<int32_t>::max()));
+        }
     }
     _components.resize(component_goods.size());
     for (size_t c = 0; c < component_goods.size(); ++c) {
