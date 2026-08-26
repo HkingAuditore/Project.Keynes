@@ -206,10 +206,15 @@ void NativeEconomyRuntime::fill_colonization_kit_buffer(
         int64_t contribution_numerator = 0;
         int64_t contribution_denominator = 1;
     };
-    auto add_candidate = [](std::vector<BufferCandidate> &candidates,
+    auto add_candidate = [&](std::vector<BufferCandidate> &candidates,
                             int32_t good, int64_t numerator,
                             int64_t denominator) {
-        if (good < 0 || numerator <= 0 || denominator <= 0) return;
+        // A colonization bridge may only use goods the source country has
+        // actually unlocked.  Consumption catalogs contain future-era
+        // variants as well, but those must not become present-day kit
+        // requirements or be reported as missing stock.
+        if (good < 0 || numerator <= 0 || denominator <= 0 ||
+            !good_production_available(source_cell, good, false)) return;
         for (const BufferCandidate &candidate : candidates)
             if (candidate.good_id == good) return;
         candidates.push_back({good, numerator, denominator});
@@ -577,8 +582,12 @@ bool NativeEconomyRuntime::plan_colonization_kit(
                              ++candidate) {
                             if (candidate >= 0 && candidate < static_cast<int32_t>(
                                     _building_construction_candidates.size())) {
-                                missing->push_back(
-                                    _building_construction_candidates[candidate].good_id);
+                                const int32_t missing_good =
+                                    _building_construction_candidates[candidate].good_id;
+                                if (good_production_available(
+                                        source_cell, missing_good, false)) {
+                                    missing->push_back(missing_good);
+                                }
                             }
                         }
                     }
