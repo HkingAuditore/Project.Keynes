@@ -102,12 +102,12 @@ func _test_two_and_ten_year_attractor(compiled: Dictionary) -> void:
 
 func _test_no_building_has_zero_food_capacity(compiled: Dictionary) -> void:
 	var runtime := _configured_population_world(compiled, false, 1, 15, 2312)
-	var before := runtime.get_population_cell_summary(0)
+	var before: Dictionary = runtime.get_population_cell_summary(0)
 	_expect("resources without buildings do not create carrying capacity",
 		int(before.get("carrying_k_geo", -1)) == 0 and
 		int(before.get("carrying_k_eff", -1)) == 0)
 	_run_cycle(runtime, 0)
-	var after := runtime.get_population_cell_summary(0)
+	var after: Dictionary = runtime.get_population_cell_summary(0)
 	_expect("first cycle without food flow remains unconstrained",
 		int(after.get("carrying_schema_version", 0)) == 2 and
 		int(after.get("local_food_capacity_persons", -1)) == 0 and
@@ -305,7 +305,8 @@ func _test_small_population_birth_residual_save_restore(compiled: Dictionary) ->
 	births.fill(429496730)
 	deaths.fill(0)
 	weights.fill(0)
-	# One person accumulates just over half a Q32 birth per five-day cycle.
+	# With the fixture's neutral satisfaction profile, one person accumulates
+	# roughly one quarter of a Q32 birth per five-day cycle.
 	catalog.signature_birth_rate_q32 = births
 	catalog.signature_death_rate_q32 = deaths
 	catalog.signature_satisfaction_birth_weight_q16 = weights
@@ -326,25 +327,28 @@ func _test_small_population_birth_residual_save_restore(compiled: Dictionary) ->
 		int(first_report.get("births", -1)) == 0 and
 		int(source.get_population_cell_summary(0).population) == 1)
 	var saved := _save(source)
-	_expect("PKEC v42 saves accumulated birth residual and support EMA",
-		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 43)
+	_expect("PKEC v45 saves accumulated birth residual and support EMA",
+		bool(saved.get("ok", false)) and int(saved.get("schema", 0)) == 45)
 	var restored := _new_ext(1, catalog)
 	_expect("small-population restored country configures",
 		CountryTestHelper.configure_all_technologies(restored, catalog, 1, 2304))
 	_expect("small-population restored economy configures",
 		bool(restored.configure_economy(catalog, profile, 1, 2304).get("ok", false)))
 	var restore_result := _restore(restored, saved.get("chunks", []))
-	_expect("PKEC v42 restores accumulated birth residual",
+	_expect("PKEC v45 restores accumulated birth residual",
 		bool(restore_result.get("ok", false)) and
 		source.get_economy_state_hash() == restored.get_economy_state_hash())
-	var source_second := _run_cycle(source, 1)
-	var restored_second := _run_cycle(restored, 1)
+	var source_second: Dictionary = {}
+	var restored_second: Dictionary = {}
+	for cycle in range(1, 4):
+		source_second = _run_cycle(source, cycle)
+		restored_second = _run_cycle(restored, cycle)
 	print("  small-pop residual source_births=%d restored_births=%d source_pop=%d restored_pop=%d source_hash=%d restored_hash=%d" % [
 		int(source_second.get("births", 0)), int(restored_second.get("births", 0)),
 		int(source.get_population_cell_summary(0).population),
 		int(restored.get_population_cell_summary(0).population),
 		int(source.get_economy_state_hash()), int(restored.get_economy_state_hash())])
-	_expect("small population deterministically births on the next cycle",
+	_expect("small population deterministically births when residual crosses Q32",
 		int(source_second.get("births", 0)) == 1 and
 		int(restored_second.get("births", 0)) == 1 and
 		int(source.get_population_cell_summary(0).population) == 2 and
@@ -404,6 +408,8 @@ func _logistic_profile(workers: bool) -> Dictionary:
 	var profile = load("res://data/economy/default_economy.tres").to_native_profile()
 	profile.market_runtime_mode = "ACTIVE"
 	profile.market_cycle_days = 5
+	# Birth-rate fixtures model one complete five-day market cycle.
+	profile.economy_cadence_force_market_days = 5
 	profile.starvation_death_rate_q32 = 0
 	profile.worker_enabled = workers
 	profile.worker_market_threshold = 1
