@@ -31,8 +31,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         error = "save_chunk_header_invalid";
         return false;
     }
-    if (schema != SCHEMA_VERSION && schema != 45 && schema != 44 && schema != 43 &&
-        schema != 42 && schema != 41) {
+    if (schema != SCHEMA_VERSION && schema != 46 && schema != 45 &&
+        schema != 44 && schema != 43 && schema != 42 && schema != 41) {
         error = schema <= 31 ? "economy_save_v31_or_earlier_unsupported" :
             (schema == 32 ? "economy_save_v32_or_earlier_unsupported" :
             "economy_save_pre_family_effect_schema_unsupported");
@@ -1110,6 +1110,19 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 error = "save_building_business_state_payload_truncated";
                 return false;
             }
+            if (_restore.schema_version >= 47 &&
+                (!read_le(bytes, cursor, group.last_market_receipt) ||
+                 !read_le(bytes, cursor, group.last_bullion_mint_receipt) ||
+                 !read_le(bytes, cursor, group.last_producer_support_receipt) ||
+                 !read_le(bytes, cursor, group.last_business_tax_paid) ||
+                 !read_le(bytes, cursor, group.last_business_subsidy_received) ||
+                 !read_le(bytes, cursor, group.last_maintenance_due) ||
+                 !read_le(bytes, cursor, group.last_observed_capacity_days_q16) ||
+                 !read_le(bytes, cursor, group.last_quoted_market_receipt) ||
+                 !read_le(bytes, cursor, group.last_quoted_operating_cost))) {
+                error = "save_building_fact_quote_payload_truncated";
+                return false;
+            }
             if (!read_le(bytes, cursor, roles) || group.cell < 0 || group.cell >= _cell_count ||
                 group.type_id < 0 || group.type_id >= static_cast<int32_t>(_building_types.size()) ||
                 group.owner_signature_id < 0 ||
@@ -1128,6 +1141,15 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 group.operating_state > 1 || group.merchant_debt_principal < 0 ||
                 group.merchant_debt_premium < 0 ||
                 group.last_in_kind_livelihood_value < 0 ||
+                group.last_market_receipt < 0 ||
+                group.last_bullion_mint_receipt < 0 ||
+                group.last_producer_support_receipt < 0 ||
+                group.last_business_tax_paid < 0 ||
+                group.last_business_subsidy_received < 0 ||
+                group.last_maintenance_due < 0 ||
+                group.last_observed_capacity_days_q16 < 0 ||
+                group.last_quoted_market_receipt < 0 ||
+                group.last_quoted_operating_cost < 0 ||
                 ((group.merchant_debt_principal > 0 || group.merchant_debt_premium > 0) &&
                  group.merchant_debt_term_cycles_left == 0 &&
                  group.merchant_debt_delinquent_cycles == 0)) {

@@ -393,6 +393,17 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             append_le<int64_t>(payload, group.merchant_debt_principal);
             append_le<int64_t>(payload, group.merchant_debt_premium);
             append_le<int64_t>(payload, group.last_in_kind_livelihood_value);
+            // v47 appends fact/quote diagnostics after the legacy business
+            // payload so v41-v46 readers keep their role spans aligned.
+            append_le<int64_t>(payload, group.last_market_receipt);
+            append_le<int64_t>(payload, group.last_bullion_mint_receipt);
+            append_le<int64_t>(payload, group.last_producer_support_receipt);
+            append_le<int64_t>(payload, group.last_business_tax_paid);
+            append_le<int64_t>(payload, group.last_business_subsidy_received);
+            append_le<int64_t>(payload, group.last_maintenance_due);
+            append_le<int64_t>(payload, group.last_observed_capacity_days_q16);
+            append_le<int64_t>(payload, group.last_quoted_market_receipt);
+            append_le<int64_t>(payload, group.last_quoted_operating_cost);
             const int32_t roles = _building_types[group.type_id].employee_count;
             append_le<int32_t>(payload, roles);
             for (int32_t r = 0; r < roles; ++r) {

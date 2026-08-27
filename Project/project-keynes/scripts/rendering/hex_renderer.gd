@@ -323,8 +323,8 @@ var terrain_materials_enabled: bool = true
 # 积压兜底：待处理批次数超过该阈值时，存量批次与新单元整体去重合并后重新切批，
 # 避免同一 chunk 在多个批次里被反复重建的复利积压。
 @export_range(2, 64, 1) var detail_scatter_merge_batch_threshold: int = 8
-@export var detail_scatter_refresh_log_enabled: bool = true
-@export var detail_scatter_rebuild_log_enabled: bool = true
+@export var detail_scatter_refresh_log_enabled: bool = false
+@export var detail_scatter_rebuild_log_enabled: bool = false
 @export_range(0.0, 100.0, 0.25) var detail_scatter_slow_layer_ms: float = 2.0
 # 21 层清单接入 + 散布配额化之后总实例数显著上升，旧的 120000 会让全局预算长期
 # 触顶、所有层被同比稀释，反过来又抹平生物群系差异。
@@ -1014,7 +1014,7 @@ func queue_detail_scatter_changes(changes) -> void:
 		"batch_chunks": int(_last_detail_refresh_report.get("batch_chunks", 0)),
 		"elapsed_ms": 0.0,
 	}
-	if detail_scatter_refresh_log_enabled:
+	if detail_scatter_refresh_log_enabled and PKLog.enabled:
 		print("[detail_scatter/QUEUE] succession active_cells=%d pending_batches=%d queued_chunks=%d chunks_per_frame=%d chunk_ms_budget=%.2f cells_per_batch=%d" % [
 			_detail_refresh_indices.size(),
 			_detail_refresh_batches.size(),
@@ -1364,12 +1364,13 @@ func _drain_detail_refresh_queue() -> void:
 		_drain_credit_ms = minf(_drain_credit_ms + ms_budget, ms_budget * 2.0)
 	if not _drain_cfg_logged:
 		_drain_cfg_logged = true
-		print("[detail_scatter/DRAIN_CFG] budget_ms=%.2f chunks_per_frame=%d plan_items=%d cells_per_batch=%d chunk_size=%d" % [
-			ms_budget, chunk_budget,
-			maxi(1, detail_scatter_refresh_plan_items_per_frame),
-			maxi(1, detail_scatter_refresh_cells_per_batch),
-			maxi(2, detail_scatter_chunk_size_cells),
-		])
+		if detail_scatter_refresh_log_enabled and PKLog.enabled:
+			print("[detail_scatter/DRAIN_CFG] budget_ms=%.2f chunks_per_frame=%d plan_items=%d cells_per_batch=%d chunk_size=%d" % [
+				ms_budget, chunk_budget,
+				maxi(1, detail_scatter_refresh_plan_items_per_frame),
+				maxi(1, detail_scatter_refresh_cells_per_batch),
+				maxi(2, detail_scatter_chunk_size_cells),
+			])
 	var t0 := Time.get_ticks_usec()
 	if _detail_refresh_queue.is_empty():
 		var has_pending_work := detail_work_pending
@@ -1455,7 +1456,7 @@ func _drain_detail_refresh_queue() -> void:
 				_last_detail_cache_update_ms += float(timing.get("cache_update_ms", 0.0))
 				_last_detail_assemble_ms += float(timing.get("assemble_ms", 0.0))
 				_last_detail_upload_ms += float(timing.get("native_apply_ms", 0.0))
-			if detail_scatter_refresh_log_enabled and layer.has_method("get_scatter_diagnostics"):
+			if detail_scatter_refresh_log_enabled and PKLog.enabled and layer.has_method("get_scatter_diagnostics"):
 				var d: Dictionary = layer.get_scatter_diagnostics()
 				if layer_elapsed >= detail_scatter_slow_layer_ms or float(d.get("rebuild_ms", 0.0)) >= detail_scatter_slow_layer_ms:
 					print("[detail_scatter/SLOW_CHUNK] name=%s wall=%.2fms update=%.2fms path=%s inst=%d cand=%d wrap=%d cells=%d chunks=%d sampled=%d active=%d water=%.2fms ctx=%.2fms knobs=%.2fms native=%.2fms apply=%.2fms remaining=%d missing=%d dropped=%d reason=%s" % [
@@ -1512,7 +1513,7 @@ func _drain_detail_refresh_queue() -> void:
 	# 无 chunk 的帧按 layers_per_frame 渐进推进，避免 20+ 层一次性尖峰。
 	_apply_detail_global_budget(false, done == 0)
 	if _detail_refresh_queue.is_empty() and _detail_plan_phase == DETAIL_PLAN_IDLE:
-		if detail_scatter_refresh_log_enabled:
+		if detail_scatter_refresh_log_enabled and PKLog.enabled:
 			print("[detail_scatter/DONE] batch_cells=%d chunks=%d batch_chunks=%d elapsed=%.2fms pending_batches=%d budget=%s" % [
 				int(_last_detail_refresh_report.get("dirty_cells", 0)),
 				int(_last_detail_refresh_report.get("chunks_done", 0)),
@@ -1746,7 +1747,7 @@ func _apply_detail_global_budget(force_complete: bool = false, allow_apply: bool
 		"budget_total_dirty": _detail_budget_total_dirty,
 		"layer_count": _detail_layers.size(),
 	}
-	if detail_scatter_rebuild_log_enabled and budget > 0 and total > budget:
+	if detail_scatter_rebuild_log_enabled and PKLog.enabled and budget > 0 and total > budget:
 		print("[detail_scatter/BUDGET_CLAMP] total_inst=%d budget=%d visible_fraction=%.3f layers=%d" % [
 			total,
 			budget,
@@ -1764,7 +1765,7 @@ func _mark_detail_budget_total_dirty() -> void:
 
 
 func _log_detail_scatter_rebuild_summary(reason: String) -> void:
-	if not detail_scatter_rebuild_log_enabled:
+	if not detail_scatter_rebuild_log_enabled or not PKLog.enabled:
 		return
 	var reports := detail_scatter_layer_reports()
 	if reports.is_empty():

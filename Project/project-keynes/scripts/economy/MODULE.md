@@ -471,12 +471,13 @@ aggregates actual offered supply across every `(cell,good)`, includes owner live
 in operating cost, compares the remaining demand deficit with input coverage, and reports
 explicit rejection reasons. Loss-suspended groups release every owner/employee; a
 viable suspended group returns to ACTIVE at the next frozen boundary with its full
-physical owner capacity. CSV schema v24 adds resource flow direction,
-procurement opportunity/allocation, in-kind livelihood coverage, and unresolved
-trade-rejection buckets. These remain derived debug state outside PKEC and replay
-hash. High discard accelerates the existing utilization response when no active
-shortage recovery is required, while preserving shortage recovery and the
-survival floor.
+physical owner capacity. CSV schema v25 retains the v24 resource-flow,
+procurement, livelihood, and unresolved-trade columns, and appends global bullion
+quota initial/remaining/remainder values plus selected-cell candidate monetary
+quota, slot, request, and expected-revenue fields. These remain derived debug
+state outside PKEC and replay hash. High discard accelerates the existing
+utilization response when no active shortage recovery is required, while
+preserving shortage recovery and the survival floor.
 
 CSV schema v13 adds `building_investment_probability_skips` to distinguish a
 cash-qualified cohort losing its deterministic investment roll from capital,

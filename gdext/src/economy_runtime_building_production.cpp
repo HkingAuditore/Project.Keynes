@@ -369,6 +369,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
         int64_t merchant_sold = 0;
         int64_t supported = 0;
         int64_t support_paid = 0;
+        int64_t bullion_sold = 0;
         int64_t unit_cost = 0;
     };
     thread_local std::vector<Offer> offers;
@@ -467,6 +468,16 @@ bool NativeEconomyRuntime::run_building_production_cell(
         group.last_input_cost = group.last_wages_paid = group.last_wages_due = 0;
         group.last_operating_cost = 0;
         group.last_maintenance_cost = 0;
+        group.last_market_receipt = 0;
+        group.last_bullion_mint_receipt = 0;
+        group.last_producer_support_receipt = 0;
+        group.last_business_tax_paid = 0;
+        group.last_business_subsidy_received = 0;
+        group.last_maintenance_due = 0;
+        // This flag is refreshed from the current period's actual workforce.
+        // A positive value means receipts are factual for this period; zero
+        // keeps a genuinely unstaffed greenfield group eligible for bootstrap.
+        group.last_observed_capacity_days_q16 = 0;
         group.purchase_intent_capacity_q16 = 0;
         group.last_base_wages_paid = group.last_base_wages_due = 0;
         group.last_bonus_paid = group.last_bonus_due = 0;
@@ -746,6 +757,18 @@ bool NativeEconomyRuntime::run_building_production_cell(
             Q16_ONE - required + mul_div_sat(
                 raw_capacity_q16, required, Q16_ONE, _saturation_count),
             0, Q16_ONE);
+    };
+    auto resource_capacity_scale_q16 = [&](const ResourceAmount &item,
+                                           int32_t resource_cell,
+                                           int64_t base) -> int64_t {
+        if (base <= 0) return Q16_ONE;
+        const int64_t available = available_resource_amount(item, resource_cell);
+        int64_t scale = std::clamp<int64_t>(mul_div_sat(
+            available, Q16_ONE, base, _saturation_count), 0, Q16_ONE);
+        // Keep a positive probe for a positive but sub-Q16 stock ratio. The
+        // later integer quantity and stock checks remain authoritative.
+        if (available > 0 && scale == 0) scale = 1;
+        return scale;
     };
     auto input_purchase_scale_q16 = [&](const ProductionInput &input,
                                         int64_t output_scale_q16) -> int64_t {
@@ -1030,8 +1053,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
                             : saturating_mul(building_days, item.quantity, _saturation_count);
                         if (base <= 0) continue;
                         executable_scale = std::min<int64_t>(executable_scale,
-                            mul_div_sat(available_resource_amount(item, cell),
-                                Q16_ONE, base, _saturation_count));
+                            resource_capacity_scale_q16(item, cell, base));
                     }
                 }
             }
@@ -1129,6 +1151,37 @@ bool NativeEconomyRuntime::run_building_production_cell(
             }
             const int32_t owner_slot = find_cohort_slot(cell, group.owner_signature_id);
             if (owner_slot < 0) continue;
+            int64_t workforce_capacity_q16 = Q16_ONE;
+            const int64_t owner_slots = saturating_mul(
+                group.count, type.owner_slots_per_building, _saturation_count);
+            workforce_capacity_q16 = owner_slots > 0
+                ? std::clamp<int64_t>(mul_div_sat(
+                    std::max<int64_t>(0, group.filled_owner), Q16_ONE,
+                    owner_slots, _saturation_count), 0, Q16_ONE)
+                : 0;
+            for (int32_t r = 0; r < type.employee_count; ++r) {
+                const JobRole &role = _building_employee_roles[
+                    type.employee_begin + r];
+                const int64_t role_slots = saturating_mul(
+                    group.count, role.slots_per_building, _saturation_count);
+                const int32_t role_index = group.employee_fill_begin + r;
+                const int64_t role_fill = role_index >= 0 && role_index <
+                        static_cast<int32_t>(_building_employee_filled.size())
+                    ? std::max<int64_t>(0, _building_employee_filled[role_index]) : 0;
+                const int64_t role_capacity = role_slots > 0
+                    ? std::clamp<int64_t>(mul_div_sat(
+                        role_fill, Q16_ONE, role_slots, _saturation_count),
+                        0, Q16_ONE) : Q16_ONE;
+                workforce_capacity_q16 = std::min(
+                    workforce_capacity_q16, role_capacity);
+            }
+            if (workforce_capacity_q16 > 0) {
+                group.last_observed_capacity_days_q16 = std::max<int64_t>(
+                    1, saturating_mul(workforce_capacity_q16,
+                        saturating_mul(std::max<int64_t>(1, group.count),
+                            std::max<int64_t>(1, _epoch_days), _saturation_count),
+                        _saturation_count));
+            }
             const int64_t intent_scale_without_climate = desired_scale_for_group(
                 group, type, false);
             int64_t intent_scale_q16 = intent_scale_without_climate;
@@ -1217,8 +1270,8 @@ bool NativeEconomyRuntime::run_building_production_cell(
                         cell, item.resource_id, raw_base, _saturation_count);
                     if (base <= 0) continue;
                     if (item.mode == 1) ++_building_resource_capacity_checks;
-                    const int64_t resource_scale = mul_div_sat(
-                        available_resource_amount(item, cell), Q16_ONE, base, _saturation_count);
+                    const int64_t resource_scale = resource_capacity_scale_q16(
+                        item, cell, base);
                     const bool resource_capacity_bound = intent_scale_q16 > 0 &&
                         resource_scale < Q16_ONE &&
                         resource_scale <= intent_scale_q16;
@@ -1886,6 +1939,52 @@ bool NativeEconomyRuntime::run_building_production_cell(
             producer_support_remaining = std::max<int64_t>(
                 0, producer_support_remaining - total_support_paid);
         }
+        // Monetary outputs share one cell-level issuance pool. Allocate the
+        // pool by each offer's requested mint value, using a cumulative split
+        // so gold and silver compete fairly and the last offer receives any
+        // fixed-point remainder. The same physical output can never claim the
+        // full quota independently.
+        int32_t first_monetary_good = -1;
+        int64_t total_bullion_request = 0;
+        for (const Offer &offer : offers) {
+            if (offer.good < 0 || offer.good >= _market.good_count) continue;
+            const int64_t issue_value = _good_monetary_issue_values[offer.good];
+            if (issue_value <= 0 || offer.sellable <= 0) continue;
+            if (first_monetary_good < 0) first_monetary_good = offer.good;
+            total_bullion_request = saturating_add(total_bullion_request,
+                mul_div_sat(offer.sellable, issue_value, GOODS_SCALE,
+                            _saturation_count), _saturation_count);
+        }
+        if (first_monetary_good >= 0 && total_bullion_request > 0) {
+            const int64_t bullion_pool = bullion_quota_remaining(
+                cell, first_monetary_good);
+            const int64_t allocatable = std::min<int64_t>(
+                std::max<int64_t>(0, bullion_pool), total_bullion_request);
+            int64_t request_prefix = 0;
+            int64_t paid_prefix = 0;
+            for (Offer &offer : offers) {
+                if (offer.good < 0 || offer.good >= _market.good_count) continue;
+                const int64_t issue_value = _good_monetary_issue_values[offer.good];
+                if (issue_value <= 0 || offer.sellable <= 0) continue;
+                request_prefix = saturating_add(request_prefix,
+                    mul_div_sat(offer.sellable, issue_value, GOODS_SCALE,
+                                _saturation_count), _saturation_count);
+                const int64_t target_paid = mul_div_sat(
+                    allocatable, request_prefix, total_bullion_request,
+                    _saturation_count);
+                const int64_t requested_paid = mul_div_sat(
+                    offer.sellable, issue_value, GOODS_SCALE, _saturation_count);
+                const int64_t paid_target = std::min<int64_t>(
+                    requested_paid, std::max<int64_t>(0, target_paid - paid_prefix));
+                offer.bullion_sold = std::min<int64_t>(offer.sellable,
+                    mul_div_sat(paid_target, GOODS_SCALE,
+                                std::max<int64_t>(1, issue_value),
+                                _saturation_count));
+                paid_prefix = saturating_add(paid_prefix,
+                    mul_div_sat(offer.bullion_sold, issue_value, GOODS_SCALE,
+                                _saturation_count), _saturation_count);
+            }
+        }
         for (const Offer &offer : offers) {
             BuildingGroup &group = _buildings[offer.group];
             const int64_t issue_value = _good_monetary_issue_values[offer.good];
@@ -1898,7 +1997,16 @@ bool NativeEconomyRuntime::run_building_production_cell(
             int64_t supported = offer.supported;
             int64_t support_paid = offer.support_paid;
             if (issue_value > 0) {
+                // A bullion lane is a shared monetary sink. Convert the
+                // remaining money quota back to physical units before minting;
+                // this prevents each mine from independently seeing the full
+                // monthly cap.
+                sold = std::min<int64_t>(sold, std::max<int64_t>(0,
+                    offer.bullion_sold));
                 paid = mul_div_sat(sold, issue_value, GOODS_SCALE, _saturation_count);
+                if (paid > 0)
+                    consume_bullion_quota(cell, offer.good, paid,
+                                          _saturation_count);
                 _explicit_money_mint = saturating_add(
                     _explicit_money_mint, paid, _saturation_count);
                 _bullion_money_issued = saturating_add(
@@ -1913,7 +2021,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
                         _silver_money_issued, paid, _saturation_count);
                 }
                 // Bullion mint is the primary sink for monetary goods (gold/silver):
-                // the whole sellable batch is absorbed by the money system every epoch.
+                // only the quota-backed portion is absorbed by the money system.
                 // Feed this back into the withdrawal signal so the utilization planner
                 // (see prepare_building_economic_plan inventory-absorption path) does
                 // not treat mint-cleared bullion as unsellable inventory and throttle
@@ -1977,6 +2085,9 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 }
             }
             int64_t business_tax = 0;
+            // Positive business tax applies to every realized producer receipt,
+            // including quota-backed bullion issuance. Negative business tax is
+            // settled once against eligible costs after payroll and maintenance.
             if (business_tax_active) {
                 const BuildingGroup &tax_group = _buildings[offer.group];
                 const int32_t business_rate = frozen_tax_rate(
@@ -1993,6 +2104,23 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 paid, business_tax, _saturation_count);
             const int64_t total_paid = saturating_add(
                 producer_after_business_tax, support_paid, _saturation_count);
+            if (issue_value > 0)
+                group.last_bullion_mint_receipt = saturating_add(
+                    group.last_bullion_mint_receipt, paid, _saturation_count);
+            else
+                group.last_market_receipt = saturating_add(
+                    group.last_market_receipt, paid, _saturation_count);
+            group.last_producer_support_receipt = saturating_add(
+                group.last_producer_support_receipt, support_paid,
+                _saturation_count);
+            if (business_tax > 0)
+                group.last_business_tax_paid = saturating_add(
+                    group.last_business_tax_paid, business_tax,
+                    _saturation_count);
+            else if (business_tax < 0)
+                group.last_business_subsidy_received = saturating_add(
+                    group.last_business_subsidy_received, -business_tax,
+                    _saturation_count);
             if (owner_operation_tax_active)
                 operation_receipts_by_group[offer.group - begin] =
                     saturating_add(
@@ -2287,6 +2415,13 @@ bool NativeEconomyRuntime::run_building_production_cell(
             !building_available(cell, group.type_id, true)) continue;
         const BuildingType &type = _building_types[group.type_id];
         if (type.maintenance_count <= 0) continue;
+        const int64_t maintenance_daily = daily_maintenance_cost_for_type(
+            cell, type, _saturation_count);
+        if (maintenance_daily != std::numeric_limits<int64_t>::max())
+            group.last_maintenance_due = saturating_mul(
+                saturating_mul(std::max<int64_t>(0, maintenance_daily),
+                    group.count, _saturation_count),
+                std::max(1, _epoch_days), _saturation_count);
         const int32_t owner_slot = find_cohort_slot(cell, group.owner_signature_id);
         if (owner_slot < 0) continue;
         const int64_t building_days = saturating_mul(
@@ -2387,6 +2522,9 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 rate, _saturation_count);
             if (transfer >= 0) continue;
             const int64_t subsidy = -transfer;
+            group.last_business_subsidy_received = saturating_add(
+                group.last_business_subsidy_received, subsidy,
+                _saturation_count);
             business_transfer_by_group[g - begin] = saturating_add(
                 business_transfer_by_group[g - begin], transfer,
                 _saturation_count);

@@ -6184,8 +6184,13 @@ func run_daily_wind_field_update(map: MapData, world: WorldData, cfg: MapConfig,
 		var rc_slp: float = float(ret_slp.get("elapsed_ms", -1.0))
 		slp_out = ret_slp.get("slp_out", PackedFloat32Array())
 		var slp_published_to_slot: bool = bool(ret_slp.get("published_to_slot", false))
+		var slp_slot_publish_reason: String = str(ret_slp.get(
+				"slot_publish_reason", "legacy_dll_unknown"))
 		out["slp_ms"] = rc_slp
 		out["slp_published_to_slot"] = slp_published_to_slot
+		out["slp_slot_publish_reason"] = slp_slot_publish_reason
+		out["slp_slot_id"] = int(ret_slp.get("slot_id", -1))
+		out["slp_slot_size"] = int(ret_slp.get("slot_size", 0))
 		# 埋点 surface：C++ run_slp_field_pass 内部分段计时（缺失=-1，旧 DLL 兼容）。
 		out["slp_passA_ms"] = float(ret_slp.get("slp_passA_ms", -1.0))
 		out["slp_passB_ms"] = float(ret_slp.get("slp_passB_ms", -1.0))
@@ -6198,8 +6203,12 @@ func run_daily_wind_field_update(map: MapData, world: WorldData, cfg: MapConfig,
 		if rc_slp < 0.0 or slp_out.size() != n_cells:
 			return fail.call("slp_failed:%s" % str(ret_slp.get("reason", "")))
 		if not slp_published_to_slot:
-			for i_slp in range(n_cells):
-				map.slp_arr[i_slp] = slp_out[i_slp]
+			# Compatibility boundary for an old DLL or an invalid native slot. The
+			# computation still came from C++; replace the PackedArray once and then
+			# refresh only cell_slp instead of doing n_cells CoW writes.
+			map.slp_arr = slp_out
+			if _world_ext.has_method("refresh_slots_from_map_keys"):
+				_world_ext.refresh_slots_from_map_keys(PackedStringArray(["cell_slp"]))
 		_slp_thermal_p95_last = float(ret_slp.get("slp_thermal_p95", 0.0))
 		_slp_delta_p95_last = float(ret_slp.get("slp_delta_p95", 0.0))
 		_slp_native_ms_last = rc_slp
@@ -6618,15 +6627,25 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 						var rc_slp: float = float(ret_slp.get("elapsed_ms", -1.0))
 						var slp_out: PackedFloat32Array = ret_slp.get("slp_out", PackedFloat32Array())
 						var slp_published_to_slot: bool = bool(ret_slp.get("published_to_slot", false))
+						var slp_slice_start: int = int(ret_slp.get("slice_start", int(knobs_slp.get("start_idx", 0))))
+						var slp_slice_end: int = int(ret_slp.get("slice_end", int(knobs_slp.get("end_idx", n_slp))))
+						var slp_slice_final: bool = bool(ret_slp.get("slice_final", _slp_final))
+						var slp_slot_id: int = int(ret_slp.get("slot_id", -1))
+						var slp_slot_size: int = int(ret_slp.get("slot_size", 0))
+						var slp_slot_publish_reason: String = str(ret_slp.get(
+								"slot_publish_reason", "legacy_dll_unknown"))
+						_slp_final = slp_slice_final
 						_phys_last_slp_rc_ms = rc_slp
 						_phys_last_slp_out_size = slp_out.size()
 						_phys_last_slp_published_to_slot = slp_published_to_slot
 						_phys_last_slp_commit_ok = rc_slp >= 0.0 and slp_out.size() == n_slp
 						if _slp_commit_diag_count < 3:
 							_slp_commit_diag_count += 1
-							print("[slp_field] commit-diag call#%d: rc=%.3f slp_out=%d n_cells=%d map_slp=%d published=%s" % [
+							print("[slp_field] commit-diag call#%d: rc=%.3f slp_out=%d n_cells=%d map_slp=%d slice=%d:%d final=%s published=%s slot=%d/%d reason=%s" % [
 								_slp_commit_diag_count, rc_slp, slp_out.size(), n_slp, map.slp_arr.size(),
-								str(slp_published_to_slot)
+								slp_slice_start, slp_slice_end, str(slp_slice_final),
+								str(slp_published_to_slot), slp_slot_id, slp_slot_size,
+								slp_slot_publish_reason,
 							])
 						# 运行期根因诊断（每 200 次调用 + 前 5 次打印一次），定位 SLP 冻结：
 						# - commit_ok=true  → 已写回 map.slp_arr，理应随 season 变化
@@ -6635,11 +6654,15 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 						_slp_rt_diag_count += 1
 						if _slp_rt_diag_count <= 5 or _slp_rt_diag_count % 200 == 0:
 							var _commit_ok: bool = rc_slp >= 0.0 and slp_out.size() == n_slp
-							var _reason: String = "commit_ok" if _commit_ok else \
-								("rc<0(cpp_fallback)" if rc_slp < 0.0 else "size_mismatch(gate_block)")
-							print("[slp_field][RT-DIAG] call#%d phase=%.4f rc=%.3f slp_out=%d n=%d published=%s -> %s" % [
+							var _reason: String = "rc<0(cpp_fallback)" if rc_slp < 0.0 else \
+								("size_mismatch(gate_block)" if not _commit_ok else \
+								("intermediate_slice" if not slp_slice_final else \
+								("slot_published" if slp_published_to_slot else "snapshot_commit")))
+							print("[slp_field][RT-DIAG] call#%d phase=%.4f rc=%.3f slp_out=%d n=%d slice=%d:%d final=%s published=%s slot=%d/%d slot_reason=%s -> %s" % [
 								_slp_rt_diag_count, season_phase, rc_slp, slp_out.size(), n_slp,
-								str(slp_published_to_slot), _reason
+								slp_slice_start, slp_slice_end, str(slp_slice_final),
+								str(slp_published_to_slot), slp_slot_id, slp_slot_size,
+								slp_slot_publish_reason, _reason,
 							])
 						if rc_slp >= 0.0 and slp_out.size() == n_slp:
 							_slp_thermal_p95_last = float(ret_slp.get("slp_thermal_p95", 0.0))
@@ -6648,8 +6671,14 @@ func _physical_solve_step_one(map: MapData, world: WorldData, hex_size: float,
 							# 避免把 partial slp_out（非切片区为上一 tick 残值）写进地图。
 							if _slp_final:
 								if not slp_published_to_slot:
-									for _i_slp_arr in range(n_slp):
-										map.slp_arr[_i_slp_arr] = slp_out[_i_slp_arr]
+									# C++ slot unavailable/stale-DLL compatibility: the result is
+									# already a complete PackedFloat32Array. Replacing it once is
+									# the same snapshot boundary as native flush; per-element writes
+									# can trigger a CoW detach on every iteration and stall the frame.
+									map.slp_arr = slp_out
+									if _world_ext.has_method("refresh_slots_from_map_keys"):
+										_world_ext.refresh_slots_from_map_keys(
+											PackedStringArray(["cell_slp"]))
 								_slp_done_by_cpp = true
 								_slp_native_ms = rc_slp
 								if not _slp_first_run_logged:

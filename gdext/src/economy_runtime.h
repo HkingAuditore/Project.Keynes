@@ -54,7 +54,7 @@ public:
     // 43: sector maintenance horizons and maintenance cost factor.
     // 44: resolved startup-demand mode. v43 restores with startup demand OFF.
     // 45: previous-period food-flow carrying-capacity snapshot.
-    static constexpr int32_t SCHEMA_VERSION = 46;
+    static constexpr int32_t SCHEMA_VERSION = 47;
     static constexpr uint32_t BUILDING_KIT_ROLE_TRADE = 1u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CONSTRUCTION = 2u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CLOTHING_INPUT = 4u;
@@ -931,6 +931,21 @@ private:
         int64_t last_expected_revenue = 0;
         int64_t last_operating_cost = 0;
         int64_t last_maintenance_cost = 0;
+        // Frozen quote and realized cashflow separation. These values are
+        // period totals, so prediction can use the last observed receipt
+        // instead of treating a nameplate recipe as an actual sale.
+        int64_t last_market_receipt = 0;
+        int64_t last_bullion_mint_receipt = 0;
+        int64_t last_producer_support_receipt = 0;
+        int64_t last_business_tax_paid = 0;
+        int64_t last_business_subsidy_received = 0;
+        int64_t last_maintenance_due = 0;
+        // Previous committed period's actual workforce-capacity-days, encoded
+        // as Q16 * building-days. Zero means no owner/role capacity was
+        // actually present at settlement; it is not a planning estimate.
+        int64_t last_observed_capacity_days_q16 = 0;
+        int64_t last_quoted_market_receipt = 0;
+        int64_t last_quoted_operating_cost = 0;
         int32_t last_margin_gap_q16 = 0;
         int32_t planned_utilization_q16 = Q16_ONE;
         int64_t sample_unit_input_cost = 0;
@@ -1362,6 +1377,12 @@ private:
         int64_t projected_profit_per_day = 0;
         int64_t return_on_capital_q16 = 0;
         int64_t cost_advantage_q16 = 0;
+        int64_t monetary_quota_initial = 0;
+        int64_t monetary_quota_daily = 0;
+        int64_t monetary_units = 0;
+        int64_t monetary_candidate_slots = 0;
+        int64_t monetary_request_money_per_day = 0;
+        int64_t monetary_expected_revenue_per_day = 0;
         int32_t failed_material_group = -1;
         std::vector<int32_t> selected_material_good_ids;
         std::vector<int64_t> selected_material_quantities;
@@ -3724,6 +3745,15 @@ private:
     int32_t _epoch_research_good_id = -1;
     std::vector<int64_t> _epoch_research_demand_by_cell;
     std::vector<int64_t> _epoch_research_demand_by_market;
+    // One shared, deterministic mint budget per cell across all monetary goods.
+    // Production and investment read the same remaining quota; no candidate can value the
+    // complete global cap independently.
+    std::vector<uint64_t> _epoch_bullion_quota_keys;
+    std::vector<int64_t> _epoch_bullion_quota_initial;
+    std::vector<int64_t> _epoch_bullion_quota_remaining;
+    int64_t _epoch_bullion_quota_initial_total = 0;
+    int64_t _epoch_bullion_quota_remaining_total = 0;
+    int64_t _epoch_bullion_quota_remainder_units = 0;
     // Building retention and household clearing share the same frozen basis.
     // These non-authoritative arrays avoid repeating elasticity/pow work.
     std::vector<int64_t> _demand_basis_cache_day;
@@ -3870,6 +3900,9 @@ private:
     uint32_t _investment_review_stamp_generation = 0;
     std::vector<int32_t> _investment_review_types_scratch;
     std::vector<int32_t> _investment_good_queue_scratch;
+    // Per-cell active plus pending monetary capacity, prepared once per
+    // investment batch so candidate evaluation does not rescan building groups.
+    std::vector<int64_t> _investment_monetary_units_by_cell;
     // v44 transient startup-demand graph. The dense value/stamp pair is the
     // fixed 12-byte (cell, good) budget; only stamped/touched lanes are read.
     // Remote/inbound lanes are sparse, rebuilt once per investment batch, and
@@ -5132,6 +5165,12 @@ private:
     int64_t epoch_research_demand_daily_for_market(int32_t market,
                                                    int32_t good) const;
     void refresh_epoch_research_demand();
+    void refresh_epoch_bullion_quota();
+    int64_t bullion_cell_quota_remaining(int32_t cell) const;
+    int64_t bullion_cell_quota_initial(int32_t cell) const;
+    int64_t bullion_quota_remaining(int32_t cell, int32_t good) const;
+    int64_t consume_bullion_quota(int32_t cell, int32_t good,
+                                  int64_t requested, int64_t &sat);
     PricePressure price_pressure(int32_t market, int32_t good, int64_t household_demand,
                                  int64_t stock, int64_t shortage_q16,
                                  int32_t signal_index, int64_t &saturation_count) const;

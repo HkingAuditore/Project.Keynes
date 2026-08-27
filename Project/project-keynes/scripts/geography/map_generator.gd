@@ -9114,7 +9114,12 @@ func start_season_round_b_plus(map: MapData, _world: WorldData, season: int) -> 
 # 任一异常（handle 无效 / fallback / mid-slice 错误）→ 标记 done=true + fallback=true，
 # 上层 caller 应放弃 round 并退回 12-stage 路径补完。
 func run_season_round_slice_b_plus(_map: MapData, _world: WorldData, max_usec: int = 0) -> Dictionary:
-	var out: Dictionary = {"done": false, "stages_done": 0, "elapsed_ms": 0.0, "fallback": false}
+	var out: Dictionary = {
+		"done": false,
+		"stages_done": _season_round_b_plus_stages_done,
+		"elapsed_ms": 0.0,
+		"fallback": false,
+	}
 	if _season_round_b_plus_handle <= 0:
 		out["fallback"] = true
 		out["done"] = true
@@ -9124,6 +9129,7 @@ func run_season_round_slice_b_plus(_map: MapData, _world: WorldData, max_usec: i
 		out["fallback"] = true
 		out["done"] = true
 		_season_log_path_once("b_plus_slice", "gdscript_fallback", "ext/method missing mid-round")
+		_abort_season_round_b_plus_safe()
 		return out
 	var budget_us: int = max_usec
 	if budget_us <= 0:
@@ -9135,6 +9141,9 @@ func run_season_round_slice_b_plus(_map: MapData, _world: WorldData, max_usec: i
 	budget_us = clampi(budget_us, 50, 1000)
 	var res: Dictionary = _data_core_world_ext.run_season_round_slice(_season_round_b_plus_handle, budget_us)
 	if res.is_empty() or bool(res.get("fallback", false)):
+		var completed_before_fallback: int = int(res.get(
+				"stages_done", res.get("stage", _season_round_b_plus_stages_done)))
+		out["stages_done"] = max(_season_round_b_plus_stages_done, completed_before_fallback)
 		out["fallback"] = true
 		out["done"] = true
 		_season_log_path_once("b_plus_slice", "gdscript_fallback", "run_season_round_slice fallback: %s" % String(res.get("reason", "unknown")))
@@ -9144,7 +9153,12 @@ func run_season_round_slice_b_plus(_map: MapData, _world: WorldData, max_usec: i
 	var elapsed_ms: float = float(res.get("elapsed_ms", 0.0))
 	_season_round_b_plus_native_ms += elapsed_ms
 	_season_round_b_plus_slices_used += 1
-	_season_round_b_plus_stages_done = int(res.get("stages_done", _season_round_b_plus_stages_done))
+	# C++ returns both the absolute stage cursor and the compatibility
+	# `stages_done` field.  Prefer the explicit total, but accept `stage` from an
+	# older DLL so a hot-reloaded script cannot reset a completed round to zero.
+	var reported_stages_done: int = int(res.get(
+			"stages_done", res.get("stage", _season_round_b_plus_stages_done)))
+	_season_round_b_plus_stages_done = max(_season_round_b_plus_stages_done, reported_stages_done)
 	out["elapsed_ms"] = elapsed_ms
 	out["stages_done"] = _season_round_b_plus_stages_done
 	out["done"] = bool(res.get("done", false))

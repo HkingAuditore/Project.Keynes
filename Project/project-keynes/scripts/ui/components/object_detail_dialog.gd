@@ -609,7 +609,8 @@ func _add_state_card(state: Dictionary) -> Control:
 
 func _add_finance_card(finance: Dictionary) -> Control:
 	var panel := _add_fact_grid([
-		{"label": "本期收入", "value": String(finance.get("revenue", "—")), "accent": UITokens.GOOD},
+		{"label": String(finance.get("revenue_label", "本期收入")),
+			"value": String(finance.get("revenue", "—")), "accent": UITokens.GOOD},
 		{"label": "本期总成本", "value": String(finance.get("cost", "—")), "accent": UITokens.RISK},
 		{"label": "本期盈亏", "value": String(finance.get("profit", "—")),
 			"accent": UITokens.GOOD if bool(finance.get("profit_positive", true)) else UITokens.RISK},

@@ -846,6 +846,19 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
     population_changed = false;
     if (_building_cell_offsets.size() != static_cast<size_t>(_cell_count + 1))
         return true;
+    auto type_emits_monetary = [&](int32_t type_id) {
+        if (type_id < 0 || type_id >= static_cast<int32_t>(
+                _building_types.size())) return false;
+        const BuildingType &type = _building_types[type_id];
+        for (int32_t output = 0; output < type.output_count; ++output) {
+            const int32_t good = _building_outputs[
+                type.output_begin + output].good_id;
+            if (good >= 0 && good < static_cast<int32_t>(
+                    _good_monetary_issue_values.size()) &&
+                _good_monetary_issue_values[good] > 0) return true;
+        }
+        return false;
+    };
     if (initialize) {
         const auto prepare_lanes_started = Clock::now();
         _building_investment_score_q16.assign(_buildings.size(), 0);
@@ -860,6 +873,8 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
         _investment_existing_by_cell_type.reserve(
             _buildings.size() / review_divisor * 2 + 1);
         begin_investment_scratch_generation();
+        _investment_monetary_units_by_cell.assign(
+            static_cast<size_t>(std::max(0, _cell_count)), 0);
         if (_merchant_offsets.size() == static_cast<size_t>(_cell_count + 1)) {
             for (const int32_t cell : _investment_review_cell_indices) {
                 ensure_investment_cell_finance_lane(cell);
@@ -967,6 +982,11 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
             if (pending.type_id >= 0 && pending.type_id < static_cast<int32_t>(
                     _building_types.size()) && pending.count > 0) {
                 const BuildingType &type = _building_types[pending.type_id];
+                if (type_emits_monetary(pending.type_id)) {
+                    _investment_monetary_units_by_cell[pending.cell] =
+                        saturating_add(_investment_monetary_units_by_cell[
+                            pending.cell], pending.count, _saturation_count);
+                }
                 for (int32_t edge = 0; edge < type.resource_count; ++edge) {
                     const ResourceAmount &item = _building_resources[
                         type.resource_begin + edge];
@@ -992,11 +1012,16 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
        if (!is_review_cell(active_cell)) continue;
        for (int32_t g = _building_cell_offsets[active_cell];
             g < _building_cell_offsets[active_cell + 1]; ++g) {
-        const BuildingGroup &group = _buildings[g];
+       const BuildingGroup &group = _buildings[g];
         if (group.count <= 0 || group.cell < 0 || group.cell >= _cell_count ||
             group.type_id < 0 || group.type_id >= static_cast<int32_t>(_building_types.size()))
             continue;
        const BuildingType &type = _building_types[group.type_id];
+        if (group.operating_state == 0 && type_emits_monetary(group.type_id)) {
+            _investment_monetary_units_by_cell[group.cell] = saturating_add(
+                _investment_monetary_units_by_cell[group.cell], group.count,
+                _saturation_count);
+        }
         ensure_investment_cell_finance_lane(group.cell);
         for (int32_t edge = 0; edge < type.resource_count; ++edge) {
             const ResourceAmount &item = _building_resources[
@@ -1160,6 +1185,36 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 country + 1 < static_cast<int32_t>(
                     _epoch_country_building_type_offsets.size())
             ? _epoch_country_building_type_offsets[country + 1] : 0;
+        // Production shares one cell-level bullion pool by active unit count.
+        // Reserve one marginal slot for every currently executable monetary
+        // type in this review. This is a bounded upper bound for the portfolio
+        // and prevents gold and silver candidates from each claiming the full
+        // pool while keeping a zero-stock industry discoverable.
+        int64_t monetary_candidate_slots = 0;
+        for (int32_t available = available_begin; available < available_end;
+             ++available) {
+            if (available < 0 || available >= static_cast<int32_t>(
+                    _epoch_country_building_type_indices.size())) continue;
+            const int32_t candidate_type =
+                _epoch_country_building_type_indices[available];
+            if (!type_emits_monetary(candidate_type) ||
+                !evaluate_building_conditions(candidate_type, cell)) continue;
+            const auto candidate_existing = _investment_existing_by_cell_type.find(
+                cell_key(cell, candidate_type));
+            if (candidate_existing != _investment_existing_by_cell_type.end() &&
+                (candidate_existing->second.suspended_count > 0 ||
+                 candidate_existing->second.filled_owner <
+                     candidate_existing->second.owner_required)) continue;
+            ++monetary_candidate_slots;
+        }
+        monetary_candidate_slots = std::min<int64_t>(
+            monetary_candidate_slots,
+            std::max<int32_t>(1, _investment_portfolio_max_types));
+        const int64_t cell_monetary_units = cell >= 0 && cell <
+                static_cast<int32_t>(_investment_monetary_units_by_cell.size())
+            ? std::max<int64_t>(0, _investment_monetary_units_by_cell[cell]) : 0;
+        const int64_t cell_monetary_quota_initial =
+            bullion_cell_quota_initial(cell);
         uint32_t investment_review_stamp = 0;
         bool sparse_mask_ready = false;
         if (_investment_sparse_mode != 0 &&
@@ -1277,6 +1332,12 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
             !_investment_sparse_runtime_disabled && sparse_mask_ready &&
             !capture_investment_diagnostics && !sparse_full_verification &&
             !employment_catchup;
+        // An empty sparse workset means "no observed signals yet", not
+        // "all industries are impossible".  Disable the filter so unlocked
+        // greenfield types receive their bounded prior and can bootstrap a
+        // previously absent good/profession/building chain.
+        if (_investment_active_goods_scratch.empty())
+            sparse_filter_active = false;
         if (sparse_filter_active) {
             int32_t selected_available_types = 0;
             const int32_t available_type_count =
@@ -1381,7 +1442,21 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
             const int32_t type_id =
                 _epoch_country_building_type_indices[available_index];
             ++_investment_sparse_considered_types;
-            const bool sparse_selected = !sparse_mask_ready ||
+            const auto existing_it = _investment_existing_by_cell_type.find(
+                cell_key(cell, type_id));
+            const InvestmentExistingType *existing = existing_it !=
+                    _investment_existing_by_cell_type.end()
+                ? &existing_it->second : nullptr;
+            const auto pending_it = _investment_pending_by_cell_type.find(
+                cell_key(cell, type_id));
+            const int64_t pending_count = pending_it !=
+                    _investment_pending_by_cell_type.end()
+                ? std::max<int64_t>(0, pending_it->second) : 0;
+            // Sparse discovery is an optimization for established flows. A
+            // type with neither installed nor pending capacity is a legitimate
+            // greenfield candidate even when no signal has touched its goods.
+            const bool greenfield = existing == nullptr && pending_count <= 0;
+            const bool sparse_selected = greenfield || !sparse_mask_ready ||
                 (type_id >= 0 && type_id < static_cast<int32_t>(
                     _investment_type_stamp.size()) &&
                  _investment_type_stamp[type_id] == investment_review_stamp);
@@ -1393,6 +1468,20 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
             }
             ++_investment_type_evaluations;
             const BuildingType &type = _building_types[type_id];
+            const int64_t monetary_slot_denominator = saturating_add(
+                cell_monetary_units,
+                std::max<int64_t>(1, monetary_candidate_slots),
+                _saturation_count);
+            const int64_t monetary_quota_money_daily = [&]() {
+                if (cell_monetary_quota_initial <= 0 ||
+                    monetary_slot_denominator <= 0) return int64_t{0};
+                const int64_t slot_quota = mul_div_sat(
+                    cell_monetary_quota_initial, 1,
+                    monetary_slot_denominator, _saturation_count);
+                const int64_t days = std::max<int64_t>(1, _epoch_days);
+                return std::max<int64_t>(0, saturating_add(
+                    slot_quota, days - 1, _saturation_count)) / days;
+            }();
             InvestmentDiagnostic *diagnostic = nullptr;
             bool type_has_viable_candidate = false;
             Candidate type_best;
@@ -1400,12 +1489,6 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 _investment_diagnostics.push_back({});
                 diagnostic = &_investment_diagnostics.back();
                 diagnostic->type_id = type_id;
-            }
-            const InvestmentExistingType *existing = nullptr;
-            const auto existing_it = _investment_existing_by_cell_type.find(
-                cell_key(cell, type_id));
-            if (existing_it != _investment_existing_by_cell_type.end()) {
-                existing = &existing_it->second;
             }
             auto reject = [&](int32_t reason) {
                 if (type_has_viable_candidate) return;
@@ -1416,11 +1499,6 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
             // Types without a marketable output naturally fail the market-signal
             // gate; collectors continue through resource, material, viability,
             // payback, and sponsor-capital checks instead of being hard-disabled.
-            const auto pending_it = _investment_pending_by_cell_type.find(
-                cell_key(cell, type_id));
-            const int64_t pending_count =
-                pending_it != _investment_pending_by_cell_type.end()
-                    ? std::max<int64_t>(0, pending_it->second) : 0;
             const int32_t existing_group = existing != nullptr
                 ? existing->representative_group : -1;
             const bool vacancy = existing != nullptr &&
@@ -1509,11 +1587,29 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                         output_deficit, effective_unit_output);
                     output_pressure_q16 = Q16_ONE;
                 }
-                const int64_t organic_output_deficit = output_deficit;
                 const int64_t local_startup = startup_demand_for(
                     cell, output.good_id);
                 const int64_t remote_startup = remote_startup_demand_for(
                     cell, output.good_id);
+                // A completely new output has no EMA, stock gap, or startup
+                // chain to identify it. Give only a greenfield candidate a
+                // small structural absorption prior so a new profession or
+                // good can be discovered; all capital, input, resource,
+                // margin, payback, and tax gates still apply below. This is a
+                // bounded discovery prior, never a full-capacity receipt.
+                constexpr int64_t GREENFIELD_ABSORPTION_Q16 = Q16_ONE / 16;
+                const bool no_market_evidence = demand <= 0 && supply <= 0 &&
+                    realized_withdrawal <= 0 && output_deficit <= 0 &&
+                    local_startup <= 0 && remote_startup <= 0;
+                if (greenfield && no_market_evidence && effective_unit_output > 0) {
+                    const int64_t structural_deficit = std::max<int64_t>(
+                        1, mul_div_sat(effective_unit_output,
+                            GREENFIELD_ABSORPTION_Q16, Q16_ONE,
+                            _saturation_count));
+                    output_deficit = structural_deficit;
+                    output_pressure_q16 = GREENFIELD_ABSORPTION_Q16;
+                }
+                const int64_t organic_output_deficit = output_deficit;
                 output_deficit = std::max(output_deficit, local_startup);
                 // Offered supply already contains the utilized portion of the
                 // installed stock. Reserve the remaining installed capacity and
@@ -1576,12 +1672,26 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     item.discarded = std::max<int64_t>(
                         0, _epoch_producer_discarded_current[signal]);
                 }
+                int64_t monetary_quota_quantity = 0;
+                if (monetary_issue) {
+                    // Investment is evaluated after current production has
+                    // consumed part of the mutable quota. Forecast the next
+                    // period from the frozen opening pool and normalize the
+                    // epoch allowance to one building-day.
+                    monetary_quota_quantity = mul_div_sat(
+                        monetary_quota_money_daily, GOODS_SCALE,
+                        std::max<int64_t>(1,
+                            _good_monetary_issue_values[output.good_id]),
+                        _saturation_count);
+                }
                 if (item.sellable > 0) {
-                    // Keep merchant_sold as cash-funded merchant procurement,
-                    // but treat audited mint settlement as full economic
-                    // absorption for the investment sell-through gate.
+                    // Keep merchant_sold as cash-funded merchant procurement;
+                    // mint sell-through is limited by the shared quota lane.
                     item.sell_through_q16 = monetary_issue
-                        ? Q16_ONE
+                        ? std::clamp<int64_t>(mul_div_sat(
+                            std::min<int64_t>(item.sellable,
+                                monetary_quota_quantity), Q16_ONE,
+                            item.sellable, _saturation_count), 0, Q16_ONE)
                         : std::clamp<int64_t>(mul_div_sat(
                             item.merchant_sold, Q16_ONE, item.sellable,
                             _saturation_count), 0, Q16_ONE);
@@ -1591,12 +1701,39 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 }
                 const int64_t unit_price = std::max<int64_t>(1,
                     _market.price[_market.index(market, output.good_id)]);
-                item.expected_cash_value = monetary_issue
-                    ? mul_div_sat(effective_unit_output,
-                        _good_monetary_issue_values[output.good_id],
-                        GOODS_SCALE, _saturation_count)
-                    : mul_div_sat(std::max<int64_t>(0, demand), unit_price,
-                        GOODS_SCALE, _saturation_count);
+                int64_t expected_absorption_q16 = 0;
+                if (monetary_issue) {
+                    expected_absorption_q16 = effective_unit_output > 0
+                        ? std::clamp<int64_t>(mul_div_sat(
+                            std::min<int64_t>(effective_unit_output,
+                                monetary_quota_quantity), Q16_ONE,
+                            effective_unit_output, _saturation_count), 0, Q16_ONE)
+                        : 0;
+                } else if (effective_unit_output > 0) {
+                    // Value only the quantity that has a factual or
+                    // demand-backed buyer. Demand itself is a daily flow;
+                    // converting it to a share of one candidate's output
+                    // avoids ranking a huge recipe by demand dollars that the
+                    // recipe cannot actually sell.
+                    const int64_t demand_absorption = std::clamp<int64_t>(
+                        mul_div_sat(std::max<int64_t>(0, demand), Q16_ONE,
+                            effective_unit_output, _saturation_count),
+                        0, Q16_ONE);
+                    const int64_t startup_absorption = std::clamp<int64_t>(
+                        mul_div_sat(std::max<int64_t>(0, output_deficit), Q16_ONE,
+                            effective_unit_output, _saturation_count),
+                        0, Q16_ONE);
+                    expected_absorption_q16 = std::max({
+                        item.sell_through_q16, demand_absorption,
+                        startup_absorption});
+                }
+                const int64_t expected_quantity = mul_div_sat(
+                    effective_unit_output, expected_absorption_q16,
+                    Q16_ONE, _saturation_count);
+                const int64_t expected_price = monetary_issue
+                    ? _good_monetary_issue_values[output.good_id] : unit_price;
+                item.expected_cash_value = mul_div_sat(expected_quantity,
+                    expected_price, GOODS_SCALE, _saturation_count);
                 item.driver_strength_q16 = item.expected_cash_value;
                 item.nameplate_output = effective_unit_output;
                 item.demand = demand;
@@ -1926,6 +2063,8 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     living_cost, std::max<int64_t>(1,
                         type.owner_slots_per_building), _saturation_count);
                 int64_t daily_cash_revenue = 0;
+                int64_t monetary_request_money_per_day = 0;
+                int64_t monetary_expected_revenue_per_day = 0;
                 int64_t daily_in_kind_livelihood = 0;
                 for (int32_t i = 0; i < type.output_count; ++i) {
                     const GoodAmount &output =
@@ -1964,7 +2103,20 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     const bool government_research_output =
                         output.good_id == _epoch_research_good_id &&
                         research_demand > 0;
-                    int64_t absorption_q16 = issue_value > 0 ? Q16_ONE : 0;
+                    int64_t absorption_q16 = 0;
+                    if (issue_value > 0 && sellable_quantity > 0) {
+                        // Investment is evaluated after current production has
+                        // consumed part of the mutable quota. Use the frozen
+                        // epoch opening pool for the next-period forecast, then
+                        // convert the epoch money into a daily physical lane.
+                        const int64_t quota_quantity = mul_div_sat(
+                            monetary_quota_money_daily, GOODS_SCALE,
+                            std::max<int64_t>(1, issue_value), _saturation_count);
+                        absorption_q16 = std::clamp<int64_t>(mul_div_sat(
+                            std::min<int64_t>(sellable_quantity, quota_quantity),
+                            Q16_ONE, sellable_quantity, _saturation_count),
+                            0, Q16_ONE);
+                    }
                     if (issue_value <= 0 && government_research_output &&
                         sellable_quantity > 0) {
                         // Government research procurement is a cash-backed
@@ -2006,6 +2158,18 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     daily_cash_revenue = saturating_add(daily_cash_revenue,
                         mul_div_sat(absorbed_quantity, settlement_price,
                             GOODS_SCALE, _saturation_count), _saturation_count);
+                    if (issue_value > 0) {
+                        monetary_request_money_per_day = saturating_add(
+                            monetary_request_money_per_day,
+                            mul_div_sat(prospective_quantity, issue_value,
+                                GOODS_SCALE, _saturation_count),
+                            _saturation_count);
+                        monetary_expected_revenue_per_day = saturating_add(
+                            monetary_expected_revenue_per_day,
+                            mul_div_sat(absorbed_quantity, settlement_price,
+                                GOODS_SCALE, _saturation_count),
+                            _saturation_count);
+                    }
                 }
                 int64_t daily_after_tax_cash_revenue = daily_cash_revenue;
                 const uint8_t investment_tax_mask = static_cast<uint8_t>(
@@ -2094,6 +2258,17 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 if (diagnostic != nullptr) {
                     diagnostic->required_capital = required_capital;
                     diagnostic->projected_profit_per_day = daily_profit;
+                    diagnostic->monetary_quota_initial =
+                        cell_monetary_quota_initial;
+                    diagnostic->monetary_quota_daily =
+                        monetary_quota_money_daily;
+                    diagnostic->monetary_units = cell_monetary_units;
+                    diagnostic->monetary_candidate_slots =
+                        monetary_candidate_slots;
+                    diagnostic->monetary_request_money_per_day =
+                        monetary_request_money_per_day;
+                    diagnostic->monetary_expected_revenue_per_day =
+                        monetary_expected_revenue_per_day;
                 }
                 const int64_t payback = daily_profit > 0
                     ? (required_capital + daily_profit - 1) / daily_profit
@@ -2183,33 +2358,6 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                         reject(INVESTMENT_REJECTION_SPONSOR_CAPITAL);
                     }
                     continue;
-                }
-                if ((_good_ids.size() > 0) && type.kind == 0) {
-                    int64_t projected_issue = 0;
-                    for (int32_t i = 0; i < type.output_count; ++i) {
-                        const GoodAmount &output = _building_outputs[type.output_begin + i];
-                        const int64_t monthly_output =
-                            effective_building_output_quantity_for_target(
-                                cell, type_id, target_signature,
-                                output.good_id, output.quantity, Q16_ONE, 30,
-                                _saturation_count);
-                        projected_issue = saturating_add(projected_issue, mul_div_sat(
-                            monthly_output,
-                            _good_monetary_issue_values[output.good_id], GOODS_SCALE,
-                            _saturation_count), _saturation_count);
-                    }
-                    const int64_t opening_money = saturating_add(
-                        _opening_totals.cohort_funds,
-                        saturating_add(_opening_totals.country_cash,
-                            _opening_totals.escrow_cash, _saturation_count),
-                        _saturation_count);
-                    if (projected_issue > 0 && (opening_money <= 0 ||
-                        mul_div_sat(projected_issue, Q16_ONE, opening_money,
-                                    _saturation_count) > _bullion_monthly_issue_cap_q16)) {
-                        ++_building_investment_blocked_resources;
-                        reject(INVESTMENT_REJECTION_RESOURCE);
-                        continue;
-                    }
                 }
                 Candidate candidate;
                 candidate.type = type_id;
