@@ -1,0 +1,348 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+=== native building runtime test ===
+  [PASS] building catalog compiles
+  [PASS] coal mine type exists
+  [PASS] role-rebuild country bootstraps
+  [PASS] role-rebuild runtime configures
+  [PASS] role-rebuild fixture bootstraps
+  [PASS] role-rebuild expansion queues
+  [PASS] same-key construction uses the count-only topology fast path
+  [PASS] construction rebuild preserves incumbent employee fill
+  [PASS] role-rebuild expansion conserves every ledger
+  [PASS] zero-resource country bootstraps
+  [PASS] zero-resource runtime configures
+  [PASS] zero-resource fixture bootstraps
+  [PASS] zero natural resource preserves assets, owner positions, and releases employees
+  [PASS] zero-resource cycle conserves every ledger
+  [PASS] owner-position country bootstraps
+  [PASS] owner-position runtime configures
+  [PASS] owner-position fixture bootstraps
+  [PASS] ACTIVE owner positions stay at physical capacity while output scales
+  [FAIL] projected owner income uses retained owners and includes retained livelihood
+  [PASS] owner-position employment conserves every ledger
+  [PASS] positive self-employment does not oscillate through suspension
+  [PASS] birth-employment country bootstraps
+  [PASS] birth-employment runtime configures
+  [PASS] birth-employment fixture bootstraps
+  [PASS] birth structural commit creates one unemployed cohort member
+  [PASS] newborn does not fill the active owner opening in the same period
+  [PASS] phase-order country bootstraps
+  [PASS] phase-order runtime configures
+  [PASS] phase-order population and plant bootstrap
+  [PASS] phase-order cycle conserves all ledgers
+  [PASS] zero-cash employees spend same-cycle wage income
+  [PASS] same-cycle produced food is sold before household clearing
+  [PASS] cost-floor country bootstraps
+  [PASS] cost-floor runtime configures
+  [PASS] cost-floor plant bootstraps
+greenfield owner quote cell=0 type=349 revenue=151990 fallback=0 price_market=0
+  [PASS] scarce output remains below its target inventory
+  [PASS] scarce output price rises to the rate-limited producer cost floor
+  [PASS] retention-cap country bootstraps
+  [PASS] retention-cap runtime configures
+  [PASS] retention-cap settlement bootstraps
+  [FAIL] survival retention is positive but capped below production
+  [PASS] consumed retained output offsets livelihood without minting cash
+  [PASS] retention-cap output reconciles sale, retention, and discard
+  [PASS] retention-cap cycle conserves every ledger
+  [PASS] survival-food production keeps the subsistence probe floor
+  [PASS] rounding-tolerance cycle conserves every ledger
+  [PASS] multi-food retention country bootstraps
+  [PASS] multi-food retention runtime configures
+  [PASS] multi-food retention settlement bootstraps
+  [PASS] produce output remains retained beside a staple output
+  [PASS] multi-food retention cycle conserves every ledger
+  [PASS] flow-replacement country bootstraps
+  [PASS] flow-replacement runtime configures
+  [PASS] flow-replacement settlement bootstraps
+  [PASS] flow-replacement stock band is scheduled
+  [PASS] survival producer is paid while opening stock is above target
+  [PASS] flow-replacement procurement conserves every ledger
+  [PASS] renewable-budget country bootstraps
+  [PASS] renewable-budget runtime configures
+  [PASS] renewable-budget fixture bootstraps
+  [PASS] renewable extractors share the five-day safe-harvest budget
+  [PASS] hunter-subsistence country bootstraps
+  [PASS] hunter-subsistence runtime configures
+  [PASS] hunter-subsistence settlement bootstraps
+  [FAIL] hunter subsistence remains an active explicitly financed producer
+  [PASS] hunter fixture exercises working-capital protection
+  [PASS] hunter-subsistence cycles conserve every ledger
+  [PASS] household-stock recovery country bootstraps
+  [PASS] household-stock recovery runtime configures
+  [PASS] household-stock recovery settlement bootstraps
+greenfield owner quote cell=0 type=45 revenue=62619 fallback=0 price_market=0
+  [PASS] non-survival hearth cannot reserve staple food ahead of households
+  [PASS] household-stock recovery drain queues
+  [PASS] one-unit raw stock does not block shortage recovery
+  [PASS] business-demand recovery country bootstraps
+  [PASS] business-demand recovery runtime configures
+  [PASS] business-demand recovery fixture bootstraps
+  [PASS] business-only tool demand remains visible to production planning
+  [PASS] business shortage keeps knapping above the industrial probe floor
+  [PASS] business-demand recovery cycles conserve every ledger
+  [PASS] input-reserve country bootstraps
+  [PASS] input-reserve runtime configures
+  [PASS] input-reserve settlement bootstraps
+  [PASS] tool stock protects the complete next-period hunting input
+  [PASS] reserved tools start the next hunting period
+  [PASS] input-reserve cycles conserve every ledger
+  [PASS] soft-input country bootstraps 184
+  [PASS] soft-input runtime configures 184
+  [PASS] soft-input settlement bootstraps 184
+  [PASS] soft-input country bootstraps 185
+  [PASS] soft-input runtime configures 185
+  [PASS] soft-input settlement bootstraps 185
+  [PASS] soft hunting input keeps partial output without tools
+  [PASS] soft hunting input still rewards available tools
+  [PASS] soft-input shortage cycles conserve every ledger
+  [PASS] producer-support country bootstraps
+  [PASS] producer-support runtime configures
+  [PASS] producer-support settlement bootstraps
+  [PASS] producer-support trace target registers
+  [PASS] zero-cash merchant spends nothing on producer output
+  [PASS] bounded support accepts its quota and explicitly reports the remainder
+  [PASS] support issuance uses exactly twenty percent of frozen retail value
+  [PASS] support issuance is a distinct producer cashflow
+  [PASS] support issuance is explicitly audited
+  [PASS] cycle-flow clearing country bootstraps
+  [PASS] cycle-flow clearing runtime configures
+  [PASS] cycle-flow clearing settlement bootstraps
+  [PASS] cycle-flow output receives low-price clearing before discard
+  [FAIL] cycle-flow clearing still discards transient stock at boundary
+  [PASS] cycle-flow support cycle conserves every ledger
+  [PASS] construction-shortage country bootstraps
+  [PASS] construction-shortage runtime configures
+  [PASS] construction-shortage settlement bootstraps
+  [PASS] construction-shortage build command queues
+  [PASS] construction shortage rejects the build command
+  [PASS] rejected construction does not pollute business demand EMA
+  [PASS] rejected construction preserves every ledger
+  [PASS] owner-reconcile country bootstraps
+  [PASS] owner-reconcile runtime configures
+  [PASS] owner-reconcile fixture bootstraps
+  [PASS] owner-reconcile artisan handle exists
+  [PASS] owner-reconcile population loss queues
+  [PASS] owner snapshot separates capacity, planned jobs, and openings
+  [PASS] shared owner signature fill reconciles to cohort employment
+  [PASS] released owner target hires from the unemployed pool
+  [PASS] owner reconciliation conserves every ledger
+  [PASS] last-demolition country bootstraps
+  [PASS] last-demolition runtime configures
+  [PASS] last-demolition fixture bootstraps
+  [PASS] last-demolition mine initially employs miners
+  [PASS] last-demolition command queues
+  [PASS] last demolition removes the final building group
+  [PASS] idle professions migrate into the unemployed cohort
+  [PASS] last-demolition reconciliation conserves every ledger
+  [PASS] non-due construction country bootstraps
+  [PASS] non-due construction runtime configures
+  [PASS] non-due construction fixture bootstraps
+  [PASS] non-due construction command queues
+  [PASS] non-due employment metrics atomically add the first cell contribution
+  [PASS] non-due construction conserves every ledger
+  [PASS] owner-job mobility country bootstraps
+  [PASS] owner-job mobility runtime configures
+  [PASS] owner-job mobility fixture bootstraps
+  [FAIL] higher owner income attracts the final low-income ACTIVE owner
+  [PASS] cross-profession owner movement transfers population and funds proportionally
+  [PASS] income-driven owner movement restores target production
+  [PASS] owner-job mobility conserves every ledger
+  [PASS] employee-owner mobility country bootstraps
+  [PASS] employee-owner mobility runtime configures
+  [PASS] employee-owner mobility fixture bootstraps
+  employee-owner debug={ "gathering_income": 9337, "gathering_filled": 2, "timber_filled": 1, "gathering_sold": 0, "gathering_output": 12360, "realloc": 0, "profession_changes": 0 }
+  [FAIL] higher food owner income attracts an incumbent mining employee
+  [PASS] employee-owner mobility retains the final merchant and produces food
+  [PASS] employee-owner mobility conserves every ledger
+  [PASS] merchant mobility country bootstraps
+  [PASS] merchant mobility runtime configures
+  [PASS] merchant mobility fixture bootstraps
+  [PASS] surplus merchant changes profession while final merchant is retained
+  [PASS] same-profession mobility country bootstraps
+  [PASS] same-profession mobility runtime configures
+  [PASS] same-profession mobility fixture bootstraps
+  [FAIL] same-profession owner movement only reallocates group fill
+  [PASS] same-profession owner movement conserves every ledger
+  [PASS] owner-job probability country bootstraps
+  [PASS] owner-job probability runtime configures
+  [PASS] owner-job probability fixture bootstraps
+  probability fixture=[0, 0]/[1, 0]/0/0
+  [PASS] lower-income vacancy does not attract an incumbent owner
+  [PASS] greenfield mobility country bootstraps
+  [PASS] greenfield mobility runtime configures
+  [PASS] greenfield mobility fixture bootstraps
+  [PASS] greenfield mobility construction queues
+  greenfield market debug={ "cell_idx": 0, "committed": true, "busy": false, "snapshot_source": "rolling_committed", "ok": true, "state_day": 5, "age_days": 0, "settlement_generation": 2, "market_id": 0, "epoch_id": 2, "good_ids": ["adobe_brick", "advanced_chips", "agricultural_machinery", "aluminum", "automobiles", "autonomous_systems", "bast_fiber", "batteries", "bauxite", "beverages", "bread", "bricks", "brine", "bronze_tools", "canned_fish", "cement", "charcoal", "chipped_stone_tools", "clay", "cloth", "clothing", "coal", "coke", "computers", "concrete", "construction_components", "copper", "copper_ore", "copper_tools", "corn_grain", "cotton_fiber", "crude_oil", "dairy_products", "detergent", "edible_oil", "electric_motor", "electrical_equipment", "electricity", "electronic_components", "engines", "explosives", "fertilizer", "fine_clothing", "fine_furniture", "fish", "flax_fiber", "flint", "footwear", "fur", "furniture", "game_meat", "gathered_plants", "glass", "glassware", "gold", "grain", "horses", "household_appliances", "industrial_chemicals", "industrial_machinery", "insulated_cable", "iron_ore", "jewelry", "latex", "lead", "lead_ore", "leather", "leather_goods", "lime", "limestone", "livestock_products", "logs", "lubricants", "lumber", "machine_parts", "manganese_ore", "manuscripts", "meat", "medicinal_herbs", "metal_housewares", "natural_gas", "natural_rubber", "nuclear_fuel", "oceanic_vessels", "packaging", "paper", "petrochemicals", "pharmaceuticals", "phosphate_rock", "plastics", "potatoes", "pottery", "precision_tools", "prepared_staples", "printed_materials", "processed_food", "radio_equipment", "railway_equipment", "rare_earth_metals", "rare_earth_ore", "raw_hide", "raw_stone", "reactor_components", "reed_bundle", "refined_fuel", "rice_grain", "salt", "saltpeter", "scientific_instruments", "seed_cotton", "semiconductors", "silica_sand", "silver", "soap", "spices", "stainless_steel", "steam_engines", "steel", "sulfur", "synthetic_fiber", "synthetic_rubber", "technology_points", "telecom_equipment", "tin", "tin_ore", "tools", "turf_block", "vegetables", "wheat_grain", "wire", "wool", "wrought_iron", "zinc", "zinc_ore"], "stock": [999914, 1000000, 1000000, 1000000, 999583, 999776, 999972, 999852, 1000000, 999358, 996312, 999931, 1000000, 1000000, 995903, 999944, 997895, 1000000, 1000000, 999886, 999847, 998158, 1000000, 999555, 999945, 999877, 1000000, 1000000, 1000000, 996595, 1000000, 1000000, 995902, 999126, 996801, 1000000, 1000000, 0, 1000000, 1000000, 1000000, 1000000, 999817, 999817, 995904, 1000000, 1000000, 999846, 999586, 999747, 997039, 997895, 999964, 999819, 1000000, 996595, 999669, 999777, 1000000, 1000000, 1000000, 1000000, 999645, 1000000, 1000000, 1000000, 1000000, 999647, 999964, 1000000, 1000000, 0, 1000000, 999934, 1000000, 1000000, 999889, 995904, 999785, 999823, 998417, 1000000, 1000000, 1000000, 1000000, 999888, 1000000, 999792, 1000000, 1000000, 996595, 999895, 1000000, 996315, 999888, 983694, 999870, 1000000, 1000000, 1000000, 1000000, 943817, 1000000, 999926, 998132, 996595, 999663, 1000000, 1000000, 1000000, 1000000, 1000000, 1000000, 999129, 999945, 1000000, 1000000, 999953, 1000000, 1000000, 1000000, 1000000, 999834, 1000000, 1000000, 1000000, 999924, 983697, 996595, 1000000, 1000000, 1000000, 1000000, 1000000], "price": [5192, 93485, 44201, 30596, 44274, 187155, 6090, 44226, 8499, 13636, 13814, 19510, 3400, 22097, 13836, 18831, 7723, 7500, 8499, 20409, 20413, 8570, 11049, 44281, 19869, 18709, 30596, 8499, 38244, 8625, 8499, 8499, 13836, 25594, 13784, 44201, 44201, 12170, 44201, 44201, 25501, 25501, 20414, 51034, 8648, 8499, 3400, 20413, 20436, 15316, 8606, 4288, 19356, 26642, 8499, 13800, 8512, 44237, 25501, 44201, 22097, 8499, 51073, 8499, 30596, 8499, 20401, 28306, 19348, 8499, 13598, 1000000000, 25501, 15458, 44201, 8499, 20409, 13836, 8507, 33790, 8556, 11899, 25501, 101983, 15301, 15307, 25501, 25522, 8499, 25501, 8625, 9355, 44193, 13815, 15307, 14181, 55273, 44201, 30596, 8499, 20401, 8926, 110482, 3895, 25701, 8626, 8512, 8499, 49292, 5525, 44201, 8499, 8499, 25594, 8502, 30596, 67989, 31437, 8499, 20401, 25501, 8499, 44226, 30596, 8499, 44193, 4360, 8864, 8625, 30596, 20401, 23797, 30596, 8499], "demand_ema": [10, 0, 0, 0, 48, 26, 3, 17, 0, 74, 410, 9, 0, 0, 495, 6, 266, 0, 0, 12, 17, 233, 0, 51, 7, 13, 0, 0, 0, 378, 0, 0, 495, 98, 370, 0, 0, 0, 0, 0, 0, 0, 21, 21, 494, 0, 0, 17, 47, 28, 353, 226, 4, 21, 0, 378, 38, 26, 0, 0, 0, 0, 41, 0, 0, 0, 0, 40, 4, 0, 0, 0, 0, 7, 0, 0, 13, 494, 23, 21, 200, 0, 0, 0, 0, 13, 0, 23, 0, 0, 378, 12, 0, 410, 13, 1909, 15, 0, 0, 0, 0, 9, 0, 8, 232, 378, 39, 0, 0, 0, 0, 0, 0, 98, 6, 0, 0, 5, 0, 0, 0, 0, 19, 0, 0, 0, 9, 1908, 378, 0, 0, 0, 0, 0], "business_demand_ema": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "desired_business_demand": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 40, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "funded_business_demand": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "unfunded_business_demand": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 40, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "offered_supply_ema": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4062, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "realized_withdrawal_ema": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 230, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 11230, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "production_input_reserve": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "construction_material_reserve": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 12870, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 25740, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 56113, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "household_available_stock": [999914, 1000000, 1000000, 1000000, 999583, 999776, 999972, 999852, 1000000, 999358, 996312, 999931, 1000000, 1000000, 995903, 999944, 997895, 1000000, 1000000, 999886, 999847, 998158, 1000000, 999555, 999945, 999877, 1000000, 1000000, 1000000, 996595, 1000000, 1000000, 995902, 999126, 996801, 1000000, 1000000, 0, 1000000, 1000000, 1000000, 1000000, 999817, 999817, 995904, 1000000, 1000000, 999846, 999586, 999747, 997039, 985025, 999964, 999819, 1000000, 996595, 999669, 999777, 1000000, 1000000, 1000000, 1000000, 999645, 1000000, 1000000, 1000000, 1000000, 999647, 999964, 1000000, 1000000, 0, 1000000, 999934, 1000000, 1000000, 999889, 995904, 999785, 999823, 998417, 1000000, 1000000, 1000000, 1000000, 999888, 1000000, 999792, 1000000, 1000000, 996595, 999895, 1000000, 996315, 999888, 983694, 999870, 1000000, 1000000, 1000000, 1000000, 887704, 1000000, 999926, 998132, 996595, 999663, 1000000, 1000000, 1000000, 1000000, 1000000, 1000000, 999129, 999945, 1000000, 1000000, 999953, 1000000, 1000000, 1000000, 1000000, 999834, 1000000, 1000000, 1000000, 999924, 983697, 996595, 1000000, 1000000, 1000000, 1000000, 1000000], "merchant_inventory_target": [600, 0, 0, 0, 2880, 1560, 180, 1020, 0, 2960, 36900, 540, 0, 0, 44550, 360, 15960, 0, 0, 720, 1275, 17475, 0, 3060, 420, 780, 0, 0, 60000, 34020, 0, 0, 44550, 7350, 33300, 0, 0, 0, 0, 0, 0, 0, 840, 840, 44460, 0, 60900, 1275, 1880, 1680, 31770, 13800, 240, 1260, 0, 34110, 2280, 1560, 0, 0, 0, 0, 1640, 0, 0, 0, 0, 2400, 240, 0, 0, 60360, 0, 420, 0, 0, 780, 44460, 1725, 1260, 15000, 0, 0, 0, 0, 780, 0, 1725, 0, 0, 34020, 720, 0, 36900, 780, 76360, 900, 0, 0, 0, 0, 673800, 0, 480, 17400, 34110, 3510, 0, 0, 0, 0, 0, 0, 7350, 240, 0, 0, 300, 0, 0, 0, 0, 1140, 0, 0, 0, 540, 171720, 34020, 0, 0, 0, 0, 0], "merchant_procurement_shortfall": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 60360, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "trade_export_safety_stock": [300, 0, 0, 0, 1440, 780, 90, 510, 0, 1480, 18450, 270, 0, 0, 22275, 180, 7980, 0, 0, 360, 637, 8737, 0, 1530, 210, 390, 0, 0, 30000, 17010, 0, 0, 22275, 3675, 16650, 0, 0, 0, 0, 0, 0, 0, 420, 420, 22230, 0, 30450, 637, 940, 840, 15885, 12870, 120, 630, 0, 17055, 1140, 780, 0, 0, 0, 0, 820, 0, 0, 0, 0, 1200, 120, 0, 0, 0, 0, 210, 0, 0, 390, 22230, 862, 630, 7500, 0, 0, 0, 0, 390, 0, 862, 0, 0, 17010, 360, 0, 18450, 390, 38180, 450, 0, 0, 0, 0, 336900, 0, 240, 8700, 17055, 1755, 0, 0, 0, 0, 0, 0, 3675, 120, 0, 0, 150, 0, 0, 0, 0, 570, 0, 0, 0, 270, 85860, 17010, 0, 0, 0, 0, 0], "trade_import_fill_target": [300, 0, 0, 0, 1440, 780, 90, 510, 0, 1480, 18450, 270, 0, 0, 22275, 180, 7980, 0, 0, 360, 637, 8737, 0, 1530, 210, 390, 0, 0, 30000, 17010, 0, 0, 22275, 3675, 16650, 0, 0, 0, 0, 0, 0, 0, 420, 420, 22230, 0, 0, 637, 940, 840, 15885, 12870, 120, 630, 0, 17055, 1140, 780, 0, 0, 0, 0, 820, 0, 0, 0, 0, 1200, 120, 0, 0, 30180, 0, 210, 0, 0, 390, 22230, 862, 630, 7500, 0, 0, 0, 0, 390, 0, 862, 0, 0, 17010, 360, 0, 18450, 390, 38180, 450, 0, 0, 0, 0, 56113, 0, 240, 8700, 17055, 1755, 0, 0, 0, 0, 0, 0, 3675, 120, 0, 0, 150, 0, 0, 0, 0, 570, 0, 0, 0, 270, 85860, 17010, 0, 0, 0, 0, 0], "trade_relief_pressure_q16": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 65536, 35, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 70, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 65536, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 35, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 70, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 35, 0, 0, 0, 0, 0], "trade_signal_age_days": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0], "trade_first_dispatch_delay_days": [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1], "trade_last_attempt_day": [-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1], "trade_last_rejection_reason": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "trade_deadline_exceeded": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "cost_anchor_price": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1358569, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "shortage_q16": [5141, 0, 0, 0, 0, 0, 3856, 0, 0, 0, 32, 8739, 0, 0, 0, 0, 99, 0, 0, 0, 0, 113, 0, 0, 10628, 0, 0, 0, 0, 35, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5699, 613, 0, 70, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5958, 0, 0, 65535, 0, 1725, 0, 0, 0, 0, 0, 1237, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 35, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 9973, 0, 2979, 0, 70, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4520, 0, 0, 0, 0, 0, 0, 0, 0, 4275, 0, 35, 0, 0, 0, 0, 0], "price_pressure_excess_q16": [655, 0, 0, 0, 3145, 1703, 196, 1114, 0, 4849, 26869, 589, 0, 0, 32440, 393, 17432, 0, 0, 786, 1114, 15269, 0, 3342, 458, 851, 0, 0, 0, 24772, 0, 0, 32440, 6422, 24248, 0, 0, 0, 0, 0, 0, 0, 1376, 1376, 32374, 0, -65536, 1114, 3080, 1835, 23134, 14942, 262, 1376, 0, 24772, 2490, 1703, 0, 0, 0, 0, 2686, 0, 0, 0, 0, 2621, 262, 0, 0, 393, 0, 458, 0, 0, 851, 32374, 1507, 1376, 13107, 0, 0, 0, 0, 851, 0, 1507, 0, 0, 24772, 786, 0, 26869, 851, 65536, 983, 0, 0, 0, 0, 589, 0, 524, 15204, 24772, 2555, 0, 0, 0, 0, 0, 0, 6422, 393, 0, 0, 327, 0, 0, 0, 0, 1245, 0, 0, 0, 589, 65536, 24772, 0, 0, 0, 0, 0], "price_inventory_target": [50, 0, 0, 0, 240, 130, 15, 85, 0, 370, 2050, 45, 0, 0, 2475, 30, 1330, 0, 0, 60, 85, 1165, 0, 255, 35, 65, 0, 0, 0, 1890, 0, 0, 2475, 490, 1850, 0, 0, 0, 0, 0, 0, 0, 105, 105, 2470, 0, 0, 85, 235, 140, 1765, 1140, 20, 105, 0, 1890, 190, 130, 0, 0, 0, 0, 205, 0, 0, 0, 0, 200, 20, 0, 0, 30, 0, 35, 0, 0, 65, 2470, 115, 105, 1000, 0, 0, 0, 0, 65, 0, 115, 0, 0, 1890, 60, 0, 2050, 65, 9545, 75, 0, 0, 0, 0, 45, 0, 40, 1160, 1890, 195, 0, 0, 0, 0, 0, 0, 490, 30, 0, 0, 25, 0, 0, 0, 0, 95, 0, 0, 0, 45, 9540, 1890, 0, 0, 0, 0, 0], "price_pressure_inventory_q16": [-65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, 0, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, 1966, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536, -65536], "price_pressure_shortage_q16": [5141, 0, 0, 0, 0, 0, 3856, 0, 0, 0, 32, 8739, 0, 0, 0, 0, 99, 0, 0, 0, 0, 113, 0, 0, 10628, 0, 0, 0, 0, 35, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5699, 613, 0, 70, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5958, 0, 0, 65535, 0, 1725, 0, 0, 0, 0, 0, 1237, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 35, 0, 0, 32, 0, 0, 0, 0, 0, 0, 0, 9973, 0, 2979, 0, 70, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4520, 0, 0, 0, 0, 0, 0, 0, 0, 4275, 0, 35, 0, 0, 0, 0, 0], "price_pressure_cost_q16": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 65371, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "price_pressure_idle_q16": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -915, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "price_pressure_total_q16": [-27546, -32768, -32768, -32768, -32375, -32556, -28888, -32629, -32768, -32162, -29378, -23956, -32768, -32768, -28713, -32719, -30490, -32768, -32768, -32670, -32629, -30747, -32768, -32351, -22083, -32662, -32768, -32768, -32768, -29637, -32768, -32768, -28713, -31966, -29737, -32768, -32768, 0, -32768, -32768, -32768, -32768, -32596, -32596, -28722, -32768, -24618, -32629, -32383, -32539, -29877, -30901, -27037, -31983, -32768, -29602, -32457, -32556, -32768, -32768, -32768, -32768, -32433, -32768, -32768, -32768, -32768, -32441, -26778, -32768, -32768, 66567, -32768, -30986, -32768, -32768, -32662, -28722, -32580, -31359, -31130, -32768, -32768, -32768, -32768, -32662, -32768, -32580, -32768, -32768, -29637, -32670, -32768, -29378, -32662, -24576, -32646, -32768, -32768, -32768, -32768, -22722, -32768, -29724, -30868, -29602, -32449, -32768, -32768, -32768, -32768, -32768, -32768, -31966, -32719, -32768, -32768, -28208, -32768, -32768, -32768, -32768, -32613, -32768, -32768, -32768, -28420, -24576, -29637, -32768, -32768, -32768, -32768, -32768], "price_change_q16": [-860, -1024, -1023, -1024, -1011, -1017, -902, -1019, -1024, -1005, -918, -748, -1024, -1024, -897, -1022, -952, -1024, -1024, -1020, -1019, -961, -1024, -1010, -690, -1020, -1024, -1024, -1024, -926, -1024, -1024, -897, -998, -929, -1023, -1023, 0, -1023, -1023, -1023, -1023, -1018, -1018, -897, -1024, -769, -1019, -1011, -1016, -934, -965, -844, -768, -1024, -925, -1014, -1017, -1023, -1023, -1024, -1024, -1013, -1024, -1024, -1024, -1023, -779, -836, -1024, -1024, 2081, -1023, -968, -1023, -1024, -1020, -897, -1018, -753, -973, -1024, -1023, -1024, -1023, -1020, -1023, -1017, -1024, -1023, -926, -1020, -1024, -918, -1020, -768, -1020, -1023, -1024, -1024, -1023, -710, -1024, -928, -964, -925, -1014, -1024, -1024, -1024, -1023, -1024, -1024, -998, -1022, -1024, -1024, -881, -1024, -1023, -1023, -1024, -1019, -1024, -1024, -1024, -888, -768, -926, -1024, -1023, -1024, -1024, -1024], "price_preview_saturation_count": 0, "good_category_ids": ["primitive_construction", "processor_component", "agricultural_machinery", "structural_metal", "automobiles", "autonomous_systems", "spinnable_fiber", "batteries", "bauxite", "beverages", "bread", "bricks", "brine", "tools", "canned_fish", "cement", "solid_fuel", "tools", "clay", "rag_paper_fiber", "clothing", "coal", "coke", "computers", "concrete", "construction_components", "copper", "copper_ore", "tools", "starchy_staple", "spinnable_fiber", "crude_oil", "dairy_products", "detergent", "edible_oil", "prime_mover", "electrical_equipment", "electricity", "electronic_components", "prime_mover", "explosives", "fertilizer", "fine_clothing", "fine_furniture", "fish", "spinnable_fiber", "flint", "footwear", "fur", "furniture", "game_meat", "gathered_plants", "glass", "glassware", "precious_metal", "starchy_staple", "horses", "household_appliances", "industrial_chemicals", "industrial_machinery", "insulated_cable", "iron_ore", "jewelry", "raw_latex_feedstock", "lead", "lead_ore", "leather", "leather_goods", "lime", "limestone", "livestock_products", "logs", "lubricants", "lumber", "machine_parts", "manganese_ore", "manuscripts", "meat", "medicinal_herbs", "metal_housewares", "natural_gas", "elastomer", "nuclear_fuel", "oceanic_vessels", "packaging", "paper", "petrochemicals", "pharmaceuticals", "phosphate_rock", "plastics", "starchy_staple", "pottery", "tools", "prepared_staples", "printed_materials", "processed_food", "radio_equipment", "railway_equipment", "rare_earth_metals", "rare_earth_ore", "raw_hide", "raw_stone", "reactor_components", "primitive_construction", "refined_fuel", "starchy_staple", "salt", "saltpeter", "scientific_instruments", "raw_fiber_crop", "processor_component", "silica_sand", "precious_metal", "soap", "spices", "ferrous_stock", "prime_mover", "ferrous_stock", "sulfur", "spinnable_fiber", "elastomer", "knowledge", "telecom_equipment", "tin", "tin_ore", "tools", "primitive_construction", "vegetables", "starchy_staple", "wire", "spinnable_fiber", "ferrous_stock", "zinc", "zinc_ore"], "good_storage_modes": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "good_monetary_issue_values": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 800000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 50000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "good_technology_tag_offsets": [0, 2, 3, 6, 9, 12, 13, 21, 24, 27, 31, 34, 38, 40, 42, 45, 48, 50, 51, 56, 65, 72, 77, 79, 81, 84, 88, 92, 95, 96, 107, 110, 113, 116, 119, 122, 125, 128, 134, 137, 140, 144, 147, 150, 153, 158, 160, 162, 165, 168, 171, 175, 177, 180, 185, 189, 197, 200, 203, 206, 209, 211, 215, 218, 225, 228, 231, 234, 239, 242, 245, 250, 257, 260, 265, 268, 271, 273, 276, 283, 288, 291, 293, 296, 301, 304, 310, 313, 316, 319, 322, 333, 336, 339, 343, 348, 350, 352, 355, 358, 361, 367, 371, 373, 375, 378, 392, 397, 401, 404, 411, 414, 417, 421, 424, 433, 436, 439, 442, 446, 449, 452, 473, 475, 478, 481, 484, 486, 495, 507, 510, 514, 516, 519, 522], "good_technology_tags": ["industry.construction", "tech.application.adobe_yard", "tech.machine_learning", "industry.machinery", "tech.application.agricultural_machinery_plant", "tech.application.method_agricultural_machinery_plant_r9", "industry.metals", "tech.application.aluminum_plant", "tech.autonomous_labor_coordination", "industry.machinery", "tech.application.automobiles_plant", "tech.application.method_automobiles_plant_r10", "tech.application.autonomous_systems_plant", "industry.primary", "tech.wild_flax_collection", "tech.application.method_flax_collector_r6", "tech.application.method_flax_collector_r8", "tech.application.method_flax_collector_r10", "tech.application.flax_collector", "tech.application.method_flax_collector_r3", "tech.application.method_flax_collector_r5", "industry.machinery", "tech.application.batteries_plant", "tech.smart_grid", "industry.primary", "tech.application.bauxite_collector", "tech.application.method_bauxite_collector_r9", "industry.food", "tech.application.brewery", "tech.application.distillery", "tech.application.beverages_plant", "industry.food", "tech.application.bakery", "tech.application.bread_plant", "industry.construction", "tech.application.bricks_plant", "tech.application.fired_brick_kiln", "tech.application.method_bricks_plant_r6", "industry.primary", "tech.application.brine_gathering_basin", "tech.application.ore_bronzesmith_camp", "tech.application.bronze_tool_workshop", "industry.food", "tech.application.canning_workshop", "tech.application.canned_fish_plant", "industry.construction", "tech.application.cement_plant", "tech.application.method_cement_plant_r9", "industry.energy", "tech.application.charcoal_pit", "tech.stone_knapping", "industry.primary", "tech.earth_building", "tech.application.primitive_clay_pit", "tech.application.early_clay_pit", "tech.application.clay_collector", "industry.textile", "tech.weaving", "tech.application.household_loom", "tech.application.guild_weaving_house", "tech.application.cottage_weaving", "tech.application.improved_domestic_loom", "tech.application.textile_mill", "tech.application.cloth_plant", "tech.application.synthetic_textile_mill", "industry.textile", "tech.hide_scraping", "tech.fiber_twisting", "tech.application.fur_sewing_shelter", "tech.application.felt_making_tent", "tech.application.tailor_shop", "tech.application.clothing_plant", "industry.primary", "tech.application.surface_coal_gathering", "tech.application.coal_mine", "tech.application.coal_adit", "tech.application.steam_coal_mine", "tech.coke_smelting", "tech.application.method_coke_ovens_r9", "industry.machinery", "tech.digital_computing", "industry.construction", "tech.application.concrete_plant", "tech.application.method_concrete_plant_r9", "industry.construction", "tech.application.classical_masonry_yard", "tech.application.classical_public_works", "tech.application.construction_components_plant", "industry.metals", "tech.natural_copper_working", "tech.copper_metallurgy", "tech.advanced_metallurgy", "industry.primary", "tech.copper_mining_application", "tech.application.early_copper_mine", "tech.copper_annealing", "industry.primary", "tech.wild_maize_collection", "tech.rainfed_maize_cultivation", "tech.application.maize_garden", "tech.application.swidden_maize_plot", "tech.application.floodplain_maize_plot", "tech.application.tenant_rainfed_maize_field", "tech.application.landed_estate", "tech.application.method_landed_estate_r6", "tech.application.method_maize_farm_r8", "tech.application.method_maize_farm_r10", "industry.primary", "tech.application.cotton_ginning_shelter", "tech.textile_machinery", "industry.primary", "tech.application.early_oil_well", "tech.application.oil_collector", "industry.food", "tech.application.creamery", "tech.application.dairy_products_plant", "industry.chemicals", "tech.application.detergent_plant", "tech.application.method_detergent_plant_r10", "industry.food", "tech.application.edible_oil_plant", "tech.application.method_edible_oil_plant_r6", "industry.machinery", "tech.application.electric_motor_plant", "tech.smart_grid", "industry.machinery", "tech.application.basic_electrical_equipment_works", "tech.application.electrical_equipment_plant", "industry.energy", "tech.application.electricity_plant", "tech.application.oil_power_plant", "tech.application.gas_power_plant", "tech.application.hydropower_station", "tech.application.nuclear_power_plant", "industry.machinery", "tech.application.electronic_components_plant", "tech.application.method_electronic_components_plant_r10", "industry.machinery", "tech.application.engines_plant", "tech.application.method_engines_plant_r10", "industry.chemicals", "tech.application.explosives_plant", "tech.application.method_explosives_plant_r8", "tech.application.method_explosives_plant_r10", "industry.chemicals", "tech.application.composting_yard", "tech.application.fertilizer_plant", "industry.textile", "tech.application.court_tailor", "tech.application.fine_clothing_plant", "industry.consumer", "tech.application.cabinetmaker_workshop", "tech.application.fine_furniture_plant", "industry.primary", "tech.freshwater_fishing", "tech.coastal_fishing", "tech.application.method_marine_fish_collector_r2", "tech.application.method_marine_fish_collector_r4", "industry.primary", "tech.application.flax_retting_pit", "tech.stone_knapping", "tech.application.method_flint_quarry_r1", "industry.textile", "tech.application.cobbler_shop", "tech.application.footwear_plant", "industry.textile", "tech.application.small_game_trapline", "tech.application.method_stone_age_hunting_camp_r4", "industry.forestry", "tech.application.guild_hall", "tech.application.furniture_plant", "industry.primary", "tech.hunting", "tech.application.small_game_trapline", "tech.application.method_stone_age_hunting_camp_r4", "tech.gathering", "tech.application.method_gathering_ground_r1", "industry.construction", "tech.application.classical_glass_kiln", "tech.application.glass_plant", "tech.application.glassware_workshop_kingdom", "tech.application.glassware_manufactory_exploration", "tech.application.glassware_factory_steam", "tech.application.glassware_factory_electrical", "tech.application.glassware_smart_factory", "industry.primary", "tech.gold_panning", "tech.application.primitive_gold_sluice", "tech.application.gold_mine", "industry.food", "tech.application.subsistence_farm", "tech.application.three_field_smallholding", "tech.application.improved_smallholding", "tech.application.mechanized_farm", "tech.industrial_agronomy", "tech.application.precision_farm", "tech.automated_agriculture", "industry.primary", "tech.horse_domestication", "tech.application.horse_breeder", "industry.machinery", "tech.application.household_appliances_plant", "tech.application.method_household_appliances_plant_r10", "industry.chemicals", "tech.application.industrial_chemicals_plant", "tech.application.electrochemical_works", "industry.machinery", "tech.application.industrial_machinery_plant", "tech.application.method_industrial_machinery_plant_r9", "tech.application.insulated_cable_plant", "tech.application.method_insulated_cable_plant_r10", "industry.primary", "tech.application.iron_ore_collector", "tech.application.early_iron_mine", "tech.application.steam_iron_mine", "industry.consumer", "tech.application.goldsmith_workshop", "tech.application.jewelry_plant", "industry.primary", "tech.application.rubber_tapping_camp", "tech.application.rubber_tree_collector", "tech.application.method_rubber_tree_collector_r6", "tech.application.method_specialty_commodity_plantation", "tech.application.method_rubber_tree_collector_r8", "tech.application.method_rubber_tree_collector_r10", "industry.metals", "tech.application.lead_plant", "tech.application.method_lead_plant_r9", "industry.primary", "tech.application.lead_ore_collector", "tech.application.method_lead_ore_collector_r9", "industry.textile", "tech.application.tannery", "tech.application.leather_plant", "tech.application.leather_goods_workshop_kingdom", "tech.application.leather_goods_manufactory_exploration", "tech.application.leather_goods_factory_steam", "tech.application.leather_goods_factory_electrical", "tech.application.leather_goods_smart_factory", "industry.construction", "tech.application.lime_plant", "tech.application.method_lime_plant_r6", "industry.primary", "tech.application.limestone_collector", "tech.application.method_limestone_collector_r6", "industry.food", "tech.application.pastoral_camp", "tech.application.manorial_pasture", "tech.application.ranching_station", "tech.application.method_smart_husbandry", "industry.primary", "tech.deadwood_collection", "tech.application.timber_collector", "tech.application.method_timber_collector_r2", "tech.application.method_timber_collector_r4", "tech.satellite_observation", "tech.application.method_autonomous_forestry", "industry.chemicals", "tech.application.lubricants_plant", "tech.application.method_lubricants_plant_r9", "industry.forestry", "tech.timber_sawing", "tech.application.method_lumber_plant_r2", "tech.application.method_lumber_plant_r4", "tech.application.method_lumber_plant_r6", "industry.machinery", "tech.application.machine_parts_plant", "tech.application.method_machine_parts_plant_r9", "industry.primary", "tech.application.manganese_ore_collector", "tech.application.method_manganese_ore_collector_r10", "tech.application.classical_scriptorium", "tech.application.monastic_scriptorium", "industry.food", "tech.application.slaughterhouse", "tech.application.mechanized_slaughterhouse", "industry.primary", "tech.application.medicinal_herbs_collector", "tech.application.method_medicinal_herbs_collector_r7", "tech.application.medicinal_herb_garden", "tech.application.medicinal_herb_estate", "tech.application.method_medicinal_herbs_collector_r8", "tech.application.method_medicinal_herbs_collector_r10", "tech.application.metal_housewares_workshop_kingdom", "tech.application.metal_housewares_manufactory_exploration", "tech.application.metal_housewares_factory_steam", "tech.application.metal_housewares_factory_electrical", "tech.application.metal_housewares_smart_factory", "industry.primary", "tech.application.natural_gas_collector", "tech.application.method_natural_gas_collector_r10", "industry.primary", "tech.application.latex_smoking_shelter", "industry.chemicals", "tech.application.nuclear_fuel_plant", "tech.application.method_nuclear_fuel_plant_r10", "tech.application.oceanic_shipyard", "tech.application.method_steam_shipping", "tech.application.method_oceanic_shipyard_r7", "tech.automated_logistics", "tech.autonomous_logistics", "industry.forestry", "tech.application.packaging_plant", "tech.application.method_packaging_plant_r7", "industry.forestry", "tech.application.plant_fiber_paper_workshop", "tech.application.bark_paper_workshop", "tech.application.parchment_workshop", "tech.application.rag_paper_workshop", "tech.application.paper_plant", "industry.chemicals", "tech.application.petrochemicals_plant", "tech.application.method_petrochemicals_plant_r10", "industry.chemicals", "tech.application.pharmaceuticals_plant", "tech.application.nuclear_medicine_center", "industry.primary", "tech.application.phosphate_rock_collector", "tech.application.method_phosphate_rock_collector_r9", "industry.chemicals", "tech.application.plastics_plant", "tech.application.method_plastics_plant_r10", "industry.primary", "tech.application.wild_tuber_patch", "tech.application.highland_tuber_plot", "tech.application.potato_collector", "tech.application.method_potato_collector_r6", "tech.application.method_highland_precision_agriculture", "tech.application.tenant_potato_field", "tech.application.potato_estate", "tech.application.method_potato_farm_r5", "tech.application.method_potato_farm_r8", "tech.application.method_potato_farm_r10", "tech.application.open_pottery_hearth", "tech.application.pottery_kiln", "tech.application.method_pottery_kiln_r3", "tech.application.precision_tool_workshop", "tech.application.method_precision_tool_workshop_r8", "tech.application.method_precision_tool_workshop_r10", "industry.food", "tech.fire_control", "tech.application.staple_kitchen", "tech.application.staple_food_plant", "industry.forestry", "tech.application.woodblock_printing_house", "tech.application.movable_type_print_shop", "tech.application.printed_materials_plant", "tech.application.method_printed_materials_plant_r7", "industry.food", "tech.application.processed_food_plant", "tech.application.radio_equipment_works", "tech.application.method_radio_equipment_works_r10", "industry.machinery", "tech.application.steam_rail_works", "tech.application.railway_equipment_plant", "industry.metals", "tech.application.rare_earth_metals_plant", "tech.application.method_rare_earth_metals_plant_r10", "industry.primary", "tech.application.rare_earth_collector", "tech.application.method_rare_earth_collector_r10", "industry.textile", "tech.hunting", "tech.application.small_game_trapline", "tech.application.slaughterhouse", "tech.application.method_stone_age_hunting_camp_r4", "tech.application.mechanized_slaughterhouse", "industry.primary", "tech.ground_stone_tools", "tech.application.method_stone_collector_r2", "tech.application.method_stone_collector_r4", "tech.application.reactor_component_works", "tech.application.method_reactor_component_works_r10", "industry.primary", "tech.reed_harvesting", "industry.chemicals", "tech.application.refined_fuel_plant", "tech.application.method_refined_fuel_plant_r10", "industry.primary", "tech.wild_rice_collection", "tech.upland_rice_propagation", "tech.application.wetland_rice_garden", "tech.application.rice_collector", "tech.application.sharecrop_paddy", "tech.application.tenant_paddy", "tech.application.bunded_rice_field", "tech.application.method_rice_collector_r3", "tech.application.estate_paddy", "tech.application.method_rice_collector_r5", "tech.application.method_rice_collector_r6", "tech.application.method_rice_collector_r8", "tech.application.method_rice_collector_r10", "industry.primary", "tech.salt_preservation", "tech.application.solar_salt_pan", "tech.application.salt_collector", "tech.application.industrial_salt_mine", "industry.primary", "tech.application.saltpeter_collector", "tech.application.method_saltpeter_collector_r8", "tech.application.method_saltpeter_collector_r10", "tech.application.scientific_instrument_works", "tech.application.method_scientific_instrument_works_r8", "tech.application.method_scientific_instrument_works_r10", "industry.primary", "tech.application.cotton_garden", "tech.application.cotton_collector", "tech.application.method_cotton_collector_r6", "tech.application.cotton_smallholding", "tech.application.method_cotton_collector_r8", "tech.application.method_cotton_collector_r10", "industry.machinery", "tech.application.basic_semiconductor_fab", "tech.application.semiconductors_plant", "industry.primary", "tech.application.classical_silica_pit", "tech.application.silica_sand_collector", "industry.primary", "tech.application.surface_silver_working", "tech.application.shallow_silver_working", "tech.application.silver_mine", "industry.chemicals", "tech.application.soap_plant", "tech.application.method_soap_plant_r6", "industry.primary", "tech.application.spice_shade_garden", "tech.application.spice_plants_collector", "tech.application.method_spice_plants_collector_r6", "tech.application.method_specialty_commodity_plantation", "tech.application.spice_managed_garden", "tech.application.spice_commercial_plantation", "tech.application.method_spice_plants_collector_r8", "tech.application.method_spice_plants_collector_r10", "industry.metals", "tech.application.stainless_steel_plant", "tech.autonomous_labor_coordination", "tech.application.atmospheric_engine_workshop", "tech.application.steam_engine_works", "tech.application.method_steam_engine_works_r9", "industry.metals", "tech.application.steam_steel_works", "tech.application.steel_plant", "industry.primary", "tech.application.sulfur_collector", "tech.application.method_sulfur_collector_r8", "tech.scientific_agents", "industry.textile", "tech.application.synthetic_fiber_plant", "tech.application.method_synthetic_fiber_plant_r10", "industry.chemicals", "tech.application.synthetic_rubber_plant", "tech.application.method_synthetic_rubber_plant_r10", "tech.early_knowledge_institution", "tech.application.lorekeeper_circle", "tech.application.oral_memory_circle", "tech.application.flood_calendar_shrine", "tech.application.seasonal_observation_shelter", "tech.application.tide_observation_hut", "tech.method.pastoral_council_tent", "tech.application.scribal_school", "tech.application.classical_academy", "tech.application.chartered_university", "tech.application.printing_academy", "tech.application.industrial_research_laboratory", "tech.application.learned_society", "tech.application.cadastral_office", "tech.application.polytechnic_institute", "tech.national_laboratories", "tech.software_engineering", "tech.application.watershed_governance_center", "tech.application.geospatial_analysis_center", "tech.machine_learning", "tech.algorithmic_governance", "industry.machinery", "tech.networked_computing", "industry.metals", "tech.application.early_tin_smelter", "tech.advanced_metallurgy", "industry.primary", "tech.application.early_tin_mine", "tech.application.tin_ore_collector", "industry.tools", "tech.application.iron_tool_workshop", "tech.application.tools_plant", "industry.primary", "tech.turf_cutting", "industry.primary", "tech.application.subsistence_farm", "tech.application.fertile_soil_collector", "tech.application.three_field_smallholding", "tech.application.improved_smallholding", "tech.application.mechanized_farm", "tech.industrial_agronomy", "tech.application.precision_farm", "tech.automated_agriculture", "industry.primary", "tech.wild_wheat_collection", "tech.rainfed_wheat_cultivation", "tech.application.floodplain_wheat_plot", "tech.application.wheat_farm", "tech.application.tenant_rainfed_wheat_field", "tech.application.dryland_wheat_field", "tech.application.method_wheat_farm_r3", "tech.application.method_wheat_farm_r5", "tech.application.method_wheat_farm_r6", "tech.application.method_wheat_farm_r8", "tech.application.method_wheat_farm_r10", "industry.metals", "tech.application.wire_plant", "tech.application.method_wire_plant_r10", "industry.textile", "tech.application.wool_shed", "tech.application.method_wool_shed_r3", "tech.application.method_wool_shed_r5", "industry.metals", "tech.application.bloomery", "industry.metals", "tech.application.zinc_plant", "tech.application.method_zinc_plant_r9", "industry.primary", "tech.application.zinc_ore_collector", "tech.scientific_agents"], "good_technology_available": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], "good_trade_enabled": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], "good_transport_load_per_unit_q16": [65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 8192, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536], "trade_import_ema": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "trade_export_ema": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "trade_inbound": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "trade_outbound": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "trade_next_arrival_day": -1, "trade_inbound_escrow_cash": 0, "trade_outbound_escrow_cash": 0, "merchant_handles": [4294967297], "merchant_population": [1], "merchant_funds": [1829958], "merchant_cash": 1829958, "merchant_inventory_retail_value": 3168417467, "merchant_inventory_liquidation_value": 3009986874, "merchant_economic_assets": 3011816832, "merchant_procurement_margin_value": 0, "merchant_trade_purchase_cash": 0, "merchant_trade_sale_cash": 0, "merchant_operating_outflow": 0, "merchant_liquidity_coverage_q16": 65536, "merchant_effective_buy_factor_q16": 65536, "merchant_snapshot_saturation_count": 0 }
+SCRIPT ERROR: Invalid cast: could not convert value to 'PackedInt64Array'.
+   at: _test_greenfield_owner_income_reallocation (res://tests/building_runtime_test.gd:1480)
+   GDScript backtrace (most recent call first):
+       [0] _test_greenfield_owner_income_reallocation (res://tests/building_runtime_test.gd:1480)
+       [1] _run (res://tests/building_runtime_test.gd:84)
+       [2] _init (res://tests/building_runtime_test.gd:9)
+  [PASS] unemployed-first mobility country bootstraps
+  [PASS] unemployed-first mobility runtime configures
+  [PASS] unemployed-first mobility fixture bootstraps
+  [PASS] unemployed owner hiring precedes ACTIVE owner attraction
+  [PASS] unemployed-first owner hiring conserves every ledger
+  [PASS] owner-investment country bootstraps
+  [PASS] owner-investment runtime configures
+  [PASS] owner-investment settlement bootstraps
+  [PASS] owner-investment diagnostic trace registers
+  [PASS] employment fills the existing profitable owner opening first
+  [PASS] existing owner-opening employment conserves every ledger
+  [PASS] profitable unlocked-building investment transitions its sponsor and starts construction
+  [PASS] investment v9 publishes one consistent marginal-output driver
+  [PASS] legacy signal thresholds and sales ratios do not veto positive marginal demand
+  [PASS] endogenous construction conserves every ledger
+  [PASS] non-review day prevents repeat expansion
+  [PASS] merit-order country bootstraps
+  [PASS] merit-order runtime configures
+  [PASS] merit-order settlement bootstraps
+  [FAIL] low-cost plant captures merchant quota before high-cost leftover
+  [PASS] merit-order offtake conserves every ledger
+  [PASS] displacement country bootstraps
+  [PASS] displacement runtime configures
+  [PASS] displacement settlement bootstraps
+  [PASS] displacement diagnostic trace registers
+  displacement debug={ "steam_row": 351, "reject": 10, "stealable": 0, "pending": false, "starts": 0, "catchup_cells": 1, "cheap_count": 0 }
+  [FAIL] cheaper unlocked type can displace covered high-cost incumbents
+  [PASS] displacement investment conserves every ledger
+  [PASS] first-research fixture catalog contains the required entries
+  [PASS] first-research country configures
+  [PASS] first-research country bootstraps
+  [FAIL] first-research queue and automatic procurement commit
+  [PASS] first-research economy configures
+  [PASS] first-research economy fixture bootstraps
+  [PASS] first-research fixture starts without a research building
+  [FAIL] automatic investment starts the first research building
+  [FAIL] first research building is committed after investment
+  [PASS] research auto-investment preserves every ledger
+  [PASS] employment-catchup country bootstraps
+  [PASS] employment-catchup runtime configures
+  [PASS] employment-catchup fixture injects 35 additional unemployed
+  [FAIL] high unemployment activates catch-up and starts jobs within 30 days
+  [FAIL] employment catch-up lowers unemployment strictly below 25 percent in 365 days
+  [PASS] employment-catchup regression conserves every ledger
+  [PASS] collector-investment country bootstraps
+  [PASS] collector-investment runtime configures
+  [PASS] collector-investment fixture bootstraps
+  [PASS] collector-investment diagnostic trace registers
+  [PASS] logs demand can fund and construct a local timber collector
+  [PASS] collector investment conserves every ledger
+  [PASS] non-starter producers consume positive explicit construction materials
+  [PASS] maintenance CSR columns exist
+  [PASS] farm and kiln maintenance recipes differ
+  [PASS] ocean fishery has an executable oceanic-vessel replacement sink
+  [PASS] installed-maintenance country bootstraps
+  [PASS] installed-maintenance runtime configures
+  [PASS] installed-maintenance fixture bootstraps
+  [PASS] installed mine keeps construction-material buffer without new starts
+  [PASS] maintenance is a paid operating cost
+  [PASS] storable industrial continuity still conserves ledgers
+  [PASS] existing-market entry country bootstraps
+  [PASS] existing-market entry runtime configures
+  [PASS] existing-market entry fixture bootstraps
+  [PASS] existing-market investment diagnostics register
+  [PASS] collector investment reaches economic gates alongside industrial reviews
+  [PASS] existing-market entry review conserves every ledger
+  [PASS] input-coverage country bootstraps
+  [PASS] input-coverage runtime configures
+  [PASS] input-coverage fixture bootstraps
+  [PASS] missing input coverage blocks further entry
+  [PASS] input-coverage review conserves every ledger
+  [PASS] owner-livelihood country bootstraps
+  [PASS] owner-livelihood runtime configures
+  [PASS] owner-livelihood fixture bootstraps
+  [PASS] shortage cannot approve a workshop that misses owner livelihood
+  [PASS] realized workshop margin includes owner livelihood
+  [PASS] owner-only loss country bootstraps
+  [PASS] owner-only loss runtime configures
+  [PASS] owner-only loss fixture bootstraps
+  [PASS] installed loom keeps logs construction reserve
+  [FAIL] owner livelihood loss counts without input or payroll cost
+  [FAIL] third owner-only livelihood loss suspends the workshop
+  [PASS] recovery-pending country bootstraps
+  [PASS] recovery-pending runtime configures
+  [PASS] recovery-pending fixture bootstraps
+  [FAIL] recovery-pending fixture reaches suspension with released owner
+  [FAIL] recovery-pending owner removal queues
+  [FAIL] failed restart remains fully suspended without a probe state
+  [FAIL] next due cycle keeps suspension without rehiring
+  [FAIL] suspended building has no recovery cooldown or probe capacity
+  [PASS] recovery-pending cycles conserve every ledger
+  [PASS] service lifecycle country bootstraps
+  [PASS] service lifecycle runtime configures
+  [PASS] service lifecycle fixture bootstraps
+  [PASS] merchant post never enters producer loss suspension
+  [PASS] dead-merchant investment country bootstraps
+  [PASS] dead-merchant investment runtime configures
+  [PASS] dead-merchant investment fixture bootstraps
+  [PASS] structural commit repairs merchant before the capital review
+  [PASS] repaired merchant supports the next endogenous construction review
+  [PASS] dead-merchant construction conserves every ledger
+  [PASS] continuation country bootstraps
+  [PASS] continuation runtime configures
+  [PASS] continuation fixture bootstraps
+  [PASS] one-cell building budget enters bounded continuation
+greenfield owner quote cell=5 type=42 revenue=9499000 fallback=1889360 price_market=5
+greenfield owner quote cell=15 type=42 revenue=9499000 fallback=1889360 price_market=15
+  [PASS] due rolling bucket completes through continuation slices
+  [PASS] completed rolling transaction can save immediately
+  [PASS] sliced building plan commits with exact conservation
+  [PASS] reference continuation country bootstraps
+  [PASS] reference continuation runtime configures
+  [PASS] reference continuation fixture bootstraps
+greenfield owner quote cell=5 type=42 revenue=9499000 fallback=1889360 price_market=5
+greenfield owner quote cell=15 type=42 revenue=9499000 fallback=1889360 price_market=15
+  [PASS] continuation slice budget preserves authoritative hash
+  [PASS] production scalar country bootstraps
+  [PASS] production worker country bootstraps
+  [PASS] production scalar runtime configures
+  [PASS] production worker runtime configures
+  [PASS] production scalar fixture bootstraps
+  [PASS] production worker fixture bootstraps
+  [PASS] building production dispatches multiple worker tasks
+  [PASS] sub-threshold production uses weighted parallel dispatch
+  [PASS] building plan uses weighted parallel dispatch
+  [PASS] building production worker and scalar hashes match
+  [PASS] building production worker and scalar event hashes match
+  [PASS] building production worker conserves all ledgers
+  [PASS] weighted worker remains scalar-equivalent across rolling phases
+  [PASS] incremental opening audit preserves exact rolling ledgers
+  [PASS] opening audit exercises fast and full verification paths
+  [PASS] INCREMENTAL closing audit exercises fast and full verification paths
+  [PASS] INCREMENTAL closing audit remains enabled and exact
+  [PASS] investment review list executes every scheduled cell exactly once
+  [FAIL] ACTIVE investment sparse filter evaluates a strict candidate subset
+  [PASS] ACTIVE investment sparse filter reports no viable-candidate mismatch
+  [PASS] merchant-finance country bootstraps
+  [PASS] merchant-finance runtime configures
+  [PASS] merchant-finance fixture bootstraps
+  [PASS] cashless owner submits merchant-financed construction
+  [PASS] merchant financing draws principal and records five-percent premium
+  [PASS] last local merchant remains a merchant while financing construction
+  [PASS] merchant-financed construction conserves all ledgers
+  [PASS] all-technology test country bootstraps
+  [PASS] building runtime configures
+  [PASS] building population bootstraps
+  [PASS] untracked settlement detail is unavailable
+  [PASS] inspector trace target registers
+  [PASS] new inspector trace reports pending until commit
+  [PASS] industrialist owner handle exists
+  [PASS] build command accepted
+  [PASS] construction cycle commits
+  [FAIL] new building group triggers one batched topology rebuild
+  [FAIL] mine completes at cycle boundary
+  [PASS] production cycle conserves population
+  [PASS] production cycle conserves money
+  [PASS] production cycle conserves market goods
+  [PASS] building snapshot reports five-day production period
+  [FAIL] owner job filled
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 275 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

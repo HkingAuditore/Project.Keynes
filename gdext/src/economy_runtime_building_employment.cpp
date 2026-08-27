@@ -575,6 +575,27 @@ bool NativeEconomyRuntime::run_building_employment_cell(
     {
         const int32_t n_eth = static_cast<int32_t>(_ethnicity_ids.size());
 
+        // Owner mobility needs a prospective quote for a genuinely greenfield
+        // lot, but the authoritative income helper must continue to return
+        // zero for empty groups everywhere else (settlement, UI, investment,
+        // and audit paths).  Keep this quote local to employment ordering and
+        // only synthesize the physical owner slots for an ACTIVE group that
+        // has never observed a capacity period.
+        auto owner_mobility_income = [&](const BuildingGroup &group,
+                                         int64_t &sat) -> int64_t {
+            const int64_t actual = projected_owner_income_per_day(group, sat);
+            if (group.filled_owner > 0 ||
+                group.last_observed_capacity_days_q16 > 0 ||
+                group.operating_state != 0 || group.count <= 0) {
+                return actual;
+            }
+            const int64_t full_owner = planned_owner_demand(group, sat);
+            if (full_owner <= 0) return actual;
+            BuildingGroup probe = group;
+            probe.filled_owner = full_owner;
+            return projected_owner_income_per_day(probe, sat);
+        };
+
         // ---- 目标计算：本周期各 group 期望的 owner / 各 role employee ----
         // 用 thread_local 缓冲避免每 cell 分配。
         thread_local std::vector<int64_t> group_owner_target;      // 每 group owner 目标
@@ -622,7 +643,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             const BuildingType &type = _building_types[group.type_id];
             int64_t score_sat = 0;
             labor_expected_owner_income[static_cast<size_t>(g - first)] =
-                projected_owner_income_per_day(group, score_sat);
+                owner_mobility_income(group, score_sat);
             int64_t weighted_net = 0;
             int64_t weighted_slots = 0;
             for (int32_t r = 0; r < type.employee_count; ++r) {
@@ -990,7 +1011,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             const BuildingType &type = _building_types[group.type_id];
             if (group.owner_signature_id < 0 ||
                 group.owner_signature_id >= static_cast<int32_t>(_signatures.size())) continue;
-            const int64_t income = projected_owner_income_per_day(
+            const int64_t income = owner_mobility_income(
                 group, _saturation_count);
             projected_owner_income[g - first] = income;
             const int64_t owner_target = group_owner_target[g - first];
