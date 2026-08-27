@@ -490,8 +490,11 @@ void NativeEconomyRuntime::configure_satisfaction_profile(const Dictionary &prof
         dict_num<int32_t>(profile, "carrying_sat_elasticity_q16", 22938),
         0, q16);
     _carrying_soft_start_q16 = std::clamp(
-        dict_num<int32_t>(profile, "carrying_soft_start_q16", 45875),
+        dict_num<int32_t>(profile, "carrying_soft_start_q16", 52429),
         1, q16);
+    _carrying_stock_buffer_days = std::clamp(
+        dict_num<int32_t>(profile, "carrying_stock_buffer_days", 30),
+        1, 3650);
     _carrying_surplus_floor_q16 = std::clamp(
         dict_num<int32_t>(profile, "carrying_surplus_floor_q16", 16384),
         0, q16);

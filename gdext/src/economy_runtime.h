@@ -2973,7 +2973,8 @@ private:
     int32_t _carrying_water_habitability_q16 = 49152;
     int32_t _carrying_surplus_elasticity_q16 = Q16_ONE / 2;
     int32_t _carrying_sat_elasticity_q16 = 22938;
-    int32_t _carrying_soft_start_q16 = 45875;
+    int32_t _carrying_soft_start_q16 = 52429;
+    int32_t _carrying_stock_buffer_days = 30;
     int32_t _carrying_surplus_floor_q16 = 16384;
     int32_t _carrying_surplus_cap_q16 = 98304;
     int32_t _carrying_sat_floor_q16 = 8192;

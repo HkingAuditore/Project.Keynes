@@ -267,7 +267,10 @@ extends Resource
 @export_range(0, 65536, 1) var carrying_water_habitability_q16: int = 49152
 @export_range(0, 65536, 1) var carrying_surplus_elasticity_q16: int = 32768
 @export_range(0, 65536, 1) var carrying_sat_elasticity_q16: int = 22938
-@export_range(1, 65536, 1) var carrying_soft_start_q16: int = 45875
+@export_range(1, 65536, 1) var carrying_soft_start_q16: int = 52429
+## Food stock contributes a bounded number of days of equivalent carrying capacity.
+## This prevents a temporary warehouse surplus from creating unlimited population growth.
+@export_range(1, 3650, 1) var carrying_stock_buffer_days: int = 30
 @export_range(0, 65536, 1) var carrying_surplus_floor_q16: int = 16384
 @export_range(65536, 262144, 1) var carrying_surplus_cap_q16: int = 98304
 @export_range(0, 65536, 1) var carrying_sat_floor_q16: int = 8192
@@ -440,6 +443,7 @@ func to_native_profile() -> Dictionary:
 		"carrying_surplus_elasticity_q16": carrying_surplus_elasticity_q16,
 		"carrying_sat_elasticity_q16": carrying_sat_elasticity_q16,
 		"carrying_soft_start_q16": carrying_soft_start_q16,
+		"carrying_stock_buffer_days": carrying_stock_buffer_days,
 		"carrying_surplus_floor_q16": carrying_surplus_floor_q16,
 		"carrying_surplus_cap_q16": carrying_surplus_cap_q16,
 		"carrying_sat_floor_q16": carrying_sat_floor_q16,

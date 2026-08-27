@@ -752,6 +752,8 @@ Inspector 诊断 lane，计入 runtime memory，但不进入 state hash 或 PKEC
 出生率折减先把 composite 按 `satisfaction_birth_reference_q16` 重标定，再把格级 sat
 混进 `K_eff`；cohort 只乘残差，避免把心情乘两次。未解锁物资族不进 surplus 分母。
 贴上 `K_eff` 后出生落到更替。饥饿死亡仍只读 `SAT_DIM_SUBSISTENCE`。
+`K_eff` 由上一周期净食品流量与当地可用食品库存共同决定；库存按 `carrying_stock_buffer_days`
+（默认 30 天）折算，并排除生产/建设锁定量。默认 `carrying_soft_start_q16=52429`（约 80%），
 出生贡献按地块与民族聚合，Q32 小数余数跨周期累计，并由 PKEC v47 持久化；不新增调度阶段。
 
 建筑基础工资不再预付；生产出售后用 owner 销售后资金统一分配。最终欠薪继续记录在
