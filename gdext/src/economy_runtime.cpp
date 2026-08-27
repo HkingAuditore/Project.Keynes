@@ -2029,6 +2029,268 @@ void NativeEconomyRuntime::refresh_epoch_research_demand() {
     }
 }
 
+void NativeEconomyRuntime::refresh_epoch_bullion_quota() {
+    _epoch_bullion_quota_keys.clear();
+    _epoch_bullion_quota_initial.clear();
+    _epoch_bullion_quota_remaining.clear();
+    _epoch_bullion_quota_initial_total = 0;
+    _epoch_bullion_quota_remaining_total = 0;
+    _epoch_bullion_quota_remainder_units = 0;
+    if (_cell_count <= 0 || _market.good_count <= 0 ||
+        _epoch_settlement_cells.empty() || _bullion_monthly_issue_cap_q16 <= 0)
+        return;
+
+    bool has_monetary_good = false;
+    for (int32_t good = 0; good < _market.good_count; ++good) {
+        if (good < static_cast<int32_t>(_good_monetary_issue_values.size()) &&
+            _good_monetary_issue_values[good] > 0) {
+            has_monetary_good = true;
+            break;
+        }
+    }
+    if (!has_monetary_good) return;
+
+    std::vector<int64_t> cell_population(
+        static_cast<size_t>(_cell_count), 0);
+    std::vector<int64_t> cell_weight(
+        static_cast<size_t>(_cell_count), 0);
+    std::vector<int64_t> country_population(
+        static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
+    for (const int32_t cell : _epoch_settlement_cells) {
+        if (cell < 0 || cell >= _cell_count) continue;
+        int64_t population = 0;
+        int64_t funds = 0;
+        _population.for_each_in_cell(cell, [&](int32_t slot) {
+            population = saturating_add(population,
+                std::max<int64_t>(0, _population.population[slot]),
+                _saturation_count);
+            funds = saturating_add(funds,
+                std::max<int64_t>(0, _population.funds[slot]),
+                _saturation_count);
+        });
+        cell_population[static_cast<size_t>(cell)] = population;
+        const int32_t country = cell < static_cast<int32_t>(
+                _epoch_cell_country.size())
+            ? _epoch_cell_country[static_cast<size_t>(cell)] : -1;
+        if (country >= 0 && country < _epoch_country_count)
+            country_population[static_cast<size_t>(country)] = saturating_add(
+                country_population[static_cast<size_t>(country)], population,
+                _saturation_count);
+        cell_weight[static_cast<size_t>(cell)] = funds;
+    }
+    // Country treasury cash is apportioned by population after fiscal reserve;
+    // this keeps the world cap global while allowing a cash-poor but populated
+    // cell to inherit a deterministic share of national monetary capacity.
+    if (_country_runtime != nullptr) {
+        for (const int32_t cell : _epoch_settlement_cells) {
+            if (cell < 0 || cell >= _cell_count) continue;
+            const int32_t country = cell < static_cast<int32_t>(
+                    _epoch_cell_country.size())
+                ? _epoch_cell_country[static_cast<size_t>(cell)] : -1;
+            if (country < 0 || country >= _epoch_country_count) continue;
+            const int64_t national_cash = std::max<int64_t>(0,
+                _country_runtime->cash_for_slot(country));
+            const int64_t population = cell_population[static_cast<size_t>(cell)];
+            const int64_t total_population = country_population[
+                static_cast<size_t>(country)];
+            if (national_cash <= 0 || population <= 0 || total_population <= 0)
+                continue;
+            cell_weight[static_cast<size_t>(cell)] = saturating_add(
+                cell_weight[static_cast<size_t>(cell)],
+                mul_div_sat(national_cash, population, total_population,
+                            _saturation_count), _saturation_count);
+        }
+    }
+    int64_t total_weight = 0;
+    for (const int32_t cell : _epoch_settlement_cells) {
+        if (cell >= 0 && cell < _cell_count)
+            total_weight = saturating_add(total_weight,
+                cell_weight[static_cast<size_t>(cell)], _saturation_count);
+    }
+    if (total_weight <= 0) return;
+    // Only spendable money can justify new currency issuance. Fiscal/trade/
+    // expedition escrow is locked and must not be counted as the monetary
+    // base; using _opening_totals.country_cash here would also double-count
+    // fiscal cash after the reservation pass has moved it into escrow.
+    const int64_t spendable_country_cash = _country_runtime != nullptr
+        ? std::max<int64_t>(0, _country_runtime->total_cash())
+        : std::max<int64_t>(0, _opening_totals.country_cash);
+    const int64_t opening_money = saturating_add(
+        std::max<int64_t>(0, _opening_totals.cohort_funds),
+        spendable_country_cash, _saturation_count);
+    const int64_t monthly_cap = mul_div_sat(
+        opening_money, std::clamp<int64_t>(_bullion_monthly_issue_cap_q16,
+            0, Q16_ONE), Q16_ONE, _saturation_count);
+    const int64_t epoch_cap = mul_div_sat(
+        monthly_cap, std::max<int64_t>(1, _epoch_days), 30,
+        _saturation_count);
+    if (epoch_cap <= 0) return;
+
+    struct QuotaRow {
+        uint64_t key = 0;
+        int64_t weight = 0;
+        int64_t base = 0;
+        int64_t remainder = 0;
+    };
+    std::vector<QuotaRow> rows;
+    rows.reserve(_epoch_settlement_cells.size());
+    for (const int32_t cell : _epoch_settlement_cells) {
+        if (cell < 0 || cell >= _cell_count ||
+            cell_weight[static_cast<size_t>(cell)] <= 0) continue;
+        // One cell-level pool is shared by every monetary good (gold, silver,
+        // and future bullion goods). Keeping the pool at cell scope means a
+        // cell with only one monetary producer never strands the other half of
+        // an artificial per-good split, while competing goods still contend for
+        // the same issuance budget during settlement.
+        // The product can exceed int64 even though the apportioned quotient is
+        // bounded by epoch_cap (weight <= total_weight).  Do the quotient and
+        // remainder in 128-bit arithmetic so saturation cannot turn the
+        // fractional remainder into billions of fake whole units.
+        const uint64_t ua = static_cast<uint64_t>(epoch_cap);
+        const uint64_t ub = static_cast<uint64_t>(
+            cell_weight[static_cast<size_t>(cell)]);
+        const uint64_t ud = static_cast<uint64_t>(total_weight);
+        uint64_t quotient = 0;
+        uint64_t remainder = 0;
+        if (ua <= std::numeric_limits<uint64_t>::max() / ub) {
+            const uint64_t product = ua * ub;
+            quotient = product / ud;
+            remainder = product % ud;
+        } else {
+#if defined(_MSC_VER) && defined(_M_X64)
+            uint64_t product_hi = 0;
+            const uint64_t product_lo = _umul128(ua, ub, &product_hi);
+            if (product_hi >= ud) {
+                // This cannot occur while ub <= ud and epoch_cap fits in
+                // int64, but keep the path saturating if a future caller
+                // violates that invariant.
+                ++_saturation_count;
+                quotient = static_cast<uint64_t>(
+                    std::numeric_limits<int64_t>::max());
+                remainder = 0;
+            } else {
+                quotient = _udiv128(product_hi, product_lo, ud, &remainder);
+            }
+#else
+            const unsigned __int128 product =
+                static_cast<unsigned __int128>(ua) * ub;
+            quotient = static_cast<uint64_t>(product / ud);
+            remainder = static_cast<uint64_t>(product % ud);
+#endif
+        }
+        rows.push_back({static_cast<uint64_t>(static_cast<uint32_t>(cell)),
+                        cell_weight[static_cast<size_t>(cell)],
+                        static_cast<int64_t>(std::min<uint64_t>(
+                            quotient, static_cast<uint64_t>(epoch_cap))),
+                        static_cast<int64_t>(remainder)});
+    }
+    if (rows.empty()) return;
+
+    // Largest-remainder apportionment keeps the sum exactly at epoch_cap (when
+    // there are enough weighted cells) instead of losing the fractional tail
+    // independently in every cell. Ties use the stable cell id, preserving
+    // replay equality and making tiny but positive cells discoverable.
+    int64_t base_total = 0;
+    for (const QuotaRow &row : rows)
+        base_total = saturating_add(base_total, row.base, _saturation_count);
+    int64_t remainder_units = std::max<int64_t>(
+        0, epoch_cap - std::min(epoch_cap, base_total));
+    // Largest-remainder apportionment has fewer leftover units than rows.  A
+    // violated bound indicates a numeric regression; clamp it so malformed
+    // inputs can never turn this bounded step into an unbounded hot loop.
+    const int64_t max_remainder_units = static_cast<int64_t>(rows.size()) - 1;
+    if (remainder_units > std::max<int64_t>(0, max_remainder_units)) {
+        ++_saturation_count;
+        remainder_units = std::max<int64_t>(0, max_remainder_units);
+    }
+    _epoch_bullion_quota_remainder_units = remainder_units;
+    std::vector<size_t> remainder_order(rows.size());
+    for (size_t i = 0; i < rows.size(); ++i) remainder_order[i] = i;
+    std::stable_sort(remainder_order.begin(), remainder_order.end(),
+        [&](size_t lhs, size_t rhs) {
+            if (rows[lhs].remainder != rows[rhs].remainder)
+                return rows[lhs].remainder > rows[rhs].remainder;
+            return rows[lhs].key < rows[rhs].key;
+        });
+    for (int64_t i = 0; i < remainder_units; ++i)
+        rows[remainder_order[static_cast<size_t>(i) % rows.size()]].base =
+            saturating_add(rows[remainder_order[static_cast<size_t>(i) % rows.size()]].base,
+                           1, _saturation_count);
+
+    std::sort(rows.begin(), rows.end(), [](const QuotaRow &a, const QuotaRow &b) {
+        return a.key < b.key;
+    });
+    for (const QuotaRow &row : rows) {
+        _epoch_bullion_quota_keys.push_back(row.key);
+        _epoch_bullion_quota_initial.push_back(std::max<int64_t>(0, row.base));
+        _epoch_bullion_quota_remaining.push_back(std::max<int64_t>(0, row.base));
+        _epoch_bullion_quota_initial_total = saturating_add(
+            _epoch_bullion_quota_initial_total, std::max<int64_t>(0, row.base),
+            _saturation_count);
+        _epoch_bullion_quota_remaining_total = saturating_add(
+            _epoch_bullion_quota_remaining_total, std::max<int64_t>(0, row.base),
+            _saturation_count);
+    }
+}
+
+int64_t NativeEconomyRuntime::bullion_cell_quota_remaining(
+        int32_t cell) const {
+    if (cell < 0 || cell >= _cell_count) return 0;
+    const uint64_t key = static_cast<uint64_t>(static_cast<uint32_t>(cell));
+    const auto it = std::lower_bound(_epoch_bullion_quota_keys.begin(),
+        _epoch_bullion_quota_keys.end(), key);
+    if (it == _epoch_bullion_quota_keys.end() || *it != key) return 0;
+    const size_t index = static_cast<size_t>(it -
+        _epoch_bullion_quota_keys.begin());
+    return index < _epoch_bullion_quota_remaining.size()
+        ? std::max<int64_t>(0, _epoch_bullion_quota_remaining[index]) : 0;
+}
+
+int64_t NativeEconomyRuntime::bullion_cell_quota_initial(
+        int32_t cell) const {
+    if (cell < 0 || cell >= _cell_count) return 0;
+    const uint64_t key = static_cast<uint64_t>(static_cast<uint32_t>(cell));
+    const auto it = std::lower_bound(_epoch_bullion_quota_keys.begin(),
+        _epoch_bullion_quota_keys.end(), key);
+    if (it == _epoch_bullion_quota_keys.end() || *it != key) return 0;
+    const size_t index = static_cast<size_t>(it -
+        _epoch_bullion_quota_keys.begin());
+    return index < _epoch_bullion_quota_initial.size()
+        ? std::max<int64_t>(0, _epoch_bullion_quota_initial[index]) : 0;
+}
+
+int64_t NativeEconomyRuntime::bullion_quota_remaining(
+        int32_t cell, int32_t good) const {
+    if (good < 0 || good >= _market.good_count ||
+        good >= static_cast<int32_t>(_good_monetary_issue_values.size()) ||
+        _good_monetary_issue_values[good] <= 0)
+        return 0;
+    return bullion_cell_quota_remaining(cell);
+}
+
+int64_t NativeEconomyRuntime::consume_bullion_quota(
+        int32_t cell, int32_t good, int64_t requested, int64_t &sat) {
+    if (requested <= 0 || cell < 0 || cell >= _cell_count || good < 0 ||
+        good >= _market.good_count) return 0;
+    if (good >= static_cast<int32_t>(_good_monetary_issue_values.size()) ||
+        _good_monetary_issue_values[good] <= 0)
+        return 0;
+    const uint64_t key = static_cast<uint64_t>(static_cast<uint32_t>(cell));
+    const auto it = std::lower_bound(_epoch_bullion_quota_keys.begin(),
+        _epoch_bullion_quota_keys.end(), key);
+    if (it == _epoch_bullion_quota_keys.end() || *it != key) return 0;
+    const size_t index = static_cast<size_t>(it -
+        _epoch_bullion_quota_keys.begin());
+    if (index >= _epoch_bullion_quota_remaining.size()) return 0;
+    const int64_t take = std::min<int64_t>(requested,
+        std::max<int64_t>(0, _epoch_bullion_quota_remaining[index]));
+    _epoch_bullion_quota_remaining[index] = saturating_sub(
+        _epoch_bullion_quota_remaining[index], take, sat);
+    _epoch_bullion_quota_remaining_total = saturating_sub(
+        _epoch_bullion_quota_remaining_total, take, sat);
+    return take;
+}
+
 int64_t NativeEconomyRuntime::epoch_research_demand_daily(
         int32_t cell, int32_t good) const {
     if (good != _epoch_research_good_id || cell < 0 ||
@@ -4049,16 +4311,56 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
             group.purchase_intent_capacity_q16 = 0;
             group.recovery_cycles = 0;
             group.last_expected_revenue = 0;
+            group.last_quoted_market_receipt = 0;
+            group.last_quoted_operating_cost = 0;
+            group.last_maintenance_due = 0;
             if (group.operating_state != 0) ++_loss_suspended_building_groups;
             continue;
         }
         const int32_t market = _market.cell_to_market[group.cell];
+        // The economic quote is for the capacity that can actually operate in
+        // this cell. A nameplate recipe is only a greenfield prior; an
+        // installed group with no owner or missing role fill has no observed
+        // revenue and must not attract labour on an imaginary margin.
+        const int64_t owner_slots = saturating_mul(
+            group.count, type.owner_slots_per_building, _saturation_count);
+        // Epoch planning runs before the employment stage. A newly installed
+        // or never-observed group therefore has no factual fill yet, but it
+        // still needs a bounded nameplate prior so its first owner/employee
+        // positions can be hired. Once production has emitted a capacity-day
+        // receipt, replace that prior with the minimum observed role fill.
+        const bool observed_capacity = group.last_observed_capacity_days_q16 > 0;
+        int64_t workforce_capacity_q16 = !observed_capacity ? Q16_ONE
+            : owner_slots > 0
+                ? std::clamp<int64_t>(mul_div_sat(
+                    std::max<int64_t>(0, group.filled_owner), Q16_ONE,
+                    owner_slots, _saturation_count), 0, Q16_ONE)
+                : Q16_ONE;
+        for (int32_t r = 0; r < type.employee_count; ++r) {
+            const JobRole &role = _building_employee_roles[type.employee_begin + r];
+            const int64_t role_slots = saturating_mul(
+                group.count, role.slots_per_building, _saturation_count);
+            const int32_t role_index = group.employee_fill_begin + r;
+            const int64_t role_fill = role_index >= 0 && role_index <
+                    static_cast<int32_t>(_building_employee_filled.size())
+                ? std::max<int64_t>(0, _building_employee_filled[role_index]) : 0;
+            const int64_t role_capacity = !observed_capacity ? Q16_ONE
+                : role_slots > 0
+                ? std::clamp<int64_t>(mul_div_sat(
+                    role_fill, Q16_ONE, role_slots, _saturation_count),
+                    0, Q16_ONE) : Q16_ONE;
+            workforce_capacity_q16 = std::min(workforce_capacity_q16,
+                                              role_capacity);
+        }
         int64_t input_cost = 0;
         int64_t employee_wages = 0;
-        const int64_t owner_living_cost = saturating_mul(
+        const int64_t owner_living_cost_full = saturating_mul(
             living_cost_for_signature(group.cell, group.owner_signature_id, -1,
                                       _saturation_count),
             type.owner_slots_per_building, _saturation_count);
+        const int64_t owner_living_cost = mul_div_sat(
+            owner_living_cost_full, workforce_capacity_q16, Q16_ONE,
+            _saturation_count);
         int64_t revenue = 0;
         bool inputs_available = true;
         for (int32_t i = 0; i < type.input_count; ++i) {
@@ -4103,6 +4405,9 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
             group.purchase_intent_capacity_q16 = 0;
             group.recovery_cycles = 0;
             group.last_expected_revenue = 0;
+            group.last_quoted_market_receipt = 0;
+            group.last_quoted_operating_cost = 0;
+            group.last_maintenance_due = 0;
             if (type.kind != 2 && group.operating_state == 2) {
                 group.operating_state = 1;
                 group.pending_operating_state = 255;
@@ -4123,14 +4428,85 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
                 role_index < static_cast<int32_t>(_building_role_contract_wage.size())
                     ? _building_role_contract_wage[role_index]
                     : role.reference_wage_per_day;
+            const int64_t filled = role_index >= 0 && role_index <
+                    static_cast<int32_t>(_building_employee_filled.size())
+                ? std::max<int64_t>(0, _building_employee_filled[role_index]) : 0;
             employee_wages = saturating_add(employee_wages, saturating_mul(
-                role.slots_per_building, wage,
-                _saturation_count), _saturation_count);
+                filled, wage, _saturation_count), _saturation_count);
+        }
+        int64_t monetary_group_quota_money = 0;
+        int64_t monetary_group_request_money = 0;
+        if (_building_cell_offsets.size() == static_cast<size_t>(_cell_count + 1)) {
+            int64_t monetary_units = 0;
+            for (int32_t peer = _building_cell_offsets[group.cell];
+                 peer < _building_cell_offsets[group.cell + 1]; ++peer) {
+                const BuildingGroup &peer_group = _buildings[peer];
+                if (peer_group.count <= 0 || peer_group.operating_state != 0 ||
+                    peer_group.type_id < 0 || peer_group.type_id >=
+                        static_cast<int32_t>(_building_types.size())) continue;
+                const BuildingType &peer_type = _building_types[peer_group.type_id];
+                bool emits_monetary = false;
+                for (int32_t peer_output = 0;
+                     peer_output < peer_type.output_count; ++peer_output) {
+                    const int32_t peer_good = _building_outputs[
+                        peer_type.output_begin + peer_output].good_id;
+                    if (peer_good >= 0 && peer_good < static_cast<int32_t>(
+                            _good_monetary_issue_values.size()) &&
+                        _good_monetary_issue_values[peer_good] > 0) {
+                        emits_monetary = true;
+                        break;
+                    }
+                }
+                if (emits_monetary)
+                    monetary_units = saturating_add(monetary_units,
+                        peer_group.count, _saturation_count);
+            }
+            const int64_t cell_quota_money = bullion_cell_quota_remaining(
+                group.cell);
+            if (cell_quota_money > 0 && monetary_units > 0)
+                monetary_group_quota_money = mul_div_sat(
+                    cell_quota_money, std::max<int64_t>(0, group.count),
+                    monetary_units, _saturation_count);
+            const int64_t group_period_days = saturating_mul(
+                std::max<int64_t>(1, group.count),
+                std::max<int64_t>(1, _epoch_days), _saturation_count);
+            for (int32_t i = 0; i < type.output_count; ++i) {
+                const GoodAmount &item = _building_outputs[type.output_begin + i];
+                const int64_t issue_value = item.good_id >= 0 &&
+                        item.good_id < static_cast<int32_t>(
+                            _good_monetary_issue_values.size())
+                    ? _good_monetary_issue_values[item.good_id] : 0;
+                if (issue_value <= 0) continue;
+                const int64_t period_units = saturating_mul(
+                    std::max<int64_t>(0, item.quantity), group_period_days,
+                    _saturation_count);
+                monetary_group_request_money = saturating_add(
+                    monetary_group_request_money,
+                    mul_div_sat(period_units, issue_value, GOODS_SCALE,
+                                _saturation_count), _saturation_count);
+            }
         }
         for (int32_t i = 0; i < type.output_count; ++i) {
             const GoodAmount &item = _building_outputs[type.output_begin + i];
             int64_t settlement = _good_monetary_issue_values[item.good_id];
-            if (settlement <= 0) {
+            if (settlement > 0) {
+                // The quota is an epoch money pool. Split the group's share
+                // across monetary output requests, then convert the resulting
+                // period receipt back to a per-building-day unit quote.
+                const int64_t period_units = saturating_mul(
+                    std::max<int64_t>(0, item.quantity),
+                    saturating_mul(std::max<int64_t>(1, group.count),
+                        std::max<int64_t>(1, _epoch_days), _saturation_count),
+                    _saturation_count);
+                const int64_t request_money = mul_div_sat(
+                    period_units, settlement, GOODS_SCALE, _saturation_count);
+                const int64_t output_quota_money = monetary_group_request_money > 0
+                    ? mul_div_sat(monetary_group_quota_money, request_money,
+                        monetary_group_request_money, _saturation_count) : 0;
+                settlement = period_units > 0
+                    ? mul_div_sat(output_quota_money, GOODS_SCALE, period_units,
+                        _saturation_count) : 0;
+            } else {
                 const int32_t output_signal = market_signal_index(
                     group.cell, item.good_id);
                 const int32_t output_flow = trade_flow_index(
@@ -4152,6 +4528,39 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
             revenue = saturating_add(revenue, mul_div_sat(
                 item.quantity, settlement, GOODS_SCALE, _saturation_count),
                 _saturation_count);
+        }
+        // Keep a full-capacity daily quote separate from the current staffed
+        // quote. The latter is used for margin gating; the former is used at
+        // the end of the plan to apply the effective execution scale exactly
+        // once. Mixing the two double-counts workforce when utilization is
+        // below nameplate capacity.
+        int64_t full_capacity_revenue = revenue;
+        revenue = mul_div_sat(full_capacity_revenue, workforce_capacity_q16,
+                              Q16_ONE, _saturation_count);
+        if (observed_capacity) {
+            // Installed groups forecast from the previous committed receipt,
+            // normalized by the observed workforce-capacity-days. A zero
+            // receipt therefore remains zero; it cannot fall back to a stale
+            // nameplate quote or a frozen commodity price.
+            const int64_t observed_receipts = saturating_add(
+                saturating_add(std::max<int64_t>(0, group.last_market_receipt),
+                               std::max<int64_t>(0, group.last_bullion_mint_receipt),
+                               _saturation_count),
+                std::max<int64_t>(0, group.last_producer_support_receipt),
+                _saturation_count);
+            // `last_observed_capacity_days_q16` already contains the prior
+            // group count, elapsed days, and Q16 workforce share. Convert
+            // the receipt to a full-capacity per-building-day quote here;
+            // apply the current effective scale only once below.
+            full_capacity_revenue = group.last_observed_capacity_days_q16 > 0
+                ? mul_div_sat(observed_receipts, Q16_ONE,
+                    std::max<int64_t>(1,
+                        group.last_observed_capacity_days_q16),
+                    _saturation_count)
+                : 0;
+            revenue = mul_div_sat(full_capacity_revenue,
+                                  workforce_capacity_q16, Q16_ONE,
+                                  _saturation_count);
         }
         const int64_t operating = saturating_add(saturating_add(
             saturating_add(input_cost, employee_wages, _saturation_count),
@@ -4567,6 +4976,20 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
                 income_transfer, _saturation_count);
             group.planned_utilization_q16 = expected_profit > 0
                 ? static_cast<int32_t>(Q16_ONE) : 0;
+            // Survival output is a bounded exception to pure cash-profit
+            // gating. It may run only far enough to cover the frozen
+            // subsistence/clothing floor computed for this owner, while its
+            // monetary forecast remains the factual receipt above (possibly
+            // zero). Resource, input, climate, and working-capital checks
+            // below still constrain what can actually execute.
+            if (group_index >= 0 && group_index < static_cast<int32_t>(
+                    _building_survival_utilization_floor_q16.size())) {
+                group.planned_utilization_q16 = std::max<int32_t>(
+                    group.planned_utilization_q16,
+                    static_cast<int32_t>(std::clamp<int64_t>(
+                        _building_survival_utilization_floor_q16[group_index],
+                        0, Q16_ONE)));
+            }
         } else {
             group.planned_utilization_q16 = 0;
         }
@@ -4584,11 +5007,17 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
                 const int64_t base = effective_resource_use_quantity(
                     group.cell, item.resource_id, raw_base, _saturation_count);
                 if (base <= 0) continue;
+                const int64_t available = available_resource_amount(item, group.cell);
+                int64_t resource_scale_q16 = std::clamp<int64_t>(mul_div_sat(
+                    available, Q16_ONE, base, _saturation_count), 0, Q16_ONE);
+                // Preserve a positive executable probe even when a very large
+                // group makes the exact ratio smaller than one Q16 unit. The
+                // production stage still computes integer quantities and
+                // rechecks inventory, so this cannot consume beyond stock.
+                if (available > 0 && resource_scale_q16 == 0)
+                    resource_scale_q16 = 1;
                 resource_capacity_q16 = std::min<int64_t>(
-                    resource_capacity_q16,
-                    std::clamp<int64_t>(mul_div_sat(
-                        available_resource_amount(item, group.cell), Q16_ONE,
-                        base, _saturation_count), 0, Q16_ONE));
+                    resource_capacity_q16, resource_scale_q16);
             }
             group.planned_utilization_q16 = static_cast<int32_t>(
                 std::min<int64_t>(group.planned_utilization_q16,
@@ -4602,12 +5031,22 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
         group.planned_utilization_q16 = static_cast<int32_t>(
             std::min<int64_t>(group.planned_utilization_q16,
                               group.last_climate_capacity_q16));
+        const int64_t effective_execution_q16 = std::min<int64_t>(
+            std::clamp<int64_t>(workforce_capacity_q16, 0, Q16_ONE),
+            std::clamp<int64_t>(group.planned_utilization_q16, 0, Q16_ONE));
         group.purchase_intent_capacity_q16 = 0;
         const int64_t group_days = saturating_mul(
             group.count, std::max(1, _epoch_days), _saturation_count);
         group.last_expected_revenue = mul_div_sat(
-            saturating_mul(group_days, revenue, _saturation_count),
-            group.planned_utilization_q16, Q16_ONE, _saturation_count);
+            saturating_mul(group_days, full_capacity_revenue, _saturation_count),
+            effective_execution_q16, Q16_ONE, _saturation_count);
+        group.last_quoted_market_receipt = group.last_expected_revenue;
+        group.last_quoted_operating_cost = mul_div_sat(
+            saturating_mul(group_days, operating, _saturation_count),
+            effective_execution_q16, Q16_ONE, _saturation_count);
+        group.last_maintenance_due = mul_div_sat(
+            saturating_mul(group_days, maintenance_cost, _saturation_count),
+            effective_execution_q16, Q16_ONE, _saturation_count);
         if (margin_gap < 0) ++_unprofitable_building_groups;
         if (group.operating_state != 0) ++_loss_suspended_building_groups;
         _utilization_sum_q16 = saturating_add(
@@ -5387,69 +5826,141 @@ int64_t NativeEconomyRuntime::projected_owner_income_per_day(
         group.count <= 0) return 0;
     const BuildingType &type = _building_types[group.type_id];
     const int64_t days = std::max<int64_t>(1, _epoch_days);
-    const int64_t utilization = std::clamp<int64_t>(
-        group.planned_utilization_q16, 0, Q16_ONE);
-    const int64_t owner_jobs = std::max(
-        planned_owner_demand(group, sat),
-        std::max<int64_t>(0, group.filled_owner));
-    if (owner_jobs <= 0 || utilization <= 0) return 0;
-    int64_t input_cost = saturating_mul(
-        saturating_mul(group.sample_unit_input_cost, group.count,
-                       sat),
-        days, sat);
-    input_cost = mul_div_sat(input_cost, utilization, Q16_ONE,
-                             sat);
-    int64_t maintenance_cost = saturating_mul(
-        saturating_mul(group.sample_unit_maintenance_cost, group.count,
-                       sat),
-        days, sat);
-    maintenance_cost = mul_div_sat(maintenance_cost, utilization, Q16_ONE,
-                                   sat);
-    int64_t wage_cost = 0;
-    for (int32_t r = 0; r < type.employee_count; ++r) {
-        const JobRole &role = _building_employee_roles[type.employee_begin + r];
-        const int32_t role_index = group.employee_fill_begin + r;
-        const int64_t wage = role_index >= 0 && role_index <
-                static_cast<int32_t>(_building_role_contract_wage.size())
-            ? _building_role_contract_wage[role_index]
-            : role.reference_wage_per_day;
-        int64_t role_cost = saturating_mul(
-            saturating_mul(role.slots_per_building, group.count,
-                           sat),
-            saturating_mul(wage, days, sat),
-            sat);
-        role_cost = mul_div_sat(role_cost, utilization, Q16_ONE,
-                                sat);
-        wage_cost = saturating_add(wage_cost, role_cost, sat);
+    // Owner mobility is based on people actually attached to this lot. The
+    // former max(planned, filled) fallback made an empty lot look profitable
+    // at full nameplate capacity and pulled population into phantom income.
+    const int64_t owner_jobs = std::max<int64_t>(0, group.filled_owner);
+    if (owner_jobs <= 0) return 0;
+    const bool observed_capacity = group.last_observed_capacity_days_q16 > 0;
+    int64_t fact_scale_q16 = Q16_ONE;
+    if (observed_capacity) {
+        int64_t workforce_q16 = Q16_ONE;
+        const int64_t owner_slots = saturating_mul(
+            group.count, type.owner_slots_per_building, sat);
+        workforce_q16 = owner_slots > 0
+            ? std::clamp<int64_t>(mul_div_sat(
+                owner_jobs, Q16_ONE, owner_slots, sat), 0, Q16_ONE)
+            : Q16_ONE;
+        for (int32_t r = 0; r < type.employee_count; ++r) {
+            const JobRole &role = _building_employee_roles[type.employee_begin + r];
+            const int64_t role_slots = saturating_mul(
+                group.count, role.slots_per_building, sat);
+            const int32_t role_index = group.employee_fill_begin + r;
+            const int64_t filled = role_index >= 0 && role_index <
+                    static_cast<int32_t>(_building_employee_filled.size())
+                ? std::max<int64_t>(0, _building_employee_filled[role_index]) : 0;
+            const int64_t role_capacity = role_slots > 0
+                ? std::clamp<int64_t>(mul_div_sat(
+                    filled, Q16_ONE, role_slots, sat), 0, Q16_ONE)
+                : Q16_ONE;
+            workforce_q16 = std::min(workforce_q16, role_capacity);
+        }
+        const int64_t current_capacity_days_q16 = saturating_mul(
+            workforce_q16,
+            saturating_mul(std::max<int64_t>(1, group.count), days, sat), sat);
+        // This is a capacity-days multiplier, not a utilization ratio. It may
+        // legitimately exceed Q16 when the current period is longer or has
+        // more staffed capacity than the observed period.
+        fact_scale_q16 = current_capacity_days_q16 > 0
+            ? mul_div_sat(current_capacity_days_q16, Q16_ONE,
+                std::max<int64_t>(1, group.last_observed_capacity_days_q16), sat)
+            : 0;
     }
+    auto scale_fact = [&](int64_t value) -> int64_t {
+        return observed_capacity
+            ? mul_div_sat(std::max<int64_t>(0, value), fact_scale_q16,
+                          Q16_ONE, sat)
+            : std::max<int64_t>(0, value);
+    };
+    int64_t input_cost = 0;
+    int64_t maintenance_cost = 0;
+    int64_t wage_cost = 0;
+    if (observed_capacity) {
+        // These are the previous committed period's actual cash outflows.
+        // They remain authoritative even when the next plan is forced to a
+        // lower utilization by a newly scarce input or resource.
+        input_cost = scale_fact(group.last_input_cost);
+        maintenance_cost = scale_fact(group.last_maintenance_cost);
+        wage_cost = scale_fact(group.last_wages_paid);
+    } else {
+        const int64_t utilization = std::clamp<int64_t>(
+            group.planned_utilization_q16, 0, Q16_ONE);
+        if (utilization <= 0) return 0;
+        input_cost = saturating_mul(
+            saturating_mul(group.sample_unit_input_cost, group.count,
+                           sat),
+            days, sat);
+        input_cost = mul_div_sat(input_cost, utilization, Q16_ONE, sat);
+        maintenance_cost = saturating_mul(
+            saturating_mul(group.sample_unit_maintenance_cost, group.count,
+                           sat),
+            days, sat);
+        maintenance_cost = mul_div_sat(maintenance_cost, utilization, Q16_ONE,
+                                       sat);
+        for (int32_t r = 0; r < type.employee_count; ++r) {
+            const JobRole &role = _building_employee_roles[type.employee_begin + r];
+            const int32_t role_index = group.employee_fill_begin + r;
+            const int64_t wage = role_index >= 0 && role_index <
+                    static_cast<int32_t>(_building_role_contract_wage.size())
+                ? _building_role_contract_wage[role_index]
+                : role.reference_wage_per_day;
+            const int64_t filled = role_index >= 0 && role_index <
+                    static_cast<int32_t>(_building_employee_filled.size())
+                ? std::max<int64_t>(0, _building_employee_filled[role_index]) : 0;
+            int64_t role_cost = saturating_mul(
+                saturating_mul(filled, wage, sat), days, sat);
+            role_cost = mul_div_sat(role_cost, utilization, Q16_ONE, sat);
+            wage_cost = saturating_add(wage_cost, role_cost, sat);
+        }
+    }
+    const int64_t owner_living_cost = saturating_mul(
+        saturating_mul(living_cost_for_signature(
+            group.cell, group.owner_signature_id, _living_cost_base_plan_id,
+            sat), owner_jobs, sat), days, sat);
+    const int64_t observed_receipts = scale_fact(saturating_add(
+        saturating_add(std::max<int64_t>(0, group.last_market_receipt),
+                       std::max<int64_t>(0, group.last_bullion_mint_receipt), sat),
+        std::max<int64_t>(0, group.last_producer_support_receipt), sat));
+    // Once a group has a recorded workforce-capacity day, the prior period's
+    // receipts are the factual anchor. A zero receipt is meaningful and must
+    // not fall back to a stale/nameplate quote; only never-observed groups use
+    // the frozen greenfield quote.
+    const int64_t quoted_revenue = observed_capacity
+        ? observed_receipts
+        : (group.last_quoted_market_receipt > 0
+            ? group.last_quoted_market_receipt : group.last_expected_revenue);
     const uint8_t owner_tax_mask = static_cast<uint8_t>(
         (1U << NativeCountryRuntime::TAX_INCOME) |
         (1U << NativeCountryRuntime::TAX_BUSINESS));
     if ((_epoch_active_tax_mask & owner_tax_mask) == 0) {
         const int64_t owner_pool = std::max<int64_t>(0,
-            saturating_sub(group.last_expected_revenue,
-                saturating_add(saturating_add(input_cost, wage_cost, sat),
-                               maintenance_cost, sat), sat));
+            saturating_sub(quoted_revenue,
+                saturating_add(saturating_add(
+                    saturating_add(input_cost, wage_cost, sat),
+                    maintenance_cost, sat), owner_living_cost, sat), sat));
         const int64_t economic_owner_pool = saturating_add(
             owner_pool,
-            std::max<int64_t>(0, group.last_in_kind_livelihood_value), sat);
+            scale_fact(group.last_in_kind_livelihood_value), sat);
         return economic_owner_pool / std::max<int64_t>(1,
             saturating_mul(owner_jobs, days, sat));
     }
     const int64_t operating_income = saturating_sub(
-        group.last_expected_revenue,
-        saturating_add(saturating_add(input_cost, wage_cost, sat),
-                       maintenance_cost, sat), sat);
+        quoted_revenue,
+        saturating_add(saturating_add(
+            saturating_add(input_cost, wage_cost, sat), maintenance_cost, sat),
+            owner_living_cost, sat), sat);
     const int32_t business_rate = frozen_tax_rate(
         group.cell, NativeCountryRuntime::TAX_BUSINESS, group.type_id);
     const int64_t eligible_business_cost = saturating_add(
         saturating_add(input_cost, wage_cost, sat), maintenance_cost, sat);
     const int64_t business_base = business_rate < 0
         ? eligible_business_cost
-        : std::max<int64_t>(0, group.last_expected_revenue);
-    const int64_t business_transfer = expected_fiscal_transfer(
-        group.cell, NativeCountryRuntime::TAX_BUSINESS,
-        business_base, business_rate, sat);
+        : std::max<int64_t>(0, quoted_revenue);
+    const int64_t business_transfer = observed_capacity
+        ? saturating_sub(scale_fact(group.last_business_subsidy_received),
+                         scale_fact(group.last_business_tax_paid), sat)
+        : expected_fiscal_transfer(group.cell, NativeCountryRuntime::TAX_BUSINESS,
+            business_base, business_rate, sat);
     const int64_t taxable_income = std::max<int64_t>(0, saturating_sub(
         operating_income, std::max<int64_t>(0, business_transfer), sat));
     const int32_t profession = group.owner_signature_id >= 0 &&
@@ -5476,7 +5987,7 @@ int64_t NativeEconomyRuntime::projected_owner_income_per_day(
         saturating_sub(operating_income, business_transfer, sat),
         income_transfer, sat));
     const int64_t economic_owner_pool = saturating_add(
-        owner_pool, std::max<int64_t>(0, group.last_in_kind_livelihood_value), sat);
+        owner_pool, scale_fact(group.last_in_kind_livelihood_value), sat);
     // ACTIVE demand is physical owner capacity; RECOVERY uses probe demand.
     // In-kind livelihood remains part of the pool but never mints cash.
     return economic_owner_pool / std::max<int64_t>(1,
@@ -14520,6 +15031,15 @@ int64_t NativeEconomyRuntime::state_hash() const {
         mix_u64(static_cast<uint64_t>(group.merchant_debt_principal));
         mix_u64(static_cast<uint64_t>(group.merchant_debt_premium));
         mix_u64(static_cast<uint64_t>(group.last_in_kind_livelihood_value));
+        mix_u64(static_cast<uint64_t>(group.last_market_receipt));
+        mix_u64(static_cast<uint64_t>(group.last_bullion_mint_receipt));
+        mix_u64(static_cast<uint64_t>(group.last_producer_support_receipt));
+        mix_u64(static_cast<uint64_t>(group.last_business_tax_paid));
+        mix_u64(static_cast<uint64_t>(group.last_business_subsidy_received));
+        mix_u64(static_cast<uint64_t>(group.last_maintenance_due));
+        mix_u64(static_cast<uint64_t>(group.last_observed_capacity_days_q16));
+        mix_u64(static_cast<uint64_t>(group.last_quoted_market_receipt));
+        mix_u64(static_cast<uint64_t>(group.last_quoted_operating_cost));
     }
     // CSR offsets are reconstructed from the stable signal records and are not
     // persistent authority. Hash only the records so bootstrap and restore do

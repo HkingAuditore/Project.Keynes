@@ -31,6 +31,7 @@ func _ready() -> void:
 	_clock = get_node("Box/Row/Clock") as Control
 	_note = get_node("Box/Note") as Label
 	_spin.get_line_edit().alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_spin.get_line_edit().text_changed.connect(_on_text_changed)
 	_spin.get_line_edit().text_submitted.connect(_on_text_submitted)
 	_spin.get_line_edit().focus_entered.connect(_on_text_focus_entered)
 	_spin.get_line_edit().focus_exited.connect(_on_focus_exited)
@@ -167,17 +168,32 @@ func _refresh_note() -> void:
 	var base := int(_data.get("base", inherited))
 	var effective := int(_data.get("effective", base))
 	var prefix := "国家默认" if String(_data.get("scope", "item")) == "default" else "此地默认"
+	if _pending:
+		_note.text = "当前有效 %s · 待生效 %s · 次日生效" % [
+			_format_rate(effective), _format_rate(_pending_rate)]
+		return
 	var parts := PackedStringArray(["%s %s" % [prefix, _format_rate(inherited)]])
 	if effective != base:
 		parts.append("效果后 %s" % _format_rate(effective))
-	if _pending:
-		parts.append("次日生效")
 	_note.text = " · ".join(parts)
 
 
 func _on_text_submitted(text: String) -> void:
 	_sync_spin_from_text(text)
 	_submit(true)
+
+
+func _on_text_changed(text: String) -> void:
+	if _applying or _pending or not bool(_data.get("editable", false)):
+		return
+	var fallback := percent_to_basis_points(float(_spin.value))
+	if text.strip_edges().is_empty():
+		return
+	var rate := parse_rate_text(text, fallback)
+	if rate == fallback:
+		return
+	_spin.set_value_no_signal(basis_points_to_percent(rate))
+	_on_value_changed(_spin.value)
 
 
 func _on_text_focus_entered() -> void:
@@ -241,9 +257,6 @@ func _on_value_changed(_value: float) -> void:
 	_reset.visible = false
 	_spin.get_line_edit().add_theme_color_override("font_color", UITokens.BRASS_HIGHLIGHT)
 	_refresh_note()
-	if _spin.get_line_edit().has_focus():
-		_stop_commit_timer()
-		return
 	if _commit_timer != null:
 		_commit_timer.start()
 

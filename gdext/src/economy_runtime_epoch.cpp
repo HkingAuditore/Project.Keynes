@@ -66,6 +66,9 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _epoch_research_good_id = -1;
     _epoch_research_demand_by_cell.clear();
     _epoch_research_demand_by_market.clear();
+    _epoch_bullion_quota_keys.clear();
+    _epoch_bullion_quota_initial.clear();
+    _epoch_bullion_quota_remaining.clear();
     _owner_retained_outputs.clear();
     // Persistent sparse key set: each rolling phase contributes its changed
     // markets, so a planner generation covers the whole world without a dense
@@ -795,11 +798,18 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
         }
     }
     _epoch_days = workset_elapsed_days(day_index);
-    refresh_epoch_research_demand();
     _commit_lag_budget_days = std::max(0, locked_market_cycle_days() - 1);
     _epoch_begin_workset_ms = elapsed_ms(workset_started);
     const auto fiscal_started = Clock::now();
     if (!prepare_fiscal_budgets(day_index, error)) return false;
+    // Fiscal escrow is removed from the country treasury by the reservation
+    // pass. Research demand must see the remaining cash, so freeze it only
+    // after fiscal budgets are prepared.
+    refresh_epoch_research_demand();
+    // Bullion issuance must use the post-reservation spendable treasury. The
+    // quota routine excludes fiscal/trade escrow, so refresh it after fiscal
+    // reservation and before production/investment planning.
+    refresh_epoch_bullion_quota();
     _epoch_begin_fiscal_ms = elapsed_ms(fiscal_started);
     const auto resource_lane_2_started = Clock::now();
     for (int32_t resource = 0;

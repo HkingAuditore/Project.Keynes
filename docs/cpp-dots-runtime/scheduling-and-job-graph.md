@@ -201,7 +201,7 @@ runtime 标记为不可 tick 并暂停 `WorldClock`，只有地图生成、全�
 
 | id | 典型文件 | 职责 | 当前形态 |
 | --- | --- | --- | --- |
-| `season_refresh` | `simulation/systems/season_refresh_system.gd` | 日历/轨道相位、B+ path、慢变量缓存、atlas queue。 | Production 入口是 `SeasonRefreshSystem`；旧 `SeasonRefreshJob` 已删除。GDScript stage orchestration，部分 gdext 加速。 |
+| `season_refresh` | `simulation/systems/season_refresh_system.gd` | 日历/轨道相位、B+ path、慢变量缓存、atlas queue。 | Production 入口是 `SeasonRefreshSystem`；旧 `SeasonRefreshJob` 已删除。GDScript stage orchestration，部分 gdext 加速；注册为 `AlwaysPolicy` + `use_job_should_run=true`，由 `should_run()` 的 `period_ticks`/`_round_active` 门控，未到期时不进入 `tick()`。 |
 | `refresh_climate_daily` | `simulation/systems/climate_daily_system.gd` | climate daily round：Pass-A/B、ocean water/land、wind、sea ice hook、transpiration。 | GDScript 6-stage state machine + 多个 C++ pass。 |
 | `natural_resource_daily` | `simulation/systems/natural_resource_daily_system.gd` | 自然资源每日生成/衰减（per-cell reserve）。reads cell.temp/cell.moisture/cell.is_water；writes 各 `cell.res_*_reserve`。 | 单 pass 调 `MapGenerator.run_natural_resource_pass_scheduled` → C++ `run_natural_resource_pass`（slot 权威）+ GDScript fallback。Job 日历 stride 每天可跑，**不等于**积分 `dt_days`。活格每天 `dt_days=1`（漏跑才按真实间隔补，clamp 1–5）；空野 `cell % 60 == day % 60`，`dt_days=clamp(today-last,1,60)` 一次入账整段自然演化。`extra_change` 只应用一次。`must_run=true`（否则会被 native_daily_sim 超预算后 budget-skip）。 |
 | `country_daily` | `simulation/systems/country_daily_system.gd` | ACTIVE 国家命令图；原子预检/应用/发布领土、名称与科技变化。 | priority 255；`must_run=false`、`max_slices=1`、`use_job_should_run=true`；无到期命令零 slice，跨帧批次使用 `country_day_barrier`。 |

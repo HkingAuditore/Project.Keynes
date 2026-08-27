@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <tuple>
+#include <unordered_map>
 
 namespace pk {
 
@@ -22,6 +23,35 @@ bool NativeEconomyRuntime::commit_ready_construction(
     }
     std::vector<PendingConstruction> sponsored_completed;
     const int32_t sorted_group_count = static_cast<int32_t>(_buildings.size());
+    // The sorted prefix contains all groups that existed before this commit.
+    // Groups appended while committing this batch are not in that prefix, so
+    // keep a transient exact-key index instead of re-scanning the growing
+    // suffix for every ready construction record.
+    struct AppendedGroupKey {
+        int32_t cell = -1;
+        int32_t type_id = -1;
+        int32_t owner_signature_id = -1;
+
+        bool operator==(const AppendedGroupKey &other) const {
+            return cell == other.cell && type_id == other.type_id &&
+                   owner_signature_id == other.owner_signature_id;
+        }
+    };
+    struct AppendedGroupKeyHash {
+        size_t operator()(const AppendedGroupKey &key) const {
+            uint64_t value = static_cast<uint32_t>(key.cell);
+            value = (value << 21) ^ static_cast<uint32_t>(key.type_id);
+            value = (value << 21) ^ static_cast<uint32_t>(key.owner_signature_id);
+            value ^= value >> 33;
+            value *= 0xff51afd7ed558ccdULL;
+            value ^= value >> 33;
+            return static_cast<size_t>(value);
+        }
+    };
+    std::unordered_map<AppendedGroupKey, int32_t, AppendedGroupKeyHash>
+        appended_group_indices;
+    appended_group_indices.reserve(std::min<size_t>(
+        _pending_construction.size(), 8192));
     const auto group_key = [](const BuildingGroup &group) {
         return std::tuple(group.cell, group.type_id, group.owner_signature_id);
     };
@@ -36,10 +66,9 @@ bool NativeEconomyRuntime::commit_ready_construction(
             });
         if (it != last && group_key(*it) == target)
             return static_cast<int32_t>(it - first);
-        for (int32_t index = sorted_group_count;
-             index < static_cast<int32_t>(_buildings.size()); ++index) {
-            if (group_key(_buildings[index]) == target) return index;
-        }
+        const auto appended = appended_group_indices.find(
+            {cell, type_id, owner_signature_id});
+        if (appended != appended_group_indices.end()) return appended->second;
         return -1;
     };
     for (const PendingConstruction &pending : _pending_construction) {
@@ -78,6 +107,10 @@ bool NativeEconomyRuntime::commit_ready_construction(
             group.merchant_debt_term_cycles_left =
                 pending.merchant_debt_term_cycles_left;
             _buildings.push_back(group);
+            appended_group_indices.emplace(
+                AppendedGroupKey{pending.cell, pending.type_id,
+                    pending.owner_signature_id},
+                static_cast<int32_t>(_buildings.size()) - 1);
             topology_changed = true;
             ++_building_structure_new_groups;
         }

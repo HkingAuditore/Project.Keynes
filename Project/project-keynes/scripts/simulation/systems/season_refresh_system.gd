@@ -46,6 +46,10 @@ func _init(p_generator, p_map: MapData, p_world: WorldData) -> void:
 	slice_budget_ms = 0.55
 	max_slices_per_tick = 1
 	must_run = false
+	# The cadence and pending-round state live in should_run().  The native
+	# scheduler must call that gate instead of treating AlwaysPolicy as due on
+	# every tick.
+	use_job_should_run = true
 	generator = p_generator
 	map = p_map
 	world_data = p_world
@@ -191,13 +195,18 @@ func tick(_ctx) -> Dictionary:
 		var bp_stages_done: int = int(bp_res.get("stages_done", _stage))
 		var bp_elapsed_ms_inner: float = float(bp_res.get("elapsed_ms", 0.0))
 		_stage = clampi(bp_stages_done, 0, 12)
+		# Capture completion before resetting the local cursor below.  The round
+		# state is reset for the next periodic run, but the scheduler must still
+		# receive done=true for this completed invocation.
+		var bp_round_complete: bool = bp_done and _stage >= 12
+		var bp_result_stage: int = _stage
+		var bp_result_progress: float = 1.0 if bp_round_complete else float(_stage) / 12.0
 		if bool(bp_res.get("fallback", false)):
 			# C++ 端中途 fallback：本 round 残余 stage 由后续 12-stage micro/main 跑完。
 			_b_plus_active = false
 		var bp_elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
-		var bp_progress: float = 1.0 if (bp_done and _stage >= 12) else float(_stage) / 12.0
 		if bp_done:
-			if _stage >= 12:
+			if bp_round_complete:
 				_round_active = false
 				if generator.has_method("finish_season_round_b_plus"):
 					generator.finish_season_round_b_plus(map, world_data, _season_idx)
@@ -207,13 +216,13 @@ func tick(_ctx) -> Dictionary:
 				_stage_cursor = 0
 		var _unused_inner: float = bp_elapsed_ms_inner
 		return {
-			"done": bp_done and _stage >= 12,
+			"done": bp_round_complete,
 			"work_done": 1,
 			"elapsed_ms": bp_elapsed_ms,
-			"progress_ratio": bp_progress,
-			"stage": _stage,
+			"progress_ratio": bp_result_progress,
+			"stage": bp_result_stage,
 			"stage_name": "b_plus_round",
-			"substage": "stages_done_%d" % _stage,
+			"substage": "stages_done_%d" % bp_result_stage,
 			"path": "b_plus",
 			"cursor": 0,
 		}

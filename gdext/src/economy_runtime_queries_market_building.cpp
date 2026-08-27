@@ -958,6 +958,15 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     PackedInt64Array last_expected_revenue;
     PackedInt64Array last_operating_cost;
     PackedInt64Array last_maintenance_cost;
+    PackedInt64Array last_market_receipt;
+    PackedInt64Array last_bullion_mint_receipt;
+    PackedInt64Array last_producer_support_receipt;
+    PackedInt64Array last_business_tax_paid;
+    PackedInt64Array last_business_subsidy_received;
+    PackedInt64Array last_maintenance_due;
+    PackedInt64Array last_observed_capacity_days_q16;
+    PackedInt64Array last_quoted_market_receipt;
+    PackedInt64Array last_quoted_operating_cost;
     PackedInt32Array last_margin_gap_q16;
     PackedInt32Array planned_utilization_q16;
     PackedInt64Array last_base_wages_due;
@@ -1101,6 +1110,16 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
         last_expected_revenue.push_back(group.last_expected_revenue);
         last_operating_cost.push_back(group.last_operating_cost);
         last_maintenance_cost.push_back(group.last_maintenance_cost);
+        last_market_receipt.push_back(group.last_market_receipt);
+        last_bullion_mint_receipt.push_back(group.last_bullion_mint_receipt);
+        last_producer_support_receipt.push_back(group.last_producer_support_receipt);
+        last_business_tax_paid.push_back(group.last_business_tax_paid);
+        last_business_subsidy_received.push_back(group.last_business_subsidy_received);
+        last_maintenance_due.push_back(group.last_maintenance_due);
+        last_observed_capacity_days_q16.push_back(
+            group.last_observed_capacity_days_q16);
+        last_quoted_market_receipt.push_back(group.last_quoted_market_receipt);
+        last_quoted_operating_cost.push_back(group.last_quoted_operating_cost);
         last_margin_gap_q16.push_back(group.last_margin_gap_q16);
         planned_utilization_q16.push_back(group.planned_utilization_q16);
         last_base_wages_due.push_back(group.last_base_wages_due);
@@ -1184,6 +1203,12 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     PackedInt64Array investment_candidate_incumbent_unit_cost;
     PackedInt64Array investment_candidate_return_on_capital_q16;
     PackedInt64Array investment_candidate_cost_advantage_q16;
+    PackedInt64Array investment_candidate_monetary_quota_initial;
+    PackedInt64Array investment_candidate_monetary_quota_daily;
+    PackedInt64Array investment_candidate_monetary_units;
+    PackedInt64Array investment_candidate_monetary_candidate_slots;
+    PackedInt64Array investment_candidate_monetary_request_money_per_day;
+    PackedInt64Array investment_candidate_monetary_expected_revenue_per_day;
     PackedInt32Array investment_candidate_failed_material_group;
     PackedInt32Array investment_candidate_selected_material_offsets;
     PackedInt32Array investment_candidate_selected_material_good_ids;
@@ -1221,6 +1246,18 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
                 item.return_on_capital_q16);
             investment_candidate_cost_advantage_q16.push_back(
                 item.cost_advantage_q16);
+            investment_candidate_monetary_quota_initial.push_back(
+                item.monetary_quota_initial);
+            investment_candidate_monetary_quota_daily.push_back(
+                item.monetary_quota_daily);
+            investment_candidate_monetary_units.push_back(
+                item.monetary_units);
+            investment_candidate_monetary_candidate_slots.push_back(
+                item.monetary_candidate_slots);
+            investment_candidate_monetary_request_money_per_day.push_back(
+                item.monetary_request_money_per_day);
+            investment_candidate_monetary_expected_revenue_per_day.push_back(
+                item.monetary_expected_revenue_per_day);
             investment_candidate_failed_material_group.push_back(
                 item.failed_material_group);
             for (size_t material = 0;
@@ -1351,6 +1388,18 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
         investment_candidate_return_on_capital_q16;
     out["investment_candidate_cost_advantage_q16"] =
         investment_candidate_cost_advantage_q16;
+    out["investment_candidate_monetary_quota_initial"] =
+        investment_candidate_monetary_quota_initial;
+    out["investment_candidate_monetary_quota_daily"] =
+        investment_candidate_monetary_quota_daily;
+    out["investment_candidate_monetary_units"] =
+        investment_candidate_monetary_units;
+    out["investment_candidate_monetary_candidate_slots"] =
+        investment_candidate_monetary_candidate_slots;
+    out["investment_candidate_monetary_request_money_per_day"] =
+        investment_candidate_monetary_request_money_per_day;
+    out["investment_candidate_monetary_expected_revenue_per_day"] =
+        investment_candidate_monetary_expected_revenue_per_day;
     out["realized_profit_margin_q16"] = realized_profit_margin_q16;
     out["severe_loss_cycles"] = severe_loss_cycles;
     out["recovery_cycles"] = recovery_cycles;
@@ -1377,6 +1426,15 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     out["last_expected_revenue"] = last_expected_revenue;
     out["last_operating_cost"] = last_operating_cost;
     out["last_maintenance_cost"] = last_maintenance_cost;
+    out["last_market_receipt"] = last_market_receipt;
+    out["last_bullion_mint_receipt"] = last_bullion_mint_receipt;
+    out["last_producer_support_receipt"] = last_producer_support_receipt;
+    out["last_business_tax_paid"] = last_business_tax_paid;
+    out["last_business_subsidy_received"] = last_business_subsidy_received;
+    out["last_maintenance_due"] = last_maintenance_due;
+    out["last_observed_capacity_days_q16"] = last_observed_capacity_days_q16;
+    out["last_quoted_market_receipt"] = last_quoted_market_receipt;
+    out["last_quoted_operating_cost"] = last_quoted_operating_cost;
     out["last_margin_gap_q16"] = last_margin_gap_q16;
     out["planned_utilization_q16"] = planned_utilization_q16;
     out["last_base_wages_due"] = last_base_wages_due;

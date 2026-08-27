@@ -618,6 +618,9 @@ samples, the expected daily C++ path is:
 - `phys_slp_cell_cursor` / `phys_wind_cell_cursor` / `phys_psi_cell_cursor`：stage 内
   cell 切片游标；末切片时 `== n_cells`，用于确认切片按预期推进、无中途 stall。仅在
   cell-range 切片开启（默认关闭）时出现。
+- SLP pass 的 `slice_start`/`slice_end`/`slice_final` 与 `slot_publish_reason` 必须一起看：
+  `slice_final=false, slot_publish_reason=intermediate_slice, published_to_slot=false` 是
+  正常中间切片；只有末片的 `slot_missing` 或 `slot_size_mismatch` 才是 slot 发布问题。
 - `phys_cell_slice_enabled`：是否启用 stage 内 cell 切片（默认 `false`，inert-by-default）。
 - `j_native_daily_sim_*` 与 `bd_climate_*` 的 native daily 诊断现在会透出
   `node_index`、`next_node_index`、`last_completed_node`、`processed_nodes`、
@@ -806,6 +809,9 @@ detail scatter 日志：
 - `water` 是 offset water mask 获取/构建成本；正常只有首个 layer 可能非零，其它 layer 应命中共享缓存。`ctx` 是 layer-level native common knobs 构建成本；`knobs` 是单 chunk 补 `sample_cell_indices` 的成本；`native` 是 GDExtension call；`apply` 是 `MultiMesh.buffer` 提交。
 - `remaining` 长时间大于 0 表示 chunk task 被预算拆帧，这是正常降峰；若视觉滞后可提高 `detail_scatter_refresh_chunks_per_frame` 或 `detail_scatter_refresh_apply_budget_ms`。
 - 若回到 `path=gdscript`，先看 `reason`：常见是旧 DLL、缺 `encode_detail_scatter_delta`、bad native payload 或 `_world_ext` 未注入。
+- `detail_scatter_rebuild_log_enabled` 默认关闭，且完整逐层 `detail_visibility_probe()` 仅在
+  `PKLog.enabled` 时执行；启动阶段看到 `ERROR: [output overflow, print less text!]` 时，
+  先关闭该诊断输出再判断是否仍有真正的主线程卡顿。
 - 若 `tail_vegetation_ms` 在没有 chunk task 时仍持续偏高，检查 `detail_scatter_budget_report()`：稳态帧应为 `budget_total_scan_ms=0` 且 `budget_total_scan_count` 不增长；`budget_total_dirty=true` 表示下一次预算应用需要重扫。持续增长通常说明相机/LOD/画质或 chunk 可见状态被无意义地反复标脏。
 - 若预算扫描确实发生，检查各层 `get_scatter_diagnostics()` 的 `chunk_cell_cache_builds`、`chunk_bounds_cache_builds` 和 `active_instance_count_scans`。同一地图、hex size、chunk size 下，前两项应在首次访问后稳定；只有 active-instance scan 应随真实可见性或实例变化增长。
 - `budget_total_scan_ms` 只统计各层 active-instance 总数汇总；`budget_apply_ms` 统计 `visible_instance_count` 的渐进下发。前者高说明可见性/空间查询退化，后者高说明层数或 MultiMesh 提交成本高，二者不要混为 chunk encode/apply 成本。

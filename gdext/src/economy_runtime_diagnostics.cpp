@@ -217,6 +217,10 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_epoch_producer_sellable_current);
     cap(_epoch_producer_merchant_sold_current);
     cap(_epoch_producer_discarded_current);
+    cap(_epoch_research_demand_by_cell); cap(_epoch_research_demand_by_market);
+    cap(_epoch_bullion_quota_keys); cap(_epoch_bullion_quota_initial);
+    cap(_epoch_bullion_quota_remaining);
+    cap(_investment_monetary_units_by_cell);
     cap(_epoch_cost_anchor_price);
     cap(_epoch_nonhousehold_withdrawals);
     cap(_production_input_reserve);
@@ -1867,6 +1871,9 @@ Dictionary NativeEconomyRuntime::report() const {
 	out["silver_accepted"] = _silver_accepted;
 	out["gold_money_issued"] = _gold_money_issued;
 	out["silver_money_issued"] = _silver_money_issued;
+	out["bullion_quota_initial"] = _epoch_bullion_quota_initial_total;
+	out["bullion_quota_remaining"] = _epoch_bullion_quota_remaining_total;
+	out["bullion_quota_remainder_units"] = _epoch_bullion_quota_remainder_units;
 	out["cycle_flow_produced"] = _cycle_flow_produced;
 	out["cycle_flow_consumed"] = _cycle_flow_consumed;
     out["cycle_flow_discarded"] = _cycle_flow_discarded;

@@ -27,7 +27,7 @@ constexpr const char *HEADERS[EconomyCsvRecorder::DIM_COUNT] = {
     "epoch_row_id,epoch_id,day_index,cell_idx,q,r,s,resource_id,opening_reserve,natural_net_change,natural_positive_change,natural_negative_change,artificial_change_applied,artificial_change_pending,artificial_generation_applied,artificial_extraction_applied,artificial_generation_pending,artificial_extraction_pending,reserve,safe_yield,projected_life_days\n",
     "epoch_row_id,epoch_id,day_index,cell_idx,q,r,s,good_id,stock,price,demand_ema,business_demand_ema,offered_supply_ema,realized_withdrawal_ema,production_input_reserve,construction_material_reserve,household_available_stock,merchant_inventory_target,merchant_procurement_shortfall,cost_anchor_price,shortage_q16,price_pressure_total_q16,category_id,storage_mode,trade_enabled,trade_import_ema,trade_export_ema,trade_inbound,trade_outbound,desired_business_demand,funded_business_demand,unfunded_business_demand,trade_export_safety_stock,trade_import_fill_target,trade_relief_pressure_q16,trade_signal_age_days,trade_first_dispatch_delay_days,trade_last_attempt_day,trade_last_rejection_reason,trade_deadline_exceeded,merchant_cash,merchant_inventory_retail_value,merchant_inventory_liquidation_value,merchant_economic_assets,merchant_procurement_margin_value,merchant_trade_purchase_cash,merchant_trade_sale_cash,merchant_operating_outflow,merchant_liquidity_coverage_q16,merchant_effective_buy_factor_q16\n",
 };
-constexpr const char *SUMMARY_V24_SUFFIX =
+constexpr const char *SUMMARY_V25_SUFFIX =
     ",building_investment_buildings_started"
     ",building_investment_portfolios_started"
     ",building_investment_types_started"
@@ -57,8 +57,11 @@ constexpr const char *SUMMARY_V24_SUFFIX =
     ",building_investment_employment_gap"
     ",building_investment_employment_catchup_cells"
     ",building_investment_displacement_starts"
-    ",investment_displacement_type_evaluations\n";
-constexpr const char *BUILDING_V24_SUFFIX =
+    ",investment_displacement_type_evaluations"
+    ",bullion_quota_initial"
+    ",bullion_quota_remaining"
+    ",bullion_quota_remainder_units\n";
+constexpr const char *BUILDING_V25_SUFFIX =
     ",last_temperature_fit_q16"
     ",last_water_fit_q16"
     ",last_climate_capacity_q16"
@@ -72,7 +75,13 @@ constexpr const char *BUILDING_V24_SUFFIX =
     ",investment_challenger_unit_cost"
     ",investment_incumbent_unit_cost"
     ",investment_return_on_capital_q16"
-    ",investment_cost_advantage_q16\n";
+    ",investment_cost_advantage_q16"
+    ",investment_monetary_quota_initial"
+    ",investment_monetary_quota_daily"
+    ",investment_monetary_units"
+    ",investment_monetary_candidate_slots"
+    ",investment_monetary_request_money_per_day"
+    ",investment_monetary_expected_revenue_per_day\n";
 
 template <typename T>
 void append_int(std::string &out, T value) {
@@ -588,6 +597,10 @@ bool EconomyCsvRecorder::fill_batch(
         row.silver_accepted = runtime._silver_accepted;
         row.gold_money_issued = runtime._gold_money_issued;
         row.silver_money_issued = runtime._silver_money_issued;
+        row.bullion_quota_initial = runtime._epoch_bullion_quota_initial_total;
+        row.bullion_quota_remaining = runtime._epoch_bullion_quota_remaining_total;
+        row.bullion_quota_remainder_units =
+            runtime._epoch_bullion_quota_remainder_units;
         row.cycle_flow_produced = runtime._cycle_flow_produced;
         row.cycle_flow_consumed = runtime._cycle_flow_consumed;
         row.cycle_flow_discarded = runtime._cycle_flow_discarded;
@@ -933,6 +946,17 @@ bool EconomyCsvRecorder::fill_batch(
                             row.investment_driver_merchant_sold = item.driver_merchant_sold;
                             row.investment_driver_sell_through_q16 = item.driver_sell_through_q16;
                             row.investment_driver_discard_q16 = item.driver_discard_q16;
+                            row.investment_monetary_quota_initial =
+                                item.monetary_quota_initial;
+                            row.investment_monetary_quota_daily =
+                                item.monetary_quota_daily;
+                            row.investment_monetary_units = item.monetary_units;
+                            row.investment_monetary_candidate_slots =
+                                item.monetary_candidate_slots;
+                            row.investment_monetary_request_money_per_day =
+                                item.monetary_request_money_per_day;
+                            row.investment_monetary_expected_revenue_per_day =
+                                item.monetary_expected_revenue_per_day;
                             row.investment_stealable = item.stealable;
                             row.investment_challenger_unit_cost =
                                 item.challenger_unit_cost;
@@ -1056,6 +1080,17 @@ bool EconomyCsvRecorder::fill_batch(
                     row.investment_driver_merchant_sold = item.driver_merchant_sold;
                     row.investment_driver_sell_through_q16 = item.driver_sell_through_q16;
                     row.investment_driver_discard_q16 = item.driver_discard_q16;
+                    row.investment_monetary_quota_initial =
+                        item.monetary_quota_initial;
+                    row.investment_monetary_quota_daily =
+                        item.monetary_quota_daily;
+                    row.investment_monetary_units = item.monetary_units;
+                    row.investment_monetary_candidate_slots =
+                        item.monetary_candidate_slots;
+                    row.investment_monetary_request_money_per_day =
+                        item.monetary_request_money_per_day;
+                    row.investment_monetary_expected_revenue_per_day =
+                        item.monetary_expected_revenue_per_day;
                     row.investment_stealable = item.stealable;
                     row.investment_challenger_unit_cost =
                         item.challenger_unit_cost;
@@ -1393,7 +1428,7 @@ bool EconomyCsvRecorder::open_files(std::string &error) {
             _files[dim].write(HEADERS[dim],
                 static_cast<std::streamsize>(header_length - 1));
             const char *suffix = dim == SUMMARY
-                ? SUMMARY_V24_SUFFIX : BUILDING_V24_SUFFIX;
+                ? SUMMARY_V25_SUFFIX : BUILDING_V25_SUFFIX;
             _files[dim].write(suffix, static_cast<std::streamsize>(
                 std::char_traits<char>::length(suffix)));
         } else {
@@ -1582,6 +1617,9 @@ bool EconomyCsvRecorder::write_batch(const Batch &batch, int64_t &bytes, std::st
         field(chunk, row.building_investment_employment_catchup_cells);
         field(chunk, row.building_investment_displacement_starts);
         field(chunk, row.investment_displacement_type_evaluations);
+        field(chunk, row.bullion_quota_initial);
+        field(chunk, row.bullion_quota_remaining);
+        field(chunk, row.bullion_quota_remainder_units);
         chunk.push_back('\n'); if (!maybe_flush(SUMMARY)) goto write_failed;
     }
     if (!flush(SUMMARY)) goto write_failed;
@@ -1666,6 +1704,12 @@ bool EconomyCsvRecorder::write_batch(const Batch &batch, int64_t &bytes, std::st
         field(chunk, row.investment_incumbent_unit_cost);
         field(chunk, row.investment_return_on_capital_q16);
         field(chunk, row.investment_cost_advantage_q16);
+        field(chunk, row.investment_monetary_quota_initial);
+        field(chunk, row.investment_monetary_quota_daily);
+        field(chunk, row.investment_monetary_units);
+        field(chunk, row.investment_monetary_candidate_slots);
+        field(chunk, row.investment_monetary_request_money_per_day);
+        field(chunk, row.investment_monetary_expected_revenue_per_day);
         chunk.push_back('\n'); if (!maybe_flush(BUILDINGS)) goto write_failed;
     }
     if (!flush(BUILDINGS)) goto write_failed;

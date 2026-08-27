@@ -22,7 +22,7 @@ class NativeEconomyRuntime;
 // into one of two POD buffers; the worker owns CSV encoding and file I/O.
 class EconomyCsvRecorder {
 public:
-    static constexpr int32_t SCHEMA_VERSION = 24;
+    static constexpr int32_t SCHEMA_VERSION = 25;
     static constexpr int32_t DIM_COUNT = 5;
     enum Dimension : int32_t { SUMMARY = 0, COHORTS = 1, BUILDINGS = 2, RESOURCES = 3, MARKET = 4 };
 
@@ -106,6 +106,9 @@ public:
         int64_t silver_accepted = 0;
         int64_t gold_money_issued = 0;
         int64_t silver_money_issued = 0;
+        int64_t bullion_quota_initial = 0;
+        int64_t bullion_quota_remaining = 0;
+        int64_t bullion_quota_remainder_units = 0;
         int64_t cycle_flow_produced = 0;
         int64_t cycle_flow_consumed = 0;
         int64_t cycle_flow_discarded = 0;
@@ -312,6 +315,12 @@ public:
         int64_t investment_driver_merchant_sold = 0;
         int64_t investment_driver_sell_through_q16 = 0;
         int64_t investment_driver_discard_q16 = 0;
+        int64_t investment_monetary_quota_initial = 0;
+        int64_t investment_monetary_quota_daily = 0;
+        int64_t investment_monetary_units = 0;
+        int64_t investment_monetary_candidate_slots = 0;
+        int64_t investment_monetary_request_money_per_day = 0;
+        int64_t investment_monetary_expected_revenue_per_day = 0;
         int64_t investment_stealable = 0;
         int64_t investment_challenger_unit_cost = 0;
         int64_t investment_incumbent_unit_cost = 0;

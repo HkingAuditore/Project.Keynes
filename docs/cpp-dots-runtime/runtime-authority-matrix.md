@@ -8,7 +8,7 @@ InfrastructureProjectStore 是施工/路线权威；Effect 仅负责跨域事务
 
 The current implementation supersedes older historical rows retained in the
 long-form matrix below: country authority is **PKCN v12**, economy authority is
-**PKEC v46**, configurable cross-domain effects are **PKEF v11**, Trigger state is
+**PKEC v47**, configurable cross-domain effects are **PKEF v11**, Trigger state is
 **PKTR v6**, ideology state is **PKID v3**, and the native gameplay journal is
 **journal v4**. The save
 coordinator restores domain state in its documented order and verifies active
@@ -25,8 +25,8 @@ rejected, with no precipitation, family, Modifier, or expedition defaults.
 | Pending new/load request | `GameFlowService` | none; one-shot process state | Never use `Engine` meta on the product path |
 | Validated world creation inputs | `NewGameConfig v3` | PKSV `new_game_config` | Store seed, foreign count, starting country cash and research policy; optional `base.map_source=pkmap` plus `pkmap_path`; v2 migrates with zero foreigners |
 | Player and foreign identity/territory | PKCN / `NativeCountryRuntime` | PKSV `pkcn` plus player-only `player_context` | Player is slot 0; each opening country owns one cell; only `cell.country_slot` is mirrored to cells |
-| Population, market, buildings, family traits/cell influence, notable families and important people, family expedition custody (people/funds/cargo), prosperity/settlement identity, taxable events and fiscal escrow | PKEC / `NativeEconomyRuntime` | PKSV `pkec` / PKEC v46 | Restore after PKCN, PKEF and trade topology; v46 is current and v45/v44/v43/v42/v41 remain readable; v45 transaction-tax order columns migrate as zero; seven frozen environment lanes include precipitation |
-| Composite cohort satisfaction (8 dimensions), family branch satisfaction, published social-pressure level, cell carrying capacity | PKEC / `NativeEconomyRuntime` | embedded in PKEC v46 | Authoritative for births, hire order, branch promotion and `ECONOMY_SOCIAL_PRESSURE`; starvation still reads only `SAT_DIM_SUBSISTENCE`; carrying capacity uses previous completed local net and effective food flow |
+| Population, market, buildings, family traits/cell influence, notable families and important people, family expedition custody (people/funds/cargo), prosperity/settlement identity, taxable events and fiscal escrow | PKEC / `NativeEconomyRuntime` | PKSV `pkec` / PKEC v47 | Restore after PKCN, PKEF and trade topology; v47 is current and v46/v45/v44/v43/v42/v41 remain readable; v45 transaction-tax order columns migrate as zero; building fact/quote diagnostics are appended after legacy business fields |
+| Composite cohort satisfaction (8 dimensions), family branch satisfaction, published social-pressure level, cell carrying capacity | PKEC / `NativeEconomyRuntime` | embedded in PKEC v47 | Authoritative for births, hire order, branch promotion and `ECONOMY_SOCIAL_PRESSURE`; starvation still reads only `SAT_DIM_SUBSISTENCE`; carrying capacity uses previous completed local net and effective food flow |
 | Dynamic cell SoA | `DCWorld` / `DCWorldExt` by component contract | PKSV `dynamic_world` | Missing provider fails the save |
 | Native environment rounds | `EnvironmentRuntime` | `PKEnvironmentRuntime v1` in PKSV `environment` | Persist arrays, ping-pong, dirty sets, topology and cursors, not counters only |
 | Climate modifiers | Climate `ModifierStore` | PKSV `pkcm` / PKCM v1 | Publishes frozen add/factor; climate still owns temperature history |
@@ -113,7 +113,7 @@ owner-lot、两组四档升级族、Price V3 稀疏企业信号、自适应工�
 ECONOMY_GRAPH/BUILDING_GRAPH 内完成。GDScript 只编译 profile/technology tags、桥接 30 个注册自然
 资源 slots、提交命令和查询选中 cell；不存在 GDScript 货币、价格、生产或贸易 fallback。
 国家身份、领土、科技和国库由 `NativeCountryRuntime` 单一权威持有；经济周期冻结国家映射与科技，
-现金/商品审计包含国家资产、贸易托管与开拓货物托管。当前持久格式为 PKCN v12 + PKEC v46，必须先恢复 PKCN 与 PKEF；
+现金/商品审计包含国家资产、贸易托管与开拓货物托管。当前持久格式为 PKCN v12 + PKEC v47，必须先恢复 PKCN 与 PKEF；
 PKEC v40 及更早版本统一返回明确的不兼容错误。
 
 cohort 综合满意度（八维度 composite）同属该权威：`_population.composite_satisfaction`

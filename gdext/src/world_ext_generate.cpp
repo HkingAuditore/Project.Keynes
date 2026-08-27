@@ -6025,19 +6025,23 @@ godot::Dictionary DCWorldExt::run_season_round_slice(int handle, int max_usec) {
     Dictionary out;
     out["done"] = false;
     out["stage"] = -1;
+    out["stages_done"] = 0;
     out["stages_done_this_slice"] = 0;
     out["elapsed_ms"] = 0.0;
     out["fallback"] = true;
     out["reason"] = String();
 
+    SeasonRoundState *st = _season_round != nullptr
+        ? static_cast<SeasonRoundState *>(_season_round)
+        : nullptr;
     auto fail = [&](const char *why) -> Dictionary {
         out["reason"] = String(why);
+        out["stages_done"] = st != nullptr ? st->stages_done : 0;
         return out;
     };
 
     if (!_bound) return fail("not bound");
-    if (_season_round == nullptr) return fail("no active round (call start_season_round first)");
-    SeasonRoundState *st = static_cast<SeasonRoundState *>(_season_round);
+    if (st == nullptr) return fail("no active round (call start_season_round first)");
     if (!st->active) return fail("round inactive");
     if (handle != st->generation) return fail("stale handle (generation mismatch)");
 
@@ -6080,6 +6084,7 @@ godot::Dictionary DCWorldExt::run_season_round_slice(int handle, int max_usec) {
             // abort 后走 12-stage 兜底路径。不在 C++ 内自动 retry。
             last_stage_reason = String(stage_res.get("reason", "stage_fallback"));
             out["stage"] = round_stage;
+            out["stages_done"] = st->stages_done;
             out["stages_done_this_slice"] = stages_done_this_slice;
             out["fallback"] = true;
             out["reason"] = String("round_stage_") + String::num_int64(round_stage)
@@ -6123,6 +6128,11 @@ godot::Dictionary DCWorldExt::run_season_round_slice(int handle, int max_usec) {
 
     out["done"] = round_done;
     out["stage"] = st->round_stage;
+    // Keep the round-level contract aligned with the GDScript facade.  The
+    // stage cursor is monotonic and represents the total number of completed
+    // round stages, including skipped stages; callers use it to advance their
+    // own state machine when a fast map finishes all stages in one slice.
+    out["stages_done"] = st->stages_done;
     out["stages_done_this_slice"] = stages_done_this_slice;
     out["elapsed_ms"] = slice_ms;
     out["fallback"] = false;
@@ -6143,6 +6153,13 @@ godot::Dictionary DCWorldExt::finish_season_round(int handle) {
 
     auto fail = [&](const char *why) -> Dictionary {
         out["reason"] = String(why);
+        // The caller must be able to distinguish a genuinely empty round
+        // from a failed finish after some stages already completed.  Keep the
+        // same monotonic progress contract as run_season_round_slice().
+        SeasonRoundState *st = _season_round != nullptr
+            ? static_cast<SeasonRoundState *>(_season_round)
+            : nullptr;
+        out["stages_done"] = st != nullptr ? st->stages_done : 0;
         return out;
     };
 

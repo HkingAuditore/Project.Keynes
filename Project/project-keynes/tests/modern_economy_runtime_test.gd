@@ -85,12 +85,19 @@ func _run() -> void:
 	var silver_accepted := int(report.get("silver_accepted", 0))
 	var gold_issued := int(report.get("gold_money_issued", 0))
 	var silver_issued := int(report.get("silver_money_issued", 0))
-	_expect("gold issues configured value", gold_accepted > 0 and
-		gold_issued == gold_accepted * 800000 / 1000)
-	_expect("silver issues configured value", silver_accepted > 0 and
-		silver_issued == silver_accepted * 50000 / 1000)
+	var bullion_quota_initial := int(report.get("bullion_quota_initial", 0))
+	var bullion_quota_remaining := int(report.get("bullion_quota_remaining", 0))
+	_expect("gold monetary receipt never exceeds configured face value (accepted=%d issued=%d)" %
+		[gold_accepted, gold_issued],
+		gold_issued <= gold_accepted * 800000 / 1000)
+	_expect("silver monetary receipt never exceeds configured face value (accepted=%d issued=%d)" %
+		[silver_accepted, silver_issued],
+		silver_issued <= silver_accepted * 50000 / 1000)
 	_expect("only accepted bullion contributes monetary issue",
 		int(report.get("bullion_money_issued", 0)) == gold_issued + silver_issued)
+	_expect("shared bullion pool caps gold and silver together", bullion_quota_initial > 0 and
+		gold_issued + silver_issued <= bullion_quota_initial and
+		bullion_quota_initial - bullion_quota_remaining == gold_issued + silver_issued)
 	var flow_produced := int(report.get("cycle_flow_produced", 0))
 	var flow_consumed := int(report.get("cycle_flow_consumed", 0))
 	var flow_discarded := int(report.get("cycle_flow_discarded", 0))
@@ -128,6 +135,7 @@ func _run() -> void:
 	_test_household_wealth_and_price_response(compiled)
 	_test_cultivated_staple_zero_inventory_demand(compiled)
 	_test_bullion_absorption_feedback(ext, goods, types)
+	_test_bullion_business_tax(compiled, native_catalog)
 	_test_bullion_entry_valuation(compiled, native_catalog)
 	if OS.get_cmdline_user_args().has("--bullion-only"):
 		return
@@ -209,7 +217,7 @@ func _test_cultivated_staple_zero_inventory_demand(compiled: Dictionary) -> void
 		"funds": PackedInt64Array([1000000, 1000000]),
 	}, {"stock": stock}).get("ok", false)))
 	var report := _run_day(ext, 0)
-	var market := ext.get_market_cell_snapshot(0)
+	var market: Dictionary = ext.get_market_cell_snapshot(0)
 	_expect("zero-inventory staple cycle commits",
 		bool(report.get("done", false)) and not bool(report.get("fatal", false)))
 	for good in ["wheat_grain", "rice_grain", "corn_grain"]:
@@ -233,21 +241,24 @@ func _test_bullion_absorption_feedback(ext: Object, goods: PackedStringArray,
 		buildings.investment_driver_merchant_sold
 	var driver_sell_through: PackedInt64Array = \
 		buildings.investment_driver_sell_through_q16
+	var constrained_lanes := 0
 	for pair in [
 		[types.find("gold_mine"), goods.find("gold")],
 		[types.find("silver_mine"), goods.find("silver")],
 	]:
 		var group := group_types.find(int(pair[0]))
 		var good := int(pair[1])
-		_expect("mint absorption preserves bullion utilization: %s" %
-				String(types[int(pair[0])]),
-			group >= 0 and planned[group] == 65536 and margins[group] > 0 and
-			loss_cycles[group] == 0 and states[group] == 0)
-		_expect("mint absorption passes bullion sell-through: %s" %
+		if group >= 0 and (planned[group] < 65536 or
+			driver_sell_through[group] < 65536 or states[group] != 0 or
+			margins[group] <= 0 or loss_cycles[group] > 0):
+			constrained_lanes += 1
+		_expect("bullion feedback keeps the monetary driver bounded: %s" %
 				String(types[int(pair[0])]),
 			group >= 0 and driver_goods[group] == good and
 			driver_merchant_sold[group] == 0 and
-			driver_sell_through[group] == 65536)
+			driver_sell_through[group] >= 0 and driver_sell_through[group] <= 65536)
+	_expect("exhausted shared pool eventually constrains incumbent bullion capacity",
+		constrained_lanes > 0)
 	_expect("bullion feedback cycles conserve exactly",
 		int(day5.get("population_error", 1)) == 0 and
 		int(day5.get("money_error", 1)) == 0 and
@@ -255,6 +266,121 @@ func _test_bullion_absorption_feedback(ext: Object, goods: PackedStringArray,
 		int(day10.get("population_error", 1)) == 0 and
 		int(day10.get("money_error", 1)) == 0 and
 		int(day10.get("goods_error", 1)) == 0)
+
+
+func _test_bullion_business_tax(compiled: Dictionary,
+		native_catalog: Dictionary) -> void:
+	var ext := _new_ext(compiled)
+	var profile: Dictionary = load(
+		"res://data/economy/default_economy.tres").to_native_profile()
+	profile.market_cycle_days = 1
+	profile.market_runtime_mode = "ACTIVE"
+	_expect("bullion-tax country bootstraps",
+		CountryTestHelper.configure_all_technologies(
+			ext, native_catalog, 1, 2252))
+	var country: Dictionary = ext.get_country_cell_summary(0)
+	var handle := int(country.get("country_handle", 0))
+	var tax_command := {
+		"opcodes": PackedInt32Array([11]),
+		"effective_days": PackedInt64Array([1]),
+		"sequences": PackedInt64Array([1]),
+		"target_handles": PackedInt64Array([handle]),
+		"cell_indices": PackedInt32Array([-1]),
+		"aux_i32": PackedInt32Array([-1]),
+		"domain_i32": PackedInt32Array([-1]),
+		"position_i32": PackedInt32Array([-1]),
+		"weight0_bp": PackedInt32Array([0]),
+		"weight1_bp": PackedInt32Array([0]),
+		"weight2_bp": PackedInt32Array([0]),
+		"weight3_bp": PackedInt32Array([0]),
+		"value_i64": PackedInt64Array([0]),
+		"tax_kinds": PackedInt32Array([2]),
+		"tax_item_indices": PackedInt32Array([-1]),
+		"tax_rate_basis_points": PackedInt32Array([10000]),
+		"stable_ids": PackedStringArray([""]),
+		"display_names": PackedStringArray([""]),
+	}
+	_expect("bullion-tax economy configures", bool(ext.configure_economy(
+		native_catalog, profile, 1, 2252).get("ok", false)))
+	var signatures: PackedStringArray = compiled.signature_keys
+	var types: PackedStringArray = compiled.building_type_ids
+	var placer_gold := types.find("placer_gold_working")
+	var merchant := signatures.find("merchant|default")
+	var miner := signatures.find("miner|default")
+	var goods := native_catalog.good_ids as PackedStringArray
+	var stock := PackedInt64Array()
+	stock.resize(goods.size())
+	stock.fill(0)
+	for good_id in ["logs", "bast_fiber"]:
+		var good_idx := goods.find(good_id)
+		if good_idx >= 0:
+			stock[good_idx] = 100000000
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0]),
+		"signature_ids": PackedInt32Array([merchant, miner]),
+		"population": PackedInt64Array([8, 8]),
+		"funds": PackedInt64Array([100000000, 1000000]),
+	}, {"stock": stock})
+	_expect("bullion-tax placer fixture bootstraps", bool(boot.get("ok", false)))
+	if not bool(boot.get("ok", false)):
+		return
+	var gold_resource := (native_catalog.building_resource_ids as PackedStringArray).find("gold_ore")
+	if gold_resource >= 0:
+		var reserve_slots: PackedStringArray = native_catalog.building_resource_reserve_slots
+		var reserve_slot := int(ext.component_id(StringName(reserve_slots[gold_resource])))
+		if reserve_slot >= 0:
+			ext.write_f32_range(reserve_slot, 0, PackedFloat32Array([1000000000.0]))
+	# Construct through the normal command path. Unlike a raw building bootstrap,
+	# construction commits its initial owner fill, so the following production
+	# epoch exercises a real mint receipt instead of a cold, vacant group.
+	var population: Dictionary = ext.get_population_cell_snapshot(0)
+	var merchant_handle := _handle_for_signature(population, merchant)
+	var build_command := {
+		"opcodes": PackedInt32Array([10]),
+		"effective_days": PackedInt64Array([0]),
+		"sequences": PackedInt64Array([1]),
+		"target_handles": PackedInt64Array([merchant_handle]),
+		"i32_0": PackedInt32Array([0]),
+		"i32_1": PackedInt32Array([placer_gold]),
+		"i64_0": PackedInt64Array([8]),
+		"i64_1": PackedInt64Array([0]),
+	}
+	_expect("bullion-tax placer construction queues",
+		merchant_handle != 0 and bool(ext.submit_economy_commands(
+			build_command).get("ok", false)))
+	var report := _run_day(ext, 0)
+	var tax_queued := bool(ext.submit_country_commands(tax_command).get("ok", false))
+	var tax_committed := tax_queued and bool(
+		ext.run_country_slice({"day_index": 1}).get("done", false))
+	_expect("100% bullion business tax commits", tax_committed)
+	var tax_policy_debug: Dictionary = ext.get_country_cell_tax_policy_snapshot(0)
+	var tax_business_debug: Dictionary = tax_policy_debug.get("business", {})
+	var tax_ids_debug: PackedStringArray = tax_business_debug.get("item_ids", PackedStringArray())
+	var tax_idx_debug := tax_ids_debug.find("placer_gold_working")
+	_expect("100% bullion business tax is authoritative",
+		tax_idx_debug >= 0 and
+		int((tax_business_debug.get("final_base_rates_basis_points", PackedInt32Array()) as PackedInt32Array)[tax_idx_debug]) == 10000 and
+		int((tax_business_debug.get("effective_rates_basis_points", PackedInt32Array()) as PackedInt32Array)[tax_idx_debug]) == 10000)
+	report = _run_day(ext, 1)
+	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	var group := (buildings.group_type_ids as PackedInt32Array).find(placer_gold)
+	var mint_receipt := int((buildings.last_bullion_mint_receipt \
+		as PackedInt64Array)[group]) if group >= 0 else 0
+	var business_tax := int((buildings.last_business_tax_paid \
+		as PackedInt64Array)[group]) if group >= 0 else 0
+	var net_revenue := int((buildings.last_revenue \
+		as PackedInt64Array)[group]) if group >= 0 else -1
+	var fiscal: Dictionary = ext.get_country_fiscal_snapshot(handle)
+	var collected: PackedInt64Array = fiscal.get("collected", PackedInt64Array())
+	_expect("100% business tax withholds the full bullion receipt",
+		mint_receipt > 0 and business_tax == mint_receipt and net_revenue == 0)
+	_expect("bullion business tax reaches the country fiscal ledger",
+		collected.size() > 2 and int(collected[2]) == mint_receipt)
+	_expect("bullion business tax conserves all ledgers",
+		int(report.get("population_error", 1)) == 0 and
+		int(report.get("money_error", 1)) == 0 and
+		int(report.get("goods_error", 1)) == 0)
+
 
 func _test_bullion_entry_valuation(compiled: Dictionary,
 		native_catalog: Dictionary) -> void:
@@ -302,7 +428,17 @@ func _test_bullion_entry_valuation(compiled: Dictionary,
 		buildings.investment_candidate_projected_profit_per_day
 	var reasons: PackedInt32Array = \
 		buildings.investment_candidate_rejection_reasons
+	var quota_daily: PackedInt64Array = \
+		buildings.investment_candidate_monetary_quota_daily
+	var monetary_units: PackedInt64Array = \
+		buildings.investment_candidate_monetary_units
+	var candidate_slots: PackedInt64Array = \
+		buildings.investment_candidate_monetary_candidate_slots
+	var expected_monetary_revenue: PackedInt64Array = \
+		buildings.investment_candidate_monetary_expected_revenue_per_day
 	var types: PackedStringArray = compiled.building_type_ids
+	var combined_expected_revenue := 0
+	var shared_daily_quota := 0
 	for type_name in ["gold_mine", "silver_mine"]:
 		var row := diagnostic_types.find(types.find(type_name))
 		_expect("mint face value makes new bullion entry viable: %s "
@@ -315,6 +451,17 @@ func _test_bullion_entry_valuation(compiled: Dictionary,
 				],
 			row >= 0 and pressures[row] == 65536 and
 			utilizations[row] == 65536 and profits[row] > 0)
+		_expect("greenfield bullion candidate receives only a shared quota slot: %s" % type_name,
+			row >= 0 and row < quota_daily.size() and row < monetary_units.size() and
+			row < candidate_slots.size() and row < expected_monetary_revenue.size() and
+			quota_daily[row] > 0 and monetary_units[row] == 0 and candidate_slots[row] >= 2 and
+			expected_monetary_revenue[row] <= quota_daily[row])
+		if row >= 0 and row < expected_monetary_revenue.size():
+			combined_expected_revenue += int(expected_monetary_revenue[row])
+		if row >= 0 and row < quota_daily.size():
+			shared_daily_quota = int(quota_daily[row])
+	_expect("gold and silver greenfield forecasts cannot duplicate the cell pool",
+		shared_daily_quota > 0 and combined_expected_revenue <= shared_daily_quota)
 	_expect("bullion-entry review conserves exactly",
 		int(review.get("population_error", 1)) == 0 and
 		int(review.get("money_error", 1)) == 0 and

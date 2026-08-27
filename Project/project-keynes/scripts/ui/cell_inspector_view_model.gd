@@ -2600,6 +2600,10 @@ func _building_category(snapshot: Dictionary, cell_idx: int = -1) -> Dictionary:
 	var last_resource: PackedInt64Array = snapshot.get("last_resource", PackedInt64Array())
 	var last_resource_generated: PackedInt64Array = snapshot.get("last_resource_generated", PackedInt64Array())
 	var last_revenue: PackedInt64Array = snapshot.get("last_revenue", PackedInt64Array())
+	var last_business_tax: PackedInt64Array = snapshot.get(
+		"last_business_tax_paid", PackedInt64Array())
+	var last_business_subsidy: PackedInt64Array = snapshot.get(
+		"last_business_subsidy_received", PackedInt64Array())
 	var last_input_cost: PackedInt64Array = snapshot.get("last_input_cost", PackedInt64Array())
 	var last_wages: PackedInt64Array = snapshot.get("last_wages_paid", PackedInt64Array())
 	var last_wages_due: PackedInt64Array = snapshot.get("last_wages_due", PackedInt64Array())
@@ -2631,6 +2635,10 @@ func _building_category(snapshot: Dictionary, cell_idx: int = -1) -> Dictionary:
 		var wages_due := int(last_wages_due[i]) if i < last_wages_due.size() else wages
 		var operating_cost := int(last_operating_cost[i]) if i < last_operating_cost.size() else input_cost + wages_due
 		var profit := revenue - operating_cost
+		var business_tax := int(last_business_tax[i]) \
+			if i < last_business_tax.size() else 0
+		var business_subsidy := int(last_business_subsidy[i]) \
+			if i < last_business_subsidy.size() else 0
 		var owner_physical_capacity := int(owner_capacity[i]) if i < owner_capacity.size() else \
 			(count * int(owner_slots[type_idx]) if type_idx >= 0 and type_idx < owner_slots.size() else count)
 		var owner_required := int(owner_required_by_group[i]) if i < owner_required_by_group.size() else 0
@@ -2703,12 +2711,17 @@ func _building_category(snapshot: Dictionary, cell_idx: int = -1) -> Dictionary:
 				production_rows.append({"id": "climate_lost_output", "name": "气候减产",
 					"value": _actual_daily_rate(lost_output, count, period_days),
 					"icon": "warning", "accent": UITokens.WARN})
+		var finance_breakdown := "原料 %s · 工资 %s · 营业税 %s" % [
+			_money_text(input_cost), _money_text(wages), _money_text(business_tax)]
+		if business_subsidy > 0:
+			finance_breakdown += " · 经营补贴 %s" % _money_text(business_subsidy)
 		var finance := {
 			"revenue": _money_text(revenue),
 			"cost": _money_text(operating_cost),
 			"profit": "%s%s" % ["+" if profit > 0 else "", _money_text(profit)],
 			"profit_positive": profit >= 0,
-			"breakdown": "原料 %s · 工资 %s" % [_money_text(input_cost), _money_text(wages)],
+			"breakdown": finance_breakdown,
+			"revenue_label": "税后收入",
 			"warning": "工资未足额支付，生产受限" if wages < wages_due else "",
 		}
 		var staffing_required := owner_required

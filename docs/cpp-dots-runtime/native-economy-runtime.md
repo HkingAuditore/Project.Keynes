@@ -1,6 +1,6 @@
 # 原生阶层与本地市场运行时（Market V2 / Price V4）
 
-PKEC v46 是当前 writer；reader 接受 v46、v45、v44、v43、v42 与 v41。v43 旧存档恢复时将
+PKEC v47 是当前 writer；reader 接受 v47、v46、v45、v44、v43、v42 与 v41。v43 旧存档恢复时将
 `startup_demand_runtime_mode` 固定为 `OFF`；v41 不得含 `EXPEDITION_PREPARING`。
 v42 保留 v39 引入的生产计划 P∈[5,15] 与投资 I∈[10,30]
 分开锁定，且 I > P。三套周期只在各自完整周期边界重选；选档用经济活格刀数
@@ -9,6 +9,23 @@ v42 保留 v39 引入的生产计划 P∈[5,15] 与投资 I∈[10,30]
 每天工作集是活格 ∩ 市场桶；`due_cells` 不再等于 `cell_count / N`。
 当前 reader 只对 v45 交易订单显式把缺失交易税列迁移为零；v40 及更早 schema 全部明确拒绝。
 v41 仅向前兼容读。
+
+建筑决策严格区分事实锚与边际反事实：已安装组的报价按真实 owner/role fill 的最小 workforce
+capacity 缩放，收入优先采用上一结算期实际市场回执；空 owner、空职业填充或缺硬投入时不产生
+虚构满产能收入。绿地候选才使用结构化配方、冻结价格、财政支持比例和 bounded prior，并在
+首栋/首个职业上受数量上限约束。金银矿共享 epoch 铸币配额：财政 reserve 后只以可支配的 cohort
+现金和国库现金计算发行基数，排除 fiscal/trade/expedition escrow；同格已装/在建铸币单位和至多四个
+可执行绿地候选共同分摊该池，避免 gold/silver 各自预占全额。科研采购同样读取财政 reserve 后的
+可用现金，正税、补贴、营业税和收入税通过同一 after-tax cashflow helper 同时进入事实与预测。
+`last_observed_capacity_days_q16` 是上一结算期实际到岗能力天数的事实标记，不是计划值；已观测
+回款先除以该标记得到满能力日回款，再乘当前 `min(workforce, plan, climate)` 一次，不能把周期总额
+再次乘以建筑天数或把 workforce 重复缩放。实际回款为零仍是零，但生存食品/衣物可以在冻结最低
+生存下限内获得有界执行探针，且仍受资源、投入和工作资本约束。
+
+经济录制器 CSV v25 追加且不重排既有列：`summary` 记录 epoch 的
+`bullion_quota_initial`、`bullion_quota_remaining` 与
+`bullion_quota_remainder_units`；被选格的 `buildings` 候选行记录共享额度、每日额度、
+已装/在建单位数、候选槽数、铸币请求和预期收入。这些是派生诊断，不进入 PKEC 或 state hash。
 领域 API 与跨域 ACK 契约见[运河运行时](./canal-runtime.md)。
 
 2026-07 的高速合批、认证近似冷却、generation-stamped scratch 和两态
@@ -206,7 +223,7 @@ sequence、settled day、稳定结果码及实际两类物资/现金支出；它
 - C++ 按建筑数、周期天数和计划利用率确定性重建稀疏生产投入硬预留。多投入配方先按同一可执行比例缩放，只预留能组成完整配方的数量；缺少任一互补投入时不会继续锁住其他投入。若非生存产出会消耗生存食物，则整套配方让家庭生存清算优先，只能使用清算后的余量。同一 CSR 遍历同时写入 `construction_material_reserve`：已安装建筑的作者维护日量（空配方则按部门地平线摊首选建造货）乘周期天数，并与一座建造 BOM 取 max。暂停组仍贡献维护预留。商人目标库存覆盖 `max(投入预留, 维护/建造预留)`；居民与国内贸易只能消费/导出 `stock - max(投入预留, 维护预留)`。业主在销售与工资之后按配方向商人付费购买维护货，买不起只记 unmet。`production_input_reserved`、`construction_material_reserved`、`maintenance_goods_consumed` / `maintenance_unmet` 及 selected-cell/CSV 逐商品列用于诊断。两份预留都是可重建缓存，不进入 PKEC。
 - 正常商人现金不足时，生产者托底只补足正常目标库存的剩余缺口，不再把全部可储存余货无条件入库；超过目标的余量进入真实 discard sink。被托底的数量仍获得冻结本地零售价 20% 的显式发行货币。`production_output_supported` 与 `producer_support_money_issued` 分开报告，货币审计把后者计入 `_explicit_money_mint`。`cycle_flow` 产出不能跨周期存货，但在边界清零前会先获得同周期低价采购/托底机会，剩余瞬态库存再计入 `cycle_flow_discarded`。
 - 生成测试经济不再使用职业固定人均资金：每个 cohort 获得按当前气候、族群和默认价格计算的 30 日 `survival_household` 生存金；业主追加两周期最低有效输入成本；商人追加本地产出目标库存资金。
-- PKEC v46 是当前 writer，reader 接受 v46、v45、v44、v43、v42 与 v41：保留 FamilyStore、NotablePersonStore、cohort membership、
+- PKEC v47 是当前 writer，reader 接受 v47、v46、v45、v44、v43、v42 与 v41：保留 FamilyStore、NotablePersonStore、cohort membership、
   building ownership、Economy Modifier domain、冻结环境、财政与出生余数、家族特性、
   per-cell influence、运河工程、上一期真实食物流量承载力、七条环境 lane 与开拓队 cargo/kit/缺货 CSR。
   PREPARING 允许 payload/cargo 为 0。reader 不做隐式迁移，v40 及更早明确拒绝。
@@ -371,6 +388,8 @@ transient 数据，不进入 PKEC v19 或 state hash；state hash 按稳定 grou
 不依赖物理 span 编号。report 通过 `building_structure_count_only_updates/new_groups/removed_groups`、
 `building_structure_topology_rebuilds/role_span_reuses/role_span_appends` 以及
 `building_structure_group_merge_ms/market_cache_ms/labor_cache_ms` 公开结构路径与成本。
+`commit_ready_construction` 对进入本批次后新追加的 `(cell,type,owner)` group 保持仅本次调用存活的
+hash 索引；既有排序前缀仍二分查找，新组不再被每一条待建记录线性重扫，避免大批投资提交退化成二次主线程尖峰。
 
 冻结国家快照同时烘焙 country-major 建筑可用位与升序 building-type CSR。`building_available()`
 只要求建筑的 direct/required 科技以及投入/产出/资源依赖组；施工材料组（kind 1）不进入开工门。
@@ -709,8 +728,10 @@ Inspector 诊断 lane，计入 runtime memory，但不进入 state hash 或 PKEC
 
 `gold`/`silver` 的 `monetary_issue_value` 默认分别为 800000/50000 money subunits。市场接收
 建筑产出的金银时不扣既有现金，native 将付款计入 `_explicit_money_mint`；金银随后作为普通
-库存参与珠宝、电子等生产且不重复发行。report 分别发布 accepted quantity、issued money 和
-`bullion_money_issued`。普通产出的正常采购仍受 merchant cash cap，余货则走低价托底发行。merchant 建筑预检只允许单一金/银产出、
+库存参与珠宝、电子等生产且不重复发行。每 epoch 的总池按财政 reserve 后的 spendable money 乘
+冻结月发行率，再按 epoch 天数和 cell 资金权重以最大余数法精确分配；fiscal/trade/expedition escrow
+不构成发行基数。report 分别发布 accepted quantity、issued money、`bullion_money_issued` 及
+`bullion_quota_initial`/`bullion_quota_remaining`。普通产出的正常采购仍受 merchant cash cap，余货则走低价托底发行。merchant 建筑预检只允许单一金/银产出、
 严格对应的唯一金/银矿藏、extract 行为且无资源生成；后期矿井可以有雇员和工具输入。
 
 职业消费使用八套结构不同的原型；全部原型都包含主食、蛋白质、蔬果、衣着、居住、家庭用品、
@@ -731,7 +752,7 @@ Inspector 诊断 lane，计入 runtime memory，但不进入 state hash 或 PKEC
 出生率折减先把 composite 按 `satisfaction_birth_reference_q16` 重标定，再把格级 sat
 混进 `K_eff`；cohort 只乘残差，避免把心情乘两次。未解锁物资族不进 surplus 分母。
 贴上 `K_eff` 后出生落到更替。饥饿死亡仍只读 `SAT_DIM_SUBSISTENCE`。
-出生贡献按地块与民族聚合，Q32 小数余数跨周期累计，并由 PKEC v46 持久化；不新增调度阶段。
+出生贡献按地块与民族聚合，Q32 小数余数跨周期累计，并由 PKEC v47 持久化；不新增调度阶段。
 
 建筑基础工资不再预付；生产出售后用 owner 销售后资金统一分配。最终欠薪继续记录在
 `wage_suspended`/unpaid 报告中并取消奖金，但该标记不代表下一轮自动停产。
@@ -740,7 +761,7 @@ Inspector 诊断 lane，计入 runtime memory，但不进入 state hash 或 PKEC
 服务。前两项在基础设施/服务经济落地前作为明确的无家庭需求资本品保留；scientific_instruments
 仍有精密工具生产下游。允许的跨 need 复用仅为 refined_fuel、computers、beverages 和 fur，
 Inspector 会聚合显示。需求/计划变更只改变 catalog hash；旧 hash 的 PKEC 按现有
-`save_catalog_scale_or_capacity_mismatch` 路径拒绝；byte schema 现为 PKEC v46（交易订单旧版本缺失的交易税列按零迁移；v45/v44/v43/v42/v41 可读），旧存档的食物流量标记为无效并在首个新周期重建，cadence 为锁定 N/P/I。
+`save_catalog_scale_or_capacity_mismatch` 路径拒绝；byte schema 现为 PKEC v47（建筑事实/报价诊断追加在业务 payload 尾部；v46/v45/v44/v43/v42/v41 可读），旧存档的食物流量标记为无效并在首个新周期重建，cadence 为锁定 N/P/I。
 生成目录遵守 16 needs、每 need 8 variants、每 variant 4 components 的运行时合同；本轮加入
 野味后实际最大 variant 数为 5，最大 component 数仍为 2。聚焦处理量以当前 schema 测试输出为准。
 
@@ -853,7 +874,8 @@ transaction.
 Collector entry is additionally constrained by the current cell-resource
 budget: renewables use reserve-responsive safe yield, while non-renewables must
 retain the configured deposit runway. Local construction conditions and the
-1 percent 30-day bullion issuance cap remain.
+configured 30-day bullion issuance cap remain; its base is post-reservation
+spendable money rather than locked escrow.
 
 Investment catalog traversal now has an exact sparse front end controlled by
 `economy_investment_sparse_mode=OFF|PROBE|ACTIVE` (default `ACTIVE`). Only a

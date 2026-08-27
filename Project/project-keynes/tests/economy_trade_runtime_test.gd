@@ -207,8 +207,8 @@ func _run() -> void:
 	_expect("dispatch preserves the source market local-demand reserve",
 		int((source_after_dispatch.stock as PackedInt64Array)[source_good_index]) >= local_target)
 	var saved := _save_economy(ext)
-	_expect("PKEC v46 saves in-transit escrow", bool(saved.get("ok", false)) and
-		int(saved.get("schema", 0)) == 46)
+	_expect("PKEC v47 saves in-transit escrow", bool(saved.get("ok", false)) and
+		int(saved.get("schema", 0)) == 47)
 	var restored := _new_ext(compiled, 2)
 	CountryTestHelper.configure_all_technologies(restored, catalog, 2, 4410)
 	restored.configure_economy(catalog, profile, 2, 4410)

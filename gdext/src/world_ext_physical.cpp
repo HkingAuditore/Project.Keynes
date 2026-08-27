@@ -2108,9 +2108,17 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
     out["elapsed_ms"] = -1.0;
     out["fallback"] = true;
     out["reason"] = String();
+    out["published_to_slot"] = false;
+    out["slice_start"] = -1;
+    out["slice_end"] = -1;
+    out["slice_final"] = false;
+    out["slot_id"] = -1;
+    out["slot_size"] = 0;
+    out["slot_publish_reason"] = String("not_evaluated");
 
     auto fail = [&](const char *why) -> Dictionary {
         out["reason"] = String(why);
+        out["slot_publish_reason"] = String("pass_fallback");
         UtilityFunctions::push_warning(
             "[DCWorldExt] run_slp_field_pass: ", why,
             " — fallback to GDScript");
@@ -2229,6 +2237,19 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
     if (end_idx > n_cells)        end_idx   = n_cells;
     if (start_idx > end_idx)      start_idx = end_idx;
     const int slice_n = end_idx - start_idx;
+    const bool slice_final = end_idx == n_cells;
+    const int sid_slp = component_id(StringName("cell_slp"));
+    const int slp_slot_size = sid_slp >= 0 ? _slots.write[sid_slp].arr_f32.size() : 0;
+    out["slice_start"] = start_idx;
+    out["slice_end"] = end_idx;
+    out["slice_final"] = slice_final;
+    out["slot_id"] = sid_slp;
+    out["slot_size"] = slp_slot_size;
+    out["slot_publish_reason"] = slice_final
+        ? (sid_slp < 0 ? String("slot_missing")
+                       : (slp_slot_size != n_cells ? String("slot_size_mismatch")
+                                                   : String("slot_ready")))
+        : String("intermediate_slice");
 
     const float   * const __restrict POSY = s_pos_y.arr_f32.ptr();
     const uint8_t * const __restrict TR   = s_terrain.arr_u8.ptr();
@@ -2605,12 +2626,12 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
         std::memcpy(dst, slp_buf.data(), sizeof(float) * static_cast<size_t>(n_cells));
     }
 
-    const int sid_slp = component_id(StringName("cell_slp"));
-    if (sid_slp >= 0 && _slots.write[sid_slp].arr_f32.size() == n_cells) {
+    if (sid_slp >= 0 && slp_slot_size == n_cells) {
         float *dst = _slots.write[sid_slp].arr_f32.ptrw();
         std::memcpy(dst, slp_buf.data(), sizeof(float) * static_cast<size_t>(n_cells));
         _flush_slot_to_map(sid_slp);
         published_to_slot = true;
+        out["slot_publish_reason"] = String("slot_published");
     }
     } else {
         // 中间切片：仅构造 full-size slp_out（GDScript size-gate 通过；不会被用作地图值），
