@@ -88,8 +88,46 @@ void NativeEconomyRuntime::commit_food_flow_snapshot() {
         const int64_t effective = std::max<int64_t>(0, local +
             _cell_food_import_eq_previous[cell] -
             _cell_food_export_eq_previous[cell]);
+        // A warehouse reserve is useful only for a bounded horizon. Convert
+        // household-available food stock into equivalent flow for the current
+        // period, so stock improves K_eff without creating unlimited growth.
+        int64_t stock_food_eq = 0;
+        if (cell < static_cast<size_t>(_market.market_count)) {
+            const int32_t market = static_cast<int32_t>(cell);
+            for (int32_t good = 0; good < _market.good_count; ++good) {
+                if (good < 0 || good >= static_cast<int32_t>(
+                        _good_food_equivalent_q16.size())) continue;
+                const int32_t coefficient = _good_food_equivalent_q16[
+                    static_cast<size_t>(good)];
+                if (coefficient <= 0) continue;
+                const int64_t idx = _market.index(market, good);
+                if (idx < 0 || idx >= static_cast<int64_t>(_market.stock.size())) continue;
+                int64_t reserve = 0;
+                const int32_t signal = market_signal_index(market, good);
+                if (signal >= 0) {
+                    if (signal < static_cast<int32_t>(_production_input_reserve.size()))
+                        reserve = std::max(reserve, _production_input_reserve[
+                            static_cast<size_t>(signal)]);
+                    if (signal < static_cast<int32_t>(_construction_material_reserve.size()))
+                        reserve = std::max(reserve, _construction_material_reserve[
+                            static_cast<size_t>(signal)]);
+                }
+                const int64_t available = std::max<int64_t>(0,
+                    _market.stock[static_cast<size_t>(idx)] - reserve);
+                stock_food_eq = saturating_add(stock_food_eq,
+                    mul_div_sat(available, coefficient, Q16_ONE, _saturation_count),
+                    _saturation_count);
+            }
+        }
+        const int64_t stock_period_eq = mul_div_sat(
+            stock_food_eq, _food_flow_previous_period_days,
+            std::max<int32_t>(1, _carrying_stock_buffer_days),
+            _saturation_count);
+        const int64_t effective_with_stock = saturating_add(
+            effective, stock_period_eq, _saturation_count);
         _cell_carrying_k_geo[cell] = denominator > 0 ? local / denominator : 0;
-        _cell_carrying_k_eff[cell] = denominator > 0 ? effective / denominator : 0;
+        _cell_carrying_k_eff[cell] = denominator > 0
+            ? effective_with_stock / denominator : 0;
     }
 }
 
@@ -583,9 +621,37 @@ void NativeEconomyRuntime::append_carrying_capacity_fields(
     const int64_t effective_supply = valid && cell < _cell_food_import_eq_previous.size()
         ? std::max<int64_t>(0, local_net + _cell_food_import_eq_previous[cell] -
             _cell_food_export_eq_previous[cell]) : 0;
+    int64_t sat = 0;
+    int64_t stock_food_eq = 0;
+    if (cell_idx < _market.market_count) {
+        for (int32_t good = 0; good < _market.good_count; ++good) {
+            if (good < 0 || good >= static_cast<int32_t>(
+                    _good_food_equivalent_q16.size())) continue;
+            const int32_t coefficient = _good_food_equivalent_q16[
+                static_cast<size_t>(good)];
+            if (coefficient <= 0) continue;
+            const int64_t idx = _market.index(cell_idx, good);
+            if (idx < 0 || idx >= static_cast<int64_t>(_market.stock.size())) continue;
+            int64_t reserve = 0;
+            const int32_t signal = market_signal_index(cell_idx, good);
+            if (signal >= 0) {
+                if (signal < static_cast<int32_t>(_production_input_reserve.size()))
+                    reserve = std::max(reserve, _production_input_reserve[
+                        static_cast<size_t>(signal)]);
+                if (signal < static_cast<int32_t>(_construction_material_reserve.size()))
+                    reserve = std::max(reserve, _construction_material_reserve[
+                        static_cast<size_t>(signal)]);
+            }
+            const int64_t available = std::max<int64_t>(0,
+                _market.stock[static_cast<size_t>(idx)] - reserve);
+            stock_food_eq = saturating_add(stock_food_eq,
+                mul_div_sat(available, coefficient, Q16_ONE, sat), sat);
+        }
+    }
+    const int64_t stock_daily = stock_food_eq /
+        std::max<int32_t>(1, _carrying_stock_buffer_days);
     const int64_t local_daily = local_net / flow_days;
     const int64_t effective_daily = effective_supply / flow_days;
-    int64_t sat = 0;
     int64_t population = 0;
     _population.for_each_in_cell(cell_idx, [&](int32_t slot) {
         population = saturating_add(population,
@@ -606,6 +672,9 @@ void NativeEconomyRuntime::append_carrying_capacity_fields(
     out["carrying_schema_version"] = 2;
     out["local_food_output_eq_per_day"] = local_daily;
     out["effective_food_supply_eq_per_day"] = effective_daily;
+    out["food_stock_eq"] = stock_food_eq;
+    out["food_stock_capacity_persons"] = stock_daily /
+        std::max<int64_t>(1, _carrying_survival_food_per_person);
     out["local_food_capacity_persons"] = cell < _cell_carrying_k_geo.size()
         ? _cell_carrying_k_geo[cell] : 0;
     out["effective_food_capacity_persons"] = cell < _cell_carrying_k_eff.size()

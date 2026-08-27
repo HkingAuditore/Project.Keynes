@@ -246,7 +246,11 @@ starvation_deficit = max(0, starvation_satisfaction_threshold - survival_sat)
 local_net_food_eq = max(0, food_output_eq - food_input_eq)
 effective_food_eq = max(0, local_net_food_eq + food_import_eq - food_export_eq)
 local_food_capacity_persons = local_net_food_eq / period_days / per_person_food_eq
-effective_food_capacity_persons = effective_food_eq / period_days / per_person_food_eq
+stock_food_eq = sum(max(0, household_available_food_stock - locked_reserve)
+                     × food_equivalent)
+stock_period_food_eq = stock_food_eq × period_days / carrying_stock_buffer_days
+effective_food_capacity_persons =
+    (effective_food_eq + stock_period_food_eq) / period_days / per_person_food_eq
 load      = P / max(1, effective_food_capacity_persons)
 fertility_land = 1                          if load ≤ soft_start
                lerp(1, death/birth, t)      otherwise
@@ -256,7 +260,8 @@ expected_births_q32 = population × effective_birth_rate_q32 × epoch_days
 ```
 
 `rescale` 仍按 `satisfaction_birth_reference_q16` 重标定。上述食物流量来自上一完整周期的实际结算；
-资源储量、地形、气候和建筑加成仅通过真实产出结果生效。家庭购买属于所有权转移，不得再次加到本地产出；
+资源生态储量、地形、气候和建筑加成通过真实产出结果生效；当地可用食品库存另按有限缓冲天数计入有效承载力。
+家庭购买属于所有权转移，不得再次加到本地产出；
 加工链按输出减投入计量。上一期流量快照进入 PKEC v45 与 `state_hash`。
 饥饿死亡公式不变，只读 `SAT_DIM_SUBSISTENCE`。
 
@@ -266,7 +271,8 @@ expected_births_q32 = population × effective_birth_rate_q32 × epoch_days
 周期开始时仍存活人口先就业和生产，不用上周期满足度削减劳动力。
 职业默认出生率为每日 Q32 `2353407`（约 20.0%/年），自然死亡率为 `294176`（约 2.5%/年），
 完全满足时净增长约 17.5%/年，健康人口在 `P ≪ K_eff` 时理论翻倍时间约 4.3 年；贴上格承载力后出生落到更替
-（`death_rate/birth_rate`）。同一 cell
+（`death_rate/birth_rate`）。库存按 `carrying_stock_buffer_days`（默认 30 天）折算为有限期食物流量，
+并扣除生产/建设锁定量；`carrying_soft_start_q16` 默认值为 `52429`（约 80%），使人口接近有效承载力前保持更长的增长窗口。同一 cell
 内按 ethnicity 汇总 `expected_births_q32`；整数部分直接出生，Q32 小数部分写入每格每民族的
 `birth_residual_q32` 并跨周期累计，由 PKEC 持久化。
 新生人口在结构提交末尾合并到 `unemployed|eth`，资金、收入和就业均为零。
