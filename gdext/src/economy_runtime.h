@@ -2892,6 +2892,10 @@ private:
     int32_t _building_finalize_cells_per_slice =
         AUTO_BUILDING_FINALIZE_CELLS_PER_SLICE;
     int32_t _building_output_efficiency_q16 = Q16_ONE;
+    // Food-only production multiplier.  Kept separate from the global
+    // building multiplier so staple/protein/produce output can be improved
+    // without inflating knowledge, tools, or construction chains.
+    int32_t _food_building_output_efficiency_q16 = 81920;
     bool _auto_building_slice_by_scale = true;
     int32_t _commands_per_slice = 16384;
     int32_t _epoch_days = 1;
@@ -2973,7 +2977,8 @@ private:
     int32_t _carrying_water_habitability_q16 = 49152;
     int32_t _carrying_surplus_elasticity_q16 = Q16_ONE / 2;
     int32_t _carrying_sat_elasticity_q16 = 22938;
-    int32_t _carrying_soft_start_q16 = 52429;
+    // Birth suppression starts at 90% of stock-inclusive carrying capacity.
+    int32_t _carrying_soft_start_q16 = 58982;
     int32_t _carrying_stock_buffer_days = 30;
     int32_t _carrying_surplus_floor_q16 = 16384;
     int32_t _carrying_surplus_cap_q16 = 98304;
@@ -4914,6 +4919,10 @@ private:
     void append_carrying_capacity_fields(godot::Dictionary &out,
                                          int32_t cell_idx) const;
     void commit_food_flow_snapshot();
+    // Returns the period food-supported population capacity using both net
+    // flow and a bounded, reserve-aware local market stock buffer.
+    int64_t food_flow_capacity_for_cell(int32_t cell, int64_t &k_geo,
+                                        int64_t &sat) const;
     void accumulate_trade_food_flow(int32_t cell, int32_t good,
                                     int64_t import_qty, int64_t export_qty,
                                     int64_t &sat);
