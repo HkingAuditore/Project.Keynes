@@ -23,6 +23,9 @@ extends Resource
 ## Global building output efficiency. It scales goods output only; construction,
 ## production inputs, natural-resource use, and wages keep their catalog values.
 @export_range(65536, 262144, 1) var building_output_efficiency_q16: int = 131072
+## Food-only multiplier applied to staple/protein/produce building outputs and
+## their carrying-capacity yield.  It leaves non-food industries unchanged.
+@export_range(65536, 262144, 1) var food_building_output_efficiency_q16: int = 81920
 ## Longest market interval (1–5). Native locks N for a full cycle from populated
 ## work plus previous-cycle machine timing. 5 is the late-game stagger cap, not
 ## a start-of-game fixed period. 0 is ignored and treated as 5; the retired
@@ -267,7 +270,8 @@ extends Resource
 @export_range(0, 65536, 1) var carrying_water_habitability_q16: int = 49152
 @export_range(0, 65536, 1) var carrying_surplus_elasticity_q16: int = 32768
 @export_range(0, 65536, 1) var carrying_sat_elasticity_q16: int = 22938
-@export_range(1, 65536, 1) var carrying_soft_start_q16: int = 52429
+## Birth suppression begins at 90% of the stock-inclusive carrying capacity.
+@export_range(1, 65536, 1) var carrying_soft_start_q16: int = 58982
 ## Food stock contributes a bounded number of days of equivalent carrying capacity.
 ## This prevents a temporary warehouse surplus from creating unlimited population growth.
 @export_range(1, 3650, 1) var carrying_stock_buffer_days: int = 30
@@ -313,6 +317,7 @@ func to_native_profile() -> Dictionary:
 		"building_finalize_cells_per_slice":
 			building_finalize_cells_per_slice,
 		"building_output_efficiency_q16": building_output_efficiency_q16,
+		"food_building_output_efficiency_q16": food_building_output_efficiency_q16,
 		"market_cycle_days": market_cycle_days,
 		"market_min_cycle_days": market_min_cycle_days,
 		"market_max_cycle_days": market_max_cycle_days,

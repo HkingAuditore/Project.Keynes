@@ -1918,26 +1918,12 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         ? std::clamp<int64_t>(mul_div_sat(sat_cell_num, 1, sat_cell_den, sat),
                               _carrying_sat_floor_q16, _carrying_sat_cap_q16)
         : Q16_ONE;
+    int64_t k_geo = 0;
+    const int64_t k_eff = food_flow_capacity_for_cell(
+        birth_cell, k_geo, sat);
     const bool food_flow_valid = birth_cell >= 0 && birth_cell < _cell_count &&
         static_cast<size_t>(birth_cell) < _cell_food_flow_valid.size() &&
         _cell_food_flow_valid[static_cast<size_t>(birth_cell)] != 0;
-    const size_t food_lane = static_cast<size_t>(std::max(0, birth_cell));
-    const int64_t local_food_net = food_flow_valid &&
-            food_lane < _cell_food_output_eq_previous.size()
-        ? std::max<int64_t>(0, _cell_food_output_eq_previous[food_lane] -
-            _cell_food_input_eq_previous[food_lane]) : 0;
-    const int64_t effective_food_supply = food_flow_valid &&
-            food_lane < _cell_food_import_eq_previous.size()
-        ? std::max<int64_t>(0, local_food_net +
-            _cell_food_import_eq_previous[food_lane] -
-            _cell_food_export_eq_previous[food_lane]) : 0;
-    const int64_t flow_days = std::max<int32_t>(1, _food_flow_previous_period_days);
-    const int64_t per_person_food = std::max<int64_t>(1,
-        _carrying_survival_food_per_person);
-    const int64_t k_geo = food_flow_valid
-        ? local_food_net / flow_days / per_person_food : 0;
-    const int64_t k_eff = food_flow_valid
-        ? effective_food_supply / flow_days / per_person_food : 0;
     if (birth_cell >= 0 && static_cast<size_t>(birth_cell) < _cell_carrying_k_geo.size()) {
         _cell_carrying_k_geo[static_cast<size_t>(birth_cell)] = k_geo;
         _cell_carrying_k_eff[static_cast<size_t>(birth_cell)] = k_eff;

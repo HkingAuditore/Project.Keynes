@@ -5618,6 +5618,16 @@ int64_t NativeEconomyRuntime::effective_building_output_quantity(
         Q16_ONE, sat);
     const int64_t building_output = mul_div_sat(utilized,
         std::max<int32_t>(0, group.output_factor_q16), Q16_ONE, sat);
+    // Apply the food-only tuning at the final authoritative output helper so
+    // market supply, retained stock, investment projections, and carrying
+    // diagnostics all observe the same multiplier.
+    const int64_t food_factor = good_id >= 0 &&
+            good_id < static_cast<int32_t>(_good_food_equivalent_q16.size()) &&
+            _good_food_equivalent_q16[static_cast<size_t>(good_id)] > 0
+        ? std::max<int32_t>(Q16_ONE, _food_building_output_efficiency_q16)
+        : Q16_ONE;
+    const int64_t food_adjusted_output = mul_div_sat(
+        building_output, food_factor, Q16_ONE, sat);
     const int32_t country_slot = group.cell >= 0 &&
             group.cell < static_cast<int32_t>(_epoch_cell_country.size())
         ? _epoch_cell_country[static_cast<size_t>(group.cell)] : -1;
@@ -5628,7 +5638,7 @@ int64_t NativeEconomyRuntime::effective_building_output_quantity(
             good_factor_index < _epoch_country_good_output_factor_q16.size()
         ? _epoch_country_good_output_factor_q16[good_factor_index] : Q16_ONE;
     const int64_t country_good_output = mul_div_sat(
-        building_output, std::max<int64_t>(0, good_factor_q16), Q16_ONE, sat);
+        food_adjusted_output, std::max<int64_t>(0, good_factor_q16), Q16_ONE, sat);
     return mul_div_sat(country_good_output, std::max<int32_t>(0,
         city_good_output_factor_q16(group.cell, good_id)), Q16_ONE, sat);
 }

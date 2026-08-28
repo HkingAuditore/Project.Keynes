@@ -867,6 +867,56 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             }
         }
 
+        // Knowledge work is deliberately a soft local cap: it blocks new
+        // hiring/transfers once knowledge owners+employees reach 30% of the
+        // living population, but does not evict incumbents when population
+        // later falls.  Keep one slot available in tiny settlements so a
+        // population of 1–3 is not permanently barred from its first scribe.
+        auto is_knowledge_group = [&](const BuildingGroup &group) -> bool {
+            return group.type_id >= 0 &&
+                group.type_id < static_cast<int32_t>(_building_types.size()) &&
+                _building_types[static_cast<size_t>(group.type_id)].economic_sector == 4;
+        };
+        int64_t local_population_for_knowledge = 0;
+        int64_t local_knowledge_employment = 0;
+        _population.for_each_in_cell(cell, [&](int32_t slot) {
+            const int64_t pop = std::max<int64_t>(0, _population.population[slot]);
+            local_population_for_knowledge = saturating_add(
+                local_population_for_knowledge, pop, _saturation_count);
+        });
+        // Count sector employment from the building graph rather than cohort
+        // profession totals: one cohort may own/serve both knowledge and
+        // non-knowledge groups, while the cap is about actual knowledge jobs.
+        for (int32_t g = first; g < last; ++g) {
+            const BuildingGroup &group = _buildings[g];
+            if (group.cell != cell || !is_knowledge_group(group)) continue;
+            local_knowledge_employment = saturating_add(
+                local_knowledge_employment, std::max<int64_t>(0, group.filled_owner),
+                _saturation_count);
+            if (group.type_id < 0 || group.type_id >=
+                    static_cast<int32_t>(_building_types.size())) continue;
+            const BuildingType &type = _building_types[group.type_id];
+            for (int32_t r = 0; r < type.employee_count; ++r) {
+                const int32_t fill_index = group.employee_fill_begin + r;
+                if (fill_index >= 0 && fill_index < static_cast<int32_t>(
+                        _building_employee_filled.size())) {
+                    local_knowledge_employment = saturating_add(
+                        local_knowledge_employment,
+                        std::max<int64_t>(0, _building_employee_filled[fill_index]),
+                        _saturation_count);
+                }
+            }
+        }
+        const int64_t knowledge_cap = local_population_for_knowledge > 0
+            ? std::max<int64_t>(1, mul_div_sat(
+                local_population_for_knowledge, 30, 100, _saturation_count)) : 0;
+        auto knowledge_slot_available = [&](const BuildingGroup &group,
+                                            int64_t add, bool source_is_knowledge) {
+            if (!is_knowledge_group(group) || source_is_knowledge) return true;
+            return local_knowledge_employment < knowledge_cap &&
+                add <= knowledge_cap - local_knowledge_employment;
+        };
+
         // ---- 第2步 招人：按优先级从 unemployed 池增量迁回 ----
         // 优先级键：(realized_profit_margin_q16 desc, planned_utilization_q16 desc,
         //            group_index asc)。排序粒度=跨 BuildingGroup（跨建筑类型）；
@@ -894,7 +944,10 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 if (pool >= 0) {
                     const int64_t avail = std::max<int64_t>(0, _population.population[pool]);
                     const int64_t take = std::min(owner_need, avail);
-                    if (take > 0 &&
+                    const int64_t capped_take = knowledge_slot_available(group, take, false)
+                        ? take : std::max<int64_t>(0, knowledge_cap -
+                            local_knowledge_employment);
+                    if (capped_take > 0 &&
                         group.owner_signature_id != static_cast<int32_t>(
                             _population.signature_id[pool])) {
                         bool drained = false;
@@ -902,18 +955,22 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                             preferred_family_for_cohort(pool, 1, 0,
                                 _signatures[group.owner_signature_id].profession_id);
                         if (!move_cohort_population(pool, cell, group.owner_signature_id,
-                                                    take, error, &drained,
+                                                    capped_take, error, &drained,
                                                     preferred_family)) {
                             return false;
                         }
-                        group.filled_owner = saturating_add(group.filled_owner, take,
+                        group.filled_owner = saturating_add(group.filled_owner, capped_take,
                                                             _saturation_count);
+                        if (is_knowledge_group(group)) {
+                            local_knowledge_employment = saturating_add(
+                                local_knowledge_employment, capped_take, _saturation_count);
+                        }
                         // 迁回的人在其目标 profession|eth slot 记为在岗 owner。
                         const int32_t dest = _population.find_signature(
                             cell, static_cast<uint32_t>(group.owner_signature_id));
                         if (dest >= 0) {
                             _population.owner_employed[dest] = saturating_add(
-                                _population.owner_employed[dest], take, _saturation_count);
+                                _population.owner_employed[dest], capped_take, _saturation_count);
                         }
                     }
                 }
@@ -934,6 +991,8 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 int64_t need = std::max<int64_t>(0,
                     role_target - std::max<int64_t>(0, _building_employee_filled[fi]));
                 if (need <= 0) continue;
+                if (is_knowledge_group(group) &&
+                    local_knowledge_employment >= knowledge_cap) continue;
                 // 目标 slot 按具体 eth 定（跨 eth 招募，按 eth 升序稳定取池）。
                 for (int32_t eth = 0; eth < n_eth && need > 0; ++eth) {
                     const int32_t pool = pool_slot_for_eth(eth);
@@ -949,7 +1008,11 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                     const int64_t transition_cost = living_cost_for_signature(
                         cell, target_sig, -1, _saturation_count) / 8;
                     if (expected_wage <= transition_cost) continue;
-                    const int64_t take = std::min(need, avail);
+                    const int64_t take = std::min({need, avail,
+                        is_knowledge_group(group)
+                            ? std::max<int64_t>(0, knowledge_cap -
+                                local_knowledge_employment)
+                            : need});
                     if (take <= 0) continue;
                     bool drained = false;
                     const uint64_t preferred_family =
@@ -960,6 +1023,10 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                     }
                     _building_employee_filled[fi] = saturating_add(
                         _building_employee_filled[fi], take, _saturation_count);
+                    if (is_knowledge_group(group)) {
+                        local_knowledge_employment = saturating_add(
+                            local_knowledge_employment, take, _saturation_count);
+                    }
                     const int32_t dest = _population.find_signature(
                         cell, static_cast<uint32_t>(target_sig));
                     if (dest >= 0) {
@@ -1079,6 +1146,9 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                     _signatures[source_group.owner_signature_id];
                 const int64_t source_income =
                     projected_owner_income[candidate - first];
+                const bool source_is_knowledge = is_knowledge_group(source_group);
+                if (!knowledge_slot_available(target_group, 1,
+                                              source_is_knowledge)) continue;
                 const int64_t transition_cost = source_signature.profession_id ==
                         target_signature.profession_id ? 0 :
                     std::max(living_cost_for_signature(
@@ -1101,6 +1171,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             }
             if (source_group_index >= 0) {
                 BuildingGroup &source_group = _buildings[source_group_index];
+                const bool source_is_knowledge = is_knowledge_group(source_group);
                 const Signature &source_signature =
                     _signatures[source_group.owner_signature_id];
                 if (source_signature.profession_id != target_signature.profession_id) {
@@ -1135,6 +1206,11 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 source_group.filled_owner -= 1;
                 target_group.filled_owner = saturating_add(
                     target_group.filled_owner, 1, _saturation_count);
+                if (source_is_knowledge != is_knowledge_group(target_group)) {
+                    local_knowledge_employment = std::max<int64_t>(0,
+                        local_knowledge_employment +
+                        (is_knowledge_group(target_group) ? 1 : -1));
+                }
                 owner_job_group_used[source_group_index - first] = 1;
                 owner_job_group_used[target_group_index - first] = 1;
                 ++_building_owner_job_reallocations;
@@ -1158,6 +1234,10 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 const int64_t required_target = saturating_add(
                     candidate.income, transition_cost, _saturation_count);
                 if (target_income < required_target) continue;
+                const BuildingGroup &source_group = _buildings[candidate.group];
+                const bool source_is_knowledge = is_knowledge_group(source_group);
+                if (!knowledge_slot_available(target_group, 1,
+                                              source_is_knowledge)) continue;
                 const int32_t source_signature_id =
                     signature_for_profession_ethnicity(candidate.profession,
                         target_signature.ethnicity_id);
@@ -1203,6 +1283,11 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 _building_employee_filled[candidate.fill_index] -= 1;
                 target_group.filled_owner = saturating_add(
                     target_group.filled_owner, 1, _saturation_count);
+                if (source_is_knowledge != is_knowledge_group(target_group)) {
+                    local_knowledge_employment = std::max<int64_t>(0,
+                        local_knowledge_employment +
+                        (is_knowledge_group(target_group) ? 1 : -1));
+                }
                 owner_job_group_used[candidate.group - first] = 1;
                 owner_job_group_used[target_group_index - first] = 1;
                 ++_building_employee_to_owner_reallocations;

@@ -272,7 +272,7 @@ expected_births_q32 = population × effective_birth_rate_q32 × epoch_days
 职业默认出生率为每日 Q32 `2353407`（约 20.0%/年），自然死亡率为 `294176`（约 2.5%/年），
 完全满足时净增长约 17.5%/年，健康人口在 `P ≪ K_eff` 时理论翻倍时间约 4.3 年；贴上格承载力后出生落到更替
 （`death_rate/birth_rate`）。库存按 `carrying_stock_buffer_days`（默认 30 天）折算为有限期食物流量，
-并扣除生产/建设锁定量；`carrying_soft_start_q16` 默认值为 `52429`（约 80%），使人口接近有效承载力前保持更长的增长窗口。同一 cell
+并扣除生产/建设锁定量；`carrying_soft_start_q16` 默认值为 `58982`（约 90%），使人口接近有效承载力前保持更长的增长窗口。同一 cell
 内按 ethnicity 汇总 `expected_births_q32`；整数部分直接出生，Q32 小数部分写入每格每民族的
 `birth_residual_q32` 并跨周期累计，由 PKEC 持久化。
 新生人口在结构提交末尾合并到 `unemployed|eth`，资金、收入和就业均为零。
