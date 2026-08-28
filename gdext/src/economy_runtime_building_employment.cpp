@@ -1945,9 +1945,11 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         if (allow_owner_job_reallocation) {
         // Unemployed hiring remains authoritative and runs first. Remaining
         // ACTIVE owner vacancies may then attract one incumbent owner from a
-        // lower-income ACTIVE group of the same ethnicity. Targets and sources
-        // are snapshotted before matching so a group cannot chain through
-        // several jobs in the same employment period.
+        // lower-income ACTIVE group that is already at or above its owner
+        // target. Understaffed lots are not sources: they keep competing for
+        // unemployed and employee labor instead of emptying each other.
+        // Targets and sources are snapshotted before matching so a group
+        // cannot chain through several jobs in the same employment period.
         thread_local std::vector<int64_t> projected_owner_income;
         thread_local std::vector<int32_t> owner_job_targets;
         thread_local std::vector<int32_t> owner_job_sources;
@@ -2002,10 +2004,14 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             if (type.kind != 2 && group.filled_owner < owner_target) {
                 if (income > 0) owner_job_targets.push_back(g);
             }
-            // Service owners may be sources. In particular, surplus merchant
-            // post owners can take a materially better owner job; the matching
-            // loop below still protects the final merchant in the cell.
-            if (group.filled_owner > 0 && owner_target > 0) {
+            // Only a fully staffed or overstaffed lot can lose an owner to
+            // another building. Two understaffed lots used to raid each other
+            // one person per epoch; last-period receipts and resource take
+            // then flipped the ranking and the same person walked back.
+            // Service owners may still be sources when they are at target
+            // (surplus merchant-post owners taking a better job). The matching
+            // loop still protects the final merchant in the cell.
+            if (group.filled_owner >= owner_target && owner_target > 0) {
                 const int32_t source_slot = owner_slot_for_profession(
                     _signatures[group.owner_signature_id].profession_id);
                 if (source_slot >= 0 && _population.owner_employed[source_slot] > 0) {

@@ -82,6 +82,7 @@ func _run() -> void:
 	_test_surplus_merchant_can_change_owner_job(catalog, profile)
 	_test_same_profession_owner_income_reallocation(catalog, profile)
 	_test_owner_income_reallocation_prefers_unemployed(catalog, profile)
+	_test_understaffed_owners_do_not_raid_each_other(catalog, profile)
 	_test_unemployment_subsidy_is_reservation_income(catalog, profile)
 	_test_endogenous_owner_investment(catalog, profile)
 	_test_merit_order_offtake_prefers_low_unit_cost(catalog, profile)
@@ -1114,7 +1115,7 @@ func _test_active_owner_income_reallocation(source_catalog: Dictionary,
 		"building_cells": PackedInt32Array([0, 0]),
 		"building_type_ids": PackedInt32Array([flint_id, knapping_id]),
 		"building_owner_signature_ids": PackedInt32Array([forager_sig, artisan_sig]),
-		"building_counts": PackedInt64Array([2, 1]),
+		"building_counts": PackedInt64Array([1, 1]),
 	})
 	_expect("owner-job mobility fixture bootstraps", bool(boot.get("ok", false)))
 	if not bool(boot.get("ok", false)):
@@ -1135,7 +1136,7 @@ func _test_active_owner_income_reallocation(source_catalog: Dictionary,
 		if artisan_row >= 0 else 0
 	_expect("higher owner income attracts the final low-income ACTIVE owner",
 		flint_group >= 0 and knapping_group >= 0 and
-		int((buildings.owner_required as PackedInt64Array)[flint_group]) == 2 and
+		int((buildings.owner_required as PackedInt64Array)[flint_group]) == 1 and
 		int((buildings.projected_owner_income_per_day as PackedInt64Array)[knapping_group]) >
 			int((buildings.projected_owner_income_per_day as PackedInt64Array)[flint_group]) and
 		int((buildings.filled_owner as PackedInt64Array)[flint_group]) == 0 and
@@ -1493,6 +1494,81 @@ func _test_owner_income_reallocation_prefers_unemployed(source_catalog: Dictiona
 		int(report.get("population_error", 1)) == 0 and
 		int(report.get("money_error", 1)) == 0 and
 		int(report.get("goods_error", 1)) == 0)
+
+
+func _test_understaffed_owners_do_not_raid_each_other(source_catalog: Dictionary,
+		source_profile: Dictionary) -> void:
+	var catalog := source_catalog.duplicate(true)
+	var profile := source_profile.duplicate(true)
+	profile.starvation_death_rate_q32 = 0
+	profile.resource_safe_harvest_q16 = 0
+	profile.investment_max_growth_share_q16 = 0
+	var signatures: PackedStringArray = catalog.signature_keys
+	var forager_sig := signatures.find("forager|default")
+	var merchant_sig := signatures.find("merchant|default")
+	var building_ids: PackedStringArray = catalog.building_type_ids
+	var flint_id := building_ids.find("flint_quarry")
+	var timber_id := building_ids.find("timber_collector")
+	var goods: PackedStringArray = catalog.good_ids
+	var tool_good := goods.find("chipped_stone_tools")
+	var logs_good := goods.find("logs")
+	var prices: PackedInt32Array = catalog.good_default_price.duplicate()
+	var min_prices: PackedInt32Array = catalog.good_min_price
+	var max_prices: PackedInt32Array = catalog.good_max_price.duplicate()
+	prices[tool_good] = min_prices[tool_good]
+	prices[logs_good] = 1000000000
+	max_prices[logs_good] = 1000000000
+	catalog.good_default_price = prices
+	catalog.good_max_price = max_prices
+	var ext := _new_ext(catalog)
+	_expect("understaffed-raid country bootstraps",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 434))
+	_expect("understaffed-raid runtime configures", bool(ext.configure_economy(
+		catalog, profile, 1, 434).get("ok", false)))
+	var stock := PackedInt64Array()
+	stock.resize(goods.size())
+	stock.fill(1000000)
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0]),
+		"signature_ids": PackedInt32Array([forager_sig, merchant_sig]),
+		"population": PackedInt64Array([2, 1]),
+		"funds": PackedInt64Array([4000000, 1000000]),
+	}, {
+		"stock": stock,
+		"price": prices,
+		"building_cells": PackedInt32Array([0, 0]),
+		"building_type_ids": PackedInt32Array([flint_id, timber_id]),
+		"building_owner_signature_ids": PackedInt32Array([forager_sig, forager_sig]),
+		"building_counts": PackedInt64Array([2, 2]),
+	})
+	_expect("understaffed-raid fixture bootstraps", bool(boot.get("ok", false)))
+	if not bool(boot.get("ok", false)):
+		return
+	var first := _run_day(ext, 0)
+	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	var flint_group := (buildings.group_type_ids as PackedInt32Array).find(flint_id)
+	var timber_group := (buildings.group_type_ids as PackedInt32Array).find(timber_id)
+	if flint_group < 0 or timber_group < 0:
+		_expect("understaffed-raid groups exist", false)
+		return
+	var flint_fill := int((buildings.filled_owner as PackedInt64Array)[flint_group])
+	var timber_fill := int((buildings.filled_owner as PackedInt64Array)[timber_group])
+	var continued := 0
+	for day in range(1, 6):
+		var later := _run_day(ext, day)
+		continued += int(later.get("building_owner_job_reallocations", 0))
+	buildings = ext.get_building_cell_snapshot(0)
+	var flint_later := int((buildings.filled_owner as PackedInt64Array)[flint_group])
+	var timber_later := int((buildings.filled_owner as PackedInt64Array)[timber_group])
+	_expect("understaffed owner lots do not keep raiding each other",
+		flint_fill + timber_fill == 2 and
+		flint_later == flint_fill and
+		timber_later == timber_fill and
+		continued == 0 and
+		int(first.get("population_error", 1)) == 0)
+	_expect("understaffed-raid conserves every ledger",
+		int(first.get("money_error", 1)) == 0 and
+		int(first.get("goods_error", 1)) == 0)
 
 
 func _test_unemployment_subsidy_is_reservation_income(source_catalog: Dictionary,

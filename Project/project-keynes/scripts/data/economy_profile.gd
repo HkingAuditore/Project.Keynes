@@ -146,10 +146,10 @@ extends Resource
 	13107, 26214, 39322, 52429,
 ])
 @export_range(0, 65536, 1) var wage_ema_alpha_q16: int = 8192
-## Daily fraction of a cohort that may reconsider employment.  The native
-## employment pass compounds this over the locked market period, so changing
-## N does not create a one-period migration shock.
-@export_range(0, 65536, 1) var employment_mobility_daily_q16: int = 3277
+## Daily fraction of a cohort that may reconsider employment (13107/65536 ≈ 20%).
+## The native employment pass compounds this over the locked market period, so
+## changing N does not create a one-period migration shock.
+@export_range(0, 65536, 1) var employment_mobility_daily_q16: int = 13107
 ## Linear choice temperature used when splitting a cohort across acceptable
 ## vacancies. Higher values soften winner-takes-all hiring.
 @export_range(1, 65536, 1) var employment_choice_temperature_q16: int = 6554
