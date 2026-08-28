@@ -974,6 +974,14 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     PackedInt64Array last_bonus_due;
     PackedInt64Array last_bonus_paid;
     PackedByteArray wage_suspended;
+    PackedInt64Array opportunity_owner_income_per_day;
+    PackedInt64Array opportunity_disposable_survival_power_per_day;
+    PackedInt64Array opportunity_executable_capacity_q16;
+    PackedInt64Array opportunity_in_kind_retail_value;
+    PackedByteArray survival_priority;
+    PackedInt64Array survival_shortage_q16;
+    PackedInt64Array monetary_quota_absorption_q16;
+    PackedByteArray monetary_quote_capped;
     PackedInt32Array group_input_selected_offsets;
     PackedInt32Array group_input_selected_good_ids;
     PackedInt32Array family_ownership_offsets;
@@ -1013,6 +1021,54 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
         owner_required.push_back(planned_owner_required);
         projected_owner_income.push_back(projected_owner_income_per_day(
             group, snapshot_sat));
+        int64_t prospective_employee_required = 0;
+        int64_t prospective_employee_filled = 0;
+        for (int32_t r = 0; r < type.employee_count; ++r) {
+            const JobRole &role = _building_employee_roles[type.employee_begin + r];
+            prospective_employee_required = saturating_add(
+                prospective_employee_required,
+                saturating_mul(group.count, role.slots_per_building, snapshot_sat),
+                snapshot_sat);
+            const int32_t role_index = group.employee_fill_begin + r;
+            if (role_index >= 0 && role_index < static_cast<int32_t>(
+                    _building_employee_filled.size())) {
+                prospective_employee_filled = saturating_add(
+                    prospective_employee_filled,
+                    std::max<int64_t>(0, _building_employee_filled[role_index]),
+                    snapshot_sat);
+            }
+        }
+        const int64_t employee_fillability_q16 = prospective_employee_required > 0
+            ? std::clamp<int64_t>(mul_div_sat(prospective_employee_filled,
+                Q16_ONE, prospective_employee_required, snapshot_sat), 0, Q16_ONE)
+            : Q16_ONE;
+        const OwnerOpportunityQuote opportunity = owner_opportunity_quote(
+            group, Q16_ONE, employee_fillability_q16, snapshot_sat);
+        opportunity_owner_income_per_day.push_back(
+            opportunity.owner_income_per_day);
+        opportunity_disposable_survival_power_per_day.push_back(
+            opportunity.disposable_survival_power_per_day);
+        opportunity_executable_capacity_q16.push_back(
+            opportunity.executable_capacity_q16);
+        opportunity_in_kind_retail_value.push_back(
+            opportunity.in_kind_retail_value);
+        survival_priority.push_back(opportunity.survival_priority ? 1 : 0);
+        int64_t group_survival_shortage_q16 = 0;
+        const int32_t group_market = _market.cell_to_market[group.cell];
+        for (int32_t output = 0; output < type.output_count; ++output) {
+            const int32_t good = _building_outputs[type.output_begin + output].good_id;
+            if (good >= 0 && good < static_cast<int32_t>(
+                    _survival_food_good_mask.size()) &&
+                _survival_food_good_mask[good] != 0) {
+                group_survival_shortage_q16 = std::max<int64_t>(
+                    group_survival_shortage_q16,
+                    _market.last_shortage_q16[_market.index(group_market, good)]);
+            }
+        }
+        survival_shortage_q16.push_back(group_survival_shortage_q16);
+        monetary_quota_absorption_q16.push_back(
+            opportunity.monetary_quota_absorption_q16);
+        monetary_quote_capped.push_back(opportunity.monetary_quote_capped ? 1 : 0);
         employee_tax_retention_q16.push_back(
             projected_employee_tax_retention_q16(group, snapshot_sat));
         filled_owner.push_back(group.filled_owner);
@@ -1298,6 +1354,17 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     out["owner_capacity"] = owner_capacity;
     out["owner_required"] = owner_required;
     out["projected_owner_income_per_day"] = projected_owner_income;
+    out["opportunity_owner_income_per_day"] = opportunity_owner_income_per_day;
+    out["opportunity_disposable_survival_power_per_day"] =
+        opportunity_disposable_survival_power_per_day;
+    out["opportunity_executable_capacity_q16"] =
+        opportunity_executable_capacity_q16;
+    out["opportunity_in_kind_retail_value"] =
+        opportunity_in_kind_retail_value;
+    out["survival_priority"] = survival_priority;
+    out["survival_shortage_q16"] = survival_shortage_q16;
+    out["monetary_quota_absorption_q16"] = monetary_quota_absorption_q16;
+    out["monetary_quote_capped"] = monetary_quote_capped;
     out["employee_tax_retention_q16"] = employee_tax_retention_q16;
     out["filled_owner"] = filled_owner;
     out["owner_openings"] = owner_openings;

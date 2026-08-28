@@ -1806,6 +1806,17 @@ Dictionary NativeEconomyRuntime::report() const {
     out["building_owner_mobility"] = _building_owner_mobility;
     out["building_owner_job_reallocations"] =
         _building_owner_job_reallocations;
+    out["building_survival_priority_candidates"] =
+        _building_survival_priority_candidates;
+    out["building_owner_opportunity_quotes"] =
+        _building_owner_opportunity_quotes;
+    out["building_owner_opportunity_zero_feasible"] =
+        _building_owner_opportunity_zero_feasible;
+    out["building_owner_survival_reallocations"] =
+        _building_owner_survival_reallocations;
+    out["bullion_quota_pressure_clamps"] = _bullion_quota_pressure_clamps;
+    out["bullion_quote_overallocation_prevented"] =
+        _bullion_quote_overallocation_prevented;
     out["building_owner_job_profession_changes"] =
         _building_owner_job_profession_changes;
     out["building_owner_job_probability_skips"] =
@@ -2203,6 +2214,9 @@ Dictionary NativeEconomyRuntime::report() const {
     out["accuracy_candidate_top_k"] = _accuracy_candidate_top_k;
     out["accuracy_choice_temperature_q16"] =
         _accuracy_choice_temperature_q16;
+    out["employment_mobility_daily_q16"] = _employment_mobility_daily_q16;
+    out["employment_choice_temperature_q16"] =
+        _employment_choice_temperature_q16;
     out["accuracy_exact_probe_rate_q16"] = _accuracy_exact_probe_rate_q16;
     out["accuracy_fallback_cooldown_epochs"] =
         _accuracy_fallback_cooldown_epochs;

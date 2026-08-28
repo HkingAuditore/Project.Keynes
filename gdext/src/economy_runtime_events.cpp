@@ -1162,6 +1162,12 @@ Dictionary NativeEconomyRuntime::set_inspector_trace_cell(int32_t cell_idx) {
         _investment_diagnostic_day = -1;
         _investment_diagnostics.clear();
     }
+    if (cell_idx != _employment_diagnostic_cell) {
+        _employment_diagnostic_cell = -1;
+        _employment_diagnostic_day = -1;
+        _employment_diagnostics.clear();
+        _family_clamp_traces.clear();
+    }
     out["ok"] = true;
     out["cell_idx"] = cell_idx;
     out["effective_next_epoch"] = _epoch_active;

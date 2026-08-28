@@ -250,6 +250,10 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _investment_diagnostic_cell = -1;
     _investment_diagnostic_day = -1;
     _investment_diagnostics.clear();
+    _employment_diagnostic_cell = -1;
+    _employment_diagnostic_day = -1;
+    _employment_diagnostics.clear();
+    _family_clamp_traces.clear();
     _population.clear(cell_count);
     _families.clear();
     _family_expeditions.clear();
@@ -1048,6 +1052,9 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     out["accuracy_exact_probe_rate_q16"] = _accuracy_exact_probe_rate_q16;
     out["accuracy_fallback_cooldown_epochs"] =
         _accuracy_fallback_cooldown_epochs;
+    out["employment_mobility_daily_q16"] = _employment_mobility_daily_q16;
+    out["employment_choice_temperature_q16"] =
+        _employment_choice_temperature_q16;
     out["merchant_count"] = static_cast<int64_t>(_merchant_slots.size());
     out["merchant_repairs"] = merchant_repairs;
     out["building_group_count"] = static_cast<int64_t>(_buildings.size());

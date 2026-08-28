@@ -1128,6 +1128,8 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
         ++_investment_review_cells;
         int64_t cell_population = 0;
         int64_t cell_unemployed = 0;
+        thread_local std::vector<int64_t> cell_profession_population;
+        cell_profession_population.assign(_profession_ids.size(), 0);
         _population.for_each_in_cell(cell, [&](int32_t slot) {
             const int64_t population = std::max<int64_t>(
                 0, _population.population[slot]);
@@ -1139,6 +1141,17 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
             cell_unemployed = saturating_add(cell_unemployed,
                 std::max<int64_t>(0, population - employed),
                 _saturation_count);
+            if (static_cast<int32_t>(_population.signature_id[slot]) >= 0 &&
+                static_cast<int32_t>(_population.signature_id[slot]) <
+                    static_cast<int32_t>(_signatures.size())) {
+                const int32_t profession = _signatures[
+                    _population.signature_id[slot]].profession_id;
+                if (profession >= 0 && profession <
+                        static_cast<int32_t>(cell_profession_population.size()))
+                    cell_profession_population[profession] = saturating_add(
+                        cell_profession_population[profession], population,
+                        _saturation_count);
+            }
         });
         const int64_t employment_gap = std::max<int64_t>(
             0, cell_unemployed - cell_population / 4);
@@ -1501,9 +1514,45 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
             // payback, and sponsor-capital checks instead of being hard-disabled.
             const int32_t existing_group = existing != nullptr
                 ? existing->representative_group : -1;
+            bool survival_vacancy = false;
+            if (existing != nullptr && existing->representative_group >= 0 &&
+                existing->representative_group < static_cast<int32_t>(_buildings.size())) {
+                const BuildingGroup &existing_group_ref =
+                    _buildings[existing->representative_group];
+                int64_t vacancy_employee_fillability = Q16_ONE;
+                const BuildingType &existing_type = _building_types[
+                    existing_group_ref.type_id];
+                for (int32_t role_index = 0; role_index < existing_type.employee_count;
+                     ++role_index) {
+                    const JobRole &role = _building_employee_roles[
+                        existing_type.employee_begin + role_index];
+                    const int64_t slots = saturating_mul(existing_group_ref.count,
+                        role.slots_per_building, _saturation_count);
+                    const int32_t fill_index = existing_group_ref.employee_fill_begin + role_index;
+                    const int64_t filled = fill_index >= 0 && fill_index <
+                            static_cast<int32_t>(_building_employee_filled.size())
+                        ? std::max<int64_t>(0, _building_employee_filled[fill_index]) : 0;
+                    const int64_t mobile = role.profession_id >= 0 &&
+                            role.profession_id < static_cast<int32_t>(
+                                cell_profession_population.size())
+                        ? cell_profession_population[role.profession_id] : 0;
+                    vacancy_employee_fillability = std::min(vacancy_employee_fillability,
+                        slots > 0 ? std::clamp<int64_t>(mul_div_sat(
+                            saturating_add(filled, mobile, _saturation_count),
+                            Q16_ONE, slots, _saturation_count), 0, Q16_ONE)
+                            : Q16_ONE);
+                }
+                int64_t quote_sat = 0;
+                const OwnerOpportunityQuote vacancy_quote =
+                    owner_opportunity_quote(existing_group_ref, Q16_ONE,
+                        vacancy_employee_fillability,
+                        quote_sat);
+                survival_vacancy = vacancy_quote.survival_priority &&
+                    vacancy_quote.executable_capacity_q16 > 0;
+            }
             const bool vacancy = existing != nullptr &&
                 existing->filled_owner < existing->owner_required;
-            if (vacancy) {
+            if (vacancy && !survival_vacancy) {
                 reject(INVESTMENT_REJECTION_ACTIVE_OWNER_VACANCY);
                 continue;
             }
@@ -1521,7 +1570,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     ? _buildings[existing_group].owner_signature_id
                     : signature_for_profession_ethnicity(
                         type.owner_profession_id, 0);
-                const int64_t effective_unit_output = existing_group >= 0
+                int64_t effective_unit_output = existing_group >= 0
                     ? effective_building_output_quantity(
                         _buildings[existing_group], output.good_id, output.quantity,
                         Q16_ONE, 1, _saturation_count)
@@ -1571,13 +1620,60 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 int64_t output_pressure_q16 =
                     _market.last_shortage_q16[index];
                 if (monetary_issue) {
-                    // The mint is a guaranteed marginal buyer. Seed entry
-                    // pressure from one building's physical output even before
-                    // the first producer exists; the later issuance-cap and
-                    // resource-horizon gates remain authoritative.
-                    output_deficit = std::max<int64_t>(
-                        output_deficit, effective_unit_output);
-                    output_pressure_q16 = Q16_ONE;
+                    // Mint demand is bounded by the remaining physical quota.
+                    // A high issue value never turns an unused money allowance
+                    // into a fictitious unit price or a full-pressure signal.
+                    const int64_t issue_value = std::max<int64_t>(1,
+                        _good_monetary_issue_values[output.good_id]);
+                    const int64_t quota_quantity = mul_div_sat(
+                        std::max<int64_t>(0, bullion_cell_quota_remaining(cell)),
+                        GOODS_SCALE, issue_value, _saturation_count);
+                    bool employee_supply = type.employee_count == 0;
+                    for (int32_t role_index = 0; role_index < type.employee_count;
+                         ++role_index) {
+                        const JobRole &role = _building_employee_roles[
+                            type.employee_begin + role_index];
+                        employee_supply = employee_supply ||
+                            (role.profession_id >= 0 &&
+                             role.profession_id < static_cast<int32_t>(
+                                 cell_profession_population.size()) &&
+                             cell_profession_population[role.profession_id] > 0);
+                    }
+                    int64_t resource_capacity_q16 = Q16_ONE;
+                    const int64_t resource_days = std::max<int64_t>(1, _epoch_days);
+                    for (int32_t resource_index = 0;
+                         resource_index < type.resource_count; ++resource_index) {
+                        const ResourceAmount &resource = _building_resources[
+                            type.resource_begin + resource_index];
+                        const int64_t raw = resource.mode == 1
+                            ? saturating_mul(1, resource.quantity, _saturation_count)
+                            : saturating_mul(resource_days, resource.quantity,
+                                _saturation_count);
+                        const int64_t required = effective_resource_use_quantity(
+                            cell, resource.resource_id, raw, _saturation_count);
+                        if (required <= 0) continue;
+                        resource_capacity_q16 = std::min(resource_capacity_q16,
+                            std::clamp<int64_t>(mul_div_sat(
+                                available_resource_amount(resource, cell), Q16_ONE,
+                                required, _saturation_count), 0, Q16_ONE));
+                    }
+                    if (!employee_supply || resource_capacity_q16 <= 0)
+                        effective_unit_output = 0;
+                    else if (resource_capacity_q16 < Q16_ONE)
+                        effective_unit_output = mul_div_sat(effective_unit_output,
+                            resource_capacity_q16, Q16_ONE, _saturation_count);
+                    const int64_t executable_output = employee_supply
+                        ? effective_unit_output : 0;
+                    const int64_t quota_deficit = std::min<int64_t>(
+                        executable_output, quota_quantity);
+                    output_deficit = std::max(output_deficit, quota_deficit);
+                    const int64_t quota_pressure = effective_unit_output > 0
+                        ? mul_div_sat(quota_deficit, Q16_ONE,
+                            effective_unit_output, _saturation_count) : 0;
+                    output_pressure_q16 = std::min<int64_t>(Q16_ONE,
+                        std::max<int64_t>(output_pressure_q16, quota_pressure));
+                    if (quota_deficit < effective_unit_output)
+                        ++_bullion_quota_pressure_clamps;
                 } else if (research_demand > 0 && supply <= 0) {
                     // Government procurement is a cash-backed buyer even before
                     // the first research producer exists. Seed one building of
@@ -2116,6 +2212,8 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                             std::min<int64_t>(sellable_quantity, quota_quantity),
                             Q16_ONE, sellable_quantity, _saturation_count),
                             0, Q16_ONE);
+                        if (quota_quantity < sellable_quantity)
+                            ++_bullion_quote_overallocation_prevented;
                     }
                     if (issue_value <= 0 && government_research_output &&
                         sellable_quantity > 0) {
@@ -2161,7 +2259,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     if (issue_value > 0) {
                         monetary_request_money_per_day = saturating_add(
                             monetary_request_money_per_day,
-                            mul_div_sat(prospective_quantity, issue_value,
+                            mul_div_sat(sellable_quantity, issue_value,
                                 GOODS_SCALE, _saturation_count),
                             _saturation_count);
                         monetary_expected_revenue_per_day = saturating_add(
@@ -2239,12 +2337,14 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     ? mul_div_sat(daily_profit, Q16_ONE,
                         daily_operating_cost, _saturation_count)
                     : Q16_ONE;
+                // Investment and employment compare one building's economic
+                // signal. Self-use value remains in that same total; do not
+                // dilute it by the number of owner slots.
                 const int64_t projected_owner_income = saturating_add(
                     std::max<int64_t>(0, saturating_sub(
                         daily_after_tax_cash_revenue, daily_variable_cost,
                         _saturation_count)),
-                    daily_in_kind_livelihood, _saturation_count) /
-                    std::max<int64_t>(1, type.owner_slots_per_building);
+                    daily_in_kind_livelihood, _saturation_count);
                 const int64_t required_capital = saturating_add(construction_cost,
                     saturating_add(saturating_mul(daily_input_cost,
                         _investment_operating_cycles * std::max(1, _epoch_days),

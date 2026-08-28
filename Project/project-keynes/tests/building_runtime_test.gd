@@ -82,6 +82,7 @@ func _run() -> void:
 	_test_surplus_merchant_can_change_owner_job(catalog, profile)
 	_test_same_profession_owner_income_reallocation(catalog, profile)
 	_test_owner_income_reallocation_prefers_unemployed(catalog, profile)
+	_test_unemployment_subsidy_is_reservation_income(catalog, profile)
 	_test_endogenous_owner_investment(catalog, profile)
 	_test_merit_order_offtake_prefers_low_unit_cost(catalog, profile)
 	_test_cost_advantage_displaces_covered_incumbents(catalog, profile)
@@ -106,6 +107,12 @@ func _run() -> void:
 	_expect("all-technology test country bootstraps",
 		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 77))
 	_expect("building runtime configures", bool(ext.configure_economy(catalog, profile, 1, 77).get("ok", false)))
+	var employment_policy: Dictionary = ext.get_economy_report()
+	_expect("employment mobility policy is exposed deterministically",
+		int(employment_policy.get("employment_mobility_daily_q16", -1)) ==
+			int(profile.employment_mobility_daily_q16) and
+		int(employment_policy.get("employment_choice_temperature_q16", -1)) ==
+			int(profile.employment_choice_temperature_q16))
 	var coal_reserve_resource := (catalog.building_resource_ids as PackedStringArray).find("coal")
 	var coal_reserve_slot := int(ext.component_id(StringName(
 		(catalog.building_resource_reserve_slots as PackedStringArray)[coal_reserve_resource])))
@@ -749,6 +756,15 @@ func _test_owner_positions_are_independent_of_utilization(
 	var projected_income := int((
 		buildings.projected_owner_income_per_day as PackedInt64Array)[group]) \
 		if group >= 0 else 0
+	var opportunity_income := int((
+		buildings.opportunity_owner_income_per_day as PackedInt64Array)[group]) \
+		if group >= 0 and buildings.has("opportunity_owner_income_per_day") else 0
+	var opportunity_capacity := int((
+		buildings.opportunity_executable_capacity_q16 as PackedInt64Array)[group]) \
+		if group >= 0 and buildings.has("opportunity_executable_capacity_q16") else 0
+	var opportunity_in_kind := int((
+		buildings.opportunity_in_kind_retail_value as PackedInt64Array)[group]) \
+		if group >= 0 and buildings.has("opportunity_in_kind_retail_value") else 0
 	var filled_owner := int((buildings.filled_owner as PackedInt64Array)[group]) \
 		if group >= 0 else 0
 	_expect("ACTIVE owner positions stay at physical capacity while output scales",
@@ -756,9 +772,12 @@ func _test_owner_positions_are_independent_of_utilization(
 		owner_required == owner_capacity and planned_equivalent < owner_capacity and
 		filled_owner == owner_capacity and opening_filled == owner_capacity and
 		unemployed == 21 - filled_owner)
-	_expect("projected owner income uses retained owners and includes retained livelihood",
+	_expect("projected building income uses retained owners and includes retained livelihood",
 		economic_owner_pool > 0 and projected_income ==
-			economic_owner_pool / (owner_capacity * period_days))
+			economic_owner_pool / period_days)
+	_expect("multi-building owner opportunity quote scales output and in-kind value",
+		group >= 0 and owner_capacity == 6 and opportunity_capacity > 0 and
+		opportunity_in_kind > 0)
 	_expect("owner-position employment conserves every ledger",
 		int(opening_report.get("population_error", 1)) == 0 and
 		int(opening_report.get("money_error", 1)) == 0 and
@@ -1451,7 +1470,8 @@ func _test_owner_income_reallocation_prefers_unemployed(source_catalog: Dictiona
 	_expect("unemployed-first mobility fixture bootstraps", bool(boot.get("ok", false)))
 	if not bool(boot.get("ok", false)):
 		return
-	var report := _run_day(ext, 0)
+	var first_report := _run_day(ext, 0)
+	var report := _run_day(ext, 1)
 	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
 	var flint_group := (buildings.group_type_ids as PackedInt32Array).find(flint_id)
 	var knapping_group := (buildings.group_type_ids as PackedInt32Array).find(knapping_id)
@@ -1467,8 +1487,119 @@ func _test_owner_income_reallocation_prefers_unemployed(source_catalog: Dictiona
 		int((population.populations as PackedInt64Array)[artisan_row]) == 1 and
 		int(report.get("building_owner_job_reallocations", 0)) == 0)
 	_expect("unemployed-first owner hiring conserves every ledger",
+		int(first_report.get("population_error", 1)) == 0 and
+		int(first_report.get("money_error", 1)) == 0 and
+		int(first_report.get("goods_error", 1)) == 0 and
 		int(report.get("population_error", 1)) == 0 and
 		int(report.get("money_error", 1)) == 0 and
+		int(report.get("goods_error", 1)) == 0)
+
+
+func _test_unemployment_subsidy_is_reservation_income(source_catalog: Dictionary,
+		source_profile: Dictionary) -> void:
+	var catalog := source_catalog.duplicate(true)
+	var profile := source_profile.duplicate(true)
+	profile.starvation_death_rate_q32 = 0
+	profile.resource_safe_harvest_q16 = 0
+	var signatures: PackedStringArray = catalog.signature_keys
+	var forager_sig := signatures.find("forager|default")
+	var unemployed_sig := signatures.find("unemployed|default")
+	var merchant_sig := signatures.find("merchant|default")
+	var unemployed_profession := int((catalog.signature_profession_ids as PackedInt32Array)[
+		unemployed_sig])
+	var flint_id := (catalog.building_type_ids as PackedStringArray).find("flint_quarry")
+	var ext := _new_ext(catalog)
+	var country_catalog := catalog.duplicate(false)
+	country_catalog.erase("ok")
+	var country_profile := {
+		"country_runtime_mode": "ACTIVE",
+		"country_light_report_enabled": false,
+		"starting_technology_ids": catalog.technology_ids,
+	}
+	_expect("unemployment-subsidy country configures", bool(ext.configure_country(
+		country_catalog, country_profile, 1, 441).get("ok", false)))
+	var country_boot: Dictionary = ext.bootstrap_country({
+		"country_ids": PackedStringArray(["country.unemployment_subsidy"]),
+		"country_names": PackedStringArray(["Unemployment Subsidy"]),
+		"country_cash": PackedInt64Array([1000000000]),
+		"territory_offsets": PackedInt32Array([0, 1]),
+		"territory_cells": PackedInt32Array([0]),
+	}, PackedByteArray([0]))
+	_expect("unemployment-subsidy country bootstraps",
+		bool(country_boot.get("ok", false)))
+	var country_handle := int(ext.get_country_cell_summary(0).get(
+		"country_handle", 0))
+	var tax_command := {
+		"opcodes": PackedInt32Array([12]),
+		"effective_days": PackedInt64Array([0]),
+		"sequences": PackedInt64Array([1]),
+		"target_handles": PackedInt64Array([country_handle]),
+		"cell_indices": PackedInt32Array([-1]),
+		"aux_i32": PackedInt32Array([-1]),
+		"domain_i32": PackedInt32Array([-1]),
+		"position_i32": PackedInt32Array([-1]),
+		"weight0_bp": PackedInt32Array([0]),
+		"weight1_bp": PackedInt32Array([0]),
+		"weight2_bp": PackedInt32Array([0]),
+		"weight3_bp": PackedInt32Array([0]),
+		"value_i64": PackedInt64Array([0]),
+		"tax_kinds": PackedInt32Array([0]),
+		"tax_item_indices": PackedInt32Array([unemployed_profession]),
+		"tax_rate_percent": PackedInt32Array([-100]),
+		"stable_ids": PackedStringArray([""]),
+		"display_names": PackedStringArray([""]),
+	}
+	_expect("unemployment-subsidy policy commits",
+		country_handle != 0 and unemployed_profession >= 0 and
+		bool(ext.submit_country_commands(tax_command).get("ok", false)) and
+		bool(ext.run_country_slice({"day_index": 0}).get("ok", false)))
+	_expect("unemployment-subsidy economy configures", bool(ext.configure_economy(
+		catalog, profile, 1, 441).get("ok", false)))
+	var stock := PackedInt64Array()
+	stock.resize((catalog.good_ids as PackedStringArray).size())
+	stock.fill(1000000)
+	var prices: PackedInt32Array = catalog.good_default_price.duplicate()
+	var output_edge := int((catalog.building_output_offsets as PackedInt32Array)[
+		flint_id])
+	var output_good := int((catalog.building_output_good_ids as PackedInt32Array)[
+		output_edge])
+	prices[output_good] = maxi(
+		int((catalog.good_min_price as PackedInt32Array)[output_good]),
+		int(prices[output_good]) * 2 / 3)
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0]),
+		"signature_ids": PackedInt32Array([unemployed_sig, merchant_sig]),
+		"population": PackedInt64Array([1, 1]),
+		"funds": PackedInt64Array([1000000, 1000000]),
+	}, {
+		"stock": stock,
+		"price": prices,
+		"building_cells": PackedInt32Array([0]),
+		"building_type_ids": PackedInt32Array([flint_id]),
+		"building_owner_signature_ids": PackedInt32Array([forager_sig]),
+		"building_counts": PackedInt64Array([1]),
+	})
+	_expect("unemployment-subsidy fixture bootstraps", bool(boot.get("ok", false)))
+	if not bool(boot.get("ok", false)):
+		return
+	var report := _run_day(ext, 0)
+	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	var population: Dictionary = ext.get_population_cell_snapshot(0)
+	var unemployed_row := _row_for_signature(population, unemployed_sig)
+	var subsidy_paid := _sum_i64(ext.get_country_fiscal_snapshot(
+		country_handle).get("subsidy_paid", PackedInt64Array()))
+	var owner_filled := int((buildings.filled_owner as PackedInt64Array)[0])
+	var opportunity_values: PackedInt64Array = \
+		buildings.opportunity_owner_income_per_day
+	var opportunity := int(opportunity_values[0])
+	var unemployed_population := int((population.populations as PackedInt64Array)[
+		unemployed_row]) if unemployed_row >= 0 else 0
+	_expect("funded unemployment subsidy is job reservation income",
+		opportunity > 0 and subsidy_paid > 0 and owner_filled == 0 and
+		unemployed_population == 1)
+	_expect("funded unemployment subsidy remains a fiscal transfer",
+		subsidy_paid > 0 and int(report.get("money_error", 1)) == 0 and
+		int(report.get("population_error", 1)) == 0 and
 		int(report.get("goods_error", 1)) == 0)
 
 

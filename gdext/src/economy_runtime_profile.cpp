@@ -194,6 +194,12 @@ bool NativeEconomyRuntime::configure_profile(const Dictionary &profile, std::str
     _wage_ema_alpha_q16 = std::clamp(
         dict_num<int32_t>(profile, "wage_ema_alpha_q16", 8192), 0,
         static_cast<int32_t>(Q16_ONE));
+    _employment_mobility_daily_q16 = std::clamp(
+        dict_num<int32_t>(profile, "employment_mobility_daily_q16", 13107), 0,
+        static_cast<int32_t>(Q16_ONE));
+    _employment_choice_temperature_q16 = std::clamp(
+        dict_num<int32_t>(profile, "employment_choice_temperature_q16", 6554), 1,
+        static_cast<int32_t>(Q16_ONE));
     _wage_max_rise_q16_per_day = std::clamp(
         dict_num<int32_t>(profile, "wage_max_rise_q16_per_day", 1311), 0,
         static_cast<int32_t>(Q16_ONE));

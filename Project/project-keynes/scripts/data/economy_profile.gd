@@ -146,6 +146,13 @@ extends Resource
 	13107, 26214, 39322, 52429,
 ])
 @export_range(0, 65536, 1) var wage_ema_alpha_q16: int = 8192
+## Daily fraction of a cohort that may reconsider employment.  The native
+## employment pass compounds this over the locked market period, so changing
+## N does not create a one-period migration shock.
+@export_range(0, 65536, 1) var employment_mobility_daily_q16: int = 3277
+## Linear choice temperature used when splitting a cohort across acceptable
+## vacancies. Higher values soften winner-takes-all hiring.
+@export_range(1, 65536, 1) var employment_choice_temperature_q16: int = 6554
 @export_range(0, 65536, 1) var wage_max_rise_q16_per_day: int = 1311
 @export_range(0, 65536, 1) var wage_max_fall_q16_per_day: int = 1311
 ## Damping: the living-cost wage floor is capped at each building's per-employee
@@ -371,6 +378,8 @@ func to_native_profile() -> Dictionary:
 		"satisfaction_birth_reference_q16": satisfaction_birth_reference_q16,
 		"satisfaction_pressure_thresholds_q16": satisfaction_pressure_thresholds_q16,
 		"wage_ema_alpha_q16": wage_ema_alpha_q16,
+		"employment_mobility_daily_q16": employment_mobility_daily_q16,
+		"employment_choice_temperature_q16": employment_choice_temperature_q16,
 		"wage_max_rise_q16_per_day": wage_max_rise_q16_per_day,
 		"wage_max_fall_q16_per_day": wage_max_fall_q16_per_day,
 		"wage_income_cap_ratio_q16": wage_income_cap_ratio_q16,

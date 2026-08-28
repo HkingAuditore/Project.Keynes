@@ -2608,6 +2608,12 @@ func _building_category(snapshot: Dictionary, cell_idx: int = -1) -> Dictionary:
 	var last_wages: PackedInt64Array = snapshot.get("last_wages_paid", PackedInt64Array())
 	var last_wages_due: PackedInt64Array = snapshot.get("last_wages_due", PackedInt64Array())
 	var last_operating_cost: PackedInt64Array = snapshot.get("last_operating_cost", PackedInt64Array())
+	var last_in_kind: PackedInt64Array = snapshot.get(
+		"last_in_kind_livelihood_value", PackedInt64Array())
+	var opportunity_owner_income: PackedInt64Array = snapshot.get(
+		"opportunity_owner_income_per_day", PackedInt64Array())
+	var opportunity_capacity: PackedInt64Array = snapshot.get(
+		"opportunity_executable_capacity_q16", PackedInt64Array())
 	var role_offsets: PackedInt32Array = snapshot.get("employee_fill_offsets", PackedInt32Array())
 	var role_professions: PackedInt32Array = snapshot.get("employee_profession_ids", PackedInt32Array())
 	var role_required: PackedInt64Array = snapshot.get("employee_required", PackedInt64Array())
@@ -2634,7 +2640,11 @@ func _building_category(snapshot: Dictionary, cell_idx: int = -1) -> Dictionary:
 		var wages := int(last_wages[i]) if i < last_wages.size() else 0
 		var wages_due := int(last_wages_due[i]) if i < last_wages_due.size() else wages
 		var operating_cost := int(last_operating_cost[i]) if i < last_operating_cost.size() else input_cost + wages_due
-		var profit := revenue - operating_cost
+		# In-kind owner retention is part of the same economic income as cash
+		# receipts. A self-consuming producer must not be shown as loss-making
+		# merely because it has no merchant sale.
+		var in_kind_income := int(last_in_kind[i]) if i < last_in_kind.size() else 0
+		var profit := revenue + in_kind_income - operating_cost
 		var business_tax := int(last_business_tax[i]) \
 			if i < last_business_tax.size() else 0
 		var business_subsidy := int(last_business_subsidy[i]) \
@@ -2647,6 +2657,10 @@ func _building_category(snapshot: Dictionary, cell_idx: int = -1) -> Dictionary:
 		var owner_actual := int(filled_owner[i]) if i < filled_owner.size() else 0
 		var owner_open := int(owner_openings[i]) if i < owner_openings.size() else maxi(0, owner_required - owner_actual)
 		var operating_state := int(operating_states[i]) if i < operating_states.size() else 0
+		var opportunity_income := int(opportunity_owner_income[i]) \
+			if i < opportunity_owner_income.size() else 0
+		var opportunity_capacity_value := int(opportunity_capacity[i]) \
+			if i < opportunity_capacity.size() else 0
 		var is_available := type_idx < 0 or type_idx >= technology_available.size() \
 			or int(technology_available[type_idx]) != 0
 		var is_loss_suspended := operating_state == 1
@@ -2711,17 +2725,18 @@ func _building_category(snapshot: Dictionary, cell_idx: int = -1) -> Dictionary:
 				production_rows.append({"id": "climate_lost_output", "name": "气候减产",
 					"value": _actual_daily_rate(lost_output, count, period_days),
 					"icon": "warning", "accent": UITokens.WARN})
-		var finance_breakdown := "原料 %s · 工资 %s · 营业税 %s" % [
-			_money_text(input_cost), _money_text(wages), _money_text(business_tax)]
+		var finance_breakdown := "现金 %s · 自用折算 %s · 原料 %s · 工资 %s · 营业税 %s" % [
+			_money_text(revenue), _money_text(in_kind_income), _money_text(input_cost),
+			_money_text(wages), _money_text(business_tax)]
 		if business_subsidy > 0:
 			finance_breakdown += " · 经营补贴 %s" % _money_text(business_subsidy)
 		var finance := {
-			"revenue": _money_text(revenue),
+			"revenue": _money_text(revenue + in_kind_income),
 			"cost": _money_text(operating_cost),
 			"profit": "%s%s" % ["+" if profit > 0 else "", _money_text(profit)],
 			"profit_positive": profit >= 0,
 			"breakdown": finance_breakdown,
-			"revenue_label": "税后收入",
+			"revenue_label": "税后总收入（含自用）",
 			"warning": "工资未足额支付，生产受限" if wages < wages_due else "",
 		}
 		var staffing_required := owner_required
@@ -2781,6 +2796,13 @@ func _building_category(snapshot: Dictionary, cell_idx: int = -1) -> Dictionary:
 			state_meta += (" · " if not state_meta.is_empty() else "") + "下期转入亏损停产"
 		var headline_profit_label := "利润" if profit >= 0 else "亏损"
 		var headline_profit := "%s%s" % ["+" if profit > 0 else "", _money_text(profit)]
+		# A vacant but executable owner-operated group has no realized cash flow
+		# yet. Do not present that zero settlement as an already-realized loss;
+		# expose the read-only opportunity quote until an owner is attached.
+		if owner_actual == 0 and opportunity_capacity_value > 0:
+			headline_profit_label = "机会收益"
+			headline_profit = "%s%s" % ["+" if opportunity_income > 0 else "",
+				_money_text(opportunity_income)]
 		if is_loss_suspended:
 			headline_profit_label = "状态"
 			headline_profit = "停产"
