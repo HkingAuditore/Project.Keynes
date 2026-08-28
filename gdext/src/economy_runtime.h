@@ -972,6 +972,27 @@ private:
         int32_t output_factor_q16 = Q16_ONE;
     };
 
+    // Epoch-derived quote used by employment, investment and diagnostics. It
+    // is rebuilt from frozen inputs and is intentionally absent from PKEC.
+    struct OwnerOpportunityQuote {
+        int64_t prospective_scale_q16 = 0;
+        int64_t cash_receipt = 0;
+        int64_t in_kind_retail_value = 0;
+        int64_t input_cost = 0;
+        int64_t wages = 0;
+        int64_t maintenance = 0;
+        int64_t owner_living_cost = 0;
+        int64_t business_transfer = 0;
+        int64_t income_transfer = 0;
+        int64_t owner_income_per_day = 0;
+        int64_t disposable_survival_power_per_day = 0;
+        int64_t executable_capacity_q16 = 0;
+        int64_t monetary_quota_absorption_q16 = 0;
+        bool survival_priority = false;
+        bool monetary_quote_capped = false;
+        bool feasible = false;
+    };
+
     struct PendingConstruction {
         int32_t cell = -1;
         int32_t type_id = -1;
@@ -1386,6 +1407,75 @@ private:
         int32_t failed_material_group = -1;
         std::vector<int32_t> selected_material_good_ids;
         std::vector<int64_t> selected_material_quantities;
+    };
+
+    // One value per `continue`/skip site on the unemployed-hiring path in
+    // run_building_employment_cell. A vacancy that stays open while an
+    // unemployed pool exists must always carry one of these.
+    enum EmploymentRejection : int32_t {
+        EMPLOYMENT_REJECTION_NONE = 0,
+        EMPLOYMENT_REJECTION_POOL_MISSING = 1,
+        EMPLOYMENT_REJECTION_POOL_EMPTY = 2,
+        EMPLOYMENT_REJECTION_SOURCE_SIGNATURE = 3,
+        EMPLOYMENT_REJECTION_TARGET_SIGNATURE = 4,
+        EMPLOYMENT_REJECTION_TARGET_DISPOSABLE = 5,
+        EMPLOYMENT_REJECTION_SURVIVAL_FLOOR = 6,
+        EMPLOYMENT_REJECTION_HURDLE = 7,
+        EMPLOYMENT_REJECTION_NO_ALLOCATION = 8,
+        EMPLOYMENT_REJECTION_KNOWLEDGE_CAP = 9,
+        EMPLOYMENT_REJECTION_SIGNATURE_SELF = 10,
+        EMPLOYMENT_REJECTION_PROFESSION_UNAVAILABLE = 11,
+        EMPLOYMENT_REJECTION_ZERO_TAKE = 12,
+    };
+
+    struct EmploymentDiagnostic {
+        int32_t group_index = -1;
+        int32_t type_id = -1;
+        // -1 marks an owner vacancy; otherwise the employee role index.
+        int32_t role = -1;
+        int32_t target_signature = -1;
+        int32_t profession_id = -1;
+        int32_t source_ethnicity = -1;
+        int32_t pool_slot = -1;
+        int32_t pool_signature = -1;
+        int64_t pool_population = 0;
+        int64_t vacancy = 0;
+        int64_t target_disposable = 0;
+        int64_t source_disposable = 0;
+        int64_t improvement_q16 = 0;
+        int64_t hurdle_q16 = 0;
+        int64_t weight_q16 = 0;
+        int64_t budget = 0;
+        int64_t allocation = 0;
+        int64_t take = 0;
+        bool eligible = false;
+        int32_t rejection_reason = EMPLOYMENT_REJECTION_NONE;
+        // Owner-slot clamp chain for the group behind this candidate. A vacancy
+        // can exist either because the group never had owners or because a
+        // clamp shed incumbents earlier in the same pass; only the chain tells
+        // the two apart.
+        int64_t owner_target = 0;
+        int64_t filled_before_clamp = 0;
+        int64_t filled_after_profession_clamp = 0;
+        int64_t filled_after_family_clamp = 0;
+        int64_t family_owned = 0;
+        int64_t family_member_people = 0;
+        int64_t anonymous_people = 0;
+        int64_t owner_cohort_population = 0;
+        int64_t shed_surplus = 0;
+    };
+
+    // Per-group output of clamp_family_owner_employment_for_cell, published
+    // only for the inspector cell so the employment diagnostics can attribute
+    // a lost owner seat to the family overlay rather than the profession clamp.
+    struct FamilyOwnerClampTrace {
+        int32_t group_index = -1;
+        int64_t family_owned = 0;
+        int64_t family_member_people = 0;
+        int64_t anonymous_people = 0;
+        int64_t owner_cohort_population = 0;
+        int64_t filled_before = 0;
+        int64_t filled_after = 0;
     };
 
     struct OutputInvestmentSignal {
@@ -3000,6 +3090,8 @@ private:
     std::array<int32_t, SAT_PRESSURE_LEVEL_COUNT - 1>
         _satisfaction_pressure_thresholds_q16 = {13107, 26214, 39322, 52429};
     int32_t _wage_ema_alpha_q16 = 8192;
+    int32_t _employment_mobility_daily_q16 = 13107;
+    int32_t _employment_choice_temperature_q16 = 6554;
     int32_t _wage_max_rise_q16_per_day = 1311;
     int32_t _wage_max_fall_q16_per_day = 1311;
     // Damping: contract wage floor may not exceed the building's per-employee
@@ -3198,6 +3290,12 @@ private:
     int64_t _building_investment_employment_gap = 0;
     int64_t _building_investment_employment_catchup_cells = 0;
     int64_t _building_investment_displacement_starts = 0;
+    int64_t _building_survival_priority_candidates = 0;
+    int64_t _building_owner_opportunity_quotes = 0;
+    int64_t _building_owner_opportunity_zero_feasible = 0;
+    int64_t _building_owner_survival_reallocations = 0;
+    int64_t _bullion_quota_pressure_clamps = 0;
+    int64_t _bullion_quote_overallocation_prevented = 0;
     int64_t _desired_business_demand = 0;
     int64_t _funded_business_demand = 0;
     int64_t _unfunded_business_demand = 0;
@@ -3879,6 +3977,15 @@ private:
     int32_t _investment_diagnostic_cell = -1;
     int64_t _investment_diagnostic_day = -1;
     std::vector<InvestmentDiagnostic> _investment_diagnostics;
+    // Same cold-path contract as the investment diagnostics above: one
+    // inspector-selected cell, transient, excluded from save/hash.
+    int32_t _employment_diagnostic_cell = -1;
+    int64_t _employment_diagnostic_day = -1;
+    std::vector<EmploymentDiagnostic> _employment_diagnostics;
+    static constexpr size_t EMPLOYMENT_DIAGNOSTIC_LIMIT = 512;
+    // Scratch for the current cell only; consumed by the employment pass in the
+    // same call that fills it.
+    std::vector<FamilyOwnerClampTrace> _family_clamp_traces;
     std::unordered_map<uint64_t, int64_t> _investment_pending_by_cell_type;
     std::unordered_map<uint64_t, InvestmentExistingType>
         _investment_existing_by_cell_type;
@@ -5081,6 +5188,9 @@ private:
                                      uint64_t &sponsor_family_handle) const;
     int64_t projected_owner_income_per_day(const BuildingGroup &group,
                                            int64_t &sat) const;
+    OwnerOpportunityQuote owner_opportunity_quote(
+        const BuildingGroup &group, int64_t owner_fillability_q16,
+        int64_t employee_fillability_q16, int64_t &sat) const;
     int64_t projected_employee_tax_retention_q16(
         const BuildingGroup &group, int64_t &sat) const;
     int64_t effective_building_output_quantity(
@@ -5255,7 +5365,7 @@ private:
                                      int64_t take);
     int64_t family_people_on_slot(int32_t slot) const;
     void update_family_employment_attribution();
-    void clamp_family_owner_employment_for_cell(int32_t cell);
+    void attribute_family_owner_employment_for_cell(int32_t cell);
     int32_t create_family_for_building(int32_t cell, int32_t building_index,
                                        int64_t founders,
                                        int64_t filled_owner,

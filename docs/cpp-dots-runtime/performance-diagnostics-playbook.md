@@ -1608,6 +1608,12 @@ Facade 缓存仅作异常兜底，不能用旧缓存覆盖更新的 live snapsho
 
 - `building_employment` 长：比较 active building cells、group count、owner/employee filled；不应出现
   `cell_count × group_count` 扫描。
+- 新的 employment mobility 还应检查 `employment_mobility_daily_q16`、
+  `employment_choice_temperature_q16` 和失业 move cap；候选数应随
+  `active_cohorts + active_groups` 线性增长，不应出现 cohort×building dense 矩阵。候选池不再
+  使用固定 top-K 截断，而是按 ethnicity offset 存储 cell-local 可行 vacancy。若岗位仍在
+  一个周期吸走整个失业池，优先检查按 ethnicity 的 budget、候选权重和最大余数分配，而不是重新
+  引入收入硬排序。性能回归以 employment stage 的 median/p95 为准，目标同机 median ≤3%、p95 ≤5%。
 ## Moisture ping-pong diagnosis (2026-07-24)
 
 For adjacent-tick moisture jumps, first distinguish native graph slices from
@@ -1717,7 +1723,7 @@ profession scratch 已按 generation 首触初始化，若耗时仍随全 catalo
   判断停产原因。
 - 先比较 `building_base_wages_due/paid`、投入采购现金、产出收入、销售后分配与商人购买力，不能
   用铸币掩盖。
-- CSV v14 building 行用 `owner_capacity/owner_required/planned_owner_equivalent/filled_owner/owner_openings` 区分物理容量、实际 owner 岗位目标、利用率折算生产等效人数、实际到岗和真实招聘空缺，并用 `projected_owner_income_per_day` 解释 ACTIVE 业主流动排序；ACTIVE required 等于完整 capacity，RECOVERY required 才随 probe capacity 与 planned utilization 缩放，亏损停产/不可用组为 0。employee required、投入、产量和资源消耗仍随 planned utilization 缩放。不要用 planned equivalent 或 `count - filled_owner` 推断失业者可进入的岗位。summary 另提供 `building_owner_job_reallocations/building_owner_job_profession_changes/building_owner_job_probability_skips`；market 还提供 `realized_withdrawal_ema/production_input_reserve/household_available_stock/merchant_inventory_target/merchant_procurement_shortfall`；
+- CSV v14 building 行用 `owner_capacity/owner_required/planned_owner_equivalent/filled_owner/owner_openings` 区分物理容量、实际 owner 岗位目标、利用率折算生产等效人数、实际到岗和真实招聘空缺；就业/投资排序使用建筑级 `opportunity_owner_income_per_day`（包含自用商品，不按 owner 数平摊），`projected_owner_income_per_day` 仅表示实际/已结算诊断。ACTIVE required 等于完整 capacity，RECOVERY required 才随 probe capacity 与 planned utilization 缩放，亏损停产/不可用组为 0。employee required、投入、产量和资源消耗仍随 planned utilization 缩放。不要用 planned equivalent 或 `count - filled_owner` 推断失业者可进入的岗位。summary 另提供 `building_owner_job_reallocations/building_owner_job_profession_changes/building_owner_job_probability_skips`；market 还提供 `realized_withdrawal_ema/production_input_reserve/household_available_stock/merchant_inventory_target/merchant_procurement_shortfall`；
   若低利用率采集建筑的 projected income 异常，核对它是否近似 `(expected cash owner pool + in-kind livelihood value) / max(owner_required, filled_owner) / period_days`。ACTIVE 的 `filled_owner > planned_owner_equivalent` 是正常的低产量自营业，不是超员；实物价值只解释生活覆盖，不应伴随现金或 money audit 增量。
   若失业与 owner jobs 反向成千跳变，同时采集/渔业组在 ACTIVE 与 SUSPENDED 间切换，检查自营业业务盈余。无雇员组只要 `last_revenue + last_in_kind_livelihood_value > last_input_cost` 就不应累积 severe loss；生活篮子未完全覆盖应出现在 livelihood coverage，而不是整组停产。
   若 `trade_completed_scans` 长期为零，按 `trade_plan_phase → trade_scan_cursor/total → trade_route_cursor/total → trade_plan_reset_count → trade_last_plan_reset_reason` 排查活性。只有规范化后的 passable/cost/neighbor 或国界变化才应重置；纯 terrain ID 重分类不得增加 reset count；

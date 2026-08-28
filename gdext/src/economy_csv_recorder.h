@@ -357,6 +357,14 @@ public:
         int64_t viability_operating_cost = 0;
         int64_t viability_income_gap = 0;
         int64_t projected_owner_income_per_day = 0;
+        int64_t opportunity_owner_income_per_day = 0;
+        int64_t opportunity_disposable_survival_power_per_day = 0;
+        int64_t opportunity_executable_capacity_q16 = 0;
+        int64_t opportunity_in_kind_retail_value = 0;
+        bool survival_priority = false;
+        int64_t survival_shortage_q16 = 0;
+        int64_t monetary_quota_absorption_q16 = 0;
+        bool monetary_quote_capped = false;
         int64_t construction_ready_day = 0;
         int64_t merchant_debt_principal = 0;
         int64_t merchant_debt_premium = 0;
@@ -364,6 +372,42 @@ public:
         int32_t merchant_debt_delinquent_cycles = 0;
         int64_t last_in_kind_livelihood_value = 0;
         int32_t recovery_failed_reviews = 0;
+        // Unemployed-hiring diagnostics for the inspector cell. Rows carrying
+        // these use group_index -2 and leave the building columns at zero.
+        bool employment_candidate = false;
+        int64_t employment_diagnostic_day = -1;
+        int32_t employment_role = -1;
+        int32_t employment_target_signature = -1;
+        int32_t employment_profession_id = -1;
+        int32_t employment_source_ethnicity = -1;
+        int32_t employment_pool_slot = -1;
+        int32_t employment_pool_signature = -1;
+        int64_t employment_pool_population = 0;
+        int64_t employment_vacancy = 0;
+        int64_t employment_target_disposable = 0;
+        int64_t employment_source_disposable = 0;
+        int64_t employment_improvement_q16 = 0;
+        int64_t employment_hurdle_q16 = 0;
+        int64_t employment_weight_q16 = 0;
+        int64_t employment_budget = 0;
+        int64_t employment_allocation = 0;
+        int64_t employment_take = 0;
+        bool employment_eligible = false;
+        int32_t employment_rejection_reason = 0;
+        // Dense per-cell group ordinal of the group this candidate targets.
+        // group_index itself is the -2 row-type marker, so it cannot carry it.
+        int32_t employment_group = -1;
+        // Owner-slot clamp chain, so a vacancy can be attributed to the clamp
+        // that created it rather than inferred from the surviving fill.
+        int64_t employment_owner_target = 0;
+        int64_t employment_filled_before_clamp = 0;
+        int64_t employment_filled_after_profession_clamp = 0;
+        int64_t employment_filled_after_family_clamp = 0;
+        int64_t employment_family_owned = 0;
+        int64_t employment_family_member_people = 0;
+        int64_t employment_anonymous_people = 0;
+        int64_t employment_owner_cohort_population = 0;
+        int64_t employment_shed_surplus = 0;
     };
 
     struct ResourceRow {

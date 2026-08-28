@@ -81,7 +81,45 @@ constexpr const char *BUILDING_V25_SUFFIX =
     ",investment_monetary_units"
     ",investment_monetary_candidate_slots"
     ",investment_monetary_request_money_per_day"
-    ",investment_monetary_expected_revenue_per_day\n";
+    ",investment_monetary_expected_revenue_per_day"
+    ",opportunity_owner_income_per_day"
+    ",opportunity_disposable_survival_power_per_day"
+    ",opportunity_executable_capacity_q16"
+    ",opportunity_in_kind_retail_value"
+    ",survival_priority"
+    ",survival_shortage_q16"
+    ",monetary_quota_absorption_q16"
+    ",monetary_quote_capped"
+    ",employment_candidate"
+    ",employment_diagnostic_day"
+    ",employment_role"
+    ",employment_target_signature"
+    ",employment_profession_id"
+    ",employment_source_ethnicity"
+    ",employment_pool_slot"
+    ",employment_pool_signature"
+    ",employment_pool_population"
+    ",employment_vacancy"
+    ",employment_target_disposable"
+    ",employment_source_disposable"
+    ",employment_improvement_q16"
+    ",employment_hurdle_q16"
+    ",employment_weight_q16"
+    ",employment_budget"
+    ",employment_allocation"
+    ",employment_take"
+    ",employment_eligible"
+    ",employment_rejection_reason"
+    ",employment_group"
+    ",employment_owner_target"
+    ",employment_filled_before_clamp"
+    ",employment_filled_after_profession_clamp"
+    ",employment_filled_after_family_clamp"
+    ",employment_family_owned"
+    ",employment_family_member_people"
+    ",employment_anonymous_people"
+    ",employment_owner_cohort_population"
+    ",employment_shed_surplus\n";
 
 template <typename T>
 void append_int(std::string &out, T value) {
@@ -378,6 +416,10 @@ int64_t EconomyCsvRecorder::projected_rows(const NativeEconomyRuntime &runtime) 
             if (runtime._investment_diagnostic_cell == cell) {
                 rows += static_cast<int64_t>(
                     runtime._investment_diagnostics.size());
+            }
+            if (runtime._employment_diagnostic_cell == cell) {
+                rows += static_cast<int64_t>(
+                    runtime._employment_diagnostics.size());
             }
         }
         if (_config.enabled[MARKET]) rows += runtime._market.good_count;
@@ -1028,7 +1070,10 @@ bool EconomyCsvRecorder::fill_batch(
                             group.last_base_wages_due, snapshot_sat),
                         row.owner_livelihood_required, snapshot_sat);
                     row.viability_income_gap = runtime.saturating_sub(
-                        group.last_revenue, row.viability_operating_cost,
+                        runtime.saturating_add(group.last_revenue,
+                            std::max<int64_t>(0,
+                                group.last_in_kind_livelihood_value), snapshot_sat),
+                        row.viability_operating_cost,
                         snapshot_sat);
                     row.projected_owner_income_per_day =
                         runtime.projected_owner_income_per_day(group, snapshot_sat);
@@ -1042,6 +1087,40 @@ bool EconomyCsvRecorder::fill_batch(
                         row.employee_required += required;
                         row.employee_filled += runtime._building_employee_filled[group.employee_fill_begin + role];
                     }
+                    const int64_t owner_fillability_q16 = NativeEconomyRuntime::Q16_ONE;
+                    const int64_t employee_fillability_q16 = row.employee_required > 0
+                        ? runtime.mul_div_sat(row.employee_filled,
+                            NativeEconomyRuntime::Q16_ONE, row.employee_required,
+                            snapshot_sat)
+                        : NativeEconomyRuntime::Q16_ONE;
+                    const auto opportunity = runtime.owner_opportunity_quote(
+                        group, owner_fillability_q16, employee_fillability_q16,
+                        snapshot_sat);
+                    row.opportunity_owner_income_per_day =
+                        opportunity.owner_income_per_day;
+                    row.opportunity_disposable_survival_power_per_day =
+                        opportunity.disposable_survival_power_per_day;
+                    row.opportunity_executable_capacity_q16 =
+                        opportunity.executable_capacity_q16;
+                    row.opportunity_in_kind_retail_value =
+                        opportunity.in_kind_retail_value;
+                    row.survival_priority = opportunity.survival_priority;
+                    const int32_t market = runtime._market.cell_to_market[cell];
+                    for (int32_t output = 0; output < type.output_count; ++output) {
+                        const int32_t good = runtime._building_outputs[
+                            type.output_begin + output].good_id;
+                        if (good >= 0 && good < static_cast<int32_t>(
+                                runtime._survival_food_good_mask.size()) &&
+                            runtime._survival_food_good_mask[good] != 0) {
+                            row.survival_shortage_q16 = std::max<int64_t>(
+                                row.survival_shortage_q16,
+                                runtime._market.last_shortage_q16[
+                                    runtime._market.index(market, good)]);
+                        }
+                    }
+                    row.monetary_quota_absorption_q16 =
+                        opportunity.monetary_quota_absorption_q16;
+                    row.monetary_quote_capped = opportunity.monetary_quote_capped;
                     batch.buildings.push_back(row);
                 }
             }
@@ -1121,6 +1200,51 @@ bool EconomyCsvRecorder::fill_batch(
                                 ? item.selected_material_quantities[material]
                                 : 0);
                     }
+                    batch.buildings.push_back(row);
+                }
+            }
+            if (runtime._employment_diagnostic_cell == cell) {
+                for (const auto &item : runtime._employment_diagnostics) {
+                    BuildingRow row;
+                    row.c = common;
+                    row.group_index = -2;
+                    row.type_id = item.type_id;
+                    row.owner_signature_id = item.target_signature;
+                    row.employment_candidate = true;
+                    row.employment_diagnostic_day =
+                        runtime._employment_diagnostic_day;
+                    row.employment_role = item.role;
+                    row.employment_target_signature = item.target_signature;
+                    row.employment_profession_id = item.profession_id;
+                    row.employment_source_ethnicity = item.source_ethnicity;
+                    row.employment_pool_slot = item.pool_slot;
+                    row.employment_pool_signature = item.pool_signature;
+                    row.employment_pool_population = item.pool_population;
+                    row.employment_vacancy = item.vacancy;
+                    row.employment_target_disposable = item.target_disposable;
+                    row.employment_source_disposable = item.source_disposable;
+                    row.employment_improvement_q16 = item.improvement_q16;
+                    row.employment_hurdle_q16 = item.hurdle_q16;
+                    row.employment_weight_q16 = item.weight_q16;
+                    row.employment_budget = item.budget;
+                    row.employment_allocation = item.allocation;
+                    row.employment_take = item.take;
+                    row.employment_eligible = item.eligible;
+                    row.employment_rejection_reason = item.rejection_reason;
+                    row.employment_group = item.group_index;
+                    row.employment_owner_target = item.owner_target;
+                    row.employment_filled_before_clamp = item.filled_before_clamp;
+                    row.employment_filled_after_profession_clamp =
+                        item.filled_after_profession_clamp;
+                    row.employment_filled_after_family_clamp =
+                        item.filled_after_family_clamp;
+                    row.employment_family_owned = item.family_owned;
+                    row.employment_family_member_people =
+                        item.family_member_people;
+                    row.employment_anonymous_people = item.anonymous_people;
+                    row.employment_owner_cohort_population =
+                        item.owner_cohort_population;
+                    row.employment_shed_surplus = item.shed_surplus;
                     batch.buildings.push_back(row);
                 }
             }
@@ -1710,6 +1834,44 @@ bool EconomyCsvRecorder::write_batch(const Batch &batch, int64_t &bytes, std::st
         field(chunk, row.investment_monetary_candidate_slots);
         field(chunk, row.investment_monetary_request_money_per_day);
         field(chunk, row.investment_monetary_expected_revenue_per_day);
+        field(chunk, row.opportunity_owner_income_per_day);
+        field(chunk, row.opportunity_disposable_survival_power_per_day);
+        field(chunk, row.opportunity_executable_capacity_q16);
+        field(chunk, row.opportunity_in_kind_retail_value);
+        field(chunk, row.survival_priority ? 1 : 0);
+        field(chunk, row.survival_shortage_q16);
+        field(chunk, row.monetary_quota_absorption_q16);
+        field(chunk, row.monetary_quote_capped ? 1 : 0);
+        field(chunk, row.employment_candidate ? 1 : 0);
+        field(chunk, row.employment_diagnostic_day);
+        field(chunk, row.employment_role);
+        field(chunk, row.employment_target_signature);
+        field(chunk, row.employment_profession_id);
+        field(chunk, row.employment_source_ethnicity);
+        field(chunk, row.employment_pool_slot);
+        field(chunk, row.employment_pool_signature);
+        field(chunk, row.employment_pool_population);
+        field(chunk, row.employment_vacancy);
+        field(chunk, row.employment_target_disposable);
+        field(chunk, row.employment_source_disposable);
+        field(chunk, row.employment_improvement_q16);
+        field(chunk, row.employment_hurdle_q16);
+        field(chunk, row.employment_weight_q16);
+        field(chunk, row.employment_budget);
+        field(chunk, row.employment_allocation);
+        field(chunk, row.employment_take);
+        field(chunk, row.employment_eligible ? 1 : 0);
+        field(chunk, row.employment_rejection_reason);
+        field(chunk, row.employment_group);
+        field(chunk, row.employment_owner_target);
+        field(chunk, row.employment_filled_before_clamp);
+        field(chunk, row.employment_filled_after_profession_clamp);
+        field(chunk, row.employment_filled_after_family_clamp);
+        field(chunk, row.employment_family_owned);
+        field(chunk, row.employment_family_member_people);
+        field(chunk, row.employment_anonymous_people);
+        field(chunk, row.employment_owner_cohort_population);
+        field(chunk, row.employment_shed_surplus);
         chunk.push_back('\n'); if (!maybe_flush(BUILDINGS)) goto write_failed;
     }
     if (!flush(BUILDINGS)) goto write_failed;

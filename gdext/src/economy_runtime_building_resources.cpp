@@ -19,6 +19,10 @@ int64_t NativeEconomyRuntime::available_resource_amount(
     if (cell < 0 || cell >= _cell_count || item.resource_id < 0 ||
         item.resource_id >= static_cast<int32_t>(_resource_ids.size())) return 0;
     const size_t idx = static_cast<size_t>(item.resource_id) * _cell_count + cell;
+    // Snapshots can be queried immediately after bootstrap, before the first
+    // resource epoch has allocated all lanes. Treat an absent lane as zero
+    // available capacity instead of indexing an uninitialised vector.
+    if (idx >= _resource_snapshot.size()) return 0;
     const bool initialized = idx < _resource_lane_generation.size() &&
         _resource_lane_generation[idx] == _resource_current_generation;
     const int64_t remaining = std::max<int64_t>(0,

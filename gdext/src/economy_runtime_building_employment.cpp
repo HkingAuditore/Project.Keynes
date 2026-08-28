@@ -3,9 +3,13 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <limits>
 
 namespace pk {
+
+namespace {
+}
 
 void NativeEconomyRuntime::replace_employment_metrics_for_cell(
         int32_t cell, int64_t owner_jobs, int64_t employee_jobs,
@@ -80,10 +84,15 @@ bool NativeEconomyRuntime::reconcile_building_employment_cells_range(
     thread_local std::vector<int64_t> sig_population;
     thread_local std::vector<int64_t> sig_owner_filled;
     thread_local std::vector<int64_t> sig_owner_distributed;
+    thread_local std::vector<int64_t> mobile_population_by_profession;
     thread_local std::vector<int64_t> profession_capacity;
     thread_local std::vector<int64_t> profession_filled;
     thread_local std::vector<int64_t> profession_prefix;
     thread_local std::vector<int64_t> profession_distributed;
+    thread_local std::vector<int64_t> owner_filled_by_profession;
+    thread_local std::vector<int64_t> owner_population_by_profession;
+    thread_local std::vector<int64_t> owner_prefix_by_profession;
+    thread_local std::vector<int64_t> owner_distributed_by_profession;
     thread_local std::vector<uint32_t> signature_stamp;
     thread_local std::vector<uint32_t> profession_stamp;
     thread_local uint32_t scratch_generation = 0;
@@ -104,6 +113,11 @@ bool NativeEconomyRuntime::reconcile_building_employment_cells_range(
         profession_distributed.resize(professions, 0);
         profession_stamp.resize(professions, 0);
     }
+    mobile_population_by_profession.assign(static_cast<size_t>(professions), 0);
+    owner_filled_by_profession.assign(static_cast<size_t>(professions), 0);
+    owner_population_by_profession.assign(static_cast<size_t>(professions), 0);
+    owner_prefix_by_profession.assign(static_cast<size_t>(professions), 0);
+    owner_distributed_by_profession.assign(static_cast<size_t>(professions), 0);
 
     for (int32_t ordinal = begin; ordinal < end; ++ordinal) {
         const int32_t cell = stable_cells[ordinal];
@@ -113,6 +127,16 @@ bool NativeEconomyRuntime::reconcile_building_employment_cells_range(
             std::fill(profession_stamp.begin(), profession_stamp.end(), 0);
             scratch_generation = 1;
         }
+        std::fill(mobile_population_by_profession.begin(),
+                  mobile_population_by_profession.end(), 0);
+        std::fill(owner_filled_by_profession.begin(),
+                  owner_filled_by_profession.end(), 0);
+        std::fill(owner_population_by_profession.begin(),
+                  owner_population_by_profession.end(), 0);
+        std::fill(owner_prefix_by_profession.begin(),
+                  owner_prefix_by_profession.end(), 0);
+        std::fill(owner_distributed_by_profession.begin(),
+                  owner_distributed_by_profession.end(), 0);
         auto touch_signature = [&](int32_t signature) {
             if (signature_stamp[signature] == scratch_generation) return;
             signature_stamp[signature] = scratch_generation;
@@ -130,18 +154,37 @@ bool NativeEconomyRuntime::reconcile_building_employment_cells_range(
         };
         const int32_t first = _building_cell_offsets[cell];
         const int32_t last = _building_cell_offsets[cell + 1];
+        int64_t mobile_population_total = 0;
         _population.for_each_in_cell(cell, [&](int32_t slot) {
             const uint32_t sig = _population.signature_id[slot];
             if (sig < sig_population.size()) {
                 touch_signature(static_cast<int32_t>(sig));
                 sig_population[sig] = saturating_add(sig_population[sig],
                     std::max<int64_t>(0, _population.population[slot]), _saturation_count);
+                if (!is_merchant_slot(slot) && sig < _signatures.size()) {
+                    const int32_t profession = _signatures[sig].profession_id;
+                    if (profession >= 0 && profession < professions) {
+                        const int64_t pop = std::max<int64_t>(0, _population.population[slot]);
+                        const int64_t attached = saturating_add(
+                            std::max<int64_t>(0, _population.owner_employed[slot]),
+                            std::max<int64_t>(0, _population.employee_employed[slot]),
+                            _saturation_count);
+                        mobile_population_by_profession[profession] = saturating_add(
+                            mobile_population_by_profession[profession],
+                            std::max<int64_t>(0, pop - attached), _saturation_count);
+                        mobile_population_total = saturating_add(
+                            mobile_population_total,
+                            std::max<int64_t>(0, pop - attached), _saturation_count);
+                    }
+                }
             }
         });
 
         priority.clear();
         thread_local std::vector<int64_t> priority_income;
+        thread_local std::vector<uint8_t> priority_survival;
         priority_income.assign(static_cast<size_t>(last - first), 0);
+        priority_survival.assign(static_cast<size_t>(last - first), 0);
         for (int32_t g = first; g < last; ++g) {
             BuildingGroup &group = _buildings[g];
             if (group.cell != cell || group.count <= 0 ||
@@ -156,19 +199,68 @@ bool NativeEconomyRuntime::reconcile_building_employment_cells_range(
                 continue;
             }
             int64_t priority_sat = 0;
+            const BuildingType &type = _building_types[group.type_id];
+            const int32_t owner_profession = group.owner_signature_id >= 0 &&
+                    group.owner_signature_id < static_cast<int32_t>(_signatures.size())
+                ? _signatures[group.owner_signature_id].profession_id : -1;
+            // A mobile unemployed cohort can enter a different profession;
+            // do not use its current (usually unemployed) profession as a
+            // hard fillability gate for the target role.
+            // Vacancy is an outcome, not a reason to lower the building's
+            // counterfactual income signal. Current staffing remains an
+            // execution constraint in production, but never suppresses demand.
+            const int64_t owner_fillability = Q16_ONE;
+            int64_t employee_fillability = Q16_ONE;
+            for (int32_t r = 0; r < type.employee_count; ++r) {
+                const JobRole &role = _building_employee_roles[type.employee_begin + r];
+                const int64_t slots = saturating_mul(group.count,
+                    role.slots_per_building, priority_sat);
+                const int32_t fill_index = group.employee_fill_begin + r;
+                const int64_t filled = fill_index >= 0 && fill_index <
+                        static_cast<int32_t>(_building_employee_filled.size())
+                    ? std::max<int64_t>(0, _building_employee_filled[fill_index]) : 0;
+                const int64_t available = mobile_population_total;
+                employee_fillability = std::min(employee_fillability,
+                    slots > 0 ? std::clamp<int64_t>(mul_div_sat(
+                        saturating_add(filled, available, priority_sat), Q16_ONE,
+                        slots, priority_sat), 0, Q16_ONE) : Q16_ONE);
+            }
+            const OwnerOpportunityQuote quote = owner_opportunity_quote(
+                group, owner_fillability, employee_fillability, priority_sat);
             priority_income[static_cast<size_t>(g - first)] =
-                projected_owner_income_per_day(group, priority_sat);
+                quote.disposable_survival_power_per_day;
+            priority_survival[static_cast<size_t>(g - first)] =
+                quote.survival_priority ? 1 : 0;
+            if (quote.survival_priority) ++_building_survival_priority_candidates;
+            ++_building_owner_opportunity_quotes;
+            if (!quote.feasible) ++_building_owner_opportunity_zero_feasible;
             _saturation_count = saturating_add(
                 _saturation_count, priority_sat, _saturation_count);
             priority.push_back(g);
         }
         std::stable_sort(priority.begin(), priority.end(), [&](int32_t a, int32_t b) {
+            const uint8_t survival_a = priority_survival[static_cast<size_t>(a - first)];
+            const uint8_t survival_b = priority_survival[static_cast<size_t>(b - first)];
+            if (survival_a != survival_b) return survival_a > survival_b;
             const int64_t income_a = priority_income[static_cast<size_t>(a - first)];
             const int64_t income_b = priority_income[static_cast<size_t>(b - first)];
             if (income_a != income_b) return income_a > income_b;
             return a < b;
         });
 
+        // Clamp owner fills by profession rather than canonical signature. The
+        // latter would silently evict owners whose ethnicity differs from the
+        // building profile during this reconciliation pass.
+        for (int32_t sig = 0; sig < static_cast<int32_t>(_signatures.size()); ++sig) {
+            if (signature_stamp[sig] != scratch_generation || sig_population[sig] <= 0)
+                continue;
+            const int32_t profession = _signatures[sig].profession_id;
+            if (profession < 0 || profession >= professions ||
+                profession == _unemployed_profession_id) continue;
+            owner_population_by_profession[profession] = saturating_add(
+                owner_population_by_profession[profession], sig_population[sig],
+                _saturation_count);
+        }
         for (int32_t g : priority) {
             BuildingGroup &group = _buildings[g];
             const int32_t sig = group.owner_signature_id;
@@ -176,13 +268,56 @@ bool NativeEconomyRuntime::reconcile_building_employment_cells_range(
                 error = "building_owner_signature_invalid_after_population_change";
                 return false;
             }
-            touch_signature(sig);
-            const int64_t available = std::max<int64_t>(
-                0, sig_population[sig] - sig_owner_filled[sig]);
+            const int32_t profession = _signatures[sig].profession_id;
+            if (profession < 0 || profession >= professions ||
+                profession == _unemployed_profession_id) {
+                group.filled_owner = 0;
+                continue;
+            }
+            int64_t &remaining = owner_population_by_profession[profession];
             group.filled_owner = std::min(
-                std::max<int64_t>(0, group.filled_owner), available);
-            sig_owner_filled[sig] = saturating_add(
-                sig_owner_filled[sig], group.filled_owner, _saturation_count);
+                std::max<int64_t>(0, group.filled_owner), remaining);
+            remaining -= group.filled_owner;
+            owner_filled_by_profession[profession] = saturating_add(
+                owner_filled_by_profession[profession], group.filled_owner,
+                _saturation_count);
+        }
+
+        // Distribute each profession's owner jobs over the live local
+        // profession|ethnicity cohorts in stable signature order.
+        std::fill(sig_owner_filled.begin(), sig_owner_filled.end(), 0);
+        std::fill(owner_population_by_profession.begin(),
+                  owner_population_by_profession.end(), 0);
+        for (int32_t sig = 0; sig < static_cast<int32_t>(_signatures.size()); ++sig) {
+            if (signature_stamp[sig] != scratch_generation || sig_population[sig] <= 0)
+                continue;
+            const int32_t profession = _signatures[sig].profession_id;
+            if (profession < 0 || profession >= professions ||
+                profession == _unemployed_profession_id) continue;
+            owner_population_by_profession[profession] = saturating_add(
+                owner_population_by_profession[profession], sig_population[sig],
+                _saturation_count);
+        }
+        std::fill(owner_prefix_by_profession.begin(), owner_prefix_by_profession.end(), 0);
+        std::fill(owner_distributed_by_profession.begin(),
+                  owner_distributed_by_profession.end(), 0);
+        for (int32_t sig = 0; sig < static_cast<int32_t>(_signatures.size()); ++sig) {
+            if (signature_stamp[sig] != scratch_generation || sig_population[sig] <= 0)
+                continue;
+            const int32_t profession = _signatures[sig].profession_id;
+            if (profession < 0 || profession >= professions ||
+                profession == _unemployed_profession_id) continue;
+            owner_prefix_by_profession[profession] = saturating_add(
+                owner_prefix_by_profession[profession], sig_population[sig],
+                _saturation_count);
+            const int64_t next = owner_population_by_profession[profession] > 0
+                ? mul_div_sat(owner_filled_by_profession[profession],
+                    owner_prefix_by_profession[profession],
+                    owner_population_by_profession[profession], _saturation_count)
+                : 0;
+            sig_owner_filled[sig] = std::max<int64_t>(0,
+                next - owner_distributed_by_profession[profession]);
+            owner_distributed_by_profession[profession] = next;
         }
 
         _population.for_each_in_cell(cell, [&](int32_t slot) {
@@ -545,7 +680,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
     //   消费退化为 survival food → satisfaction 掉 → starvation 自然死上升，
     //   失业惩罚由 demography 自动施加，无需硬编死亡率）。
     //
-    // 两步结构（数学上等价于"消失清理 + 建筑驱动裁员 + 优先级招人"三阶段
+    // 两步结构（数学上等价于"消失清理 + 建筑驱动裁员 + 有限流动招人"三阶段
     //   合并，但 owner/employee 在同一 slot 内自然竞争 population，无需在阶段
     //   间显式传递 slot 剩余容量）：
     //   [第1步 析出] 每个在岗 slot 按本周期 planned_utilization 目标算
@@ -557,7 +692,9 @@ bool NativeEconomyRuntime::run_building_employment_cell(
     //     (realized_profit_margin_q16 desc, planned_utilization_q16 desc,
     //      group_index asc) 跨建筑类型排序，依次把 filled_owner/filled_employee
     //     补到目标，从 unemployed|eth 真实迁回对应 profession|eth slot（受池
-    //     可用量约束）。低优先级/亏损 group 招不满即长期缺人 → "先喂最赚钱"。
+    //     可用量约束）。所有可行候选按 pay ratio 和 utilization 加权比例
+    //     从有限 mobility budget 迁回，不再由单一最高收入 group 吸走整个
+    //     失业池，也不因候选截断而饿死低排名建筑。
     //     招人跨 profession：失业 farmer 可被招为 miner（profession 是可变就业
     //     状态，架构决策4）。
     //
@@ -575,25 +712,140 @@ bool NativeEconomyRuntime::run_building_employment_cell(
     {
         const int32_t n_eth = static_cast<int32_t>(_ethnicity_ids.size());
 
-        // Owner mobility needs a prospective quote for a genuinely greenfield
-        // lot, but the authoritative income helper must continue to return
-        // zero for empty groups everywhere else (settlement, UI, investment,
-        // and audit paths).  Keep this quote local to employment ordering and
-        // only synthesize the physical owner slots for an ACTIVE group that
-        // has never observed a capacity period.
+        // Owner mobility always uses the read-only opportunity quote. This is
+        // intentionally independent of realized filled_owner so an established
+        // but temporarily vacant lot can attract labor again.
         auto owner_mobility_income = [&](const BuildingGroup &group,
                                          int64_t &sat) -> int64_t {
-            const int64_t actual = projected_owner_income_per_day(group, sat);
-            if (group.filled_owner > 0 ||
-                group.last_observed_capacity_days_q16 > 0 ||
-                group.operating_state != 0 || group.count <= 0) {
-                return actual;
+            if (group.type_id < 0 || group.type_id >= static_cast<int32_t>(
+                    _building_types.size()) || group.operating_state == 1 ||
+                group.count <= 0) return 0;
+            const BuildingType &type = _building_types[group.type_id];
+            // Evaluate the whole executable owner capacity. Using the current
+            // filled_owner ratio here creates the same self-reinforcing vacancy
+            // loop as the production planner.
+            const int64_t owner_fillability = Q16_ONE;
+            int64_t employee_fillability = Q16_ONE;
+            for (int32_t r = 0; r < type.employee_count; ++r) {
+                const JobRole &role = _building_employee_roles[type.employee_begin + r];
+                const int64_t slots = saturating_mul(group.count,
+                    role.slots_per_building, sat);
+                const int32_t index = group.employee_fill_begin + r;
+                const int64_t filled = index >= 0 && index < static_cast<int32_t>(
+                        _building_employee_filled.size())
+                    ? std::max<int64_t>(0, _building_employee_filled[index]) : 0;
+                employee_fillability = std::min(employee_fillability,
+                    slots > 0 ? std::clamp<int64_t>(mul_div_sat(filled, Q16_ONE,
+                        slots, sat), 0, Q16_ONE) : Q16_ONE);
             }
-            const int64_t full_owner = planned_owner_demand(group, sat);
-            if (full_owner <= 0) return actual;
-            BuildingGroup probe = group;
-            probe.filled_owner = full_owner;
-            return projected_owner_income_per_day(probe, sat);
+            return owner_opportunity_quote(group, owner_fillability,
+                employee_fillability, sat).disposable_survival_power_per_day;
+        };
+
+        // Employment mobility is evaluated in disposable-income space.  Owner
+        // income already excludes the owner's living cost; employee wages do
+        // not, so subtract the target signature's cost before comparing them.
+        // Keep the daily flow cadence-invariant by compounding a small daily
+        // hazard over the frozen market period.
+        auto period_mobility_q16 = [&]() -> int64_t {
+            const int64_t daily = std::clamp<int64_t>(
+                _employment_mobility_daily_q16, 0, Q16_ONE);
+            int64_t stay = Q16_ONE;
+            for (int32_t d = 0; d < std::max(1, _epoch_days); ++d) {
+                stay = mul_div_sat(stay, Q16_ONE - daily, Q16_ONE,
+                                   _saturation_count);
+            }
+            return std::clamp<int64_t>(Q16_ONE - stay, 0, Q16_ONE);
+        };
+        const int64_t mobility_period_q16 = period_mobility_q16();
+        auto transition_hurdle_q16 = [&](int32_t source_profession,
+                                         int32_t target_profession) -> int64_t {
+            if (source_profession == target_profession)
+                return std::max<int64_t>(1, _investment_displacement_min_advantage_q16);
+            int64_t hurdle = std::max<int64_t>(Q16_ONE / 8,
+                _investment_displacement_min_advantage_q16);
+            if (target_profession == _merchant_profession_id &&
+                source_profession != _merchant_profession_id) {
+                hurdle = std::max<int64_t>(hurdle,
+                    _investment_merchant_transition_min_improvement_q16);
+            }
+            return hurdle;
+        };
+        auto improvement_q16 = [&](int64_t current_disposable,
+                                   int64_t target_disposable) -> int64_t {
+            const int64_t gain = saturating_sub(target_disposable,
+                                                current_disposable,
+                                                _saturation_count);
+            if (gain <= 0) return 0;
+            // Both sides already include their livelihood terms. Reusing raw
+            // living costs in this denominator applies the livelihood hurdle
+            // twice and can make every positive vacancy unreachable from zero
+            // unemployment income.
+            const int64_t denominator = std::max<int64_t>(
+                1, std::llabs(current_disposable));
+            return std::clamp<int64_t>(mul_div_sat(
+                gain, Q16_ONE, denominator, _saturation_count), 0,
+                Q16_ONE * 4);
+        };
+        auto choice_factor_q16 = [&](int64_t improvement) -> int64_t {
+            const int64_t temperature = std::max<int64_t>(1,
+                _employment_choice_temperature_q16);
+            const int64_t softened = mul_div_sat(
+                std::max<int64_t>(0, improvement), Q16_ONE,
+                saturating_add(Q16_ONE, temperature, _saturation_count),
+                _saturation_count);
+            return std::clamp<int64_t>(
+                saturating_add(Q16_ONE, softened, _saturation_count),
+                Q16_ONE, Q16_ONE * 5);
+        };
+        auto owner_entry_capital = [&](const BuildingGroup &group) -> int64_t {
+            const int64_t owner_demand = std::max<int64_t>(1,
+                planned_owner_demand(group, _saturation_count));
+            if (group.sample_unit_input_cost <= 0 || group.count <= 0)
+                return 0;
+            const int64_t full_period_cost = saturating_mul(
+                saturating_mul(group.sample_unit_input_cost, group.count,
+                               _saturation_count),
+                std::max<int64_t>(1, _epoch_days), _saturation_count);
+            // Match the household-market reserve: one entrant carries its
+            // proportional share of the period's physical input bill.
+            const int64_t operation_scale = employment_utilization_q16(group);
+            return mul_div_sat(full_period_cost, operation_scale,
+                Q16_ONE, _saturation_count) / owner_demand;
+        };
+        auto recent_expense_per_day = [&](int32_t slot) -> int64_t {
+            if (slot < 0 || slot >= static_cast<int32_t>(_population.population.size()))
+                return 0;
+            const int64_t people = std::max<int64_t>(1,
+                _population.population[slot]);
+            const int64_t days = std::max<int64_t>(1, _epoch_days);
+            return std::max<int64_t>(0, _population.epoch_expense[slot]) /
+                people / days;
+        };
+        auto unemployed_disposable_income = [&](int32_t slot) -> int64_t {
+            if (slot < 0 || slot >= static_cast<int32_t>(
+                    _population.population.size())) return 0;
+            const int32_t signature = static_cast<int32_t>(
+                _population.signature_id[slot]);
+            if (signature < 0 || signature >= static_cast<int32_t>(
+                    _signatures.size())) return 0;
+            const int32_t profession = _signatures[signature].profession_id;
+            if (profession != _unemployed_profession_id) return 0;
+            // Savings and proportional ledger/EMA values carried into the
+            // unemployed cohort are stocks or prior-period attribution, not
+            // current employment income. A funded negative income tax is the
+            // one current reservation-income source and must remain visible.
+            const int32_t income_rate = frozen_tax_rate(
+                cell, NativeCountryRuntime::TAX_INCOME, profession);
+            if (income_rate >= 0) return 0;
+            const int64_t daily_floor = living_cost_for_signature(
+                cell, signature, _living_cost_base_plan_id,
+                _saturation_count);
+            const int64_t signed_transfer = expected_fiscal_transfer(
+                cell, NativeCountryRuntime::TAX_INCOME, daily_floor,
+                income_rate, _saturation_count);
+            return std::max<int64_t>(0, saturating_sub(
+                0, signed_transfer, _saturation_count));
         };
 
         // ---- 目标计算：本周期各 group 期望的 owner / 各 role employee ----
@@ -693,6 +945,17 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         //     population - retained 迁往 unemployed|eth。
         //
         // owner 侧夹紧（建筑驱动：每 group 独立按自身 filled-target 裁）。
+        const bool trace_employment = cell == _inspector_trace_cell;
+        thread_local std::vector<int64_t> trace_filled_before_clamp;
+        thread_local std::vector<int64_t> trace_filled_after_profession;
+        if (trace_employment) {
+            trace_filled_before_clamp.assign(
+                static_cast<size_t>(std::max(0, last - first)), 0);
+            trace_filled_after_profession.assign(
+                static_cast<size_t>(std::max(0, last - first)), 0);
+            for (int32_t g = first; g < last; ++g)
+                trace_filled_before_clamp[g - first] = _buildings[g].filled_owner;
+        }
         for (int32_t g = first; g < last; ++g) {
             BuildingGroup &group = _buildings[g];
             if (group.cell != cell || group.count <= 0) continue;
@@ -700,35 +963,49 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 group.filled_owner = group_owner_target[g - first];
             }
         }
-        // A cohort can lose population during household demography while its
-        // building-group fill counters still describe the previous epoch. Clamp
-        // the aggregate fill for each owner signature to the live cohort population
-        // before deriving retained employment. Higher-priority groups retain their
-        // incumbents first; any released target is eligible for normal hiring below.
-        thread_local std::vector<int64_t> sig_owner_remaining;
-        sig_owner_remaining.assign(_signatures.size(), 0);
+        // A building's canonical owner signature describes its occupation, not an
+        // ethnicity admission rule. Clamp aggregate owner fills by profession so
+        // owners hired from another local ethnicity remain valid in the next pass.
+        thread_local std::vector<int64_t> owner_remaining_by_profession;
+        owner_remaining_by_profession.assign(professions, 0);
         _population.for_each_in_cell(cell, [&](int32_t slot) {
             const uint32_t sig = _population.signature_id[slot];
-            if (sig >= sig_owner_remaining.size()) return;
-            sig_owner_remaining[sig] = saturating_add(
-                sig_owner_remaining[sig],
-                std::max<int64_t>(0, _population.population[slot]), _saturation_count);
+            if (sig >= _signatures.size()) return;
+            const int32_t profession = _signatures[sig].profession_id;
+            if (profession < 0 || profession >= professions ||
+                profession == _unemployed_profession_id) return;
+            owner_remaining_by_profession[profession] = saturating_add(
+                owner_remaining_by_profession[profession],
+                std::max<int64_t>(0, _population.population[slot]),
+                _saturation_count);
         });
         for (int32_t g : hire_order) {
             BuildingGroup &group = _buildings[g];
             if (group.owner_signature_id < 0 ||
-                group.owner_signature_id >= static_cast<int32_t>(sig_owner_remaining.size())) {
+                group.owner_signature_id >= static_cast<int32_t>(_signatures.size())) {
                 group.filled_owner = 0;
                 continue;
             }
-            int64_t &remaining = sig_owner_remaining[group.owner_signature_id];
+            const int32_t profession =
+                _signatures[group.owner_signature_id].profession_id;
+            if (profession < 0 || profession >= professions ||
+                profession == _unemployed_profession_id) {
+                group.filled_owner = 0;
+                continue;
+            }
+            int64_t &remaining = owner_remaining_by_profession[profession];
             group.filled_owner = std::min(std::max<int64_t>(0, group.filled_owner), remaining);
             remaining -= group.filled_owner;
         }
-        // Family ownership is a sparse overlay on the aggregated building
-        // group. Family-owned owner slots can only be filled by local members
-        // of that same family; anonymous buildings use only anonymous people.
-        clamp_family_owner_employment_for_cell(cell);
+        if (trace_employment) {
+            for (int32_t g = first; g < last; ++g)
+                trace_filled_after_profession[g - first] =
+                    _buildings[g].filled_owner;
+        }
+        // Family ownership is a sparse attribution overlay on the aggregated
+        // building group, not an admission rule: it records which families the
+        // seated proprietors belong to, and never reduces the fill.
+        attribute_family_owner_employment_for_cell(cell);
         // employee 侧夹紧：profession p 若 Σfilled > Σtarget，按 group 稳定序
         // 从后往前削减各 role fill 到 demand。用 remaining[p] 追踪该 profession
         // 允许保留的总在岗数，逐 group 分配 min(role_filled, remaining)。
@@ -760,17 +1037,66 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         //     retained = owner_retained + employee_retained（A1: <= population）。
         //     surplus = population - retained → 迁往 unemployed|eth。
         //
-        // 先按 signature 聚合 owner filled（owner 绑定精确 signature）。
-        thread_local std::vector<int64_t> sig_owner_retained;   // 按 signature id
+        // First aggregate filled owner jobs by profession, then distribute them
+        // over local profession|ethnicity cohorts in stable signature order. A
+        // BuildingGroup has no per-owner identity, so retaining by its canonical
+        // signature would recreate an ethnicity partition after every pass.
+        thread_local std::vector<int64_t> sig_owner_retained;
+        thread_local std::vector<int64_t> sig_owner_population;
+        thread_local std::vector<int64_t> owner_filled_by_profession;
+        thread_local std::vector<int64_t> owner_population_by_profession;
+        thread_local std::vector<int64_t> owner_prefix_by_profession;
+        thread_local std::vector<int64_t> owner_distributed_by_profession;
+        thread_local std::vector<int32_t> owner_active_signatures;
         sig_owner_retained.assign(_signatures.size(), 0);
+        sig_owner_population.assign(_signatures.size(), 0);
+        owner_filled_by_profession.assign(professions, 0);
+        owner_population_by_profession.assign(professions, 0);
+        owner_prefix_by_profession.assign(professions, 0);
+        owner_distributed_by_profession.assign(professions, 0);
+        owner_active_signatures.clear();
         for (int32_t g = first; g < last; ++g) {
             BuildingGroup &group = _buildings[g];
             if (group.cell != cell || group.count <= 0) continue;
             if (group.owner_signature_id < 0 ||
                 group.owner_signature_id >= static_cast<int32_t>(_signatures.size())) continue;
-            sig_owner_retained[group.owner_signature_id] = saturating_add(
-                sig_owner_retained[group.owner_signature_id],
+            const int32_t profession =
+                _signatures[group.owner_signature_id].profession_id;
+            if (profession < 0 || profession >= professions ||
+                profession == _unemployed_profession_id) continue;
+            owner_filled_by_profession[profession] = saturating_add(
+                owner_filled_by_profession[profession],
                 std::max<int64_t>(0, group.filled_owner), _saturation_count);
+        }
+        _population.for_each_in_cell(cell, [&](int32_t slot) {
+            const int32_t sig = static_cast<int32_t>(_population.signature_id[slot]);
+            if (sig < 0 || sig >= static_cast<int32_t>(_signatures.size())) return;
+            const int32_t profession = _signatures[sig].profession_id;
+            if (profession < 0 || profession >= professions ||
+                profession == _unemployed_profession_id) return;
+            if (sig_owner_population[sig] == 0) owner_active_signatures.push_back(sig);
+            const int64_t population = std::max<int64_t>(0,
+                _population.population[slot]);
+            sig_owner_population[sig] = saturating_add(sig_owner_population[sig],
+                population, _saturation_count);
+            owner_population_by_profession[profession] = saturating_add(
+                owner_population_by_profession[profession], population,
+                _saturation_count);
+        });
+        std::sort(owner_active_signatures.begin(), owner_active_signatures.end());
+        for (const int32_t sig : owner_active_signatures) {
+            const int32_t profession = _signatures[sig].profession_id;
+            owner_prefix_by_profession[profession] = saturating_add(
+                owner_prefix_by_profession[profession], sig_owner_population[sig],
+                _saturation_count);
+            const int64_t next = owner_population_by_profession[profession] > 0
+                ? mul_div_sat(owner_filled_by_profession[profession],
+                    owner_prefix_by_profession[profession],
+                    owner_population_by_profession[profession], _saturation_count)
+                : 0;
+            sig_owner_retained[sig] = std::max<int64_t>(0,
+                next - owner_distributed_by_profession[profession]);
+            owner_distributed_by_profession[profession] = next;
         }
         // employee 在岗按 profession 稳定序摊派到各 slot（同 profession 的多 eth
         // slot 按 signature_id 升序，用 cohort 可容纳量比例摊派，前缀和保确定）。
@@ -855,6 +1181,17 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 shed_pop.push_back(surplus);
             }
         });
+        // Signature must be read before the moves below rewrite the slots.
+        thread_local std::vector<int64_t> trace_shed_by_signature;
+        if (trace_employment) {
+            trace_shed_by_signature.assign(_signatures.size(), 0);
+            for (size_t i = 0; i < shed_source_slots.size(); ++i) {
+                const int32_t sig = static_cast<int32_t>(
+                    _population.signature_id[shed_source_slots[i]]);
+                if (sig >= 0 && sig < static_cast<int32_t>(_signatures.size()))
+                    trace_shed_by_signature[sig] += shed_pop[i];
+            }
+        }
         // 遍历外执行析出迁移（在岗 profession|eth → unemployed|eth）。
         for (size_t i = 0; i < shed_source_slots.size(); ++i) {
             const int32_t src = shed_source_slots[i];
@@ -917,7 +1254,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 add <= knowledge_cap - local_knowledge_employment;
         };
 
-        // ---- 第2步 招人：按优先级从 unemployed 池增量迁回 ----
+        // ---- 第2步 招人：按 cell-local attraction 比例从 unemployed 池增量迁回 ----
         // 优先级键：(realized_profit_margin_q16 desc, planned_utilization_q16 desc,
         //            group_index asc)。排序粒度=跨 BuildingGroup（跨建筑类型）；
         // 同 type_id+同 owner_signature 聚合的组内盈利/利用率相同，组内不排（稳定序）。
@@ -930,49 +1267,560 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             if (sig < 0) return -1;
             return _population.find_signature(cell, static_cast<uint32_t>(sig));
         };
+        const bool capture_employment_diagnostics = cell == _inspector_trace_cell;
+        if (capture_employment_diagnostics) {
+            _employment_diagnostic_cell = cell;
+            _employment_diagnostic_day = _current_day;
+            _employment_diagnostics.clear();
+        }
+        thread_local std::vector<int64_t> unemployed_budget_by_eth;
+        struct EmploymentSourcePool {
+            int32_t source_slot = -1;
+            int32_t source_group = -1;
+            int32_t source_role = -1;
+            int32_t profession = -1;
+            int32_t ethnicity = -1;
+            int64_t available_population = 0;
+            int64_t current_disposable_income = 0;
+            int64_t transferable_funds = 0;
+        };
+        thread_local std::vector<EmploymentSourcePool> employment_source_pools;
+        unemployed_budget_by_eth.assign(static_cast<size_t>(n_eth), 0);
+        employment_source_pools.clear();
+        for (int32_t eth = 0; eth < n_eth; ++eth) {
+            const int32_t pool = pool_slot_for_eth(eth);
+            if (pool < 0) continue;
+            const int32_t source_signature = static_cast<int32_t>(
+                _population.signature_id[pool]);
+            const int64_t source_cost = living_cost_for_signature(
+                cell, source_signature, -1, _saturation_count);
+            const int64_t available = std::max<int64_t>(0,
+                _population.population[pool]);
+            const int64_t current_disposable = available > 0
+                ? unemployed_disposable_income(pool) : 0;
+            employment_source_pools.push_back({
+                pool, -1, -1,
+                source_signature >= 0 && source_signature <
+                    static_cast<int32_t>(_signatures.size())
+                    ? _signatures[source_signature].profession_id : -1,
+                eth, available, current_disposable,
+                std::max<int64_t>(0, _population.funds[pool] -
+                    saturating_mul(saturating_mul(source_cost, available,
+                        _saturation_count), 30, _saturation_count))});
+            unemployed_budget_by_eth[static_cast<size_t>(eth)] = mul_div_sat(
+                available,
+                mobility_period_q16, Q16_ONE, _saturation_count);
+            if (mobility_period_q16 > 0 &&
+                _population.population[pool] > 0 &&
+                unemployed_budget_by_eth[static_cast<size_t>(eth)] == 0) {
+                unemployed_budget_by_eth[static_cast<size_t>(eth)] = 1;
+            }
+        }
+        auto labor_pay_ratio_q16 = [&](int32_t profession) -> int64_t {
+            const int32_t signal = labor_signal_index(cell, profession);
+            if (signal < 0 || signal >= static_cast<int32_t>(
+                    _labor_signals.pay_ratio_q16.size())) return Q16_ONE;
+            return std::clamp<int64_t>(
+                _labor_signals.pay_ratio_q16[signal], 0, Q16_ONE);
+        };
+        auto vacancy_weight = [&](int64_t target_disposable,
+                                  int64_t vacancy,
+                                  int32_t profession,
+                                  int64_t utilization_q16) -> int64_t {
+            if (vacancy <= 0) return 0;
+            const int64_t income_term = choice_factor_q16(
+                std::clamp<int64_t>(target_disposable, 0, Q16_ONE * 4));
+            const int64_t payment_term = (Q16_ONE +
+                labor_pay_ratio_q16(profession)) / 2;
+            const int64_t utilization_term = (Q16_ONE +
+                std::clamp<int64_t>(utilization_q16, 0, Q16_ONE)) / 2;
+            int64_t weight = saturating_mul(vacancy, income_term,
+                                             _saturation_count);
+            weight = mul_div_sat(weight, payment_term, Q16_ONE,
+                                 _saturation_count);
+            return mul_div_sat(weight, utilization_term, Q16_ONE,
+                               _saturation_count);
+        };
+        // Keep all candidates in one cell-local pool. An unemployed cohort has
+        // one source signature per ethnicity, so ethnicity remains the compact
+        // source-pool key while every feasible vacancy participates in the
+        // attraction denominator.
+        struct EmploymentJobOption {
+            int32_t group = -1;
+            int32_t role = -1; // -1 = owner vacancy, otherwise role index
+            int32_t target_signature = -1;
+            int32_t profession = -1;
+            int32_t source_ethnicity = -1;
+            int64_t vacancy = 0;
+            int64_t target_disposable = 0;
+            int64_t weight_q16 = 0;
+            int64_t allocated_move = 0;
+            int64_t remainder = 0;
+            int32_t margin_q16 = 0;
+            int64_t utilization_q16 = 0;
+            int32_t diagnostic_index = -1;
+        };
+        thread_local std::vector<EmploymentJobOption> employment_candidates;
+        employment_candidates.clear();
+        employment_candidates.reserve(hire_order.size() *
+            static_cast<size_t>(std::max(1, n_eth)) * 2);
+        auto candidate_better = [&](const EmploymentJobOption &a,
+                                    const EmploymentJobOption &b) {
+            if (a.target_disposable != b.target_disposable)
+                return a.target_disposable > b.target_disposable;
+            if (a.margin_q16 != b.margin_q16)
+                return a.margin_q16 > b.margin_q16;
+            if (a.utilization_q16 != b.utilization_q16)
+                return a.utilization_q16 > b.utilization_q16;
+            if (a.group != b.group) return a.group < b.group;
+            return a.role < b.role;
+        };
+        auto add_candidate = [&](int32_t eth, const EmploymentJobOption &candidate) {
+            if (eth < 0 || eth >= n_eth || candidate.vacancy <= 0) return;
+            EmploymentJobOption option = candidate;
+            option.weight_q16 = vacancy_weight(option.target_disposable,
+                option.vacancy, option.profession, option.utilization_q16);
+            option.source_ethnicity = eth;
+            if (capture_employment_diagnostics &&
+                _employment_diagnostics.size() < EMPLOYMENT_DIAGNOSTIC_LIMIT) {
+                option.diagnostic_index =
+                    static_cast<int32_t>(_employment_diagnostics.size());
+                EmploymentDiagnostic diagnostic;
+                // Match the recorder's dense per-cell group ordering so these
+                // rows join against the regular building rows.
+                int32_t dense_group = 0;
+                for (int32_t prior = first; prior < option.group; ++prior)
+                    if (_buildings[prior].count > 0) ++dense_group;
+                diagnostic.group_index = dense_group;
+                diagnostic.type_id = _buildings[option.group].type_id;
+                diagnostic.role = option.role;
+                diagnostic.target_signature = option.target_signature;
+                diagnostic.profession_id = option.profession;
+                diagnostic.source_ethnicity = eth;
+                diagnostic.vacancy = option.vacancy;
+                diagnostic.target_disposable = option.target_disposable;
+                diagnostic.weight_q16 = option.weight_q16;
+                diagnostic.budget =
+                    unemployed_budget_by_eth[static_cast<size_t>(eth)];
+                const int32_t pool = pool_slot_for_eth(eth);
+                diagnostic.pool_slot = pool;
+                if (pool >= 0) {
+                    diagnostic.pool_signature = static_cast<int32_t>(
+                        _population.signature_id[pool]);
+                    diagnostic.pool_population = _population.population[pool];
+                }
+                diagnostic.owner_target = group_owner_target[option.group - first];
+                if (trace_employment) {
+                    diagnostic.filled_before_clamp =
+                        trace_filled_before_clamp[option.group - first];
+                    diagnostic.filled_after_profession_clamp =
+                        trace_filled_after_profession[option.group - first];
+                    const int32_t owner_sig =
+                        _buildings[option.group].owner_signature_id;
+                    if (owner_sig >= 0 && owner_sig < static_cast<int32_t>(
+                            trace_shed_by_signature.size()))
+                        diagnostic.shed_surplus =
+                            trace_shed_by_signature[owner_sig];
+                    for (const FamilyOwnerClampTrace &trace :
+                            _family_clamp_traces) {
+                        if (trace.group_index != option.group) continue;
+                        diagnostic.filled_after_family_clamp = trace.filled_after;
+                        diagnostic.family_owned = trace.family_owned;
+                        diagnostic.family_member_people =
+                            trace.family_member_people;
+                        diagnostic.anonymous_people = trace.anonymous_people;
+                        diagnostic.owner_cohort_population =
+                            trace.owner_cohort_population;
+                        break;
+                    }
+                }
+                _employment_diagnostics.push_back(diagnostic);
+            }
+            employment_candidates.push_back(option);
+        };
+        auto diagnostic_for = [&](const EmploymentJobOption &option)
+                -> EmploymentDiagnostic * {
+            if (!capture_employment_diagnostics || option.diagnostic_index < 0 ||
+                option.diagnostic_index >= static_cast<int32_t>(
+                    _employment_diagnostics.size())) return nullptr;
+            return &_employment_diagnostics[
+                static_cast<size_t>(option.diagnostic_index)];
+        };
+        // Snapshot the total acceptable vacancy weight per ethnicity.  The
+        // sequential pass below consumes this denominator as it allocates, so
+        // each successive job receives its proportional share of the remaining
+        // mobile unemployed pool rather than winning by loop order.
+        for (int32_t g : hire_order) {
+            const BuildingGroup &group = _buildings[g];
+            const BuildingType &type = _building_types[group.type_id];
+            const int64_t owner_need = std::max<int64_t>(0,
+                group_owner_target[g - first] - group.filled_owner);
+            if (owner_need > 0 && group.owner_signature_id >= 0 &&
+                group.owner_signature_id < static_cast<int32_t>(_signatures.size())) {
+                const int32_t owner_profession =
+                    _signatures[group.owner_signature_id].profession_id;
+                // Owner eligibility is profession-based.  Generate one target
+                // signature per source ethnicity so migration preserves the
+                // person's identity instead of forcing the building's
+                // canonical ethnicity onto the cohort.
+                for (int32_t eth = 0; eth < n_eth; ++eth) {
+                    const int32_t target_sig = signature_for_profession_ethnicity(
+                        owner_profession, eth);
+                    if (target_sig < 0) continue;
+                    add_candidate(eth, EmploymentJobOption{
+                        g, -1, target_sig, owner_profession,
+                        eth, owner_need, labor_expected_owner_income[g - first], 0, 0, 0,
+                        group.realized_profit_margin_q16,
+                        employment_utilization_q16(group)});
+                }
+            }
+            if (group.operating_state == 1) continue;
+            for (int32_t r = 0; r < type.employee_count; ++r) {
+                const JobRole &role = _building_employee_roles[type.employee_begin + r];
+                const int32_t fi = group.employee_fill_begin + r;
+                const int64_t need = std::max<int64_t>(0,
+                    planned_role_demand(group, role) -
+                    std::max<int64_t>(0, _building_employee_filled[fi]));
+                if (need <= 0) continue;
+                const int64_t gross = fi >= 0 && fi < static_cast<int32_t>(
+                        _building_role_contract_wage.size())
+                    ? _building_role_contract_wage[fi] : role.reference_wage_per_day;
+                const int64_t wage = expected_after_tax_income(
+                    cell, role.profession_id, gross, _saturation_count);
+                for (int32_t eth = 0; eth < n_eth; ++eth) {
+                    const int32_t target_sig = signature_for_profession_ethnicity(
+                        role.profession_id, eth);
+                    if (target_sig < 0) continue;
+                    const int64_t target_disposable = wage -
+                        living_cost_for_signature(cell, target_sig, -1,
+                            _saturation_count);
+                    add_candidate(eth, EmploymentJobOption{
+                        g, r, target_sig, role.profession_id, eth, need,
+                        target_disposable, 0, 0, 0, group.realized_profit_margin_q16,
+                        employment_utilization_q16(group)});
+                }
+            }
+        }
+        auto candidate_eligible_for_pool = [&](const EmploymentJobOption &candidate,
+                                               int32_t eth,
+                                               EmploymentDiagnostic *diagnostic) {
+            auto deny = [&](int32_t reason) {
+                if (diagnostic != nullptr) {
+                    diagnostic->eligible = false;
+                    diagnostic->rejection_reason = reason;
+                }
+                return false;
+            };
+            const int32_t pool = pool_slot_for_eth(eth);
+            if (pool < 0) return deny(EMPLOYMENT_REJECTION_POOL_MISSING);
+            if (_population.population[pool] <= 0)
+                return deny(EMPLOYMENT_REJECTION_POOL_EMPTY);
+            const int32_t source_signature = static_cast<int32_t>(
+                _population.signature_id[pool]);
+            if (source_signature < 0 || source_signature >=
+                    static_cast<int32_t>(_signatures.size()))
+                return deny(EMPLOYMENT_REJECTION_SOURCE_SIGNATURE);
+            const int64_t target_cost = living_cost_for_signature(
+                cell, candidate.target_signature, -1, _saturation_count);
+            const int64_t source_disposable = unemployed_disposable_income(pool);
+            const int64_t improvement = improvement_q16(
+                source_disposable, candidate.target_disposable);
+            const int64_t hurdle = transition_hurdle_q16(
+                _signatures[source_signature].profession_id, candidate.profession);
+            if (diagnostic != nullptr) {
+                diagnostic->source_disposable = source_disposable;
+                diagnostic->improvement_q16 = improvement;
+                diagnostic->hurdle_q16 = hurdle;
+            }
+            if (candidate.role < 0) {
+                if (candidate.target_disposable < 0)
+                    return deny(EMPLOYMENT_REJECTION_TARGET_DISPOSABLE);
+                if (improvement < hurdle)
+                    return deny(EMPLOYMENT_REJECTION_HURDLE);
+            } else {
+                const bool desperate = _population.needs_satisfaction[pool] <
+                    _starvation_satisfaction_threshold_q16;
+                const int64_t target_wage = saturating_add(
+                    candidate.target_disposable, target_cost, _saturation_count);
+                const int64_t survival_floor = desperate
+                    ? mul_div_sat(target_cost, _starvation_satisfaction_threshold_q16,
+                        Q16_ONE, _saturation_count) : target_cost;
+                if (target_wage < survival_floor)
+                    return deny(EMPLOYMENT_REJECTION_SURVIVAL_FLOOR);
+                if (improvement < hurdle)
+                    return deny(EMPLOYMENT_REJECTION_HURDLE);
+            }
+            if (diagnostic != nullptr) {
+                diagnostic->eligible = true;
+                diagnostic->rejection_reason = EMPLOYMENT_REJECTION_NONE;
+            }
+            return true;
+        };
+        // Remove infeasible vacancies before proportional allocation. All
+        // feasible vacancies remain in the pool; there is intentionally no
+        // frontier, so a lower-ranked but executable building can still
+        // receive its proportional share. Build a compact per-eth index so
+        // allocation is O(candidates + sources) instead of rescanning the
+        // complete candidate list once per ethnicity.
+        thread_local std::vector<int64_t> candidate_allocations;
+        candidate_allocations.assign(employment_candidates.size(), 0);
+        thread_local std::vector<int32_t> candidate_eth_offsets;
+        thread_local std::vector<int32_t> candidate_eth_indices;
+        candidate_eth_offsets.assign(static_cast<size_t>(n_eth) + 1, 0);
+        for (const EmploymentJobOption &candidate : employment_candidates) {
+            if (candidate.source_ethnicity >= 0 && candidate.source_ethnicity < n_eth &&
+                candidate_eligible_for_pool(candidate, candidate.source_ethnicity,
+                    diagnostic_for(candidate))) {
+                ++candidate_eth_offsets[static_cast<size_t>(candidate.source_ethnicity) + 1];
+            }
+        }
+        for (int32_t eth = 0; eth < n_eth; ++eth) {
+            candidate_eth_offsets[static_cast<size_t>(eth) + 1] +=
+                candidate_eth_offsets[static_cast<size_t>(eth)];
+        }
+        candidate_eth_indices.assign(
+            static_cast<size_t>(candidate_eth_offsets.back()), -1);
+        thread_local std::vector<int32_t> candidate_eth_write;
+        candidate_eth_write = candidate_eth_offsets;
+        for (int32_t index = 0; index < static_cast<int32_t>(
+                employment_candidates.size()); ++index) {
+            const EmploymentJobOption &candidate = employment_candidates[
+                static_cast<size_t>(index)];
+            if (candidate.source_ethnicity < 0 || candidate.source_ethnicity >= n_eth ||
+                !candidate_eligible_for_pool(candidate, candidate.source_ethnicity,
+                    nullptr)) continue;
+            candidate_eth_indices[static_cast<size_t>(candidate_eth_write[
+                static_cast<size_t>(candidate.source_ethnicity)]++)] = index;
+        }
+        // Deterministic largest-remainder allocation over the complete
+        // cell-local candidate set.
+        for (int32_t eth = 0; eth < n_eth; ++eth) {
+            int64_t total_weight = 0;
+            int64_t allocated = 0;
+            const int32_t begin = candidate_eth_offsets[static_cast<size_t>(eth)];
+            const int32_t end = candidate_eth_offsets[static_cast<size_t>(eth) + 1];
+            for (int32_t cursor = begin; cursor < end; ++cursor) {
+                const int32_t index = candidate_eth_indices[static_cast<size_t>(cursor)];
+                const EmploymentJobOption &candidate = employment_candidates[
+                    static_cast<size_t>(index)];
+                total_weight = saturating_add(total_weight,
+                    std::max<int64_t>(1, candidate.weight_q16), _saturation_count);
+            }
+            if (total_weight <= 0) continue;
+            const int64_t budget = unemployed_budget_by_eth[static_cast<size_t>(eth)];
+            for (int32_t cursor = begin; cursor < end; ++cursor) {
+                const int32_t index = candidate_eth_indices[static_cast<size_t>(cursor)];
+                EmploymentJobOption &candidate = employment_candidates[
+                    static_cast<size_t>(index)];
+                const int64_t weight = std::max<int64_t>(1, candidate.weight_q16);
+                const int64_t scaled = saturating_mul(budget, weight,
+                    _saturation_count);
+                const int64_t base_take = std::min(candidate.vacancy,
+                    scaled / total_weight);
+                candidate_allocations[static_cast<size_t>(index)] = base_take;
+                candidate.remainder = scaled % total_weight;
+                allocated = saturating_add(allocated, base_take,
+                    _saturation_count);
+            }
+            int64_t left = std::max<int64_t>(0, budget - allocated);
+            while (left > 0) {
+                int64_t residual_weight = 0;
+                for (int32_t cursor = begin; cursor < end; ++cursor) {
+                    const int32_t index = candidate_eth_indices[static_cast<size_t>(cursor)];
+                    const EmploymentJobOption &candidate =
+                        employment_candidates[static_cast<size_t>(index)];
+                    if (candidate_allocations[static_cast<size_t>(index)] <
+                            candidate.vacancy)
+                        residual_weight = saturating_add(residual_weight,
+                            std::max<int64_t>(1, candidate.weight_q16),
+                            _saturation_count);
+                }
+                if (residual_weight <= 0) break;
+                int64_t distributed = 0;
+                for (int32_t cursor = begin; cursor < end; ++cursor) {
+                    const int32_t index = candidate_eth_indices[static_cast<size_t>(cursor)];
+                    EmploymentJobOption &candidate = employment_candidates[
+                        static_cast<size_t>(index)];
+                    const int64_t room = candidate.vacancy -
+                        candidate_allocations[static_cast<size_t>(index)];
+                    if (room <= 0) continue;
+                    const int64_t weight = std::max<int64_t>(1, candidate.weight_q16);
+                    const int64_t scaled = saturating_mul(left, weight,
+                        _saturation_count);
+                    const int64_t extra = std::min(room,
+                        scaled / residual_weight);
+                    if (extra <= 0) continue;
+                    candidate_allocations[static_cast<size_t>(index)] += extra;
+                    distributed = saturating_add(distributed, extra,
+                        _saturation_count);
+                }
+                if (distributed > 0) {
+                    left -= distributed;
+                    continue;
+                }
+                // The remaining amount is smaller than the candidate count;
+                // resolve only this rounding tail by largest remainder.
+                int32_t best = -1;
+                for (int32_t cursor = begin; cursor < end; ++cursor) {
+                    const int32_t index = candidate_eth_indices[static_cast<size_t>(cursor)];
+                    const EmploymentJobOption &candidate =
+                        employment_candidates[static_cast<size_t>(index)];
+                    if (candidate_allocations[static_cast<size_t>(index)] >=
+                            candidate.vacancy) continue;
+                    if (best < 0 || candidate.remainder >
+                            employment_candidates[static_cast<size_t>(best)].remainder ||
+                        (candidate.remainder == employment_candidates[static_cast<size_t>(best)].remainder &&
+                            candidate_better(candidate,
+                                employment_candidates[static_cast<size_t>(best)])))
+                        best = index;
+                }
+                if (best < 0) break;
+                ++candidate_allocations[static_cast<size_t>(best)];
+                --left;
+            }
+        }
+        if (capture_employment_diagnostics) {
+            for (int32_t index = 0; index < static_cast<int32_t>(
+                    employment_candidates.size()); ++index) {
+                EmploymentDiagnostic *diagnostic = diagnostic_for(
+                    employment_candidates[static_cast<size_t>(index)]);
+                if (diagnostic == nullptr) continue;
+                diagnostic->allocation =
+                    candidate_allocations[static_cast<size_t>(index)];
+                if (diagnostic->eligible && diagnostic->allocation <= 0)
+                    diagnostic->rejection_reason =
+                        EMPLOYMENT_REJECTION_NO_ALLOCATION;
+            }
+        }
+        auto slot_diagnostic = [&](int32_t eth, int32_t group, int32_t role,
+                                   int32_t target_signature)
+                -> EmploymentDiagnostic * {
+            if (!capture_employment_diagnostics) return nullptr;
+            for (const EmploymentJobOption &candidate : employment_candidates) {
+                if (candidate.source_ethnicity == eth && candidate.group == group &&
+                    candidate.role == role &&
+                    candidate.target_signature == target_signature)
+                    return diagnostic_for(candidate);
+            }
+            return nullptr;
+        };
+        auto drop_role_diagnostics = [&](int32_t group, int32_t role,
+                                         int32_t reason) {
+            if (!capture_employment_diagnostics) return;
+            for (const EmploymentJobOption &candidate : employment_candidates) {
+                if (candidate.group != group || candidate.role != role) continue;
+                EmploymentDiagnostic *diagnostic = diagnostic_for(candidate);
+                if (diagnostic != nullptr) diagnostic->rejection_reason = reason;
+            }
+        };
+        auto candidate_allocation = [&](int32_t eth, int32_t group, int32_t role,
+                                        int32_t target_signature) -> int64_t {
+            if (eth < 0 || eth >= n_eth) return 0;
+            const int32_t begin = candidate_eth_offsets[static_cast<size_t>(eth)];
+            const int32_t end = candidate_eth_offsets[static_cast<size_t>(eth) + 1];
+            for (int32_t cursor = begin; cursor < end; ++cursor) {
+                const int32_t index = candidate_eth_indices[static_cast<size_t>(cursor)];
+                const EmploymentJobOption &candidate =
+                    employment_candidates[static_cast<size_t>(index)];
+                if (candidate.group == group && candidate.role == role &&
+                    candidate.target_signature == target_signature &&
+                    candidate_allocations[static_cast<size_t>(index)] > 0)
+                    return candidate_allocations[static_cast<size_t>(index)];
+            }
+            return 0;
+        };
         for (size_t oi = 0; oi < hire_order.size(); ++oi) {
             const int32_t g = hire_order[oi];
             BuildingGroup &group = _buildings[g];
             const BuildingType &type = _building_types[group.type_id];
-            // --- owner 招募（精确 eth = owner_signature 的 eth）---
+            // --- owner 招募（按来源 ethnicity 保留身份，不要求匹配 canonical owner ethnicity）---
             const int64_t owner_target = group_owner_target[g - first];
             int64_t owner_need = std::max<int64_t>(0, owner_target - group.filled_owner);
             if (owner_need > 0 && group.owner_signature_id >= 0 &&
                 group.owner_signature_id < static_cast<int32_t>(_signatures.size())) {
-                const int32_t owner_eth = _signatures[group.owner_signature_id].ethnicity_id;
-                const int32_t pool = pool_slot_for_eth(owner_eth);
-                if (pool >= 0) {
-                    const int64_t avail = std::max<int64_t>(0, _population.population[pool]);
-                    const int64_t take = std::min(owner_need, avail);
-                    const int64_t capped_take = knowledge_slot_available(group, take, false)
+                const int32_t owner_profession =
+                    _signatures[group.owner_signature_id].profession_id;
+                for (int32_t source_eth = 0; source_eth < n_eth && owner_need > 0;
+                     ++source_eth) {
+                    const int32_t pool = pool_slot_for_eth(source_eth);
+                    const int32_t target_sig = signature_for_profession_ethnicity(
+                        owner_profession, source_eth);
+                    EmploymentDiagnostic *slot = slot_diagnostic(
+                        source_eth, g, -1, target_sig);
+                    auto drop = [&](int32_t reason) {
+                        if (slot != nullptr) slot->rejection_reason = reason;
+                    };
+                    if (pool < 0 || target_sig < 0) {
+                        drop(pool < 0 ? EMPLOYMENT_REJECTION_POOL_MISSING
+                                      : EMPLOYMENT_REJECTION_TARGET_SIGNATURE);
+                        continue;
+                    }
+                    const int64_t avail = std::max<int64_t>(0,
+                        _population.population[pool]);
+                    if (avail <= 0 || candidate_allocation(source_eth, g, -1,
+                            target_sig) <= 0) {
+                        drop(avail <= 0 ? EMPLOYMENT_REJECTION_POOL_EMPTY
+                                        : EMPLOYMENT_REJECTION_NO_ALLOCATION);
+                        continue;
+                    }
+                    const int64_t target_disposable = labor_expected_owner_income[
+                        g - first];
+                    const int64_t source_disposable =
+                        unemployed_disposable_income(pool);
+                    const int32_t source_profession = _signatures[
+                        _population.signature_id[pool]].profession_id;
+                    const int64_t improvement = improvement_q16(
+                        source_disposable, target_disposable);
+                    int64_t &budget = unemployed_budget_by_eth[
+                        static_cast<size_t>(source_eth)];
+                    const bool eligible = target_disposable >= 0 && improvement >=
+                        transition_hurdle_q16(source_profession, owner_profession);
+                    const int64_t proportional = eligible
+                        ? candidate_allocation(source_eth, g, -1, target_sig) : 0;
+                    const int64_t take = std::min({owner_need, avail, proportional});
+                    const bool knowledge_ok = knowledge_slot_available(group, take, false);
+                    const int64_t capped_take = knowledge_ok
                         ? take : std::max<int64_t>(0, knowledge_cap -
                             local_knowledge_employment);
-                    if (capped_take > 0 &&
-                        group.owner_signature_id != static_cast<int32_t>(
+                    if (capped_take <= 0 || target_sig == static_cast<int32_t>(
                             _population.signature_id[pool])) {
-                        bool drained = false;
-                        const uint64_t preferred_family =
-                            preferred_family_for_cohort(pool, 1, 0,
-                                _signatures[group.owner_signature_id].profession_id);
-                        if (!move_cohort_population(pool, cell, group.owner_signature_id,
-                                                    capped_take, error, &drained,
-                                                    preferred_family)) {
-                            return false;
-                        }
-                        group.filled_owner = saturating_add(group.filled_owner, capped_take,
-                                                            _saturation_count);
-                        if (is_knowledge_group(group)) {
-                            local_knowledge_employment = saturating_add(
-                                local_knowledge_employment, capped_take, _saturation_count);
-                        }
-                        // 迁回的人在其目标 profession|eth slot 记为在岗 owner。
-                        const int32_t dest = _population.find_signature(
-                            cell, static_cast<uint32_t>(group.owner_signature_id));
-                        if (dest >= 0) {
-                            _population.owner_employed[dest] = saturating_add(
-                                _population.owner_employed[dest], capped_take, _saturation_count);
-                        }
+                        if (target_sig == static_cast<int32_t>(
+                                _population.signature_id[pool]))
+                            drop(EMPLOYMENT_REJECTION_SIGNATURE_SELF);
+                        else if (!knowledge_ok)
+                            drop(EMPLOYMENT_REJECTION_KNOWLEDGE_CAP);
+                        else if (!eligible)
+                            drop(EMPLOYMENT_REJECTION_HURDLE);
+                        else
+                            drop(EMPLOYMENT_REJECTION_ZERO_TAKE);
+                        continue;
                     }
+                    if (slot != nullptr) {
+                        slot->take = capped_take;
+                        slot->rejection_reason = EMPLOYMENT_REJECTION_NONE;
+                    }
+                    bool drained = false;
+                    const uint64_t preferred_family =
+                        preferred_family_for_cohort(pool, 1, 0, owner_profession);
+                    if (!move_cohort_population(pool, cell, target_sig, capped_take,
+                                                error, &drained, preferred_family)) {
+                        return false;
+                    }
+                    group.filled_owner = saturating_add(group.filled_owner, capped_take,
+                                                        _saturation_count);
+                    owner_need = std::max<int64_t>(0, owner_need - capped_take);
+                    if (is_knowledge_group(group)) {
+                        local_knowledge_employment = saturating_add(
+                            local_knowledge_employment, capped_take, _saturation_count);
+                    }
+                    const int32_t dest = _population.find_signature(
+                        cell, static_cast<uint32_t>(target_sig));
+                    if (dest >= 0) {
+                        _population.owner_employed[dest] = saturating_add(
+                            _population.owner_employed[dest], capped_take,
+                            _saturation_count);
+                    }
+                    budget = std::max<int64_t>(0, budget - capped_take);
                 }
             }
             if (group.operating_state == 1) continue;
@@ -980,7 +1828,11 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             for (int32_t r = 0; r < type.employee_count; ++r) {
                 const JobRole &role = _building_employee_roles[type.employee_begin + r];
                 const int32_t p = role.profession_id;
-                if (!profession_available(cell, p, true)) continue;
+                if (!profession_available(cell, p, true)) {
+                    drop_role_diagnostics(g, r,
+                        EMPLOYMENT_REJECTION_PROFESSION_UNAVAILABLE);
+                    continue;
+                }
                 const int32_t fi = group.employee_fill_begin + r;
                 const int64_t gross_wage = fi >= 0 && fi < static_cast<int32_t>(
                         _building_role_contract_wage.size())
@@ -992,28 +1844,79 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                     role_target - std::max<int64_t>(0, _building_employee_filled[fi]));
                 if (need <= 0) continue;
                 if (is_knowledge_group(group) &&
-                    local_knowledge_employment >= knowledge_cap) continue;
+                    local_knowledge_employment >= knowledge_cap) {
+                    drop_role_diagnostics(g, r, EMPLOYMENT_REJECTION_KNOWLEDGE_CAP);
+                    continue;
+                }
                 // 目标 slot 按具体 eth 定（跨 eth 招募，按 eth 升序稳定取池）。
                 for (int32_t eth = 0; eth < n_eth && need > 0; ++eth) {
                     const int32_t pool = pool_slot_for_eth(eth);
-                    if (pool < 0) continue;
-                    const int64_t avail = std::max<int64_t>(0, _population.population[pool]);
-                    if (avail <= 0) continue;
                     const int32_t target_sig = signature_for_profession_ethnicity(p, eth);
-                    if (target_sig < 0) continue;
-                    if (target_sig == static_cast<int32_t>(_population.signature_id[pool]))
+                    EmploymentDiagnostic *slot = slot_diagnostic(
+                        eth, g, r, target_sig);
+                    auto drop = [&](int32_t reason) {
+                        if (slot != nullptr) slot->rejection_reason = reason;
+                    };
+                    if (pool < 0) {
+                        drop(EMPLOYMENT_REJECTION_POOL_MISSING);
                         continue;
-                    // Migration cost depends on the actual target ethnicity;
-                    // do not gate every pool by ethnicity 0's living cost.
-                    const int64_t transition_cost = living_cost_for_signature(
-                        cell, target_sig, -1, _saturation_count) / 8;
-                    if (expected_wage <= transition_cost) continue;
-                    const int64_t take = std::min({need, avail,
+                    }
+                    const int64_t avail = std::max<int64_t>(0, _population.population[pool]);
+                    if (avail <= 0) {
+                        drop(EMPLOYMENT_REJECTION_POOL_EMPTY);
+                        continue;
+                    }
+                    if (target_sig < 0) {
+                        drop(EMPLOYMENT_REJECTION_TARGET_SIGNATURE);
+                        continue;
+                    }
+                    if (target_sig == static_cast<int32_t>(_population.signature_id[pool])) {
+                        drop(EMPLOYMENT_REJECTION_SIGNATURE_SELF);
+                        continue;
+                    }
+                    if (candidate_allocation(eth, g, r, target_sig) <= 0) {
+                        drop(EMPLOYMENT_REJECTION_NO_ALLOCATION);
+                        continue;
+                    }
+                    const int64_t target_cost = living_cost_for_signature(
+                        cell, target_sig, -1, _saturation_count);
+                    const int64_t target_disposable = expected_wage - target_cost;
+                    const int64_t source_disposable =
+                        unemployed_disposable_income(pool);
+                    const int32_t source_profession = _signatures[
+                        _population.signature_id[pool]].profession_id;
+                    const int64_t improvement = improvement_q16(
+                        source_disposable, target_disposable);
+                    const bool desperate = _population.needs_satisfaction[pool] <
+                        _starvation_satisfaction_threshold_q16;
+                    const int64_t survival_floor = desperate
+                        ? mul_div_sat(target_cost,
+                            _starvation_satisfaction_threshold_q16, Q16_ONE,
+                            _saturation_count) : target_cost;
+                    int64_t &budget = unemployed_budget_by_eth[
+                        static_cast<size_t>(eth)];
+                    const bool eligible = expected_wage >= survival_floor &&
+                        improvement >= transition_hurdle_q16(
+                            source_profession, p);
+                    const int64_t proportional = eligible
+                        ? candidate_allocation(eth, g, r, target_sig) : 0;
+                    const int64_t take = std::min({need, avail, proportional,
                         is_knowledge_group(group)
                             ? std::max<int64_t>(0, knowledge_cap -
                                 local_knowledge_employment)
                             : need});
-                    if (take <= 0) continue;
+                    if (take <= 0) {
+                        drop(eligible
+                            ? EMPLOYMENT_REJECTION_ZERO_TAKE
+                            : (expected_wage < survival_floor
+                                ? EMPLOYMENT_REJECTION_SURVIVAL_FLOOR
+                                : EMPLOYMENT_REJECTION_HURDLE));
+                        continue;
+                    }
+                    if (slot != nullptr) {
+                        slot->take = take;
+                        slot->rejection_reason = EMPLOYMENT_REJECTION_NONE;
+                    }
                     bool drained = false;
                     const uint64_t preferred_family =
                         preferred_family_for_cohort(pool, 1, 0, p);
@@ -1034,6 +1937,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                             _population.employee_employed[dest], take, _saturation_count);
                     }
                     need -= take;
+                    budget = std::max<int64_t>(0, budget - take);
                 }
             }
         }
@@ -1062,6 +1966,19 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         employee_owner_sources.clear();
         owner_job_group_used.assign(static_cast<size_t>(last - first), uint8_t{0});
         int64_t local_merchant_population = 0;
+        auto owner_slot_for_profession = [&](int32_t profession) -> int32_t {
+            if (profession < 0) return -1;
+            for (int32_t eth = 0; eth < n_eth; ++eth) {
+                const int32_t signature = signature_for_profession_ethnicity(
+                    profession, eth);
+                if (signature < 0) continue;
+                const int32_t slot = _population.find_signature(
+                    cell, static_cast<uint32_t>(signature));
+                if (slot >= 0 && _population.owner_employed[slot] > 0)
+                    return slot;
+            }
+            return -1;
+        };
         _population.for_each_in_cell(cell, [&](int32_t slot) {
             if (is_merchant_slot(slot)) {
                 local_merchant_population = saturating_add(
@@ -1089,8 +2006,8 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             // post owners can take a materially better owner job; the matching
             // loop below still protects the final merchant in the cell.
             if (group.filled_owner > 0 && owner_target > 0) {
-                const int32_t source_slot = _population.find_signature(
-                    cell, static_cast<uint32_t>(group.owner_signature_id));
+                const int32_t source_slot = owner_slot_for_profession(
+                    _signatures[group.owner_signature_id].profession_id);
                 if (source_slot >= 0 && _population.owner_employed[source_slot] > 0) {
                     owner_job_sources.push_back(g);
                 }
@@ -1134,39 +2051,58 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                     group_owner_target[target_group_index - first]) continue;
             const Signature &target_signature =
                 _signatures[target_group.owner_signature_id];
+            const int32_t target_owner_profession = target_signature.profession_id;
             const int64_t target_income =
                 projected_owner_income[target_group_index - first];
             int32_t source_group_index = -1;
             int32_t source_slot = -1;
+            int32_t source_target_signature = -1;
             for (int32_t candidate : owner_job_sources) {
                 if (candidate == target_group_index ||
                     owner_job_group_used[candidate - first] != 0) continue;
                 const BuildingGroup &source_group = _buildings[candidate];
-                const Signature &source_signature =
-                    _signatures[source_group.owner_signature_id];
+                const int32_t source_profile_profession =
+                    _signatures[source_group.owner_signature_id].profession_id;
+                const int32_t source_slot_candidate = owner_slot_for_profession(
+                    source_profile_profession);
+                if (source_slot_candidate < 0) continue;
+                const int32_t source_signature_id = static_cast<int32_t>(
+                    _population.signature_id[source_slot_candidate]);
+                if (source_signature_id < 0 || source_signature_id >=
+                        static_cast<int32_t>(_signatures.size())) continue;
+                const Signature &source_signature = _signatures[source_signature_id];
+                const int32_t candidate_target_signature =
+                    signature_for_profession_ethnicity(target_owner_profession,
+                        source_signature.ethnicity_id);
+                if (candidate_target_signature < 0) continue;
                 const int64_t source_income =
                     projected_owner_income[candidate - first];
                 const bool source_is_knowledge = is_knowledge_group(source_group);
                 if (!knowledge_slot_available(target_group, 1,
                                               source_is_knowledge)) continue;
-                const int64_t transition_cost = source_signature.profession_id ==
-                        target_signature.profession_id ? 0 :
-                    std::max(living_cost_for_signature(
-                        cell, source_group.owner_signature_id, -1,
-                        _saturation_count) / 8, living_cost_for_signature(
-                        cell, target_group.owner_signature_id, -1,
-                        _saturation_count) / 8);
-                const int64_t required_target = saturating_add(
-                    source_income, transition_cost, _saturation_count);
-                if (source_signature.ethnicity_id != target_signature.ethnicity_id ||
-                    target_income < required_target) continue;
-                const int32_t slot = _population.find_signature(
-                    cell, static_cast<uint32_t>(source_group.owner_signature_id));
-                if (slot < 0 || _population.owner_employed[slot] <= 0) continue;
+                const int64_t source_cost = living_cost_for_signature(
+                    cell, source_group.owner_signature_id, -1,
+                    _saturation_count);
+                const int64_t improvement = improvement_q16(
+                    source_income, target_income);
+                if (improvement < transition_hurdle_q16(
+                        source_signature.profession_id,
+                        target_owner_profession)) continue;
                 if (source_signature.profession_id == _merchant_profession_id &&
                     local_merchant_population <= 1) continue;
+                if (source_signature.profession_id != target_signature.profession_id) {
+                    const int64_t source_population = std::max<int64_t>(1,
+                        _population.population[source_slot_candidate]);
+                    const int64_t source_reserve = saturating_mul(saturating_mul(
+                        source_cost, source_population, _saturation_count), 30,
+                        _saturation_count);
+                    const int64_t transferable = std::max<int64_t>(0,
+                        _population.funds[source_slot_candidate] - source_reserve);
+                    if (transferable < owner_entry_capital(target_group)) continue;
+                }
                 source_group_index = candidate;
-                source_slot = slot;
+                source_slot = source_slot_candidate;
+                source_target_signature = candidate_target_signature;
                 break;
             }
             if (source_group_index >= 0) {
@@ -1174,13 +2110,13 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 const bool source_is_knowledge = is_knowledge_group(source_group);
                 const Signature &source_signature =
                     _signatures[source_group.owner_signature_id];
-                if (source_signature.profession_id != target_signature.profession_id) {
+                if (source_signature.profession_id != target_owner_profession) {
                     bool source_drained = false;
                     const uint64_t preferred_family =
                         preferred_family_for_cohort(source_slot, 1, 0,
-                            target_signature.profession_id);
+                            target_owner_profession);
                     if (!move_cohort_population(source_slot, cell,
-                            target_group.owner_signature_id, 1, error,
+                            source_target_signature, 1, error,
                             &source_drained, preferred_family)) {
                         return false;
                     }
@@ -1189,7 +2125,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                             0, _population.owner_employed[source_slot] - 1);
                     }
                     const int32_t destination = _population.find_signature(
-                        cell, static_cast<uint32_t>(target_group.owner_signature_id));
+                        cell, static_cast<uint32_t>(source_target_signature));
                     if (destination < 0) {
                         error = "owner_job_reallocation_destination_missing";
                         return false;
@@ -1211,6 +2147,14 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                         local_knowledge_employment +
                         (is_knowledge_group(target_group) ? 1 : -1));
                 }
+                {
+                    int64_t realloc_sat = 0;
+                    if (owner_opportunity_quote(target_group, Q16_ONE, Q16_ONE,
+                            realloc_sat).survival_priority)
+                        ++_building_owner_survival_reallocations;
+                    _saturation_count = saturating_add(_saturation_count,
+                        realloc_sat, _saturation_count);
+                }
                 owner_job_group_used[source_group_index - first] = 1;
                 owner_job_group_used[target_group_index - first] = 1;
                 ++_building_owner_job_reallocations;
@@ -1223,39 +2167,73 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             // raise projected owner income and can attract labor out of a lower-
             // wage industry. Preserve ethnicity and move at most one person per
             // source/target group in an employment period.
+            int32_t selected_employee_target_signature = -1;
             for (const EmployeeOwnerSource &candidate : employee_owner_sources) {
                 if (owner_job_group_used[candidate.group - first] != 0 ||
                     _building_employee_filled[candidate.fill_index] <= 0) continue;
-                const int64_t transition_cost = candidate.profession ==
-                        target_signature.profession_id ? 0 :
-                    living_cost_for_signature(cell,
-                        target_group.owner_signature_id, -1,
-                        _saturation_count) / 8;
-                const int64_t required_target = saturating_add(
-                    candidate.income, transition_cost, _saturation_count);
-                if (target_income < required_target) continue;
                 const BuildingGroup &source_group = _buildings[candidate.group];
                 const bool source_is_knowledge = is_knowledge_group(source_group);
                 if (!knowledge_slot_available(target_group, 1,
                                               source_is_knowledge)) continue;
-                const int32_t source_signature_id =
-                    signature_for_profession_ethnicity(candidate.profession,
-                        target_signature.ethnicity_id);
-                if (source_signature_id < 0) continue;
-                const int32_t employee_slot = _population.find_signature(
-                    cell, static_cast<uint32_t>(source_signature_id));
-                if (employee_slot < 0 ||
-                    _population.employee_employed[employee_slot] <= 0) continue;
+                int32_t source_signature_id = -1;
+                int32_t employee_slot = -1;
+                int64_t source_cost = 0;
+                bool candidate_eligible = false;
+                // Employee cohorts retain their ethnicity while moving into
+                // the target owner profession. Search all local ethnicities;
+                // the first eligible slot is deterministic and no ethnicity
+                // equality with the building profile is required.
+                for (int32_t source_eth = 0; source_eth < n_eth; ++source_eth) {
+                    const int32_t candidate_source_signature =
+                        signature_for_profession_ethnicity(candidate.profession,
+                            source_eth);
+                    if (candidate_source_signature < 0) continue;
+                    const int32_t candidate_employee_slot = _population.find_signature(
+                        cell, static_cast<uint32_t>(candidate_source_signature));
+                    if (candidate_employee_slot < 0 ||
+                        _population.employee_employed[candidate_employee_slot] <= 0) continue;
+                    const int32_t candidate_target_signature =
+                        signature_for_profession_ethnicity(target_owner_profession,
+                            source_eth);
+                    if (candidate_target_signature < 0) continue;
+                    const int64_t candidate_source_cost = living_cost_for_signature(
+                        cell, candidate_source_signature, -1, _saturation_count);
+                    const int64_t candidate_current_disposable = candidate.income -
+                        std::max(candidate_source_cost,
+                            recent_expense_per_day(candidate_employee_slot));
+                    const int64_t candidate_improvement = improvement_q16(
+                        candidate_current_disposable, target_income);
+                    if (candidate_improvement < transition_hurdle_q16(
+                            candidate.profession, target_owner_profession)) continue;
+                    source_signature_id = candidate_source_signature;
+                    employee_slot = candidate_employee_slot;
+                    selected_employee_target_signature = candidate_target_signature;
+                    source_cost = candidate_source_cost;
+                    candidate_eligible = true;
+                    break;
+                }
+                if (!candidate_eligible) continue;
+                // Even a same-profession employee→owner move opens a new
+                // business position and therefore needs the target reserve;
+                // only the counter update differs from a profession change.
+                const int64_t source_population = std::max<int64_t>(1,
+                    _population.population[employee_slot]);
+                const int64_t source_reserve = saturating_mul(saturating_mul(
+                    source_cost, source_population, _saturation_count), 30,
+                    _saturation_count);
+                const int64_t transferable = std::max<int64_t>(0,
+                    _population.funds[employee_slot] - source_reserve);
+                if (transferable < owner_entry_capital(target_group)) continue;
 
                 const bool profession_change =
-                    candidate.profession != target_signature.profession_id;
+                    candidate.profession != target_owner_profession;
                 if (profession_change) {
                     bool source_drained = false;
                     const uint64_t preferred_family =
                         preferred_family_for_cohort(employee_slot, 1, 0,
-                            target_signature.profession_id);
+                            target_owner_profession);
                     if (!move_cohort_population(employee_slot, cell,
-                            target_group.owner_signature_id, 1, error,
+                            selected_employee_target_signature, 1, error,
                             &source_drained, preferred_family)) {
                         return false;
                     }
@@ -1265,7 +2243,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                                 _population.employee_employed[employee_slot] - 1);
                     }
                     const int32_t destination = _population.find_signature(
-                        cell, static_cast<uint32_t>(target_group.owner_signature_id));
+                        cell, static_cast<uint32_t>(selected_employee_target_signature));
                     if (destination < 0) {
                         error = "employee_owner_reallocation_destination_missing";
                         return false;
@@ -1287,6 +2265,14 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                     local_knowledge_employment = std::max<int64_t>(0,
                         local_knowledge_employment +
                         (is_knowledge_group(target_group) ? 1 : -1));
+                }
+                {
+                    int64_t realloc_sat = 0;
+                    if (owner_opportunity_quote(target_group, Q16_ONE, Q16_ONE,
+                            realloc_sat).survival_priority)
+                        ++_building_owner_survival_reallocations;
+                    _saturation_count = saturating_add(_saturation_count,
+                        realloc_sat, _saturation_count);
                 }
                 owner_job_group_used[candidate.group - first] = 1;
                 owner_job_group_used[target_group_index - first] = 1;

@@ -661,7 +661,16 @@ bool NativeEconomyRuntime::run_building_production_cell(
             int64_t desired = survival_food
                 ? survival_required_units(owner_slot, stable_need, _epoch_days,
                     retention_environment, _saturation_count)
-                : 0;
+                : (survival_clothing
+                    ? 0
+                    : desired_need_units(owner_slot, need_index, _epoch_days,
+                        need_index < static_cast<int32_t>(
+                            retention_need_environment.size())
+                            ? retention_need_environment[need_index] : Q16_ONE,
+                        need_index < static_cast<int32_t>(
+                            retention_need_composites.size())
+                            ? retention_need_composites[need_index] : Q16_ONE,
+                        _saturation_count));
             if (survival_clothing) {
                 const int64_t full_desired = survival_required_units(
                     owner_slot, stable_need, _epoch_days,
@@ -672,7 +681,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 retention_clothing_targets[owner] = std::max<int64_t>(
                     retention_clothing_targets[owner], desired);
             }
-            if (!survival_food && !survival_clothing) continue;
+            if (!survival_food && !survival_clothing && desired <= 0) continue;
             std::array<int64_t, MAX_VARIANTS_PER_NEED>
                 owner_variant_scores{};
             int64_t score_sum = 0;
@@ -727,8 +736,10 @@ bool NativeEconomyRuntime::run_building_production_cell(
             const int64_t numerator = saturating_add(saturating_mul(
                 desired, _survival_production_target_q16,
                 _saturation_count), Q16_ONE - 1, _saturation_count);
-            retention_food_targets[owner] = std::max<int64_t>(
-                numerator / Q16_ONE, produced_food_desired);
+            // Keep the configured survival retention fraction authoritative.
+            // Clamping to the amount of a preferred variant could retain an
+            // entire small production batch and remove the cash-backed lane.
+            retention_food_targets[owner] = numerator / Q16_ONE;
         }
     }
     const bool has_cell_signals =

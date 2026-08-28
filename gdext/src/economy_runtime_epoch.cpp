@@ -147,6 +147,12 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _building_investment_employment_gap = 0;
     _building_investment_employment_catchup_cells = 0;
     _building_investment_displacement_starts = 0;
+    _building_survival_priority_candidates = 0;
+    _building_owner_opportunity_quotes = 0;
+    _building_owner_opportunity_zero_feasible = 0;
+    _building_owner_survival_reallocations = 0;
+    _bullion_quota_pressure_clamps = 0;
+    _bullion_quote_overallocation_prevented = 0;
     _startup_demand_seed_count = 0;
     _startup_demand_touched_lanes = 0;
     _startup_demand_catalog_edges = 0;

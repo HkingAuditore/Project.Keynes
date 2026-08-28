@@ -10,9 +10,10 @@ v42 保留 v39 引入的生产计划 P∈[5,15] 与投资 I∈[10,30]
 当前 reader 只对 v45 交易订单显式把缺失交易税列迁移为零；v40 及更早 schema 全部明确拒绝。
 v41 仅向前兼容读。
 
-建筑决策严格区分事实锚与边际反事实：已安装组的报价按真实 owner/role fill 的最小 workforce
-capacity 缩放，收入优先采用上一结算期实际市场回执；空 owner、空职业填充或缺硬投入时不产生
-虚构满产能收入。绿地候选才使用结构化配方、冻结价格、财政支持比例和 bounded prior，并在
+建筑决策严格区分事实锚与边际反事实：实际生产仍按真实 owner/role fill 的最小 workforce
+capacity 执行，但就业、转职和投资使用一次性的建筑级 opportunity quote，不因空缺 owner 或
+当前填充率把收益压成零；报价收入优先采用上一结算期回执，并把自用商品按冻结零售价并入同一
+总收入。绿地候选才使用结构化配方、冻结价格、财政支持比例和 bounded prior，并在
 首栋/首个职业上受数量上限约束。金银矿共享 epoch 铸币配额：财政 reserve 后只以可支配的 cohort
 现金和国库现金计算发行基数，排除 fiscal/trade/expedition escrow；同格已装/在建铸币单位和至多四个
 可执行绿地候选共同分摊该池，避免 gold/silver 各自预占全额。科研采购同样读取财政 reserve 后的
@@ -549,9 +550,13 @@ scratch，不改变 PKEC 字节布局、状态哈希或调度阶段。
 ACTIVE 自营业建筑的 planned owner demand 始终等于完整物理业主席位，planned utilization 只降低
 每栋投入、产量和资源消耗；RECOVERY 才按 probe capacity 缩放业主需求，SUSPENDED/不可用组为零。
 `planned_owner_equivalent` 是利用率折算诊断，不是可裁撤岗位，因而 ACTIVE 的 `filled_owner` 高于该值
-属于正常状态。业主岗位流动的 `projected_owner_income_per_day` 按
-`max(planned owner demand, filled_owner)` 计算人均值；已消费的自留生存物资继续按冻结零售价计作
-实物生活收入，但不铸币。
+属于正常状态。`projected_owner_income_per_day` 保留实际/已结算的建筑组日收益口径；业主岗位流动使用建筑级
+`opportunity_owner_income_per_day`，两者都不按 owner 数平摊。已消费的自留商品继续按冻结零售价计入该总收入，
+但不铸币。
+失业池的岗位比较不读取迁移时按比例携带的存款、周期账目或收入 EMA：劳动/经营收益为零，只有按
+失业 profession 的冻结负所得税率、`survival_household` 日成本和当前财政履约率计算出的可兑现所得补贴
+进入保留收益。改善率以该来源保留收益为分母；目标机会收益已经包含生活成本，不能再用生活成本
+重复压低改善率。候选只读阶段与人口迁移 replay 复用同一个值，避免二次判断使用不同收入公式。
 之后、publish 之前另执行一次只裁不招的就业对账，使 committed `filled_owner`、role fill 与 cohort
 `owner_employed/employee_employed` 始终一致；新空缺留到下一周期正常招聘，不追溯改变本期生产或工资。
 失业池招聘完成后，仍有业主空缺的 ACTIVE 非服务建筑可从同民族、至少有一名业主的 ACTIVE 建筑
@@ -851,8 +856,9 @@ technology-unlocked building type, including types absent locally. Every catalog
 building has an explicit, positive construction recipe; an empty recipe is a
 codegen/audit failure rather than a zero-cost investment exception.
 Required capital includes construction goods, two market cycles of inputs, one
-cycle of base wages, and 30 days of owner livelihood. Every same-ethnicity
-cohort with enough cash after retaining its full 30-day livelihood reserve is
+cycle of base wages, and 30 days of owner livelihood. Every local
+profession/ethnicity cohort with enough cash after retaining its full 30-day
+livelihood reserve is
 eligible; the last local merchant is the only mobility exception. Projected
 owner income must exceed current per-capita income. The fixed-point income-gain
 ratio is the investment probability, sampled deterministically from
