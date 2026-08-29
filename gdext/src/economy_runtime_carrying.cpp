@@ -331,13 +331,19 @@ bool NativeEconomyRuntime::compile_carrying_catalog(const Dictionary &catalog,
         _carrying_family_weight.assign(
             kDefaultFamilyWeight, kDefaultFamilyWeight + CARRYING_FAMILY_COUNT);
     }
-    // Food-equivalent coefficients normalize one authored survival need to
-    // Q16_ONE, so the denominator is the number of food needs, not raw goods
-    // quantities (which may differ between grain, bread, or substitutes).
+    // Food-equivalent coefficients convert one goods subunit into the fraction
+    // of an authored survival need it covers, so the food-flow numerator is
+    // already measured in need units. The per-person denominator must therefore
+    // be the authored ration itself: the sum of base_qty_per_person across the
+    // survival food needs of the base living-cost plan. Counting needs instead
+    // of quantities silently assumed one full need unit per need per day, which
+    // overstated the ration by ~239x and pinned every settlement at maximum
+    // carrying load.
     _carrying_survival_food_per_person = 0;
     if (_living_cost_base_plan_id >= 0 &&
         _living_cost_base_plan_id < static_cast<int32_t>(_plans.size())) {
         int64_t food_need_count = 0;
+        int64_t ration_per_person = 0;
         int64_t sat = 0;
         const Plan &plan = _plans[static_cast<size_t>(_living_cost_base_plan_id)];
         for (int32_t n = 0; n < plan.need_count; ++n) {
@@ -346,11 +352,18 @@ bool NativeEconomyRuntime::compile_carrying_catalog(const Dictionary &catalog,
                 static_cast<size_t>(need.stable_id) < _survival_food_need_mask.size() &&
                 _survival_food_need_mask[static_cast<size_t>(need.stable_id)] != 0) {
                 ++food_need_count;
+                ration_per_person = saturating_add(ration_per_person,
+                    std::max<int64_t>(0, need.base_qty_per_person), sat);
             }
         }
-        if (food_need_count > 0)
+        if (ration_per_person > 0) {
+            _carrying_survival_food_per_person = ration_per_person;
+        } else if (food_need_count > 0) {
+            // Defensive fallback for a plan that authors no positive ration:
+            // keep one need unit per food need so capacity stays finite.
             _carrying_survival_food_per_person = saturating_mul(
-                food_need_count, Q16_ONE, sat);
+                food_need_count, GOODS_SCALE, sat);
+        }
     }
     return true;
 }
@@ -692,6 +705,8 @@ void NativeEconomyRuntime::append_carrying_capacity_fields(
             sat), 0, Q16_ONE) : 0;
     }
     out["carrying_schema_version"] = 2;
+    out["carrying_survival_food_per_person"] =
+        std::max<int64_t>(1, _carrying_survival_food_per_person);
     out["local_food_output_eq_per_day"] = local_daily;
     out["effective_food_supply_eq_per_day"] = effective_daily;
     out["food_stock_eq"] = stock_food_eq;
