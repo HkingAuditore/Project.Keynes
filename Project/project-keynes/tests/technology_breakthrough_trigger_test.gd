@@ -48,7 +48,9 @@ func _init() -> void:
 			"technology.practice.watershed_management",
 			"technology.practice.forest_management",
 			"technology.practice.chemical_process_control",
-			"technology.practice.energy_control"]:
+			"technology.practice.energy_control",
+			"technology.practice.hide_working",
+			"technology.contact.bast_fiber"]:
 		_require((trigger_ir.trigger_keys as PackedStringArray).has(trigger_key),
 			"new practice trigger compiles: %s" % trigger_key)
 	_require(bool(ext.configure_triggers(trigger_ir).get("ok", false)),
@@ -186,6 +188,68 @@ func _init() -> void:
 	var maritime_signal := catalog_signal_ids.find("breakthrough.maritime_operations")
 	_require((final_evidence.get("signal_ids", PackedInt32Array()) as PackedInt32Array).has(
 		maritime_signal), "maritime operations breakthrough is discoverable")
+
+	var hide_event := {
+		"event_ids": PackedInt64Array([4]),
+		"source_ids": PackedInt32Array([1]),
+		"days": PackedInt64Array([6]),
+		"event_types": PackedInt32Array([14]),
+		"payload_schemas": PackedInt32Array([7]),
+		"entity_handles": PackedInt64Array([handle]),
+		"group_handles": PackedInt64Array([0]),
+		"values": PackedInt64Array([1]),
+		"payload_i0": PackedInt64Array([28]),
+		"payload_i1": PackedInt64Array([1]),
+		"payload_i2": PackedInt64Array([0]),
+		"payload_i3": PackedInt64Array([1]),
+	}
+	_require(int(ext.submit_trigger_events(hide_event).get("accepted", 0)) == 1,
+		"hide-working practice event accepted")
+	_require(bool(ext.run_trigger_daily(6).get("ok", false)),
+		"hide-working threshold evaluates")
+	_require(int(ext.handoff_trigger_effects(32).get("handed_off", 0)) == 1,
+		"hide-working breakthrough hands off")
+	_require(int(ext.dispatch_effect_native_country().get(
+		"submitted_transactions", 0)) == 1,
+		"hide-working breakthrough submits a Country transaction")
+	_require(bool(ext.run_country_slice({"day_index": 7}).get("ok", false)),
+		"hide-working breakthrough commits")
+	_require(int(ext.ack_effect_native_country().get("acknowledged", 0)) == 1,
+		"hide-working breakthrough ACK completes")
+
+	var bast_contact_event := {
+		"event_ids": PackedInt64Array([5]),
+		"source_ids": PackedInt32Array([1]),
+		"days": PackedInt64Array([8]),
+		"event_types": PackedInt32Array([16]),
+		"payload_schemas": PackedInt32Array([7]),
+		"entity_handles": PackedInt64Array([handle]),
+		"group_handles": PackedInt64Array([0]),
+		"values": PackedInt64Array([1]),
+		"payload_i0": PackedInt64Array([10]),
+		"payload_i1": PackedInt64Array([1]),
+		"payload_i2": PackedInt64Array([0]),
+		"payload_i3": PackedInt64Array([1]),
+	}
+	_require(int(ext.submit_trigger_events(bast_contact_event).get("accepted", 0)) == 1,
+		"bast-fiber contact event accepted")
+	_require(bool(ext.run_trigger_daily(8).get("ok", false)),
+		"bast-fiber contact threshold evaluates")
+	_require(int(ext.handoff_trigger_effects(32).get("handed_off", 0)) == 1,
+		"bast-fiber contact hands off")
+	_require(int(ext.dispatch_effect_native_country().get(
+		"submitted_transactions", 0)) == 1,
+		"bast-fiber contact submits a Country transaction")
+	_require(bool(ext.run_country_slice({"day_index": 9}).get("ok", false)),
+		"bast-fiber contact commits")
+	_require(int(ext.ack_effect_native_country().get("acknowledged", 0)) == 1,
+		"bast-fiber contact ACK completes")
+	var material_evidence: Dictionary = facade.research_signal_snapshot(handle)
+	var material_signal_ids: PackedInt32Array = material_evidence.get(
+		"signal_ids", PackedInt32Array())
+	for material_signal_id in ["breakthrough.hide_working", "contact.bast_fiber"]:
+		_require(material_signal_ids.has(catalog_signal_ids.find(material_signal_id)),
+			"material practice evidence discovered: %s" % material_signal_id)
 
 	var next_event_id := 10
 	for weather_rule in range(7):

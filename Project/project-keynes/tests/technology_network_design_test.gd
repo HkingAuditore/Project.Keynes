@@ -236,6 +236,28 @@ func _init() -> void:
 	assert(_has_expected_building(fiber_twisting, "bast_wrap_shelter"))
 	assert((fiber_twisting.hard_prerequisite_ids as Array).has(
 		"tech.wild_flax_collection"))
+	assert(JSON.stringify(fiber_twisting.reveal_condition).contains(
+		"contact.bast_fiber"))
+	var flax_identification: Dictionary = node_by_id["tech.flax_identification"]
+	assert(JSON.stringify(flax_identification.reveal_condition).contains(
+		"contact.bast_fiber"))
+	var hide_scraping: Dictionary = node_by_id["tech.hide_scraping"]
+	assert(JSON.stringify(hide_scraping.reveal_condition).contains(
+		"breakthrough.hide_working"))
+	var hide_shelter: Resource = load(
+		"res://data/economy/buildings/hide_scraping_shelter.tres")
+	assert(hide_shelter != null and
+		not (hide_shelter.construction_good_ids as PackedStringArray).has("bast_fiber"))
+	var hunting_camp: Resource = load(
+		"res://data/economy/buildings/stone_age_hunting_camp.tres")
+	assert(hunting_camp != null and
+		not (hunting_camp.construction_good_ids as PackedStringArray).has(
+			"bast_fiber"))
+	var raw_hide_output := (hunting_camp.output_good_ids as PackedStringArray).find(
+		"raw_hide")
+	assert(raw_hide_output >= 0 and
+		int((hunting_camp.output_quantities_per_day as PackedInt64Array)[
+			raw_hide_output]) == 110)
 	var ground_stone: Dictionary = node_by_id["tech.ground_stone_tools"]
 	assert(_has_expected_building(ground_stone, "stone_collector"))
 

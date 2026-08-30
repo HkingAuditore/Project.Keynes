@@ -194,6 +194,7 @@ const NETWORK_SIGNAL_ROWS := [
 	["contact.rubber", "橡胶样本接触", ResearchSignalDefinitionScript.Kind.CONTACT, ResearchSignalDefinitionScript.Persistence.PERMANENT, ["category.contact"], [], [], true],
 	["contact.tin", "锡矿贸易接触", ResearchSignalDefinitionScript.Kind.CONTACT, ResearchSignalDefinitionScript.Persistence.PERMANENT, ["category.contact"], [], [], true],
 	["contact.maritime_vessel", "外国舰船或远洋船体接触", ResearchSignalDefinitionScript.Kind.CONTACT, ResearchSignalDefinitionScript.Persistence.PERMANENT, ["category.contact", "category.maritime"], [], [], true],
+	["contact.bast_fiber", "韧皮纤维实物接触", ResearchSignalDefinitionScript.Kind.CONTACT, ResearchSignalDefinitionScript.Persistence.PERMANENT, ["category.contact", "category.fiber_crop"], [], [], true],
 
 	["breakthrough.seed_saving", "留种实践突破", ResearchSignalDefinitionScript.Kind.TECH_BREAKTHROUGH, ResearchSignalDefinitionScript.Persistence.PERMANENT, ["category.breakthrough"], [], [], true],
 	["breakthrough.rainfed_adaptation", "雨养适应突破", ResearchSignalDefinitionScript.Kind.TECH_BREAKTHROUGH, ResearchSignalDefinitionScript.Persistence.PERMANENT, ["category.breakthrough"], [], [], true],
@@ -212,6 +213,7 @@ const NETWORK_SIGNAL_ROWS := [
 	["breakthrough.forest_management", "林业经营突破", ResearchSignalDefinitionScript.Kind.TECH_BREAKTHROUGH, ResearchSignalDefinitionScript.Persistence.PERMANENT, ["category.breakthrough"], [], [], true],
 	["breakthrough.chemical_process_control", "化工过程控制突破", ResearchSignalDefinitionScript.Kind.TECH_BREAKTHROUGH, ResearchSignalDefinitionScript.Persistence.PERMANENT, ["category.breakthrough"], [], [], true],
 	["breakthrough.energy_control", "能源控制突破", ResearchSignalDefinitionScript.Kind.TECH_BREAKTHROUGH, ResearchSignalDefinitionScript.Persistence.PERMANENT, ["category.breakthrough"], [], [], true],
+	["breakthrough.hide_working", "生皮处理实践", ResearchSignalDefinitionScript.Kind.TECH_BREAKTHROUGH, ResearchSignalDefinitionScript.Persistence.PERMANENT, ["category.breakthrough", "category.hunting"], [], [], true],
 ]
 
 ## Occupancy bit 0..31. Envelope/carrier/origin are generation+runtime inputs;
