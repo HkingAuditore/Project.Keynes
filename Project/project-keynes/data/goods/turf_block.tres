@@ -10,6 +10,5 @@ category_id = &"primitive_construction"
 substitution_category_ids = PackedStringArray("primitive_construction", "masonry_material")
 technology_tags = PackedStringArray("industry.primary", "tech.turf_cutting")
 default_price = 5000
-min_price = 500
-max_price = 50000
+reference_max_price = 250000
 

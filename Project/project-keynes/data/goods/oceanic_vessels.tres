@@ -8,5 +8,4 @@ category_id = &"oceanic_vessels"
 substitution_category_ids = PackedStringArray("oceanic_vessels")
 technology_tags = PackedStringArray("tech.application.oceanic_shipyard", "tech.application.method_steam_shipping", "tech.application.method_oceanic_shipyard_r7", "tech.automated_logistics", "tech.autonomous_logistics")
 default_price = 120000
-min_price = 12000
-max_price = 1200000
+reference_max_price = 6000000

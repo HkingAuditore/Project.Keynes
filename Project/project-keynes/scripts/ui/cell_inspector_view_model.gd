@@ -2452,6 +2452,11 @@ func _market_category(snapshot: Dictionary) -> Dictionary:
 	var business_demand_ema: PackedInt64Array = snapshot.get("business_demand_ema", PackedInt64Array())
 	var offered_supply_ema: PackedInt64Array = snapshot.get("offered_supply_ema", PackedInt64Array())
 	var cost_anchor: PackedInt32Array = snapshot.get("cost_anchor_price", PackedInt32Array())
+	var reference_ceiling: PackedInt32Array = snapshot.get("price_reference_ceiling", PackedInt32Array())
+	var base_ceiling: PackedInt32Array = snapshot.get("price_base_ceiling", PackedInt32Array())
+	var effective_ceiling: PackedInt32Array = snapshot.get("price_effective_ceiling", PackedInt32Array())
+	var target_ceiling: PackedInt32Array = snapshot.get("price_target_ceiling", PackedInt32Array())
+	var confirmation_days: PackedInt32Array = snapshot.get("price_ceiling_confirmation_days", PackedInt32Array())
 	var shortage_q16: PackedInt32Array = snapshot.get("shortage_q16", PackedInt32Array())
 	var technology_available: PackedByteArray = snapshot.get(
 		"good_technology_available", PackedByteArray())
@@ -2497,6 +2502,14 @@ func _market_category(snapshot: Dictionary) -> Dictionary:
 			{"id": "cost_anchor", "name": "成本锚", "value": _money_text(int(cost_anchor[i])) if i < cost_anchor.size() and cost_anchor[i] > 0 else "—"},
 			{"id": "shortage", "name": "短缺", "value": "%.1f%%" % shortage},
 		]
+		if i < reference_ceiling.size() and i < base_ceiling.size() and i < effective_ceiling.size() and i < target_ceiling.size() and i < confirmation_days.size():
+			detail_rows.append_array([
+				{"id": "reference_ceiling", "name": "参考上限", "value": _money_text(reference_ceiling[i])},
+				{"id": "base_ceiling", "name": "成本上限", "value": _money_text(base_ceiling[i])},
+				{"id": "effective_ceiling", "name": "有效上限", "value": _money_text(effective_ceiling[i])},
+				{"id": "target_ceiling", "name": "目标上限", "value": _money_text(target_ceiling[i])},
+				{"id": "ceiling_confirmation", "name": "短缺确认", "value": "%d 天" % confirmation_days[i]},
+			])
 		if inbound > 0:
 			detail_rows.append({"id": "trade_inbound", "name": "运入",
 				"value": _goods_unit_text(inbound)})
@@ -3287,6 +3300,8 @@ func _sum_i64(values: PackedInt64Array) -> int:
 
 
 func _money_text(subunits: int) -> String:
+	if subunits != 0 and absi(subunits) < 100:
+		return "%.4f" % (float(subunits) / 10000.0)
 	return UITokens.format_compact_number_cn(float(subunits) / 10000.0, 2)
 
 

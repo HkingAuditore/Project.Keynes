@@ -7,5 +7,4 @@ display_name = "科学仪器"
 category_id = &"instruments"
 technology_tags = PackedStringArray("tech.experimental_science")
 default_price = 58000
-min_price = 5800
-max_price = 580000
+reference_max_price = 2900000

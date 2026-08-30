@@ -1,5 +1,9 @@
 # Market V2 冻结周期、错峰与调度契约
 
+Price V6 / PKEC v49：只支持新游戏；旧经济存档显式拒绝，不重置旧价格后继续运行。
+没有新增持久化费用余数，价格／资金／物资尺度与冻结 N=1–5、P、I 调度保持不变。
+价格规则与验证详见 [定点计价与账本](economy-fixed-point-ledger-formulas.md)。
+
 高速档稳定合批和 `executed_stage` 归因规则见
 [运行时性能优化契约](runtime-performance-optimization-2026-07.md)。
 
@@ -344,3 +348,6 @@ it cannot preempt a production range already executing.
 `aggregate_publish/COMMIT` consumes sorted `population_changed_cells` after the
 committed summary swap, so worker partitioning cannot affect tier or naming
 order. Bootstrap and legacy restore are the only full-cell rebuild paths.
+
+
+Price V6 的动态上限、30 实际日确认及稀疏存档契约见 [实施与验收](price-v6-validation.md)。

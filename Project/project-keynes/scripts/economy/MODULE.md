@@ -1,7 +1,12 @@
 # economy — 原生阶层与本地市场模块
 
-> 状态：Market V2 / Price V4 ACTIVE（`production_income_consumption_v12`）。功能、守恒、确定性与
-> 200k/10M 性能门槛已通过。范围包含 cohort、商人所有权、消费、本地市场、需求 EMA/价格、环境需求、
+当前价格为 Native Price V5：无目录最低售价，仅保留正数值下界与既有最高价；
+积压削弱向上成本压力，小额账单合并后向上取整。GoodProfile 的旧 `min_price`
+和原生目录 `good_min_price` 均显式拒绝。PKEC v48 仅支持新游戏。
+GDScript 不模拟价格，界面将 0.01 以下金额显示为四位小数。
+
+> 历史基线：Market V2 / Price V4 ACTIVE（`production_income_consumption_v12`）。该版本的功能、守恒、确定性与
+> 200k/10M 性能门槛已通过，不代表 Price V5 的性能验收。范围包含 cohort、商人所有权、消费、本地市场、需求 EMA/价格、环境需求、
 > 替代品/互补 bundle、Inspector、BUILDING_GRAPH、显赫家族、冻结国家科技、国内 Trade V1、
 > 税收财政、PKEC v44 流式存档与 PKEJ 分层事件；国家身份、领土、科技、研究、税务政策和国库由
 > NativeCountryRuntime 权威持有；跨国贸易结算/关税事件、政治、年龄、微观家庭与谱系尚未接入；
@@ -327,11 +332,24 @@ derived target. Price V4 instead derives its pricing inventory target from at mo
 five-day settlement period, so a balanced current flow is not priced as a
 60-day shortage. No parallel inventory state is introduced.
 
-Catalog `min_price` and `max_price` are authoritative settlement bounds. Normal
-settlement clamps each updated market price to the per-good catalog interval,
-intersected with the positive `int32` numeric guards `[1, INT32_MAX]`. Per-day
-rise/fall limits remain the normal volatility control, and the producer cost
-anchor remains a dynamic soft floor when active supply confirms the cost signal.
+Catalog `min_price` is the only hard settlement bound; `max_price` is a soft ceiling.
+A rising price is damped twice before the clamp: by the rise fade
+`(anchor / max(anchor, price))^2` applied inside `next_price_v4`, then by the remaining
+catalog headroom `(max - price) / (max - min)`. With `u = max(anchor, price) / anchor`
+the fade integrates to `u^3 = 3 * max_price_rise_q16 * days`, so the price-to-anchor
+ratio grows like the cube root of elapsed time and the approach to the ceiling is
+asymptotic. A chronic shortage keeps a live price signal instead of pinning at the
+bound, while long-run drift stays bounded. Falls keep the hard floor because the
+`int32` guard `[1, INT32_MAX]` alone still lets prices collapse to one sub-unit.
+`estimate_trade_price` shares the settlement shaping so a planned destination price can
+never exceed a price settlement can reach. Per-day rise/fall limits remain the normal
+volatility control, and the producer cost anchor remains a dynamic soft floor when
+active supply confirms the cost signal.
+
+`price_cap_hits` stays as the union counter for existing consumers. New
+`price_rate_clamp_hits`, `price_rise_fade_hits`, `price_headroom_damp_hits`, and
+`price_catalog_bound_hits` separate the four shaping events so the fade can be verified
+independently of the rate limit and the catalog bound.
 
 Production utilization uses household demand plus sparse business demand.
 Business-only tools and intermediates recover from the industrial probe floor

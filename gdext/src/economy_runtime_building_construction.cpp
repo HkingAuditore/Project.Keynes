@@ -57,6 +57,7 @@ bool NativeEconomyRuntime::plan_construction_materials(
         plan.good_ids.push_back(good);
         plan.quantities.push_back(quantity);
     };
+    GoodsBill construction_bill;
     const int32_t cost_factor = std::max<int32_t>(1, cost_factor_q16);
     for (int64_t unit = 0; unit < count; ++unit) {
         for (int32_t group_index = 0; group_index < type.construction_count;
@@ -105,7 +106,7 @@ bool NativeEconomyRuntime::plan_construction_materials(
                         const int64_t price = _market.price[_market.index(
                             market, candidate.good_id)];
                         plan.total_cost = saturating_add(plan.total_cost,
-                            mul_div_sat(physical, price, GOODS_SCALE, sat), sat);
+                            construction_bill.add(physical, price, sat), sat);
                         const int64_t credited = mul_div_sat(
                             physical, efficiency, Q16_ONE, sat);
                         remaining = std::max<int64_t>(0,
@@ -143,9 +144,7 @@ bool NativeEconomyRuntime::plan_construction_materials(
                 }
                 const int64_t price = _market.price[_market.index(
                     market, candidate.good_id)];
-                const int64_t effective_cost = mul_div_sat(
-                    physical, price, GOODS_SCALE,
-                    sat);
+                const int64_t effective_cost = goods_cost(physical, price, sat);
                 const bool preferred_candidate = candidate.good_id ==
                     preferred.good_id;
                 const bool selected_preferred = selected_good == preferred.good_id;
@@ -166,8 +165,9 @@ bool NativeEconomyRuntime::plan_construction_materials(
             (*virtual_stock)[static_cast<size_t>(selected_good)] -=
                 selected_quantity;
             add_selection(selected_good, selected_quantity);
-            plan.total_cost = saturating_add(plan.total_cost, selected_cost,
-                sat);
+            plan.total_cost = saturating_add(plan.total_cost,
+                construction_bill.add(selected_quantity,
+                    _market.price[_market.index(market, selected_good)], sat), sat);
         }
     }
     plan.feasible = true;
@@ -286,6 +286,7 @@ bool NativeEconomyRuntime::apply_treasury_sponsored_build_command(
     std::vector<int64_t> treasury_used(good_ids.size(), 0);
     std::vector<int64_t> market_used(good_ids.size(), 0);
     int64_t total_cash = 0;
+    GoodsBill treasury_bill;
     int64_t treasury_goods_total = 0;
     int64_t market_goods_total = 0;
     for (size_t i = 0; i < good_ids.size(); ++i) {
@@ -296,9 +297,7 @@ bool NativeEconomyRuntime::apply_treasury_sponsored_build_command(
         const int64_t lane = _market.index(market, good_ids[i]);
         if (_market.stock[lane] < market_used[i])
             return reject("construction_materials_insufficient");
-        total_cash = saturating_add(total_cash, mul_div_sat(
-            market_used[i], _market.price[lane], GOODS_SCALE,
-            _saturation_count), _saturation_count);
+        total_cash = saturating_add(total_cash, treasury_bill.add(market_used[i], _market.price[lane], _saturation_count), _saturation_count);
         treasury_goods_total = saturating_add(
             treasury_goods_total, treasury_used[i], _saturation_count);
         market_goods_total = saturating_add(

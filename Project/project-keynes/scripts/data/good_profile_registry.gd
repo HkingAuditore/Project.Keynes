@@ -67,7 +67,6 @@ static func compile_native_columns() -> Dictionary:
 	var ids := PackedStringArray()
 	var default_prices := PackedInt32Array()
 	var initial_stock := PackedInt64Array()
-	var min_prices := PackedInt32Array()
 	var max_prices := PackedInt32Array()
 	var adjust_q16 := PackedInt32Array()
 	var demand_elasticity := PackedInt32Array()
@@ -101,6 +100,10 @@ static func compile_native_columns() -> Dictionary:
 	var semantic_tag_offsets := PackedInt32Array([0])
 	var semantic_tags := PackedStringArray()
 	for p in _ordered:
+		if p.has_meta(&"obsolete_max_price"):
+			return {"ok": false, "reason": "obsolete max_price in good: %s" % p.get("id")}
+		if p.has_meta(&"obsolete_min_price"):
+			return {"ok": false, "reason": "obsolete min_price in good: %s" % p.get("id")}
 		var stable_id := String(p.get("id"))
 		var category_id := String(p.get("category_id"))
 		var configured_substitution_categories: PackedStringArray = p.get(
@@ -156,8 +159,7 @@ static func compile_native_columns() -> Dictionary:
 		semantic_tag_offsets.append(semantic_tags.size())
 		default_prices.append(int(p.get("default_price")))
 		initial_stock.append(int(p.get("initial_stock")))
-		min_prices.append(int(p.get("min_price")))
-		max_prices.append(int(p.get("max_price")))
+		max_prices.append(int(p.get("reference_max_price")))
 		adjust_q16.append(int(p.get("price_adjust_q16")))
 		demand_elasticity.append(int(p.get("demand_price_elasticity_q16")))
 		var wealth_elasticity := int(p.get("household_wealth_elasticity_q16"))
@@ -211,8 +213,7 @@ static func compile_native_columns() -> Dictionary:
 		"good_semantic_tags": semantic_tags,
 		"good_default_price": default_prices,
 		"good_initial_stock": initial_stock,
-		"good_min_price": min_prices,
-		"good_max_price": max_prices,
+		"good_reference_max_price": max_prices,
 		"good_price_adjust_q16": adjust_q16,
 		"good_demand_price_elasticity_q16": demand_elasticity,
 		"good_household_wealth_elasticity_q16": household_wealth_elasticity_q16,

@@ -10,5 +10,4 @@ category_id = &"brine"
 substitution_category_ids = PackedStringArray("brine", "salt_feedstock")
 technology_tags = PackedStringArray("industry.primary", "tech.application.brine_gathering_basin")
 default_price = 4000
-min_price = 400
-max_price = 40000
+reference_max_price = 200000

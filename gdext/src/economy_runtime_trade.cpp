@@ -12,8 +12,6 @@ namespace pk {
 
 namespace {
 using Clock = std::chrono::steady_clock;
-constexpr int32_t PRICE_NUMERIC_GUARD_MIN = 1;
-constexpr int32_t PRICE_NUMERIC_GUARD_MAX = std::numeric_limits<int32_t>::max();
 double elapsed_ms(const Clock::time_point &start) {
     return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
 }
@@ -348,10 +346,15 @@ int32_t NativeEconomyRuntime::estimate_trade_price(
         market, good, _market.demand_ema[index], std::max<int64_t>(0, stock_after),
         _market.last_shortage_q16[index], signal, sat);
     bool rate_clamped = false;
-    const int64_t next = next_price_v4(good, _market.price[index], pressure,
-        std::max(1, _epoch_days), sat, rate_clamped);
-    return static_cast<int32_t>(std::clamp<int64_t>(
-        next, PRICE_NUMERIC_GUARD_MIN, PRICE_NUMERIC_GUARD_MAX));
+    bool rise_damped = false;
+    const int64_t current_price = _market.price[index];
+    const int64_t next = next_price_v6(good, current_price, pressure,
+        std::max(1, _epoch_days), sat, rate_clamped, rise_damped);
+    // Share the settlement shaping so a planned destination price can never
+    // exceed a price the settlement path is actually able to reach.
+    return static_cast<int32_t>(shape_price(
+        market_price_ceiling(market, good, pressure.adjustment_anchor_price),
+        current_price, next, sat, nullptr, nullptr));
 }
 
 int64_t NativeEconomyRuntime::trade_relief_pressure_q16(
@@ -506,10 +509,8 @@ NativeEconomyRuntime::TradeQuote NativeEconomyRuntime::make_trade_quote(
     TradeQuote quote;
     quote.source_price = std::max(0, source_price);
     quote.destination_price = std::max(0, destination_price);
-    quote.base = mul_div_sat(std::max<int64_t>(0, quantity),
-        quote.source_price, GOODS_SCALE, saturation_count);
-    quote.retail = mul_div_sat(std::max<int64_t>(0, quantity),
-        quote.destination_price, GOODS_SCALE, saturation_count);
+    quote.base = goods_cost(std::max<int64_t>(0, quantity), quote.source_price, saturation_count);
+    quote.retail = goods_cost(std::max<int64_t>(0, quantity), quote.destination_price, saturation_count);
     const int32_t source_country = source >= 0 &&
             source < static_cast<int32_t>(_epoch_cell_country.size())
         ? _epoch_cell_country[static_cast<size_t>(source)] : -1;
@@ -757,8 +758,7 @@ bool NativeEconomyRuntime::route_trade_source(
         int64_t density_profit = line_quote.combined_profit;
         if (relief_route && density_profit <= 0) {
             density_profit = std::max<int64_t>(1, mul_div_sat(
-                mul_div_sat(quantity, std::max<int64_t>(1, source_price),
-                            GOODS_SCALE, sat),
+                goods_cost(quantity, std::max<int64_t>(1, source_price), sat),
                 std::max<int64_t>(1, relief_q16), Q16_ONE, sat));
         }
         TradeCandidate candidate;

@@ -435,6 +435,7 @@ void NativeEconomyRuntime::MarketStore::clear() {
     demand_ema.clear();
     last_shortage_q16.clear();
     cell_to_market.clear();
+    price_ceilings.clear();
 }
 
 } // namespace pk

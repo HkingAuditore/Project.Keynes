@@ -441,8 +441,8 @@ func _run() -> void:
 	var person_before_save: Dictionary = ext.get_notable_person_snapshot(person_handle)
 	var hash_before := int(ext.get_economy_state_hash())
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
-	_expect("PKEC v47 save begins", bool(save_begin.get("ok", false))
-		and int(save_begin.get("schema_version", 0)) == 47)
+	_expect("PKEC v49 save begins", bool(save_begin.get("ok", false))
+		and int(save_begin.get("schema_version", 0)) == 49)
 	var chunks: Array[PackedByteArray] = []
 	for _i in 512:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)

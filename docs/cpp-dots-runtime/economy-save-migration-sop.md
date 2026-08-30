@@ -1,5 +1,9 @@
 # 经济存档、catalog migration 与内容扩展 SOP
 
+Price V6 / PKEC v49：只支持新游戏；旧经济存档显式拒绝，不重置旧价格后继续运行。
+没有新增持久化费用余数，价格／资金／物资尺度与冻结 N=1–5、P、I 调度保持不变。
+价格规则与验证详见 [定点计价与账本](economy-fixed-point-ledger-formulas.md)。
+
 ## PKEC v47（当前 writer；v46/v45/v44/v43/v42/v41 向前兼容读）
 
 PKEC v47 在建筑业务状态尾部追加九个 `i64`：实际市场回执、铸币回执、生产者托底回执、
@@ -419,3 +423,6 @@ PKEC v22/v23 remain readable. After population restore they rebuild tiers and
 allocate names deterministically in ascending cell order with
 `name_roll_generation=0`. PKCN still restores before PKEC.
 
+
+
+Price V6 的动态上限、30 实际日确认及稀疏存档契约见 [实施与验收](price-v6-validation.md)。

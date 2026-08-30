@@ -10,5 +10,4 @@ technology_tags = PackedStringArray("tech.stone_knapping")
 production_quality_level = 1
 production_efficiency_q16 = 32768
 default_price = 75000
-min_price = 7500
-max_price = 210000
+reference_max_price = 3750000

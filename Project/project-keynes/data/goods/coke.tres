@@ -8,5 +8,4 @@ category_id = &"coke"
 substitution_category_ids = PackedStringArray("coke")
 technology_tags = PackedStringArray("tech.coke_smelting", "tech.application.method_coke_ovens_r9")
 default_price = 13000
-min_price = 1300
-max_price = 130000
+reference_max_price = 650000

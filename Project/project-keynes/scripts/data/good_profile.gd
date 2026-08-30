@@ -43,8 +43,7 @@ extends Resource
 # reference is allowed: adding a good is a data-resource-only operation.
 @export var default_price: int = 10000
 @export var initial_stock: int = 0
-@export var min_price: int = 1
-@export var max_price: int = 100000000
+@export var reference_max_price: int = 100000000
 @export var price_adjust_q16: int = 2048
 
 ## Market V2 demand and next-day price formation. Inventory targets multiply
@@ -73,3 +72,13 @@ extends Resource
 ## Producer output is purchased by local merchants at retail price multiplied
 ## by this factor. 62259 is deterministic Q16 for the default 95% price.
 @export_range(0, 65536, 1) var merchant_buy_price_factor_q16: int = 62259
+
+# Capture obsolete resource properties so catalog compilation fails explicitly.
+func _set(property: StringName, _value: Variant) -> bool:
+	if property == &"max_price":
+		set_meta(&"obsolete_max_price", true)
+		return true
+	if property == &"min_price":
+		set_meta(&"obsolete_min_price", true)
+		return true
+	return false

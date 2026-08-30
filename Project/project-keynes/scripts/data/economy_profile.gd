@@ -30,6 +30,10 @@ extends Resource
 ## work plus previous-cycle machine timing. 5 is the late-game stagger cap, not
 ## a start-of-game fixed period. 0 is ignored and treated as 5; the retired
 ## 50/334 auto-fast-forward path is not restored.
+## Price V6: continuous effective-shortage confirmation and daily basis-point rates.
+@export_range(1, 365, 1) var price_ceiling_confirm_days: int = 30
+@export_range(1, 100, 1) var price_ceiling_expand_bp: int = 50
+@export_range(1, 100, 1) var price_ceiling_recover_bp: int = 10
 @export_range(1, 5, 1) var market_cycle_days: int = 5
 @export_range(1, 5, 1) var market_min_cycle_days: int = 1
 @export_range(1, 5, 1) var market_max_cycle_days: int = 5
@@ -325,6 +329,9 @@ func to_native_profile() -> Dictionary:
 			building_finalize_cells_per_slice,
 		"building_output_efficiency_q16": building_output_efficiency_q16,
 		"food_building_output_efficiency_q16": food_building_output_efficiency_q16,
+		"price_ceiling_confirm_days": price_ceiling_confirm_days,
+		"price_ceiling_expand_bp": price_ceiling_expand_bp,
+		"price_ceiling_recover_bp": price_ceiling_recover_bp,
 		"market_cycle_days": market_cycle_days,
 		"market_min_cycle_days": market_min_cycle_days,
 		"market_max_cycle_days": market_max_cycle_days,

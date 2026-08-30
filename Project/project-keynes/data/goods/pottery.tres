@@ -8,5 +8,4 @@ category_id = &"pottery"
 substitution_category_ids = PackedStringArray("pottery")
 technology_tags = PackedStringArray("tech.application.open_pottery_hearth", "tech.application.pottery_kiln", "tech.application.method_pottery_kiln_r3")
 default_price = 11000
-min_price = 1100
-max_price = 110000
+reference_max_price = 550000

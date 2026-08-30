@@ -488,7 +488,7 @@ func _make_trade_world(catalog: Dictionary, seed: int, tech_ids: PackedStringArr
 			prices[cell * goods.size() + good] = int(
 				(catalog.good_default_price as PackedInt32Array)[good])
 	stock[gathered] = 100000000
-	prices[gathered] = int((catalog.good_min_price as PackedInt32Array)[gathered])
+	prices[gathered] = maxi(1, int((catalog.good_default_price as PackedInt32Array)[gathered]) / 10)
 	var boot: Dictionary = ext.bootstrap_economy({
 		"cell_indices": PackedInt32Array([0, 2]),
 		"signature_ids": PackedInt32Array([merchant, merchant]),

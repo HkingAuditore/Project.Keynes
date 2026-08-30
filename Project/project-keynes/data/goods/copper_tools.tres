@@ -12,5 +12,4 @@ technology_tags = PackedStringArray("tech.copper_annealing")
 production_quality_level = 1
 production_efficiency_q16 = 42598
 default_price = 45000
-min_price = 4500
-max_price = 180000
+reference_max_price = 2250000

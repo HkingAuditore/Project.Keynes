@@ -7,5 +7,4 @@ display_name = "绝缘电缆"
 category_id = &"electrical"
 technology_tags = PackedStringArray("tech.electrification")
 default_price = 26000
-min_price = 2600
-max_price = 260000
+reference_max_price = 1300000

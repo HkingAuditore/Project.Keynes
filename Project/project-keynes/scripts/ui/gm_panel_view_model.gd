@@ -419,6 +419,8 @@ static func _convert_value(value, spec: Dictionary) -> Dictionary:
 
 
 static func _money(value: int) -> String:
+	if value != 0 and absi(value) < 100:
+		return "%.4f" % (float(value) / 10000.0)
 	return "%.2f" % (float(value) / 10000.0)
 
 

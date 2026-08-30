@@ -24,6 +24,15 @@ void NativeEconomyRuntime::register_builtin_formulas() {
 
 
 bool NativeEconomyRuntime::configure_profile(const Dictionary &profile, std::string &error) {
+    _price_ceiling_confirm_days = dict_num<int32_t>(profile, "price_ceiling_confirm_days", 30);
+    _price_ceiling_expand_bp = dict_num<int32_t>(profile, "price_ceiling_expand_bp", 50);
+    _price_ceiling_recover_bp = dict_num<int32_t>(profile, "price_ceiling_recover_bp", 10);
+    if (_price_ceiling_confirm_days < 1 || _price_ceiling_confirm_days > 365 ||
+        _price_ceiling_expand_bp < 1 || _price_ceiling_expand_bp > 100 ||
+        _price_ceiling_recover_bp < 1 || _price_ceiling_recover_bp > 100) {
+        error = "price_ceiling_profile_invalid";
+        return false;
+    }
     _cells_per_slice = std::clamp(dict_num<int32_t>(profile, "cells_per_slice", 256), 1, 65536);
     _auto_slice_by_scale = dict_num<bool>(profile, "auto_slice_by_scale", true);
     const int32_t configured_building_cells = dict_num<int32_t>(

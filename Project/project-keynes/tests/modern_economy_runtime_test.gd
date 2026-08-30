@@ -159,11 +159,11 @@ func _household_good_demand(compiled: Dictionary, funds: int, wheat_price: int) 
 	var goods: PackedStringArray = catalog.good_ids
 	var wheat := goods.find("wheat_grain")
 	var prices: PackedInt32Array = catalog.good_default_price.duplicate()
-	var maximums: PackedInt32Array = catalog.good_max_price.duplicate()
+	var maximums: PackedInt32Array = catalog.good_reference_max_price.duplicate()
 	prices[wheat] = wheat_price
 	maximums[wheat] = maxi(int(maximums[wheat]), wheat_price)
 	catalog.good_default_price = prices
-	catalog.good_max_price = maximums
+	catalog.good_reference_max_price = maximums
 	var ext := _new_ext(catalog)
 	var profile: Dictionary = load("res://data/economy/default_economy.tres").to_native_profile()
 	profile.market_cycle_days = 1

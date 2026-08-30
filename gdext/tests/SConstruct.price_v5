@@ -1,0 +1,13 @@
+from pathlib import Path
+root = Path(Dir('.').abspath).parent
+SConsignFile('../../tmp/price_v5/numeric.sconsign.dblite')
+env = Environment()
+env.Append(CPPPATH=[str(root/'src'), str(root/'godot-cpp/include'),
+                   str(root/'godot-cpp/gen/include'), str(root/'godot-cpp/gdextension')])
+if env['PLATFORM'] == 'win32':
+    env.Append(CCFLAGS=['/std:c++17', '/EHsc', '/O2'])
+else:
+    env.Append(CCFLAGS=['-std=c++17', '-O2'])
+obj = env.Object('../../tmp/price_v5/numeric_math', '../src/economy_runtime_math.cpp')
+test = env.Object('../../tmp/price_v5/numeric_test', 'price_v5_numeric_test.cpp')
+Default(env.Program('../../tmp/price_v5/price_v5_numeric_test', [obj, test]))

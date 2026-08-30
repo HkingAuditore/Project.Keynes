@@ -337,9 +337,7 @@ int32_t NativeEconomyRuntime::select_startup_producer(
                 break;
             }
             operating_cost = saturating_add(operating_cost,
-                mul_div_sat(physical,
-                    _market.price[_market.index(market, input_good)],
-                    GOODS_SCALE, sat), sat);
+                goods_cost(physical, _market.price[_market.index(market, input_good)], sat), sat);
         }
         if (operating_cost == std::numeric_limits<int64_t>::max()) continue;
         for (int32_t role = 0; role < type.employee_count; ++role) {
@@ -358,9 +356,7 @@ int32_t NativeEconomyRuntime::select_startup_producer(
                 break;
             }
             construction_cost = saturating_add(construction_cost,
-                mul_div_sat(physical,
-                    _market.price[_market.index(market, material)],
-                    GOODS_SCALE, sat), sat);
+                goods_cost(physical, _market.price[_market.index(market, material)], sat), sat);
         }
         if (construction_cost == std::numeric_limits<int64_t>::max()) continue;
         const int64_t revenue = mul_div_sat(output_quantity,
@@ -1187,6 +1183,32 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
         };
         bool eligible_but_unfunded = false;
         const int32_t market = _market.cell_to_market[cell];
+        // Prices, environment and household-good factors stay frozen throughout
+        // this cell's candidate evaluation. living_cost_for_signature depends
+        // only on the plan and ethnicity, not on the prospective building.
+        // Reset per cell (including continuation re-entry), so no generation or
+        // catalog-index cache can survive into another market or settlement.
+        thread_local std::vector<int64_t> investment_living_cost_cache;
+        investment_living_cost_cache.assign(_plans.size() * _ethnicity_ids.size(), -1);
+        auto investment_living_cost = [&](int32_t signature_id, int64_t &sat) -> int64_t {
+            if (signature_id < 0 || signature_id >= static_cast<int32_t>(_signatures.size()))
+                return 0;
+            const Signature &signature = _signatures[signature_id];
+            if (signature.plan_id < 0 || signature.plan_id >= static_cast<int32_t>(_plans.size()))
+                return 0;
+            const size_t key = static_cast<size_t>(signature.plan_id) * _ethnicity_ids.size() +
+                static_cast<size_t>(signature.ethnicity_id);
+            if (key >= investment_living_cost_cache.size())
+                return living_cost_for_signature(cell, signature_id, -1, sat);
+            int64_t &cached = investment_living_cost_cache[key];
+            if (cached >= 0) return cached;
+            const int64_t saturation_before = sat;
+            const int64_t value = living_cost_for_signature(cell, signature_id, -1, sat);
+            // Saturation diagnostics are per evaluation. Exceptional values are
+            // recomputed, preserving their original event counts as well.
+            if (sat == saturation_before) cached = value;
+            return value;
+        };
         const int32_t country = _epoch_cell_country.size() ==
                 static_cast<size_t>(_cell_count)
             ? _epoch_cell_country[static_cast<size_t>(cell)] : -1;
@@ -1382,10 +1404,19 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
         // construction_cost, every sponsor search for this (cell, type) is
         // guaranteed to fail; the gate below skips such types after materials
         // pricing and reports them exactly like sponsor-capital rejects.
+        // Use the same protected 30-day livelihood reserve as
+        // find_entrepreneur_source. Raw cash is too weak a bound at tiny prices:
+        // it admits hundreds of bundles whose sponsors cannot transfer a tick.
         int64_t cell_max_sponsor_funds = 0;
         _population.for_each_in_cell(cell, [&](int32_t slot) {
-            cell_max_sponsor_funds = std::max(
-                cell_max_sponsor_funds, _population.funds[slot]);
+            const int64_t funds = std::max<int64_t>(0, _population.funds[slot]);
+            int64_t probe_sat = 0; // same non-authoritative quote as the sponsor search
+            const int64_t living_cost = investment_living_cost(
+                static_cast<int32_t>(_population.signature_id[slot]), probe_sat);
+            const int64_t reserve = saturating_mul(saturating_mul(living_cost,
+                std::max<int64_t>(0, _population.population[slot]), probe_sat), 30, probe_sat);
+            cell_max_sponsor_funds = std::max(cell_max_sponsor_funds,
+                std::max<int64_t>(0, funds - reserve));
         });
         int64_t cell_credit_construction_cover = 0;
         if (_merchant_credit_runtime_mode == 2) {
@@ -2017,13 +2048,10 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 input_coverage_bound_q16 = std::min<int64_t>(
                     input_coverage_bound_q16,
                     std::clamp<int64_t>(soft_bound_q16, 0, Q16_ONE));
-                daily_input_cost = saturating_add(daily_input_cost, mul_div_sat(
-                    input.quantity, best_price, GOODS_SCALE, _saturation_count),
+                daily_input_cost = saturating_add(daily_input_cost, goods_cost(input.quantity, best_price, _saturation_count),
                     _saturation_count);
                 daily_input_base_cost = saturating_add(
-                    daily_input_base_cost, mul_div_sat(
-                        input.quantity, best_base_price, GOODS_SCALE,
-                        _saturation_count), _saturation_count);
+                    daily_input_base_cost, goods_cost(input.quantity, best_base_price, _saturation_count), _saturation_count);
             }
             if (daily_input_cost == std::numeric_limits<int64_t>::max()) {
                 reject(INVESTMENT_REJECTION_INPUT_CHAIN);
@@ -2153,8 +2181,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 const int32_t target_signature = signature_for_profession_ethnicity(
                     type.owner_profession_id, ethnicity);
                 if (target_signature < 0) continue;
-                const int64_t living_cost = living_cost_for_signature(
-                    cell, target_signature, -1, _saturation_count);
+                const int64_t living_cost = investment_living_cost(target_signature, _saturation_count);
                 const int64_t owner_livelihood = saturating_mul(
                     living_cost, std::max<int64_t>(1,
                         type.owner_slots_per_building), _saturation_count);
@@ -2405,7 +2432,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     std::max<int64_t>(1, type.owner_slots_per_building),
                     type_id, had_eligible_sponsor, willing_population,
                     transferable_capital, income_improvement_q16,
-                    sponsor_family_handle);
+                    sponsor_family_handle, &investment_living_cost_cache);
                 bool uses_merchant_credit = false;
                 if (sponsor < 0 && _merchant_credit_runtime_mode == 2 &&
                     construction_cost > 0) {
@@ -2439,7 +2466,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                             std::max<int64_t>(1, type.owner_slots_per_building),
                             type_id, credit_sponsor_eligible, willing_population,
                             transferable_capital, income_improvement_q16,
-                            sponsor_family_handle);
+                            sponsor_family_handle, &investment_living_cost_cache);
                         had_eligible_sponsor = had_eligible_sponsor ||
                             credit_sponsor_eligible;
                         uses_merchant_credit = sponsor >= 0;

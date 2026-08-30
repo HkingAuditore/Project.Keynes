@@ -462,7 +462,7 @@ func _run() -> void:
 	_expect("building PKCN save completes", bool(ext.end_country_save().get("ok", false)))
 	var chunks: Array[PackedByteArray] = []
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
-	_expect("building v47 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 47)
+	_expect("building v49 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 49)
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty(): break
@@ -1090,11 +1090,11 @@ func _test_active_owner_income_reallocation(source_catalog: Dictionary,
 	var goods: PackedStringArray = catalog.good_ids
 	var tool_good := goods.find("chipped_stone_tools")
 	var prices: PackedInt32Array = catalog.good_default_price.duplicate()
-	var max_prices: PackedInt32Array = catalog.good_max_price.duplicate()
+	var max_prices: PackedInt32Array = catalog.good_reference_max_price.duplicate()
 	prices[tool_good] = 1000000000
 	max_prices[tool_good] = 1000000000
 	catalog.good_default_price = prices
-	catalog.good_max_price = max_prices
+	catalog.good_reference_max_price = max_prices
 	var ext := _new_ext(catalog)
 	_expect("owner-job mobility country bootstraps",
 		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 431))
@@ -1171,7 +1171,7 @@ func _test_employee_income_reallocation_to_owner(source_catalog: Dictionary,
 	var plants_good := goods.find("gathered_plants")
 	var logs_good := goods.find("logs")
 	var prices: PackedInt32Array = catalog.good_default_price.duplicate()
-	var max_prices: PackedInt32Array = catalog.good_max_price.duplicate()
+	var max_prices: PackedInt32Array = catalog.good_reference_max_price.duplicate()
 	# Mint-backed silver pays employees at face value; keep this fixture's mine
 	# output tiny so the food owner opening still beats the miner wage.
 	var output_offsets: PackedInt32Array = catalog.building_output_offsets
@@ -1185,7 +1185,7 @@ func _test_employee_income_reallocation_to_owner(source_catalog: Dictionary,
 	prices[logs_good] = 100000
 	max_prices[logs_good] = 100000
 	catalog.good_default_price = prices
-	catalog.good_max_price = max_prices
+	catalog.good_reference_max_price = max_prices
 	var ext := _new_ext(catalog)
 	_expect("employee-owner mobility country bootstraps",
 		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 440))
@@ -1269,11 +1269,11 @@ func _test_surplus_merchant_can_change_owner_job(source_catalog: Dictionary,
 	var goods: PackedStringArray = catalog.good_ids
 	var tool_good := goods.find("chipped_stone_tools")
 	var prices: PackedInt32Array = catalog.good_default_price.duplicate()
-	var max_prices: PackedInt32Array = catalog.good_max_price.duplicate()
+	var max_prices: PackedInt32Array = catalog.good_reference_max_price.duplicate()
 	prices[tool_good] = 1000000000
 	max_prices[tool_good] = 1000000000
 	catalog.good_default_price = prices
-	catalog.good_max_price = max_prices
+	catalog.good_reference_max_price = max_prices
 	var ext := _new_ext(catalog)
 	_expect("merchant mobility country bootstraps",
 		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 432))
@@ -1327,13 +1327,14 @@ func _test_same_profession_owner_income_reallocation(source_catalog: Dictionary,
 	var tool_good := goods.find("chipped_stone_tools")
 	var logs_good := goods.find("logs")
 	var prices: PackedInt32Array = catalog.good_default_price.duplicate()
-	var min_prices: PackedInt32Array = catalog.good_min_price
-	var max_prices: PackedInt32Array = catalog.good_max_price.duplicate()
+	var min_prices: PackedInt32Array = catalog.good_default_price
+	for g in range(min_prices.size()): min_prices[g] = maxi(1, min_prices[g] / 10)
+	var max_prices: PackedInt32Array = catalog.good_reference_max_price.duplicate()
 	prices[tool_good] = min_prices[tool_good]
 	prices[logs_good] = 1000000000
 	max_prices[logs_good] = 1000000000
 	catalog.good_default_price = prices
-	catalog.good_max_price = max_prices
+	catalog.good_reference_max_price = max_prices
 	var ext := _new_ext(catalog)
 	_expect("same-profession mobility country bootstraps",
 		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 433))
@@ -1379,12 +1380,12 @@ func _test_same_profession_owner_income_reallocation(source_catalog: Dictionary,
 
 	var skip_catalog := source_catalog.duplicate(true)
 	var skip_prices: PackedInt32Array = skip_catalog.good_default_price.duplicate()
-	var skip_max_prices: PackedInt32Array = skip_catalog.good_max_price.duplicate()
+	var skip_max_prices: PackedInt32Array = skip_catalog.good_reference_max_price.duplicate()
 	skip_prices[tool_good] = min_prices[tool_good]
 	skip_prices[logs_good] = 3200
 	skip_max_prices[logs_good] = 3200
 	skip_catalog.good_default_price = skip_prices
-	skip_catalog.good_max_price = skip_max_prices
+	skip_catalog.good_reference_max_price = skip_max_prices
 	var skip_ext := _new_ext(skip_catalog)
 	_expect("owner-job probability country bootstraps",
 		CountryTestHelper.configure_all_technologies(skip_ext, skip_catalog, 1, 439))
@@ -1442,11 +1443,11 @@ func _test_owner_income_reallocation_prefers_unemployed(source_catalog: Dictiona
 	var goods: PackedStringArray = catalog.good_ids
 	var tool_good := goods.find("chipped_stone_tools")
 	var prices: PackedInt32Array = catalog.good_default_price.duplicate()
-	var max_prices: PackedInt32Array = catalog.good_max_price.duplicate()
+	var max_prices: PackedInt32Array = catalog.good_reference_max_price.duplicate()
 	prices[tool_good] = 1000000000
 	max_prices[tool_good] = 1000000000
 	catalog.good_default_price = prices
-	catalog.good_max_price = max_prices
+	catalog.good_reference_max_price = max_prices
 	var ext := _new_ext(catalog)
 	_expect("unemployed-first mobility country bootstraps",
 		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 437))
@@ -1513,13 +1514,14 @@ func _test_understaffed_owners_do_not_raid_each_other(source_catalog: Dictionary
 	var tool_good := goods.find("chipped_stone_tools")
 	var logs_good := goods.find("logs")
 	var prices: PackedInt32Array = catalog.good_default_price.duplicate()
-	var min_prices: PackedInt32Array = catalog.good_min_price
-	var max_prices: PackedInt32Array = catalog.good_max_price.duplicate()
+	var min_prices: PackedInt32Array = catalog.good_default_price
+	for g in range(min_prices.size()): min_prices[g] = maxi(1, min_prices[g] / 10)
+	var max_prices: PackedInt32Array = catalog.good_reference_max_price.duplicate()
 	prices[tool_good] = min_prices[tool_good]
 	prices[logs_good] = 1000000000
 	max_prices[logs_good] = 1000000000
 	catalog.good_default_price = prices
-	catalog.good_max_price = max_prices
+	catalog.good_reference_max_price = max_prices
 	var ext := _new_ext(catalog)
 	_expect("understaffed-raid country bootstraps",
 		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 434))
@@ -1640,7 +1642,7 @@ func _test_unemployment_subsidy_is_reservation_income(source_catalog: Dictionary
 	var output_good := int((catalog.building_output_good_ids as PackedInt32Array)[
 		output_edge])
 	prices[output_good] = maxi(
-		int((catalog.good_min_price as PackedInt32Array)[output_good]),
+		maxi(1, int((catalog.good_default_price as PackedInt32Array)[output_good]) / 10),
 		int(prices[output_good]) * 2 / 3)
 	var boot: Dictionary = ext.bootstrap_economy({
 		"cell_indices": PackedInt32Array([0, 0]),
@@ -1727,7 +1729,7 @@ func _test_endogenous_owner_investment(source_catalog: Dictionary,
 	# a positive, unsaturated gap.
 	stock[tool_good] = 250
 	var prices: PackedInt32Array = catalog.good_default_price.duplicate()
-	prices[tool_good] = int((catalog.good_max_price as PackedInt32Array)[tool_good])
+	prices[tool_good] = int((catalog.good_reference_max_price as PackedInt32Array)[tool_good])
 	var boot: Dictionary = ext.bootstrap_economy({
 		"cell_indices": PackedInt32Array([0, 0, 0, 0]),
 		"signature_ids": PackedInt32Array([
@@ -2177,7 +2179,7 @@ func _test_high_unemployment_investment_catchup(
 	stock.resize(goods.size())
 	stock.fill(1000000000)
 	var prices: PackedInt32Array = catalog.good_default_price.duplicate()
-	prices[tool_good] = int((catalog.good_max_price as PackedInt32Array)[tool_good])
+	prices[tool_good] = int((catalog.good_reference_max_price as PackedInt32Array)[tool_good])
 	var boot: Dictionary = ext.bootstrap_economy({
 		"cell_indices": PackedInt32Array([0, 0, 0, 0, 0]),
 		"signature_ids": PackedInt32Array([
@@ -2268,7 +2270,7 @@ func _test_collector_endogenous_investment(
 	stock.fill(1000000)
 	stock[logs_good] = 0
 	var prices: PackedInt32Array = catalog.good_default_price.duplicate()
-	prices[logs_good] = int((catalog.good_max_price as PackedInt32Array)[logs_good])
+	prices[logs_good] = int((catalog.good_reference_max_price as PackedInt32Array)[logs_good])
 	var boot: Dictionary = ext.bootstrap_economy({
 		"cell_indices": PackedInt32Array([0, 0, 0]),
 		"signature_ids": PackedInt32Array([artisan_sig, unemployed_sig, merchant_sig]),
@@ -2468,7 +2470,7 @@ func _test_investment_capacity_is_not_gate(source_catalog: Dictionary,
 	stock.fill(1000000)
 	stock[tool_good] = 0
 	var prices: PackedInt32Array = catalog.good_default_price.duplicate()
-	prices[tool_good] = int((catalog.good_max_price as PackedInt32Array)[tool_good])
+	prices[tool_good] = int((catalog.good_reference_max_price as PackedInt32Array)[tool_good])
 	var boot: Dictionary = ext.bootstrap_economy({
 		"cell_indices": PackedInt32Array([0, 0, 0, 0]),
 		"signature_ids": PackedInt32Array([
@@ -2584,11 +2586,11 @@ func _test_investment_requires_owner_livelihood(source_catalog: Dictionary,
 	_block_construction_except(catalog, PackedInt32Array([knapping_id, hunting_id]),
 		_luxury_blocking_good(catalog))
 	_minimize_household_good_demand(catalog, tool_good)
-	var max_prices: PackedInt32Array = catalog.good_max_price.duplicate()
+	var max_prices: PackedInt32Array = catalog.good_reference_max_price.duplicate()
 	var default_prices: PackedInt32Array = catalog.good_default_price.duplicate()
 	max_prices[tool_good] = 9000
 	default_prices[tool_good] = 9000
-	catalog.good_max_price = max_prices
+	catalog.good_reference_max_price = max_prices
 	catalog.good_default_price = default_prices
 	_ensure_building_input(catalog, hunting_id, tool_good, 2000, 65536)
 	var ext := _new_ext(catalog)
@@ -2729,11 +2731,11 @@ func _test_recovery_failure_commits_next_cycle(source_catalog: Dictionary,
 	var cloth_good := goods.find("cloth")
 	_minimize_household_good_demand(catalog, cloth_good)
 	var prices: PackedInt32Array = catalog.good_default_price.duplicate()
-	var max_prices: PackedInt32Array = catalog.good_max_price.duplicate()
+	var max_prices: PackedInt32Array = catalog.good_reference_max_price.duplicate()
 	prices[cloth_good] = 1000000000
 	max_prices[cloth_good] = 1000000000
 	catalog.good_default_price = prices
-	catalog.good_max_price = max_prices
+	catalog.good_reference_max_price = max_prices
 	var ext := _new_ext(catalog)
 	_expect("recovery-pending country bootstraps",
 		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 291))
@@ -2917,7 +2919,7 @@ func _test_endogenous_investment_repairs_dead_merchant(source_catalog: Dictionar
 	stock.fill(1000000)
 	stock[tool_good] = 0
 	var prices: PackedInt32Array = catalog.good_default_price.duplicate()
-	prices[tool_good] = int((catalog.good_max_price as PackedInt32Array)[tool_good])
+	prices[tool_good] = int((catalog.good_reference_max_price as PackedInt32Array)[tool_good])
 	var boot: Dictionary = ext.bootstrap_economy({
 		"cell_indices": PackedInt32Array([0, 0, 0, 0]),
 		"signature_ids": PackedInt32Array([
@@ -4270,7 +4272,7 @@ func _insert_packed_string(values: PackedStringArray, index: int, value: String)
 
 
 func _ensure_building_input(catalog: Dictionary, type_id: int, good_id: int,
-		quantity: int, required_q16: int) -> int:
+		quantity: int, required_q16: int, append_input: bool = false) -> int:
 	if type_id < 0 or good_id < 0:
 		return -1
 	var type_offsets: PackedInt32Array = catalog.building_input_offsets
@@ -4286,7 +4288,7 @@ func _ensure_building_input(catalog: Dictionary, type_id: int, good_id: int,
 		if int(goods[input_idx]) == good_id:
 			slot = input_idx
 			break
-	if slot < 0 and begin < end:
+	if slot < 0 and begin < end and not append_input:
 		slot = begin
 	if slot >= 0:
 		goods[slot] = good_id

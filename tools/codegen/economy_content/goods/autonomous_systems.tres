@@ -7,5 +7,4 @@ display_name = "自主系统"
 category_id = &"machinery"
 technology_tags = PackedStringArray("tech.autonomous_systems")
 default_price = 220000
-min_price = 22000
-max_price = 2200000
+reference_max_price = 11000000

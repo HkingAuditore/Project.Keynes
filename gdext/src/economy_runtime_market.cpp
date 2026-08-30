@@ -11,8 +11,6 @@ namespace pk {
 namespace {
 using Clock = std::chrono::steady_clock;
 
-constexpr int32_t PRICE_NUMERIC_GUARD_MIN = 1;
-constexpr int32_t PRICE_NUMERIC_GUARD_MAX = std::numeric_limits<int32_t>::max();
 constexpr std::array<int32_t, 9> HOUSEHOLD_WEALTH_ANCHORS_Q16 = {
     4096, 8192, 16384, 32768, 65536, 131072, 262144, 524288, 1048576};
 
@@ -59,17 +57,14 @@ int64_t NativeEconomyRuntime::variant_unit_price(int32_t market, int32_t variant
     if (market < 0 || market >= _market.market_count || variant_id < 0 ||
         variant_id >= static_cast<int32_t>(_variants.size())) return 1;
     const VariantChoice &variant = _variants[variant_id];
-    int64_t unit_price = 0;
+    GoodsBill bill;
     for (int32_t c = 0; c < variant.component_count; ++c) {
         const NeedComponent &component = _components[variant.component_begin + c];
-        unit_price = saturating_add(
-            unit_price,
-            mul_div_sat(effective_household_good_quantity(
-                            market, component.good_id, component.qty_per_need, sat),
-                        _market.price[_market.index(market, component.good_id)],
-                        GOODS_SCALE, sat), sat);
+        bill.add(effective_household_good_quantity(
+                     market, component.good_id, component.qty_per_need, sat),
+                 _market.price[_market.index(market, component.good_id)], sat);
     }
-    return std::max<int64_t>(1, unit_price);
+    return std::max<int64_t>(1, bill.total(sat));
 }
 
 void NativeEconomyRuntime::build_demand_basis(
@@ -907,12 +902,13 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 cell, NativeCountryRuntime::TAX_CONSUMPTION,
                 component.good_id);
             if (rate <= 0) continue;
-            const int64_t component_value = mul_div_sat(
+            const int64_t component_value = goods_cost(
                 component_quantity(slot, component),
-                _market.price[_market.index(market, component.good_id)],
-                GOODS_SCALE, sat);
-            quoted = saturating_add(quoted, mul_div_sat(
-                component_value, rate, 10000, sat), sat);
+                _market.price[_market.index(market, component.good_id)], sat);
+            int64_t tax_quote = mul_div_sat(component_value, rate, 10000, sat);
+            if (((component_value % 10000) * (rate % 10000)) % 10000 != 0)
+                tax_quote = saturating_add(tax_quote, 1, sat);
+            quoted = saturating_add(quoted, tax_quote, sat);
         }
         return std::max<int64_t>(1, quoted);
     };
@@ -1190,6 +1186,8 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     }
     result.formula_ms += elapsed_ms(formula_start);
 
+    thread_local std::vector<int32_t> budget_tax_rates;
+    if (consumption_tax_active) budget_tax_rates.resize(std::max<size_t>(1, _components.size()));
     auto budget_orders = [&](std::vector<BundleOrder> &orders, bool use_remaining) {
         thread_local std::vector<int64_t> budget_committed;
         budget_committed.assign(cohort_count, 0);
@@ -1205,21 +1203,43 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                     cohort_working_capital_reserve[local] -
                     (use_remaining ? cohort_spend[local] : 0) -
                     budget_committed[local]);
-            int64_t total_cost = 0;
-            for (size_t i = begin; i < end; ++i) {
-                total_cost = saturating_add(total_cost,
-                    mul_div_sat(orders[i].desired_units, orders[i].unit_price,
-                                GOODS_SCALE, sat), sat);
+            GoodsBill desired_bill;
+            for (size_t i = begin; i < end; ++i)
+                desired_bill.add(orders[i].desired_units, orders[i].unit_price, sat);
+            // One independently rounded base per fiscal policy can cost more
+            // than the aggregate linear quote. Reserve that bounded difference
+            // before allocating quantities, never repair it by clipping payment.
+            int64_t rounding_reserve = 0;
+            if (consumption_tax_active) {
+                size_t policies = 0;
+                for (size_t i = begin; i < end; ++i) {
+                    if (orders[i].desired_units <= 0) continue;
+                    const VariantChoice &variant = _variants[orders[i].variant_index];
+                    for (int32_t c = 0; c < variant.component_count; ++c) {
+                        const int32_t rate = frozen_tax_rate(cohort_cell(orders[i].slot),
+                            NativeCountryRuntime::TAX_CONSUMPTION,
+                            _components[variant.component_begin + c].good_id);
+                        size_t policy = 0;
+                        while (policy < policies && budget_tax_rates[policy] != rate) ++policy;
+                        if (policy == policies) {
+                            budget_tax_rates[policies++] = rate;
+                            if (rate > 0) rounding_reserve += (rate + 9999) / 10000;
+                        }
+                    }
+                }
+                rounding_reserve += std::max<int64_t>(0, static_cast<int64_t>(policies) - 1);
             }
+            remaining = std::max<int64_t>(0, remaining - rounding_reserve);
+            const int64_t total_cost = desired_bill.total(sat);
             if (total_cost <= remaining) {
                 for (size_t i = begin; i < end; ++i) orders[i].funded_units = orders[i].desired_units;
             } else if (remaining > 0 && total_cost > 0) {
+                GoodsBill prefix_bill;
                 int64_t cost_prefix = 0;
                 int64_t allocated_cost = 0;
                 for (size_t i = begin; i < end; ++i) {
-                    cost_prefix = saturating_add(cost_prefix,
-                        mul_div_sat(orders[i].desired_units, orders[i].unit_price,
-                                    GOODS_SCALE, sat), sat);
+                    prefix_bill.add(orders[i].desired_units, orders[i].unit_price, sat);
+                    cost_prefix = prefix_bill.total(sat);
                     const int64_t next = mul_div_sat(cost_prefix, remaining, total_cost, sat);
                     const int64_t share = std::max<int64_t>(0, next - allocated_cost);
                     allocated_cost = next;
@@ -1230,78 +1250,69 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                                         orders[i].unit_price, sat));
                 }
             }
-            int64_t committed = 0;
-            for (size_t i = begin; i < end; ++i) {
-                committed = saturating_add(committed, mul_div_sat(
-                    orders[i].funded_units, orders[i].unit_price,
-                    GOODS_SCALE, sat), sat);
-            }
+            GoodsBill committed_bill;
+            for (size_t i = begin; i < end; ++i)
+                committed_bill.add(orders[i].funded_units, orders[i].unit_price, sat);
+            const int64_t committed = saturating_add(
+                committed_bill.total(sat), rounding_reserve, sat);
             budget_committed[local] = saturating_add(
                 budget_committed[local], committed, sat);
             begin = end;
         }
     };
 
+    struct HouseholdBillBucket { int32_t rate = 0; GoodsBill bill; };
+    thread_local std::vector<HouseholdBillBucket> settlement_bills;
+    settlement_bills.resize(std::max<size_t>(1, _components.size()));
+    size_t settlement_bill_count = 0;
+    int32_t billing_local = -1, billing_priority = -1;
     const auto record_order_settlement = [&](BundleOrder &order) {
         if (order.filled_units <= 0) return;
+        if (billing_local != order.local_cohort || billing_priority != order.priority) {
+            billing_local = order.local_cohort;
+            billing_priority = order.priority;
+            settlement_bill_count = 0;
+        }
         const int32_t cell = cohort_cell(order.slot);
         const VariantChoice &variant = _variants[order.variant_index];
-        int64_t food_eq = 0;
+        int64_t food_eq = 0, base_spend = 0, positive_tax = 0, subsidy = 0;
         for (int32_t c = 0; c < variant.component_count; ++c) {
-            const NeedComponent &component =
-                _components[variant.component_begin + c];
-            const int64_t quantity = mul_div_sat(
-                order.filled_units, component_quantity(order.slot, component),
-                GOODS_SCALE, sat);
+            const NeedComponent &component = _components[variant.component_begin + c];
+            const int64_t quantity = mul_div_sat(order.filled_units,
+                component_quantity(order.slot, component), GOODS_SCALE, sat);
             food_eq = saturating_add(food_eq,
                 food_equivalent(component.good_id, quantity), sat);
+            const int32_t rate = consumption_tax_active ? frozen_tax_rate(
+                cell, NativeCountryRuntime::TAX_CONSUMPTION, component.good_id) : 0;
+            size_t bucket = 0;
+            while (bucket < settlement_bill_count && settlement_bills[bucket].rate != rate)
+                ++bucket;
+            if (bucket == settlement_bill_count) {
+                settlement_bills[bucket] = {rate, {}};
+                ++settlement_bill_count;
+            }
+            const int64_t component_base = settlement_bills[bucket].bill.add(quantity,
+                _market.price[_market.index(market, component.good_id)], sat);
+            base_spend = saturating_add(base_spend, component_base, sat);
+            const int64_t price = _market.price[_market.index(market, component.good_id)];
+            if (component_base > 0 && quantity > 0 && quantity < GOODS_SCALE &&
+                price < GOODS_SCALE && quantity * price < GOODS_SCALE)
+                ++result.small_payment_roundups;
+            if (consumption_tax_active) {
+                const int64_t transfer = apply_fiscal_tax(cell,
+                    NativeCountryRuntime::TAX_CONSUMPTION, component_base, rate, sat);
+                if (transfer > 0) positive_tax = saturating_add(positive_tax, transfer, sat);
+                else subsidy = saturating_add(subsidy, -transfer, sat);
+            }
         }
         result.food_access_eq = saturating_add(result.food_access_eq, food_eq, sat);
         if (food_eq > 0) ++result.food_access_events;
         record_food_access(cell, food_eq);
-        if (!subsidy_settlement) {
-            const int64_t spend = mul_div_sat(
-                order.filled_units, order.unit_price, GOODS_SCALE, sat);
-            cohort_spend[order.local_cohort] = saturating_add(
-                cohort_spend[order.local_cohort], spend, sat);
-            if (order.need_index >= 0 && order.need_index < static_cast<int32_t>(
-                    need_states.size()))
-                need_states[order.need_index].spent_money = saturating_add(
-                    need_states[order.need_index].spent_money, spend, sat);
-            return;
-        }
-        int64_t base_spend = 0;
-        int64_t positive_tax = 0;
-        int64_t subsidy = 0;
-        for (int32_t c = 0; c < variant.component_count; ++c) {
-            const NeedComponent &component =
-                _components[variant.component_begin + c];
-            const int64_t quantity = mul_div_sat(
-                order.filled_units, component_quantity(order.slot, component),
-                GOODS_SCALE, sat);
-            const int64_t component_base = mul_div_sat(
-                quantity, _market.price[_market.index(market, component.good_id)],
-                GOODS_SCALE, sat);
-            base_spend = saturating_add(base_spend, component_base, sat);
-            const int32_t rate = frozen_tax_rate(
-                cell, NativeCountryRuntime::TAX_CONSUMPTION,
-                component.good_id);
-            const int64_t transfer = apply_fiscal_tax(
-                cell, NativeCountryRuntime::TAX_CONSUMPTION,
-                component_base, rate, sat);
-            if (transfer > 0)
-                positive_tax = saturating_add(positive_tax, transfer, sat);
-            else
-                subsidy = saturating_add(subsidy, -transfer, sat);
-        }
         const int32_t pay = family_purchase_pay_factor_q16(order.slot);
         if (pay < Q16_ONE && base_spend > 0) {
-            const int64_t family_request = mul_div_sat(
-                base_spend, Q16_ONE - pay, Q16_ONE, sat);
-            const int64_t family_paid = -apply_fiscal_tax(
-                cell, NativeCountryRuntime::TAX_CONSUMPTION,
-                family_request, -10000, sat);
-            subsidy = saturating_add(subsidy, family_paid, sat);
+            const int64_t request = mul_div_sat(base_spend, Q16_ONE - pay, Q16_ONE, sat);
+            subsidy = saturating_add(subsidy, -apply_fiscal_tax(cell,
+                NativeCountryRuntime::TAX_CONSUMPTION, request, -10000, sat), sat);
         }
         cohort_base_spend[order.local_cohort] = saturating_add(
             cohort_base_spend[order.local_cohort], base_spend, sat);
@@ -1313,12 +1324,13 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             saturating_add(base_spend, positive_tax, sat), subsidy, sat);
         cohort_spend[order.local_cohort] = saturating_add(
             cohort_spend[order.local_cohort], net_spend, sat);
-        if (order.need_index >= 0 && order.need_index < static_cast<int32_t>(
-                need_states.size()))
+        if (order.need_index >= 0 && order.need_index < static_cast<int32_t>(need_states.size()))
             need_states[order.need_index].spent_money = saturating_add(
                 need_states[order.need_index].spent_money, net_spend, sat);
     };
     auto clear_orders = [&](std::vector<BundleOrder> &orders) -> bool {
+        billing_local = -1;
+        settlement_bill_count = 0;
         good_counts.assign(_market.good_count, 0);
         pass_demand.assign(_market.good_count, 0);
         for (const BundleOrder &order : orders) {
@@ -1534,6 +1546,13 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     result.fallback_ms += elapsed_ms(fallback_start);
 
     const auto merchant_start = Clock::now();
+    for (int32_t local = 0; local < cohort_count; ++local) {
+        if (cohort_spend[local] > std::max<int64_t>(0,
+                _population.funds[slots[local]] - cohort_working_capital_reserve[local])) {
+            error = "household_invoice_exceeds_reserved_cash";
+            return false;
+        }
+    }
     int64_t planned_revenue = 0;
     for (int32_t local = 0; local < cohort_count; ++local) {
         const int32_t slot = slots[local];
@@ -2062,6 +2081,51 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     }
     result.merchant_settle_ms += elapsed_ms(merchant_start);
 
+    // Effective shortage is exceptional-path work. The reference bound is a
+    // cheap lower bound on every dynamic ceiling, so ordinary prices skip it.
+    bool observe_ceiling = !_market.price_ceilings[market].empty();
+    for (int32_t good = 0; good < _market.good_count && !observe_ceiling; ++good)
+        observe_ceiling = int64_t(_market.price[_market.index(market, good)]) * 5 >=
+                          int64_t(_good_reference_max_price[good]) * 4;
+    thread_local std::vector<int64_t> ceiling_requested, ceiling_unfilled, primary_unfilled;
+    if (observe_ceiling) {
+        ceiling_requested.assign(_market.good_count, 0);
+        ceiling_unfilled.assign(_market.good_count, 0);
+        primary_unfilled.assign(need_states.size(), 0);
+        result.price_ceiling_observations.reserve(_market.good_count);
+        for (const auto &order : primary_orders)
+            primary_unfilled[order.need_index] = saturating_add(primary_unfilled[order.need_index],
+                std::max<int64_t>(0, order.funded_units - order.filled_units), sat);
+        for (const auto &order : primary_orders) {
+            const auto &need = need_states[order.need_index];
+            const int64_t unresolved = std::min(primary_unfilled[order.need_index],
+                std::max<int64_t>(0, need.desired_units - need.filled_units));
+            const int64_t missing_units = mul_div_sat(unresolved,
+                std::max<int64_t>(0, order.funded_units - order.filled_units),
+                std::max<int64_t>(1, primary_unfilled[order.need_index]), sat);
+            const auto &variant = _variants[order.variant_index];
+            for (int32_t c = 0; c < variant.component_count; ++c) {
+                const auto &component = _components[variant.component_begin + c];
+                const int64_t missing = mul_div_sat(missing_units,
+                    component_quantity(order.slot, component), GOODS_SCALE, sat);
+                const int64_t delivered = mul_div_sat(order.filled_units,
+                    component_quantity(order.slot, component), GOODS_SCALE, sat);
+                ceiling_requested[component.good_id] = saturating_add(ceiling_requested[component.good_id],
+                    saturating_add(missing, delivered, sat), sat);
+                ceiling_unfilled[component.good_id] = saturating_add(ceiling_unfilled[component.good_id], missing, sat);
+            }
+        }
+        for (const auto &order : fallback_orders) {
+            const auto &variant = _variants[order.variant_index];
+            for (int32_t c = 0; c < variant.component_count; ++c) {
+                const auto &component = _components[variant.component_begin + c];
+                const int64_t delivered = mul_div_sat(order.filled_units,
+                    component_quantity(order.slot, component), GOODS_SCALE, sat);
+                ceiling_requested[component.good_id] = saturating_add(ceiling_requested[component.good_id], delivered, sat);
+            }
+        }
+    }
+    size_t ceiling_cursor = 0;
     const auto price_start = Clock::now();
     for (int32_t good = 0; good < _market.good_count; ++good) {
         const int64_t idx = _market.index(market, good);
@@ -2096,22 +2160,52 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             std::min<int64_t>(Q16_ONE - 1, shortage));
         const PricePressure pressure = price_pressure(
             market, good, ema, _market.stock[idx], shortage, signal_index, sat);
+        if (pressure.glut_cost_damped) ++result.price_glut_cost_damp_hits;
         if (pressure.cost_q16 != 0) ++result.price_cost_anchor_hits;
         if (pressure.idle_q16 != 0) ++result.price_inactive_reversions;
         bool rate_clamped = false;
-        const int64_t next_price = next_price_v4(good, _market.price[idx], pressure,
-            _epoch_days, sat, rate_clamped);
-        // The catalog bounds are gameplay/economic invariants, while the
-        // numeric guard only protects the storage type.  Applying only the
-        // latter lets inactive goods collapse to one sub-unit and appear as
-        // a zero price in the UI.
-        const int64_t catalog_min = std::max<int64_t>(
-            PRICE_NUMERIC_GUARD_MIN, _good_min_price[good]);
-        const int64_t catalog_max = std::min<int64_t>(
-            PRICE_NUMERIC_GUARD_MAX, std::max<int64_t>(catalog_min, _good_max_price[good]));
-        const int64_t bounded = std::clamp<int64_t>(
-            next_price, catalog_min, catalog_max);
-        if (rate_clamped || bounded != next_price) ++result.price_cap_hits;
+        bool rise_damped = false;
+        bool minimum_tick = false, headroom_tick = false;
+        const int64_t current_price = _market.price[idx];
+        const int64_t next_price = next_price_v6(good, current_price, pressure,
+            _epoch_days, sat, rate_clamped, rise_damped, &minimum_tick);
+        bool headroom_damped = false;
+        bool catalog_bound = false;
+        const int32_t base_ceiling = base_price_ceiling(_good_reference_max_price[good],
+            _good_default_price[good], pressure.adjustment_anchor_price);
+        const auto &ceiling_rows = _market.price_ceilings[market];
+        while (ceiling_cursor < ceiling_rows.size() && ceiling_rows[ceiling_cursor].good < good) ++ceiling_cursor;
+        const bool has_ceiling = ceiling_cursor < ceiling_rows.size() && ceiling_rows[ceiling_cursor].good == good;
+        const int32_t ceiling = has_ceiling ? std::max(base_ceiling, ceiling_rows[ceiling_cursor].limit) : base_ceiling;
+        const int64_t bounded = shape_price(ceiling, current_price, next_price, sat,
+            &headroom_damped, &catalog_bound, &headroom_tick);
+        if (next_price > current_price && bounded == current_price) ++result.price_ceiling_blocked_rises;
+        if (observe_ceiling && (has_ceiling || current_price * 5 >= int64_t(base_ceiling) * 4)) {
+            int64_t requested = ceiling_requested[good], unfilled = ceiling_unfilled[good];
+            if (signal_index >= 0 && signal_index < static_cast<int32_t>(_epoch_ceiling_business_requested.size())) {
+                requested = saturating_add(requested, _epoch_ceiling_business_requested[signal_index], sat);
+                unfilled = saturating_add(unfilled, _epoch_ceiling_business_unfilled[signal_index], sat);
+            }
+            result.price_ceiling_observations.push_back({market, good, static_cast<int32_t>(current_price),
+                base_ceiling, static_cast<int32_t>(std::min<int64_t>(_epoch_days, _sample_day + 1)),
+                requested, unfilled});
+        }
+        if (next_price > PRICE_NUMERIC_GUARD_MAX ||
+            (base_ceiling == PRICE_NUMERIC_GUARD_MAX &&
+             int64_t(_good_reference_max_price[good]) * std::max<int64_t>(
+                 _good_default_price[good], pressure.adjustment_anchor_price) >
+             int64_t(PRICE_NUMERIC_GUARD_MAX) * _good_default_price[good]))
+            ++result.price_numeric_ceiling_hits;
+        if (bounded == PRICE_NUMERIC_GUARD_MIN) ++result.price_numeric_floor_hits;
+        if (bounded != current_price && (minimum_tick || headroom_tick))
+            ++result.price_min_tick_hits;
+        if (rate_clamped) ++result.price_rate_clamp_hits;
+        if (rise_damped) ++result.price_rise_fade_hits;
+        if (headroom_damped) ++result.price_headroom_damp_hits;
+        if (catalog_bound) ++result.price_catalog_bound_hits;
+        if (rate_clamped || rise_damped || headroom_damped || catalog_bound) {
+            ++result.price_cap_hits;
+        }
         if (_market.price[idx] != bounded) ++result.changed_prices;
         _market.price[idx] = static_cast<int32_t>(bounded);
         const int32_t flow_index = trade_flow_index(market, good, false);

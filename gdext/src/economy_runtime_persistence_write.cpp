@@ -157,6 +157,10 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             append_le<int32_t>(payload, _maintenance_horizon_days_by_sector[sector]);
         append_le<int32_t>(payload, _building_maintenance_cost_factor_q16);
         append_le<int32_t>(payload, _startup_demand_runtime_mode);
+        append_le<int32_t>(payload, _price_ceiling_confirm_days);
+        append_le<int32_t>(payload, _price_ceiling_expand_bp);
+        append_le<int32_t>(payload, _price_ceiling_recover_bp);
+        append_le<int64_t>(payload, price_ceiling_state_count());
         append_id_table(payload, _profession_ids);
         append_id_table(payload, _ethnicity_ids);
         append_id_table(payload, _good_ids);
@@ -1188,6 +1192,24 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             ++_save.section;
         return make_save_chunk(SAVE_SECTION_CANAL_PROJECTS,
             static_cast<uint32_t>(_save.canal_project_cursor - begin), payload);
+    }
+    if (_save.section == SAVE_SECTION_PRICE_CEILINGS) {
+        uint32_t records = 0;
+        while (_save.ceiling_market_cursor < _market.market_count) {
+            const auto &row = _market.price_ceilings[_save.ceiling_market_cursor];
+            if (_save.ceiling_row_cursor >= static_cast<int32_t>(row.size())) {
+                ++_save.ceiling_market_cursor; _save.ceiling_row_cursor = 0; continue;
+            }
+            if (records > 0 && payload.size() + 14 > static_cast<size_t>(budget - 16)) break;
+            const auto &state = row[_save.ceiling_row_cursor++];
+            append_le<int32_t>(payload, _save.ceiling_market_cursor);
+            append_le<int32_t>(payload, state.good);
+            append_le<int32_t>(payload, state.limit);
+            append_le<uint16_t>(payload, state.confirmation_days);
+            ++records;
+        }
+        if (_save.ceiling_market_cursor >= _market.market_count) ++_save.section;
+        return make_save_chunk(SAVE_SECTION_PRICE_CEILINGS, records, payload);
     }
     _save.end_emitted = true;
     return make_save_chunk(SAVE_SECTION_END, 0, payload);

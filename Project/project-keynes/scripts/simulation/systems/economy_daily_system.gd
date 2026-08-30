@@ -294,6 +294,9 @@ func last_perf_report() -> Dictionary:
 		return {}
 	var out: Dictionary = {"_tick_idx": int(_last_report.get("_tick_idx", -1))}
 	for key in [
+		"last_completed_price_ms", "last_completed_price_numeric_floor_hits",
+		"last_completed_price_min_tick_hits", "last_completed_price_glut_cost_damp_hits",
+		"last_completed_small_payment_roundups",
 		"elapsed_ms", "executed_stage", "executed_substage", "next_stage",
 		"work_done", "cursor_start", "cursor_end", "processed_cells",
 		"processed_cohorts", "processed_building_groups", "worker_tasks",

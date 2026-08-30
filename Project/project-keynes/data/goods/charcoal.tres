@@ -10,6 +10,5 @@ category_id = &"solid_fuel"
 substitution_category_ids = PackedStringArray("solid_fuel", "smelting_fuel")
 technology_tags = PackedStringArray("industry.energy", "tech.application.charcoal_pit")
 default_price = 9000
-min_price = 900
-max_price = 90000
+reference_max_price = 450000
 

@@ -677,8 +677,15 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
 
     _good_default_price = packed_i32(catalog, "good_default_price");
     _good_default_stock = packed_i64(catalog, "good_initial_stock");
-    _good_min_price = packed_i32(catalog, "good_min_price");
-    _good_max_price = packed_i32(catalog, "good_max_price");
+    if (catalog.has("good_min_price")) {
+        error = "obsolete_good_min_price_price_v5";
+        return false;
+    }
+    if (catalog.has("good_max_price")) {
+        error = "obsolete_good_max_price_price_v6";
+        return false;
+    }
+    _good_reference_max_price = packed_i32(catalog, "good_reference_max_price");
     _good_price_adjust_q16 = packed_i32(catalog, "good_price_adjust_q16");
     _good_demand_price_elasticity_q16 = packed_i32(catalog, "good_demand_price_elasticity_q16");
     _good_household_wealth_elasticity_q16 = packed_i32(
@@ -756,7 +763,7 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
     if (_good_household_savings_threshold_months_q16.empty())
         _good_household_savings_threshold_months_q16.assign(goods, 0);
     if (_good_default_price.size() != goods || _good_default_stock.size() != goods ||
-        _good_min_price.size() != goods || _good_max_price.size() != goods ||
+        _good_reference_max_price.size() != goods ||
         _good_price_adjust_q16.size() != goods ||
         _good_demand_price_elasticity_q16.size() != goods ||
         _good_household_wealth_elasticity_q16.size() != goods ||
@@ -806,8 +813,8 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
             goods, _good_technology_offsets, _good_required_technologies,
             "good_technology_catalog_invalid")) return false;
     for (size_t i = 0; i < goods; ++i) {
-        if (_good_default_price[i] < PRICE_NUMERIC_GUARD_MIN || _good_min_price[i] < 0 ||
-            _good_max_price[i] < _good_min_price[i] || _good_default_stock[i] < 0 ||
+        if (_good_default_price[i] < PRICE_NUMERIC_GUARD_MIN ||
+            _good_reference_max_price[i] < _good_default_price[i] || _good_default_stock[i] < 0 ||
             _good_demand_price_elasticity_q16[i] <= 0 ||
             _good_household_wealth_elasticity_q16[i] < -Q16_ONE ||
             _good_household_wealth_elasticity_q16[i] > Q16_ONE * 2 ||

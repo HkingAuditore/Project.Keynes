@@ -8,5 +8,4 @@ category_id = &"gathered_plants"
 substitution_category_ids = PackedStringArray("gathered_plants")
 technology_tags = PackedStringArray("tech.gathering", "tech.application.method_gathering_ground_r1")
 default_price = 5000
-min_price = 500
-max_price = 50000
+reference_max_price = 250000
