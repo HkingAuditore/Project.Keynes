@@ -8,5 +8,4 @@ category_id = &"reactor_components"
 substitution_category_ids = PackedStringArray("reactor_components")
 technology_tags = PackedStringArray("tech.application.reactor_component_works", "tech.application.method_reactor_component_works_r10")
 default_price = 130000
-min_price = 13000
-max_price = 1300000
+reference_max_price = 6500000

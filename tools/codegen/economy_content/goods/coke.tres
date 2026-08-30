@@ -7,5 +7,4 @@ display_name = "焦炭"
 category_id = &"energy"
 technology_tags = PackedStringArray("tech.coke_smelting")
 default_price = 13000
-min_price = 1300
-max_price = 130000
+reference_max_price = 650000

@@ -31,11 +31,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         error = "save_chunk_header_invalid";
         return false;
     }
-    if (schema != SCHEMA_VERSION && schema != 46 && schema != 45 &&
-        schema != 44 && schema != 43 && schema != 42 && schema != 41) {
-        error = schema <= 31 ? "economy_save_v31_or_earlier_unsupported" :
-            (schema == 32 ? "economy_save_v32_or_earlier_unsupported" :
-            "economy_save_pre_family_effect_schema_unsupported");
+    if (schema != SCHEMA_VERSION) {
+        error = "economy_save_price_v6_requires_new_game";
         return false;
     }
     if (!_restore.header_seen && section != SAVE_SECTION_HEADER) {
@@ -393,6 +390,17 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             error = "save_startup_demand_mode_invalid";
             return false;
         }
+        int32_t ceiling_confirm = 0, ceiling_expand = 0, ceiling_recover = 0;
+        int64_t ceiling_count = 0;
+        if (!read_le(bytes, cursor, ceiling_confirm) || !read_le(bytes, cursor, ceiling_expand) ||
+            !read_le(bytes, cursor, ceiling_recover) || !read_le(bytes, cursor, ceiling_count) ||
+            ceiling_confirm != _price_ceiling_confirm_days || ceiling_expand != _price_ceiling_expand_bp ||
+            ceiling_recover != _price_ceiling_recover_bp || ceiling_count < 0 ||
+            ceiling_count > int64_t(markets) * goods) {
+            error = "save_price_ceiling_profile_or_count_invalid";
+            return false;
+        }
+        _restore.expected_ceilings = ceiling_count;
         if (!read_id_table(bytes, cursor, professions) || !read_id_table(bytes, cursor, ethnicities) ||
             !read_id_table(bytes, cursor, good_ids) || !read_id_table(bytes, cursor, plan_ids) ||
             cursor != bytes.size()) {
@@ -607,6 +615,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         _population.active_count = active_count;
         _population.high_water_slots = static_cast<int64_t>(slots);
         _market.market_count = markets;
+        _market.price_ceilings.resize(markets);
         _market.good_count = goods;
         _market.stock.assign(static_cast<size_t>(markets) * goods, 0);
         _market.price.assign(static_cast<size_t>(markets) * goods, 0);
@@ -2467,11 +2476,37 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             ++_restore.restored_canal_projects;
         }
         _restore.canal_projects_seen = true;
+    } else if (section == SAVE_SECTION_PRICE_CEILINGS) {
+        if (_restore.restored_ceilings + records > _restore.expected_ceilings) {
+            error = "save_price_ceiling_count_invalid"; return false;
+        }
+        for (uint32_t i = 0; i < records; ++i) {
+            int32_t market = -1;
+            PriceCeilingState state;
+            if (!read_le(bytes, cursor, market) || !read_le(bytes, cursor, state.good) ||
+                !read_le(bytes, cursor, state.limit) || !read_le(bytes, cursor, state.confirmation_days) ||
+                market < 0 || market >= _market.market_count || state.good < 0 ||
+                state.good >= _market.good_count || state.limit < 1 ||
+                state.confirmation_days > _price_ceiling_confirm_days) {
+                error = "save_price_ceiling_record_invalid"; return false;
+            }
+            const int64_t key = int64_t(market) * _market.good_count + state.good;
+            if (key <= _restore.last_ceiling_key) {
+                error = "save_price_ceiling_order_invalid"; return false;
+            }
+            _restore.last_ceiling_key = key;
+            _market.price_ceilings[market].push_back(state);
+            ++_restore.restored_ceilings;
+        }
+        _restore.ceilings_seen = true;
     } else if (section == SAVE_SECTION_END ||
                (schema == 33 && section == SAVE_SECTION_END_V33)) {
         if (records != 0 || payload_bytes != 0) {
             error = "save_end_chunk_invalid";
             return false;
+        }
+        if (!_restore.ceilings_seen || _restore.restored_ceilings != _restore.expected_ceilings) {
+            error = "save_price_ceiling_section_missing"; return false;
         }
         _restore.end_seen = true;
     } else {

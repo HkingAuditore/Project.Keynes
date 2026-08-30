@@ -9,5 +9,4 @@ technology_tags = PackedStringArray("tech.precision_engineering")
 production_quality_level = 4
 production_efficiency_q16 = 98304
 default_price = 52000
-min_price = 5200
-max_price = 520000
+reference_max_price = 2600000

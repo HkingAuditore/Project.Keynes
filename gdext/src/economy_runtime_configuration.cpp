@@ -665,6 +665,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
         return out;
     }
     _market.market_count = market_count;
+    _market.price_ceilings.resize(market_count);
     _market.good_count = static_cast<int32_t>(_good_ids.size());
     const int64_t matrix_size = static_cast<int64_t>(market_count) * _market.good_count;
     if (matrix_size <= 0 || matrix_size > 25000000LL) {

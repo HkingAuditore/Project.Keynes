@@ -674,7 +674,6 @@ bool NativeEconomyRuntime::run_government_research_procurement(std::string &erro
         const int32_t country = _epoch_cell_country[market];
         if (country < 0 || country >= _epoch_country_count) continue;
         const int64_t index = _market.index(market, good);
-        if (_market.stock[index] <= 0) continue;
         candidates.push_back({country, market, _market.price[index]});
     }
     std::stable_sort(candidates.begin(), candidates.end(),
@@ -710,8 +709,7 @@ bool NativeEconomyRuntime::run_government_research_procurement(std::string &erro
         const int64_t quantity = std::min({
             _market.stock[index], remaining[country], affordable});
         if (quantity <= 0) continue;
-        const int64_t cash = mul_div_sat(
-            quantity, candidate.price, GOODS_SCALE, _saturation_count);
+        const int64_t cash = goods_cost(quantity, candidate.price, _saturation_count);
         if (cash <= 0) continue;
         // Household demography can zero a merchant cohort immediately, while
         // STRUCTURAL_REMOVE_EMPTY and merchant repair wait until after this
@@ -784,7 +782,24 @@ bool NativeEconomyRuntime::run_government_research_procurement(std::string &erro
             _government_research_procured_points, quantity, _saturation_count);
         _government_research_procurement_cash = saturating_add(
             _government_research_procurement_cash, cash, _saturation_count);
+        _epoch_ceiling_research_requested[candidate.market] = saturating_add(
+            _epoch_ceiling_research_requested[candidate.market], quantity, _saturation_count);
+        _epoch_ceiling_research_delivered[candidate.market] = saturating_add(
+            _epoch_ceiling_research_delivered[candidate.market], quantity, _saturation_count);
         ++_government_research_procurement_orders;
+    }
+    // Unspent, budget-backed demand is assigned once in the same stable price
+    // order. Never duplicate the national wallet across several empty markets.
+    for (const Candidate &candidate : candidates) {
+        const int32_t country = candidate.country;
+        if (!enabled[country] || budgets[country] <= 0 || remaining[country] <= 0) continue;
+        const int64_t quantity = std::min(remaining[country], mul_div_sat(
+            budgets[country], GOODS_SCALE, std::max<int64_t>(1, candidate.price), _saturation_count));
+        if (quantity <= 0) continue;
+        _epoch_ceiling_research_requested[candidate.market] = saturating_add(
+            _epoch_ceiling_research_requested[candidate.market], quantity, _saturation_count);
+        remaining[country] -= quantity;
+        budgets[country] -= goods_cost(quantity, candidate.price, _saturation_count);
     }
     return true;
 }
@@ -2956,6 +2971,8 @@ int32_t NativeEconomyRuntime::ensure_market_signal_index(int32_t cell, int32_t g
         append_i64_if_aligned(_epoch_business_demand_ema);
         append_i64_if_aligned(_epoch_desired_business_demand);
         append_i64_if_aligned(_epoch_funded_business_demand);
+    append_i64_if_aligned(_epoch_ceiling_business_requested);
+    append_i64_if_aligned(_epoch_ceiling_business_unfilled);
         append_i64_if_aligned(_epoch_offered_supply_ema);
         append_i64_if_aligned(_epoch_producer_sellable_current);
         append_i64_if_aligned(_epoch_producer_merchant_sold_current);
@@ -3002,6 +3019,8 @@ int32_t NativeEconomyRuntime::ensure_market_signal_index(int32_t cell, int32_t g
     insert_i64_if_aligned(_epoch_business_demand_ema);
     insert_i64_if_aligned(_epoch_desired_business_demand);
     insert_i64_if_aligned(_epoch_funded_business_demand);
+    insert_i64_if_aligned(_epoch_ceiling_business_requested);
+    insert_i64_if_aligned(_epoch_ceiling_business_unfilled);
     insert_i64_if_aligned(_epoch_offered_supply_ema);
     insert_i64_if_aligned(_epoch_producer_sellable_current);
     insert_i64_if_aligned(_epoch_producer_merchant_sold_current);
@@ -3091,6 +3110,8 @@ bool NativeEconomyRuntime::flush_market_signal_overflow(std::string &error) {
     reorder(_epoch_business_demand_ema);
     reorder(_epoch_desired_business_demand);
     reorder(_epoch_funded_business_demand);
+    reorder(_epoch_ceiling_business_requested);
+    reorder(_epoch_ceiling_business_unfilled);
     reorder(_epoch_offered_supply_ema);
     reorder(_epoch_producer_sellable_current);
     reorder(_epoch_producer_merchant_sold_current);
@@ -5132,6 +5153,13 @@ NativeEconomyRuntime::PricePressure NativeEconomyRuntime::price_pressure(
             anchor - price, Q16_ONE, std::max<int64_t>(anchor, price), sat),
             -Q16_ONE, Q16_ONE), confidence, Q16_ONE, sat);
     }
+    // Inventory overhang weakens only upward cost anchoring. This reuses the
+    // existing normalized inventory signal, with no new per-market history.
+    if (out.cost_q16 > 0 && out.inventory_q16 < 0) {
+        out.cost_q16 = inventory_adjusted_cost_pressure(
+            out.cost_q16, out.inventory_q16, sat);
+        out.glut_cost_damped = true;
+    }
     if (demand == 0 && out.supply == 0 && stock == 0) {
         out.idle_q16 = std::clamp<int64_t>(mul_div_sat(
             static_cast<int64_t>(_good_default_price[good]) - price, Q16_ONE,
@@ -5157,15 +5185,79 @@ NativeEconomyRuntime::PricePressure NativeEconomyRuntime::price_pressure(
     return out;
 }
 
-int64_t NativeEconomyRuntime::next_price_v4(
+int32_t NativeEconomyRuntime::market_price_ceiling(
+        int32_t market, int32_t good, int64_t cost_anchor) const {
+    int32_t limit = base_price_ceiling(_good_reference_max_price[good],
+                                      _good_default_price[good], cost_anchor);
+    const auto &rows = _market.price_ceilings[market];
+    const auto it = std::lower_bound(rows.begin(), rows.end(), good,
+        [](const PriceCeilingState &row, int32_t id) { return row.good < id; });
+    if (it != rows.end() && it->good == good) limit = std::max(limit, it->limit);
+    return limit;
+}
+
+int64_t NativeEconomyRuntime::price_ceiling_state_count() const {
+    int64_t count = 0;
+    for (const auto &row : _market.price_ceilings) count += row.size();
+    return count;
+}
+
+void NativeEconomyRuntime::commit_price_ceilings() {
+    // All household/building work is joined and actual research delivery is now
+    // known. Query and trade prediction never enter this state transition.
+    std::sort(_epoch_price_ceiling_observations.begin(), _epoch_price_ceiling_observations.end(),
+        [](const auto &a, const auto &b) { return std::pair{a.market,a.good} < std::pair{b.market,b.good}; });
+    size_t begin = 0;
+    while (begin < _epoch_price_ceiling_observations.size()) {
+        const int32_t market = _epoch_price_ceiling_observations[begin].market;
+        size_t end = begin + 1;
+        while (end < _epoch_price_ceiling_observations.size() &&
+               _epoch_price_ceiling_observations[end].market == market) ++end;
+        auto &old = _market.price_ceilings[market];
+        // Reuse the previous row's storage at the serial merge boundary.
+        // Once active rows have warmed up this performs no allocation.
+        auto &next = _price_ceiling_merge_scratch;
+        next.clear();
+        next.reserve(end - begin);
+        size_t cursor = 0;
+        for (size_t i = begin; i < end; ++i) {
+            const auto &observation = _epoch_price_ceiling_observations[i];
+            while (cursor < old.size() && old[cursor].good < observation.good) ++cursor;
+            PriceCeilingState state = cursor < old.size() && old[cursor].good == observation.good
+                ? old[cursor] : PriceCeilingState{observation.good, observation.base, 0};
+            int64_t requested = observation.requested, unfilled = observation.unfilled;
+            if (observation.good == _epoch_research_good_id) {
+                requested = saturating_add(requested, _epoch_ceiling_research_requested[market], _saturation_count);
+                unfilled = saturating_add(unfilled, std::max<int64_t>(0,
+                    _epoch_ceiling_research_requested[market] - _epoch_ceiling_research_delivered[market]), _saturation_count);
+            }
+            const int64_t shortage = requested > 0 ? std::clamp<int64_t>(
+                mul_div_sat(unfilled, Q16_ONE, requested, _saturation_count), 0, Q16_ONE) : 0;
+            const int32_t before = std::max(state.limit, observation.base);
+            state = advance_price_ceiling(state, observation.base, observation.price, shortage,
+                observation.days, _price_ceiling_confirm_days, _price_ceiling_expand_bp, _price_ceiling_recover_bp);
+            if (state.limit > before) ++_price_ceiling_expansions;
+            if (state.limit < before) ++_price_ceiling_recoveries;
+            if (state.limit > observation.base || state.confirmation_days > 0 ||
+                int64_t(observation.price) * 10 >= int64_t(observation.base) * 7) next.push_back(state);
+        }
+        old.swap(next);
+        begin = end;
+    }
+    _epoch_price_ceiling_observations.clear();
+}
+
+int64_t NativeEconomyRuntime::next_price_v6(
         int32_t good, int64_t current_price, const PricePressure &pressure,
-        int32_t days, int64_t &sat, bool &rate_clamped) const {
+        int32_t days, int64_t &sat, bool &rate_clamped, bool &rise_damped, bool *minimum_tick) const {
+    if (minimum_tick) *minimum_tick = false;
     const int64_t unclamped_change_q16 = pressure.change_q16;
     const int64_t change_q16 = std::clamp<int64_t>(unclamped_change_q16,
         -static_cast<int64_t>(_good_max_price_fall_q16[good]),
         static_cast<int64_t>(_good_max_price_rise_q16[good]));
     rate_clamped = unclamped_change_q16 != change_q16;
-    const int64_t period_change_q16 = saturating_mul(
+    rise_damped = false;
+    int64_t period_change_q16 = saturating_mul(
         change_q16, std::max(1, days), sat);
     // Positive pressure uses the stable default/cost anchor so repeated
     // shortages do not compound exponentially. Negative pressure uses the
@@ -5173,8 +5265,14 @@ int64_t NativeEconomyRuntime::next_price_v4(
     // markdown into a collapse below the producer's economic scale.
     const int64_t adjustment_reference = price_adjustment_reference(
         current_price, pressure.adjustment_anchor_price, period_change_q16);
-    int64_t next = saturating_add(current_price, mul_div_sat(
-        adjustment_reference, period_change_q16, Q16_ONE, sat), sat);
+    int64_t delta = mul_div_sat(
+        adjustment_reference, period_change_q16, Q16_ONE, sat);
+    // Preserve a nonzero rate through price quantization, at the numeric floor.
+    if (delta == 0 && change_q16 != 0) {
+        delta = change_q16 > 0 ? 1 : -1;
+        if (minimum_tick) *minimum_tick = true;
+    }
+    int64_t next = saturating_add(current_price, delta, sat);
     if (pressure.idle_q16 != 0 && pressure.inactive_reversion_alpha_q16 > 0) {
         const int64_t alpha_q16 = std::min<int64_t>(Q16_ONE, saturating_mul(
             pressure.inactive_reversion_alpha_q16, std::max(1, days), sat));
@@ -6421,7 +6519,7 @@ int32_t NativeEconomyRuntime::find_entrepreneur_source(
         bool &had_eligible_sponsor, int64_t &willing_population,
         int64_t &transferable_capital,
         int64_t &income_improvement_q16,
-        uint64_t &sponsor_family_handle) const {
+        uint64_t &sponsor_family_handle, const std::vector<int64_t> *living_cost_cache) const {
     had_eligible_sponsor = false;
     willing_population = 0;
     transferable_capital = 0;
@@ -6457,8 +6555,13 @@ int32_t NativeEconomyRuntime::find_entrepreneur_source(
             : population;
         if (available_population <= 0 ||
             (is_merchant_slot(slot) && population <= 1)) return;
-        const int64_t source_living_cost = living_cost_for_signature(
-            cell, source_signature, -1, sat);
+        const size_t living_key = static_cast<size_t>(source.plan_id) * _ethnicity_ids.size() +
+            static_cast<size_t>(source.ethnicity_id);
+        const int64_t cached_living_cost = living_cost_cache != nullptr &&
+                living_key < living_cost_cache->size()
+            ? (*living_cost_cache)[living_key] : -1;
+        const int64_t source_living_cost = cached_living_cost >= 0 ? cached_living_cost :
+            living_cost_for_signature(cell, source_signature, -1, sat);
         const int64_t reserve = saturating_mul(saturating_mul(
             source_living_cost, population, sat), 30, sat);
         const int64_t transferable = std::max<int64_t>(
@@ -9599,6 +9702,31 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                 _price_cap_hits = saturating_add(_price_cap_hits,
                                                  market_result.price_cap_hits,
                                                  _saturation_count);
+                _price_rate_clamp_hits = saturating_add(
+                    _price_rate_clamp_hits, market_result.price_rate_clamp_hits,
+                    _saturation_count);
+                _epoch_price_ceiling_observations.insert(_epoch_price_ceiling_observations.end(),
+                    market_result.price_ceiling_observations.begin(), market_result.price_ceiling_observations.end());
+                _price_ceiling_blocked_rises += market_result.price_ceiling_blocked_rises;
+                _price_numeric_ceiling_hits = saturating_add(_price_numeric_ceiling_hits,
+        market_result.price_numeric_ceiling_hits, _saturation_count);
+    _price_numeric_floor_hits = saturating_add(_price_numeric_floor_hits,
+                    market_result.price_numeric_floor_hits, _saturation_count);
+                _price_min_tick_hits = saturating_add(_price_min_tick_hits,
+                    market_result.price_min_tick_hits, _saturation_count);
+                _price_glut_cost_damp_hits = saturating_add(_price_glut_cost_damp_hits,
+                    market_result.price_glut_cost_damp_hits, _saturation_count);
+                _small_payment_roundups = saturating_add(_small_payment_roundups,
+                    market_result.small_payment_roundups, _saturation_count);
+                _price_rise_fade_hits = saturating_add(
+                    _price_rise_fade_hits, market_result.price_rise_fade_hits,
+                    _saturation_count);
+                _price_headroom_damp_hits = saturating_add(
+                    _price_headroom_damp_hits,
+                    market_result.price_headroom_damp_hits, _saturation_count);
+                _price_catalog_bound_hits = saturating_add(
+                    _price_catalog_bound_hits,
+                    market_result.price_catalog_bound_hits, _saturation_count);
                 _price_cost_anchor_hits = saturating_add(
                     _price_cost_anchor_hits, market_result.price_cost_anchor_hits,
                     _saturation_count);
@@ -9767,6 +9895,7 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                 break;
             }
             ++work_done;
+            commit_price_ceilings();
             _stage = Stage::TRADE_DISPATCH;
             if (finish_chunk_and_should_yield()) break;
             continue;
@@ -15025,6 +15154,13 @@ int64_t NativeEconomyRuntime::state_hash() const {
     mix_u64(static_cast<uint64_t>(_building_catalog_hash));
     mix_u64(static_cast<uint64_t>(_prosperity_profile_hash));
     mix_u64(static_cast<uint64_t>(_startup_demand_runtime_mode));
+    mix_u64(_price_ceiling_confirm_days); mix_u64(_price_ceiling_expand_bp); mix_u64(_price_ceiling_recover_bp);
+    for (size_t market = 0; market < _market.price_ceilings.size(); ++market) {
+        for (const auto &state : _market.price_ceilings[market]) {
+            mix_u64(market); mix_u64(state.good); mix_u64(state.limit); mix_u64(state.confirmation_days);
+        }
+    }
+    mix_u64(price_ceiling_state_count());
     mix_u64(static_cast<uint64_t>(_cell_count));
     mix_u64(static_cast<uint64_t>(_epoch_id));
     mix_u64(static_cast<uint64_t>(_epoch_days));

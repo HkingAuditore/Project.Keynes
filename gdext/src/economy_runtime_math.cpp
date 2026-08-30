@@ -109,6 +109,13 @@ int64_t NativeEconomyRuntime::mul_div_sat(int64_t a, int64_t b, int64_t divisor,
 #endif
 }
 
+int64_t NativeEconomyRuntime::inventory_adjusted_cost_pressure(
+        int64_t cost, int64_t inventory, int64_t &sat) {
+    return cost > 0 && inventory < 0
+        ? mul_div_sat(cost, std::max<int64_t>(0, Q16_ONE + inventory), Q16_ONE, sat)
+        : cost;
+}
+
 int64_t NativeEconomyRuntime::pow_q16(int64_t ratio_q16, int64_t exponent_q16,
                                       int64_t &sat) {
     if (ratio_q16 <= 0) return exponent_q16 <= 0 ? Q16_ONE : 0;
@@ -209,6 +216,79 @@ void NativeEconomyRuntime::formula_income_price_linear(const FormulaBatchInput &
         qty = mul_div_sat(qty, income_factor, Q16_ONE, sat);
         out[i] = mul_div_sat(qty, price_factor, Q16_ONE, sat);
     }
+}
+
+int32_t NativeEconomyRuntime::base_price_ceiling(
+        int32_t reference, int32_t default_price, int64_t cost_anchor) {
+    const int64_t base = std::max<int64_t>(1, default_price);
+    const int64_t anchor = std::clamp<int64_t>(std::max(base, cost_anchor), 1, INT32_MAX);
+    // Valid catalog i32 operands have an exact, non-overflowing i64 product.
+    return static_cast<int32_t>(std::min<int64_t>(INT32_MAX,
+        (std::max<int64_t>(1, reference) * anchor + base - 1) / base));
+}
+
+NativeEconomyRuntime::PriceCeilingState NativeEconomyRuntime::advance_price_ceiling(
+        PriceCeilingState state, int32_t base, int32_t price, int64_t shortage,
+        int32_t days, int32_t confirm_days, int32_t expand_bp, int32_t recover_bp) {
+    state.limit = std::max(base, state.limit);
+    // A local settlement represents at most five actual elapsed days. Replay
+    // fixed daily integer steps so cadence never changes the confirmation clock.
+    for (int32_t day = 0; day < std::clamp(days, 0, 5); ++day) {
+        const bool confirmed = state.confirmation_days >= confirm_days;
+        const bool release = int64_t(price) * 10 < int64_t(state.limit) * 7 ||
+                             shortage * 10 <= Q16_ONE;
+        if (confirmed) {
+            if (release) state.confirmation_days = 0;
+            else if (shortage >= Q16_ONE / 4) {
+                const int64_t growth = (int64_t(state.limit) * expand_bp + 9999) / 10000;
+                state.limit = static_cast<int32_t>(std::min<int64_t>(INT32_MAX,
+                    int64_t(state.limit) + growth));
+            }
+        } else if (int64_t(price) * 5 >= int64_t(state.limit) * 4 &&
+                   shortage >= Q16_ONE / 4) {
+            ++state.confirmation_days;
+        } else {
+            state.confirmation_days = 0;
+        }
+        if (int64_t(price) * 10 < int64_t(state.limit) * 7 && shortage * 10 <= Q16_ONE) {
+            const int64_t reduction = (int64_t(state.limit) * recover_bp + 9999) / 10000;
+            state.limit = static_cast<int32_t>(std::max<int64_t>(base, state.limit - reduction));
+        }
+    }
+    return state;
+}
+
+int64_t NativeEconomyRuntime::shape_price(int32_t ceiling, int64_t current_price,
+        int64_t next_price, int64_t &sat, bool *headroom_damped,
+        bool *catalog_bound, bool *minimum_tick) {
+    if (minimum_tick) *minimum_tick = false;
+    // Price V5 has no economic floor. Small positive prices are a UI
+    // formatting concern; only the numeric minimum protects arithmetic.
+    const int64_t catalog_min = PRICE_NUMERIC_GUARD_MIN;
+    const int64_t catalog_max = std::min<int64_t>(
+        PRICE_NUMERIC_GUARD_MAX, std::max<int64_t>(catalog_min, ceiling));
+    // Only the final 20% of the current cap damps upward movement.
+    // Contracting a cap never forces a markdown; falls keep their rate limit.
+    const int64_t soft_start = catalog_max * 4 / 5;
+    const int64_t catalog_span = catalog_max - soft_start;
+    int64_t shaped = next_price;
+    if (headroom_damped != nullptr) *headroom_damped = false;
+    if (next_price > current_price && current_price >= soft_start && catalog_span > 0) {
+        const int64_t headroom_q16 = mul_div_sat(
+            std::max<int64_t>(0, catalog_max - current_price), Q16_ONE,
+            catalog_span, sat);
+        const int64_t damped = saturating_add(current_price, mul_div_sat(
+            next_price - current_price, headroom_q16, Q16_ONE, sat), sat);
+        if (headroom_damped != nullptr) *headroom_damped = damped != next_price;
+        shaped = damped;
+        if (shaped == current_price && current_price < catalog_max) {
+            shaped = current_price + 1;
+            if (minimum_tick) *minimum_tick = true;
+        }
+    }
+    const int64_t bounded = std::clamp<int64_t>(shaped, catalog_min, std::max(catalog_max, current_price));
+    if (catalog_bound != nullptr) *catalog_bound = bounded != shaped;
+    return bounded;
 }
 
 } // namespace pk

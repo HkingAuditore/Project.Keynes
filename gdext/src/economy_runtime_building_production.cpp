@@ -828,9 +828,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 cell, candidate.good_id,
                 physical_input_quantity(GOODS_SCALE, candidate),
                 _saturation_count);
-            const int64_t effective_price = mul_div_sat(
-                _market.price[_market.index(market, candidate.good_id)],
-                unit_physical, GOODS_SCALE, _saturation_count);
+            const int64_t effective_price = goods_cost(_market.price[_market.index(market, candidate.good_id)], unit_physical, _saturation_count);
             if (capacity_q16 > best_capacity_q16 ||
                 (capacity_q16 == best_capacity_q16 &&
                  (effective_price < best_effective_price ||
@@ -884,6 +882,16 @@ bool NativeEconomyRuntime::run_building_production_cell(
     thread_local std::vector<int32_t> quoted_input_candidates;
     thread_local std::vector<int64_t> quoted_input_quantities;
     thread_local std::vector<std::pair<int32_t, int64_t>> quoted_good_totals;
+    struct InputPolicyBill { int32_t good = -1; int32_t rate = 0; GoodsBill bill; };
+    thread_local std::vector<InputPolicyBill> input_policy_bills;
+    input_policy_bills.resize(std::max<size_t>(1, _building_inputs.size()));
+    size_t input_policy_count = 0;
+    bool observe_price_ceiling = !_market.price_ceilings[market].empty();
+    for (int32_t good = 0; good < _market.good_count && !observe_price_ceiling; ++good)
+        observe_price_ceiling = int64_t(_market.price[_market.index(market, good)]) * 5 >=
+                                int64_t(_good_reference_max_price[good]) * 4;
+    thread_local std::vector<int32_t> ceiling_input_candidates;
+    thread_local std::vector<int64_t> ceiling_input_quantities;
     auto quote_group_inputs = [&](const BuildingGroup &group,
                                   const BuildingType &type,
                                   int64_t output_scale_q16,
@@ -891,6 +899,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
                                   std::vector<int32_t> *selected_out,
                                   std::vector<int64_t> *quantities_out) -> int64_t {
         int64_t total_cost = 0;
+        input_policy_count = 0;
         const int64_t building_days = saturating_mul(
             group.count, std::max(1, _epoch_days), _saturation_count);
         output_scale_q16 = std::clamp<int64_t>(output_scale_q16, 0, Q16_ONE);
@@ -931,14 +940,23 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     return std::numeric_limits<int64_t>::max();
                 }
             }
-            const int64_t base_cost = mul_div_sat(
-                qty, _market.price[_market.index(market, candidate.good_id)],
-                GOODS_SCALE, _saturation_count);
-            const TransactionQuote quote = quote_transaction(
-                cell, candidate.good_id, base_cost, false, true,
-                _saturation_count);
-            total_cost = saturating_add(
-                total_cost, quote.buyer_outlay, _saturation_count);
+            const int32_t rate = frozen_tax_rate(cell,
+                NativeCountryRuntime::TAX_TRANSACTION, candidate.good_id);
+            size_t policy = 0;
+            while (policy < input_policy_count && input_policy_bills[policy].rate != rate)
+                ++policy;
+            if (policy == input_policy_count) {
+                input_policy_bills[policy] = {candidate.good_id, rate, {}};
+                ++input_policy_count;
+            }
+            input_policy_bills[policy].bill.add(qty,
+                _market.price[_market.index(market, candidate.good_id)], _saturation_count);
+        }
+        for (size_t policy = 0; policy < input_policy_count; ++policy) {
+            const InputPolicyBill &bill = input_policy_bills[policy];
+            const TransactionQuote quote = quote_transaction(cell, bill.good,
+                bill.bill.total(_saturation_count), false, true, _saturation_count);
+            total_cost = saturating_add(total_cost, quote.buyer_outlay, _saturation_count);
         }
         return std::max<int64_t>(0, total_cost);
     };
@@ -1271,6 +1289,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 std::clamp<int64_t>(scale_q16, 0, Q16_ONE);
             bool resource_limited = false;
             bool resource_capacity_limited = false;
+            int64_t ceiling_resource_scale = intent_scale_q16;
             if (type.behavior_id == 1 || type.behavior_id == 2) {
                 for (int32_t i = 0; i < type.resource_count; ++i) {
                     const ResourceAmount &item = _building_resources[type.resource_begin + i];
@@ -1293,6 +1312,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
                         resource_capacity_limited = true;
                     }
                     scale_q16 = std::min(scale_q16, resource_scale);
+                    ceiling_resource_scale = std::min(ceiling_resource_scale, resource_scale);
                 }
             }
             const int64_t scale_without_climate_q16 = std::clamp<int64_t>(
@@ -1347,6 +1367,46 @@ bool NativeEconomyRuntime::run_building_production_cell(
                         _building_resource_generated, qty, _saturation_count);
                 }
             }
+            if (observe_price_ceiling && type.input_count > 0) {
+                const int64_t affordable_scale = clamp_scale_to_group_budget(
+                    std::min(intent_scale_q16, ceiling_resource_scale), false);
+                const int64_t intent_cost = quote_group_inputs(group, type, affordable_scale, false,
+                    &ceiling_input_candidates, &ceiling_input_quantities);
+                if (intent_cost <= settlement_budget) {
+                    for (int32_t i = 0; i < type.input_count; ++i) {
+                        const int32_t selected = ceiling_input_candidates[i];
+                        const int64_t requested = ceiling_input_quantities[i];
+                        if (selected < 0 || requested <= 0) continue;
+                        const auto &item = _building_inputs[type.input_begin + i];
+                        const int64_t requested_scale = input_purchase_scale_q16(item, affordable_scale);
+                        // Test this recipe edge independently. A missing
+                        // complementary input must not make stocked goods scarce.
+                        const int64_t effective = saturating_mul(building_days,
+                            item.quantity, _saturation_count);
+                        const int32_t available = select_input_candidate(item, true, effective);
+                        int64_t available_scale = 0;
+                        if (available >= 0) {
+                            const auto &candidate = _building_input_candidates[available];
+                            const int64_t physical = effective_production_input_quantity(cell,
+                                candidate.good_id, physical_input_quantity(effective, candidate),
+                                _saturation_count);
+                            available_scale = physical > 0 ? std::min<int64_t>(Q16_ONE,
+                                mul_div_sat(_market.stock[_market.index(market, candidate.good_id)],
+                                    Q16_ONE, physical, _saturation_count)) : Q16_ONE;
+                        }
+                        const int64_t unfilled = mul_div_sat(requested,
+                            std::max<int64_t>(0, requested_scale - available_scale),
+                            std::max<int64_t>(1, requested_scale), _saturation_count);
+                        const int32_t signal = market_signal_index(cell, _building_input_candidates[selected].good_id);
+                        if (signal >= 0 && signal < static_cast<int32_t>(_epoch_ceiling_business_requested.size())) {
+                            _epoch_ceiling_business_requested[signal] = saturating_add(
+                                _epoch_ceiling_business_requested[signal], requested, _saturation_count);
+                            _epoch_ceiling_business_unfilled[signal] = saturating_add(
+                                _epoch_ceiling_business_unfilled[signal], unfilled, _saturation_count);
+                        }
+                    }
+                }
+            }
             if (scale_q16 == 0) continue;
             touch_accounting_slot(owner_slot);
             const int64_t actual_cost = quote_group_inputs(
@@ -1364,19 +1424,12 @@ bool NativeEconomyRuntime::run_building_production_cell(
             int64_t base_input_cost = 0;
             int64_t input_fiscal_transfer = 0;
             int64_t settled_input_outlay = 0;
-            for (int32_t i = 0; i < type.input_count; ++i) {
-                const int32_t selected = quoted_input_candidates[i];
-                const int64_t qty = quoted_input_quantities[i];
-                if (selected < 0 || qty <= 0) continue;
-                const InputCandidate &candidate =
-                    _building_input_candidates[selected];
-                const int64_t base_cost = mul_div_sat(
-                    qty, _market.price[_market.index(
-                        market, candidate.good_id)],
-                    GOODS_SCALE, _saturation_count);
-                const TransactionQuote quote = quote_transaction(
-                    cell, candidate.good_id, base_cost, true, true,
-                    _saturation_count);
+            // Reuse the final preflight bills verbatim, so splitting a recipe
+            // into several input edges cannot change the rounded fee or tax.
+            for (size_t policy = 0; policy < input_policy_count; ++policy) {
+                const InputPolicyBill &bill = input_policy_bills[policy];
+                const TransactionQuote quote = quote_transaction(cell, bill.good,
+                    bill.bill.total(_saturation_count), true, true, _saturation_count);
                 base_input_cost = saturating_add(
                     base_input_cost, quote.base_value, _saturation_count);
                 input_fiscal_transfer = saturating_add(
@@ -1664,9 +1717,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
             const int64_t outlay_price = std::max<int64_t>(
                 1, procurement_quote.buyer_outlay);
             procurement_outlay_price_by_good[good] = outlay_price;
-            const int64_t base_weight = mul_div_sat(
-                quota_by_good[good], outlay_price, GOODS_SCALE,
-                _saturation_count);
+            const int64_t base_weight = goods_cost(quota_by_good[good], outlay_price, _saturation_count);
             purchase_value_by_good[good] = base_weight;
             total_purchase_value = saturating_add(
                 total_purchase_value, base_weight, _saturation_count);
@@ -1996,7 +2047,13 @@ bool NativeEconomyRuntime::run_building_production_cell(
                                 _saturation_count), _saturation_count);
             }
         }
+        GoodsBill procurement_bill;
+        int32_t procurement_bill_good = -1;
         for (const Offer &offer : offers) {
+            if (procurement_bill_good != offer.good) {
+                procurement_bill = {};
+                procurement_bill_good = offer.good;
+            }
             BuildingGroup &group = _buildings[offer.group];
             const int64_t issue_value = _good_monetary_issue_values[offer.good];
             const int64_t buy_price = std::max<int64_t>(1, mul_div_sat(
@@ -2047,8 +2104,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 }
             } else {
                 sold = offer.merchant_sold;
-                const int64_t base_payment = mul_div_sat(
-                    sold, buy_price, GOODS_SCALE, _saturation_count);
+                const int64_t base_payment = procurement_bill.add(sold, buy_price, _saturation_count);
                 const TransactionQuote procurement_quote = quote_transaction(
                     cell, offer.good, base_payment, true, false,
                     _saturation_count);
@@ -2419,6 +2475,9 @@ bool NativeEconomyRuntime::run_building_production_cell(
     }
     thread_local std::vector<int64_t> maintenance_observed;
     maintenance_observed.assign(cell_signal_count, 0);
+    thread_local std::vector<std::pair<int32_t, int64_t>> ceiling_maintenance_wallets;
+    ceiling_maintenance_wallets.clear();
+    if (observe_price_ceiling) ceiling_maintenance_wallets.reserve(end - begin);
     for (int32_t g = begin; g < end; ++g) {
         BuildingGroup &group = _buildings[g];
         if (group.cell != cell || group.count <= 0 ||
@@ -2438,6 +2497,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
         const int64_t building_days = saturating_mul(
             group.count, std::max(1, _epoch_days), _saturation_count);
         int64_t paid = 0;
+        GoodsBill maintenance_bill;
         for (int32_t i = 0; i < type.maintenance_count; ++i) {
             const GoodAmount &item =
                 _building_maintenance_goods[type.maintenance_begin + i];
@@ -2460,6 +2520,27 @@ bool NativeEconomyRuntime::run_building_production_cell(
                               GOODS_SCALE, price, _saturation_count)
                 : 0;
             const int64_t bought = std::min(desired, std::min(stock, affordable));
+            if (observe_price_ceiling && signal >= 0 &&
+                signal < static_cast<int32_t>(_epoch_ceiling_business_requested.size())) {
+                auto wallet = std::find_if(ceiling_maintenance_wallets.begin(),
+                    ceiling_maintenance_wallets.end(), [owner_slot](const auto &entry) {
+                        return entry.first == owner_slot;
+                    });
+                if (wallet == ceiling_maintenance_wallets.end()) {
+                    ceiling_maintenance_wallets.push_back({owner_slot,
+                        std::max<int64_t>(0, _population.funds[owner_slot])});
+                    wallet = ceiling_maintenance_wallets.end() - 1;
+                }
+                wallet->second = std::min(wallet->second,
+                    std::max<int64_t>(0, _population.funds[owner_slot]));
+                const int64_t requested = price > 0 ? std::min(desired,
+                    mul_div_sat(wallet->second, GOODS_SCALE, price, _saturation_count)) : 0;
+                wallet->second -= goods_cost(requested, price, _saturation_count);
+                _epoch_ceiling_business_requested[signal] = saturating_add(
+                    _epoch_ceiling_business_requested[signal], requested, _saturation_count);
+                _epoch_ceiling_business_unfilled[signal] = saturating_add(
+                    _epoch_ceiling_business_unfilled[signal], std::max<int64_t>(0, requested - bought), _saturation_count);
+            }
             const int64_t unmet = std::max<int64_t>(0, desired - bought);
             _maintenance_unmet = saturating_add(
                 _maintenance_unmet, unmet, _saturation_count);
@@ -2470,8 +2551,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     _saturation_count);
             }
             if (bought <= 0 || price <= 0) continue;
-            const int64_t cost = mul_div_sat(
-                bought, price, GOODS_SCALE, _saturation_count);
+            const int64_t cost = maintenance_bill.add(bought, price, _saturation_count);
             if (cost > _population.funds[owner_slot]) continue;
             audit_touch_market_lane(static_cast<size_t>(stock_index));
             _market.stock[stock_index] -= bought;

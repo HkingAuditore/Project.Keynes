@@ -45,7 +45,18 @@ void NativeEconomyRuntime::MarketResult::reset() {
     price_ms = 0.0;
     merchant_count = 0;
     merchant_repairs = 0;
+    price_ceiling_observations.clear();
+    price_ceiling_expansions = price_ceiling_recoveries = price_ceiling_blocked_rises = 0;
     price_cap_hits = 0;
+    price_rate_clamp_hits = 0;
+    price_numeric_floor_hits = 0;
+    price_numeric_ceiling_hits = 0;
+    price_min_tick_hits = 0;
+    price_glut_cost_damp_hits = 0;
+    small_payment_roundups = 0;
+    price_rise_fade_hits = 0;
+    price_headroom_damp_hits = 0;
+    price_catalog_bound_hits = 0;
     price_cost_anchor_hits = 0;
     price_inactive_reversions = 0;
     revenue = 0;
@@ -75,6 +86,7 @@ void NativeEconomyRuntime::MarketResult::reset() {
 
 int64_t NativeEconomyRuntime::MarketResult::capacity_bytes() const {
     return static_cast<int64_t>(
+        price_ceiling_observations.capacity() * sizeof(PriceCeilingObservation) +
         food_access_by_cell.capacity() * sizeof(FoodAccessEntry) +
         retained_consumed_by_good.capacity() * sizeof(int64_t) +
         building_in_kind_credits.capacity() * sizeof(BuildingInKindCredit) +

@@ -7,5 +7,4 @@ display_name = "无线电设备"
 category_id = &"communication"
 technology_tags = PackedStringArray("tech.radio")
 default_price = 65000
-min_price = 6500
-max_price = 650000
+reference_max_price = 3250000

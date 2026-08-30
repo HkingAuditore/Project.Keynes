@@ -8,5 +8,4 @@ category_id = &"autonomous_systems"
 substitution_category_ids = PackedStringArray("autonomous_systems")
 technology_tags = PackedStringArray("tech.application.autonomous_systems_plant")
 default_price = 220000
-min_price = 22000
-max_price = 2200000
+reference_max_price = 11000000

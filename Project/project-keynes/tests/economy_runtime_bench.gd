@@ -72,8 +72,9 @@ func _init() -> void:
 		var prices := PackedInt32Array()
 		prices.resize(cells * goods)
 		var defaults := catalog.good_default_price as PackedInt32Array
-		var minimums := catalog.good_min_price as PackedInt32Array
-		var maximums := catalog.good_max_price as PackedInt32Array
+		var minimums := catalog.good_default_price as PackedInt32Array
+		for g in range(minimums.size()): minimums[g] = maxi(1, minimums[g] / 10)
+		var maximums := catalog.good_reference_max_price as PackedInt32Array
 		for cell in range(cells):
 			var source := (cell & 1) == 0
 			var base := cell * goods
@@ -328,7 +329,6 @@ func _synthetic_catalog(good_count: int, signatures: int) -> Dictionary:
 	var good_ids := PackedStringArray()
 	var default_price := PackedInt32Array()
 	var initial_stock := PackedInt64Array()
-	var min_price := PackedInt32Array()
 	var max_price := PackedInt32Array()
 	var adjust := PackedInt32Array()
 	var elasticity := PackedInt32Array()
@@ -346,7 +346,6 @@ func _synthetic_catalog(good_count: int, signatures: int) -> Dictionary:
 		good_ids.append("good_%03d" % good)
 		default_price.append(10000 + good)
 		initial_stock.append(0)
-		min_price.append(1000)
 		max_price.append(1000000)
 		adjust.append(2048)
 		elasticity.append(65536)
@@ -427,7 +426,7 @@ func _synthetic_catalog(good_count: int, signatures: int) -> Dictionary:
 		"building_technology_tags": PackedStringArray(),
 		"good_ids": good_ids, "need_ids": need_ids, "plan_ids": PackedStringArray(["plan"]),
 		"good_default_price": default_price, "good_initial_stock": initial_stock,
-		"good_min_price": min_price, "good_max_price": max_price,
+		"good_reference_max_price": max_price,
 		"good_price_adjust_q16": adjust, "good_demand_price_elasticity_q16": elasticity,
 		"good_demand_ema_alpha_q16": ema,
 		"good_inventory_target_ratios_q16": inventory_target_ratios,

@@ -7,5 +7,4 @@ display_name = "采集植物食物"
 category_id = &"food"
 technology_tags = PackedStringArray("tech.gathering")
 default_price = 5000
-min_price = 500
-max_price = 50000
+reference_max_price = 250000

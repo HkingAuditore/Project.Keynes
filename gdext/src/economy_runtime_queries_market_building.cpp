@@ -65,12 +65,14 @@ Dictionary NativeEconomyRuntime::market_cell_snapshot(int32_t cell_idx) const {
     PackedByteArray trade_deadline_exceeded;
     PackedInt32Array cost_anchor_price;
     PackedInt32Array price;
+    PackedInt32Array reference_ceiling, base_ceiling, effective_ceiling, target_ceiling, ceiling_days;
     PackedInt32Array shortage_q16;
     PackedInt32Array pressure_excess_q16;
     PackedInt64Array price_inventory_target;
     PackedInt32Array pressure_inventory_q16;
     PackedInt32Array pressure_shortage_q16;
     PackedInt32Array pressure_cost_q16;
+    PackedByteArray cost_glut_damped;
     PackedInt32Array pressure_idle_q16;
     PackedInt32Array pressure_total_q16;
     PackedInt32Array price_change_q16;
@@ -211,10 +213,23 @@ Dictionary NativeEconomyRuntime::market_cell_snapshot(int32_t cell_idx) const {
             _market.stock[_market.index(market, g)],
             _market.last_shortage_q16[_market.index(market, g)], signal,
             snapshot_saturation);
+        const int32_t base_limit = base_price_ceiling(_good_reference_max_price[g],
+            _good_default_price[g], pressure.adjustment_anchor_price);
+        const int32_t target_limit = market_price_ceiling(market, g, pressure.adjustment_anchor_price);
+        reference_ceiling.push_back(_good_reference_max_price[g]);
+        base_ceiling.push_back(base_limit);
+        target_ceiling.push_back(target_limit);
+        effective_ceiling.push_back(std::max(target_limit, _market.price[_market.index(market, g)]));
+        const auto &ceiling_rows = _market.price_ceilings[market];
+        const auto ceiling_it = std::lower_bound(ceiling_rows.begin(), ceiling_rows.end(), g,
+            [](const PriceCeilingState &state, int32_t good) { return state.good < good; });
+        ceiling_days.push_back(ceiling_it != ceiling_rows.end() && ceiling_it->good == g
+            ? ceiling_it->confirmation_days : 0);
         pressure_excess_q16.push_back(static_cast<int32_t>(pressure.excess_q16));
         price_inventory_target.push_back(pressure.inventory_target);
         pressure_inventory_q16.push_back(static_cast<int32_t>(pressure.inventory_q16));
         pressure_shortage_q16.push_back(static_cast<int32_t>(pressure.shortage_q16));
+        cost_glut_damped.push_back(pressure.glut_cost_damped ? 1 : 0);
         pressure_cost_q16.push_back(static_cast<int32_t>(pressure.cost_q16));
         pressure_idle_q16.push_back(static_cast<int32_t>(pressure.idle_q16));
         pressure_total_q16.push_back(static_cast<int32_t>(std::clamp<int64_t>(
@@ -241,6 +256,11 @@ Dictionary NativeEconomyRuntime::market_cell_snapshot(int32_t cell_idx) const {
     out["good_ids"] = good_ids;
     out["stock"] = stock;
     out["price"] = price;
+    out["price_reference_ceiling"] = reference_ceiling;
+    out["price_base_ceiling"] = base_ceiling;
+    out["price_effective_ceiling"] = effective_ceiling;
+    out["price_target_ceiling"] = target_ceiling;
+    out["price_ceiling_confirmation_days"] = ceiling_days;
     out["demand_ema"] = demand_ema;
     out["business_demand_ema"] = business_demand_ema;
     out["desired_business_demand"] = desired_business_demand;
@@ -268,6 +288,8 @@ Dictionary NativeEconomyRuntime::market_cell_snapshot(int32_t cell_idx) const {
     out["price_pressure_inventory_q16"] = pressure_inventory_q16;
     out["price_pressure_shortage_q16"] = pressure_shortage_q16;
     out["price_pressure_cost_q16"] = pressure_cost_q16;
+    out["price_cost_glut_damped"] = cost_glut_damped;
+    out["price_numeric_min"] = PRICE_NUMERIC_GUARD_MIN;
     out["price_pressure_idle_q16"] = pressure_idle_q16;
     out["price_pressure_total_q16"] = pressure_total_q16;
     out["price_change_q16"] = price_change_q16;

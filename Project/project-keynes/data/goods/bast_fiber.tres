@@ -10,6 +10,5 @@ category_id = &"spinnable_fiber"
 substitution_category_ids = PackedStringArray("spinnable_fiber", "natural_spinnable_fiber", "guild_textile_fiber", "rag_paper_fiber")
 technology_tags = PackedStringArray("industry.primary", "tech.wild_flax_collection", "tech.application.method_flax_collector_r6", "tech.application.method_flax_collector_r8", "tech.application.method_flax_collector_r10", "tech.application.flax_collector", "tech.application.method_flax_collector_r3", "tech.application.method_flax_collector_r5")
 default_price = 7000
-min_price = 700
-max_price = 70000
+reference_max_price = 350000
 

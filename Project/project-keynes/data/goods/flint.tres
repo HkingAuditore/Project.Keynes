@@ -8,5 +8,4 @@ category_id = &"flint"
 substitution_category_ids = PackedStringArray("flint")
 technology_tags = PackedStringArray("tech.stone_knapping", "tech.application.method_flint_quarry_r1")
 default_price = 4000
-min_price = 400
-max_price = 40000
+reference_max_price = 200000

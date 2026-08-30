@@ -7,5 +7,4 @@ display_name = "先进芯片"
 category_id = &"electronics"
 technology_tags = PackedStringArray("tech.machine_learning")
 default_price = 110000
-min_price = 11000
-max_price = 1100000
+reference_max_price = 5500000

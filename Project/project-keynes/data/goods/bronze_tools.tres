@@ -10,5 +10,4 @@ technology_tags = PackedStringArray("tech.application.ore_bronzesmith_camp", "te
 production_quality_level = 2
 production_efficiency_q16 = 52429
 default_price = 26000
-min_price = 2600
-max_price = 260000
+reference_max_price = 1300000

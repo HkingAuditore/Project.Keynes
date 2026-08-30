@@ -7,5 +7,4 @@ display_name = "远洋船舶"
 category_id = &"transport_equipment"
 technology_tags = PackedStringArray("tech.oceanic_navigation")
 default_price = 120000
-min_price = 12000
-max_price = 1200000
+reference_max_price = 6000000

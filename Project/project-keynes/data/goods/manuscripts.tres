@@ -8,5 +8,4 @@ category_id = &"manuscripts"
 substitution_category_ids = PackedStringArray("manuscripts")
 technology_tags = PackedStringArray("tech.application.classical_scriptorium", "tech.application.monastic_scriptorium")
 default_price = 24000
-min_price = 2400
-max_price = 240000
+reference_max_price = 1200000

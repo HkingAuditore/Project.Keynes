@@ -8,5 +8,4 @@ category_id = &"processor_component"
 substitution_category_ids = PackedStringArray("processor_component")
 technology_tags = PackedStringArray("tech.machine_learning")
 default_price = 110000
-min_price = 11000
-max_price = 1100000
+reference_max_price = 5500000

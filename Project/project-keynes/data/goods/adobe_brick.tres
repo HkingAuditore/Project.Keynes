@@ -10,6 +10,5 @@ category_id = &"primitive_construction"
 substitution_category_ids = PackedStringArray("primitive_construction", "masonry_material")
 technology_tags = PackedStringArray("industry.construction", "tech.application.adobe_yard")
 default_price = 6000
-min_price = 600
-max_price = 60000
+reference_max_price = 300000
 

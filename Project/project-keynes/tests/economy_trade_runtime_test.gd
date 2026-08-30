@@ -55,7 +55,7 @@ func _run() -> void:
 		prices[goods.size() + good] = int((compiled.good_default_price as PackedInt32Array)[good])
 	for good in [gathered, cloth]:
 		stock[good] = 100000000
-		prices[good] = int((compiled.good_min_price as PackedInt32Array)[good])
+		prices[good] = maxi(1, int((compiled.good_default_price as PackedInt32Array)[good]) / 10)
 	_expect("two markets bootstrap", bool(ext.bootstrap_economy({
 		"cell_indices": PackedInt32Array([0, 1]),
 		"signature_ids": PackedInt32Array([
@@ -207,8 +207,8 @@ func _run() -> void:
 	_expect("dispatch preserves the source market local-demand reserve",
 		int((source_after_dispatch.stock as PackedInt64Array)[source_good_index]) >= local_target)
 	var saved := _save_economy(ext)
-	_expect("PKEC v47 saves in-transit escrow", bool(saved.get("ok", false)) and
-		int(saved.get("schema", 0)) == 47)
+	_expect("PKEC v49 saves in-transit escrow", bool(saved.get("ok", false)) and
+		int(saved.get("schema", 0)) == 49)
 	var restored := _new_ext(compiled, 2)
 	CountryTestHelper.configure_all_technologies(restored, catalog, 2, 4410)
 	restored.configure_economy(catalog, profile, 2, 4410)
@@ -362,7 +362,7 @@ func _test_country_boundary(compiled: Dictionary, catalog: Dictionary) -> void:
 		for g in range(goods.size()):
 			price[cell * goods.size() + g] = int(
 				(compiled.good_default_price as PackedInt32Array)[g])
-	price[good] = int((compiled.good_min_price as PackedInt32Array)[good])
+	price[good] = maxi(1, int((compiled.good_default_price as PackedInt32Array)[good]) / 10)
 	var merchant := (compiled.signature_keys as PackedStringArray).find("merchant|default")
 	ext.bootstrap_economy({
 		"cell_indices": PackedInt32Array([0, 4]),
@@ -490,7 +490,7 @@ func _test_player_vision_gates_foreign_trade(compiled: Dictionary, catalog: Dict
 		for g in range(goods.size()):
 			price[cell * goods.size() + g] = int(
 				(compiled.good_default_price as PackedInt32Array)[g])
-	price[good] = int((compiled.good_min_price as PackedInt32Array)[good])
+	price[good] = maxi(1, int((compiled.good_default_price as PackedInt32Array)[good]) / 10)
 	var merchant := (compiled.signature_keys as PackedStringArray).find("merchant|default")
 	ext.bootstrap_economy({
 		"cell_indices": PackedInt32Array([0, 4]),
@@ -543,9 +543,9 @@ func _test_tariff_matrix(compiled: Dictionary, catalog: Dictionary) -> void:
 		var retail := int(retails[0])
 		var import_transfer := int(imports[0])
 		var export_transfer := int(exports[0])
-		_expect("tariff basis and signed transfers use deterministic floor rounding",
-			base == quantity * int(source_prices[0]) / 1000 and
-			retail == quantity * int(destination_prices[0]) / 1000 and
+		_expect("trade basis rounds up once; signed tariffs retain floor rounding",
+			base == (quantity * int(source_prices[0]) + 999) / 1000 and
+			retail == (quantity * int(destination_prices[0]) + 999) / 1000 and
 			import_transfer == base * 33 / 100 and
 			export_transfer == base * 99 / 100)
 		_expect("tariffs affect both merchant profit tests and seller net escrow",
@@ -791,8 +791,8 @@ func _new_tariff_fixture(compiled: Dictionary, catalog: Dictionary,
 		for other_good in range(goods.size()):
 			prices[cell * goods.size() + other_good] = int(
 				(compiled.good_default_price as PackedInt32Array)[other_good])
-	prices[good] = int((compiled.good_min_price as PackedInt32Array)[good])
-	prices[goods.size() + good] = int((compiled.good_max_price as PackedInt32Array)[good])
+	prices[good] = maxi(1, int((compiled.good_default_price as PackedInt32Array)[good]) / 10)
+	prices[goods.size() + good] = int((compiled.good_reference_max_price as PackedInt32Array)[good])
 	var merchant := (compiled.signature_keys as PackedStringArray).find("merchant|default")
 	var economy_bootstrap: Dictionary = ext.bootstrap_economy({
 		"cell_indices": PackedInt32Array([0, 1]),
@@ -927,9 +927,9 @@ func _test_route_expansion_continuation(compiled: Dictionary,
 			prices[cell * goods.size() + good] = int(
 				(compiled.good_default_price as PackedInt32Array)[good])
 	for good in range(goods.size()):
-		prices[good] = int((compiled.good_min_price as PackedInt32Array)[good])
+		prices[good] = maxi(1, int((compiled.good_default_price as PackedInt32Array)[good]) / 10)
 		prices[(CELLS - 1) * goods.size() + good] = int(
-			(compiled.good_max_price as PackedInt32Array)[good])
+			(compiled.good_reference_max_price as PackedInt32Array)[good])
 	var merchant := (compiled.signature_keys as PackedStringArray).find(
 		"merchant|default")
 	_expect("long-route markets bootstrap", bool(ext.bootstrap_economy({
@@ -1180,8 +1180,8 @@ func _test_survival_shortage_relief_routes(compiled: Dictionary, catalog: Dictio
 		for g in range(goods.size()):
 			price[cell * goods.size() + g] = int(
 				(compiled.good_default_price as PackedInt32Array)[g])
-	price[good] = int((compiled.good_min_price as PackedInt32Array)[good])
-	price[goods.size() + good] = int((compiled.good_min_price as PackedInt32Array)[good])
+	price[good] = maxi(1, int((compiled.good_default_price as PackedInt32Array)[good]) / 10)
+	price[goods.size() + good] = maxi(1, int((compiled.good_default_price as PackedInt32Array)[good]) / 10)
 	var merchant := (compiled.signature_keys as PackedStringArray).find("merchant|default")
 	ext.bootstrap_economy({
 		"cell_indices": PackedInt32Array([0, 1]),
@@ -1226,8 +1226,8 @@ func _test_unprofitable_rejected(compiled: Dictionary, catalog: Dictionary) -> v
 		for g in range(goods.size()):
 			price[cell * goods.size() + g] = int(
 				(compiled.good_default_price as PackedInt32Array)[g])
-	price[good] = int((compiled.good_max_price as PackedInt32Array)[good])
-	price[goods.size() + good] = int((compiled.good_min_price as PackedInt32Array)[good])
+	price[good] = int((compiled.good_reference_max_price as PackedInt32Array)[good])
+	price[goods.size() + good] = maxi(1, int((compiled.good_default_price as PackedInt32Array)[good]) / 10)
 	var merchant := (compiled.signature_keys as PackedStringArray).find("merchant|default")
 	ext.bootstrap_economy({
 		"cell_indices": PackedInt32Array([0, 1]),
@@ -1271,7 +1271,7 @@ func _test_invalid_seller_rebind(compiled: Dictionary, catalog: Dictionary) -> v
 		for g in range(goods.size()):
 			prices[cell * goods.size() + g] = int(
 				(compiled.good_default_price as PackedInt32Array)[g])
-	prices[good] = int((compiled.good_min_price as PackedInt32Array)[good])
+	prices[good] = maxi(1, int((compiled.good_default_price as PackedInt32Array)[good]) / 10)
 	var signatures := compiled.signature_keys as PackedStringArray
 	var merchant := signatures.find("merchant|default")
 	var worker := signatures.find("worker|default")
@@ -1353,7 +1353,7 @@ func _test_worker_scalar_equivalence(compiled: Dictionary, catalog: Dictionary) 
 		for g in range(goods.size()):
 			prices[cell * goods.size() + g] = int(
 				(compiled.good_default_price as PackedInt32Array)[g])
-	prices[good] = int((compiled.good_min_price as PackedInt32Array)[good])
+	prices[good] = maxi(1, int((compiled.good_default_price as PackedInt32Array)[good]) / 10)
 	var merchant := (compiled.signature_keys as PackedStringArray).find("merchant|default")
 	var population_packet := {
 		"cell_indices": PackedInt32Array([0, 1]),
@@ -1422,7 +1422,7 @@ func _test_v10_migration(compiled: Dictionary, catalog: Dictionary) -> void:
 	var result := _restore_economy(restored, legacy_chunks)
 	_expect("PKEC v35 explicitly rejects pre-v35 economy saves",
 		not bool(result.get("ok", true)) and
-		String(result.get("reason", "")) == "economy_save_v32_or_earlier_unsupported")
+		String(result.get("reason", "")) == "economy_save_price_v6_requires_new_game")
 
 func _new_ext(catalog: Dictionary, cells: int) -> Object:
 	var ext: Object = ClassDB.instantiate("DCWorldExt")

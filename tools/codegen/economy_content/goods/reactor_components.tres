@@ -7,5 +7,4 @@ display_name = "反应堆部件"
 category_id = &"nuclear"
 technology_tags = PackedStringArray("tech.nuclear_fission")
 default_price = 130000
-min_price = 13000
-max_price = 1300000
+reference_max_price = 6500000

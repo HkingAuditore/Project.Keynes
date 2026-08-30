@@ -1,6 +1,6 @@
-# Market V2 / Price V4 定点数、需求曲线与守恒账本
+# Market V2 / Price V6 定点数、需求曲线与守恒账本
 
-## Price V4 参考价值加法积分
+## Price V5 库存压力与参考价值积分
 
 令 `p` 为当前价格、`a_up=max(default_price,cost_anchor_price)`、`a_down=max(1,p)`，
 `x` 为供需、库存、短缺和成本压力经弹性及 `price_adjust_q16` 调整后的日变化率。
@@ -14,7 +14,34 @@
 使每期降幅受商品自身价格尺度约束，较高的生产成本锚不会把清仓压力放大成越过当前价格的跳水。
 若需求、供给和库存全为零，再独立执行
 `p_next = p_market + (default_price-p_market)*min(1, alpha*N)`。
-价格没有玩法上下限；`PRICE_NUMERIC_GUARD_MIN/MAX` 仅防止定点整数溢出。
+Price V5 移除商品 `min_price`，下界仅为 1 个价格子单位（0.0001/物资单位）。
+V6 将原 `max_price` 数值保留为 `reference_max_price`，删除上涨锚点平方衰减。
+当前上限由成本基准及稀疏短缺确认状态决定，只在最后 20% 区域衰减上涨。
+非零调价被截断为零且仍有空间时保留一个子单位；目标上限收缩不强制跳价。
+量化修正最多一个价格子单位，极低价时可以超过相对限速。完整公式见下方动态上限段。
+
+库存压力为负时，只削弱正成本压力：`cost_positive *= max(0,1+inventory_pressure)`。
+库存为目标的 1、1.5、2 倍时分别保留 100%、50%、0%；负成本压力不变。
+非储存物资不使用库存项。原有居民预算需求、企业需求、EMA 和冻结周期保持不变。
+
+### Price V5 小额费用
+
+`GoodsBill` 在当前计费组内累计精确的 `quantity*price/1000`，以整数商及 0..999 的
+余数表示，累计费用向上取整；每条明细只支付新旧累计费用的差。零数量为零费用，
+正数量／正价格的整组至少收费一资金子单位。不保存跨期余数，也不增加人口×商品矩阵。
+单笔国内／跨境贸易、科研采购用同一 `goods_cost` 向上取整；现有有符号税费取整保持不变。
+居民按买方／市场／需求优先级／消费税率分组，初次清算和替代清算是独立批次。
+生产投入按交易税率分组，最后一次预检的账单直接用于实际结算；建造材料按建造批次合并。
+生产者收购沿已有排序按商品累计结算，金额不超过商人预留预算；金银及生产扶持发行保留原有算法。
+居民预算使用向上取整的保守报价，实际费用使用实际成交组件数量；不得靠截断实际扣款制造免费交付。
+存在消费税时，预算还预留不同税率分组分别取整的上界差额。该保守预留可能使只有一两个
+资金子单位的居民暂时买不到本可负担的微量商品；它不改变商品价格，也不是额外扣款。
+实际扣款若超过可支用资金，整期以 `household_invoice_exceeds_reserved_cash` 拒绝提交。
+
+小额合并不跨税补贴规则、买方或结算阶段。极小交易存在最多不足一个资金子单位的基础账单溢价，
+这是选定的离散货币规则；不能把它解释为物资的最低售价。
+
+PKEC v49 仅接受同版本存档，旧版返回 `economy_save_price_v6_requires_new_game`。
 
 ## 数值 ABI
 
@@ -285,7 +312,7 @@ expected_births_q32 = population × effective_birth_rate_q32 × epoch_days
 ## 价格
 
 每个商品以 `period_demand/N` 更新居民需求 EMA；effective alpha 为
-`min(1, daily_alpha*N)`。Price V3 的总需求是居民需求 EMA 与稀疏企业投入需求 EMA 之和；
+`min(1, daily_alpha*N)`。Price V5 的总需求是居民需求 EMA 与稀疏企业投入需求 EMA 之和；
 供给使用建筑实际 offer（含托底入库和周期流丢弃、排除业主留用）EMA。每个活跃 `(cell, good)` 只维护一条稀疏信号，
 不存在 `market×good×building` 稠密矩阵。
 
@@ -670,16 +697,32 @@ inventory_pressure_q16 = clamp((price_inventory_target - stock)
 
 merchant_inventory_target = protected_daily_flow
                             * good_target_inventory_days_q16 / Q16
-final_price = clamp(rate_limited_composite_price,
-                    max(1, good.min_price),
-                    min(INT32_MAX, max(max(1, good.min_price), good.max_price)))
+base_ceiling = ceil(reference_max_price * max(default_price, cost_anchor) / default_price)
+cap = max(base_ceiling, sparse_state.limit)              # clamp to INT32_MAX
+soft_start = floor(cap * 4 / 5)
+headroom = price < soft_start ? 1 : max(0, cap-price)/(cap-soft_start)
+shaped_price = price + (rate_limited_price-price)*headroom # rises only
+final_price = clamp(shaped_price, 1, max(cap, current_price))
 ```
 
-The price target is derived transiently and is not merchant inventory authority. The
-merchant target retains the full configured horizon. Catalog `min_price/max_price` clamp
-normal prices in addition to the integer-safety guards. The production cost anchor is
-still a dynamic soft floor and may lift an underpriced active output only within the
-configured price-rise rate.
+Price V6 removes the quadratic rise fade. Rises retain the default/cost adjustment
+anchor; falls retain the current-price reference and their existing daily rate limit.
+Only the last 20% of the cap dampens a rise. A nonzero rounded-away movement gets
+one tick when headroom exists. Contracting the target cap never forces a markdown.
+
+The price inventory target remains a transient settlement-period signal; merchant
+inventory authority retains its longer horizon. Positive cost pressure is weakened
+by excess inventory, so it does not guarantee a producer break-even price.
+
+The sparse cap state requires 30 actual observed days at price >=80% of cap and
+budget-backed unmet demand >=25%. Expansion starts after confirmation: 50bp/day.
+Shortage between 10% and 25% pauses expansion. Price below 70% or shortage <=10%
+resets confirmation. Recovery requires both price below 70% and shortage <=10%,
+then reduces the cap by 10bp/day without going below the cost-based base cap.
+Daily integer steps are replayed for N=1/3/5; negative bootstrap settlement days
+never contribute to confirmation. Query and trade forecasts never advance state.
+See [V6 validation](price-v6-validation.md) for funding rules and test results.
+
 
 ## Flow replacement procurement and producer settlement
 

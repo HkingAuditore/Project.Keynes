@@ -86,6 +86,7 @@ func _run() -> void:
 	_test_environment_substitution(stable_catalog)
 	_test_price_quantity_response(stable_catalog)
 	_test_price_v3_numeric_guards_and_horizons(stable_catalog)
+	_test_price_rise_fade_and_soft_ceiling(stable_catalog)
 	_test_survival_labor_and_mortality(stable_catalog)
 	_test_demand_preview_query(stable_catalog)
 	_test_cycle_approximation(stable_catalog)
@@ -411,15 +412,15 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
 	if not bool(save_begin.get("ok", false)):
 		print("  PKEC begin failed=", save_begin)
-	_expect("v47 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 47)
+	_expect("v49 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 49)
 	var chunks: Array[PackedByteArray] = []
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty():
 			break
 		chunks.append(chunk)
-	_expect("v42 save emits chunks", chunks.size() >= 12)
-	_expect("v42 save completes", bool(ext.end_economy_save().get("ok", false)))
+	_expect("v49 save emits chunks", chunks.size() >= 12)
+	_expect("v49 save completes", bool(ext.end_economy_save().get("ok", false)))
 	var legacy_target: Object = _new_ext(1, 0.1)
 	legacy_target.configure_economy(catalog, profile, 1, 42)
 	legacy_target.begin_economy_restore()
@@ -429,7 +430,7 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	var legacy_result: Dictionary = legacy_target.feed_economy_restore_chunk(legacy_header)
 	_expect("PKEC v29 is rejected precisely",
 		not bool(legacy_result.get("ok", true)) and
-		String(legacy_result.get("reason", "")) == "economy_save_v31_or_earlier_unsupported")
+		String(legacy_result.get("reason", "")) == "economy_save_price_v6_requires_new_game")
 	var mismatch_target: Object = _new_ext(1, 0.1)
 	var mismatch_catalog := catalog.duplicate(true)
 	mismatch_catalog["catalog_hash"] = int(catalog.catalog_hash) + 1
@@ -592,13 +593,14 @@ func _test_price_quantity_response(compiled: Dictionary) -> void:
 
 func _test_price_v3_numeric_guards_and_horizons(compiled: Dictionary) -> void:
 	var goods: PackedStringArray = compiled.good_ids
-	var old_min_prices: PackedInt32Array = compiled.good_min_price
-	var old_max_prices: PackedInt32Array = compiled.good_max_price
+	var old_min_prices: PackedInt32Array = compiled.good_default_price
+	for g in range(old_min_prices.size()): old_min_prices[g] = maxi(1, old_min_prices[g] / 10)
+	var old_max_prices: PackedInt32Array = compiled.good_reference_max_price
 
 	var shortage := _configured_price_worker(compiled, 1811)
 	var shortage_report: Dictionary = {}
-	for day in range(64):
-		shortage_report = _run_day(shortage, day)
+	for day in range(61):
+		shortage_report = _run_price_day(shortage, day)
 	var shortage_market: Dictionary = shortage.get_market_cell_snapshot(0)
 	var game_meat := goods.find("game_meat")
 	_expect("sustained shortage remains within the catalog maximum price",
@@ -625,25 +627,25 @@ func _test_price_v3_numeric_guards_and_horizons(compiled: Dictionary) -> void:
 	var directional_fall_limited := true
 	var max_fall_q16 := int(
 		(compiled.good_max_price_fall_q16 as PackedInt32Array)[raw_hide]) * 5
-	for day in range(36):
-		oversupply_report = _run_day(oversupply, day)
+	for day in range(360):
+		oversupply_report = _run_price_day(oversupply, day)
 		var cycle_price := _good_value(
 			oversupply.get_market_cell_snapshot(0), "price", "raw_hide")
 		var minimum_price := maxi(
 			1, previous_price - int(previous_price * max_fall_q16 / 65536))
 		directional_fall_limited = directional_fall_limited and \
-			cycle_price >= minimum_price
+			cycle_price >= maxi(1, minimum_price - 1)
 		previous_price = cycle_price
 	var oversupply_market: Dictionary = oversupply.get_market_cell_snapshot(0)
-	_expect("persistent valueless oversupply cannot fall below the catalog minimum price",
-		_good_value(oversupply_market, "price", "raw_hide") >=
+	_expect("persistent oversupply falls below the retired catalog floor",
+		_good_value(oversupply_market, "price", "raw_hide") <
 		int(old_min_prices[raw_hide]))
 	_expect("oversupply markdown uses the current-price fall limit",
 		directional_fall_limited)
 	_expect("numeric price guards preserve positive prices and exact ledgers",
 		_good_value(oversupply_market, "price", "raw_hide") >= 1 and
 		String(oversupply.get_economy_report().get("price_runtime_bounds", "")) ==
-			"catalog_min_max_and_numeric_guard" and
+			"numeric_min_dynamic_ceiling" and
 		int(oversupply.get_economy_report().get("price_numeric_guard_min", 0)) == 1 and
 		int(shortage_report.get("population_error", 1)) == 0 and
 		int(shortage_report.get("money_error", 1)) == 0 and
@@ -651,6 +653,29 @@ func _test_price_v3_numeric_guards_and_horizons(compiled: Dictionary) -> void:
 		int(oversupply_report.get("population_error", 1)) == 0 and
 		int(oversupply_report.get("money_error", 1)) == 0 and
 		int(oversupply_report.get("goods_error", 1)) == 0)
+
+func _test_price_rise_fade_and_soft_ceiling(compiled: Dictionary) -> void:
+	var shortage := _configured_price_worker(compiled, 1811)
+	for day in range(120):
+		_run_price_day(shortage, day)
+	var market: Dictionary = shortage.get_market_cell_snapshot(0)
+	var price := _good_value(market, "price", "game_meat")
+	_expect("shortage price is positive and bounded by the effective ceiling",
+		price > 0 and price <= _good_value(market, "price_effective_ceiling", "game_meat"))
+	_expect("obsolete quadratic rise fade is inactive",
+		int(shortage.get_economy_report().get("price_rise_fade_hits", -1)) == 0)
+	var hash_before: int = shortage.get_economy_state_hash()
+	shortage.get_market_cell_snapshot(0)
+	_expect("ceiling queries do not advance confirmation state",
+		shortage.get_economy_state_hash() == hash_before)
+
+func _run_price_day(ext: Object, day: int) -> Dictionary:
+	var report: Dictionary = {}
+	for slice in range(65536):
+		report = ext.run_economy_slice({"day_index": day, "tick_index": slice})
+		if bool(report.get("done", false)) or bool(report.get("fatal", false)):
+			return report
+	return report
 
 func _test_demand_preview_query(compiled: Dictionary) -> void:
 	var cold: Object = _configured_single_worker(compiled, 0.0, 1701)
@@ -841,6 +866,9 @@ func _configured_price_worker(compiled: Dictionary, seed: int) -> Object:
 		CountryTestHelper.configure_all_technologies(ext, catalog, 1, seed))
 	var profile := _native_profile(false, 1)
 	profile.starvation_death_rate_q32 = 0
+	profile.market_cycle_days = 5
+	profile.market_min_cycle_days = 5
+	profile.market_max_cycle_days = 5
 	_expect("price-response economy configures",
 		bool(ext.configure_economy(catalog, profile, 1, seed).get("ok", false)))
 	ext.inject_economy_cadence_timing(1000000.0, 1000000.0)

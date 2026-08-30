@@ -7,5 +7,4 @@ display_name = "陶器"
 category_id = &"household_goods"
 technology_tags = PackedStringArray("tech.pottery")
 default_price = 11000
-min_price = 1100
-max_price = 110000
+reference_max_price = 550000

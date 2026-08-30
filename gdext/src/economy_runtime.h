@@ -54,7 +54,7 @@ public:
     // 43: sector maintenance horizons and maintenance cost factor.
     // 44: resolved startup-demand mode. v43 restores with startup demand OFF.
     // 45: previous-period food-flow carrying-capacity snapshot.
-    static constexpr int32_t SCHEMA_VERSION = 47;
+    static constexpr int32_t SCHEMA_VERSION = 49;
     static constexpr uint32_t BUILDING_KIT_ROLE_TRADE = 1u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CONSTRUCTION = 2u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CLOTHING_INPUT = 4u;
@@ -1646,6 +1646,15 @@ private:
         }
     };
 
+    struct PriceCeilingState {
+        int32_t good = -1;
+        int32_t limit = 0;
+        uint16_t confirmation_days = 0;
+    };
+    struct PriceCeilingObservation {
+        int32_t market = -1, good = -1, price = 1, base = 1, days = 0;
+        int64_t requested = 0, unfilled = 0;
+    };
     struct MarketStore {
         int32_t market_count = 0;
         int32_t good_count = 0;
@@ -1654,6 +1663,8 @@ private:
         std::vector<int64_t> demand_ema;
         std::vector<uint16_t> last_shortage_q16;
         std::vector<int32_t> cell_to_market;
+        // One sparse sorted row per market; no extra market-by-good matrix.
+        std::vector<std::vector<PriceCeilingState>> price_ceilings;
 
         void clear();
         int64_t index(int32_t market, int32_t good) const {
@@ -2061,6 +2072,7 @@ private:
         int64_t inventory_q16 = 0;
         int64_t shortage_q16 = 0;
         int64_t cost_q16 = 0;
+        bool glut_cost_damped = false;
         int64_t idle_q16 = 0;
         int64_t total_q16 = 0;
         int64_t change_q16 = 0;
@@ -2254,7 +2266,22 @@ private:
         double price_ms = 0.0;
         int64_t merchant_count = 0;
         int64_t merchant_repairs = 0;
+        // Union of every price-shaping event below. Kept so existing
+        // diagnostics and tests keep reading one headline number.
+        std::vector<PriceCeilingObservation> price_ceiling_observations;
+        int64_t price_ceiling_expansions = 0;
+        int64_t price_ceiling_recoveries = 0;
+        int64_t price_ceiling_blocked_rises = 0;
         int64_t price_cap_hits = 0;
+        int64_t price_rate_clamp_hits = 0;
+        int64_t price_numeric_floor_hits = 0;
+        int64_t price_numeric_ceiling_hits = 0;
+        int64_t price_min_tick_hits = 0;
+        int64_t price_glut_cost_damp_hits = 0;
+        int64_t small_payment_roundups = 0;
+        int64_t price_rise_fade_hits = 0;
+        int64_t price_headroom_damp_hits = 0;
+        int64_t price_catalog_bound_hits = 0;
         int64_t price_cost_anchor_hits = 0;
         int64_t price_inactive_reversions = 0;
         int64_t revenue = 0;
@@ -2738,6 +2765,12 @@ private:
         double building_production_ms = 0.0;
         double building_production_worker_ms = 0.0;
         double building_production_merge_ms = 0.0;
+        int64_t price_numeric_floor_hits = 0;
+        int64_t price_numeric_ceiling_hits = 0;
+        int64_t price_min_tick_hits = 0;
+        int64_t price_glut_cost_damp_hits = 0;
+        int64_t small_payment_roundups = 0;
+        double price_ms = 0.0;
         double household_market_worker_ms = 0.0;
         double household_market_prepare_ms = 0.0;
         double household_market_merge_ms = 0.0;
@@ -2859,6 +2892,8 @@ private:
         int32_t country_partner_cursor = 0;
         int32_t canal_quote_cursor = 0;
         int32_t canal_project_cursor = 0;
+        int32_t ceiling_market_cursor = 0;
+        int32_t ceiling_row_cursor = 0;
         std::vector<uint8_t> modifier_bytes;
         size_t modifier_cursor = 0;
         bool end_emitted = false;
@@ -2868,6 +2903,10 @@ private:
         bool active = false;
         bool header_seen = false;
         bool end_seen = false;
+        bool ceilings_seen = false;
+        int64_t expected_ceilings = 0;
+        int64_t restored_ceilings = 0;
+        int64_t last_ceiling_key = -1;
         bool failed = false;
         std::string error;
         int32_t expected_pages = 0;
@@ -3236,6 +3275,15 @@ private:
     int64_t _rejected_commands = 0;
     int64_t _merchant_repairs = 0;
     int64_t _price_cap_hits = 0;
+    int64_t _price_rate_clamp_hits = 0;
+    int64_t _price_numeric_floor_hits = 0;
+    int64_t _price_numeric_ceiling_hits = 0;
+    int64_t _price_min_tick_hits = 0;
+    int64_t _price_glut_cost_damp_hits = 0;
+    int64_t _small_payment_roundups = 0;
+    int64_t _price_rise_fade_hits = 0;
+    int64_t _price_headroom_damp_hits = 0;
+    int64_t _price_catalog_bound_hits = 0;
     int64_t _price_cost_anchor_hits = 0;
     int64_t _price_inactive_reversions = 0;
     int64_t _continuation_slices = 0;
@@ -4139,8 +4187,7 @@ private:
     std::vector<std::string> _plan_ids;
     std::vector<int32_t> _good_default_price;
     std::vector<int64_t> _good_default_stock;
-    std::vector<int32_t> _good_min_price;
-    std::vector<int32_t> _good_max_price;
+    std::vector<int32_t> _good_reference_max_price;
     std::vector<int32_t> _good_price_adjust_q16;
     std::vector<int32_t> _good_demand_price_elasticity_q16;
     std::vector<int32_t> _good_household_wealth_elasticity_q16;
@@ -5185,7 +5232,8 @@ private:
                                      int64_t &willing_population,
                                      int64_t &transferable_capital,
                                      int64_t &income_improvement_q16,
-                                     uint64_t &sponsor_family_handle) const;
+                                     uint64_t &sponsor_family_handle,
+                                     const std::vector<int64_t> *living_cost_cache = nullptr) const;
     int64_t projected_owner_income_per_day(const BuildingGroup &group,
                                            int64_t &sat) const;
     OwnerOpportunityQuote owner_opportunity_quote(
@@ -5294,9 +5342,36 @@ private:
     PricePressure price_pressure(int32_t market, int32_t good, int64_t household_demand,
                                  int64_t stock, int64_t shortage_q16,
                                  int32_t signal_index, int64_t &saturation_count) const;
-    int64_t next_price_v4(int32_t good, int64_t current_price,
+    int64_t next_price_v6(int32_t good, int64_t current_price,
                           const PricePressure &pressure, int32_t days,
-                          int64_t &saturation_count, bool &rate_clamped) const;
+                          int64_t &saturation_count, bool &rate_clamped,
+                          bool &rise_damped, bool *minimum_tick = nullptr) const;
+    // Applies the catalog bounds to a candidate next price.  Settlement and
+    // trade projection must share this so a planned destination price can
+    // never exceed a price the settlement path is able to reach.
+    static int32_t base_price_ceiling(int32_t reference, int32_t default_price,
+                                       int64_t cost_anchor);
+    static PriceCeilingState advance_price_ceiling(PriceCeilingState state,
+        int32_t base, int32_t price, int64_t funded_shortage_q16, int32_t days,
+        int32_t confirm_days, int32_t expand_bp, int32_t recover_bp);
+    int32_t market_price_ceiling(int32_t market, int32_t good,
+                                 int64_t cost_anchor) const;
+    int64_t price_ceiling_state_count() const;
+    void commit_price_ceilings();
+    std::vector<PriceCeilingObservation> _epoch_price_ceiling_observations;
+    std::vector<PriceCeilingState> _price_ceiling_merge_scratch;
+    std::vector<int64_t> _epoch_ceiling_business_requested, _epoch_ceiling_business_unfilled;
+    std::vector<int64_t> _epoch_ceiling_research_requested, _epoch_ceiling_research_delivered;
+
+    int32_t _price_ceiling_confirm_days = 30;
+    int32_t _price_ceiling_expand_bp = 50;
+    int32_t _price_ceiling_recover_bp = 10;
+    int64_t _price_ceiling_expansions = 0;
+    int64_t _price_ceiling_recoveries = 0;
+    int64_t _price_ceiling_blocked_rises = 0;
+    static int64_t shape_price(int32_t ceiling, int64_t current_price, int64_t next_price,
+                        int64_t &saturation_count, bool *headroom_damped,
+                        bool *catalog_bound, bool *minimum_tick = nullptr);
     int32_t find_building_group(int32_t cell, int32_t type_id,
                                 int32_t owner_signature_id) const;
     int32_t find_cohort_slot(int32_t cell, int32_t signature_id) const;
@@ -5567,6 +5642,16 @@ private:
     static int64_t saturating_add(int64_t a, int64_t b, int64_t &saturation_count);
     static int64_t saturating_sub(int64_t a, int64_t b, int64_t &saturation_count);
     static int64_t saturating_mul(int64_t a, int64_t b, int64_t &saturation_count);
+    // Ephemeral bill: sum exact q*p/GOODS_SCALE, then round once. No save state.
+    friend struct EconomyPricingTests;
+    struct GoodsBill {
+        int64_t charged = 0;
+        int32_t remainder = 0;
+        int64_t add(int64_t quantity, int64_t price, int64_t &sat);
+        int64_t total(int64_t &sat) const;
+    };
+    static int64_t inventory_adjusted_cost_pressure(int64_t cost, int64_t inventory, int64_t &sat);
+    static int64_t goods_cost(int64_t quantity, int64_t price, int64_t &sat);
     static int64_t mul_div_sat(int64_t a, int64_t b, int64_t divisor,
                                int64_t &saturation_count);
     static int64_t pow_q16(int64_t ratio_q16, int64_t exponent_q16,
@@ -5686,5 +5771,52 @@ private:
                                     int64_t treasury_goods_used = 0,
                                     int64_t market_goods_used = 0);
 };
+
+// Common invoice operands fit a signed 64-bit product. Keep this path inline;
+// extreme quantities still use the established wide saturating arithmetic.
+inline int64_t NativeEconomyRuntime::GoodsBill::total(int64_t &) const {
+    return charged;
+}
+
+inline int64_t NativeEconomyRuntime::GoodsBill::add(
+        int64_t quantity, int64_t price, int64_t &sat) {
+    if (quantity <= 0 || price <= 0) return 0;
+    int64_t units;
+    int64_t fraction;
+    constexpr int64_t small_max = std::numeric_limits<int32_t>::max();
+    if (quantity <= small_max && price <= small_max) {
+        const int64_t product = quantity * price;
+        units = product / GOODS_SCALE;
+        fraction = remainder + product % GOODS_SCALE;
+    } else {
+        units = mul_div_sat(quantity, price, GOODS_SCALE, sat);
+        fraction = remainder + ((quantity % GOODS_SCALE) *
+                                (price % GOODS_SCALE)) % GOODS_SCALE;
+    }
+    const int64_t correction = (fraction > GOODS_SCALE ||
+        (remainder == 0 && fraction != 0)) ? 1 : 0;
+    remainder = static_cast<int32_t>(fraction % GOODS_SCALE);
+    constexpr int64_t limit = std::numeric_limits<int64_t>::max();
+    if (units < limit && charged <= limit - units - correction) {
+        const int64_t delta = units + correction;
+        charged += delta;
+        return delta;
+    }
+    const int64_t before = charged;
+    charged = saturating_add(charged, saturating_add(units, correction, sat), sat);
+    return charged - before;
+}
+
+inline int64_t NativeEconomyRuntime::goods_cost(
+        int64_t quantity, int64_t price, int64_t &sat) {
+    if (quantity <= 0 || price <= 0) return 0;
+    constexpr int64_t small_max = std::numeric_limits<int32_t>::max();
+    if (quantity <= small_max && price <= small_max)
+        return (quantity * price + GOODS_SCALE - 1) / GOODS_SCALE;
+    const int64_t whole = mul_div_sat(quantity, price, GOODS_SCALE, sat);
+    const bool fractional = ((quantity % GOODS_SCALE) *
+                            (price % GOODS_SCALE)) % GOODS_SCALE != 0;
+    return saturating_add(whole, fractional ? 1 : 0, sat);
+}
 
 } // namespace pk

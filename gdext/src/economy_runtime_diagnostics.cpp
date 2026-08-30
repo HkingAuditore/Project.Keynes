@@ -86,6 +86,11 @@ int32_t NativeEconomyRuntime::stage_progress_q16() const {
 int64_t NativeEconomyRuntime::memory_bytes() const {
     int64_t bytes = 0;
     auto cap = [&](const auto &v) { bytes += static_cast<int64_t>(v.capacity() * sizeof(typename std::decay_t<decltype(v)>::value_type)); };
+    cap(_market.price_ceilings);
+    for (const auto &row : _market.price_ceilings) cap(row);
+    cap(_epoch_price_ceiling_observations);
+    cap(_epoch_ceiling_business_requested); cap(_epoch_ceiling_business_unfilled);
+    cap(_epoch_ceiling_research_requested); cap(_epoch_ceiling_research_delivered);
     cap(_population.cell_first_page); cap(_population.page_next); cap(_population.page_cell);
     cap(_population.free_pages); cap(_population.active); cap(_population.reserved);
     cap(_population.reservation_owner); cap(_population.signature_id);
@@ -1385,6 +1390,12 @@ Dictionary NativeEconomyRuntime::report() const {
         _budgeted_building_commit_phase_fusions;
     out["budgeted_publish_phase_fusions"] =
         _budgeted_publish_phase_fusions;
+    out["last_completed_price_numeric_floor_hits"] = _last_completed_perf.price_numeric_floor_hits;
+    out["last_completed_price_numeric_ceiling_hits"] = _last_completed_perf.price_numeric_ceiling_hits;
+    out["last_completed_price_min_tick_hits"] = _last_completed_perf.price_min_tick_hits;
+    out["last_completed_price_glut_cost_damp_hits"] = _last_completed_perf.price_glut_cost_damp_hits;
+    out["last_completed_small_payment_roundups"] = _last_completed_perf.small_payment_roundups;
+    out["last_completed_price_ms"] = _last_completed_perf.price_ms;
     out["last_completed_perf_valid"] = _last_completed_perf.valid;
     out["last_completed_epoch_id"] = _last_completed_perf.epoch_id;
     out["last_completed_sample_day"] = _last_completed_perf.sample_day;
@@ -2259,7 +2270,30 @@ Dictionary NativeEconomyRuntime::report() const {
     out["merchant_count"] = static_cast<int64_t>(_merchant_slots.size());
     out["merchant_repairs"] = _merchant_repairs;
     out["price_cap_hits"] = _price_cap_hits;
-    out["price_runtime_bounds"] = "catalog_min_max_and_numeric_guard";
+    out["price_rate_clamp_hits"] = _price_rate_clamp_hits;
+    out["price_ceiling_expansions"] = _price_ceiling_expansions;
+    out["price_ceiling_recoveries"] = _price_ceiling_recoveries;
+    out["price_ceiling_blocked_rises"] = _price_ceiling_blocked_rises;
+    out["price_ceiling_active_states"] = price_ceiling_state_count();
+    int64_t ceiling_capacity_bytes = 0;
+    for (const auto &row : _market.price_ceilings)
+        ceiling_capacity_bytes += static_cast<int64_t>(row.capacity() * sizeof(PriceCeilingState));
+    out["price_ceiling_state_bytes"] = ceiling_capacity_bytes;
+    out["price_ceiling_confirm_days"] = _price_ceiling_confirm_days;
+    out["price_ceiling_expand_bp"] = _price_ceiling_expand_bp;
+    out["price_ceiling_recover_bp"] = _price_ceiling_recover_bp;
+    out["price_numeric_floor_hits"] = _price_numeric_floor_hits;
+    out["price_numeric_ceiling_hits"] = _price_numeric_ceiling_hits;
+    out["price_ceiling_limit_hits"] = _price_catalog_bound_hits;
+    out["price_min_tick_hits"] = _price_min_tick_hits;
+    out["price_glut_cost_damp_hits"] = _price_glut_cost_damp_hits;
+    out["small_payment_roundups"] = _small_payment_roundups;
+    out["price_rise_fade_hits"] = _price_rise_fade_hits;
+    out["price_headroom_damp_hits"] = _price_headroom_damp_hits;
+    out["price_catalog_bound_hits"] = _price_catalog_bound_hits;
+    out["price_rise_fade_model"] = "disabled_price_v6";
+    out["price_runtime_bounds"] = "numeric_min_dynamic_ceiling";
+    out["price_model"] = "price_v6_dynamic_ceiling";
     out["price_numeric_guard_min"] = PRICE_NUMERIC_GUARD_MIN;
     out["price_numeric_guard_max"] = PRICE_NUMERIC_GUARD_MAX;
     out["continuation_slices"] = _continuation_slices;

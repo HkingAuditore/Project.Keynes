@@ -1,6 +1,25 @@
-# 原生阶层与本地市场运行时（Market V2 / Price V4）
+# 原生阶层与本地市场运行时（Market V2 / Price V6）
 
-PKEC v47 是当前 writer；reader 接受 v47、v46、v45、v44、v43、v42 与 v41。v43 旧存档恢复时将
+## 2026-08-30 Price V6 当前契约
+
+定价权威仍在 NativeEconomyRuntime。移除目录最低售价，`1` 只作为数值下界；
+商品最高价改为参考上限，由成本基础上限和持续有效短缺共同决定当前上限；保留 1–5 日周期。库存积压按已有库存压力削弱正成本锚，负成本压力不变。
+小额账单合并后向上取整，报价、预算与支付共同使用整数计价；不增加持久化费用余数。
+PKEC v49 要求新游戏，旧价格机制没有静默回退。详见
+[定点计价与账本](economy-fixed-point-ledger-formulas.md)。
+
+聚合诊断新增 `price_numeric_floor_hits`、`price_min_tick_hits`、
+`price_glut_cost_damp_hits`、`small_payment_roundups`，并保存对应 `last_completed_*`。
+`last_completed_price_ms` 记录完整结算周期的价格 CPU 时间；选中市场还可查询
+`price_cost_glut_damped` 和 `price_numeric_min`。无逐商品日志或全局快照复制。
+
+验证入口：`tests/price_v6_runtime_test.gd`、`tests/price_v6_business_test.gd`、`tests/price_v5_runtime_test.gd`、`tests/price_v5_bench.gd`，以及
+`scons -C gdext/tests -f SConstruct.price_v5` 的原生定点边界测试。
+基准必须显式标明 DLL、周期、场景和重复次数；不能将守恒或单次计时当作经济精度／性能证明。
+下方带日期的 V3/V4 内容属于历史记录，价格下限和存档兼容以本节为准。
+
+
+历史契约（已被 v49 仅同版本读取规则替代）：PKEC v47 writer 的 reader 曾接受 v47、v46、v45、v44、v43、v42 与 v41。v43 旧存档恢复时将
 `startup_demand_runtime_mode` 固定为 `OFF`；v41 不得含 `EXPEDITION_PREPARING`。
 v42 保留 v39 引入的生产计划 P∈[5,15] 与投资 I∈[10,30]
 分开锁定，且 I > P。三套周期只在各自完整周期边界重选；选档用经济活格刀数
@@ -1156,7 +1175,7 @@ Internal quote/credit invariant failures now include cell, group, type, and fina
 values in the fatal reason. This changes no PKEC field, scheduler stage, or authority
 boundary.
 
-## 2026-07-21 Price V3 dynamic range correction
+## 历史：2026-07-21 Price V3 dynamic range correction
 
 Price inventory pressure now uses at most one committed settlement period. The full
 good-specific merchant inventory horizon remains authoritative for procurement and
@@ -1164,16 +1183,28 @@ trade stock planning, but no longer makes a flow-balanced good look maximally sc
 the price integrator. Selected-cell market snapshots expose `price_inventory_target`
 beside `merchant_inventory_target` so the two derived horizons can be audited directly.
 
-Catalog `min_price` and `max_price` are authoritative settlement bounds. Settlement
-prices are clamped to each good's catalog interval intersected with the emergency
-numeric interval `[1, INT32_MAX]`; trade quotes, cost anchors, bootstrap packets, and
-PKEC restore validation therefore never expose a price outside those bounds.
-Configured per-day rise/fall limits still bound volatility, and the observed production
-cost anchor remains a rate-limited dynamic soft floor. Trade relief is derived from
+Catalog `min_price` is now the only hard settlement bound; `max_price` is a soft
+ceiling. A rising price is damped twice before the clamp: first by the rise fade
+`(anchor / max(anchor, price))^2` applied inside `next_price_v4`, then by the remaining
+catalog headroom `(max - price) / (max - min)`. With `u = max(anchor, price) / anchor`
+the rise fade integrates to `u^3 = 3 * max_price_rise_q16 * days`, so the
+price-to-anchor ratio grows like the cube root of elapsed time and the approach to the
+catalog ceiling is asymptotic rather than a wall. A chronic shortage therefore keeps a
+live price signal instead of pinning at the bound, while long-run drift stays bounded.
+Falling prices keep the hard floor because the integer guard alone still lets prices
+collapse to one sub-unit and display as zero.
+
+Settlement prices are clamped to each good's catalog interval intersected with the
+emergency numeric interval `[1, INT32_MAX]`; trade quotes, cost anchors, bootstrap
+packets, and PKEC restore validation therefore never expose a price outside those
+bounds. `estimate_trade_price` shares the same shaping as settlement, so a planned
+destination price can never exceed a price settlement is able to reach. Configured
+per-day rise/fall limits still bound volatility, and the observed production cost
+anchor remains a rate-limited dynamic soft floor. Trade relief is derived from
 shortage, unfunded business demand, and production-input reserve gaps. PKEC v15 and
 authoritative state layout are unchanged.
 
-## 2026-07-22 Price V4 anchored additive pricing and investment feedback
+## 历史：2026-07-22 Price V4 anchored additive pricing and investment feedback
 
 Price V4 uses catalog-bounded economic prices with directional adjustment references. Frozen
 market pressure is clamped by the per-good daily rise/fall rate. Positive pressure is
@@ -1399,3 +1430,6 @@ backward-compatibly in the high bit of the persisted tier byte; older v24
 records have it clear. Selected-cell summaries expose
 `settlement_name_forced`.
 
+
+
+Price V6 的动态上限、30 实际日确认及稀疏存档契约见 [实施与验收](price-v6-validation.md)。

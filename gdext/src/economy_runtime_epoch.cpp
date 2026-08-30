@@ -47,6 +47,11 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _epoch_business_demand_ema.clear();
     _epoch_desired_business_demand.clear();
     _epoch_funded_business_demand.clear();
+    _epoch_price_ceiling_observations.clear();
+    _epoch_ceiling_business_requested.clear();
+    _epoch_ceiling_business_unfilled.clear();
+    _epoch_ceiling_research_requested.clear();
+    _epoch_ceiling_research_delivered.clear();
     _epoch_offered_supply_ema.clear();
     _epoch_producer_sellable_current.clear();
     _epoch_producer_merchant_sold_current.clear();
@@ -96,6 +101,16 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _rejected_commands = 0;
     _merchant_repairs = 0;
     _price_cap_hits = 0;
+    _price_rate_clamp_hits = 0;
+    _price_ceiling_expansions = _price_ceiling_recoveries = _price_ceiling_blocked_rises = 0;
+    _price_numeric_floor_hits = 0;
+    _price_numeric_ceiling_hits = 0;
+    _price_min_tick_hits = 0;
+    _price_glut_cost_damp_hits = 0;
+    _small_payment_roundups = 0;
+    _price_rise_fade_hits = 0;
+    _price_headroom_damp_hits = 0;
+    _price_catalog_bound_hits = 0;
     _price_cost_anchor_hits = 0;
     _price_inactive_reversions = 0;
     _continuation_slices = 0;
@@ -590,6 +605,12 @@ void NativeEconomyRuntime::capture_completed_perf_snapshot() {
     snapshot.building_production_ms = _production_ms;
     snapshot.building_production_worker_ms = _production_worker_ms;
     snapshot.building_production_merge_ms = _production_merge_ms;
+    snapshot.price_numeric_floor_hits = _price_numeric_floor_hits;
+    snapshot.price_numeric_ceiling_hits = _price_numeric_ceiling_hits;
+    snapshot.price_min_tick_hits = _price_min_tick_hits;
+    snapshot.price_glut_cost_damp_hits = _price_glut_cost_damp_hits;
+    snapshot.small_payment_roundups = _small_payment_roundups;
+    snapshot.price_ms = _price_ms;
     snapshot.household_market_worker_ms = _market_worker_ms;
     snapshot.household_market_prepare_ms = _household_market_prepare_ms;
     snapshot.household_market_merge_aggregate_ms = _market_merge_aggregate_ms;
@@ -898,6 +919,11 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     _epoch_business_demand_ema = _market_signals.business_demand_ema;
     _epoch_desired_business_demand.assign(_market_signals.good_ids.size(), 0);
     _epoch_funded_business_demand.assign(_market_signals.good_ids.size(), 0);
+    _epoch_price_ceiling_observations.clear();
+    _epoch_ceiling_business_requested.assign(_market_signals.good_ids.size(), 0);
+    _epoch_ceiling_business_unfilled.assign(_market_signals.good_ids.size(), 0);
+    _epoch_ceiling_research_requested.assign(_market.market_count, 0);
+    _epoch_ceiling_research_delivered.assign(_market.market_count, 0);
     _epoch_offered_supply_ema = _market_signals.offered_supply_ema;
     _epoch_producer_sellable_current.assign(_market_signals.good_ids.size(), 0);
     _epoch_producer_merchant_sold_current.assign(

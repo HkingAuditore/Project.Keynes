@@ -8,5 +8,4 @@ category_id = &"scientific_instruments"
 substitution_category_ids = PackedStringArray("scientific_instruments")
 technology_tags = PackedStringArray("tech.application.scientific_instrument_works", "tech.application.method_scientific_instrument_works_r8", "tech.application.method_scientific_instrument_works_r10")
 default_price = 58000
-min_price = 5800
-max_price = 580000
+reference_max_price = 2900000
