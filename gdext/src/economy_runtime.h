@@ -528,7 +528,8 @@ public:
         PRACTICE_FOREST_MANAGEMENT = 25,
         PRACTICE_CHEMICAL_PROCESS_CONTROL = 26,
         PRACTICE_ENERGY_CONTROL = 27,
-        PRACTICE_RULE_COUNT = 28,
+        PRACTICE_HIDE_WORKING = 28,
+        PRACTICE_RULE_COUNT = 29,
     };
     bool drain_committed_gameplay_facts(
         std::vector<CommittedGameplayFact> &out);
@@ -4341,7 +4342,7 @@ private:
 	std::vector<int32_t> _building_required_technology_tag_offsets;
 	std::vector<std::string> _building_required_technology_tags;
     std::vector<uint32_t> _building_technology_practice_masks;
-    std::array<int32_t, 27> _breakthrough_signal_ids{};
+    std::array<int32_t, 28> _breakthrough_signal_ids{};
     int32_t _bio_maize_signal_id = -1;
     std::array<int32_t, 8> _metal_resource_signal_ids{
         -1, -1, -1, -1, -1, -1, -1, -1};

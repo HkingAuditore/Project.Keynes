@@ -2981,9 +2981,19 @@
 				"tech.hunting"
 			],
 			"reveal_condition": {
-				"kind": 1,
-				"id": "resource.wild_game",
-				"value": 1
+				"operator": 2,
+				"children": [
+					{
+						"kind": 1,
+						"id": "resource.wild_game",
+						"value": 1
+					},
+					{
+						"kind": 1,
+						"id": "breakthrough.hide_working",
+						"value": 1
+					}
+				]
 			},
 			"is_milestone": false,
 			"is_era_key": false,
@@ -3036,7 +3046,7 @@
 			"branch_family_id": "branch.pastoral_livestock",
 			"era_entry_milestone_id": "",
 			"reveal_category": "environment_observation",
-			"reveal_summary": "生皮刮制由首次资源、生物或地貌目击揭示",
+			"reveal_summary": "生皮刮制可由野生动物目击或狩猎营实际产出生皮揭示",
 			"branch_successor_ids": [],
 			"prerequisite_rationales": [
 				"狩猎是生皮刮制不可替代的知识基础。"
@@ -6050,6 +6060,11 @@
 						"kind": 1,
 						"id": "contact.flax",
 						"value": 1
+					},
+					{
+						"kind": 1,
+						"id": "contact.bast_fiber",
+						"value": 1
 					}
 				]
 			},
@@ -6081,7 +6096,7 @@
 			"branch_family_id": "branch.textile_fibers",
 			"era_entry_milestone_id": "",
 			"reveal_category": "environment_observation",
-			"reveal_summary": "亚麻与韧皮辨识由首次资源、生物或地貌目击揭示",
+			"reveal_summary": "亚麻与韧皮辨识可由植物目击、亚麻样本或实际输入的韧皮纤维揭示",
 			"branch_successor_ids": [],
 			"prerequisite_rationales": [
 				"自然观察是亚麻与韧皮辨识不可替代的知识基础。"
@@ -7343,6 +7358,11 @@
 						"kind": 1,
 						"id": "bio.bast_fiber",
 						"value": 1
+					},
+					{
+						"kind": 1,
+						"id": "contact.bast_fiber",
+						"value": 1
 					}
 				]
 			},
@@ -7408,7 +7428,7 @@
 			"branch_family_id": "branch.textile_fibers",
 			"era_entry_milestone_id": "",
 			"reveal_category": "environment_observation",
-			"reveal_summary": "纤维捻制由首次资源、生物或地貌目击揭示",
+			"reveal_summary": "纤维捻制可由纤维植物目击或实际输入的韧皮纤维揭示",
 			"branch_successor_ids": [],
 			"prerequisite_rationales": [
 				"自然观察是纤维捻制不可替代的知识基础。",

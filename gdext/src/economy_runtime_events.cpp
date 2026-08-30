@@ -207,7 +207,8 @@ void NativeEconomyRuntime::publish_technology_practice_facts() {
                                    PRACTICE_WATERSHED_MANAGEMENT,
                                    PRACTICE_FOREST_MANAGEMENT,
                                    PRACTICE_CHEMICAL_PROCESS_CONTROL,
-                                   PRACTICE_ENERGY_CONTROL}) {
+                                   PRACTICE_ENERGY_CONTROL,
+                                   PRACTICE_HIDE_WORKING}) {
             if ((mask & (uint32_t{1} << rule)) != 0)
                 aggregate.values[static_cast<size_t>(rule)] = std::max(
                     aggregate.values[static_cast<size_t>(rule)], effective_days);
@@ -236,7 +237,7 @@ void NativeEconomyRuntime::publish_technology_practice_facts() {
     static constexpr std::array<int32_t, PRACTICE_RULE_COUNT> SIGNAL_BY_RULE{
         0, 1, 1, 2, 3, 4, 5, 6, 7, 8, 9,
         10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21,
-        22, 23, 24, 25, 26};
+        22, 23, 24, 25, 26, 27};
     for (int32_t country = 0; country < static_cast<int32_t>(countries.size()); ++country) {
         Aggregate &aggregate = countries[static_cast<size_t>(country)];
         const uint64_t country_handle = _epoch_country_handles[static_cast<size_t>(country)];

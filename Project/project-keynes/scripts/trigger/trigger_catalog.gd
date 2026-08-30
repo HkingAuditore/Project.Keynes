@@ -82,10 +82,11 @@ const BREAKTHROUGH_RULES := [
 	[25, "forest_management", "breakthrough.forest_management", 360],
 	[26, "chemical_process_control", "breakthrough.chemical_process_control", 360],
 	[27, "energy_control", "breakthrough.energy_control", 360],
+	[28, "hide_working", "breakthrough.hide_working", 1],
 ]
 
 ## These facts are emitted only after a cross-country delivery of the matching
-## crop sample or ore. Merely knowing a trade route never creates contact.
+## crop sample, fiber, ore or vessel. Merely knowing a trade route never creates contact.
 const CONTACT_RULES := [
 	[0, "maize", "contact.maize"],
 	[1, "wheat", "contact.wheat"],
@@ -97,6 +98,7 @@ const CONTACT_RULES := [
 	[7, "rubber", "contact.rubber"],
 	[8, "tin", "contact.tin"],
 	[9, "maritime_vessel", "contact.maritime_vessel"],
+	[10, "bast_fiber", "contact.bast_fiber"],
 ]
 
 const WEATHER_RULES := [

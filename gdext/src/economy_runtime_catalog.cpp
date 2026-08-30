@@ -1419,6 +1419,8 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
             type_has_technology(type, "tech.nuclear_energy") ||
             type_has_technology(type, "tech.smart_grid"))
             mask |= practice_bit(PRACTICE_ENERGY_CONTROL);
+        if (type_outputs(type, "raw_hide"))
+            mask |= practice_bit(PRACTICE_HIDE_WORKING);
         _building_technology_practice_masks[type] = mask;
     }
     for (int32_t rule = 0; rule < PRACTICE_RULE_COUNT; ++rule) {
@@ -1472,7 +1474,7 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
                 static_cast<int32_t>(_good_occupancy_bits.size());
         }
     }
-    const std::array<const char *, 27> breakthrough_ids{
+    const std::array<const char *, 28> breakthrough_ids{
         "breakthrough.maize_selection", "breakthrough.dryland_adaptation",
         "breakthrough.hydraulic_engineering", "breakthrough.metalworking",
         "breakthrough.printing", "breakthrough.steam_power",
@@ -1486,7 +1488,7 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
         "breakthrough.assembly_line", "breakthrough.digital_control",
         "breakthrough.maritime_operations", "breakthrough.watershed_management",
         "breakthrough.forest_management", "breakthrough.chemical_process_control",
-        "breakthrough.energy_control"};
+        "breakthrough.energy_control", "breakthrough.hide_working"};
     for (size_t i = 0; i < breakthrough_ids.size(); ++i)
         _breakthrough_signal_ids[i] = signal_id(breakthrough_ids[i]);
     for (size_t i = 22; i < breakthrough_ids.size(); ++i) {
