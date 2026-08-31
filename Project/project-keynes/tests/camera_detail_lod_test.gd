@@ -101,6 +101,19 @@ func _run() -> void:
 	_expect(is_equal_approx(float(grass_layer.get("_zoom_visible_fraction")), 0.25),
 		"ground mid LOD uses a quarter-density prefix")
 
+	_expect(is_equal_approx(camera.zoom_max, 6.0), "MapCamera zoom_max is 6")
+	camera.call("_set_target_zoom", 8.0, center)
+	_expect(is_equal_approx(camera.get("_target_zoom").x, 6.0),
+		"interactive zoom target clamps at 6")
+	camera.restore_view_state(camera.global_position, 6.0)
+	_expect(is_equal_approx(camera.zoom.x, 6.0)
+		and is_equal_approx(camera.get("_target_zoom").x, 6.0),
+		"instant restore can sit at zoom 6")
+	var count_at_six := layer.instance_count()
+	layer.set_camera_zoom(6.0)
+	_expect(layer.instance_count() == count_at_six,
+		"zoom 6 only adjusts the visible prefix and never rebuilds instances")
+
 	print("=== camera/detail LOD: %d checks, %d failures ===" % [_checks, _failures])
 	quit(0 if _failures == 0 else 1)
 

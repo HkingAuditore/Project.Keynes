@@ -60,6 +60,7 @@ void NativeEconomyRuntime::initialize_building_role_span(BuildingGroup &group) {
         _building_role_base_wage_paid.resize(role_end, 0);
         _building_role_bonus_due.resize(role_end, 0);
         _building_role_bonus_paid.resize(role_end, 0);
+        _building_role_forecast_pay_ratio_q16.resize(role_end, 0);
         _building_last_input_selected_goods.resize(input_end, -1);
         ++_building_structure_role_span_appends;
     }
@@ -78,6 +79,7 @@ void NativeEconomyRuntime::initialize_building_role_span(BuildingGroup &group) {
         _building_role_base_wage_paid[lane] = 0;
         _building_role_bonus_due[lane] = 0;
         _building_role_bonus_paid[lane] = 0;
+        _building_role_forecast_pay_ratio_q16[lane] = 0;
     }
     std::fill(_building_last_input_selected_goods.begin() + span.input_begin,
               _building_last_input_selected_goods.begin() + span.input_begin +
@@ -218,7 +220,59 @@ void NativeEconomyRuntime::rebuild_building_cell_offsets() {
             _building_active_cells.push_back(cell);
         }
     }
+    rebuild_building_visual_snapshot();
     rebuild_building_review_buckets();
+}
+
+void NativeEconomyRuntime::rebuild_building_visual_snapshot() {
+    _building_visual_cell_offsets.assign(
+        static_cast<size_t>(std::max(0, _cell_count)) + 1, 0);
+    _building_visual_type_indices.clear();
+    _building_visual_counts.clear();
+    int32_t current_cell = 0;
+    int32_t last_cell = -1;
+    int32_t last_type = -1;
+    for (const BuildingGroup &group : _buildings) {
+        if (group.count <= 0 || group.cell < 0 || group.cell >= _cell_count ||
+            group.type_id < 0 ||
+            group.type_id >= static_cast<int32_t>(_building_types.size()))
+            continue;
+        while (current_cell < group.cell) {
+            _building_visual_cell_offsets[static_cast<size_t>(++current_cell)] =
+                static_cast<int32_t>(_building_visual_type_indices.size());
+        }
+        if (last_cell == group.cell && last_type == group.type_id) {
+            _building_visual_counts.back() = saturating_add(
+                _building_visual_counts.back(), group.count, _saturation_count);
+        } else {
+            _building_visual_type_indices.push_back(group.type_id);
+            _building_visual_counts.push_back(group.count);
+            last_cell = group.cell;
+            last_type = group.type_id;
+        }
+    }
+    while (current_cell < _cell_count) {
+        _building_visual_cell_offsets[static_cast<size_t>(++current_cell)] =
+            static_cast<int32_t>(_building_visual_type_indices.size());
+    }
+}
+
+void NativeEconomyRuntime::publish_building_visual_changes(
+        const std::vector<int32_t> &changed_cells) {
+    if (changed_cells.empty()) return;
+    rebuild_building_visual_snapshot();
+    _building_visual_dirty_cells.insert(_building_visual_dirty_cells.end(),
+                                        changed_cells.begin(), changed_cells.end());
+    std::sort(_building_visual_dirty_cells.begin(),
+              _building_visual_dirty_cells.end());
+    _building_visual_dirty_cells.erase(std::remove_if(
+        _building_visual_dirty_cells.begin(), _building_visual_dirty_cells.end(),
+        [&](int32_t cell) { return cell < 0 || cell >= _cell_count; }),
+        _building_visual_dirty_cells.end());
+    _building_visual_dirty_cells.erase(std::unique(
+        _building_visual_dirty_cells.begin(), _building_visual_dirty_cells.end()),
+        _building_visual_dirty_cells.end());
+    ++_building_visual_generation;
 }
 
 void NativeEconomyRuntime::rebuild_building_review_buckets() {

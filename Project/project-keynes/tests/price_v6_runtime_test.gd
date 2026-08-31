@@ -89,7 +89,7 @@ func _test_ceiling_save(ext: Object, catalog: Dictionary) -> void:
 		if chunk.is_empty(): break
 		country_chunks.append(chunk)
 	ext.end_country_save()
-	_expect("active ceiling PKEC49 save starts", int(ext.begin_economy_save(4096).get("schema_version", 0)) == 49)
+	_expect("active ceiling PKEC50 save starts", int(ext.begin_economy_save(4096).get("schema_version", 0)) == 50)
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(4096)
 		if chunk.is_empty(): break

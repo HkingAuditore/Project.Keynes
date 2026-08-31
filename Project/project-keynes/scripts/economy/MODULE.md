@@ -530,6 +530,31 @@ when a full restart is executable but its expected margin remains below restart;
 blockage resets the failed-review streak. The default threshold is 73 fixed five-day reviews,
 approximately one year, before confirmed excess capacity is liquidated in batches.
 
+## 2026-08-31 open-access resource and realized-income employment
+
+Renewable extraction now defaults to open access
+(`resource_safe_harvest_q16 = 0`). Extractor output follows the local
+Gordon-Schaefer stock-density term, so overharvest lowers CPUE, realizable
+output, income and labor demand and may deplete a stock. A positive
+`resource_safe_harvest_q16` remains the explicit managed-harvest switch and
+restores the shared cell/resource budget and investment veto.
+
+Employee choice uses expected collectible pay rather than the contract alone:
+the last role payment ratio is blended with the existing cell/profession paid
+wage EMA, then capped by a current funding forecast. That forecast values only
+output covered by household/business/startup/export demand or an inventory
+shortfall, excludes the candidate's own output from its target, and caps normal
+market receipts by current merchant cash per settlement day. A role without
+payment history therefore no longer advertises its full contract.
+
+Unemployed hiring alone may use a one-eighth-contract low-confidence prior so
+one seed building can establish observations. Incumbent job comparison and
+inspector expected pay never use that prior, preventing a newly unlocked,
+unfunded good or empty building from poaching established workers.
+Unpaid mobile incumbents are released through the existing unemployed pool and
+largest-remainder hiring path, preserving aggregate cohorts and deterministic
+transition costs without a per-person labor simulation.
+
 ## 2026-07-23 renewable-harvest and fixture-employment correction
 
 The optional test-economy bootstrap no longer expands renewable extractors from a
@@ -544,12 +569,9 @@ placement, normal resource-tiered population is capped at generated job capacity
 divided by the 95 percent employment target. Explicit 10x/100x/1000x fixtures
 remain synthetic load tests.
 
-The safe-yield calculation is bootstrap-only. Runtime production continues to
-consume the resource physically present, and endogenous investment has no
-reserve, safe-yield, or deposit-life veto. Overinvestment is therefore expressed
-through resource shortage, lower realized capacity, profit, suspension, and
-possible later liquidation rather than an approval hard cap. No authority,
-DataCore slot, scheduler stage, save field, or hash field is introduced.
+Historical note: this section predated the native shared harvest budget.
+Current PKEC v50 behavior is defined above; when managed harvest is enabled,
+runtime production and investment both enforce it.
 
 ## 2026-07-23 portfolio investment and partial liquidation
 

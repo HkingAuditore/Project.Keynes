@@ -563,6 +563,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     _building_role_base_wage_paid.clear();
     _building_role_bonus_due.clear();
     _building_role_bonus_paid.clear();
+    _building_role_forecast_pay_ratio_q16.clear();
     _pending_construction.clear();
     _investment_pending_by_cell_type.clear();
     _investment_existing_by_cell_type.clear();
@@ -1031,7 +1032,8 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
         _estimated_total_slices_per_epoch;
     out["workload_deadline_feasible"] = _workload_deadline_feasible;
     out["workload_cycle_clamped"] = _workload_cycle_clamped;
-    out["approximation_model"] = "rolling_cell_settlement_v19_class_good_elasticity";
+    out["approximation_model"] =
+        "rolling_cell_settlement_v21_funded_cold_start_labor";
     out["economy_accuracy_preset"] = _accuracy_preset == 0 ? "EXACT" :
         (_accuracy_preset == 1 ? "BALANCED" :
         (_accuracy_preset == 2 ? "FAST" : "CUSTOM"));

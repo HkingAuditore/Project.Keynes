@@ -202,6 +202,7 @@ public:
     godot::Dictionary get_country_treasury_snapshot(int64_t handle) const;
     godot::Dictionary get_country_research_snapshot(int64_t handle) const;
     godot::Dictionary get_country_research_signal_snapshot(int64_t handle) const;
+    godot::Dictionary consume_country_visual_era_dirty_slots();
     bool has_completed_country_technology(int64_t handle,
                                           int32_t technology_id) const;
     godot::Dictionary get_country_tax_policy_snapshot(int64_t handle) const;
@@ -408,6 +409,12 @@ public:
     godot::Dictionary capture_economy_trade_visibility(
         const godot::PackedByteArray &visible, bool fog_solved);
     godot::Dictionary get_building_cell_snapshot(int cell_idx) const;
+    godot::Dictionary get_building_visual_snapshot(
+        const godot::PackedInt32Array &requested_cells) const;
+    godot::Dictionary consume_building_visual_dirty_cells();
+    // Numeric 2.5D building chunk baker. The Godot side supplies only flat
+    // chunk-local PackedArrays; C++ returns MultiMesh-ready 16-float buffers.
+    godot::Dictionary bake_building_visual_chunk(godot::Dictionary knobs);
     godot::Dictionary get_treasury_construction_quotes(
         int64_t country_handle, int cell_idx,
         const godot::PackedInt32Array &type_ids) const;

@@ -424,6 +424,8 @@ public:
         float artificial_generation_pending = 0.0f;
         float artificial_extraction_pending = 0.0f;
         float reserve = 0.0f;
+        int32_t stock_density_q16 = 0;
+        int32_t managed_harvest_enabled = 0;
         int64_t safe_yield = 0;
         int64_t projected_life_days = 0;
     };

@@ -27,7 +27,7 @@ signal zoom_changed(value: float)
 signal view_changed(world_rect: Rect2, center: Vector2, zoom_value: float)
 
 @export var zoom_min: float = 0.25
-@export var zoom_max: float = 3.0
+@export var zoom_max: float = 6.0
 @export var zoom_step: float = 1.15
 @export var pan_button: MouseButton = MOUSE_BUTTON_RIGHT
 # 缩放平滑速度（越大越快到位）。滚轮/键盘缩放走平滑插值，捏合走即时跟手。
@@ -402,6 +402,29 @@ func _set_target_zoom(target_scalar: float, screen_anchor: Vector2) -> void:
 
 func _minimum_zoom() -> float:
 	return maxf(zoom_min, _fit_floor_zoom)
+
+
+## Applies a persisted player view without leaving the smoothing target at its
+## pre-load value. All interactive zoom paths already use the same bounds; save
+## restore must not be an unchecked back door around them.
+func restore_view_state(world_position: Vector2, saved_zoom) -> void:
+	_stop_motion()
+	global_position = world_position
+	var scalar := zoom.x
+	if saved_zoom is Vector2:
+		scalar = float((saved_zoom as Vector2).x)
+	elif saved_zoom is float or saved_zoom is int:
+		scalar = float(saved_zoom)
+	if not is_finite(scalar):
+		scalar = 1.0
+	scalar = clampf(scalar, _minimum_zoom(), zoom_max)
+	zoom = Vector2(scalar, scalar)
+	_target_zoom = zoom
+	_zoom_anchor_screen = get_viewport_rect().size * 0.5
+	_clamp_position()
+	_emit_zoom_changed_if_needed()
+	_emit_view_changed_if_needed(true)
+
 
 func _apply_zoom_anchored(new_scalar: float, screen_anchor: Vector2) -> void:
 	var old := zoom.x

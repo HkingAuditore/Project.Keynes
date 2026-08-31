@@ -65,6 +65,7 @@ func _run() -> void:
 	_test_survival_retention_cap(catalog, profile)
 	_test_all_survival_food_outputs_are_retained(catalog, profile)
 	_test_survival_flow_replacement_procurement(catalog, profile)
+	_test_open_access_cpue_tracks_stock_density(catalog, profile)
 	_test_renewable_harvest_budget_is_shared(catalog, profile)
 	_test_hunter_subsistence_and_working_capital(catalog, profile)
 	_test_shortage_recovery_uses_household_stock(catalog, profile)
@@ -79,6 +80,7 @@ func _run() -> void:
 	_test_non_due_construction_employment_metrics(catalog, profile)
 	_test_active_owner_income_reallocation(catalog, profile)
 	_test_employee_income_reallocation_to_owner(catalog, profile)
+	_test_employee_job_to_job_realized_income(catalog, profile)
 	_test_surplus_merchant_can_change_owner_job(catalog, profile)
 	_test_same_profession_owner_income_reallocation(catalog, profile)
 	_test_owner_income_reallocation_prefers_unemployed(catalog, profile)
@@ -370,6 +372,18 @@ func _run() -> void:
 	_expect("unfunded active employment keeps its payroll commitment",
 		day2_group_paid == 0 and day2_group_due > 0 and
 		day2_paid_total >= day2_group_paid and day2_due_total >= day2_group_due)
+	var day2_role_offsets: PackedInt32Array = buildings.employee_fill_offsets
+	var day2_contracts: PackedInt64Array = \
+		buildings.employee_contract_wages_per_day
+	var day2_expected: PackedInt64Array = \
+		buildings.employee_expected_wages_per_day
+	var payment_discounted := false
+	for role_index in range(day2_role_offsets[mine_group],
+			day2_role_offsets[mine_group + 1]):
+		payment_discounted = payment_discounted or (
+			int(day2_expected[role_index]) < int(day2_contracts[role_index]))
+	_expect("unpaid role lowers collectible expected wage below contract",
+		payment_discounted)
 	var constrained_intent := int(
 		(buildings.purchase_intent_capacity_q16 as PackedInt64Array)[mine_group])
 	_expect("producer-income inventory floor preserves the next active production plan",
@@ -462,7 +476,7 @@ func _run() -> void:
 	_expect("building PKCN save completes", bool(ext.end_country_save().get("ok", false)))
 	var chunks: Array[PackedByteArray] = []
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
-	_expect("building v49 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 49)
+	_expect("building v50 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 50)
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty(): break
@@ -1253,6 +1267,128 @@ func _test_employee_income_reallocation_to_owner(source_catalog: Dictionary,
 		int(final_report.get("population_error", 1)) == 0 and
 		int(final_report.get("money_error", 1)) == 0 and
 		int(final_report.get("goods_error", 1)) == 0)
+
+
+func _test_employee_job_to_job_realized_income(source_catalog: Dictionary,
+		source_profile: Dictionary) -> void:
+	var catalog := source_catalog.duplicate(true)
+	var profile := source_profile.duplicate(true)
+	profile.starvation_death_rate_q32 = 0
+	profile.resource_safe_harvest_q16 = 0
+	profile.employment_mobility_daily_q16 = 6554
+	profile.investment_displacement_min_advantage_q16 = 1
+	profile.investment_max_growth_share_q16 = 0
+	profile.producer_support_monthly_cap_q16 = 0
+	var buildings: PackedStringArray = catalog.building_type_ids
+	var hunting_id := buildings.find("method_stone_age_hunting_camp_r4")
+	var mine_id := buildings.find("rare_earth_collector")
+	var tailor_id := buildings.find("tailor_shop")
+	var signatures: PackedStringArray = catalog.signature_keys
+	var hunter_sig := signatures.find("hunter|default")
+	var industrialist_sig := signatures.find("industrialist|default")
+	var guild_master_sig := signatures.find("guild_master|default")
+	var merchant_sig := signatures.find("merchant|default")
+	var goods: PackedStringArray = catalog.good_ids
+	var rare_earth_ore := goods.find("rare_earth_ore")
+	var tools_good := goods.find("tools")
+	var clothing_good := goods.find("clothing")
+	var cloth_good := goods.find("cloth")
+	var game_meat_good := goods.find("game_meat")
+	var raw_hide_good := goods.find("raw_hide")
+	var fur_good := goods.find("fur")
+	var prices: PackedInt32Array = catalog.good_default_price.duplicate()
+	var max_prices: PackedInt32Array = \
+		catalog.good_reference_max_price.duplicate()
+	prices[rare_earth_ore] = 1000000000
+	max_prices[rare_earth_ore] = 1000000000
+	prices[clothing_good] = 1000000
+	max_prices[clothing_good] = 1000000
+	prices[tools_good] = 1
+	max_prices[tools_good] = 1
+	prices[cloth_good] = 1
+	max_prices[cloth_good] = 1
+	catalog.good_default_price = prices
+	catalog.good_reference_max_price = max_prices
+	var ext := _new_ext(catalog)
+	_expect("job-to-job country bootstraps",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 443))
+	_expect("job-to-job runtime configures", bool(ext.configure_economy(
+		catalog, profile, 1, 443).get("ok", false)))
+	var stock := PackedInt64Array()
+	stock.resize(goods.size())
+	stock.fill(1000000000)
+	for demanded_good in [
+			game_meat_good, raw_hide_good, fur_good, clothing_good]:
+		stock[demanded_good] = 0
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0, 0, 0]),
+		"signature_ids": PackedInt32Array([
+			hunter_sig, industrialist_sig, guild_master_sig, merchant_sig]),
+		"population": PackedInt64Array([9, 1, 1, 1]),
+		"funds": PackedInt64Array([
+			1000, 1000000000, 1000000000, 100000000]),
+	}, {
+		"stock": stock,
+		"price": prices,
+		"building_cells": PackedInt32Array([0, 0, 0]),
+		"building_type_ids": PackedInt32Array([
+			hunting_id, mine_id, tailor_id]),
+		"building_owner_signature_ids": PackedInt32Array([
+			hunter_sig, industrialist_sig, guild_master_sig]),
+		"building_counts": PackedInt64Array([1, 1, 1]),
+	})
+	_expect("job-to-job fixture bootstraps", bool(boot.get("ok", false)))
+	if not bool(boot.get("ok", false)):
+		return
+	_seed_resource_reserve(ext, catalog, "wild_game", 1000000000.0)
+	_seed_resource_reserve(ext, catalog, "rare_earth", 1000000000.0)
+	var moved := 0
+	var profession_changes := 0
+	var report := {}
+	for day in range(5):
+		report = _run_day(ext, day)
+		moved += int(report.get("building_employee_job_reallocations", 0))
+		profession_changes += int(
+			report.get("building_employee_job_profession_changes", 0))
+	var population: Dictionary = ext.get_population_cell_snapshot(0)
+	var apprentice_sig := signatures.find("apprentice|default")
+	var journeyman_sig := signatures.find("journeyman|default")
+	var apprentice_row := _row_for_signature(population, apprentice_sig)
+	var journeyman_row := _row_for_signature(population, journeyman_sig)
+	var moved_population := 0
+	for row in [apprentice_row, journeyman_row]:
+		if row >= 0:
+			moved_population += int(
+				(population.employee_employed_by_cohort as PackedInt64Array)[row])
+	_expect("zero-unemployment employee moves to higher collectible pay",
+		moved > 0 and profession_changes > 0 and
+		moved_population > 0)
+	var building_snapshot: Dictionary = ext.get_building_cell_snapshot(0)
+	var mine_group := (building_snapshot.group_type_ids as PackedInt32Array).find(
+		mine_id)
+	var role_offsets: PackedInt32Array = building_snapshot.employee_fill_offsets
+	var contracts: PackedInt64Array = \
+		building_snapshot.employee_contract_wages_per_day
+	var expected: PackedInt64Array = \
+		building_snapshot.employee_expected_wages_per_day
+	var forecast_ratios: PackedInt32Array = \
+		building_snapshot.employee_forecast_pay_ratio_q16
+	var mine_cold_start_rejected := mine_group >= 0
+	if mine_group >= 0:
+		for role_index in range(role_offsets[mine_group],
+				role_offsets[mine_group + 1]):
+			mine_cold_start_rejected = mine_cold_start_rejected and \
+				forecast_ratios[role_index] == 0 and \
+				expected[role_index] < contracts[role_index]
+	_expect("unfunded new good cannot advertise its nominal contract",
+		mine_cold_start_rejected and
+		int(report.get("building_employee_cold_start_forecasts", 0)) > 0 and
+		int(report.get(
+			"building_employee_funding_limited_forecasts", 0)) > 0)
+	_expect("job-to-job transition conserves every ledger",
+		int(report.get("population_error", 1)) == 0 and
+		int(report.get("money_error", 1)) == 0 and
+		int(report.get("goods_error", 1)) == 0)
 
 
 func _test_surplus_merchant_can_change_owner_job(source_catalog: Dictionary,
@@ -3349,6 +3485,62 @@ func _test_renewable_harvest_budget_is_shared(source_catalog: Dictionary,
 	_expect("renewable extractors share the five-day safe-harvest budget",
 		harvested > 0 and harvested <= 312500)
 
+
+func _test_open_access_cpue_tracks_stock_density(source_catalog: Dictionary,
+		source_profile: Dictionary) -> void:
+	var outputs := PackedInt64Array()
+	for reserve_value in [1000.0, 250.0]:
+		var catalog := source_catalog.duplicate(true)
+		var profile := source_profile.duplicate(true)
+		profile.starvation_death_rate_q32 = 0
+		profile.resource_safe_harvest_q16 = 0
+		var hunting_id := (catalog.building_type_ids as PackedStringArray).find(
+			"stone_age_hunting_camp")
+		var wild_game_id := (catalog.building_resource_ids as PackedStringArray).find(
+			"wild_game")
+		var capacities: PackedInt64Array = catalog.building_resource_ecology_capacity
+		var growth_rates: PackedInt32Array = catalog.building_resource_ecology_growth_q16
+		capacities[wild_game_id] = 1000000
+		growth_rates[wild_game_id] = 65536
+		catalog.building_resource_ecology_capacity = capacities
+		catalog.building_resource_ecology_growth_q16 = growth_rates
+		var ext := _new_ext(catalog)
+		var reserve_slot := int(ext.component_id(StringName(
+			(catalog.building_resource_reserve_slots as PackedStringArray)[wild_game_id])))
+		ext.write_f32_range(reserve_slot, 0, PackedFloat32Array([reserve_value]))
+		_expect("open-access CPUE country bootstraps",
+			CountryTestHelper.configure_all_technologies(ext, catalog, 1, 8282))
+		_expect("open-access CPUE runtime configures",
+			bool(ext.configure_economy(catalog, profile, 1, 8282).get("ok", false)))
+		var signatures: PackedStringArray = catalog.signature_keys
+		var stock := PackedInt64Array()
+		stock.resize((catalog.good_ids as PackedStringArray).size())
+		stock.fill(100000000)
+		var boot: Dictionary = ext.bootstrap_economy({
+			"cell_indices": PackedInt32Array([0, 0]),
+			"signature_ids": PackedInt32Array([
+				signatures.find("hunter|default"),
+				signatures.find("merchant|default"),
+			]),
+			"population": PackedInt64Array([1, 1]),
+			"funds": PackedInt64Array([100000000, 100000000]),
+		}, {
+			"stock": stock,
+			"building_cells": PackedInt32Array([0]),
+			"building_type_ids": PackedInt32Array([hunting_id]),
+			"building_owner_signature_ids": PackedInt32Array([
+				signatures.find("hunter|default"),
+			]),
+			"building_counts": PackedInt64Array([1]),
+		})
+		_expect("open-access CPUE fixture bootstraps", bool(boot.get("ok", false)))
+		_run_day(ext, 0)
+		var buildings: Dictionary = ext.get_building_cell_snapshot(0)
+		outputs.append(int((buildings.last_output as PackedInt64Array)[0]))
+	_expect("open-access CPUE falls continuously with renewable stock density",
+		outputs.size() == 2 and outputs[0] > 0 and outputs[1] > 0 and
+		outputs[1] < outputs[0] and outputs[1] * 3 <= outputs[0])
+
 func _test_shortage_recovery_uses_household_stock(source_catalog: Dictionary,
 		source_profile: Dictionary) -> void:
 	var catalog := source_catalog.duplicate(true)
@@ -4072,12 +4264,16 @@ func _new_ext(catalog: Dictionary, cell_count: int = 1) -> Object:
 	var reserve_slots: PackedStringArray = catalog.building_resource_reserve_slots
 	var extra_slots: PackedStringArray = catalog.building_resource_extra_slots
 	var resource_ids: PackedStringArray = catalog.building_resource_ids
+	var ecology_capacities: PackedInt64Array = \
+		catalog.building_resource_ecology_capacity
 	for i in range(resource_ids.size()):
 		var reserve_sid: int = ext.register_component(StringName(reserve_slots[i]), 0, 1, false)
 		var extra_sid: int = ext.register_component(StringName(extra_slots[i]), 0, 1, false)
 		var reserve := PackedFloat32Array()
 		reserve.resize(cell_count)
-		reserve.fill(1000.0)
+		reserve.fill(maxf(1000.0,
+			float(ecology_capacities[i]) / 1000.0 if
+			i < ecology_capacities.size() else 1000.0))
 		var extra := PackedFloat32Array()
 		extra.resize(cell_count)
 		extra.fill(0.0)

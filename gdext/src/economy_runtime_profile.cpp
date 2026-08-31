@@ -354,7 +354,7 @@ bool NativeEconomyRuntime::configure_profile(const Dictionary &profile, std::str
         profile, "resource_min_reserve_q16", 22938), 0,
         static_cast<int32_t>(Q16_ONE));
     _resource_safe_harvest_q16 = std::clamp(dict_num<int32_t>(
-        profile, "resource_safe_harvest_q16", 32768), 0,
+        profile, "resource_safe_harvest_q16", 0), 0,
         static_cast<int32_t>(Q16_ONE));
     _resource_min_horizon_days = std::clamp(dict_num<int32_t>(
         profile, "resource_min_horizon_days", 3650), 1, 365000);

@@ -1039,10 +1039,23 @@ void NativeEconomyRuntime::store_preparing_missing_goods(
     }
     _family_expeditions.missing_good_count[expedition] =
         static_cast<uint32_t>(kit.missing_good_ids.size());
+    uint64_t identity = hash_preparing_missing_stock(source,
+        kit.missing_good_ids.empty() ? nullptr : kit.missing_good_ids.data(),
+        static_cast<uint32_t>(kit.missing_good_ids.size()));
+    // Stocking progress must move the identity too, otherwise a party whose
+    // shortfall list is unchanged looks frozen to the UI while its escrow grows.
+    identity = trace_hash_mix(identity,
+        static_cast<uint64_t>(std::max<int64_t>(0, kit.bridge_required_units)));
+    identity = trace_hash_mix(identity,
+        static_cast<uint64_t>(std::max<int64_t>(0, kit.bridge_missing_units)));
+    for (const FamilyExpeditionCargoLine &line : kit.cargo) {
+        identity = trace_hash_mix(identity,
+            static_cast<uint32_t>(line.good_id));
+        identity = trace_hash_mix(identity,
+            static_cast<uint64_t>(line.quantity));
+    }
     _family_expeditions.kit_missing_stock_identity[expedition] =
-        hash_preparing_missing_stock(source,
-            kit.missing_good_ids.empty() ? nullptr : kit.missing_good_ids.data(),
-            static_cast<uint32_t>(kit.missing_good_ids.size()));
+        identity == 0 ? 1 : identity;
 }
 
 void NativeEconomyRuntime::refresh_preparing_family_expedition_missing(
@@ -1065,6 +1078,13 @@ void NativeEconomyRuntime::refresh_preparing_family_expedition_missing(
 
 void NativeEconomyRuntime::abort_preparing_family_expedition(
         int32_t expedition, int64_t day, uint8_t kind, const char *code) {
+    // Stocked goods were drawn from the source market and must go back there,
+    // or cancelling a preparation would destroy them.
+    if (_family_expeditions.cargo_count[expedition] > 0) {
+        std::string ignored;
+        restore_family_expedition_cargo(expedition,
+            _family_expeditions.source_cell[expedition], false, ignored);
+    }
     const uint64_t key = family_expedition_target_key(
         _family_expeditions.country_handle[expedition],
         _family_expeditions.target_cell[expedition]);
@@ -1078,20 +1098,23 @@ void NativeEconomyRuntime::abort_preparing_family_expedition(
 bool NativeEconomyRuntime::launch_preparing_family_expedition(
         int32_t expedition, int64_t day, const ColonizationKitPlan &kit,
         std::string &error) {
-    const int32_t source = _family_expeditions.source_cell[expedition];
-    if (!extract_family_expedition_cargo(expedition, kit, error)) {
-        error.clear();
-        store_preparing_missing_goods(expedition, kit);
-        _family_expeditions.due_day[expedition] = day + 1;
-        push_family_expedition_due(expedition);
-        return true;
+    // The escrow already holds every kit line, so only the people still have
+    // to leave. A blocked payload extract keeps the stocked goods and retries
+    // tomorrow instead of dumping them back on the market.
+    _family_expeditions.kit_building_begin[expedition] = static_cast<uint32_t>(
+        _family_expedition_kit_buildings.size());
+    if (kit.place_buildings != 0) {
+        _family_expedition_kit_buildings.insert(
+            _family_expedition_kit_buildings.end(),
+            kit.buildings.begin(), kit.buildings.end());
+        _family_expeditions.kit_building_count[expedition] =
+            static_cast<uint32_t>(kit.buildings.size());
+    } else {
+        _family_expeditions.kit_building_count[expedition] = 0;
     }
     if (!extract_family_expedition_payload(expedition,
             _family_expeditions.population[expedition], error)) {
-        std::string ignored;
-        restore_family_expedition_cargo(expedition, source, false, ignored);
         error.clear();
-        _family_expeditions.cargo_count[expedition] = 0;
         _family_expeditions.kit_building_count[expedition] = 0;
         store_preparing_missing_goods(expedition, kit);
         _family_expeditions.due_day[expedition] = day + 1;
@@ -1129,30 +1152,36 @@ bool NativeEconomyRuntime::advance_preparing_family_expedition(
         abort_preparing_family_expedition(expedition, day, 7, "PREPARING_ABORTED");
         return true;
     }
-    const uint32_t missing_count =
-        _family_expeditions.missing_good_count[expedition];
-    const uint32_t missing_begin =
-        _family_expeditions.missing_good_begin[expedition];
-    if (missing_count > 0 &&
-        missing_begin + missing_count <=
-            _family_expedition_missing_good_ids.size()) {
-        const uint64_t hashed = hash_preparing_missing_stock(source,
-            _family_expedition_missing_good_ids.data() + missing_begin,
-            missing_count);
-        if (hashed ==
-                _family_expeditions.kit_missing_stock_identity[expedition]) {
-            _family_expeditions.due_day[expedition] = day + 1;
-            push_family_expedition_due(expedition);
-            return true;
-        }
-    }
+    // Stock up day by day. A cell that never holds a whole kit at once can
+    // still fund one over time, so the party escrows the spare stock it can
+    // afford today and the planner treats that escrow as available tomorrow.
+    // Replanning every day is the point: there is no shortcut that skips the
+    // top-up, because spare stock can appear in goods that were not short.
+    ColonizationReserveContext reserve;
+    std::vector<int64_t> reserved_stock;
+    std::vector<int64_t> floor_stock;
+    collect_family_expedition_reserved_stock(expedition, reserved_stock);
+    colonization_source_survival_floor(source, floor_stock);
+    reserve.reserved = &reserved_stock;
+    reserve.floor = &floor_stock;
+    reserve.prefer_reserved_candidates = true;
     ColonizationKitPlan kit;
     const int32_t travel = std::max(1,
         (_family_expeditions.route_cost[expedition] +
          std::max(1, _family_expeditions.speed[expedition]) - 1) /
         std::max(1, _family_expeditions.speed[expedition]));
-    if (!plan_colonization_kit(source, target, people, travel, false, kit)) {
+    if (!plan_colonization_kit(source, target, people, travel, false, kit,
+            false, &reserve)) {
         abort_preparing_family_expedition(expedition, day, 7, "PREPARING_ABORTED");
+        return true;
+    }
+    if (!reserve_preparing_family_expedition_cargo(expedition, kit, error)) {
+        // Escrow accounting must never fatal the economy: keep what is already
+        // held, report the shortfall, and try again tomorrow.
+        error.clear();
+        store_preparing_missing_goods(expedition, kit);
+        _family_expeditions.due_day[expedition] = day + 1;
+        push_family_expedition_due(expedition);
         return true;
     }
     if (kit.kit_partial == 0 && !kit.buildings.empty())
@@ -2153,6 +2182,36 @@ Dictionary NativeEconomyRuntime::family_expedition_snapshot(
     out["kit_missing_good_quantities"] = missing_good_quantities;
     out["kit_missing_stock_identity"] = static_cast<int64_t>(
         _family_expeditions.kit_missing_stock_identity[expedition]);
+    int64_t bridge_required = 0;
+    int64_t bridge_missing = 0;
+    if (_family_expeditions.state[expedition] == EXPEDITION_PREPARING) {
+        // Stocking progress needs the unclamped survival-bridge demand, which
+        // only the planner knows. Replan read-only against the live escrow.
+        ColonizationReserveContext reserve;
+        std::vector<int64_t> reserved_stock;
+        std::vector<int64_t> floor_stock;
+        collect_family_expedition_reserved_stock(expedition, reserved_stock);
+        colonization_source_survival_floor(
+            _family_expeditions.source_cell[expedition], floor_stock);
+        reserve.reserved = &reserved_stock;
+        reserve.floor = &floor_stock;
+        reserve.prefer_reserved_candidates = true;
+        ColonizationKitPlan kit;
+        const int32_t travel = std::max(1,
+            (_family_expeditions.route_cost[expedition] +
+             std::max(1, _family_expeditions.speed[expedition]) - 1) /
+            std::max(1, _family_expeditions.speed[expedition]));
+        if (plan_colonization_kit(
+                _family_expeditions.source_cell[expedition],
+                _family_expeditions.target_cell[expedition],
+                _family_expeditions.population[expedition], travel,
+                _epoch_active, kit, false, &reserve)) {
+            bridge_required = kit.bridge_required_units;
+            bridge_missing = kit.bridge_missing_units;
+        }
+    }
+    out["kit_bridge_required_units"] = bridge_required;
+    out["kit_bridge_missing_units"] = bridge_missing;
     return out;
 }
 

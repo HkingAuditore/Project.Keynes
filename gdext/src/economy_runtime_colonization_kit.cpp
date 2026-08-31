@@ -169,22 +169,41 @@ uint64_t NativeEconomyRuntime::hash_colonization_kit_plan(
 
 void NativeEconomyRuntime::fill_colonization_kit_buffer(
         int32_t source_cell, int32_t target_cell, int64_t population,
-        int32_t travel_days, ColonizationKitPlan &kit) const {
+        int32_t travel_days, ColonizationKitPlan &kit,
+        const ColonizationReserveContext *reserve,
+        int32_t bridge_days_override) const {
     if (population <= 0 || source_cell < 0 || source_cell >= _cell_count)
         return;
     const int32_t market = _market.cell_to_market[source_cell];
     if (market < 0 || market >= _market.market_count) return;
+    auto extra_stock = [&](const std::vector<int64_t> *lane,
+                           int32_t good) -> int64_t {
+        if (lane == nullptr || good < 0 ||
+            good >= static_cast<int32_t>(lane->size())) return 0;
+        return std::max<int64_t>(0, (*lane)[static_cast<size_t>(good)]);
+    };
+    // Spare stock is what the party may take today: market stock above the
+    // floor its own source cell must keep, plus whatever it already escrowed.
+    auto spare_stock = [&](int32_t good) -> int64_t {
+        if (good < 0 || good >= _market.good_count) return 0;
+        const int64_t stock = std::max<int64_t>(0,
+            _market.stock[_market.index(market, good)]);
+        const int64_t floor = reserve == nullptr ? 0
+            : extra_stock(reserve->floor, good);
+        const int64_t held = reserve == nullptr ? 0
+            : extra_stock(reserve->reserved, good);
+        return std::max<int64_t>(0, stock - floor) + held;
+    };
     kit.source_stock_identity = 1469598103934665603ULL;
     for (int32_t good = 0; good < _market.good_count; ++good) {
         kit.source_stock_identity = trace_hash_mix(
             kit.source_stock_identity,
-            static_cast<uint64_t>(std::max<int64_t>(0,
-                _market.stock[_market.index(market, good)])));
+            static_cast<uint64_t>(spare_stock(good)));
     }
     if (kit.source_stock_identity == 0) kit.source_stock_identity = 1;
     const EnvironmentSample sample = environment_sample_for_cell(target_cell);
-    const int32_t days = std::max(1, travel_days) +
-        COLONIZATION_KIT_BRIDGE_EXTRA_DAYS;
+    const int32_t days = bridge_days_override > 0 ? bridge_days_override
+        : std::max(1, travel_days) + COLONIZATION_KIT_BRIDGE_EXTRA_DAYS;
     int64_t sat = 0;
     auto source_stock = [&](int32_t good) -> int64_t {
         if (good < 0 || good >= _market.good_count) return 0;
@@ -192,14 +211,12 @@ void NativeEconomyRuntime::fill_colonization_kit_buffer(
         // reserve the source market stock.  Every subsequent line must draw
         // from the remaining balance, otherwise a good shared by the build
         // plan and the survival bridge can be billed twice and fail at start.
-        int64_t reserved = 0;
+        int64_t planned = 0;
         for (const FamilyExpeditionCargoLine &line : kit.cargo) {
             if (line.good_id != good || line.quantity <= 0) continue;
-            reserved = saturating_add(reserved, line.quantity, sat);
+            planned = saturating_add(planned, line.quantity, sat);
         }
-        const int64_t stock = std::max<int64_t>(0,
-            _market.stock[_market.index(market, good)]);
-        return std::max<int64_t>(0, stock - reserved);
+        return std::max<int64_t>(0, spare_stock(good) - planned);
     };
     struct BufferCandidate {
         int32_t good_id = -1;
@@ -220,8 +237,20 @@ void NativeEconomyRuntime::fill_colonization_kit_buffer(
         candidates.push_back({good, numerator, denominator});
     };
     auto fill_group = [&](int64_t required,
-                          const std::vector<BufferCandidate> &candidates) {
+                          std::vector<BufferCandidate> candidates) {
         int64_t remaining = std::max<int64_t>(0, required);
+        kit.bridge_required_units = saturating_add(kit.bridge_required_units,
+            remaining, sat);
+        // A party that escrowed a substitute over previous days must keep
+        // spending that one first, otherwise a newly stocked preferred
+        // candidate would strand the goods already paid for.
+        if (reserve != nullptr && reserve->prefer_reserved_candidates) {
+            std::stable_partition(candidates.begin(), candidates.end(),
+                [&](const BufferCandidate &candidate) {
+                    return extra_stock(reserve->reserved,
+                        candidate.good_id) > 0;
+                });
+        }
         for (const BufferCandidate &candidate : candidates) {
             if (remaining <= 0) break;
             int64_t physical_needed = mul_div_sat(remaining,
@@ -244,6 +273,8 @@ void NativeEconomyRuntime::fill_colonization_kit_buffer(
                 remaining - std::min(remaining, credited));
         }
         if (remaining <= 0) return;
+        kit.bridge_missing_units = saturating_add(kit.bridge_missing_units,
+            remaining, sat);
         kit.kit_partial = 1;
         for (const BufferCandidate &candidate : candidates)
             kit.missing_good_ids.push_back(candidate.good_id);
@@ -359,7 +390,7 @@ void NativeEconomyRuntime::fill_colonization_kit_buffer(
 bool NativeEconomyRuntime::plan_colonization_kit(
         int32_t source_cell, int32_t target_cell, int64_t population,
         int32_t travel_days, bool frozen, ColonizationKitPlan &kit,
-        bool ignore_existing) const {
+        bool ignore_existing, const ColonizationReserveContext *reserve) const {
     kit = ColonizationKitPlan{};
     kit.supported_population = std::max<int64_t>(0, population);
     if (source_cell < 0 || source_cell >= _cell_count ||
@@ -435,7 +466,7 @@ bool NativeEconomyRuntime::plan_colonization_kit(
         if (population < COLONIZATION_KIT_MIN_OWNER_SLOTS)
             kit.kit_partial = 1;
         fill_colonization_kit_buffer(source_cell, target_cell, population,
-            travel_days, kit);
+            travel_days, kit, reserve);
         sort_colonization_kit_cargo(kit);
         kit.kit_hash = hash_colonization_kit_plan(kit);
         return true;
@@ -544,13 +575,27 @@ bool NativeEconomyRuntime::plan_colonization_kit(
                 kit.buildings.push_back({row.type_id, row.count});
         }
     };
+    auto reserve_lane = [&](const std::vector<int64_t> *lane,
+                            int32_t good) -> int64_t {
+        if (lane == nullptr || good < 0 ||
+            good >= static_cast<int32_t>(lane->size())) return 0;
+        return std::max<int64_t>(0, (*lane)[static_cast<size_t>(good)]);
+    };
+    auto spare_source_stock = [&](int32_t market, int32_t good) -> int64_t {
+        const int64_t stock = std::max<int64_t>(0,
+            _market.stock[_market.index(market, good)]);
+        const int64_t floor = reserve == nullptr ? 0
+            : reserve_lane(reserve->floor, good);
+        const int64_t held = reserve == nullptr ? 0
+            : reserve_lane(reserve->reserved, good);
+        return std::max<int64_t>(0, stock - floor) + held;
+    };
     auto materials_fit = [&](std::vector<int32_t> *missing) -> bool {
         std::vector<int64_t> stock(_good_ids.size(), 0);
         const int32_t market = _market.cell_to_market[source_cell];
         if (market < 0 || market >= _market.market_count) return false;
         for (int32_t good = 0; good < _market.good_count; ++good)
-            stock[static_cast<size_t>(good)] = std::max<int64_t>(0,
-                _market.stock[_market.index(market, good)]);
+            stock[static_cast<size_t>(good)] = spare_source_stock(market, good);
         kit.cargo.erase(std::remove_if(kit.cargo.begin(), kit.cargo.end(),
             [](const FamilyExpeditionCargoLine &line) {
                 return line.flags == EXPEDITION_CARGO_CONSTRUCTION;
@@ -645,7 +690,7 @@ bool NativeEconomyRuntime::plan_colonization_kit(
         : mul_div_sat(food_produced, Q16_ONE, food_required, sat);
 
     fill_colonization_kit_buffer(source_cell, target_cell, population,
-        travel_days, kit);
+        travel_days, kit, reserve);
 
     const int32_t market = _market.cell_to_market[source_cell];
     if (market >= 0 && market < _market.market_count) {
@@ -670,8 +715,8 @@ bool NativeEconomyRuntime::plan_colonization_kit(
         for (int32_t good = 0; good < static_cast<int32_t>(billed.size());
              ++good) {
             if (billed[static_cast<size_t>(good)] <= 0) continue;
-            const int64_t stock = std::max<int64_t>(0,
-                _market.stock[_market.index(market, good)]);
+            const int64_t stock = good < _market.good_count
+                ? spare_source_stock(market, good) : 0;
             const int64_t leftover = std::max<int64_t>(0,
                 stock - reserved[static_cast<size_t>(good)]);
             const int64_t extra = std::min(leftover,
@@ -707,6 +752,123 @@ bool NativeEconomyRuntime::adjust_market_stock(
     }
     audit_touch_market_lane(static_cast<size_t>(index));
     _market.stock[index] = next;
+    return true;
+}
+
+void NativeEconomyRuntime::colonization_source_survival_floor(
+        int32_t source_cell, std::vector<int64_t> &floor) const {
+    floor.assign(_good_ids.size(), 0);
+    if (source_cell < 0 || source_cell >= _cell_count) return;
+    int64_t sat = 0;
+    int64_t population = 0;
+    _population.for_each_in_cell(source_cell, [&](int32_t slot) {
+        population = saturating_add(population, _population.population[slot],
+            sat);
+    });
+    if (population <= 0) return;
+    // Run the same bridge planner against the source cell itself: whatever it
+    // would pack to keep its own people fed and clothed over the floor window
+    // is exactly the stock a preparing party must leave behind. An empty
+    // building list keeps this to survival goods, which is what households
+    // actually clear against.
+    ColonizationKitPlan keep;
+    fill_colonization_kit_buffer(source_cell, source_cell, population, 1, keep,
+        nullptr, COLONIZATION_RESERVE_SOURCE_FLOOR_DAYS);
+    for (const FamilyExpeditionCargoLine &line : keep.cargo) {
+        if (line.good_id < 0 ||
+            line.good_id >= static_cast<int32_t>(floor.size())) continue;
+        floor[static_cast<size_t>(line.good_id)] = saturating_add(
+            floor[static_cast<size_t>(line.good_id)], line.quantity, sat);
+    }
+}
+
+void NativeEconomyRuntime::collect_family_expedition_reserved_stock(
+        int32_t expedition, std::vector<int64_t> &reserved) const {
+    reserved.assign(_good_ids.size(), 0);
+    if (expedition < 0 || expedition >= static_cast<int32_t>(
+            _family_expeditions.active.size()) ||
+        _family_expeditions.active[expedition] == 0) return;
+    const uint32_t begin = _family_expeditions.cargo_begin[expedition];
+    const uint32_t end = std::min<uint32_t>(
+        static_cast<uint32_t>(_family_expedition_cargo.size()),
+        begin + _family_expeditions.cargo_count[expedition]);
+    int64_t sat = 0;
+    for (uint32_t i = begin; i < end; ++i) {
+        const FamilyExpeditionCargoLine &line = _family_expedition_cargo[i];
+        if (line.good_id < 0 ||
+            line.good_id >= static_cast<int32_t>(reserved.size())) continue;
+        reserved[static_cast<size_t>(line.good_id)] = saturating_add(
+            reserved[static_cast<size_t>(line.good_id)], line.quantity, sat);
+    }
+}
+
+bool NativeEconomyRuntime::reserve_preparing_family_expedition_cargo(
+        int32_t expedition, const ColonizationKitPlan &kit,
+        std::string &error) {
+    const int32_t source_cell = _family_expeditions.source_cell[expedition];
+    const uint32_t begin = _family_expeditions.cargo_begin[expedition];
+    const uint32_t count = _family_expeditions.cargo_count[expedition];
+    if (static_cast<size_t>(begin) + count > _family_expedition_cargo.size()) {
+        error = "colonization_cargo_range_invalid";
+        return false;
+    }
+    // The planner already counted the escrow as available stock, so every kit
+    // line states the total the party must hold. Only the difference moves:
+    // surplus goes back to the source market first so the top-up can spend it.
+    auto planned_quantity = [&](int32_t good, uint8_t flags) -> int64_t {
+        for (const FamilyExpeditionCargoLine &line : kit.cargo)
+            if (line.good_id == good && line.flags == flags)
+                return line.quantity;
+        return 0;
+    };
+    auto held_quantity = [&](int32_t good, uint8_t flags) -> int64_t {
+        for (uint32_t i = 0; i < count; ++i) {
+            const FamilyExpeditionCargoLine &line =
+                _family_expedition_cargo[begin + i];
+            if (line.good_id == good && line.flags == flags)
+                return line.quantity;
+        }
+        return 0;
+    };
+    std::vector<std::pair<int32_t, int64_t>> applied;
+    auto move_stock = [&](int32_t good, int64_t delta) -> bool {
+        if (delta == 0) return true;
+        if (!adjust_market_stock(source_cell, good, delta, error)) {
+            for (auto it = applied.rbegin(); it != applied.rend(); ++it) {
+                std::string ignored;
+                adjust_market_stock(source_cell, it->first, -it->second,
+                    ignored);
+            }
+            return false;
+        }
+        applied.push_back({good, delta});
+        return true;
+    };
+    for (uint32_t i = 0; i < count; ++i) {
+        const FamilyExpeditionCargoLine held =
+            _family_expedition_cargo[begin + i];
+        const int64_t surplus = held.quantity -
+            planned_quantity(held.good_id, held.flags);
+        if (surplus > 0 && !move_stock(held.good_id, surplus)) return false;
+    }
+    for (const FamilyExpeditionCargoLine &line : kit.cargo) {
+        const int64_t shortfall = line.quantity -
+            held_quantity(line.good_id, line.flags);
+        if (shortfall > 0 && !move_stock(line.good_id, -shortfall)) return false;
+    }
+    if (kit.cargo.size() <= count) {
+        for (size_t i = 0; i < kit.cargo.size(); ++i)
+            _family_expedition_cargo[begin + i] = kit.cargo[i];
+    } else {
+        // A newly needed good does not fit the existing range, so relocate the
+        // whole escrow to the end of the lane.
+        _family_expeditions.cargo_begin[expedition] = static_cast<uint32_t>(
+            _family_expedition_cargo.size());
+        _family_expedition_cargo.insert(_family_expedition_cargo.end(),
+            kit.cargo.begin(), kit.cargo.end());
+    }
+    _family_expeditions.cargo_count[expedition] =
+        static_cast<uint32_t>(kit.cargo.size());
     return true;
 }
 

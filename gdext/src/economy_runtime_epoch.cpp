@@ -142,6 +142,11 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _building_owner_job_profession_changes = 0;
     _building_owner_job_probability_skips = 0;
     _building_employee_to_owner_reallocations = 0;
+    _building_employee_job_reallocations = 0;
+    _building_employee_job_profession_changes = 0;
+    _building_employee_job_hurdle_rejections = 0;
+    _building_employee_cold_start_forecasts = 0;
+    _building_employee_funding_limited_forecasts = 0;
     _building_investments_started = 0;
     _building_investment_blocked_funds = 0;
     _building_investment_blocked_materials = 0;

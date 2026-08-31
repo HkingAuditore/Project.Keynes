@@ -923,6 +923,9 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     PackedInt32Array employee_wage_policies;
     PackedInt64Array employee_reference_wages;
     PackedInt64Array employee_contract_wages;
+    PackedInt64Array employee_expected_wages;
+    PackedInt32Array employee_payment_credibility_q16;
+    PackedInt32Array employee_forecast_pay_ratio_q16;
     PackedInt64Array employee_base_living_cost;
     PackedInt64Array employee_role_living_cost;
     PackedInt64Array employee_local_average_wage;
@@ -1219,7 +1222,45 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
             const int32_t role_index = group.employee_fill_begin + r;
             employee_wage_policies.push_back(role.wage_policy);
             employee_reference_wages.push_back(role.reference_wage_per_day);
-            employee_contract_wages.push_back(_building_role_contract_wage[role_index]);
+            const int64_t contract = std::max<int64_t>(
+                0, _building_role_contract_wage[role_index]);
+            employee_contract_wages.push_back(contract);
+            const int64_t due = std::max<int64_t>(
+                0, _building_role_base_wage_due[role_index]);
+            const int64_t paid = std::max<int64_t>(
+                0, _building_role_base_wage_paid[role_index]);
+            const int32_t signal = labor_signal_index(cell_idx, role.profession_id);
+            const int64_t profession_paid = signal >= 0 && signal <
+                    static_cast<int32_t>(_labor_signals.paid_wage_ema.size())
+                ? std::max<int64_t>(0, _labor_signals.paid_wage_ema[signal]) : 0;
+            const int64_t role_credibility = due > 0
+                ? std::clamp<int64_t>(mul_div_sat(
+                    paid, Q16_ONE, due, snapshot_sat), 0, Q16_ONE)
+                : Q16_ONE;
+            const int64_t role_expected = mul_div_sat(
+                contract, role_credibility, Q16_ONE, snapshot_sat);
+            const int32_t forecast_ratio_q16 = role_index >= 0 &&
+                    role_index < static_cast<int32_t>(
+                        _building_role_forecast_pay_ratio_q16.size())
+                ? std::clamp<int32_t>(
+                    _building_role_forecast_pay_ratio_q16[role_index],
+                    0, Q16_ONE)
+                : Q16_ONE;
+            const int64_t forecast_expected = mul_div_sat(
+                contract, forecast_ratio_q16, Q16_ONE, snapshot_sat);
+            const int64_t history_expected = profession_paid > 0
+                    ? saturating_add(role_expected,
+                        std::min(contract, profession_paid), snapshot_sat) / 2
+                    : role_expected;
+            const int64_t expected = due <= 0
+                ? forecast_expected
+                : std::min(history_expected, forecast_expected);
+            employee_expected_wages.push_back(expected);
+            employee_payment_credibility_q16.push_back(static_cast<int32_t>(
+                contract > 0 ? std::clamp<int64_t>(mul_div_sat(
+                    expected, Q16_ONE, contract, snapshot_sat), 0, Q16_ONE)
+                    : Q16_ONE));
+            employee_forecast_pay_ratio_q16.push_back(forecast_ratio_q16);
             employee_base_living_cost.push_back(
                 _building_role_base_living_cost[role_index]);
             employee_role_living_cost.push_back(
@@ -1401,6 +1442,11 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     out["employee_wage_policies"] = employee_wage_policies;
     out["employee_reference_wages_per_day"] = employee_reference_wages;
     out["employee_contract_wages_per_day"] = employee_contract_wages;
+    out["employee_expected_wages_per_day"] = employee_expected_wages;
+    out["employee_payment_credibility_q16"] =
+        employee_payment_credibility_q16;
+    out["employee_forecast_pay_ratio_q16"] =
+        employee_forecast_pay_ratio_q16;
     out["employee_base_living_cost_per_day"] = employee_base_living_cost;
     out["employee_role_living_cost_per_day"] = employee_role_living_cost;
     out["employee_local_average_wage_per_day"] = employee_local_average_wage;
@@ -1565,6 +1611,67 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     out["construction_merchant_debt_premium"] = construction_merchant_debt_premium;
     out["construction_merchant_debt_term_cycles_left"] =
         construction_merchant_debt_term_cycles_left;
+    return out;
+}
+
+Dictionary NativeEconomyRuntime::building_visual_snapshot(
+        const PackedInt32Array &requested_cells) const {
+    Dictionary out;
+    out["ok"] = false;
+    out["building_generation"] = static_cast<int64_t>(_building_visual_generation);
+    if (!_bootstrapped) {
+        out["reason"] = "economy_not_bootstrapped";
+        return out;
+    }
+    std::vector<int32_t> cells;
+    cells.reserve(static_cast<size_t>(requested_cells.size()));
+    for (int64_t i = 0; i < requested_cells.size(); ++i) {
+        const int32_t cell = requested_cells[i];
+        if (cell < 0 || cell >= _cell_count) {
+            out["reason"] = "cell_out_of_range";
+            out["invalid_cell"] = cell;
+            return out;
+        }
+        cells.push_back(cell);
+    }
+    std::sort(cells.begin(), cells.end());
+    cells.erase(std::unique(cells.begin(), cells.end()), cells.end());
+    PackedInt32Array cell_indices;
+    PackedInt32Array type_offsets;
+    PackedInt32Array type_indices;
+    PackedInt64Array counts;
+    type_offsets.push_back(0);
+    for (const int32_t cell : cells) {
+        cell_indices.push_back(cell);
+        const int32_t begin = _building_visual_cell_offsets.empty()
+            ? 0 : _building_visual_cell_offsets[static_cast<size_t>(cell)];
+        const int32_t end = _building_visual_cell_offsets.empty()
+            ? 0 : _building_visual_cell_offsets[static_cast<size_t>(cell + 1)];
+        for (int32_t row = begin; row < end; ++row) {
+            type_indices.push_back(_building_visual_type_indices[static_cast<size_t>(row)]);
+            counts.push_back(_building_visual_counts[static_cast<size_t>(row)]);
+        }
+        type_offsets.push_back(type_indices.size());
+    }
+    out["ok"] = true;
+    out["cell_indices"] = cell_indices;
+    out["type_offsets"] = type_offsets;
+    out["type_indices"] = type_indices;
+    out["counts"] = counts;
+    return out;
+}
+
+Dictionary NativeEconomyRuntime::consume_building_visual_dirty_cells() {
+    Dictionary out;
+    PackedInt32Array cells;
+    cells.resize(static_cast<int64_t>(_building_visual_dirty_cells.size()));
+    for (int64_t i = 0; i < cells.size(); ++i)
+        cells.set(i, _building_visual_dirty_cells[static_cast<size_t>(i)]);
+    _building_visual_dirty_cells.clear();
+    out["ok"] = _bootstrapped;
+    out["building_generation"] = static_cast<int64_t>(_building_visual_generation);
+    out["dirty_cells"] = cells;
+    if (!_bootstrapped) out["reason"] = "economy_not_bootstrapped";
     return out;
 }
 

@@ -305,7 +305,10 @@ bool NativeEconomyRuntime::prepare_fiscal_budgets(int64_t day_index,
     _fiscal_current_requests.assign(lane_count, 0);
     _fiscal_budgets.assign(lane_count, 0);
     _fiscal_remaining.assign(lane_count, 0);
-    _fiscal_fulfillment_q16.assign(lane_count, Q16_ONE);
+    // Settlement is hard-capped by _fiscal_remaining, so a lane that never
+    // reaches the reservation pass has no budget behind it. Promising anything
+    // here would let a quote offer a discount that apply_fiscal_tax cannot pay.
+    _fiscal_fulfillment_q16.assign(lane_count, 0);
     _fiscal_epoch_bases.assign(lane_count, 0);
     _fiscal_epoch_assessed.assign(lane_count, 0);
     _fiscal_epoch_collected.assign(lane_count, 0);
@@ -544,11 +547,15 @@ bool NativeEconomyRuntime::prepare_fiscal_budgets(int64_t day_index,
                 _fiscal_remaining[lane] = share;
                 const int64_t request = std::max<int64_t>(
                     0, _fiscal_reservation_requests[lane]);
+                // A lane with no reservation request also got no share, so the
+                // honest promise ratio is zero. The lane still bootstraps: the
+                // first epoch records its request through apply_fiscal_tax and
+                // the next epoch reserves treasury cash against it.
                 _fiscal_fulfillment_q16[lane] = request > 0
                     ? static_cast<int32_t>(std::clamp<int64_t>(mul_div_sat(
                         share, Q16_ONE, request, _saturation_count),
                         0, Q16_ONE))
-                    : Q16_ONE;
+                    : 0;
             }
         }
         // Continue the same stable reservation order with import then export

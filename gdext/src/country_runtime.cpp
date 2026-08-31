@@ -255,6 +255,8 @@ Dictionary NativeCountryRuntime::configure(const Dictionary &catalog,
     _technology_milestone_required_counts = packed_i32(catalog, "technology_milestone_required_counts");
     _technology_entry_milestone_indices =
         packed_i32(catalog, "technology_entry_milestone_indices");
+    _technology_era_milestone_indices =
+        packed_i32(catalog, "technology_era_milestone_indices");
     _technology_flags = packed_i32(catalog, "technology_flags");
     _technology_modifier_definition_keys =
         packed_strings(catalog, "technology_modifier_definition_keys");
@@ -294,6 +296,7 @@ Dictionary NativeCountryRuntime::configure(const Dictionary &catalog,
         _technology_milestone_offsets.size() != tech_count + 1 ||
         _technology_milestone_required_counts.size() != tech_count ||
         _technology_entry_milestone_indices.size() != tech_count ||
+        _technology_era_milestone_indices.size() != 11 ||
         _technology_flags.size() != tech_count ||
         _technology_modifier_definition_keys.size() != tech_count ||
         _technology_prerequisite_offsets.front() != 0 ||
@@ -401,6 +404,9 @@ Dictionary NativeCountryRuntime::configure(const Dictionary &catalog,
     _country_goods.clear();
     _country_discovered.clear();
     _country_pending_technologies.clear();
+    _current_visual_era.clear();
+    _visual_era_dirty_slots.clear();
+    _visual_era_generation = 0;
     _country_research_signals.clear();
     _country_research_signal_cells.clear();
     _country_research_signal_evidence.clear();
@@ -468,6 +474,7 @@ int32_t NativeCountryRuntime::append_country(const std::string &stable_id,
     _countries.cash.push_back(cash);
     _countries.state_version.push_back(1);
     _country_technologies.resize(static_cast<size_t>(slot + 1) * _technology_words, 0);
+    _current_visual_era.resize(static_cast<size_t>(slot + 1), -1);
     _country_goods.resize(static_cast<size_t>(slot + 1) * _good_ids.size(), 0);
     _country_tax_defaults.resize(static_cast<size_t>(slot + 1) * TAX_KIND_COUNT,
                                  0);
@@ -1029,6 +1036,11 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
         }
     }
     _bootstrapped = true;
+    _current_visual_era.resize(_countries.active.size(), -1);
+    for (int32_t slot = 0;
+         slot < static_cast<int32_t>(_countries.active.size()); ++slot)
+        _current_visual_era[static_cast<size_t>(slot)] =
+            visual_era_index_for_slot(slot);
     _last_committed_day = -1;
     _last_research_day = -1;
     publish_report("aggregate_publish", -1, 0, 0, 0, _cell_count,
@@ -2459,6 +2471,9 @@ Dictionary NativeCountryRuntime::reset(const String &reason) {
     _country_goods.clear();
     _country_discovered.clear();
     _country_pending_technologies.clear();
+    _current_visual_era.clear();
+    _visual_era_dirty_slots.clear();
+    _visual_era_generation = 0;
     _pending_activation_indices.clear();
     _pending_activation_index_dirty = true;
     _pending_activation_count = 0;
@@ -2623,6 +2638,48 @@ bool NativeCountryRuntime::has_completed_technology(
     int32_t slot = -1;
     return validate_handle(static_cast<uint64_t>(handle), slot) &&
            has_technology(slot, technology_id);
+}
+
+int32_t NativeCountryRuntime::visual_era_index_for_slot(int32_t slot) const {
+    if (slot < 0 || slot >= static_cast<int32_t>(_countries.active.size()) ||
+        _countries.active[static_cast<size_t>(slot)] == 0 ||
+        _technology_words <= 0)
+        return -1;
+    int32_t era = -1;
+    const size_t base = static_cast<size_t>(slot) * _technology_words;
+    for (int32_t i = 0;
+         i < static_cast<int32_t>(_technology_era_milestone_indices.size()); ++i) {
+        const int32_t technology =
+            _technology_era_milestone_indices[static_cast<size_t>(i)];
+        if (technology < 0 ||
+            technology >= static_cast<int32_t>(_technology_ids.size()))
+            continue;
+        const size_t word = base + static_cast<size_t>(technology / 64);
+        if (word < _country_technologies.size() &&
+            (_country_technologies[word] &
+             (uint64_t{1} << (technology % 64))) != 0)
+            era = i;
+    }
+    return era;
+}
+
+Dictionary NativeCountryRuntime::consume_visual_era_dirty_slots() {
+    Dictionary out;
+    std::sort(_visual_era_dirty_slots.begin(), _visual_era_dirty_slots.end());
+    _visual_era_dirty_slots.erase(std::unique(_visual_era_dirty_slots.begin(),
+                                              _visual_era_dirty_slots.end()),
+                                  _visual_era_dirty_slots.end());
+    PackedInt32Array slots;
+    slots.resize(static_cast<int64_t>(_visual_era_dirty_slots.size()));
+    for (int64_t i = 0; i < slots.size(); ++i)
+        slots.set(i, _visual_era_dirty_slots[static_cast<size_t>(i)]);
+    _visual_era_dirty_slots.clear();
+    out["ok"] = _bootstrapped;
+    out["country_era_generation"] =
+        static_cast<int64_t>(_visual_era_generation);
+    out["country_slots"] = slots;
+    if (!_bootstrapped) out["reason"] = "country_not_bootstrapped";
+    return out;
 }
 
 Dictionary NativeCountryRuntime::country_snapshot(int64_t handle) const {
@@ -3547,8 +3604,17 @@ int32_t NativeCountryRuntime::run_research_day(int64_t day_index) {
                     handle, technology_modifier_key, technology, day_index, modifier_error);
             }
             if (!modifier_ready) continue;
+            const int32_t visual_era_before = visual_era_index_for_slot(slot);
             _country_technologies[word_index] |= bit;
             _country_pending_technologies[word_index] &= ~bit;
+            const int32_t visual_era_after = visual_era_index_for_slot(slot);
+            if (visual_era_after != visual_era_before) {
+                if (_current_visual_era.size() < _countries.active.size())
+                    _current_visual_era.resize(_countries.active.size(), -1);
+                _current_visual_era[static_cast<size_t>(slot)] = visual_era_after;
+                _visual_era_dirty_slots.push_back(slot);
+                ++_visual_era_generation;
+            }
             if (use_pending_queue)
                 activated_pending.push_back(technology);
             // Era rewards are emitted only after the technology's permanent
@@ -5027,6 +5093,12 @@ bool NativeCountryRuntime::decode_save(const std::vector<uint8_t> &bytes, std::s
     _last_committed_day = committed_day;
     _submit_order = std::max(saved_submit_order, max_submit_order);
     _bootstrapped = true;
+    _current_visual_era.resize(_countries.active.size(), -1);
+    for (int32_t slot = 0;
+         slot < static_cast<int32_t>(_countries.active.size()); ++slot)
+        _current_visual_era[static_cast<size_t>(slot)] =
+            visual_era_index_for_slot(slot);
+    _visual_era_dirty_slots.clear();
     _state_hash_cache_valid = false;
     rebuild_cell_csr();
     publish_report("aggregate_publish", committed_day, 0, 0, 0, _cell_count, country_count, _mode == MODE_ACTIVE);

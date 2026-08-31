@@ -234,6 +234,7 @@ Dictionary NativeEconomyRuntime::begin_restore() {
     _building_role_base_wage_paid.clear();
     _building_role_bonus_due.clear();
     _building_role_bonus_paid.clear();
+    _building_role_forecast_pay_ratio_q16.clear();
     _pending_construction.clear();
     _canal_quotes.clear();
     _canal_quote_index.clear();

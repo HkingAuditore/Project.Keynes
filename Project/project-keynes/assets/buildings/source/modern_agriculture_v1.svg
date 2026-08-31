@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160">
+  <!-- Flat top-down authored tile. No baked shadow: the analytic
+       building_shadow pass owns false shadows. -->
+  <polygon data-role="roof_back" fill="#616b70" points="25.60,35.20 89.60,35.20 89.60,76.80 25.60,76.80"/>
+  <polygon data-role="ridge" fill="#9ca6ab" points="25.60,75.04 89.60,75.04 89.60,76.80 25.60,76.80"/>
+  <polygon data-role="wall" fill="#b8bdbd" points="27.52,76.80 87.68,76.80 87.68,112.00 27.52,112.00"/>
+  <polygon data-role="foundation" fill="#42474a" points="23.68,112.00 91.52,112.00 91.52,118.40 23.68,118.40"/>
+  <polygon data-role="foundation" fill="#42474a" points="96.00,41.60 147.20,41.60 147.20,105.60 96.00,105.60"/>
+  <polygon data-role="glass" fill="#5e94ad" points="98.05,43.84 111.02,43.84 111.02,55.36 98.05,55.36"/>
+  <polygon data-role="glass" fill="#5e94ad" points="98.05,59.84 111.02,59.84 111.02,71.36 98.05,71.36"/>
+  <polygon data-role="glass" fill="#5e94ad" points="98.05,75.84 111.02,75.84 111.02,87.36 98.05,87.36"/>
+  <polygon data-role="glass" fill="#5e94ad" points="98.05,91.84 111.02,91.84 111.02,103.36 98.05,103.36"/>
+  <polygon data-role="glass" fill="#5e94ad" points="115.11,43.84 128.09,43.84 128.09,55.36 115.11,55.36"/>
+  <polygon data-role="glass" fill="#5e94ad" points="115.11,59.84 128.09,59.84 128.09,71.36 115.11,71.36"/>
+  <polygon data-role="glass" fill="#5e94ad" points="115.11,75.84 128.09,75.84 128.09,87.36 115.11,87.36"/>
+  <polygon data-role="glass" fill="#5e94ad" points="115.11,91.84 128.09,91.84 128.09,103.36 115.11,103.36"/>
+  <polygon data-role="glass" fill="#5e94ad" points="132.18,43.84 145.15,43.84 145.15,55.36 132.18,55.36"/>
+  <polygon data-role="glass" fill="#5e94ad" points="132.18,59.84 145.15,59.84 145.15,71.36 132.18,71.36"/>
+  <polygon data-role="glass" fill="#5e94ad" points="132.18,75.84 145.15,75.84 145.15,87.36 132.18,87.36"/>
+  <polygon data-role="glass" fill="#5e94ad" points="132.18,91.84 145.15,91.84 145.15,103.36 132.18,103.36"/>
+  <polygon data-role="yard" fill="#707873" points="19.20,121.60 140.80,121.60 140.80,137.60 19.20,137.60"/>
+  <polygon data-role="facility" fill="#78858c" points="20.80,121.60 139.20,121.60 139.20,124.91 20.80,124.91"/>
+  <polygon data-role="facility" fill="#78858c" points="20.80,132.27 139.20,132.27 139.20,135.57 20.80,135.57"/>
+</svg>

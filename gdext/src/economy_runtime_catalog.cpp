@@ -1959,6 +1959,20 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
     _resource_ecology_growth_q16 = packed_i32(catalog, "building_resource_ecology_growth_q16");
     _resource_temp_lo_q16 = packed_i32(catalog, "building_resource_temp_lo_q16");
     _resource_temp_hi_q16 = packed_i32(catalog, "building_resource_temp_hi_q16");
+    _resource_climate_temp_opt_q16 =
+        packed_i32(catalog, "building_resource_climate_temp_opt_q16");
+    _resource_climate_temp_tol_q16 =
+        packed_i32(catalog, "building_resource_climate_temp_tol_q16");
+    _resource_climate_moisture_opt_q16 =
+        packed_i32(catalog, "building_resource_climate_moisture_opt_q16");
+    _resource_climate_moisture_tol_q16 =
+        packed_i32(catalog, "building_resource_climate_moisture_tol_q16");
+    _resource_runtime_fit_weight_q16 =
+        packed_i32(catalog, "building_resource_runtime_fit_weight_q16");
+    _resource_temperature_signal =
+        packed_i32(catalog, "building_resource_temperature_signal");
+    _resource_moisture_signal =
+        packed_i32(catalog, "building_resource_moisture_signal");
     const size_t resource_count = _resource_ids.size();
     if (_resource_ids.size() != _resource_reserve_slots.size() ||
         _resource_ids.size() != _resource_extra_slots.size() ||
@@ -1974,6 +1988,13 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
         _resource_ecology_growth_q16.size() != resource_count ||
         _resource_temp_lo_q16.size() != resource_count ||
         _resource_temp_hi_q16.size() != resource_count ||
+        _resource_climate_temp_opt_q16.size() != resource_count ||
+        _resource_climate_temp_tol_q16.size() != resource_count ||
+        _resource_climate_moisture_opt_q16.size() != resource_count ||
+        _resource_climate_moisture_tol_q16.size() != resource_count ||
+        _resource_runtime_fit_weight_q16.size() != resource_count ||
+        _resource_temperature_signal.size() != resource_count ||
+        _resource_moisture_signal.size() != resource_count ||
         !std::is_sorted(_resource_ids.begin(), _resource_ids.end()) ||
         std::adjacent_find(_resource_ids.begin(), _resource_ids.end()) != _resource_ids.end() ||
         _modifier_sector_ids.size() != 5 || _modifier_terrain_ids.empty() ||

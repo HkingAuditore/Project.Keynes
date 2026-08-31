@@ -38,10 +38,17 @@ V6 将原 `max_price` 数值保留为 `reference_max_price`，删除上涨锚点
 资金子单位的居民暂时买不到本可负担的微量商品；它不改变商品价格，也不是额外扣款。
 实际扣款若超过可支用资金，整期以 `household_invoice_exceeds_reserved_cash` 拒绝提交。
 
+消费补贴与家族购买折扣写进订单报价时，必须按 cell 的 `TAX_CONSUMPTION` 车道剩余托管
+预算逐单递减配额，顺序与结算调用 `apply_fiscal_tax` 的顺序一致；配额耗尽的订单按原价
+报价。家族折扣的申请基数是不含消费税的组件基价，与结算侧一致。每张带折扣报价的订单
+另预留一个资金子单位，覆盖「报价按意向量向下取整、结算按实际成交组件基数重算」的
+亚单位差。报价承诺的折扣因此始终不高于结算实际兑现的折扣。
+
 小额合并不跨税补贴规则、买方或结算阶段。极小交易存在最多不足一个资金子单位的基础账单溢价，
 这是选定的离散货币规则；不能把它解释为物资的最低售价。
 
-PKEC v49 仅接受同版本存档，旧版返回 `economy_save_price_v6_requires_new_game`。
+PKEC v50 仅接受同版本存档；旧版仍通过统一的
+`economy_save_price_v6_requires_new_game` 兼容错误码显式拒绝。
 
 ## 数值 ABI
 
@@ -812,10 +819,26 @@ capacity remain in `[0,Q16_ONE]`. A missing profile is exactly `Q16_ONE`.
 pre-climate capacity and total capacity, after the existing output and Modifier
 factors. Climate creates no goods or money and cannot increase baseline output.
 
-## Renewable harvest budget
+## Open-access renewable extraction and optional harvest policy
 
-All quantities below use resource fixed units. For renewable resource `r` in
-cell `c`, the daily production and investment budget is:
+PKEC v50 defaults renewable extraction to open access. For an extract edge,
+the Gordon-Schaefer stock-density term is:
+
+```text
+runtime_fit = lerp(1, climate_fit, runtime_climate_fit_weight)
+local_capacity = ecology_capacity * runtime_fit
+cpue = clamp(frozen_or_remaining_stock / local_capacity, 0, 1)
+resource_capacity = min(physical_stock / requested_extraction, cpue)
+```
+
+The building recipe represents catchability and full-density effort. Falling
+stock therefore lowers extraction, output, revenue, affordable wages, labor
+demand, and owner opportunity without an administrative cap. Extraction can
+still exceed natural growth and deplete the stock.
+
+`resource_safe_harvest_q16` is an optional managed-harvest policy. Zero
+disables it. When positive, all quantities below use resource fixed units and
+the shared daily production and investment budget is:
 
 ```text
 reserve_floor = frozen_reserve[c,r] * resource_min_reserve_q16 / Q16_ONE
@@ -831,4 +854,49 @@ All `extract` edges in the same `(cell,resource)` lane share the epoch budget;
 peak daily extraction committed by installed buildings, pending construction,
 and candidates already allocated in the same portfolio. Non-renewable entry uses
 `reserve / resource_min_horizon_days` as its daily budget. A zero safe-harvest
-factor disables the production budget and investment runway gates.
+factor disables the renewable production budget and investment runway gates,
+but does not disable CPUE.
+
+## Collectible wage expectation and incumbent mobility
+
+Before employment, each output receives a conservative daily absorption quote:
+
+```text
+absorbable = max(household_demand_ema,
+                 realized_withdrawal_ema,
+                 business_demand_ema,
+                 local_or_remote_startup_demand,
+                 export_ema,
+                 inventory_target_without_candidate_supply - current_stock)
+quoted_output = min(planned_output, max(0, absorbable))
+quoted_market_receipt = min(quoted_output * merchant_buy_price,
+                            current_merchant_cash / epoch_days)
+funded_pay_ratio = clamp(
+    ((quoted_receipt / (1 + target_margin) - daily_inputs) / employee_slots)
+    * wage_income_cap_ratio / contract_wage, 0, 1)
+```
+
+Monetary-issue outputs remain governed by their issue value instead of merchant
+cash. Candidate output is deliberately excluded from the inventory-target
+input, so a newly unlocked recipe cannot create demand for itself.
+
+For an employee role with payment history:
+
+```text
+role_expected = contract_wage * last_role_pay_ratio
+history_expected = min(contract_wage,
+                       (role_expected + min(contract_wage,
+                                            cell_profession_paid_wage_ema)) / 2)
+expected_paid = min(contract_wage * funded_pay_ratio, history_expected)
+```
+
+A role without its own payment history uses
+`contract_wage * funded_pay_ratio`; it neither assumes full payment nor inherits
+another employer's arrears. Only unemployed hiring receives a one-eighth
+contract low-confidence prior, allowing a seed building to establish evidence.
+Incumbent vacancy ranking, employee-to-owner comparison, inspector output, and
+job-to-job comparison never use that prior. A job-to-job move requires the
+relative disposable-income gain to clear the existing profession transition
+hurdle and is capped by the cadence-invariant compounded mobility share.
+Same-profession moves only rebalance role fill; cross-profession moves preserve
+ethnicity and use the existing cohort-signature transfer.

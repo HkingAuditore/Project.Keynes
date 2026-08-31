@@ -159,9 +159,49 @@ func _init() -> void:
 	_expect("Trigger definition changes reject PKCN with catalog_hash_mismatch",
 		not bool(trigger_incompatible_restore.get("ok", false)) and String(
 			trigger_incompatible_restore.get("reason", "")) == "catalog_hash_mismatch")
+	_expect_strict_flax_reveal(compiled, profile, ids)
 	_expect_equal_weight_progress_accumulates(compiled, profile, packet, ids)
 	print("technology research runtime: %s" % ("PASS" if _failures == 0 else "FAIL"))
 	quit(0 if _failures == 0 else 1)
+
+
+func _expect_strict_flax_reveal(compiled: Dictionary, profile: Resource,
+		ids: PackedStringArray) -> void:
+	var ext: Object = ClassDB.instantiate("DCWorldExt")
+	ext.create_entities(1)
+	var facade = CountryFacadeScript.new()
+	_expect("strict flax country configures", bool(facade.configure(
+		ext, 1, 43, profile, compiled).get("ok", false)))
+	var packet := {
+		"country_ids": PackedStringArray(["country.flax"]),
+		"country_names": PackedStringArray(["亚麻门槛测试国"]),
+		"country_cash": PackedInt64Array([0]),
+		"territory_offsets": PackedInt32Array([0, 1]),
+		"territory_cells": PackedInt32Array([0]),
+		"technology_offsets": PackedInt32Array([0, 0]),
+		"technology_indices": PackedInt32Array(),
+		"treasury_offsets": PackedInt32Array([0, 0]),
+		"treasury_good_indices": PackedInt32Array(),
+		"treasury_quantities": PackedInt64Array(),
+	}
+	_expect("strict flax country bootstraps", bool(facade.bootstrap(
+		PackedByteArray([0]), packet).get("ok", false)))
+	var handle := int(facade.cell_summary(0).country_handle)
+	var flax_identification := ids.find("tech.flax_identification")
+	_expect("unrelated bast fiber queues", bool(facade.discover_research_signal(
+		handle, &"bio.bast_fiber", 0, 1, 0, 1).get("ok", false)))
+	_expect("unrelated bast fiber commits", bool(ext.run_country_slice(
+		{"day_index": 0}).get("done", false)))
+	var snapshot: Dictionary = facade.research_snapshot(handle)
+	_expect("bast fiber does not reveal flax identification",
+		int(snapshot.technology_states[flax_identification]) == 0)
+	_expect("flax contact queues", bool(facade.discover_research_signal(
+		handle, &"contact.flax", 0, 1, 1, 2).get("ok", false)))
+	_expect("flax contact commits", bool(ext.run_country_slice(
+		{"day_index": 1}).get("done", false)))
+	snapshot = facade.research_snapshot(handle)
+	_expect("flax contact reveals the identification node",
+		int(snapshot.technology_states[flax_identification]) == 1)
 
 
 func _expect_equal_weight_progress_accumulates(compiled: Dictionary, profile: Resource,

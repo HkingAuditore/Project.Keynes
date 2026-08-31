@@ -337,13 +337,10 @@ func _audit(catalog: Dictionary) -> void:
 	var gathering = load("res://data/economy/buildings/gathering_ground.tres")
 	var stone_hunting = load(
 		"res://data/economy/buildings/stone_age_hunting_camp.tres")
-	_expect("stone hunting keeps a soft tool complement",
+	_expect("stone hunting has no soft tool complement on the current recipe",
 		stone_hunting != null and
-		stone_hunting.input_good_ids == PackedStringArray(["tools"]) and
-		stone_hunting.input_quantities_per_day == PackedInt64Array([200]) and
-		stone_hunting.input_required_q16 == PackedInt32Array([32768]) and
-		stone_hunting.input_category_ids == PackedStringArray(["tools"]) and
-		stone_hunting.input_min_quality_levels == PackedInt32Array([1]))
+		stone_hunting.input_good_ids.is_empty() and
+		stone_hunting.input_quantities_per_day.is_empty())
 	var stone_collector = load("res://data/economy/buildings/stone_collector.tres")
 	var timber_collector = load("res://data/economy/buildings/timber_collector.tres")
 	var bronze_tools = load("res://data/economy/buildings/bronze_tool_workshop.tres")
@@ -407,12 +404,12 @@ func _audit(catalog: Dictionary) -> void:
 	_expect("stone hunting sustains its hunter and yields fewer hides",
 		stone_hunting != null and
 		stone_hunting.output_good_ids == PackedStringArray(["game_meat", "raw_hide"]) and
-		stone_hunting.output_quantities_per_day == PackedInt64Array([6670, 80]) and
+		stone_hunting.output_quantities_per_day == PackedInt64Array([310, 36]) and
 		stone_hunting.output_quantities_per_day[0] >= 171 and
 		stone_hunting.output_quantities_per_day[0] >
 			stone_hunting.output_quantities_per_day[1] and
-		stone_hunting.resource_quantities_per_day == PackedInt64Array([1430]) and
-		stone_hunting.owner_slots_per_building == 2)
+		stone_hunting.resource_quantities_per_day == PackedInt64Array([163]) and
+		stone_hunting.owner_slots_per_building == 1)
 	_expect("rough bullion sites are merchant-owned mint collectors",
 		String(early_gold.owner_profession_id) == "merchant" and
 		String(early_silver.owner_profession_id) == "merchant" and

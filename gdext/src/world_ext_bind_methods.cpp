@@ -118,6 +118,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::get_country_treasury_snapshot);
     ClassDB::bind_method(D_METHOD("get_country_research_snapshot", "handle"),
                          &DCWorldExt::get_country_research_snapshot);
+    ClassDB::bind_method(D_METHOD("consume_country_visual_era_dirty_slots"),
+                         &DCWorldExt::consume_country_visual_era_dirty_slots);
     ClassDB::bind_method(D_METHOD("get_country_research_signal_snapshot", "handle"),
                          &DCWorldExt::get_country_research_signal_snapshot);
     ClassDB::bind_method(D_METHOD("has_completed_country_technology", "handle",
@@ -360,6 +362,12 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::capture_economy_trade_visibility);
     ClassDB::bind_method(D_METHOD("get_building_cell_snapshot", "cell_idx"),
                          &DCWorldExt::get_building_cell_snapshot);
+    ClassDB::bind_method(D_METHOD("get_building_visual_snapshot", "requested_cells"),
+                         &DCWorldExt::get_building_visual_snapshot);
+    ClassDB::bind_method(D_METHOD("consume_building_visual_dirty_cells"),
+                          &DCWorldExt::consume_building_visual_dirty_cells);
+    ClassDB::bind_method(D_METHOD("bake_building_visual_chunk", "knobs"),
+                          &DCWorldExt::bake_building_visual_chunk);
     ClassDB::bind_method(D_METHOD("get_treasury_construction_quotes",
                                   "country_handle", "cell_idx", "type_ids"),
                          &DCWorldExt::get_treasury_construction_quotes);

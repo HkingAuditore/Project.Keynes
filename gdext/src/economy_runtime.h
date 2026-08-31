@@ -14,6 +14,7 @@
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/packed_byte_array.hpp>
 #include <godot_cpp/variant/packed_int32_array.hpp>
+#include <godot_cpp/variant/packed_int64_array.hpp>
 #include <godot_cpp/variant/string.hpp>
 #include <godot_cpp/variant/string_name.hpp>
 
@@ -54,7 +55,10 @@ public:
     // 43: sector maintenance horizons and maintenance cost factor.
     // 44: resolved startup-demand mode. v43 restores with startup demand OFF.
     // 45: previous-period food-flow carrying-capacity snapshot.
-    static constexpr int32_t SCHEMA_VERSION = 49;
+    // 51: EXPEDITION_PREPARING parties escrow the cargo they have already
+    // drawn from the source market, so payload/kit stay empty but cargo may
+    // not. Older economy saves are rejected by the same-version reader.
+    static constexpr int32_t SCHEMA_VERSION = 51;
     static constexpr uint32_t BUILDING_KIT_ROLE_TRADE = 1u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CONSTRUCTION = 2u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CLOTHING_INPUT = 4u;
@@ -65,13 +69,20 @@ public:
     static constexpr int32_t COLONIZATION_KIT_MIN_OWNER_SLOTS = 3;
     static constexpr int32_t COLONIZATION_KIT_FOOD_COVERAGE_Q16 = 72090;
     static constexpr int32_t COLONIZATION_KIT_BRIDGE_EXTRA_DAYS = 15;
+    // Days of the source cell's own survival consumption that a preparing
+    // party may never draw down. The daily reserve step runs before market
+    // clearing, so without this floor an expedition would empty the source
+    // market and starve the households that are producing its kit.
+    static constexpr int32_t COLONIZATION_RESERVE_SOURCE_FLOOR_DAYS = 10;
     // Bump when preparing-kit buffer demand changes so in-flight PREPARING
     // parties replan even if source stock of the previous missing goods is
     // unchanged. Revision 2: clothing uses need.base_qty_per_person, not 1.0
     // goods per person-day. Revision 3: every candidate in an underfilled
     // substitute group participates in the PREPARING stock watch. Revision 4:
     // staple, protein, and produce candidates share one aggregate food pool.
-    static constexpr uint64_t COLONIZATION_PREPARING_STOCK_HASH_REVISION = 4;
+    // Revision 5: preparing parties escrow spare stock day by day, so the
+    // watch identity covers the reserve as well as the remaining shortfall.
+    static constexpr uint64_t COLONIZATION_PREPARING_STOCK_HASH_REVISION = 5;
     static constexpr int32_t ROLLING_PHASE_COUNT = 5;
     static constexpr int32_t MARKET_CYCLE_MIN_DAYS = 1;
     static constexpr int32_t MARKET_CYCLE_MAX_DAYS = 5;
@@ -364,6 +375,11 @@ public:
                                               const godot::String &view,
                                               int32_t offset, int32_t limit) const;
     godot::Dictionary building_cell_snapshot(int32_t cell_idx) const;
+    // Sparse, committed visual projection. This lane is deliberately excluded
+    // from PKEC and state_hash; it is rebuilt from authoritative groups.
+    godot::Dictionary building_visual_snapshot(
+        const godot::PackedInt32Array &requested_cells) const;
+    godot::Dictionary consume_building_visual_dirty_cells();
     godot::Dictionary treasury_construction_quotes(
         int64_t country_handle, int32_t cell_idx,
         const godot::PackedInt32Array &type_ids) const;
@@ -1259,11 +1275,25 @@ private:
         std::vector<int32_t> missing_good_ids;
         int64_t supported_population = 0;
         int64_t food_coverage_q16 = 0;
+        // Unclamped survival-bridge demand and the part still unfilled after
+        // spare source stock and the escrowed reserve. Progress reporting needs
+        // the demand before it is clamped to what the market can supply.
+        int64_t bridge_required_units = 0;
+        int64_t bridge_missing_units = 0;
         uint8_t kit_partial = 0;
         uint8_t place_buildings = 0;
         uint64_t kit_hash = 0;
         uint64_t dest_identity = 0;
         uint64_t source_stock_identity = 0;
+    };
+
+    // Extra stock the kit planner may spend beyond the plain source market:
+    // `reserved` is what a preparing party already escrowed (already deducted
+    // from the market), `floor` is per-good stock the party must leave behind.
+    struct ColonizationReserveContext {
+        const std::vector<int64_t> *reserved = nullptr;
+        const std::vector<int64_t> *floor = nullptr;
+        bool prefer_reserved_candidates = false;
     };
 
     struct FamilyExpeditionStore {
@@ -3202,7 +3232,9 @@ private:
     int32_t _investment_sparse_mode = 2;
     int32_t _recovery_liquidation_max_share_q16 = Q16_ONE / 4;
     int32_t _resource_min_reserve_q16 = 22938;
-    int32_t _resource_safe_harvest_q16 = Q16_ONE / 2;
+    // Zero is open access. Positive values enable the optional managed
+    // safe-harvest budget.
+    int32_t _resource_safe_harvest_q16 = 0;
     int32_t _resource_min_horizon_days = 3650;
     int32_t _bullion_monthly_issue_cap_q16 = 655;
     int32_t _producer_support_monthly_cap_q16 = 3277;
@@ -3319,6 +3351,11 @@ private:
     int64_t _building_owner_job_profession_changes = 0;
     int64_t _building_owner_job_probability_skips = 0;
     int64_t _building_employee_to_owner_reallocations = 0;
+    int64_t _building_employee_job_reallocations = 0;
+    int64_t _building_employee_job_profession_changes = 0;
+    int64_t _building_employee_job_hurdle_rejections = 0;
+    int64_t _building_employee_cold_start_forecasts = 0;
+    int64_t _building_employee_funding_limited_forecasts = 0;
     int64_t _building_investments_started = 0;
     int64_t _building_investment_blocked_funds = 0;
     int64_t _building_investment_blocked_materials = 0;
@@ -4250,6 +4287,13 @@ private:
     std::vector<int32_t> _resource_ecology_growth_q16;
     std::vector<int32_t> _resource_temp_lo_q16;
     std::vector<int32_t> _resource_temp_hi_q16;
+    std::vector<int32_t> _resource_climate_temp_opt_q16;
+    std::vector<int32_t> _resource_climate_temp_tol_q16;
+    std::vector<int32_t> _resource_climate_moisture_opt_q16;
+    std::vector<int32_t> _resource_climate_moisture_tol_q16;
+    std::vector<int32_t> _resource_runtime_fit_weight_q16;
+    std::vector<int32_t> _resource_temperature_signal;
+    std::vector<int32_t> _resource_moisture_signal;
     std::vector<int64_t> _resource_deltas;
     std::vector<uint32_t> _resource_lane_generation;
     std::vector<size_t> _resource_touched_lanes;
@@ -4678,6 +4722,11 @@ private:
     uint32_t _building_labor_signal_stamp_generation = 0;
     std::vector<int32_t> _building_cell_offsets;
     std::vector<int32_t> _building_active_cells;
+    std::vector<int32_t> _building_visual_cell_offsets;
+    std::vector<int32_t> _building_visual_type_indices;
+    std::vector<int64_t> _building_visual_counts;
+    std::vector<int32_t> _building_visual_dirty_cells;
+    uint64_t _building_visual_generation = 0;
     // Transient CSR baked from stable building order. Recovery reviews touch
     // only the current cell-modulo-review bucket instead of scanning all groups.
     std::vector<int32_t> _building_review_phase_offsets;
@@ -4695,6 +4744,10 @@ private:
     std::vector<int64_t> _building_role_base_wage_paid;
     std::vector<int64_t> _building_role_bonus_due;
     std::vector<int64_t> _building_role_bonus_paid;
+    // Epoch-derived cold-start funding ceiling. This is rebuilt before
+    // employment from demand-backed absorption and is intentionally excluded
+    // from PKEC and the authoritative state hash.
+    std::vector<int32_t> _building_role_forecast_pay_ratio_q16;
     std::vector<PendingConstruction> _pending_construction;
     // Epoch-transient stable CSR over pending construction. This removes the
     // previous all-pending scan from every active building cell.
@@ -5045,7 +5098,17 @@ private:
     uint64_t hash_colonization_kit_plan(const ColonizationKitPlan &kit) const;
     void fill_colonization_kit_buffer(int32_t source_cell, int32_t target_cell,
                                       int64_t population, int32_t travel_days,
-                                      ColonizationKitPlan &kit) const;
+                                      ColonizationKitPlan &kit,
+                                      const ColonizationReserveContext *reserve
+                                          = nullptr,
+                                      int32_t bridge_days_override = 0) const;
+    void colonization_source_survival_floor(
+        int32_t source_cell, std::vector<int64_t> &floor) const;
+    void collect_family_expedition_reserved_stock(
+        int32_t expedition, std::vector<int64_t> &reserved) const;
+    bool reserve_preparing_family_expedition_cargo(
+        int32_t expedition, const ColonizationKitPlan &kit,
+        std::string &error);
     void add_colonization_kit_cargo(ColonizationKitPlan &kit, int32_t good_id,
                                     int64_t quantity, uint8_t flags,
                                     int64_t &sat) const;
@@ -5053,7 +5116,9 @@ private:
     bool plan_colonization_kit(int32_t source_cell, int32_t target_cell,
                                int64_t population, int32_t travel_days,
                                bool frozen, ColonizationKitPlan &kit,
-                               bool ignore_existing = false) const;
+                               bool ignore_existing = false,
+                               const ColonizationReserveContext *reserve
+                                   = nullptr) const;
     bool adjust_market_stock(int32_t cell, int32_t good_id, int64_t delta,
                              std::string &error);
     bool publish_epoch_slice(int64_t &work_done, std::string &error);
@@ -5278,6 +5343,7 @@ private:
     void queue_bio_introduce_from_good(int32_t cell, int32_t good_id);
     void commit_bio_introduce(int32_t cell, int32_t bit);
     bool resource_is_renewable(int32_t resource_id) const;
+    int32_t resource_stock_density_q16(int32_t resource_id, int32_t cell) const;
     int64_t renewable_safe_harvest(int32_t resource_id, int32_t cell) const;
     bool commit_ready_construction(std::vector<int32_t> &changed_cells,
                                    bool prune_empty_groups = true);
@@ -5285,6 +5351,9 @@ private:
     void release_building_role_span(const BuildingGroup &group);
     void rebuild_building_role_storage();
     void rebuild_building_cell_offsets();
+    void rebuild_building_visual_snapshot();
+    void publish_building_visual_changes(
+        const std::vector<int32_t> &changed_cells);
     void rebuild_building_review_buckets();
     void review_recovery_building_group(int32_t group_index);
     void finalize_household_building_cell(int32_t cell, int64_t &saturation,

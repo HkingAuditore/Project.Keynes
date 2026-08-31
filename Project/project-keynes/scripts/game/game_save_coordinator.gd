@@ -334,7 +334,7 @@ func _register_providers() -> void:
 			"_can_modifier_provider", "_write_gameplay_modifier_provider",
 			"_restore_gameplay_modifier_provider"),
 		# 视野排在 PKCN 之后：恢复时要先有领土才能重解算可见性。
-		_make_provider(&"pkfg", 1, PackedStringArray(["pkfg"]),
+		_make_provider(&"pkfg", 2, PackedStringArray(["pkfg"]),
 			"_can_vision_provider", "_write_vision_provider", "_restore_vision_provider"),
 		# v4 also persists custom gameplay commits (including canal geography)
 		# with event_id=-1 idempotency evidence. The manifest
@@ -390,6 +390,8 @@ func _manifest_compatible(raw_manifest) -> bool:
 		var entry: Dictionary = by_id[provider_id]
 		var saved_schema := int(entry.get("schema_version", -1))
 		var schema_compatible: bool = saved_schema == provider.schema_version()
+		if provider_id == "pkfg":
+			schema_compatible = saved_schema in [1, 2]
 		if provider_id == "environment":
 			schema_compatible = saved_schema in [1, 2]
 		elif provider_id == "pkcn":
@@ -604,11 +606,26 @@ func _write_vision_provider(context: Dictionary) -> Dictionary:
 		# 迷雾从未解算过（沙盒 / 迷雾关）。写一份空进度，保持 section 必存。
 		explored = PackedByteArray()
 		explored.resize(map.cell_count())
-	return {"ok": true, "sections": {"pkfg": {
+	var payload := {
 		"schema": "PKFogOfWar",
+		"version": 2,
 		"cells": map.cell_count(),
 		"explored": explored,
-	}}}
+	}
+	var intel = context.host.building_visual_intel_cache() \
+		if context.host.has_method("building_visual_intel_cache") else null
+	if intel != null:
+		payload.merge(intel.to_pkfg_fields(), true)
+	else:
+		payload.merge({
+			"building_intel_cells": PackedInt32Array(),
+			"building_intel_country_slots": PackedInt32Array(),
+			"building_intel_era_indices": PackedInt32Array(),
+			"building_intel_type_offsets": PackedInt32Array([0]),
+			"building_intel_type_indices": PackedInt32Array(),
+			"building_intel_counts": PackedInt64Array(),
+		}, true)
+	return {"ok": true, "sections": {"pkfg": payload}}
 
 
 func _write_journal_provider(context: Dictionary) -> Dictionary:
@@ -669,8 +686,19 @@ func _restore_country_provider(sections: Dictionary, context: Dictionary) -> Dic
 
 func _restore_economy_provider(sections: Dictionary, context: Dictionary) -> Dictionary:
 	var result: Dictionary = context.generator.get_economy_facade().restore_bytes(sections.pkec)
-	return result if bool(result.get("ok", false)) else _result(false,
-		"pkec_restore_failed", String(result.get("reason", "经济恢复失败。")))
+	if not bool(result.get("ok", false)):
+		return _result(false, "pkec_restore_failed",
+			String(result.get("reason", "经济恢复失败。")))
+	# PKEC owns the authored building catalog. Bind it before PKFG is restored so
+	# building intel type indices are checked against the authoritative type count.
+	if context.host != null and context.host.has_method(
+			"refresh_building_visual_catalog"):
+		var visual_setup: Dictionary = context.host.refresh_building_visual_catalog()
+		if not bool(visual_setup.get("ok", false)) \
+				and not bool(visual_setup.get("deferred", false)):
+			push_warning("[building-visual] restore bind disabled: %s" % String(
+				visual_setup.get("reason", "catalog audit failed")))
+	return result
 
 
 func _restore_climate_modifier_provider(sections: Dictionary,
@@ -740,6 +768,17 @@ func _restore_vision_provider(sections: Dictionary, context: Dictionary) -> Dict
 	var explored := PackedByteArray(payload.get("explored", PackedByteArray()))
 	if explored.size() != n:
 		return _result(false, "pkfg_restore_failed", "视野 section 已截断。")
+	var intel = host.building_visual_intel_cache() \
+		if host.has_method("building_visual_intel_cache") else null
+	if intel != null:
+		var type_count := host.building_visual_type_count() \
+			if host.has_method("building_visual_type_count") else -1
+		var intel_restore: Dictionary = intel.restore_pkfg(payload, type_count)
+		if not bool(intel_restore.get("ok", false)):
+			return _result(false, "pkfg_restore_failed",
+				String(intel_restore.get("reason", "建筑情报 CSR 无效。")))
+	# Commit exploration only after the complete PKFG v2 payload validated. A bad
+	# building CSR therefore cannot partially mutate the current fog state.
 	map.explored_arr = explored
 	# 领土此刻已由 PKCN 恢复，可以直接重解算可见性并把 k 推进 enum_lut.a。
 	host.refresh_country_visuals("save_restore")

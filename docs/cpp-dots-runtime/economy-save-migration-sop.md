@@ -1,6 +1,17 @@
 # 经济存档、catalog migration 与内容扩展 SOP
 
-Price V6 / PKEC v49：只支持新游戏；旧经济存档显式拒绝，不重置旧价格后继续运行。
+筹备期逐日囤积 / PKEC v51：只支持新游戏；旧经济存档显式拒绝。v51 不增加持久字段，
+只放宽一条校验：`EXPEDITION_PREPARING` 记录仍要求 `payload_count == 0` 且
+`kit_count == 0`，但 `cargo_count` 可以非零——筹备队每天把源地市场买得起的差额划入托管
+cargo，攒够才出发。该 cargo 已计入在途货物守恒与权威 state hash，因此不能按旧规则当成
+"PREPARING 必须空货舱"读；v50 及更早存档在这条上语义不同，一律拒绝而非静默迁移。
+桥接需求/缺口（`kit_bridge_*`）与源地口粮底线都是查询期派生量，不落盘。
+
+开放资源与可兑现工资 / PKEC v50：只支持新游戏；旧经济存档显式拒绝，
+不允许在旧 safe-harvest、CPUE 或合同工资预期下静默续跑。v50 不增加持久字段，
+资源密度和岗位预期工资仍是可重建派生状态；版本提升用于锁定公式语义。
+`employee_forecast_pay_ratio_q16` 同样在每次 employment 前由冻结需求、库存与商人现金
+重建，不写入角色 payload，也不进入权威 state hash；恢复后首个就业阶段会覆盖零初始化值。
 没有新增持久化费用余数，价格／资金／物资尺度与冻结 N=1–5、P、I 调度保持不变。
 价格规则与验证详见 [定点计价与账本](economy-fixed-point-ledger-formulas.md)。
 

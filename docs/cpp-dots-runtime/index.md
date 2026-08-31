@@ -1,5 +1,7 @@
 # C++/DOTS Runtime 开发文档索引
 
+- [建筑视觉运行时](./building-visual-runtime.md)：科技时代驱动的 2.5D 建筑复合体、迷雾情报、天气、阴影、植被协调和性能闸门。
+
 - [运河运行时](./canal-runtime.md)：API-ready 的权威边状态、经济施工、Effect 原子提交、
   贸易/殖民边成本、局地水文、Visual Tile 与 PKEC v41；PlayerController 尚未注册。
 

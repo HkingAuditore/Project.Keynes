@@ -7,6 +7,27 @@ const EXPECTED_DOMAINS := 4
 const CANDIDATES_PER_ERA := [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
 const CANDIDATES_REQUIRED := [4, 4, 4, 4, 5, 5, 5, 6, 6, 7, 7]
 const ResearchPredicateScript = preload("res://scripts/research/research_predicate.gd")
+const ResearchConditionScript = preload("res://scripts/research/research_condition.gd")
+const IDENTIFICATION_SIGNAL_BY_TECH := {
+	"tech.clay_identification": PackedStringArray(["resource.clay"]),
+	"tech.spice_identification": PackedStringArray(["bio.spice", "contact.spice"]),
+	"tech.rubber_identification": PackedStringArray(["bio.rubber", "contact.rubber"]),
+	"tech.gold_placer_identification": PackedStringArray(["resource.gold_ore"]),
+	"tech.silver_vein_identification": PackedStringArray(["resource.silver_ore"]),
+	"tech.reed_identification": PackedStringArray(["bio.reed"]),
+	"tech.flint_identification": PackedStringArray(["resource.flint"]),
+	"tech.maize_identification": PackedStringArray(["bio.maize", "contact.maize"]),
+	"tech.wheat_identification": PackedStringArray(["bio.wheat", "contact.wheat"]),
+	"tech.rice_identification": PackedStringArray(["bio.rice", "contact.rice"]),
+	"tech.potato_identification": PackedStringArray(["bio.potato", "contact.potato"]),
+	"tech.cotton_identification": PackedStringArray(["bio.cotton", "contact.cotton"]),
+	"tech.flax_identification": PackedStringArray(["bio.flax", "contact.flax"]),
+	"tech.natural_copper_identification": PackedStringArray(["resource.copper_ore"]),
+	"tech.tin_identification": PackedStringArray(["resource.tin_ore", "contact.tin"]),
+	"tech.iron_ore_identification": PackedStringArray(["resource.iron_ore"]),
+	"tech.coal_outcrop_identification": PackedStringArray(["resource.coal"]),
+	"tech.coal_geology": PackedStringArray(["resource.coal"]),
+}
 
 
 func _init() -> void:
@@ -58,6 +79,20 @@ func _init() -> void:
 		assert(node_by_id.has(milestone_id), milestone_id)
 	for candidate_id in candidate_ids:
 		assert(node_by_id.has(candidate_id), candidate_id)
+	var identification_count := 0
+	for node_value in nodes:
+		var node: Dictionary = node_value
+		if String(node.get("node_role", "")) != "identification":
+			continue
+		identification_count += 1
+		var technology_id := String(node.id)
+		assert(IDENTIFICATION_SIGNAL_BY_TECH.has(technology_id),
+			"unreviewed identification node: %s" % technology_id)
+		var reveal: Dictionary = node.get("reveal_condition", {})
+		_assert_identification_reveal(technology_id, reveal,
+			IDENTIFICATION_SIGNAL_BY_TECH[technology_id])
+	assert(identification_count == IDENTIFICATION_SIGNAL_BY_TECH.size(),
+		"identification signal contract contains stale entries")
 
 	var route_by_id := {}
 	var route_target_by_id := {}
@@ -239,8 +274,11 @@ func _init() -> void:
 	assert(JSON.stringify(fiber_twisting.reveal_condition).contains(
 		"contact.bast_fiber"))
 	var flax_identification: Dictionary = node_by_id["tech.flax_identification"]
-	assert(JSON.stringify(flax_identification.reveal_condition).contains(
-		"contact.bast_fiber"))
+	var flax_reveal := JSON.stringify(flax_identification.reveal_condition)
+	assert(flax_reveal.contains("bio.flax"))
+	assert(flax_reveal.contains("contact.flax"))
+	assert(not flax_reveal.contains("bio.bast_fiber"))
+	assert(not flax_reveal.contains("contact.bast_fiber"))
 	var hide_scraping: Dictionary = node_by_id["tech.hide_scraping"]
 	assert(JSON.stringify(hide_scraping.reveal_condition).contains(
 		"breakthrough.hide_working"))
@@ -257,7 +295,7 @@ func _init() -> void:
 		"raw_hide")
 	assert(raw_hide_output >= 0 and
 		int((hunting_camp.output_quantities_per_day as PackedInt64Array)[
-			raw_hide_output]) == 110)
+			raw_hide_output]) == 36)
 	var ground_stone: Dictionary = node_by_id["tech.ground_stone_tools"]
 	assert(_has_expected_building(ground_stone, "stone_collector"))
 
@@ -493,6 +531,32 @@ func _init() -> void:
 	print("[PASS] technology network schema v3: %d nodes / %.1f%% kingdom+ route coverage / %d routes" % [
 		nodes.size(), coverage * 100.0, route_by_id.size()])
 	quit(0)
+
+
+func _assert_identification_reveal(technology_id: String, reveal: Dictionary,
+		allowed: PackedStringArray) -> void:
+	var signals := PackedStringArray()
+	_collect_atoms(reveal, PackedStringArray(), signals)
+	assert(signals.size() == allowed.size(),
+		"identification reveal count mismatch: %s" % technology_id)
+	for signal_id in allowed:
+		assert(signals.has(String(signal_id)),
+			"%s missing identification signal %s" % [technology_id, signal_id])
+	for signal_id in signals:
+		assert(allowed.has(String(signal_id)),
+			"%s extra identification signal %s" % [technology_id, signal_id])
+	if allowed.size() == 1:
+		assert(not reveal.has("operator") and not reveal.has("children"),
+			"single identification reveal must be an atom: %s" % technology_id)
+		assert(int(reveal.get("kind", -1)) == ResearchPredicateScript.Kind.SIGNAL_PRESENT,
+			"identification reveal kind invalid: %s" % technology_id)
+		assert(int(reveal.get("value", 0)) == 1,
+			"identification reveal threshold invalid: %s" % technology_id)
+	else:
+		assert(int(reveal.get("operator", -1)) == ResearchConditionScript.Operator.ANY_OF,
+			"paired identification reveal must be ANY_OF: %s" % technology_id)
+		assert((reveal.get("children", []) as Array).size() == allowed.size(),
+			"paired identification reveal children mismatch: %s" % technology_id)
 
 
 func _validate_condition(value: Variant) -> void:

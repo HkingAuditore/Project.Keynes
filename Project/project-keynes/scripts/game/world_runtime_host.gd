@@ -20,6 +20,8 @@ const MAP_OVERLAY_REFRESH_INTERVAL_MSEC: int = 100
 const SettlementLabelLayerScript = preload(
 	"res://scripts/rendering/settlement_label_layer.gd")
 const PkmapIOScript = preload("res://scripts/geography/pkmap_io.gd")
+const BuildingVisualIntelCacheScript = preload(
+	"res://scripts/rendering/building_visual_intel_cache.gd")
 
 @export var map_width: int = 60
 @export var map_height: int = 40
@@ -95,6 +97,11 @@ var _player_country_slot: int = -1
 var _player_country_handle: int = 0
 var _physical_visible_arr: PackedByteArray = PackedByteArray()
 var _vision_dirty_indices: PackedInt32Array = PackedInt32Array()
+var _building_visual_intel: BuildingVisualIntelCache = BuildingVisualIntelCacheScript.new()
+var _building_visual_next_poll_msec: int = 0
+var _building_visual_type_count: int = -1
+var _building_visual_force_full_refresh: bool = false
+var _building_visual_diag_logged: bool = false
 var _native_vision_configured_n: int = -1
 var _native_vision_configured_map_id: int = 0
 var _magnetic_navigation_dense_id: int = -2
@@ -182,6 +189,40 @@ func _game_save_service() -> Node:
 
 func current_map() -> MapData:
 	return _current_map
+
+
+func building_visual_intel_cache() -> BuildingVisualIntelCache:
+	return _building_visual_intel
+
+
+func building_visual_type_count() -> int:
+	return _building_visual_type_count
+
+
+## Rebinds the renderer to the authored economy catalog. Save restore calls this
+## immediately after PKEC so PKFG validation sees the real type upper bound.
+## During pre-restore world generation the economy facade can legitimately be
+## unconfigured; that state is deferred without emitting a false stale-DLL warning.
+func refresh_building_visual_catalog() -> Dictionary:
+	if _generator == null or not _generator.has_method("get_economy_facade"):
+		return {"ok": false, "deferred": true,
+			"reason": "building_visual_economy_facade_unavailable"}
+	var economy_facade = _generator.get_economy_facade()
+	if economy_facade == null or not economy_facade.has_method("building_visual_catalog"):
+		return {"ok": false, "deferred": true,
+			"reason": "building_visual_catalog_unavailable"}
+	var visual_catalog: Dictionary = economy_facade.building_visual_catalog()
+	var ids := PackedStringArray(
+		visual_catalog.get("building_type_ids", PackedStringArray()))
+	if ids.is_empty():
+		_building_visual_type_count = -1
+		return {"ok": false, "deferred": true,
+			"reason": "building_visual_catalog_not_ready"}
+	_building_visual_type_count = ids.size()
+	if _renderer == null or not _renderer.has_method("configure_building_visuals"):
+		return {"ok": false, "reason": "building_visual_renderer_unavailable"}
+	return _renderer.configure_building_visuals(
+		visual_catalog, _building_visual_intel)
 
 
 func set_selected_cell(cell: HexCell) -> void:
@@ -292,6 +333,9 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 			return
 
 	_current_map = result["map"] as MapData
+	_building_visual_intel.configure(
+		_current_map.cell_count() if _current_map != null else 0)
+	_building_visual_diag_logged = false
 	_world_data = result["world_data"] as WorldData
 	_last_seed = int(result.get("seed", cfg.seed))
 	_fast_tick_count = 0
@@ -304,6 +348,11 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 		_generator.set_world_clock_ref(_world_clock)
 	_rebuild_view_adapter()
 	_bind_renderer_and_camera(safe_area)
+	var building_visual_setup := refresh_building_visual_catalog()
+	if not bool(building_visual_setup.get("ok", false)) \
+			and not bool(building_visual_setup.get("deferred", false)):
+		push_warning("[building-visual] disabled: %s" % String(
+			building_visual_setup.get("reason", "catalog audit failed")))
 	if not _pending_load_bundle.is_empty():
 		var save_service := _game_save_service()
 		var restore_result: Dictionary = save_service.restore_prepared_game(self) if save_service != null \
@@ -316,7 +365,19 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 			world_generation_failed.emit(String(restore_result.get("message", "存档恢复失败。")))
 			return
 		_pending_load_bundle.clear()
+	var initial_visible_building_cells := PackedInt32Array()
+	for cell in _current_map.cell_count():
+		if cell < _current_map.visible_arr.size() and _current_map.visible_arr[cell] != 0:
+			initial_visible_building_cells.append(cell)
+	_refresh_building_visual_intel({
+		"newly_visible_cells": initial_visible_building_cells,
+		"vision_revision": _current_map.vision_revision,
+	})
 	_runtime_ready_for_ticks = true
+	# The host process also drains building visual dirty cells. Keep it alive for
+	# the normal runtime; overlay refreshes must not disable construction/era
+	# intelligence updates.
+	set_process(true)
 	if _world_clock != null:
 		# 读档路径由 world_clock provider 恢复权威模式；新世界则恢复生成前模式。
 		if not restore_clock_from_save:
@@ -398,7 +459,7 @@ func set_map_overlay(request: Dictionary) -> void:
 func clear_map_overlay() -> void:
 	_map_overlay_request.clear()
 	_map_overlay_dirty = false
-	set_process(false)
+	set_process(_runtime_ready_for_ticks)
 	if _map_overlay_layer != null:
 		_map_overlay_layer.hide_animated()
 
@@ -423,6 +484,10 @@ func map_overlay_diagnostics() -> Dictionary:
 
 
 func _process(_delta: float) -> void:
+	var now_msec := Time.get_ticks_msec()
+	if now_msec >= _building_visual_next_poll_msec:
+		_building_visual_next_poll_msec = now_msec + 100
+		_refresh_building_visual_intel({})
 	if not _map_overlay_dirty or _map_overlay_request.is_empty():
 		return
 	_refresh_map_overlay(false)
@@ -464,7 +529,7 @@ func _refresh_map_overlay(force: bool) -> void:
 	_map_overlay_layer.set_cell_lut_texture(_map_overlay_tex)
 	_map_overlay_layer.show_mode_animated(mode)
 	_map_overlay_dirty = false
-	set_process(false)
+	set_process(_runtime_ready_for_ticks)
 	_map_overlay_last_refresh_msec = now
 	_map_overlay_refresh_count += 1
 	_map_overlay_last_result = {
@@ -2495,13 +2560,110 @@ func refresh_country_visuals(reason: String) -> Dictionary:
 		return out
 	if _player_country_slot < 0:
 		_player_country_slot = _resolve_player_country_slot()
+	var previous_visible := _current_map.visible_arr.duplicate()
 	out["vision"] = _refresh_vision()
+	if not out["vision"].has("newly_visible_cells"):
+		var changed := PackedInt32Array()
+		var newly_visible := PackedInt32Array()
+		var newly_hidden := PackedInt32Array()
+		for cell in _current_map.cell_count():
+			var before: int = previous_visible[cell] \
+				if cell < previous_visible.size() else 0
+			var after: int = _current_map.visible_arr[cell] \
+				if cell < _current_map.visible_arr.size() else 0
+			if before == after:
+				continue
+			changed.append(cell)
+			if after != 0:
+				newly_visible.append(cell)
+			else:
+				newly_hidden.append(cell)
+		out["vision"]["visibility_changed_cells"] = changed
+		out["vision"]["newly_visible_cells"] = newly_visible
+		out["vision"]["newly_hidden_cells"] = newly_hidden
+		out["vision"]["vision_revision"] = _current_map.vision_revision
 	out["lut"] = _republish_cell_luts(_vision_dirty_indices)
+	out["building_intel"] = _refresh_building_visual_intel(out["vision"])
 	out["border"] = _refresh_country_borders()
 	if _settlement_label_layer != null:
 		_settlement_label_layer.set_fog_enabled(_fog_of_war_enabled)
 		_settlement_label_layer.mark_visibility_dirty()
 	return out
+
+
+func _refresh_building_visual_intel(vision_report: Dictionary) -> Dictionary:
+	if _current_map == null or _generator == null:
+		return {"ok": false, "reason": "building_visual_world_unavailable"}
+	if _building_visual_type_count < 0:
+		var catalog_setup := refresh_building_visual_catalog()
+		if not bool(catalog_setup.get("ok", false)):
+			return {"ok": false, "reason": String(catalog_setup.get(
+				"reason", "building_visual_catalog_not_ready"))}
+	var ext = _generator.get_data_core_world_ext() \
+		if _generator.has_method("get_data_core_world_ext") else null
+	if ext == null or not ext.has_method("get_building_visual_snapshot") \
+			or not ext.has_method("consume_building_visual_dirty_cells"):
+		return {"ok": false, "reason": "building_visual_native_api_unavailable"}
+	var requested := PackedInt32Array(
+		vision_report.get("newly_visible_cells", PackedInt32Array()))
+	# In sandbox/debug sessions fog is disabled and the native vision pass may
+	# legitimately report an empty physical array (there is no player sensor).
+	# Rendering visibility is nevertheless full-map in this mode, so seed the
+	# visual intel cache once instead of silently filtering every cell out.
+	if not _fog_of_war_enabled and _building_visual_intel.known_cells().is_empty():
+		for cell in _current_map.cell_count():
+			requested.append(cell)
+	var building_dirty: Dictionary = ext.consume_building_visual_dirty_cells()
+	requested.append_array(PackedInt32Array(
+		building_dirty.get("dirty_cells", PackedInt32Array())))
+	if ext.has_method("consume_country_visual_era_dirty_slots"):
+		var era_dirty: Dictionary = ext.consume_country_visual_era_dirty_slots()
+		var dirty_slots := {}
+		for slot in PackedInt32Array(era_dirty.get("country_slots", PackedInt32Array())):
+			dirty_slots[int(slot)] = true
+		if not dirty_slots.is_empty():
+			for cell in _building_visual_intel.known_cells():
+				if cell < _current_map.visible_arr.size() \
+						and _current_map.visible_arr[cell] != 0 \
+						and cell < _current_map.country_slot_arr.size() \
+						and dirty_slots.has(int(_current_map.country_slot_arr[cell])):
+					requested.append(cell)
+	if _building_visual_force_full_refresh:
+		for cell in _current_map.cell_count():
+			requested.append(cell)
+	if requested.is_empty():
+		return {"ok": true, "changed_cells": PackedInt32Array()}
+	var visibility := _current_map.visible_arr
+	if not _fog_of_war_enabled:
+		visibility = PackedByteArray()
+		visibility.resize(_current_map.cell_count())
+		visibility.fill(1)
+	var refreshed := _building_visual_intel.refresh_visible_cells(
+		ext, requested, visibility)
+	if bool(refreshed.get("ok", false)):
+		_building_visual_force_full_refresh = false
+	if _renderer != null and _renderer.has_method("update_building_visual_intel"):
+		_renderer.update_building_visual_intel(
+			_building_visual_intel,
+			PackedInt32Array(refreshed.get("changed_cells", PackedInt32Array())))
+		if not _building_visual_diag_logged and bool(refreshed.get("ok", false)):
+			var visual_diag: Dictionary = _renderer.building_visual_diagnostics() \
+				if _renderer.has_method("building_visual_diagnostics") else {}
+			print((
+				"[building-visual] intel_refresh requested=%d changed=%d known=%d "
+				+ "catalog=%d resident=%d body=%d queued=%d zoom=%.3f"
+			) % [
+				requested.size(),
+				PackedInt32Array(refreshed.get("changed_cells", PackedInt32Array())).size(),
+				_building_visual_intel.known_cells().size(),
+				int(visual_diag.get("catalog_types", _building_visual_type_count)),
+				int(visual_diag.get("resident_chunks", 0)),
+				int(visual_diag.get("body_instances", 0)),
+				int(visual_diag.get("queued_chunks", 0)),
+				float(visual_diag.get("camera_zoom", -1.0)),
+			])
+			_building_visual_diag_logged = true
+	return refreshed
 
 
 func player_country_slot() -> int:
@@ -2515,7 +2677,10 @@ func is_fog_of_war_enabled() -> bool:
 ## GM 与场景配置共用这一入口；开启请求仍受正式对局上下文门控。
 func set_fog_of_war_enabled(enabled: bool) -> void:
 	fog_of_war_enabled = enabled
+	var previous_fog_enabled := _fog_of_war_enabled
 	_fog_of_war_enabled = _resolve_fog_of_war_enabled()
+	if previous_fog_enabled != _fog_of_war_enabled:
+		_building_visual_force_full_refresh = true
 	if _renderer != null and _renderer.has_method("set_fog_of_war_enabled"):
 		_renderer.set_fog_of_war_enabled(_fog_of_war_enabled, fog_early_out_enabled)
 	if _current_map != null and _world_data != null:

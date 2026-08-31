@@ -157,6 +157,11 @@ Dictionary DCWorldExt::get_country_research_signal_snapshot(int64_t handle) cons
         : country_runtime_from(_country_runtime)->research_signal_snapshot(handle);
 }
 
+Dictionary DCWorldExt::consume_country_visual_era_dirty_slots() {
+    return _country_runtime == nullptr ? country_unavailable()
+        : country_runtime_from(_country_runtime)->consume_visual_era_dirty_slots();
+}
+
 bool DCWorldExt::has_completed_country_technology(
         int64_t handle, int32_t technology_id) const {
     return _country_runtime != nullptr &&

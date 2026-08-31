@@ -412,15 +412,15 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
 	if not bool(save_begin.get("ok", false)):
 		print("  PKEC begin failed=", save_begin)
-	_expect("v49 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 49)
+	_expect("v50 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 50)
 	var chunks: Array[PackedByteArray] = []
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty():
 			break
 		chunks.append(chunk)
-	_expect("v49 save emits chunks", chunks.size() >= 12)
-	_expect("v49 save completes", bool(ext.end_economy_save().get("ok", false)))
+	_expect("v50 save emits chunks", chunks.size() >= 12)
+	_expect("v50 save completes", bool(ext.end_economy_save().get("ok", false)))
 	var legacy_target: Object = _new_ext(1, 0.1)
 	legacy_target.configure_economy(catalog, profile, 1, 42)
 	legacy_target.begin_economy_restore()

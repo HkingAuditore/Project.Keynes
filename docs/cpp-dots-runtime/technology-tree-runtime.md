@@ -44,8 +44,11 @@ the node non-researchable; signals cannot bypass them. Deferred domain points do
 domain, and `pending` activation does not re-evaluate a gate. `COUNTRY_FLAG`, statistics, buildings,
 transient event sequences and `WITHIN_DAYS` remain unsupported authoring extensions.
 
-Static signal discovery is country-local. A 0→1 explored-cell transition submits landform/resource
-CSR plus the cell's **current** `bio.*` occupancy bits. Occupancy 0→1 on an already-explored cell
+Static signal discovery is country-local. The native vision/research pass submits landform/resource
+CSR plus the cell's **current** `bio.*` occupancy bits for player-owned territory. After
+`tech.magnetic_navigation` grants `research.observe_visible_foreign`, the same pass also accepts
+currently visible foreign or unowned cells; historical exploration alone never supplies research
+evidence. A cell is submitted when it first becomes eligible, and occupancy 0→1 on an eligible cell
 submits `DISCOVER` again. Local extinction does not delete country evidence. The first native
 generation pass builds landform CSR only; after natural-resource reserves exist, `run_bio_seed_pass`
 writes `cell.bio_occupancy_bits` (carrier-gated origin stands filling the
@@ -55,7 +58,8 @@ span continents; continent-scale landmasses keep a food + fiber/livestock floor;
 islets skipped unless they are the unique argmax). A later native
 pass appends every `resource.*` fact to the same sorted CSR. GDScript only assembles the returned
 arrays. `NativeCountryRuntime` owns whether a country has observed them. Goods stock and cross-border
-trade never imply Bio occupancy; trade still yields `contact.*` knowledge only. Agricultural
+trade never imply Bio occupancy; trade still yields matching `contact.*` knowledge. Identification
+nodes may consume only the matching `contact.*` atom for that same object. Agricultural
 production of mapped goods can introduce occupancy on the producing cell if the climate envelope and
 carrier reserve still hold.
 
@@ -130,17 +134,18 @@ Modifier、也不另开 capability 子系统：`tech.river_transport` 开河运�
 `tech.celestial_navigation` 开浅海（探索时代才开海；`tech.fishing_boats` 只解锁渔舟生产建筑，
 不开放航区），
 `tech.oceanic_navigation` 开远海，`tech.oceanic_ship_design` 开深海。海事等级嵌套，河运独立。
-`node_role == identification` 的 18 个
-辨识节点只允许本对象目击/储量、对应 `contact.*`，或目录用来定义该对象的栖息地（芦苇保留
-沼泽与河湖，砂金保留河湖）；种植园容量、跨物种/跨矿种第三条和 `breakthrough.*` 不得作为
-辨识启发。王国铁矿、王国露头煤和启蒙煤层地质仍把上一时代里程碑包在 `ALL_OF` 外层。
+`node_role == identification` 的 18 个辨识节点只允许本对象自身的 `bio.*` 目击、
+`resource.*` 储量，或匹配的 `contact.*` 样本接触作为揭示条件。栖息地、地貌、天气、
+发展成就、`breakthrough.*` 以及跨物种/跨矿种信号均不得替代对象本身；目录测试维护完整的
+辨识节点—专属信号清单，新辨识节点若未经过审核会直接失败。王国铁矿、王国露头煤和
+启蒙煤层地质仍把各自知识路线编入研究资格，但节点首次揭示必须来自对应矿产。
 采集、沤麻、冷锤、地表采矿等处理节点不再继承辨识的第三条代理证据；纤维捻制/织造仍可
 同时看见亚麻与棉花，但沤麻只认亚麻。铁矿与煤炭拆开；高炉冶炼由铁矿、煤炭和金属加工
 揭示，不再误用皮革词元 `fur`。航海揭示去掉渔获代理，物流不再共用海事三元组。
 处理与生产节点不得把地貌/承载力写成对象目击的 `ANY_OF` 旁路：羊毛毡制只认羊，狩猎只认
-野生动物，韧皮采集只认亚麻/韧皮，毛用畜牧只认羊，乳品只认牛。芦苇与砂金辨识仍可用目录
-定义的栖息地。跨国贸易实际送达 `bast_fiber` 时发布 `contact.bast_fiber`，可作为亚麻与韧皮辨识及
-纤维捻制的实物证据；仅存在贸易路线或远方库存不会揭示。开局求解器不再预建韧皮衣物；寒冷路线
+野生动物，韧皮采集只认亚麻/韧皮，毛用畜牧只认羊，乳品只认牛。芦苇与砂金辨识必须分别
+目击芦苇和天然金，沼泽或河湖不再揭示这些辨识科技。亚麻辨识可由 `bio.flax` 或
+`contact.flax` 揭示，但 `bio.bast_fiber` / `contact.bast_fiber` 不能替代。开局求解器不再预建韧皮衣物；寒冷路线
 授予刮皮并预建生皮刮制棚，暖地不预建衣着。
 通用采集与狩猎不依赖辨识，辨识只控制地图与 Inspector 是否点名；对象专属的第一处理
 （打制石器、土建筑、块茎挖掘、韧皮采集、芦苇收割、粗陶淘金、银矿拣采以及玉米/麦/稻/
@@ -203,8 +208,8 @@ Effect/Trigger/经济绑定与这些目录文本共同参与精确 catalog ident
 狩猎营在 committed economy cycle 实际产出生皮后，通过既有
 `Economy → technology.practice.hide_working → Trigger → Effect → Country` 路径授予永久
 `breakthrough.hide_working` 证据；它与野生动物目击二选一揭示生皮刮制。狩猎营与生皮刮制棚施工
-均只使用原木，不再反向依赖尚未解锁的韧皮纤维。石器狩猎营每劳动日副产 `110` 生皮子单位，使一座营地
-在中性衣着需求下约能支撑 15 人的生皮衣物链；刮制棚仍按实际生皮库存部分开工，不凭空生成衣物。
+均只使用原木，不再反向依赖尚未解锁的韧皮纤维。石器狩猎营每劳动日副产 `36` 生皮子单位，使一座营地
+在中性衣着需求下约能支撑 5 人的生皮衣物链；刮制棚仍按实际生皮库存部分开工，不凭空生成衣物。
 农耕时代为
 17 项，后续时代缓慢递增，避免把石器时代压力平移到农耕时代，且建筑解锁主体位于帝国时代以后。
 

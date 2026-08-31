@@ -898,6 +898,27 @@ var native_lod_order_enabled := true:
 var _last_scatter_path: String = "none"
 var _last_rebuild_ms: float = 0.0
 var _last_candidate_count: int = 0
+var _settlement_core_buckets := PackedByteArray()
+
+# Settlement core envelope mirrors the building density ladder without copying
+# individual building transforms.  The outer archetype ring is 0.54 hex and
+# the authored building half-width is 0.85 * baker_scale * visual_scale.
+# Keep these constants in sync with world_ext_detail.cpp.
+const SETTLEMENT_BUILDING_SPREAD_MIN := 0.16
+const SETTLEMENT_BUILDING_SPREAD_MAX := 1.15
+const SETTLEMENT_BUILDING_SCALE_MIN := 0.60
+const SETTLEMENT_BUILDING_SCALE_MAX := 1.125
+const SETTLEMENT_BUILDING_VISUAL_SCALE := 0.144
+const SETTLEMENT_OUTER_RING_FACTOR := 0.54
+const SETTLEMENT_ART_HALF_WIDTH := 0.85
+# The largest detail lobes extend about 0.84 local units from their instance
+# origin. Include that footprint so a tree centre outside the core cannot still
+# paint its canopy over a building.
+const SETTLEMENT_DETAIL_FOOTPRINT_RADIUS := 0.85
+
+
+func set_settlement_core_buckets(value: PackedByteArray) -> void:
+	_settlement_core_buckets = value
 var _last_wrap_edge_copy_count: int = 0
 var _last_rebuild_reason: String = ""
 var _last_incremental_cells: int = 0
@@ -1943,6 +1964,7 @@ func _build_native_delta_common_knobs() -> Dictionary:
 		"wind_speed_arr": _map.wind_speed_arr,
 		"is_water_arr": _map.is_water_arr,
 		"has_river_arr": _map.has_river_arr,
+		"settlement_core_buckets": _settlement_core_buckets,
 		"veg_ideal_temp": veg_tables.get("ideal_temp", PackedFloat32Array()),
 		"veg_ideal_moist": veg_tables.get("ideal_moist", PackedFloat32Array()),
 		"veg_temp_tol": veg_tables.get("temp_tol", PackedFloat32Array()),
@@ -3753,11 +3775,15 @@ func _rebuild_via_native(
 		return false
 	var cfg := _profile()
 
-	# offset 网格 is_water 栅格（odd-r），用于 C++ 端精确复刻 _is_water_position：
-	# world_to_cube → cube_to_offset → 越界 / 水域 cell 即拒绝。空位预置 1（拒绝）。
+	# offset 网格（odd-r）用于 C++ 端精确复刻 world_to_wrapped_cell：
+	# world_to_cube → cube_to_offset → 越界 / 横向环绕。水域空位预置 1
+	# （拒绝），cell 索引空位预置 -1。
 	var offset_is_water := PackedByteArray()
 	offset_is_water.resize(grid_w * grid_h)
 	offset_is_water.fill(1)
+	var offset_cell_indices := PackedInt32Array()
+	offset_cell_indices.resize(grid_w * grid_h)
+	offset_cell_indices.fill(-1)
 
 	# 每个"活跃 cell"（suitability>0 且 climate_presence>0.02）的廉价 per-cell 数据。
 	var keys := PackedInt32Array()
@@ -3783,6 +3809,7 @@ func _rebuild_via_native(
 		var off := HexUtils.cube_to_offset(int(cell.q), int(cell.r))
 		if off.x >= 0 and off.x < grid_w and off.y >= 0 and off.y < grid_h:
 			offset_is_water[off.y * grid_w + off.x] = (1 if _is_water_cell(cell, idx) else 0)
+			offset_cell_indices[off.y * grid_w + off.x] = idx
 		var suitability := cell_suitabilities[order]
 		if suitability <= 0.0:
 			continue
@@ -3824,6 +3851,7 @@ func _rebuild_via_native(
 		"grid_w": grid_w,
 		"grid_h": grid_h,
 		"offset_is_water": offset_is_water,
+		"offset_cell_indices": offset_cell_indices,
 		"flow_buffer": _world.flow_buffer if _world != null else PackedFloat32Array(),
 		"flow_w": int(_world.derived_size.x) if _world != null else 0,
 		"flow_h": int(_world.derived_size.y) if _world != null else 0,
@@ -4237,6 +4265,16 @@ func _try_append_instance(
 	var center := _cell_center(cell, idx)
 	var pos := _candidate_position(center, key, attempt)
 	var domain := _spawn_domain()
+	var min_size: float = minf(cfg.min_size_factor, cfg.max_size_factor)
+	var max_size: float = maxf(cfg.min_size_factor, cfg.max_size_factor)
+	var size := _hex_size * lerpf(min_size, max_size, _hash01(key, 400 + attempt))
+	size *= lerpf(0.85, 1.12, clampf(_sample_density_for_size(idx, cell), 0.0, 1.0))
+	size *= _quality_size_scale()
+	# Candidate discs intentionally overlap adjacent hexes. Check the actual
+	# destination cell and its six neighbours, not the source cell, so a canopy
+	# spawned across a boundary cannot intrude into a known settlement.
+	if domain != SPAWN_WATER and _overlaps_known_settlement(pos, size):
+		return
 	var candidate_is_water := _is_water_position(pos, cell, idx)
 	if domain == SPAWN_LAND and candidate_is_water:
 		return
@@ -4259,11 +4297,6 @@ func _try_append_instance(
 	if _hash01(key, 9300 + attempt) > local_acceptance:
 		return
 	var variant := _hash01(key, 300 + attempt)
-	var min_size: float = minf(cfg.min_size_factor, cfg.max_size_factor)
-	var max_size: float = maxf(cfg.min_size_factor, cfg.max_size_factor)
-	var size := _hex_size * lerpf(min_size, max_size, _hash01(key, 400 + attempt))
-	size *= lerpf(0.85, 1.12, clampf(_sample_density_for_size(idx, cell), 0.0, 1.0))
-	size *= _quality_size_scale()
 
 	_instance_cell_indices.append(idx)
 	_instance_cells.append(cell)
@@ -4273,6 +4306,54 @@ func _try_append_instance(
 	_instance_seeds.append(_hash01(key, 600 + attempt))
 	_instance_variants.append(variant)
 	_instance_scores.append(world_noise * 0.66 + cell_suitability * 0.27 + _hash01(key, 7600 + attempt) * 0.07)
+
+
+func _overlaps_known_settlement(pos: Vector2, candidate_size: float) -> bool:
+	if _map == null or _settlement_core_buckets.is_empty():
+		return false
+	var destination = HexUtils.world_to_wrapped_cell(_map, pos, _hex_size)
+	if destination == null:
+		return false
+	if _cell_overlaps_settlement(destination, pos, candidate_size):
+		return true
+	for neighbour in _map.get_neighbors(destination):
+		if _cell_overlaps_settlement(neighbour, pos, candidate_size):
+			return true
+	return false
+
+
+func _cell_overlaps_settlement(cell, pos: Vector2, candidate_size: float) -> bool:
+	if cell == null:
+		return false
+	var idx := _cell_index(cell, -1)
+	if idx < 0 or idx >= _settlement_core_buckets.size():
+		return false
+	var bucket := mini(15, int(_settlement_core_buckets[idx]))
+	if bucket <= 0:
+		return false
+	var canonical_center := HexUtils.cube_to_world(
+		int(cell.q), int(cell.r), _hex_size)
+	var period := HexUtils.wrap_period_x(int(_map.width), _hex_size)
+	var display_center := HexUtils.nearest_display_world(
+		canonical_center, pos.x, period)
+	var radius := _settlement_core_radius(bucket) \
+		+ maxf(0.0, candidate_size) * SETTLEMENT_DETAIL_FOOTPRINT_RADIUS
+	return pos.distance_squared_to(display_center) < radius * radius
+
+
+func _settlement_core_radius(bucket: int) -> float:
+	var density := clampf(float(bucket) / 15.0, 0.0, 1.0)
+	var spread := lerpf(
+		SETTLEMENT_BUILDING_SPREAD_MIN,
+		SETTLEMENT_BUILDING_SPREAD_MAX,
+		density)
+	var building_scale := lerpf(
+		SETTLEMENT_BUILDING_SCALE_MIN,
+		SETTLEMENT_BUILDING_SCALE_MAX,
+		density)
+	return (SETTLEMENT_OUTER_RING_FACTOR * spread
+		+ SETTLEMENT_ART_HALF_WIDTH * building_scale
+			* SETTLEMENT_BUILDING_VISUAL_SCALE) * _hex_size
 
 
 func _apply_instance_cap() -> void:
