@@ -23,9 +23,6 @@ extends Resource
 ## Global building output efficiency. It scales goods output only; construction,
 ## production inputs, natural-resource use, and wages keep their catalog values.
 @export_range(65536, 262144, 1) var building_output_efficiency_q16: int = 131072
-## Food-only multiplier applied to staple/protein/produce building outputs and
-## their carrying-capacity yield.  It leaves non-food industries unchanged.
-@export_range(65536, 262144, 1) var food_building_output_efficiency_q16: int = 81920
 ## Longest market interval (1–5). Native locks N for a full cycle from populated
 ## work plus previous-cycle machine timing. 5 is the late-game stagger cap, not
 ## a start-of-game fixed period. 0 is ignored and treated as 5; the retired
@@ -331,7 +328,6 @@ func to_native_profile() -> Dictionary:
 		"building_finalize_cells_per_slice":
 			building_finalize_cells_per_slice,
 		"building_output_efficiency_q16": building_output_efficiency_q16,
-		"food_building_output_efficiency_q16": food_building_output_efficiency_q16,
 		"price_ceiling_confirm_days": price_ceiling_confirm_days,
 		"price_ceiling_expand_bp": price_ceiling_expand_bp,
 		"price_ceiling_recover_bp": price_ceiling_recover_bp,

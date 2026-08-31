@@ -18,9 +18,9 @@ const RESOURCE_RUNWAY_DAYS := 365
 const RENEWABLE_SAFE_HARVEST_Q16 := 0
 const RENEWABLE_MIN_RESERVE_Q16 := 22938
 const RENEWABLE_GROWTH_DIVISOR := 8
-const MIN_FOOD_COVERAGE_Q16 := 72090 # 110%
-const TARGET_SUPPLY_MAX_Q16 := 75366 # 115%
-const TARGET_FOOD_MAX_Q16 := 81920 # 125%
+const MIN_FOOD_COVERAGE_Q16 := 85197 # 130%; climate and population-growth buffer
+const TARGET_SUPPLY_MAX_Q16 := 91750 # 140%
+const TARGET_FOOD_MAX_Q16 := 98304 # 150%
 
 const FIXED_BUILDING_IDS := {
 	"early_merchant_post": true,
@@ -814,7 +814,7 @@ static func _evaluate_counts(candidates: Array[Dictionary], counts: PackedInt32A
 
 
 static func _plan_better(candidate: Dictionary, current: Dictionary) -> bool:
-	# Valid plans already meet the 110% food floor. Prefer the smallest core
+	# Valid plans already meet the 130% food floor. Prefer the smallest core
 	# bundle so leftover population stays in the unemployed pool.
 	if int(candidate.starter_building_total) != int(current.starter_building_total):
 		return int(candidate.starter_building_total) < int(current.starter_building_total)

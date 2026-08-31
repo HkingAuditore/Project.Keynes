@@ -549,9 +549,6 @@ int64_t NativeEconomyRuntime::cell_k_geo_persons(int32_t cell, int64_t &sat) con
                 food = mul_div_sat(food, climate, Q16_ONE, sat);
                 food = mul_div_sat(food, std::max(1, _building_output_efficiency_q16),
                     Q16_ONE, sat);
-                food = mul_div_sat(food,
-                    std::max(1, _food_building_output_efficiency_q16),
-                    Q16_ONE, sat);
                 if (static_cast<size_t>(country) <
                     _epoch_country_output_factor_q16.size()) {
                     food = mul_div_sat(food,
