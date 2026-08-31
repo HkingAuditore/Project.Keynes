@@ -5053,6 +5053,11 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
                 const int64_t available = available_resource_amount(item, group.cell);
                 int64_t resource_scale_q16 = std::clamp<int64_t>(mul_div_sat(
                     available, Q16_ONE, base, _saturation_count), 0, Q16_ONE);
+                if (item.mode == 0 && resource_is_renewable(item.resource_id)) {
+                    resource_scale_q16 = std::min<int64_t>(
+                        resource_scale_q16,
+                        resource_stock_density_q16(item.resource_id, group.cell));
+                }
                 // Preserve a positive executable probe even when a very large
                 // group makes the exact ratio smaller than one Q16 unit. The
                 // production stage still computes integer quantities and
@@ -5288,6 +5293,12 @@ bool NativeEconomyRuntime::evaluate_building_conditions(int32_t type_id, int32_t
         cell < 0 || cell >= _cell_count) return false;
     const BuildingType &type = _building_types[type_id];
     if (type.condition_count == 0) return true;
+    if (type.condition_count > 64) return false;
+    if (type.condition_begin < 0 ||
+        static_cast<size_t>(type.condition_begin) +
+            static_cast<size_t>(type.condition_count) >
+            _building_conditions.size())
+        return false;
     bool stack[64]{};
     int32_t top = 0;
     auto compare = [](int64_t lhs, int32_t op, int64_t rhs) {
@@ -5301,29 +5312,48 @@ bool NativeEconomyRuntime::evaluate_building_conditions(int32_t type_id, int32_t
             default: return false;
         }
     };
-    if (type.condition_count > 64) return false;
+    // Environment and building-context lanes are captured per day, so a cold
+    // query that runs before the first capture (UI inspector, colonization
+    // preview) sees empty vectors. Report "conditions unmet" for the missing
+    // signal instead of indexing past the lane.
+    bool lanes_ready = true;
+    auto lane = [&](const auto &values) -> int64_t {
+        if (static_cast<size_t>(cell) >= values.size()) {
+            lanes_ready = false;
+            return 0;
+        }
+        return static_cast<int64_t>(values[static_cast<size_t>(cell)]);
+    };
     for (int32_t i = 0; i < type.condition_count; ++i) {
         const ConditionToken &token = _building_conditions[type.condition_begin + i];
         if (token.opcode == 1) {
             int64_t lhs = 0;
             switch (token.signal) {
-                case 0: lhs = _environment_temperature_q16[cell]; break;
-                case 1: lhs = _environment_moisture_q16[cell]; break;
-                case 2: lhs = _environment_snow_q16[cell]; break;
-                case 3: lhs = _environment_weather_q16[cell]; break;
-                case 4: lhs = _building_elevation_q16[cell]; break;
-                case 5: lhs = _building_terrain[cell]; break;
-                case 6: lhs = _building_landform[cell]; break;
-                case 7: lhs = _building_vegetation[cell]; break;
-                case 8: lhs = _building_is_water[cell]; break;
-                case 9: lhs = _building_has_river[cell]; break;
-                case 10:
-                    if (token.reference < 0 || token.reference >= static_cast<int32_t>(_resource_ids.size()))
+                case 0: lhs = lane(_environment_temperature_q16); break;
+                case 1: lhs = lane(_environment_moisture_q16); break;
+                case 2: lhs = lane(_environment_snow_q16); break;
+                case 3: lhs = lane(_environment_weather_q16); break;
+                case 4: lhs = lane(_building_elevation_q16); break;
+                case 5: lhs = lane(_building_terrain); break;
+                case 6: lhs = lane(_building_landform); break;
+                case 7: lhs = lane(_building_vegetation); break;
+                case 8: lhs = lane(_building_is_water); break;
+                case 9: lhs = lane(_building_has_river); break;
+                case 10: {
+                    if (token.reference < 0 || token.reference >=
+                            static_cast<int32_t>(_resource_ids.size()))
                         return false;
-                    lhs = _resource_snapshot[static_cast<size_t>(token.reference) * _cell_count + cell];
+                    const size_t index =
+                        static_cast<size_t>(token.reference) *
+                            static_cast<size_t>(_cell_count) +
+                        static_cast<size_t>(cell);
+                    if (index >= _resource_snapshot.size()) return false;
+                    lhs = _resource_snapshot[index];
                     break;
+                }
                 default: return false;
             }
+            if (!lanes_ready) return false;
             if (top >= 64) return false;
             stack[top++] = compare(lhs, token.compare, token.value);
         } else if (token.opcode == 4) {
@@ -6161,8 +6191,14 @@ NativeEconomyRuntime::owner_opportunity_quote(
             group.cell, resource.resource_id, base, sat);
         if (effective <= 0) { scale = 0; break; }
         const int64_t available = available_resource_amount(resource, group.cell);
-        scale = std::min(scale, std::clamp<int64_t>(mul_div_sat(
-            available, Q16_ONE, effective, sat), 0, Q16_ONE));
+        int64_t resource_scale = std::clamp<int64_t>(mul_div_sat(
+            available, Q16_ONE, effective, sat), 0, Q16_ONE);
+        if (resource.mode == 0 &&
+            resource_is_renewable(resource.resource_id)) {
+            resource_scale = std::min<int64_t>(resource_scale,
+                resource_stock_density_q16(resource.resource_id, group.cell));
+        }
+        scale = std::min(scale, resource_scale);
     }
     quote.prospective_scale_q16 = scale;
     quote.executable_capacity_q16 = scale;
@@ -10148,6 +10184,7 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                     std::sort(stable_finalize_cells.begin(),
                               stable_finalize_cells.end());
                     _investment_employment_cells.swap(stable_finalize_cells);
+                    publish_building_visual_changes(_investment_employment_cells);
                     _building_commit_cursor = 0;
                     _building_finalize_phase = 1;
                     _finalize_construction_ms +=

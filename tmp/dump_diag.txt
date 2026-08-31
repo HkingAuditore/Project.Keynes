@@ -1,0 +1,1073 @@
+=== COHORTS ===
+artisan          merch=False pop 1.0->1.0 sat 1.000->0.777 min=0.000 cov 0.30->0.16 min=0.013 incE 8655 incL 3158 expL 18101 unemp_max=0.0 owner=1.0 need=staple_food sat0=1 covlt1=521
+fisher           merch=False pop 3.0->2.0 sat 1.000->0.787 min=0.759 cov 1.32->2.40 min=0.013 incE 159449 incL 268194 expL 31930 unemp_max=0.0 owner=2.0 need=staple_food sat0=0 covlt1=52
+forager          merch=False pop 13.0->13.0 sat 1.000->0.775 min=0.000 cov 1.85->0.49 min=0.035 incE 216168 incL 67102 expL 145016 unemp_max=0.0 owner=13.0 need=staple_food sat0=1 covlt1=338
+hunter           merch=False pop 16.0->15.0 sat 1.000->0.787 min=0.289 cov 0.98->0.97 min=0.194 incE 0 incL 0 expL 154581 unemp_max=0.0 owner=15.0 need=staple_food sat0=0 covlt1=553
+merchant         merch=True pop 1.0->1.0 sat 1.000->0.776 min=0.000 cov 0.86->0.98 min=0.635 incE 368229 incL 368037 expL 370212 unemp_max=1.0 owner=0.0 need=staple_food sat0=1 covlt1=438
+unemployed       merch=False pop 1.0->1.0 sat 1.000->1.000 min=1.000 cov 1.00->1.00 min=1.000 incE 0 incL 0 expL 0 unemp_max=1.0 owner=0.0 need=-1 sat0=0 covlt1=0
+=== MARKET KEY ===
+rice_grain             stk 0->0 min=0 havL=0 demE=3176.3 demL=4325.2 supL=0.0 wdL=0.0 shE=1.00 shL=1.00 so=553 sev=553 firstSO=49054 firstSev=49054 px 15676066->15955431 inb=0.0 outb=0.0 rej={'4': 553}
+prepared_staples       stk 0->0 min=0 havL=0 demE=5997.4 demL=3994.3 supL=0.0 wdL=0.0 shE=1.00 shL=0.69 so=553 sev=497 firstSO=49054 firstSev=49054 px 25319378->25527214 inb=0.0 outb=0.0 rej={'4': 549}
+gathered_plants        stk 0->0 min=0 havL=0 demE=1746.5 demL=2515.0 supL=0.0 wdL=0.0 shE=0.68 shL=0.66 so=553 sev=324 firstSO=49054 firstSev=49054 px 7969418->7993433 inb=0.0 outb=0.0 rej={'4': 553}
+game_meat              stk 0->0 min=0 havL=0 demE=0.6 demL=29.5 supL=0.0 wdL=3804.0 shE=1.00 shL=1.00 so=553 sev=553 firstSO=49054 firstSev=49054 px 620940->1258803 inb=0.0 outb=0.0 rej={'4': 553}
+fish                   stk 10890->0 min=0 havL=0 demE=4839.1 demL=4359.4 supL=3417.0 wdL=5069.0 shE=0.01 shL=0.21 so=337 sev=1 firstSO=49066 firstSev=49279 px 10969->97199 inb=0.0 outb=0.0 rej={'4': 553}
+wheat_grain            stk 0->0 min=0 havL=0 demE=0.0 demL=0.0 supL=0.0 wdL=0.0 shE=0.00 shL=0.00 so=553 sev=0 firstSO=49054 firstSev=None px 10000->10000 inb=0.0 outb=0.0 rej={}
+bread                  stk 0->0 min=0 havL=0 demE=0.0 demL=0.0 supL=0.0 wdL=0.0 shE=0.00 shL=0.00 so=553 sev=0 firstSO=49054 firstSev=None px 16000->16000 inb=0.0 outb=0.0 rej={}
+charcoal               stk 2->2 min=2 havL=2 demE=3854.9 demL=3728.0 supL=0.0 wdL=0.0 shE=1.00 shL=1.00 so=0 sev=517 firstSO=None firstSev=49054 px 3354849->3223256 inb=0.0 outb=0.0 rej={'4': 553}
+clothing               stk 0->0 min=0 havL=0 demE=95.3 demL=105.1 supL=0.0 wdL=0.0 shE=1.00 shL=0.80 so=553 sev=488 firstSO=49054 firstSev=49054 px 787301823->786383971 inb=0.0 outb=0.0 rej={}
+chipped_stone_tools    stk 0->0 min=0 havL=0 demE=0.8 demL=0.4 supL=0.0 wdL=0.0 shE=1.00 shL=1.00 so=553 sev=553 firstSO=49054 firstSev=49054 px 1137322->1076265 inb=0.0 outb=0.0 rej={'4': 172}
+lumber                 stk 40109->40109 min=40109 havL=40109 demE=16.2 demL=16.0 supL=2224.0 wdL=0.0 shE=1.00 shL=1.00 so=0 sev=553 firstSO=None firstSev=49054 px 12429313->12468434 inb=0.0 outb=0.0 rej={'4': 553}
+bast_fiber             stk 352784->352792 min=352762 havL=326546 demE=16.2 demL=12.0 supL=19376.9 wdL=13.0 shE=1.00 shL=1.00 so=0 sev=553 firstSO=None firstSev=49054 px 2651238->2666119 inb=0.0 outb=0.0 rej={}
+reed_bundle            stk 0->0 min=0 havL=0 demE=41.7 demL=36.0 supL=0.0 wdL=0.0 shE=1.00 shL=1.00 so=553 sev=553 firstSO=49054 firstSev=49054 px 5978633->6057834 inb=0.0 outb=0.0 rej={'4': 553}
+turf_block             stk 0->0 min=0 havL=0 demE=44.5 demL=44.0 supL=0.0 wdL=0.0 shE=1.00 shL=1.00 so=553 sev=553 firstSO=49054 firstSev=49054 px 6584570->6672794 inb=0.0 outb=0.0 rej={'4': 553}
+pottery                stk 0->0 min=0 havL=0 demE=0.0 demL=0.0 supL=0.0 wdL=0.0 shE=0.00 shL=0.00 so=553 sev=0 firstSO=49054 firstSev=None px 11000->11000 inb=0.0 outb=0.0 rej={}
+salt                   stk 0->0 min=0 havL=0 demE=0.0 demL=0.0 supL=0.0 wdL=0.0 shE=0.00 shL=0.00 so=553 sev=0 firstSO=49054 firstSev=None px 10000->10000 inb=0.0 outb=0.0 rej={}
+wool                   stk 0->0 min=0 havL=0 demE=0.0 demL=0.0 supL=0.0 wdL=0.0 shE=0.00 shL=0.00 so=553 sev=0 firstSO=49054 firstSev=None px 24000->24000 inb=0.0 outb=0.0 rej={}
+=== LATE SHORTAGE TOP ===
+{'shortage_late': 0.9999847412109375, 'good_id': 'turf_block', 'stock_late': 0.0, 'demand_late': 44.0, 'supply_late': 0.0}
+{'shortage_late': 0.9999847412109375, 'good_id': 'rice_grain', 'stock_late': 0.0, 'demand_late': 4325.211111111111, 'supply_late': 0.0}
+{'shortage_late': 0.9999847412109375, 'good_id': 'reed_bundle', 'stock_late': 0.0, 'demand_late': 36.0, 'supply_late': 0.0}
+{'shortage_late': 0.9999847412109375, 'good_id': 'lumber', 'stock_late': 40109.0, 'demand_late': 16.0, 'supply_late': 2224.0}
+{'shortage_late': 0.9999847412109375, 'good_id': 'game_meat', 'stock_late': 0.0, 'demand_late': 29.522222222222222, 'supply_late': 0.0}
+{'shortage_late': 0.9999847412109375, 'good_id': 'chipped_stone_tools', 'stock_late': 0.0, 'demand_late': 0.4, 'supply_late': 0.0}
+{'shortage_late': 0.9999847412109375, 'good_id': 'charcoal', 'stock_late': 2.0, 'demand_late': 3728.0, 'supply_late': 0.0}
+{'shortage_late': 0.9999847412109375, 'good_id': 'bast_fiber', 'stock_late': 352788.63333333336, 'demand_late': 12.0, 'supply_late': 19376.933333333334}
+{'shortage_late': 0.79998779296875, 'good_id': 'clothing', 'stock_late': 0.0, 'demand_late': 105.08888888888889, 'supply_late': 0.0}
+{'shortage_late': 0.6888783772786459, 'good_id': 'prepared_staples', 'stock_late': 0.0, 'demand_late': 3994.288888888889, 'supply_late': 0.0}
+{'shortage_late': 0.6555455525716146, 'good_id': 'gathered_plants', 'stock_late': 0.0, 'demand_late': 2515.0333333333333, 'supply_late': 0.0}
+{'shortage_late': 0.4706878662109375, 'good_id': 'logs', 'stock_late': 64588.0, 'demand_late': 9820.0, 'supply_late': 7481.0}
+{'shortage_late': 0.2148591783311632, 'good_id': 'fish', 'stock_late': 0.0, 'demand_late': 4359.444444444444, 'supply_late': 3417.0}
+=== DEMAND NO SUPPLY ===
+{'good_id': 'rice_grain', 'demand_late': 4325.211111111111, 'supply_late': 0.0, 'stock_late': 0.0, 'shortage_late': 0.9999847412109375}
+{'good_id': 'prepared_staples', 'demand_late': 3994.288888888889, 'supply_late': 0.0, 'stock_late': 0.0, 'shortage_late': 0.6888783772786459}
+{'good_id': 'charcoal', 'demand_late': 3728.0, 'supply_late': 0.0, 'stock_late': 2.0, 'shortage_late': 0.9999847412109375}
+{'good_id': 'gathered_plants', 'demand_late': 2515.0333333333333, 'supply_late': 0.0, 'stock_late': 0.0, 'shortage_late': 0.6555455525716146}
+{'good_id': 'clothing', 'demand_late': 105.08888888888889, 'supply_late': 0.0, 'stock_late': 0.0, 'shortage_late': 0.79998779296875}
+{'good_id': 'turf_block', 'demand_late': 44.0, 'supply_late': 0.0, 'stock_late': 0.0, 'shortage_late': 0.9999847412109375}
+{'good_id': 'reed_bundle', 'demand_late': 36.0, 'supply_late': 0.0, 'stock_late': 0.0, 'shortage_late': 0.9999847412109375}
+{'good_id': 'game_meat', 'demand_late': 29.522222222222222, 'supply_late': 0.0, 'stock_late': 0.0, 'shortage_late': 0.9999847412109375}
+=== BUILDINGS META ===
+{'actual_rows': 7189, 'candidate_rows': 14931, 'construction_rows': 0, 'late_output': 3778576.0, 'late_sold': 984141.0, 'late_discard': 1975435.0, 'late_retained': 819000.0, 'early_output': 4612974.0, 'early_discard': 2252084.0, 'state_last': {'0': 12, '1': 1}, 'openings_last': 86.0, 'filled_owner_last': 31.0, 'owner_required_last': 117.0, 'emp_req_last': 0.0, 'emp_filled_last': 0.0, 'last_day_candidates': 27, 'last_cand_reject': {'3': 8, '12': 8, '14': 3, '13': 3, '5': 2, '10': 1, '2': 1, '8': 1}, 'last_cand_score_max': 0.0, 'employment_candidates_last': 11, 'employment_reject': {'1': 11}}
+=== TYPES ===
+bast_fiber_camp              g 1->1 cnt=5 own f/r/c/o 9.0/10.0/10.0/1.0 emp 0.0/0.0 outL=1744756 sold=1701 disc=1743055 dshare=0.9990250785783227 soldS=0.0009749214216773004 util=0.507 mar=-0.549 state={'0': 5} clim=0.513 res=0.0 gen=0.0 rev=4091091
+deadwood_gathering_camp      g 1->1 cnt=22 own f/r/c/o 4.0/44.0/44.0/40.0 emp 0.0/0.0 outL=1002420 sold=674280 disc=0 dshare=0.0 soldS=0.672652181720237 util=0.091 mar=-0.358 state={'0': 22} clim=1.000 res=129510.0 gen=0.0 rev=1948050
+marine_fish_collector        g 1->1 cnt=3 own f/r/c/o 2.0/6.0/6.0/4.0 emp 0.0/0.0 outL=456480 sold=308160 disc=0 dshare=0.0 soldS=0.6750788643533123 util=0.333 mar=1.000 state={'0': 3} clim=1.000 res=73710.0 gen=0.0 rev=24137449
+stone_age_hunting_camp       g 1->1 cnt=17 own f/r/c/o 15.0/17.0/17.0/2.0 emp 0.0/0.0 outL=374220 sold=0 disc=31680 dshare=0.08465608465608465 soldS=0.0 util=0.088 mar=0.000 state={'0': 17} clim=1.000 res=81450.0 gen=0.0 rev=0
+lumber_plant                 g 1->1 cnt=1 own f/r/c/o 1.0/1.0/1.0/0.0 emp 0.0/0.0 outL=200700 sold=0 disc=200700 dshare=1.0 soldS=0.0 util=1.000 mar=-1.000 state={'0': 1} clim=1.000 res=0.0 gen=0.0 rev=0
+charcoal_pit                 g 1->1 cnt=1 own f/r/c/o 0.0/1.0/1.0/1.0 emp 0.0/0.0 outL=0 sold=0 disc=0 dshare=None soldS=None util=0.000 mar=0.000 state={'0': 1} clim=1.000 res=0.0 gen=0.0 rev=0
+communal_hearth              g 1->1 cnt=1 own f/r/c/o 0.0/1.0/1.0/1.0 emp 0.0/0.0 outL=0 sold=0 disc=0 dshare=None soldS=None util=0.000 mar=0.000 state={'0': 1} clim=1.000 res=0.0 gen=0.0 rev=0
+early_knowledge_institution  g 1->1 cnt=22 own f/r/c/o 0.0/22.0/22.0/22.0 emp 0.0/0.0 outL=0 sold=0 disc=0 dshare=None soldS=None util=0.000 mar=0.000 state={'0': 22} clim=1.000 res=0.0 gen=0.0 rev=0
+early_merchant_post          g 1->1 cnt=2 own f/r/c/o 0.0/2.0/2.0/2.0 emp 0.0/0.0 outL=0 sold=0 disc=0 dshare=None soldS=None util=0.000 mar=0.000 state={'0': 2} clim=1.000 res=0.0 gen=0.0 rev=0
+gathering_ground             g 1->1 cnt=7 own f/r/c/o 0.0/7.0/7.0/7.0 emp 0.0/0.0 outL=0 sold=0 disc=0 dshare=None soldS=None util=0.000 mar=0.000 state={'0': 7} clim=0.513 res=0.0 gen=0.0 rev=0
+placer_gold_working          g 1->1 cnt=2 own f/r/c/o 0.0/0.0/2.0/0.0 emp 0.0/0.0 outL=0 sold=0 disc=0 dshare=None soldS=None util=0.000 mar=0.000 state={'1': 2} clim=1.000 res=0.0 gen=0.0 rev=0
+reed_cutting_camp            g 1->1 cnt=1 own f/r/c/o 0.0/2.0/2.0/2.0 emp 0.0/0.0 outL=0 sold=0 disc=0 dshare=None soldS=None util=0.000 mar=0.000 state={'0': 1} clim=1.000 res=0.0 gen=0.0 rev=0
+wild_rice_marsh              g 1->1 cnt=4 own f/r/c/o 0.0/4.0/4.0/4.0 emp 0.0/0.0 outL=0 sold=0 disc=0 dshare=None soldS=None util=0.000 mar=0.000 state={'0': 4} clim=0.214 res=0.0 gen=0.0 rev=0
+=== RESOURCES (nonzero or changing) ===
+timber                 open=4.5621e+06 fin=4.5595e+06 min=4.55556e+06 dep=0.0014344260273796946 extA=830.697 genA=0 natN=33064.6 natP=31294.3 life=-1.0 zero=None extDays=543 yield=6246566.0
+marine_fish            open=316121 fin=316285 min=316068 dep=0.00016892249905325923 extA=526.054 genA=0 natN=0 natP=689.648 life=-1.0 zero=None extDays=543 yield=46730.0
+wild_game              open=1865.47 fin=1864.57 min=1864.57 dep=0.00048491694416976673 extA=499.583 genA=0 natN=0 natP=498.678 life=129.0 zero=None extDays=543 yield=906.0
+stone                  open=1.46742e+08 fin=1.46742e+08 min=1.46742e+08 dep=0.0 extA=0 genA=0 natN=0 natP=0 life=0.0 zero=None extDays=0 yield=0.0
+fertile_soil           open=30133 fin=30142.2 min=30094 dep=0.0012942603866055334 extA=0 genA=0 natN=152.205 natP=161.395 life=0.0 zero=None extDays=0 yield=0.0
+copper_ore             open=3.25927e+07 fin=3.25927e+07 min=3.25927e+07 dep=0.0 extA=0 genA=0 natN=0 natP=0 life=0.0 zero=None extDays=0 yield=0.0
+iron_ore               open=3.48117e+07 fin=3.48117e+07 min=3.48117e+07 dep=0.0 extA=0 genA=0 natN=0 natP=0 life=0.0 zero=None extDays=0 yield=0.0
+gold_ore               open=3.08985e+06 fin=3.08985e+06 min=3.08985e+06 dep=0.0 extA=0 genA=0 natN=0 natP=0 life=30898465.0 zero=None extDays=0 yield=0.0
+clay                   open=1.04191e+07 fin=1.03928e+07 min=1.03805e+07 dep=0.003709721847643417 extA=0 genA=0 natN=84361 natP=58004 life=0.0 zero=None extDays=0 yield=0.0
+arable_land            open=125000 fin=125000 min=125000 dep=0.0 extA=0 genA=0 natN=0 natP=0 life=0.0 zero=None extDays=0 yield=0.0
+plantation_land        open=140000 fin=140000 min=140000 dep=0.0 extA=0 genA=0 natN=0 natP=0 life=0.0 zero=None extDays=0 yield=0.0
+pasture                open=160000 fin=160000 min=160000 dep=0.0 extA=0 genA=0 natN=0 natP=0 life=0.0 zero=None extDays=0 yield=0.0
+lead_ore               open=1.46117e+07 fin=1.46117e+07 min=1.46117e+07 dep=0.0 extA=0 genA=0 natN=0 natP=0 life=0.0 zero=None extDays=0 yield=0.0
+flint                  open=3.09086e+07 fin=3.09086e+07 min=3.09086e+07 dep=0.0 extA=0 genA=0 natN=0 natP=0 life=0.0 zero=None extDays=0 yield=0.0
+=== GLOBAL TS compact selected ===
+births: {'first': 0.0, 'last': 0.0, 'early90_mean': 0.022222222222222223, 'late90_mean': 0.03333333333333333, 'sum': 16.0, 'min': 0.0, 'max': 1.0, 'nonzero_days': 16}
+deaths: {'first': 0.0, 'last': 1.0, 'early90_mean': 0.022222222222222223, 'late90_mean': 0.044444444444444446, 'sum': 15.0, 'min': 0.0, 'max': 1.0, 'nonzero_days': 15}
+unemployed_population: {'first': 6.0, 'last': 6.0, 'early90_mean': 5.4222222222222225, 'late90_mean': 6.033333333333333, 'sum': 3280.0, 'min': 1.0, 'max': 7.0, 'nonzero_days': 553}
+filled_owner_jobs: {'first': 117.0, 'last': 118.0, 'early90_mean': 104.76666666666667, 'late90_mean': 118.95555555555555, 'sum': 64574.0, 'min': 11.0, 'max': 121.0, 'nonzero_days': 553}
+filled_employee_jobs: {'first': 0.0, 'last': 0.0, 'early90_mean': 0.0, 'late90_mean': 0.0, 'sum': 0.0, 'min': 0.0, 'max': 0.0, 'nonzero_days': 0}
+building_investments_started: {'first': 0.0, 'last': 0.0, 'early90_mean': 0.0, 'late90_mean': 0.0, 'sum': 0.0, 'min': 0.0, 'max': 0.0, 'nonzero_days': 0}
+building_investment_candidates: {'first': 0.0, 'last': 0.0, 'early90_mean': 0.0, 'late90_mean': 0.0, 'sum': 0.0, 'min': 0.0, 'max': 0.0, 'nonzero_days': 0}
+building_investment_demand_limited: {'first': 0.0, 'last': 0.0, 'early90_mean': 0.0, 'late90_mean': 0.0, 'sum': 0.0, 'min': 0.0, 'max': 0.0, 'nonzero_days': 0}
+building_investment_material_limited: {'first': 0.0, 'last': 0.0, 'early90_mean': 0.0, 'late90_mean': 0.0, 'sum': 0.0, 'min': 0.0, 'max': 0.0, 'nonzero_days': 0}
+building_investment_capital_limited: {'first': 0.0, 'last': 0.0, 'early90_mean': 0.0, 'late90_mean': 0.0, 'sum': 0.0, 'min': 0.0, 'max': 0.0, 'nonzero_days': 0}
+building_investment_owner_population_limited: {'first': 0.0, 'last': 0.0, 'early90_mean': 0.0, 'late90_mean': 0.0, 'sum': 0.0, 'min': 0.0, 'max': 0.0, 'nonzero_days': 0}
+production_output_discarded: {'first': 27093.0, 'last': 23818.0, 'early90_mean': 23596.87777777778, 'late90_mean': 23966.61111111111, 'sum': 12948084.0, 'min': 329.0, 'max': 53589.0, 'nonzero_days': 553}
+production_output_stock: {'first': 45434.0, 'last': 48709.0, 'early90_mean': 45020.944444444445, 'late90_mean': 46560.37777777778, 'sum': 26626117.0, 'min': 4534.0, 'max': 83514.0, 'nonzero_days': 553}
+producer_revenue: {'first': 221333.0, 'last': 495621.0, 'early90_mean': 428661.7444444444, 'late90_mean': 456232.65555555554, 'sum': 671038211.0, 'min': 18130.0, 'max': 18418673.0, 'nonzero_days': 553}
+trade_orders_dispatched: {'first': 1.0, 'last': 0.0, 'early90_mean': 0.25555555555555554, 'late90_mean': 0.4, 'sum': 238.0, 'min': 0.0, 'max': 1.0, 'nonzero_days': 238}
+trade_orders_arrived: {'first': 0.0, 'last': 1.0, 'early90_mean': 0.24444444444444444, 'late90_mean': 0.4, 'sum': 237.0, 'min': 0.0, 'max': 1.0, 'nonzero_days': 237}
+production_input_reserve_shortfall: {'first': 6491.0, 'last': 6491.0, 'early90_mean': 6341.877777777778, 'late90_mean': 6491.0, 'sum': 3565212.0, 'min': 0.0, 'max': 12982.0, 'nonzero_days': 544}
+merchant_cash: {'first': 724151450.0, 'last': 668762473.0, 'early90_mean': 721587703.7222222, 'late90_mean': 669767890.8444444, 'sum': 382278359822.0, 'min': 650679996.0, 'max': 724151450.0, 'nonzero_days': 553}
+loss_suspended_building_groups: {'first': 1.0, 'last': 0.0, 'early90_mean': 1.1333333333333333, 'late90_mean': 1.2, 'sum': 663.0, 'min': 0.0, 'max': 4.0, 'nonzero_days': 330}
+climate_limited_building_groups: {'first': 8.0, 'last': 8.0, 'early90_mean': 7.2, 'late90_mean': 8.0, 'sum': 4340.0, 'min': 1.0, 'max': 8.0, 'nonzero_days': 553}
+average_climate_capacity_q16: {'first': 31144.0, 'last': 31144.0, 'early90_mean': 31355.477777777778, 'late90_mean': 31144.088888888888, 'sum': 17257602.0, 'min': 30795.0, 'max': 33588.0, 'nonzero_days': 553}
+maintenance_unmet: {'first': 388.0, 'last': 388.0, 'early90_mean': 314.31111111111113, 'late90_mean': 388.0, 'sum': 185036.0, 'min': 184.0, 'max': 592.0, 'nonzero_days': 553}
+=== SPOTS ===
+{
+  "summary_first": {
+    "day_index": "49054",
+    "cohort_count": "20",
+    "building_group_count": "38",
+    "filled_owner_jobs": "117",
+    "filled_employee_jobs": "0",
+    "unemployed_population": "6",
+    "births": "0",
+    "deaths": "0",
+    "population_error": "0",
+    "money_error": "0",
+    "goods_error": "0",
+    "production_output_discarded": "27093",
+    "production_output_stock": "45434",
+    "building_investments_started": "0",
+    "producer_revenue": "221333",
+    "production_input_reserve_shortfall": "6491",
+    "trade_orders_dispatched": "1"
+  },
+  "summary_last": {
+    "day_index": "49606",
+    "cohort_count": "20",
+    "building_group_count": "38",
+    "filled_owner_jobs": "118",
+    "filled_employee_jobs": "0",
+    "unemployed_population": "6",
+    "births": "0",
+    "deaths": "1",
+    "population_error": "0",
+    "money_error": "0",
+    "goods_error": "0",
+    "production_output_discarded": "23818",
+    "production_output_stock": "48709",
+    "building_investments_started": "0",
+    "producer_revenue": "495621",
+    "production_input_reserve_shortfall": "6491",
+    "trade_orders_dispatched": "0",
+    "trade_orders_arrived": "1"
+  },
+  "summary_first_death": {
+    "day_index": "49066",
+    "deaths": "1",
+    "births": "0",
+    "unemployed_population": "6"
+  },
+  "rice_first": {
+    "day_index": "49054",
+    "good_id": "rice_grain",
+    "stock": "0",
+    "household_available_stock": "0",
+    "demand_ema": "3077",
+    "offered_supply_ema": "0",
+    "shortage_q16": "65535",
+    "price": "15676066"
+  },
+  "rice_last": {
+    "day_index": "49606",
+    "good_id": "rice_grain",
+    "stock": "0",
+    "household_available_stock": "0",
+    "demand_ema": "3121",
+    "offered_supply_ema": "0",
+    "shortage_q16": "65535",
+    "price": "15955431",
+    "trade_import_ema": "0",
+    "trade_last_rejection_reason": "4"
+  },
+  "prepared_staples_last": {
+    "day_index": "49606",
+    "good_id": "prepared_staples",
+    "stock": "0",
+    "demand_ema": "5958",
+    "offered_supply_ema": "0",
+    "shortage_q16": "65535",
+    "price": "25527214"
+  },
+  "fisher_last": {
+    "day_index": "49606",
+    "signature_id": "12",
+    "population": "2",
+    "funds": "32436093530",
+    "epoch_income": "299655",
+    "epoch_expense": "31944",
+    "livelihood_coverage_q16": "157033",
+    "satisfaction_q16": "51570",
+    "unemployed": "0",
+    "owner_employed": "2"
+  },
+  "hunter_last": {
+    "day_index": "49606",
+    "signature_id": "17",
+    "population": "15",
+    "funds": "7333644971",
+    "epoch_income": "0",
+    "epoch_expense": "171445",
+    "livelihood_coverage_q16": "63268",
+    "satisfaction_q16": "51570",
+    "unemployed": "0"
+  },
+  "top_discard_building_last": {
+    "day_index": "49606",
+    "type_id": "12",
+    "group_index": "0",
+    "count": "5",
+    "operating_state": "0",
+    "filled_owner": "9",
+    "owner_required": "10",
+    "owner_openings": "1",
+    "last_output": "19604",
+    "last_sold": "21",
+    "last_discarded": "19583",
+    "last_retained": "0",
+    "realized_profit_margin_q16": "-32765",
+    "last_climate_capacity_q16": "33588"
+  }
+}
+=== PLOT ===
+{
+  "days_sample": [
+    49054,
+    49091,
+    49128,
+    49164,
+    49201,
+    49238,
+    49275,
+    49312,
+    49348,
+    49385,
+    49422,
+    49459,
+    49496,
+    49532,
+    49569,
+    49606
+  ],
+  "global": {
+    "births": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "deaths": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ],
+    "unemployed": [
+      6.0,
+      1.0,
+      6.0,
+      6.0,
+      6.0,
+      6.0,
+      6.0,
+      6.0,
+      6.0,
+      6.0,
+      6.0,
+      6.0,
+      6.0,
+      6.0,
+      6.0,
+      6.0
+    ],
+    "filled_owner": [
+      117.0,
+      11.0,
+      117.0,
+      117.0,
+      118.0,
+      120.0,
+      120.0,
+      120.0,
+      120.0,
+      119.0,
+      119.0,
+      118.0,
+      119.0,
+      119.0,
+      118.0,
+      118.0
+    ],
+    "filled_employee": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "discard": [
+      27093.0,
+      659.0,
+      23810.0,
+      23839.0,
+      23810.0,
+      23810.0,
+      23815.0,
+      23839.0,
+      23940.0,
+      23866.0,
+      27118.0,
+      23818.0,
+      23839.0,
+      23818.0,
+      23839.0,
+      23818.0
+    ],
+    "output_stock": [
+      45434.0,
+      7429.0,
+      48767.0,
+      37943.0,
+      50635.0,
+      50705.0,
+      55620.0,
+      54917.0,
+      53304.0,
+      49847.0,
+      45888.0,
+      43287.0,
+      49478.0,
+      48126.0,
+      41900.0,
+      48709.0
+    ],
+    "revenue": [
+      221333.0,
+      19459.0,
+      292224.0,
+      213753.0,
+      389662.0,
+      422675.0,
+      14771522.0,
+      351345.0,
+      357958.0,
+      340991.0,
+      333859.0,
+      376235.0,
+      338063.0,
+      429859.0,
+      426810.0,
+      495621.0
+    ],
+    "invest_started": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "trade_dispatched": [
+      1.0,
+      0.0,
+      1.0,
+      1.0,
+      0.0,
+      1.0,
+      0.0,
+      1.0,
+      1.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0
+    ],
+    "merchant_cash": [
+      724151450.0,
+      723141432.0,
+      719345031.0,
+      718546523.0,
+      717437003.0,
+      715848814.0,
+      706942809.0,
+      676539251.0,
+      673961966.0,
+      672786964.0,
+      672176358.0,
+      671493920.0,
+      671049286.0,
+      670342334.0,
+      669683005.0,
+      668762473.0
+    ],
+    "input_shortfall": [
+      6491.0,
+      0.0,
+      6293.0,
+      6293.0,
+      6293.0,
+      6293.0,
+      6293.0,
+      6491.0,
+      6491.0,
+      6491.0,
+      6491.0,
+      6491.0,
+      6491.0,
+      6491.0,
+      6491.0,
+      6491.0
+    ]
+  },
+  "cell650": {
+    "population": [
+      34.0,
+      34.0,
+      34.0,
+      34.0,
+      34.0,
+      34.0,
+      34.0,
+      34.0,
+      34.0,
+      34.0,
+      32.0,
+      32.0,
+      32.0,
+      32.0,
+      32.0,
+      32.0
+    ],
+    "satisfaction": [
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.5321785421932445,
+      0.98504638671875,
+      0.78045654296875,
+      0.77850341796875,
+      0.7310324276194853,
+      0.7352416094611672,
+      0.7468948364257812,
+      0.7931137084960938,
+      0.7939634323120117,
+      0.7947044372558594,
+      0.795283317565918,
+      0.7848386764526367,
+      0.781252384185791
+    ],
+    "livelihood_coverage": [
+      1.3193601720473345,
+      1.3154346241670496,
+      1.363113852108226,
+      0.9476408116957721,
+      1.3952829697552849,
+      1.4011715159696692,
+      0.5479018267463235,
+      1.2456929823931526,
+      1.1816231222713696,
+      0.9993743896484375,
+      0.7459864616394043,
+      0.9069046974182129,
+      0.7372064590454102,
+      0.8655953407287598,
+      0.7251782417297363,
+      0.8359575271606445
+    ],
+    "unemployed": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "owner_employed": [
+      33.0,
+      33.0,
+      33.0,
+      33.0,
+      33.0,
+      33.0,
+      33.0,
+      33.0,
+      33.0,
+      33.0,
+      31.0,
+      31.0,
+      31.0,
+      31.0,
+      31.0,
+      31.0
+    ],
+    "merchant_cash": [
+      340732670.0,
+      340423773.0,
+      340539749.0,
+      340491438.0,
+      340376229.0,
+      340167891.0,
+      334238440.0,
+      306745676.0,
+      305780455.0,
+      305910968.0,
+      306126985.0,
+      306031168.0,
+      305980063.0,
+      305877511.0,
+      305813013.0,
+      305689342.0
+    ],
+    "rice_grain_stock": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "rice_grain_shortage": [
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375
+    ],
+    "rice_grain_demand": [
+      3077.0,
+      3569.0,
+      3000.0,
+      3328.0,
+      3482.0,
+      3002.0,
+      3602.0,
+      3119.0,
+      2989.0,
+      11848.0,
+      2806.0,
+      2872.0,
+      3331.0,
+      6614.0,
+      3362.0,
+      3121.0
+    ],
+    "rice_grain_supply": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "prepared_staples_stock": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "prepared_staples_shortage": [
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.0,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.0,
+      0.9999847412109375,
+      0.9999847412109375
+    ],
+    "prepared_staples_demand": [
+      5804.0,
+      6763.0,
+      5652.0,
+      6297.0,
+      6598.0,
+      5657.0,
+      6867.0,
+      5948.0,
+      5695.0,
+      78.0,
+      5325.0,
+      5472.0,
+      6372.0,
+      96.0,
+      6410.0,
+      5958.0
+    ],
+    "prepared_staples_supply": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "game_meat_stock": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "game_meat_shortage": [
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375
+    ],
+    "game_meat_demand": [
+      0.0,
+      3.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      5.0,
+      13.0,
+      17.0,
+      20.0,
+      21.0,
+      25.0,
+      29.0,
+      29.0,
+      33.0
+    ],
+    "game_meat_supply": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "fish_stock": [
+      10890.0,
+      10275.0,
+      1324.0,
+      0.0,
+      2057.0,
+      6605.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "fish_shortage": [
+      0.0,
+      0.0,
+      0.0,
+      0.51324462890625,
+      0.0,
+      0.0,
+      0.182220458984375,
+      0.2713470458984375,
+      0.269317626953125,
+      0.267608642578125,
+      0.2186279296875,
+      0.217376708984375,
+      0.21630859375,
+      0.2154083251953125,
+      0.214508056640625,
+      0.213958740234375
+    ],
+    "fish_demand": [
+      4852.0,
+      4699.0,
+      4872.0,
+      4920.0,
+      4975.0,
+      4965.0,
+      5088.0,
+      4696.0,
+      4684.0,
+      4672.0,
+      4383.0,
+      4373.0,
+      4368.0,
+      4364.0,
+      4359.0,
+      4356.0
+    ],
+    "fish_supply": [
+      5105.0,
+      5091.0,
+      4413.0,
+      3987.0,
+      4381.0,
+      4744.0,
+      4031.0,
+      3417.0,
+      3417.0,
+      3417.0,
+      3417.0,
+      3417.0,
+      3417.0,
+      3417.0,
+      3417.0,
+      3417.0
+    ],
+    "gathered_plants_stock": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "gathered_plants_shortage": [
+      0.9999847412109375,
+      0.0,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.0,
+      0.9999847412109375,
+      0.0,
+      0.0,
+      0.9999847412109375,
+      0.0,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.0,
+      0.9999847412109375,
+      0.0,
+      0.0
+    ],
+    "gathered_plants_demand": [
+      2165.0,
+      87.0,
+      2497.0,
+      1093.0,
+      443.0,
+      2484.0,
+      3.0,
+      1838.0,
+      2443.0,
+      24.0,
+      2375.0,
+      2054.0,
+      99.0,
+      5654.0,
+      2.0,
+      999.0
+    ],
+    "gathered_plants_supply": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "charcoal_stock": [
+      2.0,
+      2.0,
+      2.0,
+      2.0,
+      2.0,
+      2.0,
+      2.0,
+      2.0,
+      2.0,
+      2.0,
+      2.0,
+      2.0,
+      2.0,
+      2.0,
+      2.0,
+      2.0
+    ],
+    "charcoal_shortage": [
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.29156494140625,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375
+    ],
+    "charcoal_demand": [
+      3860.0,
+      3852.0,
+      3853.0,
+      3852.0,
+      3852.0,
+      3848.0,
+      6543.0,
+      360.0,
+      16.0,
+      16.0,
+      5121.0,
+      3765.0,
+      3728.0,
+      3728.0,
+      3728.0,
+      3728.0
+    ],
+    "charcoal_supply": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      2709.0,
+      883.0,
+      4.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "clothing_stock": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "clothing_shortage": [
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.0,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.9999847412109375,
+      0.0,
+      0.9999847412109375
+    ],
+    "clothing_demand": [
+      89.0,
+      93.0,
+      99.0,
+      115.0,
+      111.0,
+      108.0,
+      185.0,
+      185.0,
+      180.0,
+      132.0,
+      87.0,
+      88.0,
+      91.0,
+      93.0,
+      31.0,
+      173.0
+    ],
+    "clothing_supply": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ]
+  }
+}

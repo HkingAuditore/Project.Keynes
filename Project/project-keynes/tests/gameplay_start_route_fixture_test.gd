@@ -387,7 +387,9 @@ func _assert_silver_only_not_valid_stone_start() -> void:
 func _assert_resource_count_monotonicity() -> void:
 	var cases: Array[Dictionary] = [
 		{"resource": "wild_game", "building": "stone_age_hunting_camp",
-			"low": 2.0, "high": 200000.0, "base": {
+			# Open access still obeys the one-day physical-stock bound. Four
+			# camps are the minimum that close the 110% protein bridge.
+			"low": 2.5, "high": 200000.0, "base": {
 				"temperature": 0.56, "moisture": 0.30, "elevation": 0.50,
 				"river": true, "coastal": false,
 				"resources": {"wild_game": 200000.0, "timber": 400000.0,

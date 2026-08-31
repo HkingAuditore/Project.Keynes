@@ -1,6 +1,8 @@
 # Market V2 冻结周期、错峰与调度契约
 
-Price V6 / PKEC v49：只支持新游戏；旧经济存档显式拒绝，不重置旧价格后继续运行。
+开放资源与可兑现工资 / PKEC v50：只支持新游戏。调度阶段与 N/P/I cadence
+不变；CPUE 在现有资源边检查内计算，工资兑现纠偏在现有
+`building_employment` cell-local CSR 内完成，不新增全图 pass。
 没有新增持久化费用余数，价格／资金／物资尺度与冻结 N=1–5、P、I 调度保持不变。
 价格规则与验证详见 [定点计价与账本](economy-fixed-point-ledger-formulas.md)。
 

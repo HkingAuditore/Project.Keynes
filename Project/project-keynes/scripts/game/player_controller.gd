@@ -217,8 +217,17 @@ func restore_view_state(map, state: Dictionary) -> void:
 	_era_reward_generation = int(state.get("era_reward_generation", 0))
 	_era_reward_locked = bool(state.get("era_reward_locked", false))
 	if _camera != null:
-		_camera.global_position = state.get("camera_position", _camera.global_position)
-		_camera.zoom = state.get("camera_zoom", _camera.zoom)
+		var saved_position = state.get(
+			"camera_position", _camera.global_position)
+		if not (saved_position is Vector2):
+			saved_position = _camera.global_position
+		var saved_zoom = state.get("camera_zoom", _camera.zoom)
+		if _camera.has_method("restore_view_state"):
+			_camera.restore_view_state(saved_position, saved_zoom)
+		else:
+			# Compatibility for minimal camera stubs used by focused tests.
+			_camera.global_position = saved_position
+			_camera.zoom = saved_zoom
 	if map != null:
 		var selected := int(state.get("selected_cell", -1))
 		if selected >= 0 and selected < map.cell_count():

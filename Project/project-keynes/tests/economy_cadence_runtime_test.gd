@@ -163,15 +163,15 @@ func _test_save_restore_keeps_buckets(compiled: Dictionary) -> void:
 	_expect("PKCN save completes", bool(ext.end_country_save().get("ok", false)))
 	var before_hash: int = ext.get_economy_state_hash()
 	var begin: Dictionary = ext.begin_economy_save(65536)
-	_expect("v49 save begins", bool(begin.get("ok", false)) and
-		int(begin.get("schema_version", 0)) == 49)
+	_expect("v50 save begins", bool(begin.get("ok", false)) and
+		int(begin.get("schema_version", 0)) == 50)
 	var chunks: Array[PackedByteArray] = []
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty():
 			break
 		chunks.append(chunk)
-	_expect("v49 save completes", bool(ext.end_economy_save().get("ok", false)))
+	_expect("v50 save completes", bool(ext.end_economy_save().get("ok", false)))
 	var restored := _new_ext(10)
 	var catalog := compiled.duplicate(true)
 	catalog.erase("ok")

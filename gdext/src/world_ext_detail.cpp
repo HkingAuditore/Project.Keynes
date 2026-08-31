@@ -102,6 +102,17 @@ godot::Dictionary DCWorldExt::encode_detail_scatter(godot::Dictionary knobs) {
     const float size_scale = float(knobs.get("size_scale", 1.0));
     const float dead_thr = float(knobs.get("vitality_dead_threshold", 0.12));
     const float dieback = float(knobs.get("vitality_dieback_noise_strength", 0.45));
+    // Mirrors ShrubLayer's settlement envelope. The core encloses the widest
+    // building ring and half of an authored compound; the detail footprint is
+    // added per candidate so its canopy cannot reach back across the boundary.
+    const double settlement_spread_min = 0.16;
+    const double settlement_spread_max = 1.15;
+    const double settlement_scale_min = 0.60;
+    const double settlement_scale_max = 1.125;
+    const double settlement_visual_scale = 0.144;
+    const double settlement_outer_ring = 0.54;
+    const double settlement_art_half_width = 0.85;
+    const double settlement_detail_footprint = 0.85;
     const int instance_cap = int(knobs.get("instance_cap", 0));
     const int flow_w = int(knobs.get("flow_w", 0));
     const int flow_h = int(knobs.get("flow_h", 0));
@@ -126,6 +137,10 @@ godot::Dictionary DCWorldExt::encode_detail_scatter(godot::Dictionary knobs) {
     PackedFloat32Array cb = knobs.get("color_b", PackedFloat32Array());
     PackedFloat32Array ca = knobs.get("color_a", PackedFloat32Array());
     PackedByteArray offw = knobs.get("offset_is_water", PackedByteArray());
+    PackedInt32Array offi = knobs.get(
+        "offset_cell_indices", PackedInt32Array());
+    PackedByteArray settlement_core = knobs.get(
+        "settlement_core_buckets", PackedByteArray());
     PackedFloat32Array flow = knobs.get("flow_buffer", PackedFloat32Array());
 
     const int K = keys.size();
@@ -151,8 +166,12 @@ godot::Dictionary DCWorldExt::encode_detail_scatter(godot::Dictionary knobs) {
     const float *CG = cg.ptr();
     const float *CB = cb.ptr();
     const float *CA = ca.ptr();
+    const uint8_t *SETTLEMENT_CORE = settlement_core.ptr();
+    const int settlement_core_n = settlement_core.size();
     const uint8_t *OFFW = offw.ptr();
     const int offw_n = offw.size();
+    const int32_t *OFFI = offi.ptr();
+    const int offi_n = offi.size();
     const float *FLOW = flow.ptr();
     const int flow_n = flow.size();
 
@@ -197,9 +216,18 @@ godot::Dictionary DCWorldExt::encode_detail_scatter(godot::Dictionary knobs) {
         return t * t * (3.0 - 2.0 * t);
     };
 
-    // _is_water_position：world_to_cube → cube_round → cube_to_offset(odd-r) → 栅格。
+    // world_to_cube → cube_round → cube_to_offset(odd-r) → wrapped grid.
+    // Keep the unwrapped cube coordinate: its world centre is the nearest
+    // display copy at the cylindrical seam.
     const double SQRT3 = std::sqrt(3.0);
-    auto world_is_water = [&](double px, double py) -> bool {
+    struct GridLocation {
+        int64_t q = 0;
+        int64_t r = 0;
+        int64_t grid_index = -1;
+        bool valid = false;
+    };
+    auto world_grid_location = [&](double px, double py) -> GridLocation {
+        GridLocation loc;
         double q_f = (SQRT3 / 3.0 * px - 1.0 / 3.0 * py) / hex_size;
         double r_f = (2.0 / 3.0 * py) / hex_size;
         double s_f = -q_f - r_f;
@@ -217,14 +245,89 @@ godot::Dictionary DCWorldExt::encode_detail_scatter(godot::Dictionary knobs) {
         int64_t col = rq + (rr - (rr & 1)) / 2;
         int64_t row = rr;
         if (row < 0 || row >= grid_h) {
-            return true;
+            return loc;
         }
         col = (col % grid_w + grid_w) % grid_w;
         int64_t gi = row * (int64_t)grid_w + col;
-        if (gi < 0 || gi >= offw_n) {
+        if (gi < 0 || gi >= int64_t(grid_w) * grid_h) {
+            return loc;
+        }
+        loc.q = rq;
+        loc.r = rr;
+        loc.grid_index = gi;
+        loc.valid = true;
+        return loc;
+    };
+    auto world_is_water = [&](const GridLocation &loc) -> bool {
+        if (!loc.valid || loc.grid_index < 0 || loc.grid_index >= offw_n) {
             return true;
         }
-        return OFFW[gi] != 0;
+        return OFFW[loc.grid_index] != 0;
+    };
+    auto settlement_core_radius = [&](int bucket) -> double {
+        const double density = clampd(double(std::min(15, bucket)) / 15.0, 0.0, 1.0);
+        const double spread = lerpd(
+            settlement_spread_min, settlement_spread_max, density);
+        const double building_scale = lerpd(
+            settlement_scale_min, settlement_scale_max, density);
+        return hex_size * (settlement_outer_ring * spread +
+            settlement_art_half_width * building_scale *
+                settlement_visual_scale);
+    };
+    auto candidate_overlaps_settlement = [&](const GridLocation &origin,
+            double px, double py, double candidate_size,
+            int32_t fallback_cell, double fallback_x, double fallback_y) -> bool {
+        const double footprint = std::max(0.0, candidate_size) *
+            settlement_detail_footprint;
+        if (origin.valid && offi_n >= grid_w * grid_h) {
+            static constexpr int DQ[7] = {0, 1, 1, 0, -1, -1, 0};
+            static constexpr int DR[7] = {0, 0, -1, -1, 0, 1, 1};
+            for (int d = 0; d < 7; ++d) {
+                const int64_t q = origin.q + DQ[d];
+                const int64_t r = origin.r + DR[d];
+                if (r < 0 || r >= grid_h) {
+                    continue;
+                }
+                int64_t col = q + (r - (r & 1)) / 2;
+                col = (col % grid_w + grid_w) % grid_w;
+                const int64_t gi = r * int64_t(grid_w) + col;
+                if (gi < 0 || gi >= offi_n) {
+                    continue;
+                }
+                const int32_t target_cell = OFFI[gi];
+                if (target_cell < 0 || target_cell >= settlement_core_n) {
+                    continue;
+                }
+                const int bucket = std::min<int>(
+                    15, SETTLEMENT_CORE[target_cell]);
+                if (bucket <= 0) {
+                    continue;
+                }
+                const double center_x = hex_size * SQRT3 *
+                    (double(q) + double(r) * 0.5);
+                const double center_y = hex_size * 1.5 * double(r);
+                const double radius = settlement_core_radius(bucket) + footprint;
+                const double dx = px - center_x;
+                const double dy = py - center_y;
+                if (dx * dx + dy * dy < radius * radius) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        // Backward-compatible fallback for synthetic callers that predate the
+        // offset index grid.
+        if (fallback_cell >= 0 && fallback_cell < settlement_core_n) {
+            const int bucket = std::min<int>(
+                15, SETTLEMENT_CORE[fallback_cell]);
+            if (bucket > 0) {
+                const double radius = settlement_core_radius(bucket) + footprint;
+                const double dx = px - fallback_x;
+                const double dy = py - fallback_y;
+                return dx * dx + dy * dy < radius * radius;
+            }
+        }
+        return false;
     };
 
     // _is_river_body_position：flow_buffer 双线性（derived_size），>= 阈值即拒绝。
@@ -329,8 +432,17 @@ godot::Dictionary DCWorldExt::encode_detail_scatter(godot::Dictionary knobs) {
             double wny = (value_noise2(bpx * 0.033, bpy * 0.033, 977) - 0.5);
             double px = bpx + wnx * (hex_size * (double)warp_strength);
             double py = bpy + wny * (hex_size * (double)warp_strength);
+            double size = hex_size * lerpd(
+                min_sz, max_sz, hash01(key, 400 + attempt));
+            size *= lerpd(0.85, 1.12, size_density);
+            size *= (double)size_scale;
+            const GridLocation location = world_grid_location(px, py);
+            if (spawn_domain != 1 && candidate_overlaps_settlement(
+                    location, px, py, size, cell_idx, center_x, center_y)) {
+                continue;
+            }
 
-            const bool pos_is_water = world_is_water(px, py);
+            const bool pos_is_water = world_is_water(location);
             if (spawn_domain == 0 && pos_is_water) {
                 continue;
             }
@@ -356,9 +468,6 @@ godot::Dictionary DCWorldExt::encode_detail_scatter(godot::Dictionary knobs) {
                 continue;
             }
             double variant = hash01(key, 300 + attempt);
-            double size = hex_size * lerpd(min_sz, max_sz, hash01(key, 400 + attempt));
-            size *= lerpd(0.85, 1.12, size_density);
-            size *= (double)size_scale;
             double rot = hash01(key, 500 + attempt) * TAU;
             if (rotation_mode == 1) {
                 rot = 0.0;

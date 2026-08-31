@@ -8,6 +8,7 @@ const VisualTileHorizonBakerScript = preload(
 	"res://scripts/rendering/visual_tile_horizon_baker.gd")
 const DetailScatterChangeSetScript = preload("res://scripts/data/detail_scatter_change_set.gd")
 const VegetationFamilyLayerScript = preload("res://scripts/rendering/vegetation_family_layer.gd")
+const BuildingVisualLayerScript = preload("res://scripts/rendering/building_visual_layer.gd")
 
 const DETAIL_PLAN_IDLE: int = 0
 const DETAIL_PLAN_COLLECT: int = 1
@@ -638,6 +639,7 @@ var _last_detail_encode_ms: float = 0.0
 var _last_detail_cache_update_ms: float = 0.0
 var _last_detail_assemble_ms: float = 0.0
 var _last_detail_upload_ms: float = 0.0
+var _building_visual_layer: BuildingVisualLayer = null
 
 
 func get_last_detail_drain_ms() -> float:
@@ -652,6 +654,25 @@ func _ready() -> void:
 	_world_quad.name = "WorldQuad"
 	_world_quad.z_index = 0
 	add_child(_world_quad)
+	_building_visual_layer = BuildingVisualLayerScript.new()
+	_building_visual_layer.name = "BuildingVisualLayer"
+	add_child(_building_visual_layer)
+	if _building_visual_layer.has_method("set_world_ext"):
+		_building_visual_layer.set_world_ext(_world_ext)
+	# Buildings share the same astronomical daylight state as terrain,
+	# weather, fog and vegetation. Push cached values immediately because this
+	# layer is created before the first WorldClock/TODProfile notification.
+	_building_visual_layer.set_season_phase(_season_phase)
+	_building_visual_layer.set_day_phase(_day_phase)
+	_building_visual_layer.set_axial_tilt_rad(deg_to_rad(axial_tilt_deg))
+	_building_visual_layer.set_day_night_enabled(day_night_enabled)
+	_building_visual_layer.set_tod_debug_sun_position(
+		_tod_debug_sun_position_enabled, _tod_debug_sun_uv)
+	_building_visual_layer.set_tod_debug_sun_height_scale(
+		_tod_debug_sun_height_scale)
+	_building_visual_layer.set_tod_sun_dir(_tod_sun_dir)
+	_building_visual_layer.set_tod(
+		_tod_sun_color, _tod_ambient_color, _tod_night_factor, _tod_exposure)
 	_spawn_detail_layers()
 	# v9.split：天气表现层
 	_weather_layer = WeatherLayer.new()
@@ -1943,6 +1964,8 @@ func _rebuild_detail_layers_if_default() -> void:
 # 注入 C++ DCWorldExt（main.gd 在 set_map 前调用），转发给每个散布层。
 func set_world_ext(ext) -> void:
 	_world_ext = ext
+	if _building_visual_layer != null and _building_visual_layer.has_method("set_world_ext"):
+		_building_visual_layer.set_world_ext(ext)
 	for layer in _detail_layers:
 		if layer != null and layer.has_method("set_world_ext"):
 			layer.set_world_ext(ext)
@@ -2003,6 +2026,64 @@ func set_map(map: MapData, world: WorldData = null) -> void:
 	_maybe_bake_terrain_horizon_gpu()
 	if is_inside_tree():
 		_rebuild()
+
+
+func configure_building_visuals(catalog: Dictionary,
+		intel: BuildingVisualIntelCache) -> Dictionary:
+	if _building_visual_layer == null:
+		return {"ok": false, "reason": "building_visual_layer_unavailable"}
+	return _building_visual_layer.configure(_map, _world, hex_size, catalog, intel)
+
+
+func update_building_visual_intel(intel: BuildingVisualIntelCache,
+		changed_cells: PackedInt32Array) -> void:
+	if _building_visual_layer != null:
+		_building_visual_layer.update_intel(intel, changed_cells)
+	var core_buckets := intel.settlement_core_buckets()
+	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
+		if layer.has_method("set_settlement_core_buckets"):
+			layer.set_settlement_core_buckets(core_buckets)
+	)
+	if not changed_cells.is_empty():
+		# Vegetation candidates overlap adjacent hexes by design. A tree whose
+		# source is a neighbouring cell can already occupy this settlement core,
+		# so rebuilding only the changed cell leaves stale cross-cell canopies.
+		queue_detail_scatter_refresh(
+			_expand_building_detail_refresh_cells(changed_cells))
+
+
+func _expand_building_detail_refresh_cells(
+		changed_cells: PackedInt32Array) -> PackedInt32Array:
+	if _map == null or changed_cells.is_empty():
+		return changed_cells
+	var count := _map.cell_count()
+	var neighbours: PackedInt32Array = _map.neighbor_indices_packed() \
+		if _map.has_indices() else PackedInt32Array()
+	var selected := {}
+	for cell_idx in changed_cells:
+		if cell_idx < 0 or cell_idx >= count:
+			continue
+		selected[cell_idx] = true
+		if neighbours.size() < count * 6:
+			continue
+		var base := cell_idx * 6
+		for direction in 6:
+			var neighbour := int(neighbours[base + direction])
+			if neighbour >= 0 and neighbour < count:
+				selected[neighbour] = true
+	var ordered: Array = selected.keys()
+	ordered.sort()
+	return PackedInt32Array(ordered)
+
+
+func building_visual_diagnostics() -> Dictionary:
+	return _building_visual_layer.diagnostics() \
+		if _building_visual_layer != null else {"ok": false}
+
+
+func building_settlement_core_bucket(cell_idx: int) -> int:
+	return _building_visual_layer.settlement_core_bucket(cell_idx) \
+		if _building_visual_layer != null else 0
 
 func get_world_bounds() -> Rect2:
 	if _world != null:
@@ -2066,6 +2147,8 @@ func set_season_phase(phase: float) -> void:
 	_season_phase = phase
 	if _shader_mat != null:
 		_shader_mat.set_shader_parameter("season_phase", _season_phase)
+	if _building_visual_layer != null:
+		_building_visual_layer.set_season_phase(_season_phase)
 	if _weather_layer != null:
 		_weather_layer.set_season_phase(_season_phase)
 	if _fog_layer != null:
@@ -2094,6 +2177,8 @@ func set_day_phase(v: float) -> void:
 	_day_phase = fposmod(v, 1.0)
 	if _shader_mat != null:
 		_shader_mat.set_shader_parameter("day_phase", _day_phase)
+	if _building_visual_layer != null:
+		_building_visual_layer.set_day_phase(_day_phase)
 	if _weather_layer != null:
 		_weather_layer.set_day_phase(_day_phase)
 	if _fog_layer != null:
@@ -2114,6 +2199,9 @@ func set_tod_debug_sun_position(enabled: bool, uv: Vector2) -> void:
 		_weather_layer.set_tod_debug_sun_position(_tod_debug_sun_position_enabled, _tod_debug_sun_uv)
 	if _fog_layer != null:
 		_fog_layer.set_tod_debug_sun_position(_tod_debug_sun_position_enabled, _tod_debug_sun_uv)
+	if _building_visual_layer != null:
+		_building_visual_layer.set_tod_debug_sun_position(
+			_tod_debug_sun_position_enabled, _tod_debug_sun_uv)
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		if layer.has_method("set_tod_debug_sun_position"):
 			layer.set_tod_debug_sun_position(_tod_debug_sun_position_enabled, _tod_debug_sun_uv)
@@ -2129,6 +2217,9 @@ func set_tod_debug_sun_height_scale(v: float) -> void:
 		_weather_layer.set_tod_debug_sun_height_scale(_tod_debug_sun_height_scale)
 	if _fog_layer != null:
 		_fog_layer.set_tod_debug_sun_height_scale(_tod_debug_sun_height_scale)
+	if _building_visual_layer != null:
+		_building_visual_layer.set_tod_debug_sun_height_scale(
+			_tod_debug_sun_height_scale)
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		if layer.has_method("set_tod_debug_sun_height_scale"):
 			layer.set_tod_debug_sun_height_scale(_tod_debug_sun_height_scale)
@@ -2146,6 +2237,8 @@ func set_visual_quality(q: int) -> void:
 	if _fog_layer != null:
 		_fog_layer.set_visual_quality(visual_quality)
 		_apply_fog_early_out()
+	if _building_visual_layer != null:
+		_building_visual_layer.set_visual_quality(visual_quality)
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_visual_quality(visual_quality)
 	)
@@ -2172,6 +2265,8 @@ func set_camera_zoom(value: float) -> void:
 	_camera_zoom = next_zoom
 	if _shader_mat != null:
 		_shader_mat.set_shader_parameter("camera_zoom", _camera_zoom)
+	if _building_visual_layer != null:
+		_building_visual_layer.set_camera_zoom(_camera_zoom)
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_camera_zoom(_camera_zoom)
 	)
@@ -2184,6 +2279,8 @@ func set_camera_view(world_rect: Rect2, center: Vector2, zoom_value: float) -> v
 	_camera_world_center = center
 	_camera_view_initialized = world_rect.size.x > 0.0 and world_rect.size.y > 0.0
 	_camera_zoom = clampf(zoom_value, 0.01, 16.0)
+	if _building_visual_layer != null:
+		_building_visual_layer.set_camera_view(world_rect, center, _camera_zoom)
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		if layer.has_method("set_camera_view"):
 			layer.set_camera_view(world_rect, center, _camera_zoom)
@@ -2833,6 +2930,8 @@ func set_day_night_enabled(v: bool) -> void:
 		_weather_layer.set_day_night_enabled(day_night_enabled)
 	if _fog_layer != null:
 		_fog_layer.set_day_night_enabled(day_night_enabled)
+	if _building_visual_layer != null:
+		_building_visual_layer.set_day_night_enabled(day_night_enabled)
 	# [cylindrical-earth-daylight] 植被/点缀层昼夜总开关随地形同步（关闭=永昼）。
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_day_night_enabled(day_night_enabled)
@@ -2927,6 +3026,10 @@ func apply_tod(profile: TODProfile) -> void:
 	_tod_exposure = profile.exposure
 	_tod_sun_dir = profile.sun_dir.normalized()
 	_tod_valid = true
+	if _building_visual_layer != null:
+		_building_visual_layer.set_tod(
+			_tod_sun_color, _tod_ambient_color, _tod_night_factor, _tod_exposure)
+		_building_visual_layer.set_tod_sun_dir(_tod_sun_dir)
 	_for_each_vegetation_layer(func(layer: ShrubLayer) -> void:
 		layer.set_tod(_tod_sun_color, _tod_ambient_color, _tod_night_factor, _tod_exposure)
 		if layer.has_method("set_tod_sun_dir"):

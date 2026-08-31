@@ -130,6 +130,17 @@ native 返回字典：compact 不构造内存、债务、transit/escrow 等全�
 `building_commit`/`aggregate_publish` 内决定是否继续跨越下一个廉价子阶段；字段不进入
 DataCore、PKEC 或权威哈希，旧调用缺省为 0.8ms。
 
+### Building visual native boundary
+
+建筑视觉的数值热路径固定在 `DCWorldExt::bake_building_visual_chunk()`：GDScript 只在
+chunk 边界收集玩家情报 CSR、位置和地形排除输入，并上传 C++ 返回的 PackedFloat32Array。
+六类聚合、对数规模映射、类别配额、稳定候选布局、河流 SDF 排除、全局重要度裁剪以及
+16-float Body/Decal buffer 编码均不得在逐帧 GDScript 中重算。`BuildingVisualLayer`
+的 `allow_gdscript_baker_fallback` 默认关闭；native 方法缺失或失败时 fail-closed 并
+记录诊断，只有旧 DLL 兼容测试显式开启后才允许 GDScript baker。Godot 对象创建、
+`MultiMesh`/材质绑定、shader 天气采样和视野调度仍留在 GDScript，因为这些操作必须在
+SceneTree/RenderingServer 主线程完成。
+
 经济 CSV v14 是同一 committed visibility boundary 的 debug consumer。`DCWorldExt::run_economy_slice()` 先完成 `publish_epoch()`，再把建筑自然资源 delta 写入/flush 到 DataCore reserve slot，最后才允许 `EconomyCsvRecorder` 把 native cohort/market/building SoA 与资源 slot 复制进一个空闲 POD buffer。后台 worker 只接触 `std::vector`、字符串表和绝对路径，不访问 Godot API 或运行中的 runtime。控制面仅绑定 `start_economy_csv_recording(config)`、`request_stop_economy_csv_recording()`、`get_economy_csv_recording_status()`；GDScript 不再逐 cell 调 snapshot API。`config.cell_indices` 为空时按 `cell_stride` 取全图样本，非空时排序去重并覆盖 stride；GM 的“当前地块”只传一个在 start 时锁定的 index。summary 仍是全局提交摘要，cohorts/buildings/resources/market 仅遍历显式样本；building 行明确区分 `owner_capacity`（物理容量）、`owner_required`（活跃组等于容量、停产/不可用组为零）、`planned_owner_equivalent`（仅用于观察利用率折算量）、`filled_owner` 与 `owner_openings`，并发布 `projected_owner_income_per_day`。v14 summary 保留既有字段并新增 ACTIVE 业主岗位重配、跨职业和概率跳过计数；market 继续包含逐商品投入预留、家庭可用库存和完整配置周期的商人目标库存。双缓冲满时自动停止接收并排空已接受批次，不阻塞经济提交；CSV 调试状态不进入 PKEC、replay hash 或 simulation authority。
 
 ## Production climate bridge override (current)
@@ -887,6 +898,12 @@ bridge surfaces and component slots.
   and `weather_convergence_delta_p95` must be interpreted as weather commit
   report fields, not as climate pass fields.
 ## Building graph bridge
+
+建筑视觉 chunk 的数值热路径也固定在 C++：`DCWorldExt::bake_building_visual_chunk`
+接收 chunk 级 PackedArrays，完成 CSR 聚合、对数实例配额、稳定布局/河流排除和
+MultiMesh buffer 编码。`BuildingVisualLayer` 只负责可见性情报调度、generation 校验以及
+Godot `MultiMesh`/纹理对象上传；旧 DLL、Web 或原生 API 不可用时才使用同步 GDScript
+编码器回退。该视觉路径不写入经济、科技、DataCore、PKEC 或 state hash。
 
 建筑目录、owner-lot、岗位和生产账本不进入 component schema。`world_ext_economy.cpp` 在周期
 sample day 从已有 static/climate slots 捕获地理条件，并只为建筑目录实际引用的自然资源复制

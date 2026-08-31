@@ -165,6 +165,7 @@ static func solve(map: MapData, world: WorldData, player_slot: int) -> Dictionar
 		report.reason = "country_or_indices_missing"
 		return report
 	_ensure_arrays(map, n)
+	var previous_visible := map.visible_arr.duplicate()
 
 	var t0 := Time.get_ticks_usec()
 	var source_cells := PackedInt32Array()
@@ -181,8 +182,18 @@ static func solve(map: MapData, world: WorldData, player_slot: int) -> Dictionar
 	var visible_count: int = 0
 	var explored_count: int = 0
 	var source_count: int = source_cells.size()
+	var visibility_changed_cells := PackedInt32Array()
+	var newly_visible_cells := PackedInt32Array()
+	var newly_hidden_cells := PackedInt32Array()
 	for i in range(n):
 		var v: int = visible[i]
+		var before: int = previous_visible[i] if i < previous_visible.size() else 0
+		if v != before:
+			visibility_changed_cells.append(i)
+			if v != 0:
+				newly_visible_cells.append(i)
+			else:
+				newly_hidden_cells.append(i)
 		visible_count += v
 		if v != 0:
 			explored[i] = 1
@@ -199,6 +210,10 @@ static func solve(map: MapData, world: WorldData, player_slot: int) -> Dictionar
 	report.sources = source_count
 	report.cells = n
 	report.elapsed_ms = float(Time.get_ticks_usec() - t0) / 1000.0
+	report.visibility_changed_cells = visibility_changed_cells
+	report.newly_visible_cells = newly_visible_cells
+	report.newly_hidden_cells = newly_hidden_cells
+	report.vision_revision = map.vision_revision
 	return report
 
 
@@ -235,7 +250,12 @@ static func mark_all_visible(map: MapData) -> Dictionary:
 	if n <= 0:
 		return {"ok": false, "reason": "empty_map", "visible": 0, "explored": 0}
 	_ensure_arrays(map, n)
+	var changed := PackedInt32Array()
+	var newly_visible := PackedInt32Array()
 	for i in range(n):
+		if map.visible_arr[i] == 0:
+			changed.append(i)
+			newly_visible.append(i)
 		map.visible_arr[i] = 1
 		map.explored_arr[i] = 1
 		map.fog_k_arr[i] = 255
@@ -244,6 +264,10 @@ static func mark_all_visible(map: MapData) -> Dictionary:
 	return {
 		"ok": true, "reason": "fog_disabled", "visible": n, "explored": n,
 		"sources": 0, "cells": n, "elapsed_ms": 0.0,
+		"visibility_changed_cells": changed,
+		"newly_visible_cells": newly_visible,
+		"newly_hidden_cells": PackedInt32Array(),
+		"vision_revision": map.vision_revision,
 	}
 
 

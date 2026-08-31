@@ -178,6 +178,9 @@ public:
     godot::Dictionary country_snapshot(int64_t handle) const;
     godot::PackedStringArray completed_technology_ids(int64_t handle) const;
     bool has_completed_technology(int64_t handle, int32_t technology_id) const;
+    int32_t visual_era_index_for_slot(int32_t slot) const;
+    uint64_t visual_era_generation() const { return _visual_era_generation; }
+    godot::Dictionary consume_visual_era_dirty_slots();
     godot::Dictionary treasury_snapshot(int64_t handle) const;
     godot::Dictionary research_snapshot(int64_t handle) const;
     godot::Dictionary research_signal_snapshot(int64_t handle) const;
@@ -526,6 +529,7 @@ private:
     // separate from the authored prerequisite CSR so the graph contains only
     // real knowledge dependencies.
     std::vector<int32_t> _technology_entry_milestone_indices;
+    std::vector<int32_t> _technology_era_milestone_indices;
     std::vector<int32_t> _technology_flags;
     std::vector<std::string> _technology_modifier_definition_keys;
     std::vector<uint8_t> _research_signal_requires_provenance;
@@ -549,6 +553,9 @@ private:
     std::vector<int64_t> _country_goods;
     std::vector<uint64_t> _country_discovered;
     std::vector<uint64_t> _country_pending_technologies;
+    std::vector<int32_t> _current_visual_era;
+    std::vector<int32_t> _visual_era_dirty_slots;
+    uint64_t _visual_era_generation = 0;
     mutable std::vector<std::vector<int32_t>> _pending_activation_indices;
     mutable bool _pending_activation_index_dirty = true;
     mutable int64_t _pending_activation_count = 0;

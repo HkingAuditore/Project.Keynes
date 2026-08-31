@@ -484,6 +484,7 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_building_role_living_cost); cap(_building_role_local_average_wage);
     cap(_building_role_base_wage_due); cap(_building_role_base_wage_paid);
     cap(_building_role_bonus_due); cap(_building_role_bonus_paid);
+    cap(_building_role_forecast_pay_ratio_q16);
     cap(_pending_construction);
     cap(_pending_construction_cell_offsets);
     cap(_pending_construction_cell_indices);
@@ -494,6 +495,11 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_resource_decay_moisture); cap(_resource_decay_self_q16);
     cap(_resource_ecology_capacity); cap(_resource_ecology_growth_q16);
     cap(_resource_temp_lo_q16); cap(_resource_temp_hi_q16);
+    cap(_resource_climate_temp_opt_q16); cap(_resource_climate_temp_tol_q16);
+    cap(_resource_climate_moisture_opt_q16);
+    cap(_resource_climate_moisture_tol_q16);
+    cap(_resource_runtime_fit_weight_q16);
+    cap(_resource_temperature_signal); cap(_resource_moisture_signal);
     cap(_resource_deltas); cap(_last_published_resource_deltas);
     cap(_resource_lane_generation); cap(_resource_touched_lanes);
     cap(_last_published_resource_touched_lanes);
@@ -1817,6 +1823,16 @@ Dictionary NativeEconomyRuntime::report() const {
     out["building_owner_mobility"] = _building_owner_mobility;
     out["building_owner_job_reallocations"] =
         _building_owner_job_reallocations;
+    out["building_employee_job_reallocations"] =
+        _building_employee_job_reallocations;
+    out["building_employee_job_profession_changes"] =
+        _building_employee_job_profession_changes;
+    out["building_employee_job_hurdle_rejections"] =
+        _building_employee_job_hurdle_rejections;
+    out["building_employee_cold_start_forecasts"] =
+        _building_employee_cold_start_forecasts;
+    out["building_employee_funding_limited_forecasts"] =
+        _building_employee_funding_limited_forecasts;
     out["building_survival_priority_candidates"] =
         _building_survival_priority_candidates;
     out["building_owner_opportunity_quotes"] =
@@ -2208,7 +2224,8 @@ Dictionary NativeEconomyRuntime::report() const {
     out["workload_deadline_feasible"] = _workload_deadline_feasible;
     out["workload_cycle_clamped"] = _workload_cycle_clamped;
     out["approximation_version"] = 19;
-    out["approximation_model"] = "rolling_cell_settlement_v19_class_good_elasticity";
+    out["approximation_model"] =
+        "rolling_cell_settlement_v21_funded_cold_start_labor";
     out["economy_accuracy_preset"] = _accuracy_preset == 0 ? "EXACT" :
         (_accuracy_preset == 1 ? "BALANCED" :
         (_accuracy_preset == 2 ? "FAST" : "CUSTOM"));

@@ -1,0 +1,18 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[building-visual] queue_probe ticks=1 queued=1 chunk=0 camera_rect=[P: (-75.0, -58.0), S: (150.0, 116.0)] prefetch=true zoom=6.000
+WARNING: [building-visual] native C++ baker unavailable (native_method_missing); geometry is disabled until the extension is rebuilt
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _report_native_bake_unavailable (res://scripts/rendering/building_visual_layer.gd:396)
+       [1] _rebuild_chunk (res://scripts/rendering/building_visual_layer.gd:380)
+       [2] _process_chunk_rebuild_queue (res://scripts/rendering/building_visual_layer.gd:739)
+       [3] _process (res://scripts/rendering/building_visual_layer.gd:233)
+[building-visual] queue_probe ticks=2 queued=0 chunk=-1 camera_rect=[P: (-75.0, -58.0), S: (150.0, 116.0)] prefetch=false zoom=6.000
+[building-visual] queue_probe ticks=3 queued=0 chunk=-1 camera_rect=[P: (-75.0, -58.0), S: (150.0, 116.0)] prefetch=false zoom=6.000
+ERROR: 14 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 276 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

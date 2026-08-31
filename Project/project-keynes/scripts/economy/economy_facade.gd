@@ -67,6 +67,21 @@ var _construction_receipt_cursor: int = 0
 var _colonization_receipt_cursors: Dictionary = {}
 var _canal_receipt_cursors: Dictionary = {}
 
+
+## Cold visual metadata boundary. It exposes only catalog-authored category
+## columns; renderers never inspect IDs, filenames, outputs, or years.
+func building_visual_catalog() -> Dictionary:
+	return {
+		"building_type_ids": _catalog.get("building_type_ids", PackedStringArray()),
+		"building_kinds": _catalog.get("building_kinds", PackedInt32Array()),
+		"building_economic_sectors": _catalog.get(
+			"building_economic_sectors", PackedInt32Array()),
+		"building_semantic_tag_offsets": _catalog.get(
+			"building_semantic_tag_offsets", PackedInt32Array()),
+		"building_semantic_tags": _catalog.get(
+			"building_semantic_tags", PackedStringArray()),
+	}
+
 func configure(world_ext: Object, cell_count: int, seed: int, profile = null) -> Dictionary:
 	_world_ext = world_ext
 	_profile = profile

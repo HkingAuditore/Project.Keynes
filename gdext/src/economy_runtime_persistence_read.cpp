@@ -128,7 +128,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 saved_investment_merchant_transition_min_improvement = 32768,
                 saved_recovery_liquidation_max_share = 16384,
                 saved_resource_reserve = 22938,
-                saved_resource_harvest = 32768,
+                saved_resource_harvest = 0,
                 saved_resource_horizon = 3650,
                 saved_bullion_cap = 655,
                 saved_support_cap = 3277;
@@ -1215,6 +1215,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 _building_role_base_wage_paid.push_back(base_paid);
                 _building_role_bonus_due.push_back(bonus_due);
                 _building_role_bonus_paid.push_back(bonus_paid);
+                _building_role_forecast_pay_ratio_q16.push_back(0);
             }
             _buildings.push_back(group);
             ++_restore.restored_buildings;
@@ -2193,8 +2194,11 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                     _family_expedition_missing_good_quantities.push_back(quantity);
                 }
             }
+            // A preparing party holds no people and has not committed to a
+            // building plan yet, but it may already escrow the goods it has
+            // stocked from the source market day by day.
             if (active != 0 && state == EXPEDITION_PREPARING &&
-                (payload_count != 0 || cargo_count != 0 || kit_count != 0)) {
+                (payload_count != 0 || kit_count != 0)) {
                 error = "save_family_expedition_preparing_payload_invalid";
                 return false;
             }

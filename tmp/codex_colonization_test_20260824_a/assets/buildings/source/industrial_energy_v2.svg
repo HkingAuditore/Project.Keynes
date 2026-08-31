@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160">
+  <!-- Flat top-down authored tile. No baked shadow: the analytic
+       building_shadow pass owns false shadows. -->
+  <polygon data-role="roof_back" fill="#4f4a4c" points="28.80,54.40 105.60,54.40 105.60,89.60 28.80,89.60"/>
+  <polygon data-role="ridge" fill="#878080" points="28.80,87.84 105.60,87.84 105.60,89.60 28.80,89.60"/>
+  <polygon data-role="wall" fill="#8f5947" points="30.72,89.60 103.68,89.60 103.68,124.80 30.72,124.80"/>
+  <polygon data-role="foundation" fill="#333030" points="26.50,124.80 107.90,124.80 107.90,131.20 26.50,131.20"/>
+  <polygon data-role="window" fill="#a1a89e" points="48.35,99.20 55.65,99.20 55.65,112.00 48.35,112.00"/>
+  <polygon data-role="window" fill="#a1a89e" points="63.55,99.20 70.85,99.20 70.85,112.00 63.55,112.00"/>
+  <polygon data-role="window" fill="#a1a89e" points="78.75,99.20 86.05,99.20 86.05,112.00 78.75,112.00"/>
+  <polygon data-role="metal" fill="#69696e" points="112.00,41.60 144.00,41.60 150.40,115.20 105.60,115.20"/>
+</svg>

@@ -15,7 +15,7 @@ const STARTER_POPULATION := 20
 const GOODS_SCALE := 1000
 const Q16_ONE := 65536
 const RESOURCE_RUNWAY_DAYS := 365
-const RENEWABLE_SAFE_HARVEST_Q16 := 32768
+const RENEWABLE_SAFE_HARVEST_Q16 := 0
 const RENEWABLE_MIN_RESERVE_Q16 := 22938
 const RENEWABLE_GROWTH_DIVISOR := 8
 const MIN_FOOD_COVERAGE_Q16 := 72090 # 110%
@@ -112,8 +112,7 @@ static func plan(map: MapData, cell_idx: int, starter_route: Dictionary,
 			continue
 		var fixed := FIXED_BUILDING_IDS.has(building_id) \
 			or _profile_outputs(profile, "technology_points") \
-			or _profile_outputs(profile, "clothing") \
-			or String(building_id) == "stone_age_hunting_camp"
+			or _profile_outputs(profile, "clothing")
 		var minimum := 1 if is_selected else 0
 		var maximum := 1 if fixed else STARTER_POPULATION / owner_slots
 		if resource_cap >= 0:
@@ -284,11 +283,13 @@ static func _building_profile_by_id(building_id: String):
 
 static func _compile_starter_construction_contract(plan_result: Dictionary,
 		starter_route: Dictionary, completed: Dictionary, map: MapData,
-		cell_idx: int, profile_by_id: Dictionary) -> Dictionary:
+		cell_idx: int, profile_by_id: Dictionary,
+		attempted_seed_ids: Dictionary = {}) -> Dictionary:
 	var seed_building_id := String(plan_result.get("primary_food_building_id", ""))
 	if seed_building_id.is_empty() or not profile_by_id.has(seed_building_id):
 		return _error("starter_construction_seed_missing",
 			"开局食物种子建筑缺少可编译的建材配方。")
+	attempted_seed_ids[seed_building_id] = true
 	var seed_profile = profile_by_id[seed_building_id]
 	var seed_groups := _construction_groups(seed_profile)
 	if seed_groups.is_empty():
@@ -359,6 +360,39 @@ static func _compile_starter_construction_contract(plan_result: Dictionary,
 		plan_result, starter_route, completed, map, cell_idx, profile_by_id,
 		selected_good_ids)
 	if not bool(dependency_check.get("ok", false)):
+		# The largest food contributor is not always a viable construction
+		# seed. Cold starts, for example, may rely on several hunting camps,
+		# while the gathering route carries the bootstrap fiber group needed
+		# to rebuild the complete starter bundle.
+		var food_goods: PackedStringArray = starter_route.get(
+			"starter_food_good_ids", PackedStringArray())
+		var starter_ids: PackedStringArray = plan_result.get(
+			"starter_building_ids", PackedStringArray())
+		for alternative_id in starter_ids:
+			var alternative := String(alternative_id)
+			if attempted_seed_ids.has(alternative) \
+					or not profile_by_id.has(alternative):
+				continue
+			var alternative_profile = profile_by_id[alternative]
+			var produces_food := false
+			for output_good in alternative_profile.output_good_ids:
+				if food_goods.has(String(output_good)):
+					produces_food = true
+					break
+			if not produces_food:
+				continue
+			var ordered := _primary_building_first(
+				starter_ids,
+				plan_result.get("starter_building_counts", PackedInt64Array()),
+				alternative)
+			plan_result["primary_food_building_id"] = alternative
+			plan_result["starter_building_ids"] = ordered.ids
+			plan_result["starter_building_counts"] = ordered.counts
+			var alternative_contract := _compile_starter_construction_contract(
+				plan_result, starter_route, completed, map, cell_idx,
+				profile_by_id, attempted_seed_ids)
+			if bool(alternative_contract.get("ok", false)):
+				return alternative_contract
 		return dependency_check
 	return {
 		"ok": true,
@@ -608,9 +642,14 @@ static func _compile_search_context(candidates: Array[Dictionary], map: MapData,
 				var reserve := _reserve(map, resource_id, cell_idx)
 				var limit := reserve
 				if mode != "capacity":
-					limit = _renewable_safe_yield_per_day(resource_id, reserve) \
-						if _resource_is_renewable(resource_id) \
-						else reserve / RESOURCE_RUNWAY_DAYS
+					if not _resource_is_renewable(resource_id):
+						limit = reserve / RESOURCE_RUNWAY_DAYS
+					elif RENEWABLE_SAFE_HARVEST_Q16 > 0:
+						limit = _renewable_safe_yield_per_day(resource_id, reserve)
+					else:
+						# Open access matches _resource_building_count_cap: only
+						# the one-day physical stock bounds startup extraction.
+						limit = reserve
 				resource_limits[resource_key] = maxf(0.0, limit)
 				resource_caps[resource_id] = maxf(0.0, limit)
 		candidate["outputs"] = outputs
@@ -937,8 +976,14 @@ static func _resource_building_count_cap(profile, map: MapData, cell_idx: int) -
 		if String(profile.resource_interaction_modes[index]) == "capacity":
 			cap = mini(cap, floori(reserve / required))
 		elif _resource_is_renewable(resource_id):
-			cap = mini(cap, floori(_renewable_safe_yield_per_day(
-				resource_id, reserve) / required))
+			if RENEWABLE_SAFE_HARVEST_Q16 > 0:
+				cap = mini(cap, floori(_renewable_safe_yield_per_day(
+					resource_id, reserve) / required))
+			else:
+				# Open access has no administrative sustainable-yield gate.
+				# The one-day physical stock bound prevents impossible startup
+				# extraction; native CPUE determines realized output and profit.
+				cap = mini(cap, floori(reserve / required))
 		else:
 			cap = mini(cap, floori(reserve /
 				(required * RESOURCE_RUNWAY_DAYS)))

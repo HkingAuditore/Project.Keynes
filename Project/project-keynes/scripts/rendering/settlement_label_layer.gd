@@ -4,6 +4,11 @@ class_name SettlementLabelLayer
 const DESKTOP_CAP := 128
 const MOBILE_CAP := 64
 const LABEL_SIZE := Vector2(176.0, 24.0)
+# Settlement names must stay legible above everything drawn inside the cell:
+# building bodies sit at absolute z 3 and would otherwise cover the text, and
+# weather (4), data overlays (5) and borders (6) tint over it. Selection
+# highlight (10) and fog of war (12) still occlude labels on purpose.
+const LABEL_Z_INDEX := 7
 
 var _map: MapData
 var _camera: Camera2D
@@ -22,6 +27,13 @@ var _dirty := true
 # 会无条件置 dirty，所以重建成本逐日计入 perf 的 tail_label_ms 列。
 var _last_rebuild_ms: float = 0.0
 var _last_rebuild_label_count: int = 0
+
+
+func _ready() -> void:
+	# Absolute z only; the layer keeps inheriting HexRenderer's transform so
+	# labels stay in world coordinates.
+	z_as_relative = false
+	z_index = LABEL_Z_INDEX
 
 
 func configure(map: MapData, camera: Camera2D, facade, hex_size: float,

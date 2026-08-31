@@ -664,6 +664,13 @@ static func compile_native_catalog(
 		"building_resource_decay_moisture", "building_resource_decay_self_q16",
 		"building_resource_ecology_capacity", "building_resource_ecology_growth_q16",
 		"building_resource_temp_lo_q16", "building_resource_temp_hi_q16",
+		"building_resource_climate_temp_opt_q16",
+		"building_resource_climate_temp_tol_q16",
+		"building_resource_climate_moisture_opt_q16",
+		"building_resource_climate_moisture_tol_q16",
+		"building_resource_runtime_fit_weight_q16",
+		"building_resource_temperature_signal",
+		"building_resource_moisture_signal",
 	]:
 		building_v13_columns.erase(key)
 	var building_compat_hash_v13 := _catalog_hash(building_v13_columns)
@@ -1111,6 +1118,13 @@ static func _compile_building_columns(profession_index: Dictionary,
 	var resource_ecology_growth_q16 := PackedInt32Array()
 	var resource_temp_lo_q16 := PackedInt32Array()
 	var resource_temp_hi_q16 := PackedInt32Array()
+	var resource_climate_temp_opt_q16 := PackedInt32Array()
+	var resource_climate_temp_tol_q16 := PackedInt32Array()
+	var resource_climate_moisture_opt_q16 := PackedInt32Array()
+	var resource_climate_moisture_tol_q16 := PackedInt32Array()
+	var resource_runtime_fit_weight_q16 := PackedInt32Array()
+	var resource_temperature_signal := PackedInt32Array()
+	var resource_moisture_signal := PackedInt32Array()
 	var resource_semantic_tag_offsets := PackedInt32Array([0])
 	var resource_semantic_tags := PackedStringArray()
 	var resource_technology_tag_offsets := PackedInt32Array([0])
@@ -1140,6 +1154,16 @@ static func _compile_building_columns(profession_index: Dictionary,
 		resource_ecology_growth_q16.append(roundi(float(resource.ecology_growth_rate) * Q16_ONE))
 		resource_temp_lo_q16.append(roundi(float(resource.temp_lo) * Q16_ONE))
 		resource_temp_hi_q16.append(roundi(float(resource.temp_hi) * Q16_ONE))
+		resource_climate_temp_opt_q16.append(roundi(float(resource.climate_temp_opt) * Q16_ONE))
+		resource_climate_temp_tol_q16.append(roundi(float(resource.climate_temp_tol) * Q16_ONE))
+		resource_climate_moisture_opt_q16.append(roundi(float(resource.climate_moisture_opt) * Q16_ONE))
+		resource_climate_moisture_tol_q16.append(roundi(float(resource.climate_moisture_tol) * Q16_ONE))
+		resource_runtime_fit_weight_q16.append(roundi(
+			float(resource.runtime_climate_fit_weight) * Q16_ONE))
+		resource_temperature_signal.append(
+			1 if String(resource.runtime_temperature_signal) == "mean_30d" else 0)
+		resource_moisture_signal.append(
+			1 if String(resource.runtime_moisture_signal) == "plant_available_water" else 0)
 		var normalized_resource_tags := PackedStringArray()
 		for tag in resource.semantic_tags:
 			var normalized := String(tag).strip_edges()
@@ -1650,6 +1674,13 @@ static func _compile_building_columns(profession_index: Dictionary,
 		"building_resource_ecology_growth_q16": resource_ecology_growth_q16,
 		"building_resource_temp_lo_q16": resource_temp_lo_q16,
 		"building_resource_temp_hi_q16": resource_temp_hi_q16,
+		"building_resource_climate_temp_opt_q16": resource_climate_temp_opt_q16,
+		"building_resource_climate_temp_tol_q16": resource_climate_temp_tol_q16,
+		"building_resource_climate_moisture_opt_q16": resource_climate_moisture_opt_q16,
+		"building_resource_climate_moisture_tol_q16": resource_climate_moisture_tol_q16,
+		"building_resource_runtime_fit_weight_q16": resource_runtime_fit_weight_q16,
+		"building_resource_temperature_signal": resource_temperature_signal,
+		"building_resource_moisture_signal": resource_moisture_signal,
 		"building_resource_semantic_tag_offsets": resource_semantic_tag_offsets,
 		"building_resource_semantic_tags": resource_semantic_tags,
 		"building_resource_technology_tag_offsets": resource_technology_tag_offsets,

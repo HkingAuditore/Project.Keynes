@@ -938,8 +938,29 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         }
         return subsidy;
     };
+    // Settlement pays every consumption-lane subsidy out of the live fiscal
+    // escrow, so the quotes handed to budget_orders have to draw down the same
+    // lane budget in the same order. A quote that ignores the remaining escrow
+    // bills a discount apply_fiscal_tax can no longer fund, and the cohort then
+    // owes more cash than its budget reserved.
+    thread_local std::vector<int32_t> subsidy_quota_cells;
+    thread_local std::vector<int64_t> subsidy_quota_remaining;
     const auto apply_subsidy_quotes = [&](std::vector<BundleOrder> &orders) {
         if (!subsidy_settlement) return;
+        subsidy_quota_cells.clear();
+        subsidy_quota_remaining.clear();
+        const auto quota_for_cell = [&](int32_t cell) -> int64_t & {
+            for (size_t i = 0; i < subsidy_quota_cells.size(); ++i) {
+                if (subsidy_quota_cells[i] == cell)
+                    return subsidy_quota_remaining[i];
+            }
+            const size_t lane = static_cast<size_t>(cell) *
+                ACTIVE_TAX_KIND_COUNT + NativeCountryRuntime::TAX_CONSUMPTION;
+            subsidy_quota_cells.push_back(cell);
+            subsidy_quota_remaining.push_back(lane < _fiscal_remaining.size()
+                ? std::max<int64_t>(0, _fiscal_remaining[lane]) : 0);
+            return subsidy_quota_remaining.back();
+        };
         for (BundleOrder &order : orders) {
             const int32_t cell = cohort_cell(order.slot);
             if (cell < 0 || cell >= _cell_count || order.desired_units <= 0)
@@ -951,8 +972,11 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             }
             const int32_t pay = family_purchase_pay_factor_q16(order.slot);
             if (pay < Q16_ONE) {
+                // Settlement discounts the pre-tax component base, so quoting
+                // against the tax-inclusive price would promise more than the
+                // family discount actually removes from the invoice.
                 const int64_t gross = mul_div_sat(
-                    order.desired_units, order.unit_price, GOODS_SCALE, sat);
+                    order.desired_units, order.base_unit_price, GOODS_SCALE, sat);
                 const int64_t family_request = mul_div_sat(
                     gross, Q16_ONE - pay, Q16_ONE, sat);
                 const int64_t family_alloc = -expected_fiscal_transfer(
@@ -962,6 +986,10 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                     allocated, family_alloc, sat);
             }
             if (allocated <= 0) continue;
+            int64_t &quota = quota_for_cell(cell);
+            allocated = std::min(allocated, quota);
+            if (allocated <= 0) continue;
+            quota -= allocated;
             // Floor the per-unit discount so the quoted order budget is never
             // lower than the net cash ultimately charged at settlement.
             order.quoted_subsidy_per_unit = mul_div_sat(
@@ -1228,6 +1256,16 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                     }
                 }
                 rounding_reserve += std::max<int64_t>(0, static_cast<int64_t>(policies) - 1);
+            }
+            // A quoted discount is floored per desired unit, while settlement
+            // recomputes it from the component base actually delivered. Reserve
+            // that sub-unit difference instead of discovering it as an invoice
+            // the cohort cannot cover.
+            if (subsidy_settlement) {
+                for (size_t i = begin; i < end; ++i) {
+                    if (orders[i].quoted_subsidy_per_unit > 0 &&
+                        orders[i].desired_units > 0) ++rounding_reserve;
+                }
             }
             remaining = std::max<int64_t>(0, remaining - rounding_reserve);
             const int64_t total_cost = desired_bill.total(sat);

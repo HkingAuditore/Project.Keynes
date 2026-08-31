@@ -1,5 +1,19 @@
 # 原生阶层与本地市场运行时（Market V2 / Price V6）
 
+## 2026-08-31 开放获取资源与可兑现工资（PKEC v50）
+
+可再生资源默认 `resource_safe_harvest_q16=0`，即不实施行政安全产量。
+`extract` 建筑按冻结本地生态容量与当前存量计算线性 CPUE；允许开采超过自然增长并
+耗尽资源。正值仍开启原有 `(cell,resource)` 共享安全开采预算，作为未来政策入口。
+
+雇员机会收入由合同工资、上一周期岗位实付比例和 cell/profession 实付工资 EMA
+共同形成。工资可负担报价按含资源 CPUE、气候和计划利用率的可执行产能计算。
+低兑现岗位的可移动在职人口按周期化 mobility 比例进入既有失业池，再通过确定性
+largest-remainder 候选分配转岗；不增加逐人口 agent、稠密职业矩阵或新调度阶段。
+
+权威实现仍位于 `NativeEconomyRuntime`。资源密度与预期工资均为派生值，不进入
+PKEC 字节布局或 state hash；公式版本升级要求新游戏。
+
 ## 2026-08-30 Price V6 当前契约
 
 定价权威仍在 NativeEconomyRuntime。移除目录最低售价，`1` 只作为数值下界；
@@ -270,6 +284,7 @@ sequence、settled day、稳定结果码及实际两类物资/现金支出；它
 - `country_daily` 和 `economy_daily` 仅在当日确属提交截止点时动态声明 `deadline_critical`，可绕过一次 tick 内的 frame/strict 启动门槛，但仍受单 slice 与 continuation 上限约束；`must_run` 保持 false。WorldClock 每推进一天后立即重读 country/economy barrier，不能在同一渲染帧越过刚升起的截止屏障。
 - 贸易候选数量用交易后源/目的库存重新报价，并以确定性整数二分裁剪为仍满足最小利润率的最大数量；relief 路线允许零价差但禁止负价差。发运前依据最新库存、现金和国家运力二次裁剪。报告增加 `trade_rejected_no_spread`、`trade_rejected_margin`、`trade_quantity_profit_clips`、`trade_relief_candidates`。
 - adaptive 工资可负担上限改为日流量：`满产日结算收入 / (1 + 目标利润率) - 日投入` 得到工资池，再除以员工槽位并应用工资收入缓冲比例。停产建筑也使用该反事实报价，避免周期总收入被错当成日收入而把工资放大约 `epoch_days` 倍。
+- PKEC v50 的 `rolling_cell_settlement_v21_funded_cold_start_labor` 不再让无历史岗位默认兑现全部合同。岗位输出先受家庭、企业、启动、出口需求与无自我供给的库存缺口约束，普通市场回执再受当前商人现金／结算日限制；该资金预测与岗位支付历史取较低值。只有失业招聘使用 1/8 合同的低置信先验，已就业者转职、employee-to-owner 比较和 inspector 均使用严格资金预测。
 - 野生动物承载力继续随普通适生度下降，但压力死亡只作用于原始温湿适生度最低 25% 的急性区间，消除普通非理想气候的重复惩罚。理想与普通气候的 24 营地五年采集均有回归覆盖。
 - 林木改用理想承载量 `1200×100`、1% 日增长和正迁入的 Beverton-Holt 分支；新地图只对适生度最高的 30% 陆地保证 30,000 最低储量。它在低于承载量时自然增长，并通过单伐木场五年持续采收回归。
 
@@ -687,7 +702,10 @@ worker 仅把居民消费与商人居民销售写入局部结果，主线程再�
 `max(汇总应税收入, survival_household 本地每日成本 × 人口 × 周期天数)` 申请，并在 cell
 预算不足时按 cohort 申请同比例兑现。财政预算在 epoch 开始除当前 cohort 外，还为本国已解锁
 建筑的 owner/employee 职业按民族预留一份有界的最低生活所得补贴 floor，因此目标职业当前为零人口
-或目标建筑尚不存在时，税后收入比较仍能看到可兑现的所得补贴。最低生活税基不进入正税。消费/业主结算同时按财政税率
+或目标建筑尚不存在时，税后收入比较仍能看到可兑现的所得补贴。
+履约率是预测与结算共用的冻结承诺比例，因此没有申请、也没有分到托管份额的车道履约率为零，
+不得沿用 100% 默认值；否则报价会承诺 `apply_fiscal_tax` 无法兑付的补贴。新车道靠首个 epoch
+记录申请、下个 epoch 从国库预留托管现金完成自举，家族购买折扣同样按此路径受国库上限约束。最低生活税基不进入正税。消费/业主结算同时按财政税率
 记录 `income_tax`、`consumption_tax`、`business_tax` 支出腿和 `income_subsidy`、`consumption_subsidy`、
 `business_subsidy` 收入腿（负税率），人口快照的 `settlement_cashflow_source_stable_ids`
 一并导出这些来源，Inspector 阶层收支按来源名展示税收支出与补贴收入。人口快照返回上次提交

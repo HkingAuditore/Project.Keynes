@@ -776,6 +776,10 @@ bool NativeEconomyRuntime::run_building_production_cell(
         const int64_t available = available_resource_amount(item, resource_cell);
         int64_t scale = std::clamp<int64_t>(mul_div_sat(
             available, Q16_ONE, base, _saturation_count), 0, Q16_ONE);
+        if (item.mode == 0 && resource_is_renewable(item.resource_id)) {
+            scale = std::min<int64_t>(scale,
+                resource_stock_density_q16(item.resource_id, resource_cell));
+        }
         // Keep a positive probe for a positive but sub-Q16 stock ratio. The
         // later integer quantity and stock checks remain authoritative.
         if (available > 0 && scale == 0) scale = 1;

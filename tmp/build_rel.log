@@ -1,0 +1,7 @@
+scons: Reading SConscript files ...
+Building for architecture x86_64 on platform windows
+scons: done reading SConscript files.
+scons: Building targets ...
+scons: `godot-cpp\bin\libgodot-cpp.windows.template_release.x86_64.lib' is up to date.
+scons: `D:\Godot\ProjectKeynes\Project.Keynes\Project\project-keynes\addons\dots_ext\bin\windows\dots_ext.windows.template_release.x86_64.dll' is up to date.
+scons: done building targets.

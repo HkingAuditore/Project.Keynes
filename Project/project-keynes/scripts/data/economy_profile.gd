@@ -230,7 +230,10 @@ extends Resource
 @export_range(1, 65536, 1) var investment_merchant_transition_min_improvement_q16: int = 32768
 @export_range(1, 65536, 1) var recovery_liquidation_max_share_q16: int = 16384
 @export_range(0, 65536, 1) var resource_min_reserve_q16: int = 22938
-@export_range(0, 65536, 1) var resource_safe_harvest_q16: int = 32768
+## Optional managed-harvest policy. Zero is open access: extractors may
+## overharvest and deplete the stock. Positive values enable the shared
+## safe-harvest budget for future policy use.
+@export_range(0, 65536, 1) var resource_safe_harvest_q16: int = 0
 @export_range(1, 365000, 1) var resource_min_horizon_days: int = 3650
 ## Sector default construction-BOM amortization when a building leaves its
 ## maintenance recipe empty. Order: agriculture, extractive, manufacturing,

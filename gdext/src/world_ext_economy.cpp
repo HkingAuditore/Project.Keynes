@@ -722,6 +722,39 @@ Dictionary DCWorldExt::get_building_cell_snapshot(int cell_idx) const {
     return out;
 }
 
+Dictionary DCWorldExt::get_building_visual_snapshot(
+        const PackedInt32Array &requested_cells) const {
+    if (_economy_runtime == nullptr) return unavailable();
+    Dictionary out = runtime_from(_economy_runtime)->building_visual_snapshot(
+        requested_cells);
+    if (!static_cast<bool>(out.get("ok", false))) return out;
+    PackedInt32Array cells = out["cell_indices"];
+    PackedInt32Array country_slots;
+    PackedInt32Array era_indices;
+    country_slots.resize(cells.size());
+    era_indices.resize(cells.size());
+    uint64_t era_generation = 0;
+    NativeCountryRuntime *countries = _country_runtime == nullptr
+        ? nullptr : static_cast<NativeCountryRuntime *>(_country_runtime);
+    if (countries != nullptr) era_generation = countries->visual_era_generation();
+    for (int64_t i = 0; i < cells.size(); ++i) {
+        const int32_t slot = countries == nullptr
+            ? -1 : countries->country_slot_for_cell(cells[i]);
+        country_slots.set(i, slot);
+        era_indices.set(i, countries == nullptr
+            ? -1 : countries->visual_era_index_for_slot(slot));
+    }
+    out["country_slots"] = country_slots;
+    out["era_indices"] = era_indices;
+    out["country_era_generation"] = static_cast<int64_t>(era_generation);
+    return out;
+}
+
+Dictionary DCWorldExt::consume_building_visual_dirty_cells() {
+    return _economy_runtime == nullptr ? unavailable()
+        : runtime_from(_economy_runtime)->consume_building_visual_dirty_cells();
+}
+
 Dictionary DCWorldExt::get_treasury_construction_quotes(
         int64_t country_handle, int cell_idx,
         const PackedInt32Array &type_ids) const {
