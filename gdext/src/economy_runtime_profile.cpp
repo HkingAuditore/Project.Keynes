@@ -63,9 +63,6 @@ bool NativeEconomyRuntime::configure_profile(const Dictionary &profile, std::str
     _building_output_efficiency_q16 = std::clamp(dict_num<int32_t>(
         profile, "building_output_efficiency_q16", Q16_ONE),
         static_cast<int32_t>(Q16_ONE), static_cast<int32_t>(Q16_ONE * 4));
-    _food_building_output_efficiency_q16 = std::clamp(dict_num<int32_t>(
-        profile, "food_building_output_efficiency_q16", 81920),
-        static_cast<int32_t>(Q16_ONE), static_cast<int32_t>(Q16_ONE * 4));
     _commands_per_slice = std::clamp(dict_num<int32_t>(profile, "commands_per_slice", 16384), 1, 1 << 20);
     // market_cycle_days is the longest market interval (1-5). Native locks N
     // for a full cycle from populated work plus previous-cycle machine timing.

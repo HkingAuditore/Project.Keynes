@@ -3052,10 +3052,6 @@ private:
     int32_t _building_finalize_cells_per_slice =
         AUTO_BUILDING_FINALIZE_CELLS_PER_SLICE;
     int32_t _building_output_efficiency_q16 = Q16_ONE;
-    // Food-only production multiplier.  Kept separate from the global
-    // building multiplier so staple/protein/produce output can be improved
-    // without inflating knowledge, tools, or construction chains.
-    int32_t _food_building_output_efficiency_q16 = 81920;
     bool _auto_building_slice_by_scale = true;
     int32_t _commands_per_slice = 16384;
     int32_t _epoch_days = 1;
