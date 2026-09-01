@@ -110,8 +110,8 @@ func _test_normal_resolution_invariance(ext: Object) -> bool:
 			<= int(low_result.get("normal_radius_x_px", 0)):
 		push_error("visual_tile_native_bake_test: normal world radius was not preserved")
 		return false
-	if absf(float(low_result.get("normal_sample_radius_hex", 0.0)) - 0.44) > 1e-6 \
-			or absf(float(low_result.get("normal_height_scale_hex", 0.0)) - 0.85) > 1e-6:
+	if absf(float(low_result.get("normal_sample_radius_hex", 0.0)) - 1.35) > 1e-6 \
+			or absf(float(low_result.get("normal_height_scale_hex", 0.0)) - 2.10) > 1e-6:
 		push_error("visual_tile_native_bake_test: hex normal contract missing")
 		return false
 	return true
@@ -406,6 +406,6 @@ func _make_knobs() -> Dictionary:
 		"coast_sdf_max_dist_px": 12.0,
 		"normal_radius_px": 2,
 		"normal_slope_gain": 8.0,
-		"normal_sample_radius_hex": 0.44,
-		"normal_height_scale_hex": 0.85,
+		"normal_sample_radius_hex": 1.35,
+		"normal_height_scale_hex": 2.10,
 	}

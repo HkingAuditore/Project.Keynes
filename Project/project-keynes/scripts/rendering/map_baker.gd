@@ -447,8 +447,8 @@ const CRAG_FREQ_MUL := 1.05    # 岩屑频率乘子
 const HYPSO_LAYER_A_MIX := 0.0    # [bimodal 2026-06-26] 置 0：双峰地台模型已产出平台，Layer A 关闭
 
 # [terrain-normal-bake 2026-06-25] 生成期烘焙"总体地形法线"（粗法线）的参数。
-const TERRAIN_NORMAL_SAMPLE_RADIUS_HEX := 0.44 # 每侧采样半径（hex），跨地图尺寸保持一致
-const TERRAIN_NORMAL_HEIGHT_SCALE_HEX := 0.85  # 归一高程 1.0 对应的视觉垂直尺度（×hex_size）
+const TERRAIN_NORMAL_SAMPLE_RADIUS_HEX := 1.35 # 宽半径低通：强调山系/盆地走向，过滤格内碎起伏
+const TERRAIN_NORMAL_HEIGHT_SCALE_HEX := 2.10  # 宏观法线的视觉垂直夸张；不改权威 elevation
 
 # ─── 轻度侵蚀（仅做边界平滑，不刻河谷） ──────────────────────────────────
 const EROSION_DROPS := 6000

@@ -597,6 +597,8 @@ bool NativeEconomyRuntime::rebuild_merchant_ranges(std::string &error) {
     _merchant_primary_slot.assign(_cell_count, -1);
     _merchant_offsets.assign(_cell_count + 1, 0);
     _merchant_slots.clear();
+    _merchant_nonempty_cells.clear();
+    _merchant_nonempty_cells_valid = false;
     for (int32_t cell = 0; cell < _cell_count; ++cell) {
         auto collect_cell_merchants = [&]() {
             _merchant_slots.resize(static_cast<size_t>(_merchant_offsets[cell]));
@@ -627,8 +629,10 @@ bool NativeEconomyRuntime::rebuild_merchant_ranges(std::string &error) {
         _merchant_offsets[cell + 1] = static_cast<int32_t>(_merchant_slots.size());
         if (_merchant_offsets[cell + 1] > _merchant_offsets[cell]) {
             _merchant_primary_slot[cell] = _merchant_slots[_merchant_offsets[cell]];
+            _merchant_nonempty_cells.push_back(cell);
         }
     }
+    _merchant_nonempty_cells_valid = true;
     return true;
 }
 
@@ -1426,7 +1430,12 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
     _epoch_country_merchant_population.assign(
         static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
     if (_merchant_offsets.size() == static_cast<size_t>(_cell_count + 1)) {
-        for (int32_t cell = 0; cell < _cell_count; ++cell) {
+        const bool use_index = _merchant_nonempty_cells_valid;
+        const int32_t scan_count = use_index
+            ? static_cast<int32_t>(_merchant_nonempty_cells.size()) : _cell_count;
+        for (int32_t scan = 0; scan < scan_count; ++scan) {
+            const int32_t cell = use_index ? _merchant_nonempty_cells[
+                static_cast<size_t>(scan)] : scan;
             const int32_t country = _epoch_cell_country[cell];
             if (country < 0 || country >= _epoch_country_count) continue;
             for (int32_t k = _merchant_offsets[cell];
@@ -4018,7 +4027,13 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
         active_begin, 0, static_cast<int32_t>(active_cells.size()));
     active_end = std::clamp<int32_t>(
         active_end, active_begin, static_cast<int32_t>(active_cells.size()));
-    thread_local std::vector<int32_t> owner_seen_cell;
+    // owner_seen_key 是 (generation, cell) 复合 stamp。原来这里是
+    // owner_seen_cell.assign(_signatures.size(), -1)：每次调用都要写一遍整张
+    // signature 表（随存档规模单调增长，且永不收缩）才能清掉上一次的残留，而单次
+    // 调用实际触碰到的 owner 只有当前格的几个。把 generation 编进 stamp 后旧值自动
+    // 失效，清表成本从 O(signatures) 降到 0——这也是"把切片调细反而不省时间"的来源。
+    thread_local std::vector<uint64_t> owner_seen_key;
+    thread_local uint64_t owner_seen_generation = 0;
     thread_local std::vector<uint8_t> owner_output_flags;
     thread_local std::vector<int64_t> owner_relevant_output;
     thread_local std::vector<int64_t> owner_floor_q16;
@@ -4029,7 +4044,8 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
     // save diagnostics stay ABI-compatible. The planner branch below is
     // permanently disabled; suspended buildings never purchase or produce.
     thread_local std::vector<std::pair<int32_t, int64_t>> recovery_probe_goods;
-    owner_seen_cell.assign(_signatures.size(), -1);
+    ++owner_seen_generation;
+    owner_seen_key.resize(_signatures.size(), 0);
     owner_output_flags.resize(_signatures.size());
     owner_relevant_output.resize(_signatures.size());
     owner_floor_q16.resize(_signatures.size());
@@ -4040,16 +4056,18 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
             const int32_t cell = active_cells[active];
             const int32_t begin = _building_cell_offsets[cell];
             const int32_t end = _building_cell_offsets[cell + 1];
+            const uint64_t cell_key = (owner_seen_generation << 32) |
+                static_cast<uint32_t>(cell);
             touched_owners.clear();
             for (int32_t g = begin; g < end; ++g) {
                 const BuildingGroup &group = _buildings[g];
                 if (group.count <= 0 || group.operating_state != 0 ||
                     !building_available(cell, group.type_id, true)) continue;
                 if (group.owner_signature_id < 0 || group.owner_signature_id >=
-                        static_cast<int32_t>(owner_seen_cell.size())) continue;
+                        static_cast<int32_t>(owner_seen_key.size())) continue;
                 const int32_t owner = group.owner_signature_id;
-                if (owner_seen_cell[owner] != cell) {
-                    owner_seen_cell[owner] = cell;
+                if (owner_seen_key[owner] != cell_key) {
+                    owner_seen_key[owner] = cell_key;
                     owner_output_flags[owner] = 0;
                     owner_relevant_output[owner] = 0;
                     owner_floor_q16[owner] = 0;
@@ -4071,8 +4089,8 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
                 if (group.count <= 0 || group.operating_state != 0 ||
                     !building_available(cell, group.type_id, true)) continue;
                 const int32_t owner = group.owner_signature_id;
-                if (owner < 0 || owner >= static_cast<int32_t>(owner_seen_cell.size()) ||
-                    owner_seen_cell[owner] != cell || (owner_output_flags[owner] & 5) == 0)
+                if (owner < 0 || owner >= static_cast<int32_t>(owner_seen_key.size()) ||
+                    owner_seen_key[owner] != cell_key || (owner_output_flags[owner] & 5) == 0)
                     continue;
                 const BuildingType &type = _building_types[group.type_id];
                 int64_t group_relevant_output = 0;
@@ -4143,8 +4161,8 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
                 const BuildingGroup &group = _buildings[g];
                 const int32_t owner = group.owner_signature_id;
                 if (group.count <= 0 || group.operating_state != 0 ||
-                    owner < 0 || owner >= static_cast<int32_t>(owner_seen_cell.size()) ||
-                    owner_seen_cell[owner] != cell || owner_floor_q16[owner] <= 0 ||
+                    owner < 0 || owner >= static_cast<int32_t>(owner_seen_key.size()) ||
+                    owner_seen_key[owner] != cell_key || owner_floor_q16[owner] <= 0 ||
                     !building_available(cell, group.type_id, true)) continue;
                 const BuildingType &type = _building_types[group.type_id];
                 int64_t group_floor_q16 = 0;
@@ -4296,6 +4314,58 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
                     return a.required_credit < b.required_credit;
                 return a.group < b.group;
             });
+    // monetary_units 是一个格级标量：同格所有 operating 且产出货币性商品的 group 的
+    // count 之和。原来每个 group 都重扫一遍同格全部 peer 来求它，单格 G 个 group 就是
+    // O(G^2)，而且内层还要为每个 peer 再遍历一遍它的 output 列表。改成按格缓存 +
+    // 按 type 预判 emits_monetary：每格只扫一次，peer 判定退化成一次查表。
+    thread_local std::vector<uint8_t> type_emits_monetary;
+    type_emits_monetary.assign(_building_types.size(), 0);
+    for (size_t type_index = 0; type_index < _building_types.size(); ++type_index) {
+        const BuildingType &monetary_type = _building_types[type_index];
+        for (int32_t i = 0; i < monetary_type.output_count; ++i) {
+            const int32_t good =
+                _building_outputs[monetary_type.output_begin + i].good_id;
+            if (good >= 0 && good < static_cast<int32_t>(
+                    _good_monetary_issue_values.size()) &&
+                _good_monetary_issue_values[good] > 0) {
+                type_emits_monetary[type_index] = 1;
+                break;
+            }
+        }
+    }
+    thread_local std::vector<int64_t> cell_monetary_units;
+    thread_local std::vector<uint64_t> cell_monetary_units_key;
+    thread_local uint64_t monetary_units_generation = 0;
+    ++monetary_units_generation;
+    const size_t monetary_cell_slots = static_cast<size_t>(std::max(0, _cell_count));
+    cell_monetary_units.resize(monetary_cell_slots);
+    cell_monetary_units_key.resize(monetary_cell_slots, 0);
+    // 这个循环自己会翻转 operating_state，而 monetary_units 直接依赖它。每个写入点都
+    // 必须让所在格重算，否则缓存会冻结一份过期快照，铸币配额就不再逐位等价。
+    auto invalidate_cell_monetary_units = [&](int32_t cell) {
+        if (cell >= 0 && static_cast<size_t>(cell) < cell_monetary_units_key.size())
+            cell_monetary_units_key[static_cast<size_t>(cell)] = 0;
+    };
+    auto cell_monetary_units_for = [&](int32_t cell) -> int64_t {
+        if (cell < 0 || static_cast<size_t>(cell) >= cell_monetary_units_key.size())
+            return 0;
+        const size_t slot = static_cast<size_t>(cell);
+        if (cell_monetary_units_key[slot] == monetary_units_generation)
+            return cell_monetary_units[slot];
+        int64_t units = 0;
+        for (int32_t peer = _building_cell_offsets[cell];
+             peer < _building_cell_offsets[cell + 1]; ++peer) {
+            const BuildingGroup &peer_group = _buildings[peer];
+            if (peer_group.count <= 0 || peer_group.operating_state != 0 ||
+                peer_group.type_id < 0 || peer_group.type_id >=
+                    static_cast<int32_t>(type_emits_monetary.size())) continue;
+            if (type_emits_monetary[peer_group.type_id] == 0) continue;
+            units = saturating_add(units, peer_group.count, _saturation_count);
+        }
+        cell_monetary_units_key[slot] = monetary_units_generation;
+        cell_monetary_units[slot] = units;
+        return units;
+    };
         for (const RecoveryPlanOrder &order : group_order) {
         const int32_t group_index = order.group;
         BuildingGroup &group = _buildings[group_index];
@@ -4316,6 +4386,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
             group.pending_operating_state = 255;
             group.recovery_cycles = 0;
             group.recovery_cooldown_cycles = 0;
+            invalidate_cell_monetary_units(group.cell);
         }
         prepare_group_climate_capacity(group, type);
         if (type.kind == 2) {
@@ -4330,6 +4401,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
             group.recovery_failed_reviews = 0;
             group.pending_operating_state = 255;
             group.recovery_cooldown_cycles = 0;
+            invalidate_cell_monetary_units(group.cell);
         }
         bool produces_cycle_flow = false;
         bool produces_survival_food = false;
@@ -4452,6 +4524,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
             if (type.kind != 2 && group.operating_state == 2) {
                 group.operating_state = 1;
                 group.pending_operating_state = 255;
+                invalidate_cell_monetary_units(group.cell);
             }
             // Missing a technologically available hard input is a recoverable
             // execution blockage, not evidence of a realized operating loss.
@@ -4479,30 +4552,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
         int64_t monetary_group_quota_money = 0;
         int64_t monetary_group_request_money = 0;
         if (_building_cell_offsets.size() == static_cast<size_t>(_cell_count + 1)) {
-            int64_t monetary_units = 0;
-            for (int32_t peer = _building_cell_offsets[group.cell];
-                 peer < _building_cell_offsets[group.cell + 1]; ++peer) {
-                const BuildingGroup &peer_group = _buildings[peer];
-                if (peer_group.count <= 0 || peer_group.operating_state != 0 ||
-                    peer_group.type_id < 0 || peer_group.type_id >=
-                        static_cast<int32_t>(_building_types.size())) continue;
-                const BuildingType &peer_type = _building_types[peer_group.type_id];
-                bool emits_monetary = false;
-                for (int32_t peer_output = 0;
-                     peer_output < peer_type.output_count; ++peer_output) {
-                    const int32_t peer_good = _building_outputs[
-                        peer_type.output_begin + peer_output].good_id;
-                    if (peer_good >= 0 && peer_good < static_cast<int32_t>(
-                            _good_monetary_issue_values.size()) &&
-                        _good_monetary_issue_values[peer_good] > 0) {
-                        emits_monetary = true;
-                        break;
-                    }
-                }
-                if (emits_monetary)
-                    monetary_units = saturating_add(monetary_units,
-                        peer_group.count, _saturation_count);
-            }
+            const int64_t monetary_units = cell_monetary_units_for(group.cell);
             const int64_t cell_quota_money = bullion_cell_quota_remaining(
                 group.cell);
             if (cell_quota_money > 0 && monetary_units > 0)
@@ -4737,6 +4787,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
                 group.operating_state = 1;
                 group.recovery_cycles = 0;
                 suspended_now = true;
+                invalidate_cell_monetary_units(group.cell);
             } else {
                 // Zero settlement covers labor, input, resource and financing
                 // blockages. None is a realized loss observation.
@@ -4748,6 +4799,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
                 group.operating_state = 1;
                 group.recovery_cycles = 0;
                 suspended_now = true;
+                invalidate_cell_monetary_units(group.cell);
             }
         }
         if (type.kind != 2 && group.operating_state == 1 && !suspended_now &&
@@ -4976,6 +5028,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
                     group.pending_operating_state = 255;
                     group.recovery_cycles = 0;
                     ++_recovery_approved;
+                    invalidate_cell_monetary_units(group.cell);
                 }
             }
         }
@@ -5596,10 +5649,43 @@ void NativeEconomyRuntime::refresh_building_modifier_factors() {
     const uint64_t mod_version = _modifier_runtime != nullptr
         ? _modifier_runtime->building_output_stat_version()
         : 0;
+    // exact_building_mod_version 只由 type_id 决定，原来每个 group 各查一次 bucket
+    // 版本。组数随存档单调增长，类型数不变，故按类型算一遍复用。-1 表示尚未解析。
+    thread_local std::vector<uint64_t> exact_building_mod_version_by_type;
+    exact_building_mod_version_by_type.assign(
+        _city_building_output_stat_ids.size(),
+        std::numeric_limits<uint64_t>::max());
     for (size_t group_index = 0; group_index < _buildings.size();
          ++group_index) {
         BuildingGroup &group = _buildings[group_index];
         BuildingFactorCacheEntry &cache = _building_factor_cache[group_index];
+        const uint8_t count_positive = group.count > 0 ? uint8_t{1} : uint8_t{0};
+        const int32_t exact_building_stat_id = group.type_id >= 0 &&
+                group.type_id < static_cast<int32_t>(
+                    _city_building_output_stat_ids.size())
+            ? _city_building_output_stat_ids[static_cast<size_t>(group.type_id)]
+            : -1;
+        uint64_t exact_building_mod_version = 0;
+        if (_modifier_runtime != nullptr && exact_building_stat_id >= 0) {
+            uint64_t &memo = exact_building_mod_version_by_type[
+                static_cast<size_t>(group.type_id)];
+            if (memo == std::numeric_limits<uint64_t>::max())
+                memo = _modifier_runtime->stat_bucket_version(
+                    ModifierRuntime::ECONOMY, &exact_building_stat_id, 1);
+            exact_building_mod_version = memo;
+        }
+        // 空组无产出，其唯一非平凡输入（family-owned 混合）也已早退成 Q16_ONE。
+        // 身份与两个 modifier 版本都没变时，重算结果必然与缓存逐位一致，
+        // 于是省掉十几次 epoch 因子查表和一次家族持股遍历。
+        if (count_positive == 0 && cache.count_positive == 0 &&
+            cache.cell == group.cell && cache.type_id == group.type_id &&
+            cache.owner_signature_id == group.owner_signature_id &&
+            cache.mod_version == mod_version &&
+            cache.exact_building_mod_version == exact_building_mod_version) {
+            ++_building_factor_cache_hits;
+            ++_building_factor_cache_hits_epoch;
+            continue;
+        }
         const bool cell_country_valid = _modifier_runtime != nullptr &&
             group.cell >= 0 &&
             group.cell < static_cast<int32_t>(_epoch_cell_country.size());
@@ -5617,16 +5703,6 @@ void NativeEconomyRuntime::refresh_building_modifier_factors() {
                 group.type_id < static_cast<int32_t>(_building_types.size())
             ? _building_types[static_cast<size_t>(group.type_id)].economic_sector
             : 2;
-        const int32_t exact_building_stat_id = group.type_id >= 0 &&
-                group.type_id < static_cast<int32_t>(
-                    _city_building_output_stat_ids.size())
-            ? _city_building_output_stat_ids[static_cast<size_t>(group.type_id)]
-            : -1;
-        const uint64_t exact_building_mod_version =
-            _modifier_runtime != nullptr && exact_building_stat_id >= 0
-            ? _modifier_runtime->stat_bucket_version(
-                ModifierRuntime::ECONOMY, &exact_building_stat_id, 1)
-            : 0;
         const int64_t sector_factor_q16 = country_slot >= 0 &&
                 static_cast<size_t>(country_slot) * 5U + sector <
                     _epoch_country_sector_output_factor_q16.size()
@@ -5703,7 +5779,8 @@ void NativeEconomyRuntime::refresh_building_modifier_factors() {
             cache.exact_building_mod_version == exact_building_mod_version &&
             cache.cell == group.cell &&
             cache.type_id == group.type_id &&
-            cache.owner_signature_id == group.owner_signature_id) {
+            cache.owner_signature_id == group.owner_signature_id &&
+            cache.count_positive == count_positive) {
             ++_building_factor_cache_hits;
             ++_building_factor_cache_hits_epoch;
             continue;
@@ -5767,6 +5844,7 @@ void NativeEconomyRuntime::refresh_building_modifier_factors() {
         cache.cell = group.cell;
         cache.type_id = group.type_id;
         cache.owner_signature_id = group.owner_signature_id;
+        cache.count_positive = count_positive;
         _building_handle_index_clean = false;
     }
 }
@@ -6807,6 +6885,15 @@ bool NativeEconomyRuntime::should_run(int64_t day_index) const {
     }
     return _epoch_active || day_index > _last_committed_day ||
            trade_planner_should_run();
+}
+
+bool NativeEconomyRuntime::deadline_critical(int64_t day_index) const {
+    if (!_bootstrapped || _fatal || _save.active || _restore.active ||
+        _market_runtime_mode != 2) {
+        return false;
+    }
+    if (_epoch_active) return day_index >= _sample_day;
+    return day_index > _last_committed_day;
 }
 
 bool NativeEconomyRuntime::trade_planner_should_run() const {
@@ -8549,6 +8636,9 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
     _trade_plan_candidates_finalized_slice = 0;
     _publish_slice_phase_ms.fill(0.0);
     _publish_slice_phase_work.fill(0);
+    _publish_commit_cells_slice_ms = 0.0;
+    _publish_commit_prepare_slice_ms = 0.0;
+    _publish_commit_finalize_slice_ms = 0.0;
     _building_commit_slice_phase_ms.fill(0.0);
     _building_commit_slice_phase_work.fill(0);
     _household_slice_phase_ms.fill(0.0);
@@ -16040,6 +16130,8 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _merchant_primary_slot.clear();
     _merchant_offsets.clear();
     _merchant_slots.clear();
+    _merchant_nonempty_cells.clear();
+    _merchant_nonempty_cells_valid = false;
     _trace_cell_mask.clear();
     _pending_trace_cell_mask.clear();
     _trace_filter_pending = false;
@@ -16214,6 +16306,23 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _building_cell_offsets.clear();
     _building_active_cells.clear();
     _cell_last_settlement_day.clear();
+    _cell_elapsed_days.clear();
+    _epoch_elapsed_days_max = 0;
+    _epoch_elapsed_days_spread_cells = 0;
+    _epoch_elapsed_days_lost = 0;
+    _total_elapsed_days_lost = 0;
+    _peak_elapsed_days_spread_cells = 0;
+    _cell_tier.clear();
+    _cell_next_review_day.clear();
+    _cell_force_wake.clear();
+    _cell_tier_seen_gen.clear();
+    _cell_tier_seen_population.clear();
+    _cell_tier_change_day.clear();
+    _cell_shortage_since_day.clear();
+    _cell_population_total.clear();
+    for (int32_t i = 0; i < 4; ++i) _tier_histogram[i] = 0;
+    for (int32_t i = 0; i < TIER_REASON_COUNT; ++i) _tier_reason_histogram[i] = 0;
+    _tier_forced_wakes = 0;
     _cell_settlement_generation.clear();
     _cell_price_stock_gen.clear();
     _cell_owner_cash_gen.clear();

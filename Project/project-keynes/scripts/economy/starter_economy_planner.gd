@@ -534,6 +534,8 @@ static func _construction_groups(profile) -> Array[Dictionary]:
 	var offsets: PackedInt32Array = profile.construction_candidate_offsets
 	var candidate_ids: PackedStringArray = profile.construction_candidate_good_ids
 	var efficiencies: PackedInt32Array = profile.construction_candidate_efficiency_q16
+	var categories: PackedStringArray = profile.construction_category_ids
+	var min_levels: PackedInt32Array = profile.construction_min_quality_levels
 	for group_index in range(mini(good_ids.size(), quantities.size())):
 		var candidates: Array[Dictionary] = []
 		if offsets.size() == good_ids.size() + 1:
@@ -545,12 +547,40 @@ static func _construction_groups(profile) -> Array[Dictionary]:
 						"efficiency_q16": int(efficiencies[candidate_index]) \
 							if candidate_index < efficiencies.size() else Q16_ONE,
 					})
+		# EconomyCatalog expands a category group the same way; the starter
+		# contract is compared against the compiled CSR, so both readers must
+		# agree on the candidate set.
+		if candidates.is_empty() and categories.size() == good_ids.size():
+			var category_id := String(categories[group_index])
+			var min_level := int(min_levels[group_index]) \
+				if min_levels.size() == good_ids.size() else 0
+			candidates = _construction_category_candidates(category_id, min_level)
 		if candidates.is_empty():
 			candidates.append({"good_id": String(good_ids[group_index]),
 				"efficiency_q16": Q16_ONE})
 		groups.append({"preferred_good_id": String(good_ids[group_index]),
 			"quantity": int(quantities[group_index]), "candidates": candidates})
 	return groups
+
+
+static func _construction_category_candidates(category_id: String,
+		min_quality_level: int) -> Array[Dictionary]:
+	var candidates: Array[Dictionary] = []
+	if category_id.is_empty():
+		return candidates
+	for good_profile in GoodProfileRegistry.ordered():
+		if int(good_profile.production_quality_level) < min_quality_level:
+			continue
+		var roles: PackedStringArray = good_profile.substitution_category_ids
+		var member := roles.has(category_id) \
+			or (roles.is_empty() and String(good_profile.category_id) == category_id)
+		if not member:
+			continue
+		candidates.append({
+			"good_id": String(good_profile.id),
+			"efficiency_q16": int(good_profile.production_efficiency_q16),
+		})
+	return candidates
 
 
 static func _construction_groups_reachable(profile, reachable: Dictionary) -> bool:

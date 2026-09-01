@@ -144,6 +144,9 @@ const FIXED_COLUMNS: Array = [
 	"tail_vegetation_assemble_ms",
 	"tail_vegetation_upload_ms",
 	"tail_overlay_ms",
+	"tail_overlay_last_bake_ms",
+	"tail_overlay_interval_msec",
+	"tail_overlay_refresh_count",
 	# 帧级渲染残差探针：frame_wall_ms = 相邻 perf 行间的平均帧墙钟（引擎帧号差分，
 	# 1 tick/帧时即逐帧墙钟）；render_residual_ms = wall - clock_full - 已知帧尾
 	# （植被/标签/overlay）≈ 渲染提交 + GPU present + 未埋点 _process 节点。
@@ -156,6 +159,14 @@ const FIXED_COLUMNS: Array = [
 	"render_objects_in_frame",
 	"render_primitives_in_frame",
 	"render_draw_calls_in_frame",
+	"runtime_graph_pulse_count",
+	"runtime_graph_abi_calls",
+	"runtime_graph_gdscript_callbacks",
+	"runtime_graph_work_done",
+	"runtime_graph_budget_yields",
+	"runtime_graph_last_elapsed_us",
+	"runtime_graph_last_status",
+	"runtime_graph_dirty_mask",
 ]
 
 # 软上限：避免误开后台跑爆内存。约 60000 帧 ≈ 30 分钟 30FPS。
@@ -217,6 +228,8 @@ var _recording: bool = false
 var _rows: Array = []
 var _start_tick: int = 0
 var _hit_limit: bool = false
+var _detail_mode: String = "CORE"
+var _detail_period_days: int = 30
 
 
 func bind_main(m) -> void:
@@ -236,15 +249,18 @@ func hit_limit() -> bool:
 
 
 # 开始录制：清空缓冲。多次调用 start 等价于"丢弃旧录制重开"。
-func start() -> void:
+func start(detail_mode: String = "CORE", detail_period_days: int = 30) -> void:
 	_rows.clear()
 	_recording = true
 	_hit_limit = false
+	_detail_mode = "DETAIL" if detail_mode.to_upper() == "DETAIL" else "CORE"
+	_detail_period_days = maxi(1, detail_period_days)
 	if _main != null and _main.has_method("get_fast_tick_count"):
 		_start_tick = int(_main.get_fast_tick_count())
 	else:
 		_start_tick = 0
-	print("[perf-record] start (start_tick=%d)" % _start_tick)
+	print("[perf-record] start (start_tick=%d mode=%s detail_period=%d)" % [
+		_start_tick, _detail_mode, _detail_period_days])
 
 
 # 停止录制并导出。
@@ -315,16 +331,27 @@ func on_fast_tick(sample: Dictionary) -> void:
 
 	# 计算 row_idx（录制内序号，从 0 开始；区别于 tick_idx 的全局序号）
 	row["row_idx"] = _rows.size()
+	var runtime_graph = sample.get("runtime_graph", {})
+	if runtime_graph is Dictionary:
+		for key in ["pulse_count", "abi_calls", "gdscript_callbacks", "work_done",
+				"budget_yields", "economy_slices", "economy_commits",
+				"last_elapsed_us", "last_status", "dirty_mask"]:
+			row["runtime_graph_%s" % key] = runtime_graph.get(key, 0)
 
-	# 拉 SUS 数据（main 的 getter 已 duplicate，可放心写入 row）
+	# CORE 只保留固定帧/预算/守恒字段。完整 job/breakdown 展开属于 DETAIL，
+	# 默认不进入每帧热路径；DETAIL 也按日周期采样，避免重复序列化。
 	if _main != null:
 		if _main.has_method("get_sus_last_tick_summary"):
 			var summary: Dictionary = _main.get_sus_last_tick_summary()
 			_merge_summary(row, summary)
-		if _main.has_method("get_sus_last_tick_report"):
+		var detail_due := _detail_mode == "DETAIL" and (
+			int(sample.get("tick_idx", 0)) % _detail_period_days == 0 or
+			bool(sample.get("detail_requested", false)) or
+			bool(sample.get("anomaly", false)))
+		if detail_due and _main.has_method("get_sus_last_tick_report"):
 			var report: Dictionary = _main.get_sus_last_tick_report()
 			_merge_jobs(row, report, bool(sample.get("was_skipped_day", false)))
-		if _main.has_method("get_sim_breakdowns"):
+		if detail_due and _main.has_method("get_sim_breakdowns"):
 			var bds: Dictionary = _main.get_sim_breakdowns()
 			_merge_breakdowns(row, bds)
 

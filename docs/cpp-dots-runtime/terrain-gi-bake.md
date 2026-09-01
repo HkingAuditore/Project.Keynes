@@ -283,8 +283,8 @@ physical texel 估算，增量约 8 MB 传输，horizon bake 总时长预计 +40
 
 | uniform | 默认 | 作用 |
 | --- | ---: | --- |
-| `gi_ao_strength` | 0.85 | V_sky 对 ambient 的作用强度，0 = 回退到接入 GI 之前 |
-| `gi_ao_floor` | 0.45 | V_sky 下限，防封闭地形死黑 |
+| `gi_ao_strength` | 0.90 | V_sky 对 ambient 的作用强度，0 = 回退到接入 GI 之前 |
+| `gi_ao_floor` | 0.38 | V_sky 下限，防封闭地形死黑 |
 | `gi_ao_smoothing` | 0.75 | 0=双线性、1=2×2 箱式低通，滤掉高度残差在 AO 上的颗粒 |
 | `gi_bent_strength` | 0.35 | bent normal 相对几何法线的**偏转**量，0 = 用几何法线 |
 | `gi_normal_floor` | 0.85 | 倾斜法线修正下限，1.0 = 完全关掉该二阶项 |

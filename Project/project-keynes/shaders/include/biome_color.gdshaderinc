@@ -142,13 +142,12 @@ vec3 hypsometric_tint(float elev, bool is_water) {
 		return water_depth_gradient(offshore_t, elev);
 	}
 	float t = clamp((elev - sea_level) / max(1.0 - sea_level, 0.001), 0.0, 1.0);
-	if (t < 0.10) return mix(color_beach, color_lowland, t / 0.10);
-	// v10.2：低地→丘陵→山地段全部扩宽，让更多 cell 落在"中等海拔"色阶
-	// 而不是被推到 mountain/peak/snow 顶端
-	if (t < 0.55) return mix(color_lowland, color_hill, (t - 0.10) / 0.45);
-	if (t < 0.85) return mix(color_hill, color_mountain, (t - 0.55) / 0.30);
+	if (t < 0.08) return mix(color_beach, color_lowland, t / 0.08);
+	// 宏观起伏强化：适度收紧高程色带，让高地与山腰在高环境光下仍能分层。
+	if (t < 0.42) return mix(color_lowland, color_hill, (t - 0.08) / 0.34);
+	if (t < 0.72) return mix(color_hill, color_mountain, (t - 0.42) / 0.30);
 	// 最高海拔只给冷岩底色；真正积雪由动态 snow_factor 叠加，避免高山底图终年锁白。
-	if (t < 0.985) return mix(color_mountain, color_peak, (t - 0.85) / 0.135);
+	if (t < 0.94) return mix(color_mountain, color_peak, (t - 0.72) / 0.22);
 	return color_peak * vec3(1.04, 1.05, 1.06);
 }
 

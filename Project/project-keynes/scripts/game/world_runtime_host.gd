@@ -17,6 +17,11 @@ const MOBILE_NATURAL_RESOURCE_STRIDE_DAYS: int = 10
 const MOBILE_DYNAMIC_VISUAL_ATLAS_STRIDE: int = 8
 const MOBILE_WEATHER_FIELD_ADVECT_STEPS: int = 2
 const MAP_OVERLAY_REFRESH_INTERVAL_MSEC: int = 100
+# overlay 重烘焙是主线程 UI 工作，但「脏」标记由每个模拟日打出，高速下等于永久脏，
+# 于是固定 100ms 节流会让它按实测成本无上限地吃墙钟（观测到单模拟日 102ms，是当日
+# 模拟成本的六倍）。改为按实测成本反推间隔，把占空比压到 MAP_OVERLAY_DUTY 以内。
+const MAP_OVERLAY_MAX_REFRESH_INTERVAL_MSEC: int = 750
+const MAP_OVERLAY_DUTY: float = 0.05
 const SettlementLabelLayerScript = preload(
 	"res://scripts/rendering/settlement_label_layer.gd")
 const PkmapIOScript = preload("res://scripts/geography/pkmap_io.gd")
@@ -85,6 +90,8 @@ var _map_overlay_last_refresh_msec: int = 0
 var _map_overlay_refresh_count: int = 0
 var _map_overlay_merged_dirty_count: int = 0
 var _map_overlay_last_result: Dictionary = {}
+# 上一次重烘焙的实测毫秒，用于把 overlay 的墙钟占用限制在固定占空比内。
+var _map_overlay_last_bake_ms: float = 0.0
 # 帧尾诊断累加器：自上一 perf 行以来的 overlay 重烘焙总毫秒（发布时清零）。
 var _overlay_bake_ms_accum: float = 0.0
 # 帧墙钟：在 fast-tick 发布点用 Engine.get_process_frames() 差分测量（本节点
@@ -479,6 +486,8 @@ func map_overlay_diagnostics() -> Dictionary:
 		"request": _map_overlay_request.duplicate(),
 		"refresh_count": _map_overlay_refresh_count,
 		"merged_dirty_count": _map_overlay_merged_dirty_count,
+		"last_bake_ms": _map_overlay_last_bake_ms,
+		"refresh_interval_msec": _map_overlay_refresh_interval_msec(),
 		"last_result": _map_overlay_last_result.duplicate(),
 	}
 
@@ -493,12 +502,19 @@ func _process(_delta: float) -> void:
 	_refresh_map_overlay(false)
 
 
+func _map_overlay_refresh_interval_msec() -> int:
+	if _map_overlay_last_bake_ms <= 0.0:
+		return MAP_OVERLAY_REFRESH_INTERVAL_MSEC
+	return clampi(int(ceil(_map_overlay_last_bake_ms / MAP_OVERLAY_DUTY)),
+		MAP_OVERLAY_REFRESH_INTERVAL_MSEC, MAP_OVERLAY_MAX_REFRESH_INTERVAL_MSEC)
+
+
 func _refresh_map_overlay(force: bool) -> void:
 	if _map_overlay_layer == null or _current_map == null or _world_data == null \
 			or _view_adapter == null or _map_overlay_request.is_empty():
 		return
 	var now := Time.get_ticks_msec()
-	if not force and now - _map_overlay_last_refresh_msec < MAP_OVERLAY_REFRESH_INTERVAL_MSEC:
+	if not force and now - _map_overlay_last_refresh_msec < _map_overlay_refresh_interval_msec():
 		return
 	var mode := int(_map_overlay_request.get("mode", OverlayMode.MODE.NONE))
 	var resource_profile: ResourceProfile = null
@@ -538,7 +554,9 @@ func _refresh_map_overlay(force: bool) -> void:
 		"encode_upload_ms": (Time.get_ticks_usec() - started) / 1000.0,
 		"stats": result.get("stats", {}),
 	}
-	_overlay_bake_ms_accum += float(_map_overlay_last_result.get("encode_upload_ms", 0.0))
+	_map_overlay_last_bake_ms = float(
+		_map_overlay_last_result.get("encode_upload_ms", 0.0))
+	_overlay_bake_ms_accum += _map_overlay_last_bake_ms
 
 
 func finish_daily_tick(ui_ms: float, ui_breakdown: Dictionary = {}) -> void:
@@ -668,9 +686,11 @@ func get_sim_breakdowns() -> Dictionary:
 	var economy_job = tick_report.get("economy_daily", {})
 	var economy_report: Dictionary = {}
 	if economy_job is Dictionary \
-			and str((economy_job as Dictionary).get("skipped_reason", "")) == "" \
-			and _generator.has_method("get_economy_report"):
-		economy_report = _generator.get_economy_report()
+		and str((economy_job as Dictionary).get("skipped_reason", "")) == "" \
+		and _generator.has_method("get_economy_perf_report"):
+		# Use the cached compact snapshot. Building the full economy report here
+		# used to allocate hundreds of fields on every fast tick.
+		economy_report = _generator.get_economy_perf_report()
 		if not economy_report.is_empty():
 			economy_report["_tick_idx"] = _fast_tick_count
 			out["economy"] = economy_report
@@ -700,6 +720,11 @@ func get_sim_breakdowns() -> Dictionary:
 		if bool(effect.get("configured", false)):
 			effect["_tick_idx"] = _fast_tick_count
 			out["effect"] = effect
+	if _generator.has_method("get_runtime_perf_snapshot"):
+		var graph: Dictionary = _generator.get_runtime_perf_snapshot(0)
+		if not graph.is_empty():
+			graph["_tick_idx"] = _fast_tick_count
+			out["runtime_graph"] = graph
 	return out.duplicate(false)
 
 
@@ -2273,10 +2298,15 @@ func _publish_fast_tick_perf_sample(
 		"tail_vegetation_assemble_ms": float(detail_report.get("assemble_ms", 0.0)),
 		"tail_vegetation_upload_ms": float(detail_report.get("upload_ms", 0.0)),
 		"tail_overlay_ms": _overlay_bake_ms_accum,
+		"tail_overlay_last_bake_ms": _map_overlay_last_bake_ms,
+		"tail_overlay_interval_msec": _map_overlay_refresh_interval_msec(),
+		"tail_overlay_refresh_count": _map_overlay_refresh_count,
 		# 帧级渲染残差探针：frame_wall = 相邻两次发布点间的平均帧墙钟（process
 		# frames 差分，多 tick 帧取平均）；engine_process/physics 为引擎监视器原始
 		# 值（信息列，其口径与帧墙钟不严格可比）；residual = wall - clock_full -
 		# 已知帧尾探针 ≈ 渲染提交 + GPU present + 未埋点 _process 节点。
+		# overlay 项只减「最近一次烘焙」而不是跨帧累加值：accum 的时间基准是相邻
+		# 两行之间，拿它去减单帧均值会把 residual 恒压成 0，废掉这一列。
 		"frame_wall_ms": _last_frame_wall_ms,
 		"engine_process_ms": Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0,
 		"engine_physics_ms": Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0,
@@ -2289,7 +2319,7 @@ func _publish_fast_tick_perf_sample(
 				if _renderer != null and _renderer.has_method("get_last_detail_drain_ms") else 0.0)
 			- (_settlement_label_layer.get_last_rebuild_ms() \
 				if _settlement_label_layer != null else 0.0)
-			- _overlay_bake_ms_accum),
+			- _map_overlay_last_bake_ms),
 	}
 	_overlay_bake_ms_accum = 0.0
 	if _generator != null and _generator.has_method("sus_climate_breakdown"):
@@ -2304,6 +2334,12 @@ func _publish_fast_tick_perf_sample(
 		var ocean_diag: Dictionary = _generator.sus_ocean_currents_breakdown()
 		if not ocean_diag.is_empty():
 			sample["ocean_currents"] = ocean_diag
+	if perf_ready and _perf_recorder != null and _perf_recorder.has_method("is_recording") \
+			and bool(_perf_recorder.is_recording()) \
+			and _generator != null and _generator.has_method("get_runtime_perf_snapshot"):
+		var runtime_graph: Dictionary = _generator.get_runtime_perf_snapshot(0)
+		if not runtime_graph.is_empty():
+			sample["runtime_graph"] = runtime_graph
 	if perf_ready:
 		var perf_started_usec := Time.get_ticks_usec()
 		_perf_recorder.call("on_fast_tick", sample)

@@ -21,8 +21,8 @@ show_behind_parent = true
 top_level = true
 script = ExtResource("2_renderer")
 weather_strength = 0.5
-terrain_horizon_strength = 0.8
-terrain_horizon_softness = 0.52
+terrain_horizon_strength = 0.9
+terrain_horizon_softness = 0.3
 terrain_horizon_max_angle = 1.5708
 terrain_horizon_cast_floor = 0.41
 

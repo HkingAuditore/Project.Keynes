@@ -38,8 +38,8 @@ terrain_material_albedo_strength = 0.62
 terrain_material_normal_strength = 0.425
 terrain_material_roughness_strength = 0.69
 terrain_material_world_size = 256.0
-terrain_horizon_strength = 0.8
-terrain_horizon_softness = 0.75
+terrain_horizon_strength = 0.9
+terrain_horizon_softness = 0.3
 terrain_horizon_max_angle = 1.5708
 terrain_horizon_cast_floor = 0.41
 

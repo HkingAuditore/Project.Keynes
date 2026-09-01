@@ -844,7 +844,10 @@ Dictionary DCWorldExt::run_my_pass(Dictionary knobs) {
 142 个 component entries（另含 `cell.resource_habitat_mask`，以及 `owner="vision"`
 的 `cell.visible` / `cell.explored`）。goods、building、profession 和 technology tags 仍只存在于 economy
 catalog/native runtime，不进入 MapData。`DCWorldExt` 在 sample boundary 批量解析资源 slot，生产
-结束后按资源列批量写回 extra-change，边界内没有逐 cell Object 调用。
+结束后按资源列把 extra-change 留在 C++ resident slot；普通 refresh 会跳过这些 lane，避免每次
+economy commit 将整列镜像回 `MapData`。native natural-resource pass 是首次消费后的发布边界：它
+合并 reserve/extra-change、flush 结果到 `MapData`，再解除 resident 标记。若 native resource pass
+不可用，兼容 fallback 仍走完整同步和 GDScript 路径。边界内没有逐 cell Object 调用。
 
 ## 排查 checklist
 
@@ -1015,6 +1018,44 @@ between-slice bulk refreshes from restoring the frozen visible value over the
 in-flight native slot. Native failure paths release the protection without
 publishing a partial value.
 
+## Pass-A round-commit bridge (2026-09-01)
+
+Pass-A also runs with `defer_visible_publish=true` on every native-daily slice,
+so its own `_flush_slot_to_map()` block never executes on the production path.
+The sliced bundle additionally sets `flush_slots_to_map=false`, because each
+native pass is expected to publish its own slots. Pass-A cannot, so without a
+dedicated commit its whole slot family stays frozen at the last non-deferred
+call — in practice the generation-era day-0 values.
+
+`run_native_daily_slice_from_job()` therefore publishes
+`NATIVE_DAILY_PASS_A_DEFERRED_SLOTS` (see `world_ext_daily_sim.cpp`) at round
+completion whenever the bundle carries `climate_pass_a_struct`:
+`cell_temp_baseline`, `cell_temp_season_offset`, `cell_ema_initialized`,
+`cell_temp_30d`, `cell_temp_365d`, `cell_temp_anomaly`, `cell_insolation_now`,
+`cell_insolation_dev`, `cell_day_length`, `cell_heat_input`,
+`cell_thermal_energy`, `cell_snowpack`. The breakdown reports
+`pass_a_deferred_publish_slots` / `pass_a_deferred_publish_ms`, and the slots
+are declared through `native_daily_collect_published_slots`.
+
+`cell_moisture` is excluded on purpose — it has the moisture commit transaction
+above. The ocean/local anomaly slots are excluded too, because pass_b and the
+ocean nodes flush them and the GDScript ocean cache aliases those arrays across
+rounds.
+
+This commit matters beyond visibility. The sliced bundle keeps
+`refresh_slots_from_map=true`, so a stale mirror is imported back into the slot
+at the next round start. For integrator state such as `cell_thermal_energy` and
+the temperature EMAs, a frozen mirror means the round-start refresh resets the
+integration to day-0 values every round, which reads as "temperature barely
+tracks the sun, then jumps".
+
+Consumers that must see the *current* day rather than the last committed round
+read the live slot directly instead of the mirror:
+`MapGenerator._native_daily_live_f32/_native_daily_live_u8` resolve
+`component_id()` and then `snapshot_f32()/snapshot_u8()`, and back the sea-ice
+solar gate (`cell_insolation_now`) and the ocean knobs
+(`cell_temp_baseline`, `cell_ema_initialized`).
+
 ## Settlement query bridge
 
 Prosperity and names have no DataCore slot or MapData mirror.
@@ -1128,3 +1169,16 @@ sparse fog dirty indices and sparse 0→1 observations. Bio additions use the sa
 native eligibility mask and enqueue directly into
 `NativeCountryRuntime::submit_observation_batch()`.
 
+# Runtime graph pulse boundary
+
+`DCWorldExt.configure_runtime_graph()` is a cold-path configuration call. When
+the profile is explicitly set to `native_runtime_graph_mode = ACTIVE`, the
+continuation callback issues at most one `advance_runtime_pulse()` per render
+frame. The native graph owns only cursors, generations and scheduling counters;
+country, economy, trigger, ideology, effect and modifier state remains in the
+existing native runtimes. The returned 64-bit token carries status and dirty
+mask, so the hot path does not request a diagnostic `Dictionary`.
+
+`get_runtime_perf_snapshot(detail_level)` is diagnostic-only. Visual buffers are
+flushed through `flush_runtime_visuals()` after a committed generation and are
+never observed from staging state.

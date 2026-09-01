@@ -2,6 +2,8 @@ extends PanelContainer
 class_name ColonizationPlannerPanel
 
 const FamilyRowScene := preload("res://scenes/ui/colonization_family_row.tscn")
+# Mirrors COLONIZATION_RESERVE_SOURCE_FLOOR_DAYS in the native economy runtime.
+const SOURCE_FLOOR_DAYS := 10
 
 signal closed()
 signal route_requested(detail: Dictionary)
@@ -393,6 +395,8 @@ static func _reason_text(code: String) -> String:
 		"colonization_kit_materials_short": "源地市场库存不足，无法抽出开工包物资。",
 		"colonization_preparing": "开拓队已开始筹备，人仍留在源地生产缺货物资。",
 		"colonization_cancelled": "开拓筹备已取消，目标占用已释放。",
+		"PREPARING_UNBUILDABLE": "源地无法获得开工包所需建材，筹备已中止，托管物资已退回。",
+		"PREPARING_ABORTED": "源分支人口已不足，开拓筹备中止。",
 		"colonization_quote_expired": "报价已过期，请重新选择要派遣的家族。",
 		"colonization_quote_corrupt": "报价数据已失效，请重新打开开拓面板。",
 		"colonization_quote_forbidden": "报价不属于玩家国家。",
@@ -479,7 +483,8 @@ func _update_start_enabled() -> void:
 		_start.tooltip_text = _kit_summary_text(_selected_quote)
 	elif preparing_kit:
 		_start.text = "开始筹备 %s 人" % count_text if has_selection else "开始筹备"
-		_start.tooltip_text = "占用目标并每日检查缺货；人留在源地继续生产，齐套后再出发。"
+		_start.tooltip_text = "占用目标；人留在源地继续生产，每日把源地余量收进队伍库存" \
+			+ "（保留本地 %d 天口粮），凑齐后自动出发。" % SOURCE_FLOOR_DAYS
 	else:
 		_start.text = "派遣 %s 人" % count_text if has_selection else "确认派遣"
 		_start.tooltip_text = "基础物资不足，只携带当前可用物资" if kit_partial \
@@ -556,20 +561,54 @@ func _preparing_missing_text(handle: int, state: int) -> String:
 	var snap: Dictionary = _controller.get_family_expedition_snapshot(handle)
 	if not bool(snap.get("ok", false)):
 		return ""
+	var lines := PackedStringArray()
+	# The party only leaves once both the survival bridge and the whole opening
+	# build plan are funded, so a single percentage has to cover both. Showing
+	# the bridge alone is what used to read 100% while the kit was still short.
+	var bridge_required := int(snap.get("kit_bridge_required_units", 0))
+	var bridge_missing := int(snap.get("kit_bridge_missing_units", 0))
+	var material_required := int(snap.get("kit_material_required_units", 0))
+	var material_missing := int(snap.get("kit_material_missing_units", 0))
+	var required := bridge_required + material_required
+	var missing := bridge_missing + material_missing
+	if required > 0:
+		lines.append("已囤积 %d%%（口粮 %d%% / 建材 %d%%），每日自动收进源地余量（保留本地 %d 天口粮）" % [
+			clampi(required - missing, 0, required) * 100 / required,
+			_stock_percent(bridge_required, bridge_missing),
+			_stock_percent(material_required, material_missing),
+			SOURCE_FLOOR_DAYS])
+	var blocker := String(snap.get("kit_blocker", ""))
+	match blocker:
+		"UNBUILDABLE":
+			lines.append("源地无法获得开工包所需的某组建材，筹备将中止并退回托管物资")
+		"NO_BUILDINGS":
+			lines.append("目标地块放不下任何开工建筑，筹备无法完成")
+		"READY":
+			lines.append("开工包已齐套，等待出发")
+		"BRIDGE":
+			lines.append("仍缺路上口粮，等源地产出")
+		"MATERIALS":
+			lines.append("仍缺开工建材，等源地产出")
 	var ids: PackedInt32Array = snap.get("kit_missing_good_ids", PackedInt32Array())
 	var qtys: PackedInt64Array = snap.get(
 		"kit_missing_good_quantities", PackedInt64Array())
-	if ids.is_empty():
-		return "筹备中，等待开工包齐套"
-	var parts := PackedStringArray()
-	for i in range(ids.size()):
-		var qty := int(qtys[i]) if i < qtys.size() else 0
-		var good_name := "物资#%d" % int(ids[i])
-		if _controller != null and _controller.has_method("good_display_name"):
-			good_name = String(_controller.good_display_name(int(ids[i])))
-		parts.append("%s 当前库存 %s" % [good_name,
-			UITokens.format_compact_number_cn(float(qty) / 1000.0, 1)])
-	return "可替代物资当前库存仍不足：" + "，".join(parts)
+	if not ids.is_empty():
+		var parts := PackedStringArray()
+		for i in range(ids.size()):
+			var qty := int(qtys[i]) if i < qtys.size() else 0
+			var good_name := "物资#%d" % int(ids[i])
+			if _controller.has_method("good_display_name"):
+				good_name = String(_controller.good_display_name(int(ids[i])))
+			parts.append("%s %s" % [good_name,
+				UITokens.format_compact_number_cn(float(qty) / 1000.0, 1)])
+		lines.append("下列物资任选其一即可顶替，源地现货：" + "，".join(parts))
+	return "\n".join(lines)
+
+
+static func _stock_percent(required: int, missing: int) -> int:
+	if required <= 0:
+		return 100
+	return clampi(required - missing, 0, required) * 100 / required
 
 
 func _expedition_row_tooltip(handle: int, state: int, due_day: int) -> String:

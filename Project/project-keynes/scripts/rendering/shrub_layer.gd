@@ -115,8 +115,8 @@ uniform int veg_shade_quality = 2;            // 0/1/2：q2 才采高度图邻�
 // [terrain-horizon 2026-07-03] 与地形同源的 8 方向 horizon shadow。同级性能档位：veg_shade_quality>=1 才采样。
 uniform bool terrain_horizon_tex_bound = false;
 uniform float terrain_horizon_max_angle = 1.309;
-uniform float terrain_horizon_softness = 0.16;
-uniform float terrain_horizon_strength = 0.70;
+uniform float terrain_horizon_softness = 0.30;
+uniform float terrain_horizon_strength = 0.90;
 uniform float terrain_horizon_cast_floor = 0.82;
 uniform int terrain_horizon_debug_view = 0;
 // [terrain-gi 2026-07-31] 与地形共用的天空可见度 GI。植被必须跟地形用同一份 horizon
@@ -124,8 +124,8 @@ uniform int terrain_horizon_debug_view = 0;
 // gi_horizon_lut[n] = vec3(cos²(h_n), cos(m_n), sin(m_n))，由 HexRenderer 预计算推送。
 uniform bool gi_lut_bound = false;
 uniform vec3 gi_horizon_lut[16];
-uniform float gi_ao_strength : hint_range(0.0, 1.0) = 0.85;
-uniform float gi_ao_floor : hint_range(0.0, 1.0) = 0.45;
+uniform float gi_ao_strength : hint_range(0.0, 1.0) = 0.90;
+uniform float gi_ao_floor : hint_range(0.0, 1.0) = 0.38;
 uniform float gi_bent_strength : hint_range(0.0, 1.0) = 0.35;
 uniform float gi_normal_floor : hint_range(0.0, 1.0) = 0.85;
 uniform float shading_enabled = 1.0;          // 0=退化回旧"平直昼夜"着色

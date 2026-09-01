@@ -83,8 +83,23 @@ public:
         EFFECT_EVENT_VALUE = 4,
     };
 
+    struct EventInput {
+        int32_t source_id = 0;
+        int64_t event_id = 0;
+        int64_t day = 0;
+        int32_t event_type = 0;
+        int32_t payload_schema = 0;
+        uint64_t entity_handle = 0;
+        uint64_t group_handle = 0;
+        int64_t value = 1;
+        std::array<int64_t, 4> payload{};
+    };
+
     godot::Dictionary configure(const godot::Dictionary &catalog);
     godot::Dictionary submit_events(const godot::Dictionary &batch);
+    bool submit_events_pod(const EventInput *events, size_t count,
+                           size_t &accepted, int64_t &last_accepted,
+                           std::string &error);
     godot::Dictionary submit_snapshots(const godot::Dictionary &batch);
     godot::Dictionary run_daily(int64_t day_index);
     godot::Dictionary poll_effects(int64_t after_effect_id, int32_t limit) const;

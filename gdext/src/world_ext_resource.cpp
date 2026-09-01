@@ -377,6 +377,9 @@ Dictionary DCWorldExt::get_natural_resource_regen_factors(
         _natural_resource_regen_factors.resize(factor_count);
         float * const factors = _natural_resource_regen_factors.ptrw();
         _natural_resource_modifier_active_factor_count = 0;
+        _natural_resource_regen_resource_active.assign(
+            static_cast<size_t>(resource_ids.size()), uint8_t{0});
+        _natural_resource_regen_summary_rejected = false;
         const int32_t generic_stat = modifier_ready
             ? modifier->stat_id_for_key("economy.city.resource.regen_factor") : -1;
         for (int32_t resource = 0; resource < resource_ids.size(); ++resource) {
@@ -397,11 +400,20 @@ Dictionary DCWorldExt::get_natural_resource_regen_factors(
                         static_cast<uint64_t>(cell), factor);
                 }
                 if (!std::isfinite(factor)) factor = 1.0;
-                factors[row + cell] = static_cast<float>(factor);
-                if (std::fabs(factor - 1.0) > 1e-7)
+                const float stored = static_cast<float>(factor);
+                factors[row + cell] = stored;
+                if (std::fabs(factor - 1.0) > 1e-7) {
                     ++_natural_resource_modifier_active_factor_count;
+                    _natural_resource_regen_resource_active[
+                        static_cast<size_t>(resource)] = uint8_t{1};
+                }
+                // pass 侧把非有限值或负因子视为致命输入。判定在这里做一次即可，
+                // 但结论必须能让 pass 走原来的 fail 分支，故只记标记不改值。
+                if (!std::isfinite(stored) || stored < 0.0f)
+                    _natural_resource_regen_summary_rejected = true;
             }
         }
+        _natural_resource_regen_summary_valid = true;
         _natural_resource_modifier_version = snapshot_version;
         _natural_resource_modifier_catalog_hash = catalog_hash;
         _natural_resource_modifier_ids_hash = ids_hash;
@@ -487,12 +499,27 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
         return fail("regen_factor_array_size_mismatch");
     const float * const regen_factor_data = regen_factors.is_empty()
         ? nullptr : regen_factors.ptr();
+    // 因子表恒等于 get_natural_resource_regen_factors 的缓存时，校验与 active 计数
+    // 已在重建处算过。判据用 CoW buffer 指针相等：GDScript 原样回传同一份数组时
+    // 指针一致；任一侧写过就已 CoW 分离，指针不同，自动退回全表扫描。
+    const bool regen_summary_cached =
+        _natural_resource_regen_summary_valid &&
+        regen_factor_data != nullptr &&
+        regen_factor_data == _natural_resource_regen_factors.ptr() &&
+        regen_factors.size() == _natural_resource_regen_factors.size() &&
+        static_cast<int>(_natural_resource_regen_resource_active.size()) >= resource_count;
     int32_t active_regen_factor_count = 0;
-    for (int64_t index = 0; index < regen_factors.size(); ++index) {
-        const float factor = regen_factor_data[index];
-        if (!std::isfinite(factor) || factor < 0.0f)
+    if (regen_summary_cached) {
+        if (_natural_resource_regen_summary_rejected)
             return fail("regen_factor_array_value_invalid");
-        if (std::fabs(factor - 1.0f) > 1e-7f) ++active_regen_factor_count;
+        active_regen_factor_count = _natural_resource_modifier_active_factor_count;
+    } else {
+        for (int64_t index = 0; index < regen_factors.size(); ++index) {
+            const float factor = regen_factor_data[index];
+            if (!std::isfinite(factor) || factor < 0.0f)
+                return fail("regen_factor_array_value_invalid");
+            if (std::fabs(factor - 1.0f) > 1e-7f) ++active_regen_factor_count;
+        }
     }
 
     if (!knobs.has("reserve_slots") || !knobs.has("extra_change_slots") || !knobs.has("habitat_modes") ||
@@ -678,10 +705,15 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
         rr.regen_factors = regen_factor_data == nullptr
             ? nullptr : regen_factor_data + int64_t(r) * int64_t(n_cells);
         if (rr.regen_factors != nullptr) {
-            for (int32_t cell = 0; cell < n_cells; ++cell) {
-                if (std::fabs(rr.regen_factors[cell] - 1.0f) > 1e-7f) {
-                    rr.has_regen_modifier = true;
-                    break;
+            if (regen_summary_cached) {
+                rr.has_regen_modifier =
+                    _natural_resource_regen_resource_active[static_cast<size_t>(r)] != 0;
+            } else {
+                for (int32_t cell = 0; cell < n_cells; ++cell) {
+                    if (std::fabs(rr.regen_factors[cell] - 1.0f) > 1e-7f) {
+                        rr.has_regen_modifier = true;
+                        break;
+                    }
                 }
             }
         }
@@ -757,6 +789,17 @@ Dictionary DCWorldExt::run_natural_resource_pass(const Dictionary &knobs) {
             published_slots.append(reserve_slots[rr.resource_index]);
             if (rr.use_extra) published_slots.append(extra_change_slots[rr.resource_index]);
             ++published_count;
+        }
+
+        // Economy can leave extra-change lanes resident in C++ between its
+        // committed publish and this pass. The flush above is the first
+        // MapData-visible boundary after those lanes were consumed.
+        for (int r = 0; r < resource_count; ++r) {
+            const int sid_extra = component_id(StringName(extra_change_slots[r]));
+            if (sid_extra >= 0 &&
+                sid_extra < static_cast<int>(_economy_resource_slot_resident.size())) {
+                _economy_resource_slot_resident[static_cast<size_t>(sid_extra)] = 0;
+            }
         }
     }
 

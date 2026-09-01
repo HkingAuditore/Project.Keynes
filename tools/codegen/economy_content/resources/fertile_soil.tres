@@ -5,6 +5,7 @@
 [resource]
 script = ExtResource("1")
 id = &"fertile_soil"
+discovery_technology_tags = PackedStringArray("tech.gathering", "tech.rainfed_field_system")
 display_name = "肥沃土壤"
 reserve_component = &"cell.res_fertile_soil_reserve"
 habitat_mode = "land"
@@ -13,10 +14,12 @@ init_min_reserve = 3500.0
 land_only = true
 temp_lo = 0.0
 temp_hi = 1.0
+runtime_temperature_signal = "mean_30d"
+runtime_moisture_signal = "plant_available_water"
 gen_base = 0.0
 gen_temp = 0.0
 gen_moisture = 0.5
-gen_self = 1.5
+gen_self = 8.0
 decay_base = 0.0
 decay_temp = 0.0
 decay_moisture = 0.0

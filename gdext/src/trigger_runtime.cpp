@@ -693,6 +693,71 @@ Dictionary TriggerRuntime::submit_events(const Dictionary &batch) {
     return out;
 }
 
+bool TriggerRuntime::submit_events_pod(const EventInput *events, size_t count,
+                                       size_t &accepted, int64_t &last_accepted,
+                                       std::string &error) {
+    accepted = 0;
+    last_accepted = 0;
+    error.clear();
+    if (!_configured) {
+        error = "trigger_runtime_not_configured";
+        return false;
+    }
+    if (events == nullptr && count != 0) {
+        error = "trigger_event_input_missing";
+        return false;
+    }
+    const auto started = std::chrono::steady_clock::now();
+    for (size_t i = 0; i < count; ++i) {
+        const EventInput &input = events[i];
+        if (input.source_id < 0 || input.source_id >= _source_count ||
+            input.event_id <= 0 || _source_needs_resync[input.source_id] != 0) {
+            ++_events_rejected;
+            continue;
+        }
+        const int64_t cursor = _source_cursor[input.source_id];
+        if (input.event_id <= cursor) {
+            ++_events_deduplicated;
+            ++accepted;
+            last_accepted = input.event_id;
+            continue;
+        }
+        if (_strict_source_cursors && cursor > 0 && input.event_id != cursor + 1) {
+            mark_source_gap(input.source_id, cursor + 1, input.event_id);
+            ++_events_rejected;
+            continue;
+        }
+        if (static_cast<int32_t>(_pending_events.size()) >= _max_pending_events) {
+            mark_source_gap(input.source_id, cursor + 1, input.event_id);
+            _last_error = "trigger_pending_event_capacity_exhausted";
+            ++_events_rejected;
+            continue;
+        }
+        Event event;
+        event.source_id = input.source_id;
+        event.event_id = input.event_id;
+        event.day = input.day;
+        event.event_type = input.event_type;
+        event.payload_schema = input.payload_schema;
+        event.entity_handle = input.entity_handle;
+        event.group_handle = input.group_handle;
+        event.value = input.value;
+        event.payload = input.payload;
+        _pending_events.push_back(event);
+        _source_cursor[input.source_id] = input.event_id;
+        last_accepted = input.event_id;
+        ++accepted;
+        ++_events_ingested;
+    }
+    _last_ingest_ms = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - started).count();
+    if (accepted != count) {
+        error = _last_error.empty() ? "trigger_event_rejected" : _last_error;
+        return false;
+    }
+    return true;
+}
+
 Dictionary TriggerRuntime::submit_snapshots(const Dictionary &batch) {
     const size_t pending_before = _pending_events.size();
     Dictionary normalized = batch.duplicate();

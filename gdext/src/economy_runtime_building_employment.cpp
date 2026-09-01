@@ -96,6 +96,8 @@ bool NativeEconomyRuntime::reconcile_building_employment_cells_range(
     thread_local std::vector<uint32_t> signature_stamp;
     thread_local std::vector<uint32_t> profession_stamp;
     thread_local uint32_t scratch_generation = 0;
+    // 本格实际出现过的 signature。摊派循环靠它取代对整张 _signatures 表的扫描。
+    thread_local std::vector<int32_t> touched_signatures;
 
     begin = std::clamp(begin, 0, static_cast<int32_t>(stable_cells.size()));
     end = std::clamp(end, begin, static_cast<int32_t>(stable_cells.size()));
@@ -137,9 +139,11 @@ bool NativeEconomyRuntime::reconcile_building_employment_cells_range(
                   owner_prefix_by_profession.end(), 0);
         std::fill(owner_distributed_by_profession.begin(),
                   owner_distributed_by_profession.end(), 0);
+        touched_signatures.clear();
         auto touch_signature = [&](int32_t signature) {
             if (signature_stamp[signature] == scratch_generation) return;
             signature_stamp[signature] = scratch_generation;
+            touched_signatures.push_back(signature);
             sig_population[signature] = 0;
             sig_owner_filled[signature] = 0;
             sig_owner_distributed[signature] = 0;
@@ -251,9 +255,13 @@ bool NativeEconomyRuntime::reconcile_building_employment_cells_range(
         // Clamp owner fills by profession rather than canonical signature. The
         // latter would silently evict owners whose ethnicity differs from the
         // building profile during this reconciliation pass.
-        for (int32_t sig = 0; sig < static_cast<int32_t>(_signatures.size()); ++sig) {
-            if (signature_stamp[sig] != scratch_generation || sig_population[sig] <= 0)
-                continue;
+        //
+        // 下面三处摊派循环原来各扫一遍整张 _signatures 表（随存档单调增长且永不
+        // 收缩），只为挑出本格实际出现的那几个 signature。改成遍历 touched 列表，
+        // 排序一次即可保持同一个 signature id 升序，前缀和摊派逐位不变。
+        std::sort(touched_signatures.begin(), touched_signatures.end());
+        for (const int32_t sig : touched_signatures) {
+            if (sig_population[sig] <= 0) continue;
             const int32_t profession = _signatures[sig].profession_id;
             if (profession < 0 || profession >= professions ||
                 profession == _unemployed_profession_id) continue;
@@ -285,12 +293,11 @@ bool NativeEconomyRuntime::reconcile_building_employment_cells_range(
 
         // Distribute each profession's owner jobs over the live local
         // profession|ethnicity cohorts in stable signature order.
-        std::fill(sig_owner_filled.begin(), sig_owner_filled.end(), 0);
+        for (const int32_t sig : touched_signatures) sig_owner_filled[sig] = 0;
         std::fill(owner_population_by_profession.begin(),
                   owner_population_by_profession.end(), 0);
-        for (int32_t sig = 0; sig < static_cast<int32_t>(_signatures.size()); ++sig) {
-            if (signature_stamp[sig] != scratch_generation || sig_population[sig] <= 0)
-                continue;
+        for (const int32_t sig : touched_signatures) {
+            if (sig_population[sig] <= 0) continue;
             const int32_t profession = _signatures[sig].profession_id;
             if (profession < 0 || profession >= professions ||
                 profession == _unemployed_profession_id) continue;
@@ -301,9 +308,8 @@ bool NativeEconomyRuntime::reconcile_building_employment_cells_range(
         std::fill(owner_prefix_by_profession.begin(), owner_prefix_by_profession.end(), 0);
         std::fill(owner_distributed_by_profession.begin(),
                   owner_distributed_by_profession.end(), 0);
-        for (int32_t sig = 0; sig < static_cast<int32_t>(_signatures.size()); ++sig) {
-            if (signature_stamp[sig] != scratch_generation || sig_population[sig] <= 0)
-                continue;
+        for (const int32_t sig : touched_signatures) {
+            if (sig_population[sig] <= 0) continue;
             const int32_t profession = _signatures[sig].profession_id;
             if (profession < 0 || profession >= professions ||
                 profession == _unemployed_profession_id) continue;
@@ -1188,8 +1194,23 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         thread_local std::vector<int64_t> owner_prefix_by_profession;
         thread_local std::vector<int64_t> owner_distributed_by_profession;
         thread_local std::vector<int32_t> owner_active_signatures;
-        sig_owner_retained.assign(_signatures.size(), 0);
-        sig_owner_population.assign(_signatures.size(), 0);
+        thread_local std::vector<int64_t> sig_owner_distributed;
+        // 这三条 signature 通道原来在每格开头各 assign 一遍整张 _signatures 表。表随
+        // 存档单调增长且永不收缩，而每格实际触碰的 signature 只有本地几个。generation
+        // stamp 让旧值自动失效：stamp 未命中的槽位一律视为 0，与清表后的读法一致。
+        thread_local std::vector<uint32_t> sig_owner_stamp;
+        thread_local uint32_t sig_owner_generation = 0;
+        ++sig_owner_generation;
+        if (sig_owner_stamp.size() < _signatures.size()) {
+            sig_owner_retained.resize(_signatures.size(), 0);
+            sig_owner_population.resize(_signatures.size(), 0);
+            sig_owner_distributed.resize(_signatures.size(), 0);
+            sig_owner_stamp.resize(_signatures.size(), 0);
+        }
+        if (sig_owner_generation == 0) {
+            std::fill(sig_owner_stamp.begin(), sig_owner_stamp.end(), 0);
+            sig_owner_generation = 1;
+        }
         owner_filled_by_profession.assign(professions, 0);
         owner_population_by_profession.assign(professions, 0);
         owner_prefix_by_profession.assign(professions, 0);
@@ -1214,6 +1235,12 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             const int32_t profession = _signatures[sig].profession_id;
             if (profession < 0 || profession >= professions ||
                 profession == _unemployed_profession_id) return;
+            if (sig_owner_stamp[sig] != sig_owner_generation) {
+                sig_owner_stamp[sig] = sig_owner_generation;
+                sig_owner_population[sig] = 0;
+                sig_owner_retained[sig] = 0;
+                sig_owner_distributed[sig] = 0;
+            }
             if (sig_owner_population[sig] == 0) owner_active_signatures.push_back(sig);
             const int64_t population = std::max<int64_t>(0,
                 _population.population[slot]);
@@ -1252,7 +1279,9 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             const int32_t sig = static_cast<int32_t>(_population.signature_id[slot]);
             const int32_t p = _signatures[sig].profession_id;
             if (p == _unemployed_profession_id) return;
-            const int64_t owner_here = std::min(sig_owner_retained[sig],
+            const int64_t retained_here = sig_owner_stamp[sig] == sig_owner_generation
+                ? sig_owner_retained[sig] : 0;
+            const int64_t owner_here = std::min(retained_here,
                 std::max<int64_t>(0, _population.population[slot]));
             const int64_t cap = std::max<int64_t>(0, _population.population[slot] - owner_here);
             emp_capacity[p] = saturating_add(emp_capacity[p], cap, _saturation_count);
@@ -1260,8 +1289,6 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         // 第二遍：只读收集每个 slot 的 surplus（迁往池）到缓冲，遍历后统一迁移。
         // owner_retained 按 signature 在多 slot 间也需稳定序摊派（同 signature 通常
         // 只有一个 slot；多页时按遍历序，前缀和保确定）。
-        thread_local std::vector<int64_t> sig_owner_distributed;
-        sig_owner_distributed.assign(_signatures.size(), 0);
         thread_local std::vector<int32_t> shed_source_slots;   // surplus 来源 slot
         thread_local std::vector<int32_t> shed_dest_eth;       // 对应 eth（→ unemployed|eth）
         thread_local std::vector<int64_t> shed_pop;            // surplus 人数
@@ -1284,10 +1311,14 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             }
             const bool merchant_here = is_merchant_slot(slot);
             // owner 在本 slot 的份额（同 signature 多 slot 时稳定序摊派）。
+            const bool sig_active = sig_owner_stamp[sig] == sig_owner_generation;
+            const int64_t retained_here = sig_active ? sig_owner_retained[sig] : 0;
+            const int64_t distributed_here = sig_active ? sig_owner_distributed[sig] : 0;
             const int64_t owner_here = std::min(
-                std::max<int64_t>(0, sig_owner_retained[sig] - sig_owner_distributed[sig]), pop);
-            sig_owner_distributed[sig] = saturating_add(sig_owner_distributed[sig],
-                                                        owner_here, _saturation_count);
+                std::max<int64_t>(0, retained_here - distributed_here), pop);
+            if (sig_active)
+                sig_owner_distributed[sig] = saturating_add(distributed_here,
+                                                            owner_here, _saturation_count);
             if (merchant_here) {
                 // 商人 slot 不做 employee（仅 owner 岗）；保底 1 个做市商不裁。
                 const int64_t retained = std::min(pop,

@@ -33,6 +33,12 @@ uniform vec2 tod_debug_sun_uv = vec2(0.25, 0.5);
 uniform float tod_debug_sun_height_scale = 1.0;
 uniform vec3 tod_sun_dir = vec3(0.4, -0.7, 0.6);
 uniform float tod_exposure = 1.0;
+
+// Windows are emissive only after the local sun has crossed into night.  Keep
+// the transition soft so the whole map does not pop when the terminator moves.
+const float BUILDING_WINDOW_NIGHT_START = 0.18;
+const float BUILDING_WINDOW_NIGHT_FULL = 0.62;
+const float BUILDING_WINDOW_LIGHT_GAIN = 0.72;
 #include "res://shaders/include/earth_daylight.gdshaderinc"
 
 varying flat float v_style;
@@ -161,10 +167,14 @@ void fragment() {
 			+ authored_ed.moon_col * authored_ed.moon_strength
 				* mix(0.05, 0.12, authored_up);
 		authored_color *= max(authored_light, vec3(0.08)) * tod_exposure;
-		// Windows are nearly inert by day and become readable at night.
-		if (authored_live && visual_quality > 1) {
+		// Windows are emissive only for live knowledge.  Fogged memory keeps its
+		// remembered neutral appearance instead of receiving live TOD lighting.
+		if (authored_live && surface.b > 0.001) {
+			float authored_window_night = smoothstep(
+				BUILDING_WINDOW_NIGHT_START, BUILDING_WINDOW_NIGHT_FULL,
+				authored_ed.pixel_night);
 			authored_color += vec3(1.0, 0.62, 0.24) * surface.b
-				* mix(0.015, 0.30, authored_ed.pixel_night) * tod_exposure;
+				* authored_window_night * BUILDING_WINDOW_LIGHT_GAIN * tod_exposure;
 		}
 		float authored_alpha = authored.a * geometry_alpha
 			* smoothstep(0.36, 0.54, camera_zoom);
@@ -309,8 +319,12 @@ void fragment() {
 			* max(ed.sun_dir.z, 0.0)
 		+ ed.moon_col * ed.moon_strength * mix(0.05, 0.12, roof_weight);
 	color *= max(building_light, vec3(0.08)) * tod_exposure;
-	color += vec3(1.0, 0.62, 0.24) * window_glow
-		* mix(0.015, 0.30, ed.pixel_night) * tod_exposure;
+	if (live_visible) {
+		float window_night = smoothstep(BUILDING_WINDOW_NIGHT_START,
+			BUILDING_WINDOW_NIGHT_FULL, ed.pixel_night);
+		color += vec3(1.0, 0.62, 0.24) * window_glow
+			* window_night * BUILDING_WINDOW_LIGHT_GAIN * tod_exposure;
+	}
 
 	float glyph = max(max(max(roof_outer, wall_front),
 		max(wall_side, foundation)), max(chimney, max(feature, windows)));

@@ -559,10 +559,6 @@ bool NativeEconomyRuntime::plan_colonization_kit(
         try_add(construction_type, 1, 40);
     if (trade_type >= 0)
         try_add(trade_type, 1, 5);
-    if (food_type >= 0) {
-        while (used_slots + owner_slots_of(food_type) <= population &&
-               try_add(food_type, 1, 50)) {}
-    }
 
     auto rebuild_buildings = [&]() {
         kit.buildings.clear();
@@ -590,6 +586,27 @@ bool NativeEconomyRuntime::plan_colonization_kit(
             : reserve_lane(reserve->reserved, good);
         return std::max<int64_t>(0, stock - floor) + held;
     };
+    // Construction demand of a build plan, in raw group quantities. Progress
+    // reporting compares the full intent against the subset the source can
+    // actually fund today, so both sides must use the same unit.
+    auto construction_units_of = [&](const std::vector<Planned> &rows)
+            -> int64_t {
+        int64_t sat = 0;
+        int64_t total = 0;
+        for (const Planned &row : rows) {
+            if (row.count <= 0 || row.type_id < 0) continue;
+            const BuildingType &type = _building_types[row.type_id];
+            for (int32_t i = 0; i < type.construction_count; ++i) {
+                const int32_t group = type.construction_begin + i;
+                if (group < 0 || group >= static_cast<int32_t>(
+                        _building_construction_goods.size())) continue;
+                total = saturating_add(total, saturating_mul(row.count,
+                    _building_construction_goods[group].quantity, sat), sat);
+            }
+        }
+        return total;
+    };
+    bool structurally_unbuildable = false;
     auto materials_fit = [&](std::vector<int32_t> *missing) -> bool {
         std::vector<int64_t> stock(_good_ids.size(), 0);
         const int32_t market = _market.cell_to_market[source_cell];
@@ -611,7 +628,7 @@ bool NativeEconomyRuntime::plan_colonization_kit(
                     row.count, Q16_ONE, plan, nullptr, &stock, true) ||
                 !plan.feasible) {
                 ok = false;
-                if (missing != nullptr && plan.failed_group >= 0) {
+                if (plan.failed_group >= 0) {
                     const int32_t group =
                         _building_types[row.type_id].construction_begin +
                         plan.failed_group;
@@ -623,17 +640,29 @@ bool NativeEconomyRuntime::plan_colonization_kit(
                             _building_construction_candidate_offsets[group];
                         const int32_t end =
                             _building_construction_candidate_offsets[group + 1];
+                        // The reachability gate must match the one
+                        // plan_construction_materials itself uses, otherwise a
+                        // group can fail with an empty explanation.
+                        bool reachable = false;
                         for (int32_t candidate = begin; candidate < end;
                              ++candidate) {
                             if (candidate >= 0 && candidate < static_cast<int32_t>(
                                     _building_construction_candidates.size())) {
                                 const int32_t missing_good =
                                     _building_construction_candidates[candidate].good_id;
-                                if (good_production_available(
+                                if (good_market_available(
                                         source_cell, missing_good, false)) {
-                                    missing->push_back(missing_good);
+                                    reachable = true;
+                                    if (missing != nullptr)
+                                        missing->push_back(missing_good);
                                 }
                             }
+                        }
+                        if (!reachable) {
+                            structurally_unbuildable = true;
+                            if (missing != nullptr)
+                                missing->push_back(
+                                    _building_construction_goods[group].good_id);
                         }
                     }
                 }
@@ -646,12 +675,10 @@ bool NativeEconomyRuntime::plan_colonization_kit(
         return ok;
     };
 
+    const std::vector<Planned> intent = planned;
     std::vector<int32_t> missing;
-    std::vector<int32_t> material_missing;
     while (!planned.empty() && !materials_fit(&missing)) {
-        kit.kit_partial = 1;
-        material_missing.insert(material_missing.end(), missing.begin(),
-            missing.end());
+        missing.clear();
         auto worst = std::max_element(planned.begin(), planned.end(),
             [](const Planned &a, const Planned &b) {
                 return std::tie(a.drop_rank, a.type_id) <
@@ -666,13 +693,37 @@ bool NativeEconomyRuntime::plan_colonization_kit(
             used_slots -= worst->owner_slots * worst->count;
             planned.erase(worst);
         }
-        missing.clear();
     }
-    if (!material_missing.empty()) {
-        kit.missing_good_ids.insert(kit.missing_good_ids.end(),
-            material_missing.begin(), material_missing.end());
+    // The kit only ships once the full intent is affordable, so the shortfall
+    // to report is the one the intent still has today. Accumulating every
+    // intermediate drop instead would keep listing goods that are already in
+    // stock and would pin kit_partial on a shortage that no longer exists.
+    kit.material_required_units = construction_units_of(intent);
+    const int64_t affordable_units = construction_units_of(planned);
+    kit.material_missing_units = std::max<int64_t>(0,
+        kit.material_required_units - affordable_units);
+    const bool intent_reduced = kit.material_missing_units > 0 ||
+        planned.size() != intent.size();
+    if (intent_reduced) {
+        std::vector<Planned> affordable;
+        affordable.swap(planned);
+        planned = intent;
+        std::vector<int32_t> material_missing;
+        structurally_unbuildable = false;
+        materials_fit(&material_missing);
+        planned.swap(affordable);
+        // materials_fit rewrites the construction cargo, so the shipped plan
+        // has to be re-costed after the intent probe.
+        materials_fit(nullptr);
+        for (const int32_t good : material_missing) {
+            if (std::find(kit.missing_good_ids.begin(),
+                    kit.missing_good_ids.end(), good) ==
+                kit.missing_good_ids.end())
+                kit.missing_good_ids.push_back(good);
+        }
         kit.kit_partial = 1;
     }
+    kit.kit_unbuildable = structurally_unbuildable ? 1 : 0;
     rebuild_buildings();
     if (kit.buildings.empty())
         kit.kit_partial = 1;

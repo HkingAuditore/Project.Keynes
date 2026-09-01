@@ -110,8 +110,16 @@ var _last_year: int = -1
 var _last_pulse_ms: float = 0.0
 var _last_loop_ms: float = 0.0
 var _last_full_proc_ms: float = 0.0
+# 单日模拟墙钟成本的 EMA。夹速按 sim_frame_budget_ms / 单日成本 推导每帧推进天数
+# 上限，使有效吞吐随成本连续下降，而不是在"超预算"处跳到固定倍速。
+var _day_cost_ms_ema: float = 0.0
+var _last_throughput_cap: float = 0.0
 var _rng: RandomNumberGenerator
 var _simulation_backpressure_sources: Dictionary = {}
+const _DAY_COST_EMA_ALPHA: float = 0.2
+# 单日成本发散时的吞吐下限：保证最坏情况仍每 8 帧推进一天。没有这个下限，
+# 一次异常尖峰进入 EMA 就能把吞吐压到比固定 1x 更差。
+const _MIN_THROUGHPUT_DAYS_PER_FRAME: float = 0.125
 const _MONTH_LENGTHS: Array[int] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 const _MONTH_NAMES_SHORT: Array[String] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
@@ -182,25 +190,28 @@ func _process(delta: float) -> void:
 	# best-effort 吞吐模型（plan/best-effort-sim-stepping）：倍速 = 目标天/秒。
 	# 本帧目标推进量先按硬上限封顶——即便上一帧卡顿导致 delta 巨大，也不会把
 	# 成百天一次性灌进来点燃死亡螺旋。
-	# Generic native backpressure clamps to x1 so ordinary continuations keep
-	# receiving day ticks. The economy hard barrier is different: it is raised
-	# only at a frozen cycle's settlement deadline, stops new days, and emits a
-	# real-frame pulse so same-day catchup can finish without deadlock.
+	# 软 backpressure（非 *_day_barrier 的来源）只是诊断信号，不参与限流。它只能由
+	# 日推进本身清除，一旦拿来砍倍速就会自锁：降速 → 更少日推进 → 更晚清除。
+	# 硬 barrier 不同：它只在冻结周期的结算截止点抬起，必须停下新的一天，并发一次
+	# 真实帧 pulse 让同日 catchup 收尾。
 	var simulation_budget_start_us: int = Time.get_ticks_usec()
 	var hard_day_barrier := _has_hard_day_barrier()
-	var had_hard_day_barrier := hard_day_barrier
 	var pulse_start_us: int = Time.get_ticks_usec()
 	if hard_day_barrier:
 		simulation_backpressure_pulse.emit(_last_day)
-		# continuation 可能同步清掉 barrier，但本帧已经消耗过模拟预算。新的一天留到
-		# 下一帧启动，避免 pulse + 完整日 tick 在同一渲染帧叠加成尖峰。
 		hard_day_barrier = _has_hard_day_barrier()
 	_last_pulse_ms = float(Time.get_ticks_usec() - pulse_start_us) / 1000.0
-	var effective_speed := 0.0 if had_hard_day_barrier or hard_day_barrier else (
-		minf(speed_multiplier, 1.0) if has_simulation_backpressure() else speed_multiplier)
-	var target: float = delta * effective_speed
-	if target > float(max_sim_days_per_frame):
-		target = float(max_sim_days_per_frame)
+	# pulse 已经吃满帧预算时才把新的一天让给下一帧，避免 pulse + 完整日 tick 叠成
+	# 尖峰。pulse 很便宜时当帧继续推进，不再为"曾经有过 barrier"额外罚一帧。
+	var blocked := hard_day_barrier or _last_pulse_ms >= sim_frame_budget_ms
+	# 连续限流：每帧推进天数上限 = 帧预算 / 实测单日成本。单日 8ms 以内不封顶，
+	# 单日 80ms 时降到 0.1 天/帧——吞吐平滑下降而帧率守住，代替旧的倍速悬崖。
+	var throughput_cap := float(max_sim_days_per_frame)
+	if _day_cost_ms_ema > 0.0:
+		throughput_cap = clampf(sim_frame_budget_ms / _day_cost_ms_ema,
+			_MIN_THROUGHPUT_DAYS_PER_FRAME, float(max_sim_days_per_frame))
+	_last_throughput_cap = throughput_cap
+	var target: float = 0.0 if blocked else minf(delta * speed_multiplier, throughput_cap)
 	_day_carry += target
 
 	# 时间盒 + 硬上限：本帧最多推进 max_sim_days_per_frame 天，且至少跑满 1 天后
@@ -208,8 +219,7 @@ func _process(delta: float) -> void:
 	# → 一个完整 SUS tick，所以这里的墙钟测量天然涵盖当日全部模拟 + 渲染同步成本。
 	var t0_us: int = Time.get_ticks_usec()
 	var ran: int = 0
-	while not had_hard_day_barrier and not hard_day_barrier \
-			and _day_carry >= 1.0 and ran < max_sim_days_per_frame:
+	while not blocked and _day_carry >= 1.0 and ran < max_sim_days_per_frame:
 		# 时间盒从 continuation pulse 之前开始计时；无 pulse 的普通帧仍保证至少推进
 		# 一天，保持低倍速/轻负载吞吐行为不变。
 		if ran > 0 and float(Time.get_ticks_usec() - simulation_budget_start_us) / 1000.0 \
@@ -220,7 +230,7 @@ func _process(delta: float) -> void:
 		ran += 1
 		# A day_changed handler may have raised a country/economy settlement
 		# barrier. Re-read it before this render frame advances another day.
-		hard_day_barrier = _has_hard_day_barrier()
+		blocked = _has_hard_day_barrier()
 
 	# best-effort：本帧没追完的整数天直接丢弃，只保留 < 1 天的小数 carry。这是杜绝
 	# spiral 的关键——债务永不累积，过载时有效倍速平滑降级、FPS 保持稳定。
@@ -232,6 +242,13 @@ func _process(delta: float) -> void:
 	#   loop_ms ≈ proc_ms ≪ 45ms  → 35ms 在 _process 之外（渲染/present GPU 同步）。
 	#   loop_ms ≈ 45ms            → 日循环本身超预算（budget 失效或单日 >预算）。
 	_last_loop_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
+	# 单日成本 EMA 的样本 = 本帧模拟总墙钟（含 continuation pulse）/ 实际推进天数。
+	# 只在真正推进过日子的帧采样；纯 barrier 帧没有可归属的天数。
+	if ran > 0:
+		var per_day_ms := float(Time.get_ticks_usec() - simulation_budget_start_us) \
+			/ 1000.0 / float(ran)
+		_day_cost_ms_ema = per_day_ms if _day_cost_ms_ema <= 0.0 else \
+			_day_cost_ms_ema + _DAY_COST_EMA_ALPHA * (per_day_ms - _day_cost_ms_ema)
 
 	# current_day 派生：已模拟整数日 + 小数 carry。低速（target<1）下 carry 平滑累加，
 	# 驱动 day_phase/season_phase 连续过渡；高速下小数部分无实际意义但无害。
@@ -261,8 +278,9 @@ func _process(delta: float) -> void:
 		for key in _simulation_backpressure_sources.keys():
 			barrier_names.append(String(key))
 		barrier_names.sort()
-		print("[clock/step] delta=%.1fms speed=%.0fx target=%.2fd ran=%d pulse=%.2fms loop=%.2fms full=%.2fms carry=%.2f barrier=%s"
-			% [delta * 1000.0, speed_multiplier, delta * speed_multiplier, ran,
+		print("[clock/step] delta=%.1fms speed=%.0fx target=%.2fd cap=%.2fd/f cost=%.2fms ran=%d pulse=%.2fms loop=%.2fms full=%.2fms carry=%.2f barrier=%s"
+			% [delta * 1000.0, speed_multiplier, delta * speed_multiplier,
+				_last_throughput_cap, _day_cost_ms_ema, ran,
 				_last_pulse_ms, _last_loop_ms, _last_full_proc_ms, _day_carry,
 				",".join(barrier_names)])
 
@@ -533,3 +551,14 @@ func get_last_loop_ms() -> float:
 
 func get_last_full_proc_ms() -> float:
 	return _last_full_proc_ms
+
+
+# 连续限流的两个可观测量：实测单日成本 EMA，以及由它推导的每帧推进天数上限。
+# 验收"日间隔双峰是否收敛为单峰"时对着 CSV 看这两列。
+
+func get_day_cost_ms_ema() -> float:
+	return _day_cost_ms_ema
+
+
+func get_throughput_cap_days_per_frame() -> float:
+	return _last_throughput_cap

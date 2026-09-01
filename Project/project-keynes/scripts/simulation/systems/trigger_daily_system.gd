@@ -3,7 +3,6 @@ class_name TriggerDailySystem
 
 const SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
 var facade: TriggerFacade
-var _last_report: Dictionary = {}
 
 func _init(p_facade: TriggerFacade) -> void:
 	id = &"trigger_runtime"
@@ -31,11 +30,13 @@ func tick(ctx) -> Dictionary:
 	var ingested := facade.ingest_committed_events(day)
 	var result: Dictionary = facade.world_ext().run_trigger_daily(day)
 	var effects := facade.dispatch_effects()
-	_last_report = facade.report()
 	return {"done": bool(result.get("done", true)), "work_done": int(result.get("work_done", 0)),
 		"elapsed_ms": float(Time.get_ticks_usec() - started) / 1000.0, "progress_ratio": 1.0,
 		"stage_name": String(result.get("stage", "trigger_evaluate")), "path": "TRIGGER_GRAPH",
 		"events_ingested": int(ingested.get("accepted", 0)), "effects_dispatched": int(effects.get("dispatched", 0)),
-		"gap_count": int(_last_report.get("gap_count", 0)), "fallback_reason": String(result.get("reason", ""))}
+		"fallback_reason": String(result.get("reason", ""))}
 
-func last_report() -> Dictionary: return _last_report.duplicate(true)
+# 报告按需构造。原来每 tick 拉一份完整 native 报告只为读一个 gap_count，而这个
+# 计数没有下游消费者——诊断需要时直接问 facade 即可。
+func last_report() -> Dictionary:
+	return facade.report() if facade != null and facade.is_configured() else {}

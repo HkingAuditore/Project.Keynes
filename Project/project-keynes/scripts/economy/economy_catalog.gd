@@ -1382,7 +1382,8 @@ static func _compile_building_columns(profession_index: Dictionary,
 				construction_quantities)
 		if error != "": return {"ok": false, "reason": "%s: %s" % [error, stable_id]}
 		var construction_candidate_error := _append_construction_candidates(
-			profile, good_index, construction_candidate_offsets,
+			profile, good_index, category_good_indices, good_quality_levels,
+			good_efficiencies_q16, construction_candidate_offsets,
 			construction_candidate_goods, construction_candidate_efficiencies)
 		if construction_candidate_error != "":
 			return {"ok": false, "reason": "%s: %s" % [construction_candidate_error, stable_id]}
@@ -1947,51 +1948,80 @@ static func _daily_inputs_are_all_soft(profile: Resource) -> bool:
 
 
 static func _append_construction_candidates(profile: Resource,
-		good_index: Dictionary, out_offsets: PackedInt32Array,
+		good_index: Dictionary, category_good_indices: Dictionary,
+		good_quality_levels: PackedInt32Array,
+		good_efficiencies_q16: PackedInt32Array, out_offsets: PackedInt32Array,
 		out_goods: PackedInt32Array, out_efficiencies: PackedInt32Array) -> String:
 	var groups: PackedStringArray = profile.construction_good_ids
 	var explicit_offsets: PackedInt32Array = profile.construction_candidate_offsets
 	var explicit_goods: PackedStringArray = profile.construction_candidate_good_ids
 	var explicit_efficiencies: PackedInt32Array = profile.construction_candidate_efficiency_q16
+	var categories: PackedStringArray = profile.construction_category_ids
+	var min_levels: PackedInt32Array = profile.construction_min_quality_levels
 	var has_explicit := explicit_offsets.size() > 1 \
 		or not explicit_goods.is_empty() or not explicit_efficiencies.is_empty()
-	if not has_explicit:
-		for good_id in groups:
-			var stable_id := String(good_id)
-			if not good_index.has(stable_id):
-				return "invalid construction good"
-			out_goods.append(int(good_index[stable_id]))
-			out_efficiencies.append(Q16_ONE)
-			out_offsets.append(out_goods.size())
-		return ""
-	if explicit_offsets.size() != groups.size() + 1 \
-		or explicit_offsets.is_empty() or explicit_offsets[0] != 0 \
-		or explicit_goods.size() != explicit_efficiencies.size() \
-		or explicit_offsets[-1] != explicit_goods.size():
-		return "building construction candidate columns mismatch"
-	for offset_index in range(1, explicit_offsets.size()):
-		if explicit_offsets[offset_index] < explicit_offsets[offset_index - 1]:
-			return "building construction candidate offsets invalid"
+	if not categories.is_empty() and categories.size() != groups.size():
+		return "building construction category columns mismatch"
+	if not min_levels.is_empty() and min_levels.size() != groups.size():
+		return "building construction quality columns mismatch"
+	if has_explicit:
+		if explicit_offsets.size() != groups.size() + 1 \
+			or explicit_offsets.is_empty() or explicit_offsets[0] != 0 \
+			or explicit_goods.size() != explicit_efficiencies.size() \
+			or explicit_offsets[-1] != explicit_goods.size():
+			return "building construction candidate columns mismatch"
+		for offset_index in range(1, explicit_offsets.size()):
+			if explicit_offsets[offset_index] < explicit_offsets[offset_index - 1]:
+				return "building construction candidate offsets invalid"
 	for group_index in range(groups.size()):
-		var begin := int(explicit_offsets[group_index])
-		var end := int(explicit_offsets[group_index + 1])
-		if end <= begin:
-			return "building construction candidate group is empty"
 		var preferred := String(groups[group_index])
-		var seen := {}
-		var preferred_seen := false
-		for candidate_index in range(begin, end):
-			var candidate_id := String(explicit_goods[candidate_index])
-			var efficiency := int(explicit_efficiencies[candidate_index])
-			if not good_index.has(candidate_id) or seen.has(candidate_id) \
-					or efficiency <= 0 or efficiency > 4 * Q16_ONE:
-				return "invalid construction candidate"
-			seen[candidate_id] = true
-			preferred_seen = preferred_seen or candidate_id == preferred
-			out_goods.append(int(good_index[candidate_id]))
-			out_efficiencies.append(efficiency)
-		if not preferred_seen:
-			return "construction candidate group must include preferred good"
+		if not good_index.has(preferred):
+			return "invalid construction good"
+		var category_id := String(categories[group_index]) if not categories.is_empty() else ""
+		var min_level := int(min_levels[group_index]) if not min_levels.is_empty() else 0
+		if min_level < 0:
+			return "negative construction quality"
+		var begin := int(explicit_offsets[group_index]) if has_explicit else 0
+		var end := int(explicit_offsets[group_index + 1]) if has_explicit else 0
+		if end > begin:
+			if category_id != "":
+				return "building construction cannot combine category and explicit candidates"
+			var seen := {}
+			var preferred_seen := false
+			for candidate_index in range(begin, end):
+				var candidate_id := String(explicit_goods[candidate_index])
+				var efficiency := int(explicit_efficiencies[candidate_index])
+				if not good_index.has(candidate_id) or seen.has(candidate_id) \
+						or efficiency <= 0 or efficiency > 4 * Q16_ONE:
+					return "invalid construction candidate"
+				seen[candidate_id] = true
+				preferred_seen = preferred_seen or candidate_id == preferred
+				out_goods.append(int(good_index[candidate_id]))
+				out_efficiencies.append(efficiency)
+			if not preferred_seen:
+				return "construction candidate group must include preferred good"
+		elif category_id == "":
+			out_goods.append(int(good_index[preferred]))
+			out_efficiencies.append(Q16_ONE)
+		else:
+			# A category group expands to every member whose production quality
+			# clears the gate. The preferred good stays in the group so the
+			# runtime keeps its cost tie-break and the content-binding summary
+			# still sees the authored material.
+			var preferred_index := int(good_index[preferred])
+			var members: PackedInt32Array = category_good_indices.get(
+				category_id, PackedInt32Array())
+			var preferred_expanded := false
+			for good_idx in members:
+				if int(good_quality_levels[good_idx]) < min_level:
+					continue
+				preferred_expanded = preferred_expanded or int(good_idx) == preferred_index
+				out_goods.append(int(good_idx))
+				out_efficiencies.append(int(good_efficiencies_q16[good_idx]))
+			if not preferred_expanded:
+				return "construction category must include preferred good"
+		if out_offsets[-1] == out_goods.size():
+			return "building construction category has no candidates"
 		out_offsets.append(out_goods.size())
 	return ""
 

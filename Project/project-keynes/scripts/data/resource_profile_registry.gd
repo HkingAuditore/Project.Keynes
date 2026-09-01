@@ -18,9 +18,15 @@ class_name ResourceProfileRegistry
 # 显式 preload，保证 ResourceProfile 类在本脚本解析前已被 Godot 加载。
 const _ResourceProfileScript = preload("res://scripts/data/resource_profile.gd")
 
-# 一个战略地图格约代表广东省量级面积。Profile 中的数量系数以基础区域为标定单位，
+# 一个战略地图格约代表粤港澳湾区量级面积。Profile 中的数量系数以基础区域为标定单位，
 # 所有初始储量、最低矿床和自然增减量统一按此面积倍率换算；增长/衰减率不缩放。
 const CELL_AREA_RESOURCE_SCALE: float = 100.0
+# 湾区单格早期建筑校准锚点（千–万量级，默认 5000）。经济 goods 量纲下：
+#   ecology_capacity ≈ 4*N*q_early / (r * CELL_AREA_RESOURCE_SCALE * 1000)
+#   capacity 门闩已由现有 init_min 覆盖 N；矿产十年地平线：
+#   init_min_reserve ≈ N*q_early*3650 / (CELL_AREA_RESOURCE_SCALE * 1000)
+# 全时代保持 resource_safe_harvest_q16=0（开放获取）+ 可再生 extract 线性密度 CPUE。
+const BAY_CELL_EARLY_BUILDING_TARGET: int = 5000
 
 const _PROFILE_PATHS: Array = [
 	"res://data/resources/timber.tres",

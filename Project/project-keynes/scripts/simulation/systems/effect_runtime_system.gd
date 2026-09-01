@@ -4,7 +4,6 @@ class_name EffectRuntimeSystem
 const SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
 
 var facade = null
-var _last_report: Dictionary = {}
 
 func _init(p_facade) -> void:
 	id = &"effect_runtime"
@@ -49,7 +48,6 @@ func tick(ctx) -> Dictionary:
 	if facade.world_ext().has_method("dispatch_effect_native_gameplay"):
 		native_gameplay_dispatched = facade.world_ext().dispatch_effect_native_gameplay()
 	var dispatched: Dictionary = facade.dispatch_transactions()
-	_last_report = facade.report()
 	return {
 		"done": bool(result.get("done", true)),
 		"work_done": int(result.get("work_done", 0)),
@@ -71,11 +69,14 @@ func tick(ctx) -> Dictionary:
 			"retryable_transactions", 0)),
 		"native_gameplay_transactions": int(native_gameplay_dispatched.get("submitted_transactions", 0)),
 		"native_gameplay_commands": int(native_gameplay_dispatched.get("submitted_commands", 0)),
-		"legacy_fallback_transactions": int(_last_report.get("legacy_fallback_transactions", 0)),
+		"legacy_fallback_transactions": facade.legacy_fallback_transactions() \
+			if facade.has_method("legacy_fallback_transactions") else 0,
 		"native_claimed_transactions": int(dispatched.get("native_claimed_transactions", 0)),
 		"missing_adapters": int(dispatched.get("missing_adapters", 0)),
 		"fallback_reason": String(result.get("last_error", "")),
 	}
 
+# 报告按需构造。原来每 tick 拉一份完整 native 报告，只为读一个由 GDScript 侧自己
+# 维护的 legacy_fallback_transactions。
 func last_report() -> Dictionary:
-	return _last_report.duplicate(true)
+	return facade.report() if facade != null and facade.is_configured() else {}

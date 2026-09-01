@@ -7,8 +7,10 @@ script = ExtResource("1")
 id = &"reed_bundle"
 display_name = "芦苇束"
 category_id = &"primitive_construction"
-substitution_category_ids = PackedStringArray("primitive_construction", "plant_construction")
+substitution_category_ids = PackedStringArray("primitive_construction", "plant_construction", "primitive_lashing")
 technology_tags = PackedStringArray("industry.primary", "tech.reed_harvesting")
+production_quality_level = 0
+production_efficiency_q16 = 65536
 default_price = 4500
 reference_max_price = 225000
 

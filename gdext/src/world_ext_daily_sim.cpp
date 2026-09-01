@@ -231,6 +231,30 @@ static Array native_daily_collect_bundle_pass_keys(const Dictionary &bundle_dict
     return keys;
 }
 
+// Pass-A runs with defer_visible_publish=true on every native-daily slice, so its
+// slot family reaches MapData only through this round-completion commit. Moisture
+// is excluded on purpose: it has its own visual-transaction bridge in
+// MapGenerator._native_daily_commit_moisture. The ocean/local anomaly slots are
+// excluded too — pass_b and the ocean nodes flush them, and the GDScript ocean
+// cache aliases those arrays across rounds.
+static const char *const NATIVE_DAILY_PASS_A_DEFERRED_SLOTS[] = {
+    "cell_temp_baseline",
+    "cell_temp_season_offset",
+    "cell_ema_initialized",
+    "cell_temp_30d",
+    "cell_temp_365d",
+    "cell_temp_anomaly",
+    "cell_insolation_now",
+    "cell_insolation_dev",
+    "cell_day_length",
+    "cell_heat_input",
+    "cell_thermal_energy",
+    "cell_snowpack",
+};
+constexpr int NATIVE_DAILY_PASS_A_DEFERRED_SLOT_COUNT =
+    int(sizeof(NATIVE_DAILY_PASS_A_DEFERRED_SLOTS) /
+        sizeof(NATIVE_DAILY_PASS_A_DEFERRED_SLOTS[0]));
+
 static Array native_daily_collect_published_slots(const Dictionary &bundle_dict) {
     Array slots;
     if (bundle_dict.has("climate_pass_a_struct") || bundle_dict.has("climate_pass_b_knobs") ||
@@ -244,6 +268,11 @@ static Array native_daily_collect_published_slots(const Dictionary &bundle_dict)
         native_daily_append_unique(slots, String("cell_air_mass_temp_anomaly"));
         native_daily_append_unique(slots, String("cell_ocean_thermal_anomaly"));
         native_daily_append_unique(slots, String("cell_local_thermal_anomaly"));
+    }
+    if (bundle_dict.has("climate_pass_a_struct")) {
+        for (int i = 0; i < NATIVE_DAILY_PASS_A_DEFERRED_SLOT_COUNT; ++i) {
+            native_daily_append_unique(slots, String(NATIVE_DAILY_PASS_A_DEFERRED_SLOTS[i]));
+        }
     }
     if (bundle_dict.has("stage_b_knobs") || bundle_dict.has("stage_b_after_hydrology_knobs") ||
         bundle_dict.has("albedo_knobs") ||
@@ -1454,6 +1483,30 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
         const auto t_flush1 = std::chrono::high_resolution_clock::now();
         breakdown["render_prepare_ms"] =
             std::chrono::duration<double, std::milli>(t_flush1 - t_flush0).count();
+        _native_daily_slice_breakdown = breakdown;
+    } else if (done && _native_daily_slice_bundle.has("climate_pass_a_struct")) {
+        // Production skips the bulk flush (flush_slots_to_map=false) because each
+        // native pass publishes its own slots. Pass-A cannot: it runs deferred, so
+        // without this commit its whole slot family — insolation, day length,
+        // season offset, runtime baseline, the temperature EMAs and thermal energy —
+        // stays frozen at the last non-deferred call and every MapData consumer
+        // (sea-ice solar gate, ocean baseline, economy/vegetation sampling, UI)
+        // keeps reading day-0 values.
+        const auto t_publish0 = std::chrono::high_resolution_clock::now();
+        int published = 0;
+        for (int i = 0; i < NATIVE_DAILY_PASS_A_DEFERRED_SLOT_COUNT; ++i) {
+            const int sid = component_id(StringName(NATIVE_DAILY_PASS_A_DEFERRED_SLOTS[i]));
+            if (sid < 0 || sid >= _slots.size()) continue;
+            _flush_slot_to_map(sid);
+            ++published;
+        }
+        const auto t_publish1 = std::chrono::high_resolution_clock::now();
+        const double publish_ms =
+            std::chrono::duration<double, std::milli>(t_publish1 - t_publish0).count();
+        breakdown["pass_a_deferred_publish_ms"] = publish_ms;
+        breakdown["pass_a_deferred_publish_slots"] = published;
+        breakdown["render_prepare_ms"] =
+            double(breakdown.get("render_prepare_ms", 0.0)) + publish_ms;
         _native_daily_slice_breakdown = breakdown;
     }
 

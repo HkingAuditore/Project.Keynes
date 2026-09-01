@@ -5,18 +5,19 @@
 [resource]
 script = ExtResource("1")
 id = &"saltpeter"
+discovery_technology_tags = PackedStringArray("tech.natural_observation")
 display_name = "硝石"
 reserve_component = &"cell.res_saltpeter_reserve"
 init_reserve_scale = 8.0
-init_min_coverage = 0.005
-init_min_reserve = 10000.0
+init_min_coverage = 0.03
+init_min_reserve = 948452.0
 land_only = true
 temp_lo = 0.0
 temp_hi = 1.0
 gen_base = 0.75
 gen_temp = 1.25
 gen_moisture = -1.0
-gen_self = 2.5
+gen_self = 10.0
 decay_base = 0.0
 decay_temp = 0.0
 decay_moisture = 3.0

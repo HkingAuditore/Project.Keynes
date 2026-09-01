@@ -359,10 +359,12 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
         const int32_t count = runtime->cell_count();
         const auto &extra_slots = runtime->building_resource_extra_slots();
         std::vector<int32_t> slot_ids(extra_slots.size(), -1);
-        std::vector<uint8_t> slot_changed(extra_slots.size(), 0);
         for (size_t r = 0; r < extra_slots.size(); ++r)
             slot_ids[r] = component_id(StringName(extra_slots[r].c_str()));
+        if (_economy_resource_slot_resident.size() < _slots.size())
+            _economy_resource_slot_resident.resize(_slots.size(), 0);
         int64_t changed = 0;
+        int32_t resident_slots = 0;
         for (size_t cursor = 0; cursor < resource_delta_lanes.size(); ++cursor) {
             const size_t flat = resource_delta_lanes[cursor];
             const size_t r = count > 0 ? flat / static_cast<size_t>(count) : 0;
@@ -376,12 +378,15 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
                 flat % static_cast<size_t>(count));
             dst[cell] += static_cast<float>(resource_deltas[cursor]) /
                          static_cast<float>(NativeEconomyRuntime::GOODS_SCALE);
-            slot_changed[r] = 1;
+            if (_economy_resource_slot_resident[static_cast<size_t>(sid)] == 0) {
+                _economy_resource_slot_resident[static_cast<size_t>(sid)] = 1;
+                ++resident_slots;
+            }
             ++changed;
         }
-        for (size_t r = 0; r < slot_changed.size(); ++r)
-            if (slot_changed[r] != 0) _flush_slot_to_map(slot_ids[r]);
         result["building_resource_delta_cells"] = changed;
+        result["building_resource_resident_slots"] = resident_slots;
+        result["building_resource_mirror_deferred"] = resident_slots > 0;
         result["published_to_slot"] = changed > 0;
     }
     resource_flush_ms = bridge_elapsed_ms(resource_flush_started);
@@ -495,6 +500,11 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
 bool DCWorldExt::economy_should_run(int64_t day_index) const {
     return _economy_runtime != nullptr &&
            runtime_from(_economy_runtime)->should_run(day_index);
+}
+
+bool DCWorldExt::economy_deadline_critical(int64_t day_index) const {
+    return _economy_runtime != nullptr &&
+           runtime_from(_economy_runtime)->deadline_critical(day_index);
 }
 
 PackedInt32Array DCWorldExt::get_economy_live_cells() {

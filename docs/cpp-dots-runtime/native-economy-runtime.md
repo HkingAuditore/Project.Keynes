@@ -6,6 +6,20 @@
 `extract` 建筑按冻结本地生态容量与当前存量计算线性 CPUE；允许开采超过自然增长并
 耗尽资源。正值仍开启原有 `(cell,resource)` 共享安全开采预算，作为未来政策入口。
 
+### 湾区单格资源尺度（`BAY_CELL_EARLY_BUILDING_TARGET = 5000`）
+
+一格约粤港澳湾区面积。内容校准锚点为约 **5000** 座早期建筑（千–万量级），单位须计入
+`CELL_AREA_RESOURCE_SCALE(=100)` 与 `GOODS_SCALE(=1000)`：
+
+- 生物 extract（BH）：`ecology_capacity ≈ 4·N·q_early / (r·1e5)`，使半载 MSY 约等于 `N` 座满负荷抽取；
+  例 `wild_game` 用 `q=163,r=0.01` → authored `3260`（运行承载 `3260×100`）。
+- 农业 capacity：门闩为 `available/(count·q)`，现有 `init_min_reserve` 已远超 `N`；补齐牧场/农地
+  `gen_self`/`decay_self` 做缓慢恢复，不走密度 CPUE。
+- 矿产 extract：`init_min_reserve ≈ N·q_early·3650 / 1e5`，使约 `N` 座早期矿场满抽仍约十年储量；
+  真矿产 `gen_self=0`，仅 `clay`/`salt`/`saltpeter` 保留并上调现网再生。
+
+不恢复抽取硬配额；线性密度 CPUE 仅作用于 `ecology_capacity>0` 的可再生 extract。
+
 雇员机会收入由合同工资、上一周期岗位实付比例和 cell/profession 实付工资 EMA
 共同形成。工资可负担报价按含资源 CPUE、气候和计划利用率的可执行产能计算。
 低兑现岗位的可移动在职人口按周期化 mobility 比例进入既有失业池，再通过确定性
@@ -286,7 +300,7 @@ sequence、settled day、稳定结果码及实际两类物资/现金支出；它
 - adaptive 工资可负担上限改为日流量：`满产日结算收入 / (1 + 目标利润率) - 日投入` 得到工资池，再除以员工槽位并应用工资收入缓冲比例。停产建筑也使用该反事实报价，避免周期总收入被错当成日收入而把工资放大约 `epoch_days` 倍。
 - PKEC v50 的 `rolling_cell_settlement_v21_funded_cold_start_labor` 不再让无历史岗位默认兑现全部合同。岗位输出先受家庭、企业、启动、出口需求与无自我供给的库存缺口约束，普通市场回执再受当前商人现金／结算日限制；该资金预测与岗位支付历史取较低值。只有失业招聘使用 1/8 合同的低置信先验，已就业者转职、employee-to-owner 比较和 inspector 均使用严格资金预测。
 - 野生动物承载力继续随普通适生度下降，但压力死亡只作用于原始温湿适生度最低 25% 的急性区间，消除普通非理想气候的重复惩罚。理想与普通气候的 24 营地五年采集均有回归覆盖。
-- 林木改用理想承载量 `1200×100`、1% 日增长和正迁入的 Beverton-Holt 分支；新地图只对适生度最高的 30% 陆地保证 30,000 最低储量。它在低于承载量时自然增长，并通过单伐木场五年持续采收回归。
+- 林木使用理想承载量 `100000×100`、1% 日增长和正迁入的 Beverton-Holt 分支；新地图只对适生度最高的 30% 陆地保证 30,000 最低储量。它在低于承载量时自然增长，并通过单伐木场五年持续采收回归。野生动物后续按湾区 `N=5000` 校准为 `3260×100`（见上文「湾区单格资源尺度」）。
 
 ## PopulationCohort
 
@@ -540,6 +554,49 @@ stable good ID 排列的候选 CSR，并附带 good-level Q16 生产效率。每
 `ceil(effective_required / efficiency)` 乘以该产能实际需要的输入购买比例；若完整物理需求为正且购买比例为正，scaled 购买量至少为 1，避免硬输入在极低利用率下被截断为“零成本免费生产”。库存、业主现金与 goods audit 仍记录实际物理数量。
 这使早期木材等配方可以直接使用打制石器、青铜、金属或精密工具，不再需要商品转换站；每个输入槽仍按建筑时代设置最低品质，因此探索以后不会再选中打制石器，信息/AI 只接受精密工具。石器狩猎营地现在有 `tools` 软槽 `32768`、按劳动槽每日 100 工具；标称日产 `6670/80` 野味/生皮并抽取 `1430` 野生动物。无工具时产能与抽取约为标称一半，与补槽前的徒手产量对齐。采集营地同样用软工具并把标称植物产出加倍，但承载力占用保持原值。开局规划器按该软槽底线估算食物与抽取，且不把软互补品当作必须闭环的硬投入。
 玩家新建建筑列表必须展开当前科技可用的输入候选显示名，并标注非 100% 的 Q16 效率；不得只渲染槽位代表物资的 `display_name`。石器时代伐木场因此显示打制石器，而不是代表物资 `tools` 的「金属工具」。运行时仍按冻结科技可用候选的有效成本选择，不因 UI 文案改变。
+
+建造边使用同一套机制：`BuildingProfile.construction_category_ids` /
+`construction_min_quality_levels` 与 `input_category_ids` / `input_min_quality_levels` 语义完全一致，
+`EconomyCatalog` 按 good 的 `substitution_category_ids` 展开为 construction candidate CSR 并附
+good-level Q16 效率。每个建造组内 category 与 explicit 候选互斥，同时声明是编译期错误。
+`StarterEconomyPlanner._construction_groups` 直接读 profile 原始数组，必须同步展开 category
+**并施加同一套 min_quality 过滤**，否则开局路线规划与编译后的 catalog 会分叉。
+
+建材池按**时代切分**，而不是一个通用大池加质量门槛。`construction_min_quality_levels` 只是下限，
+没有上限，单一大池会让钢和铝下沉去建石器时代的采集营。当前池：
+
+| 池 | 成员 | 用于 |
+| --- | --- | --- |
+| `primitive_construction` | turf_block / reed_bundle / adobe_brick / logs / raw_stone / clay | 石器带结构槽 |
+| `primitive_lashing` | bast_fiber / reed_bundle | 石器带绑扎槽 |
+| `classical_construction` | lumber / bricks / raw_stone | 古典带 |
+| `industrial_construction` | construction_components / concrete / bricks / glass | 工业与现代带 |
+| `structural_metal` | steel / stainless_steel / aluminum | 金属结构槽 |
+| `conductor_metal` | copper / aluminum | 电气导体槽 |
+| `tools`（min_quality 2） | bronze_tools / tools / precision_tools | 手工业建筑装配槽 |
+
+配方的时代由它自己命名的材料推出：含 concrete/construction_components/steel 即工业带，含
+lumber/bricks 即古典带，其余为石器带。`raw_stone` 与 `bricks` 因此按上下文落入不同的池。
+玻璃进工业池是必要的——silica 是地块资源，没有硅石就造不出玻璃，而 139 个建筑的建造配方要玻璃。
+
+同池成员价格接近，所以"选有效成本最低的候选"不会把其余成员永久排除。**候选效率取自 good 的全局
+`production_efficiency_q16`，一个 good 无法按用途给出不同折算率**；需要按槽位区分折算时只能用
+explicit 候选列表（例如冶炼槽的 `coke = 78643`）。因此扩池时不要改建材 good 的全局效率：
+`steel` 出现在 26 个建筑的生产投入里，`logs` 13 个，改效率会连带改掉这些配方的物理消耗。
+
+1222 个建造组里 1196 个已有替代，`modern_economy_catalog_test` 的
+`_audit_construction_substitution_breadth` 锁住这条不变量；余下 26 个允许保持单候选的 good 列在
+`CONSTRUCTION_SOLE_CANDIDATE_GOODS`，都是功能性专用件（芯片、铁路设备、船体、燧石）或
+刻意不入池的 `gathered_plants`——把采集植物拉进建材池会让茅草屋顶和口粮抢同一批产出。
+
+固体燃料同理：`solid_fuel`（logs / charcoal / coal / coke）与 `smelting_fuel`
+（charcoal / coal / coke）此前只有 charcoal 一个成员且无人引用，导致没有木炭就炼不了铁、烧不了砖。
+燃料的 `production_quality_level` 兼作时代闸：木柴与木炭 0、煤 1、焦炭 2，所以工业锅炉不会退回烧
+木炭，焦炭高炉也不会退回烧煤。只有**燃烧**该 good 的槽位接入类别；原料位（logs→charcoal、
+coal→coke、logs→lumber）以及已有手工 explicit 候选的槽位保持原样。
+
+候选列表进入 `technology_content_binding_hash`，因此改建材候选会让旧 PKCN 存档
+`catalog_hash_mismatch`。
 
 `upgrade_family_id/upgrade_tier` 编译为稳定 family 目录与逐建筑 tier。BUILD 检查同族最高已解锁
 档位，旧档返回 `building_tier_obsolete_for_construction`；生产仍只检查该建筑原始科技，因此旧

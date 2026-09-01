@@ -119,6 +119,10 @@ public:
     static constexpr int32_t ENV_CURVE_SAMPLES = 17;
     static constexpr int32_t PUBLISH_ENTRIES_PER_SLICE = 4096;
     static constexpr int32_t PUBLISH_AUDIT_ENTRIES_PER_SLICE = 131072;
+    // Commit mutates the authoritative cell table and therefore cannot be
+    // worker-parallelized. Keep its deterministic range small enough that a
+    // single publish slice remains below the 2 ms non-preemptible target.
+    static constexpr int32_t PUBLISH_COMMIT_ENTRIES_PER_SLICE = 256;
     static constexpr int32_t BUILDING_REVIEW_GROUPS_PER_SLICE = 4096;
     static constexpr int32_t AUTO_BUILDING_CELLS_PER_SLICE = 256;
     static constexpr int32_t AUTO_INVESTMENT_CELLS_PER_SLICE = 96;
@@ -345,6 +349,7 @@ public:
                _environment_day != day_index;
     }
     bool should_run(int64_t day_index) const;
+    bool deadline_critical(int64_t day_index) const;
     void drain_bio_introduces(godot::PackedInt32Array &cells,
                               godot::PackedInt32Array &bits);
     godot::PackedInt32Array economy_live_cells_query();
@@ -1280,6 +1285,14 @@ private:
         // the demand before it is clamped to what the market can supply.
         int64_t bridge_required_units = 0;
         int64_t bridge_missing_units = 0;
+        // Same reporting contract for the opening build plan: the construction
+        // demand of the full intent, and the part of it the source cell still
+        // cannot fund. Both are derived per replan and never persisted.
+        int64_t material_required_units = 0;
+        int64_t material_missing_units = 0;
+        // A construction group whose every candidate is unavailable on the
+        // source market can never be funded, so preparing would never end.
+        uint8_t kit_unbuildable = 0;
         uint8_t kit_partial = 0;
         uint8_t place_buildings = 0;
         uint64_t kit_hash = 0;
@@ -3033,6 +3046,7 @@ private:
     std::string _executed_substage;
     PublishPhase _publish_phase = PublishPhase::PREPARE;
     size_t _publish_cursor = 0;
+    bool _publish_commit_initialized = false;
     int32_t _publish_order_cursor = 0;
     int32_t _publish_line_cursor = 0;
     int64_t _publish_valuation_sat = 0;
@@ -3055,6 +3069,30 @@ private:
     bool _auto_building_slice_by_scale = true;
     int32_t _commands_per_slice = 16384;
     int32_t _epoch_days = 1;
+    // 本 epoch 每格各自的未结算天数，以及全局取 min 造成的天数丢失量。
+    // _epoch_days 是所有结算格的最小值：分桶齐整时每格相同、丢失恒为 0；新格上线
+    // 或 cadence 重锁会让同批格的 elapsed 不齐，落后格的差额当前被直接丢弃。
+    std::vector<int32_t> _cell_elapsed_days;
+    // 活跃度分级（阶段 6）。当前只观测：分级结果进直方图与 report，不参与工作集
+    // 选择，所以逐日数值与分级前逐位相同。要让 T2/T3 真正降频，前提是同一天内不同
+    // 格能用不同的 dt，而 _epoch_days 是每 epoch 一个标量，见 cell_elapsed_days。
+    std::vector<uint8_t> _cell_tier;
+    std::vector<int64_t> _cell_next_review_day;
+    std::vector<uint8_t> _cell_force_wake;
+    std::vector<uint32_t> _cell_tier_seen_gen;
+    std::vector<int64_t> _cell_tier_seen_population;
+    std::vector<int64_t> _cell_tier_change_day;
+    std::vector<int64_t> _cell_shortage_since_day;
+    std::vector<int64_t> _cell_population_total;
+    static constexpr int32_t SHORTAGE_ACUTE_DAYS = 10;
+    int64_t _tier_histogram[4] = {0, 0, 0, 0};
+    int64_t _tier_reason_histogram[11] = {0};
+    int64_t _tier_forced_wakes = 0;
+    int32_t _epoch_elapsed_days_max = 0;
+    int32_t _epoch_elapsed_days_spread_cells = 0;
+    int64_t _epoch_elapsed_days_lost = 0;
+    int64_t _total_elapsed_days_lost = 0;
+    int32_t _peak_elapsed_days_spread_cells = 0;
     int32_t _configured_epoch_days = MARKET_CYCLE_MAX_DAYS;
     int32_t _min_epoch_days = MARKET_CYCLE_MIN_DAYS;
     int32_t _max_epoch_days = MARKET_CYCLE_MAX_DAYS;
@@ -3777,6 +3815,12 @@ private:
     std::array<int64_t, static_cast<size_t>(PublishPhase::COUNT)> _publish_phase_work{};
     std::array<double, static_cast<size_t>(PublishPhase::COUNT)> _publish_slice_phase_ms{};
     std::array<int64_t, static_cast<size_t>(PublishPhase::COUNT)> _publish_slice_phase_work{};
+    double _publish_commit_cells_ms = 0.0;
+    double _publish_commit_prepare_ms = 0.0;
+    double _publish_commit_finalize_ms = 0.0;
+    double _publish_commit_cells_slice_ms = 0.0;
+    double _publish_commit_prepare_slice_ms = 0.0;
+    double _publish_commit_finalize_slice_ms = 0.0;
     std::array<double, BUILDING_COMMIT_PHASE_COUNT> _building_commit_slice_phase_ms{};
     std::array<int64_t, BUILDING_COMMIT_PHASE_COUNT> _building_commit_slice_phase_work{};
     enum HouseholdSlicePhase : size_t {
@@ -4030,6 +4074,10 @@ private:
         int32_t owner_signature_id = -1;
         int32_t family_owned_factor_q16 = Q16_ONE;
         int32_t cell_sector_factor_q16 = Q16_ONE;
+        // 空组（count==0，含拆除后留下的墓碑槽）的 family-owned 混合因子恒为
+        // Q16_ONE，与家族持股无关。把「当时是否为空」纳入身份判据后，空组可以
+        // 完全跳过重算而不会在 count 变正时错误命中旧值。
+        uint8_t count_positive = 0;
     };
     std::vector<BuildingFactorCacheEntry> _building_factor_cache;
     std::vector<BuildingFactorCacheEntry> _building_factor_cache_rebuild_scratch;
@@ -4252,6 +4300,11 @@ private:
     std::vector<int32_t> _merchant_primary_slot;
     std::vector<int32_t> _merchant_offsets;
     std::vector<int32_t> _merchant_slots;
+    // 有商人的格，按格号升序，与 CSR 同一次构建产出。capture_country_epoch 原来
+    // 为聚合每国商人人口扫整张地图；商人只存在于少数有人口的格，列表让它按实际
+    // 端点数走。_valid=false 时消费方退回全图循环，语义不变。
+    std::vector<int32_t> _merchant_nonempty_cells;
+    bool _merchant_nonempty_cells_valid = false;
     std::vector<int32_t> _environment_temperature_q16;
     std::vector<int32_t> _environment_temperature_30d_q16;
     std::vector<int32_t> _environment_moisture_q16;
@@ -5668,6 +5721,27 @@ private:
     bool cell_due_plan_review(int32_t cell, int64_t day) const;
     bool cell_due_investment_review(int32_t cell, int64_t day) const;
     int32_t workset_elapsed_days(int64_t day_index) const;
+    void capture_cell_elapsed_days(int64_t day_index);
+    int32_t cell_elapsed_days(int32_t cell) const;
+    enum TierReason : int32_t {
+        TIER_REASON_PLAYER_TERRITORY = 0,
+        TIER_REASON_VISIBLE,
+        TIER_REASON_FORCED_WAKE,
+        TIER_REASON_EFFECT_SHORTAGE,
+        TIER_REASON_ESSENTIALS_SHORTAGE,
+        TIER_REASON_CONSTRUCTION,
+        TIER_REASON_RECENT_CHANGE,
+        TIER_REASON_QUIET_SHORT,
+        TIER_REASON_QUIET_WITH_BUILDINGS,
+        TIER_REASON_DORMANT,
+        TIER_REASON_OUT_OF_RANGE,
+        TIER_REASON_COUNT,
+    };
+    uint8_t classify_cell_activity_tier(int32_t cell, int64_t day_index,
+                                        int32_t *reason_out = nullptr) const;
+    void refresh_cell_activity_tiers(int64_t day_index);
+    void request_cell_wake(int32_t cell);
+    int32_t tier_review_period_days(uint8_t tier) const;
     void rebuild_economy_live_cells();
     void refresh_cadence_estimates();
     void maybe_lock_cadence_cycles(int64_t day_index);

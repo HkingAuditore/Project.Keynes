@@ -45,6 +45,15 @@
 
 namespace pk {
 
+struct NativeSliceResult {
+    uint32_t status = 0;
+    uint32_t work_done = 0;
+    uint32_t next_cursor = 0;
+    uint32_t dirty_mask = 0;
+    uint32_t elapsed_us = 0;
+    uint32_t flags = 0;
+};
+
 class DCWorldExt : public godot::RefCounted {
     GDCLASS(DCWorldExt, godot::RefCounted);
 
@@ -168,6 +177,15 @@ public:
     godot::Dictionary configure_native_world(const godot::Dictionary &knobs);
     godot::Dictionary run_native_daily_tick(const godot::Dictionary &tick_knobs);
     godot::Dictionary run_native_daily_slice(const godot::Dictionary &tick_knobs);
+    // Coarse-grained native scheduler boundary. Configuration is cold-path;
+    // advance_runtime_pulse is the only production bridge call needed to
+    // drain cross-domain continuation work for one render frame.
+    int configure_runtime_graph(const godot::Dictionary &boot_config);
+    int64_t advance_runtime_pulse(int64_t day, double season_phase,
+                                  double speed_scale, int budget_us, int flags = 0);
+    void flush_runtime_visuals(uint32_t dirty_mask = 0);
+    godot::Dictionary get_runtime_perf_snapshot(int detail_level = 0) const;
+    godot::Dictionary get_runtime_graph_last_economy_report() const;
     bool is_native_daily_visual_commit_pending() const;
     void complete_native_daily_visual_commit();
     // Compatibility alias for callers predating the full visual-snapshot barrier.
@@ -385,6 +403,7 @@ public:
     godot::Dictionary run_economy_slice(const godot::Dictionary &ctx);
     godot::Dictionary run_economy_slice_compact(const godot::Dictionary &ctx);
     bool economy_should_run(int64_t day_index) const;
+    bool economy_deadline_critical(int64_t day_index) const;
     godot::PackedInt32Array get_economy_live_cells();
     godot::Dictionary get_economy_report() const;
     godot::Dictionary get_country_class_opinion_snapshot() const;
@@ -2440,6 +2459,20 @@ private:
     godot::PackedByteArray                    _pending_visual_dirty_mask;
     int                                       _pending_visual_dirty_count = 0;
     bool                                      _pending_visual_dirty_dense = false;
+    // Economy writes resource extra-change lanes directly into native slots.
+    // Until the native resource pass consumes and publishes them, MapData
+    // still contains the preceding committed mirror and must not overwrite
+    // those slots during a generic refresh.
+    std::vector<uint8_t>                      _economy_resource_slot_resident;
+    // BIND_TABLE 反查记忆化。_flush_slot_to_map / refresh_slots_from_map_keys 原来
+    // 每次调用都线性扫 148 条表项，每条现构一个 StringName（UTF-8 解析 + 全局
+    // StringName 表加锁查找）。资源 pass 每日 flush 约 28 个 slot、refresh 约 68 个
+    // key，累计上万次 StringName 构造。查找结果对 (comp_id → 表项) 是恒定的，
+    // 首次解析后缓存：-2 未解析，-1 不在表内，>=0 为表项下标。
+    // _slot_visual_dirty_cache 同理缓存 pk_slot_affects_visual_dirty 的 String
+    // begins_with 链：0 未解析，1 否，2 是。
+    std::vector<int16_t>                      _slot_bind_index_cache;
+    std::vector<uint8_t>                      _slot_visual_dirty_cache;
     bool                                      _bound    = false;
     bool                                      _native_world_configured = false;
     int                                       _native_world_cell_count = 0;
@@ -2484,6 +2517,25 @@ private:
     godot::Dictionary                        _native_generation_profile;
     bool                                      _native_generation_active = false;
     int                                       _native_generation_seed = 0;
+
+    // NativeRuntimeGraph state. Runtime pointers above remain the authority;
+    // this state stores only scheduler cursors, counters and dirty generations.
+    bool                                      _runtime_graph_configured = false;
+    bool                                      _runtime_graph_enabled = false;
+    int64_t                                   _runtime_graph_day = -1;
+    uint64_t                                  _runtime_graph_generation = 0;
+    uint32_t                                  _runtime_graph_dirty_mask = 0;
+    uint32_t                                  _runtime_graph_next_cursor = 0;
+    uint64_t                                  _runtime_graph_pulse_count = 0;
+    uint64_t                                  _runtime_graph_abi_calls = 0;
+    uint64_t                                  _runtime_graph_callback_count = 0;
+    uint64_t                                  _runtime_graph_work_done = 0;
+    uint64_t                                  _runtime_graph_budget_yields = 0;
+    uint64_t                                  _runtime_graph_economy_slices = 0;
+    uint64_t                                  _runtime_graph_economy_commits = 0;
+    uint32_t                                  _runtime_graph_last_elapsed_us = 0;
+    uint32_t                                  _runtime_graph_last_status = 0;
+    godot::Dictionary                         _runtime_graph_last_economy_report;
 
     // ---- archetype ----
     godot::Vector<godot::Array>               _archetypes;          // each entry = comp_ids
@@ -2547,6 +2599,13 @@ private:
     int32_t                                   _natural_resource_modifier_cells = -1;
     int32_t                                   _natural_resource_modifier_active_factor_count = 0;
     godot::PackedFloat32Array                 _natural_resource_regen_factors;
+    // 因子表只在 modifier 快照变动时重建，但 run_natural_resource_pass 原来每日
+    // 重扫整表（resource_count × n_cells）做有限性校验与 active 计数，再对每个动态
+    // 资源额外扫一遍 n_cells 判断 has_regen_modifier。表没变时结论恒定，故在重建
+    // 处一次算清并缓存；pass 侧凭 (snapshot_version, factor_count) 命中即跳过。
+    std::vector<uint8_t>                      _natural_resource_regen_resource_active;
+    bool                                      _natural_resource_regen_summary_valid = false;
+    bool                                      _natural_resource_regen_summary_rejected = false;
 
     // Bio occupancy keeps deterministic full-map semantics in phase one, but
     // reuses its cell lanes across daily calls. Published PackedArrays remain
@@ -2721,6 +2780,8 @@ private:
     // ---- helpers ----
     void _ensure_slot_capacity(Slot &slot, int new_count);
     void _flush_slot_to_map(int comp_id);
+    int  _bind_index_for_slot(int comp_id);
+    bool _slot_is_visual_dirty(int comp_id);
     godot::Dictionary _queue_bio_observations(
         int64_t country_handle, int64_t effective_day,
         const godot::PackedInt32Array &cells,

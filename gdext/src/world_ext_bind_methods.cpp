@@ -70,6 +70,17 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::run_native_daily_tick);
     ClassDB::bind_method(D_METHOD("run_native_daily_slice", "tick_knobs"),
                          &DCWorldExt::run_native_daily_slice);
+    ClassDB::bind_method(D_METHOD("configure_runtime_graph", "boot_config"),
+                         &DCWorldExt::configure_runtime_graph);
+    ClassDB::bind_method(D_METHOD("advance_runtime_pulse", "day", "season_phase",
+                                  "speed_scale", "budget_us", "flags"),
+                         &DCWorldExt::advance_runtime_pulse, DEFVAL(0));
+    ClassDB::bind_method(D_METHOD("flush_runtime_visuals", "dirty_mask"),
+                         &DCWorldExt::flush_runtime_visuals, DEFVAL(0));
+    ClassDB::bind_method(D_METHOD("get_runtime_perf_snapshot", "detail_level"),
+                         &DCWorldExt::get_runtime_perf_snapshot, DEFVAL(0));
+    ClassDB::bind_method(D_METHOD("get_runtime_graph_last_economy_report"),
+                         &DCWorldExt::get_runtime_graph_last_economy_report);
     ClassDB::bind_method(D_METHOD("is_native_daily_visual_commit_pending"),
                          &DCWorldExt::is_native_daily_visual_commit_pending);
     ClassDB::bind_method(D_METHOD("complete_native_daily_visual_commit"),
@@ -322,6 +333,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::run_economy_slice_compact);
     ClassDB::bind_method(D_METHOD("economy_should_run", "day_index"),
                          &DCWorldExt::economy_should_run);
+    ClassDB::bind_method(D_METHOD("economy_deadline_critical", "day_index"),
+                         &DCWorldExt::economy_deadline_critical);
     ClassDB::bind_method(D_METHOD("get_economy_live_cells"),
                          &DCWorldExt::get_economy_live_cells);
     ClassDB::bind_method(D_METHOD("get_economy_report"),

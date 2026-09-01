@@ -40,8 +40,8 @@ uniform bool terrain_normal_tex_bound = false;
 // R=E/NE, G=N/NW, B=W/SW, A=S/SE（high/low nibble）。只用于遮蔽直射光。
 uniform bool terrain_horizon_tex_bound = false;
 uniform float terrain_horizon_max_angle = 1.309; // ~75 degrees
-uniform float terrain_horizon_softness = 0.16;
-uniform float terrain_horizon_strength = 0.70;
+uniform float terrain_horizon_softness = 0.30;
+uniform float terrain_horizon_strength = 0.90;
 uniform float terrain_horizon_cast_floor = 0.82;
 uniform int terrain_horizon_debug_view = 0; // 0=off, 1=shadow mask, 2=direct visibility
 // [terrain-gi 2026-07-31] 同一张 horizon 图派生的全局光照量。设计与推导见
@@ -54,10 +54,10 @@ uniform int terrain_horizon_debug_view = 0; // 0=off, 1=shadow mask, 2=direct vi
 //   绝不能让未初始化的全零表把地表打黑。
 uniform bool gi_lut_bound = false;
 uniform vec3 gi_horizon_lut[16];
-uniform float gi_ao_strength : hint_range(0.0, 1.0) = 0.85;
+uniform float gi_ao_strength : hint_range(0.0, 1.0) = 0.90;
 // V_sky 的下限。几何遮蔽算出的 0 意味着"看不到任何天空"，但真实峡谷底部仍被岩壁多次
 // 散射照亮；没有下限时封闭地形会被压成死黑，暗部还会把地表 dither 的对比度一并放大。
-uniform float gi_ao_floor : hint_range(0.0, 1.0) = 0.45;
+uniform float gi_ao_floor : hint_range(0.0, 1.0) = 0.38;
 // 0=双线性（保留高频残差）；1=2×2 箱式低通。AO 与 bent normal 共用，不增加采样次数。
 uniform float gi_ao_smoothing : hint_range(0.0, 1.0) = 0.75;
 // 环境光查询法线向 bent normal 偏转的比例。**1.0 会完全丢弃几何法线**，让环境光只跟随
@@ -250,9 +250,9 @@ uniform bool tod_latitude_sun_enabled = true;
 // tod_sun_relief_max_up：太阳方向 up 分量截顶上限（原硬编码 0.92）。越低 → 太阳越偏水平 →
 //   坡面方向性明暗越强、影子方向随时角旋转越明显。默认 0.88。
 // tod_terrain_relief_strength：陆地专属的方向性明暗叠加强度（仅作用于陆地 BRDF 之后，
-//   不影响水面反射）。朝阳坡变亮、背阳坡变暗，随太阳方位旋转 → 光源移动清晰可见。默认 0.35。
+//   不影响水面反射）。朝阳坡变亮、背阳坡变暗，随太阳方位旋转 → 光源移动清晰可见。默认 0.55。
 uniform float tod_sun_relief_max_up        : hint_range(0.5, 1.0) = 0.88;
-uniform float tod_terrain_relief_strength  : hint_range(0.0, 1.0) = 0.35;
+uniform float tod_terrain_relief_strength  : hint_range(0.0, 1.0) = 0.55;
 
 // ─── Pass 2 新增开关（任务 4/6） ─────────────────────────────────────────
 // cloud_tod_tint_enabled：只给云阴影用；云本体渲染在 weather_overlay.gdshader。
@@ -478,7 +478,7 @@ uniform vec3 color_snow         : source_color = vec3(0.96, 0.96, 0.96);
 // ─── 极端天气地表反馈（仅保留 BLIZZARD 雪/薄冰；裂地与热浪/干旱调色已删除）────
 // ─── 双光源 hillshading ──────────────────────────────────────────────────
 
-uniform float hillshade_strength : hint_range(0.0, 1.0) = 0.45;
+uniform float hillshade_strength : hint_range(0.0, 1.0) = 0.90;
 uniform float hillshade_slope_gain : hint_range(0.5, 24.0) = 8.0;
 uniform vec2  hillshade_dir      = vec2(-0.55, -0.55);
 uniform vec2  hillshade_fill_dir = vec2( 0.60,  0.40);
@@ -486,11 +486,11 @@ uniform vec2  hillshade_fill_dir = vec2( 0.60,  0.40);
 //   compute_terrain_normal：① 粗法线给山脉总体走向（治"走向不清晰"）；② 细节法线只在需要的地形 +
 //   高画质上叠（治"密密麻麻"）；③ 低/中端机不算细节（性能分档）。
 uniform float hillshade_coarse_radius   : hint_range(1.0, 16.0) = 4.0;  // 未绑定烘焙法线时运行期回退半径(texel)
-uniform float terrain_normal_sample_radius_hex = 0.44;
-uniform float terrain_normal_height_scale_hex = 0.85;
-// [normal-soften 2026-07-31] 1.6→1.25：烘焙粗法线再放大后会把 residual 残差的中频起伏
-// 读成过硬的阴阳面，压低后宏观走向仍在、砂砾感下降。
-uniform float hillshade_coarse_strength : hint_range(0.0, 3.0)  = 1.25;  // 烘焙粗法线 xy 强度再缩放（基底明暗）
+uniform float terrain_normal_sample_radius_hex = 1.35;
+uniform float terrain_normal_height_scale_hex = 2.10;
+// [normal-soften 2026-07-31] 1.6→1.25：先压低 residual 中频引起的过硬阴阳面。
+// [起伏增强 2026-09-01] 1.25→1.65：在 1.35-hex 宽半径粗法线上恢复宏观走向，不提高细节法线。
+uniform float hillshade_coarse_strength : hint_range(0.0, 3.0)  = 1.65;  // 烘焙粗法线 xy 强度再缩放（基底明暗）
 uniform bool  hillshade_detail_enabled = true;                          // 细节法线总开关
 // [normal-soften 2026-07-31] 细节法线改走更宽差分 + zoom 门控，全局强度再降到 0.16。
 // 高画质不再等于"更碎"：见 hillshade_tod.compute_terrain_normal。

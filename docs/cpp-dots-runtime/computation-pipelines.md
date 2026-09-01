@@ -235,7 +235,7 @@ Fallback（仅指 bind 后的 republish 层 `run_native_world_generate_pass`，*
 C++ 入口：
 
 - `encode_bake_height_tex_data`：`height_buffer` F32 `[0,1]` → RG8 16-bit，高字节/低字节与旧 GDScript `round(v*65535)` bit-equivalent。Legacy 上传时由 `DCAtlasEncoders.encode_height_flow_tex` 再与 flow 拼成 RGBA8（B=flow）。
-- `encode_bake_terrain_normal_tex_data`：**生成期烘焙"总体地形法线"**（2026-06-25，2026-09-01 尺度修复）。中心差分半径由 `sample_radius_hex × hex_size` 换算为 X/Y texel，垂直增益使用 `height_scale_hex × hex_size / (2·radius_world)`，不再绑定固定 `coarse_radius`/栅格分辨率；X 圆柱环绕、Y clamp，按行并行。默认 `sample_radius_hex=0.44`、`height_scale_hex=0.85`，legacy、tiled、shader fallback 共用该 hex 世界度量，避免大地图明暗起伏被放大。GDScript 侧 `DCAtlasEncoders.encode_terrain_normal_tex` 提供等价 debug fallback。
+- `encode_bake_terrain_normal_tex_data`：**生成期烘焙"总体地形法线"**（2026-06-25，2026-09-01 尺度修复）。中心差分半径由 `sample_radius_hex × hex_size` 换算为 X/Y texel，垂直增益使用 `height_scale_hex × hex_size / (2·radius_world)`，不再绑定固定 `coarse_radius`/栅格分辨率；X 圆柱环绕、Y clamp，按行并行。默认 `sample_radius_hex=1.35`、`height_scale_hex=2.10`，用跨格低通法线强调山系/盆地走向；legacy、tiled、shader fallback 共用该 hex 世界度量。GDScript 侧 `DCAtlasEncoders.encode_terrain_normal_tex` 提供等价 debug fallback。
 - `encode_bake_horizon_tex_data`：**生成期烘焙 8 方向地形遮蔽角**（2026-07-03，2026-09-01 射程固定）。在独立 3×3 低通后沿 8 方向 trace，步进仍为 `step_px·(s + 0.5·step_growth·s·(s-1))`，但新增 `max_distance_world`（默认由 `24 hex × hex_size` 注入），CPU、legacy GPU shader、tiled compute 均按世界距离截断；因此大地图不会因边界更远而额外变暗。高度尺度仍独立使用 `height_scale_hex=16`，不可与法线高度尺度混用。其余 nibble 编码、环绕、GI occluder 契约不变。
 - `encode_bake_enum_atlas_payload`：map-index atlas RGBA8，`R=biome`、`G/B=cell.index low/high`、`A=landform`；输入使用 `WorldData` 的 CSR 像素反向索引与按 `cell.index` 排列的 landform byte。
 - `encode_bake_flow_tex_data`：river SDF/flow F32 `[0,1]` → L8。Legacy/Tiled 均打进 height 纹理的 B 通道，不再单独建 `flow_tex` / `visual_flow_tiles`。
@@ -311,7 +311,7 @@ relief（见下 “P0 relief”）。
 
 下游收益：权威主索引固定为 warp 后的 `cube_round`，`dyn_lut`、`eco_lut`、天气、迷雾和交互状态均使用同一个 NEAREST 主格，不再通过图集空间 Dither 改派归属。静态地表边界由独立的 RG8 副索引与 R8 距离纹理在屏幕空间窄带内处理；边界数据缺失时直接退化为硬主索引。C++ 单 pass 与 fused pass 应逐字节一致，并由 headless parity 测试覆盖。
 
-**分层地形法线（2026-06-25，2026-09-01 尺度修复，起伏增强）**：粗法线仍优先采样 `terrain_normal_tex`；未绑定时的运行期 fallback 按 `terrain_normal_sample_radius_hex=0.44` 与 `terrain_normal_height_scale_hex=1.05` 从 `world_size/hm_resolution/hex_size` 换算差分半径和增益。经典双光源路径也使用同一世界尺度，避免 legacy 存档在大地图上出现额外明暗放大。显示端 hillshade 默认强度为 `0.86`，粗法线增益为 `1.45`；Terrain GI/AO 默认强度为 `0.90`、天空可见度下限为 `0.38`，用于增强坡面和谷地层次而不改变真实高程。细节法线和性能分档契约不变。
+**分层地形法线（2026-06-25，2026-09-01 尺度修复，宏观起伏增强）**：粗法线仍优先采样 `terrain_normal_tex`；烘焙与未绑定 fallback 统一按 `terrain_normal_sample_radius_hex=1.35` 与 `terrain_normal_height_scale_hex=2.10` 从 `world_size/hm_resolution/hex_size` 换算差分半径和增益。1.35-hex 宽半径低通格内 residual，保留山系、高地和盆地的跨格走向；2.10 只夸张视觉法线，不改权威 elevation。显示端 hillshade 默认强度为 `0.90`，粗法线增益为 `1.65`；Terrain GI/AO 默认强度为 `0.90`、天空可见度下限为 `0.38`。陆地 hypsometric 色带同步收紧为 `0.08/0.42/0.72/0.94`，使强环境光下仍有高程分层。细节法线和性能分档契约不变。
 
 **P1 高程 hypsometric 重映射（2026-06-25，治平原/阶梯）**：在 normalize 之后对 `land_h=(E-sea)/(1-sea)` 施一条**单调三段曲线**——低地压平（出真平原）、中段柔和台地（可辨非硬 staircase）、高段陡升（拉开起伏、山更挺拔），治 P0 遗留 #3（平原不平 / 整体起伏弱）与半个 #2（连续高程驱动、取消按类别硬分档）。曲线为 PCHIP（Fritsch–Carlson 单调限幅）C1 + 单调（不倒置高程序），控制点 `PK_HYPSO_XS/YS` 以 `constexpr`/`const` 落地（C++↔GDScript 同名同值），共享 helper `PkHypsoCurve`/`pk_hypso_remap_elev`（C++）与 `_hypso_make_tangents`/`_hypso_eval`/`_hypso_remap_elev`（GDScript）。**两层施加（方案 C）**：
 - **Layer B（仿真高程 E，定结构，C++ 唯一路径）**：`run_native_world_generate_base_pass` 在 normalize + 侵蚀(SPL/droplet/thermal) 之后、湖判/分类之前，对陆地段（`E>sea_level`）以 `mix=1.0` 施全曲线；锚定 sea_level → below-sea(海洋/湖种) 不变、海陆边界与 ocean/coast 分类不破坏；置于侵蚀之后 → 保留河谷网络与台地保形。**因生成已 100% C++（dots-total-cpp，GDScript 生成 fallback 已删），Layer B 无 GDScript 镜像**。下游湖判/气候/分类/landform 全部看到重塑后的 E（biome 分布随之变化，符合"三级阶梯成真实结构"预期）。
@@ -565,6 +565,16 @@ I/O：
 2. GDScript stage machine 推进日历/轨道相位和相关缓存。
 3. B+ path 可走 `gdext`，日志中会出现 `b_plus_path=gdext`。
 4. 末尾可能排队 atlas/visual 更新。
+
+B+ round 的 native/GDScript 返回契约：`run_season_round_slice()` 每片返回
+`done`、`stage`（当前 stage cursor）、`stages_done`（本 round 已完成 stage 总数，
+包含跳过的 stage）、`stages_done_this_slice`、`elapsed_ms` 和 `fallback`。GDScript
+协调器以 `stages_done` 作为单调进度；为兼容旧 DLL，缺少该字段时回退读取 `stage`。
+当 `done=true` 且 `stages_done==12` 时，协调器必须结束 round 并调用
+`finish_season_round()`；不能把已完成 round 的 stage 重置为 0 后继续调度。C++
+在 stage 边界检查 slice deadline，因此单片可能完成多个 stage，但不会在 stage 内
+强行中断。若任一 stage 返回 fallback，round 由 GDScript 显式 abort 后退回保留的
+12-stage 路径。
 
 `season_phase` 在当前 runtime 中只表示年内轨道相位，用于计算太阳直射点、日照和昼长；它不再作为独立的季节魔法因子直接改变温度、湿度、降水或风向。`refresh_seasonal()` 也不再执行旧的按季节重置湿度/雨影/风向逻辑，只保留慢层与 atlas 边界维护。Season refresh 的 `sync_current_state` 阶段只能读取已由 `wind_surface` 发布的 `cell_temp` 来派生雪盖、地貌、植被和覆盖；不得重算或 flush `cell_temp`，以免绕过 climate finalizer 造成 30-tick 温度跳变。
 
@@ -986,9 +996,9 @@ reserve'        /= 1 + ecology_stress_mortality_rate * acute_stress
 自然资源移出，只作为农场/种植园产出的 goods。旱作耕地、水田容量、种植园容量、牧场容量和肥沃土壤
 是农业 capacity 条件，不会被每日生产扣减。矿产通常 `gen_* / decay_* = 0`；土壤
 沿用线性 IMEX，野生动物、林木与海鱼启用密度制约生态分支。`fertile_soil` 的最差适宜度净自然项保持为正，
-其省级面积缩放后的长期储量下限为 5000；`wild_game` 使用 1200×100 的理想承载量、0.065% 日增长、
-`0.01×100` 日迁入，并关闭季节性急性压力死亡；气候仍通过承载量表达长期适生差异，适生地可从零恢复，并以真实的
-`24 × 0.715 × 5 = 85.8` 每周期采收量通过理想/普通气候五年高位回归。`timber` 使用
+其省级面积缩放后的长期储量下限随 `gen_self`/`decay_self` 而定；`wild_game` 按湾区锚点
+`N=5000` 校准为 `3260×100` 理想承载量、1% 日增长与约 `0.0272×100` 日迁入，并关闭季节性急性压力死亡；气候仍通过承载量表达长期适生差异，适生地可从零恢复，并以真实的
+`24 × 0.163 × 5` 资源单位/周期采收量通过理想/普通气候五年高位回归。`timber` 使用
 `100000×100` 理想承载量、1% 日增长与
 正迁入；生成期排除沙漠/寒漠/极旱荒漠，剩余非沙漠陆地有 `1000×100` 的基础林木 floor，
 最适生 30% 陆地初始储量不低于 3,000,000；湿度最适点/容差为 `0.70/0.55`，使高温高湿
@@ -997,7 +1007,8 @@ reserve'        /= 1 + ecology_stress_mortality_rate * acute_stress
 气候调整承载量时仍可正增长，不规定长期库存必须保持某个承载量百分比。
 `marine_fish` 在沿海陆格与海洋水格的联合 habitat 中按适生度保留约 72% 的有效格，初始平均
 `1800×100`，不再给全海域灌入同一最低值。适生度综合温度、海域深浅、洋流速度、上升流、河口营养
-扩散和连续空间噪声；以 `5000×100` 为理想承载量，日增长率为 0.15%，迁入为 `0.01×100`。
+扩散和连续空间噪声；以 `5000×100` 为理想承载量，日增长率为 **1%**，迁入为 `0.01×100`。
+`freshwater_fish` 承载量保持 `2500×100`，日增长率 **1.2%**。
 
 **初始储量（bootstrap，多因子「地块自身情况」适宜度）**：`_bootstrap_natural_resource_deposits(map, cfg)`
 在 `init_soa_from_bake` 与生成期物理环流 flush 之后、经济 bootstrap 之前跑一次。随后显式把 habitat
@@ -2103,7 +2114,7 @@ psi_path=gdscript
 
 - `path=gdext_raster` 表示 pixel raster slice 使用 C++ raster path。
 - `psi_path=gdscript` 如果出现在 PSI stage 执行前，可能只是默认/上一阶段报告；需要看后续 `stage_psi_path=gdext` 或 `published=true`。
-- SLP/PSI `published_to_slot=true` 表示 C++ 已把输出写入 slot，GDScript caller 应跳过重复 array copy。
+- SLP/PSI `published_to_slot=true` 表示 C++ 已把输出写入 slot，GDScript caller 应跳过重复 array copy。SLP 现在额外返回 `slice_start`、`slice_end`、`slice_final`、`slot_id`、`slot_size` 和 `slot_publish_reason`：中间切片的 `published_to_slot=false` 且 reason=`intermediate_slice` 是正常的 Pass A 累积，不是 C++ 失败；末片 reason=`slot_published` 才表示 slot flush，`slot_missing`/`slot_size_mismatch` 才表示真实 slot 不可用。末片若因旧 DLL 或 slot 不可用而返回 `published_to_slot=false`，运行期兼容路径必须以一次 `map.slp_arr = slp_out` 的快照交换提交，并只用 `refresh_slots_from_map_keys(["cell_slp"])` 回灌该 slot；不得逐元素写 `map.slp_arr`，否则 PackedArray CoW 可能把一个已完成的原生 pass 变成主线程长卡顿。
 
 风险：
 
@@ -2829,10 +2840,23 @@ population/market snapshots`。岗位按本地 profession 匹配，owner lot 先
 多个建筑组共享 owner signature 时，owner fill 总和按盈利/利用率优先级受该 cohort 存活人口约束；
 household demography 和 structural commit 后再做一次只裁不招的 committed 对账，避免死亡后出现
 建筑组幽灵填充。补招仍只发生在下一次 `building_employment`，不会改变已经完成的生产与工资结算。
-`building_employment` 内部先完成失业池招聘，再对剩余 ACTIVE 非服务业主空缺执行一次冻结匹配：
-目标按预期业主日收入降序、来源按收入升序，同民族且目标收入更高时使用
-`seed/day/cell/target_group/source_group` 的确定性概率。同职业只改组填充，跨职业复用 cohort 迁移；
-每个目标/来源组每周期最多成功一次。调度阶段、锁定 N/S cadence、DataCore slots 与 GDScript 权威边界不变。
+`building_employment` 内部先完成失业池招聘，再对剩余 ACTIVE 非服务业主空缺执行一次冻结匹配。
+岗位和来源统一比较扣除生活成本后的可支配收入：雇员为税后工资减目标签名生活成本，
+业主使用已扣投入、工资、维护、经营税、所得税和业主生活成本的
+`projected_owner_income_per_day`。普通就业不得低于生活成本；仅当 cohort 的生存满意度低于
+`starvation_satisfaction_threshold_q16` 时，才允许达到该阈值比例的紧急低工资岗位。
+同职业至少需要 `investment_displacement_min_advantage_q16` 的相对改善，跨职业至少为
+`max(Q16_ONE/8, investment_displacement_min_advantage_q16)`，转入 merchant 还要满足 merchant
+改善门槛；收入相等不再触发转职。
+
+失业人口按 `employment_mobility_daily_q16` 复合到锁定市场周期形成有限 move cap（默认 5%/日），
+每个失业 ethnicity cohort 只保留可行岗位吸引力最高的 4 个候选。候选权重为 vacancy、收入改善
+choice factor、labor pay ratio 和 planned utilization 的乘积，按稳定最大余数法分配，容量是硬上限；
+因此高收入岗位会得到更多人，但不会在单个周期吸走整池人口。owner→owner 与 employee→owner
+复用同一可支配收入门槛；跨职业 owner 迁移必须在扣除 30 日生活费后仍覆盖 household market 的
+每位 owner working-capital reserve，资金由 `move_cohort_population` 按人口比例转移。目标和来源
+先快照，匹配只执行一次，禁止链式跳槽；调度阶段、锁定 N/S cadence、DataCore slots 与
+GDScript 权威边界不变。
 有效可采储量合入尚未消费的负 pending
 extra，避免跨经济周期重复超采。资源配方 CSR 额外编译 mode：`extract` 以有效储量限制产能并
 发布负 delta；`capacity` 以 `reserve / (building_count × requirement)` 限产，但不写资源 delta。
@@ -2902,8 +2926,10 @@ extra-change slot 由 ResourceProfileRegistry 顺序驱动 natural-resource pass
 滚动 PKEC v22 下，building plan 的业主生存利用率下限使用 cell-local 线性聚合，market signal
 临时量只分配该 cell 的稀疏 CSR lane；investment 复用 epoch-transient `(cell,type)` 与
 `(cell,resource)` 索引，并在 `building_commit_phase` 中按 cell range continuation。投资只处理
-新增建筑：业主空缺仍由 employment 填补；资金充足 cohort 按“目标业主日收入高于当前人均
-`income_ema`”进入确定性概率抽样，中签后才迁入建筑目录指定的业主职业。生产阶段则在
+新增建筑：业主空缺仍由 employment 填补；资金充足 cohort 按扣除生活成本后的可支配收入
+改善门槛、有限 mobility budget 和 cell-local 全量 vacancy attraction 比例分配进入建筑目录
+指定的业主职业，owner 不再按 ethnicity 硬分区；跨职业迁移前还必须覆盖 30 日生活费后的
+owner working-capital reserve。生产阶段则在
 当前 `market_id == cell_id` 契约下按 due cell 并行：worker 直接写互不重叠的 cohort、building、
 market、resource-delta 和 signal lane，把跨 cell 诊断、留用品、现金流及 trace 写入每 cell 的
 `ProductionResult`。主线程按原 cursor 顺序归并后才推进 stage，因此 scalar/worker 的权威状态与
@@ -3076,3 +3102,25 @@ Runtime vegetation dynamics (`run_vegetation_dynamics_pass`, threaded path, merg
 ### Vegetation distribution rebalance (2026-08-02)
 
 The generation/runtime authority remains the native full pass with a GDScript mirror. The temperate forest moisture gate is `0.42` (previously `0.48`), while the tropical JUNGLE/rainforest wet-tail gate is `0.64` (previously `0.56`); monsoon and tropical dry forest occupy the intermediate shoulder. Wet forest and wetland profiles use an asymmetric moisture fit: deficit is penalized normally, while surplus moisture retains only `0.25` of the Gaussian distance as a waterlogging cost. Explicit saturated substrates (`SWAMP`, `MANGROVE`, `DELTA`, `FLOODPLAIN`) reject the continuous tropical-rainforest candidate and compete through marsh, swamp, mangrove, or monsoon profiles. Runtime low-vitality succession scans all allowed terrestrial profiles for the best climate/terrain suitability instead of only the two succession-graph neighbors, while preserving compatibility gain, streak, and cooldown gates. This prevents low-fit rainforest or grassland from becoming trapped by a locally incomplete succession chain.
+
+## Native bio occupancy and research observation (2026-08-25)
+
+Bio occupancy is a C++/SoA authority. Generation builds deterministic bounded
+patches from 1–8 farthest-point cores instead of filling every eligible cell.
+FOOD, GRAZER, FIBER and SPECIALTY are exclusive natural guilds; spice, rubber
+and silkworm are SPECIALTY. A newly occupied cell may contain at most three
+species. Production introduction may coexist with same-guild cultivation up to
+that cap; persistence never normalizes old overlaps.
+
+`configure_bio_occupancy()` freezes species columns, bit lookup, neighbors and
+carrier slot IDs once. Daily ACTIVE calls read bound `cell_*` slots directly.
+Persistence, target-owned proposals, stable guild merge and publish are scalar
+below 16,384 cells and use the shared worker dispatcher above it. Target-owned
+proposal lanes need no atomics or worker-sized full-map buffers. Continuation
+keeps staging private until its final slice; PackedArray input/output remains the
+PROBE/A-B rollback path.
+
+Auto execution starts one-shot through 50,000 cells, then selects by a
+complete-round 1.25 ms EMA. Slices target 0.75 ms and freeze a 2,048–32,768-cell
+range. Newly added occupancy is filtered by native vision eligibility and queued
+directly into the country observation batch.

@@ -14,6 +14,9 @@ func _init() -> void:
 	else:
 		print(catalog)
 	_audit_explicit_candidate_validation()
+	_audit_construction_category_validation()
+	if bool(catalog.get("ok", false)):
+		_audit_construction_substitution_breadth(catalog)
 	print("=== modern economy catalog %s ===" % ("PASS" if failures == 0 else "FAIL"))
 	quit(0 if failures == 0 else 1)
 
@@ -401,13 +404,15 @@ func _audit(catalog: Dictionary) -> void:
 			stone_building != null and
 			String(stone_building.owner_profession_id) == stone_owner_policy[building_id] and
 			stone_building.employee_profession_ids.is_empty())
-	_expect("stone hunting sustains its hunter and yields fewer hides",
+	_expect("stone hunting sustains its hunter and yields hides plus wearable fur",
 		stone_hunting != null and
-		stone_hunting.output_good_ids == PackedStringArray(["game_meat", "raw_hide"]) and
-		stone_hunting.output_quantities_per_day == PackedInt64Array([310, 36]) and
+		stone_hunting.output_good_ids == PackedStringArray(["game_meat", "raw_hide", "fur"]) and
+		stone_hunting.output_quantities_per_day == PackedInt64Array([780, 36, 36]) and
 		stone_hunting.output_quantities_per_day[0] >= 171 and
 		stone_hunting.output_quantities_per_day[0] >
 			stone_hunting.output_quantities_per_day[1] and
+		stone_hunting.output_quantities_per_day[1] ==
+			stone_hunting.output_quantities_per_day[2] and
 		stone_hunting.resource_quantities_per_day == PackedInt64Array([163]) and
 		stone_hunting.owner_slots_per_building == 1)
 	_expect("rough bullion sites are merchant-owned mint collectors",
@@ -1159,6 +1164,126 @@ func _audit_explicit_candidate_validation() -> void:
 	_expect("category and explicit candidates are mutually exclusive per slot",
 		"cannot combine category" in EconomyCatalogScript._validate_explicit_input_candidates(
 			category_conflict, good_index))
+
+
+const CONSTRUCTION_GOOD_INDEX := {
+	"logs": 0, "turf_block": 1, "reed_bundle": 2, "bast_fiber": 3,
+}
+const CONSTRUCTION_QUALITY_LEVELS := [0, 0, 0, 1]
+const CONSTRUCTION_EFFICIENCIES := [65536, 65536, 32768, 65536]
+
+
+func _construction_categories() -> Dictionary:
+	return {
+		"primitive_construction": PackedInt32Array([0, 1, 2]),
+		"primitive_lashing": PackedInt32Array([2, 3]),
+	}
+
+
+func _construction_profile(category_ids: PackedStringArray,
+		min_levels: PackedInt32Array):
+	var profile = BuildingProfileScript.new()
+	profile.construction_good_ids = PackedStringArray(["logs"])
+	profile.construction_quantities = PackedInt64Array([1000])
+	profile.construction_category_ids = category_ids
+	profile.construction_min_quality_levels = min_levels
+	return profile
+
+
+func _expand_construction(profile) -> Dictionary:
+	var offsets := PackedInt32Array([0])
+	var goods := PackedInt32Array()
+	var efficiencies := PackedInt32Array()
+	var error: String = EconomyCatalogScript._append_construction_candidates(
+		profile, CONSTRUCTION_GOOD_INDEX, _construction_categories(),
+		PackedInt32Array(CONSTRUCTION_QUALITY_LEVELS),
+		PackedInt32Array(CONSTRUCTION_EFFICIENCIES),
+		offsets, goods, efficiencies)
+	return {"error": error, "offsets": offsets, "goods": goods,
+		"efficiencies": efficiencies}
+
+
+## Goods that are allowed to remain the only candidate of a construction group.
+## Each is functional equipment or a signature input rather than a material with
+## an interchangeable stand-in: a rail depot really does need rolling stock, and
+## gathered plants stay out of the material pools so thatch never competes with
+## the food supply.
+const CONSTRUCTION_SOLE_CANDIDATE_GOODS := ["advanced_chips", "computers",
+	"electrical_equipment", "electronic_components", "flint", "gathered_plants",
+	"oceanic_vessels", "railway_equipment"]
+
+
+func _audit_construction_substitution_breadth(catalog: Dictionary) -> void:
+	# A construction group with one candidate is a hard dependency: a cell that
+	# cannot reach that single good can never build the type, which is how
+	# colonization used to deadlock on bast fibre. Materials must stay pooled.
+	var offsets: PackedInt32Array = catalog.get(
+		"building_construction_candidate_offsets", PackedInt32Array())
+	var candidate_goods: PackedInt32Array = catalog.get(
+		"building_construction_candidate_good_ids", PackedInt32Array())
+	var good_ids: PackedStringArray = catalog.get("good_ids", PackedStringArray())
+	var offenders := PackedStringArray()
+	var pooled := 0
+	for group in range(maxi(0, offsets.size() - 1)):
+		var begin := int(offsets[group])
+		var end := int(offsets[group + 1])
+		if end - begin > 1:
+			pooled += 1
+			continue
+		if end - begin != 1:
+			continue
+		var good := int(candidate_goods[begin])
+		var stable_id := String(good_ids[good]) if good < good_ids.size() else str(good)
+		if not CONSTRUCTION_SOLE_CANDIDATE_GOODS.has(stable_id) \
+				and not offenders.has(stable_id):
+			offenders.append(stable_id)
+	_expect("every construction material group offers a substitute (%d pooled)" % pooled,
+		offenders.is_empty())
+	if not offenders.is_empty():
+		print("      sole-candidate materials: %s" % ", ".join(offenders))
+
+
+func _audit_construction_category_validation() -> void:
+	var expanded := _expand_construction(_construction_profile(
+		PackedStringArray(["primitive_construction"]), PackedInt32Array([0])))
+	_expect("a construction category expands to every member good",
+		String(expanded.error) == ""
+		and expanded.goods == PackedInt32Array([0, 1, 2])
+		and expanded.offsets == PackedInt32Array([0, 3])
+		and expanded.efficiencies == PackedInt32Array([65536, 65536, 32768]))
+
+	var lashing = _construction_profile(
+		PackedStringArray(["primitive_lashing"]), PackedInt32Array([1]))
+	lashing.construction_good_ids = PackedStringArray(["bast_fiber"])
+	var gated := _expand_construction(lashing)
+	_expect("a construction quality gate drops obsolete substitutes",
+		String(gated.error) == "" and gated.goods == PackedInt32Array([3]))
+
+	var untyped := _expand_construction(_construction_profile(
+		PackedStringArray(), PackedInt32Array()))
+	_expect("an uncategorised construction group keeps its single good",
+		String(untyped.error) == "" and untyped.goods == PackedInt32Array([0]))
+
+	var conflict = _construction_profile(
+		PackedStringArray(["primitive_construction"]), PackedInt32Array([0]))
+	conflict.construction_candidate_offsets = PackedInt32Array([0, 2])
+	conflict.construction_candidate_good_ids = PackedStringArray(
+		["logs", "turf_block"])
+	conflict.construction_candidate_efficiency_q16 = PackedInt32Array(
+		[65536, 65536])
+	_expect("construction category and explicit candidates are mutually exclusive",
+		"cannot combine category" in String(_expand_construction(conflict).error))
+
+	var wrong_category := _expand_construction(_construction_profile(
+		PackedStringArray(["primitive_lashing"]), PackedInt32Array([0])))
+	_expect("a construction category must contain its representative good",
+		"must include preferred good" in String(wrong_category.error))
+
+	var short_columns := _expand_construction(_construction_profile(
+		PackedStringArray(["primitive_construction", "primitive_lashing"]),
+		PackedInt32Array([0])))
+	_expect("construction category columns must align with the groups",
+		"category columns mismatch" in String(short_columns.error))
 
 
 func _candidate_profile():

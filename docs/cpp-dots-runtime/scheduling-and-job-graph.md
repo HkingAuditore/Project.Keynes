@@ -1,5 +1,14 @@
 # Scheduling and Job Graph
 
+### Aggregate publish commit slicing
+
+`aggregate_publish/COMMIT` now processes the deterministic settlement-cell list
+in persistent 256-cell ranges. Generation updates, shortage metrics, and effect
+metrics stay in the original order; social/technology facts, food-flow snapshot,
+and the committed barrier run only once after the final range. Diagnostics expose
+`aggregate_publish.commit_cells` and `aggregate_publish.commit_finalize` so range
+mutation cost is separated from one-time bridge/finalization work.
+
 ## 2026-08 continuation budget contract
 
 固定预算仍为 `sim_frame_budget_ms=8ms`、`sim_slice_budget_ms=3ms`；Country/Economy
@@ -1041,3 +1050,21 @@ worker paths share one deterministic naming order.
 Trigger graph scheduling: `trigger_runtime` runs after committed event publication
 and before Modifier/Country/Economy consumers. Its report uses `path=TRIGGER_GRAPH`,
 `stage_name`, `progress_ratio`, and fallback/gap fields.
+# Native runtime graph pulse
+
+The optional `NativeRuntimeGraph` pulse drains the existing native domain
+runtimes in their established deterministic order: country, trigger, ideology,
+effect, modifier, gameplay effect, then economy. It is budgeted cooperatively;
+when the pulse reaches its microsecond budget it returns a budget-yield status
+and resumes from the runtime-owned cursors on the next frame. GDScript remains
+the compatibility/fallback scheduler until A/B hash and soak gates pass.
+
+When `native_runtime_graph_mode=ACTIVE`, `economy_daily` remains registered only
+as a compatibility SUS node but its `should_run()` is policy-gated to false.
+The graph invokes the existing `NativeEconomyRuntime` directly, including its
+committed event and construction-receipt publication boundary; the GDScript
+continuation callback only calls `advance_runtime_pulse()` after native-daily
+and bio same-day transactions have released their barriers. `get_economy_perf_report()`
+reads the graph's last compact result in this mode, so recorder/GM diagnostics do
+not silently report an empty legacy-job snapshot. OFF/SHADOW continue to use the
+legacy `economy_daily` report and continuation path.

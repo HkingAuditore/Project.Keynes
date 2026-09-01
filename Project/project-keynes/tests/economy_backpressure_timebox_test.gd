@@ -170,11 +170,42 @@ func _initialize() -> void:
 	resumed_clock.simulation_backpressure_pulse.connect(func(_day: int) -> void:
 		resumed_clock.request_simulation_backpressure(&"economy_day_barrier", false))
 	resumed_clock._process(1.0 / 60.0)
-	if resumed_clock.day_index() != 0:
-		failures.append("a continuation pulse started a new day in the same render frame")
-	resumed_clock._process(1.0 / 60.0)
 	if resumed_clock.day_index() != 1:
+		failures.append("a cheap continuation pulse did not resume the day it drained")
+
+	# 让新的一天延后一帧的条件收紧为"pulse 真的吃满了帧预算"，而不是"本帧曾经
+	# 有过 barrier"。后者对便宜的 pulse 罚了一整帧，是夹速悬崖的一部分。
+	var costly_clock := WorldClock.new()
+	costly_clock.speed_multiplier = 50.0
+	costly_clock._last_day = 0
+	costly_clock._last_season = costly_clock.season_index_for_day(0)
+	costly_clock._last_year = costly_clock.year_index_for_day(0)
+	costly_clock._day_carry = 0.2
+	costly_clock.sim_frame_budget_ms = 1.0
+	costly_clock.request_simulation_backpressure(&"economy_day_barrier", true)
+	costly_clock.simulation_backpressure_pulse.connect(func(_day: int) -> void:
+		OS.delay_msec(4)
+		costly_clock.request_simulation_backpressure(&"economy_day_barrier", false))
+	costly_clock._process(1.0 / 60.0)
+	if costly_clock.day_index() != 0:
+		failures.append("a budget-exhausting pulse still stacked a full day in the same frame")
+	costly_clock._process(1.0 / 60.0)
+	if costly_clock.day_index() != 1:
 		failures.append("a drained barrier did not resume day advancement on the next frame")
+
+	# 软 backpressure 只做诊断，不再参与限流：它只能由日推进本身清除，拿来砍倍速
+	# 会自锁成"降速 → 更少日推进 → 更晚清除"。
+	var soft_clock := WorldClock.new()
+	soft_clock.speed_multiplier = 50.0
+	soft_clock._last_day = 0
+	soft_clock._last_season = soft_clock.season_index_for_day(0)
+	soft_clock._last_year = soft_clock.year_index_for_day(0)
+	# 0.5 + 50x*(1/60) 跨得过整日；旧的 1x 夹速下 0.5 + 0.017 跨不过去。
+	soft_clock._day_carry = 0.5
+	soft_clock.request_simulation_backpressure(&"economy", true)
+	soft_clock._process(1.0 / 60.0)
+	if soft_clock.day_index() < 1:
+		failures.append("soft backpressure clamped day advancement instead of staying diagnostic")
 
 	var sticky_clock := WorldClock.new()
 	sticky_clock.sim_frame_budget_ms = 8.0

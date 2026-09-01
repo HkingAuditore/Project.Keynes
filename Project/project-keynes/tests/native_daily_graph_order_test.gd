@@ -149,6 +149,35 @@ func _run() -> void:
 			"map.moisture_arr = moisture_snapshot",
 			"diag[\"moisture_committed\"] = moisture_committed",
 		]))
+	# Pass-A is deferred on every slice while production disables the bulk
+	# flush_slots_to_map, so the round-completion commit below is the ONLY path that
+	# mirrors insolation / day length / season offset / runtime baseline / temp EMAs
+	# into MapData. Losing it freezes every MapData climate consumer at day 0.
+	_expect("round completion publishes the deferred pass-A slot family",
+		_contains_in_order(daily_src, [
+			"NATIVE_DAILY_PASS_A_DEFERRED_SLOTS[] = {",
+			"\"cell_temp_baseline\"",
+			"\"cell_temp_30d\"",
+			"\"cell_insolation_now\"",
+			"\"cell_day_length\"",
+			"\"cell_thermal_energy\"",
+		]) and _contains_in_order(daily_src, [
+			"} else if (done && _native_daily_slice_bundle.has(\"climate_pass_a_struct\")) {",
+			"NATIVE_DAILY_PASS_A_DEFERRED_SLOTS[i]",
+			"_flush_slot_to_map(sid)",
+			"breakdown[\"pass_a_deferred_publish_slots\"] = published",
+		]))
+	_expect("sun-driven and baseline-driven knobs read the live slot, not the MapData mirror",
+		_contains_in_order(generator_src, [
+			"func _native_daily_live_f32(",
+			"func _native_daily_live_u8(",
+		]) and generator_src.contains(
+			"_native_daily_live_f32(\"cell_temp_baseline\", map.temp_baseline_arr, n)"
+		) and generator_src.contains(
+			"_native_daily_live_u8(\"cell_ema_initialized\", map.ema_initialized_arr, n)"
+		) and generator_src.contains(
+			"_native_daily_live_f32(\"cell_insolation_now\", map.insolation_now_arr, n_cells)"
+		))
 	_expect("transpiration subtracts donor outflow before neighbor distribution",
 		climate_src.contains("D[i] += self_share - transported") and
 		climate_src.contains("transported / float(valid_land_neighbors)"))

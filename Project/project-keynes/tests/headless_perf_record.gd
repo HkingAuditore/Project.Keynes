@@ -45,6 +45,7 @@ func _run() -> int:
 	var accuracy_preset := str(args.get("accuracy_preset", "")).to_upper()
 	var closing_audit_mode := str(args.get("closing_audit_mode", "")).to_upper()
 	var worker_mode := str(args.get("worker_mode", "")).to_upper()
+	var runtime_graph_mode := str(args.get("runtime_graph_mode", "")).to_upper()
 	var country_report_mode := str(args.get("country_report_mode", "LIGHT")).to_upper()
 	var country_full_diagnostics := country_report_mode in ["FULL", "PROBE"]
 	var country_light_report_enabled := not country_full_diagnostics
@@ -155,6 +156,19 @@ func _run() -> int:
 	# 覆盖生成 + 运行全程,退出前恢复。
 	var climate_profile_res: Resource = null
 	var ns_prev_values: Dictionary = {}
+	var graph_prev_mode = null
+	if runtime_graph_mode in ["OFF", "SHADOW", "ACTIVE"]:
+		climate_profile_res = ResourceLoader.load("res://data/world/earth_like.tres", "Resource")
+		if climate_profile_res == null:
+			push_error("[headless-perf] runtime_graph_mode requested but earth_like.tres missing")
+			return 2
+		graph_prev_mode = climate_profile_res.get("native_runtime_graph_mode")
+		climate_profile_res.set("native_runtime_graph_mode", {
+			"OFF": ClimateProfile.NATIVE_MODE_OFF,
+			"SHADOW": ClimateProfile.NATIVE_MODE_SHADOW,
+			"ACTIVE": ClimateProfile.NATIVE_MODE_ACTIVE,
+		}[runtime_graph_mode])
+		print("[headless-perf] runtime_graph_mode=%s applied" % runtime_graph_mode)
 	if ns_gates in ["ON", "WIND", "ALL"]:
 		var gate_knobs: Dictionary = {
 			"wind_traj_table_enabled": true,
@@ -177,6 +191,8 @@ func _run() -> int:
 
 	var generation_started := Time.get_ticks_usec()
 	await host.generate_world(-1 if use_saved_setup else seed)
+	if graph_prev_mode != null and climate_profile_res != null:
+		climate_profile_res.set("native_runtime_graph_mode", graph_prev_mode)
 	if economy_profile != null:
 		economy_profile.set(
 			"economy_approximation_runtime_mode", previous_accuracy_mode)
@@ -241,7 +257,9 @@ func _run() -> int:
 	var recorder: RefCounted = PerfRecorderScript.new()
 	recorder.call("bind_main", host)
 	host.set_perf_recorder(recorder)
-	recorder.call("start")
+	# The benchmark deliberately requests per-tick DETAIL so performance CSV
+	# diagnosis retains every job and breakdown. Player recording defaults CORE.
+	recorder.call("start", "DETAIL", 1)
 
 	var run_started := Time.get_ticks_usec()
 	var barrier_pulses := 0
@@ -253,9 +271,21 @@ func _run() -> int:
 		host.run_daily_tick(day, phase)
 		host.finish_daily_tick(0.0, {})
 
-		var drained := _drain_hard_barrier(clock, day)
+		var drained := await _drain_hard_barrier(clock, day)
 		barrier_pulses += int(drained.get("pulses", 0))
 		if not bool(drained.get("ok", false)):
+			var barrier_sources := PackedStringArray()
+			for source in clock._simulation_backpressure_sources.keys():
+				barrier_sources.append(String(source))
+			barrier_sources.sort()
+			var graph_snapshot: Dictionary = {}
+			if host.get("_generator") != null:
+				var runtime_generator = host.get("_generator")
+				var ext = runtime_generator.get("_data_core_world_ext")
+				if ext != null and ext.has_method("get_runtime_perf_snapshot"):
+					graph_snapshot = ext.get_runtime_perf_snapshot(1)
+			push_error("[headless-perf] barrier snapshot day=%d sources=%s graph=%s" % [
+				day, ",".join(barrier_sources), JSON.stringify(graph_snapshot)])
 			push_error("[headless-perf] hard barrier did not drain at day %d" % day)
 			fatal = true
 			break
@@ -340,6 +370,11 @@ func _drain_hard_barrier(clock: WorldClock, day: int) -> Dictionary:
 	while _has_hard_barrier(clock) and pulses < MAX_BARRIER_PULSES_PER_DAY:
 		clock.simulation_backpressure_pulse.emit(day)
 		pulses += 1
+		# Native daily/ocean continuations may hand work to the persistent
+		# scheduler/worker queue. A synchronous signal loop can starve that queue
+		# and falsely report a stuck barrier even though the player path would
+		# advance on the next rendered frame.
+		await process_frame
 	return {
 		"ok": not _has_hard_barrier(clock),
 		"pulses": pulses,

@@ -346,6 +346,10 @@
 					"id": "raw_hide"
 				},
 				{
+					"kind": 1,
+					"id": "fur"
+				},
+				{
 					"kind": 2,
 					"id": "stone_age_hunting_camp"
 				}
@@ -388,6 +392,18 @@
 					"display_name": "生皮"
 				},
 				{
+					"kind": "good",
+					"id": "fur",
+					"binding_kind": 1,
+					"subject": "good.fur",
+					"attribute": "production_access",
+					"operation": "unlock",
+					"value": 1,
+					"implementation": "GoodProfile.technology_tags",
+					"status": "existing_binding",
+					"display_name": "毛皮"
+				},
+				{
 					"kind": "building",
 					"id": "stone_age_hunting_camp",
 					"binding_kind": 2,
@@ -400,7 +416,7 @@
 					"display_name": "狩猎营地"
 				}
 			],
-			"effect_summary": "可利用资源：野生动物；解锁物资：野味；解锁物资：生皮；解锁建筑：狩猎营地；作为必要支撑：生皮刮制棚、小型陷阱线",
+			"effect_summary": "可利用资源：野生动物；解锁物资：野味；解锁物资：生皮；解锁物资：毛皮；解锁建筑：狩猎营地；作为必要支撑：生皮刮制棚、小型陷阱线",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 1 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",

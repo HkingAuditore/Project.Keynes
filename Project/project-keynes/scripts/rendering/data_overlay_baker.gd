@@ -217,18 +217,18 @@ static func bake(
 	for cell in cells:
 		if cell == null:
 			continue
-		var sample := _sample_cell(cell, adapter, mode, climate, season_phase, world, map, lat_buf, lat_buf_size)
-		var value: float = float(sample.get("value", 0.0))
-		var bucket: int = int(sample.get("bucket", 0))
-		var intensity: float = clampf(float(sample.get("intensity", 0.0)), 0.0, 1.0)
-		var is_valid: bool = bool(sample.get("valid", true))
-		# 方向型通道（WIND_DIR / OCEAN_CURRENT_DIR）：sample 返回 hue + dir_intensity，
+		_sample_cell(cell, adapter, mode, climate, season_phase, world, map, lat_buf, lat_buf_size)
+		var value: float = _s_value
+		var bucket: int = _s_bucket
+		var intensity: float = clampf(_s_intensity, 0.0, 1.0)
+		var is_valid: bool = _s_valid
+		# 方向型通道（WIND_DIR / OCEAN_CURRENT_DIR）：采样给出 hue + dir_intensity，
 		# 这里把它们重映射到 baker 协议——R = hue（[0,1] → 0..255）、G = dir_intensity。
 		# shader 端按 mode 取 R 反推 hue 走 hsv2rgb。
-		var is_vector_mode: bool = bool(sample.get("vector_mode", false))
+		var is_vector_mode: bool = _s_vector_mode
 		if is_vector_mode and is_valid:
-			value = clampf(float(sample.get("hue", 0.0)), 0.0, 1.0)
-			intensity = clampf(float(sample.get("dir_intensity", 0.0)), 0.0, 1.0)
+			value = clampf(_s_hue, 0.0, 1.0)
+			intensity = clampf(_s_dir_intensity, 0.0, 1.0)
 
 		if is_valid and (is_nan(value) or is_inf(value)):
 			is_valid = false
@@ -518,19 +518,19 @@ static func bake_cell_lut(
 					and (int(occupancy_bits[idx]) & (1 << occupancy_bit)) != 0
 				bucket = occupancy_bit
 			_:
-				var cell = map.cell_at(idx)
-				var sample := _sample_cell(
-					cell, adapter, mode, climate, season_phase, world, map,
-					world.latitude_buffer, world.latitude_buffer.size()
+				_sample_cell(
+					map.cell_at(idx), adapter, mode, climate, season_phase,
+					world, map, world.latitude_buffer,
+					world.latitude_buffer.size()
 				)
-				valid = bool(sample.get("valid", true))
-				value = float(sample.get("value", 0.0))
-				intensity = clampf(float(sample.get("intensity", 0.0)), 0.0, 1.0)
-				bucket = int(sample.get("bucket", 0))
-				vector_mode = bool(sample.get("vector_mode", false))
+				valid = _s_valid
+				value = _s_value
+				intensity = clampf(_s_intensity, 0.0, 1.0)
+				bucket = _s_bucket
+				vector_mode = _s_vector_mode
 				if vector_mode:
-					value = clampf(float(sample.get("hue", 0.0)), 0.0, 1.0)
-					intensity = clampf(float(sample.get("dir_intensity", 0.0)), 0.0, 1.0)
+					value = clampf(_s_hue, 0.0, 1.0)
+					intensity = clampf(_s_dir_intensity, 0.0, 1.0)
 		if valid and (is_nan(value) or is_inf(value)):
 			valid = false
 		if not valid:
@@ -619,11 +619,32 @@ static func _fanout_cell_bytes_soa(
 			buf[base + 1] = g_byte
 			buf[base + 3] = 255
 
-# 逐 cell 按 mode 做采样。
-# 返回 { value: float(0..1), bucket: int, intensity: float(0..1), valid: bool }
-# value  —— 连续通道使用；离散通道忽略
-# bucket —— 离散通道使用（CLIMATE_ZONE 档位 / WeatherType.WT id）
-# intensity —— 仅 WEATHER 通道用于控制 alpha
+# 逐 cell 按 mode 做采样，结果写入下面这组静态槽而不是每格新建 Dictionary。
+# 采样被调用 n_cells 次（约 2400）× 每秒最多 10 次重烘焙，逐格分配 Dictionary
+# 等于每秒两万多次分配；槽化后语义不变、零分配。调用方读槽前必须先调本函数。
+# _s_value     —— 连续通道使用；离散通道忽略
+# _s_bucket    —— 离散通道使用（CLIMATE_ZONE 档位 / WeatherType.WT id）
+# _s_intensity —— 仅 WEATHER 通道用于控制 alpha
+# _s_hue / _s_dir_intensity —— 仅 vector 通道（风向 / 洋流方向）使用
+static var _s_value: float = 0.0
+static var _s_bucket: int = 0
+static var _s_intensity: float = 0.0
+static var _s_hue: float = 0.0
+static var _s_dir_intensity: float = 0.0
+static var _s_valid: bool = false
+static var _s_vector_mode: bool = false
+
+
+static func _sample_reset() -> void:
+	_s_value = 0.0
+	_s_bucket = 0
+	_s_intensity = 0.0
+	_s_hue = 0.0
+	_s_dir_intensity = 0.0
+	_s_valid = false
+	_s_vector_mode = false
+
+
 static func _sample_cell(
 	cell,
 	adapter: DCViewAdapter,
@@ -634,23 +655,20 @@ static func _sample_cell(
 	map,
 	lat_buf: PackedFloat32Array,
 	lat_buf_size: int
-) -> Dictionary:
+) -> void:
+	_sample_reset()
 	# B.1：所有 schema-mirrored 字段从 adapter 读，cell.* 仅留 non-schema
 	# 字段（passable_sea / vegetation_vitality / temperature_transport_anomaly /
 	# upwelling_strength / slp / wind_speed / wind_stress_curl / ocean_psi）。
 	var idx: int = int(cell.index)
 	match mode:
 		OverlayMode.MODE.TEMPERATURE:
-			return {
-				"value": clampf(adapter.get_temp(idx), 0.0, 1.0),
-				"valid": true,
-			}
+			_s_value = clampf(adapter.get_temp(idx), 0.0, 1.0)
+			_s_valid = true
 		OverlayMode.MODE.PRECIPITATION:
 			var precip: float = adapter.get_weather_precip(idx)
-			return {
-				"value": clampf(precip / PRECIPITATION_NORM_MAX, 0.0, 1.0),
-				"valid": true,
-			}
+			_s_value = clampf(precip / PRECIPITATION_NORM_MAX, 0.0, 1.0)
+			_s_valid = true
 		OverlayMode.MODE.CLIMATE_ZONE:
 			# 与 main.gd._climate_zone_name 一致：用 world.latitude_buffer 取真实 ny。
 			# 直接取该 cell 覆盖的第一个像素 idx，查 latitude_buffer[idx]。
@@ -658,78 +676,59 @@ static func _sample_cell(
 			# 三方完全一致；buffer 缺失时回退到 _latitude_hint 的近似（仅极旧地图）。
 			var ny_like: float = _cell_latitude(cell, world, lat_buf, lat_buf_size)
 			var lat_dev: float = absf(ny_like - 0.5) * 2.0  # 0(赤道)..1(极)
-			var zone: int = clampi(int(lat_dev * 5.0), 0, 4)
-			return {
-				"bucket": zone,
-				"valid": true,
-			}
+			_s_bucket = clampi(int(lat_dev * 5.0), 0, 4)
+			_s_valid = true
 		OverlayMode.MODE.HUMIDITY:
-			return {
-				"value": clampf(adapter.get_moisture(idx), 0.0, 1.0),
-				"valid": true,
-			}
+			_s_value = clampf(adapter.get_moisture(idx), 0.0, 1.0)
+			_s_valid = true
 		OverlayMode.MODE.WEATHER:
 			var has_weather: bool = adapter.get_weather_field_init(idx)
 			var w: int = adapter.get_weather_type(idx) if has_weather else WeatherType.WT.CLEAR
 			var intensity: float = adapter.get_weather_intensity(idx) if has_weather else 0.0
-			return {
-				"bucket": w,
-				"intensity": clampf(intensity, 0.0, 1.0),
-				"valid": true,
-			}
+			_s_bucket = w
+			_s_intensity = clampf(intensity, 0.0, 1.0)
+			_s_valid = true
 		OverlayMode.MODE.VEGETATION_VITALITY:
 			# 水域 cell 不参与植被健康度采样：用 HexCell.passable_sea 作为"水"
 			# 的 proxy（TerrainProfileRegistry 已把 OCEAN/SEA_ICE/COAST/LAKE/REEF
 			# 等水面地形标记 passable_sea=true）。陆上植被（即使 passable_land=false
 			# 的高山 SNOW）仍参与采样，只是 vitality 默认 0.7，无特殊处理。
 			if bool(cell.passable_sea):
-				return { "value": 0.0, "valid": false }
-			return {
-				"value": clampf(float(cell.vegetation_vitality), 0.0, 1.0),
-				"valid": true,
-			}
+				return
+			_s_value = clampf(float(cell.vegetation_vitality), 0.0, 1.0)
+			_s_valid = true
 		OverlayMode.MODE.OCEAN_CURRENT:
 			# 仅水域有效：陆地 ocean_current 维持 0，画出来无意义且会被中性灰污染。
 			# 用 passable_sea 当水的 proxy（与 VEGETATION_VITALITY 同口径）。
 			if not bool(cell.passable_sea):
-				return { "value": 0.0, "valid": false }
+				return
 			var mag: float = adapter.get_ocean_current(idx).length()
-			return {
-				"value": clampf(mag / OCEAN_CURRENT_NORM_MAX, 0.0, 1.0),
-				"valid": true,
-			}
+			_s_value = clampf(mag / OCEAN_CURRENT_NORM_MAX, 0.0, 1.0)
+			_s_valid = true
 		OverlayMode.MODE.OCEAN_HEAT_TRANSPORT:
 			# 仅水域有意义：洋流给该格相对静水状态的温度增减。
 			# 双向归一化到 [0, 1]：0 = 强冷输入、0.5 = 中性、1 = 强暖输入。
 			if not bool(cell.passable_sea):
-				return { "value": 0.5, "valid": false }
+				return
 			var raw_t: float = float(cell.temperature_transport_anomaly)
-			var n_t: float = 0.5 + clampf(raw_t / (HEAT_TRANSPORT_NORM_RANGE * 2.0), -0.5, 0.5)
-			return {
-				"value": n_t,
-				"valid": true,
-			}
+			_s_value = 0.5 + clampf(raw_t / (HEAT_TRANSPORT_NORM_RANGE * 2.0), -0.5, 0.5)
+			_s_valid = true
 		OverlayMode.MODE.UPWELLING:
 			# 仅水域有意义：upwelling_strength ∈ [-1, 1]，正=上升流（营养上涌）。
 			# 同样双向归一化到 [0, 1]：0 = 强下沉、0.5 = 中性、1 = 强上升。
 			if not bool(cell.passable_sea):
-				return { "value": 0.5, "valid": false }
+				return
 			var raw_u: float = adapter.get_upwelling_strength(idx)
-			var n_u: float = 0.5 + clampf(raw_u / (UPWELLING_NORM_RANGE * 2.0), -0.5, 0.5)
-			return {
-				"value": n_u,
-				"valid": true,
-			}
+			_s_value = 0.5 + clampf(raw_u / (UPWELLING_NORM_RANGE * 2.0), -0.5, 0.5)
+			_s_valid = true
 		OverlayMode.MODE.WIND_SPEED:
 			# 注意：wind_at() 总是 normalize（服务于风向场 advection），不能反推
 			# 风速。这里读物理循环写入的 wind_speed SoA / facade 真值。
 			# 值域 ≈ [0.15, 1.7]，由 WIND_SPEED_NORM_MAX 钳到 [0, 1]。
 			# 全图都有效，包括海洋和高山。
 			var w_speed: float = adapter.get_wind_speed(idx)
-			return {
-				"value": clampf(w_speed / WIND_SPEED_NORM_MAX, 0.0, 1.0),
-				"valid": true,
-			}
+			_s_value = clampf(w_speed / WIND_SPEED_NORM_MAX, 0.0, 1.0)
+			_s_valid = true
 		OverlayMode.MODE.BIOME_GROUP:
 			# 把 cell.terrain（27 种）映射到 OverlayMode.TERRAIN_TO_BIOME_GROUP 的
 			# 10 个生态大类，避免离散调色板膨胀到难以辨认。
@@ -737,118 +736,90 @@ static func _sample_cell(
 			var bgroup: int = 9  # 默认 fallback：未分类
 			if t_b >= 0 and t_b < OverlayMode.TERRAIN_TO_BIOME_GROUP.size():
 				bgroup = int(OverlayMode.TERRAIN_TO_BIOME_GROUP[t_b])
-			return {
-				"bucket": bgroup,
-				"valid": true,
-			}
+			_s_bucket = bgroup
+			_s_valid = true
 		OverlayMode.MODE.LANDFORM:
-			return {
-				"bucket": adapter.get_landform(idx),
-				"valid": true,
-			}
+			_s_bucket = adapter.get_landform(idx)
+			_s_valid = true
 		OverlayMode.MODE.ELEVATION:
-			return {
-				"value": clampf(adapter.get_elevation(idx), 0.0, 1.0),
-				"valid": true,
-			}
+			_s_value = clampf(adapter.get_elevation(idx), 0.0, 1.0)
+			_s_valid = true
 		OverlayMode.MODE.VEGETATION_TYPE:
-			return {
-				"bucket": adapter.get_vegetation(idx),
-				"valid": true,
-			}
+			_s_bucket = adapter.get_vegetation(idx)
+			_s_valid = true
 		OverlayMode.MODE.WIND_DIR:
 			# 方向型通道：hue = atan2(dy, dx) / (2π) + 0.5（[0,1]），value = mag/NORM_MAX
 			# 使用 cell.wind_vector 给方向，cell.wind_speed 给强度。
 			var wv: Vector2 = adapter.get_wind_vector(idx)
 			var mag_w: float = wv.length()
 			if mag_w < 0.0001:
-				return { "value": 0.0, "valid": false }
+				return
 			var speed_w: float = adapter.get_wind_speed(idx)
 			if speed_w <= 0.0001:
 				speed_w = mag_w
 			var ang_w: float = atan2(wv.y, wv.x)
-			var hue_w: float = (ang_w / TAU) + 0.5  # [0, 1)
-			hue_w = fposmod(hue_w, 1.0)
 			# value 用 baker 现成的 R 通道；intensity 复用 G 通道存模长（HSV 的 V）
 			# 但当前编码协议 R=value，G=intensity；我们让 R=hue，G=norm_mag。
-			# 通过返回特殊字段 hue / dir_intensity，主循环里特别处理写入。
-			return {
-				"hue": hue_w,
-				"dir_intensity": clampf(speed_w / WIND_SPEED_NORM_MAX, 0.0, 1.0),
-				"valid": true,
-				"vector_mode": true,
-			}
+			# 主循环按 _s_vector_mode 走 hue / dir_intensity 两个槽写入。
+			_s_hue = fposmod((ang_w / TAU) + 0.5, 1.0)
+			_s_dir_intensity = clampf(speed_w / WIND_SPEED_NORM_MAX, 0.0, 1.0)
+			_s_valid = true
+			_s_vector_mode = true
 		OverlayMode.MODE.OCEAN_CURRENT_DIR:
 			# 仅水域有效；陆地无意义。复用 cell.ocean_current。
 			if not bool(cell.passable_sea):
-				return { "value": 0.0, "valid": false }
+				return
 			var oc: Vector2 = adapter.get_ocean_current(idx)
 			var mag_o: float = oc.length()
 			if mag_o < 0.0001:
-				return { "value": 0.0, "valid": false }
+				return
 			var ang_o: float = atan2(oc.y, oc.x)
-			var hue_o: float = fposmod((ang_o / TAU) + 0.5, 1.0)
-			return {
-				"hue": hue_o,
-				"dir_intensity": clampf(mag_o / OCEAN_CURRENT_NORM_MAX, 0.0, 1.0),
-				"valid": true,
-				"vector_mode": true,
-			}
+			_s_hue = fposmod((ang_o / TAU) + 0.5, 1.0)
+			_s_dir_intensity = clampf(mag_o / OCEAN_CURRENT_NORM_MAX, 0.0, 1.0)
+			_s_valid = true
+			_s_vector_mode = true
 		OverlayMode.MODE.SLP:
 			# Physical Wind & Ocean Circulation 调试通道：海陆压力（双向）。
 			# cell.slp ∈ [-1, 1] 归一化（陆地夏低冬高、海洋季节波动小）。
 			# 全图都有效；diverging 渐变 → 0=低压(冷色) / 0.5=中性 / 1=高压(暖色)。
 			var slp_raw: float = adapter.get_slp(idx)
-			var n_slp: float = 0.5 + clampf(slp_raw / (SLP_OVERLAY_NORM_RANGE * 2.0), -0.5, 0.5)
-			return {
-				"value": n_slp,
-				"valid": true,
-			}
+			_s_value = 0.5 + clampf(slp_raw / (SLP_OVERLAY_NORM_RANGE * 2.0), -0.5, 0.5)
+			_s_valid = true
 		OverlayMode.MODE.WIND_STRESS_CURL:
 			# 仅水域有意义（陆地不参与海盆 ψ 求解）。cell.wind_stress_curl 由
 			# PhysicalCirculationSolver 在 ψ 求解前的源项计算阶段写入；典型量级
 			# ~ ±0.5（无量纲，只用于 overlay 视觉对比）。
 			if not bool(cell.passable_sea):
-				return { "value": 0.5, "valid": false }
+				return
 			var curl_raw: float = adapter.get_wind_stress_curl(idx)
-			var n_curl: float = 0.5 + clampf(curl_raw * 1.0, -0.5, 0.5)
-			return {
-				"value": n_curl,
-				"valid": true,
-			}
+			_s_value = 0.5 + clampf(curl_raw * 1.0, -0.5, 0.5)
+			_s_valid = true
 		OverlayMode.MODE.OCEAN_PSI:
 			# 仅水域有效。流函数 ψ 的等高线 = 流线，diverging 渐变让北半球反气旋
 			# (ψ 中部小)与南半球反气旋(ψ 中部大)以同色对称呈现。
 			# cell.ocean_psi 量级 ~ ±5（数值随地图尺寸变化），稳健做法：scan max abs 后
 			# 归一化；这里简化用经验常数 5.0。
 			if not bool(cell.passable_sea):
-				return { "value": 0.5, "valid": false }
+				return
 			var psi_raw: float = adapter.get_ocean_psi(idx)
-			var n_psi: float = 0.5 + clampf(psi_raw / 10.0, -0.5, 0.5)
-			return {
-				"value": n_psi,
-				"valid": true,
-			}
+			_s_value = 0.5 + clampf(psi_raw / 10.0, -0.5, 0.5)
+			_s_valid = true
 		OverlayMode.MODE.DEMO_THERMAL_GRADIENT:
 			# Reference-impl Pass #2 (demo-only, performance-charter §12.6)。
 			# 采样 MapData.demo_thermal_gradient_arr[cell.index]——该字段由 C++
 			# _ext.run_thermal_gradient_pass + flush snapshot 填充；开关关闭时
 			# size=0，安全返回 valid=false 避免走错路。
 			if map == null:
-				return { "value": 0.0, "valid": false }
+				return
 			var dtg_arr: PackedFloat32Array = map.demo_thermal_gradient_arr
 			var dtg_n: int = dtg_arr.size()
 			if dtg_n <= 0:
-				return { "value": 0.0, "valid": false }
+				return
 			var dtg_idx: int = int(cell.index)
 			if dtg_idx < 0 or dtg_idx >= dtg_n:
-				return { "value": 0.0, "valid": false }
-			return {
-				"value": clampf(dtg_arr[dtg_idx], 0.0, 1.0),
-				"valid": true,
-			}
-		_:
-			return { "value": 0.0, "valid": false }
+				return
+			_s_value = clampf(dtg_arr[dtg_idx], 0.0, 1.0)
+			_s_valid = true
 
 static func _is_near_zero_sample(mode: int, value: float, intensity: float, is_vector_mode: bool) -> bool:
 	if is_vector_mode:

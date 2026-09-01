@@ -27,6 +27,7 @@ var _round_active: bool = false
 # round 启动尝试 start_season_round_b_plus，成功则整 round 走
 # run_season_round_slice_b_plus；失败/中途 fallback 退回 12-stage。
 var _b_plus_active: bool = false
+var _b_plus_finish_pending: bool = false
 
 # ─── Periodic-driver ─────────────────────────────────────────────────────
 # 旧设计：season_refresh 由 WorldClock.season_changed → queue_season_refresh
@@ -182,10 +183,38 @@ func tick(_ctx) -> Dictionary:
 		_ticks_since_last_round = 0
 		# DOTS-Final-Frontier Phase B+：尝试启用 round-level 单 C++ 调用路径。
 		_b_plus_active = false
+		_b_plus_finish_pending = false
 		if generator.has_method("season_round_b_plus_available") and generator.season_round_b_plus_available():
 			if generator.has_method("start_season_round_b_plus"):
 				var bp_handle: int = int(generator.start_season_round_b_plus(map, world_data, _season_idx))
 				_b_plus_active = bp_handle > 0
+
+	# Native math has committed, but the Godot facade/history mirror is published
+	# in fixed ranges before this day barrier may release.
+	if _b_plus_finish_pending:
+		var publish: Dictionary = generator.continue_finish_season_round_b_plus(map)
+		var publish_done: bool = bool(publish.get("done", false))
+		var publish_cursor: int = int(publish.get("cursor", _stage_cursor))
+		_stage_cursor = publish_cursor
+		var publish_elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
+		if publish_done:
+			_b_plus_finish_pending = false
+			_round_active = false
+			if generator.has_method("finish_season_refresh"):
+				generator.finish_season_refresh(map, world_data, _season_idx)
+			_stage = 0
+			_stage_cursor = 0
+		return {
+			"done": publish_done,
+			"work_done": int(publish.get("work_done", 0)),
+			"elapsed_ms": publish_elapsed_ms,
+			"progress_ratio": 1.0 if publish_done else 0.95,
+			"stage": 12,
+			"stage_name": "b_plus_publish",
+			"substage": "cursor_%d" % publish_cursor,
+			"path": "b_plus_publish",
+			"cursor": publish_cursor,
+		}
 
 	# B+ 路径：整个 round 用 1 个 C++ 调度器跑，slice 由 b1 stage-boundary 切片。
 	if _b_plus_active:
@@ -207,13 +236,21 @@ func tick(_ctx) -> Dictionary:
 		var bp_elapsed_ms: float = (Time.get_ticks_usec() - t_start_us) / 1000.0
 		if bp_done:
 			if bp_round_complete:
-				_round_active = false
-				if generator.has_method("finish_season_round_b_plus"):
-					generator.finish_season_round_b_plus(map, world_data, _season_idx)
-				if generator.has_method("finish_season_refresh"):
-					generator.finish_season_refresh(map, world_data, _season_idx)
-				_stage = 0
-				_stage_cursor = 0
+				_b_plus_active = false
+				if generator.has_method("begin_finish_season_round_b_plus"):
+					generator.begin_finish_season_round_b_plus(map, world_data, _season_idx)
+					_b_plus_finish_pending = true
+					bp_round_complete = false
+					bp_result_progress = 0.95
+					bp_result_stage = 12
+				else:
+					_round_active = false
+					if generator.has_method("finish_season_round_b_plus"):
+						generator.finish_season_round_b_plus(map, world_data, _season_idx)
+					if generator.has_method("finish_season_refresh"):
+						generator.finish_season_refresh(map, world_data, _season_idx)
+					_stage = 0
+					_stage_cursor = 0
 		var _unused_inner: float = bp_elapsed_ms_inner
 		return {
 			"done": bp_round_complete,

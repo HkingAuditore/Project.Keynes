@@ -1815,3 +1815,18 @@ Determinism requires matching occupancy/visible/explored/fog/evidence hashes for
 worker counts and one-shot versus continuation. At 100k cells, bio and vision
 new transient scratch each remain below 8 MB. Run release measurements only;
 headless debug results are correctness diagnostics, not performance acceptance.
+# Runtime graph diagnostics
+
+Use `get_runtime_perf_snapshot(0)` for CORE sampling and
+`get_runtime_perf_snapshot(1)` only for explicit DETAIL/GM captures. The
+snapshot reports pulse count, ABI calls, callback count, work units, budget
+yields, elapsed microseconds and the pending dirty mask. Economy deadline
+checks use the native boolean `economy_deadline_critical(day)` and therefore do
+not allocate the full economy report.
+
+CORE also exposes `economy_slices` and `economy_commits`. In graph ACTIVE,
+`economy_slices` proves direct native Economy execution and `economy_commits`
+counts completed submissions. The expected migrated shape is nonzero graph
+Economy counters with `j_economy_daily_slices=0` and
+`j_economy_daily_skip=policy_gated`; do not infer Economy inactivity from the
+legacy SUS job report.

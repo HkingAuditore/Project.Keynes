@@ -1192,7 +1192,7 @@ func _build_telemetry_group(parent: VBoxContainer) -> void:
 	# mobile 落盘到 user://perf，避免 Android APK 资源目录不可写。
 	_record_btn = Button.new()
 	_record_btn.text = "⏺ 开始录制"
-	_record_btn.tooltip_text = "录制每个 fast_tick 的耗时（sus/render/ui + 各 Job + breakdown）→ 桌面 ../../tmp；手机 user://perf"
+	_record_btn.tooltip_text = "录制每个 fast_tick 的核心耗时；完整 Job/Breakdown 仅低频采样 → 桌面 ../../tmp；手机 user://perf"
 	_record_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_record_btn.pressed.connect(_on_btn_toggle_record)
 	ctrl_row.add_child(_record_btn)
@@ -1844,7 +1844,9 @@ func _on_btn_toggle_record() -> void:
 			_show_record_toast("已导出 " + fname, false)
 	else:
 		if _perf_recorder.has_method("start"):
-			_perf_recorder.call("start")
+			# Production capture uses the compact CORE schema. DETAIL remains
+			# available for explicit forensic recordings and legacy callers.
+			_perf_recorder.call("start", "CORE")
 		_refresh_record_btn_text(true)
 
 
