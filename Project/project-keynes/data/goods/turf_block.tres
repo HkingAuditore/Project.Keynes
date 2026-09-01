@@ -9,6 +9,8 @@ display_name = "草皮块"
 category_id = &"primitive_construction"
 substitution_category_ids = PackedStringArray("primitive_construction", "masonry_material")
 technology_tags = PackedStringArray("industry.primary", "tech.turf_cutting")
+production_quality_level = 0
+production_efficiency_q16 = 65536
 default_price = 5000
 reference_max_price = 250000
 

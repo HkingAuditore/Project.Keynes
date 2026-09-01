@@ -570,9 +570,33 @@ func _ready() -> void:
 	_dots_bootstrap.bootstrap_flag_bus()
 	_visual_bootstrap = DCVisualBootstrap.new(self)
 
+# 选中格的 weather / vitality / climate / emergent 四行。原来同步串在 day_changed
+# 链里，也就是落在 WorldClock 的 sim_frame_budget_ms 时间盒内：高倍速下每模拟日付
+# 一次约 3ms 的纯显示成本，直接挤占模拟预算。改为在 _process 里按墙钟节流读最新
+# 快照，刷新次数与推进天数解耦——玩家看到的仍是当前值，只是不再每天重画。
+const SELECTED_CELL_LINES_REFRESH_INTERVAL_MS: int = 100
+var _selected_cell_lines_dirty: bool = false
+var _selected_cell_lines_next_refresh_ms: int = 0
+
+
 func _process(_delta: float) -> void:
 	if _tod_sun_handle_btn != null and _tod_sun_handle_btn.visible and not _tod_sun_handle_dragging:
 		_position_tod_sun_handle()
+	_refresh_selected_cell_lines_if_due()
+
+
+func _refresh_selected_cell_lines_if_due() -> void:
+	if not _selected_cell_lines_dirty or _selected_cell == null:
+		return
+	var now_ms: int = Time.get_ticks_msec()
+	if now_ms < _selected_cell_lines_next_refresh_ms:
+		return
+	_selected_cell_lines_next_refresh_ms = now_ms + SELECTED_CELL_LINES_REFRESH_INTERVAL_MS
+	_selected_cell_lines_dirty = false
+	_refresh_weather_line()
+	_refresh_vitality_line()
+	_refresh_climate_line()
+	_refresh_emergent_lines()
 
 # 地块选择：由 MapCamera 的 tile_tapped 信号驱动。
 # camera 仅在"点按"（非拖拽/捏合）时发出该信号，且基于 UI 已消费过的输入做判定，
@@ -1426,6 +1450,11 @@ func _on_day_changed(_day_idx: int) -> void:
 	# 在 fast tick 末尾，sample 在那之后构造），两侧对齐。
 	if _generator != null and _generator.has_method("set_current_fast_tick_idx"):
 		_generator.set_current_fast_tick_idx(_fast_tick_count + 1)
+	# 完整经济 slice 报告是 450+ 键的 native Dictionary。只有录制器真的要读它时才
+	# 值得每个 slice 构造一份，其余时间经济走 compact 报告。
+	if _generator != null and _generator.has_method("set_economy_diagnostics_enabled"):
+		_generator.set_economy_diagnostics_enabled(
+			_recorder_ready(_perf_recorder) or _recorder_ready(_economy_data_recorder))
 
 	# Sliced Update Scheduler（任务 8）：完整收编后 fast tick 的全部模拟工作
 	# 都在这里一次性驱动。返回字典：{ fronts: Array[WeatherFront], weather_ran: bool }。
@@ -1492,15 +1521,13 @@ func _on_day_changed(_day_idx: int) -> void:
 			_renderer.set_weather_fronts(fronts)
 	var t_render_ms: float = (Time.get_ticks_usec() - t_render_us0) / 1000.0
 
-	# 选中地块的 weather + vitality + 连续气候三行跟着每日推进刷新
-	# （不刷整张面板，仅刷少量行避免抖动；演替发生时整张面板会在下次 _refresh_info_panel 同步）
-	# Fast-tick perf opt (A)：跳日不刷这些行——保留上次值直到下一个真正 tick 的日。
+	# 选中地块的 weather + vitality + 连续气候 + emergent 四行只在这里打脏标记，
+	# 实际重画交给 _process 的墙钟节流（_refresh_selected_cell_lines_if_due），
+	# 这样纯显示成本不再落在日推进的模拟时间盒里。
+	# Fast-tick perf opt (A)：跳日不标脏——保留上次值直到下一个真正 tick 的日。
 	var t_ui_us0: int = Time.get_ticks_usec()
 	if _selected_cell != null and not was_skipped_day:
-		_refresh_weather_line()
-		_refresh_vitality_line()
-		_refresh_climate_line()
-		_refresh_emergent_lines()
+		_selected_cell_lines_dirty = true
 	var t_ui_ms: float = (Time.get_ticks_usec() - t_ui_us0) / 1000.0
 
 	# Emergent Climate Coupling：fast tick 总耗时打点
@@ -2786,6 +2813,11 @@ func _select_cell(cell: HexCell) -> void:
 		_info_panel_controller.set_selected_cell(cell)
 	_ensure_emergent_labels()
 	_refresh_info_panel()
+	# 选中切换与面板首次打开走立即刷新，不等墙钟节流窗口。refresh_info_panel 不含
+	# climate_line，所以这里必须真的跑一遍四行而不是只标脏。
+	_selected_cell_lines_dirty = true
+	_selected_cell_lines_next_refresh_ms = 0
+	_refresh_selected_cell_lines_if_due()
 	# Legend 指针：选中后把当前 cell 的通道值映射到色带位置。
 	_update_overlay_pointer_for_cell()
 	# 保留用户当前缩放/位置（不再 fit 重置视图）；仅当选中地块被右侧面板/顶栏

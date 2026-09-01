@@ -155,8 +155,9 @@ func _test_registry_knobs() -> void:
 		_expect("iron gen_self==0 (non-renewable)", is_equal_approx(gen_self[ii], 0.0))
 	if gi >= 0:
 		_expect("wild_game extra slot", gi < extra_slots.size() and extra_slots[gi] == "cell_res_wild_game_extra_change")
+		# Bay-cell N=5000：authored ecology_capacity≈3260 → knobs 乘 CELL_AREA 后 ≥300000。
 		_expect("wild_game enables province-scale density-dependent ecology",
-			gi < ecology_capacity.size() and ecology_capacity[gi] >= 60000.0 and
+			gi < ecology_capacity.size() and ecology_capacity[gi] >= 300000.0 and
 			gi < ecology_growth_rate.size() and ecology_growth_rate[gi] > 0.0 and
 			gi < ecology_immigration.size() and ecology_immigration[gi] > 0.0 and
 			gi < ecology_stress_mortality_rate.size() and

@@ -547,6 +547,7 @@ bool DCWorldExt::bind_map_data(Object *map_data) {
     _pending_visual_dirty_mask = PackedByteArray();
     _pending_visual_dirty_count = 0;
     _pending_visual_dirty_dense = false;
+    _economy_resource_slot_resident.clear();
     // A newly bound MapData may have a different restored canal mask even
     // when the DCWorldExt object itself is reused. Force one sparse topology
     // compilation before the next hydrology pass.
@@ -661,6 +662,7 @@ Dictionary DCWorldExt::configure_native_world(const Dictionary &knobs) {
     _pending_visual_dirty_mask = PackedByteArray();
     _pending_visual_dirty_count = 0;
     _pending_visual_dirty_dense = false;
+    _economy_resource_slot_resident.clear();
     _native_fronts_snapshot.clear();
     _native_dirty_report.clear();
     _native_runtime_config.clear();
@@ -805,14 +807,45 @@ static int pk_visual_dirty_dense_threshold(int cell_count) {
     return std::min(cell_count, std::max(64, ratio_threshold));
 }
 
+int DCWorldExt::_bind_index_for_slot(int comp_id) {
+    if (comp_id < 0 || comp_id >= _slots.size()) return -1;
+    if (int(_slot_bind_index_cache.size()) <= comp_id)
+        _slot_bind_index_cache.resize(size_t(_slots.size()), int16_t{-2});
+    int16_t &cached = _slot_bind_index_cache[size_t(comp_id)];
+    if (cached != -2) return int(cached);
+    const StringName &slot_name = _slots[comp_id].name;
+    cached = -1;
+    for (int i = 0; i < BIND_TABLE_SIZE; ++i) {
+        if (slot_name == StringName(BIND_TABLE[i].slot_name)) {
+            cached = int16_t(i);
+            break;
+        }
+    }
+    return int(cached);
+}
+
+bool DCWorldExt::_slot_is_visual_dirty(int comp_id) {
+    if (comp_id < 0 || comp_id >= _slots.size()) return false;
+    if (int(_slot_visual_dirty_cache.size()) <= comp_id)
+        _slot_visual_dirty_cache.resize(size_t(_slots.size()), uint8_t{0});
+    uint8_t &cached = _slot_visual_dirty_cache[size_t(comp_id)];
+    if (cached == 0)
+        cached = pk_slot_affects_visual_dirty(_slots[comp_id].name) ? uint8_t{2} : uint8_t{1};
+    return cached == 2;
+}
+
 void DCWorldExt::_flush_slot_to_map(int comp_id) {
     if (!_map_data || comp_id < 0 || comp_id >= _slots.size()) return;
     const Slot &s = _slots[comp_id];
-    for (int i = 0; i < BIND_TABLE_SIZE; ++i) {
-        if (s.name == StringName(BIND_TABLE[i].slot_name)) {
+    {
+        const int bind_index = _bind_index_for_slot(comp_id);
+        if (bind_index >= 0) {
+            const int i = bind_index;
             const StringName prop_name(BIND_TABLE[i].property_name);
-            const Variant previous = _map_data->get(prop_name);
-            const bool visual_slot = pk_slot_affects_visual_dirty(s.name);
+            const bool visual_slot = _slot_is_visual_dirty(comp_id);
+            // 非视觉 slot 不做 diff，previous 也就无人消费。它是一次
+            // Object::get + Variant 构造 + PackedArray 引用计数往返。
+            const Variant previous = visual_slot ? _map_data->get(prop_name) : Variant();
             bool any_visual_dirty = false;
             int cell_limit = _native_world_cell_count;
             if (cell_limit <= 0) {
@@ -944,6 +977,7 @@ void DCWorldExt::flush_slots_to_map() {
         if (sid < 0 || sid >= _slots.size()) continue;
         _flush_slot_to_map(sid);
     }
+    _economy_resource_slot_resident.clear();
     flush_pending_mark_dirty_all();
 }
 
@@ -953,6 +987,8 @@ void DCWorldExt::flush_slots_to_map_keys(const PackedStringArray &slot_names) {
         const int sid = component_id(StringName(slot_names[i]));
         if (sid >= 0) {
             _flush_slot_to_map(sid);
+            if (sid < static_cast<int>(_economy_resource_slot_resident.size()))
+                _economy_resource_slot_resident[static_cast<size_t>(sid)] = 0;
         }
     }
 }
@@ -969,6 +1005,10 @@ void DCWorldExt::refresh_slots_from_map() {
         }
         const int sid = component_id(slot_name);
         if (sid < 0 || sid >= _slots.size()) continue;
+        if (sid < static_cast<int>(_economy_resource_slot_resident.size()) &&
+            _economy_resource_slot_resident[static_cast<size_t>(sid)] != 0) {
+            continue;
+        }
         Slot &s = _slots.write[sid];
         const StringName prop_name(BIND_TABLE[i].property_name);
         Variant v = _map_data->get(prop_name);
@@ -1002,16 +1042,18 @@ void DCWorldExt::refresh_slots_from_map_keys(const PackedStringArray &slot_names
         }
         const int sid = component_id(requested);
         if (sid < 0 || sid >= _slots.size()) continue;
+        if (sid < static_cast<int>(_economy_resource_slot_resident.size()) &&
+            _economy_resource_slot_resident[static_cast<size_t>(sid)] != 0) {
+            continue;
+        }
+        const int bind_index = _bind_index_for_slot(sid);
+        if (bind_index < 0) continue;
         Slot &s = _slots.write[sid];
-        for (int i = 0; i < BIND_TABLE_SIZE; ++i) {
-            if (requested != StringName(BIND_TABLE[i].slot_name)) continue;
-            Variant v = _map_data->get(StringName(BIND_TABLE[i].property_name));
-            switch (s.dtype) {
-                case SlotDType::F32: s.arr_f32 = v; break;
-                case SlotDType::I32: s.arr_i32 = v; break;
-                case SlotDType::U8:  s.arr_u8  = v; break;
-            }
-            break;
+        Variant v = _map_data->get(StringName(BIND_TABLE[bind_index].property_name));
+        switch (s.dtype) {
+            case SlotDType::F32: s.arr_f32 = v; break;
+            case SlotDType::I32: s.arr_i32 = v; break;
+            case SlotDType::U8:  s.arr_u8  = v; break;
         }
     }
 }

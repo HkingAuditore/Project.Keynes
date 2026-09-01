@@ -293,8 +293,8 @@ static func encode_height_flow_tex(height_buf: PackedFloat32Array, flow_buf: Pac
 static func encode_terrain_normal_tex(buf: PackedFloat32Array, size: Vector2i,
 		coarse_radius: int = 4, slope_gain: float = 8.0, wrap_x: bool = true,
 		native_ext: Object = null, world_size: Vector2 = Vector2.ZERO,
-		hex_size: float = 1.0, sample_radius_hex: float = 0.44,
-		height_scale_hex: float = 0.85) -> ImageTexture:
+		hex_size: float = 1.0, sample_radius_hex: float = 1.35,
+		height_scale_hex: float = 2.10) -> ImageTexture:
 	var W: int = size.x
 	var H: int = size.y
 	var ret: Dictionary = _native_data(native_ext, &"encode_bake_terrain_normal_tex_data", {

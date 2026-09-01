@@ -9,6 +9,8 @@ display_name = "日晒土坯"
 category_id = &"primitive_construction"
 substitution_category_ids = PackedStringArray("primitive_construction", "masonry_material")
 technology_tags = PackedStringArray("industry.construction", "tech.application.adobe_yard")
+production_quality_level = 0
+production_efficiency_q16 = 65536
 default_price = 6000
 reference_max_price = 300000
 

@@ -468,6 +468,17 @@ var _season_round_slots_fresh: bool = false
 # X2 once-log：累计当 round 内 ensure helper 的 skip / refresh 次数，用于 A/B 验证。
 var _season_round_slots_skip_count: int = 0
 
+# B+ only reads this fixed SoA subset.  A full refresh also copies every
+# resource and visual slot, which is both unnecessary here and can make the
+# first seasonal slice miss its frame budget after the world has grown.
+var _season_round_refresh_keys := PackedStringArray([
+	"cell_terrain", "cell_base_terrain", "cell_is_water",
+	"cell_moisture", "cell_base_moisture", "cell_water_balance_30d",
+	"cell_elevation", "cell_lat_norm", "cell_temp", "cell_temp_365d",
+	"cell_wind_x", "cell_wind_y", "cell_has_river", "cell_river_flow",
+	"cell_landform", "cell_vegetation", "cell_cover", "cell_snow_cover",
+])
+
 # refresh-consolidation-2026-06：climate daily round 内 SoA-slots 同步守门员。
 # 仿照 _season_round_slots_fresh 模式，但**独立**于 season_refresh round，
 # 因为 climate daily 和 season refresh 不重叠（不同 SUS job）。
@@ -500,6 +511,15 @@ var _season_round_b_plus_logged: Dictionary = {}
 var _season_round_b_plus_native_ms: float = 0.0
 var _season_round_b_plus_slices_used: int = 0
 var _season_round_b_plus_stages_done: int = 0
+# The native round has committed before this publish phase starts. Keep the
+# Godot-facing facade/history work range-resident so a seasonal boundary never
+# turns 2400 HexCell updates into one non-preemptible render-frame spike.
+var _season_round_b_plus_publish_active: bool = false
+var _season_round_b_plus_publish_cursor: int = 0
+var _season_round_b_plus_facade_published: bool = false
+var _season_round_b_plus_publish_terrain_fixed: int = 0
+var _season_round_b_plus_publish_axis_fixed: int = 0
+var _season_round_b_plus_publish_state_fixed: int = 0
 # 季节 round-start knob 几何缓存（perf-2026-06）：_build_season_round_knobs 每次
 # round 启动都重建 row_indices + rain-shadow jitter，两者各跑 n_cells 次
 # map.cell_at(i)（HexCell RefCounted 解引用）共 ~3ms，是 season_refresh B+ round-start
@@ -1119,6 +1139,7 @@ var _enum_atlas_upload_job = null
 var _native_daily_sim_job = null
 var _native_environment_runtime_job = null
 var _native_daily_configured: bool = false
+var _runtime_graph_active: bool = false
 var _native_daily_last_result: Dictionary = {}
 var _native_daily_slice_round_active: bool = false
 var _native_daily_slice_unified_weather_embedded: bool = false
@@ -1874,9 +1895,34 @@ func get_economy_report() -> Dictionary:
 
 
 func get_economy_perf_report() -> Dictionary:
+	# ACTIVE owns Economy scheduling in the native graph, so the legacy SUS job
+	# has no report to offer (it is intentionally policy-gated). Prefer the
+	# graph's compact native result, while retaining the legacy report for OFF /
+	# SHADOW and older DLLs that do not expose the graph accessor.
+	if _runtime_graph_active and _data_core_world_ext != null \
+			and _data_core_world_ext.has_method("get_runtime_graph_last_economy_report"):
+		var graph_report: Dictionary = _data_core_world_ext.get_runtime_graph_last_economy_report()
+		if not graph_report.is_empty():
+			return graph_report
 	return _economy_daily_job.last_perf_report() \
 		if _economy_daily_job != null and _economy_daily_job.has_method("last_perf_report") \
 		else {}
+
+
+func get_runtime_perf_snapshot(detail_level: int = 0) -> Dictionary:
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method("get_runtime_perf_snapshot"):
+		return {}
+	return _data_core_world_ext.get_runtime_perf_snapshot(detail_level)
+
+
+func runtime_graph_active() -> bool:
+	return _runtime_graph_active
+
+
+# 由 main.gd 每日按录制器状态推送。关闭时经济 slice 走 compact 报告。
+func set_economy_diagnostics_enabled(enabled: bool) -> void:
+	if _economy_daily_job != null:
+		_economy_daily_job.diagnostics_enabled = enabled
 
 
 func set_test_economy_bootstrap_enabled(enabled: bool) -> void:
@@ -2230,6 +2276,11 @@ func _finish_continuation_perf_frame(started_us: int, frame_slices: int,
 func _continue_economy_inflight(day_index: int) -> void:
 	if _sus == null:
 		return
+	if _runtime_graph_active and _data_core_world_ext != null \
+			and _data_core_world_ext.has_method("advance_runtime_pulse") \
+			and not native_daily_round_active() and not bio_occupancy_round_active():
+		_advance_runtime_graph_pulse(day_index)
+		return
 	var speed: float = float(_world_clock_ref.speed_multiplier) if _world_clock_ref != null else 1.0
 	var season: float = float(_world_clock_ref.season_phase()) if _world_clock_ref != null else 0.0
 	var ctx: SusTickContext = SusTickContext.make(
@@ -2399,6 +2450,38 @@ func _continue_economy_inflight(day_index: int) -> void:
 			_finish_continuation_perf_frame(started_us, continuation_count, frame_max_slice_ms, budget_ms)
 			return
 	_finish_continuation_perf_frame(started_us, continuation_count, frame_max_slice_ms, budget_ms)
+
+
+func _advance_runtime_graph_pulse(day_index: int) -> Dictionary:
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
+			"advance_runtime_pulse"):
+		return {}
+	var speed_graph := float(_world_clock_ref.speed_multiplier) if _world_clock_ref != null else 1.0
+	var season_graph := float(_world_clock_ref.season_phase()) if _world_clock_ref != null else 0.0
+	var budget_graph := ECONOMY_CONTINUATION_FALLBACK_BUDGET_MS
+	if _world_clock_ref != null and _world_clock_ref.get("sim_frame_budget_ms") != null:
+		budget_graph = maxf(0.25, float(_world_clock_ref.sim_frame_budget_ms))
+	var token := int(_data_core_world_ext.advance_runtime_pulse(
+		day_index, season_graph, speed_graph, int(budget_graph * 1000.0), 0))
+	var token_status := int((token >> 56) & 0xff)
+	var token_dirty := int((token >> 32) & 0xffff)
+	if _world_clock_ref != null:
+		_world_clock_ref.request_simulation_backpressure(
+			&"economy_day_barrier", token_status == 3)
+		_world_clock_ref.request_simulation_backpressure(
+			&"country_day_barrier", token_status == 3)
+	if token_dirty != 0 and _data_core_world_ext.has_method("flush_runtime_visuals"):
+		_data_core_world_ext.flush_runtime_visuals(token_dirty)
+	if _data_core_world_ext.has_method("get_runtime_graph_last_economy_report"):
+		var economy_result: Dictionary = _data_core_world_ext.get_runtime_graph_last_economy_report()
+		if int(economy_result.get("day_index", economy_result.get("sample_day", -1))) == day_index:
+			if _economy_facade != null and bool(economy_result.get(
+					"economy_event_batch_published", false)):
+				_economy_facade.dispatch_committed_events(economy_result)
+			if _economy_facade != null:
+				_economy_facade.dispatch_construction_command_receipts()
+	return {"token": token, "status": token_status,
+		"dirty_mask": token_dirty}
 
 
 func _native_daily_slice_available() -> bool:
@@ -3114,6 +3197,36 @@ func _native_mode_is_shadow(cp, field_name: String) -> bool:
 	return int(cp.get(field_name)) == 1
 
 
+# Pass-A publishes its slot family only at the native-daily round boundary, so a
+# knob built mid-round from MapData sees the previous round's values. Knobs whose
+# physics depends on the current day's sun (sea-ice solar gate) or on the current
+# runtime baseline (ocean heat transport) must read the live slot instead.
+func _native_daily_live_f32(slot_name: String, fallback: PackedFloat32Array,
+		n: int) -> PackedFloat32Array:
+	if _data_core_world_ext == null \
+			or not _data_core_world_ext.has_method("component_id") \
+			or not _data_core_world_ext.has_method("snapshot_f32"):
+		return fallback
+	var sid: int = int(_data_core_world_ext.component_id(slot_name))
+	if sid < 0:
+		return fallback
+	var live: PackedFloat32Array = _data_core_world_ext.snapshot_f32(sid)
+	return live if live.size() == n else fallback
+
+
+func _native_daily_live_u8(slot_name: String, fallback: PackedByteArray,
+		n: int) -> PackedByteArray:
+	if _data_core_world_ext == null \
+			or not _data_core_world_ext.has_method("component_id") \
+			or not _data_core_world_ext.has_method("snapshot_u8"):
+		return fallback
+	var sid: int = int(_data_core_world_ext.component_id(slot_name))
+	if sid < 0:
+		return fallback
+	var live: PackedByteArray = _data_core_world_ext.snapshot_u8(sid)
+	return live if live.size() == n else fallback
+
+
 func _native_daily_base_tick_knobs(ctx: SusTickContext) -> Dictionary:
 	var season_idx: int = 0
 	if _world_clock_ref != null and _world_clock_ref.has_method("season_index"):
@@ -3590,10 +3703,12 @@ func _build_native_daily_ocean_knobs(map: MapData, cp_now, season_phase: float) 
 	var dc_views: Dictionary = _climate_views_from_world(cp_now)
 	var use_dc: bool = not dc_views.is_empty()
 	var temp_a: PackedFloat32Array = dc_views["temp"] if use_dc else map.temp_arr
-	var temp_baseline_a: PackedFloat32Array = dc_views["temp_baseline"] if use_dc else map.temp_baseline_arr
+	var temp_baseline_a: PackedFloat32Array = dc_views["temp_baseline"] if use_dc \
+			else _native_daily_live_f32("cell_temp_baseline", map.temp_baseline_arr, n)
 	var elev_a: PackedFloat32Array = dc_views["elevation"] if use_dc else map.elevation_arr
 	var lat_a: PackedFloat32Array = dc_views["lat_norm"] if use_dc else map.cell_lat_norm_arr
-	var ema_init_a: PackedByteArray = dc_views["ema_initialized"] if use_dc else map.ema_initialized_arr
+	var ema_init_a: PackedByteArray = dc_views["ema_initialized"] if use_dc \
+			else _native_daily_live_u8("cell_ema_initialized", map.ema_initialized_arr, n)
 	var ocx_a: PackedFloat32Array = dc_views["ocean_current_x"] if use_dc else map.ocean_current_x_arr
 	var ocy_a: PackedFloat32Array = dc_views["ocean_current_y"] if use_dc else map.ocean_current_y_arr
 	if temp_a.size() < n or elev_a.size() < n:
@@ -5179,6 +5294,16 @@ func _configure_native_world_context(map: MapData, world: WorldData, cfg: MapCon
 	}
 	var res: Dictionary = _data_core_world_ext.configure_native_world(knobs)
 	_native_daily_configured = int(res.get("rc", -1)) == 0
+	_runtime_graph_active = false
+	if _data_core_world_ext.has_method("configure_runtime_graph"):
+		var graph_mode := int(cp.native_runtime_graph_mode) if cp != null and cp.get("native_runtime_graph_mode") != null else 0
+		var graph_rc := int(_data_core_world_ext.configure_runtime_graph({
+			"enabled": graph_mode == ClimateProfileScript.NATIVE_MODE_ACTIVE,
+			"mode": graph_mode,
+			"day": int(_world_clock_ref.day_index()) if _world_clock_ref != null else 0,
+			"generation": 0,
+		}))
+		_runtime_graph_active = graph_rc == 0 and graph_mode == ClimateProfileScript.NATIVE_MODE_ACTIVE
 	if OS.is_debug_build():
 		# wrap_period_x 回显：0 表示 climate/weather 平流内核退化为裸 cell_pos_x 差分，
 		# 东西接缝会重新出现方向恒定的风场/洋流经线伪影。
@@ -6266,6 +6391,10 @@ func sus_tick_daily(world_clock_node, day_index_override: int = -1,
 	var ctx: SusTickContext = SusTickContext.make(di, di, sp, ss, &"day_changed")
 	_sync_data_core_runtime_terrain_mirror(_sus_map, "sus_tick_pre")
 	_sus.tick(ctx)
+	var runtime_graph_pulse: Dictionary = {}
+	if _runtime_graph_active and not native_daily_round_active() \
+			and not bio_occupancy_round_active():
+		runtime_graph_pulse = _advance_runtime_graph_pulse(di)
 	# Bio remains daily-semantic even when its first slice loses the ordinary
 	# frame-budget race. Convert that skip into a same-day pending transaction;
 	# the continuation pulse starts it before WorldClock may advance.
@@ -6335,7 +6464,8 @@ func sus_tick_daily(world_clock_node, day_index_override: int = -1,
 	# 视觉平滑，且没有任何 shader 采样 cell.weather_transition_alpha（地图只读离散
 	# weather_type），高倍速下逐 cell fan-out 反而是 ~35ms/次的空耗。淡入开关
 	# weather_transition_enabled 现仅作用于 C++ weather.commit（跑天气日推进）。
-	return { "fronts": fronts, "weather_ran": weather_ran, "fronts_changed": fronts_changed, "fronts_diff": fronts_diff }
+	return { "fronts": fronts, "weather_ran": weather_ran, "fronts_changed": fronts_changed,
+		"fronts_diff": fronts_diff, "runtime_graph": runtime_graph_pulse }
 
 
 ## 地图重新生成 / regenerate 路径调用：清空所有 Job 的进度游标 + pending 缓冲。
@@ -7136,14 +7266,15 @@ func _run_season_stage4_micro(map: MapData, season_idx: int, cursor: int, max_us
 
 func finish_season_refresh(_map: MapData, _world: WorldData, _season_idx: int) -> void:
 	_season_refresh_in_progress = false
-	if _map != null and _map.has_method("sync_runtime_terrain_facade_from_soa"):
+	if not _season_round_b_plus_facade_published and _map != null and _map.has_method("sync_runtime_terrain_facade_from_soa"):
 		var terrain_facade_fixed: int = int(_map.sync_runtime_terrain_facade_from_soa())
 		_last_season_refresh_breakdown["terrain_facade_fixed"] = terrain_facade_fixed
 		if terrain_facade_fixed > 0:
 			_season_log_path_once("finish", "soa_to_facade_sync", "terrain_fixed=%d" % terrain_facade_fixed)
-	if _map != null:
+	if not _season_round_b_plus_facade_published and _map != null:
 		var enum_axes_written: int = _write_runtime_enum_axes_dense(_map)
 		_last_season_refresh_breakdown["runtime_enum_axes_dense_written"] = enum_axes_written
+	_season_round_b_plus_facade_published = false
 	# X2-精简版（2026-05-21）：once-log round 的 slots refresh / skip 计数。
 	# 期望全 gdext 路径下：refresh=1, skip=11（同 round 12 个 stage helper 共享一次 refresh）。
 	# 若 refresh 大于 1 → 说明 round 内某 stage 走了 GDScript fallback 改 cell，触发自动补刷
@@ -7264,7 +7395,14 @@ func _ensure_season_round_slots_fresh() -> void:
 	if _season_round_slots_fresh:
 		_season_round_slots_skip_count += 1
 		return
-	_data_core_world_ext.refresh_slots_from_map()
+	# Do not overwrite native-only Economy/resource slots or pay their copy
+	# cost at a seasonal boundary.  Every B+ stage reads one of the keys above;
+	# its outputs stay in the native slots and publish at their existing stage
+	# boundary.
+	if _data_core_world_ext.has_method("refresh_slots_from_map_keys"):
+		_data_core_world_ext.refresh_slots_from_map_keys(_season_round_refresh_keys)
+	else:
+		_data_core_world_ext.refresh_slots_from_map()
 	_season_round_slots_fresh = true
 	_season_round_slots_refresh_count += 1
 
@@ -9159,33 +9297,22 @@ func run_season_round_slice_b_plus(_map: MapData, _world: WorldData, max_usec: i
 	return out
 
 
-# B+ 入口 3/3：round 收尾。
-# 副作用：
-#   1. 调 finish_season_round 取回 decayed soil_moisture_arr / veg_growth_pressure_arr，
-#      回灌 map.xxx_arr，让 hexcell_facade getter 看到新值。
-#   2. 调一次 _sync_stage8_facade_fields_from_soa(map) 把多轴 SoA（terrain/landform/
-#      vegetation/cover）回灌到 cell facade，并触发 push_biome_history /
-#      push_vegetation_history 各 1 次/round。
-#   3. 落 breakdown：b_plus_native_ms / slices / stages_done。
-#   4. 清 handle 与累计计数。
-# 若 finish_season_round 本身 fallback：仍尝试 facade sync 让本 round 已写入 SoA 的
-# 部分字段透出（避免上层看到陈旧 cell），然后清 handle。
-func finish_season_round_b_plus(map: MapData, _world: WorldData, _season: int) -> void:
+# B+ completion has two boundaries. The C++ finish below is the authoritative
+# commit; the Godot facade/history mirror is then published in fixed 256-cell
+# ranges. The WorldClock keeps its seasonal barrier until that mirror is done.
+func begin_finish_season_round_b_plus(map: MapData, _world: WorldData, _season: int) -> void:
 	if _season_round_b_plus_handle <= 0:
 		_season_log_path_once("b_plus_finish", "gdscript_fallback", "no active handle to finish")
 		return
 	var ext_ok: bool = _data_core_world_ext != null and _data_core_world_ext.has_method("finish_season_round")
 	if not ext_ok:
 		_season_log_path_once("b_plus_finish", "gdscript_fallback", "finish_season_round method missing")
-		# 算作一次 fallback round（已 start 但 ext 半途丢失，验收侧应可见）
-		_b_plus_rounds_total += 1
-		_b_plus_rounds_fallback += 1
 		_season_round_b_plus_handle = 0
-		_b_plus_round_start_usec = 0
 		return
 	var res: Dictionary = _data_core_world_ext.finish_season_round(_season_round_b_plus_handle)
 	var fallback: bool = bool(res.get("fallback", false))
-	# 即便 fallback，res 内的 in/out array 也优先取（C++ 端如果半途退出至少把已 decayed 的写回了）。
+	# Even on fallback, consume any C++ in/out arrays before exposing the stable
+	# map boundary. This is a committed-array swap, not a partial facade update.
 	if map != null:
 		var n: int = map.cell_count()
 		var soil_out: Variant = res.get("soil_moisture_arr", null)
@@ -9194,8 +9321,6 @@ func finish_season_round_b_plus(map: MapData, _world: WorldData, _season: int) -
 			map.soil_moisture_arr = soil_out
 		if typeof(vg_out) == TYPE_PACKED_FLOAT32_ARRAY and (vg_out as PackedFloat32Array).size() == n:
 			map.vegetation_growth_pressure_arr = vg_out
-		# 行为变更（用户 2026-05-21 已确认）：B+ 路径下 facade sync + history push 1 次/round。
-		_sync_stage8_facade_fields_from_soa(map)
 	_last_season_refresh_breakdown["b_plus_native_ms"] = float(res.get("total_native_ms", _season_round_b_plus_native_ms))
 	_last_season_refresh_breakdown["b_plus_slices_used"] = int(res.get("slices_used", _season_round_b_plus_slices_used))
 	_last_season_refresh_breakdown["b_plus_stages_done"] = int(res.get("stages_done", _season_round_b_plus_stages_done))
@@ -9207,24 +9332,111 @@ func finish_season_round_b_plus(map: MapData, _world: WorldData, _season: int) -
 				int(res.get("slices_used", _season_round_b_plus_slices_used)),
 				int(res.get("stages_done", _season_round_b_plus_stages_done)),
 		])
-	# B+ round 验收样本采集（pop_b_plus_round_samples 消费）
-	var wall_ms_now: float = 0.0
-	if _b_plus_round_start_usec > 0:
-		wall_ms_now = float(Time.get_ticks_usec() - _b_plus_round_start_usec) / 1000.0
-	_b_plus_rounds_total += 1
-	if fallback:
-		_b_plus_rounds_fallback += 1
-	else:
-		_b_plus_rounds_b_plus += 1
-	_b_plus_slices_used_samples.append(int(res.get("slices_used", _season_round_b_plus_slices_used)))
-	_b_plus_stages_done_samples.append(int(res.get("stages_done", _season_round_b_plus_stages_done)))
-	_b_plus_native_ms_samples.append(float(res.get("total_native_ms", _season_round_b_plus_native_ms)))
-	_b_plus_wall_ms_samples.append(wall_ms_now)
 	_season_round_b_plus_handle = 0
+	_season_round_b_plus_publish_active = map != null and map.cell_count() > 0
+	_season_round_b_plus_publish_cursor = 0
+	_season_round_b_plus_facade_published = false
+	_season_round_b_plus_publish_terrain_fixed = 0
+	_season_round_b_plus_publish_axis_fixed = 0
+	_season_round_b_plus_publish_state_fixed = 0
+
+
+func continue_finish_season_round_b_plus(map: MapData, max_cells: int = 128) -> Dictionary:
+	var out: Dictionary = {"done": false, "cursor": _season_round_b_plus_publish_cursor, "work_done": 0}
+	if not _season_round_b_plus_publish_active:
+		out["done"] = true
+		return out
+	if map == null:
+		_season_round_b_plus_publish_active = false
+		out["done"] = true
+		return out
+	var n: int = map.cell_count()
+	var terrain_a: PackedByteArray = map.terrain_arr
+	var landform_a: PackedByteArray = map.landform_arr
+	var vegetation_a: PackedByteArray = map.vegetation_arr
+	var cover_a: PackedByteArray = map.cover_arr
+	var water_a: PackedByteArray = map.is_water_arr
+	var volcano_a: PackedByteArray = map.has_volcano_arr
+	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	var water_lut: PackedByteArray = MapData.is_water_lut()
+	var volcano_lf: int = int(LandformType.LF.VOLCANO)
+	var cursor: int = clampi(_season_round_b_plus_publish_cursor, 0, n)
+	var start_cursor: int = cursor
+	var end: int = mini(n, cursor + clampi(max_cells, 32, 256))
+	while cursor < end:
+		if cursor < volcano_a.size() and int(volcano_a[cursor]) != 0 and cursor < landform_a.size() \
+				and int(landform_a[cursor]) != volcano_lf:
+			landform_a[cursor] = volcano_lf
+			if cursor < map.base_landform_arr.size():
+				map.base_landform_arr[cursor] = volcano_lf
+		var cell: HexCell = cells[cursor] if cursor < cells.size() else null
+		if cell != null:
+			var terrain_changed: bool = cursor < terrain_a.size() and int(cell.terrain) != int(terrain_a[cursor])
+			if terrain_changed:
+				cell.apply_terrain(int(terrain_a[cursor]))
+				_season_round_b_plus_publish_terrain_fixed += 1
+			if cursor < terrain_a.size() and cursor < water_a.size():
+				water_a[cursor] = water_lut[int(terrain_a[cursor]) & 0xFF]
+			var landform_changed: bool = cursor < landform_a.size() and int(cell.landform) != int(landform_a[cursor])
+			var vegetation_changed: bool = cursor < vegetation_a.size() and int(cell.vegetation) != int(vegetation_a[cursor])
+			var cover_changed: bool = cursor < cover_a.size() and int(cell.cover) != int(cover_a[cursor])
+			if landform_changed:
+				cell.landform = int(landform_a[cursor])
+			if vegetation_changed:
+				cell.vegetation = int(vegetation_a[cursor])
+			if cover_changed:
+				cell.cover = int(cover_a[cursor])
+			if landform_changed or vegetation_changed or cover_changed:
+				_season_round_b_plus_publish_axis_fixed += 1
+			if (terrain_changed or landform_changed or vegetation_changed or cover_changed) \
+					and cell.current_state != null and not cell.current_state.is_empty():
+				cell.current_state["biome"] = int(cell.terrain)
+				cell.current_state["landform"] = int(cell.landform)
+				cell.current_state["vegetation"] = int(cell.vegetation)
+				cell.current_state["cover"] = int(cell.cover)
+				_season_round_b_plus_publish_state_fixed += 1
+			# Preserve one history sample per completed round without per-cell method
+			# calls. The direct writes are identical to HexCell.push_*_history().
+			if cell.biome_history.size() < HexCell.HISTORY_LEN:
+				cell.biome_history.resize(HexCell.HISTORY_LEN)
+				for h in range(HexCell.HISTORY_LEN):
+					cell.biome_history[h] = int(cell.terrain) & 0xFF
+			cell.biome_history[cell._history_idx] = int(cell.terrain) & 0xFF
+			cell._history_idx = (cell._history_idx + 1) % HexCell.HISTORY_LEN
+			if cell.vegetation_history.size() < HexCell.HISTORY_LEN:
+				cell.vegetation_history.resize(HexCell.HISTORY_LEN)
+				for h in range(HexCell.HISTORY_LEN):
+					cell.vegetation_history[h] = int(cell.vegetation) & 0xFF
+			cell.vegetation_history[cell._veg_history_idx] = int(cell.vegetation) & 0xFF
+			cell._veg_history_idx = (cell._veg_history_idx + 1) % HexCell.HISTORY_LEN
+		cursor += 1
+	_season_round_b_plus_publish_cursor = cursor
+	out["cursor"] = cursor
+	out["work_done"] = cursor - start_cursor
+	if cursor < n:
+		return out
+	if landform_a.size() == n:
+		map.landform_arr = landform_a
+	_write_runtime_enum_axes_dense(map)
+	_season_round_b_plus_publish_active = false
+	_season_round_b_plus_facade_published = true
+	_last_season_refresh_breakdown["terrain_facade_fixed"] = _season_round_b_plus_publish_terrain_fixed
+	_last_season_refresh_breakdown["axis_facade_fixed"] = _season_round_b_plus_publish_axis_fixed
+	_last_season_refresh_breakdown["current_state_fixed"] = _season_round_b_plus_publish_state_fixed
+	var wall_ms_now: float = float(Time.get_ticks_usec() - _b_plus_round_start_usec) / 1000.0 \
+			if _b_plus_round_start_usec > 0 else 0.0
+	_b_plus_rounds_total += 1
+	_b_plus_rounds_b_plus += 1
+	_b_plus_slices_used_samples.append(_season_round_b_plus_slices_used)
+	_b_plus_stages_done_samples.append(_season_round_b_plus_stages_done)
+	_b_plus_native_ms_samples.append(_season_round_b_plus_native_ms)
+	_b_plus_wall_ms_samples.append(wall_ms_now)
 	_season_round_b_plus_native_ms = 0.0
 	_season_round_b_plus_slices_used = 0
 	_season_round_b_plus_stages_done = 0
 	_b_plus_round_start_usec = 0
+	out["done"] = true
+	return out
 
 
 # 一次性取走 B+ round 验收样本，清零内部计数。
@@ -9271,6 +9483,9 @@ func _abort_season_round_b_plus_safe() -> void:
 	_season_round_b_plus_native_ms = 0.0
 	_season_round_b_plus_slices_used = 0
 	_season_round_b_plus_stages_done = 0
+	_season_round_b_plus_publish_active = false
+	_season_round_b_plus_publish_cursor = 0
+	_season_round_b_plus_facade_published = false
 	# abort 不算完整 round（不进 _b_plus_rounds_total 计数），仅清 start usec。
 	_b_plus_round_start_usec = 0
 
@@ -9293,8 +9508,7 @@ func _sync_stage8_facade_fields_from_soa(map: MapData) -> void:
 	var landform_a: PackedByteArray = map.landform_arr
 	var vegetation_a: PackedByteArray = map.vegetation_arr
 	var cover_a: PackedByteArray = map.cover_arr
-	if map.has_method("sync_runtime_terrain_facade_from_soa"):
-		map.sync_runtime_terrain_facade_from_soa()
+	var water_a: PackedByteArray = map.is_water_arr
 	var volcano_repaired: int = 0
 	var volcano_a: PackedByteArray = map.has_volcano_arr
 	if volcano_a.size() == n and landform_a.size() == n:
@@ -9311,26 +9525,50 @@ func _sync_stage8_facade_fields_from_soa(map: MapData) -> void:
 		if volcano_repaired > 0:
 			map.landform_arr = landform_a
 			_last_season_refresh_breakdown["volcano_landform_repaired"] = volcano_repaired
-			_write_runtime_enum_axes_dense(map)
+	# Keep the legacy one-sample-per-round history contract, but avoid writing
+	# facade fields and UI dictionaries when the native SoA value is unchanged.
+	# The old path first traversed every cell in MapData, then repeated a second
+	# traversal here and rewrote four Dictionary entries for every cell.
+	var cells: Array = map.iter_cells() if map.has_indices() else map.all_cells()
+	var terrain_facade_fixed: int = 0
+	var axis_facade_fixed: int = 0
+	var state_fixed: int = 0
+	var water_lut: PackedByteArray = MapData.is_water_lut()
 	for i in range(n):
-		var cell: HexCell = map.cell_at(i)
+		var cell: HexCell = cells[i] if i < cells.size() else null
 		if cell == null:
 			continue
-		if i < landform_a.size():
+		var terrain_changed: bool = i < terrain_a.size() and int(cell.terrain) != int(terrain_a[i])
+		if terrain_changed:
+			cell.apply_terrain(int(terrain_a[i]))
+			terrain_facade_fixed += 1
+		if i < terrain_a.size() and i < water_a.size():
+			water_a[i] = water_lut[int(terrain_a[i]) & 0xFF]
+		var landform_changed: bool = i < landform_a.size() and int(cell.landform) != int(landform_a[i])
+		var vegetation_changed: bool = i < vegetation_a.size() and int(cell.vegetation) != int(vegetation_a[i])
+		var cover_changed: bool = i < cover_a.size() and int(cell.cover) != int(cover_a[i])
+		if landform_changed:
 			cell.landform = int(landform_a[i])
-		if i < vegetation_a.size():
+		if vegetation_changed:
 			cell.vegetation = int(vegetation_a[i])
-		if i < cover_a.size():
+		if cover_changed:
 			cell.cover = int(cover_a[i])
-		if cell.current_state != null and not cell.current_state.is_empty():
+		if landform_changed or vegetation_changed or cover_changed:
+			axis_facade_fixed += 1
+		if (terrain_changed or landform_changed or vegetation_changed or cover_changed) \
+				and cell.current_state != null and not cell.current_state.is_empty():
 			# Keep inspector/UI snapshots on the same SoA publish boundary as the
 			# HexCell facade; otherwise labels can show the previous vegetation.
 			cell.current_state["biome"] = int(cell.terrain)
 			cell.current_state["landform"] = int(cell.landform)
 			cell.current_state["vegetation"] = int(cell.vegetation)
 			cell.current_state["cover"] = int(cell.cover)
+			state_fixed += 1
 		cell.push_biome_history(int(cell.terrain))
 		cell.push_vegetation_history(int(cell.vegetation))
+	_last_season_refresh_breakdown["terrain_facade_fixed"] = terrain_facade_fixed
+	_last_season_refresh_breakdown["axis_facade_fixed"] = axis_facade_fixed
+	_last_season_refresh_breakdown["current_state_fixed"] = state_fixed
 
 
 func build_current_state_view(cell: HexCell, season: int = -1) -> Dictionary:
@@ -12303,7 +12541,9 @@ func _sea_ice_solar_exposure(sea_ice_frac: float, min_thick_ice_exposure: float 
 func _sea_ice_insolation_input(map: MapData, cells: Array, season_phase: float) -> PackedFloat32Array:
 	var n_cells: int = cells.size()
 	if map != null and map.insolation_now_arr.size() == n_cells:
-		return map.insolation_now_arr
+		# Live slot first: the freeze gate and solar melt must see today's sun, and
+		# Pass-A only mirrors insolation into MapData at the round boundary.
+		return _native_daily_live_f32("cell_insolation_now", map.insolation_now_arr, n_cells)
 	if _gdext_sea_ice_insol_buf.size() != n_cells:
 		_gdext_sea_ice_insol_buf.resize(n_cells)
 	for i in range(n_cells):

@@ -119,7 +119,9 @@ SETTLE 的 `i32_1` 来自 Effect payload[3]（可选守恒 `population_reward`�
 源地编号、职业构成、路线成本和旅行日不进入默认文案，后两者仅留在
 tooltip。同一家族多个可达源地合成一张卡，并自动选人口最多的源分支。
 选中后人数默认填满可派遣上限。完整开工包时主按钮显示「派遣 N 人并安家」；
-绿地开工包不完整时显示「开始筹备 N 人」，成功码 `colonization_preparing`，切到「在途」页显示「筹备中」与缺货行。迁徙或部分桥接库存仍显示「派遣 N 人」，并用黄铜说明「基础物资不足，只携带当前可用物资」。物资不够不再禁用按钮。
+绿地开工包不完整时显示「开始筹备 N 人」，成功码 `colonization_preparing`，切到「在途」页显示「筹备中」与缺货行。
+缺货行按 `kit_blocker` 逐条说明卡点，并同时给出口粮与建材两个分项百分比；行内 `Effect` 标签
+`max_lines_visible` 为 4，2 行会把说明直接截掉。迁徙或部分桥接库存仍显示「派遣 N 人」，并用黄铜说明「基础物资不足，只携带当前可用物资」。物资不够不再禁用按钮。
 冻结周期顶部仍用黄铜
 提示结算中，确认按钮改为「排队派遣 N 人」并保持可点；点击后命令进入 pending，
 提交完成后自动抽离人口与源地货物出发。取消同样可在结算中排队。若结算中暂时没有可列家族，
@@ -143,30 +145,70 @@ busy。家族入口进入地图选点模式，Esc/右键退出。
 混装。cargo 始终记录各具体物资的实际物理量，不允许跨食品池、衣着、输入组或建材组抵扣。普通 BUILD 与
 投资仍要求单个候选独自满足一组，并按现有低成本规则选择，不启用开拓专用 split policy。
 已有建筑或在建的目标只带桥接库存，不落成新建筑。`N < 3` 标记 `kit_partial`，
-只带桥接。绿地 `N >= 3` **不允许带着空建筑列表出发**：库存不够就留在 `PREPARING`，
-每日到期堆只对上次缺货 ID 做 `O(缺货数)` 库存哈希；哈希不变则 `due_day = day+1` 再入堆，
-变了才重跑 `plan_colonization_kit`。规划复杂度仍是 `O(unlocked_types)`，禁止把
-GDScript `StarterEconomyPlanner` 的 20 人穷举搬进报价热路径，也不扫全图、不跑投资周期 I。
+只带桥接。绿地 `N >= 3` **不允许带着空建筑列表出发**：库存不够就留在 `PREPARING`。
+
+开工包规模由 `COLONIZATION_KIT_FOOD_COVERAGE_Q16` 封顶，不再把剩余业主槽全部填成采集营；
+派遣人数上升不会让建材需求线性膨胀，也就不会把筹备拖成看不到头的囤积。
+
+`PREPARING` 是**逐日囤积**，不是逐日重试。每个到期日 `advance_preparing_family_expedition`
+必定重跑一次 `plan_colonization_kit`（不再用缺货库存哈希跳过，因为余量可能出现在上次并不缺的
+物资上），然后 `reserve_preparing_family_expedition_cargo` 把当天买得起的差额从源地市场划入队伍
+托管 cargo。规划把已托管量当作可用库存（`ColonizationReserveContext::reserved`），所以每条
+`kit.cargo` 表示"必须持有的总量"，只搬差额；计划缩小时超额先退回源地市场。`prefer_reserved_candidates`
+让已囤积的替代品排在候选前面，避免新到货的首选候选把已付出的货搁死。
+
+托管不得吃掉源地自己的口粮：`ColonizationReserveContext::floor` 由
+`colonization_source_survival_floor` 用同一套桥接规划器跑源地自身人口
+`COLONIZATION_RESERVE_SOURCE_FLOOR_DAYS = 10` 天算出，规划与划账都只看
+`max(0, 市场库存 - floor) + 已托管`。到期处理发生在市场结算之前，没有这条底线会把源地掏空。
+
+齐套后 `launch_preparing_family_expedition` 只抽人口（cargo 已在托管里），并在此刻才写入
+`kit_building_*`；抽人失败保留托管、次日重试。`abort_preparing_family_expedition`（取消、
+目标易主、源地人口不足）必须先把托管 cargo 退回源地市场，否则取消筹备会凭空销毁货物。
+
+`kit_partial` 的建材位只反映**最终**规划与原始意图的差距，不再被"历史上砍过一栋建筑"永久锁定；
+`missing_good_ids` 同样只收录最后一次 `materials_fit` 的缺口，并与 `plan_construction_materials`
+统一用 `good_market_available` 判定可得（先前用更窄的 `good_production_available`，会写出空清单）。
+开工包的建材组走全库统一的时代分池（`primitive_construction` / `primitive_lashing` 等，
+见 native-economy-runtime.md），所以源地缺某一种具体材料不再等于开不了工；
+`kit_unbuildable` 只在整组候选都不可得时才会触发。
+若某个建造组的全部候选在源地市场都不可得，规划置 `kit_unbuildable`，
+`advance_preparing_family_expedition` 立即 abort 并写 `PREPARING_UNBUILDABLE` 回执、退还托管、
+释放目标占用——这种缺口不会随时间消失，继续逐日囤积就是永久卡死。
+
+规划复杂度仍是 `O(unlocked_types)`，禁止把 GDScript `StarterEconomyPlanner` 的 20 人穷举
+搬进报价热路径，也不扫全图、不跑投资周期 I。
 物资只从源地市场划走；`N < 3` 抽货失败仍可回执 `colonization_kit_materials_short`。
 到达仍一次性插入冻结开工计划；若 BUFFER 里还有建材，落地当天对目标再 `plan_colonization_kit` 一次
 （`ignore_existing=true`，用剩余业主槽封顶），用剩余建材补插。
 
 ## 存档与诊断
 
-当前写出为 PKCN v11、PKEC v42；PKEF 当前为 v11。v42 允许 `EXPEDITION_PREPARING` 且
-payload/cargo/kit 为 0，并写出缺货 CSR。reader 接受 v41 与 v42：v41 不得含 PREPARING，
-且仍要求 payload≥1。科技目录、研究信号、Effect recipe、Trigger 定义或内容绑定摘要变化时，
+当前写出为 PKCN v11、PKEC v51；PKEF 当前为 v11。reader 只接受同版本。
+v51 的 `EXPEDITION_PREPARING` 记录要求 `payload_count == 0` 且 `kit_count == 0`，
+但 `cargo_count` **可以非零**——那是筹备期逐日囤积的托管货物，已计入在途货物守恒总量与
+authoritative state hash。v42 曾要求 PREPARING 的 cargo 也为 0，该约束在 v51 解除。
+科技目录、研究信号、Effect recipe、Trigger 定义或内容绑定摘要变化时，
 PKCN 以 `catalog_hash_mismatch` 拒绝旧存档。完整恢复必须先恢复 PKCN 与 PKEF，再恢复 PKEC，
 使 PKEC 能交叉验证所有 `SETTLING` 事务。恢复后重建到期堆和活动目标索引；筹备队保留保存时的
-缺货 identity；revision 4 把不足组的全部候选纳入监听，并将食品缺口统一为合并食品池，任一候选库存变化后才重规划。
-`kit_missing_good_ids` 因而表示不足组的库存监听候选，而非每种物资都必须分别齐套；食品缺口现在监听
-合并后的食品候选集合。已有建筑的本国地块迁徙仍只携带桥接库存，不落成新建筑，也不额外抽取建材。
+缺货 identity；revision 4 把不足组的全部候选纳入监听，并将食品缺口统一为合并食品池。
+revision 5 起 identity 不再用于跳过重规划（每日必重规划），只用于让 UI 感知筹备进度变化，
+因此把桥接需求/缺口与当前托管 cargo 一起混入。
+`kit_missing_good_ids` 表示不足组的库存监听候选，而非每种物资都必须分别齐套。
+筹备进度另由 `kit_bridge_required_units` / `kit_bridge_missing_units`（未被库存钳制的
+原始桥接需求与剩余缺口）与 `kit_material_required_units` / `kit_material_missing_units`
+（完整开工意图的建造需求，以及源地当前仍供不起的那部分）暴露，`kit_blocker` 再给出
+`READY` / `BRIDGE` / `MATERIALS` / `NO_BUILDINGS` / `UNBUILDABLE` 之一说明真正卡在哪。
+UI 的"已囤积 N%"必须按桥接 + 建材合计口径算：只看桥接会在建材还差一大截时显示 100%。
+这五个值都是每次查询时只读重规划得到的派生量，不落存档，PKEC schema 不变。已有建筑的本国地块迁徙仍只携带桥接库存，不落成新建筑，也不额外抽取建材。
 v36 在途队伍 cargo 为空，到达后不落成开工包。
 
 `get_economy_report()` 暴露活动队数、到期堆大小、在途人口、路线查询、载荷拆分
 和跨域提交耗时。核心回归在 `tests/family_colonization_runtime_test.gd`，覆盖冻结
 路线、revision 重验、真实人口/货物托管、O(1) 判重、进度返程、回执、PKEC v42
 中途恢复，零库存绿地 N=3 进入 PREPARING、人不离开源地、补库存后下一 idle 日 OUTBOUND，
+砍过建筑的开工包在建材补足后仍必须能出发、建造组按 substitution category 接受替代建材、
+结构性不可得触发 `PREPARING_UNBUILDABLE` abort 且不凭空增减货物，
 绿地 N≥3 落成采集+商栈、返程退货、已开发格不落成，
 冻结周期内排队的 `SETTLE_FAMILY_EXPEDITION` 能通过 epoch 预检并落地，
 在更高序号格已有建筑时把开工包插入中间格不得打乱守恒，

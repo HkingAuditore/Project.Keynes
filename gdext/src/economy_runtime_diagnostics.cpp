@@ -230,7 +230,12 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_epoch_nonhousehold_withdrawals);
     cap(_production_input_reserve);
     cap(_construction_material_reserve);
-    cap(_cell_last_settlement_day); cap(_cell_settlement_generation);
+    cap(_cell_last_settlement_day); cap(_cell_elapsed_days);
+    cap(_cell_tier); cap(_cell_next_review_day); cap(_cell_force_wake);
+    cap(_cell_tier_seen_gen); cap(_cell_tier_seen_population);
+    cap(_cell_tier_change_day); cap(_cell_shortage_since_day);
+    cap(_cell_population_total);
+    cap(_cell_settlement_generation);
     cap(_cell_price_stock_gen); cap(_cell_owner_cash_gen); cap(_cell_population_gen);
     cap(_cell_building_structure_gen); cap(_cell_technology_gen);
     cap(_cell_resource_gen); cap(_cell_trade_gen); cap(_cell_effect_shortage_q16);
@@ -655,6 +660,18 @@ Dictionary NativeEconomyRuntime::compact_report() const {
             breakdown_ms["aggregate_publish.trade_init"] = 0.0;
             breakdown_work["aggregate_publish.trade_init"] = 0;
         }
+        breakdown_ms["aggregate_publish.commit_cells"] =
+            _publish_commit_cells_slice_ms;
+        breakdown_ms["aggregate_publish.commit_prepare"] =
+            _publish_commit_prepare_slice_ms;
+        breakdown_ms["aggregate_publish.commit_finalize"] =
+            _publish_commit_finalize_slice_ms;
+        breakdown_work["aggregate_publish.commit_cells"] =
+            _publish_slice_phase_work[static_cast<size_t>(PublishPhase::COMMIT)];
+        breakdown_work["aggregate_publish.commit_prepare"] =
+            _publish_commit_prepare_slice_ms > 0.0 ? 1 : 0;
+        breakdown_work["aggregate_publish.commit_finalize"] =
+            _publish_commit_finalize_slice_ms > 0.0 ? 1 : 0;
         out["publish_breakdown_ms"] = breakdown_ms;
         out["publish_breakdown_work"] = breakdown_work;
     }
@@ -1043,6 +1060,9 @@ Dictionary NativeEconomyRuntime::report() const {
                 sizeof(SettlementChange));
     out["settlement_memory_bytes"] = settlement_memory;
     out["publish_ms"] = _publish_ms;
+    out["publish_commit_cells_ms"] = _publish_commit_cells_ms;
+    out["publish_commit_prepare_ms"] = _publish_commit_prepare_ms;
+    out["publish_commit_finalize_ms"] = _publish_commit_finalize_ms;
     const CountryClassOpinionSnapshot &class_opinion =
         country_class_opinion_snapshot();
     out["class_opinion_revision"] =
@@ -1092,6 +1112,18 @@ Dictionary NativeEconomyRuntime::report() const {
         publish_breakdown_ms["aggregate_publish.trade_init"] = 0.0;
         publish_breakdown_work["aggregate_publish.trade_init"] = 0;
     }
+    publish_breakdown_ms["aggregate_publish.commit_cells"] =
+        _publish_commit_cells_slice_ms;
+    publish_breakdown_ms["aggregate_publish.commit_prepare"] =
+        _publish_commit_prepare_slice_ms;
+    publish_breakdown_ms["aggregate_publish.commit_finalize"] =
+        _publish_commit_finalize_slice_ms;
+    publish_breakdown_work["aggregate_publish.commit_cells"] =
+        _publish_slice_phase_work[static_cast<size_t>(PublishPhase::COMMIT)];
+    publish_breakdown_work["aggregate_publish.commit_prepare"] =
+        _publish_commit_prepare_slice_ms > 0.0 ? 1 : 0;
+    publish_breakdown_work["aggregate_publish.commit_finalize"] =
+        _publish_commit_finalize_slice_ms > 0.0 ? 1 : 0;
     out["publish_breakdown_ms"] = publish_breakdown_ms;
     out["publish_breakdown_work"] = publish_breakdown_work;
     out["publish_cumulative_breakdown_ms"] = publish_cumulative_breakdown_ms;

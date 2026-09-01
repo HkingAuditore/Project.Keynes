@@ -5,7 +5,7 @@
 [ext_resource type="Script" path="res://scripts/ui/components/colonization_family_row.gd" id="3_script"]
 
 [node name="ColonizationFamilyRow" type="Button"]
-custom_minimum_size = Vector2(0, 120)
+custom_minimum_size = Vector2(0, 156)
 size_flags_horizontal = 3
 focus_mode = 0
 mouse_default_cursor_shape = 2
@@ -57,7 +57,7 @@ max_badge_width = 184.0
 layout_mode = 2
 mouse_filter = 2
 autowrap_mode = 3
-max_lines_visible = 2
+max_lines_visible = 4
 theme_type_variation = &"PKMutedLabel"
 
 [node name="Population" type="Label" parent="Margin/Line"]

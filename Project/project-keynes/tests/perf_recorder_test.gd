@@ -44,6 +44,7 @@ func _run() -> void:
 	_test_economy_telemetry_aliases()
 	_test_format_csv_header_and_rows()
 	_test_format_csv_missing_cell_blank()
+	_test_recorder_default_core_sampling()
 	_test_recorder_skipped_day_no_job_columns()
 	_test_recorder_state_machine()
 	print("=== perf_recorder test summary: %d checks, %d failures ===" % [_checks, _failures])
@@ -251,13 +252,38 @@ class _MockMain:
 		return breakdowns
 
 
+func _test_recorder_default_core_sampling() -> void:
+	var rec = PerfRecorder.new()
+	var mock = _MockMain.new()
+	mock.sus_report = {"climate": {"elapsed_ms": 2.5, "slices_run": 1}}
+	rec.bind_main(mock)
+	rec.start()
+	rec.on_fast_tick({
+		"tick_idx": 1, "timestamp_ms": 100, "was_skipped_day": false,
+		"fps": 60, "fast_ms": 2.5, "t_sus_ms": 2.0, "t_render_ms": 0.0, "t_ui_ms": 0.0,
+	})
+	var path: String = rec.stop_and_export()
+	_expect(path != "", "default CORE export returns non-empty path")
+	if path == "":
+		return
+	var f := FileAccess.open(path, FileAccess.READ)
+	_expect(f != null, "default CORE export readable")
+	if f == null:
+		return
+	f.get_8(); f.get_8(); f.get_8()
+	var header: String = f.get_line()
+	f.close()
+	_expect(not header.contains("j_climate_ms"),
+		"default CORE omits per-tick job detail")
+
+
 # 跳日帧 sus_report 不应展开为 j_*_ms 列（避免误把上一非跳日 tick 的值当本帧）
 func _test_recorder_skipped_day_no_job_columns() -> void:
 	var rec = PerfRecorder.new()
 	var mock = _MockMain.new()
 	mock.sus_report = {"climate": {"elapsed_ms": 2.5, "slices_run": 1, "skipped_reason": ""}}
 	rec.bind_main(mock)
-	rec.start()
+	rec.start("DETAIL", 1)
 
 	# 跳日帧
 	rec.on_fast_tick({

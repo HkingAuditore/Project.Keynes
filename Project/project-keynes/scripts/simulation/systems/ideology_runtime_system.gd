@@ -4,7 +4,6 @@ class_name IdeologyRuntimeSystem
 const SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
 var facade = null
 var world_clock: WorldClock = null
-var _last_report: Dictionary = {}
 
 func _init(p_facade, p_world_clock: WorldClock = null) -> void:
 	id = &"ideology_runtime"
@@ -29,7 +28,6 @@ func tick(ctx) -> Dictionary:
 	var result: Dictionary = facade.world_ext().run_ideology_daily(int(ctx.day_index) if ctx != null else 0)
 	if facade.has_method("drain_receipts"):
 		facade.drain_receipts()
-	_last_report = facade.report()
 	var done := bool(result.get("done", true))
 	if world_clock != null and world_clock.has_method("request_simulation_backpressure"):
 		world_clock.request_simulation_backpressure(&"ideology_day_barrier", not done)
@@ -44,10 +42,13 @@ func tick(ctx) -> Dictionary:
 		"pending_transition_visits": int(result.get("pending_transition_visits", 0)),
 		"sparse_idea_scan_count": int(result.get("sparse_idea_scan_count", 0)),
 		"dormant_scan_count": int(result.get("dormant_scan_count", 0))}
-func last_report() -> Dictionary: return _last_report.duplicate(true)
+
+# 报告按需构造。原来每 tick 拉一份完整 native 报告，而 tick 的返回值里一个字段都
+# 没用到它。
+func last_report() -> Dictionary:
+	return facade.report() if facade != null and facade.is_configured() else {}
 
 func reset_progress() -> void:
 	super.reset_progress()
-	_last_report.clear()
 	if world_clock != null and world_clock.has_method("request_simulation_backpressure"):
 		world_clock.request_simulation_backpressure(&"ideology_day_barrier", false)

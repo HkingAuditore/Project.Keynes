@@ -351,6 +351,12 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _settlement_name_collision_probes = 0;
     _prosperity_update_ms = 0.0;
     _publish_ms = 0.0;
+    _publish_commit_cells_ms = 0.0;
+    _publish_commit_prepare_ms = 0.0;
+    _publish_commit_finalize_ms = 0.0;
+    _publish_commit_cells_slice_ms = 0.0;
+    _publish_commit_prepare_slice_ms = 0.0;
+    _publish_commit_finalize_slice_ms = 0.0;
     _employment_ms = 0.0;
     _production_ms = 0.0;
     _production_merge_ms = 0.0;
@@ -830,6 +836,8 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
         }
     }
     _epoch_days = workset_elapsed_days(day_index);
+    capture_cell_elapsed_days(day_index);
+    refresh_cell_activity_tiers(day_index);
     _commit_lag_budget_days = std::max(0, locked_market_cycle_days() - 1);
     _epoch_begin_workset_ms = elapsed_ms(workset_started);
     const auto fiscal_started = Clock::now();

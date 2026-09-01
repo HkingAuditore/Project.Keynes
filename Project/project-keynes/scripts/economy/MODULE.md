@@ -539,6 +539,11 @@ output, income and labor demand and may deplete a stock. A positive
 `resource_safe_harvest_q16` remains the explicit managed-harvest switch and
 restores the shared cell/resource budget and investment veto.
 
+Bay-cell content calibration uses `ResourceProfileRegistry.BAY_CELL_EARLY_BUILDING_TARGET`
+(=5000 early buildings). Ecology capacity, agri floors, and mineral
+`init_min_reserve` are authored against goods units with
+`CELL_AREA_RESOURCE_SCALE * GOODS_SCALE`; the CPUE curve itself is unchanged.
+
 Employee choice uses expected collectible pay rather than the contract alone:
 the last role payment ratio is blended with the existing cell/profession paid
 wage EMA, then capped by a current funding forecast. That forecast values only

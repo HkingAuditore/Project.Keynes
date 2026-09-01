@@ -255,6 +255,27 @@ round finalizer. GDScript/Godot remains a snapshot consumer. Standalone,
 legacy, PROBE, and A/B pass entry points keep immediate flush unless they
 explicitly request `defer_visible_publish`.
 
+## Climate Pass-A visibility override (2026-09-01)
+
+Pass-A likewise keeps slot authority and defers its visible publish, but unlike
+moisture it has no per-slot bridge. The sliced round commits
+`NATIVE_DAILY_PASS_A_DEFERRED_SLOTS` at completion (insolation, insolation dev,
+day length, season offset, runtime baseline, temp 30d/365d/anomaly,
+`cell_ema_initialized`, heat input, thermal energy, snowpack) and reports
+`pass_a_deferred_publish_slots`. No schema, component ID, scheduler node, or
+save field changed.
+
+This is a visibility contract, not just a diagnostic one: the sliced bundle
+keeps `refresh_slots_from_map=true`, so a stale mirror is re-imported into the
+slot at the next round start and would reset the thermal-energy/EMA integrators
+to their day-0 values every round.
+
+Consumers that need the current simulation day rather than the last committed
+round read the live slot through `MapGenerator._native_daily_live_f32/_u8`
+(`component_id()` + `snapshot_f32()/snapshot_u8()`): the sea-ice solar gate uses
+`cell_insolation_now`, and the ocean knobs use `cell_temp_baseline` and
+`cell_ema_initialized`.
+
 ## Trigger authority
 
 ## Climate mode authority (2026-08)

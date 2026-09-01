@@ -113,15 +113,21 @@ bool NativeEconomyRuntime::cell_due_investment_review(int32_t cell,
 
 void NativeEconomyRuntime::rebuild_economy_live_cells() {
     _economy_live_cells.clear();
+    const size_t cell_slots = static_cast<size_t>(std::max(0, _cell_count));
+    if (_cell_population_total.size() != cell_slots)
+        _cell_population_total.assign(cell_slots, 0);
+    else
+        std::fill(_cell_population_total.begin(), _cell_population_total.end(), 0);
     const int32_t page_count = static_cast<int32_t>(_population.page_cell.size());
     for (int32_t page = 0; page < page_count; ++page) {
         const int32_t cell = _population.page_cell[page];
         if (cell < 0 || cell >= _cell_count) continue;
-        bool any_population = false;
+        int64_t total = 0;
         _population.for_each_in_cell(cell, [&](int32_t slot) {
-            if (_population.population[slot] > 0) any_population = true;
+            total += std::max<int64_t>(0, _population.population[slot]);
         });
-        if (any_population) _economy_live_cells.push_back(cell);
+        _cell_population_total[static_cast<size_t>(cell)] = total;
+        if (total > 0) _economy_live_cells.push_back(cell);
     }
     for (const int32_t cell : _building_active_cells) {
         if (cell >= 0 && cell < _cell_count)
@@ -160,6 +166,180 @@ int32_t NativeEconomyRuntime::workset_elapsed_days(int64_t day_index) const {
         any = true;
     }
     return any ? elapsed : 1;
+}
+
+void NativeEconomyRuntime::capture_cell_elapsed_days(int64_t day_index) {
+    // 每格自己的未结算天数。全局 _epoch_days 取的是这些值的最小值，落后格的
+    // 差额目前被直接丢弃。休眠分级会把这个差额从「偶发」变成「常态」，所以先把
+    // per-cell 值与丢失量落地成可观测量，再决定消费侧改造范围。
+    if (static_cast<int32_t>(_cell_elapsed_days.size()) != _cell_count)
+        _cell_elapsed_days.assign(static_cast<size_t>(std::max(0, _cell_count)), 1);
+    const int32_t cap = MARKET_CYCLE_MAX_DAYS;
+    _epoch_elapsed_days_max = 0;
+    _epoch_elapsed_days_spread_cells = 0;
+    _epoch_elapsed_days_lost = 0;
+    for (const int32_t cell : _epoch_settlement_cells) {
+        if (cell < 0 || cell >= _cell_count) continue;
+        const int64_t last = cell < static_cast<int32_t>(
+            _cell_last_settlement_day.size())
+            ? _cell_last_settlement_day[cell] : day_index - 1;
+        const int32_t cell_elapsed = clamp_i32(day_index - last, 1, cap);
+        _cell_elapsed_days[static_cast<size_t>(cell)] = cell_elapsed;
+        if (cell_elapsed > _epoch_elapsed_days_max)
+            _epoch_elapsed_days_max = cell_elapsed;
+        if (cell_elapsed != _epoch_days) {
+            ++_epoch_elapsed_days_spread_cells;
+            _epoch_elapsed_days_lost += cell_elapsed - _epoch_days;
+        }
+    }
+    _total_elapsed_days_lost = saturating_add(
+        _total_elapsed_days_lost, _epoch_elapsed_days_lost, _saturation_count);
+    if (_epoch_elapsed_days_spread_cells > _peak_elapsed_days_spread_cells)
+        _peak_elapsed_days_spread_cells = _epoch_elapsed_days_spread_cells;
+}
+
+int32_t NativeEconomyRuntime::cell_elapsed_days(int32_t cell) const {
+    if (cell < 0 || cell >= static_cast<int32_t>(_cell_elapsed_days.size()))
+        return std::max(1, _epoch_days);
+    return std::max(1, _cell_elapsed_days[static_cast<size_t>(cell)]);
+}
+
+int32_t NativeEconomyRuntime::tier_review_period_days(uint8_t tier) const {
+    switch (tier) {
+        case 0: return 1;
+        case 1: return std::max(1, locked_market_cycle_days());
+        case 2: return 15;
+        default: return 30;
+    }
+}
+
+uint8_t NativeEconomyRuntime::classify_cell_activity_tier(
+    int32_t cell, int64_t day_index, int32_t *reason_out) const {
+    // 分级只用 O(1) 信号，绝不用人口数量做判据：刚开辟的边区、单一产地、贸易
+    // 枢纽都可能人少而战略重要。任一「有事发生」的证据出现就上抬 tier。
+    auto hit = [&](int32_t reason, uint8_t tier) {
+        if (reason_out != nullptr) *reason_out = reason;
+        return tier;
+    };
+    if (cell < 0 || cell >= _cell_count) return hit(TIER_REASON_OUT_OF_RANGE, 3);
+    const size_t idx = static_cast<size_t>(cell);
+
+    // 可见性只有在开启视野门控时才有区分度：未门控时这张表整体为 1，含义是
+    // 「不做门控」而不是「玩家正在看」。
+    if (_epoch_trade_vision_gated && _epoch_player_country_slot >= 0 &&
+        idx < _epoch_cell_visible.size() && _epoch_cell_visible[idx] != 0)
+        return hit(TIER_REASON_VISIBLE, 0);
+    if (idx < _cell_force_wake.size() && _cell_force_wake[idx] != 0)
+        return hit(TIER_REASON_FORCED_WAKE, 0);
+    // 短缺分急性与慢性。刚出现的短缺是事件，值得每日跟；长期缺某种货的格是稳态，
+    // 把它按每日跑不会让它更快脱困，只会让分级完全失去节省。
+    const bool shortage_now =
+        (idx < _cell_effect_shortage_q16.size() &&
+         _cell_effect_shortage_q16[idx] > 0) ||
+        (idx < _cell_essentials_shortage_q16.size() &&
+         _cell_essentials_shortage_q16[idx] > 0);
+    if (shortage_now) {
+        const int64_t since = idx < _cell_shortage_since_day.size()
+                                  ? _cell_shortage_since_day[idx] : day_index;
+        if (since >= 0 &&
+            day_index - since <= static_cast<int64_t>(SHORTAGE_ACUTE_DAYS))
+            return hit(TIER_REASON_EFFECT_SHORTAGE, 0);
+        return hit(TIER_REASON_ESSENTIALS_SHORTAGE, 1);
+    }
+    if (cell + 1 < static_cast<int32_t>(_pending_construction_cell_offsets.size()) &&
+        _pending_construction_cell_offsets[idx + 1] >
+            _pending_construction_cell_offsets[idx])
+        return hit(TIER_REASON_CONSTRUCTION, 0);
+
+    const int64_t change_day = idx < _cell_tier_change_day.size()
+                                   ? _cell_tier_change_day[idx]
+                                   : day_index;
+    const int64_t quiet_days = day_index - change_day;
+    if (quiet_days <= 2) return hit(TIER_REASON_RECENT_CHANGE, 0);
+
+    // 玩家领土只把下限抬到 T1（= 现有 market cycle 节奏），不抬到每日。抬到每日
+    // 会让成本重新和帝国规模挂钩，而封顶正是分级要解决的问题；抬到 T1 则保证
+    // 玩家领土的节奏永远不差于分级前的现状。
+    const bool player_owned = _epoch_player_country_slot >= 0 &&
+                              idx < _epoch_cell_country.size() &&
+                              _epoch_cell_country[idx] == _epoch_player_country_slot;
+    if (player_owned) return hit(TIER_REASON_PLAYER_TERRITORY, 1);
+
+    const bool has_buildings =
+        cell + 1 < static_cast<int32_t>(_building_cell_offsets.size()) &&
+        _building_cell_offsets[idx + 1] > _building_cell_offsets[idx];
+    if (quiet_days <= static_cast<int64_t>(tier_review_period_days(2)))
+        return hit(TIER_REASON_QUIET_SHORT, 1);
+    if (has_buildings) return hit(TIER_REASON_QUIET_WITH_BUILDINGS, 2);
+    return hit(TIER_REASON_DORMANT, 3);
+}
+
+void NativeEconomyRuntime::refresh_cell_activity_tiers(int64_t day_index) {
+    const size_t n = static_cast<size_t>(std::max(0, _cell_count));
+    if (_cell_tier.size() != n) _cell_tier.assign(n, 1);
+    if (_cell_next_review_day.size() != n) _cell_next_review_day.assign(n, 0);
+    if (_cell_force_wake.size() != n) _cell_force_wake.assign(n, 0);
+    if (_cell_tier_seen_gen.size() != n) _cell_tier_seen_gen.assign(n, 0);
+    if (_cell_tier_seen_population.size() != n)
+        _cell_tier_seen_population.assign(n, -1);
+    if (_cell_tier_change_day.size() != n)
+        _cell_tier_change_day.assign(n, day_index);
+    if (_cell_shortage_since_day.size() != n)
+        _cell_shortage_since_day.assign(n, -1);
+
+    for (int32_t i = 0; i < 4; ++i) _tier_histogram[i] = 0;
+    for (int32_t i = 0; i < TIER_REASON_COUNT; ++i) _tier_reason_histogram[i] = 0;
+    for (const int32_t cell : _economy_live_cells) {
+        if (cell < 0 || cell >= _cell_count) continue;
+        const size_t idx = static_cast<size_t>(cell);
+        // _cell_population_gen 在每次 publish 里对每个结算格无条件自增，它是
+        // 「本格被处理过」而不是「本格发生了变化」，用它做判据会把所有格都判成
+        // T0。真正的事件标记只有建筑结构、贸易到货，以及人口总数的实际变动。
+        const uint32_t struct_gen = idx < _cell_building_structure_gen.size()
+                                        ? _cell_building_structure_gen[idx] : 0u;
+        const uint32_t trade_gen = idx < _cell_trade_gen.size()
+                                       ? _cell_trade_gen[idx] : 0u;
+        const uint32_t fused = struct_gen * 40503u ^ trade_gen * 2246822519u;
+        const int64_t population = idx < _cell_population_total.size()
+                                       ? _cell_population_total[idx] : 0;
+        if (fused != _cell_tier_seen_gen[idx] ||
+            population != _cell_tier_seen_population[idx]) {
+            _cell_tier_seen_gen[idx] = fused;
+            _cell_tier_seen_population[idx] = population;
+            _cell_tier_change_day[idx] = day_index;
+        }
+        const bool shortage_now =
+            (idx < _cell_effect_shortage_q16.size() &&
+             _cell_effect_shortage_q16[idx] > 0) ||
+            (idx < _cell_essentials_shortage_q16.size() &&
+             _cell_essentials_shortage_q16[idx] > 0);
+        if (!shortage_now)
+            _cell_shortage_since_day[idx] = -1;
+        else if (_cell_shortage_since_day[idx] < 0)
+            _cell_shortage_since_day[idx] = day_index;
+
+        int32_t reason = TIER_REASON_DORMANT;
+        const uint8_t tier = classify_cell_activity_tier(cell, day_index, &reason);
+        if (reason >= 0 && reason < TIER_REASON_COUNT)
+            ++_tier_reason_histogram[reason];
+        if (tier == 0 && _cell_force_wake[idx] != 0) {
+            _cell_force_wake[idx] = 0;
+            ++_tier_forced_wakes;
+        }
+        _cell_tier[idx] = tier;
+        _cell_next_review_day[idx] =
+            day_index + static_cast<int64_t>(tier_review_period_days(tier));
+        ++_tier_histogram[tier];
+    }
+}
+
+void NativeEconomyRuntime::request_cell_wake(int32_t cell) {
+    if (cell < 0 || cell >= _cell_count) return;
+    const size_t n = static_cast<size_t>(std::max(0, _cell_count));
+    if (_cell_force_wake.size() != n) _cell_force_wake.assign(n, 0);
+    _cell_force_wake[static_cast<size_t>(cell)] = 1;
+    if (_cell_next_review_day.size() == n)
+        _cell_next_review_day[static_cast<size_t>(cell)] = 0;
 }
 
 int32_t NativeEconomyRuntime::knives_per_day(double ms_per_knife) const {
@@ -589,6 +769,27 @@ void NativeEconomyRuntime::write_cadence_report(Dictionary &out) const {
     out["settlement_mode"] = "locked_cycle";
     out["market_cycle_days"] = n;
     out["epoch_days"] = _epoch_days;
+    out["epoch_elapsed_days_max"] = _epoch_elapsed_days_max;
+    out["epoch_elapsed_days_spread_cells"] = _epoch_elapsed_days_spread_cells;
+    out["epoch_elapsed_days_lost"] = _epoch_elapsed_days_lost;
+    out["total_elapsed_days_lost"] = _total_elapsed_days_lost;
+    out["peak_elapsed_days_spread_cells"] = _peak_elapsed_days_spread_cells;
+    out["tier_t0_cells"] = _tier_histogram[0];
+    out["tier_t1_cells"] = _tier_histogram[1];
+    out["tier_t2_cells"] = _tier_histogram[2];
+    out["tier_t3_cells"] = _tier_histogram[3];
+    out["tier_forced_wakes"] = _tier_forced_wakes;
+    {
+        static const char *kTierReasonNames[TIER_REASON_COUNT] = {
+            "player_territory", "visible", "forced_wake", "effect_shortage",
+            "essentials_shortage", "construction", "recent_change",
+            "quiet_short", "quiet_with_buildings", "dormant", "out_of_range"};
+        Dictionary reasons;
+        for (int32_t i = 0; i < TIER_REASON_COUNT; ++i)
+            reasons[String(kTierReasonNames[i])] = _tier_reason_histogram[i];
+        out["tier_reasons"] = reasons;
+    }
+    out["tier_dormancy_cap_days"] = tier_review_period_days(3);
     out["market_configured_cycle_days"] = _configured_epoch_days;
     out["market_min_cycle_days"] = _min_epoch_days;
     out["market_max_cycle_days"] = _max_epoch_days;

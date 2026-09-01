@@ -160,8 +160,8 @@ godot::Dictionary DCWorldExt::encode_bake_terrain_normal_tex_data(godot::Diction
     const double world_size_x = std::max(1e-6, double(knobs.get("world_size_x", double(w))));
     const double world_size_y = std::max(1e-6, double(knobs.get("world_size_y", double(h))));
     const double hex_size = std::max(1e-4, double(knobs.get("hex_size", 1.0)));
-    const double sample_radius_hex = std::max(0.01, double(knobs.get("sample_radius_hex", 0.44)));
-    const double height_scale_hex = std::max(0.01, double(knobs.get("height_scale_hex", 0.85)));
+    const double sample_radius_hex = std::max(0.01, double(knobs.get("sample_radius_hex", 1.35)));
+    const double height_scale_hex = std::max(0.01, double(knobs.get("height_scale_hex", 2.10)));
     const double texel_x = world_size_x / double(w);
     const double texel_y = world_size_y / double(h);
     const double radius_world = sample_radius_hex * hex_size;
@@ -2277,9 +2277,9 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
     const int shore_carve_band_px = std::max(1, std::min(60, int(std::round(
             double(knobs.get("shore_carve_band", 6)) * distance_scale))));
     const double normal_sample_radius_hex = std::max(0.01,
-            double(knobs.get("normal_sample_radius_hex", 0.44)));
+            double(knobs.get("normal_sample_radius_hex", 1.35)));
     const double normal_height_scale_hex = std::max(0.01,
-            double(knobs.get("normal_height_scale_hex", 0.85)));
+            double(knobs.get("normal_height_scale_hex", 2.10)));
     const double normal_radius_world = normal_sample_radius_hex * hex_size;
     const int normal_radius_x = std::max(1, std::min(64, int(std::round(
             normal_radius_world / step_x))));

@@ -21,6 +21,7 @@ double elapsed_ms(const Clock::time_point &start) {
 void NativeEconomyRuntime::reset_publish_state() {
     _publish_phase = PublishPhase::PREPARE;
     _publish_cursor = 0;
+    _publish_commit_initialized = false;
     _publish_order_cursor = 0;
     _publish_line_cursor = 0;
     _publish_valuation_sat = 0;
@@ -31,6 +32,12 @@ void NativeEconomyRuntime::reset_publish_state() {
     _publish_phase_work.fill(0);
     _publish_slice_phase_ms.fill(0.0);
     _publish_slice_phase_work.fill(0);
+    _publish_commit_cells_ms = 0.0;
+    _publish_commit_prepare_ms = 0.0;
+    _publish_commit_finalize_ms = 0.0;
+    _publish_commit_cells_slice_ms = 0.0;
+    _publish_commit_prepare_slice_ms = 0.0;
+    _publish_commit_finalize_slice_ms = 0.0;
 }
 
 bool NativeEconomyRuntime::publish_epoch_slice(
@@ -502,10 +509,27 @@ bool NativeEconomyRuntime::publish_epoch_slice(
                 _publish_phase = PublishPhase::COMMIT;
         }
     } else if (_publish_phase == PublishPhase::COMMIT) {
-        _committed_cells.swap(_staging_cells);
-        commit_incremental_audit_shadow();
-        update_settlements_for_changed_cells();
-        for (const int32_t cell : _epoch_settlement_cells) {
+        // The old implementation performed every commit-side cell mutation in
+        // one call. Keep the exact order, but retain the cursor across calls so
+        // a large settlement set cannot create an unbounded native range.
+        if (!_publish_commit_initialized) {
+            const auto commit_prepare_started = Clock::now();
+            _committed_cells.swap(_staging_cells);
+            commit_incremental_audit_shadow();
+            update_settlements_for_changed_cells();
+            _publish_commit_initialized = true;
+            _publish_cursor = 0;
+            const double commit_prepare_ms = elapsed_ms(commit_prepare_started);
+            _publish_commit_prepare_ms += commit_prepare_ms;
+            _publish_commit_prepare_slice_ms += commit_prepare_ms;
+        }
+        const auto commit_cells_started = Clock::now();
+        const size_t start = _publish_cursor;
+        const size_t end = std::min(
+            _epoch_settlement_cells.size(),
+            start + static_cast<size_t>(PUBLISH_COMMIT_ENTRIES_PER_SLICE));
+        for (; _publish_cursor < end; ++_publish_cursor) {
+            const int32_t cell = _epoch_settlement_cells[_publish_cursor];
             if (cell < 0 || cell >= _cell_count) continue;
             _cell_last_settlement_day[cell] = _sample_day;
             ++_cell_settlement_generation[cell];
@@ -568,6 +592,15 @@ bool NativeEconomyRuntime::publish_epoch_slice(
             refresh_family_effect_metrics_for_cell(cell,
                 family_effect_metric_revision(2), AGGREGATE_EFFECT_METRICS);
         }
+        const double commit_cells_ms = elapsed_ms(commit_cells_started);
+        _publish_commit_cells_ms += commit_cells_ms;
+        _publish_commit_cells_slice_ms += commit_cells_ms;
+        work_done += static_cast<int64_t>(end - start);
+        if (_publish_cursor < _epoch_settlement_cells.size()) {
+            // Do not run any post-commit side effects until every cell has been
+            // committed. This is the same committed barrier as before.
+        } else {
+        const auto commit_finalize_started = Clock::now();
         publish_social_pressure_facts();
         publish_technology_practice_facts();
         publish_country_development_facts();
@@ -594,7 +627,13 @@ bool NativeEconomyRuntime::publish_epoch_slice(
         _stage = _trade_plan.phase == TradePlanStore::IDLE
             ? Stage::AGGREGATE_PUBLISH : Stage::TRADE_PLANNING;
         _publish_phase = PublishPhase::DONE;
+        _publish_commit_initialized = false;
+        _publish_cursor = 0;
+        const double commit_finalize_ms = elapsed_ms(commit_finalize_started);
+        _publish_commit_finalize_ms += commit_finalize_ms;
+        _publish_commit_finalize_slice_ms += commit_finalize_ms;
         ++work_done;
+        }
     }
 
     const double slice_ms = elapsed_ms(started);

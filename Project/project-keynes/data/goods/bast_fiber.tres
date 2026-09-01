@@ -7,8 +7,10 @@ script = ExtResource("1")
 id = &"bast_fiber"
 display_name = "亚麻秆/韧皮原料"
 category_id = &"spinnable_fiber"
-substitution_category_ids = PackedStringArray("spinnable_fiber", "natural_spinnable_fiber", "guild_textile_fiber", "rag_paper_fiber")
+substitution_category_ids = PackedStringArray("spinnable_fiber", "natural_spinnable_fiber", "guild_textile_fiber", "rag_paper_fiber", "primitive_lashing")
 technology_tags = PackedStringArray("industry.primary", "tech.wild_flax_collection", "tech.application.method_flax_collector_r6", "tech.application.method_flax_collector_r8", "tech.application.method_flax_collector_r10", "tech.application.flax_collector", "tech.application.method_flax_collector_r3", "tech.application.method_flax_collector_r5")
+production_quality_level = 0
+production_efficiency_q16 = 65536
 default_price = 7000
 reference_max_price = 350000
 

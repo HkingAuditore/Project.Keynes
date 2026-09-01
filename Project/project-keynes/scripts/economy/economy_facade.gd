@@ -609,6 +609,7 @@ static func _colonization_result_message(code: String) -> String:
 		"STARTED": "开拓队已经出发。",
 		"CANCELLED_RETURNING": "开拓已取消，队伍正在返程。",
 		"TARGET_LOST_RETURNING": "目标已被占领，队伍正在返程。",
+		"PREPARING_UNBUILDABLE": "源地缺少开工包所需建材且无法获得，筹备已中止，托管物资已退回。",
 		"CLAIMED": "开拓成功，目标已纳入领土。",
 		"RELOCATED": "迁徙成功，人员已并入目标地块。",
 		"RETURNED": "开拓队已返回原出发地。",

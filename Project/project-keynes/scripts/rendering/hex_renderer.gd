@@ -68,8 +68,9 @@ const DETAIL_PLAN_FINALIZE: int = 7
 # 起伏（山系阴影面、盆地洼地、河谷下切）在 2.5D 着色下更立体可读。属纯视觉 knob，可再微调。
 # [需求5 2026-06-25] strength 0.74→0.80、slope_gain 13→15：山地仍偏台地。配合更强的
 # height bake / biome detail 之后，再把坡面对比抬一点，让山脊和山谷更容易读出来。
+# [起伏增强 2026-09-01] 0.80→0.90：配合 hex 世界度量法线，加强宏观坡面可读性。
 @export_group("Hillshading")
-@export_range(0.0, 1.0, 0.01) var hillshade_strength: float = 0.80
+@export_range(0.0, 1.0, 0.01) var hillshade_strength: float = 0.90
 @export_range(0.5, 24.0, 0.5) var hillshade_slope_gain: float = 15.0
 
 # ─── 河流 ────────────────────────────────────────────────────────────────
@@ -217,11 +218,11 @@ var terrain_materials_enabled: bool = true
 @export var perf_sampler_enabled: bool = false
 
 @export_group("Terrain Horizon Shadow")
-@export_range(0.0, 1.0, 0.01) var terrain_horizon_strength: float = 0.70:
+@export_range(0.0, 1.0, 0.01) var terrain_horizon_strength: float = 0.90:
 	set(value):
 		terrain_horizon_strength = clampf(value, 0.0, 1.0)
 		_push_terrain_horizon_uniforms()
-@export_range(0.01, 1.0, 0.005) var terrain_horizon_softness: float = 0.16:
+@export_range(0.01, 1.0, 0.005) var terrain_horizon_softness: float = 0.30:
 	set(value):
 		terrain_horizon_softness = clampf(value, 0.01, 1.0)
 		_push_terrain_horizon_uniforms()
@@ -242,12 +243,12 @@ var terrain_materials_enabled: bool = true
 # docs/cpp-dots-runtime/terrain-gi-bake.md。三个强度全部归零即精确回退到接入 GI 之前，
 # 这是视觉回归定位的主要手段。
 @export_group("Terrain GI")
-@export_range(0.0, 1.0, 0.01) var gi_ao_strength: float = 0.85:
+@export_range(0.0, 1.0, 0.01) var gi_ao_strength: float = 0.90:
 	set(value):
 		gi_ao_strength = clampf(value, 0.0, 1.0)
 		_push_terrain_horizon_uniforms()
 ## V_sky 下限。峡谷底部仍有岩壁多次散射，纯几何遮蔽的 0 会压成死黑并放大地表 dither 对比。
-@export_range(0.0, 1.0, 0.01) var gi_ao_floor: float = 0.45:
+@export_range(0.0, 1.0, 0.01) var gi_ao_floor: float = 0.38:
 	set(value):
 		gi_ao_floor = clampf(value, 0.0, 1.0)
 		_push_terrain_horizon_uniforms()
@@ -3637,8 +3638,8 @@ func _apply_uniforms() -> void:
 	var visual_resolution := Vector2(visual_tiles.layout.logical_size) if tiled \
 		else Vector2(_world.hm_size.x, _world.hm_size.y)
 	sm.set_shader_parameter("hm_resolution", visual_resolution)
-	sm.set_shader_parameter("terrain_normal_sample_radius_hex", 0.44)
-	sm.set_shader_parameter("terrain_normal_height_scale_hex", 0.85)
+	sm.set_shader_parameter("terrain_normal_sample_radius_hex", 1.35)
+	sm.set_shader_parameter("terrain_normal_height_scale_hex", 2.10)
 	sm.set_shader_parameter("derived_resolution", visual_resolution if tiled \
 		else Vector2(_world.derived_size.x, _world.derived_size.y))
 	sm.set_shader_parameter("visual_reference_resolution",

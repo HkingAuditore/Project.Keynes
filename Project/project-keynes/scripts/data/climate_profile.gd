@@ -259,6 +259,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 # post_base 全字段 mismatch=0），默认切到 ACTIVE，generate() 走 native 生成路径。
 @export_range(0, 2, 1) var native_generation_mode: int = NATIVE_MODE_ACTIVE
 @export_range(0, 2, 1) var native_daily_sim_mode: int = NATIVE_MODE_OFF
+@export_range(0, 2, 1) var native_runtime_graph_mode: int = NATIVE_MODE_ACTIVE
 @export_range(0, 2, 1) var native_render_prepare_mode: int = NATIVE_MODE_OFF
 @export var native_environment_runtime_enabled: bool = false
 @export_range(1, 30, 1) var native_daily_sim_stride: int = 1

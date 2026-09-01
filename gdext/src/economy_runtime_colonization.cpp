@@ -1175,6 +1175,15 @@ bool NativeEconomyRuntime::advance_preparing_family_expedition(
         abort_preparing_family_expedition(expedition, day, 7, "PREPARING_ABORTED");
         return true;
     }
+    // Stockpiling only ever clears once the whole opening kit is affordable.
+    // When a construction group has no candidate the source market can ever
+    // supply, that day never comes, so end the preparation instead of holding
+    // the escrow and the target claim forever.
+    if (kit.kit_unbuildable != 0) {
+        abort_preparing_family_expedition(expedition, day, 7,
+            "PREPARING_UNBUILDABLE");
+        return true;
+    }
     if (!reserve_preparing_family_expedition_cargo(expedition, kit, error)) {
         // Escrow accounting must never fatal the economy: keep what is already
         // held, report the shortfall, and try again tomorrow.
@@ -2184,6 +2193,9 @@ Dictionary NativeEconomyRuntime::family_expedition_snapshot(
         _family_expeditions.kit_missing_stock_identity[expedition]);
     int64_t bridge_required = 0;
     int64_t bridge_missing = 0;
+    int64_t material_required = 0;
+    int64_t material_missing = 0;
+    String blocker;
     if (_family_expeditions.state[expedition] == EXPEDITION_PREPARING) {
         // Stocking progress needs the unclamped survival-bridge demand, which
         // only the planner knows. Replan read-only against the live escrow.
@@ -2208,10 +2220,28 @@ Dictionary NativeEconomyRuntime::family_expedition_snapshot(
                 _epoch_active, kit, false, &reserve)) {
             bridge_required = kit.bridge_required_units;
             bridge_missing = kit.bridge_missing_units;
+            material_required = kit.material_required_units;
+            material_missing = kit.material_missing_units;
+            // One reason, ordered by how final it is: an unreachable material
+            // ends the preparation, an empty plan is a target problem, and the
+            // two shortfalls are the ordinary day-by-day stockpiling states.
+            if (kit.kit_unbuildable != 0)
+                blocker = "UNBUILDABLE";
+            else if (kit.place_buildings != 0 && kit.buildings.empty())
+                blocker = "NO_BUILDINGS";
+            else if (material_missing > 0)
+                blocker = "MATERIALS";
+            else if (bridge_missing > 0)
+                blocker = "BRIDGE";
+            else
+                blocker = "READY";
         }
     }
     out["kit_bridge_required_units"] = bridge_required;
     out["kit_bridge_missing_units"] = bridge_missing;
+    out["kit_material_required_units"] = material_required;
+    out["kit_material_missing_units"] = material_missing;
+    out["kit_blocker"] = blocker;
     return out;
 }
 

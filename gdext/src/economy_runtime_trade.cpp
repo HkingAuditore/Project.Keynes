@@ -1750,6 +1750,10 @@ bool NativeEconomyRuntime::settle_due_trade_orders(std::string &error) {
             }
             _trade_orders.cargo_delivered[order] = 1;
             const int32_t source_cell = _trade_orders.sources[order];
+            // 货物按日历到达，不看目的地的分级节奏。休眠格必须在到货当日被拉回
+            // T0，否则库存会挂在一个下次结算在 30 天后的市场上。
+            request_cell_wake(destination);
+            request_cell_wake(source_cell);
             if (source_cell != destination) {
                 auto increment_trade_fact = [&](int32_t cell) {
                     if (cell < 0 || cell >= static_cast<int32_t>(

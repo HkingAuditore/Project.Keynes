@@ -13,6 +13,8 @@ upgrade_tier = 2
 construction_days = 0
 construction_good_ids = PackedStringArray("lumber", "bricks", "tools")
 construction_quantities = PackedInt64Array(11250, 11250, 3750)
+construction_category_ids = PackedStringArray("classical_construction", "classical_construction", "tools")
+construction_min_quality_levels = PackedInt32Array(0, 0, 2)
 
 owner_profession_id = &"guild_master"
 owner_slots_per_building = 1

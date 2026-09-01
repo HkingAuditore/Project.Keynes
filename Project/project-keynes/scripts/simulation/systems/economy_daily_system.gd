@@ -9,6 +9,12 @@ var world_clock: WorldClock = null
 var generator = null
 var _last_report: Dictionary = {}
 var _fatal_reported: bool = false
+# 完整 slice 报告是一份 450+ 键的 native Dictionary，每个 slice 都要整份跨语言搬运。
+# 只有录制器/调试台真的要读它时才构造，其余时间走 compact。
+var diagnostics_enabled: bool = false
+# catchup 每天最多有一次实际工作可做，但每次调用都要跨语言拉一份 live cells 再建
+# 一遍 set——按 slice 数白付 O(live_cells)。记住已经跑过的那一天。
+var _natural_resource_catchup_day: int = -1
 
 func _init(p_facade, p_world_clock: WorldClock = null, p_generator = null) -> void:
 	id = &"economy_daily"
@@ -49,6 +55,9 @@ func declare_reads() -> Array[StringName]:
 func should_run(ctx: SusTickContext) -> bool:
 	if facade == null or not facade.is_configured():
 		return false
+	if generator != null and generator.has_method("runtime_graph_active") \
+			and bool(generator.runtime_graph_active()):
+		return false
 	var ext: Object = facade.world_ext()
 	return ext != null and ext.has_method("economy_should_run") \
 		and bool(ext.economy_should_run(ctx.day_index))
@@ -57,6 +66,9 @@ func should_run(ctx: SusTickContext) -> bool:
 func is_deadline_critical(ctx: SusTickContext) -> bool:
 	if facade == null or not facade.is_configured() or ctx == null:
 		return false
+	var ext: Object = facade.world_ext()
+	if ext != null and ext.has_method("economy_deadline_critical"):
+		return bool(ext.economy_deadline_critical(ctx.day_index))
 	var report: Dictionary = facade.report()
 	if bool(report.get("epoch_active", false)):
 		return int(ctx.day_index) >= int(
@@ -76,9 +88,13 @@ func tick(ctx) -> Dictionary:
 		"slice_budget_ms": slice_budget_ms,
 	}
 	var ext: Object = facade.world_ext()
-	if generator != null and generator.has_method("catchup_natural_resources_for_live_cells"):
-		generator.catchup_natural_resources_for_live_cells(
-			int(ctx.day_index) if ctx != null else 0)
+	var day_index: int = int(ctx.day_index) if ctx != null else 0
+	# catchup 内部用 _natural_resource_last_day 去重，所以同一天的第二个 slice 必然
+	# 空跑——但空跑之前已经付掉了 live cells 的跨语言拷贝和整轮遍历。
+	if generator != null and _natural_resource_catchup_day != day_index \
+			and generator.has_method("catchup_natural_resources_for_live_cells"):
+		_natural_resource_catchup_day = day_index
+		generator.catchup_natural_resources_for_live_cells(day_index)
 	# Country daily ACKs CLAIM at priority 255. Dispatch SETTLE before this
 	# slice so a claimed party already in SETTLING can land, and a frozen
 	# cycle can still join LEDGER_APPLY. Newly arrived parties are enqueued
@@ -88,9 +104,10 @@ func tick(ctx) -> Dictionary:
 		ext.dispatch_effect_native_economy()
 	var effect_dispatch_ms := float(
 		Time.get_ticks_usec() - effect_dispatch_started_us) / 1000.0
-	var compact_slice: bool = ctx != null and \
-		ctx.source == &"country_economy_continuation" and \
-		ext.has_method("run_economy_slice_compact")
+	# continuation 一直走 compact。其余 slice 也默认走 compact：只有诊断开启时才值得
+	# 为每个 slice 构造整份 450+ 键报告。
+	var compact_slice: bool = ext.has_method("run_economy_slice_compact") and (
+		not diagnostics_enabled or (ctx != null and ctx.source == &"country_economy_continuation"))
 	var native_call_started_us := Time.get_ticks_usec()
 	var result: Dictionary = ext.run_economy_slice_compact(native_ctx) if compact_slice \
 		else ext.run_economy_slice(native_ctx)

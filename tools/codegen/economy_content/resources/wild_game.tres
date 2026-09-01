@@ -5,12 +5,16 @@
 [resource]
 script = ExtResource("1")
 id = &"wild_game"
+discovery_technology_tags = PackedStringArray("tech.hunting", "tech.animal_tracking")
 display_name = "野生动物"
+semantic_tags = PackedStringArray("ecology.wildlife", "activity.hunting")
 reserve_component = &"cell.res_wild_game_reserve"
 init_reserve_scale = 3.0
 land_only = true
 temp_lo = 0.0
 temp_hi = 1.0
+runtime_temperature_signal = "mean_30d"
+runtime_moisture_signal = "plant_available_water"
 gen_base = 0.0
 gen_temp = 0.0
 gen_moisture = 0.0
@@ -19,33 +23,33 @@ decay_base = 0.0
 decay_temp = 0.0
 decay_moisture = 0.0
 decay_self = 0.006
-init_base = -20.0
+init_base = -54.3333
 init_temp = 0.0
-init_moisture = 12.0
-init_river = 18.0
-init_climate_fit = 55.0
-init_noise = 20.0
+init_moisture = 32.6
+init_river = 48.9
+init_climate_fit = 149.417
+init_noise = 54.3333
 init_noise_scale = 0.055
 init_landform_weights = {
-4: 18.0,
-5: 24.0,
-6: 16.0,
-9: 22.0,
-13: 20.0,
-14: 18.0
+4: 48.9,
+5: 65.2,
+6: 43.4667,
+9: 59.7667,
+13: 54.3333,
+14: 48.9
 }
 init_vegetation_weights = {
-7: 22.0,
-9: 34.0,
-10: 30.0,
-12: 28.0,
-13: 24.0,
-14: 38.0,
-15: 34.0,
-20: 28.0,
-21: 32.0,
-24: 30.0,
-25: 32.0
+7: 59.7667,
+9: 92.3667,
+10: 81.5,
+12: 76.0667,
+13: 65.2,
+14: 103.233,
+15: 92.3667,
+20: 76.0667,
+21: 86.9333,
+24: 81.5,
+25: 86.9333
 }
 climate_temp_opt = 0.52
 climate_temp_tol = 0.42
@@ -53,7 +57,9 @@ climate_moisture_opt = 0.55
 climate_moisture_tol = 0.38
 runtime_climate_fit_weight = 0.75
 decay_stress = 0.55
-ecology_capacity = 1200.0
-ecology_growth_rate = 0.001495
-ecology_immigration = 0.01
+ecology_capacity = 3260.0
+# Bay-cell early-building target N=5000 (goods units).
+# ecology_capacity = 4*N*q/(r*CELL_AREA*GOODS_SCALE); MSY camps ~= N.
+ecology_growth_rate = 0.01
+ecology_immigration = 0.0272
 ecology_stress_mortality_rate = 0.0

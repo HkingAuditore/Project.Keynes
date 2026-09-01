@@ -5,10 +5,11 @@
 [resource]
 script = ExtResource("1")
 id = &"silver_ore"
+discovery_technology_tags = PackedStringArray("tech.surface_silver_collection")
 display_name = "银矿"
 reserve_component = &"cell.res_silver_ore_reserve"
 init_reserve_scale = 8.0
-init_min_coverage = 0.005
+init_min_coverage = 0.15
 init_min_reserve = 80000.0
 init_target_coverage = 0.15
 init_target_reserve_density = 60000.0

@@ -234,6 +234,12 @@ func report() -> Dictionary:
 	out["native_claimed_transactions_skipped"] = _native_claimed_transactions_skipped
 	return out
 
+
+# 这个计数完全由 GDScript 侧维护。单独暴露出来，让每 tick 只想读它的调用方不必
+# 为此构造一整份 native 报告。
+func legacy_fallback_transactions() -> int:
+	return _legacy_fallback_transactions
+
 func explain(instance_id: int) -> Dictionary:
 	return _world_ext.explain_effect(instance_id) if _configured else {
 		"ok": false, "reason": "effect_runtime_unconfigured"}
