@@ -4674,7 +4674,8 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
     const int stage = int(knobs.get("stage", 8));
     // DOTS-Total-CPP（task-item.md 任务 2）：扩展 stage 分发到 0 / 8 / 10。
     // - stage 0 (moisture set)  ：纯 SoA loop，直接 C++。
-    // - stage 8 (sync_current_state)：本函数原有实装。
+    // - stage 8 (sync_current_state)：只从当前 runtime cell_temp 派生慢层/视觉轴；
+    //   不得重算或写回 cell_temp，最终温度唯一写者是 wind_surface。
     // - stage 10 (feedback decay)   ：knobs in/out 走 soil_moisture_arr /
     //   veg_growth_pressure_arr（SoA schema 未含），与 run_climate_feedback_pass 同模式。
     // - stage 1/2/3/4/5/6/7/9 ：依赖 terrain decision tree + apply_terrain multi-axis
@@ -5053,7 +5054,7 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
                 lf_new = prev_lf;
             }
             LF[i] = lf_new;
-            // vegetation 用当前 moisture + 季节温度（temp 由 stage 8 写，这里
+            // vegetation 用当前 moisture + 季节温度（由当前 runtime temp 派生；这里
             // 用 lat_tab 行温度 + off 近似；与 GDScript _seasonal_redecide_terrain
             // 路径不调用 _sync_axes_for_cell（只 apply_terrain），但下游 stage 9
             // 会 sync）。为保持 bit-equal：仅写 terrain + landform，veg/cover 留给
@@ -5671,31 +5672,24 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
 
     // 历史上的 stage 8 = sync_current_state（_run_season_refresh_stage8_gdext 入口）。
     if (stage != 8) return fail("unsupported stage");
-    if (!knobs.has("n_cells") || !knobs.has("height") || !knobs.has("sea_level") ||
-        !knobs.has("season_offset_rows")) {
-        return fail("missing required knob");
+    if (!knobs.has("n_cells") || !knobs.has("sea_level")) {
+        return fail("missing required knob (n_cells / sea_level)");
     }
 
     const int n_cells = int(knobs["n_cells"]);
-    const int height = int(knobs["height"]);
     const float sea_level = float(knobs["sea_level"]);
     if (n_cells <= 0) return fail("n_cells <= 0");
-    if (height <= 0) return fail("height <= 0");
-    PackedFloat32Array season_rows = knobs["season_offset_rows"];
-    if (season_rows.size() < height) return fail("season_offset_rows size < height");
 
     const int sid_temp = component_id(StringName("cell_temp"));
     const int sid_moist = component_id(StringName("cell_moisture"));
     const int sid_snow = component_id(StringName("cell_snow_cover"));
     const int sid_elev = component_id(StringName("cell_elevation"));
-    const int sid_temp_year = component_id(StringName("cell_temp_baseline_year"));
-    const int sid_lat = component_id(StringName("cell_lat_norm"));
     const int sid_terrain = component_id(StringName("cell_terrain"));
     const int sid_landform = component_id(StringName("cell_landform"));
     const int sid_vegetation = component_id(StringName("cell_vegetation"));
     const int sid_cover = component_id(StringName("cell_cover"));
     if (sid_temp < 0 || sid_moist < 0 || sid_snow < 0 || sid_elev < 0 ||
-        sid_temp_year < 0 || sid_lat < 0 || sid_terrain < 0 ||
+        sid_terrain < 0 ||
         sid_landform < 0 || sid_vegetation < 0 || sid_cover < 0) {
         return fail("missing slot id");
     }
@@ -5704,15 +5698,12 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
     Slot &s_moist = _slots.write[sid_moist];
     Slot &s_snow = _slots.write[sid_snow];
     Slot &s_elev = _slots.write[sid_elev];
-    Slot &s_temp_year = _slots.write[sid_temp_year];
-    Slot &s_lat = _slots.write[sid_lat];
     Slot &s_terrain = _slots.write[sid_terrain];
     Slot &s_landform = _slots.write[sid_landform];
     Slot &s_vegetation = _slots.write[sid_vegetation];
     Slot &s_cover = _slots.write[sid_cover];
     if (s_temp.arr_f32.size() != n_cells || s_moist.arr_f32.size() != n_cells ||
         s_snow.arr_f32.size() != n_cells || s_elev.arr_f32.size() != n_cells ||
-        s_temp_year.arr_f32.size() != n_cells || s_lat.arr_f32.size() != n_cells ||
         s_terrain.arr_u8.size() != n_cells || s_landform.arr_u8.size() != n_cells ||
         s_vegetation.arr_u8.size() != n_cells || s_cover.arr_u8.size() != n_cells) {
         return fail("slot array size mismatch");
@@ -5720,11 +5711,8 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
 
     const float * const __restrict MOIST = s_moist.arr_f32.ptr();
     const float * const __restrict ELEV = s_elev.arr_f32.ptr();
-    const float * const __restrict TEMP_YEAR_BASE = s_temp_year.arr_f32.ptr();
-    const float * const __restrict LAT = s_lat.arr_f32.ptr();
-    const float * const __restrict ROW_OFF = season_rows.ptr();
+    const float * const __restrict TEMP = s_temp.arr_f32.ptr();
     const uint8_t * const __restrict TERR = s_terrain.arr_u8.ptr();
-    float * const __restrict TEMP = s_temp.arr_f32.ptrw();
     float * const __restrict SNOW = s_snow.arr_f32.ptrw();
     uint8_t * const __restrict LAND = s_landform.arr_u8.ptrw();
     uint8_t * const __restrict VEG = s_vegetation.arr_u8.ptrw();
@@ -5732,15 +5720,12 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
 
     auto t0 = std::chrono::high_resolution_clock::now();
     int snow_cells = 0;
-    const int max_row = height - 1;
     for (int i = 0; i < n_cells; ++i) {
-        int row = int(std::round(pk_clamp01(double(LAT[i])) * double(max_row)));
-        if (row < 0) row = 0;
-        else if (row > max_row) row = max_row;
         // 2026-07-08：海拔惩罚基于 sea_level 以上 land_h，与 GDScript / shader SAME_SOURCE。
         const double e = double(ELEV[i]);
-        const double temp_year = pk_clamp01(double(TEMP_YEAR_BASE[i]) - pk_alt_penalty(e, double(sea_level)));
-        const float temp_now = float(pk_clamp01(temp_year + double(ROW_OFF[row])));
+        // Runtime temperature is owned by wind_surface. Season refresh consumes it
+        // for slow-layer derivation and must never prescribe a replacement value.
+        const float temp_now = std::isfinite(TEMP[i]) ? pk_clamp01(double(TEMP[i])) : 0.0f;
         float snow = 0.0f;
         if (!pk_is_water_terrain(TERR[i])) {
             const float land_h = (ELEV[i] - sea_level) / std::max(1.0f - sea_level, 0.001f);
@@ -5760,7 +5745,6 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
         if (!pk_is_water_terrain(TERR[i]) && (prev_lf == 8 || prev_lf == 12 || prev_lf == 13 || prev_lf == 14 || prev_lf == 15)) {
             lf = prev_lf;
         }
-        TEMP[i] = temp_now;
         SNOW[i] = snow;
         LAND[i] = lf;
         // Keep vegetation succession lag where the pair is plausible, but
@@ -5773,7 +5757,6 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
         if (snow > 0.5f) ++snow_cells;
     }
 
-    _flush_slot_to_map(sid_temp);
     _flush_slot_to_map(sid_snow);
     _flush_slot_to_map(sid_landform);
     _flush_slot_to_map(sid_vegetation);

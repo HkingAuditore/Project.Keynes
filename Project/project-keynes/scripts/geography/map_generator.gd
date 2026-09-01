@@ -8136,17 +8136,11 @@ func _run_season_refresh_stage8_gdext(map: MapData, _world: WorldData, season: i
 			or not _data_core_world_ext.has_method("run_season_refresh_stage"):
 		_season_log_path_once("stage8", "gdscript_fallback", "ext/method/map/cfg unavailable")
 		return false
-	if not map.has_lat_lut():
-		map.bake_lat_temp_year_lut(self)
-	_ensure_row_tables(_last_cfg, season)
 	_ensure_season_round_slots_fresh()
 	var knobs: Dictionary = {
 		"stage": 8,
-		"season": season,
 		"n_cells": map.cell_count(),
-		"height": _last_cfg.height,
 		"sea_level": _last_cfg.sea_level,
-		"season_offset_rows": _row_season_off,
 	}
 	var res: Dictionary = _data_core_world_ext.run_season_refresh_stage(knobs)
 	if bool(res.get("fallback", true)) or float(res.get("elapsed_ms", -1.0)) < 0.0:
@@ -9418,19 +9412,16 @@ func _seasonal_sync_current_state(map: MapData, season: int) -> void:
 	if _last_cfg == null:
 		return
 	var cfg_local: MapConfig = _last_cfg
-	_ensure_row_tables(cfg_local, season)
-	var lat_tab: PackedFloat32Array = _row_lat_temp
-	var off_tab: PackedFloat32Array = _row_season_off
 	for cell: HexCell in map.all_cells():
-		var r_idx2: int = _cube_to_row(cell, cfg_local)
-		var lat_temp2: float = lat_tab[r_idx2]
-		var temp_year2: float = clampf(lat_temp2 - _alt_penalty(cell.elevation, cfg_local.sea_level), 0.0, 1.0)
-		var temp_now2: float = clampf(temp_year2 + off_tab[r_idx2], 0.0, 1.0)
+		# Season refresh is a slow-layer/visual pass. Runtime temperature remains
+		# owned by wind_surface; only use the current value to derive snow/axes.
+		var fallback_temp: float = _compute_temperature(_cube_row_norm(cell, cfg_local), cell.elevation)
+		var temp_now2: float = _valid_runtime_temp_or_baseline(cell.temperature, fallback_temp)
 		var land_h: float = (cell.elevation - cfg_local.sea_level) / maxf(1.0 - cfg_local.sea_level, 0.001)
 		var snow_cover: float = 0.0
 		if not _is_water(cell.terrain):
 			snow_cover = _derived_snow_cover(temp_now2, land_h, int(cell.terrain), int(cell.cover))
-		_sync_axes_for_cell(cell, cfg_local, snow_cover)
+		_sync_axes_for_cell(cell, cfg_local, snow_cover, temp_now2)
 		cell.current_state = {
 			"season": season,
 			"temperature": temp_now2,
@@ -10512,7 +10503,7 @@ func _derive_cover(cell: HexCell, snow_cover: float) -> int:
 	return CoverType.CV.NONE
 
 # 单 cell 同步三轴。生成期间用 snow_cover=0（默认夏季）；refresh_seasonal 内传当季 snow_cover。
-func _sync_axes_for_cell(cell: HexCell, cfg: MapConfig, snow_cover: float) -> void:
+func _sync_axes_for_cell(cell: HexCell, cfg: MapConfig, snow_cover: float, temperature_override: float = -1.0) -> void:
 	var landform := _derive_landform(cell, cfg)
 	var prev_landform: int = int(cell.landform)
 	if not _is_water(cell.terrain) and (
@@ -10523,7 +10514,7 @@ func _sync_axes_for_cell(cell: HexCell, cfg: MapConfig, snow_cover: float) -> vo
 			or prev_landform == LandformType.LF.CANYON):
 		landform = prev_landform
 	var ny: float = _cube_row_norm(cell, cfg)
-	var temp: float = _compute_temperature(ny, cell.elevation)
+	var temp: float = temperature_override if temperature_override >= 0.0 else _compute_temperature(ny, cell.elevation)
 	cell.landform = landform
 	# 保留合理的演替滞后；明显跨生态带的残留则在 terrain 重分类后立即纠正。
 	var needs_reconcile := VegetationType.needs_biome_reconciliation(

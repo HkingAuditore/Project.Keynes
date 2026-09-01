@@ -311,7 +311,7 @@ relief（见下 “P0 relief”）。
 
 下游收益：权威主索引固定为 warp 后的 `cube_round`，`dyn_lut`、`eco_lut`、天气、迷雾和交互状态均使用同一个 NEAREST 主格，不再通过图集空间 Dither 改派归属。静态地表边界由独立的 RG8 副索引与 R8 距离纹理在屏幕空间窄带内处理；边界数据缺失时直接退化为硬主索引。C++ 单 pass 与 fused pass 应逐字节一致，并由 headless parity 测试覆盖。
 
-**分层地形法线（2026-06-25，2026-09-01 尺度修复）**：粗法线仍优先采样 `terrain_normal_tex`；未绑定时的运行期 fallback 改按 `terrain_normal_sample_radius_hex=0.44` 与 `terrain_normal_height_scale_hex=0.85` 从 `world_size/hm_resolution/hex_size` 换算差分半径和增益。经典双光源路径也使用同一世界尺度，避免 legacy 存档在大地图上出现额外明暗放大。细节法线和性能分档契约不变。
+**分层地形法线（2026-06-25，2026-09-01 尺度修复，起伏增强）**：粗法线仍优先采样 `terrain_normal_tex`；未绑定时的运行期 fallback 按 `terrain_normal_sample_radius_hex=0.44` 与 `terrain_normal_height_scale_hex=1.05` 从 `world_size/hm_resolution/hex_size` 换算差分半径和增益。经典双光源路径也使用同一世界尺度，避免 legacy 存档在大地图上出现额外明暗放大。显示端 hillshade 默认强度为 `0.86`，粗法线增益为 `1.45`；Terrain GI/AO 默认强度为 `0.90`、天空可见度下限为 `0.38`，用于增强坡面和谷地层次而不改变真实高程。细节法线和性能分档契约不变。
 
 **P1 高程 hypsometric 重映射（2026-06-25，治平原/阶梯）**：在 normalize 之后对 `land_h=(E-sea)/(1-sea)` 施一条**单调三段曲线**——低地压平（出真平原）、中段柔和台地（可辨非硬 staircase）、高段陡升（拉开起伏、山更挺拔），治 P0 遗留 #3（平原不平 / 整体起伏弱）与半个 #2（连续高程驱动、取消按类别硬分档）。曲线为 PCHIP（Fritsch–Carlson 单调限幅）C1 + 单调（不倒置高程序），控制点 `PK_HYPSO_XS/YS` 以 `constexpr`/`const` 落地（C++↔GDScript 同名同值），共享 helper `PkHypsoCurve`/`pk_hypso_remap_elev`（C++）与 `_hypso_make_tangents`/`_hypso_eval`/`_hypso_remap_elev`（GDScript）。**两层施加（方案 C）**：
 - **Layer B（仿真高程 E，定结构，C++ 唯一路径）**：`run_native_world_generate_base_pass` 在 normalize + 侵蚀(SPL/droplet/thermal) 之后、湖判/分类之前，对陆地段（`E>sea_level`）以 `mix=1.0` 施全曲线；锚定 sea_level → below-sea(海洋/湖种) 不变、海陆边界与 ocean/coast 分类不破坏；置于侵蚀之后 → 保留河谷网络与台地保形。**因生成已 100% C++（dots-total-cpp，GDScript 生成 fallback 已删），Layer B 无 GDScript 镜像**。下游湖判/气候/分类/landform 全部看到重塑后的 E（biome 分布随之变化，符合"三级阶梯成真实结构"预期）。
@@ -566,7 +566,7 @@ I/O：
 3. B+ path 可走 `gdext`，日志中会出现 `b_plus_path=gdext`。
 4. 末尾可能排队 atlas/visual 更新。
 
-`season_phase` 在当前 runtime 中只表示年内轨道相位，用于计算太阳直射点、日照和昼长；它不再作为独立的季节魔法因子直接改变温度、湿度、降水或风向。`refresh_seasonal()` 也不再执行旧的按季节重置湿度/雨影/风向逻辑，只保留慢层与 atlas 边界维护。
+`season_phase` 在当前 runtime 中只表示年内轨道相位，用于计算太阳直射点、日照和昼长；它不再作为独立的季节魔法因子直接改变温度、湿度、降水或风向。`refresh_seasonal()` 也不再执行旧的按季节重置湿度/雨影/风向逻辑，只保留慢层与 atlas 边界维护。Season refresh 的 `sync_current_state` 阶段只能读取已由 `wind_surface` 发布的 `cell_temp` 来派生雪盖、地貌、植被和覆盖；不得重算或 flush `cell_temp`，以免绕过 climate finalizer 造成 30-tick 温度跳变。
 
 性能特征：
 
