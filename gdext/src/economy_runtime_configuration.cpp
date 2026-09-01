@@ -195,6 +195,21 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     for (size_t i = 0; i < _country_climate_loss_stat_ids.size(); ++i)
         _country_climate_loss_stat_ids[i] = _modifier_runtime != nullptr
             ? _modifier_runtime->stat_id_for_key(CLIMATE_LOSS_STATS[i]) : -1;
+    static const char *CLIMATE_HAZARDS[4] = {
+        "drought", "flood", "cold_stress", "heat_stress",
+    };
+    _country_climate_profile_loss_stat_ids.clear();
+    _country_climate_profile_loss_stat_ids.reserve(
+        _production_climate_profile_ids.size() * 4U);
+    for (const std::string &profile_id : _production_climate_profile_ids) {
+        for (const char *hazard : CLIMATE_HAZARDS) {
+            const std::string key = "country.climate.profile." + profile_id +
+                "." + hazard + "_loss_factor";
+            _country_climate_profile_loss_stat_ids.push_back(
+                _modifier_runtime != nullptr
+                    ? _modifier_runtime->stat_id_for_key(key) : -1);
+        }
+    }
     if (_modifier_runtime != nullptr && (std::any_of(
             _country_family_output_stat_ids.begin(),
             _country_family_output_stat_ids.end(),
@@ -228,6 +243,9 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
             [](int32_t id) { return id < 0; }) || std::any_of(
             _country_climate_loss_stat_ids.begin(),
             _country_climate_loss_stat_ids.end(),
+            [](int32_t id) { return id < 0; }) || std::any_of(
+            _country_climate_profile_loss_stat_ids.begin(),
+            _country_climate_profile_loss_stat_ids.end(),
             [](int32_t id) { return id < 0; }))) {
         reset("modifier_technology_route_stat_missing");
         out["ok"] = false;

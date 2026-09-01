@@ -37,7 +37,7 @@ layout(push_constant, std430) uniform Params {
 	float height_world_scale;
 	float bias;
 	float max_angle;
-	float _pad0;
+	float max_distance_world;
 } params;
 
 const float INV_SQRT2 = 0.70710678118654752440;
@@ -181,7 +181,12 @@ void main() {
 
 	for (int direction_id = 0; direction_id < 8; ++direction_id) {
 		vec2 direction = DIRECTIONS[direction_id];
+		float world_step = length(direction * vec2(params.texel_x, params.texel_y));
 		float max_distance = ray_limit(origin, direction);
+		if (params.max_distance_world > 0.0) {
+			max_distance = min(max_distance,
+				params.max_distance_world / max(world_step, 1e-6));
+		}
 		float distance_px = 1.0;
 		float best_slope = 0.0;
 		int best_hit = -1;

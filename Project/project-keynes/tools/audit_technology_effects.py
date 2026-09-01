@@ -203,7 +203,7 @@ def classify_term(stat: str) -> str:
         return "building"
     if is_broad(stat):
         return "broad"
-    if stat in CLIMATE_STATS:
+    if stat in CLIMATE_STATS or stat.startswith("country.climate.profile."):
         return "climate"
     if stat in CONSTRUCTION_STATS:
         return "construction"

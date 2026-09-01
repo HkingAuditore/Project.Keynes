@@ -13,6 +13,13 @@ Country freezes generation-safe handles and `country.economy_output_factor`. Eco
 the factor to Q16 at `capture_country_epoch()`. Never query the Country store in cohort/building
 inner loops.
 
+Production climate adaptation uses the same boundary. Four global stats and 24 catalog-generated
+`country.climate.profile.<profile_id>.<hazard>_loss_factor` stats are resolved to dense IDs during
+economy configuration, then frozen as contiguous country×profile×4 Q16 arrays. The production helper
+multiplies global and matching-profile factors, clamps the combined loss factor to `[0.20, 1.00]`, and
+feeds the existing climate-capacity equation. A missing climate profile remains identity; no string
+lookup or ModifierStore access is allowed in production or investment loops.
+
 ## Building Output
 
 Use `effective_building_output_quantity()` or its target variant for actual output and every

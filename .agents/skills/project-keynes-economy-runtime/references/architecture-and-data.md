@@ -34,6 +34,13 @@ DataCore contributes only the sample-day environment columns: temperature, moist
 and weather intensity. `world_ext_economy.cpp` reads raw F32 slot pointers once and quantizes them
 to Q16. No per-cell cross-language calls occur.
 
+Production-climate loss adaptation is epoch-derived, not persisted authority. Configuration resolves
+the four global country hazard stats plus the six production profiles × four hazards. Epoch capture
+freezes both dense Q16 tables. `production_climate_capacity_q16()` selects the limiting hazard,
+computes `clamp(global_factor × profile_factor, 0.20, 1.00)`, and applies that value in the sole
+capacity formula. Actual production, investment forecasts, recovery, and liquidation therefore share
+one climate result; PKEC byte schema does not change.
+
 ## 2. Population storage
 
 `PopulationStore` is a 64-lane page/chunk SoA. Each cell owns a page chain; allocation and reclaim

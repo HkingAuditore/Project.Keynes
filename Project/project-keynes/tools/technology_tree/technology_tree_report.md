@@ -10,7 +10,7 @@
 | 时代 | 11 |
 | 领域 | 4 |
 | 里程碑 | 11 |
-| 硬前置边 | 2460 |
+| 硬前置边 | 2134 |
 | 应用交汇边 | 19 |
 | 替代说明边 | 670 |
 | 分支关系边 | 7 |
@@ -19,10 +19,10 @@
 ## 时代目录
 
 - [石器时代](#era-1)（72 项，成本 0-5000）
-- [农耕时代](#era-2)（92 项，成本 3000-12000）
-- [王国时代](#era-3)（63 项，成本 3000-30000）
-- [帝国时代](#era-4)（43 项，成本 3000-70000）
-- [探索时代](#era-5)（41 项，成本 3000-160000）
+- [农耕时代](#era-2)（94 项，成本 3000-12000）
+- [王国时代](#era-3)（64 项，成本 3000-30000）
+- [帝国时代](#era-4)（42 项，成本 3000-70000）
+- [探索时代](#era-5)（39 项，成本 3000-160000）
 - [启蒙时代](#era-6)（57 项，成本 3900-360000）
 - [蒸汽时代](#era-7)（62 项，成本 9360-800000）
 - [电气时代](#era-8)（74 项，成本 9360-1800000）
@@ -233,6 +233,7 @@
 #### 被以下科技作为硬前置
 
 - 市场制度 (`tech.market_institutions`)：早期贸易是市场制度不可替代的知识基础。
+- 货币 (`tech.currency`)：早期贸易是货币不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -311,26 +312,17 @@
 - 应用：露天黏土坑 (`tech.application.early_clay_pit`)：枯枝采集是应用：露天黏土坑不可替代的知识基础。
 - 马匹驯化 (`tech.horse_domestication`)：枯枝采集是马匹驯化不可替代的知识基础。
 - 应用：主食厨房 (`tech.application.staple_kitchen`)：枯枝采集是应用：主食厨房不可替代的知识基础。
-- 应用：卤水采集池 (`tech.application.brine_gathering_basin`)：枯枝采集是应用：卤水采集池不可替代的知识基础。
-- 应用：家庭棉花园圃 (`tech.application.cotton_garden`)：枯枝采集是应用：家庭棉花园圃不可替代的知识基础。
 - 应用：乳品工坊 (`tech.application.creamery`)：枯枝采集是应用：乳品工坊不可替代的知识基础。
 - 应用：日晒土坯场 (`tech.application.adobe_yard`)：枯枝采集是应用：日晒土坯场不可替代的知识基础。
 - 应用：商栈 (`tech.application.merchant_post`)：枯枝采集是应用：商栈不可替代的知识基础。
 - 应用：屠宰场 (`tech.application.slaughterhouse`)：枯枝采集是应用：屠宰场不可替代的知识基础。
 - 树皮纸 (`tech.bark_paper_making`)：枯枝采集是树皮纸不可替代的知识基础。
-- 应用：青铜工具工坊 (`tech.application.bronze_tool_workshop`)：枯枝采集是应用：青铜工具工坊不可替代的知识基础。
 - 应用：浅坑银矿作业 (`tech.application.shallow_silver_working`)：枯枝采集是应用：浅坑银矿作业不可替代的知识基础。
 - 应用：毛皮缝制棚 (`tech.application.fur_sewing_shelter`)：枯枝采集是应用：毛皮缝制棚不可替代的知识基础。
 - 应用：面包坊 (`tech.application.bakery`)：枯枝采集是应用：面包坊不可替代的知识基础。
 - 应用：旱作保水小麦田 (`tech.application.dryland_wheat_field`)：枯枝采集是应用：旱作保水小麦田不可替代的知识基础。
-- 铜矿开采 (`tech.copper_mining_application`)：枯枝采集是铜矿开采不可替代的知识基础。
-- 应用：盐场 (`tech.application.salt_collector`)：枯枝采集是应用：盐场不可替代的知识基础。
 - 应用：城邦抄写室 (`tech.application.classical_scriptorium`)：枯枝采集是应用：城邦抄写室不可替代的知识基础。
 - 应用：石灰厂 (`tech.application.lime_plant`)：枯枝采集是应用：石灰厂不可替代的知识基础。
-- 应用：帆船渔场 (`tech.application.method_marine_fish_collector_r2`)：枯枝采集是应用：帆船渔场不可替代的知识基础。
-- 应用：黏土坑 (`tech.application.clay_collector`)：枯枝采集是应用：黏土坑不可替代的知识基础。
-- 应用：制革工坊 (`tech.application.tannery`)：枯枝采集是应用：制革工坊不可替代的知识基础。
-- 应用：羊毛棚 (`tech.application.wool_shed`)：枯枝采集是应用：羊毛棚不可替代的知识基础。
 - 应用：毡制帐篷 (`tech.application.felt_making_tent`)：枯枝采集是应用：毡制帐篷不可替代的知识基础。
 - 应用：树皮纸工坊 (`tech.application.bark_paper_workshop`)：枯枝采集是应用：树皮纸工坊不可替代的知识基础。
 
@@ -651,9 +643,7 @@
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「金矿」（resource.gold\_ore）
-  - 已发现信号「河湖水系」（landform.freshwater\_access）
+- 已发现信号「金矿」（resource.gold\_ore）
 
 #### 效果摘要
 
@@ -787,10 +777,7 @@
 
 #### 发现启发（仅用于揭示）
 
-- 满足其一：
-  - 已发现信号「芦苇」（bio.reed）
-  - 已发现信号「沼泽」（landform.marsh）
-  - 已发现信号「河湖水系」（landform.freshwater\_access）
+- 已发现信号「芦苇」（bio.reed）
 
 #### 效果摘要
 
@@ -1039,8 +1026,10 @@ terrain.floodplain.agriculture产出 +12%
 - 窑烧控制 (`tech.kiln_firing`)：火种控制是窑烧控制不可替代的知识基础。
 - 应用：露天陶器烧造 (`tech.application.open_pottery_hearth`)：火种控制是应用：露天陶器烧造不可替代的知识基础。
 - 乳胶烟熏凝固 (`tech.latex_smoke_coagulation`)：火种控制是乳胶烟熏凝固不可替代的知识基础。
-- 应用：传知者议事圈 (`tech.application.lorekeeper_circle`)：火种控制是应用：传知者议事圈不可替代的知识基础。
+- 应用：卤水采集池 (`tech.application.brine_gathering_basin`)：火种控制是应用：卤水采集池不可替代的知识基础。
 - 应用：乳胶烟熏凝固棚 (`tech.application.latex_smoking_shelter`)：火种控制是应用：乳胶烟熏凝固棚不可替代的知识基础。
+- 应用：传知者议事圈 (`tech.application.lorekeeper_circle`)：火种控制是应用：传知者议事圈不可替代的知识基础。
+- 应用：金银器工坊 (`tech.application.goldsmith_workshop`)：火种控制是应用：金银器工坊不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -1462,7 +1451,6 @@ terrain.floodplain.agriculture产出 +12%
 #### 被以下科技作为硬前置
 
 - 应用：木槽溜洗场 (`tech.application.primitive_gold_sluice`)：粗陶淘金是应用：木槽溜洗场不可替代的知识基础。
-- 应用：金银器工坊 (`tech.application.goldsmith_workshop`)：粗陶淘金是应用：金银器工坊不可替代的知识基础。
 - 应用：金矿 (`tech.application.gold_mine`)：粗陶淘金是应用：金矿不可替代的知识基础。
 - 应用：珠宝厂 (`tech.application.jewelry_plant`)：粗陶淘金是应用：珠宝厂不可替代的知识基础。
 
@@ -1643,7 +1631,9 @@ terrain.floodplain.agriculture产出 +12%
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「野生动物」（resource.wild\_game）
+- 满足其一：
+  - 已发现信号「野生动物」（resource.wild\_game）
+  - 已发现信号「生皮处理实践」（breakthrough.hide\_working）
 
 #### 效果摘要
 
@@ -1740,7 +1730,6 @@ terrain.floodplain.agriculture产出 +12%
 
 - 盐渍保存 (`tech.salt_preservation`)：卤水采集是盐渍保存不可替代的知识基础。
 - 应用：卤水采集池 (`tech.application.brine_gathering_basin`)：卤水采集是应用：卤水采集池不可替代的知识基础。
-- 应用：日晒盐田 (`tech.application.solar_salt_pan`)：卤水采集是应用：日晒盐田不可替代的知识基础。
 - 应用：深井盐矿 (`tech.application.industrial_salt_mine`)：卤水采集是应用：深井盐矿不可替代的知识基础。
 
 #### 主题路线后继
@@ -1813,9 +1802,9 @@ terrain.floodplain.agriculture产出 +12%
 - 应用：露天黏土坑 (`tech.application.early_clay_pit`)：黏土调制是应用：露天黏土坑不可替代的知识基础。
 - 窑烧控制 (`tech.kiln_firing`)：黏土调制是窑烧控制不可替代的知识基础。
 - 应用：露天陶器烧造 (`tech.application.open_pottery_hearth`)：黏土调制是应用：露天陶器烧造不可替代的知识基础。
+- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：黏土调制是应用：烧砖窑不可替代的知识基础。
 - 应用：升焰陶窑 (`tech.application.pottery_kiln`)：黏土调制是应用：升焰陶窑不可替代的知识基础。
 - 应用：制砖厂 (`tech.application.bricks_plant`)：黏土调制是应用：制砖厂不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：黏土调制是应用：烧砖窑不可替代的知识基础。
 - 应用：黏土坑 (`tech.application.clay_collector`)：黏土调制是应用：黏土坑不可替代的知识基础。
 
 #### 主题路线后继
@@ -1888,7 +1877,6 @@ terrain.floodplain.agriculture产出 +12%
 - 共同体分工 (`tech.communal_specialization`)：复合工具是共同体分工不可替代的知识基础。
 - 犁耕农业 (`tech.plough_agriculture`)：复合工具是犁耕农业不可替代的知识基础。
 - 手工锯木 (`tech.timber_sawing`)：复合工具是手工锯木不可替代的知识基础。
-- 应用：野生割胶营地 (`tech.application.rubber_tapping_camp`)：复合工具是应用：野生割胶营地不可替代的知识基础。
 - 应用：木槽溜洗场 (`tech.application.primitive_gold_sluice`)：复合工具是应用：木槽溜洗场不可替代的知识基础。
 - 木版印刷 (`tech.woodblock_printing`)：复合工具是木版印刷不可替代的知识基础。
 - 应用：组织化伐木场 (`tech.application.method_timber_collector_r2`)：复合工具是应用：组织化伐木场不可替代的知识基础。
@@ -1967,7 +1955,7 @@ terrain.floodplain.agriculture产出 +12%
 - 稻类辨识 (`tech.rice_identification`)：自然观察是稻类辨识不可替代的知识基础。
 - 块茎辨识 (`tech.potato_identification`)：自然观察是块茎辨识不可替代的知识基础。
 - 棉花辨识 (`tech.cotton_identification`)：自然观察是棉花辨识不可替代的知识基础。
-- 亚麻与韧皮辨识 (`tech.flax_identification`)：自然观察是亚麻与韧皮辨识不可替代的知识基础。
+- 亚麻辨识 (`tech.flax_identification`)：自然观察是亚麻辨识不可替代的知识基础。
 - 纤维捻制 (`tech.fiber_twisting`)：自然观察是纤维捻制不可替代的知识基础。
 - 天文历法 (`tech.celestial_calendars`)：自然观察是天文历法不可替代的知识基础。
 - 自然哲学 (`tech.natural_philosophy`)：自然观察是自然哲学不可替代的知识基础。
@@ -2275,26 +2263,28 @@ timber -8%；作为必要支撑：刀耕火种玉米地
 - 应用：家用织机 (`tech.application.household_loom`)：磨制石器是应用：家用织机不可替代的知识基础。
 - 应用：露头煤采集场 (`tech.application.surface_coal_gathering`)：磨制石器是应用：露头煤采集场不可替代的知识基础。
 - 应用：地表铁矿采集场 (`tech.application.iron_ore_collector`)：磨制石器是应用：地表铁矿采集场不可替代的知识基础。
+- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：磨制石器是应用：烧砖窑不可替代的知识基础。
+- 铜矿开采 (`tech.copper_mining_application`)：磨制石器是铜矿开采不可替代的知识基础。
+- 应用：硅砂矿坑 (`tech.application.classical_silica_pit`)：磨制石器是应用：硅砂矿坑不可替代的知识基础。
+- 应用：制革工坊 (`tech.application.tannery`)：磨制石器是应用：制革工坊不可替代的知识基础。
+- 应用：金银器工坊 (`tech.application.goldsmith_workshop`)：磨制石器是应用：金银器工坊不可替代的知识基础。
 - 应用：浅坑银矿作业 (`tech.application.shallow_silver_working`)：磨制石器是应用：浅坑银矿作业不可替代的知识基础。
 - 应用：升焰陶窑 (`tech.application.pottery_kiln`)：磨制石器是应用：升焰陶窑不可替代的知识基础。
 - 应用：制砖厂 (`tech.application.bricks_plant`)：磨制石器是应用：制砖厂不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：磨制石器是应用：烧砖窑不可替代的知识基础。
-- 铜矿开采 (`tech.copper_mining_application`)：磨制石器是铜矿开采不可替代的知识基础。
 - 应用：盐场 (`tech.application.salt_collector`)：磨制石器是应用：盐场不可替代的知识基础。
 - 应用：城邦抄写室 (`tech.application.classical_scriptorium`)：磨制石器是应用：城邦抄写室不可替代的知识基础。
 - 应用：石灰石采石场 (`tech.application.limestone_collector`)：磨制石器是应用：石灰石采石场不可替代的知识基础。
 - 应用：石灰厂 (`tech.application.lime_plant`)：磨制石器是应用：石灰厂不可替代的知识基础。
-- 应用：硅砂矿坑 (`tech.application.classical_silica_pit`)：磨制石器是应用：硅砂矿坑不可替代的知识基础。
 - 应用：改良燧石矿坑 (`tech.application.method_flint_quarry_r1`)：磨制石器是应用：改良燧石矿坑不可替代的知识基础。
 - 应用：组织化伐木场 (`tech.application.method_timber_collector_r2`)：磨制石器是应用：组织化伐木场不可替代的知识基础。
 - 应用：帆船渔场 (`tech.application.method_marine_fish_collector_r2`)：磨制石器是应用：帆船渔场不可替代的知识基础。
 - 应用：黏土坑 (`tech.application.clay_collector`)：磨制石器是应用：黏土坑不可替代的知识基础。
 - 应用：定居采集营地 (`tech.application.method_gathering_ground_r1`)：磨制石器是应用：定居采集营地不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：磨制石器是应用：改良锯木场不可替代的知识基础。
-- 应用：制革工坊 (`tech.application.tannery`)：磨制石器是应用：制革工坊不可替代的知识基础。
 - 应用：羊毛棚 (`tech.application.wool_shed`)：磨制石器是应用：羊毛棚不可替代的知识基础。
 - 应用：石作工场 (`tech.application.classical_masonry_yard`)：磨制石器是应用：石作工场不可替代的知识基础。
 - 应用：石料场 (`tech.application.method_stone_collector_r2`)：磨制石器是应用：石料场不可替代的知识基础。
+- 应用：硫矿 (`tech.application.sulfur_collector`)：磨制石器是应用：硫矿不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -2751,7 +2741,7 @@ timber -8%；作为必要支撑：刀耕火种玉米地
 
 #### 效果摘要
 
-无
+洪灾损失 -6%
 
 #### 机会成本
 
@@ -2770,7 +2760,9 @@ timber -8%；作为必要支撑：刀耕火种玉米地
 
 #### 永久 Modifier 条款
 
-无
+- 洪灾损失：`country.climate.flood_loss_factor`：+6%
+  - 效果机制：洪水历法实践降低全国气候型生产建筑的洪灾损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
 
 #### 被以下科技作为硬前置
 
@@ -2978,9 +2970,10 @@ timber -8%；作为必要支撑：块炼炉、土法炼铜炉、烧砖窑、升�
 #### 被以下科技作为硬前置
 
 - 应用：覆土木炭窑 (`tech.application.charcoal_pit`)：木炭烧制是应用：覆土木炭窑不可替代的知识基础。
-- 应用：升焰陶窑 (`tech.application.pottery_kiln`)：木炭烧制是应用：升焰陶窑不可替代的知识基础。
+- 应用：露天青铜作坊 (`tech.application.ore_bronzesmith_camp`)：木炭烧制是应用：露天青铜作坊不可替代的知识基础。
 - 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：木炭烧制是应用：烧砖窑不可替代的知识基础。
 - 木炭坩埚炼铜 (`tech.copper_metallurgy`)：木炭烧制是木炭坩埚炼铜不可替代的知识基础。
+- 应用：升焰陶窑 (`tech.application.pottery_kiln`)：木炭烧制是应用：升焰陶窑不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -3196,8 +3189,8 @@ timber -8%；作为必要支撑：块炼炉、土法炼铜炉、烧砖窑、升�
 - 应用：亚麻农场 (`tech.application.flax_collector`)：种子与繁育观察是应用：亚麻农场不可替代的知识基础。
 - 应用：家庭棉花园圃 (`tech.application.cotton_garden`)：种子与繁育观察是应用：家庭棉花园圃不可替代的知识基础。
 - 应用：林下遮阴香料园 (`tech.application.spice_shade_garden`)：种子与繁育观察是应用：林下遮阴香料园不可替代的知识基础。
+- 应用：药草园 (`tech.application.medicinal_herb_garden`)：种子与繁育观察是应用：药草园不可替代的知识基础。
 - 应用：菜蔬农场 (`tech.application.fertile_soil_collector`)：种子与繁育观察是应用：菜蔬农场不可替代的知识基础。
-- 应用：药草园 (`tech.application.medicinal_herb_garden`)：tech.crop\_domestication是药草园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -3695,7 +3688,7 @@ timber -8%；作为必要支撑：块炼炉、土法炼铜炉、烧砖窑、升�
 
 无
 
-### 亚麻与韧皮辨识 (`tech.flax_identification`)
+### 亚麻辨识 (`tech.flax_identification`)
 
 | 字段 | 内容 |
 | --- | --- |
@@ -3715,13 +3708,12 @@ timber -8%；作为必要支撑：块炼炉、土法炼铜炉、烧砖窑、升�
 
 #### 硬前置（决定研发资格）
 
-- 自然观察 (`tech.natural_observation`)：自然观察是亚麻与韧皮辨识不可替代的知识基础。
+- 自然观察 (`tech.natural_observation`)：自然观察是亚麻辨识不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
   - 已发现信号「亚麻」（bio.flax）
-  - 已发现信号「韧皮纤维植物」（bio.bast\_fiber）
   - 已发现信号「亚麻样本接触」（contact.flax）
 
 #### 效果摘要
@@ -3751,8 +3743,8 @@ timber -8%；作为必要支撑：块炼炉、土法炼铜炉、烧砖窑、升�
 
 #### 被以下科技作为硬前置
 
-- 野生韧皮采集 (`tech.wild_flax_collection`)：亚麻与韧皮辨识是野生韧皮采集不可替代的知识基础。
-- 沤麻 (`tech.flax_retting`)：亚麻与韧皮辨识是沤麻不可替代的知识基础。
+- 野生韧皮采集 (`tech.wild_flax_collection`)：亚麻辨识是野生韧皮采集不可替代的知识基础。
+- 沤麻 (`tech.flax_retting`)：亚麻辨识是沤麻不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -3794,7 +3786,7 @@ timber -8%；作为必要支撑：块炼炉、土法炼铜炉、烧砖窑、升�
 
 #### 效果摘要
 
-工程领域研究效率 +20%
+工程领域研究效率 +20%；旱灾损失 -4%；洪灾损失 -4%
 
 #### 机会成本
 
@@ -3814,8 +3806,14 @@ timber -8%；作为必要支撑：块炼炉、土法炼铜炉、烧砖窑、升�
 #### 永久 Modifier 条款
 
 - 工程领域研究效率：`country.research.engineering_efficiency`：+20%
+- 旱灾损失：`country.climate.drought_loss_factor`：+4%
+- 洪灾损失：`country.climate.flood_loss_factor`：+4%
   - 效果机制：计时、测量与统计提高工程研究效率。
   - 运行时消费者：`NativeCountryRuntime::process_research_day`
+  - 效果机制：季节历降低全国气候型生产建筑的旱灾损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：季节历降低全国气候型生产建筑的洪灾损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
 
 #### 被以下科技作为硬前置
 
@@ -3891,8 +3889,8 @@ timber -8%；作为必要支撑：块炼炉、土法炼铜炉、烧砖窑、升�
 - 应用：自给农庄 (`tech.application.subsistence_farm`)：家庭生产是应用：自给农庄不可替代的知识基础。
 - 应用：家庭玉米园圃 (`tech.application.maize_garden`)：家庭生产是应用：家庭玉米园圃不可替代的知识基础。
 - 应用：林下遮阴香料园 (`tech.application.spice_shade_garden`)：家庭生产是应用：林下遮阴香料园不可替代的知识基础。
+- 应用：药草园 (`tech.application.medicinal_herb_garden`)：家庭生产是应用：药草园不可替代的知识基础。
 - 应用：菜蔬农场 (`tech.application.fertile_soil_collector`)：家庭生产是应用：菜蔬农场不可替代的知识基础。
-- 应用：药草园 (`tech.application.medicinal_herb_garden`)：tech.household\_production是药草园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -4341,7 +4339,7 @@ timber -8%；作为必要支撑：块炼炉、土法炼铜炉、烧砖窑、升�
 
 #### 硬前置（决定研发资格）
 
-- 亚麻与韧皮辨识 (`tech.flax_identification`)：亚麻与韧皮辨识是野生韧皮采集不可替代的知识基础。
+- 亚麻辨识 (`tech.flax_identification`)：亚麻辨识是野生韧皮采集不可替代的知识基础。
 - 枯枝采集 (`tech.deadwood_collection`)：枯枝采集是野生韧皮采集不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
@@ -4350,7 +4348,7 @@ timber -8%；作为必要支撑：块炼炉、土法炼铜炉、烧砖窑、升�
 
 #### 效果摘要
 
-解锁物资：韧皮纤维；解锁建筑：野生韧皮纤维营地；作为必要支撑：亚麻农场、沤麻池
+解锁物资：亚麻秆/韧皮原料；解锁建筑：野生韧皮纤维营地；作为必要支撑：亚麻农场、沤麻池
 
 #### 机会成本
 
@@ -4365,7 +4363,7 @@ timber -8%；作为必要支撑：块炼炉、土法炼铜炉、烧砖窑、升�
 
 #### 结构化内容效果
 
-- **韧皮纤维**（`good`）：`good.bast_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
+- **亚麻秆/韧皮原料**（`good`）：`good.bast_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
 - **野生韧皮纤维营地**（`building`）：`building.bast_fiber_camp` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -4380,21 +4378,19 @@ timber -8%；作为必要支撑：块炼炉、土法炼铜炉、烧砖窑、升�
 - 应用：野生块茎采集地 (`tech.application.wild_tuber_patch`)：野生韧皮采集是应用：野生块茎采集地不可替代的知识基础。
 - 应用：小型陷阱线 (`tech.application.small_game_trapline`)：野生韧皮采集是应用：小型陷阱线不可替代的知识基础。
 - 应用：露天银矿 (`tech.application.surface_silver_working`)：野生韧皮采集是应用：露天银矿不可替代的知识基础。
-- 应用：野生割胶营地 (`tech.application.rubber_tapping_camp`)：野生韧皮采集是应用：野生割胶营地不可替代的知识基础。
 - 应用：亚麻农场 (`tech.application.flax_collector`)：野生韧皮采集是应用：亚麻农场不可替代的知识基础。
 - 应用：林下遮阴香料园 (`tech.application.spice_shade_garden`)：野生韧皮采集是应用：林下遮阴香料园不可替代的知识基础。
+- 应用：药草园 (`tech.application.medicinal_herb_garden`)：野生韧皮采集是应用：药草园不可替代的知识基础。
 - 应用：口述记忆圈 (`tech.application.oral_memory_circle`)：野生韧皮采集是应用：口述记忆圈不可替代的知识基础。
 - 应用：洪水历法祭所 (`tech.application.flood_calendar_shrine`)：野生韧皮采集是应用：洪水历法祭所不可替代的知识基础。
 - 应用：家用织机 (`tech.application.household_loom`)：野生韧皮采集是应用：家用织机不可替代的知识基础。
-- 应用：沤麻池 (`tech.application.flax_retting_pit`)：tech.wild\_flax\_collection是沤麻池不可替代的知识基础。
-- 应用：乳胶烟熏凝固棚 (`tech.application.latex_smoking_shelter`)：野生韧皮采集是应用：乳胶烟熏凝固棚不可替代的知识基础。
+- 应用：沤麻池 (`tech.application.flax_retting_pit`)：野生韧皮采集是应用：沤麻池不可替代的知识基础。
 - 应用：毛皮缝制棚 (`tech.application.fur_sewing_shelter`)：野生韧皮采集是应用：毛皮缝制棚不可替代的知识基础。
 - 应用：物候观察棚 (`tech.application.seasonal_observation_shelter`)：野生韧皮采集是应用：物候观察棚不可替代的知识基础。
 - 应用：潮汐观察屋 (`tech.application.tide_observation_hut`)：野生韧皮采集是应用：潮汐观察屋不可替代的知识基础。
 - 方法：牧群路线议事帐 (`tech.method.pastoral_council_tent`)：野生韧皮采集是方法：牧群路线议事帐不可替代的知识基础。
 - 应用：毡制帐篷 (`tech.application.felt_making_tent`)：野生韧皮采集是应用：毡制帐篷不可替代的知识基础。
 - 应用：植物纤维抄纸坊 (`tech.application.plant_fiber_paper_workshop`)：野生韧皮采集是应用：植物纤维抄纸坊不可替代的知识基础。
-- 应用：药草园 (`tech.application.medicinal_herb_garden`)：tech.wild\_flax\_collection是药草园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -4437,7 +4433,7 @@ timber -8%；作为必要支撑：块炼炉、土法炼铜炉、烧砖窑、升�
 
 #### 效果摘要
 
-可利用资源：淡水鱼群；解锁物资：鱼类；解锁建筑：淡水捕鱼营地
+可利用资源：淡水鱼群；解锁物资：鱼类；解锁建筑：淡水捕鱼营地；湖泊农业产出 +10%
 
 #### 机会成本
 
@@ -4458,7 +4454,9 @@ timber -8%；作为必要支撑：块炼炉、土法炼铜炉、烧砖窑、升�
 
 #### 永久 Modifier 条款
 
-无
+- 湖泊农业：`country.output.landform.lake.agriculture_factor`：+10%
+  - 效果机制：淡水岸捕提高湖泊的农业生产适应。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -4506,7 +4504,7 @@ timber -8%；作为必要支撑：块炼炉、土法炼铜炉、烧砖窑、升�
 
 #### 效果摘要
 
-可利用资源：海洋鱼类；解锁物资：鱼类；解锁建筑：沿岸渔场
+可利用资源：海洋鱼类；解锁物资：鱼类；解锁建筑：沿岸渔场；海岸农业产出 +10%
 
 #### 机会成本
 
@@ -4527,7 +4525,9 @@ timber -8%；作为必要支撑：块炼炉、土法炼铜炉、烧砖窑、升�
 
 #### 永久 Modifier 条款
 
-无
+- 海岸农业：`country.output.landform.coast.agriculture_factor`：+10%
+  - 效果机制：潮间带采集提高海岸的农业生产适应。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -4575,6 +4575,7 @@ timber -8%；作为必要支撑：块炼炉、土法炼铜炉、烧砖窑、升�
   - 已发现信号「亚麻」（bio.flax）
   - 已发现信号「棉花」（bio.cotton）
   - 已发现信号「韧皮纤维植物」（bio.bast\_fiber）
+  - 已发现信号「韧皮纤维实物接触」（contact.bast\_fiber）
 
 #### 效果摘要
 
@@ -4882,11 +4883,11 @@ landform.plateau.agriculture产出 +12%；作为必要支撑：冷凉高地块�
 
 - 垄作块茎 (`tech.ridge_tuber_cultivation`)：块茎繁育是垄作块茎不可替代的知识基础。
 - 应用：冷凉高地块茎田 (`tech.application.highland_tuber_plot`)：块茎繁育是应用：冷凉高地块茎田不可替代的知识基础。
-- 应用：马铃薯农场 (`tech.application.potato_collector`)：tech.potato\_propagation是马铃薯农场不可替代的知识基础。
-- 应用：机械化马铃薯农场 (`tech.application.method_potato_collector_r6`)：tech.potato\_propagation是机械化马铃薯农场不可替代的知识基础。
-- 应用：改良轮作马铃薯庄园 (`tech.application.method_potato_farm_r5`)：tech.potato\_propagation是改良轮作马铃薯庄园不可替代的知识基础。
-- 应用：精准马铃薯农场 (`tech.application.method_potato_farm_r8`)：tech.potato\_propagation是精准马铃薯农场不可替代的知识基础。
-- 应用：自动化马铃薯农场 (`tech.application.method_potato_farm_r10`)：tech.potato\_propagation是自动化马铃薯农场不可替代的知识基础。
+- 应用：马铃薯农场 (`tech.application.potato_collector`)：块茎繁育是应用：马铃薯农场不可替代的知识基础。
+- 应用：改良轮作马铃薯庄园 (`tech.application.method_potato_farm_r5`)：块茎繁育是应用：改良轮作马铃薯庄园不可替代的知识基础。
+- 应用：机械化马铃薯农场 (`tech.application.method_potato_collector_r6`)：块茎繁育是应用：机械化马铃薯农场不可替代的知识基础。
+- 应用：精准马铃薯农场 (`tech.application.method_potato_farm_r8`)：块茎繁育是应用：精准马铃薯农场不可替代的知识基础。
+- 应用：自动化马铃薯农场 (`tech.application.method_potato_farm_r10`)：块茎繁育是应用：自动化马铃薯农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -4962,8 +4963,8 @@ landform.plateau.agriculture产出 +12%；作为必要支撑：冷凉高地块�
 - 应用：退水玉米地 (`tech.application.floodplain_maize_plot`)：玉米繁育是应用：退水玉米地不可替代的知识基础。
 - 应用：佃作雨养玉米田 (`tech.application.tenant_rainfed_maize_field`)：玉米繁育是应用：佃作雨养玉米田不可替代的知识基础。
 - 应用：玉米庄园 (`tech.application.landed_estate`)：玉米繁育是应用：玉米庄园不可替代的知识基础。
-- 应用：精准玉米农场 (`tech.application.method_maize_farm_r8`)：tech.maize\_propagation是精准玉米农场不可替代的知识基础。
-- 应用：自动化玉米农场 (`tech.application.method_maize_farm_r10`)：tech.maize\_propagation是自动化玉米农场不可替代的知识基础。
+- 应用：精准玉米农场 (`tech.application.method_maize_farm_r8`)：玉米繁育是应用：精准玉米农场不可替代的知识基础。
+- 应用：自动化玉米农场 (`tech.application.method_maize_farm_r10`)：玉米繁育是应用：自动化玉米农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -5040,9 +5041,9 @@ landform.plateau.agriculture产出 +12%；作为必要支撑：冷凉高地块�
 - 系统育种 (`tech.crop_breeding`)：小麦繁育是系统育种不可替代的知识基础。
 - 应用：佃作小麦庄园 (`tech.application.method_wheat_farm_r3`)：小麦繁育是应用：佃作小麦庄园不可替代的知识基础。
 - 应用：改良轮作小麦庄园 (`tech.application.method_wheat_farm_r5`)：小麦繁育是应用：改良轮作小麦庄园不可替代的知识基础。
-- 应用：机械化小麦农场 (`tech.application.method_wheat_farm_r6`)：tech.wheat\_propagation是机械化小麦农场不可替代的知识基础。
-- 应用：精准小麦农场 (`tech.application.method_wheat_farm_r8`)：tech.wheat\_propagation是精准小麦农场不可替代的知识基础。
-- 应用：自动化小麦农场 (`tech.application.method_wheat_farm_r10`)：tech.wheat\_propagation是自动化小麦农场不可替代的知识基础。
+- 应用：机械化小麦农场 (`tech.application.method_wheat_farm_r6`)：小麦繁育是应用：机械化小麦农场不可替代的知识基础。
+- 应用：精准小麦农场 (`tech.application.method_wheat_farm_r8`)：小麦繁育是应用：精准小麦农场不可替代的知识基础。
+- 应用：自动化小麦农场 (`tech.application.method_wheat_farm_r10`)：小麦繁育是应用：自动化小麦农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -5203,7 +5204,7 @@ landform.plateau.agriculture产出 +12%；作为必要支撑：冷凉高地块�
 <a id="era-2"></a>
 ## 农耕时代
 
-共 92 项科技，研究成本范围 3000-12000；时代里程碑：农耕社会 (`tech.agrarian_society`)。
+共 94 项科技，研究成本范围 3000-12000；时代里程碑：农耕社会 (`tech.agrarian_society`)。
 
 ### 渔舟 (`tech.fishing_boats`)
 
@@ -5470,8 +5471,6 @@ landform.plateau.agriculture产出 +12%；作为必要支撑：冷凉高地块�
 
 - 应用：露天陶器烧造 (`tech.application.open_pottery_hearth`)：应用：原始黏土坑是应用：露天陶器烧造不可替代的知识基础。
 - 应用：日晒土坯场 (`tech.application.adobe_yard`)：应用：原始黏土坑是应用：日晒土坯场不可替代的知识基础。
-- 应用：日晒盐田 (`tech.application.solar_salt_pan`)：应用：原始黏土坑是应用：日晒盐田不可替代的知识基础。
-- 应用：块炼炉 (`tech.application.bloomery`)：应用：原始黏土坑是应用：块炼炉不可替代的知识基础。
 - 应用：升焰陶窑 (`tech.application.pottery_kiln`)：应用：原始黏土坑是应用：升焰陶窑不可替代的知识基础。
 - 应用：制砖厂 (`tech.application.bricks_plant`)：应用：原始黏土坑是应用：制砖厂不可替代的知识基础。
 - 应用：水泥厂 (`tech.application.cement_plant`)：应用：原始黏土坑是应用：水泥厂不可替代的知识基础。
@@ -5549,7 +5548,6 @@ landform.plateau.agriculture产出 +12%；作为必要支撑：冷凉高地块�
 - 应用：羊毛行会作坊 (`tech.application.method_wool_shed_r3`)：应用：游牧营地是应用：羊毛行会作坊不可替代的知识基础。
 - 应用：精梳羊毛作坊 (`tech.application.method_wool_shed_r5`)：应用：游牧营地是应用：精梳羊毛作坊不可替代的知识基础。
 - 应用：制皂工坊 (`tech.application.soap_plant`)：应用：游牧营地是应用：制皂工坊不可替代的知识基础。
-- 应用：堆肥场 (`tech.application.composting_yard`)：应用：游牧营地是应用：堆肥场不可替代的知识基础。
 - 应用：工业屠宰场 (`tech.application.mechanized_slaughterhouse`)：应用：游牧营地是应用：工业屠宰场不可替代的知识基础。
 - 应用：工业制皂厂 (`tech.application.method_soap_plant_r6`)：应用：游牧营地是应用：工业制皂厂不可替代的知识基础。
 - 应用：乳制品厂 (`tech.application.dairy_products_plant`)：应用：游牧营地是应用：乳制品厂不可替代的知识基础。
@@ -5756,12 +5754,7 @@ landform.plateau.agriculture产出 +12%；作为必要支撑：冷凉高地块�
 #### 被以下科技作为硬前置
 
 - 应用：露天陶器烧造 (`tech.application.open_pottery_hearth`)：应用：覆土木炭窑是应用：露天陶器烧造不可替代的知识基础。
-- 应用：露天青铜作坊 (`tech.application.ore_bronzesmith_camp`)：应用：覆土木炭窑是应用：露天青铜作坊不可替代的知识基础。
-- 应用：块炼炉 (`tech.application.bloomery`)：应用：覆土木炭窑是应用：块炼炉不可替代的知识基础。
-- 应用：铁制工具工坊 (`tech.application.iron_tool_workshop`)：应用：覆土木炭窑是应用：铁制工具工坊不可替代的知识基础。
 - 应用：升焰陶窑 (`tech.application.pottery_kiln`)：应用：覆土木炭窑是应用：升焰陶窑不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：覆土木炭窑是应用：烧砖窑不可替代的知识基础。
-- 木炭坩埚炼铜 (`tech.copper_metallurgy`)：应用：覆土木炭窑是木炭坩埚炼铜不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -6304,7 +6297,7 @@ landform.plateau.agriculture产出 +12%；作为必要支撑：冷凉高地块�
 
 #### 效果摘要
 
-terrain.desert.agriculture产出 +28%；terrain.cold\_desert.agriculture产出 +24%
+terrain.desert.agriculture产出 +28%；terrain.cold\_desert.agriculture产出 +24%；旱作生产·旱灾损失 -12%
 
 #### 机会成本
 
@@ -6325,10 +6318,13 @@ terrain.desert.agriculture产出 +28%；terrain.cold\_desert.agriculture产出 +
 
 - terrain.desert.agriculture：`country.output.terrain.desert.agriculture_factor`：+28%
 - terrain.cold\_desert.agriculture：`country.output.terrain.cold_desert.agriculture_factor`：+24%
+- 旱作生产·旱灾损失：`country.climate.profile.dryland_crop.drought_loss_factor`：+12%
   - 效果机制：旱作改善沙漠边缘农业。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
   - 效果机制：保墒适应寒漠农业。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：旱作农业降低旱作生产建筑的旱灾损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
 
 #### 被以下科技作为硬前置
 
@@ -6473,8 +6469,8 @@ landform.hill.agriculture产出 +28%
 #### 被以下科技作为硬前置
 
 - 乳胶烟熏凝固 (`tech.latex_smoke_coagulation`)：天然橡胶加工是乳胶烟熏凝固不可替代的知识基础。
-- 应用：精准橡胶种植园 (`tech.application.method_rubber_tree_collector_r8`)：tech.rubber\_working是精准橡胶种植园不可替代的知识基础。
-- 应用：自动化橡胶种植园 (`tech.application.method_rubber_tree_collector_r10`)：tech.rubber\_working是自动化橡胶种植园不可替代的知识基础。
+- 应用：精准橡胶种植园 (`tech.application.method_rubber_tree_collector_r8`)：天然橡胶加工是应用：精准橡胶种植园不可替代的知识基础。
+- 应用：自动化橡胶种植园 (`tech.application.method_rubber_tree_collector_r10`)：天然橡胶加工是应用：自动化橡胶种植园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -6516,7 +6512,7 @@ landform.hill.agriculture产出 +28%
 
 #### 效果摘要
 
-工程领域研究效率 +8%
+工程领域研究效率 +8%；寒冷损失 -5%；热害损失 -5%
 
 #### 机会成本
 
@@ -6536,8 +6532,14 @@ landform.hill.agriculture产出 +28%
 #### 永久 Modifier 条款
 
 - 工程领域研究效率：`country.research.engineering_efficiency`：+8%
+- 寒冷损失：`country.climate.cold_stress_factor`：+5%
+- 热害损失：`country.climate.heat_stress_factor`：+5%
   - 效果机制：计时、测量与统计提高工程研究效率。
   - 运行时消费者：`NativeCountryRuntime::process_research_day`
+  - 效果机制：天文历法降低全国气候型生产建筑的寒冷损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：天文历法降低全国气候型生产建筑的热害损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
 
 #### 被以下科技作为硬前置
 
@@ -6689,10 +6691,10 @@ landform.lowland.agriculture产出 +22%；作为必要支撑：畦埂水稻田�
 - 早期玻璃烧制 (`tech.early_glassmaking`)：窑烧控制是早期玻璃烧制不可替代的知识基础。
 - 应用：土法炼锡炉 (`tech.application.early_tin_smelter`)：窑烧控制是应用：土法炼锡炉不可替代的知识基础。
 - 地表煤利用 (`tech.surface_coal_use`)：窑烧控制是地表煤利用不可替代的知识基础。
+- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：窑烧控制是应用：烧砖窑不可替代的知识基础。
 - 应用：升焰陶窑 (`tech.application.pottery_kiln`)：窑烧控制是应用：升焰陶窑不可替代的知识基础。
 - 应用：制砖厂 (`tech.application.bricks_plant`)：窑烧控制是应用：制砖厂不可替代的知识基础。
 - 火药配制 (`tech.gunpowder_formulation`)：窑烧控制是火药配制不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：窑烧控制是应用：烧砖窑不可替代的知识基础。
 - 应用：行会陶窑 (`tech.application.method_pottery_kiln_r3`)：窑烧控制是应用：行会陶窑不可替代的知识基础。
 - 应用：锡矿 (`tech.application.tin_ore_collector`)：窑烧控制是应用：锡矿不可替代的知识基础。
 
@@ -6764,7 +6766,7 @@ landform.lowland.agriculture产出 +22%；作为必要支撑：畦埂水稻田�
 #### 被以下科技作为硬前置
 
 - 植物纤维抄纸 (`tech.plant_fiber_papermaking`)：织机织造是植物纤维抄纸不可替代的知识基础。
-- 应用：行会织造坊 (`tech.application.guild_weaving_house`)：tech.loom\_weaving是行会织造坊不可替代的知识基础。
+- 应用：行会织造坊 (`tech.application.guild_weaving_house`)：织机织造是应用：行会织造坊不可替代的知识基础。
 - 应用：羊毛行会作坊 (`tech.application.method_wool_shed_r3`)：织机织造是应用：羊毛行会作坊不可替代的知识基础。
 - 纺织机械 (`tech.textile_machinery`)：织机织造是纺织机械不可替代的知识基础。
 
@@ -6835,8 +6837,8 @@ landform.lowland.agriculture产出 +22%；作为必要支撑：畦埂水稻田�
 
 - 应用：日晒土坯场 (`tech.application.adobe_yard`)：日晒土坯是应用：日晒土坯场不可替代的知识基础。
 - 砌体建筑 (`tech.masonry`)：日晒土坯是砌体建筑不可替代的知识基础。
-- 应用：制砖厂 (`tech.application.bricks_plant`)：日晒土坯是应用：制砖厂不可替代的知识基础。
 - 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：日晒土坯是应用：烧砖窑不可替代的知识基础。
+- 应用：制砖厂 (`tech.application.bricks_plant`)：日晒土坯是应用：制砖厂不可替代的知识基础。
 - 应用：石作工场 (`tech.application.classical_masonry_yard`)：日晒土坯是应用：石作工场不可替代的知识基础。
 
 #### 主题路线后继
@@ -6981,7 +6983,7 @@ terrain.jungle.agriculture产出 +12%
 
 - 佃作水田 (`tech.tenant_paddy_management`)：水田稻作是佃作水田不可替代的知识基础。
 - 应用：佃作稻庄 (`tech.application.method_rice_collector_r3`)：水田稻作是应用：佃作稻庄不可替代的知识基础。
-- 应用：机械化稻作农场 (`tech.application.method_rice_collector_r6`)：tech.rice\_paddy\_cultivation是机械化稻作农场不可替代的知识基础。
+- 应用：机械化稻作农场 (`tech.application.method_rice_collector_r6`)：水田稻作是应用：机械化稻作农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -7052,7 +7054,7 @@ terrain.jungle.agriculture产出 +12%
 #### 被以下科技作为硬前置
 
 - 防霜窖藏 (`tech.frost_protected_storage`)：垄作块茎是防霜窖藏不可替代的知识基础。
-- 应用：马铃薯农场 (`tech.application.potato_collector`)：tech.ridge\_tuber\_cultivation是马铃薯农场不可替代的知识基础。
+- 应用：马铃薯农场 (`tech.application.potato_collector`)：垄作块茎是应用：马铃薯农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -7160,7 +7162,7 @@ landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +2
 
 #### 硬前置（决定研发资格）
 
-- 亚麻与韧皮辨识 (`tech.flax_identification`)：亚麻与韧皮辨识是沤麻不可替代的知识基础。
+- 亚麻辨识 (`tech.flax_identification`)：亚麻辨识是沤麻不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -7197,15 +7199,15 @@ landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +2
 
 - 手工纺纱 (`tech.hand_spinning`)：沤麻是手工纺纱不可替代的知识基础。
 - 应用：亚麻农场 (`tech.application.flax_collector`)：沤麻是应用：亚麻农场不可替代的知识基础。
-- 应用：沤麻池 (`tech.application.flax_retting_pit`)：tech.flax\_retting是沤麻池不可替代的知识基础。
-- 应用：行会织造坊 (`tech.application.guild_weaving_house`)：tech.flax\_retting是行会织造坊不可替代的知识基础。
+- 应用：沤麻池 (`tech.application.flax_retting_pit`)：沤麻是应用：沤麻池不可替代的知识基础。
+- 应用：行会织造坊 (`tech.application.guild_weaving_house`)：沤麻是应用：行会织造坊不可替代的知识基础。
 - 契约劳工制度 (`tech.indentured_contracts`)：沤麻是契约劳工制度不可替代的知识基础。
 - 长期租约 (`tech.long_term_leases`)：沤麻是长期租约不可替代的知识基础。
 - 应用：亚麻庄园 (`tech.application.method_flax_collector_r3`)：沤麻是应用：亚麻庄园不可替代的知识基础。
 - 应用：改良亚麻庄园 (`tech.application.method_flax_collector_r5`)：沤麻是应用：改良亚麻庄园不可替代的知识基础。
-- 应用：机械化亚麻农场 (`tech.application.method_flax_collector_r6`)：tech.flax\_retting是机械化亚麻农场不可替代的知识基础。
-- 应用：精准亚麻农场 (`tech.application.method_flax_collector_r8`)：tech.flax\_retting是精准亚麻农场不可替代的知识基础。
-- 应用：自动化亚麻农场 (`tech.application.method_flax_collector_r10`)：tech.flax\_retting是自动化亚麻农场不可替代的知识基础。
+- 应用：机械化亚麻农场 (`tech.application.method_flax_collector_r6`)：沤麻是应用：机械化亚麻农场不可替代的知识基础。
+- 应用：精准亚麻农场 (`tech.application.method_flax_collector_r8`)：沤麻是应用：精准亚麻农场不可替代的知识基础。
+- 应用：自动化亚麻农场 (`tech.application.method_flax_collector_r10`)：沤麻是应用：自动化亚麻农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -7274,10 +7276,8 @@ landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +2
 
 #### 被以下科技作为硬前置
 
-- 棉花园圃 (`tech.cotton_gardening`)：棉花去籽是棉花园圃不可替代的知识基础。
-- 应用：家庭棉花园圃 (`tech.application.cotton_garden`)：棉花去籽是应用：家庭棉花园圃不可替代的知识基础。
 - 应用：手工轧棉棚 (`tech.application.cotton_ginning_shelter`)：棉花去籽是应用：手工轧棉棚不可替代的知识基础。
-- 应用：佃作棉花田 (`tech.application.cotton_smallholding`)：tech.cotton\_ginning是佃作棉花田不可替代的知识基础。
+- 应用：佃作棉花田 (`tech.application.cotton_smallholding`)：棉花去籽是应用：佃作棉花田不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -7323,7 +7323,7 @@ landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +2
 
 #### 效果摘要
 
-可利用资源：种植园承载力；terrain.jungle.agriculture产出 +24%；作为必要支撑：香料种植园
+可利用资源：种植园承载力；terrain.jungle.agriculture产出 +24%；种植园生产·热害损失 -12%；作为必要支撑：香料种植园
 
 #### 机会成本
 
@@ -7343,15 +7343,18 @@ landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +2
 #### 永久 Modifier 条款
 
 - terrain.jungle.agriculture：`country.output.terrain.jungle.agriculture_factor`：+24%
+- 种植园生产·热害损失：`country.climate.profile.plantation_crop.heat_stress_loss_factor`：+12%
   - 效果机制：遮阴园艺适应雨林微气候。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：遮阴香料园降低种植园生产建筑的热害损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
 
 #### 被以下科技作为硬前置
 
 - 应用：林下遮阴香料园 (`tech.application.spice_shade_garden`)：遮阴香料园是应用：林下遮阴香料园不可替代的知识基础。
+- 应用：药草园 (`tech.application.medicinal_herb_garden`)：遮阴香料园是应用：药草园不可替代的知识基础。
+- 应用：药材商品园 (`tech.application.medicinal_herb_estate`)：遮阴香料园是应用：药材商品园不可替代的知识基础。
 - 应用：香料种植园 (`tech.application.spice_plants_collector`)：遮阴香料园是应用：香料种植园不可替代的知识基础。
-- 应用：药草园 (`tech.application.medicinal_herb_garden`)：tech.spice\_shade\_gardening是药草园不可替代的知识基础。
-- 应用：药材商品园 (`tech.application.medicinal_herb_estate`)：tech.spice\_shade\_gardening是药材商品园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -7421,15 +7424,12 @@ landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +2
 
 - 应用：乳品工坊 (`tech.application.creamery`)：手工锯木是应用：乳品工坊不可替代的知识基础。
 - 树皮纸 (`tech.bark_paper_making`)：手工锯木是树皮纸不可替代的知识基础。
-- 应用：行会织造坊 (`tech.application.guild_weaving_house`)：tech.timber\_sawing是行会织造坊不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：手工锯木是应用：改良锯木场不可替代的知识基础。
-- 应用：家庭纺织坊 (`tech.application.cottage_weaving`)：手工锯木提供应用：家庭纺织坊所需的建材“木材”。
-- 应用：大气式蒸汽机工坊 (`tech.application.atmospheric_engine_workshop`)：手工锯木提供应用：大气式蒸汽机工坊所需的建材“木材”。
+- 应用：水力锯木场 (`tech.application.method_lumber_plant_r4`)：手工锯木是应用：水力锯木场不可替代的知识基础。
 - 应用：细木家具工坊 (`tech.application.cabinetmaker_workshop`)：手工锯木是应用：细木家具工坊不可替代的知识基础。
 - 焦炭冶炼 (`tech.coke_smelting`)：手工锯木是焦炭冶炼不可替代的知识基础。
 - 蒸汽锯木 (`tech.steam_sawmilling`)：手工锯木是蒸汽锯木不可替代的知识基础。
 - 应用：蒸汽锯木厂 (`tech.application.method_lumber_plant_r6`)：手工锯木是应用：蒸汽锯木厂不可替代的知识基础。
-- 应用：科学仪器工坊 (`tech.application.scientific_instrument_works`)：手工锯木提供应用：科学仪器工坊所需的建材“木材”。
 - 先进冶金 (`tech.advanced_metallurgy`)：手工锯木是先进冶金不可替代的知识基础。
 
 #### 主题路线后继
@@ -7570,12 +7570,12 @@ landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +2
 
 - 皮纸制作 (`tech.parchment_making`)：皮革鞣制是皮纸制作不可替代的知识基础。
 - 应用：制革工坊 (`tech.application.tannery`)：皮革鞣制是应用：制革工坊不可替代的知识基础。
+- Leather Goods Workshop (`tech.application.leather_goods_workshop_kingdom`)：皮革鞣制是Leather Goods Workshop不可替代的知识基础。
 - 应用：皮纸工坊 (`tech.application.parchment_workshop`)：皮革鞣制是应用：皮纸工坊不可替代的知识基础。
 - 应用：鞋匠铺 (`tech.application.cobbler_shop`)：皮革鞣制是应用：鞋匠铺不可替代的知识基础。
 - 劳工组织 (`tech.labor_organization`)：皮革鞣制是劳工组织不可替代的知识基础。
 - 应用：制鞋厂 (`tech.application.footwear_plant`)：皮革鞣制是应用：制鞋厂不可替代的知识基础。
 - 应用：制革厂 (`tech.application.leather_plant`)：皮革鞣制是应用：制革厂不可替代的知识基础。
-- Leather Goods Workshop (`tech.application.leather_goods_workshop_kingdom`)：knowledge prerequisite: tech.herd\_management -\> Leather Goods Workshop
 
 #### 主题路线后继
 
@@ -7826,12 +7826,13 @@ landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +2
 #### 发现启发（仅用于揭示）
 
 - 满足其一：
+  - 已发现信号「盐」（resource.salt）
   - 已发现信号「硝石」（resource.saltpeter）
   - 已发现信号「热浪经验」（weather.heatwave）
 
 #### 效果摘要
 
-加工食品 -8%
+解锁物资：食盐；解锁建筑：煮盐灶；加工食品 -8%
 
 #### 机会成本
 
@@ -7839,14 +7840,15 @@ landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +2
 
 #### 内容解锁
 
-- **物资：** 无
-- **建筑 / 生产方式：** 无
+- **物资：** 食盐 (`salt`)
+- **建筑 / 生产方式：** 煮盐灶 (`brine_boiling_hearth`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
-无
+- **食盐**（`good`）：`good.salt` → `production_access` `unlock` `1.0`；`existing_binding`
+- **煮盐灶**（`building`）：`building.brine_boiling_hearth` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -7930,9 +7932,7 @@ landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +2
 #### 被以下科技作为硬前置
 
 - 铜退火 (`tech.copper_annealing`)：自然铜冷锤是铜退火不可替代的知识基础。
-- 铜锡配比与铸造 (`tech.bronze_casting`)：自然铜冷锤是铜锡配比与铸造不可替代的知识基础。
 - 应用：浅层锡矿 (`tech.application.early_tin_mine`)：自然铜冷锤是应用：浅层锡矿不可替代的知识基础。
-- 木炭坩埚炼铜 (`tech.copper_metallurgy`)：自然铜冷锤是木炭坩埚炼铜不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -8074,8 +8074,8 @@ landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +2
 #### 被以下科技作为硬前置
 
 - 河运 (`tech.river_transport`)：陶器容器体系是河运不可替代的知识基础。
-- 活字印刷 (`tech.movable_type_printing`)：陶器容器体系是活字印刷不可替代的知识基础。
 - 木炭坩埚炼铜 (`tech.copper_metallurgy`)：陶器容器体系是木炭坩埚炼铜不可替代的知识基础。
+- 活字印刷 (`tech.movable_type_printing`)：陶器容器体系是活字印刷不可替代的知识基础。
 - 应用：行会陶窑 (`tech.application.method_pottery_kiln_r3`)：陶器容器体系是应用：行会陶窑不可替代的知识基础。
 - 应用：活字印刷坊 (`tech.application.movable_type_print_shop`)：陶器容器体系是应用：活字印刷坊不可替代的知识基础。
 
@@ -8123,7 +8123,7 @@ landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +2
 
 #### 效果摘要
 
-稻米产出 +12%；作为必要支撑：稻作农场、湿地稻园
+稻米产出 +12%；水田生产·旱灾损失 -10%；绿洲农业产出 +14%；作为必要支撑：稻作农场、湿地稻园
 
 #### 机会成本
 
@@ -8143,8 +8143,14 @@ landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +2
 #### 永久 Modifier 条款
 
 - 稻米：`country.output.good.rice_grain_factor`：+12%
+- 水田生产·旱灾损失：`country.climate.profile.paddy_crop.drought_loss_factor`：+10%
+- 绿洲农业：`country.output.terrain.oasis.agriculture_factor`：+14%
   - 效果机制：基础灌溉提高稻米产出。
   - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：灌溉降低水田生产建筑的旱灾损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：灌溉提高绿洲的农业生产适应。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -8222,9 +8228,9 @@ landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +2
 
 #### 被以下科技作为硬前置
 
-- 应用：商品香料园 (`tech.application.spice_managed_garden`)：tech.spice\_cultivation是商品香料园不可替代的知识基础。
-- 应用：药草园 (`tech.application.medicinal_herb_garden`)：tech.spice\_cultivation是药草园不可替代的知识基础。
-- 应用：药材商品园 (`tech.application.medicinal_herb_estate`)：tech.spice\_cultivation是药材商品园不可替代的知识基础。
+- 应用：药草园 (`tech.application.medicinal_herb_garden`)：香料栽培是应用：药草园不可替代的知识基础。
+- 应用：商品香料园 (`tech.application.spice_managed_garden`)：香料栽培是应用：商品香料园不可替代的知识基础。
+- 应用：药材商品园 (`tech.application.medicinal_herb_estate`)：香料栽培是应用：药材商品园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -8339,7 +8345,7 @@ landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +2
 
 #### 效果摘要
 
-可利用资源：肥沃土壤；可利用资源：旱地承载力；主粮加工产出 +12%；作为必要支撑：菜蔬农场、亚麻农场、玉米庄园、佃作小麦庄园、改良轮作小麦庄园、雨养玉米田、雨养小麦地、自给农庄、佃作雨养玉米田、佃作雨养小麦田、旱稻田、小麦农场
+可利用资源：肥沃土壤；可利用资源：旱地承载力；主粮加工产出 +12%；草原农业产出 +12%；作为必要支撑：菜蔬农场、亚麻农场、玉米庄园、佃作小麦庄园、改良轮作小麦庄园、雨养玉米田、雨养小麦地、自给农庄、佃作雨养玉米田、佃作雨养小麦田、旱稻田、小麦农场
 
 #### 机会成本
 
@@ -8360,7 +8366,10 @@ landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +2
 #### 永久 Modifier 条款
 
 - 主粮加工：`country.output.family.staple_preparation_factor`：+12%
+- 草原农业：`country.output.terrain.grassland.agriculture_factor`：+12%
   - 效果机制：储藏、加工与供给组织减少主粮处理损失。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：雨养田体系提高草原的农业生产适应。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
@@ -8374,12 +8383,12 @@ landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +2
 - 应用：亚麻农场 (`tech.application.flax_collector`)：雨养田体系是应用：亚麻农场不可替代的知识基础。
 - 应用：家庭棉花园圃 (`tech.application.cotton_garden`)：雨养田体系是应用：家庭棉花园圃不可替代的知识基础。
 - 应用：冷凉高地块茎田 (`tech.application.highland_tuber_plot`)：雨养田体系是应用：冷凉高地块茎田不可替代的知识基础。
+- 应用：马铃薯农场 (`tech.application.potato_collector`)：雨养田体系是应用：马铃薯农场不可替代的知识基础。
 - 应用：菜蔬农场 (`tech.application.fertile_soil_collector`)：雨养田体系是应用：菜蔬农场不可替代的知识基础。
 - 应用：小麦农场 (`tech.application.wheat_farm`)：雨养田体系是应用：小麦农场不可替代的知识基础。
 - 应用：佃作雨养玉米田 (`tech.application.tenant_rainfed_maize_field`)：雨养田体系是应用：佃作雨养玉米田不可替代的知识基础。
 - 应用：佃作雨养小麦田 (`tech.application.tenant_rainfed_wheat_field`)：雨养田体系是应用：佃作雨养小麦田不可替代的知识基础。
-- 应用：家庭纺织坊 (`tech.application.cottage_weaving`)：雨养田体系提供应用：家庭纺织坊所需的资源“旱地承载力”辨识。
-- 应用：马铃薯农场 (`tech.application.potato_collector`)：tech.rainfed\_field\_system是马铃薯农场不可替代的知识基础。
+- 应用：佃作棉花田 (`tech.application.cotton_smallholding`)：雨养田体系是应用：佃作棉花田不可替代的知识基础。
 - 应用：三圃制小农场 (`tech.application.three_field_smallholding`)：雨养田体系是应用：三圃制小农场不可替代的知识基础。
 - 系统育种 (`tech.crop_breeding`)：雨养田体系是系统育种不可替代的知识基础。
 - 应用：玉米庄园 (`tech.application.landed_estate`)：雨养田体系是应用：玉米庄园不可替代的知识基础。
@@ -8387,12 +8396,10 @@ landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +2
 - 应用：棉花农场 (`tech.application.cotton_collector`)：雨养田体系是应用：棉花农场不可替代的知识基础。
 - 应用：亚麻庄园 (`tech.application.method_flax_collector_r3`)：雨养田体系是应用：亚麻庄园不可替代的知识基础。
 - 应用：改良轮作小麦庄园 (`tech.application.method_wheat_farm_r5`)：雨养田体系是应用：改良轮作小麦庄园不可替代的知识基础。
-- 应用：改良家用织机 (`tech.application.improved_domestic_loom`)：雨养田体系提供应用：改良家用织机所需的资源“旱地承载力”辨识。
+- 应用：改良轮作马铃薯庄园 (`tech.application.method_potato_farm_r5`)：雨养田体系是应用：改良轮作马铃薯庄园不可替代的知识基础。
 - 应用：改良小农场 (`tech.application.improved_smallholding`)：雨养田体系是应用：改良小农场不可替代的知识基础。
 - 工业农学 (`tech.industrial_agronomy`)：雨养田体系是工业农学不可替代的知识基础。
 - 自动化农业 (`tech.automated_agriculture`)：雨养田体系是自动化农业不可替代的知识基础。
-- 应用：改良轮作马铃薯庄园 (`tech.application.method_potato_farm_r5`)：tech.rainfed\_field\_system是改良轮作马铃薯庄园不可替代的知识基础。
-- 应用：佃作棉花田 (`tech.application.cotton_smallholding`)：tech.rainfed\_field\_system是佃作棉花田不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -8647,7 +8654,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 效果摘要
 
-马铃薯产出 +25%；作为必要支撑：冷凉高地块茎田
+马铃薯产出 +25%；旱作生产·寒冷损失 -10%；作为必要支撑：冷凉高地块茎田
 
 #### 机会成本
 
@@ -8667,8 +8674,11 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 永久 Modifier 条款
 
 - 马铃薯：`country.output.good.potatoes_factor`：+25%
+- 旱作生产·寒冷损失：`country.climate.profile.dryland_crop.cold_stress_loss_factor`：+10%
   - 效果机制：块茎辨识、保存与高地栽培提高马铃薯产出。
   - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：防霜窖藏降低旱作生产建筑的寒冷损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
 
 #### 被以下科技作为硬前置
 
@@ -8779,7 +8789,6 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 硬前置（决定研发资格）
 
 - 野生棉铃采集 (`tech.wild_cotton_collection`)：野生棉铃采集是棉花园圃不可替代的知识基础。
-- 棉花去籽 (`tech.cotton_ginning`)：棉花去籽是棉花园圃不可替代的知识基础。
 - 种子与繁育观察 (`tech.crop_domestication`)：种子与繁育观察是棉花园圃不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
@@ -8816,14 +8825,13 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 #### 被以下科技作为硬前置
 
 - 应用：家庭棉花园圃 (`tech.application.cotton_garden`)：棉花园圃是应用：家庭棉花园圃不可替代的知识基础。
-- 应用：手工轧棉棚 (`tech.application.cotton_ginning_shelter`)：棉花园圃是应用：手工轧棉棚不可替代的知识基础。
 - 商品作物管理 (`tech.commodity_crop_management`)：棉花园圃是商品作物管理不可替代的知识基础。
 - 应用：药材种植园 (`tech.application.medicinal_herbs_collector`)：棉花园圃是应用：药材种植园不可替代的知识基础。
 - 应用：棉花农场 (`tech.application.cotton_collector`)：棉花园圃是应用：棉花农场不可替代的知识基础。
 - 应用：机械化棉花农场 (`tech.application.method_cotton_collector_r6`)：棉花园圃是应用：机械化棉花农场不可替代的知识基础。
 - 应用：受控环境药材农场 (`tech.application.method_medicinal_herbs_collector_r7`)：棉花园圃是应用：受控环境药材农场不可替代的知识基础。
-- 应用：精准棉花农场 (`tech.application.method_cotton_collector_r8`)：tech.cotton\_gardening是精准棉花农场不可替代的知识基础。
-- 应用：自动化棉花农场 (`tech.application.method_cotton_collector_r10`)：tech.cotton\_gardening是自动化棉花农场不可替代的知识基础。
+- 应用：精准棉花农场 (`tech.application.method_cotton_collector_r8`)：棉花园圃是应用：精准棉花农场不可替代的知识基础。
+- 应用：自动化棉花农场 (`tech.application.method_cotton_collector_r10`)：棉花园圃是应用：自动化棉花农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -8965,7 +8973,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 - 应用：硅砂矿坑 (`tech.application.classical_silica_pit`)：早期玻璃烧制是应用：硅砂矿坑不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：早期玻璃烧制是应用：玻璃窑不可替代的知识基础。
-- Glassware Workshop (`tech.application.glassware_workshop_kingdom`)：knowledge prerequisite: tech.kiln\_firing -\> Glassware Workshop
+- Glassware Workshop (`tech.application.glassware_workshop_kingdom`)：早期玻璃烧制是Glassware Workshop不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -9007,7 +9015,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 效果摘要
 
-铜矿采掘产出 +12%；作为必要支撑：铜矿
+解锁物资：铜工具；解锁建筑：铜器工坊；铜矿采掘产出 +12%；作为必要支撑：铜矿
 
 #### 机会成本
 
@@ -9015,14 +9023,15 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 内容解锁
 
-- **物资：** 无
-- **建筑 / 生产方式：** 无
+- **物资：** 铜工具 (`copper_tools`)
+- **建筑 / 生产方式：** 铜器工坊 (`copper_tool_workshop`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
-无
+- **铜工具**（`good`）：`good.copper_tools` → `production_access` `unlock` `1.0`；`existing_binding`
+- **铜器工坊**（`building`）：`building.copper_tool_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -9034,6 +9043,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 - 锡矿辨识 (`tech.tin_identification`)：铜退火是锡矿辨识不可替代的知识基础。
 - 铜矿焙烧 (`tech.copper_ore_roasting`)：铜退火是铜矿焙烧不可替代的知识基础。
+- 铜锡配比与铸造 (`tech.bronze_casting`)：铜退火是铜锡配比与铸造不可替代的知识基础。
 - 应用：露天青铜作坊 (`tech.application.ore_bronzesmith_camp`)：铜退火是应用：露天青铜作坊不可替代的知识基础。
 
 #### 主题路线后继
@@ -9250,9 +9260,9 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 - 应用：自给农庄 (`tech.application.subsistence_farm`)：家庭土地占有是应用：自给农庄不可替代的知识基础。
 - 共同田协调 (`tech.communal_field_coordination`)：家庭土地占有是共同田协调不可替代的知识基础。
 - 应用：冷凉高地块茎田 (`tech.application.highland_tuber_plot`)：家庭土地占有是应用：冷凉高地块茎田不可替代的知识基础。
+- 应用：马铃薯农场 (`tech.application.potato_collector`)：家庭土地占有是应用：马铃薯农场不可替代的知识基础。
 - 应用：菜蔬农场 (`tech.application.fertile_soil_collector`)：家庭土地占有是应用：菜蔬农场不可替代的知识基础。
 - 应用：畦埂水稻田 (`tech.application.bunded_rice_field`)：家庭土地占有是应用：畦埂水稻田不可替代的知识基础。
-- 应用：马铃薯农场 (`tech.application.potato_collector`)：tech.household\_landholding是马铃薯农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -9731,7 +9741,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 效果摘要
 
-铜矿石 -8%；作为必要支撑：土法炼铜炉
+作为必要支撑：土法炼铜炉
 
 #### 机会成本
 
@@ -9750,9 +9760,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 
 #### 永久 Modifier 条款
 
-- 铜矿石：`country.resource.copper_ore.use_factor`：+8%
-  - 效果机制：焙烧改善铜回收率。
-  - 运行时消费者：`NativeEconomyRuntime::effective_resource_use_quantity`
+无
 
 #### 被以下科技作为硬前置
 
@@ -10224,7 +10232,7 @@ terrain.floodplain.agriculture产出 +12%；作为必要支撑：畦埂水稻田
 
 #### 硬前置（决定研发资格）
 
-- 自然铜冷锤 (`tech.natural_copper_working`)：自然铜冷锤是铜锡配比与铸造不可替代的知识基础。
+- 铜退火 (`tech.copper_annealing`)：铜退火是铜锡配比与铸造不可替代的知识基础。
 - 锡矿辨识 (`tech.tin_identification`)：锡矿辨识是铜锡配比与铸造不可替代的知识基础。
 - 磨制石器 (`tech.ground_stone_tools`)：磨制石器是铜锡配比与铸造不可替代的知识基础。
 
@@ -10261,13 +10269,7 @@ terrain.floodplain.agriculture产出 +12%；作为必要支撑：畦埂水稻田
 
 #### 被以下科技作为硬前置
 
-- 应用：土法炼锡炉 (`tech.application.early_tin_smelter`)：铜锡配比与铸造是应用：土法炼锡炉不可替代的知识基础。
 - 应用：露天青铜作坊 (`tech.application.ore_bronzesmith_camp`)：铜锡配比与铸造是应用：露天青铜作坊不可替代的知识基础。
-- 货币 (`tech.currency`)：铜锡配比与铸造是货币不可替代的知识基础。
-- 铁矿辨识 (`tech.iron_ore_identification`)：铜锡配比与铸造是铁矿辨识不可替代的知识基础。
-- 地表铁矿采集 (`tech.surface_iron_collection`)：铜锡配比与铸造是地表铁矿采集不可替代的知识基础。
-- 块炼铁 (`tech.iron_smelting`)：铜锡配比与铸造是块炼铁不可替代的知识基础。
-- 应用：铁制工具工坊 (`tech.application.iron_tool_workshop`)：铜锡配比与铸造是应用：铁制工具工坊不可替代的知识基础。
 - 应用：青铜工具工坊 (`tech.application.bronze_tool_workshop`)：铜锡配比与铸造是应用：青铜工具工坊不可替代的知识基础。
 - 应用：锡矿 (`tech.application.tin_ore_collector`)：铜锡配比与铸造是应用：锡矿不可替代的知识基础。
 
@@ -10384,7 +10386,7 @@ terrain.floodplain.agriculture产出 +12%；作为必要支撑：畦埂水稻田
 
 #### 效果摘要
 
-稻米产出 +22%；作为必要支撑：庄园水田、佃作稻庄、精耕稻庄、分成水田、佃作水田
+稻米产出 +22%；水田生产·洪灾损失 -10%；沼泽农业产出 +14%；作为必要支撑：庄园水田、佃作稻庄、精耕稻庄、分成水田、佃作水田
 
 #### 机会成本
 
@@ -10404,8 +10406,14 @@ terrain.floodplain.agriculture产出 +12%；作为必要支撑：畦埂水稻田
 #### 永久 Modifier 条款
 
 - 稻米：`country.output.good.rice_grain_factor`：+22%
+- 水田生产·洪灾损失：`country.climate.profile.paddy_crop.flood_loss_factor`：+10%
+- 沼泽农业：`country.output.terrain.swamp.agriculture_factor`：+14%
   - 效果机制：水位控制改善稻作产量。
   - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：稻田水位控制降低水田生产建筑的洪灾损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：稻田水位控制提高沼泽的农业生产适应。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -10415,9 +10423,9 @@ terrain.floodplain.agriculture产出 +12%；作为必要支撑：畦埂水稻田
 - 应用：佃作稻庄 (`tech.application.method_rice_collector_r3`)：稻田水位控制是应用：佃作稻庄不可替代的知识基础。
 - 应用：庄园水田 (`tech.application.estate_paddy`)：稻田水位控制是应用：庄园水田不可替代的知识基础。
 - 应用：精耕稻庄 (`tech.application.method_rice_collector_r5`)：稻田水位控制是应用：精耕稻庄不可替代的知识基础。
-- 应用：机械化稻作农场 (`tech.application.method_rice_collector_r6`)：tech.rice\_water\_control是机械化稻作农场不可替代的知识基础。
-- 应用：精准稻作农场 (`tech.application.method_rice_collector_r8`)：tech.rice\_water\_control是精准稻作农场不可替代的知识基础。
-- 应用：自动化稻作农场 (`tech.application.method_rice_collector_r10`)：tech.rice\_water\_control是自动化稻作农场不可替代的知识基础。
+- 应用：机械化稻作农场 (`tech.application.method_rice_collector_r6`)：稻田水位控制是应用：机械化稻作农场不可替代的知识基础。
+- 应用：精准稻作农场 (`tech.application.method_rice_collector_r8`)：稻田水位控制是应用：精准稻作农场不可替代的知识基础。
+- 应用：自动化稻作农场 (`tech.application.method_rice_collector_r10`)：稻田水位控制是应用：自动化稻作农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -10600,8 +10608,6 @@ terrain.floodplain.agriculture产出 +12%；作为必要支撑：畦埂水稻田
 
 - 野生割胶 (`tech.wild_latex_tapping`)：野生割胶是应用：野生割胶营地不可替代的知识基础。
 - 橡胶树辨识 (`tech.rubber_identification`)：橡胶树辨识是应用：野生割胶营地不可替代的知识基础。
-- 复合工具 (`tech.composite_tools`)：复合工具是应用：野生割胶营地不可替代的知识基础。
-- 野生韧皮采集 (`tech.wild_flax_collection`)：野生韧皮采集是应用：野生割胶营地不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -10671,7 +10677,7 @@ terrain.floodplain.agriculture产出 +12%；作为必要支撑：畦埂水稻田
 #### 硬前置（决定研发资格）
 
 - 卤水采集 (`tech.brine_collection`)：卤水采集是应用：卤水采集池不可替代的知识基础。
-- 枯枝采集 (`tech.deadwood_collection`)：枯枝采集是应用：卤水采集池不可替代的知识基础。
+- 火种控制 (`tech.fire_control`)：火种控制是应用：卤水采集池不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -11091,7 +11097,7 @@ terrain.floodplain.agriculture产出 +12%；作为必要支撑：畦埂水稻田
 
 #### 效果摘要
 
-解锁物资：韧皮原料；解锁建筑：亚麻农场；作为必要支撑：家庭纺织坊、亚麻庄园、改良亚麻庄园
+解锁物资：亚麻秆/韧皮原料；解锁建筑：亚麻农场；作为必要支撑：家庭纺织坊、亚麻庄园、改良亚麻庄园
 
 #### 机会成本
 
@@ -11106,7 +11112,7 @@ terrain.floodplain.agriculture产出 +12%；作为必要支撑：畦埂水稻田
 
 #### 结构化内容效果
 
-- **韧皮原料**（`good`）：`good.bast_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
+- **亚麻秆/韧皮原料**（`good`）：`good.bast_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
 - **亚麻农场**（`building`）：`building.flax_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -11115,9 +11121,8 @@ terrain.floodplain.agriculture产出 +12%；作为必要支撑：畦埂水稻田
 
 #### 被以下科技作为硬前置
 
-- 应用：沤麻池 (`tech.application.flax_retting_pit`)：tech.application.flax\_collector是沤麻池不可替代的知识基础。
-- 应用：行会织造坊 (`tech.application.guild_weaving_house`)：tech.application.flax\_collector是行会织造坊不可替代的知识基础。
-- 应用：碎布造纸工坊 (`tech.application.rag_paper_workshop`)：tech.application.flax\_collector是碎布造纸工坊不可替代的知识基础。
+- 应用：沤麻池 (`tech.application.flax_retting_pit`)：应用：亚麻农场是应用：沤麻池不可替代的知识基础。
+- 应用：碎布造纸工坊 (`tech.application.rag_paper_workshop`)：应用：亚麻农场是应用：碎布造纸工坊不可替代的知识基础。
 - 应用：蒸汽纺织厂 (`tech.application.textile_mill`)：应用：亚麻农场是应用：蒸汽纺织厂不可替代的知识基础。
 - 应用：电力纺织厂 (`tech.application.cloth_plant`)：应用：亚麻农场是应用：电力纺织厂不可替代的知识基础。
 - 应用：合成纤维织造厂 (`tech.application.synthetic_textile_mill`)：应用：亚麻农场是应用：合成纤维织造厂不可替代的知识基础。
@@ -11155,9 +11160,7 @@ terrain.floodplain.agriculture产出 +12%；作为必要支撑：畦埂水稻田
 #### 硬前置（决定研发资格）
 
 - 棉花园圃 (`tech.cotton_gardening`)：棉花园圃是应用：家庭棉花园圃不可替代的知识基础。
-- 棉花去籽 (`tech.cotton_ginning`)：棉花去籽是应用：家庭棉花园圃不可替代的知识基础。
 - 种子与繁育观察 (`tech.crop_domestication`)：种子与繁育观察是应用：家庭棉花园圃不可替代的知识基础。
-- 枯枝采集 (`tech.deadwood_collection`)：枯枝采集是应用：家庭棉花园圃不可替代的知识基础。
 - 雨养田体系 (`tech.rainfed_field_system`)：雨养田体系是应用：家庭棉花园圃不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
@@ -11190,8 +11193,7 @@ terrain.floodplain.agriculture产出 +12%；作为必要支撑：畦埂水稻田
 
 #### 被以下科技作为硬前置
 
-- 应用：手工轧棉棚 (`tech.application.cotton_ginning_shelter`)：应用：家庭棉花园圃是应用：手工轧棉棚不可替代的知识基础。
-- 应用：佃作棉花田 (`tech.application.cotton_smallholding`)：tech.application.cotton\_garden是佃作棉花田不可替代的知识基础。
+- 应用：佃作棉花田 (`tech.application.cotton_smallholding`)：应用：家庭棉花园圃是应用：佃作棉花田不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -11261,7 +11263,7 @@ terrain.floodplain.agriculture产出 +12%；作为必要支撑：畦埂水稻田
 
 #### 被以下科技作为硬前置
 
-- 应用：商品香料园 (`tech.application.spice_managed_garden`)：tech.application.spice\_shade\_garden是商品香料园不可替代的知识基础。
+- 应用：商品香料园 (`tech.application.spice_managed_garden`)：应用：林下遮阴香料园是应用：商品香料园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -11405,17 +11407,11 @@ terrain.floodplain.agriculture产出 +12%；作为必要支撑：畦埂水稻田
 - 应用：佃作雨养小麦田 (`tech.application.tenant_rainfed_wheat_field`)：应用：日晒土坯场是应用：佃作雨养小麦田不可替代的知识基础。
 - 应用：分成水田 (`tech.application.sharecrop_paddy`)：应用：日晒土坯场是应用：分成水田不可替代的知识基础。
 - 应用：佃作水田 (`tech.application.tenant_paddy`)：应用：日晒土坯场是应用：佃作水田不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：日晒土坯场是应用：烧砖窑不可替代的知识基础。
+- 应用：佃作马铃薯田 (`tech.application.tenant_potato_field`)：应用：日晒土坯场是应用：佃作马铃薯田不可替代的知识基础。
+- 应用：商品香料园 (`tech.application.spice_managed_garden`)：应用：日晒土坯场是应用：商品香料园不可替代的知识基础。
+- 应用：药材商品园 (`tech.application.medicinal_herb_estate`)：应用：日晒土坯场是应用：药材商品园不可替代的知识基础。
 - 应用：旱作保水小麦田 (`tech.application.dryland_wheat_field`)：应用：日晒土坯场是应用：旱作保水小麦田不可替代的知识基础。
 - 应用：畦埂水稻田 (`tech.application.bunded_rice_field`)：应用：日晒土坯场是应用：畦埂水稻田不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：日晒土坯场是应用：石作工场不可替代的知识基础。
-- 应用：植物纤维抄纸坊 (`tech.application.plant_fiber_paper_workshop`)：应用：日晒土坯场是应用：植物纤维抄纸坊不可替代的知识基础。
-- 应用：树皮纸工坊 (`tech.application.bark_paper_workshop`)：应用：日晒土坯场是应用：树皮纸工坊不可替代的知识基础。
-- 应用：皮纸工坊 (`tech.application.parchment_workshop`)：应用：日晒土坯场是应用：皮纸工坊不可替代的知识基础。
-- 应用：佃作马铃薯田 (`tech.application.tenant_potato_field`)：tech.application.adobe\_yard是佃作马铃薯田不可替代的知识基础。
-- 应用：佃作棉花田 (`tech.application.cotton_smallholding`)：tech.application.adobe\_yard是佃作棉花田不可替代的知识基础。
-- 应用：商品香料园 (`tech.application.spice_managed_garden`)：tech.application.adobe\_yard是商品香料园不可替代的知识基础。
-- 应用：药材商品园 (`tech.application.medicinal_herb_estate`)：tech.application.adobe\_yard是药材商品园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -11588,7 +11584,6 @@ terrain.floodplain.agriculture产出 +12%；作为必要支撑：畦埂水稻田
 
 #### 硬前置（决定研发资格）
 
-- 铜锡配比与铸造 (`tech.bronze_casting`)：铜锡配比与铸造是应用：土法炼锡炉不可替代的知识基础。
 - 窑烧控制 (`tech.kiln_firing`)：窑烧控制是应用：土法炼锡炉不可替代的知识基础。
 - 锡矿辨识 (`tech.tin_identification`)：锡矿辨识是应用：土法炼锡炉不可替代的知识基础。
 - 应用：浅层锡矿 (`tech.application.early_tin_mine`)：应用：浅层锡矿是应用：土法炼锡炉不可替代的知识基础。
@@ -11662,7 +11657,7 @@ terrain.floodplain.agriculture产出 +12%；作为必要支撑：畦埂水稻田
 - 铜退火 (`tech.copper_annealing`)：铜退火是应用：露天青铜作坊不可替代的知识基础。
 - 铜锡配比与铸造 (`tech.bronze_casting`)：铜锡配比与铸造是应用：露天青铜作坊不可替代的知识基础。
 - 应用：土法炼锡炉 (`tech.application.early_tin_smelter`)：应用：土法炼锡炉是应用：露天青铜作坊不可替代的知识基础。
-- 应用：覆土木炭窑 (`tech.application.charcoal_pit`)：应用：覆土木炭窑是应用：露天青铜作坊不可替代的知识基础。
+- 木炭烧制 (`tech.charcoal_burning`)：木炭烧制是应用：露天青铜作坊不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -11694,19 +11689,7 @@ terrain.floodplain.agriculture产出 +12%；作为必要支撑：畦埂水稻田
 
 #### 被以下科技作为硬前置
 
-- 应用：地表铁矿采集场 (`tech.application.iron_ore_collector`)：应用：露天青铜作坊是应用：地表铁矿采集场不可替代的知识基础。
-- 应用：改良燧石矿坑 (`tech.application.method_flint_quarry_r1`)：应用：露天青铜作坊是应用：改良燧石矿坑不可替代的知识基础。
-- 应用：组织化伐木场 (`tech.application.method_timber_collector_r2`)：应用：露天青铜作坊是应用：组织化伐木场不可替代的知识基础。
-- 应用：帆船渔场 (`tech.application.method_marine_fish_collector_r2`)：应用：露天青铜作坊是应用：帆船渔场不可替代的知识基础。
-- 应用：黏土坑 (`tech.application.clay_collector`)：应用：露天青铜作坊是应用：黏土坑不可替代的知识基础。
-- 应用：定居采集营地 (`tech.application.method_gathering_ground_r1`)：应用：露天青铜作坊是应用：定居采集营地不可替代的知识基础。
-- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：露天青铜作坊是应用：改良锯木场不可替代的知识基础。
-- 应用：制革工坊 (`tech.application.tannery`)：应用：露天青铜作坊是应用：制革工坊不可替代的知识基础。
-- 应用：羊毛棚 (`tech.application.wool_shed`)：应用：露天青铜作坊是应用：羊毛棚不可替代的知识基础。
-- 应用：金银器工坊 (`tech.application.goldsmith_workshop`)：应用：露天青铜作坊是应用：金银器工坊不可替代的知识基础。
-- 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：露天青铜作坊是应用：玻璃窑不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：露天青铜作坊是应用：石作工场不可替代的知识基础。
-- 应用：石料场 (`tech.application.method_stone_collector_r2`)：应用：露天青铜作坊是应用：石料场不可替代的知识基础。
+无
 
 #### 主题路线后继
 
@@ -11740,10 +11723,10 @@ terrain.floodplain.agriculture产出 +12%；作为必要支撑：畦埂水稻田
 
 #### 硬前置（决定研发资格）
 
-- 垄作块茎 (`tech.ridge_tuber_cultivation`)：tech.ridge\_tuber\_cultivation是马铃薯农场不可替代的知识基础。
-- 块茎繁育 (`tech.potato_propagation`)：tech.potato\_propagation是马铃薯农场不可替代的知识基础。
-- 雨养田体系 (`tech.rainfed_field_system`)：tech.rainfed\_field\_system是马铃薯农场不可替代的知识基础。
-- 家庭土地占有 (`tech.household_landholding`)：tech.household\_landholding是马铃薯农场不可替代的知识基础。
+- 垄作块茎 (`tech.ridge_tuber_cultivation`)：垄作块茎是应用：马铃薯农场不可替代的知识基础。
+- 块茎繁育 (`tech.potato_propagation`)：块茎繁育是应用：马铃薯农场不可替代的知识基础。
+- 雨养田体系 (`tech.rainfed_field_system`)：雨养田体系是应用：马铃薯农场不可替代的知识基础。
+- 家庭土地占有 (`tech.household_landholding`)：家庭土地占有是应用：马铃薯农场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -11775,7 +11758,7 @@ terrain.floodplain.agriculture产出 +12%；作为必要支撑：畦埂水稻田
 
 #### 被以下科技作为硬前置
 
-- 应用：佃作马铃薯田 (`tech.application.tenant_potato_field`)：tech.application.potato\_collector是佃作马铃薯田不可替代的知识基础。
+- 应用：佃作马铃薯田 (`tech.application.tenant_potato_field`)：应用：马铃薯农场是应用：佃作马铃薯田不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -11809,11 +11792,11 @@ terrain.floodplain.agriculture产出 +12%；作为必要支撑：畦埂水稻田
 
 #### 硬前置（决定研发资格）
 
-- 种子与繁育观察 (`tech.crop_domestication`)：tech.crop\_domestication是药草园不可替代的知识基础。
-- 家庭生产 (`tech.household_production`)：tech.household\_production是药草园不可替代的知识基础。
-- 香料栽培 (`tech.spice_cultivation`)：tech.spice\_cultivation是药草园不可替代的知识基础。
-- 遮阴香料园 (`tech.spice_shade_gardening`)：tech.spice\_shade\_gardening是药草园不可替代的知识基础。
-- 野生韧皮采集 (`tech.wild_flax_collection`)：tech.wild\_flax\_collection是药草园不可替代的知识基础。
+- 种子与繁育观察 (`tech.crop_domestication`)：种子与繁育观察是应用：药草园不可替代的知识基础。
+- 家庭生产 (`tech.household_production`)：家庭生产是应用：药草园不可替代的知识基础。
+- 香料栽培 (`tech.spice_cultivation`)：香料栽培是应用：药草园不可替代的知识基础。
+- 遮阴香料园 (`tech.spice_shade_gardening`)：遮阴香料园是应用：药草园不可替代的知识基础。
+- 野生韧皮采集 (`tech.wild_flax_collection`)：野生韧皮采集是应用：药草园不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -11836,8 +11819,8 @@ terrain.floodplain.agriculture产出 +12%；作为必要支撑：畦埂水稻田
 
 #### 结构化内容效果
 
-- **药材**（`good`）：`good.medicinal_herbs` → `production_access` `unlock` `1.0`；`catalog_rebind`
-- **药草园**（`building`）：`building.medicinal_herb_garden` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+- **药材**（`good`）：`good.medicinal_herbs` → `production_access` `unlock` `1.0`；`existing_binding`
+- **药草园**（`building`）：`building.medicinal_herb_garden` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -11845,7 +11828,143 @@ terrain.floodplain.agriculture产出 +12%；作为必要支撑：畦埂水稻田
 
 #### 被以下科技作为硬前置
 
-- 应用：药材商品园 (`tech.application.medicinal_herb_estate`)：tech.application.medicinal\_herb\_garden是药材商品园不可替代的知识基础。
+- 应用：药材商品园 (`tech.application.medicinal_herb_estate`)：应用：药草园是应用：药材商品园不可替代的知识基础。
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 应用：手工轧棉棚 (`tech.application.cotton_ginning_shelter`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.cotton_ginning_shelter` |
+| 时代 | 农耕时代 (`agrarian`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 9360 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.textile\_fibers |
+| 主要路线 | 工艺 · 纺织 (\`route.craft.textiles\`) |
+| 全部路线 | 工艺 · 纺织 (\`route.craft.textiles\`)；作物 · 热带作物 (\`route.crop.tropical\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | craft |
+
+#### 硬前置（决定研发资格）
+
+- 棉花去籽 (`tech.cotton_ginning`)：棉花去籽是应用：手工轧棉棚不可替代的知识基础。
+- 野生棉铃采集 (`tech.wild_cotton_collection`)：野生棉铃采集是应用：手工轧棉棚不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：棉纤维；解锁建筑：手工轧棉棚；作为必要支撑：家庭棉花园圃
+
+#### 机会成本
+
+多条知识路线汇合为一个可见应用节点，避免建筑条件隐式叠加。
+
+#### 内容解锁
+
+- **物资：** 棉纤维 (`cotton_fiber`)
+- **建筑 / 生产方式：** 手工轧棉棚 (`cotton_ginning_shelter`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **棉纤维**（`good`）：`good.cotton_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
+- **手工轧棉棚**（`building`）：`building.cotton_ginning_shelter` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 应用：乳胶烟熏凝固棚 (`tech.application.latex_smoking_shelter`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.latex_smoking_shelter` |
+| 时代 | 农耕时代 (`agrarian`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 9360 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.tropical\_commodities |
+| 主要路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
+| 全部路线 | 作物 · 热带作物 (\`route.crop.tropical\`)；材料 · 合成材料 (\`route.material.materials\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | craft |
+
+#### 硬前置（决定研发资格）
+
+- 乳胶烟熏凝固 (`tech.latex_smoke_coagulation`)：乳胶烟熏凝固是应用：乳胶烟熏凝固棚不可替代的知识基础。
+- 野生割胶 (`tech.wild_latex_tapping`)：野生割胶是应用：乳胶烟熏凝固棚不可替代的知识基础。
+- 火种控制 (`tech.fire_control`)：火种控制是应用：乳胶烟熏凝固棚不可替代的知识基础。
+- 应用：野生割胶营地 (`tech.application.rubber_tapping_camp`)：应用：野生割胶营地是应用：乳胶烟熏凝固棚不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：凝固天然橡胶；解锁建筑：乳胶烟熏凝固棚；作为必要支撑：橡胶种植园
+
+#### 机会成本
+
+多条知识路线汇合为一个可见应用节点，避免建筑条件隐式叠加。
+
+#### 内容解锁
+
+- **物资：** 凝固天然橡胶 (`natural_rubber`)
+- **建筑 / 生产方式：** 乳胶烟熏凝固棚 (`latex_smoking_shelter`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **凝固天然橡胶**（`good`）：`good.natural_rubber` → `production_access` `unlock` `1.0`；`existing_binding`
+- **乳胶烟熏凝固棚**（`building`）：`building.latex_smoking_shelter` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
 
 #### 主题路线后继
 
@@ -11862,7 +11981,7 @@ terrain.floodplain.agriculture产出 +12%；作为必要支撑：畦埂水稻田
 <a id="era-3"></a>
 ## 王国时代
 
-共 63 项科技，研究成本范围 3000-30000；时代里程碑：王国体系 (`tech.kingdom_administration`)。
+共 64 项科技，研究成本范围 3000-30000；时代里程碑：王国体系 (`tech.kingdom_administration`)。
 
 ### 应用：传知者议事圈 (`tech.application.lorekeeper_circle`)
 
@@ -12689,6 +12808,7 @@ terrain.floodplain.agriculture产出 +12%；作为必要支撑：畦埂水稻田
 
 #### 被以下科技作为硬前置
 
+- 货币 (`tech.currency`)：度量衡是货币不可替代的知识基础。
 - 应用：木槽溜洗场 (`tech.application.primitive_gold_sluice`)：度量衡是应用：木槽溜洗场不可替代的知识基础。
 - 应用：地籍管理局 (`tech.application.cadastral_office`)：度量衡是应用：地籍管理局不可替代的知识基础。
 
@@ -12724,7 +12844,8 @@ terrain.floodplain.agriculture产出 +12%；作为必要支撑：畦埂水稻田
 
 #### 硬前置（决定研发资格）
 
-- 铜锡配比与铸造 (`tech.bronze_casting`)：铜锡配比与铸造是货币不可替代的知识基础。
+- 早期贸易 (`tech.early_trade`)：早期贸易是货币不可替代的知识基础。
+- 度量衡 (`tech.weights_and_measures`)：度量衡是货币不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -12758,7 +12879,6 @@ terrain.floodplain.agriculture产出 +12%；作为必要支撑：畦埂水稻田
 #### 被以下科技作为硬前置
 
 - 坩埚钢 (`tech.crucible_steel`)：货币是坩埚钢不可替代的知识基础。
-- 应用：金银器工坊 (`tech.application.goldsmith_workshop`)：货币是应用：金银器工坊不可替代的知识基础。
 - 应用：珠宝厂 (`tech.application.jewelry_plant`)：货币是应用：珠宝厂不可替代的知识基础。
 
 #### 主题路线后继
@@ -12873,7 +12993,7 @@ terrain.floodplain.agriculture产出 +12%；作为必要支撑：畦埂水稻田
 
 #### 效果摘要
 
-营造方法产出 +12%
+营造方法产出 +12%；洪灾损失 -8%；低地农业产出 +14%
 
 #### 机会成本
 
@@ -12893,7 +13013,13 @@ terrain.floodplain.agriculture产出 +12%；作为必要支撑：畦埂水稻田
 #### 永久 Modifier 条款
 
 - 营造方法：`country.output.family.construction_methods_factor`：+12%
+- 洪灾损失：`country.climate.flood_loss_factor`：+8%
+- 低地农业：`country.output.landform.lowland.agriculture_factor`：+14%
   - 效果机制：渠道、闸门与堤岸工程提高水工营造产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：运河工程降低全国气候型生产建筑的洪灾损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：运河工程提高低地的农业生产适应。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
@@ -13010,7 +13136,7 @@ terrain.floodplain.agriculture产出 +12%；作为必要支撑：畦埂水稻田
 
 #### 效果摘要
 
-谷物产出 +18%；作为必要支撑：工业榨油厂
+谷物产出 +18%；平原农业产出 +14%；作为必要支撑：工业榨油厂
 
 #### 机会成本
 
@@ -13030,8 +13156,11 @@ terrain.floodplain.agriculture产出 +12%；作为必要支撑：畦埂水稻田
 #### 永久 Modifier 条款
 
 - 谷物：`country.output.good.grain_factor`：+18%
+- 平原农业：`country.output.terrain.plain.agriculture_factor`：+14%
   - 效果机制：轮作维持谷物地力。
   - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：轮作提高平原的农业生产适应。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -13738,13 +13867,13 @@ pharmaceuticals产出 +12%
 - 应用：佃作雨养玉米田 (`tech.application.tenant_rainfed_maize_field`)：习惯佃作是应用：佃作雨养玉米田不可替代的知识基础。
 - 应用：佃作雨养小麦田 (`tech.application.tenant_rainfed_wheat_field`)：习惯佃作是应用：佃作雨养小麦田不可替代的知识基础。
 - 应用：佃作水田 (`tech.application.tenant_paddy`)：习惯佃作是应用：佃作水田不可替代的知识基础。
+- 应用：佃作马铃薯田 (`tech.application.tenant_potato_field`)：习惯佃作是应用：佃作马铃薯田不可替代的知识基础。
+- 应用：佃作棉花田 (`tech.application.cotton_smallholding`)：习惯佃作是应用：佃作棉花田不可替代的知识基础。
+- 应用：商品香料园 (`tech.application.spice_managed_garden`)：习惯佃作是应用：商品香料园不可替代的知识基础。
+- 应用：药材商品园 (`tech.application.medicinal_herb_estate`)：习惯佃作是应用：药材商品园不可替代的知识基础。
 - 庄园谷物经营 (`tech.manorial_cereal_farming`)：习惯佃作是庄园谷物经营不可替代的知识基础。
 - 应用：佃作稻庄 (`tech.application.method_rice_collector_r3`)：习惯佃作是应用：佃作稻庄不可替代的知识基础。
-- 应用：佃作马铃薯田 (`tech.application.tenant_potato_field`)：tech.customary\_tenancy是佃作马铃薯田不可替代的知识基础。
-- 应用：马铃薯庄园 (`tech.application.potato_estate`)：tech.customary\_tenancy是马铃薯庄园不可替代的知识基础。
-- 应用：佃作棉花田 (`tech.application.cotton_smallholding`)：tech.customary\_tenancy是佃作棉花田不可替代的知识基础。
-- 应用：商品香料园 (`tech.application.spice_managed_garden`)：tech.customary\_tenancy是商品香料园不可替代的知识基础。
-- 应用：药材商品园 (`tech.application.medicinal_herb_estate`)：tech.customary\_tenancy是药材商品园不可替代的知识基础。
+- 应用：马铃薯庄园 (`tech.application.potato_estate`)：习惯佃作是应用：马铃薯庄园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -13883,6 +14012,7 @@ pharmaceuticals产出 +12%
 - 契约劳工制度 (`tech.indentured_contracts`)：庄园核算是契约劳工制度不可替代的知识基础。
 - 长期租约 (`tech.long_term_leases`)：庄园核算是长期租约不可替代的知识基础。
 - 系统育种 (`tech.crop_breeding`)：庄园核算是系统育种不可替代的知识基础。
+- 应用：马铃薯庄园 (`tech.application.potato_estate`)：庄园核算是应用：马铃薯庄园不可替代的知识基础。
 - 应用：玉米庄园 (`tech.application.landed_estate`)：庄园核算是应用：玉米庄园不可替代的知识基础。
 - 应用：佃作小麦庄园 (`tech.application.method_wheat_farm_r3`)：庄园核算是应用：佃作小麦庄园不可替代的知识基础。
 - 应用：庄园水田 (`tech.application.estate_paddy`)：庄园核算是应用：庄园水田不可替代的知识基础。
@@ -13890,9 +14020,8 @@ pharmaceuticals产出 +12%
 - 应用：亚麻庄园 (`tech.application.method_flax_collector_r3`)：庄园核算是应用：亚麻庄园不可替代的知识基础。
 - 应用：改良轮作小麦庄园 (`tech.application.method_wheat_farm_r5`)：庄园核算是应用：改良轮作小麦庄园不可替代的知识基础。
 - 应用：改良亚麻庄园 (`tech.application.method_flax_collector_r5`)：庄园核算是应用：改良亚麻庄园不可替代的知识基础。
+- 应用：改良轮作马铃薯庄园 (`tech.application.method_potato_farm_r5`)：庄园核算是应用：改良轮作马铃薯庄园不可替代的知识基础。
 - 应用：地籍管理局 (`tech.application.cadastral_office`)：庄园核算是应用：地籍管理局不可替代的知识基础。
-- 应用：马铃薯庄园 (`tech.application.potato_estate`)：tech.estate\_accounting是马铃薯庄园不可替代的知识基础。
-- 应用：改良轮作马铃薯庄园 (`tech.application.method_potato_farm_r5`)：tech.estate\_accounting是改良轮作马铃薯庄园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -13961,7 +14090,7 @@ pharmaceuticals产出 +12%
 
 - 应用：佃作雨养玉米田 (`tech.application.tenant_rainfed_maize_field`)：佃作谷物是应用：佃作雨养玉米田不可替代的知识基础。
 - 应用：佃作雨养小麦田 (`tech.application.tenant_rainfed_wheat_field`)：佃作谷物是应用：佃作雨养小麦田不可替代的知识基础。
-- 应用：佃作马铃薯田 (`tech.application.tenant_potato_field`)：tech.tenant\_cereal\_farming是佃作马铃薯田不可替代的知识基础。
+- 应用：佃作马铃薯田 (`tech.application.tenant_potato_field`)：佃作谷物是应用：佃作马铃薯田不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -14064,11 +14193,11 @@ pharmaceuticals产出 +12%
 
 #### 硬前置（决定研发资格）
 
-- 铜锡配比与铸造 (`tech.bronze_casting`)：铜锡配比与铸造是铁矿辨识不可替代的知识基础。
+无
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「知识就业 10」（development.employment.knowledge.10\_90d）
+- 已发现信号「铁矿」（resource.iron\_ore）
 
 #### 效果摘要
 
@@ -14132,7 +14261,6 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 铁矿辨识 (`tech.iron_ore_identification`)：铁矿辨识是地表铁矿采集不可替代的知识基础。
-- 铜锡配比与铸造 (`tech.bronze_casting`)：铜锡配比与铸造是地表铁矿采集不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -14203,7 +14331,6 @@ iron\_extraction产出 +12%；作为必要支撑：块炼炉、浅层铁矿、�
 #### 硬前置（决定研发资格）
 
 - 地表铁矿采集 (`tech.surface_iron_collection`)：地表铁矿采集是块炼铁不可替代的知识基础。
-- 铜锡配比与铸造 (`tech.bronze_casting`)：铜锡配比与铸造是块炼铁不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -14238,10 +14365,10 @@ iron\_extraction产出 +12%；作为必要支撑：浅层铁矿
 
 - 应用：块炼炉 (`tech.application.bloomery`)：块炼铁是应用：块炼炉不可替代的知识基础。
 - 应用：铁制工具工坊 (`tech.application.iron_tool_workshop`)：块炼铁是应用：铁制工具工坊不可替代的知识基础。
+- Metal Housewares Workshop (`tech.application.metal_housewares_workshop_kingdom`)：块炼铁是Metal Housewares Workshop不可替代的知识基础。
 - 高炉冶炼 (`tech.blast_furnace`)：块炼铁是高炉冶炼不可替代的知识基础。
 - 坩埚钢 (`tech.crucible_steel`)：块炼铁是坩埚钢不可替代的知识基础。
 - 应用：浅层铁矿 (`tech.application.early_iron_mine`)：块炼铁是应用：浅层铁矿不可替代的知识基础。
-- Metal Housewares Workshop (`tech.application.metal_housewares_workshop_kingdom`)：knowledge prerequisite: tech.bronze\_casting -\> Metal Housewares Workshop
 
 #### 主题路线后继
 
@@ -14279,7 +14406,7 @@ iron\_extraction产出 +12%；作为必要支撑：浅层铁矿
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「综合满意度 50%」（development.satisfaction.50\_180d）
+- 已发现信号「煤炭」（resource.coal）
 
 #### 效果摘要
 
@@ -14640,9 +14767,9 @@ iron\_extraction产出 +12%；作为必要支撑：浅层铁矿
 
 #### 硬前置（决定研发资格）
 
-- 沤麻 (`tech.flax_retting`)：tech.flax\_retting是沤麻池不可替代的知识基础。
-- 野生韧皮采集 (`tech.wild_flax_collection`)：tech.wild\_flax\_collection是沤麻池不可替代的知识基础。
-- 应用：亚麻农场 (`tech.application.flax_collector`)：tech.application.flax\_collector是沤麻池不可替代的知识基础。
+- 沤麻 (`tech.flax_retting`)：沤麻是应用：沤麻池不可替代的知识基础。
+- 野生韧皮采集 (`tech.wild_flax_collection`)：野生韧皮采集是应用：沤麻池不可替代的知识基础。
+- 应用：亚麻农场 (`tech.application.flax_collector`)：应用：亚麻农场是应用：沤麻池不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -14674,77 +14801,7 @@ iron\_extraction产出 +12%；作为必要支撑：浅层铁矿
 
 #### 被以下科技作为硬前置
 
-- 应用：行会织造坊 (`tech.application.guild_weaving_house`)：tech.application.flax\_retting\_pit是行会织造坊不可替代的知识基础。
-- 应用：碎布造纸工坊 (`tech.application.rag_paper_workshop`)：tech.application.flax\_retting\_pit是碎布造纸工坊不可替代的知识基础。
-
-#### 主题路线后继
-
-无
-
-#### 跨领域应用
-
-无
-
-#### 作为候选参与的里程碑
-
-无
-
-### 应用：手工轧棉棚 (`tech.application.cotton_ginning_shelter`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.application.cotton_ginning_shelter` |
-| 时代 | 王国时代 (`kingdom`) |
-| 领域 | 工程 (`engineering`) |
-| 研究成本 | 9360 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | branch |
-| 锚点类型 | application |
-| 节点角色 | applied\_method |
-| 布局路线 | branch.textile\_fibers |
-| 主要路线 | 工艺 · 纺织 (\`route.craft.textiles\`) |
-| 全部路线 | 工艺 · 纺织 (\`route.craft.textiles\`)；作物 · 热带作物 (\`route.crop.tropical\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | craft |
-
-#### 硬前置（决定研发资格）
-
-- 棉花去籽 (`tech.cotton_ginning`)：棉花去籽是应用：手工轧棉棚不可替代的知识基础。
-- 野生棉铃采集 (`tech.wild_cotton_collection`)：野生棉铃采集是应用：手工轧棉棚不可替代的知识基础。
-- 棉花园圃 (`tech.cotton_gardening`)：棉花园圃是应用：手工轧棉棚不可替代的知识基础。
-- 应用：家庭棉花园圃 (`tech.application.cotton_garden`)：应用：家庭棉花园圃是应用：手工轧棉棚不可替代的知识基础。
-
-#### 发现启发（仅用于揭示）
-
-无
-
-#### 效果摘要
-
-解锁物资：棉纤维；解锁建筑：手工轧棉棚；作为必要支撑：家庭棉花园圃
-
-#### 机会成本
-
-多条知识路线汇合为一个可见应用节点，避免建筑条件隐式叠加。
-
-#### 内容解锁
-
-- **物资：** 棉纤维 (`cotton_fiber`)
-- **建筑 / 生产方式：** 手工轧棉棚 (`cotton_ginning_shelter`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-- **棉纤维**（`good`）：`good.cotton_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
-- **手工轧棉棚**（`building`）：`building.cotton_ginning_shelter` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-无
-
-#### 被以下科技作为硬前置
-
-无
+- 应用：碎布造纸工坊 (`tech.application.rag_paper_workshop`)：应用：沤麻池是应用：碎布造纸工坊不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -14816,7 +14873,6 @@ iron\_extraction产出 +12%；作为必要支撑：浅层铁矿
 - 应用：大气式蒸汽机工坊 (`tech.application.atmospheric_engine_workshop`)：应用：露头煤采集场是应用：大气式蒸汽机工坊不可替代的知识基础。
 - 焦炭冶炼 (`tech.coke_smelting`)：应用：露头煤采集场是焦炭冶炼不可替代的知识基础。
 - 应用：燃煤发电厂 (`tech.application.electricity_plant`)：应用：露头煤采集场是应用：燃煤发电厂不可替代的知识基础。
-- 应用：化肥厂 (`tech.application.fertilizer_plant`)：应用：露头煤采集场是应用：化肥厂不可替代的知识基础。
 - 应用：综合工学院 (`tech.application.polytechnic_institute`)：应用：露头煤采集场是应用：综合工学院不可替代的知识基础。
 - 先进冶金 (`tech.advanced_metallurgy`)：应用：露头煤采集场是先进冶金不可替代的知识基础。
 
@@ -14853,9 +14909,7 @@ iron\_extraction产出 +12%；作为必要支撑：浅层铁矿
 #### 硬前置（决定研发资格）
 
 - 盐渍保存 (`tech.salt_preservation`)：盐渍保存是应用：日晒盐田不可替代的知识基础。
-- 卤水采集 (`tech.brine_collection`)：卤水采集是应用：日晒盐田不可替代的知识基础。
 - 应用：卤水采集池 (`tech.application.brine_gathering_basin`)：应用：卤水采集池是应用：日晒盐田不可替代的知识基础。
-- 应用：原始黏土坑 (`tech.application.primitive_clay_pit`)：应用：原始黏土坑是应用：日晒盐田不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -14863,7 +14917,7 @@ iron\_extraction产出 +12%；作为必要支撑：浅层铁矿
 
 #### 效果摘要
 
-解锁物资：食盐；解锁建筑：日晒盐田
+解锁物资：食盐；解锁建筑：日晒盐田；盐碱地采掘产出 +18%
 
 #### 机会成本
 
@@ -14883,7 +14937,9 @@ iron\_extraction产出 +12%；作为必要支撑：浅层铁矿
 
 #### 永久 Modifier 条款
 
-无
+- 盐碱地采掘：`country.output.landform.salt_flat.extractive_factor`：+18%
+  - 效果机制：应用：日晒盐田提高盐碱地的采掘生产适应。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -15025,76 +15081,6 @@ iron\_extraction产出 +12%；作为必要支撑：浅层铁矿
 
 - **小麦**（`good`）：`good.wheat_grain` → `production_access` `unlock` `1.0`；`existing_binding`
 - **佃作雨养小麦田**（`building`）：`building.tenant_rainfed_wheat_field` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-无
-
-#### 被以下科技作为硬前置
-
-无
-
-#### 主题路线后继
-
-无
-
-#### 跨领域应用
-
-无
-
-#### 作为候选参与的里程碑
-
-无
-
-### 应用：乳胶烟熏凝固棚 (`tech.application.latex_smoking_shelter`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.application.latex_smoking_shelter` |
-| 时代 | 王国时代 (`kingdom`) |
-| 领域 | 工程 (`engineering`) |
-| 研究成本 | 9360 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | branch |
-| 锚点类型 | application |
-| 节点角色 | applied\_method |
-| 布局路线 | branch.tropical\_commodities |
-| 主要路线 | 作物 · 热带作物 (\`route.crop.tropical\`) |
-| 全部路线 | 作物 · 热带作物 (\`route.crop.tropical\`)；材料 · 合成材料 (\`route.material.materials\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | craft |
-
-#### 硬前置（决定研发资格）
-
-- 乳胶烟熏凝固 (`tech.latex_smoke_coagulation`)：乳胶烟熏凝固是应用：乳胶烟熏凝固棚不可替代的知识基础。
-- 野生割胶 (`tech.wild_latex_tapping`)：野生割胶是应用：乳胶烟熏凝固棚不可替代的知识基础。
-- 火种控制 (`tech.fire_control`)：火种控制是应用：乳胶烟熏凝固棚不可替代的知识基础。
-- 野生韧皮采集 (`tech.wild_flax_collection`)：野生韧皮采集是应用：乳胶烟熏凝固棚不可替代的知识基础。
-- 应用：野生割胶营地 (`tech.application.rubber_tapping_camp`)：应用：野生割胶营地是应用：乳胶烟熏凝固棚不可替代的知识基础。
-
-#### 发现启发（仅用于揭示）
-
-无
-
-#### 效果摘要
-
-解锁物资：凝固天然橡胶；解锁建筑：乳胶烟熏凝固棚；作为必要支撑：橡胶种植园
-
-#### 机会成本
-
-多条知识路线汇合为一个可见应用节点，避免建筑条件隐式叠加。
-
-#### 内容解锁
-
-- **物资：** 凝固天然橡胶 (`natural_rubber`)
-- **建筑 / 生产方式：** 乳胶烟熏凝固棚 (`latex_smoking_shelter`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-- **凝固天然橡胶**（`good`）：`good.natural_rubber` → `production_access` `unlock` `1.0`；`existing_binding`
-- **乳胶烟熏凝固棚**（`building`）：`building.latex_smoking_shelter` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -15279,7 +15265,6 @@ iron\_extraction产出 +12%；作为必要支撑：浅层铁矿
 #### 硬前置（决定研发资格）
 
 - 地表铁矿采集 (`tech.surface_iron_collection`)：地表铁矿采集是应用：地表铁矿采集场不可替代的知识基础。
-- 应用：露天青铜作坊 (`tech.application.ore_bronzesmith_camp`)：应用：露天青铜作坊是应用：地表铁矿采集场不可替代的知识基础。
 - 磨制石器 (`tech.ground_stone_tools`)：磨制石器是应用：地表铁矿采集场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
@@ -15350,8 +15335,6 @@ iron\_extraction产出 +12%；作为必要支撑：浅层铁矿
 - 块炼铁 (`tech.iron_smelting`)：块炼铁是应用：块炼炉不可替代的知识基础。
 - 地表铁矿采集 (`tech.surface_iron_collection`)：地表铁矿采集是应用：块炼炉不可替代的知识基础。
 - 应用：地表铁矿采集场 (`tech.application.iron_ore_collector`)：应用：地表铁矿采集场是应用：块炼炉不可替代的知识基础。
-- 应用：覆土木炭窑 (`tech.application.charcoal_pit`)：应用：覆土木炭窑是应用：块炼炉不可替代的知识基础。
-- 应用：原始黏土坑 (`tech.application.primitive_clay_pit`)：应用：原始黏土坑是应用：块炼炉不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -15384,7 +15367,7 @@ iron\_extraction产出 +12%；作为必要支撑：浅层铁矿
 #### 被以下科技作为硬前置
 
 - 应用：铁制工具工坊 (`tech.application.iron_tool_workshop`)：应用：块炼炉是应用：铁制工具工坊不可替代的知识基础。
-- Metal Housewares Workshop (`tech.application.metal_housewares_workshop_kingdom`)：knowledge prerequisite: tech.iron\_smelting -\> Metal Housewares Workshop
+- Metal Housewares Workshop (`tech.application.metal_housewares_workshop_kingdom`)：应用：块炼炉是Metal Housewares Workshop不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -15420,8 +15403,6 @@ iron\_extraction产出 +12%；作为必要支撑：浅层铁矿
 
 - 块炼铁 (`tech.iron_smelting`)：块炼铁是应用：铁制工具工坊不可替代的知识基础。
 - 应用：块炼炉 (`tech.application.bloomery`)：应用：块炼炉是应用：铁制工具工坊不可替代的知识基础。
-- 铜锡配比与铸造 (`tech.bronze_casting`)：铜锡配比与铸造是应用：铁制工具工坊不可替代的知识基础。
-- 应用：覆土木炭窑 (`tech.application.charcoal_pit`)：应用：覆土木炭窑是应用：铁制工具工坊不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -15453,19 +15434,7 @@ iron\_extraction产出 +12%；作为必要支撑：浅层铁矿
 
 #### 被以下科技作为硬前置
 
-- 应用：家庭纺织坊 (`tech.application.cottage_weaving`)：应用：铁制工具工坊提供应用：家庭纺织坊所需的建材“金属工具”。
-- 应用：植物纤维抄纸坊 (`tech.application.plant_fiber_paper_workshop`)：应用：铁制工具工坊是应用：植物纤维抄纸坊不可替代的知识基础。
-- 应用：树皮纸工坊 (`tech.application.bark_paper_workshop`)：应用：铁制工具工坊是应用：树皮纸工坊不可替代的知识基础。
-- 应用：皮纸工坊 (`tech.application.parchment_workshop`)：应用：铁制工具工坊是应用：皮纸工坊不可替代的知识基础。
-- 应用：水力锯木场 (`tech.application.method_lumber_plant_r4`)：应用：铁制工具工坊是应用：水力锯木场不可替代的知识基础。
-- 应用：商业狩猎与毛皮站 (`tech.application.method_stone_age_hunting_camp_r4`)：应用：铁制工具工坊提供应用：商业狩猎与毛皮站所需的必需投入“金属工具”。
-- 应用：精梳羊毛作坊 (`tech.application.method_wool_shed_r5`)：应用：铁制工具工坊提供应用：精梳羊毛作坊所需的必需投入“金属工具”。
-- 应用：蒸馏酒坊 (`tech.application.distillery`)：应用：铁制工具工坊提供应用：蒸馏酒坊所需的必需投入“金属工具”。
-- 应用：规模化采石场 (`tech.application.method_stone_collector_r4`)：应用：铁制工具工坊提供应用：规模化采石场所需的必需投入“金属工具”。
-- 应用：商营伐木场 (`tech.application.method_timber_collector_r4`)：应用：铁制工具工坊提供应用：商营伐木场所需的必需投入“金属工具”。
-- 应用：煤矿 (`tech.application.coal_mine`)：应用：铁制工具工坊提供应用：煤矿所需的必需投入“金属工具”。
-- 应用：大气式蒸汽机工坊 (`tech.application.atmospheric_engine_workshop`)：应用：铁制工具工坊是应用：大气式蒸汽机工坊不可替代的知识基础。
-- 应用：改良家用织机 (`tech.application.improved_domestic_loom`)：应用：铁制工具工坊提供应用：改良家用织机所需的建材“金属工具”。
+无
 
 #### 主题路线后继
 
@@ -15500,7 +15469,6 @@ iron\_extraction产出 +12%；作为必要支撑：浅层铁矿
 #### 硬前置（决定研发资格）
 
 - 铜锡配比与铸造 (`tech.bronze_casting`)：铜锡配比与铸造是应用：青铜工具工坊不可替代的知识基础。
-- 枯枝采集 (`tech.deadwood_collection`)：枯枝采集是应用：青铜工具工坊不可替代的知识基础。
 - 应用：土法炼锡炉 (`tech.application.early_tin_smelter`)：应用：土法炼锡炉是应用：青铜工具工坊不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
@@ -15571,9 +15539,7 @@ iron\_extraction产出 +12%；作为必要支撑：浅层铁矿
 - 日晒土坯 (`tech.adobe_making`)：日晒土坯是应用：烧砖窑不可替代的知识基础。
 - 黏土调制 (`tech.clay_preparation`)：黏土调制是应用：烧砖窑不可替代的知识基础。
 - 木炭烧制 (`tech.charcoal_burning`)：木炭烧制是应用：烧砖窑不可替代的知识基础。
-- 应用：日晒土坯场 (`tech.application.adobe_yard`)：应用：日晒土坯场是应用：烧砖窑不可替代的知识基础。
 - 磨制石器 (`tech.ground_stone_tools`)：磨制石器是应用：烧砖窑不可替代的知识基础。
-- 应用：覆土木炭窑 (`tech.application.charcoal_pit`)：应用：覆土木炭窑是应用：烧砖窑不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -15605,82 +15571,149 @@ iron\_extraction产出 +12%；作为必要支撑：浅层铁矿
 
 #### 被以下科技作为硬前置
 
-- 铜矿开采 (`tech.copper_mining_application`)：应用：烧砖窑是铜矿开采不可替代的知识基础。
-- 应用：盐场 (`tech.application.salt_collector`)：应用：烧砖窑是应用：盐场不可替代的知识基础。
-- 应用：城邦抄写室 (`tech.application.classical_scriptorium`)：应用：烧砖窑是应用：城邦抄写室不可替代的知识基础。
-- 应用：石灰石采石场 (`tech.application.limestone_collector`)：应用：烧砖窑是应用：石灰石采石场不可替代的知识基础。
-- 应用：石灰厂 (`tech.application.lime_plant`)：应用：烧砖窑是应用：石灰厂不可替代的知识基础。
-- 应用：行会织造坊 (`tech.application.guild_weaving_house`)：tech.application.fired\_brick\_kiln是行会织造坊不可替代的知识基础。
-- 应用：硅砂矿坑 (`tech.application.classical_silica_pit`)：应用：烧砖窑是应用：硅砂矿坑不可替代的知识基础。
-- 应用：组织化伐木场 (`tech.application.method_timber_collector_r2`)：应用：烧砖窑是应用：组织化伐木场不可替代的知识基础。
-- 应用：帆船渔场 (`tech.application.method_marine_fish_collector_r2`)：应用：烧砖窑是应用：帆船渔场不可替代的知识基础。
-- 应用：黏土坑 (`tech.application.clay_collector`)：应用：烧砖窑是应用：黏土坑不可替代的知识基础。
-- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：烧砖窑是应用：改良锯木场不可替代的知识基础。
-- 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：烧砖窑是应用：玻璃窑不可替代的知识基础。
-- 应用：石料场 (`tech.application.method_stone_collector_r2`)：应用：烧砖窑是应用：石料场不可替代的知识基础。
-- 应用：公共营造场 (`tech.application.classical_public_works`)：应用：烧砖窑是应用：公共营造场不可替代的知识基础。
-- 应用：水力锯木场 (`tech.application.method_lumber_plant_r4`)：应用：烧砖窑是应用：水力锯木场不可替代的知识基础。
-- 应用：养马场 (`tech.application.horse_breeder`)：应用：烧砖窑是应用：养马场不可替代的知识基础。
-- 应用：鞋匠铺 (`tech.application.cobbler_shop`)：应用：烧砖窑是应用：鞋匠铺不可替代的知识基础。
-- 应用：酿酒坊 (`tech.application.brewery`)：应用：烧砖窑是应用：酿酒坊不可替代的知识基础。
-- 应用：蒸馏酒坊 (`tech.application.distillery`)：应用：烧砖窑是应用：蒸馏酒坊不可替代的知识基础。
-- 应用：榨油坊 (`tech.application.edible_oil_plant`)：应用：烧砖窑是应用：榨油坊不可替代的知识基础。
-- 应用：古典学院 (`tech.application.classical_academy`)：应用：烧砖窑是应用：古典学院不可替代的知识基础。
-- 应用：庄园牧场 (`tech.application.manorial_pasture`)：应用：烧砖窑是应用：庄园牧场不可替代的知识基础。
-- 应用：家具行会工坊 (`tech.application.guild_hall`)：应用：烧砖窑是应用：家具行会工坊不可替代的知识基础。
-- 应用：煤矿 (`tech.application.coal_mine`)：应用：烧砖窑是应用：煤矿不可替代的知识基础。
-- 应用：堆肥场 (`tech.application.composting_yard`)：应用：烧砖窑是应用：堆肥场不可替代的知识基础。
-- 应用：特许大学 (`tech.application.chartered_university`)：应用：烧砖窑是应用：特许大学不可替代的知识基础。
-- 应用：细木家具工坊 (`tech.application.cabinetmaker_workshop`)：应用：烧砖窑是应用：细木家具工坊不可替代的知识基础。
-- 应用：宫廷裁缝坊 (`tech.application.court_tailor`)：应用：烧砖窑是应用：宫廷裁缝坊不可替代的知识基础。
-- 应用：玉米庄园 (`tech.application.landed_estate`)：应用：烧砖窑是应用：玉米庄园不可替代的知识基础。
-- 应用：庄园水田 (`tech.application.estate_paddy`)：应用：烧砖窑是应用：庄园水田不可替代的知识基础。
-- 应用：药材种植园 (`tech.application.medicinal_herbs_collector`)：应用：烧砖窑是应用：药材种植园不可替代的知识基础。
-- 应用：锡矿 (`tech.application.tin_ore_collector`)：应用：烧砖窑是应用：锡矿不可替代的知识基础。
-- 应用：棉花农场 (`tech.application.cotton_collector`)：应用：烧砖窑是应用：棉花农场不可替代的知识基础。
-- 应用：亚麻庄园 (`tech.application.method_flax_collector_r3`)：应用：烧砖窑是应用：亚麻庄园不可替代的知识基础。
-- 应用：改良亚麻庄园 (`tech.application.method_flax_collector_r5`)：应用：烧砖窑是应用：改良亚麻庄园不可替代的知识基础。
-- 应用：印刷学社 (`tech.application.printing_academy`)：应用：烧砖窑是应用：印刷学社不可替代的知识基础。
-- 应用：罐头工坊 (`tech.application.canning_workshop`)：应用：烧砖窑是应用：罐头工坊不可替代的知识基础。
-- 焦炭冶炼 (`tech.coke_smelting`)：应用：烧砖窑是焦炭冶炼不可替代的知识基础。
-- 应用：炸药厂 (`tech.application.explosives_plant`)：应用：烧砖窑是应用：炸药厂不可替代的知识基础。
-- 应用：浅层铁矿 (`tech.application.early_iron_mine`)：应用：烧砖窑是应用：浅层铁矿不可替代的知识基础。
-- 应用：面包厂 (`tech.application.bread_plant`)：应用：烧砖窑是应用：面包厂不可替代的知识基础。
-- 应用：铅矿 (`tech.application.lead_ore_collector`)：应用：烧砖窑是应用：铅矿不可替代的知识基础。
-- 应用：金矿 (`tech.application.gold_mine`)：应用：烧砖窑是应用：金矿不可替代的知识基础。
-- 应用：深井盐矿 (`tech.application.industrial_salt_mine`)：应用：烧砖窑是应用：深井盐矿不可替代的知识基础。
-- 应用：改良小农场 (`tech.application.improved_smallholding`)：应用：烧砖窑是应用：改良小农场不可替代的知识基础。
-- 应用：水泥厂 (`tech.application.cement_plant`)：应用：烧砖窑是应用：水泥厂不可替代的知识基础。
-- 应用：鱼类罐头厂 (`tech.application.canned_fish_plant`)：应用：烧砖窑是应用：鱼类罐头厂不可替代的知识基础。
-- 应用：制衣厂 (`tech.application.clothing_plant`)：应用：烧砖窑是应用：制衣厂不可替代的知识基础。
-- 应用：玻璃厂 (`tech.application.glass_plant`)：应用：烧砖窑是应用：玻璃厂不可替代的知识基础。
-- 应用：化学工场 (`tech.application.industrial_chemicals_plant`)：应用：烧砖窑是应用：化学工场不可替代的知识基础。
-- 应用：制鞋厂 (`tech.application.footwear_plant`)：应用：烧砖窑是应用：制鞋厂不可替代的知识基础。
-- 应用：家具厂 (`tech.application.furniture_plant`)：应用：烧砖窑是应用：家具厂不可替代的知识基础。
-- 应用：机械零件厂 (`tech.application.machine_parts_plant`)：应用：烧砖窑是应用：机械零件厂不可替代的知识基础。
-- 应用：制革厂 (`tech.application.leather_plant`)：应用：烧砖窑是应用：制革厂不可替代的知识基础。
-- 应用：蒸汽锯木厂 (`tech.application.method_lumber_plant_r6`)：应用：烧砖窑是应用：蒸汽锯木厂不可替代的知识基础。
-- 应用：工业机械厂 (`tech.application.industrial_machinery_plant`)：应用：烧砖窑是应用：工业机械厂不可替代的知识基础。
-- 应用：工业屠宰场 (`tech.application.mechanized_slaughterhouse`)：应用：烧砖窑是应用：工业屠宰场不可替代的知识基础。
-- 应用：工业榨油厂 (`tech.application.method_edible_oil_plant_r6`)：应用：烧砖窑是应用：工业榨油厂不可替代的知识基础。
-- 应用：农业机械厂 (`tech.application.agricultural_machinery_plant`)：应用：烧砖窑是应用：农业机械厂不可替代的知识基础。
-- 应用：工业石灰厂 (`tech.application.method_lime_plant_r6`)：应用：烧砖窑是应用：工业石灰厂不可替代的知识基础。
-- 应用：机械化棉花农场 (`tech.application.method_cotton_collector_r6`)：应用：烧砖窑是应用：机械化棉花农场不可替代的知识基础。
-- 应用：机械化农场 (`tech.application.mechanized_farm`)：应用：烧砖窑是应用：机械化农场不可替代的知识基础。
-- 应用：机械化玉米农场 (`tech.application.method_landed_estate_r6`)：应用：烧砖窑是应用：机械化玉米农场不可替代的知识基础。
-- 应用：乳制品厂 (`tech.application.dairy_products_plant`)：应用：烧砖窑是应用：乳制品厂不可替代的知识基础。
-- 应用：博学学会 (`tech.application.learned_society`)：应用：烧砖窑是应用：博学学会不可替代的知识基础。
-- 应用：地籍管理局 (`tech.application.cadastral_office`)：应用：烧砖窑是应用：地籍管理局不可替代的知识基础。
-- 应用：综合工学院 (`tech.application.polytechnic_institute`)：应用：烧砖窑是应用：综合工学院不可替代的知识基础。
-- 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：烧砖窑是应用：混凝土厂不可替代的知识基础。
-- 应用：建筑构件厂 (`tech.application.construction_components_plant`)：应用：烧砖窑是应用：建筑构件厂不可替代的知识基础。
-- 应用：蒸汽钻井场 (`tech.application.early_oil_well`)：应用：烧砖窑是应用：蒸汽钻井场不可替代的知识基础。
-- 先进冶金 (`tech.advanced_metallurgy`)：应用：烧砖窑是先进冶金不可替代的知识基础。
-- 应用：铝土矿 (`tech.application.bauxite_collector`)：应用：烧砖窑是应用：铝土矿不可替代的知识基础。
-- 应用：工业石灰岩矿场 (`tech.application.method_limestone_collector_r6`)：应用：烧砖窑是应用：工业石灰岩矿场不可替代的知识基础。
-- 应用：机械化小麦农场 (`tech.application.method_wheat_farm_r6`)：tech.application.fired\_brick\_kiln是机械化小麦农场不可替代的知识基础。
-- 应用：机械化稻作农场 (`tech.application.method_rice_collector_r6`)：tech.application.fired\_brick\_kiln是机械化稻作农场不可替代的知识基础。
-- 应用：机械化亚麻农场 (`tech.application.method_flax_collector_r6`)：tech.application.fired\_brick\_kiln是机械化亚麻农场不可替代的知识基础。
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 铜矿开采 (`tech.copper_mining_application`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.copper_mining_application` |
+| 时代 | 王国时代 (`kingdom`) |
+| 领域 | 科学 (`science`) |
+| 研究成本 | 3900 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.nonferrous\_metals |
+| 主要路线 | 资源 · 铜 (\`route.resource.copper\`) |
+| 全部路线 | 资源 · 铜 (\`route.resource.copper\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | observation |
+
+#### 硬前置（决定研发资格）
+
+- 自然铜辨识 (`tech.natural_copper_identification`)：自然铜辨识是铜矿开采不可替代的知识基础。
+- 打制石器 (`tech.stone_knapping`)：打制石器是铜矿开采不可替代的知识基础。
+- 磨制石器 (`tech.ground_stone_tools`)：磨制石器是铜矿开采不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+解锁物资：铜矿石；解锁建筑：铜矿；恶地采掘产出 +14%；作为必要支撑：铜矿、自然铜冷锤工坊
+
+#### 机会成本
+
+自然铜辨识与打制石器汇合后，才能把矿物观察转化为铜矿开采。
+
+#### 内容解锁
+
+- **物资：** 铜矿石 (`copper_ore`)
+- **建筑 / 生产方式：** 铜矿 (`copper_ore_collector`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **铜矿石**（`good`）：`good.copper_ore` → `production_access` `unlock` `1.0`；`existing_binding`
+- **铜矿**（`building`）：`building.copper_ore_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+- 恶地采掘：`country.output.landform.badlands.extractive_factor`：+14%
+  - 效果机制：铜矿开采提高恶地的采掘生产适应。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+
+#### 被以下科技作为硬前置
+
+- 先进冶金 (`tech.advanced_metallurgy`)：铜矿开采是先进冶金不可替代的知识基础。
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 木炭坩埚炼铜 (`tech.copper_metallurgy`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.copper_metallurgy` |
+| 时代 | 王国时代 (`kingdom`) |
+| 领域 | 工程 (`engineering`) |
+| 研究成本 | 9360 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | branch |
+| 节点角色 | production\_system |
+| 布局路线 | branch.nonferrous\_metals |
+| 主要路线 | 资源 · 铜 (\`route.resource.copper\`) |
+| 全部路线 | 资源 · 铜 (\`route.resource.copper\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | metallurgy |
+
+#### 硬前置（决定研发资格）
+
+- 铜矿焙烧 (`tech.copper_ore_roasting`)：铜矿焙烧是木炭坩埚炼铜不可替代的知识基础。
+- 木炭烧制 (`tech.charcoal_burning`)：木炭烧制是木炭坩埚炼铜不可替代的知识基础。
+- 陶器容器体系 (`tech.pottery`)：陶器容器体系是木炭坩埚炼铜不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「金属加工突破」（breakthrough.metalworking）
+
+#### 效果摘要
+
+解锁物资：铜；解锁建筑：土法炼铜炉；铜矿采掘产出 +28%；作为必要支撑：浅层铜矿、土法炼锡炉
+
+#### 机会成本
+
+转入该路线需补齐历史锚点；时代 2 后的生产方式依赖专用资本、岗位或地理条件
+
+#### 内容解锁
+
+- **物资：** 铜 (`copper`)
+- **建筑 / 生产方式：** 土法炼铜炉 (`early_copper_smelter`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **铜**（`good`）：`good.copper` → `production_access` `unlock` `1.0`；`existing_binding`
+- **土法炼铜炉**（`building`）：`building.early_copper_smelter` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+- 铜矿采掘：`country.output.family.copper_extraction_factor`：+28%
+  - 效果机制：有色矿物辨识与冶金工艺提高铜及合金原料链产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+
+#### 被以下科技作为硬前置
+
+- 应用：浅层铜矿 (`tech.application.early_copper_mine`)：木炭坩埚炼铜是应用：浅层铜矿不可替代的知识基础。
+- 应用：线材厂 (`tech.application.wire_plant`)：木炭坩埚炼铜是应用：线材厂不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -15716,7 +15749,6 @@ iron\_extraction产出 +12%；作为必要支撑：浅层铁矿
 
 - 早期玻璃烧制 (`tech.early_glassmaking`)：早期玻璃烧制是应用：硅砂矿坑不可替代的知识基础。
 - 磨制石器 (`tech.ground_stone_tools`)：磨制石器是应用：硅砂矿坑不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：硅砂矿坑不可替代的知识基础。
 - 自然观察 (`tech.natural_observation`)：自然观察是应用：硅砂矿坑不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
@@ -15786,9 +15818,7 @@ iron\_extraction产出 +12%；作为必要支撑：浅层铁矿
 #### 硬前置（决定研发资格）
 
 - 皮革鞣制 (`tech.hide_tanning`)：皮革鞣制是应用：制革工坊不可替代的知识基础。
-- 枯枝采集 (`tech.deadwood_collection`)：枯枝采集是应用：制革工坊不可替代的知识基础。
 - 磨制石器 (`tech.ground_stone_tools`)：磨制石器是应用：制革工坊不可替代的知识基础。
-- 应用：露天青铜作坊 (`tech.application.ore_bronzesmith_camp`)：应用：露天青铜作坊是应用：制革工坊不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -15820,9 +15850,78 @@ iron\_extraction产出 +12%；作为必要支撑：浅层铁矿
 
 #### 被以下科技作为硬前置
 
+- Leather Goods Workshop (`tech.application.leather_goods_workshop_kingdom`)：应用：制革工坊是Leather Goods Workshop不可替代的知识基础。
 - 应用：鞋匠铺 (`tech.application.cobbler_shop`)：应用：制革工坊是应用：鞋匠铺不可替代的知识基础。
 - 应用：制鞋厂 (`tech.application.footwear_plant`)：应用：制革工坊是应用：制鞋厂不可替代的知识基础。
-- Leather Goods Workshop (`tech.application.leather_goods_workshop_kingdom`)：knowledge prerequisite: tech.hide\_tanning -\> Leather Goods Workshop
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 应用：金银器工坊 (`tech.application.goldsmith_workshop`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `tech.application.goldsmith_workshop` |
+| 时代 | 王国时代 (`kingdom`) |
+| 领域 | 社会 (`society`) |
+| 研究成本 | 20400 科技点（`technology_points`） |
+| 节点标记 | 无 |
+| 网络角色 | branch |
+| 锚点类型 | application |
+| 节点角色 | applied\_method |
+| 布局路线 | branch.commerce\_finance |
+| 主要路线 | 制度 · 市场 (\`route.institution.market\`) |
+| 全部路线 | 制度 · 市场 (\`route.institution.market\`) |
+| 开局能力标签 | 无 |
+| 效果配置 | trade |
+
+#### 硬前置（决定研发资格）
+
+- 磨制石器 (`tech.ground_stone_tools`)：磨制石器是应用：金银器工坊不可替代的知识基础。
+- 火种控制 (`tech.fire_control`)：火种控制是应用：金银器工坊不可替代的知识基础。
+
+#### 发现启发（仅用于揭示）
+
+- 满足其一：
+  - 已发现信号「金矿」（resource.gold\_ore）
+  - 已发现信号「银矿」（resource.silver\_ore）
+
+#### 效果摘要
+
+解锁物资：珠宝；解锁建筑：金银器工坊；作为必要支撑：珠宝厂
+
+#### 机会成本
+
+多条知识路线汇合为一个可见应用节点，避免建筑条件隐式叠加。
+
+#### 内容解锁
+
+- **物资：** 珠宝 (`jewelry`)
+- **建筑 / 生产方式：** 金银器工坊 (`goldsmith_workshop`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+- **珠宝**（`good`）：`good.jewelry` → `production_access` `unlock` `1.0`；`existing_binding`
+- **金银器工坊**（`building`）：`building.goldsmith_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
 
 #### 主题路线后继
 
@@ -15857,9 +15956,7 @@ iron\_extraction产出 +12%；作为必要支撑：浅层铁矿
 #### 硬前置（决定研发资格）
 
 - 早期玻璃烧制 (`tech.early_glassmaking`)：早期玻璃烧制是应用：玻璃窑不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：玻璃窑不可替代的知识基础。
 - 应用：硅砂矿坑 (`tech.application.classical_silica_pit`)：应用：硅砂矿坑是应用：玻璃窑不可替代的知识基础。
-- 应用：露天青铜作坊 (`tech.application.ore_bronzesmith_camp`)：应用：露天青铜作坊是应用：玻璃窑不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -15891,13 +15988,11 @@ iron\_extraction产出 +12%；作为必要支撑：浅层铁矿
 
 #### 被以下科技作为硬前置
 
+- Glassware Workshop (`tech.application.glassware_workshop_kingdom`)：应用：玻璃窑是Glassware Workshop不可替代的知识基础。
 - 应用：古典学院 (`tech.application.classical_academy`)：应用：玻璃窑是应用：古典学院不可替代的知识基础。
 - 应用：特许大学 (`tech.application.chartered_university`)：应用：玻璃窑是应用：特许大学不可替代的知识基础。
 - 应用：远洋造船厂 (`tech.application.oceanic_shipyard`)：应用：玻璃窑是应用：远洋造船厂不可替代的知识基础。
 - 应用：印刷学社 (`tech.application.printing_academy`)：应用：玻璃窑是应用：印刷学社不可替代的知识基础。
-- 应用：科学仪器工坊 (`tech.application.scientific_instrument_works`)：应用：玻璃窑提供应用：科学仪器工坊所需的建材“玻璃”。
-- 应用：燃煤发电厂 (`tech.application.electricity_plant`)：应用：玻璃窑提供应用：燃煤发电厂所需的建材“玻璃”。
-- 应用：早期电气设备厂 (`tech.application.basic_electrical_equipment_works`)：应用：玻璃窑提供应用：早期电气设备厂所需的建材“玻璃”。
 - 应用：博学学会 (`tech.application.learned_society`)：应用：玻璃窑是应用：博学学会不可替代的知识基础。
 - 应用：综合工学院 (`tech.application.polytechnic_institute`)：应用：玻璃窑是应用：综合工学院不可替代的知识基础。
 - 应用：建筑构件厂 (`tech.application.construction_components_plant`)：应用：玻璃窑是应用：建筑构件厂不可替代的知识基础。
@@ -15914,7 +16009,6 @@ iron\_extraction产出 +12%；作为必要支撑：浅层铁矿
 - 应用：电气化造船厂 (`tech.application.method_oceanic_shipyard_r7`)：应用：玻璃窑是应用：电气化造船厂不可替代的知识基础。
 - 应用：酿造厂 (`tech.application.beverages_plant`)：应用：玻璃窑是应用：酿造厂不可替代的知识基础。
 - 应用：高级成衣厂 (`tech.application.fine_clothing_plant`)：应用：玻璃窑是应用：高级成衣厂不可替代的知识基础。
-- 应用：油田 (`tech.application.oil_collector`)：应用：玻璃窑是应用：油田不可替代的知识基础。
 - 工业农学 (`tech.industrial_agronomy`)：应用：玻璃窑是工业农学不可替代的知识基础。
 - 应用：电池厂 (`tech.application.batteries_plant`)：应用：玻璃窑是应用：电池厂不可替代的知识基础。
 - 国家实验室 (`tech.national_laboratories`)：应用：玻璃窑是国家实验室不可替代的知识基础。
@@ -15953,7 +16047,6 @@ iron\_extraction产出 +12%；作为必要支撑：浅层铁矿
 - 应用：自动化焦化厂 (`tech.application.method_coke_ovens_r9`)：应用：玻璃窑是应用：自动化焦化厂不可替代的知识基础。
 - 机器学习 (`tech.machine_learning`)：应用：玻璃窑是机器学习不可替代的知识基础。
 - 自动化农业 (`tech.automated_agriculture`)：应用：玻璃窑是自动化农业不可替代的知识基础。
-- Glassware Workshop (`tech.application.glassware_workshop_kingdom`)：knowledge prerequisite: tech.early\_glassmaking -\> Glassware Workshop
 
 #### 主题路线后继
 
@@ -15987,8 +16080,8 @@ iron\_extraction产出 +12%；作为必要支撑：浅层铁矿
 
 #### 硬前置（决定研发资格）
 
-- 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：knowledge prerequisite: tech.early\_glassmaking -\> Glassware Workshop
-- 早期玻璃烧制 (`tech.early_glassmaking`)：knowledge prerequisite: tech.kiln\_firing -\> Glassware Workshop
+- 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是Glassware Workshop不可替代的知识基础。
+- 早期玻璃烧制 (`tech.early_glassmaking`)：早期玻璃烧制是Glassware Workshop不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -15996,7 +16089,7 @@ iron\_extraction产出 +12%；作为必要支撑：浅层铁矿
 
 #### 效果摘要
 
-解锁物资：Glassware Workshop；解锁建筑：Glassware Workshop；作为必要支撑：Glassware Workshop
+解锁物资：玻璃器皿；解锁建筑：玻璃器皿小作坊；作为必要支撑：Glassware Workshop
 
 #### 机会成本
 
@@ -16011,8 +16104,8 @@ terminal production upgrade
 
 #### 结构化内容效果
 
-- **Glassware Workshop**（`good`）：`good.glassware` → `production_access` `unlock` `1.0`；`existing_binding`
-- **Glassware Workshop**（`building`）：`building.glassware_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **玻璃器皿**（`good`）：`good.glassware` → `production_access` `unlock` `1.0`；`existing_binding`
+- **玻璃器皿小作坊**（`building`）：`building.glassware_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -16020,7 +16113,7 @@ terminal production upgrade
 
 #### 被以下科技作为硬前置
 
-- Glassware Manufactory (`tech.application.glassware_manufactory_exploration`)：knowledge prerequisite: tech.application.glassware\_workshop\_kingdom -\> Glassware Manufactory
+- Glassware Manufactory (`tech.application.glassware_manufactory_exploration`)：Glassware Workshop是Glassware Manufactory不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -16054,8 +16147,8 @@ terminal production upgrade
 
 #### 硬前置（决定研发资格）
 
-- 应用：块炼炉 (`tech.application.bloomery`)：knowledge prerequisite: tech.iron\_smelting -\> Metal Housewares Workshop
-- 块炼铁 (`tech.iron_smelting`)：knowledge prerequisite: tech.bronze\_casting -\> Metal Housewares Workshop
+- 应用：块炼炉 (`tech.application.bloomery`)：应用：块炼炉是Metal Housewares Workshop不可替代的知识基础。
+- 块炼铁 (`tech.iron_smelting`)：块炼铁是Metal Housewares Workshop不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -16063,7 +16156,7 @@ terminal production upgrade
 
 #### 效果摘要
 
-解锁物资：Metal Housewares Workshop；解锁建筑：Metal Housewares Workshop；作为必要支撑：Metal Housewares Workshop
+解锁物资：金属家用器皿；解锁建筑：金属家用器皿小作坊；作为必要支撑：Metal Housewares Workshop
 
 #### 机会成本
 
@@ -16078,8 +16171,8 @@ terminal production upgrade
 
 #### 结构化内容效果
 
-- **Metal Housewares Workshop**（`good`）：`good.metal_housewares` → `production_access` `unlock` `1.0`；`existing_binding`
-- **Metal Housewares Workshop**（`building`）：`building.metal_housewares_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **金属家用器皿**（`good`）：`good.metal_housewares` → `production_access` `unlock` `1.0`；`existing_binding`
+- **金属家用器皿小作坊**（`building`）：`building.metal_housewares_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -16087,7 +16180,7 @@ terminal production upgrade
 
 #### 被以下科技作为硬前置
 
-- Metal Housewares Manufactory (`tech.application.metal_housewares_manufactory_exploration`)：knowledge prerequisite: tech.application.metal\_housewares\_workshop\_kingdom -\> Metal Housewares Manufactory
+- Metal Housewares Manufactory (`tech.application.metal_housewares_manufactory_exploration`)：Metal Housewares Workshop是Metal Housewares Manufactory不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -16121,8 +16214,8 @@ terminal production upgrade
 
 #### 硬前置（决定研发资格）
 
-- 应用：制革工坊 (`tech.application.tannery`)：knowledge prerequisite: tech.hide\_tanning -\> Leather Goods Workshop
-- 皮革鞣制 (`tech.hide_tanning`)：knowledge prerequisite: tech.herd\_management -\> Leather Goods Workshop
+- 应用：制革工坊 (`tech.application.tannery`)：应用：制革工坊是Leather Goods Workshop不可替代的知识基础。
+- 皮革鞣制 (`tech.hide_tanning`)：皮革鞣制是Leather Goods Workshop不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -16130,7 +16223,7 @@ terminal production upgrade
 
 #### 效果摘要
 
-解锁物资：Leather Goods Workshop；解锁建筑：Leather Goods Workshop；作为必要支撑：Leather Goods Workshop
+解锁物资：皮革制品；解锁建筑：皮革制品小作坊；作为必要支撑：Leather Goods Workshop
 
 #### 机会成本
 
@@ -16145,8 +16238,8 @@ terminal production upgrade
 
 #### 结构化内容效果
 
-- **Leather Goods Workshop**（`good`）：`good.leather_goods` → `production_access` `unlock` `1.0`；`existing_binding`
-- **Leather Goods Workshop**（`building`）：`building.leather_goods_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **皮革制品**（`good`）：`good.leather_goods` → `production_access` `unlock` `1.0`；`existing_binding`
+- **皮革制品小作坊**（`building`）：`building.leather_goods_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -16154,7 +16247,7 @@ terminal production upgrade
 
 #### 被以下科技作为硬前置
 
-- Leather Goods Manufactory (`tech.application.leather_goods_manufactory_exploration`)：knowledge prerequisite: tech.application.leather\_goods\_workshop\_kingdom -\> Leather Goods Manufactory
+- Leather Goods Manufactory (`tech.application.leather_goods_manufactory_exploration`)：Leather Goods Workshop是Leather Goods Manufactory不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -16188,10 +16281,10 @@ terminal production upgrade
 
 #### 硬前置（决定研发资格）
 
-- 应用：马铃薯农场 (`tech.application.potato_collector`)：tech.application.potato\_collector是佃作马铃薯田不可替代的知识基础。
-- 习惯佃作 (`tech.customary_tenancy`)：tech.customary\_tenancy是佃作马铃薯田不可替代的知识基础。
-- 佃作谷物 (`tech.tenant_cereal_farming`)：tech.tenant\_cereal\_farming是佃作马铃薯田不可替代的知识基础。
-- 应用：日晒土坯场 (`tech.application.adobe_yard`)：tech.application.adobe\_yard是佃作马铃薯田不可替代的知识基础。
+- 应用：马铃薯农场 (`tech.application.potato_collector`)：应用：马铃薯农场是应用：佃作马铃薯田不可替代的知识基础。
+- 习惯佃作 (`tech.customary_tenancy`)：习惯佃作是应用：佃作马铃薯田不可替代的知识基础。
+- 佃作谷物 (`tech.tenant_cereal_farming`)：佃作谷物是应用：佃作马铃薯田不可替代的知识基础。
+- 应用：日晒土坯场 (`tech.application.adobe_yard`)：应用：日晒土坯场是应用：佃作马铃薯田不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -16214,8 +16307,8 @@ terminal production upgrade
 
 #### 结构化内容效果
 
-- **马铃薯**（`good`）：`good.potatoes` → `production_access` `unlock` `1.0`；`catalog_rebind`
-- **佃作马铃薯田**（`building`）：`building.tenant_potato_field` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+- **马铃薯**（`good`）：`good.potatoes` → `production_access` `unlock` `1.0`；`existing_binding`
+- **佃作马铃薯田**（`building`）：`building.tenant_potato_field` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -16223,7 +16316,7 @@ terminal production upgrade
 
 #### 被以下科技作为硬前置
 
-- 应用：马铃薯庄园 (`tech.application.potato_estate`)：tech.application.tenant\_potato\_field是马铃薯庄园不可替代的知识基础。
+- 应用：马铃薯庄园 (`tech.application.potato_estate`)：应用：佃作马铃薯田是应用：马铃薯庄园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -16257,11 +16350,10 @@ terminal production upgrade
 
 #### 硬前置（决定研发资格）
 
-- 应用：家庭棉花园圃 (`tech.application.cotton_garden`)：tech.application.cotton\_garden是佃作棉花田不可替代的知识基础。
-- 棉花去籽 (`tech.cotton_ginning`)：tech.cotton\_ginning是佃作棉花田不可替代的知识基础。
-- 习惯佃作 (`tech.customary_tenancy`)：tech.customary\_tenancy是佃作棉花田不可替代的知识基础。
-- 雨养田体系 (`tech.rainfed_field_system`)：tech.rainfed\_field\_system是佃作棉花田不可替代的知识基础。
-- 应用：日晒土坯场 (`tech.application.adobe_yard`)：tech.application.adobe\_yard是佃作棉花田不可替代的知识基础。
+- 应用：家庭棉花园圃 (`tech.application.cotton_garden`)：应用：家庭棉花园圃是应用：佃作棉花田不可替代的知识基础。
+- 棉花去籽 (`tech.cotton_ginning`)：棉花去籽是应用：佃作棉花田不可替代的知识基础。
+- 习惯佃作 (`tech.customary_tenancy`)：习惯佃作是应用：佃作棉花田不可替代的知识基础。
+- 雨养田体系 (`tech.rainfed_field_system`)：雨养田体系是应用：佃作棉花田不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -16284,8 +16376,8 @@ terminal production upgrade
 
 #### 结构化内容效果
 
-- **籽棉**（`good`）：`good.seed_cotton` → `production_access` `unlock` `1.0`；`catalog_rebind`
-- **佃作棉花田**（`building`）：`building.cotton_smallholding` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+- **籽棉**（`good`）：`good.seed_cotton` → `production_access` `unlock` `1.0`；`existing_binding`
+- **佃作棉花田**（`building`）：`building.cotton_smallholding` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -16327,10 +16419,10 @@ terminal production upgrade
 
 #### 硬前置（决定研发资格）
 
-- 应用：林下遮阴香料园 (`tech.application.spice_shade_garden`)：tech.application.spice\_shade\_garden是商品香料园不可替代的知识基础。
-- 香料栽培 (`tech.spice_cultivation`)：tech.spice\_cultivation是商品香料园不可替代的知识基础。
-- 习惯佃作 (`tech.customary_tenancy`)：tech.customary\_tenancy是商品香料园不可替代的知识基础。
-- 应用：日晒土坯场 (`tech.application.adobe_yard`)：tech.application.adobe\_yard是商品香料园不可替代的知识基础。
+- 应用：林下遮阴香料园 (`tech.application.spice_shade_garden`)：应用：林下遮阴香料园是应用：商品香料园不可替代的知识基础。
+- 香料栽培 (`tech.spice_cultivation`)：香料栽培是应用：商品香料园不可替代的知识基础。
+- 习惯佃作 (`tech.customary_tenancy`)：习惯佃作是应用：商品香料园不可替代的知识基础。
+- 应用：日晒土坯场 (`tech.application.adobe_yard`)：应用：日晒土坯场是应用：商品香料园不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -16353,8 +16445,8 @@ terminal production upgrade
 
 #### 结构化内容效果
 
-- **香料**（`good`）：`good.spices` → `production_access` `unlock` `1.0`；`catalog_rebind`
-- **商品香料园**（`building`）：`building.spice_managed_garden` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+- **香料**（`good`）：`good.spices` → `production_access` `unlock` `1.0`；`existing_binding`
+- **商品香料园**（`building`）：`building.spice_managed_garden` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -16362,7 +16454,7 @@ terminal production upgrade
 
 #### 被以下科技作为硬前置
 
-- 应用：商业香料种植园 (`tech.application.spice_commercial_plantation`)：tech.application.spice\_managed\_garden是商业香料种植园不可替代的知识基础。
+- 应用：商业香料种植园 (`tech.application.spice_commercial_plantation`)：应用：商品香料园是应用：商业香料种植园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -16396,11 +16488,11 @@ terminal production upgrade
 
 #### 硬前置（决定研发资格）
 
-- 应用：药草园 (`tech.application.medicinal_herb_garden`)：tech.application.medicinal\_herb\_garden是药材商品园不可替代的知识基础。
-- 香料栽培 (`tech.spice_cultivation`)：tech.spice\_cultivation是药材商品园不可替代的知识基础。
-- 遮阴香料园 (`tech.spice_shade_gardening`)：tech.spice\_shade\_gardening是药材商品园不可替代的知识基础。
-- 习惯佃作 (`tech.customary_tenancy`)：tech.customary\_tenancy是药材商品园不可替代的知识基础。
-- 应用：日晒土坯场 (`tech.application.adobe_yard`)：tech.application.adobe\_yard是药材商品园不可替代的知识基础。
+- 应用：药草园 (`tech.application.medicinal_herb_garden`)：应用：药草园是应用：药材商品园不可替代的知识基础。
+- 香料栽培 (`tech.spice_cultivation`)：香料栽培是应用：药材商品园不可替代的知识基础。
+- 遮阴香料园 (`tech.spice_shade_gardening`)：遮阴香料园是应用：药材商品园不可替代的知识基础。
+- 习惯佃作 (`tech.customary_tenancy`)：习惯佃作是应用：药材商品园不可替代的知识基础。
+- 应用：日晒土坯场 (`tech.application.adobe_yard`)：应用：日晒土坯场是应用：药材商品园不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -16423,8 +16515,8 @@ terminal production upgrade
 
 #### 结构化内容效果
 
-- **药材**（`good`）：`good.medicinal_herbs` → `production_access` `unlock` `1.0`；`catalog_rebind`
-- **药材商品园**（`building`）：`building.medicinal_herb_estate` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+- **药材**（`good`）：`good.medicinal_herbs` → `production_access` `unlock` `1.0`；`existing_binding`
+- **药材商品园**（`building`）：`building.medicinal_herb_estate` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -16449,7 +16541,7 @@ terminal production upgrade
 <a id="era-4"></a>
 ## 帝国时代
 
-共 43 项科技，研究成本范围 3000-70000；时代里程碑：帝国网络 (`tech.imperial_integration`)。
+共 42 项科技，研究成本范围 3000-70000；时代里程碑：帝国网络 (`tech.imperial_integration`)。
 
 ### 应用：木槽溜洗场 (`tech.application.primitive_gold_sluice`)
 
@@ -16920,9 +17012,7 @@ terminal production upgrade
 
 #### 被以下科技作为硬前置
 
-- 应用：大气式蒸汽机工坊 (`tech.application.atmospheric_engine_workshop`)：应用：制砖厂提供应用：大气式蒸汽机工坊所需的建材“砖块”。
-- 应用：科学仪器工坊 (`tech.application.scientific_instrument_works`)：应用：制砖厂提供应用：科学仪器工坊所需的建材“砖块”。
-- 应用：燃煤发电厂 (`tech.application.electricity_plant`)：应用：制砖厂提供应用：燃煤发电厂所需的建材“砖块”。
+无
 
 #### 主题路线后继
 
@@ -17202,10 +17292,10 @@ timber +28%；terrain.forest.extractive产出 +22%；作为必要支撑：森林
 - 作物移植适应 (`tech.crop_transplantation`)：集约轮作是作物移植适应不可替代的知识基础。
 - 应用：三圃制小农场 (`tech.application.three_field_smallholding`)：集约轮作是应用：三圃制小农场不可替代的知识基础。
 - 系统育种 (`tech.crop_breeding`)：集约轮作是系统育种不可替代的知识基础。
+- 应用：马铃薯庄园 (`tech.application.potato_estate`)：集约轮作是应用：马铃薯庄园不可替代的知识基础。
 - 应用：佃作小麦庄园 (`tech.application.method_wheat_farm_r3`)：集约轮作是应用：佃作小麦庄园不可替代的知识基础。
 - 应用：改良轮作小麦庄园 (`tech.application.method_wheat_farm_r5`)：集约轮作是应用：改良轮作小麦庄园不可替代的知识基础。
-- 应用：马铃薯庄园 (`tech.application.potato_estate`)：tech.intensive\_crop\_rotation是马铃薯庄园不可替代的知识基础。
-- 应用：改良轮作马铃薯庄园 (`tech.application.method_potato_farm_r5`)：tech.intensive\_crop\_rotation是改良轮作马铃薯庄园不可替代的知识基础。
+- 应用：改良轮作马铃薯庄园 (`tech.application.method_potato_farm_r5`)：集约轮作是应用：改良轮作马铃薯庄园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -17688,7 +17778,7 @@ iron\_extraction产出 +12%
 
 #### 被以下科技作为硬前置
 
-- 应用：碎布造纸工坊 (`tech.application.rag_paper_workshop`)：tech.rag\_paper\_making是碎布造纸工坊不可替代的知识基础。
+- 应用：碎布造纸工坊 (`tech.application.rag_paper_workshop`)：破布纸是应用：碎布造纸工坊不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -17981,77 +18071,6 @@ iron\_extraction产出 +12%
 
 无
 
-### 铜矿开采 (`tech.copper_mining_application`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.copper_mining_application` |
-| 时代 | 帝国时代 (`empire`) |
-| 领域 | 科学 (`science`) |
-| 研究成本 | 3900 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | branch |
-| 锚点类型 | application |
-| 节点角色 | applied\_method |
-| 布局路线 | branch.nonferrous\_metals |
-| 主要路线 | 资源 · 铜 (\`route.resource.copper\`) |
-| 全部路线 | 资源 · 铜 (\`route.resource.copper\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | observation |
-
-#### 硬前置（决定研发资格）
-
-- 自然铜辨识 (`tech.natural_copper_identification`)：自然铜辨识是铜矿开采不可替代的知识基础。
-- 打制石器 (`tech.stone_knapping`)：打制石器是铜矿开采不可替代的知识基础。
-- 枯枝采集 (`tech.deadwood_collection`)：枯枝采集是铜矿开采不可替代的知识基础。
-- 磨制石器 (`tech.ground_stone_tools`)：磨制石器是铜矿开采不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是铜矿开采不可替代的知识基础。
-
-#### 发现启发（仅用于揭示）
-
-无
-
-#### 效果摘要
-
-解锁物资：铜矿石；解锁建筑：铜矿；作为必要支撑：铜矿、自然铜冷锤工坊
-
-#### 机会成本
-
-自然铜辨识与打制石器汇合后，才能把矿物观察转化为铜矿开采。
-
-#### 内容解锁
-
-- **物资：** 铜矿石 (`copper_ore`)
-- **建筑 / 生产方式：** 铜矿 (`copper_ore_collector`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-- **铜矿石**（`good`）：`good.copper_ore` → `production_access` `unlock` `1.0`；`existing_binding`
-- **铜矿**（`building`）：`building.copper_ore_collector` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-无
-
-#### 被以下科技作为硬前置
-
-- 木炭坩埚炼铜 (`tech.copper_metallurgy`)：铜矿开采是木炭坩埚炼铜不可替代的知识基础。
-- 先进冶金 (`tech.advanced_metallurgy`)：铜矿开采是先进冶金不可替代的知识基础。
-
-#### 主题路线后继
-
-无
-
-#### 跨领域应用
-
-无
-
-#### 作为候选参与的里程碑
-
-无
-
 ### 应用：盐场 (`tech.application.salt_collector`)
 
 | 字段 | 内容 |
@@ -18073,9 +18092,7 @@ iron\_extraction产出 +12%
 #### 硬前置（决定研发资格）
 
 - 盐渍保存 (`tech.salt_preservation`)：盐渍保存是应用：盐场不可替代的知识基础。
-- 枯枝采集 (`tech.deadwood_collection`)：枯枝采集是应用：盐场不可替代的知识基础。
 - 磨制石器 (`tech.ground_stone_tools`)：磨制石器是应用：盐场不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：盐场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -18144,7 +18161,6 @@ iron\_extraction产出 +12%
 - 文字 (`tech.writing`)：文字是应用：城邦抄写室不可替代的知识基础。
 - 枯枝采集 (`tech.deadwood_collection`)：枯枝采集是应用：城邦抄写室不可替代的知识基础。
 - 磨制石器 (`tech.ground_stone_tools`)：磨制石器是应用：城邦抄写室不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：城邦抄写室不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -18214,7 +18230,6 @@ iron\_extraction产出 +12%
 - 运河工程 (`tech.canal_engineering`)：运河工程是应用：石灰石采石场不可替代的知识基础。
 - 砌体建筑 (`tech.masonry`)：砌体建筑是应用：石灰石采石场不可替代的知识基础。
 - 磨制石器 (`tech.ground_stone_tools`)：磨制石器是应用：石灰石采石场不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：石灰石采石场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -18351,7 +18366,6 @@ iron\_extraction产出 +12%
 - 砌体建筑 (`tech.masonry`)：砌体建筑是应用：石灰厂不可替代的知识基础。
 - 枯枝采集 (`tech.deadwood_collection`)：枯枝采集是应用：石灰厂不可替代的知识基础。
 - 磨制石器 (`tech.ground_stone_tools`)：磨制石器是应用：石灰厂不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：石灰厂不可替代的知识基础。
 - 应用：石灰石采石场 (`tech.application.limestone_collector`)：应用：石灰石采石场是应用：石灰厂不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
@@ -18568,7 +18582,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-航运作业产出 +28%
+航运作业产出 +28%；海岸农业产出 +14%
 
 #### 机会成本
 
@@ -18588,7 +18602,10 @@ iron\_extraction产出 +12%
 #### 永久 Modifier 条款
 
 - 航运作业：`country.output.family.maritime_operations_factor`：+28%
+- 海岸农业：`country.output.landform.coast.agriculture_factor`：+14%
   - 效果机制：导航、船舶与物流组织提高运输生产方式产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：磁针导航提高海岸的农业生产适应。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
@@ -19182,7 +19199,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-全社会 +12%
+全社会 +12%；峡谷采掘产出 +14%
 
 #### 机会成本
 
@@ -19202,7 +19219,10 @@ iron\_extraction产出 +12%
 #### 永久 Modifier 条款
 
 - 全社会：`country.output.extractive_factor`：+12%
+- 峡谷采掘：`country.output.landform.canyon.extractive_factor`：+14%
   - 效果机制：矿井木支护提高采掘作业稳定性。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：矿井木支护提高峡谷的采掘生产适应。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
@@ -19252,7 +19272,7 @@ iron\_extraction产出 +12%
 
 #### 效果摘要
 
-可利用资源：铅矿；可利用资源：锌矿；全社会 +12%
+可利用资源：铅矿；可利用资源：锌矿；全社会 +12%；山地采掘产出 +14%
 
 #### 机会成本
 
@@ -19273,7 +19293,10 @@ iron\_extraction产出 +12%
 #### 永久 Modifier 条款
 
 - 全社会：`country.output.extractive_factor`：+12%
+- 山地采掘：`country.output.landform.mountain.extractive_factor`：+14%
   - 效果机制：矿井通风延长安全作业时间。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：矿井通风提高山地的采掘生产适应。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
@@ -19395,12 +19418,8 @@ iron\_extraction产出 +12%
 
 #### 硬前置（决定研发资格）
 
-- 织机织造 (`tech.loom_weaving`)：tech.loom\_weaving是行会织造坊不可替代的知识基础。
-- 沤麻 (`tech.flax_retting`)：tech.flax\_retting是行会织造坊不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：tech.application.fired\_brick\_kiln是行会织造坊不可替代的知识基础。
-- 手工锯木 (`tech.timber_sawing`)：tech.timber\_sawing是行会织造坊不可替代的知识基础。
-- 应用：亚麻农场 (`tech.application.flax_collector`)：tech.application.flax\_collector是行会织造坊不可替代的知识基础。
-- 应用：沤麻池 (`tech.application.flax_retting_pit`)：tech.application.flax\_retting\_pit是行会织造坊不可替代的知识基础。
+- 织机织造 (`tech.loom_weaving`)：织机织造是应用：行会织造坊不可替代的知识基础。
+- 沤麻 (`tech.flax_retting`)：沤麻是应用：行会织造坊不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -19449,7 +19468,7 @@ iron\_extraction产出 +12%
 <a id="era-5"></a>
 ## 探索时代
 
-共 41 项科技，研究成本范围 3000-160000；时代里程碑：洲际网络 (`tech.global_exchange`)。
+共 39 项科技，研究成本范围 3000-160000；时代里程碑：洲际网络 (`tech.global_exchange`)。
 
 ### 方法：牧群路线议事帐 (`tech.method.pastoral_council_tent`)
 
@@ -19506,81 +19525,6 @@ iron\_extraction产出 +12%
 #### 被以下科技作为硬前置
 
 无
-
-#### 主题路线后继
-
-无
-
-#### 跨领域应用
-
-无
-
-#### 作为候选参与的里程碑
-
-无
-
-### 木炭坩埚炼铜 (`tech.copper_metallurgy`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.copper_metallurgy` |
-| 时代 | 探索时代 (`exploration`) |
-| 领域 | 工程 (`engineering`) |
-| 研究成本 | 9360 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | branch |
-| 锚点类型 | branch |
-| 节点角色 | production\_system |
-| 布局路线 | branch.nonferrous\_metals |
-| 主要路线 | 资源 · 铜 (\`route.resource.copper\`) |
-| 全部路线 | 资源 · 铜 (\`route.resource.copper\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | metallurgy |
-
-#### 硬前置（决定研发资格）
-
-- 自然铜冷锤 (`tech.natural_copper_working`)：自然铜冷锤是木炭坩埚炼铜不可替代的知识基础。
-- 铜矿焙烧 (`tech.copper_ore_roasting`)：铜矿焙烧是木炭坩埚炼铜不可替代的知识基础。
-- 木炭烧制 (`tech.charcoal_burning`)：木炭烧制是木炭坩埚炼铜不可替代的知识基础。
-- 陶器容器体系 (`tech.pottery`)：陶器容器体系是木炭坩埚炼铜不可替代的知识基础。
-- 铜矿开采 (`tech.copper_mining_application`)：铜矿开采是木炭坩埚炼铜不可替代的知识基础。
-- 应用：覆土木炭窑 (`tech.application.charcoal_pit`)：应用：覆土木炭窑是木炭坩埚炼铜不可替代的知识基础。
-
-#### 发现启发（仅用于揭示）
-
-- 满足其一：
-  - 已发现信号「金属加工突破」（breakthrough.metalworking）
-
-#### 效果摘要
-
-解锁物资：铜；解锁建筑：土法炼铜炉；铜矿采掘产出 +28%；作为必要支撑：浅层铜矿、土法炼锡炉
-
-#### 机会成本
-
-转入该路线需补齐历史锚点；时代 2 后的生产方式依赖专用资本、岗位或地理条件
-
-#### 内容解锁
-
-- **物资：** 铜 (`copper`)
-- **建筑 / 生产方式：** 土法炼铜炉 (`early_copper_smelter`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-- **铜**（`good`）：`good.copper` → `production_access` `unlock` `1.0`；`existing_binding`
-- **土法炼铜炉**（`building`）：`building.early_copper_smelter` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-- 铜矿采掘：`country.output.family.copper_extraction_factor`：+28%
-  - 效果机制：有色矿物辨识与冶金工艺提高铜及合金原料链产出。
-  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
-
-#### 被以下科技作为硬前置
-
-- 应用：浅层铜矿 (`tech.application.early_copper_mine`)：木炭坩埚炼铜是应用：浅层铜矿不可替代的知识基础。
-- 应用：线材厂 (`tech.application.wire_plant`)：木炭坩埚炼铜是应用：线材厂不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -19834,7 +19778,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 效果摘要
 
-航运作业产出 +12%；作为必要支撑：远洋渔场、蒸汽航运船坞
+航运作业产出 +12%；海岸农业产出 +16%；作为必要支撑：远洋渔场、蒸汽航运船坞
 
 #### 机会成本
 
@@ -19854,21 +19798,24 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 永久 Modifier 条款
 
 - 航运作业：`country.output.family.maritime_operations_factor`：+12%
+- 海岸农业：`country.output.terrain.coast.agriculture_factor`：+16%
   - 效果机制：导航、船舶与物流组织提高运输生产方式产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：远洋航海提高海岸的农业生产适应。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
 - 远洋船舶设计 (`tech.oceanic_ship_design`)：远洋航海是远洋船舶设计不可替代的知识基础。
 - 远洋补给 (`tech.oceanic_provisioning`)：远洋航海是远洋补给不可替代的知识基础。
+- Glassware Manufactory (`tech.application.glassware_manufactory_exploration`)：远洋航海是Glassware Manufactory不可替代的知识基础。
+- Metal Housewares Manufactory (`tech.application.metal_housewares_manufactory_exploration`)：远洋航海是Metal Housewares Manufactory不可替代的知识基础。
+- Leather Goods Manufactory (`tech.application.leather_goods_manufactory_exploration`)：远洋航海是Leather Goods Manufactory不可替代的知识基础。
 - 精密仪器 (`tech.precision_instruments`)：远洋航海是精密仪器不可替代的知识基础。
 - 蒸汽密封 (`tech.steam_sealing`)：远洋航海是蒸汽密封不可替代的知识基础。
 - 应用：远洋造船厂 (`tech.application.oceanic_shipyard`)：远洋航海是应用：远洋造船厂不可替代的知识基础。
 - 应用：远洋渔场 (`tech.application.method_marine_fish_collector_r4`)：远洋航海是应用：远洋渔场不可替代的知识基础。
 - 应用：蒸汽航运船坞 (`tech.application.method_steam_shipping`)：远洋航海是应用：蒸汽航运船坞不可替代的知识基础。
-- Glassware Manufactory (`tech.application.glassware_manufactory_exploration`)：knowledge prerequisite: tech.oceanic\_navigation -\> Glassware Manufactory
-- Metal Housewares Manufactory (`tech.application.metal_housewares_manufactory_exploration`)：knowledge prerequisite: tech.oceanic\_navigation -\> Metal Housewares Manufactory
-- Leather Goods Manufactory (`tech.application.leather_goods_manufactory_exploration`)：knowledge prerequisite: tech.oceanic\_navigation -\> Leather Goods Manufactory
 
 #### 主题路线后继
 
@@ -20142,7 +20089,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
-- 应用：硫矿 (`tech.application.sulfur_collector`)：火药武器是应用：硫矿不可替代的知识基础。
 - 应用：炸药厂 (`tech.application.explosives_plant`)：火药武器是应用：炸药厂不可替代的知识基础。
 - 应用：现代炸药厂 (`tech.application.method_explosives_plant_r8`)：火药武器是应用：现代炸药厂不可替代的知识基础。
 - 应用：自动化炸药厂 (`tech.application.method_explosives_plant_r10`)：火药武器是应用：自动化炸药厂不可替代的知识基础。
@@ -20602,7 +20548,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 效果摘要
 
-全社会 +12%；作为必要支撑：硅砂矿
+全社会 +12%；裂谷采掘产出 +16%；作为必要支撑：硅砂矿
 
 #### 机会成本
 
@@ -20622,7 +20568,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 永久 Modifier 条款
 
 - 全社会：`country.output.extractive_factor`：+12%
+- 裂谷采掘：`country.output.landform.rift_valley.extractive_factor`：+16%
   - 效果机制：矿井排水提高采掘作业连续性。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：矿井排水提高裂谷的采掘生产适应。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
@@ -20834,19 +20783,19 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 - 种植园庄园管理 (`tech.estate_plantation_management`)：商品作物管理是种植园庄园管理不可替代的知识基础。
 - 工资契约 (`tech.wage_contracts`)：商品作物管理是工资契约不可替代的知识基础。
+- 应用：商业香料种植园 (`tech.application.spice_commercial_plantation`)：商品作物管理是应用：商业香料种植园不可替代的知识基础。
 - 应用：棉花农场 (`tech.application.cotton_collector`)：商品作物管理是应用：棉花农场不可替代的知识基础。
 - 应用：香料种植园 (`tech.application.spice_plants_collector`)：商品作物管理是应用：香料种植园不可替代的知识基础。
 - 应用：橡胶种植园 (`tech.application.rubber_tree_collector`)：商品作物管理是应用：橡胶种植园不可替代的知识基础。
 - 机动农业 (`tech.motorized_agriculture`)：商品作物管理是机动农业不可替代的知识基础。
 - 应用：机械化橡胶种植园 (`tech.application.method_rubber_tree_collector_r6`)：商品作物管理是应用：机械化橡胶种植园不可替代的知识基础。
 - 应用：机械化香料种植园 (`tech.application.method_spice_plants_collector_r6`)：商品作物管理是应用：机械化香料种植园不可替代的知识基础。
+- 应用：精准香料种植园 (`tech.application.method_spice_plants_collector_r8`)：商品作物管理是应用：精准香料种植园不可替代的知识基础。
+- 应用：精准药材农场 (`tech.application.method_medicinal_herbs_collector_r8`)：商品作物管理是应用：精准药材农场不可替代的知识基础。
+- 应用：精准橡胶种植园 (`tech.application.method_rubber_tree_collector_r8`)：商品作物管理是应用：精准橡胶种植园不可替代的知识基础。
 - 应用：专用商品作物种植园 (`tech.application.method_specialty_commodity_plantation`)：商品作物管理是应用：专用商品作物种植园不可替代的知识基础。
-- 应用：商业香料种植园 (`tech.application.spice_commercial_plantation`)：tech.commodity\_crop\_management是商业香料种植园不可替代的知识基础。
-- 应用：精准香料种植园 (`tech.application.method_spice_plants_collector_r8`)：tech.commodity\_crop\_management是精准香料种植园不可替代的知识基础。
-- 应用：自动化香料种植园 (`tech.application.method_spice_plants_collector_r10`)：tech.commodity\_crop\_management是自动化香料种植园不可替代的知识基础。
-- 应用：精准药材农场 (`tech.application.method_medicinal_herbs_collector_r8`)：tech.commodity\_crop\_management是精准药材农场不可替代的知识基础。
-- 应用：精准橡胶种植园 (`tech.application.method_rubber_tree_collector_r8`)：tech.commodity\_crop\_management是精准橡胶种植园不可替代的知识基础。
-- 应用：自动化橡胶种植园 (`tech.application.method_rubber_tree_collector_r10`)：tech.commodity\_crop\_management是自动化橡胶种植园不可替代的知识基础。
+- 应用：自动化香料种植园 (`tech.application.method_spice_plants_collector_r10`)：商品作物管理是应用：自动化香料种植园不可替代的知识基础。
+- 应用：自动化橡胶种植园 (`tech.application.method_rubber_tree_collector_r10`)：商品作物管理是应用：自动化橡胶种植园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -21091,7 +21040,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 效果摘要
 
-农业领域研究效率 +8%
+农业领域研究效率 +8%；种植园生产·寒冷损失 -10%；种植园生产·热害损失 -10%；灌木地农业产出 +14%
 
 #### 机会成本
 
@@ -21111,8 +21060,17 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 永久 Modifier 条款
 
 - 农业领域研究效率：`country.research.agriculture_efficiency`：+8%
+- 种植园生产·寒冷损失：`country.climate.profile.plantation_crop.cold_stress_loss_factor`：+10%
+- 种植园生产·热害损失：`country.climate.profile.plantation_crop.heat_stress_loss_factor`：+10%
+- 灌木地农业：`country.output.terrain.shrubland.agriculture_factor`：+14%
   - 效果机制：自然观察、生物分类与育种方法提高农业研究效率。
   - 运行时消费者：`NativeCountryRuntime::process_research_day`
+  - 效果机制：作物移植适应降低种植园生产建筑的寒冷损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：作物移植适应降低种植园生产建筑的热害损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：作物移植适应提高灌木地的农业生产适应。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -21158,7 +21116,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 效果摘要
 
-可利用资源：种植园承载力；农业领域研究效率 +22%
+可利用资源：种植园承载力；农业领域研究效率 +22%；旱作生产·旱灾损失 -8%；旱作生产·寒冷损失 -8%；旱作生产·热害损失 -8%
 
 #### 机会成本
 
@@ -21178,8 +21136,17 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 永久 Modifier 条款
 
 - 农业领域研究效率：`country.research.agriculture_efficiency`：+22%
+- 旱作生产·旱灾损失：`country.climate.profile.dryland_crop.drought_loss_factor`：+8%
+- 旱作生产·寒冷损失：`country.climate.profile.dryland_crop.cold_stress_loss_factor`：+8%
+- 旱作生产·热害损失：`country.climate.profile.dryland_crop.heat_stress_loss_factor`：+8%
   - 效果机制：自然观察、生物分类与育种方法提高农业研究效率。
   - 运行时消费者：`NativeCountryRuntime::process_research_day`
+  - 效果机制：作物驯化移植降低旱作生产建筑的旱灾损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：作物驯化移植降低旱作生产建筑的寒冷损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：作物驯化移植降低旱作生产建筑的热害损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
 
 #### 被以下科技作为硬前置
 
@@ -21325,10 +21292,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 被以下科技作为硬前置
 
+- 应用：商业香料种植园 (`tech.application.spice_commercial_plantation`)：种植园庄园管理是应用：商业香料种植园不可替代的知识基础。
 - 应用：棉花农场 (`tech.application.cotton_collector`)：种植园庄园管理是应用：棉花农场不可替代的知识基础。
 - 应用：香料种植园 (`tech.application.spice_plants_collector`)：种植园庄园管理是应用：香料种植园不可替代的知识基础。
 - 应用：橡胶种植园 (`tech.application.rubber_tree_collector`)：种植园庄园管理是应用：橡胶种植园不可替代的知识基础。
-- 应用：商业香料种植园 (`tech.application.spice_commercial_plantation`)：tech.estate\_plantation\_management是商业香料种植园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -21365,7 +21332,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 - 打制石器 (`tech.stone_knapping`)：打制石器是应用：改良燧石矿坑不可替代的知识基础。
 - 燧石辨识 (`tech.flint_identification`)：燧石辨识是应用：改良燧石矿坑不可替代的知识基础。
 - 磨制石器 (`tech.ground_stone_tools`)：磨制石器是应用：改良燧石矿坑不可替代的知识基础。
-- 应用：露天青铜作坊 (`tech.application.ore_bronzesmith_camp`)：应用：露天青铜作坊是应用：改良燧石矿坑不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -21433,8 +21399,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 - 复合工具 (`tech.composite_tools`)：复合工具是应用：组织化伐木场不可替代的知识基础。
 - 磨制石器 (`tech.ground_stone_tools`)：磨制石器是应用：组织化伐木场不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：组织化伐木场不可替代的知识基础。
-- 应用：露天青铜作坊 (`tech.application.ore_bronzesmith_camp`)：应用：露天青铜作坊是应用：组织化伐木场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -21501,11 +21465,8 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 渔舟 (`tech.fishing_boats`)：渔舟是应用：帆船渔场不可替代的知识基础。
-- 枯枝采集 (`tech.deadwood_collection`)：枯枝采集是应用：帆船渔场不可替代的知识基础。
 - 磨制石器 (`tech.ground_stone_tools`)：磨制石器是应用：帆船渔场不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：帆船渔场不可替代的知识基础。
 - 潮间带采集 (`tech.coastal_fishing`)：潮间带采集是应用：帆船渔场不可替代的知识基础。
-- 应用：露天青铜作坊 (`tech.application.ore_bronzesmith_camp`)：应用：露天青铜作坊是应用：帆船渔场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -21572,10 +21533,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 黏土调制 (`tech.clay_preparation`)：黏土调制是应用：黏土坑不可替代的知识基础。
-- 枯枝采集 (`tech.deadwood_collection`)：枯枝采集是应用：黏土坑不可替代的知识基础。
 - 磨制石器 (`tech.ground_stone_tools`)：磨制石器是应用：黏土坑不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：黏土坑不可替代的知识基础。
-- 应用：露天青铜作坊 (`tech.application.ore_bronzesmith_camp`)：应用：露天青铜作坊是应用：黏土坑不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -21643,7 +21601,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 - 永久聚落 (`tech.permanent_settlements`)：永久聚落是应用：定居采集营地不可替代的知识基础。
 - 磨制石器 (`tech.ground_stone_tools`)：磨制石器是应用：定居采集营地不可替代的知识基础。
-- 应用：露天青铜作坊 (`tech.application.ore_bronzesmith_camp`)：应用：露天青铜作坊是应用：定居采集营地不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -21711,8 +21668,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 - 手工锯木 (`tech.timber_sawing`)：手工锯木是应用：改良锯木场不可替代的知识基础。
 - 磨制石器 (`tech.ground_stone_tools`)：磨制石器是应用：改良锯木场不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：改良锯木场不可替代的知识基础。
-- 应用：露天青铜作坊 (`tech.application.ore_bronzesmith_camp`)：应用：露天青铜作坊是应用：改良锯木场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -21766,8 +21721,8 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 - 应用：家具行会工坊 (`tech.application.guild_hall`)：应用：改良锯木场是应用：家具行会工坊不可替代的知识基础。
 - 应用：裁缝铺 (`tech.application.tailor_shop`)：应用：改良锯木场是应用：裁缝铺不可替代的知识基础。
 - 应用：煤矿 (`tech.application.coal_mine`)：应用：改良锯木场是应用：煤矿不可替代的知识基础。
-- 应用：堆肥场 (`tech.application.composting_yard`)：应用：改良锯木场是应用：堆肥场不可替代的知识基础。
-- 应用：碎布造纸工坊 (`tech.application.rag_paper_workshop`)：tech.application.method\_lumber\_plant\_r2是碎布造纸工坊不可替代的知识基础。
+- 应用：马铃薯庄园 (`tech.application.potato_estate`)：应用：改良锯木场是应用：马铃薯庄园不可替代的知识基础。
+- 应用：商业香料种植园 (`tech.application.spice_commercial_plantation`)：应用：改良锯木场是应用：商业香料种植园不可替代的知识基础。
 - 应用：木版印刷坊 (`tech.application.woodblock_printing_house`)：应用：改良锯木场是应用：木版印刷坊不可替代的知识基础。
 - 应用：活字印刷坊 (`tech.application.movable_type_print_shop`)：应用：改良锯木场是应用：活字印刷坊不可替代的知识基础。
 - 应用：硝石矿 (`tech.application.saltpeter_collector`)：应用：改良锯木场是应用：硝石矿不可替代的知识基础。
@@ -21782,25 +21737,22 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 - 应用：包装材料厂 (`tech.application.packaging_plant`)：应用：改良锯木场是应用：包装材料厂不可替代的知识基础。
 - 应用：印刷厂 (`tech.application.printed_materials_plant`)：应用：改良锯木场是应用：印刷厂不可替代的知识基础。
 - 应用：药材种植园 (`tech.application.medicinal_herbs_collector`)：应用：改良锯木场是应用：药材种植园不可替代的知识基础。
-- 应用：棉花农场 (`tech.application.cotton_collector`)：应用：改良锯木场是应用：棉花农场不可替代的知识基础。
 - 应用：香料种植园 (`tech.application.spice_plants_collector`)：应用：改良锯木场是应用：香料种植园不可替代的知识基础。
 - 应用：橡胶种植园 (`tech.application.rubber_tree_collector`)：应用：改良锯木场是应用：橡胶种植园不可替代的知识基础。
 - 应用：远洋渔场 (`tech.application.method_marine_fish_collector_r4`)：应用：改良锯木场是应用：远洋渔场不可替代的知识基础。
 - 应用：亚麻庄园 (`tech.application.method_flax_collector_r3`)：应用：改良锯木场是应用：亚麻庄园不可替代的知识基础。
 - 应用：改良轮作小麦庄园 (`tech.application.method_wheat_farm_r5`)：应用：改良锯木场是应用：改良轮作小麦庄园不可替代的知识基础。
 - 应用：改良亚麻庄园 (`tech.application.method_flax_collector_r5`)：应用：改良锯木场是应用：改良亚麻庄园不可替代的知识基础。
-- 应用：硫矿 (`tech.application.sulfur_collector`)：应用：改良锯木场是应用：硫矿不可替代的知识基础。
 - 应用：印刷学社 (`tech.application.printing_academy`)：应用：改良锯木场是应用：印刷学社不可替代的知识基础。
 - 应用：煤层平硐 (`tech.application.coal_adit`)：应用：改良锯木场是应用：煤层平硐不可替代的知识基础。
 - 应用：罐头工坊 (`tech.application.canning_workshop`)：应用：改良锯木场是应用：罐头工坊不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：改良锯木场是应用：焦炭炼钢厂不可替代的知识基础。
 - 应用：炸药厂 (`tech.application.explosives_plant`)：应用：改良锯木场是应用：炸药厂不可替代的知识基础。
 - 应用：浅层铁矿 (`tech.application.early_iron_mine`)：应用：改良锯木场是应用：浅层铁矿不可替代的知识基础。
+- 应用：改良轮作马铃薯庄园 (`tech.application.method_potato_farm_r5`)：应用：改良锯木场是应用：改良轮作马铃薯庄园不可替代的知识基础。
 - 应用：面包厂 (`tech.application.bread_plant`)：应用：改良锯木场是应用：面包厂不可替代的知识基础。
 - 应用：铅矿 (`tech.application.lead_ore_collector`)：应用：改良锯木场是应用：铅矿不可替代的知识基础。
 - 应用：锌矿 (`tech.application.zinc_ore_collector`)：应用：改良锯木场是应用：锌矿不可替代的知识基础。
-- 应用：金矿 (`tech.application.gold_mine`)：应用：改良锯木场是应用：金矿不可替代的知识基础。
-- 应用：银矿 (`tech.application.silver_mine`)：应用：改良锯木场是应用：银矿不可替代的知识基础。
 - 应用：深井盐矿 (`tech.application.industrial_salt_mine`)：应用：改良锯木场是应用：深井盐矿不可替代的知识基础。
 - 应用：改良小农场 (`tech.application.improved_smallholding`)：应用：改良锯木场是应用：改良小农场不可替代的知识基础。
 - 应用：水泥厂 (`tech.application.cement_plant`)：应用：改良锯木场是应用：水泥厂不可替代的知识基础。
@@ -21818,7 +21770,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 - 应用：蒸汽航运船坞 (`tech.application.method_steam_shipping`)：应用：改良锯木场是应用：蒸汽航运船坞不可替代的知识基础。
 - 应用：机械零件厂 (`tech.application.machine_parts_plant`)：应用：改良锯木场是应用：机械零件厂不可替代的知识基础。
 - 应用：铁路设备工场 (`tech.application.steam_rail_works`)：应用：改良锯木场是应用：铁路设备工场不可替代的知识基础。
-- 应用：造纸厂 (`tech.application.paper_plant`)：应用：改良锯木场是应用：造纸厂不可替代的知识基础。
 - 应用：制革厂 (`tech.application.leather_plant`)：应用：改良锯木场是应用：制革厂不可替代的知识基础。
 - 应用：工业机械厂 (`tech.application.industrial_machinery_plant`)：应用：改良锯木场是应用：工业机械厂不可替代的知识基础。
 - 应用：工业屠宰场 (`tech.application.mechanized_slaughterhouse`)：应用：改良锯木场是应用：工业屠宰场不可替代的知识基础。
@@ -21827,11 +21778,14 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 - 应用：农业机械厂 (`tech.application.agricultural_machinery_plant`)：应用：改良锯木场是应用：农业机械厂不可替代的知识基础。
 - 应用：工业砖厂 (`tech.application.method_bricks_plant_r6`)：应用：改良锯木场是应用：工业砖厂不可替代的知识基础。
 - 应用：工业石灰厂 (`tech.application.method_lime_plant_r6`)：应用：改良锯木场是应用：工业石灰厂不可替代的知识基础。
-- 应用：机械化马铃薯农场 (`tech.application.method_potato_collector_r6`)：tech.application.method\_lumber\_plant\_r2是机械化马铃薯农场不可替代的知识基础。
+- 应用：机械化马铃薯农场 (`tech.application.method_potato_collector_r6`)：应用：改良锯木场是应用：机械化马铃薯农场不可替代的知识基础。
 - 应用：机械化牧场 (`tech.application.ranching_station`)：应用：改良锯木场是应用：机械化牧场不可替代的知识基础。
 - 应用：机械化棉花农场 (`tech.application.method_cotton_collector_r6`)：应用：改良锯木场是应用：机械化棉花农场不可替代的知识基础。
 - 应用：机械化农场 (`tech.application.mechanized_farm`)：应用：改良锯木场是应用：机械化农场不可替代的知识基础。
 - 应用：机械化玉米农场 (`tech.application.method_landed_estate_r6`)：应用：改良锯木场是应用：机械化玉米农场不可替代的知识基础。
+- 应用：机械化小麦农场 (`tech.application.method_wheat_farm_r6`)：应用：改良锯木场是应用：机械化小麦农场不可替代的知识基础。
+- 应用：机械化稻作农场 (`tech.application.method_rice_collector_r6`)：应用：改良锯木场是应用：机械化稻作农场不可替代的知识基础。
+- 应用：机械化亚麻农场 (`tech.application.method_flax_collector_r6`)：应用：改良锯木场是应用：机械化亚麻农场不可替代的知识基础。
 - 应用：主食加工厂 (`tech.application.staple_food_plant`)：应用：改良锯木场是应用：主食加工厂不可替代的知识基础。
 - 应用：乳制品厂 (`tech.application.dairy_products_plant`)：应用：改良锯木场是应用：乳制品厂不可替代的知识基础。
 - 应用：制药厂 (`tech.application.pharmaceuticals_plant`)：应用：改良锯木场是应用：制药厂不可替代的知识基础。
@@ -21841,16 +21795,9 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 - 应用：地籍管理局 (`tech.application.cadastral_office`)：应用：改良锯木场是应用：地籍管理局不可替代的知识基础。
 - 应用：建筑构件厂 (`tech.application.construction_components_plant`)：应用：改良锯木场是应用：建筑构件厂不可替代的知识基础。
 - 应用：蒸汽机工厂 (`tech.application.steam_engine_works`)：应用：改良锯木场是应用：蒸汽机工厂不可替代的知识基础。
-- 应用：蒸汽钻井场 (`tech.application.early_oil_well`)：应用：改良锯木场是应用：蒸汽钻井场不可替代的知识基础。
 - 应用：铝土矿 (`tech.application.bauxite_collector`)：应用：改良锯木场是应用：铝土矿不可替代的知识基础。
 - 应用：炼锌厂 (`tech.application.zinc_plant`)：应用：改良锯木场是应用：炼锌厂不可替代的知识基础。
 - 应用：工业石灰岩矿场 (`tech.application.method_limestone_collector_r6`)：应用：改良锯木场是应用：工业石灰岩矿场不可替代的知识基础。
-- 应用：马铃薯庄园 (`tech.application.potato_estate`)：tech.application.method\_lumber\_plant\_r2是马铃薯庄园不可替代的知识基础。
-- 应用：改良轮作马铃薯庄园 (`tech.application.method_potato_farm_r5`)：tech.application.method\_lumber\_plant\_r2是改良轮作马铃薯庄园不可替代的知识基础。
-- 应用：机械化小麦农场 (`tech.application.method_wheat_farm_r6`)：tech.application.method\_lumber\_plant\_r2是机械化小麦农场不可替代的知识基础。
-- 应用：机械化稻作农场 (`tech.application.method_rice_collector_r6`)：tech.application.method\_lumber\_plant\_r2是机械化稻作农场不可替代的知识基础。
-- 应用：机械化亚麻农场 (`tech.application.method_flax_collector_r6`)：tech.application.method\_lumber\_plant\_r2是机械化亚麻农场不可替代的知识基础。
-- 应用：商业香料种植园 (`tech.application.spice_commercial_plantation`)：tech.application.method\_lumber\_plant\_r2是商业香料种植园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -21885,10 +21832,8 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 硬前置（决定研发资格）
 
 - 毛用畜牧 (`tech.wool_husbandry`)：毛用畜牧是应用：羊毛棚不可替代的知识基础。
-- 枯枝采集 (`tech.deadwood_collection`)：枯枝采集是应用：羊毛棚不可替代的知识基础。
 - 磨制石器 (`tech.ground_stone_tools`)：磨制石器是应用：羊毛棚不可替代的知识基础。
 - 应用：游牧营地 (`tech.application.pastoral_camp`)：应用：游牧营地是应用：羊毛棚不可替代的知识基础。
-- 应用：露天青铜作坊 (`tech.application.ore_bronzesmith_camp`)：应用：露天青铜作坊是应用：羊毛棚不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -21921,74 +21866,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 #### 被以下科技作为硬前置
 
 - 应用：毡制帐篷 (`tech.application.felt_making_tent`)：应用：羊毛棚是应用：毡制帐篷不可替代的知识基础。
-
-#### 主题路线后继
-
-无
-
-#### 跨领域应用
-
-无
-
-#### 作为候选参与的里程碑
-
-无
-
-### 应用：金银器工坊 (`tech.application.goldsmith_workshop`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `tech.application.goldsmith_workshop` |
-| 时代 | 探索时代 (`exploration`) |
-| 领域 | 社会 (`society`) |
-| 研究成本 | 20400 科技点（`technology_points`） |
-| 节点标记 | 无 |
-| 网络角色 | branch |
-| 锚点类型 | application |
-| 节点角色 | applied\_method |
-| 布局路线 | branch.commerce\_finance |
-| 主要路线 | 制度 · 市场 (\`route.institution.market\`) |
-| 全部路线 | 制度 · 市场 (\`route.institution.market\`) |
-| 开局能力标签 | 无 |
-| 效果配置 | trade |
-
-#### 硬前置（决定研发资格）
-
-- 货币 (`tech.currency`)：货币是应用：金银器工坊不可替代的知识基础。
-- 粗陶淘金 (`tech.gold_panning`)：粗陶淘金是应用：金银器工坊不可替代的知识基础。
-- 应用：露天青铜作坊 (`tech.application.ore_bronzesmith_camp`)：应用：露天青铜作坊是应用：金银器工坊不可替代的知识基础。
-
-#### 发现启发（仅用于揭示）
-
-无
-
-#### 效果摘要
-
-解锁物资：珠宝；解锁建筑：金银器工坊；作为必要支撑：珠宝厂
-
-#### 机会成本
-
-多条知识路线汇合为一个可见应用节点，避免建筑条件隐式叠加。
-
-#### 内容解锁
-
-- **物资：** 珠宝 (`jewelry`)
-- **建筑 / 生产方式：** 金银器工坊 (`goldsmith_workshop`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-- **珠宝**（`good`）：`good.jewelry` → `production_access` `unlock` `1.0`；`existing_binding`
-- **金银器工坊**（`building`）：`building.goldsmith_workshop` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
-
-#### 永久 Modifier 条款
-
-无
-
-#### 被以下科技作为硬前置
-
-无
 
 #### 主题路线后继
 
@@ -22175,9 +22052,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 - 手工纺纱 (`tech.hand_spinning`)：手工纺纱是应用：家庭纺织坊不可替代的知识基础。
 - 织造 (`tech.weaving`)：织造是应用：家庭纺织坊不可替代的知识基础。
 - 应用：行会织造坊 (`tech.application.guild_weaving_house`)：应用：行会织造坊是应用：家庭纺织坊不可替代的知识基础。
-- 手工锯木 (`tech.timber_sawing`)：手工锯木提供应用：家庭纺织坊所需的建材“木材”。
-- 应用：铁制工具工坊 (`tech.application.iron_tool_workshop`)：应用：铁制工具工坊提供应用：家庭纺织坊所需的建材“金属工具”。
-- 雨养田体系 (`tech.rainfed_field_system`)：雨养田体系提供应用：家庭纺织坊所需的资源“旱地承载力”辨识。
 
 #### 发现启发（仅用于揭示）
 
@@ -22243,8 +22117,8 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 硬前置（决定研发资格）
 
-- Glassware Workshop (`tech.application.glassware_workshop_kingdom`)：knowledge prerequisite: tech.application.glassware\_workshop\_kingdom -\> Glassware Manufactory
-- 远洋航海 (`tech.oceanic_navigation`)：knowledge prerequisite: tech.oceanic\_navigation -\> Glassware Manufactory
+- Glassware Workshop (`tech.application.glassware_workshop_kingdom`)：Glassware Workshop是Glassware Manufactory不可替代的知识基础。
+- 远洋航海 (`tech.oceanic_navigation`)：远洋航海是Glassware Manufactory不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -22252,7 +22126,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 #### 效果摘要
 
-解锁物资：Glassware Manufactory；解锁建筑：Glassware Manufactory；作为必要支撑：Glassware Manufactory
+解锁物资：玻璃器皿；解锁建筑：玻璃器皿工场；作为必要支撑：Glassware Manufactory
 
 #### 机会成本
 
@@ -22267,8 +22141,8 @@ terminal production upgrade
 
 #### 结构化内容效果
 
-- **Glassware Manufactory**（`good`）：`good.glassware` → `production_access` `unlock` `1.0`；`existing_binding`
-- **Glassware Manufactory**（`building`）：`building.glassware_manufactory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **玻璃器皿**（`good`）：`good.glassware` → `production_access` `unlock` `1.0`；`existing_binding`
+- **玻璃器皿工场**（`building`）：`building.glassware_manufactory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -22276,8 +22150,8 @@ terminal production upgrade
 
 #### 被以下科技作为硬前置
 
-- Glassware Factory (`tech.application.glassware_factory_steam`)：knowledge prerequisite: tech.application.glassware\_manufactory\_exploration -\> Glassware Factory
-- Glassware Factory (`tech.application.glassware_factory_electrical`)：knowledge prerequisite: tech.application.glassware\_manufactory\_exploration -\> Glassware Factory
+- Glassware Factory (`tech.application.glassware_factory_steam`)：Glassware Manufactory是Glassware Factory不可替代的知识基础。
+- Glassware Factory (`tech.application.glassware_factory_electrical`)：Glassware Manufactory是Glassware Factory不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -22311,8 +22185,8 @@ terminal production upgrade
 
 #### 硬前置（决定研发资格）
 
-- Metal Housewares Workshop (`tech.application.metal_housewares_workshop_kingdom`)：knowledge prerequisite: tech.application.metal\_housewares\_workshop\_kingdom -\> Metal Housewares Manufactory
-- 远洋航海 (`tech.oceanic_navigation`)：knowledge prerequisite: tech.oceanic\_navigation -\> Metal Housewares Manufactory
+- Metal Housewares Workshop (`tech.application.metal_housewares_workshop_kingdom`)：Metal Housewares Workshop是Metal Housewares Manufactory不可替代的知识基础。
+- 远洋航海 (`tech.oceanic_navigation`)：远洋航海是Metal Housewares Manufactory不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -22320,7 +22194,7 @@ terminal production upgrade
 
 #### 效果摘要
 
-解锁物资：Metal Housewares Manufactory；解锁建筑：Metal Housewares Manufactory；作为必要支撑：Metal Housewares Manufactory
+解锁物资：金属家用器皿；解锁建筑：金属家用器皿工场；作为必要支撑：Metal Housewares Manufactory
 
 #### 机会成本
 
@@ -22335,8 +22209,8 @@ terminal production upgrade
 
 #### 结构化内容效果
 
-- **Metal Housewares Manufactory**（`good`）：`good.metal_housewares` → `production_access` `unlock` `1.0`；`existing_binding`
-- **Metal Housewares Manufactory**（`building`）：`building.metal_housewares_manufactory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **金属家用器皿**（`good`）：`good.metal_housewares` → `production_access` `unlock` `1.0`；`existing_binding`
+- **金属家用器皿工场**（`building`）：`building.metal_housewares_manufactory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -22344,8 +22218,8 @@ terminal production upgrade
 
 #### 被以下科技作为硬前置
 
-- Metal Housewares Factory (`tech.application.metal_housewares_factory_steam`)：knowledge prerequisite: tech.application.metal\_housewares\_manufactory\_exploration -\> Metal Housewares Factory
-- Metal Housewares Factory (`tech.application.metal_housewares_factory_electrical`)：knowledge prerequisite: tech.application.metal\_housewares\_manufactory\_exploration -\> Metal Housewares Factory
+- Metal Housewares Factory (`tech.application.metal_housewares_factory_steam`)：Metal Housewares Manufactory是Metal Housewares Factory不可替代的知识基础。
+- Metal Housewares Factory (`tech.application.metal_housewares_factory_electrical`)：Metal Housewares Manufactory是Metal Housewares Factory不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -22379,8 +22253,8 @@ terminal production upgrade
 
 #### 硬前置（决定研发资格）
 
-- Leather Goods Workshop (`tech.application.leather_goods_workshop_kingdom`)：knowledge prerequisite: tech.application.leather\_goods\_workshop\_kingdom -\> Leather Goods Manufactory
-- 远洋航海 (`tech.oceanic_navigation`)：knowledge prerequisite: tech.oceanic\_navigation -\> Leather Goods Manufactory
+- Leather Goods Workshop (`tech.application.leather_goods_workshop_kingdom`)：Leather Goods Workshop是Leather Goods Manufactory不可替代的知识基础。
+- 远洋航海 (`tech.oceanic_navigation`)：远洋航海是Leather Goods Manufactory不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -22388,7 +22262,7 @@ terminal production upgrade
 
 #### 效果摘要
 
-解锁物资：Leather Goods Manufactory；解锁建筑：Leather Goods Manufactory；作为必要支撑：Leather Goods Manufactory
+解锁物资：皮革制品；解锁建筑：皮革制品工场；作为必要支撑：Leather Goods Manufactory
 
 #### 机会成本
 
@@ -22403,8 +22277,8 @@ terminal production upgrade
 
 #### 结构化内容效果
 
-- **Leather Goods Manufactory**（`good`）：`good.leather_goods` → `production_access` `unlock` `1.0`；`existing_binding`
-- **Leather Goods Manufactory**（`building`）：`building.leather_goods_manufactory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **皮革制品**（`good`）：`good.leather_goods` → `production_access` `unlock` `1.0`；`existing_binding`
+- **皮革制品工场**（`building`）：`building.leather_goods_manufactory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -22412,8 +22286,8 @@ terminal production upgrade
 
 #### 被以下科技作为硬前置
 
-- Leather Goods Factory (`tech.application.leather_goods_factory_steam`)：knowledge prerequisite: tech.application.leather\_goods\_manufactory\_exploration -\> Leather Goods Factory
-- Leather Goods Factory (`tech.application.leather_goods_factory_electrical`)：knowledge prerequisite: tech.application.leather\_goods\_manufactory\_exploration -\> Leather Goods Factory
+- Leather Goods Factory (`tech.application.leather_goods_factory_steam`)：Leather Goods Manufactory是Leather Goods Factory不可替代的知识基础。
+- Leather Goods Factory (`tech.application.leather_goods_factory_electrical`)：Leather Goods Manufactory是Leather Goods Factory不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -22523,9 +22397,7 @@ terminal production upgrade
 - 道路工程 (`tech.road_engineering`)：道路工程是应用：石作工场不可替代的知识基础。
 - 砌体建筑 (`tech.masonry`)：砌体建筑是应用：石作工场不可替代的知识基础。
 - 日晒土坯 (`tech.adobe_making`)：日晒土坯是应用：石作工场不可替代的知识基础。
-- 应用：日晒土坯场 (`tech.application.adobe_yard`)：应用：日晒土坯场是应用：石作工场不可替代的知识基础。
 - 磨制石器 (`tech.ground_stone_tools`)：磨制石器是应用：石作工场不可替代的知识基础。
-- 应用：露天青铜作坊 (`tech.application.ore_bronzesmith_camp`)：应用：露天青铜作坊是应用：石作工场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -22557,158 +22429,7 @@ terminal production upgrade
 
 #### 被以下科技作为硬前置
 
-- 应用：商业狩猎与毛皮站 (`tech.application.method_stone_age_hunting_camp_r4`)：应用：石作工场是应用：商业狩猎与毛皮站不可替代的知识基础。
-- 应用：行会陶窑 (`tech.application.method_pottery_kiln_r3`)：应用：石作工场是应用：行会陶窑不可替代的知识基础。
-- 应用：养马场 (`tech.application.horse_breeder`)：应用：石作工场是应用：养马场不可替代的知识基础。
-- 应用：羊毛行会作坊 (`tech.application.method_wool_shed_r3`)：应用：石作工场是应用：羊毛行会作坊不可替代的知识基础。
-- 应用：佃作稻庄 (`tech.application.method_rice_collector_r3`)：应用：石作工场是应用：佃作稻庄不可替代的知识基础。
-- 应用：鞋匠铺 (`tech.application.cobbler_shop`)：应用：石作工场是应用：鞋匠铺不可替代的知识基础。
-- 应用：精梳羊毛作坊 (`tech.application.method_wool_shed_r5`)：应用：石作工场是应用：精梳羊毛作坊不可替代的知识基础。
-- 应用：酿酒坊 (`tech.application.brewery`)：应用：石作工场是应用：酿酒坊不可替代的知识基础。
-- 应用：蒸馏酒坊 (`tech.application.distillery`)：应用：石作工场是应用：蒸馏酒坊不可替代的知识基础。
-- 应用：规模化采石场 (`tech.application.method_stone_collector_r4`)：应用：石作工场是应用：规模化采石场不可替代的知识基础。
-- 应用：榨油坊 (`tech.application.edible_oil_plant`)：应用：石作工场是应用：榨油坊不可替代的知识基础。
-- 应用：制皂工坊 (`tech.application.soap_plant`)：应用：石作工场是应用：制皂工坊不可替代的知识基础。
-- 应用：修道院抄写室 (`tech.application.monastic_scriptorium`)：应用：石作工场是应用：修道院抄写室不可替代的知识基础。
-- 应用：商营伐木场 (`tech.application.method_timber_collector_r4`)：应用：石作工场是应用：商营伐木场不可替代的知识基础。
-- 应用：庄园牧场 (`tech.application.manorial_pasture`)：应用：石作工场是应用：庄园牧场不可替代的知识基础。
-- 应用：三圃制小农场 (`tech.application.three_field_smallholding`)：应用：石作工场是应用：三圃制小农场不可替代的知识基础。
-- 应用：家具行会工坊 (`tech.application.guild_hall`)：应用：石作工场是应用：家具行会工坊不可替代的知识基础。
-- 应用：裁缝铺 (`tech.application.tailor_shop`)：应用：石作工场是应用：裁缝铺不可替代的知识基础。
-- 应用：煤矿 (`tech.application.coal_mine`)：应用：石作工场是应用：煤矿不可替代的知识基础。
-- 应用：堆肥场 (`tech.application.composting_yard`)：应用：石作工场是应用：堆肥场不可替代的知识基础。
-- 应用：碎布造纸工坊 (`tech.application.rag_paper_workshop`)：tech.application.classical\_masonry\_yard是碎布造纸工坊不可替代的知识基础。
-- 应用：硝石矿 (`tech.application.saltpeter_collector`)：应用：石作工场是应用：硝石矿不可替代的知识基础。
-- 应用：细木家具工坊 (`tech.application.cabinetmaker_workshop`)：应用：石作工场是应用：细木家具工坊不可替代的知识基础。
-- 应用：宫廷裁缝坊 (`tech.application.court_tailor`)：应用：石作工场是应用：宫廷裁缝坊不可替代的知识基础。
-- 应用：玉米庄园 (`tech.application.landed_estate`)：应用：石作工场是应用：玉米庄园不可替代的知识基础。
-- 应用：佃作小麦庄园 (`tech.application.method_wheat_farm_r3`)：应用：石作工场是应用：佃作小麦庄园不可替代的知识基础。
-- 应用：精耕稻庄 (`tech.application.method_rice_collector_r5`)：应用：石作工场是应用：精耕稻庄不可替代的知识基础。
-- 应用：远洋造船厂 (`tech.application.oceanic_shipyard`)：应用：石作工场是应用：远洋造船厂不可替代的知识基础。
-- 应用：包装材料厂 (`tech.application.packaging_plant`)：应用：石作工场是应用：包装材料厂不可替代的知识基础。
-- 应用：印刷厂 (`tech.application.printed_materials_plant`)：应用：石作工场是应用：印刷厂不可替代的知识基础。
-- 应用：药材种植园 (`tech.application.medicinal_herbs_collector`)：应用：石作工场是应用：药材种植园不可替代的知识基础。
-- 应用：棉花农场 (`tech.application.cotton_collector`)：应用：石作工场是应用：棉花农场不可替代的知识基础。
-- 应用：香料种植园 (`tech.application.spice_plants_collector`)：应用：石作工场是应用：香料种植园不可替代的知识基础。
-- 应用：橡胶种植园 (`tech.application.rubber_tree_collector`)：应用：石作工场是应用：橡胶种植园不可替代的知识基础。
-- 应用：远洋渔场 (`tech.application.method_marine_fish_collector_r4`)：应用：石作工场是应用：远洋渔场不可替代的知识基础。
-- 应用：亚麻庄园 (`tech.application.method_flax_collector_r3`)：应用：石作工场是应用：亚麻庄园不可替代的知识基础。
-- 应用：改良轮作小麦庄园 (`tech.application.method_wheat_farm_r5`)：应用：石作工场是应用：改良轮作小麦庄园不可替代的知识基础。
-- 应用：改良亚麻庄园 (`tech.application.method_flax_collector_r5`)：应用：石作工场是应用：改良亚麻庄园不可替代的知识基础。
-- 应用：硫矿 (`tech.application.sulfur_collector`)：应用：石作工场是应用：硫矿不可替代的知识基础。
-- 应用：罐头工坊 (`tech.application.canning_workshop`)：应用：石作工场是应用：罐头工坊不可替代的知识基础。
-- 焦炭冶炼 (`tech.coke_smelting`)：应用：石作工场是焦炭冶炼不可替代的知识基础。
-- 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：石作工场是应用：焦炭炼钢厂不可替代的知识基础。
-- 应用：炸药厂 (`tech.application.explosives_plant`)：应用：石作工场是应用：炸药厂不可替代的知识基础。
-- 应用：浅层铁矿 (`tech.application.early_iron_mine`)：应用：石作工场是应用：浅层铁矿不可替代的知识基础。
-- 应用：面包厂 (`tech.application.bread_plant`)：应用：石作工场是应用：面包厂不可替代的知识基础。
-- 应用：铅矿 (`tech.application.lead_ore_collector`)：应用：石作工场是应用：铅矿不可替代的知识基础。
-- 应用：锌矿 (`tech.application.zinc_ore_collector`)：应用：石作工场是应用：锌矿不可替代的知识基础。
-- 应用：金矿 (`tech.application.gold_mine`)：应用：石作工场是应用：金矿不可替代的知识基础。
-- 应用：银矿 (`tech.application.silver_mine`)：应用：石作工场是应用：银矿不可替代的知识基础。
-- 应用：深井盐矿 (`tech.application.industrial_salt_mine`)：应用：石作工场是应用：深井盐矿不可替代的知识基础。
-- 应用：改良小农场 (`tech.application.improved_smallholding`)：应用：石作工场是应用：改良小农场不可替代的知识基础。
-- 应用：水泥厂 (`tech.application.cement_plant`)：应用：石作工场是应用：水泥厂不可替代的知识基础。
-- 应用：硅砂矿 (`tech.application.silica_sand_collector`)：应用：石作工场是应用：硅砂矿不可替代的知识基础。
-- 应用：鱼类罐头厂 (`tech.application.canned_fish_plant`)：应用：石作工场是应用：鱼类罐头厂不可替代的知识基础。
-- 应用：蒸汽动力煤矿 (`tech.application.steam_coal_mine`)：应用：石作工场是应用：蒸汽动力煤矿不可替代的知识基础。
-- 应用：蒸汽动力铁矿 (`tech.application.steam_iron_mine`)：应用：石作工场是应用：蒸汽动力铁矿不可替代的知识基础。
-- 应用：制衣厂 (`tech.application.clothing_plant`)：应用：石作工场是应用：制衣厂不可替代的知识基础。
-- 应用：蒸汽纺织厂 (`tech.application.textile_mill`)：应用：石作工场是应用：蒸汽纺织厂不可替代的知识基础。
-- 应用：钢制工具厂 (`tech.application.tools_plant`)：应用：石作工场是应用：钢制工具厂不可替代的知识基础。
-- 应用：玻璃厂 (`tech.application.glass_plant`)：应用：石作工场是应用：玻璃厂不可替代的知识基础。
-- 应用：化学工场 (`tech.application.industrial_chemicals_plant`)：应用：石作工场是应用：化学工场不可替代的知识基础。
-- 应用：磷矿 (`tech.application.phosphate_rock_collector`)：应用：石作工场是应用：磷矿不可替代的知识基础。
-- 应用：制鞋厂 (`tech.application.footwear_plant`)：应用：石作工场是应用：制鞋厂不可替代的知识基础。
-- 应用：家具厂 (`tech.application.furniture_plant`)：应用：石作工场是应用：家具厂不可替代的知识基础。
-- 应用：蒸汽航运船坞 (`tech.application.method_steam_shipping`)：应用：石作工场是应用：蒸汽航运船坞不可替代的知识基础。
-- 应用：机械零件厂 (`tech.application.machine_parts_plant`)：应用：石作工场是应用：机械零件厂不可替代的知识基础。
-- 应用：铁路设备工场 (`tech.application.steam_rail_works`)：应用：石作工场是应用：铁路设备工场不可替代的知识基础。
-- 应用：造纸厂 (`tech.application.paper_plant`)：应用：石作工场是应用：造纸厂不可替代的知识基础。
-- 应用：制革厂 (`tech.application.leather_plant`)：应用：石作工场是应用：制革厂不可替代的知识基础。
-- 应用：工业机械厂 (`tech.application.industrial_machinery_plant`)：应用：石作工场是应用：工业机械厂不可替代的知识基础。
-- 应用：工业屠宰场 (`tech.application.mechanized_slaughterhouse`)：应用：石作工场是应用：工业屠宰场不可替代的知识基础。
-- 应用：工业制皂厂 (`tech.application.method_soap_plant_r6`)：应用：石作工场是应用：工业制皂厂不可替代的知识基础。
-- 应用：工业榨油厂 (`tech.application.method_edible_oil_plant_r6`)：应用：石作工场是应用：工业榨油厂不可替代的知识基础。
-- 应用：农业机械厂 (`tech.application.agricultural_machinery_plant`)：应用：石作工场是应用：农业机械厂不可替代的知识基础。
-- 应用：工业砖厂 (`tech.application.method_bricks_plant_r6`)：应用：石作工场是应用：工业砖厂不可替代的知识基础。
-- 应用：工业石灰厂 (`tech.application.method_lime_plant_r6`)：应用：石作工场是应用：工业石灰厂不可替代的知识基础。
-- 应用：机械化马铃薯农场 (`tech.application.method_potato_collector_r6`)：tech.application.classical\_masonry\_yard是机械化马铃薯农场不可替代的知识基础。
-- 应用：机械化牧场 (`tech.application.ranching_station`)：应用：石作工场是应用：机械化牧场不可替代的知识基础。
-- 应用：机械化棉花农场 (`tech.application.method_cotton_collector_r6`)：应用：石作工场是应用：机械化棉花农场不可替代的知识基础。
-- 应用：机械化农场 (`tech.application.mechanized_farm`)：应用：石作工场是应用：机械化农场不可替代的知识基础。
-- 应用：机械化玉米农场 (`tech.application.method_landed_estate_r6`)：应用：石作工场是应用：机械化玉米农场不可替代的知识基础。
-- 应用：主食加工厂 (`tech.application.staple_food_plant`)：应用：石作工场是应用：主食加工厂不可替代的知识基础。
-- 应用：乳制品厂 (`tech.application.dairy_products_plant`)：应用：石作工场是应用：乳制品厂不可替代的知识基础。
-- 应用：制药厂 (`tech.application.pharmaceuticals_plant`)：应用：石作工场是应用：制药厂不可替代的知识基础。
-- 应用：机械化橡胶种植园 (`tech.application.method_rubber_tree_collector_r6`)：应用：石作工场是应用：机械化橡胶种植园不可替代的知识基础。
-- 应用：机械化香料种植园 (`tech.application.method_spice_plants_collector_r6`)：应用：石作工场是应用：机械化香料种植园不可替代的知识基础。
-- 应用：精密工具工坊 (`tech.application.precision_tool_workshop`)：应用：石作工场是应用：精密工具工坊不可替代的知识基础。
-- 应用：地籍管理局 (`tech.application.cadastral_office`)：应用：石作工场是应用：地籍管理局不可替代的知识基础。
-- 应用：综合工学院 (`tech.application.polytechnic_institute`)：应用：石作工场是应用：综合工学院不可替代的知识基础。
-- 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：石作工场是应用：混凝土厂不可替代的知识基础。
-- 应用：蒸汽机工厂 (`tech.application.steam_engine_works`)：应用：石作工场是应用：蒸汽机工厂不可替代的知识基础。
-- 应用：蒸汽钻井场 (`tech.application.early_oil_well`)：应用：石作工场是应用：蒸汽钻井场不可替代的知识基础。
-- 应用：珠宝厂 (`tech.application.jewelry_plant`)：应用：石作工场是应用：珠宝厂不可替代的知识基础。
-- 应用：电气化包装厂 (`tech.application.method_packaging_plant_r7`)：应用：石作工场是应用：电气化包装厂不可替代的知识基础。
-- 应用：电气印刷厂 (`tech.application.method_printed_materials_plant_r7`)：应用：石作工场是应用：电气印刷厂不可替代的知识基础。
-- 应用：高级家具厂 (`tech.application.fine_furniture_plant`)：应用：石作工场是应用：高级家具厂不可替代的知识基础。
-- 应用：电化工厂 (`tech.application.electrochemical_works`)：应用：石作工场是应用：电化工厂不可替代的知识基础。
-- 应用：电力纺织厂 (`tech.application.cloth_plant`)：应用：石作工场是应用：电力纺织厂不可替代的知识基础。
-- 应用：炼油厂 (`tech.application.refined_fuel_plant`)：应用：石作工场是应用：炼油厂不可替代的知识基础。
-- 应用：综合食品厂 (`tech.application.processed_food_plant`)：应用：石作工场是应用：综合食品厂不可替代的知识基础。
-- 应用：受控环境药材农场 (`tech.application.method_medicinal_herbs_collector_r7`)：应用：石作工场是应用：受控环境药材农场不可替代的知识基础。
-- 应用：电动机厂 (`tech.application.electric_motor_plant`)：应用：石作工场是应用：电动机厂不可替代的知识基础。
-- 应用：电气化造船厂 (`tech.application.method_oceanic_shipyard_r7`)：应用：石作工场是应用：电气化造船厂不可替代的知识基础。
-- 应用：酿造厂 (`tech.application.beverages_plant`)：应用：石作工场是应用：酿造厂不可替代的知识基础。
-- 应用：高级成衣厂 (`tech.application.fine_clothing_plant`)：应用：石作工场是应用：高级成衣厂不可替代的知识基础。
-- 应用：油田 (`tech.application.oil_collector`)：应用：石作工场是应用：油田不可替代的知识基础。
-- 工业农学 (`tech.industrial_agronomy`)：应用：石作工场是工业农学不可替代的知识基础。
-- 先进冶金 (`tech.advanced_metallurgy`)：应用：石作工场是先进冶金不可替代的知识基础。
-- 应用：铝土矿 (`tech.application.bauxite_collector`)：应用：石作工场是应用：铝土矿不可替代的知识基础。
-- 应用：电池厂 (`tech.application.batteries_plant`)：应用：石作工场是应用：电池厂不可替代的知识基础。
-- 应用：精密工具厂 (`tech.application.method_precision_tool_workshop_r8`)：应用：石作工场是应用：精密工具厂不可替代的知识基础。
-- 应用：铁路设备厂 (`tech.application.railway_equipment_plant`)：应用：石作工场是应用：铁路设备厂不可替代的知识基础。
-- 应用：燃油发电厂 (`tech.application.oil_power_plant`)：应用：石作工场是应用：燃油发电厂不可替代的知识基础。
-- 应用：现代炸药厂 (`tech.application.method_explosives_plant_r8`)：应用：石作工场是应用：现代炸药厂不可替代的知识基础。
-- 应用：精密仪器厂 (`tech.application.method_scientific_instrument_works_r8`)：应用：石作工场是应用：精密仪器厂不可替代的知识基础。
-- 应用：炼锌厂 (`tech.application.zinc_plant`)：应用：石作工场是应用：炼锌厂不可替代的知识基础。
-- 应用：锰矿 (`tech.application.manganese_ore_collector`)：应用：石作工场是应用：锰矿不可替代的知识基础。
-- 应用：天然气田 (`tech.application.natural_gas_collector`)：应用：石作工场是应用：天然气田不可替代的知识基础。
-- 应用：现代硝石矿 (`tech.application.method_saltpeter_collector_r8`)：应用：石作工场是应用：现代硝石矿不可替代的知识基础。
-- 应用：现代硫矿 (`tech.application.method_sulfur_collector_r8`)：应用：石作工场是应用：现代硫矿不可替代的知识基础。
-- 应用：燃气发电厂 (`tech.application.gas_power_plant`)：应用：石作工场是应用：燃气发电厂不可替代的知识基础。
-- 应用：石油化工厂 (`tech.application.petrochemicals_plant`)：应用：石作工场是应用：石油化工厂不可替代的知识基础。
-- 应用：洗涤剂厂 (`tech.application.detergent_plant`)：应用：石作工场是应用：洗涤剂厂不可替代的知识基础。
-- 应用：合成橡胶厂 (`tech.application.synthetic_rubber_plant`)：应用：石作工场是应用：合成橡胶厂不可替代的知识基础。
-- 应用：塑料厂 (`tech.application.plastics_plant`)：应用：石作工场是应用：塑料厂不可替代的知识基础。
-- 应用：合成纤维厂 (`tech.application.synthetic_fiber_plant`)：应用：石作工场是应用：合成纤维厂不可替代的知识基础。
-- 应用：合成纤维织造厂 (`tech.application.synthetic_textile_mill`)：应用：石作工场是应用：合成纤维织造厂不可替代的知识基础。
-- 应用：电气设备厂 (`tech.application.electrical_equipment_plant`)：应用：石作工场是应用：电气设备厂不可替代的知识基础。
-- 应用：电子元件厂 (`tech.application.electronic_components_plant`)：应用：石作工场是应用：电子元件厂不可替代的知识基础。
-- 应用：绝缘电缆厂 (`tech.application.insulated_cable_plant`)：应用：石作工场是应用：绝缘电缆厂不可替代的知识基础。
-- 应用：无线电设备厂 (`tech.application.radio_equipment_works`)：应用：石作工场是应用：无线电设备厂不可替代的知识基础。
-- 应用：河流水力发电站 (`tech.application.hydropower_station`)：应用：石作工场是应用：河流水力发电站不可替代的知识基础。
-- 应用：家用电器厂 (`tech.application.household_appliances_plant`)：应用：石作工场是应用：家用电器厂不可替代的知识基础。
-- 数字计算 (`tech.digital_computing`)：应用：石作工场是数字计算不可替代的知识基础。
-- 应用：发动机厂 (`tech.application.engines_plant`)：应用：石作工场是应用：发动机厂不可替代的知识基础。
-- 应用：汽车厂 (`tech.application.automobiles_plant`)：应用：石作工场是应用：汽车厂不可替代的知识基础。
-- 卫星观测 (`tech.satellite_observation`)：应用：石作工场是卫星观测不可替代的知识基础。
-- 应用：战略金属冶炼厂 (`tech.application.rare_earth_metals_plant`)：应用：石作工场是应用：战略金属冶炼厂不可替代的知识基础。
-- 应用：核燃料厂 (`tech.application.nuclear_fuel_plant`)：应用：石作工场是应用：核燃料厂不可替代的知识基础。
-- 应用：核反应堆设备厂 (`tech.application.reactor_component_works`)：应用：石作工场是应用：核反应堆设备厂不可替代的知识基础。
-- 应用：核电站 (`tech.application.nuclear_power_plant`)：应用：石作工场是应用：核电站不可替代的知识基础。
-- 应用：核医学制药中心 (`tech.application.nuclear_medicine_center`)：应用：石作工场是应用：核医学制药中心不可替代的知识基础。
-- 应用：工业石灰岩矿场 (`tech.application.method_limestone_collector_r6`)：应用：石作工场是应用：工业石灰岩矿场不可替代的知识基础。
-- 应用：自动化混凝土厂 (`tech.application.method_concrete_plant_r9`)：应用：石作工场是应用：自动化混凝土厂不可替代的知识基础。
-- 机器学习 (`tech.machine_learning`)：应用：石作工场是机器学习不可替代的知识基础。
-- 自动化农业 (`tech.automated_agriculture`)：应用：石作工场是自动化农业不可替代的知识基础。
-- 应用：马铃薯庄园 (`tech.application.potato_estate`)：tech.application.classical\_masonry\_yard是马铃薯庄园不可替代的知识基础。
-- 应用：改良轮作马铃薯庄园 (`tech.application.method_potato_farm_r5`)：tech.application.classical\_masonry\_yard是改良轮作马铃薯庄园不可替代的知识基础。
-- 应用：机械化小麦农场 (`tech.application.method_wheat_farm_r6`)：tech.application.classical\_masonry\_yard是机械化小麦农场不可替代的知识基础。
-- 应用：机械化稻作农场 (`tech.application.method_rice_collector_r6`)：tech.application.classical\_masonry\_yard是机械化稻作农场不可替代的知识基础。
-- 应用：机械化亚麻农场 (`tech.application.method_flax_collector_r6`)：tech.application.classical\_masonry\_yard是机械化亚麻农场不可替代的知识基础。
-- 应用：商业香料种植园 (`tech.application.spice_commercial_plantation`)：tech.application.classical\_masonry\_yard是商业香料种植园不可替代的知识基础。
+无
 
 #### 主题路线后继
 
@@ -22745,8 +22466,6 @@ terminal production upgrade
 - 运河工程 (`tech.canal_engineering`)：运河工程是应用：石料场不可替代的知识基础。
 - 砌体建筑 (`tech.masonry`)：砌体建筑是应用：石料场不可替代的知识基础。
 - 磨制石器 (`tech.ground_stone_tools`)：磨制石器是应用：石料场不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：石料场不可替代的知识基础。
-- 应用：露天青铜作坊 (`tech.application.ore_bronzesmith_camp`)：应用：露天青铜作坊是应用：石料场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -22815,9 +22534,7 @@ terminal production upgrade
 - 植物纤维抄纸 (`tech.plant_fiber_papermaking`)：植物纤维抄纸是应用：植物纤维抄纸坊不可替代的知识基础。
 - 文字 (`tech.writing`)：文字是应用：植物纤维抄纸坊不可替代的知识基础。
 - 纤维捻制 (`tech.fiber_twisting`)：纤维捻制是应用：植物纤维抄纸坊不可替代的知识基础。
-- 应用：日晒土坯场 (`tech.application.adobe_yard`)：应用：日晒土坯场是应用：植物纤维抄纸坊不可替代的知识基础。
 - 野生韧皮采集 (`tech.wild_flax_collection`)：野生韧皮采集是应用：植物纤维抄纸坊不可替代的知识基础。
-- 应用：铁制工具工坊 (`tech.application.iron_tool_workshop`)：应用：铁制工具工坊是应用：植物纤维抄纸坊不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -22891,8 +22608,6 @@ terminal production upgrade
 - 树皮纸 (`tech.bark_paper_making`)：树皮纸是应用：树皮纸工坊不可替代的知识基础。
 - 文字 (`tech.writing`)：文字是应用：树皮纸工坊不可替代的知识基础。
 - 枯枝采集 (`tech.deadwood_collection`)：枯枝采集是应用：树皮纸工坊不可替代的知识基础。
-- 应用：日晒土坯场 (`tech.application.adobe_yard`)：应用：日晒土坯场是应用：树皮纸工坊不可替代的知识基础。
-- 应用：铁制工具工坊 (`tech.application.iron_tool_workshop`)：应用：铁制工具工坊是应用：树皮纸工坊不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -22961,8 +22676,6 @@ terminal production upgrade
 - 皮纸制作 (`tech.parchment_making`)：皮纸制作是应用：皮纸工坊不可替代的知识基础。
 - 文字 (`tech.writing`)：文字是应用：皮纸工坊不可替代的知识基础。
 - 皮革鞣制 (`tech.hide_tanning`)：皮革鞣制是应用：皮纸工坊不可替代的知识基础。
-- 应用：日晒土坯场 (`tech.application.adobe_yard`)：应用：日晒土坯场是应用：皮纸工坊不可替代的知识基础。
-- 应用：铁制工具工坊 (`tech.application.iron_tool_workshop`)：应用：铁制工具工坊是应用：皮纸工坊不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -23030,7 +22743,6 @@ terminal production upgrade
 
 - 手稿文化 (`tech.manuscript_culture`)：手稿文化是应用：公共营造场不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：公共营造场不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：公共营造场不可替代的知识基础。
 - 应用：石灰厂 (`tech.application.lime_plant`)：应用：石灰厂是应用：公共营造场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
@@ -23098,8 +22810,7 @@ terminal production upgrade
 #### 硬前置（决定研发资格）
 
 - 森林管理 (`tech.forest_management`)：森林管理是应用：水力锯木场不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：水力锯木场不可替代的知识基础。
-- 应用：铁制工具工坊 (`tech.application.iron_tool_workshop`)：应用：铁制工具工坊是应用：水力锯木场不可替代的知识基础。
+- 手工锯木 (`tech.timber_sawing`)：手工锯木是应用：水力锯木场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -23306,8 +23017,6 @@ terminal production upgrade
 - 轮作 (`tech.crop_rotation`)：轮作是应用：商业狩猎与毛皮站不可替代的知识基础。
 - 毛皮缝制 (`tech.fur_sewing`)：毛皮缝制是应用：商业狩猎与毛皮站不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：商业狩猎与毛皮站不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：商业狩猎与毛皮站不可替代的知识基础。
-- 应用：铁制工具工坊 (`tech.application.iron_tool_workshop`)：应用：铁制工具工坊提供应用：商业狩猎与毛皮站所需的必需投入“金属工具”。
 
 #### 发现启发（仅用于揭示）
 
@@ -23379,7 +23088,6 @@ terminal production upgrade
 - 窑烧控制 (`tech.kiln_firing`)：窑烧控制是应用：行会陶窑不可替代的知识基础。
 - 行业组织 (`tech.guild_organization`)：行业组织是应用：行会陶窑不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：行会陶窑不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：行会陶窑不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -23447,8 +23155,6 @@ terminal production upgrade
 
 - 马匹驯化 (`tech.horse_domestication`)：马匹驯化是应用：养马场不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：养马场不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：养马场不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：养马场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -23516,7 +23222,6 @@ terminal production upgrade
 
 - 织机织造 (`tech.loom_weaving`)：织机织造是应用：羊毛行会作坊不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：羊毛行会作坊不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：羊毛行会作坊不可替代的知识基础。
 - 应用：游牧营地 (`tech.application.pastoral_camp`)：应用：游牧营地是应用：羊毛行会作坊不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
@@ -23587,7 +23292,6 @@ terminal production upgrade
 - 水田稻作 (`tech.rice_paddy_cultivation`)：水田稻作是应用：佃作稻庄不可替代的知识基础。
 - 习惯佃作 (`tech.customary_tenancy`)：习惯佃作是应用：佃作稻庄不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：佃作稻庄不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：佃作稻庄不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -23655,8 +23359,6 @@ terminal production upgrade
 
 - 皮革鞣制 (`tech.hide_tanning`)：皮革鞣制是应用：鞋匠铺不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：鞋匠铺不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：鞋匠铺不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：鞋匠铺不可替代的知识基础。
 - 应用：制革工坊 (`tech.application.tannery`)：应用：制革工坊是应用：鞋匠铺不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
@@ -23725,9 +23427,7 @@ terminal production upgrade
 
 - 毛用畜牧 (`tech.wool_husbandry`)：毛用畜牧是应用：精梳羊毛作坊不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：精梳羊毛作坊不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：精梳羊毛作坊不可替代的知识基础。
 - 应用：游牧营地 (`tech.application.pastoral_camp`)：应用：游牧营地是应用：精梳羊毛作坊不可替代的知识基础。
-- 应用：铁制工具工坊 (`tech.application.iron_tool_workshop`)：应用：铁制工具工坊提供应用：精梳羊毛作坊所需的必需投入“金属工具”。
 
 #### 发现启发（仅用于揭示）
 
@@ -23795,8 +23495,6 @@ terminal production upgrade
 
 - 发酵保存 (`tech.fermentation`)：发酵保存是应用：酿酒坊不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：酿酒坊不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：酿酒坊不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：酿酒坊不可替代的知识基础。
 - 应用：自给农庄 (`tech.application.subsistence_farm`)：应用：自给农庄是应用：酿酒坊不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
@@ -23865,11 +23563,8 @@ terminal production upgrade
 
 - 发酵保存 (`tech.fermentation`)：发酵保存是应用：蒸馏酒坊不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：蒸馏酒坊不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：蒸馏酒坊不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：蒸馏酒坊不可替代的知识基础。
 - 应用：自给农庄 (`tech.application.subsistence_farm`)：应用：自给农庄是应用：蒸馏酒坊不可替代的知识基础。
 - 应用：露天陶器烧造 (`tech.application.open_pottery_hearth`)：应用：露天陶器烧造是应用：蒸馏酒坊不可替代的知识基础。
-- 应用：铁制工具工坊 (`tech.application.iron_tool_workshop`)：应用：铁制工具工坊提供应用：蒸馏酒坊所需的必需投入“金属工具”。
 
 #### 发现启发（仅用于揭示）
 
@@ -23937,8 +23632,6 @@ terminal production upgrade
 
 - 道路工程 (`tech.road_engineering`)：道路工程是应用：规模化采石场不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：规模化采石场不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：规模化采石场不可替代的知识基础。
-- 应用：铁制工具工坊 (`tech.application.iron_tool_workshop`)：应用：铁制工具工坊提供应用：规模化采石场所需的必需投入“金属工具”。
 
 #### 发现启发（仅用于揭示）
 
@@ -24006,8 +23699,6 @@ terminal production upgrade
 
 - 轮作 (`tech.crop_rotation`)：轮作是应用：榨油坊不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：榨油坊不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：榨油坊不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：榨油坊不可替代的知识基础。
 - 雨养玉米田 (`tech.rainfed_maize_cultivation`)：雨养玉米田是应用：榨油坊不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
@@ -24078,7 +23769,6 @@ terminal production upgrade
 
 - 城市卫生 (`tech.urban_sanitation`)：城市卫生是应用：制皂工坊不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：制皂工坊不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：制皂工坊不可替代的知识基础。
 - 应用：游牧营地 (`tech.application.pastoral_camp`)：应用：游牧营地是应用：制皂工坊不可替代的知识基础。
 - 应用：日晒盐田 (`tech.application.solar_salt_pan`)：应用：日晒盐田是应用：制皂工坊不可替代的知识基础。
 - 应用：榨油坊 (`tech.application.edible_oil_plant`)：应用：榨油坊是应用：制皂工坊不可替代的知识基础。
@@ -24149,7 +23839,6 @@ terminal production upgrade
 
 - 学术机构 (`tech.scholarly_academies`)：学术机构是应用：古典学院不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：古典学院不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：古典学院不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：古典学院不可替代的知识基础。
 - 应用：城邦抄写室 (`tech.application.classical_scriptorium`)：应用：城邦抄写室是应用：古典学院不可替代的知识基础。
 
@@ -24219,7 +23908,6 @@ terminal production upgrade
 
 - 手稿文化 (`tech.manuscript_culture`)：手稿文化是应用：修道院抄写室不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：修道院抄写室不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：修道院抄写室不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -24287,8 +23975,6 @@ terminal production upgrade
 
 - 森林管理 (`tech.forest_management`)：森林管理是应用：商营伐木场不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：商营伐木场不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：商营伐木场不可替代的知识基础。
-- 应用：铁制工具工坊 (`tech.application.iron_tool_workshop`)：应用：铁制工具工坊提供应用：商营伐木场所需的必需投入“金属工具”。
 
 #### 发现启发（仅用于揭示）
 
@@ -24356,8 +24042,6 @@ terminal production upgrade
 
 - 牧业网络 (`tech.pastoral_networks`)：牧业网络是应用：庄园牧场不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：庄园牧场不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：庄园牧场不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：庄园牧场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -24425,7 +24109,6 @@ terminal production upgrade
 
 - 集约轮作 (`tech.intensive_crop_rotation`)：集约轮作是应用：三圃制小农场不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：三圃制小农场不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：三圃制小农场不可替代的知识基础。
 - 雨养田体系 (`tech.rainfed_field_system`)：雨养田体系是应用：三圃制小农场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
@@ -24495,8 +24178,6 @@ terminal production upgrade
 
 - 行业组织 (`tech.guild_organization`)：行业组织是应用：家具行会工坊不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：家具行会工坊不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：家具行会工坊不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：家具行会工坊不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -24564,7 +24245,6 @@ terminal production upgrade
 
 - 行业组织 (`tech.guild_organization`)：行业组织是应用：裁缝铺不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：裁缝铺不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：裁缝铺不可替代的知识基础。
 - 应用：家用织机 (`tech.application.household_loom`)：应用：家用织机是应用：裁缝铺不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
@@ -24633,9 +24313,6 @@ terminal production upgrade
 
 - 煤矿开采 (`tech.coal_mining`)：煤矿开采是应用：煤矿不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：煤矿不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：煤矿不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：煤矿不可替代的知识基础。
-- 应用：铁制工具工坊 (`tech.application.iron_tool_workshop`)：应用：铁制工具工坊提供应用：煤矿所需的必需投入“金属工具”。
 
 #### 发现启发（仅用于揭示）
 
@@ -24740,8 +24417,8 @@ terminal production upgrade
 - 应用：精耕稻庄 (`tech.application.method_rice_collector_r5`)：长期租约是应用：精耕稻庄不可替代的知识基础。
 - 应用：改良轮作小麦庄园 (`tech.application.method_wheat_farm_r5`)：长期租约是应用：改良轮作小麦庄园不可替代的知识基础。
 - 应用：改良亚麻庄园 (`tech.application.method_flax_collector_r5`)：长期租约是应用：改良亚麻庄园不可替代的知识基础。
+- 应用：改良轮作马铃薯庄园 (`tech.application.method_potato_farm_r5`)：长期租约是应用：改良轮作马铃薯庄园不可替代的知识基础。
 - 应用：地籍管理局 (`tech.application.cadastral_office`)：长期租约是应用：地籍管理局不可替代的知识基础。
-- 应用：改良轮作马铃薯庄园 (`tech.application.method_potato_farm_r5`)：tech.long\_term\_leases是改良轮作马铃薯庄园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -24788,7 +24465,7 @@ terminal production upgrade
 
 #### 效果摘要
 
-谷物产出 +12%；小麦产出 +12%；稻米产出 +12%；玉米产出 +12%；作为必要支撑：改良亚麻庄园、精耕稻庄、改良轮作小麦庄园
+谷物产出 +12%；小麦产出 +12%；稻米产出 +12%；玉米产出 +12%；旱作生产·寒冷损失 -10%；旱作生产·热害损失 -10%；作为必要支撑：改良亚麻庄园、精耕稻庄、改良轮作小麦庄园
 
 #### 机会成本
 
@@ -24811,6 +24488,8 @@ terminal production upgrade
 - 小麦：`country.output.good.wheat_grain_factor`：+12%
 - 稻米：`country.output.good.rice_grain_factor`：+12%
 - 玉米：`country.output.good.corn_grain_factor`：+12%
+- 旱作生产·寒冷损失：`country.climate.profile.dryland_crop.cold_stress_loss_factor`：+10%
+- 旱作生产·热害损失：`country.climate.profile.dryland_crop.heat_stress_loss_factor`：+10%
   - 效果机制：育种提高通用谷物潜力。
   - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
   - 效果机制：育种提高小麦潜力。
@@ -24819,13 +24498,17 @@ terminal production upgrade
   - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
   - 效果机制：育种提高玉米潜力。
   - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：系统育种降低旱作生产建筑的寒冷损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：系统育种降低旱作生产建筑的热害损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
 
 #### 被以下科技作为硬前置
 
 - 应用：精耕稻庄 (`tech.application.method_rice_collector_r5`)：系统育种是应用：精耕稻庄不可替代的知识基础。
 - 应用：改良轮作小麦庄园 (`tech.application.method_wheat_farm_r5`)：系统育种是应用：改良轮作小麦庄园不可替代的知识基础。
 - 应用：改良亚麻庄园 (`tech.application.method_flax_collector_r5`)：系统育种是应用：改良亚麻庄园不可替代的知识基础。
-- 应用：改良轮作马铃薯庄园 (`tech.application.method_potato_farm_r5`)：tech.crop\_breeding是改良轮作马铃薯庄园不可替代的知识基础。
+- 应用：改良轮作马铃薯庄园 (`tech.application.method_potato_farm_r5`)：系统育种是应用：改良轮作马铃薯庄园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -24867,7 +24550,7 @@ terminal production upgrade
 
 #### 效果摘要
 
-小麦产出 +12%
+小麦产出 +12%；平原农业产出 +16%
 
 #### 机会成本
 
@@ -24887,8 +24570,11 @@ terminal production upgrade
 #### 永久 Modifier 条款
 
 - 小麦：`country.output.good.wheat_grain_factor`：+12%
+- 平原农业：`country.output.landform.plain.agriculture_factor`：+16%
   - 效果机制：小麦辨识、繁育与旱作体系提高小麦产出。
   - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：农业改良提高平原的农业生产适应。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -25223,7 +24909,7 @@ terminal production upgrade
 
 #### 效果摘要
 
-landform.delta.agriculture产出 +18%；landform.delta.manufacturing产出 -5%；作为必要支撑：混凝土厂、河流水力发电站、流域治理中心
+landform.delta.agriculture产出 +18%；landform.delta.manufacturing产出 -5%；旱灾损失 -10%；洪灾损失 -10%；作为必要支撑：混凝土厂、河流水力发电站、流域治理中心
 
 #### 机会成本
 
@@ -25244,10 +24930,16 @@ landform.delta.agriculture产出 +18%；landform.delta.manufacturing产出 -5%�
 
 - landform.delta.agriculture：`country.output.landform.delta.agriculture_factor`：+18%
 - landform.delta.manufacturing：`country.output.landform.delta.manufacturing_factor`：+5%
+- 旱灾损失：`country.climate.drought_loss_factor`：+10%
+- 洪灾损失：`country.climate.flood_loss_factor`：+10%
   - 效果机制：堤渠分洪改善三角洲农业。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
   - 效果机制：大型水工维护占用制造能力。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：水利工程降低全国气候型生产建筑的旱灾损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：水利工程降低全国气候型生产建筑的洪灾损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
 
 #### 被以下科技作为硬前置
 
@@ -25516,7 +25208,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 
 #### 效果摘要
 
-全社会 +12%
+全社会 +12%；沼泽采掘产出 +14%
 
 #### 机会成本
 
@@ -25536,7 +25228,10 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 #### 永久 Modifier 条款
 
 - 全社会：`country.output.extractive_factor`：+12%
+- 沼泽采掘：`country.output.terrain.swamp.extractive_factor`：+14%
   - 效果机制：大气式蒸汽机为矿井抽排提供连续动力。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：大气式蒸汽机提高沼泽的采掘生产适应。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
@@ -25653,7 +25348,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 
 #### 效果摘要
 
-可利用资源：磷矿石；农业领域研究效率 +8%
+可利用资源：磷矿石；农业领域研究效率 +8%；旱作生产·旱灾损失 -6%；水田生产·洪灾损失 -6%；恶地农业产出 +14%
 
 #### 机会成本
 
@@ -25673,8 +25368,17 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 #### 永久 Modifier 条款
 
 - 农业领域研究效率：`country.research.agriculture_efficiency`：+8%
+- 旱作生产·旱灾损失：`country.climate.profile.dryland_crop.drought_loss_factor`：+6%
+- 水田生产·洪灾损失：`country.climate.profile.paddy_crop.flood_loss_factor`：+6%
+- 恶地农业：`country.output.terrain.badlands.agriculture_factor`：+14%
   - 效果机制：自然观察、生物分类与育种方法提高农业研究效率。
   - 运行时消费者：`NativeCountryRuntime::process_research_day`
+  - 效果机制：土壤实验降低旱作生产建筑的旱灾损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：土壤实验降低水田生产建筑的洪灾损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：土壤实验提高恶地的农业生产适应。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -25720,7 +25424,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 
 #### 效果摘要
 
-畜牧业产出 +28%
+畜牧业产出 +28%；牧业生产·寒冷损失 -10%；牧业生产·热害损失 -10%
 
 #### 机会成本
 
@@ -25740,8 +25444,14 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 #### 永久 Modifier 条款
 
 - 畜牧业：`country.output.family.livestock_husbandry_factor`：+28%
+- 牧业生产·寒冷损失：`country.climate.profile.pasture_livestock.cold_stress_loss_factor`：+10%
+- 牧业生产·热害损失：`country.climate.profile.pasture_livestock.heat_stress_loss_factor`：+10%
   - 效果机制：畜群管理、繁育与加工体系提高畜牧业产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：畜种改良降低牧业生产建筑的寒冷损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：畜种改良降低牧业生产建筑的热害损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
 
 #### 被以下科技作为硬前置
 
@@ -26118,7 +25828,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 
 #### 发现启发（仅用于揭示）
 
-- 已发现信号「综合满意度 55%」（development.satisfaction.55\_360d）
+- 已发现信号「煤炭」（resource.coal）
 
 #### 效果摘要
 
@@ -26402,9 +26112,6 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 
 - 大气式蒸汽机 (`tech.atmospheric_engine`)：大气式蒸汽机是应用：大气式蒸汽机工坊不可替代的知识基础。
 - 应用：露头煤采集场 (`tech.application.surface_coal_gathering`)：应用：露头煤采集场是应用：大气式蒸汽机工坊不可替代的知识基础。
-- 应用：铁制工具工坊 (`tech.application.iron_tool_workshop`)：应用：铁制工具工坊是应用：大气式蒸汽机工坊不可替代的知识基础。
-- 手工锯木 (`tech.timber_sawing`)：手工锯木提供应用：大气式蒸汽机工坊所需的建材“木材”。
-- 应用：制砖厂 (`tech.application.bricks_plant`)：应用：制砖厂提供应用：大气式蒸汽机工坊所需的建材“砖块”。
 
 #### 发现启发（仅用于揭示）
 
@@ -26441,7 +26148,6 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 - 应用：蒸汽锯木厂 (`tech.application.method_lumber_plant_r6`)：应用：大气式蒸汽机工坊是应用：蒸汽锯木厂不可替代的知识基础。
 - 应用：工业机械厂 (`tech.application.industrial_machinery_plant`)：应用：大气式蒸汽机工坊是应用：工业机械厂不可替代的知识基础。
 - 应用：农业机械厂 (`tech.application.agricultural_machinery_plant`)：应用：大气式蒸汽机工坊是应用：农业机械厂不可替代的知识基础。
-- 应用：蒸汽钻井场 (`tech.application.early_oil_well`)：应用：大气式蒸汽机工坊是应用：蒸汽钻井场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -26475,12 +26181,11 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 
 #### 硬前置（决定研发资格）
 
-- 应用：佃作马铃薯田 (`tech.application.tenant_potato_field`)：tech.application.tenant\_potato\_field是马铃薯庄园不可替代的知识基础。
-- 庄园核算 (`tech.estate_accounting`)：tech.estate\_accounting是马铃薯庄园不可替代的知识基础。
-- 习惯佃作 (`tech.customary_tenancy`)：tech.customary\_tenancy是马铃薯庄园不可替代的知识基础。
-- 集约轮作 (`tech.intensive_crop_rotation`)：tech.intensive\_crop\_rotation是马铃薯庄园不可替代的知识基础。
-- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：tech.application.method\_lumber\_plant\_r2是马铃薯庄园不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：tech.application.classical\_masonry\_yard是马铃薯庄园不可替代的知识基础。
+- 应用：佃作马铃薯田 (`tech.application.tenant_potato_field`)：应用：佃作马铃薯田是应用：马铃薯庄园不可替代的知识基础。
+- 庄园核算 (`tech.estate_accounting`)：庄园核算是应用：马铃薯庄园不可替代的知识基础。
+- 习惯佃作 (`tech.customary_tenancy`)：习惯佃作是应用：马铃薯庄园不可替代的知识基础。
+- 集约轮作 (`tech.intensive_crop_rotation`)：集约轮作是应用：马铃薯庄园不可替代的知识基础。
+- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：马铃薯庄园不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -26503,8 +26208,8 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 
 #### 结构化内容效果
 
-- **马铃薯**（`good`）：`good.potatoes` → `production_access` `unlock` `1.0`；`catalog_rebind`
-- **马铃薯庄园**（`building`）：`building.potato_estate` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+- **马铃薯**（`good`）：`good.potatoes` → `production_access` `unlock` `1.0`；`existing_binding`
+- **马铃薯庄园**（`building`）：`building.potato_estate` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -26512,7 +26217,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 
 #### 被以下科技作为硬前置
 
-- 应用：改良轮作马铃薯庄园 (`tech.application.method_potato_farm_r5`)：tech.application.potato\_estate是改良轮作马铃薯庄园不可替代的知识基础。
+- 应用：改良轮作马铃薯庄园 (`tech.application.method_potato_farm_r5`)：应用：马铃薯庄园是应用：改良轮作马铃薯庄园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -26546,11 +26251,10 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 
 #### 硬前置（决定研发资格）
 
-- 应用：商品香料园 (`tech.application.spice_managed_garden`)：tech.application.spice\_managed\_garden是商业香料种植园不可替代的知识基础。
-- 种植园庄园管理 (`tech.estate_plantation_management`)：tech.estate\_plantation\_management是商业香料种植园不可替代的知识基础。
-- 商品作物管理 (`tech.commodity_crop_management`)：tech.commodity\_crop\_management是商业香料种植园不可替代的知识基础。
-- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：tech.application.method\_lumber\_plant\_r2是商业香料种植园不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：tech.application.classical\_masonry\_yard是商业香料种植园不可替代的知识基础。
+- 应用：商品香料园 (`tech.application.spice_managed_garden`)：应用：商品香料园是应用：商业香料种植园不可替代的知识基础。
+- 种植园庄园管理 (`tech.estate_plantation_management`)：种植园庄园管理是应用：商业香料种植园不可替代的知识基础。
+- 商品作物管理 (`tech.commodity_crop_management`)：商品作物管理是应用：商业香料种植园不可替代的知识基础。
+- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：商业香料种植园不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -26573,8 +26277,8 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 
 #### 结构化内容效果
 
-- **香料**（`good`）：`good.spices` → `production_access` `unlock` `1.0`；`catalog_rebind`
-- **商业香料种植园**（`building`）：`building.spice_commercial_plantation` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+- **香料**（`good`）：`good.spices` → `production_access` `unlock` `1.0`；`existing_binding`
+- **商业香料种植园**（`building`）：`building.spice_commercial_plantation` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -26624,10 +26328,6 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 - 轮作 (`tech.crop_rotation`)：轮作是应用：堆肥场不可替代的知识基础。
 - 机械工坊 (`tech.mechanical_workshops`)：机械工坊是应用：堆肥场不可替代的知识基础。
 - 游牧放牧 (`tech.pastoralism`)：游牧放牧是应用：堆肥场不可替代的知识基础。
-- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：堆肥场不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：堆肥场不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：堆肥场不可替代的知识基础。
-- 应用：游牧营地 (`tech.application.pastoral_camp`)：应用：游牧营地是应用：堆肥场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -26695,11 +26395,9 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 
 #### 硬前置（决定研发资格）
 
-- 破布纸 (`tech.rag_paper_making`)：tech.rag\_paper\_making是碎布造纸工坊不可替代的知识基础。
-- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：tech.application.method\_lumber\_plant\_r2是碎布造纸工坊不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：tech.application.classical\_masonry\_yard是碎布造纸工坊不可替代的知识基础。
-- 应用：亚麻农场 (`tech.application.flax_collector`)：tech.application.flax\_collector是碎布造纸工坊不可替代的知识基础。
-- 应用：沤麻池 (`tech.application.flax_retting_pit`)：tech.application.flax\_retting\_pit是碎布造纸工坊不可替代的知识基础。
+- 破布纸 (`tech.rag_paper_making`)：破布纸是应用：碎布造纸工坊不可替代的知识基础。
+- 应用：亚麻农场 (`tech.application.flax_collector`)：应用：亚麻农场是应用：碎布造纸工坊不可替代的知识基础。
+- 应用：沤麻池 (`tech.application.flax_retting_pit`)：应用：沤麻池是应用：碎布造纸工坊不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -26910,7 +26608,6 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 
 - 火药配制 (`tech.gunpowder_formulation`)：火药配制是应用：硝石矿不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：硝石矿不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：硝石矿不可替代的知识基础。
 - 自然观察 (`tech.natural_observation`)：自然观察是应用：硝石矿不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
@@ -26979,7 +26676,6 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 #### 硬前置（决定研发资格）
 
 - 特许大学 (`tech.chartered_universities`)：特许大学是应用：特许大学不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：特许大学不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：特许大学不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：特许大学不可替代的知识基础。
 - 应用：城邦抄写室 (`tech.application.classical_scriptorium`)：应用：城邦抄写室是应用：特许大学不可替代的知识基础。
@@ -27051,8 +26747,6 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 - 行会学徒制 (`tech.guild_apprenticeship`)：行会学徒制是应用：细木家具工坊不可替代的知识基础。
 - 手工锯木 (`tech.timber_sawing`)：手工锯木是应用：细木家具工坊不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：细木家具工坊不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：细木家具工坊不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：细木家具工坊不可替代的知识基础。
 - 应用：家用织机 (`tech.application.household_loom`)：应用：家用织机是应用：细木家具工坊不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
@@ -27121,8 +26815,6 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 
 - 行会学徒制 (`tech.guild_apprenticeship`)：行会学徒制是应用：宫廷裁缝坊不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：宫廷裁缝坊不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：宫廷裁缝坊不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：宫廷裁缝坊不可替代的知识基础。
 - 应用：家用织机 (`tech.application.household_loom`)：应用：家用织机是应用：宫廷裁缝坊不可替代的知识基础。
 - 应用：小型陷阱线 (`tech.application.small_game_trapline`)：应用：小型陷阱线是应用：宫廷裁缝坊不可替代的知识基础。
 
@@ -27263,8 +26955,6 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 - 庄园核算 (`tech.estate_accounting`)：庄园核算是应用：玉米庄园不可替代的知识基础。
 - 农奴义务 (`tech.serf_obligations`)：农奴义务是应用：玉米庄园不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：玉米庄园不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：玉米庄园不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：玉米庄园不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -27336,7 +27026,6 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 - 庄园核算 (`tech.estate_accounting`)：庄园核算是应用：佃作小麦庄园不可替代的知识基础。
 - 集约轮作 (`tech.intensive_crop_rotation`)：集约轮作是应用：佃作小麦庄园不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：佃作小麦庄园不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：佃作小麦庄园不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -27407,7 +27096,6 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 - 庄园核算 (`tech.estate_accounting`)：庄园核算是应用：庄园水田不可替代的知识基础。
 - 农奴义务 (`tech.serf_obligations`)：农奴义务是应用：庄园水田不可替代的知识基础。
 - 公共仓储 (`tech.public_storehouses`)：公共仓储是应用：庄园水田不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：庄园水田不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：庄园水田不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
@@ -27480,7 +27168,6 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 - 系统育种 (`tech.crop_breeding`)：系统育种是应用：精耕稻庄不可替代的知识基础。
 - 长期租约 (`tech.long_term_leases`)：长期租约是应用：精耕稻庄不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：精耕稻庄不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：精耕稻庄不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -27548,7 +27235,6 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 
 - 远洋航海 (`tech.oceanic_navigation`)：远洋航海是应用：远洋造船厂不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：远洋造船厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：远洋造船厂不可替代的知识基础。
 - 应用：家用织机 (`tech.application.household_loom`)：应用：家用织机是应用：远洋造船厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：远洋造船厂不可替代的知识基础。
 
@@ -27622,7 +27308,6 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 - 标准化 (`tech.standardization`)：标准化是应用：包装材料厂不可替代的知识基础。
 - 行业组织 (`tech.guild_organization`)：行业组织是应用：包装材料厂不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：包装材料厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：包装材料厂不可替代的知识基础。
 - 应用：植物纤维抄纸坊 (`tech.application.plant_fiber_paper_workshop`)：应用：植物纤维抄纸坊是应用：包装材料厂不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
@@ -27699,7 +27384,6 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 - 行业组织 (`tech.guild_organization`)：行业组织是应用：印刷厂不可替代的知识基础。
 - 手稿文化 (`tech.manuscript_culture`)：手稿文化是应用：印刷厂不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：印刷厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：印刷厂不可替代的知识基础。
 - 应用：植物纤维抄纸坊 (`tech.application.plant_fiber_paper_workshop`)：应用：植物纤维抄纸坊是应用：印刷厂不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
@@ -27768,8 +27452,6 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 
 - 商业农庄 (`tech.commercial_estates`)：商业农庄是应用：药材种植园不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：药材种植园不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：药材种植园不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：药材种植园不可替代的知识基础。
 - 棉花园圃 (`tech.cotton_gardening`)：棉花园圃是应用：药材种植园不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
@@ -27840,7 +27522,6 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 - 锡矿辨识 (`tech.tin_identification`)：锡矿辨识是应用：锡矿不可替代的知识基础。
 - 铜锡配比与铸造 (`tech.bronze_casting`)：铜锡配比与铸造是应用：锡矿不可替代的知识基础。
 - 窑烧控制 (`tech.kiln_firing`)：窑烧控制是应用：锡矿不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：锡矿不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -27910,9 +27591,6 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 - 棉花园圃 (`tech.cotton_gardening`)：棉花园圃是应用：棉花农场不可替代的知识基础。
 - 契约劳工制度 (`tech.indentured_contracts`)：契约劳工制度是应用：棉花农场不可替代的知识基础。
 - 商品作物管理 (`tech.commodity_crop_management`)：商品作物管理是应用：棉花农场不可替代的知识基础。
-- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：棉花农场不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：棉花农场不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：棉花农场不可替代的知识基础。
 - 雨养田体系 (`tech.rainfed_field_system`)：雨养田体系是应用：棉花农场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
@@ -27984,7 +27662,6 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 - 契约劳工制度 (`tech.indentured_contracts`)：契约劳工制度是应用：香料种植园不可替代的知识基础。
 - 商品作物管理 (`tech.commodity_crop_management`)：商品作物管理是应用：香料种植园不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：香料种植园不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：香料种植园不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -28055,7 +27732,6 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 - 种植园庄园管理 (`tech.estate_plantation_management`)：种植园庄园管理是应用：橡胶种植园不可替代的知识基础。
 - 契约劳工制度 (`tech.indentured_contracts`)：契约劳工制度是应用：橡胶种植园不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：橡胶种植园不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：橡胶种植园不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -28124,7 +27800,6 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 - 远洋补给 (`tech.oceanic_provisioning`)：远洋补给是应用：远洋渔场不可替代的知识基础。
 - 远洋航海 (`tech.oceanic_navigation`)：远洋航海是应用：远洋渔场不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：远洋渔场不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：远洋渔场不可替代的知识基础。
 - 潮间带采集 (`tech.coastal_fishing`)：潮间带采集是应用：远洋渔场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
@@ -28196,8 +27871,6 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 - 留种选育 (`tech.seed_selection`)：留种选育是应用：亚麻庄园不可替代的知识基础。
 - 庄园核算 (`tech.estate_accounting`)：庄园核算是应用：亚麻庄园不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：亚麻庄园不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：亚麻庄园不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：亚麻庄园不可替代的知识基础。
 - 雨养田体系 (`tech.rainfed_field_system`)：雨养田体系是应用：亚麻庄园不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
@@ -28206,7 +27879,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 
 #### 效果摘要
 
-解锁物资：韧皮原料；解锁建筑：亚麻庄园；作为必要支撑：棉花农场、橡胶种植园、香料种植园
+解锁物资：亚麻秆/韧皮原料；解锁建筑：亚麻庄园；作为必要支撑：棉花农场、橡胶种植园、香料种植园
 
 #### 机会成本
 
@@ -28221,7 +27894,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 
 #### 结构化内容效果
 
-- **韧皮原料**（`good`）：`good.bast_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
+- **亚麻秆/韧皮原料**（`good`）：`good.bast_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
 - **亚麻庄园**（`building`）：`building.method_flax_collector_r3` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -28271,7 +27944,6 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 - 集约轮作 (`tech.intensive_crop_rotation`)：集约轮作是应用：改良轮作小麦庄园不可替代的知识基础。
 - 长期租约 (`tech.long_term_leases`)：长期租约是应用：改良轮作小麦庄园不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：改良轮作小麦庄园不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：改良轮作小麦庄园不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -28342,8 +28014,6 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 - 庄园核算 (`tech.estate_accounting`)：庄园核算是应用：改良亚麻庄园不可替代的知识基础。
 - 系统育种 (`tech.crop_breeding`)：系统育种是应用：改良亚麻庄园不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：改良亚麻庄园不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：改良亚麻庄园不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：改良亚麻庄园不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -28351,7 +28021,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 
 #### 效果摘要
 
-解锁物资：韧皮原料；解锁建筑：改良亚麻庄园；作为必要支撑：地籍管理局、改良亚麻庄园、精耕稻庄、改良轮作小麦庄园
+解锁物资：亚麻秆/韧皮原料；解锁建筑：改良亚麻庄园；作为必要支撑：地籍管理局、改良亚麻庄园、精耕稻庄、改良轮作小麦庄园
 
 #### 机会成本
 
@@ -28366,7 +28036,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 
 #### 结构化内容效果
 
-- **韧皮原料**（`good`）：`good.bast_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
+- **亚麻秆/韧皮原料**（`good`）：`good.bast_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
 - **改良亚麻庄园**（`building`）：`building.method_flax_collector_r5` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
@@ -28417,7 +28087,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 
 #### 效果摘要
 
-煤 -12%；工具 +5%
+煤 -12%；工具 +5%；山地采掘产出 +18%
 
 #### 机会成本
 
@@ -28438,14 +28108,16 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 
 - 煤：`country.resource.coal.use_factor`：+12%
 - 工具：`country.input.good.tools_factor`：+5%
+- 山地采掘：`country.output.landform.mountain.extractive_factor`：+18%
   - 效果机制：工业矿井降低煤层损失。
   - 运行时消费者：`NativeEconomyRuntime::effective_resource_use_quantity`
   - 效果机制：工业矿井增加工具维护负担。
   - 运行时消费者：`NativeEconomyRuntime::effective_production_input_quantity`
+  - 效果机制：工业采煤提高山地的采掘生产适应。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
-- 应用：硫矿 (`tech.application.sulfur_collector`)：工业采煤是应用：硫矿不可替代的知识基础。
 - 应用：煤层平硐 (`tech.application.coal_adit`)：工业采煤是应用：煤层平硐不可替代的知识基础。
 - 公司矿山 (`tech.corporate_mining`)：工业采煤是公司矿山不可替代的知识基础。
 - 石油开采 (`tech.petroleum_extraction`)：工业采煤是石油开采不可替代的知识基础。
@@ -28484,14 +28156,11 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 #### 硬前置（决定研发资格）
 
 - 火药配制 (`tech.gunpowder_formulation`)：火药配制是应用：硫矿不可替代的知识基础。
-- 工业采煤 (`tech.industrial_coal_mining`)：工业采煤是应用：硫矿不可替代的知识基础。
-- 火药武器 (`tech.gunpowder_weapons`)：火药武器是应用：硫矿不可替代的知识基础。
-- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：硫矿不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：硫矿不可替代的知识基础。
+- 磨制石器 (`tech.ground_stone_tools`)：磨制石器是应用：硫矿不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
-无
+- 已发现信号「硫磺」（resource.sulfur）
 
 #### 效果摘要
 
@@ -28558,7 +28227,6 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 
 - 特许大学 (`tech.chartered_universities`)：特许大学是应用：印刷学社不可替代的知识基础。
 - 螺旋压印 (`tech.screw_press_printing`)：螺旋压印是应用：印刷学社不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：印刷学社不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：印刷学社不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：印刷学社不可替代的知识基础。
 - 应用：木版印刷坊 (`tech.application.woodblock_printing_house`)：应用：木版印刷坊是应用：印刷学社不可替代的知识基础。
@@ -28701,8 +28369,6 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 - 实验科学 (`tech.experimental_science`)：实验科学是应用：罐头工坊不可替代的知识基础。
 - 精密工程 (`tech.precision_engineering`)：精密工程是应用：罐头工坊不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：罐头工坊不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：罐头工坊不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：罐头工坊不可替代的知识基础。
 - 淡水岸捕 (`tech.freshwater_fishing`)：淡水岸捕是应用：罐头工坊不可替代的知识基础。
 - 应用：日晒盐田 (`tech.application.solar_salt_pan`)：应用：日晒盐田是应用：罐头工坊不可替代的知识基础。
 - 应用：包装材料厂 (`tech.application.packaging_plant`)：应用：包装材料厂是应用：罐头工坊不可替代的知识基础。
@@ -28773,8 +28439,6 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 
 - 高炉冶炼 (`tech.blast_furnace`)：高炉冶炼是焦炭冶炼不可替代的知识基础。
 - 手工锯木 (`tech.timber_sawing`)：手工锯木是焦炭冶炼不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是焦炭冶炼不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是焦炭冶炼不可替代的知识基础。
 - 应用：露头煤采集场 (`tech.application.surface_coal_gathering`)：应用：露头煤采集场是焦炭冶炼不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
@@ -28925,7 +28589,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 
 #### 效果摘要
 
-全社会 +6%；作为必要支撑：机械化农场、机械化玉米农场、机械化橡胶种植园、机械化香料种植园
+全社会 +6%；平原农业产出 +16%；作为必要支撑：机械化农场、机械化玉米农场、机械化橡胶种植园、机械化香料种植园
 
 #### 机会成本
 
@@ -28945,7 +28609,10 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 #### 永久 Modifier 条款
 
 - 全社会：`country.output.agriculture_factor`：+6%
+- 平原农业：`country.output.terrain.plain.agriculture_factor`：+16%
   - 效果机制：机械化提高全社会农业作业时效。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：机械化农业提高平原的农业生产适应。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
@@ -28953,14 +28620,14 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 - 机械收割 (`tech.mechanical_reaping`)：机械化农业是机械收割不可替代的知识基础。
 - 机动农业 (`tech.motorized_agriculture`)：机械化农业是机动农业不可替代的知识基础。
 - 应用：农业机械厂 (`tech.application.agricultural_machinery_plant`)：机械化农业是应用：农业机械厂不可替代的知识基础。
-- 应用：机械化马铃薯农场 (`tech.application.method_potato_collector_r6`)：tech.mechanized\_agriculture是机械化马铃薯农场不可替代的知识基础。
+- 应用：机械化马铃薯农场 (`tech.application.method_potato_collector_r6`)：机械化农业是应用：机械化马铃薯农场不可替代的知识基础。
 - 应用：机械化棉花农场 (`tech.application.method_cotton_collector_r6`)：机械化农业是应用：机械化棉花农场不可替代的知识基础。
+- 应用：机械化小麦农场 (`tech.application.method_wheat_farm_r6`)：机械化农业是应用：机械化小麦农场不可替代的知识基础。
+- 应用：机械化稻作农场 (`tech.application.method_rice_collector_r6`)：机械化农业是应用：机械化稻作农场不可替代的知识基础。
+- 应用：机械化亚麻农场 (`tech.application.method_flax_collector_r6`)：机械化农业是应用：机械化亚麻农场不可替代的知识基础。
 - 应用：机械化橡胶种植园 (`tech.application.method_rubber_tree_collector_r6`)：机械化农业是应用：机械化橡胶种植园不可替代的知识基础。
 - 应用：机械化香料种植园 (`tech.application.method_spice_plants_collector_r6`)：机械化农业是应用：机械化香料种植园不可替代的知识基础。
 - 集体农业 (`tech.collective_agriculture`)：机械化农业是集体农业不可替代的知识基础。
-- 应用：机械化小麦农场 (`tech.application.method_wheat_farm_r6`)：tech.mechanized\_agriculture是机械化小麦农场不可替代的知识基础。
-- 应用：机械化稻作农场 (`tech.application.method_rice_collector_r6`)：tech.mechanized\_agriculture是机械化稻作农场不可替代的知识基础。
-- 应用：机械化亚麻农场 (`tech.application.method_flax_collector_r6`)：tech.mechanized\_agriculture是机械化亚麻农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -29111,6 +28778,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 - 应用：机械零件厂 (`tech.application.machine_parts_plant`)：机床是应用：机械零件厂不可替代的知识基础。
 - 应用：蒸汽锯木厂 (`tech.application.method_lumber_plant_r6`)：机床是应用：蒸汽锯木厂不可替代的知识基础。
 - 应用：工业机械厂 (`tech.application.industrial_machinery_plant`)：机床是应用：工业机械厂不可替代的知识基础。
+- 应用：油田 (`tech.application.oil_collector`)：机床是应用：油田不可替代的知识基础。
 - 应用：自动化机械零件厂 (`tech.application.method_machine_parts_plant_r9`)：机床是应用：自动化机械零件厂不可替代的知识基础。
 
 #### 主题路线后继
@@ -29164,7 +28832,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 - **物资：** 无
 - **建筑 / 生产方式：** 无
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 机械轧棉厂 (`mechanized_cotton_gin`)
 
 #### 结构化内容效果
 
@@ -29180,14 +28848,15 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 
 - 铁路物流 (`tech.rail_logistics`)：蒸汽动力是铁路物流不可替代的知识基础。
 - 蒸汽锯木 (`tech.steam_sawmilling`)：蒸汽动力是蒸汽锯木不可替代的知识基础。
+- Glassware Factory (`tech.application.glassware_factory_steam`)：蒸汽动力是Glassware Factory不可替代的知识基础。
+- Metal Housewares Factory (`tech.application.metal_housewares_factory_steam`)：蒸汽动力是Metal Housewares Factory不可替代的知识基础。
+- Leather Goods Factory (`tech.application.leather_goods_factory_steam`)：蒸汽动力是Leather Goods Factory不可替代的知识基础。
 - 应用：鱼类罐头厂 (`tech.application.canned_fish_plant`)：蒸汽动力是应用：鱼类罐头厂不可替代的知识基础。
 - 应用：蒸汽航运船坞 (`tech.application.method_steam_shipping`)：蒸汽动力是应用：蒸汽航运船坞不可替代的知识基础。
 - 应用：蒸汽锯木厂 (`tech.application.method_lumber_plant_r6`)：蒸汽动力是应用：蒸汽锯木厂不可替代的知识基础。
 - 应用：蒸汽机工厂 (`tech.application.steam_engine_works`)：蒸汽动力是应用：蒸汽机工厂不可替代的知识基础。
+- 应用：蒸汽钻井场 (`tech.application.early_oil_well`)：蒸汽动力是应用：蒸汽钻井场不可替代的知识基础。
 - 应用：自动化蒸汽机厂 (`tech.application.method_steam_engine_works_r9`)：蒸汽动力是应用：自动化蒸汽机厂不可替代的知识基础。
-- Glassware Factory (`tech.application.glassware_factory_steam`)：knowledge prerequisite: tech.steam\_power -\> Glassware Factory
-- Metal Housewares Factory (`tech.application.metal_housewares_factory_steam`)：knowledge prerequisite: tech.steam\_power -\> Metal Housewares Factory
-- Leather Goods Factory (`tech.application.leather_goods_factory_steam`)：knowledge prerequisite: tech.steam\_power -\> Leather Goods Factory
 
 #### 主题路线后继
 
@@ -29479,6 +29148,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 
 - 应用：磷矿 (`tech.application.phosphate_rock_collector`)：肥料加工是应用：磷矿不可替代的知识基础。
 - 合成肥料 (`tech.synthetic_fertilizer`)：肥料加工是合成肥料不可替代的知识基础。
+- 应用：化肥厂 (`tech.application.fertilizer_plant`)：肥料加工是应用：化肥厂不可替代的知识基础。
 - 应用：自动化磷矿 (`tech.application.method_phosphate_rock_collector_r9`)：肥料加工是应用：自动化磷矿不可替代的知识基础。
 
 #### 主题路线后继
@@ -29547,10 +29217,10 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 
 #### 被以下科技作为硬前置
 
-- 应用：机械化马铃薯农场 (`tech.application.method_potato_collector_r6`)：tech.mechanical\_reaping是机械化马铃薯农场不可替代的知识基础。
+- 应用：机械化马铃薯农场 (`tech.application.method_potato_collector_r6`)：机械收割是应用：机械化马铃薯农场不可替代的知识基础。
 - 应用：机械化农场 (`tech.application.mechanized_farm`)：机械收割是应用：机械化农场不可替代的知识基础。
 - 应用：机械化玉米农场 (`tech.application.method_landed_estate_r6`)：机械收割是应用：机械化玉米农场不可替代的知识基础。
-- 应用：机械化小麦农场 (`tech.application.method_wheat_farm_r6`)：tech.mechanical\_reaping是机械化小麦农场不可替代的知识基础。
+- 应用：机械化小麦农场 (`tech.application.method_wheat_farm_r6`)：机械收割是应用：机械化小麦农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -29667,7 +29337,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 
 #### 效果摘要
 
-布匹产出 +20%；煤 +4%；作为必要支撑：电力纺织厂、高级成衣厂、制鞋厂、改良家用织机
+解锁物资：棉纤维；解锁建筑：机械轧棉厂；布匹产出 +20%；煤 +4%；作为必要支撑：电力纺织厂、高级成衣厂、制鞋厂、改良家用织机
 
 #### 机会成本
 
@@ -29675,14 +29345,15 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 
 #### 内容解锁
 
-- **物资：** 无
-- **建筑 / 生产方式：** 无
+- **物资：** 棉纤维 (`cotton_fiber`)
+- **建筑 / 生产方式：** 机械轧棉厂 (`mechanized_cotton_gin`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
 #### 结构化内容效果
 
-无
+- **棉纤维**（`good`）：`good.cotton_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
+- **机械轧棉厂**（`building`）：`building.mechanized_cotton_gin` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -29738,7 +29409,6 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 
 - 高炉冶炼 (`tech.blast_furnace`)：高炉冶炼是应用：焦炭炼钢厂不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：焦炭炼钢厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：焦炭炼钢厂不可替代的知识基础。
 - 焦炭冶炼 (`tech.coke_smelting`)：焦炭冶炼是应用：焦炭炼钢厂不可替代的知识基础。
 - 应用：地表铁矿采集场 (`tech.application.iron_ore_collector`)：应用：地表铁矿采集场是应用：焦炭炼钢厂不可替代的知识基础。
 
@@ -29777,8 +29447,6 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 - 应用：面包厂 (`tech.application.bread_plant`)：应用：焦炭炼钢厂是应用：面包厂不可替代的知识基础。
 - 应用：铅矿 (`tech.application.lead_ore_collector`)：应用：焦炭炼钢厂是应用：铅矿不可替代的知识基础。
 - 应用：锌矿 (`tech.application.zinc_ore_collector`)：应用：焦炭炼钢厂是应用：锌矿不可替代的知识基础。
-- 应用：金矿 (`tech.application.gold_mine`)：应用：焦炭炼钢厂是应用：金矿不可替代的知识基础。
-- 应用：银矿 (`tech.application.silver_mine`)：应用：焦炭炼钢厂是应用：银矿不可替代的知识基础。
 - 应用：深井盐矿 (`tech.application.industrial_salt_mine`)：应用：焦炭炼钢厂是应用：深井盐矿不可替代的知识基础。
 - 应用：改良小农场 (`tech.application.improved_smallholding`)：应用：焦炭炼钢厂是应用：改良小农场不可替代的知识基础。
 - 应用：水泥厂 (`tech.application.cement_plant`)：应用：焦炭炼钢厂是应用：水泥厂不可替代的知识基础。
@@ -29795,7 +29463,6 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 - 应用：蒸汽航运船坞 (`tech.application.method_steam_shipping`)：应用：焦炭炼钢厂是应用：蒸汽航运船坞不可替代的知识基础。
 - 应用：机械零件厂 (`tech.application.machine_parts_plant`)：应用：焦炭炼钢厂是应用：机械零件厂不可替代的知识基础。
 - 应用：铁路设备工场 (`tech.application.steam_rail_works`)：应用：焦炭炼钢厂是应用：铁路设备工场不可替代的知识基础。
-- 应用：造纸厂 (`tech.application.paper_plant`)：应用：焦炭炼钢厂是应用：造纸厂不可替代的知识基础。
 - 应用：制革厂 (`tech.application.leather_plant`)：应用：焦炭炼钢厂是应用：制革厂不可替代的知识基础。
 - 应用：工业机械厂 (`tech.application.industrial_machinery_plant`)：应用：焦炭炼钢厂是应用：工业机械厂不可替代的知识基础。
 - 应用：工业屠宰场 (`tech.application.mechanized_slaughterhouse`)：应用：焦炭炼钢厂是应用：工业屠宰场不可替代的知识基础。
@@ -29803,14 +29470,14 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 - 应用：工业榨油厂 (`tech.application.method_edible_oil_plant_r6`)：应用：焦炭炼钢厂是应用：工业榨油厂不可替代的知识基础。
 - 应用：农业机械厂 (`tech.application.agricultural_machinery_plant`)：应用：焦炭炼钢厂是应用：农业机械厂不可替代的知识基础。
 - 应用：工业石灰厂 (`tech.application.method_lime_plant_r6`)：应用：焦炭炼钢厂是应用：工业石灰厂不可替代的知识基础。
-- 应用：机械化马铃薯农场 (`tech.application.method_potato_collector_r6`)：tech.application.steam\_steel\_works是机械化马铃薯农场不可替代的知识基础。
+- 应用：机械化马铃薯农场 (`tech.application.method_potato_collector_r6`)：应用：焦炭炼钢厂是应用：机械化马铃薯农场不可替代的知识基础。
 - 应用：机械化牧场 (`tech.application.ranching_station`)：应用：焦炭炼钢厂是应用：机械化牧场不可替代的知识基础。
 - 应用：机械化棉花农场 (`tech.application.method_cotton_collector_r6`)：应用：焦炭炼钢厂是应用：机械化棉花农场不可替代的知识基础。
 - 应用：机械化农场 (`tech.application.mechanized_farm`)：应用：焦炭炼钢厂是应用：机械化农场不可替代的知识基础。
 - 应用：机械化玉米农场 (`tech.application.method_landed_estate_r6`)：应用：焦炭炼钢厂是应用：机械化玉米农场不可替代的知识基础。
-- 应用：燃煤发电厂 (`tech.application.electricity_plant`)：应用：焦炭炼钢厂提供应用：燃煤发电厂所需的建材“钢材”。
-- 应用：化肥厂 (`tech.application.fertilizer_plant`)：应用：焦炭炼钢厂是应用：化肥厂不可替代的知识基础。
-- 应用：早期电气设备厂 (`tech.application.basic_electrical_equipment_works`)：应用：焦炭炼钢厂提供应用：早期电气设备厂所需的建材“钢材”。
+- 应用：机械化小麦农场 (`tech.application.method_wheat_farm_r6`)：应用：焦炭炼钢厂是应用：机械化小麦农场不可替代的知识基础。
+- 应用：机械化稻作农场 (`tech.application.method_rice_collector_r6`)：应用：焦炭炼钢厂是应用：机械化稻作农场不可替代的知识基础。
+- 应用：机械化亚麻农场 (`tech.application.method_flax_collector_r6`)：应用：焦炭炼钢厂是应用：机械化亚麻农场不可替代的知识基础。
 - 应用：主食加工厂 (`tech.application.staple_food_plant`)：应用：焦炭炼钢厂是应用：主食加工厂不可替代的知识基础。
 - 应用：乳制品厂 (`tech.application.dairy_products_plant`)：应用：焦炭炼钢厂是应用：乳制品厂不可替代的知识基础。
 - 应用：机械化橡胶种植园 (`tech.application.method_rubber_tree_collector_r6`)：应用：焦炭炼钢厂是应用：机械化橡胶种植园不可替代的知识基础。
@@ -29819,7 +29486,6 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 - 应用：综合工学院 (`tech.application.polytechnic_institute`)：应用：焦炭炼钢厂是应用：综合工学院不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：焦炭炼钢厂是应用：混凝土厂不可替代的知识基础。
 - 应用：蒸汽机工厂 (`tech.application.steam_engine_works`)：应用：焦炭炼钢厂是应用：蒸汽机工厂不可替代的知识基础。
-- 应用：蒸汽钻井场 (`tech.application.early_oil_well`)：应用：焦炭炼钢厂是应用：蒸汽钻井场不可替代的知识基础。
 - 应用：珠宝厂 (`tech.application.jewelry_plant`)：应用：焦炭炼钢厂是应用：珠宝厂不可替代的知识基础。
 - 应用：电气化包装厂 (`tech.application.method_packaging_plant_r7`)：应用：焦炭炼钢厂是应用：电气化包装厂不可替代的知识基础。
 - 应用：电气印刷厂 (`tech.application.method_printed_materials_plant_r7`)：应用：焦炭炼钢厂是应用：电气印刷厂不可替代的知识基础。
@@ -29833,7 +29499,6 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 - 应用：电气化造船厂 (`tech.application.method_oceanic_shipyard_r7`)：应用：焦炭炼钢厂是应用：电气化造船厂不可替代的知识基础。
 - 应用：酿造厂 (`tech.application.beverages_plant`)：应用：焦炭炼钢厂是应用：酿造厂不可替代的知识基础。
 - 应用：高级成衣厂 (`tech.application.fine_clothing_plant`)：应用：焦炭炼钢厂是应用：高级成衣厂不可替代的知识基础。
-- 应用：油田 (`tech.application.oil_collector`)：应用：焦炭炼钢厂是应用：油田不可替代的知识基础。
 - 工业农学 (`tech.industrial_agronomy`)：应用：焦炭炼钢厂是工业农学不可替代的知识基础。
 - 先进冶金 (`tech.advanced_metallurgy`)：应用：焦炭炼钢厂是先进冶金不可替代的知识基础。
 - 应用：铝土矿 (`tech.application.bauxite_collector`)：应用：焦炭炼钢厂是应用：铝土矿不可替代的知识基础。
@@ -29876,9 +29541,6 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 - 应用：自动化混凝土厂 (`tech.application.method_concrete_plant_r9`)：应用：焦炭炼钢厂是应用：自动化混凝土厂不可替代的知识基础。
 - 机器学习 (`tech.machine_learning`)：应用：焦炭炼钢厂是机器学习不可替代的知识基础。
 - 自动化农业 (`tech.automated_agriculture`)：应用：焦炭炼钢厂是自动化农业不可替代的知识基础。
-- 应用：机械化小麦农场 (`tech.application.method_wheat_farm_r6`)：tech.application.steam\_steel\_works是机械化小麦农场不可替代的知识基础。
-- 应用：机械化稻作农场 (`tech.application.method_rice_collector_r6`)：tech.application.steam\_steel\_works是机械化稻作农场不可替代的知识基础。
-- 应用：机械化亚麻农场 (`tech.application.method_flax_collector_r6`)：tech.application.steam\_steel\_works是机械化亚麻农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -29915,8 +29577,6 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 - 火药武器 (`tech.gunpowder_weapons`)：火药武器是应用：炸药厂不可替代的知识基础。
 - 工业化学 (`tech.industrial_chemistry`)：工业化学是应用：炸药厂不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：炸药厂不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：炸药厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：炸药厂不可替代的知识基础。
 - 应用：硝石矿 (`tech.application.saltpeter_collector`)：应用：硝石矿是应用：炸药厂不可替代的知识基础。
 - 应用：硫矿 (`tech.application.sulfur_collector`)：应用：硫矿是应用：炸药厂不可替代的知识基础。
 
@@ -30350,7 +30010,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 
 #### 效果摘要
 
-timber -8%；煤 +5%
+timber -8%；煤 +5%；泰加林采掘产出 +16%
 
 #### 机会成本
 
@@ -30371,10 +30031,13 @@ timber -8%；煤 +5%
 
 - timber：`country.resource.timber.use_factor`：+8%
 - 煤：`country.input.good.coal_factor`：+5%
+- 泰加林采掘：`country.output.terrain.taiga.extractive_factor`：+16%
   - 效果机制：动力锯切减少锯路损耗。
   - 运行时消费者：`NativeEconomyRuntime::effective_resource_use_quantity`
   - 效果机制：蒸汽锯木以煤耗换取吞吐。
   - 运行时消费者：`NativeEconomyRuntime::effective_production_input_quantity`
+  - 效果机制：蒸汽锯木提高泰加林的采掘生产适应。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -30623,8 +30286,6 @@ timber -8%；煤 +5%
 - 地表铁矿采集 (`tech.surface_iron_collection`)：地表铁矿采集是应用：浅层铁矿不可替代的知识基础。
 - 块炼铁 (`tech.iron_smelting`)：块炼铁是应用：浅层铁矿不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：浅层铁矿不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：浅层铁矿不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：浅层铁矿不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：浅层铁矿不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
@@ -30844,8 +30505,6 @@ timber -8%；煤 +5%
 - 机械工坊 (`tech.mechanical_workshops`)：机械工坊是应用：改良家用织机不可替代的知识基础。
 - 纺织机械 (`tech.textile_machinery`)：纺织机械是应用：改良家用织机不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：改良家用织机不可替代的知识基础。
-- 应用：铁制工具工坊 (`tech.application.iron_tool_workshop`)：应用：铁制工具工坊提供应用：改良家用织机所需的建材“金属工具”。
-- 雨养田体系 (`tech.rainfed_field_system`)：雨养田体系提供应用：改良家用织机所需的资源“旱地承载力”辨识。
 
 #### 发现启发（仅用于揭示）
 
@@ -30911,8 +30570,8 @@ timber -8%；煤 +5%
 
 #### 硬前置（决定研发资格）
 
-- Glassware Manufactory (`tech.application.glassware_manufactory_exploration`)：knowledge prerequisite: tech.application.glassware\_manufactory\_exploration -\> Glassware Factory
-- 蒸汽动力 (`tech.steam_power`)：knowledge prerequisite: tech.steam\_power -\> Glassware Factory
+- Glassware Manufactory (`tech.application.glassware_manufactory_exploration`)：Glassware Manufactory是Glassware Factory不可替代的知识基础。
+- 蒸汽动力 (`tech.steam_power`)：蒸汽动力是Glassware Factory不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -30920,7 +30579,7 @@ timber -8%；煤 +5%
 
 #### 效果摘要
 
-解锁物资：Glassware Factory；解锁建筑：Glassware Factory；作为必要支撑：Glassware Factory
+解锁物资：玻璃器皿；解锁建筑：玻璃器皿工厂；作为必要支撑：Glassware Factory
 
 #### 机会成本
 
@@ -30935,8 +30594,8 @@ terminal production upgrade
 
 #### 结构化内容效果
 
-- **Glassware Factory**（`good`）：`good.glassware` → `production_access` `unlock` `1.0`；`existing_binding`
-- **Glassware Factory**（`building`）：`building.glassware_factory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **玻璃器皿**（`good`）：`good.glassware` → `production_access` `unlock` `1.0`；`existing_binding`
+- **玻璃器皿工厂**（`building`）：`building.glassware_factory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -30944,7 +30603,7 @@ terminal production upgrade
 
 #### 被以下科技作为硬前置
 
-- Smart Glassware Factory (`tech.application.glassware_smart_factory`)：knowledge prerequisite: tech.application.glassware\_factory\_steam -\> Smart Glassware Factory
+- Smart Glassware Factory (`tech.application.glassware_smart_factory`)：Glassware Factory是Smart Glassware Factory不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -30978,8 +30637,8 @@ terminal production upgrade
 
 #### 硬前置（决定研发资格）
 
-- Metal Housewares Manufactory (`tech.application.metal_housewares_manufactory_exploration`)：knowledge prerequisite: tech.application.metal\_housewares\_manufactory\_exploration -\> Metal Housewares Factory
-- 蒸汽动力 (`tech.steam_power`)：knowledge prerequisite: tech.steam\_power -\> Metal Housewares Factory
+- Metal Housewares Manufactory (`tech.application.metal_housewares_manufactory_exploration`)：Metal Housewares Manufactory是Metal Housewares Factory不可替代的知识基础。
+- 蒸汽动力 (`tech.steam_power`)：蒸汽动力是Metal Housewares Factory不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -30987,7 +30646,7 @@ terminal production upgrade
 
 #### 效果摘要
 
-解锁物资：Metal Housewares Factory；解锁建筑：Metal Housewares Factory；作为必要支撑：Metal Housewares Factory
+解锁物资：金属家用器皿；解锁建筑：金属家用器皿工厂；作为必要支撑：Metal Housewares Factory
 
 #### 机会成本
 
@@ -31002,8 +30661,8 @@ terminal production upgrade
 
 #### 结构化内容效果
 
-- **Metal Housewares Factory**（`good`）：`good.metal_housewares` → `production_access` `unlock` `1.0`；`existing_binding`
-- **Metal Housewares Factory**（`building`）：`building.metal_housewares_factory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **金属家用器皿**（`good`）：`good.metal_housewares` → `production_access` `unlock` `1.0`；`existing_binding`
+- **金属家用器皿工厂**（`building`）：`building.metal_housewares_factory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -31011,7 +30670,7 @@ terminal production upgrade
 
 #### 被以下科技作为硬前置
 
-- Smart Metal Housewares Factory (`tech.application.metal_housewares_smart_factory`)：knowledge prerequisite: tech.application.metal\_housewares\_factory\_steam -\> Smart Metal Housewares Factory
+- Smart Metal Housewares Factory (`tech.application.metal_housewares_smart_factory`)：Metal Housewares Factory是Smart Metal Housewares Factory不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -31045,8 +30704,8 @@ terminal production upgrade
 
 #### 硬前置（决定研发资格）
 
-- Leather Goods Manufactory (`tech.application.leather_goods_manufactory_exploration`)：knowledge prerequisite: tech.application.leather\_goods\_manufactory\_exploration -\> Leather Goods Factory
-- 蒸汽动力 (`tech.steam_power`)：knowledge prerequisite: tech.steam\_power -\> Leather Goods Factory
+- Leather Goods Manufactory (`tech.application.leather_goods_manufactory_exploration`)：Leather Goods Manufactory是Leather Goods Factory不可替代的知识基础。
+- 蒸汽动力 (`tech.steam_power`)：蒸汽动力是Leather Goods Factory不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -31054,7 +30713,7 @@ terminal production upgrade
 
 #### 效果摘要
 
-解锁物资：Leather Goods Factory；解锁建筑：Leather Goods Factory；作为必要支撑：Leather Goods Factory
+解锁物资：皮革制品；解锁建筑：皮革制品工厂；作为必要支撑：Leather Goods Factory
 
 #### 机会成本
 
@@ -31069,8 +30728,8 @@ terminal production upgrade
 
 #### 结构化内容效果
 
-- **Leather Goods Factory**（`good`）：`good.leather_goods` → `production_access` `unlock` `1.0`；`existing_binding`
-- **Leather Goods Factory**（`building`）：`building.leather_goods_factory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **皮革制品**（`good`）：`good.leather_goods` → `production_access` `unlock` `1.0`；`existing_binding`
+- **皮革制品工厂**（`building`）：`building.leather_goods_factory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -31078,7 +30737,7 @@ terminal production upgrade
 
 #### 被以下科技作为硬前置
 
-- Smart Leather Goods Factory (`tech.application.leather_goods_smart_factory`)：knowledge prerequisite: tech.application.leather\_goods\_factory\_steam -\> Smart Leather Goods Factory
+- Smart Leather Goods Factory (`tech.application.leather_goods_smart_factory`)：Leather Goods Factory是Smart Leather Goods Factory不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -31112,15 +30771,14 @@ terminal production upgrade
 
 #### 硬前置（决定研发资格）
 
-- 应用：马铃薯庄园 (`tech.application.potato_estate`)：tech.application.potato\_estate是改良轮作马铃薯庄园不可替代的知识基础。
-- 系统育种 (`tech.crop_breeding`)：tech.crop\_breeding是改良轮作马铃薯庄园不可替代的知识基础。
-- 块茎繁育 (`tech.potato_propagation`)：tech.potato\_propagation是改良轮作马铃薯庄园不可替代的知识基础。
-- 雨养田体系 (`tech.rainfed_field_system`)：tech.rainfed\_field\_system是改良轮作马铃薯庄园不可替代的知识基础。
-- 庄园核算 (`tech.estate_accounting`)：tech.estate\_accounting是改良轮作马铃薯庄园不可替代的知识基础。
-- 集约轮作 (`tech.intensive_crop_rotation`)：tech.intensive\_crop\_rotation是改良轮作马铃薯庄园不可替代的知识基础。
-- 长期租约 (`tech.long_term_leases`)：tech.long\_term\_leases是改良轮作马铃薯庄园不可替代的知识基础。
-- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：tech.application.method\_lumber\_plant\_r2是改良轮作马铃薯庄园不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：tech.application.classical\_masonry\_yard是改良轮作马铃薯庄园不可替代的知识基础。
+- 应用：马铃薯庄园 (`tech.application.potato_estate`)：应用：马铃薯庄园是应用：改良轮作马铃薯庄园不可替代的知识基础。
+- 系统育种 (`tech.crop_breeding`)：系统育种是应用：改良轮作马铃薯庄园不可替代的知识基础。
+- 块茎繁育 (`tech.potato_propagation`)：块茎繁育是应用：改良轮作马铃薯庄园不可替代的知识基础。
+- 雨养田体系 (`tech.rainfed_field_system`)：雨养田体系是应用：改良轮作马铃薯庄园不可替代的知识基础。
+- 庄园核算 (`tech.estate_accounting`)：庄园核算是应用：改良轮作马铃薯庄园不可替代的知识基础。
+- 集约轮作 (`tech.intensive_crop_rotation`)：集约轮作是应用：改良轮作马铃薯庄园不可替代的知识基础。
+- 长期租约 (`tech.long_term_leases`)：长期租约是应用：改良轮作马铃薯庄园不可替代的知识基础。
+- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：改良轮作马铃薯庄园不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -31143,8 +30801,8 @@ terminal production upgrade
 
 #### 结构化内容效果
 
-- **马铃薯**（`good`）：`good.potatoes` → `production_access` `unlock` `1.0`；`catalog_rebind`
-- **改良轮作马铃薯庄园**（`building`）：`building.method_potato_farm_r5` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+- **马铃薯**（`good`）：`good.potatoes` → `production_access` `unlock` `1.0`；`existing_binding`
+- **改良轮作马铃薯庄园**（`building`）：`building.method_potato_farm_r5` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -31195,8 +30853,6 @@ terminal production upgrade
 - 流水线组织 (`tech.assembly_line`)：流水线组织是应用：面包厂不可替代的知识基础。
 - 工业组织 (`tech.industrial_organization`)：工业组织是应用：面包厂不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：面包厂不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：面包厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：面包厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：面包厂不可替代的知识基础。
 - 应用：自给农庄 (`tech.application.subsistence_farm`)：应用：自给农庄是应用：面包厂不可替代的知识基础。
 - 应用：包装材料厂 (`tech.application.packaging_plant`)：应用：包装材料厂是应用：面包厂不可替代的知识基础。
@@ -31267,8 +30923,6 @@ terminal production upgrade
 
 - 矿井通风 (`tech.mine_ventilation`)：矿井通风是应用：铅矿不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：铅矿不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：铅矿不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：铅矿不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：铅矿不可替代的知识基础。
 - 应用：炸药厂 (`tech.application.explosives_plant`)：应用：炸药厂是应用：铅矿不可替代的知识基础。
 - 深井采矿 (`tech.deep_mining`)：深井采矿是应用：铅矿不可替代的知识基础。
@@ -31340,7 +30994,6 @@ terminal production upgrade
 
 - 矿井通风 (`tech.mine_ventilation`)：矿井通风是应用：锌矿不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：锌矿不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：锌矿不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：锌矿不可替代的知识基础。
 - 应用：炸药厂 (`tech.application.explosives_plant`)：应用：炸药厂是应用：锌矿不可替代的知识基础。
 
@@ -31410,10 +31063,6 @@ terminal production upgrade
 #### 硬前置（决定研发资格）
 
 - 井筒开掘 (`tech.shaft_sinking`)：井筒开掘是应用：金矿不可替代的知识基础。
-- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：金矿不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：金矿不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：金矿不可替代的知识基础。
-- 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：金矿不可替代的知识基础。
 - 粗陶淘金 (`tech.gold_panning`)：粗陶淘金是应用：金矿不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
@@ -31481,9 +31130,6 @@ terminal production upgrade
 #### 硬前置（决定研发资格）
 
 - 井筒开掘 (`tech.shaft_sinking`)：井筒开掘是应用：银矿不可替代的知识基础。
-- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：银矿不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：银矿不可替代的知识基础。
-- 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：银矿不可替代的知识基础。
 - 地表银矿拣采 (`tech.surface_silver_collection`)：地表银矿拣采是应用：银矿不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
@@ -31552,8 +31198,6 @@ terminal production upgrade
 
 - 矿井排水 (`tech.mine_drainage`)：矿井排水是应用：深井盐矿不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：深井盐矿不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：深井盐矿不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：深井盐矿不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：深井盐矿不可替代的知识基础。
 - 应用：炸药厂 (`tech.application.explosives_plant`)：应用：炸药厂是应用：深井盐矿不可替代的知识基础。
 - 卤水采集 (`tech.brine_collection`)：卤水采集是应用：深井盐矿不可替代的知识基础。
@@ -31624,8 +31268,6 @@ terminal production upgrade
 
 - 农业改良 (`tech.agricultural_improvement`)：农业改良是应用：改良小农场不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：改良小农场不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：改良小农场不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：改良小农场不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：改良小农场不可替代的知识基础。
 - 雨养田体系 (`tech.rainfed_field_system`)：雨养田体系是应用：改良小农场不可替代的知识基础。
 
@@ -31696,8 +31338,6 @@ terminal production upgrade
 
 - 水利工程 (`tech.hydraulic_engineering`)：水利工程是应用：水泥厂不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：水泥厂不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：水泥厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：水泥厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：水泥厂不可替代的知识基础。
 - 应用：石灰厂 (`tech.application.lime_plant`)：应用：石灰厂是应用：水泥厂不可替代的知识基础。
 - 应用：原始黏土坑 (`tech.application.primitive_clay_pit`)：应用：原始黏土坑是应用：水泥厂不可替代的知识基础。
@@ -31771,7 +31411,6 @@ terminal production upgrade
 - 深井采矿 (`tech.deep_mining`)：深井采矿是应用：硅砂矿不可替代的知识基础。
 - 矿井排水 (`tech.mine_drainage`)：矿井排水是应用：硅砂矿不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：硅砂矿不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：硅砂矿不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：硅砂矿不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
@@ -31842,8 +31481,6 @@ terminal production upgrade
 - 蒸汽动力 (`tech.steam_power`)：蒸汽动力是应用：鱼类罐头厂不可替代的知识基础。
 - 工业组织 (`tech.industrial_organization`)：工业组织是应用：鱼类罐头厂不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：鱼类罐头厂不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：鱼类罐头厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：鱼类罐头厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：鱼类罐头厂不可替代的知识基础。
 - 淡水岸捕 (`tech.freshwater_fishing`)：淡水岸捕是应用：鱼类罐头厂不可替代的知识基础。
 - 应用：日晒盐田 (`tech.application.solar_salt_pan`)：应用：日晒盐田是应用：鱼类罐头厂不可替代的知识基础。
@@ -31915,7 +31552,6 @@ terminal production upgrade
 
 - 蒸汽抽水 (`tech.steam_pumping`)：蒸汽抽水是应用：蒸汽动力煤矿不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：蒸汽动力煤矿不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：蒸汽动力煤矿不可替代的知识基础。
 - 露头煤辨识 (`tech.coal_outcrop_identification`)：露头煤辨识是应用：蒸汽动力煤矿不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
@@ -31984,7 +31620,6 @@ terminal production upgrade
 
 - 蒸汽抽水 (`tech.steam_pumping`)：蒸汽抽水是应用：蒸汽动力铁矿不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：蒸汽动力铁矿不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：蒸汽动力铁矿不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：蒸汽动力铁矿不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
@@ -32053,8 +31688,6 @@ terminal production upgrade
 
 - 纺织机械 (`tech.textile_machinery`)：纺织机械是应用：制衣厂不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：制衣厂不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：制衣厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：制衣厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：制衣厂不可替代的知识基础。
 - 应用：家用织机 (`tech.application.household_loom`)：应用：家用织机是应用：制衣厂不可替代的知识基础。
 
@@ -32124,7 +31757,6 @@ terminal production upgrade
 
 - 纺织机械 (`tech.textile_machinery`)：纺织机械是应用：蒸汽纺织厂不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：蒸汽纺织厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：蒸汽纺织厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：蒸汽纺织厂不可替代的知识基础。
 - 应用：亚麻农场 (`tech.application.flax_collector`)：应用：亚麻农场是应用：蒸汽纺织厂不可替代的知识基础。
 
@@ -32194,7 +31826,6 @@ terminal production upgrade
 
 - 机床 (`tech.machine_tools`)：机床是应用：钢制工具厂不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：钢制工具厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：钢制工具厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：钢制工具厂不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
@@ -32262,8 +31893,6 @@ terminal production upgrade
 #### 硬前置（决定研发资格）
 
 - 工业化学 (`tech.industrial_chemistry`)：工业化学是应用：玻璃厂不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：玻璃厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：玻璃厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：玻璃厂不可替代的知识基础。
 - 应用：硅砂矿坑 (`tech.application.classical_silica_pit`)：应用：硅砂矿坑是应用：玻璃厂不可替代的知识基础。
 
@@ -32333,8 +31962,6 @@ terminal production upgrade
 
 - 工业化学 (`tech.industrial_chemistry`)：工业化学是应用：化学工场不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：化学工场不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：化学工场不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：化学工场不可替代的知识基础。
 - 应用：硫矿 (`tech.application.sulfur_collector`)：应用：硫矿是应用：化学工场不可替代的知识基础。
 - 应用：日晒盐田 (`tech.application.solar_salt_pan`)：应用：日晒盐田是应用：化学工场不可替代的知识基础。
 
@@ -32368,7 +31995,6 @@ terminal production upgrade
 
 #### 被以下科技作为硬前置
 
-- 应用：造纸厂 (`tech.application.paper_plant`)：应用：化学工场是应用：造纸厂不可替代的知识基础。
 - 应用：制革厂 (`tech.application.leather_plant`)：应用：化学工场是应用：制革厂不可替代的知识基础。
 - 应用：制药厂 (`tech.application.pharmaceuticals_plant`)：应用：化学工场是应用：制药厂不可替代的知识基础。
 - 应用：高级家具厂 (`tech.application.fine_furniture_plant`)：应用：化学工场是应用：高级家具厂不可替代的知识基础。
@@ -32413,7 +32039,6 @@ terminal production upgrade
 
 - 肥料加工 (`tech.fertilizer_processing`)：肥料加工是应用：磷矿不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：磷矿不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：磷矿不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：磷矿不可替代的知识基础。
 - 应用：炸药厂 (`tech.application.explosives_plant`)：应用：炸药厂是应用：磷矿不可替代的知识基础。
 
@@ -32447,7 +32072,7 @@ terminal production upgrade
 
 #### 被以下科技作为硬前置
 
-- 应用：化肥厂 (`tech.application.fertilizer_plant`)：应用：磷矿是应用：化肥厂不可替代的知识基础。
+无
 
 #### 主题路线后继
 
@@ -32486,8 +32111,6 @@ terminal production upgrade
 - 纺织机械 (`tech.textile_machinery`)：纺织机械是应用：制鞋厂不可替代的知识基础。
 - 互换零件 (`tech.interchangeable_parts`)：互换零件是应用：制鞋厂不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：制鞋厂不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：制鞋厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：制鞋厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：制鞋厂不可替代的知识基础。
 - 应用：家用织机 (`tech.application.household_loom`)：应用：家用织机是应用：制鞋厂不可替代的知识基础。
 - 应用：野生割胶营地 (`tech.application.rubber_tapping_camp`)：应用：野生割胶营地是应用：制鞋厂不可替代的知识基础。
@@ -32559,8 +32182,6 @@ terminal production upgrade
 
 - 管理层级 (`tech.managerial_hierarchy`)：管理层级是应用：家具厂不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：家具厂不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：家具厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：家具厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：家具厂不可替代的知识基础。
 - 应用：家用织机 (`tech.application.household_loom`)：应用：家用织机是应用：家具厂不可替代的知识基础。
 
@@ -32735,11 +32356,11 @@ terminal production upgrade
 - 电网 (`tech.electric_grid`)：电气化是电网不可替代的知识基础。
 - 电动机 (`tech.electric_motors`)：电气化是电动机不可替代的知识基础。
 - 应用：早期电气设备厂 (`tech.application.basic_electrical_equipment_works`)：电气化是应用：早期电气设备厂不可替代的知识基础。
+- Glassware Factory (`tech.application.glassware_factory_electrical`)：电气化是Glassware Factory不可替代的知识基础。
+- Metal Housewares Factory (`tech.application.metal_housewares_factory_electrical`)：电气化是Metal Housewares Factory不可替代的知识基础。
+- Leather Goods Factory (`tech.application.leather_goods_factory_electrical`)：电气化是Leather Goods Factory不可替代的知识基础。
 - 电子控制 (`tech.electronic_control`)：电气化是电子控制不可替代的知识基础。
 - 应用：电气设备厂 (`tech.application.electrical_equipment_plant`)：电气化是应用：电气设备厂不可替代的知识基础。
-- Glassware Factory (`tech.application.glassware_factory_electrical`)：knowledge prerequisite: tech.electrification -\> Glassware Factory
-- Metal Housewares Factory (`tech.application.metal_housewares_factory_electrical`)：knowledge prerequisite: tech.electrification -\> Metal Housewares Factory
-- Leather Goods Factory (`tech.application.leather_goods_factory_electrical`)：knowledge prerequisite: tech.electrification -\> Leather Goods Factory
 
 #### 主题路线后继
 
@@ -33001,7 +32622,6 @@ terminal production upgrade
 - 蒸汽动力 (`tech.steam_power`)：蒸汽动力是应用：蒸汽航运船坞不可替代的知识基础。
 - 海岸船厂 (`tech.coastal_shipyards`)：海岸船厂是应用：蒸汽航运船坞不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：蒸汽航运船坞不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：蒸汽航运船坞不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：蒸汽航运船坞不可替代的知识基础。
 - 应用：大气式蒸汽机工坊 (`tech.application.atmospheric_engine_workshop`)：应用：大气式蒸汽机工坊是应用：蒸汽航运船坞不可替代的知识基础。
 - 应用：远洋造船厂 (`tech.application.oceanic_shipyard`)：应用：远洋造船厂是应用：蒸汽航运船坞不可替代的知识基础。
@@ -33074,8 +32694,6 @@ terminal production upgrade
 - 大规模生产 (`tech.mass_production`)：大规模生产是应用：机械零件厂不可替代的知识基础。
 - 机械工坊 (`tech.mechanical_workshops`)：机械工坊是应用：机械零件厂不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：机械零件厂不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：机械零件厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：机械零件厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：机械零件厂不可替代的知识基础。
 - 应用：榨油坊 (`tech.application.edible_oil_plant`)：应用：榨油坊是应用：机械零件厂不可替代的知识基础。
 
@@ -33146,7 +32764,6 @@ terminal production upgrade
 
 - 铁路物流 (`tech.rail_logistics`)：铁路物流是应用：铁路设备工场不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：铁路设备工场不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：铁路设备工场不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：铁路设备工场不可替代的知识基础。
 - 应用：大气式蒸汽机工坊 (`tech.application.atmospheric_engine_workshop`)：应用：大气式蒸汽机工坊是应用：铁路设备工场不可替代的知识基础。
 
@@ -33180,7 +32797,6 @@ terminal production upgrade
 
 #### 被以下科技作为硬前置
 
-- 应用：蒸汽钻井场 (`tech.application.early_oil_well`)：应用：铁路设备工场是应用：蒸汽钻井场不可替代的知识基础。
 - 应用：电弧炉炼钢厂 (`tech.application.steel_plant`)：应用：铁路设备工场是应用：电弧炉炼钢厂不可替代的知识基础。
 - 应用：铁路设备厂 (`tech.application.railway_equipment_plant`)：应用：铁路设备工场是应用：铁路设备厂不可替代的知识基础。
 
@@ -33216,13 +32832,9 @@ terminal production upgrade
 
 #### 硬前置（决定研发资格）
 
-- 机械印刷 (`tech.mechanized_printing`)：机械印刷是应用：造纸厂不可替代的知识基础。
 - 工业化学 (`tech.industrial_chemistry`)：工业化学是应用：造纸厂不可替代的知识基础。
+- 机械印刷 (`tech.mechanized_printing`)：机械印刷是应用：造纸厂不可替代的知识基础。
 - 工厂制 (`tech.factory_system`)：工厂制是应用：造纸厂不可替代的知识基础。
-- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：造纸厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：造纸厂不可替代的知识基础。
-- 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：造纸厂不可替代的知识基础。
-- 应用：化学工场 (`tech.application.industrial_chemicals_plant`)：应用：化学工场是应用：造纸厂不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -33293,8 +32905,6 @@ terminal production upgrade
 - 工业化学 (`tech.industrial_chemistry`)：工业化学是应用：制革厂不可替代的知识基础。
 - 互换零件 (`tech.interchangeable_parts`)：互换零件是应用：制革厂不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：制革厂不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：制革厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：制革厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：制革厂不可替代的知识基础。
 - 应用：化学工场 (`tech.application.industrial_chemicals_plant`)：应用：化学工场是应用：制革厂不可替代的知识基础。
 
@@ -33366,7 +32976,6 @@ terminal production upgrade
 - 手工锯木 (`tech.timber_sawing`)：手工锯木是应用：蒸汽锯木厂不可替代的知识基础。
 - 蒸汽动力 (`tech.steam_power`)：蒸汽动力是应用：蒸汽锯木厂不可替代的知识基础。
 - 机床 (`tech.machine_tools`)：机床是应用：蒸汽锯木厂不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：蒸汽锯木厂不可替代的知识基础。
 - 应用：大气式蒸汽机工坊 (`tech.application.atmospheric_engine_workshop`)：应用：大气式蒸汽机工坊是应用：蒸汽锯木厂不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
@@ -33469,6 +33078,7 @@ terminal production upgrade
 - 内燃机 (`tech.internal_combustion`)：石油炼制是内燃机不可替代的知识基础。
 - 合成材料 (`tech.synthetic_materials`)：石油炼制是合成材料不可替代的知识基础。
 - 应用：炼油厂 (`tech.application.refined_fuel_plant`)：石油炼制是应用：炼油厂不可替代的知识基础。
+- 应用：润滑油厂 (`tech.application.lubricants_plant`)：石油炼制是应用：润滑油厂不可替代的知识基础。
 - 应用：智能炼油厂 (`tech.application.method_refined_fuel_plant_r10`)：石油炼制是应用：智能炼油厂不可替代的知识基础。
 
 #### 主题路线后继
@@ -33506,8 +33116,6 @@ terminal production upgrade
 - 工厂制 (`tech.factory_system`)：工厂制是应用：工业机械厂不可替代的知识基础。
 - 机床 (`tech.machine_tools`)：机床是应用：工业机械厂不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：工业机械厂不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：工业机械厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：工业机械厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：工业机械厂不可替代的知识基础。
 - 应用：机械零件厂 (`tech.application.machine_parts_plant`)：应用：机械零件厂是应用：工业机械厂不可替代的知识基础。
 - 应用：大气式蒸汽机工坊 (`tech.application.atmospheric_engine_workshop`)：应用：大气式蒸汽机工坊是应用：工业机械厂不可替代的知识基础。
@@ -33560,7 +33168,6 @@ terminal production upgrade
 - 应用：电气化造船厂 (`tech.application.method_oceanic_shipyard_r7`)：应用：工业机械厂是应用：电气化造船厂不可替代的知识基础。
 - 应用：酿造厂 (`tech.application.beverages_plant`)：应用：工业机械厂是应用：酿造厂不可替代的知识基础。
 - 应用：高级成衣厂 (`tech.application.fine_clothing_plant`)：应用：工业机械厂是应用：高级成衣厂不可替代的知识基础。
-- 应用：油田 (`tech.application.oil_collector`)：应用：工业机械厂是应用：油田不可替代的知识基础。
 - 应用：电弧炉炼钢厂 (`tech.application.steel_plant`)：应用：工业机械厂是应用：电弧炉炼钢厂不可替代的知识基础。
 - 应用：电池厂 (`tech.application.batteries_plant`)：应用：工业机械厂是应用：电池厂不可替代的知识基础。
 - 应用：电解铝厂 (`tech.application.aluminum_plant`)：应用：工业机械厂是应用：电解铝厂不可替代的知识基础。
@@ -33716,8 +33323,8 @@ terminal production upgrade
 - 应用：受控环境药材农场 (`tech.application.method_medicinal_herbs_collector_r7`)：现代医学是应用：受控环境药材农场不可替代的知识基础。
 - 公共卫生体系 (`tech.public_health_systems`)：现代医学是公共卫生体系不可替代的知识基础。
 - 生物技术 (`tech.biotechnology`)：现代医学是生物技术不可替代的知识基础。
-- 应用：精准药材农场 (`tech.application.method_medicinal_herbs_collector_r8`)：tech.modern\_medicine是精准药材农场不可替代的知识基础。
-- 应用：自动化药材农场 (`tech.application.method_medicinal_herbs_collector_r10`)：tech.modern\_medicine是自动化药材农场不可替代的知识基础。
+- 应用：精准药材农场 (`tech.application.method_medicinal_herbs_collector_r8`)：现代医学是应用：精准药材农场不可替代的知识基础。
+- 应用：自动化药材农场 (`tech.application.method_medicinal_herbs_collector_r10`)：现代医学是应用：自动化药材农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -34262,7 +33869,7 @@ terminal production upgrade
 
 #### 效果摘要
 
-小麦产出 +12%
+小麦产出 +12%；草原农业产出 +18%
 
 #### 机会成本
 
@@ -34282,18 +33889,21 @@ terminal production upgrade
 #### 永久 Modifier 条款
 
 - 小麦：`country.output.good.wheat_grain_factor`：+12%
+- 草原农业：`country.output.terrain.grassland.agriculture_factor`：+18%
   - 效果机制：小麦辨识、繁育与旱作体系提高小麦产出。
   - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：机动农业提高草原的农业生产适应。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
-- 应用：机械化马铃薯农场 (`tech.application.method_potato_collector_r6`)：tech.motorized\_agriculture是机械化马铃薯农场不可替代的知识基础。
+- 应用：机械化马铃薯农场 (`tech.application.method_potato_collector_r6`)：机动农业是应用：机械化马铃薯农场不可替代的知识基础。
+- 应用：机械化小麦农场 (`tech.application.method_wheat_farm_r6`)：机动农业是应用：机械化小麦农场不可替代的知识基础。
+- 应用：机械化稻作农场 (`tech.application.method_rice_collector_r6`)：机动农业是应用：机械化稻作农场不可替代的知识基础。
+- 应用：机械化亚麻农场 (`tech.application.method_flax_collector_r6`)：机动农业是应用：机械化亚麻农场不可替代的知识基础。
 - 应用：机械化橡胶种植园 (`tech.application.method_rubber_tree_collector_r6`)：机动农业是应用：机械化橡胶种植园不可替代的知识基础。
 - 应用：机械化香料种植园 (`tech.application.method_spice_plants_collector_r6`)：机动农业是应用：机械化香料种植园不可替代的知识基础。
 - 工业农学 (`tech.industrial_agronomy`)：机动农业是工业农学不可替代的知识基础。
-- 应用：机械化小麦农场 (`tech.application.method_wheat_farm_r6`)：tech.motorized\_agriculture是机械化小麦农场不可替代的知识基础。
-- 应用：机械化稻作农场 (`tech.application.method_rice_collector_r6`)：tech.motorized\_agriculture是机械化稻作农场不可替代的知识基础。
-- 应用：机械化亚麻农场 (`tech.application.method_flax_collector_r6`)：tech.motorized\_agriculture是机械化亚麻农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -34337,7 +33947,7 @@ terminal production upgrade
 
 #### 效果摘要
 
-畜牧业产出 +28%
+畜牧业产出 +28%；牧业生产·寒冷损失 -14%；牧业生产·热害损失 -14%；稀树草原农业产出 +16%
 
 #### 机会成本
 
@@ -34357,7 +33967,16 @@ terminal production upgrade
 #### 永久 Modifier 条款
 
 - 畜牧业：`country.output.family.livestock_husbandry_factor`：+28%
+- 牧业生产·寒冷损失：`country.climate.profile.pasture_livestock.cold_stress_loss_factor`：+14%
+- 牧业生产·热害损失：`country.climate.profile.pasture_livestock.heat_stress_loss_factor`：+14%
+- 稀树草原农业：`country.output.terrain.savanna.agriculture_factor`：+16%
   - 效果机制：畜群管理、繁育与加工体系提高畜牧业产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：现代畜牧降低牧业生产建筑的寒冷损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：现代畜牧降低牧业生产建筑的热害损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：现代畜牧提高稀树草原的农业生产适应。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
@@ -34476,7 +34095,7 @@ terminal production upgrade
 
 #### 效果摘要
 
-肉类 -8%；作为必要支撑：乳制品厂
+肉类 -8%；牧业生产·热害损失 -8%；沙漠农业产出 +12%；作为必要支撑：乳制品厂
 
 #### 机会成本
 
@@ -34496,8 +34115,14 @@ terminal production upgrade
 #### 永久 Modifier 条款
 
 - 肉类：`country.consumption.good.meat_factor`：+8%
+- 牧业生产·热害损失：`country.climate.profile.pasture_livestock.heat_stress_loss_factor`：+8%
+- 沙漠农业：`country.output.terrain.desert.agriculture_factor`：+12%
   - 效果机制：冷藏减少家庭肉类腐败。
   - 运行时消费者：`NativeEconomyRuntime::effective_household_good_quantity`
+  - 效果机制：机械制冷降低牧业生产建筑的热害损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：机械制冷提高沙漠的农业生产适应。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -34714,10 +34339,10 @@ oil -10%
 
 #### 被以下科技作为硬前置
 
+- 应用：蒸汽钻井场 (`tech.application.early_oil_well`)：石油钻探是应用：蒸汽钻井场不可替代的知识基础。
 - 应用：油田 (`tech.application.oil_collector`)：石油钻探是应用：油田不可替代的知识基础。
 - 应用：燃油发电厂 (`tech.application.oil_power_plant`)：石油钻探是应用：燃油发电厂不可替代的知识基础。
 - 应用：天然气田 (`tech.application.natural_gas_collector`)：石油钻探是应用：天然气田不可替代的知识基础。
-- 应用：润滑油厂 (`tech.application.lubricants_plant`)：石油钻探是应用：润滑油厂不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -34840,8 +34465,6 @@ oil -10%
 - 工业质量控制 (`tech.industrial_quality_control`)：工业质量控制是应用：工业屠宰场不可替代的知识基础。
 - 大规模生产 (`tech.mass_production`)：大规模生产是应用：工业屠宰场不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：工业屠宰场不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：工业屠宰场不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：工业屠宰场不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：工业屠宰场不可替代的知识基础。
 - 应用：游牧营地 (`tech.application.pastoral_camp`)：应用：游牧营地是应用：工业屠宰场不可替代的知识基础。
 - 应用：工业机械厂 (`tech.application.industrial_machinery_plant`)：应用：工业机械厂是应用：工业屠宰场不可替代的知识基础。
@@ -34915,7 +34538,6 @@ oil -10%
 - 工业化学 (`tech.industrial_chemistry`)：工业化学是应用：工业制皂厂不可替代的知识基础。
 - 大规模生产 (`tech.mass_production`)：大规模生产是应用：工业制皂厂不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：工业制皂厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：工业制皂厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：工业制皂厂不可替代的知识基础。
 - 应用：游牧营地 (`tech.application.pastoral_camp`)：应用：游牧营地是应用：工业制皂厂不可替代的知识基础。
 - 应用：日晒盐田 (`tech.application.solar_salt_pan`)：应用：日晒盐田是应用：工业制皂厂不可替代的知识基础。
@@ -34990,8 +34612,6 @@ oil -10%
 - 工业组织 (`tech.industrial_organization`)：工业组织是应用：工业榨油厂不可替代的知识基础。
 - 工业质量控制 (`tech.industrial_quality_control`)：工业质量控制是应用：工业榨油厂不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：工业榨油厂不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：工业榨油厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：工业榨油厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：工业榨油厂不可替代的知识基础。
 - 雨养玉米田 (`tech.rainfed_maize_cultivation`)：雨养玉米田是应用：工业榨油厂不可替代的知识基础。
 - 应用：工业机械厂 (`tech.application.industrial_machinery_plant`)：应用：工业机械厂是应用：工业榨油厂不可替代的知识基础。
@@ -35062,8 +34682,6 @@ oil -10%
 
 - 机械化农业 (`tech.mechanized_agriculture`)：机械化农业是应用：农业机械厂不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：农业机械厂不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：农业机械厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：农业机械厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：农业机械厂不可替代的知识基础。
 - 应用：工业机械厂 (`tech.application.industrial_machinery_plant`)：应用：工业机械厂是应用：农业机械厂不可替代的知识基础。
 - 应用：大气式蒸汽机工坊 (`tech.application.atmospheric_engine_workshop`)：应用：大气式蒸汽机工坊是应用：农业机械厂不可替代的知识基础。
@@ -35098,19 +34716,19 @@ oil -10%
 
 #### 被以下科技作为硬前置
 
-- 应用：机械化马铃薯农场 (`tech.application.method_potato_collector_r6`)：tech.application.agricultural\_machinery\_plant是机械化马铃薯农场不可替代的知识基础。
+- 应用：机械化马铃薯农场 (`tech.application.method_potato_collector_r6`)：应用：农业机械厂是应用：机械化马铃薯农场不可替代的知识基础。
 - 应用：机械化牧场 (`tech.application.ranching_station`)：应用：农业机械厂是应用：机械化牧场不可替代的知识基础。
 - 应用：机械化棉花农场 (`tech.application.method_cotton_collector_r6`)：应用：农业机械厂是应用：机械化棉花农场不可替代的知识基础。
 - 应用：机械化农场 (`tech.application.mechanized_farm`)：应用：农业机械厂是应用：机械化农场不可替代的知识基础。
 - 应用：机械化玉米农场 (`tech.application.method_landed_estate_r6`)：应用：农业机械厂是应用：机械化玉米农场不可替代的知识基础。
+- 应用：机械化小麦农场 (`tech.application.method_wheat_farm_r6`)：应用：农业机械厂是应用：机械化小麦农场不可替代的知识基础。
+- 应用：机械化稻作农场 (`tech.application.method_rice_collector_r6`)：应用：农业机械厂是应用：机械化稻作农场不可替代的知识基础。
+- 应用：机械化亚麻农场 (`tech.application.method_flax_collector_r6`)：应用：农业机械厂是应用：机械化亚麻农场不可替代的知识基础。
 - 应用：机械化橡胶种植园 (`tech.application.method_rubber_tree_collector_r6`)：应用：农业机械厂是应用：机械化橡胶种植园不可替代的知识基础。
 - 应用：机械化香料种植园 (`tech.application.method_spice_plants_collector_r6`)：应用：农业机械厂是应用：机械化香料种植园不可替代的知识基础。
 - 工业农学 (`tech.industrial_agronomy`)：应用：农业机械厂是工业农学不可替代的知识基础。
 - 自动化农业 (`tech.automated_agriculture`)：应用：农业机械厂是自动化农业不可替代的知识基础。
 - 应用：智能牧业站 (`tech.application.method_smart_husbandry`)：应用：农业机械厂是应用：智能牧业站不可替代的知识基础。
-- 应用：机械化小麦农场 (`tech.application.method_wheat_farm_r6`)：tech.application.agricultural\_machinery\_plant是机械化小麦农场不可替代的知识基础。
-- 应用：机械化稻作农场 (`tech.application.method_rice_collector_r6`)：tech.application.agricultural\_machinery\_plant是机械化稻作农场不可替代的知识基础。
-- 应用：机械化亚麻农场 (`tech.application.method_flax_collector_r6`)：tech.application.agricultural\_machinery\_plant是机械化亚麻农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -35146,7 +34764,6 @@ oil -10%
 
 - 工业组织 (`tech.industrial_organization`)：工业组织是应用：工业砖厂不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：工业砖厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：工业砖厂不可替代的知识基础。
 - 应用：工业机械厂 (`tech.application.industrial_machinery_plant`)：应用：工业机械厂是应用：工业砖厂不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
@@ -35215,8 +34832,6 @@ oil -10%
 
 - 工业组织 (`tech.industrial_organization`)：工业组织是应用：工业石灰厂不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：工业石灰厂不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：工业石灰厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：工业石灰厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：工业石灰厂不可替代的知识基础。
 - 应用：石灰石采石场 (`tech.application.limestone_collector`)：应用：石灰石采石场是应用：工业石灰厂不可替代的知识基础。
 - 应用：工业机械厂 (`tech.application.industrial_machinery_plant`)：应用：工业机械厂是应用：工业石灰厂不可替代的知识基础。
@@ -35285,14 +34900,13 @@ oil -10%
 
 #### 硬前置（决定研发资格）
 
-- 机动农业 (`tech.motorized_agriculture`)：tech.motorized\_agriculture是机械化马铃薯农场不可替代的知识基础。
-- 机械化农业 (`tech.mechanized_agriculture`)：tech.mechanized\_agriculture是机械化马铃薯农场不可替代的知识基础。
-- 块茎繁育 (`tech.potato_propagation`)：tech.potato\_propagation是机械化马铃薯农场不可替代的知识基础。
-- 机械收割 (`tech.mechanical_reaping`)：tech.mechanical\_reaping是机械化马铃薯农场不可替代的知识基础。
-- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：tech.application.method\_lumber\_plant\_r2是机械化马铃薯农场不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：tech.application.classical\_masonry\_yard是机械化马铃薯农场不可替代的知识基础。
-- 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：tech.application.steam\_steel\_works是机械化马铃薯农场不可替代的知识基础。
-- 应用：农业机械厂 (`tech.application.agricultural_machinery_plant`)：tech.application.agricultural\_machinery\_plant是机械化马铃薯农场不可替代的知识基础。
+- 机动农业 (`tech.motorized_agriculture`)：机动农业是应用：机械化马铃薯农场不可替代的知识基础。
+- 机械化农业 (`tech.mechanized_agriculture`)：机械化农业是应用：机械化马铃薯农场不可替代的知识基础。
+- 块茎繁育 (`tech.potato_propagation`)：块茎繁育是应用：机械化马铃薯农场不可替代的知识基础。
+- 机械收割 (`tech.mechanical_reaping`)：机械收割是应用：机械化马铃薯农场不可替代的知识基础。
+- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：机械化马铃薯农场不可替代的知识基础。
+- 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：机械化马铃薯农场不可替代的知识基础。
+- 应用：农业机械厂 (`tech.application.agricultural_machinery_plant`)：应用：农业机械厂是应用：机械化马铃薯农场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -35360,7 +34974,6 @@ oil -10%
 
 - 牧业网络 (`tech.pastoral_networks`)：牧业网络是应用：机械化牧场不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：机械化牧场不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：机械化牧场不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：机械化牧场不可替代的知识基础。
 - 应用：农业机械厂 (`tech.application.agricultural_machinery_plant`)：应用：农业机械厂是应用：机械化牧场不可替代的知识基础。
 
@@ -35432,8 +35045,6 @@ oil -10%
 - 棉花园圃 (`tech.cotton_gardening`)：棉花园圃是应用：机械化棉花农场不可替代的知识基础。
 - 机械脱粒 (`tech.mechanical_threshing`)：机械脱粒是应用：机械化棉花农场不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：机械化棉花农场不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：机械化棉花农场不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：机械化棉花农场不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：机械化棉花农场不可替代的知识基础。
 - 应用：农业机械厂 (`tech.application.agricultural_machinery_plant`)：应用：农业机械厂是应用：机械化棉花农场不可替代的知识基础。
 
@@ -35503,8 +35114,6 @@ oil -10%
 
 - 机械收割 (`tech.mechanical_reaping`)：机械收割是应用：机械化农场不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：机械化农场不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：机械化农场不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：机械化农场不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：机械化农场不可替代的知识基础。
 - 应用：农业机械厂 (`tech.application.agricultural_machinery_plant`)：应用：农业机械厂是应用：机械化农场不可替代的知识基础。
 
@@ -35575,8 +35184,6 @@ oil -10%
 
 - 机械收割 (`tech.mechanical_reaping`)：机械收割是应用：机械化玉米农场不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：机械化玉米农场不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：机械化玉米农场不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：机械化玉米农场不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：机械化玉米农场不可替代的知识基础。
 - 应用：农业机械厂 (`tech.application.agricultural_machinery_plant`)：应用：农业机械厂是应用：机械化玉米农场不可替代的知识基础。
 
@@ -35730,9 +35337,6 @@ oil -10%
 
 - 工业研究 (`tech.industrial_research`)：工业研究是应用：科学仪器工坊不可替代的知识基础。
 - 科学分类 (`tech.scientific_classification`)：科学分类是应用：科学仪器工坊不可替代的知识基础。
-- 手工锯木 (`tech.timber_sawing`)：手工锯木提供应用：科学仪器工坊所需的建材“木材”。
-- 应用：制砖厂 (`tech.application.bricks_plant`)：应用：制砖厂提供应用：科学仪器工坊所需的建材“砖块”。
-- 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑提供应用：科学仪器工坊所需的建材“玻璃”。
 
 #### 发现启发（仅用于揭示）
 
@@ -35810,9 +35414,6 @@ oil -10%
 - 发电机 (`tech.electric_generation`)：发电机是应用：燃煤发电厂不可替代的知识基础。
 - 大气式蒸汽机 (`tech.atmospheric_engine`)：大气式蒸汽机是应用：燃煤发电厂不可替代的知识基础。
 - 应用：露头煤采集场 (`tech.application.surface_coal_gathering`)：应用：露头煤采集场是应用：燃煤发电厂不可替代的知识基础。
-- 应用：制砖厂 (`tech.application.bricks_plant`)：应用：制砖厂提供应用：燃煤发电厂所需的建材“砖块”。
-- 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂提供应用：燃煤发电厂所需的建材“钢材”。
-- 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑提供应用：燃煤发电厂所需的建材“玻璃”。
 
 #### 发现启发（仅用于揭示）
 
@@ -35860,7 +35461,6 @@ oil -10%
 - 应用：电气化造船厂 (`tech.application.method_oceanic_shipyard_r7`)：应用：燃煤发电厂是应用：电气化造船厂不可替代的知识基础。
 - 应用：酿造厂 (`tech.application.beverages_plant`)：应用：燃煤发电厂是应用：酿造厂不可替代的知识基础。
 - 应用：高级成衣厂 (`tech.application.fine_clothing_plant`)：应用：燃煤发电厂是应用：高级成衣厂不可替代的知识基础。
-- 应用：油田 (`tech.application.oil_collector`)：应用：燃煤发电厂是应用：油田不可替代的知识基础。
 - 工业农学 (`tech.industrial_agronomy`)：应用：燃煤发电厂是工业农学不可替代的知识基础。
 - 应用：电弧炉炼钢厂 (`tech.application.steel_plant`)：应用：燃煤发电厂是应用：电弧炉炼钢厂不可替代的知识基础。
 - 应用：电池厂 (`tech.application.batteries_plant`)：应用：燃煤发电厂是应用：电池厂不可替代的知识基础。
@@ -36052,9 +35652,7 @@ oil -10%
 #### 硬前置（决定研发资格）
 
 - 合成肥料 (`tech.synthetic_fertilizer`)：合成肥料是应用：化肥厂不可替代的知识基础。
-- 应用：磷矿 (`tech.application.phosphate_rock_collector`)：应用：磷矿是应用：化肥厂不可替代的知识基础。
-- 应用：露头煤采集场 (`tech.application.surface_coal_gathering`)：应用：露头煤采集场是应用：化肥厂不可替代的知识基础。
-- 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：化肥厂不可替代的知识基础。
+- 肥料加工 (`tech.fertilizer_processing`)：肥料加工是应用：化肥厂不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -36124,8 +35722,6 @@ oil -10%
 - 电磁感应 (`tech.electromagnetic_induction`)：电磁感应是应用：早期电气设备厂不可替代的知识基础。
 - 应用：线材厂 (`tech.application.wire_plant`)：应用：线材厂是应用：早期电气设备厂不可替代的知识基础。
 - 应用：燃煤发电厂 (`tech.application.electricity_plant`)：应用：燃煤发电厂是应用：早期电气设备厂不可替代的知识基础。
-- 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂提供应用：早期电气设备厂所需的建材“钢材”。
-- 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑提供应用：早期电气设备厂所需的建材“玻璃”。
 
 #### 发现启发（仅用于揭示）
 
@@ -36197,8 +35793,8 @@ oil -10%
 
 #### 硬前置（决定研发资格）
 
-- Glassware Manufactory (`tech.application.glassware_manufactory_exploration`)：knowledge prerequisite: tech.application.glassware\_manufactory\_exploration -\> Glassware Factory
-- 电气化 (`tech.electrification`)：knowledge prerequisite: tech.electrification -\> Glassware Factory
+- Glassware Manufactory (`tech.application.glassware_manufactory_exploration`)：Glassware Manufactory是Glassware Factory不可替代的知识基础。
+- 电气化 (`tech.electrification`)：电气化是Glassware Factory不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -36206,7 +35802,7 @@ oil -10%
 
 #### 效果摘要
 
-解锁物资：Glassware Factory；解锁建筑：Glassware Factory；作为必要支撑：Glassware Factory
+解锁物资：玻璃器皿；解锁建筑：玻璃器皿工厂；作为必要支撑：Glassware Factory
 
 #### 机会成本
 
@@ -36221,8 +35817,8 @@ terminal production upgrade
 
 #### 结构化内容效果
 
-- **Glassware Factory**（`good`）：`good.glassware` → `production_access` `unlock` `1.0`；`existing_binding`
-- **Glassware Factory**（`building`）：`building.glassware_factory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **玻璃器皿**（`good`）：`good.glassware` → `production_access` `unlock` `1.0`；`existing_binding`
+- **玻璃器皿工厂**（`building`）：`building.glassware_factory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -36264,8 +35860,8 @@ terminal production upgrade
 
 #### 硬前置（决定研发资格）
 
-- Metal Housewares Manufactory (`tech.application.metal_housewares_manufactory_exploration`)：knowledge prerequisite: tech.application.metal\_housewares\_manufactory\_exploration -\> Metal Housewares Factory
-- 电气化 (`tech.electrification`)：knowledge prerequisite: tech.electrification -\> Metal Housewares Factory
+- Metal Housewares Manufactory (`tech.application.metal_housewares_manufactory_exploration`)：Metal Housewares Manufactory是Metal Housewares Factory不可替代的知识基础。
+- 电气化 (`tech.electrification`)：电气化是Metal Housewares Factory不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -36273,7 +35869,7 @@ terminal production upgrade
 
 #### 效果摘要
 
-解锁物资：Metal Housewares Factory；解锁建筑：Metal Housewares Factory；作为必要支撑：Metal Housewares Factory
+解锁物资：金属家用器皿；解锁建筑：金属家用器皿工厂；作为必要支撑：Metal Housewares Factory
 
 #### 机会成本
 
@@ -36288,8 +35884,8 @@ terminal production upgrade
 
 #### 结构化内容效果
 
-- **Metal Housewares Factory**（`good`）：`good.metal_housewares` → `production_access` `unlock` `1.0`；`existing_binding`
-- **Metal Housewares Factory**（`building`）：`building.metal_housewares_factory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **金属家用器皿**（`good`）：`good.metal_housewares` → `production_access` `unlock` `1.0`；`existing_binding`
+- **金属家用器皿工厂**（`building`）：`building.metal_housewares_factory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -36331,8 +35927,8 @@ terminal production upgrade
 
 #### 硬前置（决定研发资格）
 
-- Leather Goods Manufactory (`tech.application.leather_goods_manufactory_exploration`)：knowledge prerequisite: tech.application.leather\_goods\_manufactory\_exploration -\> Leather Goods Factory
-- 电气化 (`tech.electrification`)：knowledge prerequisite: tech.electrification -\> Leather Goods Factory
+- Leather Goods Manufactory (`tech.application.leather_goods_manufactory_exploration`)：Leather Goods Manufactory是Leather Goods Factory不可替代的知识基础。
+- 电气化 (`tech.electrification`)：电气化是Leather Goods Factory不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -36340,7 +35936,7 @@ terminal production upgrade
 
 #### 效果摘要
 
-解锁物资：Leather Goods Factory；解锁建筑：Leather Goods Factory；作为必要支撑：Leather Goods Factory
+解锁物资：皮革制品；解锁建筑：皮革制品工厂；作为必要支撑：Leather Goods Factory
 
 #### 机会成本
 
@@ -36355,8 +35951,8 @@ terminal production upgrade
 
 #### 结构化内容效果
 
-- **Leather Goods Factory**（`good`）：`good.leather_goods` → `production_access` `unlock` `1.0`；`existing_binding`
-- **Leather Goods Factory**（`building`）：`building.leather_goods_factory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **皮革制品**（`good`）：`good.leather_goods` → `production_access` `unlock` `1.0`；`existing_binding`
+- **皮革制品工厂**（`building`）：`building.leather_goods_factory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -36398,15 +35994,13 @@ terminal production upgrade
 
 #### 硬前置（决定研发资格）
 
-- 机动农业 (`tech.motorized_agriculture`)：tech.motorized\_agriculture是机械化小麦农场不可替代的知识基础。
-- 机械化农业 (`tech.mechanized_agriculture`)：tech.mechanized\_agriculture是机械化小麦农场不可替代的知识基础。
-- 小麦繁育 (`tech.wheat_propagation`)：tech.wheat\_propagation是机械化小麦农场不可替代的知识基础。
-- 机械收割 (`tech.mechanical_reaping`)：tech.mechanical\_reaping是机械化小麦农场不可替代的知识基础。
-- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：tech.application.method\_lumber\_plant\_r2是机械化小麦农场不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：tech.application.fired\_brick\_kiln是机械化小麦农场不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：tech.application.classical\_masonry\_yard是机械化小麦农场不可替代的知识基础。
-- 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：tech.application.steam\_steel\_works是机械化小麦农场不可替代的知识基础。
-- 应用：农业机械厂 (`tech.application.agricultural_machinery_plant`)：tech.application.agricultural\_machinery\_plant是机械化小麦农场不可替代的知识基础。
+- 机动农业 (`tech.motorized_agriculture`)：机动农业是应用：机械化小麦农场不可替代的知识基础。
+- 机械化农业 (`tech.mechanized_agriculture`)：机械化农业是应用：机械化小麦农场不可替代的知识基础。
+- 小麦繁育 (`tech.wheat_propagation`)：小麦繁育是应用：机械化小麦农场不可替代的知识基础。
+- 机械收割 (`tech.mechanical_reaping`)：机械收割是应用：机械化小麦农场不可替代的知识基础。
+- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：机械化小麦农场不可替代的知识基础。
+- 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：机械化小麦农场不可替代的知识基础。
+- 应用：农业机械厂 (`tech.application.agricultural_machinery_plant`)：应用：农业机械厂是应用：机械化小麦农场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -36429,8 +36023,8 @@ terminal production upgrade
 
 #### 结构化内容效果
 
-- **小麦**（`good`）：`good.wheat_grain` → `production_access` `unlock` `1.0`；`catalog_rebind`
-- **机械化小麦农场**（`building`）：`building.method_wheat_farm_r6` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+- **小麦**（`good`）：`good.wheat_grain` → `production_access` `unlock` `1.0`；`existing_binding`
+- **机械化小麦农场**（`building`）：`building.method_wheat_farm_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -36472,15 +36066,13 @@ terminal production upgrade
 
 #### 硬前置（决定研发资格）
 
-- 机动农业 (`tech.motorized_agriculture`)：tech.motorized\_agriculture是机械化稻作农场不可替代的知识基础。
-- 机械化农业 (`tech.mechanized_agriculture`)：tech.mechanized\_agriculture是机械化稻作农场不可替代的知识基础。
-- 稻田水位控制 (`tech.rice_water_control`)：tech.rice\_water\_control是机械化稻作农场不可替代的知识基础。
-- 水田稻作 (`tech.rice_paddy_cultivation`)：tech.rice\_paddy\_cultivation是机械化稻作农场不可替代的知识基础。
-- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：tech.application.method\_lumber\_plant\_r2是机械化稻作农场不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：tech.application.fired\_brick\_kiln是机械化稻作农场不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：tech.application.classical\_masonry\_yard是机械化稻作农场不可替代的知识基础。
-- 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：tech.application.steam\_steel\_works是机械化稻作农场不可替代的知识基础。
-- 应用：农业机械厂 (`tech.application.agricultural_machinery_plant`)：tech.application.agricultural\_machinery\_plant是机械化稻作农场不可替代的知识基础。
+- 机动农业 (`tech.motorized_agriculture`)：机动农业是应用：机械化稻作农场不可替代的知识基础。
+- 机械化农业 (`tech.mechanized_agriculture`)：机械化农业是应用：机械化稻作农场不可替代的知识基础。
+- 稻田水位控制 (`tech.rice_water_control`)：稻田水位控制是应用：机械化稻作农场不可替代的知识基础。
+- 水田稻作 (`tech.rice_paddy_cultivation`)：水田稻作是应用：机械化稻作农场不可替代的知识基础。
+- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：机械化稻作农场不可替代的知识基础。
+- 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：机械化稻作农场不可替代的知识基础。
+- 应用：农业机械厂 (`tech.application.agricultural_machinery_plant`)：应用：农业机械厂是应用：机械化稻作农场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -36503,8 +36095,8 @@ terminal production upgrade
 
 #### 结构化内容效果
 
-- **稻米**（`good`）：`good.rice_grain` → `production_access` `unlock` `1.0`；`catalog_rebind`
-- **机械化稻作农场**（`building`）：`building.method_rice_collector_r6` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+- **稻米**（`good`）：`good.rice_grain` → `production_access` `unlock` `1.0`；`existing_binding`
+- **机械化稻作农场**（`building`）：`building.method_rice_collector_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -36546,14 +36138,12 @@ terminal production upgrade
 
 #### 硬前置（决定研发资格）
 
-- 机动农业 (`tech.motorized_agriculture`)：tech.motorized\_agriculture是机械化亚麻农场不可替代的知识基础。
-- 机械化农业 (`tech.mechanized_agriculture`)：tech.mechanized\_agriculture是机械化亚麻农场不可替代的知识基础。
-- 沤麻 (`tech.flax_retting`)：tech.flax\_retting是机械化亚麻农场不可替代的知识基础。
-- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：tech.application.method\_lumber\_plant\_r2是机械化亚麻农场不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：tech.application.fired\_brick\_kiln是机械化亚麻农场不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：tech.application.classical\_masonry\_yard是机械化亚麻农场不可替代的知识基础。
-- 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：tech.application.steam\_steel\_works是机械化亚麻农场不可替代的知识基础。
-- 应用：农业机械厂 (`tech.application.agricultural_machinery_plant`)：tech.application.agricultural\_machinery\_plant是机械化亚麻农场不可替代的知识基础。
+- 机动农业 (`tech.motorized_agriculture`)：机动农业是应用：机械化亚麻农场不可替代的知识基础。
+- 机械化农业 (`tech.mechanized_agriculture`)：机械化农业是应用：机械化亚麻农场不可替代的知识基础。
+- 沤麻 (`tech.flax_retting`)：沤麻是应用：机械化亚麻农场不可替代的知识基础。
+- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：机械化亚麻农场不可替代的知识基础。
+- 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：机械化亚麻农场不可替代的知识基础。
+- 应用：农业机械厂 (`tech.application.agricultural_machinery_plant`)：应用：农业机械厂是应用：机械化亚麻农场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -36561,7 +36151,7 @@ terminal production upgrade
 
 #### 效果摘要
 
-解锁物资：韧皮原料；解锁建筑：机械化亚麻农场
+解锁物资：亚麻秆/韧皮原料；解锁建筑：机械化亚麻农场
 
 #### 机会成本
 
@@ -36576,8 +36166,8 @@ terminal production upgrade
 
 #### 结构化内容效果
 
-- **韧皮原料**（`good`）：`good.bast_fiber` → `production_access` `unlock` `1.0`；`catalog_rebind`
-- **机械化亚麻农场**（`building`）：`building.method_flax_collector_r6` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+- **亚麻秆/韧皮原料**（`good`）：`good.bast_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
+- **机械化亚麻农场**（`building`）：`building.method_flax_collector_r6` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -36628,7 +36218,6 @@ terminal production upgrade
 - 工厂制 (`tech.factory_system`)：工厂制是应用：主食加工厂不可替代的知识基础。
 - 工业质量控制 (`tech.industrial_quality_control`)：工业质量控制是应用：主食加工厂不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：主食加工厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：主食加工厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：主食加工厂不可替代的知识基础。
 - 应用：自给农庄 (`tech.application.subsistence_farm`)：应用：自给农庄是应用：主食加工厂不可替代的知识基础。
 - 应用：包装材料厂 (`tech.application.packaging_plant`)：应用：包装材料厂是应用：主食加工厂不可替代的知识基础。
@@ -36702,8 +36291,6 @@ terminal production upgrade
 - 流水线组织 (`tech.assembly_line`)：流水线组织是应用：乳制品厂不可替代的知识基础。
 - 工业组织 (`tech.industrial_organization`)：工业组织是应用：乳制品厂不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：乳制品厂不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：乳制品厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：乳制品厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：乳制品厂不可替代的知识基础。
 - 应用：游牧营地 (`tech.application.pastoral_camp`)：应用：游牧营地是应用：乳制品厂不可替代的知识基础。
 - 应用：包装材料厂 (`tech.application.packaging_plant`)：应用：包装材料厂是应用：乳制品厂不可替代的知识基础。
@@ -36774,7 +36361,6 @@ terminal production upgrade
 
 - 现代医学 (`tech.modern_medicine`)：现代医学是应用：制药厂不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：制药厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：制药厂不可替代的知识基础。
 - 应用：药材种植园 (`tech.application.medicinal_herbs_collector`)：应用：药材种植园是应用：制药厂不可替代的知识基础。
 - 应用：化学工场 (`tech.application.industrial_chemicals_plant`)：应用：化学工场是应用：制药厂不可替代的知识基础。
 
@@ -36846,7 +36432,6 @@ terminal production upgrade
 - 商品作物管理 (`tech.commodity_crop_management`)：商品作物管理是应用：机械化橡胶种植园不可替代的知识基础。
 - 机械化农业 (`tech.mechanized_agriculture`)：机械化农业是应用：机械化橡胶种植园不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：机械化橡胶种植园不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：机械化橡胶种植园不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：机械化橡胶种植园不可替代的知识基础。
 - 应用：农业机械厂 (`tech.application.agricultural_machinery_plant`)：应用：农业机械厂是应用：机械化橡胶种植园不可替代的知识基础。
 
@@ -36918,7 +36503,6 @@ terminal production upgrade
 - 商品作物管理 (`tech.commodity_crop_management`)：商品作物管理是应用：机械化香料种植园不可替代的知识基础。
 - 机械化农业 (`tech.mechanized_agriculture`)：机械化农业是应用：机械化香料种植园不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：机械化香料种植园不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：机械化香料种植园不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：机械化香料种植园不可替代的知识基础。
 - 应用：农业机械厂 (`tech.application.agricultural_machinery_plant`)：应用：农业机械厂是应用：机械化香料种植园不可替代的知识基础。
 
@@ -37060,7 +36644,6 @@ terminal production upgrade
 
 - 精密工程 (`tech.precision_engineering`)：精密工程是应用：精密工具工坊不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：精密工具工坊不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：精密工具工坊不可替代的知识基础。
 - 应用：科学仪器工坊 (`tech.application.scientific_instrument_works`)：应用：科学仪器工坊是应用：精密工具工坊不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
@@ -37094,7 +36677,6 @@ terminal production upgrade
 #### 被以下科技作为硬前置
 
 - 应用：蒸汽机工厂 (`tech.application.steam_engine_works`)：应用：精密工具工坊是应用：蒸汽机工厂不可替代的知识基础。
-- 应用：蒸汽钻井场 (`tech.application.early_oil_well`)：应用：精密工具工坊是应用：蒸汽钻井场不可替代的知识基础。
 - 国家实验室 (`tech.national_laboratories`)：应用：精密工具工坊是国家实验室不可替代的知识基础。
 - 机器学习 (`tech.machine_learning`)：应用：精密工具工坊是机器学习不可替代的知识基础。
 
@@ -37131,7 +36713,6 @@ terminal production upgrade
 #### 硬前置（决定研发资格）
 
 - 学术社团 (`tech.learned_societies`)：学术社团是应用：博学学会不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：博学学会不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：博学学会不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：博学学会不可替代的知识基础。
 - 应用：木版印刷坊 (`tech.application.woodblock_printing_house`)：应用：木版印刷坊是应用：博学学会不可替代的知识基础。
@@ -37207,8 +36788,6 @@ terminal production upgrade
 - 庄园核算 (`tech.estate_accounting`)：庄园核算是应用：地籍管理局不可替代的知识基础。
 - 度量衡 (`tech.weights_and_measures`)：度量衡是应用：地籍管理局不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：地籍管理局不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：地籍管理局不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：地籍管理局不可替代的知识基础。
 - 应用：木版印刷坊 (`tech.application.woodblock_printing_house`)：应用：木版印刷坊是应用：地籍管理局不可替代的知识基础。
 - 应用：科学仪器工坊 (`tech.application.scientific_instrument_works`)：应用：科学仪器工坊是应用：地籍管理局不可替代的知识基础。
 
@@ -37278,10 +36857,8 @@ terminal production upgrade
 
 - 公共教育 (`tech.public_education`)：公共教育是应用：综合工学院不可替代的知识基础。
 - 工业组织 (`tech.industrial_organization`)：工业组织是应用：综合工学院不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：综合工学院不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：综合工学院不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：综合工学院不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：综合工学院不可替代的知识基础。
 - 应用：科学仪器工坊 (`tech.application.scientific_instrument_works`)：应用：科学仪器工坊是应用：综合工学院不可替代的知识基础。
 - 应用：露头煤采集场 (`tech.application.surface_coal_gathering`)：应用：露头煤采集场是应用：综合工学院不可替代的知识基础。
 
@@ -37352,8 +36929,6 @@ terminal production upgrade
 - 合成材料 (`tech.synthetic_materials`)：合成材料是应用：混凝土厂不可替代的知识基础。
 - 水利工程 (`tech.hydraulic_engineering`)：水利工程是应用：混凝土厂不可替代的知识基础。
 - 大规模生产 (`tech.mass_production`)：大规模生产是应用：混凝土厂不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：混凝土厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：混凝土厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：混凝土厂不可替代的知识基础。
 - 应用：水泥厂 (`tech.application.cement_plant`)：应用：水泥厂是应用：混凝土厂不可替代的知识基础。
 
@@ -37401,7 +36976,6 @@ terminal production upgrade
 - 应用：电气化造船厂 (`tech.application.method_oceanic_shipyard_r7`)：应用：混凝土厂是应用：电气化造船厂不可替代的知识基础。
 - 应用：酿造厂 (`tech.application.beverages_plant`)：应用：混凝土厂是应用：酿造厂不可替代的知识基础。
 - 应用：高级成衣厂 (`tech.application.fine_clothing_plant`)：应用：混凝土厂是应用：高级成衣厂不可替代的知识基础。
-- 应用：油田 (`tech.application.oil_collector`)：应用：混凝土厂是应用：油田不可替代的知识基础。
 - 工业农学 (`tech.industrial_agronomy`)：应用：混凝土厂是工业农学不可替代的知识基础。
 - 应用：电池厂 (`tech.application.batteries_plant`)：应用：混凝土厂是应用：电池厂不可替代的知识基础。
 - 国家实验室 (`tech.national_laboratories`)：应用：混凝土厂是国家实验室不可替代的知识基础。
@@ -37477,7 +37051,6 @@ terminal production upgrade
 - 机械工坊 (`tech.mechanical_workshops`)：机械工坊是应用：建筑构件厂不可替代的知识基础。
 - 标准化 (`tech.standardization`)：标准化是应用：建筑构件厂不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：建筑构件厂不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：建筑构件厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：建筑构件厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：建筑构件厂不可替代的知识基础。
 
@@ -37547,7 +37120,6 @@ terminal production upgrade
 
 - 蒸汽动力 (`tech.steam_power`)：蒸汽动力是应用：蒸汽机工厂不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：蒸汽机工厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：蒸汽机工厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：蒸汽机工厂不可替代的知识基础。
 - 焦炭冶炼 (`tech.coke_smelting`)：焦炭冶炼是应用：蒸汽机工厂不可替代的知识基础。
 - 应用：精密工具工坊 (`tech.application.precision_tool_workshop`)：应用：精密工具工坊是应用：蒸汽机工厂不可替代的知识基础。
@@ -37617,13 +37189,8 @@ terminal production upgrade
 #### 硬前置（决定研发资格）
 
 - 石油开采 (`tech.petroleum_extraction`)：石油开采是应用：蒸汽钻井场不可替代的知识基础。
-- 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：蒸汽钻井场不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：蒸汽钻井场不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：蒸汽钻井场不可替代的知识基础。
-- 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：蒸汽钻井场不可替代的知识基础。
-- 应用：精密工具工坊 (`tech.application.precision_tool_workshop`)：应用：精密工具工坊是应用：蒸汽钻井场不可替代的知识基础。
-- 应用：大气式蒸汽机工坊 (`tech.application.atmospheric_engine_workshop`)：应用：大气式蒸汽机工坊是应用：蒸汽钻井场不可替代的知识基础。
-- 应用：铁路设备工场 (`tech.application.steam_rail_works`)：应用：铁路设备工场是应用：蒸汽钻井场不可替代的知识基础。
+- 石油钻探 (`tech.petroleum_drilling`)：石油钻探是应用：蒸汽钻井场不可替代的知识基础。
+- 蒸汽动力 (`tech.steam_power`)：蒸汽动力是应用：蒸汽钻井场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -37657,7 +37224,6 @@ terminal production upgrade
 
 - 应用：炼油厂 (`tech.application.refined_fuel_plant`)：应用：蒸汽钻井场是应用：炼油厂不可替代的知识基础。
 - 应用：石油化工厂 (`tech.application.petrochemicals_plant`)：应用：蒸汽钻井场是应用：石油化工厂不可替代的知识基础。
-- 应用：润滑油厂 (`tech.application.lubricants_plant`)：应用：蒸汽钻井场是应用：润滑油厂不可替代的知识基础。
 - 应用：自动化润滑油厂 (`tech.application.method_lubricants_plant_r9`)：应用：蒸汽钻井场是应用：自动化润滑油厂不可替代的知识基础。
 - 应用：智能炼油厂 (`tech.application.method_refined_fuel_plant_r10`)：应用：蒸汽钻井场是应用：智能炼油厂不可替代的知识基础。
 - 应用：智能石油化工厂 (`tech.application.method_petrochemicals_plant_r10`)：应用：蒸汽钻井场是应用：智能石油化工厂不可替代的知识基础。
@@ -37697,7 +37263,6 @@ terminal production upgrade
 - 货币 (`tech.currency`)：货币是应用：珠宝厂不可替代的知识基础。
 - 工业质量控制 (`tech.industrial_quality_control`)：工业质量控制是应用：珠宝厂不可替代的知识基础。
 - 公司管理 (`tech.corporate_management`)：公司管理是应用：珠宝厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：珠宝厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：珠宝厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：珠宝厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：珠宝厂不可替代的知识基础。
@@ -37770,7 +37335,6 @@ terminal production upgrade
 #### 硬前置（决定研发资格）
 
 - 标准化 (`tech.standardization`)：标准化是应用：电气化包装厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：电气化包装厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：电气化包装厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：电气化包装厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：电气化包装厂不可替代的知识基础。
@@ -37843,7 +37407,6 @@ terminal production upgrade
 #### 硬前置（决定研发资格）
 
 - 标准化 (`tech.standardization`)：标准化是应用：电气印刷厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：电气印刷厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：电气印刷厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：电气印刷厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：电气印刷厂不可替代的知识基础。
@@ -37916,7 +37479,6 @@ terminal production upgrade
 #### 硬前置（决定研发资格）
 
 - 管理层级 (`tech.managerial_hierarchy`)：管理层级是应用：高级家具厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：高级家具厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：高级家具厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：高级家具厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：高级家具厂不可替代的知识基础。
@@ -37990,7 +37552,6 @@ terminal production upgrade
 #### 硬前置（决定研发资格）
 
 - 电化学 (`tech.electrochemistry`)：电化学是应用：电化工厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：电化工厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：电化工厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：电化工厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：电化工厂不可替代的知识基础。
@@ -38065,7 +37626,6 @@ terminal production upgrade
 - 大规模生产 (`tech.mass_production`)：大规模生产是应用：电力纺织厂不可替代的知识基础。
 - 纺织机械 (`tech.textile_machinery`)：纺织机械是应用：电力纺织厂不可替代的知识基础。
 - 公司管理 (`tech.corporate_management`)：公司管理是应用：电力纺织厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：电力纺织厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：电力纺织厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：电力纺织厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：电力纺织厂不可替代的知识基础。
@@ -38138,7 +37698,6 @@ terminal production upgrade
 #### 硬前置（决定研发资格）
 
 - 石油炼制 (`tech.petroleum_refining`)：石油炼制是应用：炼油厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：炼油厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：炼油厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：炼油厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：炼油厂不可替代的知识基础。
@@ -38213,7 +37772,6 @@ terminal production upgrade
 - 冷链 (`tech.cold_chain`)：冷链是应用：综合食品厂不可替代的知识基础。
 - 大规模生产 (`tech.mass_production`)：大规模生产是应用：综合食品厂不可替代的知识基础。
 - 工业质量控制 (`tech.industrial_quality_control`)：工业质量控制是应用：综合食品厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：综合食品厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：综合食品厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：综合食品厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：综合食品厂不可替代的知识基础。
@@ -38289,7 +37847,6 @@ terminal production upgrade
 #### 硬前置（决定研发资格）
 
 - 现代医学 (`tech.modern_medicine`)：现代医学是应用：受控环境药材农场不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：受控环境药材农场不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：受控环境药材农场不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：受控环境药材农场不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：受控环境药材农场不可替代的知识基础。
@@ -38362,7 +37919,6 @@ terminal production upgrade
 #### 硬前置（决定研发资格）
 
 - 电动机 (`tech.electric_motors`)：电动机是应用：电动机厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：电动机厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：电动机厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：电动机厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：电动机厂不可替代的知识基础。
@@ -38444,7 +38000,6 @@ terminal production upgrade
 - 海岸船厂 (`tech.coastal_shipyards`)：海岸船厂是应用：电气化造船厂不可替代的知识基础。
 - 大规模生产 (`tech.mass_production`)：大规模生产是应用：电气化造船厂不可替代的知识基础。
 - 工业统计 (`tech.industrial_statistics`)：工业统计是应用：电气化造船厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：电气化造船厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：电气化造船厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：电气化造船厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：电气化造船厂不可替代的知识基础。
@@ -38517,7 +38072,6 @@ terminal production upgrade
 #### 硬前置（决定研发资格）
 
 - 公司管理 (`tech.corporate_management`)：公司管理是应用：酿造厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：酿造厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：酿造厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：酿造厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：酿造厂不可替代的知识基础。
@@ -38592,7 +38146,6 @@ terminal production upgrade
 
 - 公司管理 (`tech.corporate_management`)：公司管理是应用：高级成衣厂不可替代的知识基础。
 - 纺织机械 (`tech.textile_machinery`)：纺织机械是应用：高级成衣厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：高级成衣厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：高级成衣厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：高级成衣厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：高级成衣厂不可替代的知识基础。
@@ -38666,12 +38219,7 @@ terminal production upgrade
 #### 硬前置（决定研发资格）
 
 - 石油钻探 (`tech.petroleum_drilling`)：石油钻探是应用：油田不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：油田不可替代的知识基础。
-- 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：油田不可替代的知识基础。
-- 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：油田不可替代的知识基础。
-- 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：油田不可替代的知识基础。
-- 应用：工业机械厂 (`tech.application.industrial_machinery_plant`)：应用：工业机械厂是应用：油田不可替代的知识基础。
-- 应用：燃煤发电厂 (`tech.application.electricity_plant`)：应用：燃煤发电厂是应用：油田不可替代的知识基础。
+- 机床 (`tech.machine_tools`)：机床是应用：油田不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -38738,7 +38286,6 @@ terminal production upgrade
 #### 硬前置（决定研发资格）
 
 - 机动农业 (`tech.motorized_agriculture`)：机动农业是工业农学不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是工业农学不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是工业农学不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是工业农学不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是工业农学不可替代的知识基础。
@@ -38753,7 +38300,7 @@ terminal production upgrade
 
 #### 效果摘要
 
-解锁物资：混合谷物；解锁物资：蔬菜；解锁建筑：电气化集约农场；玉米产出 +12%
+解锁物资：混合谷物；解锁物资：蔬菜；解锁建筑：电气化集约农场；玉米产出 +12%；旱作生产·旱灾损失 -8%；旱作生产·热害损失 -8%；稀树草原农业产出 +18%
 
 #### 机会成本
 
@@ -38775,8 +38322,17 @@ terminal production upgrade
 #### 永久 Modifier 条款
 
 - 玉米：`country.output.good.corn_grain_factor`：+12%
+- 旱作生产·旱灾损失：`country.climate.profile.dryland_crop.drought_loss_factor`：+8%
+- 旱作生产·热害损失：`country.climate.profile.dryland_crop.heat_stress_loss_factor`：+8%
+- 稀树草原农业：`country.output.terrain.savanna.agriculture_factor`：+18%
   - 效果机制：辨识、繁育与田间体系提高玉米产出。
   - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：工业农学降低旱作生产建筑的旱灾损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：工业农学降低旱作生产建筑的热害损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：工业农学提高稀树草原的农业生产适应。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -38818,8 +38374,6 @@ terminal production upgrade
 
 - 高炉冶炼 (`tech.blast_furnace`)：高炉冶炼是先进冶金不可替代的知识基础。
 - 手工锯木 (`tech.timber_sawing`)：手工锯木是先进冶金不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是先进冶金不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是先进冶金不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是先进冶金不可替代的知识基础。
 - 铜矿开采 (`tech.copper_mining_application`)：铜矿开采是先进冶金不可替代的知识基础。
 - 应用：露头煤采集场 (`tech.application.surface_coal_gathering`)：应用：露头煤采集场是先进冶金不可替代的知识基础。
@@ -38978,7 +38532,7 @@ terminal production upgrade
 
 #### 效果摘要
 
-可利用资源：铝土矿；可利用资源：锰矿；geospatial\_analysis\_institution产出 +12%；作为必要支撑：天然气田、战略矿山
+可利用资源：铝土矿；可利用资源：锰矿；geospatial\_analysis\_institution产出 +12%；台地采掘产出 +18%；作为必要支撑：天然气田、战略矿山
 
 #### 机会成本
 
@@ -38999,7 +38553,10 @@ terminal production upgrade
 #### 永久 Modifier 条款
 
 - geospatial\_analysis\_institution：`country.output.family.geospatial_analysis_institution_factor`：+12%
+- 台地采掘：`country.output.terrain.mesa.extractive_factor`：+18%
   - 效果机制：测绘、遥感与地理分析提高地理空间机构产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：深层地球物理提高台地的采掘生产适应。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
@@ -39194,7 +38751,7 @@ terminal production upgrade
 
 #### 效果摘要
 
-铁矿石 -10%；煤 -10%；作为必要支撑：自动化磷矿、自动化锌矿
+铁矿石 -10%；煤 -10%；峡谷采掘产出 +18%；作为必要支撑：自动化磷矿、自动化锌矿
 
 #### 机会成本
 
@@ -39215,10 +38772,13 @@ terminal production upgrade
 
 - 铁矿石：`country.resource.iron_ore.use_factor`：+10%
 - 煤：`country.resource.coal.use_factor`：+10%
+- 峡谷采掘：`country.output.landform.canyon.extractive_factor`：+18%
   - 效果机制：机械采矿提高铁矿回采。
   - 运行时消费者：`NativeEconomyRuntime::effective_resource_use_quantity`
   - 效果机制：机械采矿提高煤层回采。
   - 运行时消费者：`NativeEconomyRuntime::effective_resource_use_quantity`
+  - 效果机制：机械化采矿提高峡谷的采掘生产适应。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -39473,8 +39033,6 @@ pharmaceuticals产出 +12%
 
 - 深层地球物理 (`tech.deep_geophysics`)：深层地球物理是应用：铝土矿不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：铝土矿不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：铝土矿不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：铝土矿不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：铝土矿不可替代的知识基础。
 - 应用：炸药厂 (`tech.application.explosives_plant`)：应用：炸药厂是应用：铝土矿不可替代的知识基础。
 
@@ -39755,7 +39313,6 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 电化学 (`tech.electrochemistry`)：电化学是应用：电池厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：电池厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：电池厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：电池厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：电池厂不可替代的知识基础。
@@ -40324,7 +39881,6 @@ pharmaceuticals产出 +12%
 - 精密工程 (`tech.precision_engineering`)：精密工程是应用：精密工具厂不可替代的知识基础。
 - 电子控制 (`tech.electronic_control`)：电子控制是应用：精密工具厂不可替代的知识基础。
 - 工业质量控制 (`tech.industrial_quality_control`)：工业质量控制是应用：精密工具厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：精密工具厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：精密工具厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：精密工具厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：精密工具厂不可替代的知识基础。
@@ -40396,7 +39952,6 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 铁路物流 (`tech.rail_logistics`)：铁路物流是应用：铁路设备厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：铁路设备厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：铁路设备厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：铁路设备厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：铁路设备厂不可替代的知识基础。
@@ -40468,7 +40023,6 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 石油钻探 (`tech.petroleum_drilling`)：石油钻探是应用：燃油发电厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：燃油发电厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：燃油发电厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：燃油发电厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：燃油发电厂不可替代的知识基础。
@@ -40542,7 +40096,6 @@ pharmaceuticals产出 +12%
 - 火药武器 (`tech.gunpowder_weapons`)：火药武器是应用：现代炸药厂不可替代的知识基础。
 - 石油化工 (`tech.petrochemical_industry`)：石油化工是应用：现代炸药厂不可替代的知识基础。
 - 合成材料 (`tech.synthetic_materials`)：合成材料是应用：现代炸药厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：现代炸药厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：现代炸药厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：现代炸药厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：现代炸药厂不可替代的知识基础。
@@ -40617,7 +40170,6 @@ pharmaceuticals产出 +12%
 - 工业质量控制 (`tech.industrial_quality_control`)：工业质量控制是应用：精密仪器厂不可替代的知识基础。
 - 电子控制 (`tech.electronic_control`)：电子控制是应用：精密仪器厂不可替代的知识基础。
 - 工业研究 (`tech.industrial_research`)：工业研究是应用：精密仪器厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：精密仪器厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：精密仪器厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：精密仪器厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：精密仪器厂不可替代的知识基础。
@@ -41056,7 +40608,6 @@ pharmaceuticals产出 +12%
 
 - 电子控制 (`tech.electronic_control`)：电子控制是应用：炼锌厂不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：炼锌厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：炼锌厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：炼锌厂不可替代的知识基础。
 - 应用：锌矿 (`tech.application.zinc_ore_collector`)：应用：锌矿是应用：炼锌厂不可替代的知识基础。
 
@@ -41130,7 +40681,6 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 机械化采矿 (`tech.mechanized_mining`)：机械化采矿是应用：锰矿不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：锰矿不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：锰矿不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：锰矿不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：锰矿不可替代的知识基础。
@@ -41277,7 +40827,6 @@ pharmaceuticals产出 +12%
 - 石化裂解 (`tech.petrochemical_cracking`)：石化裂解是应用：天然气田不可替代的知识基础。
 - 深层地球物理 (`tech.deep_geophysics`)：深层地球物理是应用：天然气田不可替代的知识基础。
 - 石油钻探 (`tech.petroleum_drilling`)：石油钻探是应用：天然气田不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：天然气田不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：天然气田不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：天然气田不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：天然气田不可替代的知识基础。
@@ -41353,7 +40902,6 @@ pharmaceuticals产出 +12%
 - 国营企业 (`tech.state_enterprises`)：国营企业是应用：现代硝石矿不可替代的知识基础。
 - 地质勘探 (`tech.geological_prospecting`)：地质勘探是应用：现代硝石矿不可替代的知识基础。
 - 工业化学 (`tech.industrial_chemistry`)：工业化学是应用：现代硝石矿不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：现代硝石矿不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：现代硝石矿不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：现代硝石矿不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：现代硝石矿不可替代的知识基础。
@@ -41426,7 +40974,6 @@ pharmaceuticals产出 +12%
 - 国营企业 (`tech.state_enterprises`)：国营企业是应用：现代硫矿不可替代的知识基础。
 - 地质勘探 (`tech.geological_prospecting`)：地质勘探是应用：现代硫矿不可替代的知识基础。
 - 工业化学 (`tech.industrial_chemistry`)：工业化学是应用：现代硫矿不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：现代硫矿不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：现代硫矿不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：现代硫矿不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：现代硫矿不可替代的知识基础。
@@ -41506,7 +41053,7 @@ pharmaceuticals产出 +12%
 
 #### 效果摘要
 
-全社会 +8%；作为必要支撑：专用商品作物种植园
+全社会 +8%；旱作生产·旱灾损失 -10%；旱作生产·热害损失 -10%；平原农业产出 +20%；作为必要支撑：专用商品作物种植园
 
 #### 机会成本
 
@@ -41526,24 +41073,33 @@ pharmaceuticals产出 +12%
 #### 永久 Modifier 条款
 
 - 全社会：`country.output.agriculture_factor`：+8%
+- 旱作生产·旱灾损失：`country.climate.profile.dryland_crop.drought_loss_factor`：+10%
+- 旱作生产·热害损失：`country.climate.profile.dryland_crop.heat_stress_loss_factor`：+10%
+- 平原农业：`country.output.landform.plain.agriculture_factor`：+20%
   - 效果机制：田块级测量改善全社会农业投入配置。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：精准农业降低旱作生产建筑的旱灾损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：精准农业降低旱作生产建筑的热害损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：精准农业提高平原的农业生产适应。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
 - 应用：精准农场 (`tech.application.precision_farm`)：精准农业是应用：精准农场不可替代的知识基础。
 - 应用：高地精准块茎农业 (`tech.application.method_highland_precision_agriculture`)：精准农业是应用：高地精准块茎农业不可替代的知识基础。
+- 应用：精准马铃薯农场 (`tech.application.method_potato_farm_r8`)：精准农业是应用：精准马铃薯农场不可替代的知识基础。
+- 应用：精准小麦农场 (`tech.application.method_wheat_farm_r8`)：精准农业是应用：精准小麦农场不可替代的知识基础。
+- 应用：精准稻作农场 (`tech.application.method_rice_collector_r8`)：精准农业是应用：精准稻作农场不可替代的知识基础。
+- 应用：精准玉米农场 (`tech.application.method_maize_farm_r8`)：精准农业是应用：精准玉米农场不可替代的知识基础。
+- 应用：精准棉花农场 (`tech.application.method_cotton_collector_r8`)：精准农业是应用：精准棉花农场不可替代的知识基础。
+- 应用：精准亚麻农场 (`tech.application.method_flax_collector_r8`)：精准农业是应用：精准亚麻农场不可替代的知识基础。
+- 应用：精准香料种植园 (`tech.application.method_spice_plants_collector_r8`)：精准农业是应用：精准香料种植园不可替代的知识基础。
+- 应用：精准药材农场 (`tech.application.method_medicinal_herbs_collector_r8`)：精准农业是应用：精准药材农场不可替代的知识基础。
+- 应用：精准橡胶种植园 (`tech.application.method_rubber_tree_collector_r8`)：精准农业是应用：精准橡胶种植园不可替代的知识基础。
 - 自动化农业 (`tech.automated_agriculture`)：精准农业是自动化农业不可替代的知识基础。
 - 应用：专用商品作物种植园 (`tech.application.method_specialty_commodity_plantation`)：精准农业是应用：专用商品作物种植园不可替代的知识基础。
-- 应用：精准马铃薯农场 (`tech.application.method_potato_farm_r8`)：tech.precision\_agriculture是精准马铃薯农场不可替代的知识基础。
-- 应用：精准小麦农场 (`tech.application.method_wheat_farm_r8`)：tech.precision\_agriculture是精准小麦农场不可替代的知识基础。
-- 应用：精准稻作农场 (`tech.application.method_rice_collector_r8`)：tech.precision\_agriculture是精准稻作农场不可替代的知识基础。
-- 应用：精准玉米农场 (`tech.application.method_maize_farm_r8`)：tech.precision\_agriculture是精准玉米农场不可替代的知识基础。
-- 应用：精准棉花农场 (`tech.application.method_cotton_collector_r8`)：tech.precision\_agriculture是精准棉花农场不可替代的知识基础。
-- 应用：精准亚麻农场 (`tech.application.method_flax_collector_r8`)：tech.precision\_agriculture是精准亚麻农场不可替代的知识基础。
-- 应用：精准香料种植园 (`tech.application.method_spice_plants_collector_r8`)：tech.precision\_agriculture是精准香料种植园不可替代的知识基础。
-- 应用：精准药材农场 (`tech.application.method_medicinal_herbs_collector_r8`)：tech.precision\_agriculture是精准药材农场不可替代的知识基础。
-- 应用：精准橡胶种植园 (`tech.application.method_rubber_tree_collector_r8`)：tech.precision\_agriculture是精准橡胶种植园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -41581,7 +41137,6 @@ pharmaceuticals产出 +12%
 - 电网 (`tech.electric_grid`)：电网是应用：燃气发电厂不可替代的知识基础。
 - 石化裂解 (`tech.petrochemical_cracking`)：石化裂解是应用：燃气发电厂不可替代的知识基础。
 - 内燃机 (`tech.internal_combustion`)：内燃机是应用：燃气发电厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：燃气发电厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：燃气发电厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：燃气发电厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：燃气发电厂不可替代的知识基础。
@@ -41652,7 +41207,6 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 石油化工 (`tech.petrochemical_industry`)：石油化工是应用：石油化工厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：石油化工厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：石油化工厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：石油化工厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：石油化工厂不可替代的知识基础。
@@ -41733,7 +41287,6 @@ pharmaceuticals产出 +12%
 - 石油化工 (`tech.petrochemical_industry`)：石油化工是应用：洗涤剂厂不可替代的知识基础。
 - 工业化学 (`tech.industrial_chemistry`)：工业化学是应用：洗涤剂厂不可替代的知识基础。
 - 电化学 (`tech.electrochemistry`)：电化学是应用：洗涤剂厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：洗涤剂厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：洗涤剂厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：洗涤剂厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：洗涤剂厂不可替代的知识基础。
@@ -41807,7 +41360,6 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 合成材料 (`tech.synthetic_materials`)：合成材料是应用：合成橡胶厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：合成橡胶厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：合成橡胶厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：合成橡胶厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：合成橡胶厂不可替代的知识基础。
@@ -41879,7 +41431,6 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 塑料工程 (`tech.plastics_engineering`)：塑料工程是应用：塑料厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：塑料厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：塑料厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：塑料厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：塑料厂不可替代的知识基础。
@@ -41954,7 +41505,6 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 合成纤维工程 (`tech.synthetic_fiber_engineering`)：合成纤维工程是应用：合成纤维厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：合成纤维厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：合成纤维厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：合成纤维厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：合成纤维厂不可替代的知识基础。
@@ -42025,7 +41575,6 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 合成纤维工程 (`tech.synthetic_fiber_engineering`)：合成纤维工程是应用：合成纤维织造厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：合成纤维织造厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：合成纤维织造厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：合成纤维织造厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：合成纤维织造厂不可替代的知识基础。
@@ -42099,7 +41648,6 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 电气化 (`tech.electrification`)：电气化是应用：电气设备厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：电气设备厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：电气设备厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：电气设备厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：电气设备厂不可替代的知识基础。
@@ -42173,7 +41721,6 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 无线电 (`tech.radio`)：无线电是应用：电子元件厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：电子元件厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：电子元件厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：电子元件厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：电子元件厂不可替代的知识基础。
@@ -42249,7 +41796,6 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 电网 (`tech.electric_grid`)：电网是应用：绝缘电缆厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：绝缘电缆厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：绝缘电缆厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：绝缘电缆厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：绝缘电缆厂不可替代的知识基础。
@@ -42325,7 +41871,6 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 无线电 (`tech.radio`)：无线电是应用：无线电设备厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：无线电设备厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：无线电设备厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：无线电设备厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：无线电设备厂不可替代的知识基础。
@@ -42400,7 +41945,6 @@ pharmaceuticals产出 +12%
 - 水利工程 (`tech.hydraulic_engineering`)：水利工程是应用：河流水力发电站不可替代的知识基础。
 - 发电机 (`tech.electric_generation`)：发电机是应用：河流水力发电站不可替代的知识基础。
 - 电网 (`tech.electric_grid`)：电网是应用：河流水力发电站不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：河流水力发电站不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：河流水力发电站不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：河流水力发电站不可替代的知识基础。
 - 应用：早期电气设备厂 (`tech.application.basic_electrical_equipment_works`)：应用：早期电气设备厂是应用：河流水力发电站不可替代的知识基础。
@@ -42472,7 +42016,6 @@ pharmaceuticals产出 +12%
 - 流水线组织 (`tech.assembly_line`)：流水线组织是应用：家用电器厂不可替代的知识基础。
 - 电动机 (`tech.electric_motors`)：电动机是应用：家用电器厂不可替代的知识基础。
 - 大规模生产 (`tech.mass_production`)：大规模生产是应用：家用电器厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：家用电器厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：家用电器厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：家用电器厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：家用电器厂不可替代的知识基础。
@@ -42544,7 +42087,6 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 电子控制 (`tech.electronic_control`)：电子控制是数字计算不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是数字计算不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是数字计算不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是数字计算不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是数字计算不可替代的知识基础。
@@ -42598,30 +42140,30 @@ pharmaceuticals产出 +12%
 - 卫星观测 (`tech.satellite_observation`)：数字计算是卫星观测不可替代的知识基础。
 - 矿物光谱遥感 (`tech.mineral_spectral_survey`)：数字计算是矿物光谱遥感不可替代的知识基础。
 - 生物信息学 (`tech.bioinformatics`)：数字计算是生物信息学不可替代的知识基础。
+- 应用：精准马铃薯农场 (`tech.application.method_potato_farm_r8`)：数字计算是应用：精准马铃薯农场不可替代的知识基础。
+- 应用：精准小麦农场 (`tech.application.method_wheat_farm_r8`)：数字计算是应用：精准小麦农场不可替代的知识基础。
+- 应用：精准稻作农场 (`tech.application.method_rice_collector_r8`)：数字计算是应用：精准稻作农场不可替代的知识基础。
+- 应用：精准玉米农场 (`tech.application.method_maize_farm_r8`)：数字计算是应用：精准玉米农场不可替代的知识基础。
+- 应用：精准棉花农场 (`tech.application.method_cotton_collector_r8`)：数字计算是应用：精准棉花农场不可替代的知识基础。
+- 应用：精准亚麻农场 (`tech.application.method_flax_collector_r8`)：数字计算是应用：精准亚麻农场不可替代的知识基础。
+- 应用：精准香料种植园 (`tech.application.method_spice_plants_collector_r8`)：数字计算是应用：精准香料种植园不可替代的知识基础。
+- 应用：精准药材农场 (`tech.application.method_medicinal_herbs_collector_r8`)：数字计算是应用：精准药材农场不可替代的知识基础。
+- 应用：精准橡胶种植园 (`tech.application.method_rubber_tree_collector_r8`)：数字计算是应用：精准橡胶种植园不可替代的知识基础。
 - 应用：地理空间分析中心 (`tech.application.geospatial_analysis_center`)：数字计算是应用：地理空间分析中心不可替代的知识基础。
 - 应用：自动化焦化厂 (`tech.application.method_coke_ovens_r9`)：数字计算是应用：自动化焦化厂不可替代的知识基础。
 - 应用：自动化混凝土厂 (`tech.application.method_concrete_plant_r9`)：数字计算是应用：自动化混凝土厂不可替代的知识基础。
 - 机器学习 (`tech.machine_learning`)：数字计算是机器学习不可替代的知识基础。
 - 自动化农业 (`tech.automated_agriculture`)：数字计算是自动化农业不可替代的知识基础。
 - 算法治理 (`tech.algorithmic_governance`)：数字计算是算法治理不可替代的知识基础。
-- 应用：精准马铃薯农场 (`tech.application.method_potato_farm_r8`)：tech.digital\_computing是精准马铃薯农场不可替代的知识基础。
-- 应用：自动化马铃薯农场 (`tech.application.method_potato_farm_r10`)：tech.digital\_computing是自动化马铃薯农场不可替代的知识基础。
-- 应用：精准小麦农场 (`tech.application.method_wheat_farm_r8`)：tech.digital\_computing是精准小麦农场不可替代的知识基础。
-- 应用：自动化小麦农场 (`tech.application.method_wheat_farm_r10`)：tech.digital\_computing是自动化小麦农场不可替代的知识基础。
-- 应用：精准稻作农场 (`tech.application.method_rice_collector_r8`)：tech.digital\_computing是精准稻作农场不可替代的知识基础。
-- 应用：自动化稻作农场 (`tech.application.method_rice_collector_r10`)：tech.digital\_computing是自动化稻作农场不可替代的知识基础。
-- 应用：精准玉米农场 (`tech.application.method_maize_farm_r8`)：tech.digital\_computing是精准玉米农场不可替代的知识基础。
-- 应用：自动化玉米农场 (`tech.application.method_maize_farm_r10`)：tech.digital\_computing是自动化玉米农场不可替代的知识基础。
-- 应用：精准棉花农场 (`tech.application.method_cotton_collector_r8`)：tech.digital\_computing是精准棉花农场不可替代的知识基础。
-- 应用：自动化棉花农场 (`tech.application.method_cotton_collector_r10`)：tech.digital\_computing是自动化棉花农场不可替代的知识基础。
-- 应用：精准亚麻农场 (`tech.application.method_flax_collector_r8`)：tech.digital\_computing是精准亚麻农场不可替代的知识基础。
-- 应用：自动化亚麻农场 (`tech.application.method_flax_collector_r10`)：tech.digital\_computing是自动化亚麻农场不可替代的知识基础。
-- 应用：精准香料种植园 (`tech.application.method_spice_plants_collector_r8`)：tech.digital\_computing是精准香料种植园不可替代的知识基础。
-- 应用：自动化香料种植园 (`tech.application.method_spice_plants_collector_r10`)：tech.digital\_computing是自动化香料种植园不可替代的知识基础。
-- 应用：精准药材农场 (`tech.application.method_medicinal_herbs_collector_r8`)：tech.digital\_computing是精准药材农场不可替代的知识基础。
-- 应用：自动化药材农场 (`tech.application.method_medicinal_herbs_collector_r10`)：tech.digital\_computing是自动化药材农场不可替代的知识基础。
-- 应用：精准橡胶种植园 (`tech.application.method_rubber_tree_collector_r8`)：tech.digital\_computing是精准橡胶种植园不可替代的知识基础。
-- 应用：自动化橡胶种植园 (`tech.application.method_rubber_tree_collector_r10`)：tech.digital\_computing是自动化橡胶种植园不可替代的知识基础。
+- 应用：自动化马铃薯农场 (`tech.application.method_potato_farm_r10`)：数字计算是应用：自动化马铃薯农场不可替代的知识基础。
+- 应用：自动化小麦农场 (`tech.application.method_wheat_farm_r10`)：数字计算是应用：自动化小麦农场不可替代的知识基础。
+- 应用：自动化稻作农场 (`tech.application.method_rice_collector_r10`)：数字计算是应用：自动化稻作农场不可替代的知识基础。
+- 应用：自动化玉米农场 (`tech.application.method_maize_farm_r10`)：数字计算是应用：自动化玉米农场不可替代的知识基础。
+- 应用：自动化棉花农场 (`tech.application.method_cotton_collector_r10`)：数字计算是应用：自动化棉花农场不可替代的知识基础。
+- 应用：自动化亚麻农场 (`tech.application.method_flax_collector_r10`)：数字计算是应用：自动化亚麻农场不可替代的知识基础。
+- 应用：自动化香料种植园 (`tech.application.method_spice_plants_collector_r10`)：数字计算是应用：自动化香料种植园不可替代的知识基础。
+- 应用：自动化药材农场 (`tech.application.method_medicinal_herbs_collector_r10`)：数字计算是应用：自动化药材农场不可替代的知识基础。
+- 应用：自动化橡胶种植园 (`tech.application.method_rubber_tree_collector_r10`)：数字计算是应用：自动化橡胶种植园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -43348,14 +42890,14 @@ pharmaceuticals产出 +12%
 - 应用：智能化合成橡胶厂 (`tech.application.method_synthetic_rubber_plant_r10`)：数字控制是应用：智能化合成橡胶厂不可替代的知识基础。
 - 应用：智能仪器厂 (`tech.application.method_scientific_instrument_works_r10`)：数字控制是应用：智能仪器厂不可替代的知识基础。
 - 自主劳动协调 (`tech.autonomous_labor_coordination`)：数字控制是自主劳动协调不可替代的知识基础。
-- 应用：自动化马铃薯农场 (`tech.application.method_potato_farm_r10`)：tech.digital\_control是自动化马铃薯农场不可替代的知识基础。
-- 应用：自动化小麦农场 (`tech.application.method_wheat_farm_r10`)：tech.digital\_control是自动化小麦农场不可替代的知识基础。
-- 应用：自动化玉米农场 (`tech.application.method_maize_farm_r10`)：tech.digital\_control是自动化玉米农场不可替代的知识基础。
-- 应用：自动化棉花农场 (`tech.application.method_cotton_collector_r10`)：tech.digital\_control是自动化棉花农场不可替代的知识基础。
-- 应用：自动化亚麻农场 (`tech.application.method_flax_collector_r10`)：tech.digital\_control是自动化亚麻农场不可替代的知识基础。
-- 应用：自动化香料种植园 (`tech.application.method_spice_plants_collector_r10`)：tech.digital\_control是自动化香料种植园不可替代的知识基础。
-- 应用：自动化药材农场 (`tech.application.method_medicinal_herbs_collector_r10`)：tech.digital\_control是自动化药材农场不可替代的知识基础。
-- 应用：自动化橡胶种植园 (`tech.application.method_rubber_tree_collector_r10`)：tech.digital\_control是自动化橡胶种植园不可替代的知识基础。
+- 应用：自动化马铃薯农场 (`tech.application.method_potato_farm_r10`)：数字控制是应用：自动化马铃薯农场不可替代的知识基础。
+- 应用：自动化小麦农场 (`tech.application.method_wheat_farm_r10`)：数字控制是应用：自动化小麦农场不可替代的知识基础。
+- 应用：自动化玉米农场 (`tech.application.method_maize_farm_r10`)：数字控制是应用：自动化玉米农场不可替代的知识基础。
+- 应用：自动化棉花农场 (`tech.application.method_cotton_collector_r10`)：数字控制是应用：自动化棉花农场不可替代的知识基础。
+- 应用：自动化亚麻农场 (`tech.application.method_flax_collector_r10`)：数字控制是应用：自动化亚麻农场不可替代的知识基础。
+- 应用：自动化香料种植园 (`tech.application.method_spice_plants_collector_r10`)：数字控制是应用：自动化香料种植园不可替代的知识基础。
+- 应用：自动化药材农场 (`tech.application.method_medicinal_herbs_collector_r10`)：数字控制是应用：自动化药材农场不可替代的知识基础。
+- 应用：自动化橡胶种植园 (`tech.application.method_rubber_tree_collector_r10`)：数字控制是应用：自动化橡胶种植园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -43460,8 +43002,7 @@ pharmaceuticals产出 +12%
 
 - 工业生态 (`tech.industrial_ecology`)：工业生态是应用：润滑油厂不可替代的知识基础。
 - 数字控制 (`tech.digital_control`)：数字控制是应用：润滑油厂不可替代的知识基础。
-- 石油钻探 (`tech.petroleum_drilling`)：石油钻探是应用：润滑油厂不可替代的知识基础。
-- 应用：蒸汽钻井场 (`tech.application.early_oil_well`)：应用：蒸汽钻井场是应用：润滑油厂不可替代的知识基础。
+- 石油炼制 (`tech.petroleum_refining`)：石油炼制是应用：润滑油厂不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -43600,7 +43141,6 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 内燃机 (`tech.internal_combustion`)：内燃机是应用：发动机厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：发动机厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：发动机厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：发动机厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：发动机厂不可替代的知识基础。
@@ -43676,7 +43216,6 @@ pharmaceuticals产出 +12%
 #### 硬前置（决定研发资格）
 
 - 内燃机 (`tech.internal_combustion`)：内燃机是应用：汽车厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：汽车厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：汽车厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：汽车厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：汽车厂不可替代的知识基础。
@@ -44134,10 +43673,10 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：森林遥感
 - 应用：高地精准块茎农业 (`tech.application.method_highland_precision_agriculture`)：地理信息系统是应用：高地精准块茎农业不可替代的知识基础。
 - 卫星观测 (`tech.satellite_observation`)：地理信息系统是卫星观测不可替代的知识基础。
 - 水文遥感 (`tech.hydrological_remote_sensing`)：地理信息系统是水文遥感不可替代的知识基础。
+- 应用：精准马铃薯农场 (`tech.application.method_potato_farm_r8`)：地理信息系统是应用：精准马铃薯农场不可替代的知识基础。
 - 应用：流域治理中心 (`tech.application.watershed_governance_center`)：地理信息系统是应用：流域治理中心不可替代的知识基础。
 - 应用：地理空间分析中心 (`tech.application.geospatial_analysis_center`)：地理信息系统是应用：地理空间分析中心不可替代的知识基础。
 - 应用：工业石灰岩矿场 (`tech.application.method_limestone_collector_r6`)：地理信息系统是应用：工业石灰岩矿场不可替代的知识基础。
-- 应用：精准马铃薯农场 (`tech.application.method_potato_farm_r8`)：tech.geographic\_information\_systems是精准马铃薯农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -44182,7 +43721,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：森林遥感
 
 #### 效果摘要
 
-稻米产出 +12%
+稻米产出 +12%；水田生产·旱灾损失 -14%；水田生产·洪灾损失 -14%；绿洲农业产出 +20%
 
 #### 机会成本
 
@@ -44202,12 +43741,21 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：森林遥感
 #### 永久 Modifier 条款
 
 - 稻米：`country.output.good.rice_grain_factor`：+12%
+- 水田生产·旱灾损失：`country.climate.profile.paddy_crop.drought_loss_factor`：+14%
+- 水田生产·洪灾损失：`country.climate.profile.paddy_crop.flood_loss_factor`：+14%
+- 绿洲农业：`country.output.terrain.oasis.agriculture_factor`：+20%
   - 效果机制：稻类辨识、水田组织与灌溉控制提高稻米产出。
   - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：精准灌溉降低水田生产建筑的旱灾损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：精准灌溉降低水田生产建筑的洪灾损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：精准灌溉提高绿洲的农业生产适应。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
-- 应用：精准稻作农场 (`tech.application.method_rice_collector_r8`)：tech.precision\_irrigation是精准稻作农场不可替代的知识基础。
+- 应用：精准稻作农场 (`tech.application.method_rice_collector_r8`)：精准灌溉是应用：精准稻作农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -44327,7 +43875,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：森林遥感
 
 #### 效果摘要
 
-解锁物资：马铃薯；解锁建筑：高地精准块茎农业；作为必要支撑：专用商品作物种植园
+解锁物资：马铃薯；解锁建筑：高地精准块茎农业；旱作生产·寒冷损失 -16%；作为必要支撑：专用商品作物种植园
 
 #### 机会成本
 
@@ -44347,7 +43895,9 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：森林遥感
 
 #### 永久 Modifier 条款
 
-无
+- 旱作生产·寒冷损失：`country.climate.profile.dryland_crop.cold_stress_loss_factor`：+16%
+  - 效果机制：应用：高地精准块茎农业降低旱作生产建筑的寒冷损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
 
 #### 被以下科技作为硬前置
 
@@ -44388,7 +43938,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：森林遥感
 - 电信 (`tech.telecommunications`)：电信是卫星观测不可替代的知识基础。
 - 森林管理 (`tech.forest_management`)：森林管理是卫星观测不可替代的知识基础。
 - 地理信息系统 (`tech.geographic_information_systems`)：地理信息系统是卫星观测不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是卫星观测不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是卫星观测不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是卫星观测不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是卫星观测不可替代的知识基础。
@@ -44473,7 +44022,7 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：森林遥感
 
 #### 效果摘要
 
-geospatial\_analysis\_institution产出 +12%
+geospatial\_analysis\_institution产出 +12%；旱灾损失 -8%；洪灾损失 -8%；寒冷损失 -8%；热害损失 -8%
 
 #### 机会成本
 
@@ -44493,8 +44042,20 @@ geospatial\_analysis\_institution产出 +12%
 #### 永久 Modifier 条款
 
 - geospatial\_analysis\_institution：`country.output.family.geospatial_analysis_institution_factor`：+12%
+- 旱灾损失：`country.climate.drought_loss_factor`：+8%
+- 洪灾损失：`country.climate.flood_loss_factor`：+8%
+- 寒冷损失：`country.climate.cold_stress_factor`：+8%
+- 热害损失：`country.climate.heat_stress_factor`：+8%
   - 效果机制：测绘、遥感与地理分析提高地理空间机构产出。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：数值天气预报降低全国气候型生产建筑的旱灾损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：数值天气预报降低全国气候型生产建筑的洪灾损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：数值天气预报降低全国气候型生产建筑的寒冷损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：数值天气预报降低全国气候型生产建筑的热害损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
 
 #### 被以下科技作为硬前置
 
@@ -44688,7 +44249,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-geospatial\_analysis\_institution产出 +12%
+geospatial\_analysis\_institution产出 +12%；旱作生产·旱灾损失 -10%；种植园生产·热害损失 -12%；硬叶灌丛农业产出 +18%
 
 #### 机会成本
 
@@ -44708,7 +44269,16 @@ geospatial\_analysis\_institution产出 +12%
 #### 永久 Modifier 条款
 
 - geospatial\_analysis\_institution：`country.output.family.geospatial_analysis_institution_factor`：+12%
+- 旱作生产·旱灾损失：`country.climate.profile.dryland_crop.drought_loss_factor`：+10%
+- 种植园生产·热害损失：`country.climate.profile.plantation_crop.heat_stress_loss_factor`：+12%
+- 硬叶灌丛农业：`country.output.terrain.chaparral.agriculture_factor`：+18%
   - 效果机制：测绘、遥感与地理分析提高地理空间机构产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：作物遥感降低旱作生产建筑的旱灾损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：作物遥感降低种植园生产建筑的热害损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：作物遥感提高硬叶灌丛的农业生产适应。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
@@ -44757,7 +44327,7 @@ geospatial\_analysis\_institution产出 +12%
 
 #### 效果摘要
 
-geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网控制中心
+geospatial\_analysis\_institution产出 +28%；旱灾损失 -12%；洪灾损失 -12%；三角洲农业产出 +20%；作为必要支撑：智能水网控制中心
 
 #### 机会成本
 
@@ -44777,7 +44347,16 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 #### 永久 Modifier 条款
 
 - geospatial\_analysis\_institution：`country.output.family.geospatial_analysis_institution_factor`：+28%
+- 旱灾损失：`country.climate.drought_loss_factor`：+12%
+- 洪灾损失：`country.climate.flood_loss_factor`：+12%
+- 三角洲农业：`country.output.landform.delta.agriculture_factor`：+20%
   - 效果机制：测绘、遥感与地理分析提高地理空间机构产出。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：水文遥感降低全国气候型生产建筑的旱灾损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：水文遥感降低全国气候型生产建筑的洪灾损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：水文遥感提高三角洲的农业生产适应。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
@@ -45233,7 +44812,6 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 #### 硬前置（决定研发资格）
 
 - 系统工程 (`tech.systems_engineering`)：系统工程是应用：战略金属冶炼厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：战略金属冶炼厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：战略金属冶炼厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：战略金属冶炼厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：战略金属冶炼厂不可替代的知识基础。
@@ -45307,7 +44885,6 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 #### 硬前置（决定研发资格）
 
 - 核裂变 (`tech.nuclear_fission`)：核裂变是应用：核燃料厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：核燃料厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：核燃料厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：核燃料厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：核燃料厂不可替代的知识基础。
@@ -45381,7 +44958,6 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 #### 硬前置（决定研发资格）
 
 - 核能 (`tech.nuclear_energy`)：核能是应用：核反应堆设备厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：核反应堆设备厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：核反应堆设备厂不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：核反应堆设备厂不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：核反应堆设备厂不可替代的知识基础。
@@ -45540,7 +45116,6 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 #### 硬前置（决定研发资格）
 
 - 核能 (`tech.nuclear_energy`)：核能是应用：核电站不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：核电站不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：核电站不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：核电站不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：核电站不可替代的知识基础。
@@ -45611,10 +45186,10 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 
 #### 硬前置（决定研发资格）
 
-- 精准农业 (`tech.precision_agriculture`)：tech.precision\_agriculture是精准马铃薯农场不可替代的知识基础。
-- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是精准马铃薯农场不可替代的知识基础。
-- 地理信息系统 (`tech.geographic_information_systems`)：tech.geographic\_information\_systems是精准马铃薯农场不可替代的知识基础。
-- 块茎繁育 (`tech.potato_propagation`)：tech.potato\_propagation是精准马铃薯农场不可替代的知识基础。
+- 精准农业 (`tech.precision_agriculture`)：精准农业是应用：精准马铃薯农场不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：数字计算是应用：精准马铃薯农场不可替代的知识基础。
+- 地理信息系统 (`tech.geographic_information_systems`)：地理信息系统是应用：精准马铃薯农场不可替代的知识基础。
+- 块茎繁育 (`tech.potato_propagation`)：块茎繁育是应用：精准马铃薯农场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -45637,8 +45212,8 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 
 #### 结构化内容效果
 
-- **马铃薯**（`good`）：`good.potatoes` → `production_access` `unlock` `1.0`；`catalog_rebind`
-- **精准马铃薯农场**（`building`）：`building.method_potato_farm_r8` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+- **马铃薯**（`good`）：`good.potatoes` → `production_access` `unlock` `1.0`；`existing_binding`
+- **精准马铃薯农场**（`building`）：`building.method_potato_farm_r8` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -45680,9 +45255,9 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 
 #### 硬前置（决定研发资格）
 
-- 精准农业 (`tech.precision_agriculture`)：tech.precision\_agriculture是精准小麦农场不可替代的知识基础。
-- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是精准小麦农场不可替代的知识基础。
-- 小麦繁育 (`tech.wheat_propagation`)：tech.wheat\_propagation是精准小麦农场不可替代的知识基础。
+- 精准农业 (`tech.precision_agriculture`)：精准农业是应用：精准小麦农场不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：数字计算是应用：精准小麦农场不可替代的知识基础。
+- 小麦繁育 (`tech.wheat_propagation`)：小麦繁育是应用：精准小麦农场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -45705,8 +45280,8 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 
 #### 结构化内容效果
 
-- **小麦**（`good`）：`good.wheat_grain` → `production_access` `unlock` `1.0`；`catalog_rebind`
-- **精准小麦农场**（`building`）：`building.method_wheat_farm_r8` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+- **小麦**（`good`）：`good.wheat_grain` → `production_access` `unlock` `1.0`；`existing_binding`
+- **精准小麦农场**（`building`）：`building.method_wheat_farm_r8` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -45748,10 +45323,10 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 
 #### 硬前置（决定研发资格）
 
-- 精准农业 (`tech.precision_agriculture`)：tech.precision\_agriculture是精准稻作农场不可替代的知识基础。
-- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是精准稻作农场不可替代的知识基础。
-- 精准灌溉 (`tech.precision_irrigation`)：tech.precision\_irrigation是精准稻作农场不可替代的知识基础。
-- 稻田水位控制 (`tech.rice_water_control`)：tech.rice\_water\_control是精准稻作农场不可替代的知识基础。
+- 精准农业 (`tech.precision_agriculture`)：精准农业是应用：精准稻作农场不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：数字计算是应用：精准稻作农场不可替代的知识基础。
+- 精准灌溉 (`tech.precision_irrigation`)：精准灌溉是应用：精准稻作农场不可替代的知识基础。
+- 稻田水位控制 (`tech.rice_water_control`)：稻田水位控制是应用：精准稻作农场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -45774,8 +45349,8 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 
 #### 结构化内容效果
 
-- **稻米**（`good`）：`good.rice_grain` → `production_access` `unlock` `1.0`；`catalog_rebind`
-- **精准稻作农场**（`building`）：`building.method_rice_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+- **稻米**（`good`）：`good.rice_grain` → `production_access` `unlock` `1.0`；`existing_binding`
+- **精准稻作农场**（`building`）：`building.method_rice_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -45817,9 +45392,9 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 
 #### 硬前置（决定研发资格）
 
-- 精准农业 (`tech.precision_agriculture`)：tech.precision\_agriculture是精准玉米农场不可替代的知识基础。
-- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是精准玉米农场不可替代的知识基础。
-- 玉米繁育 (`tech.maize_propagation`)：tech.maize\_propagation是精准玉米农场不可替代的知识基础。
+- 精准农业 (`tech.precision_agriculture`)：精准农业是应用：精准玉米农场不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：数字计算是应用：精准玉米农场不可替代的知识基础。
+- 玉米繁育 (`tech.maize_propagation`)：玉米繁育是应用：精准玉米农场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -45842,8 +45417,8 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 
 #### 结构化内容效果
 
-- **玉米**（`good`）：`good.corn_grain` → `production_access` `unlock` `1.0`；`catalog_rebind`
-- **精准玉米农场**（`building`）：`building.method_maize_farm_r8` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+- **玉米**（`good`）：`good.corn_grain` → `production_access` `unlock` `1.0`；`existing_binding`
+- **精准玉米农场**（`building`）：`building.method_maize_farm_r8` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -45885,9 +45460,9 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 
 #### 硬前置（决定研发资格）
 
-- 精准农业 (`tech.precision_agriculture`)：tech.precision\_agriculture是精准棉花农场不可替代的知识基础。
-- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是精准棉花农场不可替代的知识基础。
-- 棉花园圃 (`tech.cotton_gardening`)：tech.cotton\_gardening是精准棉花农场不可替代的知识基础。
+- 精准农业 (`tech.precision_agriculture`)：精准农业是应用：精准棉花农场不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：数字计算是应用：精准棉花农场不可替代的知识基础。
+- 棉花园圃 (`tech.cotton_gardening`)：棉花园圃是应用：精准棉花农场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -45910,8 +45485,8 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 
 #### 结构化内容效果
 
-- **籽棉**（`good`）：`good.seed_cotton` → `production_access` `unlock` `1.0`；`catalog_rebind`
-- **精准棉花农场**（`building`）：`building.method_cotton_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+- **籽棉**（`good`）：`good.seed_cotton` → `production_access` `unlock` `1.0`；`existing_binding`
+- **精准棉花农场**（`building`）：`building.method_cotton_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -45953,9 +45528,9 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 
 #### 硬前置（决定研发资格）
 
-- 精准农业 (`tech.precision_agriculture`)：tech.precision\_agriculture是精准亚麻农场不可替代的知识基础。
-- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是精准亚麻农场不可替代的知识基础。
-- 沤麻 (`tech.flax_retting`)：tech.flax\_retting是精准亚麻农场不可替代的知识基础。
+- 精准农业 (`tech.precision_agriculture`)：精准农业是应用：精准亚麻农场不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：数字计算是应用：精准亚麻农场不可替代的知识基础。
+- 沤麻 (`tech.flax_retting`)：沤麻是应用：精准亚麻农场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -45963,7 +45538,7 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 
 #### 效果摘要
 
-解锁物资：韧皮原料；解锁建筑：精准亚麻农场
+解锁物资：亚麻秆/韧皮原料；解锁建筑：精准亚麻农场
 
 #### 机会成本
 
@@ -45978,8 +45553,8 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 
 #### 结构化内容效果
 
-- **韧皮原料**（`good`）：`good.bast_fiber` → `production_access` `unlock` `1.0`；`catalog_rebind`
-- **精准亚麻农场**（`building`）：`building.method_flax_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+- **亚麻秆/韧皮原料**（`good`）：`good.bast_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
+- **精准亚麻农场**（`building`）：`building.method_flax_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -46021,9 +45596,9 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 
 #### 硬前置（决定研发资格）
 
-- 精准农业 (`tech.precision_agriculture`)：tech.precision\_agriculture是精准香料种植园不可替代的知识基础。
-- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是精准香料种植园不可替代的知识基础。
-- 商品作物管理 (`tech.commodity_crop_management`)：tech.commodity\_crop\_management是精准香料种植园不可替代的知识基础。
+- 精准农业 (`tech.precision_agriculture`)：精准农业是应用：精准香料种植园不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：数字计算是应用：精准香料种植园不可替代的知识基础。
+- 商品作物管理 (`tech.commodity_crop_management`)：商品作物管理是应用：精准香料种植园不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -46046,8 +45621,8 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 
 #### 结构化内容效果
 
-- **香料**（`good`）：`good.spices` → `production_access` `unlock` `1.0`；`catalog_rebind`
-- **精准香料种植园**（`building`）：`building.method_spice_plants_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+- **香料**（`good`）：`good.spices` → `production_access` `unlock` `1.0`；`existing_binding`
+- **精准香料种植园**（`building`）：`building.method_spice_plants_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -46089,10 +45664,10 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 
 #### 硬前置（决定研发资格）
 
-- 精准农业 (`tech.precision_agriculture`)：tech.precision\_agriculture是精准药材农场不可替代的知识基础。
-- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是精准药材农场不可替代的知识基础。
-- 现代医学 (`tech.modern_medicine`)：tech.modern\_medicine是精准药材农场不可替代的知识基础。
-- 商品作物管理 (`tech.commodity_crop_management`)：tech.commodity\_crop\_management是精准药材农场不可替代的知识基础。
+- 精准农业 (`tech.precision_agriculture`)：精准农业是应用：精准药材农场不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：数字计算是应用：精准药材农场不可替代的知识基础。
+- 现代医学 (`tech.modern_medicine`)：现代医学是应用：精准药材农场不可替代的知识基础。
+- 商品作物管理 (`tech.commodity_crop_management`)：商品作物管理是应用：精准药材农场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -46115,8 +45690,8 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 
 #### 结构化内容效果
 
-- **药材**（`good`）：`good.medicinal_herbs` → `production_access` `unlock` `1.0`；`catalog_rebind`
-- **精准药材农场**（`building`）：`building.method_medicinal_herbs_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+- **药材**（`good`）：`good.medicinal_herbs` → `production_access` `unlock` `1.0`；`existing_binding`
+- **精准药材农场**（`building`）：`building.method_medicinal_herbs_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -46158,10 +45733,10 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 
 #### 硬前置（决定研发资格）
 
-- 精准农业 (`tech.precision_agriculture`)：tech.precision\_agriculture是精准橡胶种植园不可替代的知识基础。
-- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是精准橡胶种植园不可替代的知识基础。
-- 商品作物管理 (`tech.commodity_crop_management`)：tech.commodity\_crop\_management是精准橡胶种植园不可替代的知识基础。
-- 天然橡胶加工 (`tech.rubber_working`)：tech.rubber\_working是精准橡胶种植园不可替代的知识基础。
+- 精准农业 (`tech.precision_agriculture`)：精准农业是应用：精准橡胶种植园不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：数字计算是应用：精准橡胶种植园不可替代的知识基础。
+- 商品作物管理 (`tech.commodity_crop_management`)：商品作物管理是应用：精准橡胶种植园不可替代的知识基础。
+- 天然橡胶加工 (`tech.rubber_working`)：天然橡胶加工是应用：精准橡胶种植园不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -46169,7 +45744,7 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 
 #### 效果摘要
 
-解锁物资：乳胶；解锁建筑：精准橡胶种植园
+解锁物资：天然乳胶；解锁建筑：精准橡胶种植园
 
 #### 机会成本
 
@@ -46184,8 +45759,8 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 
 #### 结构化内容效果
 
-- **乳胶**（`good`）：`good.latex` → `production_access` `unlock` `1.0`；`catalog_rebind`
-- **精准橡胶种植园**（`building`）：`building.method_rubber_tree_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+- **天然乳胶**（`good`）：`good.latex` → `production_access` `unlock` `1.0`；`existing_binding`
+- **精准橡胶种植园**（`building`）：`building.method_rubber_tree_collector_r8` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -46233,7 +45808,6 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 #### 硬前置（决定研发资格）
 
 - 核裂变 (`tech.nuclear_fission`)：核裂变是应用：核医学制药中心不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：核医学制药中心不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：核医学制药中心不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是应用：核医学制药中心不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是应用：核医学制药中心不可替代的知识基础。
@@ -46725,8 +46299,6 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 - 地理信息系统 (`tech.geographic_information_systems`)：地理信息系统是应用：工业石灰岩矿场不可替代的知识基础。
 - 工业组织 (`tech.industrial_organization`)：工业组织是应用：工业石灰岩矿场不可替代的知识基础。
 - 应用：改良锯木场 (`tech.application.method_lumber_plant_r2`)：应用：改良锯木场是应用：工业石灰岩矿场不可替代的知识基础。
-- 应用：烧砖窑 (`tech.application.fired_brick_kiln`)：应用：烧砖窑是应用：工业石灰岩矿场不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：工业石灰岩矿场不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：工业石灰岩矿场不可替代的知识基础。
 - 应用：工业机械厂 (`tech.application.industrial_machinery_plant`)：应用：工业机械厂是应用：工业石灰岩矿场不可替代的知识基础。
 
@@ -46868,7 +46440,6 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 
 - 传感器网络 (`tech.sensor_networks`)：传感器网络是应用：自动化混凝土厂不可替代的知识基础。
 - 工业质量控制 (`tech.industrial_quality_control`)：工业质量控制是应用：自动化混凝土厂不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是应用：自动化混凝土厂不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是应用：自动化混凝土厂不可替代的知识基础。
 - 应用：水泥厂 (`tech.application.cement_plant`)：应用：水泥厂是应用：自动化混凝土厂不可替代的知识基础。
 - 数字计算 (`tech.digital_computing`)：数字计算是应用：自动化混凝土厂不可替代的知识基础。
@@ -46941,7 +46512,6 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 - 概率与统计 (`tech.probability_statistics`)：概率与统计是机器学习不可替代的知识基础。
 - 运筹学 (`tech.operations_research`)：运筹学是机器学习不可替代的知识基础。
 - 半导体制造 (`tech.semiconductor_manufacturing`)：半导体制造是机器学习不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是机器学习不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是机器学习不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是机器学习不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是机器学习不可替代的知识基础。
@@ -47200,7 +46770,6 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 #### 硬前置（决定研发资格）
 
 - 精准农业 (`tech.precision_agriculture`)：精准农业是自动化农业不可替代的知识基础。
-- 应用：石作工场 (`tech.application.classical_masonry_yard`)：应用：石作工场是自动化农业不可替代的知识基础。
 - 应用：焦炭炼钢厂 (`tech.application.steam_steel_works`)：应用：焦炭炼钢厂是自动化农业不可替代的知识基础。
 - 应用：混凝土厂 (`tech.application.concrete_plant`)：应用：混凝土厂是自动化农业不可替代的知识基础。
 - 应用：玻璃窑 (`tech.application.classical_glass_kiln`)：应用：玻璃窑是自动化农业不可替代的知识基础。
@@ -47217,7 +46786,7 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 
 #### 效果摘要
 
-解锁物资：混合谷物；解锁物资：蔬菜；解锁建筑：自动化农场；全社会 +22%；作为必要支撑：专用商品作物种植园
+解锁物资：混合谷物；解锁物资：蔬菜；解锁建筑：自动化农场；全社会 +22%；旱作生产·旱灾损失 -10%；旱作生产·洪灾损失 -10%；旱作生产·寒冷损失 -10%；旱作生产·热害损失 -10%；平原农业产出 +24%；作为必要支撑：专用商品作物种植园
 
 #### 机会成本
 
@@ -47239,21 +46808,36 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 #### 永久 Modifier 条款
 
 - 全社会：`country.output.agriculture_factor`：+22%
+- 旱作生产·旱灾损失：`country.climate.profile.dryland_crop.drought_loss_factor`：+10%
+- 旱作生产·洪灾损失：`country.climate.profile.dryland_crop.flood_loss_factor`：+10%
+- 旱作生产·寒冷损失：`country.climate.profile.dryland_crop.cold_stress_loss_factor`：+10%
+- 旱作生产·热害损失：`country.climate.profile.dryland_crop.heat_stress_loss_factor`：+10%
+- 平原农业：`country.output.landform.plain.agriculture_factor`：+24%
   - 效果机制：自动化农业提高全社会农业作业的连续性。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：自动化农业降低旱作生产建筑的旱灾损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：自动化农业降低旱作生产建筑的洪灾损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：自动化农业降低旱作生产建筑的寒冷损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：自动化农业降低旱作生产建筑的热害损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：自动化农业提高平原的农业生产适应。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
 - 应用：专用商品作物种植园 (`tech.application.method_specialty_commodity_plantation`)：自动化农业是应用：专用商品作物种植园不可替代的知识基础。
-- 应用：自动化马铃薯农场 (`tech.application.method_potato_farm_r10`)：tech.automated\_agriculture是自动化马铃薯农场不可替代的知识基础。
-- 应用：自动化小麦农场 (`tech.application.method_wheat_farm_r10`)：tech.automated\_agriculture是自动化小麦农场不可替代的知识基础。
-- 应用：自动化稻作农场 (`tech.application.method_rice_collector_r10`)：tech.automated\_agriculture是自动化稻作农场不可替代的知识基础。
-- 应用：自动化玉米农场 (`tech.application.method_maize_farm_r10`)：tech.automated\_agriculture是自动化玉米农场不可替代的知识基础。
-- 应用：自动化棉花农场 (`tech.application.method_cotton_collector_r10`)：tech.automated\_agriculture是自动化棉花农场不可替代的知识基础。
-- 应用：自动化亚麻农场 (`tech.application.method_flax_collector_r10`)：tech.automated\_agriculture是自动化亚麻农场不可替代的知识基础。
-- 应用：自动化香料种植园 (`tech.application.method_spice_plants_collector_r10`)：tech.automated\_agriculture是自动化香料种植园不可替代的知识基础。
-- 应用：自动化药材农场 (`tech.application.method_medicinal_herbs_collector_r10`)：tech.automated\_agriculture是自动化药材农场不可替代的知识基础。
-- 应用：自动化橡胶种植园 (`tech.application.method_rubber_tree_collector_r10`)：tech.automated\_agriculture是自动化橡胶种植园不可替代的知识基础。
+- 应用：自动化马铃薯农场 (`tech.application.method_potato_farm_r10`)：自动化农业是应用：自动化马铃薯农场不可替代的知识基础。
+- 应用：自动化小麦农场 (`tech.application.method_wheat_farm_r10`)：自动化农业是应用：自动化小麦农场不可替代的知识基础。
+- 应用：自动化稻作农场 (`tech.application.method_rice_collector_r10`)：自动化农业是应用：自动化稻作农场不可替代的知识基础。
+- 应用：自动化玉米农场 (`tech.application.method_maize_farm_r10`)：自动化农业是应用：自动化玉米农场不可替代的知识基础。
+- 应用：自动化棉花农场 (`tech.application.method_cotton_collector_r10`)：自动化农业是应用：自动化棉花农场不可替代的知识基础。
+- 应用：自动化亚麻农场 (`tech.application.method_flax_collector_r10`)：自动化农业是应用：自动化亚麻农场不可替代的知识基础。
+- 应用：自动化香料种植园 (`tech.application.method_spice_plants_collector_r10`)：自动化农业是应用：自动化香料种植园不可替代的知识基础。
+- 应用：自动化药材农场 (`tech.application.method_medicinal_herbs_collector_r10`)：自动化农业是应用：自动化药材农场不可替代的知识基础。
+- 应用：自动化橡胶种植园 (`tech.application.method_rubber_tree_collector_r10`)：自动化农业是应用：自动化橡胶种植园不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -47477,9 +47061,9 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 - 应用：智能化汽车厂 (`tech.application.method_automobiles_plant_r10`)：机器人制造是应用：智能化汽车厂不可替代的知识基础。
 - 应用：智能化发动机厂 (`tech.application.method_engines_plant_r10`)：机器人制造是应用：智能化发动机厂不可替代的知识基础。
 - 应用：智能仪器厂 (`tech.application.method_scientific_instrument_works_r10`)：机器人制造是应用：智能仪器厂不可替代的知识基础。
-- Smart Glassware Factory (`tech.application.glassware_smart_factory`)：knowledge prerequisite: tech.robotic\_manufacturing -\> Smart Glassware Factory
-- Smart Metal Housewares Factory (`tech.application.metal_housewares_smart_factory`)：knowledge prerequisite: tech.robotic\_manufacturing -\> Smart Metal Housewares Factory
-- Smart Leather Goods Factory (`tech.application.leather_goods_smart_factory`)：knowledge prerequisite: tech.robotic\_manufacturing -\> Smart Leather Goods Factory
+- Smart Glassware Factory (`tech.application.glassware_smart_factory`)：机器人制造是Smart Glassware Factory不可替代的知识基础。
+- Smart Metal Housewares Factory (`tech.application.metal_housewares_smart_factory`)：机器人制造是Smart Metal Housewares Factory不可替代的知识基础。
+- Smart Leather Goods Factory (`tech.application.leather_goods_smart_factory`)：机器人制造是Smart Leather Goods Factory不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -47662,7 +47246,7 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 
 #### 效果摘要
 
-铁矿石 -12%；全社会 +15%；作为必要支撑：智能锰矿、智能天然气田、智能硝石矿、智能硫矿
+铁矿石 -12%；全社会 +15%；台地采掘产出 +22%；作为必要支撑：智能锰矿、智能天然气田、智能硝石矿、智能硫矿
 
 #### 机会成本
 
@@ -47683,9 +47267,12 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 
 - 铁矿石：`country.resource.iron_ore.use_factor`：+12%
 - 全社会：`country.output.extractive_factor`：+15%
+- 台地采掘：`country.output.terrain.mesa.extractive_factor`：+22%
   - 效果机制：传感调度减少贫化遗漏。
   - 运行时消费者：`NativeEconomyRuntime::effective_resource_use_quantity`
   - 效果机制：自主采矿提高连续作业。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：自主采矿提高台地的采掘生产适应。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
@@ -47735,7 +47322,7 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 
 #### 效果摘要
 
-全社会 +4%
+全社会 +4%；旱灾损失 -12%；洪灾损失 -12%；寒冷损失 -12%；热害损失 -12%
 
 #### 机会成本
 
@@ -47755,8 +47342,20 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 #### 永久 Modifier 条款
 
 - 全社会：`country.output.agriculture_factor`：+4%
+- 旱灾损失：`country.climate.drought_loss_factor`：+12%
+- 洪灾损失：`country.climate.flood_loss_factor`：+12%
+- 寒冷损失：`country.climate.cold_stress_factor`：+12%
+- 热害损失：`country.climate.heat_stress_factor`：+12%
   - 效果机制：气候预测减少农业时机与灾害暴露误差。
   - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
+  - 效果机制：气候建模降低全国气候型生产建筑的旱灾损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：气候建模降低全国气候型生产建筑的洪灾损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：气候建模降低全国气候型生产建筑的寒冷损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：气候建模降低全国气候型生产建筑的热害损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
 
 #### 被以下科技作为硬前置
 
@@ -48648,7 +48247,7 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 
 #### 效果摘要
 
-农业领域研究效率 +22%
+农业领域研究效率 +22%；旱作生产·寒冷损失 -16%；旱作生产·热害损失 -16%；牧业生产·寒冷损失 -16%；牧业生产·热害损失 -16%
 
 #### 机会成本
 
@@ -48668,8 +48267,20 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 #### 永久 Modifier 条款
 
 - 农业领域研究效率：`country.research.agriculture_efficiency`：+22%
+- 旱作生产·寒冷损失：`country.climate.profile.dryland_crop.cold_stress_loss_factor`：+16%
+- 旱作生产·热害损失：`country.climate.profile.dryland_crop.heat_stress_loss_factor`：+16%
+- 牧业生产·寒冷损失：`country.climate.profile.pasture_livestock.cold_stress_loss_factor`：+16%
+- 牧业生产·热害损失：`country.climate.profile.pasture_livestock.heat_stress_loss_factor`：+16%
   - 效果机制：自然观察、生物分类与育种方法提高农业研究效率。
   - 运行时消费者：`NativeCountryRuntime::process_research_day`
+  - 效果机制：智能育种降低旱作生产建筑的寒冷损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：智能育种降低旱作生产建筑的热害损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：智能育种降低牧业生产建筑的寒冷损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：智能育种降低牧业生产建筑的热害损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
 
 #### 被以下科技作为硬前置
 
@@ -50088,7 +49699,7 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 
 #### 效果摘要
 
-解锁物资：原木；解锁建筑：自主林业经营站；作为必要支撑：自主航运调度港、智能化核燃料厂、智能化核反应堆设备厂、智能牧业站、智能水网控制中心
+解锁物资：原木；解锁建筑：自主林业经营站；泰加林采掘产出 +22%；作为必要支撑：自主航运调度港、智能化核燃料厂、智能化核反应堆设备厂、智能牧业站、智能水网控制中心
 
 #### 机会成本
 
@@ -50108,7 +49719,9 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 
 #### 永久 Modifier 条款
 
-无
+- 泰加林采掘：`country.output.terrain.taiga.extractive_factor`：+22%
+  - 效果机制：应用：自主林业经营站提高泰加林的采掘生产适应。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
@@ -50156,7 +49769,7 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 
 #### 效果摘要
 
-稻米产出 +28%
+稻米产出 +28%；水田生产·旱灾损失 -20%；水田生产·洪灾损失 -20%；洪泛平原农业产出 +22%
 
 #### 机会成本
 
@@ -50176,12 +49789,21 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 #### 永久 Modifier 条款
 
 - 稻米：`country.output.good.rice_grain_factor`：+28%
+- 水田生产·旱灾损失：`country.climate.profile.paddy_crop.drought_loss_factor`：+20%
+- 水田生产·洪灾损失：`country.climate.profile.paddy_crop.flood_loss_factor`：+20%
+- 洪泛平原农业：`country.output.terrain.floodplain.agriculture_factor`：+22%
   - 效果机制：稻类辨识、水田组织与灌溉控制提高稻米产出。
   - 运行时消费者：`NativeEconomyRuntime::effective_building_output_quantity`
+  - 效果机制：自适应灌溉降低水田生产建筑的旱灾损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：自适应灌溉降低水田生产建筑的洪灾损失。
+  - 运行时消费者：`NativeEconomyRuntime::production_climate_capacity_q16`
+  - 效果机制：自适应灌溉提高洪泛平原的农业生产适应。
+  - 运行时消费者：`NativeEconomyRuntime::refresh_building_modifier_factors`
 
 #### 被以下科技作为硬前置
 
-- 应用：自动化稻作农场 (`tech.application.method_rice_collector_r10`)：tech.adaptive\_irrigation是自动化稻作农场不可替代的知识基础。
+- 应用：自动化稻作农场 (`tech.application.method_rice_collector_r10`)：自适应灌溉是应用：自动化稻作农场不可替代的知识基础。
 
 #### 主题路线后继
 
@@ -50447,8 +50069,8 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 
 #### 硬前置（决定研发资格）
 
-- Glassware Factory (`tech.application.glassware_factory_steam`)：knowledge prerequisite: tech.application.glassware\_factory\_steam -\> Smart Glassware Factory
-- 机器人制造 (`tech.robotic_manufacturing`)：knowledge prerequisite: tech.robotic\_manufacturing -\> Smart Glassware Factory
+- Glassware Factory (`tech.application.glassware_factory_steam`)：Glassware Factory是Smart Glassware Factory不可替代的知识基础。
+- 机器人制造 (`tech.robotic_manufacturing`)：机器人制造是Smart Glassware Factory不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -50456,7 +50078,7 @@ geospatial\_analysis\_institution产出 +28%；作为必要支撑：智能水网
 
 #### 效果摘要
 
-解锁物资：Smart Glassware Factory；解锁建筑：Smart Glassware Factory；作为必要支撑：Smart Glassware Factory
+解锁物资：玻璃器皿；解锁建筑：智能玻璃器皿工厂；作为必要支撑：Smart Glassware Factory
 
 #### 机会成本
 
@@ -50471,8 +50093,8 @@ terminal production upgrade
 
 #### 结构化内容效果
 
-- **Smart Glassware Factory**（`good`）：`good.glassware` → `production_access` `unlock` `1.0`；`existing_binding`
-- **Smart Glassware Factory**（`building`）：`building.smart_glassware_factory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **玻璃器皿**（`good`）：`good.glassware` → `production_access` `unlock` `1.0`；`existing_binding`
+- **智能玻璃器皿工厂**（`building`）：`building.smart_glassware_factory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -50514,8 +50136,8 @@ terminal production upgrade
 
 #### 硬前置（决定研发资格）
 
-- Metal Housewares Factory (`tech.application.metal_housewares_factory_steam`)：knowledge prerequisite: tech.application.metal\_housewares\_factory\_steam -\> Smart Metal Housewares Factory
-- 机器人制造 (`tech.robotic_manufacturing`)：knowledge prerequisite: tech.robotic\_manufacturing -\> Smart Metal Housewares Factory
+- Metal Housewares Factory (`tech.application.metal_housewares_factory_steam`)：Metal Housewares Factory是Smart Metal Housewares Factory不可替代的知识基础。
+- 机器人制造 (`tech.robotic_manufacturing`)：机器人制造是Smart Metal Housewares Factory不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -50523,7 +50145,7 @@ terminal production upgrade
 
 #### 效果摘要
 
-解锁物资：Smart Metal Housewares Factory；解锁建筑：Smart Metal Housewares Factory；作为必要支撑：Smart Metal Housewares Factory
+解锁物资：金属家用器皿；解锁建筑：智能金属家用器皿工厂；作为必要支撑：Smart Metal Housewares Factory
 
 #### 机会成本
 
@@ -50538,8 +50160,8 @@ terminal production upgrade
 
 #### 结构化内容效果
 
-- **Smart Metal Housewares Factory**（`good`）：`good.metal_housewares` → `production_access` `unlock` `1.0`；`existing_binding`
-- **Smart Metal Housewares Factory**（`building`）：`building.smart_metal_housewares_factory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **金属家用器皿**（`good`）：`good.metal_housewares` → `production_access` `unlock` `1.0`；`existing_binding`
+- **智能金属家用器皿工厂**（`building`）：`building.smart_metal_housewares_factory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -50581,8 +50203,8 @@ terminal production upgrade
 
 #### 硬前置（决定研发资格）
 
-- Leather Goods Factory (`tech.application.leather_goods_factory_steam`)：knowledge prerequisite: tech.application.leather\_goods\_factory\_steam -\> Smart Leather Goods Factory
-- 机器人制造 (`tech.robotic_manufacturing`)：knowledge prerequisite: tech.robotic\_manufacturing -\> Smart Leather Goods Factory
+- Leather Goods Factory (`tech.application.leather_goods_factory_steam`)：Leather Goods Factory是Smart Leather Goods Factory不可替代的知识基础。
+- 机器人制造 (`tech.robotic_manufacturing`)：机器人制造是Smart Leather Goods Factory不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -50590,7 +50212,7 @@ terminal production upgrade
 
 #### 效果摘要
 
-解锁物资：Smart Leather Goods Factory；解锁建筑：Smart Leather Goods Factory；作为必要支撑：Smart Leather Goods Factory
+解锁物资：皮革制品；解锁建筑：智能皮革制品工厂；作为必要支撑：Smart Leather Goods Factory
 
 #### 机会成本
 
@@ -50605,8 +50227,8 @@ terminal production upgrade
 
 #### 结构化内容效果
 
-- **Smart Leather Goods Factory**（`good`）：`good.leather_goods` → `production_access` `unlock` `1.0`；`existing_binding`
-- **Smart Leather Goods Factory**（`building`）：`building.smart_leather_goods_factory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
+- **皮革制品**（`good`）：`good.leather_goods` → `production_access` `unlock` `1.0`；`existing_binding`
+- **智能皮革制品工厂**（`building`）：`building.smart_leather_goods_factory` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -50648,10 +50270,10 @@ terminal production upgrade
 
 #### 硬前置（决定研发资格）
 
-- 自动化农业 (`tech.automated_agriculture`)：tech.automated\_agriculture是自动化马铃薯农场不可替代的知识基础。
-- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是自动化马铃薯农场不可替代的知识基础。
-- 数字控制 (`tech.digital_control`)：tech.digital\_control是自动化马铃薯农场不可替代的知识基础。
-- 块茎繁育 (`tech.potato_propagation`)：tech.potato\_propagation是自动化马铃薯农场不可替代的知识基础。
+- 自动化农业 (`tech.automated_agriculture`)：自动化农业是应用：自动化马铃薯农场不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：数字计算是应用：自动化马铃薯农场不可替代的知识基础。
+- 数字控制 (`tech.digital_control`)：数字控制是应用：自动化马铃薯农场不可替代的知识基础。
+- 块茎繁育 (`tech.potato_propagation`)：块茎繁育是应用：自动化马铃薯农场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -50674,8 +50296,8 @@ terminal production upgrade
 
 #### 结构化内容效果
 
-- **马铃薯**（`good`）：`good.potatoes` → `production_access` `unlock` `1.0`；`catalog_rebind`
-- **自动化马铃薯农场**（`building`）：`building.method_potato_farm_r10` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+- **马铃薯**（`good`）：`good.potatoes` → `production_access` `unlock` `1.0`；`existing_binding`
+- **自动化马铃薯农场**（`building`）：`building.method_potato_farm_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -50717,10 +50339,10 @@ terminal production upgrade
 
 #### 硬前置（决定研发资格）
 
-- 自动化农业 (`tech.automated_agriculture`)：tech.automated\_agriculture是自动化小麦农场不可替代的知识基础。
-- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是自动化小麦农场不可替代的知识基础。
-- 数字控制 (`tech.digital_control`)：tech.digital\_control是自动化小麦农场不可替代的知识基础。
-- 小麦繁育 (`tech.wheat_propagation`)：tech.wheat\_propagation是自动化小麦农场不可替代的知识基础。
+- 自动化农业 (`tech.automated_agriculture`)：自动化农业是应用：自动化小麦农场不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：数字计算是应用：自动化小麦农场不可替代的知识基础。
+- 数字控制 (`tech.digital_control`)：数字控制是应用：自动化小麦农场不可替代的知识基础。
+- 小麦繁育 (`tech.wheat_propagation`)：小麦繁育是应用：自动化小麦农场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -50743,8 +50365,8 @@ terminal production upgrade
 
 #### 结构化内容效果
 
-- **小麦**（`good`）：`good.wheat_grain` → `production_access` `unlock` `1.0`；`catalog_rebind`
-- **自动化小麦农场**（`building`）：`building.method_wheat_farm_r10` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+- **小麦**（`good`）：`good.wheat_grain` → `production_access` `unlock` `1.0`；`existing_binding`
+- **自动化小麦农场**（`building`）：`building.method_wheat_farm_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -50786,10 +50408,10 @@ terminal production upgrade
 
 #### 硬前置（决定研发资格）
 
-- 自动化农业 (`tech.automated_agriculture`)：tech.automated\_agriculture是自动化稻作农场不可替代的知识基础。
-- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是自动化稻作农场不可替代的知识基础。
-- 自适应灌溉 (`tech.adaptive_irrigation`)：tech.adaptive\_irrigation是自动化稻作农场不可替代的知识基础。
-- 稻田水位控制 (`tech.rice_water_control`)：tech.rice\_water\_control是自动化稻作农场不可替代的知识基础。
+- 自动化农业 (`tech.automated_agriculture`)：自动化农业是应用：自动化稻作农场不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：数字计算是应用：自动化稻作农场不可替代的知识基础。
+- 自适应灌溉 (`tech.adaptive_irrigation`)：自适应灌溉是应用：自动化稻作农场不可替代的知识基础。
+- 稻田水位控制 (`tech.rice_water_control`)：稻田水位控制是应用：自动化稻作农场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -50812,8 +50434,8 @@ terminal production upgrade
 
 #### 结构化内容效果
 
-- **稻米**（`good`）：`good.rice_grain` → `production_access` `unlock` `1.0`；`catalog_rebind`
-- **自动化稻作农场**（`building`）：`building.method_rice_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+- **稻米**（`good`）：`good.rice_grain` → `production_access` `unlock` `1.0`；`existing_binding`
+- **自动化稻作农场**（`building`）：`building.method_rice_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -50855,10 +50477,10 @@ terminal production upgrade
 
 #### 硬前置（决定研发资格）
 
-- 自动化农业 (`tech.automated_agriculture`)：tech.automated\_agriculture是自动化玉米农场不可替代的知识基础。
-- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是自动化玉米农场不可替代的知识基础。
-- 数字控制 (`tech.digital_control`)：tech.digital\_control是自动化玉米农场不可替代的知识基础。
-- 玉米繁育 (`tech.maize_propagation`)：tech.maize\_propagation是自动化玉米农场不可替代的知识基础。
+- 自动化农业 (`tech.automated_agriculture`)：自动化农业是应用：自动化玉米农场不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：数字计算是应用：自动化玉米农场不可替代的知识基础。
+- 数字控制 (`tech.digital_control`)：数字控制是应用：自动化玉米农场不可替代的知识基础。
+- 玉米繁育 (`tech.maize_propagation`)：玉米繁育是应用：自动化玉米农场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -50881,8 +50503,8 @@ terminal production upgrade
 
 #### 结构化内容效果
 
-- **玉米**（`good`）：`good.corn_grain` → `production_access` `unlock` `1.0`；`catalog_rebind`
-- **自动化玉米农场**（`building`）：`building.method_maize_farm_r10` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+- **玉米**（`good`）：`good.corn_grain` → `production_access` `unlock` `1.0`；`existing_binding`
+- **自动化玉米农场**（`building`）：`building.method_maize_farm_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -50924,10 +50546,10 @@ terminal production upgrade
 
 #### 硬前置（决定研发资格）
 
-- 自动化农业 (`tech.automated_agriculture`)：tech.automated\_agriculture是自动化棉花农场不可替代的知识基础。
-- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是自动化棉花农场不可替代的知识基础。
-- 数字控制 (`tech.digital_control`)：tech.digital\_control是自动化棉花农场不可替代的知识基础。
-- 棉花园圃 (`tech.cotton_gardening`)：tech.cotton\_gardening是自动化棉花农场不可替代的知识基础。
+- 自动化农业 (`tech.automated_agriculture`)：自动化农业是应用：自动化棉花农场不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：数字计算是应用：自动化棉花农场不可替代的知识基础。
+- 数字控制 (`tech.digital_control`)：数字控制是应用：自动化棉花农场不可替代的知识基础。
+- 棉花园圃 (`tech.cotton_gardening`)：棉花园圃是应用：自动化棉花农场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -50950,8 +50572,8 @@ terminal production upgrade
 
 #### 结构化内容效果
 
-- **籽棉**（`good`）：`good.seed_cotton` → `production_access` `unlock` `1.0`；`catalog_rebind`
-- **自动化棉花农场**（`building`）：`building.method_cotton_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+- **籽棉**（`good`）：`good.seed_cotton` → `production_access` `unlock` `1.0`；`existing_binding`
+- **自动化棉花农场**（`building`）：`building.method_cotton_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -50993,10 +50615,10 @@ terminal production upgrade
 
 #### 硬前置（决定研发资格）
 
-- 自动化农业 (`tech.automated_agriculture`)：tech.automated\_agriculture是自动化亚麻农场不可替代的知识基础。
-- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是自动化亚麻农场不可替代的知识基础。
-- 数字控制 (`tech.digital_control`)：tech.digital\_control是自动化亚麻农场不可替代的知识基础。
-- 沤麻 (`tech.flax_retting`)：tech.flax\_retting是自动化亚麻农场不可替代的知识基础。
+- 自动化农业 (`tech.automated_agriculture`)：自动化农业是应用：自动化亚麻农场不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：数字计算是应用：自动化亚麻农场不可替代的知识基础。
+- 数字控制 (`tech.digital_control`)：数字控制是应用：自动化亚麻农场不可替代的知识基础。
+- 沤麻 (`tech.flax_retting`)：沤麻是应用：自动化亚麻农场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -51004,7 +50626,7 @@ terminal production upgrade
 
 #### 效果摘要
 
-解锁物资：韧皮原料；解锁建筑：自动化亚麻农场
+解锁物资：亚麻秆/韧皮原料；解锁建筑：自动化亚麻农场
 
 #### 机会成本
 
@@ -51019,8 +50641,8 @@ terminal production upgrade
 
 #### 结构化内容效果
 
-- **韧皮原料**（`good`）：`good.bast_fiber` → `production_access` `unlock` `1.0`；`catalog_rebind`
-- **自动化亚麻农场**（`building`）：`building.method_flax_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+- **亚麻秆/韧皮原料**（`good`）：`good.bast_fiber` → `production_access` `unlock` `1.0`；`existing_binding`
+- **自动化亚麻农场**（`building`）：`building.method_flax_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -51062,10 +50684,10 @@ terminal production upgrade
 
 #### 硬前置（决定研发资格）
 
-- 自动化农业 (`tech.automated_agriculture`)：tech.automated\_agriculture是自动化香料种植园不可替代的知识基础。
-- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是自动化香料种植园不可替代的知识基础。
-- 数字控制 (`tech.digital_control`)：tech.digital\_control是自动化香料种植园不可替代的知识基础。
-- 商品作物管理 (`tech.commodity_crop_management`)：tech.commodity\_crop\_management是自动化香料种植园不可替代的知识基础。
+- 自动化农业 (`tech.automated_agriculture`)：自动化农业是应用：自动化香料种植园不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：数字计算是应用：自动化香料种植园不可替代的知识基础。
+- 数字控制 (`tech.digital_control`)：数字控制是应用：自动化香料种植园不可替代的知识基础。
+- 商品作物管理 (`tech.commodity_crop_management`)：商品作物管理是应用：自动化香料种植园不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -51088,8 +50710,8 @@ terminal production upgrade
 
 #### 结构化内容效果
 
-- **香料**（`good`）：`good.spices` → `production_access` `unlock` `1.0`；`catalog_rebind`
-- **自动化香料种植园**（`building`）：`building.method_spice_plants_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+- **香料**（`good`）：`good.spices` → `production_access` `unlock` `1.0`；`existing_binding`
+- **自动化香料种植园**（`building`）：`building.method_spice_plants_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -51131,10 +50753,10 @@ terminal production upgrade
 
 #### 硬前置（决定研发资格）
 
-- 自动化农业 (`tech.automated_agriculture`)：tech.automated\_agriculture是自动化药材农场不可替代的知识基础。
-- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是自动化药材农场不可替代的知识基础。
-- 数字控制 (`tech.digital_control`)：tech.digital\_control是自动化药材农场不可替代的知识基础。
-- 现代医学 (`tech.modern_medicine`)：tech.modern\_medicine是自动化药材农场不可替代的知识基础。
+- 自动化农业 (`tech.automated_agriculture`)：自动化农业是应用：自动化药材农场不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：数字计算是应用：自动化药材农场不可替代的知识基础。
+- 数字控制 (`tech.digital_control`)：数字控制是应用：自动化药材农场不可替代的知识基础。
+- 现代医学 (`tech.modern_medicine`)：现代医学是应用：自动化药材农场不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -51157,8 +50779,8 @@ terminal production upgrade
 
 #### 结构化内容效果
 
-- **药材**（`good`）：`good.medicinal_herbs` → `production_access` `unlock` `1.0`；`catalog_rebind`
-- **自动化药材农场**（`building`）：`building.method_medicinal_herbs_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+- **药材**（`good`）：`good.medicinal_herbs` → `production_access` `unlock` `1.0`；`existing_binding`
+- **自动化药材农场**（`building`）：`building.method_medicinal_herbs_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 
@@ -51200,11 +50822,11 @@ terminal production upgrade
 
 #### 硬前置（决定研发资格）
 
-- 自动化农业 (`tech.automated_agriculture`)：tech.automated\_agriculture是自动化橡胶种植园不可替代的知识基础。
-- 数字计算 (`tech.digital_computing`)：tech.digital\_computing是自动化橡胶种植园不可替代的知识基础。
-- 数字控制 (`tech.digital_control`)：tech.digital\_control是自动化橡胶种植园不可替代的知识基础。
-- 商品作物管理 (`tech.commodity_crop_management`)：tech.commodity\_crop\_management是自动化橡胶种植园不可替代的知识基础。
-- 天然橡胶加工 (`tech.rubber_working`)：tech.rubber\_working是自动化橡胶种植园不可替代的知识基础。
+- 自动化农业 (`tech.automated_agriculture`)：自动化农业是应用：自动化橡胶种植园不可替代的知识基础。
+- 数字计算 (`tech.digital_computing`)：数字计算是应用：自动化橡胶种植园不可替代的知识基础。
+- 数字控制 (`tech.digital_control`)：数字控制是应用：自动化橡胶种植园不可替代的知识基础。
+- 商品作物管理 (`tech.commodity_crop_management`)：商品作物管理是应用：自动化橡胶种植园不可替代的知识基础。
+- 天然橡胶加工 (`tech.rubber_working`)：天然橡胶加工是应用：自动化橡胶种植园不可替代的知识基础。
 
 #### 发现启发（仅用于揭示）
 
@@ -51212,7 +50834,7 @@ terminal production upgrade
 
 #### 效果摘要
 
-解锁物资：乳胶；解锁建筑：自动化橡胶种植园
+解锁物资：天然乳胶；解锁建筑：自动化橡胶种植园
 
 #### 机会成本
 
@@ -51227,8 +50849,8 @@ terminal production upgrade
 
 #### 结构化内容效果
 
-- **乳胶**（`good`）：`good.latex` → `production_access` `unlock` `1.0`；`catalog_rebind`
-- **自动化橡胶种植园**（`building`）：`building.method_rubber_tree_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`new_content`
+- **天然乳胶**（`good`）：`good.latex` → `production_access` `unlock` `1.0`；`existing_binding`
+- **自动化橡胶种植园**（`building`）：`building.method_rubber_tree_collector_r10` → `construction_and_production_access` `unlock` `1.0`；`existing_binding`
 
 #### 永久 Modifier 条款
 

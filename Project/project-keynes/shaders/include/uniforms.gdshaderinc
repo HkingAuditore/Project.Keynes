@@ -170,6 +170,7 @@ uniform vec3 fog_unexplored_color : source_color = vec3(0.263, 0.290, 0.353);
 // =========================================================================
 uniform vec2 world_origin = vec2(0.0);
 uniform vec2 world_size = vec2(1.0);
+uniform float hex_size = 22.0;
 uniform float wrap_origin_x = 0.0;
 uniform float wrap_period_x = 0.0;
 uniform vec2 hm_resolution = vec2(2048.0, 1536.0);
@@ -485,6 +486,8 @@ uniform vec2  hillshade_fill_dir = vec2( 0.60,  0.40);
 //   compute_terrain_normal：① 粗法线给山脉总体走向（治"走向不清晰"）；② 细节法线只在需要的地形 +
 //   高画质上叠（治"密密麻麻"）；③ 低/中端机不算细节（性能分档）。
 uniform float hillshade_coarse_radius   : hint_range(1.0, 16.0) = 4.0;  // 未绑定烘焙法线时运行期回退半径(texel)
+uniform float terrain_normal_sample_radius_hex = 0.44;
+uniform float terrain_normal_height_scale_hex = 0.85;
 // [normal-soften 2026-07-31] 1.6→1.25：烘焙粗法线再放大后会把 residual 残差的中频起伏
 // 读成过硬的阴阳面，压低后宏观走向仍在、砂砾感下降。
 uniform float hillshade_coarse_strength : hint_range(0.0, 3.0)  = 1.25;  // 烘焙粗法线 xy 强度再缩放（基底明暗）

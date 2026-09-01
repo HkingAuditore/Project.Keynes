@@ -84,6 +84,8 @@ texel 18 bytes 估算；compute 临时工作集额外按 12 bytes 估算。可�
 - `project_keynes/rendering/map_tiles/texels_per_hex`
 - `project_keynes/rendering/map_tiles/budget_mp`
 - `project_keynes/rendering/map_tiles/horizon_height_scale_hex`
+- `terrain_normal_sample_radius_hex=0.44`、`terrain_normal_height_scale_hex=0.85`（代码常量）
+- `terrain_horizon_max_distance_hex=24`（代码常量，转为 `max_distance_world`）
 - `--map-visual-mode=` / `--map-tile-mode=`
 - `--map-tile-texels-per-hex=`
 - `--map-tile-budget-mp=`
@@ -140,9 +142,9 @@ O(n_pixels) 循环。每个 layer 返回后立即 `update_layer()` 并让出一�
 而是主/副 cell 中心距离差除以 `hex_size` 后在 `0.90 hex` 饱和；任意 Tile 分辨率都保持
 相同世界范围，高分辨率只提高量化精度。8x8 Bayer DitherUV 锚定全局基线 texel 的世界尺寸，
 不会因 Tile MP 增加而缩成更密的图案。宏观法线先用 X/Y 各自的 texel 世界尺寸把中心差分
-还原为世界导数，再按一个全局基线 texel 校准到 legacy 的坡度强度；
-`normal_reference_radius_px` 同样从基线 texel 半径换算为每轴 Tile 半径。因此改变像素预算或
-Tile 数量不会压平坡度，也不会改变宏观法线的世界空间平滑范围。算法所需 halo 在 native
+还原为世界导数，采样半径固定为 `normal_sample_radius_hex × hex_size`（默认 0.44 hex），
+垂直尺度固定为 `normal_height_scale_hex × hex_size`（默认 0.85）。因此改变像素预算、地图
+尺寸或 Tile 数量不会放大/压平坡度，也不会改变宏观法线的世界空间平滑范围。算法所需 halo 在 native
 pass 内扩展到足以覆盖换算后的法线半径；运行时 2 px gutter 只服务滤波和接缝。
 
 当前 API 是无状态的逐层 pass，而不是持久 C++ session 对象；共享 PackedArray 依靠 Godot
@@ -167,8 +169,8 @@ Copy-on-Write 复用，且热循环仍完全位于 C++。若后续 profiling 证
 变化，运行期查 `bounce_lut` 即可，季节、雪盖、植被枯荣都不触发重烘。详见
 `terrain-gi-bake.md`。
 
-X 坐标先按周期环绕再解析 logical texel，Y clamp。水平射线最多一个经度周期；其他方向
-到 Y 边界停止。达到主 traversal iteration cap 时，使用沿当前射线走廊的分层 max-height
+X 坐标先按周期环绕再解析 logical texel，Y clamp。每条射线先按 `max_distance_world`
+（默认 `24 × hex_size`）截断，再受水平经度周期或 Y 边界限制。达到主 traversal iteration cap 时，使用沿当前射线走廊的分层 max-height
 span 完成保守 tail；每个 span 以最近距离计算斜率上界，因此只会略多遮挡，不会漏遮挡，
 也不会把全图无关山峰投成三角长影。只有 512 次 tail 仍无法覆盖的病理尺寸才使用全局最大值，
 并单独累计 `global_fallback_rays`。

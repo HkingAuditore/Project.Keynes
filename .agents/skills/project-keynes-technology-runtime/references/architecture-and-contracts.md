@@ -154,9 +154,13 @@ Each researchable technology maps to a permanent country Modifier definition:
 
 Consumers include four domain research efficiencies, research cost, research-institution output, five
 economic-sector outputs, every production-family output, generated exact-building-type output stats,
-four climate-loss factors, construction cost/time, and domestic-trade capacity/speed. Economy freezes
-country×family, country×building-type, and climate factors at epoch capture rather than creating one
-Country Modifier per building instance.
+four country climate-loss factors, 24 generated production-profile climate-loss factors,
+construction cost/time, and domestic-trade capacity/speed. Economy freezes country×family,
+country×building-type, country×hazard, and country×production-profile×hazard factors at epoch capture
+rather than creating one Country Modifier per building instance. The current authoritative catalog has
+705 nodes (698 researchable), 448 technology Modifier terms, including 65 geography×sector terms on
+60 technologies and 56 climate-adaptation terms on 28 technologies. Catalog hash changes remain a
+strict old-save rejection; there is no PKCN/PKEF/PKEC migration for this content revision.
 
 Modifiers may alter production results, consumed-points-to-progress conversion, construction
 parameters, or trade capacity. They must not directly mutate ledger quantities.

@@ -1483,6 +1483,9 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
         static_cast<size_t>(std::max(0, _epoch_country_count)), Q16_ONE);
     _epoch_country_climate_loss_factor_q16.assign(
         static_cast<size_t>(std::max(0, _epoch_country_count)) * 4U, Q16_ONE);
+    _epoch_country_climate_profile_loss_factor_q16.assign(
+        static_cast<size_t>(std::max(0, _epoch_country_count)) *
+            _production_climate_profile_ids.size() * 4U, Q16_ONE);
     _epoch_country_trade_capacity_factor_q16.assign(
         static_cast<size_t>(std::max(0, _epoch_country_count)), Q16_ONE);
     _epoch_country_trade_speed_factor_q16.assign(
@@ -1648,6 +1651,18 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
                         ModifierRuntime::COUNTRY,
                         _country_climate_loss_stat_ids[climate], country_handle,
                         0, 1.0));
+            }
+            const size_t profile_climate_count =
+                _production_climate_profile_ids.size() * 4U;
+            for (size_t profile_climate = 0;
+                 profile_climate < profile_climate_count; ++profile_climate) {
+                _epoch_country_climate_profile_loss_factor_q16[
+                    static_cast<size_t>(country) * profile_climate_count +
+                        profile_climate] =
+                    modifier_factor_q16(_modifier_runtime->effective_value(
+                        ModifierRuntime::COUNTRY,
+                        _country_climate_profile_loss_stat_ids[profile_climate],
+                        country_handle, 0, 1.0));
             }
             _epoch_country_trade_capacity_factor_q16[country] =
                 modifier_factor_q16(
@@ -16100,6 +16115,8 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _epoch_country_resource_generation_factor_q16.clear();
     _epoch_country_terrain_sector_output_factor_q16.clear();
     _epoch_country_landform_sector_output_factor_q16.clear();
+    _epoch_country_climate_loss_factor_q16.clear();
+    _epoch_country_climate_profile_loss_factor_q16.clear();
     _epoch_country_production_input_factor_q16.clear();
     _epoch_country_household_consumption_factor_q16.clear();
     _epoch_country_resource_global_use_factor_q16.clear();

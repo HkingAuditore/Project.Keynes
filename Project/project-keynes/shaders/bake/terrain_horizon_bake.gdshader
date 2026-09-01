@@ -32,6 +32,7 @@ uniform float height_world_scale = 176.0;       // 归一高程 → world units 
 uniform float sea_level = 0.42;                 // horizon-only 水面接收高度
 uniform float texel_x = 1.0;                    // world units / texel（x）
 uniform float texel_y = 1.0;                    // world units / texel（y）
+uniform float max_distance_world = 0.0;         // 0=legacy；否则固定世界射程
 // [terrain-horizon-wrap 2026-07-03] 真正经度环绕周期（world units）。柱状地图东西连续，
 // 但 height_tex 覆盖的 world_bounds 含 padding（world_bounds.size.x = wrap_period_x + 约 4.87·hex），
 // 所以不能按整图像素宽 %W 环绕，必须按此周期在世界经度空间折叠，才能与运行期 wrap_map_uv 对齐、
@@ -114,9 +115,16 @@ void fragment() {
 	for (int d = 0; d < 8; d++) {
 		vec2 dir = horizon_dir(d);
 		float best_slope_sq = 0.0;
+		float world_step = length(dir * vec2(texel_x, texel_y));
+		float max_distance_px = max_distance_world > 0.0
+			? max_distance_world / max(world_step, 1e-6)
+			: 3.402823466e+38;
 		for (int s = 1; s <= steps; s++) {
 			float sf = float(s);
 			float dist_px = step_px * (sf + 0.5 * step_growth * sf * (sf - 1.0));
+			if (dist_px > max_distance_px) {
+				break;
+			}
 			float sx_f = float(x) + dir.x * dist_px;
 			int sy = int(floor(float(y) + dir.y * dist_px + 0.5));
 			if (sy < 0 || sy >= H) {

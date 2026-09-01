@@ -1,10 +1,24 @@
 extends SceneTree
 
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
+const ModifierCatalogScript = preload("res://scripts/modifier/modifier_catalog.gd")
 
 func _init() -> void:
 	var catalog: Dictionary = TechnologyCatalogScript.compile_native_catalog()
 	assert(bool(catalog.get("ok", false)), str(catalog))
+	var modifier_catalog: Dictionary = ModifierCatalogScript.load_default().compile_native_catalog()
+	assert(bool(modifier_catalog.get("ok", false)), str(modifier_catalog))
+	var profile_stat_count := 0
+	for stat_index in range((modifier_catalog.stat_keys as PackedStringArray).size()):
+		var stat_key := String(modifier_catalog.stat_keys[stat_index])
+		if not stat_key.begins_with("country.climate.profile."):
+			continue
+		profile_stat_count += 1
+		assert(int(modifier_catalog.stat_domains[stat_index]) == 1)
+		assert(is_equal_approx(float(modifier_catalog.stat_min_values[stat_index]), 0.20))
+		assert(is_equal_approx(float(modifier_catalog.stat_max_values[stat_index]), 1.0))
+		assert(int(modifier_catalog.stat_persistable[stat_index]) == 1)
+	assert(profile_stat_count == 24)
 	const EXPECTED_TECHNOLOGY_COUNT := 705
 	const EXPECTED_STARTER_COUNT := 7
 	const EXPECTED_MILESTONE_CANDIDATES := [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
@@ -106,6 +120,28 @@ func _init() -> void:
 	var milestone_position := 0
 	var recipe_ids := {}
 	var modifier_stats: PackedStringArray = catalog.technology_modifier_term_stat_keys
+	assert(modifier_stats.size() == 448)
+	var geography_terms := 0
+	var climate_terms := 0
+	var geography_technologies := {}
+	var climate_technologies := {}
+	for technology_index in range(EXPECTED_TECHNOLOGY_COUNT):
+		var term_begin := int(catalog.technology_modifier_term_offsets[technology_index])
+		var term_end := int(catalog.technology_modifier_term_offsets[technology_index + 1])
+		assert(term_end - term_begin <= 6)
+		for term_index in range(term_begin, term_end):
+			var stat := String(modifier_stats[term_index])
+			if stat.begins_with("country.output.terrain.") \
+					or stat.begins_with("country.output.landform."):
+				geography_terms += 1
+				geography_technologies[technology_index] = true
+			elif stat.begins_with("country.climate."):
+				climate_terms += 1
+				climate_technologies[technology_index] = true
+	assert(geography_terms == 65)
+	assert(geography_technologies.size() == 60)
+	assert(climate_terms == 56)
+	assert(climate_technologies.size() == 28)
 	for i in range(catalog.technology_ids.size()):
 		var public_definition: Dictionary = definitions[i]
 		assert(String(public_definition.display_name) \

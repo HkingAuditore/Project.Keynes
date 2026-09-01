@@ -2582,6 +2582,7 @@ func _run_visual_tile_horizon_fallback(world: WorldData, generation_id: int,
 			"max_horizon_angle": float(params.get("max_horizon_angle", 1.309)),
 			"bias": float(params.get("bias", 0.004)),
 			"height_world_scale": float(params.get("height_world_scale", 176.0)),
+			"max_distance_world": float(params.get("max_distance_world", hex_size * 24.0)),
 			"sea_level": clampf(float(params.get("sea_level", world.sea_level)), 0.0, 1.0),
 		}
 		var map_index_data := _global_map_index_bytes(world)
@@ -2759,6 +2760,7 @@ func _start_terrain_horizon_bake(world: WorldData, params: Dictionary) -> void:
 	mat.set_shader_parameter("max_horizon_angle", float(params.get("max_horizon_angle", 1.309)))
 	mat.set_shader_parameter("bias", float(params.get("bias", 0.004)))
 	mat.set_shader_parameter("height_world_scale", float(params.get("height_world_scale", 176.0)))
+	mat.set_shader_parameter("max_distance_world", float(params.get("max_distance_world", hex_size * 24.0)))
 	mat.set_shader_parameter("sea_level", clampf(float(params.get("sea_level", world.sea_level)), 0.0, 1.0))
 	mat.set_shader_parameter("texel_x", float(params.get("texel_x", 1.0)))
 	mat.set_shader_parameter("texel_y", float(params.get("texel_y", 1.0)))
@@ -3629,11 +3631,14 @@ func _apply_uniforms() -> void:
 
 	sm.set_shader_parameter("world_origin", bounds.position)
 	sm.set_shader_parameter("world_size", bounds.size)
+	sm.set_shader_parameter("hex_size", hex_size)
 	sm.set_shader_parameter("wrap_origin_x", 0.0)
 	sm.set_shader_parameter("wrap_period_x", _wrap_period_x())
 	var visual_resolution := Vector2(visual_tiles.layout.logical_size) if tiled \
 		else Vector2(_world.hm_size.x, _world.hm_size.y)
 	sm.set_shader_parameter("hm_resolution", visual_resolution)
+	sm.set_shader_parameter("terrain_normal_sample_radius_hex", 0.44)
+	sm.set_shader_parameter("terrain_normal_height_scale_hex", 0.85)
 	sm.set_shader_parameter("derived_resolution", visual_resolution if tiled \
 		else Vector2(_world.derived_size.x, _world.derived_size.y))
 	sm.set_shader_parameter("visual_reference_resolution",

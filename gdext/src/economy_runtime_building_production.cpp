@@ -117,6 +117,19 @@ int64_t NativeEconomyRuntime::production_climate_capacity_q16(
         const size_t index = static_cast<size_t>(country) * 4U + adaptation;
         if (index < _epoch_country_climate_loss_factor_q16.size())
             loss_factor_q16 = _epoch_country_climate_loss_factor_q16[index];
+        const size_t profile_count = _production_climate_profile_ids.size();
+        const size_t profile_index =
+            (static_cast<size_t>(country) * profile_count +
+             static_cast<size_t>(type.production_climate_profile_id)) * 4U +
+            adaptation;
+        if (static_cast<size_t>(type.production_climate_profile_id) < profile_count &&
+            profile_index < _epoch_country_climate_profile_loss_factor_q16.size()) {
+            loss_factor_q16 = mul_div_sat(loss_factor_q16,
+                _epoch_country_climate_profile_loss_factor_q16[profile_index],
+                Q16_ONE, saturation_count);
+        }
+        loss_factor_q16 = std::clamp<int64_t>(loss_factor_q16,
+            Q16_ONE / 5, Q16_ONE);
     }
     const int64_t exposed_loss = mul_div_sat(climate.exposure_q16,
         Q16_ONE - bounded, Q16_ONE, saturation_count);

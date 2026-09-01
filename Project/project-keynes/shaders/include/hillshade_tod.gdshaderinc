@@ -35,12 +35,17 @@
 
 float hillshading_two_lights(vec2 uv) {
 	vec2 texel = 1.0 / hm_resolution;
+	vec2 world_texel = world_size / max(hm_resolution, vec2(1.0));
 	float l = decode_height_rg8(uv - vec2(texel.x, 0.0));
 	float r = decode_height_rg8(uv + vec2(texel.x, 0.0));
 	float u = decode_height_rg8(uv - vec2(0.0, texel.y));
 	float d = decode_height_rg8(uv + vec2(0.0, texel.y));
-	float dx = (r - l) * hillshade_slope_gain;
-	float dy = (d - u) * hillshade_slope_gain;
+	float gx = terrain_normal_height_scale_hex * max(hex_size, 1e-4) /
+		(2.0 * max(world_texel.x, 1e-4));
+	float gy = terrain_normal_height_scale_hex * max(hex_size, 1e-4) /
+		(2.0 * max(world_texel.y, 1e-4));
+	float dx = (r - l) * gx;
+	float dy = (d - u) * gy;
 	vec3 normal = normalize(vec3(-dx, -dy, 1.0));
 
 	vec3 key_dir  = normalize(vec3(hillshade_dir.x,      hillshade_dir.y,      0.65));
@@ -168,14 +173,21 @@ vec3 compute_terrain_normal(vec2 uv, int quality, int biome) {
 #endif
 	{
 		// [pk-web-texture-budget] terrain_normal tile 已裁掉时，无条件走此运行期宽半径
-		// 差分（旧存档/未 rebake 时本就走这条路径，是已验证过的完整回退）。
-		float cr = hillshade_coarse_radius;
-		float lc = decode_height_rg8(uv - vec2(texel.x * cr, 0.0));
-		float rc = decode_height_rg8(uv + vec2(texel.x * cr, 0.0));
-		float uc = decode_height_rg8(uv - vec2(0.0, texel.y * cr));
-		float dc = decode_height_rg8(uv + vec2(0.0, texel.y * cr));
-		float g = hillshade_slope_gain / max(1.0, cr);           // 宽差分 → 单位坡度
-		N_coarse = vec3(-(rc - lc) * g, -(dc - uc) * g, 1.0);
+		// 差分半径按 hex 世界尺度换算，旧存档也不会随地图栅格改变明暗强度。
+		vec2 world_texel = world_size / max(hm_resolution, vec2(1.0));
+		float rx = max(1.0, floor(terrain_normal_sample_radius_hex * max(hex_size, 1e-4) /
+			max(world_texel.x, 1e-4) + 0.5));
+		float ry = max(1.0, floor(terrain_normal_sample_radius_hex * max(hex_size, 1e-4) /
+			max(world_texel.y, 1e-4) + 0.5));
+		float lc = decode_height_rg8(uv - vec2(texel.x * rx, 0.0));
+		float rc = decode_height_rg8(uv + vec2(texel.x * rx, 0.0));
+		float uc = decode_height_rg8(uv - vec2(0.0, texel.y * ry));
+		float dc = decode_height_rg8(uv + vec2(0.0, texel.y * ry));
+		float gx = terrain_normal_height_scale_hex * max(hex_size, 1e-4) /
+			(2.0 * rx * max(world_texel.x, 1e-4));
+		float gy = terrain_normal_height_scale_hex * max(hex_size, 1e-4) /
+			(2.0 * ry * max(world_texel.y, 1e-4));
+		N_coarse = vec3(-(rc - lc) * gx, -(dc - uc) * gy, 1.0);
 	}
 
 	// ── 2. 细节量：性能分档 + biome 门控 + zoom 门控 ────────────────────

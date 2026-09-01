@@ -131,7 +131,7 @@ godot::Dictionary DCWorldExt::encode_bake_height_tex_data(godot::Dictionary knob
 // [terrain-normal-bake 2026-06-25] 生成期烘焙"总体地形法线"：地形是静态的，把宏观山脉走向的
 //   粗法线一次性算好编码成 RG8（nx,ny ∈ [0,1] 由 [-1,1] 映射，nz 在 shader 重建）。运行期 shader
 //   只需 1 次采样拿走向，替代每帧的宽半径 4-tap，细节法线另由运行期按 biome/性能档叠加。
-//   宽半径中心差分（半径 coarse_radius texel）→ 平滑掉 per-pixel ridge/crag 高频，只留走势。
+//   中心差分半径按 sample_radius_hex × hex_size 换算到栅格 → 平滑掉高频，只留走势。
 //   X 方向按圆柱环绕（wrap_x），Y 方向 clamp；按行 parallel_for_range 并行。
 godot::Dictionary DCWorldExt::encode_bake_terrain_normal_tex_data(godot::Dictionary knobs) {
     using godot::Dictionary;
@@ -157,10 +157,16 @@ godot::Dictionary DCWorldExt::encode_bake_terrain_normal_tex_data(godot::Diction
     PackedFloat32Array src = knobs.get("buffer", PackedFloat32Array());
     if (src.size() < n) return fail("height buffer too small");
 
-    int radius = int(knobs.get("coarse_radius", 4));
-    if (radius < 1) radius = 1;
-    else if (radius > 64) radius = 64;
-    const double gain = double(knobs.get("slope_gain", 8.0));
+    const double world_size_x = std::max(1e-6, double(knobs.get("world_size_x", double(w))));
+    const double world_size_y = std::max(1e-6, double(knobs.get("world_size_y", double(h))));
+    const double hex_size = std::max(1e-4, double(knobs.get("hex_size", 1.0)));
+    const double sample_radius_hex = std::max(0.01, double(knobs.get("sample_radius_hex", 0.44)));
+    const double height_scale_hex = std::max(0.01, double(knobs.get("height_scale_hex", 0.85)));
+    const double texel_x = world_size_x / double(w);
+    const double texel_y = world_size_y / double(h);
+    const double radius_world = sample_radius_hex * hex_size;
+    const int radius_x = std::max(1, std::min(64, int(std::round(radius_world / texel_x))));
+    const int radius_y = std::max(1, std::min(64, int(std::round(radius_world / texel_y))));
     const bool wrap_x = bool(knobs.get("wrap_x", true));
 
     PackedByteArray data;
@@ -168,20 +174,21 @@ godot::Dictionary DCWorldExt::encode_bake_terrain_normal_tex_data(godot::Diction
     const float * const __restrict SRC = src.ptr();
     uint8_t * const __restrict DST = data.ptrw();
 
-    const double inv2r_gain = gain / (2.0 * double(radius));
+    const double gain_x = height_scale_hex * hex_size / (2.0 * double(radius_x) * texel_x);
+    const double gain_y = height_scale_hex * hex_size / (2.0 * double(radius_y) * texel_y);
 
     auto t0 = std::chrono::high_resolution_clock::now();
 
     auto run_range = [&](int y0, int y1) {
         for (int y = y0; y < y1; ++y) {
-            const int yu = (y - radius < 0) ? 0 : (y - radius);
-            const int yd = (y + radius >= h) ? (h - 1) : (y + radius);
+            const int yu = (y - radius_y < 0) ? 0 : (y - radius_y);
+            const int yd = (y + radius_y >= h) ? (h - 1) : (y + radius_y);
             const int rowU = yu * w;
             const int rowD = yd * w;
             const int row  = y * w;
             for (int x = 0; x < w; ++x) {
-                int xl = x - radius;
-                int xr = x + radius;
+                int xl = x - radius_x;
+                int xr = x + radius_x;
                 if (wrap_x) {
                     xl = ((xl % w) + w) % w;
                     xr = xr % w;
@@ -193,8 +200,8 @@ godot::Dictionary DCWorldExt::encode_bake_terrain_normal_tex_data(godot::Diction
                 const double hR = double(SRC[row + xr]);
                 const double hU = double(SRC[rowU + x]);
                 const double hD = double(SRC[rowD + x]);
-                const double sx = (hR - hL) * inv2r_gain;
-                const double sy = (hD - hU) * inv2r_gain;
+                const double sx = (hR - hL) * gain_x;
+                const double sy = (hD - hU) * gain_y;
                 // N = normalize(-sx, -sy, 1)
                 const double inv_len = 1.0 / std::sqrt(sx * sx + sy * sy + 1.0);
                 const double nx = -sx * inv_len;
@@ -269,6 +276,7 @@ godot::Dictionary DCWorldExt::encode_bake_horizon_tex_data(godot::Dictionary kno
     if (max_angle < 0.01) max_angle = 0.01;
     else if (max_angle > M_PI * 0.5) max_angle = M_PI * 0.5;
     const double height_world_scale = std::max(1e-4, double(knobs.get("height_world_scale", 176.0)));
+    const double max_distance_world = std::max(0.0, double(knobs.get("max_distance_world", 0.0)));
     const double sea_level = std::clamp(double(knobs.get("sea_level", 0.0)), 0.0, 1.0);
     double world_size_x = double(knobs.get("world_size_x", double(w)));
     double world_size_y = double(knobs.get("world_size_y", double(h)));
@@ -381,12 +389,23 @@ godot::Dictionary DCWorldExt::encode_bake_horizon_tex_data(godot::Dictionary kno
                     // [terrain-horizon perf 2026-07-03] 逐步只维护最大 slope² = (dh·scale)²/dist²。
                     // atan2 对正 slope 单调 → argmax 不变；把每像素 8×steps 次 sqrt+atan2 降为每方向
                     // 末尾 1 次 sqrt+atan。量化到 16 级后输出与旧 atan2 路径一致。
-                    double best_slope_sq = 0.0;
-                    int best_hit = -1;
-                    for (int s = 1; s <= steps; ++s) {
+                double best_slope_sq = 0.0;
+                int best_hit = -1;
+                const double dir_world_step = std::sqrt(
+                        (dir_x[d] * texel_x) * (dir_x[d] * texel_x) +
+                        (dir_y[d] * texel_y) * (dir_y[d] * texel_y));
+                const double max_distance_px = max_distance_world > 0.0
+                        ? std::min(
+                            (max_distance_world / std::max(dir_world_step, 1e-6)),
+                            (wrap_x && std::abs(dir_y[d]) <= 1e-9)
+                                ? period_px
+                                : std::numeric_limits<double>::max())
+                        : std::numeric_limits<double>::max();
+                for (int s = 1; s <= steps; ++s) {
                         const double sf = double(s);
                         const double dist_px = step_px
                             * (sf + 0.5 * step_growth * sf * (sf - 1.0));
+                        if (dist_px > max_distance_px) break;
                         const double sx_f = double(x) + dir_x[d] * dist_px;
                         const int sy = int(std::floor(double(y) + dir_y[d] * dist_px + 0.5));
                         if (sy < 0 || sy >= h) break;
@@ -466,6 +485,7 @@ godot::Dictionary DCWorldExt::encode_bake_horizon_tex_data(godot::Dictionary kno
     out["lowpass_radius"] = lowpass_radius;
     out["sea_level"] = sea_level;
     out["max_horizon_angle"] = max_angle;
+    out["max_distance_world"] = max_distance_world;
     out["occluder_ready"] = occluder_ready;
     if (occluder_ready) out["occluder_data"] = occluder_data;
     return out;
@@ -2244,6 +2264,7 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
 
     const double step_x = size_x / double(W);
     const double step_y = size_y / double(H);
+    const double hex_size = std::max(0.0001, double(knobs.get("hex_size", 1.0)));
     const double normal_reference_step_x = base_size_x / double(BW);
     const double normal_reference_step_y = base_size_y / double(BH);
     const double raster_scale_x = normal_reference_step_x / step_x;
@@ -2255,13 +2276,15 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
             double(knobs.get("coast_sdf_max_dist_px", 8.0)) * distance_scale));
     const int shore_carve_band_px = std::max(1, std::min(60, int(std::round(
             double(knobs.get("shore_carve_band", 6)) * distance_scale))));
-    const int normal_reference_radius = std::max(1, std::min(64,
-            int(knobs.get("normal_reference_radius_px",
-                    knobs.get("normal_radius_px", 4)))));
+    const double normal_sample_radius_hex = std::max(0.01,
+            double(knobs.get("normal_sample_radius_hex", 0.44)));
+    const double normal_height_scale_hex = std::max(0.01,
+            double(knobs.get("normal_height_scale_hex", 0.85)));
+    const double normal_radius_world = normal_sample_radius_hex * hex_size;
     const int normal_radius_x = std::max(1, std::min(64, int(std::round(
-            double(normal_reference_radius) * normal_reference_step_x / step_x))));
+            normal_radius_world / step_x))));
     const int normal_radius_y = std::max(1, std::min(64, int(std::round(
-            double(normal_reference_radius) * normal_reference_step_y / step_y))));
+            normal_radius_world / step_y))));
     const int required_halo = std::max({normal_radius_x, normal_radius_y,
             int(std::ceil(river_sdf_max_dist_px)) + 2,
             int(std::ceil(coast_sdf_max_dist_px)) + 2,
@@ -2279,7 +2302,6 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
     // 运行期再做 1-texel 差分后读成全图砂砾。knobs 未传时与 project.godot 新默认对齐。
     const double residual_amp = std::max(0.0, std::min(0.08,
             double(knobs.get("residual_amp", 0.01))));
-    const double hex_size = std::max(0.0001, double(knobs.get("hex_size", 1.0)));
     // High-frequency residual must be a function of world space, not of the chosen
     // Tile density. Sampling its zero-mean filter one texel away made lower-density
     // layouts produce a visibly rougher height field and macro normal.
@@ -2554,11 +2576,9 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
     const float * const CS = cell_surface.size() >= n_cells ? cell_surface.ptr() : nullptr;
     const uint8_t * const CT = cell_terrain.size() >= n_cells ? cell_terrain.ptr() : nullptr;
     const uint8_t * const BWATER = baseline_water.size() >= BN ? baseline_water.ptr() : nullptr;
-    const double normal_slope_gain = double(knobs.get("normal_slope_gain", 8.0));
-    // 先还原世界空间导数，再校准到一个基线 texel；画质预算变化时保持 legacy 强度与平滑尺度。
-    const double normal_gain_x = normal_slope_gain * normal_reference_step_x /
+    const double normal_gain_x = normal_height_scale_hex * hex_size /
             (double(normal_radius_x * 2) * step_x);
-    const double normal_gain_y = normal_slope_gain * normal_reference_step_y /
+    const double normal_gain_y = normal_height_scale_hex * hex_size /
             (double(normal_radius_y * 2) * step_y);
 
     godot::Ref<godot::FastNoiseLite> detail_noise;
@@ -2668,11 +2688,10 @@ godot::Dictionary DCWorldExt::run_bake_visual_tile_layer_pass(godot::Dictionary 
         out["edge_distance"] = edge_distance_data;
     }
     out["hashes"] = hashes;
-    out["normal_reference_radius_px"] = normal_reference_radius;
+    out["normal_sample_radius_hex"] = normal_sample_radius_hex;
+    out["normal_height_scale_hex"] = normal_height_scale_hex;
     out["normal_radius_x_px"] = normal_radius_x;
     out["normal_radius_y_px"] = normal_radius_y;
-    out["normal_reference_step_x"] = normal_reference_step_x;
-    out["normal_reference_step_y"] = normal_reference_step_y;
     out["raster_scale_x"] = raster_scale_x;
     out["raster_scale_y"] = raster_scale_y;
     out["distance_scale"] = distance_scale;

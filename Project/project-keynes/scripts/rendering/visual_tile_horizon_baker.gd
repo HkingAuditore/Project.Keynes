@@ -232,6 +232,7 @@ func _run_compute(tiles, params: Dictionary) -> Dictionary:
 	trace_push.encode_float(56, float(params.get("height_world_scale", 176.0)))
 	trace_push.encode_float(60, float(params.get("bias", 0.004)))
 	trace_push.encode_float(64, float(params.get("max_horizon_angle", 1.309)))
+	trace_push.encode_float(68, float(params.get("max_distance_world", 0.0)))
 	_rd.compute_list_bind_compute_pipeline(compute_list, shader_bundle.trace_pipeline)
 	_rd.compute_list_bind_uniform_set(compute_list, trace_set, 0)
 	_rd.compute_list_set_push_constant(compute_list, trace_push, trace_push.size())
