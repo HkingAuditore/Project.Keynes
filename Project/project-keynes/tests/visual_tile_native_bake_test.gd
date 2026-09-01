@@ -50,6 +50,9 @@ func _init() -> void:
 	if not _test_normal_resolution_invariance(ext):
 		quit(1)
 		return
+	if not _test_normal_map_size_invariance(ext):
+		quit(1)
+		return
 	if not _test_edge_distance_resolution_invariance(ext):
 		quit(1)
 		return
@@ -77,7 +80,6 @@ func _test_normal_resolution_invariance(ext: Object) -> bool:
 	low["baseline_origin_y"] = 0.0
 	low["baseline_size_x"] = 40.0
 	low["baseline_size_y"] = 30.0
-	low["normal_reference_radius_px"] = 4
 	low.erase("normal_radius_px")
 	var baseline: PackedFloat32Array = low["baseline_height_buffer"]
 	var baseline_width: int = int(low["baseline_width"])
@@ -108,6 +110,10 @@ func _test_normal_resolution_invariance(ext: Object) -> bool:
 			<= int(low_result.get("normal_radius_x_px", 0)):
 		push_error("visual_tile_native_bake_test: normal world radius was not preserved")
 		return false
+	if absf(float(low_result.get("normal_sample_radius_hex", 0.0)) - 0.44) > 1e-6 \
+			or absf(float(low_result.get("normal_height_scale_hex", 0.0)) - 0.85) > 1e-6:
+		push_error("visual_tile_native_bake_test: hex normal contract missing")
+		return false
 	return true
 
 
@@ -124,6 +130,38 @@ func _average_normal_x(result: Dictionary, width: int, height: int) -> float:
 			total += float(data[(y * width + x) * 2]) / 255.0 * 2.0 - 1.0
 			count += 1
 	return total / float(maxi(count, 1))
+
+
+func _test_normal_map_size_invariance(ext: Object) -> bool:
+	var results: Array[Dictionary] = []
+	for map_size in [Vector2(40.0, 30.0), Vector2(60.0, 45.0), Vector2(100.0, 75.0)]:
+		var knobs := _make_knobs()
+		knobs["wrap_period_x"] = 0.0
+		knobs["size_x"] = map_size.x
+		knobs["size_y"] = map_size.y
+		knobs["baseline_origin_x"] = 0.0
+		knobs["baseline_origin_y"] = 0.0
+		knobs["baseline_size_x"] = map_size.x
+		knobs["baseline_size_y"] = map_size.y
+		var baseline: PackedFloat32Array = knobs["baseline_height_buffer"]
+		var bw := int(knobs["baseline_width"])
+		var bh := int(knobs["baseline_height"])
+		for y in range(bh):
+			for x in range(bw):
+				baseline[y * bw + x] = 0.66 + 0.28 * float(x) / float(maxi(bw - 1, 1))
+		knobs["baseline_height_buffer"] = baseline
+		var result: Dictionary = ext.run_bake_visual_tile_layer_pass(knobs)
+		if bool(result.get("fallback", true)):
+			push_error("visual_tile_native_bake_test: map-size normal bake failed")
+			return false
+		results.append(result)
+	var reference := _average_normal_x(results[0], 20, 20)
+	for i in range(1, results.size()):
+		var value := _average_normal_x(results[i], 20, 20)
+		if absf(value - reference) > 3.0 / 255.0:
+			push_error("visual_tile_native_bake_test: normal changed with map bounds ref=%.6f got=%.6f" % [reference, value])
+			return false
+	return true
 
 
 func _test_edge_distance_resolution_invariance(ext: Object) -> bool:
@@ -368,4 +406,6 @@ func _make_knobs() -> Dictionary:
 		"coast_sdf_max_dist_px": 12.0,
 		"normal_radius_px": 2,
 		"normal_slope_gain": 8.0,
+		"normal_sample_radius_hex": 0.44,
+		"normal_height_scale_hex": 0.85,
 	}

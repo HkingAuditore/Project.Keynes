@@ -292,7 +292,9 @@ static func encode_height_flow_tex(height_buf: PackedFloat32Array, flow_buf: Pac
 # 与 world_ext.cpp::encode_bake_terrain_normal_tex_data 逐位对齐。
 static func encode_terrain_normal_tex(buf: PackedFloat32Array, size: Vector2i,
 		coarse_radius: int = 4, slope_gain: float = 8.0, wrap_x: bool = true,
-		native_ext: Object = null) -> ImageTexture:
+		native_ext: Object = null, world_size: Vector2 = Vector2.ZERO,
+		hex_size: float = 1.0, sample_radius_hex: float = 0.44,
+		height_scale_hex: float = 0.85) -> ImageTexture:
 	var W: int = size.x
 	var H: int = size.y
 	var ret: Dictionary = _native_data(native_ext, &"encode_bake_terrain_normal_tex_data", {
@@ -301,27 +303,38 @@ static func encode_terrain_normal_tex(buf: PackedFloat32Array, size: Vector2i,
 		"height": H,
 		"coarse_radius": coarse_radius,
 		"slope_gain": slope_gain,
+		"world_size_x": world_size.x if world_size.x > 0.0 else float(W),
+		"world_size_y": world_size.y if world_size.y > 0.0 else float(H),
+		"hex_size": maxf(hex_size, 1e-4),
+		"sample_radius_hex": maxf(sample_radius_hex, 0.01),
+		"height_scale_hex": maxf(height_scale_hex, 0.01),
 		"wrap_x": wrap_x,
 	})
 	if not bool(ret.get("fallback", true)):
 		return _upload_rg8(ret.get("data", PackedByteArray()), W, H)
 
 	# Debug fallback: mirrors the native contract (宽半径中心差分 → RG8 法线)。
-	var r: int = maxi(coarse_radius, 1)
+	var texel_world := Vector2(
+		(world_size.x if world_size.x > 0.0 else float(W)) / float(W),
+		(world_size.y if world_size.y > 0.0 else float(H)) / float(H))
+	var radius_world := maxf(sample_radius_hex, 0.01) * maxf(hex_size, 1e-4)
+	var r_x: int = maxi(1, int(round(radius_world / maxf(texel_world.x, 1e-6))))
+	var r_y: int = maxi(1, int(round(radius_world / maxf(texel_world.y, 1e-6))))
 	var data: PackedByteArray = PackedByteArray()
 	data.resize(W * H * 2)
 	if buf.size() < W * H:
 		return _upload_rg8(data, W, H)
-	var inv2r_gain: float = slope_gain / (2.0 * float(r))
+	var gain_x: float = maxf(height_scale_hex, 0.01) * maxf(hex_size, 1e-4) / (2.0 * float(r_x) * maxf(texel_world.x, 1e-6))
+	var gain_y: float = maxf(height_scale_hex, 0.01) * maxf(hex_size, 1e-4) / (2.0 * float(r_y) * maxf(texel_world.y, 1e-6))
 	for y in range(H):
-		var yu: int = maxi(y - r, 0)
-		var yd: int = mini(y + r, H - 1)
+		var yu: int = maxi(y - r_y, 0)
+		var yd: int = mini(y + r_y, H - 1)
 		var row: int = y * W
 		var row_u: int = yu * W
 		var row_d: int = yd * W
 		for x in range(W):
-			var xl: int = x - r
-			var xr: int = x + r
+			var xl: int = x - r_x
+			var xr: int = x + r_x
 			if wrap_x:
 				xl = ((xl % W) + W) % W
 				xr = xr % W
@@ -332,8 +345,8 @@ static func encode_terrain_normal_tex(buf: PackedFloat32Array, size: Vector2i,
 			var h_r: float = buf[row + xr]
 			var h_u: float = buf[row_u + x]
 			var h_d: float = buf[row_d + x]
-			var sx: float = (h_r - h_l) * inv2r_gain
-			var sy: float = (h_d - h_u) * inv2r_gain
+			var sx: float = (h_r - h_l) * gain_x
+			var sy: float = (h_d - h_u) * gain_y
 			var inv_len: float = 1.0 / sqrt(sx * sx + sy * sy + 1.0)
 			var nx: float = -sx * inv_len
 			var ny: float = -sy * inv_len
@@ -352,7 +365,7 @@ static func encode_horizon_tex(buf: PackedFloat32Array, size: Vector2i,
 		max_horizon_angle: float = 1.309, bias: float = 0.003,
 		height_world_scale: float = 0.0, wrap_period_x: float = 0.0,
 		sea_level: float = 0.0, step_growth: float = 0.35,
-		lowpass_radius: int = 1) -> ImageTexture:
+		lowpass_radius: int = 1, max_distance_world: float = 0.0) -> ImageTexture:
 	var W: int = size.x
 	var H: int = size.y
 	var hscale: float = height_world_scale if height_world_scale > 0.0 else maxf(hex_size * 8.0, 1.0)
@@ -372,6 +385,7 @@ static func encode_horizon_tex(buf: PackedFloat32Array, size: Vector2i,
 		"max_horizon_angle": max_horizon_angle,
 		"bias": bias,
 		"height_world_scale": hscale,
+		"max_distance_world": max_distance_world,
 		"sea_level": sea_level,
 	})
 	if not bool(ret.get("fallback", true)):

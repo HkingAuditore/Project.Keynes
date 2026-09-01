@@ -114,6 +114,25 @@ func compile_native_catalog() -> Dictionary:
 	var economy: Dictionary = EconomyCatalogScript.compile_native_catalog()
 	if not bool(economy.get("ok", false)):
 		return economy
+	# Production-profile climate adaptation stats are catalog-derived. Their dense
+	# IDs are resolved once by NativeEconomyRuntime and frozen into the epoch cache;
+	# production hot loops never construct or look up these string keys.
+	var climate_hazards := PackedStringArray([
+		"drought", "flood", "cold_stress", "heat_stress",
+	])
+	for profile_id in economy.get("production_climate_profile_ids", PackedStringArray()):
+		for hazard in climate_hazards:
+			var key := "country.climate.profile.%s.%s_loss_factor" % [profile_id, hazard]
+			if stat_ids.has(key):
+				return {"ok": false, "reason": "modifier_stat_key_invalid_or_duplicate"}
+			stat_ids[key] = out.stat_keys.size()
+			out.stat_keys.append(key)
+			out.stat_domains.append(1)
+			out.stat_min_values.append(0.20)
+			out.stat_max_values.append(1.0)
+			out.stat_persistable.append(1)
+			stat_domains_by_id.append(1)
+			stat_allowed_operations_by_id.append(15)
 	# Selector-addressable city stats are generated from stable economy IDs at
 	# the cold catalog boundary. Runtime consumers resolve them to dense IDs and
 	# only read frozen POD factors in hot loops.

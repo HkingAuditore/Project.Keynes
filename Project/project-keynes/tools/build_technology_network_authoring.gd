@@ -579,6 +579,8 @@ func _audit_report(payload: Dictionary, validation: Dictionary) -> String:
 		"居民物资消费": 0,
 		"自然资源": 0,
 		"地理×产业": 0,
+		"国家气候适应": 0,
+		"生产类型气候适应": 0,
 	}
 	for node_value in payload.nodes:
 		for term_value in (node_value as Dictionary).get("modifier_terms", []):
@@ -594,6 +596,10 @@ func _audit_report(payload: Dictionary, validation: Dictionary) -> String:
 			elif stat.begins_with("country.output.terrain.") \
 					or stat.begins_with("country.output.landform."):
 				effect_counts["地理×产业"] += 1
+			elif stat.begins_with("country.climate.profile."):
+				effect_counts["生产类型气候适应"] += 1
+			elif stat.begins_with("country.climate."):
+				effect_counts["国家气候适应"] += 1
 			else:
 				effect_counts["全社会或部门"] += 1
 	var lines := PackedStringArray([
@@ -614,6 +620,9 @@ func _audit_report(payload: Dictionary, validation: Dictionary) -> String:
 		"- Household good-consumption terms: %d" % int(effect_counts["居民物资消费"]),
 		"- Natural-resource terms: %d" % int(effect_counts["自然资源"]),
 		"- Geography × sector terms: %d" % int(effect_counts["地理×产业"]),
+		"- Country climate-adaptation terms: %d" % int(effect_counts["国家气候适应"]),
+		"- Production-profile climate-adaptation terms: %d" % int(
+			effect_counts["生产类型气候适应"]),
 		"- Missing runtime consumers: 0", "",
 		"## Branch families", "",
 	])

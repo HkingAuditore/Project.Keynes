@@ -4448,6 +4448,8 @@ private:
     int32_t _country_household_consumption_stat_id = -1;
     int32_t _country_resource_use_stat_id = -1;
     std::array<int32_t, 4> _country_climate_loss_stat_ids{-1, -1, -1, -1};
+    // Dense [production climate profile][hazard] stat IDs, resolved at configure.
+    std::vector<int32_t> _country_climate_profile_loss_stat_ids;
     int32_t _city_birth_stat_id = -1;
     int32_t _city_consumption_stat_id = -1;
     std::vector<int32_t> _city_need_consumption_stat_ids;
@@ -4568,6 +4570,8 @@ private:
     std::vector<int32_t> _epoch_country_household_consumption_factor_q16;
     std::vector<int32_t> _epoch_country_resource_global_use_factor_q16;
     std::vector<int32_t> _epoch_country_climate_loss_factor_q16;
+    // Dense [country][production climate profile][hazard] Q16 loss factors.
+    std::vector<int32_t> _epoch_country_climate_profile_loss_factor_q16;
     std::vector<int32_t> _epoch_country_trade_capacity_factor_q16;
     std::vector<int32_t> _epoch_country_trade_speed_factor_q16;
     std::vector<uint8_t> _epoch_country_water_capability;

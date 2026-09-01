@@ -4710,10 +4710,23 @@
 			"starter_capability_tags": [
 				"starter.knowledge"
 			],
-			"modifier_terms": [],
+			"modifier_terms": [
+				{
+					"stat": "country.climate.flood_loss_factor",
+					"operation": 0,
+					"value": -0.06,
+					"subject_kind": "climate_hazard",
+					"subject_id": "flood",
+					"subject_display_name": "洪灾损失",
+					"effect_class": "通用气候适应",
+					"effect_rationale": "洪水历法实践降低全国气候型生产建筑的洪灾损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				}
+			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "",
+			"effect_summary": "洪灾损失 -6%",
 			"opportunity_cost": "占用通用研究预算，延后同代专业路线锚点",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -6129,11 +6142,35 @@
 					"effect_rationale": "计时、测量与统计提高工程研究效率。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeCountryRuntime::process_research_day"
+				},
+				{
+					"stat": "country.climate.drought_loss_factor",
+					"operation": 0,
+					"value": -0.04,
+					"subject_kind": "climate_hazard",
+					"subject_id": "drought",
+					"subject_display_name": "旱灾损失",
+					"effect_class": "通用气候适应",
+					"effect_rationale": "季节历降低全国气候型生产建筑的旱灾损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.climate.flood_loss_factor",
+					"operation": 0,
+					"value": -0.04,
+					"subject_kind": "climate_hazard",
+					"subject_id": "flood",
+					"subject_display_name": "洪灾损失",
+					"effect_class": "通用气候适应",
+					"effect_rationale": "季节历降低全国气候型生产建筑的洪灾损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "工程领域研究效率 +20%",
+			"effect_summary": "工程领域研究效率 +20%；旱灾损失 -4%；洪灾损失 -4%",
 			"opportunity_cost": "占用通用研究预算，延后同代专业路线锚点",
 			"application_target_ids": [],
 			"terminal_reason": "季节历是测量、标准化与精密仪器在当前目录中的应用端点，其终点效果由工程领域研究效率20%消费",
@@ -6936,7 +6973,7 @@
 					"display_name": "野生韧皮纤维营地"
 				}
 			],
-			"effect_summary": "解锁物资：韧皮纤维；解锁建筑：野生韧皮纤维营地；作为必要支撑：亚麻农场、沤麻池",
+			"effect_summary": "解锁物资：亚麻秆/韧皮原料；解锁建筑：野生韧皮纤维营地；作为必要支撑：亚麻农场、沤麻池",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 1 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "野生韧皮采集是纤维、纺织、服装与合成纤维在当前目录中的应用端点，其终点效果由bast_fiber、clothing、bast_fiber_camp、bast_wrap_shelter消费",
@@ -7019,7 +7056,20 @@
 			"starter_capability_tags": [
 				"starter.food"
 			],
-			"modifier_terms": [],
+			"modifier_terms": [
+				{
+					"stat": "country.output.landform.lake.agriculture_factor",
+					"operation": 0,
+					"value": 0.1,
+					"subject_kind": "geography",
+					"subject_id": "landform.lake.agriculture",
+					"subject_display_name": "湖泊农业",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "淡水岸捕提高湖泊的农业生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				}
+			],
 			"expected_bindings": [
 				{
 					"kind": 3,
@@ -7072,7 +7122,7 @@
 					"display_name": "淡水捕鱼营地"
 				}
 			],
-			"effect_summary": "可利用资源：淡水鱼群；解锁物资：鱼类；解锁建筑：淡水捕鱼营地",
+			"effect_summary": "可利用资源：淡水鱼群；解锁物资：鱼类；解锁建筑：淡水捕鱼营地；湖泊农业产出 +10%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 1 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "淡水岸捕是渔业、航海、港口与海运物流在当前目录中的应用端点，其终点效果由fish、freshwater_fish、freshwater_fishing_camp消费",
@@ -7166,7 +7216,20 @@
 			"starter_capability_tags": [
 				"starter.food"
 			],
-			"modifier_terms": [],
+			"modifier_terms": [
+				{
+					"stat": "country.output.landform.coast.agriculture_factor",
+					"operation": 0,
+					"value": 0.1,
+					"subject_kind": "geography",
+					"subject_id": "landform.coast.agriculture",
+					"subject_display_name": "海岸农业",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "潮间带采集提高海岸的农业生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				}
+			],
 			"expected_bindings": [
 				{
 					"kind": 3,
@@ -7219,7 +7282,7 @@
 					"display_name": "沿岸渔场"
 				}
 			],
-			"effect_summary": "可利用资源：海洋鱼类；解锁物资：鱼类；解锁建筑：沿岸渔场",
+			"effect_summary": "可利用资源：海洋鱼类；解锁物资：鱼类；解锁建筑：沿岸渔场；海岸农业产出 +10%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 1 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "潮间带采集是渔业、航海、港口与海运物流在当前目录中的应用端点，其终点效果由fish、marine_fish、marine_fish_collector消费",
@@ -10053,11 +10116,23 @@
 					"effect_rationale": "保墒适应寒漠农业。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				},
+				{
+					"stat": "country.climate.profile.dryland_crop.drought_loss_factor",
+					"operation": 0,
+					"value": -0.12,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "dryland_crop",
+					"subject_display_name": "旱作生产·旱灾损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "旱作农业降低旱作生产建筑的旱灾损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "terrain.desert.agriculture产出 +28%；terrain.cold_desert.agriculture产出 +24%",
+			"effect_summary": "terrain.desert.agriculture产出 +28%；terrain.cold_desert.agriculture产出 +24%；旱作生产·旱灾损失 -12%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 2 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -10381,11 +10456,35 @@
 					"effect_rationale": "计时、测量与统计提高工程研究效率。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeCountryRuntime::process_research_day"
+				},
+				{
+					"stat": "country.climate.cold_stress_factor",
+					"operation": 0,
+					"value": -0.05,
+					"subject_kind": "climate_hazard",
+					"subject_id": "cold_stress",
+					"subject_display_name": "寒冷损失",
+					"effect_class": "通用气候适应",
+					"effect_rationale": "天文历法降低全国气候型生产建筑的寒冷损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.climate.heat_stress_factor",
+					"operation": 0,
+					"value": -0.05,
+					"subject_kind": "climate_hazard",
+					"subject_id": "heat_stress",
+					"subject_display_name": "热害损失",
+					"effect_class": "通用气候适应",
+					"effect_rationale": "天文历法降低全国气候型生产建筑的热害损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "工程领域研究效率 +8%",
+			"effect_summary": "工程领域研究效率 +8%；寒冷损失 -5%；热害损失 -5%",
 			"opportunity_cost": "占用通用研究预算，延后同代专业路线锚点",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -11590,6 +11689,18 @@
 					"effect_rationale": "遮阴园艺适应雨林微气候。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				},
+				{
+					"stat": "country.climate.profile.plantation_crop.heat_stress_loss_factor",
+					"operation": 0,
+					"value": -0.12,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "plantation_crop",
+					"subject_display_name": "种植园生产·热害损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "遮阴香料园降低种植园生产建筑的热害损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
 				}
 			],
 			"expected_bindings": [
@@ -11612,7 +11723,7 @@
 					"display_name": "种植园承载力"
 				}
 			],
-			"effect_summary": "可利用资源：种植园承载力；terrain.jungle.agriculture产出 +24%；作为必要支撑：香料种植园",
+			"effect_summary": "可利用资源：种植园承载力；terrain.jungle.agriculture产出 +24%；种植园生产·热害损失 -12%；作为必要支撑：香料种植园",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 2 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "遮阴香料园是当前技术网络中的应用端点，其效果由已绑定内容直接消费",
@@ -12382,7 +12493,7 @@
 					"display_name": "煮盐灶"
 				}
 			],
-			"effect_summary": "加工食品 -8%",
+			"effect_summary": "解锁物资：食盐；解锁建筑：煮盐灶；加工食品 -8%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 2 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -12868,11 +12979,35 @@
 					"effect_rationale": "基础灌溉提高稻米产出。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::effective_building_output_quantity"
+				},
+				{
+					"stat": "country.climate.profile.paddy_crop.drought_loss_factor",
+					"operation": 0,
+					"value": -0.1,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "paddy_crop",
+					"subject_display_name": "水田生产·旱灾损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "灌溉降低水田生产建筑的旱灾损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.output.terrain.oasis.agriculture_factor",
+					"operation": 0,
+					"value": 0.14,
+					"subject_kind": "geography",
+					"subject_id": "terrain.oasis.agriculture",
+					"subject_display_name": "绿洲农业",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "灌溉提高绿洲的农业生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "稻米产出 +12%；作为必要支撑：稻作农场、湿地稻园",
+			"effect_summary": "稻米产出 +12%；水田生产·旱灾损失 -10%；绿洲农业产出 +14%；作为必要支撑：稻作农场、湿地稻园",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 2 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -13223,6 +13358,18 @@
 					"effect_rationale": "储藏、加工与供给组织减少主粮处理损失。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				},
+				{
+					"stat": "country.output.terrain.grassland.agriculture_factor",
+					"operation": 0,
+					"value": 0.12,
+					"subject_kind": "geography",
+					"subject_id": "terrain.grassland.agriculture",
+					"subject_display_name": "草原农业",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "雨养田体系提高草原的农业生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
 				}
 			],
 			"expected_bindings": [
@@ -13261,7 +13408,7 @@
 					"display_name": "旱地承载力"
 				}
 			],
-			"effect_summary": "可利用资源：肥沃土壤；可利用资源：旱地承载力；主粮加工产出 +12%；作为必要支撑：菜蔬农场、亚麻农场、玉米庄园、佃作小麦庄园、改良轮作小麦庄园、雨养玉米田、雨养小麦地、自给农庄、佃作雨养玉米田、佃作雨养小麦田、旱稻田、小麦农场",
+			"effect_summary": "可利用资源：肥沃土壤；可利用资源：旱地承载力；主粮加工产出 +12%；草原农业产出 +12%；作为必要支撑：菜蔬农场、亚麻农场、玉米庄园、佃作小麦庄园、改良轮作小麦庄园、雨养玉米田、雨养小麦地、自给农庄、佃作雨养玉米田、佃作雨养小麦田、旱稻田、小麦农场",
 			"opportunity_cost": "占用通用研究预算，延后同代专业路线锚点",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -13694,11 +13841,23 @@
 					"effect_rationale": "块茎辨识、保存与高地栽培提高马铃薯产出。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::effective_building_output_quantity"
+				},
+				{
+					"stat": "country.climate.profile.dryland_crop.cold_stress_loss_factor",
+					"operation": 0,
+					"value": -0.1,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "dryland_crop",
+					"subject_display_name": "旱作生产·寒冷损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "防霜窖藏降低旱作生产建筑的寒冷损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "马铃薯产出 +25%；作为必要支撑：冷凉高地块茎田",
+			"effect_summary": "马铃薯产出 +25%；旱作生产·寒冷损失 -10%；作为必要支撑：冷凉高地块茎田",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 2 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "防霜窖藏是块茎、梯田与高地农业在当前目录中的应用端点，其终点效果由冷凉高地块茎田消费",
@@ -14263,7 +14422,7 @@
 					"display_name": "铜器工坊"
 				}
 			],
-			"effect_summary": "铜矿采掘产出 +12%；作为必要支撑：铜矿",
+			"effect_summary": "解锁物资：铜工具；解锁建筑：铜器工坊；铜矿采掘产出 +12%；作为必要支撑：铜矿",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 1 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -15560,7 +15719,7 @@
 			"modifier_terms": [],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "铜矿石 -8%；作为必要支撑：土法炼铜炉",
+			"effect_summary": "作为必要支撑：土法炼铜炉",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 1 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "铜矿焙烧是铁、煤、矿井、蒸汽与重工业在当前目录中的应用端点，其终点效果由copper_ore、copper_ore_collector消费",
@@ -16599,11 +16758,35 @@
 					"effect_rationale": "水位控制改善稻作产量。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::effective_building_output_quantity"
+				},
+				{
+					"stat": "country.climate.profile.paddy_crop.flood_loss_factor",
+					"operation": 0,
+					"value": -0.1,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "paddy_crop",
+					"subject_display_name": "水田生产·洪灾损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "稻田水位控制降低水田生产建筑的洪灾损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.output.terrain.swamp.agriculture_factor",
+					"operation": 0,
+					"value": 0.14,
+					"subject_kind": "geography",
+					"subject_id": "terrain.swamp.agriculture",
+					"subject_display_name": "沼泽农业",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "稻田水位控制提高沼泽的农业生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "稻米产出 +22%；作为必要支撑：庄园水田、佃作稻庄、精耕稻庄、分成水田、佃作水田",
+			"effect_summary": "稻米产出 +22%；水田生产·洪灾损失 -10%；沼泽农业产出 +14%；作为必要支撑：庄园水田、佃作稻庄、精耕稻庄、分成水田、佃作水田",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 2 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "稻田水位控制是水稻、水田与灌溉农业在当前目录中的应用端点，其终点效果由bunded_rice_field消费",
@@ -17711,7 +17894,7 @@
 					"display_name": "亚麻农场"
 				}
 			],
-			"effect_summary": "解锁物资：韧皮原料；解锁建筑：亚麻农场；作为必要支撑：家庭纺织坊、亚麻庄园、改良亚麻庄园",
+			"effect_summary": "解锁物资：亚麻秆/韧皮原料；解锁建筑：亚麻农场；作为必要支撑：家庭纺织坊、亚麻庄园、改良亚麻庄园",
 			"opportunity_cost": "多条知识路线汇合为一个可见应用节点，避免建筑条件隐式叠加。",
 			"application_target_ids": [],
 			"terminal_reason": "应用节点直接呈现该建筑的完整解锁条件。",
@@ -21161,11 +21344,35 @@
 					"effect_rationale": "渠道、闸门与堤岸工程提高水工营造产出。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				},
+				{
+					"stat": "country.climate.flood_loss_factor",
+					"operation": 0,
+					"value": -0.08,
+					"subject_kind": "climate_hazard",
+					"subject_id": "flood",
+					"subject_display_name": "洪灾损失",
+					"effect_class": "通用气候适应",
+					"effect_rationale": "运河工程降低全国气候型生产建筑的洪灾损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.output.landform.lowland.agriculture_factor",
+					"operation": 0,
+					"value": 0.14,
+					"subject_kind": "geography",
+					"subject_id": "landform.lowland.agriculture",
+					"subject_display_name": "低地农业",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "运河工程提高低地的农业生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "营造方法产出 +12%",
+			"effect_summary": "营造方法产出 +12%；洪灾损失 -8%；低地农业产出 +14%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 3 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -21472,11 +21679,23 @@
 					"effect_rationale": "轮作维持谷物地力。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::effective_building_output_quantity"
+				},
+				{
+					"stat": "country.output.terrain.plain.agriculture_factor",
+					"operation": 0,
+					"value": 0.14,
+					"subject_kind": "geography",
+					"subject_id": "terrain.plain.agriculture",
+					"subject_display_name": "平原农业",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "轮作提高平原的农业生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "谷物产出 +18%；作为必要支撑：工业榨油厂",
+			"effect_summary": "谷物产出 +18%；平原农业产出 +14%；作为必要支撑：工业榨油厂",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 3 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -25037,7 +25256,20 @@
 			"is_starting": false,
 			"is_starter_eligible": false,
 			"starter_capability_tags": [],
-			"modifier_terms": [],
+			"modifier_terms": [
+				{
+					"stat": "country.output.landform.salt_flat.extractive_factor",
+					"operation": 0,
+					"value": 0.18,
+					"subject_kind": "geography",
+					"subject_id": "landform.salt_flat.extractive",
+					"subject_display_name": "盐碱地采掘",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "应用：日晒盐田提高盐碱地的采掘生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				}
+			],
 			"expected_bindings": [
 				{
 					"kind": 1,
@@ -25074,7 +25306,7 @@
 					"display_name": "日晒盐田"
 				}
 			],
-			"effect_summary": "解锁物资：食盐；解锁建筑：日晒盐田",
+			"effect_summary": "解锁物资：食盐；解锁建筑：日晒盐田；盐碱地采掘产出 +18%",
 			"opportunity_cost": "多条知识路线汇合为一个可见应用节点，避免建筑条件隐式叠加。",
 			"application_target_ids": [],
 			"terminal_reason": "应用节点直接呈现该建筑的完整解锁条件。",
@@ -26255,7 +26487,20 @@
 			"is_starting": false,
 			"is_starter_eligible": false,
 			"starter_capability_tags": [],
-			"modifier_terms": [],
+			"modifier_terms": [
+				{
+					"stat": "country.output.landform.badlands.extractive_factor",
+					"operation": 0,
+					"value": 0.14,
+					"subject_kind": "geography",
+					"subject_id": "landform.badlands.extractive",
+					"subject_display_name": "恶地采掘",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "铜矿开采提高恶地的采掘生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				}
+			],
 			"expected_bindings": [
 				{
 					"kind": 1,
@@ -26292,7 +26537,7 @@
 					"display_name": "铜矿"
 				}
 			],
-			"effect_summary": "解锁物资：铜矿石；解锁建筑：铜矿；作为必要支撑：铜矿、自然铜冷锤工坊",
+			"effect_summary": "解锁物资：铜矿石；解锁建筑：铜矿；恶地采掘产出 +14%；作为必要支撑：铜矿、自然铜冷锤工坊",
 			"opportunity_cost": "自然铜辨识与打制石器汇合后，才能把矿物观察转化为铜矿开采。",
 			"application_target_ids": [],
 			"terminal_reason": "应用节点直接呈现该建筑的完整解锁条件。",
@@ -27021,7 +27266,7 @@
 					"display_name": "玻璃器皿小作坊"
 				}
 			],
-			"effect_summary": "解锁物资：Glassware Workshop；解锁建筑：Glassware Workshop；作为必要支撑：Glassware Workshop",
+			"effect_summary": "解锁物资：玻璃器皿；解锁建筑：玻璃器皿小作坊；作为必要支撑：Glassware Workshop",
 			"opportunity_cost": "terminal production upgrade",
 			"application_target_ids": [],
 			"terminal_reason": "explicit terminal production application",
@@ -27133,7 +27378,7 @@
 					"display_name": "金属家用器皿小作坊"
 				}
 			],
-			"effect_summary": "解锁物资：Metal Housewares Workshop；解锁建筑：Metal Housewares Workshop；作为必要支撑：Metal Housewares Workshop",
+			"effect_summary": "解锁物资：金属家用器皿；解锁建筑：金属家用器皿小作坊；作为必要支撑：Metal Housewares Workshop",
 			"opportunity_cost": "terminal production upgrade",
 			"application_target_ids": [],
 			"terminal_reason": "explicit terminal production application",
@@ -27244,7 +27489,7 @@
 					"display_name": "皮革制品小作坊"
 				}
 			],
-			"effect_summary": "解锁物资：Leather Goods Workshop；解锁建筑：Leather Goods Workshop；作为必要支撑：Leather Goods Workshop",
+			"effect_summary": "解锁物资：皮革制品；解锁建筑：皮革制品小作坊；作为必要支撑：Leather Goods Workshop",
 			"opportunity_cost": "terminal production upgrade",
 			"application_target_ids": [],
 			"terminal_reason": "explicit terminal production application",
@@ -31759,11 +32004,23 @@
 					"effect_rationale": "导航、船舶与物流组织提高运输生产方式产出。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				},
+				{
+					"stat": "country.output.landform.coast.agriculture_factor",
+					"operation": 0,
+					"value": 0.14,
+					"subject_kind": "geography",
+					"subject_id": "landform.coast.agriculture",
+					"subject_display_name": "海岸农业",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "磁针导航提高海岸的农业生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "航运作业产出 +28%",
+			"effect_summary": "航运作业产出 +28%；海岸农业产出 +14%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 4 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "磁针导航是渔业、航海、港口与海运物流在当前目录中的应用端点，其终点效果由航运作业28%消费",
@@ -33115,11 +33372,23 @@
 					"effect_rationale": "矿井木支护提高采掘作业稳定性。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				},
+				{
+					"stat": "country.output.landform.canyon.extractive_factor",
+					"operation": 0,
+					"value": 0.14,
+					"subject_kind": "geography",
+					"subject_id": "landform.canyon.extractive",
+					"subject_display_name": "峡谷采掘",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "矿井木支护提高峡谷的采掘生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "全社会 +12%",
+			"effect_summary": "全社会 +12%；峡谷采掘产出 +14%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 4 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -33243,6 +33512,18 @@
 					"effect_rationale": "矿井通风延长安全作业时间。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				},
+				{
+					"stat": "country.output.landform.mountain.extractive_factor",
+					"operation": 0,
+					"value": 0.14,
+					"subject_kind": "geography",
+					"subject_id": "landform.mountain.extractive",
+					"subject_display_name": "山地采掘",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "矿井通风提高山地的采掘生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
 				}
 			],
 			"expected_bindings": [
@@ -33281,7 +33562,7 @@
 					"display_name": "锌矿"
 				}
 			],
-			"effect_summary": "可利用资源：铅矿；可利用资源：锌矿；全社会 +12%",
+			"effect_summary": "可利用资源：铅矿；可利用资源：锌矿；全社会 +12%；山地采掘产出 +14%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 4 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "矿井通风是当前技术网络中的应用端点，其效果由已绑定内容直接消费",
@@ -34135,6 +34416,18 @@
 					"effect_rationale": "导航、船舶与物流组织提高运输生产方式产出。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				},
+				{
+					"stat": "country.output.terrain.coast.agriculture_factor",
+					"operation": 0,
+					"value": 0.16,
+					"subject_kind": "geography",
+					"subject_id": "terrain.coast.agriculture",
+					"subject_display_name": "海岸农业",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "远洋航海提高海岸的农业生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
 				}
 			],
 			"expected_bindings": [],
@@ -34152,7 +34445,7 @@
 					"display_name": "远海运输走廊"
 				}
 			],
-			"effect_summary": "航运作业产出 +12%；作为必要支撑：远洋渔场、蒸汽航运船坞",
+			"effect_summary": "航运作业产出 +12%；海岸农业产出 +16%；作为必要支撑：远洋渔场、蒸汽航运船坞",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 5 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -35828,11 +36121,23 @@
 					"effect_rationale": "矿井排水提高采掘作业连续性。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				},
+				{
+					"stat": "country.output.landform.rift_valley.extractive_factor",
+					"operation": 0,
+					"value": 0.16,
+					"subject_kind": "geography",
+					"subject_id": "landform.rift_valley.extractive",
+					"subject_display_name": "裂谷采掘",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "矿井排水提高裂谷的采掘生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "全社会 +12%；作为必要支撑：硅砂矿",
+			"effect_summary": "全社会 +12%；裂谷采掘产出 +16%；作为必要支撑：硅砂矿",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 5 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -36894,11 +37199,47 @@
 					"effect_rationale": "自然观察、生物分类与育种方法提高农业研究效率。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeCountryRuntime::process_research_day"
+				},
+				{
+					"stat": "country.climate.profile.plantation_crop.cold_stress_loss_factor",
+					"operation": 0,
+					"value": -0.1,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "plantation_crop",
+					"subject_display_name": "种植园生产·寒冷损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "作物移植适应降低种植园生产建筑的寒冷损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.climate.profile.plantation_crop.heat_stress_loss_factor",
+					"operation": 0,
+					"value": -0.1,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "plantation_crop",
+					"subject_display_name": "种植园生产·热害损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "作物移植适应降低种植园生产建筑的热害损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.output.terrain.shrubland.agriculture_factor",
+					"operation": 0,
+					"value": 0.14,
+					"subject_kind": "geography",
+					"subject_id": "terrain.shrubland.agriculture",
+					"subject_display_name": "灌木地农业",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "作物移植适应提高灌木地的农业生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "农业领域研究效率 +8%",
+			"effect_summary": "农业领域研究效率 +8%；种植园生产·寒冷损失 -10%；种植园生产·热害损失 -10%；灌木地农业产出 +14%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 5 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "作物移植适应是当前技术网络中的应用端点，其效果由已绑定内容直接消费",
@@ -37043,6 +37384,42 @@
 					"effect_rationale": "自然观察、生物分类与育种方法提高农业研究效率。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeCountryRuntime::process_research_day"
+				},
+				{
+					"stat": "country.climate.profile.dryland_crop.drought_loss_factor",
+					"operation": 0,
+					"value": -0.08,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "dryland_crop",
+					"subject_display_name": "旱作生产·旱灾损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "作物驯化移植降低旱作生产建筑的旱灾损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.climate.profile.dryland_crop.cold_stress_loss_factor",
+					"operation": 0,
+					"value": -0.08,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "dryland_crop",
+					"subject_display_name": "旱作生产·寒冷损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "作物驯化移植降低旱作生产建筑的寒冷损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.climate.profile.dryland_crop.heat_stress_loss_factor",
+					"operation": 0,
+					"value": -0.08,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "dryland_crop",
+					"subject_display_name": "旱作生产·热害损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "作物驯化移植降低旱作生产建筑的热害损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
 				}
 			],
 			"expected_bindings": [
@@ -37065,7 +37442,7 @@
 					"display_name": "种植园承载力"
 				}
 			],
-			"effect_summary": "可利用资源：种植园承载力；农业领域研究效率 +22%",
+			"effect_summary": "可利用资源：种植园承载力；农业领域研究效率 +22%；旱作生产·旱灾损失 -8%；旱作生产·寒冷损失 -8%；旱作生产·热害损失 -8%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 5 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "作物驯化移植是自然史、生物学与育种科学在当前目录中的应用端点，其终点效果由plantation_land消费",
@@ -38698,7 +39075,7 @@
 					"display_name": "玻璃器皿工场"
 				}
 			],
-			"effect_summary": "解锁物资：Glassware Manufactory；解锁建筑：Glassware Manufactory；作为必要支撑：Glassware Manufactory",
+			"effect_summary": "解锁物资：玻璃器皿；解锁建筑：玻璃器皿工场；作为必要支撑：Glassware Manufactory",
 			"opportunity_cost": "terminal production upgrade",
 			"application_target_ids": [],
 			"terminal_reason": "explicit terminal production application",
@@ -38809,7 +39186,7 @@
 					"display_name": "金属家用器皿工场"
 				}
 			],
-			"effect_summary": "解锁物资：Metal Housewares Manufactory；解锁建筑：Metal Housewares Manufactory；作为必要支撑：Metal Housewares Manufactory",
+			"effect_summary": "解锁物资：金属家用器皿；解锁建筑：金属家用器皿工场；作为必要支撑：Metal Housewares Manufactory",
 			"opportunity_cost": "terminal production upgrade",
 			"application_target_ids": [],
 			"terminal_reason": "explicit terminal production application",
@@ -38920,7 +39297,7 @@
 					"display_name": "皮革制品工场"
 				}
 			],
-			"effect_summary": "解锁物资：Leather Goods Manufactory；解锁建筑：Leather Goods Manufactory；作为必要支撑：Leather Goods Manufactory",
+			"effect_summary": "解锁物资：皮革制品；解锁建筑：皮革制品工场；作为必要支撑：Leather Goods Manufactory",
 			"opportunity_cost": "terminal production upgrade",
 			"application_target_ids": [],
 			"terminal_reason": "explicit terminal production application",
@@ -42805,11 +43182,35 @@
 					"effect_rationale": "育种提高玉米潜力。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::effective_building_output_quantity"
+				},
+				{
+					"stat": "country.climate.profile.dryland_crop.cold_stress_loss_factor",
+					"operation": 0,
+					"value": -0.1,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "dryland_crop",
+					"subject_display_name": "旱作生产·寒冷损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "系统育种降低旱作生产建筑的寒冷损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.climate.profile.dryland_crop.heat_stress_loss_factor",
+					"operation": 0,
+					"value": -0.1,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "dryland_crop",
+					"subject_display_name": "旱作生产·热害损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "系统育种降低旱作生产建筑的热害损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "谷物产出 +12%；小麦产出 +12%；稻米产出 +12%；玉米产出 +12%；作为必要支撑：改良亚麻庄园、精耕稻庄、改良轮作小麦庄园",
+			"effect_summary": "谷物产出 +12%；小麦产出 +12%；稻米产出 +12%；玉米产出 +12%；旱作生产·寒冷损失 -10%；旱作生产·热害损失 -10%；作为必要支撑：改良亚麻庄园、精耕稻庄、改良轮作小麦庄园",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 6 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -42977,11 +43378,23 @@
 					"effect_rationale": "小麦辨识、繁育与旱作体系提高小麦产出。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::effective_building_output_quantity"
+				},
+				{
+					"stat": "country.output.landform.plain.agriculture_factor",
+					"operation": 0,
+					"value": 0.16,
+					"subject_kind": "geography",
+					"subject_id": "landform.plain.agriculture",
+					"subject_display_name": "平原农业",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "农业改良提高平原的农业生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "小麦产出 +12%",
+			"effect_summary": "小麦产出 +12%；平原农业产出 +16%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 6 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -43733,11 +44146,35 @@
 					"effect_rationale": "大型水工维护占用制造能力。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				},
+				{
+					"stat": "country.climate.drought_loss_factor",
+					"operation": 0,
+					"value": -0.1,
+					"subject_kind": "climate_hazard",
+					"subject_id": "drought",
+					"subject_display_name": "旱灾损失",
+					"effect_class": "通用气候适应",
+					"effect_rationale": "水利工程降低全国气候型生产建筑的旱灾损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.climate.flood_loss_factor",
+					"operation": 0,
+					"value": -0.1,
+					"subject_kind": "climate_hazard",
+					"subject_id": "flood",
+					"subject_display_name": "洪灾损失",
+					"effect_class": "通用气候适应",
+					"effect_rationale": "水利工程降低全国气候型生产建筑的洪灾损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "landform.delta.agriculture产出 +18%；landform.delta.manufacturing产出 -5%；作为必要支撑：混凝土厂、河流水力发电站、流域治理中心",
+			"effect_summary": "landform.delta.agriculture产出 +18%；landform.delta.manufacturing产出 -5%；旱灾损失 -10%；洪灾损失 -10%；作为必要支撑：混凝土厂、河流水力发电站、流域治理中心",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 6 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [
 				"tech.electric_generation",
@@ -44343,11 +44780,23 @@
 					"effect_rationale": "大气式蒸汽机为矿井抽排提供连续动力。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				},
+				{
+					"stat": "country.output.terrain.swamp.extractive_factor",
+					"operation": 0,
+					"value": 0.14,
+					"subject_kind": "geography",
+					"subject_id": "terrain.swamp.extractive",
+					"subject_display_name": "沼泽采掘",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "大气式蒸汽机提高沼泽的采掘生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "全社会 +12%",
+			"effect_summary": "全社会 +12%；沼泽采掘产出 +14%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 6 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -44641,6 +45090,42 @@
 					"effect_rationale": "自然观察、生物分类与育种方法提高农业研究效率。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeCountryRuntime::process_research_day"
+				},
+				{
+					"stat": "country.climate.profile.dryland_crop.drought_loss_factor",
+					"operation": 0,
+					"value": -0.06,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "dryland_crop",
+					"subject_display_name": "旱作生产·旱灾损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "土壤实验降低旱作生产建筑的旱灾损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.climate.profile.paddy_crop.flood_loss_factor",
+					"operation": 0,
+					"value": -0.06,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "paddy_crop",
+					"subject_display_name": "水田生产·洪灾损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "土壤实验降低水田生产建筑的洪灾损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.output.terrain.badlands.agriculture_factor",
+					"operation": 0,
+					"value": 0.14,
+					"subject_kind": "geography",
+					"subject_id": "terrain.badlands.agriculture",
+					"subject_display_name": "恶地农业",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "土壤实验提高恶地的农业生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
 				}
 			],
 			"expected_bindings": [
@@ -44663,7 +45148,7 @@
 					"display_name": "磷矿石"
 				}
 			],
-			"effect_summary": "可利用资源：磷矿石；农业领域研究效率 +8%",
+			"effect_summary": "可利用资源：磷矿石；农业领域研究效率 +8%；旱作生产·旱灾损失 -6%；水田生产·洪灾损失 -6%；恶地农业产出 +14%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 6 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -44787,11 +45272,35 @@
 					"effect_rationale": "畜群管理、繁育与加工体系提高畜牧业产出。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				},
+				{
+					"stat": "country.climate.profile.pasture_livestock.cold_stress_loss_factor",
+					"operation": 0,
+					"value": -0.1,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "pasture_livestock",
+					"subject_display_name": "牧业生产·寒冷损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "畜种改良降低牧业生产建筑的寒冷损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.climate.profile.pasture_livestock.heat_stress_loss_factor",
+					"operation": 0,
+					"value": -0.1,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "pasture_livestock",
+					"subject_display_name": "牧业生产·热害损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "畜种改良降低牧业生产建筑的热害损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "畜牧业产出 +28%",
+			"effect_summary": "畜牧业产出 +28%；牧业生产·寒冷损失 -10%；牧业生产·热害损失 -10%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 6 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "畜种改良是草原、马匹与畜牧业在当前目录中的应用端点，其终点效果由畜牧业28%消费",
@@ -49196,7 +49705,7 @@
 					"display_name": "亚麻庄园"
 				}
 			],
-			"effect_summary": "解锁物资：韧皮原料；解锁建筑：亚麻庄园；作为必要支撑：棉花农场、橡胶种植园、香料种植园",
+			"effect_summary": "解锁物资：亚麻秆/韧皮原料；解锁建筑：亚麻庄园；作为必要支撑：棉花农场、橡胶种植园、香料种植园",
 			"opportunity_cost": "多条知识路线汇合为一个可见应用节点，避免建筑条件隐式叠加。",
 			"application_target_ids": [],
 			"terminal_reason": "应用节点直接呈现该建筑的完整解锁条件。",
@@ -49472,7 +49981,7 @@
 					"display_name": "改良亚麻庄园"
 				}
 			],
-			"effect_summary": "解锁物资：韧皮原料；解锁建筑：改良亚麻庄园；作为必要支撑：地籍管理局、改良亚麻庄园、精耕稻庄、改良轮作小麦庄园",
+			"effect_summary": "解锁物资：亚麻秆/韧皮原料；解锁建筑：改良亚麻庄园；作为必要支撑：地籍管理局、改良亚麻庄园、精耕稻庄、改良轮作小麦庄园",
 			"opportunity_cost": "多条知识路线汇合为一个可见应用节点，避免建筑条件隐式叠加。",
 			"application_target_ids": [],
 			"terminal_reason": "应用节点直接呈现该建筑的完整解锁条件。",
@@ -49596,11 +50105,23 @@
 					"effect_rationale": "工业矿井增加工具维护负担。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::effective_production_input_quantity"
+				},
+				{
+					"stat": "country.output.landform.mountain.extractive_factor",
+					"operation": 0,
+					"value": 0.18,
+					"subject_kind": "geography",
+					"subject_id": "landform.mountain.extractive",
+					"subject_display_name": "山地采掘",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "工业采煤提高山地的采掘生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "煤 -12%；工具 +5%",
+			"effect_summary": "煤 -12%；工具 +5%；山地采掘产出 +18%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 7 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -50553,11 +51074,23 @@
 					"effect_rationale": "机械化提高全社会农业作业时效。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				},
+				{
+					"stat": "country.output.terrain.plain.agriculture_factor",
+					"operation": 0,
+					"value": 0.16,
+					"subject_kind": "geography",
+					"subject_id": "terrain.plain.agriculture",
+					"subject_display_name": "平原农业",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "机械化农业提高平原的农业生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "全社会 +6%；作为必要支撑：机械化农场、机械化玉米农场、机械化橡胶种植园、机械化香料种植园",
+			"effect_summary": "全社会 +6%；平原农业产出 +16%；作为必要支撑：机械化农场、机械化玉米农场、机械化橡胶种植园、机械化香料种植园",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 7 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -52252,7 +52785,7 @@
 					"display_name": "机械轧棉厂"
 				}
 			],
-			"effect_summary": "布匹产出 +20%；煤 +4%；作为必要支撑：电力纺织厂、高级成衣厂、制鞋厂、改良家用织机",
+			"effect_summary": "解锁物资：棉纤维；解锁建筑：机械轧棉厂；布匹产出 +20%；煤 +4%；作为必要支撑：电力纺织厂、高级成衣厂、制鞋厂、改良家用织机",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 7 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -53440,11 +53973,23 @@
 					"effect_rationale": "蒸汽锯木以煤耗换取吞吐。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::effective_production_input_quantity"
+				},
+				{
+					"stat": "country.output.terrain.taiga.extractive_factor",
+					"operation": 0,
+					"value": 0.16,
+					"subject_kind": "geography",
+					"subject_id": "terrain.taiga.extractive",
+					"subject_display_name": "泰加林采掘",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "蒸汽锯木提高泰加林的采掘生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "timber -8%；煤 +5%",
+			"effect_summary": "timber -8%；煤 +5%；泰加林采掘产出 +16%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 7 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "蒸汽锯木是森林、木材、造纸与生物质在当前目录中的应用端点，其终点效果由method_lumber_plant_r6消费",
@@ -54477,7 +55022,7 @@
 					"display_name": "玻璃器皿工厂"
 				}
 			],
-			"effect_summary": "解锁物资：Glassware Factory；解锁建筑：Glassware Factory；作为必要支撑：Glassware Factory",
+			"effect_summary": "解锁物资：玻璃器皿；解锁建筑：玻璃器皿工厂；作为必要支撑：Glassware Factory",
 			"opportunity_cost": "terminal production upgrade",
 			"application_target_ids": [],
 			"terminal_reason": "explicit terminal production application",
@@ -54588,7 +55133,7 @@
 					"display_name": "金属家用器皿工厂"
 				}
 			],
-			"effect_summary": "解锁物资：Metal Housewares Factory；解锁建筑：Metal Housewares Factory；作为必要支撑：Metal Housewares Factory",
+			"effect_summary": "解锁物资：金属家用器皿；解锁建筑：金属家用器皿工厂；作为必要支撑：Metal Housewares Factory",
 			"opportunity_cost": "terminal production upgrade",
 			"application_target_ids": [],
 			"terminal_reason": "explicit terminal production application",
@@ -54699,7 +55244,7 @@
 					"display_name": "皮革制品工厂"
 				}
 			],
-			"effect_summary": "解锁物资：Leather Goods Factory；解锁建筑：Leather Goods Factory；作为必要支撑：Leather Goods Factory",
+			"effect_summary": "解锁物资：皮革制品；解锁建筑：皮革制品工厂；作为必要支撑：Leather Goods Factory",
 			"opportunity_cost": "terminal production upgrade",
 			"application_target_ids": [],
 			"terminal_reason": "explicit terminal production application",
@@ -60611,11 +61156,23 @@
 					"effect_rationale": "小麦辨识、繁育与旱作体系提高小麦产出。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::effective_building_output_quantity"
+				},
+				{
+					"stat": "country.output.terrain.grassland.agriculture_factor",
+					"operation": 0,
+					"value": 0.18,
+					"subject_kind": "geography",
+					"subject_id": "terrain.grassland.agriculture",
+					"subject_display_name": "草原农业",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "机动农业提高草原的农业生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "小麦产出 +12%",
+			"effect_summary": "小麦产出 +12%；草原农业产出 +18%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 8 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -60764,11 +61321,47 @@
 					"effect_rationale": "畜群管理、繁育与加工体系提高畜牧业产出。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				},
+				{
+					"stat": "country.climate.profile.pasture_livestock.cold_stress_loss_factor",
+					"operation": 0,
+					"value": -0.14,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "pasture_livestock",
+					"subject_display_name": "牧业生产·寒冷损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "现代畜牧降低牧业生产建筑的寒冷损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.climate.profile.pasture_livestock.heat_stress_loss_factor",
+					"operation": 0,
+					"value": -0.14,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "pasture_livestock",
+					"subject_display_name": "牧业生产·热害损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "现代畜牧降低牧业生产建筑的热害损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.output.terrain.savanna.agriculture_factor",
+					"operation": 0,
+					"value": 0.16,
+					"subject_kind": "geography",
+					"subject_id": "terrain.savanna.agriculture",
+					"subject_display_name": "稀树草原农业",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "现代畜牧提高稀树草原的农业生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "畜牧业产出 +28%",
+			"effect_summary": "畜牧业产出 +28%；牧业生产·寒冷损失 -14%；牧业生产·热害损失 -14%；稀树草原农业产出 +16%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 8 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "现代畜牧是草原、马匹与畜牧业在当前目录中的应用端点，其终点效果由method_smart_husbandry消费",
@@ -61086,11 +61679,35 @@
 					"effect_rationale": "冷藏减少家庭肉类腐败。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::effective_household_good_quantity"
+				},
+				{
+					"stat": "country.climate.profile.pasture_livestock.heat_stress_loss_factor",
+					"operation": 0,
+					"value": -0.08,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "pasture_livestock",
+					"subject_display_name": "牧业生产·热害损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "机械制冷降低牧业生产建筑的热害损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.output.terrain.desert.agriculture_factor",
+					"operation": 0,
+					"value": 0.12,
+					"subject_kind": "geography",
+					"subject_id": "terrain.desert.agriculture",
+					"subject_display_name": "沙漠农业",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "机械制冷提高沙漠的农业生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "肉类 -8%；作为必要支撑：乳制品厂",
+			"effect_summary": "肉类 -8%；牧业生产·热害损失 -8%；沙漠农业产出 +12%；作为必要支撑：乳制品厂",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 8 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -64074,7 +64691,7 @@
 					"display_name": "玻璃器皿工厂"
 				}
 			],
-			"effect_summary": "解锁物资：Glassware Factory；解锁建筑：Glassware Factory；作为必要支撑：Glassware Factory",
+			"effect_summary": "解锁物资：玻璃器皿；解锁建筑：玻璃器皿工厂；作为必要支撑：Glassware Factory",
 			"opportunity_cost": "terminal production upgrade",
 			"application_target_ids": [],
 			"terminal_reason": "explicit terminal production application",
@@ -64185,7 +64802,7 @@
 					"display_name": "金属家用器皿工厂"
 				}
 			],
-			"effect_summary": "解锁物资：Metal Housewares Factory；解锁建筑：Metal Housewares Factory；作为必要支撑：Metal Housewares Factory",
+			"effect_summary": "解锁物资：金属家用器皿；解锁建筑：金属家用器皿工厂；作为必要支撑：Metal Housewares Factory",
 			"opportunity_cost": "terminal production upgrade",
 			"application_target_ids": [],
 			"terminal_reason": "explicit terminal production application",
@@ -64296,7 +64913,7 @@
 					"display_name": "皮革制品工厂"
 				}
 			],
-			"effect_summary": "解锁物资：Leather Goods Factory；解锁建筑：Leather Goods Factory；作为必要支撑：Leather Goods Factory",
+			"effect_summary": "解锁物资：皮革制品；解锁建筑：皮革制品工厂；作为必要支撑：Leather Goods Factory",
 			"opportunity_cost": "terminal production upgrade",
 			"application_target_ids": [],
 			"terminal_reason": "explicit terminal production application",
@@ -64657,7 +65274,7 @@
 					"display_name": "机械化亚麻农场"
 				}
 			],
-			"effect_summary": "解锁物资：韧皮原料；解锁建筑：机械化亚麻农场",
+			"effect_summary": "解锁物资：亚麻秆/韧皮原料；解锁建筑：机械化亚麻农场",
 			"application_target_ids": [],
 			"terminal_reason": "应用节点直接呈现该作物生产方式。",
 			"branch_family_id": "branch.textile_fibers",
@@ -68423,6 +69040,42 @@
 					"effect_rationale": "辨识、繁育与田间体系提高玉米产出。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::effective_building_output_quantity"
+				},
+				{
+					"stat": "country.climate.profile.dryland_crop.drought_loss_factor",
+					"operation": 0,
+					"value": -0.08,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "dryland_crop",
+					"subject_display_name": "旱作生产·旱灾损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "工业农学降低旱作生产建筑的旱灾损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.climate.profile.dryland_crop.heat_stress_loss_factor",
+					"operation": 0,
+					"value": -0.08,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "dryland_crop",
+					"subject_display_name": "旱作生产·热害损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "工业农学降低旱作生产建筑的热害损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.output.terrain.savanna.agriculture_factor",
+					"operation": 0,
+					"value": 0.18,
+					"subject_kind": "geography",
+					"subject_id": "terrain.savanna.agriculture",
+					"subject_display_name": "稀树草原农业",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "工业农学提高稀树草原的农业生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
 				}
 			],
 			"expected_bindings": [
@@ -68477,7 +69130,7 @@
 					"display_name": "电气化集约农场"
 				}
 			],
-			"effect_summary": "解锁物资：混合谷物；解锁物资：蔬菜；解锁建筑：电气化集约农场；玉米产出 +12%",
+			"effect_summary": "解锁物资：混合谷物；解锁物资：蔬菜；解锁建筑：电气化集约农场；玉米产出 +12%；旱作生产·旱灾损失 -8%；旱作生产·热害损失 -8%；稀树草原农业产出 +18%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 9 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -69028,6 +69681,18 @@
 					"effect_rationale": "测绘、遥感与地理分析提高地理空间机构产出。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				},
+				{
+					"stat": "country.output.terrain.mesa.extractive_factor",
+					"operation": 0,
+					"value": 0.18,
+					"subject_kind": "geography",
+					"subject_id": "terrain.mesa.extractive",
+					"subject_display_name": "台地采掘",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "深层地球物理提高台地的采掘生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
 				}
 			],
 			"expected_bindings": [
@@ -69066,7 +69731,7 @@
 					"display_name": "锰矿"
 				}
 			],
-			"effect_summary": "可利用资源：铝土矿；可利用资源：锰矿；geospatial_analysis_institution产出 +12%；作为必要支撑：天然气田、战略矿山",
+			"effect_summary": "可利用资源：铝土矿；可利用资源：锰矿；geospatial_analysis_institution产出 +12%；台地采掘产出 +18%；作为必要支撑：天然气田、战略矿山",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 9 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "深层地球物理是当前技术网络中的应用端点，其效果由已绑定内容直接消费",
@@ -69537,11 +70202,23 @@
 					"effect_rationale": "机械采矿提高煤层回采。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::effective_resource_use_quantity"
+				},
+				{
+					"stat": "country.output.landform.canyon.extractive_factor",
+					"operation": 0,
+					"value": 0.18,
+					"subject_kind": "geography",
+					"subject_id": "landform.canyon.extractive",
+					"subject_display_name": "峡谷采掘",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "机械化采矿提高峡谷的采掘生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "铁矿石 -10%；煤 -10%；作为必要支撑：自动化磷矿、自动化锌矿",
+			"effect_summary": "铁矿石 -10%；煤 -10%；峡谷采掘产出 +18%；作为必要支撑：自动化磷矿、自动化锌矿",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 9 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -74058,11 +74735,47 @@
 					"effect_rationale": "田块级测量改善全社会农业投入配置。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				},
+				{
+					"stat": "country.climate.profile.dryland_crop.drought_loss_factor",
+					"operation": 0,
+					"value": -0.1,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "dryland_crop",
+					"subject_display_name": "旱作生产·旱灾损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "精准农业降低旱作生产建筑的旱灾损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.climate.profile.dryland_crop.heat_stress_loss_factor",
+					"operation": 0,
+					"value": -0.1,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "dryland_crop",
+					"subject_display_name": "旱作生产·热害损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "精准农业降低旱作生产建筑的热害损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.output.landform.plain.agriculture_factor",
+					"operation": 0,
+					"value": 0.2,
+					"subject_kind": "geography",
+					"subject_id": "landform.plain.agriculture",
+					"subject_display_name": "平原农业",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "精准农业提高平原的农业生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "全社会 +8%；作为必要支撑：专用商品作物种植园",
+			"effect_summary": "全社会 +8%；旱作生产·旱灾损失 -10%；旱作生产·热害损失 -10%；平原农业产出 +20%；作为必要支撑：专用商品作物种植园",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 10 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -79341,11 +80054,47 @@
 					"effect_rationale": "稻类辨识、水田组织与灌溉控制提高稻米产出。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::effective_building_output_quantity"
+				},
+				{
+					"stat": "country.climate.profile.paddy_crop.drought_loss_factor",
+					"operation": 0,
+					"value": -0.14,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "paddy_crop",
+					"subject_display_name": "水田生产·旱灾损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "精准灌溉降低水田生产建筑的旱灾损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.climate.profile.paddy_crop.flood_loss_factor",
+					"operation": 0,
+					"value": -0.14,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "paddy_crop",
+					"subject_display_name": "水田生产·洪灾损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "精准灌溉降低水田生产建筑的洪灾损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.output.terrain.oasis.agriculture_factor",
+					"operation": 0,
+					"value": 0.2,
+					"subject_kind": "geography",
+					"subject_id": "terrain.oasis.agriculture",
+					"subject_display_name": "绿洲农业",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "精准灌溉提高绿洲的农业生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "稻米产出 +12%",
+			"effect_summary": "稻米产出 +12%；水田生产·旱灾损失 -14%；水田生产·洪灾损失 -14%；绿洲农业产出 +20%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 10 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -79670,7 +80419,20 @@
 			"is_starting": false,
 			"is_starter_eligible": false,
 			"starter_capability_tags": [],
-			"modifier_terms": [],
+			"modifier_terms": [
+				{
+					"stat": "country.climate.profile.dryland_crop.cold_stress_loss_factor",
+					"operation": 0,
+					"value": -0.16,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "dryland_crop",
+					"subject_display_name": "旱作生产·寒冷损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "应用：高地精准块茎农业降低旱作生产建筑的寒冷损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				}
+			],
 			"expected_bindings": [
 				{
 					"kind": 1,
@@ -79707,7 +80469,7 @@
 					"display_name": "高地精准块茎农业"
 				}
 			],
-			"effect_summary": "解锁物资：马铃薯；解锁建筑：高地精准块茎农业；作为必要支撑：专用商品作物种植园",
+			"effect_summary": "解锁物资：马铃薯；解锁建筑：高地精准块茎农业；旱作生产·寒冷损失 -16%；作为必要支撑：专用商品作物种植园",
 			"opportunity_cost": "多条知识路线汇合为一个可见应用节点，避免建筑条件隐式叠加。",
 			"application_target_ids": [],
 			"terminal_reason": "应用节点直接呈现该建筑的完整解锁条件。",
@@ -80035,11 +80797,59 @@
 					"effect_rationale": "测绘、遥感与地理分析提高地理空间机构产出。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				},
+				{
+					"stat": "country.climate.drought_loss_factor",
+					"operation": 0,
+					"value": -0.08,
+					"subject_kind": "climate_hazard",
+					"subject_id": "drought",
+					"subject_display_name": "旱灾损失",
+					"effect_class": "通用气候适应",
+					"effect_rationale": "数值天气预报降低全国气候型生产建筑的旱灾损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.climate.flood_loss_factor",
+					"operation": 0,
+					"value": -0.08,
+					"subject_kind": "climate_hazard",
+					"subject_id": "flood",
+					"subject_display_name": "洪灾损失",
+					"effect_class": "通用气候适应",
+					"effect_rationale": "数值天气预报降低全国气候型生产建筑的洪灾损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.climate.cold_stress_factor",
+					"operation": 0,
+					"value": -0.08,
+					"subject_kind": "climate_hazard",
+					"subject_id": "cold_stress",
+					"subject_display_name": "寒冷损失",
+					"effect_class": "通用气候适应",
+					"effect_rationale": "数值天气预报降低全国气候型生产建筑的寒冷损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.climate.heat_stress_factor",
+					"operation": 0,
+					"value": -0.08,
+					"subject_kind": "climate_hazard",
+					"subject_id": "heat_stress",
+					"subject_display_name": "热害损失",
+					"effect_class": "通用气候适应",
+					"effect_rationale": "数值天气预报降低全国气候型生产建筑的热害损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "geospatial_analysis_institution产出 +12%",
+			"effect_summary": "geospatial_analysis_institution产出 +12%；旱灾损失 -8%；洪灾损失 -8%；寒冷损失 -8%；热害损失 -8%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 10 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "",
@@ -80501,11 +81311,47 @@
 					"effect_rationale": "测绘、遥感与地理分析提高地理空间机构产出。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				},
+				{
+					"stat": "country.climate.profile.dryland_crop.drought_loss_factor",
+					"operation": 0,
+					"value": -0.1,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "dryland_crop",
+					"subject_display_name": "旱作生产·旱灾损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "作物遥感降低旱作生产建筑的旱灾损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.climate.profile.plantation_crop.heat_stress_loss_factor",
+					"operation": 0,
+					"value": -0.12,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "plantation_crop",
+					"subject_display_name": "种植园生产·热害损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "作物遥感降低种植园生产建筑的热害损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.output.terrain.chaparral.agriculture_factor",
+					"operation": 0,
+					"value": 0.18,
+					"subject_kind": "geography",
+					"subject_id": "terrain.chaparral.agriculture",
+					"subject_display_name": "硬叶灌丛农业",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "作物遥感提高硬叶灌丛的农业生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "geospatial_analysis_institution产出 +12%",
+			"effect_summary": "geospatial_analysis_institution产出 +12%；旱作生产·旱灾损失 -10%；种植园生产·热害损失 -12%；硬叶灌丛农业产出 +18%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 10 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "作物遥感是当前技术网络中的应用端点，其效果由已绑定内容直接消费",
@@ -80631,11 +81477,47 @@
 					"effect_rationale": "测绘、遥感与地理分析提高地理空间机构产出。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				},
+				{
+					"stat": "country.climate.drought_loss_factor",
+					"operation": 0,
+					"value": -0.12,
+					"subject_kind": "climate_hazard",
+					"subject_id": "drought",
+					"subject_display_name": "旱灾损失",
+					"effect_class": "通用气候适应",
+					"effect_rationale": "水文遥感降低全国气候型生产建筑的旱灾损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.climate.flood_loss_factor",
+					"operation": 0,
+					"value": -0.12,
+					"subject_kind": "climate_hazard",
+					"subject_id": "flood",
+					"subject_display_name": "洪灾损失",
+					"effect_class": "通用气候适应",
+					"effect_rationale": "水文遥感降低全国气候型生产建筑的洪灾损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.output.landform.delta.agriculture_factor",
+					"operation": 0,
+					"value": 0.2,
+					"subject_kind": "geography",
+					"subject_id": "landform.delta.agriculture",
+					"subject_display_name": "三角洲农业",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "水文遥感提高三角洲的农业生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "geospatial_analysis_institution产出 +28%；作为必要支撑：智能水网控制中心",
+			"effect_summary": "geospatial_analysis_institution产出 +28%；旱灾损失 -12%；洪灾损失 -12%；三角洲农业产出 +20%；作为必要支撑：智能水网控制中心",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 10 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "水文遥感是制图、地学、遥感与空间分析在当前目录中的应用端点，其终点效果由watershed_governance_center消费",
@@ -82713,7 +83595,7 @@
 					"display_name": "精准亚麻农场"
 				}
 			],
-			"effect_summary": "解锁物资：韧皮原料；解锁建筑：精准亚麻农场",
+			"effect_summary": "解锁物资：亚麻秆/韧皮原料；解锁建筑：精准亚麻农场",
 			"application_target_ids": [],
 			"terminal_reason": "应用节点直接呈现该作物生产方式。",
 			"branch_family_id": "branch.textile_fibers",
@@ -83050,7 +83932,7 @@
 					"display_name": "精准橡胶种植园"
 				}
 			],
-			"effect_summary": "解锁物资：乳胶；解锁建筑：精准橡胶种植园",
+			"effect_summary": "解锁物资：天然乳胶；解锁建筑：精准橡胶种植园",
 			"application_target_ids": [],
 			"terminal_reason": "应用节点直接呈现该作物生产方式。",
 			"branch_family_id": "branch.tropical_commodities",
@@ -85241,6 +86123,66 @@
 					"effect_rationale": "自动化农业提高全社会农业作业的连续性。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				},
+				{
+					"stat": "country.climate.profile.dryland_crop.drought_loss_factor",
+					"operation": 0,
+					"value": -0.1,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "dryland_crop",
+					"subject_display_name": "旱作生产·旱灾损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "自动化农业降低旱作生产建筑的旱灾损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.climate.profile.dryland_crop.flood_loss_factor",
+					"operation": 0,
+					"value": -0.1,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "dryland_crop",
+					"subject_display_name": "旱作生产·洪灾损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "自动化农业降低旱作生产建筑的洪灾损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.climate.profile.dryland_crop.cold_stress_loss_factor",
+					"operation": 0,
+					"value": -0.1,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "dryland_crop",
+					"subject_display_name": "旱作生产·寒冷损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "自动化农业降低旱作生产建筑的寒冷损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.climate.profile.dryland_crop.heat_stress_loss_factor",
+					"operation": 0,
+					"value": -0.1,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "dryland_crop",
+					"subject_display_name": "旱作生产·热害损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "自动化农业降低旱作生产建筑的热害损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.output.landform.plain.agriculture_factor",
+					"operation": 0,
+					"value": 0.24,
+					"subject_kind": "geography",
+					"subject_id": "landform.plain.agriculture",
+					"subject_display_name": "平原农业",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "自动化农业提高平原的农业生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
 				}
 			],
 			"expected_bindings": [
@@ -85295,7 +86237,7 @@
 					"display_name": "自动化农场"
 				}
 			],
-			"effect_summary": "解锁物资：混合谷物；解锁物资：蔬菜；解锁建筑：自动化农场；全社会 +22%；作为必要支撑：专用商品作物种植园",
+			"effect_summary": "解锁物资：混合谷物；解锁物资：蔬菜；解锁建筑：自动化农场；全社会 +22%；旱作生产·旱灾损失 -10%；旱作生产·洪灾损失 -10%；旱作生产·寒冷损失 -10%；旱作生产·热害损失 -10%；平原农业产出 +24%；作为必要支撑：专用商品作物种植园",
 			"opportunity_cost": "占用通用研究预算，延后同代专业路线锚点",
 			"application_target_ids": [],
 			"terminal_reason": "自动化农业是食物、保存与公共储备在当前目录中的应用端点，其终点效果由automated_farm消费",
@@ -86169,11 +87111,23 @@
 					"effect_rationale": "自主采矿提高连续作业。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				},
+				{
+					"stat": "country.output.terrain.mesa.extractive_factor",
+					"operation": 0,
+					"value": 0.22,
+					"subject_kind": "geography",
+					"subject_id": "terrain.mesa.extractive",
+					"subject_display_name": "台地采掘",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "自主采矿提高台地的采掘生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "铁矿石 -12%；全社会 +15%；作为必要支撑：智能锰矿、智能天然气田、智能硝石矿、智能硫矿",
+			"effect_summary": "铁矿石 -12%；全社会 +15%；台地采掘产出 +22%；作为必要支撑：智能锰矿、智能天然气田、智能硝石矿、智能硫矿",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 11 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "自主采矿是铁、煤、矿井、蒸汽与重工业在当前目录中的应用端点，其终点效果由method_rare_earth_collector_r10、method_saltpeter_collector_r10、method_sulfur_collector_r10消费",
@@ -86298,11 +87252,59 @@
 					"effect_rationale": "气候预测减少农业时机与灾害暴露误差。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				},
+				{
+					"stat": "country.climate.drought_loss_factor",
+					"operation": 0,
+					"value": -0.12,
+					"subject_kind": "climate_hazard",
+					"subject_id": "drought",
+					"subject_display_name": "旱灾损失",
+					"effect_class": "通用气候适应",
+					"effect_rationale": "气候建模降低全国气候型生产建筑的旱灾损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.climate.flood_loss_factor",
+					"operation": 0,
+					"value": -0.12,
+					"subject_kind": "climate_hazard",
+					"subject_id": "flood",
+					"subject_display_name": "洪灾损失",
+					"effect_class": "通用气候适应",
+					"effect_rationale": "气候建模降低全国气候型生产建筑的洪灾损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.climate.cold_stress_factor",
+					"operation": 0,
+					"value": -0.12,
+					"subject_kind": "climate_hazard",
+					"subject_id": "cold_stress",
+					"subject_display_name": "寒冷损失",
+					"effect_class": "通用气候适应",
+					"effect_rationale": "气候建模降低全国气候型生产建筑的寒冷损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.climate.heat_stress_factor",
+					"operation": 0,
+					"value": -0.12,
+					"subject_kind": "climate_hazard",
+					"subject_id": "heat_stress",
+					"subject_display_name": "热害损失",
+					"effect_class": "通用气候适应",
+					"effect_rationale": "气候建模降低全国气候型生产建筑的热害损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "全社会 +4%",
+			"effect_summary": "全社会 +4%；旱灾损失 -12%；洪灾损失 -12%；寒冷损失 -12%；热害损失 -12%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 11 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "气候建模是制图、地学、遥感与空间分析在当前目录中的应用端点，其终点效果由全社会4%消费",
@@ -88178,11 +89180,59 @@
 					"effect_rationale": "自然观察、生物分类与育种方法提高农业研究效率。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeCountryRuntime::process_research_day"
+				},
+				{
+					"stat": "country.climate.profile.dryland_crop.cold_stress_loss_factor",
+					"operation": 0,
+					"value": -0.16,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "dryland_crop",
+					"subject_display_name": "旱作生产·寒冷损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "智能育种降低旱作生产建筑的寒冷损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.climate.profile.dryland_crop.heat_stress_loss_factor",
+					"operation": 0,
+					"value": -0.16,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "dryland_crop",
+					"subject_display_name": "旱作生产·热害损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "智能育种降低旱作生产建筑的热害损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.climate.profile.pasture_livestock.cold_stress_loss_factor",
+					"operation": 0,
+					"value": -0.16,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "pasture_livestock",
+					"subject_display_name": "牧业生产·寒冷损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "智能育种降低牧业生产建筑的寒冷损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.climate.profile.pasture_livestock.heat_stress_loss_factor",
+					"operation": 0,
+					"value": -0.16,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "pasture_livestock",
+					"subject_display_name": "牧业生产·热害损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "智能育种降低牧业生产建筑的热害损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "农业领域研究效率 +22%",
+			"effect_summary": "农业领域研究效率 +22%；旱作生产·寒冷损失 -16%；旱作生产·热害损失 -16%；牧业生产·寒冷损失 -16%；牧业生产·热害损失 -16%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 11 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "智能育种是自然史、生物学与育种科学在当前目录中的应用端点，其终点效果由农业领域研究效率22%消费",
@@ -91162,7 +92212,20 @@
 			"is_starting": false,
 			"is_starter_eligible": false,
 			"starter_capability_tags": [],
-			"modifier_terms": [],
+			"modifier_terms": [
+				{
+					"stat": "country.output.terrain.taiga.extractive_factor",
+					"operation": 0,
+					"value": 0.22,
+					"subject_kind": "geography",
+					"subject_id": "terrain.taiga.extractive",
+					"subject_display_name": "泰加林采掘",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "应用：自主林业经营站提高泰加林的采掘生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
+				}
+			],
 			"expected_bindings": [
 				{
 					"kind": 1,
@@ -91199,7 +92262,7 @@
 					"display_name": "自主林业经营站"
 				}
 			],
-			"effect_summary": "解锁物资：原木；解锁建筑：自主林业经营站；作为必要支撑：自主航运调度港、智能化核燃料厂、智能化核反应堆设备厂、智能牧业站、智能水网控制中心",
+			"effect_summary": "解锁物资：原木；解锁建筑：自主林业经营站；泰加林采掘产出 +22%；作为必要支撑：自主航运调度港、智能化核燃料厂、智能化核反应堆设备厂、智能牧业站、智能水网控制中心",
 			"opportunity_cost": "多条知识路线汇合为一个可见应用节点，避免建筑条件隐式叠加。",
 			"application_target_ids": [],
 			"terminal_reason": "应用节点直接呈现该建筑的完整解锁条件。",
@@ -91315,11 +92378,47 @@
 					"effect_rationale": "稻类辨识、水田组织与灌溉控制提高稻米产出。",
 					"implementation_status": "runtime_consumed",
 					"runtime_consumer": "NativeEconomyRuntime::effective_building_output_quantity"
+				},
+				{
+					"stat": "country.climate.profile.paddy_crop.drought_loss_factor",
+					"operation": 0,
+					"value": -0.2,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "paddy_crop",
+					"subject_display_name": "水田生产·旱灾损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "自适应灌溉降低水田生产建筑的旱灾损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.climate.profile.paddy_crop.flood_loss_factor",
+					"operation": 0,
+					"value": -0.2,
+					"subject_kind": "production_climate_profile",
+					"subject_id": "paddy_crop",
+					"subject_display_name": "水田生产·洪灾损失",
+					"effect_class": "生产类型气候适应",
+					"effect_rationale": "自适应灌溉降低水田生产建筑的洪灾损失。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::production_climate_capacity_q16"
+				},
+				{
+					"stat": "country.output.terrain.floodplain.agriculture_factor",
+					"operation": 0,
+					"value": 0.22,
+					"subject_kind": "geography",
+					"subject_id": "terrain.floodplain.agriculture",
+					"subject_display_name": "洪泛平原农业",
+					"effect_class": "地理生产适应",
+					"effect_rationale": "自适应灌溉提高洪泛平原的农业生产适应。",
+					"implementation_status": "runtime_consumed",
+					"runtime_consumer": "NativeEconomyRuntime::refresh_building_modifier_factors"
 				}
 			],
 			"expected_bindings": [],
 			"content_effects": [],
-			"effect_summary": "稻米产出 +28%",
+			"effect_summary": "稻米产出 +28%；水田生产·旱灾损失 -20%；水田生产·洪灾损失 -20%；洪泛平原农业产出 +22%",
 			"opportunity_cost": "转入该路线需补齐历史锚点；时代 11 后的生产方式依赖专用资本、岗位或地理条件",
 			"application_target_ids": [],
 			"terminal_reason": "自适应灌溉是水稻、水田与灌溉农业在当前目录中的应用端点，其终点效果由稻米28%消费",
@@ -91897,7 +92996,7 @@
 					"display_name": "智能玻璃器皿工厂"
 				}
 			],
-			"effect_summary": "解锁物资：Smart Glassware Factory；解锁建筑：Smart Glassware Factory；作为必要支撑：Smart Glassware Factory",
+			"effect_summary": "解锁物资：玻璃器皿；解锁建筑：智能玻璃器皿工厂；作为必要支撑：Smart Glassware Factory",
 			"opportunity_cost": "terminal production upgrade",
 			"application_target_ids": [],
 			"terminal_reason": "explicit terminal production application",
@@ -92008,7 +93107,7 @@
 					"display_name": "智能金属家用器皿工厂"
 				}
 			],
-			"effect_summary": "解锁物资：Smart Metal Housewares Factory；解锁建筑：Smart Metal Housewares Factory；作为必要支撑：Smart Metal Housewares Factory",
+			"effect_summary": "解锁物资：金属家用器皿；解锁建筑：智能金属家用器皿工厂；作为必要支撑：Smart Metal Housewares Factory",
 			"opportunity_cost": "terminal production upgrade",
 			"application_target_ids": [],
 			"terminal_reason": "explicit terminal production application",
@@ -92119,7 +93218,7 @@
 					"display_name": "智能皮革制品工厂"
 				}
 			],
-			"effect_summary": "解锁物资：Smart Leather Goods Factory；解锁建筑：Smart Leather Goods Factory；作为必要支撑：Smart Leather Goods Factory",
+			"effect_summary": "解锁物资：皮革制品；解锁建筑：智能皮革制品工厂；作为必要支撑：Smart Leather Goods Factory",
 			"opportunity_cost": "terminal production upgrade",
 			"application_target_ids": [],
 			"terminal_reason": "explicit terminal production application",
@@ -92802,7 +93901,7 @@
 					"display_name": "自动化亚麻农场"
 				}
 			],
-			"effect_summary": "解锁物资：韧皮原料；解锁建筑：自动化亚麻农场",
+			"effect_summary": "解锁物资：亚麻秆/韧皮原料；解锁建筑：自动化亚麻农场",
 			"application_target_ids": [],
 			"terminal_reason": "应用节点直接呈现该作物生产方式。",
 			"branch_family_id": "branch.textile_fibers",
@@ -93145,7 +94244,7 @@
 					"display_name": "自动化橡胶种植园"
 				}
 			],
-			"effect_summary": "解锁物资：乳胶；解锁建筑：自动化橡胶种植园",
+			"effect_summary": "解锁物资：天然乳胶；解锁建筑：自动化橡胶种植园",
 			"application_target_ids": [],
 			"terminal_reason": "应用节点直接呈现该作物生产方式。",
 			"branch_family_id": "branch.tropical_commodities",

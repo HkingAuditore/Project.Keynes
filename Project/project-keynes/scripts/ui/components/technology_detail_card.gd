@@ -259,6 +259,9 @@ func _effect_items(definition: Dictionary) -> Array:
 		elif stat.begins_with("country.output.good."):
 			text = "%s产出 %s" % [String(term.get(
 				"subject_display_name", "指定商品")), delta]
+		elif stat.begins_with("country.climate.profile."):
+			text = "%s %s" % [String(term.get(
+				"subject_display_name", "生产类型气候损失")), delta]
 		else:
 			var subject_names := {
 				"country.economy_output_factor": "全社会经济产出",

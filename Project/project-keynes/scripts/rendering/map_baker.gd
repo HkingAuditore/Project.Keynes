@@ -109,6 +109,7 @@ const TERRAIN_HORIZON_LOWPASS_RADIUS := 1  # Horizon 专用 3x3 低通，不改�
 const TERRAIN_HORIZON_MAX_ANGLE := 1.309      # 约 75°，与运行期解码契约一致
 const TERRAIN_HORIZON_BIAS := 0.01            # height 单位，抑制同高/高频 relief 自遮蔽
 const TERRAIN_HORIZON_HEIGHT_SCALE_HEX := 16.0   # 归一高程 → world units（×hex_size）
+const TERRAIN_HORIZON_MAX_DISTANCE_HEX := 24.0  # 固定近场遮挡射程，避免大地图引入更远山体
 
 # ─── v10.noise-pack：共享噪声包贴图（替换 shader 内海量 fbm 多 octave 采样） ──
 # 256×256 RGBA8，固定 seed → 跨 world 实例可缓存共享。MapBaker 一次烘出，所有
@@ -446,8 +447,8 @@ const CRAG_FREQ_MUL := 1.05    # 岩屑频率乘子
 const HYPSO_LAYER_A_MIX := 0.0    # [bimodal 2026-06-26] 置 0：双峰地台模型已产出平台，Layer A 关闭
 
 # [terrain-normal-bake 2026-06-25] 生成期烘焙"总体地形法线"（粗法线）的参数。
-const TERRAIN_NORMAL_COARSE_RADIUS := 4   # 宽半径（texel）：越大越平滑掉高频、山脉走向越干净
-const TERRAIN_NORMAL_SLOPE_GAIN := 8.0    # 烘焙参考垂直增益（与 shader hillshade_slope_gain 默认对齐）
+const TERRAIN_NORMAL_SAMPLE_RADIUS_HEX := 0.44 # 每侧采样半径（hex），跨地图尺寸保持一致
+const TERRAIN_NORMAL_HEIGHT_SCALE_HEX := 0.85  # 归一高程 1.0 对应的视觉垂直尺度（×hex_size）
 
 # ─── 轻度侵蚀（仅做边界平滑，不刻河谷） ──────────────────────────────────
 const EROSION_DROPS := 6000
@@ -1092,7 +1093,8 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 	# shader 直接 1 次采样拿宏观山脉走向，细节法线运行期按 biome/性能档叠（见 hillshade_tod）。
 	world.terrain_normal_tex = DCAtlasEncoders.encode_terrain_normal_tex(
 		world.height_buffer, world.hm_size,
-		TERRAIN_NORMAL_COARSE_RADIUS, TERRAIN_NORMAL_SLOPE_GAIN, true, _world_ext)
+		4, 8.0, true, _world_ext, world.world_bounds.size, hex_size,
+		TERRAIN_NORMAL_SAMPLE_RADIUS_HEX, TERRAIN_NORMAL_HEIGHT_SCALE_HEX)
 	stage_progress.emit("encode", 0.90)
 	await _yield_generation_frame()
 	# [terrain-horizon] 8 方向 horizon angle 烘焙，三条路径：
@@ -1120,6 +1122,7 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 			"max_horizon_angle": TERRAIN_HORIZON_MAX_ANGLE,
 			"bias": TERRAIN_HORIZON_BIAS,
 			"height_world_scale": maxf(hex_size * horizon_height_scale_hex, 1e-4),
+			"max_distance_world": maxf(hex_size * TERRAIN_HORIZON_MAX_DISTANCE_HEX, 1e-4),
 			"sea_level": world.sea_level,
 			"texel_x": tx,
 			"texel_y": ty,
@@ -1135,7 +1138,8 @@ func bake_world(map: MapData, cfg: MapConfig, hex_size: float, seed_val: int) ->
 			world.height_buffer, world.hm_size, world.world_bounds.size, hex_size, world.terrain_horizon_tex,
 			_world_ext, TERRAIN_HORIZON_STEPS, TERRAIN_HORIZON_STEP_PX, TERRAIN_HORIZON_MAX_ANGLE,
 			TERRAIN_HORIZON_BIAS, hex_size * horizon_height_scale_hex, world.wrap_period_x,
-			world.sea_level, TERRAIN_HORIZON_STEP_GROWTH, TERRAIN_HORIZON_LOWPASS_RADIUS)
+			world.sea_level, TERRAIN_HORIZON_STEP_GROWTH, TERRAIN_HORIZON_LOWPASS_RADIUS,
+			hex_size * TERRAIN_HORIZON_MAX_DISTANCE_HEX)
 	world.enum_atlas_tex = _encode_enum_atlas(
 		world.biome_buffer, world.vegetation_buffer, world.cover_buffer,
 		world.derived_size, null, world, map
@@ -1323,9 +1327,8 @@ func _bake_visual_tiles(map: MapData, world: WorldData, hex_size: float,
 		"shore_carve_amp": SHORE_CARVE_AMP,
 		"shore_carve_band": SHORE_CARVE_BAND,
 		"coast_sdf_max_dist_px": COAST_SDF_MAX_DIST_PX,
-		# 保持 legacy 粗法线的世界空间平滑范围；native 按 Tile 的 X/Y texel 尺寸分别换算半径。
-		"normal_reference_radius_px": TERRAIN_NORMAL_COARSE_RADIUS,
-		"normal_slope_gain": TERRAIN_NORMAL_SLOPE_GAIN,
+		"normal_sample_radius_hex": TERRAIN_NORMAL_SAMPLE_RADIUS_HEX,
+		"normal_height_scale_hex": TERRAIN_NORMAL_HEIGHT_SCALE_HEX,
 	}
 	var texel_world: Vector2 = layout.visual_domain.size / Vector2(layout.logical_size)
 	var layer_reports: Array[Dictionary] = []

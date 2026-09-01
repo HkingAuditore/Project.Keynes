@@ -8,7 +8,7 @@
 - Nodes with research routes: 271
 - Research routes: 648
 - Authored branch successor edges: 7
-- Unlock-only/no-Modifier nodes: 367
+- Unlock-only/no-Modifier nodes: 361
 
 ## Explicit effect semantics
 
@@ -17,7 +17,9 @@
 - Exact-good input terms: 9
 - Household good-consumption terms: 5
 - Natural-resource terms: 16
-- Geography × sector terms: 30
+- Geography × sector terms: 65
+- Country climate-adaptation terms: 18
+- Production-profile climate-adaptation terms: 38
 - Missing runtime consumers: 0
 
 ## Branch families
