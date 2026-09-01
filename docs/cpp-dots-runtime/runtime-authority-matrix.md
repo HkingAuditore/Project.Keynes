@@ -105,7 +105,9 @@ round 也设置 `native_daily_day_barrier`，continuation pulse 先完成 climat
 
 Season refresh stage 2/4 的 terrain/biome 重判读取 `cell_temp_365d`、`cell_base_moisture` 和
 `cell_water_balance_30d`；瞬时 `cell_moisture` 仍归实时气候，vegetation 的慢速状态仍由
-stage B 维护。native 与 GDScript fallback 使用同一输入口径。
+stage B 维护。native 与 GDScript fallback 使用同一输入口径。Season refresh 的
+`sync_current_state` 阶段只读取已由 `wind_surface` 发布的 `cell_temp` 来派生雪盖、
+地貌、植被和覆盖；它不得重算、写入或 flush `cell_temp`，以免绕过 climate finalizer。
 
 ## Economy Authority
 

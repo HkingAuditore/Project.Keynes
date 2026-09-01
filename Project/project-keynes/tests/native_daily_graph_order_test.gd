@@ -23,12 +23,14 @@ func _run() -> void:
 	var generator_src: String = _read_source("res://scripts/geography/map_generator.gd")
 	var climate_src: String = _read_source("res://../../gdext/src/world_ext_climate.cpp")
 	var weather_src: String = _read_source("res://../../gdext/src/world_ext_weather.cpp")
+	var season_src: String = _read_source("res://../../gdext/src/world_ext_generate.cpp")
 
 	_expect("world_ext_daily_sim.cpp readable", not daily_src.is_empty())
 	_expect("system_schedule.cpp readable", not schedule_src.is_empty())
 	_expect("map_generator.gd readable", not generator_src.is_empty())
 	_expect("world_ext_climate.cpp readable", not climate_src.is_empty())
 	_expect("world_ext_weather.cpp readable", not weather_src.is_empty())
+	_expect("world_ext_generate.cpp readable", not season_src.is_empty())
 	if _failures > 0:
 		_finish()
 		return
@@ -153,6 +155,16 @@ func _run() -> void:
 	_expect("weather direct moisture writes are gated",
 		weather_src.contains("weather_direct_moisture_enabled") and
 		weather_src.contains("direct_moisture_enabled"))
+
+	var season_stage8: String = _section(season_src,
+			"// 历史上的 stage 8 = sync_current_state",
+			"godot::Dictionary DCWorldExt::run_season_refresh_micro_pass")
+	_expect("season refresh stage 8 reads runtime temperature",
+		season_stage8.contains("const float * const __restrict TEMP = s_temp.arr_f32.ptr()") and
+		season_stage8.contains("Runtime temperature is owned by wind_surface"))
+	_expect("season refresh stage 8 does not write or flush cell_temp",
+		not season_stage8.contains("TEMP[i] = temp_now") and
+		not season_stage8.contains("_flush_slot_to_map(sid_temp)"))
 
 	_finish()
 
