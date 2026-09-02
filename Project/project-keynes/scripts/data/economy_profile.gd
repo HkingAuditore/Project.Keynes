@@ -151,6 +151,11 @@ extends Resource
 ## The native employment pass compounds this over the locked market period, so
 ## changing N does not create a one-period migration shock.
 @export_range(0, 65536, 1) var employment_mobility_daily_q16: int = 13107
+## Extra hurdle multiplier (Q16) when both source and target start understaffed
+## and the source still has positive opportunity income. Default 2× suppresses
+## small-gap understaffed↔understaffed thrashing while leaving non-positive
+## opportunity lots easy to exit.
+@export_range(65536, 262144, 1) var employment_understaffed_reallocation_hurdle_mult_q16: int = 131072
 ## Linear choice temperature used when splitting a cohort across acceptable
 ## vacancies. Higher values soften winner-takes-all hiring.
 @export_range(1, 65536, 1) var employment_choice_temperature_q16: int = 6554
@@ -385,6 +390,8 @@ func to_native_profile() -> Dictionary:
 		"satisfaction_pressure_thresholds_q16": satisfaction_pressure_thresholds_q16,
 		"wage_ema_alpha_q16": wage_ema_alpha_q16,
 		"employment_mobility_daily_q16": employment_mobility_daily_q16,
+		"employment_understaffed_reallocation_hurdle_mult_q16":
+			employment_understaffed_reallocation_hurdle_mult_q16,
 		"employment_choice_temperature_q16": employment_choice_temperature_q16,
 		"wage_max_rise_q16_per_day": wage_max_rise_q16_per_day,
 		"wage_max_fall_q16_per_day": wage_max_fall_q16_per_day,

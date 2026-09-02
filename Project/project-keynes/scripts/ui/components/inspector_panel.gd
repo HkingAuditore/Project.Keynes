@@ -79,6 +79,7 @@ var _tax_editors: Dictionary = {}
 var _page_tax_editors: Array = []
 var _page_tax_section: Control = null
 var _pending_tax: Dictionary = {}
+var _draft_tax: Dictionary = {}
 var _deferred_object_detail_payload: Dictionary = {}
 var _construction_model: Dictionary = {}
 var _detail_change_notify := true
@@ -173,6 +174,7 @@ func set_model_for_selection(model: Dictionary) -> void:
 	if new_cell_index != _cell_index:
 		_scroll_by_tab.clear()
 		_pending_tax.clear()
+		_draft_tax.clear()
 		_deferred_object_detail_payload.clear()
 		_section_collapsed.clear()
 		close_detail(false)
@@ -256,6 +258,7 @@ func reset_for_world() -> void:
 	_current_tab = "geography"
 	_scroll_by_tab.clear()
 	_pending_tax.clear()
+	_draft_tax.clear()
 	close_detail(false)
 	_tabs_signature_cache = ""
 	_last_score_band = -1
@@ -337,6 +340,7 @@ func _apply_score(score: Dictionary, live_patch: bool) -> void:
 
 
 func _render_content(reset_scroll: bool) -> void:
+	_capture_tax_drafts()
 	for child in _content_box.get_children():
 		_content_box.remove_child(child)
 		child.queue_free()
@@ -358,8 +362,38 @@ func _render_content(reset_scroll: bool) -> void:
 	var data: Dictionary = categories.get(_current_tab, categories.get("geography", {}))
 	_build_category_content(data)
 	_rebuild_tax_editor_registry()
+	_restore_tax_drafts()
 	if reset_scroll and _scroll != null:
 		_scroll.scroll_vertical = 0
+
+
+func _capture_tax_drafts() -> void:
+	_draft_tax.clear()
+	for key_value in _tax_editors.keys():
+		var key := String(key_value)
+		if _pending_tax.has(key):
+			continue
+		for editor_value in _tax_editors[key]:
+			var editor := editor_value as TaxLaneEditor
+			if editor == null or not editor.is_editing():
+				continue
+			_draft_tax[key] = editor.displayed_rate()
+			break
+
+
+func _restore_tax_drafts() -> void:
+	if _draft_tax.is_empty():
+		return
+	for key_value in _draft_tax.keys():
+		var key := String(key_value)
+		if _pending_tax.has(key):
+			continue
+		var rate := int(_draft_tax[key])
+		for editor_value in _tax_editors.get(key, []):
+			var editor := editor_value as TaxLaneEditor
+			if editor != null and not editor.is_pending():
+				editor.apply_draft(rate)
+	_draft_tax.clear()
 
 
 func _build_category_content(data: Dictionary) -> void:

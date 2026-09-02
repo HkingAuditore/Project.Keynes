@@ -76,9 +76,8 @@ func set_data(data: Dictionary) -> void:
 	if displayed != previous_base and displayed != new_base:
 		var was_dirty := _dirty
 		_dirty = true
-		if not was_dirty and not _spin.get_line_edit().has_focus() \
-				and _commit_timer != null:
-			_commit_timer.start()
+		if not was_dirty and not _spin.get_line_edit().has_focus():
+			_start_commit_timer()
 	if not _dirty and not _has_edit_focus():
 		_apply_authoritative_value()
 	_reset.visible = editable and bool(_data.get("has_override", false)) \
@@ -129,6 +128,27 @@ func lane_data() -> Dictionary:
 
 func is_editing() -> bool:
 	return _dirty or _has_edit_focus()
+
+
+func blocks_rebuild() -> bool:
+	# pending 允许就地 patch（set_data 会保住待生效税率），但不能拆树重建。
+	return _pending or is_editing()
+
+
+func displayed_rate() -> int:
+	return percent_to_basis_points(float(_spin.value)) if _spin != null \
+		else int(_data.get("base", 0))
+
+
+func apply_draft(rate: int) -> void:
+	if _pending or not bool(_data.get("editable", false)):
+		return
+	_dirty = true
+	_set_spin_rate(rate)
+	_spin.get_line_edit().add_theme_color_override("font_color", UITokens.BRASS_HIGHLIGHT)
+	_reset.visible = false
+	_refresh_note()
+	_start_commit_timer()
 
 
 func _has_edit_focus() -> bool:
@@ -257,8 +277,7 @@ func _on_value_changed(_value: float) -> void:
 	_reset.visible = false
 	_spin.get_line_edit().add_theme_color_override("font_color", UITokens.BRASS_HIGHLIGHT)
 	_refresh_note()
-	if _commit_timer != null:
-		_commit_timer.start()
+	_start_commit_timer()
 
 
 func _on_commit_timeout() -> void:
@@ -277,13 +296,19 @@ func _submit(explicit: bool) -> void:
 		_dirty = false
 		_stop_commit_timer()
 		return
-	_dirty = false
+	# 保持 dirty 穿过同步命令握手，避免 emit 期间的 live patch 把未 pending 的草稿盖回继承值。
 	_stop_commit_timer()
 	override_requested.emit(
 		String(_data.get("scope", "item")),
 		String(_data.get("kind", "")),
 		String(_data.get("item_id", "")),
 		rate)
+	if _pending:
+		return
+	if rate != int(_data.get("base", 0)):
+		_dirty = true
+	else:
+		_dirty = false
 
 
 func _on_reset_pressed() -> void:
@@ -300,3 +325,8 @@ func _on_reset_pressed() -> void:
 func _stop_commit_timer() -> void:
 	if _commit_timer != null:
 		_commit_timer.stop()
+
+
+func _start_commit_timer() -> void:
+	if _commit_timer != null and _commit_timer.is_inside_tree():
+		_commit_timer.start()

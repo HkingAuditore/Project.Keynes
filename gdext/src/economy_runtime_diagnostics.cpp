@@ -1855,6 +1855,8 @@ Dictionary NativeEconomyRuntime::report() const {
     out["building_owner_mobility"] = _building_owner_mobility;
     out["building_owner_job_reallocations"] =
         _building_owner_job_reallocations;
+    out["building_owner_understaffed_reallocations"] =
+        _building_owner_understaffed_reallocations;
     out["building_employee_job_reallocations"] =
         _building_employee_job_reallocations;
     out["building_employee_job_profession_changes"] =
@@ -2275,6 +2277,8 @@ Dictionary NativeEconomyRuntime::report() const {
     out["accuracy_choice_temperature_q16"] =
         _accuracy_choice_temperature_q16;
     out["employment_mobility_daily_q16"] = _employment_mobility_daily_q16;
+    out["employment_understaffed_reallocation_hurdle_mult_q16"] =
+        _employment_understaffed_reallocation_hurdle_mult_q16;
     out["employment_choice_temperature_q16"] =
         _employment_choice_temperature_q16;
     out["accuracy_exact_probe_rate_q16"] = _accuracy_exact_probe_rate_q16;

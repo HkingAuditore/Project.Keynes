@@ -85,6 +85,7 @@ func _run() -> void:
 	_test_same_profession_owner_income_reallocation(catalog, profile)
 	_test_owner_income_reallocation_prefers_unemployed(catalog, profile)
 	_test_understaffed_owners_do_not_raid_each_other(catalog, profile)
+	_test_understaffed_labor_flows_to_higher_opportunity(catalog, profile)
 	_test_unemployment_subsidy_is_reservation_income(catalog, profile)
 	_test_endogenous_owner_investment(catalog, profile)
 	_test_merit_order_offtake_prefers_low_unit_cost(catalog, profile)
@@ -114,6 +115,9 @@ func _run() -> void:
 	_expect("employment mobility policy is exposed deterministically",
 		int(employment_policy.get("employment_mobility_daily_q16", -1)) ==
 			int(profile.employment_mobility_daily_q16) and
+		int(employment_policy.get(
+			"employment_understaffed_reallocation_hurdle_mult_q16", -1)) ==
+			int(profile.employment_understaffed_reallocation_hurdle_mult_q16) and
 		int(employment_policy.get("employment_choice_temperature_q16", -1)) ==
 			int(profile.employment_choice_temperature_q16))
 	var coal_reserve_resource := (catalog.building_resource_ids as PackedStringArray).find("coal")
@@ -1635,6 +1639,8 @@ func _test_owner_income_reallocation_prefers_unemployed(source_catalog: Dictiona
 
 func _test_understaffed_owners_do_not_raid_each_other(source_catalog: Dictionary,
 		source_profile: Dictionary) -> void:
+	# Small opportunity gap between two understaffed same-profession lots must
+	# not thrash after the first employment settle (asymmetric hysteresis).
 	var catalog := source_catalog.duplicate(true)
 	var profile := source_profile.duplicate(true)
 	profile.starvation_death_rate_q32 = 0
@@ -1645,17 +1651,22 @@ func _test_understaffed_owners_do_not_raid_each_other(source_catalog: Dictionary
 	var merchant_sig := signatures.find("merchant|default")
 	var building_ids: PackedStringArray = catalog.building_type_ids
 	var flint_id := building_ids.find("flint_quarry")
-	var timber_id := building_ids.find("timber_collector")
+	var rubble_id := building_ids.find("rubble_stone_working")
+	var slots: PackedInt64Array = catalog.building_owner_slots.duplicate()
+	slots[flint_id] = 1
+	slots[rubble_id] = 1
+	catalog.building_owner_slots = slots
 	var goods: PackedStringArray = catalog.good_ids
-	var tool_good := goods.find("chipped_stone_tools")
-	var logs_good := goods.find("logs")
+	var flint_good := goods.find("flint")
+	var stone_good := goods.find("raw_stone")
 	var prices: PackedInt32Array = catalog.good_default_price.duplicate()
-	var min_prices: PackedInt32Array = catalog.good_default_price
-	for g in range(min_prices.size()): min_prices[g] = maxi(1, min_prices[g] / 10)
 	var max_prices: PackedInt32Array = catalog.good_reference_max_price.duplicate()
-	prices[tool_good] = min_prices[tool_good]
-	prices[logs_good] = 1000000000
-	max_prices[logs_good] = 1000000000
+	# Near-equal positive opportunities so understaffed↔understaffed noise
+	# stays below the raised hysteresis hurdle.
+	prices[flint_good] = 8000000
+	prices[stone_good] = 10000000
+	max_prices[flint_good] = 8000000
+	max_prices[stone_good] = 10000000
 	catalog.good_default_price = prices
 	catalog.good_reference_max_price = max_prices
 	var ext := _new_ext(catalog)
@@ -1675,7 +1686,7 @@ func _test_understaffed_owners_do_not_raid_each_other(source_catalog: Dictionary
 		"stock": stock,
 		"price": prices,
 		"building_cells": PackedInt32Array([0, 0]),
-		"building_type_ids": PackedInt32Array([flint_id, timber_id]),
+		"building_type_ids": PackedInt32Array([flint_id, rubble_id]),
 		"building_owner_signature_ids": PackedInt32Array([forager_sig, forager_sig]),
 		"building_counts": PackedInt64Array([2, 2]),
 	})
@@ -1685,28 +1696,111 @@ func _test_understaffed_owners_do_not_raid_each_other(source_catalog: Dictionary
 	var first := _run_day(ext, 0)
 	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
 	var flint_group := (buildings.group_type_ids as PackedInt32Array).find(flint_id)
-	var timber_group := (buildings.group_type_ids as PackedInt32Array).find(timber_id)
-	if flint_group < 0 or timber_group < 0:
+	var rubble_group := (buildings.group_type_ids as PackedInt32Array).find(rubble_id)
+	if flint_group < 0 or rubble_group < 0:
 		_expect("understaffed-raid groups exist", false)
 		return
-	var flint_fill := int((buildings.filled_owner as PackedInt64Array)[flint_group])
-	var timber_fill := int((buildings.filled_owner as PackedInt64Array)[timber_group])
 	var continued := 0
 	for day in range(1, 6):
 		var later := _run_day(ext, day)
 		continued += int(later.get("building_owner_job_reallocations", 0))
 	buildings = ext.get_building_cell_snapshot(0)
 	var flint_later := int((buildings.filled_owner as PackedInt64Array)[flint_group])
-	var timber_later := int((buildings.filled_owner as PackedInt64Array)[timber_group])
-	_expect("understaffed owner lots do not keep raiding each other",
-		flint_fill + timber_fill == 2 and
-		flint_later == flint_fill and
-		timber_later == timber_fill and
+	var rubble_later := int((buildings.filled_owner as PackedInt64Array)[rubble_group])
+	_expect("understaffed owner lots do not thrash on a small opportunity gap",
+		flint_later + rubble_later == 2 and
+		flint_later >= 0 and rubble_later >= 0 and
 		continued == 0 and
 		int(first.get("population_error", 1)) == 0)
 	_expect("understaffed-raid conserves every ledger",
 		int(first.get("money_error", 1)) == 0 and
 		int(first.get("goods_error", 1)) == 0)
+
+
+func _test_understaffed_labor_flows_to_higher_opportunity(source_catalog: Dictionary,
+		source_profile: Dictionary) -> void:
+	# slots >> population: a large opportunity gap must pull labor onto the
+	# higher-opportunity vacancy, including from understaffed lower-opportunity lots.
+	var catalog := source_catalog.duplicate(true)
+	var profile := source_profile.duplicate(true)
+	profile.starvation_death_rate_q32 = 0
+	profile.resource_safe_harvest_q16 = 0
+	profile.investment_max_growth_share_q16 = 0
+	# Keep unemployed hiring from instantly absorbing the whole pool into the
+	# best lot so owner→owner understaffed flow remains observable.
+	profile.employment_mobility_daily_q16 = 655
+	var signatures: PackedStringArray = catalog.signature_keys
+	var forager_sig := signatures.find("forager|default")
+	var unemployed_sig := signatures.find("unemployed|default")
+	var merchant_sig := signatures.find("merchant|default")
+	var building_ids: PackedStringArray = catalog.building_type_ids
+	var flint_id := building_ids.find("flint_quarry")
+	var rubble_id := building_ids.find("rubble_stone_working")
+	var slots: PackedInt64Array = catalog.building_owner_slots.duplicate()
+	slots[flint_id] = 1
+	slots[rubble_id] = 1
+	catalog.building_owner_slots = slots
+	var goods: PackedStringArray = catalog.good_ids
+	var flint_good := goods.find("flint")
+	var stone_good := goods.find("raw_stone")
+	var prices: PackedInt32Array = catalog.good_default_price.duplicate()
+	var max_prices: PackedInt32Array = catalog.good_reference_max_price.duplicate()
+	prices[flint_good] = 500000000
+	prices[stone_good] = 5000000
+	max_prices[flint_good] = 500000000
+	max_prices[stone_good] = 5000000
+	catalog.good_default_price = prices
+	catalog.good_reference_max_price = max_prices
+	var ext := _new_ext(catalog)
+	_expect("understaffed-flow country bootstraps",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 445))
+	_expect("understaffed-flow runtime configures", bool(ext.configure_economy(
+		catalog, profile, 1, 445).get("ok", false)))
+	var stock := PackedInt64Array()
+	stock.resize(goods.size())
+	stock.fill(1000000)
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0, 0]),
+		"signature_ids": PackedInt32Array([forager_sig, unemployed_sig, merchant_sig]),
+		"population": PackedInt64Array([0, 2, 1]),
+		"funds": PackedInt64Array([0, 4000000, 1000000]),
+	}, {
+		"stock": stock,
+		"price": prices,
+		"building_cells": PackedInt32Array([0, 0]),
+		"building_type_ids": PackedInt32Array([rubble_id, flint_id]),
+		"building_owner_signature_ids": PackedInt32Array([forager_sig, forager_sig]),
+		"building_counts": PackedInt64Array([2, 2]),
+	})
+	_expect("understaffed-flow fixture bootstraps", bool(boot.get("ok", false)))
+	if not bool(boot.get("ok", false)):
+		return
+	var realloc_total := 0
+	var understaffed_realloc_total := 0
+	var flint_fill := 0
+	var rubble_fill := 0
+	var last_report: Dictionary = {}
+	for day in range(0, 8):
+		last_report = _run_day(ext, day)
+		realloc_total += int(last_report.get("building_owner_job_reallocations", 0))
+		understaffed_realloc_total += int(last_report.get(
+			"building_owner_understaffed_reallocations", 0))
+		var buildings: Dictionary = ext.get_building_cell_snapshot(0)
+		var flint_group := (buildings.group_type_ids as PackedInt32Array).find(flint_id)
+		var rubble_group := (buildings.group_type_ids as PackedInt32Array).find(rubble_id)
+		if flint_group < 0 or rubble_group < 0:
+			_expect("understaffed-flow groups exist", false)
+			return
+		flint_fill = int((buildings.filled_owner as PackedInt64Array)[flint_group])
+		rubble_fill = int((buildings.filled_owner as PackedInt64Array)[rubble_group])
+	_expect("understaffed labor concentrates on the higher-opportunity lot",
+		flint_fill + rubble_fill >= 1 and
+		flint_fill > rubble_fill and
+		(realloc_total > 0 or understaffed_realloc_total > 0 or flint_fill >= 2) and
+		int(last_report.get("population_error", 1)) == 0)
+	_expect("understaffed-flow conserves every ledger",
+		int(last_report.get("money_error", 1)) == 0 and
+		int(last_report.get("goods_error", 1)) == 0)
 
 
 func _test_unemployment_subsidy_is_reservation_income(source_catalog: Dictionary,

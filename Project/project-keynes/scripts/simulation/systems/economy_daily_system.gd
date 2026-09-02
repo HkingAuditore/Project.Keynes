@@ -150,11 +150,14 @@ func tick(ctx) -> Dictionary:
 		_fatal_reported = true
 		# FATAL is terminal for the economy graph. If its hard barrier remains
 		# armed, economy_should_run() stays false forever and WorldClock cannot
-		# advance or reach a slice that would clear the barrier. Keep the fatal
-		# report visible while allowing non-economy domains to continue.
+		# advance or reach a slice that would clear the barrier. Drop the barrier
+		# and pause instead: a dead economy that keeps ticking accumulates days of
+		# unsettled books, which is worse than a visible stop the player can act on.
 		if world_clock != null and world_clock.has_method("request_simulation_backpressure"):
 			world_clock.request_simulation_backpressure(&"economy", false)
 			world_clock.request_simulation_backpressure(&"economy_day_barrier", false)
+		if world_clock != null and world_clock.has_method("pause"):
+			world_clock.pause(true)
 		var fatal_report: Dictionary = facade.report() if facade != null else result
 		var conservation_diagnostics := {
 			"fatal_reason": fatal_report.get("fatal_reason", "missing"),

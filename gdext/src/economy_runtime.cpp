@@ -15308,6 +15308,8 @@ int64_t NativeEconomyRuntime::state_hash() const {
     // silently continue under a different policy.
     mix_u64(0x454d504c4f594346ULL); // "EMPLOYCF"
     mix_u64(static_cast<uint32_t>(_employment_mobility_daily_q16));
+    mix_u64(static_cast<uint32_t>(
+        _employment_understaffed_reallocation_hurdle_mult_q16));
     mix_u64(static_cast<uint32_t>(_employment_choice_temperature_q16));
     mix_u64(static_cast<uint64_t>(_last_committed_day));
     mix_u64(static_cast<uint64_t>(_environment_day));

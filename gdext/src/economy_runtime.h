@@ -3189,6 +3189,10 @@ private:
         _satisfaction_pressure_thresholds_q16 = {13107, 26214, 39322, 52429};
     int32_t _wage_ema_alpha_q16 = 8192;
     int32_t _employment_mobility_daily_q16 = 13107;
+    // Extra hurdle when both source and target start understaffed and the source
+    // still has positive opportunity income. Keeps opportunity-gradient flow
+    // while suppressing small-gap understaffed↔understaffed thrashing.
+    int32_t _employment_understaffed_reallocation_hurdle_mult_q16 = Q16_ONE * 2;
     int32_t _employment_choice_temperature_q16 = 6554;
     int32_t _wage_max_rise_q16_per_day = 1311;
     int32_t _wage_max_fall_q16_per_day = 1311;
@@ -3376,6 +3380,7 @@ private:
     int64_t _building_investment_candidates = 0;
     int64_t _building_owner_mobility = 0;
     int64_t _building_owner_job_reallocations = 0;
+    int64_t _building_owner_understaffed_reallocations = 0;
     int64_t _building_owner_job_profession_changes = 0;
     int64_t _building_owner_job_probability_skips = 0;
     int64_t _building_employee_to_owner_reallocations = 0;

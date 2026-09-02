@@ -482,7 +482,13 @@ func ui_snapshot(handle: int, section_mask: int) -> Dictionary:
 			"ok": false, "reason": "country_ui_snapshot_unavailable"}
 
 func dispatch_committed_events(result: Dictionary) -> void:
-	if not _configured or int(result.get("changed_countries", 0)) <= 0:
+	# Territory CLAIM 会同时抬 changed_cells/changed_countries；纯研究/税表
+	# 提交可能只有 changed_countries。任一侧非零都要广播，否则 runtime-graph
+	# 路径下国界/视野会停在旧 mesh。
+	if not _configured:
+		return
+	if int(result.get("changed_countries", 0)) <= 0 \
+			and int(result.get("changed_cells", 0)) <= 0:
 		return
 	var events: Dictionary = _world_ext.poll_country_events(_last_event_id, 512)
 	var ids: PackedInt64Array = events.get("event_ids", PackedInt64Array())

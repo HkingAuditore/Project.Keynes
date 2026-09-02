@@ -650,16 +650,24 @@ ACTIVE 自营业建筑的 planned owner demand 始终等于完整物理业主席
 重复压低改善率。候选只读阶段与人口迁移 replay 复用同一个值，避免二次判断使用不同收入公式。
 之后、publish 之前另执行一次只裁不招的就业对账，使 committed `filled_owner`、role fill 与 cohort
 `owner_employed/employee_employed` 始终一致；新空缺留到下一周期正常招聘，不追溯改变本期生产或工资。
-失业池招聘完成后，仍有业主空缺的 ACTIVE 非服务建筑可从同民族、至少有一名业主的 ACTIVE 建筑
-吸引一名业主；若没有合格业主来源，还可从任一 ACTIVE 建筑吸引同民族在岗 employee 晋升或转行为
-owner。目标按冻结预期税后业主日收入降序，owner 来源按该收入升序，employee 来源按合同工资的
-预计税后收入升序；目标收入必须至少高出来源 12.5%，达到门槛后确定性转岗，不再用随机抽签截断
-已经形成的价格信号。每个目标和来源建筑组每周期最多参与一次成功流动，来源可失去最后一名普通
-业主或 employee，但最后一名本地商人不可流出。同职业只调整岗位归属；跨职业通过
-`move_cohort_population()` 按人口比例携带资金和当期 cohort 账目，不发生出资、建设或额外现金
-转移。SUSPENDED、不可用建筑与不同民族不参与。report 以
-`building_employee_to_owner_reallocations` 单独统计 employee 来源，兼容字段
-`building_owner_job_probability_skips` 保留但当前确定性路径不再递增。
+失业池招聘完成后，仍有业主空缺的 ACTIVE 非服务建筑可沿机会梯度从同民族、至少有一名
+业主的 ACTIVE 建筑吸引一名业主；若没有合格业主来源，还可从任一 ACTIVE 建筑吸引同民族
+在岗 employee 晋升或转行为 owner。目标按冻结预期税后业主日收入（`opportunity_owner_income_per_day`）
+降序，owner 来源按该收入升序，employee 来源按合同工资的预计税后收入升序。来源不再要求
+已满编：缺编 lot 也可以放走人，使劳动力能从低机会岗集中到高机会空岗。目标收入必须至少
+高出来源的基础转岗门槛（同职为 displacement 最小优势，跨职至少约 12.5%）；当来源在快照时
+已缺编且来源机会收入仍为正时，门槛再乘
+`employment_understaffed_reallocation_hurdle_mult_q16`（默认 2×），以抑制两个缺编正机会
+岗在噪声下互挖乒乓；从来源机会收入≤0 跳到正机会目标时仍只用基础门槛，使离开亏损/零机会
+岗更容易。达到门槛后确定性转岗，不再用随机抽签截断已经形成的价格信号。每个目标和来源
+建筑组每周期最多参与一次成功流动，来源可失去最后一名普通业主或 employee，但最后一名本地
+商人不可流出。同职业只调整岗位归属；跨职业通过 `move_cohort_population()` 按人口比例携带
+资金和当期 cohort 账目，不发生出资、建设或额外现金转移。SUSPENDED、不可用建筑与不同民族
+不参与。report 以 `building_employee_to_owner_reallocations` 单独统计 employee 来源，
+`building_owner_understaffed_reallocations` 统计来源快照时缺编的 owner→owner 成功流动；
+兼容字段 `building_owner_job_probability_skips` 保留但当前确定性路径不再递增。既有类型仍有
+业主空缺时，投资审查继续以 `ACTIVE_OWNER_VACANCY` 拒绝新建扩容，直到就业侧先填齐空缺
+（生存食品短缺的 survival_vacancy 例外不变）。
 利用率坍缩时失业者获跨周期缓冲、可长期失业，不再每周期从零重摊。商人全程排除（`ensure_merchant_invariant`
 保持），其失业/商业萧条为独立后续设计。随后业主按本地价购买输入并生产。每个 owner 从统一
 `survival_household` 基础量、冻结人口/环境和民族修正计算无财富/价格弹性的生存量，只对主食、蛋白质、蔬果保留饥饿阈值比例，并按寒冷
@@ -1160,7 +1168,8 @@ that a 12.5% shortage or 65% utilization threshold was missed. The summary repor
 only profession changes attached to a construction start.
 CSV v14 historically added
 `building_owner_job_reallocations`, `building_owner_job_profession_changes`,
-`building_owner_job_probability_skips`, and building-row
+`building_owner_job_probability_skips`, diagnostics
+`building_owner_understaffed_reallocations`, and building-row
 `projected_owner_income_per_day`. CSV v23 adds summary
 `building_employee_to_owner_reallocations`; CSV v16 additionally publishes aggregate debt,
 recovery, in-kind income, trade episode, generation, and arbitration diagnostics.
