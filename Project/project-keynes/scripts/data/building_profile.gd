@@ -40,11 +40,11 @@ var economic_sector_id: String = ""
 ## Q16 efficiency determines physical consumption.
 @export var construction_category_ids: PackedStringArray = PackedStringArray()
 @export var construction_min_quality_levels: PackedInt32Array = PackedInt32Array()
-## Optional construction-material alternatives. Each entry in
-## construction_good_ids is a required group (AND); the corresponding
-## candidate slice is an OR list. A non-empty candidate slice is mutually
-## exclusive with the category on that group. Empty arrays preserve the legacy
-## single-good recipe and are expanded by EconomyCatalog.
+## Optional construction-material alternatives. Authored rows describe the
+## preferred composition and contribute to one total effective-quantity bill;
+## EconomyCatalog unions every row's category/explicit candidates into one OR
+## pool, so any mixture may satisfy the total. A non-empty candidate slice is
+## mutually exclusive with the category on that authored row.
 @export var construction_candidate_offsets: PackedInt32Array = PackedInt32Array()
 @export var construction_candidate_good_ids: PackedStringArray = PackedStringArray()
 @export var construction_candidate_efficiency_q16: PackedInt32Array = PackedInt32Array()

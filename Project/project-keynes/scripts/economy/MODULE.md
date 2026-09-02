@@ -612,6 +612,20 @@ employment retains only the final merchant invariant; surplus merchants may
 move through the normal aggregate profession/owner-job paths. PKEC v19 persists
 the three new deterministic policy controls and explicitly rejects v17.
 
+## Colonization opening-kit policy
+
+The native colonization planner escrows the source cell's currently available
+local-market stock without a colonization-specific household survival floor.
+Ordinary household demand and shortage consequences remain part of market
+settlement; the expedition command does not reserve ten days of source food.
+
+Every building construction bill compiles to one pooled effective-quantity
+group. Authored rows retain their preferred composition and quantities, while
+their exact, category, and explicit candidates are unioned into one OR pool.
+Any mixture of those candidates may satisfy the summed bill; no authored row is
+an independent AND requirement. For example, a placer-gold working may pay its
+whole 2,912-subunit bill with logs, bast fibre, reed bundles, or a mixture.
+
 ## Prosperity and settlement names
 
 - Profiles compile thresholds, complete historical names, fictional components,

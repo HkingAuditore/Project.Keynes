@@ -1376,17 +1376,31 @@ static func _compile_building_columns(profession_index: Dictionary,
 		if profile.construction_good_ids.is_empty() and not zero_cost_construction:
 			return {"ok": false, "reason": "building requires explicit construction goods: %s" % stable_id}
 		var error := ""
+		var authored_construction_goods := PackedInt32Array()
+		var authored_construction_quantities := PackedInt64Array()
 		if not profile.construction_good_ids.is_empty():
 			error = _append_building_goods(profile.construction_good_ids,
-				profile.construction_quantities, good_index, construction_goods,
-				construction_quantities)
+				profile.construction_quantities, good_index,
+				authored_construction_goods, authored_construction_quantities)
 		if error != "": return {"ok": false, "reason": "%s: %s" % [error, stable_id]}
+		var authored_candidate_offsets := PackedInt32Array([0])
+		var authored_candidate_goods := PackedInt32Array()
+		var authored_candidate_efficiencies := PackedInt32Array()
 		var construction_candidate_error := _append_construction_candidates(
 			profile, good_index, category_good_indices, good_quality_levels,
-			good_efficiencies_q16, construction_candidate_offsets,
-			construction_candidate_goods, construction_candidate_efficiencies)
+			good_efficiencies_q16, authored_candidate_offsets,
+			authored_candidate_goods, authored_candidate_efficiencies)
 		if construction_candidate_error != "":
 			return {"ok": false, "reason": "%s: %s" % [construction_candidate_error, stable_id]}
+		if not authored_construction_goods.is_empty():
+			var pooled_error := _append_pooled_construction(
+				authored_construction_goods, authored_construction_quantities,
+				authored_candidate_offsets, authored_candidate_goods,
+				authored_candidate_efficiencies, construction_goods,
+				construction_quantities, construction_candidate_offsets,
+				construction_candidate_goods, construction_candidate_efficiencies)
+			if pooled_error != "":
+				return {"ok": false, "reason": "%s: %s" % [pooled_error, stable_id]}
 		construction_offsets.append(construction_goods.size())
 		var authored_maintenance_ids: PackedStringArray = profile.maintenance_good_ids
 		var authored_maintenance_qty: PackedInt64Array = profile.maintenance_quantities_per_day
@@ -1913,6 +1927,49 @@ static func _append_building_goods(ids: PackedStringArray, quantities: PackedInt
 			return "invalid building good"
 		out_ids.append(int(good_index[stable_id]))
 		out_quantities.append(int(quantities[i]))
+	return ""
+
+
+## Construction BOM rows are authoring weights, not independent hard slots.
+## Compile every building to one effective-quantity group whose candidates are
+## the stable union of every authored row. Any mixture can therefore satisfy
+## the total bill, matching household food-basket substitution semantics.
+static func _append_pooled_construction(authored_goods: PackedInt32Array,
+		authored_quantities: PackedInt64Array,
+		authored_candidate_offsets: PackedInt32Array,
+		authored_candidate_goods: PackedInt32Array,
+		authored_candidate_efficiencies: PackedInt32Array,
+		out_goods: PackedInt32Array, out_quantities: PackedInt64Array,
+		out_candidate_offsets: PackedInt32Array,
+		out_candidate_goods: PackedInt32Array,
+		out_candidate_efficiencies: PackedInt32Array) -> String:
+	if authored_goods.is_empty() \
+			or authored_goods.size() != authored_quantities.size() \
+			or authored_candidate_offsets.size() != authored_goods.size() + 1 \
+			or authored_candidate_goods.size() != authored_candidate_efficiencies.size():
+		return "invalid pooled construction columns"
+	var total_quantity := 0
+	for quantity in authored_quantities:
+		if int(quantity) <= 0 or total_quantity > 9223372036854775807 - int(quantity):
+			return "pooled construction quantity overflow"
+		total_quantity += int(quantity)
+	var candidate_position := {}
+	for candidate_index in range(authored_candidate_goods.size()):
+		var good_id := int(authored_candidate_goods[candidate_index])
+		var efficiency := int(authored_candidate_efficiencies[candidate_index])
+		if candidate_position.has(good_id):
+			var position := int(candidate_position[good_id])
+			# A material admitted through several authored roles keeps its most
+			# efficient valid conversion into generic construction quantity.
+			out_candidate_efficiencies[position] = maxi(
+				int(out_candidate_efficiencies[position]), efficiency)
+			continue
+		candidate_position[good_id] = out_candidate_goods.size()
+		out_candidate_goods.append(good_id)
+		out_candidate_efficiencies.append(efficiency)
+	out_goods.append(int(authored_goods[0]))
+	out_quantities.append(total_quantity)
+	out_candidate_offsets.append(out_candidate_goods.size())
 	return ""
 
 

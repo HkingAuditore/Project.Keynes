@@ -316,7 +316,7 @@ static func _compile_starter_construction_contract(plan_result: Dictionary,
 	var candidate_good_ids := PackedStringArray()
 	var candidate_efficiencies := PackedInt32Array()
 	var legacy_candidates := PackedStringArray()
-	var selected_by_good := {}
+	var viable_groups: Array = []
 	for group_index in range(seed_groups.size()):
 		var group: Dictionary = seed_groups[group_index]
 		var viable: Array[Dictionary] = []
@@ -347,18 +347,47 @@ static func _compile_starter_construction_contract(plan_result: Dictionary,
 			if int(a.physical) != int(b.physical):
 				return int(a.physical) < int(b.physical)
 			return String(a.good_id) < String(b.good_id))
-		var selected: Dictionary = viable[0]
-		selected_by_good[String(selected.good_id)] = int(selected_by_good.get(
-			String(selected.good_id), 0)) + int(selected.physical)
+		viable_groups.append(viable)
 
-	var selected_good_ids := PackedStringArray(selected_by_good.keys())
-	selected_good_ids.sort()
+	# A seed recipe may expose one OR group while the rest of the starter bundle
+	# uses its candidates in different material roles. Pick the first stable
+	# one-candidate-per-group combination that closes the complete bundle instead
+	# of committing to the preferred good before checking downstream buildings.
+	var selections: Array = [[]]
+	for viable_group in viable_groups:
+		var expanded: Array = []
+		for prefix in selections:
+			for option in viable_group:
+				var next: Array = (prefix as Array).duplicate()
+				next.append(option)
+				expanded.append(next)
+				if expanded.size() > 1024:
+					return _error("starter_construction_selection_overflow",
+						"开局建材候选组合超过确定性搜索上限。")
+		selections = expanded
+	var selected_good_ids := PackedStringArray()
 	var selected_quantities := PackedInt64Array()
-	for good_id in selected_good_ids:
-		selected_quantities.append(int(selected_by_good[String(good_id)]))
-	var dependency_check := _validate_starter_construction_closure(
-		plan_result, starter_route, completed, map, cell_idx, profile_by_id,
-		selected_good_ids)
+	var dependency_check := {}
+	for selection in selections:
+		var selected_by_good := {}
+		for option in selection:
+			var good_id := String(option.good_id)
+			selected_by_good[good_id] = int(selected_by_good.get(good_id, 0)) \
+				+ int(option.physical)
+		var trial_good_ids := PackedStringArray(selected_by_good.keys())
+		trial_good_ids.sort()
+		var trial_check := _validate_starter_construction_closure(
+			plan_result, starter_route, completed, map, cell_idx, profile_by_id,
+			trial_good_ids)
+		if dependency_check.is_empty():
+			dependency_check = trial_check
+		if not bool(trial_check.get("ok", false)):
+			continue
+		selected_good_ids = trial_good_ids
+		for good_id in selected_good_ids:
+			selected_quantities.append(int(selected_by_good[String(good_id)]))
+		dependency_check = trial_check
+		break
 	if not bool(dependency_check.get("ok", false)):
 		# The largest food contributor is not always a viable construction
 		# seed. Cold starts, for example, may rely on several hunting camps,
@@ -528,7 +557,7 @@ static func _starter_buffered_goods(starter_route: Dictionary) -> Dictionary:
 
 
 static func _construction_groups(profile) -> Array[Dictionary]:
-	var groups: Array[Dictionary] = []
+	var authored_groups: Array[Dictionary] = []
 	var good_ids: PackedStringArray = profile.construction_good_ids
 	var quantities: PackedInt64Array = profile.construction_quantities
 	var offsets: PackedInt32Array = profile.construction_candidate_offsets
@@ -558,9 +587,31 @@ static func _construction_groups(profile) -> Array[Dictionary]:
 		if candidates.is_empty():
 			candidates.append({"good_id": String(good_ids[group_index]),
 				"efficiency_q16": Q16_ONE})
-		groups.append({"preferred_good_id": String(good_ids[group_index]),
+		authored_groups.append({"preferred_good_id": String(good_ids[group_index]),
 			"quantity": int(quantities[group_index]), "candidates": candidates})
-	return groups
+	if authored_groups.is_empty():
+		return authored_groups
+	var pooled_quantity := 0
+	var pooled_candidates: Array[Dictionary] = []
+	var candidate_positions := {}
+	for group in authored_groups:
+		pooled_quantity += int(group.quantity)
+		for candidate in group.candidates:
+			var good_id := String(candidate.good_id)
+			var efficiency := int(candidate.efficiency_q16)
+			if candidate_positions.has(good_id):
+				var position := int(candidate_positions[good_id])
+				pooled_candidates[position].efficiency_q16 = maxi(
+					int(pooled_candidates[position].efficiency_q16), efficiency)
+				continue
+			candidate_positions[good_id] = pooled_candidates.size()
+			pooled_candidates.append({"good_id": good_id,
+				"efficiency_q16": efficiency})
+	return [{
+		"preferred_good_id": String(authored_groups[0].preferred_good_id),
+		"quantity": pooled_quantity,
+		"candidates": pooled_candidates,
+	}]
 
 
 static func _construction_category_candidates(category_id: String,

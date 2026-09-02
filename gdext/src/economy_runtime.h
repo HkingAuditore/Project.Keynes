@@ -69,11 +69,6 @@ public:
     static constexpr int32_t COLONIZATION_KIT_MIN_OWNER_SLOTS = 3;
     static constexpr int32_t COLONIZATION_KIT_FOOD_COVERAGE_Q16 = 72090;
     static constexpr int32_t COLONIZATION_KIT_BRIDGE_EXTRA_DAYS = 15;
-    // Days of the source cell's own survival consumption that a preparing
-    // party may never draw down. The daily reserve step runs before market
-    // clearing, so without this floor an expedition would empty the source
-    // market and starve the households that are producing its kit.
-    static constexpr int32_t COLONIZATION_RESERVE_SOURCE_FLOOR_DAYS = 10;
     // Bump when preparing-kit buffer demand changes so in-flight PREPARING
     // parties replan even if source stock of the previous missing goods is
     // unchanged. Revision 2: clothing uses need.base_qty_per_person, not 1.0
@@ -1302,10 +1297,9 @@ private:
 
     // Extra stock the kit planner may spend beyond the plain source market:
     // `reserved` is what a preparing party already escrowed (already deducted
-    // from the market), `floor` is per-good stock the party must leave behind.
+    // from the market).
     struct ColonizationReserveContext {
         const std::vector<int64_t> *reserved = nullptr;
-        const std::vector<int64_t> *floor = nullptr;
         bool prefer_reserved_candidates = false;
     };
 
@@ -5155,8 +5149,6 @@ private:
                                       const ColonizationReserveContext *reserve
                                           = nullptr,
                                       int32_t bridge_days_override = 0) const;
-    void colonization_source_survival_floor(
-        int32_t source_cell, std::vector<int64_t> &floor) const;
     void collect_family_expedition_reserved_stock(
         int32_t expedition, std::vector<int64_t> &reserved) const;
     bool reserve_preparing_family_expedition_cargo(

@@ -182,17 +182,16 @@ void NativeEconomyRuntime::fill_colonization_kit_buffer(
             good >= static_cast<int32_t>(lane->size())) return 0;
         return std::max<int64_t>(0, (*lane)[static_cast<size_t>(good)]);
     };
-    // Spare stock is what the party may take today: market stock above the
-    // floor its own source cell must keep, plus whatever it already escrowed.
+    // A preparing party may escrow any source-market stock that is not already
+    // committed to another line of this kit. Household survival remains part
+    // of ordinary market settlement rather than a colonization-only floor.
     auto spare_stock = [&](int32_t good) -> int64_t {
         if (good < 0 || good >= _market.good_count) return 0;
         const int64_t stock = std::max<int64_t>(0,
             _market.stock[_market.index(market, good)]);
-        const int64_t floor = reserve == nullptr ? 0
-            : extra_stock(reserve->floor, good);
         const int64_t held = reserve == nullptr ? 0
             : extra_stock(reserve->reserved, good);
-        return std::max<int64_t>(0, stock - floor) + held;
+        return stock + held;
     };
     kit.source_stock_identity = 1469598103934665603ULL;
     for (int32_t good = 0; good < _market.good_count; ++good) {
@@ -580,11 +579,9 @@ bool NativeEconomyRuntime::plan_colonization_kit(
     auto spare_source_stock = [&](int32_t market, int32_t good) -> int64_t {
         const int64_t stock = std::max<int64_t>(0,
             _market.stock[_market.index(market, good)]);
-        const int64_t floor = reserve == nullptr ? 0
-            : reserve_lane(reserve->floor, good);
         const int64_t held = reserve == nullptr ? 0
             : reserve_lane(reserve->reserved, good);
-        return std::max<int64_t>(0, stock - floor) + held;
+        return stock + held;
     };
     // Construction demand of a build plan, in raw group quantities. Progress
     // reporting compares the full intent against the subset the source can
@@ -804,33 +801,6 @@ bool NativeEconomyRuntime::adjust_market_stock(
     audit_touch_market_lane(static_cast<size_t>(index));
     _market.stock[index] = next;
     return true;
-}
-
-void NativeEconomyRuntime::colonization_source_survival_floor(
-        int32_t source_cell, std::vector<int64_t> &floor) const {
-    floor.assign(_good_ids.size(), 0);
-    if (source_cell < 0 || source_cell >= _cell_count) return;
-    int64_t sat = 0;
-    int64_t population = 0;
-    _population.for_each_in_cell(source_cell, [&](int32_t slot) {
-        population = saturating_add(population, _population.population[slot],
-            sat);
-    });
-    if (population <= 0) return;
-    // Run the same bridge planner against the source cell itself: whatever it
-    // would pack to keep its own people fed and clothed over the floor window
-    // is exactly the stock a preparing party must leave behind. An empty
-    // building list keeps this to survival goods, which is what households
-    // actually clear against.
-    ColonizationKitPlan keep;
-    fill_colonization_kit_buffer(source_cell, source_cell, population, 1, keep,
-        nullptr, COLONIZATION_RESERVE_SOURCE_FLOOR_DAYS);
-    for (const FamilyExpeditionCargoLine &line : keep.cargo) {
-        if (line.good_id < 0 ||
-            line.good_id >= static_cast<int32_t>(floor.size())) continue;
-        floor[static_cast<size_t>(line.good_id)] = saturating_add(
-            floor[static_cast<size_t>(line.good_id)], line.quantity, sat);
-    }
 }
 
 void NativeEconomyRuntime::collect_family_expedition_reserved_stock(

@@ -22,6 +22,9 @@ uniform vec2 tod_debug_sun_uv = vec2(0.25, 0.5);
 uniform float tod_debug_sun_height_scale = 1.0;
 uniform vec3 tod_sun_dir = vec3(0.4, -0.7, 0.6);
 uniform float tod_exposure = 1.0;
+const float BUILDING_MACRO_WINDOW_NIGHT_START = 0.18;
+const float BUILDING_MACRO_WINDOW_NIGHT_FULL = 0.62;
+const float BUILDING_MACRO_WINDOW_LIGHT_GAIN = 1.18;
 #include "res://shaders/include/earth_daylight.gdshaderinc"
 
 vec2 lut_uv(float cell) {
@@ -65,6 +68,11 @@ void fragment() {
 		* (1.0 - smoothstep(0.045, 0.065, abs(q.y - 0.19)));
 	float door = (1.0 - smoothstep(0.035, 0.050, abs(q.x)))
 		* (1.0 - smoothstep(0.095, 0.12, abs(q.y - 0.08)));
+	float window_l = (1.0 - smoothstep(0.040, 0.060, abs(q.x + 0.13)))
+		* (1.0 - smoothstep(0.045, 0.065, abs(q.y - 0.075)));
+	float window_r = (1.0 - smoothstep(0.040, 0.060, abs(q.x - 0.13)))
+		* (1.0 - smoothstep(0.045, 0.065, abs(q.y - 0.075)));
+	float windows = max(window_l, window_r) * body;
 	float shadow = (1.0 - smoothstep(0.20, 0.24, abs(q.x - 0.16)))
 		* (1.0 - smoothstep(0.055, 0.075, abs(q.y - 0.24)));
 	float glyph = max(max(body, roof), max(foundation, door));
@@ -85,6 +93,14 @@ void fragment() {
 		+ ed.sun_col * ed.local_day * 0.24 * max(ed.sun_dir.z, 0.0)
 		+ ed.moon_col * ed.moon_strength * 0.08;
 	color *= max(building_light, vec3(0.08)) * tod_exposure;
+	// The macro layer used to lose all emissive information, making most
+	// settlements become black blocks as soon as this LOD took over.
+	if (knowledge > 0.88) {
+		float window_night = smoothstep(BUILDING_MACRO_WINDOW_NIGHT_START,
+			BUILDING_MACRO_WINDOW_NIGHT_FULL, ed.pixel_night);
+		color += vec3(1.0, 0.60, 0.22) * windows * window_night
+			* BUILDING_MACRO_WINDOW_LIGHT_GAIN * tod_exposure;
+	}
 	if (knowledge < 0.88) {
 		float gray = dot(color, vec3(0.299, 0.587, 0.114));
 		color = mix(vec3(gray), color, 0.35) * 0.72;
