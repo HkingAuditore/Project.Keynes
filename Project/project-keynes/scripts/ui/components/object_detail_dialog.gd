@@ -33,6 +33,9 @@ var _player_controller = null
 var _fact_columns: Array[int] = []
 var _embedded := false
 var _fact_grids: Array[GridContainer] = []
+var _detail_identity := ""
+var _fact_value_labels: Array = []
+var _payload_kind := ""
 
 
 func _ready() -> void:
@@ -74,6 +77,9 @@ func show_details(payload: Dictionary) -> void:
 	_section_targets.clear()
 	_fact_columns.clear()
 	_fact_grids.clear()
+	_fact_value_labels.clear()
+	_detail_identity = _detail_identity_of(payload)
+	_payload_kind = String(payload.get("kind", ""))
 	_header_icon.set_semantic(StringName(payload.get("icon", "resource")),
 		payload.get("accent", UITokens.ACCENT))
 	_title_label.text = String(payload.get("name", "对象详情"))
@@ -81,7 +87,7 @@ func show_details(payload: Dictionary) -> void:
 	_clear_content()
 	_tax_section = null
 	_tax_editors.clear()
-	var kind := String(payload.get("kind", ""))
+	var kind := _payload_kind
 	var row: Dictionary = payload.get("row", {})
 	_build_tax_section(kind, payload.get("tax_context", {}), row)
 	match kind:
@@ -104,6 +110,10 @@ func refresh_details(payload: Dictionary) -> bool:
 		return false
 	if has_active_tax_edit():
 		return false
+	var identity := _detail_identity_of(payload)
+	if identity == _detail_identity and _content != null and _content.get_child_count() > 0:
+		if _patch_details(payload):
+			return true
 	var saved_scroll := _scroll.scroll_vertical if _scroll != null else 0
 	show_details(payload)
 	call_deferred("_restore_scroll", saved_scroll)
@@ -124,6 +134,162 @@ func has_active_tax_edit() -> bool:
 		if editor != null and editor.is_editing():
 			return true
 	return false
+
+
+func has_blocking_tax_state() -> bool:
+	for editor_value in _tax_editors.values():
+		var editor := editor_value as TaxLaneEditor
+		if editor != null and editor.blocks_rebuild():
+			return true
+	return false
+
+
+func _detail_identity_of(payload: Dictionary) -> String:
+	var kind := String(payload.get("kind", ""))
+	var row: Dictionary = payload.get("row", {})
+	var row_id := String(row.get("id", ""))
+	if row_id.is_empty():
+		row_id = String(payload.get("name", ""))
+	var family_handle := int(row.get("family_handle", 0))
+	return "%s|%s|%d|%d" % [kind, row_id, family_handle, _item_tax_lanes(row).size()]
+
+
+func _patch_details(payload: Dictionary) -> bool:
+	var kind := String(payload.get("kind", ""))
+	if kind != _payload_kind:
+		return false
+	var row: Dictionary = payload.get("row", {})
+	if not _patch_tax_section(payload.get("tax_context", {}), row):
+		return false
+	_header_icon.set_semantic(StringName(payload.get("icon", "resource")),
+		payload.get("accent", UITokens.ACCENT))
+	_title_label.text = String(payload.get("name", "对象详情"))
+	_subtitle_label.text = String(payload.get("subtitle", ""))
+	_patch_fact_values(_facts_for_row(kind, row))
+	_detail_identity = _detail_identity_of(payload)
+	return true
+
+
+func _patch_tax_section(context_value: Variant, row: Dictionary) -> bool:
+	var context: Dictionary = context_value if context_value is Dictionary else {}
+	var item_lanes := _item_tax_lanes(row)
+	if item_lanes.is_empty():
+		return _tax_editors.is_empty()
+	if _tax_section == null or item_lanes.size() != _tax_editors.size():
+		return false
+	var cell_idx := int(context.get("cell", -1))
+	var editable := bool(context.get("editable", false))
+	(_tax_section.get_node("Head/Readonly") as Control).visible = not editable
+	var hint := _tax_section.get_node("Hint") as Label
+	if not bool(context.get("available", true)):
+		hint.text = String(context.get("reason", "该领土没有可调整的税收政策。"))
+		hint.visible = true
+	else:
+		hint.text = _tax_hint(_payload_kind)
+		hint.visible = true
+	for raw in item_lanes:
+		var lane: Dictionary = raw
+		var item_key := String(lane.get("item_id", ""))
+		var key := "cell:%d/%s/%s" % [
+			cell_idx, String(lane.get("kind", "")), item_key]
+		var editor := _tax_editors.get(key) as TaxLaneEditor
+		if editor == null:
+			# 兼容 editor_key 使用 lane 内 cell 前缀不一致时的查找。
+			editor = _find_tax_editor(String(lane.get("kind", "")), item_key)
+		if editor == null:
+			return false
+		editor.set_data(lane)
+	return true
+
+
+func _find_tax_editor(kind: String, item_id: String) -> TaxLaneEditor:
+	var suffix := "/%s/%s" % [kind, item_id]
+	for key_value in _tax_editors.keys():
+		var key := String(key_value)
+		if key.ends_with(suffix):
+			return _tax_editors[key] as TaxLaneEditor
+	return null
+
+
+func _facts_for_row(kind: String, row: Dictionary) -> Array:
+	match kind:
+		"cohort":
+			return [
+				{"label": "人口", "value": String(row.get("population", "—")), "accent": UITokens.ACCENT},
+				{"label": "身份", "value": String(row.get("cohort_identity", "本地人口")), "accent": UITokens.ARCHIVE_INK},
+				{"label": "人均财富", "value": String(row.get("wealth", "—")).trim_prefix("人均 "), "accent": UITokens.RESOURCE},
+				{"label": "满意度", "value": String(row.get("satisfaction", "—")), "accent": row.get("living_accent", UITokens.ACCENT)},
+				{"label": "生活水平", "value": String(row.get("living_standard", "—")), "accent": row.get("living_accent", UITokens.ACCENT)},
+				{"label": "最短板", "value": String(row.get("worst_dimension", "—")), "accent": UITokens.WARN},
+				{"label": "收入/人", "value": String(row.get("income", "—")), "accent": UITokens.GOOD},
+				{"label": "支出/人", "value": String(row.get("expense", "—")), "accent": UITokens.RISK},
+				{"label": "净额/人", "value": String(row.get("net", "—")),
+					"accent": UITokens.GOOD if bool(row.get("net_positive", true)) else UITokens.RISK},
+			]
+		"building":
+			return [
+				{"label": "栋数", "value": String(row.get("count", "—")), "accent": UITokens.ACCENT},
+				{"label": "状态", "value": String(row.get("status", "—")), "accent": row.get("accent", UITokens.ACCENT)},
+				{"label": String(row.get("profit_label", "利润")), "value": String(row.get("profit", "—")),
+					"accent": row.get("accent", UITokens.ACCENT)},
+			]
+		"good":
+			var risk := String(row.get("risk", ""))
+			var inbound := String(row.get("trade_inbound", ""))
+			var outbound := String(row.get("trade_outbound", ""))
+			var facts := [
+				{"label": "本地库存", "value": String(row.get("stock_plain", row.get("stock", "—"))),
+					"accent": UITokens.RESOURCE},
+				{"label": "本地价格", "value": String(row.get("price", "—")), "accent": UITokens.RESOURCE},
+				{"label": "库存日变化", "value": String(row.get("delta", "—")),
+					"accent": _delta_accent(String(row.get("delta", "")))},
+				{"label": "短缺风险", "value": risk if not risk.is_empty() else "无",
+					"accent": UITokens.RISK if not risk.is_empty() else UITokens.ARCHIVE_INK_MUTED},
+			]
+			if not inbound.is_empty():
+				facts.append({"label": "运入", "value": inbound, "accent": UITokens.ACCENT})
+			if not outbound.is_empty():
+				facts.append({"label": "运出", "value": outbound, "accent": UITokens.ACCENT})
+			return facts
+		"resource":
+			return [
+				{"label": "储量指数", "value": String(row.get("value", "—")), "accent": UITokens.RESOURCE},
+				{"label": "密度", "value": String(row.get("density", "—")), "accent": UITokens.RESOURCE},
+				{"label": "日变化", "value": String(row.get("delta", "—")),
+					"accent": _delta_accent(String(row.get("delta", "")))},
+				{"label": "开采条件", "value": "本地建筑可开采" if bool(row.get("extractable", false)) \
+					else "本地无可开采建筑", "accent": UITokens.GOOD if bool(row.get("extractable", false)) \
+					else UITokens.ARCHIVE_INK_MUTED},
+			]
+		"family":
+			return [
+				{"label": "家族人口", "value": String(row.get("population", "—")), "accent": UITokens.ACCENT},
+				{"label": "重要人物", "value": "%d 位" % int(row.get("notable_people", 0)), "accent": UITokens.ACCENT},
+				{"label": "家族产业", "value": "%s 栋" % String(row.get("owned_buildings", "0")), "accent": UITokens.CLIMATE},
+				{"label": "现金财产", "value": String(row.get("cash_claim", "—")), "accent": UITokens.RESOURCE},
+				{"label": "生产资产", "value": String(row.get("productive_asset_value", "—")), "accent": UITokens.RESOURCE},
+				{"label": "净资产", "value": String(row.get("net_worth", "—")), "accent": UITokens.GOOD},
+				{"label": "创立日", "value": "第 %d 日" % int(row.get("founded_day", 0)), "accent": UITokens.ARCHIVE_INK},
+				{"label": "衰退复核", "value": "%d 次" % int(row.get("decline_reviews", 0)), "accent": UITokens.ARCHIVE_INK_MUTED},
+				{"label": "本地威望", "value": "%s · %s" % [
+					["0", "I", "II", "III", "IV", "V"][clampi(int(row.get("prestige_level", 0)), 0, 5)],
+					String(row.get("prestige_score", "0.0%"))], "accent": UITokens.ACCENT},
+			]
+	return []
+
+
+func _patch_fact_values(facts: Array) -> void:
+	if facts.is_empty() or _fact_value_labels.is_empty():
+		return
+	var count := mini(facts.size(), _fact_value_labels.size())
+	for index in range(count):
+		var fact: Dictionary = facts[index]
+		var value := _fact_value_labels[index] as Label
+		if value == null or not is_instance_valid(value):
+			continue
+		value.text = String(fact.get("value", "—"))
+		value.add_theme_color_override("font_color",
+			fact.get("accent", UITokens.ARCHIVE_INK))
 
 
 func _build_tax_section(kind: String, context_value: Variant, row: Dictionary) -> void:
@@ -236,6 +402,9 @@ func close_dialog() -> void:
 	if not visible:
 		return
 	visible = false
+	_detail_identity = ""
+	_payload_kind = ""
+	_fact_value_labels.clear()
 	closed.emit()
 
 
@@ -262,18 +431,7 @@ func _build_cohort_details(row: Dictionary) -> void:
 	var status := String(row.get("status", ""))
 	if not status.is_empty():
 		_add_muted_note(status)
-	_section_targets["overview"] = _add_fact_grid([
-		{"label": "人口", "value": String(row.get("population", "—")), "accent": UITokens.ACCENT},
-		{"label": "身份", "value": String(row.get("cohort_identity", "本地人口")), "accent": UITokens.ARCHIVE_INK},
-		{"label": "人均财富", "value": String(row.get("wealth", "—")).trim_prefix("人均 "), "accent": UITokens.RESOURCE},
-		{"label": "满意度", "value": String(row.get("satisfaction", "—")), "accent": row.get("living_accent", UITokens.ACCENT)},
-		{"label": "生活水平", "value": String(row.get("living_standard", "—")), "accent": row.get("living_accent", UITokens.ACCENT)},
-		{"label": "最短板", "value": String(row.get("worst_dimension", "—")), "accent": UITokens.WARN},
-		{"label": "收入/人", "value": String(row.get("income", "—")), "accent": UITokens.GOOD},
-		{"label": "支出/人", "value": String(row.get("expense", "—")), "accent": UITokens.RISK},
-		{"label": "净额/人", "value": String(row.get("net", "—")),
-			"accent": UITokens.GOOD if bool(row.get("net_positive", true)) else UITokens.RISK},
-	])
+	_section_targets["overview"] = _add_fact_grid(_facts_for_row("cohort", row))
 	var needs_target := _add_rows_card("满意度维度", "growth", UITokens.ACCENT,
 		row.get("satisfaction_rows", []))
 	_add_rows_card("收入构成", "trend_up", UITokens.GOOD, row.get("income_rows", []))
@@ -291,12 +449,7 @@ func _build_cohort_details(row: Dictionary) -> void:
 
 
 func _build_building_details(row: Dictionary) -> void:
-	_section_targets["overview"] = _add_fact_grid([
-		{"label": "栋数", "value": String(row.get("count", "—")), "accent": UITokens.ACCENT},
-		{"label": "状态", "value": String(row.get("status", "—")), "accent": row.get("accent", UITokens.ACCENT)},
-		{"label": String(row.get("profit_label", "利润")), "value": String(row.get("profit", "—")),
-			"accent": row.get("accent", UITokens.ACCENT)},
-	])
+	_section_targets["overview"] = _add_fact_grid(_facts_for_row("building", row))
 	var owner := String(row.get("owner", ""))
 	if not owner.is_empty():
 		_add_muted_note(owner)
@@ -320,23 +473,7 @@ func _build_building_details(row: Dictionary) -> void:
 
 
 func _build_good_details(row: Dictionary) -> void:
-	var risk := String(row.get("risk", ""))
-	var inbound := String(row.get("trade_inbound", ""))
-	var outbound := String(row.get("trade_outbound", ""))
-	var facts := [
-		{"label": "本地库存", "value": String(row.get("stock_plain", row.get("stock", "—"))),
-			"accent": UITokens.RESOURCE},
-		{"label": "本地价格", "value": String(row.get("price", "—")), "accent": UITokens.RESOURCE},
-		{"label": "库存日变化", "value": String(row.get("delta", "—")),
-			"accent": _delta_accent(String(row.get("delta", "")))},
-		{"label": "短缺风险", "value": risk if not risk.is_empty() else "无",
-			"accent": UITokens.RISK if not risk.is_empty() else UITokens.ARCHIVE_INK_MUTED},
-	]
-	if not inbound.is_empty():
-		facts.append({"label": "运入", "value": inbound, "accent": UITokens.ACCENT})
-	if not outbound.is_empty():
-		facts.append({"label": "运出", "value": outbound, "accent": UITokens.ACCENT})
-	_section_targets["overview"] = _add_fact_grid(facts)
+	_section_targets["overview"] = _add_fact_grid(_facts_for_row("good", row))
 	var operations_target := _add_rows_card("供需明细", "resource", UITokens.RESOURCE,
 		row.get("detail_rows", []))
 	if operations_target != null:
@@ -344,31 +481,11 @@ func _build_good_details(row: Dictionary) -> void:
 
 
 func _build_resource_details(row: Dictionary) -> void:
-	_section_targets["overview"] = _add_fact_grid([
-		{"label": "储量指数", "value": String(row.get("value", "—")), "accent": UITokens.RESOURCE},
-		{"label": "密度", "value": String(row.get("density", "—")), "accent": UITokens.RESOURCE},
-		{"label": "日变化", "value": String(row.get("delta", "—")),
-			"accent": _delta_accent(String(row.get("delta", "")))},
-		{"label": "开采条件", "value": "本地建筑可开采" if bool(row.get("extractable", false)) \
-			else "本地无可开采建筑", "accent": UITokens.GOOD if bool(row.get("extractable", false)) \
-			else UITokens.ARCHIVE_INK_MUTED},
-	])
+	_section_targets["overview"] = _add_fact_grid(_facts_for_row("resource", row))
 
 
 func _build_family_details(row: Dictionary) -> void:
-	_section_targets["overview"] = _add_fact_grid([
-		{"label": "家族人口", "value": String(row.get("population", "—")), "accent": UITokens.ACCENT},
-		{"label": "重要人物", "value": "%d 位" % int(row.get("notable_people", 0)), "accent": UITokens.ACCENT},
-		{"label": "家族产业", "value": "%s 栋" % String(row.get("owned_buildings", "0")), "accent": UITokens.CLIMATE},
-		{"label": "现金财产", "value": String(row.get("cash_claim", "—")), "accent": UITokens.RESOURCE},
-		{"label": "生产资产", "value": String(row.get("productive_asset_value", "—")), "accent": UITokens.RESOURCE},
-		{"label": "净资产", "value": String(row.get("net_worth", "—")), "accent": UITokens.GOOD},
-		{"label": "创立日", "value": "第 %d 日" % int(row.get("founded_day", 0)), "accent": UITokens.ARCHIVE_INK},
-		{"label": "衰退复核", "value": "%d 次" % int(row.get("decline_reviews", 0)), "accent": UITokens.ARCHIVE_INK_MUTED},
-		{"label": "本地威望", "value": "%s · %s" % [
-			["0", "I", "II", "III", "IV", "V"][clampi(int(row.get("prestige_level", 0)), 0, 5)],
-			String(row.get("prestige_score", "0.0%"))], "accent": UITokens.ACCENT},
-	])
+	_section_targets["overview"] = _add_fact_grid(_facts_for_row("family", row))
 	var people_target := _add_rows_card("家族特性", "family.house", UITokens.ACCENT,
 		row.get("trait_rows", []))
 	_add_rows_card("行为偏好", "growth", UITokens.GOOD,
@@ -475,6 +592,7 @@ func _add_fact_grid(facts: Array) -> Control:
 		value.add_theme_font_override("font", UITokens.font_with_weight(650))
 		value.add_theme_color_override("font_color",
 			fact.get("accent", UITokens.ARCHIVE_INK))
+		_fact_value_labels.append(value)
 	return panel
 
 

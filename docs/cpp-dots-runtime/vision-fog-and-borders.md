@@ -622,3 +622,9 @@ eligible = owned_by_player
 `country_committed` 仍是唯一广播，但 `changed_cells > 0` 才重算视野和国界。
 纯证据、税务或国库提交不触发这两个 O(n) 工作；capability 跃迁只重算视野，
 不重建国界。vision pass 返回 fog dirty indices，地图 LUT 只刷新这些格。
+
+生产路径默认 `native_runtime_graph_mode=ACTIVE` 时，国家提交发生在
+`advance_runtime_pulse()` 内，不经过 `CountryDailySystem`。此时必须由
+`MapGenerator._dispatch_runtime_graph_country_committed()` 按 generation
+watermark 补发同一条 `country_committed`，否则 Inspector 已显示归属、
+`country_slot_arr` 已写入，国界 ribbon 却停在开拓前的 mesh。

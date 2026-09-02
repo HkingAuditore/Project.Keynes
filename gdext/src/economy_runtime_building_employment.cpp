@@ -2264,15 +2264,16 @@ bool NativeEconomyRuntime::run_building_employment_cell(
 
         if (allow_owner_job_reallocation) {
         // Unemployed hiring remains authoritative and runs first. Remaining
-        // ACTIVE owner vacancies may then attract one incumbent owner from a
-        // lower-income ACTIVE group that is already at or above its owner
-        // target. Understaffed lots are not sources: they keep competing for
-        // unemployed and employee labor instead of emptying each other.
+        // ACTIVE owner vacancies may then attract one incumbent owner along the
+        // opportunity gradient. Any ACTIVE lot with at least one owner may be a
+        // source; understaffed↔understaffed moves with positive source income
+        // pay an extra hurdle so small noisy gaps cannot thrash each epoch.
         // Targets and sources are snapshotted before matching so a group
         // cannot chain through several jobs in the same employment period.
         thread_local std::vector<int64_t> projected_owner_income;
         thread_local std::vector<int32_t> owner_job_targets;
         thread_local std::vector<int32_t> owner_job_sources;
+        thread_local std::vector<uint8_t> owner_job_source_understaffed;
         thread_local std::vector<uint8_t> owner_job_group_used;
         struct EmployeeOwnerSource {
             int32_t group = -1;
@@ -2285,6 +2286,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         projected_owner_income.assign(static_cast<size_t>(last - first), 0);
         owner_job_targets.clear();
         owner_job_sources.clear();
+        owner_job_source_understaffed.clear();
         employee_owner_sources.clear();
         owner_job_group_used.assign(static_cast<size_t>(last - first), uint8_t{0});
         int64_t local_merchant_population = 0;
@@ -2324,18 +2326,19 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             if (type.kind != 2 && group.filled_owner < owner_target) {
                 if (income > 0) owner_job_targets.push_back(g);
             }
-            // Only a fully staffed or overstaffed lot can lose an owner to
-            // another building. Two understaffed lots used to raid each other
-            // one person per epoch; last-period receipts and resource take
-            // then flipped the ranking and the same person walked back.
-            // Service owners may still be sources when they are at target
-            // (surplus merchant-post owners taking a better job). The matching
-            // loop still protects the final merchant in the cell.
-            if (group.filled_owner >= owner_target && owner_target > 0) {
+            // Opportunity-gradient sources: any ACTIVE lot that still has an
+            // attached owner may lose one person to a higher-opportunity
+            // vacancy. The matching loop applies asymmetric hysteresis so two
+            // understaffed positive-income lots cannot thrash on noise, while
+            // leaving non-positive opportunity lots stays on the base hurdle.
+            // The final local merchant remains protected below.
+            if (group.filled_owner > 0 && owner_target > 0) {
                 const int32_t source_slot = owner_slot_for_profession(
                     _signatures[group.owner_signature_id].profession_id);
                 if (source_slot >= 0 && _population.owner_employed[source_slot] > 0) {
                     owner_job_sources.push_back(g);
+                    owner_job_source_understaffed.push_back(
+                        group.filled_owner < owner_target ? uint8_t{1} : uint8_t{0});
                 }
             }
             for (int32_t r = 0; r < type.employee_count; ++r) {
@@ -2355,12 +2358,33 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             const int64_t income_b = projected_owner_income[b - first];
             return income_a != income_b ? income_a > income_b : a < b;
         });
-        std::stable_sort(owner_job_sources.begin(), owner_job_sources.end(),
-                         [&](int32_t a, int32_t b) {
-            const int64_t income_a = projected_owner_income[a - first];
-            const int64_t income_b = projected_owner_income[b - first];
-            return income_a != income_b ? income_a < income_b : a < b;
+        // Keep understaffed flags aligned with sources while sorting by income.
+        thread_local std::vector<size_t> owner_source_order;
+        owner_source_order.resize(owner_job_sources.size());
+        for (size_t i = 0; i < owner_source_order.size(); ++i)
+            owner_source_order[i] = i;
+        std::stable_sort(owner_source_order.begin(), owner_source_order.end(),
+                         [&](size_t a, size_t b) {
+            const int32_t ga = owner_job_sources[a];
+            const int32_t gb = owner_job_sources[b];
+            const int64_t income_a = projected_owner_income[ga - first];
+            const int64_t income_b = projected_owner_income[gb - first];
+            return income_a != income_b ? income_a < income_b : ga < gb;
         });
+        {
+            thread_local std::vector<int32_t> sorted_sources;
+            thread_local std::vector<uint8_t> sorted_understaffed;
+            sorted_sources.clear();
+            sorted_understaffed.clear();
+            sorted_sources.reserve(owner_job_sources.size());
+            sorted_understaffed.reserve(owner_job_sources.size());
+            for (size_t idx : owner_source_order) {
+                sorted_sources.push_back(owner_job_sources[idx]);
+                sorted_understaffed.push_back(owner_job_source_understaffed[idx]);
+            }
+            owner_job_sources.swap(sorted_sources);
+            owner_job_source_understaffed.swap(sorted_understaffed);
+        }
         std::stable_sort(employee_owner_sources.begin(), employee_owner_sources.end(),
                          [](const EmployeeOwnerSource &a,
                             const EmployeeOwnerSource &b) {
@@ -2381,7 +2405,10 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             int32_t source_group_index = -1;
             int32_t source_slot = -1;
             int32_t source_target_signature = -1;
-            for (int32_t candidate : owner_job_sources) {
+            bool matched_understaffed_source = false;
+            for (size_t source_i = 0; source_i < owner_job_sources.size();
+                 ++source_i) {
+                const int32_t candidate = owner_job_sources[source_i];
                 if (candidate == target_group_index ||
                     owner_job_group_used[candidate - first] != 0) continue;
                 const BuildingGroup &source_group = _buildings[candidate];
@@ -2409,9 +2436,24 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                     _saturation_count);
                 const int64_t improvement = improvement_q16(
                     source_income, target_income);
-                if (improvement < transition_hurdle_q16(
-                        source_signature.profession_id,
-                        target_owner_profession)) continue;
+                const int64_t base_hurdle = transition_hurdle_q16(
+                    source_signature.profession_id, target_owner_profession);
+                // Asymmetric hysteresis: easy exit from non-positive opportunity,
+                // raised bar only for understaffed→understaffed with positive
+                // source income (the historical thrash pair).
+                int64_t effective_hurdle = base_hurdle;
+                const bool source_understaffed =
+                    source_i < owner_job_source_understaffed.size() &&
+                    owner_job_source_understaffed[source_i] != 0;
+                if (!(source_income <= 0 && target_income > 0) &&
+                    source_understaffed && source_income > 0) {
+                    effective_hurdle = mul_div_sat(
+                        base_hurdle,
+                        std::max<int32_t>(Q16_ONE,
+                            _employment_understaffed_reallocation_hurdle_mult_q16),
+                        Q16_ONE, _saturation_count);
+                }
+                if (improvement < effective_hurdle) continue;
                 if (source_signature.profession_id == _merchant_profession_id &&
                     local_merchant_population <= 1) continue;
                 if (source_signature.profession_id != target_signature.profession_id) {
@@ -2427,6 +2469,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 source_group_index = candidate;
                 source_slot = source_slot_candidate;
                 source_target_signature = candidate_target_signature;
+                matched_understaffed_source = source_understaffed;
                 break;
             }
             if (source_group_index >= 0) {
@@ -2482,6 +2525,8 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 owner_job_group_used[source_group_index - first] = 1;
                 owner_job_group_used[target_group_index - first] = 1;
                 ++_building_owner_job_reallocations;
+                if (matched_understaffed_source)
+                    ++_building_owner_understaffed_reallocations;
                 continue;
             }
 

@@ -1068,3 +1068,76 @@ and bio same-day transactions have released their barriers. `get_economy_perf_re
 reads the graph's last compact result in this mode, so recorder/GM diagnostics do
 not silently report an empty legacy-job snapshot. OFF/SHADOW continue to use the
 legacy `economy_daily` report and continuation path.
+
+Country commits keep the same publication contract: after each pulse,
+`MapGenerator._dispatch_runtime_graph_country_committed()` watches
+`CountryFacade.report().generation` and emits `country_committed` when
+`changed_cells` or `changed_countries` advances. Legacy `CountryDailySystem`
+already did this inside its SUS tick; the graph path used to skip that
+boundary, so CLAIM updated native/`country_slot_arr` while
+`CountryBorderLayer` / `VisionSolver` kept the pre-claim mesh. The generation
+watermark ignores the bootstrap report so world-ready visuals are not
+replayed.
+
+## Native runtime graph barrier arming
+
+`advance_runtime_pulse()` returns `status=3` **only** when a hard domain
+(`country` / `effect` / `modifier` / `gameplay_effect` / `economy`) still reports
+`should_run(day)` after the pulse. Exhausting the wall-clock budget increments
+`budget_yields` but never arms the barrier on its own: Trigger and Ideology own
+soft cursors that legitimately carry work into tomorrow, so a pulse that spent
+its whole budget on them must still let `WorldClock` commit the day. Arming on
+the budget yield alone produced a self-lock — a busy trigger froze the calendar,
+and the frozen day kept the same trigger work queued.
+
+`TriggerRuntime::should_run()` stays true while its effect queue is non-empty,
+and `handoff_effects()` refuses the head effect whenever its action has no native
+adapter or a peer runtime rejected it. Such an effect can never drain, so the
+graph loop retires trigger for the remainder of the pulse as soon as handoff
+reports `blocked`, pushes a one-shot `[sim/graph-trigger] handoff blocked` warning
+with the reason, and exposes `trigger_blocked_pulses` / `trigger_blocked_reason`
+in `get_runtime_perf_snapshot()`. Without that guard the loop re-ran trigger 64
+times per pulse on the same refused effect and burned the entire frame budget.
+
+## Native runtime graph stall watchdog
+
+`_advance_runtime_graph_pulse()` arms both `country_day_barrier` and
+`economy_day_barrier` from `status=3`. That pair has no
+equivalent of the legacy continuation's `hard_ack_due and economy_inflight`
+escape, so a domain whose `should_run()` cannot be cleared within the current day
+self-locks: barrier armed → `WorldClock` cannot advance → the day never changes →
+the domain's condition never changes. The observable signature is `[clock/step]`
+printing `ran=0 barrier=country_day_barrier,economy_day_barrier` forever with a
+small constant `pulse` (the 64-iteration graph loop spinning without progress),
+while `weather-layer`/`detail_scatter`/`natural_resource` logs stop entirely.
+
+`MapGenerator._track_runtime_graph_stall()` guards that state in two stages:
+
+- After `RUNTIME_GRAPH_STALL_DIAG_PULSES` (30) consecutive `status=3` pulses on
+  the same day, and then every `RUNTIME_GRAPH_STALL_DIAG_STRIDE` (300) pulses, it
+  prints `[sim/graph-barrier] day= pulses= released= pinned= work= economy_slices=
+  economy_commits= yields= last_us=`. `pinned` comes from
+  `get_runtime_perf_snapshot(1)` and names exactly which domains still report
+  pending, which is the entry point for root-causing the livelock.
+- After `RUNTIME_GRAPH_STALL_RELEASE_PULSES` (1200) pulses it latches
+  `released=true` and stops arming both barriers, so the calendar resumes and the
+  pending domains keep draining on later days. The latch clears on the first
+  non-`status=3` pulse. A released barrier is a degraded mode, not a fix: it also
+  raises a `push_warning`, and any `[sim/graph-barrier]` line in a log is a defect
+  to investigate.
+
+## Economy fatal halts the calendar
+
+`NativeEconomyRuntime::should_run()` returns false once `_fatal` is set, so a
+fatal economy makes the graph's `pending` check fall back to idle and the calendar
+keeps advancing with a dead economy — climate, country and population keep
+simulating against books that no longer settle. The legacy continuation path
+avoided this by arming `economy_day_barrier` on `fatal`; the graph path now reads
+`fatal` off `get_runtime_graph_last_economy_report()` every pulse and calls
+`MapGenerator._halt_on_economy_fatal()` once, which prints
+`[sim/economy-fatal] day= reason= stage= audit_ledger= audit_lane= …`, raises a
+`push_error`, pauses `WorldClock`, and emits the `economy_runtime_fatal` signal
+for UI. `audit_ledger` / `audit_lane` come from
+`NativeEconomyRuntime::diagnose_incremental_audit_mismatch()` and point at the
+population slot or market lane whose incremental closing total diverged from the
+full audit.

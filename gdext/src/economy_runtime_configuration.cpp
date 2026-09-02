@@ -1074,6 +1074,8 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     out["accuracy_fallback_cooldown_epochs"] =
         _accuracy_fallback_cooldown_epochs;
     out["employment_mobility_daily_q16"] = _employment_mobility_daily_q16;
+    out["employment_understaffed_reallocation_hurdle_mult_q16"] =
+        _employment_understaffed_reallocation_hurdle_mult_q16;
     out["employment_choice_temperature_q16"] =
         _employment_choice_temperature_q16;
     out["merchant_count"] = static_cast<int64_t>(_merchant_slots.size());

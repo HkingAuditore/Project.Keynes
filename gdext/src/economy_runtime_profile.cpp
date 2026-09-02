@@ -203,6 +203,12 @@ bool NativeEconomyRuntime::configure_profile(const Dictionary &profile, std::str
     _employment_mobility_daily_q16 = std::clamp(
         dict_num<int32_t>(profile, "employment_mobility_daily_q16", 13107), 0,
         static_cast<int32_t>(Q16_ONE));
+    _employment_understaffed_reallocation_hurdle_mult_q16 = std::clamp(
+        dict_num<int32_t>(profile,
+            "employment_understaffed_reallocation_hurdle_mult_q16",
+            static_cast<int32_t>(Q16_ONE * 2)),
+        static_cast<int32_t>(Q16_ONE),
+        static_cast<int32_t>(Q16_ONE * 4));
     _employment_choice_temperature_q16 = std::clamp(
         dict_num<int32_t>(profile, "employment_choice_temperature_q16", 6554), 1,
         static_cast<int32_t>(Q16_ONE));

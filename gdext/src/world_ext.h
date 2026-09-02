@@ -2533,6 +2533,8 @@ private:
     uint64_t                                  _runtime_graph_budget_yields = 0;
     uint64_t                                  _runtime_graph_economy_slices = 0;
     uint64_t                                  _runtime_graph_economy_commits = 0;
+    uint64_t                                  _runtime_graph_trigger_blocked_pulses = 0;
+    std::string                               _runtime_graph_trigger_blocked_reason;
     uint32_t                                  _runtime_graph_last_elapsed_us = 0;
     uint32_t                                  _runtime_graph_last_status = 0;
     godot::Dictionary                         _runtime_graph_last_economy_report;

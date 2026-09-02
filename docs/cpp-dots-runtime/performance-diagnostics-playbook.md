@@ -1586,7 +1586,31 @@ real-frame pulse 会在 `sim_frame_budget_ms` 时间盒内连续执行 bounded r
 只应由未完成的 Country 批次，或硬 ACK（Effect→Modifier→gameplay）仍到期且经济 catchup
 仍在进行时钉住日历。Trigger/Ideology 的 `should_run` 可以因为次日队列而长期为真，
 不得单独阻止经济 catchup。若 UI 可交互但日历不动，先看 `[clock/step]` 的 `barrier=`
-与节流的 `[sim/barrier]`（`hard_ack=` 只有 effect/modifier/gameplay）。周期边界出现全量尖峰时，检查
+与节流的 `[sim/barrier]`（`hard_ack=` 只有 effect/modifier/gameplay）。
+`native_runtime_graph_mode=ACTIVE` 下 continuation 走的是 `advance_runtime_pulse()`，
+`[sim/barrier]` 不会出现；此时 `country_day_barrier` 与 `economy_day_barrier`
+**永远成对**出现（两者都由同一个 `status==3` 驱动），配合恒定的小 `pulse=`（约 2ms，
+即 graph 内 64 次迭代空转）和 `weather-layer`/`detail_scatter`/`natural_resource`
+日志彻底停止，就是 graph 自锁。改看节流的 `[sim/graph-barrier]`：`pinned=` 直接给出
+是 country / effect / modifier / gameplay_effect / economy 里的哪个域 `should_run(day)`
+永远为真。`released=true` 表示看门狗已强行放行日历（降级运行），不是修复。
+
+`pinned=trigger` 配合 `last_us≈` 满预算、`yields` 每 pulse +1、`economy_slices`
+完全不动，是另一种病：trigger 的 effect 队列里卡了一个 handoff 拒收的 effect，
+`should_run` 恒真，64 次迭代把整帧预算烧在同一个 effect 上。预算耗尽本身已不再举
+barrier，所以现在这种情况只表现为 `pulse=` 打满而日历仍在走；定位看一次性的
+`[sim/graph-trigger] handoff blocked reason=`，以及 `[sim/graph-barrier]` 行尾的
+`trigger_blocked=<pulses>/<reason>`。常见 reason 是
+`trigger_effect_domain_adapter_required`（该 action 还没有原生适配器）。
+
+经济进入 fatal 时不再静默继续：`[sim/economy-fatal]` 打出 `reason` / `stage` /
+`audit_ledger` / `audit_lane`，同时 `push_error` 并暂停 `WorldClock`。看到
+`reason=incremental_closing_audit_mismatch` 而 `population_error`/`money_error`/
+`goods_error` 全为 0，说明真实守恒没破，是增量收盘审计快路径与全量审计发生分歧；
+用 `audit_ledger`（population/money/goods）+ `audit_lane` 定位分歧的 cohort slot
+或 market lane，必要时把 `economy_closing_audit_mode` 临时设为 `FULL` 绕过快路径
+以确认。
+周期边界出现全量尖峰时，检查
 是否误恢复“全 cohort 会计清零”或“无结构变化也重建 merchant CSR”。`building_commit` 返回的
 `next_stage=aggregate_publish` 不表示本片已执行 publish；只有下一片
 `executed_stage=aggregate_publish` 才计入发布耗时。

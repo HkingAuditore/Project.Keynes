@@ -141,6 +141,10 @@ class_name MapGenerator
 # 订阅本信号；详细 stage 含义见 map_baker.gd 顶部 stage_progress 信号注释。
 signal bake_progress(stage: String, fraction: float)
 
+# 原生经济 runtime 进入不可恢复状态时发出一次。UI 层可以订阅它弹出停机提示；
+# 仿真本身已经被 _halt_on_economy_fatal 暂停，继续推进只会放大错误账目。
+signal economy_runtime_fatal(day_index: int, reason: String, report: Dictionary)
+
 # 显式 preload，避免新建 class_name 文件时 Godot 全局类注册表偶发未拾取的问题
 const WindBeltScript = preload("res://scripts/weather/wind_belt.gd")
 const DCClimateMath = preload("res://scripts/simulation/climate/climate_math.gd")
@@ -1106,8 +1110,21 @@ const NATIVE_DAILY_CONTINUATION_SLICE_HEADROOM_MS := 3.0
 const BIO_OCCUPANCY_SLICE_CELLS := 2048
 const EFFECT_ACK_CHAIN_MAX_PASSES := 8
 const BARRIER_DIAG_LOG_STRIDE := 60
+# 原生 runtime graph 的硬 barrier 没有 legacy 续跑路径那种 `hard_ack_due and
+# economy_inflight` 逃生口：advance_runtime_pulse 只要看到任一硬域 should_run(day)
+# 就回 status=3，GDScript 就把 country/economy 两个 barrier 一起举起来。而 barrier
+# 举着 → WorldClock 推不动一天 → day 不变 → 那个域的 should_run 条件也永远不变，
+# 于是自锁：每帧烧掉 64 次空转迭代，日历永久冻结。下面两级看门狗先把 pinned 域打出来
+# 供定位，再在长时间零进展后放行日历，把硬冻结降级为可观测的降速。
+const RUNTIME_GRAPH_STALL_DIAG_PULSES := 30
+const RUNTIME_GRAPH_STALL_DIAG_STRIDE := 300
+const RUNTIME_GRAPH_STALL_RELEASE_PULSES := 1200
 var _continuation_perf_pending: Dictionary = {}
 var _barrier_diag_count: int = 0
+var _runtime_graph_stall_day: int = -1
+var _runtime_graph_stall_pulses: int = 0
+var _runtime_graph_stall_released: bool = false
+var _runtime_graph_economy_fatal_halted: bool = false
 var _test_economy_bootstrap_enabled: bool = false
 var _test_economy_population_scale: int = EconomyTestBootstrapScript.DEFAULT_POPULATION_SCALE
 var _gameplay_start_context: Dictionary = {}
@@ -1140,6 +1157,10 @@ var _native_daily_sim_job = null
 var _native_environment_runtime_job = null
 var _native_daily_configured: bool = false
 var _runtime_graph_active: bool = false
+## Runtime-graph 路径不走 CountryDailySystem，必须自己把 country commit
+## 转成 country_committed，否则国界/视野不会跟着 CLAIM 刷新。
+## -1 = 尚未对齐过 watermark（首次只采纳，不重放 bootstrap）。
+var _runtime_graph_last_country_generation: int = -1
 var _native_daily_last_result: Dictionary = {}
 var _native_daily_slice_round_active: bool = false
 var _native_daily_slice_unified_weather_embedded: bool = false
@@ -2465,15 +2486,22 @@ func _advance_runtime_graph_pulse(day_index: int) -> Dictionary:
 		day_index, season_graph, speed_graph, int(budget_graph * 1000.0), 0))
 	var token_status := int((token >> 56) & 0xff)
 	var token_dirty := int((token >> 32) & 0xffff)
+	var barrier_armed := _track_runtime_graph_stall(day_index, token_status)
 	if _world_clock_ref != null:
 		_world_clock_ref.request_simulation_backpressure(
-			&"economy_day_barrier", token_status == 3)
+			&"economy_day_barrier", barrier_armed)
 		_world_clock_ref.request_simulation_backpressure(
-			&"country_day_barrier", token_status == 3)
+			&"country_day_barrier", barrier_armed)
 	if token_dirty != 0 and _data_core_world_ext.has_method("flush_runtime_visuals"):
 		_data_core_world_ext.flush_runtime_visuals(token_dirty)
+	# Country slice 已在 pulse 内写入 native + MapData.country_slot_arr，但
+	# CountryDailySystem.dispatch_committed_events 被 graph 短路跳过；这里按
+	# generation watermark 补发，驱动 WorldRuntimeHost.refresh_country_visuals。
+	_dispatch_runtime_graph_country_committed()
 	if _data_core_world_ext.has_method("get_runtime_graph_last_economy_report"):
 		var economy_result: Dictionary = _data_core_world_ext.get_runtime_graph_last_economy_report()
+		if bool(economy_result.get("fatal", false)):
+			_halt_on_economy_fatal(day_index, economy_result)
 		if int(economy_result.get("day_index", economy_result.get("sample_day", -1))) == day_index:
 			if _economy_facade != null and bool(economy_result.get(
 					"economy_event_batch_published", false)):
@@ -2482,6 +2510,126 @@ func _advance_runtime_graph_pulse(day_index: int) -> Dictionary:
 				_economy_facade.dispatch_construction_command_receipts()
 	return {"token": token, "status": token_status,
 		"dirty_mask": token_dirty}
+
+
+## 经济 runtime 进入 fatal 后 economy_should_run() 恒为 false，原生 graph 的 pending
+## 判定随之落回 idle，日历会继续推进——气候/国家/人口照跑，经济却已经死了，玩家看到的
+## 是一份持续腐烂的存档。legacy 续跑路径在 fatal 时会举起 economy_day_barrier 把时钟
+## 钉住；graph 路径这里补上等价语义，并且直接暂停 + push_error，让停机可见而不是伪装
+## 成又一次卡顿。
+func _halt_on_economy_fatal(day_index: int, economy_result: Dictionary) -> void:
+	if _runtime_graph_economy_fatal_halted:
+		return
+	_runtime_graph_economy_fatal_halted = true
+	var reason := String(economy_result.get("fatal_reason", "unknown"))
+	# 全量 report 有 450+ 键，只在 fatal 这一次值得付这个跨语言搬运；守恒/审计字段
+	# 只在这里齐全，compact slice 报告不带。
+	var detail: Dictionary = economy_result
+	if _economy_facade != null and _economy_facade.has_method("report"):
+		detail = _economy_facade.report()
+	print("[sim/economy-fatal] day=%d reason=%s stage=%s sample_day=%s last_completed_sample_day=%s audit_mode=%s audit_ledger=%s audit_lane=%s audit_mismatches=%s population_error=%s money_error=%s goods_error=%s"
+		% [day_index, reason, str(detail.get("stage", "?")),
+			str(detail.get("sample_day", -1)),
+			str(detail.get("last_completed_sample_day", -1)),
+			str(detail.get("closing_audit_mode", "?")),
+			str(detail.get("closing_audit_mismatch_ledger", "?")),
+			str(detail.get("closing_audit_mismatch_lane", -1)),
+			str(detail.get("closing_audit_mismatches", -1)),
+			str(detail.get("population_error", -1)),
+			str(detail.get("money_error", -1)),
+			str(detail.get("goods_error", -1))])
+	push_error("[economy] 原生经济 runtime 已 fatal（%s），仿真已在第 %d 天暂停以避免继续产出错误结果。"
+		% [reason, day_index])
+	if _world_clock_ref != null and _world_clock_ref.has_method("pause"):
+		_world_clock_ref.pause(true)
+	economy_runtime_fatal.emit(day_index, reason, detail)
+
+
+func _dispatch_runtime_graph_country_committed() -> void:
+	if _country_facade == null or not _country_facade.is_configured():
+		return
+	var report: Dictionary = _country_facade.report()
+	var generation := int(report.get("generation", -1))
+	if generation < 0:
+		return
+	if _runtime_graph_last_country_generation < 0:
+		_runtime_graph_last_country_generation = generation
+		return
+	if generation == _runtime_graph_last_country_generation:
+		return
+	_runtime_graph_last_country_generation = generation
+	if int(report.get("changed_countries", 0)) <= 0 \
+			and int(report.get("changed_cells", 0)) <= 0:
+		return
+	_country_facade.dispatch_committed_events(report)
+
+
+## 返回本次 pulse 之后 country/economy 硬 barrier 是否还应该举着。
+## status=3 表示"还有硬域 pending"，正常情况下会在同一天的几次 pulse 内落回 1/2。
+## 同一天连续 pending 到 RUNTIME_GRAPH_STALL_RELEASE_PULSES 时判定为自锁并放行日历：
+## 放行只是让 WorldClock 继续推进，pending 的域在后续日仍会被 pulse 继续 drain。
+func _track_runtime_graph_stall(day_index: int, token_status: int) -> bool:
+	if token_status != 3:
+		_runtime_graph_stall_day = -1
+		_runtime_graph_stall_pulses = 0
+		_runtime_graph_stall_released = false
+		return false
+	if day_index != _runtime_graph_stall_day:
+		_runtime_graph_stall_day = day_index
+		_runtime_graph_stall_pulses = 0
+	_runtime_graph_stall_pulses += 1
+	var latching := not _runtime_graph_stall_released \
+		and _runtime_graph_stall_pulses >= RUNTIME_GRAPH_STALL_RELEASE_PULSES
+	if latching:
+		_runtime_graph_stall_released = true
+	if latching or (_runtime_graph_stall_pulses >= RUNTIME_GRAPH_STALL_DIAG_PULSES \
+			and (_runtime_graph_stall_pulses - RUNTIME_GRAPH_STALL_DIAG_PULSES) \
+				% RUNTIME_GRAPH_STALL_DIAG_STRIDE == 0):
+		_log_stalled_runtime_graph(day_index)
+	return not _runtime_graph_stall_released
+
+
+func _log_stalled_runtime_graph(day: int) -> void:
+	var snapshot: Dictionary = {}
+	if _data_core_world_ext != null \
+			and _data_core_world_ext.has_method("get_runtime_perf_snapshot"):
+		snapshot = _data_core_world_ext.get_runtime_perf_snapshot(1)
+	var pinned := PackedStringArray()
+	for key in ["country_pending", "trigger_pending", "ideology_pending",
+			"effect_pending", "modifier_pending", "gameplay_effect_pending",
+			"economy_pending"]:
+		if bool(snapshot.get(key, false)):
+			pinned.append(String(key).trim_suffix("_pending"))
+	print("[sim/graph-barrier] day=%d pulses=%d released=%s pinned=%s work=%s economy_slices=%s economy_commits=%s yields=%s last_us=%s trigger_blocked=%s/%s"
+		% [day, _runtime_graph_stall_pulses, str(_runtime_graph_stall_released),
+			",".join(pinned), str(snapshot.get("work_done", -1)),
+			str(snapshot.get("economy_slices", -1)),
+			str(snapshot.get("economy_commits", -1)),
+			str(snapshot.get("budget_yields", -1)),
+			str(snapshot.get("last_elapsed_us", -1)),
+			str(snapshot.get("trigger_blocked_pulses", -1)),
+			str(snapshot.get("trigger_blocked_reason", ""))])
+	# 放行日历意味着某个硬域自锁了，仿真接下来是在"经济/效果落后于日历"的降级状态下
+	# 继续跑。这不能只留在 stdout 里——它和经济 fatal 一样会污染后续账目。
+	if _runtime_graph_stall_released:
+		push_warning("[sim] 原生 runtime graph 在第 %d 天自锁 %d 个 pulse（pinned=%s），已放行日历；该域的工作已落后于日历，结果不可信。"
+			% [day, _runtime_graph_stall_pulses, ",".join(pinned)])
+	# Effect 是这个 barrier 历史上最常见的钉子（一个永远到不了 ACKED/REJECTED/
+	# RESYNC_REQUIRED 的 transaction 会让 effect_should_run 恒真）。命中时多打一行
+	# 事务状态直方图，直接区分是"卡住的事务"还是"到期的 due heap 实例"。
+	if bool(snapshot.get("effect_pending", false)) and _effect_facade != null:
+		var effect_report: Dictionary = _effect_facade.report()
+		print("[sim/graph-barrier/effect] current_day=%s last_completed_day=%s planned=%s preflighted=%s committed=%s acked=%s rejected=%s resync=%s transactions=%s instances=%s"
+			% [str(effect_report.get("current_day", -1)),
+				str(effect_report.get("last_completed_day", -1)),
+				str(effect_report.get("planned_transactions", -1)),
+				str(effect_report.get("preflighted_transactions", -1)),
+				str(effect_report.get("committed_transactions", -1)),
+				str(effect_report.get("acked_transactions", -1)),
+				str(effect_report.get("rejected_transactions", -1)),
+				str(effect_report.get("resync_required_transactions", -1)),
+				str(effect_report.get("transactions", -1)),
+				str(effect_report.get("instances", -1))])
 
 
 func _native_daily_slice_available() -> bool:
@@ -5295,6 +5443,7 @@ func _configure_native_world_context(map: MapData, world: WorldData, cfg: MapCon
 	var res: Dictionary = _data_core_world_ext.configure_native_world(knobs)
 	_native_daily_configured = int(res.get("rc", -1)) == 0
 	_runtime_graph_active = false
+	_runtime_graph_last_country_generation = -1
 	if _data_core_world_ext.has_method("configure_runtime_graph"):
 		var graph_mode := int(cp.native_runtime_graph_mode) if cp != null and cp.get("native_runtime_graph_mode") != null else 0
 		var graph_rc := int(_data_core_world_ext.configure_runtime_graph({

@@ -6,6 +6,8 @@
 #include "modifier_runtime.h"
 #include "trigger_runtime.h"
 
+#include <godot_cpp/variant/utility_functions.hpp>
+
 #include <algorithm>
 #include <chrono>
 
@@ -46,6 +48,8 @@ int DCWorldExt::configure_runtime_graph(const Dictionary &boot_config) {
     _runtime_graph_budget_yields = 0;
     _runtime_graph_economy_slices = 0;
     _runtime_graph_economy_commits = 0;
+    _runtime_graph_trigger_blocked_pulses = 0;
+    _runtime_graph_trigger_blocked_reason.clear();
     _runtime_graph_last_elapsed_us = 0;
     _runtime_graph_last_status = 0;
     _runtime_graph_configured = true;
@@ -127,6 +131,15 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
         return ingested;
     };
 
+    // TriggerRuntime::should_run() stays true while its effect queue is not
+    // empty. When handoff refuses the head effect (no native adapter for that
+    // action, or a peer runtime rejected it) the queue can never drain, and
+    // re-entering trigger every iteration burns the whole pulse budget on an
+    // effect that will be refused again. Retire trigger for the rest of this
+    // pulse as soon as handoff reports blocked, and keep the reason for
+    // diagnostics.
+    bool trigger_handoff_blocked = false;
+
     // Stable order mirrors the existing GDScript ACK chain and scheduler
     // priorities. Each runtime owns its own persistent range cursor.
     while (iterations++ < 64 && !over_budget()) {
@@ -145,10 +158,27 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
             work += ingested_events;
             progressed = true;
         }
-        if (_trigger_runtime != nullptr &&
+        if (_trigger_runtime != nullptr && !trigger_handoff_blocked &&
             static_cast<TriggerRuntime *>(_trigger_runtime)->should_run(day)) {
             ran(run_trigger_daily(day));
-            if (_effect_runtime != nullptr) handoff_trigger_effects(512);
+            if (_effect_runtime != nullptr) {
+                const Dictionary handoff = handoff_trigger_effects(512);
+                if (bool(handoff.get("blocked", false))) {
+                    trigger_handoff_blocked = true;
+                    const std::string reason =
+                        String(handoff.get("reason", "trigger_effect_handoff_blocked"))
+                            .utf8().get_data();
+                    if (reason != _runtime_graph_trigger_blocked_reason) {
+                        _runtime_graph_trigger_blocked_reason = reason;
+                        UtilityFunctions::push_warning(
+                            String("[sim/graph-trigger] handoff blocked day=") +
+                            String::num_int64(day) + String(" reason=") +
+                            String(reason.c_str()) +
+                            String(" — trigger effect queue cannot drain; "
+                                   "trigger is retired for the rest of each pulse"));
+                    }
+                }
+            }
             progressed = true;
         }
         if (over_budget()) break;
@@ -213,13 +243,18 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
             break;
         }
     }
-    if (over_budget()) {
-        ++_runtime_graph_budget_yields;
-        status = 3;
-    }
+    if (over_budget()) ++_runtime_graph_budget_yields;
+    if (trigger_handoff_blocked) ++_runtime_graph_trigger_blocked_pulses;
     // A runtime may still own a persistent cursor even when this pulse did not
     // hit the wall-clock budget (for example a range cap stopped the loop).
     // Keep the committed-day barrier armed until every hard domain reports idle.
+    //
+    // Only the hard domains below may arm it. Running out of wall-clock budget
+    // is deliberately NOT sufficient: Trigger/Ideology own soft cursors that
+    // legitimately carry work into tomorrow, so a pulse that spends its whole
+    // budget on them must still let WorldClock commit the day. Arming on the
+    // budget yield alone froze the calendar for as long as trigger stayed
+    // busy, because the frozen day kept trigger's own work queued.
     const bool pending =
         (_country_runtime != nullptr &&
          static_cast<NativeCountryRuntime *>(_country_runtime)->should_run(day)) ||
@@ -264,6 +299,10 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
     out["budget_yields"] = static_cast<int64_t>(_runtime_graph_budget_yields);
     out["economy_slices"] = static_cast<int64_t>(_runtime_graph_economy_slices);
     out["economy_commits"] = static_cast<int64_t>(_runtime_graph_economy_commits);
+    out["trigger_blocked_pulses"] =
+        static_cast<int64_t>(_runtime_graph_trigger_blocked_pulses);
+    out["trigger_blocked_reason"] =
+        String(_runtime_graph_trigger_blocked_reason.c_str());
     out["last_elapsed_us"] = static_cast<int64_t>(_runtime_graph_last_elapsed_us);
     out["last_status"] = static_cast<int64_t>(_runtime_graph_last_status);
     out["dirty_mask"] = static_cast<int64_t>(_runtime_graph_dirty_mask);

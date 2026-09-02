@@ -2853,10 +2853,12 @@ household demography 和 structural commit 后再做一次只裁不招的 commit
 每个失业 ethnicity cohort 只保留可行岗位吸引力最高的 4 个候选。候选权重为 vacancy、收入改善
 choice factor、labor pay ratio 和 planned utilization 的乘积，按稳定最大余数法分配，容量是硬上限；
 因此高收入岗位会得到更多人，但不会在单个周期吸走整池人口。owner→owner 与 employee→owner
-复用同一可支配收入门槛；跨职业 owner 迁移必须在扣除 30 日生活费后仍覆盖 household market 的
-每位 owner working-capital reserve，资金由 `move_cohort_population` 按人口比例转移。目标和来源
-先快照，匹配只执行一次，禁止链式跳槽；调度阶段、锁定 N/S cadence、DataCore slots 与
-GDScript 权威边界不变。
+复用同一可支配收入门槛；缺编 ACTIVE lot 也可作 owner 来源（机会梯度），但当来源快照时已缺编且
+机会收入仍为正时，门槛再乘 `employment_understaffed_reallocation_hurdle_mult_q16`（默认 2×）
+以防小噪声乒乓；从来源机会≤0 跳到正机会目标只用基础门槛。跨职业 owner 迁移必须在扣除 30 日
+生活费后仍覆盖 household market 的每位 owner working-capital reserve，资金由
+`move_cohort_population` 按人口比例转移。目标和来源先快照，匹配只执行一次，禁止链式跳槽；
+调度阶段、锁定 N/S cadence、DataCore slots 与 GDScript 权威边界不变。
 有效可采储量合入尚未消费的负 pending
 extra，避免跨经济周期重复超采。资源配方 CSR 额外编译 mode：`extract` 以有效储量限制产能并
 发布负 delta；`capacity` 以 `reserve / (building_count × requirement)` 限产，但不写资源 delta。

@@ -139,6 +139,7 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _fiscal_business_prospective_request = 0;
     _building_owner_mobility = 0;
     _building_owner_job_reallocations = 0;
+    _building_owner_understaffed_reallocations = 0;
     _building_owner_job_profession_changes = 0;
     _building_owner_job_probability_skips = 0;
     _building_employee_to_owner_reallocations = 0;

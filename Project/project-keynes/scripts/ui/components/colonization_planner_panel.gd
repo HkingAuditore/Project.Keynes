@@ -18,6 +18,8 @@ var _selected_quote: Dictionary = {}
 var _economy_busy := false
 var _quotes_identity := ""
 var _expeditions_identity := ""
+var _quote_row_refs: Dictionary = {}
+var _expedition_row_refs: Dictionary = {}
 var _family_view_cache: Dictionary = {}
 var _current_tab := "quotes"
 var _title: Label
@@ -79,6 +81,8 @@ func open_target(target_cell: int, family_filter: int = 0,
 	_selected_quote.clear()
 	_quotes_identity = ""
 	_expeditions_identity = ""
+	_quote_row_refs.clear()
+	_expedition_row_refs.clear()
 	_family_view_cache.clear()
 	_economy_busy = false
 	_title.text = "开拓"
@@ -162,6 +166,7 @@ func _show_quotes() -> void:
 	_current_tab = "quotes"
 	if _tabs != null:
 		_tabs.select_tab("quotes")
+	_discard_expedition_rows()
 	if _controller == null:
 		_clear_list()
 		_quotes_identity = ""
@@ -199,38 +204,13 @@ func _show_quotes() -> void:
 		_update_start_enabled()
 		return
 	_quotes_identity = identity
-	_clear_list()
 	_apply_kind(String(page.get("kind", "colonize")))
 	_set_busy_status(_economy_busy)
 	var quotes := _collapse_quotes(page)
 	var keep_population := int(_population.value) if not _selected_quote.is_empty() else 0
-	var restored := false
-	for quote in quotes:
-		var family_handle := int(quote.get("family_handle", 0))
-		var maximum_population := int(quote.get("maximum_population", 0))
-		var decorated: Dictionary = quote
-		decorated.merge(_family_view_for(family_handle,
-			maximum_population + 1), true)
-		var row := FamilyRowScene.instantiate()
-		row.set_row({
-			"name": String(decorated.get("display_name", "家族")),
-			"population": int(decorated.get("family_population",
-				maximum_population + 1)),
-			"badges": decorated.get("trait_badges", []),
-			"effect": String(decorated.get("effect_text", "")),
-			"tooltip": _quote_tooltip(quote),
-		})
-		row.pressed.connect(_on_quote_row_pressed.bind(decorated, row))
-		_list.add_child(row)
-		if int(_selected_quote.get("family_handle", 0)) == family_handle:
-			row.set_pressed_no_signal(true)
-			_selected_quote = decorated.duplicate(true)
-			var maximum := maxi(1, maximum_population)
-			_population.max_value = maximum
-			_population.value = clampi(keep_population, 1, maximum) \
-				if keep_population > 0 else maximum
-			restored = true
+	var restored := _sync_quote_rows(quotes, keep_population)
 	if quotes.is_empty():
+		_clear_list()
 		if _economy_busy:
 			_add_note("经济正在结算。家族列表将在提交后刷新，也可先查看在途队伍。",
 				UITokens.ARCHIVE_INK_MUTED)
@@ -240,6 +220,61 @@ func _show_quotes() -> void:
 		_refresh_selected_kit()
 	else:
 		_update_start_enabled()
+
+
+func _sync_quote_rows(quotes: Array, keep_population: int) -> bool:
+	_remove_note_children()
+	var keep := {}
+	var restored := false
+	for quote_value in quotes:
+		var quote: Dictionary = quote_value
+		var family_handle := int(quote.get("family_handle", 0))
+		keep[family_handle] = true
+		var maximum_population := int(quote.get("maximum_population", 0))
+		var decorated: Dictionary = quote.duplicate(true)
+		decorated.merge(_family_view_for(family_handle,
+			maximum_population + 1), true)
+		var row := _quote_row_refs.get(family_handle) as Button
+		if row == null or not is_instance_valid(row):
+			row = FamilyRowScene.instantiate() as Button
+			row.pressed.connect(_on_reusable_quote_pressed.bind(row))
+			_list.add_child(row)
+			_quote_row_refs[family_handle] = row
+		row.set_meta("quote", decorated)
+		row.set_row({
+			"name": String(decorated.get("display_name", "家族")),
+			"population": int(decorated.get("family_population",
+				maximum_population + 1)),
+			"badges": decorated.get("trait_badges", []),
+			"effect": String(decorated.get("effect_text", "")),
+			"tooltip": _quote_tooltip(quote),
+		})
+		var selected := int(_selected_quote.get("family_handle", 0)) == family_handle
+		row.set_pressed_no_signal(selected)
+		if selected:
+			_selected_quote = decorated.duplicate(true)
+			var maximum := maxi(1, maximum_population)
+			_population.max_value = maximum
+			_population.value = clampi(keep_population, 1, maximum) \
+				if keep_population > 0 else maximum
+			restored = true
+	var stale: Array = []
+	for handle_value in _quote_row_refs.keys():
+		if not keep.has(handle_value):
+			stale.append(handle_value)
+	for handle_value in stale:
+		var stale_row := _quote_row_refs[handle_value] as Node
+		_quote_row_refs.erase(handle_value)
+		if stale_row != null and is_instance_valid(stale_row):
+			stale_row.queue_free()
+	return restored
+
+
+func _on_reusable_quote_pressed(row: Button) -> void:
+	var quote: Dictionary = row.get_meta("quote", {})
+	if quote.is_empty():
+		return
+	_on_quote_row_pressed(quote, row)
 
 
 func _on_quote_row_pressed(quote: Dictionary, row: Button) -> void:
@@ -275,6 +310,7 @@ func _show_expeditions() -> void:
 	if _tabs != null:
 		_tabs.select_tab("expeditions")
 	_selected_quote.clear()
+	_discard_quote_rows()
 	_update_start_enabled()
 	if _controller == null:
 		_clear_list()
@@ -288,6 +324,8 @@ func _show_expeditions() -> void:
 		if _transient_query_failure(code, page):
 			_economy_busy = true
 			_set_busy_status(true)
+			if _has_expedition_rows():
+				return
 			_clear_list()
 			_expeditions_identity = ""
 			_add_note("正在等待经济提交完成后显示在途队伍。", UITokens.ARCHIVE_INK_MUTED)
@@ -302,22 +340,59 @@ func _show_expeditions() -> void:
 		_set_busy_status(_economy_busy)
 		return
 	_expeditions_identity = identity
-	_clear_list()
 	_set_busy_status(_economy_busy)
+	var handles: PackedInt64Array = page.get("expedition_handles", PackedInt64Array())
+	if handles.is_empty():
+		_clear_list()
+		if _economy_busy:
+			_add_note("经济正在结算。在途队伍将在提交后刷新。", UITokens.ARCHIVE_INK_MUTED)
+		else:
+			_add_note("当前没有活动开拓队。", UITokens.ARCHIVE_INK_MUTED)
+		return
+	_sync_expedition_rows(page)
+
+
+func _sync_expedition_rows(page: Dictionary) -> void:
+	_remove_note_children()
 	var handles: PackedInt64Array = page.get("expedition_handles", PackedInt64Array())
 	var families: PackedInt64Array = page.get("family_handles", PackedInt64Array())
 	var populations: PackedInt64Array = page.get("populations", PackedInt64Array())
 	var dues: PackedInt64Array = page.get("due_days", PackedInt64Array())
 	var states: PackedInt32Array = page.get("states", PackedInt32Array())
+	var keep := {}
 	for index in range(handles.size()):
+		var expedition_handle := int(handles[index])
+		keep[expedition_handle] = true
 		var family_handle := int(families[index]) if index < families.size() else 0
-		var view: Dictionary = _family_view_for(family_handle, int(populations[index]))
+		var view: Dictionary = _family_view_for(family_handle,
+			int(populations[index]) if index < populations.size() else 0)
 		var state := int(states[index]) if index < states.size() else 0
 		var returning := state == 3
-		var row_wrap := HBoxContainer.new()
-		row_wrap.add_theme_constant_override("separation", UITokens.SPACE_SM)
-		var row := FamilyRowScene.instantiate()
-		row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var row_wrap := _expedition_row_refs.get(expedition_handle) as HBoxContainer
+		var row: Button
+		var cancel: Button
+		if row_wrap == null or not is_instance_valid(row_wrap):
+			row_wrap = HBoxContainer.new()
+			row_wrap.add_theme_constant_override("separation", UITokens.SPACE_SM)
+			row = FamilyRowScene.instantiate() as Button
+			row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			row.toggle_mode = false
+			row.pressed.connect(_on_reusable_expedition_pressed.bind(row))
+			row_wrap.add_child(row)
+			cancel = Button.new()
+			cancel.text = "取消"
+			cancel.focus_mode = Control.FOCUS_NONE
+			cancel.theme_type_variation = &"PKTabButton"
+			cancel.custom_minimum_size = Vector2(64.0, 36.0)
+			cancel.pressed.connect(_on_reusable_cancel_pressed.bind(cancel))
+			row_wrap.add_child(cancel)
+			_list.add_child(row_wrap)
+			_expedition_row_refs[expedition_handle] = row_wrap
+		else:
+			row = row_wrap.get_child(0) as Button
+			cancel = row_wrap.get_child(1) as Button
+		row.set_meta("expedition_handle", expedition_handle)
+		cancel.set_meta("expedition_handle", expedition_handle)
 		row.set_row({
 			"name": String(view.get("display_name", "家族")),
 			"population": int(populations[index]) if index < populations.size() else 0,
@@ -325,37 +400,65 @@ func _show_expeditions() -> void:
 				"text": _state_text(state),
 				"accent": UITokens.WARN if returning else UITokens.ACCENT,
 			}],
-			"effect": _preparing_missing_text(int(handles[index]), state),
-			"tooltip": _expedition_row_tooltip(int(handles[index]), state,
+			"effect": _preparing_missing_text(expedition_handle, state),
+			"tooltip": _expedition_row_tooltip(expedition_handle, state,
 				int(dues[index]) if index < dues.size() else -1),
 		})
-		row.toggle_mode = false
-		row.pressed.connect(expedition_selected.emit.bind(int(handles[index])))
-		row_wrap.add_child(row)
-		var cancel := Button.new()
-		cancel.text = "取消"
-		cancel.focus_mode = Control.FOCUS_NONE
-		cancel.theme_type_variation = &"PKTabButton"
-		cancel.custom_minimum_size = Vector2(64.0, 36.0)
 		cancel.disabled = returning
 		if returning:
 			cancel.tooltip_text = "返程中的队伍不能重复取消"
 		else:
 			cancel.tooltip_text = "按当前进度返程；结算中会先排队，提交完成后执行"
-		cancel.pressed.connect(cancel_requested.emit.bind(int(handles[index])))
-		row_wrap.add_child(cancel)
-		_list.add_child(row_wrap)
-	if handles.is_empty():
-		if _economy_busy:
-			_add_note("经济正在结算。在途队伍将在提交后刷新。", UITokens.ARCHIVE_INK_MUTED)
-		else:
-			_add_note("当前没有活动开拓队。", UITokens.ARCHIVE_INK_MUTED)
+	var stale: Array = []
+	for handle_value in _expedition_row_refs.keys():
+		if not keep.has(handle_value):
+			stale.append(handle_value)
+	for handle_value in stale:
+		var stale_wrap := _expedition_row_refs[handle_value] as Node
+		_expedition_row_refs.erase(handle_value)
+		if stale_wrap != null and is_instance_valid(stale_wrap):
+			stale_wrap.queue_free()
+
+
+func _on_reusable_expedition_pressed(row: Button) -> void:
+	expedition_selected.emit(int(row.get_meta("expedition_handle", 0)))
+
+
+func _on_reusable_cancel_pressed(cancel: Button) -> void:
+	cancel_requested.emit(int(cancel.get_meta("expedition_handle", 0)))
 
 
 func _clear_list() -> void:
+	_quote_row_refs.clear()
+	_expedition_row_refs.clear()
 	for child in _list.get_children():
 		_list.remove_child(child)
 		child.queue_free()
+
+
+func _discard_quote_rows() -> void:
+	for row_value in _quote_row_refs.values():
+		var row := row_value as Node
+		if row != null and is_instance_valid(row):
+			row.queue_free()
+	_quote_row_refs.clear()
+
+
+func _discard_expedition_rows() -> void:
+	for row_value in _expedition_row_refs.values():
+		var row := row_value as Node
+		if row != null and is_instance_valid(row):
+			row.queue_free()
+	_expedition_row_refs.clear()
+
+
+func _remove_note_children() -> void:
+	if _list == null:
+		return
+	for child in _list.get_children():
+		if child is Label:
+			_list.remove_child(child)
+			child.queue_free()
 
 
 func _add_note(text: String, color: Color) -> void:
@@ -508,19 +611,15 @@ static func _transient_query_failure(code: String, page: Dictionary) -> bool:
 
 
 func _has_quote_rows() -> bool:
-	if _list == null:
-		return false
-	for child in _list.get_children():
-		if child is Button:
+	for row_value in _quote_row_refs.values():
+		if row_value != null and is_instance_valid(row_value):
 			return true
 	return false
 
 
 func _has_expedition_rows() -> bool:
-	if _list == null:
-		return false
-	for child in _list.get_children():
-		if child is HBoxContainer:
+	for row_value in _expedition_row_refs.values():
+		if row_value != null and is_instance_valid(row_value):
 			return true
 	return false
 
