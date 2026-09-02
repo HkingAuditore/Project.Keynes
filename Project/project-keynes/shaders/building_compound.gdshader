@@ -38,7 +38,8 @@ uniform float tod_exposure = 1.0;
 // the transition soft so the whole map does not pop when the terminator moves.
 const float BUILDING_WINDOW_NIGHT_START = 0.18;
 const float BUILDING_WINDOW_NIGHT_FULL = 0.62;
-const float BUILDING_WINDOW_LIGHT_GAIN = 0.72;
+const float BUILDING_WINDOW_LIGHT_GAIN = 1.45;
+const float BUILDING_WINDOW_HALO_GAIN = 0.34;
 #include "res://shaders/include/earth_daylight.gdshaderinc"
 
 varying flat float v_style;
@@ -175,6 +176,11 @@ void fragment() {
 				authored_ed.pixel_night);
 			authored_color += vec3(1.0, 0.62, 0.24) * surface.b
 				* authored_window_night * BUILDING_WINDOW_LIGHT_GAIN * tod_exposure;
+			// Give sub-pixel windows enough energy to survive mip filtering at the
+			// compound/macro transition without turning the whole facade emissive.
+			authored_color += vec3(1.0, 0.44, 0.12)
+				* smoothstep(0.02, 0.42, surface.b) * authored_window_night
+				* BUILDING_WINDOW_HALO_GAIN * tod_exposure;
 		}
 		float authored_alpha = authored.a * geometry_alpha
 			* smoothstep(0.36, 0.54, camera_zoom);
@@ -259,6 +265,9 @@ void fragment() {
 	float window_glow = max(
 		box_mask(p, vec2(0.12, 0.235), vec2(0.064, 0.040), 0.009),
 		box_mask(p, vec2(0.36, 0.235), vec2(0.039, 0.036), 0.009));
+	float window_halo = max(
+		box_mask(p, vec2(0.12, 0.235), vec2(0.125, 0.090), 0.045),
+		box_mask(p, vec2(0.36, 0.235), vec2(0.090, 0.084), 0.040));
 	color = mix(color, vec3(0.14, 0.085, 0.048), door_frame);
 	color = mix(color, vec3(0.050, 0.035, 0.025), door);
 	color = mix(color, vec3(0.115, 0.085, 0.055), windows);
@@ -324,6 +333,8 @@ void fragment() {
 			BUILDING_WINDOW_NIGHT_FULL, ed.pixel_night);
 		color += vec3(1.0, 0.62, 0.24) * window_glow
 			* window_night * BUILDING_WINDOW_LIGHT_GAIN * tod_exposure;
+		color += vec3(1.0, 0.44, 0.12) * window_halo
+			* window_night * BUILDING_WINDOW_HALO_GAIN * tod_exposure;
 	}
 
 	float glyph = max(max(max(roof_outer, wall_front),

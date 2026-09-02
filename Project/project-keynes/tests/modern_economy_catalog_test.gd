@@ -337,7 +337,32 @@ func _audit(catalog: Dictionary) -> void:
 	_expect("wheat collector remains an arable crop building",
 		wheat_farm != null and String(wheat_farm.id) == "wheat_farm" and
 		wheat_farm.resource_ids.has("arable_land"))
-	var gathering = load("res://data/economy/buildings/gathering_ground.tres")
+	var construction_offsets: PackedInt32Array = catalog.building_construction_offsets
+	var construction_quantities: PackedInt64Array = catalog.building_construction_quantities
+	var construction_candidate_offsets: PackedInt32Array = \
+		catalog.building_construction_candidate_offsets
+	var construction_candidate_goods: PackedInt32Array = \
+		catalog.building_construction_candidate_good_ids
+	var every_building_is_pooled := true
+	for building_index in range(buildings.size()):
+		if int(construction_offsets[building_index + 1]) \
+				- int(construction_offsets[building_index]) > 1:
+			every_building_is_pooled = false
+			break
+	_expect("every building compiles to at most one construction pool",
+		every_building_is_pooled)
+	var placer_index: int = buildings.find("placer_gold_working")
+	var placer_group := int(construction_offsets[placer_index])
+	var placer_candidates := PackedStringArray()
+	for candidate_edge in range(construction_candidate_offsets[placer_group],
+			construction_candidate_offsets[placer_group + 1]):
+		placer_candidates.append(goods[construction_candidate_goods[candidate_edge]])
+	_expect("placer construction is one pooled bill with interchangeable materials",
+		placer_index >= 0 and
+		int(construction_offsets[placer_index + 1]) == placer_group + 1 and
+		int(construction_quantities[placer_group]) == 2912 and
+		placer_candidates.has("logs") and placer_candidates.has("bast_fiber") and
+		placer_candidates.has("reed_bundle"))
 	var stone_hunting = load(
 		"res://data/economy/buildings/stone_age_hunting_camp.tres")
 	_expect("stone hunting has no soft tool complement on the current recipe",

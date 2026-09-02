@@ -1,144 +1,6 @@
-[gd_resource type="Theme" load_steps=24 format=3]
+[gd_resource type="Theme" format=3 uid="uid://pxjpycs2dsct"]
 
-[ext_resource type="FontFile" path="res://assets/fonts/source_han/SourceHanSansCN-VF.woff2" id="1_font"]
-
-[sub_resource type="StyleBoxFlat" id="StylePanel"]
-content_margin_left = 12.0
-content_margin_top = 8.0
-content_margin_right = 12.0
-content_margin_bottom = 8.0
-bg_color = Color(0.052, 0.047, 0.039, 0.965)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(0.53, 0.41, 0.24, 0.72)
-corner_radius_top_left = 7
-corner_radius_top_right = 7
-corner_radius_bottom_right = 7
-corner_radius_bottom_left = 7
-shadow_color = Color(0, 0, 0, 0.52)
-shadow_size = 12
-shadow_offset = Vector2(0, 4)
-
-[sub_resource type="StyleBoxFlat" id="StyleInset"]
-content_margin_left = 8.0
-content_margin_top = 8.0
-content_margin_right = 8.0
-content_margin_bottom = 8.0
-bg_color = Color(0.105, 0.087, 0.066, 0.96)
-border_width_left = 2
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(0.36, 0.29, 0.19, 0.64)
-corner_radius_top_left = 4
-corner_radius_top_right = 4
-corner_radius_bottom_right = 4
-corner_radius_bottom_left = 4
-shadow_color = Color(0, 0, 0, 0.32)
-shadow_size = 4
-shadow_offset = Vector2(0, 2)
-
-[sub_resource type="StyleBoxFlat" id="StyleHUDPanel"]
-bg_color = Color(0.052, 0.047, 0.039, 0.965)
-border_width_bottom = 1
-border_color = Color(0.53, 0.41, 0.24, 0.72)
-shadow_color = Color(0, 0, 0, 0.52)
-shadow_size = 6
-shadow_offset = Vector2(0, 2)
-
-[sub_resource type="StyleBoxFlat" id="StyleHUDInset"]
-content_margin_left = 6.0
-content_margin_top = 2.0
-content_margin_right = 6.0
-content_margin_bottom = 2.0
-bg_color = Color(0.105, 0.087, 0.066, 0.96)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(0.36, 0.29, 0.19, 0.64)
-corner_radius_top_left = 4
-corner_radius_top_right = 4
-corner_radius_bottom_right = 4
-corner_radius_bottom_left = 4
-
-[sub_resource type="StyleBoxFlat" id="StyleDialog"]
-content_margin_left = 16.0
-content_margin_top = 12.0
-content_margin_right = 16.0
-content_margin_bottom = 16.0
-bg_color = Color(0.035, 0.032, 0.028, 0.992)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(0.92, 0.72, 0.38, 0.92)
-corner_radius_top_left = 7
-corner_radius_top_right = 7
-corner_radius_bottom_right = 7
-corner_radius_bottom_left = 7
-shadow_color = Color(0, 0, 0, 0.68)
-shadow_size = 18
-shadow_offset = Vector2(0, 6)
-
-[sub_resource type="StyleBoxFlat" id="ButtonNormal"]
-content_margin_left = 12.0
-content_margin_top = 8.0
-content_margin_right = 12.0
-content_margin_bottom = 8.0
-bg_color = Color(0.105, 0.076, 0.05, 0.97)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(0.52, 0.39, 0.22, 0.8)
-corner_radius_top_left = 4
-corner_radius_top_right = 4
-corner_radius_bottom_right = 4
-corner_radius_bottom_left = 4
-shadow_color = Color(0, 0, 0, 0.42)
-shadow_size = 6
-shadow_offset = Vector2(0, 2)
-
-[sub_resource type="StyleBoxFlat" id="ButtonHover"]
-content_margin_left = 12.0
-content_margin_top = 8.0
-content_margin_right = 12.0
-content_margin_bottom = 8.0
-bg_color = Color(0.145, 0.108, 0.071, 0.98)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(0.92, 0.72, 0.38, 0.96)
-corner_radius_top_left = 4
-corner_radius_top_right = 4
-corner_radius_bottom_right = 4
-corner_radius_bottom_left = 4
-shadow_color = Color(0, 0, 0, 0.46)
-shadow_size = 8
-shadow_offset = Vector2(0, 2)
-
-[sub_resource type="StyleBoxFlat" id="ButtonPressed"]
-content_margin_left = 12.0
-content_margin_top = 9.0
-content_margin_right = 12.0
-content_margin_bottom = 7.0
-bg_color = Color(0.3, 0.205, 0.105, 0.99)
-border_width_left = 2
-border_width_top = 2
-border_width_right = 2
-border_width_bottom = 2
-border_color = Color(0.98, 0.78, 0.42, 1)
-corner_radius_top_left = 4
-corner_radius_top_right = 4
-corner_radius_bottom_right = 4
-corner_radius_bottom_left = 4
-shadow_color = Color(0, 0, 0, 0.32)
-shadow_size = 3
-shadow_offset = Vector2(0, 1)
+[ext_resource type="FontFile" uid="uid://0mtmrt8e1u4k" path="res://assets/fonts/source_han/SourceHanSansCN-VF.woff2" id="1_font"]
 
 [sub_resource type="StyleBoxFlat" id="ButtonDisabled"]
 content_margin_left = 12.0
@@ -168,21 +30,91 @@ corner_radius_top_right = 4
 corner_radius_bottom_right = 4
 corner_radius_bottom_left = 4
 
-[sub_resource type="StyleBoxFlat" id="LineEditNormal"]
-content_margin_left = 8.0
-content_margin_top = 6.0
-content_margin_right = 8.0
-content_margin_bottom = 6.0
-bg_color = Color(0.055, 0.05, 0.043, 0.96)
+[sub_resource type="StyleBoxFlat" id="ButtonHover"]
+content_margin_left = 12.0
+content_margin_top = 8.0
+content_margin_right = 12.0
+content_margin_bottom = 8.0
+bg_color = Color(0.145, 0.108, 0.071, 0.98)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.92, 0.72, 0.38, 0.96)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+shadow_color = Color(0, 0, 0, 0.46)
+shadow_size = 8
+shadow_offset = Vector2(0, 2)
+
+[sub_resource type="StyleBoxFlat" id="ButtonNormal"]
+content_margin_left = 12.0
+content_margin_top = 8.0
+content_margin_right = 12.0
+content_margin_bottom = 8.0
+bg_color = Color(0.105, 0.076, 0.05, 0.97)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.52, 0.39, 0.22, 0.8)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+shadow_color = Color(0, 0, 0, 0.42)
+shadow_size = 6
+shadow_offset = Vector2(0, 2)
+
+[sub_resource type="StyleBoxFlat" id="ButtonPressed"]
+content_margin_left = 12.0
+content_margin_top = 9.0
+content_margin_right = 12.0
+content_margin_bottom = 7.0
+bg_color = Color(0.3, 0.205, 0.105, 0.99)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.98, 0.78, 0.42, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+shadow_color = Color(0, 0, 0, 0.32)
+shadow_size = 3
+shadow_offset = Vector2(0, 1)
+
+[sub_resource type="StyleBoxLine" id="HorizontalRule"]
+color = Color(0.36, 0.29, 0.19, 0.64)
+
+[sub_resource type="StyleBoxFlat" id="SliderFill"]
+content_margin_top = 3.0
+content_margin_bottom = 3.0
+bg_color = Color(0.55, 0.39, 0.18, 1)
+border_width_top = 1
+border_width_bottom = 1
+border_color = Color(0.92, 0.72, 0.38, 0.96)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[sub_resource type="StyleBoxFlat" id="SliderTrack"]
+content_margin_top = 3.0
+content_margin_bottom = 3.0
+bg_color = Color(0.035, 0.032, 0.028, 0.96)
 border_width_left = 1
 border_width_top = 1
 border_width_right = 1
 border_width_bottom = 1
 border_color = Color(0.36, 0.29, 0.19, 0.64)
-corner_radius_top_left = 4
-corner_radius_top_right = 4
-corner_radius_bottom_right = 4
-corner_radius_bottom_left = 4
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
 
 [sub_resource type="StyleBoxFlat" id="LineEditFocus"]
 content_margin_left = 8.0
@@ -199,6 +131,103 @@ corner_radius_top_left = 4
 corner_radius_top_right = 4
 corner_radius_bottom_right = 4
 corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="LineEditNormal"]
+content_margin_left = 8.0
+content_margin_top = 6.0
+content_margin_right = 8.0
+content_margin_bottom = 6.0
+bg_color = Color(0.055, 0.05, 0.043, 0.96)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.36, 0.29, 0.19, 0.64)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleInset"]
+content_margin_left = 8.0
+content_margin_top = 8.0
+content_margin_right = 8.0
+content_margin_bottom = 8.0
+bg_color = Color(0.105, 0.087, 0.066, 0.96)
+border_width_left = 2
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.36, 0.29, 0.19, 0.64)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+shadow_color = Color(0, 0, 0, 0.32)
+shadow_size = 4
+shadow_offset = Vector2(0, 2)
+
+[sub_resource type="StyleBoxFlat" id="StyleDialog"]
+content_margin_left = 16.0
+content_margin_top = 12.0
+content_margin_right = 16.0
+content_margin_bottom = 16.0
+bg_color = Color(0.035, 0.032, 0.028, 0.992)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.92, 0.72, 0.38, 0.92)
+corner_radius_top_left = 7
+corner_radius_top_right = 7
+corner_radius_bottom_right = 7
+corner_radius_bottom_left = 7
+shadow_color = Color(0, 0, 0, 0.68)
+shadow_size = 18
+shadow_offset = Vector2(0, 6)
+
+[sub_resource type="StyleBoxFlat" id="StyleHUDInset"]
+content_margin_left = 6.0
+content_margin_top = 2.0
+content_margin_right = 6.0
+content_margin_bottom = 2.0
+bg_color = Color(0.105, 0.087, 0.066, 0.96)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.36, 0.29, 0.19, 0.64)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleHUDPanel"]
+bg_color = Color(0.052, 0.047, 0.039, 0.965)
+border_width_bottom = 1
+border_color = Color(0.53, 0.41, 0.24, 0.72)
+shadow_color = Color(0, 0, 0, 0.52)
+shadow_size = 6
+shadow_offset = Vector2(0, 2)
+
+[sub_resource type="StyleBoxFlat" id="StylePanel"]
+content_margin_left = 12.0
+content_margin_top = 8.0
+content_margin_right = 12.0
+content_margin_bottom = 8.0
+bg_color = Color(0.052, 0.047, 0.039, 0.965)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.53, 0.41, 0.24, 0.72)
+corner_radius_top_left = 7
+corner_radius_top_right = 7
+corner_radius_bottom_right = 7
+corner_radius_bottom_left = 7
+shadow_color = Color(0, 0, 0, 0.52)
+shadow_size = 12
+shadow_offset = Vector2(0, 4)
 
 [sub_resource type="StyleBoxFlat" id="ProgressBackground"]
 bg_color = Color(0.035, 0.032, 0.028, 0.96)
@@ -223,41 +252,6 @@ corner_radius_top_left = 4
 corner_radius_top_right = 4
 corner_radius_bottom_right = 4
 corner_radius_bottom_left = 4
-
-[sub_resource type="StyleBoxFlat" id="SliderTrack"]
-content_margin_top = 3.0
-content_margin_bottom = 3.0
-bg_color = Color(0.035, 0.032, 0.028, 0.96)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(0.36, 0.29, 0.19, 0.64)
-corner_radius_top_left = 3
-corner_radius_top_right = 3
-corner_radius_bottom_right = 3
-corner_radius_bottom_left = 3
-
-[sub_resource type="StyleBoxFlat" id="SliderFill"]
-content_margin_top = 3.0
-content_margin_bottom = 3.0
-bg_color = Color(0.55, 0.39, 0.18, 1)
-border_width_top = 1
-border_width_bottom = 1
-border_color = Color(0.92, 0.72, 0.38, 0.96)
-corner_radius_top_left = 3
-corner_radius_top_right = 3
-corner_radius_bottom_right = 3
-corner_radius_bottom_left = 3
-
-[sub_resource type="StyleBoxFlat" id="ScrollTrack"]
-content_margin_left = 3.0
-content_margin_right = 3.0
-bg_color = Color(0.035, 0.032, 0.028, 0.86)
-corner_radius_top_left = 3
-corner_radius_top_right = 3
-corner_radius_bottom_right = 3
-corner_radius_bottom_left = 3
 
 [sub_resource type="StyleBoxFlat" id="ScrollGrabber"]
 content_margin_left = 3.0
@@ -295,8 +289,14 @@ corner_radius_top_right = 3
 corner_radius_bottom_right = 3
 corner_radius_bottom_left = 3
 
-[sub_resource type="StyleBoxLine" id="HorizontalRule"]
-color = Color(0.36, 0.29, 0.19, 0.64)
+[sub_resource type="StyleBoxFlat" id="ScrollTrack"]
+content_margin_left = 3.0
+content_margin_right = 3.0
+bg_color = Color(0.035, 0.032, 0.028, 0.86)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
 
 [sub_resource type="StyleBoxLine" id="VerticalRule"]
 color = Color(0.36, 0.29, 0.19, 0.64)
@@ -305,102 +305,102 @@ vertical = true
 [resource]
 default_font = ExtResource("1_font")
 default_font_size = 14
+Button/colors/font_color = Color(0.965, 0.925, 0.825, 1)
+Button/colors/font_disabled_color = Color(0.55, 0.49, 0.4, 1)
+Button/colors/font_hover_color = Color(1, 0.94, 0.72, 1)
+Button/colors/font_pressed_color = Color(0.965, 0.925, 0.825, 1)
+Button/styles/disabled = SubResource("ButtonDisabled")
+Button/styles/focus = SubResource("ButtonFocus")
+Button/styles/hover = SubResource("ButtonHover")
+Button/styles/normal = SubResource("ButtonNormal")
+Button/styles/pressed = SubResource("ButtonPressed")
+CheckBox/colors/font_color = Color(0.965, 0.925, 0.825, 1)
+CheckBox/colors/font_disabled_color = Color(0.55, 0.49, 0.4, 1)
+CheckBox/colors/font_hover_color = Color(1, 0.94, 0.72, 1)
+CheckBox/colors/font_pressed_color = Color(0.965, 0.925, 0.825, 1)
+CheckBox/styles/disabled = SubResource("ButtonDisabled")
+CheckBox/styles/focus = SubResource("ButtonFocus")
+CheckBox/styles/hover = SubResource("ButtonHover")
+CheckBox/styles/normal = SubResource("ButtonNormal")
+CheckBox/styles/pressed = SubResource("ButtonPressed")
+HSeparator/styles/separator = SubResource("HorizontalRule")
+HSlider/styles/grabber_area = SubResource("SliderFill")
+HSlider/styles/grabber_area_highlight = SubResource("SliderFill")
+HSlider/styles/slider = SubResource("SliderTrack")
 Label/colors/font_color = Color(0.965, 0.925, 0.825, 1)
 Label/colors/font_shadow_color = Color(0, 0, 0, 0.36)
 Label/constants/shadow_offset_x = 1
 Label/constants/shadow_offset_y = 1
-Button/colors/font_color = Color(0.965, 0.925, 0.825, 1)
-Button/colors/font_hover_color = Color(1, 0.94, 0.72, 1)
-Button/colors/font_pressed_color = Color(0.965, 0.925, 0.825, 1)
-Button/colors/font_disabled_color = Color(0.55, 0.49, 0.4, 1)
-Button/styles/normal = SubResource("ButtonNormal")
-Button/styles/hover = SubResource("ButtonHover")
-Button/styles/pressed = SubResource("ButtonPressed")
-Button/styles/disabled = SubResource("ButtonDisabled")
-Button/styles/focus = SubResource("ButtonFocus")
-OptionButton/colors/font_color = Color(0.965, 0.925, 0.825, 1)
-OptionButton/colors/font_hover_color = Color(1, 0.94, 0.72, 1)
-OptionButton/colors/font_pressed_color = Color(0.965, 0.925, 0.825, 1)
-OptionButton/colors/font_disabled_color = Color(0.55, 0.49, 0.4, 1)
-OptionButton/styles/normal = SubResource("ButtonNormal")
-OptionButton/styles/hover = SubResource("ButtonHover")
-OptionButton/styles/pressed = SubResource("ButtonPressed")
-OptionButton/styles/disabled = SubResource("ButtonDisabled")
-OptionButton/styles/focus = SubResource("ButtonFocus")
-CheckBox/colors/font_color = Color(0.965, 0.925, 0.825, 1)
-CheckBox/colors/font_hover_color = Color(1, 0.94, 0.72, 1)
-CheckBox/colors/font_pressed_color = Color(0.965, 0.925, 0.825, 1)
-CheckBox/colors/font_disabled_color = Color(0.55, 0.49, 0.4, 1)
-CheckBox/styles/normal = SubResource("ButtonNormal")
-CheckBox/styles/hover = SubResource("ButtonHover")
-CheckBox/styles/pressed = SubResource("ButtonPressed")
-CheckBox/styles/disabled = SubResource("ButtonDisabled")
-CheckBox/styles/focus = SubResource("ButtonFocus")
-PanelContainer/styles/panel = SubResource("StylePanel")
+LineEdit/colors/caret_color = Color(0.92, 0.72, 0.38, 0.96)
 LineEdit/colors/font_color = Color(0.965, 0.925, 0.825, 1)
 LineEdit/colors/font_placeholder_color = Color(0.55, 0.49, 0.4, 1)
-LineEdit/colors/caret_color = Color(0.92, 0.72, 0.38, 0.96)
-LineEdit/styles/normal = SubResource("LineEditNormal")
 LineEdit/styles/focus = SubResource("LineEditFocus")
+LineEdit/styles/normal = SubResource("LineEditNormal")
+OptionButton/colors/font_color = Color(0.965, 0.925, 0.825, 1)
+OptionButton/colors/font_disabled_color = Color(0.55, 0.49, 0.4, 1)
+OptionButton/colors/font_hover_color = Color(1, 0.94, 0.72, 1)
+OptionButton/colors/font_pressed_color = Color(0.965, 0.925, 0.825, 1)
+OptionButton/styles/disabled = SubResource("ButtonDisabled")
+OptionButton/styles/focus = SubResource("ButtonFocus")
+OptionButton/styles/hover = SubResource("ButtonHover")
+OptionButton/styles/normal = SubResource("ButtonNormal")
+OptionButton/styles/pressed = SubResource("ButtonPressed")
+PKBadgeLabel/base_type = &"Label"
+PKBadgeLabel/font_sizes/font_size = 12
+PKBadgeLabel/styles/normal = SubResource("StyleInset")
+PKDangerText/base_type = &"Label"
+PKDangerText/colors/font_color = Color(0.86, 0.42, 0.31, 1)
+PKDialog/base_type = &"PanelContainer"
+PKDialog/styles/panel = SubResource("StyleDialog")
+PKHUDInset/base_type = &"PanelContainer"
+PKHUDInset/styles/panel = SubResource("StyleHUDInset")
+PKHUDPanel/base_type = &"PanelContainer"
+PKHUDPanel/styles/panel = SubResource("StyleHUDPanel")
+PKIconButton/base_type = &"Button"
+PKIconButton/styles/disabled = SubResource("ButtonDisabled")
+PKIconButton/styles/focus = SubResource("ButtonFocus")
+PKIconButton/styles/hover = SubResource("ButtonHover")
+PKIconButton/styles/normal = SubResource("ButtonNormal")
+PKIconButton/styles/pressed = SubResource("ButtonPressed")
+PKInsetPanel/base_type = &"PanelContainer"
+PKInsetPanel/styles/panel = SubResource("StyleInset")
+PKMetricCard/base_type = &"PanelContainer"
+PKMetricCard/styles/panel = SubResource("StyleInset")
+PKMutedLabel/base_type = &"Label"
+PKMutedLabel/colors/font_color = Color(0.78, 0.7, 0.56, 1)
+PKMutedLabel/font_sizes/font_size = 12
+PKPanel/base_type = &"PanelContainer"
+PKPanel/styles/panel = SubResource("StylePanel")
+PKPrimaryButton/base_type = &"Button"
+PKPrimaryButton/colors/font_color = Color(1, 0.94, 0.72, 1)
+PKPrimaryButton/styles/disabled = SubResource("ButtonDisabled")
+PKPrimaryButton/styles/focus = SubResource("ButtonFocus")
+PKPrimaryButton/styles/hover = SubResource("ButtonHover")
+PKPrimaryButton/styles/normal = SubResource("ButtonPressed")
+PKPrimaryButton/styles/pressed = SubResource("ButtonPressed")
+PKSectionTitle/base_type = &"Label"
+PKSectionTitle/colors/font_color = Color(0.92, 0.72, 0.38, 0.96)
+PKSectionTitle/font_sizes/font_size = 13
+PKTabButton/base_type = &"Button"
+PKTabButton/styles/disabled = SubResource("ButtonDisabled")
+PKTabButton/styles/focus = SubResource("ButtonFocus")
+PKTabButton/styles/hover = SubResource("ButtonHover")
+PKTabButton/styles/normal = SubResource("ButtonNormal")
+PKTabButton/styles/pressed = SubResource("ButtonPressed")
+PKTitle/base_type = &"Label"
+PKTitle/colors/font_color = Color(0.965, 0.925, 0.825, 1)
+PKTitle/font_sizes/font_size = 20
+PanelContainer/styles/panel = SubResource("StylePanel")
 ProgressBar/colors/font_color = Color(0.965, 0.925, 0.825, 1)
 ProgressBar/styles/background = SubResource("ProgressBackground")
 ProgressBar/styles/fill = SubResource("ProgressFill")
 SpinBox/colors/updown = Color(0.92, 0.72, 0.38, 0.96)
-HSlider/styles/slider = SubResource("SliderTrack")
-HSlider/styles/grabber_area = SubResource("SliderFill")
-HSlider/styles/grabber_area_highlight = SubResource("SliderFill")
-VScrollBar/styles/scroll = SubResource("ScrollTrack")
-VScrollBar/styles/scroll_focus = SubResource("ScrollTrack")
-VScrollBar/styles/grabber = SubResource("ScrollGrabber")
-VScrollBar/styles/grabber_highlight = SubResource("ScrollGrabberHover")
-VScrollBar/styles/grabber_pressed = SubResource("ScrollGrabberPressed")
-HSeparator/styles/separator = SubResource("HorizontalRule")
-VSeparator/styles/separator = SubResource("VerticalRule")
 TooltipLabel/colors/font_color = Color(0.965, 0.925, 0.825, 1)
 TooltipLabel/font_sizes/font_size = 12
 TooltipPanel/styles/panel = SubResource("StyleDialog")
-PKPanel/base_type = &"PanelContainer"
-PKPanel/styles/panel = SubResource("StylePanel")
-PKInsetPanel/base_type = &"PanelContainer"
-PKInsetPanel/styles/panel = SubResource("StyleInset")
-PKHUDPanel/base_type = &"PanelContainer"
-PKHUDPanel/styles/panel = SubResource("StyleHUDPanel")
-PKHUDInset/base_type = &"PanelContainer"
-PKHUDInset/styles/panel = SubResource("StyleHUDInset")
-PKDialog/base_type = &"PanelContainer"
-PKDialog/styles/panel = SubResource("StyleDialog")
-PKPrimaryButton/base_type = &"Button"
-PKPrimaryButton/colors/font_color = Color(1, 0.94, 0.72, 1)
-PKPrimaryButton/styles/normal = SubResource("ButtonPressed")
-PKPrimaryButton/styles/hover = SubResource("ButtonHover")
-PKPrimaryButton/styles/pressed = SubResource("ButtonPressed")
-PKPrimaryButton/styles/disabled = SubResource("ButtonDisabled")
-PKPrimaryButton/styles/focus = SubResource("ButtonFocus")
-PKIconButton/base_type = &"Button"
-PKIconButton/styles/normal = SubResource("ButtonNormal")
-PKIconButton/styles/hover = SubResource("ButtonHover")
-PKIconButton/styles/pressed = SubResource("ButtonPressed")
-PKIconButton/styles/disabled = SubResource("ButtonDisabled")
-PKIconButton/styles/focus = SubResource("ButtonFocus")
-PKTabButton/base_type = &"Button"
-PKTabButton/styles/normal = SubResource("ButtonNormal")
-PKTabButton/styles/hover = SubResource("ButtonHover")
-PKTabButton/styles/pressed = SubResource("ButtonPressed")
-PKTabButton/styles/disabled = SubResource("ButtonDisabled")
-PKTabButton/styles/focus = SubResource("ButtonFocus")
-PKMetricCard/base_type = &"PanelContainer"
-PKMetricCard/styles/panel = SubResource("StyleInset")
-PKTitle/base_type = &"Label"
-PKTitle/colors/font_color = Color(0.965, 0.925, 0.825, 1)
-PKTitle/font_sizes/font_size = 20
-PKSectionTitle/base_type = &"Label"
-PKSectionTitle/colors/font_color = Color(0.92, 0.72, 0.38, 0.96)
-PKSectionTitle/font_sizes/font_size = 13
-PKMutedLabel/base_type = &"Label"
-PKMutedLabel/colors/font_color = Color(0.78, 0.7, 0.56, 1)
-PKMutedLabel/font_sizes/font_size = 12
-PKDangerText/base_type = &"Label"
-PKDangerText/colors/font_color = Color(0.86, 0.42, 0.31, 1)
-PKBadgeLabel/base_type = &"Label"
-PKBadgeLabel/styles/normal = SubResource("StyleInset")
-PKBadgeLabel/font_sizes/font_size = 12
+VScrollBar/styles/grabber = SubResource("ScrollGrabber")
+VScrollBar/styles/grabber_highlight = SubResource("ScrollGrabberHover")
+VScrollBar/styles/grabber_pressed = SubResource("ScrollGrabberPressed")
+VScrollBar/styles/scroll = SubResource("ScrollTrack")
+VScrollBar/styles/scroll_focus = SubResource("ScrollTrack")
+VSeparator/styles/separator = SubResource("VerticalRule")

@@ -1,4 +1,4 @@
-[gd_scene load_steps=27 format=3 uid="uid://c6x8q3wvfm8sh"]
+[gd_scene format=3 uid="uid://c6x8q3wvfm8sh"]
 
 [ext_resource type="Script" uid="uid://d2jlthr1nqltt" path="res://scripts/game/player_game.gd" id="1_player"]
 [ext_resource type="Script" uid="uid://cr8rfj8egdakv" path="res://scripts/rendering/hex_renderer.gd" id="2_renderer"]
@@ -7,7 +7,7 @@
 [ext_resource type="Script" uid="uid://cdia5pxf0v0uh" path="res://scripts/rendering/cell_highlight.gd" id="5_highlight"]
 [ext_resource type="Script" uid="uid://byvlm8cpk3u5i" path="res://scripts/game/world_runtime_host.gd" id="6_runtime"]
 [ext_resource type="Script" uid="uid://chdm47b1d80b0" path="res://scripts/ui/game_ui_manager.gd" id="7_ui"]
-[ext_resource type="Script" path="res://scripts/game/player_controller.gd" id="8_player_controller"]
+[ext_resource type="Script" uid="uid://dn1o67mssbnmc" path="res://scripts/game/player_controller.gd" id="8_player_controller"]
 [ext_resource type="Script" uid="uid://doewiqfv0iv3t" path="res://scripts/rendering/data_overlay_layer.gd" id="11_overlay"]
 [ext_resource type="PackedScene" path="res://scenes/ui/player_top_bar.tscn" id="12_top_bar"]
 [ext_resource type="PackedScene" path="res://scenes/ui/inspector_panel.tscn" id="13_inspector"]
@@ -19,7 +19,7 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/world_loading_overlay.tscn" id="21_loading"]
 [ext_resource type="PackedScene" path="res://scenes/ui/pause_menu.tscn" id="22_pause"]
 [ext_resource type="Theme" path="res://assets/themes/player_session_theme.tres" id="23_theme"]
-[ext_resource type="Script" path="res://scripts/rendering/colonization_route_layer.gd" id="24_colonization_route"]
+[ext_resource type="Script" uid="uid://bbeuvnbhk3s76" path="res://scripts/rendering/colonization_route_layer.gd" id="24_colonization_route"]
 [ext_resource type="PackedScene" path="res://scenes/ui/colonization_planner_panel.tscn" id="25_colonization_panel"]
 [ext_resource type="PackedScene" path="res://scenes/ui/era_reward_dialog.tscn" id="26_era_reward"]
 [ext_resource type="Theme" path="res://assets/themes/player_ui_theme.tres" id="27_legacy_theme"]
@@ -38,8 +38,6 @@ terrain_material_albedo_strength = 0.62
 terrain_material_normal_strength = 0.425
 terrain_material_roughness_strength = 0.69
 terrain_material_world_size = 256.0
-terrain_horizon_strength = 0.9
-terrain_horizon_softness = 0.3
 terrain_horizon_max_angle = 1.5708
 terrain_horizon_cast_floor = 0.41
 
@@ -51,7 +49,7 @@ script = ExtResource("5_highlight")
 [node name="DataOverlayLayer" type="Node2D" parent="WorldRoot" unique_id=2064388670]
 script = ExtResource("11_overlay")
 
-[node name="ColonizationRouteLayer" type="Node2D" parent="WorldRoot"]
+[node name="ColonizationRouteLayer" type="Node2D" parent="WorldRoot" unique_id=129430531]
 top_level = true
 z_index = 12
 script = ExtResource("24_colonization_route")
@@ -61,7 +59,6 @@ script = ExtResource("3_camera")
 
 [node name="WorldClock" type="Node" parent="." unique_id=1779671533]
 script = ExtResource("4_clock")
-debug_step_log = false
 
 [node name="RuntimeHost" type="Node" parent="." unique_id=1075796029]
 script = ExtResource("6_runtime")
@@ -69,7 +66,7 @@ script = ExtResource("6_runtime")
 [node name="UI" type="CanvasLayer" parent="." unique_id=1030090401]
 script = ExtResource("7_ui")
 
-[node name="UIRoot" type="Control" parent="UI"]
+[node name="UIRoot" type="Control" parent="UI" unique_id=1523509164]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -79,7 +76,7 @@ grow_vertical = 2
 mouse_filter = 2
 theme = ExtResource("23_theme")
 
-[node name="HUDLayer" type="Control" parent="UI/UIRoot"]
+[node name="HUDLayer" type="Control" parent="UI/UIRoot" unique_id=1293940931]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -88,22 +85,31 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 
-[node name="PlayerTopBar" parent="UI/UIRoot/HUDLayer" instance=ExtResource("12_top_bar")]
+[node name="PlayerTopBar" parent="UI/UIRoot/HUDLayer" unique_id=358183008 instance=ExtResource("12_top_bar")]
 unique_name_in_owner = true
+layout_mode = 0
+anchors_preset = 0
 
-[node name="PerfMiniHUD" parent="UI/UIRoot/HUDLayer" instance=ExtResource("16_perf")]
+[node name="PerfMiniHUD" parent="UI/UIRoot/HUDLayer" unique_id=1339658041 instance=ExtResource("16_perf")]
 unique_name_in_owner = true
+layout_mode = 0
+anchors_preset = 0
 
-[node name="MapOverlayToolbar" parent="UI/UIRoot/HUDLayer" instance=ExtResource("17_overlay_toolbar")]
+[node name="MapOverlayToolbar" parent="UI/UIRoot/HUDLayer" unique_id=1329221014 instance=ExtResource("17_overlay_toolbar")]
 unique_name_in_owner = true
+anchors_preset = 0
 
-[node name="CountryActionBar" parent="UI/UIRoot/HUDLayer" instance=ExtResource("18_country_bar")]
+[node name="CountryActionBar" parent="UI/UIRoot/HUDLayer" unique_id=416698945 instance=ExtResource("18_country_bar")]
 unique_name_in_owner = true
+layout_mode = 0
+anchors_preset = 0
 
-[node name="MapOverlayLegend" parent="UI/UIRoot/HUDLayer" instance=ExtResource("19_legend")]
+[node name="MapOverlayLegend" parent="UI/UIRoot/HUDLayer" unique_id=959612046 instance=ExtResource("19_legend")]
 unique_name_in_owner = true
+layout_mode = 0
+anchors_preset = 0
 
-[node name="PanelLayer" type="Control" parent="UI/UIRoot"]
+[node name="PanelLayer" type="Control" parent="UI/UIRoot" unique_id=1843493714]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -112,13 +118,16 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 
-[node name="RightPanel" parent="UI/UIRoot/PanelLayer" instance=ExtResource("13_inspector")]
+[node name="RightPanel" parent="UI/UIRoot/PanelLayer" unique_id=1598700151 instance=ExtResource("13_inspector")]
 unique_name_in_owner = true
+layout_mode = 0
+anchors_preset = 0
 
-[node name="CountryPanel" parent="UI/UIRoot/PanelLayer" instance=ExtResource("20_country_panel")]
+[node name="CountryPanel" parent="UI/UIRoot/PanelLayer" unique_id=894348401 instance=ExtResource("20_country_panel")]
 unique_name_in_owner = true
+layout_mode = 1
 
-[node name="ModalLayer" type="Control" parent="UI/UIRoot"]
+[node name="ModalLayer" type="Control" parent="UI/UIRoot" unique_id=1165939887]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -127,19 +136,22 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 
-[node name="ColonizationPlannerPanel" parent="UI/UIRoot/ModalLayer" instance=ExtResource("25_colonization_panel")]
+[node name="ColonizationPlannerPanel" parent="UI/UIRoot/ModalLayer" unique_id=798826369 instance=ExtResource("25_colonization_panel")]
 unique_name_in_owner = true
 
-[node name="EraRewardDialog" parent="UI/UIRoot/ModalLayer" instance=ExtResource("26_era_reward")]
+[node name="EraRewardDialog" parent="UI/UIRoot/ModalLayer" unique_id=1525594621 instance=ExtResource("26_era_reward")]
 unique_name_in_owner = true
+layout_mode = 1
 
-[node name="WorldLoadingOverlay" parent="UI/UIRoot/ModalLayer" instance=ExtResource("21_loading")]
+[node name="WorldLoadingOverlay" parent="UI/UIRoot/ModalLayer" unique_id=1010889164 instance=ExtResource("21_loading")]
 unique_name_in_owner = true
+layout_mode = 1
 
-[node name="PauseMenu" parent="UI/UIRoot/ModalLayer" instance=ExtResource("22_pause")]
+[node name="PauseMenu" parent="UI/UIRoot/ModalLayer" unique_id=1591619413 instance=ExtResource("22_pause")]
 unique_name_in_owner = true
+layout_mode = 1
 
-[node name="DebugLayer" type="Control" parent="UI/UIRoot"]
+[node name="DebugLayer" type="Control" parent="UI/UIRoot" unique_id=1072610589]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0

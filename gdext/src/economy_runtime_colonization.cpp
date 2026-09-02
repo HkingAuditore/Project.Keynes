@@ -1159,11 +1159,8 @@ bool NativeEconomyRuntime::advance_preparing_family_expedition(
     // top-up, because spare stock can appear in goods that were not short.
     ColonizationReserveContext reserve;
     std::vector<int64_t> reserved_stock;
-    std::vector<int64_t> floor_stock;
     collect_family_expedition_reserved_stock(expedition, reserved_stock);
-    colonization_source_survival_floor(source, floor_stock);
     reserve.reserved = &reserved_stock;
-    reserve.floor = &floor_stock;
     reserve.prefer_reserved_candidates = true;
     ColonizationKitPlan kit;
     const int32_t travel = std::max(1,
@@ -2201,12 +2198,8 @@ Dictionary NativeEconomyRuntime::family_expedition_snapshot(
         // only the planner knows. Replan read-only against the live escrow.
         ColonizationReserveContext reserve;
         std::vector<int64_t> reserved_stock;
-        std::vector<int64_t> floor_stock;
         collect_family_expedition_reserved_stock(expedition, reserved_stock);
-        colonization_source_survival_floor(
-            _family_expeditions.source_cell[expedition], floor_stock);
         reserve.reserved = &reserved_stock;
-        reserve.floor = &floor_stock;
         reserve.prefer_reserved_candidates = true;
         ColonizationKitPlan kit;
         const int32_t travel = std::max(1,

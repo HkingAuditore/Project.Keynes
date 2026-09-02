@@ -2,8 +2,6 @@ extends PanelContainer
 class_name ColonizationPlannerPanel
 
 const FamilyRowScene := preload("res://scenes/ui/colonization_family_row.tscn")
-# Mirrors COLONIZATION_RESERVE_SOURCE_FLOOR_DAYS in the native economy runtime.
-const SOURCE_FLOOR_DAYS := 10
 
 signal closed()
 signal route_requested(detail: Dictionary)
@@ -483,8 +481,7 @@ func _update_start_enabled() -> void:
 		_start.tooltip_text = _kit_summary_text(_selected_quote)
 	elif preparing_kit:
 		_start.text = "开始筹备 %s 人" % count_text if has_selection else "开始筹备"
-		_start.tooltip_text = "占用目标；人留在源地继续生产，每日把源地余量收进队伍库存" \
-			+ "（保留本地 %d 天口粮），凑齐后自动出发。" % SOURCE_FLOOR_DAYS
+		_start.tooltip_text = "占用目标；人留在源地继续生产，每日把源地可用现货收进队伍库存，凑齐后自动出发。"
 	else:
 		_start.text = "派遣 %s 人" % count_text if has_selection else "确认派遣"
 		_start.tooltip_text = "基础物资不足，只携带当前可用物资" if kit_partial \
@@ -572,11 +569,10 @@ func _preparing_missing_text(handle: int, state: int) -> String:
 	var required := bridge_required + material_required
 	var missing := bridge_missing + material_missing
 	if required > 0:
-		lines.append("已囤积 %d%%（口粮 %d%% / 建材 %d%%），每日自动收进源地余量（保留本地 %d 天口粮）" % [
+		lines.append("已囤积 %d%%（口粮 %d%% / 建材 %d%%），每日自动收进源地可用现货" % [
 			clampi(required - missing, 0, required) * 100 / required,
 			_stock_percent(bridge_required, bridge_missing),
-			_stock_percent(material_required, material_missing),
-			SOURCE_FLOOR_DAYS])
+			_stock_percent(material_required, material_missing)])
 	var blocker := String(snap.get("kit_blocker", ""))
 	match blocker:
 		"UNBUILDABLE":

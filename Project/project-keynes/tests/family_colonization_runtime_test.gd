@@ -918,7 +918,7 @@ func _add_market_stock(ext: Object, day: int, sequence: int, cell: int,
 func _run_preparing_stock_accumulation(catalog: Dictionary) -> void:
 	# A source cell that never holds a whole kit at once must still be able to
 	# fund one: the preparing party escrows the daily surplus it can afford,
-	# leaves the cell's own survival floor alone, and stays conserved.
+	# and stays conserved without a colonization-only source reserve.
 	var fixture := _make_fixture(catalog, 260823, 0)
 	var ext: Object = fixture.ext
 	var country_handle := int(fixture.country_handle)
@@ -995,8 +995,25 @@ func _run_preparing_stock_accumulation(catalog: Dictionary) -> void:
 		and not bool(cancel_report.get("fatal", false)))
 
 
-const PRIMITIVE_MATERIAL_IDS := ["logs", "raw_stone", "reed_bundle",
-	"turf_block", "adobe_brick", "bast_fiber"]
+func _building_construction_candidate_ids(catalog: Dictionary,
+		building_id: String) -> PackedStringArray:
+	var out := PackedStringArray()
+	var building_ids: PackedStringArray = catalog.building_type_ids
+	var building := building_ids.find(building_id)
+	if building < 0:
+		return out
+	var construction_offsets: PackedInt32Array = catalog.building_construction_offsets
+	var candidate_offsets: PackedInt32Array = \
+		catalog.building_construction_candidate_offsets
+	var candidate_goods: PackedInt32Array = \
+		catalog.building_construction_candidate_good_ids
+	var good_ids: PackedStringArray = catalog.good_ids
+	for group in range(construction_offsets[building], construction_offsets[building + 1]):
+		for edge in range(candidate_offsets[group], candidate_offsets[group + 1]):
+			var stable_id := String(good_ids[candidate_goods[edge]])
+			if not out.has(stable_id):
+				out.append(stable_id)
+	return out
 
 
 func _expedition_state(ext: Object, country_handle: int) -> int:
@@ -1051,7 +1068,7 @@ func _run_material_topup_departs(catalog: Dictionary) -> void:
 	# on the first drop, so topping the market back up never released the party.
 	var good_ids: PackedStringArray = catalog.good_ids
 	var scarce := {}
-	for stable_id in PRIMITIVE_MATERIAL_IDS:
+	for stable_id in _building_construction_candidate_ids(catalog, "gathering_ground"):
 		scarce[stable_id] = 0
 	scarce["logs"] = 4000
 	var fixture := _make_fixture(catalog, 260841, 1000000, scarce)
@@ -1076,7 +1093,7 @@ func _run_material_topup_departs(catalog: Dictionary) -> void:
 		and int(snap.get("kit_material_missing_units", 0)) > 0
 		and String(snap.get("kit_blocker", "")) == "MATERIALS")
 	var refill := PackedInt32Array()
-	for stable_id in ["logs", "bast_fiber"]:
+	for stable_id in ["reed_bundle"]:
 		var index := good_ids.find(stable_id)
 		if index >= 0:
 			refill.append(index)
@@ -1098,14 +1115,12 @@ func _run_material_topup_departs(catalog: Dictionary) -> void:
 
 
 func _run_construction_category_substitute(catalog: Dictionary) -> void:
-	# Stone-age construction groups are authored as substitution categories, so
-	# a source that never produced logs or bast fibre can still fund the kit out
-	# of turf blocks and reed bundles.
+	# Every building compiles to one material pool, so a source that never
+	# produced another admitted material can fund the whole bill with reeds.
 	var good_ids: PackedStringArray = catalog.good_ids
 	var overrides := {}
-	for stable_id in PRIMITIVE_MATERIAL_IDS:
+	for stable_id in _building_construction_candidate_ids(catalog, "gathering_ground"):
 		overrides[stable_id] = 0
-	overrides["turf_block"] = 1000000
 	overrides["reed_bundle"] = 1000000
 	var fixture := _make_fixture(catalog, 260842, 1000000, overrides)
 	var ext: Object = fixture.ext
@@ -1123,11 +1138,9 @@ func _run_construction_category_substitute(catalog: Dictionary) -> void:
 		return
 	var cargo := _construction_cargo_of(ext, country_handle,
 		int(started.get("expedition_handle", 0)))
-	var substitute_total := 0
-	for stable_id in ["turf_block", "reed_bundle"]:
-		substitute_total += int(cargo.get(good_ids.find(stable_id), 0))
-	_expect("the opening kit is built from category substitutes only",
-		substitute_total > 0
+	var reed_total := int(cargo.get(good_ids.find("reed_bundle"), 0))
+	_expect("the opening kit is built entirely from the stocked reed substitute",
+		reed_total > 0
 		and int(cargo.get(good_ids.find("logs"), 0)) == 0
 		and int(cargo.get(good_ids.find("bast_fiber"), 0)) == 0)
 	_expect("category-substituted departure remains goods-conserved",
@@ -1143,7 +1156,7 @@ func _run_unreachable_material_aborts(catalog: Dictionary) -> void:
 	var tags: PackedStringArray = catalog.good_technology_tags
 	var trade_enabled: PackedInt32Array = catalog.good_trade_enabled
 	var locked_tech := {}
-	for stable_id in PRIMITIVE_MATERIAL_IDS:
+	for stable_id in _building_construction_candidate_ids(catalog, "gathering_ground"):
 		var good := good_ids.find(stable_id)
 		if good < 0 or good + 1 >= tag_offsets.size():
 			continue
