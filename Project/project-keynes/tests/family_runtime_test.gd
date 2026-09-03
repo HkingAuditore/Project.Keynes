@@ -172,6 +172,8 @@ func _run() -> void:
 		and int(day0.get("population_error", 1)) == 0
 		and int(day0.get("money_error", 1)) == 0
 		and int(day0.get("goods_error", 1)) == 0)
+	_expect("family ownership never exceeds building count or owner capacity",
+		_ownership_within_building_capacity(ext, 0))
 	var page: Dictionary = ext.get_family_cell_snapshot(0, 0, 64)
 	_expect("one notable family forms from actual owner operators",
 		bool(page.get("ok", false)) and int(page.get("total", 0)) == 1)
@@ -725,6 +727,38 @@ func _configure_country(ext: Object, catalog: Dictionary, seed: int) -> bool:
 		"treasury_good_indices": PackedInt32Array(),
 		"treasury_quantities": PackedInt64Array(),
 	}, PackedByteArray([0])).get("ok", false))
+
+
+## PKEC restore rejects ownership shares that outgrew their building group, so
+## the live CSR must already satisfy that invariant at every commit boundary.
+func _ownership_within_building_capacity(ext: Object, cell: int) -> bool:
+	var snapshot: Dictionary = ext.get_building_cell_snapshot(cell)
+	if not bool(snapshot.get("ok", false)):
+		return false
+	var offsets: PackedInt32Array = snapshot.get(
+		"family_ownership_offsets", PackedInt32Array())
+	var owned: PackedInt64Array = snapshot.get(
+		"family_owned_counts", PackedInt64Array())
+	var filled: PackedInt64Array = snapshot.get(
+		"family_filled_owner", PackedInt64Array())
+	var counts: PackedInt64Array = snapshot.get(
+		"group_counts", PackedInt64Array())
+	var capacity: PackedInt64Array = snapshot.get(
+		"owner_capacity", PackedInt64Array())
+	if offsets.size() != counts.size() + 1:
+		return false
+	for group in counts.size():
+		var group_owned := 0
+		var group_filled := 0
+		for edge in range(int(offsets[group]), int(offsets[group + 1])):
+			if int(owned[edge]) <= 0 or int(filled[edge]) < 0:
+				return false
+			group_owned += int(owned[edge])
+			group_filled += int(filled[edge])
+		if group_owned > int(counts[group]) \
+				or group_filled > int(capacity[group]):
+			return false
+	return true
 
 
 func _run_day(ext: Object, day: int) -> Dictionary:

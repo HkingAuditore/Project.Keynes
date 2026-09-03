@@ -5614,6 +5614,10 @@ private:
     // Clamp derived employment/basis fields so membership edges always satisfy
     // the PKEC restore invariants even if attribution briefly overshoots.
     static void sanitize_family_membership_edge(FamilyMembershipEdge &edge);
+    // Clamp ownership shares to the surviving building count and owner-slot
+    // capacity. Liquidation and demolition shrink a group after the shares were
+    // granted, so without this the PKEC restore invariants can reject a save.
+    void sanitize_family_ownership_edges();
     void absorb_family_households();
     int64_t family_household_target_people(int64_t owner_slots) const;
     int64_t family_household_people_for_slot(int32_t slot,
