@@ -75,6 +75,13 @@ const COUNTRY_DIRTY_ECONOMY := 2
 const COUNTRY_DIRTY_IDEOLOGY := 4
 const COUNTRY_DIRTY_ALL := COUNTRY_DIRTY_TECHNOLOGY | COUNTRY_DIRTY_ECONOMY | COUNTRY_DIRTY_IDEOLOGY
 
+const ResearchToastScript = preload("res://scripts/ui/components/research_toast.gd")
+const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
+
+var _research_toast: ResearchToast
+var _last_research_toast_states := PackedInt32Array()
+var _research_toast_bootstrapped := false
+
 
 func _ready() -> void:
 	layer = 20
@@ -408,12 +415,16 @@ func _revision_selection_context(revision: Dictionary) -> String:
 	]
 
 
-func _on_country_committed(_report: Dictionary) -> void:
-	# 税务提交与日常经济提交都只更新当前页的稳定节点；领土/视野改变由各自的
-	# 明确事件触发整块选择重建，不能在这里摧毁输入焦点和滚动状态。
+func _on_country_committed(report: Dictionary) -> void:
+	# 税务提交与日常经济提交都只更新当前页的稳定节点。领土变更会改 fog_state，
+	# 必须重建当前选中格的 Inspector，否则邻格仍停在「未探索」占位卡上，
+	# 而地图迷雾柔边已经把地形透出来了。
 	refresh_selected_daily_lines(true)
+	if int(report.get("changed_cells", 0)) > 0 and _selected_cell != null:
+		refresh_selected_panel()
 	_mark_country_panel_dirty(COUNTRY_DIRTY_ALL, "country_committed")
 	_refresh_player_discovery_context()
+	_poll_research_completion_toasts()
 
 
 func open_country_section(section_id: String) -> void:
@@ -923,6 +934,7 @@ func _bind_ui() -> void:
 	_country_action_bar = get_node("UIRoot/HUDLayer/CountryActionBar") as CountryActionBar
 	_country_action_bar.section_selected.connect(open_country_section)
 	_layout_country_action_bar()
+	_ensure_research_toast()
 
 	_map_overlay_legend = get_node("UIRoot/HUDLayer/MapOverlayLegend") as OverlayLegend
 	# Bottom-right is outside the map's main reading line and the left tool
@@ -1084,6 +1096,61 @@ func _layout_country_action_bar() -> void:
 	_country_action_bar.offset_bottom = -UITokens.SPACE_SM
 	var window_width := get_window().size.x if get_window() != null else int(viewport_width)
 	_country_action_bar.set_compact(window_width < 720)
+	_layout_research_toast()
+
+
+func _ensure_research_toast() -> void:
+	if _research_toast != null:
+		return
+	var hud := get_node_or_null("UIRoot/HUDLayer") as Control
+	if hud == null:
+		return
+	_research_toast = ResearchToastScript.new() as ResearchToast
+	_research_toast.name = "ResearchToast"
+	_research_toast.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud.add_child(_research_toast)
+	_layout_research_toast()
+
+
+func _layout_research_toast() -> void:
+	if _research_toast == null:
+		return
+	_research_toast.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	_research_toast.offset_left = 24.0
+	_research_toast.offset_right = -24.0
+	_research_toast.offset_top = 64.0
+	_research_toast.offset_bottom = 160.0
+	_research_toast.z_index = 40
+
+
+func _poll_research_completion_toasts() -> void:
+	if _country_view_model == null:
+		return
+	_ensure_research_toast()
+	if _research_toast == null:
+		return
+	var states: PackedInt32Array = _country_view_model.player_research_states()
+	if states.is_empty():
+		return
+	if not _research_toast_bootstrapped:
+		_last_research_toast_states = states.duplicate()
+		_research_toast_bootstrapped = true
+		return
+	var definitions: Array = TechnologyCatalogScript.public_definitions()
+	var limit := mini(states.size(), definitions.size())
+	var previous := _last_research_toast_states
+	for index in range(limit):
+		var next_state := int(states[index])
+		var prev_state := int(previous[index]) if index < previous.size() else 0
+		if prev_state >= 4 or next_state < 4:
+			continue
+		var definition: Dictionary = definitions[index]
+		if bool(definition.get("is_application", false)) \
+				or String(definition.get("id", "")).begins_with("app."):
+			continue
+		_research_toast.show_research_completed(String(definition.get(
+			"display_name", definition.get("id", ""))))
+	_last_research_toast_states = states.duplicate()
 
 
 func _layout_gm_panel() -> void:

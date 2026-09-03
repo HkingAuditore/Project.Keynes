@@ -19,7 +19,6 @@ Taxation is not a separate runtime.
 | Concern | Authority |
 |---|---|
 | Default rates, sparse overrides, policy version | `NativeCountryRuntime` |
-| Per-cell defaults and sparse item overrides | `NativeCountryRuntime::CellTaxPolicyStore` |
 | Country cash treasury | `NativeCountryRuntime` |
 | Country tax Modifier entity | `ModifierRuntime` using country handle |
 | Frozen effective rates | `NativeEconomyRuntime` |
@@ -53,57 +52,56 @@ Stable `TaxKind` order:
 | 3 | import | good |
 | 4 | export | good |
 
-Each country stores one integer default per kind and a dense override vector using an inheritance
-sentinel. Save/query surfaces retain sparse override semantics. Clearing an override immediately
-inherits the current default.
+Each country stores one integer default per kind, a parallel assessment mode, and dense
+override vectors using an inheritance sentinel for both value and mode. Save/query surfaces
+retain sparse override semantics. Clearing an override immediately inherits the current default
+mode and value.
 
 Commands:
 
 - `SET_TAX_DEFAULT`
 - `SET_TAX_OVERRIDE`
 - `CLEAR_TAX_OVERRIDE`
-- `SET/CLEAR_CELL_TAX_DEFAULT`
-- `SET/CLEAR_CELL_TAX_OVERRIDE`
-- `CLEAR_CELL_TAX_POLICY`
 
-Command columns include `tax_kinds`, `tax_item_indices`, and `tax_rate_percent`. The facade validates
-stable IDs and converts them to dense IDs before submission. `CountryDailySystem` commits commands
-at the effective day before the economy freezes the next epoch.
+Command columns include `tax_kinds`, `tax_item_indices`, `tax_rate_basis_points`, and
+`tax_assessment_modes` (`PERCENT_BP=0`, `ABSOLUTE=1`). The facade validates stable IDs and
+converts them to dense IDs before submission. `CountryDailySystem` commits commands at the
+effective day before the economy freezes the next epoch.
 
-Stat keys:
+Stat keys (percent Modifier overlay only):
 
 ```text
-country.tax.income.<profession>.rate_pct
-country.tax.consumption.<good>.rate_pct
-country.tax.business.<building>.rate_pct
-country.tax.import.<good>.rate_pct
-country.tax.export.<good>.rate_pct
+country.tax.income.<profession>.rate_bp
+country.tax.consumption.<good>.rate_bp
+country.tax.business.<building>.rate_bp
+country.tax.import.<good>.rate_bp
+country.tax.export.<good>.rate_bp
 ```
 
 The country policy and Modifier catalogs must use the same sorted profession/good/building IDs.
 Reject duplicate keys and shape/hash mismatches. The economy resolves stat IDs outside workers,
-batch-queries each country once per epoch, rounds half away from zero, clamps to `[-100,100]`, and
-stores contiguous `int8` arrays.
+batch-queries each country once per epoch, rounds half away from zero, clamps percent to
+`[-100000,10000]`, and freezes contiguous value+mode arrays. Absolute slots skip Modifier overlay.
 
-Cell precedence is cell item → cell kind default → country item → country kind
-default, followed by Country Modifier. Economy compiles only used
-`(country, policy)` pairs, shares local-default rows by `(country, kind, base)`,
-and keeps exact entries as sorted short slices. Never allocate a
-`cell_count × tax_catalog_size` matrix.
-
-Generate an active-tax bitmask from the frozen arrays. When a kind is entirely zero, preserve the
-original settlement/prediction fast path and skip unnecessary fiscal drafts.
+Generate an active-tax bitmask from the frozen arrays (`|value|!=0` in either mode). When a kind
+is entirely zero, preserve the original settlement/prediction fast path and skip unnecessary
+fiscal drafts.
 
 ## 3. Tax bases and cash direction
 
-Unified formula:
+Percent formula:
 
 ```text
-amount = floor(base * abs(rate_percent) / 100)
+amount = mul_div_sat(base, abs(rate_bp), 10000)
 ```
 
-Use saturating `int64` fixed-point helpers. Positive rates transfer payer cash to the cell's country
-treasury. Negative rates transfer treasury-funded fiscal escrow to the recipient.
+Absolute formula: `abs(X) * units` where income/business units are
+`population_or_buildings * epoch_days`, and transaction/tariff units are filled/traded quantity.
+
+Use saturating `int64` fixed-point helpers. Positive rates/amounts transfer payer cash to the
+cell's country treasury. Negative rates/amounts transfer treasury-funded fiscal escrow to the
+recipient. Absolute income/business levies are settled in
+`settle_absolute_daily_taxes_for_cell` with saturating cash collection.
 
 ### Income tax
 
@@ -114,13 +112,6 @@ treasury. Negative rates transfer treasury-funded fiscal escrow to the recipient
 - Clamp each batch base to zero. Do not carry losses.
 - Exclude transfers, minting, construction investment, capital principal, producer support, tax
   subsidies, and business subsidies.
-- Positive income tax remains source-withheld. Negative income tax is aggregated once per cohort
-  after wage, owner, and merchant taxable sources complete.
-- Freeze a minimum-living base for every negative-rate cohort from the local `survival_household`
-  basket: `per_person_daily_cost * population * epoch_days`.
-- For a negative income rate use
-  `max(aggregate_taxable_income, minimum_living_base)`. The inferred floor must never be taxed by a
-  positive rate.
 
 ### Consumption tax
 
@@ -150,10 +141,9 @@ Tariff lanes remain inactive until foreign trade exists.
 At the start of each rolling bucket:
 
 1. Match the prior lane history to a generation-safe country handle.
-2. Build reservation weights. Consumption and business use the previous request; income uses
-   `max(previous request, current frozen minimum-living request)`.
-3. Reserve `min(country cash, reservation request)` before research procurement.
-4. Allocate the reserved cash proportionally by reservation weight.
+2. Sum the previous subsidy requests per country.
+3. Reserve `min(country cash, previous request)` before research procurement.
+4. Allocate the reserved cash proportionally by previous request.
 5. Resolve integer remainders by stable tax-kind then cell prefix order.
 
 Workers read their lane budget and mutate only their own lane request/remaining/paid entries.
@@ -169,10 +159,8 @@ At fiscal commit:
 5. Clear escrow before the save boundary.
 
 Current positive tax is available only to the next subsidy batch. This avoids circular funding.
-The first consumption/business negative-rate batch without history pays zero and establishes the
-next weight. A negative income lane may pay its frozen minimum-living request immediately. Territory
-transfer invalidates history whose generation-safe country handle no longer matches, while the
-current income minimum-living request may seed a fresh reservation.
+First negative-rate batch without history pays zero and establishes the next weight. Territory
+transfer invalidates history whose generation-safe country handle no longer matches.
 
 Money audits include trade and fiscal escrow. Country treasury must never become negative.
 
@@ -226,12 +214,10 @@ Do not use nominal negative rates as guaranteed income. For a negative rate:
 
 ```text
 nominal = floor(base * abs(rate) / 100)
-expected_paid = min(nominal, floor(nominal * lane_budget / reservation_weight))
+expected_paid = min(nominal, floor(nominal * lane_budget / previous_request))
 ```
 
-For income, `reservation_weight` may be seeded by the current minimum-living request. For
-consumption/business it is the matching previous request; no reservation weight or lane budget
-means expected subsidy is zero.
+If previous request or lane budget is zero, expected subsidy is zero.
 
 ## 6. Tariff boundary
 
@@ -264,8 +250,8 @@ paid/unmet subsidy, fulfillment, cumulative values, and inactive tariff state.
 
 Current schemas:
 
-- PKCN v11: tax policy, policy version, country Modifier persistence.
-- PKEC v33: previous subsidy requests, generation-safe country history, fiscal cumulative values,
+- PKCN v4: tax policy, policy version, country Modifier persistence.
+- PKEC v23: previous subsidy requests, generation-safe country history, fiscal cumulative values,
   and deterministic hash.
 
 PKCN v3/PKEC v22 migrate explicitly to zero rates and empty fiscal history. Modifier catalog
@@ -289,15 +275,8 @@ Show treasury, last tax collected, subsidy paid, and fulfillment summary cards. 
 default rate, search/filter, overrides-only mode, base rate, effective rate, and pending state.
 
 Submit one command only when a SpinBox/input is confirmed, not for every key or drag frame. Display
-next-day pending state until the effective day, a newer policy version, and the live snapshot
-actually show the submitted rate (or cleared override). Day and version alone must not snap the
-editor back to an inherited 0%. Import and export remain editable with a
-foreign-trade-not-connected message.
-
-Cell Inspector tax editors share that confirm-then-pending rule. Arrow, drag, Enter, and focus-loss
-all confirm; Enter and focus-loss submit the LineEdit text, not a stale SpinBox value. Live patches
-must keep the draft or pending rate and must not write the inherited default back over an
-in-progress or still-uncommitted edit.
+next-day pending state until both the effective day and a newer policy version are observed. Import
+and export remain editable with a foreign-trade-not-connected message.
 
 Cache rows and update visible values in place. Do not rebuild the node tree or reset scroll position
 on daily refresh. Keep the workspace usable at 1280×720.
@@ -316,8 +295,7 @@ Focused correctness:
 Fiscal:
 
 - Nonnegative treasury.
-- Consumption/business first-batch delay, immediate funded income-floor reservation, and
-  proportional fulfillment.
+- First-batch delay and next-batch proportional fulfillment.
 - Stable remainder order.
 - Unused return and research priority.
 - Territory-transfer history invalidation.

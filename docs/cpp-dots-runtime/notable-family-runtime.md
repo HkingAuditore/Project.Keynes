@@ -97,7 +97,9 @@ variant 份额和普通需求量；生存需求下限不下降。投资建设持
 
 成员、所有权和 cell 反向索引是权威 CSR；产业统计、影响力、行为因子和 owned-output 是派生缓存。
 `FAMILY_COMMIT` 先完成所有权威 CSR 与生命周期变更，再按“产业统计 → 影响力 → 行为因子 →
-owned-output”只发布一次派生层，禁止每次 `rebuild_family_indices()` 顺带重建整张行为表。行为缓存用
+owned-output”发布派生层。产业统计 / 影响力 / owned-output 与 `_family_indices_dirty` /
+`structure_changed` 以及 `FAMILY_INFLUENCE_REFRESH_EPOCHS` 同门，禁止每个 epoch 无条件全表重建。
+禁止每次 `rebuild_family_indices()` 顺带重建整张行为表。行为缓存用
 traits / effect bindings / influences / condition metrics / home-cell dirty reason 驱动；存在动态行为条件时
 每个日界最多重建一次，无变化的中间调用直接跳过。一次重建为首次遇到动态条件的
 `(family, cell)` 惰性构造一个 `FamilyCellContext` 指标 slab，后续条件 trait edge 复用该 slab；禁止每条 edge 重复扫描人口、建筑、
@@ -230,7 +232,9 @@ bootstrap 不触发。若旧会话已在无家族状态下运行，日常 `FAMIL
 - 第一版没有经理或代理经营的替代通道。
 
 `FAMILY_COMMIT` 将建筑 `filled_owner` 回写到成员边，并按剩余成员容量确定性分摊 employee
-employment。因此 `get_family_snapshot()` 可按 profession 汇总家族人口、业主就业和雇员就业；
+employment。业主归因会钳到 `people`，避免 `owner_employed + employee_employed > people`。
+PKEC 恢复对已写出的越界就业/滞后 `population_basis`/`funds_basis` 做同样钳位修复，而不是
+一律 `save_family_membership_invalid`。因此 `get_family_snapshot()` 可按 profession 汇总家族人口、业主就业和雇员就业；
 这些是 cohort 与建筑岗位的派生归因，不是独立劳动力账本。
 
 ## 迁移、投资与经济结算

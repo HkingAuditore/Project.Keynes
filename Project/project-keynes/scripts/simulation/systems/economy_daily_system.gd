@@ -141,8 +141,14 @@ func tick(ctx) -> Dictionary:
 	var commit_due := bool(result.get("commit_due", false))
 	var boundary_continuation := bool(
 		result.get("boundary_continuation_required", false))
+	var elapsed_ms := float(Time.get_ticks_usec() - started_us) / 1000.0
+	var frame_budget_ms := 8.0
+	if world_clock != null:
+		frame_budget_ms = maxf(0.1, float(world_clock.sim_frame_budget_ms))
+	var frame_over := elapsed_ms >= frame_budget_ms
 	var day_barrier := bool(result.get("fatal", false)) or (
-		not bool(result.get("done", true)) and (commit_due or boundary_continuation))
+		not bool(result.get("done", true)) and (
+			commit_due or boundary_continuation or frame_over))
 	if world_clock != null and world_clock.has_method("request_simulation_backpressure"):
 		world_clock.request_simulation_backpressure(&"economy", over_budget)
 		world_clock.request_simulation_backpressure(&"economy_day_barrier", day_barrier)
@@ -262,7 +268,7 @@ func tick(ctx) -> Dictionary:
 	return {
 		"done": bool(result.get("done", true)),
 		"work_done": int(result.get("work_done", 0)),
-		"elapsed_ms": float(Time.get_ticks_usec() - started_us) / 1000.0,
+		"elapsed_ms": elapsed_ms,
 		"progress_ratio": float(result.get("progress_q16", 65535)) / 65536.0,
 		"stage_name": executed_stage,
 		"next_stage": String(result.get("next_stage", result.get("stage", ""))),

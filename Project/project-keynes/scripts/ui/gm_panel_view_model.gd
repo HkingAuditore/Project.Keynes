@@ -2,6 +2,7 @@ extends RefCounted
 class_name GMPanelViewModel
 
 const MAX_REPORT_ROWS := 14
+const MAX_FATAL_MONEY_REPORT_ROWS := 36
 const MAX_COHORT_ROWS := 12
 const MAX_MARKET_ROWS := 18
 const MAX_BUILDING_ROWS := 12
@@ -13,6 +14,22 @@ const ECONOMY_PINNED_REPORT_KEYS := [
 	"fatal", "fatal_reason", "stage", "epoch_active", "epoch_id",
 	"current_day", "last_completed_sample_day", "newest_state_day",
 	"population_error", "money_error", "goods_error",
+]
+# money_conservation_failed 时必须钉住分桶；否则 MAX_REPORT_ROWS 会先填满
+# accuracy_* 等无关键，GM 面板看不到 open/close/mint/burn。
+const ECONOMY_FATAL_MONEY_PINNED_KEYS := [
+	"fatal", "fatal_reason", "stage", "epoch_active", "epoch_id",
+	"current_day", "last_completed_sample_day", "sample_day",
+	"population_error", "money_error", "goods_error",
+	"money_open", "money_close", "money_expected",
+	"explicit_money_mint", "explicit_money_burn",
+	"opening_cohort_funds", "closing_cohort_funds",
+	"opening_country_cash", "closing_country_cash",
+	"opening_escrow_cash", "closing_escrow_cash",
+	"opening_expedition_funds", "closing_expedition_funds",
+	"producer_support_money_issued", "bullion_money_issued",
+	"closing_audit_mode", "closing_audit_incremental_this_epoch",
+	"opening_audit_fast_paths", "opening_audit_full_verifications",
 ]
 
 
@@ -299,12 +316,48 @@ static func _append_scalar_report(sections: Array, title: String, report,
 	if not (report is Dictionary) or report.is_empty():
 		return
 	var rows := []
+	var row_limit := MAX_REPORT_ROWS
+	var pin_keys := pinned
 	if title == "经济运行时" and bool(report.get("fatal", false)):
 		rows.append({"label": "状态", "value": "已暂停 · %s" % String(
 			report.get("fatal_reason", "unknown"))})
-	_append_scalar_rows(rows, report, MAX_REPORT_ROWS, pinned)
+		pin_keys = ECONOMY_FATAL_MONEY_PINNED_KEYS
+		row_limit = MAX_FATAL_MONEY_REPORT_ROWS
+		_dump_economy_money_conservation_fatal(report)
+	_append_scalar_rows(rows, report, row_limit, pin_keys)
 	if not rows.is_empty():
 		sections.append({"title": title, "rows": rows})
+
+
+static var _money_conservation_dump_done := false
+
+
+static func _dump_economy_money_conservation_fatal(report: Dictionary) -> void:
+	if _money_conservation_dump_done:
+		return
+	_money_conservation_dump_done = true
+	var payload := {}
+	for key in ECONOMY_FATAL_MONEY_PINNED_KEYS:
+		if report.has(key):
+			payload[key] = report[key]
+	payload["dumped_at"] = Time.get_datetime_string_from_system()
+	var text := JSON.stringify(payload)
+	var user_path := "user://economy_money_conservation_fatal.json"
+	var user_file := FileAccess.open(user_path, FileAccess.WRITE)
+	if user_file != null:
+		user_file.store_string(text)
+		user_file.close()
+	# 同步写到工程 tmp，方便 agent 直接读取（不依赖 userdata 路径）。
+	var project_res := ProjectSettings.globalize_path("res://")
+	var abs_path := project_res.path_join(
+		"..\\..\\tmp\\economy_money_conservation_fatal.json").simplify_path()
+	var abs_file := FileAccess.open(abs_path, FileAccess.WRITE)
+	if abs_file != null:
+		abs_file.store_string(text)
+		abs_file.close()
+	print("[gm/economy-fatal-dump] %s keys=%d user=%s abs=%s" % [
+		String(report.get("fatal_reason", "?")), payload.size(),
+		ProjectSettings.globalize_path(user_path), abs_path])
 
 
 static func _append_scalar_rows(rows: Array, data: Dictionary, limit: int,

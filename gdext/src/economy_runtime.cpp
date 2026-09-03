@@ -1196,6 +1196,11 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
     _epoch_business_tax_rates = std::move(snapshot.business_tax_rates);
     _epoch_import_tax_rates = std::move(snapshot.import_tax_rates);
     _epoch_export_tax_rates = std::move(snapshot.export_tax_rates);
+    _epoch_income_tax_modes = std::move(snapshot.income_tax_modes);
+    _epoch_consumption_tax_modes = std::move(snapshot.consumption_tax_modes);
+    _epoch_business_tax_modes = std::move(snapshot.business_tax_modes);
+    _epoch_import_tax_modes = std::move(snapshot.import_tax_modes);
+    _epoch_export_tax_modes = std::move(snapshot.export_tax_modes);
     std::vector<uint32_t> snapshot_cell_tax_policy_ids =
         std::move(snapshot.cell_tax_policy_ids);
     std::vector<NativeCountryRuntime::CellTaxPolicy>
@@ -1209,7 +1214,12 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
         !tax_shape_valid(_epoch_consumption_tax_rates, _good_ids.size()) ||
         !tax_shape_valid(_epoch_business_tax_rates, _building_types.size()) ||
         !tax_shape_valid(_epoch_import_tax_rates, _good_ids.size()) ||
-        !tax_shape_valid(_epoch_export_tax_rates, _good_ids.size())) {
+        !tax_shape_valid(_epoch_export_tax_rates, _good_ids.size()) ||
+        !tax_shape_valid(_epoch_income_tax_modes, _profession_ids.size()) ||
+        !tax_shape_valid(_epoch_consumption_tax_modes, _good_ids.size()) ||
+        !tax_shape_valid(_epoch_business_tax_modes, _building_types.size()) ||
+        !tax_shape_valid(_epoch_import_tax_modes, _good_ids.size()) ||
+        !tax_shape_valid(_epoch_export_tax_modes, _good_ids.size())) {
         error = "country_tax_snapshot_shape_invalid";
         return false;
     }
@@ -1537,23 +1547,52 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
                 _epoch_country_handles[static_cast<size_t>(country)];
             const auto freeze_tax_group = [&](const std::vector<int32_t> &stat_ids,
                                               std::vector<int32_t> &rates,
+                                              const std::vector<int32_t> &modes,
                                               size_t item_count) {
                 if (item_count == 0) return;
                 const size_t begin = static_cast<size_t>(country) * item_count;
+                std::vector<int32_t> percent_stat_ids;
+                std::vector<int32_t> percent_bases;
+                std::vector<size_t> percent_indices;
+                percent_stat_ids.reserve(item_count);
+                percent_bases.reserve(item_count);
+                percent_indices.reserve(item_count);
+                for (size_t item = 0; item < item_count; ++item) {
+                    const size_t index = begin + item;
+                    if (index >= modes.size() ||
+                        modes[index] ==
+                            NativeCountryRuntime::TAX_MODE_ABSOLUTE) {
+                        continue;
+                    }
+                    percent_stat_ids.push_back(stat_ids[item]);
+                    percent_bases.push_back(rates[index]);
+                    percent_indices.push_back(index);
+                }
+                if (percent_stat_ids.empty()) return;
+                std::vector<int32_t> effective = percent_bases;
                 _modifier_runtime->effective_values(
-                    ModifierRuntime::COUNTRY, stat_ids.data(), country_handle,
-                    rates.data() + begin, rates.data() + begin, item_count);
+                    ModifierRuntime::COUNTRY, percent_stat_ids.data(),
+                    country_handle, percent_bases.data(), effective.data(),
+                    percent_stat_ids.size());
+                for (size_t i = 0; i < percent_indices.size(); ++i) {
+                    rates[percent_indices[i]] = static_cast<int32_t>(
+                        std::clamp<int64_t>(
+                            effective[i],
+                            NativeCountryRuntime::TAX_RATE_MIN_BP,
+                            NativeCountryRuntime::TAX_RATE_MAX_BP));
+                }
             };
             freeze_tax_group(_income_tax_stat_ids, _epoch_income_tax_rates,
-                             _profession_ids.size());
-            freeze_tax_group(_consumption_tax_stat_ids, _epoch_consumption_tax_rates,
-                             _good_ids.size());
+                             _epoch_income_tax_modes, _profession_ids.size());
+            freeze_tax_group(_consumption_tax_stat_ids,
+                             _epoch_consumption_tax_rates,
+                             _epoch_consumption_tax_modes, _good_ids.size());
             freeze_tax_group(_business_tax_stat_ids, _epoch_business_tax_rates,
-                             _building_types.size());
+                             _epoch_business_tax_modes, _building_types.size());
             freeze_tax_group(_import_tax_stat_ids, _epoch_import_tax_rates,
-                             _good_ids.size());
+                             _epoch_import_tax_modes, _good_ids.size());
             freeze_tax_group(_export_tax_stat_ids, _epoch_export_tax_rates,
-                             _good_ids.size());
+                             _epoch_export_tax_modes, _good_ids.size());
             _epoch_country_output_factor_q16[static_cast<size_t>(country)] =
                 modifier_factor_q16(_modifier_runtime->country_economy_output_factor(
                     country_handle));
@@ -1699,6 +1738,7 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
     _epoch_compiled_cell_tax_overrides.clear();
     _epoch_compiled_cell_tax_default_rows.clear();
     _epoch_compiled_cell_tax_default_rates.clear();
+    _epoch_compiled_cell_tax_default_modes.clear();
     _epoch_has_cell_tax_policies = false;
     std::unordered_map<uint64_t, uint32_t> compiled_policy_ids;
     std::unordered_map<uint64_t, int32_t> default_row_ids;
@@ -1735,10 +1775,13 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
         }
     };
     const auto ensure_default_row = [&](int32_t country, int32_t kind,
-                                        int32_t base_rate) -> int32_t {
+                                        int32_t base_rate,
+                                        int32_t base_mode) -> int32_t {
         const uint64_t key =
             (static_cast<uint64_t>(static_cast<uint32_t>(country)) << 40U) |
             (static_cast<uint64_t>(static_cast<uint8_t>(kind)) << 32U) |
+            (static_cast<uint64_t>(static_cast<uint8_t>(base_mode & 0xff))
+             << 24U) |
             static_cast<uint32_t>(base_rate);
         const auto found = default_row_ids.find(key);
         if (found != default_row_ids.end()) return found->second;
@@ -1747,13 +1790,18 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
         row.kind = kind;
         row.country = country;
         row.base_rate = base_rate;
+        row.base_mode = base_mode;
         row.offset = static_cast<int32_t>(
             _epoch_compiled_cell_tax_default_rates.size());
         row.count = static_cast<int32_t>(item_count);
         _epoch_compiled_cell_tax_default_rates.resize(
             _epoch_compiled_cell_tax_default_rates.size() + item_count,
             base_rate);
-        if (_modifier_runtime != nullptr && item_count > 0) {
+        _epoch_compiled_cell_tax_default_modes.resize(
+            _epoch_compiled_cell_tax_default_modes.size() + item_count,
+            base_mode);
+        if (_modifier_runtime != nullptr && item_count > 0 &&
+            base_mode != NativeCountryRuntime::TAX_MODE_ABSOLUTE) {
             const auto &stat_ids = stat_ids_for_kind(kind);
             _modifier_runtime->effective_values(
                 ModifierRuntime::COUNTRY, stat_ids.data(),
@@ -1768,7 +1816,13 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
         default_row_ids.emplace(key, row_id);
         return row_id;
     };
-    for (int32_t cell = 0; cell < _cell_count; ++cell) {
+    const std::vector<int32_t> &tax_cells = _economy_live_cells.empty()
+        ? std::vector<int32_t>() : _economy_live_cells;
+    const bool scan_all_tax_cells = tax_cells.empty();
+    const int32_t tax_scan_count = scan_all_tax_cells
+        ? _cell_count : static_cast<int32_t>(tax_cells.size());
+    for (int32_t i = 0; i < tax_scan_count; ++i) {
+        const int32_t cell = scan_all_tax_cells ? i : tax_cells[static_cast<size_t>(i)];
         const uint32_t authority_id =
             snapshot_cell_tax_policy_ids[static_cast<size_t>(cell)];
         const int32_t country = _epoch_cell_country[static_cast<size_t>(cell)];
@@ -1792,7 +1846,12 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
                 for (const auto &entry : authority.overrides) {
                     if (entry.kind != kind) continue;
                     int32_t effective = entry.rate;
-                    if (_modifier_runtime != nullptr) {
+                    const int32_t mode =
+                        entry.mode == NativeCountryRuntime::TAX_MODE_INHERIT
+                            ? NativeCountryRuntime::TAX_MODE_PERCENT_BP
+                            : entry.mode;
+                    if (_modifier_runtime != nullptr &&
+                        mode != NativeCountryRuntime::TAX_MODE_ABSOLUTE) {
                         const auto &stat_ids = stat_ids_for_kind(kind);
                         _modifier_runtime->effective_values(
                             ModifierRuntime::COUNTRY,
@@ -1801,7 +1860,7 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
                             &effective, &effective, 1);
                     }
                     _epoch_compiled_cell_tax_overrides.push_back(
-                        {entry.item, effective});
+                        {entry.item, effective, mode});
                     if (effective != 0)
                         compiled.active_mask |= static_cast<uint8_t>(1U << kind);
                 }
@@ -1810,9 +1869,22 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
                         _epoch_compiled_cell_tax_overrides.size());
                 const int32_t local_default =
                     authority.defaults[static_cast<size_t>(kind)];
-                if (local_default != NativeCountryRuntime::TAX_RATE_INHERIT) {
+                const int32_t local_default_mode =
+                    authority.default_modes[static_cast<size_t>(kind)];
+                if (local_default != NativeCountryRuntime::TAX_RATE_INHERIT ||
+                    local_default_mode !=
+                        NativeCountryRuntime::TAX_MODE_INHERIT) {
+                    const int32_t resolved_mode =
+                        local_default_mode ==
+                                NativeCountryRuntime::TAX_MODE_INHERIT
+                            ? NativeCountryRuntime::TAX_MODE_PERCENT_BP
+                            : local_default_mode;
+                    const int32_t resolved_rate =
+                        local_default == NativeCountryRuntime::TAX_RATE_INHERIT
+                            ? 0
+                            : local_default;
                     const int32_t row_id = ensure_default_row(
-                        country, kind, local_default);
+                        country, kind, resolved_rate, resolved_mode);
                     compiled.default_row_ids[static_cast<size_t>(kind)] = row_id;
                     const CompiledCellTaxDefaultRow &row =
                         _epoch_compiled_cell_tax_default_rows[
@@ -1917,7 +1989,13 @@ bool NativeEconomyRuntime::capture_country_epoch(std::string &error) {
     mark_country_tax(NativeCountryRuntime::TAX_EXPORT,
                      _epoch_export_tax_rates, _good_ids.size());
     _epoch_active_tax_mask = 0;
-    for (int32_t cell = 0; cell < _cell_count; ++cell) {
+    const std::vector<int32_t> &tax_mask_cells = _economy_live_cells.empty()
+        ? std::vector<int32_t>() : _economy_live_cells;
+    const bool mask_all_cells = tax_mask_cells.empty();
+    const int32_t tax_mask_count = mask_all_cells
+        ? _cell_count : static_cast<int32_t>(tax_mask_cells.size());
+    for (int32_t i = 0; i < tax_mask_count; ++i) {
+        const int32_t cell = mask_all_cells ? i : tax_mask_cells[static_cast<size_t>(i)];
         const int32_t country = _epoch_cell_country[static_cast<size_t>(cell)];
         uint8_t mask = 0;
         const uint32_t compiled_id =
@@ -2993,6 +3071,7 @@ int32_t NativeEconomyRuntime::ensure_market_signal_index(int32_t cell, int32_t g
             if (values.size() == old_size) values.push_back(0);
         };
         append_i64_if_aligned(_epoch_business_demand_ema);
+        append_i64_if_aligned(_epoch_derived_business_demand);
         append_i64_if_aligned(_epoch_desired_business_demand);
         append_i64_if_aligned(_epoch_funded_business_demand);
     append_i64_if_aligned(_epoch_ceiling_business_requested);
@@ -3041,6 +3120,7 @@ int32_t NativeEconomyRuntime::ensure_market_signal_index(int32_t cell, int32_t g
         if (values.size() == old_size) values.insert(values.begin() + insert_pos, 0);
     };
     insert_i64_if_aligned(_epoch_business_demand_ema);
+    insert_i64_if_aligned(_epoch_derived_business_demand);
     insert_i64_if_aligned(_epoch_desired_business_demand);
     insert_i64_if_aligned(_epoch_funded_business_demand);
     insert_i64_if_aligned(_epoch_ceiling_business_requested);
@@ -3132,6 +3212,7 @@ bool NativeEconomyRuntime::flush_market_signal_overflow(std::string &error) {
     reorder(_market_signals.realized_withdrawal_ema);
     reorder(_market_signals.cost_anchor_price);
     reorder(_epoch_business_demand_ema);
+    reorder(_epoch_derived_business_demand);
     reorder(_epoch_desired_business_demand);
     reorder(_epoch_funded_business_demand);
     reorder(_epoch_ceiling_business_requested);
@@ -4766,9 +4847,10 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
             maintenance_cost, _saturation_count);
         const int64_t expected_business_base = expected_business_rate < 0
             ? expected_business_eligible_cost : std::max<int64_t>(0, revenue);
-        const int64_t expected_business_transfer = expected_fiscal_transfer(
-            group.cell, NativeCountryRuntime::TAX_BUSINESS,
-            expected_business_base, expected_business_rate, _saturation_count);
+        const int64_t expected_business_transfer =
+            expected_resolved_fiscal_transfer(
+                group.cell, NativeCountryRuntime::TAX_BUSINESS, group.type_id,
+                expected_business_base, 1, _saturation_count);
         // Income tax excludes owner livelihood from the tax base. Business
         // tax is deductible only when positive; a business subsidy is a
         // transfer and must not recursively increase taxable income.
@@ -4780,12 +4862,14 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
         const int32_t expected_income_rate = frozen_tax_rate(
             group.cell, NativeCountryRuntime::TAX_INCOME,
             type.owner_profession_id);
-        const int64_t expected_income_transfer = expected_fiscal_transfer(
-            group.cell, NativeCountryRuntime::TAX_INCOME,
-            expected_income_rate < 0
-                ? std::max<int64_t>(expected_income_base, owner_living_cost)
-                : expected_income_base,
-            expected_income_rate, _saturation_count);
+        const int64_t expected_income_transfer =
+            expected_resolved_fiscal_transfer(
+                group.cell, NativeCountryRuntime::TAX_INCOME,
+                type.owner_profession_id,
+                expected_income_rate < 0
+                    ? std::max<int64_t>(expected_income_base, owner_living_cost)
+                    : expected_income_base,
+                1, _saturation_count);
         const int64_t expected_after_tax_profit = saturating_sub(
             saturating_sub(saturating_sub(revenue, operating,
                 _saturation_count), expected_business_transfer,
@@ -4828,11 +4912,14 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
             // Fiscal bases follow realized cash, while lifecycle viability still
             // includes wage obligations through owner_business_cost.
             const int64_t realized_business_eligible_cost = realized_taxable_cost;
+            const int64_t absolute_building_days = saturating_mul(
+                group.count, std::max<int64_t>(1, _epoch_days),
+                _saturation_count);
             const int64_t realized_business_transfer = realized_business_rate < 0
-                ? expected_fiscal_transfer(
+                ? expected_resolved_fiscal_transfer(
                     group.cell, NativeCountryRuntime::TAX_BUSINESS,
-                    realized_business_eligible_cost, realized_business_rate,
-                    _saturation_count)
+                    group.type_id, realized_business_eligible_cost,
+                    absolute_building_days, _saturation_count)
                 : 0;
             const bool positive_self_employment = type.employee_count == 0 &&
                 saturating_add(owner_business_income,
@@ -4847,12 +4934,17 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
             const int64_t realized_income_base = std::max<int64_t>(0,
                 saturating_sub(group.last_revenue, realized_taxable_cost,
                     _saturation_count));
-            const int64_t realized_income_transfer = expected_fiscal_transfer(
-                group.cell, NativeCountryRuntime::TAX_INCOME,
-                realized_income_rate < 0
-                    ? std::max<int64_t>(realized_income_base, owner_living_cost)
-                    : realized_income_base,
-                realized_income_rate, _saturation_count);
+            const int64_t absolute_owner_days = saturating_mul(
+                std::max<int64_t>(1, group.count),
+                std::max<int64_t>(1, _epoch_days), _saturation_count);
+            const int64_t realized_income_transfer =
+                expected_resolved_fiscal_transfer(
+                    group.cell, NativeCountryRuntime::TAX_INCOME,
+                    realized_profession,
+                    realized_income_rate < 0
+                        ? std::max<int64_t>(realized_income_base, owner_living_cost)
+                        : realized_income_base,
+                    absolute_owner_days, _saturation_count);
             const int64_t realized_after_tax_profit = saturating_sub(
                 saturating_sub(
                     saturating_sub(group.last_revenue, owner_business_cost,
@@ -5136,9 +5228,9 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
                 group.cell, NativeCountryRuntime::TAX_BUSINESS, group.type_id);
             const int64_t business_base = business_rate < 0
                 ? expected_business_eligible_cost : std::max<int64_t>(0, revenue);
-            const int64_t business_transfer = expected_fiscal_transfer(
-                group.cell, NativeCountryRuntime::TAX_BUSINESS, business_base,
-                business_rate, _saturation_count);
+            const int64_t business_transfer = expected_resolved_fiscal_transfer(
+                group.cell, NativeCountryRuntime::TAX_BUSINESS, group.type_id,
+                business_base, 1, _saturation_count);
             const int64_t income_base = std::max<int64_t>(0,
                 saturating_sub(saturating_sub(
                     revenue, expected_business_eligible_cost, _saturation_count),
@@ -5146,12 +5238,13 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
             const int32_t income_rate = frozen_tax_rate(
                 group.cell, NativeCountryRuntime::TAX_INCOME,
                 type.owner_profession_id);
-            const int64_t income_transfer = expected_fiscal_transfer(
+            const int64_t income_transfer = expected_resolved_fiscal_transfer(
                 group.cell, NativeCountryRuntime::TAX_INCOME,
+                type.owner_profession_id,
                 income_rate < 0
                     ? std::max<int64_t>(income_base, owner_living_cost)
                     : income_base,
-                income_rate, _saturation_count);
+                1, _saturation_count);
             // Owner-retained output is economic income even when no merchant
             // transaction occurs. Reuse the realized value when available; for
             // an empty/new group, take a read-only opportunity quote only when
@@ -5283,6 +5376,15 @@ NativeEconomyRuntime::PricePressure NativeEconomyRuntime::price_pressure(
     out.business_demand = saturating_add(
         out.business_demand,
         epoch_research_demand_daily_for_market(market, good), sat);
+    if (signal_index >= 0 &&
+        signal_index < static_cast<int32_t>(_epoch_derived_business_demand.size())) {
+        const int64_t derived = std::max<int64_t>(
+            0, _epoch_derived_business_demand[signal_index]);
+        out.business_demand = saturating_add(out.business_demand,
+            mul_div_sat(derived,
+                std::clamp<int64_t>(_derived_business_demand_weight_q16, 0, Q16_ONE),
+                Q16_ONE, sat), sat);
+    }
     const int64_t demand = saturating_add(out.household_demand, out.business_demand, sat);
     const int64_t flow = saturating_add(demand, out.supply, sat);
     out.excess_q16 = std::clamp<int64_t>(mul_div_sat(
@@ -5652,7 +5754,11 @@ int64_t NativeEconomyRuntime::pay_building_wage_amount(
                 1U << NativeCountryRuntime::TAX_INCOME)) != 0) {
             const int32_t income_rate = frozen_tax_rate(
                 cell, NativeCountryRuntime::TAX_INCOME, profession_id);
-            if (income_rate < 0) {
+            const int32_t income_mode = frozen_tax_mode(
+                cell, NativeCountryRuntime::TAX_INCOME, profession_id);
+            if (income_mode == NativeCountryRuntime::TAX_MODE_ABSOLUTE) {
+                // Settled in settle_absolute_daily_taxes_for_cell.
+            } else if (income_rate < 0) {
                 if (slot >= 0 && slot < static_cast<int32_t>(
                         _income_taxable_base_by_slot.size())) {
                     _income_taxable_base_by_slot[slot] = saturating_add(
@@ -5662,7 +5768,7 @@ int64_t NativeEconomyRuntime::pay_building_wage_amount(
             } else {
                 income_tax = apply_fiscal_tax(
                     cell, NativeCountryRuntime::TAX_INCOME, share, income_rate,
-                    _saturation_count);
+                    income_mode, _saturation_count);
                 record_cohort_fiscal(slot, income_tax);
             }
         }
@@ -6287,11 +6393,14 @@ int64_t NativeEconomyRuntime::projected_owner_income_per_day(
     const int64_t business_base = business_rate < 0
         ? eligible_business_cost
         : std::max<int64_t>(0, quoted_revenue);
+    const int64_t absolute_building_days = saturating_mul(
+        group.count, std::max<int64_t>(1, days), sat);
     const int64_t business_transfer = observed_capacity
         ? saturating_sub(scale_fact(group.last_business_subsidy_received),
                          scale_fact(group.last_business_tax_paid), sat)
-        : expected_fiscal_transfer(group.cell, NativeCountryRuntime::TAX_BUSINESS,
-            business_base, business_rate, sat);
+        : expected_resolved_fiscal_transfer(
+            group.cell, NativeCountryRuntime::TAX_BUSINESS, group.type_id,
+            business_base, absolute_building_days, sat);
     const int64_t taxable_income = std::max<int64_t>(0, saturating_sub(
         operating_income, std::max<int64_t>(0, business_transfer), sat));
     const int32_t profession = group.owner_signature_id >= 0 &&
@@ -6311,9 +6420,11 @@ int64_t NativeEconomyRuntime::projected_owner_income_per_day(
         income_subsidy_base = std::max(
             income_subsidy_base, living_floor);
     }
-    const int64_t income_transfer = expected_fiscal_transfer(
-        group.cell, NativeCountryRuntime::TAX_INCOME, income_subsidy_base,
-        income_rate, sat);
+    const int64_t absolute_owner_days = saturating_mul(
+        owner_jobs, std::max<int64_t>(1, days), sat);
+    const int64_t income_transfer = expected_resolved_fiscal_transfer(
+        group.cell, NativeCountryRuntime::TAX_INCOME, profession,
+        income_subsidy_base, absolute_owner_days, sat);
     const int64_t owner_pool = std::max<int64_t>(0, saturating_sub(
         saturating_sub(operating_income, business_transfer, sat),
         income_transfer, sat));
@@ -6607,8 +6718,11 @@ NativeEconomyRuntime::owner_opportunity_quote(
         group.cell, NativeCountryRuntime::TAX_BUSINESS, group.type_id);
     const int64_t business_base = business_rate < 0 ? operating_cost :
         std::max<int64_t>(0, quote.cash_receipt);
-    quote.business_transfer = expected_fiscal_transfer(group.cell,
-        NativeCountryRuntime::TAX_BUSINESS, business_base, business_rate, sat);
+    const int64_t absolute_building_days = saturating_mul(
+        group.count, std::max<int64_t>(1, _epoch_days), sat);
+    quote.business_transfer = expected_resolved_fiscal_transfer(
+        group.cell, NativeCountryRuntime::TAX_BUSINESS, group.type_id,
+        business_base, absolute_building_days, sat);
     const int64_t pre_income = saturating_sub(
         saturating_sub(quote.cash_receipt, operating_cost, sat),
         quote.business_transfer, sat);
@@ -6619,8 +6733,11 @@ NativeEconomyRuntime::owner_opportunity_quote(
         group.cell, NativeCountryRuntime::TAX_INCOME, profession);
     const int64_t income_base = income_rate < 0
         ? std::max(pre_income, quote.owner_living_cost) : std::max<int64_t>(0, pre_income);
-    quote.income_transfer = expected_fiscal_transfer(group.cell,
-        NativeCountryRuntime::TAX_INCOME, income_base, income_rate, sat);
+    const int64_t absolute_owner_days = saturating_mul(
+        std::max<int64_t>(1, group.count), std::max<int64_t>(1, _epoch_days), sat);
+    quote.income_transfer = expected_resolved_fiscal_transfer(
+        group.cell, NativeCountryRuntime::TAX_INCOME, profession,
+        income_base, absolute_owner_days, sat);
     const int64_t pool = saturating_add(saturating_sub(
         saturating_sub(pre_income, quote.owner_living_cost, sat),
         quote.income_transfer, sat), quote.in_kind_retail_value, sat);
@@ -7409,6 +7526,14 @@ int64_t NativeEconomyRuntime::merchant_procurement_quota(
             _market_signals.business_demand_ema.size())) {
         feasible_daily = saturating_add(feasible_daily,
             std::max<int64_t>(0, _market_signals.business_demand_ema[signal_index]), sat);
+    }
+    if (signal_index >= 0 && signal_index < static_cast<int32_t>(
+            _epoch_derived_business_demand.size())) {
+        feasible_daily = saturating_add(feasible_daily,
+            mul_div_sat(std::max<int64_t>(0,
+                    _epoch_derived_business_demand[signal_index]),
+                std::clamp<int64_t>(_derived_business_demand_weight_q16, 0, Q16_ONE),
+                Q16_ONE, sat), sat);
     }
     feasible_daily = saturating_add(
         feasible_daily,
@@ -8746,9 +8871,7 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
     // At high simulation speeds the bridge/scheduler overhead is larger than
     // the value of yielding every sub-millisecond range. Wall time only
     // controls yielding; it never changes authoritative work order or results.
-    const double slice_budget_ms = speed_scale >= 20.0
-        ? std::max(1.8, requested_slice_budget_ms)
-        : requested_slice_budget_ms;
+    const double slice_budget_ms = requested_slice_budget_ms;
     constexpr int32_t MAX_CHUNKS_PER_SLICE = 8;
     int32_t chunks_completed = 0;
     int32_t phase_fusions = 0;
@@ -8847,6 +8970,9 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
             out["elapsed_ms"] = elapsed_ms(slice_start);
             return out;
         }
+        if (slice_budget_exhausted()) {
+            yield_reason = "budget";
+        }
     } else {
         // A continuation reuses the frozen epoch workset and prepare state;
         // count this explicitly so diagnostics can expose duplicate prepare
@@ -8862,7 +8988,7 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
     bool cell_range_used = false;
     bool structural_range_used = false;
     bool building_range_used = false;
-    while (_epoch_active && !_fatal) {
+    while (_epoch_active && !_fatal && !slice_budget_exhausted()) {
         if (_stage == Stage::BUILDING_PLAN) {
             _executed_stage = Stage::BUILDING_PLAN;
             const auto start = Clock::now();
@@ -9513,6 +9639,9 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                 for (; _household_post_cursor < end;
                      ++_household_post_cursor) {
                     settle_income_subsidies_for_cell(
+                        _epoch_settlement_cells[_household_post_cursor],
+                        _saturation_count);
+                    settle_absolute_daily_taxes_for_cell(
                         _epoch_settlement_cells[_household_post_cursor],
                         _saturation_count);
                     ++work_done;
@@ -12733,6 +12862,10 @@ void NativeEconomyRuntime::rebuild_family_indices(bool rebuild_derived) {
             dst.population_basis = std::max(dst.population_basis,
                                             edge.population_basis);
             dst.funds_basis = std::max(dst.funds_basis, edge.funds_basis);
+            // Employment is recomputed later; keep merge-only edges basis-valid.
+            dst.owner_employed = 0;
+            dst.employee_employed = 0;
+            sanitize_family_membership_edge(dst);
         } else {
             merged_memberships.push_back(edge);
         }
@@ -13271,6 +13404,22 @@ void NativeEconomyRuntime::attribute_family_owner_employment_for_cell(
     }
 }
 
+void NativeEconomyRuntime::sanitize_family_membership_edge(
+        FamilyMembershipEdge &edge) {
+    if (edge.people < 0) edge.people = 0;
+    if (edge.cash_claim < 0) edge.cash_claim = 0;
+    if (edge.population_basis < edge.people)
+        edge.population_basis = edge.people;
+    if (edge.funds_basis < edge.cash_claim)
+        edge.funds_basis = edge.cash_claim;
+    if (edge.owner_employed < 0) edge.owner_employed = 0;
+    if (edge.employee_employed < 0) edge.employee_employed = 0;
+    if (edge.owner_employed > edge.people)
+        edge.owner_employed = edge.people;
+    if (edge.owner_employed + edge.employee_employed > edge.people)
+        edge.employee_employed = edge.people - edge.owner_employed;
+}
+
 void NativeEconomyRuntime::update_family_employment_attribution() {
     for (FamilyMembershipEdge &edge : _family_memberships) {
         edge.owner_employed = 0;
@@ -13295,8 +13444,9 @@ void NativeEconomyRuntime::update_family_employment_attribution() {
                 FamilyMembershipEdge &edge = _family_memberships[
                     _family_cohort_edge_indices[p]];
                 if (edge.family_handle == ownership.family_handle) {
-                    edge.owner_employed = saturating_add(edge.owner_employed,
-                        ownership.filled_owner, _saturation_count);
+                    edge.owner_employed = std::min(edge.people,
+                        saturating_add(edge.owner_employed,
+                            ownership.filled_owner, _saturation_count));
                     break;
                 }
             }
@@ -13328,7 +13478,11 @@ void NativeEconomyRuntime::update_family_employment_attribution() {
                 edge.employee_employed = std::max<int64_t>(0,
                     next - distributed);
                 distributed = next;
+                sanitize_family_membership_edge(edge);
             }
+        } else {
+            for (size_t i = begin; i < end; ++i)
+                sanitize_family_membership_edge(_family_memberships[i]);
         }
         begin = end;
     }
@@ -14272,8 +14426,6 @@ bool NativeEconomyRuntime::run_family_commit_slice(int64_t &work_done,
     // Derived caches are published once from the final canonical edge set.
     // Industry metrics must precede influence/effect reconciliation because
     // conditional Family metrics read them.
-    rebuild_family_industry_metrics();
-    const auto influence_started = Clock::now();
     bool has_influence = false;
     for (uint8_t flag : _family_influences.active) {
         if (flag != 0) {
@@ -14281,13 +14433,18 @@ bool NativeEconomyRuntime::run_family_commit_slice(int64_t &work_done,
             break;
         }
     }
-    if (structure_changed ||
+    const bool refresh_influence = structure_changed ||
         (!_family_memberships.empty() && !has_influence) ||
-        (_epoch_id % FAMILY_INFLUENCE_REFRESH_EPOCHS) == 0)
+        (_epoch_id % FAMILY_INFLUENCE_REFRESH_EPOCHS) == 0;
+    if (refresh_influence || structure_changed)
+        rebuild_family_industry_metrics();
+    const auto influence_started = Clock::now();
+    if (refresh_influence)
         rebuild_family_influences(false);
     _family_commit_influence_ms += elapsed_ms(influence_started);
     rebuild_family_behavior_cache();
-    rebuild_family_owned_output_csr();
+    if (structure_changed || refresh_influence)
+        rebuild_family_owned_output_csr();
     _family_membership_edges_processed +=
         static_cast<int64_t>(_family_memberships.size());
     _family_ownership_edges_processed +=
@@ -16329,6 +16486,12 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _epoch_business_tax_rates.clear();
     _epoch_import_tax_rates.clear();
     _epoch_export_tax_rates.clear();
+    _epoch_income_tax_modes.clear();
+    _epoch_consumption_tax_modes.clear();
+    _epoch_business_tax_modes.clear();
+    _epoch_import_tax_modes.clear();
+    _epoch_export_tax_modes.clear();
+    _epoch_compiled_cell_tax_default_modes.clear();
     _epoch_cell_compiled_tax_policy.clear();
     _epoch_cell_active_tax_mask.clear();
     _epoch_compiled_cell_tax_policies.clear();

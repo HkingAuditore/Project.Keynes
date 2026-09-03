@@ -34,11 +34,8 @@ signals, and four environment signals. Population alive at the boundary enters e
 building input purchases, output sales, and income distribution then update funds and stock before
 household clearing. Producer-retained food fills one aggregate emergency calorie pool across staple,
 protein, and produce needs, while active owner lots protect next-period physical-input cash from
-household spending. Calculate the whole period from that frozen state using the
-cell's actual elapsed days (`clamp(day - cell_last_settlement_day, 1, 5)`), not
-a newly chosen N. Production locks market N in 1–5 at cycle boundaries.
-`market_cycle_days=0` is ignored and treated as the maximum 5; it does not
-select the retired 50/334 auto-fast-forward path.
+household spending. Calculate the whole N-day period from that state. The production default is N=5. Setting
+`market_cycle_days=0` selects scale-driven automatic N.
 
 This is an approximation, not N sequential daily integrations. Keep its state invisible until
 the period deadline. Commands arriving after sample day apply next period.
@@ -96,14 +93,19 @@ merchant funds += population-weighted revenue share
 merchant epoch_income += revenue share
 ```
 
-Distribute merchant revenue once per market, not per order, and only across
-living merchant cohorts (`population > 0`). A zero-population merchant lane is
-not a market-maker: repair the cell from the largest non-merchant cohort before
-debiting household funds, then credit the live slots on the market's cells.
-Stale `_merchant_offsets[market]` ranges must not be the sole owner lookup.
-
-Compute total and worst-need satisfaction
+Distribute merchant revenue once per market, not per order. Compute total and worst-need satisfaction
 in one linear pass over need states; do not scan all need states once per cohort.
+
+That same pass also drives composite satisfaction. Four `Σ(weight × satisfaction)` / `Σweight`
+accumulators — keyed by the data-driven `Need.satisfaction_tier` — produce the subsistence, basic,
+comfort, and luxury dimensions with **zero extra iteration**. Income growth, savings, tax burden,
+and social development come from cohort ledgers and the epoch-boundary
+`_epoch_cell_development_q16` cache, so the hot loop only does multiply-add plus one
+`mul_div_sat`. Never add a second pass over need states, a string comparison, or a `Dictionary`
+here. `_population.composite_satisfaction` is the authoritative index for births, hire order,
+family branch promotion, and social-pressure events; `needs_satisfaction`
+(`SAT_DIM_SUBSISTENCE`) drives starvation mortality and nothing else. Full contract:
+`docs/cpp-dots-runtime/satisfaction-runtime.md`.
 
 Merchants also submit household demand. Total cohort money does not change from purchases.
 
@@ -122,6 +124,30 @@ Household demand remains market-major. Building input demand, offered supply, an
 anchors live in a sorted sparse `(cell, good)` signal store built from actual building input/output
 edges. Update those signals only after production so they feed the next frozen cycle.
 
+At each market sample boundary, after freezing realized business/supply/cost signals, run a sparse
+Leontief shadow pass over live cells: seed unmet deficits
+`max(household + realized_business + research - offered_supply, inventory_gap_daily)`, select the
+preferred unlocked producer via the investment good→type CSR, and explode hard/soft-required input
+edges as
+
+```text
+derived_B += deficit_A * input_qty_B_eff / output_qty_A * required_share_q16
+```
+
+Stamp-BFS continues upstream without cycles. Results land in `_epoch_derived_business_demand`
+(aligned to signal lanes; `ensure_market_signal_index` may create missing intermediate lanes). This
+column is recomputed each sample and is excluded from PKEC/hash. Price pressure folds
+
+```text
+business_for_price = realized_business + research
+                   + derived * derived_weight_q16   # default 1/2
+```
+
+so intermediate goods such as flint receive reverse pressure from finished-good shortages even when
+downstream workshops are vacant. Investment `startup_demand` uses the same deficit×BOM scaling and
+may include derived demand when seeding upstream candidates. Shadow demand never withdraws stock or
+mints money.
+
 Price pressure combines excess demand, target-inventory gap, shortage, a confidence-weighted soft
 cost anchor, and inactive-default-price reversion. Divide the combined pressure by the configured
 demand price elasticity before applying the good-specific adjustment rate. Monetary-issue goods do
@@ -135,11 +161,9 @@ living-cost price term.
 ## Domestic trade planning and settlement
 
 Keep one cell equal to one local market. Build a separate trade topology from frozen six-neighbor
-indices, positive terrain enter costs, base landform water classes, river flags, and frozen country
-ownership. Water cells are corridors, not markets: capture marks them impassable and precomputes
-coastal portal CSR so Dijkstra only expands land. Route cache keys include the country's frozen
-water-capability layer. Every land vertex on a v1 route must belong to the same non-neutral
-country. Do not materialize all-pairs distances or a dense market-by-good trade matrix.
+indices, positive terrain enter costs, and frozen country ownership. Every vertex on a v1 route must
+belong to the same non-neutral country. Do not materialize all-pairs distances or a dense
+market-by-good trade matrix.
 
 Scan market-major pairs with a round-robin deterministic work budget and retain only sparse surplus
 and deficit signals. For a selected surplus source, run bounded integer multi-target Dijkstra and
@@ -179,12 +203,8 @@ and produce calorie pool; exact variants consume first and leftover self-produce
 emergency cross-food calories. Producers also retain the minimum clothing share implied by frozen
 cold exposure. All other and excess output enters the local market. Retained goods
 create no cashflow; consume them before paid household orders and attribute any unused amount
-to the source building's discarded output. Remaining offers sort by `(good, unit_cost, group)` and fill merchant quota
-from lowest unit cost; identical-cost offers at the marginal tier still share
-the leftover quota in proportion to sellable quantity. Unit cost allocates the group's current
-`last_operating_cost` across outputs. Producer-support mint only covers quota
-that cheaper offers did not already fill. Cost-anchor retail targets weight by
-`merchant_sold`, not offered quantity. Offers still use each good's configured merchant buy factor;
+to the source building's discarded output. Remaining offers sort by local retail price descending
+and use each good's configured merchant buy factor;
 merchant positive funds cap the normally purchased quantity. Put every remaining storable unit into
 merchant-owned inventory and issue the producer one-fifth of frozen local retail value; record that
 payment as explicit money mint rather than merchant spending. Non-storable cycle-flow remainder is
@@ -211,15 +231,11 @@ funds but is excluded from both order budgeting and final household settlement, 
 consumption cannot strand an otherwise viable producer without operating cash.
 
 Rebuild a deterministic sparse `(cell, input good)` reserve from active building counts, planned
-utilization, period length, and the cheapest available input candidate. The same building-cell walk
-writes `construction_material_reserve` from each type's compiled daily maintenance recipe (authored
-quantities, or construction BOM divided by the sector horizon). Merchant inventory targets must
-cover `max(input reserve, construction reserve)`. Household clearing and domestic export may use
-only stock above that protected floor. Continuity procurement quotas apply to every storable
-non-monetary good below 1.2× target, not only survival goods. Owners buy maintenance after wages
-from merchant stock at settlement price; unpaid quantity is unmet, never a free sink. Both reserves
-are derived state rather than PKEC fields. Report requested input reserve, construction reserve,
-consumed maintenance, and unmet maintenance.
+utilization, period length, and the cheapest available input candidate. Merchant inventory targets
+must cover this reserve. Household clearing and domestic export may use only stock above it. The
+reserve is derived state rather than a PKEC field: rebuild it after catalog/building restoration and
+whenever the sparse building signal shape or cycle plan changes. Report both the requested reserve
+and its remaining stock shortfall.
 
 At a 30-day capital-review boundary, a fully owned industrial lot can expand only if it already
 meets its configured target margin, planned utilization is at least 75%, demand pressure is at least

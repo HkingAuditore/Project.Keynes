@@ -13,7 +13,7 @@ const TaxLaneScene := preload("res://scenes/ui/object_tax_lane.tscn")
 
 signal closed()
 signal colonization_requested(family_handle: int, source_cell: int)
-signal tax_override_requested(scope: String, kind: String, item_id: String, rate: int)
+signal tax_override_requested(scope: String, kind: String, item_id: String, rate: int, mode: int)
 signal tax_reset_requested(scope: String, kind: String, item_id: String)
 signal tax_editing_finished()
 
@@ -320,8 +320,8 @@ func _build_tax_section(kind: String, context_value: Variant, row: Dictionary) -
 		var editor := TaxLaneScene.instantiate() as TaxLaneEditor
 		lanes.add_child(editor)
 		editor.override_requested.connect(func(scope: String, lane_kind: String,
-				item_id: String, rate: int) -> void:
-			tax_override_requested.emit(scope, lane_kind, item_id, rate))
+				item_id: String, rate: int, mode: int = 0) -> void:
+			tax_override_requested.emit(scope, lane_kind, item_id, rate, mode))
 		editor.reset_requested.connect(func(scope: String, lane_kind: String,
 				item_id: String) -> void:
 			tax_reset_requested.emit(scope, lane_kind, item_id))

@@ -5740,6 +5740,7 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
                 snow = t1 * t2;
             }
         }
+        const bool skip_vegetation_rewrite = bool(knobs.get("skip_vegetation_rewrite", false));
         uint8_t lf = pk_derive_landform(TERR[i], ELEV[i], sea_level);
         const uint8_t prev_lf = LAND[i];
         if (!pk_is_water_terrain(TERR[i]) && (prev_lf == 8 || prev_lf == 12 || prev_lf == 13 || prev_lf == 14 || prev_lf == 15)) {
@@ -5747,10 +5748,11 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
         }
         SNOW[i] = snow;
         LAND[i] = lf;
-        // Keep vegetation succession lag where the pair is plausible, but
-        // reconcile a clearly cross-biome residue after terrain reclassification.
-        if (pk_is_water_terrain(TERR[i]) || VEG[i] == 0 ||
-            pk_vegetation_needs_biome_reconcile(TERR[i], VEG[i])) {
+        // Vegetation succession/streak is owned by vegetation_dynamics. Season
+        // sync only repairs water/empty cells unless skip_vegetation_rewrite.
+        if (!skip_vegetation_rewrite &&
+            (pk_is_water_terrain(TERR[i]) || VEG[i] == 0 ||
+            pk_vegetation_needs_biome_reconcile(TERR[i], VEG[i]))) {
             VEG[i] = pk_derive_vegetation(TERR[i], lf, temp_now, MOIST[i]);
         }
         COV[i] = pk_derive_cover(TERR[i], snow);
@@ -5759,7 +5761,8 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
 
     _flush_slot_to_map(sid_snow);
     _flush_slot_to_map(sid_landform);
-    _flush_slot_to_map(sid_vegetation);
+    if (!bool(knobs.get("skip_vegetation_rewrite", false)))
+        _flush_slot_to_map(sid_vegetation);
     _flush_slot_to_map(sid_cover);
 
     auto t1 = std::chrono::high_resolution_clock::now();

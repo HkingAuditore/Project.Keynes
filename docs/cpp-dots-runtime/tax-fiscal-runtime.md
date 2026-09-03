@@ -7,22 +7,36 @@
 ## 政策模型
 
 五类税种的 dense 编号固定为所得税、交易税（兼容名 `consumption`）、营业税、进口关税、出口关税。
-税率以基点保存，范围为 `[-100000,10000]`（补贴最高 1000%，正税最高 100%），并保存以下稀疏覆盖：
+每个政策槽位（全国默认、全国细项、地块默认、地块细项）同时保存 **评估模式** 与 **有符号取值**：
+
+| Mode | 取值含义 | 税额 |
+|---|---|---|
+| `PERCENT_BP`（默认） | 有符号基点 `[-100000,10000]`（补贴最高 1000%，正税最高 100%） | `mul_div_sat(money_base, \|bp\|, 10000)` |
+| `ABSOLUTE` | 有符号货币额 `[-1e9,1e9]`（负=补贴） | 见下表计数单位 |
+
+绝对值计数单位：
+
+- 所得税：`|X| × profession 的 cohort.population × epoch_days`
+- 营业税：`|X| × building_type 的 BuildingGroup.count × epoch_days`
+- 交易税：`|X| × 最终吸收成交数量`（每单位定额）
+- 进口/出口关税：`|X| × 外贸成交数量`（国内事件仍为 0）
+
+覆盖项：
 
 - 所得税：`profession_id`，即工匠、采集者、学徒、企业家等职业 cohort。
 - 交易税（兼容字段名 `consumption`）：`good_id`。
 - 营业税：`building_type_id`。
 - 进口/出口关税：各自按 `good_id`。
 
-负值表示补贴，覆盖清除后立即恢复继承当前默认率。`CountryFacade` 把 stable ID
+负值表示补贴，覆盖清除后立即恢复继承当前默认（mode+value）。`CountryFacade` 把 stable ID
 转为 dense ID，提交 `SET_TAX_DEFAULT`、`SET_TAX_OVERRIDE` 或
-`CLEAR_TAX_OVERRIDE`；`country_daily` 在命令的 effective day 原子提交，经济图随后
+`CLEAR_TAX_OVERRIDE`（命令携带 `tax_assessment_mode`）；`country_daily` 在命令的 effective day 原子提交，经济图随后
 冻结本轮到期 cell 使用的政策。
 
 地块级政策使用 `CellTaxPolicyStore` 的稀疏驻留行：每格只有一个 `u32` policy ID，
-`0` 表示完全继承全国；驻留行保存五个可继承默认率和按 `(kind,item)` 排序的细项覆盖。
-继承固定为“地块细项 → 地块税种默认 → 全国细项 → 全国税种默认”，最后统一应用
-Country Modifier。显式本地值即使等于父级也不会自动消失，只有 clear/reset 命令恢复继承。
+`0` 表示完全继承全国；驻留行保存五个可继承默认率/模式和按 `(kind,item)` 排序的细项覆盖。
+继承固定为“地块细项 → 地块税种默认 → 全国细项 → 全国税种默认”，最后仅对 **百分比模式**
+应用 Country Modifier（绝对值槽位冻结政策原值）。显式本地值即使等于父级也不会自动消失，只有 clear/reset 命令恢复继承。
 领土易主在同一原子提交中把该格 policy ID 置零。
 
 Modifier stat key 由同一份排序后的 economy catalog 生成：
@@ -36,16 +50,19 @@ country.tax.export.<good>.rate_bp
 ```
 
 每个 economy epoch 只编译实际出现的 `(country, policy)`。本地默认率按
-`(country, kind, base_rate)` 共享连续有效率行，细项覆盖只编译自身条目；worker 查询为
-逐格 bitmask → 短有序细项切片 → 共享默认率行 → 全国连续率。最终值按半值远离零量化为整数，
+`(country, kind, base_rate, base_mode)` 共享连续有效率行，细项覆盖只编译自身条目；worker 查询为
+逐格 bitmask → 短有序细项切片 → 共享默认率行 → 全国连续率。百分比最终值按半值远离零量化为整数，
 再 clamp 到 `[-100000,10000]`；worker 热路径只读连续数组，不做字符串、Variant、Godot API
 调用或共享国库写入。
 
-五类冻结税表同时生成 epoch active-tax bitmask。对应税种全零时，家庭订单、工资、商人所得、
+五类冻结税表同时生成 epoch active-tax bitmask（任一 mode 下 `|value|!=0` 即激活）。对应税种全零时，家庭订单、工资、商人所得、
 建筑生产、招聘价值、投资价值和财政提交均走原有零税快路，不建立逐交易税务草案；因此默认
-`0%` 政策不应为 worker 热路径引入字符串、分配或无意义的逐项税额计算。
+`0%` / `0` 定额政策不应为 worker 热路径引入字符串、分配或无意义的逐项税额计算。
 
-PKCN v12 按 cell 和 stable item ID 的规范顺序保存稀疏地块政策及 pending 命令；内部
+所得税/营业税绝对值在 `settle_absolute_daily_taxes_for_cell` 按人口/栋数×天总评；正税从 cohort/业主现金饱和征收（assessed 可大于 collected），补贴走既有 escrow。交易税/关税绝对值在成交点按数量计税。
+
+PKCN **v13** 保存 mode 稠密数组与地块稀疏 mode，以及 pending 命令的 `tax_assessment_mode`；
+v12/v11 恢复时全部填 `PERCENT_BP`（v11 仍先做 percent→bp 迁移）。内部
 policy ID 不进入存档或确定性 hash。PKEC v47 保存交易订单税转移和建筑事实/报价诊断，
 并在恢复后从 PKCN 重新编译缓存；v45 订单按零交易税迁移。
 
@@ -80,11 +97,13 @@ policy ID 不进入存档或确定性 hash。PKEC v47 保存交易订单税转�
 
 ## 税基和资金方向
 
-统一税额公式为：
+百分比税额公式为：
 
 ```text
 floor(tax_base * abs(rate_basis_points) / 10000)
 ```
+
+绝对值税额公式为 `abs(X) * countable_units`（所得/营业再乘 `epoch_days`；交易/关税用成交数量）。
 
 计算使用 checked/saturating `int64` 定点助手。
 

@@ -69,6 +69,12 @@ lut --> wx["weather overlay / curtain<br/>按可见性屏蔽"]
 - 扩散到邻格扣 `cell_view_block[nb]`，预算仍 ≥ 0 则该格可见。取「剩余预算最大」
   的路径，于是站在山上看得远、穿密林看得近。平原 `view_block = 10`，所以平地上
   大约看 4 格。
+- **领土一环保底**：Dijkstra 之后，每个源的六邻接强制 `visible = 1`。
+  开拓后邻格「只被柔边照亮、Inspector 仍未探索」的主因是 `country_slot`
+  镜像时序：native CLAIM 已生效，但 `MapData.country_slot_arr` 仍是 CoW 旧
+  缓冲时视野源集会缺新领土。`sync_country_territory_to_map` 必须在
+  `country_committed` → `refresh_country_visuals` 之前把权威刷进 MapData；
+  一环保底再兜共边硬状态。
 - 邻接用现有的 `map.neighbor_indices_packed()`（`idx*6+dir` 布局，东西 wrap、
   南北硬边界）。
 - 预算是有界小整数（≤ `BASE_BUDGET + MAX_VIEW_HEIGHT`），所以用 **bucket queue**
@@ -628,6 +634,10 @@ eligible = owned_by_player
 `MapGenerator._dispatch_runtime_graph_country_committed()` 按 generation
 watermark 补发同一条 `country_committed`，否则 Inspector 已显示归属、
 `country_slot_arr` 已写入，国界 ribbon 却停在开拓前的 mesh。
+广播前必须先 `sync_country_territory_to_map()`：native CLAIM 权威与
+MapData CoW 镜像之间存在窗口，视野若读到旧 `country_slot_arr`，新领土
+不会进源集，邻格只被迷雾柔边照亮却保持 `explored=0`。
+`refresh_country_visuals` 入口再次 sync，作为第二道闸。
 一次 pulse 可能跨过多个 country slice，所以最后一份 report 的
 `changed_cells` 可能已被后续纯研究/税表提交覆盖为 0。
 MapGenerator 在 generation 变化时不得用该字段提前拦截；`CountryFacade`

@@ -18,8 +18,10 @@ func _init() -> void:
 	_test_terrain_awareness()
 	_test_source_probe_matches_solve()
 	_test_explored_is_monotonic()
+	_test_territory_ring_always_visible()
 	_test_fog_state_and_disabled_path()
 	_test_native_vision_research_boundary()
+	_test_save_restore_resolves_pending_player_context()
 	print("vision solver: %d checks, %d failures" % [_checks, _failures])
 	quit(0 if _failures == 0 else 1)
 
@@ -109,6 +111,25 @@ func _test_native_vision_research_boundary() -> void:
 		not remote_cells.has(distant) or int((remote.physical_visible as PackedByteArray)[distant]) != 0)
 
 
+func _test_save_restore_resolves_pending_player_context() -> void:
+	var map := _make_map(LF.PLAIN, VEG.NONE)
+	var start_cell := _center_index(map)
+	map.country_slot_arr[start_cell] = 3
+	var host := WorldRuntimeHost.new()
+	host._current_map = map
+	host._pending_load_bundle = {
+		"sections": {
+			"player_context": {
+				"start_cell": start_cell,
+			},
+		},
+	}
+	_expect("load resolves player slot from pending player_context before providers",
+		host._resolve_player_country_slot() == 3)
+	_expect("load enables fog from pending player_context before providers",
+		host._resolve_fog_of_war_enabled())
+
+
 ## 平原上：源格必可见，可见集连通且远小于全图，边界不可见。
 func _test_flat_terrain_radius() -> void:
 	var map := _make_map(LF.PLAIN, VEG.NONE)
@@ -172,6 +193,33 @@ func _test_explored_is_monotonic() -> void:
 		VisionSolver.fog_state(map, first) == VisionSolver.FOG_EXPLORED)
 	_expect("new homeland reads as FOG_VISIBLE",
 		VisionSolver.fog_state(map, second) == VisionSolver.FOG_VISIBLE)
+
+
+## 共边格必须硬可见：即使 view_block 全满（扣穿 BASE_BUDGET），领土六邻接
+## 也不能停在未探索——这是开拓后「贴边看得见却显示未探索」的回归锁。
+func _test_territory_ring_always_visible() -> void:
+	var map := _make_map(LF.PLAIN, VEG.NONE)
+	var world := WorldData.new()
+	VisionSolver.bake_static_fields(map, world)
+	var src := _center_index(map)
+	map.country_slot_arr[src] = 0
+	for i in range(world.cell_view_block.size()):
+		world.cell_view_block[i] = 60
+	var report: Dictionary = VisionSolver.solve(map, world, 0)
+	_expect("max-block solve succeeds", bool(report.get("ok", false)))
+	_expect("source remains visible under max block", map.visible_arr[src] == 1)
+	var neighbors: PackedInt32Array = map.neighbor_indices_packed()
+	var ring := 0
+	for d in range(6):
+		var nb: int = neighbors[src * 6 + d]
+		if nb < 0:
+			continue
+		ring += 1
+		_expect("territory neighbor %d is hard-visible" % nb, map.visible_arr[nb] == 1)
+		_expect("territory neighbor %d is explored" % nb, map.explored_arr[nb] == 1)
+		_expect("territory neighbor %d is FOG_VISIBLE" % nb,
+			VisionSolver.fog_state(map, nb) == VisionSolver.FOG_VISIBLE)
+	_expect("source has at least one graph neighbor", ring > 0)
 
 
 ## 三态门控与「迷雾关闭」直通路径。UI 与 shader 都只认这三个数组，

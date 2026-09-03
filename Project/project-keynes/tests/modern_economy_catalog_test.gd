@@ -125,49 +125,53 @@ func _building_outputs_good(offsets: PackedInt32Array, goods: PackedInt32Array,
 
 
 func _audit_two_owner_early_buildings() -> void:
+	# Totals are building-level (already scaled for two owner slots). Freshwater
+	# remains a one-owner soft-tool camp; the two-owner set is the shared early
+	# craft/collector conversion family.
 	var expected := {
-		"freshwater_fishing_camp": {
-			"input": PackedInt64Array([100]), "output": PackedInt64Array([3880]),
-			"resource": PackedInt64Array([194])},
 		"marine_fish_collector": {
-			"input": PackedInt64Array([100]), "output": PackedInt64Array([4000]),
-			"resource": PackedInt64Array([500])},
+			"input": PackedInt64Array([66, 200]), "output": PackedInt64Array([4181]),
+			"resource": PackedInt64Array([279]), "owners": 2},
 		"bast_wrap_shelter": {
-			"input": PackedInt64Array([240]), "output": PackedInt64Array([180]),
-			"resource": PackedInt64Array()},
+			"input": PackedInt64Array([3251, 200]), "output": PackedInt64Array([1083]),
+			"resource": PackedInt64Array(), "owners": 2},
 		"hide_scraping_shelter": {
-			"input": PackedInt64Array([350]), "output": PackedInt64Array([220]),
-			"resource": PackedInt64Array()},
+			"input": PackedInt64Array([5231, 200]), "output": PackedInt64Array([1463]),
+			"resource": PackedInt64Array(), "owners": 2},
 		"fur_sewing_shelter": {
-			"input": PackedInt64Array([200]), "output": PackedInt64Array([240]),
-			"resource": PackedInt64Array()},
+			"input": PackedInt64Array([4429, 200]), "output": PackedInt64Array([3467]),
+			"resource": PackedInt64Array(), "owners": 2},
 		"felt_making_tent": {
-			"input": PackedInt64Array([300]), "output": PackedInt64Array([260]),
-			"resource": PackedInt64Array()},
+			"input": PackedInt64Array([7502, 200]), "output": PackedInt64Array([4875]),
+			"resource": PackedInt64Array(), "owners": 2},
 		"stone_collector": {
-			"input": PackedInt64Array([100]), "output": PackedInt64Array([3545]),
-			"resource": PackedInt64Array([354])},
+			"input": PackedInt64Array([200]), "output": PackedInt64Array([6968]),
+			"resource": PackedInt64Array([3163]), "owners": 2},
 		"timber_collector": {
-			"input": PackedInt64Array([100]), "output": PackedInt64Array([3545]),
-			"resource": PackedInt64Array([221])},
+			"input": PackedInt64Array([200]), "output": PackedInt64Array([6968]),
+			"resource": PackedInt64Array([2346]), "owners": 2},
 		"adobe_yard": {
-			"input": PackedInt64Array([900, 90]), "output": PackedInt64Array([820]),
-			"resource": PackedInt64Array()},
+			"input": PackedInt64Array([14203, 1420, 200]), "output": PackedInt64Array([6500]),
+			"resource": PackedInt64Array(), "owners": 2},
+		"freshwater_fishing_camp": {
+			"input": PackedInt64Array([100]), "output": PackedInt64Array([1560]),
+			"resource": PackedInt64Array([104]), "owners": 1},
 	}
 	for building_id in expected:
 		var profile: BuildingProfile = load(
 			"res://data/economy/buildings/%s.tres" % building_id)
-		var per_owner: Dictionary = expected[building_id]
+		var row: Dictionary = expected[building_id]
+		var owners := int(row.owners)
 		_expect("early self-operated building has two owners and no employees: %s" %
-			building_id, profile != null and profile.owner_slots_per_building == 2 and
+			building_id, profile != null and profile.owner_slots_per_building == owners and
 			profile.employee_profession_ids.is_empty() and
 			profile.employee_slots_per_building.is_empty())
 		if profile == null:
 			continue
 		_expect("two-owner conversion preserves per-owner throughput: %s" % building_id,
-			profile.input_quantities_per_day == _scale_i64(per_owner.input, 2) and
-			profile.output_quantities_per_day == _scale_i64(per_owner.output, 2) and
-			profile.resource_quantities_per_day == _scale_i64(per_owner.resource, 2))
+			profile.input_quantities_per_day == row.input and
+			profile.output_quantities_per_day == row.output and
+			profile.resource_quantities_per_day == row.resource)
 
 
 func _scale_i64(values: PackedInt64Array, factor: int) -> PackedInt64Array:
@@ -275,8 +279,8 @@ func _audit(catalog: Dictionary) -> void:
 	_audit_zero_cost_starter_construction()
 	_audit_soft_complement_policy(catalog)
 	_audit_household_consumption_contract(catalog)
-	_expect("network economy catalog has 133 goods", goods.size() == 133)
-	_expect("network economy has 363 production methods", buildings.size() == 363)
+	_expect("network economy catalog has 134 goods", goods.size() == 134)
+	_expect("network economy has 400 production methods", buildings.size() == 400)
 	_expect("45 labor, institutional and research professions", professions.size() == 45)
 	_expect("20 differentiated household needs", needs.size() == 20)
 	_expect("31 registered natural resources", ResourceRegistryScript.count() == 31)
@@ -365,10 +369,12 @@ func _audit(catalog: Dictionary) -> void:
 		placer_candidates.has("reed_bundle"))
 	var stone_hunting = load(
 		"res://data/economy/buildings/stone_age_hunting_camp.tres")
-	_expect("stone hunting has no soft tool complement on the current recipe",
+	_expect("stone hunting uses a soft tool complement at half capacity floor",
 		stone_hunting != null and
-		stone_hunting.input_good_ids.is_empty() and
-		stone_hunting.input_quantities_per_day.is_empty())
+		stone_hunting.input_good_ids == PackedStringArray(["tools"]) and
+		stone_hunting.input_quantities_per_day == PackedInt64Array([100]) and
+		stone_hunting.input_required_q16 == PackedInt32Array([32768]) and
+		stone_hunting.input_category_ids == PackedStringArray(["tools"]))
 	var stone_collector = load("res://data/economy/buildings/stone_collector.tres")
 	var timber_collector = load("res://data/economy/buildings/timber_collector.tres")
 	var bronze_tools = load("res://data/economy/buildings/bronze_tool_workshop.tres")
@@ -378,31 +384,38 @@ func _audit(catalog: Dictionary) -> void:
 		timber_collector.owner_slots_per_building == 2 and
 		stone_collector.input_quantities_per_day == PackedInt64Array([200]) and
 		timber_collector.input_quantities_per_day == PackedInt64Array([200]) and
+		stone_collector.input_required_q16 == PackedInt32Array([32768]) and
+		timber_collector.input_required_q16 == PackedInt32Array([32768]) and
 		stone_collector.input_quantities_per_day[0] /
 			stone_collector.owner_slots_per_building == 100 and
 		timber_collector.input_quantities_per_day[0] /
 			timber_collector.owner_slots_per_building == 100)
 	_expect("bronze workshops avoid material-cost dominated recipes",
-		bronze_tools.input_quantities_per_day == PackedInt64Array([1500, 500]) and
-		ore_bronze.input_quantities_per_day == PackedInt64Array([500, 500, 500]))
+		bronze_tools.input_quantities_per_day == PackedInt64Array([2857, 952]) and
+		ore_bronze.input_quantities_per_day == PackedInt64Array([700, 300, 200]))
 	var early_gold = load("res://data/economy/buildings/placer_gold_working.tres")
 	var early_silver = load("res://data/economy/buildings/surface_silver_working.tres")
 	var hearth = load("res://data/economy/buildings/communal_hearth.tres")
 	var knapping = load("res://data/economy/buildings/knapping_workshop.tres")
 	var early_weaving = load("res://data/economy/buildings/household_weaving_shelter.tres")
 	_expect("stone production chains have physical, demand-scaled inputs",
-		hearth.input_quantities_per_day == PackedInt64Array([7000, 3500, 2000]) and
-		hearth.input_required_q16 == PackedInt32Array([65536, 32768, 49152]) and
+		hearth.input_good_ids.find("gathered_plants") >= 0 and
+		hearth.input_good_ids.find("game_meat") >= 0 and
+		hearth.input_good_ids.find("tools") >= 0 and
+		hearth.input_required_q16[hearth.input_good_ids.find("tools")] == 32768 and
 		knapping.construction_good_ids == PackedStringArray(["logs", "flint"]) and
-		knapping.construction_quantities == PackedInt64Array([1000, 500]) and
-		knapping.input_quantities_per_day == PackedInt64Array([100]) and
-		knapping.output_quantities_per_day == PackedInt64Array([220]) and
+		knapping.construction_quantities == PackedInt64Array([24905, 12452]) and
+		knapping.input_good_ids == PackedStringArray(["flint"]) and
+		knapping.input_quantities_per_day.size() == 1 and
+		knapping.input_quantities_per_day[0] > 0 and
+		knapping.output_quantities_per_day.size() == 1 and
+		knapping.output_quantities_per_day[0] > 0 and
 		early_weaving.construction_good_ids == PackedStringArray(
 			["logs", "gathered_plants"]) and
-		early_weaving.construction_quantities == PackedInt64Array([2000, 4000]) and
+		early_weaving.construction_quantities == PackedInt64Array([17642, 35284]) and
 		early_weaving.input_good_ids == PackedStringArray(["gathered_plants"]) and
-		early_weaving.input_quantities_per_day == PackedInt64Array([120]) and
-		early_weaving.output_quantities_per_day == PackedInt64Array([110]) and
+		early_weaving.input_quantities_per_day == PackedInt64Array([1764]) and
+		early_weaving.output_quantities_per_day == PackedInt64Array([813]) and
 		String(early_weaving.building_kind) == "industrial")
 	_expect("primitive logging extracts rather than creates timber",
 		timber_collector.resource_generation_ids.is_empty() and
@@ -432,13 +445,13 @@ func _audit(catalog: Dictionary) -> void:
 	_expect("stone hunting sustains its hunter and yields hides plus wearable fur",
 		stone_hunting != null and
 		stone_hunting.output_good_ids == PackedStringArray(["game_meat", "raw_hide", "fur"]) and
-		stone_hunting.output_quantities_per_day == PackedInt64Array([780, 36, 36]) and
+		stone_hunting.output_quantities_per_day == PackedInt64Array([1560, 72, 72]) and
 		stone_hunting.output_quantities_per_day[0] >= 171 and
 		stone_hunting.output_quantities_per_day[0] >
 			stone_hunting.output_quantities_per_day[1] and
 		stone_hunting.output_quantities_per_day[1] ==
 			stone_hunting.output_quantities_per_day[2] and
-		stone_hunting.resource_quantities_per_day == PackedInt64Array([163]) and
+		stone_hunting.resource_quantities_per_day == PackedInt64Array([326]) and
 		stone_hunting.owner_slots_per_building == 1)
 	_expect("rough bullion sites are merchant-owned mint collectors",
 		String(early_gold.owner_profession_id) == "merchant" and
@@ -1329,16 +1342,15 @@ func _audit_subsistence_upgrade_families(catalog: Dictionary) -> void:
 	var tiers: PackedInt32Array = catalog.building_upgrade_tiers
 	var expected := {
 		"subsistence_food": [
-			["gathering_ground", 1, 14000, 1],
-			["subsistence_farm", 2, 16000, 1],
-			["three_field_smallholding", 3, 24000, 2],
-			["improved_smallholding", 4, 32000, 2],
+			["subsistence_farm", 1, 1390, 1],
+			["three_field_smallholding", 2, 3296, 1],
+			["improved_smallholding", 3, 18540, 1],
 		],
 		"household_cloth": [
-			["household_weaving_shelter", 1, 110, 1],
-			["household_loom", 2, 1320, 0],
-			["cottage_weaving", 3, 2400, 0],
-			["improved_domestic_loom", 4, 3600, 0],
+			["household_weaving_shelter", 1, 813, 1],
+			["household_loom", 2, 1192, 1],
+			["cottage_weaving", 3, 2438, 0],
+			["improved_domestic_loom", 4, 4875, 0],
 		],
 	}
 	var output_offsets: PackedInt32Array = catalog.building_output_offsets

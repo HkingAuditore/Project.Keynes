@@ -99,7 +99,14 @@ func _init() -> void:
 		return
 	_expect("tree view draws itself instead of spawning nodes",
 		tree.get_child_count() == 0)
+	var available: Control = workspace.available_view()
+	_expect("available research desk exists", available != null)
+	_expect("opening the technology section defaults to the available desk",
+		int(workspace.navigation_report().get("mode", -1)) == 0)
+	_expect("available desk lists only researchable technologies",
+		int(available.available_report().get("count", 0)) >= 3)
 
+	tree.ensure_full_layout()
 	var layout: Dictionary = tree.layout_report()
 	_audit_layout(layout, definitions)
 	_audit_fog(tree, layout)
@@ -536,8 +543,9 @@ func _audit_refresh(workspace: Control, tree: Control, definitions: Array,
 	_expect("steady technology refresh p95 stays below 1ms", refresh_p95 <= 1.0)
 
 
-# Focus mode keeps a four-domain atlas inside the centre canvas; overview
-# carries the full-network orientation without exposing undiscovered eras.
+# Available desk is the daily default; focus mode keeps a four-domain atlas
+# inside the centre canvas; overview carries network orientation without
+# exposing undiscovered eras.
 func _audit_navigation(workspace: Control, tree: Control, definitions: Array) -> void:
 	_expect("the tree view exposes no zoom state at all", tree.get("_zoom") == null)
 	var initial_nav: Dictionary = workspace.navigation_report()
@@ -546,6 +554,7 @@ func _audit_navigation(workspace: Control, tree: Control, definitions: Array) ->
 		and int(initial_nav.era) == 0)
 	_expect("the toolbar no longer splits the tree by domain tabs",
 		workspace.get_node_or_null("Root/Toolbar/Row/DomainTabs") == null)
+	workspace._set_mode(1)
 	var initial_focus: Dictionary = tree.focus_report()
 	_expect("focus view contains at most three era bands",
 		(initial_focus.get("bands", []) as Array).size() <= 3)
@@ -595,7 +604,7 @@ func _audit_navigation(workspace: Control, tree: Control, definitions: Array) ->
 	_expect("focus view keeps all four research domains on one map",
 		domains_seen.size() == 4)
 	_expect("each research domain occupies a single vertical lane", not split_column)
-	workspace._set_mode(1)
+	workspace._set_mode(2)
 	var overview: Control = workspace.overview_view()
 	overview.patch_states(states)
 	var full_overview: Dictionary = overview.overview_report()

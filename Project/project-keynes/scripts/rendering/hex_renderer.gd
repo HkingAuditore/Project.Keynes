@@ -320,6 +320,7 @@ var terrain_materials_enabled: bool = true
 # 跨多天翻转的单元只重建一次，批次数不再随天数线性增长；低速下窗口 < 一日，
 # 延迟不可感知。0 表示逐次直通（旧行为）。
 @export_range(0.0, 1000.0, 10.0) var detail_scatter_enqueue_coalesce_ms: float = 120.0
+var _simulation_speed_multiplier: float = 1.0
 # 累积器硬上限：超过即提前冲刷，防止无限堆积。
 @export_range(64, 8192, 64) var detail_scatter_enqueue_max_pending_cells: int = 1024
 # 积压兜底：待处理批次数超过该阈值时，存量批次与新单元整体去重合并后重新切批，
@@ -908,6 +909,19 @@ func _sync_family_materials_from_sources() -> void:
 		_detail_family_layer.sync_dynamic_materials()
 
 
+func set_simulation_speed_multiplier(multiplier: float) -> void:
+	_simulation_speed_multiplier = maxf(0.0, multiplier)
+
+
+func _effective_detail_enqueue_coalesce_ms() -> float:
+	var base_ms := maxf(0.0, detail_scatter_enqueue_coalesce_ms)
+	if _simulation_speed_multiplier >= 20.0:
+		return maxf(base_ms, 400.0)
+	if _simulation_speed_multiplier >= 5.0:
+		return maxf(base_ms, 250.0)
+	return base_ms
+
+
 func queue_detail_scatter_refresh(indices: PackedInt32Array) -> void:
 	var changes = DetailScatterChangeSetScript.new()
 	for raw_idx in indices:
@@ -1014,7 +1028,7 @@ func queue_detail_scatter_changes(changes) -> void:
 	_detail_affected_family_count = _count_set_bits(affected_families)
 	var now_msec := Time.get_ticks_msec()
 	var window_due := _scatter_last_enqueue_msec <= 0 or \
-		float(now_msec - _scatter_last_enqueue_msec) >= maxf(0.0, detail_scatter_enqueue_coalesce_ms)
+		float(now_msec - _scatter_last_enqueue_msec) >= _effective_detail_enqueue_coalesce_ms()
 	if not window_due and _scatter_pending_cells.size() < detail_scatter_enqueue_max_pending_cells:
 		return
 	_scatter_last_enqueue_msec = now_msec

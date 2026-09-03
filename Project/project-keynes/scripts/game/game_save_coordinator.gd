@@ -170,6 +170,14 @@ func restore_prepared_game(host: WorldRuntimeHost) -> Dictionary:
 	if not bool(finalized.get("ok", false)):
 		return _result(false, "load_runtime_finalize_failed",
 			String(finalized.get("reason", "读档后调度器初始化失败。")))
+	if not host.has_method("finalize_save_restore_visuals"):
+		return _result(false, "load_visual_finalize_missing",
+			"地图运行时缺少读档后视野重绑接口。")
+	var visual_finalized: Dictionary = host.finalize_save_restore_visuals()
+	var vision: Dictionary = visual_finalized.get("vision", {})
+	if not bool(vision.get("ok", false)):
+		return _result(false, "load_visual_finalize_failed",
+			String(vision.get("reason", "读档后视野重建失败。")))
 	var slot_id := String(_pending_load.slot_id)
 	_pending_load.clear()
 	var result := _result(true, "ok", "")
@@ -811,15 +819,17 @@ func _restore_vision_provider(sections: Dictionary, context: Dictionary) -> Dict
 	# Commit exploration only after the complete PKFG v2 payload validated. A bad
 	# building CSR therefore cannot partially mutate the current fog state.
 	map.explored_arr = explored
-	# 领土此刻已由 PKCN 恢复，可以直接重解算可见性并把 k 推进 enum_lut.a。
-	host.refresh_country_visuals("save_restore")
+	# 玩家 session provider 仍在 PKFG 之后。这里只提交单调探索权威；全部
+	# provider 恢复完毕后由 finalize_save_restore_visuals 重绑玩家国家，
+	# 再依据 PKCN 领土重算 visible/fog 并发布 enum_lut.a。
 	return _result(true, "ok", "")
 
 
 func _restore_journal_provider(sections: Dictionary, context: Dictionary) -> Dictionary:
 	var result: Dictionary = context.event_bus.restore_journal(sections.journal)
 	if not bool(result.get("ok", false)) and not bool(result.get("fallback", false)):
-		return _result(false, "journal_restore_failed", "事件 journal 恢复失败。")
+		return _result(false, "journal_restore_failed",
+			"事件 journal 恢复失败：%s" % String(result.get("reason", "unknown")))
 	return _result(true, "ok", "")
 
 

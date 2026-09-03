@@ -212,6 +212,10 @@ public:
                                         const godot::PackedByteArray &is_water);
     godot::Dictionary submit_country_commands(const godot::Dictionary &packed_batch);
     godot::Dictionary run_country_slice(const godot::Dictionary &ctx);
+    /// Push NativeCountryRuntime territory into DataCore + MapData before
+    /// vision/borders consume country_slot_arr. CLAIM can bump native ownership
+    /// while MapData still holds a CoW-stale mirror; visuals must not race that.
+    godot::Dictionary sync_country_territory_to_map();
     bool country_should_run(int64_t day_index) const;
     godot::Dictionary get_country_report() const;
     int64_t get_country_state_hash() const;
