@@ -6,6 +6,11 @@
 # `view_block[nb]`；预算仍 ≥ 0 则该格可见。取「剩余预算最大」的路径，
 # 于是站在山上看得远、穿密林看得近，且天然沿地形起伏。
 #
+# 硬不变式：每个源的六邻接（图距离 1）在 Dijkstra 之后强制可见。
+# 开拓后邻格「看起来亮了但仍未探索」的主因是 country_slot 镜像时序
+# （见 WorldRuntimeHost.refresh_country_visuals 的 territory sync）；
+# 一环保底再兜住预算扣穿等边角，避免共边格硬状态再掉队。
+#
 # 为什么不逐格 LOS 光线步进：便宜两个数量级，视觉上足够。真需要精确遮挡时，
 # 后续可以离线预烘每格可视集 CSR，本类的对外接口不变。
 #
@@ -354,7 +359,27 @@ static func _solve_visible_from_sources(
 					continue
 				best[nb] = nb_budget
 				buckets[nb_budget].append(nb)
+	_force_territory_ring_visible(visible, neighbors, source_cells, n)
 	return visible
+
+
+## 领土六邻接必可见：共边格不得因预算边角或时序抖动保持未探索。
+static func _force_territory_ring_visible(
+	visible: PackedByteArray,
+	neighbors: PackedInt32Array,
+	source_cells: PackedInt32Array,
+	n: int
+) -> void:
+	for source in source_cells:
+		if source < 0 or source >= n:
+			continue
+		visible[source] = 1
+		var base_n: int = source * 6
+		for d in range(6):
+			var nb: int = neighbors[base_n + d]
+			if nb < 0 or nb >= n:
+				continue
+			visible[nb] = 1
 
 
 ## k = 0.5 * blur(explored) + 0.5 * blur(visible)，量化到 0..255。

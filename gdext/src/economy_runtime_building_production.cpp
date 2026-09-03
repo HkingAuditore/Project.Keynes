@@ -2177,10 +2177,16 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 const int32_t business_rate = frozen_tax_rate(
                     cell, NativeCountryRuntime::TAX_BUSINESS,
                     tax_group.type_id);
-                if (business_rate > 0) {
+                const int32_t business_mode = frozen_tax_mode(
+                    cell, NativeCountryRuntime::TAX_BUSINESS,
+                    tax_group.type_id);
+                // Absolute business tax is a per-building daily levy settled in
+                // settle_absolute_daily_taxes_for_cell, not per receipt.
+                if (business_rate > 0 &&
+                    business_mode != NativeCountryRuntime::TAX_MODE_ABSOLUTE) {
                     business_tax = apply_fiscal_tax(
                         cell, NativeCountryRuntime::TAX_BUSINESS, paid,
-                        business_rate, _saturation_count);
+                        business_rate, business_mode, _saturation_count);
                     record_cohort_fiscal(offer.owner_slot, business_tax);
                 }
             }
@@ -2616,7 +2622,14 @@ bool NativeEconomyRuntime::run_building_production_cell(
             BuildingGroup &group = _buildings[g];
             const int32_t rate = frozen_tax_rate(
                 cell, NativeCountryRuntime::TAX_BUSINESS, group.type_id);
-            if (rate >= 0 || group.owner_signature_id < 0) continue;
+            const int32_t mode = frozen_tax_mode(
+                cell, NativeCountryRuntime::TAX_BUSINESS, group.type_id);
+            // Absolute business subsidies settle once per building-day in
+            // settle_absolute_daily_taxes_for_cell. Never reinterpret the
+            // absolute currency amount as a percent-of-cost basis point.
+            if (rate >= 0 ||
+                mode == NativeCountryRuntime::TAX_MODE_ABSOLUTE ||
+                group.owner_signature_id < 0) continue;
             const int32_t owner_slot = find_cohort_slot(
                 cell, group.owner_signature_id);
             if (owner_slot < 0) continue;
@@ -2627,7 +2640,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 group.last_maintenance_cost, _saturation_count);
             const int64_t transfer = apply_fiscal_tax(
                 cell, NativeCountryRuntime::TAX_BUSINESS, eligible_cost,
-                rate, _saturation_count);
+                rate, mode, _saturation_count);
             if (transfer >= 0) continue;
             const int64_t subsidy = -transfer;
             group.last_business_subsidy_received = saturating_add(
@@ -2679,8 +2692,12 @@ bool NativeEconomyRuntime::run_building_production_cell(
             ? _signatures[signature].profession_id : -1;
         const int32_t income_rate = frozen_tax_rate(
             cell, NativeCountryRuntime::TAX_INCOME, profession);
+        const int32_t income_mode = frozen_tax_mode(
+            cell, NativeCountryRuntime::TAX_INCOME, profession);
         int64_t income_tax = 0;
-        if (income_rate < 0) {
+        if (income_mode == NativeCountryRuntime::TAX_MODE_ABSOLUTE) {
+            // Settled in settle_absolute_daily_taxes_for_cell.
+        } else if (income_rate < 0) {
             if (owner_slot < static_cast<int32_t>(
                     _income_taxable_base_by_slot.size())) {
                 _income_taxable_base_by_slot[owner_slot] = saturating_add(
@@ -2690,7 +2707,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
         } else {
             income_tax = apply_fiscal_tax(
                 cell, NativeCountryRuntime::TAX_INCOME, net_operating_income,
-                income_rate, _saturation_count);
+                income_rate, income_mode, _saturation_count);
             record_cohort_fiscal(owner_slot, income_tax);
         }
         if (income_tax == 0) continue;

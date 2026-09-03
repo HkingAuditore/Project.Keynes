@@ -386,6 +386,22 @@ int64_t NativeEconomyRuntime::trade_relief_pressure_q16(
         }
     }
     if (signal >= 0 && signal < static_cast<int32_t>(
+            _epoch_derived_business_demand.size())) {
+        const int64_t derived = std::max<int64_t>(
+            0, _epoch_derived_business_demand[signal]);
+        if (derived > 0) {
+            const int64_t weighted = mul_div_sat(derived,
+                std::clamp<int64_t>(_derived_business_demand_weight_q16, 0, Q16_ONE),
+                Q16_ONE, sat);
+            const int64_t household = std::max<int64_t>(
+                GOODS_SCALE, _market.demand_ema[index]);
+            pressure = std::max<int64_t>(pressure, std::clamp<int64_t>(
+                mul_div_sat(weighted, Q16_ONE,
+                    saturating_add(household, weighted, sat), sat),
+                0, Q16_ONE));
+        }
+    }
+    if (signal >= 0 && signal < static_cast<int32_t>(
             _production_input_reserve.size())) {
         const int64_t reserve = merchant_protected_reserve(signal);
         const int64_t stock = std::max<int64_t>(0, _market.stock[index]);
@@ -407,6 +423,14 @@ int64_t NativeEconomyRuntime::trade_local_stock_target(
     const int32_t signal = market_signal_index(market, good);
     if (signal >= 0) demand = saturating_add(
         demand, _market_signals.business_demand_ema[signal], sat);
+    if (signal >= 0 && signal < static_cast<int32_t>(
+            _epoch_derived_business_demand.size())) {
+        demand = saturating_add(demand,
+            mul_div_sat(std::max<int64_t>(0,
+                    _epoch_derived_business_demand[signal]),
+                std::clamp<int64_t>(_derived_business_demand_weight_q16, 0, Q16_ONE),
+                Q16_ONE, sat), sat);
+    }
     const int64_t relief_q16 = trade_relief_pressure_q16(market, good, sat);
     if (relief_q16 > 0) {
         const int64_t relief_base = std::max<int64_t>(demand, GOODS_SCALE);
@@ -524,12 +548,27 @@ NativeEconomyRuntime::TradeQuote NativeEconomyRuntime::make_trade_quote(
             destination, NativeCountryRuntime::TAX_IMPORT, good);
         const int32_t export_rate = frozen_tax_rate(
             source, NativeCountryRuntime::TAX_EXPORT, good);
-        const int64_t import_amount = mul_div_sat(
-            quote.base, std::abs(static_cast<int64_t>(import_rate)), 10000,
-            saturation_count);
-        const int64_t export_amount = mul_div_sat(
-            quote.base, std::abs(static_cast<int64_t>(export_rate)), 10000,
-            saturation_count);
+        const int32_t import_mode = frozen_tax_mode(
+            destination, NativeCountryRuntime::TAX_IMPORT, good);
+        const int32_t export_mode = frozen_tax_mode(
+            source, NativeCountryRuntime::TAX_EXPORT, good);
+        const int64_t qty = std::max<int64_t>(0, quantity);
+        const int64_t import_amount =
+            import_mode == NativeCountryRuntime::TAX_MODE_ABSOLUTE
+                ? saturating_mul(qty,
+                    std::abs(static_cast<int64_t>(import_rate)),
+                    saturation_count)
+                : mul_div_sat(quote.base,
+                    std::abs(static_cast<int64_t>(import_rate)), 10000,
+                    saturation_count);
+        const int64_t export_amount =
+            export_mode == NativeCountryRuntime::TAX_MODE_ABSOLUTE
+                ? saturating_mul(qty,
+                    std::abs(static_cast<int64_t>(export_rate)),
+                    saturation_count)
+                : mul_div_sat(quote.base,
+                    std::abs(static_cast<int64_t>(export_rate)), 10000,
+                    saturation_count);
         quote.import_transfer = import_rate < 0 ? -import_amount : import_amount;
         quote.export_transfer = export_rate < 0 ? -export_amount : export_amount;
     }
@@ -538,9 +577,15 @@ NativeEconomyRuntime::TradeQuote NativeEconomyRuntime::make_trade_quote(
     // or enterprise-input absorption to prevent closed inventory subsidy loops.
     const int32_t transaction_rate = frozen_tax_rate(
         destination, NativeCountryRuntime::TAX_TRANSACTION, good);
+    const int32_t transaction_mode = frozen_tax_mode(
+        destination, NativeCountryRuntime::TAX_TRANSACTION, good);
     if (transaction_rate > 0) {
-        quote.transaction_transfer = mul_div_sat(
-            quote.base, transaction_rate, 10000, saturation_count);
+        quote.transaction_transfer =
+            transaction_mode == NativeCountryRuntime::TAX_MODE_ABSOLUTE
+                ? saturating_mul(std::max<int64_t>(0, quantity),
+                    static_cast<int64_t>(transaction_rate), saturation_count)
+                : mul_div_sat(quote.base, transaction_rate, 10000,
+                    saturation_count);
     }
     quote.importer_outlay = saturating_add(
         saturating_add(quote.base, quote.import_transfer, saturation_count),
@@ -2553,11 +2598,17 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
         }
         const int64_t import_tax = std::max<int64_t>(
             0, clipped.import_transfer);
+        const int32_t tx_rate = frozen_tax_rate(candidate.destination,
+            NativeCountryRuntime::TAX_TRANSACTION, candidate.good);
+        const int32_t tx_mode = frozen_tax_mode(candidate.destination,
+            NativeCountryRuntime::TAX_TRANSACTION, candidate.good);
+        const int64_t tx_base =
+            tx_mode == NativeCountryRuntime::TAX_MODE_ABSOLUTE
+                ? std::max<int64_t>(0, clipped.quantity)
+                : clipped.base_value;
         const int64_t transaction_tax = apply_fiscal_tax(
             candidate.destination, NativeCountryRuntime::TAX_TRANSACTION,
-            clipped.base_value,
-            std::max<int32_t>(0, frozen_tax_rate(candidate.destination,
-                NativeCountryRuntime::TAX_TRANSACTION, candidate.good)),
+            tx_base, std::max<int32_t>(0, tx_rate), tx_mode,
             _saturation_count);
         // The merchant pays the base purchase. A positive import transfer is
         // an additional tax expense; a negative transfer is credited from the

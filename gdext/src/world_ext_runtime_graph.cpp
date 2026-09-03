@@ -168,12 +168,29 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
                     const std::string reason =
                         String(handoff.get("reason", "trigger_effect_handoff_blocked"))
                             .utf8().get_data();
-                    if (reason != _runtime_graph_trigger_blocked_reason) {
-                        _runtime_graph_trigger_blocked_reason = reason;
+                    const String command_key =
+                        String(handoff.get("blocked_command_key", ""));
+                    const String definition_key =
+                        String(handoff.get("blocked_definition_key", ""));
+                    std::string snapshot_reason = reason;
+                    if (!command_key.is_empty()) {
+                        snapshot_reason += ":";
+                        snapshot_reason += command_key.utf8().get_data();
+                        snapshot_reason += "/";
+                        snapshot_reason += definition_key.utf8().get_data();
+                    }
+                    if (snapshot_reason != _runtime_graph_trigger_blocked_reason) {
+                        _runtime_graph_trigger_blocked_reason = snapshot_reason;
                         UtilityFunctions::push_warning(
                             String("[sim/graph-trigger] handoff blocked day=") +
                             String::num_int64(day) + String(" reason=") +
                             String(reason.c_str()) +
+                            String(" command_key=") + command_key +
+                            String(" definition_key=") + definition_key +
+                            String(" action=") +
+                            String::num_int64(int64_t(handoff.get("blocked_action", 0))) +
+                            String(" opcode=") +
+                            String::num_int64(int64_t(handoff.get("blocked_opcode", 0))) +
                             String(" — trigger effect queue cannot drain; "
                                    "trigger is retired for the rest of each pulse"));
                     }

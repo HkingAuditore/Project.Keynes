@@ -51,15 +51,18 @@ identifies the domestic importer/exporter and the relevant domestic merchant buy
 
 ## Preserve hard invariants
 
-- Keep rates as deterministic integer percentages in `[-100,100]`; negative means subsidy.
+- Keep rates as deterministic integer basis points in `[-100000,10000]` for percent mode;
+  absolute mode uses signed currency in `[-1e9,1e9]`. Negative means subsidy.
 - Resolve stable IDs before commands enter native code. Workers use dense IDs and frozen arrays.
 - Keep Modifier targets country handles. Do not add composite country-item entities.
 - Generate tax stat keys from the same sorted economy catalog used by policy arrays.
-- Quantize Modifier-effective rates half away from zero, then clamp.
-- Compute `floor(base * abs(rate) / 100)` with saturating fixed-point helpers. For negative income
-  rates only, aggregate cohort taxable income and floor its base at the frozen local
-  `survival_household` living cost times population and epoch days.
-- Withhold positive tax at the source. Never depend on a later payer cash balance.
+- Quantize Modifier-effective rates half away from zero, then clamp. Modifier overlays apply
+  only to percent-mode slots; absolute slots freeze policy values as-is.
+- Percent: `mul_div_sat(base, abs(rate_bp), 10000)`. Absolute income/business:
+  `|X| * count * epoch_days` in `settle_absolute_daily_taxes_for_cell`. Absolute
+  transaction/tariff: `|X| * qty` at settlement.
+- Withhold positive percent tax at the source. Absolute daily levies saturating-collect from
+  cohort/owner cash at assessment (unmet assessed amounts are recorded, never minted).
 - Exclude transfers, minting, capital principal, tax subsidies, and losses from income tax bases.
 - Deduct positive business tax from owner operating income; never tax a business subsidy again.
 - Tax household consumption only, not building inputs, government procurement, or domestic
@@ -74,7 +77,7 @@ identifies the domestic importer/exporter and the relevant domestic merchant buy
   strings, Variant, or per-transaction heap allocation.
 - Return unused escrow and clear it at fiscal commit. Include escrow in money conservation.
 - Keep domestic tariff event count and amount zero until foreign trade exists.
-- Preserve zero-tax fast paths. Default `0%` must not add per-order or per-building tax work.
+- Preserve zero-tax fast paths. Default `0%` / absolute `0` must not add per-order or per-building tax work.
 - Preserve population, money, and goods audit errors at exactly zero.
 
 ## Implement in the required order

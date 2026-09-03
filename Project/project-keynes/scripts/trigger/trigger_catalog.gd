@@ -212,6 +212,9 @@ func compile_native_catalog() -> Dictionary:
 	return out
 
 
+## Effect catalog 用这些行预编译 trigger.country.* command 模板。
+## 必须覆盖 TriggerRuntime 会开火的全部 COUNTRY_COMMAND 信号，否则 handoff
+## 会卡在 trigger_effect_definition_not_compiled，钉死当日日历。
 static func breakthrough_effect_rows() -> Array[Dictionary]:
 	var signal_catalog: Dictionary = ResearchSignalCatalogScript.compile_native_catalog()
 	if not bool(signal_catalog.get("ok", false)):
@@ -220,7 +223,10 @@ static func breakthrough_effect_rows() -> Array[Dictionary]:
 		"research_signal_ids", PackedStringArray())
 	var rows: Array[Dictionary] = []
 	var seen_signals := {}
-	for row in BREAKTHROUGH_RULES + CONTACT_RULES + WEATHER_RULES:
+	var authored_rows: Array = BREAKTHROUGH_RULES + CONTACT_RULES + WEATHER_RULES
+	for definition in DevelopmentAchievementCatalogScript.definitions():
+		authored_rows.append([0, "", String(definition.signal_id)])
+	for row in authored_rows:
 		var signal_id := String(row[2])
 		if seen_signals.has(signal_id):
 			continue
@@ -231,11 +237,19 @@ static func breakthrough_effect_rows() -> Array[Dictionary]:
 		rows.append({
 			"signal_id": signal_id,
 			"signal_index": signal_index,
-			"command_key": "contact.discover" if signal_id.begins_with("contact.") \
-				else ("weather.discover" if signal_id.begins_with("weather.") \
-				else "breakthrough.discover"),
+			"command_key": _country_signal_command_key(signal_id),
 		})
 	return rows
+
+
+static func _country_signal_command_key(signal_id: String) -> String:
+	if signal_id.begins_with("contact."):
+		return "contact.discover"
+	if signal_id.begins_with("weather."):
+		return "weather.discover"
+	if signal_id.begins_with("development."):
+		return "development.discover"
+	return "breakthrough.discover"
 
 
 static func _weather_definitions() -> Array[Resource]:

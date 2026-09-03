@@ -1654,127 +1654,14 @@ func refresh_for_succession(_indices: PackedInt32Array) -> void:
 
 
 func _refresh_for_succession_native(indices: PackedInt32Array) -> bool:
-	if _world_ext == null or not _world_ext.has_method("encode_detail_scatter_delta"):
-		return false
 	if _map == null or _multimesh == null:
 		return false
 	var t0_us := Time.get_ticks_usec()
-	var grid_w: int = int(_map.width) if "width" in _map else 0
-	var grid_h: int = int(_map.height) if "height" in _map else 0
-	if grid_w <= 0 or grid_h <= 0:
+	var payload := _encode_native_payload_for_indices(indices, 0)
+	if not bool(payload.get("ok", false)):
+		_last_rebuild_reason = str(payload.get("reason", "native_delta_fallback"))
 		return false
-
-	var valid_indices := PackedInt32Array()
-	var keys := PackedInt32Array()
-	var native_cell_indices := PackedInt32Array()
-	var cx := PackedFloat32Array()
-	var cy := PackedFloat32Array()
-	var suit := PackedFloat32Array()
-	var att := PackedInt32Array()
-	var accp := PackedFloat32Array()
-	var vit := PackedFloat32Array()
-	var sized := PackedFloat32Array()
-	var col_r := PackedFloat32Array()
-	var col_g := PackedFloat32Array()
-	var col_b := PackedFloat32Array()
-	var col_a := PackedFloat32Array()
-	var delta_max_per_cell: int = maxi(1, _max_per_cell())
-
-	for raw_idx in indices:
-		var idx := int(raw_idx)
-		var cell := _map.cell_at(idx)
-		if cell == null:
-			continue
-		valid_indices.append(idx)
-		var state := _sample_cell_state(idx, cell)
-		var key := _cell_hash_key(cell, idx)
-		var suitability := _cell_suitability(cell, idx, key, state)
-		if suitability <= 0.0:
-			continue
-		if _scatter_presence(state) <= 0.02:
-			continue
-		var veg := int(state.get("vegetation", VegetationType.VEG.NONE))
-		var lf := int(state.get("landform", LandformType.LF.PLAIN))
-		var cover := int(state.get("cover", CoverType.CV.NONE))
-		var center := _cell_center(cell, idx)
-		var base := _base_color_for_vegetation(veg)
-		keys.append(key)
-		native_cell_indices.append(idx)
-		cx.append(center.x)
-		cy.append(center.y)
-		var quota := _cell_quota(suitability, delta_max_per_cell)
-		suit.append(suitability)
-		att.append(int(quota.x))
-		accp.append(quota.y)
-		vit.append(clampf(float(state.get("vitality", 0.7)), 0.0, 1.0))
-		sized.append(_vegetation_weight(veg) * _landform_weight(lf) * _cover_weight(cover))
-		col_r.append(base.r)
-		col_g.append(base.g)
-		col_b.append(base.b)
-		col_a.append(base.a)
-
-	if valid_indices.is_empty():
-		return false
-	if keys.is_empty():
-		_apply_native_delta_payload(valid_indices, PackedFloat32Array(), PackedInt32Array(), 0, 0, 0, t0_us)
-		return true
-
-	var cfg := _profile()
-	var knobs := {
-		"hex_size": _hex_size,
-		"origin_x": _bounds.position.x,
-		"origin_y": _bounds.position.y,
-		"size_x": _bounds.size.x,
-		"size_y": _bounds.size.y,
-		"wrap_period_x": HexUtils.wrap_period_x(grid_w, _hex_size),
-		"wrap_edge_margin": 0.0,
-		"grid_w": grid_w,
-		"grid_h": grid_h,
-		"offset_is_water": _native_offset_is_water(grid_w, grid_h),
-		"flow_buffer": _world.flow_buffer if _world != null else PackedFloat32Array(),
-		"flow_w": int(_world.derived_size.x) if _world != null else 0,
-		"flow_h": int(_world.derived_size.y) if _world != null else 0,
-		"river_clear_threshold": cfg.river_clear_threshold,
-		"spawn_domain": _spawn_domain(),
-		"rotation_mode": _rotation_mode(),
-		"random_rotation_strength": _random_rotation_strength(),
-		"upright_jitter_radians": deg_to_rad(_upright_jitter_degrees()),
-		"spawn_radius_factor": _effective_spawn_radius_factor(),
-		"world_noise_warp_strength": cfg.world_noise_warp_strength,
-		"patch_frequency": cfg.patch_frequency,
-		"patch_cutoff": cfg.patch_cutoff,
-		"patch_contrast": cfg.patch_contrast,
-		"world_noise_mid_mix": cfg.world_noise_mid_mix,
-		"world_noise_fine_mix": cfg.world_noise_fine_mix,
-		"micro_gap_threshold": cfg.micro_gap_threshold,
-		"world_noise_acceptance": cfg.world_noise_acceptance,
-		"min_size_factor": minf(cfg.min_size_factor, cfg.max_size_factor),
-		"max_size_factor": maxf(cfg.min_size_factor, cfg.max_size_factor),
-		"size_scale": _quality_size_scale(),
-		"vitality_dead_threshold": cfg.vitality_dead_threshold,
-		"vitality_dieback_noise_strength": cfg.vitality_dieback_noise_strength,
-		"instance_cap": maxi(_instance_cap(), keys.size() * maxi(_max_per_cell(), 1) * 3),
-		"keys": keys,
-		"cell_indices": native_cell_indices,
-		"center_x": cx,
-		"center_y": cy,
-		"suitability": suit,
-		"attempts": att,
-		"accept_p": accp,
-		"vitality": vit,
-		"size_density": sized,
-		"color_r": col_r,
-		"color_g": col_g,
-		"color_b": col_b,
-		"color_a": col_a,
-	}
-
-	var res = _world_ext.call("encode_detail_scatter_delta", knobs)
-	if not (res is Dictionary):
-		return false
-	if bool(res.get("fallback", true)):
-		_last_rebuild_reason = str(res.get("reason", "native_delta_fallback"))
-		return false
+	var res: Dictionary = payload.get("res", {})
 	var inst := int(res.get("instance_count", 0))
 	var buffer: PackedFloat32Array = res.get("buffer", PackedFloat32Array())
 	var cell_indices: PackedInt32Array = res.get("cell_indices", PackedInt32Array())
@@ -1782,7 +1669,7 @@ func _refresh_for_succession_native(indices: PackedInt32Array) -> bool:
 		_last_rebuild_reason = "native_delta_bad_payload"
 		return false
 	_apply_native_delta_payload(
-		valid_indices,
+		payload.get("valid_indices", indices),
 		buffer,
 		cell_indices,
 		inst,

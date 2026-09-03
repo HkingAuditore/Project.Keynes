@@ -647,6 +647,186 @@ void NativeEconomyRuntime::prepare_startup_demand() {
     _startup_demand_prepare_ms += elapsed_ms(started);
 }
 
+int64_t NativeEconomyRuntime::startup_producer_output_quantity(
+        int32_t cell, int32_t type_id, int32_t good_id, int64_t &sat) const {
+    if (cell < 0 || cell >= _cell_count || type_id < 0 ||
+        type_id >= static_cast<int32_t>(_building_types.size()) ||
+        good_id < 0 || good_id >= _market.good_count) return 0;
+    const BuildingType &type = _building_types[type_id];
+    int64_t output_quantity = 0;
+    for (int32_t edge = 0; edge < type.output_count; ++edge) {
+        const GoodAmount &output = _building_outputs[type.output_begin + edge];
+        if (output.good_id != good_id) continue;
+        output_quantity = saturating_add(output_quantity, output.quantity, sat);
+    }
+    output_quantity = mul_div_sat(output_quantity,
+        _building_output_efficiency_q16, Q16_ONE, sat);
+    output_quantity = mul_div_sat(output_quantity,
+        production_climate_capacity_q16(type, cell, nullptr, nullptr, sat),
+        Q16_ONE, sat);
+    return std::max<int64_t>(0, output_quantity);
+}
+
+int64_t NativeEconomyRuntime::market_flow_deficit_daily(
+        int32_t cell, int32_t good_id, bool include_derived,
+        int64_t &sat) const {
+    if (cell < 0 || cell >= _cell_count || good_id < 0 ||
+        good_id >= _market.good_count) return 0;
+    const int32_t market = _market.cell_to_market[cell];
+    if (market < 0 || market >= _market.market_count) return 0;
+    const int64_t index = _market.index(market, good_id);
+    const int32_t signal = market_signal_index(cell, good_id);
+    int64_t demand = std::max<int64_t>(0, _market.demand_ema[index]);
+    if (signal >= 0) {
+        demand = saturating_add(demand,
+            std::max<int64_t>(0, _market_signals.business_demand_ema[signal]),
+            sat);
+        if (include_derived &&
+            signal < static_cast<int32_t>(_epoch_derived_business_demand.size())) {
+            demand = saturating_add(demand,
+                std::max<int64_t>(0, _epoch_derived_business_demand[signal]),
+                sat);
+        }
+    }
+    demand = saturating_add(demand,
+        epoch_research_demand_daily(cell, good_id), sat);
+    const int64_t supply = signal >= 0
+        ? std::max<int64_t>(0, _market_signals.offered_supply_ema[signal]) : 0;
+    const int64_t realized = signal >= 0
+        ? std::max<int64_t>(0,
+            _market_signals.realized_withdrawal_ema[signal]) : 0;
+    const int32_t flow = const_cast<NativeEconomyRuntime *>(this)->
+        trade_flow_index(cell, good_id, false);
+    const int64_t exports = flow >= 0
+        ? std::max<int64_t>(0, _trade_flows.export_ema[flow]) : 0;
+    const int64_t target = merchant_inventory_target(
+        market, good_id, signal, realized, exports, supply, sat);
+    const int64_t gap = std::max<int64_t>(
+        0, target - std::max<int64_t>(0, _market.stock[index]));
+    const int64_t gap_daily = gap > 0
+        ? mul_div_sat(gap, Q16_ONE,
+            std::max<int64_t>(Q16_ONE,
+                _good_target_inventory_days_q16[good_id]), sat)
+        : 0;
+    return std::max<int64_t>(
+        std::max<int64_t>(0, demand - supply), gap_daily);
+}
+
+void NativeEconomyRuntime::refresh_derived_business_demand() {
+    _derived_business_demand_total = 0;
+    _derived_business_demand_lanes = 0;
+    _derived_business_demand_edges = 0;
+    _epoch_derived_business_demand.assign(_market_signals.good_ids.size(), 0);
+    if (_market.good_count <= 0 || _cell_count <= 0 ||
+        _investment_good_type_offsets.size() != _good_ids.size() + 1 ||
+        _economy_live_cells.empty()) return;
+    if (_investment_good_stamp.size() != _good_ids.size())
+        _investment_good_stamp.assign(_good_ids.size(), 0);
+    struct QueueEntry {
+        int32_t good = -1;
+        int64_t needed = 0;
+    };
+    thread_local std::vector<QueueEntry> queue;
+    for (const int32_t cell : _economy_live_cells) {
+        if (cell < 0 || cell >= _cell_count) continue;
+        ++_investment_review_stamp_generation;
+        if (_investment_review_stamp_generation == 0) {
+            std::fill(_investment_good_stamp.begin(),
+                      _investment_good_stamp.end(), 0);
+            _investment_review_stamp_generation = 1;
+        }
+        const uint32_t visit = _investment_review_stamp_generation;
+        queue.clear();
+        auto enqueue = [&](int32_t good, int64_t needed) {
+            if (good < 0 || good >= _market.good_count || needed <= 0) return;
+            queue.push_back({good, needed});
+        };
+        int64_t sat = 0;
+        auto seed_good = [&](int32_t good) {
+            const int64_t deficit = market_flow_deficit_daily(
+                cell, good, false, sat);
+            if (deficit > 0) enqueue(good, deficit);
+        };
+        if (_market_signals.cell_offsets.size() ==
+                static_cast<size_t>(_cell_count + 1)) {
+            for (int32_t signal = _market_signals.cell_offsets[cell];
+                 signal < _market_signals.cell_offsets[cell + 1]; ++signal) {
+                seed_good(_market_signals.good_ids[signal]);
+            }
+        }
+        const uint64_t key_begin =
+            static_cast<uint64_t>(static_cast<uint32_t>(cell)) << 32;
+        const uint64_t key_end = key_begin | 0xffffffffULL;
+        auto active = std::lower_bound(
+            _trade_active_keys.begin(), _trade_active_keys.end(), key_begin);
+        for (; active != _trade_active_keys.end() && *active <= key_end;
+             ++active) {
+            seed_good(static_cast<int32_t>(*active & 0xffffffffULL));
+        }
+        if (_epoch_research_good_id >= 0) {
+            const int64_t research = epoch_research_demand_daily(
+                cell, _epoch_research_good_id);
+            if (research > 0) enqueue(_epoch_research_good_id, research);
+        }
+        size_t cursor = 0;
+        while (cursor < queue.size()) {
+            const QueueEntry entry = queue[cursor++];
+            if (entry.good < 0 || entry.good >= _market.good_count ||
+                entry.needed <= 0) continue;
+            if (_investment_good_stamp[entry.good] == visit) continue;
+            _investment_good_stamp[entry.good] = visit;
+            _derived_business_demand_edges = saturating_add(
+                _derived_business_demand_edges,
+                _investment_good_type_offsets[entry.good + 1] -
+                    _investment_good_type_offsets[entry.good],
+                _saturation_count);
+            const int32_t type_id = select_startup_producer(cell, entry.good);
+            if (type_id < 0) continue;
+            const BuildingType &type = _building_types[type_id];
+            const int64_t output_qty = startup_producer_output_quantity(
+                cell, type_id, entry.good, sat);
+            if (output_qty <= 0) continue;
+            for (int32_t edge = 0; edge < type.input_count; ++edge) {
+                const ProductionInput &input =
+                    _building_inputs[type.input_begin + edge];
+                ++_derived_business_demand_edges;
+                if (input.required_q16 <= 0) continue;
+                int64_t physical = 0;
+                const int32_t input_good = select_startup_input_candidate(
+                    cell, input, physical);
+                if (input_good < 0 || physical <= 0) continue;
+                int64_t derived = mul_div_sat(
+                    entry.needed, physical, output_qty, sat);
+                derived = mul_div_sat(derived,
+                    std::clamp<int64_t>(input.required_q16, 0, Q16_ONE),
+                    Q16_ONE, sat);
+                if (derived <= 0) continue;
+                const int32_t signal = ensure_market_signal_index(
+                    cell, input_good);
+                if (signal < 0) continue;
+                if (signal >= static_cast<int32_t>(
+                        _epoch_derived_business_demand.size())) {
+                    _epoch_derived_business_demand.resize(
+                        _market_signals.good_ids.size(), 0);
+                }
+                const int64_t before =
+                    _epoch_derived_business_demand[signal];
+                _epoch_derived_business_demand[signal] = saturating_add(
+                    before, derived, _saturation_count);
+                if (before <= 0 &&
+                    _epoch_derived_business_demand[signal] > 0) {
+                    ++_derived_business_demand_lanes;
+                }
+                _derived_business_demand_total = saturating_add(
+                    _derived_business_demand_total, derived,
+                    _saturation_count);
+                if (_investment_good_stamp[input_good] != visit)
+                    enqueue(input_good, derived);
+            }
+        }
+    }
+}
+
 void NativeEconomyRuntime::propagate_startup_demand_for_cell(int32_t cell) {
     if (_startup_demand_runtime_mode == 0 || cell < 0 || cell >= _cell_count ||
         _investment_good_stamp.size() != _good_ids.size()) return;
@@ -663,34 +843,8 @@ void NativeEconomyRuntime::propagate_startup_demand_for_cell(int32_t cell) {
             _investment_good_queue_scratch.push_back(good);
     };
     auto actual_deficit = [&](int32_t good) {
-        const int32_t market = _market.cell_to_market[cell];
-        const int64_t index = _market.index(market, good);
-        const int32_t signal = market_signal_index(cell, good);
-        int64_t demand = std::max<int64_t>(0, _market.demand_ema[index]);
-        if (signal >= 0) demand = saturating_add(demand,
-            std::max<int64_t>(0, _market_signals.business_demand_ema[signal]),
-            _saturation_count);
-        demand = saturating_add(demand,
-            epoch_research_demand_daily(cell, good), _saturation_count);
-        const int64_t supply = signal >= 0
-            ? std::max<int64_t>(0, _market_signals.offered_supply_ema[signal]) : 0;
-        const int64_t realized = signal >= 0
-            ? std::max<int64_t>(0,
-                _market_signals.realized_withdrawal_ema[signal]) : 0;
-        const int32_t flow = trade_flow_index(cell, good, false);
-        const int64_t exports = flow >= 0
-            ? std::max<int64_t>(0, _trade_flows.export_ema[flow]) : 0;
-        const int64_t target = merchant_inventory_target(
-            market, good, signal, realized, exports, supply, _saturation_count);
-        const int64_t gap = std::max<int64_t>(
-            0, target - std::max<int64_t>(0, _market.stock[index]));
-        const int64_t gap_daily = gap > 0
-            ? mul_div_sat(gap, Q16_ONE,
-                std::max<int64_t>(Q16_ONE,
-                    _good_target_inventory_days_q16[good]), _saturation_count)
-            : 0;
-        return std::max<int64_t>(
-            std::max<int64_t>(0, demand - supply), gap_daily);
+        int64_t sat = 0;
+        return market_flow_deficit_daily(cell, good, true, sat);
     };
     const uint64_t key_begin =
         static_cast<uint64_t>(static_cast<uint32_t>(cell)) << 32;
@@ -765,13 +919,27 @@ void NativeEconomyRuntime::propagate_startup_demand_for_cell(int32_t cell) {
         if (type_id < 0) continue;
         const BuildingType &type = _building_types[type_id];
         const int32_t market = _market.cell_to_market[cell];
+        const int64_t parent_deficit = std::max<int64_t>(
+            startup_demand_for(cell, good), actual_deficit(good));
+        const int64_t output_qty = startup_producer_output_quantity(
+            cell, type_id, good, _saturation_count);
         for (int32_t edge = 0; edge < type.input_count; ++edge) {
             const ProductionInput &input = _building_inputs[type.input_begin + edge];
             int64_t physical = 0;
             const int32_t input_good = select_startup_input_candidate(
                 cell, input, physical);
             ++_startup_demand_catalog_edges;
-            if (input_good < 0 || physical <= 0) continue;
+            if (input_good < 0 || physical <= 0 || input.required_q16 <= 0)
+                continue;
+            int64_t derived = physical;
+            if (parent_deficit > 0 && output_qty > 0) {
+                derived = mul_div_sat(parent_deficit, physical, output_qty,
+                    _saturation_count);
+                derived = mul_div_sat(derived,
+                    std::clamp<int64_t>(input.required_q16, 0, Q16_ONE),
+                    Q16_ONE, _saturation_count);
+            }
+            if (derived <= 0) continue;
             const int32_t signal = market_signal_index(cell, input_good);
             const int64_t stock = std::max<int64_t>(0,
                 _market.stock[_market.index(market, input_good)]);
@@ -782,13 +950,13 @@ void NativeEconomyRuntime::propagate_startup_demand_for_cell(int32_t cell) {
                 saturating_mul(supply, std::max(1, _epoch_days),
                     _saturation_count), _saturation_count);
             const int64_t required = saturating_mul(
-                physical, std::max(1, _epoch_days), _saturation_count);
+                derived, std::max(1, _epoch_days), _saturation_count);
             if (available >= required) continue;
             if (_investment_good_stamp[input_good] == visit) {
                 ++_startup_demand_cycle_skips;
                 continue;
             }
-            record_startup_demand(cell, input_good, physical);
+            record_startup_demand(cell, input_good, derived);
             queue_good(input_good);
         }
         for (int32_t edge = 0; edge < type.construction_count; ++edge) {
@@ -1074,6 +1242,27 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 existing.owner_required,
                 planned_owner_demand(group, _saturation_count),
                 _saturation_count);
+            existing.sum_last_revenue = saturating_add(
+                existing.sum_last_revenue,
+                std::max<int64_t>(0, group.last_revenue), _saturation_count);
+            existing.sum_last_in_kind_livelihood = saturating_add(
+                existing.sum_last_in_kind_livelihood,
+                std::max<int64_t>(0, group.last_in_kind_livelihood_value),
+                _saturation_count);
+            existing.sum_last_input_cost = saturating_add(
+                existing.sum_last_input_cost,
+                std::max<int64_t>(0, group.last_input_cost), _saturation_count);
+            existing.sum_last_base_wages_due = saturating_add(
+                existing.sum_last_base_wages_due,
+                std::max<int64_t>(0, group.last_base_wages_due),
+                _saturation_count);
+            existing.sum_last_maintenance_cost = saturating_add(
+                existing.sum_last_maintenance_cost,
+                std::max<int64_t>(0, group.last_maintenance_cost),
+                _saturation_count);
+            existing.sum_last_output = saturating_add(
+                existing.sum_last_output,
+                std::max<int64_t>(0, group.last_output), _saturation_count);
         } else {
             existing.suspended_count = saturating_add(
                 existing.suspended_count, group.count, _saturation_count);
@@ -2026,7 +2215,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                         candidate.efficiency_q16, _saturation_count);
                     const TransactionQuote input_quote = quote_transaction(
                         cell, candidate.good_id, base_effective_price,
-                        false, true, _saturation_count);
+                        false, true, _saturation_count, GOODS_SCALE);
                     const int64_t effective_price = input_quote.buyer_outlay;
                     if (coverage_q16 > best_coverage_q16 ||
                         (coverage_q16 == best_coverage_q16 &&
@@ -2154,10 +2343,39 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 }
                 continue;
             }
-            utilization_q16 = std::min(utilization_q16, input_coverage_bound_q16);
-            utilization_q16 = std::min(utilization_q16,
-                production_climate_capacity_q16(
-                    type, cell, nullptr, nullptr, _saturation_count));
+            const int64_t climate_capacity_q16 = production_climate_capacity_q16(
+                type, cell, nullptr, nullptr, _saturation_count);
+            int64_t revealed_util_q16 = 0;
+            if (existing != nullptr && existing->active_count > 0 &&
+                existing->sum_last_output > 0) {
+                int64_t recipe_qty = 0;
+                for (int32_t i = 0; i < type.output_count; ++i) {
+                    recipe_qty = saturating_add(recipe_qty,
+                        std::max<int64_t>(0,
+                            _building_outputs[type.output_begin + i].quantity),
+                        _saturation_count);
+                }
+                const int64_t nameplate = saturating_mul(
+                    saturating_mul(existing->active_count, recipe_qty,
+                        _saturation_count),
+                    std::max<int64_t>(1, _epoch_days), _saturation_count);
+                if (recipe_qty > 0 && nameplate > 0) {
+                    revealed_util_q16 = std::clamp<int64_t>(mul_div_sat(
+                        existing->sum_last_output, Q16_ONE, nameplate,
+                        _saturation_count), 0, Q16_ONE);
+                }
+            }
+            // Market/climate may still bind expansion. Soft-input stock coverage
+            // must not undercut the executable intensity incumbents already
+            // revealed in this cell.
+            utilization_q16 = std::min(utilization_q16, climate_capacity_q16);
+            if (revealed_util_q16 > 0) {
+                utilization_q16 = std::min(utilization_q16,
+                    std::max(input_coverage_bound_q16, revealed_util_q16));
+            } else {
+                utilization_q16 = std::min(utilization_q16,
+                    input_coverage_bound_q16);
+            }
             if (utilization_q16 <= 0) {
                 reject(INVESTMENT_REJECTION_INPUT_CHAIN);
                 continue;
@@ -2171,7 +2389,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 diagnostic->challenger_unit_cost = challenger_unit_cost;
                 diagnostic->incumbent_unit_cost = incumbent_unit_cost;
             }
-            const int64_t daily_variable_cost = mul_div_sat(saturating_add(
+            const int64_t quoted_daily_variable_cost = mul_div_sat(saturating_add(
                 saturating_add(daily_input_cost, daily_wages, _saturation_count),
                 daily_maintenance, _saturation_count), utilization_q16,
                 Q16_ONE, _saturation_count);
@@ -2189,6 +2407,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 int64_t monetary_request_money_per_day = 0;
                 int64_t monetary_expected_revenue_per_day = 0;
                 int64_t daily_in_kind_livelihood = 0;
+                int64_t driver_absorption_q16 = 0;
                 for (int32_t i = 0; i < type.output_count; ++i) {
                     const GoodAmount &output =
                         _building_outputs[type.output_begin + i];
@@ -2271,6 +2490,8 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                             output_signal.deficit, Q16_ONE, sellable_quantity,
                             _saturation_count), 0, Q16_ONE);
                     }
+                    if (i == driver_index)
+                        driver_absorption_q16 = absorption_q16;
                     const int64_t absorbed_quantity = mul_div_sat(
                         sellable_quantity, absorption_q16, Q16_ONE,
                         _saturation_count);
@@ -2296,26 +2517,27 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                             _saturation_count);
                     }
                 }
+                int64_t daily_variable_cost = quoted_daily_variable_cost;
                 int64_t daily_after_tax_cash_revenue = daily_cash_revenue;
                 const uint8_t investment_tax_mask = static_cast<uint8_t>(
                     (1U << NativeCountryRuntime::TAX_INCOME) |
                     (1U << NativeCountryRuntime::TAX_BUSINESS));
                 if ((_epoch_active_tax_mask & investment_tax_mask) != 0) {
-                    const int32_t business_rate = frozen_tax_rate(
-                        cell, NativeCountryRuntime::TAX_BUSINESS, type_id);
                     const int64_t eligible_cost_base = mul_div_sat(
                         saturating_add(saturating_add(
                             daily_input_base_cost, daily_wages,
                             _saturation_count), daily_maintenance,
                             _saturation_count),
                         utilization_q16, Q16_ONE, _saturation_count);
+                    const int32_t business_rate = frozen_tax_rate(
+                        cell, NativeCountryRuntime::TAX_BUSINESS, type_id);
+                    const int64_t business_percent_base = business_rate < 0
+                        ? eligible_cost_base : daily_cash_revenue;
+                    // Absolute business levy is per building-day.
                     const int64_t business_transfer =
-                        expected_fiscal_transfer(
-                            cell, NativeCountryRuntime::TAX_BUSINESS,
-                            business_rate < 0
-                                ? eligible_cost_base : daily_cash_revenue,
-                            business_rate,
-                            _saturation_count);
+                        expected_resolved_fiscal_transfer(
+                            cell, NativeCountryRuntime::TAX_BUSINESS, type_id,
+                            business_percent_base, 1, _saturation_count);
                     const int64_t taxable_owner_income =
                         std::max<int64_t>(0, saturating_sub(
                             saturating_sub(
@@ -2329,16 +2551,57 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     const int64_t income_subsidy_base = income_rate < 0
                         ? std::max(taxable_owner_income, owner_livelihood)
                         : taxable_owner_income;
+                    // Absolute income levy is per person-day for the owner.
                     const int64_t income_transfer =
-                        expected_fiscal_transfer(
+                        expected_resolved_fiscal_transfer(
                             cell, NativeCountryRuntime::TAX_INCOME,
-                            income_subsidy_base, income_rate,
+                            type.owner_profession_id, income_subsidy_base, 1,
                             _saturation_count);
                     daily_after_tax_cash_revenue = saturating_sub(
                         saturating_sub(
                             daily_cash_revenue, business_transfer,
                             _saturation_count),
                         income_transfer, _saturation_count);
+                }
+                // Incumbent expansion: forecast the marginal building from
+                // revealed local unit economics so soft-input stock quotes
+                // cannot contradict already-settled same-type camps.
+                if (existing != nullptr && existing->active_count > 0 &&
+                    existing->sum_last_output > 0 && revealed_util_q16 > 0) {
+                    const int64_t days = std::max<int64_t>(1, _epoch_days);
+                    const int64_t buildings = existing->active_count;
+                    const int64_t unit_cash = existing->sum_last_revenue /
+                        buildings / days;
+                    const int64_t unit_inkind =
+                        existing->sum_last_in_kind_livelihood /
+                        buildings / days;
+                    const int64_t unit_var =
+                        saturating_add(saturating_add(
+                            existing->sum_last_input_cost,
+                            existing->sum_last_base_wages_due,
+                            _saturation_count),
+                            existing->sum_last_maintenance_cost,
+                            _saturation_count) / buildings / days;
+                    int64_t absorption_q16 = driver_absorption_q16;
+                    if (absorption_q16 <= 0 && driver.good_id >= 0) {
+                        absorption_q16 = std::max<int64_t>(
+                            driver.sell_through_q16,
+                            driver.deficit > 0 && driver.nameplate_output > 0
+                                ? std::clamp<int64_t>(mul_div_sat(
+                                    driver.deficit, Q16_ONE,
+                                    driver.nameplate_output, _saturation_count),
+                                    0, Q16_ONE)
+                                : 0);
+                    }
+                    absorption_q16 = std::clamp<int64_t>(absorption_q16, 0, Q16_ONE);
+                    daily_after_tax_cash_revenue = mul_div_sat(
+                        unit_cash, absorption_q16, Q16_ONE, _saturation_count);
+                    daily_cash_revenue = daily_after_tax_cash_revenue;
+                    daily_in_kind_livelihood = std::min(unit_inkind,
+                        owner_livelihood);
+                    daily_variable_cost = unit_var;
+                    monetary_expected_revenue_per_day =
+                        daily_after_tax_cash_revenue;
                 }
                 const int64_t daily_economic_revenue = saturating_add(
                     daily_after_tax_cash_revenue, daily_in_kind_livelihood,
@@ -2822,18 +3085,34 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
             }
             int64_t material_lo = 0;
             int64_t material_hi = cap;
+            // 建材凑得齐还不够：同格其它类型先占走便宜的首选材料后，剩下的
+            // 替代品会把单价推高，重算出的这批建材总价必须仍在候选自己冻结
+            // 的资金包络（自筹 + 商人信贷）之内，否则批量在这里就要收窄。
+            const int64_t funded_per_building = saturating_add(
+                candidate.required_capital, candidate.merchant_credit,
+                _saturation_count);
+            bool cost_envelope_limited = false;
             while (material_lo < material_hi) {
                 const int64_t mid = material_lo +
                     (material_hi - material_lo + 1) / 2;
                 ConstructionMaterialPlan candidate_plan;
-                if (plan_construction_materials(cell, candidate.type, mid,
+                if (!plan_construction_materials(cell, candidate.type, mid,
                         investment_cost_factor, candidate_plan, &adjustment)) {
-                    material_lo = mid;
-                } else {
                     material_hi = mid - 1;
+                    continue;
                 }
+                if (candidate_plan.total_cost > saturating_mul(
+                        mid, funded_per_building, _saturation_count)) {
+                    cost_envelope_limited = true;
+                    material_hi = mid - 1;
+                    continue;
+                }
+                material_lo = mid;
             }
-            if (material_lo < cap) ++_building_investment_material_limited;
+            if (material_lo < cap) {
+                if (cost_envelope_limited) ++_building_investment_capital_limited;
+                else ++_building_investment_material_limited;
+            }
             cap = std::min(cap, material_lo);
             if (_resource_safe_harvest_q16 > 0) {
                 for (int32_t edge = 0; edge < type.resource_count; ++edge) {
@@ -3003,6 +3282,109 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
             }
         }
 
+        // Freeze the exact aggregate invoices for the whole portfolio before
+        // moving population or money. The generic BUILD entry point reports a
+        // business rejection by returning true without appending construction;
+        // calling it after those mutations made any quote/commit mismatch fatal
+        // and left the three conservation ledgers dirty. Planning against one
+        // shared virtual stock vector also makes substitute selection identical
+        // to the later stable portfolio commit order.
+        std::array<ConstructionMaterialPlan, 4> commit_material_plans{};
+        std::vector<int64_t> commit_virtual_stock(_good_ids.size(), 0);
+        for (int32_t good = 0; good < _market.good_count; ++good) {
+            commit_virtual_stock[static_cast<size_t>(good)] =
+                std::max<int64_t>(0, _market.stock[_market.index(market, good)]);
+        }
+        std::vector<int64_t> trial_virtual_stock;
+        const int32_t commit_cost_factor = country >= 0 &&
+                country < static_cast<int32_t>(
+                    _epoch_country_construction_cost_factor_q16.size())
+            ? _epoch_country_construction_cost_factor_q16[country] : Q16_ONE;
+        const int32_t commit_time_factor = country >= 0 &&
+                country < static_cast<int32_t>(
+                    _epoch_country_construction_time_factor_q16.size())
+            ? _epoch_country_construction_time_factor_q16[country] : Q16_ONE;
+        // 分配阶段逐类型看到的库存，和这里四种类型排队共用同一份库存之后
+        // 剩下的材料并不相同：便宜的首选材料被前面的类型占走后，后面只能
+        // 买更贵的替代品。用与下单完全一致的顺序和库存重算发票，超出资金
+        // 包络就把批量收窄（可以收到零，视作这次不投），把矛盾解决在改动
+        // 人口和资金之前，而不是留给下面的兜底断言。
+        for (int32_t i = 0; i < portfolio_size; ++i) {
+            Candidate &candidate = portfolio[i];
+            if (candidate.allocated_count <= 0) continue;
+            if (!building_available(cell, candidate.type, true) ||
+                !evaluate_building_conditions(candidate.type, cell) ||
+                candidate.target_signature < 0 ||
+                candidate.target_signature >= static_cast<int32_t>(
+                    _signatures.size()) ||
+                _signatures[candidate.target_signature].profession_id !=
+                    _building_types[candidate.type].owner_profession_id) {
+                error = "building_investment_catalog_preflight_drift";
+                return false;
+            }
+            const int64_t funded_per_building = saturating_add(
+                candidate.required_capital, candidate.merchant_credit,
+                _saturation_count);
+            ConstructionMaterialPlan &plan = commit_material_plans[i];
+            // 整批撑得住是常态，先按完整批量试一次并直接接管扣减后的库存，
+            // 稳态下不额外增加一次 plan 调用。
+            trial_virtual_stock = commit_virtual_stock;
+            const bool full_batch_affordable = plan_construction_materials(
+                    cell, candidate.type, candidate.allocated_count,
+                    commit_cost_factor, plan, nullptr,
+                    &trial_virtual_stock) &&
+                plan.total_cost <= saturating_mul(candidate.allocated_count,
+                    funded_per_building, _saturation_count);
+            if (full_batch_affordable) {
+                commit_virtual_stock.swap(trial_virtual_stock);
+            } else {
+                // 单位造价随批量单调不减（每栋都在剩余库存里挑当时最便宜的
+                // 材料），所以「撑得住」是单调谓词，可以二分。
+                int64_t affordable_lo = 0;
+                int64_t affordable_hi = candidate.allocated_count - 1;
+                while (affordable_lo < affordable_hi) {
+                    const int64_t mid = affordable_lo +
+                        (affordable_hi - affordable_lo + 1) / 2;
+                    trial_virtual_stock = commit_virtual_stock;
+                    ConstructionMaterialPlan trial_plan;
+                    if (plan_construction_materials(cell, candidate.type, mid,
+                            commit_cost_factor, trial_plan, nullptr,
+                            &trial_virtual_stock) &&
+                        trial_plan.total_cost <= saturating_mul(
+                            mid, funded_per_building, _saturation_count)) {
+                        affordable_lo = mid;
+                    } else {
+                        affordable_hi = mid - 1;
+                    }
+                }
+                _building_investment_cost_envelope_trimmed = saturating_add(
+                    _building_investment_cost_envelope_trimmed,
+                    candidate.allocated_count - affordable_lo,
+                    _saturation_count);
+                candidate.allocated_count = affordable_lo;
+                if (candidate.allocated_count <= 0) {
+                    plan = ConstructionMaterialPlan{};
+                    continue;
+                }
+                if (!plan_construction_materials(
+                        cell, candidate.type, candidate.allocated_count,
+                        commit_cost_factor, plan, nullptr,
+                        &commit_virtual_stock)) {
+                    error = "building_investment_material_preflight_drift";
+                    return false;
+                }
+            }
+            // 收窄之后这里只是兜底断言。真的还超说明另有未知漏洞，此时停在
+            // fatal 比带着错账继续跑安全。
+            if (plan.total_cost > saturating_mul(candidate.allocated_count,
+                    funded_per_building, _saturation_count)) {
+                error = "building_investment_cost_preflight_drift";
+                return false;
+            }
+        }
+
+        // 汇总和信贷额度都必须用收窄之后的批量重算，否则会按已经作废的旧
+        // 栋数迁移人口、透支商人信贷。
         active_types = 0;
         int64_t total_buildings = 0;
         int64_t total_owner_population = 0;
@@ -3038,60 +3420,6 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
         if (portfolio_credit_required > available_credit) {
             error = "building_investment_startup_credit_overcommit";
             return false;
-        }
-
-        // Freeze the exact aggregate invoices for the whole portfolio before
-        // moving population or money. The generic BUILD entry point reports a
-        // business rejection by returning true without appending construction;
-        // calling it after those mutations made any quote/commit mismatch fatal
-        // and left the three conservation ledgers dirty. Planning against one
-        // shared virtual stock vector also makes substitute selection identical
-        // to the later stable portfolio commit order.
-        std::array<ConstructionMaterialPlan, 4> commit_material_plans{};
-        std::vector<int64_t> commit_virtual_stock(_good_ids.size(), 0);
-        for (int32_t good = 0; good < _market.good_count; ++good) {
-            commit_virtual_stock[static_cast<size_t>(good)] =
-                std::max<int64_t>(0, _market.stock[_market.index(market, good)]);
-        }
-        const int32_t commit_cost_factor = country >= 0 &&
-                country < static_cast<int32_t>(
-                    _epoch_country_construction_cost_factor_q16.size())
-            ? _epoch_country_construction_cost_factor_q16[country] : Q16_ONE;
-        const int32_t commit_time_factor = country >= 0 &&
-                country < static_cast<int32_t>(
-                    _epoch_country_construction_time_factor_q16.size())
-            ? _epoch_country_construction_time_factor_q16[country] : Q16_ONE;
-        for (int32_t i = 0; i < portfolio_size; ++i) {
-            const Candidate &candidate = portfolio[i];
-            if (candidate.allocated_count <= 0) continue;
-            if (!building_available(cell, candidate.type, true) ||
-                !evaluate_building_conditions(candidate.type, cell) ||
-                candidate.target_signature < 0 ||
-                candidate.target_signature >= static_cast<int32_t>(
-                    _signatures.size()) ||
-                _signatures[candidate.target_signature].profession_id !=
-                    _building_types[candidate.type].owner_profession_id) {
-                error = "building_investment_catalog_preflight_drift";
-                return false;
-            }
-            ConstructionMaterialPlan &plan = commit_material_plans[i];
-            if (!plan_construction_materials(
-                    cell, candidate.type, candidate.allocated_count,
-                    commit_cost_factor, plan, nullptr,
-                    &commit_virtual_stock)) {
-                error = "building_investment_material_preflight_drift";
-                return false;
-            }
-            const int64_t funded_per_building = saturating_add(
-                candidate.required_capital, candidate.merchant_credit,
-                _saturation_count);
-            const int64_t funded_total = saturating_mul(
-                candidate.allocated_count, funded_per_building,
-                _saturation_count);
-            if (plan.total_cost > funded_total) {
-                error = "building_investment_cost_preflight_drift";
-                return false;
-            }
         }
 
         for (int32_t i = 0; i < portfolio_size; ++i) {

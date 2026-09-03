@@ -217,7 +217,8 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_market_signals_rebuild_scratch.realized_withdrawal_ema);
     cap(_market_signals_rebuild_scratch.cost_anchor_price);
     cap(_market_signal_overflow_cells);
-    cap(_epoch_business_demand_ema); cap(_epoch_desired_business_demand);
+    cap(_epoch_business_demand_ema); cap(_epoch_derived_business_demand);
+    cap(_epoch_desired_business_demand);
     cap(_epoch_funded_business_demand); cap(_epoch_offered_supply_ema);
     cap(_epoch_producer_sellable_current);
     cap(_epoch_producer_merchant_sold_current);
@@ -1915,6 +1916,8 @@ Dictionary NativeEconomyRuntime::report() const {
         _building_investment_material_limited;
     out["building_investment_capital_limited"] =
         _building_investment_capital_limited;
+    out["building_investment_cost_envelope_trimmed"] =
+        _building_investment_cost_envelope_trimmed;
     out["building_investment_owner_population_limited"] =
         _building_investment_owner_population_limited;
     out["building_investment_jobs_started"] =
@@ -1924,6 +1927,10 @@ Dictionary NativeEconomyRuntime::report() const {
     out["building_investment_employment_catchup_cells"] =
         _building_investment_employment_catchup_cells;
     out["desired_business_demand"] = _desired_business_demand;
+    out["derived_business_demand_total"] = _derived_business_demand_total;
+    out["derived_business_demand_lanes"] = _derived_business_demand_lanes;
+    out["derived_business_demand_edges"] = _derived_business_demand_edges;
+    out["derived_business_demand_weight_q16"] = _derived_business_demand_weight_q16;
     out["funded_business_demand"] = _funded_business_demand;
     out["unfunded_business_demand"] = _unfunded_business_demand;
     out["owner_working_capital_allocated"] = _owner_working_capital_allocated;

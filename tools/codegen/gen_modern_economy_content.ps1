@@ -1985,6 +1985,10 @@ function Add-Terminal-Upgrade-Family([string]$Family, [string]$Token, [string]$D
 function Write-SelfSufficientBuilding([string]$Id, [string]$Name, [string]$Technology, [string]$Family,
     [int]$Tier, [string]$Owner, [string[]]$Outputs, [long[]]$OutputQty,
     [string[]]$Resources, [long[]]$ResourceQty, [int]$OwnerSlots = 1) {
+    # Caller quantities are already full-tool yields for capacity farms.
+    # Soft tools (required=32768) make bare-handed yield half of that rate;
+    # do not double capacity-farm outputs here.
+    $skipSoftTools = $Family -eq 'household_cloth'
     [double]$baseRevenue = 0
     for ($i = 0; $i -lt $Outputs.Count; $i++) {
         $buyFactor = Good-Integer-Field $Outputs[$i] 'merchant_buy_price_factor_q16' 62259
@@ -2002,6 +2006,38 @@ function Write-SelfSufficientBuilding([string]$Id, [string]$Name, [string]$Techn
         })
     }
     $shares = if ($Outputs.Count -eq 2) { @(32768, 32768) } else { @() }
+    $laborSlots = [Math]::Max(1, $OwnerSlots)
+    $toolQty = [long](100 * $laborSlots)
+    $inputGoodsLine = if ($skipSoftTools) {
+        'input_good_ids = PackedStringArray()'
+    } else {
+        'input_good_ids = PackedStringArray("tools")'
+    }
+    $inputQtyLine = if ($skipSoftTools) {
+        'input_quantities_per_day = PackedInt64Array()'
+    } else {
+        "input_quantities_per_day = PackedInt64Array($toolQty)"
+    }
+    $inputRequiredLine = if ($skipSoftTools) {
+        'input_required_q16 = PackedInt32Array()'
+    } else {
+        'input_required_q16 = PackedInt32Array(32768)'
+    }
+    $inputCategoryLine = if ($skipSoftTools) {
+        'input_category_ids = PackedStringArray()'
+    } else {
+        'input_category_ids = PackedStringArray("tools")'
+    }
+    $inputMinLine = if ($skipSoftTools) {
+        'input_min_quality_levels = PackedInt32Array()'
+    } else {
+        'input_min_quality_levels = PackedInt32Array(1)'
+    }
+    $inputOffsetsLine = if ($skipSoftTools) {
+        'input_candidate_offsets = PackedInt32Array(0)'
+    } else {
+        'input_candidate_offsets = PackedInt32Array(0, 0)'
+    }
     Write-Utf8 (Join-Path $buildingsDir "$Id.tres") @"
 [gd_resource type="Resource" script_class="BuildingProfile" load_steps=2 format=3]
 [ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
@@ -2020,8 +2056,14 @@ employee_profession_ids = PackedStringArray()
 employee_slots_per_building = PackedInt64Array()
 employee_wage_policy_ids = PackedStringArray()
 employee_reference_wages_per_day = PackedInt64Array()
-input_good_ids = PackedStringArray()
-input_quantities_per_day = PackedInt64Array()
+$inputGoodsLine
+$inputQtyLine
+$inputRequiredLine
+$inputCategoryLine
+$inputMinLine
+$inputOffsetsLine
+input_candidate_good_ids = PackedStringArray()
+input_candidate_efficiency_q16 = PackedInt32Array()
 output_good_ids = $(PSArray $Outputs)
 output_quantities_per_day = $(PI64 $OutputQty)
 output_cost_shares_q16 = $(PI32 $shares)

@@ -1695,14 +1695,14 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 !read_le(bytes, cursor, edge.employee_employed) ||
                 !_families.valid_handle(edge.family_handle, family) ||
                 !_population.valid_handle(edge.cohort_handle, slot) ||
-                edge.people <= 0 || edge.cash_claim < 0 ||
-                edge.population_basis < edge.people ||
-                edge.funds_basis < edge.cash_claim ||
-                edge.owner_employed < 0 || edge.employee_employed < 0 ||
-                edge.owner_employed + edge.employee_employed > edge.people) {
+                edge.people <= 0 || edge.cash_claim < 0) {
                 error = "save_family_membership_invalid";
                 return false;
             }
+            // Older saves could persist overshot employment attribution or
+            // stale population/funds bases after membership merges. Repair the
+            // derived fields instead of rejecting an otherwise loadable world.
+            sanitize_family_membership_edge(edge);
             _family_memberships.push_back(edge);
             ++_restore.restored_family_memberships;
         }

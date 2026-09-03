@@ -119,6 +119,36 @@ Dictionary DCWorldExt::run_country_slice(const Dictionary &ctx) {
     return out;
 }
 
+Dictionary DCWorldExt::sync_country_territory_to_map() {
+    Dictionary out;
+    out["ok"] = false;
+    if (_country_runtime == nullptr) {
+        out["reason"] = "country_runtime_unavailable";
+        return out;
+    }
+    if (_map_data == nullptr) {
+        out["reason"] = "map_data_unbound";
+        return out;
+    }
+    NativeCountryRuntime *runtime = country_runtime_from(_country_runtime);
+    const int slot = component_id(StringName("cell_country_slot"));
+    if (slot < 0) {
+        out["reason"] = "country_slot_unavailable";
+        return out;
+    }
+    const auto publish_start = std::chrono::steady_clock::now();
+    const PackedInt32Array snapshot = runtime->cell_country_snapshot();
+    write_i32_range(slot, 0, snapshot);
+    _flush_slot_to_map(slot);
+    const double publish_ms = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - publish_start).count();
+    runtime->mark_slot_publication(true, publish_ms);
+    out["ok"] = true;
+    out["cells"] = snapshot.size();
+    out["slot_publish_ms"] = publish_ms;
+    return out;
+}
+
 bool DCWorldExt::country_should_run(int64_t day_index) const {
     return _country_runtime != nullptr && country_runtime_from(_country_runtime)->should_run(day_index);
 }

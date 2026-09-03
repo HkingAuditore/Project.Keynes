@@ -45,6 +45,10 @@ func _run() -> void:
 	var first_clock: WorldClock = first_scene.get_node("WorldClock")
 	first_clock.speed_multiplier = 0.0
 	first_clock.pause(false)
+	_expect("new game binds a valid player country for vision",
+		first_host.player_country_slot() >= 0)
+	_expect("new game has non-empty explored progress",
+		_count_nonzero(first_host.current_map().explored_arr) > 0)
 	var expected := _capture_hashes(first_host, first_clock)
 	var save_result: Dictionary = await _game_save.call("request_manual_save", "manual_3")
 	_expect("PKSV manual save completed", bool(save_result.get("ok", false)))
@@ -63,6 +67,7 @@ func _run() -> void:
 	if not bool(save_result.get("ok", false)):
 		_finish()
 		return
+	await _verify_wiped_fog_is_never_persisted(first_host)
 
 	var load_begin: Dictionary = _game_flow.call("begin_load_game", "manual_3")
 	_expect("load request accepted", bool(load_begin.get("ok", false)))
@@ -83,10 +88,33 @@ func _run() -> void:
 		var actual := _capture_hashes(loaded_host, loaded_clock)
 		for key in expected:
 			_expect("round-trip hash %s" % key, str(actual.get(key, "")) == str(expected[key]))
+		_expect("load rebinds a valid player country for vision",
+			loaded_host.player_country_slot() >= 0)
+		_expect("load preserves non-empty explored progress",
+			_count_nonzero(loaded_host.current_map().explored_arr) > 0)
 		_expect("loaded clock retains unpaused zero-speed mode",
 			not loaded_clock.paused and is_zero_approx(loaded_clock.speed_multiplier))
 		await _verify_post_restore_cycle(loaded_host, loaded_clock)
 	_finish()
+
+
+## 探索进度是单调的玩家资产。视野解算一旦失效（历史 bug 会把玩家国家绑成 -1），
+## 写档必须先自修复，修不好就拒绝落盘，绝不能把全 0 位图盖到上一份存档上。
+func _verify_wiped_fog_is_never_persisted(host: WorldRuntimeHost) -> void:
+	var wiped := PackedByteArray()
+	wiped.resize(host.current_map().cell_count())
+	host.current_map().explored_arr = wiped
+	var guarded: Dictionary = await _game_save.call("request_manual_save", "manual_2")
+	if not bool(guarded.get("ok", false)):
+		_expect("wiped fog save is rejected with the vision code",
+			String(guarded.get("code", "")) == "pkfg_vision_unsolved")
+		return
+	var probe: Dictionary = _game_save.call("prepare_load", "manual_2")
+	var bundle: Dictionary = probe.get("bundle", {})
+	var sections: Dictionary = bundle.get("sections", {})
+	var pkfg: Dictionary = sections.get("pkfg", {})
+	_expect("save never persists an empty explored bitmap",
+		_count_nonzero(PackedByteArray(pkfg.get("explored", PackedByteArray()))) > 0)
 
 
 func _verify_post_restore_cycle(host: WorldRuntimeHost, clock: WorldClock) -> void:
@@ -161,6 +189,13 @@ func _hash_variant(value) -> String:
 	context.start(HashingContext.HASH_SHA256)
 	context.update(var_to_bytes(value))
 	return context.finish().hex_encode()
+
+
+func _count_nonzero(values: PackedByteArray) -> int:
+	var count := 0
+	for value in values:
+		count += 1 if value != 0 else 0
+	return count
 
 
 func _slot(slots: Array, slot_id: String) -> Dictionary:

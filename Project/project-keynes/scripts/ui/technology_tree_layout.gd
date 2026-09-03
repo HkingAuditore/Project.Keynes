@@ -25,14 +25,45 @@ const MAX_NODE_WIDTH := 252.0
 const MAX_FOCUS_CANVAS_WIDTH := 1600.0
 
 
-static func build(definitions: Array, eras: Array, domains: Array = [],
-		visual_edges: Array = []) -> Dictionary:
+# Parents/children only — enough for fog, detail relations, and focus geometry.
+# Full node/edge baking stays in build() and is deferred until layout_report needs it.
+static func build_topology(definitions: Array, visual_edges: Array = []) -> Dictionary:
 	var count := definitions.size()
 	if count == 0:
-		return {"ok": false, "nodes": [], "edges": [], "bands": [],
-			"parents": [], "children": [], "content_rect": Rect2()}
-	var domain_indices := _domain_indices(definitions, domains)
-	var lane_indices := _lane_indices(definitions, domain_indices)
+		return {"ok": false, "parents": [], "children": [], "index_by_id": {},
+			"nodes": [], "edges": [], "bands": [], "content_rect": Rect2()}
+	var graph := _dependency_graph(definitions, visual_edges)
+	return {
+		"ok": true,
+		"parents": graph.parents,
+		"children": graph.children,
+		"index_by_id": graph.index_by_id,
+		"nodes": [],
+		"edges": [],
+		"bands": [],
+		"content_rect": Rect2(),
+	}
+
+
+# Resolve application/branch edges once so build_focus does not scan thousands of
+# catalog edges on every era/visibility change.
+static func index_soft_edges(visual_edges: Array, index_by_id: Dictionary) -> Array:
+	var soft: Array[Dictionary] = []
+	for edge_value in visual_edges:
+		var edge: Dictionary = edge_value
+		var kind := String(edge.get("kind", ""))
+		if kind not in ["application", "branch"]:
+			continue
+		var from := int(index_by_id.get(String(edge.get("from", "")), -1))
+		var to := int(index_by_id.get(String(edge.get("to", "")), -1))
+		if from < 0 or to < 0 or from == to:
+			continue
+		soft.append({"from": from, "to": to, "kind": kind})
+	return soft
+
+
+static func _dependency_graph(definitions: Array, visual_edges: Array) -> Dictionary:
+	var count := definitions.size()
 	var index_by_id := {}
 	for i in range(count):
 		index_by_id[String((definitions[i] as Dictionary).get("id", ""))] = i
@@ -80,6 +111,27 @@ static func build(definitions: Array, eras: Array, domains: Array = [],
 				children[parent] = parent_children
 				edge_pairs.append({"from": parent, "to": child, "kind": "hard"})
 			parents[child] = child_parents
+	return {
+		"index_by_id": index_by_id,
+		"parents": parents,
+		"children": children,
+		"edge_pairs": edge_pairs,
+	}
+
+
+static func build(definitions: Array, eras: Array, domains: Array = [],
+		visual_edges: Array = []) -> Dictionary:
+	var count := definitions.size()
+	if count == 0:
+		return {"ok": false, "nodes": [], "edges": [], "bands": [],
+			"parents": [], "children": [], "content_rect": Rect2()}
+	var domain_indices := _domain_indices(definitions, domains)
+	var lane_indices := _lane_indices(definitions, domain_indices)
+	var graph := _dependency_graph(definitions, visual_edges)
+	var index_by_id: Dictionary = graph.index_by_id
+	var parents: Array = graph.parents
+	var children: Array = graph.children
+	var edge_pairs: Array = graph.edge_pairs
 
 	var era_order := _era_order(definitions, eras)
 	var era_slot := {}
@@ -195,9 +247,10 @@ static func build_focus(definitions: Array, eras: Array, domains: Array,
 		visual_edges: Array, domain_id: String, focus_era: int,
 		visible_nodes: PackedByteArray = PackedByteArray(),
 		base_layout: Dictionary = {},
-		canvas_size: Vector2 = Vector2.ZERO) -> Dictionary:
+		canvas_size: Vector2 = Vector2.ZERO,
+		soft_edges: Array = []) -> Dictionary:
 	var full := base_layout if not base_layout.is_empty() \
-		else build(definitions, eras, domains, visual_edges)
+		else build_topology(definitions, visual_edges)
 	if not bool(full.get("ok", false)) or definitions.is_empty():
 		return {"ok": false, "nodes": [], "edges": [], "portals": [],
 			"bands": [], "lanes": [], "content_rect": Rect2()}
@@ -362,22 +415,19 @@ static func build_focus(definitions: Array, eras: Array, domains: Array,
 					"target": int(child),
 					"direction": "outgoing",
 				})
-	var focus_index_by_id := {}
-	for index in local_lookup:
-		focus_index_by_id[String((definitions[index] as Dictionary).get("id", ""))] = int(index)
-	for edge_value in visual_edges:
-		var visual: Dictionary = edge_value
-		var visual_kind := String(visual.get("kind", ""))
-		if visual_kind not in ["application", "branch"]:
-			continue
-		var from := int(focus_index_by_id.get(String(visual.get("from", "")), -1))
-		var to := int(focus_index_by_id.get(String(visual.get("to", "")), -1))
-		if from < 0 or to < 0:
+	var soft_source: Array = soft_edges
+	if soft_source.is_empty() and not visual_edges.is_empty():
+		soft_source = index_soft_edges(visual_edges, index_by_id)
+	for edge_value in soft_source:
+		var soft: Dictionary = edge_value
+		var from := int(soft.get("from", -1))
+		var to := int(soft.get("to", -1))
+		if not local_lookup.has(from) or not local_lookup.has(to):
 			continue
 		edges.append({
 			"from": from,
 			"to": to,
-			"kind": visual_kind,
+			"kind": String(soft.get("kind", "application")),
 			"points": _edge_points(rect_by_index[from], rect_by_index[to]),
 		})
 	content_rect.size.y = maxf(content_rect.size.y, cursor_y)

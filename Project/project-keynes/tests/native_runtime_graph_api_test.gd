@@ -9,6 +9,7 @@ func _init() -> void:
 	var required := [
 		"configure_runtime_graph", "advance_runtime_pulse",
 		"flush_runtime_visuals", "get_runtime_perf_snapshot",
+		"sync_country_territory_to_map",
 		"economy_deadline_critical",
 	]
 	for method_name in required:
