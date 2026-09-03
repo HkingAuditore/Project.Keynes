@@ -246,6 +246,20 @@ compiles `ProductionClimateProfile` resources and retains the climate/resource
 reference fallbacks; it never settles production. The change adds no scheduler
 node or GDScript economy authority. Empty profile IDs are an identity capacity.
 
+## Economy production shortage propagation authority override (current)
+
+`NativeEconomyRuntime` keeps hard-input execution and economic intent separate.
+For an installed ACTIVE group with a live owner and an output inventory gap,
+the native building plan may retain a cash-backed `1/32` storable or `1/6`
+cycle-flow probe even when input stock is zero. The value reuses the existing
+building planning/diagnostic field and is not a second economy state: actual
+capacity, withdrawals, wages, goods, and money remain zero until normal
+settlement can fund and reserve the input. Planned, funded, and unfunded input
+quantities reuse the sparse market-signal CSR and update the existing business
+demand EMA used by price and merchant procurement. The propagation is one
+output-to-input hop per production cycle; no PKEC/DataCore schema, price ABI,
+scheduler node, or GDScript authority changes.
+
 ## Climate moisture visibility override (current)
 
 `DCWorldExt.cell_moisture` remains the simulation authority; no schema,

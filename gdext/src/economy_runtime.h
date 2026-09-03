@@ -971,6 +971,9 @@ private:
         int64_t last_base_wages_due = 0;
         int64_t last_bonus_paid = 0;
         int64_t last_bonus_due = 0;
+        // Planned purchase/production intent. This may retain a bounded
+        // shortage-recovery probe while last_capacity_q16 is zero because a
+        // hard input cannot be funded or reserved.
         int64_t purchase_intent_capacity_q16 = 0;
         int32_t realized_profit_margin_q16 = 0;
         uint16_t severe_loss_cycles = 0;
@@ -5289,6 +5292,14 @@ private:
     int64_t fiscal_escrow_total() const;
     bool apply_build_command(const Command &cmd, int32_t owner_slot,
                              std::string &error, bool allow_obsolete_tier = false);
+    bool commit_preflighted_build_command(
+        const Command &cmd, int32_t owner_slot,
+        const ConstructionMaterialPlan &material_plan,
+        int32_t effective_construction_days,
+        int64_t construction_debt_principal,
+        int64_t construction_debt_premium,
+        int64_t funding_gap,
+        std::string &error);
     bool plan_construction_materials(int32_t cell, int32_t type_id,
                                      int64_t count, int32_t cost_factor_q16,
                                      ConstructionMaterialPlan &plan,

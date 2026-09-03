@@ -2988,6 +2988,21 @@ prevents a resource- or climate-limited building that is already using all of
 its executable capacity from suppressing a valid market signal and employment
 catch-up investment.
 
+When an ACTIVE installed group has a technologically valid hard input but no
+stock, `building_plan` keeps a bounded purchase intent instead of collapsing it
+to zero. The output-side pressure is the maximum of household shortage,
+business-demand stock gap, and the normalized `demand - available_stock` gap;
+the probe floor is `1/32` for storable outputs and `1/6` for cycle-flow outputs.
+The floor is enabled only with a live owner, an output gap, and a valid input
+market, then capped by owner plus local merchant cash coverage for one current
+period. `last_capacity_q16` remains the executable result and is still forced to
+zero when the hard input cannot be purchased. Production publishes the planned,
+funded, and unfunded input quantities through the existing sparse `(cell, good)`
+signal lanes. Unfunded demand therefore feeds the normal business-demand EMA,
+price pressure, and merchant forecast on the next cycle without minting money or
+goods. Propagation is one output-to-input hop per cycle; no recursive industry
+closure, dense market matrix, save field, DataCore slot, or price ABI is added.
+
 When a profitable candidate passes technology, resource, input, material,
 target-margin, and payback gates but its sponsor lacks liquid startup capital,
 ACTIVE merchant credit may fund the construction bundle plus the bounded input,

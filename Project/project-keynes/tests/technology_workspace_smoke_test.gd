@@ -107,7 +107,61 @@ func _init() -> void:
 	await _audit_fit(workspace, tree)
 	_audit_refresh(workspace, tree, definitions, eras, domains)
 	_audit_navigation(workspace, tree, definitions)
+	_audit_application_card(definitions, eras, domains)
 	_finish()
+
+
+func _audit_application_card(definitions: Array, eras: Array, domains: Array) -> void:
+	var application := {
+		"id": "app.test_industry_step",
+		"display_name": "测试产业应用",
+		"era_id": String((definitions[4] as Dictionary).get("era_id", "stone")),
+		"domain_id": String((definitions[4] as Dictionary).get("domain_id", "agriculture")),
+		"layout_lane": String((definitions[4] as Dictionary).get("layout_lane", "")),
+		"anchor_kind": "application",
+		"node_role": "application",
+		"is_application": true,
+		"required_technology_ids": PackedStringArray([
+			String((definitions[0] as Dictionary).id),
+			String((definitions[4] as Dictionary).id),
+		]),
+		"primary_technology_id": String((definitions[0] as Dictionary).id),
+		"cost_points": 0,
+		"progression_step": 1,
+		"maturity_display_names": PackedStringArray(["采集阶段"]),
+	}
+	var combined := definitions.duplicate(true)
+	combined.append(application)
+	var model := _model(definitions, eras, domains)
+	model.technology_definitions = combined
+	model.technology_research_definition_count = definitions.size()
+	var edges: Array = TechnologyCatalogScript.public_visual_edges()
+	edges.append({"from": String((definitions[0] as Dictionary).id),
+		"to": application.id, "kind": "application"})
+	edges.append({"from": String((definitions[4] as Dictionary).id),
+		"to": application.id, "kind": "application"})
+	model.technology_visual_edges = edges
+	var workspace := WorkspaceScene.instantiate() as Control
+	get_root().add_child(workspace)
+	workspace.set_model(model)
+	var native_states: PackedInt32Array = model.research.technology_states
+	var states: PackedInt32Array = workspace._presentation_states(native_states)
+	_expect("application card is visible but locked when one required tech is unfinished",
+		states.size() == combined.size() and states[definitions.size()] == 2)
+	var conditions: Array = workspace._application_condition_items(application, states)
+	_expect("application detail distinguishes primary and supporting technologies",
+		_items_contain(conditions, "主科技") and _items_contain(conditions, "支撑科技"))
+	native_states[4] = 0
+	states = workspace._presentation_states(native_states)
+	_expect("application card remains unknown while a required tech is hidden",
+		states[definitions.size()] == 0)
+	native_states[4] = 5
+	states = workspace._presentation_states(native_states)
+	_expect("application card is derived as enabled only after every required tech completes",
+		states[definitions.size()] == 5)
+	_expect("application card never enters native research state storage",
+		native_states.size() == definitions.size())
+	workspace.queue_free()
 
 
 func _model(definitions: Array, eras: Array, domains: Array) -> Dictionary:

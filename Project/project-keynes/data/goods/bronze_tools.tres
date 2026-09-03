@@ -1,12 +1,15 @@
-[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
 [ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
 [resource]
 script = ExtResource("1")
 id = &"bronze_tools"
 display_name = "青铜工具"
+semantic_tags = PackedStringArray()
 category_id = &"tools"
 substitution_category_ids = PackedStringArray("tools")
-technology_tags = PackedStringArray("tech.application.ore_bronzesmith_camp", "tech.application.bronze_tool_workshop")
+technology_tags = PackedStringArray("tech.copper_annealing", "tech.bronze_casting")
 production_quality_level = 2
 production_efficiency_q16 = 52429
 default_price = 26000

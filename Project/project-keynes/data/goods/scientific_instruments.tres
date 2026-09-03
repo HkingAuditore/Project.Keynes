@@ -1,11 +1,14 @@
-[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
 [ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
 [resource]
 script = ExtResource("1")
 id = &"scientific_instruments"
 display_name = "科学仪器"
+semantic_tags = PackedStringArray()
 category_id = &"scientific_instruments"
 substitution_category_ids = PackedStringArray("scientific_instruments")
-technology_tags = PackedStringArray("tech.application.scientific_instrument_works", "tech.application.method_scientific_instrument_works_r8", "tech.application.method_scientific_instrument_works_r10")
+technology_tags = PackedStringArray("tech.industrial_research", "tech.industrial_quality_control")
 default_price = 58000
 reference_max_price = 2900000

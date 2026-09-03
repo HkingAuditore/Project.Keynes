@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
 
 [ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
 
@@ -6,11 +6,9 @@
 script = ExtResource("1")
 id = &"reed_bundle"
 display_name = "芦苇束"
+semantic_tags = PackedStringArray()
 category_id = &"primitive_construction"
 substitution_category_ids = PackedStringArray("primitive_construction", "plant_construction", "primitive_lashing")
 technology_tags = PackedStringArray("industry.primary", "tech.reed_harvesting")
-production_quality_level = 0
-production_efficiency_q16 = 65536
 default_price = 4500
 reference_max_price = 225000
-

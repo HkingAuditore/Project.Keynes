@@ -70,6 +70,7 @@ func _run() -> void:
 	_test_hunter_subsistence_and_working_capital(catalog, profile)
 	_test_shortage_recovery_uses_household_stock(catalog, profile)
 	_test_business_demand_recovers_industrial_utilization(catalog, profile)
+	_test_input_shortage_propagates_to_upstream(catalog, profile)
 	_test_production_input_hard_reserve(catalog, profile)
 	_test_production_input_soft_shortage(catalog, profile)
 	_test_producer_support_issuance(catalog, profile)
@@ -3775,6 +3776,99 @@ func _test_business_demand_recovers_industrial_utilization(
 	_expect("business shortage keeps knapping above the industrial probe floor",
 		group >= 0 and utilization > 65536 / 32)
 	_expect("business-demand recovery cycles conserve every ledger", ledgers_ok)
+
+func _test_input_shortage_propagates_to_upstream(source_catalog: Dictionary,
+		source_profile: Dictionary) -> void:
+	var catalog := source_catalog.duplicate(true)
+	var profile := source_profile.duplicate(true)
+	profile.starvation_death_rate_q32 = 0
+	var building_ids: PackedStringArray = catalog.building_type_ids
+	var flint_quarry_id := building_ids.find("flint_quarry")
+	var knapping_id := building_ids.find("knapping_workshop")
+	var timber_id := building_ids.find("timber_collector")
+	var goods: PackedStringArray = catalog.good_ids
+	var flint_good := goods.find("flint")
+	var tool_good := goods.find("chipped_stone_tools")
+	var logs_good := goods.find("logs")
+	_minimize_household_good_demand(catalog, tool_good)
+	_require_materials_for_primitive_collectors(catalog, tool_good)
+	_block_construction_except(catalog, PackedInt32Array([
+		flint_quarry_id, knapping_id, timber_id]), _luxury_blocking_good(catalog))
+	# Make the downstream timber producer consume the same tools made by the
+	# knapping workshop, so its output gap creates a business demand signal.
+	var input_offsets: PackedInt32Array = catalog.building_input_offsets
+	var candidate_offsets: PackedInt32Array = catalog.building_input_candidate_offsets
+	var candidate_goods: PackedInt32Array = catalog.building_input_candidate_good_ids
+	var timber_input := int(input_offsets[timber_id])
+	for candidate_idx in range(int(candidate_offsets[timber_input]),
+			int(candidate_offsets[timber_input + 1])):
+		candidate_goods[candidate_idx] = tool_good
+	catalog.building_input_candidate_good_ids = candidate_goods
+	var ext := _new_ext(catalog)
+	_expect("shortage-propagation country bootstraps",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 191))
+	_expect("shortage-propagation runtime configures",
+		bool(ext.configure_economy(catalog, profile, 1, 191).get("ok", false)))
+	_seed_resource_reserve(ext, catalog, "flint", 1000000000.0)
+	var signatures: PackedStringArray = catalog.signature_keys
+	var artisan_sig := signatures.find("artisan|default")
+	var forager_sig := signatures.find("forager|default")
+	var merchant_sig := signatures.find("merchant|default")
+	var stock := PackedInt64Array()
+	stock.resize(goods.size())
+	stock.fill(1000000)
+	stock[flint_good] = 0
+	stock[tool_good] = 0
+	stock[logs_good] = 0
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0, 0]),
+		"signature_ids": PackedInt32Array([
+			artisan_sig, forager_sig, merchant_sig]),
+		"population": PackedInt64Array([1, 6, 1]),
+		"funds": PackedInt64Array([200000, 400000, 1000000000]),
+	}, {
+		"stock": stock,
+		"building_cells": PackedInt32Array([0, 0, 0]),
+		"building_type_ids": PackedInt32Array([
+			knapping_id, timber_id, flint_quarry_id]),
+		"building_owner_signature_ids": PackedInt32Array([
+			artisan_sig, forager_sig, forager_sig]),
+		"building_counts": PackedInt64Array([1, 3, 1]),
+	})
+	_expect("shortage-propagation fixture bootstraps", bool(boot.get("ok", false)))
+	var ledgers_ok := true
+	var intent_seen := false
+	var desired_seen := false
+	var unfunded_seen := false
+	var ema_seen := false
+	var quarry_opportunity := false
+	var flint_recovered := false
+	var knapping_output_seen := false
+	for day in range(10):
+		var report := _run_day(ext, day)
+		ledgers_ok = ledgers_ok and int(report.get("population_error", 1)) == 0 and \
+			int(report.get("money_error", 1)) == 0 and \
+			int(report.get("goods_error", 1)) == 0
+		var market: Dictionary = ext.get_market_cell_snapshot(0)
+		var buildings: Dictionary = ext.get_building_cell_snapshot(0)
+		var knapping_row := (buildings.group_type_ids as PackedInt32Array).find(knapping_id)
+		var quarry_row := (buildings.group_type_ids as PackedInt32Array).find(flint_quarry_id)
+		if knapping_row >= 0:
+			intent_seen = intent_seen or int((buildings.purchase_intent_capacity_q16 as PackedInt64Array)[knapping_row]) > 0
+			knapping_output_seen = knapping_output_seen or int((buildings.last_output as PackedInt64Array)[knapping_row]) > 0
+		if quarry_row >= 0:
+			quarry_opportunity = quarry_opportunity or int((buildings.last_output as PackedInt64Array)[quarry_row]) > 0
+		desired_seen = desired_seen or _good_value(market, "desired_business_demand", "flint") > 0
+		unfunded_seen = unfunded_seen or _good_value(market, "unfunded_business_demand", "flint") > 0
+		ema_seen = ema_seen or _good_value(market, "business_demand_ema", "flint") > 0
+		flint_recovered = flint_recovered or _good_value(market, "stock", "flint") > 0
+	_expect("missing input keeps a bounded purchase intent", intent_seen)
+	_expect("missing input publishes unfunded upstream demand", desired_seen and unfunded_seen)
+	_expect("upstream demand reaches the business-demand EMA", ema_seen)
+	_expect("flint quarry receives a production opportunity", quarry_opportunity)
+	_expect("flint stock recovers without synthetic goods", flint_recovered)
+	_expect("knapping eventually resumes after flint recovery", knapping_output_seen)
+	_expect("shortage-propagation cycles conserve every ledger", ledgers_ok)
 
 func _test_production_input_hard_reserve(source_catalog: Dictionary,
 		source_profile: Dictionary) -> void:

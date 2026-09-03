@@ -10,6 +10,8 @@ const REQUIRED_SECTIONS := [
 ]
 const SaveRepositoryScript = preload("res://scripts/game/save_repository.gd")
 const RuntimeStateProviderScript = preload("res://scripts/game/runtime_state_provider.gd")
+const TECHNOLOGY_INDUSTRY_PROVIDER_ID := "technology_industry"
+const TECHNOLOGY_INDUSTRY_REVISION := 2
 
 var _repository = SaveRepositoryScript.new()
 var _runtime_host: WorldRuntimeHost
@@ -34,8 +36,13 @@ func _ready() -> void:
 func list_slots() -> Array:
 	var slots := _repository.list_slots()
 	for slot in slots:
-		if bool(slot.get("loadable", false)) and not _manifest_compatible(
-				slot.get("provider_manifest", [])):
+		if not bool(slot.get("loadable", false)):
+			continue
+		var manifest = slot.get("provider_manifest", [])
+		if _manifest_industry_revision(manifest) != TECHNOLOGY_INDUSTRY_REVISION:
+			slot.loadable = false
+			slot.reason = SaveRepositoryScript.LEGACY_INDUSTRY_REASON
+		elif not _manifest_compatible(manifest):
 			slot.loadable = false
 			slot.reason = "存档运行时 provider 版本不兼容。"
 	return slots
@@ -98,6 +105,10 @@ func prepare_load(slot_id: String) -> Dictionary:
 	var container: Dictionary = _repository.load_slot(slot_id)
 	if not bool(container.get("ok", false)):
 		return container
+	if _manifest_industry_revision(container.header.get(
+			"provider_manifest", [])) != TECHNOLOGY_INDUSTRY_REVISION:
+		return _result(false, "technology_industry_revision_incompatible",
+			SaveRepositoryScript.LEGACY_INDUSTRY_REASON)
 	if not _manifest_compatible(container.header.get("provider_manifest", [])):
 		return _result(false, "save_provider_incompatible",
 			"存档运行时 provider 缺失或版本不兼容。")
@@ -203,6 +214,7 @@ func _save(slot_id: String, reason: String) -> Dictionary:
 		"height": int(base.get("map_height", 0)),
 		"saved_at": Time.get_datetime_string_from_system(true),
 		"reason": reason,
+		"technology_industry_revision": TECHNOLOGY_INDUSTRY_REVISION,
 		"provider_manifest": collected.provider_manifest,
 	}
 	var result: Dictionary = _repository.write_slot(slot_id, header, collected.sections)
@@ -301,6 +313,12 @@ func _collect_sections(saved_paused: bool, saved_speed: float) -> Dictionary:
 			sections[section_id] = provider_sections[section_id]
 		context.current_provider_sections = provider_sections
 		provider_manifest.append(provider.manifest_entry(context))
+	provider_manifest.append({
+		"provider_id": TECHNOLOGY_INDUSTRY_PROVIDER_ID,
+		"schema_version": TECHNOLOGY_INDUSTRY_REVISION,
+		"sections": PackedStringArray(),
+		"content_hash": "",
+	})
 	for required in REQUIRED_SECTIONS:
 		if not sections.has(required):
 			return _result(false, "save_provider_missing", "运行时缺少 provider：%s" % required)
@@ -381,6 +399,9 @@ func _manifest_compatible(raw_manifest) -> bool:
 		if not raw is Dictionary:
 			return false
 		by_id[String(raw.get("provider_id", ""))] = raw
+	var industry_entry: Dictionary = by_id.get(TECHNOLOGY_INDUSTRY_PROVIDER_ID, {})
+	if int(industry_entry.get("schema_version", 1)) != TECHNOLOGY_INDUSTRY_REVISION:
+		return false
 	for provider in _providers:
 		var provider_id := String(provider.provider_id())
 		if not by_id.has(provider_id):
@@ -423,6 +444,16 @@ func _manifest_compatible(raw_manifest) -> bool:
 		if actual != expected:
 			return false
 	return true
+
+
+func _manifest_industry_revision(raw_manifest) -> int:
+	if not raw_manifest is Array:
+		return 1
+	for raw in raw_manifest:
+		if raw is Dictionary and String(raw.get("provider_id", "")) \
+				== TECHNOLOGY_INDUSTRY_PROVIDER_ID:
+			return int(raw.get("schema_version", 1))
+	return 1
 
 
 func _can_world_provider(context: Dictionary) -> Dictionary:

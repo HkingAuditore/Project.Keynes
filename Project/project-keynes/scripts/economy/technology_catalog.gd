@@ -52,6 +52,7 @@ const ROUTE_VALUE_NAMES_ZH := {
 	"horse": "马匹", "industrial": "工业农业", "inland": "内陆", "iron": "铁",
 	"knowledge": "知识", "laboratory": "实验室", "learning": "机器学习", "machinery": "机械",
 	"maize": "玉米", "maritime": "海运", "market": "市场", "materials": "合成材料",
+	"medicinal_herb": "药草",
 	"mechanized": "机械化", "minerals": "矿产", "modeling": "建模", "network": "网络",
 	"nuclear": "核能", "observation": "观察", "oil": "石油", "oral": "口述传承",
 	"pasture": "牧场", "phosphate": "磷矿", "planning": "规划", "plants": "野生植物",
@@ -80,6 +81,80 @@ static func _network_payload() -> Dictionary:
 	return _network_payload_cache
 
 
+## Validate the cold-path application intersections introduced by schema v4.
+## These records intentionally remain outside the technology dense index.
+static func validate_application_intersections(network: Dictionary,
+		technology_rows: Array = []) -> Dictionary:
+	var schema_version := int(network.get("schema_version", 0))
+	if schema_version == 3:
+		return {"ok": true, "application_intersections": []}
+	if schema_version != 4:
+		return {"ok": false, "reason": "technology_network_schema_version_invalid"}
+	var raw = network.get("application_intersections", null)
+	if not raw is Array:
+		return {"ok": false, "reason": "technology_application_intersections_missing"}
+	var rows: Array = technology_rows
+	if rows.is_empty():
+		rows = network.get("nodes", []) as Array
+	var technology_ids := {}
+	for value in rows:
+		var row: Dictionary = value
+		var technology_id := String(row.get("id", ""))
+		if technology_id.begins_with("tech."):
+			technology_ids[technology_id] = true
+	var era_ids := {}
+	for value in network.get("eras", []):
+		era_ids[String((value as Dictionary).get("id", ""))] = true
+	var domain_ids := {}
+	for value in network.get("domains", []):
+		domain_ids[String((value as Dictionary).get("id", ""))] = true
+	var branch_ids := {}
+	for value in (network.get("backbones", []) as Array) + (network.get("branch_families", []) as Array):
+		branch_ids[String((value as Dictionary).get("id", ""))] = true
+	var seen := {}
+	var cjk := RegEx.new()
+	cjk.compile("[\\x{4e00}-\\x{9fff}]")
+	for value in raw as Array:
+		if not value is Dictionary:
+			return {"ok": false, "reason": "technology_application_intersection_invalid"}
+		var row: Dictionary = value
+		var intersection_id := String(row.get("id", "")).strip_edges()
+		if not intersection_id.begins_with("app.") or seen.has(intersection_id):
+			return {"ok": false, "reason": "technology_application_intersection_id_invalid", "id": intersection_id}
+		seen[intersection_id] = true
+		var display_name := String(row.get("display_name", "")).strip_edges()
+		if display_name.is_empty() or cjk.search(display_name) == null:
+			return {"ok": false, "reason": "technology_application_intersection_display_name_invalid", "id": intersection_id}
+		var era_id := String(row.get("era_id", "")).strip_edges()
+		var domain_id := String(row.get("domain_id", "")).strip_edges()
+		var branch_id := String(row.get("branch_family_id",
+			row.get("industry_chain_id", ""))).strip_edges()
+		var has_layout := not String(row.get("layout_lane", "")).strip_edges().is_empty() \
+			or row.has("layout_order")
+		if not era_ids.has(era_id) or not domain_ids.has(domain_id) or branch_id.is_empty() \
+				or not branch_ids.has(branch_id) or not has_layout:
+			return {"ok": false, "reason": "technology_application_intersection_metadata_invalid", "id": intersection_id}
+		var required: Array = row.get("required_technology_ids", [])
+		if required.size() < 2:
+			return {"ok": false, "reason": "technology_application_intersection_prerequisite_count_invalid", "id": intersection_id}
+		var required_seen := {}
+		for technology_value in required:
+			var technology_id := String(technology_value)
+			if not technology_id.begins_with("tech.") or not technology_ids.has(technology_id) or required_seen.has(technology_id):
+				return {"ok": false, "reason": "technology_application_intersection_technology_invalid", "id": intersection_id, "technology_id": technology_id}
+			required_seen[technology_id] = true
+		var buildings: Array = row.get("building_ids", [])
+		if buildings.is_empty():
+			return {"ok": false, "reason": "technology_application_intersection_buildings_empty", "id": intersection_id}
+		var building_seen := {}
+		for building_value in buildings:
+			var building_id := String(building_value).strip_edges()
+			if building_id.is_empty() or building_seen.has(building_id):
+				return {"ok": false, "reason": "technology_application_intersection_building_invalid", "id": intersection_id, "building_id": building_id}
+			building_seen[building_id] = true
+	return {"ok": true, "application_intersections": (raw as Array).duplicate(true)}
+
+
 static func compile_native_catalog() -> Dictionary:
 	var signal_catalog := ResearchSignalCatalogScript.compile_native_catalog()
 	if not bool(signal_catalog.get("ok", false)):
@@ -88,14 +163,17 @@ static func compile_native_catalog() -> Dictionary:
 	if not bool(network.get("ok", false)):
 		return network
 	var technology_rows: Array = (network.get("nodes", []) as Array).duplicate(true)
-	# Schema-v3 authoring is already era-grouped and topologically ordered. Do
-	# not re-sort by legacy layout_order: a same-era dependency may legitimately
-	# point from a later visual row to an earlier one.
+	# The authored technology-node list is era-grouped and topologically ordered.
+	# Do not mix v4 application intersections into it or re-sort by layout data.
 	var era_rows: Array = network.get("eras", [])
 	var domain_rows: Array = network.get("domains", [])
+	var schema_version := int(network.get("schema_version", 0))
 	if technology_rows.is_empty() or era_rows.size() != 11 or domain_rows.size() != 4 \
-			or int(network.get("schema_version", 0)) != 3:
+			or schema_version not in [3, 4]:
 		return {"ok": false, "reason": "technology_network_shape_invalid"}
+	var application_validation := validate_application_intersections(network, technology_rows)
+	if not bool(application_validation.get("ok", false)):
+		return application_validation
 	var ids := PackedStringArray()
 	var names := PackedStringArray()
 	var era_ids := PackedStringArray()
@@ -363,6 +441,7 @@ static func compile_native_catalog() -> Dictionary:
 		"starting_technology_ids": PackedStringArray(STARTING_IDS),
 		"starter_eligible_technology_ids": starter_eligible_ids,
 		"technology_visual_edges": (network.get("visual_edges", []) as Array).duplicate(true),
+		"technology_application_intersections": application_validation.application_intersections,
 	}
 	for era_index_value in range(era_rows.size()):
 		out.technology_era_reward_pool_ids.append(
@@ -454,9 +533,6 @@ static func _validate_knowledge_basis(row: Dictionary, row_by_id: Dictionary) ->
 				return {"ok": false, "reason": "technology_knowledge_alternative_not_visible",
 					"id": technology_id, "alternative_id": alternative_id}
 			alternative_seen[alternative_id] = true
-	if String(row.get("anchor_kind", "")) == "application" and required_ids.size() < 2:
-		return {"ok": false, "reason": "technology_application_foundation_count_invalid",
-			"id": technology_id}
 	if not exemption_reason.is_empty():
 		var exemption_allowed := bool(row.get("is_starter_eligible", false)) \
 			or bool(row.get("is_milestone", false)) \
@@ -933,6 +1009,46 @@ static func public_visual_edges() -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	for edge_value in network.get("visual_edges", []):
 		out.append((edge_value as Dictionary).duplicate(true))
+	return out
+
+
+static func public_application_intersections(compiled_catalog: Dictionary = {}) -> Array[Dictionary]:
+	var compiled := compiled_catalog if not compiled_catalog.is_empty() else compile_native_catalog()
+	if not bool(compiled.get("ok", false)):
+		return []
+	var out: Array[Dictionary] = []
+	for value in compiled.get("technology_application_intersections", []):
+		var source: Dictionary = value
+		out.append({
+			"id": String(source.get("id", "")),
+			"display_name": String(source.get("display_name", "")),
+			"era_id": String(source.get("era_id", "")),
+			"domain_id": String(source.get("domain_id", "")),
+			"branch_family_id": String(source.get("branch_family_id",
+				source.get("industry_chain_id", ""))),
+			"industry_chain_id": String(source.get("industry_chain_id",
+				source.get("branch_family_id", ""))),
+			"layout_lane": String(source.get("layout_lane", "")),
+			"layout_order": float(source.get("layout_order", 0.0)),
+			"required_technology_ids": PackedStringArray(source.get("required_technology_ids", [])),
+			"building_ids": PackedStringArray(source.get("building_ids", [])),
+		})
+	return out
+
+
+## Kept separate from public_visual_edges because app.* endpoints are not
+## technologies and must never enter the research-runtime graph.
+static func public_application_visual_edges(compiled_catalog: Dictionary = {}) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for intersection in public_application_intersections(compiled_catalog):
+		var application_id := String(intersection.get("id", ""))
+		for required_id in intersection.get("required_technology_ids", PackedStringArray()):
+			out.append({
+				"from": String(required_id),
+				"to": application_id,
+				"kind": "application",
+				"application_id": application_id,
+			})
 	return out
 
 

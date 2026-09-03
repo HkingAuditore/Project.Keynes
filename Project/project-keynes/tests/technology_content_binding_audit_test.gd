@@ -98,56 +98,43 @@ func _init() -> void:
 
 
 func _assert_goods_unlock_with_runnable_producer(catalog: Dictionary) -> void:
-	var definitions: Array = TechnologyCatalogScript.public_definitions()
-	var definition_by_id := {}
-	for definition_value in definitions:
-		var definition: Dictionary = definition_value
-		definition_by_id[String(definition.get("id", ""))] = definition
-	var goods_by_technology := {}
 	var good_ids: PackedStringArray = catalog.good_ids
 	var good_tag_offsets: PackedInt32Array = catalog.good_technology_tag_offsets
 	var good_tags: PackedStringArray = catalog.good_technology_tags
 	for good_index in range(good_ids.size()):
+		var unlocking_technologies := PackedStringArray()
 		for tag_index in range(good_tag_offsets[good_index], good_tag_offsets[good_index + 1]):
 			var technology_id := String(good_tags[tag_index])
-			if not technology_id.begins_with("tech."):
+			if technology_id.begins_with("tech."):
+				assert(not technology_id.begins_with("tech.application."), technology_id)
+				unlocking_technologies.append(technology_id)
+		assert(not unlocking_technologies.is_empty(), good_ids[good_index])
+		var valid_producer := ""
+		for building_index in range((catalog.building_type_ids as PackedStringArray).size()):
+			if not _building_outputs_good(catalog, building_index, good_index):
 				continue
-			var technology_goods: PackedStringArray = goods_by_technology.get(
-				technology_id, PackedStringArray())
-			technology_goods.append(String(good_ids[good_index]))
-			goods_by_technology[technology_id] = technology_goods
-	for technology_id_value in goods_by_technology:
-		var technology_id := String(technology_id_value)
-		assert(definition_by_id.has(technology_id), technology_id)
-		var definition: Dictionary = definition_by_id[technology_id]
-		var scenarios := _knowledge_route_scenarios(
-			definition.get("knowledge_basis", {}))
-		for scenario_index in range(scenarios.size()):
+			var direct_ids := _building_direct_technology_ids(catalog, building_index)
+			var owns_good_unlock := false
+			for direct_id in direct_ids:
+				if unlocking_technologies.has(String(direct_id)):
+					owns_good_unlock = true
+					break
+			if not owns_good_unlock:
+				continue
 			var completed := {}
 			for starter_id in catalog.starter_eligible_technology_ids:
 				_add_technology_with_hard_ancestors(catalog, String(starter_id), completed)
-			_add_technology_with_hard_ancestors(catalog, technology_id, completed)
-			for alternative_id in scenarios[scenario_index]:
-				_add_technology_with_hard_ancestors(
-					catalog, String(alternative_id), completed)
+			for required_id in _building_full_technology_ids(catalog, building_index):
+				_add_technology_with_hard_ancestors(catalog, String(required_id), completed)
 			var closure := _compile_production_closure(catalog, completed)
-			var available_goods: Dictionary = closure.available_goods
-			var runnable_buildings: Dictionary = closure.runnable_buildings
-			for good_id_value in goods_by_technology[technology_id]:
-				var good_id := String(good_id_value)
-				assert(available_goods.has(good_id),
-					"production closure failed: technology=%s good=%s route=%d" % [
-						technology_id, good_id, scenario_index])
-				var producer_ids := _direct_producer_ids(
-					catalog, technology_id, good_id)
-				var runnable_direct_producer := ""
-				for producer_id in producer_ids:
-					if runnable_buildings.has(String(producer_id)):
-						runnable_direct_producer = String(producer_id)
-						break
-				assert(not runnable_direct_producer.is_empty(),
-					"new good lacks runnable same-technology producer: technology=%s good=%s producers=%s route=%d" % [
-						technology_id, good_id, producer_ids, scenario_index])
+			var building_id := String(catalog.building_type_ids[building_index])
+			if (closure.runnable_buildings as Dictionary).has(building_id) \
+					and (closure.available_goods as Dictionary).has(String(good_ids[good_index])):
+				valid_producer = building_id
+				break
+		assert(not valid_producer.is_empty(),
+			"good lacks a producer reachable through its complete technology gate: %s" %
+				good_ids[good_index])
 	_assert_no_construction_self_output(catalog)
 
 
@@ -186,14 +173,9 @@ func _compile_production_closure(catalog: Dictionary,
 		completed: Dictionary) -> Dictionary:
 	var available_goods := {}
 	var runnable_buildings := {}
-	var starter_indices := {}
-	for starter_id in catalog.starter_eligible_technology_ids:
-		starter_indices[(catalog.technology_ids as PackedStringArray).find(
-			String(starter_id))] = true
 	var building_ids: PackedStringArray = catalog.building_type_ids
 	for building_index in range(building_ids.size()):
-		var owners := _building_direct_technology_indices(catalog, building_index)
-		if not _any_index_in_set(owners, starter_indices):
+		if not _building_technology_gate_satisfied(catalog, building_index, completed):
 			continue
 		runnable_buildings[String(building_ids[building_index])] = true
 		_append_building_outputs(catalog, building_index, available_goods)
@@ -204,8 +186,8 @@ func _compile_production_closure(catalog: Dictionary,
 			var building_id := String(building_ids[building_index])
 			if runnable_buildings.has(building_id):
 				continue
-			var owners := _building_direct_technology_indices(catalog, building_index)
-			if not _any_index_in_set(owners, completed) or not _building_dependencies_available(
+			if not _building_technology_gate_satisfied(catalog, building_index, completed) \
+					or not _building_dependencies_available(
 					catalog, building_index, completed, available_goods):
 				continue
 			runnable_buildings[building_id] = true
@@ -213,6 +195,53 @@ func _compile_production_closure(catalog: Dictionary,
 				catalog, building_index, available_goods) or changed
 	return {"available_goods": available_goods,
 		"runnable_buildings": runnable_buildings}
+
+
+func _building_technology_gate_satisfied(catalog: Dictionary,
+		building_index: int, completed: Dictionary) -> bool:
+	if not _any_index_in_set(_building_direct_technology_indices(
+			catalog, building_index), completed):
+		return false
+	var offsets: PackedInt32Array = catalog.building_required_technology_tag_offsets
+	var tags: PackedStringArray = catalog.building_required_technology_tags
+	for edge in range(offsets[building_index], offsets[building_index + 1]):
+		var technology_id := String(tags[edge])
+		assert(not technology_id.begins_with("tech.application."), technology_id)
+		var technology_index := (catalog.technology_ids as PackedStringArray).find(technology_id)
+		assert(technology_index >= 0, technology_id)
+		if not completed.has(technology_index):
+			return false
+	return true
+
+
+func _building_direct_technology_ids(catalog: Dictionary,
+		building_index: int) -> PackedStringArray:
+	var result := PackedStringArray()
+	for technology_index in _building_direct_technology_indices(catalog, building_index):
+		result.append(String(catalog.technology_ids[technology_index]))
+	return result
+
+
+func _building_full_technology_ids(catalog: Dictionary,
+		building_index: int) -> PackedStringArray:
+	var result := _building_direct_technology_ids(catalog, building_index)
+	var offsets: PackedInt32Array = catalog.building_required_technology_tag_offsets
+	var tags: PackedStringArray = catalog.building_required_technology_tags
+	for edge in range(offsets[building_index], offsets[building_index + 1]):
+		var technology_id := String(tags[edge])
+		if not result.has(technology_id):
+			result.append(technology_id)
+	result.sort()
+	return result
+
+
+func _building_outputs_good(catalog: Dictionary, building_index: int,
+		good_index: int) -> bool:
+	for edge in range(catalog.building_output_offsets[building_index],
+			catalog.building_output_offsets[building_index + 1]):
+		if int(catalog.building_output_good_ids[edge]) == good_index:
+			return true
+	return false
 
 
 func _building_direct_technology_indices(catalog: Dictionary,
@@ -437,57 +466,49 @@ func _assert_public_building_effect_scope(catalog: Dictionary) -> void:
 	var definitions: Array = TechnologyCatalogScript.public_definitions()
 	var technology_ids: PackedStringArray = catalog.technology_ids
 	var building_ids: PackedStringArray = catalog.building_type_ids
-	var required_offsets: PackedInt32Array = \
-		catalog.building_required_technology_tag_offsets
-	var activation_offsets: PackedInt32Array = catalog.building_technology_tag_offsets
-	var activation_tags: PackedStringArray = catalog.building_technology_tags
-	var visible_owner_by_building := {}
-	for building_index in range(building_ids.size()):
-		var required_tag_count := required_offsets[building_index + 1] - required_offsets[building_index]
-		var allows_runtime_gate := String(building_ids[building_index]) == "mechanized_cotton_gin"
-		assert(required_tag_count == (1 if allows_runtime_gate else 0),
-			"building retains hidden required technology tags: %s" % building_ids[building_index])
-		if allows_runtime_gate:
-			assert(String(catalog.building_required_technology_tags[required_offsets[building_index]])
-				== "tech.steam_power")
-		var direct_technology_ids := PackedStringArray()
-		for edge in range(activation_offsets[building_index],
-				activation_offsets[building_index + 1]):
-			var tag := String(activation_tags[edge])
-			if tag.begins_with("tech."):
-				direct_technology_ids.append(tag)
-		var is_terminal_tier3 := String(building_ids[building_index]) in [
-			"glassware_factory", "metal_housewares_factory", "leather_goods_factory"]
-		assert(direct_technology_ids.size() == (2 if is_terminal_tier3 else 1),
-			"building has invalid visible technology count: %s" % building_ids[building_index])
-		visible_owner_by_building[String(building_ids[building_index])] = \
-			direct_technology_ids
-	var public_effect_owner_by_building := {}
+	for technology_id in technology_ids:
+		assert(not String(technology_id).begins_with("tech.application."), technology_id)
 	for definition_value in definitions:
 		var definition: Dictionary = definition_value
-		for effect_value in definition.get("content_effects", []):
-			var effect: Dictionary = effect_value
-			if String(effect.get("kind", "")) != "building":
-				continue
-			var building_id := String(effect.get("id", ""))
-			var building_index := building_ids.find(building_id)
-			assert(building_index >= 0, building_id)
-			var owners: PackedStringArray = public_effect_owner_by_building.get(
-				building_id, PackedStringArray())
-			var owner_id := String(definition.get("id", ""))
-			if not owners.has(owner_id):
-				owners.append(owner_id)
-			public_effect_owner_by_building[building_id] = owners
-	assert(public_effect_owner_by_building.size() == building_ids.size())
-	for building_id in building_ids:
-		var visible_ids: PackedStringArray = visible_owner_by_building[String(building_id)]
-		var public_owners: PackedStringArray = public_effect_owner_by_building.get(
-			String(building_id), PackedStringArray())
-		assert(public_owners.size() == visible_ids.size(),
-			"building public effect owner count mismatch: %s" % building_id)
-		for public_owner in public_owners:
-			assert(visible_ids.has(public_owner),
-				"building public effect does not match its direct technology: %s" % building_id)
+		assert(not String(definition.get("id", "")).begins_with("tech.application."))
+	var application_by_building := {}
+	var application_ids := {}
+	for application_value in TechnologyCatalogScript.public_application_intersections(catalog):
+		var application: Dictionary = application_value
+		var application_id := String(application.get("id", ""))
+		assert(application_id.begins_with("app.") and not application_ids.has(application_id))
+		application_ids[application_id] = true
+		var required := PackedStringArray(application.get("required_technology_ids", []))
+		var normalized_required := required.duplicate()
+		normalized_required.sort()
+		assert(required.size() >= 2 and normalized_required.size() == _unique_count(normalized_required),
+			"application technology requirement invalid: %s" % application_id)
+		for technology_id in required:
+			assert(technology_ids.has(String(technology_id)) \
+				and not String(technology_id).begins_with("tech.application."),
+				"application references non-research technology: %s -> %s" % [
+					application_id, technology_id])
+		for building_value in application.get("building_ids", []):
+			var building_id := String(building_value)
+			assert(building_ids.has(building_id) and not application_by_building.has(building_id),
+				"application building ownership invalid: %s -> %s" % [application_id, building_id])
+			application_by_building[building_id] = normalized_required
+	for building_index in range(building_ids.size()):
+		var building_id := String(building_ids[building_index])
+		var full_gate := _building_full_technology_ids(catalog, building_index)
+		for technology_id in full_gate:
+			assert(not String(technology_id).begins_with("tech.application."),
+				"building references removed synthetic technology: %s -> %s" % [
+					building_id, technology_id])
+		if full_gate.size() == 1:
+			assert(not application_by_building.has(building_id),
+				"single-technology building must not generate application: %s" % building_id)
+		else:
+			assert(application_by_building.has(building_id),
+				"multi-technology building lacks application: %s" % building_id)
+			assert(full_gate == application_by_building[building_id],
+				"application gate differs from complete building gate: %s expected=%s actual=%s" % [
+					building_id, full_gate, application_by_building[building_id]])
 	var copper_index := technology_ids.find("tech.natural_copper_identification")
 	assert(copper_index >= 0)
 	var copper_summary := String((definitions[copper_index] as Dictionary).get(
@@ -627,8 +648,13 @@ func _assert_networked_crop_and_resource_gates(catalog: Dictionary) -> void:
 			continue
 		var identification_id := String(node.get("id", ""))
 		for binding in _technology_bindings(catalog, identification_id):
-			assert(int(binding.kind) != 2,
-				"identification directly constructs production: %s -> %s" % [
+			if int(binding.kind) != 2:
+				continue
+			var building_index := (catalog.building_type_ids as PackedStringArray).find(
+				String(binding.id))
+			assert(building_index >= 0 \
+				and _building_full_technology_ids(catalog, building_index).size() > 1,
+				"identification alone constructs production: %s -> %s" % [
 					identification_id, binding.id])
 	assert(identification_first_seen.size() == identification_first.size())
 	_assert_technology_has_binding(catalog, "tech.wild_maize_collection", 2,
@@ -737,24 +763,15 @@ func _assert_engineering_method_scope(catalog: Dictionary) -> void:
 		"tech.scientific_agents": [
 			"method_sulfur_collector_r10", "method_zinc_ore_collector_r9"],
 		"tech.smart_grid": ["method_electric_motor_plant_r10"],
-		"tech.electronic_control": ["zinc_plant"],
+		"tech.electrochemistry": ["zinc_plant"],
 		"tech.geographic_information_systems": ["method_limestone_collector_r6"],
-		"tech.application.early_tin_mine": ["early_tin_mine"],
+		"tech.tin_identification": ["early_tin_mine"],
 		"tech.industrial_agronomy": ["method_agricultural_machinery_plant_r9"],
 	}
 	for technology_id in expected_direct:
 		for building_id in expected_direct[technology_id]:
 			_assert_technology_has_binding(
 				catalog, String(technology_id), 2, String(building_id))
-	var technology_ids: PackedStringArray = catalog.technology_ids
-	for technology_id in technology_ids:
-		var direct_buildings := 0
-		for binding in _technology_bindings(catalog, String(technology_id)):
-			if int(binding.kind) == 2:
-				direct_buildings += 1
-		assert(direct_buildings <= 2,
-			"technology directly unlocks too many buildings: %s -> %d" % [
-				technology_id, direct_buildings])
 	_assert_building_supports(catalog, "method_oceanic_shipyard_r7", [
 		"tech.oceanic_ship_design", "tech.coastal_shipyards",
 		"tech.mass_production", "tech.industrial_statistics"])
@@ -771,7 +788,8 @@ func _assert_specialized_production_methods(catalog: Dictionary) -> void:
 		["method_steam_shipping", "tech.steam_sealing",
 			["tech.oceanic_navigation", "tech.steam_power", "tech.coastal_shipyards"]],
 		["method_automated_port", "tech.automated_logistics",
-			["tech.global_logistics", "tech.digital_control", "tech.electric_grid"]],
+			["tech.global_logistics", "tech.digital_control",
+				"tech.semiconductor_manufacturing"]],
 		["method_autonomous_shipping", "tech.autonomous_logistics",
 			["tech.autonomous_systems", "tech.smart_grid", "tech.distributed_intelligence"]],
 		["hydropower_station", "tech.water_power",
@@ -948,17 +966,18 @@ func _assert_building_supports(catalog: Dictionary, building_id: String,
 	var building_index := (catalog.building_type_ids as PackedStringArray).find(building_id)
 	assert(building_index >= 0, building_id)
 	var actual := PackedStringArray()
-	var required_offsets: PackedInt32Array = catalog.building_required_technology_tag_offsets
-	assert(required_offsets[building_index] == required_offsets[building_index + 1])
-	var activation_offsets: PackedInt32Array = catalog.building_technology_tag_offsets
-	var activation_tags: PackedStringArray = catalog.building_technology_tags
-	for edge in range(activation_offsets[building_index], activation_offsets[building_index + 1]):
-		var technology_id := String(activation_tags[edge])
-		if technology_id.begins_with("tech."):
-			_collect_technology_ancestry(catalog, technology_id, actual)
+	for technology_id in _building_full_technology_ids(catalog, building_index):
+		_collect_technology_ancestry(catalog, String(technology_id), actual)
 	for technology_id in required_ids:
-		assert(actual.has(technology_id), "%s missing ALL support %s" % [
+		assert(actual.has(technology_id), "%s missing technology foundation %s" % [
 			building_id, technology_id])
+
+
+func _unique_count(values: PackedStringArray) -> int:
+	var seen := {}
+	for value in values:
+		seen[String(value)] = true
+	return seen.size()
 
 
 func _collect_technology_ancestry(catalog: Dictionary, technology_id: String,

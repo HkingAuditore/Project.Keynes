@@ -30,6 +30,7 @@ const MODE_OVERVIEW := 1
 
 var _player_controller = null
 var _definitions: Array = []
+var _research_definition_count := 0
 var _eras: Array = []
 var _domains: Array = []
 var _lanes: Array = []
@@ -197,6 +198,8 @@ func set_model(model: Dictionary) -> void:
 	set_process(false)
 	if _definitions.is_empty():
 		_definitions = model.get("technology_definitions", [])
+		_research_definition_count = int(model.get(
+			"technology_research_definition_count", _definitions.size()))
 		_eras = model.get("technology_eras", [])
 		_domains = model.get("technology_domains", [])
 		_lanes = model.get("technology_lanes", [])
@@ -297,7 +300,8 @@ func _research_from_model(model: Dictionary) -> Dictionary:
 	if not states_value is PackedInt32Array:
 		return {}
 	var states: PackedInt32Array = states_value
-	if states.is_empty() or (not _definitions.is_empty() and states.size() != _definitions.size()):
+	if states.is_empty() or (_research_definition_count > 0 \
+			and states.size() != _research_definition_count):
 		return {}
 	return candidate
 
@@ -380,7 +384,8 @@ func _set_mode(mode: int) -> void:
 	_prev_era.disabled = _mode != MODE_FOCUS
 	_next_era.disabled = _mode != MODE_FOCUS
 	if _mode == MODE_OVERVIEW:
-		_overview.patch_states(_research.get("technology_states", PackedInt32Array()))
+		_overview.patch_states(_presentation_states(_research.get(
+			"technology_states", PackedInt32Array())))
 	UIAnimation.crossfade(_tree if _mode == MODE_FOCUS else _overview, UITokens.ANIM_FAST)
 
 
@@ -406,7 +411,8 @@ func _on_search_submitted(query: String) -> void:
 	var normalized := query.strip_edges().to_lower()
 	if normalized.is_empty():
 		return
-	var states: PackedInt32Array = _research.get("technology_states", PackedInt32Array())
+	var states := _presentation_states(_research.get(
+		"technology_states", PackedInt32Array()))
 	var best := -1
 	for index in range(_definitions.size()):
 		if index >= states.size() or not TechnologyTreeView.presents_state(states[index]):
@@ -428,7 +434,8 @@ func _on_search_submitted(query: String) -> void:
 func _focus_technology(index: int) -> void:
 	if index < 0 or index >= _definitions.size():
 		return
-	var states: PackedInt32Array = _research.get("technology_states", PackedInt32Array())
+	var states := _presentation_states(_research.get(
+		"technology_states", PackedInt32Array()))
 	var definition: Dictionary = _definitions[index]
 	var is_milestone := bool(definition.get("is_milestone", false))
 	if not is_milestone and (index >= states.size() \
@@ -533,7 +540,8 @@ func _milestone_completed_count(definition: Dictionary, states: PackedInt32Array
 
 
 func _deepest_visible_era() -> int:
-	var states: PackedInt32Array = _research.get("technology_states", PackedInt32Array())
+	var states := _presentation_states(_research.get(
+		"technology_states", PackedInt32Array()))
 	var deepest := 0
 	var parents: Array = []
 	if _tree != null:
@@ -622,8 +630,12 @@ func _configure_queues() -> void:
 
 
 func _apply_research() -> void:
-	var states: PackedInt32Array = _research.get("technology_states", PackedInt32Array())
-	var progress: PackedInt64Array = _research.get("technology_progress", PackedInt64Array())
+	var research_states: PackedInt32Array = _research.get(
+		"technology_states", PackedInt32Array())
+	var research_progress: PackedInt64Array = _research.get(
+		"technology_progress", PackedInt64Array())
+	var states := _presentation_states(research_states)
+	var progress := _presentation_progress(research_progress)
 	var relations_changed := states != _last_states
 	_last_states = states
 	_tree.patch_states(states, progress)
@@ -635,9 +647,9 @@ func _apply_research() -> void:
 	_budget.set_state(bool(_research.get("auto_purchase_enabled", false)),
 		int(_research.get("daily_procurement_budget", 0)),
 		int(_research.get("country_cash", 0)))
-	_patch_queues(states, progress, weights)
+	_patch_queues(research_states, research_progress, weights)
 	_patch_development()
-	_update_status(states)
+	_update_status(research_states)
 	if _initial_focus_pending:
 		_apply_default_focus()
 	_refresh_detail(relations_changed)
@@ -834,7 +846,9 @@ func _refresh_detail(refresh_relations: bool = true) -> void:
 		_detail_signature = ""
 		_detail.show_empty()
 		return
-	var states: PackedInt32Array = _research.get("technology_states", PackedInt32Array())
+	var research_states: PackedInt32Array = _research.get(
+		"technology_states", PackedInt32Array())
+	var states := _presentation_states(research_states)
 	var state := int(states[index]) if index < states.size() else 0
 	var definition: Dictionary = _definitions[index]
 	if not TechnologyTreeView.presents_state(state):
@@ -886,6 +900,9 @@ func _relations_for(index: int, states: PackedInt32Array) -> Dictionary:
 	var definition: Dictionary = _definitions[index]
 	var hard_ids: PackedStringArray = definition.get(
 		"prerequisite_ids", PackedStringArray())
+	if _is_application_definition(definition):
+		hard_ids = definition.get("required_technology_ids", definition.get(
+			"application_foundation_ids", PackedStringArray()))
 	var rationales: PackedStringArray = definition.get(
 		"prerequisite_rationales", PackedStringArray())
 	var prerequisites: Array = []
@@ -920,6 +937,13 @@ func _relations_for(index: int, states: PackedInt32Array) -> Dictionary:
 		"branch_successor_ids", "branch_successor_rationales", states)
 	var applications := _authored_relation_entries(definition,
 		"application_target_ids", "application_target_rationales", states)
+	if not _is_application_definition(definition):
+		for target_index in range(_research_definition_count, _definitions.size()):
+			var application: Dictionary = _definitions[target_index]
+			var required_ids: PackedStringArray = application.get(
+				"required_technology_ids", PackedStringArray())
+			if required_ids.has(selected_id):
+				applications.append(_relation_entry(target_index, states))
 	return {
 		"prerequisites": prerequisites,
 		"hard_successors": hard_successors,
@@ -975,6 +999,8 @@ func _condition_items(index: int, states: PackedInt32Array) -> Array:
 	if index < 0 or index >= _definitions.size():
 		return []
 	var definition: Dictionary = _definitions[index]
+	if _is_application_definition(definition):
+		return _application_condition_items(definition, states)
 	var items: Array = []
 	var entry_id := String(definition.get("era_entry_milestone_id", ""))
 	if not entry_id.is_empty() and bool(definition.get("is_milestone", false)):
@@ -1185,6 +1211,9 @@ func _on_tree_selected(_index: int) -> void:
 
 
 func _on_tree_activated(index: int) -> void:
+	if index < 0 or index >= _definitions.size() \
+			or _is_application_definition(_definitions[index]):
+		return
 	var states: PackedInt32Array = _research.get("technology_states", PackedInt32Array())
 	var state := int(states[index]) if index < states.size() else 0
 	if state == 3:
@@ -1229,6 +1258,8 @@ func _enqueue(index: int) -> void:
 	if _player_controller == null or index < 0 or index >= _definitions.size():
 		return
 	var definition: Dictionary = _definitions[index]
+	if _is_application_definition(definition):
+		return
 	var result: Dictionary = _player_controller.request_command(
 		PlayerControllerScript.COMMAND_RESEARCH_ENQUEUE,
 		{"technology_id": StringName(definition.get("id", "")),
@@ -1241,6 +1272,8 @@ func _enqueue(index: int) -> void:
 func _remove_from_queue(index: int) -> void:
 	if _player_controller == null or index < 0 or index >= _definitions.size():
 		return
+	if _is_application_definition(_definitions[index]):
+		return
 	var result: Dictionary = _player_controller.request_command(
 		PlayerControllerScript.COMMAND_RESEARCH_REMOVE,
 		{"technology_id": StringName((_definitions[index] as Dictionary).get("id", ""))})
@@ -1252,12 +1285,116 @@ func _remove_from_queue(index: int) -> void:
 func _move_in_queue(technology: int, domain: int, position: int) -> void:
 	if _player_controller == null or technology < 0 or technology >= _definitions.size():
 		return
+	if _is_application_definition(_definitions[technology]):
+		return
 	var result: Dictionary = _player_controller.request_command(
 		PlayerControllerScript.COMMAND_RESEARCH_MOVE,
 		{"technology_id": StringName((_definitions[technology] as Dictionary).get("id", "")),
 		"domain": domain, "position": position})
 	if bool(result.get("ok", false)):
 		policy_submitted.emit()
+
+
+func _presentation_states(research_states: PackedInt32Array) -> PackedInt32Array:
+	var states := PackedInt32Array()
+	states.resize(_definitions.size())
+	for index in range(mini(research_states.size(), _definitions.size())):
+		states[index] = research_states[index]
+	for index in range(_research_definition_count, _definitions.size()):
+		states[index] = _application_state(_definitions[index], research_states)
+	return states
+
+
+func _presentation_progress(research_progress: PackedInt64Array) -> PackedInt64Array:
+	var progress := PackedInt64Array()
+	progress.resize(_definitions.size())
+	for index in range(mini(research_progress.size(), _definitions.size())):
+		progress[index] = research_progress[index]
+	return progress
+
+
+func _application_state(definition: Dictionary,
+		research_states: PackedInt32Array) -> int:
+	if not _is_application_definition(definition):
+		return 0
+	var required: PackedStringArray = definition.get(
+		"required_technology_ids", definition.get(
+			"application_foundation_ids", PackedStringArray()))
+	if required.is_empty():
+		return 0
+	var all_completed := true
+	for technology_id in required:
+		var index := int(_technology_indices.get(String(technology_id), -1))
+		var state := int(research_states[index]) \
+			if index >= 0 and index < research_states.size() else 0
+		if not TechnologyTreeView.presents_state(state):
+			return 0
+		if state < 5:
+			all_completed = false
+	return 5 if all_completed else 2
+
+
+func _application_condition_items(definition: Dictionary,
+		states: PackedInt32Array) -> Array:
+	var items: Array = []
+	var required: PackedStringArray = definition.get(
+		"required_technology_ids", definition.get(
+			"application_foundation_ids", PackedStringArray()))
+	var primary_id := String(definition.get("primary_technology_id",
+		String(required[0]) if not required.is_empty() else ""))
+	for technology_id_value in required:
+		var technology_id := String(technology_id_value)
+		var index := int(_technology_indices.get(technology_id, -1))
+		var state := int(states[index]) if index >= 0 and index < states.size() else 0
+		var met := state >= 5
+		var name := "未知科技"
+		if index >= 0 and TechnologyTreeView.presents_state(state):
+			name = String((_definitions[index] as Dictionary).get(
+				"display_name", technology_id))
+		items.append({
+			"text": "%s：%s · %s" % [
+				"主科技" if technology_id == primary_id else "支撑科技",
+				name, "已完成" if met else "未完成"],
+			"icon": &"technology.state.completed" if met else &"technology.state.locked",
+			"accent": UITokens.GOOD if met else UITokens.WARN,
+			"met": met,
+		})
+	_append_application_constraints(items, definition,
+		"required_input_good_ids", "投入商品", "投产时核验")
+	_append_application_constraints(items, definition,
+		"required_resource_ids", "自然资源", "建设地点核验")
+	_append_application_constraints(items, definition,
+		"required_tile_condition_ids", "地块条件", "建设地点核验")
+	_append_application_constraints(items, definition,
+		"required_terrain_ids", "地块条件", "建设地点核验")
+	_append_application_constraints(items, definition,
+		"required_landform_ids", "地块条件", "建设地点核验")
+	return items
+
+
+func _append_application_constraints(items: Array, definition: Dictionary,
+		field: String, category: String, verification: String) -> void:
+	for value in definition.get(field, []):
+		var label := ""
+		if value is Dictionary:
+			label = String((value as Dictionary).get("display_name",
+				(value as Dictionary).get("id", "")))
+		else:
+			label = str(value)
+		if label.is_empty():
+			continue
+		items.append({
+			"text": "%s：%s · %s" % [category, label, verification],
+			"icon": &"technology.state.locked",
+			"accent": UITokens.WARN,
+			"met": false,
+		})
+
+
+func _is_application_definition(definition: Dictionary) -> bool:
+	return bool(definition.get("is_application", false)) \
+		or String(definition.get("anchor_kind", "")) == "application" \
+		or String(definition.get("id", "")).begins_with("app.")
 
 
 func _domain_index_of(definition: Dictionary) -> int:

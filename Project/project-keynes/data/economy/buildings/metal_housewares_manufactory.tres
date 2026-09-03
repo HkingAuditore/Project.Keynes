@@ -1,23 +1,33 @@
-[gd_resource type="Resource" script_class="BuildingProfile" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
 [ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
 [resource]
 script = ExtResource("1")
 id = &"metal_housewares_manufactory"
 display_name = "金属家用器皿工场"
-building_kind = "industrial"
 economic_sector_id = "manufacturing"
-technology_tags = PackedStringArray("industry.consumer", "tech.application.metal_housewares_manufactory_exploration")
-
+semantic_tags = PackedStringArray()
+technology_tags = PackedStringArray("tech.iron_smelting")
+required_technology_tags = PackedStringArray("tech.surface_iron_collection", "tech.ground_stone_tools", "tech.oceanic_navigation")
 upgrade_family_id = &"metal_housewares_making"
 upgrade_tier = 2
-construction_days = 0
+industry_chain_id = &"metal_housewares_making"
+progression_step = 2
+maturity_rank = 2
+maturity_display_name = "家户试作"
+progression_role = "mainline"
+predecessor_building_ids = PackedStringArray("metal_housewares_workshop")
 construction_good_ids = PackedStringArray("lumber", "bricks", "tools")
 construction_quantities = PackedInt64Array(11250, 11250, 4500)
 construction_category_ids = PackedStringArray("classical_construction", "classical_construction", "tools")
 construction_min_quality_levels = PackedInt32Array(0, 0, 2)
-
+construction_candidate_offsets = PackedInt32Array()
+construction_candidate_good_ids = PackedStringArray()
+construction_candidate_efficiency_q16 = PackedInt32Array()
+maintenance_good_ids = PackedStringArray()
+maintenance_quantities_per_day = PackedInt64Array()
 owner_profession_id = &"guild_master"
-owner_slots_per_building = 1
 employee_profession_ids = PackedStringArray("artisan", "journeyman")
 employee_slots_per_building = PackedInt64Array(8, 6)
 employee_wage_policy_ids = PackedStringArray("fixed", "fixed")
@@ -32,13 +42,15 @@ input_candidate_good_ids = PackedStringArray("wrought_iron", "steel", "stainless
 input_candidate_efficiency_q16 = PackedInt32Array(65536, 65536, 65536, 65536)
 output_good_ids = PackedStringArray("metal_housewares")
 output_quantities_per_day = PackedInt64Array(12306)
-target_operating_margin_q16 = 9830
-supply_price_elasticity_q16 = 65536
+output_cost_shares_q16 = PackedInt32Array()
 resource_ids = PackedStringArray()
 resource_quantities_per_day = PackedInt64Array()
 resource_interaction_modes = PackedStringArray()
 resource_access_modes = PackedStringArray()
 resource_generation_ids = PackedStringArray()
 resource_generation_quantities_per_day = PackedInt64Array()
-resource_generation_floor_q16 = 0
-behavior_id = "none"
+condition_opcodes = PackedInt32Array()
+condition_signals = PackedInt32Array()
+condition_compares = PackedInt32Array()
+condition_reference_ids = PackedStringArray()
+condition_values = PackedInt64Array()

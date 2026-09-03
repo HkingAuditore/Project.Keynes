@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
 
 [ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
 
@@ -6,28 +6,10 @@
 script = ExtResource("1")
 id = &"copper_ore"
 display_name = "铜矿石"
+semantic_tags = PackedStringArray()
 category_id = &"copper_ore"
 substitution_category_ids = PackedStringArray("copper_ore")
-technology_tags = PackedStringArray("industry.primary", "tech.copper_mining_application", "tech.application.early_copper_mine")
-production_quality_level = 0
-production_efficiency_q16 = 65536
-storage_mode = "stock"
-monetary_issue_value = 0
-default_price = 10000
-initial_stock = 0
+technology_tags = PackedStringArray("industry.primary", "tech.copper_mine_engineering", "tech.copper_metallurgy")
 reference_max_price = 500000
 price_adjust_q16 = 922
 demand_price_elasticity_q16 = 29491
-demand_ema_alpha_q16 = 16384
-inventory_target_ratio_q16 = 65536
-inventory_weight_q16 = 32768
-shortage_weight_q16 = 65536
-excess_demand_weight_q16 = 8192
-cost_anchor_weight_q16 = 16384
-inactive_reversion_weight_q16 = 8192
-business_demand_ema_alpha_q16 = 8192
-supply_ema_alpha_q16 = 8192
-cost_ema_alpha_q16 = 4096
-max_price_rise_q16 = 8192
-max_price_fall_q16 = 4096
-merchant_buy_price_factor_q16 = 62259

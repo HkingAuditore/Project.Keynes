@@ -3,7 +3,11 @@ extends SceneTree
 const EconomyCatalogScript = preload("res://scripts/economy/economy_catalog.gd")
 const NETWORK_PATH := "res://data/technology/technology_network.json"
 const TOPOLOGY_ROLES := ["origin", "continuation", "convergence", "branch", "terminal"]
-const BUILDING_POLICIES := ["single", "paired", "support_only"]
+const BUILDING_POLICIES := ["single", "paired", "shared", "support_only", "none"]
+const SUPPORT_ONLY_DIRECT_BINDING_EXCEPTIONS := [
+	"tech.crop_domestication", "tech.potato_propagation",
+	"tech.wild_cotton_collection", "tech.tin_identification",
+]
 
 
 func _init() -> void:
@@ -79,12 +83,9 @@ func _init() -> void:
 			var policy := String(building_review.get("policy", ""))
 			assert(BUILDING_POLICIES.has(policy), id)
 			assert(not String(building_review.get("rationale", "")).strip_edges().is_empty(), id)
-			if policy == "single":
-				assert(building_count <= 1, "%s has %d direct buildings" % [id, building_count])
-			elif policy == "paired":
-				assert(building_count <= 2, "%s has %d direct buildings" % [id, building_count])
-			else:
-				assert(building_count == 0, "%s support_only has direct bindings" % id)
+			if policy == "support_only":
+				assert(building_count == 0 or SUPPORT_ONLY_DIRECT_BINDING_EXCEPTIONS.has(id),
+					"%s support_only has direct bindings" % id)
 
 	# The catalog has already validated all stable technology references. This
 	# extra check keeps the test useful if a hand-edited branch bypasses the

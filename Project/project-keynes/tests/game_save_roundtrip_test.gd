@@ -48,6 +48,12 @@ func _run() -> void:
 	var expected := _capture_hashes(first_host, first_clock)
 	var save_result: Dictionary = await _game_save.call("request_manual_save", "manual_3")
 	_expect("PKSV manual save completed", bool(save_result.get("ok", false)))
+	var save_header: Dictionary = save_result.get("header", {})
+	_expect("save header declares technology industry revision 2",
+		int(save_header.get("technology_industry_revision", 0)) == 2)
+	_expect("provider manifest declares technology industry revision 2",
+		_manifest_schema(save_header.get("provider_manifest", []),
+			"technology_industry") == 2)
 	var slots: Array = _game_save.call("list_slots")
 	var slot := _slot(slots, "manual_3")
 	_expect("saved slot is visible and loadable",
@@ -162,6 +168,15 @@ func _slot(slots: Array, slot_id: String) -> Dictionary:
 		if String((value as Dictionary).get("slot_id", "")) == slot_id:
 			return value
 	return {}
+
+
+func _manifest_schema(manifest, provider_id: String) -> int:
+	if not manifest is Array:
+		return -1
+	for value in manifest:
+		if value is Dictionary and String(value.get("provider_id", "")) == provider_id:
+			return int(value.get("schema_version", -1))
+	return -1
 
 
 func _expect(label: String, condition: bool) -> void:

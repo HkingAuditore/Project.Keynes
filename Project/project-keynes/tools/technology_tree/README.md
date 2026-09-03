@@ -18,7 +18,8 @@ Civ 式交互科技树报告页，用于排查 `TechnologyCatalog` 的分布、�
 & "<godot_console.exe>" --headless --path . --script res://tools/export_technology_tree.gd -- --check
 ```
 
-脚本编译权威目录（705 节点 / 11 时代自检），一次生成两份确定性报告：
+脚本编译 schema v4 权威目录（`tech.*` 研究科技与 `app.*` 自动应用 / 11 时代自检），
+数量与内容指纹以 `technology_industry_v2_stable_id_manifest.json` 为准，一次生成两份确定性报告：
 
 - `technology_tree_report.html`：把目录数据、预编译可视边和结构化内容效果注入
   `technology_tree_template.html` 后得到的自包含交互报告，无外部依赖，双击即可在浏览器打开；

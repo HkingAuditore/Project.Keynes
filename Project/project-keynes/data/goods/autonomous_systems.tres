@@ -1,11 +1,14 @@
-[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
 [ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
 [resource]
 script = ExtResource("1")
 id = &"autonomous_systems"
 display_name = "自主系统"
+semantic_tags = PackedStringArray()
 category_id = &"autonomous_systems"
 substitution_category_ids = PackedStringArray("autonomous_systems")
-technology_tags = PackedStringArray("tech.application.autonomous_systems_plant")
+technology_tags = PackedStringArray("tech.autonomous_systems")
 default_price = 220000
 reference_max_price = 11000000

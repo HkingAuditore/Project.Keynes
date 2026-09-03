@@ -90,7 +90,7 @@ static func _reason_text(code: String) -> String:
 	return {
 		"construction_cell_not_owned": "目标地块不属于玩家国家",
 		"construction_technology_locked": "科技尚未解锁",
-		"construction_obsolete": "该建筑层级已经淘汰",
+		"construction_obsolete": "已有更高阶生产方式；当前方式仍可建造",
 		"construction_conditions_failed": "地块条件不满足",
 		"construction_resource_unavailable": "自然资源承载不足",
 		"construction_materials_insufficient": "国库与当地市场建材不足",

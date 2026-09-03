@@ -1,11 +1,14 @@
-[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
 [ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
 [resource]
 script = ExtResource("1")
 id = &"radio_equipment"
 display_name = "无线电设备"
+semantic_tags = PackedStringArray()
 category_id = &"radio_equipment"
 substitution_category_ids = PackedStringArray("radio_equipment")
-technology_tags = PackedStringArray("tech.application.radio_equipment_works", "tech.application.method_radio_equipment_works_r10")
+technology_tags = PackedStringArray("tech.radio", "tech.distributed_intelligence")
 default_price = 65000
 reference_max_price = 3250000

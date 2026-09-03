@@ -1,7 +1,6 @@
 extends SceneTree
 
 const NETWORK_PATH := "res://data/technology/technology_network.json"
-const EXPECTED_NODES := 705
 const EXPECTED_ERAS := 11
 const EXPECTED_DOMAINS := 4
 const CANDIDATES_PER_ERA := [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
@@ -9,25 +8,73 @@ const CANDIDATES_REQUIRED := [4, 4, 4, 4, 5, 5, 5, 6, 6, 7, 7]
 const ResearchPredicateScript = preload("res://scripts/research/research_predicate.gd")
 const ResearchConditionScript = preload("res://scripts/research/research_condition.gd")
 const IDENTIFICATION_SIGNAL_BY_TECH := {
-	"tech.clay_identification": PackedStringArray(["resource.clay"]),
-	"tech.spice_identification": PackedStringArray(["bio.spice", "contact.spice"]),
-	"tech.rubber_identification": PackedStringArray(["bio.rubber", "contact.rubber"]),
-	"tech.gold_placer_identification": PackedStringArray(["resource.gold_ore"]),
-	"tech.silver_vein_identification": PackedStringArray(["resource.silver_ore"]),
-	"tech.reed_identification": PackedStringArray(["bio.reed"]),
-	"tech.flint_identification": PackedStringArray(["resource.flint"]),
-	"tech.maize_identification": PackedStringArray(["bio.maize", "contact.maize"]),
-	"tech.wheat_identification": PackedStringArray(["bio.wheat", "contact.wheat"]),
-	"tech.rice_identification": PackedStringArray(["bio.rice", "contact.rice"]),
-	"tech.potato_identification": PackedStringArray(["bio.potato", "contact.potato"]),
-	"tech.cotton_identification": PackedStringArray(["bio.cotton", "contact.cotton"]),
-	"tech.flax_identification": PackedStringArray(["bio.flax", "contact.flax"]),
-	"tech.natural_copper_identification": PackedStringArray(["resource.copper_ore"]),
-	"tech.tin_identification": PackedStringArray(["resource.tin_ore", "contact.tin"]),
-	"tech.iron_ore_identification": PackedStringArray(["resource.iron_ore"]),
-	"tech.coal_outcrop_identification": PackedStringArray(["resource.coal"]),
-	"tech.coal_geology": PackedStringArray(["resource.coal"]),
+	"tech.clay_identification": ["resource.clay"],
+	"tech.spice_identification": ["bio.spice", "contact.spice"],
+	"tech.medicinal_herb_identification": ["bio.medicinal_herb", "contact.medicinal_herb"],
+	"tech.rubber_identification": ["bio.rubber", "contact.rubber"],
+	"tech.gold_placer_identification": ["resource.gold_ore"],
+	"tech.silver_vein_identification": ["resource.silver_ore"],
+	"tech.reed_identification": ["bio.reed"],
+	"tech.flint_identification": ["resource.flint"],
+	"tech.maize_identification": ["bio.maize", "contact.maize"],
+	"tech.wheat_identification": ["bio.wheat", "contact.wheat"],
+	"tech.rice_identification": ["bio.rice", "contact.rice"],
+	"tech.potato_identification": ["bio.potato", "contact.potato"],
+	"tech.cotton_identification": ["bio.cotton", "contact.cotton"],
+	"tech.flax_identification": ["bio.flax", "contact.flax"],
+	"tech.natural_copper_identification": ["resource.copper_ore"],
+	"tech.tin_identification": ["resource.tin_ore", "contact.tin"],
+	"tech.iron_ore_identification": ["resource.iron_ore"],
+	"tech.coal_outcrop_identification": ["resource.coal"],
+	"tech.coal_geology": ["resource.coal"],
 }
+
+
+func _assert_application_intersections(data: Dictionary, nodes: Array) -> void:
+	var technology_ids := {}
+	for value in nodes:
+		var technology_id := String((value as Dictionary).get("id", ""))
+		assert(technology_id.begins_with("tech.") and not technology_id.begins_with("tech.application."))
+		technology_ids[technology_id] = true
+	var era_ids := {}
+	for value in data.get("eras", []):
+		era_ids[String((value as Dictionary).get("id", ""))] = true
+	var domain_ids := {}
+	for value in data.get("domains", []):
+		domain_ids[String((value as Dictionary).get("id", ""))] = true
+	var branch_ids := {}
+	for value in (data.get("backbones", []) as Array) + (data.get("branch_families", []) as Array):
+		branch_ids[String((value as Dictionary).get("id", ""))] = true
+	var applications: Array = data.get("application_intersections", [])
+	assert(not applications.is_empty())
+	var seen := {}
+	var cjk := RegEx.new()
+	cjk.compile("[\\x{4e00}-\\x{9fff}]")
+	for value in applications:
+		var row: Dictionary = value
+		var application_id := String(row.get("id", ""))
+		assert(application_id.begins_with("app.") and not seen.has(application_id))
+		seen[application_id] = true
+		assert(cjk.search(String(row.get("display_name", ""))) != null)
+		assert(era_ids.has(String(row.get("era_id", ""))))
+		assert(domain_ids.has(String(row.get("domain_id", ""))))
+		assert(branch_ids.has(String(row.get("branch_family_id",
+			row.get("industry_chain_id", "")))))
+		assert(not String(row.get("layout_lane", "")).is_empty() or row.has("layout_order"))
+		var required: Array = row.get("required_technology_ids", [])
+		assert(required.size() >= 2)
+		var required_seen := {}
+		for technology_value in required:
+			var technology_id := String(technology_value)
+			assert(technology_ids.has(technology_id) and not required_seen.has(technology_id))
+			required_seen[technology_id] = true
+		var buildings: Array = row.get("building_ids", [])
+		assert(not buildings.is_empty())
+		var building_seen := {}
+		for building_value in buildings:
+			var building_id := String(building_value)
+			assert(not building_id.is_empty() and not building_seen.has(building_id))
+			building_seen[building_id] = true
 
 
 func _init() -> void:
@@ -36,12 +83,15 @@ func _init() -> void:
 	var parsed: Variant = JSON.parse_string(file.get_as_text())
 	assert(parsed is Dictionary)
 	var data: Dictionary = parsed
-	assert(int(data.get("schema_version", 0)) == 3)
+	var schema_version := int(data.get("schema_version", 0))
+	assert(schema_version == 4)
 	var eras: Array = data.get("eras", [])
 	var nodes: Array = data.get("nodes", [])
 	assert(eras.size() == EXPECTED_ERAS)
 	assert((data.get("domains", []) as Array).size() == EXPECTED_DOMAINS)
-	assert(nodes.size() == EXPECTED_NODES)
+	assert(not nodes.is_empty())
+	if schema_version == 4:
+		_assert_application_intersections(data, nodes)
 	assert(not data.has("specialist_lanes"))
 
 	var era_index := {}
@@ -103,6 +153,18 @@ func _init() -> void:
 	var branch_edges := 0
 	var era_building_counts := {}
 	var era_building_ids := {}
+	var intersection_buildings := {}
+	for application_value in data.get("application_intersections", []):
+		var application: Dictionary = application_value
+		var application_era := String(application.get("era_id", ""))
+		for building_value in application.get("building_ids", []):
+			var building_id := String(building_value)
+			intersection_buildings[building_id] = true
+			var application_buildings: Array = era_building_ids.get(application_era, [])
+			application_buildings.append(building_id)
+			era_building_ids[application_era] = application_buildings
+			era_building_counts[application_era] = int(era_building_counts.get(
+				application_era, 0)) + 1
 	for node_value in nodes:
 		var node: Dictionary = node_value
 		var id := String(node.id)
@@ -111,6 +173,8 @@ func _init() -> void:
 		for binding_value in node.get("expected_bindings", []):
 			var binding: Dictionary = binding_value
 			if int(binding.get("kind", 0)) == 2:
+				if intersection_buildings.has(String(binding.get("id", ""))):
+					continue
 				building_unlocks += 1
 				var building_ids: Array = era_building_ids.get(String(node.era_id), [])
 				building_ids.append(String(binding.get("id", "")))
@@ -169,11 +233,6 @@ func _init() -> void:
 			for alternative_value in group_value as Array:
 				assert(route_knowledge.has(String(alternative_value)),
 					"%s alternative knowledge is not visible: %s" % [id, alternative_value])
-		if is_application:
-			assert(knowledge_required.size() >= 2,
-				"application lacks two knowledge foundations: %s" % id)
-			assert(building_unlocks == 1,
-				"application must unlock exactly one building: %s" % id)
 		if era >= 2 and not is_application:
 			nodes_after_kingdom += 1
 			if not routes.is_empty():
@@ -394,7 +453,7 @@ func _init() -> void:
 		"tech.movable_type_printing": "tech.pottery",
 		"tech.surface_coal_collection": "tech.ground_stone_tools",
 		"tech.crop_domestication": "tech.natural_observation",
-		"tech.fiber_twisting": "tech.natural_observation",
+		"tech.fiber_twisting": "tech.wild_flax_collection",
 		"tech.food_storage": "tech.seasonal_foraging",
 		"tech.charcoal_burning": "tech.fire_control",
 		"tech.fur_sewing": "tech.animal_husbandry",
@@ -410,24 +469,27 @@ func _init() -> void:
 	for copper_id in ["tech.natural_copper_identification",
 			"tech.natural_copper_working", "tech.copper_annealing",
 			"tech.tin_identification", "tech.copper_ore_roasting",
-			"tech.copper_mining_application", "tech.copper_metallurgy"]:
+			"tech.copper_mine_engineering", "tech.copper_metallurgy"]:
 		assert(String((node_by_id[copper_id] as Dictionary).era_id) != "stone",
 			"copper chain leaked into the stone era: %s" % copper_id)
-	var copper_mining: Dictionary = node_by_id["tech.copper_mining_application"]
-	assert(String(copper_mining.get("anchor_kind", "")) == "application")
+	var copper_mining: Dictionary = node_by_id["tech.copper_mine_engineering"]
+	assert(String(copper_mining.get("anchor_kind", "")) == "branch")
 	assert("tech.natural_copper_identification" in copper_mining.hard_prerequisite_ids)
-	assert("tech.stone_knapping" in copper_mining.hard_prerequisite_ids)
+	assert("tech.ground_stone_tools" in copper_mining.hard_prerequisite_ids)
 	assert(_has_expected_building(copper_mining, "copper_ore_collector"))
 	var copper_metallurgy: Dictionary = node_by_id["tech.copper_metallurgy"]
 	for prerequisite_id in ["tech.copper_ore_roasting", "tech.charcoal_burning",
 			"tech.pottery"]:
 		assert(prerequisite_id in copper_metallurgy.hard_prerequisite_ids)
 	assert(_has_expected_building(copper_metallurgy, "early_copper_smelter"))
-	for application_id in ["tech.application.early_tin_mine",
-			"tech.application.ore_bronzesmith_camp",
-			"tech.application.early_copper_mine"]:
-		assert(String((node_by_id[application_id] as Dictionary).get(
-			"anchor_kind", "")) == "application", application_id)
+	var application_by_id := {}
+	for application_value in data.get("application_intersections", []):
+		var application: Dictionary = application_value
+		application_by_id[String(application.get("id", ""))] = application
+	for application_id in ["app.early_tin_mine", "app.ore_bronzesmith_camp",
+			"app.early_copper_mine"]:
+		assert(application_by_id.has(application_id), application_id)
+		assert((application_by_id[application_id].required_technology_ids as Array).size() >= 2)
 	var crop_reveal := JSON.stringify(node_by_id["tech.crop_domestication"].reveal_condition)
 	for crop_signal in ["bio.maize", "bio.wheat", "bio.rice", "bio.potato"]:
 		assert(crop_reveal.contains(crop_signal), crop_signal)
@@ -494,8 +556,11 @@ func _init() -> void:
 	for fishing_id in ["tech.coastal_fishing", "tech.freshwater_fishing"]:
 		var fishing: Dictionary = node_by_id[fishing_id]
 		var fishing_hard: Array = fishing.hard_prerequisite_ids
-		assert(fishing_hard.has("tech.early_knowledge_institution"), fishing_id)
-		assert(fishing_hard.has("tech.wild_flax_collection"), fishing_id)
+		var fishing_history := {}
+		for prerequisite_value in fishing_hard:
+			_collect_ancestors(String(prerequisite_value), node_by_id, fishing_history)
+		assert(fishing_history.has("tech.early_knowledge_institution"), fishing_id)
+		assert(fishing_history.has("tech.wild_flax_collection"), fishing_id)
 		var fishing_routes: Array = fishing.get("research_routes", [])
 		assert(fishing_routes.size() == 1, fishing_id)
 		assert(String((fishing_routes[0] as Dictionary).route_type) == "geography",
@@ -528,7 +593,7 @@ func _init() -> void:
 	assert(JSON.stringify(plantation.research_routes).contains("tech.indentured_contracts"))
 	assert(JSON.stringify(plantation.research_routes).contains("development.agricultural_employment_100_360d"))
 
-	print("[PASS] technology network schema v3: %d nodes / %.1f%% kingdom+ route coverage / %d routes" % [
+	print("[PASS] technology network schema v4: %d nodes / %.1f%% kingdom+ route coverage / %d routes" % [
 		nodes.size(), coverage * 100.0, route_by_id.size()])
 	quit(0)
 

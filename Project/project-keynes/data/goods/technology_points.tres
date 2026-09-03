@@ -1,18 +1,14 @@
-[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
 
 [ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
 
 [resource]
 script = ExtResource("1")
 id = &"technology_points"
-technology_tags = PackedStringArray("tech.early_knowledge_institution", "tech.application.lorekeeper_circle", "tech.application.oral_memory_circle", "tech.application.flood_calendar_shrine", "tech.application.seasonal_observation_shelter", "tech.application.tide_observation_hut", "tech.method.pastoral_council_tent", "tech.application.scribal_school", "tech.application.classical_academy", "tech.application.chartered_university", "tech.application.printing_academy", "tech.application.industrial_research_laboratory", "tech.application.learned_society", "tech.application.cadastral_office", "tech.application.polytechnic_institute", "tech.national_laboratories", "tech.software_engineering", "tech.application.watershed_governance_center", "tech.application.geospatial_analysis_center", "tech.machine_learning", "tech.algorithmic_governance")
 display_name = "科技值"
+semantic_tags = PackedStringArray()
 category_id = &"knowledge"
 substitution_category_ids = PackedStringArray("knowledge")
-storage_mode = "stock"
-trade_enabled = true
+technology_tags = PackedStringArray("tech.early_knowledge_institution", "tech.oral_tradition", "tech.oral_memory_practice", "tech.flood_calendar_practice", "tech.phenology_observation", "tech.tide_observation", "tech.method.pastoral_council_tent", "tech.record_keeping", "tech.scholarly_academies", "tech.chartered_universities", "tech.public_education", "tech.learned_societies", "tech.property_cadastre", "tech.national_laboratories", "tech.software_engineering", "tech.hydrological_remote_sensing", "tech.geographic_information_systems", "tech.machine_learning", "tech.algorithmic_governance")
 transport_load_per_unit_q16 = 8192
-default_price = 10000
-initial_stock = 0
 reference_max_price = 1000000
-merchant_buy_price_factor_q16 = 62259

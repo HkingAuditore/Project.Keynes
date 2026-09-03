@@ -2552,15 +2552,12 @@ func _dispatch_runtime_graph_country_committed() -> void:
 	var generation := int(report.get("generation", -1))
 	if generation < 0:
 		return
-	if _runtime_graph_last_country_generation < 0:
-		_runtime_graph_last_country_generation = generation
-		return
 	if generation == _runtime_graph_last_country_generation:
 		return
 	_runtime_graph_last_country_generation = generation
-	if int(report.get("changed_countries", 0)) <= 0 \
-			and int(report.get("changed_cells", 0)) <= 0:
-		return
+	# 不能用最后一份 report 的 changed_* 在这里提前门控。同一个
+	# pulse 里的后续 country slice 可能把领土提交摘要覆盖掉；
+	# CountryFacade 会根据未消费的原生事件流归一化 changed_cells。
 	_country_facade.dispatch_committed_events(report)
 
 

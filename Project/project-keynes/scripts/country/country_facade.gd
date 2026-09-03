@@ -30,6 +30,7 @@ enum Opcode {
 	SET_CELL_TAX_OVERRIDE = 17,
 	CLEAR_CELL_TAX_OVERRIDE = 18,
 	CLEAR_CELL_TAX_POLICY = 19,
+	CLAIM_UNOWNED_TERRITORY = 20,
 }
 
 enum TaxKind {
@@ -482,13 +483,11 @@ func ui_snapshot(handle: int, section_mask: int) -> Dictionary:
 			"ok": false, "reason": "country_ui_snapshot_unavailable"}
 
 func dispatch_committed_events(result: Dictionary) -> void:
-	# Territory CLAIM 会同时抬 changed_cells/changed_countries；纯研究/税表
-	# 提交可能只有 changed_countries。任一侧非零都要广播，否则 runtime-graph
-	# 路径下国界/视野会停在旧 mesh。
+	# Runtime graph 一次 pulse 可能跨过多个 country slice；此时 report 是
+	# 最后一个 slice 的摘要，其 changed_cells 可能已被后续纯研究/税表提交
+	# 覆盖为 0。领土事件流才是这个 generation 间隔内是否发生过领土
+	# 变更的可靠证据，必须先 poll 再决定是否广播。
 	if not _configured:
-		return
-	if int(result.get("changed_countries", 0)) <= 0 \
-			and int(result.get("changed_cells", 0)) <= 0:
 		return
 	var events: Dictionary = _world_ext.poll_country_events(_last_event_id, 512)
 	var ids: PackedInt64Array = events.get("event_ids", PackedInt64Array())
@@ -500,8 +499,16 @@ func dispatch_committed_events(result: Dictionary) -> void:
 	var signal_ids: PackedInt32Array = events.get("signal_ids", PackedInt32Array())
 	var sources: PackedInt32Array = events.get("signal_source_kinds", PackedInt32Array())
 	var evidence_deltas: PackedInt32Array = events.get("evidence_deltas", PackedInt32Array())
+	var territory_cells: Dictionary = {}
 	for i in opcodes.size():
-		if int(opcodes[i]) != Opcode.DISCOVER_COUNTRY_SIGNAL:
+		var opcode := int(opcodes[i])
+		if opcode == Opcode.CREATE_COUNTRY \
+				or opcode == Opcode.TRANSFER_TERRITORY \
+				or opcode == Opcode.CLAIM_UNOWNED_TERRITORY:
+			var territory_cell := int(cells[i]) if i < cells.size() else -1
+			if territory_cell >= 0:
+				territory_cells[territory_cell] = true
+		if opcode != Opcode.DISCOVER_COUNTRY_SIGNAL:
 			continue
 		research_signal_discovered.emit({
 			"country_handle": int(handles[i]) if i < handles.size() else 0,
@@ -510,7 +517,16 @@ func dispatch_committed_events(result: Dictionary) -> void:
 			"source_kind": int(sources[i]) if i < sources.size() else 0,
 			"evidence_delta": int(evidence_deltas[i]) if i < evidence_deltas.size() else 1,
 		})
-	country_committed.emit(result.duplicate(true))
+	var normalized := result.duplicate(true)
+	if not territory_cells.is_empty():
+		normalized["changed_cells"] = maxi(
+			int(normalized.get("changed_cells", 0)), territory_cells.size())
+		normalized["changed_countries"] = maxi(
+			int(normalized.get("changed_countries", 0)), 1)
+	if int(normalized.get("changed_countries", 0)) <= 0 \
+			and int(normalized.get("changed_cells", 0)) <= 0:
+		return
+	country_committed.emit(normalized)
 
 func is_configured() -> bool:
 	return _configured
