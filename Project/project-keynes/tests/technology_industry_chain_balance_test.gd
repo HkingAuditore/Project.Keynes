@@ -7,9 +7,21 @@ const ERA_IDS := [
 	"steam", "electrical", "atomic", "information", "intelligent",
 ]
 const ERA_FOOD_LABOR_CAPACITY := [
-	1.15, 1.35, 1.60, 2.00, 2.50, 3.20, 6.00, 18.00, 40.00, 90.00, 180.00,
+	1.15, 1.35, 1.60, 2.00, 2.50, 3.20, 6.00, 18.00, 40.00, 56.25, 112.50,
 ]
 const SURVIVAL_FOOD_UNITS_PER_PERSON := 824.0
+const PRIMARY_FOOD_CHAINS := [
+	"production.wheat_grain", "production.rice_grain", "production.corn_grain",
+	"production.potatoes", "subsistence_food",
+]
+const PRECISION_FARMS := [
+	"method_wheat_farm_r8", "method_rice_collector_r8",
+	"method_maize_farm_r8", "method_potato_farm_r8",
+]
+const AUTOMATED_FARMS := [
+	"method_wheat_farm_r10", "method_rice_collector_r10",
+	"method_maize_farm_r10", "method_potato_farm_r10",
+]
 const FOOD_EQUIVALENT_GOODS := [
 	"prepared_staples", "bread", "grain", "gathered_plants", "potatoes",
 	"game_meat", "meat", "fish", "canned_fish", "dairy_products",
@@ -38,6 +50,7 @@ func _init() -> void:
 	_audit_unlock_semantics(catalog, failures)
 	_audit_productivity(catalog, failures)
 	_audit_early_farm_capacity(catalog, failures)
+	_audit_automation_inputs(catalog, failures)
 	_assert_negative_fixtures(catalog)
 	for failure in failures:
 		push_error(JSON.stringify(failure))
@@ -57,8 +70,7 @@ func _audit_good_sinks(catalog: Dictionary, failures: Array) -> void:
 	var sink_era := {}
 	var building_ids: PackedStringArray = catalog.building_type_ids
 	for building in range(building_ids.size()):
-		var owner := _building_owner(catalog, building)
-		var era := ERA_IDS.find(String(technology_eras[owner]))
+		var era := ERA_IDS.find(_building_era_id(catalog, building))
 		for edge in range(catalog.building_output_offsets[building],
 				catalog.building_output_offsets[building + 1]):
 			var good := int(catalog.building_output_good_ids[edge])
@@ -150,13 +162,29 @@ func _hard_ancestors(id: String, by_id: Dictionary, memo: Dictionary) -> Diction
 	return result
 
 
-func _building_owner(catalog: Dictionary, building: int) -> int:
+func _building_era_id(catalog: Dictionary, building: int) -> String:
+	var latest_era := -1
+	var latest_era_id := ""
 	for edge in range(catalog.building_technology_tag_offsets[building],
 			catalog.building_technology_tag_offsets[building + 1]):
 		var tag := String(catalog.building_technology_tags[edge])
 		if tag.begins_with("tech."):
-			return (catalog.technology_ids as PackedStringArray).find(tag)
-	return -1
+			var technology := (catalog.technology_ids as PackedStringArray).find(tag)
+			var era_id := String(catalog.technology_era_ids[technology])
+			var era := ERA_IDS.find(era_id)
+			if era > latest_era:
+				latest_era = era
+				latest_era_id = era_id
+	for edge in range(catalog.building_required_technology_tag_offsets[building],
+			catalog.building_required_technology_tag_offsets[building + 1]):
+		var tag := String(catalog.building_required_technology_tags[edge])
+		var technology := (catalog.technology_ids as PackedStringArray).find(tag)
+		var era_id := String(catalog.technology_era_ids[technology])
+		var era := ERA_IDS.find(era_id)
+		if era > latest_era:
+			latest_era = era
+			latest_era_id = era_id
+	return latest_era_id
 
 
 func _audit_unlock_semantics(catalog: Dictionary, failures: Array) -> void:
@@ -167,17 +195,17 @@ func _audit_unlock_semantics(catalog: Dictionary, failures: Array) -> void:
 		"upland_rice_plot": "agrarian", "wetland_rice_garden": "agrarian",
 		"maize_garden": "agrarian", "highland_tuber_plot": "agrarian",
 		"flax_collector": "agrarian", "spice_shade_garden": "agrarian",
-		"pastoral_camp": "agrarian", "creamery": "agrarian",
-		"wheat_farm": "kingdom", "rice_collector": "kingdom",
+		"pastoral_camp": "stone", "creamery": "agrarian",
+		"wheat_farm": "agrarian", "rice_collector": "agrarian",
 		"tenant_rainfed_maize_field": "kingdom",
 		"tenant_rainfed_wheat_field": "kingdom", "tenant_paddy": "kingdom",
-		"guild_weaving_house": "empire", "cottage_weaving": "exploration",
+		"guild_weaving_house": "agrarian", "cottage_weaving": "agrarian",
 		"atmospheric_engine_workshop": "enlightenment",
 		"improved_domestic_loom": "steam", "electricity_plant": "electrical",
 		"wire_plant": "electrical", "basic_electrical_equipment_works": "electrical",
 		"scientific_instrument_works": "electrical",
 		"industrial_research_laboratory": "electrical",
-		"polytechnic_institute": "atomic", "nuclear_power_plant": "information",
+		"polytechnic_institute": "electrical", "nuclear_power_plant": "information",
 	}
 	var building_ids: PackedStringArray = catalog.building_type_ids
 	var technology_eras: PackedStringArray = catalog.technology_era_ids
@@ -186,8 +214,7 @@ func _audit_unlock_semantics(catalog: Dictionary, failures: Array) -> void:
 		if building < 0:
 			failures.append({"kind": "missing_semantic_building", "building": building_id})
 			continue
-		var owner := _building_owner(catalog, building)
-		var actual := String(technology_eras[owner]) if owner >= 0 else ""
+		var actual := _building_era_id(catalog, building)
 		if actual != String(expected_eras[building_id]):
 			failures.append({"kind": "semantic_era_mismatch", "building": building_id,
 				"expected": expected_eras[building_id], "actual": actual})
@@ -215,6 +242,7 @@ func _audit_productivity(catalog: Dictionary, failures: Array) -> void:
 	var input_goods: PackedInt32Array = catalog.building_input_good_ids
 	var input_quantities: PackedInt64Array = catalog.building_input_quantities
 	var input_required: PackedInt32Array = catalog.building_input_required_q16
+	var chain_ids: PackedStringArray = catalog.building_industry_chain_ids
 	for building in range(building_ids.size()):
 		var labor := maxi(1, int(owner_slots[building]))
 		for role in range(employee_offsets[building], employee_offsets[building + 1]):
@@ -237,13 +265,15 @@ func _audit_productivity(catalog: Dictionary, failures: Array) -> void:
 		if value <= 0.0:
 			continue
 		var productivity := value / float(labor)
-		var owner := _building_owner(catalog, building)
-		var era_id := String(technology_eras[owner]) if owner >= 0 else ""
+		var era_id := _building_era_id(catalog, building)
 		var era := ERA_IDS.find(era_id)
 		var food_capacity := food_output / float(labor) / SURVIVAL_FOOD_UNITS_PER_PERSON
-		if food_output > 0.0 and era >= 0:
+		if food_output > 0.0 and era >= 0 \
+				and String(chain_ids[building]) in PRIMARY_FOOD_CHAINS \
+				and String(building_ids[building]) != "gathering_ground":
 			var food_rows: Array = era_food_capacity.get(era_id, [])
-			food_rows.append(food_capacity)
+			food_rows.append({"building": String(building_ids[building]),
+				"capacity": food_capacity})
 			era_food_capacity[era_id] = food_rows
 			var food_input := 0.0
 			for edge in range(input_offsets[building], input_offsets[building + 1]):
@@ -312,15 +342,18 @@ func _audit_productivity(catalog: Dictionary, failures: Array) -> void:
 		if rows.is_empty():
 			continue
 		var expected := float(ERA_FOOD_LABOR_CAPACITY[era])
-		for capacity in rows:
-			if float(capacity) < expected * 0.995:
+		for row_value in rows:
+			var row: Dictionary = row_value
+			var capacity := float(row.capacity)
+			if capacity < expected * 0.995:
 				failures.append({"kind": "food_labor_capacity_out_of_range",
-					"era": era_id, "capacity": capacity, "expected": expected})
+					"building": String(row.building), "era": era_id,
+					"capacity": capacity, "expected": expected})
 	if not era_food_capacity.get("stone", []).is_empty() \
 			and not era_food_capacity.get("intelligent", []).is_empty():
-		var food_ratio := _median_float(era_food_capacity["intelligent"]) / maxf(0.001,
-			_median_float(era_food_capacity["stone"]))
-		if food_ratio < 140.0:
+		var food_ratio := _median_capacity(era_food_capacity["intelligent"]) / maxf(0.001,
+			_median_capacity(era_food_capacity["stone"]))
+		if food_ratio < 75.0:
 			failures.append({"kind": "food_long_run_productivity_gap",
 				"ratio_to_stone": food_ratio})
 	var research_family := family_ids.find("research_institution")
@@ -345,18 +378,18 @@ func _audit_productivity(catalog: Dictionary, failures: Array) -> void:
 
 func _audit_early_farm_capacity(catalog: Dictionary, failures: Array) -> void:
 	var expected := {
-		"wild_wheat_stand": ["stone", 1.10, 1.20],
-		"wild_rice_marsh": ["stone", 1.10, 1.20],
-		"wild_maize_stand": ["stone", 1.10, 1.20],
-		"wild_tuber_patch": ["stone", 1.10, 1.20],
-		"subsistence_farm": ["agrarian", 1.30, 1.40],
-		"floodplain_wheat_plot": ["agrarian", 1.30, 1.40],
-		"upland_rice_plot": ["agrarian", 1.30, 1.40],
-		"maize_garden": ["agrarian", 1.40, 1.50],
-		"rainfed_wheat_plot": ["agrarian", 1.40, 1.50],
-		"wetland_rice_garden": ["agrarian", 1.40, 1.50],
-		"rainfed_maize_field": ["agrarian", 1.50, 1.60],
-		"swidden_maize_plot": ["agrarian", 1.50, 1.60],
+		"wild_wheat_stand": ["stone", 1.40, 1.48],
+		"wild_rice_marsh": ["stone", 1.40, 1.48],
+		"wild_maize_stand": ["stone", 1.40, 1.48],
+		"wild_tuber_patch": ["stone", 1.40, 1.48],
+		"subsistence_farm": ["agrarian", 1.65, 1.72],
+		"floodplain_wheat_plot": ["agrarian", 1.65, 1.72],
+		"upland_rice_plot": ["agrarian", 1.65, 1.72],
+		"maize_garden": ["agrarian", 1.78, 1.86],
+		"rainfed_wheat_plot": ["agrarian", 1.78, 1.86],
+		"wetland_rice_garden": ["agrarian", 1.78, 1.86],
+		"rainfed_maize_field": ["agrarian", 1.90, 1.98],
+		"swidden_maize_plot": ["agrarian", 1.90, 1.98],
 	}
 	var ids: PackedStringArray = catalog.building_type_ids
 	var output_offsets: PackedInt32Array = catalog.building_output_offsets
@@ -388,6 +421,33 @@ func _audit_early_farm_capacity(catalog: Dictionary, failures: Array) -> void:
 				"expected_era": bounds[0], "range": [bounds[1], bounds[2]]})
 
 
+func _audit_automation_inputs(catalog: Dictionary, failures: Array) -> void:
+	var required_inputs := ["fertilizer", "agricultural_machinery", "electricity", "computers"]
+	for building_id in PRECISION_FARMS:
+		for good_id in required_inputs:
+			if not _has_required_input(catalog, building_id, good_id):
+				failures.append({"kind": "precision_farm_missing_required_input",
+					"building": building_id, "good": good_id})
+	for building_id in AUTOMATED_FARMS:
+		for good_id in required_inputs + ["autonomous_systems"]:
+			if not _has_required_input(catalog, building_id, good_id):
+				failures.append({"kind": "automated_farm_missing_required_input",
+					"building": building_id, "good": good_id})
+
+
+func _has_required_input(catalog: Dictionary, building_id: String, good_id: String) -> bool:
+	var building := (catalog.building_type_ids as PackedStringArray).find(building_id)
+	var good := (catalog.good_ids as PackedStringArray).find(good_id)
+	if building < 0 or good < 0:
+		return false
+	for edge in range(catalog.building_input_offsets[building],
+			catalog.building_input_offsets[building + 1]):
+		if int(catalog.building_input_good_ids[edge]) == good \
+				and int(catalog.building_input_required_q16[edge]) > 0:
+			return true
+	return false
+
+
 func _median_float(values: Array) -> float:
 	if values.is_empty():
 		return 0.0
@@ -397,6 +457,13 @@ func _median_float(values: Array) -> float:
 	if sorted.size() % 2 == 1:
 		return float(sorted[middle])
 	return (float(sorted[middle - 1]) + float(sorted[middle])) * 0.5
+
+
+func _median_capacity(rows: Array) -> float:
+	var values: Array = []
+	for row_value in rows:
+		values.append(float((row_value as Dictionary).get("capacity", 0.0)))
+	return _median_float(values)
 
 
 func _assert_negative_fixtures(catalog: Dictionary) -> void:

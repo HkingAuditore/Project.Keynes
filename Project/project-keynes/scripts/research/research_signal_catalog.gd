@@ -164,6 +164,7 @@ const NETWORK_SIGNAL_ROWS := [
 	["bio.reed", "芦苇", ResearchSignalDefinitionScript.Kind.BIO, ResearchSignalDefinitionScript.Persistence.PERMANENT, ["category.construction_plant"], ["habitat.wetland"], [], true],
 	["bio.bast_fiber", "韧皮纤维植物", ResearchSignalDefinitionScript.Kind.BIO, ResearchSignalDefinitionScript.Persistence.PERMANENT, ["category.fiber_crop"], ["habitat.forest_edge"], [], true],
 	["bio.dye_plant", "染料植物", ResearchSignalDefinitionScript.Kind.BIO, ResearchSignalDefinitionScript.Persistence.PERMANENT, ["category.dye_crop"], ["habitat.warm_crop"], [], true],
+	["bio.medicinal_herb", "野生药草", ResearchSignalDefinitionScript.Kind.BIO, ResearchSignalDefinitionScript.Persistence.PERMANENT, ["category.medicinal_crop"], ["habitat.forest_edge", "habitat.open_grassland"], [], true],
 
 	["landform.delta", "三角洲", ResearchSignalDefinitionScript.Kind.LANDFORM, ResearchSignalDefinitionScript.Persistence.PERMANENT, ["category.river"], [], [], true],
 	["landform.floodplain", "洪泛平原", ResearchSignalDefinitionScript.Kind.LANDFORM, ResearchSignalDefinitionScript.Persistence.PERMANENT, ["category.river"], [], [], true],
@@ -192,6 +193,7 @@ const NETWORK_SIGNAL_ROWS := [
 	["contact.flax", "亚麻样本接触", ResearchSignalDefinitionScript.Kind.CONTACT, ResearchSignalDefinitionScript.Persistence.PERMANENT, ["category.contact"], [], [], true],
 	["contact.spice", "香料样本接触", ResearchSignalDefinitionScript.Kind.CONTACT, ResearchSignalDefinitionScript.Persistence.PERMANENT, ["category.contact"], [], [], true],
 	["contact.rubber", "橡胶样本接触", ResearchSignalDefinitionScript.Kind.CONTACT, ResearchSignalDefinitionScript.Persistence.PERMANENT, ["category.contact"], [], [], true],
+	["contact.medicinal_herb", "药草样本接触", ResearchSignalDefinitionScript.Kind.CONTACT, ResearchSignalDefinitionScript.Persistence.PERMANENT, ["category.contact"], [], [], true],
 	["contact.tin", "锡矿贸易接触", ResearchSignalDefinitionScript.Kind.CONTACT, ResearchSignalDefinitionScript.Persistence.PERMANENT, ["category.contact"], [], [], true],
 	["contact.maritime_vessel", "外国舰船或远洋船体接触", ResearchSignalDefinitionScript.Kind.CONTACT, ResearchSignalDefinitionScript.Persistence.PERMANENT, ["category.contact", "category.maritime"], [], [], true],
 	["contact.bast_fiber", "韧皮纤维实物接触", ResearchSignalDefinitionScript.Kind.CONTACT, ResearchSignalDefinitionScript.Persistence.PERMANENT, ["category.contact", "category.fiber_crop"], [], [], true],
@@ -430,6 +432,15 @@ const BIO_OCCUPANCY_BY_ID := {
 		"habitat_class": OCCUPANCY_HABITAT_FIBER_OPEN,
 		"introduce_goods": [],
 	},
+	"bio.medicinal_herb": {
+		"carrier": "", "carrier_alt": "",
+		"temp_lo": 0.20, "temp_hi": 0.88, "moist_lo": 0.24, "moist_hi": 0.96,
+		"elev_lo": 0.0, "elev_hi": 0.88, "veg": _VEG_FOREST, "flags": 0,
+		"max_cost": 14, "fill_keep": 0.50, "guild": OCCUPANCY_GUILD_SPECIALTY,
+		"habitat_class": OCCUPANCY_HABITAT_FIBER_FOREST,
+		"origin_policy": OCCUPANCY_ORIGIN_COSMOPOLITAN,
+		"introduce_goods": ["medicinal_herbs"],
+	},
 }
 
 const OVERLAY_ICON_BY_ID := {
@@ -441,6 +452,7 @@ const OVERLAY_ICON_BY_ID := {
 	"bio.flax": &"economy.crop",
 	"bio.spice": &"economy.crop",
 	"bio.dye_plant": &"economy.crop",
+	"bio.medicinal_herb": &"economy.crop",
 	"bio.bast_fiber": &"economy.crop",
 	"bio.horse": &"good.horses",
 	"bio.sheep": &"good.wool",

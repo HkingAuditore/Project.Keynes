@@ -3,6 +3,9 @@ extends RefCounted
 
 const FORMAT_VERSION := 1
 const MAGIC := "PKSV"
+const TECHNOLOGY_INDUSTRY_REVISION := 2
+const LEGACY_TECHNOLOGY_INDUSTRY_REVISION := 1
+const LEGACY_INDUSTRY_REASON := "该存档使用旧产业科技规则，无法载入当前版本。请新建游戏或从兼容版本继续。"
 const SAVE_DIR := "user://saves"
 const SLOT_IDS := ["manual_1", "manual_2", "manual_3", "autosave"]
 var _save_dir: String
@@ -34,6 +37,7 @@ func list_slots() -> Array:
 			"width": int(header.get("width", 0)),
 			"height": int(header.get("height", 0)),
 			"saved_at": String(header.get("saved_at", "")),
+			"technology_industry_revision": _technology_industry_revision(header),
 			"provider_manifest": header.get("provider_manifest", []),
 		})
 	return slots
@@ -67,6 +71,7 @@ func write_slot(slot_id: String, header_fields: Dictionary, sections: Dictionary
 	header.merge({
 		"magic": MAGIC,
 		"format_version": FORMAT_VERSION,
+		"technology_industry_revision": TECHNOLOGY_INDUSTRY_REVISION,
 		"application_version": ProjectSettings.get_setting("application/config/version", "dev"),
 		"generator_hash": compatibility_hash(),
 		"sections": section_table,
@@ -116,6 +121,8 @@ func load_slot(slot_id: String) -> Dictionary:
 	if not bool(result.get("ok", false)):
 		return result
 	if not _compatible(result.header):
+		if _technology_industry_revision(result.header) != TECHNOLOGY_INDUSTRY_REVISION:
+			return _error("technology_industry_revision_incompatible", LEGACY_INDUSTRY_REASON)
 		return _error("save_incompatible", "存档由不兼容的生成器或版本创建。")
 	result["slot_id"] = slot_id
 	return result
@@ -125,9 +132,9 @@ func load_preview(slot_id: String) -> Dictionary:
 	if slot_id not in SLOT_IDS:
 		return _error("slot_invalid", "存档槽位无效。")
 	var path := _slot_path(slot_id)
-	var result := _read_section(path, "preview")
+	var result := _read_section(path, "preview", false)
 	if not bool(result.get("ok", false)):
-		result = _read_section(path + ".bak", "preview")
+		result = _read_section(path + ".bak", "preview", false)
 	return result
 
 
@@ -197,7 +204,8 @@ func _read_container(path: String, read_sections: bool,
 	return result
 
 
-func _read_section(path: String, section_id: String) -> Dictionary:
+func _read_section(path: String, section_id: String,
+		require_compatibility: bool = true) -> Dictionary:
 	if not FileAccess.file_exists(path):
 		return _error("save_missing", "存档不存在。")
 	var file := FileAccess.open(path, FileAccess.READ)
@@ -210,10 +218,13 @@ func _read_section(path: String, section_id: String) -> Dictionary:
 			or header_length > file.get_length() - 12:
 		return _error("save_header_invalid", "存档头无效。")
 	var parsed = JSON.parse_string(file.get_buffer(header_length).get_string_from_utf8())
-	if not parsed is Dictionary or not _compatible(parsed):
+	if not parsed is Dictionary:
+		return _error("save_header_invalid", "存档头无法解析。")
+	var header := parsed as Dictionary
+	if require_compatibility and not _compatible(header):
 		return _error("save_incompatible", "存档版本不兼容。")
 	var payload_start := file.get_position()
-	for raw in (parsed as Dictionary).get("sections", []):
+	for raw in header.get("sections", []):
 		var entry := raw as Dictionary
 		if String(entry.get("id", "")) != section_id:
 			continue
@@ -232,19 +243,28 @@ func _read_section(path: String, section_id: String) -> Dictionary:
 			return _error("save_section_decompress_failed", "存档 section 解压失败。")
 		if _sha256(bytes) != String(entry.get("sha256", "")):
 			return _error("save_section_checksum_failed", "存档 section 校验失败。")
-		return {"ok": true, "code": "ok", "message": "", "bytes": bytes}
+		return {"ok": true, "code": "ok", "message": "", "bytes": bytes,
+			"header": header}
 	return _error("save_provider_missing", "存档缺少预览 section。")
 
 
 func _compatible(header: Dictionary) -> bool:
 	return int(header.get("format_version", -1)) == FORMAT_VERSION \
-		and String(header.get("generator_hash", "")) == compatibility_hash()
+		and String(header.get("generator_hash", "")) == compatibility_hash() \
+		and _technology_industry_revision(header) == TECHNOLOGY_INDUSTRY_REVISION
 
 
 func _reason_for(read: Dictionary, header: Dictionary) -> String:
 	if not bool(read.get("ok", false)):
 		return String(read.get("message", "存档损坏。"))
+	if _technology_industry_revision(header) != TECHNOLOGY_INDUSTRY_REVISION:
+		return LEGACY_INDUSTRY_REASON
 	return "" if _compatible(header) else "存档版本或生成器不兼容。"
+
+
+func _technology_industry_revision(header: Dictionary) -> int:
+	return int(header.get("technology_industry_revision",
+		LEGACY_TECHNOLOGY_INDUSTRY_REVISION))
 
 
 func _slot_path(slot_id: String) -> String:

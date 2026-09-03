@@ -1,11 +1,14 @@
-[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
 [ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
 [resource]
 script = ExtResource("1")
 id = &"manuscripts"
 display_name = "手抄本"
+semantic_tags = PackedStringArray()
 category_id = &"manuscripts"
 substitution_category_ids = PackedStringArray("manuscripts")
-technology_tags = PackedStringArray("tech.application.classical_scriptorium", "tech.application.monastic_scriptorium")
+technology_tags = PackedStringArray("tech.writing", "tech.manuscript_culture")
 default_price = 24000
 reference_max_price = 1200000

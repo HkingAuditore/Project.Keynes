@@ -244,6 +244,12 @@
   }
   .node.milestone .n-name { color: var(--brass); font-size: 14px; }
   .node.backbone { border-color: rgba(157,184,201,0.38); }
+  .node.application {
+    border-color: rgba(105,151,140,0.55);
+    border-style: dashed;
+    background: linear-gradient(180deg, #202822, #19201c);
+  }
+  .node.application::before { background: #69978c; }
   .node.milestone .n-tag {
     display: inline-block; margin-top: 4px; font-size: 10px; letter-spacing: 2px;
     color: var(--brass); border: 1px solid var(--brass-faint); border-radius: 8px;
@@ -317,7 +323,7 @@ DATA.edges.forEach(e => {
     outgoingEdges[e.from].push(e); incomingEdges[e.to].push(e);
   }
 });
-const STRUCTURAL_EDGE_KINDS = new Set(["hard", "milestone_candidate"]);
+const STRUCTURAL_EDGE_KINDS = new Set(["hard", "application", "milestone_candidate"]);
 DATA.nodes.forEach((n, i) => n._order = i);   // 目录序（拓扑序）作为确定性 tiebreak
 const laneRank = {};
 (DATA.lanes || []).forEach((lane, i) => { laneRank[lane.id] = i; });
@@ -515,7 +521,7 @@ function renderBands() {
     el.style.cssText = `left:0;width:${STAGE_W}px;top:${band.top}px;height:${band.bottom - band.top}px`;
     el.innerHTML = `<div class="era-title">
         <div class="era-name">${band.era.display_name}</div>
-        <div class="era-meta">${band.era.node_count} 项 · ${fmtCost(band.era.min_cost)}–${fmtCost(band.era.max_cost)}</div>
+        <div class="era-meta">${band.era.technology_count} 科技 · ${band.era.application_count} 自动应用 · ${fmtCost(band.era.min_cost)}–${fmtCost(band.era.max_cost)}</div>
       </div>
       <div class="era-watermark">${ERA_NUMERALS[ei] || ""}</div>`;
     stage.insertBefore(el, svg);
@@ -564,14 +570,15 @@ DATA.nodes.forEach(n => {
   const dom = domainsById[n.domain_id];
   const el = document.createElement("div");
   el.className = "node" + (n.is_milestone ? " milestone" : "")
+    + (n.is_automatic_application ? " application" : "")
     + (n.network_role === "backbone" ? " backbone" : "");
   el.style.cssText = `left:${p.x}px;top:${p.y}px;--spine:${dom.accent}`;
   const mark = n.is_starter_eligible ? '<div class="n-mark start" title="区域开局候选"></div>'
     : (!n.is_milestone && n.is_era_key) ? '<div class="n-mark key" title="时代关键"></div>' : "";
   el.innerHTML = `
     <div class="n-name">${n.display_name}</div>
-    <div class="n-meta"><span>${dom.display_name}</span><span class="n-cost">${fmtCost(n.cost_points)}</span></div>
-    ${n.is_milestone ? '<div class="n-tag">时 代 里 程 碑</div>' : ""}${mark}`;
+    <div class="n-meta"><span>${dom.display_name}</span><span class="n-cost">${n.is_automatic_application ? "自动应用" : fmtCost(n.cost_points)}</span></div>
+    ${n.is_milestone ? '<div class="n-tag">时 代 里 程 碑</div>' : ""}${n.is_automatic_application ? '<div class="n-tag">产 业 交 汇</div>' : ""}${mark}`;
   el.addEventListener("click", ev => { ev.stopPropagation(); select(n.id); });
   el.addEventListener("mouseenter", () => applyChain(n.id));
   el.addEventListener("mouseleave", () => applyChain(selectedId));
@@ -722,7 +729,7 @@ function renderOverview() {
   detail.innerHTML = `
     <div class="d-kicker">TECHNOLOGY CATALOG</div>
     <h2 class="d-title" style="padding-left:0">分布总览</h2>
-    <div class="d-sub" style="padding-left:0">${DATA.nodes.length} 项科技 · ${DATA.eras.length} 个时代 · ${DATA.domains.length} 个领域</div>
+    <div class="d-sub" style="padding-left:0">${DATA.technology_count} 项研究科技 · ${DATA.application_count} 项自动应用 · ${DATA.eras.length} 个时代 · ${DATA.domains.length} 个领域</div>
     <div class="d-sec"><h3>时代 × 领域 分布</h3>
       <table class="overview-table">
         <tr><th style="text-align:left">时代</th>${DATA.domains.map(d =>
@@ -768,6 +775,7 @@ function renderDetail(n) {
   if (n.is_starter_eligible) badges.push('<span class="badge enamel">区域开局候选</span>');
   if (n.is_milestone) badges.push('<span class="badge brass">时代里程碑</span>');
   if (!n.is_milestone && n.is_era_key) badges.push('<span class="badge brass">时代关键 · 里程碑候选</span>');
+  if (n.is_automatic_application) badges.push('<span class="badge enamel">零成本自动应用</span>');
   (n.route_display_names && n.route_display_names.length ? n.route_display_names : n.route_tags)
     .forEach(t => badges.push(`<span class="badge">${esc(t)}</span>`));
 
@@ -782,7 +790,7 @@ function renderDetail(n) {
         <div class="t-key">${t.stat}</div>
         <div class="d-desc">${esc(t.effect_rationale || "")}</div>
         <div class="t-key">运行时消费者 · ${esc(t.runtime_consumer || "未声明")}</div></div>`).join("")
-    : '<div class="cond-line" style="color:var(--text-3)">无数值效果（开局即完成）。</div>';
+    : `<div class="cond-line" style="color:var(--text-3)">${n.is_automatic_application ? "自动应用不进入 Modifier。" : "无数值效果（开局即完成）。"}</div>`;
 
   const chip = (id, soft, tag) => {
     const t = nodesById[id];
@@ -825,7 +833,7 @@ function renderDetail(n) {
     <div class="d-sub" style="padding-left:13px">${n.id}</div>
     <div class="d-badges">${badges.join("")}</div>
     <div class="d-sec"><h3>基本信息</h3>
-      <div class="kv"><span>研究成本</span><span>${n.cost_points.toLocaleString("zh-CN")} 科技值</span></div>
+      <div class="kv"><span>${n.is_automatic_application ? "生效方式" : "研究成本"}</span><span>${n.is_automatic_application ? "要求全部完成后自动生效" : n.cost_points.toLocaleString("zh-CN") + " 科技值"}</span></div>
       <div class="kv"><span>效果档案</span><span style="font-family:var(--mono);font-size:11.5px">${n.effect_profile}</span></div>
       <div class="kv"><span>网络角色</span><span style="font-family:var(--mono);font-size:11.5px">${esc(n.network_role || "")}</span></div>
       <div class="kv"><span>锚点类型</span><span style="font-family:var(--mono);font-size:11.5px">${esc(n.anchor_kind || "")}</span></div>
@@ -836,7 +844,7 @@ function renderDetail(n) {
     <div class="d-sec"><h3>机会成本</h3><div class="d-desc">${esc(n.opportunity_cost || "无")}</div></div>
     ${unlockBlock}
     ${renderContentEffects(n.content_effects)}
-    <div class="d-sec"><h3>硬前置 · 全部必须完成</h3><div>${prereqs}</div></div>
+    <div class="d-sec"><h3>${n.is_automatic_application ? "应用要求" : "硬前置"} · 全部必须完成</h3><div>${prereqs}</div></div>
     <div class="d-sec"><h3>替代知识路径</h3>${research}</div>
     ${milestoneBlock}
     <div class="d-sec"><h3>发现启发 · 仅用于揭示</h3>${inspiration}</div>
@@ -867,7 +875,7 @@ const eraNav = document.getElementById("era-nav");
 DATA.eras.forEach((era, col) => {
   const tab = document.createElement("span");
   tab.className = "era-tab";
-  tab.innerHTML = `${era.display_name}<b>${era.node_count}</b>`;
+  tab.innerHTML = `${era.display_name}<b>${era.technology_count}+${era.application_count}</b>`;
   tab.addEventListener("click", () => {
     const first = DATA.nodes.find(n => n.era_id === era.id);
     if (first) nodeEls[first.id].scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });

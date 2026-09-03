@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
 
 [ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
 
@@ -6,8 +6,9 @@
 script = ExtResource("1")
 id = &"seed_cotton"
 display_name = "籽棉"
+semantic_tags = PackedStringArray()
 category_id = &"raw_fiber_crop"
 substitution_category_ids = PackedStringArray("raw_fiber_crop")
-technology_tags = PackedStringArray("industry.primary", "tech.application.cotton_garden", "tech.application.cotton_collector", "tech.application.method_cotton_collector_r6", "tech.application.cotton_smallholding", "tech.application.method_cotton_collector_r8", "tech.application.method_cotton_collector_r10")
+technology_tags = PackedStringArray("industry.primary", "tech.wild_cotton_collection", "tech.cotton_gardening", "tech.estate_plantation_management", "tech.mechanized_agriculture", "tech.precision_agriculture", "tech.automated_agriculture")
 default_price = 6500
 reference_max_price = 325000

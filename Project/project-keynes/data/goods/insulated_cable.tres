@@ -1,11 +1,14 @@
-[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
 [ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
 [resource]
 script = ExtResource("1")
 id = &"insulated_cable"
 display_name = "绝缘电缆"
+semantic_tags = PackedStringArray()
 category_id = &"insulated_cable"
 substitution_category_ids = PackedStringArray("insulated_cable")
-technology_tags = PackedStringArray("tech.application.insulated_cable_plant", "tech.application.method_insulated_cable_plant_r10")
+technology_tags = PackedStringArray("tech.electric_grid")
 default_price = 26000
 reference_max_price = 1300000

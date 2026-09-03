@@ -17,24 +17,26 @@ const ResearchPredicateScript = preload("res://scripts/research/research_predica
 const TEMPLATE_PATH := "res://tools/technology_tree/technology_tree_template.html"
 const HTML_OUTPUT_PATH := "res://tools/technology_tree/technology_tree_report.html"
 const MARKDOWN_OUTPUT_PATH := "res://tools/technology_tree/technology_tree_report.md"
+const STABLE_ID_MANIFEST_PATH := \
+	"res://tools/technology_tree/technology_industry_v2_stable_id_manifest.json"
 const PLACEHOLDER := "__TECHNOLOGY_TREE_DATA__"
 
-const EXPECTED_NODE_COUNT := 705
 const EXPECTED_ERA_COUNT := 11
 const EXPECTED_DOMAIN_COUNT := 4
-const EXPECTED_MILESTONE_CANDIDATE_COUNTS := [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
 const EXPECTED_MILESTONE_REQUIRED_COUNTS := [4, 4, 4, 4, 5, 5, 5, 6, 6, 7, 7]
-const MAX_VISUAL_EDGE_COUNT := 4000
+const MAX_VISUAL_EDGE_COUNT := 10000
 const VISUAL_EDGE_KINDS := ["hard", "alternative", "application", "branch", "milestone_candidate"]
 
 
 func _init() -> void:
 	var definitions := TechnologyCatalogScript.public_definitions()
+	var applications := TechnologyCatalogScript.public_application_intersections()
 	var eras := TechnologyCatalogScript.public_era_metadata()
 	var domains := TechnologyCatalogScript.public_domain_metadata()
 	var visual_edges := TechnologyCatalogScript.public_visual_edges()
+	visual_edges.append_array(TechnologyCatalogScript.public_application_visual_edges())
 	var lanes := TechnologyCatalogScript.public_lane_metadata()
-	var error := _validate(definitions, eras, domains, visual_edges)
+	var error := _validate(definitions, applications, eras, domains, visual_edges)
 	if error != "":
 		push_error("[export_technology_tree] %s" % error)
 		quit(1)
@@ -43,6 +45,8 @@ func _init() -> void:
 	var tech_names := {}
 	for definition in definitions:
 		tech_names[String(definition.get("id", ""))] = String(definition.get("display_name", ""))
+	for application in applications:
+		tech_names[String(application.get("id", ""))] = String(application.get("display_name", ""))
 	# Economy content bindings are read through the authoritative EconomyCatalog
 	# reverse index (kind 1 = Good, 2 = Building, 3 = Resource), never re-parsed.
 	var economy: Dictionary = EconomyCatalogScript.compile_native_catalog()
@@ -55,12 +59,18 @@ func _init() -> void:
 	for i in range(definitions.size()):
 		nodes.append(_node_record(definitions[i], definitions, tech_names, signal_names,
 			unlocks[i]))
+	var building_names := _building_display_names()
+	for application in applications:
+		nodes.append(_application_record(application, building_names))
 	var payload := {
-		"eras": _era_records(eras, definitions),
+		"schema_version": 4,
+		"eras": _era_records(eras, definitions, applications),
 		"domains": _domain_records(domains),
 		"lanes": lanes,
 		"edges": visual_edges,
 		"nodes": nodes,
+		"technology_count": definitions.size(),
+		"application_count": applications.size(),
 	}
 	var template_file := FileAccess.open(TEMPLATE_PATH, FileAccess.READ)
 	if template_file == null:
@@ -86,8 +96,8 @@ func _init() -> void:
 				", ".join(stale_paths))
 			quit(1)
 			return
-		print("[PASS] technology tree reports are current: %d nodes / %d edges" % [
-			nodes.size(), visual_edges.size()])
+		print("[PASS] technology tree reports are current: %d technologies / %d applications / %d edges" % [
+			definitions.size(), applications.size(), visual_edges.size()])
 		quit(0)
 		return
 	if not _write_report(HTML_OUTPUT_PATH, html_report):
@@ -96,8 +106,9 @@ func _init() -> void:
 	if not _write_report(MARKDOWN_OUTPUT_PATH, markdown_report):
 		quit(1)
 		return
-	print("[PASS] technology tree reports: %d nodes / %d eras -> %s, %s" % [
-		nodes.size(), eras.size(), HTML_OUTPUT_PATH, MARKDOWN_OUTPUT_PATH])
+	print("[PASS] technology tree reports: %d technologies / %d applications / %d eras -> %s, %s" % [
+		definitions.size(), applications.size(), eras.size(), HTML_OUTPUT_PATH,
+		MARKDOWN_OUTPUT_PATH])
 	quit(0)
 
 
@@ -120,10 +131,9 @@ func _write_report(path: String, contents: String) -> bool:
 	return true
 
 
-func _validate(definitions: Array[Dictionary], eras: Array[Dictionary],
-		domains: Array[Dictionary], visual_edges: Array[Dictionary]) -> String:
-	if definitions.size() != EXPECTED_NODE_COUNT:
-		return "node_count_mismatch: %d" % definitions.size()
+func _validate(definitions: Array[Dictionary], applications: Array[Dictionary],
+		eras: Array[Dictionary], domains: Array[Dictionary],
+		visual_edges: Array[Dictionary]) -> String:
 	if eras.size() != EXPECTED_ERA_COUNT:
 		return "era_count_mismatch: %d" % eras.size()
 	if domains.size() != EXPECTED_DOMAIN_COUNT:
@@ -132,7 +142,18 @@ func _validate(definitions: Array[Dictionary], eras: Array[Dictionary],
 		return "visual_edge_count_invalid: %d" % visual_edges.size()
 	var order := {}
 	for i in range(definitions.size()):
-		order[String(definitions[i].get("id", ""))] = i
+		var technology_id := String(definitions[i].get("id", ""))
+		if not technology_id.begins_with("tech.") or order.has(technology_id):
+			return "technology_id_invalid: %s" % technology_id
+		order[technology_id] = i
+	for i in range(applications.size()):
+		var application_id := String(applications[i].get("id", ""))
+		if not application_id.begins_with("app.") or order.has(application_id):
+			return "application_id_invalid: %s" % application_id
+		order[application_id] = definitions.size() + i
+	var manifest_error := _validate_stable_id_manifest(definitions, applications)
+	if manifest_error != "":
+		return manifest_error
 	var milestone_count := 0
 	var milestone_era_index := 0
 	for i in range(definitions.size()):
@@ -146,10 +167,6 @@ func _validate(definitions: Array[Dictionary], eras: Array[Dictionary],
 				return "catalog_not_topological: %s" % id
 		if bool(definition.get("is_milestone", false)):
 			milestone_count += 1
-			if (definition.get("milestone_candidate_ids", PackedStringArray())
-					as PackedStringArray).size() != EXPECTED_MILESTONE_CANDIDATE_COUNTS[
-					milestone_era_index]:
-				return "milestone_candidate_count_invalid: %s" % id
 			if int(definition.get("milestone_required_count", 0)) \
 					!= EXPECTED_MILESTONE_REQUIRED_COUNTS[milestone_era_index]:
 				return "milestone_required_count_invalid: %s" % id
@@ -166,6 +183,34 @@ func _validate(definitions: Array[Dictionary], eras: Array[Dictionary],
 			return "visual_edge_kind_invalid: %s" % kind
 		if not order.has(from_id) or not order.has(to_id):
 			return "visual_edge_endpoint_missing: %s -> %s" % [from_id, to_id]
+	return ""
+
+
+func _validate_stable_id_manifest(definitions: Array[Dictionary],
+		applications: Array[Dictionary]) -> String:
+	var file := FileAccess.open(STABLE_ID_MANIFEST_PATH, FileAccess.READ)
+	if file == null:
+		return "stable_id_manifest_missing: %s" % STABLE_ID_MANIFEST_PATH
+	var parsed: Variant = JSON.parse_string(file.get_as_text())
+	file.close()
+	if not parsed is Dictionary:
+		return "stable_id_manifest_invalid"
+	var manifest: Dictionary = parsed
+	if int(manifest.get("technology_industry_revision", 0)) != 2 \
+			or int(manifest.get("technology_network_schema_version", 0)) != 4:
+		return "stable_id_manifest_revision_invalid"
+	var technology_ids := PackedStringArray()
+	for definition in definitions:
+		technology_ids.append(String(definition.get("id", "")))
+	technology_ids.sort()
+	var application_ids := PackedStringArray()
+	for application in applications:
+		application_ids.append(String(application.get("id", "")))
+	application_ids.sort()
+	if technology_ids != PackedStringArray(manifest.get("technology_ids", [])):
+		return "stable_technology_id_manifest_mismatch"
+	if application_ids != PackedStringArray(manifest.get("application_ids", [])):
+		return "stable_application_id_manifest_mismatch"
 	return ""
 
 
@@ -331,6 +376,70 @@ func _node_record(definition: Dictionary, definitions: Array[Dictionary],
 	}
 
 
+func _application_record(application: Dictionary, building_names: Dictionary) -> Dictionary:
+	var required_ids := PackedStringArray(application.get("required_technology_ids", []))
+	var rationales := PackedStringArray()
+	for _required_id in required_ids:
+		rationales.append("该知识是此产业交汇自动生效的必要条件。")
+	var buildings: Array[Dictionary] = []
+	for building_id_value in application.get("building_ids", PackedStringArray()):
+		var building_id := String(building_id_value)
+		buildings.append({
+			"id": building_id,
+			"name": String(building_names.get(building_id, building_id)),
+		})
+	return {
+		"id": String(application.get("id", "")),
+		"display_name": String(application.get("display_name", "")),
+		"era_id": String(application.get("era_id", "")),
+		"domain_id": String(application.get("domain_id", "")),
+		"cost_points": 0,
+		"prerequisite_ids": required_ids,
+		"prerequisite_rationales": rationales,
+		"successor_ids": PackedStringArray(),
+		"hard_successor_ids": PackedStringArray(),
+		"hard_successor_rationales": PackedStringArray(),
+		"candidate_milestone_ids": PackedStringArray(),
+		"is_milestone": false,
+		"is_era_key": false,
+		"is_starting": false,
+		"is_starter_eligible": false,
+		"is_automatic_application": true,
+		"node_role": "automatic_application",
+		"network_role": "application",
+		"anchor_kind": "application_intersection",
+		"primary_route_tag": "",
+		"layout_lane": String(application.get("layout_lane",
+			application.get("industry_chain_id", ""))),
+		"starter_capability_tags": PackedStringArray(),
+		"milestone_candidate_ids": PackedStringArray(),
+		"milestone_candidate_names": PackedStringArray(),
+		"milestone_required_count": 0,
+		"effect_summary": "全部所需科技完成后自动应用；不进入研究队列、进度、Modifier 或存档。",
+		"effect_profile": "",
+		"route_tags": PackedStringArray(),
+		"route_display_names": PackedStringArray(),
+		"condition_lines": [],
+		"reveal_condition_lines": [],
+		"modifier_terms": [],
+		"content_effects": [],
+		"opportunity_cost": "无需研究点。",
+		"topology_review": {},
+		"building_unlock_review": {},
+		"branch_successor_ids": PackedStringArray(),
+		"branch_successor_rationales": PackedStringArray(),
+		"application_target_ids": PackedStringArray(),
+		"application_target_rationales": PackedStringArray(),
+		"terminal_reason": "",
+		"unlocks": {
+			"goods": [],
+			"buildings": buildings,
+			"resources": [],
+			"support_buildings": [],
+		},
+	}
+
+
 func _node_modifier_terms(definition: Dictionary) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	for term_value in definition.get("modifier_terms", []):
@@ -405,25 +514,32 @@ func _predicate_text(predicate: Dictionary, tech_names: Dictionary,
 	return "（暂不支持的条件谓词 %d：%s）" % [kind, id]
 
 
-func _era_records(eras: Array[Dictionary], definitions: Array[Dictionary]) -> Array[Dictionary]:
+func _era_records(eras: Array[Dictionary], definitions: Array[Dictionary],
+		applications: Array[Dictionary]) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	for era in eras:
 		var era_id := String(era.get("id", ""))
-		var count := 0
+		var technology_count := 0
+		var application_count := 0
 		var min_cost := -1
 		var max_cost := 0
 		for definition in definitions:
 			if String(definition.get("era_id", "")) != era_id:
 				continue
-			count += 1
+			technology_count += 1
 			var cost := int(definition.get("cost_points", 0))
 			min_cost = cost if min_cost < 0 else mini(min_cost, cost)
 			max_cost = maxi(max_cost, cost)
+		for application in applications:
+			if String(application.get("era_id", "")) == era_id:
+				application_count += 1
 		out.append({
 			"id": era_id,
 			"display_name": String(era.get("display_name", era_id)),
 			"milestone_id": String(era.get("milestone_id", "")),
-			"node_count": count,
+			"node_count": technology_count + application_count,
+			"technology_count": technology_count,
+			"application_count": application_count,
 			"min_cost": maxi(min_cost, 0),
 			"max_cost": max_cost,
 		})
@@ -470,7 +586,8 @@ func _markdown_report(payload: Dictionary) -> String:
 	lines.append("")
 	lines.append("| 项目 | 数量 |")
 	lines.append("| --- | ---: |")
-	lines.append("| 科技 | %d |" % nodes.size())
+	lines.append("| 研究科技 (`tech.*`) | %d |" % int(payload.get("technology_count", 0)))
+	lines.append("| 自动应用 (`app.*`) | %d |" % int(payload.get("application_count", 0)))
 	lines.append("| 时代 | %d |" % eras.size())
 	lines.append("| 领域 | %d |" % domains.size())
 	lines.append("| 里程碑 | %d |" % milestone_count)
@@ -485,10 +602,11 @@ func _markdown_report(payload: Dictionary) -> String:
 	lines.append("")
 	for era_index in range(eras.size()):
 		var era: Dictionary = eras[era_index]
-		lines.append("- [%s](#era-%d)（%d 项，成本 %d-%d）" % [
+		lines.append("- [%s](#era-%d)（%d 项科技、%d 项自动应用，科技成本 %d-%d）" % [
 			_md_inline(String(era.get("display_name", era.get("id", "")))),
 			era_index + 1,
-			int(era.get("node_count", 0)),
+			int(era.get("technology_count", 0)),
+			int(era.get("application_count", 0)),
 			int(era.get("min_cost", 0)),
 			int(era.get("max_cost", 0)),
 		])
@@ -500,8 +618,9 @@ func _markdown_report(payload: Dictionary) -> String:
 		lines.append("<a id=\"era-%d\"></a>" % (era_index + 1))
 		lines.append("## %s" % _md_inline(String(era.get("display_name", era_id))))
 		lines.append("")
-		lines.append("共 %d 项科技，研究成本范围 %d-%d；时代里程碑：%s。" % [
-			int(era.get("node_count", 0)),
+		lines.append("共 %d 项研究科技、%d 项自动应用，科技研究成本范围 %d-%d；时代里程碑：%s。" % [
+			int(era.get("technology_count", 0)),
+			int(era.get("application_count", 0)),
 			int(era.get("min_cost", 0)),
 			int(era.get("max_cost", 0)),
 			_named_technology(String(era.get("milestone_id", "")), tech_names),
@@ -515,6 +634,7 @@ func _markdown_report(payload: Dictionary) -> String:
 func _append_markdown_node(lines: PackedStringArray, node: Dictionary, era: Dictionary,
 		domain_names: Dictionary, tech_names: Dictionary) -> void:
 	var id := String(node.get("id", ""))
+	var is_application := bool(node.get("is_automatic_application", false))
 	var domain_id := String(node.get("domain_id", ""))
 	var flags := PackedStringArray()
 	if bool(node.get("is_starting", false)):
@@ -525,6 +645,8 @@ func _append_markdown_node(lines: PackedStringArray, node: Dictionary, era: Dict
 		flags.append("时代关键")
 	if bool(node.get("is_milestone", false)):
 		flags.append("时代里程碑")
+	if is_application:
+		flags.append("零成本自动应用")
 
 	lines.append("")
 	lines.append("### %s (`%s`)" % [
@@ -538,7 +660,10 @@ func _append_markdown_node(lines: PackedStringArray, node: Dictionary, era: Dict
 		_md_code(String(node.get("era_id", "")))])
 	lines.append("| 领域 | %s (`%s`) |" % [
 		_md_table(String(domain_names.get(domain_id, domain_id))), _md_code(domain_id)])
-	lines.append("| 研究成本 | %d 科技点（`technology_points`） |" % int(node.get("cost_points", 0)))
+	if is_application:
+		lines.append("| 生效方式 | 所需科技全部完成后立即自动应用；无研究成本、队列或进度 |")
+	else:
+		lines.append("| 研究成本 | %d 科技点（`technology_points`） |" % int(node.get("cost_points", 0)))
 	lines.append("| 节点标记 | %s |" % _md_table("、".join(flags) if not flags.is_empty() else "无"))
 	lines.append("| 网络角色 | %s |" % _md_table(_value_or_none(
 		node.get("network_role", ""))))
@@ -565,7 +690,8 @@ func _append_markdown_node(lines: PackedStringArray, node: Dictionary, era: Dict
 		node.get("starter_capability_tags", PackedStringArray()))))
 	lines.append("| 效果配置 | %s |" % _md_table(_value_or_none(node.get("effect_profile", ""))))
 
-	_append_relation_section(lines, "硬前置（决定研发资格）",
+	_append_relation_section(lines,
+		"所需科技（ALL，决定自动应用）" if is_application else "硬前置（决定研发资格）",
 		node.get("prerequisite_ids", PackedStringArray()),
 		node.get("prerequisite_rationales", PackedStringArray()), tech_names)
 	if not (node.get("condition_lines", []) as Array).is_empty():

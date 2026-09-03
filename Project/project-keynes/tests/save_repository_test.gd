@@ -22,6 +22,8 @@ func _init() -> void:
 		"saved_at": "test",
 	}, sections)
 	_expect("write succeeds", bool(written.ok))
+	_expect("new save declares technology industry revision 2",
+		int(written.header.get("technology_industry_revision", 0)) == 2)
 	var loaded: Dictionary = repository.load_slot("manual_1")
 	_expect("load succeeds", bool(loaded.ok))
 	_expect("variant section round trips", bytes_to_var(loaded.section_bytes.config).country == "Test")
@@ -45,13 +47,30 @@ func _init() -> void:
 		and bytes_to_var(recovered.section_bytes.config).country == "Test")
 
 	repository.write_slot("manual_2", written.header, sections)
-	_write_truncated("manual_2.pksv")
+	_rewrite_legacy_industry_header("manual_2.pksv")
+	var legacy_slots := repository.list_slots()
+	_expect("legacy industry save stays visible and disabled",
+		bool(legacy_slots[1].exists) and not bool(legacy_slots[1].loadable) \
+		and String(legacy_slots[1].reason).contains("旧产业科技规则"))
+	_expect("missing industry revision is reported as revision 1",
+		int(legacy_slots[1].technology_industry_revision) == 1)
+	_expect("legacy industry save preview remains readable",
+		repository.load_preview("manual_2").get("bytes", PackedByteArray()) \
+		== sections.preview)
+	var legacy_load := repository.load_slot("manual_2")
+	_expect("legacy industry save is rejected before load",
+		not bool(legacy_load.get("ok", false)) \
+		and String(legacy_load.get("code", "")) \
+		== "technology_industry_revision_incompatible")
 	repository.write_slot("manual_3", written.header, sections)
 	_rewrite_incompatible_header("manual_3.pksv")
+	_expect("native-incompatible save preview remains readable",
+		repository.load_preview("manual_3").get("bytes", PackedByteArray()) \
+		== sections.preview)
 	repository.write_slot("autosave", written.header, sections)
 	_corrupt_last_byte("autosave.pksv")
 	var invalid_slots := repository.list_slots()
-	_expect("truncated save stays visible and disabled",
+	_expect("legacy save stays visible and disabled",
 		bool(invalid_slots[1].exists) and not bool(invalid_slots[1].loadable) \
 		and not String(invalid_slots[1].reason).is_empty())
 	_expect("incompatible save stays visible and disabled",
@@ -93,6 +112,14 @@ func _write_truncated(file_name: String) -> void:
 
 
 func _rewrite_incompatible_header(file_name: String) -> void:
+	_rewrite_header(file_name, false)
+
+
+func _rewrite_legacy_industry_header(file_name: String) -> void:
+	_rewrite_header(file_name, true)
+
+
+func _rewrite_header(file_name: String, erase_industry_revision: bool) -> void:
 	var path := "%s/%s" % [TEST_DIR, file_name]
 	var source := FileAccess.open(path, FileAccess.READ)
 	if source == null or source.get_length() < 12:
@@ -105,7 +132,10 @@ func _rewrite_incompatible_header(file_name: String) -> void:
 		return
 	var payload := source.get_buffer(source.get_length() - source.get_position())
 	source.close()
-	header.generator_hash = "0".repeat(64)
+	if erase_industry_revision:
+		header.erase("technology_industry_revision")
+	else:
+		header.generator_hash = "0".repeat(64)
 	var header_bytes := JSON.stringify(header).to_utf8_buffer()
 	var output := FileAccess.open(path, FileAccess.WRITE)
 	output.store_buffer(magic)

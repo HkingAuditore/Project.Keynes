@@ -23,7 +23,7 @@
 `tools/build_technology_network_authoring.gd` 只用于确定性重建与校验 JSON，连续运行必须得到
 相同 SHA-256。
 
-## Research prerequisites and discovery signals (PKCN v11)
+## Research prerequisites and discovery signals (PKCN v12)
 
 `ResearchSignalCatalog` is static content, not another runtime. It compiles stable signal IDs for
 Bio, resource, landform, weather and breakthrough observations. `TechnologyCatalog` compiles
@@ -104,17 +104,20 @@ idempotency key，不会重复发现。
 
 ## 目录
 
-当前 schema v3 目录包含 671 个稳定 ID 的定义：7 个只允许区域开局求解器授予的零成本生存核心
-处理节点，以及 664 个可研究节点，覆盖 11 个时代和农业、工程、科学、社会四领域。不存在全球
-统一开局科技。各时代里程碑候选数依次为 `8/9/10/11/12/13/14/15/16/17/18`，达标数依次为
-`4/4/4/4/5/5/5/6/6/7/7`；候选分组只用于 UI。里程碑不直接解锁 Good、Resource、建筑或
+当前 schema v4 目录把研究科技与产业交汇严格分开。`nodes[]` 只能使用 `tech.*`，是唯一进入
+dense technology ID、研究队列、进度、Effect、Modifier、里程碑与 PKCN 的集合；
+`application_intersections[]` 只能使用 `app.*`，其要求全部完成后自动生效，成本恒为零，
+仅编译为静态公开展示数据。最终 ID 集合、数量与内容 SHA-256 以
+`tools/technology_tree/technology_industry_v2_stable_id_manifest.json` 为准，不在文档中固定总数。
+目录覆盖 11 个时代和农业、工程、科学、社会四领域，不存在全球统一开局科技。各时代里程碑
+达标数依次为 `4/4/4/4/5/5/5/6/6/7/7`；候选名单只从重构后的实质科技生成并只用于 UI。
+里程碑不直接解锁 Good、Resource、建筑或
 生产方式，只执行时代奖励 Effect，并作为下一时代里程碑的研究门槛。普通节点的研发不再被该门槛挡住。
 
 拓扑由四条公共主干与 24 个动态主题家族组成，不再要求每个家族每时代占一个槽位。揭示条件、核心知识硬边、
 里程碑候选阈值与替代路线统一编译为一条研究条件 IR；上一时代里程碑只编译进时代里程碑节点，不再成为普通节点的研究门槛。实践、接触、资源
 和地理证据负责揭示问题，路线内的 `ANY_OF` / `AT_LEAST` 负责不同解决能力，不能冒充核心知识。
-当前目录有 2321 条硬边、648 条研究路线包、670 条替代可视边、19 条应用交汇边、7 条显式分支边和
-143 条里程碑候选边；没有
+边数量由 schema v4 目录与稳定 manifest 的目录身份共同守门，不再复制到文档；没有
 authoring-side `research_condition`。王国时代以后的主干、制度和生产系统节点通常保留两到三条
 类型不同的路线；不可替代知识已由可见硬前置完整表达时可以明确豁免，不得保留被硬前置传递闭包
 完全蕴含的伪路线。研究路线可以引用同代已经完成的科技，但不得自引用或引用未来时代；最大硬入度只是当前
@@ -166,7 +169,7 @@ Modifier、也不另开 capability 子系统：`tech.river_transport` 开河运�
 目录编译器为每项科技生成唯一 Effect recipe、唯一永久 Modifier definition、显式 Modifier
 term CSR、路线标签、每路线独立 postfix IR 与总 `ANY_OF`、prerequisite CSR、milestone-candidate CSR、反向
 解锁索引和拓扑序。`EconomyCatalog` 另外生成科技到 Good/生产方式/Resource 的反向绑定 CSR，
-并验证 130 个 Good、351 个生产方式、45 个职业和 31 个 Resource 均有合法科技标签，职业不得直接持有
+并验证全部 Good、生产方式、职业和 Resource 均有合法科技标签，职业不得直接持有
 `tech.*` 门槛。任一内容缺绑定、引用未知科技，或科技没有内容/Modifier/Effect 消费者都会
 导致冷启动编译失败。
 
@@ -175,16 +178,16 @@ term CSR、路线标签、每路线独立 postfix IR 与总 `ANY_OF`、prerequis
 纯观察辨识节点使用。该字段编译为 `technology_knowledge_basis_json` 并参与目录身份哈希，不新增
 国家运行时状态、研究谓词或存档字段。
 
-权威目录直接使用 671 项中文名称和中文效果摘要，`TechnologyCatalog.public_definitions()`
-同时提供中文路线标签；玩家界面不显示内部 `tech.*`/`route.*` ID。稳定 ID、dense 顺序、
+权威目录直接使用中文名称和中文效果摘要，`TechnologyCatalog.public_definitions()` 提供研究科技，
+`public_application_intersections()` 提供自动应用卡，前者同时提供中文路线标签；玩家界面不显示
+内部 `tech.*`/`app.*`/`route.*` ID。稳定 ID、dense 顺序、
 Effect/Trigger/经济绑定与这些目录文本共同参与精确 catalog identity，因此本轮不迁移旧目录存档；
 旧目录存档明确返回 `catalog_hash_mismatch`。
 
-内容解锁审计验证每项绑定存在且确有消费者。当前 351 项活动建筑都恰好保留一个可见的直接
-`tech.*` 标签，`required_technology_tags` 必须为空；多项知识汇合时由显式应用科技吸收硬前置，
-再由该应用科技单独解锁一栋建筑。目录包含 298 个至少汇合两项真实知识的 application anchor，
-另有 11 个单一知识递进的普通 `tech.method.*` 方法节点；单前置的纯延迟 application 已删除。
-科技详情因此可以展示全部真实建筑效果，不再依赖隐藏复合绑定名单。里程碑直接建筑绑定仍必须为 0。数值效果必须显式填写
+内容解锁审计验证每项绑定存在且确有消费者。建筑保留一个主 `technology_tags`，并可通过
+`required_technology_tags` 表达零至多个 ALL 支撑知识；对应 `app.*` 的要求集合必须与建筑完整门槛
+完全一致，否则目录编译失败。自动应用没有研究按钮、成本或进度，也不产生 Effect/Modifier/存档状态。
+科技详情可以展示产业步骤、前驱、后续与专精分支；里程碑直接建筑绑定仍必须为 0。数值效果必须显式填写
 作用类别、机制说明与原生消费者；生成器不得按名称、家族、首个建筑或数组位置补 Modifier。同一科技
 不得解锁并立即固定加成同一物资、建筑、方法或自然资源。大气式
 蒸汽机先解锁低产原型工坊，蒸汽动力再解锁通用蒸汽机工厂，蒸汽抽水单独解锁蒸汽矿井；
@@ -384,13 +387,14 @@ section tab；section 切换只由底栏 `CountryActionBar` 驱动。经济 sect
 
 - `NewGameConfig v3` 保存外国数量、起始国家现金、每日科研采购预算、四领域权重和自动采购开关；
   v2 迁移时外国数量为 0。
-- PKCN v11 保存完整研究/信号状态，并把科技与研究信号、揭示条件 IR、Effect recipe/Modifier term IR、
+- PKCN v12 保存完整研究/信号状态，并把科技与研究信号、揭示条件 IR、Effect recipe/Modifier term IR、
   Trigger 定义摘要和全部内容绑定摘要混入 catalog identity。
-- PKEF v10 保存 Effect program hash、实例、事务/ACK 和时代奖励冻结计划；PKTR v5 保存突破
+- PKEF v11 保存 Effect program hash、实例、事务/ACK 和时代奖励冻结计划；PKTR v6 保存突破
   与发展成就阈值累计、最后采样日、连续进度、来源游标和未派发效果。
-- PKEC v36 保存采购累计、科技值市场/在途状态、实践发布所需的经济权威与联合审计基线。
+- PKEC v51 保存采购累计、科技值市场/在途状态、实践发布所需的经济权威与联合审计基线。
 - PKSV 恢复顺序保持 PKCN 在 PKEC 之前。
-- PKCN/PKEF/PKTR 的旧 schema 或任何相关 catalog identity 变化统一返回
+- provider manifest 保存 `technology_industry_revision = 2`；缺失按 revision 1 预览，但禁止载入。
+  PKCN/PKEF/PKTR 的旧 schema 或任何相关 catalog identity 变化统一返回
   `catalog_hash_mismatch`，不做 ID 映射、默认补齐或静默迁移。
 
 ## 聚焦验证

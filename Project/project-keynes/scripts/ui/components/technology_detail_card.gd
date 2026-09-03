@@ -132,13 +132,29 @@ func show_technology(index: int, definition: Dictionary, state: int, fraction: f
 		String(definition.get("domain_id", ""))), accent)
 	_header_icon.tooltip_text = "%s · %s" % [domain_name, era_name]
 	_name.text = String(definition.get("display_name", ""))
-	_state_label.text = STATE_NAMES[clampi(state, 0, STATE_NAMES.size() - 1)]
+	var is_application := _is_application(definition)
+	_state_label.text = _application_state_name(state) if is_application \
+		else STATE_NAMES[clampi(state, 0, STATE_NAMES.size() - 1)]
 	_state_label.add_theme_color_override("font_color", _state_colour(state))
-	var chips: Array = [
-		{"text": era_name, "accent": UITokens.BRASS_HIGHLIGHT},
-		{"text": "成本 %s" % UITokens.format_compact_number_cn(
-			float(definition.get("cost_points", 0)), 1), "accent": UITokens.CLIMATE},
-	]
+	var chips: Array = [{"text": era_name, "accent": UITokens.BRASS_HIGHLIGHT}]
+	if is_application:
+		chips.append({"text": "静态应用", "accent": UITokens.RESOURCE})
+		var chain_name := String(definition.get(
+			"industry_chain_display_name", ""))
+		if not chain_name.is_empty():
+			chips.append({"text": "产业链 · %s" % chain_name,
+				"accent": UITokens.BRASS_HIGHLIGHT})
+		var step := int(definition.get("progression_step", 0))
+		if step > 0:
+			chips.append({"text": "产业步骤 %d" % step, "accent": UITokens.CLIMATE})
+		for maturity_name in definition.get("maturity_display_names", PackedStringArray()):
+			chips.append({"text": String(maturity_name), "accent": UITokens.WARN})
+		for role in definition.get("progression_roles", PackedStringArray()):
+			chips.append({"text": _progression_role_name(String(role)),
+				"accent": UITokens.RESOURCE})
+	else:
+		chips.append({"text": "成本 %s" % UITokens.format_compact_number_cn(
+			float(definition.get("cost_points", 0)), 1), "accent": UITokens.CLIMATE})
 	if bool(definition.get("is_milestone", false)):
 		chips.append({"text": "时代里程碑", "accent": UITokens.WARN})
 	elif bool(definition.get("is_era_key", false)):
@@ -154,14 +170,18 @@ func show_technology(index: int, definition: Dictionary, state: int, fraction: f
 			"accent": UITokens.RESOURCE,
 		})
 	_chips.set_badges(chips)
-	_gauge.set_data("研究进度", clampf(fraction, 0.0, 1.0),
-		_progress_caption(definition, fraction, state), accent)
+	_gauge.visible = not is_application
+	if not is_application:
+		_gauge.set_data("研究进度", clampf(fraction, 0.0, 1.0),
+			_progress_caption(definition, fraction, state), accent)
 	var insight_items: Array = relations.get("condition_items", [])
 	insight_items.append_array(_effect_items(definition))
 	_effects.set_items(insight_items)
 	var required := int(definition.get("milestone_required_count", 0))
 	var prerequisites: Array = relations.get("prerequisites", [])
-	if required > 0:
+	if is_application:
+		_prerequisite_title.text = "应用所需科技"
+	elif required > 0:
 		_prerequisite_title.text = "里程碑候选（任选 %d 项）" % required
 	else:
 		_prerequisite_title.text = "需要先完成"
@@ -177,7 +197,10 @@ func show_technology(index: int, definition: Dictionary, state: int, fraction: f
 	var applications: Array = relations.get("applications", [])
 	_application_title.visible = not applications.is_empty()
 	_fill_relation_rows(_applications, applications)
-	_apply_action(state)
+	if is_application:
+		_action.visible = false
+	else:
+		_apply_action(state)
 	_restore_scroll.call_deferred(saved_scroll)
 
 
@@ -186,12 +209,18 @@ func update_progress(state: int, fraction: float, definition: Dictionary) -> voi
 	if _index < 0 or _detail_block == null or not _detail_block.visible:
 		return
 	_state = state
-	_state_label.text = STATE_NAMES[clampi(state, 0, STATE_NAMES.size() - 1)]
+	var is_application := _is_application(definition)
+	_state_label.text = _application_state_name(state) if is_application \
+		else STATE_NAMES[clampi(state, 0, STATE_NAMES.size() - 1)]
 	_state_label.add_theme_color_override("font_color", _state_colour(state))
-	_gauge.set_data("研究进度", clampf(fraction, 0.0, 1.0),
-		_progress_caption(definition, fraction, state), _accent)
-	if not _submitted:
+	_gauge.visible = not is_application
+	if not is_application:
+		_gauge.set_data("研究进度", clampf(fraction, 0.0, 1.0),
+			_progress_caption(definition, fraction, state), _accent)
+	if not _submitted and not is_application:
 		_apply_action(state)
+	elif is_application:
+		_action.visible = false
 
 
 func _progress_caption(definition: Dictionary, fraction: float, state: int) -> String:
@@ -202,6 +231,25 @@ func _progress_caption(definition: Dictionary, fraction: float, state: int) -> S
 	var cost := float(definition.get("cost_points", 0))
 	var remaining := maxf(0.0, cost * (1.0 - clampf(fraction, 0.0, 1.0)))
 	return "还需 %s" % UITokens.format_compact_number_cn(remaining, 1)
+
+
+func _is_application(definition: Dictionary) -> bool:
+	return bool(definition.get("is_application", false)) \
+		or String(definition.get("anchor_kind", "")) == "application" \
+		or String(definition.get("id", "")).begins_with("app.")
+
+
+func _application_state_name(state: int) -> String:
+	return "应用能力已启用" if state >= 5 else "应用条件未满足"
+
+
+func _progression_role_name(role: String) -> String:
+	match role:
+		"mainline": return "主线产业"
+		"geographic_specialization": return "地理专门化"
+		"institutional_variant": return "制度变体"
+		"terminal": return "产业终点"
+	return role
 
 
 func _effect_items(definition: Dictionary) -> Array:

@@ -247,7 +247,7 @@ state is introduced.
 ### 玩家国库资助建设
 
 `TREASURY_SPONSORED_BUILD` 沿用通用 `(effective_day, sequence, submit_order)` 命令序列，
-固定 `count=1` 和私营业主布局。执行时重新验证领土、科技、淘汰、条件及自然资源承载，随后仅
+固定 `count=1` 和私营业主布局。执行时重新验证领土、科技、条件及自然资源承载，随后仅
 遍历目标建筑的 construction CSR：国家物资优先，本格市场补足，并按本期零售价计算国库现金。
 全部物资、市场、商人与现金先预检，国家国库通过单次批量接口扣减，之后才扣市场、向当地商人
 付款并追加 `pending_construction`。失败不产生部分状态。轻量 receipt 独立于诊断 trace，发布
@@ -599,8 +599,8 @@ coal→coke、logs→lumber）以及已有手工 explicit 候选的槽位保持�
 `catalog_hash_mismatch`。
 
 `upgrade_family_id/upgrade_tier` 编译为稳定 family 目录与逐建筑 tier。BUILD 检查同族最高已解锁
-档位，旧档返回 `building_tier_obsolete_for_construction`；生产仍只检查该建筑原始科技，因此旧
-owner-lot 继续生产且不会自动转换。快照发布 family、tier、highest available tier 和当前可建状态。
+档位；高阶知识不会使低阶方式失效，旧 owner-lot 继续生产且不会自动转换。快照发布 family、tier、
+highest available tier 和当前可建状态。
 `subsistence_food` 与 `household_cloth` 家族仍保留 gathering、pottery、guild、steam 等历史层级，
 但这只是家庭/小农升级族的构造选择，不是食物产能的时代上限。农业专门化、机械化、精准农业和
 自动化建筑继续在电气、原子、信息与智能时代提供新生产法；食物容量按每名劳动者的完整
@@ -1055,6 +1055,12 @@ The three sparse current-cycle producer lanes and all driver diagnostics are
 transient. They do not enter PKEC v20 or the state hash. CSV v19 adds the driver
 good, pressure, utilization, sellable, merchant-sold, sell-through, and discard
 columns.
+
+投资组合提交在 `endogenous_owner_portfolio_v9` 中保持一次性预检：最多四个候选
+先按稳定顺序共享虚拟施工库存生成精确材料账单，再迁移 owner 人口/资金并提交
+这些账单。提交阶段不再重新调用会“成功返回但软拒绝”的通用 BUILD 入口，因此
+预检与提交之间的报价差异不会把已发生的迁移变成 fatal；材料、资金和人口审计
+仍在每个已提交账单上逐项校验。
 
 ## PKEC v22 rolling settlement (historical foundation, retained by PKEC v41)
 

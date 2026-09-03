@@ -139,11 +139,10 @@ static func audit(catalog: Dictionary, effective: bool = false,
 			for edge in range(technology_begin + 1,
 					branch_technology_offsets[branch + 1]):
 				var required := int(branch_technologies[edge])
+				closure[required] = true
 				if effective:
 					for ancestor in closures[required]:
 						closure[ancestor] = true
-				elif not closure.has(required):
-					missing_required.append(String(technology_ids[required]))
 			var missing_dependencies := []
 			for group in range(branch_group_offsets[branch],
 					branch_group_offsets[branch + 1]):

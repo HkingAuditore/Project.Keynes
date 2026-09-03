@@ -273,12 +273,11 @@ candidate selection remains technology-gated, deterministic, and native-owned. M
 may not own ordinary production. The only merchant-owner profiles are the two early bullion
 collectors described above; both GDScript and native catalog validation enforce their exact recipe.
 
-Building upgrade families compile stable family IDs and per-type tiers. Construction checks the
-highest technology-available tier and rejects an older BUILD with
-`building_tier_obsolete_for_construction`; production checks only the building's own technology, so
-existing older assets continue operating. Building snapshots expose family indices, tiers, highest
-available tiers, and construction availability. These catalog additions change the catalog hash but
-not the PKEC v11 byte layout.
+Building upgrade families compile stable family IDs and per-type tiers. Construction keeps every
+technology-available tier buildable; production checks only the building's own technology, so
+existing older assets continue operating without automatic conversion. Building snapshots expose
+family indices, tiers, highest available tiers, and construction availability. These catalog additions
+change the catalog hash but not the PKEC v11 byte layout.
 
 At `building_commit`, endogenous owner investment may create one industrial building per cell only
 when a 180-day capital-review boundary is crossed. Existing vacancies remain employment concerns.

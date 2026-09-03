@@ -1,11 +1,14 @@
-[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
 [ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
 [resource]
 script = ExtResource("1")
 id = &"gathered_plants"
 display_name = "采集植物食物"
+semantic_tags = PackedStringArray()
 category_id = &"gathered_plants"
 substitution_category_ids = PackedStringArray("gathered_plants")
-technology_tags = PackedStringArray("tech.gathering", "tech.application.method_gathering_ground_r1")
+technology_tags = PackedStringArray("tech.gathering", "tech.permanent_settlements")
 default_price = 5000
 reference_max_price = 250000

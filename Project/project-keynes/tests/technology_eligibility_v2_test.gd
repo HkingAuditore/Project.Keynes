@@ -9,13 +9,13 @@ var _compiled: Dictionary
 
 func _init() -> void:
 	if not ClassDB.class_exists("DCWorldExt"):
-		print("technology eligibility v3: SKIP")
+		print("technology eligibility v4: SKIP")
 		quit(0)
 		return
 	_compiled = EconomyCatalogScript.compile_native_catalog()
-	_expect("schema v3 catalog compiles", bool(_compiled.get("ok", false)))
+	_expect("schema v4 catalog compiles", bool(_compiled.get("ok", false)))
 	var ids: PackedStringArray = _compiled.get("technology_ids", PackedStringArray())
-	_expect("stable technology count", ids.size() == 705)
+	_expect("stable technology manifest is present", ids.size() == 369)
 	_expect("route IR is present", (_compiled.get("research_route_ids", PackedStringArray()) as PackedStringArray).size() > 600)
 
 	# Ordinary next-era nodes: reveal, hard prerequisites and one complete route
@@ -110,7 +110,7 @@ func _init() -> void:
 		_state(composite_hidden, "tech.composite_tools") == 0)
 	_discover(composite_hidden, PackedStringArray(["resource.stone"]))
 	_expect("stone evidence reveals composite tools",
-		_state(composite_hidden, "tech.composite_tools") == 2)
+		_state(composite_hidden, "tech.composite_tools") == 1)
 
 	var hide_locked := _fixture(PackedStringArray(["tech.hunting"]),
 		PackedStringArray(["resource.wild_game"]))
@@ -177,7 +177,7 @@ func _init() -> void:
 	_expect("the unified institution opens seasonal calendar after its core history",
 		_state(coastal_calendar, "tech.seasonal_calendar") == 2)
 
-	print("technology eligibility v3: %s" % ("PASS" if _failures == 0 else "FAIL"))
+	print("technology eligibility v4: %s" % ("PASS" if _failures == 0 else "FAIL"))
 	quit(0 if _failures == 0 else 1)
 
 

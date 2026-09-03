@@ -427,8 +427,6 @@ bool NativeEconomyRuntime::apply_build_command(const Command &cmd, int32_t owner
         ++_rejected_commands;
         return true;
     }
-    const std::vector<int32_t> &planned_good_ids = material_plan.good_ids;
-    const std::vector<int64_t> &planned_quantities = material_plan.quantities;
     const int64_t total_cost = material_plan.total_cost;
     int64_t construction_debt_principal = 0;
     int64_t construction_debt_premium = 0;
@@ -511,6 +509,45 @@ bool NativeEconomyRuntime::apply_build_command(const Command &cmd, int32_t owner
             _merchant_credit_drawn_by_cell[cell] = saturating_add(
                 _merchant_credit_drawn_by_cell[cell], funding_gap,
                 _saturation_count);
+        }
+    }
+    return commit_preflighted_build_command(
+        cmd, owner_slot, material_plan, effective_construction_days,
+        construction_debt_principal, construction_debt_premium, funding_gap,
+        error);
+}
+
+bool NativeEconomyRuntime::commit_preflighted_build_command(
+        const Command &cmd, int32_t owner_slot,
+        const ConstructionMaterialPlan &material_plan,
+        int32_t effective_construction_days,
+        int64_t construction_debt_principal,
+        int64_t construction_debt_premium,
+        int64_t funding_gap,
+        std::string &error) {
+    const int32_t cell = cmd.i32_0;
+    const int32_t type_id = cmd.i32_1;
+    const int64_t count = cmd.i64_0;
+    const int32_t market = _market.cell_to_market[cell];
+    const int32_t owner_signature = static_cast<int32_t>(
+        _population.signature_id[owner_slot]);
+    const std::vector<int32_t> &planned_good_ids = material_plan.good_ids;
+    const std::vector<int64_t> &planned_quantities = material_plan.quantities;
+    const int64_t total_cost = material_plan.total_cost;
+    if (!material_plan.feasible || planned_good_ids.size() !=
+            planned_quantities.size() ||
+        _population.funds[owner_slot] < total_cost) {
+        error = "building_construction_preflight_funds_drift";
+        return false;
+    }
+    for (size_t i = 0; i < planned_good_ids.size(); ++i) {
+        const int32_t good_id = planned_good_ids[i];
+        if (good_id < 0 || good_id >= _market.good_count ||
+            planned_quantities[i] < 0 ||
+            _market.stock[_market.index(market, good_id)] <
+                planned_quantities[i]) {
+            error = "building_construction_preflight_stock_drift";
+            return false;
         }
     }
     std::vector<EventLeg> event_legs;

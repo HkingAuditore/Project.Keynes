@@ -465,6 +465,10 @@ DataCore 或 MapData。
   `CellInspectorViewModel`; country commits rebuild selected summary, daily ticks live-patch values.
 - Visual/vision hook: `country_committed` → `WorldRuntimeHost.refresh_country_visuals()` →
   `VisionSolver` re-solve → `enum_lut.a` rebake → `CountryBorderLayer` rebuild.
+  Native runtime-graph 按 country generation 转发时必须先消费原生 country
+  event stream；不得用 pulse 最后 report 中可能被后续 slice 覆盖的
+  `changed_cells=0` 提前跳过。Facade 从 create/transfer/claim 事件归一化
+  territory dirty，保持 `country_committed` 为唯一视觉/视野广播。
   Exploration progress persists as PKSV `pkfg` (after PKCN); the Inspector gates
   tabs by `VisionSolver.fog_state()`. See
   [`vision-fog-and-borders.md`](../docs/cpp-dots-runtime/vision-fog-and-borders.md).

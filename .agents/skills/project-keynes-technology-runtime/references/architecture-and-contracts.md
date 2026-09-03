@@ -17,12 +17,18 @@ technology catalog and validates every `tech.*` reference. It must not invent ID
 
 Current baseline:
 
-- 361 definitions: 23 regional-start processing nodes and 338 researchable technologies.
+- Schema v4 keeps research state exclusively in `nodes[]` with `tech.*` IDs. Zero-cost
+  `application_intersections[]` use `app.*`, become active when every requirement is complete,
+  and never enter dense IDs, queues, progress, Effect, Modifier, milestones, PKCN, or PKEC.
+- Stable ID sets, counts, and SHA-256 values come from
+  `tools/technology_tree/technology_industry_v2_stable_id_manifest.json`; do not duplicate totals here.
 - 11 eras, four domains, four backbones, and twenty-four dynamic branch families.
-- Each era has exactly eight milestone candidates and requires any four.
-- Eligibility requires the previous milestone, every core prerequisite, and any one complete research route when routes exist.
-- Nonstone specialist anchors require the previous milestone and previous same-lane anchor;
-  backbone anchors require the previous milestone.
+- Milestone required counts remain `4/4/4/4/5/5/5/6/6/7/7`; candidate lists are regenerated
+  only from substantive `tech.*` definitions.
+- Eligibility requires every core prerequisite and any one complete research route when routes exist.
+  Era-milestone nodes additionally require the previous-era milestone; ordinary nodes do not.
+- Nonstone specialist anchors require previous same-lane knowledge where authored; they do not
+  inherit a universal previous-era research gate.
 - Geography, resource, contact and practice evidence appears only in reveal-condition IR. It may
   inspire and reveal a node but never bypass a prerequisite or complete research.
 - Rivers, lakes and wetlands publish `landform.freshwater_access`; there is no
@@ -42,8 +48,9 @@ Current baseline:
 `Project/project-keynes/data/technology/technology_network.json` is the sole authoring source.
 `TechnologyCatalog` strictly parses it and remains the sole compiled/runtime authority. The authoring
 file includes explicit hard prerequisites, reveal conditions, research routes, Modifier terms,
-content bindings and the static visual edge kinds: hard, alternative, application, and
-milestone_candidate. Alternative edges identify their route and are shown only for the selected node.
+content bindings and the static technology visual edge kinds: hard, alternative, branch, and
+milestone_candidate. Application edges are derived separately from `application_intersections[]`.
+Alternative edges identify their route and are shown only for the selected node.
 
 Compilation produces stable-ID lookup, dense IDs in topological order, prerequisite/milestone and
 Modifier-term CSR, unique Effect recipe identity, route/condition IR, reverse unlock indices and public
@@ -157,9 +164,9 @@ economic-sector outputs, every production-family output, generated exact-buildin
 four country climate-loss factors, 24 generated production-profile climate-loss factors,
 construction cost/time, and domestic-trade capacity/speed. Economy freezes country×family,
 country×building-type, country×hazard, and country×production-profile×hazard factors at epoch capture
-rather than creating one Country Modifier per building instance. The current authoritative catalog has
-705 nodes (698 researchable), 448 technology Modifier terms, including 65 geography×sector terms on
-60 technologies and 56 climate-adaptation terms on 28 technologies. Catalog hash changes remain a
+rather than creating one Country Modifier per building instance. Only `tech.*` definitions may own
+technology Modifier terms; `app.*` intersections cannot. Exact term counts remain part of the catalog
+identity rather than a duplicated documentation constant. Catalog hash changes remain a
 strict old-save rejection; there is no PKCN/PKEF/PKEC migration for this content revision.
 
 Modifiers may alter production results, consumed-points-to-progress conversion, construction

@@ -1,11 +1,14 @@
-[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
 [ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
 [resource]
 script = ExtResource("1")
 id = &"steam_engines"
 display_name = "蒸汽机"
+semantic_tags = PackedStringArray()
 category_id = &"prime_mover"
 substitution_category_ids = PackedStringArray("prime_mover", "industrial_prime_mover", "agricultural_prime_mover")
-technology_tags = PackedStringArray("tech.application.atmospheric_engine_workshop", "tech.application.steam_engine_works", "tech.application.method_steam_engine_works_r9")
+technology_tags = PackedStringArray("tech.atmospheric_engine", "tech.steam_power")
 default_price = 80000
 reference_max_price = 4000000

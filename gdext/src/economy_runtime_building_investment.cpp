@@ -3040,6 +3040,60 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
             return false;
         }
 
+        // Freeze the exact aggregate invoices for the whole portfolio before
+        // moving population or money. The generic BUILD entry point reports a
+        // business rejection by returning true without appending construction;
+        // calling it after those mutations made any quote/commit mismatch fatal
+        // and left the three conservation ledgers dirty. Planning against one
+        // shared virtual stock vector also makes substitute selection identical
+        // to the later stable portfolio commit order.
+        std::array<ConstructionMaterialPlan, 4> commit_material_plans{};
+        std::vector<int64_t> commit_virtual_stock(_good_ids.size(), 0);
+        for (int32_t good = 0; good < _market.good_count; ++good) {
+            commit_virtual_stock[static_cast<size_t>(good)] =
+                std::max<int64_t>(0, _market.stock[_market.index(market, good)]);
+        }
+        const int32_t commit_cost_factor = country >= 0 &&
+                country < static_cast<int32_t>(
+                    _epoch_country_construction_cost_factor_q16.size())
+            ? _epoch_country_construction_cost_factor_q16[country] : Q16_ONE;
+        const int32_t commit_time_factor = country >= 0 &&
+                country < static_cast<int32_t>(
+                    _epoch_country_construction_time_factor_q16.size())
+            ? _epoch_country_construction_time_factor_q16[country] : Q16_ONE;
+        for (int32_t i = 0; i < portfolio_size; ++i) {
+            const Candidate &candidate = portfolio[i];
+            if (candidate.allocated_count <= 0) continue;
+            if (!building_available(cell, candidate.type, true) ||
+                !evaluate_building_conditions(candidate.type, cell) ||
+                candidate.target_signature < 0 ||
+                candidate.target_signature >= static_cast<int32_t>(
+                    _signatures.size()) ||
+                _signatures[candidate.target_signature].profession_id !=
+                    _building_types[candidate.type].owner_profession_id) {
+                error = "building_investment_catalog_preflight_drift";
+                return false;
+            }
+            ConstructionMaterialPlan &plan = commit_material_plans[i];
+            if (!plan_construction_materials(
+                    cell, candidate.type, candidate.allocated_count,
+                    commit_cost_factor, plan, nullptr,
+                    &commit_virtual_stock)) {
+                error = "building_investment_material_preflight_drift";
+                return false;
+            }
+            const int64_t funded_per_building = saturating_add(
+                candidate.required_capital, candidate.merchant_credit,
+                _saturation_count);
+            const int64_t funded_total = saturating_mul(
+                candidate.allocated_count, funded_per_building,
+                _saturation_count);
+            if (plan.total_cost > funded_total) {
+                error = "building_investment_cost_preflight_drift";
+                return false;
+            }
+        }
+
         for (int32_t i = 0; i < portfolio_size; ++i) {
             Candidate &candidate = portfolio[i];
             if (candidate.allocated_count <= 0) continue;
@@ -3200,14 +3254,16 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
             command.i32_0 = cell;
             command.i32_1 = candidate.type;
             command.i64_0 = candidate.allocated_count;
-            const size_t pending_before = _pending_construction.size();
             const int64_t consumed_before = _construction_goods_consumed;
-            if (!apply_build_command(
-                    command, owner_slot, error, true)) return false;
-            if (_pending_construction.size() != pending_before + 1) {
-                error = "building_investment_preflight_drift";
-                return false;
-            }
+            const BuildingType &type = _building_types[candidate.type];
+            const int32_t effective_construction_days =
+                type.construction_days <= 0 ? 0 : std::max<int32_t>(1,
+                    static_cast<int32_t>(mul_div_sat(
+                        type.construction_days, commit_time_factor,
+                        Q16_ONE, _saturation_count)));
+            if (!commit_preflighted_build_command(
+                    command, owner_slot, commit_material_plans[i],
+                    effective_construction_days, 0, 0, 0, error)) return false;
             if (candidate.merchant_credit > 0) {
                 PendingConstruction &pending = _pending_construction.back();
                 const int64_t credit = saturating_mul(

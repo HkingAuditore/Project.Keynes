@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
 
 [ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
 
@@ -6,28 +6,11 @@
 script = ExtResource("1")
 id = &"leather"
 display_name = "皮革"
+semantic_tags = PackedStringArray()
 category_id = &"leather"
 substitution_category_ids = PackedStringArray("leather")
-technology_tags = PackedStringArray("industry.textile", "tech.application.tannery", "tech.application.leather_plant")
-production_quality_level = 0
-production_efficiency_q16 = 65536
-storage_mode = "stock"
-monetary_issue_value = 0
+technology_tags = PackedStringArray("industry.textile", "tech.hide_tanning", "tech.factory_system")
 default_price = 24000
-initial_stock = 0
 reference_max_price = 1200000
 price_adjust_q16 = 1843
 demand_price_elasticity_q16 = 58982
-demand_ema_alpha_q16 = 16384
-inventory_target_ratio_q16 = 65536
-inventory_weight_q16 = 32768
-shortage_weight_q16 = 65536
-excess_demand_weight_q16 = 8192
-cost_anchor_weight_q16 = 16384
-inactive_reversion_weight_q16 = 8192
-business_demand_ema_alpha_q16 = 8192
-supply_ema_alpha_q16 = 8192
-cost_ema_alpha_q16 = 4096
-max_price_rise_q16 = 8192
-max_price_fall_q16 = 4096
-merchant_buy_price_factor_q16 = 62259

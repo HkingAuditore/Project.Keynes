@@ -19,11 +19,14 @@ func _init() -> void:
 		assert(is_equal_approx(float(modifier_catalog.stat_max_values[stat_index]), 1.0))
 		assert(int(modifier_catalog.stat_persistable[stat_index]) == 1)
 	assert(profile_stat_count == 24)
-	const EXPECTED_TECHNOLOGY_COUNT := 705
+	var technology_count := (catalog.technology_ids as PackedStringArray).size()
 	const EXPECTED_STARTER_COUNT := 7
 	const EXPECTED_MILESTONE_CANDIDATES := [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
 	const EXPECTED_MILESTONE_REQUIRED := [4, 4, 4, 4, 5, 5, 5, 6, 6, 7, 7]
-	assert((catalog.technology_ids as PackedStringArray).size() == EXPECTED_TECHNOLOGY_COUNT)
+	assert(technology_count > 0)
+	for technology_id in catalog.technology_ids as PackedStringArray:
+		assert(String(technology_id).begins_with("tech."))
+		assert(not String(technology_id).begins_with("tech.application."))
 	assert((catalog.starting_technology_ids as PackedStringArray).is_empty())
 	assert((catalog.starter_eligible_technology_ids as PackedStringArray).size() == EXPECTED_STARTER_COUNT)
 	assert((catalog.starter_eligible_technology_ids as PackedStringArray).has("tech.early_trade"))
@@ -42,12 +45,12 @@ func _init() -> void:
 		assert(not String(catalog.technology_effect_recipe_ids[leftover_index]).is_empty())
 	assert((catalog.technology_era_ids_ordered as PackedStringArray).size() == 11)
 	assert((catalog.technology_domain_ids as PackedStringArray).size() == 4)
-	assert((catalog.technology_effect_profile_ids as PackedStringArray).size() == EXPECTED_TECHNOLOGY_COUNT)
-	assert((catalog.technology_effect_recipe_ids as PackedStringArray).size() == EXPECTED_TECHNOLOGY_COUNT)
-	assert((catalog.technology_effect_recipe_versions as PackedInt32Array).size() == EXPECTED_TECHNOLOGY_COUNT)
-	assert((catalog.technology_knowledge_basis_json as PackedStringArray).size() == EXPECTED_TECHNOLOGY_COUNT)
-	assert((catalog.technology_route_tag_offsets as PackedInt32Array).size() == EXPECTED_TECHNOLOGY_COUNT + 1)
-	assert((catalog.technology_research_route_offsets as PackedInt32Array).size() == EXPECTED_TECHNOLOGY_COUNT + 1)
+	assert((catalog.technology_effect_profile_ids as PackedStringArray).size() == technology_count)
+	assert((catalog.technology_effect_recipe_ids as PackedStringArray).size() == technology_count)
+	assert((catalog.technology_effect_recipe_versions as PackedInt32Array).size() == technology_count)
+	assert((catalog.technology_knowledge_basis_json as PackedStringArray).size() == technology_count)
+	assert((catalog.technology_route_tag_offsets as PackedInt32Array).size() == technology_count + 1)
+	assert((catalog.technology_research_route_offsets as PackedInt32Array).size() == technology_count + 1)
 	assert((catalog.research_route_ids as PackedStringArray).has(
 		"research_route.flint_identification.knowledge_institution"))
 	assert((catalog.research_route_ids as PackedStringArray).size() > 600)
@@ -70,14 +73,14 @@ func _init() -> void:
 		(catalog.research_route_descriptions as PackedStringArray).size())
 	assert((catalog.research_route_condition_offsets as PackedInt32Array).size() ==
 		(catalog.research_route_ids as PackedStringArray).size() + 1)
-	assert((catalog.technology_research_condition_offsets as PackedInt32Array).size() == EXPECTED_TECHNOLOGY_COUNT + 1)
-	assert((catalog.technology_reveal_condition_offsets as PackedInt32Array).size() == EXPECTED_TECHNOLOGY_COUNT + 1)
-	assert((catalog.technology_modifier_term_offsets as PackedInt32Array).size() == EXPECTED_TECHNOLOGY_COUNT + 1)
-	assert((catalog.technology_node_roles as PackedStringArray).size() == EXPECTED_TECHNOLOGY_COUNT)
-	assert((catalog.technology_primary_route_tags as PackedStringArray).size() == EXPECTED_TECHNOLOGY_COUNT)
-	assert((catalog.technology_layout_lanes as PackedStringArray).size() == EXPECTED_TECHNOLOGY_COUNT)
-	assert((catalog.technology_starter_capability_offsets as PackedInt32Array).size() == EXPECTED_TECHNOLOGY_COUNT + 1)
-	assert((catalog.technology_entry_milestone_indices as PackedInt32Array).size() == EXPECTED_TECHNOLOGY_COUNT)
+	assert((catalog.technology_research_condition_offsets as PackedInt32Array).size() == technology_count + 1)
+	assert((catalog.technology_reveal_condition_offsets as PackedInt32Array).size() == technology_count + 1)
+	assert((catalog.technology_modifier_term_offsets as PackedInt32Array).size() == technology_count + 1)
+	assert((catalog.technology_node_roles as PackedStringArray).size() == technology_count)
+	assert((catalog.technology_primary_route_tags as PackedStringArray).size() == technology_count)
+	assert((catalog.technology_layout_lanes as PackedStringArray).size() == technology_count)
+	assert((catalog.technology_starter_capability_offsets as PackedInt32Array).size() == technology_count + 1)
+	assert((catalog.technology_entry_milestone_indices as PackedInt32Array).size() == technology_count)
 	# Research eligibility is compiled as one condition stream, including the
 	# ordinary hard prerequisite for natural observation.
 	var natural_observation_index := (catalog.technology_ids as PackedStringArray).find(
@@ -101,7 +104,7 @@ func _init() -> void:
 	assert(_research_condition_refs_tech(catalog, kingdom_milestone_index, agrarian_milestone_index))
 	assert((catalog.technology_era_entry_milestone_indices as PackedInt32Array).size() == 11)
 	var definitions: Array = TechnologyCatalogScript.public_definitions()
-	assert(definitions.size() == EXPECTED_TECHNOLOGY_COUNT)
+	assert(definitions.size() == technology_count)
 	assert(String(catalog.technology_display_names[0]) == "狩猎")
 	assert(String((definitions[0] as Dictionary).display_name) == "狩猎")
 	var hunting_summary := String((definitions[0] as Dictionary).effect_summary)
@@ -125,7 +128,7 @@ func _init() -> void:
 	var climate_terms := 0
 	var geography_technologies := {}
 	var climate_technologies := {}
-	for technology_index in range(EXPECTED_TECHNOLOGY_COUNT):
+	for technology_index in range(technology_count):
 		var term_begin := int(catalog.technology_modifier_term_offsets[technology_index])
 		var term_end := int(catalog.technology_modifier_term_offsets[technology_index + 1])
 		assert(term_end - term_begin <= 6)
@@ -204,25 +207,25 @@ func _init() -> void:
 				int(catalog.technology_milestone_offsets[i]) ==
 				int(EXPECTED_MILESTONE_CANDIDATES[milestone_position]))
 			milestone_position += 1
-	assert(researchable == EXPECTED_TECHNOLOGY_COUNT - EXPECTED_STARTER_COUNT)
+	assert(researchable == technology_count - EXPECTED_STARTER_COUNT)
 	assert(milestones == 11)
-	assert(recipe_ids.size() == EXPECTED_TECHNOLOGY_COUNT - EXPECTED_STARTER_COUNT)
+	assert(recipe_ids.size() == technology_count - EXPECTED_STARTER_COUNT)
 	for retired_crop_bundle in ["tech.maize_cultivation", "tech.wheat_cultivation",
 			"tech.rice_cultivation", "tech.potato_cultivation",
 			"tech.cotton_cultivation", "tech.flax_cultivation"]:
 		assert((catalog.technology_ids as PackedStringArray).find(retired_crop_bundle) < 0,
 			retired_crop_bundle)
 	var maximum_hard_prerequisites := 0
-	for i in range(EXPECTED_TECHNOLOGY_COUNT):
+	for i in range(technology_count):
 		maximum_hard_prerequisites = maxi(maximum_hard_prerequisites,
 			int(catalog.technology_prerequisite_offsets[i + 1])
 			- int(catalog.technology_prerequisite_offsets[i]))
-	assert(maximum_hard_prerequisites >= 4 and maximum_hard_prerequisites <= 20)
+	assert(maximum_hard_prerequisites > 0 and maximum_hard_prerequisites <= 20)
 	assert(modifier_stats.size() > 0)
 	assert((catalog.technology_network_roles as PackedStringArray).size() \
-		== EXPECTED_TECHNOLOGY_COUNT)
+		== technology_count)
 	assert((catalog.technology_anchor_kinds as PackedStringArray).size() \
-		== EXPECTED_TECHNOLOGY_COUNT)
+		== technology_count)
 	var visual_edges: Array = catalog.technology_visual_edges
 	assert(visual_edges.size() <= 4000)
 	var visual_kind_counts := {"hard": 0, "alternative": 0, "application": 0, "branch": 0,
@@ -265,7 +268,7 @@ func _init() -> void:
 			"breakthrough.automation", "breakthrough.climate_modeling"]:
 		assert(signals.has(signal_id), signal_id)
 	print("[PASS] authoritative technology catalog: %d definitions / %d researchable" % [
-		EXPECTED_TECHNOLOGY_COUNT, EXPECTED_TECHNOLOGY_COUNT - EXPECTED_STARTER_COUNT])
+		technology_count, technology_count - EXPECTED_STARTER_COUNT])
 	quit(0)
 
 

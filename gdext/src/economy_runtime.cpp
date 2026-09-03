@@ -4417,6 +4417,14 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
             group.last_margin_gap_q16 = 0;
             group.planned_utilization_q16 = 0;
             group.purchase_intent_capacity_q16 = 0;
+            const int32_t unavailable_index = static_cast<int32_t>(
+                &group - _buildings.data());
+            if (unavailable_index >= 0 && unavailable_index <
+                    static_cast<int32_t>(
+                        _building_planned_capacity_before_climate_q16.size())) {
+                _building_planned_capacity_before_climate_q16[
+                    unavailable_index] = 0;
+            }
             group.recovery_cycles = 0;
             group.last_expected_revenue = 0;
             group.last_quoted_market_receipt = 0;
@@ -4476,6 +4484,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
             _saturation_count);
         int64_t revenue = 0;
         bool inputs_available = true;
+        bool hard_input_market_available = true;
         for (int32_t i = 0; i < type.input_count; ++i) {
             const ProductionInput &item = _building_inputs[type.input_begin + i];
             int64_t best_effective_price = std::numeric_limits<int64_t>::max();
@@ -4498,6 +4507,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
             }
             if (best_effective_price == std::numeric_limits<int64_t>::max()) {
                 if (item.required_q16 >= Q16_ONE) {
+                    hard_input_market_available = false;
                     inputs_available = false;
                     break;
                 }
@@ -4515,7 +4525,84 @@ bool NativeEconomyRuntime::prepare_building_economic_plan(
             group.sample_unit_maintenance_cost = 0;
             group.last_margin_gap_q16 = -Q16_ONE;
             group.planned_utilization_q16 = 0;
-            group.purchase_intent_capacity_q16 = 0;
+            // A hard input shortage blocks execution, but it must not erase
+            // the downstream signal that can restart the upstream producer.
+            // Keep a bounded, cash-backed probe in the transient planning
+            // vector; production will still re-check stock and settle zero
+            // output when the input is absent.
+            int64_t structural_intent_q16 = 0;
+            const int32_t owner_slot = find_cohort_slot(
+                group.cell, group.owner_signature_id);
+            if (type.kind != 2 && hard_input_market_available && owner_slot >= 0 &&
+                    _population.population[owner_slot] > 0 &&
+                    group.operating_state == 0) {
+                int64_t output_pressure_q16 = 0;
+                bool has_output_gap = false;
+                bool cycle_flow_output = false;
+                for (int32_t i = 0; i < type.output_count; ++i) {
+                    const int32_t good = _building_outputs[
+                        type.output_begin + i].good_id;
+                    if (good < 0 || good >= _market.good_count) continue;
+                    cycle_flow_output = cycle_flow_output ||
+                        _good_storage_modes[good] == 1;
+                    const int32_t signal = market_signal_index(group.cell, good);
+                    const int64_t business_demand = signal >= 0
+                        ? std::max<int64_t>(0,
+                            _market_signals.business_demand_ema[signal]) : 0;
+                    const int64_t stock = std::max<int64_t>(0,
+                        _market.stock[_market.index(market, good)]);
+                    const int64_t demand_gap_q16 = business_demand > 0
+                        ? std::clamp<int64_t>(mul_div_sat(
+                            std::max<int64_t>(0, business_demand - stock),
+                            Q16_ONE, std::max<int64_t>(business_demand, GOODS_SCALE),
+                            _saturation_count), 0, Q16_ONE) : 0;
+                    const int64_t household_shortage_q16 = std::clamp<int64_t>(
+                        _market.last_shortage_q16[_market.index(market, good)],
+                        0, Q16_ONE);
+                    output_pressure_q16 = std::max(output_pressure_q16,
+                        std::max(demand_gap_q16, household_shortage_q16));
+                    has_output_gap = has_output_gap || demand_gap_q16 > 0 ||
+                        household_shortage_q16 > 0;
+                }
+                if (has_output_gap) {
+                    const int64_t probe_floor_q16 = cycle_flow_output
+                        ? std::max<int64_t>(1, Q16_ONE / 6)
+                        : std::max<int64_t>(1, Q16_ONE / 32);
+                    structural_intent_q16 = std::clamp<int64_t>(
+                        std::max(output_pressure_q16, probe_floor_q16),
+                        0, Q16_ONE);
+                    const int64_t period_input_cost = saturating_mul(
+                        saturating_mul(std::max<int64_t>(0, input_cost),
+                            std::max<int64_t>(1, group.count),
+                            _saturation_count),
+                        std::max(1, _epoch_days), _saturation_count);
+                    int64_t available_cash = std::max<int64_t>(0,
+                        _population.funds[owner_slot]);
+                    for (int32_t k = _merchant_offsets[group.cell];
+                         k < _merchant_offsets[group.cell + 1]; ++k) {
+                        available_cash = saturating_add(available_cash,
+                            std::max<int64_t>(0,
+                                _population.funds[_merchant_slots[k]]),
+                            _saturation_count);
+                    }
+                    if (period_input_cost > 0) {
+                        structural_intent_q16 = std::min<int64_t>(
+                            structural_intent_q16,
+                            std::clamp<int64_t>(mul_div_sat(
+                                available_cash, Q16_ONE, period_input_cost,
+                                _saturation_count), 0, Q16_ONE));
+                    }
+                }
+            }
+            group.purchase_intent_capacity_q16 = structural_intent_q16;
+            const int32_t missing_input_index = static_cast<int32_t>(
+                &group - _buildings.data());
+            if (missing_input_index >= 0 && missing_input_index <
+                    static_cast<int32_t>(
+                        _building_planned_capacity_before_climate_q16.size())) {
+                _building_planned_capacity_before_climate_q16[
+                    missing_input_index] = structural_intent_q16;
+            }
             group.recovery_cycles = 0;
             group.last_expected_revenue = 0;
             group.last_quoted_market_receipt = 0;

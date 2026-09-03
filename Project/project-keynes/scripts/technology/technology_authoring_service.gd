@@ -4,6 +4,7 @@ extends RefCounted
 const NETWORK_PATH := "res://data/technology/technology_network.json"
 const BACKUP_PATH := "res://data/technology/technology_network.json.bak"
 const VALIDATOR := "res://tools/build_technology_network_authoring.gd"
+const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
 
 var payload: Dictionary = {}
 var dirty := false
@@ -18,7 +19,9 @@ func load_network() -> Dictionary:
 		return {"ok": false, "reason": "technology_network_json_invalid"}
 	payload = (parsed as Dictionary).duplicate(true)
 	dirty = false
-	return {"ok": true, "nodes": (payload.get("nodes", []) as Array).size()}
+	return {"ok": true, "schema_version": int(payload.get("schema_version", 0)),
+		"nodes": (payload.get("nodes", []) as Array).size(),
+		"application_intersections": application_intersections().size()}
 
 func nodes() -> Array:
 	return payload.get("nodes", []) as Array
@@ -32,6 +35,27 @@ func node_by_id(id: String) -> Dictionary:
 
 func update_node(id: String, changes: Dictionary) -> bool:
 	var row := node_by_id(id)
+	if row.is_empty():
+		return false
+	for key in changes:
+		if key == "id":
+			continue
+		row[key] = changes[key]
+	dirty = true
+	return true
+
+func application_intersections() -> Array:
+	return payload.get("application_intersections", []) as Array
+
+func application_intersection_by_id(id: String) -> Dictionary:
+	for row_value in application_intersections():
+		var row: Dictionary = row_value
+		if String(row.get("id", "")) == id:
+			return row
+	return {}
+
+func update_application_intersection(id: String, changes: Dictionary) -> bool:
+	var row := application_intersection_by_id(id)
 	if row.is_empty():
 		return false
 	for key in changes:
@@ -57,7 +81,8 @@ func set_relation(id: String, field: String, values: Array, rationale_field := "
 func validate() -> Dictionary:
 	if payload.is_empty():
 		return {"ok": false, "reason": "technology_network_not_loaded"}
-	if int(payload.get("schema_version", 0)) != 3:
+	var schema_version := int(payload.get("schema_version", 0))
+	if schema_version not in [3, 4]:
 		return {"ok": false, "reason": "technology_network_schema_version_invalid"}
 	var ids := {}
 	for row_value in nodes():
@@ -72,7 +97,11 @@ func validate() -> Dictionary:
 			for ref in row.get(key, []):
 				if not ids.has(String(ref)):
 					return {"ok": false, "reason": "technology_reference_unknown:%s:%s" % [row.id, ref]}
-	return {"ok": true, "nodes": nodes().size()}
+	var application_check := TechnologyCatalogScript.validate_application_intersections(payload, nodes())
+	if not bool(application_check.get("ok", false)):
+		return application_check
+	return {"ok": true, "schema_version": schema_version, "nodes": nodes().size(),
+		"application_intersections": application_intersections().size()}
 
 func save() -> Dictionary:
 	var check := validate()

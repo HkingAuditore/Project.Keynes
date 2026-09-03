@@ -211,7 +211,7 @@ UI 不得使用 `building count - filled_owner` 作为招聘空缺。
 价格驱动自动扩张，每地块每次评估最多一座。
 ACTIVE 企业还按上一周期售罄率与 `supply_price_elasticity_q16` 调整计划利用率；丢弃率不超过
 1% 时按舍入噪声处理，家庭可用库存不超过 1 个 goods 子单位且短缺率至少 12.5% 时主动恢复，真实未成交只缩减下一周期 employee 岗位、
-采购和产量，不把仍在经营的 owner 转为失业。耐储商品保留 1/32 探测下限，易腐/周期流商品保留 1/6；生存食物组还按同一业主人口的饥饿阈值自留需求计算动态下限并取较高值。生产者最低生存自留只在
+采购和产量，不把仍在经营的 owner 转为失业。耐储商品保留 1/32 探测下限，易腐/周期流商品保留 1/6；生存食物组还按同一业主人口的饥饿阈值自留需求计算动态下限并取较高值。硬投入缺货时，计划阶段保留一个受限的 native 购买意图（复用现有 `purchase_intent_capacity_q16` 诊断字段）：只有建筑已安装、科技和投入市场有效、业主仍有人口、且至少一个输出存在家庭/企业库存缺口时才启用；耐储输出下限为 `1/32`，周期流输出为 `1/6`，并按业主与本地商人现有现金覆盖探测成本。实际 `last_capacity_q16` 仍由库存、资源、气候和结算资金重新夹紧，缺料不会支付工资或生成商品。该意图写入既有稀疏 `desired_business_demand`，未满足部分进入 `unfunded_business_demand` 和下一周期 `business_demand_ema`，从而让价格与商人采购看到上游压力；它不发行普通货币，也不递归求解完整产业链，每周期只传导一跳，积压按单周期探测量和现有 EMA 衰减。生产者最低生存自留只在
 该业主实际生产的单组分食物/寒冷衣物之间重新归一化，剩余产出仍进入全体家庭公平清算。Price V4 上涨使用默认价/成本锚的加法步长；
 下跌使用当前价格作为步长基准，库存堆积时仍允许跌破成本清仓，但高成本锚不会放大负向跳水。
 生产投入预留按互补配方的共同可执行比例缩放；任一投入缺失时不会继续锁住其他投入。非生存加工若消耗生存食物，则家庭生存清算优先，企业只使用剩余量。生产者托底只覆盖正常目标库存尚未填满的部分，超目标余量进入 discard，不再无条件发行货币入库。
@@ -241,9 +241,9 @@ GDScript 只附加 catalog 展示名
 生产和工资仍完全由 C++ 权威计算。
 
 `BuildingProfile.upgrade_family_id/upgrade_tier` 编译为稳定 family/tier 目录。国家解锁更高档后，
-旧档 BUILD 以 `building_tier_obsolete_for_construction` 拒绝；已有 owner-lot 仍按其原始科技条件
-生产，不自动升级或拆除。`subsistence_food` 与 `household_cloth` 都只有 gathering、pottery、
-guild、steam 四档，蒸汽档封顶。
+旧档 BUILD 仍可继续建造；投资市场会按资本回报、单位成本和当地约束选择层级，已有 owner-lot
+仍按其原始科技条件生产，不自动升级或拆除。`subsistence_food` 与 `household_cloth` 都只有
+gathering、pottery、guild、steam 四档，蒸汽档封顶。
 
 生产投入可保持精确 good，也可配置 `input_category_ids + input_min_quality_levels`，或使用
 `input_candidate_offsets/input_candidate_good_ids/input_candidate_efficiency_q16` 表达配方专属替代品。

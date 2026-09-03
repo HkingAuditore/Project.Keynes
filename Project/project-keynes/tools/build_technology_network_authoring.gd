@@ -1,14 +1,15 @@
 extends SceneTree
 
-# Deterministic schema-v3 normalizer and validator. The network JSON is the
+# Deterministic schema-v4 normalizer and validator. The network JSON is the
 # sole authoring source: this tool never invents prerequisites, branches,
 # milestone candidates, application links, or Modifier effects.
 
 const ResearchConditionScript = preload("res://scripts/research/research_condition.gd")
 const ResearchPredicateScript = preload("res://scripts/research/research_predicate.gd")
+const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
 
 const NETWORK_PATH := "res://data/technology/technology_network.json"
-const REPORT_PATH := "res://tools/technology_tree/technology_network_v3_audit.md"
+const REPORT_PATH := "res://tools/technology_tree/technology_network_v4_audit.md"
 const ERA_IDS := [
 	"stone", "agrarian", "kingdom", "empire", "exploration", "enlightenment",
 	"steam", "electrical", "atomic", "information", "intelligent",
@@ -72,8 +73,8 @@ func _init() -> void:
 	if not check_only:
 		_write_json(payload)
 		_write_text(REPORT_PATH, report)
-	print("[PASS] technology schema v3: %d nodes / %d hard / %d research-route / %d milestone candidates" % [
-		(payload.nodes as Array).size(), int(validation.hard_edges),
+	print("[PASS] technology schema v4: %d research nodes / %d application intersections / %d hard / %d research-route / %d milestone candidates" % [
+		(payload.nodes as Array).size(), (payload.get("application_intersections", []) as Array).size(), int(validation.hard_edges),
 		int(validation.alternative_edges), int(validation.milestone_candidate_edges)])
 	quit(0)
 
@@ -164,7 +165,7 @@ func _read_payload() -> Dictionary:
 
 
 func _validate(payload: Dictionary) -> Dictionary:
-	if int(payload.get("schema_version", 0)) != 3:
+	if int(payload.get("schema_version", 0)) != 4:
 		return _fail("technology_network_schema_version_invalid")
 	var eras: Array = payload.get("eras", [])
 	var domains: Array = payload.get("domains", [])
@@ -172,8 +173,12 @@ func _validate(payload: Dictionary) -> Dictionary:
 	var families: Array = payload.get("branch_families", [])
 	var nodes: Array = payload.get("nodes", [])
 	if eras.size() != 11 or domains.size() != 4 or backbones.size() != 4 \
-		or families.size() != 24 or nodes.size() != 705:
+		or families.size() != 24 or nodes.is_empty():
 		return _fail("technology_network_shape_invalid")
+	var application_validation := TechnologyCatalogScript.validate_application_intersections(
+		payload, nodes)
+	if not bool(application_validation.get("ok", false)):
+		return _fail(String(application_validation.get("reason", "technology_application_intersections_invalid")))
 	if payload.has("specialist_lanes"):
 		return _fail("technology_legacy_lane_metadata_present")
 	var era_index := {}
@@ -603,7 +608,9 @@ func _audit_report(payload: Dictionary, validation: Dictionary) -> String:
 			else:
 				effect_counts["全社会或部门"] += 1
 	var lines := PackedStringArray([
-		"# Technology Network v3 Audit", "",
+		"# Technology Network v4 Audit", "",
+		"- Research nodes: %d" % (payload.nodes as Array).size(),
+		"- Application intersections: %d (static, zero-cost)" % (payload.get("application_intersections", []) as Array).size(),
 		"- Nodes: %d" % (payload.nodes as Array).size(),
 		"- Branch families: %d" % (payload.branch_families as Array).size(),
 		"- Hard prerequisite edges: %d (no indegree cap)" % int(validation.hard_edges),

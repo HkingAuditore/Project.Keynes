@@ -625,7 +625,7 @@ static func _construction_result_message(code: String) -> String:
 		"ok": "建筑已开工。",
 		"construction_cell_not_owned": "目标地块已不属于玩家国家。",
 		"construction_technology_locked": "建造所需科技尚未解锁。",
-		"construction_obsolete": "该建筑层级已经淘汰。",
+		"construction_obsolete": "已有更高阶生产方式；当前方式仍可建造。",
 		"construction_conditions_failed": "目标地块不满足建筑放置条件。",
 		"construction_resource_unavailable": "当地自然资源承载不足。",
 		"construction_materials_insufficient": "国库与当地市场的建材总量不足。",

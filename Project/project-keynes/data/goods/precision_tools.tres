@@ -1,12 +1,15 @@
-[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
 [ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
 [resource]
 script = ExtResource("1")
 id = &"precision_tools"
 display_name = "精密工具"
+semantic_tags = PackedStringArray()
 category_id = &"tools"
 substitution_category_ids = PackedStringArray("tools")
-technology_tags = PackedStringArray("tech.application.precision_tool_workshop", "tech.application.method_precision_tool_workshop_r8", "tech.application.method_precision_tool_workshop_r10")
+technology_tags = PackedStringArray("tech.precision_engineering", "tech.human_machine_collaboration")
 production_quality_level = 4
 production_efficiency_q16 = 98304
 default_price = 52000

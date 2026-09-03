@@ -571,6 +571,7 @@ func _draw_node(node: Dictionary) -> void:
 	var domain := int(node.domain)
 	var is_milestone := bool(node.get("is_milestone", false)) \
 		or bool(definition.get("is_milestone", false))
+	var is_application := _is_application_definition(definition)
 	var accent := UITokens.ARCHIVE_BRASS if is_milestone else _accent_for(domain)
 	var emphasis := _emphasis_for(index)
 	var text_colour := _node_text_colour(emphasis)
@@ -595,7 +596,8 @@ func _draw_node(node: Dictionary) -> void:
 			muted_text_colour)
 		return
 	_draw_glyph(&"technology.milestone" if is_milestone \
-		else IconCatalog.technology_domain_semantic(String(definition.get("domain_id", ""))),
+		else (&"economy.building" if is_application \
+		else IconCatalog.technology_domain_semantic(String(definition.get("domain_id", "")))),
 		rect.position + Vector2(14.0, 28.0 if is_milestone else 36.0), 13,
 		text_colour if emphasis == 2 else accent)
 	var label := String(definition.get("display_name", ""))
@@ -608,13 +610,20 @@ func _draw_node(node: Dictionary) -> void:
 			"时代里程碑", HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 60.0, 12,
 			muted_text_colour)
 	else:
-		_draw_glyph(IconCatalog.technology_state_semantic(state),
-			rect.position + Vector2(rect.size.x - 24.0, 35.0), 12,
-			text_colour if emphasis == 2 else _state_colour(state))
-		_draw_progress(index, rect, accent, emphasis == 0)
+		if is_application:
+			draw_string(get_theme_default_font(), rect.position + Vector2(38.0, 54.0),
+				"已启用" if state >= 5 else "应用条件未齐",
+				HORIZONTAL_ALIGNMENT_LEFT, rect.size.x - 50.0, 11, muted_text_colour)
+		else:
+			_draw_glyph(IconCatalog.technology_state_semantic(state),
+				rect.position + Vector2(rect.size.x - 24.0, 35.0), 12,
+				text_colour if emphasis == 2 else _state_colour(state))
+			_draw_progress(index, rect, accent, emphasis == 0)
 
 
 func _draw_progress(index: int, rect: Rect2, accent: Color, dim: bool) -> void:
+	if _is_application_definition(_definitions[index]):
+		return
 	var state := _state_of(index)
 	if state < 2 or state >= 5:
 		return
@@ -684,6 +693,12 @@ func _domain_index_of(definition: Dictionary) -> int:
 		if String((_domains[index] as Dictionary).get("id", "")) == domain_id:
 			return index
 	return 0
+
+
+func _is_application_definition(definition: Dictionary) -> bool:
+	return bool(definition.get("is_application", false)) \
+		or String(definition.get("anchor_kind", "")) == "application" \
+		or String(definition.get("id", "")).begins_with("app.")
 
 
 func _card_style(domain: int, state: int, known: bool, emphasis: int,

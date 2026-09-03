@@ -1,4 +1,4 @@
-[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
 
 [ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
 
@@ -6,28 +6,17 @@
 script = ExtResource("1")
 id = &"electricity"
 display_name = "电力"
+semantic_tags = PackedStringArray()
 category_id = &"electricity"
 substitution_category_ids = PackedStringArray("electricity")
-technology_tags = PackedStringArray("industry.energy", "tech.application.electricity_plant", "tech.application.oil_power_plant", "tech.application.gas_power_plant", "tech.application.hydropower_station", "tech.application.nuclear_power_plant")
-production_quality_level = 0
-production_efficiency_q16 = 65536
+technology_tags = PackedStringArray("industry.energy", "tech.electric_generation", "tech.petroleum_drilling", "tech.water_power", "tech.nuclear_energy")
 storage_mode = "cycle_flow"
-monetary_issue_value = 0
 default_price = 12000
-initial_stock = 0
 reference_max_price = 600000
 price_adjust_q16 = 614
 demand_price_elasticity_q16 = 19661
-demand_ema_alpha_q16 = 16384
 inventory_target_ratio_q16 = 0
-inventory_weight_q16 = 32768
 shortage_weight_q16 = 0
 excess_demand_weight_q16 = 65536
-cost_anchor_weight_q16 = 16384
-inactive_reversion_weight_q16 = 8192
 business_demand_ema_alpha_q16 = 16384
 supply_ema_alpha_q16 = 16384
-cost_ema_alpha_q16 = 4096
-max_price_rise_q16 = 8192
-max_price_fall_q16 = 4096
-merchant_buy_price_factor_q16 = 62259

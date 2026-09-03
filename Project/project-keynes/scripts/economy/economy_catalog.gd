@@ -434,6 +434,16 @@ static func compile_native_catalog(
 		technology_set[technology_id] = true
 		technology_index[technology_id] = technology_index_value
 		technology_binding_rows[technology_index_value] = []
+	var building_type_set := {}
+	for building_id in building_columns.building_type_ids:
+		building_type_set[String(building_id)] = true
+	for intersection_value in technology_catalog.get("technology_application_intersections", []):
+		var intersection: Dictionary = intersection_value
+		for building_value in intersection.get("building_ids", []):
+			var building_id := String(building_value)
+			if not building_type_set.has(building_id):
+				return {"ok": false, "reason": "technology_application_building_missing",
+					"id": String(intersection.get("id", "")), "building_id": building_id}
 	var good_tag_offsets: PackedInt32Array = good_columns.good_technology_tag_offsets
 	for good_index_value in range(good_columns.good_ids.size()):
 		var good_binding_count := 0
@@ -485,10 +495,7 @@ static func compile_native_catalog(
 		if building_binding_count == 0:
 			return {"ok": false, "reason": "building_technology_binding_missing",
 				"id": String(building_columns.building_type_ids[building_index_value])}
-		var allows_terminal_or_unlock := String(
-			building_columns.building_type_ids[building_index_value]) in [
-				"glassware_factory", "metal_housewares_factory", "leather_goods_factory"]
-		if building_binding_count != (2 if allows_terminal_or_unlock else 1):
+		if building_binding_count != 1:
 			return {"ok": false, "reason": "building_technology_binding_must_be_single",
 				"id": String(building_columns.building_type_ids[building_index_value]),
 				"count": building_binding_count}
@@ -636,6 +643,11 @@ static func compile_native_catalog(
 	for key in [
 		"building_upgrade_family_ids", "building_upgrade_family_indices",
 		"building_upgrade_tiers", "building_input_required_q16",
+		"building_industry_chain_ids", "building_progression_steps",
+		"building_maturity_ranks", "building_maturity_display_names",
+		"building_progression_roles", "building_progression_predecessor_offsets",
+		"building_progression_predecessor_indices",
+		"building_progression_terminal_reasons",
 		"building_input_category_ids", "building_input_min_quality_levels",
 		"building_input_candidate_offsets",
 		"building_input_candidate_good_ids", "building_input_candidate_efficiency_q16",
@@ -658,6 +670,11 @@ static func compile_native_catalog(
 		catalog[key] = carrying_columns[key]
 	var building_v13_columns := building_columns.duplicate(true)
 	for key in [
+		"building_industry_chain_ids", "building_progression_steps",
+		"building_maturity_ranks", "building_maturity_display_names",
+		"building_progression_roles", "building_progression_predecessor_offsets",
+		"building_progression_predecessor_indices",
+		"building_progression_terminal_reasons",
 		"building_resource_gen_base", "building_resource_gen_temp",
 		"building_resource_gen_moisture", "building_resource_gen_self",
 		"building_resource_decay_base", "building_resource_decay_temp",
@@ -1033,6 +1050,94 @@ static func _carrying_category_goods(offsets: PackedInt32Array, ids: PackedStrin
 	return out
 
 
+static func validate_building_progression_profiles(profiles: Array) -> Dictionary:
+	var ids := PackedStringArray()
+	var index_by_id := {}
+	for profile in profiles:
+		var building_id := String(profile.id).strip_edges()
+		if building_id.is_empty() or index_by_id.has(building_id):
+			return {"ok": false, "reason": "building_progression_id_invalid", "id": building_id}
+		index_by_id[building_id] = ids.size()
+		ids.append(building_id)
+	var chain_ids := PackedStringArray()
+	var steps := PackedInt32Array()
+	var ranks := PackedInt32Array()
+	var display_names := PackedStringArray()
+	var roles := PackedStringArray()
+	var terminal_reasons := PackedStringArray()
+	var predecessor_offsets := PackedInt32Array([0])
+	var predecessor_indices := PackedInt32Array()
+	var cjk := RegEx.new()
+	cjk.compile("[\\x{4e00}-\\x{9fff}]")
+	for profile in profiles:
+		var building_id := String(profile.id).strip_edges()
+		var chain_id := String(profile.industry_chain_id).strip_edges()
+		var step := int(profile.progression_step)
+		var rank := int(profile.maturity_rank)
+		var display_name := String(profile.maturity_display_name).strip_edges()
+		var role := String(profile.progression_role).strip_edges()
+		var predecessors: PackedStringArray = profile.predecessor_building_ids
+		var terminal_reason := String(profile.terminal_reason).strip_edges()
+		var active := not chain_id.is_empty() or step != 0 or rank != 0 \
+			or not display_name.is_empty() or not role.is_empty() \
+			or not predecessors.is_empty() or not terminal_reason.is_empty()
+		if not active:
+			chain_ids.append("")
+			steps.append(0)
+			ranks.append(0)
+			display_names.append("")
+			roles.append("")
+			terminal_reasons.append("")
+			predecessor_offsets.append(predecessor_indices.size())
+			continue
+		if chain_id.is_empty() or step <= 0 or rank < 1 or rank > 7 \
+				or display_name.is_empty() or cjk.search(display_name) == null \
+				or role not in ["entry", "mainline", "specialization", "support", "terminal"]:
+			return {"ok": false, "reason": "building_progression_metadata_invalid", "id": building_id}
+		if role == "entry" and not predecessors.is_empty():
+			return {"ok": false, "reason": "building_progression_entry_has_predecessor", "id": building_id}
+		if role != "entry" and predecessors.is_empty():
+			return {"ok": false, "reason": "building_progression_predecessor_missing", "id": building_id}
+		if role == "terminal" and terminal_reason.is_empty():
+			return {"ok": false, "reason": "building_progression_terminal_reason_missing", "id": building_id}
+		if role != "terminal" and not terminal_reason.is_empty():
+			return {"ok": false, "reason": "building_progression_terminal_reason_unexpected", "id": building_id}
+		var predecessor_seen := {}
+		for predecessor_value in predecessors:
+			var predecessor_id := String(predecessor_value).strip_edges()
+			if predecessor_id == building_id or predecessor_seen.has(predecessor_id) \
+					or not index_by_id.has(predecessor_id):
+				return {"ok": false, "reason": "building_progression_predecessor_invalid", "id": building_id, "predecessor_id": predecessor_id}
+			predecessor_seen[predecessor_id] = true
+			var predecessor = profiles[int(index_by_id[predecessor_id])]
+			if String(predecessor.industry_chain_id).strip_edges() != chain_id \
+					or int(predecessor.progression_step) >= step \
+					or int(predecessor.maturity_rank) > rank:
+				return {"ok": false, "reason": "building_progression_predecessor_order_invalid", "id": building_id, "predecessor_id": predecessor_id,
+					"chain": chain_id, "predecessor_chain": String(predecessor.industry_chain_id),
+					"step": step, "predecessor_step": int(predecessor.progression_step),
+					"rank": rank, "predecessor_rank": int(predecessor.maturity_rank)}
+			predecessor_indices.append(int(index_by_id[predecessor_id]))
+		chain_ids.append(chain_id)
+		steps.append(step)
+		ranks.append(rank)
+		display_names.append(display_name)
+		roles.append(role)
+		terminal_reasons.append(terminal_reason)
+		predecessor_offsets.append(predecessor_indices.size())
+	return {
+		"ok": true,
+		"building_industry_chain_ids": chain_ids,
+		"building_progression_steps": steps,
+		"building_maturity_ranks": ranks,
+		"building_maturity_display_names": display_names,
+		"building_progression_roles": roles,
+		"building_progression_predecessor_offsets": predecessor_offsets,
+		"building_progression_predecessor_indices": predecessor_indices,
+		"building_progression_terminal_reasons": terminal_reasons,
+	}
+
+
 static func _compile_building_columns(profession_index: Dictionary,
 		good_index: Dictionary, good_storage_modes: PackedInt32Array,
 		good_monetary_issue_values: PackedInt64Array,
@@ -1041,6 +1146,9 @@ static func _compile_building_columns(profession_index: Dictionary,
 		good_quality_levels: PackedInt32Array,
 		good_efficiencies_q16: PackedInt32Array) -> Dictionary:
 	var profiles := _load_resources(BUILDING_DIR)
+	var progression_columns := validate_building_progression_profiles(profiles)
+	if not bool(progression_columns.get("ok", false)):
+		return progression_columns
 	var climate_profiles := _load_resources(PRODUCTION_CLIMATE_DIR)
 	var climate_profile_ids := PackedStringArray()
 	var climate_temperature_opt_q16 := PackedInt32Array()
@@ -1637,6 +1745,14 @@ static func _compile_building_columns(profession_index: Dictionary,
 		"building_upgrade_family_ids": upgrade_family_ids,
 		"building_upgrade_family_indices": upgrade_family_indices,
 		"building_upgrade_tiers": upgrade_tiers,
+		"building_industry_chain_ids": progression_columns.building_industry_chain_ids,
+		"building_progression_steps": progression_columns.building_progression_steps,
+		"building_maturity_ranks": progression_columns.building_maturity_ranks,
+		"building_maturity_display_names": progression_columns.building_maturity_display_names,
+		"building_progression_roles": progression_columns.building_progression_roles,
+		"building_progression_predecessor_offsets": progression_columns.building_progression_predecessor_offsets,
+		"building_progression_predecessor_indices": progression_columns.building_progression_predecessor_indices,
+		"building_progression_terminal_reasons": progression_columns.building_progression_terminal_reasons,
 		"building_owner_profession_ids": owner_professions,
 		"building_owner_slots": owner_slots,
 		"building_wage_per_employee_per_day": wages_per_employee_per_day,

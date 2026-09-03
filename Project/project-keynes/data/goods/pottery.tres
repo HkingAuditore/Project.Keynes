@@ -1,11 +1,14 @@
-[gd_resource type="Resource" script_class="GoodProfile" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
 [ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
 [resource]
 script = ExtResource("1")
 id = &"pottery"
 display_name = "陶器"
+semantic_tags = PackedStringArray()
 category_id = &"pottery"
 substitution_category_ids = PackedStringArray("pottery")
-technology_tags = PackedStringArray("tech.application.open_pottery_hearth", "tech.application.pottery_kiln", "tech.application.method_pottery_kiln_r3")
+technology_tags = PackedStringArray("tech.hand_pottery", "tech.kiln_firing", "tech.pottery")
 default_price = 11000
 reference_max_price = 550000

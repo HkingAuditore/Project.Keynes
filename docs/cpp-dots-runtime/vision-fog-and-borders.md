@@ -628,3 +628,8 @@ eligible = owned_by_player
 `MapGenerator._dispatch_runtime_graph_country_committed()` 按 generation
 watermark 补发同一条 `country_committed`，否则 Inspector 已显示归属、
 `country_slot_arr` 已写入，国界 ribbon 却停在开拓前的 mesh。
+一次 pulse 可能跨过多个 country slice，所以最后一份 report 的
+`changed_cells` 可能已被后续纯研究/税表提交覆盖为 0。
+MapGenerator 在 generation 变化时不得用该字段提前拦截；`CountryFacade`
+必须先消费原生事件流，并从 `CREATE_COUNTRY` / `TRANSFER_TERRITORY` /
+`CLAIM_UNOWNED_TERRITORY` 事件归一化出非零 `changed_cells`，再决定是否广播。

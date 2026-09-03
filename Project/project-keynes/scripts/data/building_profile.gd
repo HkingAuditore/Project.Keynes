@@ -20,10 +20,19 @@ var economic_sector_id: String = ""
 ## in addition to the ANY gate above. These tags deliberately do not count as
 ## direct content bindings in TechnologyCatalog audits.
 @export var required_technology_tags: PackedStringArray = PackedStringArray()
-## Optional construction-upgrade family. Existing lower-tier buildings keep
-## operating, but only the highest technology-available tier may be built.
+## Optional runtime comparison family. Existing lower tiers keep operating and
+## remain constructible; this is not the authored industry progression graph.
 @export var upgrade_family_id: StringName = &""
 @export_range(0, 255, 1) var upgrade_tier: int = 0
+## Cold-path industry progression metadata. Legacy profiles may leave every
+## field empty/zero; once any field is authored, the full contract is required.
+@export var industry_chain_id: StringName = &""
+@export_range(0, 255, 1) var progression_step: int = 0
+@export_range(0, 7, 1) var maturity_rank: int = 0
+@export var maturity_display_name: String = ""
+@export var progression_role: String = ""
+@export var predecessor_building_ids: PackedStringArray = PackedStringArray()
+@export var terminal_reason: String = ""
 ## Empty keeps non-biological production at the catalog baseline.
 @export var production_climate_profile_id: StringName = &""
 
