@@ -2770,6 +2770,12 @@ func finalize_save_restore_visuals() -> Dictionary:
 	if _renderer != null and _renderer.has_method("set_fog_of_war_enabled"):
 		_renderer.set_fog_of_war_enabled(
 			_fog_of_war_enabled, fog_early_out_enabled)
+	# 迷雾开着却绑不到玩家国家，说明 PKCN 领土或 player_context 没恢复成功。
+	# 这种状态解算出来的视野是全黑的，继续跑还会被下一次自动存档写死，
+	# 所以直接让读档失败，而不是交出一张「全部未探索」的地图。
+	if _fog_of_war_enabled and _player_country_slot < 0:
+		return {"reason": "save_restore_finalized", "border": {}, "lut": {},
+			"vision": {"ok": false, "reason": "读档后无法绑定玩家国家，视野不可解算。"}}
 	return refresh_country_visuals("save_restore_finalized")
 
 

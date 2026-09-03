@@ -12923,6 +12923,7 @@ void NativeEconomyRuntime::rebuild_family_indices(bool rebuild_derived) {
         }
     }
     _family_ownerships.swap(merged_ownerships);
+    sanitize_family_ownership_edges();
 
     _family_owned_offsets.assign(_families.active.size() + 1, 0);
     for (const FamilyBuildingOwnership &edge : _family_ownerships) {
@@ -13420,6 +13421,39 @@ void NativeEconomyRuntime::sanitize_family_membership_edge(
         edge.employee_employed = edge.people - edge.owner_employed;
 }
 
+void NativeEconomyRuntime::sanitize_family_ownership_edges() {
+    if (_family_ownerships.empty()) return;
+    const std::unordered_map<uint64_t, int32_t> &building_by_handle =
+        building_handle_index();
+    std::vector<int64_t> claimed(_buildings.size(), 0);
+    for (FamilyBuildingOwnership &edge : _family_ownerships) {
+        const auto found = building_by_handle.find(edge.building_handle);
+        if (found == building_by_handle.end()) {
+            edge.owned_count = 0;
+            edge.filled_owner = 0;
+            continue;
+        }
+        const size_t group = static_cast<size_t>(found->second);
+        const BuildingGroup &building = _buildings[group];
+        edge.owned_count = std::clamp<int64_t>(edge.owned_count, 0,
+            std::max<int64_t>(0, building.count - claimed[group]));
+        claimed[group] += edge.owned_count;
+        int64_t capacity_sat = 0;
+        const int64_t owner_capacity = building.type_id >= 0 &&
+            building.type_id < static_cast<int32_t>(_building_types.size())
+            ? saturating_mul(edge.owned_count, std::max<int64_t>(0,
+                _building_types[static_cast<size_t>(building.type_id)]
+                    .owner_slots_per_building), capacity_sat)
+            : 0;
+        edge.filled_owner = std::clamp<int64_t>(edge.filled_owner, 0,
+            capacity_sat != 0 ? 0 : owner_capacity);
+    }
+    _family_ownerships.erase(std::remove_if(_family_ownerships.begin(),
+        _family_ownerships.end(), [](const FamilyBuildingOwnership &edge) {
+            return edge.owned_count <= 0;
+        }), _family_ownerships.end());
+}
+
 void NativeEconomyRuntime::update_family_employment_attribution() {
     for (FamilyMembershipEdge &edge : _family_memberships) {
         edge.owner_employed = 0;
@@ -13580,8 +13614,12 @@ int32_t NativeEconomyRuntime::create_family_for_building(
     membership.funds_basis = _population.funds[slot];
     membership.owner_employed = std::clamp<int64_t>(filled_owner, 0, founders);
     _family_memberships.push_back(membership);
+    const int64_t founder_owner_capacity = group.type_id >= 0 &&
+        group.type_id < static_cast<int32_t>(_building_types.size())
+        ? std::max<int64_t>(0, _building_types[static_cast<size_t>(group.type_id)]
+            .owner_slots_per_building) : 0;
     _family_ownerships.push_back({family_handle, group.modifier_handle, 1,
-        membership.owner_employed});
+        std::min(membership.owner_employed, founder_owner_capacity)});
     assign_core_family_traits(family_index);
     ++_families_formed;
     _family_indices_dirty = true;

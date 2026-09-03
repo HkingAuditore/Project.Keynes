@@ -577,6 +577,14 @@ ribbon 的内边界截断。
 （`PKFogOfWar v1`）。`visible` 与 `fog_k` 是领土与地形的纯函数，不存，恢复后重算。
 恢复顺序必须排在 PKCN 之后（解算读领土），细节见 `game-flow-start-save.md`。
 
+单调进度只能靠两道闸守住，因为一次视野解算失效就会被下一次自动存档写死：
+
+- 写档（`_write_vision_provider`）：迷雾开启且玩家已有领土时 `explored` 必然非空
+  （首都及其邻格一定被揭开）。全 0 只可能是本局视野从未解算成功，此时先重解一次，
+  仍为空就以 `pkfg_vision_unsolved` 拒绝落盘，把上一份存档的进度留在磁盘上。
+- 读档收尾（`finalize_save_restore_visuals`）：迷雾开启却绑不到玩家国家 slot 时
+  直接失败，而不是交出一张「全部未探索」的地图继续跑。
+
 ## 关闭路径
 
 `fog_of_war_enabled` 总开关之外，还要求本局有 gameplay start context

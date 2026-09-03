@@ -639,20 +639,32 @@ func _write_modifier_provider(context: Dictionary, domain: int,
 ## 只存 cell_explored：它是单调累积的玩家进度，重算不回来。cell_visible 与
 ## fog_k 都是领土 + 地形的纯函数，恢复后由 refresh_country_visuals 重解算。
 func _write_vision_provider(context: Dictionary) -> Dictionary:
-	var map: MapData = context.host.current_map()
+	var host: WorldRuntimeHost = context.host
+	var map: MapData = host.current_map()
 	var explored := map.explored_arr
 	if explored.size() != map.cell_count():
 		# 迷雾从未解算过（沙盒 / 迷雾关）。写一份空进度，保持 section 必存。
 		explored = PackedByteArray()
 		explored.resize(map.cell_count())
+	# 迷雾开启且玩家已有领土时 explored 必然非空：首都及其邻格一定被揭开。
+	# 全 0 只可能是本局视野没解算成功，落盘会把上一份存档的探索进度永久抹掉。
+	# 先重解一次，仍为空就拒绝写档，把旧进度留在磁盘上。
+	if host.is_fog_of_war_enabled() and not _has_explored_progress(explored) \
+			and _player_territory_cells(host, map) > 0:
+		host.refresh_country_visuals("save_capture_vision_repair")
+		explored = map.explored_arr
+		if explored.size() != map.cell_count() \
+				or not _has_explored_progress(explored):
+			return _result(false, "pkfg_vision_unsolved",
+				"玩家视野尚未解算，写档会清空探索进度。")
 	var payload := {
 		"schema": "PKFogOfWar",
 		"version": 2,
 		"cells": map.cell_count(),
 		"explored": explored,
 	}
-	var intel = context.host.building_visual_intel_cache() \
-		if context.host.has_method("building_visual_intel_cache") else null
+	var intel = host.building_visual_intel_cache() \
+		if host.has_method("building_visual_intel_cache") else null
 	if intel != null:
 		payload.merge(intel.to_pkfg_fields(), true)
 	else:
@@ -665,6 +677,23 @@ func _write_vision_provider(context: Dictionary) -> Dictionary:
 			"building_intel_counts": PackedInt64Array(),
 		}, true)
 	return {"ok": true, "sections": {"pkfg": payload}}
+
+
+func _has_explored_progress(explored: PackedByteArray) -> bool:
+	for value in explored:
+		if value != 0:
+			return true
+	return false
+
+
+func _player_territory_cells(host: WorldRuntimeHost, map: MapData) -> int:
+	var slot := host.player_country_slot()
+	if slot < 0:
+		return 0
+	var count := 0
+	for value in map.country_slot_arr:
+		count += 1 if int(value) == slot else 0
+	return count
 
 
 func _write_journal_provider(context: Dictionary) -> Dictionary:

@@ -234,7 +234,9 @@ bootstrap 不触发。若旧会话已在无家族状态下运行，日常 `FAMIL
 `FAMILY_COMMIT` 将建筑 `filled_owner` 回写到成员边，并按剩余成员容量确定性分摊 employee
 employment。业主归因会钳到 `people`，避免 `owner_employed + employee_employed > people`。
 PKEC 恢复对已写出的越界就业/滞后 `population_basis`/`funds_basis` 做同样钳位修复，而不是
-一律 `save_family_membership_invalid`。因此 `get_family_snapshot()` 可按 profession 汇总家族人口、业主就业和雇员就业；
+一律 `save_family_membership_invalid`。建筑 ownership 同理：清算与拆除会在份额授予之后缩小
+`count`，因此 CSR 重建与 PKEC 恢复都按当前 `count` 与业主槽容量钳 `owned_count` /
+`filled_owner`，并丢弃归零边，而不是一律 `restore_family_ownership_exceeds_building`。因此 `get_family_snapshot()` 可按 profession 汇总家族人口、业主就业和雇员就业；
 这些是 cohort 与建筑岗位的派生归因，不是独立劳动力账本。
 
 ## 迁移、投资与经济结算
