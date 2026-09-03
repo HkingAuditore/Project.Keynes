@@ -176,11 +176,13 @@ func _run_stuck_pending_recovery(compiled: Dictionary) -> void:
 		"treasury_quantities": PackedInt64Array([10000000]),
 	}).get("ok", false)))
 	var handle := int(country.cell_summary(0).country_handle)
+	_expect("recovery livestock evidence queues", bool(country.discover_research_signal(
+		handle, &"bio.sheep", 0, 1, 0, 1).get("ok", false)))
+	_run_production_day(ext, 0)
 	_expect("recovery queues animal husbandry", bool(country.set_research_weights(
 		handle, PackedInt32Array([10000, 0, 0, 0]), 1, 10).get("ok", false))
 		and bool(country.enqueue_research(handle, &"tech.animal_husbandry",
 			0, -1, 1, 11).get("ok", false)))
-	_run_production_day(ext, 0)
 	_run_production_day(ext, 1)
 	var tech := (compiled.technology_ids as PackedStringArray).find("tech.animal_husbandry")
 	_expect("animal husbandry completion stays pending",
@@ -223,11 +225,13 @@ func _run_missed_effect_nudge_recovery(compiled: Dictionary) -> void:
 		"treasury_quantities": PackedInt64Array([10000000]),
 	}).get("ok", false)))
 	var handle := int(country.cell_summary(0).country_handle)
+	_expect("nudge livestock evidence queues", bool(country.discover_research_signal(
+		handle, &"bio.sheep", 0, 1, 0, 1).get("ok", false)))
+	_run_production_day_no_drain(ext, 0)
 	_expect("nudge queues animal husbandry", bool(country.set_research_weights(
 		handle, PackedInt32Array([10000, 0, 0, 0]), 1, 10).get("ok", false))
 		and bool(country.enqueue_research(handle, &"tech.animal_husbandry",
 			0, -1, 1, 11).get("ok", false)))
-	_run_production_day_no_drain(ext, 0)
 	_run_production_day_no_drain(ext, 1)
 	var tech := (compiled.technology_ids as PackedStringArray).find("tech.animal_husbandry")
 	_expect("nudge completion stays pending",

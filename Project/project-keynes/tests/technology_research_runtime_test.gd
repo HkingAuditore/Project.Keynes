@@ -120,8 +120,8 @@ func _init() -> void:
 	var restore_end: Dictionary = restored_ext.end_country_restore()
 	var restored_handle := int(restored_facade.cell_summary(0).country_handle)
 	var restored_snapshot: Dictionary = restored_facade.research_snapshot(restored_handle)
-	_expect("PKCN v11 preserves sparse progress queues policy and hash",
-		bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 11
+	_expect("PKCN v12 preserves sparse progress queues policy and hash",
+		bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 12
 		and bool(save_end.get("ok", false)) and bool(restore_end.get("ok", false))
 		and int(restored_snapshot.technology_progress[seasonal]) == 7000
 		and restored_snapshot.queue_technology_indices == snapshot.queue_technology_indices

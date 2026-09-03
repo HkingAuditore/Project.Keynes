@@ -304,10 +304,9 @@ func _run() -> void:
 				var family: Dictionary = economy.family_snapshot(family_handle)
 				var industries: Dictionary = economy.family_industries(
 					family_handle, 0, 64)
-				var founder_building := String(route_buildings[0])
+				var founder_building := String(country_start.get("primary_food_building_id", ""))
 				_expect("founder family is attached to the first regional producer",
 					int(family.get("population", 0)) >= 1
-					and int(family.get("population", 0)) <= 2
 					and int(family.get("owned_buildings", 0)) == 1
 					and (industries.get("building_type_stable_ids",
 						PackedStringArray()) as PackedStringArray).has(

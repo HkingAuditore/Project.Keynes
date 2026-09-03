@@ -4,9 +4,7 @@
 > 是要求全部完成后零成本生效的静态产业交汇；最终 ID 数量与 SHA-256 读取
 > `tools/technology_tree/technology_industry_v2_stable_id_manifest.json`。目录保留 11 个时代、
 > 4 个领域、4 条公共主干与动态主题家族，不存在全球统一开局科技。里程碑达标数固定为
-> `4/4/4/4/5/5/5/6/6/7/7`。下文仍保留的早期设计
-> 示例只用于解释运行时边界；凡出现“180 项”“8 选 3”或“玉米栽培直接开放农场”的描述，
-> 均以本节及 `technology-tree-runtime.md` 的当前契约为准。
+> `4/4/4/4/5/5/5/6/6/7/7`。本文各节均按本轮目录契约描述；历史数量与旧设计另留在审计快照中。
 
 ## 当前网状目录契约
 
@@ -18,6 +16,10 @@
 - 硬前置和直接内容绑定都没有人为数量上限；审计关系真实性、引用完整性和运行时消费者。
 - `BuildingProfile.technology_tags` 是直接应用科技的 ANY 门槛；
   `required_technology_tags` 是对象、环境体系、动力和制度等全部必须满足的 ALL 支撑轴。
+- `BuildingProfile` 的产业链、内部步骤、七级成熟度、角色、前驱和终端原因只用于冷目录、UI
+  与审计。高阶步骤不会让低阶设施失效或禁止建设；真正替代由投入、岗位、资本、地理和利润决定。
+- `app.*` 只表达多项既有知识的零成本自动交汇，要求集合必须与建筑完整门槛一致；它没有研究按钮、
+  成本、进度、Effect、Modifier 或存档状态，不能用来包装建筑同名的第二次收费。
 - 发现条件只揭示和允许研究辨识节点。玉米、麦、稻、块茎、棉、亚麻、香料、橡胶、煤、
   金、银、黏土、燧石、芦苇、自然铜、锡等均不再由地图信号直接开放成熟生产建筑。辨识节点本身只接受
   本对象目击/储量、对应接触样本，或目录定义该对象的栖息地；不接受种植园容量或跨对象代理。
@@ -339,12 +341,13 @@ Effect 再应用专属 Modifier 或发布下一项研究机会。
 
 ### 已完成：全量内容与绑定
 
-180 节点已经完成玉米、小麦、水稻、马铃薯、马匹、河谷、水利、干旱、冶金、煤炭、
-石油、电力、自动化和气候建模等路线：
+当前稳定 manifest 覆盖玉米、小麦、水稻、马铃薯、马匹、河谷、水利、干旱、冶金、煤炭、
+石油、电力、自动化和气候建模等路线；节点、应用、Good、建筑与 Resource 的当前 ID 集合、
+数量和 SHA-256 只从该 manifest 读取，不在本说明复制历史总数：
 
-- 121 个 Good、273 个生产方式和 31 个 Resource 均通过强绑定审计；职业科技门槛已移除。
-- 176 个可研究科技各有唯一 Effect recipe、唯一 Modifier definition 和显式 term IR。
-- 39 个生产家族因子及旱、涝、寒、热适应因子在 economy epoch 边界冻结并被生产消费。
+- Good、生产方式和 Resource 由强绑定、四种生产闭包与产业平衡审计守门；职业科技门槛已移除。
+- 每个研究科技拥有稳定 Effect recipe；只有真实数值消费者的科技生成 Modifier definition 与 term IR。
+- 生产家族及旱、涝、寒、热适应因子在 economy epoch 边界冻结并被生产消费。
 - 蒸汽链拆成大气式原型工坊、通用蒸汽机工厂、蒸汽抽水矿井、铁路物流和冶金应用；
   `steam_power` 不再充当跨行业总开关。
 
@@ -355,7 +358,8 @@ Effect 再应用专属 Modifier 或发布下一项研究机会。
 - Economy 在提交边界扫描稀疏 BuildingGroup，并发布已经资格化的实践事实。
 - Trigger 维护计数、来源、fire sequence 和幂等；Effect 将结果转成
   `DISCOVER_COUNTRY_SIGNAL`，第一实践格保留为证据来源。
-- PKCN v11、PKEF v11、PKTR v6 使用严格当前 schema 与 catalog identity round-trip。
+- PKCN v12、PKEF v11、PKTR v6 与 PKEC v51 使用严格当前 schema 与 catalog identity round-trip；
+  provider manifest 另保存 `technology_industry_revision = 2`，revision 1 只允许预览。
 
 ### 已完成：专属数值效果
 

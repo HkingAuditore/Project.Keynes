@@ -87,7 +87,7 @@ Inspector 认矿与科技树揭示分开：可见格（含无主地）只按观�
 淘金、芦苇和水利路线的揭示条件使用。它不是 `ResourceProfile`，也没有储量、采集或商品
 配方；实际可采集的水生自然资源只有 `freshwater_fish` 等明确资源条目。
 
-Temporary weather is only a fact. Economy publishes sparse committed practice facts; PKTR v5
+Temporary weather is only a fact. Economy publishes sparse committed practice facts; PKTR v6
 persists their threshold accumulation, and Effect issues idempotent `DISCOVER_COUNTRY_SIGNAL`
 commands for permanent `breakthrough.*` evidence while retaining the first practice cell.
 
@@ -203,18 +203,19 @@ Effect/Trigger/经济绑定与这些目录文本共同参与精确 catalog ident
 影响和 30 条地理×产业影响。没有数值 term 的科技仍可通过解锁、硬前置、替代入口、标签或应用边
 成为真实内容消费者；完成流程不得等待不存在的 Modifier ACK。
 
-建筑解锁按时代分布严格为 `15/17/20/24/28/32/36/40/44/46/49`，其中帝国时代及以后占
-299/351。石器时代固定包含狩猎营、采集地、早期商栈、砂金采集、枯枝采集、生皮刮制、统一知识机构、
-公共火塘、燧石采石场、石器打制工坊、采石场、淡水捕鱼、沿岸捕鱼、野生韧皮纤维营地和韧皮裹衣棚
-共 15 项；露天银采移出石器时代。完成打制石器后直接解锁燧石采石场和石器打制工坊并可实际生产
-打制石器；野生韧皮采集先提供韧皮纤维与采集营，纤维捻制再消费该知识并解锁基础衣物与韧皮裹衣棚。
+建筑 ID、时代分布与内容指纹由稳定 manifest 和目录结构不变量守门，不在文档里复制固定配额。
+每个生产建筑以 `industry_chain_id`、`progression_step`、七级 `maturity_rank`、成熟度显示名、
+产业角色、前驱建筑和终端原因描述其真实产业位置；这些字段只进入冷目录、UI 和审计，不进入
+Native 可变状态或 PKEC。高阶知识不会淘汰、删除或禁止建设低阶设施；新旧方式以配方、投入、岗位、
+资本、地理与利润竞争。`upgrade_family_id/tier` 只用于真正可比较的生产方式，不能用近似重复建筑
+填充时代或伪造产业阶段。完成打制石器后直接解锁燧石采石场和石器打制工坊并可实际生产打制石器；
+野生韧皮采集先提供韧皮纤维与采集营，纤维捻制再消费该知识并解锁基础衣物与韧皮裹衣棚。
 狩猎营在 committed economy cycle 实际产出生皮后，通过既有
 `Economy → technology.practice.hide_working → Trigger → Effect → Country` 路径授予永久
 `breakthrough.hide_working` 证据；它与野生动物目击二选一揭示生皮刮制。狩猎营与生皮刮制棚施工
 均只使用原木，不再反向依赖尚未解锁的韧皮纤维。石器狩猎营每劳动日副产 `36` 生皮子单位，使一座营地
 在中性衣着需求下约能支撑 5 人的生皮衣物链；刮制棚仍按实际生皮库存部分开工，不凭空生成衣物。
-农耕时代为
-17 项，后续时代缓慢递增，避免把石器时代压力平移到农耕时代，且建筑解锁主体位于帝国时代以后。
+相邻核心产业步骤按时代间隔和生产闭包审计，不以固定建筑数量迫使某个时代膨胀。
 
 Good 的 `tech.*` 标签是生产许可，不再只是可见性标签：每个 Good 的标签集合必须精确等于全部
 实际生产者的直接科技集合，每个标签都必须有同科技直接解锁的活动生产者。
@@ -252,7 +253,7 @@ Good 的 `tech.*` 标签是生产许可，不再只是可见性标签：每个 G
 
 ## 国家研究状态与日结算
 
-PKCN v11 为每个国家保存：
+PKCN v12 为每个国家保存：
 
 - discovered/completed/pending 三个 bitset；
 - 仅保存非零项的排序稀疏进度表；
@@ -423,8 +424,8 @@ section tab；section 切换只由底栏 `CountryActionBar` 驱动。经济 sect
 科技后，原生运行时建立稳定的 `(country_handle, technology_dense_id)`
 Effect instance；其专属 recipe 至少生成永久 `technology.modifier` 和
 `technology.adopted` 事件，必要的 Country/Economy 命令与它们共享一个事务。Modifier
-definition key 和 term IR 继续由科技目录编译，未在 Effect 目录中复制数值配置。PKCN
-仍只保存科技权威状态，PKEF v10 保存 Effect instance/transaction。正常路径仍等 adapter ACK
+definition key 和 term IR 继续由科技目录编译，未在 Effect 目录中复制数值配置。PKCN v12
+仍只保存科技权威状态，PKEF v11 保存 Effect instance/transaction。正常路径仍等 adapter ACK
 到齐；若下一国家日 UNIQUE_SOURCE 仍未落地，Country 直接套用同一 UNIQUE_SOURCE 后才把
 pending 转成 completed。
 
