@@ -59,7 +59,8 @@ python tools/audit_technology_unlock_progression.py
 ## 产业闭环重平衡
 
 `rebalance_industry_closure.mjs` 是确定性迁移与守门工具：统一 Good 的生产科技标签，修复早期
-铜/青铜、铁/煤、纺织、盐/橡胶和建材链，补资本品建设需求，并保持 11 时代建筑配额与拓扑顺序。
+铜/青铜、铁/煤、纺织、盐/橡胶和建材链，补资本品建设需求，并保持产业步骤、闭包与拓扑顺序；
+它不靠重复建筑填充固定时代配额。
 默认模式只报告是否仍有待写变更；需要应用迁移时显式传入 `--write`：
 
 ```powershell

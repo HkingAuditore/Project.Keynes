@@ -48,6 +48,14 @@ Also use `civ-grounded-development` for repository changes. Add
 - Keep `Project/project-keynes/data/technology/technology_network.json` as the sole authoring source.
   `TechnologyCatalog` remains the sole compiled/runtime authority; do not restore parallel row constants
   or route-based Modifier inference.
+- Schema v4 keeps researchable state in `nodes[]` with `tech.*` IDs. `application_intersections[]`
+  use `app.*` IDs, have zero research cost, become active only when their complete requirement set is
+  met, and are static presentation/content bindings rather than research state. They never enter dense
+  IDs, queues, progress, Effect, Modifier, milestones, or PKCN/PKEC.
+- A `BuildingProfile` has one primary `technology_tags` ANY gate and optional
+  `required_technology_tags` ALL support gates. An intersection's requirement set must exactly match
+  the building's complete gate. Building progression metadata is cold catalog data; researching a
+  higher step never disables, deletes, or makes an earlier facility unconstructible.
 - Do not store technology strings in runtime hot paths or dense progress for every
   `country × technology`.
 - Do not move research queues, progress, discovery, completion, policy, or technology treasury
@@ -68,7 +76,7 @@ Also use `civ-grounded-development` for repository changes. Add
 - Keep player-facing Chinese names, effect summaries, and route labels in the
   `public_definitions()` presentation layer. Translation-only edits must not change stable `tech.*`
   IDs, compiled native catalog rows, or exact catalog identity.
-- Restore PKCN before PKEC. PKCN v11, PKEF v9 and PKTR v5 use exact schema/catalog identity and
+- Restore PKCN before PKEC. PKCN v12, PKEF v11, PKTR v6 and PKEC v51 use exact schema/catalog identity and
   return `catalog_hash_mismatch` for older trees rather than silently defaulting state.
 - Do not add taxes, cross-country technology trade, research diplomacy, or AI research policy as
   incidental scope.

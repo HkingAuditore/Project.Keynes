@@ -14,6 +14,29 @@ Use this schema when a technology-network proposal should be checked by `audit_t
 
 Exactly eleven ordered eras are required.
 
+The live catalog is schema v4. Its `nodes[]` remain researchable `tech.*` definitions only. When an
+auditable design needs to describe a multi-knowledge production binding, add a top-level
+`application_intersections[]` entry instead of a paid application node:
+
+```json
+{
+  "id": "app.household_tuber_garden",
+  "name": "家庭块茎试种圃",
+  "description": "块茎繁育与家户生产共同成熟后的过渡方式",
+  "era": "agrarian",
+  "domain": "agriculture",
+  "industry_chain_id": "potato",
+  "layout_order": 12,
+  "required_technology_ids": ["tech.potato_propagation", "tech.household_production"],
+  "building_ids": ["household_tuber_garden"]
+}
+```
+
+Intersection IDs use `app.*`, have zero cost, are automatically active when every requirement is
+complete, and are static presentation/content data. They do not enter the research DAG, dense IDs,
+queues, progress, Effect, Modifier, milestones, or save schemas. The requirement set must exactly
+match the referenced building's primary ANY technology plus ALL support tags.
+
 ## Node
 
 ```json
@@ -125,7 +148,9 @@ Allowed kinds:
 - `alternative`
 - `application`
 
-Only `hard` and `alternative` edges participate in the research-prerequisite DAG audit. Application edges may point back to an earlier-era technology to describe feedback, but must not be compiled as backward research prerequisites.
+Only `hard` and `alternative` edges participate in the research-prerequisite DAG audit. An
+`application` edge in this proposal format is explanatory feedback only and must not be compiled as a
+research prerequisite; live multi-knowledge building bindings belong in `application_intersections[]`.
 
 ## Audit Behavior
 

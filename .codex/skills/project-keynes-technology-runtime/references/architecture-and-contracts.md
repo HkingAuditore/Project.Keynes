@@ -25,6 +25,9 @@ Current baseline:
 - 11 eras, four domains, four backbones, and twenty-four dynamic branch families.
 - Milestone required counts remain `4/4/4/4/5/5/5/6/6/7/7`; candidate lists are regenerated
   only from substantive `tech.*` definitions.
+- Building progression fields (`industry_chain_id`, `progression_step`, `maturity_rank`, display
+  name, role, predecessors, and terminal reason) are cold catalog/UI/audit data. They do not enter
+  Native mutable state or PKEC, and a later step never disables an earlier constructible facility.
 - Eligibility requires every core prerequisite and any one complete research route when routes exist.
   Era-milestone nodes additionally require the previous-era milestone; ordinary nodes do not.
 - Nonstone specialist anchors require previous same-lane knowledge where authored; they do not
@@ -228,11 +231,13 @@ Current versions:
 
 - `NewGameConfig` v3: foreign-country count, starting cash, procurement budget, four weights,
   automatic-purchase flag; v2 migrates with zero foreign countries.
-- PKCN v11: catalog/content/Trigger identity, all research/signal state, queues, policy, deferred stock,
+- PKCN v12: catalog/content/Trigger identity, all research/signal state, queues, policy, deferred stock,
   pending items, evidence provenance and counters.
-- PKEF v9: unique technology recipes, transactions/ACK and era-reward plans.
-- PKTR v5: Trigger accumulation, last development sample day, consecutive progress, and pending effects.
-- PKEC v34: procurement/practice state, technology-points market/in-transit state and audit baselines.
+- PKEF v11: unique technology recipes, transactions/ACK and era-reward plans.
+- PKTR v6: Trigger accumulation, last development sample day, consecutive progress, and pending effects.
+- PKEC v51: procurement/practice state, technology-points market/in-transit state and audit baselines.
+- PKSV/provider manifests carry `technology_industry_revision = 2`; a missing revision is revision 1
+  and may be previewed but not loaded.
 
 Restore PKCN before PKEC. Reject old PKCN/PKEF/PKTR schemas and any related catalog identity change
 with `catalog_hash_mismatch`. Do not silently migrate IDs or populate defaults during restore.
