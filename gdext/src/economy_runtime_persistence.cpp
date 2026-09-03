@@ -840,6 +840,10 @@ Dictionary NativeEconomyRuntime::end_restore() {
             member_people[slot] += edge.people;
             member_cash[slot] += edge.cash_claim;
         }
+        // Saves written before ownership clamping could carry shares granted
+        // ahead of a liquidation or owner-slot change. Repair them instead of
+        // rejecting an otherwise loadable world; handles stay authoritative.
+        sanitize_family_ownership_edges();
         std::vector<int64_t> owned(_buildings.size(), 0);
         for (const FamilyBuildingOwnership &edge : _family_ownerships) {
             const int32_t group = building_index_for_handle(edge.building_handle);

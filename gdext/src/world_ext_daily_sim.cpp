@@ -855,7 +855,13 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
 
         const auto t_context0 = std::chrono::high_resolution_clock::now();
         if (bool(_native_daily_slice_bundle.get("refresh_slots_from_map", true))) {
-            refresh_slots_from_map();
+            PackedStringArray refresh_keys =
+                _native_daily_slice_bundle.get("refresh_slot_keys", PackedStringArray());
+            if (refresh_keys.size() > 0) {
+                refresh_slots_from_map_keys(refresh_keys);
+            } else {
+                refresh_slots_from_map();
+            }
         }
         // The initial refresh imports the last committed MapData state. Protect
         // moisture from unrelated bulk refreshes and prevent visual consumers from
@@ -1084,6 +1090,10 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
             return true;
         }
         if (std::strcmp(node.name, "albedo") == 0) {
+            if (_native_daily_slice_bundle.has("stage_b_knobs") ||
+                _native_daily_slice_bundle.has("stage_b_after_hydrology_knobs")) {
+                return true;
+            }
             const double ms = run_albedo_pass(as_dict(_native_daily_slice_bundle["albedo_knobs"]));
             if (ms < 0.0) return false;
             breakdown["albedo_ms"] = ms;
@@ -1091,6 +1101,10 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
             return true;
         }
         if (std::strcmp(node.name, "vegetation_dynamics") == 0) {
+            if (_native_daily_slice_bundle.has("stage_b_knobs") ||
+                _native_daily_slice_bundle.has("stage_b_after_hydrology_knobs")) {
+                return true;
+            }
             const double ms = run_vegetation_dynamics_pass(as_dict(_native_daily_slice_bundle["vegetation_dynamics_knobs"]));
             if (ms < 0.0) return false;
             breakdown["veg_dyn_ms"] = ms;
@@ -1098,6 +1112,10 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
             return true;
         }
         if (std::strcmp(node.name, "climate_feedback") == 0) {
+            if (_native_daily_slice_bundle.has("stage_b_knobs") ||
+                _native_daily_slice_bundle.has("stage_b_after_hydrology_knobs")) {
+                return true;
+            }
             const double ms = run_climate_feedback_pass(as_dict(_native_daily_slice_bundle["climate_feedback_knobs"]));
             if (ms < 0.0) return false;
             breakdown["feedback_ms"] = ms;
@@ -2454,7 +2472,12 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
 
     const auto t_context0 = std::chrono::high_resolution_clock::now();
     if (bool(bundle.get("refresh_slots_from_map", true))) {
-        refresh_slots_from_map();
+        PackedStringArray refresh_keys = bundle.get("refresh_slot_keys", PackedStringArray());
+        if (refresh_keys.size() > 0) {
+            refresh_slots_from_map_keys(refresh_keys);
+        } else {
+            refresh_slots_from_map();
+        }
     }
     const auto t_context1 = std::chrono::high_resolution_clock::now();
     breakdown["native_context_ms"] = std::chrono::duration<double, std::milli>(
@@ -2605,7 +2628,7 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
         any_pass_ran = true;
     }
 
-    if (bundle.has("albedo_knobs")) {
+    if (bundle.has("albedo_knobs") && !bundle.has("stage_b_knobs")) {
         const double ms = run_albedo_pass(as_dict(bundle["albedo_knobs"]));
         if (ms < 0.0) return finish_with_failure("albedo", "pass returned fallback");
         breakdown["albedo_ms"] = ms;
@@ -2613,7 +2636,7 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
         any_pass_ran = true;
     }
 
-    if (bundle.has("vegetation_dynamics_knobs")) {
+    if (bundle.has("vegetation_dynamics_knobs") && !bundle.has("stage_b_knobs")) {
         const double ms = run_vegetation_dynamics_pass(as_dict(bundle["vegetation_dynamics_knobs"]));
         if (ms < 0.0) return finish_with_failure("vegetation_dynamics", "pass returned fallback");
         breakdown["veg_dyn_ms"] = ms;
@@ -2621,7 +2644,7 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
         any_pass_ran = true;
     }
 
-    if (bundle.has("climate_feedback_knobs")) {
+    if (bundle.has("climate_feedback_knobs") && !bundle.has("stage_b_knobs")) {
         const double ms = run_climate_feedback_pass(as_dict(bundle["climate_feedback_knobs"]));
         if (ms < 0.0) return finish_with_failure("climate_feedback", "pass returned fallback");
         breakdown["feedback_ms"] = ms;

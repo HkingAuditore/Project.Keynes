@@ -287,7 +287,7 @@ const NATIVE_MODE_ACTIVE: int = 2
 # expand after bit-equal/perf validation.
 @export var native_daily_node_range_enabled: bool = false
 @export_range(128, 4096, 64) var native_daily_node_range_cells: int = 768
-@export var native_daily_node_range_nodes: PackedStringArray = PackedStringArray(["ocean_water", "ocean_land"])
+@export var native_daily_node_range_nodes: PackedStringArray = PackedStringArray(["climate_pass_a", "ocean_water", "ocean_land", "wind_air", "wind_surface"])
 @export var native_daily_ocean_thread_variant_enabled: bool = false
 @export_range(0, 16, 1) var native_daily_ocean_thread_tasks: int = 0
 @export_range(1.0, 30.0, 0.5) var native_daily_sea_ice_spread_dt_cap_days: float = 2.0

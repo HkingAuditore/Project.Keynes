@@ -854,17 +854,18 @@ Dictionary DCWorldExt::restore_gameplay_event_journal(Dictionary snapshot) {
             invalid["reason"] = "gameplay_effect_idempotency_shape_invalid";
             return invalid;
         }
-        std::unordered_set<int64_t> event_set;
-        for (const GameplayEventRecord &event : _gameplay_events)
-            event_set.insert(event.event_id);
         for (int i = 0; i < effect_keys.size(); ++i) {
             const uint64_t key = static_cast<uint64_t>(effect_keys[i]);
             const int64_t request = effect_requests[i];
             const int64_t event = effect_events[i];
             const bool custom_commit = version >= 4 && event == -1;
+            // The journal is a bounded ring. Idempotency evidence outlives the
+            // scrolled-out GameplayEventRecord, so a positive event_id may be
+            // absent from the restored event list after long sessions. Reject
+            // only malformed keys/requests; do not require the referenced event
+            // to still exist.
             if (key == 0 || request <= 0 ||
-                (!custom_commit && (event <= 0 ||
-                    event_set.find(event) == event_set.end())) ||
+                (!custom_commit && event <= 0) ||
                 !_effect_gameplay_idempotency.emplace(key, request).second ||
                 !_effect_gameplay_event_ids.emplace(key, event).second ||
                 !_effect_gameplay_results.emplace(request,

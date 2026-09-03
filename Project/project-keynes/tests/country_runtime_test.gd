@@ -203,6 +203,26 @@ func _run() -> void:
 	_expect("cleared override inherits current default",
 		int(tax_policy.income.rates[artisan]) == 10 and
 		int(tax_policy.income.has_override[artisan]) == 0)
+	var absolute_tax := _commands([{
+		"opcode": 11, "day": 5, "sequence": 1, "handle": beta.country_handle,
+		"cell": -1, "aux": -1, "stable_id": "", "name": "",
+		"tax_kind": 0, "tax_rate_bp": 2500, "tax_mode": 1,
+	}, {
+		"opcode": 12, "day": 5, "sequence": 2, "handle": beta.country_handle,
+		"cell": -1, "aux": -1, "stable_id": "", "name": "",
+		"tax_kind": 0, "tax_item": artisan, "tax_rate_bp": -100,
+		"tax_mode": 1,
+	}])
+	_expect("absolute tax defaults and overrides queue",
+		bool(ext.submit_country_commands(absolute_tax).get("ok", false)))
+	_expect("absolute tax policy commits",
+		bool(ext.run_country_slice({"day_index": 5}).get("ok", false)))
+	tax_policy = ext.get_country_tax_policy_snapshot(beta.country_handle)
+	_expect("absolute assessment modes round-trip",
+		int(tax_policy.default_assessment_modes[0]) == 1 and
+		int(tax_policy.income.assessment_modes[artisan]) == 1 and
+		int(tax_policy.income.absolute_amounts[artisan]) == -100 and
+		int(tax_policy.income.has_override[artisan]) == 1)
 	var tax_matrix_ext := _new_ext(4)
 	tax_matrix_ext.configure_country(catalog, profile, 4, 100)
 	tax_matrix_ext.bootstrap_country(packet, water)
@@ -401,7 +421,7 @@ func _run() -> void:
 	for cell_chunk in cell_save_chunks:
 		cell_restored.feed_country_restore_chunk(cell_chunk)
 	var cell_restore_result: Dictionary = cell_restored.end_country_restore()
-	_expect("PKCN v12 sparse cell policies round-trip with exact replay hash",
+	_expect("PKCN sparse cell policies round-trip with exact replay hash",
 		bool(cell_restore_result.get("ok", false)) and
 		int(cell_restored.get_country_state_hash()) ==
 			int(tax_matrix_ext.get_country_state_hash()) and
@@ -472,7 +492,7 @@ func _run() -> void:
 	_expect("pending research signal command queues before PKCN capture",
 		bool(ext.submit_country_commands(pending_signal_commands).get("ok", false)))
 	var save_begin: Dictionary = ext.begin_country_save(4096)
-	_expect("PKCN v12 begins", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 12)
+	_expect("PKCN v13 begins", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 13)
 	var chunks: Array[PackedByteArray] = []
 	while true:
 		var chunk: PackedByteArray = ext.read_country_save_chunk(4096)
@@ -561,6 +581,7 @@ func _commands(rows: Array[Dictionary]) -> Dictionary:
 		"tax_kinds": PackedInt32Array(),
 		"tax_item_indices": PackedInt32Array(),
 		"tax_rate_basis_points": PackedInt32Array(),
+		"tax_assessment_modes": PackedInt32Array(),
 		"tax_rate_percent": PackedInt32Array(),
 		"stable_ids": PackedStringArray(), "display_names": PackedStringArray()}
 	for row in rows:
@@ -582,6 +603,7 @@ func _commands(rows: Array[Dictionary]) -> Dictionary:
 		out.tax_item_indices.append(int(row.get("tax_item", -1)))
 		out.tax_rate_basis_points.append(int(row.get("tax_rate_bp",
 			int(row.get("tax_rate", 0)) * 100)))
+		out.tax_assessment_modes.append(int(row.get("tax_mode", 0)))
 		out.tax_rate_percent.append(int(row.get("tax_rate", 0)))
 		out.stable_ids.append(String(row.stable_id))
 		out.display_names.append(String(row.name))

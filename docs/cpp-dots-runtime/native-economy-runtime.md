@@ -1,5 +1,29 @@
 # 原生阶层与本地市场运行时（Market V2 / Price V6）
 
+## 2026-09-03 Incumbent 扩容使用揭示单位经济
+
+本地已有同类型在营组且上期有产出实绩时，扩容投资的利用率取
+`min(市场驱动, 气候, max(软投入覆盖, 揭示产能强度))`，生计/目标利润/回本门禁改用
+`(Σ last_revenue + Σ in_kind) / active_count` 等揭示每座日经济，现金份额仍按吸收率缩放。
+绿地说（无 incumbent）保持原报价。避免「旧营地富得流油、新建一座却 OWNER_LIVELIHOOD」的口径分裂。
+
+## 2026-09-03 投资批量按共用库存收窄
+
+内生投资的报价按「单座 + 满库存 + 最便宜候选材料」冻结每座所需资本（自筹 + 商人信贷），
+而下单阶段同一格最多四种建筑要按 portfolio 顺序共用同一份库存，前面的类型占走便宜的首选
+材料后，后面只能选更贵的替代品。原实现在分配阶段只校验材料能否凑齐，把资金校验留到
+下单前，材料替代抬价即触发 `building_investment_cost_preflight_drift` 致命中止。
+
+现在 `additional_capacity` 的材料二分同时要求「该栋数的重算发票 ≤ 该栋数的资金包络」，
+并在全部分配轮次结束、迁移人口与资金之前，按与下单完全一致的顺序和共用库存再核一次：
+超包络即把 `allocated_count` 二分收窄到仍撑得住的最大栋数（可为零，视作本次不投），
+随后重算 `active_types`/总栋数/业主人口与 `portfolio_credit_required`。单位造价随批量
+单调不减，故该谓词单调、可二分。下单前的三个 `*_preflight_drift` 检查保留为兜底断言。
+
+`building_investment_cost_envelope_trimmed` 报告被收窄掉的栋数；受此约束的批量沿用既有
+`building_investment_capital_limited` 计数。资金包络公式、商人信贷政策与材料替代选择算法
+均未改动，不涉及 PKEC 字节布局、state hash 或调度阶段。
+
 ## 2026-08-31 开放获取资源与可兑现工资（PKEC v50）
 
 可再生资源默认 `resource_safe_harvest_q16=0`，即不实施行政安全产量。
@@ -552,7 +576,7 @@ stable good ID 排列的候选 CSR，并附带 good-level Q16 生产效率。每
 `1 - required` 的产能底线，库存/现金越接近完整物理需求，产能越线性恢复到满产。native 在冻结国家科技可用的候选
 中按 `price / efficiency` 选择最低有效成本；生产期还要求本地正库存。物理消耗为
 `ceil(effective_required / efficiency)` 乘以该产能实际需要的输入购买比例；若完整物理需求为正且购买比例为正，scaled 购买量至少为 1，避免硬输入在极低利用率下被截断为“零成本免费生产”。库存、业主现金与 goods audit 仍记录实际物理数量。
-这使早期木材等配方可以直接使用打制石器、青铜、金属或精密工具，不再需要商品转换站；每个输入槽仍按建筑时代设置最低品质，因此探索以后不会再选中打制石器，信息/AI 只接受精密工具。石器狩猎营地现在有 `tools` 软槽 `32768`、按劳动槽每日 100 工具；标称日产 `6670/80` 野味/生皮并抽取 `1430` 野生动物。无工具时产能与抽取约为标称一半，与补槽前的徒手产量对齐。采集营地同样用软工具并把标称植物产出加倍，但承载力占用保持原值。开局规划器按该软槽底线估算食物与抽取，且不把软互补品当作必须闭环的硬投入。
+这使早期木材等配方可以直接使用打制石器、青铜、金属或精密工具，不再需要商品转换站；每个输入槽仍按建筑时代设置最低品质，因此探索以后不会再选中打制石器，信息/AI 只接受精密工具。石器狩猎营地有 `tools` 软槽 `32768`、按劳动槽每日 100 工具；满工具标称日产 `1560/72/72` 野味/生皮/毛皮并抽取 `326` 野生动物。无工具时产能与抽取约为标称一半，对齐补槽前的徒手产量。纯抽取采集者在补软工具时把标称产出与 `extract` 加倍；含 `capacity` 的农田/牧场等保持原标称（满工具=旧产量，徒手约一半），以免土地生产力越出时代区间。邻近后期档按满工具人均产出至少 `1.34×` 前档上修。开局规划器按该软槽底线估算食物与抽取，且不把软互补品当作必须闭环的硬投入。
 玩家新建建筑列表必须展开当前科技可用的输入候选显示名，并标注非 100% 的 Q16 效率；不得只渲染槽位代表物资的 `display_name`。石器时代伐木场因此显示打制石器，而不是代表物资 `tools` 的「金属工具」。运行时仍按冻结科技可用候选的有效成本选择，不因 UI 文案改变。
 
 建造边使用同一套机制：`BuildingProfile.construction_category_ids` /
@@ -1519,6 +1543,16 @@ capitals. A forced capital receives and retains a deterministic name below tier
 backward-compatibly in the high bit of the persisted tier byte; older v24
 records have it clear. Selected-cell summaries expose
 `settlement_name_forced`.
+
+## 2026-09-03 Leontief shadow derived demand
+
+Sample-boundary `refresh_derived_business_demand()` explodes unmet final/business
+deficits through the preferred producer BOM into `_epoch_derived_business_demand`
+(sparse signal-aligned, not PKEC). Price pressure, merchant procurement quota,
+trade import targets, and investment startup deficits fold that shadow demand
+with default weight `Q16_ONE/2`. Vacant downstream workshops can therefore raise
+intermediate prices (for example tools → flint) without realized input purchases.
+Conservation is unchanged: derived demand never withdraws stock or mints money.
 
 
 

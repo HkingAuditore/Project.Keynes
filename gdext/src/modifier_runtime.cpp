@@ -121,6 +121,14 @@ int32_t ModifierRuntime::stat_id(const std::string &key) const {
     return it == _stat_ids.end() ? -1 : it->second;
 }
 
+double ModifierRuntime::stat_clamp_max(const char *key, double fallback) const {
+    if (key == nullptr || !_configured) return fallback;
+    const int32_t sid = stat_id(key);
+    if (sid < 0 || sid >= static_cast<int32_t>(_stats.size())) return fallback;
+    const double hi = _stats[static_cast<size_t>(sid)].max_value;
+    return std::isfinite(hi) ? hi : fallback;
+}
+
 int32_t ModifierRuntime::definition_id(const std::string &key) const {
     const auto it = _definition_ids.find(key);
     return it == _definition_ids.end() ? -1 : it->second;

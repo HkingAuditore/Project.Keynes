@@ -13,6 +13,11 @@ theme_override_constants/separation = 4
 custom_minimum_size = Vector2(64, 0)
 layout_mode = 2
 vertical_alignment = 1
+[node name="Mode" type="OptionButton" parent="Box/Row"]
+custom_minimum_size = Vector2(64, 30)
+layout_mode = 2
+focus_mode = 0
+tooltip_text = "百分比或绝对值计税"
 [node name="Spin" type="SpinBox" parent="Box/Row"]
 custom_minimum_size = Vector2(88, 30)
 layout_mode = 2

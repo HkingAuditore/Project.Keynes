@@ -1394,6 +1394,14 @@ private:
         int64_t owner_required = 0;
         int64_t last_sold = 0;
         int64_t last_discarded = 0;
+        // Revealed active-group settlement totals for incumbent expansion quotes.
+        // Review-only; never persisted. last_revenue is already post business tax.
+        int64_t sum_last_revenue = 0;
+        int64_t sum_last_in_kind_livelihood = 0;
+        int64_t sum_last_input_cost = 0;
+        int64_t sum_last_base_wages_due = 0;
+        int64_t sum_last_maintenance_cost = 0;
+        int64_t sum_last_output = 0;
     };
 
     enum InvestmentRejection : int32_t {
@@ -3407,6 +3415,8 @@ private:
     int64_t _building_investment_demand_limited = 0;
     int64_t _building_investment_material_limited = 0;
     int64_t _building_investment_capital_limited = 0;
+    // 下单前按共用库存重算发票时，因超出资金包络而被砍掉的栋数。
+    int64_t _building_investment_cost_envelope_trimmed = 0;
     int64_t _building_investment_owner_population_limited = 0;
     int64_t _building_investment_jobs_started = 0;
     int64_t _building_investment_employment_gap = 0;
@@ -3957,8 +3967,16 @@ private:
     MarketSignalStore _market_signals;
     MarketSignalStore _market_signals_rebuild_scratch;
     std::vector<int64_t> _epoch_business_demand_ema;
+    // Leontief shadow derived demand from unmet final/business deficits through
+    // preferred producer BOMs. Recomputed each sample; excluded from PKEC/hash.
+    std::vector<int64_t> _epoch_derived_business_demand;
     std::vector<int64_t> _epoch_desired_business_demand;
     std::vector<int64_t> _epoch_funded_business_demand;
+    // Confidence weight for folding derived demand into price pressure.
+    int32_t _derived_business_demand_weight_q16 = Q16_ONE / 2;
+    int64_t _derived_business_demand_total = 0;
+    int64_t _derived_business_demand_lanes = 0;
+    int64_t _derived_business_demand_edges = 0;
     std::vector<int64_t> _epoch_offered_supply_ema;
     // Current-cycle producer absorption diagnostics, aligned to the sparse
     // (cell, good) market-signal lanes. These are transient and excluded from
@@ -4516,10 +4534,16 @@ private:
     std::vector<int32_t> _epoch_business_tax_rates;
     std::vector<int32_t> _epoch_import_tax_rates;
     std::vector<int32_t> _epoch_export_tax_rates;
+    std::vector<int32_t> _epoch_income_tax_modes;
+    std::vector<int32_t> _epoch_consumption_tax_modes;
+    std::vector<int32_t> _epoch_business_tax_modes;
+    std::vector<int32_t> _epoch_import_tax_modes;
+    std::vector<int32_t> _epoch_export_tax_modes;
     static constexpr size_t CELL_TAX_KIND_COUNT = 5;
     struct CompiledCellTaxOverride {
         int32_t item = -1;
         int32_t rate = 0;
+        int32_t mode = 0; // TAX_MODE_PERCENT_BP
     };
     struct CompiledCellTaxPolicy {
         std::array<int32_t, CELL_TAX_KIND_COUNT>
@@ -4534,6 +4558,7 @@ private:
         int32_t kind = -1;
         int32_t country = -1;
         int32_t base_rate = 0;
+        int32_t base_mode = 0; // TAX_MODE_PERCENT_BP
         int32_t offset = 0;
         int32_t count = 0;
     };
@@ -4543,6 +4568,7 @@ private:
     std::vector<CompiledCellTaxOverride> _epoch_compiled_cell_tax_overrides;
     std::vector<CompiledCellTaxDefaultRow> _epoch_compiled_cell_tax_default_rows;
     std::vector<int32_t> _epoch_compiled_cell_tax_default_rates;
+    std::vector<int32_t> _epoch_compiled_cell_tax_default_modes;
     int64_t _epoch_cell_tax_cache_bytes = 0;
     double _epoch_cell_tax_compile_ms = 0.0;
     bool _epoch_has_cell_tax_policies = false;
@@ -5274,16 +5300,31 @@ private:
                                         int64_t base_value,
                                         bool settle,
                                         bool subsidy_eligible,
-                                        int64_t &saturation_count);
+                                        int64_t &saturation_count,
+                                        int64_t filled_quantity = -1);
     void settle_income_subsidies_for_cell(int32_t cell,
                                           int64_t &saturation_count);
+    void settle_absolute_daily_taxes_for_cell(int32_t cell,
+                                              int64_t &saturation_count);
     bool commit_fiscal(std::string &error);
     int32_t frozen_tax_rate(int32_t cell, int32_t kind, int32_t item) const;
+    int32_t frozen_tax_mode(int32_t cell, int32_t kind, int32_t item) const;
     int64_t apply_fiscal_tax(int32_t cell, int32_t kind, int64_t base,
                              int32_t rate, int64_t &saturation_count);
+    int64_t apply_fiscal_tax(int32_t cell, int32_t kind, int64_t base,
+                             int32_t rate, int32_t mode,
+                             int64_t &saturation_count);
     int64_t expected_fiscal_transfer(int32_t cell, int32_t kind, int64_t base,
                                      int32_t rate,
                                      int64_t &saturation_count) const;
+    int64_t expected_fiscal_transfer(int32_t cell, int32_t kind, int64_t base,
+                                     int32_t rate, int32_t mode,
+                                     int64_t &saturation_count) const;
+    // Resolve frozen mode: percent uses money base, absolute uses unit count
+    // (person-days, building-days, or goods quantity).
+    int64_t expected_resolved_fiscal_transfer(
+            int32_t cell, int32_t kind, int32_t item, int64_t percent_base,
+            int64_t absolute_units, int64_t &saturation_count) const;
     int32_t tariff_epoch_lane_index(int32_t cell, int32_t tariff_kind,
                                     bool create);
     int64_t expected_after_tax_income(int32_t cell, int32_t profession,
@@ -5342,6 +5383,15 @@ private:
     int64_t remote_startup_demand_for(int32_t cell, int32_t good_id) const;
     void consume_remote_startup_demand(int32_t cell, int32_t good_id,
                                        int64_t daily_capacity);
+    // Sparse Leontief explosion of unmet deficits into intermediate-good
+    // shadow demand for pricing and investment. Sample-boundary only.
+    void refresh_derived_business_demand();
+    int64_t market_flow_deficit_daily(int32_t cell, int32_t good_id,
+                                      bool include_derived,
+                                      int64_t &sat) const;
+    int64_t startup_producer_output_quantity(int32_t cell, int32_t type_id,
+                                             int32_t good_id,
+                                             int64_t &sat) const;
     int32_t select_startup_producer(int32_t cell, int32_t good_id) const;
     int32_t select_startup_input_candidate(int32_t cell,
                                            const ProductionInput &input,
@@ -5561,6 +5611,13 @@ private:
                                          uint8_t weight_q8);
     void split_family_branches();
     void normalize_family_memberships(bool rebuild_derived = true);
+    // Clamp derived employment/basis fields so membership edges always satisfy
+    // the PKEC restore invariants even if attribution briefly overshoots.
+    static void sanitize_family_membership_edge(FamilyMembershipEdge &edge);
+    // Clamp ownership shares to the surviving building count and owner-slot
+    // capacity. Liquidation and demolition shrink a group after the shares were
+    // granted, so without this the PKEC restore invariants can reject a save.
+    void sanitize_family_ownership_edges();
     void absorb_family_households();
     int64_t family_household_target_people(int64_t owner_slots) const;
     int64_t family_household_people_for_slot(int32_t slot,

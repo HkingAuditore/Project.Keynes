@@ -199,6 +199,18 @@ Dictionary DCWorldExt::run_vision_research_pass(const Dictionary &knobs) {
             }
         }
     }
+    // 领土六邻接必可见：与 VisionSolver._force_territory_ring_visible 对齐。
+    // 主修复是 CLAIM 后 sync_country_territory_to_map；这里兜住共边硬状态。
+    for (int32_t cell = 0; cell < n; ++cell) {
+        if (player_slot < 0 || owners[cell] != player_slot) continue;
+        visible[size_t(cell)] = 1u;
+        const int32_t base = cell * 6;
+        for (int32_t d = 0; d < 6; ++d) {
+            const int32_t next = neighbors[base + d];
+            if (next < 0 || next >= n) continue;
+            visible[size_t(next)] = 1u;
+        }
+    }
 
     std::vector<uint8_t> explored(static_cast<size_t>(n));
     std::vector<float> vis_a(static_cast<size_t>(n));

@@ -1165,12 +1165,22 @@ Dictionary TriggerRuntime::handoff_effects(EffectRuntime *effect_runtime,
     int32_t handed_off = 0;
     int64_t last_effect_id = _acked_effect_id;
     std::string blocked_reason;
+    std::string blocked_command_key;
+    std::string blocked_definition_key;
+    int32_t blocked_action = 0;
+    int32_t blocked_opcode = 0;
+    int32_t blocked_trigger_id = -1;
     for (const Effect &effect : _effects) {
         if (effect.id <= _acked_effect_id) continue;
         if (handed_off >= max_count) break;
         if (effect.action == IDEOLOGY_COMMAND) {
             if (ideology_runtime == nullptr) {
                 blocked_reason = "trigger_ideology_runtime_unavailable";
+                blocked_command_key = effect.command_key;
+                blocked_definition_key = effect.definition_key;
+                blocked_action = effect.action;
+                blocked_opcode = effect.opcode;
+                blocked_trigger_id = effect.trigger_id;
                 break;
             }
             std::string error;
@@ -1182,6 +1192,11 @@ Dictionary TriggerRuntime::handoff_effects(EffectRuntime *effect_runtime,
                     static_cast<int32_t>(effect.payload[2]),
                     static_cast<int32_t>(effect.payload[3]), error)) {
                 blocked_reason = error.empty() ? "trigger_ideology_handoff_failed" : error;
+                blocked_command_key = effect.command_key;
+                blocked_definition_key = effect.definition_key;
+                blocked_action = effect.action;
+                blocked_opcode = effect.opcode;
+                blocked_trigger_id = effect.trigger_id;
                 break;
             }
             last_effect_id = effect.id;
@@ -1196,6 +1211,11 @@ Dictionary TriggerRuntime::handoff_effects(EffectRuntime *effect_runtime,
         if (!native_modifier && effect.action != COUNTRY_COMMAND &&
             effect.action != ECONOMY_COMMAND) {
             blocked_reason = "trigger_effect_domain_adapter_required";
+            blocked_command_key = effect.command_key;
+            blocked_definition_key = effect.definition_key;
+            blocked_action = effect.action;
+            blocked_opcode = effect.opcode;
+            blocked_trigger_id = effect.trigger_id;
             break;
         }
         std::string error;
@@ -1223,6 +1243,11 @@ Dictionary TriggerRuntime::handoff_effects(EffectRuntime *effect_runtime,
                 effect.resolved_value, effect.duration_days, effect.stacks,
                 effect.command_key, effect.definition_key, effect.payload, error)) {
             blocked_reason = error.empty() ? "trigger_effect_handoff_failed" : error;
+            blocked_command_key = effect.command_key;
+            blocked_definition_key = effect.definition_key;
+            blocked_action = effect.action;
+            blocked_opcode = effect.opcode;
+            blocked_trigger_id = effect.trigger_id;
             break;
         }
         last_effect_id = effect.id;
@@ -1235,7 +1260,14 @@ Dictionary TriggerRuntime::handoff_effects(EffectRuntime *effect_runtime,
     out["handed_off"] = handed_off;
     out["last_effect_id"] = last_effect_id;
     out["blocked"] = !blocked_reason.empty();
-    if (!blocked_reason.empty()) out["reason"] = String(blocked_reason.c_str());
+    if (!blocked_reason.empty()) {
+        out["reason"] = String(blocked_reason.c_str());
+        out["blocked_command_key"] = String(blocked_command_key.c_str());
+        out["blocked_definition_key"] = String(blocked_definition_key.c_str());
+        out["blocked_action"] = blocked_action;
+        out["blocked_opcode"] = blocked_opcode;
+        out["blocked_trigger_id"] = blocked_trigger_id;
+    }
     return out;
 }
 

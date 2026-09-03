@@ -45,6 +45,7 @@ Dictionary NativeEconomyRuntime::market_cell_snapshot(int32_t cell_idx) const {
     PackedInt64Array stock;
     PackedInt64Array demand_ema;
     PackedInt64Array business_demand_ema;
+    PackedInt64Array derived_business_demand;
     PackedInt64Array desired_business_demand;
     PackedInt64Array funded_business_demand;
     PackedInt64Array unfunded_business_demand;
@@ -140,6 +141,9 @@ Dictionary NativeEconomyRuntime::market_cell_snapshot(int32_t cell_idx) const {
         const int32_t signal = market_signal_index(cell_idx, g);
         business_demand_ema.push_back(signal >= 0 ?
             _market_signals.business_demand_ema[signal] : 0);
+        derived_business_demand.push_back(signal >= 0 && signal < static_cast<int32_t>(
+                _epoch_derived_business_demand.size())
+            ? _epoch_derived_business_demand[signal] : 0);
         const int64_t desired_business = signal >= 0 && signal < static_cast<int32_t>(
                 _epoch_desired_business_demand.size())
             ? _epoch_desired_business_demand[signal] : 0;
@@ -263,6 +267,7 @@ Dictionary NativeEconomyRuntime::market_cell_snapshot(int32_t cell_idx) const {
     out["price_ceiling_confirmation_days"] = ceiling_days;
     out["demand_ema"] = demand_ema;
     out["business_demand_ema"] = business_demand_ema;
+    out["derived_business_demand"] = derived_business_demand;
     out["desired_business_demand"] = desired_business_demand;
     out["funded_business_demand"] = funded_business_demand;
     out["unfunded_business_demand"] = unfunded_business_demand;

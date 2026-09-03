@@ -32,7 +32,10 @@ var _definitions: Array = []
 var _eras: Array = []
 var _domains: Array = []
 var _visual_edges: Array = []
+var _soft_edges: Array = []
+var _id_to_index: Dictionary = {}
 var _layout: Dictionary = {}
+var _layout_baked := false
 var _focus_layout: Dictionary = {}
 var _parents: Array = []
 var _children: Array = []
@@ -54,6 +57,7 @@ var _name_font: Font = UITokens.font_with_weight(640)
 var _visibility_signature := 0
 var _portal_slots: Dictionary = {}
 var _canvas_key := Vector2i.ZERO
+var _focus_active := false
 
 
 func _ready() -> void:
@@ -75,33 +79,64 @@ func set_catalog(definitions: Array, eras: Array, domains: Array,
 	_accents.clear()
 	for domain in domains:
 		_accents.append((domain as Dictionary).get("accent", UITokens.ACCENT))
-	_layout = LayoutScript.build(definitions, eras, domains, visual_edges)
+	_id_to_index.clear()
+	for index in range(definitions.size()):
+		_id_to_index[String((definitions[index] as Dictionary).get("id", ""))] = index
+	# Topology is enough for fog and focus geometry; full bezier bake waits until
+	# layout_report() so opening the available-research desk stays cheap.
+	_layout = LayoutScript.build_topology(definitions, visual_edges)
+	_layout_baked = false
+	_soft_edges = LayoutScript.index_soft_edges(visual_edges,
+		_layout.get("index_by_id", _id_to_index))
 	_parents = _layout.get("parents", [])
 	_children = _layout.get("children", [])
 	_visible_nodes.resize(definitions.size())
 	_known_nodes.resize(definitions.size())
 	if not definitions.is_empty():
 		_domain_id = String((definitions[0] as Dictionary).get("domain_id", ""))
+
+
+func ensure_full_layout() -> void:
+	if _layout_baked or _definitions.is_empty():
+		return
+	_layout = LayoutScript.build(_definitions, _eras, _domains, _visual_edges)
+	_layout_baked = bool(_layout.get("ok", false))
+	_parents = _layout.get("parents", [])
+	_children = _layout.get("children", [])
+
+
+func activate_focus_drawing() -> void:
+	if _focus_active:
+		return
+	_focus_active = true
 	_rebuild_focus()
 
 
 func patch_states(states: PackedInt32Array, progress: PackedInt64Array) -> void:
 	var state_changed := states != _states
+	var old_progress := _progress
 	_states = states
 	_progress = progress
+	var rebuild := false
 	if state_changed:
 		var signature := _recompute_visibility()
 		if signature != _visibility_signature:
 			_visibility_signature = signature
-			_rebuild_focus(false)
+			rebuild = _focus_active
+			if rebuild:
+				_rebuild_focus(false)
 	if _selected >= 0 and not _is_visible(_selected) and not _focus_contains(_selected):
 		_selected = -1
 		_chain_up.clear()
 		_chain_down.clear()
-	queue_redraw()
+	if not _focus_active:
+		return
+	if rebuild or state_changed or _progress_dirty_for_draw(old_progress, progress):
+		queue_redraw()
 
 
 func set_focus(domain_id: String, era_index: int, preferred_index: int = -1) -> void:
+	_focus_active = true
 	if not domain_id.is_empty():
 		_domain_id = domain_id
 	_focus_era = clampi(era_index, 0, maxi(0, _eras.size() - 1))
@@ -125,6 +160,8 @@ func focus_era() -> int:
 
 
 func focus_report() -> Dictionary:
+	if _focus_layout.is_empty() and _focus_active:
+		_rebuild_focus(false)
 	return _focus_layout
 
 
@@ -139,7 +176,8 @@ func select_technology(index: int) -> void:
 		return
 	_selected = index
 	_rebuild_chains(index)
-	queue_redraw()
+	if _focus_active:
+		queue_redraw()
 
 
 func frame_frontier() -> void:
@@ -169,7 +207,33 @@ func visibility_report() -> Dictionary:
 # Full graph data remains available to the detail card and tests. The focused
 # geometry is intentionally exposed separately through focus_report().
 func layout_report() -> Dictionary:
+	ensure_full_layout()
 	return _layout
+
+
+func topology_report() -> Dictionary:
+	return {
+		"ok": bool(_layout.get("ok", false)),
+		"parents": _parents,
+		"children": _children,
+		"index_by_id": _id_to_index,
+	}
+
+
+func _progress_dirty_for_draw(old_progress: PackedInt64Array,
+		new_progress: PackedInt64Array) -> bool:
+	if old_progress.size() != new_progress.size():
+		return true
+	for node_value in _focus_layout.get("nodes", []) as Array:
+		var index := int((node_value as Dictionary).get("index", -1))
+		var state := _state_of(index)
+		if state < 2 or state >= 5:
+			continue
+		if index < 0 or index >= new_progress.size():
+			continue
+		if index >= old_progress.size() or old_progress[index] != new_progress[index]:
+			return true
+	return false
 
 
 func _recompute_visibility() -> int:
@@ -189,14 +253,18 @@ func _recompute_visibility() -> int:
 
 
 func _rebuild_focus(recenter: bool = true) -> void:
-	if _definitions.is_empty() or _layout.is_empty():
+	if not _focus_active or _definitions.is_empty() or _parents.is_empty():
 		return
 	var previous_offset := _offset
 	var had_focus := not _focus_layout.is_empty()
 	var canvas := size if size.x >= 1.0 else Vector2(720.0, 480.0)
 	_canvas_key = Vector2i(int(canvas.x), int(canvas.y))
 	_focus_layout = LayoutScript.build_focus(_definitions, _eras, _domains,
-		_visual_edges, _domain_id, _focus_era, _visible_nodes, _layout, canvas)
+		_visual_edges, _domain_id, _focus_era, _visible_nodes, {
+			"ok": true,
+			"parents": _parents,
+			"children": _children,
+		}, canvas, _soft_edges)
 	_portal_slots.clear()
 	var side_counts := {}
 	for cursor in range((_focus_layout.get("portals", []) as Array).size()):
@@ -401,6 +469,8 @@ func _clamp_offset() -> void:
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_RESIZED:
+		if not _focus_active:
+			return
 		var key := Vector2i(int(size.x), int(size.y))
 		if key != _canvas_key and size.x >= 1.0 and size.y >= 1.0:
 			_rebuild_focus()
@@ -410,11 +480,12 @@ func _notification(what: int) -> void:
 	elif what == NOTIFICATION_MOUSE_EXIT:
 		_hovered = -1
 		_hovered_portal = -1
-		queue_redraw()
+		if _focus_active:
+			queue_redraw()
 
 
 func _draw() -> void:
-	if _focus_layout.is_empty():
+	if not _focus_active or _focus_layout.is_empty():
 		return
 	draw_set_transform(_offset, 0.0, Vector2.ONE)
 	_draw_bands()
@@ -528,11 +599,9 @@ func _draw_milestone_progress() -> void:
 			"milestone_candidate_ids", PackedStringArray())
 		var completed := 0
 		for id in candidates:
-			for cursor in range(_definitions.size()):
-				if String((_definitions[cursor] as Dictionary).get("id", "")) == String(id) \
-						and _state_of(cursor) >= 5:
-					completed += 1
-					break
+			var candidate_index := int(_id_to_index.get(String(id), -1))
+			if candidate_index >= 0 and _state_of(candidate_index) >= 5:
+				completed += 1
 		var required := maxi(1, int(definition.get("milestone_required_count", 5)))
 		var node_rect: Rect2 = node.rect
 		var rect := Rect2(node_rect.position + Vector2(12.0, node_rect.size.y - 9.0),

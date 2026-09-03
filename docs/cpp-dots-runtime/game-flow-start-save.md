@@ -217,8 +217,12 @@ Restore order is strict:
    and native Country Effect ingress idempotency.
 6. Restore PKEF v11, then PKEC v41 after trade topology has been configured, including Economy
    modifiers, building identities, notable families, active family expeditions, and production-climate state.
-7. Restore PKGP, then PKFG; re-solve vision and republish `enum_lut.a` and the border
-   mesh through `WorldRuntimeHost.refresh_country_visuals()`.
+7. Restore PKGP, then commit PKFG `explored_arr` without solving. After the later
+   player-session provider restores `start_cell`, finalize scheduling, rebind
+   the player country, re-solve vision, and republish `enum_lut.a` and the border
+   mesh through `WorldRuntimeHost.finalize_save_restore_visuals()`. That call fails
+   the load when fog is enabled but the player country slot cannot be rebound;
+   a silently unexplored map would be persisted by the next autosave.
 8. Restore journal v4 and PKTR v6, then PKID v3
    ideology state. PKID verifies its active PKEF bindings before the session is
    allowed to resume.
@@ -226,8 +230,10 @@ Restore order is strict:
 10. Restore selected cell, camera position/zoom, pause, and speed.
 
 PKCM must follow environment; PKCN and PKEF must precede PKEC; PKGP follows Economy
-base/identity restore. PKFG must follow PKCN, because re-solving
-visibility reads the restored territory. Native restore rejects crossed
+base/identity restore. PKFG must follow PKCN. Its provider commits monotonic
+exploration first, but visibility solving waits until `player_context.start_cell`
+is restored; solving earlier resolves player slot `-1` and can publish an
+all-unexplored map. Native restore rejects crossed
 generations or catalog hashes.
 
 While regenerating a load target, `MapGenerator` enters restore-preparation
@@ -262,7 +268,8 @@ Minimum gates are configuration and repository tests; deterministic multi-start
 tests across representative seeds/sizes; one-cell ownership, pairwise land
 distance, unique names, resource, population,
 and building assertions; `EnvironmentRuntime` byte-exact round-trip; PKCN/PKEC
-focused tests; four Modifier domain round-trips; a PKFG round-trip that hashes `explored_arr` across save/load
+focused tests; four Modifier domain round-trips; a PKFG round-trip that hashes `explored_arr` across save/load,
+proves a wiped fog state is never persisted as empty exploration progress,
 and then advances the restored runtime through at least one complete five-phase
 economy settlement cycle (`game_save_roundtrip_test.gd`); debug/release GDExtension builds; and
 desktop/narrow UI checks.

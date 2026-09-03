@@ -1360,6 +1360,8 @@ func _set_speed(s: float) -> void:
 func _on_speed_changed(new_speed: float) -> void:
 	_sync_speed_buttons()
 	if _renderer != null:
+		if _renderer.has_method("set_simulation_speed_multiplier"):
+			_renderer.set_simulation_speed_multiplier(new_speed)
 		var wl = _renderer.get_node_or_null("WeatherLayer")
 		if wl != null and wl.has_method("set_clock_speed_multiplier"):
 			wl.set_clock_speed_multiplier(new_speed)

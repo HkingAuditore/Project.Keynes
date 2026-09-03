@@ -194,6 +194,14 @@ func _run() -> void:
 	_expect("season refresh stage 8 does not write or flush cell_temp",
 		not season_stage8.contains("TEMP[i] = temp_now") and
 		not season_stage8.contains("_flush_slot_to_map(sid_temp)"))
+	_expect("season B+ skips vegetation rewrite under vegetation_dynamics owner",
+		generator_src.contains("skip_vegetation_rewrite") and
+		season_src.contains("skip_vegetation_rewrite"))
+	_expect("ACTIVE native daily uses keyed slot refresh",
+		generator_src.contains("refresh_slot_keys") and
+		daily_src.contains("refresh_slots_from_map_keys"))
+	_expect("full-run helper does not double-run stage_b and split albedo",
+		daily_src.contains("bundle.has(\"albedo_knobs\") && !bundle.has(\"stage_b_knobs\")"))
 
 	_finish()
 

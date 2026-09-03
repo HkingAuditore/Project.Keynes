@@ -20,6 +20,10 @@ const PAGE_DEFINITIONS := {
 }
 const TAX_KIND := {"income": 0, "consumption": 1, "business": 2, "import": 3, "export": 4}
 const KIND_LABELS := {"import": "进口", "export": "出口"}
+const TAX_MODE_PERCENT_BP := 0
+const TAX_MODE_ABSOLUTE := 1
+const TAX_ABSOLUTE_MIN := -1000000000
+const TAX_ABSOLUTE_MAX := 1000000000
 const CARD_SIZE := Vector2(280.0, 0.0)
 const ENTRANCE_STAGGER := 0.022
 const ENTRANCE_MAX_DELAY := 0.30
@@ -372,13 +376,17 @@ func _refresh_page() -> void:
 	var page_pres: Dictionary = presentation.get(_presentation_key(_page), {})
 	var defaults := _basis_points_array(policy.get("default_rates_basis_points", PackedInt32Array()),
 		policy.get("default_rates", PackedInt32Array()))
+	var default_modes: PackedInt32Array = policy.get(
+		"default_assessment_modes", PackedInt32Array())
 	var default_card := _ensure_card(_page, "__default__", _default_title(),
 		String(&"tax.default"), true)
 	var default_data := {}
 	for kind in _page_kinds(_page):
 		var kind_id := int(TAX_KIND[kind])
 		default_data[kind] = {"base": int(defaults[kind_id]),
-			"effective": int(defaults[kind_id]), "has_override": false}
+			"effective": int(defaults[kind_id]), "has_override": false,
+			"mode": int(default_modes[kind_id]) if kind_id < default_modes.size() \
+				else TAX_MODE_PERCENT_BP}
 	_update_card(default_card, default_data)
 	wanted["%s:__default__" % _page] = true
 	var index_by_id := {}
@@ -405,11 +413,15 @@ func _refresh_page() -> void:
 				break
 			var effective := _group_basis_points(group, "effective_rates", rates)
 			var flags: PackedByteArray = group.get("has_override", PackedByteArray())
+			var modes: PackedInt32Array = group.get(
+				"assessment_modes", PackedInt32Array())
 			kind_data[kind] = {
 				"base": int(rates[index]),
 				"effective": int(effective[index]) if index < effective.size() \
 					else int(rates[index]),
 				"has_override": index < flags.size() and flags[index] != 0,
+				"mode": int(modes[index]) if index < modes.size() \
+					else TAX_MODE_PERCENT_BP,
 			}
 		if not complete:
 			continue
@@ -756,8 +768,16 @@ func _group_basis_points(group: Dictionary, key: String,
 	return converted
 
 
-func _set_spin_basis_points(spin: SpinBox, rate_basis_points: int) -> void:
+func _set_spin_basis_points(spin: SpinBox, rate_basis_points: int,
+		mode: int = TAX_MODE_PERCENT_BP) -> void:
 	if spin == null:
+		return
+	_configure_spin_for_mode(spin, mode)
+	if mode == TAX_MODE_ABSOLUTE:
+		spin.set_value_no_signal(float(rate_basis_points))
+		var line := spin.get_line_edit()
+		if line != null and not line.has_focus():
+			line.text = str(rate_basis_points)
 		return
 	spin.set_value_no_signal(TaxLaneEditor.basis_points_to_percent(rate_basis_points))
 	var line := spin.get_line_edit()
@@ -770,6 +790,40 @@ func _set_spin_basis_points(spin: SpinBox, rate_basis_points: int) -> void:
 		shown = "%s %s" % [shown, spin.suffix]
 	if line.text != shown:
 		line.text = shown
+
+
+func _configure_spin_for_mode(spin: SpinBox, mode: int) -> void:
+	if spin == null:
+		return
+	if mode == TAX_MODE_ABSOLUTE:
+		spin.min_value = float(TAX_ABSOLUTE_MIN)
+		spin.max_value = float(TAX_ABSOLUTE_MAX)
+		spin.step = 1.0
+		spin.suffix = ""
+	else:
+		spin.min_value = -1000.0
+		spin.max_value = 100.0
+		spin.step = 0.01
+		spin.suffix = "%"
+
+
+func _card_mode(card: Dictionary, kind: String, fallback: int = TAX_MODE_PERCENT_BP) -> int:
+	return int((card.assessment_modes as Dictionary).get(kind, fallback))
+
+
+func _on_mode_selected(index: int, key: String, kind: String) -> void:
+	var card: Dictionary = _rows.get(key, {})
+	if card.is_empty():
+		return
+	var mode_button := (card.modes as Dictionary).get(kind) as OptionButton
+	var mode := TAX_MODE_PERCENT_BP
+	if mode_button != null:
+		mode = int(mode_button.get_item_id(index))
+	(card.assessment_modes as Dictionary)[kind] = mode
+	var spin := (card.spins as Dictionary)[kind] as SpinBox
+	_configure_spin_for_mode(spin, mode)
+	_set_spin_basis_points(spin, 0, mode)
+	_submit_rate(kind, String(card.item_id), 0, bool(card.is_default), mode)
 
 
 func _ensure_card(page: String, item_id: String, label: String,
@@ -792,6 +846,7 @@ func _ensure_card(page: String, item_id: String, label: String,
 		sub_label.text = "未单独设置的项目适用"
 		sub_label.visible = true
 	var spins := {}
+	var modes := {}
 	var resets := {}
 	var pendings := {}
 	var lane_host := panel.get_node("Body/Lanes") as VBoxContainer
@@ -801,6 +856,15 @@ func _ensure_card(page: String, item_id: String, label: String,
 		var kind_label := kind_row.get_node("Kind") as Label
 		kind_label.text = String(KIND_LABELS.get(kind, kind))
 		kind_label.visible = kinds.size() > 1
+		var mode_button := kind_row.get_node_or_null("Mode") as OptionButton
+		if mode_button != null:
+			mode_button.clear()
+			mode_button.add_item("%", TAX_MODE_PERCENT_BP)
+			mode_button.add_item("定额", TAX_MODE_ABSOLUTE)
+			mode_button.select(0)
+			mode_button.item_selected.connect(
+				_on_mode_selected.bind(key, kind))
+			modes[kind] = mode_button
 		var spin := kind_row.get_node("Spin") as SpinBox
 		spin.get_line_edit().alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		spin.get_line_edit().text_submitted.connect(
@@ -820,8 +884,8 @@ func _ensure_card(page: String, item_id: String, label: String,
 		pendings[kind] = clock_badge
 	_flow.add_child(panel)
 	var result := {"control": panel, "name": name_label, "sub": sub_label,
-		"spins": spins, "resets": resets, "pendings": pendings,
-		"overridden": {}, "rates": {}, "kinds": kinds,
+		"spins": spins, "modes": modes, "resets": resets, "pendings": pendings,
+		"overridden": {}, "rates": {}, "assessment_modes": {}, "kinds": kinds,
 		"page": page, "item_id": item_id, "is_default": is_default,
 		"accent": accent}
 	_rows[key] = result
@@ -835,14 +899,16 @@ func _update_card(card: Dictionary, kind_data: Dictionary) -> void:
 	for kind in card.kinds:
 		var data: Dictionary = kind_data.get(kind, {})
 		var base := int(data.get("base", 0))
+		var mode := int(data.get("mode", TAX_MODE_PERCENT_BP))
 		var overridden := bool(data.get("has_override", false))
 		var visual_rate := _visual_rate(card, kind, base, overridden)
-		signature_parts.append("%d:%d:%d:%d:%d" % [
+		signature_parts.append("%d:%d:%d:%d:%d:%d" % [
 			base,
 			visual_rate,
 			int(data.get("effective", data.get("base", 0))),
 			1 if overridden else 0,
 			1 if _pending.has("%s:%s" % [kind, String(card.item_id)]) else 0,
+			mode,
 		])
 	var signature := "|".join(signature_parts)
 	if signature == String(card.get("signature", "")):
@@ -850,6 +916,13 @@ func _update_card(card: Dictionary, kind_data: Dictionary) -> void:
 	card["signature"] = signature
 	for kind in card.kinds:
 		var data: Dictionary = kind_data.get(kind, {})
+		var mode := int(data.get("mode", TAX_MODE_PERCENT_BP))
+		(card.assessment_modes as Dictionary)[kind] = mode
+		var mode_button := (card.modes as Dictionary).get(kind) as OptionButton
+		if mode_button != null:
+			var select_index := mode_button.get_item_index(mode)
+			if select_index >= 0 and mode_button.selected != select_index:
+				mode_button.select(select_index)
 		var pending := _pending.has("%s:%s" % [kind, String(card.item_id)])
 		((card.pendings as Dictionary)[kind] as Control).visible = pending
 		if pending:
@@ -858,13 +931,12 @@ func _update_card(card: Dictionary, kind_data: Dictionary) -> void:
 			var spin := (card.spins as Dictionary)[kind] as SpinBox
 			if pending_entry.has("rate"):
 				var pending_rate := int(pending_entry.rate)
-				_set_spin_basis_points(spin, pending_rate)
+				var pending_mode := int(pending_entry.get("mode", mode))
+				_set_spin_basis_points(spin, pending_rate, pending_mode)
 			continue
 		var spin := (card.spins as Dictionary)[kind] as SpinBox
 		var line_edit := spin.get_line_edit()
 		var draft_key := _item_draft_key(kind, String(card.item_id))
-		# Arrow/drag edits do not focus LineEdit. Keep the in-progress item
-		# draft through live refresh until confirm or set_model.
 		if line_edit.has_focus() or spin.has_focus() or _draft_overrides.has(draft_key):
 			(card.rates as Dictionary)[kind] = int(data.get("base", 0))
 			(card.overridden as Dictionary)[kind] = bool(data.get("has_override", false))
@@ -873,7 +945,7 @@ func _update_card(card: Dictionary, kind_data: Dictionary) -> void:
 		var effective := int(data.get("effective", base))
 		var overridden := bool(data.get("has_override", false))
 		var visual_rate := _visual_rate(card, kind, base, overridden)
-		_set_spin_basis_points(spin, visual_rate)
+		_set_spin_basis_points(spin, visual_rate, mode)
 		line_edit.add_theme_color_override("font_color",
 			UITokens.BRASS_HIGHLIGHT \
 				if overridden or visual_rate != base else UITokens.ARCHIVE_INK_MUTED)
@@ -882,7 +954,8 @@ func _update_card(card: Dictionary, kind_data: Dictionary) -> void:
 		(card.rates as Dictionary)[kind] = base
 		if (card.kinds as Array).size() == 1 and not bool(card.is_default):
 			var sub := card.sub as Label
-			sub.visible = visual_rate == base and effective != base
+			sub.visible = visual_rate == base and effective != base \
+				and mode == TAX_MODE_PERCENT_BP
 			if sub.visible:
 				sub.text = "修正后 %s" % _format_rate(effective)
 	_refresh_override_frame(card)
@@ -1072,11 +1145,19 @@ func _confirm_spin(key: String, kind: String) -> void:
 	if card.is_empty():
 		return
 	var spin := (card.spins as Dictionary)[kind] as SpinBox
-	var fallback := int((card.rates as Dictionary).get(kind,
-		TaxLaneEditor.percent_to_basis_points(float(spin.value))))
-	var rate := TaxLaneEditor.parse_rate_text(spin.get_line_edit().text, fallback)
+	var mode := _card_mode(card, kind)
+	var fallback := int((card.rates as Dictionary).get(kind, 0))
+	var rate := fallback
+	if mode == TAX_MODE_ABSOLUTE:
+		var text := spin.get_line_edit().text.strip_edges()
+		if text.is_valid_int():
+			rate = clampi(text.to_int(), TAX_ABSOLUTE_MIN, TAX_ABSOLUTE_MAX)
+		else:
+			rate = clampi(int(round(spin.value)), TAX_ABSOLUTE_MIN, TAX_ABSOLUTE_MAX)
+	else:
+		rate = TaxLaneEditor.parse_rate_text(spin.get_line_edit().text, fallback)
 	if rate != fallback:
-		_set_spin_basis_points(spin, rate)
+		_set_spin_basis_points(spin, rate, mode)
 	var current := int((card.rates as Dictionary).get(kind, 0))
 	var overridden := bool((card.overridden as Dictionary).get(kind, false))
 	var item_id := String(card.item_id)
@@ -1085,20 +1166,30 @@ func _confirm_spin(key: String, kind: String) -> void:
 		_stop_draft_timer()
 	if bool(card.is_default):
 		if rate != current or _preview_defaults.has(kind):
-			_submit_rate(kind, String(card.item_id), rate, true)
+			_submit_rate(kind, String(card.item_id), rate, true, mode)
 		else:
 			_preview_defaults.erase(kind)
 			_refresh_page()
 		return
-	if not overridden and rate == _default_rate(kind):
+	if not overridden and rate == _default_rate(kind) and mode == _default_mode(kind):
 		return
 	if rate == current and not overridden:
 		return
 	var default_rate := _default_rate(kind)
-	if rate == default_rate and overridden:
+	if rate == default_rate and overridden and mode == _default_mode(kind):
 		_clear_override(kind, String(card.item_id))
 	elif rate != current:
-		_submit_rate(kind, String(card.item_id), rate, false)
+		_submit_rate(kind, String(card.item_id), rate, false, mode)
+
+
+func _default_mode(kind: String) -> int:
+	var policy: Dictionary = _model.get("tax_policy", {})
+	var modes: PackedInt32Array = policy.get(
+		"default_assessment_modes", PackedInt32Array())
+	var kind_id := int(TAX_KIND.get(kind, -1))
+	if kind_id < 0 or kind_id >= modes.size():
+		return TAX_MODE_PERCENT_BP
+	return int(modes[kind_id])
 
 
 func _default_rate(kind: String) -> int:
@@ -1144,28 +1235,31 @@ func _clear_override(kind: String, item_id: String) -> void:
 		_set_status(String(result.get("reason", "税率覆盖清除命令提交失败")))
 
 
-func _submit_rate(kind: String, item_id: String, rate: int, is_default: bool) -> void:
+func _submit_rate(kind: String, item_id: String, rate: int, is_default: bool,
+		mode: int = TAX_MODE_PERCENT_BP) -> void:
 	if _player_controller == null:
 		return
 	var result: Dictionary
 	if is_default:
 		result = _player_controller.request_command(&"country.tax.set_default", {
-			"kind": int(TAX_KIND[kind]), "rate_basis_points": rate})
+			"kind": int(TAX_KIND[kind]), "rate_basis_points": rate,
+			"tax_assessment_mode": mode})
 	else:
 		result = _player_controller.request_command(&"country.tax.set_override", {
 			"kind": int(TAX_KIND[kind]), "item_id": StringName(item_id),
-			"rate_basis_points": rate})
+			"rate_basis_points": rate, "tax_assessment_mode": mode})
 	if bool(result.get("ok", false)):
 		if is_default:
 			_preview_defaults.erase(kind)
-		_mark_pending(kind, item_id, rate, "set")
+		_mark_pending(kind, item_id, rate, "set", mode)
 		var card: Dictionary = _rows.get("%s:%s" % [_kind_page(kind), item_id], {})
 		if not card.is_empty():
 			var spin := (card.spins as Dictionary)[kind] as SpinBox
-			_set_spin_basis_points(spin, rate)
+			_set_spin_basis_points(spin, rate, mode)
 			spin.get_line_edit().add_theme_color_override("font_color",
 				UITokens.BRASS_HIGHLIGHT)
 			(card.rates as Dictionary)[kind] = rate
+			(card.assessment_modes as Dictionary)[kind] = mode
 			if not is_default:
 				(card.overridden as Dictionary)[kind] = true
 				((card.resets as Dictionary)[kind] as Button).visible = true
@@ -1180,7 +1274,8 @@ func _submit_rate(kind: String, item_id: String, rate: int, is_default: bool) ->
 			if not card.is_empty():
 				_set_spin_basis_points(
 					(card.spins as Dictionary)[kind] as SpinBox,
-					int((card.rates as Dictionary).get(kind, 0)))
+					int((card.rates as Dictionary).get(kind, 0)),
+					_card_mode(card, kind))
 			_refresh_page()
 		_set_status(String(result.get("reason", "税率命令提交失败")))
 
@@ -1196,13 +1291,15 @@ func _refresh_override_frame(card: Dictionary) -> void:
 
 
 func _mark_pending(kind: String, item_id: String,
-		optimistic_rate: int = 0, op: String = "set") -> void:
+		optimistic_rate: int = 0, op: String = "set",
+		mode: int = TAX_MODE_PERCENT_BP) -> void:
 	var key := "%s:%s" % [kind, item_id]
 	var policy: Dictionary = _model.get("tax_policy", {})
 	_pending[key] = {
 		"effective_day": _effective_day(),
 		"policy_version": int(policy.get("policy_version", -1)),
 		"rate": optimistic_rate,
+		"mode": mode,
 		"op": op,
 	}
 	var card: Dictionary = _rows.get("%s:%s" % [_kind_page(kind), item_id], {})

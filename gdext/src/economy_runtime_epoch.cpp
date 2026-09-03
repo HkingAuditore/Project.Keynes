@@ -45,6 +45,7 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
         _persons.epoch_tax[i] = 0;
     }
     _epoch_business_demand_ema.clear();
+    _epoch_derived_business_demand.clear();
     _epoch_desired_business_demand.clear();
     _epoch_funded_business_demand.clear();
     _epoch_price_ceiling_observations.clear();
@@ -163,6 +164,7 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _building_investment_demand_limited = 0;
     _building_investment_material_limited = 0;
     _building_investment_capital_limited = 0;
+    _building_investment_cost_envelope_trimmed = 0;
     _building_investment_owner_population_limited = 0;
     _building_investment_jobs_started = 0;
     _building_investment_employment_gap = 0;
@@ -188,6 +190,9 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _desired_business_demand = 0;
     _funded_business_demand = 0;
     _unfunded_business_demand = 0;
+    _derived_business_demand_total = 0;
+    _derived_business_demand_lanes = 0;
+    _derived_business_demand_edges = 0;
     _owner_working_capital_allocated = 0;
     _merchant_credit_budget = 0;
     _merchant_credit_committed = 0;
@@ -931,6 +936,7 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     _production_input_reserve.assign(_market_signals.good_ids.size(), 0);
     _construction_material_reserve.assign(_market_signals.good_ids.size(), 0);
     _epoch_business_demand_ema = _market_signals.business_demand_ema;
+    _epoch_derived_business_demand.assign(_market_signals.good_ids.size(), 0);
     _epoch_desired_business_demand.assign(_market_signals.good_ids.size(), 0);
     _epoch_funded_business_demand.assign(_market_signals.good_ids.size(), 0);
     _epoch_price_ceiling_observations.clear();
@@ -945,6 +951,7 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     _epoch_producer_discarded_current.assign(_market_signals.good_ids.size(), 0);
     _epoch_nonhousehold_withdrawals.assign(_market_signals.good_ids.size(), 0);
     _epoch_cost_anchor_price = _market_signals.cost_anchor_price;
+    refresh_derived_business_demand();
     _epoch_begin_vector_init_ms = elapsed_ms(vector_init_started);
     const auto audit_started = Clock::now();
     int64_t live_expedition_population = 0;

@@ -107,6 +107,7 @@ var _last_year: int = -1
 # 帧内分解诊断：continuation 脉冲段 / 日推进循环段 / 整个 _process 的最近一帧墙钟。
 # pulse 段在 loop 计时之前运行（economy/country 跨日结算 drain），是 fast_ms 与
 # loop_ms 都看不到的盲区；三者之和应 ≈ render-profile 的 sus_frame_avg。
+var _last_fat_slice_diag: Dictionary = {}
 var _last_pulse_ms: float = 0.0
 var _last_loop_ms: float = 0.0
 var _last_full_proc_ms: float = 0.0
@@ -283,6 +284,14 @@ func _process(delta: float) -> void:
 				_last_throughput_cap, _day_cost_ms_ema, ran,
 				_last_pulse_ms, _last_loop_ms, _last_full_proc_ms, _day_carry,
 				",".join(barrier_names)])
+		if ran > 0 and _last_loop_ms >= sim_frame_budget_ms and not _last_fat_slice_diag.is_empty():
+			print("[clock/fat-day] loop=%.2fms largest=%.2fms job=%s stage=%s over_budget=%s native_stage=%s"
+				% [_last_loop_ms,
+					float(_last_fat_slice_diag.get("largest_slice_ms", 0.0)),
+					str(_last_fat_slice_diag.get("largest_slice_job", "")),
+					str(_last_fat_slice_diag.get("largest_slice_stage", "")),
+					str(_last_fat_slice_diag.get("commit_over_budget", false)),
+					str(_last_fat_slice_diag.get("native_stage", ""))])
 
 # ─── 派生查询 ────────────────────────────────────────────────────────────
 
@@ -540,6 +549,10 @@ func has_simulation_backpressure() -> bool:
 # ─── 帧内分解诊断查询 ────────────────────────────────────────────────────
 # 最近一帧的 continuation 脉冲段 / 日推进循环段 / 整个 _process 墙钟（毫秒）。
 # render-profile dump 按帧采样这些值，把 sus_frame_avg 拆成 pulse + loop + 帧尾。
+
+func note_sim_slice_diag(diag: Dictionary) -> void:
+	_last_fat_slice_diag = diag.duplicate(false)
+
 
 func get_last_pulse_ms() -> float:
 	return _last_pulse_ms

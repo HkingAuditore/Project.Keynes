@@ -450,8 +450,9 @@ var _last_sea_ice_atlas_upload_breakdown: Dictionary = {}
 # 把 "305 行重复值" 累加成假象总耗时。
 var _current_fast_tick_idx: int = 0
 var _pending_season_refresh: bool = false
-var _pending_season_idx: int = 0
 var _season_refresh_in_progress: bool = false
+var _pending_season_idx: int = 0
+var _last_season_refresh_day: int = -1
 var _last_season_refresh_breakdown: Dictionary = {}
 # 逐 tick 散布刷新滚动快照（2026-08-01）：日级原生 pass（海冰翻转、veg_dyn、季节 redecide 等）
 # 会改写 landform/vegetation/cover，但这些写入路径都不调 queue_detail_scatter_refresh，
@@ -462,6 +463,9 @@ var _scatter_sync_snap_landform := PackedByteArray()
 var _scatter_sync_snap_vegetation := PackedByteArray()
 var _scatter_sync_snap_cover := PackedByteArray()
 var _last_detail_scatter_sync: Dictionary = {}
+# 生产路径以 event bus + changeset 为权威脏源。逐格 tick-sync 仅在
+# 当日没有 pending 且三轴 memcmp 发现差异时作安全网；debug 开关才打印。
+var detail_scatter_tick_sync_debug: bool = false
 # X2-精简版（2026-05-21）：season_refresh round 内 SoA-slots 缓存标志。
 # round 启动时 refresh_slots_from_map 调一次后置 true；
 # 之后每个 stage helper 进入时若仍为 true → 跳过 refresh_slots（省 ~14μs × 11 = ~0.15ms/round）；
@@ -2538,6 +2542,34 @@ func _halt_on_economy_fatal(day_index: int, economy_result: Dictionary) -> void:
 			str(detail.get("population_error", -1)),
 			str(detail.get("money_error", -1)),
 			str(detail.get("goods_error", -1))])
+	# graph 路径原先只打短行；money_conservation_failed 需要和 economy_daily 同等的分桶，
+	# 否则 GM 截断/日志丢失后无法定位是 open 虚高、mint 漏记还是 burn 漏记。
+	if reason == "money_conservation_failed" or reason == "population_conservation_failed" \
+			or reason == "goods_conservation_failed":
+		var conservation := {
+			"money_open": detail.get("money_open", "missing"),
+			"money_close": detail.get("money_close", "missing"),
+			"money_expected": detail.get("money_expected", "missing"),
+			"explicit_money_mint": detail.get("explicit_money_mint", "missing"),
+			"explicit_money_burn": detail.get("explicit_money_burn", "missing"),
+			"opening_cohort_funds": detail.get("opening_cohort_funds", "missing"),
+			"closing_cohort_funds": detail.get("closing_cohort_funds", "missing"),
+			"opening_country_cash": detail.get("opening_country_cash", "missing"),
+			"closing_country_cash": detail.get("closing_country_cash", "missing"),
+			"opening_escrow_cash": detail.get("opening_escrow_cash", "missing"),
+			"closing_escrow_cash": detail.get("closing_escrow_cash", "missing"),
+			"opening_expedition_funds": detail.get("opening_expedition_funds", "missing"),
+			"closing_expedition_funds": detail.get("closing_expedition_funds", "missing"),
+			"producer_support_money_issued": detail.get(
+				"producer_support_money_issued", "missing"),
+			"bullion_money_issued": detail.get("bullion_money_issued", "missing"),
+			"opening_audit_fast_paths": detail.get(
+				"opening_audit_fast_paths", "missing"),
+			"opening_audit_full_verifications": detail.get(
+				"opening_audit_full_verifications", "missing"),
+			"closing_audit_mode": detail.get("closing_audit_mode", "missing"),
+		}
+		print("[sim/economy-fatal-conservation] %s" % JSON.stringify(conservation))
 	push_error("[economy] 原生经济 runtime 已 fatal（%s），仿真已在第 %d 天暂停以避免继续产出错误结果。"
 		% [reason, day_index])
 	if _world_clock_ref != null and _world_clock_ref.has_method("pause"):
@@ -2555,6 +2587,12 @@ func _dispatch_runtime_graph_country_committed() -> void:
 	if generation == _runtime_graph_last_country_generation:
 		return
 	_runtime_graph_last_country_generation = generation
+	# 广播前先把 native 领土刷进 MapData：country_committed 监听方会立刻
+	# refresh_country_visuals；若此时 country_slot_arr 仍是 CoW 旧镜像，
+	# 视野源集会缺新 CLAIM 格，邻格只被迷雾柔边照亮却保持未探索。
+	if _data_core_world_ext != null \
+			and _data_core_world_ext.has_method("sync_country_territory_to_map"):
+		_data_core_world_ext.sync_country_territory_to_map()
 	# 不能用最后一份 report 的 changed_* 在这里提前门控。同一个
 	# pulse 里的后续 country slice 可能把领土提交摘要覆盖掉；
 	# CountryFacade 会根据未消费的原生事件流归一化 changed_cells。
@@ -3410,6 +3448,9 @@ func _build_native_daily_stage_b_knobs(map: MapData, cp_now, call_index: int,
 	var run_albedo: bool = (call_index % albedo_stride) == 0
 	var run_veg_dyn: bool = (call_index % veg_dyn_stride) == 0
 	var run_feedback: bool = (call_index % feedback_stride) == 0 and bool(cp_now.fast_slow_layering_enabled)
+	if run_veg_dyn and _world_clock_ref != null and _world_clock_ref.has_method("day_index"):
+		if int(_world_clock_ref.day_index()) == _last_season_refresh_day:
+			run_veg_dyn = false
 	if not (run_albedo or run_veg_dyn or run_feedback):
 		return {}
 	var knobs: Dictionary = {
@@ -3506,6 +3547,9 @@ func _native_daily_season_cadence_policy(cp_now, call_index: int) -> Dictionary:
 	var run_veg_dyn: bool = (call_index % veg_dyn_stride) == 0
 	var run_feedback: bool = (call_index % feedback_stride) == 0 \
 			and cp_now != null and bool(cp_now.fast_slow_layering_enabled)
+	if run_veg_dyn and _world_clock_ref != null and _world_clock_ref.has_method("day_index"):
+		if int(_world_clock_ref.day_index()) == _last_season_refresh_day:
+			run_veg_dyn = false
 	return {
 		"owner": "native_graph_policy",
 		"policy_state": "native_ready",
@@ -3520,6 +3564,8 @@ func _native_daily_season_cadence_policy(cp_now, call_index: int) -> Dictionary:
 			"vegetation_dynamics": run_veg_dyn,
 			"feedback": run_feedback,
 		},
+		"vegetation_owner": "vegetation_dynamics",
+		"season_vegetation_rewrite": false,
 		"stage_b_any": run_albedo or run_veg_dyn or run_feedback,
 		"season_period_ticks": season_period_ticks,
 		"season_period_counter": season_period_counter,
@@ -4379,10 +4425,20 @@ func _native_daily_static_bundle_cache_key(map: MapData, cp_now) -> String:
 
 
 func _build_native_daily_static_bundle_shell(map: MapData, cp_now) -> Dictionary:
+	var climate_active: bool = cp_now.get("native_climate_round_active_owner_enabled") != null \
+			and bool(cp_now.native_climate_round_active_owner_enabled)
+	var refresh_keys := PackedStringArray()
+	if climate_active:
+		refresh_keys = PackedStringArray([
+			"cell_terrain", "cell_base_terrain", "cell_is_water",
+			"cell_landform", "cell_vegetation", "cell_cover",
+			"cell_base_moisture",
+		])
 	var legacy_daily_retired: bool = cp_now.get("native_daily_legacy_daily_production_retired") != null \
 			and bool(cp_now.native_daily_legacy_daily_production_retired)
 	return {
 		"refresh_slots_from_map": true,
+		"refresh_slot_keys": refresh_keys,
 		# Native pass wrappers already flush their published slots. A final bulk
 		# flush walks every bound slot and was making ACTIVE native_daily cost ~8ms.
 		"flush_slots_to_map": false,
@@ -4456,7 +4512,7 @@ func _build_native_daily_bundle(
 			native_weather_readiness["ready"] = true
 			native_weather_readiness["reason"] = "active_bootstrap_unified_publish"
 			native_weather_readiness["active_bootstrap_requested"] = true
-		bundle["weather_native_daily_readiness"] = native_weather_readiness.duplicate(true)
+		bundle["weather_native_daily_readiness"] = native_weather_readiness.duplicate()
 		var native_weather_daily_allowed: bool = bool(native_weather_readiness.get("ready", false)) \
 				or native_weather_active_bootstrap
 		var runtime_hydrology_active: bool = cp_now.get("runtime_hydrology_enabled") != null \
@@ -4553,7 +4609,7 @@ func _build_native_daily_bundle(
 		native_weather_readiness["ready"] = true
 		native_weather_readiness["reason"] = "active_bootstrap_unified_publish"
 		native_weather_readiness["active_bootstrap_requested"] = true
-	bundle["weather_native_daily_readiness"] = native_weather_readiness.duplicate(true)
+	bundle["weather_native_daily_readiness"] = native_weather_readiness.duplicate()
 	var native_weather_daily_allowed: bool = bool(native_weather_readiness.get("ready", false)) \
 			or native_weather_active_bootstrap
 	var runtime_hydrology_active: bool = cp_now.get("runtime_hydrology_enabled") != null \
@@ -5929,7 +5985,7 @@ func _native_daily_effective_node_range_config(cp, ctx: SusTickContext, map_ref:
 		catchup_active = effective_cells > base_cells
 		catchup_reason = "fit_contract_budget" if catchup_active else "base_fits_contract"
 	elif n_cells > 0 and age_days >= budget_days - 1:
-		effective_cells = maxi(base_cells, n_cells)
+		effective_cells = maxi(base_cells, mini(n_cells, base_cells * 2))
 		catchup_active = effective_cells > base_cells
 		catchup_reason = "near_contract_deadline" if catchup_active else "base_at_deadline"
 	return {
@@ -6610,6 +6666,17 @@ func sus_tick_daily(world_clock_node, day_index_override: int = -1,
 	# 视觉平滑，且没有任何 shader 采样 cell.weather_transition_alpha（地图只读离散
 	# weather_type），高倍速下逐 cell fan-out 反而是 ~35ms/次的空耗。淡入开关
 	# weather_transition_enabled 现仅作用于 C++ weather.commit（跑天气日推进）。
+	if world_clock_node != null and world_clock_node.has_method("note_sim_slice_diag"):
+		var economy_tick: Dictionary = sus_tick_report.get(&"economy_daily",
+			sus_tick_report.get("economy_daily", {}))
+		world_clock_node.note_sim_slice_diag({
+			"largest_slice_ms": float(sus_tick_report.get("largest_slice_ms", 0.0)),
+			"largest_slice_job": str(sus_tick_report.get("largest_slice_job", "")),
+			"largest_slice_stage": str(sus_tick_report.get("largest_slice_stage", "")),
+			"commit_over_budget": bool(economy_tick.get("commit_over_budget", false)),
+			"native_stage": str(native_tick_report.get("stage_name",
+				native_tick_report.get("substage", ""))),
+		})
 	return { "fronts": fronts, "weather_ran": weather_ran, "fronts_changed": fronts_changed,
 		"fronts_diff": fronts_diff, "runtime_graph": runtime_graph_pulse }
 
@@ -7412,6 +7479,8 @@ func _run_season_stage4_micro(map: MapData, season_idx: int, cursor: int, max_us
 
 func finish_season_refresh(_map: MapData, _world: WorldData, _season_idx: int) -> void:
 	_season_refresh_in_progress = false
+	if _world_clock_ref != null and _world_clock_ref.has_method("day_index"):
+		_last_season_refresh_day = int(_world_clock_ref.day_index())
 	if not _season_round_b_plus_facade_published and _map != null and _map.has_method("sync_runtime_terrain_facade_from_soa"):
 		var terrain_facade_fixed: int = int(_map.sync_runtime_terrain_facade_from_soa())
 		_last_season_refresh_breakdown["terrain_facade_fixed"] = terrain_facade_fixed
@@ -7471,12 +7540,18 @@ func sync_detail_scatter_after_tick(map: MapData) -> void:
 			or cover_a.size() != n:
 		_prime_scatter_sync_snapshot(map)
 		return
-	# 快路径：PackedByteArray == 是原生 memcmp；绝大多数无写入 tick 直接返回。
-	# 绝大多数无写入 tick 在此直接返回；只有真发生改写的 tick 才进逐格 diff。
+	# 快路径：PackedByteArray == 是原生 memcmp。权威脏源已有 pending 时只对齐快照，
+	# 避免季节日再扫 2400 格并与 bus/changeset 双排队。
 	var l_same: bool = _scatter_sync_snap_landform == landform_a
 	var c_same: bool = _scatter_sync_snap_cover == cover_a
 	var v_same: bool = _scatter_sync_snap_vegetation == vegetation_a
 	if l_same and c_same and v_same:
+		return
+	if has_pending_detail_scatter_refresh() and not detail_scatter_tick_sync_debug:
+		_prime_scatter_sync_snapshot(map)
+		_last_detail_scatter_sync["cells"] = 0
+		_last_detail_scatter_sync["vegetation_cells"] = 0
+		_last_detail_scatter_sync["skipped_pending"] = true
 		return
 	var changes = DetailScatterChangeSetScript.new()
 	_detail_scatter_change_generation += 1
@@ -7499,14 +7574,15 @@ func sync_detail_scatter_after_tick(map: MapData) -> void:
 				int(_scatter_sync_snap_cover[i]), int(cover_a[i])
 			)
 	if changes.is_empty():
+		_prime_scatter_sync_snapshot(map)
 		return
-	_scatter_sync_snap_landform = landform_a.duplicate()
-	_scatter_sync_snap_vegetation = vegetation_a.duplicate()
-	_scatter_sync_snap_cover = cover_a.duplicate()
+	_prime_scatter_sync_snapshot(map)
 	_last_detail_scatter_sync["cells"] = changes.size()
 	_last_detail_scatter_sync["vegetation_cells"] = veg_changed
+	_last_detail_scatter_sync["skipped_pending"] = false
 	queue_detail_scatter_changes(changes)
-	print("[detail_scatter] tick-sync queued=%d (vegetation=%d)" % [changes.size(), veg_changed])
+	if detail_scatter_tick_sync_debug:
+		print("[detail_scatter] tick-sync queued=%d (vegetation=%d)" % [changes.size(), veg_changed])
 
 
 # DOTS-Total-CPP 真·收尾（2026-05-21）：per-stage path once-log。
@@ -9339,6 +9415,7 @@ func _build_season_round_knobs(map: MapData, season: int) -> Dictionary:
 		# stage 4
 		"donor_table": donor_table,
 		"elev_decay": float(cp.veg_feedback_elev_decay),
+		"skip_vegetation_rewrite": true,
 		# stage 11 (feedback_decay)
 		"decay": float(cp.feedback_decay),
 		"soil_moisture_arr": soil_arr,
