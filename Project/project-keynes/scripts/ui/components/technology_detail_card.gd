@@ -80,7 +80,7 @@ func show_empty() -> void:
 	_name.text = "科技详情"
 	_state_label.text = ""
 	_placeholder.visible = true
-	_placeholder.text = "在科技树中选择一项科技，查看成本、效果与前置。"
+	_placeholder.text = "在可研究清单或科技树中选择一项科技，查看成本、效果与前置。"
 	_detail_block.visible = false
 
 

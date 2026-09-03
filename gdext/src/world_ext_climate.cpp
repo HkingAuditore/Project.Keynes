@@ -5987,6 +5987,11 @@ double DCWorldExt::run_climate_feedback_pass_thread(Dictionary knobs, int n_task
 
 // ─── 方案 B：stage_b 三段合并 run_stage_b_pass ────────────────────────────
 //
+// 生产热路径只跑这一份 fused loop。独立的 run_albedo_pass /
+// run_vegetation_dynamics_pass / run_climate_feedback_pass 仍保留 1:1 拷贝，
+// 仅供 SHADOW / 缺 stage_b_knobs 的 helper；slice graph 在已有 stage_b_knobs
+// 时跳过拆开节点，避免双跑。
+//
 // 这是 run_albedo_pass + run_vegetation_dynamics_pass +
 // run_climate_feedback_pass 的顺序内联合并版本。三段主循环算法**完全 1:1
 // 拷贝**自原三个独立函数，仅做以下结构合并：

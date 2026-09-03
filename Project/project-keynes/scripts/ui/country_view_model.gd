@@ -210,6 +210,20 @@ func player_completed_technology_ids() -> PackedStringArray:
 	return snapshot.get("technology_ids", PackedStringArray())
 
 
+# Lightweight player research states for HUD completion toasts. Avoids building the
+# full technology workspace model when the country panel is closed.
+func player_research_states() -> PackedInt32Array:
+	var context := _country_context()
+	if not bool(context.get("ok", false)):
+		return PackedInt32Array()
+	var facade = context.facade
+	if facade == null or not facade.has_method("research_snapshot"):
+		return PackedInt32Array()
+	var research: Dictionary = facade.research_snapshot(int(context.country_handle))
+	var states = research.get("technology_states", null)
+	return states if states is PackedInt32Array else PackedInt32Array()
+
+
 func _build_full_legacy(section_id: String = "technology") -> Dictionary:
 	var normalized_section := section_id if section_id in [
 		"technology", "economy", "ideology"] else "technology"
@@ -862,6 +876,9 @@ static func _present_tax_policy(tax_policy: Dictionary, completed_technologies,
 		"import": tariff_goods,
 		"export": tariff_goods,
 		"business": buildings,
+		"default_assessment_modes": tax_policy.get(
+			"default_assessment_modes", PackedInt32Array()),
+		"absolute_amounts": tax_policy.get("absolute_amounts", {}),
 	}
 
 

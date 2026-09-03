@@ -932,9 +932,9 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 _market.price[_market.index(market, component.good_id)],
                 GOODS_SCALE, sat);
             subsidy = saturating_add(subsidy,
-                -expected_fiscal_transfer(
+                -expected_resolved_fiscal_transfer(
                     cell, NativeCountryRuntime::TAX_CONSUMPTION,
-                    component_base, rate, sat), sat);
+                    component.good_id, component_base, quantity, sat), sat);
         }
         return subsidy;
     };
@@ -1337,8 +1337,16 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 price < GOODS_SCALE && quantity * price < GOODS_SCALE)
                 ++result.small_payment_roundups;
             if (consumption_tax_active) {
-                const int64_t transfer = apply_fiscal_tax(cell,
-                    NativeCountryRuntime::TAX_CONSUMPTION, component_base, rate, sat);
+                const int32_t mode = frozen_tax_mode(
+                    cell, NativeCountryRuntime::TAX_CONSUMPTION,
+                    component.good_id);
+                const int64_t tax_base =
+                    mode == NativeCountryRuntime::TAX_MODE_ABSOLUTE
+                        ? quantity
+                        : component_base;
+                const int64_t transfer = apply_fiscal_tax(
+                    cell, NativeCountryRuntime::TAX_CONSUMPTION, tax_base,
+                    rate, mode, sat);
                 if (transfer > 0) positive_tax = saturating_add(positive_tax, transfer, sat);
                 else subsidy = saturating_add(subsidy, -transfer, sat);
             }
@@ -1674,7 +1682,12 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             const int32_t cell = cohort_cell(slot);
             const int32_t income_rate = frozen_tax_rate(
                 cell, NativeCountryRuntime::TAX_INCOME, profession);
-            if (income_rate < 0) {
+            const int32_t income_mode = frozen_tax_mode(
+                cell, NativeCountryRuntime::TAX_INCOME, profession);
+            if (income_mode == NativeCountryRuntime::TAX_MODE_ABSOLUTE) {
+                // Absolute income levies settle in
+                // settle_absolute_daily_taxes_for_cell.
+            } else if (income_rate < 0) {
                 if (slot >= 0 && slot < static_cast<int32_t>(
                         _income_taxable_base_by_slot.size())) {
                     _income_taxable_base_by_slot[slot] = saturating_add(
@@ -1684,7 +1697,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             } else {
                 income_tax = apply_fiscal_tax(
                     cell, NativeCountryRuntime::TAX_INCOME, taxable_income,
-                    income_rate, sat);
+                    income_rate, income_mode, sat);
                 record_cohort_fiscal(slot, income_tax);
             }
         }

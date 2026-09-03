@@ -44,6 +44,38 @@ func _init() -> void:
 	_require(bool(trigger_ir.get("ok", false)), "trigger catalog compiles")
 	_require(int(trigger_ir.trigger_keys.size()) >= 14,
 		"default catalog includes breakthrough definitions")
+	var compiled_country_commands := {}
+	var development_programs := 0
+	for definition_value in effect_catalog.definitions:
+		var compiled_definition: Resource = definition_value
+		if String(compiled_definition.key).begins_with("trigger.country.development."):
+			development_programs += 1
+		for command_value in compiled_definition.commands:
+			var compiled_command: Resource = command_value
+			compiled_country_commands["%s|%s" % [
+				String(compiled_command.command_key),
+				String(compiled_command.definition_key)]] = true
+	var missing_country_commands: PackedStringArray = PackedStringArray()
+	var country_command_count := 0
+	var development_discover_count := 0
+	for effect_index in range((trigger_ir.effect_command_keys as PackedStringArray).size()):
+		if int(trigger_ir.effect_actions[effect_index]) != TriggerCatalogScript.ACTION_COUNTRY_COMMAND:
+			continue
+		country_command_count += 1
+		var command_key := String(trigger_ir.effect_command_keys[effect_index])
+		var definition_key := String(trigger_ir.effect_definition_keys[effect_index])
+		if command_key == "development.discover":
+			development_discover_count += 1
+		var pair := "%s|%s" % [command_key, definition_key]
+		if not compiled_country_commands.has(pair):
+			missing_country_commands.append(pair)
+	_require(development_discover_count > 0 and development_programs == development_discover_count,
+		"development.discover commands are compiled into Effect catalog")
+	_require(missing_country_commands.is_empty(),
+		"every COUNTRY_COMMAND trigger effect has a compiled command: %s" %
+			str(missing_country_commands))
+	_require(country_command_count > development_discover_count,
+		"country trigger commands include breakthrough/contact/weather plus development")
 	for trigger_key in ["technology.practice.maritime_operations",
 			"technology.practice.watershed_management",
 			"technology.practice.forest_management",

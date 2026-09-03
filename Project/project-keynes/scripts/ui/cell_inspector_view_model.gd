@@ -735,6 +735,10 @@ func _tax_context_for_cell(cell_idx: int, kinds: Array) -> Dictionary:
 		"local_default_rates_basis_points", "local_default_rates")
 	var local_flags: PackedByteArray = policy.get(
 		"has_local_default", PackedByteArray())
+	var country_modes: PackedInt32Array = policy.get(
+		"country_default_assessment_modes", PackedInt32Array())
+	var local_modes: PackedInt32Array = policy.get(
+		"local_default_assessment_modes", PackedInt32Array())
 	for kind_value in kinds:
 		var kind := String(kind_value)
 		var kind_id := int(TAX_KIND_IDS.get(kind, -1))
@@ -742,16 +746,22 @@ func _tax_context_for_cell(cell_idx: int, kinds: Array) -> Dictionary:
 			continue
 		var inherited := int(country_defaults[kind_id]) \
 			if kind_id < country_defaults.size() else 0
+		var inherited_mode := int(country_modes[kind_id]) \
+			if kind_id < country_modes.size() else 0
 		var overridden := kind_id < local_flags.size() and local_flags[kind_id] != 0
 		var rate := int(local_defaults[kind_id]) \
 			if overridden and kind_id < local_defaults.size() else inherited
+		var mode := int(local_modes[kind_id]) \
+			if overridden and kind_id < local_modes.size() else inherited_mode
 		defaults.append({
 			"scope": "default", "kind": kind,
 			"kind_label": String(TAX_DEFAULT_LABELS.get(kind,
 				TAX_KIND_LABELS.get(kind, kind))),
 			"accent": TAX_KIND_ACCENTS.get(kind, UITokens.ACCENT),
 			"item_id": "", "base": rate, "effective": rate,
-			"default_rate": inherited, "has_override": overridden,
+			"mode": mode, "effective_mode": mode,
+			"default_rate": inherited, "default_mode": inherited_mode,
+			"has_override": overridden,
 			"editable": editable,
 		})
 	return {
@@ -783,6 +793,10 @@ func _tax_lanes_from_policy(
 		"local_default_rates_basis_points", "local_default_rates")
 	var local_flags: PackedByteArray = policy.get(
 		"has_local_default", PackedByteArray())
+	var local_modes: PackedInt32Array = policy.get(
+		"local_default_assessment_modes", PackedInt32Array())
+	var country_modes: PackedInt32Array = policy.get(
+		"country_default_assessment_modes", PackedInt32Array())
 	for kind_value in OBJECT_TAX_KINDS.get(object_kind, []):
 		var kind := String(kind_value)
 		var group: Dictionary = policy.get(kind, {})
@@ -792,6 +806,8 @@ func _tax_lanes_from_policy(
 		if item_index < 0 or item_index >= rates.size():
 			continue
 		var effective := _tax_group_basis_points(group, "effective_rates", rates)
+		var modes: PackedInt32Array = group.get(
+			"assessment_modes", PackedInt32Array())
 		var item_flags: PackedByteArray = group.get(
 			"has_local_item", PackedByteArray())
 		var country_bases := _tax_group_basis_points(group, "country_base_rates")
@@ -802,6 +818,12 @@ func _tax_lanes_from_policy(
 			else (int(country_bases[item_index]) \
 				if item_index < country_bases.size() else (int(country_defaults[kind_id]) \
 					if kind_id >= 0 and kind_id < country_defaults.size() else 0))
+		var inherited_mode := int(local_modes[kind_id]) \
+			if kind_id >= 0 and kind_id < local_flags.size() \
+			and local_flags[kind_id] != 0 and kind_id < local_modes.size() \
+			else (int(country_modes[kind_id]) \
+				if kind_id >= 0 and kind_id < country_modes.size() else 0)
+		var mode := int(modes[item_index]) if item_index < modes.size() else inherited_mode
 		lanes.append({
 			"scope": "item", "kind": kind,
 			"kind_label": String(TAX_KIND_LABELS.get(kind, kind)),
@@ -809,9 +831,11 @@ func _tax_lanes_from_policy(
 			"item_id": item_id, "base": int(rates[item_index]),
 			"effective": int(effective[item_index]) \
 				if item_index < effective.size() else int(rates[item_index]),
+			"mode": mode, "effective_mode": mode,
 			"has_override": item_index < item_flags.size() \
 				and item_flags[item_index] != 0,
-			"default_rate": inherited, "editable": editable,
+			"default_rate": inherited, "default_mode": inherited_mode,
+			"editable": editable,
 		})
 	return lanes
 

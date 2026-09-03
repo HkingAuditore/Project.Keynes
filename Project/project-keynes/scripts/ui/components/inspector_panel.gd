@@ -579,9 +579,12 @@ func _restore_lane_pending(editor: TaxLaneEditor, lane: Dictionary) -> void:
 		else String(lane.get("item_id", ""))
 	var key := _tax_key(String(lane.get("kind", "")), item_key)
 	if _pending_tax.has(key):
-		editor.mark_pending(int(_pending_tax[key].get("rate", lane.get("base", 0))))
+		editor.mark_pending(
+			int(_pending_tax[key].get("rate", lane.get("base", 0))),
+			int(_pending_tax[key].get("mode", lane.get("mode", 0))))
 	elif _pending_tax.has(_clear_all_pending_key()):
-		editor.mark_pending(int(lane.get("base", 0)))
+		editor.mark_pending(
+			int(lane.get("base", 0)), int(lane.get("mode", 0)))
 
 
 func _rebuild_tax_editor_registry() -> void:
@@ -643,7 +646,8 @@ func _on_tax_override_requested(
 		scope: String,
 		kind: String,
 		item_id: String,
-		rate: int
+		rate: int,
+		mode: int = 0
 ) -> void:
 	if _player_controller == null or _cell_index < 0:
 		return
@@ -652,13 +656,18 @@ func _on_tax_override_requested(
 		return
 	var command := &"country.tax.cell.set_default" \
 		if scope == "default" else &"country.tax.cell.set_override"
-	var args := {"cell": _cell_index, "kind": kind_id, "rate_basis_points": rate}
+	var args := {
+		"cell": _cell_index,
+		"kind": kind_id,
+		"rate_basis_points": rate,
+		"tax_assessment_mode": mode,
+	}
 	if scope != "default":
 		args["item_id"] = StringName(item_id)
 	var result: Dictionary = _player_controller.request_command(command, args)
 	var key := _tax_key(kind, item_id if scope != "default" else "default")
 	if bool(result.get("ok", false)):
-		_mark_tax_pending(key, rate, "set")
+		_mark_tax_pending(key, rate, "set", mode)
 	else:
 		_resolve_tax_editor_key(key)
 
@@ -686,15 +695,17 @@ func _on_tax_reset_requested(scope: String, kind: String, item_id: String) -> vo
 		_resolve_tax_editor_key(key)
 
 
-func _mark_tax_pending(key: String, rate: int, op: String = "set") -> void:
+func _mark_tax_pending(key: String, rate: int, op: String = "set",
+		mode: int = 0) -> void:
 	_pending_tax[key] = {
 		"effective_day": int(_tax_context.get("current_day", -1)) + 1,
 		"policy_version": int(_tax_context.get("policy_version", -1)),
 		"rate": rate,
+		"mode": mode,
 		"op": op,
 	}
 	for editor_value in _tax_editors.get(key, []):
-		(editor_value as TaxLaneEditor).mark_pending(rate)
+		(editor_value as TaxLaneEditor).mark_pending(rate, mode)
 
 
 func _resolve_tax_pending(context: Dictionary, category: Dictionary = {}) -> void:

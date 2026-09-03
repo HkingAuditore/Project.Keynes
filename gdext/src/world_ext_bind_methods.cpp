@@ -115,6 +115,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::submit_country_commands);
     ClassDB::bind_method(D_METHOD("run_country_slice", "ctx"),
                          &DCWorldExt::run_country_slice);
+    ClassDB::bind_method(D_METHOD("sync_country_territory_to_map"),
+                         &DCWorldExt::sync_country_territory_to_map);
     ClassDB::bind_method(D_METHOD("country_should_run", "day_index"),
                          &DCWorldExt::country_should_run);
     ClassDB::bind_method(D_METHOD("get_country_report"),

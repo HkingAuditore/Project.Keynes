@@ -727,8 +727,10 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         const int32_t begin = _save.family_membership_cursor;
         for (; _save.family_membership_cursor < end;
              ++_save.family_membership_cursor) {
-            const FamilyMembershipEdge &edge =
+            const FamilyMembershipEdge &raw =
                 _family_memberships[_save.family_membership_cursor];
+            FamilyMembershipEdge edge = raw;
+            sanitize_family_membership_edge(edge);
             append_le<uint64_t>(payload, edge.family_handle);
             append_le<uint64_t>(payload, edge.cohort_handle);
             append_le<int64_t>(payload, edge.people);

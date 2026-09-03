@@ -25,8 +25,9 @@ const COMPACT_RAIL_WIDTH := 42.0
 const INTERNAL_COMPACT_WIDTH := 1120.0
 const LIVE_REFRESH_INTERVAL_MSEC := 120
 const DOMAIN_COUNT := 4
-const MODE_FOCUS := 0
-const MODE_OVERVIEW := 1
+const MODE_AVAILABLE := 0
+const MODE_FOCUS := 1
+const MODE_OVERVIEW := 2
 
 var _player_controller = null
 var _definitions: Array = []
@@ -45,7 +46,8 @@ var _development: Dictionary = {}
 var _queue_signature := ""
 var _detail_signature := ""
 var _last_states := PackedInt32Array()
-var _mode := MODE_FOCUS
+var _mode := MODE_AVAILABLE
+var _selected_technology := -1
 var _focus_domain := ""
 var _focus_era := 0
 var _manual_focus := false
@@ -59,6 +61,7 @@ var _status_chips: Dictionary = {}
 var _policy_panel: PanelContainer
 var _dial: Control
 var _budget: Control
+var _available: Control
 var _tree: Control
 var _overview: Control
 var _detail: Control
@@ -68,6 +71,7 @@ var _detail_rail: Button
 var _policy_close: Button
 var _detail_close: Button
 var _main: Control
+var _available_mode: Button
 var _focus_mode: Button
 var _overview_mode: Button
 var _prev_era: Button
@@ -93,6 +97,7 @@ func _ready() -> void:
 		"policy_panel": "Root/Main/PolicyPanel",
 		"dial": "Root/Main/PolicyPanel/Scroll/Body/Dial",
 		"budget": "Root/Main/PolicyPanel/Scroll/Body/Budget",
+		"available": "Root/Main/Available",
 		"tree": "Root/Main/Tree",
 		"overview": "Root/Main/Overview",
 		"detail_host": "Root/Main/DetailHost",
@@ -103,6 +108,7 @@ func _ready() -> void:
 	_policy_panel = get_node_or_null(required_paths.policy_panel) as PanelContainer
 	_dial = get_node_or_null(required_paths.dial) as Control
 	_budget = get_node_or_null(required_paths.budget) as Control
+	_available = get_node_or_null(required_paths.available) as Control
 	_tree = get_node_or_null(required_paths.tree) as Control
 	_overview = get_node_or_null(required_paths.overview) as Control
 	_detail_host = get_node_or_null(required_paths.detail_host) as PanelContainer
@@ -112,6 +118,7 @@ func _ready() -> void:
 	_detail_close = get_node_or_null("Root/Main/DetailHost/Body/Header/Close") as Button
 	_detail = get_node_or_null(required_paths.detail) as Control
 	_main = get_node_or_null("Root/Main") as Control
+	_available_mode = get_node_or_null("Root/Toolbar/Row/AvailableMode") as Button
 	_focus_mode = get_node_or_null("Root/Toolbar/Row/FocusMode") as Button
 	_overview_mode = get_node_or_null("Root/Toolbar/Row/OverviewMode") as Button
 	_prev_era = get_node_or_null("Root/Toolbar/Row/EraPlate/EraRow/PrevEra") as Button
@@ -119,15 +126,16 @@ func _ready() -> void:
 	_era_label = get_node_or_null("Root/Toolbar/Row/EraPlate/EraRow/EraLabel") as Label
 	_search = get_node_or_null("Root/Toolbar/Row/Search") as LineEdit
 	if _policy_panel == null or _dial == null or _budget == null \
-			or _tree == null or _overview == null or _detail == null \
-			or _detail_host == null or _main == null or _focus_mode == null \
-			or _overview_mode == null or _prev_era == null or _next_era == null \
-			or _era_label == null or _search == null:
+			or _available == null or _tree == null or _overview == null or _detail == null \
+			or _detail_host == null or _main == null or _available_mode == null \
+			or _focus_mode == null or _overview_mode == null or _prev_era == null \
+			or _next_era == null or _era_label == null or _search == null:
 		var missing := PackedStringArray()
 		for key in required_paths:
 			if get_node_or_null(required_paths[key]) == null:
 				missing.append(String(required_paths[key]))
-		for extra in ["Root/Toolbar/Row/EraPlate/EraRow/PrevEra",
+		for extra in ["Root/Toolbar/Row/AvailableMode",
+				"Root/Toolbar/Row/EraPlate/EraRow/PrevEra",
 				"Root/Toolbar/Row/EraPlate/EraRow/NextEra",
 				"Root/Toolbar/Row/EraPlate/EraRow/EraLabel",
 				"Root/Toolbar/Row/Search"]:
@@ -163,12 +171,16 @@ func _ready() -> void:
 	_dial.weights_previewed.connect(_on_weights_previewed)
 	_dial.weights_committed.connect(_on_weights_committed)
 	_budget.budget_committed.connect(_on_budget_committed)
+	_available.technology_selected.connect(_on_available_selected)
+	_available.technology_activated.connect(_on_tree_activated)
+	_available.show_in_tree_requested.connect(_focus_technology)
 	_tree.technology_selected.connect(_on_tree_selected)
 	_tree.technology_activated.connect(_on_tree_activated)
 	_tree.portal_requested.connect(_focus_technology)
 	_overview.cell_activated.connect(_on_overview_cell_activated)
 	_detail.enqueue_requested.connect(_enqueue)
 	_detail.remove_requested.connect(_remove_from_queue)
+	_available_mode.pressed.connect(func() -> void: _set_mode(MODE_AVAILABLE))
 	_focus_mode.pressed.connect(func() -> void: _set_mode(MODE_FOCUS))
 	_overview_mode.pressed.connect(func() -> void: _set_mode(MODE_OVERVIEW))
 	_prev_era.pressed.connect(func() -> void: _shift_era(-1))
@@ -220,6 +232,8 @@ func set_model(model: Dictionary) -> void:
 		if not _definitions.is_empty():
 			_tree.set_catalog(_definitions, _eras, _domains, _visual_edges)
 			_overview.set_catalog(_definitions, _eras, _domains)
+			_available.set_catalog(_definitions, _domains, _research_definition_count,
+				_era_names)
 			_ensure_focus_domain()
 			_dial.configure(_domains)
 			_configure_queues()
@@ -333,7 +347,7 @@ func _update_effective_compact() -> void:
 func reset_navigation() -> void:
 	_initial_focus_pending = true
 	_manual_focus = false
-	_set_mode(MODE_FOCUS)
+	_set_mode(MODE_AVAILABLE)
 	if not _definitions.is_empty():
 		_apply_default_focus()
 	_apply_column_layout()
@@ -351,6 +365,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 func tree_view() -> Control:
 	return _tree
+
+
+func available_view() -> Control:
+	return _available
 
 
 func overview_view() -> Control:
@@ -376,17 +394,33 @@ func _ensure_focus_domain() -> void:
 
 
 func _set_mode(mode: int) -> void:
-	_mode = MODE_OVERVIEW if mode == MODE_OVERVIEW else MODE_FOCUS
+	if mode == MODE_OVERVIEW:
+		_mode = MODE_OVERVIEW
+	elif mode == MODE_FOCUS:
+		_mode = MODE_FOCUS
+	else:
+		_mode = MODE_AVAILABLE
+	_available_mode.set_pressed_no_signal(_mode == MODE_AVAILABLE)
 	_focus_mode.set_pressed_no_signal(_mode == MODE_FOCUS)
 	_overview_mode.set_pressed_no_signal(_mode == MODE_OVERVIEW)
+	_available.visible = _mode == MODE_AVAILABLE
 	_tree.visible = _mode == MODE_FOCUS
 	_overview.visible = _mode == MODE_OVERVIEW
 	_prev_era.disabled = _mode != MODE_FOCUS
 	_next_era.disabled = _mode != MODE_FOCUS
-	if _mode == MODE_OVERVIEW:
+	if _mode == MODE_FOCUS:
+		_apply_focus(-1 if not _manual_focus else (
+			_tree.selected_technology() if _tree.selected_technology() >= 0 else -1))
+	elif _mode == MODE_OVERVIEW:
 		_overview.patch_states(_presentation_states(_research.get(
 			"technology_states", PackedInt32Array())))
-	UIAnimation.crossfade(_tree if _mode == MODE_FOCUS else _overview, UITokens.ANIM_FAST)
+	elif _mode == MODE_AVAILABLE:
+		_available.patch_states(
+			_presentation_states(_research.get("technology_states", PackedInt32Array())),
+			_presentation_progress(_research.get("technology_progress", PackedInt64Array())))
+	var canvas := _available if _mode == MODE_AVAILABLE \
+		else (_tree if _mode == MODE_FOCUS else _overview)
+	UIAnimation.crossfade(canvas, UITokens.ANIM_FAST)
 
 
 func _shift_era(delta: int) -> void:
@@ -445,6 +479,7 @@ func _focus_technology(index: int) -> void:
 		_focus_domain = String(definition.get("domain_id", ""))
 	_focus_era = _era_index(String(definition.get("era_id", "")))
 	_manual_focus = true
+	_selected_technology = index
 	_set_mode(MODE_FOCUS)
 	_apply_focus(index)
 
@@ -468,14 +503,17 @@ func _apply_default_focus() -> void:
 	if target < 0:
 		target = _frontier_target()
 	if target < 0:
+		_set_mode(MODE_AVAILABLE)
+		_initial_focus_pending = false
 		return
 	var definition: Dictionary = _definitions[target]
 	_focus_domain = String(definition.get("domain_id", ""))
 	_focus_era = _era_index(String(definition.get("era_id", "")))
 	_initial_focus_pending = false
 	_manual_focus = false
-	_set_mode(MODE_FOCUS)
-	_apply_focus(target)
+	_set_mode(MODE_AVAILABLE)
+	_available.select_technology(target)
+	_on_available_selected(target)
 
 
 func _queue_priority_target() -> int:
@@ -545,7 +583,7 @@ func _deepest_visible_era() -> int:
 	var deepest := 0
 	var parents: Array = []
 	if _tree != null:
-		parents = _tree.layout_report().get("parents", [])
+		parents = _tree.topology_report().get("parents", [])
 	for index in range(mini(states.size(), _definitions.size())):
 		if not _tree_visible_from_states(index, states, parents):
 			continue
@@ -610,7 +648,7 @@ func _apply_column_layout() -> void:
 	_detail_host.clip_contents = true
 	var canvas_left := left if _policy_open else (COMPACT_RAIL_WIDTH if _compact else 0.0)
 	var canvas_right := -right if _detail_open else (-COMPACT_RAIL_WIDTH if _compact else 0.0)
-	for canvas in [_tree, _overview]:
+	for canvas in [_available, _tree, _overview]:
 		if canvas == null:
 			continue
 		canvas.offset_left = canvas_left
@@ -639,6 +677,7 @@ func _apply_research() -> void:
 	var relations_changed := states != _last_states
 	_last_states = states
 	_tree.patch_states(states, progress)
+	_available.patch_states(states, progress)
 	if _overview.visible:
 		_overview.patch_states(states)
 	var weights: PackedInt32Array = _research.get("domain_weights_bp",
@@ -841,11 +880,16 @@ func _rebuild_queue_rows(offsets: PackedInt32Array,
 
 
 func _refresh_detail(refresh_relations: bool = true) -> void:
-	var index := int(_tree.selected_technology())
+	var index := _selected_technology
+	if index < 0:
+		index = int(_available.selected_technology()) if _available != null else -1
+	if index < 0:
+		index = int(_tree.selected_technology()) if _tree != null else -1
 	if index < 0 or index >= _definitions.size():
 		_detail_signature = ""
 		_detail.show_empty()
 		return
+	_selected_technology = index
 	var research_states: PackedInt32Array = _research.get(
 		"technology_states", PackedInt32Array())
 	var states := _presentation_states(research_states)
@@ -1205,7 +1249,14 @@ func _development_definition(signal_id: String) -> Dictionary:
 	return {}
 
 
-func _on_tree_selected(_index: int) -> void:
+func _on_available_selected(index: int) -> void:
+	_selected_technology = index
+	_manual_focus = true
+	_refresh_detail()
+
+
+func _on_tree_selected(index: int) -> void:
+	_selected_technology = index
 	_manual_focus = true
 	_refresh_detail()
 

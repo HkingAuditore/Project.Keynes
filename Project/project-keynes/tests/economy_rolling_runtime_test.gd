@@ -109,7 +109,7 @@ func _run() -> void:
 	var restored := _new_ext(compiled)
 	_expect("restore country matches", CountryTestHelper.configure_all_technologies(
 		restored, catalog, CELL_COUNT, 92015))
-	_expect("PKCN v12 tax and treasury restore matches",
+	_expect("PKCN tax and treasury restore matches",
 		_restore_country(restored, saved_country.get("chunks", [])))
 	_expect("restore economy configures", bool(restored.configure_economy(
 		catalog, profile, CELL_COUNT, 92015).get("ok", false)))
@@ -194,6 +194,49 @@ func _run() -> void:
 		int(floor_restored.get_economy_state_hash()) ==
 			int(floor_runtime.get_economy_state_hash()))
 	_test_prospective_income_subsidy(compiled, catalog, profile)
+	_test_absolute_income_and_business_tax(compiled, catalog, profile)
+
+
+func _test_absolute_income_and_business_tax(compiled: Dictionary, catalog: Dictionary,
+		profile: Dictionary) -> void:
+	var runtime := _new_runtime(compiled, catalog, profile, 92018, false)
+	if runtime == null:
+		return
+	var handle := int(runtime.get_country_cell_summary(0).country_handle)
+	var pop: Dictionary = runtime.get_population_cell_snapshot(0)
+	var handles: PackedInt64Array = pop.get("handles", PackedInt64Array())
+	_expect("absolute tax fixture has population", not handles.is_empty())
+	if handles.is_empty():
+		return
+	_expect("absolute income levy commits",
+		_set_tax_value(runtime, handle, 0, -1, 1, 1, 0, 1))
+	_validate_day(runtime, 0)
+	_validate_day(runtime, 1)
+	var fiscal: Dictionary = runtime.get_country_fiscal_snapshot(handle)
+	var collected: PackedInt64Array = fiscal.get(
+		"cumulative_collected", PackedInt64Array())
+	_expect("absolute income levy collects into treasury",
+		bool(fiscal.get("ok", false)) and collected.size() > 0 and
+		int(collected[0]) > 0 and
+		int(runtime.get_country_treasury_snapshot(handle).cash) >= 0)
+	_expect("absolute business levy commits",
+		_set_tax_value(runtime, handle, 2, -1, 1, 1, 2, 2))
+	_validate_day(runtime, 2)
+	var business_fiscal: Dictionary = runtime.get_country_fiscal_snapshot(handle)
+	var business_collected: PackedInt64Array = business_fiscal.get(
+		"cumulative_collected", PackedInt64Array())
+	_expect("absolute business levy remains treasury-safe",
+		business_collected.size() > 2 and
+		int(runtime.get_country_treasury_snapshot(handle).cash) >= 0)
+	_expect("absolute income subsidy commits",
+		_set_tax_value(runtime, handle, 0, -1, -1, 1, 3, 3))
+	_validate_day(runtime, 3)
+	_validate_day(runtime, 4)
+	var subsidy: Dictionary = runtime.get_country_fiscal_snapshot(handle)
+	_expect("absolute income subsidy stays treasury-capped",
+		_sum_i64(subsidy.get("subsidy_requested", PackedInt64Array())) >= 0 and
+		int(runtime.get_country_treasury_snapshot(handle).cash) >= 0)
+
 
 func _test_prospective_income_subsidy(compiled: Dictionary, catalog: Dictionary,
 		profile: Dictionary) -> void:
@@ -497,8 +540,13 @@ func _set_consumption_tax(ext: Object, handle: int, rate: int,
 
 func _set_income_tax(ext: Object, handle: int, rate: int,
 		day: int, sequence: int) -> bool:
+	return _set_tax_value(ext, handle, 0, -1, rate, 0, day, sequence)
+
+
+func _set_tax_value(ext: Object, handle: int, kind: int, item: int,
+		value: int, mode: int, day: int, sequence: int) -> bool:
 	var batch := {
-		"opcodes": PackedInt32Array([11]),
+		"opcodes": PackedInt32Array([11 if item < 0 else 12]),
 		"effective_days": PackedInt64Array([day]),
 		"sequences": PackedInt64Array([sequence]),
 		"target_handles": PackedInt64Array([handle]),
@@ -511,9 +559,10 @@ func _set_income_tax(ext: Object, handle: int, rate: int,
 		"weight2_bp": PackedInt32Array([0]),
 		"weight3_bp": PackedInt32Array([0]),
 		"value_i64": PackedInt64Array([0]),
-		"tax_kinds": PackedInt32Array([0]),
-		"tax_item_indices": PackedInt32Array([-1]),
-		"tax_rate_percent": PackedInt32Array([rate]),
+		"tax_kinds": PackedInt32Array([kind]),
+		"tax_item_indices": PackedInt32Array([item]),
+		"tax_rate_basis_points": PackedInt32Array([value]),
+		"tax_assessment_modes": PackedInt32Array([mode]),
 		"stable_ids": PackedStringArray([""]),
 		"display_names": PackedStringArray([""]),
 	}

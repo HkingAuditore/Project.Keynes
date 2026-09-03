@@ -988,9 +988,9 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             const int64_t daily_floor = living_cost_for_signature(
                 cell, signature, _living_cost_base_plan_id,
                 _saturation_count);
-            const int64_t signed_transfer = expected_fiscal_transfer(
-                cell, NativeCountryRuntime::TAX_INCOME, daily_floor,
-                income_rate, _saturation_count);
+            const int64_t signed_transfer = expected_resolved_fiscal_transfer(
+                cell, NativeCountryRuntime::TAX_INCOME, profession,
+                daily_floor, 1, _saturation_count);
             return std::max<int64_t>(0, saturating_sub(
                 0, signed_transfer, _saturation_count));
         };

@@ -204,6 +204,16 @@ func _run() -> void:
 		owner_row >= 0
 		and int((family.profession_people as PackedInt64Array)[owner_row]) > 0
 		and int((family.profession_owner_employed as PackedInt64Array)[owner_row]) > 0)
+	var employment_ok := true
+	for row in profession_rows.size():
+		var people := int((family.profession_people as PackedInt64Array)[row])
+		var owners := int((family.profession_owner_employed as PackedInt64Array)[row])
+		var employees := int((family.profession_employee_employed as PackedInt64Array)[row])
+		if owners < 0 or employees < 0 or owners + employees > people:
+			employment_ok = false
+			break
+	_expect("family employment attribution never exceeds membership people",
+		employment_ok)
 	var industries: Dictionary = ext.get_family_industries(family_handle, 0, 64)
 	_expect("family owns one aggregated building and fills its owner post",
 		int(industries.get("total", 0)) == 1

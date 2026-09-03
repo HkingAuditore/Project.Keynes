@@ -1,4 +1,4 @@
-[gd_scene load_steps=9 format=3]
+[gd_scene load_steps=10 format=3]
 
 [ext_resource type="Script" path="res://scripts/ui/components/technology_workspace.gd" id="1_script"]
 [ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="2_icon"]
@@ -8,6 +8,7 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/technology_tree_view.tscn" id="6_tree"]
 [ext_resource type="PackedScene" path="res://scenes/ui/technology_detail_card.tscn" id="7_detail"]
 [ext_resource type="PackedScene" path="res://scenes/ui/technology_overview_view.tscn" id="8_overview"]
+[ext_resource type="PackedScene" path="res://scenes/ui/technology_available_view.tscn" id="9_available"]
 
 [node name="TechnologyWorkspace" type="Control"]
 layout_mode = 3
@@ -117,12 +118,19 @@ theme_type_variation = &"PKWorkspaceToolbar"
 layout_mode = 2
 theme_override_constants/separation = 6
 
+[node name="AvailableMode" type="Button" parent="Root/Toolbar/Row"]
+custom_minimum_size = Vector2(72, 32)
+layout_mode = 2
+text = "可研究"
+toggle_mode = true
+button_pressed = true
+theme_type_variation = &"PKTabButton"
+
 [node name="FocusMode" type="Button" parent="Root/Toolbar/Row"]
 custom_minimum_size = Vector2(72, 32)
 layout_mode = 2
-text = "聚焦"
+text = "科技树"
 toggle_mode = true
-button_pressed = true
 theme_type_variation = &"PKTabButton"
 
 [node name="OverviewMode" type="Button" parent="Root/Toolbar/Row"]
@@ -195,8 +203,20 @@ grow_vertical = 2
 mouse_filter = 2
 theme_type_variation = &"PKWorkspaceCanvas"
 
+[node name="Available" parent="Root/Main" instance=ExtResource("9_available")]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+offset_left = 320.0
+offset_right = -360.0
+
 [node name="Tree" parent="Root/Main" instance=ExtResource("6_tree")]
 unique_name_in_owner = true
+visible = false
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0

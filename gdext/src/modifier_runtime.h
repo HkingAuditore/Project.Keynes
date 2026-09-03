@@ -91,6 +91,8 @@ public:
                           int32_t *out_values, size_t count) const;
     double effective_value(int32_t domain, const char *stat_key, uint64_t entity_handle,
                            uint64_t group_handle, double base_value) const;
+    // Catalog clamp ceiling for a configured stat key; `fallback` when missing.
+    double stat_clamp_max(const char *key, double fallback) const;
     // Ascending, de-duplicated scope ids that currently hold a bucket in
     // `domain` for `scope` and any of `stat_ids`. Any scope id absent from the
     // result provably contributes nothing, so callers building dense per-entity

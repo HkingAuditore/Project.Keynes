@@ -77,6 +77,7 @@ var _last_ui_perf_summary: Dictionary = {}
 var _perf_recorder: RefCounted = null
 var _tile_data_recorder: RefCounted = null
 var _economy_data_recorder: RefCounted = null
+var _money_conservation_fatal_dumped := false
 var _pending_tick_start_usec: int = 0
 var _pending_tick_sus_ms: float = 0.0
 var _pending_tick_render_ms: float = 0.0
@@ -192,6 +193,10 @@ func configure_session(request: Dictionary) -> Dictionary:
 ## 用节点路径解析而非全局标识符，因为 `--script` 无头工具链不注册 autoload。
 func _game_save_service() -> Node:
 	return get_node_or_null(^"/root/GameSave")
+
+
+func _game_flow_service() -> Node:
+	return get_node_or_null(^"/root/GameFlow")
 
 
 func current_map() -> MapData:
@@ -1312,6 +1317,9 @@ func _gm_overview_snapshot() -> Dictionary:
 	var calendar := _world_clock.calendar_date() if _world_clock != null else {}
 	var country_report := _generator.get_country_report() if _generator != null and _generator.has_method("get_country_report") else {}
 	var economy_report := _generator.get_economy_report() if _generator != null and _generator.has_method("get_economy_report") else {}
+	if bool(economy_report.get("fatal", false)) \
+			and String(economy_report.get("fatal_reason", "")) == "money_conservation_failed":
+		_dump_money_conservation_fatal_report(economy_report)
 	return {
 		"world": {"ready": _current_map != null, "seed": _last_seed,
 			"width": _current_map.width if _current_map != null else 0,
@@ -1327,6 +1335,45 @@ func _gm_overview_snapshot() -> Dictionary:
 		"economy": economy_report,
 		"recorders": _gm_recorder_snapshot(),
 	}
+
+
+func _dump_money_conservation_fatal_report(report: Dictionary) -> void:
+	if _money_conservation_fatal_dumped:
+		return
+	_money_conservation_fatal_dumped = true
+	var keys := [
+		"fatal", "fatal_reason", "stage", "epoch_active", "epoch_id",
+		"current_day", "last_completed_sample_day", "sample_day",
+		"population_error", "money_error", "goods_error",
+		"money_open", "money_close", "money_expected",
+		"explicit_money_mint", "explicit_money_burn",
+		"opening_cohort_funds", "closing_cohort_funds",
+		"opening_country_cash", "closing_country_cash",
+		"opening_escrow_cash", "closing_escrow_cash",
+		"opening_expedition_funds", "closing_expedition_funds",
+		"producer_support_money_issued", "bullion_money_issued",
+		"closing_audit_mode", "closing_audit_incremental_this_epoch",
+		"opening_audit_fast_paths", "opening_audit_full_verifications",
+	]
+	var payload := {}
+	for key in keys:
+		if report.has(key):
+			payload[key] = report[key]
+	payload["dumped_at"] = Time.get_datetime_string_from_system()
+	var text := JSON.stringify(payload)
+	print("[host/economy-fatal-conservation] %s" % text)
+	var user_file := FileAccess.open(
+		"user://economy_money_conservation_fatal.json", FileAccess.WRITE)
+	if user_file != null:
+		user_file.store_string(text)
+		user_file.close()
+	var abs_path := ProjectSettings.globalize_path("res://").path_join(
+		"..\\..\\tmp\\economy_money_conservation_fatal.json").simplify_path()
+	var abs_file := FileAccess.open(abs_path, FileAccess.WRITE)
+	if abs_file != null:
+		abs_file.store_string(text)
+		abs_file.close()
+		print("[host/economy-fatal-dump] wrote %s" % abs_path)
 
 
 func _gm_selected_snapshot(cell_idx: int) -> Dictionary:
@@ -2383,6 +2430,8 @@ func _recorder_ready(recorder: RefCounted) -> bool:
 
 func on_speed_changed(new_speed: float) -> void:
 	if _renderer != null:
+		if _renderer.has_method("set_simulation_speed_multiplier"):
+			_renderer.set_simulation_speed_multiplier(new_speed)
 		var weather_layer := _renderer.get_node_or_null("WeatherLayer")
 		if weather_layer != null and weather_layer.has_method("set_clock_speed_multiplier"):
 			weather_layer.set_clock_speed_multiplier(new_speed)
@@ -2594,6 +2643,10 @@ func refresh_country_visuals(reason: String) -> Dictionary:
 	var out := {"reason": reason, "vision": {}, "border": {}, "lut": {}}
 	if _current_map == null or _world_data == null:
 		return out
+	# Native CLAIM 先写 NativeCountryRuntime，再经 DataCore CoW 镜像到 MapData。
+	# 若 country_committed 抢在 flush 之前触发，视野会用旧 country_slot_arr 解算，
+	# 国界/Inspector 随后看到新领土，邻格就只剩迷雾柔边「看起来亮了」。
+	out["territory_sync"] = _sync_country_territory_to_map()
 	if _player_country_slot < 0:
 		_player_country_slot = _resolve_player_country_slot()
 	var previous_visible := _current_map.visible_arr.duplicate()
@@ -2706,6 +2759,20 @@ func player_country_slot() -> int:
 	return _player_country_slot
 
 
+## PKFG is restored before the PlayerGame world_ready callback. Rebind the
+## player identity only after all providers (including player_session) have
+## restored, then solve and publish fog exactly once from the restored explored
+## array and PKCN territory.
+func finalize_save_restore_visuals() -> Dictionary:
+	_fog_of_war_enabled = _resolve_fog_of_war_enabled()
+	_player_country_slot = _resolve_player_country_slot()
+	_player_country_handle = _resolve_player_country_handle()
+	if _renderer != null and _renderer.has_method("set_fog_of_war_enabled"):
+		_renderer.set_fog_of_war_enabled(
+			_fog_of_war_enabled, fog_early_out_enabled)
+	return refresh_country_visuals("save_restore_finalized")
+
+
 func is_fog_of_war_enabled() -> bool:
 	return _fog_of_war_enabled
 
@@ -2728,30 +2795,58 @@ func set_fog_of_war_enabled(enabled: bool) -> void:
 func _resolve_fog_of_war_enabled() -> bool:
 	if not fog_of_war_enabled:
 		return false
-	if _generator == null or not _generator.has_method("gameplay_start_report"):
-		return false
-	return bool(_generator.gameplay_start_report().get("ok", false))
+	return _resolve_player_start_cell() >= 0
 
 
 func _resolve_player_country_slot() -> int:
-	if _current_map == null or _generator == null \
-			or not _generator.has_method("gameplay_start_report"):
+	if _current_map == null:
 		return -1
-	var start_cell := int(_generator.gameplay_start_report().get("cell", -1))
+	var start_cell := _resolve_player_start_cell()
 	if start_cell < 0 or start_cell >= _current_map.country_slot_arr.size():
 		return -1
 	return int(_current_map.country_slot_arr[start_cell])
 
 
 func _resolve_player_country_handle() -> int:
-	if _generator == null or not _generator.has_method("gameplay_start_report") \
-			or not _generator.has_method("get_country_facade"):
+	if _generator == null or not _generator.has_method("get_country_facade"):
 		return 0
-	var start_cell := int(_generator.gameplay_start_report().get("cell", -1))
+	var start_cell := _resolve_player_start_cell()
 	var facade = _generator.get_country_facade()
 	if facade == null or start_cell < 0:
 		return 0
 	return int(facade.cell_summary(start_cell).get("country_handle", 0))
+
+
+## During load, renderer binding precedes provider restore, so
+## gameplay_start_report has no restored cell yet. The decoded player_context
+## in the pending bundle is the authoritative pre-restore source.
+func _resolve_player_start_cell() -> int:
+	if _generator != null and _generator.has_method("gameplay_start_report"):
+		var report: Dictionary = _generator.gameplay_start_report()
+		var report_cell := int(report.get("cell", -1))
+		if bool(report.get("ok", false)) and report_cell >= 0:
+			return report_cell
+	var sections = _pending_load_bundle.get("sections", {})
+	if sections is Dictionary:
+		var pending_context = sections.get("player_context", {})
+		if pending_context is Dictionary:
+			var pending_cell := int(pending_context.get("start_cell", -1))
+			if pending_cell >= 0:
+				return pending_cell
+	var flow := _game_flow_service()
+	if flow != null and flow.has_method("session"):
+		var session: Dictionary = flow.session()
+		return int(session.get("start_cell", -1))
+	return -1
+
+
+## 把 native 领土权威刷进 MapData.country_slot_arr，供视野/国界同一瞬间消费。
+func _sync_country_territory_to_map() -> Dictionary:
+	var ext = _generator.get_data_core_world_ext() if _generator != null \
+		and _generator.has_method("get_data_core_world_ext") else null
+	if ext == null or not ext.has_method("sync_country_territory_to_map"):
+		return {"ok": false, "reason": "sync_country_territory_unavailable"}
+	return ext.sync_country_territory_to_map()
 
 
 func _refresh_vision() -> Dictionary:
