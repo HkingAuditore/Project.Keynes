@@ -12,7 +12,7 @@
 | 领域 | 4 |
 | 里程碑 | 11 |
 | 硬前置边 | 526 |
-| 应用交汇边 | 4320 |
+| 应用交汇边 | 4345 |
 | 替代说明边 | 635 |
 | 分支关系边 | 8 |
 | 里程碑候选边 | 143 |
@@ -75,7 +75,7 @@
 - **物资：** 毛皮 (`fur`)；野味 (`game_meat`)；生皮 (`raw_hide`)
 - **建筑 / 生产方式：** 狩猎营地 (`stone_age_hunting_camp`)
 - **自然资源：** 野生动物 (`wild_game`)
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 宫廷裁缝坊 (`court_tailor`)；毛皮缝制棚 (`fur_sewing_shelter`)；小型陷阱线 (`small_game_trapline`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 宫廷裁缝坊 (`court_tailor`)；毛皮缝制棚 (`fur_sewing_shelter`)；制革厂 (`leather_plant`)；小型陷阱线 (`small_game_trapline`)
 
 #### 结构化内容效果
 
@@ -636,7 +636,7 @@
 - **物资：** 黏土 (`clay`)
 - **建筑 / 生产方式：** 土料挖掘坑 (`earth_digging_pit`)；原始黏土坑 (`primitive_clay_pit`)
 - **自然资源：** 黏土 (`clay`)
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 日晒土坯场 (`adobe_yard`)；电解铝厂 (`aluminum_plant`)；汽车厂 (`automobiles_plant`)；自主控制系统厂 (`autonomous_systems_plant`)；电池厂 (`batteries_plant`)；酿造厂 (`beverages_plant`)；制砖厂 (`bricks_plant`)；畦埂水稻田 (`bunded_rice_field`)；水泥厂 (`cement_plant`)；电力纺织厂 (`cloth_plant`)；混凝土厂 (`concrete_plant`)；建筑构件厂 (`construction_components_plant`)；洗涤剂厂 (`detergent_plant`)；蒸馏酒坊 (`distillery`)；旱作保水小麦田 (`dryland_wheat_field`)；露天黏土坑 (`early_clay_pit`)；电动机厂 (`electric_motor_plant`)；电气设备厂 (`electrical_equipment_plant`)；电化工厂 (`electrochemical_works`)；电子元件厂 (`electronic_components_plant`)；发动机厂 (`engines_plant`)；高级成衣厂 (`fine_clothing_plant`)；高级家具厂 (`fine_furniture_plant`)；燃气发电厂 (`gas_power_plant`)；家用电器厂 (`household_appliances_plant`)；河流水力发电站 (`hydropower_station`)；绝缘电缆厂 (`insulated_cable_plant`)；珠宝厂 (`jewelry_plant`)；锰矿 (`manganese_ore_collector`)；药材商品园 (`medicinal_herb_estate`)；智能化汽车厂 (`method_automobiles_plant_r10`)；自动化焦化厂 (`method_coke_ovens_r9`)；自动化混凝土厂 (`method_concrete_plant_r9`)；智能化洗涤剂厂 (`method_detergent_plant_r10`)；智能化电子元件厂 (`method_electronic_components_plant_r10`)；智能化发动机厂 (`method_engines_plant_r10`)；自动化炸药厂 (`method_explosives_plant_r10`)；现代炸药厂 (`method_explosives_plant_r8`)；智能化家用电器厂 (`method_household_appliances_plant_r10`)；智能锰矿 (`method_manganese_ore_collector_r10`)；受控环境药材农场 (`method_medicinal_herbs_collector_r7`)；智能天然气田 (`method_natural_gas_collector_r10`)；智能化核燃料厂 (`method_nuclear_fuel_plant_r10`)；电气化造船厂 (`method_oceanic_shipyard_r7`)；电气化包装厂 (`method_packaging_plant_r7`)；智能石油化工厂 (`method_petrochemicals_plant_r10`)；智能化塑料厂 (`method_plastics_plant_r10`)；改良轮作马铃薯庄园 (`method_potato_farm_r5`)；智能工具厂 (`method_precision_tool_workshop_r10`)；精密工具厂 (`method_precision_tool_workshop_r8`)；电气印刷厂 (`method_printed_materials_plant_r7`)；智能化无线电设备厂 (`method_radio_equipment_works_r10`)；智能战略矿山 (`method_rare_earth_collector_r10`)；智能战略金属冶炼厂 (`method_rare_earth_metals_plant_r10`)；智能化核反应堆设备厂 (`method_reactor_component_works_r10`)；智能炼油厂 (`method_refined_fuel_plant_r10`)；智能硝石矿 (`method_saltpeter_collector_r10`)；现代硝石矿 (`method_saltpeter_collector_r8`)；精密仪器厂 (`method_scientific_instrument_works_r8`)；现代硫矿 (`method_sulfur_collector_r8`)；智能化合成纤维厂 (`method_synthetic_fiber_plant_r10`)；智能化合成橡胶厂 (`method_synthetic_rubber_plant_r10`)；天然气田 (`natural_gas_collector`)；核燃料厂 (`nuclear_fuel_plant`)；核医学制药中心 (`nuclear_medicine_center`)；核电站 (`nuclear_power_plant`)；燃油发电厂 (`oil_power_plant`)；露天陶器烧造 (`open_pottery_hearth`)；石油化工厂 (`petrochemicals_plant`)；塑料厂 (`plastics_plant`)；马铃薯庄园 (`potato_estate`)；升焰陶窑 (`pottery_kiln`)；综合食品厂 (`processed_food_plant`)；无线电设备厂 (`radio_equipment_works`)；铁路设备厂 (`railway_equipment_plant`)；战略金属冶炼厂 (`rare_earth_metals_plant`)；核反应堆设备厂 (`reactor_component_works`)；炼油厂 (`refined_fuel_plant`)；书记学校 (`scribal_school`)；分成水田 (`sharecrop_paddy`)；商业香料种植园 (`spice_commercial_plantation`)；商品香料园 (`spice_managed_garden`)；不锈钢厂 (`stainless_steel_plant`)；合成纤维厂 (`synthetic_fiber_plant`)；合成橡胶厂 (`synthetic_rubber_plant`)；合成纤维织造厂 (`synthetic_textile_mill`)；佃作水田 (`tenant_paddy`)；佃作马铃薯田 (`tenant_potato_field`)；佃作雨养玉米田 (`tenant_rainfed_maize_field`)；佃作雨养小麦田 (`tenant_rainfed_wheat_field`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 日晒土坯场 (`adobe_yard`)；电解铝厂 (`aluminum_plant`)；汽车厂 (`automobiles_plant`)；自主控制系统厂 (`autonomous_systems_plant`)；电池厂 (`batteries_plant`)；酿造厂 (`beverages_plant`)；制砖厂 (`bricks_plant`)；畦埂水稻田 (`bunded_rice_field`)；水泥厂 (`cement_plant`)；电力纺织厂 (`cloth_plant`)；混凝土厂 (`concrete_plant`)；建筑构件厂 (`construction_components_plant`)；洗涤剂厂 (`detergent_plant`)；蒸馏酒坊 (`distillery`)；旱作保水小麦田 (`dryland_wheat_field`)；露天黏土坑 (`early_clay_pit`)；电动机厂 (`electric_motor_plant`)；电气设备厂 (`electrical_equipment_plant`)；电化工厂 (`electrochemical_works`)；电子元件厂 (`electronic_components_plant`)；发动机厂 (`engines_plant`)；高级成衣厂 (`fine_clothing_plant`)；高级家具厂 (`fine_furniture_plant`)；燃气发电厂 (`gas_power_plant`)；家用电器厂 (`household_appliances_plant`)；河流水力发电站 (`hydropower_station`)；绝缘电缆厂 (`insulated_cable_plant`)；珠宝厂 (`jewelry_plant`)；锰矿 (`manganese_ore_collector`)；药材商品园 (`medicinal_herb_estate`)；智能化汽车厂 (`method_automobiles_plant_r10`)；工业砖厂 (`method_bricks_plant_r6`)；自动化焦化厂 (`method_coke_ovens_r9`)；自动化混凝土厂 (`method_concrete_plant_r9`)；智能化洗涤剂厂 (`method_detergent_plant_r10`)；智能化电子元件厂 (`method_electronic_components_plant_r10`)；智能化发动机厂 (`method_engines_plant_r10`)；自动化炸药厂 (`method_explosives_plant_r10`)；现代炸药厂 (`method_explosives_plant_r8`)；智能化家用电器厂 (`method_household_appliances_plant_r10`)；智能锰矿 (`method_manganese_ore_collector_r10`)；受控环境药材农场 (`method_medicinal_herbs_collector_r7`)；智能天然气田 (`method_natural_gas_collector_r10`)；智能化核燃料厂 (`method_nuclear_fuel_plant_r10`)；电气化造船厂 (`method_oceanic_shipyard_r7`)；电气化包装厂 (`method_packaging_plant_r7`)；智能石油化工厂 (`method_petrochemicals_plant_r10`)；智能化塑料厂 (`method_plastics_plant_r10`)；改良轮作马铃薯庄园 (`method_potato_farm_r5`)；智能工具厂 (`method_precision_tool_workshop_r10`)；精密工具厂 (`method_precision_tool_workshop_r8`)；电气印刷厂 (`method_printed_materials_plant_r7`)；智能化无线电设备厂 (`method_radio_equipment_works_r10`)；智能战略矿山 (`method_rare_earth_collector_r10`)；智能战略金属冶炼厂 (`method_rare_earth_metals_plant_r10`)；智能化核反应堆设备厂 (`method_reactor_component_works_r10`)；智能炼油厂 (`method_refined_fuel_plant_r10`)；智能硝石矿 (`method_saltpeter_collector_r10`)；现代硝石矿 (`method_saltpeter_collector_r8`)；精密仪器厂 (`method_scientific_instrument_works_r8`)；现代硫矿 (`method_sulfur_collector_r8`)；智能化合成纤维厂 (`method_synthetic_fiber_plant_r10`)；智能化合成橡胶厂 (`method_synthetic_rubber_plant_r10`)；天然气田 (`natural_gas_collector`)；核燃料厂 (`nuclear_fuel_plant`)；核医学制药中心 (`nuclear_medicine_center`)；核电站 (`nuclear_power_plant`)；燃油发电厂 (`oil_power_plant`)；露天陶器烧造 (`open_pottery_hearth`)；石油化工厂 (`petrochemicals_plant`)；塑料厂 (`plastics_plant`)；马铃薯庄园 (`potato_estate`)；升焰陶窑 (`pottery_kiln`)；综合食品厂 (`processed_food_plant`)；无线电设备厂 (`radio_equipment_works`)；铁路设备厂 (`railway_equipment_plant`)；战略金属冶炼厂 (`rare_earth_metals_plant`)；核反应堆设备厂 (`reactor_component_works`)；炼油厂 (`refined_fuel_plant`)；书记学校 (`scribal_school`)；分成水田 (`sharecrop_paddy`)；商业香料种植园 (`spice_commercial_plantation`)；商品香料园 (`spice_managed_garden`)；不锈钢厂 (`stainless_steel_plant`)；合成纤维厂 (`synthetic_fiber_plant`)；合成橡胶厂 (`synthetic_rubber_plant`)；合成纤维织造厂 (`synthetic_textile_mill`)；佃作水田 (`tenant_paddy`)；佃作马铃薯田 (`tenant_potato_field`)；佃作雨养玉米田 (`tenant_rainfed_maize_field`)；佃作雨养小麦田 (`tenant_rainfed_wheat_field`)
 
 #### 结构化内容效果
 
@@ -776,7 +776,7 @@
 - **物资：** 畜牧产品 (`livestock_products`)
 - **建筑 / 生产方式：** 游牧营地 (`pastoral_camp`)
 - **自然资源：** 牧场承载力 (`pasture`)
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 乳品工坊 (`creamery`)；乳制品厂 (`dairy_products_plant`)；毡制帐篷 (`felt_making_tent`)；工业屠宰场 (`mechanized_slaughterhouse`)；工业制皂厂 (`method_soap_plant_r6`)；羊毛行会作坊 (`method_wool_shed_r3`)；精梳羊毛作坊 (`method_wool_shed_r5`)；综合食品厂 (`processed_food_plant`)；屠宰场 (`slaughterhouse`)；制皂工坊 (`soap_plant`)；羊毛棚 (`wool_shed`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 堆肥场 (`composting_yard`)；乳品工坊 (`creamery`)；乳制品厂 (`dairy_products_plant`)；毡制帐篷 (`felt_making_tent`)；工业屠宰场 (`mechanized_slaughterhouse`)；工业制皂厂 (`method_soap_plant_r6`)；羊毛行会作坊 (`method_wool_shed_r3`)；精梳羊毛作坊 (`method_wool_shed_r5`)；综合食品厂 (`processed_food_plant`)；屠宰场 (`slaughterhouse`)；制皂工坊 (`soap_plant`)；羊毛棚 (`wool_shed`)
 
 #### 结构化内容效果
 
@@ -1395,7 +1395,7 @@
 - **物资：** 原木 (`logs`)
 - **建筑 / 生产方式：** 枯枝采集营地 (`deadwood_gathering_camp`)；伐木场 (`timber_collector`)
 - **自然资源：** 木材 (`timber`)
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 日晒土坯场 (`adobe_yard`)；电解铝厂 (`aluminum_plant`)；汽车厂 (`automobiles_plant`)；自主控制系统厂 (`autonomous_systems_plant`)；面包坊 (`bakery`)；树皮纸工坊 (`bark_paper_workshop`)；电池厂 (`batteries_plant`)；酿造厂 (`beverages_plant`)；畦埂水稻田 (`bunded_rice_field`)；水泥厂 (`cement_plant`)；覆土木炭窑 (`charcoal_pit`)；特许大学 (`chartered_university`)；古典学院 (`classical_academy`)；公共营造场 (`classical_public_works`)；城邦抄写室 (`classical_scriptorium`)；电力纺织厂 (`cloth_plant`)；混凝土厂 (`concrete_plant`)；建筑构件厂 (`construction_components_plant`)；宫廷裁缝坊 (`court_tailor`)；乳品工坊 (`creamery`)；乳制品厂 (`dairy_products_plant`)；洗涤剂厂 (`detergent_plant`)；蒸馏酒坊 (`distillery`)；旱作保水小麦田 (`dryland_wheat_field`)；露天黏土坑 (`early_clay_pit`)；电动机厂 (`electric_motor_plant`)；电气设备厂 (`electrical_equipment_plant`)；电化工厂 (`electrochemical_works`)；电子元件厂 (`electronic_components_plant`)；发动机厂 (`engines_plant`)；毡制帐篷 (`felt_making_tent`)；高级成衣厂 (`fine_clothing_plant`)；高级家具厂 (`fine_furniture_plant`)；毛皮缝制棚 (`fur_sewing_shelter`)；燃气发电厂 (`gas_power_plant`)；采集营地 (`gathering_ground`)；生皮刮制棚 (`hide_scraping_shelter`)；家用电器厂 (`household_appliances_plant`)；河流水力发电站 (`hydropower_station`)；绝缘电缆厂 (`insulated_cable_plant`)；珠宝厂 (`jewelry_plant`)；石灰厂 (`lime_plant`)；锰矿 (`manganese_ore_collector`)；工业屠宰场 (`mechanized_slaughterhouse`)；药材商品园 (`medicinal_herb_estate`)；商栈 (`merchant_post`)；智能化汽车厂 (`method_automobiles_plant_r10`)；自动化焦化厂 (`method_coke_ovens_r9`)；自动化混凝土厂 (`method_concrete_plant_r9`)；智能化洗涤剂厂 (`method_detergent_plant_r10`)；智能化电子元件厂 (`method_electronic_components_plant_r10`)；智能化发动机厂 (`method_engines_plant_r10`)；自动化炸药厂 (`method_explosives_plant_r10`)；现代炸药厂 (`method_explosives_plant_r8`)；智能化家用电器厂 (`method_household_appliances_plant_r10`)；智能锰矿 (`method_manganese_ore_collector_r10`)；受控环境药材农场 (`method_medicinal_herbs_collector_r7`)；智能天然气田 (`method_natural_gas_collector_r10`)；智能化核燃料厂 (`method_nuclear_fuel_plant_r10`)；电气化造船厂 (`method_oceanic_shipyard_r7`)；电气化包装厂 (`method_packaging_plant_r7`)；智能石油化工厂 (`method_petrochemicals_plant_r10`)；智能化塑料厂 (`method_plastics_plant_r10`)；改良轮作马铃薯庄园 (`method_potato_farm_r5`)；智能工具厂 (`method_precision_tool_workshop_r10`)；精密工具厂 (`method_precision_tool_workshop_r8`)；电气印刷厂 (`method_printed_materials_plant_r7`)；智能化无线电设备厂 (`method_radio_equipment_works_r10`)；智能战略矿山 (`method_rare_earth_collector_r10`)；智能战略金属冶炼厂 (`method_rare_earth_metals_plant_r10`)；智能化核反应堆设备厂 (`method_reactor_component_works_r10`)；智能炼油厂 (`method_refined_fuel_plant_r10`)；智能硝石矿 (`method_saltpeter_collector_r10`)；现代硝石矿 (`method_saltpeter_collector_r8`)；精密仪器厂 (`method_scientific_instrument_works_r8`)；工业制皂厂 (`method_soap_plant_r6`)；现代硫矿 (`method_sulfur_collector_r8`)；智能化合成纤维厂 (`method_synthetic_fiber_plant_r10`)；智能化合成橡胶厂 (`method_synthetic_rubber_plant_r10`)；羊毛行会作坊 (`method_wool_shed_r3`)；精梳羊毛作坊 (`method_wool_shed_r5`)；天然气田 (`natural_gas_collector`)；核燃料厂 (`nuclear_fuel_plant`)；核医学制药中心 (`nuclear_medicine_center`)；核电站 (`nuclear_power_plant`)；燃油发电厂 (`oil_power_plant`)；露天陶器烧造 (`open_pottery_hearth`)；游牧营地 (`pastoral_camp`)；石油化工厂 (`petrochemicals_plant`)；河滩淘金场 (`placer_gold_working`)；塑料厂 (`plastics_plant`)；马铃薯庄园 (`potato_estate`)；升焰陶窑 (`pottery_kiln`)；综合食品厂 (`processed_food_plant`)；无线电设备厂 (`radio_equipment_works`)；铁路设备厂 (`railway_equipment_plant`)；战略金属冶炼厂 (`rare_earth_metals_plant`)；核反应堆设备厂 (`reactor_component_works`)；炼油厂 (`refined_fuel_plant`)；野生割胶营地 (`rubber_tapping_camp`)；书记学校 (`scribal_school`)；浅坑银矿作业 (`shallow_silver_working`)；分成水田 (`sharecrop_paddy`)；屠宰场 (`slaughterhouse`)；小型陷阱线 (`small_game_trapline`)；制皂工坊 (`soap_plant`)；商业香料种植园 (`spice_commercial_plantation`)；商品香料园 (`spice_managed_garden`)；不锈钢厂 (`stainless_steel_plant`)；主食厨房 (`staple_kitchen`)；狩猎营地 (`stone_age_hunting_camp`)；露天银矿 (`surface_silver_working`)；合成纤维厂 (`synthetic_fiber_plant`)；合成橡胶厂 (`synthetic_rubber_plant`)；合成纤维织造厂 (`synthetic_textile_mill`)；佃作水田 (`tenant_paddy`)；佃作马铃薯田 (`tenant_potato_field`)；佃作雨养玉米田 (`tenant_rainfed_maize_field`)；佃作雨养小麦田 (`tenant_rainfed_wheat_field`)；野生棉丛 (`wild_cotton_stand`)；野生药草采集地 (`wild_medicinal_herb_patch`)；野生香料林 (`wild_spice_grove`)；羊毛棚 (`wool_shed`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 日晒土坯场 (`adobe_yard`)；电解铝厂 (`aluminum_plant`)；汽车厂 (`automobiles_plant`)；自主控制系统厂 (`autonomous_systems_plant`)；面包坊 (`bakery`)；树皮纸工坊 (`bark_paper_workshop`)；电池厂 (`batteries_plant`)；酿造厂 (`beverages_plant`)；煮盐灶 (`brine_boiling_hearth`)；畦埂水稻田 (`bunded_rice_field`)；水泥厂 (`cement_plant`)；覆土木炭窑 (`charcoal_pit`)；特许大学 (`chartered_university`)；古典学院 (`classical_academy`)；公共营造场 (`classical_public_works`)；城邦抄写室 (`classical_scriptorium`)；电力纺织厂 (`cloth_plant`)；混凝土厂 (`concrete_plant`)；建筑构件厂 (`construction_components_plant`)；宫廷裁缝坊 (`court_tailor`)；乳品工坊 (`creamery`)；乳制品厂 (`dairy_products_plant`)；洗涤剂厂 (`detergent_plant`)；蒸馏酒坊 (`distillery`)；旱作保水小麦田 (`dryland_wheat_field`)；露天黏土坑 (`early_clay_pit`)；电动机厂 (`electric_motor_plant`)；电气设备厂 (`electrical_equipment_plant`)；电化工厂 (`electrochemical_works`)；电子元件厂 (`electronic_components_plant`)；发动机厂 (`engines_plant`)；毡制帐篷 (`felt_making_tent`)；高级成衣厂 (`fine_clothing_plant`)；高级家具厂 (`fine_furniture_plant`)；毛皮缝制棚 (`fur_sewing_shelter`)；燃气发电厂 (`gas_power_plant`)；采集营地 (`gathering_ground`)；生皮刮制棚 (`hide_scraping_shelter`)；家用电器厂 (`household_appliances_plant`)；河流水力发电站 (`hydropower_station`)；绝缘电缆厂 (`insulated_cable_plant`)；珠宝厂 (`jewelry_plant`)；石灰厂 (`lime_plant`)；锰矿 (`manganese_ore_collector`)；工业屠宰场 (`mechanized_slaughterhouse`)；药材商品园 (`medicinal_herb_estate`)；商栈 (`merchant_post`)；智能化汽车厂 (`method_automobiles_plant_r10`)；自动化焦化厂 (`method_coke_ovens_r9`)；自动化混凝土厂 (`method_concrete_plant_r9`)；智能化洗涤剂厂 (`method_detergent_plant_r10`)；智能化电子元件厂 (`method_electronic_components_plant_r10`)；智能化发动机厂 (`method_engines_plant_r10`)；自动化炸药厂 (`method_explosives_plant_r10`)；现代炸药厂 (`method_explosives_plant_r8`)；智能化家用电器厂 (`method_household_appliances_plant_r10`)；智能锰矿 (`method_manganese_ore_collector_r10`)；受控环境药材农场 (`method_medicinal_herbs_collector_r7`)；智能天然气田 (`method_natural_gas_collector_r10`)；智能化核燃料厂 (`method_nuclear_fuel_plant_r10`)；电气化造船厂 (`method_oceanic_shipyard_r7`)；电气化包装厂 (`method_packaging_plant_r7`)；智能石油化工厂 (`method_petrochemicals_plant_r10`)；智能化塑料厂 (`method_plastics_plant_r10`)；改良轮作马铃薯庄园 (`method_potato_farm_r5`)；智能工具厂 (`method_precision_tool_workshop_r10`)；精密工具厂 (`method_precision_tool_workshop_r8`)；电气印刷厂 (`method_printed_materials_plant_r7`)；智能化无线电设备厂 (`method_radio_equipment_works_r10`)；智能战略矿山 (`method_rare_earth_collector_r10`)；智能战略金属冶炼厂 (`method_rare_earth_metals_plant_r10`)；智能化核反应堆设备厂 (`method_reactor_component_works_r10`)；智能炼油厂 (`method_refined_fuel_plant_r10`)；智能硝石矿 (`method_saltpeter_collector_r10`)；现代硝石矿 (`method_saltpeter_collector_r8`)；精密仪器厂 (`method_scientific_instrument_works_r8`)；工业制皂厂 (`method_soap_plant_r6`)；现代硫矿 (`method_sulfur_collector_r8`)；智能化合成纤维厂 (`method_synthetic_fiber_plant_r10`)；智能化合成橡胶厂 (`method_synthetic_rubber_plant_r10`)；羊毛行会作坊 (`method_wool_shed_r3`)；精梳羊毛作坊 (`method_wool_shed_r5`)；天然气田 (`natural_gas_collector`)；核燃料厂 (`nuclear_fuel_plant`)；核医学制药中心 (`nuclear_medicine_center`)；核电站 (`nuclear_power_plant`)；燃油发电厂 (`oil_power_plant`)；露天陶器烧造 (`open_pottery_hearth`)；游牧营地 (`pastoral_camp`)；石油化工厂 (`petrochemicals_plant`)；河滩淘金场 (`placer_gold_working`)；塑料厂 (`plastics_plant`)；马铃薯庄园 (`potato_estate`)；升焰陶窑 (`pottery_kiln`)；综合食品厂 (`processed_food_plant`)；无线电设备厂 (`radio_equipment_works`)；铁路设备厂 (`railway_equipment_plant`)；战略金属冶炼厂 (`rare_earth_metals_plant`)；核反应堆设备厂 (`reactor_component_works`)；炼油厂 (`refined_fuel_plant`)；野生割胶营地 (`rubber_tapping_camp`)；书记学校 (`scribal_school`)；浅坑银矿作业 (`shallow_silver_working`)；分成水田 (`sharecrop_paddy`)；屠宰场 (`slaughterhouse`)；小型陷阱线 (`small_game_trapline`)；制皂工坊 (`soap_plant`)；商业香料种植园 (`spice_commercial_plantation`)；商品香料园 (`spice_managed_garden`)；不锈钢厂 (`stainless_steel_plant`)；主食厨房 (`staple_kitchen`)；狩猎营地 (`stone_age_hunting_camp`)；露天银矿 (`surface_silver_working`)；合成纤维厂 (`synthetic_fiber_plant`)；合成橡胶厂 (`synthetic_rubber_plant`)；合成纤维织造厂 (`synthetic_textile_mill`)；佃作水田 (`tenant_paddy`)；佃作马铃薯田 (`tenant_potato_field`)；佃作雨养玉米田 (`tenant_rainfed_maize_field`)；佃作雨养小麦田 (`tenant_rainfed_wheat_field`)；野生棉丛 (`wild_cotton_stand`)；野生药草采集地 (`wild_medicinal_herb_patch`)；野生香料林 (`wild_spice_grove`)；羊毛棚 (`wool_shed`)
 
 #### 结构化内容效果
 
@@ -1466,7 +1466,7 @@
 - **物资：** 科技值 (`technology_points`)
 - **建筑 / 生产方式：** 早期知识机构 (`early_knowledge_institution`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 精密工具工坊 (`precision_tool_workshop`)
 
 #### 结构化内容效果
 
@@ -5329,7 +5329,6 @@ timber -8%；作为必要支撑：块炼炉、土法炼铜炉、烧砖窑、升�
 
 - 块茎繁育 (`tech.potato_propagation`)：该知识是此产业交汇自动生效的必要条件。
 - 家庭生产 (`tech.household_production`)：该知识是此产业交汇自动生效的必要条件。
-- 雨养田体系 (`tech.rainfed_field_system`)：该知识是此产业交汇自动生效的必要条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -5890,7 +5889,7 @@ timber -8%；作为必要支撑：块炼炉、土法炼铜炉、烧砖窑、升�
 - **物资：** 铜 (`copper`)
 - **建筑 / 生产方式：** 自然铜冷锤工坊 (`natural_copper_workshop`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 青铜工具工坊 (`bronze_tool_workshop`)；浅层锡矿 (`early_tin_mine`)；土法炼锡炉 (`early_tin_smelter`)；电子元件厂 (`electronic_components_plant`)；露天青铜作坊 (`ore_bronzesmith_camp`)；无线电设备厂 (`radio_equipment_works`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 大气式蒸汽机工坊 (`atmospheric_engine_workshop`)；青铜工具工坊 (`bronze_tool_workshop`)；浅层锡矿 (`early_tin_mine`)；土法炼锡炉 (`early_tin_smelter`)；电子元件厂 (`electronic_components_plant`)；智能仪器厂 (`method_scientific_instrument_works_r10`)；智能化线材厂 (`method_wire_plant_r10`)；露天青铜作坊 (`ore_bronzesmith_camp`)；无线电设备厂 (`radio_equipment_works`)；科学仪器工坊 (`scientific_instrument_works`)
 
 #### 结构化内容效果
 
@@ -7170,7 +7169,7 @@ landform.hill.agriculture产出 +28%
 - **物资：** 无
 - **建筑 / 生产方式：** 无
 - **自然资源：** 肥沃土壤 (`fertile_soil`)；旱地承载力 (`arable_land`)
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 面包坊 (`bakery`)；酿造厂 (`beverages_plant`)；面包厂 (`bread_plant`)；酿酒坊 (`brewery`)；电力纺织厂 (`cloth_plant`)；家庭纺织坊 (`cottage_weaving`)；棉花农场 (`cotton_collector`)；家庭棉花园圃 (`cotton_garden`)；佃作棉花田 (`cotton_smallholding`)；蒸馏酒坊 (`distillery`)；菜蔬农场 (`fertile_soil_collector`)；亚麻农场 (`flax_collector`)；沤麻池 (`flax_retting_pit`)；冷凉高地块茎田 (`highland_tuber_plot`)；家庭亚麻试种圃 (`household_flax_plot`)；改良家用织机 (`improved_domestic_loom`)；改良小农场 (`improved_smallholding`)；玉米庄园 (`landed_estate`)；家庭玉米园圃 (`maize_garden`)；亚麻庄园 (`method_flax_collector_r3`)；改良轮作马铃薯庄园 (`method_potato_farm_r5`)；佃作小麦庄园 (`method_wheat_farm_r3`)；改良轮作小麦庄园 (`method_wheat_farm_r5`)；垄作马铃薯田 (`potato_collector`)；马铃薯庄园 (`potato_estate`)；综合食品厂 (`processed_food_plant`)；碎布造纸工坊 (`rag_paper_workshop`)；主食加工厂 (`staple_food_plant`)；主食厨房 (`staple_kitchen`)；自给农庄 (`subsistence_farm`)；合成纤维织造厂 (`synthetic_textile_mill`)；佃作马铃薯田 (`tenant_potato_field`)；佃作雨养玉米田 (`tenant_rainfed_maize_field`)；佃作雨养小麦田 (`tenant_rainfed_wheat_field`)；蒸汽纺织厂 (`textile_mill`)；三圃制小农场 (`three_field_smallholding`)；小麦农场 (`wheat_farm`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 面包坊 (`bakery`)；酿造厂 (`beverages_plant`)；面包厂 (`bread_plant`)；酿酒坊 (`brewery`)；电力纺织厂 (`cloth_plant`)；家庭纺织坊 (`cottage_weaving`)；棉花农场 (`cotton_collector`)；家庭棉花园圃 (`cotton_garden`)；佃作棉花田 (`cotton_smallholding`)；蒸馏酒坊 (`distillery`)；菜蔬农场 (`fertile_soil_collector`)；亚麻农场 (`flax_collector`)；沤麻池 (`flax_retting_pit`)；冷凉高地块茎田 (`highland_tuber_plot`)；家庭亚麻试种圃 (`household_flax_plot`)；改良家用织机 (`improved_domestic_loom`)；改良小农场 (`improved_smallholding`)；玉米庄园 (`landed_estate`)；家庭玉米园圃 (`maize_garden`)；机械化农场 (`mechanized_farm`)；机械化棉花农场 (`method_cotton_collector_r6`)；亚麻庄园 (`method_flax_collector_r3`)；改良亚麻庄园 (`method_flax_collector_r5`)；机械化亚麻农场 (`method_flax_collector_r6`)；机械化玉米农场 (`method_landed_estate_r6`)；机械化马铃薯农场 (`method_potato_collector_r6`)；改良轮作马铃薯庄园 (`method_potato_farm_r5`)；佃作小麦庄园 (`method_wheat_farm_r3`)；改良轮作小麦庄园 (`method_wheat_farm_r5`)；机械化小麦农场 (`method_wheat_farm_r6`)；垄作马铃薯田 (`potato_collector`)；马铃薯庄园 (`potato_estate`)；综合食品厂 (`processed_food_plant`)；碎布造纸工坊 (`rag_paper_workshop`)；主食加工厂 (`staple_food_plant`)；主食厨房 (`staple_kitchen`)；自给农庄 (`subsistence_farm`)；合成纤维织造厂 (`synthetic_textile_mill`)；佃作马铃薯田 (`tenant_potato_field`)；佃作雨养玉米田 (`tenant_rainfed_maize_field`)；佃作雨养小麦田 (`tenant_rainfed_wheat_field`)；蒸汽纺织厂 (`textile_mill`)；三圃制小农场 (`three_field_smallholding`)；小麦农场 (`wheat_farm`)
 
 #### 结构化内容效果
 
@@ -7960,7 +7959,7 @@ terrain.steppe.agriculture产出 +22%；作为必要支撑：旱作保水小麦�
 - **物资：** 日晒土坯 (`adobe_brick`)；砖块 (`bricks`)
 - **建筑 / 生产方式：** 日晒土坯场 (`adobe_yard`)；制砖厂 (`bricks_plant`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 煮盐灶 (`brine_boiling_hearth`)；畦埂水稻田 (`bunded_rice_field`)；石作工场 (`classical_masonry_yard`)；计算机厂 (`computers_plant`)；计算研究中心 (`computing_research_center`)；家庭纺织坊 (`cottage_weaving`)；棉花农场 (`cotton_collector`)；早期计算机工场 (`digital_computer_workshop`)；旱作保水小麦田 (`dryland_wheat_field`)；化肥厂 (`fertilizer_plant`)；烧砖窑 (`fired_brick_kiln`)；行会织造坊 (`guild_weaving_house`)；药材商品园 (`medicinal_herb_estate`)；森林遥感经营站 (`method_forest_remote_sensing`)；改良轮作马铃薯庄园 (`method_potato_farm_r5`)；油田 (`oil_collector`)；马铃薯庄园 (`potato_estate`)；野生割胶营地 (`rubber_tapping_camp`)；科学仪器工坊 (`scientific_instrument_works`)；分成水田 (`sharecrop_paddy`)；商业香料种植园 (`spice_commercial_plantation`)；商品香料园 (`spice_managed_garden`)；佃作水田 (`tenant_paddy`)；佃作马铃薯田 (`tenant_potato_field`)；佃作雨养玉米田 (`tenant_rainfed_maize_field`)；佃作雨养小麦田 (`tenant_rainfed_wheat_field`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 煮盐灶 (`brine_boiling_hearth`)；畦埂水稻田 (`bunded_rice_field`)；石作工场 (`classical_masonry_yard`)；公共营造场 (`classical_public_works`)；计算机厂 (`computers_plant`)；计算研究中心 (`computing_research_center`)；家庭纺织坊 (`cottage_weaving`)；棉花农场 (`cotton_collector`)；早期计算机工场 (`digital_computer_workshop`)；旱作保水小麦田 (`dryland_wheat_field`)；化肥厂 (`fertilizer_plant`)；烧砖窑 (`fired_brick_kiln`)；行会织造坊 (`guild_weaving_house`)；药材商品园 (`medicinal_herb_estate`)；森林遥感经营站 (`method_forest_remote_sensing`)；改良轮作马铃薯庄园 (`method_potato_farm_r5`)；油田 (`oil_collector`)；马铃薯庄园 (`potato_estate`)；野生割胶营地 (`rubber_tapping_camp`)；科学仪器工坊 (`scientific_instrument_works`)；分成水田 (`sharecrop_paddy`)；商业香料种植园 (`spice_commercial_plantation`)；商品香料园 (`spice_managed_garden`)；佃作水田 (`tenant_paddy`)；佃作马铃薯田 (`tenant_potato_field`)；佃作雨养玉米田 (`tenant_rainfed_maize_field`)；佃作雨养小麦田 (`tenant_rainfed_wheat_field`)
 
 #### 结构化内容效果
 
@@ -8824,7 +8823,7 @@ terrain.floodplain.agriculture产出 +12%；作为必要支撑：畦埂水稻田
 - **物资：** 无
 - **建筑 / 生产方式：** 无
 - **自然资源：** 水田承载力 (`paddy_land`)
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 佃作稻庄 (`method_rice_collector_r3`)；机械化稻作农场 (`method_rice_collector_r6`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 自动化稻作农场 (`method_rice_collector_r10`)；佃作稻庄 (`method_rice_collector_r3`)；机械化稻作农场 (`method_rice_collector_r6`)；精准稻作农场 (`method_rice_collector_r8`)
 
 #### 结构化内容效果
 
@@ -12315,6 +12314,7 @@ landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +2
 
 - 盐渍保存 (`tech.salt_preservation`)：该知识是此产业交汇自动生效的必要条件。
 - 日晒土坯 (`tech.adobe_making`)：该知识是此产业交汇自动生效的必要条件。
+- 枯枝采集 (`tech.deadwood_collection`)：该知识是此产业交汇自动生效的必要条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -12760,7 +12760,7 @@ landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +2
 - **物资：** 石灰 (`lime`)
 - **建筑 / 生产方式：** 石灰厂 (`lime_plant`)
 - **自然资源：** 石灰岩 (`limestone`)
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 电解铝厂 (`aluminum_plant`)；汽车厂 (`automobiles_plant`)；自主控制系统厂 (`autonomous_systems_plant`)；电池厂 (`batteries_plant`)；酿造厂 (`beverages_plant`)；水泥厂 (`cement_plant`)；石作工场 (`classical_masonry_yard`)；公共营造场 (`classical_public_works`)；电力纺织厂 (`cloth_plant`)；煤层平硐 (`coal_adit`)；混凝土厂 (`concrete_plant`)；建筑构件厂 (`construction_components_plant`)；洗涤剂厂 (`detergent_plant`)；电动机厂 (`electric_motor_plant`)；电气设备厂 (`electrical_equipment_plant`)；电化工厂 (`electrochemical_works`)；电子元件厂 (`electronic_components_plant`)；发动机厂 (`engines_plant`)；高级成衣厂 (`fine_clothing_plant`)；高级家具厂 (`fine_furniture_plant`)；燃气发电厂 (`gas_power_plant`)；家用电器厂 (`household_appliances_plant`)；河流水力发电站 (`hydropower_station`)；绝缘电缆厂 (`insulated_cable_plant`)；珠宝厂 (`jewelry_plant`)；石灰石采石场 (`limestone_collector`)；锰矿 (`manganese_ore_collector`)；智能化汽车厂 (`method_automobiles_plant_r10`)；自动化焦化厂 (`method_coke_ovens_r9`)；自动化混凝土厂 (`method_concrete_plant_r9`)；智能化洗涤剂厂 (`method_detergent_plant_r10`)；智能化电子元件厂 (`method_electronic_components_plant_r10`)；智能化发动机厂 (`method_engines_plant_r10`)；自动化炸药厂 (`method_explosives_plant_r10`)；现代炸药厂 (`method_explosives_plant_r8`)；智能化家用电器厂 (`method_household_appliances_plant_r10`)；工业石灰厂 (`method_lime_plant_r6`)；智能锰矿 (`method_manganese_ore_collector_r10`)；受控环境药材农场 (`method_medicinal_herbs_collector_r7`)；智能天然气田 (`method_natural_gas_collector_r10`)；智能化核燃料厂 (`method_nuclear_fuel_plant_r10`)；电气化造船厂 (`method_oceanic_shipyard_r7`)；电气化包装厂 (`method_packaging_plant_r7`)；智能石油化工厂 (`method_petrochemicals_plant_r10`)；智能化塑料厂 (`method_plastics_plant_r10`)；智能工具厂 (`method_precision_tool_workshop_r10`)；精密工具厂 (`method_precision_tool_workshop_r8`)；电气印刷厂 (`method_printed_materials_plant_r7`)；智能化无线电设备厂 (`method_radio_equipment_works_r10`)；智能战略矿山 (`method_rare_earth_collector_r10`)；智能战略金属冶炼厂 (`method_rare_earth_metals_plant_r10`)；智能化核反应堆设备厂 (`method_reactor_component_works_r10`)；智能炼油厂 (`method_refined_fuel_plant_r10`)；智能硝石矿 (`method_saltpeter_collector_r10`)；现代硝石矿 (`method_saltpeter_collector_r8`)；精密仪器厂 (`method_scientific_instrument_works_r8`)；石料场 (`method_stone_collector_r2`)；现代硫矿 (`method_sulfur_collector_r8`)；智能化合成纤维厂 (`method_synthetic_fiber_plant_r10`)；智能化合成橡胶厂 (`method_synthetic_rubber_plant_r10`)；天然气田 (`natural_gas_collector`)；核燃料厂 (`nuclear_fuel_plant`)；核医学制药中心 (`nuclear_medicine_center`)；核电站 (`nuclear_power_plant`)；燃油发电厂 (`oil_power_plant`)；石油化工厂 (`petrochemicals_plant`)；塑料厂 (`plastics_plant`)；综合食品厂 (`processed_food_plant`)；无线电设备厂 (`radio_equipment_works`)；铁路设备厂 (`railway_equipment_plant`)；战略金属冶炼厂 (`rare_earth_metals_plant`)；核反应堆设备厂 (`reactor_component_works`)；炼油厂 (`refined_fuel_plant`)；不锈钢厂 (`stainless_steel_plant`)；合成纤维厂 (`synthetic_fiber_plant`)；合成橡胶厂 (`synthetic_rubber_plant`)；合成纤维织造厂 (`synthetic_textile_mill`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 电解铝厂 (`aluminum_plant`)；汽车厂 (`automobiles_plant`)；自主控制系统厂 (`autonomous_systems_plant`)；电池厂 (`batteries_plant`)；酿造厂 (`beverages_plant`)；水泥厂 (`cement_plant`)；石作工场 (`classical_masonry_yard`)；公共营造场 (`classical_public_works`)；电力纺织厂 (`cloth_plant`)；煤层平硐 (`coal_adit`)；混凝土厂 (`concrete_plant`)；建筑构件厂 (`construction_components_plant`)；洗涤剂厂 (`detergent_plant`)；电动机厂 (`electric_motor_plant`)；电气设备厂 (`electrical_equipment_plant`)；电化工厂 (`electrochemical_works`)；电子元件厂 (`electronic_components_plant`)；发动机厂 (`engines_plant`)；高级成衣厂 (`fine_clothing_plant`)；高级家具厂 (`fine_furniture_plant`)；燃气发电厂 (`gas_power_plant`)；家用电器厂 (`household_appliances_plant`)；河流水力发电站 (`hydropower_station`)；绝缘电缆厂 (`insulated_cable_plant`)；珠宝厂 (`jewelry_plant`)；石灰石采石场 (`limestone_collector`)；锰矿 (`manganese_ore_collector`)；智能化汽车厂 (`method_automobiles_plant_r10`)；自动化焦化厂 (`method_coke_ovens_r9`)；自动化混凝土厂 (`method_concrete_plant_r9`)；智能化洗涤剂厂 (`method_detergent_plant_r10`)；智能化电子元件厂 (`method_electronic_components_plant_r10`)；智能化发动机厂 (`method_engines_plant_r10`)；自动化炸药厂 (`method_explosives_plant_r10`)；现代炸药厂 (`method_explosives_plant_r8`)；智能化家用电器厂 (`method_household_appliances_plant_r10`)；工业石灰厂 (`method_lime_plant_r6`)；工业石灰岩矿场 (`method_limestone_collector_r6`)；智能锰矿 (`method_manganese_ore_collector_r10`)；受控环境药材农场 (`method_medicinal_herbs_collector_r7`)；智能天然气田 (`method_natural_gas_collector_r10`)；智能化核燃料厂 (`method_nuclear_fuel_plant_r10`)；电气化造船厂 (`method_oceanic_shipyard_r7`)；电气化包装厂 (`method_packaging_plant_r7`)；智能石油化工厂 (`method_petrochemicals_plant_r10`)；智能化塑料厂 (`method_plastics_plant_r10`)；智能工具厂 (`method_precision_tool_workshop_r10`)；精密工具厂 (`method_precision_tool_workshop_r8`)；电气印刷厂 (`method_printed_materials_plant_r7`)；智能化无线电设备厂 (`method_radio_equipment_works_r10`)；智能战略矿山 (`method_rare_earth_collector_r10`)；智能战略金属冶炼厂 (`method_rare_earth_metals_plant_r10`)；智能化核反应堆设备厂 (`method_reactor_component_works_r10`)；智能炼油厂 (`method_refined_fuel_plant_r10`)；智能硝石矿 (`method_saltpeter_collector_r10`)；现代硝石矿 (`method_saltpeter_collector_r8`)；精密仪器厂 (`method_scientific_instrument_works_r8`)；石料场 (`method_stone_collector_r2`)；现代硫矿 (`method_sulfur_collector_r8`)；智能化合成纤维厂 (`method_synthetic_fiber_plant_r10`)；智能化合成橡胶厂 (`method_synthetic_rubber_plant_r10`)；天然气田 (`natural_gas_collector`)；核燃料厂 (`nuclear_fuel_plant`)；核医学制药中心 (`nuclear_medicine_center`)；核电站 (`nuclear_power_plant`)；燃油发电厂 (`oil_power_plant`)；石油化工厂 (`petrochemicals_plant`)；塑料厂 (`plastics_plant`)；综合食品厂 (`processed_food_plant`)；无线电设备厂 (`radio_equipment_works`)；铁路设备厂 (`railway_equipment_plant`)；战略金属冶炼厂 (`rare_earth_metals_plant`)；核反应堆设备厂 (`reactor_component_works`)；炼油厂 (`refined_fuel_plant`)；不锈钢厂 (`stainless_steel_plant`)；合成纤维厂 (`synthetic_fiber_plant`)；合成橡胶厂 (`synthetic_rubber_plant`)；合成纤维织造厂 (`synthetic_textile_mill`)
 
 #### 结构化内容效果
 
@@ -13251,7 +13251,7 @@ landform.plateau.agriculture产出 +32%；landform.mountain.agriculture产出 +2
 - **物资：** 食用油 (`edible_oil`)；肥料 (`fertilizer`)
 - **建筑 / 生产方式：** 堆肥场 (`composting_yard`)；榨油坊 (`edible_oil_plant`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 农业机械厂 (`agricultural_machinery_plant`)；电解铝厂 (`aluminum_plant`)；汽车厂 (`automobiles_plant`)；自主控制系统厂 (`autonomous_systems_plant`)；电池厂 (`batteries_plant`)；酿造厂 (`beverages_plant`)；电力纺织厂 (`cloth_plant`)；洗涤剂厂 (`detergent_plant`)；电动机厂 (`electric_motor_plant`)；电气设备厂 (`electrical_equipment_plant`)；电化工厂 (`electrochemical_works`)；电子元件厂 (`electronic_components_plant`)；发动机厂 (`engines_plant`)；高级成衣厂 (`fine_clothing_plant`)；高级家具厂 (`fine_furniture_plant`)；燃气发电厂 (`gas_power_plant`)；家用电器厂 (`household_appliances_plant`)；工业机械厂 (`industrial_machinery_plant`)；绝缘电缆厂 (`insulated_cable_plant`)；珠宝厂 (`jewelry_plant`)；机械零件厂 (`machine_parts_plant`)；机械化农场 (`mechanized_farm`)；工业屠宰场 (`mechanized_slaughterhouse`)；智能化汽车厂 (`method_automobiles_plant_r10`)；工业砖厂 (`method_bricks_plant_r6`)；机械化棉花农场 (`method_cotton_collector_r6`)；智能化洗涤剂厂 (`method_detergent_plant_r10`)；工业榨油厂 (`method_edible_oil_plant_r6`)；智能化电子元件厂 (`method_electronic_components_plant_r10`)；智能化发动机厂 (`method_engines_plant_r10`)；自动化炸药厂 (`method_explosives_plant_r10`)；现代炸药厂 (`method_explosives_plant_r8`)；机械化亚麻农场 (`method_flax_collector_r6`)；智能化家用电器厂 (`method_household_appliances_plant_r10`)；机械化玉米农场 (`method_landed_estate_r6`)；工业石灰厂 (`method_lime_plant_r6`)；工业石灰岩矿场 (`method_limestone_collector_r6`)；智能锰矿 (`method_manganese_ore_collector_r10`)；受控环境药材农场 (`method_medicinal_herbs_collector_r7`)；智能天然气田 (`method_natural_gas_collector_r10`)；智能化核燃料厂 (`method_nuclear_fuel_plant_r10`)；电气化造船厂 (`method_oceanic_shipyard_r7`)；电气化包装厂 (`method_packaging_plant_r7`)；智能石油化工厂 (`method_petrochemicals_plant_r10`)；智能化塑料厂 (`method_plastics_plant_r10`)；机械化马铃薯农场 (`method_potato_collector_r6`)；智能工具厂 (`method_precision_tool_workshop_r10`)；精密工具厂 (`method_precision_tool_workshop_r8`)；电气印刷厂 (`method_printed_materials_plant_r7`)；智能化无线电设备厂 (`method_radio_equipment_works_r10`)；智能战略矿山 (`method_rare_earth_collector_r10`)；智能战略金属冶炼厂 (`method_rare_earth_metals_plant_r10`)；智能化核反应堆设备厂 (`method_reactor_component_works_r10`)；智能炼油厂 (`method_refined_fuel_plant_r10`)；机械化稻作农场 (`method_rice_collector_r6`)；机械化橡胶种植园 (`method_rubber_tree_collector_r6`)；智能硝石矿 (`method_saltpeter_collector_r10`)；现代硝石矿 (`method_saltpeter_collector_r8`)；精密仪器厂 (`method_scientific_instrument_works_r8`)；智能牧业站 (`method_smart_husbandry`)；工业制皂厂 (`method_soap_plant_r6`)；机械化香料种植园 (`method_spice_plants_collector_r6`)；商业狩猎与毛皮站 (`method_stone_age_hunting_camp_r4`)；现代硫矿 (`method_sulfur_collector_r8`)；智能化合成纤维厂 (`method_synthetic_fiber_plant_r10`)；智能化合成橡胶厂 (`method_synthetic_rubber_plant_r10`)；机械化小麦农场 (`method_wheat_farm_r6`)；天然气田 (`natural_gas_collector`)；核燃料厂 (`nuclear_fuel_plant`)；核医学制药中心 (`nuclear_medicine_center`)；核电站 (`nuclear_power_plant`)；燃油发电厂 (`oil_power_plant`)；石油化工厂 (`petrochemicals_plant`)；塑料厂 (`plastics_plant`)；综合食品厂 (`processed_food_plant`)；无线电设备厂 (`radio_equipment_works`)；铁路设备厂 (`railway_equipment_plant`)；机械化牧场 (`ranching_station`)；炼油厂 (`refined_fuel_plant`)；制皂工坊 (`soap_plant`)；电弧炉炼钢厂 (`steel_plant`)；合成纤维厂 (`synthetic_fiber_plant`)；合成橡胶厂 (`synthetic_rubber_plant`)；合成纤维织造厂 (`synthetic_textile_mill`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 农业机械厂 (`agricultural_machinery_plant`)；电解铝厂 (`aluminum_plant`)；汽车厂 (`automobiles_plant`)；自主控制系统厂 (`autonomous_systems_plant`)；电池厂 (`batteries_plant`)；酿造厂 (`beverages_plant`)；电力纺织厂 (`cloth_plant`)；洗涤剂厂 (`detergent_plant`)；电动机厂 (`electric_motor_plant`)；电气设备厂 (`electrical_equipment_plant`)；电化工厂 (`electrochemical_works`)；电子元件厂 (`electronic_components_plant`)；发动机厂 (`engines_plant`)；高级成衣厂 (`fine_clothing_plant`)；高级家具厂 (`fine_furniture_plant`)；燃气发电厂 (`gas_power_plant`)；家用电器厂 (`household_appliances_plant`)；工业机械厂 (`industrial_machinery_plant`)；绝缘电缆厂 (`insulated_cable_plant`)；珠宝厂 (`jewelry_plant`)；机械零件厂 (`machine_parts_plant`)；机械化农场 (`mechanized_farm`)；工业屠宰场 (`mechanized_slaughterhouse`)；智能化汽车厂 (`method_automobiles_plant_r10`)；工业砖厂 (`method_bricks_plant_r6`)；机械化棉花农场 (`method_cotton_collector_r6`)；智能化洗涤剂厂 (`method_detergent_plant_r10`)；工业榨油厂 (`method_edible_oil_plant_r6`)；智能化电子元件厂 (`method_electronic_components_plant_r10`)；智能化发动机厂 (`method_engines_plant_r10`)；自动化炸药厂 (`method_explosives_plant_r10`)；现代炸药厂 (`method_explosives_plant_r8`)；机械化亚麻农场 (`method_flax_collector_r6`)；智能化家用电器厂 (`method_household_appliances_plant_r10`)；机械化玉米农场 (`method_landed_estate_r6`)；工业石灰厂 (`method_lime_plant_r6`)；工业石灰岩矿场 (`method_limestone_collector_r6`)；智能锰矿 (`method_manganese_ore_collector_r10`)；受控环境药材农场 (`method_medicinal_herbs_collector_r7`)；智能天然气田 (`method_natural_gas_collector_r10`)；智能化核燃料厂 (`method_nuclear_fuel_plant_r10`)；电气化造船厂 (`method_oceanic_shipyard_r7`)；电气化包装厂 (`method_packaging_plant_r7`)；智能石油化工厂 (`method_petrochemicals_plant_r10`)；智能化塑料厂 (`method_plastics_plant_r10`)；机械化马铃薯农场 (`method_potato_collector_r6`)；智能工具厂 (`method_precision_tool_workshop_r10`)；精密工具厂 (`method_precision_tool_workshop_r8`)；电气印刷厂 (`method_printed_materials_plant_r7`)；智能化无线电设备厂 (`method_radio_equipment_works_r10`)；智能战略矿山 (`method_rare_earth_collector_r10`)；智能战略金属冶炼厂 (`method_rare_earth_metals_plant_r10`)；智能化核反应堆设备厂 (`method_reactor_component_works_r10`)；智能炼油厂 (`method_refined_fuel_plant_r10`)；机械化稻作农场 (`method_rice_collector_r6`)；机械化橡胶种植园 (`method_rubber_tree_collector_r6`)；智能硝石矿 (`method_saltpeter_collector_r10`)；现代硝石矿 (`method_saltpeter_collector_r8`)；精密仪器厂 (`method_scientific_instrument_works_r8`)；智能牧业站 (`method_smart_husbandry`)；工业制皂厂 (`method_soap_plant_r6`)；专用商品作物种植园 (`method_specialty_commodity_plantation`)；机械化香料种植园 (`method_spice_plants_collector_r6`)；商业狩猎与毛皮站 (`method_stone_age_hunting_camp_r4`)；现代硫矿 (`method_sulfur_collector_r8`)；智能化合成纤维厂 (`method_synthetic_fiber_plant_r10`)；智能化合成橡胶厂 (`method_synthetic_rubber_plant_r10`)；机械化小麦农场 (`method_wheat_farm_r6`)；天然气田 (`natural_gas_collector`)；核燃料厂 (`nuclear_fuel_plant`)；核医学制药中心 (`nuclear_medicine_center`)；核电站 (`nuclear_power_plant`)；燃油发电厂 (`oil_power_plant`)；石油化工厂 (`petrochemicals_plant`)；塑料厂 (`plastics_plant`)；综合食品厂 (`processed_food_plant`)；无线电设备厂 (`radio_equipment_works`)；铁路设备厂 (`railway_equipment_plant`)；机械化牧场 (`ranching_station`)；炼油厂 (`refined_fuel_plant`)；制皂工坊 (`soap_plant`)；电弧炉炼钢厂 (`steel_plant`)；合成纤维厂 (`synthetic_fiber_plant`)；合成橡胶厂 (`synthetic_rubber_plant`)；合成纤维织造厂 (`synthetic_textile_mill`)
 
 #### 结构化内容效果
 
@@ -14288,7 +14288,7 @@ pharmaceuticals产出 +12%
 - **物资：** 无
 - **建筑 / 生产方式：** 无
 - **自然资源：** 铁矿 (`iron_ore`)
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 浅层铁矿 (`early_iron_mine`)；蒸汽动力铁矿 (`steam_iron_mine`)
 
 #### 结构化内容效果
 
@@ -14853,6 +14853,75 @@ iron\_extraction产出 +12%；作为必要支撑：浅层铁矿
 
 - **物资：** 无
 - **建筑 / 生产方式：** 商栈 (`merchant_post`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 商业狩猎与毛皮站 (`app.method_stone_age_hunting_camp_r4`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `app.method_stone_age_hunting_camp_r4` |
+| 时代 | 王国时代 (`kingdom`) |
+| 领域 | 社会 (`society`) |
+| 生效方式 | 所需科技全部完成后立即自动应用；无研究成本、队列或进度 |
+| 节点标记 | 零成本自动应用 |
+| 网络角色 | application |
+| 锚点类型 | application\_intersection |
+| 节点角色 | automatic\_application |
+| 布局路线 | 无 |
+| 主要路线 | 无 |
+| 全部路线 | 无 |
+| 开局能力标签 | 无 |
+| 效果配置 | 无 |
+
+#### 所需科技（ALL，决定自动应用）
+
+- 动物追踪 (`tech.animal_tracking`)：该知识是此产业交汇自动生效的必要条件。
+- 轮作 (`tech.crop_rotation`)：该知识是此产业交汇自动生效的必要条件。
+- 毛皮缝制 (`tech.fur_sewing`)：该知识是此产业交汇自动生效的必要条件。
+- 手工锯木 (`tech.timber_sawing`)：该知识是此产业交汇自动生效的必要条件。
+- 磨制石器 (`tech.ground_stone_tools`)：该知识是此产业交汇自动生效的必要条件。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+全部所需科技完成后自动应用；不进入研究队列、进度、Modifier 或存档。
+
+#### 机会成本
+
+无需研究点。
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 商业狩猎与毛皮站 (`method_stone_age_hunting_camp_r4`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
@@ -16870,75 +16939,6 @@ iron\_extraction产出 +12%；作为必要支撑：浅层铁矿
 
 - **物资：** 无
 - **建筑 / 生产方式：** 药材商品园 (`medicinal_herb_estate`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-无
-
-#### 永久 Modifier 条款
-
-无
-
-#### 被以下科技作为硬前置
-
-无
-
-#### 主题路线后继
-
-无
-
-#### 跨领域应用
-
-无
-
-#### 作为候选参与的里程碑
-
-无
-
-### 商业狩猎与毛皮站 (`app.method_stone_age_hunting_camp_r4`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `app.method_stone_age_hunting_camp_r4` |
-| 时代 | 王国时代 (`kingdom`) |
-| 领域 | 社会 (`society`) |
-| 生效方式 | 所需科技全部完成后立即自动应用；无研究成本、队列或进度 |
-| 节点标记 | 零成本自动应用 |
-| 网络角色 | application |
-| 锚点类型 | application\_intersection |
-| 节点角色 | automatic\_application |
-| 布局路线 | 无 |
-| 主要路线 | 无 |
-| 全部路线 | 无 |
-| 开局能力标签 | 无 |
-| 效果配置 | 无 |
-
-#### 所需科技（ALL，决定自动应用）
-
-- 动物追踪 (`tech.animal_tracking`)：该知识是此产业交汇自动生效的必要条件。
-- 轮作 (`tech.crop_rotation`)：该知识是此产业交汇自动生效的必要条件。
-- 毛皮缝制 (`tech.fur_sewing`)：该知识是此产业交汇自动生效的必要条件。
-- 手工锯木 (`tech.timber_sawing`)：该知识是此产业交汇自动生效的必要条件。
-- 磨制石器 (`tech.ground_stone_tools`)：该知识是此产业交汇自动生效的必要条件。
-
-#### 发现启发（仅用于揭示）
-
-无
-
-#### 效果摘要
-
-全部所需科技完成后自动应用；不进入研究队列、进度、Modifier 或存档。
-
-#### 机会成本
-
-无需研究点。
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 商业狩猎与毛皮站 (`method_stone_age_hunting_camp_r4`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
@@ -22409,6 +22409,75 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 无
 
+### 炸药厂 (`app.explosives_plant`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `app.explosives_plant` |
+| 时代 | 探索时代 (`exploration`) |
+| 领域 | 工程 (`engineering`) |
+| 生效方式 | 所需科技全部完成后立即自动应用；无研究成本、队列或进度 |
+| 节点标记 | 零成本自动应用 |
+| 网络角色 | application |
+| 锚点类型 | application\_intersection |
+| 节点角色 | automatic\_application |
+| 布局路线 | 无 |
+| 主要路线 | 无 |
+| 全部路线 | 无 |
+| 开局能力标签 | 无 |
+| 效果配置 | 无 |
+
+#### 所需科技（ALL，决定自动应用）
+
+- 火药武器 (`tech.gunpowder_weapons`)：该知识是此产业交汇自动生效的必要条件。
+- 手工锯木 (`tech.timber_sawing`)：该知识是此产业交汇自动生效的必要条件。
+- 磨制石器 (`tech.ground_stone_tools`)：该知识是此产业交汇自动生效的必要条件。
+- 火药配制 (`tech.gunpowder_formulation`)：该知识是此产业交汇自动生效的必要条件。
+- 自然观察 (`tech.natural_observation`)：该知识是此产业交汇自动生效的必要条件。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+全部所需科技完成后自动应用；不进入研究队列、进度、Modifier 或存档。
+
+#### 机会成本
+
+无需研究点。
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 炸药厂 (`explosives_plant`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
 ### 玻璃器皿工场 (`app.glassware_manufactory_exploration`)
 
 | 字段 | 内容 |
@@ -22585,75 +22654,6 @@ geospatial\_analysis\_institution产出 +12%；作为必要支撑：地籍管理
 
 - **物资：** 无
 - **建筑 / 生产方式：** 皮革制品工场 (`leather_goods_manufactory`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-无
-
-#### 永久 Modifier 条款
-
-无
-
-#### 被以下科技作为硬前置
-
-无
-
-#### 主题路线后继
-
-无
-
-#### 跨领域应用
-
-无
-
-#### 作为候选参与的里程碑
-
-无
-
-### 炸药厂 (`app.explosives_plant`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `app.explosives_plant` |
-| 时代 | 探索时代 (`exploration`) |
-| 领域 | 工程 (`engineering`) |
-| 生效方式 | 所需科技全部完成后立即自动应用；无研究成本、队列或进度 |
-| 节点标记 | 零成本自动应用 |
-| 网络角色 | application |
-| 锚点类型 | application\_intersection |
-| 节点角色 | automatic\_application |
-| 布局路线 | 无 |
-| 主要路线 | 无 |
-| 全部路线 | 无 |
-| 开局能力标签 | 无 |
-| 效果配置 | 无 |
-
-#### 所需科技（ALL，决定自动应用）
-
-- 火药武器 (`tech.gunpowder_weapons`)：该知识是此产业交汇自动生效的必要条件。
-- 手工锯木 (`tech.timber_sawing`)：该知识是此产业交汇自动生效的必要条件。
-- 磨制石器 (`tech.ground_stone_tools`)：该知识是此产业交汇自动生效的必要条件。
-- 火药配制 (`tech.gunpowder_formulation`)：该知识是此产业交汇自动生效的必要条件。
-- 自然观察 (`tech.natural_observation`)：该知识是此产业交汇自动生效的必要条件。
-
-#### 发现启发（仅用于揭示）
-
-无
-
-#### 效果摘要
-
-全部所需科技完成后自动应用；不进入研究队列、进度、Modifier 或存档。
-
-#### 机会成本
-
-无需研究点。
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 炸药厂 (`explosives_plant`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
@@ -25834,6 +25834,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 - 枯枝采集 (`tech.deadwood_collection`)：该知识是此产业交汇自动生效的必要条件。
 - 运河工程 (`tech.canal_engineering`)：该知识是此产业交汇自动生效的必要条件。
 - 铜锡配比与铸造 (`tech.bronze_casting`)：该知识是此产业交汇自动生效的必要条件。
+- 日晒土坯 (`tech.adobe_making`)：该知识是此产业交汇自动生效的必要条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -26449,6 +26450,7 @@ terrain.badlands.extractive产出 +18%；landform.plateau.extractive产出 +18%�
 - 磨制石器 (`tech.ground_stone_tools`)：该知识是此产业交汇自动生效的必要条件。
 - 地表煤利用 (`tech.surface_coal_use`)：该知识是此产业交汇自动生效的必要条件。
 - 块炼铁 (`tech.iron_smelting`)：该知识是此产业交汇自动生效的必要条件。
+- 自然铜冷锤 (`tech.natural_copper_working`)：该知识是此产业交汇自动生效的必要条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -28477,6 +28479,7 @@ timber -8%；煤 +5%；泰加林采掘产出 +16%
 - 轮作 (`tech.crop_rotation`)：该知识是此产业交汇自动生效的必要条件。
 - 机械工坊 (`tech.mechanical_workshops`)：该知识是此产业交汇自动生效的必要条件。
 - 游牧放牧 (`tech.pastoralism`)：该知识是此产业交汇自动生效的必要条件。
+- 畜群管理 (`tech.herd_management`)：该知识是此产业交汇自动生效的必要条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -29395,6 +29398,7 @@ timber -8%；煤 +5%；泰加林采掘产出 +16%
 - 磨制石器 (`tech.ground_stone_tools`)：该知识是此产业交汇自动生效的必要条件。
 - 高炉冶炼 (`tech.blast_furnace`)：该知识是此产业交汇自动生效的必要条件。
 - 焦炭冶炼 (`tech.coke_smelting`)：该知识是此产业交汇自动生效的必要条件。
+- 铁矿辨识 (`tech.iron_ore_identification`)：该知识是此产业交汇自动生效的必要条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -30598,6 +30602,7 @@ timber -8%；煤 +5%；泰加林采掘产出 +16%
 - 系统育种 (`tech.crop_breeding`)：该知识是此产业交汇自动生效的必要条件。
 - 手工锯木 (`tech.timber_sawing`)：该知识是此产业交汇自动生效的必要条件。
 - 磨制石器 (`tech.ground_stone_tools`)：该知识是此产业交汇自动生效的必要条件。
+- 雨养田体系 (`tech.rainfed_field_system`)：该知识是此产业交汇自动生效的必要条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -31056,14 +31061,18 @@ timber -8%；煤 +5%；泰加林采掘产出 +16%
 - **物资：** 电池 (`batteries`)；工业化学品 (`industrial_chemicals`)；铅 (`lead`)；锌 (`zinc`)
 - **建筑 / 生产方式：** 电池厂 (`batteries_plant`)；电化工厂 (`electrochemical_works`)；炼铅厂 (`lead_plant`)；炼锌厂 (`zinc_plant`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 高端芯片厂 (`advanced_chip_fab`)；汽车厂 (`automobiles_plant`)；自主控制系统厂 (`autonomous_systems_plant`)；洗涤剂厂 (`detergent_plant`)；智能化汽车厂 (`method_automobiles_plant_r10`)；智能化电池厂 (`method_batteries_plant_r10`)；智能化洗涤剂厂 (`method_detergent_plant_r10`)；智能化电子元件厂 (`method_electronic_components_plant_r10`)；智能化发动机厂 (`method_engines_plant_r10`)；自动化炸药厂 (`method_explosives_plant_r10`)；智能化家用电器厂 (`method_household_appliances_plant_r10`)；智能锰矿 (`method_manganese_ore_collector_r10`)；智能天然气田 (`method_natural_gas_collector_r10`)；智能化核燃料厂 (`method_nuclear_fuel_plant_r10`)；智能石油化工厂 (`method_petrochemicals_plant_r10`)；智能化塑料厂 (`method_plastics_plant_r10`)；智能工具厂 (`method_precision_tool_workshop_r10`)；智能化无线电设备厂 (`method_radio_equipment_works_r10`)；智能战略矿山 (`method_rare_earth_collector_r10`)；智能战略金属冶炼厂 (`method_rare_earth_metals_plant_r10`)；智能化核反应堆设备厂 (`method_reactor_component_works_r10`)；智能炼油厂 (`method_refined_fuel_plant_r10`)；智能硝石矿 (`method_saltpeter_collector_r10`)；智能化合成纤维厂 (`method_synthetic_fiber_plant_r10`)；智能化合成橡胶厂 (`method_synthetic_rubber_plant_r10`)；自动化炼锌厂 (`method_zinc_plant_r9`)；通信设备厂 (`telecom_equipment_plant`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 高端芯片厂 (`advanced_chip_fab`)；汽车厂 (`automobiles_plant`)；自主控制系统厂 (`autonomous_systems_plant`)；洗涤剂厂 (`detergent_plant`)；电子元件厂 (`electronic_components_plant`)；智能化汽车厂 (`method_automobiles_plant_r10`)；智能化电池厂 (`method_batteries_plant_r10`)；智能化洗涤剂厂 (`method_detergent_plant_r10`)；智能化电子元件厂 (`method_electronic_components_plant_r10`)；智能化发动机厂 (`method_engines_plant_r10`)；自动化炸药厂 (`method_explosives_plant_r10`)；智能化家用电器厂 (`method_household_appliances_plant_r10`)；智能锰矿 (`method_manganese_ore_collector_r10`)；智能天然气田 (`method_natural_gas_collector_r10`)；智能化核燃料厂 (`method_nuclear_fuel_plant_r10`)；智能石油化工厂 (`method_petrochemicals_plant_r10`)；智能化塑料厂 (`method_plastics_plant_r10`)；智能工具厂 (`method_precision_tool_workshop_r10`)；智能化无线电设备厂 (`method_radio_equipment_works_r10`)；智能战略矿山 (`method_rare_earth_collector_r10`)；智能战略金属冶炼厂 (`method_rare_earth_metals_plant_r10`)；智能化核反应堆设备厂 (`method_reactor_component_works_r10`)；智能炼油厂 (`method_refined_fuel_plant_r10`)；智能硝石矿 (`method_saltpeter_collector_r10`)；智能化合成纤维厂 (`method_synthetic_fiber_plant_r10`)；智能化合成橡胶厂 (`method_synthetic_rubber_plant_r10`)；自动化炼锌厂 (`method_zinc_plant_r9`)；通信设备厂 (`telecom_equipment_plant`)
 
 #### 结构化内容效果
 
 - **电池厂**（`building`）：`building.batteries_plant` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
 - **电化工厂**（`building`）：`building.electrochemical_works` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
+- **炼铅厂**（`building`）：`building.lead_plant` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
+- **炼锌厂**（`building`）：`building.zinc_plant` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
 - **电池**（`good`）：`good.batteries` → `production_access` `unlock` `1.0`；`catalog_rebind`
 - **工业化学品**（`good`）：`good.industrial_chemicals` → `production_access` `unlock` `1.0`；`catalog_rebind`
+- **铅**（`good`）：`good.lead` → `production_access` `unlock` `1.0`；`catalog_rebind`
+- **锌**（`good`）：`good.zinc` → `production_access` `unlock` `1.0`；`catalog_rebind`
 
 #### 永久 Modifier 条款
 
@@ -32657,6 +32666,7 @@ oil -10%
 - 地表煤采集 (`tech.surface_coal_collection`)：该知识是此产业交汇自动生效的必要条件。
 - 露头煤辨识 (`tech.coal_outcrop_identification`)：该知识是此产业交汇自动生效的必要条件。
 - 地表煤利用 (`tech.surface_coal_use`)：该知识是此产业交汇自动生效的必要条件。
+- 雨养田体系 (`tech.rainfed_field_system`)：该知识是此产业交汇自动生效的必要条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -33855,6 +33865,87 @@ oil -10%
 
 无
 
+### 电弧炉炼钢厂 (`app.steel_plant`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `app.steel_plant` |
+| 时代 | 电气时代 (`electrical`) |
+| 领域 | 工程 (`engineering`) |
+| 生效方式 | 所需科技全部完成后立即自动应用；无研究成本、队列或进度 |
+| 节点标记 | 零成本自动应用 |
+| 网络角色 | application |
+| 锚点类型 | application\_intersection |
+| 节点角色 | automatic\_application |
+| 布局路线 | 无 |
+| 主要路线 | 无 |
+| 全部路线 | 无 |
+| 开局能力标签 | 无 |
+| 效果配置 | 无 |
+
+#### 所需科技（ALL，决定自动应用）
+
+- 焦炭冶炼 (`tech.coke_smelting`)：该知识是此产业交汇自动生效的必要条件。
+- 发电机 (`tech.electric_generation`)：该知识是此产业交汇自动生效的必要条件。
+- 大气式蒸汽机 (`tech.atmospheric_engine`)：该知识是此产业交汇自动生效的必要条件。
+- 地表煤采集 (`tech.surface_coal_collection`)：该知识是此产业交汇自动生效的必要条件。
+- 露头煤辨识 (`tech.coal_outcrop_identification`)：该知识是此产业交汇自动生效的必要条件。
+- 磨制石器 (`tech.ground_stone_tools`)：该知识是此产业交汇自动生效的必要条件。
+- 地表煤利用 (`tech.surface_coal_use`)：该知识是此产业交汇自动生效的必要条件。
+- 工厂制 (`tech.factory_system`)：该知识是此产业交汇自动生效的必要条件。
+- 机床 (`tech.machine_tools`)：该知识是此产业交汇自动生效的必要条件。
+- 手工锯木 (`tech.timber_sawing`)：该知识是此产业交汇自动生效的必要条件。
+- 高炉冶炼 (`tech.blast_furnace`)：该知识是此产业交汇自动生效的必要条件。
+- 地表铁矿采集 (`tech.surface_iron_collection`)：该知识是此产业交汇自动生效的必要条件。
+- 大规模生产 (`tech.mass_production`)：该知识是此产业交汇自动生效的必要条件。
+- 机械工坊 (`tech.mechanical_workshops`)：该知识是此产业交汇自动生效的必要条件。
+- 轮作 (`tech.crop_rotation`)：该知识是此产业交汇自动生效的必要条件。
+- 雨养玉米田 (`tech.rainfed_maize_cultivation`)：该知识是此产业交汇自动生效的必要条件。
+- 铁路物流 (`tech.rail_logistics`)：该知识是此产业交汇自动生效的必要条件。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+全部所需科技完成后自动应用；不进入研究队列、进度、Modifier 或存档。
+
+#### 机会成本
+
+无需研究点。
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 电弧炉炼钢厂 (`steel_plant`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
 ### 农业机械厂 (`app.agricultural_machinery_plant`)
 
 | 字段 | 内容 |
@@ -33973,6 +34064,7 @@ oil -10%
 - 地表煤采集 (`tech.surface_coal_collection`)：该知识是此产业交汇自动生效的必要条件。
 - 露头煤辨识 (`tech.coal_outcrop_identification`)：该知识是此产业交汇自动生效的必要条件。
 - 地表煤利用 (`tech.surface_coal_use`)：该知识是此产业交汇自动生效的必要条件。
+- 雨养田体系 (`tech.rainfed_field_system`)：该知识是此产业交汇自动生效的必要条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -34053,6 +34145,7 @@ oil -10%
 - 地表煤采集 (`tech.surface_coal_collection`)：该知识是此产业交汇自动生效的必要条件。
 - 露头煤辨识 (`tech.coal_outcrop_identification`)：该知识是此产业交汇自动生效的必要条件。
 - 地表煤利用 (`tech.surface_coal_use`)：该知识是此产业交汇自动生效的必要条件。
+- 土建筑 (`tech.earth_building`)：该知识是此产业交汇自动生效的必要条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -34273,6 +34366,7 @@ oil -10%
 - 高炉冶炼 (`tech.blast_furnace`)：该知识是此产业交汇自动生效的必要条件。
 - 焦炭冶炼 (`tech.coke_smelting`)：该知识是此产业交汇自动生效的必要条件。
 - 地表铁矿采集 (`tech.surface_iron_collection`)：该知识是此产业交汇自动生效的必要条件。
+- 铁矿辨识 (`tech.iron_ore_identification`)：该知识是此产业交汇自动生效的必要条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -35079,6 +35173,7 @@ oil -10%
 - 地表煤采集 (`tech.surface_coal_collection`)：该知识是此产业交汇自动生效的必要条件。
 - 露头煤辨识 (`tech.coal_outcrop_identification`)：该知识是此产业交汇自动生效的必要条件。
 - 地表煤利用 (`tech.surface_coal_use`)：该知识是此产业交汇自动生效的必要条件。
+- 雨养田体系 (`tech.rainfed_field_system`)：该知识是此产业交汇自动生效的必要条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -35160,6 +35255,7 @@ oil -10%
 - 地表煤采集 (`tech.surface_coal_collection`)：该知识是此产业交汇自动生效的必要条件。
 - 露头煤辨识 (`tech.coal_outcrop_identification`)：该知识是此产业交汇自动生效的必要条件。
 - 地表煤利用 (`tech.surface_coal_use`)：该知识是此产业交汇自动生效的必要条件。
+- 雨养田体系 (`tech.rainfed_field_system`)：该知识是此产业交汇自动生效的必要条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -35314,6 +35410,7 @@ oil -10%
 - 地表铁矿采集 (`tech.surface_iron_collection`)：该知识是此产业交汇自动生效的必要条件。
 - 火药配制 (`tech.gunpowder_formulation`)：该知识是此产业交汇自动生效的必要条件。
 - 太阳蒸发制盐 (`tech.solar_evaporation`)：该知识是此产业交汇自动生效的必要条件。
+- 狩猎 (`tech.hunting`)：该知识是此产业交汇自动生效的必要条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -35646,6 +35743,157 @@ oil -10%
 
 无
 
+### 炼铅厂 (`app.lead_plant`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `app.lead_plant` |
+| 时代 | 电气时代 (`electrical`) |
+| 领域 | 科学 (`science`) |
+| 生效方式 | 所需科技全部完成后立即自动应用；无研究成本、队列或进度 |
+| 节点标记 | 零成本自动应用 |
+| 网络角色 | application |
+| 锚点类型 | application\_intersection |
+| 节点角色 | automatic\_application |
+| 布局路线 | 无 |
+| 主要路线 | 无 |
+| 全部路线 | 无 |
+| 开局能力标签 | 无 |
+| 效果配置 | 无 |
+
+#### 所需科技（ALL，决定自动应用）
+
+- 电化学 (`tech.electrochemistry`)：该知识是此产业交汇自动生效的必要条件。
+- 矿井通风 (`tech.mine_ventilation`)：该知识是此产业交汇自动生效的必要条件。
+- 手工锯木 (`tech.timber_sawing`)：该知识是此产业交汇自动生效的必要条件。
+- 磨制石器 (`tech.ground_stone_tools`)：该知识是此产业交汇自动生效的必要条件。
+- 高炉冶炼 (`tech.blast_furnace`)：该知识是此产业交汇自动生效的必要条件。
+- 焦炭冶炼 (`tech.coke_smelting`)：该知识是此产业交汇自动生效的必要条件。
+- 地表铁矿采集 (`tech.surface_iron_collection`)：该知识是此产业交汇自动生效的必要条件。
+- 火药武器 (`tech.gunpowder_weapons`)：该知识是此产业交汇自动生效的必要条件。
+- 工业化学 (`tech.industrial_chemistry`)：该知识是此产业交汇自动生效的必要条件。
+- 火药配制 (`tech.gunpowder_formulation`)：该知识是此产业交汇自动生效的必要条件。
+- 自然观察 (`tech.natural_observation`)：该知识是此产业交汇自动生效的必要条件。
+- 深井采矿 (`tech.deep_mining`)：该知识是此产业交汇自动生效的必要条件。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+全部所需科技完成后自动应用；不进入研究队列、进度、Modifier 或存档。
+
+#### 机会成本
+
+无需研究点。
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 炼铅厂 (`lead_plant`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
+### 炼锌厂 (`app.zinc_plant`)
+
+| 字段 | 内容 |
+| --- | --- |
+| 稳定 ID | `app.zinc_plant` |
+| 时代 | 电气时代 (`electrical`) |
+| 领域 | 科学 (`science`) |
+| 生效方式 | 所需科技全部完成后立即自动应用；无研究成本、队列或进度 |
+| 节点标记 | 零成本自动应用 |
+| 网络角色 | application |
+| 锚点类型 | application\_intersection |
+| 节点角色 | automatic\_application |
+| 布局路线 | 无 |
+| 主要路线 | 无 |
+| 全部路线 | 无 |
+| 开局能力标签 | 无 |
+| 效果配置 | 无 |
+
+#### 所需科技（ALL，决定自动应用）
+
+- 电化学 (`tech.electrochemistry`)：该知识是此产业交汇自动生效的必要条件。
+- 手工锯木 (`tech.timber_sawing`)：该知识是此产业交汇自动生效的必要条件。
+- 磨制石器 (`tech.ground_stone_tools`)：该知识是此产业交汇自动生效的必要条件。
+- 高炉冶炼 (`tech.blast_furnace`)：该知识是此产业交汇自动生效的必要条件。
+- 焦炭冶炼 (`tech.coke_smelting`)：该知识是此产业交汇自动生效的必要条件。
+- 地表铁矿采集 (`tech.surface_iron_collection`)：该知识是此产业交汇自动生效的必要条件。
+- 矿井通风 (`tech.mine_ventilation`)：该知识是此产业交汇自动生效的必要条件。
+- 火药武器 (`tech.gunpowder_weapons`)：该知识是此产业交汇自动生效的必要条件。
+- 工业化学 (`tech.industrial_chemistry`)：该知识是此产业交汇自动生效的必要条件。
+- 火药配制 (`tech.gunpowder_formulation`)：该知识是此产业交汇自动生效的必要条件。
+- 自然观察 (`tech.natural_observation`)：该知识是此产业交汇自动生效的必要条件。
+
+#### 发现启发（仅用于揭示）
+
+无
+
+#### 效果摘要
+
+全部所需科技完成后自动应用；不进入研究队列、进度、Modifier 或存档。
+
+#### 机会成本
+
+无需研究点。
+
+#### 内容解锁
+
+- **物资：** 无
+- **建筑 / 生产方式：** 炼锌厂 (`zinc_plant`)
+- **自然资源：** 无
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
+
+#### 结构化内容效果
+
+无
+
+#### 永久 Modifier 条款
+
+无
+
+#### 被以下科技作为硬前置
+
+无
+
+#### 主题路线后继
+
+无
+
+#### 跨领域应用
+
+无
+
+#### 作为候选参与的里程碑
+
+无
+
 ### 工业研究实验室 (`app.industrial_research_laboratory`)
 
 | 字段 | 内容 |
@@ -35885,6 +36133,7 @@ oil -10%
 - 科学分类 (`tech.scientific_classification`)：该知识是此产业交汇自动生效的必要条件。
 - 日晒土坯 (`tech.adobe_making`)：该知识是此产业交汇自动生效的必要条件。
 - 早期玻璃烧制 (`tech.early_glassmaking`)：该知识是此产业交汇自动生效的必要条件。
+- 自然铜冷锤 (`tech.natural_copper_working`)：该知识是此产业交汇自动生效的必要条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -36177,6 +36426,7 @@ oil -10%
 - 地表煤采集 (`tech.surface_coal_collection`)：该知识是此产业交汇自动生效的必要条件。
 - 露头煤辨识 (`tech.coal_outcrop_identification`)：该知识是此产业交汇自动生效的必要条件。
 - 地表煤利用 (`tech.surface_coal_use`)：该知识是此产业交汇自动生效的必要条件。
+- 雨养田体系 (`tech.rainfed_field_system`)：该知识是此产业交汇自动生效的必要条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -36342,6 +36592,7 @@ oil -10%
 - 地表煤采集 (`tech.surface_coal_collection`)：该知识是此产业交汇自动生效的必要条件。
 - 露头煤辨识 (`tech.coal_outcrop_identification`)：该知识是此产业交汇自动生效的必要条件。
 - 地表煤利用 (`tech.surface_coal_use`)：该知识是此产业交汇自动生效的必要条件。
+- 雨养田体系 (`tech.rainfed_field_system`)：该知识是此产业交汇自动生效的必要条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -36359,238 +36610,6 @@ oil -10%
 
 - **物资：** 无
 - **建筑 / 生产方式：** 机械化亚麻农场 (`method_flax_collector_r6`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-无
-
-#### 永久 Modifier 条款
-
-无
-
-#### 被以下科技作为硬前置
-
-无
-
-#### 主题路线后继
-
-无
-
-#### 跨领域应用
-
-无
-
-#### 作为候选参与的里程碑
-
-无
-
-### 电弧炉炼钢厂 (`app.steel_plant`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `app.steel_plant` |
-| 时代 | 电气时代 (`electrical`) |
-| 领域 | 工程 (`engineering`) |
-| 生效方式 | 所需科技全部完成后立即自动应用；无研究成本、队列或进度 |
-| 节点标记 | 零成本自动应用 |
-| 网络角色 | application |
-| 锚点类型 | application\_intersection |
-| 节点角色 | automatic\_application |
-| 布局路线 | 无 |
-| 主要路线 | 无 |
-| 全部路线 | 无 |
-| 开局能力标签 | 无 |
-| 效果配置 | 无 |
-
-#### 所需科技（ALL，决定自动应用）
-
-- 焦炭冶炼 (`tech.coke_smelting`)：该知识是此产业交汇自动生效的必要条件。
-- 发电机 (`tech.electric_generation`)：该知识是此产业交汇自动生效的必要条件。
-- 大气式蒸汽机 (`tech.atmospheric_engine`)：该知识是此产业交汇自动生效的必要条件。
-- 地表煤采集 (`tech.surface_coal_collection`)：该知识是此产业交汇自动生效的必要条件。
-- 露头煤辨识 (`tech.coal_outcrop_identification`)：该知识是此产业交汇自动生效的必要条件。
-- 磨制石器 (`tech.ground_stone_tools`)：该知识是此产业交汇自动生效的必要条件。
-- 地表煤利用 (`tech.surface_coal_use`)：该知识是此产业交汇自动生效的必要条件。
-- 工厂制 (`tech.factory_system`)：该知识是此产业交汇自动生效的必要条件。
-- 机床 (`tech.machine_tools`)：该知识是此产业交汇自动生效的必要条件。
-- 手工锯木 (`tech.timber_sawing`)：该知识是此产业交汇自动生效的必要条件。
-- 高炉冶炼 (`tech.blast_furnace`)：该知识是此产业交汇自动生效的必要条件。
-- 地表铁矿采集 (`tech.surface_iron_collection`)：该知识是此产业交汇自动生效的必要条件。
-- 大规模生产 (`tech.mass_production`)：该知识是此产业交汇自动生效的必要条件。
-- 机械工坊 (`tech.mechanical_workshops`)：该知识是此产业交汇自动生效的必要条件。
-- 轮作 (`tech.crop_rotation`)：该知识是此产业交汇自动生效的必要条件。
-- 雨养玉米田 (`tech.rainfed_maize_cultivation`)：该知识是此产业交汇自动生效的必要条件。
-- 铁路物流 (`tech.rail_logistics`)：该知识是此产业交汇自动生效的必要条件。
-
-#### 发现启发（仅用于揭示）
-
-无
-
-#### 效果摘要
-
-全部所需科技完成后自动应用；不进入研究队列、进度、Modifier 或存档。
-
-#### 机会成本
-
-无需研究点。
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 电弧炉炼钢厂 (`steel_plant`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-无
-
-#### 永久 Modifier 条款
-
-无
-
-#### 被以下科技作为硬前置
-
-无
-
-#### 主题路线后继
-
-无
-
-#### 跨领域应用
-
-无
-
-#### 作为候选参与的里程碑
-
-无
-
-### 炼铅厂 (`app.lead_plant`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `app.lead_plant` |
-| 时代 | 电气时代 (`electrical`) |
-| 领域 | 科学 (`science`) |
-| 生效方式 | 所需科技全部完成后立即自动应用；无研究成本、队列或进度 |
-| 节点标记 | 零成本自动应用 |
-| 网络角色 | application |
-| 锚点类型 | application\_intersection |
-| 节点角色 | automatic\_application |
-| 布局路线 | 无 |
-| 主要路线 | 无 |
-| 全部路线 | 无 |
-| 开局能力标签 | 无 |
-| 效果配置 | 无 |
-
-#### 所需科技（ALL，决定自动应用）
-
-- 电化学 (`tech.electrochemistry`)：该知识是此产业交汇自动生效的必要条件。
-- 矿井通风 (`tech.mine_ventilation`)：该知识是此产业交汇自动生效的必要条件。
-- 手工锯木 (`tech.timber_sawing`)：该知识是此产业交汇自动生效的必要条件。
-- 磨制石器 (`tech.ground_stone_tools`)：该知识是此产业交汇自动生效的必要条件。
-- 高炉冶炼 (`tech.blast_furnace`)：该知识是此产业交汇自动生效的必要条件。
-- 焦炭冶炼 (`tech.coke_smelting`)：该知识是此产业交汇自动生效的必要条件。
-- 地表铁矿采集 (`tech.surface_iron_collection`)：该知识是此产业交汇自动生效的必要条件。
-- 火药武器 (`tech.gunpowder_weapons`)：该知识是此产业交汇自动生效的必要条件。
-- 工业化学 (`tech.industrial_chemistry`)：该知识是此产业交汇自动生效的必要条件。
-- 火药配制 (`tech.gunpowder_formulation`)：该知识是此产业交汇自动生效的必要条件。
-- 自然观察 (`tech.natural_observation`)：该知识是此产业交汇自动生效的必要条件。
-- 深井采矿 (`tech.deep_mining`)：该知识是此产业交汇自动生效的必要条件。
-
-#### 发现启发（仅用于揭示）
-
-无
-
-#### 效果摘要
-
-全部所需科技完成后自动应用；不进入研究队列、进度、Modifier 或存档。
-
-#### 机会成本
-
-无需研究点。
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 炼铅厂 (`lead_plant`)
-- **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
-
-#### 结构化内容效果
-
-无
-
-#### 永久 Modifier 条款
-
-无
-
-#### 被以下科技作为硬前置
-
-无
-
-#### 主题路线后继
-
-无
-
-#### 跨领域应用
-
-无
-
-#### 作为候选参与的里程碑
-
-无
-
-### 炼锌厂 (`app.zinc_plant`)
-
-| 字段 | 内容 |
-| --- | --- |
-| 稳定 ID | `app.zinc_plant` |
-| 时代 | 电气时代 (`electrical`) |
-| 领域 | 科学 (`science`) |
-| 生效方式 | 所需科技全部完成后立即自动应用；无研究成本、队列或进度 |
-| 节点标记 | 零成本自动应用 |
-| 网络角色 | application |
-| 锚点类型 | application\_intersection |
-| 节点角色 | automatic\_application |
-| 布局路线 | 无 |
-| 主要路线 | 无 |
-| 全部路线 | 无 |
-| 开局能力标签 | 无 |
-| 效果配置 | 无 |
-
-#### 所需科技（ALL，决定自动应用）
-
-- 电化学 (`tech.electrochemistry`)：该知识是此产业交汇自动生效的必要条件。
-- 手工锯木 (`tech.timber_sawing`)：该知识是此产业交汇自动生效的必要条件。
-- 磨制石器 (`tech.ground_stone_tools`)：该知识是此产业交汇自动生效的必要条件。
-- 高炉冶炼 (`tech.blast_furnace`)：该知识是此产业交汇自动生效的必要条件。
-- 焦炭冶炼 (`tech.coke_smelting`)：该知识是此产业交汇自动生效的必要条件。
-- 地表铁矿采集 (`tech.surface_iron_collection`)：该知识是此产业交汇自动生效的必要条件。
-- 矿井通风 (`tech.mine_ventilation`)：该知识是此产业交汇自动生效的必要条件。
-- 火药武器 (`tech.gunpowder_weapons`)：该知识是此产业交汇自动生效的必要条件。
-- 工业化学 (`tech.industrial_chemistry`)：该知识是此产业交汇自动生效的必要条件。
-- 火药配制 (`tech.gunpowder_formulation`)：该知识是此产业交汇自动生效的必要条件。
-- 自然观察 (`tech.natural_observation`)：该知识是此产业交汇自动生效的必要条件。
-
-#### 发现启发（仅用于揭示）
-
-无
-
-#### 效果摘要
-
-全部所需科技完成后自动应用；不进入研究队列、进度、Modifier 或存档。
-
-#### 机会成本
-
-无需研究点。
-
-#### 内容解锁
-
-- **物资：** 无
-- **建筑 / 生产方式：** 炼锌厂 (`zinc_plant`)
 - **自然资源：** 无
 - **作为 ALL 支撑条件参与的建筑 / 生产方式：** 无
 
@@ -36813,9 +36832,7 @@ oil -10%
 - **铝土矿**（`resource`）：`resource.bauxite` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 - **锰矿**（`resource`）：`resource.manganese_ore` → `local_resource_access` `unlock` `1.0`；`existing_binding`
 - **铝土矿**（`building`）：`building.bauxite_collector` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
-- **炼铅厂**（`building`）：`building.lead_plant` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
 - **铝土矿**（`good`）：`good.bauxite` → `production_access` `unlock` `1.0`；`catalog_rebind`
-- **铅**（`good`）：`good.lead` → `production_access` `unlock` `1.0`；`catalog_rebind`
 
 #### 永久 Modifier 条款
 
@@ -37478,8 +37495,7 @@ pharmaceuticals产出 +12%
 
 #### 结构化内容效果
 
-- **炼锌厂**（`building`）：`building.zinc_plant` → `construction_and_production_access` `unlock` `1.0`；`catalog_rebind`
-- **锌**（`good`）：`good.zinc` → `production_access` `unlock` `1.0`；`catalog_rebind`
+无
 
 #### 永久 Modifier 条款
 
@@ -38251,7 +38267,7 @@ pharmaceuticals产出 +12%
 - **物资：** 战略矿物材料 (`rare_earth_metals`)；锌 (`zinc`)
 - **建筑 / 生产方式：** 自动化炼锌厂 (`method_zinc_plant_r9`)；战略金属冶炼厂 (`rare_earth_metals_plant`)
 - **自然资源：** 无
-- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 智能战略金属冶炼厂 (`method_rare_earth_metals_plant_r10`)；核燃料厂 (`nuclear_fuel_plant`)；核医学制药中心 (`nuclear_medicine_center`)；核电站 (`nuclear_power_plant`)；核反应堆设备厂 (`reactor_component_works`)；不锈钢厂 (`stainless_steel_plant`)
+- **作为 ALL 支撑条件参与的建筑 / 生产方式：** 智能化核燃料厂 (`method_nuclear_fuel_plant_r10`)；智能战略金属冶炼厂 (`method_rare_earth_metals_plant_r10`)；智能化核反应堆设备厂 (`method_reactor_component_works_r10`)；核燃料厂 (`nuclear_fuel_plant`)；核医学制药中心 (`nuclear_medicine_center`)；核电站 (`nuclear_power_plant`)；核反应堆设备厂 (`reactor_component_works`)；不锈钢厂 (`stainless_steel_plant`)
 
 #### 结构化内容效果
 
@@ -38582,6 +38598,7 @@ pharmaceuticals产出 +12%
 - 磨制石器 (`tech.ground_stone_tools`)：该知识是此产业交汇自动生效的必要条件。
 - 工业研究 (`tech.industrial_research`)：该知识是此产业交汇自动生效的必要条件。
 - 科学分类 (`tech.scientific_classification`)：该知识是此产业交汇自动生效的必要条件。
+- 早期知识机构 (`tech.early_knowledge_institution`)：该知识是此产业交汇自动生效的必要条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -43800,6 +43817,7 @@ geospatial\_analysis\_institution产出 +28%；旱灾损失 -12%；洪灾损失 
 - 露头煤辨识 (`tech.coal_outcrop_identification`)：该知识是此产业交汇自动生效的必要条件。
 - 地表煤利用 (`tech.surface_coal_use`)：该知识是此产业交汇自动生效的必要条件。
 - 发电机 (`tech.electric_generation`)：该知识是此产业交汇自动生效的必要条件。
+- 电化学 (`tech.electrochemistry`)：该知识是此产业交汇自动生效的必要条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -46895,6 +46913,7 @@ geospatial\_analysis\_institution产出 +28%；旱灾损失 -12%；洪灾损失 
 - 数字计算 (`tech.digital_computing`)：该知识是此产业交汇自动生效的必要条件。
 - 精准灌溉 (`tech.precision_irrigation`)：该知识是此产业交汇自动生效的必要条件。
 - 稻田水位控制 (`tech.rice_water_control`)：该知识是此产业交汇自动生效的必要条件。
+- 水田稻作 (`tech.rice_paddy_cultivation`)：该知识是此产业交汇自动生效的必要条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -49127,6 +49146,7 @@ geospatial\_analysis\_institution产出 +28%；旱灾损失 -12%；洪灾损失 
 - 生物技术 (`tech.biotechnology`)：该知识是此产业交汇自动生效的必要条件。
 - 精准农业 (`tech.precision_agriculture`)：该知识是此产业交汇自动生效的必要条件。
 - 自动化农业 (`tech.automated_agriculture`)：该知识是此产业交汇自动生效的必要条件。
+- 轮作 (`tech.crop_rotation`)：该知识是此产业交汇自动生效的必要条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -49380,6 +49400,7 @@ geospatial\_analysis\_institution产出 +28%；旱灾损失 -12%；洪灾损失 
 - 智能电网 (`tech.smart_grid`)：该知识是此产业交汇自动生效的必要条件。
 - 机器人制造 (`tech.robotic_manufacturing`)：该知识是此产业交汇自动生效的必要条件。
 - 数字控制 (`tech.digital_control`)：该知识是此产业交汇自动生效的必要条件。
+- 自然铜冷锤 (`tech.natural_copper_working`)：该知识是此产业交汇自动生效的必要条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -49538,6 +49559,7 @@ geospatial\_analysis\_institution产出 +28%；旱灾损失 -12%；洪灾损失 
 - 数字控制 (`tech.digital_control`)：该知识是此产业交汇自动生效的必要条件。
 - 智能科学代理 (`tech.scientific_agents`)：该知识是此产业交汇自动生效的必要条件。
 - 早期玻璃烧制 (`tech.early_glassmaking`)：该知识是此产业交汇自动生效的必要条件。
+- 自然铜冷锤 (`tech.natural_copper_working`)：该知识是此产业交汇自动生效的必要条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -50144,6 +50166,7 @@ geospatial\_analysis\_institution产出 +28%；旱灾损失 -12%；洪灾损失 
 - 火药配制 (`tech.gunpowder_formulation`)：该知识是此产业交汇自动生效的必要条件。
 - 深井采矿 (`tech.deep_mining`)：该知识是此产业交汇自动生效的必要条件。
 - 太阳蒸发制盐 (`tech.solar_evaporation`)：该知识是此产业交汇自动生效的必要条件。
+- 系统工程 (`tech.systems_engineering`)：该知识是此产业交汇自动生效的必要条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -50251,6 +50274,7 @@ geospatial\_analysis\_institution产出 +28%；旱灾损失 -12%；洪灾损失 
 - 火药配制 (`tech.gunpowder_formulation`)：该知识是此产业交汇自动生效的必要条件。
 - 深井采矿 (`tech.deep_mining`)：该知识是此产业交汇自动生效的必要条件。
 - 太阳蒸发制盐 (`tech.solar_evaporation`)：该知识是此产业交汇自动生效的必要条件。
+- 系统工程 (`tech.systems_engineering`)：该知识是此产业交汇自动生效的必要条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -50797,6 +50821,7 @@ geospatial\_analysis\_institution产出 +28%；旱灾损失 -12%；洪灾损失 
 - 地表煤采集 (`tech.surface_coal_collection`)：该知识是此产业交汇自动生效的必要条件。
 - 露头煤辨识 (`tech.coal_outcrop_identification`)：该知识是此产业交汇自动生效的必要条件。
 - 地表煤利用 (`tech.surface_coal_use`)：该知识是此产业交汇自动生效的必要条件。
+- 砌体建筑 (`tech.masonry`)：该知识是此产业交汇自动生效的必要条件。
 
 #### 发现启发（仅用于揭示）
 
@@ -53017,6 +53042,7 @@ geospatial\_analysis\_institution产出 +28%；旱灾损失 -12%；洪灾损失 
 - 数字计算 (`tech.digital_computing`)：该知识是此产业交汇自动生效的必要条件。
 - 自适应灌溉 (`tech.adaptive_irrigation`)：该知识是此产业交汇自动生效的必要条件。
 - 稻田水位控制 (`tech.rice_water_control`)：该知识是此产业交汇自动生效的必要条件。
+- 水田稻作 (`tech.rice_paddy_cultivation`)：该知识是此产业交汇自动生效的必要条件。
 
 #### 发现启发（仅用于揭示）
 
