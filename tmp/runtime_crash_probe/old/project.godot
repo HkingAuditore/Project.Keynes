@@ -1,0 +1,6 @@
+; Minimal extension-load probe (generated for read-only crash isolation).
+config_version=5
+
+[application]
+config/name="RuntimeCrashProbeOld"
+run/main_scene="res://probe.gd"

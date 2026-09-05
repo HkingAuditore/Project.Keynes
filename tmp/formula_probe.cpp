@@ -1,0 +1,4 @@
+#include "gdext/src/runtime_climate_formulas.h"
+#include <iostream>
+#include <iomanip>
+int main(){using namespace pk::climate_formula; std::cout<<std::setprecision(10); std::cout<<"clamp "<<clamp01(-1)<<" "<<clamp01(2)<<"\n"; std::cout<<"ins "<<daily_insolation(.5f,0,23.5f)<<" "<<daily_insolation(.5f,2,23.5f)<<" diff="<<fabs(daily_insolation(.5f,0,23.5f)-daily_insolation(.5f,2,23.5f))<<"\n"; std::cout<<"day="<<day_length_norm(.5f,0,23.5f)<<"\n"; std::cout<<"abs="<<surface_absorbed_factor(false,.30f)<<" cool="<<compress_season_cooling(.1f)<<" "<<compress_season_cooling(-.13f)<<"\n"; std::cout<<"alpha="<<thermal_alpha_eff(0,10)<<" "<<thermal_alpha_eff(1,10)<<" alt="<<altitude_penalty(-1,.5)<<" "<<altitude_penalty(2,.5)<<"\n"; uint64_t s=0x243f6a8885a308d3ull; auto x=normalized_rng(s); std::cout<<"rng="<<x<<"\n"; std::cout<<"self="<<self_test()<<"\n"; }

@@ -1,5 +1,35 @@
 # Performance Diagnostics Playbook
 
+## 2026-09 50 倍速归因列
+
+Country 研究需同时看墙钟和确定性工作量。墙钟列为
+`research_activation_ms/research_allocation_ms/research_effect_ack_ms/`
+`research_discovery_ms/research_modifier_ms/research_report_ms`；工作量列为 scanned/active
+countries、pending/discovery checks、Modifier queries/cache hits、remainder iterations。
+`research_activation_ms` 是包围计时，不能再与内部 ACK/discovery 计时相加。若无研究工作的
+日子仍有 scanned countries，先查 active membership 的移除；若 discovery checks 与目录科技
+总量同比增长，查反向 CSR 漏边后触发的 FULL parity fallback；若 Modifier query 不随
+snapshot version 稳定，查缓存失效范围。
+后台 Country POD 额外记录 `country_pod_active_index_count`。该值是本次快照中活跃研究
+索引的规模；当索引有效且没有待研究国家时应为 0，而不是国家总数。若它长期等于总国家数，
+说明捕获边界未发布活跃索引或仍在兼容全扫描路径。
+
+Runtime Graph 发布侧固定看 `runtime_graph_post_pulse_flush_ms`、
+`runtime_graph_flush_slot_count`、`runtime_graph_visual_diff_cell_count`、
+`runtime_graph_country_territory_sync_ms`、`runtime_graph_event_dispatch_ms` 和
+`runtime_graph_full_flush_count`。研究日 territory sync 必须为 0；稳态 full flush 的增量必须
+为 0。计数器是进程累计值，跨区间比较必须取 delta，不能把 bootstrap 允许的一次全 flush
+误判成稳态回归。
+
+并行后端固定看 `native_executor_workers`、`native_executor_interactive` 和
+`native_executor_fault_count`。interactive 为 true 时，`active_worker_limit` 应随机器逻辑核数
+保留至少四核；四核及以下应为 0 并走协调线程顺序路径。`simulation_worker_ready=false`
+不是性能失败，而是当前 graph 尚未清掉 Godot Object/Variant/MapData 边界的安全门，禁止通过
+提高线程数绕过该门。
+
+正式比较必须同构建、同 seed、同命令 trace、同地图规模运行至少 5 次，报告 median、P95、
+P99、max。墙钟变化若未伴随工作计数变化，优先视为调度/机器噪声；工作计数增长才是算法回归。
+
 ## 2026-08 production diagnostics
 
 优先检查 `country_report_mode`、`country_state_hash_ms`、
@@ -1854,3 +1884,28 @@ counts completed submissions. The expected migrated shape is nonzero graph
 Economy counters with `j_economy_daily_slices=0` and
 `j_economy_daily_skip=policy_gated`; do not infer Economy inactivity from the
 legacy SUS job report.
+# 后台模拟线程诊断字段（2026-09）
+
+`get_runtime_thread_report()` 和 `get_runtime_perf_snapshot()` 会报告
+`simulation_host_state`、`simulation_committed_day`、`simulation_generation`、
+`simulation_time_debt_days`、`snapshot_publish_drop_count`、命令/回执队列容量错误
+和 `worker_fault_count`。主线程不应等待 host；任何非零
+`main_wait_on_sim_us` 都是交互阻断问题。
+
+后台 host 还发布 `snapshot_staleness_ms`、`last_commit_produced_at_us`、
+`command_queue_depth`、`receipt_queue_depth` 和 `worker_state`。这些字段应与
+`runtime_graph_*` CSV 列一起查看：staleness 上升而 `main_wait_on_sim_us=0`
+表示只落后可视提交；队列深度持续增长表示需要降低命令生产速率或扩大业务侧
+批处理，而不是让主线程等待。`snapshot_publish_drop_count` 非零只代表可视发布
+被三缓冲保护丢弃，不能推断模拟日丢失。
+
+Climate 首批垂直切片的 `runtime_graph_climate_pod_ready`、
+`runtime_graph_climate_pod_plan_ms`、`runtime_graph_climate_pod_replay_ms`、
+`runtime_graph_climate_pod_work_units`、`runtime_graph_climate_pod_changed_cells` 和
+`runtime_graph_climate_pod_state_hash` 只描述 SHADOW worker 的纯 POD 诊断。它们用于把
+plan/replay 成本和日级 state hash 纳入同一份 CSV；不得据此将 Climate 视为 ACTIVE authority，
+也不得与同步 Climate 的 `t_sus_ms` 直接相加。
+
+看到 `simulation_worker_blocker=runtime_graph_still_uses_godot_containers_and_object_boundaries`
+或 `runtime_graph_not_thread_safe` 时，说明 graph 尚未完成输入冻结和 POD ABI 迁移，
+应继续使用 OFF/SHADOW，而不是绕过 readiness gate。

@@ -5,6 +5,7 @@ signal load_completed(slot_id: String, result: Dictionary)
 
 const REQUIRED_SECTIONS := [
 	"new_game_config", "world_clock", "dynamic_world", "environment",
+	"simulation_runtime",
 	"pkcm", "pkcn", "pkec", "pkgp", "pkfg", "journal",
 	"player_context", "player_view", "preview", "pktr", "pkef", "pkid",
 ]
@@ -23,6 +24,7 @@ var _last_autosave_year := -1
 var _autosave_enabled := true
 var _busy := false
 var _providers: Array = []
+var _next_runtime_save_request_id: int = 1
 
 
 func _ready() -> void:
@@ -126,6 +128,18 @@ func prepare_load(slot_id: String) -> Dictionary:
 		if value == null:
 			return _result(false, "save_section_decode_failed", "无法解析存档 section：%s" % section_id)
 		decoded[section_id] = value
+	var runtime_bytes: PackedByteArray = bytes_by_id.get("simulation_runtime", PackedByteArray())
+	if runtime_bytes.is_empty():
+		decoded["simulation_runtime"] = {}
+	elif _valid_native_runtime_bundle(runtime_bytes):
+		# Keep the immutable PKSR bytes intact. The runtime host consumes this
+		# envelope during STARTING/RESTORING; it must not be decoded through
+		# Godot's Variant serializer on the UI thread.
+		decoded["simulation_runtime"] = runtime_bytes
+	else:
+		decoded["simulation_runtime"] = bytes_to_var(runtime_bytes)
+		if not decoded["simulation_runtime"] is Dictionary:
+			return _result(false, "save_section_decode_failed", "无法解析存档 section：simulation_runtime")
 	decoded["pkcn"] = bytes_by_id.pkcn
 	decoded["pkec"] = bytes_by_id.pkec
 	decoded["pkcm"] = bytes_by_id.pkcm
@@ -205,7 +219,13 @@ func _save(slot_id: String, reason: String) -> Dictionary:
 		_restore_clock_mode(was_paused, previous_speed)
 		_busy = false
 		return boundary
-	var collected := _collect_sections(was_paused, previous_speed)
+	var runtime_bundle := await _capture_native_runtime_bundle()
+	if not bool(runtime_bundle.get("ok", false)):
+		_restore_clock_mode(was_paused, previous_speed)
+		_busy = false
+		return runtime_bundle
+	var collected := _collect_sections(was_paused, previous_speed,
+		 runtime_bundle.get("bytes", PackedByteArray()))
 	if not bool(collected.get("ok", false)):
 		_restore_clock_mode(was_paused, previous_speed)
 		_busy = false
@@ -301,9 +321,11 @@ func _can_save() -> Dictionary:
 	return _result(true, "ok", "")
 
 
-func _collect_sections(saved_paused: bool, saved_speed: float) -> Dictionary:
+func _collect_sections(saved_paused: bool, saved_speed: float,
+		native_runtime_bundle: PackedByteArray = PackedByteArray()) -> Dictionary:
 	var generator := _runtime_host.generator()
 	var context := _provider_context(_runtime_host, generator, saved_paused, saved_speed)
+	context["native_runtime_bundle"] = native_runtime_bundle
 	var sections := {}
 	var provider_manifest: Array = []
 	for provider in _providers:
@@ -347,6 +369,9 @@ func _register_providers() -> void:
 			"_restore_climate_modifier_provider"),
 		_make_provider(&"world_clock", 1, PackedStringArray(["world_clock"]),
 			"_can_clock_provider", "_write_clock_provider", "_restore_clock_provider"),
+		_make_provider(&"simulation_runtime", 2, PackedStringArray(["simulation_runtime"]),
+			"_can_simulation_runtime_provider", "_write_simulation_runtime_provider",
+			"_restore_simulation_runtime_provider"),
 		_make_provider(&"pkcn", 11, PackedStringArray(["pkcn"]),
 			"_can_country_provider", "_write_country_provider", "_restore_country_provider"),
 		# Effect restores before Economy so PKEC v47 can cross-check every
@@ -480,6 +505,105 @@ func _can_environment_provider(context: Dictionary) -> Dictionary:
 func _can_clock_provider(_context: Dictionary) -> Dictionary:
 	return _result(_world_clock != null, "ok" if _world_clock != null else "save_provider_missing",
 		"" if _world_clock != null else "WorldClock provider 不可用。")
+
+
+func _can_simulation_runtime_provider(context: Dictionary) -> Dictionary:
+	return _result(context.get("generator") != null, "ok" \
+		if context.get("generator") != null else "save_provider_missing",
+		"模拟 runtime provider 不可用。")
+
+
+func _write_simulation_runtime_provider(context: Dictionary) -> Dictionary:
+	var host: WorldRuntimeHost = context.get("host")
+	var native_bundle: PackedByteArray = context.get("native_runtime_bundle", PackedByteArray())
+	if not native_bundle.is_empty():
+		return {"ok": true, "sections": {"simulation_runtime": native_bundle}}
+	var runtime_report: Dictionary = {}
+	var generator = context.get("generator")
+	if generator != null and generator.has_method("get_runtime_thread_report"):
+		runtime_report = generator.get_runtime_thread_report()
+	return {"ok": true, "sections": {"simulation_runtime": {
+		"schema": "PKSR",
+		"version": 2,
+		"committed_day": _world_clock.day_index() if _world_clock != null else 0,
+		"paused": bool(context.get("saved_paused", true)),
+		"speed_days_per_second": float(context.get("saved_speed", 0.0)),
+		"runtime_thread_report": runtime_report,
+		"native_save_bundle": false,
+	}}}
+
+
+func _restore_simulation_runtime_provider(sections: Dictionary, context: Dictionary) -> Dictionary:
+	var runtime = sections.get("simulation_runtime", {})
+	if runtime is PackedByteArray:
+		if not _valid_native_runtime_bundle(runtime):
+			return _result(false, "simulation_runtime_checksum_failed",
+				"PKSR runtime bundle 校验失败。")
+		var generator = context.get("generator")
+		if generator == null or not generator.has_method("restore_runtime_bundle"):
+			return _result(false, "simulation_runtime_restore_missing",
+				"地图运行时缺少 PKSR 后台恢复接口。")
+		var restored: Dictionary = generator.restore_runtime_bundle(runtime)
+		if not bool(restored.get("ok", false)):
+			return _result(false, String(restored.get("code",
+				"simulation_runtime_restore_failed")),
+				"PKSR runtime bundle 恢复失败：%s" % String(
+					restored.get("code", "unknown")))
+		return restored
+	if runtime.is_empty():
+		return _result(true, "ok", "")
+	if String(runtime.get("schema", "PKSR")) != "PKSR" \
+			or int(runtime.get("version", 1)) != 2:
+		return _result(false, "simulation_runtime_incompatible", "PKSR runtime section 版本不兼容。")
+	return _result(true, "ok", "")
+
+
+func _capture_native_runtime_bundle() -> Dictionary:
+	if _runtime_host == null or _runtime_host.generator() == null:
+		return {"ok": true, "bytes": PackedByteArray()}
+	var generator := _runtime_host.generator()
+	if not generator.has_method("get_runtime_thread_report") \
+			or not generator.has_method("request_runtime_save") \
+			or not generator.has_method("poll_runtime_save"):
+		return {"ok": true, "bytes": PackedByteArray()}
+	var report: Dictionary = generator.get_runtime_thread_report()
+	var mode := String(report.get("requested_simulation_thread_mode", "OFF"))
+	if mode == "OFF":
+		return {"ok": true, "bytes": PackedByteArray()}
+	var request_id := _next_runtime_save_request_id
+	_next_runtime_save_request_id += 1
+	if _next_runtime_save_request_id <= 0:
+		_next_runtime_save_request_id = 1
+	var requested: Dictionary = generator.request_runtime_save(request_id)
+	if not bool(requested.get("ok", false)):
+		return _result(false, String(requested.get("code", "runtime_save_request_failed")),
+			"后台 runtime 保存请求失败。")
+	const MAX_POLL_FRAMES := 1800
+	for _frame in MAX_POLL_FRAMES:
+		var polled: Dictionary = generator.poll_runtime_save(request_id)
+		if bool(polled.get("ready", false)):
+			var bytes: PackedByteArray = polled.get("bytes", PackedByteArray())
+			if not _valid_native_runtime_bundle(bytes):
+				return _result(false, "simulation_runtime_checksum_failed",
+					"后台 runtime bundle 校验失败。")
+			return {"ok": true, "bytes": bytes}
+		var state := String(generator.get_runtime_thread_report().get(
+			"simulation_host_state", ""))
+		if state == "FAULTED":
+			return _result(false, "worker_faulted", "后台模拟线程发生故障，无法保存。")
+		await get_tree().process_frame
+	return _result(false, "runtime_save_timeout", "等待后台 runtime 保存超时。")
+
+
+func _valid_native_runtime_bundle(bytes: PackedByteArray) -> bool:
+	# PKSR v2 contains the immutable runtime envelope. The container section hash
+	# is checked by SaveRepository; this validates the fixed ABI header before it
+	# reaches a restore provider. PKSR v1 is intentionally rejected.
+	return bytes.size() >= 2161 \
+		and bytes.slice(0, 4).get_string_from_ascii() == "PKSR" \
+		and bytes.decode_u32(4) == 2 \
+		and bytes.decode_u32(81) == 1 \
+		and bytes.decode_u32(85) == 1
 
 
 func _can_country_provider(context: Dictionary) -> Dictionary:

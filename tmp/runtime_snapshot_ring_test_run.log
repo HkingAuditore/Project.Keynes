@@ -1,0 +1,64 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+Phase 13: 25 lake seeds
+Phase 13: 51 lake cells
+Phase 14: 8 volcanoes
+MapGenerator v7: per-cell 325ms (2400 cells)
+MapBaker v6: hm=(1024, 606) seed=1779826139
+  height+biome+moisture+veg+cover: 4410ms
+  light erosion: 105ms
+  river SDF: 357ms
+  latitude: 14ms
+WARNING: PhysicalCirculation solve@phase=2.00 total=377ms (slp=0ms wind=42ms psi=67ms finalize=4ms upwelling=8ms wind_raster=236ms) — exceeds 25ms soft budget
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _physical_solve_for_phase (res://scripts/rendering/map_baker.gd:2810)
+       [1] bake_world (res://scripts/rendering/map_baker.gd:332)
+       [2] generate (res://scripts/geography/map_generator.gd:457)
+       [3] _generate_and_render (res://scripts/main.gd:724)
+       [4] _ready (res://scripts/main.gd:204)
+  wind field (physical-hex): 378ms
+  ocean currents (physical-hex): 338ms
+  ocean upwelling (physical-hex): 227ms
+  volcano field: 599ms
+  encode: 428ms
+MapBaker v6: total 6856ms
+MapGenerator v7: bake 6858ms
+MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+MapGenerator: skip _compute_terrain_perturbed_wind (physical-hex solver writes per-cell)
+[hex-renderer] set_weather_fronts(n=0) layer=WeatherLayer
+[fastpath] HexCell typed fields active (SoA)
+[climate] insolation-driven path active (SoA): subsolar_lat=+23.5°, equator_annual_mean=0.958, tilt=23.5°
+_apply_sea_ice_daily_pass: 5ms (water=1170, flipped=0, phase=0.000)
+refresh_climate_daily #1: 100ms (cells=2400, phase=0.000) | A=5.9 B=14.0 ocean=5.2 wind=64.7 sea_ice=4.9 ice_bake=0.0 transp=5.2
+=== World baked in 7232ms ===
+  OCEAN: 899
+  COAST: 133
+  GLACIER: 116
+  SNOW: 135
+  DELTA: 30
+  TUNDRA: 78
+  LAKE: 51
+  TAIGA: 44
+  KELP: 52
+  SWAMP: 93
+  HILL: 294
+  MOUNTAIN: 198
+  STEPPE: 6
+  GRASSLAND: 6
+  FOREST: 25
+  REEF: 86
+  SAVANNA: 40
+  JUNGLE: 109
+  SHRUBLAND: 2
+  BADLANDS: 3
+[DataCore] flags after CLI: use_data_core=true use_data_core_weather=true validate_weather=false
+[fastpath] weather_refresh_stride = 1
+fast tick #1: 29ms (sus=28.91 render=0.01 ui=0.00 skipped_day=true)
+Season refresh queued 0ms
+Yearly refresh 2ms
+ERROR: 8 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 20 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

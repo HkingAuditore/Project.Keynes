@@ -1,5 +1,46 @@
 # Simulation Computation Pipelines
 
+## Runtime Domain POD ABI v3
+
+The background simulation protocol reserves twelve fixed daily barriers:
+`INPUT_CAPTURE`, `CLIMATE`, `COUNTRY`, `TRIGGER_INPUT`, `IDEOLOGY`, `EFFECT`,
+`MODIFIER`, `GAMEPLAY_EFFECT`, `ECONOMY`, `EVENTS`, `VISUAL`, and `COMMIT`.
+`CLIMATE` has its own mask bit; it is no longer an alias of `TRIGGER_INPUT`.
+The POD protocol version is `3` (the legacy host envelope and PKSV/PKSR
+container versions remain independently versioned). `NativeSimulationHost`
+owns a worker-only `RuntimeAuthoritativeDomainStores` aggregate containing the
+POD state for each gameplay domain. These stores are bootstrap/reset and hash
+boundaries only until their corresponding OFF/SHADOW parity gate passes; the
+ACTIVE authority mask must not be expanded by the presence of a struct alone.
+
+The input-capture barrier validates immutable environment array sizes, finite
+values, CSR/hydrology topology and generation ordering before a worker day can
+advance. `RuntimeEnvironmentSnapshot::climate_input_complete` is deliberately
+false for sparse diagnostic fixtures; production Climate capture must set it
+only after copying all current/history, weather, wind/ocean, anomaly, soil and
+vegetation lanes. A complete frame with any missing lane is rejected before the
+trace is published. The frame also carries the real `dt_days`; the shadow
+kernel no longer silently reduces a multi-day stride to one day. Trace reports
+expose front day, lag and the canonical full-input hash for replay diagnostics.
+No domain store retains `Object`, `Variant`, `Dictionary`, `PackedArray`,
+`MapData` or renderer pointers. Visual and save publication remain explicit
+immutable-copy boundaries.
+
+## Background POD barrier
+
+后台线程迁移使用 `RuntimeDomainPodPipeline`（`runtime_domain_pod.h/.cpp`）作为 ABI 边界。
+该 pipeline 的 domain store 只含 native vectors 和整数句柄；每个 domain 先生成纯数据
+intent/ACK，再由固定日序归并。当前仅在 SHADOW 运行并上报 POD 工作计数，不能替代现有
+同步 authority；ACTIVE 的 gate 仍要求真实 domain state、跨域 preflight/ACK 和 1000 日
+shadow parity 全部通过。
+
+Climate POD 迁移的第一步已落地：`RuntimeClimatePodState` 在 worker 内维护温度、湿度、
+雪盖、温度 EMA、水分平衡、降水、天气强度、植被活力、anomaly 与确定性 RNG；输入来自
+`RuntimeEnvironmentSnapshot` 的 immutable 深拷贝，视觉天气前线和 GPU 资源仍留在主线程。
+`RuntimeClimatePodSnapshot` 支持深拷贝快照和校验失败回滚，存档 codec 同步保存这些字段。
+这只是 Climate 的 state/restore 边界，尚未替代现有 `run_climate_*`、hydrology 或 weather
+authority，所以 `implemented_domain_mask` 与 ACTIVE gate 不变。
+
 ## Modifier pipelines
 
 ```text

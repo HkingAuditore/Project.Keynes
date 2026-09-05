@@ -26,6 +26,7 @@
 #include <unordered_set>
 #include <string>
 #include <vector>
+#include <memory>
 
 #include <godot_cpp/classes/object.hpp>
 #include <godot_cpp/classes/ref_counted.hpp>
@@ -42,8 +43,11 @@
 #include <godot_cpp/variant/vector2i.hpp>
 
 #include "components/slot.h"
+#include "runtime_pod_protocol.h"
 
 namespace pk {
+
+class NativeSimulationHost;
 
 struct NativeSliceResult {
     uint32_t status = 0;
@@ -184,8 +188,39 @@ public:
     int64_t advance_runtime_pulse(int64_t day, double season_phase,
                                   double speed_scale, int budget_us, int flags = 0);
     void flush_runtime_visuals(uint32_t dirty_mask = 0);
+    void set_runtime_qos(bool interactive);
+    godot::Dictionary get_runtime_thread_report() const;
     godot::Dictionary get_runtime_perf_snapshot(int detail_level = 0) const;
     godot::Dictionary get_runtime_graph_last_economy_report() const;
+    godot::Dictionary record_runtime_visual_timings(double ui_input_to_feedback_ms,
+                                                    double visual_apply_ms,
+                                                    double gpu_upload_ms);
+    // Thread-isolated runtime host. These methods are non-blocking facade calls;
+    // the worker is only enabled after the complete POD graph has been proven.
+    godot::Dictionary start_runtime_worker(const godot::Dictionary &config);
+    godot::Dictionary set_runtime_clock(bool paused, double speed_days_per_second);
+      godot::Dictionary capture_runtime_inputs(const godot::Dictionary &inputs);
+    godot::Dictionary publish_runtime_climate_reference(int64_t day,
+                                                        int64_t state_hash);
+    godot::Dictionary capture_country_runtime_snapshot();
+    godot::Dictionary capture_country_pod_catalog();
+    godot::Dictionary submit_runtime_command(const godot::Dictionary &command);
+    godot::Dictionary poll_runtime_receipts(int max_items = 128);
+    godot::Dictionary set_runtime_qos_threaded(bool interactive);
+    godot::Dictionary poll_runtime_commit(int64_t after_generation);
+    godot::Dictionary consume_runtime_visual_patch(int64_t generation, int family,
+                                                    int cursor, int max_items);
+    godot::Dictionary request_runtime_save(int64_t request_id);
+    godot::Dictionary poll_runtime_save(int64_t request_id);
+    godot::Dictionary restore_runtime_bundle(const godot::PackedByteArray &bytes);
+    godot::Dictionary request_runtime_stop();
+    bool runtime_snapshot_ring_self_test() const;
+    bool runtime_domain_pod_self_test() const;
+    bool runtime_authoritative_domains_self_test() const;
+    bool runtime_climate_authority_self_test() const;
+    bool runtime_climate_trace_self_test() const;
+    bool runtime_country_pod_authority_self_test() const;
+    bool runtime_protocol_guard_self_test() const;
     bool is_native_daily_visual_commit_pending() const;
     void complete_native_daily_visual_commit();
     // Compatibility alias for callers predating the full visual-snapshot barrier.
@@ -2541,7 +2576,19 @@ private:
     std::string                               _runtime_graph_trigger_blocked_reason;
     uint32_t                                  _runtime_graph_last_elapsed_us = 0;
     uint32_t                                  _runtime_graph_last_status = 0;
+    double                                    _runtime_graph_post_pulse_flush_ms = 0.0;
+    double                                    _runtime_graph_country_territory_sync_ms = 0.0;
+    uint64_t                                  _runtime_graph_flush_slot_count = 0;
+    uint64_t                                  _runtime_graph_visual_diff_cell_count = 0;
+    uint64_t                                  _runtime_graph_full_flush_count = 0;
     godot::Dictionary                         _runtime_graph_last_economy_report;
+    std::unique_ptr<NativeSimulationHost>     _runtime_host;
+    // Main-thread cache for the most recently consumed immutable commit.  The
+    // visual patch API reads this exact generation instead of polling the ring
+    // a second time and accidentally mixing two different commits.
+    RuntimeCommit                             _runtime_commit_cache;
+    uint64_t                                  _runtime_commit_cache_generation = 0;
+    bool                                      _runtime_commit_cache_valid = false;
 
     // ---- archetype ----
     godot::Vector<godot::Array>               _archetypes;          // each entry = comp_ids

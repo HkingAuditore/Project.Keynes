@@ -1,0 +1,7 @@
+[configuration]
+entry_symbol = "dots_ext_init"
+compatibility_minimum = "4.4"
+compatibility_maximum = "4.6"
+
+[libraries]
+windows.debug.x86_64 = "res://addons/dots_ext/bin/windows/dots_ext.windows.template_debug.x86_64.dll"

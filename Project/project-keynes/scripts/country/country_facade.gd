@@ -200,6 +200,13 @@ func set_research_weights(handle: int, weights_bp: PackedInt32Array,
 		effective_day: int, sequence: int) -> Dictionary:
 	if weights_bp.size() != 4:
 		return {"ok": false, "reason": "research weights require four domains"}
+	var total := 0
+	for weight in weights_bp:
+		if int(weight) < 0 or int(weight) > 10000:
+			return {"ok": false, "reason": "research weights must be within 0..10000"}
+		total += int(weight)
+	if total != 10000:
+		return {"ok": false, "reason": "research weights must sum to 10000"}
 	return submit([{"opcode": Opcode.SET_RESEARCH_WEIGHTS, "target_handle": handle,
 		"weights_bp": weights_bp, "effective_day": effective_day, "sequence": sequence}])
 

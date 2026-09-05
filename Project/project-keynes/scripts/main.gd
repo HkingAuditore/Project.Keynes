@@ -577,12 +577,44 @@ func _ready() -> void:
 const SELECTED_CELL_LINES_REFRESH_INTERVAL_MS: int = 100
 var _selected_cell_lines_dirty: bool = false
 var _selected_cell_lines_next_refresh_ms: int = 0
+var _runtime_interactive_qos: bool = false
+var _runtime_interactive_grace_until_ms: int = 0
+var _runtime_last_viewport_size: Vector2i = Vector2i.ZERO
 
 
 func _process(_delta: float) -> void:
+	_update_runtime_interactive_qos()
 	if _tod_sun_handle_btn != null and _tod_sun_handle_btn.visible and not _tod_sun_handle_dragging:
 		_position_tod_sun_handle()
 	_refresh_selected_cell_lines_if_due()
+
+
+func _update_runtime_interactive_qos() -> void:
+	if _generator == null or (not _generator.has_method("set_runtime_interactive") \
+			and not _generator.has_method("set_runtime_qos_threaded")):
+		return
+	var pointer_active := Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT) \
+			or Input.is_mouse_button_pressed(MOUSE_BUTTON_MIDDLE) \
+			or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
+	var now_ms := Time.get_ticks_msec()
+	var viewport_size: Vector2i = get_viewport().size \
+		if get_viewport() != null else Vector2i.ZERO
+	if viewport_size != _runtime_last_viewport_size:
+		_runtime_last_viewport_size = viewport_size
+		_runtime_interactive_grace_until_ms = now_ms + 150
+	if pointer_active:
+		_runtime_interactive_grace_until_ms = now_ms + 150
+	var ctrl_drag := Input.is_key_pressed(KEY_CTRL) and pointer_active
+	var interactive := pointer_active or ctrl_drag or now_ms < _runtime_interactive_grace_until_ms
+	if interactive == _runtime_interactive_qos:
+		return
+	_runtime_interactive_qos = interactive
+	# Prefer the non-blocking worker QoS control. Keep the legacy facade as a
+	# compatibility fallback for older extensions; neither path waits for sim.
+	if _generator.has_method("set_runtime_qos_threaded"):
+		_generator.set_runtime_qos_threaded(interactive)
+	else:
+		_generator.set_runtime_interactive(interactive)
 
 
 func _refresh_selected_cell_lines_if_due() -> void:
@@ -3496,6 +3528,21 @@ func get_sim_breakdowns() -> Dictionary:
 				"research_queue_size": country_report.get("research_queue_size", -1),
 				"research_full_scan_fallbacks": country_report.get(
 					"research_full_scan_fallbacks", 0),
+				"research_activation_ms": country_report.get("research_activation_ms", 0.0),
+				"research_allocation_ms": country_report.get("research_allocation_ms", 0.0),
+				"research_effect_ack_ms": country_report.get("research_effect_ack_ms", 0.0),
+				"research_discovery_ms": country_report.get("research_discovery_ms", 0.0),
+				"research_modifier_ms": country_report.get("research_modifier_ms", 0.0),
+				"research_report_ms": country_report.get("research_report_ms", 0.0),
+				"research_countries_scanned": country_report.get("research_countries_scanned", 0),
+				"research_active_countries": country_report.get("research_active_countries", 0),
+				"research_pending_checks": country_report.get("research_pending_checks", 0),
+				"research_discovery_checks": country_report.get("research_discovery_checks", 0),
+				"research_discovery_frontier_mismatches": country_report.get(
+					"research_discovery_frontier_mismatches", 0),
+				"research_modifier_queries": country_report.get("research_modifier_queries", 0),
+				"research_modifier_cache_hits": country_report.get("research_modifier_cache_hits", 0),
+				"research_remainder_iterations": country_report.get("research_remainder_iterations", 0),
 			}
 	if _generator.has_method("get_economy_perf_report"):
 		var economy_perf: Dictionary = _generator.get_economy_perf_report()

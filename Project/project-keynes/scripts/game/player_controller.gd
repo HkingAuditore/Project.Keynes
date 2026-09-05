@@ -497,6 +497,9 @@ func _dispatch_player_input(event: InputEvent) -> void:
 func _connect_runtime() -> void:
 	if _camera != null and not _camera.tile_tapped.is_connected(_on_tile_tapped):
 		_camera.tile_tapped.connect(_on_tile_tapped)
+	if _runtime_host != null and _runtime_host.has_signal("simulation_committed") \
+			and not _runtime_host.simulation_committed.is_connected(_on_simulation_committed):
+		_runtime_host.simulation_committed.connect(_on_simulation_committed)
 	if _world_clock == null:
 		return
 	if not _world_clock.day_changed.is_connected(_on_day_changed):
@@ -509,6 +512,17 @@ func _connect_runtime() -> void:
 		_world_clock.visual_day_phase_changed.connect(_on_visual_day_phase_changed)
 	if not _world_clock.speed_changed.is_connected(_on_speed_changed):
 		_world_clock.speed_changed.connect(_on_speed_changed)
+
+
+func _on_simulation_committed(_from_day: int, to_day: int, _generation: int) -> void:
+	# ACTIVE worker commits are display-only on the Godot side. The worker owns
+	# the authoritative date; this callback refreshes only lightweight UI state.
+	if _runtime_host == null or _world_clock == null:
+		return
+	_sync_time_ui()
+	if _ui_manager != null and _selected_cell != null:
+		_ui_manager.refresh_selected_daily_lines(false, to_day)
+	_sync_era_reward_offer()
 
 
 func _connect_ui() -> void:
@@ -575,8 +589,10 @@ func _on_ideology_command_settled(result: Dictionary) -> void:
 func _on_day_changed(day_idx: int) -> void:
 	if _runtime_host == null or _world_clock == null:
 		return
-	var season_phase: float = _world_clock.season_phase_for_day(day_idx)
-	_runtime_host.run_daily_tick(day_idx, season_phase)
+	# WorldRuntimeHost owns the single OFF/SHADOW daily authority and receives
+	# this clock signal before the controller. The controller only refreshes
+	# presentation state; keeping simulation out of this callback prevents a
+	# second SUS invocation when a worker commit is introduced.
 	_sync_era_reward_offer()
 	if _economy_facade != null and _player_country_handle != 0 and \
 			_economy_facade.has_method("dispatch_family_colonization_receipts"):

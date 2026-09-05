@@ -1,0 +1,8 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+SCRIPT ERROR: Parse Error: Preload file "res://scripts/geography/map_generator.gd" does not exist.
+   at: GDScript::reload (res://tests/runtime_graph_country_committed_test.gd:5)
+SCRIPT ERROR: Parse Error: Preload file "res://scripts/country/country_facade.gd" does not exist.
+   at: GDScript::reload (res://tests/runtime_graph_country_committed_test.gd:6)
+ERROR: Failed to load script "res://tests/runtime_graph_country_committed_test.gd" with error "Parse error".
+   at: load (modules/gdscript/gdscript.cpp:2907)

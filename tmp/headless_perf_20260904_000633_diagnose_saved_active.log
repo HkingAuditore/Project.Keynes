@@ -1,0 +1,163 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[headless-perf] runtime_graph_mode=ACTIVE applied
+[native_generation/base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=6400 native_ms=31.162 water=2109 land=4291
+[native_generation/post_base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=6400 native_ms=6.047 lakes=524 rivers=682 volcanoes=7
+[native_generation/vegetation] native_ms=2.550 candidates=3977 none=2093 score=[0.004,0.902,1.158] plant_water_land=4180 river_adjacent_desert=0 coastal_highland_desert=0 terrain_weight=[0.180,1.200]
+[native_generation/qa] single_water=0 tiny<=3=0 small<=5=0 bodies=6 largest=853 | land_below_sea=0.0% | terr_distinct=26 entropy=3.922bit | river_ratio=10.656%
+MapGenerator v7: per-cell 190ms (6400 cells, path=gdext)
+MapBaker v6: hm=(1024, 578) seed=19991123
+    [fused] terrain=90.7ms erosion=2.6ms(ok=true) river=23.3ms(ok=true) latitude=0.1ms coast_sdf=6.1ms(ok=true)
+  geometry fields (fused C++): 205ms
+  physical circulation hex solve: deferred until DCWorldExt bind (ext=true idx=true soa=false)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+  visual tiles: {"degradation_reason":"","effective_budget_px":3455040,"effective_texels_per_hex":14.0884494350151,"effective_world_units_per_texel":"(1.561685, 1.561441)","estimated_peak_bytes":137002320,"estimated_resident_bytes":80796240,"fallback_reason":"","generation_id":1,"grid_size":"(5, 3)","gutter_px":2,"hex_size":22.0,"horizon_path":"neutral_pending","interior_size":"(488, 472)","layer_size":"(492, 476)","layers":[{"bake_ms":157.9319,"coast_sdf_max_dist_px":19.5983294073761,"distance_scale":2.44979117592201,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":1498611210313382120,"edge_neighbor":1005562523882514657,"height":-7376923324040294084,"map_index":-8053414775906859736,"terrain_detail":6186431328292761184,"terrain_normal":7286100316132456644,"water_depth":8500868540866711591},"layer":0,"normal_radius_px":"(19, 19)","raster_scale":"(2.449755, 2.449827)","river_sdf_max_dist_px":8.57426911572705,"shore_carve_band_px":15,"upload_ms":0.096,"wall_ms":158.632},{"bake_ms":185.0027,"coast_sdf_max_dist_px":19.5983294073761,"distance_scale":2.44979117592201,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-4950402997942453765,"edge_neighbor":-1817094073867092319,"height":1471375401268205925,"map_index":-8546904551409701050,"terrain_detail":-7935255503121449438,"terrain_normal":-7915661459498719513,"water_depth":-62740835754847394},"layer":1,"normal_radius_px":"(19, 19)","raster_scale":"(2.449755, 2.449827)","river_sdf_max_dist_px":8.57426911572705,"shore_carve_band_px":15,"upload_ms":0.074,"wall_ms":185.485},{"bake_ms":158.0521,"coast_sdf_max_dist_px":19.5983294073761,"distance_scale":2.44979117592201,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":4243370179097460355,"edge_neighbor":-2473085161927184100,"height":4927024985908459391,"map_index":-9142522595905325655,"terrain_detail":-5571335100742566399,"terrain_normal":-1150163867049919111,"water_depth":4237294191949753166},"layer":2,"normal_radius_px":"(19, 19)","raster_scale":"(2.449755, 2.449827)","river_sdf_max_dist_px":8.57426911572705,"shore_carve_band_px":15,"upload_ms":0.067,"wall_ms":158.572},{"bake_ms":152.0818,"coast_sdf_max_dist_px":19.5983294073761,"distance_scale":2.44979117592201,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-4016242880810002576,"edge_neighbor":-683629665796388668,"height":-7520999095292079456,"map_index":2871588665590495637,"terrain_detail":4139408718546223794,"terrain_normal":-7047879812217166595,"water_depth":5033656126038932743},"layer":3,"normal_radius_px":"(19, 19)","raster_scale":"(2.449755, 2.449827)","river_sdf_max_dist_px":8.57426911572705,"shore_carve_band_px":15,"upload_ms":0.072,"wall_ms":152.536},{"bake_ms":139.8559,"coast_sdf_max_dist_px":19.5983294073761,"distance_scale":2.44979117592201,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-7704383429176326032,"edge_neighbor":-6877892940147537227,"height":-7595767888867245694,"map_index":-192870331959762579,"terrain_detail":-894614703239167692,"terrain_normal":-4315052604121110928,"water_depth":683988004703962534},"layer":4,"normal_radius_px":"(19, 19)","raster_scale":"(2.449755, 2.449827)","river_sdf_max_dist_px":8.57426911572705,"shore_carve_band_px":15,"upload_ms":0.071,"wall_ms":140.447},{"bake_ms":169.0626,"coast_sdf_max_dist_px":19.5983294073761,"distance_scale":2.44979117592201,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-7598640109446582885,"edge_neighbor":-1764245753992674974,"height":-4577823756547968262,"map_index":-960288850545030431,"terrain_detail":-1993308945813862946,"terrain_normal":9078381166360185785,"water_depth":8839454634503668253},"layer":5,"normal_radius_px":"(19, 19)","raster_scale":"(2.449755, 2.449827)","river_sdf_max_dist_px":8.57426911572705,"shore_carve_band_px":15,"upload_ms":0.067,"wall_ms":169.597},{"bake_ms":195.0878,"coast_sdf_max_dist_px":19.5983294073761,"distance_scale":2.44979117592201,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-1858353696028595544,"edge_neighbor":1108555598599322303,"height":3441083034547183006,"map_index":6520780247712767537,"terrain_detail":3443491598543143355,"terrain_normal":-3478583296300424158,"water_depth":-3012677319862532256},"layer":6,"normal_radius_px":"(19, 19)","raster_scale":"(2.449755, 2.449827)","river_sdf_max_dist_px":8.57426911572705,"shore_carve_band_px":15,"upload_ms":0.083,"wall_ms":195.593},{"bake_ms":220.1642,"coast_sdf_max_dist_px":19.5983294073761,"distance_scale":2.44979117592201,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-5893058516336187516,"edge_neighbor":1442208126432080017,"height":-4666043265625715018,"map_index":4649237518952089265,"terrain_detail":-5278840651366733002,"terrain_normal":4333891573206164917,"water_depth":-6518189979266314899},"layer":7,"normal_radius_px":"(19, 19)","raster_scale":"(2.449755, 2.449827)","river_sdf_max_dist_px":8.57426911572705,"shore_carve_band_px":15,"upload_ms":0.07,"wall_ms":220.726},{"bake_ms":237.6023,"coast_sdf_max_dist_px":19.5983294073761,"distance_scale":2.44979117592201,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-6318680840453701181,"edge_neighbor":6193403274120941793,"height":-2532794657566706717,"map_index":3426855152307819721,"terrain_detail":2347542797967897600,"terrain_normal":8520382156561056669,"water_depth":8831652956077313837},"layer":8,"normal_radius_px":"(19, 19)","raster_scale":"(2.449755, 2.449827)","river_sdf_max_dist_px":8.57426911572705,"shore_carve_band_px":15,"upload_ms":0.076,"wall_ms":238.249},{"bake_ms":203.6741,"coast_sdf_max_dist_px":19.5983294073761,"distance_scale":2.44979117592201,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-1946363005395327418,"edge_neighbor":-6514032908187300227,"height":4498766106562795991,"map_index":3150189820029954894,"terrain_detail":3828129195704303385,"terrain_normal":7866275739324536031,"water_depth":5838804721329831772},"layer":9,"normal_radius_px":"(19, 19)","raster_scale":"(2.449755, 2.449827)","river_sdf_max_dist_px":8.57426911572705,"shore_carve_band_px":15,"upload_ms":0.078,"wall_ms":204.153},{"bake_ms":106.7772,"coast_sdf_max_dist_px":19.5983294073761,"distance_scale":2.44979117592201,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":1678950708696106614,"edge_neighbor":1015721758964441636,"height":-6926517991540189726,"map_index":-7757122459065779037,"terrain_detail":2959282876299837370,"terrain_normal":6522436335626879952,"water_depth":-6633786931501927494},"layer":10,"normal_radius_px":"(19, 19)","raster_scale":"(2.449755, 2.449827)","river_sdf_max_dist_px":8.57426911572705,"shore_carve_band_px":15,"upload_ms":0.068,"wall_ms":107.345},{"bake_ms":153.4887,"coast_sdf_max_dist_px":19.5983294073761,"distance_scale":2.44979117592201,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":810413171848159772,"edge_neighbor":5432655005942197615,"height":6503035989124921826,"map_index":6533579997817892683,"terrain_detail":2852440910945261490,"terrain_normal":-468430794466196023,"water_depth":-8305440258341467525},"layer":11,"normal_radius_px":"(19, 19)","raster_scale":"(2.449755, 2.449827)","river_sdf_max_dist_px":8.57426911572705,"shore_carve_band_px":15,"upload_ms":0.076,"wall_ms":153.964},{"bake_ms":179.6675,"coast_sdf_max_dist_px":19.5983294073761,"distance_scale":2.44979117592201,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-3575228656758023210,"edge_neighbor":8551960486932143823,"height":5180202469269445208,"map_index":1957591469298544708,"terrain_detail":1534918056969626317,"terrain_normal":1285237346100215013,"water_depth":7716736934307154753},"layer":12,"normal_radius_px":"(19, 19)","raster_scale":"(2.449755, 2.449827)","river_sdf_max_dist_px":8.57426911572705,"shore_carve_band_px":15,"upload_ms":0.077,"wall_ms":180.136},{"bake_ms":194.4804,"coast_sdf_max_dist_px":19.5983294073761,"distance_scale":2.44979117592201,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-2794556244063640672,"edge_neighbor":-8840180479178680574,"height":5139636230275778796,"map_index":8424139790529617322,"terrain_detail":983150219155691097,"terrain_normal":-3237760816967435371,"water_depth":1478786174899524247},"layer":13,"normal_radius_px":"(19, 19)","raster_scale":"(2.449755, 2.449827)","river_sdf_max_dist_px":8.57426911572705,"shore_carve_band_px":15,"upload_ms":0.068,"wall_ms":195.036},{"bake_ms":144.5795,"coast_sdf_max_dist_px":19.5983294073761,"distance_scale":2.44979117592201,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":3047036292607849804,"edge_neighbor":6185407933387684373,"height":7349827255519059027,"map_index":-4422322475118034819,"terrain_detail":-9051776929821328223,"terrain_normal":-5974623630694956686,"water_depth":-3458449386860231174},"layer":14,"normal_radius_px":"(19, 19)","raster_scale":"(2.449755, 2.449827)","river_sdf_max_dist_px":8.57426911572705,"shore_carve_band_px":15,"upload_ms":0.079,"wall_ms":145.067}],"logical_size":"(2440, 1416)","mode":"tiled","path":"visual_tiled_static","profile":"desktop_auto","renderer":"mobile","requested_budget_px":3411975,"requested_texels_per_hex":14.0,"requested_tile_world_span":"(804.5714, 804.5714)","requested_world_units_per_texel":1.57142857142857,"tile_world_area":561669.436340332,"tile_world_span":"(762.1024, 737.0)","total_ms":2606.11,"visual_domain":"[P: (0.0, -44.0), S: (3810.512, 2211.0)]","wrap_period_x":3810.51177665153,"wrap_x":true}
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/organic.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1179)
+       [3] generate (res://scripts/geography/map_generator.gd:1429)
+       [4] generate_world (res://scripts/game/world_runtime_host.gd:331)
+       [5] _run (res://tests/headless_perf_record.gd:193)
+       [6] _init (res://tests/headless_perf_record.gd:25)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/dry_sand.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1179)
+       [3] generate (res://scripts/geography/map_generator.gd:1429)
+       [4] generate_world (res://scripts/game/world_runtime_host.gd:331)
+       [5] _run (res://tests/headless_perf_record.gd:193)
+       [6] _init (res://tests/headless_perf_record.gd:25)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/rock.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1179)
+       [3] generate (res://scripts/geography/map_generator.gd:1429)
+       [4] generate_world (res://scripts/game/world_runtime_host.gd:331)
+       [5] _run (res://tests/headless_perf_record.gd:193)
+       [6] _init (res://tests/headless_perf_record.gd:25)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/snow_wet.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1179)
+       [3] generate (res://scripts/geography/map_generator.gd:1429)
+       [4] generate_world (res://scripts/game/world_runtime_host.gd:331)
+       [5] _run (res://tests/headless_perf_record.gd:193)
+       [6] _init (res://tests/headless_perf_record.gd:25)
+  cell LUT encode: deferred until DCWorldExt bind
+  encode: 5282ms
+MapBaker v6: total 5488ms
+MapGenerator v7: bake 5577ms
+MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+MapGenerator: skip _compute_terrain_perturbed_wind (physical-hex solver writes per-cell)
+[SUS] sim budget strict=false frame=8.00ms warn=2.00ms slice=0.75ms upload=1.50ms scheduler=DCSystemScheduler native_sus=auto
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+[DataCore] _data_core_world_ext bound=true (climate co-processor; class=DCWorldExt)
+[native_world] configure rc=0 reason=configured cells=6400 wrap_period_x=173.205
+[native_generation] path=gdext n=6400 published=9 native_ms=0.277 compute_ms=0.213 flush_ms=0.063
+[hex_cell] facade ENABLED (6400 cells bound; ext=true)
+[DataCore] _baker climate_profile injected=true (fixes WorldData.config==null sea_ice prepare path)
+[phys_solve][oneshot] OK slp=1.29ms wind=0.83ms psi=0.61ms(ran=true) upwelling=0.08ms total=3.77ms
+PhysicalCirculation solve@phase=1.50 total=4ms (C++ one-shot run_physical_solve_pass)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+[physical_init] deferred native refresh complete: 4ms
+[cell_lut] deferred encode: 4ms path=gdext
+[bio-occupancy] seed landmasses=3 provinces=3 species=20 secondary_hearths=0
+[bio-occupancy]   bio.maize envelope=397 hearth=45 seeded_landmasses=1 primary_landmass=1 primary_envelope=397 occupied=45 occupied/envelope=0.11
+[bio-occupancy]   bio.wheat envelope=910 hearth=150 seeded_landmasses=1 primary_landmass=1 primary_envelope=910 occupied=150 occupied/envelope=0.16
+[bio-occupancy]   bio.rice envelope=153 hearth=20 seeded_landmasses=1 primary_landmass=1 primary_envelope=153 occupied=20 occupied/envelope=0.13
+[bio-occupancy]   bio.potato envelope=1014 hearth=209 seeded_landmasses=1 primary_landmass=1 primary_envelope=1014 occupied=209 occupied/envelope=0.21
+[bio-occupancy]   bio.horse envelope=1084 hearth=299 seeded_landmasses=1 primary_landmass=1 primary_envelope=1084 occupied=299 occupied/envelope=0.28
+[bio-occupancy]   bio.cotton envelope=716 hearth=161 seeded_landmasses=1 primary_landmass=1 primary_envelope=716 occupied=161 occupied/envelope=0.22
+[bio-occupancy]   bio.flax envelope=880 hearth=342 seeded_landmasses=1 primary_landmass=1 primary_envelope=880 occupied=342 occupied/envelope=0.39
+[bio-occupancy]   bio.spice envelope=501 hearth=33 seeded_landmasses=1 primary_landmass=1 primary_envelope=501 occupied=33 occupied/envelope=0.07
+[bio-occupancy]   bio.rubber envelope=332 hearth=53 seeded_landmasses=1 primary_landmass=1 primary_envelope=332 occupied=53 occupied/envelope=0.16
+[bio-occupancy]   bio.sheep envelope=421 hearth=62 seeded_landmasses=1 primary_landmass=1 primary_envelope=421 occupied=62 occupied/envelope=0.15
+[bio-occupancy]   bio.goat envelope=2021 hearth=207 seeded_landmasses=1 primary_landmass=1 primary_envelope=2015 occupied=207 occupied/envelope=0.10
+[bio-occupancy]   bio.cattle envelope=103 hearth=6 seeded_landmasses=1 primary_landmass=1 primary_envelope=103 occupied=6 occupied/envelope=0.06
+[bio-occupancy]   bio.pig envelope=1048 hearth=168 seeded_landmasses=1 primary_landmass=1 primary_envelope=1048 occupied=168 occupied/envelope=0.16
+[bio-occupancy]   bio.camel envelope=229 hearth=50 seeded_landmasses=1 primary_landmass=1 primary_envelope=229 occupied=50 occupied/envelope=0.22
+[bio-occupancy]   bio.yak envelope=969 hearth=384 seeded_landmasses=1 primary_landmass=1 primary_envelope=917 occupied=384 occupied/envelope=0.42
+[bio-occupancy]   bio.silkworm envelope=492 hearth=81 seeded_landmasses=1 primary_landmass=1 primary_envelope=488 occupied=81 occupied/envelope=0.17
+[bio-occupancy]   bio.reed envelope=551 hearth=28 seeded_landmasses=1 primary_landmass=1 primary_envelope=551 occupied=28 occupied/envelope=0.05
+[bio-occupancy]   bio.bast_fiber envelope=887 hearth=124 seeded_landmasses=1 primary_landmass=1 primary_envelope=884 occupied=124 occupied/envelope=0.14
+[bio-occupancy]   bio.dye_plant envelope=752 hearth=153 seeded_landmasses=1 primary_landmass=1 primary_envelope=752 occupied=153 occupied/envelope=0.20
+[bio-occupancy]   bio.medicinal_herb envelope=1436 hearth=163 seeded_landmasses=1 primary_landmass=1 primary_envelope=1427 occupied=163 occupied/envelope=0.11
+[bio-occupancy]   landmass 1 classes=cold_grazer, fiber_forest, highland_food, dry_grazer, fiber_wet, fiber_open, open_grazer, open_food, forest_grazer, tropical, wetland_food foods=potato, wheat, maize, rice
+[bio-occupancy]   landmass 2 classes=none foods=none
+[bio-occupancy]   landmass 3 classes=none foods=none
+[weather] gdext acceleration ON (class=DCWorldExt)
+[weather] gdext field commit ON
+[weather] gdext distribute ON
+[weather] gdext summary ON
+[weather] hexcell facade ON (skip AoS double-write in hot loop)
+[weather] gdext resident knobs ON (class=KnobsHandle)
+[economy] ACTIVE native graph cells=6400 goods=134 cohorts=16 epoch_days=1 trade=ACTIVE topology_ready=true topology_generation=1 bootstrap=starter_settlement_bootstrap_v9 founder_families=4 founder_people=4
+[country] ACTIVE native authority countries=4 cells=6400 generation=1
+[weather/knobs] resident KnobsHandle path ACTIVE — first to_*_knobs_dict hit (field_rebuild_count=1 expected ≤1; stable Hz target ≤1 Hz)
+[native_daily] ACTIVE: registered native_daily_sim + natural_resource_daily + bio_occupancy_daily; retained season_refresh + ocean_currents boundary jobs
+[DCSystemScheduler] topology: ["season_refresh", "trigger_runtime", "ideology_runtime", "effect_runtime", "modifier_daily", "gameplay_effect", "natural_resource_daily", "bio_occupancy_daily", "enum_atlas_upload", "ocean_currents", "native_daily_sim", "dynamic_visual_atlas_upload", "country_daily", "economy_daily"]
+WARNING: [building-visual] disabled: building_visual_renderer_unavailable
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] generate_world (res://scripts/game/world_runtime_host.gd:366)
+       [1] _run (res://tests/headless_perf_record.gd:193)
+       [2] _init (res://tests/headless_perf_record.gd:25)
+[perf-record] start (start_tick=0 mode=DETAIL detail_period=1)
+[DCSystemScheduler][RT] ocean_skip#1 tick=1 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#2 tick=2 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#3 tick=3 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[phys_solve][RT] start#1 phase=0.0438 pending=nan solve_ocean=true ext=true idx=true soa=true
+[slp_field] path-decision call#1: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true -> cpp_gate=true
+[slp_field] commit-diag call#1: rc=0.085 slp_out=6400 n_cells=6400 map_slp=6400 slice=0:800 final=false published=false slot=19/6400 reason=intermediate_slice
+[slp_field][RT-DIAG] call#1 phase=0.0438 rc=0.085 slp_out=6400 n=6400 slice=0:800 final=false published=false slot=19/6400 slot_reason=intermediate_slice -> intermediate_slice
+[natural_resource/slow-dump] tick=5 day=5 wall=6.36 cpp=0.279 compute=0.253 loop=0.046 flush=0.057 wrapper=5.568 layout=cell_indices dispatches=0 resources=13/31 skipped_static=18 published=true total_delta=10785660.14834
+[DCSystemScheduler][RT] ocean_skip#4 tick=5 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#5 tick=7 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+WARNING: [sim/graph-trigger] handoff blocked day=7 reason=trigger_effect_domain_adapter_required command_key=economy.social_pressure_notice definition_key= action=13 opcode=1 â trigger effect queue cannot drain; trigger is retired for the rest of each pulse
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _advance_runtime_graph_pulse (res://scripts/geography/map_generator.gd:2489)
+       [1] _continue_economy_inflight (res://scripts/geography/map_generator.gd:2307)
+       [2] _drain_hard_barrier (res://tests/headless_perf_record.gd:371)
+       [3] _run (res://tests/headless_perf_record.gd:274)
+       [4] _init (res://tests/headless_perf_record.gd:25)
+[slp_field] path-decision call#2: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true -> cpp_gate=true
+[slp_field] commit-diag call#2: rc=0.113 slp_out=6400 n_cells=6400 map_slp=6400 slice=800:1600 final=false published=false slot=19/6400 reason=intermediate_slice
+[slp_field][RT-DIAG] call#2 phase=0.0438 rc=0.113 slp_out=6400 n=6400 slice=800:1600 final=false published=false slot=19/6400 slot_reason=intermediate_slice -> intermediate_slice
+[DCSystemScheduler][RT] ocean_skip#6 tick=9 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#7 tick=10 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#8 tick=11 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[slp_field] path-decision call#3: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true -> cpp_gate=true
+[slp_field] commit-diag call#3: rc=0.088 slp_out=6400 n_cells=6400 map_slp=6400 slice=1600:2400 final=false published=false slot=19/6400 reason=intermediate_slice
+[slp_field][RT-DIAG] call#3 phase=0.0438 rc=0.088 slp_out=6400 n=6400 slice=1600:2400 final=false published=false slot=19/6400 slot_reason=intermediate_slice -> intermediate_slice
+[DCSystemScheduler][RT] ocean_skip#9 tick=13 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#10 tick=14 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#11 tick=15 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[slp_field][RT-DIAG] call#4 phase=0.0438 rc=0.089 slp_out=6400 n=6400 slice=2400:3200 final=false published=false slot=19/6400 slot_reason=intermediate_slice -> intermediate_slice
+[DCSystemScheduler][RT] ocean_skip#12 tick=17 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#13 tick=19 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[slp_field][RT-DIAG] call#5 phase=0.0438 rc=0.095 slp_out=6400 n=6400 slice=3200:4000 final=false published=false slot=19/6400 slot_reason=intermediate_slice -> intermediate_slice
+[DCSystemScheduler][RT] ocean_skip#14 tick=21 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#15 tick=22 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#16 tick=23 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#17 tick=25 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#18 tick=26 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#19 tick=27 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#20 tick=29 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[season_refresh] b_plus_start path=gdext handle=1 season=0 n_cells=6400
+[perf-record] exported rows=30 cols=1168 → F:/Developent/Godot/Project.Keynes/tmp/perf_record_20260904_000655.csv
+[headless-perf/result] label=diagnose_saved_active days=30 speed=50.000 seed=19991123 map=100x64 formal_start=true trade_scenario=false foreign_count=3 import_tariff_rate=0 export_tariff_rate=0 population_scale=0 saved_setup=true economy_configured=true country_count=4 population=80 generation_ms=17715.1 run_ms=821.0 barrier_pulses=4 ledger_failures=0 fatal=false population_error=0 money_error=0 goods_error=0 family_count=4 family_branch_count=4 family_trait_roll_count=11 effect_instances=6 family_effect_stack_groups=2 family_effect_group_members=2 effect_metric_slab_bytes=3357 effect_instance_storage_bytes=2704 city_good_output_shared_count=134 city_good_output_non_neutral_shared_count=0 city_good_output_override_count=0 city_good_output_override_cell_count=0 city_good_output_cache_bytes=26140 trade_orders_dispatched=0 trade_orders_arrived=0 trade_orders_cumulative=0 trade_base_cumulative=0 trade_route_expansions=6541 trade_tariff_lanes=0 trade_country_goods=0 trade_country_partners=0 tariff_collected=0 tariff_subsidy_paid=0 economy_memory_bytes=156372724 rows=30 expected_rows=30 path=F:/Developent/Godot/Project.Keynes/tmp/perf_record_20260904_000655.csv
+ERROR: 24 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 312 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

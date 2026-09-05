@@ -1,0 +1,8 @@
+[build audit]
+- Patched gdext/src/world_ext_runtime_graph.cpp: direct get_runtime_thread_report now includes authority_ready, graph_coverage_complete, state/state_id, ABI alias, generation/state_hash aliases, completed_days, fallback diagnostics, climate parity/trace fields.
+- Single-file compile passes (MSVC /std:c++17 /EHsc /W3 /permissive- /DNOMINMAX).
+- Full SCons debug build with alternate basename dots_ext_reportfix succeeded after concurrent kernel fix; original target was locked by many Godot processes. Alternate DLL: Project/project-keynes/addons/dots_ext/bin/windows/dots_ext_reportfix.windows.template_debug.x86_64.dll.
+- Headless on alternate DLL: protocol guard 8/0; snapshot ring PASS; save section 8/0; climate authority self-test FAIL = climate_formula_self_test_failed; domain POD authoritative stores self-test fails for same reason; thread isolation old contract 9 failures because strict trace barrier blocks without reference frame.
+- Formula diagnosis: surface_absorbed_factor(false, 0.30f) returns 0.475, self_test expects 1.0. Reversed-edge smoothstep likely incorrect; inspect runtime_climate_formulas.cpp before enabling tests.
+- After another agent added runtime_domain_authorities.cpp, release SCons build now fails there: missing includes/declarations for RuntimeClimateKernel and RuntimeCountryPodAdapter; references RuntimeCountryPodSnapshot::country member that does not exist. This is a new shared-tree blocker unrelated to report patch.
+- Recompiled standalone POD self-test after formula fix: PASS.

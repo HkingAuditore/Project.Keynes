@@ -14,7 +14,6 @@
 #include <godot_cpp/classes/global_constants.hpp>
 #include <godot_cpp/classes/fast_noise_lite.hpp>          // native world-gen 复刻：与 GDScript _init_noise 同一引擎噪声
 #include <godot_cpp/classes/random_number_generator.hpp>  // native world-gen 复刻：与 GDScript _rng 同一引擎 PCG
-#include <godot_cpp/classes/worker_thread_pool.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/core/error_macros.hpp>
 #include <godot_cpp/core/math.hpp>
@@ -58,19 +57,17 @@ using namespace godot;
 static inline float pk_signed_hydrology_contribution(float anomaly,
                                                       float wet_weight,
                                                       float dry_weight) {
-    return anomaly * (anomaly < 0.0f ? dry_weight : wet_weight);
+    return climate_formula::signed_hydrology_contribution(
+        anomaly, wet_weight, dry_weight);
 }
 
 static inline float pk_plant_available_water(
         float moisture, float water_balance_30d, float soil_moisture,
         float water_balance_weight, float soil_buffer_weight,
         float drought_penalty) {
-    return std::clamp(
-        moisture
-            + std::max(water_balance_30d, 0.0f) * water_balance_weight
-            + std::max(soil_moisture, 0.0f) * soil_buffer_weight
-            + std::min(water_balance_30d, 0.0f) * drought_penalty,
-        0.0f, 1.0f);
+    return climate_formula::plant_available_water(
+        moisture, water_balance_30d, soil_moisture,
+        water_balance_weight, soil_buffer_weight, drought_penalty);
 }
 
 
@@ -2399,7 +2396,6 @@ double DCWorldExt::run_climate_pass_b_thread(const Dictionary &knobs, int n_task
     using godot::StringName;
     using godot::PackedFloat32Array;
     using godot::PackedInt32Array;
-    using godot::WorkerThreadPool;
 
     auto diag = [&](const char *why) {
         UtilityFunctions::push_warning(
@@ -2554,10 +2550,10 @@ double DCWorldExt::run_climate_pass_b_thread(const Dictionary &knobs, int n_task
 
     // 任务粒度兜底：n_land 很小时（< 256），分块开销 > 收益，直接单线程跑。
     // [Phase C.3b] 整段 chunk + WTP gate + wait 由 parallel_for_range 统一封装；
-    // 行为与原手写 PassBLandTask + add_native_group_task 模板严格一致：
+    // 行为与原手写 PassBLandTask + native executor 模板严格一致：
     //   - n < 256 || n_tasks == 1 直接 run_range(0, n_land)
     //   - WTP 缺失 in-thread 顺序按 task_idx 跑（保持调度等价）
-    //   - 否则 add_native_group_task("pk_pass_b_land") + wait
+    //   - 否则 NativeParallelExecutor group + wait
     pk::parallel_for_range(
         "pk_pass_b_land", n_land, n_tasks, /*seq_threshold=*/256,
         [&](int begin, int end) {

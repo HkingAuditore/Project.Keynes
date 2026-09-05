@@ -1,0 +1,8 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+SCRIPT ERROR: Parse Error: Identifier "DCWorldExt" not declared in the current scope.
+   at: GDScript::reload (res://probe.gd:6)
+SCRIPT ERROR: Parse Error: Cannot infer the type of "ext" variable because the value doesn't have a set type.
+   at: GDScript::reload (res://probe.gd:6)
+ERROR: Failed to load script "res://probe.gd" with error "Parse error".
+   at: load (modules/gdscript/gdscript.cpp:2907)

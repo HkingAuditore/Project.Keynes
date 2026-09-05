@@ -28,6 +28,11 @@ env = SConscript("godot-cpp/SConstruct")
 # ---------------------------------------------------------------------------
 env.Append(CPPPATH=["src/"])
 
+if env["platform"] == "windows" and env.get("is_msvc", False):
+    # NativeSimulationHost catches domain faults at the thread boundary; make
+    # the MSVC exception model explicit instead of relying on toolchain defaults.
+    env.Append(CCFLAGS=["/EHsc"])
+
 # ---------------------------------------------------------------------------
 # SIMD / vectorisation flags (Phase 3 micro-bench — methods C: SIMD path).
 # Toggle off if you suspect AVX2 isn't available on a target machine.

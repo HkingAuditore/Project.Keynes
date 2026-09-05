@@ -15,6 +15,8 @@
 #include <godot_cpp/variant/packed_int32_array.hpp>
 #include <godot_cpp/variant/string.hpp>
 
+#include "runtime_pod_protocol.h"
+
 namespace pk {
 
 class EffectRuntime;
@@ -200,6 +202,21 @@ public:
                                    bool &ok, std::string &reason) const;
     bool has_pending_effect_commands() const;
     bool should_run(int64_t day_index) const;
+    // Phase B POD adapter. It covers the research-only continuation path and
+    // intentionally rejects command batches until their payload conversion
+    // is migrated. No Godot value is created while this method executes.
+    bool run_day_pod(const RuntimeCountryDayContext &context,
+                     RuntimeCountryDayCommit &out);
+    // Copy the numeric Country authority into a worker-safe immutable
+    // projection. This method is a main-thread capture boundary; the
+    // returned snapshot contains no Godot values or string references.
+    bool export_pod_snapshot(RuntimeCountryPodSnapshot &out,
+                             std::string &error) const;
+    // Main-thread capture of the numeric technology/research catalog. This
+    // is deliberately separate from export_pod_snapshot so a worker can
+    // reject a missing or stale catalog before accepting commands.
+    bool export_pod_catalog(RuntimeCountryPodCatalog &out,
+                            std::string &error) const;
     godot::Dictionary run_slice(const godot::Dictionary &ctx);
     godot::Dictionary report() const;
     godot::Dictionary reset(const godot::String &reason);
@@ -496,6 +513,11 @@ private:
     bool validate_pending_activation_index() const;
     void insert_pending_activation(int32_t slot, int32_t technology);
     void erase_pending_activation(int32_t slot, int32_t technology);
+    bool country_has_research_work(int32_t slot) const;
+    void rebuild_research_active_index();
+    void rebuild_discovery_dependents();
+    void refresh_discovery_for_completed(
+        int32_t slot, const std::vector<int32_t> &completed);
     void refresh_discovery(int32_t slot);
     bool prerequisites_met(int32_t slot, int32_t technology) const;
     bool prerequisites_met(const std::vector<uint64_t> &completed, int32_t slot,
@@ -520,6 +542,7 @@ private:
     static const SignalEvidence *find_signal_evidence(
         const std::vector<SignalEvidence> &entries, int32_t signal);
     int64_t effective_research_cost(int32_t slot, int32_t technology) const;
+    void ensure_research_modifier_cache(int32_t slot) const;
     // Sparse progress may exceed catalog base cost when country.research.cost_factor
     // is above 1.0. Restore validation must accept any value that effective cost
     // could legally reach under the ModifierCatalog clamp ceiling.
@@ -551,6 +574,10 @@ private:
     bool _effect_runtime_enabled = false;
     int32_t _starting_country_slot = -1;
     uint64_t _generation = 0;
+    // Visibility generations are diagnostic/publish watermarks, not separate
+    // simulation authorities.  They deliberately stay out of save/state hashes.
+    uint64_t _territory_generation = 0;
+    uint64_t _research_generation = 0;
     bool _full_diagnostics = false;
     bool _light_report_enabled = true;
     bool _pending_queue_enabled = true;
@@ -599,6 +626,8 @@ private:
     std::vector<int64_t> _technology_reveal_condition_values;
     std::vector<int32_t> _technology_reveal_signal_offsets;
     std::vector<int32_t> _technology_reveal_signal_technologies;
+    std::vector<int32_t> _technology_discovery_dependent_offsets;
+    std::vector<int32_t> _technology_discovery_dependents;
     std::vector<uint8_t> _is_water;
 
     CountryStore _countries;
@@ -618,6 +647,36 @@ private:
     mutable int64_t _research_queue_rebuilds = 0;
     int64_t _research_full_scan_fallbacks = 0;
     std::string _research_queue_fallback_reason;
+    std::vector<int32_t> _research_active_country_slots;
+    std::vector<int32_t> _research_active_country_scratch;
+    std::vector<uint8_t> _research_active_country_membership;
+    // A country has four research lanes with an eight-entry queue each. Keep
+    // activation scratch at the runtime level so the daily hot loop reuses
+    // capacity instead of allocating two vectors for every active country.
+    std::vector<int32_t> _research_activated_pending_scratch;
+    std::vector<int32_t> _research_activated_technologies_scratch;
+    struct ResearchModifierCache {
+        uint64_t country_handle = 0;
+        uint64_t modifier_version = std::numeric_limits<uint64_t>::max();
+        double cost_factor = 1.0;
+        std::array<double, 4> efficiency{{1.0, 1.0, 1.0, 1.0}};
+    };
+    mutable std::vector<ResearchModifierCache> _research_modifier_cache;
+    // Per-run diagnostics. They are reset at run_research_day() entry and are
+    // excluded from persistence and authoritative hashes.
+    mutable double _research_activation_ms = 0.0;
+    mutable double _research_allocation_ms = 0.0;
+    mutable double _research_effect_ack_ms = 0.0;
+    mutable double _research_discovery_ms = 0.0;
+    mutable double _research_modifier_ms = 0.0;
+    mutable int64_t _research_countries_scanned = 0;
+    mutable int64_t _research_active_countries = 0;
+    mutable int64_t _research_pending_checks = 0;
+    mutable int64_t _research_discovery_checks = 0;
+    mutable int64_t _research_discovery_frontier_mismatches = 0;
+    mutable int64_t _research_modifier_queries = 0;
+    mutable int64_t _research_modifier_cache_hits = 0;
+    mutable int64_t _research_remainder_iterations = 0;
     std::vector<uint64_t> _country_research_signals;
     std::vector<std::vector<uint64_t>> _country_research_signal_cells;
     std::vector<std::vector<SignalEvidence>> _country_research_signal_evidence;
@@ -659,6 +718,9 @@ private:
     std::deque<Event> _events;
     CommandBatchState _command_batch;
     godot::Dictionary _report;
+    // Suppresses the one legacy diagnostic write in run_research_day() while
+    // the POD adapter is executing on a worker-owned runtime.
+    bool _pod_execution = false;
 
     std::vector<uint8_t> _save_bytes;
     size_t _save_cursor = 0;

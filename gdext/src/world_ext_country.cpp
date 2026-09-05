@@ -3,6 +3,7 @@
 #include "effect_runtime.h"
 #include "modifier_runtime.h"
 #include "economy_runtime.h"
+#include "native_simulation_host.h"
 
 #include <chrono>
 
@@ -83,6 +84,104 @@ Dictionary DCWorldExt::submit_country_commands(const Dictionary &packed_batch) {
         : country_runtime_from(_country_runtime)->submit_commands(packed_batch);
 }
 
+Dictionary DCWorldExt::capture_country_runtime_snapshot() {
+    Dictionary out;
+    if (_country_runtime == nullptr) {
+        out["ok"] = false;
+        out["code"] = "country_runtime_unavailable";
+        return out;
+    }
+    RuntimeCountryPodSnapshot snapshot;
+    std::string error;
+    if (!country_runtime_from(_country_runtime)->export_pod_snapshot(snapshot, error)) {
+        out["ok"] = false;
+        out["code"] = error.empty() ? "country_snapshot_capture_failed" : error.c_str();
+        return out;
+    }
+    if (!_runtime_host) _runtime_host = std::make_unique<NativeSimulationHost>();
+    if (!_runtime_host->publish_country_snapshot(snapshot)) {
+        out["ok"] = false;
+        out["code"] = "country_snapshot_validation_failed";
+        return out;
+    }
+    out["ok"] = true;
+    out["code"] = "ok";
+    out["generation"] = static_cast<int64_t>(snapshot.generation);
+    out["state_hash"] = static_cast<int64_t>(snapshot.state_hash);
+    out["committed_day"] = snapshot.committed_day;
+    out["country_count"] = static_cast<int>(snapshot.country_count);
+    out["cell_count"] = static_cast<int>(snapshot.cell_count);
+    out["technology_count"] = static_cast<int>(snapshot.technology_count);
+    return out;
+}
+
+Dictionary DCWorldExt::capture_country_pod_catalog() {
+    Dictionary out;
+    if (_country_runtime == nullptr) {
+        out["ok"] = false;
+        out["code"] = "country_runtime_unavailable";
+        return out;
+    }
+    RuntimeCountryPodCatalog catalog;
+    std::string error;
+    if (!country_runtime_from(_country_runtime)->export_pod_catalog(catalog, error)) {
+        out["ok"] = false;
+        out["code"] = error.empty() ? "country_catalog_capture_failed" : error.c_str();
+        return out;
+    }
+    PackedInt64Array costs;
+    costs.resize(static_cast<int64_t>(catalog.technology_costs.size()));
+    for (int64_t i = 0; i < costs.size(); ++i) costs.set(i, catalog.technology_costs[static_cast<size_t>(i)]);
+    PackedInt32Array domains, flags, prereq_offsets, prerequisites;
+    domains.resize(static_cast<int64_t>(catalog.technology_domains.size()));
+    flags.resize(static_cast<int64_t>(catalog.technology_flags.size()));
+    prereq_offsets.resize(static_cast<int64_t>(catalog.prerequisite_offsets.size()));
+    prerequisites.resize(static_cast<int64_t>(catalog.prerequisites.size()));
+    for (int64_t i = 0; i < domains.size(); ++i) domains.set(i, catalog.technology_domains[static_cast<size_t>(i)]);
+    for (int64_t i = 0; i < flags.size(); ++i) flags.set(i, catalog.technology_flags[static_cast<size_t>(i)]);
+    for (int64_t i = 0; i < prereq_offsets.size(); ++i) prereq_offsets.set(i, catalog.prerequisite_offsets[static_cast<size_t>(i)]);
+    for (int64_t i = 0; i < prerequisites.size(); ++i) prerequisites.set(i, catalog.prerequisites[static_cast<size_t>(i)]);
+    PackedInt32Array condition_offsets, condition_ops, condition_refs;
+    PackedInt64Array condition_values;
+    condition_offsets.resize(static_cast<int64_t>(catalog.research_condition_offsets.size()));
+    condition_ops.resize(static_cast<int64_t>(catalog.research_condition_ops.size()));
+    condition_refs.resize(static_cast<int64_t>(catalog.research_condition_refs.size()));
+    condition_values.resize(static_cast<int64_t>(catalog.research_condition_values.size()));
+    for (int64_t i = 0; i < condition_offsets.size(); ++i) condition_offsets.set(i, catalog.research_condition_offsets[static_cast<size_t>(i)]);
+    for (int64_t i = 0; i < condition_ops.size(); ++i) condition_ops.set(i, catalog.research_condition_ops[static_cast<size_t>(i)]);
+    for (int64_t i = 0; i < condition_refs.size(); ++i) condition_refs.set(i, catalog.research_condition_refs[static_cast<size_t>(i)]);
+    for (int64_t i = 0; i < condition_values.size(); ++i) condition_values.set(i, catalog.research_condition_values[static_cast<size_t>(i)]);
+    PackedInt32Array milestone_offsets, milestone_candidates, milestone_required, entry_milestones;
+    milestone_offsets.resize(static_cast<int64_t>(catalog.milestone_offsets.size()));
+    milestone_candidates.resize(static_cast<int64_t>(catalog.milestone_candidates.size()));
+    milestone_required.resize(static_cast<int64_t>(catalog.milestone_required_counts.size()));
+    entry_milestones.resize(static_cast<int64_t>(catalog.entry_milestone_indices.size()));
+    for (int64_t i = 0; i < milestone_offsets.size(); ++i) milestone_offsets.set(i, catalog.milestone_offsets[static_cast<size_t>(i)]);
+    for (int64_t i = 0; i < milestone_candidates.size(); ++i) milestone_candidates.set(i, catalog.milestone_candidates[static_cast<size_t>(i)]);
+    for (int64_t i = 0; i < milestone_required.size(); ++i) milestone_required.set(i, catalog.milestone_required_counts[static_cast<size_t>(i)]);
+    for (int64_t i = 0; i < entry_milestones.size(); ++i) entry_milestones.set(i, catalog.entry_milestone_indices[static_cast<size_t>(i)]);
+    out["ok"] = true;
+    out["catalog_hash"] = static_cast<int64_t>(catalog.catalog_hash);
+    out["technology_count"] = static_cast<int>(catalog.technology_count);
+    out["technology_words"] = static_cast<int>(catalog.technology_words);
+    out["technology_points_good_id"] = catalog.technology_points_good_id;
+    out["research_conditions_complete"] = catalog.research_conditions_complete;
+    out["technology_costs"] = costs;
+    out["technology_domains"] = domains;
+    out["technology_flags"] = flags;
+    out["prerequisite_offsets"] = prereq_offsets;
+    out["prerequisites"] = prerequisites;
+    out["milestone_offsets"] = milestone_offsets;
+    out["milestone_candidates"] = milestone_candidates;
+    out["milestone_required_counts"] = milestone_required;
+    out["entry_milestone_indices"] = entry_milestones;
+    out["research_condition_offsets"] = condition_offsets;
+    out["research_condition_ops"] = condition_ops;
+    out["research_condition_refs"] = condition_refs;
+    out["research_condition_values"] = condition_values;
+    return out;
+}
+
 Dictionary DCWorldExt::run_country_slice(const Dictionary &ctx) {
     if (_country_runtime == nullptr) return country_unavailable();
     NativeCountryRuntime *runtime = country_runtime_from(_country_runtime);
@@ -100,6 +199,10 @@ Dictionary DCWorldExt::run_country_slice(const Dictionary &ctx) {
             else
                 write_i32_range(slot, 0, runtime->cell_country_snapshot());
             _flush_slot_to_map(slot);
+            ++_runtime_graph_flush_slot_count;
+            _runtime_graph_visual_diff_cell_count += static_cast<uint64_t>(
+                !indices.is_empty() ? indices.size() :
+                static_cast<int64_t>(out.get("cell_count", 0)));
             const double publish_ms = std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - publish_start).count();
             runtime->mark_slot_publication(true, publish_ms);
@@ -142,6 +245,10 @@ Dictionary DCWorldExt::sync_country_territory_to_map() {
     _flush_slot_to_map(slot);
     const double publish_ms = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - publish_start).count();
+    ++_runtime_graph_flush_slot_count;
+    _runtime_graph_visual_diff_cell_count +=
+        static_cast<uint64_t>(snapshot.size());
+    _runtime_graph_country_territory_sync_ms = publish_ms;
     runtime->mark_slot_publication(true, publish_ms);
     out["ok"] = true;
     out["cells"] = snapshot.size();

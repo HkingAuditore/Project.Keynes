@@ -77,10 +77,62 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::advance_runtime_pulse, DEFVAL(0));
     ClassDB::bind_method(D_METHOD("flush_runtime_visuals", "dirty_mask"),
                          &DCWorldExt::flush_runtime_visuals, DEFVAL(0));
+    ClassDB::bind_method(D_METHOD("set_runtime_qos", "interactive"),
+                         &DCWorldExt::set_runtime_qos);
+    ClassDB::bind_method(D_METHOD("get_runtime_thread_report"),
+                         &DCWorldExt::get_runtime_thread_report);
+    ClassDB::bind_method(D_METHOD("record_runtime_visual_timings",
+                                  "ui_input_to_feedback_ms", "visual_apply_ms",
+                                  "gpu_upload_ms"),
+                         &DCWorldExt::record_runtime_visual_timings);
     ClassDB::bind_method(D_METHOD("get_runtime_perf_snapshot", "detail_level"),
                          &DCWorldExt::get_runtime_perf_snapshot, DEFVAL(0));
     ClassDB::bind_method(D_METHOD("get_runtime_graph_last_economy_report"),
                          &DCWorldExt::get_runtime_graph_last_economy_report);
+    ClassDB::bind_method(D_METHOD("start_runtime_worker", "config"),
+                         &DCWorldExt::start_runtime_worker);
+    ClassDB::bind_method(D_METHOD("set_runtime_clock", "paused", "speed_days_per_second"),
+                         &DCWorldExt::set_runtime_clock);
+    ClassDB::bind_method(D_METHOD("set_runtime_qos_threaded", "interactive"),
+                         &DCWorldExt::set_runtime_qos_threaded);
+     ClassDB::bind_method(D_METHOD("capture_runtime_inputs", "inputs"),
+                          &DCWorldExt::capture_runtime_inputs);
+     ClassDB::bind_method(D_METHOD("publish_runtime_climate_reference", "day", "state_hash"),
+                          &DCWorldExt::publish_runtime_climate_reference);
+    ClassDB::bind_method(D_METHOD("capture_country_runtime_snapshot"),
+                         &DCWorldExt::capture_country_runtime_snapshot);
+    ClassDB::bind_method(D_METHOD("capture_country_pod_catalog"),
+                         &DCWorldExt::capture_country_pod_catalog);
+    ClassDB::bind_method(D_METHOD("submit_runtime_command", "command"),
+                         &DCWorldExt::submit_runtime_command);
+    ClassDB::bind_method(D_METHOD("poll_runtime_receipts", "max_items"),
+                         &DCWorldExt::poll_runtime_receipts, DEFVAL(128));
+    ClassDB::bind_method(D_METHOD("poll_runtime_commit", "after_generation"),
+                         &DCWorldExt::poll_runtime_commit, DEFVAL(0));
+    ClassDB::bind_method(D_METHOD("consume_runtime_visual_patch", "generation", "family", "cursor", "max_items"),
+                         &DCWorldExt::consume_runtime_visual_patch, DEFVAL(0), DEFVAL(0), DEFVAL(0));
+    ClassDB::bind_method(D_METHOD("request_runtime_save", "request_id"),
+                         &DCWorldExt::request_runtime_save);
+    ClassDB::bind_method(D_METHOD("poll_runtime_save", "request_id"),
+                         &DCWorldExt::poll_runtime_save);
+    ClassDB::bind_method(D_METHOD("restore_runtime_bundle", "bytes"),
+                         &DCWorldExt::restore_runtime_bundle);
+    ClassDB::bind_method(D_METHOD("request_runtime_stop"),
+                         &DCWorldExt::request_runtime_stop);
+    ClassDB::bind_method(D_METHOD("runtime_snapshot_ring_self_test"),
+                         &DCWorldExt::runtime_snapshot_ring_self_test);
+    ClassDB::bind_method(D_METHOD("runtime_domain_pod_self_test"),
+                         &DCWorldExt::runtime_domain_pod_self_test);
+    ClassDB::bind_method(D_METHOD("runtime_authoritative_domains_self_test"),
+                         &DCWorldExt::runtime_authoritative_domains_self_test);
+    ClassDB::bind_method(D_METHOD("runtime_climate_authority_self_test"),
+                         &DCWorldExt::runtime_climate_authority_self_test);
+    ClassDB::bind_method(D_METHOD("runtime_climate_trace_self_test"),
+                         &DCWorldExt::runtime_climate_trace_self_test);
+    ClassDB::bind_method(D_METHOD("runtime_country_pod_authority_self_test"),
+                         &DCWorldExt::runtime_country_pod_authority_self_test);
+    ClassDB::bind_method(D_METHOD("runtime_protocol_guard_self_test"),
+                         &DCWorldExt::runtime_protocol_guard_self_test);
     ClassDB::bind_method(D_METHOD("is_native_daily_visual_commit_pending"),
                          &DCWorldExt::is_native_daily_visual_commit_pending);
     ClassDB::bind_method(D_METHOD("complete_native_daily_visual_commit"),

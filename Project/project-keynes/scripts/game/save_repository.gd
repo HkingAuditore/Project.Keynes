@@ -1,8 +1,9 @@
 class_name SaveRepository
 extends RefCounted
 
-const FORMAT_VERSION := 1
+const FORMAT_VERSION := 2
 const MAGIC := "PKSV"
+const LEGACY_FORMAT_REASON := "该存档使用 PKSV v1 格式，与当前 PKSV v2 不兼容。旧存档会保留，但不能载入。"
 const TECHNOLOGY_INDUSTRY_REVISION := 2
 const LEGACY_TECHNOLOGY_INDUSTRY_REVISION := 1
 const LEGACY_INDUSTRY_REASON := "该存档使用旧产业科技规则，无法载入当前版本。请新建游戏或从兼容版本继续。"
@@ -26,10 +27,18 @@ func list_slots() -> Array:
 			if bool(backup.get("ok", false)):
 				read = backup
 		var header: Dictionary = read.get("header", {})
+		var format_version := int(read.get("format_version", -1))
+		if format_version < 0:
+			format_version = _peek_format_version(path)
+			if format_version < 0:
+				format_version = _peek_format_version(path + ".bak")
+		var exists := FileAccess.file_exists(path) or FileAccess.file_exists(path + ".bak")
 		slots.append({
 			"slot_id": slot_id,
-			"exists": FileAccess.file_exists(path) or FileAccess.file_exists(path + ".bak"),
+			"exists": exists,
 			"loadable": bool(read.get("ok", false)) and _compatible(header),
+			"incompatible": exists and (not bool(read.get("ok", false)) or not _compatible(header)),
+			"format_version": format_version,
 			"reason": _reason_for(read, header),
 			"country_name": String(header.get("country_name", "")),
 			"day": int(header.get("day", 0)),
@@ -48,14 +57,20 @@ func write_slot(slot_id: String, header_fields: Dictionary, sections: Dictionary
 		return _error("slot_invalid", "存档槽位无效。")
 	_ensure_directory()
 	var section_table: Array = []
+	var normalized_sections: Dictionary = sections.duplicate(true)
+	# PKSV v2 always carries the runtime section.  Low-level repository tests and
+	# legacy callers may omit it; an empty section keeps the container shape
+	# valid while the runtime coordinator supplies the authoritative payload.
+	if not normalized_sections.has("simulation_runtime"):
+		normalized_sections["simulation_runtime"] = PackedByteArray()
 	var blocks: Array[PackedByteArray] = []
 	var offset := 0
-	var section_ids := sections.keys()
+	var section_ids := normalized_sections.keys()
 	section_ids.sort()
 	for raw_id in section_ids:
 		var section_id := String(raw_id)
-		var bytes: PackedByteArray = sections[raw_id] if sections[raw_id] is PackedByteArray \
-			else var_to_bytes(sections[raw_id])
+		var bytes: PackedByteArray = normalized_sections[raw_id] if normalized_sections[raw_id] is PackedByteArray \
+			else var_to_bytes(normalized_sections[raw_id])
 		var compressed: PackedByteArray = PackedByteArray() if bytes.is_empty() \
 			else bytes.compress(FileAccess.COMPRESSION_ZSTD)
 		section_table.append({
@@ -117,7 +132,9 @@ func load_slot(slot_id: String) -> Dictionary:
 	var path := _slot_path(slot_id)
 	var result := _read_container(path, true)
 	if not bool(result.get("ok", false)):
-		result = _read_container(path + ".bak", true)
+		var backup := _read_container(path + ".bak", true)
+		if bool(backup.get("ok", false)):
+			result = backup
 	if not bool(result.get("ok", false)):
 		return result
 	if not _compatible(result.header):
@@ -167,8 +184,14 @@ func _read_container(path: String, read_sections: bool,
 	var magic := file.get_buffer(4).get_string_from_ascii()
 	var version := file.get_32()
 	var header_length := file.get_32()
-	if magic != MAGIC or version != FORMAT_VERSION or header_length <= 0 \
-			or header_length > file.get_length() - 12:
+	if magic != MAGIC:
+		return _error("save_header_invalid", "存档头无效。")
+	if version != FORMAT_VERSION:
+		var version_error := _error("save_format_version_incompatible", LEGACY_FORMAT_REASON \
+			if version == 1 else "存档格式版本不受支持。")
+		version_error["format_version"] = version
+		return version_error
+	if header_length <= 0 or header_length > file.get_length() - 12:
 		return _error("save_header_invalid", "存档头无效。")
 	var parsed = JSON.parse_string(file.get_buffer(header_length).get_string_from_utf8())
 	if not parsed is Dictionary:
@@ -214,8 +237,14 @@ func _read_section(path: String, section_id: String,
 	var magic := file.get_buffer(4).get_string_from_ascii()
 	var version := file.get_32()
 	var header_length := file.get_32()
-	if magic != MAGIC or version != FORMAT_VERSION or header_length <= 0 \
-			or header_length > file.get_length() - 12:
+	if magic != MAGIC:
+		return _error("save_header_invalid", "存档头无效。")
+	if version != FORMAT_VERSION:
+		var version_error := _error("save_format_version_incompatible", LEGACY_FORMAT_REASON \
+			if version == 1 else "存档格式版本不受支持。")
+		version_error["format_version"] = version
+		return version_error
+	if header_length <= 0 or header_length > file.get_length() - 12:
 		return _error("save_header_invalid", "存档头无效。")
 	var parsed = JSON.parse_string(file.get_buffer(header_length).get_string_from_utf8())
 	if not parsed is Dictionary:
@@ -269,6 +298,17 @@ func _technology_industry_revision(header: Dictionary) -> int:
 
 func _slot_path(slot_id: String) -> String:
 	return "%s/%s.pksv" % [_save_dir, slot_id]
+
+
+func _peek_format_version(path: String) -> int:
+	if not FileAccess.file_exists(path):
+		return -1
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null or file.get_length() < 8:
+		return -1
+	if file.get_buffer(4).get_string_from_ascii() != MAGIC:
+		return -1
+	return file.get_32()
 
 
 func _ensure_directory() -> void:

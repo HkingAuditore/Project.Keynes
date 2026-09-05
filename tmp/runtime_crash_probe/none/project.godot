@@ -1,0 +1,6 @@
+; Minimal engine-only probe.
+config_version=5
+
+[application]
+config/name="RuntimeCrashProbeNone"
+

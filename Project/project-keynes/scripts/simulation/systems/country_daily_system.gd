@@ -5,9 +5,10 @@ const SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
 
 var facade = null
 var world_clock: WorldClock = null
+var generator = null
 var _last_report: Dictionary = {}
 
-func _init(p_facade, p_world_clock: WorldClock = null) -> void:
+func _init(p_facade, p_world_clock: WorldClock = null, p_generator = null) -> void:
 	id = &"country_daily"
 	priority = 255
 	must_run = false
@@ -19,6 +20,7 @@ func _init(p_facade, p_world_clock: WorldClock = null) -> void:
 	policy = SusPolicyScript.AlwaysPolicy.new()
 	facade = p_facade
 	world_clock = p_world_clock
+	generator = p_generator
 
 func feature_flag() -> StringName:
 	return &""
@@ -27,6 +29,9 @@ func declare_writes() -> Array[StringName]:
 	return [DCComponentIds.CELL_COUNTRY_SLOT]
 
 func should_run(ctx: SusTickContext) -> bool:
+	if generator != null and generator.has_method("runtime_graph_active") \
+			and bool(generator.runtime_graph_active()):
+		return false
 	return facade != null and facade.is_configured() and \
 		bool(facade.world_ext().country_should_run(ctx.day_index))
 
@@ -38,6 +43,11 @@ func is_deadline_critical(ctx: SusTickContext) -> bool:
 
 func tick(ctx) -> Dictionary:
 	var started_us := Time.get_ticks_usec()
+	if generator != null and generator.has_method("runtime_graph_active") \
+			and bool(generator.runtime_graph_active()):
+		return {"done": true, "elapsed_ms": 0.0,
+			"stage_name": "country_owned_by_runtime_graph",
+			"path": "native_runtime_graph"}
 	if facade == null or not facade.is_configured():
 		return {"done": true, "elapsed_ms": 0.0, "stage_name": "country_unavailable"}
 	var result: Dictionary = facade.world_ext().run_country_slice({
@@ -50,7 +60,10 @@ func tick(ctx) -> Dictionary:
 	# native 每 slice 返回新分配的 Dictionary，跨过这个边界后不再被 native 改写。
 	# 深拷贝等于把整份报告重建一遍，而 last_report() 出口本来就自带拷贝。
 	_last_report = result
+	var dispatch_started_us := Time.get_ticks_usec()
 	facade.dispatch_committed_events(result)
+	result["event_dispatch_ms"] = \
+		float(Time.get_ticks_usec() - dispatch_started_us) / 1000.0
 	var barrier := bool(result.get("country_day_barrier", false))
 	if world_clock != null and world_clock.has_method("request_simulation_backpressure"):
 		world_clock.request_simulation_backpressure(&"country_day_barrier", barrier)

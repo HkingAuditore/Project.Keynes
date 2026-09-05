@@ -7,7 +7,7 @@ InfrastructureProjectStore 是施工/路线权威；Effect 仅负责跨域事务
 ## Current schema precedence (2026-08-20)
 
 The current implementation supersedes older historical rows retained in the
-long-form matrix below: country authority is **PKCN v12**, economy authority is
+long-form matrix below: country authority is **PKCN v13**, economy authority is
 **PKEC v47**, configurable cross-domain effects are **PKEF v11**, Trigger state is
 **PKTR v6**, ideology state is **PKID v3**, and the native gameplay journal is
 **journal v4**. The save
@@ -30,8 +30,8 @@ rejected, with no precipitation, family, Modifier, or expedition defaults.
 | Dynamic cell SoA | `DCWorld` / `DCWorldExt` by component contract | PKSV `dynamic_world` | Missing provider fails the save |
 | Native environment rounds | `EnvironmentRuntime` | `PKEnvironmentRuntime v1` in PKSV `environment` | Persist arrays, ping-pong, dirty sets, topology and cursors, not counters only |
 | Climate modifiers | Climate `ModifierStore` | PKSV `pkcm` / PKCM v1 | Publishes frozen add/factor; climate still owns temperature history |
-| Country research, technology, treasury, territory claim and national/cell tax policy | PKCN / `NativeCountryRuntime` | PKSV `pkcn` / PKCN v12 | Owns discovery/evidence, research, neutral-only colonization claim, five national defaults/overrides, interned sparse per-cell policies, fiscal cash bridge, native Effect ingress idempotency and the era-reward plan reference; catalog identity includes technology recipes/terms, Trigger definitions and content bindings |
-| Country modifiers | Country `ModifierStore` | embedded in PKCN v12 | Technology, production-family, climate-adaptation and fine-grained tax-rate effects alter frozen national/cell consumers, never ledgers directly |
+| Country research, technology, treasury, territory claim and national/cell tax policy | PKCN / `NativeCountryRuntime` | PKSV `pkcn` / PKCN v13 | Owns discovery/evidence, research, neutral-only colonization claim, five national defaults/overrides, interned sparse per-cell policies, fiscal cash bridge, native Effect ingress idempotency and the era-reward plan reference; catalog identity includes technology recipes/terms, Trigger definitions and content bindings |
+| Country modifiers | Country `ModifierStore` | embedded in PKCN v13 | Technology, production-family, climate-adaptation and fine-grained tax-rate effects alter frozen national/cell consumers, never ledgers directly |
 | Economy/building/family-cell modifiers | Economy `ModifierStore` + `BuildingIdentityStore` | embedded in PKEC v42, Modifier schema v3 | Factors feed frozen output/birth/consumption/resource helpers; exact-good uses shared+CSR overrides and exact-building reuses type cache; never writes ledgers directly |
 | Gameplay modifiers | Gameplay `ModifierStore` + base/identity SoA | PKSV `pkgp` / PKGP v1 | Explicit native handles only; no Godot Object reflection |
 | Configurable effects and cross-domain plans | `EffectRuntime` | PKSV `pkef` / PKEF v11 | Owns catalog IR, FamilyEffect metadata/stack groups, managed lifecycle, unique technology recipes, flat metric slabs, due/dirty candidates, transactions, durable external bindings and ACKs; never owns country/economy/Modifier stores |
@@ -88,7 +88,7 @@ round 也设置 `native_daily_day_barrier`，continuation pulse 先完成 climat
 | `refresh_climate_daily` | `ClimateDailySystem` 持有 `_round_active`、`_pass_cursor`、phase lock；native daily report 镜像 climate state。 | 多个 `DCWorldExt` climate/ocean/wind/sea-ice/transpiration pass 写 slot；GDScript system 仍持 round state。 | Pass 级 `_flush_slot_to_map()` / `published_to_slot`，尾部 debug/CSV/visual intents。 | `ClimateDailySystem` sliced path；旧 `RefreshClimateDailyJob` 已删除。 | Partial native-ready / guarded ACTIVE owner flags；默认仍保留 GDScript round shell。 | Reset/abort/debug boundary、visible publish 与 sync sliced fallback 尚未完全退休。 |
 | `native_daily_sim` | `DCWorldExt::run_native_daily_slice()` 持有 graph continuation、node cursor、round accumulator；GDScript 只保留 SUS shell 与 bundle boundary。 | `SCHEDULE_GRAPH` 节点调用 C++ pass 写 slots。 | Graph report `published_slots`、`visual_dirty_intents`、`authority_report`、`authority_blockers`、`retained_boundaries`；必要时 flush 到 `MapData`。首片被预算跳过时，GDScript 的 transient `native_daily_day_pending` 持有 same-day barrier，continuation 再直接启动 job。 | 普通 ACTIVE 不再回 full-run；`run_native_daily_tick()` 只作 debug/probe，`run_native_sim_tick()` 作 SHADOW/A-B。 | `run_native_daily_slice` 是唯一 ACTIVE hot path；`graph_coverage_state=complete` 只由 simulation authority blockers 决定；`native_daily_legacy_daily_production_retired=true` 才允许 fallback/test-only handoff。 | Climate/weather/ocean/season owner gates 与 legacy fallback 未退休时仍阻塞；Godot/visual boundaries 只进 `retained_boundaries`；pending 标记不进入存档或 hash，reset 时清理。 |
 | `modifier_daily` | `ModifierRuntime` 持有四域 SoA、bucket、expiry heap、命令排序与 snapshot version。 | 不写领域 base slot；发布只读 effective 聚合。 | `MODIFIER_GRAPH` report、command result、journal；PKCM/PKGP 与 PKCN/PKEC 内嵌 domain。 | GDScript fallback 只消费同一 `evaluate_modifier_stat` 公式；无第二份可变 store。 | ACTIVE，priority 90、单 slice、无工作时零 slice。 | 独立 SHADOW 双算和目标规模性能门禁尚未完成。 |
-| `country_daily` | `NativeCountryRuntime` 持有国家 SoA、handle generation、领土 CSR、国家科技/研究信号 bitset、稀疏证据、现金/物资国库、五类税务默认率/稀疏覆盖、命令游标与 state hash。 | 只把 `cell.country_slot` 发布到 DataCore/MapData；名称、科技、证据、国库、税表和 CSR 保持 native。 | 原子 `command_preflight → command_apply → aggregate_publish`；国家事件与粗粒度 snapshot；PKCN v12。 | PROBE/OFF 只作验证门；OFF 时依赖国家的经济禁用，不恢复旧状态。 | 默认 **ACTIVE**；priority 255、`must_run=false`、`use_job_should_run=true`，无到期命令零 slice。 | 不含灭国、科技撤销、外交、战争或 AI；活跃国家至少一格，水域无主。 |
+| `country_daily` | `NativeCountryRuntime` 持有国家 SoA、handle generation、领土 CSR、国家科技/研究信号 bitset、稀疏证据、现金/物资国库、五类税务默认率/稀疏覆盖、命令游标与 state hash；研究日使用有序 active-country index 与 discovery 反向 CSR。 | 只把 `cell.country_slot` 发布到 DataCore/MapData；名称、科技、证据、国库、税表和 CSR 保持 native。 | 原子 `command_preflight → command_apply → aggregate_publish`；只有 `territory_generation` 改变才同步地块；研究可见性使用独立 `research_generation`；PKCN v13。 | PROBE/OFF 只作验证门；OFF 时依赖国家的经济禁用，不恢复旧状态。 | 默认 **ACTIVE**；Native Runtime Graph ACTIVE 时旧 SUS `country_daily` 永久 no-op，避免同日双 authority。 | 不含灭国、科技撤销、外交、战争或 AI；活跃国家至少一格，水域无主。独立模拟线程尚须先清除 graph 内 Godot Variant/Object/WorkerThreadPool 边界。 |
 | `economy_daily` | `NativeEconomyRuntime` 持有 Population/Settlement/Market/Family/FamilyTrait/FamilyCellInfluence/NotablePerson stores、稀疏关系、BUILDING_GRAPH、国内 Trade、税务与财政 escrow。 | 独立 native vectors；due-cell sample 冻结七条环境 lane、国家/科技/税率、城市 Modifier 和资源再生 factor。 | `FAMILY_COMMIT` 归一化 claim、评审威望、冻结行为因子 CSR、按 mask 发布 FamilyEffect metric，并仅在变化时协调 legacy Modifier/Trigger 与 FamilyEffect POD source；`PERSON_COMMIT` 绑定人物；发布审计与 PKEC v42。 | 无大规模 GDScript fallback；资源再生保留读取同一 POD 的脚本 fallback。 | 默认 **ACTIVE / 锁定 N∈[1,5]**。 | 跨国贸易执行、政治、谱系仍未接入。 |
 | `weather_refresh` | `WeatherDCSystem` wrapper 内的 `WeatherRefreshJob` 持有 field stage/front state；`WeatherSystem` 持业务 facade。 | `DCWorldExt` weather field/distribute/summary/stage-b pass 与 GDScript fallback 写 weather slots。 | Weather commit flush、front apply、weather LUT upload intent/Godot upload。 | `WeatherRefreshJob` staged path；merged native 受 readiness gate。 | `weather_native_daily_readiness_report()` 证明 visible publish/front/LUT 后为 `native_ready`；`native_weather_transaction_active_owner_enabled=true` 后为 `native_active`，执行后可升 `native_active_verified`。 | WeatherFront Godot objects、front rebuild、ImageTexture/LUT upload、CSV visible fields 是 retained boundaries；publish readiness 未达成才是 blocker。 |
 | Vegetation / cover / landform | `vegetation_dynamics`（stage-b）独占 `cell_vegetation` 演替/streak/vitality。季节 B+ `sync_current_state` 写 snow/landform/cover， knobs `skip_vegetation_rewrite` 禁止全图 `pk_derive_vegetation`。同日 B+ 完成后 stage-b `run_veg_dyn=false`。 | `DCWorldExt::run_stage_b_pass` / `run_vegetation_dynamics_pass`；B+ 不 flush `cell_vegetation`。 | Succession dirty → gameplay event bus / `queue_detail_scatter_changes`。 | GDScript season stages 0–8 生产为 `emergent_noop`。 | ACTIVE climate round。 | 不要平行第二套植被公式；tick-sync memcmp 仅 debug。 |
@@ -330,3 +330,18 @@ Native person promotion and `PERSON_COMMIT` also register the current
 `person.modifier.gameplay.generic.bonus` instance. No person ledger or
 structural authority is moved out of `NotablePersonStore`/`PERSON_COMMIT`.
 
+# Current Country worker status
+
+Country has a numeric POD snapshot and a SHADOW-only read-only daily probe. The
+legacy `NativeCountryRuntime` remains the synchronous authority. Country state
+mutation, Effect/Modifier/Economy ACK, and command application are therefore
+still outside the worker ownership set; `authority_ready` must remain false and
+the missing-domain mask must remain non-zero.
+
+# Consolidated domain diagnostic runner (current status)
+
+`RuntimeDomainAuthorityRunner` executes the fixed 12-stage POD plan/replay
+diagnostic after the Climate trace barrier. It owns isolated shadow stores,
+emits typed intents/ACKs, and reports timing, hashes, and fallback reasons.
+It is not an authority: `capability_mask()` is zero, MapData is never written,
+and `implemented_domain_mask` remains `COMMIT (0x800)`.

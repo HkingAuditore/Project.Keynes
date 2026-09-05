@@ -1,0 +1,113 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+=== runtime thread isolation smoke ===
+  [PASS] thread API exported
+  [PASS] commit API exported
+  [PASS] stop API exported
+  [PASS] thread QoS API exported
+  [PASS] runtime restore API exported
+  [PASS] partial graph is rejected
+  [PASS] rejection is explicit
+  [PASS] ACTIVE is blocked until every native domain handler exists
+  [PASS] shadow graph starts asynchronously
+  [PASS] domain POD ABI version is exposed
+  [PASS] worker reaches running state
+ERROR:   [FAIL] worker advances committed day
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/runtime_thread_isolation_test.gd:310)
+       [1] _run (res://tests/runtime_thread_isolation_test.gd:54)
+       [2] _init (res://tests/runtime_thread_isolation_test.gd:7)
+  [PASS] main thread never waits for simulation
+  [PASS] time debt remains bounded
+  [PASS] coverage reports missing native domain handlers
+ERROR:   [FAIL] day plan exposes fixed domain barrier
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/runtime_thread_isolation_test.gd:310)
+       [1] _run (res://tests/runtime_thread_isolation_test.gd:61)
+       [2] _init (res://tests/runtime_thread_isolation_test.gd:7)
+  [PASS] thread QoS update is non-blocking
+  [PASS] invalid clock speed is rejected before wake
+ERROR:   [FAIL] commit is published
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/runtime_thread_isolation_test.gd:310)
+       [1] _run (res://tests/runtime_thread_isolation_test.gd:74)
+       [2] _init (res://tests/runtime_thread_isolation_test.gd:7)
+ERROR:   [FAIL] commit generation is positive
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/runtime_thread_isolation_test.gd:310)
+       [1] _run (res://tests/runtime_thread_isolation_test.gd:75)
+       [2] _init (res://tests/runtime_thread_isolation_test.gd:7)
+ERROR:   [FAIL] commit exposes per-family generations
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/runtime_thread_isolation_test.gd:310)
+       [1] _run (res://tests/runtime_thread_isolation_test.gd:77)
+       [2] _init (res://tests/runtime_thread_isolation_test.gd:7)
+  [PASS] visual timing feedback is non-blocking
+  [PASS] visual timing fields are reported
+  [PASS] same generation is not republished
+ERROR:   [FAIL] visual patch cursor handles an empty family
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/runtime_thread_isolation_test.gd:310)
+       [1] _run (res://tests/runtime_thread_isolation_test.gd:96)
+       [2] _init (res://tests/runtime_thread_isolation_test.gd:7)
+ERROR:   [FAIL] newer commit advances generation
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/runtime_thread_isolation_test.gd:310)
+       [1] _run (res://tests/runtime_thread_isolation_test.gd:101)
+       [2] _init (res://tests/runtime_thread_isolation_test.gd:7)
+ERROR:   [FAIL] expired visual generation is discarded
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/runtime_thread_isolation_test.gd:310)
+       [1] _run (res://tests/runtime_thread_isolation_test.gd:105)
+       [2] _init (res://tests/runtime_thread_isolation_test.gd:7)
+  [PASS] POD environment snapshot is accepted
+  [PASS] environment dimensions are visible in thread report
+  [PASS] environment dimensions are visible in perf snapshot
+  [PASS] stale environment snapshot is rejected
+  [PASS] environment resource shape is validated
+  [PASS] trade LUT shape is validated
+  [PASS] invalid command payload is rejected before enqueue
+  [PASS] commands are accepted without waiting
+  [PASS] unknown domain is queued for deterministic preflight
+  [PASS] worker receipts preserve stable producer ordering
+  [PASS] future command remains accepted before save
+  [PASS] runtime save request is non-blocking
+  [PASS] runtime save bundle becomes available
+  [PASS] runtime save bundle carries checksum metadata
+  [PASS] runtime save bundle is PKSR v2
+  [PASS] runtime save bundle carries deferred commands
+  [PASS] consumed save bundle is not returned twice
+  [PASS] full command queue fails immediately
+  [PASS] stop returns immediately
+  [PASS] save is rejected while worker is stopping
+  [PASS] worker stops cleanly
+  [PASS] PKSR v1 restore is explicitly rejected
+  [PASS] stopped host accepts PKSR restore
+  [PASS] stopped host can be reused
+  [PASS] restarted host starts paused
+  [PASS] PKSR restore restores day and generation
+ERROR:   [FAIL] restored pending command produces its deterministic receipt
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/runtime_thread_isolation_test.gd:310)
+       [1] _run (res://tests/runtime_thread_isolation_test.gd:268)
+       [2] _init (res://tests/runtime_thread_isolation_test.gd:7)
+  [PASS] shadow mode starts without authority coverage
+  [PASS] shadow mode is observable and remains non-authoritative
+  [PASS] mode hot switch is rejected
+  [PASS] off mode does not create a worker
+=== done: 58 checks, 9 failures ===
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 111 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

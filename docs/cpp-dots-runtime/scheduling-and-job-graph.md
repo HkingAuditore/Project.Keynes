@@ -1,5 +1,26 @@
 # Scheduling and Job Graph
 
+## 2026-09 单一 Country authority 与发布确认
+
+Native Runtime Graph ACTIVE 时，已注册的旧 SUS `country_daily` 仅保留 topology/调试可见性，
+其 `should_run()` 与 `tick()` 都永久 no-op。Country、Effect、Modifier、Ideology、Trigger、
+Economy 只能在同一 graph day barrier 内按稳定顺序推进，GDScript 不得因 `day_changed` 再补跑
+同一天。
+
+Graph dirty family 是 domain commit 的确认集合，不是“再做一次 MapData 全量发布”的请求。
+`flush_runtime_visuals(mask)` 只清除真实交集；未被 mask 选中的 dirty family 必须保留到后续
+确认。国家领土同步由 `territory_generation` 触发，研究、国库、税务和国家名称变化只发布
+各自状态/事件，不触发 `sync_country_territory_to_map()`。
+
+独立线程上线门禁不是“graph 在 C++”而是 `graph_coverage_state=complete` 且整条 daily 调用链
+为纯标准 C++ 数据。当前 `advance_runtime_pulse()` 仍构造 Dictionary，Economy 首次环境捕获仍
+会访问 MapData；这些跨线程阻断项在 worker host 报告中明确标记，启动 host 必须拒绝。
+
+Economy/climate 的内部分块已统一使用 `NativeParallelExecutor`：固定线程池、稳定 task index
+分块和调用线程归并；交互态通过 `set_runtime_qos(true)` 把许可收缩到保留四个逻辑核心，
+四核及以下设备退化为协调线程顺序执行。该 executor 不调用 Godot WorkerThreadPool，因而
+不会把 Godot 线程亲和性带入未来的模拟 worker；但它本身不等于 Runtime Graph 已可后台运行。
+
 ### Aggregate publish commit slicing
 
 `aggregate_publish/COMMIT` now processes the deterministic settlement-cell list
@@ -1141,3 +1162,36 @@ for UI. `audit_ledger` / `audit_lane` come from
 `NativeEconomyRuntime::diagnose_incremental_audit_mismatch()` and point at the
 population slot or market lane whose incremental closing total diverged from the
 full audit.
+# NativeSimulationHost 调度边界（2026-09）
+
+线程 host 使用 `steady_clock` 产生目标模拟日速率；空闲时由 condition variable
+唤醒，追赶时保留最多 100 天时间债务，绝不跳过模拟日。暂停、改速、交互 QoS 和
+停止均为非阻塞控制消息。命令稳定键为
+`(effective_day, producer_id, sequence, request_id)`，队列满立即返回
+`command_queue_capacity_exceeded`。
+
+当前 host 只完成线程生命周期、时钟、POD 命令和 commit 发布骨架；domain daily
+authority 仍由同步 Runtime Graph 持有。`RuntimeThreadReport` 同时公开
+`required_domain_mask`、`implemented_domain_mask`、`missing_domain_mask` 和
+`coverage_blocker`，覆盖率只能由 worker 的完整 POD barrier 证明，不能由启动参数
+`graph_coverage_complete=true` 声明。当前只实现 `COMMIT` handler，因此报告固定为
+`graph_coverage_state=partial`、`coverage_blocker=missing_native_domain_handlers`；只有
+所有 domain 完成 Godot bridge 脱离且 `graph_coverage_state=complete` 后，才允许将该 host
+切换为 ACTIVE 权威。
+
+启动参数 `simulation_thread_mode` 固定为 `OFF`、`SHADOW`、`ACTIVE`。`OFF` 不创建
+worker；`SHADOW` 允许 host 在 coverage 不完整时运行并发布只读 commit，但画面和权威仍由
+同步世界驱动；`ACTIVE` 必须先通过完整 barrier。host 非 `STOPPED` 时拒绝再次启动，因而不能
+在同一局游戏热切换模式。性能 CSV 同时记录 requested/effective mode、三个 coverage mask 和
+blocker，SHADOW 对拍不得只看墙钟吞吐。
+
+当前 `NativeSimulationHost` 仍是 clock/命令/提交边界骨架：它会拒绝
+coverage 不完整的 `ACTIVE` 启动请求（`SHADOW` 是只读对照例外），并不会把依赖 Godot `Dictionary`、
+`Variant` 或 `MapData` 的 `advance_runtime_pulse()` 放入 worker。真实 Country、
+Economy、Effect、Modifier、Climate、Trigger domain 迁移完成并通过 SHADOW 逐日
+hash 对拍前，生产模式必须保持 OFF；这不是性能失败，而是线程安全门禁。
+
+保存边界会在 worker 内先吸收 ingress 队列，再编码当前 pending command 列表和
+producer sequence。这样 `request_runtime_save()` 已接受的命令不会因为尚未执行而丢失；
+恢复只在 host 为 `STOPPED` 时校验 PKSR optional tail，下一次 `start` 将其放回 worker
+本地 pending 列表。主线程仍只接收 immutable bytes，不读取任何 domain store。

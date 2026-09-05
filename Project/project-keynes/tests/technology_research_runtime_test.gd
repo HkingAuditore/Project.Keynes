@@ -80,9 +80,37 @@ func _init() -> void:
 			0, -1, 1, 11).get("ok", false))
 		and bool(facade.enqueue_research(handle, &"tech.ground_stone_tools",
 			1, -1, 1, 12).get("ok", false)))
+	_expect("invalid research weights fail before command enqueue",
+		not bool(facade.set_research_weights(
+			handle, PackedInt32Array([7000, 3000, 1, 0]), 1, 13).get("ok", true))
+		and not bool(facade.set_research_weights(
+			handle, PackedInt32Array([10001, -1, 0, 0]), 1, 14).get("ok", true)))
+	var territory_generation_before := int(
+		ext.get_country_report().get("territory_generation", -1))
+	var research_generation_before := int(
+		ext.get_country_report().get("research_generation", -1))
 	var result: Dictionary = ext.run_country_slice({"day_index": 1})
 	_expect("research day commits", bool(result.get("ok", false))
 		and bool(result.get("done", false)))
+	_expect("research-only day never publishes territory",
+		int(result.get("territory_generation", -2)) == territory_generation_before
+		and int(result.get("research_generation", -1)) > research_generation_before
+		and not bool(result.get("published_to_slot", true)))
+	_expect("research remainder distribution has a fixed four-domain bound",
+		int(result.get("research_remainder_iterations", -1)) <= 3)
+	_expect("research hot-loop diagnostics are present",
+		result.has("research_activation_ms")
+		and result.has("research_allocation_ms")
+		and result.has("research_effect_ack_ms")
+		and result.has("research_discovery_ms")
+		and result.has("research_modifier_ms")
+		and result.has("research_report_ms")
+		and result.has("research_countries_scanned")
+		and result.has("research_active_countries")
+		and result.has("research_pending_checks")
+		and result.has("research_discovery_checks")
+		and result.has("research_modifier_queries")
+		and result.has("research_modifier_cache_hits"))
 	var snapshot: Dictionary = facade.research_snapshot(handle)
 	var seasonal := ids.find("tech.maize_garden_horticulture")
 	var composite := ids.find("tech.ground_stone_tools")

@@ -3661,7 +3661,7 @@ void NativeEconomyRuntime::prepare_due_demand_basis_cache() {
     std::vector<int64_t> saturation_by_cell(static_cast<size_t>(cell_count), 0);
     const int32_t task_count = _worker_enabled &&
             cell_count >= _worker_market_threshold &&
-            godot::WorkerThreadPool::get_singleton() != nullptr
+            parallel_has_real_worker_threads()
         ? std::min<int32_t>(cell_count, _worker_tasks_hint > 0
             ? _worker_tasks_hint
             : std::clamp<int32_t>((cell_count + 127) / 128, 2, 16))
@@ -9033,7 +9033,7 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                         _worker_task_cap));
                 const int32_t task_count = _worker_enabled &&
                         cell_count >= 2 && estimated_work >= 128 &&
-                        godot::WorkerThreadPool::get_singleton() != nullptr
+                        parallel_has_real_worker_threads()
                     ? std::min({cell_count, _worker_task_cap,
                         _worker_tasks_hint > 0
                         ? _worker_tasks_hint : default_tasks})
@@ -9343,7 +9343,7 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
             _production_worker_tasks = _worker_enabled && disjoint_markets &&
                     cell_count >= 2 &&
                     estimated_work >= 256 &&
-                    godot::WorkerThreadPool::get_singleton() != nullptr
+                    parallel_has_real_worker_threads()
                 ? std::min({cell_count, _worker_task_cap,
                     _worker_tasks_hint > 0
                     ? _worker_tasks_hint : production_default_tasks})
@@ -9523,7 +9523,7 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                 _household_post_restarted_scratch.assign(count, 0);
                 _household_post_failed_scratch.assign(count, 0);
                 const int32_t tasks = _worker_enabled && count >= 2 &&
-                        godot::WorkerThreadPool::get_singleton() != nullptr
+                        parallel_has_real_worker_threads()
                     ? std::min(count, _worker_task_cap) : 1;
                 auto finalize_cells = [&](int32_t relative_begin,
                                           int32_t relative_end) {
@@ -9584,7 +9584,7 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                 _household_reserve_shortfall_scratch.assign(count, 0);
                 _household_post_saturation_scratch.assign(count, 0);
                 const int32_t tasks = _worker_enabled && count >= 2 &&
-                        godot::WorkerThreadPool::get_singleton() != nullptr
+                        parallel_has_real_worker_threads()
                     ? std::min(count, _worker_task_cap) : 1;
                 auto accumulate_cells = [&](int32_t relative_begin,
                                             int32_t relative_end) {
@@ -9792,7 +9792,7 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
             _worker_tasks = _worker_enabled &&
                                     market_count >= 2 &&
                                     estimated_work >= 256 &&
-                                    godot::WorkerThreadPool::get_singleton() != nullptr
+                                    parallel_has_real_worker_threads()
                                 ? std::min({market_count, _worker_task_cap,
                                            _worker_tasks_hint > 0
                                                ? _worker_tasks_hint

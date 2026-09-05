@@ -1,5 +1,40 @@
 # GDScript / C++ Data Bridge
 
+## Background worker POD boundary (ABI v3)
+
+The main-thread bridge captures Godot values into an immutable
+`RuntimeEnvironmentSnapshot`; only that native-owned copy crosses into
+`NativeSimulationHost`. The worker-side domain protocol uses ABI v3 and the
+fixed twelve-stage barrier declared in `runtime_pod_protocol.h`. `Dictionary`,
+`Variant`, `PackedArray`, `MapData`, and renderer objects are confined to the
+capture/facade side. `RuntimeAuthoritativeDomainStores` is reset at host
+bootstrap and remains private to the worker; it is not a zero-copy view of
+DataCore. Snapshot, visual patch, and PKSR save APIs are explicit copy-out
+boundaries, and a domain is not considered implemented until its OFF/SHADOW
+parity gate passes.
+
+## Runtime Graph 稀疏发布（2026-09）
+
+Runtime Graph dirty mask 采用真实交集：一次 `flush_runtime_visuals(mask)` 只确认
+`pending & mask`，并保留其它 family。稳态 graph flush 是发布确认边界，不再调用
+`flush_slots_to_map()`；全表 flush 仅限 bootstrap、restore 和显式 debug。
+
+当前 family 为 `CLOCK`、`COUNTRY_STATE`、`COUNTRY_TERRITORY`、
+`COUNTRY_VISUAL_ERA`、`CLIMATE_FIELDS`、`WEATHER`、`ECONOMY_UI`、`EVENTS`、
+`OVERLAY`。各 domain 必须在自己的 commit 中发布具体 slot/patch，graph 不能事后扫描并
+重写整个 MapData。国家侧尤其以 `territory_generation` 为唯一领土镜像门；
+`research_publish` 只表示研究快照可见，`published_to_slot=false`。
+
+图形版 CSV 已直接记录 `post_pulse_flush_ms`、`flush_slot_count`、
+`visual_diff_cell_count`、`country_territory_sync_ms`、`event_dispatch_ms` 与
+`full_flush_count`，不能只在 headless report 中观察这些边界。
+
+后台模拟线程的硬前提是调用链完全不包含 Godot `Object`、`Variant`、`Dictionary`、
+`PackedArray` 和 `WorkerThreadPool`。当前 graph 仍有这些边界，因此线程化 ACTIVE 必须保持
+关闭，直到运行时存储迁成标准 C++ POD/vector、环境输入在启动时冻结、各 domain 提供纯 POD
+daily ABI。禁止仅把现有 `advance_runtime_pulse()` 包进 `std::thread`，那会把 MapData 反射
+与 Godot 容器访问移到不受支持的线程。
+
 ## Country UI section snapshot（2026-08）
 
 `CountryFacade.ui_snapshot(handle, section_mask)` 绑定到
@@ -39,7 +74,7 @@ range 推进 persistence/introduction、diffusion、merge、publish 四个 phase
 
 PKSV persistence is a snapshot boundary, not a new owner. GDScript coordinates
 section capture while each native authority emits its own versioned state:
-PKCN v11, PKEF v11, PKTR v6, PKID v3, PKEC v41, PKCM v1, PKGP v1, and
+PKCN v13, PKEF v11, PKTR v6, PKID v3, PKEC v41, PKCM v1, PKGP v1, and
 `PKEnvironmentRuntime v1`. Environment export includes the
 resident core vectors, weather ping-pong buffers, topology, dirty/active sets,
 round flags, stage cursors, and snapshot generations. Restore validates schema
@@ -1182,3 +1217,41 @@ mask, so the hot path does not request a diagnostic `Dictionary`.
 `get_runtime_perf_snapshot(detail_level)` is diagnostic-only. Visual buffers are
 flushed through `flush_runtime_visuals()` after a committed generation and are
 never observed from staging state.
+# 后台 Runtime Host 边界（2026-09）
+
+`DCWorldExt` 现在提供 `start_runtime_worker`、`set_runtime_clock`、
+`submit_runtime_command`、`poll_runtime_commit`、`poll_runtime_receipts` 和
+`request_runtime_stop`。这些入口只负责主线程参数校验与 POD 转换；
+`NativeSimulationHost` 使用固定容量命令/回执队列和三缓冲提交环，worker 不持有
+Godot `Object`、`Variant`、`Dictionary` 或 `PackedArray`。
+
+后台 host 的启动配置必须包含 `graph_coverage_complete=true`。当前完整 Runtime
+Graph 仍包含 Godot bridge，因此未满足该条件时明确返回
+`runtime_graph_not_thread_safe`，生产路径继续使用 `OFF` 同步权威；不能把现有
+`advance_runtime_pulse()` 直接放进后台线程。
+
+`capture_runtime_inputs()` 是输入冻结边界：主线程复制环境、拓扑和视野数组，
+worker 只消费 immutable native snapshot。视觉层只能消费 generation-tagged commit，
+不能从 worker 反向写 MapData 或 renderer。
+
+提交快照由主线程 cache 固定到单一 generation；当请求的 generation 已被更新提交
+覆盖时，视觉 patch 返回 `runtime_generation_expired`，不会把不同提交拼接到同一帧。
+`consume_runtime_visual_patch()` 的 cursor 始终按原始 intent 索引推进，即使 family
+过滤后本批没有输出也不会重复扫描。
+
+异步 PKSR bundle 只允许成功消费一次。worker 发布 immutable bytes 后，首次匹配
+`request_id` 的轮询取得 bundle，后续轮询保持 `save_pending`，避免 UI 重复写盘；
+facade 同时校验末尾 little-endian FNV-1a checksum。bundle 当前还携带
+`environment_generation`、`environment_day`、`climate_anomaly`、`time_debt_days`，
+以及已入队但尚未到日边界的命令和 producer sequence。PKSR v2 还携带
+`runtime_domain_abi_version` 与 `section_mask`，恢复时 tail 通过 `PCQ1` marker、
+容量和 signed-day 校验后交给下一次 worker start；旧 PKSR v1 envelope 明确返回
+`runtime_bundle_version_incompatible`，不再按早期最小长度猜测解析。
+# Country snapshot bridge
+
+After Country bootstrap, the facade may call `capture_country_runtime_snapshot()`.
+The return value contains only `ok`, error `code`, generation, state hash, day,
+and array sizes. Array contents stay in the native immutable snapshot and are not
+materialized as a Godot `Dictionary` on the worker path. A failed capture is
+reported synchronously before publication; publication itself is lock-free for
+the worker through an atomic shared pointer.

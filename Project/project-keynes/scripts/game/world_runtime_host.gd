@@ -5,6 +5,8 @@ signal world_generation_started()
 signal world_generation_failed(reason: String)
 signal world_ready(map: MapData, world_data: WorldData, generator: MapGenerator, view_adapter: DCViewAdapter)
 signal daily_tick_completed(report: Dictionary)
+## 后台 worker 完整日提交通知。该信号只用于展示和诊断，订阅者不得推进模拟。
+signal simulation_committed(from_day: int, to_day: int, generation: int)
 signal generation_progress(stage: String, fraction: float)
 signal gm_toggle_changed(toggle_id: String, enabled: bool)
 signal gm_action_completed(action_id: String, result: Dictionary)
@@ -119,6 +121,16 @@ var _new_game_config: Dictionary = {}
 var _load_slot_id: String = ""
 var _pending_load_bundle: Dictionary = {}
 var _runtime_ready_for_ticks: bool = false
+var _runtime_commit_generation: int = 0
+var _runtime_commit_day: int = -1
+var _runtime_commit_family_cursors: Dictionary = {}
+var _runtime_commit_family_done: Dictionary = {}
+var _runtime_pending_visual_generation: int = 0
+var _runtime_pending_dirty_families: int = 0
+var _runtime_last_commit: Dictionary = {}
+var _runtime_last_visual_apply_ms: float = 0.0
+var _runtime_last_ui_feedback_ms: float = 0.0
+var _runtime_last_gpu_upload_ms: float = 0.0
 var _gm_sequence: int = 1
 var _gm_click_claim_territory_enabled: bool = false
 var _gm_click_claim_pending_days: Dictionary = {}
@@ -134,6 +146,10 @@ func configure(
 	world_clock: WorldClock,
 	map_overlay_layer: DataOverlayLayer = null
 ) -> void:
+	if _world_clock != null:
+		var old_day_callback := Callable(self, "_on_clock_day_changed")
+		if _world_clock.day_changed.is_connected(old_day_callback):
+			_world_clock.day_changed.disconnect(old_day_callback)
 	if _camera != null and _camera.zoom_changed.is_connected(_on_camera_zoom_changed):
 		_camera.zoom_changed.disconnect(_on_camera_zoom_changed)
 	if _camera != null and _camera.view_changed.is_connected(_on_camera_view_changed):
@@ -142,6 +158,10 @@ func configure(
 	_camera = camera
 	_world_clock = world_clock
 	_map_overlay_layer = map_overlay_layer
+	if _world_clock != null:
+		var day_callback := Callable(self, "_on_clock_day_changed")
+		if not _world_clock.day_changed.is_connected(day_callback):
+			_world_clock.day_changed.connect(day_callback)
 	if _camera != null:
 		_camera.zoom_changed.connect(_on_camera_zoom_changed)
 		_camera.view_changed.connect(_on_camera_view_changed)
@@ -149,6 +169,22 @@ func configure(
 		_on_camera_view_changed(_camera.current_world_view_rect(), _camera.position, _camera.zoom.x)
 	set_process(false)
 	_init_tod_profile()
+
+
+func _on_clock_day_changed(day_idx: int) -> void:
+	# OFF/SHADOW keep the synchronous reference authority in this host. The
+	# PlayerController only consumes the resulting state for UI; it must not be
+	# another simulation entry point. ACTIVE will consume worker commits here
+	# once the native domain coverage gate is complete.
+	if not _runtime_ready_for_ticks or _generator == null or _world_clock == null:
+		return
+	var report := _generator.get_runtime_thread_report() \
+		if _generator.has_method("get_runtime_thread_report") else {}
+	var worker_authoritative := String(report.get("simulation_thread_mode", "OFF")) == "ACTIVE" \
+		and bool(report.get("simulation_worker_ready", false))
+	if worker_authoritative:
+		return
+	run_daily_tick(day_idx, _world_clock.season_phase_for_day(day_idx))
 
 
 func _on_camera_zoom_changed(value: float) -> void:
@@ -293,6 +329,18 @@ func is_day_night_enabled() -> bool:
 
 func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void:
 	_runtime_ready_for_ticks = false
+	_runtime_commit_generation = 0
+	_runtime_commit_day = -1
+	_runtime_commit_family_cursors.clear()
+	_runtime_commit_family_done.clear()
+	_runtime_pending_visual_generation = 0
+	_runtime_pending_dirty_families = 0
+	_runtime_last_commit.clear()
+	# A new map must never race the previous simulation host.  The stop request
+	# is non-blocking. Wait for the lifecycle acknowledgement one render frame
+	# at a time before replacing the generator, so the old DCWorldExt destructor
+	# never has to join a live simulation from the UI call stack.
+	await _stop_previous_runtime_worker()
 	var restore_clock_from_save := not _pending_load_bundle.is_empty()
 	var clock_was_paused := true
 	if _world_clock != null:
@@ -377,6 +425,14 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 			world_generation_failed.emit(String(restore_result.get("message", "存档恢复失败。")))
 			return
 		_pending_load_bundle.clear()
+	# Phase A: freeze all worker inputs after generation/restore has completed.
+	# This is a copy boundary only; simulation_thread_mode remains OFF until the
+	# complete POD graph is available and explicitly enabled at startup.
+	if _generator != null and _generator.has_method("capture_runtime_inputs_for_worker"):
+		var input_capture: Dictionary = _generator.capture_runtime_inputs_for_worker()
+		if not bool(input_capture.get("ok", false)):
+			push_warning("[runtime-input] capture deferred: %s" % String(
+				input_capture.get("code", "unknown")))
 	var initial_visible_building_cells := PackedInt32Array()
 	for cell in _current_map.cell_count():
 		if cell < _current_map.visible_arr.size() and _current_map.visible_arr[cell] != 0:
@@ -396,6 +452,23 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 			_world_clock.pause(clock_was_paused)
 		on_clock_running_changed(not _world_clock.paused)
 	world_ready.emit(_current_map, _world_data, _generator, _view_adapter)
+
+
+func _stop_previous_runtime_worker() -> void:
+	if _generator == null or not _generator.has_method("request_runtime_stop"):
+		return
+	var stop_result: Dictionary = _generator.request_runtime_stop()
+	if not bool(stop_result.get("pending", false)):
+		return
+	# This is intentionally an async lifecycle wait, never a mutex/worker join.
+	# A faulted worker has already unwound its thread and is safe to release.
+	while true:
+		var report: Dictionary = _generator.get_runtime_thread_report() \
+			if _generator.has_method("get_runtime_thread_report") else {}
+		var state := String(report.get("simulation_host_state", report.get("state", "STOPPED")))
+		if state in ["STOPPED", "FAULTED"]:
+			return
+		await get_tree().process_frame
 
 
 func is_loading_session() -> bool:
@@ -498,6 +571,7 @@ func map_overlay_diagnostics() -> Dictionary:
 
 
 func _process(_delta: float) -> void:
+	_consume_runtime_commit_if_ready()
 	var now_msec := Time.get_ticks_msec()
 	if now_msec >= _building_visual_next_poll_msec:
 		_building_visual_next_poll_msec = now_msec + 100
@@ -505,6 +579,97 @@ func _process(_delta: float) -> void:
 	if not _map_overlay_dirty or _map_overlay_request.is_empty():
 		return
 	_refresh_map_overlay(false)
+
+
+## ACTIVE worker 的唯一主线程消费点。poll_runtime_commit() 只返回不可变提交
+## 元数据；视觉 intent 采用有界预算分片消费。这里绝不调用 run_daily_tick、
+## 不读取 runtime store，也不等待 worker。
+func _consume_runtime_commit_if_ready() -> void:
+	if not _runtime_ready_for_ticks or _generator == null:
+		return
+	if not _generator.has_method("get_runtime_thread_report") \
+			or not _generator.has_method("poll_runtime_commit"):
+		return
+	var report: Dictionary = _generator.get_runtime_thread_report()
+	if String(report.get("simulation_thread_mode", report.get(
+			"requested_simulation_thread_mode", "OFF"))) != "ACTIVE":
+		return
+	if not bool(report.get("simulation_worker_ready", report.get(
+			"authority_ready", false))):
+		return
+	var commit: Dictionary = _generator.poll_runtime_commit(_runtime_commit_generation)
+	var received_new_commit := bool(commit.get("ok", false)) \
+			and bool(commit.get("available", false)) \
+			and int(commit.get("generation", 0)) > _runtime_commit_generation
+	if received_new_commit:
+		var generation := int(commit.get("generation", 0))
+		_runtime_commit_generation = generation
+		_runtime_commit_day = int(commit.get("committed_day", _runtime_commit_day))
+		_runtime_last_commit = commit.duplicate(false)
+		_runtime_commit_family_cursors.clear()
+		_runtime_commit_family_done.clear()
+		_runtime_pending_visual_generation = generation
+		_runtime_pending_dirty_families = int(commit.get("dirty_families", 0))
+		# 只通知一次最新完整日提交；后续帧仅继续消费尚未应用的视觉 patch。
+		simulation_committed.emit(
+			int(commit.get("from_day", _runtime_commit_day)),
+			_runtime_commit_day,
+			_runtime_commit_generation)
+	if _runtime_pending_visual_generation <= 0 \
+			or _runtime_pending_visual_generation != _runtime_commit_generation:
+		return
+	# 当前 skeleton 的 COMMIT 阶段可能没有 visual intents；仍走同一消费边界，
+	# 以后新增 family 时无需把 worker 对象暴露给主线程。交互期间缩小预算，
+	# 但不等待或取消 worker，只把剩余 patch 留到下一渲染帧。
+	var apply_started_us := Time.get_ticks_usec()
+	var interactive := bool(report.get("interactive", false))
+	var budget_us := 250 if interactive else 750
+	var max_items := 128 if interactive else 512
+	for family_index in range(9):
+		if Time.get_ticks_usec() - apply_started_us >= budget_us:
+			break
+		var family_bit := 1 << family_index
+		if (_runtime_pending_dirty_families & family_bit) == 0 \
+				or bool(_runtime_commit_family_done.get(family_bit, false)):
+			continue
+		var cursor := int(_runtime_commit_family_cursors.get(family_bit, 0))
+		var patch: Dictionary = _generator.consume_runtime_visual_patch(
+			_runtime_pending_visual_generation, family_bit, cursor, max_items)
+		if not bool(patch.get("available", false)):
+			if String(patch.get("code", "")) == "runtime_generation_expired":
+				# A newer commit will be picked up on the next frame. Do not spin
+				# forever trying to consume a generation already evicted by the ring.
+				_runtime_commit_family_done[family_bit] = true
+			continue
+		if int(patch.get("generation", _runtime_pending_visual_generation)) \
+				!= _runtime_pending_visual_generation:
+			_runtime_commit_family_done[family_bit] = true
+			continue
+		_runtime_commit_family_cursors[family_bit] = int(patch.get("next_cursor", cursor))
+		_runtime_commit_family_done[family_bit] = bool(patch.get("done", false))
+		_apply_runtime_visual_patch(family_bit, patch)
+	_runtime_last_visual_apply_ms = float(Time.get_ticks_usec() - apply_started_us) / 1000.0
+	if _generator.has_method("record_runtime_visual_timings"):
+		_generator.record_runtime_visual_timings(
+			_runtime_last_ui_feedback_ms,
+			_runtime_last_visual_apply_ms,
+			_runtime_last_gpu_upload_ms)
+	var all_done := true
+	for family_index in range(9):
+		var family_bit := 1 << family_index
+		if (_runtime_pending_dirty_families & family_bit) != 0 \
+				and not bool(_runtime_commit_family_done.get(family_bit, false)):
+			all_done = false
+			break
+	if all_done:
+		_runtime_pending_visual_generation = 0
+
+
+## 视觉 intent 的兼容适配点。worker 只发布数值 intent；具体 MapData/GPU
+## 更新仍留在主线程。当前未迁移的 family 不做隐式写入，避免误把 probe
+## 数据当成权威状态。
+func _apply_runtime_visual_patch(_family: int, _patch: Dictionary) -> void:
+	return
 
 
 func _map_overlay_refresh_interval_msec() -> int:
@@ -686,6 +851,21 @@ func get_sim_breakdowns() -> Dictionary:
 				"research_queue_size": country_report.get("research_queue_size", -1),
 				"research_full_scan_fallbacks": country_report.get(
 					"research_full_scan_fallbacks", 0),
+				"research_activation_ms": country_report.get("research_activation_ms", 0.0),
+				"research_allocation_ms": country_report.get("research_allocation_ms", 0.0),
+				"research_effect_ack_ms": country_report.get("research_effect_ack_ms", 0.0),
+				"research_discovery_ms": country_report.get("research_discovery_ms", 0.0),
+				"research_modifier_ms": country_report.get("research_modifier_ms", 0.0),
+				"research_report_ms": country_report.get("research_report_ms", 0.0),
+				"research_countries_scanned": country_report.get("research_countries_scanned", 0),
+				"research_active_countries": country_report.get("research_active_countries", 0),
+				"research_pending_checks": country_report.get("research_pending_checks", 0),
+				"research_discovery_checks": country_report.get("research_discovery_checks", 0),
+				"research_discovery_frontier_mismatches": country_report.get(
+					"research_discovery_frontier_mismatches", 0),
+				"research_modifier_queries": country_report.get("research_modifier_queries", 0),
+				"research_modifier_cache_hits": country_report.get("research_modifier_cache_hits", 0),
+				"research_remainder_iterations": country_report.get("research_remainder_iterations", 0),
 			}
 			out["country"] = country_breakdown
 	var economy_job = tick_report.get("economy_daily", {})
@@ -2429,6 +2609,7 @@ func _recorder_ready(recorder: RefCounted) -> bool:
 
 
 func on_speed_changed(new_speed: float) -> void:
+	_sync_runtime_worker_clock()
 	if _renderer != null:
 		if _renderer.has_method("set_simulation_speed_multiplier"):
 			_renderer.set_simulation_speed_multiplier(new_speed)
@@ -2457,6 +2638,11 @@ func on_speed_changed(new_speed: float) -> void:
 
 
 func on_clock_running_changed(running: bool) -> void:
+	if _generator != null and _world_clock != null \
+			and _generator.has_method("set_runtime_clock_threaded"):
+		# This is a non-blocking control message. In OFF the facade simply reports
+		# that no worker exists and the legacy clock remains authoritative.
+		_generator.set_runtime_clock_threaded(not running, _world_clock.speed_multiplier)
 	if _renderer == null:
 		return
 	var weather_layer := _renderer.get_node_or_null("WeatherLayer")
@@ -2465,6 +2651,14 @@ func on_clock_running_changed(running: bool) -> void:
 	var fog_layer := _renderer.get_node_or_null("FogOfWarLayer")
 	if fog_layer != null and fog_layer.has_method("set_clock_running"):
 		fog_layer.set_clock_running(running)
+
+
+func _sync_runtime_worker_clock() -> void:
+	if _generator == null or _world_clock == null \
+			or not _generator.has_method("set_runtime_clock_threaded"):
+		return
+	_generator.set_runtime_clock_threaded(
+		_world_clock.paused, _world_clock.speed_multiplier)
 
 
 func on_visual_day_phase_changed(visual_day_phase: float) -> void:

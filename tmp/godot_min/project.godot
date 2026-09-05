@@ -1,0 +1,13 @@
+; Minimal headless diagnostic project.
+config_version=5
+
+
+[display]
+window/size/viewport_width=64
+window/size/viewport_height=64
+
+[debug]
+file_logging/enable_file_logging=false
+
+[application]
+config/name="RuntimeMinimal"
