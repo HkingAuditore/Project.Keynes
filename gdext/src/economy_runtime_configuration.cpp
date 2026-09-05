@@ -1020,7 +1020,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     rebuild_incremental_audit_shadow();
     _closing_audit_force_full = true;
     if (_worker_enabled && _population.active_count >= _worker_market_threshold &&
-        godot::WorkerThreadPool::get_singleton() != nullptr) {
+        parallel_has_real_worker_threads()) {
         const int warm_tasks = _worker_tasks_hint > 0 ? _worker_tasks_hint : 16;
         auto warm_worker = [](int32_t begin, int32_t end) {
             volatile uint32_t local = 0;

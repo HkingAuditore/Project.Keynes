@@ -45,6 +45,15 @@ cohort 与家族分支的八维度综合满意度、阶层权重、生存闸门�
 
 ## Native Modifier Runtime
 
+- [NativeSimulationHost 线程边界](./native-simulation-host.md)：后台模拟 worker 的状态机、
+  POD 命令/环境输入、三缓冲提交、非阻塞生命周期和当前 ACTIVE 门禁。
+
+- [后台模拟与 UI 隔离状态](./background-simulation-ui-isolation-status.md)：本轮规划、已落地
+  实现、当前门禁、验证证据和按阶段接手清单的完整状态记录。
+
+- [Runtime Domain 字段映射](./runtime-domain-field-map.md)：输入冻结与 Climate POD SHADOW
+  垂直切片的字段 owner、单位、hash/save/visual 边界和有效性约束。
+
 - [Native Modifier Runtime](./native-modifier-runtime.md)：四域 ModifierStore、固定公式、
   generation handle、scope/bucket、daily freeze、气候/国家/经济/Gameplay 接入、
   PKCN v11/PKEC v41/Modifier schema v3/PKCM v1/PKGP v1 与验证状态。

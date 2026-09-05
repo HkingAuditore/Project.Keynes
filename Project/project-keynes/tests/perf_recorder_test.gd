@@ -102,6 +102,18 @@ func _test_continuation_columns_fixed() -> void:
 	var last: int = cols.find("continuation_substage_work")
 	_expect(first != -1 and last != -1, "continuation perf columns present")
 	_expect(first < last, "continuation perf columns retain fixed order")
+	_expect(cols.find("runtime_graph_country_pod_active_index_count") != -1,
+		"country active index diagnostic column present")
+	for key in [
+		"runtime_graph_climate_pod_ready",
+		"runtime_graph_climate_pod_plan_ms",
+		"runtime_graph_climate_pod_replay_ms",
+		"runtime_graph_climate_pod_work_units",
+		"runtime_graph_climate_pod_changed_cells",
+		"runtime_graph_climate_pod_state_hash",
+		"runtime_graph_climate_pod_fallback_reason",
+	]:
+		_expect(cols.find(key) != -1, "climate POD diagnostic column present: %s" % key)
 	_expect(cols.find("continuation_stage_counts") != -1,
 		"continuation stage counts column present")
 	_expect(cols.find("continuation_stage_wall_ms") != -1,

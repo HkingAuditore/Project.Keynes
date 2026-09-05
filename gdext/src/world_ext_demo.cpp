@@ -13,7 +13,6 @@
 #include <godot_cpp/classes/global_constants.hpp>
 #include <godot_cpp/classes/fast_noise_lite.hpp>          // native world-gen 复刻：与 GDScript _init_noise 同一引擎噪声
 #include <godot_cpp/classes/random_number_generator.hpp>  // native world-gen 复刻：与 GDScript _rng 同一引擎 PCG
-#include <godot_cpp/classes/worker_thread_pool.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/core/error_macros.hpp>
 #include <godot_cpp/core/math.hpp>
@@ -1038,17 +1037,8 @@ void DCWorldExt::bench_pass_a_full_thread(int comp_id,
         k1, k2, base, season,
         n_tasks,
     };
-    WorkerThreadPool *wtp = WorkerThreadPool::get_singleton();
-    if (wtp == nullptr) {
-        // Fallback: run in-thread.
-        for (int t = 0; t < n_tasks; ++t) {
-            pass_a_full_worker(&task, static_cast<uint32_t>(t));
-        }
-        return;
-    }
-    int64_t group_id = wtp->add_native_group_task(
-        &pass_a_full_worker, &task, n_tasks, -1, true, String("pk_pass_a_full"));
-    wtp->wait_for_group_task_completion(group_id);
+    NativeParallelExecutor::instance().run_group(
+        static_cast<uint32_t>(n_tasks), &pass_a_full_worker, &task);
 }
 
 // ─── indexed / scalar ───────────────────────────────────────────────────
@@ -1114,16 +1104,8 @@ void DCWorldExt::bench_pass_a_indexed_thread(int comp_id,
         k1, k2, base, season,
         n_tasks,
     };
-    WorkerThreadPool *wtp = WorkerThreadPool::get_singleton();
-    if (wtp == nullptr) {
-        for (int t = 0; t < n_tasks; ++t) {
-            pass_a_indexed_worker(&task, static_cast<uint32_t>(t));
-        }
-        return;
-    }
-    int64_t group_id = wtp->add_native_group_task(
-        &pass_a_indexed_worker, &task, n_tasks, -1, true, String("pk_pass_a_idx"));
-    wtp->wait_for_group_task_completion(group_id);
+    NativeParallelExecutor::instance().run_group(
+        static_cast<uint32_t>(n_tasks), &pass_a_indexed_worker, &task);
 }
 
 // ─── Class binding ─────────────────────────────────────────────────────────

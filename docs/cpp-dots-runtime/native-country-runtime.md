@@ -1,12 +1,42 @@
-# Native Country Runtime（PKCN v11）
+# Native Country Runtime（PKCN v13）
 
-PKCN v11 保留玩家时代奖励的最小交叉引用：plan ID、Offer 代际、里程碑科技和
+## 2026-09 研究热循环与发布边界
+
+国家研究的生产路径只遍历按 country slot 排序的
+`research_active_country_slots`。队列、pending Effect/Modifier ACK 或可继续消费的研究点
+使国家留在集合中；队列为空且无 pending/ACK 时立即退出。集合及 membership bitset 是
+可重建的 transient index，不进入 PKCN、state hash 或事件顺序。
+
+科技目录配置时构建 discovery 反向 CSR。技术完成后只刷新该技术可能影响的 prerequisite、
+milestone、reveal/unlock frontier；FULL 诊断模式额外执行旧全扫描做 parity，若旧扫描还能
+新增节点则递增 `research_discovery_frontier_mismatches`。这条诊断路径只用于发现索引漏边，
+不得在 LIGHT 生产报告中重复提交事件。
+
+每国四域 research efficiency 与 cost factor 以
+`(country_handle, country_modifier_snapshot_version)` 缓存。任一 Country Modifier commit 会使
+对应版本失效；缓存不进入存档。四域尾数分配使用稳定 largest-remainder，按 remainder、
+domain id 排序，补发次数最多 3。研究权重命令仍要求每项 `0..10000` 且总和严格等于
+`10000`，预检失败不修改任何权威状态。
+
+发布 generation 分为 `state_generation`、`territory_generation`、
+`visual_generation`、`research_generation`。只有 territory generation 变化才允许
+`sync_country_territory_to_map()`；纯研究、国库和税务提交不得冒充 MapData slot 发布。
+这些 generation 是可见性/诊断游标，不参与 PKCN 持久权威与 state hash。
+
+研究 epoch 的固定探针为 `research_activation_ms`、`research_allocation_ms`、
+`research_effect_ack_ms`、`research_discovery_ms`、`research_modifier_ms`、
+`research_report_ms`，并伴随 scanned/active country、pending/discovery checks、Modifier
+query/cache hit、remainder iteration 等确定性工作计数器。`research_activation_ms` 是整个
+activation 阶段的包围计时，包含其中的 ACK/discovery 子计时，分析未归属时间时不能把三者
+直接相加。
+
+PKCN v13 保留玩家时代奖励的最小交叉引用：plan ID、Offer 代际、里程碑科技和
 `OPEN / SELECTED_PENDING / RESOLVED / ERROR` 状态。完整备选仍由 PKEF v10 持有；
-PKEF 恢复时必须与该引用逐字段一致。PKCN v11 额外把科技/研究信号/Effect recipe 与
+PKEF 恢复时必须与该引用逐字段一致。PKCN v13 额外把科技/研究信号/Effect recipe 与
 Modifier term identity、Trigger 定义摘要及完整内容绑定摘要混入国家 catalog hash。
 旧 schema 或任一 identity 不一致统一返回 `catalog_hash_mismatch`。
 
-PKCN v11 保留 Effect/POD `CLAIM_UNOWNED_TERRITORY` 与时代奖励引用。
+PKCN v13 保留 Effect/POD `CLAIM_UNOWNED_TERRITORY` 与时代奖励引用。
 `CLAIM_UNOWNED_TERRITORY` 只允许目标
 当前为 neutral，供[家族远程开拓事务](./family-colonization-runtime.md)在
 Country priority 255 提交；侵略、吞并与通行权不复用该 opcode。
@@ -78,6 +108,12 @@ CSR、元数据和分配器余量，也以 `<8MB` 为验收门槛。
 预检，再提交稀疏地块 delta。建国命令直接携带第一块领土，因此建国与领土获得原子完成；
 科技复制该地原所有国，来自无主地时使用起始科技。当前版本不提供删除国家、灭国或撤销科技。
 
+后台迁移使用 `RuntimeCountryCommand` / `RuntimeCountryCommandBatch` 作为无字符串、固定容量
+的协议记录（当前 batch 上限 256）。GDScript facade 和同步 C++ facade 都在 pending 队列之前
+执行研究权重校验：四个权重必须分别处于 `0..10000`，且总和严格为 `10000`；失败分别返回
+明确的本地 reason 或 `country_research_weight_policy_invalid`。该协议目前只冻结输入边界，
+尚未把 Country store 接入 `NativeSimulationHost`，因此不改变当前 ACTIVE 门禁和同步权威。
+
 GM 的“点击地块接管领土”不新增 opcode：`WorldRuntimeHost` 在会话级模式开启时监听既有
 选中回调，解析玩家国家 handle，并包装 `TRANSFER_TERRITORY` 到下一游戏日。水域、已归属和
 同格重复排队在 host 边界提前返回；最后领土保护、handle 有效性、原子批次与经济冻结规则
@@ -123,5 +159,5 @@ handle、重复 good、非负数量和全部余额，再一次性提交并只递
 国家已掌握科技认矿；无主地没有科技，但不能因此把全图已生成的储量显示成未配置。详见
 [视野迷雾与国界线](./vision-fog-and-borders.md)。
 > 科技树扩展说明见[科技树、科技值与科研经济运行时](./technology-tree-runtime.md)。当前
-> PKCN v11 持久化 discovery/completed/pending bitset、稀疏研究进度、四领域队列与权重、
+> PKCN v13 持久化 discovery/completed/pending bitset、稀疏研究进度、四领域队列与权重、
 > 采购政策、暂缓科技值、研究信号证据和审计计数；旧版本明确拒绝恢复。

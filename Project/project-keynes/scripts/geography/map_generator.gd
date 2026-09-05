@@ -449,6 +449,22 @@ var _last_sea_ice_atlas_upload_breakdown: Dictionary = {}
 # perf_recorder 比对 row.tick_idx ≠ dict._tick_idx 时跳过整组字段，避免
 # 把 "305 行重复值" 累加成假象总耗时。
 var _current_fast_tick_idx: int = 0
+var _runtime_input_generation: int = 0
+# Climate trace is a release protocol, not a best-effort diagnostic stream.
+# Keep the main-thread capture/reference bookkeeping here so a worker can only
+# consume a day after the OFF path has released its matching reference hash.
+var _runtime_climate_trace_pending: Dictionary = {}
+var _runtime_climate_reference_last_day: int = -1
+var _runtime_climate_reference_last_hash: int = 0
+var _runtime_climate_reference_failures: int = 0
+var _runtime_climate_reference_last_error: String = ""
+var _runtime_climate_catalog_hash: int = 0
+var _runtime_climate_catalog_map_id: int = 0
+var _runtime_climate_topology_generation: int = 1
+var _runtime_climate_topology_map_id: int = 0
+var _runtime_climate_neighbor_offsets: PackedInt32Array = PackedInt32Array()
+var _runtime_climate_neighbor_offsets_map_id: int = 0
+var _last_climate_breakdown: Dictionary = {}
 var _pending_season_refresh: bool = false
 var _season_refresh_in_progress: bool = false
 var _pending_season_idx: int = 0
@@ -1165,6 +1181,9 @@ var _runtime_graph_active: bool = false
 ## 转成 country_committed，否则国界/视野不会跟着 CLAIM 刷新。
 ## -1 = 尚未对齐过 watermark（首次只采纳，不重放 bootstrap）。
 var _runtime_graph_last_country_generation: int = -1
+var _runtime_graph_last_country_territory_generation: int = -1
+var _runtime_graph_country_territory_sync_ms: float = 0.0
+var _runtime_graph_country_event_dispatch_ms: float = 0.0
 var _native_daily_last_result: Dictionary = {}
 var _native_daily_slice_round_active: bool = false
 var _native_daily_slice_unified_weather_embedded: bool = false
@@ -1299,6 +1318,19 @@ func generate(cfg: MapConfig, hex_size: float) -> Dictionary:
 	_last_cfg = cfg
 	_last_hex_size = hex_size
 	_last_seed = effective_seed
+	_runtime_input_generation = 0
+	_runtime_climate_trace_pending.clear()
+	_runtime_climate_reference_last_day = -1
+	_runtime_climate_reference_last_hash = 0
+	_runtime_climate_reference_failures = 0
+	_runtime_climate_reference_last_error = ""
+	_runtime_climate_catalog_hash = 0
+	_runtime_climate_catalog_map_id = 0
+	_runtime_climate_topology_generation = 1
+	_runtime_climate_topology_map_id = 0
+	_runtime_climate_neighbor_offsets = PackedInt32Array()
+	_runtime_climate_neighbor_offsets_map_id = 0
+	_last_climate_breakdown.clear()
 	_current_season = -1
 	_weather_stage_b_call_index = -1
 	_native_daily_last_weather_embed_day = -1000000
@@ -1858,7 +1890,8 @@ func _register_country_economy_systems(scheduler_profile) -> Dictionary:
 		_sus.configure_job_from_profile(
 			_ideology_daily_job, scheduler_profile, false, &"ideology_runtime", 1)
 		_runtime_register_system(_ideology_daily_job)
-	_country_daily_job = CountryDailySystemScript.new(_country_facade, _world_clock_ref)
+	_country_daily_job = CountryDailySystemScript.new(
+		_country_facade, _world_clock_ref, self)
 	_sus.configure_job_from_profile(
 		_country_daily_job, scheduler_profile, false, &"country_daily", 1)
 	_runtime_register_system(_country_daily_job)
@@ -1937,11 +1970,602 @@ func get_economy_perf_report() -> Dictionary:
 func get_runtime_perf_snapshot(detail_level: int = 0) -> Dictionary:
 	if _data_core_world_ext == null or not _data_core_world_ext.has_method("get_runtime_perf_snapshot"):
 		return {}
-	return _data_core_world_ext.get_runtime_perf_snapshot(detail_level)
+	var snapshot: Dictionary = _data_core_world_ext.get_runtime_perf_snapshot(detail_level)
+	snapshot["country_territory_sync_ms"] = _runtime_graph_country_territory_sync_ms
+	snapshot["event_dispatch_ms"] = _runtime_graph_country_event_dispatch_ms
+	return snapshot
 
 
 func runtime_graph_active() -> bool:
 	return _runtime_graph_active
+
+
+func set_runtime_interactive(interactive: bool) -> void:
+	# QoS is a native executor hint only. It never changes simulation order or
+	# authority; the next native group observes the reduced permit count.
+	if _data_core_world_ext != null and _data_core_world_ext.has_method("set_runtime_qos"):
+		_data_core_world_ext.set_runtime_qos(interactive)
+
+
+func set_runtime_qos_threaded(interactive: bool) -> Dictionary:
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
+			"set_runtime_qos_threaded"):
+		return {"ok": false, "code": "runtime_worker_api_missing"}
+	return _data_core_world_ext.set_runtime_qos_threaded(interactive)
+
+
+func get_runtime_thread_report() -> Dictionary:
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method("get_runtime_thread_report"):
+		return {}
+	return _data_core_world_ext.get_runtime_thread_report()
+
+
+func record_runtime_visual_timings(ui_input_to_feedback_ms: float,
+		visual_apply_ms: float, gpu_upload_ms: float) -> Dictionary:
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
+			"record_runtime_visual_timings"):
+		return {"ok": false, "code": "runtime_worker_api_missing"}
+	return _data_core_world_ext.record_runtime_visual_timings(
+		ui_input_to_feedback_ms, visual_apply_ms, gpu_upload_ms)
+
+
+func start_runtime_worker(config: Dictionary) -> Dictionary:
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method("start_runtime_worker"):
+		return {"ok": false, "code": "runtime_worker_api_missing"}
+	return _data_core_world_ext.start_runtime_worker(config)
+
+
+func set_runtime_clock_threaded(paused: bool, speed_days_per_second: float) -> Dictionary:
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method("set_runtime_clock"):
+		return {"ok": false, "code": "runtime_worker_api_missing"}
+	return _data_core_world_ext.set_runtime_clock(paused, speed_days_per_second)
+
+
+func capture_runtime_inputs(inputs: Dictionary) -> Dictionary:
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method("capture_runtime_inputs"):
+		return {"ok": false, "code": "runtime_worker_api_missing"}
+	return _data_core_world_ext.capture_runtime_inputs(inputs)
+
+
+func _runtime_climate_failure(code: String, reason: String = "", day: int = -1) -> Dictionary:
+	_runtime_climate_reference_failures += 1
+	_runtime_climate_reference_last_error = reason if not reason.is_empty() else code
+	return {
+		"ok": false,
+		"code": code,
+		"reason": _runtime_climate_reference_last_error,
+		"fallback_reason": _runtime_climate_reference_last_error,
+		"day": day,
+	}
+
+
+func _runtime_climate_hash_append(hashing, label: String, value) -> void:
+	# Packed arrays are hashed as their native bytes (float32/int32/uint8
+	# bit-patterns), while scalar metadata is framed as UTF-8 text. The field
+	# labels and lengths make concatenation unambiguous and keep the reference
+	# hash stable across runs without relying on Dictionary iteration order.
+	hashing.update((label + "#").to_utf8_buffer())
+	if value is PackedFloat32Array:
+		var f32: PackedFloat32Array = value
+		hashing.update(("f32:%d:" % f32.size()).to_utf8_buffer())
+		hashing.update(f32.to_byte_array())
+		return
+	if value is PackedFloat64Array:
+		var f64: PackedFloat64Array = value
+		hashing.update(("f64:%d:" % f64.size()).to_utf8_buffer())
+		hashing.update(f64.to_byte_array())
+		return
+	if value is PackedInt32Array:
+		var i32: PackedInt32Array = value
+		hashing.update(("i32:%d:" % i32.size()).to_utf8_buffer())
+		hashing.update(i32.to_byte_array())
+		return
+	if value is PackedInt64Array:
+		var i64: PackedInt64Array = value
+		hashing.update(("i64:%d:" % i64.size()).to_utf8_buffer())
+		hashing.update(i64.to_byte_array())
+		return
+	if value is PackedByteArray:
+		var bytes: PackedByteArray = value
+		hashing.update(("u8:%d:" % bytes.size()).to_utf8_buffer())
+		hashing.update(bytes)
+		return
+	if value is PackedStringArray:
+		var strings: PackedStringArray = value
+		hashing.update(("str:%d:" % strings.size()).to_utf8_buffer())
+		hashing.update("\n".join(strings).to_utf8_buffer())
+		return
+	if value is Array or value is Dictionary:
+		hashing.update(var_to_bytes(value))
+		return
+	hashing.update(String(value).to_utf8_buffer())
+
+
+func _runtime_climate_hash_digest_value(digest: PackedByteArray) -> int:
+	var value: int = 0
+	# Seven bytes keep the result positive in Godot's signed 64-bit Variant int,
+	# while retaining 56 bits of SHA-256 entropy. C++ rejects zero hashes.
+	for i in range(mini(7, digest.size())):
+		value = (value << 8) | int(digest[i])
+	return maxi(1, value)
+
+
+func _runtime_climate_catalog_hash_for_map(map: MapData) -> int:
+	if map == null:
+		return 0
+	var map_id := map.get_instance_id()
+	if _runtime_climate_catalog_map_id == map_id and _runtime_climate_catalog_hash > 0:
+		return _runtime_climate_catalog_hash
+	var hashing := HashingContext.new()
+	hashing.start(HashingContext.HASH_SHA256)
+	hashing.update("runtime-climate-catalog-v1\n".to_utf8_buffer())
+	_runtime_climate_hash_append(hashing, "abi", 3)
+	_runtime_climate_hash_append(hashing, "width", int(map.width))
+	_runtime_climate_hash_append(hashing, "height", int(map.height))
+	_runtime_climate_hash_append(hashing, "cells", int(map.cell_count()))
+	var cp := _c()
+	if cp != null:
+		# Only immutable numeric/profile knobs belong in the catalog. Dynamic
+		# day fields are deliberately excluded and remain input snapshot data.
+		for field_name in PackedStringArray([
+			"solar_amplitude", "lapse_rate", "sea_ice_freeze_threshold",
+			"sea_ice_melt_threshold", "soil_water_capacity", "hydrology_enabled",
+			"weather_advect_use_wind_vector", "veg_feedback_elev_decay",
+		]):
+			var field_value = cp.get(field_name)
+			if field_value != null:
+				_runtime_climate_hash_append(hashing, field_name, field_value)
+	# Static map identity is included once per generated MapData instance. These
+	# arrays are not re-read by the worker; they only detect a mismatched map.
+	_runtime_climate_hash_append(hashing, "elevation", map.elevation_arr)
+	_runtime_climate_hash_append(hashing, "lat_norm", map.cell_lat_norm_arr)
+	_runtime_climate_hash_append(hashing, "terrain", map.terrain_arr)
+	_runtime_climate_hash_append(hashing, "landform", map.landform_arr)
+	_runtime_climate_hash_append(hashing, "water", map.is_water_arr)
+	_runtime_climate_hash_append(hashing, "hydro_parent", map.hydro_parent_arr)
+	_runtime_climate_hash_append(hashing, "neighbours", map.neighbor_indices_packed())
+	_runtime_climate_catalog_hash = _runtime_climate_hash_digest_value(hashing.finish())
+	_runtime_climate_catalog_map_id = map_id
+	return _runtime_climate_catalog_hash
+
+
+func _runtime_climate_topology_generation_for_map(map: MapData) -> int:
+	if map == null:
+		return 0
+	var map_id := map.get_instance_id()
+	var supplied = map.get("topology_generation")
+	if supplied != null:
+		_runtime_climate_topology_generation = maxi(1, int(supplied))
+	elif _runtime_climate_topology_map_id != map_id:
+		# MapData is immutable at the topology boundary for the current phase. A
+		# regenerated map receives a new local revision; later topology mutation
+		# work can replace this with the authored topology revision field.
+		_runtime_climate_topology_generation = 1
+	_runtime_climate_topology_map_id = map_id
+	return _runtime_climate_topology_generation
+
+
+func _runtime_climate_optional_array(map: MapData, field_name: String, packed_type: int):
+	var value = map.get(field_name) if map != null else null
+	if value != null and typeof(value) == packed_type:
+		return value
+	match packed_type:
+		TYPE_PACKED_FLOAT32_ARRAY:
+			return PackedFloat32Array()
+		TYPE_PACKED_INT32_ARRAY:
+			return PackedInt32Array()
+		TYPE_PACKED_BYTE_ARRAY:
+			return PackedByteArray()
+	return PackedByteArray()
+
+
+func _runtime_climate_neighbor_offsets_for_map(map: MapData) -> PackedInt32Array:
+	if map == null:
+		return PackedInt32Array()
+	var map_id := map.get_instance_id()
+	var cell_count := int(map.cell_count())
+	if _runtime_climate_neighbor_offsets_map_id == map_id \
+			and _runtime_climate_neighbor_offsets.size() == cell_count + 1:
+		return _runtime_climate_neighbor_offsets
+	var offsets := PackedInt32Array()
+	offsets.resize(cell_count + 1)
+	for i in range(cell_count + 1):
+		offsets[i] = i * 6
+	_runtime_climate_neighbor_offsets = offsets
+	_runtime_climate_neighbor_offsets_map_id = map_id
+	return offsets
+
+
+func _runtime_climate_trace_has_older_pending(day: int) -> bool:
+	for raw_day in _runtime_climate_trace_pending.keys():
+		var pending_day := int(raw_day)
+		if pending_day < day and not bool(
+				_runtime_climate_trace_pending[raw_day].get("reference_published", false)):
+			return true
+	return false
+
+
+## Phase A input boundary.  This is the only production helper allowed to
+## read MapData arrays before they cross into NativeSimulationHost.  The
+## returned dictionary is immediately copied by the C++ facade; no PackedArray
+## reference is retained by the worker.
+func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0) -> Dictionary:
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method("capture_runtime_inputs"):
+		return _runtime_climate_failure("runtime_worker_api_missing", "runtime worker input API is unavailable", day)
+	var map: MapData = _sus_map
+	if map == null:
+		return _runtime_climate_failure("runtime_input_map_unavailable", "MapData is not bound", day)
+	if day < 0:
+		day = int(_world_clock_ref.day_index()) if _world_clock_ref != null \
+			and _world_clock_ref.has_method("day_index") else 0
+	if phase < 0.0:
+		phase = float(_world_clock_ref.season_phase()) if _world_clock_ref != null \
+			and _world_clock_ref.has_method("season_phase") else 0.0
+	if is_nan(phase) or is_inf(phase) or day < 0:
+		return _runtime_climate_failure("runtime_input_value_invalid", "day/season phase is not finite", day)
+	if _runtime_climate_trace_pending.has(day):
+		var cached: Dictionary = _runtime_climate_trace_pending[day]
+		return {
+			"ok": true,
+			"already_captured": true,
+			"day": day,
+			"input_generation": int(cached.get("input_generation", 0)),
+			"catalog_hash": int(cached.get("catalog_hash", 0)),
+			"topology_generation": int(cached.get("topology_generation", 0)),
+		}
+	var cell_count := int(map.cell_count())
+	if cell_count <= 0 or int(map.width) <= 0 or int(map.height) <= 0:
+		return _runtime_climate_failure("runtime_input_map_shape_invalid", "MapData shape is empty", day)
+	# NativeSimulationHost keeps the last accepted immutable generation across a
+	# save/restore boundary. Reconcile that watermark before allocating the next
+	# capture so a restored host never receives a duplicate generation.
+	if _data_core_world_ext != null and _data_core_world_ext.has_method(
+			"get_runtime_thread_report"):
+		var thread_report: Dictionary = get_runtime_thread_report()
+		_runtime_input_generation = maxi(
+			_runtime_input_generation,
+			int(thread_report.get("environment_generation", 0)))
+	var next_generation := maxi(1, _runtime_input_generation + 1)
+	var catalog_hash := _runtime_climate_catalog_hash_for_map(map)
+	var topology_generation := _runtime_climate_topology_generation_for_map(map)
+	var anomaly := 0.0
+	if _world_clock_ref != null:
+		var anomaly_value = _world_clock_ref.get("climate_anomaly")
+		if anomaly_value != null:
+			anomaly = float(anomaly_value)
+	var hydro_parent: PackedInt32Array = map.hydro_parent_arr
+	var geometry_area = _runtime_climate_optional_array(
+		map, "cell_geometry_area_arr", TYPE_PACKED_FLOAT32_ARRAY)
+	var wind_band = _runtime_climate_optional_array(
+		map, "cell_wind_band_arr", TYPE_PACKED_FLOAT32_ARRAY)
+	var ocean_heat_capacity = _runtime_climate_optional_array(
+		map, "cell_ocean_heat_capacity_arr", TYPE_PACKED_FLOAT32_ARRAY)
+	var building_reserve = _runtime_climate_optional_array(
+		map, "building_resource_reserve_arr", TYPE_PACKED_FLOAT32_ARRAY)
+	var building_extra = _runtime_climate_optional_array(
+		map, "building_resource_extra_arr", TYPE_PACKED_FLOAT32_ARRAY)
+	var trade_passable: PackedByteArray = map.economy_trade_passable_lut()
+	var trade_cost: PackedInt32Array = map.economy_trade_move_cost_lut()
+	var neighbor_offsets := _runtime_climate_neighbor_offsets_for_map(map)
+	if (not trade_passable.is_empty() or not trade_cost.is_empty()) \
+			and (trade_passable.size() != 256 or trade_cost.size() != 256):
+		return _runtime_climate_failure("runtime_input_lut_shape_mismatch",
+			"trade LUTs must both be empty or both contain 256 entries", day)
+	var input_generation := next_generation
+	var result: Dictionary = _data_core_world_ext.capture_runtime_inputs({
+		"generation": input_generation,
+		"climate_catalog_abi_version": 3,
+		"climate_catalog_hash": catalog_hash,
+		"climate_map_width": int(map.width),
+		"climate_map_height": int(map.height),
+		"day": day,
+		"season_phase": phase,
+		"climate_anomaly": anomaly,
+		"topology_generation": topology_generation,
+		"vision_revision": map.vision_revision,
+		"fog_solved": map.fog_solved,
+		"cell_temp": map.temp_arr,
+		"cell_temp_30d": map.temp_30d_arr,
+		"cell_moisture": map.moisture_arr,
+		"cell_plant_available_water": map.plant_available_water_arr,
+		"cell_weather_precip": map.weather_precip_arr,
+		"cell_snow_cover": map.snow_cover_arr,
+		"cell_weather_intensity": map.weather_intensity_arr,
+		"cell_elevation": map.elevation_arr,
+		"cell_lat_norm": map.cell_lat_norm_arr,
+		"cell_geometry_area": geometry_area,
+		"cell_wind_band": wind_band,
+		"cell_ocean_heat_capacity": ocean_heat_capacity,
+		"neighbor_indices": map.neighbor_indices_packed(),
+		"neighbor_offsets": neighbor_offsets,
+		"hydro_parent": hydro_parent,
+		"terrain": map.terrain_arr,
+		"landform": map.landform_arr,
+		"vegetation": map.vegetation_arr,
+		"cover": map.cover_arr,
+		"is_water": map.is_water_arr,
+		"has_river": map.has_river_arr,
+		"canal_edge_mask": map.canal_edge_mask_arr,
+		"canal_water": map.canal_water_arr,
+		"trade_passable_lut": trade_passable,
+		"trade_move_cost_lut": trade_cost,
+		"visible": map.visible_arr,
+		"building_resource_reserve": building_reserve,
+		"building_resource_extra": building_extra,
+	})
+	if bool(result.get("ok", false)):
+		_runtime_input_generation = input_generation
+		var round_state := _native_daily_climate_round_state_snapshot()
+		_runtime_climate_trace_pending[day] = {
+			"day": day,
+			"phase": phase,
+			"input_generation": input_generation,
+			"catalog_hash": catalog_hash,
+			"topology_generation": topology_generation,
+			"captured_at_msec": Time.get_ticks_msec(),
+			"pass_generation_before": int(round_state.get("pass_generation", -1)),
+			"round_active_before": bool(round_state.get("round_active", false)),
+			"reference_published": false,
+			"reference_hash": 0,
+			"capture_result": result.duplicate(true),
+		}
+		result["input_generation"] = input_generation
+		result["catalog_hash"] = catalog_hash
+		result["topology_generation"] = topology_generation
+	else:
+		result["fallback_reason"] = String(result.get("code", "runtime_input_publish_failed"))
+		_runtime_climate_reference_last_error = String(result["fallback_reason"])
+		_runtime_climate_reference_failures += 1
+	return result
+
+
+func _compute_runtime_climate_reference_hash(map: MapData, day: int) -> int:
+	if map == null or day < 0:
+		return 0
+	var hashing := HashingContext.new()
+	hashing.start(HashingContext.HASH_SHA256)
+	hashing.update("runtime-climate-reference-v1\n".to_utf8_buffer())
+	_runtime_climate_hash_append(hashing, "day", day)
+	_runtime_climate_hash_append(hashing, "width", int(map.width))
+	_runtime_climate_hash_append(hashing, "height", int(map.height))
+	_runtime_climate_hash_append(hashing, "cells", int(map.cell_count()))
+	_runtime_climate_hash_append(hashing, "catalog", _runtime_climate_catalog_hash_for_map(map))
+	_runtime_climate_hash_append(hashing, "topology", _runtime_climate_topology_generation_for_map(map))
+	_runtime_climate_hash_append(hashing, "temperature", map.temp_arr)
+	_runtime_climate_hash_append(hashing, "temperature_30d_ema", map.temp_30d_arr)
+	_runtime_climate_hash_append(hashing, "temperature_365d_ema", map.temp_365d_arr)
+	_runtime_climate_hash_append(hashing, "temperature_baseline", map.temp_baseline_arr)
+	_runtime_climate_hash_append(hashing, "thermal_energy", map.thermal_energy_arr)
+	_runtime_climate_hash_append(hashing, "moisture", map.moisture_arr)
+	_runtime_climate_hash_append(hashing, "plant_available_water", map.plant_available_water_arr)
+	_runtime_climate_hash_append(hashing, "water_balance_30d", map.water_balance_30d_arr)
+	_runtime_climate_hash_append(hashing, "weather_precipitation", map.weather_precip_arr)
+	_runtime_climate_hash_append(hashing, "weather_intensity", map.weather_intensity_arr)
+	_runtime_climate_hash_append(hashing, "weather_vapor", map.weather_vapor_arr)
+	_runtime_climate_hash_append(hashing, "weather_cloud_water", map.weather_cloud_water_arr)
+	_runtime_climate_hash_append(hashing, "weather_cloud", map.weather_cloud_arr)
+	_runtime_climate_hash_append(hashing, "weather_convergence", map.weather_convergence_arr)
+	_runtime_climate_hash_append(hashing, "weather_instability", map.weather_instability_arr)
+	_runtime_climate_hash_append(hashing, "weather_type", map.weather_type_arr)
+	_runtime_climate_hash_append(hashing, "weather_transition", map.weather_transition_alpha_arr)
+	_runtime_climate_hash_append(hashing, "snow_cover", map.snow_cover_arr)
+	_runtime_climate_hash_append(hashing, "snowpack", map.snowpack_arr)
+	_runtime_climate_hash_append(hashing, "sea_ice", map.sea_ice_frac_arr)
+	_runtime_climate_hash_append(hashing, "runoff", map.surface_runoff_arr)
+	_runtime_climate_hash_append(hashing, "groundwater", map.groundwater_storage_arr)
+	_runtime_climate_hash_append(hashing, "river_storage", map.river_storage_arr)
+	_runtime_climate_hash_append(hashing, "river_discharge", map.river_discharge_arr)
+	_runtime_climate_hash_append(hashing, "riparian_moisture",
+		_runtime_climate_optional_array(map, "riparian_moisture_arr", TYPE_PACKED_FLOAT32_ARRAY))
+	_runtime_climate_hash_append(hashing, "vegetation_vitality", map.vegetation_vitality_arr)
+	_runtime_climate_hash_append(hashing, "vegetation_growth_pressure", map.vegetation_growth_pressure_arr)
+	_runtime_climate_hash_append(hashing, "vegetation_heat_stress", map.vegetation_heat_stress_arr)
+	_runtime_climate_hash_append(hashing, "vegetation_drought_stress", map.vegetation_drought_stress_arr)
+	_runtime_climate_hash_append(hashing, "vegetation_cold_stress", map.vegetation_cold_stress_arr)
+	_runtime_climate_hash_append(hashing, "growth_streak", map.vitality_high_streak_arr)
+	_runtime_climate_hash_append(hashing, "drought_streak", map.vitality_low_streak_arr)
+	_runtime_climate_hash_append(hashing, "succession_candidate", map.vegetation_regen_score_arr)
+	_runtime_climate_hash_append(hashing, "temperature_anomaly", map.temp_anomaly_arr)
+	_runtime_climate_hash_append(hashing, "ocean_thermal_anomaly", map.ocean_thermal_anomaly_arr)
+	_runtime_climate_hash_append(hashing, "local_thermal_anomaly", map.local_thermal_anomaly_arr)
+	_runtime_climate_hash_append(hashing, "air_mass_temperature_anomaly", map.air_mass_temp_anomaly_arr)
+	_runtime_climate_hash_append(hashing, "temperature_transport_anomaly", map.temperature_transport_anomaly_arr)
+	_runtime_climate_hash_append(hashing, "soil_moisture", map.soil_moisture_arr)
+	var anomaly := 0.0
+	if _world_clock_ref != null:
+		var anomaly_value = _world_clock_ref.get("climate_anomaly")
+		if anomaly_value != null:
+			anomaly = float(anomaly_value)
+	_runtime_climate_hash_append(hashing, "climate_anomaly", anomaly)
+	_runtime_climate_hash_append(hashing, "vision_revision", int(map.vision_revision))
+	return _runtime_climate_hash_digest_value(hashing.finish())
+
+
+func _runtime_climate_reference_ready_for_day(day: int) -> bool:
+	if not _runtime_climate_trace_pending.has(day):
+		return false
+	var pending: Dictionary = _runtime_climate_trace_pending[day]
+	if bool(pending.get("reference_published", false)):
+		return true
+	if _refresh_climate_daily_job == null:
+		return false
+	var state := _native_daily_climate_round_state_snapshot()
+	var before_generation := int(pending.get("pass_generation_before", -1))
+	var current_generation := int(state.get("pass_generation", -1))
+	var was_active := bool(pending.get("round_active_before", false))
+	var active_now := bool(state.get("round_active", false))
+	var finalizing_now := bool(state.get("finalize_pending", false))
+	var cursor := int(state.get("pass_cursor", -1))
+	var pass_count := int(state.get("pass_count", 0))
+	var round_complete := cursor >= pass_count and pass_count > 0 \
+			and not active_now and not finalizing_now
+	var breakdown_done := not bool(_last_climate_breakdown.get("partial", true)) \
+			and String(_last_climate_breakdown.get("pass_status", "")) in ["done", ""]
+	# A new pass generation, or a previously active round transitioning to idle,
+	# proves that the synchronous reference has reached its immutable boundary.
+	if round_complete and breakdown_done and (current_generation > before_generation \
+			or (was_active and not active_now)):
+		return true
+	# Climate can be skipped by SUS cadence. In that case the OFF state is
+	# intentionally unchanged; releasing the captured frame still preserves the
+	# exact input/output day contract and prevents an unbounded trace backlog.
+	var ran_this_tick: bool = _refresh_climate_daily_job.did_run_last_tick()
+	return round_complete and breakdown_done and not ran_this_tick \
+			and current_generation == before_generation and not was_active
+
+
+func _publish_runtime_climate_reference(day: int, map: MapData = null) -> Dictionary:
+	if map == null:
+		map = _sus_map
+	if not _runtime_climate_trace_pending.has(day):
+		return _runtime_climate_failure("climate_trace_reference_frame_missing",
+			"no captured input frame exists for this day", day)
+	var pending: Dictionary = _runtime_climate_trace_pending[day]
+	if bool(pending.get("reference_published", false)):
+		return {
+			"ok": true,
+			"already_published": true,
+			"day": day,
+			"state_hash": int(pending.get("reference_hash", 0)),
+			"input_generation": int(pending.get("input_generation", 0)),
+		}
+	if not _runtime_climate_reference_ready_for_day(day):
+		return {
+			"ok": false,
+			"pending": true,
+			"code": "climate_trace_reference_pending",
+			"fallback_reason": "synchronous Climate round is not complete",
+			"day": day,
+		}
+	var state_hash := _compute_runtime_climate_reference_hash(map, day)
+	if state_hash <= 0:
+		return _runtime_climate_failure("climate_trace_reference_hash_invalid",
+			"reference Climate state hash is zero", day)
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
+			"publish_runtime_climate_reference"):
+		return _runtime_climate_failure("runtime_worker_api_missing",
+			"runtime climate reference API is unavailable", day)
+	var result: Dictionary = _data_core_world_ext.publish_runtime_climate_reference(
+		day, state_hash)
+	if not bool(result.get("ok", false)):
+		var code := String(result.get("code", "climate_trace_reference_publish_failed"))
+		return _runtime_climate_failure(code, code, day)
+	pending["reference_published"] = true
+	pending["reference_hash"] = state_hash
+	pending["published_at_msec"] = Time.get_ticks_msec()
+	_runtime_climate_trace_pending[day] = pending
+	_runtime_climate_reference_last_day = day
+	_runtime_climate_reference_last_hash = state_hash
+	_runtime_climate_reference_last_error = ""
+	# Keep enough history for diagnostics without allowing a long-running OFF
+	# session to grow the GDScript dictionary indefinitely.
+	var days: Array = _runtime_climate_trace_pending.keys()
+	days.sort()
+	while days.size() > 64:
+		_runtime_climate_trace_pending.erase(days.pop_front())
+	result["input_generation"] = int(pending.get("input_generation", 0))
+	result["catalog_hash"] = int(pending.get("catalog_hash", 0))
+	result["topology_generation"] = int(pending.get("topology_generation", 0))
+	return result
+
+
+func _publish_ready_runtime_climate_references(up_to_day: int,
+		map: MapData = null) -> Dictionary:
+	var aggregate: Dictionary = {
+		"ok": true,
+		"published_days": [],
+		"pending_days": [],
+		"last_result": {},
+	}
+	if up_to_day < 0:
+		return aggregate
+	var days: Array = _runtime_climate_trace_pending.keys()
+	days.sort()
+	for raw_day in days:
+		var pending_day := int(raw_day)
+		if pending_day > up_to_day:
+			break
+		var pending: Dictionary = _runtime_climate_trace_pending[raw_day]
+		if bool(pending.get("reference_published", false)):
+			continue
+		var result := _publish_runtime_climate_reference(pending_day, map)
+		aggregate["last_result"] = result
+		if bool(result.get("ok", false)):
+			var published_days: Array = aggregate["published_days"]
+			published_days.append(pending_day)
+			aggregate["published_days"] = published_days
+			continue
+		var code := String(result.get("code", "climate_trace_reference_pending"))
+		if code == "climate_trace_reference_pending":
+			var pending_days: Array = aggregate["pending_days"]
+			pending_days.append(pending_day)
+			aggregate["pending_days"] = pending_days
+			break
+		aggregate["ok"] = false
+		break
+	return aggregate
+
+
+func runtime_climate_trace_report() -> Dictionary:
+	var pending_days: Array[int] = []
+	for raw_day in _runtime_climate_trace_pending.keys():
+		pending_days.append(int(raw_day))
+	pending_days.sort()
+	return {
+		"pending_days": pending_days,
+		"pending_count": pending_days.size(),
+		"input_generation": _runtime_input_generation,
+		"last_reference_day": _runtime_climate_reference_last_day,
+		"last_reference_hash": _runtime_climate_reference_last_hash,
+		"reference_failures": _runtime_climate_reference_failures,
+		"fallback_reason": _runtime_climate_reference_last_error,
+		"catalog_hash": _runtime_climate_catalog_hash,
+		"topology_generation": _runtime_climate_topology_generation,
+	}
+
+
+func submit_runtime_command(command: Dictionary) -> Dictionary:
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method("submit_runtime_command"):
+		return {"ok": false, "code": "runtime_worker_api_missing"}
+	return _data_core_world_ext.submit_runtime_command(command)
+
+
+func poll_runtime_commit(after_generation: int = 0) -> Dictionary:
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method("poll_runtime_commit"):
+		return {"ok": false, "code": "runtime_worker_api_missing"}
+	return _data_core_world_ext.poll_runtime_commit(after_generation)
+
+
+func consume_runtime_visual_patch(generation: int, family: int, cursor: int,
+		max_items: int) -> Dictionary:
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method("consume_runtime_visual_patch"):
+		return {"ok": false, "code": "runtime_worker_api_missing"}
+	return _data_core_world_ext.consume_runtime_visual_patch(
+		generation, family, cursor, max_items)
+
+
+func request_runtime_save(request_id: int) -> Dictionary:
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method("request_runtime_save"):
+		return {"ok": false, "code": "runtime_worker_api_missing"}
+	return _data_core_world_ext.request_runtime_save(request_id)
+
+
+func poll_runtime_save(request_id: int) -> Dictionary:
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method("poll_runtime_save"):
+		return {"ok": false, "code": "runtime_worker_api_missing"}
+	return _data_core_world_ext.poll_runtime_save(request_id)
+
+
+func restore_runtime_bundle(bytes: PackedByteArray) -> Dictionary:
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method("restore_runtime_bundle"):
+		return {"ok": false, "code": "runtime_worker_api_missing"}
+	return _data_core_world_ext.restore_runtime_bundle(bytes)
+
+
+func request_runtime_stop() -> Dictionary:
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method("request_runtime_stop"):
+		return {"ok": true, "state": "STOPPED"}
+	return _data_core_world_ext.request_runtime_stop()
 
 
 # 由 main.gd 每日按录制器状态推送。关闭时经济 slice 走 compact 报告。
@@ -2587,16 +3211,27 @@ func _dispatch_runtime_graph_country_committed() -> void:
 	if generation == _runtime_graph_last_country_generation:
 		return
 	_runtime_graph_last_country_generation = generation
+	var territory_generation := int(report.get("territory_generation", -1))
 	# 广播前先把 native 领土刷进 MapData：country_committed 监听方会立刻
 	# refresh_country_visuals；若此时 country_slot_arr 仍是 CoW 旧镜像，
 	# 视野源集会缺新 CLAIM 格，邻格只被迷雾柔边照亮却保持未探索。
-	if _data_core_world_ext != null \
+	if territory_generation != _runtime_graph_last_country_territory_generation \
+			and _data_core_world_ext != null \
 			and _data_core_world_ext.has_method("sync_country_territory_to_map"):
+		var sync_started_us := Time.get_ticks_usec()
 		_data_core_world_ext.sync_country_territory_to_map()
+		_runtime_graph_country_territory_sync_ms = \
+			float(Time.get_ticks_usec() - sync_started_us) / 1000.0
+	else:
+		_runtime_graph_country_territory_sync_ms = 0.0
+	_runtime_graph_last_country_territory_generation = territory_generation
 	# 不能用最后一份 report 的 changed_* 在这里提前门控。同一个
 	# pulse 里的后续 country slice 可能把领土提交摘要覆盖掉；
 	# CountryFacade 会根据未消费的原生事件流归一化 changed_cells。
+	var dispatch_started_us := Time.get_ticks_usec()
 	_country_facade.dispatch_committed_events(report)
+	_runtime_graph_country_event_dispatch_ms = \
+		float(Time.get_ticks_usec() - dispatch_started_us) / 1000.0
 
 
 ## 返回本次 pulse 之后 country/economy 硬 barrier 是否还应该举着。
@@ -5497,6 +6132,9 @@ func _configure_native_world_context(map: MapData, world: WorldData, cfg: MapCon
 	_native_daily_configured = int(res.get("rc", -1)) == 0
 	_runtime_graph_active = false
 	_runtime_graph_last_country_generation = -1
+	_runtime_graph_last_country_territory_generation = -1
+	_runtime_graph_country_territory_sync_ms = 0.0
+	_runtime_graph_country_event_dispatch_ms = 0.0
 	if _data_core_world_ext.has_method("configure_runtime_graph"):
 		var graph_mode := int(cp.native_runtime_graph_mode) if cp != null and cp.get("native_runtime_graph_mode") != null else 0
 		var graph_rc := int(_data_core_world_ext.configure_runtime_graph({
@@ -6580,6 +7218,17 @@ func sus_tick_daily(world_clock_node, day_index_override: int = -1,
 		di = day_index_override
 	if not is_nan(season_phase_override):
 		sp = season_phase_override
+	# A sliced Climate round may finish on a later render-frame/day boundary.
+	# Release older completed references first; capture remains ordered but is
+	# allowed to queue behind an unreleased frame so each input day is retained.
+	var trace_input_day: int = maxi(0, di - 1)
+	var runtime_climate_pre_reference: Dictionary = \
+		_publish_ready_runtime_climate_references(trace_input_day - 1, _sus_map)
+	# Capture the immutable Climate input immediately before the synchronous OFF
+	# graph. The worker never reads MapData directly; it can only consume this
+	# frame after _publish_runtime_climate_reference() releases its hash below.
+	var runtime_climate_capture: Dictionary = \
+		capture_runtime_inputs_for_worker(trace_input_day, sp)
 	# 任务 8：每个 tick 入场前清掉 weather_refresh 的 ran_this_tick 标志，
 	# 这样 SUS 决定跳过该 Job 时它就保持 false（main.gd 据此跳过 UI 行刷新）。
 	if _refresh_climate_daily_job != null:
@@ -6677,13 +7326,26 @@ func sus_tick_daily(world_clock_node, day_index_override: int = -1,
 			"native_stage": str(native_tick_report.get("stage_name",
 				native_tick_report.get("substage", ""))),
 		})
+	var runtime_climate_reference: Dictionary = \
+		_publish_ready_runtime_climate_references(trace_input_day, _sus_map)
 	return { "fronts": fronts, "weather_ran": weather_ran, "fronts_changed": fronts_changed,
-		"fronts_diff": fronts_diff, "runtime_graph": runtime_graph_pulse }
+		"fronts_diff": fronts_diff, "runtime_graph": runtime_graph_pulse,
+		"runtime_climate_pre_reference": runtime_climate_pre_reference,
+		"runtime_climate_capture": runtime_climate_capture,
+		"runtime_climate_reference": runtime_climate_reference,
+		"runtime_climate_trace": runtime_climate_trace_report(), }
 
 
 ## 地图重新生成 / regenerate 路径调用：清空所有 Job 的进度游标 + pending 缓冲。
 func sus_reset_all() -> void:
 	_abort_all_climate_passes("sus_reset_all")
+	# A regenerate/restore invalidates every captured frame. The C++ host is
+	# stopped by WorldRuntimeHost before this reset, so no stale reference may be
+	# released into the next map's trace.
+	_runtime_climate_trace_pending.clear()
+	_runtime_climate_reference_last_day = -1
+	_runtime_climate_reference_last_hash = 0
+	_runtime_climate_reference_last_error = ""
 	# Drop same-day transient transactions before a map regenerate/restore. The
 	# new world must never inherit a stale Bio/native daily barrier from the old
 	# map, even when reset is requested between continuation pulses.

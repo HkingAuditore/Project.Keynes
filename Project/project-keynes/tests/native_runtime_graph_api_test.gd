@@ -8,7 +8,8 @@ func _init() -> void:
 	var ext: Object = ClassDB.instantiate("DCWorldExt")
 	var required := [
 		"configure_runtime_graph", "advance_runtime_pulse",
-		"flush_runtime_visuals", "get_runtime_perf_snapshot",
+		"flush_runtime_visuals", "set_runtime_qos", "get_runtime_thread_report",
+		"get_runtime_perf_snapshot",
 		"sync_country_territory_to_map",
 		"economy_deadline_critical",
 	]
@@ -31,5 +32,14 @@ func _init() -> void:
 		push_error("[runtime-graph-api] snapshot fields missing")
 		quit(1)
 		return
+	ext.set_runtime_qos(true)
+	var thread_report: Dictionary = ext.get_runtime_thread_report()
+	if String(thread_report.get("executor_backend", "")) != "native_fixed_pool" \
+			or bool(thread_report.get("simulation_worker_ready", true)) \
+			or not bool(thread_report.get("interactive", false)):
+		push_error("[runtime-graph-api] unsafe worker gate mismatch")
+		quit(1)
+		return
+	ext.set_runtime_qos(false)
 	print("[runtime-graph-api] PASS")
 	quit(0)

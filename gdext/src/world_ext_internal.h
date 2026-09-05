@@ -16,6 +16,7 @@
 
 #include "world_ext.h"
 #include "component_bind_table.gen.h"
+#include "runtime_climate_formulas.h"
 
 #include <godot_cpp/classes/fast_noise_lite.hpp>
 #include <godot_cpp/classes/random_number_generator.hpp>
@@ -297,50 +298,27 @@ static inline float dc_decay_tta(float prev, float decay_rate) {
 }
 
 static inline float dc_phase_progress(float season_phase) {
-    float p = std::fmod(season_phase, 4.0f);
-    if (p < 0.0f) p += 4.0f;
-    return p * 0.25f;
+    return climate_formula::phase_progress(season_phase);
 }
 
 static inline float dc_subsolar_lat_rad(float season_phase, float axial_tilt_deg) {
-    constexpr float TAU_F = 6.2831853071795864769f;
-    return axial_tilt_deg * float(M_PI / 180.0) *
-           std::cos(TAU_F * dc_phase_progress(season_phase));
+    return climate_formula::subsolar_lat_rad(season_phase, axial_tilt_deg);
 }
 
 static inline float dc_sunset_hour_angle(float lat_rad, float decl_rad) {
-    if (std::fabs(decl_rad) <= 1e-6f) return float(M_PI) * 0.5f;
-    const float polar_test = -std::tan(lat_rad) * std::tan(decl_rad);
-    if (polar_test <= -1.0f) return float(M_PI);
-    if (polar_test >= 1.0f) return 0.0f;
-    return std::acos(polar_test);
+    return climate_formula::sunset_hour_angle(lat_rad, decl_rad);
 }
 
 static inline float dc_day_length_norm(float ny, float season_phase, float axial_tilt_deg) {
-    const float lat_rad = (ny - 0.5f) * float(M_PI);
-    const float decl_rad = dc_subsolar_lat_rad(season_phase, axial_tilt_deg);
-    return dc_clamp01f(dc_sunset_hour_angle(lat_rad, decl_rad) / float(M_PI));
+    return climate_formula::day_length_norm(ny, season_phase, axial_tilt_deg);
 }
 
 static inline float dc_insolation_now(float ny, float season_phase, float axial_tilt_deg, float daylen_amp) {
-    (void)daylen_amp;
-    const float lat_rad = (ny - 0.5f) * float(M_PI);
-    const float subsolar = dc_subsolar_lat_rad(season_phase, axial_tilt_deg);
-    const float h0 = dc_sunset_hour_angle(lat_rad, subsolar);
-    if (h0 <= 1e-6f) return 0.0f;
-    const float daily =
-        h0 * std::sin(lat_rad) * std::sin(subsolar) +
-        std::cos(lat_rad) * std::cos(subsolar) * std::sin(h0);
-    return dc_clamp01f(daily);
+    return climate_formula::daily_insolation(ny, season_phase, axial_tilt_deg, daylen_amp);
 }
 
 static inline float dc_insolation_annual_mean(float ny, float axial_tilt_deg, float daylen_amp) {
-    constexpr int SAMPLES = 16;
-    float acc = 0.0f;
-    for (int s = 0; s < SAMPLES; ++s) {
-        acc += dc_insolation_now(ny, (float(s) + 0.5f) * (4.0f / float(SAMPLES)), axial_tilt_deg, daylen_amp);
-    }
-    return acc / float(SAMPLES);
+    return climate_formula::annual_insolation_mean(ny, axial_tilt_deg, daylen_amp);
 }
 
 // SAME_SOURCE（C++ 镜像）: DCClimateMath.compute_insolation_dev_from_values。
@@ -349,8 +327,7 @@ static inline float dc_insolation_annual_mean(float ny, float axial_tilt_deg, fl
 //   （吸收短波 / 冰反照率反馈）在 season_offset 处处理，更物理。
 // ny 保留入参以稳定签名与调用点，但不再参与计算。
 static inline float dc_insolation_season_dev(float ny, float insol_now, float insol_mean) {
-    (void)ny;
-    return insol_now - insol_mean;
+    return climate_formula::insolation_season_dev(ny, insol_now, insol_mean);
 }
 
 // ─── 表面吸收短波因子（海陆/极地物理化 2026-06-16，年均代理版）──────────────
@@ -360,24 +337,17 @@ static inline float dc_insolation_season_dev(float ny, float insol_now, float in
 // （季节强迫更大），但其高热容（低 thermal_inertia_water）阻尼实际摆幅→大陆性对比。
 // 归一化基准 = 无冰陆地 (1-PK_ALBEDO_LAND)，使无冰陆地 factor=1.0（中纬零重调）。
 // 仅缩放 season_offset，不动 cos^1.6 年均基线 → 反馈有下界、不失控。
-static constexpr float PK_ALBEDO_OCEAN = 0.08f;   // 开阔水面
-static constexpr float PK_ALBEDO_LAND  = 0.20f;   // 一般陆地（归一化基准面）
-static constexpr float PK_ALBEDO_ICE   = 0.62f;   // 冰雪覆盖
-static constexpr float PK_T_ICE_LO     = 0.12f;   // ≤ 此温度视为完全冰封
-static constexpr float PK_T_ICE_HI     = 0.30f;   // ≥ 此温度视为无冰
+static constexpr float PK_ALBEDO_OCEAN = climate_formula::ALBEDO_OCEAN;
+static constexpr float PK_ALBEDO_LAND  = climate_formula::ALBEDO_LAND;
+static constexpr float PK_ALBEDO_ICE   = climate_formula::ALBEDO_ICE;
+static constexpr float PK_T_ICE_LO     = climate_formula::ICE_TEMP_LOW;
+static constexpr float PK_T_ICE_HI     = climate_formula::ICE_TEMP_HIGH;
 // temp_annual 必须传【年均温度 temp_365d】（慢 EMA），不能传瞬时温度——否则
 // "暖→脱冰→吸收增→更暖"会形成夏季融化正反馈使极地夏季失控变热（实测 0.43）。
 // 用年均温度作"持久冰封气候"代理：深极地年均≈0.05 常年冰封 → 因子≈0.475 →
 // 极地夏季自然压低且稳定（夏峰 0.30→0.22）；中纬年均高 → 因子=1.0 → 季节性不变。
 static inline float pk_surface_absorbed_factor(bool is_water, float temp_annual) {
-    const float a_base = is_water ? PK_ALBEDO_OCEAN : PK_ALBEDO_LAND;
-    // ice_w：年均温度落入冻结带时升到 1（端点反序 smoothstep(HI,LO,t) → 冷=1, 暖=0）。
-    float t = (temp_annual - PK_T_ICE_HI) / (PK_T_ICE_LO - PK_T_ICE_HI);
-    if (t < 0.0f) t = 0.0f;
-    else if (t > 1.0f) t = 1.0f;
-    const float ice_w = t * t * (3.0f - 2.0f * t);
-    const float a_eff = a_base + (PK_ALBEDO_ICE - a_base) * ice_w;
-    return (1.0f - a_eff) / (1.0f - PK_ALBEDO_LAND);
+    return climate_formula::surface_absorbed_factor(is_water, temp_annual);
 }
 
 // ─── 季节项冷侧软压缩（冬季过冷托底 物理化 v2 2026-06-16）──────────────────
@@ -387,11 +357,10 @@ static inline float pk_surface_absorbed_factor(bool is_water, float temp_annual)
 // 按 tanh 软饱和到约 −KNEE：小幅降温几乎不变，深冬大幅降温不再无限过冷。
 // KNEE=0.13：温带平原冬季 min 0.087→0.21（叠加 pass_b≈0.13 严寒、脱离极寒），
 // 夏峰不变，深极地仍冻结（海冰核/冰带不塌）。
-static constexpr float PK_WINTER_COOL_KNEE = 0.13f;
+static constexpr float PK_WINTER_COOL_KNEE = climate_formula::WINTER_COOL_KNEE;
 
 static inline float pk_compress_season_cooling(float season_offset) {
-    if (season_offset >= 0.0f) return season_offset;
-    return -PK_WINTER_COOL_KNEE * std::tanh(-season_offset / PK_WINTER_COOL_KNEE);
+    return climate_formula::compress_season_cooling(season_offset);
 }
 
 // 热惯性松弛系数的多日积分：单日 α 表示"每日向 radiative target 逼近 α 比例"。
@@ -399,10 +368,7 @@ static inline float pk_compress_season_cooling(float season_offset) {
 // 近似恒定）。dt<=1 时退化为原 α，保持非加速档 bit-equal。SAME_SOURCE：
 // map_generator.gd 同名内联与 climate_daily_system 共享同一公式。
 static inline float pk_thermal_alpha_eff(float alpha, float dt_days) {
-    if (alpha < 0.0f) alpha = 0.0f;
-    else if (alpha > 1.0f) alpha = 1.0f;
-    if (dt_days <= 1.0f) return alpha;
-    return 1.0f - std::pow(1.0f - alpha, dt_days);
+    return climate_formula::thermal_alpha_eff(alpha, dt_days);
 }
 
 // ─── 季节项组合（legacy parity）──────────────────────────────────────────
@@ -415,8 +381,8 @@ static inline float pk_thermal_alpha_eff(float alpha, float dt_days) {
 static inline float pk_season_offset_continental(float insol_amp_gain, bool is_water,
                                                  float temp_annual, float dev_today,
                                                  float land_continentality) {
-    (void)land_continentality;
-    return pk_compress_season_cooling(insol_amp_gain * pk_surface_absorbed_factor(is_water, temp_annual) * dev_today);
+    return climate_formula::season_offset_continental(
+        insol_amp_gain, is_water, temp_annual, dev_today, land_continentality);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1695,32 +1661,26 @@ static inline double pk_smoothstep(double a, double b, double x) {
     return t * t * (3.0 - 2.0 * t);
 }
 
-static constexpr double PK_ALT_PEN_ABS_ELEV_BLEND = 0.25;
+static constexpr double PK_ALT_PEN_ABS_ELEV_BLEND = climate_formula::ALT_PEN_ABS_ELEV_BLEND;
 
 // SAME_SOURCE: map_generator.gd::_alt_penalty.
 //   ALT_PEN_LINEAR=0.40, ALT_PEN_HIGH_LO=0.45, ALT_PEN_HIGH_HI=1.00, ALT_PEN_HIGH_AMP=0.22.
 //   输入先从绝对 elevation 转为 sea_level 以上的 land_h，再混入少量绝对 elevation。
 //   这样海平面附近不被过度扣温，同时中高海拔仍保留一部分冷却锚点。
 static inline double pk_alt_penalty_from_height(double height_norm) {
-    const double h = pk_clamp01(height_norm);
-    const double lin = h * 0.40;
-    const double hi = pk_smoothstep(0.45, 1.00, h) * 0.22;
-    return lin + hi;
+    return climate_formula::altitude_penalty_from_height(height_norm);
 }
 
 static inline double pk_land_height_for_temperature(double elevation, double sea_level) {
-    const double denom = (1.0 - sea_level) > 0.001 ? (1.0 - sea_level) : 0.001;
-    return pk_clamp01((elevation - sea_level) / denom);
+    return climate_formula::land_height_for_temperature(elevation, sea_level);
 }
 
 static inline double pk_temperature_height_for_penalty(double elevation, double sea_level) {
-    const double land_h = pk_land_height_for_temperature(elevation, sea_level);
-    const double elev = pk_clamp01(elevation);
-    return land_h + (elev - land_h) * PK_ALT_PEN_ABS_ELEV_BLEND;
+    return climate_formula::temperature_height_for_penalty(elevation, sea_level);
 }
 
 static inline double pk_alt_penalty(double elevation, double sea_level) {
-    return pk_alt_penalty_from_height(pk_temperature_height_for_penalty(elevation, sea_level));
+    return climate_formula::altitude_penalty(elevation, sea_level);
 }
 
 // SAME_SOURCE（C++ 镜像）: DCClimateMath.LAT_TEMP_CURVE_EXP —— 纬度温度钟形曲线指数的
@@ -1729,7 +1689,7 @@ static inline double pk_alt_penalty(double elevation, double sea_level) {
 // climate_season.gdshaderinc（Shader），并重编 gdext。
 // terrain-overhaul（2026-06-18）：1.6→1.3，拓宽温带带——旧值钟形过窄使中纬迅速跌入
 // taiga/tundra，温带森林/草原带被压扁；下调指数让温带/亚热带占据更多纬度。
-static constexpr double PK_LAT_TEMP_CURVE_EXP = 1.3;
+static constexpr double PK_LAT_TEMP_CURVE_EXP = climate_formula::LAT_TEMP_CURVE_EXP;
 
 // [cylindrical-earth-daylight] 文件作用域 2π：供生成期圆柱噪声采样(cyl_noise)、经度角(θ=2π·col/width)
 // 与雨影 jitter 圆环采样共用。放文件作用域而非函数内，避免无捕获 lambda 隐式捕获 constexpr 报错
@@ -1740,8 +1700,7 @@ static constexpr double PK_TWO_PI = 6.283185307179586;
 //   lat_temp = pow(cos(lat_signed * π/2), PK_LAT_TEMP_CURVE_EXP) ∈ [0,1]（cos 偶函数，传 |ls| 等价）。
 // 下方 pk_compute_temperature + 洋流上升流/热盐 cold-sink 一律调用本函数，不再就地重写 pow(cos,...)。
 static inline double pk_lat_temp_bell(double lat_signed) {
-    const double c = std::cos(lat_signed * M_PI * 0.5);
-    return std::pow(c < 0.0 ? 0.0 : c, PK_LAT_TEMP_CURVE_EXP);
+    return climate_formula::lat_temp_bell(lat_signed);
 }
 
 // SAME_SOURCE: map_generator.gd::_compute_temperature —— 钟形 - 海平面相对海拔惩罚，clamp[0,1]。

@@ -5,9 +5,9 @@
 // 统一封装现有 5 个手写 _thread 模板（pass_a_full / pass_a_indexed / pass_b /
 // ocean_water / ocean_land）的样板代码：
 //   1. 计算 n_tasks（自适应或 caller 指定）
-//   2. 小规模降级（n < seq_thresh 直接顺序，避免 WTP add_native_group_task 固定开销）
-//   3. WorkerThreadPool 缺失 fallback（in-thread 顺序遍历每段）
-//   4. add_native_group_task + wait_for_group_task_completion
+//   2. 小规模降级（n < seq_thresh 直接顺序，避免固定池调度开销）
+//   3. 固定 NativeParallelExecutor 缺失/交互限流时的顺序 fallback
+//   4. 固定线程池 group barrier + 确定性 task index 归并
 //
 // 设计约束（非常重要）：
 //   - 必须 header-only template，hot path 零 std::function / virtual 开销
@@ -34,26 +34,16 @@
 #include <utility>
 #include <vector>
 
-#include <godot_cpp/classes/os.hpp>
-#include <godot_cpp/classes/worker_thread_pool.hpp>
-#include <godot_cpp/variant/string.hpp>
+#include "native_parallel_executor.h"
 
 namespace pk {
 
-// [pk-web-nothreads-hang] Web 单线程（nothreads）导出下 WorkerThreadPool::
-// get_singleton() 不是 nullptr（池对象本身仍存在），但没有真正的 worker 线程
-// 去消费任务：add_native_group_task 入队后永远等不到线程取走执行，
-// wait_for_group_task_completion 会在调用线程（浏览器唯一的主线程）上死等，
-// 表现为点击生成世界后整个页面彻底卡死——这是 Godot 官方文档确认过的已知行为
-// （因此专门加了 "nothreads" feature tag，见 godotengine/godot#93563）。
-// 结果只由构建期的线程支持决定，运行期不会变化，缓存一次即可；inline 函数里的
-// static 变量在所有翻译单元间共享同一份，不会重复初始化。
+// The executor is intentionally independent of Godot's WorkerThreadPool. This
+// keeps the native simulation path free of Godot thread-affinity assumptions
+// and makes the same deterministic fallback available on small/unsupported
+// targets.
 inline bool parallel_has_real_worker_threads() {
-    static const bool has_threads = [] {
-        godot::OS *os = godot::OS::get_singleton();
-        return os != nullptr && !os->has_feature("nothreads");
-    }();
-    return has_threads;
+    return NativeParallelExecutor::instance().has_workers();
 }
 
 // 自适应 n_tasks：每 task ~1024 cells，clamp [1, 16]。
@@ -67,7 +57,7 @@ inline int parallel_default_n_tasks(int n) {
 }
 
 // run_range: void(int begin, int end) — 处理 [begin, end) 区间内的工作单元。
-// label: WorkerThreadPool 调试 group 名（"pk_xxx"）。
+// label: diagnostic group name (not used by the native executor).
 // n_tasks_hint: 0 = 自适应（推荐），>0 = caller 指定（兼容 bench_pass_a_*_thread 行为）
 // seq_threshold: n < threshold 时直接同线程顺序跑（与 pass_b line 4324 / ocean_water line 4634 一致）
 template <typename F>
@@ -76,9 +66,6 @@ inline void parallel_for_range(const char *label,
                                int n_tasks_hint,
                                int seq_threshold,
                                F &&run_range) {
-    using godot::WorkerThreadPool;
-    using godot::String;
-
     if (n <= 0) {
         return;
     }
@@ -99,9 +86,9 @@ inline void parallel_for_range(const char *label,
     //    （与 pass_b line 4336 "in-thread loop over the would-be tasks" 一致），
     //    保持调度等价。见 parallel_has_real_worker_threads() 顶部注释——Web
     //    nothreads 下 wtp 非空但没有线程消费任务，必须同等走这条回退路径，
-    //    否则下面的 wait_for_group_task_completion 会死等到浏览器页面卡死。
-    WorkerThreadPool *wtp = WorkerThreadPool::get_singleton();
-    if (wtp == nullptr || !parallel_has_real_worker_threads()) {
+    //    否则下面的 native group barrier 会在无 worker 目标上永久等待。
+    NativeParallelExecutor &executor = NativeParallelExecutor::instance();
+    if (!executor.has_workers()) {
         const int chunk = (n + n_tasks - 1) / n_tasks;
         for (int t = 0; t < n_tasks; ++t) {
             const int begin = t * chunk;
@@ -112,10 +99,10 @@ inline void parallel_for_range(const char *label,
         return;
     }
 
-    // 4) 真并行：add_native_group_task + wait
+    // 4) 真并行：NativeParallelExecutor group + wait
     //    Trampoline：把 lambda 通过 userdata 传进 C ABI worker 函数。
     //    F 由 hot path 调用方持有（栈上），整个 parallel_for_range 期间存活，
-    //    wait_for_group_task_completion 返回后才出栈，无生命周期风险。
+    //    group barrier 返回后才出栈，无生命周期风险。
     //    注：当传入的是 lvalue lambda 时 F 推导为 lambda& 引用类型，
     //    Userdata 不能持有"指向引用的指针"，必须用 remove_reference_t 取裸类型。
     using FnT = std::remove_reference_t<F>;
@@ -135,9 +122,8 @@ inline void parallel_for_range(const char *label,
         (*u->fn)(begin, end);
     };
 
-    int64_t group_id = wtp->add_native_group_task(
-        worker, &ud, n_tasks, -1, true, String(label));
-    wtp->wait_for_group_task_completion(group_id);
+    (void)label;
+    executor.run_group(static_cast<uint32_t>(n_tasks), worker, &ud);
 }
 
 // 默认 seq_threshold=256（与现有手写实现一致）
@@ -174,9 +160,6 @@ inline void parallel_for_range_with_emit(const char *label,
                                          int seq_threshold,
                                          Emit &global_emit,
                                          F &&run_range) {
-    using godot::WorkerThreadPool;
-    using godot::String;
-
     if (n <= 0) {
         return;
     }
@@ -195,8 +178,8 @@ inline void parallel_for_range_with_emit(const char *label,
     // WTP 缺失 / 无真实 worker 线程 fallback（同上，见 parallel_has_real_worker_
     // threads() 顶部注释）：按 task_idx 顺序在调用线程内跑，每段一个 local emit
     // 然后串行 merge_into。与真并行路径 bit-equal。
-    WorkerThreadPool *wtp = WorkerThreadPool::get_singleton();
-    if (wtp == nullptr || !parallel_has_real_worker_threads()) {
+    NativeParallelExecutor &executor = NativeParallelExecutor::instance();
+    if (!executor.has_workers()) {
         const int chunk = (n + n_tasks - 1) / n_tasks;
         for (int t = 0; t < n_tasks; ++t) {
             const int begin = t * chunk;
@@ -234,9 +217,8 @@ inline void parallel_for_range_with_emit(const char *label,
         (*u->fn)(begin, end, local);
     };
 
-    int64_t group_id = wtp->add_native_group_task(
-        worker, &ud, n_tasks, -1, true, String(label));
-    wtp->wait_for_group_task_completion(group_id);
+    (void)label;
+    executor.run_group(static_cast<uint32_t>(n_tasks), worker, &ud);
 
     // 串行 reduce（task_idx 升序）— 与 cell idx 升序兼容，输出顺序 bit-equal。
     for (int t = 0; t < n_tasks; ++t) {

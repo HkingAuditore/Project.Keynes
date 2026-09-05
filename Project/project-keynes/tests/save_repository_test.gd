@@ -33,6 +33,19 @@ func _init() -> void:
 	var slots: Array = repository.list_slots()
 	_expect("four fixed slots", slots.size() == 4)
 	_expect("metadata visible", bool(slots[0].loadable) and String(slots[0].country_name) == "Test")
+	_write_legacy_format("manual_2.pksv")
+	var legacy_format_slots: Array = repository.list_slots()
+	_expect("PKSV v1 stays listed as explicitly incompatible",
+		bool(legacy_format_slots[1].exists) and not bool(legacy_format_slots[1].loadable) \
+		and bool(legacy_format_slots[1].incompatible) \
+		and int(legacy_format_slots[1].format_version) == 1 \
+		and String(legacy_format_slots[1].reason).contains("PKSV v1"))
+	var legacy_format_load: Dictionary = repository.load_slot("manual_2")
+	_expect("PKSV v1 is rejected without deleting it",
+		not bool(legacy_format_load.get("ok", true)) \
+		and String(legacy_format_load.get("code", "")) == "save_format_version_incompatible" \
+		and int(legacy_format_load.get("format_version", -1)) == 1 \
+		and FileAccess.file_exists("%s/manual_2.pksv" % TEST_DIR))
 
 	var replacement := sections.duplicate(true)
 	replacement.config.country = "Replacement"
@@ -109,6 +122,16 @@ func _write_truncated(file_name: String) -> void:
 	if file != null:
 		file.store_buffer(PackedByteArray([80, 75, 83, 86]))
 		file.close()
+
+
+func _write_legacy_format(file_name: String) -> void:
+	var file := FileAccess.open("%s/%s" % [TEST_DIR, file_name], FileAccess.WRITE)
+	if file == null:
+		return
+	file.store_buffer("PKSV".to_ascii_buffer())
+	file.store_32(1)
+	file.store_32(0)
+	file.close()
 
 
 func _rewrite_incompatible_header(file_name: String) -> void:

@@ -142,7 +142,7 @@ bool NativeEconomyRuntime::publish_epoch_slice(
         _closing_audit_market_full_scan_entries += entry_count;
         const int32_t audit_tasks = _worker_enabled &&
                 entry_count >= 32768 &&
-                godot::WorkerThreadPool::get_singleton() != nullptr
+                parallel_has_real_worker_threads()
             ? std::min<int32_t>(_worker_task_cap, _worker_tasks_hint > 0
                 ? _worker_tasks_hint
                 : std::max<int32_t>(2, (entry_count + 32767) / 32768))

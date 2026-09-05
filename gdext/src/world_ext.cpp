@@ -20,7 +20,6 @@
 #include <godot_cpp/classes/global_constants.hpp>
 #include <godot_cpp/classes/fast_noise_lite.hpp>          // native world-gen 复刻：与 GDScript _init_noise 同一引擎噪声
 #include <godot_cpp/classes/random_number_generator.hpp>  // native world-gen 复刻：与 GDScript _rng 同一引擎 PCG
-#include <godot_cpp/classes/worker_thread_pool.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/core/error_macros.hpp>
 #include <godot_cpp/core/math.hpp>
@@ -56,6 +55,7 @@
 
 
 #include "world_ext_internal.h"
+#include "native_simulation_host.h"
 
 namespace pk {
 
@@ -69,6 +69,11 @@ using namespace godot;
 
 DCWorldExt::DCWorldExt() = default;
 DCWorldExt::~DCWorldExt() {
+    if (_runtime_host) {
+        _runtime_host->request_stop();
+        _runtime_host->join_for_destruction();
+        _runtime_host.reset();
+    }
     if (_ideology_runtime != nullptr) {
         delete static_cast<NativeIdeologyRuntime *>(_ideology_runtime);
         _ideology_runtime = nullptr;
@@ -970,6 +975,7 @@ void DCWorldExt::flush_pending_mark_dirty_all() {
 }
 
 void DCWorldExt::flush_slots_to_map() {
+    ++_runtime_graph_full_flush_count;
     if (!_map_data) return;
     for (int i = 0; i < BIND_TABLE_SIZE; ++i) {
         const StringName slot_name(BIND_TABLE[i].slot_name);
