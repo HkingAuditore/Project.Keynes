@@ -757,6 +757,151 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
         }
     }
 
+    // ── climate_stage_knobs：ACTIVE 下 worker 自己到不了的那几个 stage ─────
+    //
+    // 这些 stage 不在 climate round 里 —— 它们跑在 native daily graph 的 stage_b 段、
+    // 各有自己的 stride，输入也不全在 environment 快照里（catalog 查表、跨 tick 缓存、
+    // 生产 builder 里的硬编码阈值）。SHADOW 下它们的输入来自生产的 reference publish，
+    // 所以 GDScript 只在 worker 权威时才填这个字典（见
+    // map_generator.gd::_build_runtime_climate_stage_knobs）；字典非空本身就等于
+    // "今天 weather 轮到期"。
+    if (inputs.has("climate_stage_knobs") &&
+        inputs["climate_stage_knobs"].get_type() == Variant::DICTIONARY) {
+        const Dictionary stage_knobs = inputs["climate_stage_knobs"];
+
+        // stage 11 后半段 weather distribute —— snow_cover / snowpack /
+        // water_balance_30d 的当日最后一个写者。缺了它这三条恒为 0，而 sea_ice 与
+        // albedo 都读 snow_cover，缺口会一路往下游传。
+        //
+        // 键名口径必须与生产 run_weather_distribute_pass（world_ext_weather.cpp）
+        // 逐一对应：GDScript 那侧的 build_distribute_knobs_for_worker 是生产同一个
+        // builder 的薄包装，两边对同一个键取不同值就是一次静默分叉。默认值同理，
+        // 那几个 snowpack / snowline 阈值在生产侧也是 has() 三元的形式。
+        if (stage_knobs.has("stage_distribute") &&
+            stage_knobs["stage_distribute"].get_type() == Variant::DICTIONARY) {
+            const Dictionary d = stage_knobs["stage_distribute"];
+            auto wd = std::make_shared<pk_async_climate::WeatherDistributeInput>();
+            wd->n_cells = static_cast<int>(cells);
+            wd->ran = true;
+            // 两条积雪计数在 ACTIVE 下由 worker 跨天自持：它们是 HexCell 的 AoS
+            // 字段、没有 SoA 镜像，既不在快照里也不经回灌回到 MapData，而生产
+            // distribute 正是被抑制的那一方 —— 每天拿它那份不再推进的缓存播种会让
+            // snow_accum_days_req 永远攒不满，snow_cover 于是恒为 0。
+            wd->own_snow_state = true;
+
+            const auto kf = [&d](const char *key, float fallback) {
+                return d.has(key) ? float(d[key]) : fallback;
+            };
+            const auto ki = [&d](const char *key, int fallback) {
+                return d.has(key) ? int(d[key]) : fallback;
+            };
+            auto &k = wd->knobs;
+            k.n_cells = static_cast<int>(cells);
+            k.snow_min_intensity = kf("snow_min_intensity", 0.0f);
+            k.snow_freeze_t = kf("snow_freeze_t", 0.0f);
+            k.snow_melt_t = kf("snow_melt_t", 0.0f);
+            k.snow_intensity_snow = kf("snow_intensity_for_snowing", 0.0f);
+            k.snow_accum_days_req = ki("snow_accum_days_req", 0);
+            k.flood_heavy_int = kf("flood_heavy_intensity", 0.0f);
+            k.flood_heavy_pre = kf("flood_heavy_precip", 0.0f);
+            k.flood_low_int = kf("flood_lowland_intensity", 0.0f);
+            k.flood_low_elev = kf("flood_lowland_elev", 0.0f);
+            k.flood_low_moist = kf("flood_lowland_moisture", 0.0f);
+            k.wt_clear = ki("wt_clear", 0);
+            k.cv_snow = ki("cv_snow", 0);
+            k.cv_none = ki("cv_none", 0);
+            k.cv_flooding = ki("cv_flooding", 0);
+            k.snowpack_accum_gain = kf("snowpack_accum_gain", 0.10f);
+            k.snowpack_melt_temp_gain = kf("snowpack_melt_temp_gain", 0.22f);
+            k.snowpack_melt_sun_gain = kf("snowpack_melt_sun_gain", 0.12f);
+            k.snowpack_cover_low = kf("snowpack_cover_low", 0.05f);
+            k.snowpack_cover_full = kf("snowpack_cover_full", 0.32f);
+            k.snowline_temp_threshold = kf("snowline_temp_threshold", 0.24f);
+            k.snowline_band = kf("snowline_band", 0.22f);
+            float anomaly_cap = kf("weather_temp_anomaly_cap", 0.025f);
+            if (anomaly_cap < 0.0f) anomaly_cap = 0.0f;
+            else if (anomaly_cap > 0.10f) anomaly_cap = 0.10f;
+            k.weather_temp_anomaly_cap = anomaly_cap;
+            k.direct_moisture_enabled =
+                bool(d.get("weather_direct_moisture_enabled", false));
+
+            // 四张 WeatherType 剖面表都是定长 8。长度不对就整份不发：内核对它们
+            // 只按 wt id 索引、不做范围检查。
+            bool tables_ok = true;
+            const auto table_f32 = [&d, &tables_ok](const char *key, float *out_tab) {
+                const Variant raw = d.get(key, Variant());
+                if (raw.get_type() != Variant::PACKED_FLOAT32_ARRAY) {
+                    tables_ok = false;
+                    return;
+                }
+                const PackedFloat32Array v = raw;
+                if (v.size() != 8) {
+                    tables_ok = false;
+                    return;
+                }
+                std::memcpy(out_tab, v.ptr(), 8 * sizeof(float));
+            };
+            const auto table_u8 = [&d, &tables_ok](const char *key, uint8_t *out_tab) {
+                const Variant raw = d.get(key, Variant());
+                if (raw.get_type() != Variant::PACKED_BYTE_ARRAY) {
+                    tables_ok = false;
+                    return;
+                }
+                const PackedByteArray v = raw;
+                if (v.size() != 8) {
+                    tables_ok = false;
+                    return;
+                }
+                std::memcpy(out_tab, v.ptr(), 8);
+            };
+            table_f32("temp_delta_arr", k.temp_delta);
+            table_f32("moisture_delta_arr", k.moist_delta);
+            table_u8("can_form_snow_arr", k.can_form_snow);
+            table_u8("can_form_flood_arr", k.can_form_flood);
+
+            // 读 lane 走 environment 快照（与生产读 _slots 同一份数据）。temp /
+            // moisture / snow_cover / snowpack / water_balance_30d 与 weather 四条
+            // 不在这里：内核用 worker 自己 store 那一份，见 runtime_climate_kernel.cpp
+            // 里 shared_distribute_ran 那一段。守卫仍要求它们齐长，所以照填。
+            wd->heat = snapshot.cell_heat_input;
+            wd->elevation = snapshot.cell_elevation;
+            wd->landform = snapshot.landform;
+            wd->terrain = snapshot.terrain;
+            wd->weather_intensity = snapshot.cell_weather_intensity;
+            wd->weather_precip = snapshot.cell_weather_precip;
+            wd->weather_type = snapshot.cell_weather_type;
+            wd->cover = snapshot.cover;
+            wd->soil_moisture = snapshot.cell_soil_moisture;
+            // weather_field_init 没有快照 lane。worker 侧的 field solve 总走 direct
+            // 语义（一定写 field_init=1），内核也用自己的 scratch 覆盖它 —— 这里
+            // 只是把守卫喂饱。
+            wd->weather_field_init.assign(cells, 1u);
+
+            const auto lane_i32 = [&d, cells](const char *key,
+                                              std::vector<int32_t> &out_vec) {
+                const Variant raw = d.get(key, Variant());
+                if (raw.get_type() != Variant::PACKED_INT32_ARRAY) return;
+                const PackedInt32Array v = raw;
+                if (static_cast<size_t>(v.size()) != cells) return;
+                out_vec.assign(v.ptr(), v.ptr() + v.size());
+            };
+            lane_i32("accumulated_snow_days", wd->accumulated_snow_days);
+            lane_i32("pre_snow_cover", wd->pre_snow_cover);
+            // own_snow_state 下这两条只用于首日播种，缺席时从零起算即可 —— 但长度
+            // 必须齐，否则整个 stage 撞守卫静默跳过。
+            if (wd->accumulated_snow_days.size() != cells) {
+                wd->accumulated_snow_days.assign(cells, 0);
+            }
+            if (wd->pre_snow_cover.size() != cells) {
+                wd->pre_snow_cover.assign(cells, 0);
+            }
+
+            if (tables_ok) {
+                snapshot.climate_weather_distribute = wd;
+            }
+        }
+    }
+
     snapshot.topology_validated = cells > 0 &&
         ((!snapshot.neighbor_offsets.empty() &&
           snapshot.neighbor_offsets.size() == cells + 1u) ||
