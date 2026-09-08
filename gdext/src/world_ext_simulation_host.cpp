@@ -218,23 +218,62 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
         out["thread_report"] = runtime_report_to_dictionary(_runtime_host->report());
         return out;
     }
+    // per-domain 权威：调用方点名它要 worker 拥有哪些域，缺省才是整图。
+    //
+    // 准入门必须跟着这个掩码走，而不是恒查 implemented_domain_mask ==
+    // RUNTIME_ALL_DOMAIN_MASK —— 那条整图门意味着 Climate 要等全部 12 个域都有 POD
+    // handler 才能转 ACTIVE，而 Climate 自己早就齐了。掩码里没点到的域仍在主线程，
+    // 它们有没有 handler 与这次授权无关。
+    //
+    // COMMIT 是 barrier 域本身，host 侧也会补上；这里一并纳入判定，否则调用方只写
+    // CLIMATE 时会被自己没请求的域挡下。
+    const uint32_t all_mask = static_cast<uint32_t>(RUNTIME_ALL_DOMAIN_MASK);
+    uint32_t requested_authority_mask = all_mask;
+    if (config.has("authoritative_domain_mask")) {
+        const Variant raw = config["authoritative_domain_mask"];
+        if (raw.get_type() != Variant::INT) {
+            out["ok"] = false;
+            out["pending"] = false;
+            out["code"] = "runtime_worker_config_invalid";
+            out["message"] = "authoritative_domain_mask_not_int";
+            out["thread_report"] = runtime_report_to_dictionary(_runtime_host->report());
+            return out;
+        }
+        const int64_t value = static_cast<int64_t>(raw);
+        if (value <= 0 || (static_cast<uint32_t>(value) & ~all_mask) != 0u) {
+            out["ok"] = false;
+            out["pending"] = false;
+            out["code"] = "runtime_worker_config_invalid";
+            out["message"] = "authoritative_domain_mask_out_of_range";
+            out["thread_report"] = runtime_report_to_dictionary(_runtime_host->report());
+            return out;
+        }
+        requested_authority_mask =
+            static_cast<uint32_t>(value) |
+            runtime_domain_mask(RuntimeDomainId::COMMIT);
+    }
+    const uint32_t missing_requested =
+        requested_authority_mask &
+        ~static_cast<uint32_t>(NativeSimulationHost::implemented_domain_mask());
     if (mode == RuntimeSimulationMode::ACTIVE &&
-        (!complete || NativeSimulationHost::implemented_domain_mask() !=
-            RUNTIME_ALL_DOMAIN_MASK)) {
+        (!complete || missing_requested != 0u)) {
         out["ok"] = false;
         out["pending"] = false;
-        const bool domains_missing = complete &&
-            NativeSimulationHost::implemented_domain_mask() != RUNTIME_ALL_DOMAIN_MASK;
+        const bool domains_missing = complete && missing_requested != 0u;
         out["code"] = domains_missing
             ? "runtime_native_domains_incomplete"
             : "runtime_graph_not_thread_safe";
         out["message"] = domains_missing
             ? "native_domain_pod_handlers_incomplete"
             : "runtime_graph_contains_godot_bridge";
+        out["requested_authority_mask"] =
+            static_cast<int64_t>(requested_authority_mask);
+        out["missing_domain_mask"] = static_cast<int64_t>(missing_requested);
         out["thread_report"] = runtime_report_to_dictionary(_runtime_host->report());
         return out;
     }
-    if (!_runtime_host->start(mode, complete, day, speed, paused)) {
+    if (!_runtime_host->start(mode, complete, day, speed, paused,
+                              requested_authority_mask)) {
         out["ok"] = false;
         out["pending"] = false;
         out["code"] = "runtime_worker_start_failed";
@@ -473,6 +512,10 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
         !copy_f32("cell_wind_x", snapshot.cell_wind_x) ||
         !copy_f32("cell_wind_y", snapshot.cell_wind_y) ||
         !copy_f32("cell_wind_speed", snapshot.cell_wind_speed) ||
+        // weather field 的平流与邻域几何要用格子平面坐标。environment 里原先没有
+        // 这两条 —— 生产是从交织的 cell_pos 里解出来的，capture 侧取不到。
+        !copy_f32("cell_pos_x", snapshot.cell_pos_x) ||
+        !copy_f32("cell_pos_y", snapshot.cell_pos_y) ||
         !copy_f32("cell_ocean_current_x", snapshot.cell_ocean_current_x) ||
         !copy_f32("cell_ocean_current_y", snapshot.cell_ocean_current_y) ||
         !copy_f32("cell_air_mass_temp_anomaly", snapshot.cell_air_mass_temp_anomaly) ||
@@ -638,6 +681,73 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
     }
     snapshot.cell_count = static_cast<uint32_t>(std::min<size_t>(
         cells, std::numeric_limits<uint32_t>::max()));
+
+    // ── ACTIVE 下 worker 要自己补的那几项 ────────────────────────────────
+    // 这两个标志的语义见 RuntimeEnvironmentSnapshot 里各自的注释。两者都不能默认
+    // 成 true：SHADOW 下 round scalars 与 season refresh 的真值来自 reference
+    // publish，无条件补偿会让 parity 立刻分叉。
+    if (!read_bool("climate_worker_authoritative", false,
+                   snapshot.climate_worker_authoritative) ||
+        !read_bool("climate_season_refresh_ran", false,
+                   snapshot.climate_season_refresh_ran)) {
+        out["ok"] = false;
+        out["code"] = "invalid_runtime_input_value";
+        return out;
+    }
+
+    // 生产 Climate round 的输入缓冲。ACTIVE 下这个字典还带着全套 round scalars
+    // （GDScript 的 _build_runtime_climate_round_scalar_knobs），因为生产各 pass 的
+    // record_production_round_scalars 在抑制门后不再被调到。fill_climate_round_input
+    // 本来就解析那些键，所以两种模式共用这一条通道。
+    //
+    // prefer_slot_lanes=true：per-cell lane 从 _slots 取而不是从 MapData 镜像取。
+    // 生产 pass_a 读的就是 _slots，而镜像只在部分 pass 末尾 flush，同一日起点未必
+    // 相等 —— 那种差异会以"同一份内核算出不同结果"的形式出现在对拍里。
+    snapshot.climate_round_input = pk_async_climate::ClimateInputBuf{};
+    if (inputs.has("climate_round_input") &&
+        inputs["climate_round_input"].get_type() == Variant::DICTIONARY) {
+        const Dictionary round_input = inputs["climate_round_input"];
+        fill_climate_round_input(round_input, static_cast<int>(cells),
+                                 snapshot.climate_round_input, true);
+        _captured_climate_round_input = snapshot.climate_round_input;
+        _captured_climate_round_input_valid = true;
+        _captured_climate_round_input_day = snapshot.day;
+    }
+
+    // round 不变量。只在 bind_map_data 之后变一次，所以与 per-day 输入分开走。
+    // 缺 albedo_table 会让 stage 8 静默跳过（而 albedo 是 temp 的日内最后写者）；
+    // 缺 water_terrain_ids 会让 sea_ice 撞守卫跳过 —— 实测的 starved=0x40 就是它。
+    if (inputs.has("climate_round_static_knobs") &&
+        inputs["climate_round_static_knobs"].get_type() == Variant::DICTIONARY) {
+        const Dictionary sk = inputs["climate_round_static_knobs"];
+        auto &dst = snapshot.climate_round_static_knobs;
+        dst.n_cells = static_cast<int>(cells);
+        // 这条 lane 的契约是定长 6N（见 ClimateRoundStaticKnobs 的注释），而
+        // environment 的拓扑还允许 CSR 形式（neighbor_offsets 非空时 indices 是变长
+        // 的）。CSR 那份直接赋过去会让内核按 i*6+k 越界读 —— 不是错值而是崩溃。
+        if (snapshot.neighbor_indices.size() == cells * 6u) {
+            dst.neighbor_indices = snapshot.neighbor_indices;
+        } else {
+            dst.neighbor_indices.clear();
+        }
+        const auto read_vec_f32 = [&sk](const char *key,
+                                        std::vector<float> &out_vec) {
+            if (!sk.has(key)) return;
+            const Variant raw = sk[key];
+            if (raw.get_type() != Variant::PACKED_FLOAT32_ARRAY) return;
+            const PackedFloat32Array values = raw;
+            out_vec.assign(values.ptr(), values.ptr() + values.size());
+        };
+        read_vec_f32("donor_table", dst.donor_table);
+        read_vec_f32("foliage_table", dst.foliage_table);
+        read_vec_f32("albedo_table", dst.albedo_table);
+        if (sk.has("water_terrain_ids") &&
+            sk["water_terrain_ids"].get_type() == Variant::PACKED_BYTE_ARRAY) {
+            const PackedByteArray ids = sk["water_terrain_ids"];
+            dst.water_terrain_ids.assign(ids.ptr(), ids.ptr() + ids.size());
+        }
+    }
+
     snapshot.topology_validated = cells > 0 &&
         ((!snapshot.neighbor_offsets.empty() &&
           snapshot.neighbor_offsets.size() == cells + 1u) ||
@@ -1513,8 +1623,11 @@ Dictionary DCWorldExt::apply_runtime_climate_writeback(
     out["generation"] = static_cast<int64_t>(applied_generation);
     out["state_hash"] = static_cast<int64_t>(applied_state_hash);
     out["cell_count"] = static_cast<int64_t>(cell_count);
-    out["writeback_applied_fields"] = applied_fields;
-    out["writeback_skipped_fields"] = skipped;
+    // 键名由 GDScript 侧决定（world_runtime_host._apply_runtime_climate_writeback
+    // 读的就是这两个）。被 slot 守卫拒掉的字段是"worker 拥有但从不发布"的字段，
+    // MapData 会静默停在转权威那天的值 —— 所以拒绝清单必须出得来，不能只报计数。
+    out["applied_fields"] = applied_fields;
+    out["skipped_fields"] = skipped;
     out["drops"] =
         static_cast<int64_t>(_runtime_host->climate_writeback_drop_count());
     return out;
