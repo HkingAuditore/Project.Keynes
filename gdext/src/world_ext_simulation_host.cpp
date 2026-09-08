@@ -709,6 +709,15 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
         const Dictionary round_input = inputs["climate_round_input"];
         fill_climate_round_input(round_input, static_cast<int>(cells),
                                  snapshot.climate_round_input, true);
+        // sea_ice_frac 这条 lane 在 SHADOW 下由生产 pass_b 的消费点记录填充，ACTIVE 下
+        // 那个记录点在抑制门后没有写者，而缺键时 fill 给的是 assign(n, 0) —— 长度恰好
+        // 合规，于是 sea_ice 内核每天都从零冰起算（起始冰量优先取这条），一个
+        // si_daily_delta_cap 就是全部结果。它也是 ocean_water 的必需 lane，不能清空，
+        // 所以直接对齐到同一天的 slot 快照：ACTIVE 下 pass_b 与 sea_ice 读的就是它。
+        if (snapshot.climate_worker_authoritative) {
+            snapshot.climate_round_input.sea_ice_frac =
+                snapshot.climate_round_input.sea_ice_frac_inout;
+        }
         _captured_climate_round_input = snapshot.climate_round_input;
         _captured_climate_round_input_valid = true;
         _captured_climate_round_input_day = snapshot.day;
