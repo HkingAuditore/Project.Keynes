@@ -262,6 +262,10 @@ const CONTESTED: Array[String] = [
 	# 幅度（-0.370..0.134 恒定 vs 对照 -0.392..0.302 每 round 推进），而 temp 的症状
 	# 完全是它的投影。看极值而不是 nz/mean：它是有符号量，全场 mean 接近 0。
 	"insolation_dev_arr",
+	# 海冰。nz 会骗人：客户端实测 390 格非零、看着像在结冰，但值域上界只有 0.024，
+	# 渲染上等于完全不显示。它的 knobs（si_t_form 等）与 insol_amp 是同一批 round
+	# scalars，都走 climate_round_input 那一条通道。
+	"sea_ice_frac_arr",
 ]
 
 
@@ -293,9 +297,10 @@ func _liveness(map: MapData) -> String:
 		var mean := total / float(max(arr.size(), 1))
 		# 温度看极值而不是 nz/mean：全场 mean 随季节几乎不变（南北半球互相抵消），
 		# 季节振幅体现在两端 —— 冬季高纬那一端要压下去。nz 对温度也没有意义。
-		if name == "temp_arr" or name == "insolation_dev_arr":
-			parts.append("%s mean=%.3f min=%.3f max=%.3f" % [
-				name.trim_suffix("_arr"), mean, lo, hi])
+		if name == "temp_arr" or name == "insolation_dev_arr" \
+				or name == "sea_ice_frac_arr":
+			parts.append("%s nz=%d mean=%.3f min=%.3f max=%.3f" % [
+				name.trim_suffix("_arr"), nonzero, mean, lo, hi])
 		else:
 			parts.append("%s nz=%d/%d mean=%.5f" % [
 				name.trim_suffix("_arr"), nonzero, arr.size(), mean])
