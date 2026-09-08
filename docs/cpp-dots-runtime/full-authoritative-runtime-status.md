@@ -2351,3 +2351,121 @@ parity 仍 **28/30**，soak `drops=0`、`writeback_days=58/60`。
 **十二、玩家的定性描述可以直接翻译成可测指标。** 「观察不到日照导致的气温差异」→ 同一 tick 内
 跨纬度的 `insolation_dev` min..max spread。两份录制来自不同世界、不同起始 tick，绝对值不可比，
 但**同 tick 内的空间 spread 可比** —— 选对指标就能绕开无法复现种子的问题。
+
+
+## 42. 代码丢失事故、重建，与海冰跨天累积缺陷（2026-09-08）
+
+### 事故
+
+清理第 41 节留下的旧 `climate_round_scalars` 解析块时，编辑脚本删错了范围，随后为了回到
+干净状态执行了 `git checkout` —— 那些代码从未提交，`world_ext_simulation_host.cpp`
+被回退到一个更早的版本，**1315 行未提交代码丢失**。`git fsck`、编辑器本地历史、Windows
+卷影副本三条恢复路径全部无果。
+
+唯一留下的资产是**已编译的 DLL 与 .obj**（丢失前那次构建的产物），以及 `world_ext.h`
+里完整的函数声明、文档里记录的接线路径。
+
+### 重建策略
+
+按「链接器能不能发现缺失」分两批，这个顺序很关键：
+
+1. **第一批 —— linker-visible 的 10 个函数。** 声明还在头文件里、GDScript 还在调，所以
+   缺失会直接表现为链接失败或方法未绑定。照 `world_ext.h` 的签名重建，编译通过即证明
+   边界完整：`append_climate_stage_cadence`、`climate_worker_authoritative`、
+   `set_runtime_climate_parity_forcing`、`get_runtime_climate_parity_fields`、
+   `get_runtime_climate_parity_divergence`、`compute_runtime_climate_parity_hash`、
+   `publish_runtime_climate_reference_state`、`runtime_climate_writeback_self_test`、
+   `runtime_climate_parity_contract_test`、`apply_runtime_climate_writeback`。
+2. **第二批 —— `capture_runtime_inputs` 里的静默接线。** 这一批**编译器一句话都不会说**：
+   少填一个 snapshot 字段只是让某个 stage 撞守卫静默跳过。只能靠 soak 的
+   `stage-days` 与逐场 nz/mean 对着 SHADOW 基准反推缺什么。
+
+重建过程中发现两个自身的坑，都由 soak 抓出：
+
+- `neighbor_indices` 直接从 environment 快照赋给 static knobs 会崩：static knobs 的契约是
+  定长 6N，而 environment 允许 CSR 形式（`neighbor_offsets` 非空时 indices 变长），内核按
+  `i*6+k` 索引就越界。加了长度守卫，不匹配时清空。
+- 回灌返回的键名写成了 `writeback_applied_fields`，GDScript 侧读的是 `applied_fields`，
+  于是 soak 一直报 `applied=0` 而实际写了 38 个场。
+
+### 缺陷：ACTIVE 下海冰每天从零冰起算
+
+重建后 soak 显示 `sea_ice_frac` max **恒为 0.070**，而这个数正好等于
+`si_daily_delta_cap`。对照（`PK_SOAK_AUTHORITY=0`）是 0.984。玩家看到的是海冰完全不显示。
+
+根因是一条 lane 的**默认值恰好通过了所有守卫**：
+
+```cpp
+// _async_sea_ice_kernel_pure（runtime_climate_passes.cpp:1696）
+const float *frac_in = ((int) in.sea_ice_frac.size() == n)
+    ? in.sea_ice_frac.data() : in.sea_ice_frac_inout.data();
+```
+
+`sea_ice_frac` 是「生产 pass_b 消费点记录的那份」，SHADOW 下由生产填、ACTIVE 下抑制门后
+没有写者。而 `fill_climate_round_input` 对缺键的处理是 `assign(n, 0.0f)` —— **长度恰好是
+n，于是优先分支胜出，内核每天都拿一份全零起始冰量**，一个 delta cap 就是全部结果。
+
+第一版修法用 `clear()` 走内核自带的退路，结果 `writeback_days` 从 28 掉到 **1**：这条
+lane 同时是 `_async_ocean_water_kernel_pure` 的**必需** lane（`runtime_climate_passes.cpp:907`
+硬校验 `size != n` 就 `return false`），清空会让整个 round 失败。正确修法是对齐到同一天的
+slot 快照 `sea_ice_frac_inout` —— 这也正是内核注释描述的语义（ACTIVE 下 pass_b 与 sea_ice
+读的就是同一个值）。
+
+### `climate_stage_knobs` 五个 stage 补回
+
+第二批的主体。GDScript 侧 `_build_runtime_climate_stage_knobs` 完好（丢的只有 C++ 解析），
+字典是四个键：`weather_round` / `stage_b` / `stage_distribute` / `stage_weather`。
+
+**键名的权威来源是生产的执行函数，不是结构体字段名。** GDScript 那几个 `*_for_worker`
+builder 都是生产同一份 builder 的薄包装，所以生产 C++ 侧读同一份字典的地方就是映射表：
+
+| stage | 生产执行函数（键名口径） | snapshot 成员 |
+| --- | --- | --- |
+| distribute | `run_weather_distribute_pass`（`world_ext_weather.cpp:1890`） | `climate_weather_distribute` |
+| albedo | `run_albedo_pass`（`world_ext_climate.cpp:3530`） | `climate_albedo`（内联） |
+| vegetation | `run_stage_b_pass` veg 段（`:4300`） | `climate_vegetation` |
+| feedback | `run_stage_b_pass` fb 段（`:4564`） | `climate_feedback` |
+| hydrology | 两侧都不跑（`runtime_hydrology_enabled=false`） | — |
+
+三条实现约束：
+
+- **守卫要求齐长的 lane 必须全填，即使内核不用它的值。** distribute 的 weather 四条会被
+  worker 自己 store 覆盖（field solve 刚写过），但 12 条 lane 的长度校验是一次性的，少
+  一条整个 stage 静默跳过。
+- **`weather_field_init` 没有快照 lane**，worker 侧 field solve 总走 direct 语义（一定写 1），
+  三处都填全 1 只为过守卫。
+- **派生值在 capture 侧算好**：`day_scale` 的 `max(1.0)`、`stress_blend` 的
+  `clamp(scale/memory_days,0,1)`，两侧各算一次会差 ULP。
+
+### 验收
+
+120 天 soak（50x48，同 seed A/B）：
+
+| 字段 | 对照（authority=0） | 事故后 | 补回后 |
+| --- | --- | --- | --- |
+| `sea_ice_frac` max | 0.984 | 0.070 | **1.000** |
+| `snow_cover` nz | 99 | 0 | **195** |
+| `vegetation_growth_pressure` nz | 850 | 0 | **909** |
+| `soil_moisture` nz | 914 | 537 | **914** |
+| `water_balance_30d` nz | 914 | 542 | **914** |
+
+`stage-days`：八个 round stage 满跑 118/118，`albedo=1` / `vegetation=2` / `feedback=1` /
+`weather=15`（15 个 weather 轮 × 各自 stride），`drops=0`。
+
+### 方法论
+
+**十三、未提交的工作没有"干净状态"可回退。** `git checkout` 的语义是「丢弃未提交的改动」，
+在有大量未提交工作时它不是撤销键。**编辑脚本删错范围之后的正确动作是先 commit（哪怕是
+WIP），再修。**
+
+**十四、按「编译器会不会告诉你」给重建排序。** linker-visible 的部分让编译成为验收条件，
+一次就能确认边界完整；静默接线只能靠行为差分反推，把它放在后面才有一个已知可用的基线去对。
+
+**十五、"缺省值恰好合法"是这套接线里最危险的一类缺陷。** 海冰这条 lane 缺席时被填成等长
+全零数组：所有 `size == n` 守卫全过、不报 starve、round `ok=1`，只有物理结果不对。同类模式
+已出现三次（`wind_baseline` 侥幸退回 LUT、`sea_ice_frac`、第 36 节的 scalars 默认值）。
+**判据是"这条 lane 在 ACTIVE 下还有写者吗"，不是"它长度对不对"。**
+
+**十六、修一条 lane 之前先查它还有几个读者。** `sea_ice_frac` 的第一版修法只考虑了 sea_ice
+内核，没查 ocean_water 也硬依赖它，结果把整个 round 弄失败了 —— 而 soak 的表象是
+`writeback_days` 掉到 1，与"海冰不涨"完全不像同一个改动引起的。
