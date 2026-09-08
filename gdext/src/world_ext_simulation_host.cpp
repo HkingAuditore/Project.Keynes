@@ -900,6 +900,79 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
                 snapshot.climate_weather_distribute = wd;
             }
         }
+
+        // stage_b 段的三个 stage（albedo / vegetation_dynamics / climate_feedback）
+        // 共用一份 knobs 字典 —— 生产那侧就是 run_stage_b_pass(knobs) 一次吃三段，
+        // 各自由 run_* 标志按自己的 stride 开合。GDScript 侧复用了生产同一个
+        // builder（_build_native_daily_stage_b_knobs），所以这里的键名与
+        // run_stage_b_pass 逐一对应。
+        const Dictionary stage_b =
+            (stage_knobs.has("stage_b") &&
+             stage_knobs["stage_b"].get_type() == Variant::DICTIONARY)
+                ? Dictionary(stage_knobs["stage_b"]) : Dictionary();
+
+        // stage 8 albedo —— temp 的日内最后一个写者。它是内联结构而不是 shared_ptr：
+        // 只有五个标量，albedo_table 本身是 round 不变量、走 static knobs。
+        // run_albedo 为假就是"这个 stride 今天没到期"，ran 留 false 让 worker 也不跑。
+        if (bool(stage_b.get("run_albedo", false))) {
+            auto &alb = snapshot.climate_albedo;
+            alb.ran = true;
+            alb.reference_albedo = stage_b.has("reference_albedo")
+                ? float(stage_b["reference_albedo"]) : 0.0f;
+            alb.temp_gain = stage_b.has("albedo_temp_gain")
+                ? float(stage_b["albedo_temp_gain"]) : 0.0f;
+            alb.snow_cover_albedo = stage_b.has("snow_cover_albedo")
+                ? float(stage_b["snow_cover_albedo"]) : 0.75f;
+            alb.cover_snow_id =
+                static_cast<uint8_t>(int(stage_b.get("cover_snow_id", 1)));
+            alb.cover_glacier_id =
+                static_cast<uint8_t>(int(stage_b.get("cover_glacier_id", 2)));
+        }
+
+        // stage 10 climate_feedback —— vegetation_growth_pressure 的写者之一。它还
+        // 写 base_moisture 与 soil_moisture，但那两条没有 worker store 成员，内核用
+        // scratch 承接初值后丢弃，所以这里记的是生产口径的初值。
+        //
+        // 六个 weather 枚举 id 在生产侧是必填（缺一个就整段拒跑），这里同样：没被
+        // 记录时 knobs 默认的 -1 与任何真实 weather_type 都不相等，效果是这段白跑。
+        if (bool(stage_b.get("run_feedback", false))) {
+            auto fb = std::make_shared<pk_async_climate::ClimateFeedbackInput>();
+            fb->n_cells = static_cast<int>(cells);
+            auto &k = fb->knobs;
+            k.ran = true;
+            const auto bf = [&stage_b](const char *key, float fallback) {
+                return stage_b.has(key) ? float(stage_b[key]) : fallback;
+            };
+            const auto bi = [&stage_b](const char *key, int fallback) {
+                return stage_b.has(key) ? int(stage_b[key]) : fallback;
+            };
+            k.soil_gain = bf("soil_gain", 0.0f);
+            k.veg_gain = bf("veg_gain", 0.0f);
+            k.scale = bf("scale", 1.0f);
+            k.per_day_clamp = bf("per_day_clamp", 0.0f);
+            k.ocean_drift_gain = bf("ocean_drift_gain", 0.0f);
+            k.base_moisture_gain = bf("weather_to_base_moisture_gain", 0.0f);
+            k.write_weather_veg_pressure =
+                bool(stage_b.get("write_weather_veg_pressure", true));
+            k.wt_rain_id = bi("wt_rain_id", -1);
+            k.wt_storm_id = bi("wt_storm_id", -1);
+            k.wt_monsoon_id = bi("wt_monsoon_id", -1);
+            k.wt_blizzard_id = bi("wt_blizzard_id", -1);
+            k.wt_drought_id = bi("wt_drought_id", -1);
+            k.wt_heatwave_id = bi("wt_heatwave_id", -1);
+
+            fb->is_water = snapshot.is_water;
+            fb->weather_type = snapshot.cell_weather_type;
+            fb->weather_intensity = snapshot.cell_weather_intensity;
+            fb->temp_transport_anomaly =
+                snapshot.cell_temperature_transport_anomaly;
+            fb->base_moisture = snapshot.cell_base_moisture;
+            fb->soil_moisture = snapshot.cell_soil_moisture;
+            // 与 distribute 同一条：weather_field_init 没有快照 lane，而 worker 侧
+            // field solve 总走 direct 语义（一定写 1）。
+            fb->weather_field_init.assign(cells, 1u);
+            snapshot.climate_feedback = fb;
+        }
     }
 
     snapshot.topology_validated = cells > 0 &&
