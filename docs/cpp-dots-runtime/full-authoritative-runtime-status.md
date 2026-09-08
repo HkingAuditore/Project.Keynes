@@ -2452,6 +2452,36 @@ builder 都是生产同一份 builder 的薄包装，所以生产 C++ 侧读同�
 `stage-days`：八个 round stage 满跑 118/118，`albedo=1` / `vegetation=2` / `feedback=1` /
 `weather=15`（15 个 weather 轮 × 各自 stride），`drops=0`。
 
+### 第三批：跨边界的键名与类型
+
+第一批（linker-visible）与第二批（capture 静默接线）之外还有第三类缺口：**函数存在、编译通过、
+ACTIVE 路径全绿，但 GDScript 侧读不到它要的键**。它只在 SHADOW 上暴露，因为只有 SHADOW 会
+穿过 GDScript↔C++ 的 parity 边界往回读值。
+
+表象是 `climate_parity_probe` 报 `only_0_of_30_days_compared ... climate_trace_reference_pending`
+—— 一天都没比上。三处独立的键名/类型错误串在同一条链上：
+
+| 位置 | 重建给的 | GDScript 读的 | 后果 |
+| --- | --- | --- | --- |
+| `get_runtime_climate_parity_fields` | `comparability`/`kind`/`tolerance` = 枚举序号 | `String(entry.get("comparability"))` | **抛异常**，打断字段收集 |
+| `publish_runtime_climate_reference_state` | `state_hash` | `parity_hash` | 取到 0 → 整天作废 |
+| `runtime_climate_parity_contract_test` | `field_count`/`comparable_count` | `fields_total`/`fields_comparable` | 表长读成 0 → 9 项契约断言连坐 |
+
+第一条最隐蔽：**Godot 4 的 `String()` 构造不接受 int**（`String(5)` 抛 "Nonexistent 'String'
+constructor"），而给序号在 C++ 侧完全合法。GDScript 那行报错只是一句 SCRIPT ERROR，我一度把它
+当成无关噪声 —— 它其实就是 0/30 的根因。修法是三条枚举一律跨边界发字符串
+（`pk_parity_kind_name` / `..._comparability_name` / `..._tolerance_name`）。
+
+同时修掉一处重建时自己引入的宽松语义：`build_climate_store_from_fields` 原本对缺席的
+comparable 字段 `continue`（留在 reset 后的零值上）。契约测试对这条有明确要求且理由充分 ——
+把缺席数组当零值哈希照样能出一个数，而两侧零的位置不同，日后会以「Climate 算法分叉」的形式
+浮出来。改成整份拒绝 + `missing_fields`，`cell_count` 也不再从数组长度推断（推断值一旦不对，
+逐条 size 检查会把每条字段都报成长度错，掩盖真正缺失的那一条）。
+
+修完七项回归全绿：authority 13/0、parity contract **159/0**、SHADOW **28/30**（与事故前逐位
+一致）、save roundtrip 37/0、daily graph 25、sea ice 12/0、canal 27/0。probe 的墙钟从 700s
+降到 75s —— 之前那 11 分钟全耗在失败重试直到 tick 预算耗尽。
+
 ### 方法论
 
 **十三、未提交的工作没有"干净状态"可回退。** `git checkout` 的语义是「丢弃未提交的改动」，
@@ -2469,3 +2499,16 @@ WIP），再修。**
 **十六、修一条 lane 之前先查它还有几个读者。** `sea_ice_frac` 的第一版修法只考虑了 sea_ice
 内核，没查 ocean_water 也硬依赖它，结果把整个 round 弄失败了 —— 而 soak 的表象是
 `writeback_days` 掉到 1，与"海冰不涨"完全不像同一个改动引起的。
+
+**十七、重建一个跨语言绑定时，键名的权威来源是调用方，不是结构体。** 十四条把重建按"编译器会
+不会告诉你"分了两批，第三批是它们之外的：**函数签名对、编译过、ACTIVE 全绿，但字典键名对不上**。
+Dictionary 是无类型边界，两侧各写一个名字不会有任何人报错。重建任何返回 Dictionary 的绑定，
+第一步应该是 grep GDScript 侧对返回值的 `.get("...")`，把那份键集当作契约。
+
+**十八、GDScript 的 SCRIPT ERROR 不是噪声。** `Invalid call. Nonexistent 'String' constructor`
+在 soak 日志里出现过多次，我因为 soak 结果正常而当成无关噪声跳过了 —— 它是 SHADOW 对拍
+0/30 的直接根因。ACTIVE 与 SHADOW 走的是不同代码路径，**一条路径全绿不能替另一条路径背书**。
+
+**十九、"墙钟变长"本身是一条诊断信号。** parity probe 从 75 秒变成 700 秒，因为它在
+`tick_budget = days * 4 + 16` 里一直重试一个永不成功的比较。用时反常时先看它是不是在重试，
+比读结果更快定位。
