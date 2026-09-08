@@ -16,12 +16,15 @@ CLIMATE|COMMIT = 0x802`，滞后一日），Country 有完整 POD 实现但未�
 | 你想知道 | 看 |
 | --- | --- |
 | 为什么做这件事、做到什么算完 | 第一部分 |
-| 权威是怎么定义的、放行标准是什么 | 第二部分 |
-| 某个域现在到哪一步了 | 第三部分（3.1 总表 → 3.2 逐域） |
-| 接下来该做什么 | 第四部分 |
-| 我要动 Climate/worker，有哪些坑 | 第五部分（**动手前必读**） |
+| 整体架构长什么样、调度怎么跑、某个模块具体怎么运行 | 第二部分 |
+| 完整迁移一共要做哪些事、哪些已经做完了 | 第三部分（工作分解 A–F） |
+| 现在到哪一步了、某个域什么状态 | 第四部分（对着第三部分的条目讲） |
+| 我要动 worker / 跨边界接线，有哪些坑 | 第五部分（**动手前必读**） |
 | 某个符号在哪个文件 | 附录 A |
 | 某个开关叫什么、默认值 | 附录 B |
+
+**第三部分与第四部分是配套的**：任务表说"要做什么"，当前状态说"到哪了"，后者的每个结论都能
+追到前者的具体条目（如 B8、D7）。
 
 与其他文档的关系：
 
@@ -72,7 +75,7 @@ CLIMATE|COMMIT = 0x802`，滞后一日），Country 有完整 POD 实现但未�
 | 主线程不读取 worker store | 代码审查 + 竞态测试 |
 | 主线程不等待 simulation / mutex / 任务 / 保存编码 | `main_wait_on_sim_us = 0` |
 | 权威模拟不跳过日期 | soak 的 `writeback_days` 连续性 |
-| worker 停顿不造成 UI 帧尖峰 | 真实客户端会话帧统计（**目前无法测量，见 3.4**） |
+| worker 停顿不造成 UI 帧尖峰 | 真实客户端会话帧统计（**目前无法测量，见 4.4 与任务 C1**） |
 | 50 权威模拟日/秒 | headless perf record |
 
 三种模式的定位：**OFF** 是同步参考权威（也是 parity 的参照系）；**SHADOW** 是后台对拍权威，
@@ -227,27 +230,195 @@ WorldClock._process() → day_changed
 
 ---
 
-# 第三部分：当前状态
+# 第三部分：任务表（完整迁移的工作分解）
 
-## 3.1 总表
+这是**完整迁移的工作分解**，六个阶段 A–F，含已完成项。每条子任务标状态：`[x]` 完成、
+`[~]` 部分、`[ ]` 未开始、`[-]` 已取消（附原因）。没有验收标准的条目不该进这张表。
 
-十二个域按成熟度分四档。「诊断占位」的准确含义是：**代码能跑、能产出测试数据，但算的不是
-生产公式**，多数只是把 environment 投影进 store 或递增计数器。
+进度概览：
 
-| 档 | 域 | 一句话 |
+| 阶段 | 内容 | 状态 |
 | --- | --- | --- |
-| **A 生产权威** | CLIMATE、COMMIT | 已在 `implemented_domain_mask`，ACTIVE 下真实承担 |
-| **B 实现完整未接入** | COUNTRY | POD authority 有完整 plan/commit/9 opcode/ACK/CPD2，但 host 主循环没引用它 |
-| **C 诊断占位** | MODIFIER、EFFECT、IDEOLOGY、TRIGGER_INPUT、ECONOMY、EVENTS | 有 POD store，但 plan/replay 是投影或计数器 |
-| **D 无 store** | GAMEPLAY_EFFECT、VISUAL、INPUT_CAPTURE | 结构上就没有可迁移的状态，或本就不该有 |
+| **A** | 基础设施：协议、线程、快照、存档骨架 | ✅ 完成 |
+| **B** | Climate 垂直切片：第一个域走通全流程 | ✅ 完成（带 6 项遗留） |
+| **C** | 测量能力：证明收益、抓住 headless 抓不到的问题 | ⬜ **未开始，阻塞 D–F 的判断** |
+| **D** | Country 接入：第二个域 | 🔶 实现完整，接线未做 |
+| **E** | 其余域：先决定哪些值得迁移 | ⬜ 未开始 |
+| **F** | 整图收尾 | ⬜ 未开始 |
 
-逐域 × 八维度（证据行号见 3.2）：
+---
+
+## 阶段 A：基础设施 ✅
+
+一次性地基，后续每个域共用。
+
+- [x] **A1 Runtime Domain ABI v3**：`RuntimeDomainId` 12 域、mask、stage 顺序
+      → 验收：`runtime_protocol_guard_test` 绿
+- [x] **A2 命令 / intent / ACK 协议**：`RuntimeDomainAck`、跨域屏障语义
+- [x] **A3 Snapshot ring**：三缓冲提交 → `runtime_snapshot_ring_test`
+- [x] **A4 Worker 生命周期**：`start_runtime_worker`、OFF/SHADOW/ACTIVE 模式机
+- [x] **A5 线程隔离门禁**：worker 不得依赖 Godot/MapData
+      → `runtime_worker_source_scan_test`、`runtime_thread_isolation_test`
+- [x] **A6 存档骨架**：PKSR envelope + 每域 section 机制
+- [x] **A7 并行执行器**：`NativeParallelExecutor`（修过一次屏障竞态：需同时等
+      `_remaining_tasks==0` 与 `_active_workers==0`）
+- [x] **A8 逐域放行机制**：`authoritative_domain_mask` 与 `implemented_domain_mask` 分离，
+      解除"全部就绪才能开 ACTIVE"的死锁
+
+## 阶段 B：Climate 垂直切片 ✅
+
+第一个域，也是给后续域趟路的样板。
+
+### B1 共享内核提取 ✅
+- [x] 九个 pass 提取为共享纯内核（`runtime_climate_passes.{h,cpp}`），生产与 worker 同一份
+- [x] round 编排 `run_climate_round_passes`（passes_mask 门控 + 逐 pass in←out 接力）
+- [x] 消除生产侧三份重复的 albedo 主循环
+- [x] `passes_ran` / `passes_starved` 两个 bit mask 插桩——**此前 pass 被跳过时完全静默**
+
+### B2 对拍能力 ✅
+- [x] 统一比较器：两侧共用 `parity_hash()`（此前两侧哈希函数/字段集/framing 全不同，
+      `matched` 只能靠 2⁻⁵⁶ 碰撞成立）
+- [x] 分叉矩阵：按 canonical 字段表逐字段累积，mismatch 填 field/cell/stage/两侧 bit
+- [x] `climate_parity_probe.gd` harness
+- [x] 首帧 `adopt_reference_baseline`（worker store 全零 vs reference 带世界生成结果）
+
+### B3 输入边界 ✅
+- [x] environment 快照全 lane（补齐过 12 条缺失 lane）
+- [x] 生产 round 输入分层 overlay（`overlay_production_pass_a`）
+- [x] `ClimateRoundStaticKnobs`（catalog 表、`water_terrain_ids`、`neighbor_indices`）
+- [x] `climate_round_scalars` 整套传递（复用生产构建函数）
+- [x] `climate_stage_knobs` 通道
+- [x] CSR 形式下 `neighbor_indices` 的回填
+
+### B4 stage 接线 ✅
+- [x] round 内八个 pass（`pass_a`..`transpiration`）
+- [x] albedo / vegetation_dynamics / climate_feedback / weather_distribute / weather_field
+- [-] runtime_hydrology —— **取消**：`runtime_hydrology_enabled=false` 时生产侧返回 `{}`，
+      两侧都不跑
+- [x] 跨天状态自持：`own_snow_state`、`own_field_state`、`climate_worker_authoritative`
+
+### B5 回灌通路 ✅
+- [x] store 内字段回灌
+- [x] store 外字段（`soil_moisture`、pass_a 五条输出）走 snapshot 独立字段，不动 PKEC 格式
+- [x] 执行序钉死：回灌 → season refresh → capture
+- [x] 存档 CLM2 + roundtrip 测试
+
+### B6 转 ACTIVE ✅
+- [x] per-domain 授权门
+- [x] 主线程 14 节点抑制门
+- [x] `runtime_climate_authority_enabled` 默认 true
+- [x] 回退路径（一个开关）
+
+### B7 客户端暴露的缺陷 ✅
+- [x] scalars 缺失（`insol_amp` 默认 0.20 vs profile 0.32，季节振幅只剩 62.5%）
+- [x] pass_a 五条输出无回灌写者
+- [x] 海冰累积（lane 被填零 → 每天从零冰起算）
+- [x] weather field solve 从未运行（湿度跳变）
+
+### B8 遗留（转入 P2） 🔶
+- [ ] stage 重排：`feedback` 移到 `weather`/`distribute` 之后 → 验收：与生产语义一致且 soak 无回归
+- [ ] ψ / cyclone / monsoon 自持推进 → 前置：解决 wind pass 与 weather 的次序
+- [ ] 量级偏差归因（snow_cover +25%、moisture/WB30 偏高、VGP 符号相反）→ 验收：每条一对一映射到原因
+- [ ] 按格数的启用阈值（小地图 +5.5% 负收益）→ 验收：阈值有实测依据
+- [ ] 大地图回灌跟不上节拍 → 验收：`writeback_days` 达到 50/50
+- [ ] 清理 `RuntimeClimateCommand` 5 个悬空 opcode → 验收：接上消费者或删除
+- [x] ~~修 `implemented_domain_mask()` 过期注释~~（2026-09-08）
+
+## 阶段 C：测量能力 ⬜ **最高优先级**
+
+**为什么排在 Country 前面**：worker 化的主要卖点是帧延迟，而这个收益至今一次都没测到过；
+同时 Climate 四个缺陷全部是真实客户端抓到的，headless 全绿。**不补上这两条，后续每个域都会
+重复 Climate 的弯路。**
+
+- [ ] **C1 真实客户端帧统计**：ACTIVE / OFF 各一次同 seed 会话
+      → 验收：给出帧时间分布对比，回答"worker 化到底改善了什么"
+- [ ] **C2 客户端字段录制对照 SOP**：固化成放行流程的第五步
+      → 验收：可重复执行的脚本 + 判读标准，Country 放行时首次执行
+- [ ] **C3 排除 harness 开销的性能口径**：headless 的 40ms 忙等轮询污染 `run_ms`
+      → 验收：一个能直接比较 ACTIVE/OFF 的指标
+
+## 阶段 D：Country 接入 🔶
+
+实现已完整，缺的是接线与决策。
+
+- [x] D1 `RuntimeCountryStore` + `RuntimeCountryPodAuthority`
+- [x] D2 `plan_day` / `commit_day` 完整实现
+- [x] D3 9 个 opcode 的 `apply_command`
+- [x] D4 ACK 语义（grant tech 发 intent、commit 校验 acks）
+- [x] D5 CPD2 存档 + roundtrip 测试
+- [x] D6 SHADOW 诊断 adapter
+- [ ] **D7 定夺两条存档路径**：host 用 `encode_country_core_checkpoint`，而
+      `RuntimeCountryPodAuthority::encode_save` 没被调用
+      → 验收：单一路径，另一条删除或注明用途
+- [ ] **D8 盘点 opcode 差额**：legacy 20 vs POD 9
+      → 验收：逐条列出「已实现 / 不需要 / 待实现」
+- [ ] **D9 接进 host 主循环**：目前 `NativeSimulationHost` 没有 `_country_authority` 引用
+      → 前置 D7、D8；验收：ACTIVE 下 Country stage 真实执行
+- [ ] **D10 跨域读取确认**：谁在读 Country 字段、能否接受滞后一日
+      → 验收：逐个消费者确认并记录
+- [ ] **D11 按六步流程放行** → 前置 C1–C3、D7–D10；验收：mask 加 COUNTRY bit
+
+## 阶段 E：其余域 ⬜
+
+**共同前置：先决定是否值得迁移。** 这不是默认要做的事——
+
+- [ ] **E1 迁移价值评估**：逐域回答"搬进 POD worker 能拿到什么，代价是什么"
+      → 特别是 ECONOMY：legacy 实现已高度优化且有自己的并行 worker，收益需要论证
+      → 验收：每域一个结论（迁移 / 不迁移 / 待定），写进本文
+- [ ] **E2 GAMEPLAY_EFFECT 去留**：它没有 store，`run_gameplay_effect` 只递增计数器
+      → 验收：确认保留还是删除这个域
+- [ ] E3–E8 六个 C 档域的实际迁移 → 前置 E1，范围由 E1 决定
+- [ ] **E9 ECONOMY 存档 section**：PKSR bundle 里目前没有它
+      → 仅在 E1 结论为"迁移"时才需要
+
+## 阶段 F：整图收尾 ⬜
+
+- [ ] F1 `implemented_domain_mask` 达到 `0xFFF`（前置：E 阶段全部完成）
+- [ ] F2 整图 ACTIVE（`start()` 不传显式 mask）
+- [ ] F3 达成 1.2 的全部硬约束：`main_wait_on_sim_us=0`、50 权威模拟日/秒、
+      worker 停顿不造成帧尖峰
+- [ ] F4 legacy 路径删除 + 更新 `runtime-deletion-inventory.md`
+
+---
+
+# 第四部分：当前状态
+
+本部分对着第三部分的任务表讲"到哪了"。**每个结论都能追到 A–F 里的具体条目。**
+
+## 4.1 一句话与进度
+
+六个阶段里 A、B 完成，C 未开始且阻塞判断，D 卡在接线，E、F 未开始。
+
+```text
+A 基础设施  ████████████ 完成
+B Climate   ███████████░ 完成，6 项遗留（B8）
+C 测量能力  ░░░░░░░░░░░░ 未开始  ← 阻塞 D-F 的判断
+D Country   ██████░░░░░░ D1-D6 完成，D7-D11 未做
+E 其余域    ░░░░░░░░░░░░ 未开始（前置是"要不要做"的决策）
+F 整图收尾  ░░░░░░░░░░░░ 未开始
+```
+
+**唯一在生产中真实承担权威的域是 Climate。** 其余十一个域中，Country 有完整实现但未接线，
+六个是诊断占位，三个结构上没有可迁移状态，COMMIT 是屏障机制本身。
+
+## 4.2 域成熟度（对应任务表 B / D / E）
+
+| 档 | 域 | 一句话 | 任务表 |
+| --- | --- | --- | --- |
+| **A 生产权威** | CLIMATE、COMMIT | ACTIVE 下真实承担，在 `implemented_domain_mask` | B 完成 |
+| **B 实现完整未接入** | COUNTRY | POD authority 有完整 plan/commit/9 opcode/ACK/CPD2，host 主循环没引用它 | D7–D11 |
+| **C 诊断占位** | MODIFIER、EFFECT、IDEOLOGY、TRIGGER_INPUT、ECONOMY、EVENTS | 有 store，但 plan/replay 是投影或计数器 | E1 先决策 |
+| **D 无 store** | GAMEPLAY_EFFECT、VISUAL、INPUT_CAPTURE | 结构上没有可迁移状态，或本就不该有 | E2 |
+
+「诊断占位」的准确含义：**代码能跑、能产出测试数据，但算的不是生产公式**。
+
+逐域 × 八维度：
 
 | 域 | POD store | plan/replay | opcode | ACK | snapshot | save | Host stage | mask |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | CLIMATE | 有 | **真实** | 定义 5 个，**无消费者** | 协议层有 | 有 | CLM2 | **ACTIVE 真 stage** | **在** |
 | COMMIT | 无（barrier） | 真实 | — | — | 有 | PKSR envelope | 有 | **在** |
-| COUNTRY | 有 | **真实但未接入** | 9 个已实现 | 有（grant tech 需 Effect ACK） | 有 | CPD2 | 仅 SHADOW adapter | 不在 |
+| COUNTRY | 有 | **真实但未接入** | 9 个已实现 | 有 | 有 | CPD2 | 仅 SHADOW adapter | 不在 |
 | MODIFIER | 有 | 诊断 | legacy 5 | 部分 | 无 | PDP3 | 无 | 不在 |
 | EFFECT | 有 | 诊断 | legacy 6 | 部分 | 无 | PDP3 | 无 | 不在 |
 | IDEOLOGY | 有 | 诊断 | legacy 9 | 无 | 无 | 无独立 | 无 | 不在 |
@@ -259,45 +430,32 @@ WorldClock._process() → day_changed
 | INPUT_CAPTURE | 无（只读快照） | 校验 | — | — | 有 | — | 两模式均校验 | 不在 |
 
 一条容易误读的：**「legacy N opcode」指主线程 runtime 的命令入口，不是 worker 队列**。
-Economy 有 23 个 legacy opcode 不代表它的 POD 迁移进度靠前，它的 POD 侧仍是诊断投影。
+Economy 有 23 个 legacy opcode 不代表它的 POD 迁移靠前，它的 POD 侧仍是诊断投影。
 
-## 3.2 逐域详述
+### CLIMATE 细节
 
-### CLIMATE（A 档，生产权威）
-
-- **store**：`RuntimeClimateStore`（`runtime_authoritative_domains.h:35`）；权威侧
-  `RuntimeClimateAuthority::_store/_next`（`runtime_climate_authority.h:185`）。
-- **执行**：ACTIVE 真 stage 在 `native_simulation_host.cpp:1339-1448`。round 内八个 pass 走共享
-  纯内核，`albedo`/`vegetation_dynamics`/`climate_feedback`/`weather_distribute`/`weather_field`
-  五个走 `climate_stage_knobs` 通道单独接线，`runtime_hydrology` 两侧都不跑。
-- **save**：CLM2（marker `0x324d4c43`，`runtime_climate_authority.cpp:11`）。
-- **注意**：pipeline / authority runner 里也有一份 climate，那是**诊断投影**
+- **执行**：ACTIVE 真 stage（`native_simulation_host.cpp:1339-1448`）。
+- **注意**：pipeline / authority runner 里另有一份 climate，那是**诊断投影**
   （`runtime_domain_pod.cpp:255`、`runtime_domain_authorities.cpp:172` 注释写明），不是权威
   路径。对拍和排障只应看 `RuntimeClimateAuthority`。
-- **悬空件**：`RuntimeClimateCommand` 定义了 5 个 opcode（`runtime_pod_protocol.h:119`），
-  **全仓库只有定义处，没有任何消费代码**。
+- **悬空件**：`RuntimeClimateCommand` 5 个 opcode（`runtime_pod_protocol.h:119`）全仓库只有
+  定义处，无任何消费代码 → B8。
 
-### COUNTRY（B 档，最接近就绪）
+### COUNTRY 细节（下一个域）
 
-这是下一个该放行的域，因为它缺的不是实现而是接线：
+缺的不是实现而是接线：
 
-- **已有**：`RuntimeCountryPodAuthority::plan_day` / `commit_day` 完整实现
-  （`runtime_country_pod.cpp:1128-1244`）；`apply_command` 实现 9 个 opcode（`:846-1042`）；
-  ACK 语义完整（grant tech 发 intent 并 `++required_ack_count`，`:895`；commit 校验 acks，`:1204`）；
-  CPD2 存档；`encode_save` 存在（`:1257`）。
-- **缺的**：`NativeSimulationHost` 主循环**没有 `_country_authority` 引用**。host 在 SHADOW 下
-  只调 `RuntimeCountryPodAdapter::execute_day` 做诊断（`native_simulation_host.cpp:1450-1477`），
-  且 adapter 显式标记 `ack_required=1` / `CROSS_DOMAIN_BARRIER_REQUIRED`（`runtime_country_pod.cpp:530`）。
-- **两条并存的存档路径**：host 实际用 `encode_country_core_checkpoint`
-  （`native_simulation_host.cpp:1978`），而 authority 自己的 `encode_save` 没被调用。接入前要
-  先定这两条留哪条。
-- legacy `NativeCountryRuntime` 有 20 个 opcode（`country_runtime.h:65`），POD 侧实现了 9 个，
-  差额需要盘点。
+- **已有**：`plan_day`/`commit_day`（`runtime_country_pod.cpp:1128-1244`）、9 个 opcode
+  （`:846-1042`）、ACK（grant tech 发 intent `:895`，commit 校验 `:1204`）、CPD2。
+- **缺的**：host 主循环**没有 `_country_authority` 引用**；SHADOW 下只调
+  `RuntimeCountryPodAdapter::execute_day` 做诊断（`native_simulation_host.cpp:1450-1477`）。
+- **两条并存的存档路径** → D7：host 用 `encode_country_core_checkpoint`（`:1978`），而
+  authority 自己的 `encode_save`（`runtime_country_pod.cpp:1257`）没被调用。
 
-### C 档六个域（诊断占位）
+### C 档六域细节
 
 共同形态：有 store、有 PDP3 序列化、`stage_preflight` 返回 `domain_handler_not_migrated`
-（`runtime_authoritative_domains.cpp:804`），只在 SHADOW 的 diagnostic runner 里跑。逐域差异：
+（`runtime_authoritative_domains.cpp:804`），只在 SHADOW diagnostic runner 里跑。
 
 | 域 | 诊断实现干了什么 | 证据 |
 | --- | --- | --- |
@@ -305,27 +463,26 @@ Economy 有 23 个 legacy opcode 不代表它的 POD 迁移进度靠前，它的
 | EFFECT | 按 instance 调度、emit intent、synthetic ACK | `:411`、`:397` |
 | IDEOLOGY | 仅 bump generation/rng；runner 做 pending_transition 排序 | `:396`、`:361` |
 | TRIGGER_INPUT | 递增 accumulator、扫 events journal | `:371`、`:315` |
-| ECONOMY | 从 country snapshot 复制 treasury；简化 population→production 投影 | `:471`、`:533`（注释写明"real Economy authority will replace"） |
+| ECONOMY | 从 country snapshot 复制 treasury；简化 population→production 投影 | `:471`、`:533`（注释："real Economy authority will replace"） |
 | EVENTS | 每日 push 一条 journal | `:496`、`:584` |
 
-**ECONOMY 额外缺一块**：PKSR bundle 里没有 ECONOMY section
-（`native_simulation_host.cpp:1942-1987` 只有 ENVELOPE / DOMAIN_POD / CLIMATE / COUNTRY），
-它的存档仍全在 legacy `economy_runtime_persistence_*`。
+**ECONOMY 额外缺存档** → E9：PKSR bundle 只有 ENVELOPE / DOMAIN_POD / CLIMATE / COUNTRY
+（`native_simulation_host.cpp:1942-1987`），它的存档仍全在 legacy `economy_runtime_persistence_*`。
 
-### D 档三个（无 store）
+### D 档三个
 
-- **GAMEPLAY_EFFECT**：`RuntimeAuthoritativeDomainStores` 里没有对应成员，`run_gameplay_effect`
-  只递增 generation/work_units（`runtime_domain_pod.cpp:457`）。**它是个空占位，不是待迁移项。**
-- **VISUAL**：只有 `RuntimeVisualIntent` 向量。SHADOW 下**刻意不把 shadow intents 泄漏到
-  visual ring**（`native_simulation_host.cpp:1318`）。
-- **INPUT_CAPTURE**：只读 `RuntimeEnvironmentSnapshot`，两种模式下都只做校验。
+- **GAMEPLAY_EFFECT**：`RuntimeAuthoritativeDomainStores` 无对应成员，`run_gameplay_effect`
+  只递增 generation/work_units（`runtime_domain_pod.cpp:457`）。**空占位** → E2。
+- **VISUAL**：只有 `RuntimeVisualIntent`。SHADOW 下**刻意不把 shadow intents 泄漏到 visual
+  ring**（`native_simulation_host.cpp:1318`）。
+- **INPUT_CAPTURE**：只读快照，两种模式都只做校验。
 
-## 3.3 测试与验收
+## 4.3 测试与验收现状
 
 ### 怎么跑
 
 ```powershell
-# 统一 runner：13 个 runtime_* + dots_completion_gate，产出 artifacts/runtime/s0-baseline/test-summary.json
+# 统一 runner：13 个 runtime_* + dots_completion_gate
 tools\runtime\Invoke-RuntimeTests.ps1
 
 # 单个测试
@@ -338,26 +495,26 @@ tools\runtime\run_climate_parity.ps1
 godot --headless --path Project/project-keynes --script res://tests/headless_perf_record.gd -- days=50 speed=50
 ```
 
-Godot 可执行文件由 `GODOT_BIN` 环境变量或 `tools/runtime/Resolve-GodotBin.ps1` 定位。
+Godot 可执行文件由 `GODOT_BIN` 或 `tools/runtime/Resolve-GodotBin.ps1` 定位。
 
 ### 关键测试
 
-| 测试 | 覆盖 | 输出格式 |
+| 测试 | 覆盖 | 输出 |
 | --- | --- | --- |
-| `runtime_protocol_guard_test.gd` | ABI v3、SHADOW 启动、ACTIVE 门禁 | `%d checks, %d failures` |
-| `runtime_climate_parity_test.gd` | 可比性契约（字段表、哈希、拒绝不完整输入） | 同上 |
-| `climate_parity_probe.gd` | **SHADOW 对拍主力**，产出分叉矩阵 CSV | `compared_days=... matched_days=...` |
-| `climate_authority_test.gd` | per-domain Climate ACTIVE 三门禁 | `%d checks, %d failures` |
-| `climate_authority_soak_probe.gd` | **ACTIVE soak 主力**，NaN/写回/stage 统计 | `[soak/done] ticks=... drops=...` |
-| `runtime_climate_save_roundtrip_test.gd` | CLM2 存读 | `%d checks, %d failures` |
-| `runtime_worker_source_scan_test.gd` | **worker 不得依赖 Godot/MapData** | PASS 或 push_error |
-| `runtime_thread_isolation_test.gd` | 线程 API、graph 不完整拒绝、三模式 | `%d checks, %d failures` |
+| `runtime_protocol_guard_test.gd` | ABI v3、SHADOW 启动、ACTIVE 门禁（A1） | `%d checks, %d failures` |
+| `runtime_climate_parity_test.gd` | 可比性契约（B2） | 同上 |
+| `climate_parity_probe.gd` | **SHADOW 对拍主力**，产出分叉矩阵 CSV（B2） | `compared_days=... matched_days=...` |
+| `climate_authority_test.gd` | per-domain ACTIVE 三门禁（B6） | `%d checks, %d failures` |
+| `climate_authority_soak_probe.gd` | **ACTIVE soak 主力**（B6） | `[soak/done] ticks=... drops=...` |
+| `runtime_climate_save_roundtrip_test.gd` | CLM2 存读（B5） | `%d checks, %d failures` |
+| `runtime_worker_source_scan_test.gd` | **worker 不得依赖 Godot/MapData**（A5） | PASS 或 push_error |
+| `runtime_thread_isolation_test.gd` | 线程 API、三模式（A5） | `%d checks, %d failures` |
 | `native_daily_graph_order_test.gd` | 图节点顺序与 C++ 常量一致 | `PASS ... (%d checks)` |
-| `runtime_country_pod_test.gd` | Country POD self-test | `%d checks, %d failures` |
+| `runtime_country_pod_test.gd` | Country POD self-test（D1–D5） | `%d checks, %d failures` |
 | `dots_completion/dots_completion_gate.gd` | 静态门禁：巨石行数、直写 grep、flag registry | `ALL GATES PASSED` |
 
-> 输出格式是 `checks / failures`，**没有** `passed=N failed=M` 那种格式；断言数是运行时累加的，
-> 没有编译期固定总数。所以"某测试应该有 N 个断言"这种判断不成立，只能看 failures 是否为 0。
+> 输出格式是 `checks / failures`，**没有** `passed=N failed=M`；断言数运行时累加，无编译期固定
+> 总数。所以"某测试应该有 N 个断言"这种判断不成立，只能看 failures 是否为 0。
 
 ### soak 环境变量（`climate_authority_soak_probe.gd`）
 
@@ -371,73 +528,30 @@ Godot 可执行文件由 `GODOT_BIN` 环境变量或 `tools/runtime/Resolve-Godo
 
 **A/B 的正确姿势**：同 seed 同尺寸跑两遍，只翻 `PK_SOAK_AUTHORITY`，对比逐场 nz/mean/max。
 
-## 3.4 已知缺陷与限制
+## 4.4 已知缺陷与限制
 
-### Climate（已放行，带着这些限制）
+### Climate（已放行，带着这些限制 → B8）
 
 | 项 | 状态 |
 | --- | --- |
-| stage 次序与生产不同 | worker 的 `climate_feedback` 排在 `weather`/`distribute` 前，生产是后。未重排 |
+| stage 次序与生产不同 | worker 的 `climate_feedback` 排在 `weather`/`distribute` 前，生产是后 |
 | ψ / cyclone / monsoon 未接 | 刻意留空（推进输入是风场，而 wind pass 在 round 里排在 weather 之后） |
 | 量级偏差 | snow_cover nz 比对照高约 25%，moisture / WB30 偏高；VGP 均值符号与对照相反 |
 | 大地图跟不上节拍 | 180x120 下 `writeback_days=30/50` |
-| 小地图负收益 | 60x40 下 `sus_sim_avg` +5.5%。目前默认对所有尺寸开启，无按格数阈值 |
+| 小地图负收益 | 60x40 下 `sus_sim_avg` +5.5%，且默认对所有尺寸开启 |
 | C5 场景表未逐项验证 | 暴雨/干旱/降雪/河流运河/跨年/topology revision 从未单独构造 |
-| `RuntimeClimateCommand` 悬空 | 5 个 opcode 定义了但无消费者 |
 
-### 测量能力的缺口（影响所有域）
+### 测量能力缺口（→ 阶段 C，影响所有域）
 
 - **帧延迟收益无法测量**：headless 的 `frame_wall_ms` 恒 0，而这正是 worker 化的主要卖点。
-  真实客户端会话下的帧统计从未采集过。
 - **`run_ms` 在 ACTIVE 下不可直接比**：harness 每天 40ms 忙等轮询（`SceneTree -s` 下
-  `_process` 不跑，回灌只能手动驱动），会淹没真实差异。
+  `_process` 不跑，回灌只能手动驱动）会淹没真实差异。
 
 ### 危险默认值
 
 - **`simulation_thread_mode` 键缺失时，C++ 侧 raw 默认是 `"ACTIVE"`**
-  （`world_ext_simulation_host.cpp:44`）。任何忘了传这个键的 harness 会静默跑成 ACTIVE。
-  生产路径总是显式传，但自己写 probe 时要注意。
-
----
-
-# 第四部分：任务表
-
-按"解除阻塞的价值 / 成本"排序。每条给出**验收标准**——没有验收标准的任务不该进这张表。
-
-## P0：补上测量能力（阻塞所有后续判断）
-
-| # | 任务 | 为什么最优先 | 验收 |
-| --- | --- | --- | --- |
-| 1 | 真实客户端会话下采集帧统计 | 这是 worker 化的**主要收益**，目前完全没测过；也是历史上两次严重问题唯一暴露过的地方 | ACTIVE / OFF 各一次同 seed 会话，给出帧时间分布对比 |
-| 2 | 把"客户端字段录制对照"固化成放行流程的一步 | Climate 四个缺陷全是它抓到的，而 headless 全绿 | 写成可重复的 SOP，Country 放行时首次执行 |
-
-## P1：Country 接入（下一个域）
-
-| # | 任务 | 前置 | 验收 |
-| --- | --- | --- | --- |
-| 3 | 定夺两条存档路径（`encode_country_core_checkpoint` vs `RuntimeCountryPodAuthority::encode_save`） | 无 | 单一路径，另一条删除或注明用途 |
-| 4 | 盘点 legacy 20 opcode 与 POD 9 opcode 的差额 | 无 | 逐条列出：已实现 / 不需要 / 待实现 |
-| 5 | 把 `RuntimeCountryPodAuthority` 接进 host 主循环 | 3、4 | ACTIVE 下 Country stage 真实执行 |
-| 6 | 跨域读取确认：谁在读 Country 字段，能否接受滞后一日 | 5 | 逐个消费者确认，写进本文 2.2 |
-| 7 | Country 按 2.5 的六步流程放行 | 1–6 | `implemented_domain_mask` 加 COUNTRY bit |
-
-## P2：Climate 收尾
-
-| # | 任务 | 验收 |
-| --- | --- | --- |
-| 8 | stage 重排：`feedback` 移到 `weather`/`distribute` 之后 | 与生产语义一致，soak 无回归 |
-| 9 | 量级偏差归因（snow_cover +25%、moisture/WB30 偏高、VGP 符号相反） | 每条能一对一映射到原因 |
-| 10 | 按格数的启用阈值（小地图负收益） | 阈值有实测依据 |
-| 11 | 大地图回灌跟不上节拍 | `writeback_days` 达到 50/50 |
-| 12 | ψ / cyclone / monsoon 自持推进 | 需先解决 wind pass 与 weather 的次序 |
-| 13 | 清理 `RuntimeClimateCommand` 悬空定义 | 接上消费者或删除 |
-| ~~14~~ | ~~修 `implemented_domain_mask()` 的过期注释~~ | 已完成（2026-09-08） |
-
-## P3：其余域
-
-C 档六个域的共同前置是**先决定它们是否值得迁移**。Economy 的 legacy 实现已经高度优化且有独立
-worker（`economy_profile.worker_enabled`），把它搬进 POD worker 的收益需要先论证。
-GAMEPLAY_EFFECT 是空占位，应确认它是否还需要存在。
+  （`world_ext_simulation_host.cpp:44`，另有别名键 `mode`）。忘了传这个键的 harness 会静默
+  跑成 ACTIVE。生产路径总是显式传，自己写 probe 时要注意。
 
 ---
 
