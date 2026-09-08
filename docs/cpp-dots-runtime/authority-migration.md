@@ -463,16 +463,27 @@ BUILDING_PLAN → TRADE_SETTLE → LEDGER_APPLY
 这是**完整迁移的工作分解**，六个阶段 A–F，含已完成项。每条子任务标状态：`[x]` 完成、
 `[~]` 部分、`[ ]` 未开始、`[-]` 已取消（附原因）。没有验收标准的条目不该进这张表。
 
+**目标是全量迁移**：十二个域全部进入 `implemented_domain_mask`（`0xFFF`），整图 ACTIVE。所以
+下面没有"要不要迁"的决策项，只有"怎么迁、按什么顺序迁"。
+
 进度概览：
 
 | 阶段 | 内容 | 状态 |
 | --- | --- | --- |
 | **A** | 基础设施：协议、线程、快照、存档骨架 | ✅ 完成 |
-| **B** | Climate 垂直切片：第一个域走通全流程 | ✅ 完成（带 6 项遗留） |
-| **C** | 测量能力：证明收益、抓住 headless 抓不到的问题 | ⬜ **未开始，阻塞 D–F 的判断** |
-| **D** | Country 接入：第二个域 | 🔶 实现完整，接线未做 |
-| **E** | 其余域：先决定哪些值得迁移 | ⬜ 未开始 |
-| **F** | 整图收尾 | ⬜ 未开始 |
+| **B** | CLIMATE 垂直切片：第一个域走通全流程 | ✅ 完成（带 6 项遗留） |
+| **C** | 测量能力：证明收益、抓住 headless 抓不到的问题 | ⬜ **未开始，阻塞后续所有判断** |
+| **D** | COUNTRY | 🔶 实现完整，接线未做 |
+| **E** | MODIFIER | ⬜ 仅 store |
+| **F** | EFFECT | ⬜ 仅 store |
+| **G** | IDEOLOGY | ⬜ 仅 store |
+| **H** | TRIGGER_INPUT | ⬜ 仅 store |
+| **I** | EVENTS | ⬜ 仅 store |
+| **J** | ECONOMY（最大工程） | ⬜ 仅 store |
+| **K** | GAMEPLAY_EFFECT / VISUAL / INPUT_CAPTURE：确认语义而非搬状态 | ⬜ 未开始 |
+| **L** | 整图收尾：`0xFFF` + 整图 ACTIVE | ⬜ 未开始 |
+
+E–J 的顺序由依赖决定（见"每个域的通用七步"末尾的依赖图），不是按工作量排的。
 
 ---
 
@@ -586,26 +597,162 @@ BUILDING_PLAN → TRADE_SETTLE → LEDGER_APPLY
       → 验收：逐个消费者确认并记录
 - [ ] **D11 按六步流程放行** → 前置 C1–C3、D7–D10；验收：mask 加 COUNTRY bit
 
-## 阶段 E：其余域 ⬜
+## 每个域的通用七步
 
-**共同前置：先决定是否值得迁移。** 这不是默认要做的事——
+E–J 六个域共用同一套步骤模板，下面各阶段只列**该域特有的难点**，不重复这七步：
 
-- [ ] **E1 迁移价值评估**：逐域回答"搬进 POD worker 能拿到什么，代价是什么"
-      → 特别是 ECONOMY：legacy 实现已高度优化且有自己的并行 worker，收益需要论证
-      → 验收：每域一个结论（迁移 / 不迁移 / 待定），写进本文
-- [ ] **E2 GAMEPLAY_EFFECT 去留**：它没有 store，`run_gameplay_effect` 只递增计数器
-      → 验收：确认保留还是删除这个域
-- [ ] E3–E8 六个 C 档域的实际迁移 → 前置 E1，范围由 E1 决定
-- [ ] **E9 ECONOMY 存档 section**：PKSR bundle 里目前没有它
-      → 仅在 E1 结论为"迁移"时才需要
+| 步 | 内容 | 完成判据 |
+| --- | --- | --- |
+| 1 | 真实 plan/replay 替换诊断投影 | 算的是生产公式，不是 environment 投影或计数器 |
+| 2 | 命令队列迁移：legacy opcode → POD | 逐条对照，无遗漏无多余 |
+| 3 | ACK / 跨域屏障 | 需要 ACK 的路径能正确阻塞与恢复 |
+| 4 | snapshot 类型 | 可整份传输 |
+| 5 | 存档 section | roundtrip 测试绿 |
+| 6 | 接入 `NativeSimulationHost` 真实 stage | ACTIVE 下真跑，不是 diagnostic runner |
+| 7 | 跨域读取确认 + 按 2.8 六步放行 | mask 加该域 bit |
 
-## 阶段 F：整图收尾 ⬜
+**迁移顺序由依赖决定**，不能随意调换：
 
-- [ ] F1 `implemented_domain_mask` 达到 `0xFFF`（前置：E 阶段全部完成）
-- [ ] F2 整图 ACTIVE（`start()` 不传显式 mask）
-- [ ] F3 达成 1.2 的全部硬约束：`main_wait_on_sim_us=0`、50 权威模拟日/秒、
+```text
+Modifier ──→ Effect ──→ Ideology
+   │            │    └─→ Trigger ←── Events
+   │            │
+   └────────────┴─→ Economy（还依赖 Country 的冻结快照）
+```
+
+Modifier 最底层（其他域经 Effect 写它）；Effect 是跨域事务枢纽（Country / Ideology /
+Technology 都靠它的 ACK）；Economy 最后，因为它同时依赖 Country 与 Modifier。
+
+## 阶段 E：MODIFIER（第三个域）⬜
+
+**为什么排在其余域最前**：它是 Effect / Ideology / Economy 税率的共同下游，它不迁移，上面几个
+域的写入路径就得跨 worker/主线程边界。
+
+- [x] E1 `RuntimeModifierStore` + `RuntimeModifierPodState`
+- [ ] E2 真实 plan/replay：目前只做过期删除与 intent 应用
+      （`runtime_domain_pod.cpp:437`、`runtime_domain_authorities.cpp:450`）
+- [ ] E3 迁移 legacy 5 个 opcode（`modifier_runtime.h:37-40`）
+- [ ] E4 ACK：目前 pipeline 读 acks 计数但**不填充**（`runtime_domain_pod.cpp:452`）
+- [ ] E5 snapshot 类型（当前无）
+- [ ] E6 独立存档 section（当前混在 PDP3 里）
+- [ ] E7 接入 host 真实 stage
+- [ ] E8 放行
+
+**特有难点**：四域 ModifierStore + daily freeze 语义。冻结发布与 worker 一日滞后叠加后是
+"滞后两日"还是"滞后一日"，要先定清楚再动手。
+
+## 阶段 F：EFFECT ⬜
+
+- [x] F1 `RuntimeEffectStore` + `RuntimeEffectPodState`
+- [ ] F2 真实 plan/replay：目前按 instance 调度并 emit intent（`runtime_domain_pod.cpp:411`）
+- [ ] F3 迁移 legacy 6 个 action（`effect_runtime.h:56-63`）
+- [ ] F4 ACK：目前 runner 里是 **synthetic ACK**（`runtime_domain_authorities.cpp:428`），
+      要换成真实跨域屏障
+- [ ] F5 snapshot 类型（当前无）
+- [ ] F6 独立存档 section（当前 PDP3）
+- [ ] F7 接入 host 真实 stage
+- [ ] F8 放行
+
+**特有难点**：它是**跨域原子事务的枢纽**。Country 的 grant tech、Ideology 的三选一、
+Technology 的里程碑都靠它的 ACK 完成。迁移它等于同时改动这几个域的提交路径，需要
+"Effect 在 worker、消费者在主线程"的中间态设计。
+
+## 阶段 G：IDEOLOGY ⬜
+
+- [x] G1 `RuntimeIdeologyStore` + `RuntimeIdeologyPodState`
+- [ ] G2 真实 plan/replay：目前只 bump generation/rng（`runtime_domain_pod.cpp:396`），
+      runner 侧做 pending_transition 排序 + xorshift（`:361`）
+- [ ] G3 迁移 legacy 9 个 opcode（`ideology_runtime.h:30-40`）
+- [ ] G4 ACK（当前无域级 ACK）
+- [ ] G5 snapshot 类型（当前无）
+- [ ] G6 存档 section（当前**无独立 section**）
+- [ ] G7 接入 host 真实 stage
+- [ ] G8 放行
+
+**特有难点**：阶级民意门与互斥/联动组的求值依赖 Economy 的阶级数据。前置是 Economy 的读取
+边界定清楚（见阶段 J），否则会形成 Ideology↔Economy 的循环依赖。
+
+## 阶段 H：TRIGGER_INPUT ⬜
+
+- [x] H1 `RuntimeTriggerStore` + `RuntimeTriggerPodState`
+- [ ] H2 真实 plan/replay：目前递增 accumulator + 扫 events journal
+      （`runtime_domain_pod.cpp:371`、`runtime_domain_authorities.cpp:315`）
+- [ ] H3 **建立 POD 命令层**：当前 POD 侧无 opcode enum，legacy `TriggerRuntime::Action`
+      有 15 项（`trigger_runtime.h:66-77`）
+- [ ] H4 ACK：目前只有 intent 链，**无屏障完成语义**
+- [ ] H5 snapshot 类型（当前无）
+- [ ] H6 独立存档 section（当前 PDP3）
+- [ ] H7 接入 host 真实 stage
+- [ ] H8 放行
+
+**特有难点**：它的输入是 Events journal、输出是 Effect，**两端都在迁移中**。三者的迁移顺序要
+么串行（Events → Trigger → Effect 各自完整放行），要么设计一个三域同时切换的批次。
+
+## 阶段 I：EVENTS ⬜
+
+- [x] I1 `RuntimeEventsStore` + `RuntimeEventsPodState`
+- [ ] I2 真实 plan/replay：目前每日 push 一条 journal（`runtime_domain_pod.cpp:496`）
+- [ ] I3 命令层（当前无 opcode）
+- [ ] I4 ACK（当前无）
+- [ ] I5 snapshot 类型（当前无）
+- [ ] I6 独立存档 section（当前 PDP3）
+- [ ] I7 接入 host 真实 stage
+- [ ] I8 放行
+
+**特有难点**：journal 是**只增不改**的结构，跨 worker 边界时要定清楚"谁能 append"。如果主线程
+与 worker 都能写，需要合并策略；如果只有 worker 能写，主线程侧的事件产生点全部要改成命令。
+
+## 阶段 J：ECONOMY（最大工程）⬜
+
+- [x] J1 `RuntimeEconomyStore` + `RuntimeEconomyPodState`
+- [ ] J2 真实 plan/replay：目前是从 country snapshot 复制 treasury + 简化的
+      population→production 投影（`runtime_domain_pod.cpp:471`、`runtime_domain_authorities.cpp:533`，
+      注释明写 "real Economy authority will replace"）
+- [ ] J3 迁移 legacy **23 个 opcode**（`economy_runtime.h:151-176`）
+- [ ] J4 ACK：pipeline ack 槽当前为空（`runtime_domain_pod.cpp:490`）
+- [ ] J5 snapshot 类型（当前无）
+- [ ] J6 **PKSR ECONOMY section**：bundle 里目前完全没有它，存档仍全在 legacy
+      `economy_runtime_persistence_*`（`native_simulation_host.cpp:1942-1987`）
+- [ ] J7 接入 host 真实 stage
+- [ ] J8 放行
+
+**四个特有难点**（这也是它排在最后的原因）：
+
+1. **冻结 epoch 与一日滞后的交互**。epoch 会跨多天冻结 country 快照，而 worker 权威本身又滞后
+   一日。两者叠加的语义必须先定义清楚，否则经济结算读到的 country 状态会漂移。
+2. **它已经是并行的**。`worker_enabled` 开启的是 `parallel_for_range` 按 cell 分 task
+   （`parallel_dispatcher.h:45-99`），与 POD worker 是两套。迁移要决定：POD worker 内部继续
+   用这套并行，还是改成 POD worker 的任务模型。**这不是"要不要迁"的问题，是"怎么迁"的问题。**
+3. **守恒审计不能降级**。`aggregate_publish` 的 VERIFY 相位
+   （`economy_runtime_publish.cpp:367`）失败会 `_fatal=true` 并让 GDScript 侧
+   `world_clock.pause(true)`。搬到 worker 后，这条"审计失败立即暂停游戏"的链路要跨线程重建。
+4. **13 个 stage 的顺序契约**。`BUILDING_PLAN → … → AGGREGATE_PUBLISH` 的主序（2.7.2）在
+   worker 侧要逐 stage 提取，与 Climate 的九个 pass 是同一类工作，但 stage 数更多、跨域读取
+   更密。
+
+## 阶段 K：三个无 store 的域 ⬜
+
+全量迁移要求 `implemented_domain_mask` 达到 `0xFFF`，所以这三个也必须有结论——但它们的"迁移"
+不是搬状态，而是确认语义。
+
+- [ ] **K1 GAMEPLAY_EFFECT**：当前无 store，`run_gameplay_effect` 只递增 generation/work_units
+      （`runtime_domain_pod.cpp:457`）。需确认它是一个真实域还是历史占位；若是前者，补齐七步；
+      若是后者，从枚举中移除并调整 `RUNTIME_ALL_DOMAIN_MASK`
+- [ ] **K2 VISUAL**：worker 不得访问 Godot 对象，所以它**不可能**成为 worker 权威。需要的是把
+      "intent 生产"迁进 worker、"intent 消费"留在主线程，并明确它在 mask 里代表哪一半
+      （当前 SHADOW 刻意不发布 intent，`native_simulation_host.cpp:1318`）
+- [ ] **K3 INPUT_CAPTURE**：本就是只读快照 + 校验，无可变状态。需确认它在 `0xFFF` 语义下算
+      "已实现"的判据是什么
+
+## 阶段 L：整图收尾 ⬜
+
+- [ ] L1 `implemented_domain_mask` 达到 `0xFFF`（前置：D–K 全部完成）
+- [ ] L2 整图 ACTIVE：`start()` 不传显式 mask 的路径打通
+- [ ] L3 达成 1.2 的全部硬约束：`main_wait_on_sim_us=0`、50 权威模拟日/秒、
       worker 停顿不造成帧尖峰
-- [ ] F4 legacy 路径删除 + 更新 `runtime-deletion-inventory.md`
+- [ ] L4 **一日滞后的全局语义**：十二个域全在 worker 后，跨域读取不再有"主线程读滞后值"的
+      问题，但玩家输入到生效的延迟需要重新评估
+- [ ] L5 legacy 路径删除 + 更新 `runtime-deletion-inventory.md`
 
 ---
 
@@ -615,28 +762,36 @@ BUILDING_PLAN → TRADE_SETTLE → LEDGER_APPLY
 
 ## 4.1 一句话与进度
 
-六个阶段里 A、B 完成，C 未开始且阻塞判断，D 卡在接线，E、F 未开始。
+十二个域的全量迁移里，**1 个已放行、1 个实现完整待接线、6 个只有 store、3 个待定语义**。
 
 ```text
-A 基础设施  ████████████ 完成
-B Climate   ███████████░ 完成，6 项遗留（B8）
-C 测量能力  ░░░░░░░░░░░░ 未开始  ← 阻塞 D-F 的判断
-D Country   ██████░░░░░░ D1-D6 完成，D7-D11 未做
-E 其余域    ░░░░░░░░░░░░ 未开始（前置是"要不要做"的决策）
-F 整图收尾  ░░░░░░░░░░░░ 未开始
+A 基础设施       ████████████ 完成
+B CLIMATE        ███████████░ 完成，6 项遗留（B8）
+C 测量能力       ░░░░░░░░░░░░ 未开始  ← 阻塞后续所有判断
+D COUNTRY        ██████░░░░░░ D1-D6 完成，D7-D11 未做
+E MODIFIER       █░░░░░░░░░░░ 仅 store
+F EFFECT         █░░░░░░░░░░░ 仅 store
+G IDEOLOGY       █░░░░░░░░░░░ 仅 store
+H TRIGGER_INPUT  █░░░░░░░░░░░ 仅 store
+I EVENTS         █░░░░░░░░░░░ 仅 store
+J ECONOMY        █░░░░░░░░░░░ 仅 store（最大工程，四个特有难点）
+K 三个无 store   ░░░░░░░░░░░░ 未开始
+L 整图收尾       ░░░░░░░░░░░░ 未开始
 ```
+
+按七步模板算，E–J 六个域各欠 6–7 步，是这轮迁移剩余工作量的主体。
 
 **唯一在生产中真实承担权威的域是 Climate。** 其余十一个域中，Country 有完整实现但未接线，
 六个是诊断占位，三个结构上没有可迁移状态，COMMIT 是屏障机制本身。
 
-## 4.2 域成熟度（对应任务表 B / D / E）
+## 4.2 域成熟度（对应任务表 B–K）
 
-| 档 | 域 | 一句话 | 任务表 |
+| 类 | 域 | 一句话 | 任务表 |
 | --- | --- | --- | --- |
-| **A 生产权威** | CLIMATE、COMMIT | ACTIVE 下真实承担，在 `implemented_domain_mask` | B 完成 |
-| **B 实现完整未接入** | COUNTRY | POD authority 有完整 plan/commit/9 opcode/ACK/CPD2，host 主循环没引用它 | D7–D11 |
-| **C 诊断占位** | MODIFIER、EFFECT、IDEOLOGY、TRIGGER_INPUT、ECONOMY、EVENTS | 有 store，但 plan/replay 是投影或计数器 | E1 先决策 |
-| **D 无 store** | GAMEPLAY_EFFECT、VISUAL、INPUT_CAPTURE | 结构上没有可迁移状态，或本就不该有 | E2 |
+| **第 1 类：生产权威** | CLIMATE、COMMIT | ACTIVE 下真实承担，在 `implemented_domain_mask` | B（完成，遗留 B8） |
+| **第 2 类：实现完整未接入** | COUNTRY | POD authority 有完整 plan/commit/9 opcode/ACK/CPD2，host 主循环没引用它 | D7–D11 |
+| **第 3 类：诊断占位** | MODIFIER、EFFECT、IDEOLOGY、TRIGGER_INPUT、ECONOMY、EVENTS | 有 store，但 plan/replay 是投影或计数器 | 阶段 E–J |
+| **第 4 类：无 store** | GAMEPLAY_EFFECT、VISUAL、INPUT_CAPTURE | 结构上没有可迁移状态，需确认语义 | 阶段 K |
 
 「诊断占位」的准确含义：**代码能跑、能产出测试数据，但算的不是生产公式**。
 
@@ -680,7 +835,7 @@ Economy 有 23 个 legacy opcode 不代表它的 POD 迁移靠前，它的 POD �
 - **两条并存的存档路径** → D7：host 用 `encode_country_core_checkpoint`（`:1978`），而
   authority 自己的 `encode_save`（`runtime_country_pod.cpp:1257`）没被调用。
 
-### C 档六域细节
+### 第 3 类六域细节
 
 共同形态：有 store、有 PDP3 序列化、`stage_preflight` 返回 `domain_handler_not_migrated`
 （`runtime_authoritative_domains.cpp:804`），只在 SHADOW diagnostic runner 里跑。
@@ -694,13 +849,13 @@ Economy 有 23 个 legacy opcode 不代表它的 POD 迁移靠前，它的 POD �
 | ECONOMY | 从 country snapshot 复制 treasury；简化 population→production 投影 | `:471`、`:533`（注释："real Economy authority will replace"） |
 | EVENTS | 每日 push 一条 journal | `:496`、`:584` |
 
-**ECONOMY 额外缺存档** → E9：PKSR bundle 只有 ENVELOPE / DOMAIN_POD / CLIMATE / COUNTRY
+**ECONOMY 额外缺存档** → J6：PKSR bundle 只有 ENVELOPE / DOMAIN_POD / CLIMATE / COUNTRY
 （`native_simulation_host.cpp:1942-1987`），它的存档仍全在 legacy `economy_runtime_persistence_*`。
 
-### D 档三个
+### 第 4 类三个
 
 - **GAMEPLAY_EFFECT**：`RuntimeAuthoritativeDomainStores` 无对应成员，`run_gameplay_effect`
-  只递增 generation/work_units（`runtime_domain_pod.cpp:457`）。**空占位** → E2。
+  只递增 generation/work_units（`runtime_domain_pod.cpp:457`）。需确认是真实域还是历史占位 → K1。
 - **VISUAL**：只有 `RuntimeVisualIntent`。SHADOW 下**刻意不把 shadow intents 泄漏到 visual
   ring**（`native_simulation_host.cpp:1318`）。
 - **INPUT_CAPTURE**：只读快照，两种模式都只做校验。
