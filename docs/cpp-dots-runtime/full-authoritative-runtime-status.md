@@ -2452,6 +2452,54 @@ builder 都是生产同一份 builder 的薄包装，所以生产 C++ 侧读同�
 `stage-days`：八个 round stage 满跑 118/118，`albedo=1` / `vegetation=2` / `feedback=1` /
 `weather=15`（15 个 weather 轮 × 各自 stride），`drops=0`。
 
+### 漏掉的第五个 stage：weather field solve
+
+补回四个 stage 后 soak 全绿、回归全绿，但玩家仍报"湿度跳变"。原因是
+`snapshot.climate_weather` **在整个文件里没有任何赋值点** —— 内核的 gate 是
+`input.climate_weather != nullptr`（`runtime_climate_kernel.cpp:373`），所以 stage 11 的
+前半段 weather field solve 在 ACTIVE 下一天都没跑过。它是 vapor / cloud_water / precip
+这条降水循环的驱动，缺席时 moisture 只被 distribute 的 `moist_delta` 和 feedback 零散推
+一下，表象正是跳变而不是连续演化。
+
+**它为什么没被 soak 抓到**：stage 11 的 stage-day 计数与 distribute **共用同一个 bit**，
+distribute 在跑，`weather=15` 就照常出现。`stage-days` 这个指标在这一段上无法区分两个
+写者 —— 内核里那句 starved 诊断的注释早就写明了这点，我没读到。
+
+接线本身是 55 个标量 + 9 个 ψ 演化参数 + 13 条必填 lane。三条实现要点：
+
+- **键名与默认值的权威来源是 `run_weather_field_solve_pass`**（解析在
+  `world_ext_weather.cpp:299` 起，收进 `wfk` 在 `:792` 起）。键名多数与 struct 字段同名，
+  例外是 `omega_ascent_gain` ← `field_omega_ascent_gain`、五个 `syn_*` ←
+  `weather_synoptic_*`。
+- **clamp 必须照抄，不只是默认值。** `field_precip_spatial_smooth` 上限 0.8、
+  `snow_classification_margin` 上限 0.12、`field_precip_inertia` 下限 0.05 等等。
+  ClimateProfile 给越界值时，只有 clamp 能让两侧落在同一个数上，而少一次 clamp 不会有
+  任何人报错。
+- **`weather_synoptic_enabled` 的生产默认是 `true`**（不是 false）。
+
+顺带修掉一个隐患：weather 与 feedback 的守卫都读 static knobs 的 `neighbor_indices`，而
+那份在 environment 走 CSR 形式时会被长度守卫清空（第 42 节前面那次崩溃的修法）。
+`stage_weather` 字典里带着一份生产校验过的定长 6N，缺失时从它补上。
+
+**验收**（60 天、同 seed、A/B）：
+
+| 字段 | 对照（authority=0） | 接线后 |
+| --- | --- | --- |
+| `moisture` mean | 0.88955 | 0.89961 |
+| `snow_cover` nz / mean | 115 / 0.03611 | 116 / 0.03840 |
+| `plant_available_water` mean | 0.29282 | 0.29957 |
+| `temp` mean / max | 0.498 / 0.975 | 0.505 / 1.000 |
+| `insolation_dev` | mean 0.011 / [-0.408, 0.474] | **逐位一致** |
+| `sea_ice_frac` nz / max | 447 / 1.000 | 472 / 1.000 |
+
+`weather=7`（60 天 ÷ 8 天一轮），无 starved，`drops=0`，SHADOW 仍 28/30。
+
+**残留**：`vegetation_growth_pressure` 的均值符号与对照相反（+0.113 vs −0.011）。两个写者
+（feedback / vegetation）现在都在跑，量级偏差归入 `moisture-magnitude` 那条一起查。
+ψ / cyclone / monsoon 仍留空 —— 它们的推进输入是风场，而 worker 的 wind pass 在 round 里
+比 weather 晚，自己推一份只会把风场的分叉搬到 ψ 上（待办 `synoptic-own`）。代价是降水少了
+移动涡旋这条主驱动，`syn_base_lift` 默认 1.55 是当前配置里最强的一项。
+
 ### 第三批：跨边界的键名与类型
 
 第一批（linker-visible）与第二批（capture 静默接线）之外还有第三类缺口：**函数存在、编译通过、
@@ -2508,6 +2556,10 @@ Dictionary 是无类型边界，两侧各写一个名字不会有任何人报错
 **十八、GDScript 的 SCRIPT ERROR 不是噪声。** `Invalid call. Nonexistent 'String' constructor`
 在 soak 日志里出现过多次，我因为 soak 结果正常而当成无关噪声跳过了 —— 它是 SHADOW 对拍
 0/30 的直接根因。ACTIVE 与 SHADOW 走的是不同代码路径，**一条路径全绿不能替另一条路径背书**。
+
+**二十、共用一个计数 bit 的两个 stage，那个计数就不能用来证明其中之一跑了。** stage 11 的
+`weather` 与 `distribute` 共用一个 bit，`weather=15` 一直照常出现，而 field solve 其实一天都
+没跑过。**接线的验收判据必须是该 stage 独占的输出场，不是它参与的计数。**
 
 **十九、"墙钟变长"本身是一条诊断信号。** parity probe 从 75 秒变成 700 秒，因为它在
 `tick_budget = days * 4 + 16` 里一直重试一个永不成功的比较。用时反常时先看它是不是在重试，

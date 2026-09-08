@@ -896,10 +896,195 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
                 wd->pre_snow_cover.assign(cells, 0);
             }
 
-            if (tables_ok) {
-                snapshot.climate_weather_distribute = wd;
+                if (tables_ok) {
+                    snapshot.climate_weather_distribute = wd;
+                }
             }
-        }
+
+            // ── stage 11 前半段 weather field solve ──────────────────────
+            //
+            // vapor / cloud_water / precip 这条降水循环的驱动。缺了它 moisture 只
+            // 被 distribute 的 moist_delta 和 feedback 零散推一下，表现是跳变而不是
+            // 连续演化 —— 而且 distribute 读的 weather 四条也就一直是 field solve
+            // 没写过的值。
+            //
+            // 键名口径对生产 run_weather_field_solve_pass（world_ext_weather.cpp:299
+            // 起解析、:792 起收进 wfk）。默认值与 clamp 都要照抄：ClimateProfile 给
+            // 越界值时只有 clamp 能让两侧落在同一个数上，而少一次 clamp 不会有任何
+            // 人报错。
+            if (stage_knobs.has("stage_weather") &&
+                stage_knobs["stage_weather"].get_type() == Variant::DICTIONARY) {
+                const Dictionary d = stage_knobs["stage_weather"];
+                auto wx = std::make_shared<pk_async_climate::WeatherFieldInput>();
+                wx->n_cells = static_cast<int>(cells);
+                wx->ran = true;
+                // conv_inhib / field_init 跨天由 worker 自持：ACTIVE 下生产的对流
+                // 抑制不再推进，每天拿它那份重置等于把这条记忆抹平，对流会一直从
+                // "无抑制"起步；field_init 被覆盖则水汽循环整场起不来（见
+                // runtime_climate_kernel.cpp:1048 起的两段注释）。
+                wx->own_field_state = true;
+
+                const auto kf = [&d](const char *key, float fallback) {
+                    return d.has(key) ? float(d[key]) : fallback;
+                };
+                const auto ki = [&d](const char *key, int fallback) {
+                    return d.has(key) ? int(d[key]) : fallback;
+                };
+                const auto kb = [&d](const char *key, bool fallback) {
+                    return d.has(key) ? bool(d[key]) : fallback;
+                };
+                const auto lo = [](float v, float min_v) {
+                    return v < min_v ? min_v : v;
+                };
+                const auto clamp_f = [](float v, float min_v, float max_v) {
+                    return v < min_v ? min_v : (v > max_v ? max_v : v);
+                };
+
+                auto &k = wx->knobs;
+                k.n_cells = static_cast<int>(cells);
+                k.climate_anomaly = kf("climate_anomaly", 0.0f);
+                k.refresh_convergence = kb("refresh_convergence", false);
+                k.apply_convergence_boost = kb("apply_convergence_boost", true);
+                // staged 语义：内核把 prev_* 复制到独立缓冲后再解算（kernel:1042），
+                // 与生产 staged 路径一致。
+                k.use_next_outputs = true;
+                k.field_advect_steps = ki("field_advect_steps", 3);
+                k.field_diffusion = kf("field_diffusion", 0.04f);
+                k.field_ocean_evap_gain = kf("field_ocean_evap_gain", 0.55f);
+                k.field_precip_inertia =
+                    clamp_f(kf("field_precip_inertia", 0.40f), 0.05f, 1.0f);
+                k.field_precip_spatial_smooth =
+                    clamp_f(kf("field_precip_spatial_smooth", 0.30f), 0.0f, 0.8f);
+                k.field_cloud_inertia =
+                    clamp_f(kf("field_cloud_inertia", 0.74f), 0.05f, 1.0f);
+                k.field_wet_terrain_precip_damping = clamp_f(
+                    kf("field_wet_terrain_precip_damping", 0.60f), 0.0f, 1.0f);
+                k.field_lake_precip_damping =
+                    clamp_f(kf("field_lake_precip_damping", 0.65f), 0.0f, 1.0f);
+                k.field_lake_evap_scale =
+                    clamp_f(kf("field_lake_evap_scale", 0.35f), 0.0f, 1.0f);
+                k.field_extreme_precip_soft_cap =
+                    clamp_f(kf("field_extreme_precip_soft_cap", 0.16f), 0.0f, 1.0f);
+                k.field_extreme_precip_softness =
+                    clamp_f(kf("field_extreme_precip_softness", 0.20f), 0.0f, 1.0f);
+                k.field_land_evapotranspiration_gain =
+                    lo(kf("field_land_evapotranspiration_gain", 0.85f), 0.0f);
+                k.field_ocean_precip_suppression = clamp_f(
+                    kf("field_ocean_precip_suppression", 0.95f), 0.0f, 1.0f);
+                k.field_frontogenesis_gain =
+                    lo(kf("field_frontogenesis_gain", 0.42f), 0.0f);
+                k.field_rain_shadow_drying =
+                    clamp_f(kf("field_rain_shadow_drying", 0.35f), 0.0f, 1.0f);
+                k.field_advect_vapor = kf("field_advect_vapor", 0.95f);
+                k.field_advect_cloud = kf("field_advect_cloud", 0.94f);
+                k.field_rh_condense = kf("field_rh_condense", 0.55f);
+                k.field_static_cond_w = kf("field_static_cond_w", 1.00f);
+                k.field_condense_rate = kf("field_condense_rate", 0.45f);
+                k.field_lift_cond_gain = kf("field_lift_cond_gain", 0.80f);
+                k.field_conv_cond_gain = kf("field_conv_cond_gain", 1.00f);
+                k.field_thermal_conv_cond = kf("field_thermal_conv_cond", 1.15f);
+                k.field_thermal_conv_precip =
+                    kf("field_thermal_conv_precip", 0.30f);
+                k.field_autoconversion = kf("field_autoconversion", 0.16f);
+                k.field_precip_base_frac = kf("field_precip_base_frac", 0.08f);
+                k.field_lift_precip_gain = kf("field_lift_precip_gain", 0.45f);
+                k.field_conv_precip_gain = kf("field_conv_precip_gain", 1.95f);
+                k.field_oro_precip_gain = kf("field_oro_precip_gain", 0.30f);
+                k.field_stratiform_gain = kf("field_stratiform_gain", 1.0f);
+                k.field_cool_season_vapor_floor =
+                    kf("field_cool_season_vapor_floor", 0.0f);
+                k.field_cloud_reevap = kf("field_cloud_reevap", 0.28f);
+                float pos_scale = kf("weather_cell_pos_scale", 1.0f);
+                if (pos_scale <= 0.001f) pos_scale = 1.0f;
+                k.weather_cell_pos_scale = pos_scale;
+                k.weather_wrap_width_x =
+                    lo(kf("weather_wrap_width_x", 0.0f), 0.0f);
+                k.cold_precip_as_blizzard = kb("cold_precip_as_blizzard", true);
+                k.snow_classification_margin =
+                    clamp_f(kf("snow_classification_margin", 0.03f), 0.0f, 0.12f);
+                k.weather_lat_te_norm = kf("weather_lat_te_norm", 0.5f);
+                // 键名例外：struct 叫 omega_ascent_gain，字典键带 field_ 前缀。
+                k.omega_ascent_gain = kf("field_omega_ascent_gain", 0.40f);
+                k.world_bounds_pos_y = kf("world_bounds_pos_y", 0.0f);
+                k.world_bounds_size_y = kf("world_bounds_size_y", 0.0f);
+                // 五个 syn_* 的字典键是 weather_synoptic_* —— 这五条是 ψ 的耦合
+                // 强度（不是 ψ 的演化参数，那些在 SynopticAdvanceKnobs 里）。
+                k.syn_supp = kf("weather_synoptic_supp", 0.75f);
+                k.syn_enh = kf("weather_synoptic_enh", 0.45f);
+                k.syn_front_force = kf("weather_synoptic_front_force", 0.55f);
+                k.syn_front_enh = kf("weather_synoptic_front_enh", 0.70f);
+                k.syn_base_lift = kf("weather_synoptic_base_lift", 1.55f);
+                k.weather_transition_enabled =
+                    kb("weather_transition_enabled", false);
+                k.weather_transition_alpha_rate =
+                    clamp_f(kf("weather_transition_alpha_rate", 1.0f), 0.0f, 1.0f);
+                k.weather_transition_dt_days =
+                    clamp_f(kf("weather_transition_dt_days", 1.0f), 0.0f, 30.0f);
+                k.thermal_monsoon_enabled = kb("thermal_monsoon_enabled", false);
+                int storm_id = ki("cyclone_storm_type_id", 2);
+                if (storm_id < 0) storm_id = 0;
+                else if (storm_id > 255) storm_id = 255;
+                k.cyclone_storm_type_id = static_cast<uint8_t>(storm_id);
+
+                // ψ 的演化参数。synoptic_enabled 的生产默认是 true。
+                wx->synoptic_enabled = kb("weather_synoptic_enabled", true);
+                auto &s = wx->synoptic;
+                s.baroclinic = kf("weather_synoptic_baroclinic", 0.40f);
+                s.damp = kf("weather_synoptic_damp", 0.90f);
+                s.diffuse = kf("weather_synoptic_diffuse", 0.05f);
+                s.seed_rate = kf("weather_synoptic_seed_rate", 0.015f);
+                s.seed_amp = kf("weather_synoptic_seed_amp", 0.42f);
+                s.adv_cells = ki("weather_synoptic_adv_cells", 3);
+                s.tick = ki("weather_solve_tick", 0);
+                s.cell_pos_scale = pos_scale;
+                s.wrap_width_x = k.weather_wrap_width_x;
+
+                // 守卫要求齐长的 13 条 lane（kernel:993 起）。少一条整段静默跳过，
+                // 而它与 distribute 共用 stage 11 的 bit，所以 stage-days 上看不出来。
+                wx->temp_read = snapshot.cell_temp;
+                wx->moisture_read = snapshot.cell_moisture;
+                wx->air_anomaly = snapshot.cell_air_mass_temp_anomaly;
+                wx->wind_x = snapshot.cell_wind_x;
+                wx->wind_y = snapshot.cell_wind_y;
+                wx->wind_speed = snapshot.cell_wind_speed;
+                wx->elevation = snapshot.cell_elevation;
+                wx->pos_x = snapshot.cell_pos_x;
+                wx->pos_y = snapshot.cell_pos_y;
+                wx->temp_transport_anomaly =
+                    snapshot.cell_temperature_transport_anomaly;
+                wx->terrain = snapshot.terrain;
+                wx->has_river = snapshot.has_river;
+                wx->vegetation = snapshot.vegetation;
+                // 可选 lane：内核对它们各有无值分支。
+                wx->river_q30 = snapshot.cell_river_discharge_30d;
+                wx->soil_moisture = snapshot.cell_soil_moisture;
+                wx->vitality = snapshot.cell_vegetation_vitality;
+                wx->sea_ice = snapshot.cell_sea_ice_frac_prev;
+                wx->snow_cover = snapshot.cell_snow_cover;
+                // ψ / cyclone / monsoon / traj 在 ACTIVE 下没有写者：它们的推进输入
+                // 是风场，而 worker 的 wind pass 在 round 里比 weather 晚，自己推一份
+                // 只会把风场的分叉搬到 ψ 上（见 WeatherFieldInput::psi 的注释）。
+                // 留空 = 内核走无 ψ 分支，代价是降水少了移动涡旋这条主驱动
+                // （syn_base_lift 默认 1.55，是当前配置里最强的一项）。这是已知待办
+                // synoptic-own，不是这次接线的遗漏。
+
+                snapshot.climate_weather = wx;
+
+                // 邻居表：weather 与 feedback 的守卫都读 static knobs 那一份，而它在
+                // environment 走 CSR 形式时会被上面的长度守卫清空。字典这份是生产
+                // 校验过的定长 6N，正好补上。
+                if (snapshot.climate_round_static_knobs.neighbor_indices.size() !=
+                        cells * 6u) {
+                    const Variant raw = d.get("neighbor_indices", Variant());
+                    if (raw.get_type() == Variant::PACKED_INT32_ARRAY) {
+                        const PackedInt32Array nb = raw;
+                        if (static_cast<size_t>(nb.size()) == cells * 6u) {
+                            snapshot.climate_round_static_knobs.neighbor_indices
+                                .assign(nb.ptr(), nb.ptr() + nb.size());
+                        }
+                    }
+                }
+            }
 
         // stage_b 段的三个 stage（albedo / vegetation_dynamics / climate_feedback）
         // 共用一份 knobs 字典 —— 生产那侧就是 run_stage_b_pass(knobs) 一次吃三段，
