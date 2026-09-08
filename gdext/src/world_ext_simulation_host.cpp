@@ -1144,4 +1144,571 @@ bool DCWorldExt::runtime_protocol_guard_self_test() const {
     return RuntimeProtocolGuard::self_test(error);
 }
 
+namespace {
+
+// 把生产侧交来的 MapData 数组还原成一份 RuntimeClimateStore。
+//
+// 键名就是 parity 表的 canonical name（RuntimeClimateParityField::name 的注释里
+// 写明了它同时是这个绑定接受的字典键），所以这里不存在第二套名字映射 —— 表是
+// 唯一的真相，加一个 parity 字段不需要动这个函数。
+//
+// 缺席的字段留在 reset 后的零值上，并不报错：生产某一天没跑某个 stage 时那条数组
+// 本来就不该出现，而把它当成错误会让整天的 reference 无法发布。
+bool build_climate_store_from_fields(const Dictionary &fields,
+                                     RuntimeClimateStore &store,
+                                     String &error) {
+    int cell_count = static_cast<int>(fields.get("cell_count", 0));
+    if (cell_count <= 0) {
+        // 没给 cell_count 时从任一条数组推断，长度不一致由下面逐条的 size 检查兜住。
+        const size_t count = runtime_climate_parity_field_count();
+        const RuntimeClimateParityField *table = runtime_climate_parity_fields();
+        for (size_t i = 0; i < count && cell_count <= 0; ++i) {
+            if (!fields.has(table[i].name)) continue;
+            const Variant raw = fields[table[i].name];
+            switch (raw.get_type()) {
+            case Variant::PACKED_FLOAT32_ARRAY:
+                cell_count = PackedFloat32Array(raw).size();
+                break;
+            case Variant::PACKED_INT32_ARRAY:
+                cell_count = PackedInt32Array(raw).size();
+                break;
+            case Variant::PACKED_BYTE_ARRAY:
+                cell_count = PackedByteArray(raw).size();
+                break;
+            default:
+                break;
+            }
+        }
+    }
+    if (cell_count <= 0) {
+        error = String("climate_reference_cell_count_missing");
+        return false;
+    }
+    store.reset(static_cast<uint32_t>(cell_count));
+    store.climate_anomaly =
+        static_cast<float>(static_cast<double>(fields.get("climate_anomaly", 0.0)));
+    const size_t count = runtime_climate_parity_field_count();
+    const RuntimeClimateParityField *table = runtime_climate_parity_fields();
+    for (size_t i = 0; i < count; ++i) {
+        const RuntimeClimateParityField &f = table[i];
+        if (!fields.has(f.name)) continue;
+        const Variant raw = fields[f.name];
+        switch (f.kind) {
+        case RuntimeClimateParityKind::F32: {
+            if (f.f32 == nullptr) break;
+            if (raw.get_type() != Variant::PACKED_FLOAT32_ARRAY) {
+                error = String(f.name) + String("(dtype)");
+                return false;
+            }
+            const PackedFloat32Array values = raw;
+            if (values.size() != cell_count) {
+                error = String(f.name) + String("(size)");
+                return false;
+            }
+            auto &dst = store.*(f.f32);
+            dst.assign(values.ptr(), values.ptr() + values.size());
+            break;
+        }
+        case RuntimeClimateParityKind::I32: {
+            if (f.i32 == nullptr) break;
+            if (raw.get_type() != Variant::PACKED_INT32_ARRAY) {
+                error = String(f.name) + String("(dtype)");
+                return false;
+            }
+            const PackedInt32Array values = raw;
+            if (values.size() != cell_count) {
+                error = String(f.name) + String("(size)");
+                return false;
+            }
+            auto &dst = store.*(f.i32);
+            dst.assign(values.ptr(), values.ptr() + values.size());
+            break;
+        }
+        case RuntimeClimateParityKind::U8: {
+            if (f.u8 == nullptr) break;
+            if (raw.get_type() != Variant::PACKED_BYTE_ARRAY) {
+                error = String(f.name) + String("(dtype)");
+                return false;
+            }
+            const PackedByteArray values = raw;
+            if (values.size() != cell_count) {
+                error = String(f.name) + String("(size)");
+                return false;
+            }
+            auto &dst = store.*(f.u8);
+            dst.assign(values.ptr(), values.ptr() + values.size());
+            break;
+        }
+        }
+    }
+    return true;
+}
+
+} // namespace
+
+void append_climate_stage_cadence(Dictionary &out,
+                                  const RuntimeThreadReport &report) {
+    PackedFloat64Array stage_ms;
+    PackedInt64Array stage_work;
+    PackedStringArray stage_names;
+    const size_t count = report.climate_stage_ms.size();
+    stage_ms.resize(static_cast<int>(count));
+    stage_work.resize(static_cast<int>(count));
+    stage_names.resize(static_cast<int>(count));
+    for (size_t i = 0; i < count; ++i) {
+        stage_ms.set(static_cast<int>(i), report.climate_stage_ms[i]);
+        stage_work.set(static_cast<int>(i),
+                       static_cast<int64_t>(report.climate_stage_work[i]));
+        stage_names.set(static_cast<int>(i),
+                        String(runtime_climate_stage_name(
+                            static_cast<RuntimeClimateStage>(i))));
+    }
+    out["climate_stage_ms"] = stage_ms;
+    out["climate_stage_work"] = stage_work;
+    out["climate_stage_names"] = stage_names;
+}
+
+bool DCWorldExt::climate_worker_authoritative() const {
+    // 直接读 host，不经任何 GDScript 注入的镜像：抑制门每 tick 都要问这个，而一个
+    // 落后一帧的 false 会让主线程在 worker 已经在产出同一天时再跑一遍 Climate。
+    if (!_runtime_host) return false;
+    return _runtime_host->domain_is_worker_authoritative(
+        RuntimeDomainId::CLIMATE);
+}
+
+Dictionary DCWorldExt::set_runtime_climate_parity_forcing(bool enabled) {
+    Dictionary out;
+    if (!_runtime_host) {
+        out["ok"] = false;
+        out["code"] = "runtime_worker_not_started";
+        return out;
+    }
+    _runtime_host->set_climate_parity_forcing(enabled);
+    out["ok"] = true;
+    out["code"] = "ok";
+    out["enabled"] = _runtime_host->climate_parity_forcing();
+    out["forced_days"] =
+        static_cast<int64_t>(_runtime_host->climate_parity_forced_days());
+    return out;
+}
+
+Array DCWorldExt::get_runtime_climate_parity_fields() const {
+    Array out;
+    const size_t count = runtime_climate_parity_field_count();
+    const RuntimeClimateParityField *table = runtime_climate_parity_fields();
+    for (size_t i = 0; i < count; ++i) {
+        const RuntimeClimateParityField &f = table[i];
+        Dictionary row;
+        row["name"] = String(f.name);
+        row["map_data_array"] = String(f.map_data_array);
+        row["kind"] = static_cast<int>(f.kind);
+        row["comparability"] = static_cast<int>(f.comparability);
+        row["tolerance"] = static_cast<int>(f.tolerance);
+        row["tolerance_band"] =
+            runtime_climate_parity_tolerance_band(f.tolerance);
+        row["stage"] = static_cast<int>(f.stage);
+        row["stage_name"] = String(runtime_climate_stage_name(f.stage));
+        row["note"] = String(f.note != nullptr ? f.note : "");
+        out.push_back(row);
+    }
+    return out;
+}
+
+Dictionary DCWorldExt::apply_runtime_climate_writeback(
+        int64_t after_generation) {
+    Dictionary out;
+    if (!_runtime_host) {
+        out["ok"] = false;
+        out["code"] = "runtime_worker_not_started";
+        return out;
+    }
+    if (!_map_data) {
+        out["ok"] = false;
+        out["code"] = "runtime_writeback_map_unavailable";
+        return out;
+    }
+    uint32_t slot = 0;
+    if (!_runtime_host->try_acquire_climate_writeback(
+            after_generation < 0 ? 0u : static_cast<uint64_t>(after_generation),
+            slot)) {
+        // 不是错误：worker 还没提交更新的一天。ok=true / applied=false 让调用方的
+        // 游标保持不动，而不是把"这一帧没有新数据"当成失败去重试。
+        out["ok"] = true;
+        out["applied"] = false;
+        out["code"] = "ok";
+        out["generation"] = after_generation;
+        out["drops"] =
+            static_cast<int64_t>(_runtime_host->climate_writeback_drop_count());
+        return out;
+    }
+    const RuntimeClimateSnapshot &snapshot =
+        _runtime_host->climate_writeback_buffer(slot);
+    const RuntimeClimateStore &store = snapshot.payload;
+    const int cell_count = static_cast<int>(store.cell_count);
+    if (cell_count <= 0) {
+        _runtime_host->release_climate_writeback(slot);
+        out["ok"] = false;
+        out["applied"] = false;
+        out["code"] = "runtime_writeback_empty_store";
+        return out;
+    }
+
+    PackedStringArray touched_slots;
+    PackedStringArray skipped;
+    int applied_fields = 0;
+
+    // 走 parity 字段表而不是另列一张回灌清单：那张表已经是"哪些场属于 Climate 权威"
+    // 的唯一定义（对拍用的就是它），另开一张清单等于让回灌和对拍可以各说各话 ——
+    // 漏掉的场会一边在 parity 里显示对齐、一边在 MapData 里冻结。
+    const size_t field_count = runtime_climate_parity_field_count();
+    const RuntimeClimateParityField *table = runtime_climate_parity_fields();
+    for (size_t i = 0; i < field_count; ++i) {
+        const RuntimeClimateParityField &field = table[i];
+        const char *slot_name = _slot_name_for_property(field.map_data_array);
+        if (slot_name == nullptr) {
+            skipped.push_back(String(field.name) + String("(unbound)"));
+            continue;
+        }
+        const int sid = component_id(StringName(slot_name));
+        if (sid < 0 || sid >= _slots.size()) {
+            skipped.push_back(String(field.name) + String("(no_slot)"));
+            continue;
+        }
+        Slot &s = _slots.write[sid];
+        switch (field.kind) {
+            case RuntimeClimateParityKind::F32: {
+                if (field.f32 == nullptr) {
+                    skipped.push_back(String(field.name) + String("(no_member)"));
+                    continue;
+                }
+                const std::vector<float> &source = store.*(field.f32);
+                if (static_cast<int>(source.size()) != cell_count) {
+                    skipped.push_back(String(field.name));
+                    continue;
+                }
+                // slot.h 的两条约束：dtype 决定哪条数组是活的（写错的那条会静默丢
+                // 弃），external_ref 的 slot 不能 resize —— 那会脱开与 GDScript 那侧
+                // 的别名，于是回灌写进一块没人读的内存。
+                if (s.dtype != SlotDType::F32) {
+                    skipped.push_back(String(field.name) + String("(dtype)"));
+                    continue;
+                }
+                if (s.arr_f32.size() != cell_count) {
+                    if (s.external_ref) {
+                        skipped.push_back(String(field.name) + String("(extern_size)"));
+                        continue;
+                    }
+                    s.arr_f32.resize(cell_count);
+                }
+                std::memcpy(s.arr_f32.ptrw(), source.data(),
+                            static_cast<size_t>(cell_count) * sizeof(float));
+                break;
+            }
+            case RuntimeClimateParityKind::I32: {
+                if (field.i32 == nullptr) {
+                    skipped.push_back(String(field.name) + String("(no_member)"));
+                    continue;
+                }
+                const std::vector<int32_t> &source = store.*(field.i32);
+                if (static_cast<int>(source.size()) != cell_count) {
+                    skipped.push_back(String(field.name));
+                    continue;
+                }
+                if (s.dtype != SlotDType::I32) {
+                    skipped.push_back(String(field.name) + String("(dtype)"));
+                    continue;
+                }
+                if (s.arr_i32.size() != cell_count) {
+                    if (s.external_ref) {
+                        skipped.push_back(String(field.name) + String("(extern_size)"));
+                        continue;
+                    }
+                    s.arr_i32.resize(cell_count);
+                }
+                std::memcpy(s.arr_i32.ptrw(), source.data(),
+                            static_cast<size_t>(cell_count) * sizeof(int32_t));
+                break;
+            }
+            case RuntimeClimateParityKind::U8: {
+                const std::vector<uint8_t> &source = store.*(field.u8);
+                if (static_cast<int>(source.size()) != cell_count) {
+                    skipped.push_back(String(field.name));
+                    continue;
+                }
+                if (s.arr_u8.size() != cell_count) {
+                    if (s.external_ref) {
+                        skipped.push_back(String(field.name) + String("(extern_size)"));
+                        continue;
+                    }
+                    s.arr_u8.resize(cell_count);
+                }
+                std::memcpy(s.arr_u8.ptrw(), source.data(),
+                            static_cast<size_t>(cell_count));
+                break;
+            }
+        }
+        touched_slots.push_back(String(slot_name));
+        ++applied_fields;
+    }
+
+    // 下面这几条走不了上面那张表：表是按 RuntimeClimateStore 的成员指针索引的，而
+    // 它们没有 store 成员（理由见 RuntimeClimateSnapshot::soil_moisture）。共同点是
+    // ACTIVE 下主线程那个写者被抑制门关掉了，worker 这份是它们唯一的日频写者 ——
+    // 不回灌就等于这条场没有写者，MapData 会停在世界生成时的值。
+    //
+    // 空 vector = 这一天产出它的 stage 没跑（distribute 按 weather 轮的节拍，不是每
+    // 天），此时保持 MapData 原值，不记 skipped：那不是缺陷，是节拍。
+    const auto apply_extra = [&](const char *field_name, const char *slot_name,
+                                 const std::vector<float> &source) {
+        if (source.empty()) return;
+        if (static_cast<int>(source.size()) != cell_count) {
+            skipped.push_back(String(field_name));
+            return;
+        }
+        const int sid = component_id(StringName(slot_name));
+        if (sid < 0 || sid >= _slots.size()) {
+            skipped.push_back(String(field_name));
+            return;
+        }
+        Slot &s = _slots.write[sid];
+        if (s.dtype != SlotDType::F32) {
+            skipped.push_back(String(field_name) + String("(dtype)"));
+            return;
+        }
+        if (s.arr_f32.size() != cell_count && s.external_ref) {
+            skipped.push_back(String(field_name) + String("(extern_size)"));
+            return;
+        }
+        if (s.arr_f32.size() != cell_count) s.arr_f32.resize(cell_count);
+        std::memcpy(s.arr_f32.ptrw(), source.data(),
+                    static_cast<size_t>(cell_count) * sizeof(float));
+        touched_slots.push_back(String(slot_name));
+        ++applied_fields;
+    };
+    apply_extra("soil_moisture", "cell_soil_moisture", snapshot.soil_moisture);
+    // pass_a 的日照/热量输出。worker 内部算得对（round 内 pass_a→pass_b 走 out 缓冲，
+    // 不经 MapData），坏的是外部读者：渲染、tile 录制、UI 面板读的都是 MapData。
+    apply_extra("insolation_now", "cell_insolation_now", snapshot.insolation_now);
+    apply_extra("insolation_dev", "cell_insolation_dev", snapshot.insolation_dev);
+    apply_extra("day_length", "cell_day_length", snapshot.day_length);
+    apply_extra("heat_input", "cell_heat_input", snapshot.heat_input);
+    apply_extra("temp_season_offset", "cell_temp_season_offset",
+                snapshot.temp_season_offset);
+
+    const int64_t applied_day = snapshot.committed_day;
+    const uint64_t applied_generation = snapshot.generation;
+    const uint64_t applied_state_hash = snapshot.state_hash;
+    // Release before flushing: the flush writes MapData, which the worker never
+    // touches, so there is no reason to keep a ring slot occupied across it.
+    _runtime_host->release_climate_writeback(slot);
+
+    flush_slots_to_map_keys(touched_slots);
+
+    out["ok"] = true;
+    // applied 只在真的写进了字段时为真。曾经这里无条件报 true，于是"回灌假活跃"
+    // 让一次全空的写回看起来和成功一模一样。
+    out["applied"] = applied_fields > 0;
+    out["code"] = "ok";
+    out["day"] = applied_day;
+    out["generation"] = static_cast<int64_t>(applied_generation);
+    out["state_hash"] = static_cast<int64_t>(applied_state_hash);
+    out["cell_count"] = static_cast<int64_t>(cell_count);
+    out["writeback_applied_fields"] = applied_fields;
+    out["writeback_skipped_fields"] = skipped;
+    out["drops"] =
+        static_cast<int64_t>(_runtime_host->climate_writeback_drop_count());
+    return out;
+}
+
+Dictionary DCWorldExt::compute_runtime_climate_parity_hash(
+        const Dictionary &fields) {
+    Dictionary out;
+    RuntimeClimateStore store;
+    String error;
+    if (!build_climate_store_from_fields(fields, store, error)) {
+        out["ok"] = false;
+        out["code"] = "climate_reference_fields_invalid";
+        out["field"] = error;
+        return out;
+    }
+    out["ok"] = true;
+    out["code"] = "ok";
+    out["cell_count"] = static_cast<int64_t>(store.cell_count);
+    // 用与 worker 完全相同的那一个归约函数。两侧"按约定各算一遍"是这条对拍最早的
+    // 失效方式，所以这里刻意不复制哈希逻辑。
+    out["state_hash"] =
+        static_cast<int64_t>(runtime_climate_parity_hash(store));
+    out["parity_version"] =
+        static_cast<int64_t>(RUNTIME_CLIMATE_PARITY_VERSION);
+    out["comparable_fields"] =
+        static_cast<int64_t>(runtime_climate_parity_comparable_count());
+    return out;
+}
+
+Dictionary DCWorldExt::publish_runtime_climate_reference_state(
+        int64_t day, const Dictionary &fields) {
+    Dictionary out;
+    if (!_runtime_host) {
+        out["ok"] = false;
+        out["code"] = "runtime_worker_not_started";
+        return out;
+    }
+    if (day < 0) {
+        out["ok"] = false;
+        out["code"] = "climate_trace_reference_invalid";
+        return out;
+    }
+    auto store = std::make_shared<RuntimeClimateStore>();
+    String error;
+    if (!build_climate_store_from_fields(fields, *store, error)) {
+        out["ok"] = false;
+        out["code"] = "climate_reference_fields_invalid";
+        out["field"] = error;
+        return out;
+    }
+    // 哈希在这里从 state 派生，所以两者不可能互相矛盾 —— 这正是这个绑定存在的理由
+    // （另一个只收哈希的版本做不到按字段/格子定位分叉）。
+    const uint64_t state_hash = runtime_climate_parity_hash(*store);
+
+    RuntimeClimateReferencePublish publish;
+    publish.reference_store = store;
+    publish.round_input = _production_round_input;
+    publish.round_ran = static_cast<bool>(_production_round_input);
+    publish.round_scalars = &_production_round_scalars;
+    publish.round_scalar_mask = _production_round_scalar_mask;
+    publish.pass_b = _production_pass_b;
+    publish.sea_ice = _production_sea_ice;
+    publish.wind_surface = _production_wind_surface;
+    publish.ocean_water = _production_ocean_water;
+    publish.wind_air = _production_wind_air;
+    publish.albedo = _production_albedo;
+    publish.vegetation = _production_vegetation;
+    publish.feedback = _production_feedback;
+    publish.weather = _production_weather;
+    publish.hydrology = _production_hydrology;
+    publish.weather_distribute = _production_weather_distribute;
+    publish.production_stage_mask = _production_stage_mask;
+    publish.seasonal_feedback_ran = _production_seasonal_feedback_ran;
+    publish.seasonal_feedback_decay = _production_seasonal_feedback_decay;
+    publish.season_refresh_ran = _production_season_refresh_ran;
+
+    std::string host_error;
+    const bool ok = _runtime_host->publish_climate_reference(
+        day, state_hash, host_error, publish);
+
+    // 节拍诊断：配错一天会表现成"算法分叉"，所以前若干天照实把 round_ran 与 stage
+    // mask 打出来。这比从分叉矩阵反推直接得多。
+    if (_publish_cadence_reports_left > 0) {
+        --_publish_cadence_reports_left;
+        UtilityFunctions::print(vformat(
+            "[climate][publish] day=%d round_ran=%d prod_stage=0x%x "
+            "scalar_mask=0x%x alb=%d veg=%d fb=%d weather=%d sr=%d ok=%d",
+            static_cast<int64_t>(day), publish.round_ran ? 1 : 0,
+            publish.production_stage_mask, publish.round_scalar_mask,
+            publish.albedo.ran ? 1 : 0,
+            static_cast<bool>(publish.vegetation) ? 1 : 0,
+            static_cast<bool>(publish.feedback) ? 1 : 0,
+            static_cast<bool>(publish.weather) ? 1 : 0,
+            publish.season_refresh_ran ? 1 : 0, ok ? 1 : 0));
+    }
+
+    // 全部 per-day 记录在这里复位。少了这一步，"生产这一天没跑某个 stage"会继承上
+    // 一天的记录，而那正是这些字段用来区分的两种情况之一。
+    _last_published_climate_reference = store;
+    _production_round_input.reset();
+    _production_round_scalar_mask = 0;
+    _production_pass_b.reset();
+    _production_sea_ice.reset();
+    _production_wind_surface.reset();
+    _production_ocean_water.reset();
+    _production_wind_air.reset();
+    _production_albedo = pk_async_climate::ClimateAlbedoKnobs{};
+    _production_vegetation.reset();
+    _production_feedback.reset();
+    _production_weather.reset();
+    _production_hydrology.reset();
+    _production_weather_distribute.reset();
+    _production_stage_mask = 0;
+    _production_seasonal_feedback_ran = false;
+    _production_seasonal_feedback_decay = 1.0f;
+    _production_season_refresh_ran = false;
+
+    if (!ok) {
+        out["ok"] = false;
+        out["code"] = String(host_error.c_str());
+        out["day"] = day;
+        out["state_hash"] = static_cast<int64_t>(state_hash);
+        return out;
+    }
+    out["ok"] = true;
+    out["pending"] = false;
+    out["code"] = "ok";
+    out["day"] = day;
+    out["state_hash"] = static_cast<int64_t>(state_hash);
+    out["cell_count"] = static_cast<int64_t>(store->cell_count);
+    return out;
+}
+
+bool DCWorldExt::runtime_climate_writeback_self_test() const {
+    std::string error;
+    return RuntimeClimateWritebackRing::self_test(error);
+}
+
+Dictionary DCWorldExt::runtime_climate_parity_contract_test() const {
+    Dictionary out;
+    std::string error;
+    const bool ok = runtime_climate_parity_self_test(error);
+    out["ok"] = ok;
+    // 返回 Dictionary 而不是裸 bool：一次 parity 契约失败必须带上原因才可行动，
+    // 而"绿灯下的裸 false"正是早期几个缺口能长期隐身的原因。
+    out["code"] = ok ? String("ok") : String(error.c_str());
+    out["parity_version"] =
+        static_cast<int64_t>(RUNTIME_CLIMATE_PARITY_VERSION);
+    out["field_count"] =
+        static_cast<int64_t>(runtime_climate_parity_field_count());
+    out["comparable_count"] =
+        static_cast<int64_t>(runtime_climate_parity_comparable_count());
+    out["max_fields"] =
+        static_cast<int64_t>(RUNTIME_CLIMATE_PARITY_MAX_FIELDS);
+    return out;
+}
+
+Array DCWorldExt::get_runtime_climate_parity_divergence() const {
+    Array out;
+    if (!_runtime_host) return out;
+    const size_t count = runtime_climate_parity_field_count();
+    const RuntimeClimateParityField *table = runtime_climate_parity_fields();
+    for (size_t i = 0; i < count; ++i) {
+        const auto st = _runtime_host->climate_parity_field_status(i);
+        // 没比过的字段也要出现在表里：缺行和"零分叉"是两件事，而分叉矩阵是用来
+        // 排迁移顺序的，一行的缺席会被读成"这个 stage 已经对齐了"。
+        Dictionary row;
+        row["name"] = String(table[i].name);
+        row["stage"] = static_cast<int>(table[i].stage);
+        row["stage_name"] = String(runtime_climate_stage_name(table[i].stage));
+        row["tolerance"] = static_cast<int>(table[i].tolerance);
+        row["tolerance_band"] =
+            runtime_climate_parity_tolerance_band(table[i].tolerance);
+        row["comparability"] = static_cast<int>(table[i].comparability);
+        row["compared_days"] = static_cast<int64_t>(st.compared_days);
+        row["diverged_days"] = static_cast<int64_t>(st.diverged_days);
+        row["diverged_cells"] = static_cast<int64_t>(st.diverged_cells);
+        row["out_of_band_days"] = static_cast<int64_t>(st.out_of_band_days);
+        row["out_of_band_cells"] = static_cast<int64_t>(st.out_of_band_cells);
+        row["first_diverged_day"] = st.first_diverged_day;
+        row["first_out_of_band_day"] = st.first_out_of_band_day;
+        row["first_cell"] = static_cast<int64_t>(st.first_cell);
+        row["last_diverged_cells"] =
+            static_cast<int64_t>(st.last_diverged_cells);
+        row["last_out_of_band_cells"] =
+            static_cast<int64_t>(st.last_out_of_band_cells);
+        row["max_abs_delta"] = st.max_abs_delta;
+        row["max_out_of_band_delta"] = st.max_out_of_band_delta;
+        row["first_reference_bits"] = String(st.first_reference_bits);
+        row["first_worker_bits"] = String(st.first_worker_bits);
+        out.push_back(row);
+    }
+    return out;
+}
+
 } // namespace pk

@@ -1,0 +1,27 @@
+﻿scons: Reading SConscript files ...
+Building for architecture x86_64 on platform windows
+scons: done reading SConscript files.
+scons: Building targets ...
+scons: `godot-cpp\bin\libgodot-cpp.windows.template_debug.x86_64.lib' is up to date.
+Compiling shared src\world_ext_simulation_host.cpp ...
+Linking Shared Library D:\Godot\ProjectKeynes\Project.Keynes\Project\project-keynes\addons\dots_ext\bin\windows\dots_ext.windows.template_debug.x86_64.dll ...
+scons.exe :   正在创建库 D:\Godot\ProjectKeynes\Project.Keynes\Project\project-keynes\addons\dots_ext\bin\windows\dots_ext.w
+indows.template_debug.x86_64.lib 和对象 D:\Godot\ProjectKeynes\Project.Keynes\Project\project-keynes\addons\dots_ext\bin\w
+indows\dots_ext.windows.template_debug.x86_64.exp
+所在位置 D:\Godot\ProjectKeynes\Project.Keynes\tools\runtime\build_gdext.ps1:32 字符: 12
++     $out = & scons platform=windows target=$Target -j8 2>&1
++            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (  正在创建库 D:\Godo...ebug.x86_64.exp:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+world_ext_bind_methods.windows.template_debug.x86_64.obj : error LNK2019: 无法解析的外部符号 "public: class godot::Dictionary __
+cdecl pk::DCWorldExt::apply_runtime_climate_writeback(__int64)" (?apply_runtime_climate_writeback@DCWorldExt@pk@@QEAA?A
+VDictionary@godot@@_J@Z)，函数 "protected: static void __cdecl pk::DCWorldExt::_bind_methods(void)" (?_bind_methods@DCWorl
+dExt@pk@@KAXXZ) 中引用了该符号
+D:\Godot\ProjectKeynes\Project.Keynes\Project\project-keynes\addons\dots_ext\bin\windows\dots_ext.windows.template_debu
+g.x86_64.dll : fatal error LNK1120: 1 个无法解析的外部命令
+scons: *** [D:\Godot\ProjectKeynes\Project.Keynes\Project\project-keynes\addons\dots_ext\bin\windows\dots_ext.windows.t
+emplate_debug.x86_64.dll] Error 1120
+scons: building terminated because of errors.
+
+[build] FAILED
